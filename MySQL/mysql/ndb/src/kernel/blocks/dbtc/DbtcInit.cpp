@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -257,7 +256,6 @@ Dbtc::Dbtc(const class Configuration & conf):
   addRecSignal(GSN_INCL_NODEREQ, &Dbtc::execINCL_NODEREQ);
   addRecSignal(GSN_TIME_SIGNAL, &Dbtc::execTIME_SIGNAL);
   addRecSignal(GSN_API_FAILREQ, &Dbtc::execAPI_FAILREQ);
-  addRecSignal(GSN_SET_VAR_REQ, &Dbtc::execSET_VAR_REQ);
 
   addRecSignal(GSN_TC_COMMIT_ACK, &Dbtc::execTC_COMMIT_ACK);
   addRecSignal(GSN_ABORT_ALL_REQ, &Dbtc::execABORT_ALL_REQ);
@@ -290,9 +288,21 @@ Dbtc::Dbtc(const class Configuration & conf):
   addRecSignal(GSN_WAIT_DROP_TAB_CONF, &Dbtc::execWAIT_DROP_TAB_CONF);
   
   addRecSignal(GSN_ALTER_TAB_REQ, &Dbtc::execALTER_TAB_REQ);
-
-  initData();
+  addRecSignal(GSN_NODE_START_REP, &Dbtc::execNODE_START_REP, true);
   
+  cacheRecord = 0;
+  apiConnectRecord = 0;
+  tcConnectRecord = 0;
+  hostRecord = 0;
+  tableRecord = 0;
+  scanRecord = 0;
+  databufRecord = 0;
+  attrbufRecord = 0;
+  gcpRecord = 0;
+  tcFailRecord = 0;
+  c_apiConTimer = 0;
+  c_apiConTimer_line = 0;
+
 #ifdef VM_TRACE
   {
     void* tmp[] = { &apiConnectptr, 

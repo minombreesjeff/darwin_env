@@ -2,8 +2,7 @@
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,10 +13,11 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-noinst_PROGRAMS =	mysql
-bin_PROGRAMS =	mysqltest_embedded mysql_client_test_embedded
-client_sources =	$(mysqltest_embedded_SOURCES) $(mysql_SOURCES)
-tests_sources= $(mysql_client_test_embedded_SOURCES)
+noinst_PROGRAMS = mysql
+bin_PROGRAMS    = mysqltest_embedded mysql_client_test_embedded
+client_sources  = $(mysqltest_embedded_SOURCES) $(mysql_SOURCES)
+tests_sources   = $(mysql_client_test_embedded_SOURCES)
+CLEANFILES      = $(client_sources) $(tests_sources)
 
 link_sources:
 	set -x; \
@@ -31,12 +31,12 @@ link_sources:
 	done
 
 DEFS = 		-DEMBEDDED_LIBRARY
-INCLUDES =	@MT_INCLUDES@ \
-		-I$(top_builddir)/include -I$(top_srcdir)/include -I$(srcdir) \
+INCLUDES =	-I$(top_builddir)/include -I$(top_srcdir)/include -I$(srcdir) \
 		-I$(top_srcdir) -I$(top_srcdir)/client -I$(top_srcdir)/regex \
 		$(openssl_includes)
-LIBS =		@LIBS@ @WRAPLIBS@ @CLIENT_LIBS@
-LDADD =		@CLIENT_EXTRA_LDFLAGS@ ../libmysqld.a @innodb_system_libs@ @LIBDL@ $(CXXLDFLAGS)
+LIBS =		@LIBS@ @WRAPLIBS@ @CLIENT_LIBS@ $(yassl_libs)
+LDADD =		@CLIENT_EXTRA_LDFLAGS@ ../libmysqld.a @innodb_system_libs@ @LIBDL@ $(CXXLDFLAGS) \
+                @NDB_SCI_LIBS@
 
 mysqltest_embedded_LINK = $(CXXLINK)
 mysqltest_embedded_SOURCES =	mysqltest.c
@@ -47,11 +47,7 @@ mysql_SOURCES = mysql.cc readline.cc completion_hash.cc \
 mysql_LDADD = @readline_link@ @TERMCAP_LIB@ $(LDADD)
 
 mysql_client_test_embedded_LINK = $(CXXLINK)
-mysql_client_test_embedded_SOURCES =	mysql_client_test.c
-
-clean-local:
-	rm -f $(client_sources)
-	rm -f $(tests_sources)
+mysql_client_test_embedded_SOURCES = mysql_client_test.c
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

@@ -1,5 +1,5 @@
-2.9 MySQL Installation Using a Source Distribution
-==================================================
+2.4.14 MySQL Installation Using a Source Distribution
+-----------------------------------------------------
 
 * Menu:
 
@@ -11,27 +11,31 @@
 * windows-source-build::         Installing MySQL from Source on Windows
 * windows-client-compiling::     Compiling MySQL Clients on Windows
 
+This section does not apply to MySQL Enterprise Server users.
+
 Before you proceed with an installation from source, first check
 whether our binary is available for your platform and whether it works
 for you. We put a great deal of effort into ensuring that our binaries
 are built with the best possible options.
 
-To obtain a source distribution for MySQL, *Note getting-mysql::.
+To obtain a source distribution for MySQL, *Note getting-mysql::. If
+you want to build MySQL from source on Windows, see *Note
+windows-source-build::.
 
 MySQL source distributions are provided as compressed `tar' archives
 and have names of the form `mysql-VERSION.tar.gz', where VERSION is a
-number like `4.1.13'.
+number like `5.0.46'.
 
 You need the following tools to build and install MySQL from source:
 
    * GNU `gunzip' to uncompress the distribution.
 
    * A reasonable `tar' to unpack the distribution. GNU `tar' is known
-     to work.  Some operating systems come with a pre-installed version
+     to work.  Some operating systems come with a preinstalled version
      of `tar' that is known to have problems. For example, the `tar'
      provided with early versions of Mac OS X `tar', SunOS 4.x and
      Solaris 8 and earlier are known to have problems with long
-     filenames. On Mac OS X, you can use the pre-installed `gnutar'
+     filenames. On Mac OS X, you can use the preinstalled `gnutar'
      program. On other systems with a deficient `tar', you should
      install GNU `tar' first.
 
@@ -54,8 +58,8 @@ You need the following tools to build and install MySQL from source:
 If you are using a version of `gcc' recent enough to understand the
 `-fno-exceptions' option, it is _very important_ that you use this
 option.  Otherwise, you may compile a binary that crashes randomly. We
-also recommend that you also use `-felide-constructors' and `-fno-rtti'
-as well. When in doubt, do the following:
+also recommend that you use `-felide-constructors' and `-fno-rtti'
+along with `-fno-exceptions'. When in doubt, do the following:
 
      CFLAGS="-O3" CXX=gcc CXXFLAGS="-O3 -felide-constructors \
             -fno-exceptions -fno-rtti" ./configure \
@@ -69,8 +73,10 @@ instructions in *Note bug-reports::.
 
 File: manual.info,  Node: quick-install,  Next: configure-options,  Prev: installing-source,  Up: installing-source
 
-2.9.1 Source Installation Overview
-----------------------------------
+2.4.14.1 Source Installation Overview
+.....................................
+
+This section does not apply to MySQL Enterprise Server users.
 
 The basic commands that you must execute to install a MySQL source
 distribution are:
@@ -84,14 +90,12 @@ distribution are:
      shell> make install
      shell> cp support-files/my-medium.cnf /etc/my.cnf
      shell> cd /usr/local/mysql
-     shell> bin/mysql_install_db --user=mysql
-     shell> chown -R root  .
-     shell> chown -R mysql var
+     shell> chown -R mysql .
      shell> chgrp -R mysql .
+     shell> bin/mysql_install_db --user=mysql
+     shell> chown -R root .
+     shell> chown -R mysql var
      shell> bin/mysqld_safe --user=mysql &
-
-For versions of MySQL older than 4.0, substitute `bin/safe_mysqld' for
-`bin/mysqld_safe' in the final command.
 
 If you start from a source RPM, do the following:
 
@@ -117,17 +121,19 @@ MySQL from a source distribution follows:
      different versions of Unix, or they may have different names such
      as `adduser' and `addgroup'.
 
-     You might want to call the user and group something other than
-     `mysql'. If so, substitute the appropriate name in the following
-     steps.
+     You might want to call the user and group something else instead
+     of `mysql'. If so, substitute the appropriate name in the
+     following steps.
 
-  2. Pick the directory under which you want to unpack the distribution
+  2. Perform the following steps as the `mysql' user, except as noted.
+
+  3. Pick the directory under which you want to unpack the distribution
      and change location into it.
 
-  3. Obtain a distribution file using the instructions in *Note
+  4. Obtain a distribution file using the instructions in *Note
      getting-mysql::.
 
-  4. Unpack the distribution into the current directory:
+  5. Unpack the distribution into the current directory:
 
           shell> gunzip < /PATH/TO/MYSQL-VERSION.tar.gz | tar xvf -
 
@@ -139,7 +145,7 @@ MySQL from a source distribution follows:
 
           shell> tar zxvf /PATH/TO/MYSQL-VERSION-OS.tar.gz
 
-  5. Change location into the top-level directory of the unpacked
+  6. Change location into the top-level directory of the unpacked
      distribution:
 
           shell> cd mysql-VERSION
@@ -147,7 +153,7 @@ MySQL from a source distribution follows:
      Note that currently you must configure and build MySQL from this
      top-level directory. You cannot build it in a different directory.
 
-  6. Configure the release and compile everything:
+  7. Configure the release and compile everything:
 
           shell> ./configure --prefix=/usr/local/mysql
           shell> make
@@ -165,64 +171,74 @@ MySQL from a source distribution follows:
 
      If the compile fails, see *Note compilation-problems::, for help.
 
-  7. Install the distribution:
+  8. Install the distribution:
 
           shell> make install
+
+     You might need to run this command as `root'.
 
      If you want to set up an option file, use one of those present in
      the `support-files' directory as a template. For example:
 
           shell> cp support-files/my-medium.cnf /etc/my.cnf
 
-     You might need to run these commands as `root'.
+     You might need to run this command as `root'.
 
      If you want to configure support for `InnoDB' tables, you should
-     edit the `/etc/my.cnf' file, removing the `#' character before the
+     edit the `/etc/my.cnf' file, remove the `#' character before the
      option lines that start with `innodb_...', and modify the option
      values to be what you want. See *Note option-files::, and *Note
      innodb-configuration::.
 
-  8. Change location into the installation directory:
+  9. Change location into the installation directory:
 
           shell> cd /usr/local/mysql
 
-  9. If you have not installed MySQL before, you must create the MySQL
-     grant tables:
+ 10. If you ran the `make install' command as `root', the installed
+     files will be owned by `root'. Ensure that the installation is
+     accessible to `mysql' by executing the following commands as
+     `root' in the installation directory:
 
-          shell> bin/mysql_install_db --user=mysql
-
-     If you run the command as `root', you should use the `--user'
-     option as shown. The value of the option should be the name of the
-     login account that you created in the first step to use for
-     running the server. If you run the command while logged in as that
-     user, you can omit the `--user' option.
-
-     Note that for MySQL versions older than 3.22.10,
-     `mysql_install_db' left the server running after creating the
-     grant tables. This is no longer true; you need to restart the
-     server after performing the remaining steps in this procedure.
-
- 10. Change the ownership of program binaries to `root' and ownership
-     of the data directory to the user that you run `mysqld' as.
-     Assuming that you are in the installation directory
-     (`/usr/local/mysql'), the commands look like this:
-
-          shell> chown -R root  .
-          shell> chown -R mysql var
+          shell> chown -R mysql .
           shell> chgrp -R mysql .
 
      The first command changes the owner attribute of the files to the
-     `root' user. The second changes the owner attribute of the data
-     directory to the `mysql' user. The third changes the group
-     attribute to the `mysql' group.
+     `mysql' user. The second changes the group attribute to the
+     `mysql' group.
 
- 11. If you want MySQL to start automatically when you boot your
+ 11. If you have not installed MySQL before, you must create the MySQL
+     data directory and initialize the grant tables:
+
+          shell> bin/mysql_install_db --user=mysql
+
+     If you run the command as `root', include the `--user' option as
+     shown. If you run the command while logged in as `mysql', you can
+     omit the `--user' option.
+
+     The command should create the data directory and its contents with
+     `mysql' as the owner.
+
+     After using `mysql_install_db' to create the grant tables for
+     MySQL, you must restart the server manually. The `mysqld_safe'
+     command to do this is shown in a later step.
+
+ 12. Most of the MySQL installation can be owned by `root' if you like.
+     The exception is that the data directory must be owned by `mysql'.
+     To accomplish this, run the following commands as `root' in the
+     installation directory:
+
+          shell> chown -R root .
+          shell> chown -R mysql var
+
+ 13. If you want MySQL to start automatically when you boot your
      machine, you can copy `support-files/mysql.server' to the location
      where your system has its startup files. More information can be
-     found in the script itself, and in *Note automatic-start::.
+     found in the `support-files/mysql.server' script itself; see also
+     *Note automatic-start::.
 
- 12. You can set up new accounts using the `bin/mysql_setpermission'
-     script if you install the `DBI' and `DBD::mysql' Perl modules. For
+ 14. You can set up new accounts using the `bin/mysql_setpermission'
+     script if you install the `DBI' and `DBD::mysql' Perl modules. See
+     *Note mysql-setpermission::. For Perl module installation
      instructions, see *Note perl-support::.
 
 After everything has been installed, you should test your distribution.
@@ -230,10 +246,13 @@ To start the MySQL server, use the following command:
 
      shell> /usr/local/mysql/bin/mysqld_safe --user=mysql &
 
-For versions of MySQL older than 4.0, substitute `safe_mysqld' for
-`mysqld_safe' in the command.
+If you run the command as `root', you should use the `--user' option as
+shown. The value of the option is the name of the login account that
+you created in the first step to use for running the server. If you run
+the command while logged in as that user, you can omit the `--user'
+option.
 
-If that command fails immediately and prints `mysqld ended', you can
+If the command fails immediately and prints `mysqld ended', you can
 find some information in the `HOST_NAME.err' file in the data directory.
 
 More information about `mysqld_safe' is given in *Note mysqld-safe::.
@@ -245,19 +264,21 @@ post-installation::.
 
 File: manual.info,  Node: configure-options,  Next: installing-source-tree,  Prev: quick-install,  Up: installing-source
 
-2.9.2 Typical `configure' Options
----------------------------------
+2.4.14.2 Typical `configure' Options
+....................................
+
+This section does not apply to MySQL Enterprise Server users.
 
 The `configure' script gives you a great deal of control over how you
 configure a MySQL source distribution.  Typically you do this using
 options on the `configure' command line. You can also affect
 `configure' using certain environment variables. See *Note
-environment-variables::. For a list of options supported by
+environment-variables::. For a full list of options supported by
 `configure', run this command:
 
      shell> ./configure --help
 
-Some of the more commonly used `configure' options are described here:
+Some of the `configure' options available are described here:
 
    * To compile just the MySQL client libraries and client programs and
      not the server, use the `--without-server' option:
@@ -276,7 +297,7 @@ Some of the more commonly used `configure' options are described here:
    * If you want to build the embedded MySQL library (`libmysqld.a'),
      use the `--with-embedded-server' option.
 
-   * If you do not want your log files and database directories located
+   * If you don't want your log files and database directories located
      under `/usr/local/var', use a `configure' command something like
      one of these:
 
@@ -317,7 +338,7 @@ Some of the more commonly used `configure' options are described here:
           shell> ./configure --with-client-ldflags=-all-static \
                      --with-mysqld-ldflags=-all-static
 
-   * If you are using `gcc' and do not have `libg++' or `libstdc++'
+   * If you are using `gcc' and don't have `libg++' or `libstdc++'
      installed, you can tell `configure' to use `gcc' as your C++
      compiler:
 
@@ -386,17 +407,18 @@ Some of the more commonly used `configure' options are described here:
 
           shell> ./configure --with-charset=CHARSET
 
-     CHARSET may be one of `big5', `cp1251', `cp1257', `czech',
-     `danish', `dec8', `dos', `euc_kr', `gb2312', `gbk', `german1',
-     `hebrew', `hp8', `hungarian', `koi8_ru', `koi8_ukr', `latin1',
-     `latin2', `sjis', `swe7', `tis620', `ujis', `usa7', or
-     `win1251ukr'.  See *Note character-sets::. (Additional character
-     sets might be available. Check the output from `./configure
-     --help' for the current list.)
+     CHARSET may be one of `binary', `armscii8', `ascii', `big5',
+     `cp1250', `cp1251', `cp1256', `cp1257', `cp850', `cp852', `cp866',
+     `cp932', `dec8', `eucjpms', `euckr', `gb2312', `gbk', `geostd8',
+     `greek', `hebrew', `hp8', `keybcs2', `koi8r', `koi8u', `latin1',
+     `latin2', `latin5', `latin7', `macce', `macroman', `sjis', `swe7',
+     `tis620', `ucs2', `ujis', `utf8'. See *Note character-sets::.
+     (Additional character sets might be available. Check the output
+     from `./configure --help' for the current list.)
 
-     As of MySQL 4.1.1, the default collation may also be specified.
-     MySQL uses the `latin1_swedish_ci' collation. To change this, use
-     the `--with-collation' option:
+     The default collation may also be specified. MySQL uses the
+     `latin1_swedish_ci' collation by default.  To change this, use the
+     `--with-collation' option:
 
           shell> ./configure --with-collation=COLLATION
 
@@ -407,12 +429,11 @@ Some of the more commonly used `configure' options are described here:
      for each character set.)
 
      *Warning:* If you change character sets after having created any
-     tables, you have to run `myisamchk -r -q
-     --set-collation=COLLATION_NAME' on every `MyISAM' table. Your
-     indexes may be sorted incorrectly otherwise. This can happen if you
-     install MySQL, create some tables, and then reconfigure MySQL to
-     use a different character set and reinstall it.  (Use
-     `--set-character-set' before MySQL 4.1.1.)
+     tables, you must run `myisamchk -r -q
+     --set-collation=COLLATION_NAME' _on every `MyISAM' table_. Your
+     indexes may be sorted incorrectly otherwise. This can happen if
+     you install MySQL, create some tables, and then reconfigure MySQL
+     to use a different character set and reinstall it.
 
      With the `configure' option `--with-extra-charsets=LIST', you can
      define which additional character sets should be compiled into the
@@ -436,7 +457,15 @@ Some of the more commonly used `configure' options are described here:
 
      This causes a safe memory allocator to be included that can find
      some errors and that provides output about what is happening. See
-     *Note debugging-server::.
+     MySQL Internals: Porting
+     (http://forge.mysql.com/wiki/MySQL_Internals_Porting).
+
+     As of MySQL 5.0.25, using `--with-debug' to configure MySQL with
+     debugging support enables you to use the
+     `--debug="d,parser_debug"' option when you start the server. This
+     causes the Bison parser that is used to process SQL statements to
+     dump a parser trace to the server's standard error output.
+     Typically, this output is written to the error log.
 
    * If your client programs are using threads, you must compile a
      thread-safe version of the MySQL client library with the
@@ -444,13 +473,8 @@ Some of the more commonly used `configure' options are described here:
      `libmysqlclient_r' library with which you should link your threaded
      applications. See *Note threaded-clients::.
 
-   * It is now possible to build MySQL with big table support using the
-     `--with-big-tables' option, beginning with the following MySQL
-     versions:
-
-        * *4.0 series*: 4.0.25
-
-        * *4.1 series*: 4.1.11
+   * It is possible to build MySQL 5.0 with large table support using
+     the `--with-big-tables' option, beginning with MySQL 5.0.4.
 
      This option causes the variables that store table row counts to be
      declared as `unsigned long long' rather than `unsigned long'. This
@@ -458,6 +482,13 @@ Some of the more commonly used `configure' options are described here:
      rows rather than 2^32 (~4.295E+09) rows. Previously it was
      necessary to pass `-DBIG_TABLES' to the compiler manually in order
      to enable this feature.
+
+   * Run `configure' with the `--disable-grant-options' option to cause
+     the the `--bootstrap', `--skip-grant-tables', and `--init-file'
+     options for `mysqld' to be disabled. For Windows, the
+     `configure.js' script recognizes the `DISABLE_GRANT_OPTIONS' flag,
+     which has the same effect. The capability is available as of MySQL
+     5.0.34.
 
    * See *Note operating-system-specific-notes::, for options that
      pertain to particular operating systems.
@@ -467,89 +498,79 @@ Some of the more commonly used `configure' options are described here:
 
 File: manual.info,  Node: installing-source-tree,  Next: compilation-problems,  Prev: configure-options,  Up: installing-source
 
-2.9.3 Installing from the Development Source Tree
--------------------------------------------------
+2.4.14.3 Installing from the Development Source Tree
+....................................................
+
+This section does not apply to MySQL Enterprise Server users.
 
 *Caution*: You should read this section only if you are interested in
-helping us test new code.  If you just want to get MySQL up and running
-on your system, you should use a standard release distribution (either
-a binary or source distribution).
+helping us test our new code. If you just want to get MySQL up and
+running on your system, you should use a standard release distribution
+(either a binary or source distribution).
 
 To obtain our most recent development source tree, first download and
 install the BitKeeper free client if you do not have it. The client can
-be obtained from `http://www.bitmover.com/bk-client.shar'.
+be obtained from `http://www.bitmover.com/bk-client2.0.shar'. Note that
+you will need `gcc' and `make' to build the BitKeeper free client, and
+`patch' and `tar' to use the BitKeeper free client. _Note that old 1.1
+versions of the BitKeeper free client will not work!_
 
 To install the BitKeeper client on Unix, use these commands:
 
-     shell> sh bk-client.shar
-     shell> cd bk_client-1.1
-     shell> make all
-     shell> PATH=$PWD:$PATH
+             shell> /bin/sh bk-client2.0.shar
+             shell> cd bk-client2.0
+             shell> make
+
+If you get a `cc: command not found' error, invoke this command before
+running `make':
+
+             shell> make CC=gcc
+
+The step above will create the utility `bkf', which is the free
+BitKeeper client.
 
 To install the BitKeeper client on Windows, use these instructions:
 
   1. Download and install Cygwin from http://cygwin.com
      (http://cygwin.com/).
 
-  2. Make sure `gcc' and `make' have been installed under Cygwin. You
-     can test this by issuing `which gcc' and `which make' commands. If
-     either one is not installed, run Cygwin's package manager, select
-     `gcc', `make', or both, and install them.
+  2. Make sure `patch', `tar', `gcc' and `make' have been installed
+     under Cygwin. You can test this by issuing `which GCC' for each
+     command. If a required tool is not installed, run Cygwin's package
+     manager, select the required tools and install them.
 
-  3. Under Cygwin, execute these commands:
+  3. For the installation of the BitKeeper free client, use the same
+     installations as given for Unix-like systems above.
 
-          shell> sh bk-client.shar
-          shell> cd bk_client-1.1
+For more information on `bkf', use:
 
-     Then edit the `Makefile' and change the line that reads `$(CC)
-     $(CFLAGS) -o sfio -lz sfio.c' to this:
-
-          $(CC) $(CFLAGS) -o sfio sfio.c -lz
-
-     Now run the `make' command and set the path:
-
-          shell> make all
-          shell> PATH=$PWD:$PATH
-
-The BitKeeper free client is shipped with its source code. The only
-documentation available for the free client is the source code itself.
+     shell> bkf --help
 
 After you have installed the BitKeeper client, you can access the MySQL
 development source tree:
 
   1. Change location to the directory you want to work from, and then
-     use one of the following commands to make a local copy of the
-     MySQL version branch of your choice:
+     use the following command to make a local copy of the MySQL 5.0
+     branch:
 
-     To copy the 3.23 branch, use this command:
+                      shell> bkf clone bk://mysql.bkbits.net/mysql-5.0 mysql-5.0
 
-          shell> sfioball -r+ bk://mysql.bkbits.net/mysql-3.23 mysql-3.23
-
-     To copy the 4.0 branch, use this command:
-
-          shell> sfioball -r+ bk://mysql.bkbits.net/mysql-4.0 mysql-4.0
-
-     To copy the 4.1 branch, use this command:
-
-          shell> sfioball -r+ bk://mysql.bkbits.net/mysql-4.1 mysql-4.1
-
-     In the preceding examples, the source tree is set up in the
-     `mysql-3.23/', `mysql-4.0/', or `mysql-4.1/' subdirectory of your
-     current directory.
+     In the preceding example, the source tree is set up in the
+     `mysql-5.0/' subdirectory of your current directory.
 
      The initial download of the source tree may take a while,
      depending on the speed of your connection. Please be patient.
 
-  2. You need GNU `make', `autoconf' 2.58 (or newer), `automake' 1.8,
+  2. You need GNU `make', `autoconf' 2.58 (or newer), `automake' 1.8.1,
      `libtool' 1.5, and `m4' to run the next set of commands. Even
-     though many operating systems come with their own implementation
-     of `make', chances are high that the compilation fails with
-     strange error messages.  Therefore, it is highly recommended that
-     you use GNU `make' (sometimes named `gmake') instead.
+     though many operating systems come with their own implementation of
+     `make', chances are high that the compilation fails with strange
+     error messages. Therefore, it is highly recommended that you use
+     GNU `make' (sometimes named `gmake') instead.
 
      Fortunately, a large number of operating systems ship with the GNU
-     toolchain preinstalled or supply installable packages of these.
-     They can also be downloaded from the following locations:
+     toolchain preinstalled or supply installable packages of these. In
+     any case, they can also be downloaded from the following locations:
 
         * `http://www.gnu.org/software/autoconf/'
 
@@ -561,18 +582,17 @@ development source tree:
 
         * `http://www.gnu.org/software/make/'
 
-     If you are trying to configure MySQL 4.1, you also need GNU
-     `bison' 1.75 or later. Older versions of `bison' may report this
-     error:
+     To configure MySQL 5.0, you also need GNU `bison'. You should use
+     the latest version of bison where possible. Version 1.75 and
+     version 2.1 are known to work. There have been reported problems
+     with `bison' 1.875. If you experience problems, upgrade to a
+     later, rather than earlier, version. Versions of `bison' older
+     than 1.75 may report this error:
 
           sql_yacc.yy:#####: fatal error: maximum table size (32767) exceeded
 
      Note: The maximum table size is not actually exceeded; the error
      is caused by bugs in older versions of `bison'.
-
-     Versions of MySQL before version 4.1 may also compile with other
-     `yacc' implementations (for example, BSD `yacc' 91.7.30). For
-     later versions, GNU `bison' is required.
 
      The following example shows the typical commands required to
      configure a source tree. The first `cd' command changes location
@@ -604,7 +624,7 @@ development source tree:
      really have `libtool' installed.
 
      A collection of our standard configuration scripts is located in
-     the `BUILD' subdirectory. You may find it more convenient to use
+     the `BUILD/' subdirectory. You may find it more convenient to use
      the `BUILD/compile-pentium-debug' script than the preceding set of
      shell commands. To compile on a different architecture, modify the
      script by removing flags that are Pentium-specific.
@@ -630,33 +650,43 @@ development source tree:
      sure that all the necessary tools are installed and that your
      `PATH' variable is set correctly so that your shell can find them.
 
-  6. After initially copying the repository with `sfioball' to obtain
-     the source tree, you should use `update' periodically to update
+  6. After initially copying the repository with `bkf' to obtain the
+     source tree, you should use `pull' option to periodically update
      your local copy. To do this any time after you have set up the
-     repository, use this command: (the example is for updating the 4.1
-     branch):
+     repository, use this command:
 
-          shell> update bk://mysql.bkbits.net/mysql-4.1
+          shell> bkf pull
 
-  7. You can examine the change history for the tree with all the diffs
-     by viewing the `BK/ChangeLog' file in the source tree and looking
-     at the `ChangeSet' descriptions listed there. To examine a
-     particular changeset, you would have to use the `sfioball' command
-     to extract two particular revisions of the source tree, and then
-     use an external `diff' command to compare them. If you see diffs
-     or code that you have a question about, do not hesitate to send
-     email to the MySQL `internals' mailing list. See *Note
-     mailing-lists::. If you think you have a better idea on how to do
-     something, send an email message to the same address with a patch.
+  7. You can examine the changeset comments for the tree by using the
+     `changes' option to `bkf':
 
-You can also browse changesets, comments, and source code online. For
-example, to browse this information for MySQL 4.1, go to
-`http://mysql.bkbits.net:8080/mysql-4.1'.
+          shell> bkf changes
+
+     To get a list of the changes that would be applied with the next
+     `bkf pull':
+
+          shell> bkf changes -R
+
+     To obtain a patch file for a specific changeset (`CSETID'), use:
+
+          shell> bkf changes -vvrCSETID
+
+     If you see diffs or code that you have a question about, do not
+     hesitate to send email to the MySQL Internals mailing list. (See
+     *Note mailing-lists::.) Also, if you think you have a better idea
+     on how to do something, send an email message to the list with
+     your proposed patch.
+
+You can also browse changesets, comments, and source code online. To
+browse this information for MySQL 5.0, go to
+`http://mysql.bkbits.net:8080/mysql-5.0'.
 
 File: manual.info,  Node: compilation-problems,  Next: mit-pthreads,  Prev: installing-source-tree,  Up: installing-source
 
-2.9.4 Dealing with Problems Compiling MySQL
--------------------------------------------
+2.4.14.4 Dealing with Problems Compiling MySQL
+..............................................
+
+This section does not apply to MySQL Enterprise Server users.
 
 All MySQL programs compile cleanly for us with no warnings on Solaris
 or Linux using `gcc'. On other systems, warnings may occur due to
@@ -724,7 +754,7 @@ that have been found to occur most often:
      One cause of these problems is that you may not have `g++', or you
      may have `g++' but not `libg++', or `libstdc++'. Take a look at the
      `config.log' file. It should contain the exact reason why your C++
-     compiler did not work. To work around these problems, you can use
+     compiler didn't work. To work around these problems, you can use
      `gcc' as your C++ compiler. Try setting the environment variable
      `CXX' to `"gcc -O3"'. For example:
 
@@ -741,31 +771,8 @@ that have been found to occur most often:
      libraries have also caused strange problems for MySQL users in the
      past.
 
-     Using `gcc' as the C++ compiler is also required if you want to
-     compile MySQL with RAID functionality (see *Note create-table::,
-     for more info on RAID table type) and you are using GNU `gcc'
-     version 3 and above. If you get errors like those following during
-     the linking stage when you configure MySQL to compile with the
-     option `--with-raid', try to use `gcc' as your C++ compiler by
-     defining the `CXX' environment variable:
-
-          gcc -O3 -DDBUG_OFF -rdynamic -o isamchk isamchk.o sort.o  libnisam.a
-          ../mysys/libmysys.a ../dbug/libdbug.a ../strings/libmystrings.a
-           -lpthread -lz -lcrypt -lnsl -lm -lpthread
-          ../mysys/libmysys.a(raid.o)(.text+0x79): In function
-          `my_raid_create':: undefined reference to `operator new(unsigned)'
-          ../mysys/libmysys.a(raid.o)(.text+0xdd): In function
-          `my_raid_create':: undefined reference to `operator delete(void*)'
-          ../mysys/libmysys.a(raid.o)(.text+0x129): In function
-          `my_raid_open':: undefined reference to `operator new(unsigned)'
-          ../mysys/libmysys.a(raid.o)(.text+0x189): In function
-          `my_raid_open':: undefined reference to `operator delete(void*)'
-          ../mysys/libmysys.a(raid.o)(.text+0x64b): In function
-          `my_raid_close':: undefined reference to `operator delete(void*)'
-          collect2: ld returned 1 exit status
-
-   * If your compilation fails with errors such as any of the
-     following, you must upgrade your version of `make' to GNU `make':
+   * If your compile fails with errors such as any of the following,
+     you must upgrade your version of `make' to GNU `make':
 
           making all in mit-pthreads
           make: Fatal error in reader: Makefile, line 18:
@@ -828,12 +835,13 @@ that have been found to occur most often:
      use that instead.
 
    * On Debian Linux 3.0, you need to install `gawk' instead of the
-     default `mawk' if you want to compile MySQL 4.1 or higher with
-     Berkeley DB support.
+     default `mawk' if you want to compile MySQL with Berkeley DB
+     support.
 
    * If you need to debug `mysqld' or a MySQL client, run `configure'
      with the `--with-debug' option, and then recompile and link your
-     clients with the new client library. See *Note debugging-client::.
+     clients with the new client library. See MySQL Internals: Porting
+     (http://forge.mysql.com/wiki/MySQL_Internals_Porting).
 
    * If you get a compilation error on Linux (for example, SuSE Linux
      8.1 or Red Hat Linux 7.3) similar to the following one, you
@@ -865,8 +873,10 @@ that have been found to occur most often:
 
 File: manual.info,  Node: mit-pthreads,  Next: windows-source-build,  Prev: compilation-problems,  Up: installing-source
 
-2.9.5 MIT-pthreads Notes
-------------------------
+2.4.14.5 MIT-pthreads Notes
+...........................
+
+This section does not apply to MySQL Enterprise Server users.
 
 This section describes some of the issues involved in using
 MIT-pthreads.
@@ -879,9 +889,8 @@ MySQL using the MIT-pthreads package. This includes older FreeBSD
 systems, SunOS 4.x, Solaris 2.4 and earlier, and some others. See *Note
 which-os::.
 
-Beginning with MySQL 4.0.2, MIT-pthreads is no longer part of the
-source distribution. If you require this package, you need to download
-it separately from
+MIT-pthreads is not part of the MySQL 5.0 source distribution. If you
+require this package, you need to download it separately from
 `http://dev.mysql.com/Downloads/Contrib/pthreads-1_60_beta6-mysql.tar.gz'
 
 After downloading, extract this source archive into the top level of
@@ -922,8 +931,8 @@ the MySQL source directory. It creates a new subdirectory named
           error: 'Can't connect to mysql server on localhost (146)'
 
      The solution to this problem is to kill the `mysqld' server and
-     restart it. This has happened to us only when we forced the server
-     to shut down and then restarted it immediately.
+     restart it. This has happened to us only when we have forcibly
+     stopped the server and restarted it immediately.
 
    * With MIT-pthreads, the `sleep()' system call isn't interruptible
      with `SIGINT' (break). This is noticeable only when you run
@@ -947,6 +956,6 @@ the MySQL source directory. It creates a new subdirectory named
           implicit declaration of function `int strtoll(...)'
           implicit declaration of function `int strtoul(...)'
 
-   * We have not gotten `readline' to work with MIT-pthreads. (This is
-     not needed, but may be interesting for someone.)
+   * We have not been able to make `readline' work with MIT-pthreads.
+     (This is not necessary, but may be of interest to some.)
 

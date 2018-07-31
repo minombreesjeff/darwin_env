@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -57,7 +56,6 @@ class ha_berkeley: public handler
   ulong alloced_rec_buff_length;
   ulong changed_rows;
   uint primary_key,last_dup_key, hidden_primary_key, version;
-  u_int32_t lock_on_read;
   bool key_read, using_ignore;
   bool fix_rec_buff_for_blob(ulong length);
   byte current_ident[BDB_HIDDEN_PRIMARY_KEY_LENGTH];
@@ -75,23 +73,17 @@ class ha_berkeley: public handler
 		  DBT *prim_key, key_map *keys);
   int restore_keys(DB_TXN *trans, key_map *changed_keys, uint primary_key,
 		   const byte *old_row, DBT *old_key,
-		   const byte *new_row, DBT *new_key,
-		   ulong thd_options);
+		   const byte *new_row, DBT *new_key);
   int key_cmp(uint keynr, const byte * old_row, const byte * new_row);
   int update_primary_key(DB_TXN *trans, bool primary_key_changed,
 			 const byte * old_row, DBT *old_key,
 			 const byte * new_row, DBT *prim_key,
-			 ulong thd_options, bool local_using_ignore);
+			 bool local_using_ignore);
   int read_row(int error, char *buf, uint keynr, DBT *row, DBT *key, bool);
   DBT *get_pos(DBT *to, byte *pos);
 
  public:
-  ha_berkeley(TABLE *table): handler(table), alloc_ptr(0),rec_buff(0), file(0),
-    int_table_flags(HA_REC_NOT_IN_SEQ | HA_FAST_KEY_READ |
-		    HA_NULL_IN_KEY | HA_CAN_INDEX_BLOBS | HA_NOT_EXACT_COUNT |
-		    HA_PRIMARY_KEY_IN_READ_INDEX | HA_FILE_BASED |
-		    HA_AUTO_PART_KEY | HA_TABLE_SCAN_ON_INDEX),
-    changed_rows(0),last_dup_key((uint) -1),version(0),using_ignore(0) {}
+  ha_berkeley(TABLE *table_arg);
   ~ha_berkeley() {}
   const char *table_type() const { return "BerkeleyDB"; }
   ulong index_flags(uint idx, uint part, bool all_parts) const;
@@ -101,6 +93,9 @@ class ha_berkeley: public handler
   uint max_supported_keys()        const { return MAX_KEY-1; }
   uint extra_rec_buf_length()	 { return BDB_HIDDEN_PRIMARY_KEY_LENGTH; }
   ha_rows estimate_rows_upper_bound();
+  uint max_supported_key_length() const { return UINT_MAX32; }
+  uint max_supported_key_part_length() const { return UINT_MAX32; }
+
   const key_map *keys_to_use_for_scanning() { return &key_map_full; }
   bool has_transactions()  { return 1;}
 
@@ -131,7 +126,7 @@ class ha_berkeley: public handler
   int extra(enum ha_extra_function operation);
   int reset(void);
   int external_lock(THD *thd, int lock_type);
-  int start_stmt(THD *thd);
+  int start_stmt(THD *thd, thr_lock_type lock_type);
   void position(byte *record);
   int analyze(THD* thd,HA_CHECK_OPT* check_opt);
   int optimize(THD* thd, HA_CHECK_OPT* check_opt);
@@ -146,16 +141,12 @@ class ha_berkeley: public handler
 			     enum thr_lock_type lock_type);
 
   void get_status();
-  inline void get_auto_primary_key(byte *to)
-  {
-    pthread_mutex_lock(&share->mutex);
-    share->auto_ident++;
-    int5store(to,share->auto_ident);
-    pthread_mutex_unlock(&share->mutex);
-  }
-  longlong get_auto_increment();
+  void get_auto_primary_key(byte *to);
+  ulonglong get_auto_increment();
   void print_error(int error, myf errflag);
   uint8 table_cache_type() { return HA_CACHE_TBL_TRANSACT; }
+  bool primary_key_is_clustered() { return true; }
+  int cmp_ref(const byte *ref1, const byte *ref2);
 };
 
 extern bool berkeley_shared_data;
@@ -169,6 +160,4 @@ extern TYPELIB berkeley_lock_typelib;
 bool berkeley_init(void);
 bool berkeley_end(void);
 bool berkeley_flush_logs(void);
-int berkeley_commit(THD *thd, void *trans);
-int berkeley_rollback(THD *thd, void *trans);
 int berkeley_show_logs(Protocol *protocol);

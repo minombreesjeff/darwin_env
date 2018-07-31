@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -50,7 +49,7 @@ static int stopwords_inited= 0;
 static MY_TMPDIR myisamchk_tmpdir;
 
 static const char *type_names[]=
-{ "?","char","binary", "short", "long", "float",
+{ "impossible","char","binary", "short", "long", "float",
   "double","number","unsigned short",
   "unsigned long","longlong","ulonglong","int24",
   "uint24","int8","varchar", "varbin","?",
@@ -721,6 +720,7 @@ get_one_option(int optid,
     case 2:
       method_conv= MI_STATS_METHOD_IGNORE_NULLS;
       break;
+    default: assert(0);                         /* Impossible */
     }
     check_param.stats_method= method_conv;
     break;
@@ -921,8 +921,8 @@ static int myisamchk(MI_CHECK *param, my_string filename)
        MI_STATE_INFO_SIZE ||
        mi_uint2korr(share->state.header.base_info_length) !=
        MI_BASE_INFO_SIZE ||
-       ((param->keys_in_use & ~share->state.key_map) &
-	(((ulonglong) 1L << share->base.keys)-1)) ||
+       mi_is_any_intersect_keys_active(param->keys_in_use, share->base.keys,
+                                       ~share->state.key_map) ||
        test_if_almost_full(info) ||
        info->s->state.header.file_version[3] != myisam_file_magic[3] ||
        (set_collation &&
@@ -989,8 +989,8 @@ static int myisamchk(MI_CHECK *param, my_string filename)
       if (param->testflag & T_REP_ANY)
       {
 	ulonglong tmp=share->state.key_map;
-	share->state.key_map= (((ulonglong) 1 << share->base.keys)-1)
-	  & param->keys_in_use;
+	mi_copy_keys_active(share->state.key_map, share->base.keys,
+                            param->keys_in_use);
 	if (tmp != share->state.key_map)
 	  info->update|=HA_STATE_CHANGED;
       }
@@ -1011,7 +1011,7 @@ static int myisamchk(MI_CHECK *param, my_string filename)
       if (!error)
       {
 	if ((param->testflag & (T_REP_BY_SORT | T_REP_PARALLEL)) &&
-	    (share->state.key_map ||
+	    (mi_is_any_key_active(share->state.key_map) ||
 	     (rep_quick && !param->keys_in_use && !recreate)) &&
 	    mi_test_if_sort_rep(info, info->state->records,
 				info->s->state.key_map,
@@ -1087,7 +1087,7 @@ static int myisamchk(MI_CHECK *param, my_string filename)
 	       llstr(info->state->records,llbuff),
 	       llstr(info->state->del,llbuff2));
       error =chk_status(param,info);
-      share->state.key_map &=param->keys_in_use;
+      mi_intersect_keys_active(share->state.key_map, param->keys_in_use);
       error =chk_size(param,info);
       if (!error || !(param->testflag & (T_FAST | T_FORCE_CREATE)))
 	error|=chk_del(param, info,param->testflag);
@@ -1278,7 +1278,7 @@ static void descript(MI_CHECK *param, register MI_INFO *info, my_string name)
 	     share->base.raid_chunksize);
     }
     if (share->options & (HA_OPTION_CHECKSUM | HA_OPTION_COMPRESS_RECORD))
-      printf("Checksum:  %23s\n",llstr(info->s->state.checksum,llbuff));
+      printf("Checksum:  %23s\n",llstr(info->state->checksum,llbuff));
 ;
     if (share->options & HA_OPTION_DELAY_KEY_WRITE)
       printf("Keys are only flushed at close\n");
@@ -1316,7 +1316,7 @@ static void descript(MI_CHECK *param, register MI_INFO *info, my_string name)
   }
 
   printf("Recordlength:        %13d\n",(int) share->base.pack_reclength);
-  if (share->state.key_map != (((ulonglong) 1 << share->base.keys) -1))
+  if (! mi_is_all_keys_active(share->state.key_map, share->base.keys))
   {
     longlong2str(share->state.key_map,buff,2);
     printf("Using only keys '%s' of %d possibly keys\n",
@@ -1498,7 +1498,7 @@ static int mi_sort_records(MI_CHECK *param,
   temp_buff=0;
   new_file= -1;
 
-  if (!(((ulonglong) 1 << sort_key) & share->state.key_map))
+  if (! mi_is_key_active(share->state.key_map, sort_key))
   {
     mi_check_print_warning(param,
 			   "Can't sort table '%s' on key %d;  No such key",
@@ -1593,7 +1593,7 @@ static int mi_sort_records(MI_CHECK *param,
   old_record_count=info->state->records;
   info->state->records=0;
   if (sort_info.new_data_file_type != COMPRESSED_RECORD)
-    share->state.checksum=0;
+    info->state->checksum=0;
 
   if (sort_record_index(&sort_param,info,keyinfo,share->state.key_root[sort_key],
 			temp_buff, sort_key,new_file,update_index) ||
@@ -1749,11 +1749,11 @@ err:
   sorting
 */
 
-static my_bool not_killed= 0;
+static int not_killed= 0;
 
-volatile my_bool *killed_ptr(MI_CHECK *param __attribute__((unused)))
+volatile int *killed_ptr(MI_CHECK *param __attribute__((unused)))
 {
-  return &not_killed; 			/* always NULL */
+  return &not_killed;			/* always NULL */
 }
 
 	/* print warnings and errors */

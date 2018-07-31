@@ -151,6 +151,10 @@ row_undo_search_clust_to_pcur(
 	mtr_t		mtr;
 	ibool		ret;
 	rec_t*		rec;
+	mem_heap_t*	heap		= NULL;
+	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
+	ulint*		offsets		= offsets_;
+	*offsets_ = (sizeof offsets_) / sizeof *offsets_;
 
 	mtr_start(&mtr);
 
@@ -161,8 +165,11 @@ row_undo_search_clust_to_pcur(
 
 	rec = btr_pcur_get_rec(&(node->pcur));
 
+	offsets = rec_get_offsets(rec, clust_index, offsets,
+						ULINT_UNDEFINED, &heap);
+
 	if (!found || 0 != ut_dulint_cmp(node->roll_ptr,
-		   		row_get_rec_roll_ptr(rec, clust_index))) {
+			row_get_rec_roll_ptr(rec, clust_index, offsets))) {
 
 		/* We must remove the reservation on the undo log record
 		BEFORE releasing the latch on the clustered index page: this
@@ -175,7 +182,7 @@ row_undo_search_clust_to_pcur(
 		ret = FALSE;
 	} else {
 		node->row = row_build(ROW_COPY_DATA, clust_index, rec,
-								node->heap);
+						offsets, node->heap);
 		btr_pcur_store_position(&(node->pcur), &mtr);
 
 		ret = TRUE;
@@ -183,6 +190,9 @@ row_undo_search_clust_to_pcur(
 
 	btr_pcur_commit_specify_mtr(&(node->pcur), &mtr);
 
+	if (UNIV_LIKELY_NULL(heap)) {
+		mem_heap_free(heap);
+	}
 	return(ret);
 }
 	
@@ -202,7 +212,7 @@ row_undo(
 	ulint	err;
 	trx_t*	trx;
 	dulint	roll_ptr;
-	ibool	froze_data_dict	= FALSE;
+	ibool	locked_data_dict;
 	
 	ut_ad(node && thr);
 	
@@ -253,15 +263,15 @@ row_undo(
 	}
 
 	/* Prevent DROP TABLE etc. while we are rolling back this row.
-        If we are doing a TABLE CREATE or some other dictionary operation,
-        then we already have dict_operation_lock locked in x-mode. Do not
-        try to lock again in s-mode, because that would cause a hang. */
+	If we are doing a TABLE CREATE or some other dictionary operation,
+	then we already have dict_operation_lock locked in x-mode. Do not
+	try to lock again, because that would cause a hang. */
 
-	if (trx->dict_operation_lock_mode == 0) {
-        
-	        row_mysql_freeze_data_dictionary(trx);
+	locked_data_dict = (trx->dict_operation_lock_mode == 0);
 
-	        froze_data_dict = TRUE;
+	if (locked_data_dict) {
+
+		row_mysql_lock_data_dictionary(trx);
 	}
 
 	if (node->state == UNDO_NODE_INSERT) {
@@ -274,9 +284,9 @@ row_undo(
 		err = row_undo_mod(node, thr);
 	}
 
-	if (froze_data_dict) {
+	if (locked_data_dict) {
 
-	        row_mysql_unfreeze_data_dictionary(trx);
+		row_mysql_unlock_data_dictionary(trx);
 	}
 
 	/* Do some cleanup */

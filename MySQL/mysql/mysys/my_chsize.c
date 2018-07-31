@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,7 +29,9 @@
       MyFlags		Flags
 
   DESCRIPTION
-    my_chsize() truncates file if shorter else fill with the filler character
+    my_chsize() truncates file if shorter else fill with the filler character.
+    The function also changes the file pointer. Usually it points to the end
+    of the file after execution.
 
   RETURN VALUE
     0	Ok
@@ -50,9 +51,9 @@ int my_chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
   DBUG_PRINT("info",("old_size: %ld", (ulong) oldsize));
 
   if (oldsize > newlength)
+  {
 #if defined(HAVE_SETFILEPOINTER)
   /* This is for the moment only true on windows */
-  {
     long is_success;
     HANDLE win_file= (HANDLE) _get_osfhandle(fd);
     long length_low, length_high;
@@ -65,35 +66,33 @@ int my_chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
       DBUG_RETURN(0);
     my_errno= GetLastError();
     goto err;
-  }
 #elif defined(HAVE_FTRUNCATE)
-  {
     if (ftruncate(fd, (off_t) newlength))
     {
       my_errno= errno;
       goto err;
     }
     DBUG_RETURN(0);
-  }
 #elif defined(HAVE_CHSIZE)
-  {
     if (chsize(fd, (off_t) newlength))
     {
       my_errno=errno;
       goto err;
     }
     DBUG_RETURN(0);
-  }
 #else
-  {
     /*
       Fill space between requested length and true length with 'filler'
       We should never come here on any modern machine
     */
-    VOID(my_seek(fd, newlength, MY_SEEK_SET, MYF(MY_WME+MY_FAE)));
+    if (my_seek(fd, newlength, MY_SEEK_SET, MYF(MY_WME+MY_FAE))
+        == MY_FILEPOS_ERROR)
+    {
+      goto err;
+    }
     swap_variables(my_off_t, newlength, oldsize);
-  }
 #endif
+  }
 
   /* Full file with 'filler' until it's as big as requested */
   bfill(buff, IO_SIZE, filler);

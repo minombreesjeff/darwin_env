@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,7 +20,6 @@
 
 const char * NEAR globerrs[GLOBERRS]=
 {
-  "File '%s' not found (Errcode: %d)",
   "Can't create/write to file '%s' (Errcode: %d)",
   "Error reading file '%s' (Errcode: %d)",
   "Error writing file '%s' (Errcode: %d)",
@@ -50,20 +48,18 @@ const char * NEAR globerrs[GLOBERRS]=
   "Error on realpath() on '%s' (Error %d)",
   "Can't sync file '%s' to disk (Errcode: %d)",
   "Collation '%s' is not a compiled collation and is not specified in the '%s' file",
+  "File '%s' not found (Errcode: %d)",
 };
 
 void init_glob_errs(void)
 {
-  my_errmsg[GLOB] = & globerrs[0];
-} /* init_glob_errs */
+  /* This is now done statically. */
+}
 
 #else
 
 void init_glob_errs()
 {
-  my_errmsg[GLOB] = & globerrs[0];
-
-  EE(EE_FILENOTFOUND)	= "File '%s' not found (Errcode: %d)";
   EE(EE_CANTCREATEFILE) = "Can't create/write to file '%s' (Errcode: %d)";
   EE(EE_READ)		= "Error reading file '%s' (Errcode: %d)";
   EE(EE_WRITE)		= "Error writing file '%s' (Errcode: %d)";
@@ -91,5 +87,6 @@ void init_glob_errs()
   EE(EE_REALPATH)=	"Error on realpath() on '%s' (Error %d)";
   EE(EE_SYNC)=		"Can't sync file '%s' to disk (Errcode: %d)";
   EE(EE_UNKNOWN_COLLATION)= "Collation '%s' is not a compiled collation and is not specified in the %s file";
+  EE(EE_FILENOTFOUND)	= "File '%s' not found (Errcode: %d)";
 }
 #endif

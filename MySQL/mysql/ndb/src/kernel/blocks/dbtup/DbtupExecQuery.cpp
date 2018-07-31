@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -213,6 +212,30 @@ void Dbtup::execTUP_ALLOCREQ(Signal* signal)
 //---------------------------------------------------
   PagePtr pagePtr;
   Uint32 pageOffset;
+
+  if (ERROR_INSERTED(4025))
+  {
+    signal->theData[0] = 827;
+    return;
+  }
+  if (ERROR_INSERTED(4026))
+  {
+    CLEAR_ERROR_INSERT_VALUE;
+    signal->theData[0] = 827;
+    return;
+  }
+  if (ERROR_INSERTED(4027) && (rand() % 100) > 25)
+  {
+    signal->theData[0] = 827;
+    return;
+  }
+  if (ERROR_INSERTED(4028) && (rand() % 100) > 25)
+  {
+    CLEAR_ERROR_INSERT_VALUE;
+    signal->theData[0] = 827;
+    return;
+  }
+  
   if (!allocTh(regFragPtr.p,
                regTabPtr.p,
                NORMAL_PAGE,
@@ -858,6 +881,8 @@ void Dbtup::sendTUPKEYCONF(Signal* signal,
   return;
 }//Dbtup::sendTUPKEYCONF()
 
+#define MAX_READ (sizeof(signal->theData) > MAX_MESSAGE_SIZE ? MAX_MESSAGE_SIZE : sizeof(signal->theData))
+
 /* ---------------------------------------------------------------- */
 /* ----------------------------- READ  ---------------------------- */
 /* ---------------------------------------------------------------- */
@@ -878,7 +903,7 @@ int Dbtup::handleReadReq(Signal* signal,
   }//if
 
   Uint32 * dst = &signal->theData[25];
-  Uint32 dstLen = (sizeof(signal->theData) / 4) - 25;
+  Uint32 dstLen = (MAX_READ / 4) - 25;
   const Uint32 node = refToNode(sendBref);
   if(node != 0 && node != getOwnNodeId()) {
     ;
@@ -888,7 +913,7 @@ int Dbtup::handleReadReq(Signal* signal,
      * execute direct
      */
     dst = &signal->theData[3];
-    dstLen = (sizeof(signal->theData) / 4) - 3;
+    dstLen = (MAX_READ / 4) - 3;
   }
   
   if (regOperPtr->interpretedExec != 1) {
@@ -1113,7 +1138,11 @@ Dbtup::updateStartLab(Signal* signal,
                                 regOperPtr->attrinbufLen);
   } else {
     jam();
-    retValue = interpreterStartLab(signal, pagePtr, regOperPtr->pageOffset);
+    if (interpreterStartLab(signal, pagePtr, regOperPtr->pageOffset) == -1)
+    {
+      jam();
+      return -1;
+    }
   }//if
 
   if (retValue == -1) {
@@ -1230,7 +1259,7 @@ int Dbtup::interpreterStartLab(Signal* signal,
   const BlockReference sendBref = regOperPtr->recBlockref;
 
   Uint32 * dst = &signal->theData[25];
-  Uint32 dstLen = (sizeof(signal->theData) / 4) - 25;
+  Uint32 dstLen = (MAX_READ / 4) - 25;
   const Uint32 node = refToNode(sendBref);
   if(node != 0 && node != getOwnNodeId()) {
     ;
@@ -1240,7 +1269,7 @@ int Dbtup::interpreterStartLab(Signal* signal,
      * execute direct
      */
     dst = &signal->theData[3];
-    dstLen = (sizeof(signal->theData) / 4) - 3;
+    dstLen = (MAX_READ / 4) - 3;
   }
   
   RtotalLen = RinitReadLen;
@@ -1541,13 +1570,8 @@ int Dbtup::interpreterNextLab(Signal* signal,
 	  // Calculate the number of words of this attribute.
 	  // We allow writes into arrays as long as they fit into the 64 bit
 	  // register size.
-	  //TEST_MR See to that TattrNoOfWords can be 
-	  // read faster from attribute description.
 	  /* --------------------------------------------------------------- */
-	  Uint32 TarraySize = (TattrDesc1 >> 16);
-	  Uint32 TattrLogLen = (TattrDesc1 >> 4) & 0xf;
-	  Uint32 TattrNoOfBits = TarraySize << TattrLogLen;
-	  Uint32 TattrNoOfWords = (TattrNoOfBits + 31) >> 5;
+          Uint32 TattrNoOfWords = AttributeDescriptor::getSizeInWords(TattrDesc1);
 	  Uint32 Toptype = operPtr.p->optype;
 
 	  Uint32 TdataForUpdate[3];
@@ -1829,9 +1853,6 @@ int Dbtup::interpreterNextLab(Signal* signal,
       case Interpreter::BRANCH_ATTR_OP_ARG:{
 	jam();
 	Uint32 cond = Interpreter::getBinaryCondition(theInstruction);
-	Uint32 diff = Interpreter::getArrayLengthDiff(theInstruction);
-	Uint32 vchr = Interpreter::isVarchar(theInstruction);
-        Uint32 nopad =Interpreter::isNopad(theInstruction);
 	Uint32 ins2 = TcurrentProgram[TprogramCounter];
 	Uint32 attrId = Interpreter::getBranchCol_AttrId(ins2) << 16;
 	Uint32 argLen = Interpreter::getBranchCol_Len(ins2);
@@ -1850,84 +1871,103 @@ int Dbtup::interpreterNextLab(Signal* signal,
 	  }
 	  tmpHabitant = attrId;
 	}
-	
-	AttributeHeader ah(tmpArea[0]);
 
+        // get type
+	attrId >>= 16;
+	Uint32 TattrDescrIndex = tabptr.p->tabDescriptor +
+	  (attrId << ZAD_LOG_SIZE);
+	Uint32 TattrDesc1 = tableDescriptor[TattrDescrIndex].tabDescr;
+	Uint32 TattrDesc2 = tableDescriptor[TattrDescrIndex+1].tabDescr;
+	Uint32 typeId = AttributeDescriptor::getType(TattrDesc1);
+	void * cs = 0;
+	if(AttributeOffset::getCharsetFlag(TattrDesc2))
+	{
+	  Uint32 pos = AttributeOffset::getCharsetPos(TattrDesc2);
+	  cs = tabptr.p->charsetArray[pos];
+	}
+	const NdbSqlUtil::Type& sqlType = NdbSqlUtil::getType(typeId);
+
+        // get data
+	AttributeHeader ah(tmpArea[0]);
         const char* s1 = (char*)&tmpArea[1];
         const char* s2 = (char*)&TcurrentProgram[TprogramCounter+1];
-	Uint32 attrLen = (4 * ah.getDataSize()) - diff;
-        if (vchr) {
-#if NDB_VERSION_MAJOR >= 3
-          bool vok = false;
-          if (attrLen >= 2) {
-            Uint32 vlen = (s1[0] << 8) | s1[1]; // big-endian
-            s1 += 2;
-            attrLen -= 2;
-            if (attrLen >= vlen) {
-              attrLen = vlen;
-              vok = true;
-            }
-          }
-          if (!vok) {
-            terrorCode = ZREGISTER_INIT_ERROR;
-            tupkeyErrorLab(signal);
-            return -1;
-          }
-#else
-          Uint32 tmp;
-          if (attrLen >= 2) {
-            unsigned char* ss = (unsigned char*)&s1[attrLen - 2];
-            tmp = (ss[0] << 8) | ss[1];
-            if (tmp <= attrLen - 2)
-              attrLen = tmp;
-          }
-          // XXX handle bad data
-#endif
-        }
-        bool res = false;
+        // fixed length in 5.0
+	Uint32 attrLen = AttributeDescriptor::getSizeInBytes(TattrDesc1);
 
+	bool r1_null = ah.isNULL();
+	bool r2_null = argLen == 0;
+	int res1;
+        if (cond != Interpreter::LIKE &&
+            cond != Interpreter::NOT_LIKE) {
+          if (r1_null || r2_null) {
+            // NULL==NULL and NULL<not-NULL
+            res1 = r1_null && r2_null ? 0 : r1_null ? -1 : 1;
+          } else {
+	    jam();
+	    if (unlikely(sqlType.m_cmp == 0))
+	    {
+	      return TUPKEY_abort(signal, 40);
+	    }
+            res1 = (*sqlType.m_cmp)(cs, s1, attrLen, s2, argLen, true);
+          }
+	} else {
+          if (r1_null || r2_null) {
+            // NULL like NULL is true (has no practical use)
+            res1 =  r1_null && r2_null ? 0 : -1;
+          } else {
+	    jam();
+	    if (unlikely(sqlType.m_like == 0))
+	    {
+	      return TUPKEY_abort(signal, 40);
+	    }
+            res1 = (*sqlType.m_like)(cs, s1, attrLen, s2, argLen);
+          }
+        }
+
+        int res = 0;
         switch ((Interpreter::BinaryCondition)cond) {
         case Interpreter::EQ:
-          res = NdbSqlUtil::char_compare(s1, attrLen, s2, argLen, !nopad) == 0;
+          res = (res1 == 0);
           break;
         case Interpreter::NE:
-          res = NdbSqlUtil::char_compare(s1, attrLen, s2, argLen, !nopad) != 0;
+          res = (res1 != 0);
           break;
         // note the condition is backwards
         case Interpreter::LT:
-          res = NdbSqlUtil::char_compare(s1, attrLen, s2, argLen, !nopad) > 0;
+          res = (res1 > 0);
           break;
         case Interpreter::LE:
-          res = NdbSqlUtil::char_compare(s1, attrLen, s2, argLen, !nopad) >= 0;
+          res = (res1 >= 0);
           break;
         case Interpreter::GT:
-          res = NdbSqlUtil::char_compare(s1, attrLen, s2, argLen, !nopad) < 0;
+          res = (res1 < 0);
           break;
         case Interpreter::GE:
-          res = NdbSqlUtil::char_compare(s1, attrLen, s2, argLen, !nopad) <= 0;
+          res = (res1 <= 0);
           break;
         case Interpreter::LIKE:
-          res = NdbSqlUtil::char_like(s1, attrLen, s2, argLen, !nopad);
+          res = (res1 == 0);
           break;
         case Interpreter::NOT_LIKE:
-          res = ! NdbSqlUtil::char_like(s1, attrLen, s2, argLen, !nopad);
+          res = (res1 == 1);
           break;
-        // XXX handle invalid value
+	  // XXX handle invalid value
         }
 #ifdef TRACE_INTERPRETER
-	  ndbout_c("cond=%u diff=%d vc=%d nopad=%d attr(%d) = >%.*s<(%d) str=>%.*s<(%d) -> res = %d",
-		   cond, diff, vchr, nopad,
-		   attrId >> 16, attrLen, s1, attrLen, argLen, s2, argLen, res);
+	ndbout_c("cond=%u attr(%d)='%.*s'(%d) str='%.*s'(%d) res1=%d res=%d",
+		 cond, attrId >> 16,
+                 attrLen, s1, attrLen, argLen, s2, argLen, res1, res);
 #endif
         if (res)
           TprogramCounter = brancher(theInstruction, TprogramCounter);
-        else {
-          Uint32 tmp = (Interpreter::mod4(argLen) >> 2) + 1;
+        else 
+	{
+          Uint32 tmp = ((argLen + 3) >> 2) + 1;
           TprogramCounter += tmp;
         }
 	break;
       }
-
+	
       case Interpreter::BRANCH_ATTR_EQ_NULL:{
 	jam();
 	Uint32 ins2 = TcurrentProgram[TprogramCounter];

@@ -1,3 +1,6 @@
+myisamchk: MyISAM file test1
+myisamchk: warning: Size of indexfile is: 1024          Should be: 2048
+MyISAM-table 'test1' is usable but should be fixed
 mi_test2 -s -L -K -R1 -m2000 ;  Should give error 135
 Error: 135 in write at record: 1105
 got error: 135 when using MyISAM-database

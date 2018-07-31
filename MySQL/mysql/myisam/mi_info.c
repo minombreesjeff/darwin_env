@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2001, 2003-2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -58,9 +57,9 @@ int mi_status(MI_INFO *info, register MI_ISAMINFO *x, uint flag)
 
     x->keys	 	= share->state.header.keys;
     x->check_time	= share->state.check_time;
-    x->mean_reclength	= info->state->records ?
-      (ulong) ((info->state->data_file_length-info->state->empty)/
-	       info->state->records) : (ulong) share->min_pack_length;
+    x->mean_reclength= x->records ?
+      (ulong) ((x->data_file_length - x->delete_length) / x->records) :
+      (ulong) share->min_pack_length;
   }
   if (flag & HA_STATUS_ERRKEY)
   {
@@ -105,3 +104,36 @@ int mi_status(MI_INFO *info, register MI_ISAMINFO *x, uint flag)
   }
   DBUG_RETURN(0);
 }
+
+
+/*
+  Write a message to the error log.
+
+  SYNOPSIS
+    mi_report_error()
+    file_name                   Name of table file (e.g. index_file_name).
+    errcode                     Error number.
+
+  DESCRIPTION
+    This function supplies my_error() with a table name. Most error
+    messages need one. Since string arguments in error messages are limited
+    to 64 characters by convention, we ensure that in case of truncation,
+    that the end of the index file path is in the message. This contains
+    the most valuable information (the table name and the database name).
+
+  RETURN
+    void
+*/
+
+void mi_report_error(int errcode, const char *file_name)
+{
+  size_t        lgt;
+  DBUG_ENTER("mi_report_error");
+  DBUG_PRINT("enter",("errcode %d, table '%s'", errcode, file_name));
+
+  if ((lgt= strlen(file_name)) > 64)
+    file_name+= lgt - 64;
+  my_error(errcode, MYF(ME_NOREFRESH), file_name);
+  DBUG_VOID_RETURN;
+}
+

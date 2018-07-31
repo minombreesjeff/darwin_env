@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -159,7 +158,7 @@ static byte *safe_hash_search(SAFE_HASH *hash, const byte *key, uint length)
     result= hash->default_value;
   else
     result= ((SAFE_HASH_ENTRY*) result)->data;
-  DBUG_PRINT("exit",("data: 0x%lx", result));
+  DBUG_PRINT("exit",("data: 0x%lx", (long) result));
   DBUG_RETURN(result);
 }
 
@@ -190,7 +189,7 @@ static my_bool safe_hash_set(SAFE_HASH *hash, const byte *key, uint length,
   SAFE_HASH_ENTRY *entry;
   my_bool error= 0;
   DBUG_ENTER("safe_hash_set");
-  DBUG_PRINT("enter",("key: %.*s  data: 0x%lx", length, key, data));
+  DBUG_PRINT("enter",("key: %.*s  data: 0x%lx", length, key, (long) data));
 
   rw_wrlock(&hash->mutex);
   entry= (SAFE_HASH_ENTRY*) hash_search(&hash->hash, key, length);

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -48,7 +47,7 @@ read_socket(NDB_SOCKET_TYPE socket, int timeout_millis,
 
 extern "C"
 int
-readln_socket(NDB_SOCKET_TYPE socket, int timeout_millis, 
+readln_socket(NDB_SOCKET_TYPE socket, int timeout_millis,
 	      char * buf, int buflen){
   if(buflen <= 1)
     return 0;
@@ -56,41 +55,70 @@ readln_socket(NDB_SOCKET_TYPE socket, int timeout_millis,
   fd_set readset;
   FD_ZERO(&readset);
   FD_SET(socket, &readset);
-  
+
   struct timeval timeout;
   timeout.tv_sec  = (timeout_millis / 1000);
   timeout.tv_usec = (timeout_millis % 1000) * 1000;
 
   const int selectRes = select(socket + 1, &readset, 0, 0, &timeout);
-  if(selectRes == 0)
+  if(selectRes == 0){
     return 0;
-  
+  }
+
   if(selectRes == -1){
     return -1;
   }
-  
-  int pos = 0; buf[pos] = 0;
-  while(true){
-    const int t = recv(socket, &buf[pos], 1, 0);
-    if(t != 1){
+
+  char* ptr = buf;
+  int len = buflen;
+  do
+  {
+    int t;
+    while((t = recv(socket, ptr, len, MSG_PEEK)) == -1 && errno == EINTR);
+    
+    if(t < 1)
+    {
       return -1;
     }
-    if(buf[pos] == '\n'){
-      buf[pos] = 0;
 
-      if(pos > 0 && buf[pos-1] == '\r'){
-	pos--;
-	buf[pos] = 0;
+    
+    for(int i = 0; i<t; i++)
+    {
+      if(ptr[i] == '\n')
+      {
+	/**
+	 * Now consume
+	 */
+	for (len = 1 + i; len; )
+	{
+	  while ((t = recv(socket, ptr, len, 0)) == -1 && errno == EINTR);
+	  if (t < 1)
+	    return -1;
+	  ptr += t;
+	  len -= t;
+	}
+	if (i > 0 && buf[i-1] == '\r')
+	{
+	  buf[i-1] = '\n';
+	  ptr--;
+	}
+	ptr[0]= 0;
+	return ptr - buf;
       }
-
-      return pos;
-    }
-    pos++;
-    if(pos == (buflen - 1)){
-      buf[pos] = 0;
-      return buflen;
     }
     
+    for (int tmp = t; tmp; )
+    {
+      while ((t = recv(socket, ptr, tmp, 0)) == -1 && errno == EINTR);
+      if (t < 1)
+      {
+	return -1;
+      }
+      ptr += t;
+      len -= t;
+      tmp -= t;
+    }
+
     FD_ZERO(&readset);
     FD_SET(socket, &readset);
     timeout.tv_sec  = (timeout_millis / 1000);
@@ -99,7 +127,9 @@ readln_socket(NDB_SOCKET_TYPE socket, int timeout_millis,
     if(selectRes != 1){
       return -1;
     }
-  }
+  } while (len > 0);
+  
+  return -1;
 }
 
 extern "C"
@@ -134,8 +164,8 @@ write_socket(NDB_SOCKET_TYPE socket, int timeout_millis,
     FD_SET(socket, &writeset);
     timeout.tv_sec  = 1;
     timeout.tv_usec = 0;
-    const int selectRes = select(socket + 1, 0, &writeset, 0, &timeout);
-    if(selectRes != 1){
+    const int selectRes2 = select(socket + 1, 0, &writeset, 0, &timeout);
+    if(selectRes2 != 1){
       return -1;
     }
   }

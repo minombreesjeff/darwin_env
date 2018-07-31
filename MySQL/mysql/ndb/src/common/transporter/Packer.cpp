@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,7 +20,12 @@
 #include <TransporterCallback.hpp>
 #include <RefConvert.hpp>
 
+#ifdef ERROR_INSERT
+Uint32 MAX_RECEIVED_SIGNALS = 1024;
+#else
 #define MAX_RECEIVED_SIGNALS 1024
+#endif
+
 Uint32
 TransporterRegistry::unpack(Uint32 * readPtr,
 			    Uint32 sizeOfData,
@@ -93,6 +97,7 @@ TransporterRegistry::unpack(Uint32 * readPtr,
 	signalHeader.theSendersSignalId = * signalData;
 	signalData ++;
       }//if
+      signalHeader.theSignalId= ~0;
       
       Uint32 * sectionPtr = signalData + signalHeader.theLength;
       Uint32 * sectionData = sectionPtr + signalHeader.m_noOfSections;

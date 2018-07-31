@@ -2,8 +2,8 @@
    
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
+   License as published by the Free Software Foundation; version 2
+   of the License.
    
    This library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -6692,6 +6692,26 @@ static const char persian[]=
              " < \\uFEF5 < \\uFEF6 < \\uFEF7 < \\uFEF8 < \\uFEF9 < \\uFEFA"
              " < \\uFEFB < \\uFEFC";
 
+/*
+  Esperanto tailoring.
+  Contributed by Bertilo Wennergren <bertilow at gmail dot com>
+  September 1, 2005
+*/
+static const char esperanto[]=
+    "& C < \\u0109 <<< \\u0108"
+    "& G < \\u011D <<< \\u011C"
+    "& H < \\u0125 <<< \\u0124"
+    "& J < \\u0135 <<< \\u0134"
+    "& S < \\u015d <<< \\u015c"
+    "& U < \\u016d <<< \\u016c";
+
+/*
+  A simplified version of Hungarian, without consonant contractions.
+*/
+static const char hungarian[]=
+    "&O < \\u00F6 <<< \\u00D6 << \\u0151 <<< \\u0150"
+    "&U < \\u00FC <<< \\u00DC << \\u0171 <<< \\u0170";
+
 
 /*
   Unicode Collation Algorithm:
@@ -6724,7 +6744,7 @@ typedef struct my_uca_scanner_handler_st
   int (*next)(my_uca_scanner *scanner);
 } my_uca_scanner_handler;
 
-static uint16 nochar[]= {0};
+static uint16 nochar[]= {0,0};
 
 
 #ifdef HAVE_CHARSET_ucs2
@@ -6749,13 +6769,32 @@ static void my_uca_scanner_init_ucs2(my_uca_scanner *scanner,
                                      CHARSET_INFO *cs __attribute__((unused)),
                                      const uchar *str, uint length)
 {
-  /* Note, no needs to initialize scanner->wbeg */
-  scanner->sbeg= str;
-  scanner->send= str + length - 2;
   scanner->wbeg= nochar; 
-  scanner->uca_length= cs->sort_order;
-  scanner->uca_weight= cs->sort_order_big;
-  scanner->contractions= cs->contractions;
+  if (length)
+  {
+    scanner->sbeg= str;
+    scanner->send= str + length - 2;
+    scanner->uca_length= cs->sort_order;
+    scanner->uca_weight= cs->sort_order_big;
+    scanner->contractions= cs->contractions;
+    return;
+  }
+
+  /*
+    Sometimes this function is called with
+    str=NULL and length=0, which should be
+    considered as an empty string.
+    
+    The above initialization is unsafe for such cases,
+    because scanner->send is initialized to (NULL-2), which is 0xFFFFFFFE.
+    Then we fall into an endless loop in my_uca_scanner_next_ucs2().
+      
+    Do special initialization for the case when length=0.
+    Initialize scanner->sbeg to an address greater than scanner->send.
+    Next call of my_uca_scanner_next_ucs2() will correctly return with -1.
+  */
+  scanner->sbeg= (uchar*) &nochar[1];
+  scanner->send= (uchar*) &nochar[0];
 }
 
 
@@ -6909,23 +6948,23 @@ static int my_uca_scanner_next_any(my_uca_scanner *scanner)
     uint16 **ucaw= scanner->uca_weight;
     uchar *ucal= scanner->uca_length;
     my_wc_t wc;
-    int mblen;
+    int mb_len;
     
-    if (((mblen= scanner->cs->cset->mb_wc(scanner->cs, &wc, 
+    if (((mb_len= scanner->cs->cset->mb_wc(scanner->cs, &wc, 
                                           scanner->sbeg,
                                           scanner->send)) <= 0))
       return -1;
     
     scanner->page= wc >> 8;
     scanner->code= wc & 0xFF;
-    scanner->sbeg+= mblen;
+    scanner->sbeg+= mb_len;
     
     if (scanner->contractions && !scanner->page &&
         (scanner->code > 0x40) && (scanner->code < 0x80))
     {
       uint page1, code1, cweight;
       
-      if (((mblen= scanner->cs->cset->mb_wc(scanner->cs, &wc,
+      if (((mb_len= scanner->cs->cset->mb_wc(scanner->cs, &wc,
                                             scanner->sbeg, 
                                             scanner->send)) >=0) &&
            (!(page1= (wc >> 8))) &&
@@ -6935,7 +6974,7 @@ static int my_uca_scanner_next_any(my_uca_scanner *scanner)
       {
         scanner->implicit[0]= 0;
         scanner->wbeg= scanner->implicit;
-        scanner->sbeg+= mblen;
+        scanner->sbeg+= mb_len;
         return cweight;
       }
     }
@@ -7048,6 +7087,9 @@ static int my_strnncoll_uca(CHARSET_INFO *cs,
     slen	First string length
     t		Second string
     tlen	Seconf string length
+    diff_if_only_endspace_difference
+		        Set to 1 if the strings should be regarded as different
+                        if they only difference in end space
   
   NOTES:
     Works exactly the same with my_strnncoll_uca(),
@@ -7085,13 +7127,16 @@ static int my_strnncoll_uca(CHARSET_INFO *cs,
 static int my_strnncollsp_uca(CHARSET_INFO *cs, 
                               my_uca_scanner_handler *scanner_handler,
                               const uchar *s, uint slen,
-                              const uchar *t, uint tlen)
+                              const uchar *t, uint tlen,
+                              my_bool diff_if_only_endspace_difference)
 {
-  my_uca_scanner sscanner;
-  my_uca_scanner tscanner;
-  int s_res;
-  int t_res;
+  my_uca_scanner sscanner, tscanner;
+  int s_res, t_res;
   
+#ifndef VARCHAR_WITH_DIFF_ENDSPACE_ARE_DIFFERENT_FOR_UNIQUE
+  diff_if_only_endspace_difference= 0;
+#endif
+
   scanner_handler->init(&sscanner, cs, s, slen);
   scanner_handler->init(&tscanner, cs, t, tlen);
   
@@ -7113,7 +7158,7 @@ static int my_strnncollsp_uca(CHARSET_INFO *cs,
         return (s_res - t_res);
       s_res= scanner_handler->next(&sscanner);
     } while (s_res > 0);
-    return 0;
+    return diff_if_only_endspace_difference ? 1 : 0;
   }
     
   if (s_res < 0 && t_res > 0)
@@ -7128,7 +7173,7 @@ static int my_strnncollsp_uca(CHARSET_INFO *cs,
         return (s_res - t_res);
       t_res= scanner_handler->next(&tscanner);
     } while (t_res > 0);
-    return 0;
+    return diff_if_only_endspace_difference ? -1 : 0;
   }
   
   return ( s_res - t_res );
@@ -7288,8 +7333,8 @@ int my_wildcmp_uca(CHARSET_INFO *cs,
   int result= -1;			/* Not found, using wildcards */
   my_wc_t s_wc, w_wc;
   int scan;
-  int (*mb_wc)(struct charset_info_st *cs, my_wc_t *wc,
-               const unsigned char *s,const unsigned char *e);
+  int (*mb_wc)(struct charset_info_st *, my_wc_t *,
+               const unsigned char *, const unsigned char *);
   mb_wc= cs->cset->mb_wc;
   
   while (wildstr != wildend)
@@ -7482,7 +7527,7 @@ typedef struct my_coll_lexem_st
     my_coll_lexem_init
     lexem                Lex analizer to init
     str                  Const string to parse
-    strend               End of the string
+    str_end               End of the string
   USAGE
   
   RETURN VALUES
@@ -7490,11 +7535,11 @@ typedef struct my_coll_lexem_st
 */
 
 static void my_coll_lexem_init(MY_COLL_LEXEM *lexem,
-                               const char *str, const char *strend)
+                               const char *str, const char *str_end)
 {
   lexem->beg= str;
   lexem->prev= str;
-  lexem->end= strend;
+  lexem->end= str_end;
   lexem->diff= 0;
   lexem->code= 0;
 }
@@ -7521,7 +7566,7 @@ static void my_coll_lexem_print_error(MY_COLL_LEXEM *lexem,
 {
   char tail[30];
   size_t len= lexem->end - lexem->prev;
-  strmake (tail, lexem->prev, min(len, sizeof(tail)-1));
+  strmake (tail, lexem->prev, (uint) min(len, sizeof(tail)-1));
   errstr[errsize-1]= '\0';
   my_snprintf(errstr,errsize-1,"%s at '%s'", txt, tail);
 }
@@ -7651,7 +7696,7 @@ typedef struct my_coll_rule_item_st
     my_coll_rule_parse
     rule                 Collation rule list to load to.
     str                  A string containin collation language expression.
-    strend               End of the string.
+    str_end              End of the string.
   USAGE
     
   RETURN VALUES
@@ -7660,7 +7705,7 @@ typedef struct my_coll_rule_item_st
 */
 
 static int my_coll_rule_parse(MY_COLL_RULE *rule, size_t mitems,
-                              const char *str, const char *strend,
+                              const char *str, const char *str_end,
                               char *errstr, size_t errsize)
 {
   MY_COLL_LEXEM lexem;
@@ -7673,7 +7718,7 @@ static int my_coll_rule_parse(MY_COLL_RULE *rule, size_t mitems,
   /* Init all variables */
   errstr[0]= '\0';
   bzero(&item, sizeof(item));
-  my_coll_lexem_init(&lexem, str, strend);
+  my_coll_lexem_init(&lexem, str, str_end);
   
   while ((lexnum= my_coll_lexem_next(&lexem)))
   {
@@ -7763,7 +7808,7 @@ static int my_coll_rule_parse(MY_COLL_RULE *rule, size_t mitems,
       continue;
     }
   }
-  return (size_t) nitems;
+  return (int) nitems;
 }
 
 #define MY_MAX_COLL_RULE 128
@@ -7936,6 +7981,7 @@ static my_bool create_tailoring(CHARSET_INFO *cs, void *(*alloc)(uint))
 
 static my_bool my_coll_init_uca(CHARSET_INFO *cs, void *(*alloc)(uint))
 {
+  cs->pad_char= ' ';
   return create_tailoring(cs, alloc);
 }
 
@@ -7949,11 +7995,13 @@ static int my_strnncoll_any_uca(CHARSET_INFO *cs,
 }
 
 static int my_strnncollsp_any_uca(CHARSET_INFO *cs,
-                              const uchar *s, uint slen,
-                              const uchar *t, uint tlen)
+                                  const uchar *s, uint slen,
+                                  const uchar *t, uint tlen,
+                                  my_bool diff_if_only_endspace_difference)
 {
   return my_strnncollsp_uca(cs, &my_any_uca_scanner_handler,
-                            s, slen, t, tlen);
+                            s, slen, t, tlen,
+                            diff_if_only_endspace_difference);
 }   
 
 static void my_hash_sort_any_uca(CHARSET_INFO *cs,
@@ -7986,11 +8034,13 @@ static int my_strnncoll_ucs2_uca(CHARSET_INFO *cs,
 }
 
 static int my_strnncollsp_ucs2_uca(CHARSET_INFO *cs,
-                              const uchar *s, uint slen,
-                              const uchar *t, uint tlen)
+                                   const uchar *s, uint slen,
+                                   const uchar *t, uint tlen,
+                                   my_bool diff_if_only_endspace_difference)
 {
   return my_strnncollsp_uca(cs, &my_ucs2_uca_scanner_handler,
-                            s, slen, t, tlen);
+                            s, slen, t, tlen,
+                            diff_if_only_endspace_difference);
 }   
 
 static void my_hash_sort_ucs2_uca(CHARSET_INFO *cs,
@@ -8014,11 +8064,13 @@ MY_COLLATION_HANDLER my_collation_ucs2_uca_handler =
     my_strnncoll_ucs2_uca,
     my_strnncollsp_ucs2_uca,
     my_strnxfrm_ucs2_uca,
+    my_strnxfrmlen_simple,
     my_like_range_ucs2,
     my_wildcmp_uca,
     NULL,
     my_instr_mb,
-    my_hash_sort_ucs2_uca
+    my_hash_sort_ucs2_uca,
+    my_propagate_complex
 };
 
 CHARSET_INFO my_charset_ucs2_general_uca=
@@ -8037,13 +8089,17 @@ CHARSET_INFO my_charset_ucs2_general_uca=
     uca_weight,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8065,13 +8121,17 @@ CHARSET_INFO my_charset_ucs2_icelandic_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8093,13 +8153,17 @@ CHARSET_INFO my_charset_ucs2_latvian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8121,13 +8185,17 @@ CHARSET_INFO my_charset_ucs2_romanian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8149,13 +8217,17 @@ CHARSET_INFO my_charset_ucs2_slovenian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8177,13 +8249,17 @@ CHARSET_INFO my_charset_ucs2_polish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8205,13 +8281,17 @@ CHARSET_INFO my_charset_ucs2_estonian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8233,13 +8313,17 @@ CHARSET_INFO my_charset_ucs2_spanish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8261,13 +8345,17 @@ CHARSET_INFO my_charset_ucs2_swedish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8289,13 +8377,17 @@ CHARSET_INFO my_charset_ucs2_turkish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_turkish, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8317,13 +8409,17 @@ CHARSET_INFO my_charset_ucs2_czech_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8346,13 +8442,17 @@ CHARSET_INFO my_charset_ucs2_danish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8374,13 +8474,17 @@ CHARSET_INFO my_charset_ucs2_lithuanian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8402,13 +8506,17 @@ CHARSET_INFO my_charset_ucs2_slovak_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8430,13 +8538,17 @@ CHARSET_INFO my_charset_ucs2_spanish2_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8459,13 +8571,17 @@ CHARSET_INFO my_charset_ucs2_roman_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8488,13 +8604,83 @@ CHARSET_INFO my_charset_ucs2_persian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     2,			/* mbminlen     */
     2,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
+    0,                  /* escape_with_backslash_is_dangerous */
+    &my_charset_ucs2_handler,
+    &my_collation_ucs2_uca_handler
+};
+
+
+CHARSET_INFO my_charset_ucs2_esperanto_uca_ci=
+{
+    145,0,0,		/* number       */
+    MY_CS_COMPILED|MY_CS_STRNXFRM|MY_CS_UNICODE,
+    "ucs2",		/* cs name    */
+    "ucs2_esperanto_ci",/* name         */
+    "",			/* comment      */
+    esperanto,		/* tailoring    */
+    NULL,		/* ctype        */
+    NULL,		/* to_lower     */
+    NULL,		/* to_upper     */
+    NULL,		/* sort_order   */
+    NULL,		/* contractions */
+    NULL,		/* sort_order_big*/
+    NULL,		/* tab_to_uni   */
+    NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
+    NULL,		/* state_map    */
+    NULL,		/* ident_map    */
+    8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
+    2,			/* mbminlen     */
+    2,			/* mbmaxlen     */
+    9,			/* min_sort_char */
+    0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
+    0,                  /* escape_with_backslash_is_dangerous */
+    &my_charset_ucs2_handler,
+    &my_collation_ucs2_uca_handler
+};
+
+
+CHARSET_INFO my_charset_ucs2_hungarian_uca_ci=
+{
+    146,0,0,		/* number       */
+    MY_CS_COMPILED|MY_CS_STRNXFRM|MY_CS_UNICODE,
+    "ucs2",		/* cs name    */
+    "ucs2_hungarian_ci",/* name         */
+    "",			/* comment      */
+    hungarian,		/* tailoring    */
+    NULL,		/* ctype        */
+    NULL,		/* to_lower     */
+    NULL,		/* to_upper     */
+    NULL,		/* sort_order   */
+    NULL,		/* contractions */
+    NULL,		/* sort_order_big*/
+    NULL,		/* tab_to_uni   */
+    NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
+    NULL,		/* state_map    */
+    NULL,		/* ident_map    */
+    8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
+    2,			/* mbminlen     */
+    2,			/* mbmaxlen     */
+    9,			/* min_sort_char */
+    0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_uca_handler
@@ -8511,11 +8697,13 @@ MY_COLLATION_HANDLER my_collation_any_uca_handler =
     my_strnncoll_any_uca,
     my_strnncollsp_any_uca,
     my_strnxfrm_any_uca,
+    my_strnxfrmlen_simple,
     my_like_range_mb,
     my_wildcmp_uca,
     NULL,
     my_instr_mb,
-    my_hash_sort_any_uca
+    my_hash_sort_any_uca,
+    my_propagate_complex
 };
 
 /* 
@@ -8562,13 +8750,17 @@ CHARSET_INFO my_charset_utf8_general_uca_ci=
     uca_weight,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8591,13 +8783,17 @@ CHARSET_INFO my_charset_utf8_icelandic_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8619,13 +8815,17 @@ CHARSET_INFO my_charset_utf8_latvian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8647,13 +8847,17 @@ CHARSET_INFO my_charset_utf8_romanian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8675,13 +8879,17 @@ CHARSET_INFO my_charset_utf8_slovenian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8703,13 +8911,17 @@ CHARSET_INFO my_charset_utf8_polish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8731,13 +8943,17 @@ CHARSET_INFO my_charset_utf8_estonian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8759,13 +8975,17 @@ CHARSET_INFO my_charset_utf8_spanish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8787,13 +9007,17 @@ CHARSET_INFO my_charset_utf8_swedish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8815,13 +9039,17 @@ CHARSET_INFO my_charset_utf8_turkish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_turkish, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    2,                  /* caseup_multiply  */
+    2,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8843,13 +9071,17 @@ CHARSET_INFO my_charset_utf8_czech_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8872,13 +9104,17 @@ CHARSET_INFO my_charset_utf8_danish_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8900,13 +9136,17 @@ CHARSET_INFO my_charset_utf8_lithuanian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8928,13 +9168,17 @@ CHARSET_INFO my_charset_utf8_slovak_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8956,13 +9200,17 @@ CHARSET_INFO my_charset_utf8_spanish2_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -8984,13 +9232,17 @@ CHARSET_INFO my_charset_utf8_roman_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler
@@ -9012,13 +9264,81 @@ CHARSET_INFO my_charset_utf8_persian_uca_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen     */
     3,			/* mbmaxlen     */
     9,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
+    0,                  /* escape_with_backslash_is_dangerous */
+    &my_charset_utf8_handler,
+    &my_collation_any_uca_handler
+};
+
+CHARSET_INFO my_charset_utf8_esperanto_uca_ci=
+{
+    209,0,0,		/* number       */
+    MY_CS_COMPILED|MY_CS_STRNXFRM|MY_CS_UNICODE,
+    "utf8",		/* cs name    */
+    "utf8_esperanto_ci",/* name         */
+    "",			/* comment      */
+    esperanto,		/* tailoring    */
+    ctype_utf8,		/* ctype        */
+    NULL,		/* to_lower     */
+    NULL,		/* to_upper     */
+    NULL,		/* sort_order   */
+    NULL,		/* contractions */
+    NULL,		/* sort_order_big*/
+    NULL,		/* tab_to_uni   */
+    NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
+    NULL,		/* state_map    */
+    NULL,		/* ident_map    */
+    8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
+    1,			/* mbminlen     */
+    3,			/* mbmaxlen     */
+    9,			/* min_sort_char */
+    0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
+    0,                  /* escape_with_backslash_is_dangerous */
+    &my_charset_utf8_handler,
+    &my_collation_any_uca_handler
+};
+
+CHARSET_INFO my_charset_utf8_hungarian_uca_ci=
+{
+    210,0,0,		/* number       */
+    MY_CS_COMPILED|MY_CS_STRNXFRM|MY_CS_UNICODE,
+    "utf8",		/* cs name    */
+    "utf8_hungarian_ci",/* name         */
+    "",			/* comment      */
+    hungarian,		/* tailoring    */
+    ctype_utf8,		/* ctype        */
+    NULL,		/* to_lower     */
+    NULL,		/* to_upper     */
+    NULL,		/* sort_order   */
+    NULL,		/* contractions */
+    NULL,		/* sort_order_big*/
+    NULL,		/* tab_to_uni   */
+    NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
+    NULL,		/* state_map    */
+    NULL,		/* ident_map    */
+    8,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
+    1,			/* mbminlen     */
+    3,			/* mbmaxlen     */
+    9,			/* min_sort_char */
+    0xFFFF,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_any_uca_handler

@@ -1,9 +1,9 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2006 MySQL AB
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 #
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,20 +24,24 @@ EXTRA_DIST =		auto_increment.res auto_increment.tst \
 			insert_and_repair.pl \
 			grant.pl grant.res test_delayed_insert.pl \
 			pmail.pl mail_to_db.pl table_types.pl \
-			udf_test udf_test.res myisam-big-rows.tst
+			myisam-big-rows.tst \
+			CMakeLists.txt
 
 bin_PROGRAMS =		mysql_client_test
 noinst_PROGRAMS =	insert_test select_test thread_test
 
-#
-# C Test for 4.1 protocol
-#
 INCLUDES =		-I$(top_builddir)/include -I$(top_srcdir)/include \
 			$(openssl_includes)
 LIBS =			@CLIENT_LIBS@
-LDADD =			@CLIENT_EXTRA_LDFLAGS@ ../libmysql/libmysqlclient.la
-mysql_client_test_LDADD=      $(LDADD) $(CXXLDFLAGS)
-mysql_client_test_SOURCES=    mysql_client_test.c
+LDADD =			@CLIENT_EXTRA_LDFLAGS@ \
+                        $(top_builddir)/libmysql/libmysqlclient.la
+
+mysql_client_test_LDADD= $(LDADD) $(CXXLDFLAGS)
+mysql_client_test_SOURCES= mysql_client_test.c\
+			$(top_srcdir)/mysys/my_memmem.c
+
+insert_test_SOURCES=       insert_test.c
+select_test_SOURCES=       select_test.c
 insert_test_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
 select_test_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
 
@@ -45,7 +49,7 @@ select_test_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
 DEFS =			-DUNDEF_THREADS_HACK
 
 thread_test.o:		thread_test.c
-			$(COMPILE) -c @MT_INCLUDES@ $(INCLUDES) $<
+			$(COMPILE) -c $(INCLUDES) $<
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

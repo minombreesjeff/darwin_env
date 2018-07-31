@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -79,7 +78,7 @@ FILE *my_fopen(const char *filename, int flags, myf MyFlags)
       my_stream_opened++;
       my_file_info[fileno(fd)].type = STREAM_BY_FOPEN;
       pthread_mutex_unlock(&THR_LOCK_open);
-      DBUG_PRINT("exit",("stream: 0x%lx",fd));
+      DBUG_PRINT("exit",("stream: 0x%lx", (long) fd));
       DBUG_RETURN(fd);
     }
     pthread_mutex_unlock(&THR_LOCK_open);
@@ -103,7 +102,7 @@ int my_fclose(FILE *fd, myf MyFlags)
 {
   int err,file;
   DBUG_ENTER("my_fclose");
-  DBUG_PRINT("my",("stream: 0x%lx  MyFlags: %d",fd, MyFlags));
+  DBUG_PRINT("my",("stream: 0x%lx  MyFlags: %d", (long) fd, MyFlags));
 
   pthread_mutex_lock(&THR_LOCK_open);
   file=fileno(fd);
@@ -163,7 +162,7 @@ FILE *my_fdopen(File Filedes, const char *name, int Flags, myf MyFlags)
     pthread_mutex_unlock(&THR_LOCK_open);
   }
 
-  DBUG_PRINT("exit",("stream: 0x%lx",fd));
+  DBUG_PRINT("exit",("stream: 0x%lx", (long) fd));
   DBUG_RETURN(fd);
 } /* my_fdopen */
 

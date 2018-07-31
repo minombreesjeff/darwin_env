@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,15 +16,15 @@
 /* This implements 'user defined functions' */
 
 /*
-** Known bugs:
-**
-** Memory for functions are never freed!
-** Shared libraries are not closed before mysqld exists;
-**   - This is because we can't be sure if some threads is using
-**     a functions.
-**
-** The buggs only affects applications that creates and frees a lot of
-** dynamic functions, so this shouldn't be a real problem.
+   Known bugs:
+  
+   Memory for functions is never freed!
+   Shared libraries are not closed before mysqld exits;
+     - This is because we can't be sure if some threads are using
+       a function.
+  
+   The bugs only affect applications that create and free a lot of
+   dynamic functions, so this shouldn't be a real problem.
 */
 
 #ifdef USE_PRAGMA_IMPLEMENTATION
@@ -83,7 +82,7 @@ static char *init_syms(udf_func *tmp, char *nm)
 {
   char *end;
 
-  if (!((tmp->func= dlsym(tmp->dlhandle, tmp->name.str))))
+  if (!((tmp->func= (Udf_func_any) dlsym(tmp->dlhandle, tmp->name.str))))
     return tmp->name.str;
 
   end=strmov(nm,tmp->name.str);
@@ -91,18 +90,18 @@ static char *init_syms(udf_func *tmp, char *nm)
   if (tmp->type == UDFTYPE_AGGREGATE)
   {
     (void)strmov(end, "_clear");
-    if (!((tmp->func_clear= dlsym(tmp->dlhandle, nm))))
+    if (!((tmp->func_clear= (Udf_func_clear) dlsym(tmp->dlhandle, nm))))
       return nm;
     (void)strmov(end, "_add");
-    if (!((tmp->func_add= dlsym(tmp->dlhandle, nm))))
+    if (!((tmp->func_add= (Udf_func_add) dlsym(tmp->dlhandle, nm))))
       return nm;
   }
 
   (void) strmov(end,"_deinit");
-  tmp->func_deinit= dlsym(tmp->dlhandle, nm);
+  tmp->func_deinit= (Udf_func_deinit) dlsym(tmp->dlhandle, nm);
 
   (void) strmov(end,"_init");
-  tmp->func_init= dlsym(tmp->dlhandle, nm);
+  tmp->func_init= (Udf_func_init) dlsym(tmp->dlhandle, nm);
 
   /*
     to prefent loading "udf" from, e.g. libc.so
@@ -110,14 +109,14 @@ static char *init_syms(udf_func *tmp, char *nm)
   */
   if (!tmp->func_init && !tmp->func_deinit && tmp->type != UDFTYPE_AGGREGATE)
   {
-    if (opt_allow_suspicious_udfs)
-      sql_print_error(ER(ER_CANT_FIND_DL_ENTRY), nm);
-    else
+    if (!opt_allow_suspicious_udfs)
       return nm;
+    if (current_thd->variables.log_warnings)
+      sql_print_warning(ER(ER_CANT_FIND_DL_ENTRY), nm);
   }
-
   return 0;
 }
+
 
 extern "C" byte* get_hash_key(const byte *buff,uint *length,
 			      my_bool not_used __attribute__((unused)))
@@ -127,9 +126,10 @@ extern "C" byte* get_hash_key(const byte *buff,uint *length,
   return (byte*) udf->name.str;
 }
 
+
 /*
-** Read all predeclared functions from mysql.func and accept all that
-** can be used.
+  Read all predeclared functions from mysql.func and accept all that
+  can be used.
 */
 
 void udf_init()
@@ -139,6 +139,7 @@ void udf_init()
   READ_RECORD read_record_info;
   TABLE *table;
   int error;
+  char db[]= "mysql"; /* A subject to casednstr, can't be constant */
   DBUG_ENTER("ufd_init");
 
   if (initialized)
@@ -158,14 +159,14 @@ void udf_init()
     DBUG_VOID_RETURN;
   }
   initialized = 1;
+  new_thd->thread_stack= (char*) &new_thd;
   new_thd->store_globals();
-  new_thd->db= my_strdup("mysql", MYF(0));
-  new_thd->db_length=5;
+  new_thd->set_db(db, sizeof(db)-1);
 
   bzero((gptr) &tables,sizeof(tables));
-  tables.alias= tables.real_name= (char*) "func";
+  tables.alias= tables.table_name= (char*) "func";
   tables.lock_type = TL_READ;
-  tables.db=new_thd->db;
+  tables.db= db;
 
   if (simple_open_n_lock_tables(new_thd, &tables))
   {
@@ -185,7 +186,7 @@ void udf_init()
     char *dl_name= get_field(&mem, table->field[2]);
     bool new_dl=0;
     Item_udftype udftype=UDFTYPE_FUNCTION;
-    if (table->fields >= 4)			// New func table
+    if (table->s->fields >= 4)			// New func table
       udftype=(Item_udftype) table->field[3]->val_int();
 
     /*
@@ -235,7 +236,7 @@ void udf_init()
     }
   }
   if (error > 0)
-    sql_print_error(ER(ER_GET_ERRNO), my_errno);
+    sql_print_error("Got unknown error: %d", my_errno);
   end_read_record(&read_record_info);
   new_thd->version--;				// Force close to free memory
 
@@ -306,6 +307,10 @@ static void del_udf(udf_func *udf)
 void free_udf(udf_func *udf)
 {
   DBUG_ENTER("free_udf");
+  
+  if (!initialized)
+    DBUG_VOID_RETURN;
+
   rw_wrlock(&THR_LOCK_udf);
   if (!--udf->usage_count)
   {
@@ -329,6 +334,9 @@ udf_func *find_udf(const char *name,uint length,bool mark_used)
 {
   udf_func *udf=0;
   DBUG_ENTER("find_udf");
+
+  if (!initialized)
+    DBUG_RETURN(NULL);
 
   /* TODO: This should be changed to reader locks someday! */
   if (mark_used)
@@ -402,7 +410,7 @@ int mysql_create_function(THD *thd,udf_func *udf)
 
   if (!initialized)
   {
-    send_error(thd, ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES));
+    my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
     DBUG_RETURN(1);
   }
 
@@ -413,28 +421,30 @@ int mysql_create_function(THD *thd,udf_func *udf)
   */
   if (strchr(udf->dl, '/') || IF_WIN(strchr(udf->dl, '\\'),0))
   {
-    send_error(thd, ER_UDF_NO_PATHS,ER(ER_UDF_NO_PATHS));
+    my_message(ER_UDF_NO_PATHS, ER(ER_UDF_NO_PATHS), MYF(0));
     DBUG_RETURN(1);
   }
   if (udf->name.length > NAME_LEN)
   {
-    net_printf(thd, ER_TOO_LONG_IDENT,udf->name);
+    my_error(ER_TOO_LONG_IDENT, MYF(0), udf->name);
     DBUG_RETURN(1);
   }
 
   rw_wrlock(&THR_LOCK_udf);
   if ((hash_search(&udf_hash,(byte*) udf->name.str, udf->name.length)))
   {
-    net_printf(thd, ER_UDF_EXISTS, udf->name);
+    my_error(ER_UDF_EXISTS, MYF(0), udf->name);
     goto err;
   }
   if (!(dl = find_udf_dl(udf->dl)))
   {
+    DBUG_PRINT("info", ("Calling dlopen, udf->dl: %s", udf->dl));
     if (!(dl = dlopen(udf->dl, RTLD_NOW)))
     {
       DBUG_PRINT("error",("dlopen of %s failed, error: %d (%s)",
 			  udf->dl,errno,dlerror()));
-      net_printf(thd, ER_CANT_OPEN_LIBRARY, udf->dl, errno, dlerror());
+      my_error(ER_CANT_OPEN_LIBRARY, MYF(0),
+                      udf->dl, errno, dlerror());
       goto err;
     }
     new_dl=1;
@@ -444,17 +454,14 @@ int mysql_create_function(THD *thd,udf_func *udf)
     char buf[NAME_LEN+16], *missing;
     if ((missing= init_syms(udf, buf)))
     {
-      net_printf(thd, ER_CANT_FIND_DL_ENTRY, missing);
+      my_error(ER_CANT_FIND_DL_ENTRY, MYF(0), missing);
       goto err;
     }
   }
   udf->name.str=strdup_root(&mem,udf->name.str);
   udf->dl=strdup_root(&mem,udf->dl);
   if (!(u_d=add_udf(&udf->name,udf->returns,udf->dl,udf->type)))
-  {
-    send_error(thd,0);		// End of memory
     goto err;
-  }
   u_d->dlhandle = dl;
   u_d->func=udf->func;
   u_d->func_init=udf->func_init;
@@ -466,23 +473,23 @@ int mysql_create_function(THD *thd,udf_func *udf)
 
   bzero((char*) &tables,sizeof(tables));
   tables.db= (char*) "mysql";
-  tables.real_name= tables.alias= (char*) "func";
+  tables.table_name= tables.alias= (char*) "func";
   /* Allow creation of functions even if we can't open func table */
   if (!(table = open_ltable(thd,&tables,TL_WRITE)))
     goto err;
 
-  restore_record(table,default_values);		// Default values for fields
+  restore_record(table, s->default_values);	// Default values for fields
   table->field[0]->store(u_d->name.str, u_d->name.length, system_charset_info);
-  table->field[1]->store((longlong) u_d->returns);
+  table->field[1]->store((longlong) u_d->returns, TRUE);
   table->field[2]->store(u_d->dl,(uint) strlen(u_d->dl), system_charset_info);
-  if (table->fields >= 4)			// If not old func format
-    table->field[3]->store((longlong) u_d->type);
+  if (table->s->fields >= 4)			// If not old func format
+    table->field[3]->store((longlong) u_d->type, TRUE);
   error = table->file->write_row(table->record[0]);
 
   close_thread_tables(thd);
   if (error)
   {
-    net_printf(thd, ER_ERROR_ON_WRITE, "mysql.func",error);
+    my_error(ER_ERROR_ON_WRITE, MYF(0), "mysql.func", error);
     del_udf(u_d);
     goto err;
   }
@@ -502,19 +509,23 @@ int mysql_drop_function(THD *thd,const LEX_STRING *udf_name)
   TABLE *table;
   TABLE_LIST tables;
   udf_func *udf;
+  char *exact_name_str;
+  uint exact_name_len;
   DBUG_ENTER("mysql_drop_function");
   if (!initialized)
   {
-    send_error(thd, ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES));
+    my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
     DBUG_RETURN(1);
   }
   rw_wrlock(&THR_LOCK_udf);  
   if (!(udf=(udf_func*) hash_search(&udf_hash,(byte*) udf_name->str,
 				    (uint) udf_name->length)))
   {
-    net_printf(thd, ER_FUNCTION_NOT_DEFINED, udf_name->str);
+    my_error(ER_FUNCTION_NOT_DEFINED, MYF(0), udf_name->str);
     goto err;
   }
+  exact_name_str= udf->name.str;
+  exact_name_len= udf->name.length;
   del_udf(udf);
   /*
     Close the handle if this was function that was found during boot or
@@ -525,10 +536,10 @@ int mysql_drop_function(THD *thd,const LEX_STRING *udf_name)
 
   bzero((char*) &tables,sizeof(tables));
   tables.db=(char*) "mysql";
-  tables.real_name= tables.alias= (char*) "func";
+  tables.table_name= tables.alias= (char*) "func";
   if (!(table = open_ltable(thd,&tables,TL_WRITE)))
     goto err;
-  table->field[0]->store(udf_name->str, udf_name->length, system_charset_info);
+  table->field[0]->store(exact_name_str, exact_name_len, &my_charset_bin);
   table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
   if (!table->file->index_read_idx(table->record[0], 0,
 				   (byte*) table->field[0]->ptr,

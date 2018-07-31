@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -35,23 +34,22 @@ class NdbOperation;
  *   MyRecAttr = MyOperation->getValue("ATTR2", NULL);
  *   if (MyRecAttr == NULL) goto error;
  *
- *   if (MyConnection->execute(Commit) == -1) goto error;
+ *   if (MyTransaction->execute(Commit) == -1) goto error;
  *
  *   ndbout << MyRecAttr->u_32_value();
  * @endcode
  * For more examples, see 
- * @ref ndbapi_example1.cpp and 
- * @ref ndbapi_example2.cpp.
+ * @ref ndbapi_simple.cpp.
  *
  * @note The NdbRecAttr object is instantiated with its value when 
- *       NdbConnection::execute is called.  Before this, the value is 
+ *       NdbTransaction::execute is called.  Before this, the value is 
  *       undefined.  (NdbRecAttr::isNULL can be used to check 
  *       if the value is defined or not.)
  *       This means that an NdbRecAttr object only has valid information
- *       between the time of calling NdbConnection::execute and
+ *       between the time of calling NdbTransaction::execute and
  *       the time of Ndb::closeTransaction.
  *       The value of the null indicator is -1 until the
- *       NdbConnection::execute method have been called.
+ *       NdbTransaction::execute method have been called.
  *
  * For simple types, there are methods which directly getting the value
  * from the NdbRecAttr object.
@@ -73,12 +71,14 @@ class NdbOperation;
  */
 class NdbRecAttr
 {
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   friend class NdbOperation;
   friend class NdbIndexScanOperation;
   friend class NdbEventOperationImpl;
   friend class NdbReceiver;
   friend class Ndb;
   friend class NdbOut& operator<<(class NdbOut&, const class AttributeS&);
+#endif
 
 public:
   /** 
@@ -125,7 +125,7 @@ public:
    * Check if attribute value is NULL.
    *
    * @return -1 = Not defined (Failure or 
-   *              NdbConnection::execute not yet called).<br>
+   *              NdbTransaction::execute not yet called).<br>
    *          0 = Attribute value is defined, but not equal to NULL.<br>
    *          1 = Attribute value is defined and equal to NULL.
    */
@@ -147,6 +147,13 @@ public:
 
   /**
    * Get value stored in NdbRecAttr object.
+   * 
+   * @return  Medium value.
+   */
+  Int32 medium_value() const;
+
+  /**
+   * Get value stored in NdbRecAttr object.
    *
    * @return  Short value.
    */
@@ -158,6 +165,13 @@ public:
    * @return  Char value.
    */           
   char  char_value() const;           
+
+  /**
+   * Get value stored in NdbRecAttr object.
+   *
+   * @return  Int8 value.
+   */           
+  Int8  int8_value() const;           
 
   /**
    * Get value stored in NdbRecAttr object.
@@ -176,6 +190,13 @@ public:
   /**
    * Get value stored in NdbRecAttr object.
    * 
+   * @return  Unsigned medium value.
+   */
+  Uint32 u_medium_value() const;
+
+  /**
+   * Get value stored in NdbRecAttr object.
+   * 
    * @return  Unsigned short value.
    */
   Uint16 u_short_value() const;
@@ -186,6 +207,13 @@ public:
    * @return  Unsigned char value.
    */   
   Uint8 u_char_value() const;        
+
+  /**
+   * Get value stored in NdbRecAttr object.
+   *
+   * @return  Uint8 value.
+   */   
+  Uint8 u_8_value() const;
 
   /**
    * Get value stored in NdbRecAttr object.
@@ -242,10 +270,16 @@ public:
    *        i.e. objects that has been cloned.
    */
   ~NdbRecAttr();    
+
+public:
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  const NdbRecAttr* next() const;
+#endif
 private:
 
   Uint32 attrId() const;        /* Get attribute id                     */
   bool setNULL();               /* Set NULL indicator                   */
+  void setUNDEFINED();          /* Set UNDEFINED indicator              */
   bool receive_data(const Uint32*, Uint32);
 
   void release();               /* Release memory if allocated          */
@@ -253,7 +287,7 @@ private:
 
   NdbRecAttr(Ndb*);
   void next(NdbRecAttr* aRecAttr);
-  NdbRecAttr* next() const;
+  NdbRecAttr* next();
 
   int setup(const class NdbDictionary::Column* col, char* aValue);
   int setup(const class NdbColumnImpl* anAttrInfo, char* aValue);
@@ -277,6 +311,8 @@ private:
 
   friend struct Ndb_free_list_t<NdbRecAttr>;
 };
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
 
 inline
 NdbDictionary::Column::Type
@@ -325,6 +361,13 @@ NdbRecAttr::char_value() const
 }
 
 inline
+Int8
+NdbRecAttr::int8_value() const
+{
+  return *(Int8*)theRef;
+}
+
+inline
 Uint32
 NdbRecAttr::u_32_value() const
 {
@@ -341,6 +384,13 @@ NdbRecAttr::u_short_value() const
 inline
 Uint8
 NdbRecAttr::u_char_value() const
+{
+  return *(Uint8*)theRef;
+}
+
+inline
+Uint8
+NdbRecAttr::u_8_value() const
 {
   return *(Uint8*)theRef;
 }
@@ -376,6 +426,13 @@ NdbRecAttr::next(NdbRecAttr* aRecAttr)
 
 inline
 NdbRecAttr*
+NdbRecAttr::next()
+{
+  return theNext;
+}
+
+inline
+const NdbRecAttr*
 NdbRecAttr::next() const
 {
   return theNext;
@@ -411,6 +468,13 @@ NdbRecAttr::setNULL()
 }
 
 inline
+void
+NdbRecAttr::setUNDEFINED()
+{
+  theNULLind = -1;
+}
+
+inline
 int
 NdbRecAttr::isNULL() const
 {
@@ -418,6 +482,27 @@ NdbRecAttr::isNULL() const
 }
 
 class NdbOut& operator <<(class NdbOut&, const NdbRecAttr &);
+
+class NdbRecordPrintFormat
+{
+public:
+  NdbRecordPrintFormat();
+  virtual ~NdbRecordPrintFormat();
+  const char *lines_terminated_by;
+  const char *fields_terminated_by;
+  const char *start_array_enclosure;
+  const char *end_array_enclosure;
+  const char *fields_enclosed_by;
+  const char *fields_optionally_enclosed_by;
+  const char *hex_prefix;
+  const char *null_string;
+  int hex_format;
+};
+NdbOut&
+ndbrecattr_print_formatted(NdbOut& out, const NdbRecAttr &r,
+                           const NdbRecordPrintFormat &f);
+
+#endif // ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
 
 #endif
 

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -628,11 +627,11 @@ PropertiesImpl::getPropsPut(const char * name,
     if(nvp == 0){
       Properties   * tmpP  = new Properties();
       PropertyImpl * tmpPI = new PropertyImpl(tmp2, tmpP);
-      PropertyImpl * nvp = put(tmpPI);
+      PropertyImpl * nvp2 = put(tmpPI);
 
       delete tmpP;
       free(tmp2);
-      return ((Properties*)nvp->value)->impl->getPropsPut(tmp+1, impl);
+      return ((Properties*)nvp2->value)->impl->getPropsPut(tmp+1, impl);
     }
     free(tmp2);
     if(nvp->valueType != PropertiesType_Properties){

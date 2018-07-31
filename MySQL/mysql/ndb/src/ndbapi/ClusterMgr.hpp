@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -49,7 +48,10 @@ public:
 
   void doStop();
   void startThread();
-  
+
+  void forceHB();
+  void set_max_api_reg_req_interval(unsigned int millisec) { m_max_api_reg_req_interval = millisec; }
+
 private:
   void threadMain();
   
@@ -64,6 +66,7 @@ public:
     bool compatible;    // Version is compatible
     bool nfCompleteRep; // NF Complete Rep has arrived
     bool m_alive;       // Node is alive
+    bool m_api_reg_conf;// API_REGCONF has arrived
     
     NodeInfo  m_info;
     NodeState m_state;
@@ -73,27 +76,32 @@ public:
      */
     Uint32 hbFrequency; // Heartbeat frequence 
     Uint32 hbCounter;   // # milliseconds passed since last hb sent
-    Uint32 hbSent;      // # heartbeats sent (without answer)
   };
   
   const Node &  getNodeInfo(NodeId) const;
   Uint32        getNoOfConnectedNodes() const;
+  void          hb_received(NodeId);
+
   Uint32        m_connect_count;
-  
 private:
+  Uint32        m_max_api_reg_req_interval;
   Uint32        noOfAliveNodes;
   Uint32        noOfConnectedNodes;
   Node          theNodes[MAX_NODES];
   NdbThread*    theClusterMgrThread;
-  
+
+  NodeBitmask   waitForHBFromNodes; // used in forcing HBs
+  NdbCondition* waitForHBCond;
+  bool          waitingForHB;
+
   /**
    * Used for controlling start/stop of the thread
    */
   NdbMutex*     clusterMgrThreadMutex;
   
   void showState(NodeId nodeId);
-  void reportNodeFailed(NodeId nodeId);
-
+  void reportNodeFailed(NodeId nodeId, bool disconnect = false);
+  
   /**
    * Signals received
    */
@@ -127,6 +135,12 @@ inline
 Uint32
 ClusterMgr::getNoOfConnectedNodes() const {
   return noOfConnectedNodes;
+}
+
+inline
+void
+ClusterMgr::hb_received(NodeId nodeId) {
+  theNodes[nodeId].m_info.m_heartbeat_cnt= 0;
 }
 
 /*****************************************************************************/
@@ -168,6 +182,7 @@ private:
     ArbitSignalData data;
     NDB_TICKS timestamp;
 
+    ArbitSignal() {}
     inline void init(GlobalSignalNumber aGsn, const Uint32* aData) {
       gsn = aGsn;
       if (aData != NULL)

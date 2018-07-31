@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,21 +74,24 @@ enum enum_used_fields
 
   RETURN VALUES
     0           all ok
-    1           one of the fileds didn't finded
+    1           one of the fileds was not found
 */
 
 static bool init_fields(THD *thd, TABLE_LIST *tables,
 			struct st_find_field *find_fields, uint count)
 {
+  Name_resolution_context *context= &thd->lex->select_lex.context;
   DBUG_ENTER("init_fields");
+  context->resolve_in_table_list_only(tables);
   for (; count-- ; find_fields++)
   {
-    TABLE_LIST *not_used;
     /* We have to use 'new' here as field will be re_linked on free */
-    Item_field *field= new Item_field("mysql", find_fields->table_name,
+    Item_field *field= new Item_field(context,
+                                      "mysql", find_fields->table_name,
                                       find_fields->field_name);
-    if (!(find_fields->field= find_field_in_tables(thd, field, tables,
-						   &not_used, TRUE)))
+    if (!(find_fields->field= find_field_in_tables(thd, field, tables, NULL,
+						   0, REPORT_ALL_ERRORS, 1,
+                                                   TRUE)))
       DBUG_RETURN(1);
   }
   DBUG_RETURN(0);
@@ -273,11 +275,11 @@ int get_topics_for_keyword(THD *thd, TABLE *topics, TABLE *relations,
   DBUG_ENTER("get_topics_for_keyword");
 
   if ((iindex_topic= find_type((char*) primary_key_name,
-			       &topics->keynames, 1+2)-1)<0 ||
+			       &topics->s->keynames, 1+2)-1)<0 ||
       (iindex_relations= find_type((char*) primary_key_name,
-				   &relations->keynames, 1+2)-1)<0)
+				   &relations->s->keynames, 1+2)-1)<0)
   {
-    send_error(thd,ER_CORRUPT_HELP_DB);
+    my_message(ER_CORRUPT_HELP_DB, ER(ER_CORRUPT_HELP_DB), MYF(0));
     DBUG_RETURN(-1);
   }
   rtopic_id= find_fields[help_relation_help_topic_id].field;
@@ -286,9 +288,8 @@ int get_topics_for_keyword(THD *thd, TABLE *topics, TABLE *relations,
   topics->file->ha_index_init(iindex_topic);
   relations->file->ha_index_init(iindex_relations);
 
-  rkey_id->store((longlong) key_id);
-  rkey_id->get_key_image(buff, rkey_id->pack_length(), rkey_id->charset(),
-			 Field::itRAW);
+  rkey_id->store((longlong) key_id, TRUE);
+  rkey_id->get_key_image(buff, rkey_id->pack_length(), Field::itRAW);
   int key_res= relations->file->index_read(relations->record[0],
 					   (byte *)buff, rkey_id->pack_length(),
 					   HA_READ_KEY_EXACT);
@@ -300,9 +301,8 @@ int get_topics_for_keyword(THD *thd, TABLE *topics, TABLE *relations,
     char topic_id_buff[8];
     longlong topic_id= rtopic_id->val_int();
     Field *field= find_fields[help_topic_help_topic_id].field;
-    field->store((longlong) topic_id);
-    field->get_key_image(topic_id_buff, field->pack_length(), field->charset(),
-			 Field::itRAW);
+    field->store((longlong) topic_id, TRUE);
+    field->get_key_image(topic_id_buff, field->pack_length(), Field::itRAW);
 
     if (!topics->file->index_read(topics->record[0], (byte *)topic_id_buff,
 				  field->pack_length(), HA_READ_KEY_EXACT))
@@ -427,7 +427,8 @@ int send_answer_1(Protocol *protocol, String *s1, String *s2, String *s3)
   field_list.push_back(new Item_empty_string("description",1000));
   field_list.push_back(new Item_empty_string("example",1000));
 
-  if (protocol->send_fields(&field_list,1))
+  if (protocol->send_fields(&field_list,
+                            Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
     DBUG_RETURN(1);
 
   protocol->prepare_for_resend();
@@ -469,7 +470,8 @@ int send_header_2(Protocol *protocol, bool for_category)
     field_list.push_back(new Item_empty_string("source_category_name",64));
   field_list.push_back(new Item_empty_string("name",64));
   field_list.push_back(new Item_empty_string("is_it_category",1));
-  DBUG_RETURN(protocol->send_fields(&field_list,1));
+  DBUG_RETURN(protocol->send_fields(&field_list, Protocol::SEND_NUM_ROWS |
+                                                 Protocol::SEND_EOF));
 }
 
 /*
@@ -545,7 +547,6 @@ int send_variant_2_list(MEM_ROOT *mem_root, Protocol *protocol,
     prepare_simple_select()
     thd      Thread handler
     cond     WHERE part of select
-    tables   list of tables, used in WHERE
     table    goal table
 
     error    code of error (out)
@@ -554,13 +555,18 @@ int send_variant_2_list(MEM_ROOT *mem_root, Protocol *protocol,
     #  created SQL_SELECT
 */
 
-SQL_SELECT *prepare_simple_select(THD *thd, Item *cond, TABLE_LIST *tables,
+SQL_SELECT *prepare_simple_select(THD *thd, Item *cond,
 				  TABLE *table, int *error)
 {
   if (!cond->fixed)
-    cond->fix_fields(thd, tables, &cond);	// can never fail
-  SQL_SELECT *res= make_select(table,0,0,cond,error);
-  if (*error || (res && res->check_quick(thd, 0, HA_POS_ERROR)))
+    cond->fix_fields(thd, &cond);	// can never fail
+
+  /* Assume that no indexes cover all required fields */
+  table->used_keys.clear_all();
+
+  SQL_SELECT *res= make_select(table, 0, 0, cond, 0, error);
+  if (*error || (res && res->check_quick(thd, 0, HA_POS_ERROR)) ||
+      (res && res->quick && res->quick->reset()))
   {
     delete res;
     res=0;
@@ -592,10 +598,11 @@ SQL_SELECT *prepare_select_for_name(THD *thd, const char *mask, uint mlen,
 {
   Item *cond= new Item_func_like(new Item_field(pfname),
 				 new Item_string(mask,mlen,pfname->charset()),
-				 new Item_string("\\",1,&my_charset_latin1));
+				 new Item_string("\\",1,&my_charset_latin1),
+                                 FALSE);
   if (thd->is_fatal_error)
     return 0;					// OOM
-  return prepare_simple_select(thd,cond,tables,table,error);
+  return prepare_simple_select(thd, cond, table, error);
 }
 
 
@@ -607,66 +614,64 @@ SQL_SELECT *prepare_select_for_name(THD *thd, const char *mask, uint mlen,
     thd			Thread handler
 
   RETURN VALUES
-    0		Success
-    1		Error and send_error already commited
-    -1		error && send_error should be issued (normal case)
+    FALSE Success
+    TRUE  Error and send_error already commited
 */
 
-int mysqld_help(THD *thd, const char *mask)
+bool mysqld_help(THD *thd, const char *mask)
 {
   Protocol *protocol= thd->protocol;
   SQL_SELECT *select;
   st_find_field used_fields[array_elements(init_used_fields)];
-  DBUG_ENTER("mysqld_help");
-
+  TABLE_LIST *leaves= 0;
   TABLE_LIST tables[4];
-  bzero((gptr)tables,sizeof(tables));
-  tables[0].alias= tables[0].real_name= (char*) "help_topic";
-  tables[0].lock_type= TL_READ;
-  tables[0].next= &tables[1];
-  tables[1].alias= tables[1].real_name= (char*) "help_category";
-  tables[1].lock_type= TL_READ;
-  tables[1].next= &tables[2];
-  tables[2].alias= tables[2].real_name= (char*) "help_relation";
-  tables[2].lock_type= TL_READ;
-  tables[2].next=  &tables[3];
-  tables[3].alias= tables[3].real_name= (char*) "help_keyword";
-  tables[3].lock_type= TL_READ;
-  tables[3].next= 0;
-  tables[0].db= tables[1].db= tables[2].db= tables[3].db= (char*) "mysql";
-
   List<String> topics_list, categories_list, subcategories_list;
   String name, description, example;
-  int res, count_topics, count_categories, error;
+  int count_topics, count_categories, error;
   uint mlen= strlen(mask);
+  size_t i;
   MEM_ROOT *mem_root= thd->mem_root;
+  DBUG_ENTER("mysqld_help");
+
+  bzero((gptr)tables,sizeof(tables));
+  tables[0].alias= tables[0].table_name= (char*) "help_topic";
+  tables[0].lock_type= TL_READ;
+  tables[0].next_global= tables[0].next_local= 
+    tables[0].next_name_resolution_table= &tables[1];
+  tables[1].alias= tables[1].table_name= (char*) "help_category";
+  tables[1].lock_type= TL_READ;
+  tables[1].next_global= tables[1].next_local= 
+    tables[1].next_name_resolution_table= &tables[2];
+  tables[2].alias= tables[2].table_name= (char*) "help_relation";
+  tables[2].lock_type= TL_READ;
+  tables[2].next_global= tables[2].next_local= 
+    tables[2].next_name_resolution_table= &tables[3];
+  tables[3].alias= tables[3].table_name= (char*) "help_keyword";
+  tables[3].lock_type= TL_READ;
+  tables[0].db= tables[1].db= tables[2].db= tables[3].db= (char*) "mysql";
 
   if (open_and_lock_tables(thd, tables))
-  {
-    res= -1;
-    goto end;
-  }
-  /* Init tables and fields to be usable from items */
-  setup_tables(tables);
+    goto error;
+  /*
+    Init tables and fields to be usable from items
+    tables do not contain VIEWs => we can pass 0 as conds
+  */
+  thd->lex->select_lex.context.table_list= 
+    thd->lex->select_lex.context.first_name_resolution_table= &tables[0];
+  setup_tables(thd, &thd->lex->select_lex.context,
+               &thd->lex->select_lex.top_join_list,
+               tables, 0, &leaves, FALSE);
   memcpy((char*) used_fields, (char*) init_used_fields, sizeof(used_fields));
   if (init_fields(thd, tables, used_fields, array_elements(used_fields)))
-  {
-    res= -1;
-    goto end;
-  }
-  size_t i;
+    goto error;
   for (i=0; i<sizeof(tables)/sizeof(TABLE_LIST); i++)
     tables[i].table->file->init_table_handle_for_HANDLER();
 
   if (!(select=
 	prepare_select_for_name(thd,mask,mlen,tables,tables[0].table,
 				used_fields[help_topic_name].field,&error)))
-  {
-    res= -1;
-    goto end;
-  }
+    goto error;
 
-  res= 1;
   count_topics= search_topics(thd,tables[0].table,used_fields,
 			      select,&topics_list,
 			      &name, &description, &example);
@@ -678,10 +683,8 @@ int mysqld_help(THD *thd, const char *mask)
     if (!(select=
           prepare_select_for_name(thd,mask,mlen,tables,tables[3].table,
                                   used_fields[help_keyword_name].field,&error)))
-    {
-      res= -1;
-      goto end;
-    }
+      goto error;
+
     count_topics=search_keyword(thd,tables[3].table,used_fields,select,&key_id);
     delete select;
     count_topics= (count_topics != 1) ? 0 :
@@ -697,10 +700,7 @@ int mysqld_help(THD *thd, const char *mask)
     if (!(select=
           prepare_select_for_name(thd,mask,mlen,tables,tables[1].table,
                                   used_fields[help_category_name].field,&error)))
-    {
-      res= -1;
-      goto end;
-    }
+      goto error;
 
     count_categories= search_categories(thd, tables[1].table, used_fields,
 					select,
@@ -709,13 +709,13 @@ int mysqld_help(THD *thd, const char *mask)
     if (!count_categories)
     {
       if (send_header_2(protocol,FALSE))
-	goto end;
+	goto error;
     }
     else if (count_categories > 1)
     {
       if (send_header_2(protocol,FALSE) ||
 	  send_variant_2_list(mem_root,protocol,&categories_list,"Y",0))
-	goto end;
+	goto error;
     }
     else
     {
@@ -726,22 +726,16 @@ int mysqld_help(THD *thd, const char *mask)
       Item *cond_cat_by_cat=
 	new Item_func_equal(new Item_field(cat_cat_id),
 			    new Item_int((int32)category_id));
-      if (!(select= prepare_simple_select(thd,cond_topic_by_cat,
-                                          tables,tables[0].table,&error)))
-      {
-	res= -1;
-	goto end;
-      }
+      if (!(select= prepare_simple_select(thd, cond_topic_by_cat,
+                                          tables[0].table, &error)))
+        goto error;
       get_all_items_for_category(thd,tables[0].table,
 				 used_fields[help_topic_name].field,
 				 select,&topics_list);
       delete select;
-      if (!(select= prepare_simple_select(thd,cond_cat_by_cat,tables,
-						     tables[1].table,&error)))
-      {
-	res= -1;
-	goto end;
-      }
+      if (!(select= prepare_simple_select(thd, cond_cat_by_cat,
+                                          tables[1].table, &error)))
+        goto error;
       get_all_items_for_category(thd,tables[1].table,
 				 used_fields[help_category_name].field,
 				 select,&subcategories_list);
@@ -750,39 +744,35 @@ int mysqld_help(THD *thd, const char *mask)
       if (send_header_2(protocol, TRUE) ||
 	  send_variant_2_list(mem_root,protocol,&topics_list,       "N",cat) ||
 	  send_variant_2_list(mem_root,protocol,&subcategories_list,"Y",cat))
-	goto end;
+	goto error;
     }
   }
   else if (count_topics == 1)
   {
     if (send_answer_1(protocol,&name,&description,&example))
-      goto end;
+      goto error;
   }
   else
   {
     /* First send header and functions */
     if (send_header_2(protocol, FALSE) ||
 	send_variant_2_list(mem_root,protocol, &topics_list, "N", 0))
-      goto end;
+      goto error;
     if (!(select=
           prepare_select_for_name(thd,mask,mlen,tables,tables[1].table,
                                   used_fields[help_category_name].field,&error)))
-    {
-      res= -1;
-      goto end;
-    }
+      goto error;
     search_categories(thd, tables[1].table, used_fields,
 		      select,&categories_list, 0);
     delete select;
     /* Then send categories */
     if (send_variant_2_list(mem_root,protocol, &categories_list, "Y", 0))
-      goto end;
+      goto error;
   }
-  res= 0;
-
   send_eof(thd);
 
-end:
-  DBUG_RETURN(res);
+  DBUG_RETURN(FALSE);
+error:
+  DBUG_RETURN(TRUE);
 }
 

@@ -1,0 +1,167 @@
+.\"     Title: \fBmysql_client_test\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 06/19/2007
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL
+.\"
+.TH "\fBMYSQL_CLIENT_TEST" "1" "06/19/2007" "MySQL" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+mysql_client_test \- test client API
+.br
+mysql_client_test_embedded \- test client API for embedded server
+.SH "SYNOPSIS"
+.HP 44
+\fBmysql_client_test [\fR\fB\fIoptions\fR\fR\fB] [\fR\fB\fItest_name\fR\fR\fB] ...\fR
+.HP 53
+\fBmysql_client_test_embedded [\fR\fB\fIoptions\fR\fR\fB] [\fR\fB\fItest_name\fR\fR\fB] ...\fR
+.SH "DESCRIPTION"
+.PP
+The
+\fBmysql_client_test\fR
+program is used for testing aspects of the MySQL client API that cannot be tested using
+\fBmysqltest\fR
+and its test language.
+\fBmysql_client_test_embedded\fR
+is similar but used for testing the embedded server. Both programs are run as part of the test suite.
+.PP
+The source code for the programs can be found in in
+\fItest/mysql_client_test.c\fR
+in a source distribution. The program serves as a good source of examples illustrating how to use various features of the client API.
+.PP
+\fBmysql_client_test\fR
+supports the following options:
+.TP 3n
+\(bu
+\fB\-\-help\fR,
+\fB\-?\fR
+.sp
+Display a help message and exit.
+.TP 3n
+\(bu
+\fB\-b \fR\fB\fIdir_name\fR\fR,
+\fB\-\-basedir=\fR\fB\fIdir_name\fR\fR
+.sp
+The base directory for the tests.
+.TP 3n
+\(bu
+\fB\-t \fR\fB\fIcount\fR\fR,
+\fB\-\-count=\fR\fB\fIcount\fR\fR
+.sp
+The number of times to execute the tests.
+.TP 3n
+\(bu
+\fB\-\-database=\fR\fB\fIdb_name\fR\fR,
+\fB\-D \fR\fB\fIdb_name\fR\fR
+.sp
+The database to use.
+.TP 3n
+\(bu
+\fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
+\fB\-#[\fR\fB\fIdebug_options\fR\fR\fB]\fR
+.sp
+Write a debugging log if MySQL is built with debugging support. The default
+\fIdebug_options\fR
+value is
+\'d:t:o,/tmp/mysql_client_test.trace'.
+.TP 3n
+\(bu
+\fB\-g \fR\fB\fIoption\fR\fR,
+\fB\-\-getopt\-ll\-test=\fR\fB\fIoption\fR\fR
+.sp
+Option to use for testing bugs in the
+getopt
+library.
+.TP 3n
+\(bu
+\fB\-\-host=\fR\fB\fIhost_name\fR\fR,
+\fB\-h \fR\fB\fIhost_name\fR\fR
+.sp
+Connect to the MySQL server on the given host.
+.TP 3n
+\(bu
+\fB\-\-password[=\fR\fB\fIpassword\fR\fR\fB]\fR,
+\fB\-p[\fR\fB\fIpassword\fR\fR\fB]\fR
+.sp
+The password to use when connecting to the server. If you use the short option form (\fB\-p\fR), you
+\fIcannot\fR
+have a space between the option and the password. If you omit the
+\fIpassword\fR
+value following the
+\fB\-\-password\fR
+or
+\fB\-p\fR
+option on the command line, you are prompted for one.
+.TP 3n
+\(bu
+\fB\-\-port=\fR\fB\fIport_num\fR\fR,
+\fB\-P \fR\fB\fIport_num\fR\fR
+.sp
+The TCP/IP port number to use for the connection.
+.TP 3n
+\(bu
+\fB\-A \fR\fB\fIarg\fR\fR,
+\fB\-\-server\-arg=\fR\fB\fIarg\fR\fR
+.sp
+Argument to send to the embedded server.
+.TP 3n
+\(bu
+\fB\-T\fR,
+\fB\-\-show\-tests\fR
+.sp
+Show all test names.
+.TP 3n
+\(bu
+\fB\-\-silent\fR,
+\fB\-s\fR
+.sp
+Be more silent.
+.TP 3n
+\(bu
+\fB\-\-socket=\fR\fB\fIpath\fR\fR,
+\fB\-S \fR\fB\fIpath\fR\fR
+.sp
+The socket file to use when connecting to
+localhost
+(which is the default host).
+.TP 3n
+\(bu
+\fB\-c\fR,
+\fB\-\-testcase\fR
+.sp
+The option may disable some code when run as a
+\fBmysql\-test\-run.pl\fR
+test case.
+.TP 3n
+\(bu
+\fB\-\-user=\fR\fB\fIuser_name\fR\fR,
+\fB\-u \fR\fB\fIuser_name\fR\fR
+.sp
+The MySQL username to use when connecting to the server.
+.TP 3n
+\(bu
+\fB\-v \fR\fB\fIdir_name\fR\fR,
+\fB\-\-vardir=\fR\fB\fIdir_name\fR\fR
+.sp
+The data directory for tests. The default is
+\fImysql\-test/var\fR.
+.SH "COPYRIGHT"
+.PP
+Copyright 2006\-2007 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information or if you are interested in doing a translation.
+.SH "SEE ALSO"
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

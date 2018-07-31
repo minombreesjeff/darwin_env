@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -96,7 +95,7 @@ my_bool my_init(void)
 #endif
   {
     DBUG_ENTER("my_init");
-    DBUG_PROCESS(my_progname ? my_progname : (char*) "unknown");
+    DBUG_PROCESS((char*) (my_progname ? my_progname : "unknown"));
     if (!home_dir)
     {					/* Don't initialize twice */
       my_win_init();
@@ -196,8 +195,12 @@ Voluntary context switches %ld, Involuntary context switches %ld\n",
    _CrtDumpMemoryLeaks();
 #endif
   }
+
+  if (!(infoflag & MY_DONT_FREE_DBUG))
+  {
+    DBUG_END();                /* Must be done before my_thread_end */
+  }
 #ifdef THREAD
-  DBUG_POP();				/* Must be done before my_thread_end */
   my_thread_end();
   my_thread_global_end();
 #if defined(SAFE_MUTEX)
@@ -243,6 +246,50 @@ void setEnvString(char *ret, const char *name, const char *value)
   DBUG_VOID_RETURN ;
 }
 
+/*
+  my_paramter_handler
+  Invalid paramter handler we will use instead of the one "baked" into the CRT
+  for MSC v8.  This one just prints out what invalid parameter was encountered.
+  By providing this routine, routines like lseek will return -1 when we expect them 
+  to instead of crash.
+*/
+void my_parameter_handler(const wchar_t * expression, const wchar_t * function, 
+                          const wchar_t * file, unsigned int line, 
+                          uintptr_t pReserved)
+{
+  DBUG_PRINT("my",("Expression: %s  function: %s  file: %s, line: %d",
+		   expression, function, file, line));
+}
+
+
+#ifdef __MSVC_RUNTIME_CHECKS
+#include <rtcapi.h>
+
+/* Turn off runtime checks for 'handle_rtc_failure' */
+#pragma runtime_checks("", off)
+
+/*
+  handle_rtc_failure
+  Catch the RTC error and dump it to stderr
+*/
+
+int handle_rtc_failure(int err_type, const char *file, int line,
+                       const char* module, const char *format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  fprintf(stderr, "Error:");
+  vfprintf(stderr, format, args);
+  fprintf(stderr, " At %s:%d\n", file, line);
+  va_end(args);
+  (void) fflush(stderr);
+
+  return 0; /* Error is handled */
+}
+#pragma runtime_checks("", on)
+#endif
+
+
 static void my_win_init(void)
 {
   HKEY	hSoftMysql ;
@@ -260,13 +307,27 @@ static void my_win_init(void)
 
   setlocale(LC_CTYPE, "");             /* To get right sortorder */
 
-#if defined(_MSC_VER) && (_MSC_VER < 1300)
+#if defined(_MSC_VER)
+#if _MSC_VER < 1300
   /* 
     Clear the OS system variable TZ and avoid the 100% CPU usage
     Only for old versions of Visual C++
   */
   _putenv( "TZ=" ); 
+#endif 
+#if _MSC_VER >= 1400
+  /* this is required to make crt functions return -1 appropriately */
+  _set_invalid_parameter_handler(my_parameter_handler);
+#endif
 #endif  
+#ifdef __MSVC_RUNTIME_CHECKS
+  /*
+    Install handler to send RTC (Runtime Error Check) warnings
+    to log file
+  */
+  _RTC_SetErrorFunc(handle_rtc_failure);
+#endif
+
   _tzset();
 
   /* apre la chiave HKEY_LOCAL_MACHINES\software\MySQL */
@@ -409,7 +470,7 @@ static void netware_init()
     }
 
     /* Parse program name and change to base format */
-    name= my_progname;
+    name= (char*) my_progname;
     for (; *name; name++)
     {
       if (*name == '\\')

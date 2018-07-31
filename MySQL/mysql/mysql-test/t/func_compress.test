@@ -2,6 +2,8 @@
 #
 # Test for compress and uncompress functions:
 #
+# Note that this test gives error in the gzip library when running under
+# valgrind, but these warnings can be ignored
 
 select @test_compress_string:='string for test compress function aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ';
 select length(@test_compress_string);
@@ -54,4 +56,30 @@ insert into t1 values(NULL), (compress('a'));
 select uncompress(a), uncompressed_length(a) from t1;
 drop table t1;
 
-# End of 4.1 tests
+#
+# Bug #23254: problem with compress(NULL)
+#
+
+create table t1(a blob);
+insert into t1 values ('0'), (NULL), ('0');
+--disable_result_log
+select compress(a), compress(a) from t1;
+--enable_result_log
+select compress(a) is null from t1;
+drop table t1;
+
+--echo End of 4.1 tests
+
+#
+# Bug #18539: uncompress(d) is null: impossible?
+#
+create table t1 (a varchar(32) not null);
+insert into t1 values ('foo');
+explain select * from t1 where uncompress(a) is null;
+select * from t1 where uncompress(a) is null;
+explain select *, uncompress(a) from t1;
+select *, uncompress(a) from t1;
+select *, uncompress(a), uncompress(a) is null from t1;
+drop table t1;
+
+--echo End of 5.0 tests

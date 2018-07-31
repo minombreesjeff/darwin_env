@@ -1,0 +1,63 @@
+.\"     Title: \fBmysql_fix_extensions\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 07/04/2007
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 5.0
+.\"
+.TH "\fBMYSQL_FIX_EXTENSI" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+mysql_fix_extensions \- make table filename extensions lowercase
+.SH "SYNOPSIS"
+.HP 30
+\fBmysql_fix_extensions \fR\fB\fIdata_dir\fR\fR
+.SH "DESCRIPTION"
+.PP
+\fBmysql_fix_extensions\fR
+converts the extensions for
+MyISAM
+(or
+ISAM) table files to lowercase. It looks for files with an extension that that matches any lettercase variant of
+\fI.frm\fR,
+\fI.myd\fR,
+\fI.myi\fR,
+\fI.isd\fR, and
+\fI.ism\fR
+and renames them to have extensionsn of
+\fI.frm\fR,
+\fI.MYD\fR,
+\fI.MYI\fR,
+\fI.ISD\fR, and
+\fI.ISM\fR, respectively. This can be useful after transferring the files from a system with case\-insensitive filenames (such as Windows) to a system with case\-sensitive filenames.
+.PP
+Invoke
+\fBmysql_fix_extensions\fR
+like this, where
+\fIdata_dir\fR
+is the pathname to the MySQL data directory.
+.sp
+.RS 3n
+.nf
+shell> \fBmysql_fix_extensions \fR\fB\fIdata_dir\fR\fR
+.fi
+.RE
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2007 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -213,7 +212,6 @@ Dbtux::treeRemove(Frag& frag, TreePos treePos)
 void
 Dbtux::treeRemoveInner(Frag& frag, NodeHandle lubNode, unsigned pos)
 {
-  TreeHead& tree = frag.m_tree;
   TreeEnt ent;
   // find g.l.b node
   NodeHandle glbNode(frag);
@@ -226,6 +224,9 @@ Dbtux::treeRemoveInner(Frag& frag, NodeHandle lubNode, unsigned pos)
   // borrow max entry from semi/leaf
   Uint32 scanList = RNIL;
   nodePopDown(glbNode, glbNode.getOccup() - 1, ent, &scanList);
+  // g.l.b may be empty now
+  // a descending scan may try to enter the empty g.l.b
+  // we prevent this in scanNext
   nodePopUp(lubNode, pos, ent, scanList);
   if (glbNode.getLink(0) != NullTupLoc) {
     jam();

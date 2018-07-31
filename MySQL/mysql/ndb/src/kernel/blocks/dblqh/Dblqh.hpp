@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,6 +27,9 @@
 #include <signaldata/LCP.hpp>
 #include <signaldata/LqhTransConf.hpp>
 #include <signaldata/LqhFrag.hpp>
+
+// primary key is stored in TUP
+#include <../dbtup/Dbtup.hpp>
 
 #ifdef DBLQH_C
 // Constants
@@ -233,6 +235,7 @@
 #define ZOPERATION_EVENT_REP 19
 #define ZPREP_DROP_TABLE 20
 #define ZENABLE_EXPAND_CHECK 21
+#define ZRETRY_TCKEYREF 22
 
 /* ------------------------------------------------------------------------- */
 /*        NODE STATE DURING SYSTEM RESTART, VARIABLES CNODES_SR_STATE        */
@@ -441,7 +444,6 @@ public:
     UintR dictConnectptr;
     UintR fragmentPtr;
     UintR nextAddfragrec;
-    UintR noOfAllocPages;
     UintR schemaVer;
     UintR tup1Connectptr;
     UintR tup2Connectptr;
@@ -463,12 +465,17 @@ public:
     Uint16 totalAttrReceived;
     Uint16 fragCopyCreation;
     Uint16 noOfKeyAttr;
-    Uint32 noOfNewAttr; // noOfCharsets in upper half
+    Uint16 noOfNewAttr;
+    Uint16 noOfCharsets;
     Uint16 noOfAttributeGroups;
     Uint16 lh3DistrBits;
     Uint16 tableType;
     Uint16 primaryTableId;
-  };// Size 108 bytes
+    Uint32 maxRowsLow;
+    Uint32 maxRowsHigh;
+    Uint32 minRowsLow;
+    Uint32 minRowsHigh;
+  };// Size 124 bytes
   typedef Ptr<AddFragRecord> AddFragRecordPtr;
   
   /* $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ */
@@ -502,6 +509,7 @@ public:
   typedef Ptr<Databuf> DatabufPtr;
 
   struct ScanRecord {
+    ScanRecord() {}
     enum ScanState {
       SCAN_FREE = 0,
       WAIT_STORED_PROC_COPY = 1,
@@ -512,9 +520,7 @@ public:
       WAIT_DELETE_STORED_PROC_ID_COPY = 6,
       WAIT_ACC_COPY = 7,
       WAIT_ACC_SCAN = 8,
-      WAIT_SCAN_KEYINFO = 9,
       WAIT_SCAN_NEXTREQ = 10,
-      WAIT_COPY_KEYINFO = 11,
       WAIT_CLOSE_SCAN = 12,
       WAIT_CLOSE_COPY = 13,
       WAIT_RELEASE_LOCK = 14,
@@ -576,6 +582,9 @@ public:
     NodeId scanNodeId;
     Uint16 scanReleaseCounter;
     Uint16 scanNumber;
+
+    // scan source block ACC TUX TUP
+    BlockReference scanBlockref;
  
     Uint8 scanCompletedStatus;
     Uint8 scanFlag;
@@ -583,6 +592,8 @@ public:
     Uint8 scanLockMode;
     Uint8 readCommitted;
     Uint8 rangeScan;
+    Uint8 descending;
+    Uint8 tupScan;
     Uint8 scanTcWaiting;
     Uint8 scanKeyinfoFlag;
     Uint8 m_last_row;
@@ -878,10 +889,6 @@ public:
      *       heard of.
      */
     Uint8 fragDistributionKey;
-    /**
-     *       Used to calculate which local fragment to use.                  
-     */
-    Uint8 hashCheckBit;
     /**
      *       The identity of the next local checkpoint this fragment
      *       should perform.
@@ -2022,8 +2029,10 @@ public:
     BlockReference tcTuxBlockref;
     BlockReference tcTupBlockref;
     Uint32 commitAckMarker;
-    UintR noFiredTriggers;
-
+    union {
+      Uint32 m_scan_curr_range_no;
+      UintR noFiredTriggers;
+    };
     Uint16 errorCode;
     Uint16 logStartPageIndex;
     Uint16 logStartPageNo;
@@ -2045,10 +2054,14 @@ public:
     Uint8 opExec;
     Uint8 operation;
     Uint8 reclenAiLqhkey;
+    Uint8 m_offset_current_keybuf;
     Uint8 replicaType;
     Uint8 simpleRead;
     Uint8 seqNoReplica;
     Uint8 tcNodeFailrec;
+#ifdef VM_TRACE
+    Uint8 tupkeyref;
+#endif
   }; /* p2c: size = 280 bytes */
   
   typedef Ptr<TcConnectionrec> TcConnectionrecPtr;
@@ -2148,12 +2161,11 @@ private:
   void execACC_SCANREF(Signal* signal);
   void execNEXT_SCANCONF(Signal* signal);
   void execNEXT_SCANREF(Signal* signal);
-  void execACC_SCAN_INFO(Signal* signal);
-  void execACC_SCAN_INFO24(Signal* signal);
   void execACC_TO_REF(Signal* signal);
   void execSTORED_PROCCONF(Signal* signal);
   void execSTORED_PROCREF(Signal* signal);
   void execCOPY_FRAGREQ(Signal* signal);
+  void execUPDATE_FRAG_DIST_KEY_ORD(Signal*);
   void execCOPY_ACTIVEREQ(Signal* signal);
   void execCOPY_STATEREQ(Signal* signal);
   void execLQH_TRANSREQ(Signal* signal);
@@ -2193,7 +2205,6 @@ private:
   void execFSREADCONF(Signal* signal);
   void execFSREADREF(Signal* signal);
   void execSCAN_HBREP(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
   void execTIME_SIGNAL(Signal* signal);
   void execFSSYNCCONF(Signal* signal);
 
@@ -2239,7 +2250,7 @@ private:
   void LQHKEY_abort(Signal* signal, int errortype);
   void LQHKEY_error(Signal* signal, int errortype);
   void nextRecordCopy(Signal* signal);
-  void calculateHash(Signal* signal);
+  Uint32 calculateHash(Uint32 tableId, const Uint32* src);
   void continueAfterCheckLcpStopBlocked(Signal* signal);
   void checkLcpStopBlockedLab(Signal* signal);
   void sendCommittedTc(Signal* signal, BlockReference atcBlockref);
@@ -2267,7 +2278,8 @@ private:
   void finishScanrec(Signal* signal);
   void releaseScanrec(Signal* signal);
   void seizeScanrec(Signal* signal);
-  void sendKeyinfo20(Signal* signal, ScanRecord *, TcConnectionrec *);
+  Uint32 sendKeyinfo20(Signal* signal, ScanRecord *, TcConnectionrec *);
+  void sendTCKEYREF(Signal*, Uint32 dst, Uint32 route, Uint32 cnt);
   void sendScanFragConf(Signal* signal, Uint32 scanCompleted);
   void initCopyrec(Signal* signal);
   void initCopyTc(Signal* signal);
@@ -2397,6 +2409,8 @@ private:
   void seizeAttrinbuf(Signal* signal);
   Uint32 seize_attrinbuf();
   Uint32 release_attrinbuf(Uint32);
+  Uint32 copy_bounds(Uint32 * dst, TcConnectionrec*);
+
   void seizeFragmentrec(Signal* signal);
   void seizePageRef(Signal* signal);
   void seizeTcrec();
@@ -2408,7 +2422,7 @@ private:
   void startNextExecSr(Signal* signal);
   void startTimeSupervision(Signal* signal);
   void stepAhead(Signal* signal, Uint32 stepAheadWords);
-  void systemError(Signal* signal);
+  void systemError(Signal* signal, int line);
   void writeAbortLog(Signal* signal);
   void writeCommitLog(Signal* signal, LogPartRecordPtr regLogPartPtr);
   void writeCompletedGciLog(Signal* signal);
@@ -2427,7 +2441,7 @@ private:
   Uint32 calcPageCheckSum(LogPageRecordPtr logP);
 
   // Generated statement blocks
-  void systemErrorLab(Signal* signal);
+  void systemErrorLab(Signal* signal, int line);
   void initFourth(Signal* signal);
   void packLqhkeyreqLab(Signal* signal);
   void sendNdbSttorryLab(Signal* signal);
@@ -2437,7 +2451,6 @@ private:
   void srLogLimits(Signal* signal);
   void srGciLimits(Signal* signal);
   void srPhase3Start(Signal* signal);
-  void warningHandlerLab(Signal* signal);
   void checkStartCompletedLab(Signal* signal);
   void continueAbortLab(Signal* signal);
   void abortContinueAfterBlockedLab(Signal* signal, bool canBlock);
@@ -2445,7 +2458,6 @@ private:
   void localCommitLab(Signal* signal);
   void abortErrorLab(Signal* signal);
   void continueAfterReceivingAllAiLab(Signal* signal);
-  void sendScanFragRefLateLab(Signal* signal);
   void abortStateHandlerLab(Signal* signal);
   void writeAttrinfoLab(Signal* signal);
   void scanAttrinfoLab(Signal* signal, Uint32* dataPtr, Uint32 length);
@@ -2512,7 +2524,7 @@ private:
   void nextScanConfScanLab(Signal* signal);
   void nextScanConfCopyLab(Signal* signal);
   void continueScanNextReqLab(Signal* signal);
-  bool keyinfoLab(Signal* signal, Uint32* dataPtr, Uint32 length);
+  void keyinfoLab(const Uint32 * src, const Uint32 * end);
   void copySendTupkeyReqLab(Signal* signal);
   void storedProcConfScanLab(Signal* signal);
   void storedProcConfCopyLab(Signal* signal);
@@ -2568,7 +2580,6 @@ private:
   void accScanConfScanLab(Signal* signal);
   void accScanConfCopyLab(Signal* signal);
   void scanLockReleasedLab(Signal* signal);
-  void accScanInfoEnterLab(Signal* signal, Uint32* dataPtr, Uint32 length);
   void openSrFourthNextLab(Signal* signal);
   void closingInitLab(Signal* signal);
   void closeExecSrCompletedLab(Signal* signal);
@@ -2583,6 +2594,8 @@ private:
   void initData();
   void initRecords();
 
+  Dbtup* c_tup;
+  Uint32 readPrimaryKeys(ScanRecord*, TcConnectionrec*, Uint32 * dst);
 // ----------------------------------------------------------------
 // These are variables handling the records. For most records one
 // pointer to the array of structs, one pointer-struct, a file size
@@ -2655,7 +2668,8 @@ private:
   UintR cfirstfreeLogFile;
   UintR clogFileFileSize;
 
-#define ZLFO_FILE_SIZE 256            /* MAX 256 OUTSTANDING FILE OPERATIONS */
+#define ZLFO_MIN_FILE_SIZE 256
+// RedoBuffer/32K minimum ZLFO_MIN_FILE_SIZE
   LogFileOperationRecord *logFileOperationRecord;
   LogFileOperationRecordPtr lfoPtr;
   UintR cfirstfreeLfo;
@@ -2672,7 +2686,7 @@ private:
   UintR cfirstfreePageRef;
   UintR cpageRefFileSize;
 
-#define ZSCANREC_FILE_SIZE 100
+// Configurable
   ArrayPool<ScanRecord> c_scanRecordPool;
   ScanRecordPtr scanptr;
   UintR cscanNoFreeRec;
@@ -2889,6 +2903,7 @@ public:
    *
    */
   struct CommitAckMarker {
+    CommitAckMarker() {}
     Uint32 transid1;
     Uint32 transid2;
     
@@ -2915,6 +2930,7 @@ public:
   void scanMarkers(Signal* signal, Uint32 tcNodeFail, Uint32 bucket, Uint32 i);
 
   struct Counters {
+    Counters() {}
     Uint32 operations;
     
     inline void clear(){

@@ -14,6 +14,51 @@
 
 @SET_MAKE@
 
+# Copyright (C) 2004-2005 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# Copyright (C) 2004, 2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# Copyright (C) 2004-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
 VPATH = @srcdir@
@@ -37,16 +82,34 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
+EXTRA_PROGRAMS = testBitmask$(EXEEXT)
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	$(top_srcdir)/ndb/config/common.mk.am \
 	$(top_srcdir)/ndb/config/type_util.mk.am
 subdir = ndb/src/common/util
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
@@ -54,10 +117,14 @@ libgeneral_la_LIBADD =
 am_libgeneral_la_OBJECTS = File.lo md5_hash.lo Properties.lo \
 	socket_io.lo SimpleProperties.lo Parser.lo InputStream.lo \
 	SocketServer.lo SocketClient.lo SocketAuthenticator.lo \
-	OutputStream.lo NdbOut.lo BaseString.lo Base64.lo \
-	NdbSqlUtil.lo new.lo uucode.lo random.lo version.lo strdup.lo \
-	ConfigValues.lo ndb_init.lo basestring_vsnprintf.lo
+	OutputStream.lo NdbOut.lo BaseString.lo NdbSqlUtil.lo new.lo \
+	uucode.lo random.lo version.lo strdup.lo ConfigValues.lo \
+	ndb_init.lo basestring_vsnprintf.lo Bitmask.lo
 libgeneral_la_OBJECTS = $(am_libgeneral_la_OBJECTS)
+am_testBitmask_OBJECTS = testBitmask.$(OBJEXT)
+testBitmask_OBJECTS = $(am_testBitmask_OBJECTS)
+testBitmask_LDADD = $(LDADD)
+testBitmask_DEPENDENCIES =
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -77,8 +144,8 @@ LTCXXCOMPILE = $(LIBTOOL) --tag=CXX --mode=compile $(CXX) $(DEFS) \
 CXXLD = $(CXX)
 CXXLINK = $(LIBTOOL) --tag=CXX --mode=link $(CXXLD) $(AM_CXXFLAGS) \
 	$(CXXFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(libgeneral_la_SOURCES)
-DIST_SOURCES = $(libgeneral_la_SOURCES)
+SOURCES = $(libgeneral_la_SOURCES) $(testBitmask_SOURCES)
+DIST_SOURCES = $(libgeneral_la_SOURCES) $(testBitmask_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -88,6 +155,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -101,7 +169,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -150,7 +217,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -169,34 +239,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -232,7 +310,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -268,7 +345,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -280,7 +356,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -298,7 +373,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -307,9 +381,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -335,19 +406,29 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 noinst_LTLIBRARIES = libgeneral.la
 libgeneral_la_SOURCES = \
 	    File.cpp md5_hash.cpp Properties.cpp socket_io.cpp \
             SimpleProperties.cpp Parser.cpp InputStream.cpp \
             SocketServer.cpp SocketClient.cpp SocketAuthenticator.cpp\
-	    OutputStream.cpp NdbOut.cpp BaseString.cpp Base64.cpp \
+	    OutputStream.cpp NdbOut.cpp BaseString.cpp \
 	    NdbSqlUtil.cpp new.cpp \
             uucode.c random.c version.c \
             strdup.c \
-            ConfigValues.cpp ndb_init.c basestring_vsnprintf.c
+            ConfigValues.cpp ndb_init.c basestring_vsnprintf.c \
+            Bitmask.cpp
+
+testBitmask_SOURCES = testBitmask.cpp
+testBitmask_LDFLAGS = @ndb_bin_am_ldflags@ \
+  $(top_builddir)/ndb/src/libndbclient.la \
+         $(top_builddir)/dbug/libdbug.a \
+         $(top_builddir)/mysys/libmysys.a \
+         $(top_builddir)/strings/libmystrings.a
 
 ndbbindir = "$(libexecdir)"
 ndbtoolsdir = "$(bindir)"
@@ -356,11 +437,13 @@ ndblibdir = "$(pkglibdir)"
 ndbincludedir = "$(pkgincludedir)/ndb"
 ndbapiincludedir = "$(pkgincludedir)/ndb/ndbapi"
 mgmapiincludedir = "$(pkgincludedir)/ndb/mgmapi"
-INCLUDES = $(INCLUDES_LOC) -I$(srcdir) -I$(top_srcdir)/include \
-	-I$(top_srcdir)/ndb/include -I$(top_srcdir)/ndb/include/util \
+INCLUDES = $(INCLUDES_LOC) -I$(srcdir) -I$(top_builddir)/include \
+	-I$(top_builddir)/ndb/include -I$(top_srcdir)/include \
+	-I$(top_srcdir)/mysys -I$(top_srcdir)/ndb/include \
+	-I$(top_srcdir)/ndb/include/util \
 	-I$(top_srcdir)/ndb/include/portlib \
 	-I$(top_srcdir)/ndb/include/logger
-LDADD = $(LDADD_LOC) -L$(top_srcdir)/ndb/src/common/portlib -lmygcc
+LDADD = $(LDADD_LOC)
 NDB_CXXFLAGS = @ndb_cxxflags_fix@ $(NDB_CXXFLAGS_LOC) 
 all: all-am
 
@@ -406,6 +489,9 @@ clean-noinstLTLIBRARIES:
 	done
 libgeneral.la: $(libgeneral_la_OBJECTS) $(libgeneral_la_DEPENDENCIES) 
 	$(CXXLINK)  $(libgeneral_la_LDFLAGS) $(libgeneral_la_OBJECTS) $(libgeneral_la_LIBADD) $(LIBS)
+testBitmask$(EXEEXT): $(testBitmask_OBJECTS) $(testBitmask_DEPENDENCIES) 
+	@rm -f testBitmask$(EXEEXT)
+	$(CXXLINK) $(testBitmask_LDFLAGS) $(testBitmask_OBJECTS) $(testBitmask_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -413,8 +499,8 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Base64.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/BaseString.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Bitmask.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ConfigValues.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/File.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/InputStream.Plo@am__quote@
@@ -434,6 +520,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/random.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/socket_io.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/strdup.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBitmask.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/uucode.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/version.Plo@am__quote@
 
@@ -656,6 +743,13 @@ uninstall-am: uninstall-info-am
 	pdf pdf-am ps ps-am tags uninstall uninstall-am \
 	uninstall-info-am
 
+
+testBitmask.cpp : Bitmask.cpp
+	rm -f testBitmask.cpp
+	@LN_CP_F@ Bitmask.cpp testBitmask.cpp
+
+testBitmask.o:	$(testBitmask_SOURCES)
+		$(CXXCOMPILE) -c $(INCLUDES) -D__TEST_BITMASK__ $<
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

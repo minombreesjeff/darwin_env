@@ -9,7 +9,7 @@ start slave;
 connection master;
 --disable_warnings
 drop table if exists t1;
---enable_warning
+--enable_warnings
 create table t1 (n int);
 insert into t1 values (1);
 save_master_pos;
@@ -28,5 +28,9 @@ start slave;
 --replace_column 1 # 7 # 8 # 9 # 22 # 23 #
 --vertical_results
 show slave status;
+
+connection master;
+drop table t1;
+sync_with_master;
 
 # end of 4.1 tests

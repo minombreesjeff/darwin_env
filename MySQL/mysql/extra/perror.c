@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,6 +24,7 @@
 #include <my_getopt.h>
 #ifdef HAVE_NDBCLUSTER_DB
 #include "../ndb/src/ndbapi/ndberror.c"
+#include "../ndb/src/kernel/error/ndbd_exit_codes.c"
 #endif
 
 static my_bool verbose, print_all_codes;
@@ -217,8 +217,11 @@ int main(int argc,char *argv[])
       On some system, like NETWARE, strerror(unknown_error) returns a
       string 'Unknown Error'.  To avoid printing it we try to find the
       error string by asking for an impossible big error message.
+
+      On Solaris 2.8 it might return NULL
     */
-    msg= strerror(10000);
+    if ((msg= strerror(10000)) == NULL)
+      msg= "Unknown Error";
 
     /*
       Allocate a buffer for unknown_error since strerror always returns
@@ -235,12 +238,29 @@ int main(int argc,char *argv[])
 #ifdef HAVE_NDBCLUSTER_DB
       if (ndb_code)
       {
-	if (ndb_error_string(code, ndb_string,  sizeof(ndb_string)) < 0)
-	  msg= 0;
+	if ((ndb_error_string(code, ndb_string, sizeof(ndb_string)) < 0) &&
+	    (ndbd_exit_string(code, ndb_string, sizeof(ndb_string)) < 0))
+	{
+          msg= 0;
+	}
 	else
 	  msg= ndb_string;
+        if (msg)
+        {
+          if (verbose)
+            printf("NDB error code %3d: %s\n",code,msg);
+          else
+            puts(msg);
+        }
+        else
+        {
+	  fprintf(stderr,"Illegal ndb error code: %d\n",code);
+          error= 1;
+        }
+        found= 1;
+        msg= 0;
       }
-      else 
+      else
 #endif
 	msg = strerror(code);
 
@@ -250,7 +270,8 @@ int main(int argc,char *argv[])
         'Unknown Error' (without regard to case).
       */
       if (msg &&
-          my_strnncoll(&my_charset_latin1, msg, 13, "Unknown Error", 13) &&
+          my_strnncoll(&my_charset_latin1, (const uchar*) msg, 13,
+                       (const uchar*) "Unknown Error", 13) &&
           (!unknown_error || strcmp(msg, unknown_error)))
       {
 	found=1;
@@ -259,20 +280,23 @@ int main(int argc,char *argv[])
 	else
 	  puts(msg);
       }
-      if (!(msg=get_ha_error_msg(code)))
+
+      if (!found)
       {
-	if (!found)
-	{
+        /* Error message still not found, look in handler error codes */
+        if (!(msg=get_ha_error_msg(code)))
+        {
 	  fprintf(stderr,"Illegal error code: %d\n",code);
 	  error=1;
-	}
-      }
-      else
-      {
-	if (verbose)
-	  printf("MySQL error code %3d: %s\n",code,msg);
-	else
-	  puts(msg);
+        }
+        else
+        {
+          found= 1;
+          if (verbose)
+            printf("MySQL error code %3d: %s\n",code,msg);
+          else
+            puts(msg);
+        }
       }
     }
   }

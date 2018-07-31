@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,17 +44,16 @@ File_class::exists(const char* aFileName)
   return (my_stat(aFileName, &stmp, MYF(0))!=NULL);
 }
 
-long
+off_t
 File_class::size(FILE* f)
 {
-  long cur_pos = 0, length = 0;
-  
-  cur_pos = ::ftell(f);
-  ::fseek(f, 0, SEEK_END); 
-  length = ::ftell(f); 
-  ::fseek(f, cur_pos, SEEK_SET); // restore original position
+  MY_STAT s;
 
-  return length;
+  // Note that my_fstat behaves *differently* than my_stat. ARGGGHH!
+  if(my_fstat(fileno(f), &s, MYF(0)))
+    return 0;
+
+  return s.st_size;
 }
 
 bool 
@@ -79,7 +77,7 @@ File_class::File_class(const char* aFileName, const char* mode) :
   m_file(NULL), 
   m_fileMode(mode)
 {
-  BaseString::snprintf(m_fileName, MAX_FILE_NAME_SIZE, aFileName);
+  BaseString::snprintf(m_fileName, PATH_MAX, aFileName);
 }
 
 bool
@@ -95,7 +93,7 @@ File_class::open(const char* aFileName, const char* mode)
     /**
      * Only copy if it's not the same string
      */
-    BaseString::snprintf(m_fileName, MAX_FILE_NAME_SIZE, aFileName);
+    BaseString::snprintf(m_fileName, PATH_MAX, aFileName);
   }
   m_fileMode = mode;
   bool rc = true;
@@ -123,13 +121,25 @@ bool
 File_class::close()
 {
   bool rc = true;
+  int retval = 0;
+
   if (m_file != NULL)
   { 
     ::fflush(m_file);
-    rc = (::fclose(m_file) == 0 ? true : false);
-    m_file = NULL; // Try again?
+    retval = ::fclose(m_file);
+    while ( (retval != 0) && (errno == EINTR) ){
+      retval = ::fclose(m_file);
+    }
+    if( retval == 0){
+      rc = true;
+    }
+    else {
+      rc = false;
+      ndbout_c("ERROR: Close file error in File.cpp for %s",strerror(errno));
+    } 
   }  
-  
+  m_file = NULL;
+
   return rc;
 }
 
@@ -152,9 +162,9 @@ File_class::readChar(char* buf)
 }
 
 int 
-File_class::write(const void* buf, size_t size, size_t nitems)
+File_class::write(const void* buf, size_t size_arg, size_t nitems)
 {
-  return ::fwrite(buf, size, nitems, m_file);
+  return ::fwrite(buf, size_arg, nitems, m_file);
 }
  
 int
@@ -168,8 +178,8 @@ File_class::writeChar(const char* buf)
 {
   return writeChar(buf, 0, ::strlen(buf));
 }
-   
-long 
+
+off_t
 File_class::size() const
 {
   return File_class::size(m_file);
@@ -188,10 +198,6 @@ File_class::flush() const
   ::fflush(m_file);
   return ::fsync(::fileno(m_file));
 #else
-  return 0;
+  return ::fflush(m_file);;
 #endif
 }
-
-//
-// PRIVATE
-//

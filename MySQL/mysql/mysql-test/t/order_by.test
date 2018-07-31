@@ -44,7 +44,7 @@ INSERT INTO t2 VALUES (7,'Liste des t2','t2_liste_form.phtml',51060,'link.gif');
 INSERT INTO t2 VALUES (8,'Consulter les soumissions','consulter_soumissions.phtml',200,'link.gif');
 INSERT INTO t2 VALUES (9,'Ajouter un type de materiel','typeMateriel_ajoute_form.phtml',51000,'link.gif');
 INSERT INTO t2 VALUES (10,'Lister/modifier un type de materiel','typeMateriel_liste_form.phtml',51010,'link.gif');
-INSERT INTO t2 VALUES (3,'Créer une fiche de client','clients_ajoute_form.phtml',40000,'link.gif');
+INSERT INTO t2 VALUES (3,'CrÃ©er une fiche de client','clients_ajoute_form.phtml',40000,'link.gif');
 INSERT INTO t2 VALUES (4,'Modifier des clients','en_construction.html',40010,'link.gif');
 INSERT INTO t2 VALUES (5,'Effacer des clients','en_construction.html',40020,'link.gif');
 INSERT INTO t2 VALUES (6,'Ajouter un service','t2_ajoute_form.phtml',51050,'link.gif');
@@ -158,7 +158,18 @@ LEFT JOIN t3 ON t3.c = t1.c;
 
 SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
 FROM      t1
+LEFT JOIN t2 ON t1.c = t2.c
+LEFT JOIN t3 ON t3.c = t1.c;
+
+SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
+FROM      t1
 LEFT JOIN t2 USING(c)
+LEFT JOIN t3 ON t3.c = t1.c
+ORDER BY a;
+
+SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
+FROM      t1
+LEFT JOIN t2 ON t1.c = t2.c
 LEFT JOIN t3 ON t3.c = t1.c
 ORDER BY a;
 
@@ -206,7 +217,7 @@ CREATE TABLE t1 (
   favo_tv varchar(50) NOT NULL default '',
   favo_eten varchar(50) NOT NULL default '',
   favo_muziek varchar(30) NOT NULL default '',
-  info text NOT NULL,
+  info text NOT NULL default '',
   ipnr varchar(30) NOT NULL default '',
   PRIMARY KEY  (member_id)
 ) ENGINE=MyISAM PACK_KEYS=1;
@@ -340,7 +351,9 @@ CREATE TABLE t2 (
 INSERT INTO t1 (titre,auteur,dest) VALUES ('test','joce','bug');
 INSERT INTO t2 (numeropost,pseudo) VALUES (1,'joce'),(1,'bug');
 SELECT titre,t1.numeropost,auteur,icone,nbrep,0,date,vue,ouvert,lastauteur,dest FROM t2 LEFT JOIN t1 USING(numeropost) WHERE t2.pseudo='joce' ORDER BY date DESC LIMIT 0,30;
+SELECT titre,numeropost,auteur,icone,nbrep,0,date,vue,ouvert,lastauteur,dest FROM t2 LEFT JOIN t1 USING(numeropost) WHERE t2.pseudo='joce' ORDER BY date DESC LIMIT 0,30;
 SELECT titre,t1.numeropost,auteur,icone,nbrep,'0',date,vue,ouvert,lastauteur,dest FROM t2 LEFT JOIN t1 USING(numeropost) WHERE t2.pseudo='joce' ORDER BY date DESC LIMIT 0,30;
+SELECT titre,numeropost,auteur,icone,nbrep,'0',date,vue,ouvert,lastauteur,dest FROM t2 LEFT JOIN t1 USING(numeropost) WHERE t2.pseudo='joce' ORDER BY date DESC LIMIT 0,30;
 drop table t1,t2;
 
 #
@@ -559,4 +572,157 @@ INSERT INTO t1 VALUES (1,30), (2,20), (1,10), (2,30), (1,20), (2,10);
 
 DROP TABLE t1;
 
-# End of 4.1 tests
+#
+# Bug #22457: Column alias in ORDER BY works, but not if in an expression
+#
+
+CREATE TABLE t1 (a INT); INSERT INTO t1 VALUES (1),(2);
+SELECT a + 1 AS num FROM t1 ORDER BY 30 - num;
+SELECT CONCAT('test', a) AS str FROM t1 ORDER BY UPPER(str);
+SELECT a + 1 AS num FROM t1 GROUP BY 30 - num;
+SELECT a + 1 AS num FROM t1 HAVING 30 - num;
+--error 1054
+SELECT a + 1 AS num, num + 1 FROM t1;
+SELECT a + 1 AS num, (select num + 2 FROM t1 LIMIT 1) FROM t1;
+--error 1054
+SELECT a.a + 1 AS num FROM t1 a JOIN t1 b ON num = b.a;
+DROP TABLE t1;
+
+#
+# Bug#25126: Reference to non-existant column in UPDATE...ORDER BY... 
+#       crashes server
+#
+CREATE TABLE bug25126 (
+  val int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY
+);
+--error 1054
+UPDATE bug25126 SET MissingCol = MissingCol;
+--error 1054
+UPDATE bug25126 SET val = val ORDER BY MissingCol;
+UPDATE bug25126 SET val = val ORDER BY val;
+UPDATE bug25126 SET val = 1 ORDER BY val;
+--error 1054
+UPDATE bug25126 SET val = 1 ORDER BY MissingCol;
+--error 1054
+UPDATE bug25126 SET val = 1 ORDER BY val, MissingCol;
+--error 1054
+UPDATE bug25126 SET val = MissingCol ORDER BY MissingCol;
+--error 1054
+UPDATE bug25126 SET MissingCol = 1 ORDER BY val, MissingCol;
+--error 1054
+UPDATE bug25126 SET MissingCol = 1 ORDER BY MissingCol;
+--error 1054
+UPDATE bug25126 SET MissingCol = val ORDER BY MissingCol;
+--error 1054
+UPDATE bug25126 SET MissingCol = MissingCol ORDER BY MissingCol;
+DROP TABLE bug25126;
+
+#
+# Bug #25427: crash when order by expression contains a name
+#             that cannot be resolved unambiguously               
+#
+
+CREATE TABLE t1 (a int);
+
+SELECT p.a AS val, q.a AS val1 FROM t1 p, t1 q ORDER BY val > 1;
+--error 1052
+SELECT p.a AS val, q.a AS val FROM t1 p, t1 q ORDER BY val;
+--error 1052
+SELECT p.a AS val, q.a AS val FROM t1 p, t1 q ORDER BY val > 1;
+
+DROP TABLE t1;
+
+#
+# Bug #27532: ORDER/GROUP BY expressions with IN/BETWEEN and NOT IN/BETWEEN
+#                          
+
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (3), (2), (4), (1);
+
+SELECT a, IF(a IN (2,3), a, a+10) FROM t1
+  ORDER BY IF(a IN (2,3), a, a+10);
+SELECT a, IF(a NOT IN (2,3), a, a+10) FROM t1 
+  ORDER BY IF(a NOT IN (2,3), a, a+10);
+SELECT a, IF(a IN (2,3), a, a+10) FROM t1 
+  ORDER BY IF(a NOT IN (2,3), a, a+10);
+
+SELECT a, IF(a BETWEEN 2 AND 3, a, a+10) FROM t1
+  ORDER BY IF(a BETWEEN 2 AND 3, a, a+10);
+SELECT a, IF(a NOT BETWEEN 2 AND 3, a, a+10) FROM t1 
+  ORDER BY IF(a NOT BETWEEN 2 AND 3, a, a+10);
+SELECT a, IF(a BETWEEN 2 AND 3, a, a+10) FROM t1 
+  ORDER BY IF(a NOT BETWEEN 2 AND 3, a, a+10);
+
+SELECT IF(a IN (1,2), a, '') as x1, IF(a NOT IN (1,2), a, '') as x2
+  FROM t1 GROUP BY x1, x2;
+SELECT IF(a IN (1,2), a, '') as x1, IF(a NOT IN (1,2), a, '') as x2
+  FROM t1 GROUP BY x1, IF(a NOT IN (1,2), a, '');
+
+# The remaining queries are for better coverage
+SELECT a, a IN (1,2) FROM t1 ORDER BY a IN (1,2);
+SELECT a FROM t1 ORDER BY a IN (1,2);
+SELECT a+10 FROM t1 ORDER BY a IN (1,2);
+SELECT a, IF(a IN (1,2), a, a+10) FROM t1
+  ORDER BY IF(a IN (3,4), a, a+10);   
+DROP TABLE t1;
+
+# End of 4.1
+create table t1 (a int not null, b  int not null, c int not null);
+insert t1 values (1,1,1),(1,1,2),(1,2,1);
+select a, b from t1 group by a, b order by sum(c);
+drop table t1;
+
+#
+# Bug#21302: Result not properly sorted when using an ORDER BY on a second 
+#             table in a join
+#
+CREATE TABLE t1 (a int, b int, PRIMARY KEY  (a));
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+
+explain SELECT t1.b as a, t2.b as c FROM 
+ t1 LEFT JOIN t1 t2 ON (t1.a = t2.a AND t2.a = 2) 
+ORDER BY c;
+SELECT t2.b as c FROM 
+ t1 LEFT JOIN t1 t2 ON (t1.a = t2.a AND t2.a = 2) 
+ORDER BY c;
+
+# check that it still removes sort of const table
+explain SELECT t1.b as a, t2.b as c FROM 
+ t1 JOIN t1 t2 ON (t1.a = t2.a AND t2.a = 2)  
+ORDER BY c;
+
+CREATE TABLE t2 LIKE t1;
+INSERT INTO t2 SELECT * from t1;
+CREATE TABLE t3 LIKE t1;
+INSERT INTO t3 SELECT * from t1;
+CREATE TABLE t4 LIKE t1;
+INSERT INTO t4 SELECT * from t1;
+INSERT INTO t1 values (0,0),(4,4);
+
+SELECT t2.b FROM t1 LEFT JOIN (t2, t3 LEFT JOIN t4 ON t3.a=t4.a)
+ON (t1.a=t2.a AND t1.b=t3.b) order by t2.b;
+
+DROP TABLE t1,t2,t3,t4;
+
+#
+# Bug#25376: Incomplete setup of ORDER BY clause results in a wrong result.
+#
+create table t1 (a int, b int, c int);
+insert into t1 values (1,2,3), (9,8,3), (19,4,3), (1,4,9);
+select a,(sum(b)/sum(c)) as ratio from t1 group by a order by sum(b)/sum(c) asc;
+drop table t1;
+
+#
+# Bug#26672: Incorrect SEC_TO_TIME() casting in ORDER BY
+#
+CREATE TABLE t1 (a INT UNSIGNED NOT NULL, b TIME);
+INSERT INTO t1 (a) VALUES (100000), (0), (100), (1000000),(10000), (1000), (10);
+UPDATE t1 SET b = SEC_TO_TIME(a);
+
+# Correct ORDER
+SELECT a, b FROM t1 ORDER BY b DESC;
+
+# must be ordered as the above
+SELECT a, b FROM t1 ORDER BY SEC_TO_TIME(a) DESC;
+
+DROP TABLE t1;

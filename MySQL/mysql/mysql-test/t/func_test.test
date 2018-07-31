@@ -108,4 +108,55 @@ select 5.1 mod 3, 5.1 mod -3, -5.1 mod 3, -5.1 mod -3;
 
 select 5 mod 3, 5 mod -3, -5 mod 3, -5 mod -3;
 
+#
+# Bug#23411: The "%" (MOD) operator is not documented; MOD-ing zero returns strange result
+# Manual: "Division by zero produces a NULL result"
+#
+select (12%0) <=> null      as '1';
+select (12%0) is null       as '1';
+select 12%0                 as 'NULL';
+select 12%2                 as '0';
+select 12%NULL              as 'NULL';
+select 12 % null            as 'NULL';
+select null % 12            as 'NULL';
+select null % 0             as 'NULL';
+select 0 % null             as 'NULL';
+select null % null          as 'NULL';
+
+select (12 mod 0) <=> null  as '1';
+select (12 mod 0) is null   as '1';
+select 12 mod 0             as 'NULL';
+select 12 mod 2             as '0';
+select 12 mod null          as 'NULL';
+select null mod 12          as 'NULL';
+select null mod 0           as 'NULL';
+select 0 mod null           as 'NULL';
+select null mod null        as 'NULL';
+
+select mod(12.0, 0)         as 'NULL';
+select mod(12, 0.0)         as 'NULL';
+select mod(12, NULL)        as 'NULL';
+select mod(12.0, NULL)      as 'NULL';
+select mod(NULL, 2)         as 'NULL';
+select mod(NULL, 2.0)       as 'NULL';
+
+
+#
+# Bug#6726: NOT BETWEEN parse failure
+#
+create table t1 (a int, b int);
+insert into t1 values (1,2), (2,3), (3,4), (4,5);
+select * from t1 where a not between 1 and 2;
+select * from t1 where a not between 1 and 2 and b not between 3 and 4;
+drop table t1;
+
+#
+# Test for bug #12791: one of the arguments of LEAST/GREATEST is NULL
+#
+
+SELECT GREATEST(1,NULL) FROM DUAL;
+SELECT LEAST('xxx','aaa',NULL,'yyy') FROM DUAL;
+SELECT LEAST(1.1,1.2,NULL,1.0) FROM DUAL;
+SELECT GREATEST(1.5E+2,1.3E+2,NULL) FROM DUAL;
+
 # End of 4.1 tests

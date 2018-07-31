@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,37 +23,58 @@
  * @brief Class of scan operations for use to scan ordered index
  */
 class NdbIndexScanOperation : public NdbScanOperation {
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   friend class Ndb;
-  friend class NdbConnection;
+  friend class NdbTransaction;
   friend class NdbResultSet;
   friend class NdbOperation;
   friend class NdbScanOperation;
+#endif
+
 public:
   /**
-   * readTuples returns a NdbResultSet where tuples are stored.
-   * Tuples are not stored in NdbResultSet until execute(NoCommit) 
-   * has been executed and nextResult has been called.
+   * readTuples using ordered index
    * 
-   * @param parallel  Scan parallelism
+   * @param lock_mode Lock mode
+   * @param scan_flags see @ref ScanFlag
+   * @param parallel No of fragments to scan in parallel (0=max)
+   */ 
+  virtual int readTuples(LockMode lock_mode = LM_Read, 
+                         Uint32 scan_flags = 0, 
+			 Uint32 parallel = 0,
+			 Uint32 batch = 0);
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  /**
+   * readTuples using ordered index
+   * 
+   * @param lock_mode Lock mode
    * @param batch     No of rows to fetch from each fragment at a time
-   * @param LockMode  Scan lock handling   
+   * @param parallel  No of fragments to scan in parallel
    * @param order_by  Order result set in index order
-   * @returns NdbResultSet.
+   * @param order_desc Order descending, ignored unless order_by
+   * @param read_range_no Enable reading of range no using @ref get_range_no
+   * @returns 0 for success and -1 for failure
    * @see NdbScanOperation::readTuples
    */ 
-  NdbResultSet* readTuples(LockMode = LM_Read,
-			   Uint32 batch = 0, 
-			   Uint32 parallel = 0,
-			   bool order_by = false,
-			   bool keyinfo = false);
-  
-  inline NdbResultSet* readTuples(int parallell){
-    return readTuples(LM_Read, 0, parallell);
+  inline int readTuples(LockMode lock_mode,
+                        Uint32 batch, 
+                        Uint32 parallel,
+                        bool order_by,
+                        bool order_desc = false,
+                        bool read_range_no = false,
+			bool keyinfo = false,
+			bool multi_range = false) {
+    Uint32 scan_flags =
+      (SF_OrderBy & -(Int32)order_by) |
+      (SF_Descending & -(Int32)order_desc) |
+      (SF_ReadRangeNo & -(Int32)read_range_no) | 
+      (SF_KeyInfo & -(Int32)keyinfo) |
+      (SF_MultiRange & -(Int32)multi_range);
+    
+    return readTuples(lock_mode, scan_flags, parallel, batch);
   }
-  
-  inline NdbResultSet* readTuplesExclusive(int parallell = 0){
-    return readTuples(LM_Exclusive, 0, parallell);
-  }
+#endif
 
   /**
    * Type of ordered index key bound.  The values (0-4) will not change
@@ -77,7 +97,7 @@ public:
    *
    * For equality, it is better to use BoundEQ instead of the equivalent
    * pair of BoundLE and BoundGE.  This is especially true when table
-   * distribution key is an initial part of the index key.
+   * partition key is an initial part of the index key.
    *
    * The sets of lower and upper bounds must be on initial sequences of
    * index keys.  All but possibly the last bound must be non-strict.
@@ -94,15 +114,14 @@ public:
    * An index stores also all-NULL keys.  Doing index scan with empty
    * bound set returns all table tuples.
    *
-   * @param attrName    Attribute name, alternatively:
-   * @param anAttrId    Index column id (starting from 0)
+   * @param attr        Attribute name, alternatively:
    * @param type        Type of bound
    * @param value       Pointer to bound value, 0 for NULL
    * @param len         Value length in bytes.
    *                    Fixed per datatype and can be omitted
    * @return            0 if successful otherwise -1
    */
-  int setBound(const char* attr, int type, const void* aValue, Uint32 len = 0);
+  int setBound(const char* attr, int type, const void* value, Uint32 len = 0);
 
   /**
    * Define bound on index key in range scan using index column id.
@@ -115,8 +134,27 @@ public:
    *   sent on next execute
    */
   int reset_bounds(bool forceSend = false);
+
+  /**
+   * Marks end of a bound, 
+   *  used when batching index reads (multiple ranges)
+   */
+  int end_of_bound(Uint32 range_no);
   
+  /**
+   * Return range no for current row
+   */
+  int get_range_no();
+  
+  /**
+   * Is current scan sorted
+   */
   bool getSorted() const { return m_ordered; }
+
+  /**
+   * Is current scan sorted descending
+   */
+  bool getDescending() const { return m_descending; }
 private:
   NdbIndexScanOperation(Ndb* aNdb);
   virtual ~NdbIndexScanOperation();
@@ -133,6 +171,8 @@ private:
   int compare(Uint32 key, Uint32 cols, const NdbReceiver*, const NdbReceiver*);
 
   Uint32 m_sort_columns;
+  Uint32 m_this_bound_start;
+  Uint32 * m_first_bound_word;
 
   friend struct Ndb_free_list_t<NdbIndexScanOperation>;
 };

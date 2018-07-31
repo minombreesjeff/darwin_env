@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004, 2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -58,29 +57,27 @@ uint _mi_ft_segiterator(register FT_SEG_ITERATOR *ftsi)
   DBUG_ENTER("_mi_ft_segiterator");
 
   if (!ftsi->num)
-  {
     DBUG_RETURN(0);
-  }
-  else
-    ftsi->num--;
+
+  ftsi->num--;
   if (!ftsi->seg)
-  {
     DBUG_RETURN(1);
-  }
-  else
-    ftsi->seg--;
+
+  ftsi->seg--;
 
   if (ftsi->seg->null_bit &&
       (ftsi->rec[ftsi->seg->null_pos] & ftsi->seg->null_bit))
   {
-      ftsi->pos=0;
-      DBUG_RETURN(1);
+    ftsi->pos=0;
+    DBUG_RETURN(1);
   }
   ftsi->pos= ftsi->rec+ftsi->seg->start;
-  if (ftsi->seg->flag & HA_VAR_LENGTH)
+  if (ftsi->seg->flag & HA_VAR_LENGTH_PART)
   {
-    ftsi->len=uint2korr(ftsi->pos);
-    ftsi->pos+=2;				 /* Skip VARCHAR length */
+    uint pack_length= (ftsi->seg->bit_start);
+    ftsi->len= (pack_length == 1 ? (uint) *(uchar*) ftsi->pos :
+                uint2korr(ftsi->pos)); 
+    ftsi->pos+= pack_length;			 /* Skip VARCHAR length */
     DBUG_RETURN(1);
   }
   if (ftsi->seg->flag & HA_BLOB_PART)
@@ -300,9 +297,11 @@ uint _ft_make_key(MI_INFO *info, uint keynr, byte *keybuf, FT_WORD *wptr,
   DBUG_RETURN(_mi_make_key(info,keynr,(uchar*) keybuf,buf,filepos));
 }
 
+
 /*
   convert key value to ft2
 */
+
 uint _mi_ft_convert_to_ft2(MI_INFO *info, uint keynr, uchar *key)
 {
   my_off_t root;
@@ -320,9 +319,12 @@ uint _mi_ft_convert_to_ft2(MI_INFO *info, uint keynr, uchar *key)
 
   get_key_full_length_rdonly(key_length, key);
   while (_mi_ck_delete(info, keynr, key, key_length) == 0)
-    /* nothing to do here.
-       _mi_ck_delete() will populate info->ft1_to_ft2 with deleted keys
-     */;
+  {
+    /*
+      nothing to do here.
+      _mi_ck_delete() will populate info->ft1_to_ft2 with deleted keys
+     */
+  }
 
   /* creating pageful of keys */
   mi_putint(info->buff,length+2,0);

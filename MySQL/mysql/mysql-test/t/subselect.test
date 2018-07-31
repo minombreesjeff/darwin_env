@@ -46,9 +46,9 @@ SELECT ROW(1,2,3) > (SELECT 1,2,1);
 SELECT ROW(1,2,3) = (SELECT 1,2,NULL);
 SELECT (SELECT 1.5,2,'a') = ROW(1.5,2,'a');
 SELECT (SELECT 1.5,2,'a') = ROW(1.5,2,'b');
-SELECT (SELECT 1.5,2,'a') = ROW('b',2,'b');
+SELECT (SELECT 1.5,2,'a') = ROW('1.5b',2,'b');
 SELECT (SELECT 'b',2,'a') = ROW(1.5,2,'a');
-SELECT (SELECT 1.5,2,'a') = ROW(1.5,'c','a');
+SELECT (SELECT 1.5,2,'a') = ROW(1.5,'2','a');
 SELECT (SELECT 1.5,'c','a') = ROW(1.5,2,'a');
 
 -- error 1241
@@ -108,7 +108,7 @@ select * from t3 where a in (select a,b from t2);
 -- error 1241
 select * from t3 where a in (select * from t2);
 insert into t4 values (12,7),(1,7),(10,9),(9,6),(7,6),(3,9),(1,10);
--- empty set
+# empty set
 select b,max(a) as ma from t4 group by b having b < (select max(t2.a) from t2 where t2.b=t4.b);
 insert into t2 values (2,10);
 select b,max(a) as ma from t4 group by b having ma < (select max(t2.a) from t2 where t2.b=t4.b);
@@ -352,7 +352,9 @@ INSERT DELAYED INTO t1 (x) VALUES ((SELECT SUM(a) FROM t2));
 select * from t1;
 INSERT INTO t1 (x) select (SELECT SUM(a)+1 FROM t2) FROM t2;
 select * from t1;
+# After this, only data based on old t1 records should have been added.
 INSERT INTO t1 (x) select (SELECT SUM(x)+2 FROM t1) FROM t2;
+select * from t1;
 -- error 1054
 INSERT DELAYED INTO t1 (x) VALUES ((SELECT SUM(x) FROM t2));
 INSERT DELAYED INTO t1 (x) VALUES ((SELECT SUM(a) FROM t2));
@@ -507,6 +509,9 @@ select ROW(1, 1, 'a') IN (select b,a,c from t1 where c='b' or c='a');
 select ROW(1, 1, 'a') IN (select b,a,c from t1 limit 2);
 drop table t1;
 
+#
+# DO & SET
+#
 create table t1 (a int);
 insert into t1 values (1);
 do @a:=(SELECT a from t1);
@@ -660,7 +665,7 @@ CREATE TABLE t2 (
 ) ENGINE=MyISAM;
 
 INSERT INTO t2 VALUES ('AUS','Australia','Oceania','Australia and New Zealand',7741220.00,1901,18886000,79.8,351182.00,392911.00,'Australia','Constitutional Monarchy, Federation','Elisabeth II',135,'AU');
-INSERT INTO t2 VALUES ('AZE','Azerbaijan','Asia','Middle East',86600.00,1991,7734000,62.9,4127.00,4100.00,'Azärbaycan','Federal Republic','Heydär Äliyev',144,'AZ');
+INSERT INTO t2 VALUES ('AZE','Azerbaijan','Asia','Middle East',86600.00,1991,7734000,62.9,4127.00,4100.00,'AzÃ¤rbaycan','Federal Republic','HeydÃ¤r Ã„liyev',144,'AZ');
 
 select t2.Continent, t1.Name, t1.Population from t2 LEFT JOIN t1 ON t2.Code = t1.t2  where t1.Population IN (select max(t1.Population) AS Population from t1, t2 where t1.t2 = t2.Code group by Continent); 
 
@@ -691,7 +696,7 @@ CREATE TABLE `t1` (
 INSERT INTO t1 VALUES (1);
 UPDATE t1 SET i=i+(SELECT MAX(i) FROM (SELECT 1) t) WHERE i=(SELECT MAX(i));
 UPDATE t1 SET i=i+1 WHERE i=(SELECT MAX(i));
--- error 1109
+-- error 1054
 UPDATE t1 SET t.i=i+(SELECT MAX(i) FROM (SELECT 1) t);
 select * from t1;
 drop table t1;
@@ -1000,7 +1005,7 @@ create table t2 (s1 int);
 select * from t1 where (select count(*) from t2 where t1.s2) = 1;
 -- error 1054
 select * from t1 where (select count(*) from t2 group by t1.s2) = 1;
--- error 1109
+-- error 1054
 select count(*) from t2 group by t1.s2;
 drop table t1, t2;
 
@@ -1128,7 +1133,9 @@ CREATE TABLE t2 (id INT);
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (1);
 SELECT t1.id, ( SELECT COUNT(t.id) FROM t2 AS t WHERE t.id = t1.id ) AS c FROM t1 LEFT JOIN t2 USING (id);
+SELECT id, ( SELECT COUNT(t.id) FROM t2 AS t WHERE t.id = t1.id ) AS c FROM t1 LEFT JOIN t2 USING (id);
 SELECT t1.id, ( SELECT COUNT(t.id) FROM t2 AS t WHERE t.id = t1.id ) AS c FROM t1 LEFT JOIN t2 USING (id) ORDER BY t1.id;
+SELECT id, ( SELECT COUNT(t.id) FROM t2 AS t WHERE t.id = t1.id ) AS c FROM t1 LEFT JOIN t2 USING (id) ORDER BY id;
 DROP TABLE t1,t2;
 
 #
@@ -1519,7 +1526,7 @@ CREATE TABLE t1 (
 ) ENGINE=MyISAM;
 INSERT INTO t1 VALUES ('XXX','Xxxxx','Oceania','Xxxxxx',26.00,0,0,0,0,0,'Xxxxx','Xxxxx','Xxxxx',NULL,'XX');
 INSERT INTO t1 VALUES ('ASM','American Samoa','Oceania','Polynesia',199.00,0,68000,75.1,334.00,NULL,'Amerika Samoa','US Territory','George W. Bush',54,'AS');
-INSERT INTO t1 VALUES ('ATF','French Southern territories','Antarctica','Antarctica',7780.00,0,0,NULL,0.00,NULL,'Terres australes françaises','Nonmetropolitan Territory of France','Jacques Chirac',NULL,'TF');
+INSERT INTO t1 VALUES ('ATF','French Southern territories','Antarctica','Antarctica',7780.00,0,0,NULL,0.00,NULL,'Terres australes franÃ§aises','Nonmetropolitan Territory of France','Jacques Chirac',NULL,'TF');
 INSERT INTO t1 VALUES ('UMI','United States Minor Outlying Islands','Oceania','Micronesia/Caribbean',16.00,0,0,NULL,0.00,NULL,'United States Minor Outlying Islands','Dependent Territory of the US','George W. Bush',NULL,'UM');
 /*!40000 ALTER TABLE t1 ENABLE KEYS */;
 SELECT DISTINCT Continent AS c FROM t1 WHERE Code <> SOME ( SELECT Code FROM t1 WHERE Continent = c AND Population < 200);
@@ -1721,7 +1728,7 @@ select (select a from t1) = (1,2);
 select (1,2,3) = (select * from t1);
 -- error 1241
 select (select * from t1) = (1,2,3);
-drop table t1
+drop table t1;
 
 #
 # Item_int_with_ref check (BUG#10020)
@@ -1813,13 +1820,6 @@ SELECT * FROM t1
                        WHERE t3.b IS NOT NULL OR t2.a > 10);
 
 DROP TABLE t1,t2,t3;
-
-#
-# BUG #10308: purge log with subselect
-#
-
-purge master logs before (select adddate(current_timestamp(), interval -4 day));
-
 
 #
 # Bug#18503: Queries with a quantified subquery returning empty set may
@@ -1948,4 +1948,1001 @@ SELECT field1, field2
 
 DROP TABLE t1, t2;
 
+#
+# Bug #23478: not top-level IN subquery returning a non-empty result set
+#             with possible NULL values by index access from the outer query
+#
+
+CREATE TABLE t1(a int, INDEX (a));
+INSERT INTO t1 VALUES (1), (3), (5), (7);
+INSERT INTO t1 VALUES (NULL);
+
+CREATE TABLE t2(a int);
+INSERT INTO t2 VALUES (1),(2),(3);
+
+EXPLAIN SELECT a, a IN (SELECT a FROM t1) FROM t2;
+SELECT a, a IN (SELECT a FROM t1) FROM t2;
+
+DROP TABLE t1,t2;
+
+#
+# Bug #11302: getObject() returns a String for a sub-query of type datetime
+#
+CREATE TABLE t1 (a DATETIME);
+INSERT INTO t1 VALUES ('1998-09-23'), ('2003-03-25');
+
+CREATE TABLE t2 AS SELECT 
+  (SELECT a FROM t1 WHERE a < '2000-01-01') AS sub_a 
+   FROM t1 WHERE a > '2000-01-01';
+SHOW CREATE TABLE t2;
+
+CREATE TABLE t3 AS (SELECT a FROM t1 WHERE a < '2000-01-01') UNION (SELECT a FROM t1 WHERE a > '2000-01-01'); 
+SHOW CREATE TABLE t3;
+
+DROP TABLE t1,t2,t3;
+
+#
+# Bug 24670: subquery witout tables but with a WHERE clause
+#
+
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (1), (2);
+
+SELECT a FROM t1 WHERE (SELECT 1 FROM DUAL WHERE 1=0) > 0;
+SELECT a FROM t1 WHERE (SELECT 1 FROM DUAL WHERE 1=0) IS NULL;
+EXPLAIN SELECT a FROM t1 WHERE (SELECT 1 FROM DUAL WHERE 1=0) IS NULL;
+
+DROP TABLE t1;
+
+#
+# Bug 24653: sorting by expressions containing subselects
+#            that return more than one row
+#
+
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (2), (4), (1), (3);
+
+CREATE TABLE t2 (b int, c int);
+INSERT INTO t2 VALUES
+  (2,1), (1,3), (2,1), (4,4), (2,2), (1,4);
+
+SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 2 );
+--error 1242
+SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 1);
+SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 2), a;
+--error 1242
+SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 1), a;
+
+SELECT b, MAX(c) FROM t2 GROUP BY b, (SELECT c FROM t2 WHERE b > 2);
+--error 1242
+SELECT b, MAX(c) FROM t2 GROUP BY b, (SELECT c FROM t2 WHERE b > 1);
+
+
+SELECT a FROM t1 GROUP BY a
+  HAVING IFNULL((SELECT b FROM t2 WHERE b > 2),
+                (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b)) > 3;
+--error 1242
+SELECT a FROM t1 GROUP BY a
+  HAVING IFNULL((SELECT b FROM t2 WHERE b > 1),
+                (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b)) > 3;
+
+SELECT a FROM t1 GROUP BY a
+  HAVING IFNULL((SELECT b FROM t2 WHERE b > 4),
+                (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b)) > 3;
+--error 1242
+SELECT a FROM t1 GROUP BY a
+  HAVING IFNULL((SELECT b FROM t2 WHERE b > 4),
+                (SELECT c FROM t2 WHERE c=a AND b > 1 ORDER BY b)) > 3;
+
+SELECT a FROM t1
+  ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 2),
+                  (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b));
+--error 1242
+SELECT a FROM t1
+  ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 1),
+                  (SELECT c FROM t2 WHERE c=a AND b > 1 ORDER BY b));
+
+SELECT a FROM t1
+  ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 4),
+                  (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b));
+--error 1242
+SELECT a FROM t1
+  ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 4),
+                  (SELECT c FROM t2 WHERE c=a AND b > 1 ORDER BY b));
+
+DROP TABLE t1,t2;
+
 # End of 4.1 tests
+
+#
+#decimal-related tests
+#
+create table t1 (df decimal(5,1));
+insert into t1 values(1.1);
+insert into t1 values(2.2);
+
+select * from t1 where df <= all (select avg(df) from t1 group by df);
+select * from t1 where df >= all (select avg(df) from t1 group by df);
+drop table t1;
+
+create table t1 (df decimal(5,1));
+insert into t1 values(1.1);
+select 1.1 * exists(select * from t1);
+drop table t1;
+
+CREATE TABLE t1 (
+  grp int(11) default NULL,
+  a decimal(10,2) default NULL);
+
+insert into t1 values (1, 1), (2, 2), (2, 3), (3, 4), (3, 5), (3, 6), (NULL, NULL);
+select * from t1;
+select min(a) from t1 group by grp;
+drop table t1;
+
+#
+# Test for bug #9338: lame substitution of c1 instead of c2 
+#
+
+CREATE table t1 ( c1 integer );
+INSERT INTO t1 VALUES ( 1 );
+INSERT INTO t1 VALUES ( 2 );
+INSERT INTO t1 VALUES ( 3 );
+
+CREATE TABLE t2 ( c2 integer );
+INSERT INTO t2 VALUES ( 1 );
+INSERT INTO t2 VALUES ( 4 );
+INSERT INTO t2 VALUES ( 5 );
+
+SELECT * FROM t1 LEFT JOIN t2 ON c1 = c2 WHERE c2 IN (1);
+
+SELECT * FROM t1 LEFT JOIN t2 ON c1 = c2
+  WHERE c2 IN ( SELECT c2 FROM t2 WHERE c2 IN ( 1 ) );
+
+DROP TABLE t1,t2;
+
+#
+# Test for bug #9516: wrong evaluation of not_null_tables attribute in SQ 
+#
+CREATE TABLE t1 ( c1 integer );
+INSERT INTO t1 VALUES ( 1 );
+INSERT INTO t1 VALUES ( 2 );
+INSERT INTO t1 VALUES ( 3 );
+INSERT INTO t1 VALUES ( 6 ); 
+ 
+CREATE TABLE t2 ( c2 integer );
+INSERT INTO t2 VALUES ( 1 );
+INSERT INTO t2 VALUES ( 4 );
+INSERT INTO t2 VALUES ( 5 );
+INSERT INTO t2 VALUES ( 6 );
+
+CREATE TABLE t3 ( c3 integer );
+INSERT INTO t3 VALUES ( 7 );
+INSERT INTO t3 VALUES ( 8 );
+
+SELECT c1,c2 FROM t1 LEFT JOIN t2 ON c1 = c2 
+  WHERE EXISTS (SELECT c3 FROM t3 WHERE c2 IS NULL );
+
+DROP TABLE t1,t2,t3;
+
+#
+# Item_int_with_ref check (BUG#10020)
+#
+CREATE TABLE `t1` (
+  `itemid` bigint(20) unsigned NOT NULL auto_increment,
+  `sessionid` bigint(20) unsigned default NULL,
+  `time` int(10) unsigned NOT NULL default '0',
+  `type` set('A','D','E','F','G','I','L','N','U') collate latin1_general_ci NOT
+NULL default '',
+  `data` text collate latin1_general_ci NOT NULL,
+  PRIMARY KEY  (`itemid`)
+) DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci;
+INSERT INTO `t1` VALUES (1, 1, 1, 'D', '');
+CREATE TABLE `t2` (
+  `sessionid` bigint(20) unsigned NOT NULL auto_increment,
+  `pid` int(10) unsigned NOT NULL default '0',
+  `date` int(10) unsigned NOT NULL default '0',
+  `ip` varchar(15) collate latin1_general_ci NOT NULL default '',
+  PRIMARY KEY  (`sessionid`)
+) DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci;
+INSERT INTO `t2` VALUES (1, 1, 1, '10.10.10.1');
+SELECT s.ip, count( e.itemid ) FROM `t1` e JOIN t2 s ON s.sessionid = e.sessionid WHERE e.sessionid = ( SELECT sessionid FROM t2 ORDER BY sessionid DESC LIMIT 1 ) GROUP BY s.ip HAVING count( e.itemid ) >0 LIMIT 0 , 30;
+drop tables t1,t2;
+
+#
+# Correct building of equal fields list (do not include outer
+# fields) (BUG#6384)
+#
+CREATE TABLE t1 (EMPNUM   CHAR(3));
+CREATE TABLE t2 (EMPNUM   CHAR(3) );
+INSERT INTO t1 VALUES ('E1'),('E2');
+INSERT INTO t2 VALUES ('E1');
+DELETE FROM t1
+WHERE t1.EMPNUM NOT IN
+      (SELECT t2.EMPNUM
+       FROM t2
+       WHERE t1.EMPNUM = t2.EMPNUM);
+select * from t1;
+DROP TABLE t1,t2;
+
+#
+# Test for bug #11487: range access in a subquery
+#
+
+CREATE TABLE t1(select_id BIGINT, values_id BIGINT);
+INSERT INTO t1 VALUES (1, 1);
+CREATE TABLE t2 (select_id BIGINT, values_id BIGINT, 
+                 PRIMARY KEY(select_id,values_id));
+INSERT INTO t2 VALUES (0, 1), (0, 2), (0, 3), (1, 5);
+
+SELECT values_id FROM t1 
+WHERE values_id IN (SELECT values_id FROM t2
+                    WHERE select_id IN (1, 0));
+SELECT values_id FROM t1 
+WHERE values_id IN (SELECT values_id FROM t2
+                    WHERE select_id BETWEEN 0 AND 1);
+SELECT values_id FROM t1 
+WHERE values_id IN (SELECT values_id FROM t2
+                    WHERE select_id = 0 OR select_id = 1);
+
+DROP TABLE t1, t2;
+
+# BUG#11821 : Select from subselect using aggregate function on an enum
+# segfaults:
+create table t1 (fld enum('0','1'));
+insert into t1 values ('1');
+select * from (select max(fld) from t1) as foo;
+drop table t1;
+
+#
+# Test for bug #11762: subquery with an aggregate function in HAVING
+#
+
+CREATE TABLE t1 (a int, b int);
+CREATE TABLE t2 (c int, d int);
+CREATE TABLE t3 (e int);
+
+INSERT INTO t1 VALUES 
+  (1,10), (2,10), (1,20), (2,20), (3,20), (2,30), (4,40);
+INSERT INTO t2 VALUES
+  (2,10), (2,20), (4,10), (5,10), (3,20), (2,40);
+INSERT INTO t3 VALUES (10), (30), (10), (20) ;
+
+SELECT a, MAX(b), MIN(b) FROM t1 GROUP BY a;
+SELECT * FROM t2;
+SELECT * FROM t3;
+
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2 WHERE MAX(b)>20);
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2 WHERE MAX(b)<d);
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2 WHERE MAX(b)>d);
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2
+                 WHERE d >= SOME(SELECT e FROM t3 WHERE MAX(b)=e));
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2
+                 WHERE  EXISTS(SELECT e FROM t3 WHERE MAX(b)=e AND e <= d));
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2
+                 WHERE d > SOME(SELECT e FROM t3 WHERE MAX(b)=e));
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2
+                 WHERE  EXISTS(SELECT e FROM t3 WHERE MAX(b)=e AND e < d));
+SELECT a FROM t1 GROUP BY a
+  HAVING a IN (SELECT c FROM t2
+                 WHERE MIN(b) < d AND 
+                       EXISTS(SELECT e FROM t3 WHERE MAX(b)=e AND e <= d));
+
+SELECT a, SUM(a) FROM t1 GROUP BY a;
+
+SELECT a FROM t1
+   WHERE EXISTS(SELECT c FROM t2 GROUP BY c HAVING SUM(a) = c) GROUP BY a;
+SELECT a FROM t1 GROUP BY a
+   HAVING EXISTS(SELECT c FROM t2 GROUP BY c HAVING SUM(a) = c);
+
+SELECT a FROM t1
+   WHERE a < 3 AND
+         EXISTS(SELECT c FROM t2 GROUP BY c HAVING SUM(a) != c) GROUP BY a;
+SELECT a FROM t1
+   WHERE a < 3 AND
+         EXISTS(SELECT c FROM t2 GROUP BY c HAVING SUM(a) != c);
+
+SELECT t1.a FROM t1 GROUP BY t1.a
+  HAVING t1.a < ALL(SELECT t2.c FROM t2 GROUP BY t2.c
+                       HAVING EXISTS(SELECT t3.e FROM t3 GROUP BY t3.e
+                                       HAVING SUM(t1.a+t2.c) < t3.e/4));
+SELECT t1.a FROM t1 GROUP BY t1.a
+       HAVING t1.a > ALL(SELECT t2.c FROM t2
+                           WHERE EXISTS(SELECT t3.e FROM t3 GROUP BY t3.e
+                                          HAVING SUM(t1.a+t2.c) < t3.e/4));
+-- error 1111
+SELECT t1.a FROM t1 GROUP BY t1.a
+       HAVING t1.a > ALL(SELECT t2.c FROM t2
+                           WHERE EXISTS(SELECT t3.e FROM t3 
+                                          WHERE SUM(t1.a+t2.c) < t3.e/4));
+-- error 1111 
+SELECT t1.a from t1 GROUP BY t1.a HAVING AVG(SUM(t1.b)) > 20;
+
+SELECT t1.a FROM t1 GROUP BY t1.a
+  HAVING t1.a IN (SELECT t2.c FROM t2 GROUP BY t2.c
+                    HAVING AVG(t2.c+SUM(t1.b)) > 20);
+SELECT t1.a FROM t1 GROUP BY t1.a
+  HAVING t1.a IN (SELECT t2.c FROM t2 GROUP BY t2.c
+                    HAVING AVG(SUM(t1.b)) > 20);
+
+SELECT t1.a, SUM(b) AS sum  FROM t1 GROUP BY t1.a
+  HAVING t1.a IN (SELECT t2.c FROM t2 GROUP BY t2.c
+                    HAVING t2.c+sum > 20);
+
+DROP TABLE t1,t2,t3;
+
+#
+# Test for bug #16603: GROUP BY in a row subquery with a quantifier 
+#                      when an index is defined on the grouping field
+
+CREATE TABLE t1 (a varchar(5), b varchar(10));
+INSERT INTO t1 VALUES
+  ('AAA', 5), ('BBB', 4), ('BBB', 1), ('CCC', 2),
+  ('CCC', 7), ('AAA', 2), ('AAA', 4), ('BBB', 3), ('AAA', 8);
+
+SELECT * FROM t1 WHERE (a,b) = ANY (SELECT a, max(b) FROM t1 GROUP BY a);
+EXPLAIN
+SELECT * FROM t1 WHERE (a,b) = ANY (SELECT a, max(b) FROM t1 GROUP BY a);
+
+ALTER TABLE t1 ADD INDEX(a);
+
+SELECT * FROM t1 WHERE (a,b) = ANY (SELECT a, max(b) FROM t1 GROUP BY a);
+EXPLAIN
+SELECT * FROM t1 WHERE (a,b) = ANY (SELECT a, max(b) FROM t1 GROUP BY a);
+
+DROP TABLE t1;
+
+#
+# Bug#17366: Unchecked Item_int results in server crash
+#
+create table t1( f1 int,f2 int);
+insert into t1 values (1,1),(2,2);
+select tt.t from (select 'crash1' as t, f2 from t1) as tt left join t1 on tt.t = 'crash2' and tt.f2 = t1.f2 where tt.t = 'crash1';
+drop table t1;
+
+#
+# Bug #18306: server crash on delete using subquery.
+#
+
+create table t1 (c int, key(c));                              
+insert into t1 values (1142477582), (1142455969);
+create table t2 (a int, b int);
+insert into t2 values (2, 1), (1, 0);
+delete from t1 where c <= 1140006215 and (select b from t2 where a = 2) = 1;
+drop table t1, t2;
+
+#
+# Bug #7549: Missing error message for invalid view selection with subquery
+#
+
+CREATE TABLE t1 (a INT);
+
+--error 1054
+CREATE VIEW v1 AS SELECT * FROM t1 WHERE no_such_column = ANY (SELECT 1);
+--error 1054
+CREATE VIEW v2 AS SELECT * FROM t1 WHERE no_such_column = (SELECT 1);
+--error 1054
+SELECT * FROM t1 WHERE no_such_column = ANY (SELECT 1);
+
+DROP TABLE t1;
+
+#
+# Bug#19077: A nested materialized derived table is used before being populated.
+#
+create table t1 (i int, j bigint);
+insert into t1 values (1, 2), (2, 2), (3, 2);
+select * from (select min(i) from t1 where j=(select * from (select min(j) from t1) t2)) t3;
+drop table t1;
+
+# 
+# Bug#19700: subselect returning BIGINT always returned it as SIGNED
+#
+CREATE TABLE t1 (i BIGINT UNSIGNED);
+INSERT INTO t1 VALUES (10000000000000000000); # > MAX SIGNED BIGINT 9323372036854775807
+INSERT INTO t1 VALUES (1);
+
+CREATE TABLE t2 (i BIGINT UNSIGNED);
+INSERT INTO t2 VALUES (10000000000000000000); # same as first table
+INSERT INTO t2 VALUES (1);
+
+/* simple test */
+SELECT t1.i FROM t1 JOIN t2 ON t1.i = t2.i;
+
+/* subquery test */
+SELECT t1.i FROM t1 WHERE t1.i = (SELECT MAX(i) FROM t2);
+
+/* subquery test with cast*/
+SELECT t1.i FROM t1 WHERE t1.i = CAST((SELECT MAX(i) FROM t2) AS UNSIGNED);
+
+DROP TABLE t1;
+DROP TABLE t2;
+
+# 
+# Bug#20519: subselect with LIMIT M, N
+#
+
+CREATE TABLE t1 (
+  id bigint(20) unsigned NOT NULL auto_increment,
+  name varchar(255) NOT NULL,
+  PRIMARY KEY  (id)
+);
+INSERT INTO t1 VALUES
+  (1, 'Balazs'), (2, 'Joe'), (3, 'Frank');
+
+CREATE TABLE t2 (
+  id bigint(20) unsigned NOT NULL auto_increment,
+  mid bigint(20) unsigned NOT NULL,
+  date date NOT NULL,
+  PRIMARY KEY  (id)
+);
+INSERT INTO t2 VALUES 
+  (1, 1, '2006-03-30'), (2, 2, '2006-04-06'), (3, 3, '2006-04-13'),
+  (4, 2, '2006-04-20'), (5, 1, '2006-05-01');
+
+SELECT *,
+      (SELECT date FROM t2 WHERE mid = t1.id
+         ORDER BY date DESC LIMIT 0, 1) AS date_last,
+      (SELECT date FROM t2 WHERE mid = t1.id
+         ORDER BY date DESC LIMIT 3, 1) AS date_next_to_last
+  FROM t1;
+SELECT *,
+      (SELECT COUNT(*) FROM t2 WHERE mid = t1.id
+         ORDER BY date DESC LIMIT 1, 1) AS date_count
+  FROM t1;
+SELECT *,
+      (SELECT date FROM t2 WHERE mid = t1.id
+         ORDER BY date DESC LIMIT 0, 1) AS date_last,
+      (SELECT date FROM t2 WHERE mid = t1.id
+         ORDER BY date DESC LIMIT 1, 1) AS date_next_to_last
+  FROM t1;
+DROP TABLE t1,t2;
+
+#
+# Bug#20869: subselect with range access by DESC
+#
+
+CREATE TABLE t1 (
+  i1 int(11) NOT NULL default '0',
+  i2 int(11) NOT NULL default '0',
+  t datetime NOT NULL default '0000-00-00 00:00:00',
+  PRIMARY KEY  (i1,i2,t)
+);
+INSERT INTO t1 VALUES 
+(24,1,'2005-03-03 16:31:31'),(24,1,'2005-05-27 12:40:07'),
+(24,1,'2005-05-27 12:40:08'),(24,1,'2005-05-27 12:40:10'),
+(24,1,'2005-05-27 12:40:25'),(24,1,'2005-05-27 12:40:30'),
+(24,2,'2005-03-03 13:43:05'),(24,2,'2005-03-03 16:23:31'),
+(24,2,'2005-03-03 16:31:30'),(24,2,'2005-05-27 12:37:02'),
+(24,2,'2005-05-27 12:40:06');
+
+CREATE TABLE t2 (
+  i1 int(11) NOT NULL default '0',
+  i2 int(11) NOT NULL default '0',
+  t datetime default NULL,
+  PRIMARY KEY  (i1)
+);
+INSERT INTO t2 VALUES (24,1,'2006-06-20 12:29:40');
+
+EXPLAIN
+SELECT * FROM t1,t2
+  WHERE t1.t = (SELECT t1.t FROM t1 
+                  WHERE t1.t < t2.t  AND t1.i2=1 AND t2.i1=t1.i1
+                    ORDER BY t1.t DESC LIMIT 1);
+SELECT * FROM t1,t2
+  WHERE t1.t = (SELECT t1.t FROM t1 
+                  WHERE t1.t < t2.t  AND t1.i2=1 AND t2.i1=t1.i1
+                    ORDER BY t1.t DESC LIMIT 1);
+
+DROP TABLE t1, t2;
+
+#
+# Bug#14654 : Cannot select from the same table twice within a UNION
+# statement 
+#
+CREATE TABLE t1 (i INT);
+
+(SELECT i FROM t1) UNION (SELECT i FROM t1);
+SELECT sql_no_cache * FROM t1 WHERE NOT EXISTS 
+  (
+   (SELECT i FROM t1) UNION 
+   (SELECT i FROM t1)
+  );
+
+SELECT * FROM t1 
+WHERE NOT EXISTS (((SELECT i FROM t1) UNION (SELECT i FROM t1)));
+
+#TODO:not supported
+--error 1064
+explain select ((select t11.i from t1 t11) union (select t12.i from t1 t12))
+  from t1;
+#supported
+explain select * from t1 where not exists 
+  ((select t11.i from t1 t11) union (select t12.i from t1 t12));
+
+DROP TABLE t1;
+
+#
+# Bug#21798: memory leak during query execution with subquery in column 
+#             list using a function
+#
+CREATE TABLE t1 (a VARCHAR(250), b INT auto_increment, PRIMARY KEY (b));
+insert into t1 (a) values (FLOOR(rand() * 100));
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+insert into t1 (a) select FLOOR(rand() * 100) from t1;
+
+SELECT a, 
+       (SELECT REPEAT(' ',250) FROM t1 i1 
+        WHERE i1.b=t1.a ORDER BY RAND() LIMIT 1) AS a 
+FROM t1 ORDER BY a LIMIT 5;
+DROP TABLE t1;
+
+#
+# Bug #21540: Subqueries with no from and aggregate functions return 
+#              wrong results
+CREATE TABLE t1 (a INT, b INT);
+CREATE TABLE t2 (a INT);
+INSERT INTO t2 values (1);
+INSERT INTO t1 VALUES (1,1),(1,2),(2,3),(3,4);
+SELECT (SELECT COUNT(DISTINCT t1.b) from t2) FROM t1 GROUP BY t1.a;
+SELECT (SELECT COUNT(DISTINCT t1.b) from t2 union select 1 from t2 where 12 < 3)
+  FROM t1 GROUP BY t1.a;
+SELECT COUNT(DISTINCT t1.b), (SELECT COUNT(DISTINCT t1.b)) FROM t1 GROUP BY t1.a;
+SELECT COUNT(DISTINCT t1.b), 
+       (SELECT COUNT(DISTINCT t1.b) union select 1 from DUAL where 12 < 3)
+  FROM t1 GROUP BY t1.a;
+SELECT (
+    SELECT (
+      SELECT COUNT(DISTINCT t1.b)
+    )
+) 
+FROM t1 GROUP BY t1.a;
+SELECT (
+  SELECT (
+      SELECT (
+        SELECT COUNT(DISTINCT t1.b)
+      )
+  ) 
+  FROM t1 GROUP BY t1.a LIMIT 1) 
+FROM t1 t2
+GROUP BY t2.a;
+DROP TABLE t1,t2;  
+
+#
+# Bug #21727: Correlated subquery that requires filesort:
+#             slow with big sort_buffer_size 
+#
+
+CREATE TABLE t1 (a int, b int auto_increment, PRIMARY KEY (b));
+CREATE TABLE t2 (x int auto_increment, y int, z int,
+                 PRIMARY KEY (x), FOREIGN KEY (y) REFERENCES t1 (b));
+
+disable_query_log;
+let $1=3000;
+while ($1)
+{
+  eval INSERT INTO t1(a) VALUES(RAND()*1000);
+  eval SELECT MAX(b) FROM t1 INTO @id;
+  let $2=10;
+  while ($2)
+  {
+    eval INSERT INTO t2(y,z) VALUES(@id,RAND()*1000);
+    dec $2;
+  } 
+  dec $1;
+}
+enable_query_log;
+
+SET SESSION sort_buffer_size = 32 * 1024;
+SELECT SQL_NO_CACHE COUNT(*) 
+  FROM (SELECT  a, b, (SELECT x FROM t2 WHERE y=b ORDER BY z DESC LIMIT 1) c
+          FROM t1) t;
+
+SET SESSION sort_buffer_size = 8 * 1024 * 1024;
+SELECT SQL_NO_CACHE COUNT(*) 
+  FROM (SELECT  a, b, (SELECT x FROM t2 WHERE y=b ORDER BY z DESC LIMIT 1) c
+          FROM t1) t;
+
+DROP TABLE t1,t2;
+
+#
+# Bug #25219: EXIST subquery with UNION over a mix of
+#             correlated and uncorrelated selects
+#
+
+CREATE TABLE t1 (id char(4) PRIMARY KEY, c int);
+CREATE TABLE t2 (c int);
+
+INSERT INTO t1 VALUES ('aa', 1);
+INSERT INTO t2 VALUES (1);
+
+SELECT * FROM t1
+  WHERE EXISTS (SELECT c FROM t2 WHERE c=1
+                UNION
+                SELECT c from t2 WHERE c=t1.c);
+
+INSERT INTO t1 VALUES ('bb', 2), ('cc', 3), ('dd',1);
+
+SELECT * FROM t1
+  WHERE EXISTS (SELECT c FROM t2 WHERE c=1
+                UNION
+                SELECT c from t2 WHERE c=t1.c);
+
+INSERT INTO t2 VALUES (2);
+CREATE TABLE t3 (c int);
+INSERT INTO t3 VALUES (1);
+
+SELECT * FROM t1
+  WHERE EXISTS (SELECT t2.c FROM t2 JOIN t3 ON t2.c=t3.c WHERE t2.c=1
+                UNION
+                SELECT c from t2 WHERE c=t1.c);
+
+DROP TABLE t1,t2,t3;
+
+#                                                                             
+# Bug#23800: Outer fields in correlated subqueries is used in a temporary     
+#            table created for sorting.                                       
+#                                                                             
+CREATE TABLE t1(f1 int);
+CREATE TABLE t2(f2 int, f21 int, f3 timestamp);
+INSERT INTO t1 VALUES (1),(1),(2),(2);
+INSERT INTO t2 VALUES (1,1,"2004-02-29 11:11:11"), (2,2,"2004-02-29 11:11:11");
+SELECT ((SELECT f2 FROM t2 WHERE f21=f1 LIMIT 1) * COUNT(f1)) AS sq FROM t1 GROUP BY f1;
+SELECT (SELECT SUM(1) FROM t2 ttt GROUP BY t2.f3 LIMIT 1) AS tt FROM t2;
+PREPARE stmt1 FROM 'SELECT ((SELECT f2 FROM t2 WHERE f21=f1 LIMIT 1) * COUNT(f1)) AS sq FROM t1 GROUP BY f1';
+EXECUTE stmt1;
+EXECUTE stmt1;
+DEALLOCATE PREPARE stmt1;
+SELECT f2, AVG(f21), 
+      (SELECT t.f3 FROM t2 AS t WHERE t2.f2=t.f2 AND t.f3=MAX(t2.f3)) AS test
+  FROM t2 GROUP BY f2;
+DROP TABLE t1,t2;                                                             
+CREATE TABLE t1 (a int, b INT, c CHAR(10) NOT NULL);                          
+INSERT INTO t1 VALUES                                                         
+  (1,1,'a'), (1,2,'b'), (1,3,'c'), (1,4,'d'), (1,5,'e'),                      
+  (2,1,'f'), (2,2,'g'), (2,3,'h'), (3,4,'i'), (3,3,'j'),                      
+  (3,2,'k'), (3,1,'l'), (1,9,'m');                                            
+SELECT a, MAX(b),                                                             
+      (SELECT t.c FROM t1 AS t WHERE t1.a=t.a AND t.b=MAX(t1.b)) AS test      
+  FROM t1 GROUP BY a;                                                         
+DROP TABLE t1;      
+
+#
+# Bug#21904 (parser problem when using IN with a double "(())")
+#
+
+--disable_warnings
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS t1xt2;
+--enable_warnings
+
+CREATE TABLE t1 (
+  id_1 int(5) NOT NULL,
+  t varchar(4) DEFAULT NULL
+);
+
+CREATE TABLE t2 (
+  id_2 int(5) NOT NULL,
+  t varchar(4) DEFAULT NULL
+);
+
+CREATE TABLE t1xt2 (
+  id_1 int(5) NOT NULL,
+  id_2 int(5) NOT NULL
+);
+
+INSERT INTO t1 VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+
+INSERT INTO t2 VALUES (2, 'bb'), (3, 'cc'), (4, 'dd'), (12, 'aa');
+
+INSERT INTO t1xt2 VALUES (2, 2), (3, 3), (4, 4);
+
+# subselect returns 0 rows
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN (SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN ((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1)));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN (((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1))));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN (SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN ((SELECT t1xt2.id_2 FROM t1xt2 where t1.id_1 = t1xt2.id_1)));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN (((SELECT t1xt2.id_2 FROM t1xt2 where t1.id_1 = t1xt2.id_1))));
+
+insert INTO t1xt2 VALUES (1, 12);
+
+# subselect returns 1 row
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN (SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN ((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1)));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN (((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1))));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN (SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN ((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1)));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN (((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1))));
+
+insert INTO t1xt2 VALUES (2, 12);
+
+# subselect returns more than 1 row
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN (SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN ((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1)));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 IN (((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1))));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN (SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN ((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1)));
+
+SELECT DISTINCT t1.id_1 FROM t1 WHERE
+(12 NOT IN (((SELECT t1xt2.id_2 FROM t1xt2 WHERE t1.id_1 = t1xt2.id_1))));
+
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t1xt2;
+
+#
+# Bug #26728: derived table with concatanation of literals in select list
+#  
+
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (3), (1), (2);           
+
+SELECT 'this is ' 'a test.' AS col1, a AS col2 FROM t1;
+SELECT * FROM (SELECT 'this is ' 'a test.' AS col1, a AS t2 FROM t1) t;
+
+DROP table t1;
+
+#
+# Bug #27257: COUNT(*) aggregated in outer query
+#  
+
+CREATE TABLE t1 (a int, b int);
+CREATE TABLE t2 (m int, n int);
+INSERT INTO t1 VALUES (2,2), (2,2), (3,3), (3,3), (3,3), (4,4);
+INSERT INTO t2 VALUES (1,11), (2,22), (3,32), (4,44), (4,44);
+
+SELECT COUNT(*), a,
+       (SELECT m FROM t2 WHERE m = count(*) LIMIT 1)
+  FROM t1 GROUP BY a;
+
+SELECT COUNT(*), a,
+       (SELECT MIN(m) FROM t2 WHERE m = count(*))
+  FROM t1 GROUP BY a;
+
+SELECT COUNT(*), a       
+  FROM t1 GROUP BY a
+    HAVING (SELECT MIN(m) FROM t2 WHERE m = count(*)) > 1;
+
+DROP TABLE t1,t2;
+
+#
+# Bug #27229: GROUP_CONCAT in subselect with COUNT() as an argument 
+#  
+
+CREATE TABLE t1 (a int, b int);
+CREATE TABLE t2 (m int, n int);
+INSERT INTO t1 VALUES (2,2), (2,2), (3,3), (3,3), (3,3), (4,4);
+INSERT INTO t2 VALUES (1,11), (2,22), (3,32), (4,44), (4,44);
+
+SELECT COUNT(*) c, a,
+       (SELECT GROUP_CONCAT(COUNT(a)) FROM t2 WHERE m = a)
+  FROM t1 GROUP BY a;
+
+SELECT COUNT(*) c, a,
+       (SELECT GROUP_CONCAT(COUNT(a)+1) FROM t2 WHERE m = a)
+  FROM t1 GROUP BY a;
+
+DROP table t1,t2;
+
+#
+# Bug#27321: Wrong subquery result in a grouping select
+#
+CREATE TABLE t1 (a int, b INT, d INT, c CHAR(10) NOT NULL, PRIMARY KEY (a, b));
+INSERT INTO t1 VALUES (1,1,0,'a'), (1,2,0,'b'), (1,3,0,'c'), (1,4,0,'d'),
+(1,5,0,'e'), (2,1,0,'f'), (2,2,0,'g'), (2,3,0,'h'), (3,4,0,'i'), (3,3,0,'j'),
+(3,2,0,'k'), (3,1,0,'l'), (1,9,0,'m'), (1,0,10,'n'), (2,0,5,'o'), (3,0,7,'p');
+
+SELECT a, MAX(b),
+  (SELECT t.c FROM t1 AS t WHERE t1.a=t.a AND t.b=MAX(t1.b + 0)) as test 
+  FROM t1 GROUP BY a;
+SELECT a x, MAX(b),
+  (SELECT t.c FROM t1 AS t WHERE x=t.a AND t.b=MAX(t1.b + 0)) as test
+  FROM t1 GROUP BY a;
+SELECT a, AVG(b),
+  (SELECT t.c FROM t1 AS t WHERE t1.a=t.a AND t.b=AVG(t1.b)) AS test
+  FROM t1 WHERE t1.d=0 GROUP BY a;
+
+SELECT tt.a,
+ (SELECT (SELECT c FROM t1 as t WHERE t1.a=t.a AND t.d=MAX(t1.b + tt.a)
+  LIMIT 1) FROM t1 WHERE t1.a=tt.a GROUP BY a LIMIT 1) as test 
+  FROM t1 as tt;
+
+SELECT tt.a,
+ (SELECT (SELECT t.c FROM t1 AS t WHERE t1.a=t.a AND t.d=MAX(t1.b + tt.a)
+  LIMIT 1)
+  FROM t1 WHERE t1.a=tt.a GROUP BY a LIMIT 1) as test 
+  FROM t1 as tt GROUP BY tt.a;
+
+SELECT tt.a, MAX(
+ (SELECT (SELECT t.c FROM t1 AS t WHERE t1.a=t.a AND t.d=MAX(t1.b + tt.a)
+  LIMIT 1)
+  FROM t1 WHERE t1.a=tt.a GROUP BY a LIMIT 1)) as test 
+  FROM t1 as tt GROUP BY tt.a;
+
+DROP TABLE t1;
+#
+# Bug #27348: SET FUNCTION used in  a subquery from WHERE condition 
+#  
+
+CREATE TABLE t1 (a int, b int);
+INSERT INTO t1 VALUES (2,22),(1,11),(2,22);
+
+SELECT a FROM t1 WHERE (SELECT COUNT(b) FROM DUAL) > 0 GROUP BY a;
+SELECT a FROM t1 WHERE (SELECT COUNT(b) FROM DUAL) > 1 GROUP BY a;
+
+SELECT a FROM t1 t0
+  WHERE (SELECT COUNT(t0.b) FROM t1 t WHERE t.b>20) GROUP BY a;
+
+SET @@sql_mode='ansi';
+--error 1111
+SELECT a FROM t1 WHERE (SELECT COUNT(b) FROM DUAL) > 0 GROUP BY a;
+--error 1111
+SELECT a FROM t1 WHERE (SELECT COUNT(b) FROM DUAL) > 1 GROUP BY a;
+
+--error 1111
+SELECT a FROM t1 t0
+  WHERE (SELECT COUNT(t0.b) FROM t1 t WHERE t.b>20) GROUP BY a;
+
+SET @@sql_mode=default;
+
+DROP TABLE t1;
+
+#
+# Bug #27363: nested aggregates in outer, subquery / sum(select
+# count(outer))
+#
+CREATE TABLE t1 (a INT); INSERT INTO t1 values (1),(1),(1),(1);
+CREATE TABLE t2 (x INT); INSERT INTO t1 values (1000),(1001),(1002);
+
+--error ER_INVALID_GROUP_FUNC_USE
+SELECT SUM( (SELECT COUNT(a) FROM t2) ) FROM t1;
+--error ER_INVALID_GROUP_FUNC_USE
+SELECT SUM( (SELECT SUM(COUNT(a)) FROM t2) ) FROM t1;
+SELECT COUNT(1) FROM DUAL;
+
+--error ER_INVALID_GROUP_FUNC_USE
+SELECT SUM( (SELECT AVG( (SELECT t1.a FROM t2) ) FROM DUAL) ) FROM t1;
+
+--error ER_INVALID_GROUP_FUNC_USE
+SELECT 
+  SUM( (SELECT AVG( (SELECT COUNT(*) FROM t1 t HAVING t1.a < 12) ) FROM t2) )
+FROM t1;
+
+--error ER_INVALID_GROUP_FUNC_USE
+SELECT t1.a as XXA, 
+   SUM( (SELECT AVG( (SELECT COUNT(*) FROM t1 t HAVING XXA < 12) ) FROM t2) )
+FROM t1;
+
+DROP TABLE t1,t2;
+
+#
+# Bug #27807: Server crash when executing subquery with EXPLAIN
+#  
+CREATE TABLE t1 (a int, b int, KEY (a)); 
+INSERT INTO t1 VALUES (1,1),(2,1);
+EXPLAIN SELECT 1 FROM t1 WHERE a = (SELECT COUNT(*) FROM t1 GROUP BY b);
+DROP TABLE t1;
+
+#
+# Bug #28377: grouping query with a correlated subquery in WHERE condition
+#  
+
+CREATE TABLE t1 (id int NOT NULL, st CHAR(2), INDEX idx(id));
+INSERT INTO t1 VALUES
+  (3,'FL'), (2,'GA'), (4,'FL'), (1,'GA'), (5,'NY'), (7,'FL'), (6,'NY');
+CREATE TABLE t2 (id int NOT NULL, INDEX idx(id));
+INSERT INTO t2 VALUES (7), (5), (1), (3);
+
+SELECT id, st FROM t1 
+  WHERE st IN ('GA','FL') AND EXISTS(SELECT 1 FROM t2 WHERE t2.id=t1.id);
+SELECT id, st FROM t1 
+  WHERE st IN ('GA','FL') AND EXISTS(SELECT 1 FROM t2 WHERE t2.id=t1.id)
+    GROUP BY id;
+
+SELECT id, st FROM t1 
+  WHERE st IN ('GA','FL') AND NOT EXISTS(SELECT 1 FROM t2 WHERE t2.id=t1.id);
+SELECT id, st FROM t1 
+  WHERE st IN ('GA','FL') AND NOT EXISTS(SELECT 1 FROM t2 WHERE t2.id=t1.id)
+    GROUP BY id;
+
+DROP TABLE t1,t2;
+
+#
+# Bug #28728: crash with EXPLAIN EXTENDED for a query with a derived table
+#             over a grouping subselect
+# 
+
+CREATE TABLE t1 (a int);
+
+INSERT INTO t1 VALUES (1), (2);
+
+EXPLAIN EXTENDED
+SELECT * FROM (SELECT count(*) FROM t1 GROUP BY a) as res;
+
+DROP TABLE t1;
+
+#
+# Bug #28811: crash for query containing subquery with ORDER BY and LIMIT 1 
+#
+ 
+CREATE TABLE t1 (
+  a varchar(255) default NULL,
+  b timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  INDEX idx(a,b)
+);
+CREATE TABLE t2 (
+  a varchar(255) default NULL
+);
+
+INSERT INTO t1 VALUES ('abcdefghijk','2007-05-07 06:00:24');
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO `t1` VALUES ('asdf','2007-02-08 01:11:26');
+INSERT INTO `t2` VALUES ('abcdefghijk');
+INSERT INTO `t2` VALUES ('asdf');
+
+SET session sort_buffer_size=8192;
+
+SELECT (SELECT 1 FROM  t1 WHERE t1.a=t2.a ORDER BY t1.b LIMIT 1) AS d1 FROM t2;
+
+DROP TABLE t1,t2;
+
+--echo End of 5.0 tests.

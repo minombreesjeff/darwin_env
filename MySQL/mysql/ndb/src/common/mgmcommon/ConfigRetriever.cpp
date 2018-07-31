@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,13 +44,15 @@
 //****************************************************************************
 
 ConfigRetriever::ConfigRetriever(const char * _connect_string,
-				 Uint32 version, Uint32 node_type)
+				 Uint32 version, Uint32 node_type,
+				 const char * _bindaddress)
 {
   DBUG_ENTER("ConfigRetriever::ConfigRetriever");
 
   m_version = version;
   m_node_type = node_type;
   _ownNodeId= 0;
+  m_end_session= true;
 
   m_handle= ndb_mgm_create_handle();
 
@@ -65,6 +66,15 @@ ConfigRetriever::ConfigRetriever(const char * _connect_string,
     setError(CR_ERROR, ndb_mgm_get_latest_error_desc(m_handle));
     DBUG_VOID_RETURN;
   }
+
+  if (_bindaddress)
+  {
+    if (ndb_mgm_set_bindaddress(m_handle, _bindaddress))
+    {
+      setError(CR_ERROR, ndb_mgm_get_latest_error_desc(m_handle));
+      DBUG_VOID_RETURN;
+    }
+  }
   resetError();
   DBUG_VOID_RETURN;
 }
@@ -73,6 +83,8 @@ ConfigRetriever::~ConfigRetriever()
 {
   DBUG_ENTER("ConfigRetriever::~ConfigRetriever");
   if (m_handle) {
+    if(m_end_session)
+      ndb_mgm_end_session(m_handle);
     ndb_mgm_disconnect(m_handle);
     ndb_mgm_destroy_handle(&m_handle);
   }
@@ -112,6 +124,12 @@ ConfigRetriever::do_connect(int no_retries,
     0 : -1;
 }
 
+int
+ConfigRetriever::disconnect()
+{
+  return ndb_mgm_disconnect(m_handle);
+}
+
 //****************************************************************************
 //****************************************************************************
 //****************************************************************************
@@ -136,12 +154,13 @@ ConfigRetriever::getConfig() {
 }
 
 ndb_mgm_configuration *
-ConfigRetriever::getConfig(NdbMgmHandle m_handle)
+ConfigRetriever::getConfig(NdbMgmHandle m_handle_arg)
 {
-  ndb_mgm_configuration * conf = ndb_mgm_get_configuration(m_handle,m_version);
+  ndb_mgm_configuration * conf = ndb_mgm_get_configuration(m_handle_arg,
+                                                           m_version);
   if(conf == 0)
   {
-    setError(CR_ERROR, ndb_mgm_get_latest_error_desc(m_handle));
+    setError(CR_ERROR, ndb_mgm_get_latest_error_desc(m_handle_arg));
     return 0;
   }
   return conf;
@@ -330,15 +349,24 @@ ConfigRetriever::setNodeId(Uint32 nodeid)
 Uint32
 ConfigRetriever::allocNodeId(int no_retries, int retry_delay_in_seconds)
 {
+  int res;
   _ownNodeId= 0;
   if(m_handle != 0)
   {
     while (1)
     {
-      int res= ndb_mgm_alloc_nodeid(m_handle, m_version, m_node_type);
+      if(!ndb_mgm_is_connected(m_handle))
+	if(!ndb_mgm_connect(m_handle, 0, 0, 0))
+	  goto next;
+
+      res= ndb_mgm_alloc_nodeid(m_handle, m_version, m_node_type,
+                                no_retries == 0 /* only log last retry */);
       if(res >= 0)
 	return _ownNodeId= (Uint32)res;
-      if (no_retries == 0)
+
+  next:
+      int error = ndb_mgm_get_latest_error(m_handle);
+      if (no_retries == 0 || error == NDB_MGM_ALLOCID_CONFIG_MISMATCH)
 	break;
       no_retries--;
       NdbSleep_SecSleep(retry_delay_in_seconds);

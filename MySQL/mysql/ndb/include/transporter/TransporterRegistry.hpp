@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,8 +29,11 @@
 
 #include "TransporterDefinitions.hpp"
 #include <SocketServer.hpp>
+#include <SocketClient.hpp>
 
 #include <NdbTCP.h>
+
+#include <mgmapi/mgmapi.h>
 
 // A transporter is always in an IOState.
 // NoHalt is used initially and as long as it is no restrictions on
@@ -97,13 +99,35 @@ public:
   TransporterRegistry(void * callback = 0 , 
 		      unsigned maxTransporters = MAX_NTRANSPORTERS, 
 		      unsigned sizeOfLongSignalMemory = 100);
-  
+
+  /**
+   * this handle will be used in the client connect thread
+   * to fetch information on dynamic ports.  The old handle
+   * (if set) is destroyed, and this is destroyed by the destructor
+   */
+  void set_mgm_handle(NdbMgmHandle h);
+  NdbMgmHandle get_mgm_handle(void) { return m_mgm_handle; };
+
   bool init(NodeId localNodeId);
 
   /**
    * after a connect from client, perform connection using correct transporter
    */
   bool connect_server(NDB_SOCKET_TYPE sockfd);
+
+  bool connect_client(NdbMgmHandle *h);
+
+  /**
+   * Given a SocketClient, creates a NdbMgmHandle, turns it into a transporter
+   * and returns the socket.
+   */
+  NDB_SOCKET_TYPE connect_ndb_mgmd(SocketClient *sc);
+
+  /**
+   * Given a connected NdbMgmHandle, turns it into a transporter
+   * and returns the socket.
+   */
+  NDB_SOCKET_TYPE connect_ndb_mgmd(NdbMgmHandle *h);
 
   /**
    * Remove all transporters
@@ -174,10 +198,10 @@ public:
    * started, startServer is called. A transporter of the selected kind
    * is created and it is put in the transporter arrays.
    */
-  bool createTransporter(struct TCP_TransporterConfiguration * config);
-  bool createTransporter(struct SCI_TransporterConfiguration * config);
-  bool createTransporter(struct SHM_TransporterConfiguration * config);
-  bool createTransporter(struct OSE_TransporterConfiguration * config);
+  bool createTCPTransporter(struct TransporterConfiguration * config);
+  bool createSCITransporter(struct TransporterConfiguration * config);
+  bool createSHMTransporter(struct TransporterConfiguration * config);
+  bool createOSETransporter(struct TransporterConfiguration * config);
 
   /**
    * Get free buffer space
@@ -233,17 +257,24 @@ public:
   
   class Transporter_interface {
   public:
-    unsigned short m_service_port;
+    NodeId m_remote_nodeId;
+    int m_s_service_port;			// signed port number
     const char *m_interface;
   };
   Vector<Transporter_interface> m_transporter_interface;
-  void add_transporter_interface(const char *interf, unsigned short port);
+  void add_transporter_interface(NodeId remoteNodeId, const char *interf,
+		  		 int s_port);	// signed port. <0 is dynamic
+  Transporter* get_transporter(NodeId nodeId);
+  NodeId get_localNodeId() { return localNodeId; };
+
 
   struct in_addr get_connect_address(NodeId node_id) const;
 protected:
   
 private:
   void * callbackObj;
+
+  NdbMgmHandle m_mgm_handle;
 
   struct NdbThread   *m_start_clients_thread;
   bool                m_run_start_clients_thread;

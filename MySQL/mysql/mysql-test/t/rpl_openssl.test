@@ -1,4 +1,4 @@
-source include/have_openssl_1.inc;
+source include/have_ssl.inc;
 source include/master-slave.inc;
 
 # We don't test all types of ssl auth params here since it's a bit hard 
@@ -45,7 +45,7 @@ select * from t1;
 
 #checking show slave status
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR $MASTER_MYPORT MASTER_MYPORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 show slave status;
 
 #checking if replication works without ssl also performing clean up
@@ -53,12 +53,13 @@ stop slave;
 change master to master_user='root',master_password='', master_ssl=0;
 start slave;
 connection master;
+drop user replssl@localhost;
 drop table t1;
 save_master_pos;
 connection slave;
 sync_with_master;
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR $MASTER_MYPORT MASTER_MYPORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 show slave status;
 
 # End of 4.1 tests

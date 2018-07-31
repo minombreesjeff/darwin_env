@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -81,7 +80,7 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table,uint count,
 static void reset_lock_data(MYSQL_LOCK *sql_lock);
 static int lock_external(THD *thd, TABLE **table,uint count);
 static int unlock_external(THD *thd, TABLE **table,uint count);
-static void print_lock_error(int error);
+static void print_lock_error(int error, const char *);
 
 /*
   Lock tables.
@@ -94,17 +93,32 @@ static void print_lock_error(int error);
     flags                       Options:
       MYSQL_LOCK_IGNORE_GLOBAL_READ_LOCK      Ignore a global read lock
       MYSQL_LOCK_IGNORE_FLUSH                 Ignore a flush tables.
+      MYSQL_LOCK_NOTIFY_IF_NEED_REOPEN        Instead of reopening altered
+                                              or dropped tables by itself,
+                                              mysql_lock_tables() should
+                                              notify upper level and rely
+                                              on caller doing this.
+    need_reopen                 Out parameter, TRUE if some tables were altered
+                                or deleted and should be reopened by caller.
 
   RETURN
     A lock structure pointer on success.
-    NULL on error.
+    NULL on error or if some tables should be reopen.
 */
 
-MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count, uint flags)
+/* Map the return value of thr_lock to an error from errmsg.txt */
+static int thr_lock_errno_to_mysql[]=
+{ 0, 1, ER_LOCK_WAIT_TIMEOUT, ER_LOCK_DEADLOCK };
+
+MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count,
+                              uint flags, bool *need_reopen)
 {
   MYSQL_LOCK *sql_lock;
   TABLE *write_lock_used;
+  int rc;
   DBUG_ENTER("mysql_lock_tables");
+
+  *need_reopen= FALSE;
 
   for (;;)
   {
@@ -136,27 +150,36 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count, uint flags)
       }
     }
 
-    thd->proc_info="System lock";
+    thd_proc_info(thd, "System lock");
     if (lock_external(thd, tables, count))
     {
       /* Clear the lock type of all lock data to avoid reusage. */
       reset_lock_data(sql_lock);
       my_free((gptr) sql_lock,MYF(0));
       sql_lock=0;
-      thd->proc_info=0;
       break;
     }
-    thd->proc_info="Table lock";
+    thd_proc_info(thd, "Table lock");
     thd->locked=1;
     /* Copy the lock data array. thr_multi_lock() reorders its contens. */
     memcpy(sql_lock->locks + sql_lock->lock_count, sql_lock->locks,
            sql_lock->lock_count * sizeof(*sql_lock->locks));
     /* Lock on the copied half of the lock data array. */
-    if (thr_multi_lock(sql_lock->locks + sql_lock->lock_count,
-                       sql_lock->lock_count))
+    rc= thr_lock_errno_to_mysql[(int) thr_multi_lock(sql_lock->locks +
+                                                     sql_lock->lock_count,
+                                                     sql_lock->lock_count,
+                                                     thd->lock_id)];
+    if (rc > 1)                                 /* a timeout or a deadlock */
+    {
+      my_error(rc, MYF(0));
+      my_free((gptr) sql_lock,MYF(0));
+      sql_lock= 0;
+      break;
+    }
+    else if (rc == 1)                           /* aborted */
     {
       thd->some_tables_deleted=1;		// Try again
-      sql_lock->lock_count=0;			// Locks are alread freed
+      sql_lock->lock_count= 0;                  // Locks are already freed
     }
     else if (!thd->some_tables_deleted || (flags & MYSQL_LOCK_IGNORE_FLUSH))
     {
@@ -170,20 +193,25 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count, uint flags)
       thd->locked=0;
       break;
     }
-    thd->proc_info=0;
+    thd_proc_info(thd, 0);
 
     /* some table was altered or deleted. reopen tables marked deleted */
     mysql_unlock_tables(thd,sql_lock);
     thd->locked=0;
 retry:
     sql_lock=0;
+    if (flags & MYSQL_LOCK_NOTIFY_IF_NEED_REOPEN)
+    {
+      *need_reopen= TRUE;
+      break;
+    }
     if (wait_for_tables(thd))
       break;					// Couldn't open tables
   }
-  thd->proc_info=0;
+  thd_proc_info(thd, 0);
   if (thd->killed)
   {
-    my_error(ER_SERVER_SHUTDOWN,MYF(0));
+    thd->send_kill_message();
     if (sql_lock)
     {
       mysql_unlock_tables(thd,sql_lock);
@@ -213,12 +241,12 @@ static int lock_external(THD *thd, TABLE **tables, uint count)
 
     if ((error=(*tables)->file->external_lock(thd,lock_type)))
     {
+      print_lock_error(error, (*tables)->file->table_type());
       for (; i-- ; tables--)
       {
 	(*tables)->file->external_lock(thd, F_UNLCK);
 	(*tables)->current_lock=F_UNLCK;
       }
-      print_lock_error(error);
       DBUG_RETURN(error);
     }
     else
@@ -476,8 +504,8 @@ MYSQL_LOCK *mysql_lock_merge(MYSQL_LOCK *a,MYSQL_LOCK *b)
   SYNOPSIS
     mysql_lock_have_duplicate()
     thd                         The current thread.
-    table                       The table to check for duplicate lock.
-    tables                      The list of tables to search for the dup lock.
+    needle                      The table to check for duplicate lock.
+    haystack                    The list of tables to search for the dup lock.
 
   NOTE
     This is mainly meant for MERGE tables in INSERT ... SELECT
@@ -490,28 +518,38 @@ MYSQL_LOCK *mysql_lock_merge(MYSQL_LOCK *a,MYSQL_LOCK *b)
     both functions should be checked.
 
   RETURN
-    1           A table from 'tables' matches a lock on 'table'.
-    0           No duplicate lock found.
+    NULL        No duplicate lock found.
+    ! NULL      First table from 'haystack' that matches a lock on 'needle'.
 */
 
-int mysql_lock_have_duplicate(THD *thd, TABLE *table, TABLE_LIST *tables)
+TABLE_LIST *mysql_lock_have_duplicate(THD *thd, TABLE_LIST *needle,
+                                      TABLE_LIST *haystack)
 {
   MYSQL_LOCK            *mylock;
   TABLE                 **lock_tables;
+  TABLE                 *table;
   TABLE                 *table2;
-  THR_LOCK_DATA         **lock_locks, **table_lock_data;
+  THR_LOCK_DATA         **lock_locks;
+  THR_LOCK_DATA         **table_lock_data;
   THR_LOCK_DATA         **end_data;
   THR_LOCK_DATA         **lock_data2;
   THR_LOCK_DATA         **end_data2;
   DBUG_ENTER("mysql_lock_have_duplicate");
 
-  /* A temporary table does not have locks. */
-  if (table->tmp_table == TMP_TABLE)
+  /*
+    Table may not be defined for derived or view tables.
+    Table may not be part of a lock for delayed operations.
+  */
+  if (! (table= needle->table) || ! table->lock_count)
     goto end;
 
-  /* Get command lock or LOCK TABLES lock. */
-  mylock= thd->lock ? thd->lock : thd->locked_tables;
-  DBUG_ASSERT(mylock);
+  /* A temporary table does not have locks. */
+  if (table->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE)
+    goto end;
+
+  /* Get command lock or LOCK TABLES lock. Maybe empty for INSERT DELAYED. */
+  if (! (mylock= thd->lock ? thd->lock : thd->locked_tables))
+    goto end;
 
   /* If we have less than two tables, we cannot have duplicates. */
   if (mylock->table_count < 2)
@@ -521,18 +559,22 @@ int mysql_lock_have_duplicate(THD *thd, TABLE *table, TABLE_LIST *tables)
   lock_tables= mylock->table;
 
   /* Prepare table related variables that don't change in loop. */
-  DBUG_ASSERT(table == lock_tables[table->lock_position]);
+  DBUG_ASSERT((table->lock_position < mylock->table_count) &&
+              (table == lock_tables[table->lock_position]));
   table_lock_data= lock_locks + table->lock_data_start;
   end_data= table_lock_data + table->lock_count;
 
-  for (; tables; tables= tables->next)
+  for (; haystack; haystack= haystack->next_global)
   {
-    table2= tables->table;
-    if (table2->tmp_table == TMP_TABLE)
+    if (haystack->placeholder())
+      continue;
+    table2= haystack->table;
+    if (table2->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE)
       continue;
 
     /* All tables in list must be in lock. */
-    DBUG_ASSERT(table2 == lock_tables[table2->lock_position]);
+    DBUG_ASSERT((table2->lock_position < mylock->table_count) &&
+                (table2 == lock_tables[table2->lock_position]));
 
     for (lock_data2=  lock_locks + table2->lock_data_start,
            end_data2= lock_data2 + table2->lock_count;
@@ -547,13 +589,17 @@ int mysql_lock_have_duplicate(THD *thd, TABLE *table, TABLE_LIST *tables)
            lock_data++)
       {
         if ((*lock_data)->lock == lock2)
-          DBUG_RETURN(1);
+        {
+          DBUG_PRINT("info", ("haystack match: '%s'", haystack->table_name));
+          DBUG_RETURN(haystack);
+        }
       }
     }
   }
 
  end:
-  DBUG_RETURN(0);
+  DBUG_PRINT("info", ("no duplicate found"));
+  DBUG_RETURN(NULL);
 }
 
 
@@ -571,12 +617,13 @@ static int unlock_external(THD *thd, TABLE **table,uint count)
     {
       (*table)->current_lock = F_UNLCK;
       if ((error=(*table)->file->external_lock(thd, F_UNLCK)))
+      {
 	error_code=error;
+	print_lock_error(error_code, (*table)->file->table_type());
+      }
     }
     table++;
   } while (--count);
-  if (error_code)
-    print_lock_error(error_code);
   DBUG_RETURN(error_code);
 }
 
@@ -608,10 +655,23 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count,
   *write_lock_used=0;
   for (i=tables=lock_count=0 ; i < count ; i++)
   {
-    if (table_ptr[i]->tmp_table != TMP_TABLE)
+    if (table_ptr[i]->s->tmp_table != NON_TRANSACTIONAL_TMP_TABLE)
     {
       tables+=table_ptr[i]->file->lock_count();
       lock_count++;
+    }
+    /*
+      To be able to open and lock for reading system tables like 'mysql.proc',
+      when we already have some tables opened and locked, and avoid deadlocks
+      we have to disallow write-locking of these tables with any other tables.
+    */
+    if (table_ptr[i]->s->system_table &&
+        table_ptr[i]->reginfo.lock_type >= TL_WRITE_ALLOW_WRITE &&
+        count != 1)
+    {
+      my_error(ER_WRONG_LOCK_OF_SYSTEM_TABLE, MYF(0), table_ptr[i]->s->db,
+               table_ptr[i]->s->table_name);
+      return 0;
     }
   }
 
@@ -637,7 +697,7 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count,
     TABLE *table;
     enum thr_lock_type lock_type;
 
-    if ((table=table_ptr[i])->tmp_table == TMP_TABLE)
+    if ((table=table_ptr[i])->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE)
       continue;
     lock_type= table->reginfo.lock_type;
     if (lock_type >= TL_WRITE_ALLOW_WRITE)
@@ -645,7 +705,7 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count,
       *write_lock_used=table;
       if (table->db_stat & HA_READ_ONLY)
       {
-	my_error(ER_OPEN_AS_READONLY,MYF(0),table->table_name);
+	my_error(ER_OPEN_AS_READONLY,MYF(0),table->alias);
         /* Clear the lock type of the lock data that are stored already. */
         sql_lock->lock_count= locks - sql_lock->locks;
         reset_lock_data(sql_lock);
@@ -796,13 +856,12 @@ int lock_table_name(THD *thd, TABLE_LIST *table_list)
   uint  key_length;
   HASH_SEARCH_STATE state;
   DBUG_ENTER("lock_table_name");
-  DBUG_PRINT("enter",("db: %s  name: %s", db, table_list->real_name));
+  DBUG_PRINT("enter",("db: %s  name: %s", db, table_list->table_name));
 
   safe_mutex_assert_owner(&LOCK_open);
 
-  key_length=(uint) (strmov(strmov(key,db)+1,table_list->real_name)
-		     -key)+ 1;
-
+  key_length= (uint)(strmov(strmov(key, db) + 1, table_list->table_name) -
+                     key) + 1;
 
   /* Only insert the table if we haven't insert it already */
   for (table=(TABLE*) hash_first(&open_cache, (byte*)key, key_length, &state);
@@ -811,31 +870,14 @@ int lock_table_name(THD *thd, TABLE_LIST *table_list)
     if (table->in_use == thd)
       DBUG_RETURN(0);
 
-  /*
-    Create a table entry with the right key and with an old refresh version
-    Note that we must use my_malloc() here as this is freed by the table
-    cache
-  */
-  if (!(table= (TABLE*) my_malloc(sizeof(*table)+key_length,
-				  MYF(MY_WME | MY_ZEROFILL))))
+  if (!(table= table_cache_insert_placeholder(thd, key, key_length)))
     DBUG_RETURN(-1);
-  memcpy((table->table_cache_key= (char*) (table+1)), key, key_length);
-  table->key_length=key_length;
-  table->in_use=thd;
-  table->locked_by_name=1;
-  table_list->table=table;
 
-  if (my_hash_insert(&open_cache, (byte*) table))
-  {
-    my_free((gptr) table,MYF(0));
-    DBUG_RETURN(-1);
-  }
-  
-  if (remove_table_from_cache(thd, db, table_list->real_name, RTFC_NO_FLAG))
-  {
-    DBUG_RETURN(1);				// Table is in use
-  }
-  DBUG_RETURN(0);
+  table_list->table= table;
+
+  /* Return 1 if table is in use */
+  DBUG_RETURN(test(remove_table_from_cache(thd, db, table_list->table_name,
+                                           RTFC_NO_FLAG)));
 }
 
 
@@ -844,14 +886,14 @@ void unlock_table_name(THD *thd, TABLE_LIST *table_list)
   if (table_list->table)
   {
     hash_delete(&open_cache, (byte*) table_list->table);
-    (void) pthread_cond_broadcast(&COND_refresh);
+    broadcast_refresh();
   }
 }
 
 
 static bool locked_named_table(THD *thd, TABLE_LIST *table_list)
 {
-  for (; table_list ; table_list=table_list->next)
+  for (; table_list ; table_list=table_list->next_local)
   {
     if (table_list->table && table_is_used(table_list->table,0))
       return 1;
@@ -905,7 +947,7 @@ bool lock_table_names(THD *thd, TABLE_LIST *table_list)
   bool got_all_locks=1;
   TABLE_LIST *lock_table;
 
-  for (lock_table=table_list ; lock_table ; lock_table=lock_table->next)
+  for (lock_table= table_list; lock_table; lock_table= lock_table->next_local)
   {
     int got_lock;
     if ((got_lock=lock_table_name(thd,lock_table)) < 0)
@@ -936,9 +978,9 @@ end:
 			(default 0, which will unlock all tables)
 
   NOTES
-    One must have a lock on LOCK_open when calling this
-    This function will send a COND_refresh signal to inform other threads
-    that the name locks are removed
+    One must have a lock on LOCK_open when calling this.
+    This function will broadcast refresh signals to inform other threads
+    that the name locks are removed.
 
   RETURN
     0	ok
@@ -948,13 +990,15 @@ end:
 void unlock_table_names(THD *thd, TABLE_LIST *table_list,
 			TABLE_LIST *last_table)
 {
-  for (TABLE_LIST *table=table_list ; table != last_table ; table=table->next)
+  for (TABLE_LIST *table= table_list;
+       table != last_table;
+       table= table->next_local)
     unlock_table_name(thd,table);
-  pthread_cond_broadcast(&COND_refresh);
+  broadcast_refresh();
 }
 
 
-static void print_lock_error(int error)
+static void print_lock_error(int error, const char *table)
 {
   int textno;
   DBUG_ENTER("print_lock_error");
@@ -966,11 +1010,22 @@ static void print_lock_error(int error)
   case HA_ERR_READ_ONLY_TRANSACTION:
     textno=ER_READ_ONLY_TRANSACTION;
     break;
+  case HA_ERR_LOCK_DEADLOCK:
+    textno=ER_LOCK_DEADLOCK;
+    break;
+  case HA_ERR_WRONG_COMMAND:
+    textno=ER_ILLEGAL_HA;
+    break;
   default:
     textno=ER_CANT_LOCK;
     break;
   }
-  my_error(textno,MYF(ME_BELL+ME_OLDWIN+ME_WAITTANG),error);
+
+  if ( textno == ER_ILLEGAL_HA )
+    my_error(textno, MYF(ME_BELL+ME_OLDWIN+ME_WAITTANG), table);
+  else
+    my_error(textno, MYF(ME_BELL+ME_OLDWIN+ME_WAITTANG), error);
+
   DBUG_VOID_RETURN;
 }
 
@@ -993,6 +1048,16 @@ static void print_lock_error(int error)
     count of threads which want to take a global read lock but cannot
   protect_against_global_read_lock
     count of threads which have set protection against global read lock.
+
+  access to them is protected with a mutex LOCK_global_read_lock
+
+  (XXX: one should never take LOCK_open if LOCK_global_read_lock is
+  taken, otherwise a deadlock may occur. Other mutexes could be a
+  problem too - grep the code for global_read_lock if you want to use
+  any other mutex here) Also one must not hold LOCK_open when calling
+  wait_if_global_read_lock(). When the thread with the global read lock
+  tries to close its tables, it needs to take LOCK_open in
+  close_thread_table().
 
   How blocking of threads by global read lock is achieved: that's
   advisory. Any piece of code which should be blocked by global read lock must
@@ -1031,16 +1096,12 @@ static void print_lock_error(int error)
   table instance of thd2
   thd1: COMMIT; # blocked by thd3.
   thd1 blocks thd2 which blocks thd3 which blocks thd1: deadlock.
-  
+
   Note that we need to support that one thread does
   FLUSH TABLES WITH READ LOCK; and then COMMIT;
   (that's what innobackup does, for some good reason).
   So in this exceptional case the COMMIT should not be blocked by the FLUSH
   TABLES WITH READ LOCK.
-
-  TODO in MySQL 5.x: make_global_read_lock_block_commit() should be
-  killable. Normally CPU does not spend a long time in this function (COMMITs
-  are quite fast), but it would still be nice.
 
 ****************************************************************************/
 
@@ -1058,16 +1119,17 @@ bool lock_global_read_lock(THD *thd)
 
   if (!thd->global_read_lock)
   {
-    (void) pthread_mutex_lock(&LOCK_open);
-    const char *old_message=thd->enter_cond(&COND_refresh, &LOCK_open,
-					    "Waiting to get readlock");
+    const char *old_message;
+    (void) pthread_mutex_lock(&LOCK_global_read_lock);
+    old_message=thd->enter_cond(&COND_global_read_lock, &LOCK_global_read_lock,
+                                "Waiting to get readlock");
     DBUG_PRINT("info",
 	       ("waiting_for: %d  protect_against: %d",
 		waiting_for_read_lock, protect_against_global_read_lock));
 
     waiting_for_read_lock++;
     while (protect_against_global_read_lock && !thd->killed)
-      pthread_cond_wait(&COND_refresh, &LOCK_open);
+      pthread_cond_wait(&COND_global_read_lock, &LOCK_global_read_lock);
     waiting_for_read_lock--;
     if (thd->killed)
     {
@@ -1076,7 +1138,7 @@ bool lock_global_read_lock(THD *thd)
     }
     thd->global_read_lock= GOT_GLOBAL_READ_LOCK;
     global_read_lock++;
-    thd->exit_cond(old_message);
+    thd->exit_cond(old_message); // this unlocks LOCK_global_read_lock
   }
   /*
     We DON'T set global_read_lock_blocks_commit now, it will be set after
@@ -1089,18 +1151,29 @@ bool lock_global_read_lock(THD *thd)
   DBUG_RETURN(0);
 }
 
+
 void unlock_global_read_lock(THD *thd)
 {
   uint tmp;
-  pthread_mutex_lock(&LOCK_open);
+  DBUG_ENTER("unlock_global_read_lock");
+  DBUG_PRINT("info",
+             ("global_read_lock: %u  global_read_lock_blocks_commit: %u",
+              global_read_lock, global_read_lock_blocks_commit));
+
+  pthread_mutex_lock(&LOCK_global_read_lock);
   tmp= --global_read_lock;
   if (thd->global_read_lock == MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT)
     --global_read_lock_blocks_commit;
-  pthread_mutex_unlock(&LOCK_open);
+  pthread_mutex_unlock(&LOCK_global_read_lock);
   /* Send the signal outside the mutex to avoid a context switch */
   if (!tmp)
-    pthread_cond_broadcast(&COND_refresh);
+  {
+    DBUG_PRINT("signal", ("Broadcasting COND_global_read_lock"));
+    pthread_cond_broadcast(&COND_global_read_lock);
+  }
   thd->global_read_lock= 0;
+
+  DBUG_VOID_RETURN;
 }
 
 #define must_wait (global_read_lock &&                             \
@@ -1115,14 +1188,22 @@ bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh,
   DBUG_ENTER("wait_if_global_read_lock");
 
   LINT_INIT(old_message);
-  (void) pthread_mutex_lock(&LOCK_open);
+  /*
+    Assert that we do not own LOCK_open. If we would own it, other
+    threads could not close their tables. This would make a pretty
+    deadlock.
+  */
+  safe_mutex_assert_not_owner(&LOCK_open);
+
+  (void) pthread_mutex_lock(&LOCK_global_read_lock);
   if ((need_exit_cond= must_wait))
   {
     if (thd->global_read_lock)		// This thread had the read locks
     {
       if (is_not_commit)
-        my_error(ER_CANT_UPDATE_WITH_READLOCK,MYF(0));
-      (void) pthread_mutex_unlock(&LOCK_open);
+        my_message(ER_CANT_UPDATE_WITH_READLOCK,
+                   ER(ER_CANT_UPDATE_WITH_READLOCK), MYF(0));
+      (void) pthread_mutex_unlock(&LOCK_global_read_lock);
       /*
         We allow FLUSHer to COMMIT; we assume FLUSHer knows what it does.
         This allowance is needed to not break existing versions of innobackup
@@ -1130,11 +1211,15 @@ bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh,
       */
       DBUG_RETURN(is_not_commit);
     }
-    old_message=thd->enter_cond(&COND_refresh, &LOCK_open,
+    old_message=thd->enter_cond(&COND_global_read_lock, &LOCK_global_read_lock,
 				"Waiting for release of readlock");
     while (must_wait && ! thd->killed &&
 	   (!abort_on_refresh || thd->version == refresh_version))
-      (void) pthread_cond_wait(&COND_refresh,&LOCK_open);
+    {
+      DBUG_PRINT("signal", ("Waiting for COND_global_read_lock"));
+      (void) pthread_cond_wait(&COND_global_read_lock, &LOCK_global_read_lock);
+      DBUG_PRINT("signal", ("Got COND_global_read_lock"));
+    }
     if (thd->killed)
       result=1;
   }
@@ -1144,10 +1229,10 @@ bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh,
     The following is only true in case of a global read locks (which is rare)
     and if old_message is set
   */
-  if (unlikely(need_exit_cond)) 
-    thd->exit_cond(old_message);
+  if (unlikely(need_exit_cond))
+    thd->exit_cond(old_message); // this unlocks LOCK_global_read_lock
   else
-    pthread_mutex_unlock(&LOCK_open);
+    pthread_mutex_unlock(&LOCK_global_read_lock);
   DBUG_RETURN(result);
 }
 
@@ -1158,31 +1243,79 @@ void start_waiting_global_read_lock(THD *thd)
   DBUG_ENTER("start_waiting_global_read_lock");
   if (unlikely(thd->global_read_lock))
     DBUG_VOID_RETURN;
-  (void) pthread_mutex_lock(&LOCK_open);
+  (void) pthread_mutex_lock(&LOCK_global_read_lock);
   tmp= (!--protect_against_global_read_lock &&
         (waiting_for_read_lock || global_read_lock_blocks_commit));
-  (void) pthread_mutex_unlock(&LOCK_open);
+  (void) pthread_mutex_unlock(&LOCK_global_read_lock);
   if (tmp)
-    pthread_cond_broadcast(&COND_refresh);
+    pthread_cond_broadcast(&COND_global_read_lock);
   DBUG_VOID_RETURN;
 }
 
 
-void make_global_read_lock_block_commit(THD *thd)
+bool make_global_read_lock_block_commit(THD *thd)
 {
+  bool error;
+  const char *old_message;
+  DBUG_ENTER("make_global_read_lock_block_commit");
   /*
     If we didn't succeed lock_global_read_lock(), or if we already suceeded
     make_global_read_lock_block_commit(), do nothing.
   */
   if (thd->global_read_lock != GOT_GLOBAL_READ_LOCK)
-    return;
-  pthread_mutex_lock(&LOCK_open);
+    DBUG_RETURN(0);
+  pthread_mutex_lock(&LOCK_global_read_lock);
   /* increment this BEFORE waiting on cond (otherwise race cond) */
   global_read_lock_blocks_commit++;
-  while (protect_against_global_read_lock)
-    pthread_cond_wait(&COND_refresh, &LOCK_open);
-  pthread_mutex_unlock(&LOCK_open);
-  thd->global_read_lock= MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT;
+  /* For testing we set up some blocking, to see if we can be killed */
+  DBUG_EXECUTE_IF("make_global_read_lock_block_commit_loop",
+                  protect_against_global_read_lock++;);
+  old_message= thd->enter_cond(&COND_global_read_lock, &LOCK_global_read_lock,
+                               "Waiting for all running commits to finish");
+  while (protect_against_global_read_lock && !thd->killed)
+    pthread_cond_wait(&COND_global_read_lock, &LOCK_global_read_lock);
+  DBUG_EXECUTE_IF("make_global_read_lock_block_commit_loop",
+                  protect_against_global_read_lock--;);
+  if ((error= test(thd->killed)))
+    global_read_lock_blocks_commit--; // undo what we did
+  else
+    thd->global_read_lock= MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT;
+  thd->exit_cond(old_message); // this unlocks LOCK_global_read_lock
+  DBUG_RETURN(error);
+}
+
+
+/*
+  Broadcast COND_refresh and COND_global_read_lock.
+
+  SYNOPSIS
+    broadcast_refresh()
+      void                      No parameters.
+
+  DESCRIPTION
+    Due to a bug in a threading library it could happen that a signal
+    did not reach its target. A condition for this was that the same
+    condition variable was used with different mutexes in
+    pthread_cond_wait(). Some time ago we changed LOCK_open to
+    LOCK_global_read_lock in global read lock handling. So COND_refresh
+    was used with LOCK_open and LOCK_global_read_lock.
+
+    We did now also change from COND_refresh to COND_global_read_lock
+    in global read lock handling. But now it is necessary to signal
+    both conditions at the same time.
+
+  NOTE
+    When signalling COND_global_read_lock within the global read lock
+    handling, it is not necessary to also signal COND_refresh.
+
+  RETURN
+    void
+*/
+
+void broadcast_refresh(void)
+{
+  VOID(pthread_cond_broadcast(&COND_refresh));
+  VOID(pthread_cond_broadcast(&COND_global_read_lock));
 }
 
 

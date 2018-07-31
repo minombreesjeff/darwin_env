@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -411,6 +410,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
     my_strntoull_8bit,
     my_strntod_8bit,
     my_strtoll10_8bit,
+    my_strntoull10rnd_8bit,
     my_scan_8bit
 };
 
@@ -431,13 +431,17 @@ CHARSET_INFO my_charset_latin1=
     NULL,		/* sort_order_big*/
     cs_to_uni,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_8bit_simple_ci_handler
@@ -580,11 +584,16 @@ static int my_strnncoll_latin1_de(CHARSET_INFO *cs __attribute__((unused)),
 
 static int my_strnncollsp_latin1_de(CHARSET_INFO *cs __attribute__((unused)),
 				    const uchar *a, uint a_length,
-				    const uchar *b, uint b_length)
+				    const uchar *b, uint b_length,
+                                    my_bool diff_if_only_endspace_difference)
 {
-  const uchar *a_end= a + a_length;
-  const uchar *b_end= b + b_length;
+  const uchar *a_end= a + a_length, *b_end= b + b_length;
   uchar a_char, a_extend= 0, b_char, b_extend= 0;
+  int res;
+
+#ifndef VARCHAR_WITH_DIFF_ENDSPACE_ARE_DIFFERENT_FOR_UNIQUE
+  diff_if_only_endspace_difference= 0;
+#endif
 
   while ((a < a_end || a_extend) && (b < b_end || b_extend))
   {
@@ -617,9 +626,12 @@ static int my_strnncollsp_latin1_de(CHARSET_INFO *cs __attribute__((unused)),
   if (b_extend)
     return -1;
 
+  res= 0;
   if (a != a_end || b != b_end)
   {
     int swap= 1;
+    if (diff_if_only_endspace_difference)
+      res= 1;                                   /* Assume 'a' is bigger */
     /*
       Check the next not space character of the longer key. If it's < ' ',
       then it's smaller than the other key.
@@ -630,6 +642,7 @@ static int my_strnncollsp_latin1_de(CHARSET_INFO *cs __attribute__((unused)),
       a_end= b_end;
       a= b;
       swap= -1;					/* swap sign of result */
+      res= -res;
     }
     for ( ; a < a_end ; a++)
     {
@@ -637,7 +650,7 @@ static int my_strnncollsp_latin1_de(CHARSET_INFO *cs __attribute__((unused)),
 	return (*a < ' ') ? -swap : swap;
     }
   }
-  return 0;
+  return res;
 }
 
 
@@ -692,11 +705,13 @@ static MY_COLLATION_HANDLER my_collation_german2_ci_handler=
   my_strnncoll_latin1_de,
   my_strnncollsp_latin1_de,
   my_strnxfrm_latin1_de,
+  my_strnxfrmlen_simple,
   my_like_range_simple,
   my_wildcmp_8bit,
   my_strcasecmp_8bit,
   my_instr_simple,
-  my_hash_sort_latin1_de
+  my_hash_sort_latin1_de,
+  my_propagate_complex
 };
 
 
@@ -716,13 +731,17 @@ CHARSET_INFO my_charset_latin1_german2_ci=
   NULL,					/* sort_order_big*/
   cs_to_uni,				/* tab_to_uni   */
   NULL,					/* tab_from_uni */
+  my_unicase_default,                   /* caseinfo     */
   NULL,					/* state_map    */
   NULL,					/* ident_map    */
   2,					/* strxfrm_multiply */
+  1,                                    /* caseup_multiply  */
+  1,                                    /* casedn_multiply  */
   1,					/* mbminlen   */
   1,					/* mbmaxlen  */
   0,					/* min_sort_char */
   247,					/* max_sort_char */
+  ' ',                                  /* pad char      */
   0,                                    /* escape_with_backslash_is_dangerous */
   &my_charset_handler,
   &my_collation_german2_ci_handler
@@ -745,13 +764,17 @@ CHARSET_INFO my_charset_latin1_bin=
   NULL,					/* sort_order_big*/
   cs_to_uni,				/* tab_to_uni   */
   NULL,					/* tab_from_uni */
+  my_unicase_default,                   /* caseinfo     */
   NULL,					/* state_map    */
   NULL,					/* ident_map    */
   1,					/* strxfrm_multiply */
+  1,                                    /* caseup_multiply  */
+  1,                                    /* casedn_multiply  */
   1,					/* mbminlen   */
   1,					/* mbmaxlen  */
   0,					/* min_sort_char */
   255,					/* max_sort_char */
+  ' ',                                  /* pad char      */
   0,                                    /* escape_with_backslash_is_dangerous */
   &my_charset_handler,
   &my_collation_8bit_bin_handler

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -91,7 +90,11 @@ private:
 	   ; \
   }
 
-#define ERR(error) ERR_OUT(g_err, error)
+#define ERR(error) \
+{ \
+  const NdbError &_error= (error); \
+  ERR_OUT(g_err, _error); \
+}
 #define ERR_INFO(error) ERR_OUT(g_info, error)
 
 #endif

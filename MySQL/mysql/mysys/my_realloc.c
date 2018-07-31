@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,7 +26,7 @@ gptr my_realloc(gptr oldpoint, uint size, myf my_flags)
 {
   gptr point;
   DBUG_ENTER("my_realloc");
-  DBUG_PRINT("my",("ptr: 0x%lx  size: %u  my_flags: %d",oldpoint, size,
+  DBUG_PRINT("my",("ptr: 0x%lx  size: %u  my_flags: %d", (long) oldpoint, size,
 		   my_flags));
 
   if (!oldpoint && (my_flags & MY_ALLOW_ZERO_PTR))
@@ -52,7 +51,7 @@ gptr my_realloc(gptr oldpoint, uint size, myf my_flags)
   if ((point = (char*)realloc(oldpoint,size)) == NULL)
   {
     if (my_flags & MY_FREE_ON_ERROR)
-      my_free(oldpoint,MyFLAGS);
+      my_free(oldpoint, my_flags);
     if (my_flags & MY_HOLD_ON_ERROR)
       DBUG_RETURN(oldpoint);
     my_errno=errno;
@@ -60,6 +59,6 @@ gptr my_realloc(gptr oldpoint, uint size, myf my_flags)
       my_error(EE_OUTOFMEMORY, MYF(ME_BELL+ME_WAITTANG), size);
   }
 #endif
-  DBUG_PRINT("exit",("ptr: 0x%lx",point));
+  DBUG_PRINT("exit",("ptr: 0x%lx", (long) point));
   DBUG_RETURN(point);
 } /* my_realloc */

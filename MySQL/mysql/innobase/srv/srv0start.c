@@ -233,6 +233,13 @@ srv_parse_data_file_paths_and_sizes(
 		}
 	}
 
+	if (i == 0) {
+		/* If innodb_data_file_path was defined it must contain
+		at least one data file definition */
+
+		return(FALSE);
+	}
+	
 	*data_file_names = (char**)ut_malloc(i * sizeof(void*));
 	*data_file_sizes = (ulint*)ut_malloc(i * sizeof(ulint));
 	*data_file_is_raw_partition = (ulint*)ut_malloc(i * sizeof(ulint));
@@ -379,6 +386,13 @@ srv_parse_log_group_home_dirs(
 		}
 	}
 
+	if (i != 1) {
+		/* If innodb_log_group_home_dir was defined it must
+		contain exactly one path definition under current MySQL */
+		
+		return(FALSE);
+	}
+	
 	*log_group_home_dirs = (char**) ut_malloc(i * sizeof(void*));
 
 	/* Then store the actual values to our array */
@@ -479,7 +493,6 @@ srv_normalize_path_for_win(
 Adds a slash or a backslash to the end of a string if it is missing
 and the string is not empty. */
 
-static
 char*
 srv_add_path_separator_if_needed(
 /*=============================*/
@@ -531,6 +544,7 @@ srv_calc_high32(
 	return(file_size >> (32 - UNIV_PAGE_SIZE_SHIFT));
 }
 
+#ifndef UNIV_HOTBACKUP
 /*************************************************************************
 Creates or opens the log files and closes them. */
 static
@@ -1040,7 +1054,9 @@ innobase_start_or_create_for_mysql(void)
 
 	srv_start_has_been_called = TRUE;
 
+#ifdef UNIV_DEBUG
 	log_do_write = TRUE;
+#endif /* UNIV_DEBUG */
 /*	yydebug = TRUE; */
 
 	srv_is_being_started = TRUE;
@@ -1124,12 +1140,9 @@ innobase_start_or_create_for_mysql(void)
 	maximum number of threads that can wait in the 'srv_conc array' for
 	their time to enter InnoDB. */
 
-#if defined(__WIN__) || defined(__NETWARE__)
+#if defined(__NETWARE__)
 
-/* Create less event semaphores because Win 98/ME had difficulty creating
-40000 event semaphores.
-Comment from Novell, Inc.: also, these just take a lot of memory on
-NetWare. */
+	/* Comment from Novell, Inc.: These take a lot of memory on NetWare.*/
         srv_max_n_threads = 1000;
 #else
         if (srv_pool_size >= 1000 * 1024) {
@@ -1182,6 +1195,13 @@ NetWare. */
 	mutex_set_level(&srv_dict_tmpfile_mutex, SYNC_DICT_OPERATION);
 	srv_dict_tmpfile = os_file_create_tmpfile();
 	if (!srv_dict_tmpfile) {
+		return(DB_ERROR);
+	}
+
+	mutex_create(&srv_misc_tmpfile_mutex);
+	mutex_set_level(&srv_misc_tmpfile_mutex, SYNC_ANY_LATCH);
+	srv_misc_tmpfile = os_file_create_tmpfile();
+	if (!srv_misc_tmpfile) {
 		return(DB_ERROR);
 	}
 
@@ -1485,15 +1505,13 @@ NetWare. */
 		fsp_header_inc_size(0, sum_of_new_sizes, &mtr);		
 
 		mtr_commit(&mtr);
-	}
 
-	if (recv_needed_recovery) {
-	    	ut_print_timestamp(stderr);
-		fprintf(stderr,
-	        "  InnoDB: Flushing modified pages from the buffer pool...\n");
-	}
+		/* Immediately write the log record about increased tablespace
+		size to disk, so that it is durable even if mysqld would crash
+		quickly */
 
-	log_make_checkpoint_at(ut_dulint_max, TRUE);
+		log_buffer_flush_to_disk();
+	}
 
 #ifdef UNIV_LOG_ARCHIVE
 	/* Archiving is always off under MySQL */
@@ -1536,18 +1554,7 @@ NetWare. */
 	srv_was_started = TRUE;
 	srv_is_being_started = FALSE;
 
-#ifdef UNIV_DEBUG
-        /* Wait a while so that the created threads have time to suspend
-	themselves before we switch sync debugging on; otherwise a thread may
-	execute mutex_enter() before the checks are on, and mutex_exit() after
-	the checks are on, which will cause an assertion failure in sync
-	debug. */
-
-        os_thread_sleep(3000000);
-#endif
-	sync_order_checks_on = TRUE;
-
-        if (srv_use_doublewrite_buf && trx_doublewrite == NULL) {
+        if (trx_doublewrite == NULL) {
 		/* Create the doublewrite buffer to a new tablespace */
 
 		trx_sys_create_doublewrite_buf();
@@ -1564,8 +1571,9 @@ NetWare. */
 
 	os_thread_create(&srv_master_thread, NULL, thread_ids + 1 +
 							SRV_MAX_N_IO_THREADS);
+#ifdef UNIV_DEBUG
 	/* buf_debug_prints = TRUE; */
-
+#endif /* UNIV_DEBUG */
 	sum_of_data_file_sizes = 0;
 	
 	for (i = 0; i < srv_n_data_files; i++) {
@@ -1693,7 +1701,7 @@ NetWare. */
 "InnoDB: You have now successfully upgraded to the multiple tablespaces\n"
 "InnoDB: format. You should NOT DOWNGRADE to an earlier version of\n"
 "InnoDB: InnoDB! But if you absolutely need to downgrade, see\n"
-"InnoDB: http://dev.mysql.com/doc/mysql/en/Multiple_tablespaces.html\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/multiple-tablespaces.html\n"
 "InnoDB: for instructions.\n");
 	}
 
@@ -1739,6 +1747,15 @@ innobase_shutdown_for_mysql(void)
 	The step 1 is the real InnoDB shutdown. The remaining steps 2 - ...
 	just free data structures after the shutdown. */
 
+
+	if (srv_fast_shutdown == 2) {
+	        ut_print_timestamp(stderr);
+		fprintf(stderr,
+"  InnoDB: MySQL has requested a very fast shutdown without flushing "
+"the InnoDB buffer pool to data files. At the next mysqld startup "
+"InnoDB will do a crash recovery!\n");
+	}
+
 #ifdef __NETWARE__
 	if(!panic_shutdown)
 #endif 
@@ -1754,6 +1771,14 @@ innobase_shutdown_for_mysql(void)
 	/* 2. Make all threads created by InnoDB to exit */
 
 	srv_shutdown_state = SRV_SHUTDOWN_EXIT_THREADS;
+
+        /* In a 'very fast' shutdown, we do not need to wait for these threads
+        to die; all which counts is that we flushed the log; a 'very fast'
+        shutdown is essentially a crash. */
+
+	if (srv_fast_shutdown == 2) {
+		return(DB_SUCCESS);
+	}
 
 	/* All threads end up waiting for certain events. Put those events
 	to the signaled state. Then the threads will exit themselves in
@@ -1816,8 +1841,14 @@ innobase_shutdown_for_mysql(void)
 		srv_dict_tmpfile = 0;
 	}
 
+	if (srv_misc_tmpfile) {
+		fclose(srv_misc_tmpfile);
+		srv_misc_tmpfile = 0;
+	}
+
 	mutex_free(&srv_monitor_file_mutex);
 	mutex_free(&srv_dict_tmpfile_mutex);
+	mutex_free(&srv_misc_tmpfile_mutex);
 
 	/* 3. Free all InnoDB's own mutexes and the os_fast_mutexes inside
 	them */
@@ -1827,6 +1858,16 @@ innobase_shutdown_for_mysql(void)
 
 	srv_free();
 	os_sync_free();
+
+	/* Check that all read views are closed except read view owned
+	by a purge. */
+
+	if (UT_LIST_GET_LEN(trx_sys->view_list) > 1) {
+	        fprintf(stderr,
+"InnoDB: Error: all read views were not closed before shutdown:\n"
+"InnoDB: %lu read views open \n",
+		UT_LIST_GET_LEN(trx_sys->view_list) - 1);
+	}
 
 	/* 5. Free all allocated memory and the os_fast_mutex created in
 	ut0mem.c */
@@ -1868,4 +1909,5 @@ void set_panic_flag_for_netware()
 	extern ibool panic_shutdown;
 	panic_shutdown = TRUE;
 }
-#endif
+#endif /* __NETWARE__ */
+#endif /* !UNIV_HOTBACKUP */

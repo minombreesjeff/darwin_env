@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -198,7 +197,7 @@ int initSequence(RandomSequence *seq, SequenceValues *inputValues)
    unsigned int i;
    unsigned int j;
    unsigned int totalLength;
-   unsigned int index;
+   unsigned int idx;
 
    if( !seq || !inputValues ) return(-1);
 
@@ -220,12 +219,12 @@ int initSequence(RandomSequence *seq, SequenceValues *inputValues)
    /*----------------------*/
    /* set the array values */
    /*----------------------*/
-   index = 0;
+   idx = 0;
 
    for(i = 0; inputValues[i].length != 0; i++) {
       for(j = 0; j < inputValues[i].length; j++ ) {
-         seq->values[index] = inputValues[i].value;
-         index++;
+         seq->values[idx] = inputValues[i].value;
+         idx++;
       }
    }
 

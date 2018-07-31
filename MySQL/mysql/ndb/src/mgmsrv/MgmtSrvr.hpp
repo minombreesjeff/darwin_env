@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -50,7 +49,9 @@ class Ndb_mgmd_event_service : public EventLoggerBase
   friend class MgmtSrvr;
 public:
   struct Event_listener : public EventLoggerBase {
+    Event_listener() {}
     NDB_SOCKET_TYPE m_socket;
+    Uint32 m_parsable;
   };
   
 private:  
@@ -105,7 +106,8 @@ public:
     ~Allocated_resources();
     // methods to reserve/allocate resources which
     // will be freed when running destructor
-    void reserve_node(NodeId id);
+    void reserve_node(NodeId id, NDB_TICKS timeout);
+    bool is_timed_out(NDB_TICKS tick);
     bool is_reserved(NodeId nodeId) { return m_reserved_nodes.get(nodeId); }
     bool is_reserved(NodeBitmask mask) { return !mask.bitAND(m_reserved_nodes).isclear(); }
     bool isclear() { return m_reserved_nodes.isclear(); }
@@ -113,6 +115,7 @@ public:
   private:
     MgmtSrvr &m_mgmsrv;
     NodeBitmask m_reserved_nodes;
+    NDB_TICKS m_alloc_timeout;
   };
   NdbMutex *m_node_id_mutex;
 
@@ -173,10 +176,13 @@ public:
   STATIC_CONST( NODE_SHUTDOWN_IN_PROGESS = 5026 );
   STATIC_CONST( SYSTEM_SHUTDOWN_IN_PROGRESS = 5027 );
   STATIC_CONST( NODE_SHUTDOWN_WOULD_CAUSE_SYSTEM_CRASH = 5028 );
-  STATIC_CONST( NO_CONTACT_WITH_CLUSTER = 6666 );
-  STATIC_CONST( OPERATION_IN_PROGRESS = 6667 );
-  
+
   STATIC_CONST( NO_CONTACT_WITH_DB_NODES = 5030 );
+  STATIC_CONST( UNSUPPORTED_NODE_SHUTDOWN = 5031 );
+
+  STATIC_CONST( NODE_NOT_API_NODE = 5062 );
+  STATIC_CONST( OPERATION_NOT_ALLOWED_START_STOP = 5063 );
+
   /**
    *   This enum specifies the different signal loggig modes possible to set 
    *   with the setSignalLoggingMode method.
@@ -249,12 +255,15 @@ public:
    *   @param   processId: Id of the DB process to stop
    *   @return  0 if succeeded, otherwise: as stated above, plus:
    */
-  int stopNode(int nodeId, bool abort = false);
+  int stopNodes(const Vector<NodeId> &node_ids, int *stopCount, bool abort,
+                int *stopSelf);
+
+  int shutdownMGM(int *stopCount, bool abort, int *stopSelf);
 
   /**
-   *   Stop the system
+   * shutdown the DB nodes
    */
-  int stop(int * cnt = 0, bool abort = false);
+  int shutdownDB(int * cnt = 0, bool abort = false);
 
   /**
    *   print version info about a node
@@ -283,18 +292,19 @@ public:
  int start(int processId);
 
   /**
-   *   Restart a node
+   *   Restart nodes
    *   @param processId: Id of the DB process to start
    */
-  int restartNode(int processId, bool nostart, bool initialStart, 
-		  bool abort = false);
+  int restartNodes(const Vector<NodeId> &node_ids,
+                   int *stopCount, bool nostart,
+                   bool initialStart, bool abort, int *stopSelf);
   
   /**
-   *   Restart the system
+   *   Restart all DB nodes
    */
-  int restart(bool nostart, bool initialStart, 
-	      bool abort = false,
-	      int * stopCount = 0);
+  int restartDB(bool nostart, bool initialStart, 
+                bool abort = false,
+                int * stopCount = 0);
   
   struct BackupEvent {
     enum Event {
@@ -313,9 +323,9 @@ public:
 	Uint32 ErrorCode;
       } FailedToStart ;
       struct {
+	Uint64 NoOfBytes;
+	Uint64 NoOfRecords;
 	Uint32 BackupId;
-	Uint32 NoOfBytes;
-	Uint32 NoOfRecords;
 	Uint32 NoOfLogBytes;
 	Uint32 NoOfLogRecords;
 	Uint32 startGCP;
@@ -427,8 +437,10 @@ public:
    */
   bool getNextNodeId(NodeId * _nodeId, enum ndb_mgm_node_type type) const ;
   bool alloc_node_id(NodeId * _nodeId, enum ndb_mgm_node_type type,
-		     struct sockaddr *client_addr, SOCKET_SIZE_TYPE *client_addr_len,
-		     BaseString &error_string);
+		     struct sockaddr *client_addr,
+                     SOCKET_SIZE_TYPE *client_addr_len,
+		     int &error_code, BaseString &error_string,
+                     int log_event = 1);
   
   /**
    *
@@ -463,23 +475,43 @@ public:
   int getPort() const;
 
   int setDbParameter(int node, int parameter, const char * value, BaseString&);
-  
+  int setConnectionDbParameter(int node1, int node2, int param, int value,
+			       BaseString& msg);
+  int getConnectionDbParameter(int node1, int node2, int param,
+			       int *value, BaseString& msg);
+
+  int connect_to_self(void);
+
+  void transporter_connect(NDB_SOCKET_TYPE sockfd);
+
+  ConfigRetriever *get_config_retriever() { return m_config_retriever; };
+
   const char *get_connect_address(Uint32 node_id);
   void get_connected_nodes(NodeBitmask &connected_nodes) const;
   SocketServer *get_socket_server() { return m_socket_server; }
+
+  void updateStatus();
 
   //**************************************************************************
 private:
   //**************************************************************************
 
-  int sendSTOP_REQ(NodeId nodeId,
+  int sendStopMgmd(NodeId nodeId,
+                   bool abort,
+                   bool stop,
+                   bool restart,
+                   bool nostart,
+                   bool initialStart);
+
+  int sendSTOP_REQ(const Vector<NodeId> &node_ids,
 		   NodeBitmask &stoppedNodes,
 		   Uint32 singleUserNodeId,
 		   bool abort,
 		   bool stop,
 		   bool restart,
 		   bool nostart,
-		   bool initialStart);
+		   bool initialStart,
+                   int *stopSelf);
  
   /**
    *   Check if it is possible to send a signal to a (DB) process
@@ -566,7 +598,6 @@ private:
    */
   enum WaitSignalType { 
     NO_WAIT,			// We don't expect to receive any signal
-    WAIT_SET_VAR,		// Accept SET_VAR_CONF and SET_VAR_REF
     WAIT_SUBSCRIBE_CONF 	// Accept event subscription confirmation
   };
   
@@ -592,7 +623,7 @@ private:
   /**
    * An event from <i>nodeId</i> has arrived
    */
-  void eventReport(NodeId nodeId, const Uint32 * theData);
+  void eventReport(const Uint32 * theData);
  
 
   //**************************************************************************
@@ -614,6 +645,8 @@ private:
   // signal arrives.
   // We wait in receiveOptimisedResponse and signal in handleReceivedSignal.
 
+  NdbMgmHandle m_local_mgm_handle;
+  char m_local_mgm_connect_string[20];
   class TransporterFacade * theFacade;
 
   int  sendVersionReq( int processId, Uint32 &version, const char **address);
@@ -629,6 +662,8 @@ private:
   friend class Ndb_mgmd_event_service;
   Ndb_mgmd_event_service m_event_listner;
   
+  NodeId m_master_node;
+
   /**
    * Handles the thread wich upon a 'Node is started' event will
    * set the node's previous loglevel settings.

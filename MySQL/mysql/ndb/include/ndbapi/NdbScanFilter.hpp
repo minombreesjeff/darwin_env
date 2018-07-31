@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,7 +44,19 @@ public:
     NAND = 3,    ///< NOT (x1 AND x2 AND x3)
     NOR  = 4     ///< NOT (x1 OR x2 OR x3)
   };
-  
+
+  enum BinaryCondition 
+  {
+    COND_LE = 0,        ///< lower bound
+    COND_LT = 1,        ///< lower bound, strict
+    COND_GE = 2,        ///< upper bound
+    COND_GT = 3,        ///< upper bound, strict
+    COND_EQ = 4,        ///< equality
+    COND_NE = 5,        ///< not equal
+    COND_LIKE = 6,      ///< like
+    COND_NOT_LIKE = 7   ///< not like
+  };
+
   /** 
    * @name Grouping
    * @{
@@ -74,7 +85,12 @@ public:
    *  <i>Explanation missing</i>
    */
   int isfalse();
-  
+
+  /**
+   * Compare column <b>ColId</b> with <b>val</b>
+   */
+  int cmp(BinaryCondition cond, int ColId, const void *val, Uint32 len = 0); 
+
   /** 
    * @name Integer Comparators
    * @{
@@ -82,80 +98,61 @@ public:
   /** Compare column value with integer for equal   
    *  ®return  0 if successful, -1 otherwize
    */
-  int eq(int ColId, Uint32 value);   
+  int eq(int ColId, Uint32 value) { return cmp(COND_EQ, ColId, &value, 4);}
+
   /** Compare column value with integer for not equal.
    *  ®return  0 if successful, -1 otherwize 
    */
-  int ne(int ColId, Uint32 value);   
+  int ne(int ColId, Uint32 value) { return cmp(COND_NE, ColId, &value, 4);}  
   /** Compare column value with integer for less than.
    *  ®return  0 if successful, -1 otherwize 
    */
-  int lt(int ColId, Uint32 value);   
+  int lt(int ColId, Uint32 value) { return cmp(COND_LT, ColId, &value, 4);}
   /** Compare column value with integer for less than or equal. 
    *  ®return  0 if successful, -1 otherwize
    */
-  int le(int ColId, Uint32 value);   
+  int le(int ColId, Uint32 value) { return cmp(COND_LE, ColId, &value, 4);}
   /** Compare column value with integer for greater than. 
    *  ®return  0 if successful, -1 otherwize
    */
-  int gt(int ColId, Uint32 value);   
+  int gt(int ColId, Uint32 value) { return cmp(COND_GT, ColId, &value, 4);} 
   /** Compare column value with integer for greater than or equal.
    *  ®return  0 if successful, -1 otherwize
    */
-  int ge(int ColId, Uint32 value);   
+  int ge(int ColId, Uint32 value) { return cmp(COND_GE, ColId, &value, 4);}
 
   /** Compare column value with integer for equal. 64-bit.  
    *  ®return  0 if successful, -1 otherwize
    */
-  int eq(int ColId, Uint64 value);   
+  int eq(int ColId, Uint64 value) { return cmp(COND_EQ, ColId, &value, 8);}
   /** Compare column value with integer for not equal. 64-bit.
    *  ®return  0 if successful, -1 otherwize
    */
-  int ne(int ColId, Uint64 value);   
+  int ne(int ColId, Uint64 value) { return cmp(COND_NE, ColId, &value, 8);}
   /** Compare column value with integer for less than. 64-bit.
    *  ®return  0 if successful, -1 otherwize
    */
-  int lt(int ColId, Uint64 value);   
+  int lt(int ColId, Uint64 value) { return cmp(COND_LT, ColId, &value, 8);}  
   /** Compare column value with integer for less than or equal. 64-bit.
    *  ®return  0 if successful, -1 otherwize
    */
-  int le(int ColId, Uint64 value);   
+  int le(int ColId, Uint64 value) { return cmp(COND_LE, ColId, &value, 8);}
   /** Compare column value with integer for greater than. 64-bit.
    *  ®return  0 if successful, -1 otherwize
    */
-  int gt(int ColId, Uint64 value);   
+  int gt(int ColId, Uint64 value) { return cmp(COND_GT, ColId, &value, 8);}
   /** Compare column value with integer for greater than or equal. 64-bit.
    *  ®return  0 if successful, -1 otherwize
    */
-  int ge(int ColId, Uint64 value);   
+  int ge(int ColId, Uint64 value) { return cmp(COND_GE, ColId, &value, 8);}
   /** @} *********************************************************************/
 
   /** Check if column value is NULL */
   int isnull(int ColId);             
   /** Check if column value is non-NULL */
   int isnotnull(int ColId);          
-
-  /** 
-   * @name String Comparators
-   * @{
-   */
-  /**
-   * Compare string against a Char or Varchar column.
-   *
-   * By default Char comparison blank-pads both sides to common length.
-   * Varchar comparison does not blank-pad.
-   *
-   * The extra <i>nopad</i> argument can be used to 
-   * force non-padded comparison for a Char column.
-   *  ®return  0 if successful, -1 otherwize
-   */
-  int eq(int ColId, const char * val, Uint32 len, bool nopad=false); 
-  int ne(int ColId, const char * val, Uint32 len, bool nopad=false); 
-  int lt(int ColId, const char * val, Uint32 len, bool nopad=false); 
-  int le(int ColId, const char * val, Uint32 len, bool nopad=false); 
-  int gt(int ColId, const char * val, Uint32 len, bool nopad=false); 
-  int ge(int ColId, const char * val, Uint32 len, bool nopad=false); 
-
+  
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    *  Like comparison operator.
    *  ®return  0 if successful, -1 otherwize
@@ -167,9 +164,12 @@ public:
    */
   int notlike(int ColId, const char * val, Uint32 len, bool nopad=false);
   /** @} *********************************************************************/
+#endif
 
 private:
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   friend class NdbScanFilterImpl;
+#endif
   class NdbScanFilterImpl & m_impl;
   NdbScanFilter& operator=(const NdbScanFilter&); ///< Defined not implemented
 };

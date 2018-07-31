@@ -2,8 +2,7 @@
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
+  the Free Software Foundation; version 2 of the License.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,10 +23,48 @@
 #include "ha_blackhole.h"
 
 
+/* Blackhole storage engine handlerton */
+
+handlerton blackhole_hton= {
+  "BLACKHOLE",
+  SHOW_OPTION_YES,
+  "/dev/null storage engine (anything you write to it disappears)",
+  DB_TYPE_BLACKHOLE_DB,
+  NULL,
+  0,       /* slot */
+  0,       /* savepoint size. */
+  NULL,    /* close_connection */
+  NULL,    /* savepoint */
+  NULL,    /* rollback to savepoint */
+  NULL,    /* release savepoint */
+  NULL,    /* commit */
+  NULL,    /* rollback */
+  NULL,    /* prepare */
+  NULL,    /* recover */
+  NULL,    /* commit_by_xid */
+  NULL,    /* rollback_by_xid */
+  NULL,    /* create_cursor_read_view */
+  NULL,    /* set_cursor_read_view */
+  NULL,    /* close_cursor_read_view */
+  HTON_CAN_RECREATE
+};
+
+/*****************************************************************************
+** BLACKHOLE tables
+*****************************************************************************/
+
+ha_blackhole::ha_blackhole(TABLE *table_arg)
+  :handler(&blackhole_hton, table_arg)
+{}
+
+
+static const char *ha_blackhole_exts[] = {
+  NullS
+};
+
 const char **ha_blackhole::bas_ext() const
-{ 
-  static const char *ext[]= { NullS }; 
-  return ext; 
+{
+  return ha_blackhole_exts;
 }
 
 int ha_blackhole::open(const char *name, int mode, uint test_if_locked)
@@ -143,7 +180,7 @@ int ha_blackhole::index_read(byte * buf, const byte * key,
                              uint key_len, enum ha_rkey_function find_flag)
 {
   DBUG_ENTER("ha_blackhole::index_read");
-  DBUG_RETURN(0);
+  DBUG_RETURN(HA_ERR_END_OF_FILE);
 }
 
 

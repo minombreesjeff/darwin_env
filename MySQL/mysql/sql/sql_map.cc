@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2001, 2004-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,9 +19,9 @@
 #endif
 
 #include "mysql_priv.h"
-#ifdef HAVE_MMAP
-#include <sys/mman.h>
 #include <sys/stat.h>
+#ifdef HAVE_SYS_MMAN_H
+#include <sys/mman.h>
 #endif
 
 #ifndef MAP_NORESERVE
@@ -42,19 +41,18 @@ mapped_files::mapped_files(const my_string filename,byte *magic,uint magic_lengt
     struct stat stat_buf;
     if (!fstat(file,&stat_buf))
     {
-      if (!(map=(byte*) mmap(0,(size=(ulong) stat_buf.st_size),PROT_READ,
+      if (!(map=(byte*) my_mmap(0,(size=(ulong) stat_buf.st_size),PROT_READ,
 			     MAP_SHARED | MAP_NORESERVE,file,
 			     0L)))
       {
 	error=errno;
-	my_printf_error(0,"Can't map file: %s, errno: %d",MYF(0),
-			(my_string) name,error);
+	my_error(ER_NO_FILE_MAPPING, MYF(0), (my_string) name, error);
       }
     }
     if (map && memcmp(map,magic,magic_length))
     {
-      my_printf_error(0,"Wrong magic in %s",MYF(0),name);
-      VOID(munmap(map,size));
+      my_error(ER_WRONG_MAGIC, MYF(0), name);
+      VOID(my_munmap(map,size));
       map=0;
     }
     if (!map)
@@ -72,7 +70,7 @@ mapped_files::~mapped_files()
 #ifdef HAVE_MMAP
   if (file >= 0)
   {
-    VOID(munmap((caddr_t) map,size));
+    VOID(my_munmap(map,size));
     VOID(my_close(file,MYF(0)));
     file= -1; map=0;
   }
@@ -112,8 +110,7 @@ mapped_files *map_file(const my_string name,byte *magic,uint magic_length)
   {
     map->use_count++;
     if (!map->map)
-      my_printf_error(0,"Can't map file: %s, error: %d",MYF(0),path,
-		      map->error);
+      my_error(ER_NO_FILE_MAPPING, MYF(0), path, map->error);
   }
   VOID(pthread_mutex_unlock(&LOCK_mapped_file));
   return map;
@@ -140,7 +137,7 @@ void unmap_file(mapped_files *map)
 ** Instansiate templates
 *****************************************************************************/
 
-#ifdef __GNUC__
+#ifdef HAVE_EXPLICIT_TEMPLATE_INSTANTIATION
 /* Used templates */
 template class I_List<mapped_files>;
 template class I_List_iterator<mapped_files>;

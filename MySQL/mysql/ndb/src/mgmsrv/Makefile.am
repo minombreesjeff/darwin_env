@@ -1,3 +1,18 @@
+# Copyright (C) 2004-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 MYSQLDATAdir =		$(localstatedir)
 MYSQLSHAREdir =		$(pkgdatadir)
 MYSQLBASEdir=		$(prefix)
@@ -16,17 +31,20 @@ ndb_mgmd_SOURCES = \
 	MgmtSrvrConfig.cpp \
 	ConfigInfo.cpp \
 	InitConfigFileParser.cpp \
-	Config.cpp \
-	CommandInterpreter.cpp
+	Config.cpp
 
 INCLUDES_LOC = -I$(top_srcdir)/ndb/src/ndbapi \
                -I$(top_srcdir)/ndb/src/mgmapi \
-               -I$(top_srcdir)/ndb/src/common/mgmcommon
+               -I$(top_srcdir)/ndb/src/common/mgmcommon \
+               -I$(top_srcdir)/ndb/src/mgmclient
 
-LDADD_LOC = $(top_builddir)/ndb/src/libndbclient.la \
+LDADD_LOC = $(top_builddir)/ndb/src/mgmclient/CommandInterpreter.o \
+            $(top_builddir)/ndb/src/libndbclient.la \
             $(top_builddir)/dbug/libdbug.a \
             $(top_builddir)/mysys/libmysys.a \
-            $(top_builddir)/strings/libmystrings.a @NDB_SCI_LIBS@
+            $(top_builddir)/strings/libmystrings.a \
+            @readline_link@ \
+            @NDB_SCI_LIBS@ \
 	    @TERMCAP_LIB@
 
 DEFS_LOC =		-DDEFAULT_MYSQL_HOME="\"$(MYSQLBASEdir)\"" \

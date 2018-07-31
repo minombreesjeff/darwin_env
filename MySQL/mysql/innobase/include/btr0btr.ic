@@ -183,26 +183,27 @@ ulint
 btr_node_ptr_get_child_page_no(
 /*===========================*/
 			   	/* out: child node address */
-	rec_t*	rec)		/* in: node pointer record */
+	rec_t*		rec,	/* in: node pointer record */
+	const ulint*	offsets)/* in: array returned by rec_get_offsets() */
 {
-	ulint	n_fields;
 	byte*	field;
 	ulint	len;
 	ulint	page_no;
 
-	n_fields = rec_get_n_fields(rec);
+	ut_ad(!rec_offs_comp(offsets) || rec_get_node_ptr_flag(rec));
 
 	/* The child address is in the last field */	
-	field = rec_get_nth_field(rec, n_fields - 1, &len);
+	field = rec_get_nth_field(rec, offsets,
+					rec_offs_n_fields(offsets) - 1, &len);
 
 	ut_ad(len == 4);
 	
 	page_no = mach_read_from_4(field);
 
-	if (page_no == 0) {
+	if (UNIV_UNLIKELY(page_no == 0)) {
 		fprintf(stderr,
 "InnoDB: a nonsensical page number 0 in a node ptr record at offset %lu\n",
-		       (unsigned long)(rec - buf_frame_align(rec)));
+			(ulong) ut_align_offset(rec, UNIV_PAGE_SIZE));
 		buf_page_print(buf_frame_align(rec));
 	}
 

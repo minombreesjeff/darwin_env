@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,6 +26,7 @@
 const NameFunctionPair
 SignalDataPrintFunctions[] = {
   { GSN_TCKEYREQ, printTCKEYREQ },
+  { GSN_TCINDXREQ, printTCKEYREQ },
   { GSN_TCKEYCONF, printTCKEYCONF },
   { GSN_TCKEYREF, printTCKEYREF },
   { GSN_LQHKEYREQ, printLQHKEYREQ },
@@ -82,14 +82,10 @@ SignalDataPrintFunctions[] = {
   { GSN_ALTER_INDX_REQ, printALTER_INDX_REQ },
   { GSN_ALTER_INDX_CONF, printALTER_INDX_CONF },
   { GSN_ALTER_INDX_REF, printALTER_INDX_REF },
-  { GSN_TCINDXREQ, printTCINDXREQ },
   { GSN_TCINDXCONF, printTCINDXCONF },
   { GSN_TCINDXREF, printTCINDXREF },
   { GSN_INDXKEYINFO, printINDXKEYINFO },
   { GSN_INDXATTRINFO, printINDXATTRINFO },
-  //{ GSN_TCINDXNEXTREQ, printTCINDXNEXTREQ },
-  //{ GSN_TCINDEXNEXTCONF, printTCINDEXNEXTCONF },
-  //{ GSN_TCINDEXNEXREF, printTCINDEXNEXREF },
   { GSN_FSAPPENDREQ, printFSAPPENDREQ },
   { GSN_BACKUP_REQ,             printBACKUP_REQ },
   { GSN_BACKUP_DATA,            printBACKUP_DATA },
@@ -154,11 +150,11 @@ SignalDataPrintFunctions[] = {
   { GSN_DISCONNECT_REP,         printDISCONNECT_REP },
   
   { GSN_SUB_CREATE_REQ,         printSUB_CREATE_REQ },
-  //{ GSN_SUB_CREATE_REF,         printSUB_CREATE_REF },
+  { GSN_SUB_CREATE_REF,         printSUB_CREATE_REF },
   { GSN_SUB_CREATE_CONF,        printSUB_CREATE_CONF },
-  { GSN_SUB_START_REQ,          printSUB_START_REQ },
-  { GSN_SUB_START_REF,          printSUB_START_REF },
-  { GSN_SUB_START_CONF,         printSUB_START_CONF },
+  { GSN_SUB_REMOVE_REQ,         printSUB_REMOVE_REQ },
+  { GSN_SUB_REMOVE_REF,         printSUB_REMOVE_REF },
+  { GSN_SUB_REMOVE_CONF,        printSUB_REMOVE_CONF },
   { GSN_SUB_SYNC_REQ,           printSUB_SYNC_REQ },
   { GSN_SUB_SYNC_REF,           printSUB_SYNC_REF },
   { GSN_SUB_SYNC_CONF,          printSUB_SYNC_CONF },

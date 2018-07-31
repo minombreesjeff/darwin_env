@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -19,20 +18,24 @@
  */
 
 #include <ndb_global.h>
+#include <ndb_opts.h>
+
 #include <my_sys.h>
 #include <my_getopt.h>
 #include <mysql_version.h>
+
+#include <netdb.h>
 
 #include <NdbOut.hpp>
 #include <mgmapi.h>
 #include <mgmapi_configuration.hpp>
 #include <ConfigInfo.hpp>
+#include <NdbAutoPtr.hpp>
 
 static int g_verbose = 0;
 static int try_reconnect = 3;
 
-static int g_nodes = 1;
-static const char * g_connectstring = 0;
+static int g_nodes, g_connections, g_section;
 static const char * g_query = 0;
 
 static int g_nodeid = 0;
@@ -41,39 +44,29 @@ static const char * g_host = 0;
 static const char * g_field_delimiter=",";
 static const char * g_row_delimiter=" ";
 static const char * g_config_file = 0;
+static int g_mycnf = 0;
 
-int g_print_full_config, opt_ndb_shm;
-my_bool opt_core;
+const char *load_default_groups[]= { "mysql_cluster",0 };
+
+NDB_STD_OPTS_VARS;
+
+int g_print_full_config;
 
 typedef ndb_mgm_configuration_iterator Iter;
 
-static void ndb_std_print_version()
-{
-  printf("MySQL distrib %s, for %s (%s)\n",
-	 MYSQL_SERVER_VERSION,SYSTEM_TYPE,MACHINE_TYPE);
-}
-
 static struct my_option my_long_options[] =
 {
-  { "usage", '?', "Display this help and exit.", 
-    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
-  { "help", '?', "Display this help and exit.", 
-    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
-  { "version", 'V', "Output version information and exit.", 0, 0, 0, 
-    GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
-  { "ndb-connectstring", 256,
-    "Set connect string for connecting to ndb_mgmd. " 
-    "Syntax: \"[nodeid=<id>;][host=]<hostname>[:<port>]\". " 
-    "Overrides specifying entries in NDB_CONNECTSTRING and my.cnf", 
-    (gptr*) &g_connectstring, (gptr*) &g_connectstring, 
-    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
+  NDB_STD_OPTS("ndb_config"),
   { "nodes", 256, "Print nodes",
     (gptr*) &g_nodes, (gptr*) &g_nodes,
-    0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  { "connections", 256, "Print connections",
+    (gptr*) &g_connections, (gptr*) &g_connections,
+    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   { "query", 'q', "Query option(s)",
     (gptr*) &g_query, (gptr*) &g_query,
     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  { "host", 257, "Host",
+  { "host", 256, "Host",
     (gptr*) &g_host, (gptr*) &g_host,
     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   { "type", 258, "Type of node/connection",
@@ -94,6 +87,9 @@ static struct my_option my_long_options[] =
   { "config-file", 256, "Path to config.ini",
     (gptr*) &g_config_file, (gptr*) &g_config_file,
     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  { "mycnf", 256, "Read config from my.cnf",
+    (gptr*) &g_mycnf, (gptr*) &g_mycnf,
+    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -101,24 +97,12 @@ static void usage()
 {
   char desc[] = 
     "This program will retreive config options for a ndb cluster\n";
+  puts(desc);
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-ndb_std_get_one_option(int optid,
-		       const struct my_option *opt __attribute__((unused)),
-		       char *argument)
-{
-  switch (optid) {
-  case 'V':
-    ndb_std_print_version();
-    exit(0);
-  case '?':
-    usage();
-    exit(0);
-  }
-  return 0;
 }
 
 /**
@@ -128,6 +112,14 @@ struct Match
 {
   int m_key;
   BaseString m_value;
+  Match() {}
+  virtual int eval(const Iter&);
+  virtual ~Match() {}
+};
+
+struct HostMatch : public Match
+{
+  HostMatch() {}
   virtual int eval(const Iter&);
 };
 
@@ -137,10 +129,18 @@ struct Apply
   Apply(int val) { m_key = val;}
   int m_key;
   virtual int apply(const Iter&);
+  virtual ~Apply() {}
 };
 
 struct NodeTypeApply : public Apply
 {
+  NodeTypeApply() {}
+  virtual int apply(const Iter&);
+};
+
+struct ConnectionTypeApply : public Apply
+{
+  ConnectionTypeApply() {}
   virtual int apply(const Iter&);
 };
 
@@ -154,16 +154,26 @@ static ndb_mgm_configuration* load_configuration();
 int
 main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   int ho_error;
   if ((ho_error=handle_options(&argc, &argv, my_long_options,
 			       ndb_std_get_one_option)))
     return -1;
 
+  if (g_nodes && g_connections)
+  {
+    fprintf(stderr,
+	    "Only one option of --nodes and --connections allowed\n");
+    return -1;
+  }
+
+  g_section = CFG_SECTION_NODE; //default
+  if (g_connections)
+    g_section = CFG_SECTION_CONNECTION;
+
   ndb_mgm_configuration * conf = 0;
 
-  if (g_config_file)
+  if (g_config_file || g_mycnf)
     conf = load_configuration();
   else
     conf = fetch_configuration();
@@ -172,7 +182,7 @@ main(int argc, char** argv){
   {
     return -1;
   }
-  
+
   Vector<Apply*> select_list;
   Vector<Match*> where_clause;
 
@@ -191,7 +201,7 @@ main(int argc, char** argv){
     exit(0);
   }
 
-  Iter iter(* conf, CFG_SECTION_NODE);
+  Iter iter(* conf, g_section);
   bool prev= false;
   iter.first();
   for(iter.first(); iter.valid(); iter.next())
@@ -220,13 +230,32 @@ parse_query(Vector<Apply*>& select, int &argc, char**& argv)
     for(unsigned i = 0; i<list.size(); i++)
     {
       const char * str= list[i].c_str();
-      if(strcasecmp(str, "id") == 0 || strcasecmp(str, "nodeid") == 0)
-	select.push_back(new Apply(CFG_NODE_ID));
-      else if(strncasecmp(str, "host", 4) == 0)
-	select.push_back(new Apply(CFG_NODE_HOST));
-      else if(strcasecmp(str, "type") == 0)
-	select.push_back(new NodeTypeApply());
-      else if(g_nodes)
+      if(g_section == CFG_SECTION_NODE)
+      {
+	if(strcasecmp(str, "id") == 0 || strcasecmp(str, "nodeid") == 0)
+	{
+	  select.push_back(new Apply(CFG_NODE_ID));
+	  continue;
+	}
+	else if(strncasecmp(str, "host", 4) == 0)
+	{
+	  select.push_back(new Apply(CFG_NODE_HOST));
+	  continue;
+	}
+	else if(strcasecmp(str, "type") == 0)
+	{
+	  select.push_back(new NodeTypeApply());
+	  continue;
+	}
+      }
+      else if (g_section == CFG_SECTION_CONNECTION)
+      {
+	if(strcasecmp(str, "type") == 0)
+	{
+	  select.push_back(new ConnectionTypeApply());
+	  continue;
+	}
+      }
       {
 	bool found = false;
 	for(int p = 0; p<ConfigInfo::m_NoOfParams; p++)
@@ -234,9 +263,15 @@ parse_query(Vector<Apply*>& select, int &argc, char**& argv)
 	  if(0)ndbout_c("%s %s",
 			ConfigInfo::m_ParamInfo[p]._section,
 			ConfigInfo::m_ParamInfo[p]._fname);
-	  if(strcmp(ConfigInfo::m_ParamInfo[p]._section, "DB") == 0 ||
-	     strcmp(ConfigInfo::m_ParamInfo[p]._section, "API") == 0 ||
-	     strcmp(ConfigInfo::m_ParamInfo[p]._section, "MGM") == 0)
+	  if(g_section == CFG_SECTION_CONNECTION &&
+	     (strcmp(ConfigInfo::m_ParamInfo[p]._section, "TCP") == 0 ||
+	      strcmp(ConfigInfo::m_ParamInfo[p]._section, "SCI") == 0 ||
+	      strcmp(ConfigInfo::m_ParamInfo[p]._section, "SHM") == 0)
+	     ||
+	     g_section == CFG_SECTION_NODE &&
+	     (strcmp(ConfigInfo::m_ParamInfo[p]._section, "DB") == 0 ||
+	      strcmp(ConfigInfo::m_ParamInfo[p]._section, "API") == 0 ||
+	      strcmp(ConfigInfo::m_ParamInfo[p]._section, "MGM") == 0))
 	  {
 	    if(strcasecmp(ConfigInfo::m_ParamInfo[p]._fname, str) == 0)
 	    {
@@ -252,11 +287,6 @@ parse_query(Vector<Apply*>& select, int &argc, char**& argv)
 	  return 1;
 	}
       }
-      else
-      {
-	fprintf(stderr, "Unknown query option: %s\n", str);
-	return 1;
-      }
     }
   }
   return 0;
@@ -269,9 +299,10 @@ parse_where(Vector<Match*>& where, int &argc, char**& argv)
   Match m;
   if(g_host)
   {
-    m.m_key = CFG_NODE_HOST;
-    m.m_value.assfmt("%s", g_host);
-    where.push_back(new Match(m));
+    HostMatch *tmp = new HostMatch;
+    tmp->m_key = CFG_NODE_HOST;
+    tmp->m_value.assfmt("%s", g_host);
+    where.push_back(tmp);
   }
   
   if(g_type)
@@ -348,6 +379,48 @@ Match::eval(const Iter& iter)
 }
 
 int
+HostMatch::eval(const Iter& iter)
+{
+  const char* valc;
+  
+  if(iter.get(m_key, &valc) == 0)
+  {
+	  struct hostent *h1, *h2, copy1;
+	  char *addr1;
+
+	  h1 = gethostbyname(m_value.c_str());
+	  if (h1 == NULL) {
+		  return 0;
+	  }
+
+	  // gethostbyname returns a pointer to a static structure
+	  // so we need to copy the results before doing the next call
+	  memcpy(&copy1, h1, sizeof(struct hostent));
+	  addr1 = (char *)malloc(copy1.h_length);
+	  NdbAutoPtr<char> tmp_aptr(addr1);
+	  memcpy(addr1, h1->h_addr, copy1.h_length);
+
+	  h2 = gethostbyname(valc);
+	  if (h2 == NULL) {
+		  return 0;
+	  }
+
+	  if (copy1.h_addrtype != h2->h_addrtype) {
+		  return 0;
+	  }
+
+	  if (copy1.h_length != h2->h_length) 
+	  {
+		  return 0;
+	  }
+	  
+	  return 0 ==  memcmp(addr1, h2->h_addr, copy1.h_length);	  
+  }
+
+  return 0;
+}
+
+int
 Apply::apply(const Iter& iter)
 {
   Uint32 val32;
@@ -379,6 +452,31 @@ NodeTypeApply::apply(const Iter& iter)
   return 0;
 }
 
+int
+ConnectionTypeApply::apply(const Iter& iter)
+{
+  Uint32 val32;
+  if (iter.get(CFG_TYPE_OF_SECTION, &val32) == 0)
+  {
+    switch (val32)
+    {
+    case CONNECTION_TYPE_TCP:
+      printf("tcp");
+      break;
+    case CONNECTION_TYPE_SCI:
+      printf("sci");
+      break;
+    case CONNECTION_TYPE_SHM:
+      printf("shm");
+      break;
+    default:
+      printf("<unknown>");
+      break;
+    }
+  } 
+  return 0;
+}
+
 ndb_mgm_configuration*
 fetch_configuration()
 {  
@@ -391,7 +489,7 @@ fetch_configuration()
 
   ndb_mgm_set_error_stream(mgm, stderr);
   
-  if (ndb_mgm_set_connectstring(mgm, g_connectstring))
+  if (ndb_mgm_set_connectstring(mgm, opt_connect_str))
   {
     fprintf(stderr, "* %5d: %s\n", 
 	    ndb_mgm_get_latest_error(mgm),
@@ -442,10 +540,20 @@ ndb_mgm_configuration*
 load_configuration()
 {  
   InitConfigFileParser parser(stderr);
-  if (g_verbose)
-    fprintf(stderr, "Using config.ini : %s", g_config_file);
+  if (g_config_file)
+  {
+    if (g_verbose)
+      fprintf(stderr, "Using config.ini : %s", g_config_file);
+    
+    Config* conf = parser.parseConfig(g_config_file);
+    if (conf)
+      return conf->m_configValues;
+  }
   
-  Config* conf = parser.parseConfig(g_config_file);
+  if (g_verbose)
+    fprintf(stderr, "Using my.cnf");
+  
+  Config* conf = parser.parse_mycnf();
   if (conf)
     return conf->m_configValues;
 

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,10 +16,6 @@
 /* Functions to create an item. Used by lex.h */
 
 #include "mysql_priv.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 Item *create_func_abs(Item* a)
 {
@@ -75,14 +70,9 @@ Item *create_func_ceiling(Item* a)
 
 Item *create_func_connection_id(void)
 {
-  THD *thd=current_thd;
-  thd->lex->safe_to_cache_query= 0;
-  return new Item_int(NullS,(longlong)
-                      ((thd->slave_thread) ?
-                       thd->variables.pseudo_thread_id :
-                       thd->thread_id),
-                      10);
-} 
+  current_thd->lex->safe_to_cache_query= 0;
+  return new Item_func_connection_id();
+}
 
 Item *create_func_conv(Item* a, Item *b, Item *c)
 {
@@ -112,7 +102,7 @@ Item *create_func_dayofmonth(Item* a)
 
 Item *create_func_dayofweek(Item* a)
 {
-  return new Item_func_weekday(new Item_func_to_days(a),1);
+  return new Item_func_weekday(a, 1);
 }
 
 Item *create_func_dayofyear(Item* a)
@@ -122,7 +112,7 @@ Item *create_func_dayofyear(Item* a)
 
 Item *create_func_dayname(Item* a)
 {
-  return new Item_func_dayname(new Item_func_to_days(a));
+  return new Item_func_dayname(a);
 }
 
 Item *create_func_degrees(Item *a)
@@ -264,6 +254,11 @@ Item *create_func_mod(Item* a, Item *b)
   return new Item_func_mod(a,b);
 }
 
+Item *create_func_name_const(Item *a, Item *b)
+{
+  return new Item_name_const(a,b);
+}
+
 Item *create_func_monthname(Item* a)
 {
   return new Item_func_monthname(a);
@@ -292,30 +287,12 @@ Item *create_func_period_diff(Item* a, Item *b)
 
 Item *create_func_pi(void)
 {
-  return new Item_real("pi()",M_PI,6,8);
+  return new Item_static_float_func("pi()", M_PI, 6, 8);
 }
 
 Item *create_func_pow(Item* a, Item *b)
 {
   return new Item_func_pow(a,b);
-}
-
-Item *create_func_current_user()
-{
-  THD *thd=current_thd;
-  char buff[HOSTNAME_LENGTH+USERNAME_LENGTH+2];
-  uint length;
-
-  thd->lex->safe_to_cache_query= 0;
-  length= (uint) (strxmov(buff, thd->priv_user, "@", thd->priv_host, NullS) -
-		  buff);
-  return new Item_string(NullS, thd->memdup(buff, length), length,
-			 system_charset_info);
-}
-
-Item *create_func_quarter(Item* a)
-{
-  return new Item_func_quarter(a);
 }
 
 Item *create_func_radians(Item *a)
@@ -367,6 +344,12 @@ Item *create_func_sin(Item* a)
 Item *create_func_sha(Item* a)
 {
   return new Item_func_sha(a);
+}
+
+Item *create_func_sleep(Item* a)
+{
+  current_thd->lex->uncacheable(UNCACHEABLE_SIDEEFFECT);
+  return new Item_func_sleep(a);
 }
 
 Item *create_func_space(Item *a)
@@ -435,19 +418,20 @@ Item *create_func_unhex(Item* a)
 
 Item *create_func_uuid(void)
 {
+  current_thd->lex->safe_to_cache_query= 0;
   return new Item_func_uuid();
 }
 
 Item *create_func_version(void)
 {
-  return new Item_string(NullS,server_version, 
+  return new Item_static_string_func("version()", server_version,
 			 (uint) strlen(server_version),
 			 system_charset_info, DERIVATION_SYSCONST);
 }
 
 Item *create_func_weekday(Item* a)
 {
-  return new Item_func_weekday(new Item_func_to_days(a),0);
+  return new Item_func_weekday(a, 0);
 }
 
 Item *create_func_year(Item* a)
@@ -462,10 +446,13 @@ Item *create_load_file(Item* a)
 }
 
 
-Item *create_func_cast(Item *a, Cast_target cast_type, int len,
+Item *create_func_cast(Item *a, Cast_target cast_type,
+                       const char *c_len, const char *c_dec,
 		       CHARSET_INFO *cs)
 {
   Item *res;
+  ulong len;
+  uint dec;
   LINT_INIT(res);
 
   switch (cast_type) {
@@ -475,13 +462,26 @@ Item *create_func_cast(Item *a, Cast_target cast_type, int len,
   case ITEM_CAST_DATE:		res= new Item_date_typecast(a); break;
   case ITEM_CAST_TIME:		res= new Item_time_typecast(a); break;
   case ITEM_CAST_DATETIME:	res= new Item_datetime_typecast(a); break;
+  case ITEM_CAST_DECIMAL:
+    len= c_len ? atoi(c_len) : 0;
+    dec= c_dec ? atoi(c_dec) : 0;
+    my_decimal_trim(&len, &dec);
+    if (len < dec)
+    {
+      my_error(ER_M_BIGGER_THAN_D, MYF(0), "");
+      return 0;
+    }
+    res= new Item_decimal_typecast(a, len, dec);
+    break;
   case ITEM_CAST_CHAR:
+    len= c_len ? atoi(c_len) : -1;
     res= new Item_char_typecast(a, len, cs ? cs : 
 				current_thd->variables.collation_connection);
     break;
   }
   return res;
 }
+
 
 Item *create_func_is_free_lock(Item* a)
 {

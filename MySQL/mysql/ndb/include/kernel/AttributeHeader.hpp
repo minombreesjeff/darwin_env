@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,10 +32,14 @@ public:
    * Psuedo columns
    */
   STATIC_CONST( PSUEDO       = 0x8000 );
-  STATIC_CONST( FRAGMENT     = 0xFFFE );
-  STATIC_CONST( ROW_COUNT    = 0xFFFD );
-  STATIC_CONST( COMMIT_COUNT = 0xFFFC );
+  STATIC_CONST( FRAGMENT     = 0xFFFE ); // Read fragment no
+  STATIC_CONST( ROW_COUNT    = 0xFFFD ); // Read row count (committed)
+  STATIC_CONST( COMMIT_COUNT = 0xFFFC ); // Read commit count
+  STATIC_CONST( RANGE_NO     = 0xFFFB ); // Read range no (when batched ranges)
   
+  STATIC_CONST( ROW_SIZE     = 0xFFFA );
+  STATIC_CONST( FRAGMENT_MEMORY= 0xFFF9 );
+
   /** Initialize AttributeHeader at location aHeaderPtr */
   static AttributeHeader& init(void* aHeaderPtr, Uint32 anAttributeId, 
 			       Uint32 aDataSize);

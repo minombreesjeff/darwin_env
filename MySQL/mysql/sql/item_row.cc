@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -53,7 +52,7 @@ void Item_row::illegal_method_call(const char *method)
   DBUG_VOID_RETURN;
 }
 
-bool Item_row::fix_fields(THD *thd, TABLE_LIST *tabl, Item **ref)
+bool Item_row::fix_fields(THD *thd, Item **ref)
 {
   DBUG_ASSERT(fixed == 0);
   null_value= 0;
@@ -61,8 +60,8 @@ bool Item_row::fix_fields(THD *thd, TABLE_LIST *tabl, Item **ref)
   Item **arg, **arg_end;
   for (arg= items, arg_end= items+arg_count; arg != arg_end ; arg++)
   {
-    if ((*arg)->fix_fields(thd, tabl, arg))
-      return 1;
+    if ((*arg)->fix_fields(thd, arg))
+      return TRUE;
     // we can't assign 'item' before, because fix_fields() can change arg
     Item *item= *arg;
     used_tables_cache |= item->used_tables();
@@ -73,15 +72,15 @@ bool Item_row::fix_fields(THD *thd, TABLE_LIST *tabl, Item **ref)
 	with_null|= item->null_inside();
       else
       {
-	item->val_int();
-	with_null|= item->null_value;
+	if (item->is_null())
+          with_null|= 1;
       }
     }
     maybe_null|= item->maybe_null;
     with_sum_func= with_sum_func || item->with_sum_func;
   }
   fixed= 1;
-  return 0;
+  return FALSE;
 }
 
 
@@ -104,7 +103,7 @@ void Item_row::split_sum_func(THD *thd, Item **ref_pointer_array,
 {
   Item **arg, **arg_end;
   for (arg= items, arg_end= items+arg_count; arg != arg_end ; arg++)
-    (*arg)->split_sum_func2(thd, ref_pointer_array, fields, arg);
+    (*arg)->split_sum_func2(thd, ref_pointer_array, fields, arg, TRUE);
 }
 
 
@@ -150,6 +149,28 @@ bool Item_row::walk(Item_processor processor, byte *arg)
       return 1;
   }
   return (this->*processor)(arg);
+}
+
+Item *Item_row::transform(Item_transformer transformer, byte *arg)
+{
+  DBUG_ASSERT(!current_thd->is_stmt_prepare());
+
+  for (uint i= 0; i < arg_count; i++)
+  {
+    Item *new_item= items[i]->transform(transformer, arg);
+    if (!new_item)
+      return 0;
+
+    /*
+      THD::change_item_tree() should be called only if the tree was
+      really transformed, i.e. when a new item has been created.
+      Otherwise we'll be allocating a lot of unnecessary memory for
+      change records at each execution.
+    */
+    if (items[i] != new_item)
+      current_thd->change_item_tree(&items[i], new_item);
+  }
+  return (this->*transformer)(arg);
 }
 
 void Item_row::bring_value()

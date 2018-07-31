@@ -1,9 +1,8 @@
-/* Copyright (C) 2000,2004 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -106,6 +105,12 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
     share_buff.state.key_del=key_del;
     share_buff.key_cache= multi_key_cache_search(name_buff, strlen(name_buff));
 
+    DBUG_EXECUTE_IF("myisam_pretend_crashed_table_on_open",
+                    if (strstr(name, "/t1"))
+                    {
+                      my_errno= HA_ERR_CRASHED;
+                      goto err;
+                    });
     if ((kfile=my_open(name_buff,(open_mode=O_RDWR) | O_SHARE,MYF(0))) < 0)
     {
       if ((errno != EROFS && errno != EACCES) ||
@@ -186,14 +191,15 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
     }
     share->state_diff_length=len-MI_STATE_INFO_SIZE;
 
-    mi_state_info_read(disk_cache, &share->state);
+    mi_state_info_read((uchar*) disk_cache, &share->state);
     len= mi_uint2korr(share->state.header.base_info_length);
     if (len != MI_BASE_INFO_SIZE)
     {
       DBUG_PRINT("warning",("saved_base_info_length: %d  base_info_length: %d",
-			    len,MI_BASE_INFO_SIZE))
+			    len,MI_BASE_INFO_SIZE));
     }
-    disk_pos=my_n_base_info_read(disk_cache+base_pos, &share->base);
+    disk_pos= (char*) 
+      my_n_base_info_read((uchar*) disk_cache + base_pos, &share->base);
     share->state.state_length=base_pos;
 
     if (!(open_flags & HA_OPEN_FOR_REPAIR) &&
@@ -305,6 +311,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       HA_KEYSEG *pos=share->keyparts;
       for (i=0 ; i < keys ; i++)
       {
+        share->keyinfo[i].share= share;
 	disk_pos=mi_keydef_read(disk_pos, &share->keyinfo[i]);
         disk_pos_assert(disk_pos + share->keyinfo[i].keysegs * HA_KEYSEG_SIZE,
  			end_pos);
@@ -315,8 +322,16 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	for (j=0 ; j < share->keyinfo[i].keysegs; j++,pos++)
 	{
 	  disk_pos=mi_keyseg_read(disk_pos, pos);
-
-	  if (pos->type == HA_KEYTYPE_TEXT || pos->type == HA_KEYTYPE_VARTEXT)
+          if (pos->flag & HA_BLOB_PART &&
+              ! (share->options & (HA_OPTION_COMPRESS_RECORD |
+                                   HA_OPTION_PACK_RECORD)))
+          {
+            my_errno= HA_ERR_CRASHED;
+            goto err;
+          }
+	  if (pos->type == HA_KEYTYPE_TEXT ||
+              pos->type == HA_KEYTYPE_VARTEXT1 ||
+              pos->type == HA_KEYTYPE_VARTEXT2)
 	  {
 	    if (!pos->language)
 	      pos->charset=default_charset_info;
@@ -326,6 +341,8 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	      goto err;
 	    }
 	  }
+	  else if (pos->type == HA_KEYTYPE_BINARY)
+	    pos->charset= &my_charset_bin;
 	}
 	if (share->keyinfo[i].flag & HA_SPATIAL)
 	{
@@ -347,11 +364,11 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
           }
           else
           {
-            uint j;
+            uint k;
             share->keyinfo[i].seg=pos;
-            for (j=0; j < FT_SEGS; j++)
+            for (k=0; k < FT_SEGS; k++)
             {
-              *pos=ft_keysegs[j];
+              *pos= ft_keysegs[k];
               pos[0].language= pos[-1].language;
               if (!(pos[0].charset= pos[-1].charset))
               {
@@ -391,7 +408,9 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	for (j=0 ; j < share->uniqueinfo[i].keysegs; j++,pos++)
 	{
 	  disk_pos=mi_keyseg_read(disk_pos, pos);
-	  if (pos->type == HA_KEYTYPE_TEXT || pos->type == HA_KEYTYPE_VARTEXT)
+	  if (pos->type == HA_KEYTYPE_TEXT ||
+              pos->type == HA_KEYTYPE_VARTEXT1 ||
+              pos->type == HA_KEYTYPE_VARTEXT2)
 	  {
 	    if (!pos->language)
 	      pos->charset=default_charset_info;
@@ -427,6 +446,13 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       offset+=share->rec[i].length;
     }
     share->rec[i].type=(int) FIELD_LAST;	/* End marker */
+    if (offset > share->base.reclength)
+    {
+      /* purecov: begin inspected */
+      my_errno= HA_ERR_CRASHED;
+      goto err;
+      /* purecov: end */
+    }
 
     if (! lock_error)
     {
@@ -491,6 +517,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	share->lock.get_status=mi_get_status;
 	share->lock.copy_status=mi_copy_status;
 	share->lock.update_status=mi_update_status;
+        share->lock.restore_status= mi_restore_status;
 	share->lock.check_status=mi_check_status;
       }
     }
@@ -599,6 +626,10 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 
 err:
   save_errno=my_errno ? my_errno : HA_ERR_END_OF_FILE;
+  if ((save_errno == HA_ERR_CRASHED) ||
+      (save_errno == HA_ERR_CRASHED_ON_USAGE) ||
+      (save_errno == HA_ERR_CRASHED_ON_REPAIR))
+    mi_report_error(save_errno, name);
   switch (errpos) {
   case 6:
     my_free((gptr) m_info,MYF(0));
@@ -810,7 +841,7 @@ uint mi_state_info_write(File file, MI_STATE_INFO *state, uint pWrite)
   mi_sizestore(ptr,state->state.empty);		ptr +=8;
   mi_sizestore(ptr,state->state.key_empty);	ptr +=8;
   mi_int8store(ptr,state->auto_increment);	ptr +=8;
-  mi_int8store(ptr,(ulonglong) state->checksum);ptr +=8;
+  mi_int8store(ptr,(ulonglong) state->state.checksum);ptr +=8;
   mi_int4store(ptr,state->process);		ptr +=4;
   mi_int4store(ptr,state->unique);		ptr +=4;
   mi_int4store(ptr,state->status);		ptr +=4;
@@ -851,7 +882,7 @@ uint mi_state_info_write(File file, MI_STATE_INFO *state, uint pWrite)
 }
 
 
-char *mi_state_info_read(char *ptr, MI_STATE_INFO *state)
+uchar *mi_state_info_read(uchar *ptr, MI_STATE_INFO *state)
 {
   uint i,keys,key_parts,key_blocks;
   memcpy_fixed(&state->header,ptr, sizeof(state->header));
@@ -872,7 +903,7 @@ char *mi_state_info_read(char *ptr, MI_STATE_INFO *state)
   state->state.empty	= mi_sizekorr(ptr);	ptr +=8;
   state->state.key_empty= mi_sizekorr(ptr);	ptr +=8;
   state->auto_increment=mi_uint8korr(ptr);	ptr +=8;
-  state->checksum=(ha_checksum) mi_uint8korr(ptr);	ptr +=8;
+  state->state.checksum=(ha_checksum) mi_uint8korr(ptr);	ptr +=8;
   state->process= mi_uint4korr(ptr);		ptr +=4;
   state->unique = mi_uint4korr(ptr);		ptr +=4;
   state->status = mi_uint4korr(ptr);		ptr +=4;
@@ -917,7 +948,7 @@ uint mi_state_info_read_dsk(File file, MI_STATE_INFO *state, my_bool pRead)
     }
     else if (my_read(file, buff, state->state_length,MYF(MY_NABP)))
       return (MY_FILE_ERROR);
-    mi_state_info_read(buff, state);
+    mi_state_info_read((uchar*) buff, state);
   }
   return 0;
 }
@@ -962,7 +993,7 @@ uint mi_base_info_write(File file, MI_BASE_INFO *base)
 }
 
 
-char *my_n_base_info_read(char *ptr, MI_BASE_INFO *base)
+uchar *my_n_base_info_read(uchar *ptr, MI_BASE_INFO *base)
 {
   base->keystart = mi_sizekorr(ptr);			ptr +=8;
   base->max_data_file_length = mi_sizekorr(ptr);	ptr +=8;
@@ -1045,18 +1076,21 @@ int mi_keyseg_write(File file, const HA_KEYSEG *keyseg)
 {
   uchar buff[HA_KEYSEG_SIZE];
   uchar *ptr=buff;
+  ulong pos;
 
-  *ptr++ =keyseg->type;
-  *ptr++ =keyseg->language;
-  *ptr++ =keyseg->null_bit;
-  *ptr++ =keyseg->bit_start;
-  *ptr++ =keyseg->bit_end;
-  *ptr++ =0;					/* Not used */
+  *ptr++= keyseg->type;
+  *ptr++= keyseg->language;
+  *ptr++= keyseg->null_bit;
+  *ptr++= keyseg->bit_start;
+  *ptr++= keyseg->bit_end;
+  *ptr++= keyseg->bit_length;
   mi_int2store(ptr,keyseg->flag);	ptr+=2;
   mi_int2store(ptr,keyseg->length);	ptr+=2;
   mi_int4store(ptr,keyseg->start);	ptr+=4;
-  mi_int4store(ptr,keyseg->null_pos);	ptr+=4;
-
+  pos= keyseg->null_bit ? keyseg->null_pos : keyseg->bit_pos;
+  mi_int4store(ptr, pos);
+  ptr+=4;
+  
   return my_write(file,(char*) buff, (uint) (ptr-buff), MYF(MY_NABP));
 }
 
@@ -1068,12 +1102,19 @@ char *mi_keyseg_read(char *ptr, HA_KEYSEG *keyseg)
    keyseg->null_bit	= *ptr++;
    keyseg->bit_start	= *ptr++;
    keyseg->bit_end	= *ptr++;
-   ptr++;
+   keyseg->bit_length   = *ptr++;
    keyseg->flag		= mi_uint2korr(ptr);  ptr +=2;
    keyseg->length	= mi_uint2korr(ptr);  ptr +=2;
    keyseg->start	= mi_uint4korr(ptr);  ptr +=4;
    keyseg->null_pos	= mi_uint4korr(ptr);  ptr +=4;
    keyseg->charset=0;				/* Will be filled in later */
+   if (keyseg->null_bit)
+     keyseg->bit_pos= (uint16)(keyseg->null_pos + (keyseg->null_bit == 7));
+   else
+   {
+     keyseg->bit_pos= (uint16)keyseg->null_pos;
+     keyseg->null_pos= 0;
+   }
    return ptr;
 }
 
@@ -1158,7 +1199,7 @@ int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, File file_to_dup __attr
 int mi_open_keyfile(MYISAM_SHARE *share)
 {
   if ((share->kfile=my_open(share->unique_file_name, share->mode | O_SHARE,
-			    MYF(MY_WME))) < 0)
+                            MYF(MY_WME))) < 0)
     return 1;
   return 0;
 }
@@ -1182,7 +1223,7 @@ int mi_disable_indexes(MI_INFO *info)
 {
   MYISAM_SHARE *share= info->s;
 
-  share->state.key_map= 0;
+  mi_clear_all_keys_active(share->state.key_map);
   return 0;
 }
 
@@ -1213,9 +1254,12 @@ int mi_enable_indexes(MI_INFO *info)
 
   if (share->state.state.data_file_length ||
       (share->state.state.key_file_length != share->base.keystart))
+  {
+    mi_print_error(info->s, HA_ERR_CRASHED);
     error= HA_ERR_CRASHED;
+  }
   else
-    share->state.key_map= ((ulonglong) 1L << share->base.keys) - 1;
+    mi_set_all_keys_active(share->state.key_map, share->base.keys);
   return error;
 }
 
@@ -1233,13 +1277,30 @@ int mi_enable_indexes(MI_INFO *info)
   RETURN
     0  indexes are not disabled
     1  all indexes are disabled
-   [2  non-unique indexes are disabled - NOT YET IMPLEMENTED]
+    2  non-unique indexes are disabled
 */
 
 int mi_indexes_are_disabled(MI_INFO *info)
 {
   MYISAM_SHARE *share= info->s;
 
-  return (! share->state.key_map && share->base.keys);
+  /*
+    No keys or all are enabled. keys is the number of keys. Left shifted
+    gives us only one bit set. When decreased by one, gives us all all bits
+    up to this one set and it gets unset.
+  */
+  if (!share->base.keys ||
+      (mi_is_all_keys_active(share->state.key_map, share->base.keys)))
+    return 0;
+
+  /* All are disabled */
+  if (mi_is_any_key_active(share->state.key_map))
+    return 1;
+
+  /*
+    We have keys. Some enabled, some disabled.
+    Don't check for any non-unique disabled but return directly 2
+  */
+  return 2;
 }
 

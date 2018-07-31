@@ -1,5 +1,19 @@
+# Copyright (C) 2004-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-dist_bin_SCRIPTS =	ndb_size.pl
+dist_bin_SCRIPTS =	ndb_size.pl ndb_error_reporter
 dist_pkgdata_DATA =	ndb_size.tmpl
 
 ndbtools_PROGRAMS = \
@@ -33,12 +47,14 @@ ndb_restore_SOURCES = restore/restore_main.cpp \
                       restore/consumer.cpp \
                       restore/consumer_restore.cpp \
                       restore/consumer_printer.cpp \
-                      restore/Restore.cpp $(tools_common_sources)
+                      restore/Restore.cpp \
+                      ../test/src/NDBT_ResultRow.cpp $(tools_common_sources)
 
 ndb_config_SOURCES = ndb_config.cpp \
 	../src/mgmsrv/Config.cpp \
 	../src/mgmsrv/ConfigInfo.cpp \
 	../src/mgmsrv/InitConfigFileParser.cpp
+
 ndb_config_CXXFLAGS = -I$(top_srcdir)/ndb/src/mgmapi \
                       -I$(top_srcdir)/ndb/src/mgmsrv \
                       -I$(top_srcdir)/ndb/include/mgmcommon \

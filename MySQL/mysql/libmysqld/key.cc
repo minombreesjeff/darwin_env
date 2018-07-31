@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,6 +17,7 @@
 /* Functions to handle keys and fields in forms */
 
 #include "mysql_priv.h"
+#include "sql_trigger.h"
 
 	/*
 	** Search after with key field is. If no key starts with field test
@@ -38,7 +38,9 @@ int find_ref_key(TABLE *table,Field *field, uint *key_length)
 
 	/* Test if some key starts as fieldpos */
 
-  for (i=0, key_info=table->key_info ; i < (int) table->keys ; i++, key_info++)
+  for (i= 0, key_info= table->key_info ;
+       i < (int) table->s->keys ;
+       i++, key_info++)
   {
     if (key_info->key_part[0].offset == fieldpos)
     {						/* Found key. Calc keylength */
@@ -48,7 +50,9 @@ int find_ref_key(TABLE *table,Field *field, uint *key_length)
   }
 	/* Test if some key contains fieldpos */
 
-  for (i=0, key_info=table->key_info ; i < (int) table->keys ; i++, key_info++)
+  for (i= 0, key_info= table->key_info ;
+       i < (int) table->s->keys ;
+       i++, key_info++)
   {
     uint j;
     KEY_PART_INFO *key_part;
@@ -66,94 +70,153 @@ int find_ref_key(TABLE *table,Field *field, uint *key_length)
 }
 
 
-	/* Copy a key from record to some buffer */
-	/* if length == 0 then copy whole key */
+/*
+  Copy part of a record that forms a key or key prefix to a buffer.
 
-void key_copy(byte *key,TABLE *table,uint idx,uint key_length)
+  SYNOPSIS
+    key_copy()
+    to_key      buffer that will be used as a key
+    from_record full record to be copied from
+    key_info    descriptor of the index
+    key_length  specifies length of all keyparts that will be copied
+
+  DESCRIPTION
+    The function takes a complete table record (as e.g. retrieved by
+    handler::index_read()), and a description of an index on the same table,
+    and extracts the first key_length bytes of the record which are part of a
+    key into to_key. If length == 0 then copy all bytes from the record that
+    form a key.
+
+  RETURN
+    None
+*/
+
+void key_copy(byte *to_key, byte *from_record, KEY *key_info, uint key_length)
 {
   uint length;
-  KEY *key_info=table->key_info+idx;
   KEY_PART_INFO *key_part;
 
   if (key_length == 0)
-    key_length=key_info->key_length;
-  for (key_part=key_info->key_part;
-       (int) key_length > 0 ;
-       key_part++)
+    key_length= key_info->key_length;
+  for (key_part= key_info->key_part; (int) key_length > 0; key_part++)
   {
     if (key_part->null_bit)
     {
-      *key++= test(table->record[0][key_part->null_offset] &
+      *to_key++= test(from_record[key_part->null_offset] &
 		   key_part->null_bit);
       key_length--;
     }
-    if (key_part->key_part_flag & HA_BLOB_PART)
+    if (key_part->type == HA_KEYTYPE_BIT)
     {
-      char *pos;
-      ulong blob_length=((Field_blob*) key_part->field)->get_length();
-      key_length-=2;
-      ((Field_blob*) key_part->field)->get_ptr(&pos);
-      length=min(key_length,key_part->length);
-      set_if_smaller(blob_length,length);
-      int2store(key,(uint) blob_length);
-      key+=2;					// Skip length info
-      memcpy(key,pos,blob_length);
+      Field_bit *field= (Field_bit *) (key_part->field);
+      if (field->bit_len)
+      {
+        uchar bits= get_rec_bits((uchar*) from_record +
+                                 key_part->null_offset +
+                                 (key_part->null_bit == 128),
+                                 field->bit_ofs, field->bit_len);
+        *to_key++= bits;
+        key_length--;
+      }
+    }
+    if (key_part->key_part_flag & HA_BLOB_PART ||
+        key_part->key_part_flag & HA_VAR_LENGTH_PART)
+    {
+      key_length-= HA_KEY_BLOB_LENGTH;
+      length= min(key_length, key_part->length);
+      key_part->field->get_key_image((char*) to_key, length, Field::itRAW);
+      to_key+= HA_KEY_BLOB_LENGTH;
     }
     else
     {
-      length=min(key_length,key_part->length);
-      memcpy(key,table->record[0]+key_part->offset,(size_t) length);
+      length= min(key_length, key_part->length);
+      Field *field= key_part->field;
+      CHARSET_INFO *cs= field->charset();
+      uint bytes= field->get_key_image((char*) to_key, length, Field::itRAW);
+      if (bytes < length)
+        cs->cset->fill(cs, (char*) to_key + bytes, length - bytes, ' ');
     }
-    key+=length;
-    key_length-=length;
+    to_key+= length;
+    key_length-= length;
   }
-} /* key_copy */
+}
 
 
-	/* restore a key from some buffer to record */
+/*
+  Restore a key from some buffer to record.
 
-void key_restore(TABLE *table,byte *key,uint idx,uint key_length)
+  SYNOPSIS
+    key_restore()
+    to_record   record buffer where the key will be restored to
+    from_key    buffer that contains a key
+    key_info    descriptor of the index
+    key_length  specifies length of all keyparts that will be restored
+
+  DESCRIPTION
+    This function converts a key into record format. It can be used in cases
+    when we want to return a key as a result row.
+
+  RETURN
+    None
+*/
+
+void key_restore(byte *to_record, byte *from_key, KEY *key_info,
+                 uint key_length)
 {
   uint length;
-  KEY *key_info=table->key_info+idx;
   KEY_PART_INFO *key_part;
 
   if (key_length == 0)
   {
-    if (idx == (uint) -1)
-      return;
-    key_length=key_info->key_length;
+    key_length= key_info->key_length;
   }
-  for (key_part=key_info->key_part;
-       (int) key_length > 0 ;
-       key_part++)
+  for (key_part= key_info->key_part ; (int) key_length > 0 ; key_part++)
   {
     if (key_part->null_bit)
     {
-      if (*key++)
-	table->record[0][key_part->null_offset]|= key_part->null_bit;
+      if (*from_key++)
+	to_record[key_part->null_offset]|= key_part->null_bit;
       else
-	table->record[0][key_part->null_offset]&= ~key_part->null_bit;
+	to_record[key_part->null_offset]&= ~key_part->null_bit;
       key_length--;
+    }
+    if (key_part->type == HA_KEYTYPE_BIT)
+    {
+      Field_bit *field= (Field_bit *) (key_part->field);
+      if (field->bit_len)
+      {
+        uchar bits= *(from_key + key_part->length -
+                      field->pack_length_in_rec() - 1);
+        set_rec_bits(bits, to_record + key_part->null_offset +
+                     (key_part->null_bit == 128),
+                     field->bit_ofs, field->bit_len);
+      }
     }
     if (key_part->key_part_flag & HA_BLOB_PART)
     {
-      uint blob_length=uint2korr(key);
-      key+=2;
-      key_length-=2;
+      uint blob_length= uint2korr(from_key);
+      from_key+= HA_KEY_BLOB_LENGTH;
+      key_length-= HA_KEY_BLOB_LENGTH;
       ((Field_blob*) key_part->field)->set_ptr((ulong) blob_length,
-					       (char*) key);
-      length=key_part->length;
+					       (char*) from_key);
+      length= key_part->length;
+    }
+    else if (key_part->key_part_flag & HA_VAR_LENGTH_PART)
+    {
+      key_length-= HA_KEY_BLOB_LENGTH;
+      length= min(key_length, key_part->length);
+      key_part->field->set_key_image((char *) from_key, length);
+      from_key+= HA_KEY_BLOB_LENGTH;
     }
     else
     {
-      length=min(key_length,key_part->length);
-      memcpy(table->record[0]+key_part->offset,key,(size_t) length);
+      length= min(key_length, key_part->length);
+      memcpy(to_record + key_part->offset, from_key, (size_t) length);
     }
-    key+=length;
-    key_length-=length;
+    from_key+= length;
+    key_length-= length;
   }
-} /* key_restore */
+}
 
 
 /*
@@ -179,54 +242,54 @@ void key_restore(TABLE *table,byte *key,uint idx,uint key_length)
 
 bool key_cmp_if_same(TABLE *table,const byte *key,uint idx,uint key_length)
 {
-  uint length;
+  uint store_length;
   KEY_PART_INFO *key_part;
+  const byte *key_end= key + key_length;;
 
   for (key_part=table->key_info[idx].key_part;
-       (int) key_length > 0;
-       key_part++, key+=length, key_length-=length)
+       key < key_end ; 
+       key_part++, key+= store_length)
   {
+    uint length;
+    store_length= key_part->store_length;
+
     if (key_part->null_bit)
     {
-      key_length--;
       if (*key != test(table->record[0][key_part->null_offset] & 
 		       key_part->null_bit))
 	return 1;
       if (*key)
-      {
-	length=key_part->store_length;
 	continue;
-      }
       key++;
+      store_length--;
     }
-    if (key_part->key_part_flag & (HA_BLOB_PART | HA_VAR_LENGTH))
+    if (key_part->key_part_flag & (HA_BLOB_PART | HA_VAR_LENGTH_PART |
+                                   HA_BIT_PART))
     {
-      if (key_part->field->key_cmp(key, key_part->length+ HA_KEY_BLOB_LENGTH))
+      if (key_part->field->key_cmp(key, key_part->length))
 	return 1;
-      length=key_part->length+HA_KEY_BLOB_LENGTH;
+      continue;
     }
-    else
+    length= min((uint) (key_end-key), store_length);
+    if (!(key_part->key_type & (FIELDFLAG_NUMBER+FIELDFLAG_BINARY+
+                                FIELDFLAG_PACK)))
     {
-      length=min(key_length,key_part->length);
-      if (!(key_part->key_type & (FIELDFLAG_NUMBER+FIELDFLAG_BINARY+
-				  FIELDFLAG_PACK)))
+      CHARSET_INFO *cs= key_part->field->charset();
+      uint char_length= key_part->length / cs->mbmaxlen;
+      const byte *pos= table->record[0] + key_part->offset;
+      if (length > char_length)
       {
-        CHARSET_INFO *cs= key_part->field->charset();
-        uint char_length= key_part->length / cs->mbmaxlen;
-        const byte *pos= table->record[0] + key_part->offset;
-        if (length > char_length)
-        {
-          char_length= my_charpos(cs, pos, pos + length, char_length);
-          set_if_smaller(char_length, length);
-        }
-	if (cs->coll->strnncollsp(cs,
-                                  (const uchar*) key, length,
-                                  (const uchar*) pos, char_length))
-	  return 1;
+        char_length= my_charpos(cs, pos, pos + length, char_length);
+        set_if_smaller(char_length, length);
       }
-      else if (memcmp(key,table->record[0]+key_part->offset,length))
-	return 1;
+      if (cs->coll->strnncollsp(cs,
+                                (const uchar*) key, length,
+                                (const uchar*) pos, char_length, 0))
+        return 1;
+      continue;
     }
+    if (memcmp(key,table->record[0]+key_part->offset,length))
+      return 1;
   }
   return 0;
 }
@@ -253,7 +316,7 @@ void key_unpack(String *to,TABLE *table,uint idx)
     {
       if (table->record[0][key_part->null_offset] & key_part->null_bit)
       {
-	to->append("NULL", 4);
+	to->append(STRING_WITH_LEN("NULL"));
 	continue;
       }
     }
@@ -265,19 +328,31 @@ void key_unpack(String *to,TABLE *table,uint idx)
       to->append(tmp);
     }
     else
-      to->append("???", 3);
+      to->append(STRING_WITH_LEN("???"));
   }
   DBUG_VOID_RETURN;
 }
 
 
 /*
-  Return 1 if any field in a list is part of key or the key uses a field
-  that is automaticly updated (like a timestamp)
+  Check if key uses field that is listed in passed field list or is
+  automatically updated (like a timestamp) or can be updated by before
+  update trigger defined on the table.
+
+  SYNOPSIS
+    is_key_used()
+      table   TABLE object with which keys and fields are associated.
+      idx     Key to be checked.
+      fields  List of fields to be checked.
+
+  RETURN VALUE
+    TRUE   Key uses field which meets one the above conditions
+    FALSE  Otherwise
 */
 
-bool check_if_key_used(TABLE *table, uint idx, List<Item> &fields)
+bool is_key_used(TABLE *table, uint idx, List<Item> &fields)
 {
+  Table_triggers_list *triggers= table->triggers;
   List_iterator_fast<Item> f(fields);
   KEY_PART_INFO *key_part,*key_part_end;
   for (key_part=table->key_info[idx].key_part,key_part_end=key_part+
@@ -296,15 +371,18 @@ bool check_if_key_used(TABLE *table, uint idx, List<Item> &fields)
       if (key_part->field->eq(field->field))
 	return 1;
     }
+    if (triggers &&
+        triggers->is_updated_in_before_update_triggers(key_part->field))
+      return 1;
   }
 
   /*
     If table handler has primary key as part of the index, check that primary
     key is not updated
   */
-  if (idx != table->primary_key && table->primary_key < MAX_KEY &&
+  if (idx != table->s->primary_key && table->s->primary_key < MAX_KEY &&
       (table->file->table_flags() & HA_PRIMARY_KEY_IN_READ_INDEX))
-    return check_if_key_used(table, table->primary_key, fields);
+    return is_key_used(table, table->s->primary_key, fields);
   return 0;
 }
 

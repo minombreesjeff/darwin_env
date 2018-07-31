@@ -5,6 +5,9 @@
 drop table if exists t1,t2,t3;
 --enable_warnings
 
+# Set timezone to GMT-3, to make it possible to use "interval 3 hour"
+set time_zone="+03:00";
+
 select from_days(to_days("960101")),to_days(960201)-to_days("19960101"),to_days(date_add(curdate(), interval 1 day))-to_days(curdate()),weekday("1997-11-29");
 select period_add("9602",-12),period_diff(199505,"9404") ;
 
@@ -140,6 +143,22 @@ select extract(SECOND FROM "1999-01-02 10:11:12");
 select extract(MONTH FROM "2001-02-00");
 
 #
+# test EXTRACT QUARTER (Bug #18100)
+#
+
+SELECT EXTRACT(QUARTER FROM '2004-01-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-02-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-03-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-04-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-05-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-06-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-07-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-08-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-09-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-10-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-11-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-12-15') AS quarter;
+#
 # MySQL Bugs: #12356: DATE_SUB or DATE_ADD incorrectly returns null
 #
 SELECT DATE_SUB(str_to_date('9999-12-31 00:01:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);
@@ -217,7 +236,7 @@ drop table t1;
 
 CREATE TABLE t1 ( start datetime default NULL);
 INSERT INTO t1 VALUES ('2002-10-21 00:00:00'),('2002-10-28 00:00:00'),('2002-11-04 00:00:00');
-CREATE TABLE t2 ( ctime1 timestamp(14) NOT NULL, ctime2 timestamp(14) NOT NULL);
+CREATE TABLE t2 ( ctime1 timestamp NOT NULL, ctime2 timestamp NOT NULL);
 INSERT INTO t2 VALUES (20021029165106,20021105164731);
 CREATE TABLE t3 (ctime1 char(19) NOT NULL, ctime2 char(19) NOT NULL);
 INSERT INTO t3 VALUES ("2002-10-29 16:51:06","2002-11-05 16:47:31");
@@ -236,15 +255,55 @@ select unix_timestamp(@a);
 select unix_timestamp('1969-12-01 19:00:01');
 
 #
-# Test for bug #6439 "unix_timestamp() function returns wrong datetime 
-# values for too big argument" and bug #7515 "from_unixtime(0) now
-# returns NULL instead of the epoch". unix_timestamp() should return error
-# for too big or negative argument. It should return Epoch value for zero
-# argument since it seems that many user's rely on this fact.
+# Tests for bug #6439 "unix_timestamp() function returns wrong datetime 
+# values for too big argument", bug #7515 "from_unixtime(0) now
+# returns NULL instead of the epoch" and bug #9191
+# "TIMESTAMP/from_unixtime() no longer accepts 2^31-1."
+# unix_timestamp() should return error for too big or negative argument.
+# It should return Epoch value for zero argument since it seems that many
+# users rely on this fact, from_unixtime() should work with values
+# up to INT_MAX32 because of the same reason.
 #
 select from_unixtime(-1);
-select from_unixtime(2145916800);
+# check for from_unixtime(2^31-1) and from_unixtime(2^31)
+select from_unixtime(2147483647);
+select from_unixtime(2147483648);
 select from_unixtime(0);
+
+#
+# Some more tests for bug #9191 "TIMESTAMP/from_unixtime() no
+# longer accepts 2^31-1". Here we test that from_unixtime and
+# unix_timestamp are consistent, when working with boundary dates.
+#
+select unix_timestamp(from_unixtime(2147483647));
+select unix_timestamp(from_unixtime(2147483648));
+
+# check for invalid dates
+
+# bad year
+select unix_timestamp('2039-01-20 01:00:00');
+select unix_timestamp('1968-01-20 01:00:00');
+# bad month
+select unix_timestamp('2038-02-10 01:00:00');
+select unix_timestamp('1969-11-20 01:00:00');
+# bad day
+select unix_timestamp('2038-01-20 01:00:00');
+select unix_timestamp('1969-12-30 01:00:00');
+
+#
+# Check negative shift (we subtract several days for boundary dates during
+# conversion).
+select unix_timestamp('2038-01-17 12:00:00');
+
+#
+# Check positive shift. (it happens only on
+# platfroms with unsigned time_t, such as QNX)
+#
+select unix_timestamp('1970-01-01 03:00:01');
+
+# check bad date, close to the boundary (we cut them off in the very end)
+select unix_timestamp('2038-01-19 07:14:07');
+
 
 #
 # Test types from + INTERVAL
@@ -272,6 +331,64 @@ select date_add(date,INTERVAL "1 1" YEAR_MONTH) from t1;
 select date_add(date,INTERVAL "1:1:1" HOUR_SECOND) from t1;
 select date_add(date,INTERVAL "1 1:1" DAY_MINUTE) from t1;
 select date_add(date,INTERVAL "1 1:1:1" DAY_SECOND) from t1;
+select date_add(date,INTERVAL "1" WEEK) from t1;
+select date_add(date,INTERVAL "1" QUARTER) from t1;
+select timestampadd(MINUTE, 1, date) from t1;
+select timestampadd(WEEK, 1, date) from t1;
+select timestampadd(SQL_TSI_SECOND, 1, date) from t1;
+# Prepared statements doesn't support FRAC_SECOND yet
+--disable_ps_protocol
+select timestampadd(SQL_TSI_FRAC_SECOND, 1, date) from t1;
+--enable_ps_protocol
+
+select timestampdiff(MONTH, '2001-02-01', '2001-05-01') as a;
+select timestampdiff(YEAR, '2002-05-01', '2001-01-01') as a;
+select timestampdiff(QUARTER, '2002-05-01', '2001-01-01') as a;
+select timestampdiff(MONTH, '2000-03-28', '2000-02-29') as a;
+select timestampdiff(MONTH, '1991-03-28', '2000-02-29') as a;
+select timestampdiff(SQL_TSI_WEEK, '2001-02-01', '2001-05-01') as a;
+select timestampdiff(SQL_TSI_HOUR, '2001-02-01', '2001-05-01') as a;
+select timestampdiff(SQL_TSI_DAY, '2001-02-01', '2001-05-01') as a;
+select timestampdiff(SQL_TSI_MINUTE, '2001-02-01 12:59:59', '2001-05-01 12:58:59') as a;
+select timestampdiff(SQL_TSI_SECOND, '2001-02-01 12:59:59', '2001-05-01 12:58:58') as a;
+select timestampdiff(SQL_TSI_FRAC_SECOND, '2001-02-01 12:59:59.120000', '2001-05-01 12:58:58.119999') as a;
+
+select timestampdiff(SQL_TSI_DAY, '1986-02-01', '1986-03-01') as a1,
+       timestampdiff(SQL_TSI_DAY, '1900-02-01', '1900-03-01') as a2,
+       timestampdiff(SQL_TSI_DAY, '1996-02-01', '1996-03-01') as a3,
+       timestampdiff(SQL_TSI_DAY, '2000-02-01', '2000-03-01') as a4;
+
+# bug 16226
+SELECT TIMESTAMPDIFF(day,'2006-01-10 14:30:28','2006-01-11 14:30:27');
+SELECT TIMESTAMPDIFF(day,'2006-01-10 14:30:28','2006-01-11 14:30:28');
+SELECT TIMESTAMPDIFF(day,'2006-01-10 14:30:28','2006-01-11 14:30:29');
+SELECT TIMESTAMPDIFF(day,'2006-01-10 14:30:28','2006-01-12 14:30:27');
+SELECT TIMESTAMPDIFF(day,'2006-01-10 14:30:28','2006-01-12 14:30:28');
+SELECT TIMESTAMPDIFF(day,'2006-01-10 14:30:28','2006-01-12 14:30:29');
+
+SELECT TIMESTAMPDIFF(week,'2006-01-10 14:30:28','2006-01-17 14:30:27');
+SELECT TIMESTAMPDIFF(week,'2006-01-10 14:30:28','2006-01-17 14:30:28');
+SELECT TIMESTAMPDIFF(week,'2006-01-10 14:30:28','2006-01-17 14:30:29');
+SELECT TIMESTAMPDIFF(week,'2006-01-10 14:30:28','2006-01-24 14:30:27');
+SELECT TIMESTAMPDIFF(week,'2006-01-10 14:30:28','2006-01-24 14:30:28');
+SELECT TIMESTAMPDIFF(week,'2006-01-10 14:30:28','2006-01-24 14:30:29');
+
+SELECT TIMESTAMPDIFF(month,'2006-01-10 14:30:28','2006-02-10 14:30:27');
+SELECT TIMESTAMPDIFF(month,'2006-01-10 14:30:28','2006-02-10 14:30:28');
+SELECT TIMESTAMPDIFF(month,'2006-01-10 14:30:28','2006-02-10 14:30:29');
+SELECT TIMESTAMPDIFF(month,'2006-01-10 14:30:28','2006-03-10 14:30:27');
+SELECT TIMESTAMPDIFF(month,'2006-01-10 14:30:28','2006-03-10 14:30:28');
+SELECT TIMESTAMPDIFF(month,'2006-01-10 14:30:28','2006-03-10 14:30:29');
+
+SELECT TIMESTAMPDIFF(year,'2006-01-10 14:30:28','2007-01-10 14:30:27');
+SELECT TIMESTAMPDIFF(year,'2006-01-10 14:30:28','2007-01-10 14:30:28');
+SELECT TIMESTAMPDIFF(year,'2006-01-10 14:30:28','2007-01-10 14:30:29');
+SELECT TIMESTAMPDIFF(year,'2006-01-10 14:30:28','2008-01-10 14:30:27');
+SELECT TIMESTAMPDIFF(year,'2006-01-10 14:30:28','2008-01-10 14:30:28');
+SELECT TIMESTAMPDIFF(year,'2006-01-10 14:30:28','2008-01-10 14:30:29');
+
+# end of bug
+
 select date_add(time,INTERVAL 1 SECOND) from t1;
 drop table t1;
 
@@ -296,6 +413,7 @@ select last_day("1997-12-1")+0.0;
 
 # Test SAPDB UTC_% functions. This part is TZ dependant (It is supposed that
 # TZ variable set to GMT-3
+
 select strcmp(date_sub(localtimestamp(), interval 3 hour), utc_timestamp())=0;
 select strcmp(date_format(date_sub(localtimestamp(), interval 3 hour),"%T"), utc_time())=0;
 select strcmp(date_format(date_sub(localtimestamp(), interval 3 hour),"%Y-%m-%d"), utc_date())=0;
@@ -354,7 +472,7 @@ select f3 from t1 where f3 between cast("2006-1-1 12:1:1" as datetime) and cast(
 select f3 from t1 where timestamp(f3) between cast("2006-1-1 12:1:1" as datetime) and cast("2006-1-1 12:1:2" as datetime);
 select f1 from t1 where cast("2006-1-1" as date) between f1 and f3;
 select f1 from t1 where cast("2006-1-1" as date) between date(f1) and date(f3);
-select f1 from t1 where cast("2006-1-1" as date) between f1 and 'zzz';
+select f1 from t1 where cast("2006-1-1" as date) between f1 and cast('zzz' as date);
 select f1 from t1 where makedate(2006,1) between date(f1) and date(f3);
 select f1 from t1 where makedate(2006,2) between date(f1) and date(f3);
 drop table t1;
@@ -369,6 +487,47 @@ show create table t1;
 drop table t1;
 
 #
+# Bug #11655: Wrong time is returning from nested selects - maximum time exists
+#
+# check if SEC_TO_TIME() handles out-of-range values correctly
+SELECT SEC_TO_TIME(3300000);
+SELECT SEC_TO_TIME(3300000)+0;
+SELECT SEC_TO_TIME(3600 * 4294967296);
+
+# check if TIME_TO_SEC() handles out-of-range values correctly
+SELECT TIME_TO_SEC('916:40:00');
+
+# check if ADDTIME() handles out-of-range values correctly
+SELECT ADDTIME('500:00:00', '416:40:00');
+SELECT ADDTIME('916:40:00', '416:40:00');
+
+# check if SUBTIME() handles out-of-range values correctly
+SELECT SUBTIME('916:40:00', '416:40:00');
+SELECT SUBTIME('-916:40:00', '416:40:00');
+
+# check if MAKETIME() handles out-of-range values correctly
+SELECT MAKETIME(916,0,0);
+SELECT MAKETIME(4294967296, 0, 0);
+SELECT MAKETIME(-4294967296, 0, 0);
+SELECT MAKETIME(0, 4294967296, 0);
+SELECT MAKETIME(0, 0, 4294967296);
+SELECT MAKETIME(CAST(-1 AS UNSIGNED), 0, 0);
+
+# check if EXTRACT() handles out-of-range values correctly
+SELECT EXTRACT(HOUR FROM '100000:02:03');
+
+# check if we get proper warnings if both input string truncation
+# and out-of-range value occur
+CREATE TABLE t1(f1 TIME);
+INSERT INTO t1 VALUES('916:00:00 a');
+SELECT * FROM t1;
+DROP TABLE t1;
+
+#
+# Bug #20927: sec_to_time treats big unsigned as signed
+#
+# check if SEC_TO_TIME() handles BIGINT UNSIGNED values correctly
+SELECT SEC_TO_TIME(CAST(-1 AS UNSIGNED));
 # 21913: DATE_FORMAT() Crashes mysql server if I use it through
 #        mysql-connector-j driver.
 #
@@ -405,4 +564,191 @@ union
 union
 (select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%k') As H);
 
+#
+# Bug #23653: crash if last_day('0000-00-00')
+#
+
+select last_day('0000-00-00');
+
+#
+# Bug 23616: datetime functions with double argumets
+#
+
+select isnull(week(now() + 0)), isnull(week(now() + 0.2)),
+  week(20061108), week(20061108.01), week(20061108085411.000002);
+
 --echo End of 4.1 tests
+
+explain extended select timestampdiff(SQL_TSI_WEEK, '2001-02-01', '2001-05-01') as a1,
+			timestampdiff(SQL_TSI_FRAC_SECOND, '2001-02-01 12:59:59.120000', '2001-05-01 12:58:58.119999') as a2;
+
+#
+# Bug #10568
+#
+
+select last_day('2005-00-00');
+select last_day('2005-00-01');
+select last_day('2005-01-00');
+
+#
+# Bug #10590: %h, %I, and %l format specifies should all return results in
+# the 0-11 range
+#
+select time_format('100:00:00', '%H %k %h %I %l');
+
+#
+# Bug #12562: Make SYSDATE behave like it does in Oracle: always the current
+#             time, regardless of magic to make NOW() always the same for the
+#             entirety of a statement.
+create table t1 (a timestamp default '2005-05-05 01:01:01',
+                 b timestamp default '2005-05-05 01:01:01');
+delimiter //;
+create function t_slow_sysdate() returns timestamp
+begin
+  do sleep(2);
+  return sysdate();
+end;
+//
+
+insert into t1 set a = sysdate(), b = t_slow_sysdate();//
+
+create trigger t_before before insert on t1
+for each row begin
+  set new.b = t_slow_sysdate();
+end
+//
+
+delimiter ;//
+
+insert into t1 set a = sysdate();
+
+select a != b from t1;
+
+drop trigger t_before;
+drop function t_slow_sysdate;
+drop table t1;
+
+create table t1 (a datetime, i int, b datetime);
+insert into t1 select sysdate(), sleep(1), sysdate() from dual;
+select a != b from t1;
+drop table t1;
+
+delimiter //;
+create procedure t_sysdate()
+begin
+  select sysdate() into @a;
+  do sleep(2);
+  select sysdate() into @b;
+  select @a != @b;
+end;
+//
+delimiter ;//
+call t_sysdate();
+drop procedure t_sysdate;
+
+#
+# Bug #13534: timestampdiff() returned incorrect results across leap years
+#
+select timestampdiff(month,'2004-09-11','2004-09-11');
+select timestampdiff(month,'2004-09-11','2005-09-11');
+select timestampdiff(month,'2004-09-11','2006-09-11');
+select timestampdiff(month,'2004-09-11','2007-09-11');
+select timestampdiff(month,'2005-09-11','2004-09-11');
+select timestampdiff(month,'2005-09-11','2003-09-11');
+
+select timestampdiff(month,'2004-02-28','2005-02-28');
+select timestampdiff(month,'2004-02-29','2005-02-28');
+select timestampdiff(month,'2004-02-28','2005-02-28');
+select timestampdiff(month,'2004-03-29','2005-03-28');
+select timestampdiff(month,'2003-02-28','2004-02-29');
+select timestampdiff(month,'2003-02-28','2005-02-28');
+
+select timestampdiff(month,'1999-09-11','2001-10-10');
+select timestampdiff(month,'1999-09-11','2001-9-11');
+
+select timestampdiff(year,'1999-09-11','2001-9-11');
+select timestampdiff(year,'2004-02-28','2005-02-28');
+select timestampdiff(year,'2004-02-29','2005-02-28');
+
+#
+# Bug #18618: BETWEEN for dates with the second argument being a constant
+#             expression and the first and the third arguments being fields 
+#
+
+CREATE TABLE t1 (id int NOT NULL PRIMARY KEY, day date);
+CREATE TABLE t2 (id int NOT NULL PRIMARY KEY, day date);
+
+INSERT INTO t1 VALUES
+  (1, '2005-06-01'), (2, '2005-02-01'), (3, '2005-07-01');
+INSERT INTO t2 VALUES
+  (1, '2005-08-01'), (2, '2005-06-15'), (3, '2005-07-15');
+
+SELECT * FROM t1, t2 
+  WHERE t1.day BETWEEN 
+               '2005.09.01' - INTERVAL 6 MONTH AND t2.day;
+SELECT * FROM t1, t2 
+  WHERE CAST(t1.day AS DATE) BETWEEN 
+                             '2005.09.01' - INTERVAL 6 MONTH AND t2.day;
+ 
+DROP TABLE t1,t2;
+
+# End of 5.0 tests
+
+# Restore timezone to default
+set time_zone= @@global.time_zone;
+
+#
+# 21913: DATE_FORMAT() Crashes mysql server if I use it through
+#        mysql-connector-j driver.
+#
+
+SET NAMES latin1;
+SET character_set_results = NULL;
+SHOW VARIABLES LIKE 'character_set_results';
+
+CREATE TABLE testBug8868 (field1 DATE, field2 VARCHAR(32) CHARACTER SET BINARY);
+INSERT INTO testBug8868 VALUES ('2006-09-04', 'abcd');
+
+SELECT DATE_FORMAT(field1,'%b-%e %l:%i%p') as fmtddate, field2 FROM testBug8868;
+
+DROP TABLE testBug8868;
+
+SET NAMES DEFAULT;
+
+#
+# Bug #22229: bug in DATE_ADD()
+#
+
+select str_to_date('10:00 PM', '%h:%i %p') + INTERVAL 10 MINUTE;
+
+#
+# Bug #21103: DATE column not compared as DATE
+#
+
+create table t1 (field DATE);
+insert into t1 values ('2006-11-06');
+select * from t1 where field < '2006-11-06 04:08:36.0'; 
+select * from t1 where field = '2006-11-06 04:08:36.0'; 
+select * from t1 where field = '2006-11-06'; 
+select * from t1 where CAST(field as DATETIME) < '2006-11-06 04:08:36.0';
+select * from t1 where CAST(field as DATE) < '2006-11-06 04:08:36.0';
+drop table t1;
+
+#
+# Bug #25643: SEC_TO_TIME function problem
+#
+CREATE TABLE t1 (a int, t1 time, t2 time, d date, PRIMARY KEY  (a));
+INSERT INTO t1 VALUES (1, '10:00:00', NULL, NULL), 
+       (2, '11:00:00', '11:15:00', '1972-02-06');
+SELECT t1, t2, SEC_TO_TIME( TIME_TO_SEC( t2 ) - TIME_TO_SEC( t1 ) ), QUARTER(d) 
+  FROM t1;
+SELECT t1, t2, SEC_TO_TIME( TIME_TO_SEC( t2 ) - TIME_TO_SEC( t1 ) ), QUARTER(d)
+  FROM t1 ORDER BY a DESC;
+DROP TABLE t1;
+
+#
+# Bug #20293: group by cuts off value from time_format
+#
+# Check if using GROUP BY with TIME_FORMAT() produces correct results
+
+SELECT TIME_FORMAT(SEC_TO_TIME(a),"%H:%i:%s") FROM (SELECT 3020399 AS a UNION SELECT 3020398 ) x GROUP BY 1;

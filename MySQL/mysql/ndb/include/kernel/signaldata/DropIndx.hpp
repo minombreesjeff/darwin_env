@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -168,11 +167,13 @@ public:
     NoError = 0,
     InvalidIndexVersion = 241,
     Busy = 701,
+    BusyWithNR = 711,
     NotMaster = 702,
     IndexNotFound = 4243,
     BadRequestType = 4247,
     InvalidName = 4248,
-    NotAnIndex = 4254
+    NotAnIndex = 4254,
+    SingleUser = 299
   };
   STATIC_CONST( SignalLength = DropIndxConf::SignalLength + 3 );
 

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -216,15 +215,7 @@ static int cs_value(MY_XML_PARSER *st,const char *attr, uint len)
 {
   struct my_cs_file_info *i= (struct my_cs_file_info *)st->user_data;
   struct my_cs_file_section_st *s;
-  int    state= (s=cs_file_sec(st->attr,strlen(st->attr))) ? s->state : 0;
-  
-#ifndef DBUG_OFF
-  if(0){
-    char   str[1024];
-    mstr(str,attr,len,sizeof(str)-1);
-    printf("VALUE %d %s='%s'\n",state,st->attr,str);
-  }
-#endif
+  int    state= (int)((s=cs_file_sec(st->attr, (int) strlen(st->attr))) ? s->state : 0);
   
   switch (state) {
   case _CS_ID:

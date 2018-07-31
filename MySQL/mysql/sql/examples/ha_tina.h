@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -48,19 +47,10 @@ class ha_tina: public handler
   tina_set *chain_ptr;
   byte chain_alloced;
   uint32 chain_size;
+  bool records_is_known;
 
-  public:
-  ha_tina(TABLE *table): handler(table),
-  /* 
-     These definitions are found in hanler.h 
-     Theses are not probably completely right.
-   */
-  current_position(0), next_position(0), chain_alloced(0), chain_size(DEFAULT_CHAIN_LENGTH)
-  {
-    /* Set our original buffers from pre-allocated memory */
-    buffer.set(byte_buffer, IO_SIZE, system_charset_info);
-    chain = chain_buffer;
-  }
+public:
+  ha_tina(TABLE *table_arg);
   ~ha_tina() 
   {
     if (chain_alloced)
@@ -88,7 +78,6 @@ class ha_tina: public handler
    */
   virtual double scan_time() { return (double) (records+deleted) / 20.0+10; }
   /* The next method will never be called */
-  virtual double read_time(ha_rows rows) { DBUG_ASSERT(0); return((double) rows /  20.0+1); }
   virtual bool fast_key_read() { return 1;}
   /* 
     TODO: return actual upper bound of number of records in the table.
@@ -120,12 +109,6 @@ class ha_tina: public handler
   int reset(void);
   int external_lock(THD *thd, int lock_type);
   int delete_all_rows(void);
-  ha_rows records_in_range(int inx, const byte *start_key,uint start_key_len,
-      enum ha_rkey_function start_search_flag,
-      const byte *end_key,uint end_key_len,
-      enum ha_rkey_function end_search_flag);
-//  int delete_table(const char *from);
-//  int rename_table(const char * from, const char * to);
   int create(const char *name, TABLE *form, HA_CREATE_INFO *create_info);
 
   THR_LOCK_DATA **store_lock(THD *thd, THR_LOCK_DATA **to,
@@ -136,3 +119,6 @@ class ha_tina: public handler
   int find_current_row(byte *buf);
   int chain_append();
 };
+
+bool tina_end();
+

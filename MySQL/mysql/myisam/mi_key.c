@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,15 +33,25 @@
 
 static int _mi_put_key_in_record(MI_INFO *info,uint keynr,byte *record);
 
-	/*
-	** Make a intern key from a record
-	** Ret: Length of key
-	*/
+/*
+  Make a intern key from a record
+
+  SYNOPSIS
+    _mi_make_key()
+    info		MyiSAM handler
+    keynr		key number
+    key			Store created key here
+    record		Record
+    filepos		Position to record in the data file
+
+  RETURN
+    Length of key
+*/
 
 uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
 		  const byte *record, my_off_t filepos)
 {
-  byte *pos,*end;
+  byte *pos;
   uchar *start;
   reg1 HA_KEYSEG *keyseg;
   my_bool is_ft= info->s->keyinfo[keynr].flag & HA_FULLTEXT;
@@ -82,30 +91,44 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
                   length);
 
     pos= (byte*) record+keyseg->start;
+    if (type == HA_KEYTYPE_BIT)
+    {
+      if (keyseg->bit_length)
+      {
+        uchar bits= get_rec_bits((uchar*) record + keyseg->bit_pos,
+                                 keyseg->bit_start, keyseg->bit_length);
+        *key++= bits;
+        length--;
+      }
+      memcpy((byte*) key, pos, length);
+      key+= length;
+      continue;
+    }
     if (keyseg->flag & HA_SPACE_PACK)
     {
-      end= pos + length;
       if (type != HA_KEYTYPE_NUM)
       {
-	while (end > pos && end[-1] == ' ')
-	  end--;
+        length= cs->cset->lengthsp(cs, pos, length);
       }
       else
       {
+        byte *end= pos + length;
 	while (pos < end && pos[0] == ' ')
 	  pos++;
+	length=(uint) (end-pos);
       }
-      length=(uint) (end-pos);
       FIX_LENGTH(cs, pos, length, char_length);
       store_key_length_inc(key,char_length);
       memcpy((byte*) key,(byte*) pos,(size_t) char_length);
       key+=char_length;
       continue;
     }
-    if (keyseg->flag & HA_VAR_LENGTH)
+    if (keyseg->flag & HA_VAR_LENGTH_PART)
     {
-      uint tmp_length=uint2korr(pos);
-      pos+=2;					/* Skip VARCHAR length */
+      uint pack_length= (keyseg->bit_start == 1 ? 1 : 2);
+      uint tmp_length= (pack_length == 1 ? (uint) *(uchar*) pos :
+                        uint2korr(pos));
+      pos+= pack_length;			/* Skip VARCHAR length */
       set_if_smaller(length,tmp_length);
       FIX_LENGTH(cs, pos, length, char_length);
       store_key_length_inc(key,char_length);
@@ -161,7 +184,7 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
     FIX_LENGTH(cs, pos, length, char_length);
     memcpy((byte*) key, pos, char_length);
     if (length > char_length)
-      cs->cset->fill(cs, key+char_length, length-char_length, ' ');
+      cs->cset->fill(cs, (char*) key+char_length, length-char_length, ' ');
     key+= length;
   }
   _mi_dpointer(info,key,filepos);
@@ -216,10 +239,10 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
       if (!(*key++= (char) 1-*old++))			/* Copy null marker */
       {
 	k_length-=length;
-        if (keyseg->flag & (HA_VAR_LENGTH | HA_BLOB_PART))
+        if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART))
         {
-          old+= 2;
           k_length-=2;                                  /* Skip length */
+          old+= 2;
         }
 	continue;					/* Found NULL */
       }
@@ -247,7 +270,7 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
       key+= char_length;
       continue;
     }
-    else if (keyseg->flag & (HA_VAR_LENGTH | HA_BLOB_PART))
+    else if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART))
     {
       /* Length of key-part used with mi_rkey() always 2 */
       uint tmp_length=uint2korr(pos);
@@ -274,7 +297,7 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
     FIX_LENGTH(cs, pos, length, char_length);
     memcpy((byte*) key, pos, char_length);
     if (length > char_length)
-      cs->cset->fill(cs,key+char_length, length-char_length, ' ');
+      cs->cset->fill(cs, (char*) key+char_length, length-char_length, ' ');
     key+= length;
     k_length-=length;
   }
@@ -333,7 +356,7 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
   byte *blob_ptr;
   DBUG_ENTER("_mi_put_key_in_record");
 
-  blob_ptr= info->lastkey2;                     /* Place to put blob parts */
+  blob_ptr= (byte*) info->lastkey2;             /* Place to put blob parts */
   key=(byte*) info->lastkey;                    /* KEy that was read */
   key_end=key+info->lastkey_length;
   for (keyseg=info->s->keyinfo[keynr].seg ; keyseg->type ;keyseg++)
@@ -347,6 +370,26 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
       }
       record[keyseg->null_pos]&= ~keyseg->null_bit;
     }
+    if (keyseg->type == HA_KEYTYPE_BIT)
+    {
+      uint length= keyseg->length;
+
+      if (keyseg->bit_length)
+      {
+        uchar bits= *key++;
+        set_rec_bits(bits, record + keyseg->bit_pos, keyseg->bit_start,
+                     keyseg->bit_length);
+        length--;
+      }
+      else
+      {
+        clr_rec_bits(record + keyseg->bit_pos, keyseg->bit_start,
+                     keyseg->bit_length);
+      }
+      memcpy(record + keyseg->start, (byte*) key, length);
+      key+= length;
+      continue;
+    }
     if (keyseg->flag & HA_SPACE_PACK)
     {
       uint length;
@@ -358,8 +401,10 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
       pos= record+keyseg->start;
       if (keyseg->type != (int) HA_KEYTYPE_NUM)
       {
-	memcpy(pos,key,(size_t) length);
-	bfill(pos+length,keyseg->length-length,' ');
+        memcpy(pos,key,(size_t) length);
+        keyseg->charset->cset->fill(keyseg->charset,
+                                    pos + length, keyseg->length - length,
+                                    ' ');
       }
       else
       {
@@ -370,7 +415,7 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
       continue;
     }
 
-    if (keyseg->flag & HA_VAR_LENGTH)
+    if (keyseg->flag & HA_VAR_LENGTH_PART)
     {
       uint length;
       get_key_length(length,key);
@@ -378,7 +423,13 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
       if (length > keyseg->length || key+length > key_end)
 	goto err;
 #endif
-      memcpy(record+keyseg->start,(byte*) key, length);
+      /* Store key length */
+      if (keyseg->bit_start == 1)
+        *(uchar*) (record+keyseg->start)= (uchar) length;
+      else
+        int2store(record+keyseg->start, length);
+      /* And key data */
+      memcpy(record+keyseg->start + keyseg->bit_start, (byte*) key, length);
       key+= length;
     }
     else if (keyseg->flag & HA_BLOB_PART)
@@ -444,6 +495,7 @@ int _mi_read_key_record(MI_INFO *info, my_off_t filepos, byte *buf)
     {				/* Read only key */
       if (_mi_put_key_in_record(info,(uint) info->lastinx,buf))
       {
+        mi_print_error(info->s, HA_ERR_CRASHED);
 	my_errno=HA_ERR_CRASHED;
 	return -1;
       }
@@ -455,22 +507,21 @@ int _mi_read_key_record(MI_INFO *info, my_off_t filepos, byte *buf)
   return(-1);				/* Wrong data to read */
 }
 
-  
+
 /*
-  Update auto_increment info
+  Retrieve auto_increment info
 
   SYNOPSIS
-    update_auto_increment()
+    retrieve_auto_increment()
     info			MyISAM handler
     record			Row to update
 
   IMPLEMENTATION
-    Only replace the auto_increment value if it is higher than the previous
-    one. For signed columns we don't update the auto increment value if it's
+    For signed columns we don't retrieve the auto increment value if it's
     less than zero.
 */
 
-void update_auto_increment(MI_INFO *info,const byte *record)
+ulonglong retrieve_auto_increment(MI_INFO *info,const byte *record)
 {
   ulonglong value= 0;			/* Store unsigned values here */
   longlong s_value= 0;			/* Store signed values here */
@@ -535,6 +586,5 @@ void update_auto_increment(MI_INFO *info,const byte *record)
     and if s_value == 0 then value will contain either s_value or the
     correct value.
   */
-  set_if_bigger(info->s->state.auto_increment,
-                (s_value > 0) ? (ulonglong) s_value : value);
+  return (s_value > 0) ? (ulonglong) s_value : value;
 }

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql_fix_privilege_tables\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL_FIX_PRIVILE" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQL_FIX_PRIVILE" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -13,8 +13,8 @@
 .SH "NAME"
 mysql_fix_privilege_tables \- upgrade MySQL system tables
 .SH "SYNOPSIS"
-.HP 37
-\fBmysql_fix_privilege_tables [\fR\fB\fIoptions\fR\fR\fB]\fR
+.HP 52
+\fBmysql_fix_privilege_tables \-\-password=\fR\fB\fIroot_password\fR\fR
 .SH "DESCRIPTION"
 .PP
 Some releases of MySQL introduce changes to the structure of the system tables in the
@@ -22,6 +22,12 @@ mysql
 database to add new privileges or support new features. When you update to a new version of MySQL, you should update your system tables as well to make sure that their structure is up to date. Otherwise, there might be capabilities that you cannot take advantage of. First, make a backup of your
 mysql
 database, and then use the following procedure.
+.PP
+\fBNote\fR: As of MySQL 5.0.19,
+\fBmysql_fix_privilege_tables\fR
+is superseded by
+\fBmysql_upgrade\fR, which should be used instead. See
+\fBmysql_upgrade\fR(1).
 .PP
 On Unix or Unix\-like systems, update the system tables by running the
 \fBmysql_fix_privilege_tables\fR
@@ -36,19 +42,11 @@ shell> \fBmysql_fix_privilege_tables\fR
 You must run this script while the server is running. It attempts to connect to the server running on the local host as
 root. If your
 root
-account requires a password, indicate the password on the command line. For MySQL 4.1 and up, specify the password like this:
+account requires a password, indicate the password on the command line like this:
 .sp
 .RS 3n
 .nf
 shell> \fBmysql_fix_privilege_tables \-\-password=\fR\fB\fIroot_password\fR\fR
-.fi
-.RE
-.PP
-Prior to MySQL 4.1, specify the password like this:
-.sp
-.RS 3n
-.nf
-shell> \fBmysql_fix_privilege_tables \fR\fB\fIroot_password\fR\fR
 .fi
 .RE
 .PP
@@ -60,16 +58,16 @@ warnings as it runs; you can ignore them.
 .PP
 After running the script, stop the server and restart it.
 .PP
-On Windows systems, there isn't an easy way to update the system tables until MySQL 4.0.15. From version 4.0.15 on, MySQL distributions include a
+On Windows systems, MySQL distributions include a
 \fImysql_fix_privilege_tables.sql\fR
 SQL script that you can run using the
 \fBmysql\fR
 client. For example, if your MySQL installation is located at
-\fIC:\\Program Files\\MySQL\\MySQL Server 4.1\fR, the commands look like this:
+\fIC:\\Program Files\\MySQL\\MySQL Server 5.0\fR, the commands look like this:
 .sp
 .RS 3n
 .nf
-C:\\> \fBcd "C:\\Program Files\\MySQL\\MySQL Server 4.1"\fR
+C:\\> \fBcd "C:\\Program Files\\MySQL\\MySQL Server 5.0"\fR
 C:\\> \fBbin\\mysql \-u root \-p mysql\fR
 mysql> \fBSOURCE scripts/mysql_fix_privilege_tables.sql\fR
 .fi
@@ -94,7 +92,7 @@ script; you can ignore them.
 After running the script, stop the server and restart it.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -102,35 +100,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

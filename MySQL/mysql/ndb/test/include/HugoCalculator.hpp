@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,14 +30,7 @@ class HugoCalculator {
 public:
   HugoCalculator(const NdbDictionary::Table& tab);
   Int32 calcValue(int record, int attrib, int updates) const;
-#if 0
-  U_Int32 calcValue(int record, int attrib, int updates) const;
-  U_Int64 calcValue(int record, int attrib, int updates) const;
-  Int64 calcValue(int record, int attrib, int updates) const;
-  float calcValue(int record, int attrib, int updates) const;
-  double calcValue(int record, int attrib, int updates) const;
-#endif
-  const char* calcValue(int record, int attrib, int updates, char* buf) const;
+  const char* calcValue(int record, int attrib, int updates, char* buf, int len) const;
 
   int verifyRowValues(NDBT_ResultRow* const  pRow) const;
   int getIdValue(NDBT_ResultRow* const pRow) const;

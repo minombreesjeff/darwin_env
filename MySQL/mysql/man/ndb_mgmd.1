@@ -1,0 +1,81 @@
+.\"     Title: \fBndb_mgmd\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 07/04/2007
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 5.0
+.\"
+.TH "\fBNDB_MGMD\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+ndb_mgmd \- the management server process
+.SH "SYNOPSIS"
+.HP 17
+\fBndb_mgmd \fR\fB\fIoptions\fR\fR
+.SH "DESCRIPTION"
+.PP
+The management server is the process that reads the cluster configuration file and distributes this information to all nodes in the cluster that request it. It also maintains a log of cluster activities. Management clients can connect to the management server and check the cluster's status.
+.PP
+It is not strictly necessary to specify a connectstring when starting the management server. However, if you are using more than one management server, a connectstring should be provided and each node in the cluster should specify its node ID explicitly.
+.PP
+See
+Section\ 3.4.2, \(lqThe Cluster Connectstring\(rq, for information about using connectstrings.
+Section\ 5.2, \(lqCommand Options for MySQL Cluster Processes\(rq, describes other options for
+\fBndb_mgmd\fR.
+.PP
+The following files are created or used by
+\fBndb_mgmd\fR
+in its starting directory, and are placed in the
+DataDir
+as specified in the
+\fIconfig.ini\fR
+configuration file. In the list that follows,
+\fInode_id\fR
+is the unique node identifier.
+.TP 3n
+\(bu
+\fIconfig.ini\fR
+is the configuration file for the cluster as a whole. This file is created by the user and read by the management server.
+Section\ 3, \(lqMySQL Cluster Configuration\(rq, discusses how to set up this file.
+.TP 3n
+\(bu
+\fIndb_\fR\fI\fInode_id\fR\fR\fI_cluster.log\fR
+is the cluster events log file. Examples of such events include checkpoint startup and completion, node startup events, node failures, and levels of memory usage. A complete listing of cluster events with descriptions may be found in
+Section\ 6, \(lqManagement of MySQL Cluster\(rq.
+.sp
+When the size of the cluster log reaches one million bytes, the file is renamed to
+\fIndb_\fR\fI\fInode_id\fR\fR\fI_cluster.log.\fR\fI\fIseq_id\fR\fR, where
+\fIseq_id\fR
+is the sequence number of the cluster log file. (For example: If files with the sequence numbers 1, 2, and 3 already exist, the next log file is named using the number
+4.)
+.TP 3n
+\(bu
+\fIndb_\fR\fI\fInode_id\fR\fR\fI_out.log\fR
+is the file used for
+stdout
+and
+stderr
+when running the management server as a daemon.
+.TP 3n
+\(bu
+\fIndb_\fR\fI\fInode_id\fR\fR\fI.pid\fR
+is the process ID file used when running the management server as a daemon.
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2007 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

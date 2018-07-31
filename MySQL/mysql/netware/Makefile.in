@@ -59,11 +59,28 @@ target_triplet = @target@
 subdir = netware
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
@@ -124,6 +141,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -137,7 +155,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -186,7 +203,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -205,34 +225,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -268,7 +296,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -304,7 +331,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -316,7 +342,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -334,7 +359,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -343,9 +367,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -371,8 +392,10 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 @HAVE_NETWARE_TRUE@INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include -I..
 @HAVE_NETWARE_TRUE@LDADD = @CLIENT_EXTRA_LDFLAGS@ ../mysys/libmysys.a \
@@ -382,23 +405,28 @@ zlib_dir = @zlib_dir@
 @HAVE_NETWARE_TRUE@mysql_install_db_SOURCES = mysql_install_db.c my_manage.c
 @HAVE_NETWARE_TRUE@mysql_test_run_SOURCES = mysql_test_run.c my_manage.c
 @HAVE_NETWARE_TRUE@libmysql_SOURCES = libmysqlmain.c
-@HAVE_NETWARE_TRUE@libmysql_LDADD = ../libmysql/.libs/libmysqlclient.a @openssl_libs@
+@HAVE_NETWARE_TRUE@libmysql_LDADD = ../libmysql/.libs/libmysqlclient.a \
+@HAVE_NETWARE_TRUE@				@openssl_libs@ @yassl_libs@
+
 @HAVE_NETWARE_TRUE@netware_build_files = client/mysql.def client/mysqladmin.def \
 @HAVE_NETWARE_TRUE@                                client/mysqlbinlog.def client/mysqlcheck.def \
 @HAVE_NETWARE_TRUE@                                client/mysqldump.def client/mysqlimport.def \
 @HAVE_NETWARE_TRUE@                                client/mysqlshow.def client/mysqltest.def \
+@HAVE_NETWARE_TRUE@				client/mysql_upgrade.def \
+@HAVE_NETWARE_TRUE@				tests/mysql_client_test.def \
 @HAVE_NETWARE_TRUE@                                extra/my_print_defaults.def \
 @HAVE_NETWARE_TRUE@                                extra/perror.def extra/replace.def \
 @HAVE_NETWARE_TRUE@                                extra/resolveip.def extra/comp_err.def \
-@HAVE_NETWARE_TRUE@				isam/isamchk.def \
-@HAVE_NETWARE_TRUE@                                isam/isamlog.def isam/pack_isam.def \
 @HAVE_NETWARE_TRUE@                                libmysqld/libmysqld.def myisam/myisamchk.def \
 @HAVE_NETWARE_TRUE@                                myisam/myisamlog.def myisam/myisampack.def \
 @HAVE_NETWARE_TRUE@                                sql/mysqld.def extra/mysql_waitpid.def \
 @HAVE_NETWARE_TRUE@                                extra/resolve_stack_dump.def myisam/myisam_ftdump.def
 
-@HAVE_NETWARE_FALSE@EXTRA_DIST = comp_err.def init_db.sql install_test_db.ncf \
-@HAVE_NETWARE_FALSE@		isamchk.def isamlog.def libmysql.def libmysql.imp \
+@HAVE_NETWARE_FALSE@BUILT_SOURCES = libmysql.imp init_db.sql test_db.sql
+@HAVE_NETWARE_FALSE@DISTCLEANFILES = libmysql.imp
+@HAVE_NETWARE_FALSE@CLEANFILES = init_db.sql test_db.sql
+@HAVE_NETWARE_FALSE@EXTRA_DIST = $(BUILT_SOURCES) comp_err.def install_test_db.ncf \
+@HAVE_NETWARE_FALSE@		libmysql.def \
 @HAVE_NETWARE_FALSE@		libmysqlmain.c my_manage.c my_manage.h \
 @HAVE_NETWARE_FALSE@		my_print_defaults.def myisam_ftdump.def myisamchk.def \
 @HAVE_NETWARE_FALSE@		myisamlog.def myisampack.def mysql.def mysql.xdc \
@@ -408,8 +436,9 @@ zlib_dir = @zlib_dir@
 @HAVE_NETWARE_FALSE@		mysql_test_run.def mysql_waitpid.def mysqladmin.def \
 @HAVE_NETWARE_FALSE@		mysqlbinlog.def mysqlcheck.def mysqld.def \
 @HAVE_NETWARE_FALSE@		mysqld_safe.c mysqld_safe.def mysqldump.def mysqlimport.def \
-@HAVE_NETWARE_FALSE@		mysqlshow.def mysqltest.def pack_isam.def perror.def \
-@HAVE_NETWARE_FALSE@		replace.def resolve_stack_dump.def resolveip.def test_db.sql \
+@HAVE_NETWARE_FALSE@		mysqlshow.def mysqltest.def mysql_upgrade.def perror.def \
+@HAVE_NETWARE_FALSE@		mysql_client_test.def \
+@HAVE_NETWARE_FALSE@		replace.def resolve_stack_dump.def resolveip.def \
 @HAVE_NETWARE_FALSE@		static_init_db.sql \
 @HAVE_NETWARE_FALSE@		BUILD/apply-patch BUILD/compile-AUTOTOOLS \
 @HAVE_NETWARE_FALSE@		BUILD/compile-linux-tools BUILD/compile-netware-END \
@@ -421,7 +450,8 @@ zlib_dir = @zlib_dir@
 @HAVE_NETWARE_FALSE@		BUILD/mwasmnlm BUILD/mwccnlm BUILD/mwenv BUILD/mwldnlm \
 @HAVE_NETWARE_FALSE@		BUILD/nwbootstrap BUILD/openssl.imp BUILD/save-patch
 
-all: all-am
+all: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
@@ -615,13 +645,15 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 check-am: all-am
-check: check-am
+check: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) check-am
 all-am: Makefile $(PROGRAMS)
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)"; do \
 	  test -z "$$dir" || $(mkdir_p) "$$dir"; \
 	done
-install: install-am
+install: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) install-am
 install-exec: install-exec-am
 install-data: install-data-am
 uninstall: uninstall-am
@@ -638,13 +670,16 @@ install-strip:
 mostlyclean-generic:
 
 clean-generic:
+	-test -z "$(CLEANFILES)" || rm -f $(CLEANFILES)
 
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
+	-test -z "$(DISTCLEANFILES)" || rm -f $(DISTCLEANFILES)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
+	-test -z "$(BUILT_SOURCES)" || rm -f $(BUILT_SOURCES)
 clean: clean-am
 
 clean-am: clean-binPROGRAMS clean-generic clean-libtool mostlyclean-am
@@ -715,6 +750,32 @@ uninstall-am: uninstall-binPROGRAMS uninstall-info-am
 @HAVE_NETWARE_TRUE@	  org=`echo $$f | sed -e 's/.*\/\(.*\)/\1/g'`; \
 @HAVE_NETWARE_TRUE@	  @LN_CP_F@ $(srcdir)/$$org ../$$f; \
 @HAVE_NETWARE_TRUE@	done
+
+# Create the libmysql.imp from libmysql/libmysql.def
+@HAVE_NETWARE_FALSE@libmysql.imp: $(top_srcdir)/libmysql/libmysql.def
+@HAVE_NETWARE_FALSE@	$(AWK) 'BEGIN{x=0;} \
+@HAVE_NETWARE_FALSE@             END{printf("\n");} \
+@HAVE_NETWARE_FALSE@             x==1 {printf(" %s",$$1); x++; next} \
+@HAVE_NETWARE_FALSE@             x>1 {printf(",\n %s", $$1); next} \
+@HAVE_NETWARE_FALSE@             /EXPORTS/{x=1}' $(top_srcdir)/libmysql/libmysql.def > libmysql.imp
+
+# Build init_db.sql from the files that contain
+# the system tables for this version of MySQL plus any commands
+@HAVE_NETWARE_FALSE@init_db.sql: $(top_srcdir)/scripts/mysql_system_tables.sql \
+@HAVE_NETWARE_FALSE@	     $(top_srcdir)/scripts/mysql_system_tables_data.sql
+@HAVE_NETWARE_FALSE@	@echo "Building $@";
+@HAVE_NETWARE_FALSE@	@echo "CREATE DATABASE mysql;" > $@;
+@HAVE_NETWARE_FALSE@	@echo "CREATE DATABASE test;" >> $@;
+@HAVE_NETWARE_FALSE@	@echo "use mysql;" >> $@;
+@HAVE_NETWARE_FALSE@	@cat $(top_srcdir)/scripts/mysql_system_tables.sql \
+@HAVE_NETWARE_FALSE@	     $(top_srcdir)/scripts/mysql_system_tables_fix.sql >> $@;
+
+# Build test_db.sql from init_db.sql plus
+# some test data
+@HAVE_NETWARE_FALSE@test_db.sql: init_db.sql $(top_srcdir)/scripts/mysql_test_data_timezone.sql
+@HAVE_NETWARE_FALSE@	@echo "Building $@";
+@HAVE_NETWARE_FALSE@	@cat init_db.sql \
+@HAVE_NETWARE_FALSE@	     $(top_srcdir)/scripts/mysql_test_data_timezone.sql >> $@;
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

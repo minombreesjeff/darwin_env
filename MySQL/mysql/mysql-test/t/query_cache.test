@@ -405,8 +405,8 @@ select * from t1 where id=2;
 create table t1 (word char(20) not null);
 select * from t1;
 show status like "Qcache_queries_in_cache";
---replace_result $MYSQL_TEST_DIR TEST_DIR
-eval load data infile '$MYSQL_TEST_DIR/std_data/words.dat' into table t1;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval load data infile '$MYSQLTEST_VARDIR/std_data_ln/words.dat' into table t1;
 show status like "Qcache_queries_in_cache";
 select count(*) from t1;
 drop table t1;
@@ -554,9 +554,8 @@ set character_set_results=cp1251;
 SELECT a,'Â','â'='Â' FROM t1; 
 show status like "Qcache_hits";
 show status like "Qcache_queries_in_cache";
-#
-# Keep things tidy
-#
+SET NAMES default;
+
 DROP TABLE t1;
 
 #
@@ -576,7 +575,6 @@ DROP TABLE t1;
 set character_set_results=null;
 select @@character_set_results;
 set character_set_results=default;
-
 #
 # query cache and environment variables
 #
@@ -611,7 +609,36 @@ select group_concat(a) FROM t1 group by b;
 set group_concat_max_len=default;
 drop table t1;
 
+# comments before command
+#
+create table t1 (a int);
+show status like "Qcache_queries_in_cache";
+show status like "Qcache_inserts";
+show status like "Qcache_hits";
+/**/ select * from t1;
+/**/ select * from t1;
+show status like "Qcache_queries_in_cache";
+show status like "Qcache_inserts";
+show status like "Qcache_hits";
+
+#
+# Keep things tidy
+#
+DROP TABLE t1;
+SET GLOBAL query_cache_size=0;
+
+#
+# Information schema & query cache test
+#
+SET SESSION query_cache_type = 2;
+create table t1(a int);
+select table_name from information_schema.tables
+where table_schema="test";
+drop table t1;
+select table_name from information_schema.tables
+where table_schema="test";
 # Bug #8480: REPAIR TABLE needs to flush the table from the query cache
+SET SESSION query_cache_type = 1;
 set global query_cache_size=1024*1024;
 flush query cache;
 create table t1 ( a int );
@@ -623,9 +650,10 @@ repair table t1;
 show status like 'qcache_queries_in_cache';
 drop table t1;
 
+#
 # Bug #9549: Make sure cached queries that span more than one cache block
 # are handled properly in the embedded server.
-
+#
 # We just want a small query cache, so we can fragment it easily
 set GLOBAL query_cache_size=64*1024;
 # This actually gives us a usable cache size of about 48K
@@ -667,6 +695,8 @@ select a from t1;
 flush query cache;
 
 drop table t1, t2;
+set GLOBAL query_cache_size=1355776;
+
 
 #
 # Query with warning prohibited to query cache (BUG#9414)
@@ -726,7 +756,242 @@ show status like "Qcache_queries_in_cache";
 show status like "Qcache_inserts";
 show status like "Qcache_hits";
 drop table t1;
+# SP cursors and selects with query cache (BUG#9715)
+#
+create table t1 (a int);
+insert into t1 values (1),(2);
 
+delimiter //;
+CREATE PROCEDURE `p1`()
+begin
+Declare c1 cursor for select a from t1;
+open c1;
+select * from t1;
+end//
+call p1()//
+drop procedure p1;
+
+create function f1() returns int
+begin
+Declare var1 int;
+select max(a) from t1 into var1;
+return var1;
+end//
+create procedure `p1`()
+begin
+ select a, f1() from t1;
+end//
+call p1()//
+drop procedure p1//
+drop function f1//
+
+drop table t1//
+delimiter ;//
+
+#
+# query in QC from normal execution and SP (BUG#6897)
+# improved to also test BUG#3583 and BUG#12990
+#
+flush query cache;
+reset query cache;
+flush status;
+delimiter //;
+create table t1 (s1 int)//
+create procedure f1 () begin
+select sql_cache * from t1;
+select sql_cache * from t1;
+select sql_cache * from t1;
+end;//
+create procedure f2 () begin
+select sql_cache * from t1 where s1=1;
+select sql_cache * from t1;
+end;//
+create procedure f3 () begin
+select sql_cache * from t1;
+select sql_cache * from t1 where s1=1;
+end;//
+create procedure f4 () begin
+select sql_cache * from t1;
+select sql_cache * from t1 where s1=1;
+select sql_cache * from t1;
+select sql_cache * from t1 where s1=1;
+select sql_cache * from t1 where s1=1;
+end;//
+delimiter ;//
+call f1();
+call f1();
+call f1();
+select sql_cache * from t1;
+insert into t1 values (1);
+select sql_cache * from t1;
+call f1();
+call f1();
+select sql_cache * from t1;
+flush query cache;
+reset query cache;
+flush status;
+select sql_cache * from t1;
+select sql_cache * from t1 where s1=1;
+call f1();
+call f2();
+call f3();
+call f4();
+call f4();
+call f3();
+call f2();
+select sql_cache * from t1 where s1=1;
+insert into t1 values (2);
+call f1();
+select sql_cache * from t1 where s1=1;
+select sql_cache * from t1;
+call f1();
+call f3();
+call f3();
+call f1();
+
+drop procedure f1;
+drop procedure f2;
+drop procedure f3;
+drop procedure f4;
+drop table t1;
 set GLOBAL query_cache_size=0;
 
 # End of 4.1 tests
+
+#
+# Bug #10303: problem with last_query_cost
+#
+
+SET GLOBAL query_cache_size=102400;
+create table t1(a int);
+insert into t1 values(0), (1), (4), (5);
+select * from t1 where a > 3;
+select * from t1 where a > 3;
+show status like 'last_query_cost';
+drop table t1;
+SET GLOBAL query_cache_size=0;
+
+#
+# Bug #20045: Server crash on INSERT ... SELECT ... FROM non-mergeable view
+#
+set global query_cache_size=1024*1024;
+flush status;
+create table t1 (a int);
+insert into t1 (a) values (1), (2), (3);
+select * from t1;
+show status like 'Qcache_hits';
+select * from t1;
+show status like 'Qcache_hits';
+create table t2 like t1;
+select * from t1;
+show status like 'Qcache_hits';
+insert into t2 select * from t1;
+select * from t1;
+show status like 'Qcache_hits';
+drop table t1, t2;
+
+create table t1(c1 int);
+create table t2(c1 int);
+create table t3(c1 int);
+create view v1 as select t3.c1 as c1 from t3,t2 where t3.c1 = t2.c1;
+start transaction;
+insert into t1(c1) select c1 from v1;
+drop table t1, t2, t3;
+drop view v1;
+set global query_cache_size=0;
+
+#
+# Query cache and changes to system variables
+#
+
+create table t1 (a int);
+insert into t1 values (1),(2),(3);
+set GLOBAL query_cache_type=1;
+set GLOBAL query_cache_limit=10000;
+set GLOBAL query_cache_min_res_unit=0;
+set GLOBAL query_cache_size= 100000;
+
+# default_week_format
+reset query cache;
+set LOCAL default_week_format = 0;
+select week('2007-01-04');
+select week('2007-01-04') from t1;
+select extract(WEEK FROM '2007-01-04') from t1;
+
+set LOCAL default_week_format = 2;
+select week('2007-01-04');
+select week('2007-01-04') from t1;
+select extract(WEEK FROM '2007-01-04') from t1;
+
+# div_precision_increment
+reset query cache;
+set LOCAL div_precision_increment=2;
+select 1/7;
+select 1/7 from t1;
+
+set LOCAL div_precision_increment=4;
+select 1/7;
+select 1/7 from t1;
+
+drop table t1;
+
+CREATE TABLE t1 (a VARCHAR(200), b TEXT, FULLTEXT (a,b));
+INSERT INTO t1 VALUES('MySQL has now support', 'for full-text search'),
+                       ('Full-text indexes', 'are called collections'),
+                          ('Only MyISAM tables','support collections'),
+             ('Function MATCH ... AGAINST()','is used to do a search'),
+        ('Full-text search in MySQL', 'implements vector space model');
+
+
+set GLOBAL ft_boolean_syntax='+ -><()~*:""&|';
+
+select *, MATCH(a,b) AGAINST("+called +collections" IN BOOLEAN MODE) as x from t1;
+
+# swap +/-
+set GLOBAL ft_boolean_syntax='- +><()~*:""&|';
+
+select *, MATCH(a,b) AGAINST("+called +collections" IN BOOLEAN MODE) as x from t1;
+
+# If in the future we need to cache queries with functions
+# be sure not to cause dead lock if the query cache is flushed
+# while inserting a query in the query cache.
+delimiter |;
+create function change_global() returns integer
+begin
+  set global ft_boolean_syntax='+ -><()~*:""&|';
+  return 1;
+end|
+delimiter ;|
+select *, change_global() from t1;
+drop function change_global;
+
+drop table t1;
+
+set GLOBAL query_cache_type=default;
+set GLOBAL query_cache_limit=default;
+set GLOBAL query_cache_min_res_unit=default;
+set GLOBAL query_cache_size= default;
+
+
+#
+# Bug #28897  	UUID() returns non-unique values when query cache is enabled
+#
+
+set GLOBAL query_cache_size=1000000;
+
+create table t1 (a char);
+insert into t1 values ('c');
+
+let $q1= `select UUID(), a from t1`;
+let $q2= `select UUID(), a from t1`; 
+
+# disabling the logging of the query because the UUIDs are different each run.
+--disable_query_log
+eval select a  from t1 where "$q1" = "$q2";
+--enable_query_log
+
+drop table t1;
+
+set GLOBAL query_cache_size= default;
+
+# End of 5.0 tests

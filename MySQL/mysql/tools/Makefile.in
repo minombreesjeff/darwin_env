@@ -18,8 +18,7 @@
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -54,23 +53,40 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-bin_PROGRAMS = mysqlmanager$(EXEEXT)
+bin_PROGRAMS = mysqltestmanager$(EXEEXT)
 subdir = tools
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(bin_PROGRAMS)
-am_mysqlmanager_OBJECTS = mysqlmanager.$(OBJEXT)
-mysqlmanager_OBJECTS = $(am_mysqlmanager_OBJECTS)
-mysqlmanager_LDADD = $(LDADD)
+am_mysqltestmanager_OBJECTS = mysqlmanager.$(OBJEXT)
+mysqltestmanager_OBJECTS = $(am_mysqltestmanager_OBJECTS)
+mysqltestmanager_LDADD = $(LDADD)
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -82,8 +98,8 @@ LTCOMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
 CCLD = $(CC)
 LINK = $(LIBTOOL) --tag=CC --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(mysqlmanager_SOURCES)
-DIST_SOURCES = $(mysqlmanager_SOURCES)
+SOURCES = $(mysqltestmanager_SOURCES)
+DIST_SOURCES = $(mysqltestmanager_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -93,6 +109,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -106,7 +123,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -155,7 +171,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -174,34 +193,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -237,7 +264,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -273,7 +299,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -285,7 +310,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -303,7 +327,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -312,9 +335,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -340,18 +360,20 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
-INCLUDES = @MT_INCLUDES@ -I$(top_builddir)/include \
-			-I$(top_srcdir)/include $(openssl_includes)
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include \
+		$(openssl_includes)
 
-LDADD = @CLIENT_EXTRA_LDFLAGS@ @openssl_libs@ \
-			$(top_builddir)/libmysql_r/libmysqlclient_r.la \
-			@ZLIB_LIBS@ 
+LDADD = @CLIENT_EXTRA_LDFLAGS@ \
+		$(top_builddir)/libmysql_r/libmysqlclient_r.la \
+		@openssl_libs@ @yassl_libs@ @ZLIB_LIBS@
 
-mysqlmanager_SOURCES = mysqlmanager.c
-mysqlmanager_DEPENDENCIES = $(LIBRARIES) $(pkglib_LTLIBRARIES)
+mysqltestmanager_SOURCES = mysqlmanager.c
+mysqltestmanager_DEPENDENCIES = $(LIBRARIES) $(pkglib_LTLIBRARIES)
 DEF = -DUNDEF_THREADS_HACK
 all: all-am
 
@@ -414,9 +436,9 @@ clean-binPROGRAMS:
 	  echo " rm -f $$p $$f"; \
 	  rm -f $$p $$f ; \
 	done
-mysqlmanager$(EXEEXT): $(mysqlmanager_OBJECTS) $(mysqlmanager_DEPENDENCIES) 
-	@rm -f mysqlmanager$(EXEEXT)
-	$(LINK) $(mysqlmanager_LDFLAGS) $(mysqlmanager_OBJECTS) $(mysqlmanager_LDADD) $(LIBS)
+mysqltestmanager$(EXEEXT): $(mysqltestmanager_OBJECTS) $(mysqltestmanager_DEPENDENCIES) 
+	@rm -f mysqltestmanager$(EXEEXT)
+	$(LINK) $(mysqltestmanager_LDFLAGS) $(mysqltestmanager_OBJECTS) $(mysqltestmanager_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)

@@ -3,6 +3,9 @@
 #
 --disable_warnings
 drop table if exists t1,t2;
+
+# Avoid wrong warnings if mysql_client_test fails
+drop database if exists client_test_db;
 --enable_warnings
 
 create table t1
@@ -30,13 +33,13 @@ deallocate prepare no_such_statement;
 execute stmt1;
 
 # Nesting ps commands is not allowed: 
---error 1064
+--error ER_UNSUPPORTED_PS 
 prepare stmt2 from 'prepare nested_stmt from "select 1"';
 
---error 1064
+--error ER_UNSUPPORTED_PS 
 prepare stmt2 from 'execute stmt1';
 
---error 1064
+--error ER_UNSUPPORTED_PS 
 prepare stmt2 from 'deallocate prepare z';
 
 # PS insert 
@@ -149,7 +152,7 @@ create table t1
   c1  tinyint, c2  smallint, c3  mediumint, c4  int,
   c5  integer, c6  bigint, c7  float, c8  double,
   c9  double precision, c10 real, c11 decimal(7, 4), c12 numeric(8, 4),
-  c13 date, c14 datetime, c15 timestamp(14), c16 time,
+  c13 date, c14 datetime, c15 timestamp, c16 time,
   c17 year, c18 bit, c19 bool, c20 char,
   c21 char(10), c22 varchar(30), c23 tinyblob, c24 tinytext,
   c25 blob, c26 text, c27 mediumblob, c28 mediumtext,
@@ -351,14 +354,14 @@ create table t1 (a int, b int);
 insert into t1 (a, b) values (1,1), (1,2), (2,1), (2,2);
 prepare stmt from
 "explain select * from t1 where t1.a=2 and t1.a=t1.b and t1.b > 1 + ?";
---replace_column 1 - 2 - 3 - 4 - 5 - 6 - 7 - 8 -
 set @v=5;
-execute stmt using @v;
 --replace_column 1 - 2 - 3 - 4 - 5 - 6 - 7 - 8 -
+execute stmt using @v;
 set @v=0;
-execute stmt using @v;
 --replace_column 1 - 2 - 3 - 4 - 5 - 6 - 7 - 8 -
+execute stmt using @v;
 set @v=5;
+--replace_column 1 - 2 - 3 - 4 - 5 - 6 - 7 - 8 -
 execute stmt using @v;
 drop table t1;
 deallocate prepare stmt;
@@ -487,6 +490,42 @@ execute stmt;
 deallocate prepare stmt;
 drop table t1, t2;
 
+#
+#
+# Bug#19399 "Stored Procedures 'Lost Connection' when dropping/creating
+#            tables"
+# Check that multi-delete tables are also cleaned up before re-execution.
+# 
+--disable_warnings
+drop table if exists t1;
+create temporary table if not exists t1 (a1 int);
+--enable_warnings
+# exact delete syntax is essential
+prepare stmt from "delete t1 from t1 where (cast(a1/3 as unsigned) * 3) = a1";
+drop temporary table t1;
+create temporary table if not exists t1 (a1 int);
+# the server crashed on  the next statement without the fix
+execute stmt;
+drop temporary table t1;
+create temporary table if not exists t1 (a1 int);
+# the problem was in memory corruption: repeat the test just in case
+execute stmt;
+drop temporary table t1;
+create temporary table if not exists t1 (a1 int);
+execute stmt;
+drop temporary table t1;
+deallocate prepare stmt;
+
+# Bug#6102 "Server crash with prepared statement and blank after
+# function name"
+# ensure that stored functions are cached when preparing a statement
+# before we open tables
+#
+create table t1 (a varchar(20)); 
+insert into t1 values ('foo'); 
+--error 1305
+prepare stmt FROM 'SELECT char_length (a) FROM t1'; 
+drop table t1;
 
 #
 # Bug #6089: FOUND_ROWS returns wrong values when no table/view is used 
@@ -524,6 +563,7 @@ set @a=200887, @b=860;
 # this query did not return all matching rows
 execute stmt using @a, @b;
 deallocate prepare stmt;
+
 drop table t1;
 
 #
@@ -583,7 +623,6 @@ execute stmt;
 execute stmt;
 deallocate prepare stmt;
 drop table t1;
-
 #
 # Bug#11458 "Prepared statement with subselects return random data":
 # drop PARAM_TABLE_BIT from the list of tables used by a subquery
@@ -652,7 +691,6 @@ execute stmt using @user_id, @id;
 execute stmt using @user_id, @id;
 deallocate prepare stmt;
 drop table t1, t2, t3, t4;
-
 #
 # Bug#9379: make sure that Item::collation is reset when one sets
 # a parameter marker from a string variable.
@@ -767,7 +805,6 @@ execute stmt using @like;
 deallocate prepare stmt;
 drop table t1;
 
-
 #
 # Bug#13134 "Length of VARCHAR() utf8 column is increasing when table is
 # recreated with PS/SP"
@@ -811,6 +848,9 @@ drop table t1;
 # Bug#16365 Prepared Statements: DoS with too many open statements
 # Check that the limit @@max_prpeared_stmt_count works.
 #
+# This is also the test for bug#23159 prepared_stmt_count should be
+# status variable.
+#
 # Save the old value
 set @old_max_prepared_stmt_count= @@max_prepared_stmt_count;
 #
@@ -820,17 +860,17 @@ set @old_max_prepared_stmt_count= @@max_prepared_stmt_count;
 #
 --disable_ps_protocol
 #
-# A. Check that the new variables are present in SHOW VARIABLES list.
+# A. Check that the new variables are present in SHOW VARIABLES and
+# SHOW STATUS lists.
 #
 show variables like 'max_prepared_stmt_count';
-show variables like 'prepared_stmt_count';
+show status like 'prepared_stmt_count';
 #
-# B. Check that the new variables are selectable.
+# B. Check that the new system variable is selectable.
 #
-select @@max_prepared_stmt_count, @@prepared_stmt_count;
+select @@max_prepared_stmt_count;
 #
-# C. Check that max_prepared_stmt_count is settable (global only),
-#    whereas prepared_stmt_count is readonly.
+# C. Check that max_prepared_stmt_count is settable (global only).
 #
 set global max_prepared_stmt_count=-1;
 select @@max_prepared_stmt_count;
@@ -838,18 +878,12 @@ set global max_prepared_stmt_count=10000000000000000;
 select @@max_prepared_stmt_count;
 set global max_prepared_stmt_count=default;
 select @@max_prepared_stmt_count;
---error 1229 # ER_GLOBAL_VARIABLE
+--error ER_GLOBAL_VARIABLE
 set @@max_prepared_stmt_count=1;
---error 1229 # ER_GLOBAL_VARIABLE
+--error ER_GLOBAL_VARIABLE
 set max_prepared_stmt_count=1;
---error 1229 # ER_GLOBAL_VARIABLE
+--error ER_GLOBAL_VARIABLE
 set local max_prepared_stmt_count=1;
---error 1229 # ER_GLOBAL_VARIABLE
-set local prepared_stmt_count=0;
---error 1229 # ER_GLOBAL_VARIABLE
-set @@prepared_stmt_count=0;
---error 1232 # ER_WRONG_TYPE_FOR_VAR
-set global prepared_stmt_count=1;
 # set to a reasonable limit works
 set global max_prepared_stmt_count=1;
 select @@max_prepared_stmt_count;
@@ -857,74 +891,71 @@ select @@max_prepared_stmt_count;
 # D. Check that the variables actually work.
 #
 set global max_prepared_stmt_count=0;
-select @@max_prepared_stmt_count, @@prepared_stmt_count;
---error 1105 # ER_UNKNOWN_ERROR
+select @@max_prepared_stmt_count;
+show status like 'prepared_stmt_count';
+--error ER_MAX_PREPARED_STMT_COUNT_REACHED
 prepare stmt from "select 1";
-select @@prepared_stmt_count;
+show status like 'prepared_stmt_count';
 set global max_prepared_stmt_count=1;
 prepare stmt from "select 1";
-select @@prepared_stmt_count;
---error 1105 # ER_UNKNOWN_ERROR
+show status like 'prepared_stmt_count';
+--error ER_MAX_PREPARED_STMT_COUNT_REACHED
 prepare stmt1 from "select 1";
-select @@prepared_stmt_count;
+show status like 'prepared_stmt_count';
 deallocate prepare stmt;
-select @@prepared_stmt_count;
+show status like 'prepared_stmt_count';
 #
 # E. Check that we can prepare a statement with the same name 
 # successfully, without hitting the limit.
 #
 prepare stmt from "select 1";
-select @@prepared_stmt_count;
+show status like 'prepared_stmt_count';
 prepare stmt from "select 2";
-select @@prepared_stmt_count;
+show status like 'prepared_stmt_count';
 #
 # F. We can set the max below the current count. In this case no new 
 # statements should be allowed to prepare.
 #
-select @@prepared_stmt_count, @@max_prepared_stmt_count;
+show status like 'prepared_stmt_count';
+select @@max_prepared_stmt_count;
 set global max_prepared_stmt_count=0;
---error 1105 # ER_UNKNOWN_ERROR
+--error ER_MAX_PREPARED_STMT_COUNT_REACHED
 prepare stmt from "select 1";
 # Result: the old statement is deallocated, the new is not created.
---error 1243 # ER_UNKNOWN_STMT_HANDLER
+--error ER_UNKNOWN_STMT_HANDLER
 execute stmt;
-select @@prepared_stmt_count;
---error 1105 # ER_UNKNOWN_ERROR
+show status like 'prepared_stmt_count';
+--error ER_MAX_PREPARED_STMT_COUNT_REACHED
 prepare stmt from "select 1";
-select @@prepared_stmt_count;
+show status like 'prepared_stmt_count';
 #
 # G. Show that the variables are up to date even after a connection with all
 # statements in it was terminated.
 #
 set global max_prepared_stmt_count=3;
-select @@max_prepared_stmt_count, @@prepared_stmt_count;
+select @@max_prepared_stmt_count;
+show status like 'prepared_stmt_count';
 prepare stmt from "select 1";
 connect (con1,localhost,root,,);
 connection con1;
 prepare stmt from "select 2";
 prepare stmt1 from "select 3";
---error 1105 # ER_UNKNOWN_ERROR
+--error ER_MAX_PREPARED_STMT_COUNT_REACHED
 prepare stmt2 from "select 4";
 connection default;
---error 1105 # ER_UNKNOWN_ERROR 
+--error ER_MAX_PREPARED_STMT_COUNT_REACHED 
 prepare stmt2 from "select 4";
-select @@max_prepared_stmt_count, @@prepared_stmt_count;
+select @@max_prepared_stmt_count;
+show status like 'prepared_stmt_count';
 disconnect con1;
 connection default;
-# Wait for the connection to die: deal with a possible race
 deallocate prepare stmt;
-let $count= `select @@prepared_stmt_count`;
-if ($count)
-{
---sleep 2
-  let $count= `select @@prepared_stmt_count`;
-}
-select @@max_prepared_stmt_count, @@prepared_stmt_count;
 #
 # Restore the old value.
 #
 set global max_prepared_stmt_count= @old_max_prepared_stmt_count;
 --enable_ps_protocol
+
 
 #
 # Bug#19399 "Stored Procedures 'Lost Connection' when dropping/creating
@@ -1075,5 +1106,698 @@ EXECUTE stmt USING @a;
 DEALLOCATE PREPARE stmt;
 DROP TABLE t1;
 
+#
+# Bug#19182: CREATE TABLE bar (m INT) SELECT n FROM foo; doesn't work
+# from stored procedure.
+#
+# The cause of a bug was that cached LEX::create_list was modified,
+# and then together with LEX::key_list was reset.
+#
+--disable_warnings
+DROP TABLE IF EXISTS t1, t2;
+--enable_warnings
+
+CREATE TABLE t1 (i INT);
+
+PREPARE st_19182
+FROM "CREATE TABLE t2 (i INT, j INT, KEY (i), KEY(j)) SELECT i FROM t1";
+
+EXECUTE st_19182;
+DESC t2;
+
+DROP TABLE t2;
+
+# Check that on second execution we don't loose 'j' column and the keys
+# on 'i' and 'j' columns.
+EXECUTE st_19182;
+DESC t2;
+
+DEALLOCATE PREPARE st_19182;
+DROP TABLE t2, t1;
+
+#
+# Bug #22060 "ALTER TABLE x AUTO_INCREMENT=y in SP crashes server"
+#
+# Code which implemented CREATE/ALTER TABLE and CREATE DATABASE
+# statement modified HA_CREATE_INFO structure in LEX, making these
+# statements PS/SP-unsafe (their re-execution might have resulted
+# in incorrect results).
+#
+--disable_warnings
+drop database if exists mysqltest;
+drop table if exists t1, t2;
+--enable_warnings
+# CREATE TABLE and CREATE TABLE ... SELECT
+create database mysqltest character set utf8;
+prepare stmt1 from "create table mysqltest.t1 (c char(10))";
+prepare stmt2 from "create table mysqltest.t2 select 'test'";
+execute stmt1;
+execute stmt2;
+show create table mysqltest.t1;
+show create table mysqltest.t2;
+drop table mysqltest.t1;
+drop table mysqltest.t2;
+alter database mysqltest character set latin1;
+execute stmt1;
+execute stmt2;
+show create table mysqltest.t1;
+show create table mysqltest.t2;
+drop database mysqltest;
+deallocate prepare stmt1;
+deallocate prepare stmt2;
+#
+# CREATE TABLE with DATA DIRECTORY option
+#
+# Protect ourselves from data left in tmp/ by a previos possibly failed
+# test
+--system rm -f $MYSQLTEST_VARDIR/tmp/t1.*
+--disable_warnings
+--disable_query_log
+eval prepare stmt from "create table t1 (c char(10)) data directory='$MYSQLTEST_VARDIR/tmp'";
+--enable_query_log
+execute stmt;
+#
+# DATA DIRECTORY option does not always work: if the operating
+# system does not support symlinks, have_symlinks option is automatically
+# disabled.
+# In this case DATA DIRECTORY is silently ignored when
+# creating a table, and is not output by SHOW CREATE TABLE.
+#
+--disable_result_log
+show create table t1;
+--enable_result_log
+drop table t1;
+execute stmt;
+--disable_result_log
+show create table t1;
+--enable_result_log
+--enable_warnings
+drop table t1;
+deallocate prepare stmt;
+#
+
+#
+# Bug #27937: crash on the second execution for prepared statement 
+#             from UNION with ORDER BY an expression containing RAND()
+#
+
+CREATE TABLE t1(a int);
+INSERT INTO t1 VALUES (2), (3), (1);
+
+PREPARE st1 FROM
+  '(SELECT a FROM t1) UNION (SELECT a+10 FROM t1) ORDER BY RAND()*0+a';
+
+EXECUTE st1;
+EXECUTE st1;
+
+DEALLOCATE PREPARE st1;
+DROP TABLE t1;
 
 --echo End of 4.1 tests.
+
+############################# 5.0 tests start ################################
+#
+#
+# Bug#6102 "Server crash with prepared statement and blank after
+# function name"
+# ensure that stored functions are cached when preparing a statement
+# before we open tables
+#
+create table t1 (a varchar(20)); 
+insert into t1 values ('foo'); 
+--error 1305
+prepare stmt FROM 'SELECT char_length (a) FROM t1'; 
+drop table t1;
+
+#
+# Bug#8115: equality propagation and prepared statements
+#
+
+create table t1 (a char(3) not null, b char(3) not null,
+                 c char(3) not null, primary key  (a, b, c));
+create table t2 like t1;
+
+# reduced query
+prepare stmt from
+  "select t1.a from (t1 left outer join t2 on t2.a=1 and t1.b=t2.b)
+  where t1.a=1";
+execute stmt;
+execute stmt;
+execute stmt;
+
+# original query
+prepare stmt from
+"select t1.a, t1.b, t1.c, t2.a, t2.b, t2.c from
+(t1 left outer join t2 on t2.a=? and t1.b=t2.b)
+left outer join t2 t3 on t3.a=? where t1.a=?";
+
+set @a:=1, @b:=1, @c:=1;
+
+execute stmt using @a, @b, @c;
+execute stmt using @a, @b, @c;
+execute stmt using @a, @b, @c;
+
+deallocate prepare stmt;
+
+drop table t1,t2;
+
+
+#
+# Bug#9383: INFORMATION_SCHEMA.COLUMNS, JOIN, Crash, prepared statement
+#
+
+eval SET @aux= "SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.COLUMNS A,
+                INFORMATION_SCHEMA.COLUMNS B
+                WHERE A.TABLE_SCHEMA = B.TABLE_SCHEMA
+                AND A.TABLE_NAME = B.TABLE_NAME
+                AND A.COLUMN_NAME = B.COLUMN_NAME AND
+                A.TABLE_NAME = 'user'";
+
+let $exec_loop_count= 3;
+eval prepare my_stmt from @aux;
+while ($exec_loop_count)
+{
+  eval execute my_stmt;
+  dec $exec_loop_count;
+}
+deallocate prepare my_stmt;
+
+# Test CALL in prepared mode
+delimiter |;
+--disable_warnings
+drop procedure if exists p1|
+drop table if exists t1|
+--enable_warnings
+create table t1 (id int)|
+insert into t1 values(1)|
+create procedure p1(a int, b int)
+begin
+  declare c int;
+  select max(id)+1 into c from t1;
+  insert into t1 select a+b;
+  insert into t1 select a-b;
+  insert into t1 select a-c;
+end|
+set @a= 3, @b= 4|
+prepare stmt from "call p1(?, ?)"|
+execute stmt using @a, @b|
+execute stmt using @a, @b|
+select * from t1|
+deallocate prepare stmt|
+drop procedure p1|
+drop table t1|
+delimiter ;|
+
+
+#
+# Bug#7306 LIMIT ?, ? and also WL#1785 " Prepared statements: implement
+# support for placeholders in LIMIT clause."
+# Add basic test coverage for the feature.
+# 
+create table t1 (a int);
+insert into t1 (a) values (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+prepare stmt from "select * from t1 limit ?, ?";
+set @offset=0, @limit=1;
+execute stmt using @offset, @limit;
+select * from t1 limit 0, 1;
+set @offset=3, @limit=2;
+execute stmt using @offset, @limit;
+select * from t1 limit 3, 2;
+prepare stmt from "select * from t1 limit ?";
+execute stmt using @limit;
+--error 1235
+prepare stmt from "select * from t1 where a in (select a from t1 limit ?)";
+prepare stmt from "select * from t1 union all select * from t1 limit ?, ?";
+set @offset=9;
+set @limit=2;
+execute stmt using @offset, @limit;
+prepare stmt from "(select * from t1 limit ?, ?) union all
+                   (select * from t1 limit ?, ?) order by a limit ?";
+execute stmt using @offset, @limit, @offset, @limit, @limit;
+
+drop table t1;
+deallocate prepare stmt;
+
+#
+# Bug#12651
+# (Crash on a PS including a subquery which is a select from a simple view)
+#
+CREATE TABLE b12651_T1(a int) ENGINE=MYISAM;
+CREATE TABLE b12651_T2(b int) ENGINE=MYISAM;
+CREATE VIEW  b12651_V1 as SELECT b FROM b12651_T2;
+
+PREPARE b12651 FROM 'SELECT 1 FROM b12651_T1 WHERE a IN (SELECT b FROM b12651_V1)';
+EXECUTE b12651;
+
+DROP VIEW b12651_V1;
+DROP TABLE b12651_T1, b12651_T2;
+DEALLOCATE PREPARE b12651;
+
+
+
+#
+# Bug #14956: ROW_COUNT() returns incorrect result after EXECUTE of prepared
+# statement
+#
+create table t1 (id int);
+prepare ins_call from "insert into t1 (id) values (1)";
+execute ins_call;
+select row_count();
+drop table t1;
+
+#
+# BUG#16474: SP crashed MySQL
+# (when using "order by localvar", where 'localvar' is just that.
+# The actual bug test is in sp.test, this is just testing that we get the
+# expected result for prepared statements too, i.e. place holders work as
+# textual substitution. If it's a single integer, it works as the (deprecated)
+# "order by column#", otherwise it's an expression.
+#
+create table t1 (a int, b int);
+insert into t1 (a,b) values (2,8),(1,9),(3,7);
+
+# Will order by index
+prepare stmt from "select * from t1 order by ?";
+set @a=NULL;
+execute stmt using @a;
+set @a=1;
+execute stmt using @a;
+set @a=2;
+execute stmt using @a;
+deallocate prepare stmt;
+# For reference:
+select * from t1 order by 1;
+
+# Will not order by index.
+prepare stmt from "select * from t1 order by ?+1";
+set @a=0;
+execute stmt using @a;
+set @a=1;
+execute stmt using @a;
+deallocate prepare stmt;
+# For reference:
+select * from t1 order by 1+1;
+
+drop table t1;
+
+#
+# Bug#19308 "REPAIR/OPTIMIZE/ANALYZE supported in SP but not in PS".
+# Add test coverage for the added commands.
+#
+create table t1 (a int);
+create table t2 like t1;
+create table t3 like t2;
+prepare stmt from "repair table t1";
+execute stmt;
+execute stmt;
+prepare stmt from "optimize table t1";
+execute stmt;
+execute stmt;
+prepare stmt from "analyze table t1";
+execute stmt;
+execute stmt;
+prepare stmt from "repair table t1, t2, t3";
+execute stmt;
+execute stmt;
+prepare stmt from "optimize table t1, t2, t3";
+execute stmt;
+execute stmt;
+prepare stmt from "analyze table t1, t2, t3";
+execute stmt;
+execute stmt;
+prepare stmt from "repair table t1, t4, t3";
+execute stmt;
+execute stmt;
+prepare stmt from "optimize table t1, t3, t4";
+execute stmt;
+execute stmt;
+prepare stmt from "analyze table t4, t1";
+execute stmt;
+execute stmt;
+deallocate prepare stmt;
+drop table t1, t2, t3;
+
+#
+# Bug#17199 "Table not found" error occurs if the query contains a call
+#            to a function from another database.
+#            Test prepared statements- related behaviour.
+#
+#
+# ALTER TABLE RENAME and Prepared Statements: wrong DB name buffer was used
+# in ALTER ... RENAME which caused memory corruption in prepared statements.
+# No need to fix this problem in 4.1 as ALTER TABLE is not allowed in
+# Prepared Statements in 4.1.
+#
+create database mysqltest_long_database_name_to_thrash_heap;
+use test;
+create table t1 (i int);
+prepare stmt from "alter table test.t1 rename t1";
+use mysqltest_long_database_name_to_thrash_heap;
+execute stmt;
+show tables like 't1';
+prepare stmt from "alter table test.t1 rename t1";
+use test;
+execute stmt;
+show tables like 't1';
+use mysqltest_long_database_name_to_thrash_heap;
+show tables like 't1';
+deallocate prepare stmt;
+#
+# Check that a prepared statement initializes its current database at
+# PREPARE, and then works correctly even if the current database has been
+# changed.
+# 
+use mysqltest_long_database_name_to_thrash_heap; 
+# Necessary for preparation of INSERT/UPDATE/DELETE to succeed
+prepare stmt_create from "create table t1 (i int)";
+prepare stmt_insert from "insert into t1 (i) values (1)";
+prepare stmt_update from "update t1 set i=2";
+prepare stmt_delete from "delete from t1 where i=2";
+prepare stmt_select from "select * from t1";
+prepare stmt_alter from "alter table t1 add column (b int)";
+prepare stmt_alter1 from "alter table t1 drop column b";
+prepare stmt_analyze from "analyze table t1";
+prepare stmt_optimize from "optimize table t1";
+prepare stmt_show from "show tables like 't1'";
+prepare stmt_truncate from "truncate table t1";
+prepare stmt_drop from "drop table t1";
+# Drop the table that was used to prepare INSERT/UPDATE/DELETE: we will
+# create a new one by executing stmt_create
+drop table t1;
+# Switch the current database
+use test;
+# Check that all prepared statements operate on the database that was
+# active at PREPARE
+execute stmt_create;
+# should return empty set
+show tables like 't1';
+use mysqltest_long_database_name_to_thrash_heap;
+show tables like 't1';
+use test;
+execute stmt_insert;
+select * from mysqltest_long_database_name_to_thrash_heap.t1;
+execute stmt_update;
+select * from mysqltest_long_database_name_to_thrash_heap.t1;
+execute stmt_delete;
+execute stmt_select;
+execute stmt_alter;
+show columns from mysqltest_long_database_name_to_thrash_heap.t1;
+execute stmt_alter1;
+show columns from mysqltest_long_database_name_to_thrash_heap.t1;
+execute stmt_analyze;
+execute stmt_optimize;
+execute stmt_show;
+execute stmt_truncate;
+execute stmt_drop;
+show tables like 't1';
+use mysqltest_long_database_name_to_thrash_heap;
+show tables like 't1';
+#
+# Attempt a statement PREPARE when there is no current database:
+# is expected to return an error.
+#
+drop database mysqltest_long_database_name_to_thrash_heap;
+--error ER_NO_DB_ERROR
+prepare stmt_create from "create table t1 (i int)";
+--error ER_NO_DB_ERROR
+prepare stmt_insert from "insert into t1 (i) values (1)";
+--error ER_NO_DB_ERROR
+prepare stmt_update from "update t1 set i=2";
+--error ER_NO_DB_ERROR
+prepare stmt_delete from "delete from t1 where i=2";
+--error ER_NO_DB_ERROR
+prepare stmt_select from "select * from t1";
+--error ER_NO_DB_ERROR
+prepare stmt_alter from "alter table t1 add column (b int)";
+--error ER_NO_DB_ERROR
+prepare stmt_alter1 from "alter table t1 drop column b";
+--error ER_NO_DB_ERROR
+prepare stmt_analyze from "analyze table t1";
+--error ER_NO_DB_ERROR
+prepare stmt_optimize from "optimize table t1";
+--error ER_NO_DB_ERROR
+prepare stmt_show from "show tables like 't1'";
+--error ER_NO_DB_ERROR
+prepare stmt_truncate from "truncate table t1";
+--error ER_NO_DB_ERROR
+prepare stmt_drop from "drop table t1";
+#
+# The above has automatically deallocated all our statements.
+#
+# Attempt to CREATE a temporary table when no DB used: it should fail
+# This proves that no table can be used without explicit specification of
+# its database if there is no current database. 
+#
+--error ER_NO_DB_ERROR
+create temporary table t1 (i int);
+#
+# Restore the old environemnt
+#
+use test;
+
+
+#
+# BUG#21166: Prepared statement causes signal 11 on second execution
+#
+# Changes in an item tree done by optimizer weren't properly
+# registered and went unnoticed, which resulted in preliminary freeing
+# of used memory.
+#
+--disable_warnings
+DROP TABLE IF EXISTS t1, t2, t3;
+--enable_warnings
+
+CREATE TABLE t1 (i BIGINT, j BIGINT);
+CREATE TABLE t2 (i BIGINT);
+CREATE TABLE t3 (i BIGINT, j BIGINT);
+
+PREPARE stmt FROM "SELECT * FROM t1 JOIN t2 ON (t2.i = t1.i)
+                   LEFT JOIN t3 ON ((t3.i, t3.j) = (t1.i, t1.j))
+                   WHERE t1.i = ?";
+
+SET @a= 1;
+EXECUTE stmt USING @a;
+EXECUTE stmt USING @a;
+
+DEALLOCATE PREPARE stmt;
+DROP TABLE IF EXISTS t1, t2, t3;
+
+
+#
+# BUG#21081: SELECT inside stored procedure returns wrong results
+#
+--disable_warnings
+DROP TABLE IF EXISTS t1, t2;
+--enable_warnings
+
+CREATE TABLE t1 (i INT KEY);
+CREATE TABLE t2 (i INT);
+
+INSERT INTO t1 VALUES (1), (2);
+INSERT INTO t2 VALUES (1);
+
+PREPARE stmt FROM "SELECT t2.i FROM t1 LEFT JOIN t2 ON t2.i = t1.i
+                   WHERE t1.i = ?";
+
+SET @arg= 1;
+EXECUTE stmt USING @arg;
+SET @arg= 2;
+EXECUTE stmt USING @arg;
+SET @arg= 1;
+EXECUTE stmt USING @arg;
+
+DEALLOCATE PREPARE stmt;
+DROP TABLE t1, t2;
+
+
+#
+# BUG#20327: Marking of a wrong field leads to a wrong result on select with
+#            view, prepared statement and subquery.
+#
+CREATE TABLE t1 (i INT);
+CREATE VIEW v1 AS SELECT * FROM t1;
+
+INSERT INTO t1 VALUES (1), (2);
+
+let $query = SELECT t1.i FROM t1 JOIN v1 ON t1.i = v1.i
+             WHERE EXISTS (SELECT * FROM t1 WHERE v1.i = 1);
+eval $query;
+eval PREPARE stmt FROM "$query";
+# Statement execution should return '1'.
+EXECUTE stmt;
+# Check re-execution.
+EXECUTE stmt;
+
+DEALLOCATE PREPARE stmt;
+DROP VIEW v1;
+DROP TABLE t1;
+
+
+#
+# BUG#21856: Prepared Statments: crash if bad create
+#
+--disable_warnings
+DROP PROCEDURE IF EXISTS p1;
+--enable_warnings
+
+let $iterations= 100;
+--disable_query_log
+--disable_result_log
+while ($iterations > 0)
+{
+  --error ER_PARSE_ERROR
+  PREPARE stmt FROM "CREATE PROCEDURE p1()";
+  dec $iterations;
+}
+--enable_query_log
+--enable_result_log
+
+#
+# Bug 19764:  SHOW commands end up in the slow log as table scans
+#
+
+flush status;
+prepare sq from 'show status like "slow_queries"';
+execute sq;
+prepare no_index from 'select 1 from information_schema.tables limit 1';
+execute sq;
+execute no_index;
+execute sq;
+deallocate prepare no_index;
+deallocate prepare sq;
+
+
+#
+# Bug 25027: query with a single-row non-correlated subquery
+#            and IS NULL predicate
+#
+
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (1), (2);
+CREATE TABLE t2 (b int);
+INSERT INTO t2 VALUES (NULL);
+
+SELECT a FROM t1 WHERE (SELECT b FROM t2) IS NULL;
+PREPARE stmt FROM 'SELECT a FROM t1 WHERE (SELECT b FROM t2) IS NULL';
+
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+PREPARE stmt FROM 'SELECT a FROM t1 WHERE (SELECT b FROM t2 limit ?) IS NULL';
+SET @arg=1;
+EXECUTE stmt USING @arg;
+DEALLOCATE PREPARE stmt;
+
+DROP TABLE t1,t2;
+#
+# Bug#4968 "Stored procedure crash if cursor opened on altered table"
+# The bug is not repeatable any more after the fix for
+# Bug#15217 "Bug #15217   Using a SP cursor on a table created with PREPARE
+# fails with weird error", however ALTER TABLE is not re-execution friendly
+# and that caused a valgrind warning. Check that the warning is gone.
+#
+--disable_warnings
+drop table if exists t1;
+--enable_warnings
+create table t1 (s1 char(20));
+prepare stmt from "alter table t1 modify s1 int";
+execute stmt;
+execute stmt;
+drop table t1;
+deallocate prepare stmt;
+
+#
+# Bug#6895 "Prepared Statements: ALTER TABLE DROP COLUMN does nothing"
+#
+--disable_warnings
+drop table if exists t1;
+--enable_warnings
+create table t1 (a int, b int);
+prepare s_6895 from "alter table t1 drop column b";
+execute s_6895;
+show columns from t1;
+drop table t1;
+create table t1 (a int, b int);
+execute s_6895;
+show columns from t1;
+drop table t1;
+create table t1 (a int, b int);
+execute s_6895;
+show columns from t1;
+deallocate prepare s_6895;
+drop table t1;
+
+#
+# Bug #22060 "ALTER TABLE x AUTO_INCREMENT=y in SP crashes server"
+#
+# 5.0 part of the test.
+#
+
+# ALTER TABLE
+create table t1 (i int primary key auto_increment) comment='comment for table t1';
+create table t2 (i int, j int, k int);
+prepare stmt from "alter table t1 auto_increment=100";
+execute stmt;
+show create table t1;
+# Let us trash table-cache's memory
+flush tables;
+select * from t2;
+execute stmt;
+show create table t1;
+deallocate prepare stmt;
+drop table t1, t2;
+# 5.1 part of the test.
+# CREATE DATABASE
+#set @old_character_set_server= @@character_set_server;
+#set @@character_set_server= latin1; 
+#prepare stmt from "create database mysqltest";
+#execute stmt;
+#show create database mysqltest;
+#drop database mysqltest;
+#set @@character_set_server= utf8; 
+#execute stmt;
+#show create database mysqltest;
+#drop database mysqltest;
+#deallocate prepare stmt;
+#set @@character_set_server= @old_character_set_server;
+
+
+#
+# BUG#24491 "using alias from source table in insert ... on duplicate key"
+#
+--disable_warnings
+drop tables if exists t1;
+--enable_warnings
+create table t1 (id int primary key auto_increment, value varchar(10));
+insert into t1 (id, value) values (1, 'FIRST'), (2, 'SECOND'), (3, 'THIRD');
+# Let us prepare INSERT ... SELECT ... ON DUPLICATE KEY UPDATE statement
+# which in its ON DUPLICATE KEY clause erroneously tries to assign value
+# to a column which is mentioned only in SELECT part.
+prepare stmt from "insert into t1 (id, value) select * from (select 4 as i, 'FOURTH' as v) as y on duplicate key update v = 'DUP'";
+# Both first and second attempts to execute it should fail
+--error ER_BAD_FIELD_ERROR 
+execute stmt;
+--error ER_BAD_FIELD_ERROR
+execute stmt;
+deallocate prepare stmt;
+# And now the same test for more complex case which is more close
+# to the one that was reported originally.
+prepare stmt from "insert into t1 (id, value) select * from (select 4 as id, 'FOURTH' as value) as y on duplicate key update y.value = 'DUP'";
+--error ER_BAD_FIELD_ERROR 
+execute stmt;
+--error ER_BAD_FIELD_ERROR
+execute stmt;
+deallocate prepare stmt;
+drop tables t1;
+
+#
+# Bug #28509: strange behaviour: passing a decimal value to PS
+#
+prepare stmt from "create table t1 select ?";
+set @a=1.0;
+execute stmt using @a;
+show create table t1;
+drop table t1;
+
+--echo End of 5.0 tests.

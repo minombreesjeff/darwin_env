@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,13 +46,16 @@ File my_create(const char *FileName, int CreateFlags, int access_flags,
 #elif defined(VMS)
   fd = open((my_string) FileName, access_flags | O_CREAT, 0,
 	    "ctx=stm","ctx=bin");
-#elif defined(MSDOS) || defined(__WIN__) || defined(__EMX__) || defined(OS2)
+#elif defined(MSDOS) || defined(__EMX__) || defined(OS2)
   if (access_flags & O_SHARE)
     fd = sopen((my_string) FileName, access_flags | O_CREAT | O_BINARY,
 	       SH_DENYNO, MY_S_IREAD | MY_S_IWRITE);
   else
     fd =  open((my_string) FileName, access_flags | O_CREAT | O_BINARY,
 	       MY_S_IREAD | MY_S_IWRITE);
+#elif defined(__WIN__)
+  fd= my_sopen((my_string) FileName, access_flags | O_CREAT | O_BINARY,
+	       SH_DENYNO, MY_S_IREAD | MY_S_IWRITE);
 #else
   fd = open(FileName, access_flags);
 #endif

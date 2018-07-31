@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -53,16 +52,31 @@ void Dbacc::initData()
   tabrec = 0;
   undopage = 0;
 
+  cnoOfAllocatedPages = cpagesize = 0;
   // Records with constant sizes
 }//Dbacc::initData()
 
 void Dbacc::initRecords() 
 {
   // Records with dynamic sizes
+  page8 = (Page8*)allocRecord("Page8",
+			      sizeof(Page8), 
+			      cpagesize,
+			      false);
+
+  operationrec = (Operationrec*)allocRecord("Operationrec",
+					    sizeof(Operationrec),
+					    coprecsize);
+
   dirRange = (DirRange*)allocRecord("DirRange",
 				    sizeof(DirRange), 
 				    cdirrangesize);
 
+  undopage = (Undopage*)allocRecord("Undopage",
+				    sizeof(Undopage), 
+				    cundopagesize,
+				    false);
+  
   directoryarray = (Directoryarray*)allocRecord("Directoryarray",
 						sizeof(Directoryarray), 
 						cdirarraysize);
@@ -83,18 +97,9 @@ void Dbacc::initRecords()
 					      sizeof(LcpConnectrec),
 					      clcpConnectsize);
 
-  operationrec = (Operationrec*)allocRecord("Operationrec",
-					    sizeof(Operationrec),
-					    coprecsize);
-
   overflowRecord = (OverflowRecord*)allocRecord("OverflowRecord",
 						sizeof(OverflowRecord),
 						coverflowrecsize);
-
-  page8 = (Page8*)allocRecord("Page8",
-			      sizeof(Page8), 
-			      cpagesize,
-			      false);
 
   rootfragmentrec = (Rootfragmentrec*)allocRecord("Rootfragmentrec",
 						  sizeof(Rootfragmentrec), 
@@ -112,11 +117,6 @@ void Dbacc::initRecords()
 				sizeof(Tabrec),
 				ctablesize);
 
-  undopage = (Undopage*)allocRecord("Undopage",
-				    sizeof(Undopage), 
-				    cundopagesize,
-				    false);
-  
   // Initialize BAT for interface to file system
 
   NewVARIABLE* bat = allocateBat(3);
@@ -133,26 +133,10 @@ void Dbacc::initRecords()
 }//Dbacc::initRecords()
 
 Dbacc::Dbacc(const class Configuration & conf):
-  SimulatedBlock(DBACC, conf)
+  SimulatedBlock(DBACC, conf),
+  c_tup(0)
 {
-  Uint32 log_page_size= 0;
   BLOCK_CONSTRUCTOR(Dbacc);
-
-  const ndb_mgm_configuration_iterator * p = conf.getOwnConfigIterator();
-  ndbrequire(p != 0);
-
-  ndb_mgm_get_int_parameter(p, CFG_DB_UNDO_INDEX_BUFFER,  
-			    &log_page_size);
-
-  /**
-   * Always set page size in half MBytes
-   */
-  cundopagesize= (log_page_size / sizeof(Undopage));
-  Uint32 mega_byte_part= cundopagesize & 15;
-  if (mega_byte_part != 0) {
-    jam();
-    cundopagesize+= (16 - mega_byte_part);
-  }
 
   // Transit signals
   addRecSignal(GSN_DUMP_STATE_ORD, &Dbacc::execDUMP_STATE_ORD);
@@ -194,9 +178,82 @@ Dbacc::Dbacc(const class Configuration & conf):
   addRecSignal(GSN_DROP_TAB_REQ, &Dbacc::execDROP_TAB_REQ);
   addRecSignal(GSN_FSREMOVECONF, &Dbacc::execFSREMOVECONF);
   addRecSignal(GSN_READ_CONFIG_REQ, &Dbacc::execREAD_CONFIG_REQ, true);
-  addRecSignal(GSN_SET_VAR_REQ,  &Dbacc::execSET_VAR_REQ);
 
   initData();
+
+#ifdef VM_TRACE
+  {
+    void* tmp[] = { &expDirRangePtr,
+		    &gnsDirRangePtr,
+		    &newDirRangePtr,
+		    &rdDirRangePtr,
+		    &nciOverflowrangeptr,
+                    &expDirptr,
+                    &rdDirptr,
+                    &sdDirptr,
+                    &nciOverflowDirptr,
+                    &fragrecptr,
+                    &fsConnectptr,
+                    &fsOpptr,
+                    &lcpConnectptr,
+                    &operationRecPtr,
+                    &idrOperationRecPtr,
+                    &copyInOperPtr,
+                    &copyOperPtr,
+                    &mlpqOperPtr,
+                    &queOperPtr,
+                    &readWriteOpPtr,
+                    &iopOverflowRecPtr,
+                    &tfoOverflowRecPtr,
+                    &porOverflowRecPtr,
+                    &priOverflowRecPtr,
+                    &rorOverflowRecPtr,
+                    &sorOverflowRecPtr,
+                    &troOverflowRecPtr,
+                    &ancPageptr,
+                    &colPageptr,
+                    &ccoPageptr,
+                    &datapageptr,
+                    &delPageptr,
+                    &excPageptr,
+                    &expPageptr,
+                    &gdiPageptr,
+                    &gePageptr,
+                    &gflPageptr,
+                    &idrPageptr,
+                    &ilcPageptr,
+                    &inpPageptr,
+                    &iopPageptr,
+                    &lastPageptr,
+                    &lastPrevpageptr,
+                    &lcnPageptr,
+                    &lcnCopyPageptr,
+                    &lupPageptr,
+                    &priPageptr,
+                    &pwiPageptr,
+                    &ciPageidptr,
+                    &gsePageidptr,
+                    &isoPageptr,
+                    &nciPageidptr,
+                    &rsbPageidptr,
+                    &rscPageidptr,
+                    &slPageidptr,
+                    &sscPageidptr,
+                    &rlPageptr,
+                    &rlpPageptr,
+                    &ropPageptr,
+                    &rpPageptr,
+                    &slPageptr,
+                    &spPageptr,
+                    &rootfragrecptr,
+                    &scanPtr,
+                    &srVersionPtr,
+                    &tabptr,
+                    &undopageptr
+    };
+    init_globals_list(tmp, sizeof(tmp)/sizeof(tmp[0]));
+  }
+#endif
 }//Dbacc::Dbacc()
 
 Dbacc::~Dbacc() 

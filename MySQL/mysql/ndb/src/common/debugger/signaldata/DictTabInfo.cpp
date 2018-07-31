@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,7 +22,6 @@ SimpleProperties::SP2StructMapping
 DictTabInfo::TableMapping[] = {
   DTIMAPS(Table, TableName, TableName, 0, MAX_TAB_NAME_SIZE),
   DTIMAP(Table, TableId, TableId),
-  DTIMAP(Table, SecondTableId, SecondTableId),
   DTIMAPS(Table, PrimaryTable, PrimaryTable, 0, MAX_TAB_NAME_SIZE),
   DTIMAP(Table, PrimaryTableId, PrimaryTableId),
   DTIMAP2(Table, TableLoggedFlag, TableLoggedFlag, 0, 1),
@@ -32,8 +30,6 @@ DictTabInfo::TableMapping[] = {
   DTIMAP2(Table, MaxLoadFactor, MaxLoadFactor,    25, 110),
   DTIMAP2(Table, FragmentTypeVal, FragmentType,       0, 3),
   DTIMAP2(Table, TableStorageVal, TableStorage,       0, 0),
-  DTIMAP2(Table, ScanOptimised, ScanOptimised,     0, 0),
-  DTIMAP2(Table, FragmentKeyTypeVal, FragmentKeyType, 0, 2),
   DTIMAP2(Table, TableTypeVal, TableType,         1, 3),
   DTIMAP(Table, NoOfKeyAttr, NoOfKeyAttr),
   DTIMAP2(Table, NoOfAttributes, NoOfAttributes, 1, MAX_ATTRIBUTES_IN_TABLE),
@@ -49,6 +45,13 @@ DictTabInfo::TableMapping[] = {
   DTIMAP2(Table, FrmLen, FrmLen, 0, MAX_FRM_DATA_SIZE),
   DTIMAPB(Table, FrmData, FrmData, 0, MAX_FRM_DATA_SIZE, FrmLen),
   DTIMAP(Table, FragmentCount, FragmentCount),
+  DTIMAP2(Table, FragmentDataLen, FragmentDataLen, 0, MAX_FRAGMENT_DATA_BYTES),
+  DTIMAPB(Table, FragmentData, FragmentData, 0, MAX_FRAGMENT_DATA_BYTES, FragmentDataLen),
+  DTIMAP(Table, MaxRowsLow, MaxRowsLow),
+  DTIMAP(Table, MaxRowsHigh, MaxRowsHigh),
+  DTIMAP(Table, MinRowsLow, MinRowsLow),
+  DTIMAP(Table, MinRowsHigh, MinRowsHigh),
+  DTIMAP(Table, SingleUserMode, SingleUserMode),
   DTIBREAK(AttributeName)
 };
 
@@ -62,16 +65,12 @@ SimpleProperties::SP2StructMapping
 DictTabInfo::AttributeMapping[] = {
   DTIMAPS(Attribute, AttributeName, AttributeName, 0, MAX_ATTR_NAME_SIZE),
   DTIMAP(Attribute, AttributeId, AttributeId),
-  DTIMAP2(Attribute, AttributeType, AttributeType,    0, 3),
+  DTIMAP(Attribute, AttributeType, AttributeType),
   DTIMAP2(Attribute, AttributeSize, AttributeSize,     3, 7),
   DTIMAP2(Attribute, AttributeArraySize, AttributeArraySize, 0, 65535),
   DTIMAP2(Attribute, AttributeKeyFlag, AttributeKeyFlag, 0, 1),
-  DTIMAP2(Attribute, AttributeStorage, AttributeStorage, 0, 0),
   DTIMAP2(Attribute, AttributeNullableFlag, AttributeNullableFlag, 0, 1),
-  DTIMAP2(Attribute, AttributeDGroup, AttributeDGroup, 0, 1),
   DTIMAP2(Attribute, AttributeDKey, AttributeDKey, 0, 1),
-  DTIMAP2(Attribute, AttributeStoredInd, AttributeStoredInd, 0, 1),
-  DTIMAP2(Attribute, AttributeGroup, AttributeGroup, 0, 0),
   DTIMAP(Attribute, AttributeExtType, AttributeExtType),
   DTIMAP(Attribute, AttributeExtPrecision, AttributeExtPrecision),
   DTIMAP(Attribute, AttributeExtScale, AttributeExtScale),
@@ -104,7 +103,6 @@ void
 DictTabInfo::Table::init(){
   memset(TableName, 0, sizeof(TableName));//TableName[0] = 0;
   TableId = ~0;
-  SecondTableId = ~0;
   memset(PrimaryTable, 0, sizeof(PrimaryTable));//PrimaryTable[0] = 0; // Only used when "index"
   PrimaryTableId = RNIL;
   TableLoggedFlag = 1;
@@ -118,8 +116,6 @@ DictTabInfo::Table::init(){
   KeyLength = 0;
   FragmentType = DictTabInfo::AllNodesSmallTable;
   TableStorage = 0;
-  ScanOptimised = 0;
-  FragmentKeyType = DictTabInfo::PrimaryKey;
   TableType = DictTabInfo::UndefTableType;
   TableVersion = 0;
   IndexState = ~0;
@@ -130,23 +126,27 @@ DictTabInfo::Table::init(){
   FrmLen = 0;
   memset(FrmData, 0, sizeof(FrmData));
   FragmentCount = 0;
+  FragmentDataLen = 0;
+  memset(FragmentData, 0, sizeof(FragmentData));
+  MaxRowsLow = 0;
+  MaxRowsHigh = 0;
+  MinRowsLow = 0;
+  MinRowsHigh = 0;
+
+  SingleUserMode = 0;
 }
 
 void
 DictTabInfo::Attribute::init(){
   memset(AttributeName, 0, sizeof(AttributeName));//AttributeName[0] = 0;
   AttributeId = 0;
-  AttributeType = DictTabInfo::UnSignedType;
+  AttributeType = ~0, // deprecated
   AttributeSize = DictTabInfo::a32Bit;
   AttributeArraySize = 1;
   AttributeKeyFlag = 0;
-  AttributeStorage = 1;
   AttributeNullableFlag = 0;
-  AttributeDGroup = 0;
   AttributeDKey = 0;
-  AttributeStoredInd = 1;
-  AttributeGroup = 0;
-  AttributeExtType = 0,
+  AttributeExtType = DictTabInfo::ExtUnsigned,
   AttributeExtPrecision = 0,
   AttributeExtScale = 0,
   AttributeExtLength = 0,

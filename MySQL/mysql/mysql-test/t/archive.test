@@ -1289,6 +1289,21 @@ select fld3 from t2 where (fld3 like "C%" and fld3 = "Chantilly");
 select fld1,fld3 from t2 where fld1 like "25050%";
 select fld1,fld3 from t2 where fld1 like "25050_";
 
+
+#
+# Test rename of table
+#
+create table t3 engine=archive select * from t2;
+select * from t3 where fld3='bonfire';
+select count(*) from t3;
+# Clean up path in error message
+--replace_result $MYSQL_TEST_DIR . /var/master-data/ /
+rename table t3 to t4;
+select * from t4 where fld3='bonfire';
+select count(*) from t4;
+
+# End of 4.1 tests
+
 #
 # Test for insert after select
 #
@@ -1299,19 +1314,18 @@ INSERT INTO t2 VALUES (4,011403,37,'intercepted','audiology','tinily','');
 SELECT * FROM t2;
 OPTIMIZE TABLE t2;
 SELECT * FROM t2;
+INSERT INTO t2 VALUES (2,011401,37,'breaking','dreaded','Steinberg','W');
+INSERT INTO t2 VALUES (3,011402,37,'Romans','scholastics','jarring','');
+INSERT INTO t2 VALUES (4,011403,37,'intercepted','audiology','tinily','');
+OPTIMIZE TABLE t2 EXTENDED;
+SELECT * FROM t2;
+REPAIR TABLE t2;
+SELECT * FROM t2;
 
 #
-# Test rename of table
-#
-create table t3 engine=archive select * from t2;
-select * from t3 where fld3='bonfire';
-select count(*) from t3;
-rename table t3 to t4;
-select * from t4 where fld3='bonfire';
-select count(*) from t4;
-
-
-# End of 4.1 tests
+# Test bulk inserts
+INSERT INTO t2 VALUES (1,000001,00,'Omaha','teethe','neat','') , (2,011401,37,'breaking','dreaded','Steinberg','W') , (3,011402,37,'Romans','scholastics','jarring','') , (4,011403,37,'intercepted','audiology','tinily','');
+SELECT * FROM t2;
 
 #
 # For bug #12836
@@ -1327,4 +1341,36 @@ SELECT * FROM t2;
 TRUNCATE TABLE t2;
 SELECT * FROM t2;
 
+# Adding support for CHECK table
+CHECK TABLE t2;
+SELECT * FROM t2;
+
+# Test INSERT DELAYED and wait until the table has one more record
+SELECT COUNT(auto) FROM t2;
+INSERT DELAYED INTO t2 VALUES (4,011403,37,'intercepted','audiology','tinily','');
+while (`SELECT COUNT(auto)!=1214 FROM t2`)
+{
+  sleep 0.1;
+}
+SELECT COUNT(auto) FROM t2;
+
+# Adding test for alter table
+ALTER TABLE t2 DROP COLUMN fld6; 
+SHOW CREATE TABLE t2;
+SELECT * from t2;
+# 
+# Cleanup, test is over
+#
+
+
 drop table t1, t2, t4;
+
+#
+# BUG#26138 - REPAIR TABLE with option USE_FRM erases all records in ARCHIVE
+#             table
+#
+create table t1 (i int) engine=archive;
+insert into t1 values (1);
+repair table t1 use_frm;
+select * from t1;
+drop table t1;

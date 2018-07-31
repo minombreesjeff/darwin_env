@@ -124,12 +124,34 @@ create table t1 select date_format("2004-01-19 10:10:10", "%Y-%m-%d");
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `date_format("2004-01-19 10:10:10", "%Y-%m-%d")` binary(10) default NULL
+  `date_format("2004-01-19 10:10:10", "%Y-%m-%d")` varchar(10) character set utf8 default NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 select * from t1;
 date_format("2004-01-19 10:10:10", "%Y-%m-%d")
 2004-01-19
 drop table t1;
+set names utf8;
+set LC_TIME_NAMES='fr_FR';
+create table t1 (s1 char(20) character set latin1);
+insert into t1 values (date_format('2004-02-02','%M'));
+select hex(s1) from t1;
+hex(s1)
+66E97672696572
+drop table t1;
+create table t1 (s1 char(20) character set koi8r);
+set LC_TIME_NAMES='ru_RU';
+insert into t1 values (date_format('2004-02-02','%M'));
+insert into t1 values (date_format('2004-02-02','%b'));
+insert into t1 values (date_format('2004-02-02','%W'));
+insert into t1 values (date_format('2004-02-02','%a'));
+select hex(s1), s1 from t1;
+hex(s1)	s1
+E6C5D7D2C1CCD1	Февраля
+E6C5D7	Фев
+F0CFCEC5C4C5CCD8CEC9CB	Понедельник
+F0CEC4	Пнд
+drop table t1;
+set LC_TIME_NAMES='en_US';
 set names koi8r;
 create table t1 (s1 char(1) character set utf8);
 insert into t1 values (_koi8r'��');
@@ -197,7 +219,7 @@ drop table t1;
 create table t1 (s1 char(10) character set utf8);
 insert into t1 values (0x41FF);
 Warnings:
-Warning	1265	Data truncated for column 's1' at row 1
+Warning	1366	Incorrect string value: '\xFF' for column 's1' at row 1
 select hex(s1) from t1;
 hex(s1)
 41
@@ -205,7 +227,7 @@ drop table t1;
 create table t1 (s1 varchar(10) character set utf8);
 insert into t1 values (0x41FF);
 Warnings:
-Warning	1265	Data truncated for column 's1' at row 1
+Warning	1366	Incorrect string value: '\xFF' for column 's1' at row 1
 select hex(s1) from t1;
 hex(s1)
 41
@@ -213,7 +235,7 @@ drop table t1;
 create table t1 (s1 text character set utf8);
 insert into t1 values (0x41FF);
 Warnings:
-Warning	1265	Data truncated for column 's1' at row 1
+Warning	1366	Incorrect string value: '\xFF' for column 's1' at row 1
 select hex(s1) from t1;
 hex(s1)
 41
@@ -285,7 +307,7 @@ create table t2 select ifnull(a,a) from t1;
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `ifnull(a,a)` char(5) character set utf8 default NULL
+  `ifnull(a,a)` varchar(5) character set utf8 default NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 select * from t2;
 ifnull(a,a)
@@ -413,7 +435,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 default NULL,
   UNIQUE KEY `a` USING HASH (`c`(1))
-) ENGINE=HEAP DEFAULT CHARSET=latin1
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
 ERROR 23000: Duplicate entry 'aa' for key 1
@@ -449,7 +471,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 default NULL,
   UNIQUE KEY `a` USING BTREE (`c`(1))
-) ENGINE=HEAP DEFAULT CHARSET=latin1
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
 ERROR 23000: Duplicate entry 'aa' for key 1
@@ -571,7 +593,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 collate utf8_bin default NULL,
   UNIQUE KEY `a` USING HASH (`c`(1))
-) ENGINE=HEAP DEFAULT CHARSET=latin1
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
 ERROR 23000: Duplicate entry 'aa' for key 1
@@ -607,7 +629,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 collate utf8_bin default NULL,
   UNIQUE KEY `a` USING BTREE (`c`(1))
-) ENGINE=HEAP DEFAULT CHARSET=latin1
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
 ERROR 23000: Duplicate entry 'aa' for key 1
@@ -809,8 +831,8 @@ create table t2 select concat(a,_utf8'') as a, concat(b,_utf8'')as b from t1;
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` char(5) character set utf8 NOT NULL default '',
-  `b` char(15) character set utf8 NOT NULL default ''
+  `a` varchar(5) character set utf8 NOT NULL default '',
+  `b` varchar(15) character set utf8 NOT NULL default ''
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t2;
 drop table t1;
@@ -832,6 +854,18 @@ select * from t1 where soundex(a) = soundex('test');
 id	a
 1	Test
 drop table t1;
+select soundex(_utf8 0xE99885E8A788E99A8FE697B6E69BB4E696B0E79A84E696B0E997BB);
+soundex(_utf8 0xE99885E8A788E99A8FE697B6E69BB4E696B0E79A84E696B0E997BB)
+阅000
+select hex(soundex(_utf8 0xE99885E8A788E99A8FE697B6E69BB4E696B0E79A84E696B0E997BB));
+hex(soundex(_utf8 0xE99885E8A788E99A8FE697B6E69BB4E696B0E79A84E696B0E997BB))
+E99885303030
+select soundex(_utf8 0xD091D092D093);
+soundex(_utf8 0xD091D092D093)
+Б000
+select hex(soundex(_utf8 0xD091D092D093));
+hex(soundex(_utf8 0xD091D092D093))
+D091303030
 SET collation_connection='utf8_general_ci';
 create table t1 select repeat('a',4000) a;
 delete from t1;
@@ -1064,18 +1098,6 @@ select * from t1 where a like "%abc\d%";
 a
 abcd
 drop table t1;
-set names utf8;
-create table t1 (a char(3), b varchar(10));
-insert into t1 values ('bar','kostja');
-prepare my_stmt from "select * from t1 where a=?";
-set @a:='bar';
-execute my_stmt using @a;
-a	b
-bar	kostja
-set @a:=NULL;
-execute my_stmt using @a;
-a	b
-drop table t1;
 CREATE TABLE t1 (
 a varchar(255) NOT NULL default '',
 KEY a (a)
@@ -1108,6 +1130,18 @@ SELECT LENGTH(bug) FROM t2;
 LENGTH(bug)
 100
 DROP TABLE t2;
+DROP TABLE t1;
+CREATE TABLE t1 (item varchar(255)) default character set utf8;
+INSERT INTO t1 VALUES (N'\\');
+INSERT INTO t1 VALUES (_utf8'\\');
+INSERT INTO t1 VALUES (N'Cote d\'Ivoire');
+INSERT INTO t1 VALUES (_utf8'Cote d\'Ivoire');
+SELECT item FROM t1 ORDER BY item;
+item
+Cote d'Ivoire
+Cote d'Ivoire
+\
+\
 DROP TABLE t1;
 SET NAMES utf8;
 DROP TABLE IF EXISTS t1;
@@ -1427,3 +1461,199 @@ substr(Z.a,-1)	a
 3	123
 6	456
 drop table t1;
+CREATE TABLE t1(id varchar(20) NOT NULL) DEFAULT CHARSET=utf8;
+INSERT INTO t1 VALUES ('xxx'), ('aa'), ('yyy'), ('aa');
+SELECT id FROM t1;
+id
+xxx
+aa
+yyy
+aa
+SELECT DISTINCT id FROM t1;
+id
+xxx
+aa
+yyy
+SELECT DISTINCT id FROM t1 ORDER BY id;
+id
+aa
+xxx
+yyy
+DROP TABLE t1;
+create table t1 (
+a varchar(26) not null
+) default character set utf8;
+insert into t1 (a) values ('abcdefghijklmnopqrstuvwxyz');
+select * from t1;
+a
+abcdefghijklmnopqrstuvwxyz
+alter table t1 change a a varchar(20) character set utf8 not null;
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+select * from t1;
+a
+abcdefghijklmnopqrst
+alter table t1 change a a char(15) character set utf8 not null;
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+select * from t1;
+a
+abcdefghijklmno
+alter table t1 change a a char(10) character set utf8 not null;
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+select * from t1;
+a
+abcdefghij
+alter table t1 change a a varchar(5) character set utf8 not null;
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+select * from t1;
+a
+abcde
+drop table t1;
+create table t1 (
+a varchar(4000) not null
+) default character set utf8;
+insert into t1 values (repeat('a',4000));
+alter table t1 change a a varchar(3000) character set utf8 not null;
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+select length(a) from t1;
+length(a)
+3000
+drop table t1;
+set names utf8;
+select hex(char(1 using utf8));
+hex(char(1 using utf8))
+01
+select char(0xd1,0x8f using utf8);
+char(0xd1,0x8f using utf8)
+я
+select char(0xd18f using utf8);
+char(0xd18f using utf8)
+я
+select char(53647 using utf8);
+char(53647 using utf8)
+я
+select char(0xff,0x8f using utf8);
+char(0xff,0x8f using utf8)
+��
+Warnings:
+Warning	1300	Invalid utf8 character string: 'FF8F'
+select convert(char(0xff,0x8f) using utf8);
+convert(char(0xff,0x8f) using utf8)
+��
+Warnings:
+Warning	1300	Invalid utf8 character string: 'FF8F'
+set sql_mode=traditional;
+select char(0xff,0x8f using utf8);
+char(0xff,0x8f using utf8)
+NULL
+Warnings:
+Error	1300	Invalid utf8 character string: 'FF8F'
+select char(195 using utf8);
+char(195 using utf8)
+NULL
+Warnings:
+Error	1300	Invalid utf8 character string: 'C3'
+select char(196 using utf8);
+char(196 using utf8)
+NULL
+Warnings:
+Error	1300	Invalid utf8 character string: 'C4'
+select char(2557 using utf8);
+char(2557 using utf8)
+NULL
+Warnings:
+Error	1300	Invalid utf8 character string: 'FD'
+select convert(char(0xff,0x8f) using utf8);
+convert(char(0xff,0x8f) using utf8)
+NULL
+Warnings:
+Error	1300	Invalid utf8 character string: 'FF8F'
+select hex(convert(char(2557 using latin1) using utf8));
+hex(convert(char(2557 using latin1) using utf8))
+09C3BD
+select hex(char(195));
+hex(char(195))
+C3
+select hex(char(196));
+hex(char(196))
+C4
+select hex(char(2557));
+hex(char(2557))
+09FD
+set names utf8;
+create table t1 (a char(1)) default character set utf8;
+create table t2 (a char(1)) default character set utf8;
+insert into t1 values('a'),('a'),(0xE38182),(0xE38182);
+insert into t1 values('i'),('i'),(0xE38184),(0xE38184);
+select * from t1 union distinct select * from t2;
+a
+a
+あ
+i
+い
+drop table t1,t2;
+set names utf8;
+create table t1 (a char(10), b varchar(10));
+insert into t1 values ('bar','kostja');
+insert into t1 values ('kostja','bar');
+prepare my_stmt from "select * from t1 where a=?";
+set @a:='bar';
+execute my_stmt using @a;
+a	b
+bar	kostja
+set @a:='kostja';
+execute my_stmt using @a;
+a	b
+kostja	bar
+set @a:=null;
+execute my_stmt using @a;
+a	b
+drop table if exists t1;
+drop table if exists t1;
+drop view if exists v1, v2;
+set names utf8;
+create table t1(col1 varchar(12) character set utf8 collate utf8_unicode_ci);
+insert into t1 values('t1_val');
+create view v1 as select 'v1_val' as col1;
+select coercibility(col1), collation(col1) from v1;
+coercibility(col1)	collation(col1)
+4	utf8_general_ci
+create view v2 as select col1 from v1 union select col1 from t1;
+select coercibility(col1), collation(col1)from v2;
+coercibility(col1)	collation(col1)
+2	utf8_unicode_ci
+2	utf8_unicode_ci
+drop view v1, v2;
+create view v1 as select 'v1_val' collate utf8_swedish_ci as col1;
+select coercibility(col1), collation(col1) from v1;
+coercibility(col1)	collation(col1)
+0	utf8_swedish_ci
+create view v2 as select col1 from v1 union select col1 from t1;
+select coercibility(col1), collation(col1) from v2;
+coercibility(col1)	collation(col1)
+0	utf8_swedish_ci
+0	utf8_swedish_ci
+drop view v1, v2;
+drop table t1;
+CREATE TABLE t1 (
+colA int(11) NOT NULL,
+colB varchar(255) character set utf8 NOT NULL,
+PRIMARY KEY  (colA)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+INSERT INTO t1 (colA, colB) VALUES (1, 'foo'), (2, 'foo bar');
+CREATE TABLE t2 (
+colA int(11) NOT NULL,
+colB varchar(255) character set utf8 NOT NULL,
+KEY bad  (colA,colB(3))
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+INSERT INTO t2 (colA, colB) VALUES (1, 'foo'),(2, 'foo bar');
+SELECT * FROM t1 JOIN t2 ON t1.colA=t2.colA AND t1.colB=t2.colB
+WHERE t1.colA < 3;
+colA	colB	colA	colB
+1	foo	1	foo
+2	foo bar	2	foo bar
+DROP TABLE t1, t2;

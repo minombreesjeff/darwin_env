@@ -6,6 +6,9 @@
 drop table if exists t1,t2;
 --enable_warnings
 
+# Set timezone to GMT-3, to make it possible to use "interval 3 hour"
+set time_zone="+03:00";
+
 CREATE TABLE t1 (a int, t timestamp);
 CREATE TABLE t2 (a int, t datetime);
 SET TIMESTAMP=1234;
@@ -28,6 +31,8 @@ CREATE TABLE t1 (value TEXT NOT NULL, id VARCHAR(32) NOT NULL, stamp timestamp, 
 INSERT INTO t1 VALUES ("my value", "myKey","1999-04-02 00:00:00");
 SELECT stamp FROM t1 WHERE id="myKey";
 UPDATE t1 SET value="my value" WHERE id="myKey";
+SELECT stamp FROM t1 WHERE id="myKey";
+UPDATE t1 SET id="myKey" WHERE value="my value";
 SELECT stamp FROM t1 WHERE id="myKey";
 drop table t1;
 
@@ -320,3 +325,17 @@ select * from t1;
 drop table t1;
 
 # End of 4.1 tests
+
+# Restore timezone to default
+set time_zone= @@global.time_zone;
+
+CREATE TABLE t1 (
+`id` int(11) NOT NULL auto_increment,
+`username` varchar(80) NOT NULL default '',
+`posted_on` timestamp NOT NULL default '0000-00-00 00:00:00',
+PRIMARY KEY (`id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 AUTO_INCREMENT=1;
+
+show fields from t1;
+select is_nullable from INFORMATION_SCHEMA.COLUMNS where TABLE_NAME='t1' and COLUMN_NAME='posted_on';
+drop table t1;

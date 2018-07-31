@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,11 +17,11 @@
 #include <Ndb.hpp>
 #include <NdbScanOperation.hpp>
 #include <NdbIndexScanOperation.hpp>
-#include <NdbConnection.hpp>
-#include <NdbResultSet.hpp>
+#include <NdbTransaction.hpp>
 #include "NdbApiSignal.hpp"
 #include <NdbOut.hpp>
 #include "NdbDictionaryImpl.hpp"
+#include <NdbBlob.hpp>
 
 #include <NdbRecAttr.hpp>
 #include <NdbReceiver.hpp>
@@ -37,9 +36,8 @@
 
 #define DEBUG_NEXT_RESULT 0
 
-NdbScanOperation::NdbScanOperation(Ndb* aNdb) :
-  NdbOperation(aNdb),
-  m_resultSet(0),
+NdbScanOperation::NdbScanOperation(Ndb* aNdb, NdbOperation::Type aType) :
+  NdbOperation(aNdb, aType),
   m_transConnection(NULL)
 {
   theParallelism = 0;
@@ -60,24 +58,11 @@ NdbScanOperation::~NdbScanOperation()
     theNdb->releaseNdbScanRec(m_receivers[i]);
   }
   delete[] m_array;
-  if (m_resultSet)
-    delete m_resultSet;
 }
-
-NdbResultSet* 
-NdbScanOperation::getResultSet()
-{
-  if (!m_resultSet)
-    m_resultSet = new NdbResultSet(this);
-
-  return m_resultSet;
-}
-
-
 
 void
 NdbScanOperation::setErrorCode(int aErrorCode){
-  NdbConnection* tmp = theNdbCon;
+  NdbTransaction* tmp = theNdbCon;
   theNdbCon = m_transConnection;
   NdbOperation::setErrorCode(aErrorCode);
   theNdbCon = tmp;
@@ -85,7 +70,7 @@ NdbScanOperation::setErrorCode(int aErrorCode){
 
 void
 NdbScanOperation::setErrorCodeAbort(int aErrorCode){
-  NdbConnection* tmp = theNdbCon;
+  NdbTransaction* tmp = theNdbCon;
   theNdbCon = m_transConnection;
   NdbOperation::setErrorCodeAbort(aErrorCode);
   theNdbCon = tmp;
@@ -100,18 +85,21 @@ NdbScanOperation::setErrorCodeAbort(int aErrorCode){
  * Remark:        Initiates operation record after allocation.
  *****************************************************************************/
 int
-NdbScanOperation::init(const NdbTableImpl* tab, NdbConnection* myConnection)
+NdbScanOperation::init(const NdbTableImpl* tab, NdbTransaction* myConnection)
 {
   m_transConnection = myConnection;
   //NdbConnection* aScanConnection = theNdb->startTransaction(myConnection);
-  NdbConnection* aScanConnection = theNdb->hupp(myConnection);
+  theNdb->theRemainingStartTransactions++; // will be checked in hupp...
+  NdbTransaction* aScanConnection = theNdb->hupp(myConnection);
   if (!aScanConnection){
+    theNdb->theRemainingStartTransactions--;
     setErrorCodeAbort(theNdb->getNdbError().code);
     return -1;
   }
 
   // NOTE! The hupped trans becomes the owner of the operation
   if(NdbOperation::init(tab, aScanConnection) != 0){
+    theNdb->theRemainingStartTransactions--;
     return -1;
   }
   
@@ -120,17 +108,18 @@ NdbScanOperation::init(const NdbTableImpl* tab, NdbConnection* myConnection)
   theStatus = GetValue;
   theOperationType = OpenScanRequest;
   theNdbCon->theMagicNumber = 0xFE11DF;
-
+  theNoOfTupKeyLeft = tab->m_noOfDistributionKeys;
+  m_read_range_no = 0;
   return 0;
 }
 
-NdbResultSet* NdbScanOperation::readTuples(NdbScanOperation::LockMode lm,
-					   Uint32 batch, 
-					   Uint32 parallel,
-					   bool keyinfo)
+int 
+NdbScanOperation::readTuples(NdbScanOperation::LockMode lm,
+			     Uint32 scan_flags, 
+			     Uint32 parallel,
+			     Uint32 batch)
 {
-  m_ordered = 0;
-
+  m_ordered = m_descending = false;
   Uint32 fragCount = m_currentTable->m_fragmentCount;
 
   if (parallel > fragCount || parallel == 0) {
@@ -143,39 +132,14 @@ NdbResultSet* NdbScanOperation::readTuples(NdbScanOperation::LockMode lm,
   //  3. theScanOp contains a NdbScanOperation
   if (theNdbCon->theScanningOp != NULL){
     setErrorCode(4605);
-    return 0;
+    return -1;
   }
 
   theNdbCon->theScanningOp = this;
-  theLockMode = lm;
 
-  bool lockExcl, lockHoldMode, readCommitted;
-  switch(lm){
-  case NdbScanOperation::LM_Read:
-    lockExcl = false;
-    lockHoldMode = true;
-    readCommitted = false;
-    break;
-  case NdbScanOperation::LM_Exclusive:
-    lockExcl = true;
-    lockHoldMode = true;
-    readCommitted = false;
-    break;
-  case NdbScanOperation::LM_CommittedRead:
-    lockExcl = false;
-    lockHoldMode = false;
-    readCommitted = true;
-    break;
-  default:
-    setErrorCode(4003);
-    return 0;
-  }
-
-  m_keyInfo = (keyinfo || lockExcl) ? 1 : 0;
-
-  bool range = false;
-  if (m_accessTable->m_indexType == NdbDictionary::Index::OrderedIndex ||
-      m_accessTable->m_indexType == NdbDictionary::Index::UniqueOrderedIndex){
+  bool rangeScan = false;
+  if (m_accessTable->m_indexType == NdbDictionary::Index::OrderedIndex)
+  {
     if (m_currentTable == m_accessTable){
       // Old way of scanning indexes, should not be allowed
       m_currentTable = theNdb->theDictionary->
@@ -186,46 +150,57 @@ NdbResultSet* NdbScanOperation::readTuples(NdbScanOperation::LockMode lm,
     // Modify operation state
     theStatus = GetValue;
     theOperationType  = OpenRangeScanRequest;
-    range = true;
+    rangeScan = true;
   }
-  
-  theParallelism = parallel;
 
+  bool tupScan = (scan_flags & SF_TupScan);
+  if (tupScan && rangeScan)
+    tupScan = false;
+
+  if (rangeScan && (scan_flags & SF_OrderBy))
+    parallel = fragCount;
+  
+  theParallelism = parallel;    
+  
   if(fix_receivers(parallel) == -1){
     setErrorCodeAbort(4000);
-    return 0;
+    return -1;
   }
   
   theSCAN_TABREQ = (!theSCAN_TABREQ ? theNdb->getSignal() : theSCAN_TABREQ);
   if (theSCAN_TABREQ == NULL) {
     setErrorCodeAbort(4000);
-    return 0;
+    return -1;
   }//if
   
+  theSCAN_TABREQ->setSignal(GSN_SCAN_TABREQ);
   ScanTabReq * req = CAST_PTR(ScanTabReq, theSCAN_TABREQ->getDataPtrSend());
   req->apiConnectPtr = theNdbCon->theTCConPtr;
   req->tableId = m_accessTable->m_tableId;
   req->tableSchemaVersion = m_accessTable->m_version;
   req->storedProcId = 0xFFFF;
   req->buddyConPtr = theNdbCon->theBuddyConPtr;
+  req->first_batch_size = batch; // Save user specified batch size
   
   Uint32 reqInfo = 0;
   ScanTabReq::setParallelism(reqInfo, parallel);
   ScanTabReq::setScanBatch(reqInfo, 0);
-  ScanTabReq::setLockMode(reqInfo, lockExcl);
-  ScanTabReq::setHoldLockFlag(reqInfo, lockHoldMode);
-  ScanTabReq::setReadCommittedFlag(reqInfo, readCommitted);
-  ScanTabReq::setRangeScanFlag(reqInfo, range);
+  ScanTabReq::setRangeScanFlag(reqInfo, rangeScan);
+  ScanTabReq::setTupScanFlag(reqInfo, tupScan);
   req->requestInfo = reqInfo;
+
+  m_keyInfo = (scan_flags & SF_KeyInfo) ? 1 : 0;
+  setReadLockMode(lm);
 
   Uint64 transId = theNdbCon->getTransactionId();
   req->transId1 = (Uint32) transId;
   req->transId2 = (Uint32) (transId >> 32);
 
-  NdbApiSignal* tSignal = 
-    theFirstKEYINFO;
-
-  theFirstKEYINFO = (tSignal ? tSignal : tSignal = theNdb->getSignal());
+  NdbApiSignal* tSignal = theSCAN_TABREQ->next();
+  if(!tSignal)
+  {
+    theSCAN_TABREQ->next(tSignal = theNdb->getSignal());
+  }
   theLastKEYINFO = tSignal;
   
   tSignal->setSignal(GSN_KEYINFO);
@@ -233,7 +208,42 @@ NdbResultSet* NdbScanOperation::readTuples(NdbScanOperation::LockMode lm,
   theTotalNrOfKeyWordInSignal= 0;
 
   getFirstATTRINFOScan();
-  return getResultSet();
+  return 0;
+}
+
+void
+NdbScanOperation::setReadLockMode(LockMode lockMode)
+{
+  bool lockExcl, lockHoldMode, readCommitted;
+  switch (lockMode)
+  {
+    case LM_CommittedRead:
+      lockExcl= false;
+      lockHoldMode= false;
+      readCommitted= true;
+      break;
+    case LM_Read:
+      lockExcl= false;
+      lockHoldMode= true;
+      readCommitted= false;
+      break;
+    case LM_Exclusive:
+      lockExcl= true;
+      lockHoldMode= true;
+      readCommitted= false;
+      m_keyInfo= 1;
+      break;
+    default:
+      /* Not supported / invalid. */
+      assert(false);
+  }
+  theLockMode= lockMode;
+  ScanTabReq *req= CAST_PTR(ScanTabReq, theSCAN_TABREQ->getDataPtrSend());
+  Uint32 reqInfo= req->requestInfo;
+  ScanTabReq::setLockMode(reqInfo, lockExcl);
+  ScanTabReq::setHoldLockFlag(reqInfo, lockHoldMode);
+  ScanTabReq::setReadCommittedFlag(reqInfo, readCommitted);
+  req->requestInfo= reqInfo;
 }
 
 int
@@ -357,65 +367,11 @@ NdbScanOperation::getFirstATTRINFOScan()
 #define FAKE_PTR 2
 #define API_PTR 3
 
-
-/*
- * After setBound() are done, move the accumulated ATTRINFO signals to
- * a separate list.  Then continue with normal scan.
- */
-#if 0
-int
-NdbIndexScanOperation::saveBoundATTRINFO()
-{
-  theCurrentATTRINFO->setLength(theAI_LenInCurrAI);
-  theBoundATTRINFO = theFirstATTRINFO;
-  theTotalBoundAI_Len = theTotalCurrAI_Len;
-  theTotalCurrAI_Len = 5;
-  theBoundATTRINFO->setData(theTotalBoundAI_Len, 4);
-  theBoundATTRINFO->setData(0, 5);
-  theBoundATTRINFO->setData(0, 6);
-  theBoundATTRINFO->setData(0, 7);
-  theBoundATTRINFO->setData(0, 8);
-  theStatus = GetValue;
-
-  int res = getFirstATTRINFOScan();
-
-  /**
-   * Define each key with getValue (if ordered)
-   *   unless the one's with EqBound
-   */
-  if(!res && m_ordered){
-
-    /**
-     * If setBound EQ
-     */
-    Uint32 i = 0;
-    while(theTupleKeyDefined[i][0] == SETBOUND_EQ)
-      i++;
-    
-    
-    Uint32 cnt = m_accessTable->getNoOfColumns() - 1;
-    m_sort_columns = cnt - i;
-    for(; i<cnt; i++){
-      const NdbColumnImpl* key = m_accessTable->m_index->m_columns[i];
-      const NdbColumnImpl* col = m_currentTable->getColumn(key->m_keyInfoPos);
-      NdbRecAttr* tmp = NdbScanOperation::getValue_impl(col, (char*)-1);
-      UintPtr newVal = UintPtr(tmp);
-      theTupleKeyDefined[i][0] = FAKE_PTR;
-      theTupleKeyDefined[i][1] = (newVal & 0xFFFFFFFF);
-#if (SIZEOF_CHARP == 8)
-      theTupleKeyDefined[i][2] = (newVal >> 32);
-#endif
-    }
-  }
-  return res;
-}
-#endif
-
 #define WAITFOR_SCAN_TIMEOUT 120000
 
 int
 NdbScanOperation::executeCursor(int nodeId){
-  NdbConnection * tCon = theNdbCon;
+  NdbTransaction * tCon = theNdbCon;
   TransporterFacade* tp = TransporterFacade::instance();
   Guard guard(tp->theMutexPtr);
 
@@ -449,13 +405,36 @@ NdbScanOperation::executeCursor(int nodeId){
       TRACE_DEBUG("The node is stopping when attempting to start a scan");
       setErrorCode(4030);
     }//if
-    tCon->theCommitStatus = NdbConnection::Aborted;
+    tCon->theCommitStatus = NdbTransaction::Aborted;
   }//if
   return -1;
 }
 
 
 int NdbScanOperation::nextResult(bool fetchAllowed, bool forceSend)
+{
+  int res;
+  if ((res = nextResultImpl(fetchAllowed, forceSend)) == 0) {
+    // handle blobs
+    NdbBlob* tBlob = theBlobList;
+    while (tBlob != 0) {
+      if (tBlob->atNextResult() == -1)
+        return -1;
+      tBlob = tBlob->theNext;
+    }
+    /*
+     * Flush blob part ops on behalf of user because
+     * - nextResult is analogous to execute(NoCommit)
+     * - user is likely to want blob value before next execute
+     */
+    if (m_transConnection->executePendingBlobOps() == -1)
+      return -1;
+    return 0;
+  }
+  return res;
+}
+
+int NdbScanOperation::nextResultImpl(bool fetchAllowed, bool forceSend)
 {
   if(m_ordered)
     return ((NdbIndexScanOperation*)this)->next_result_ordered(fetchAllowed,
@@ -467,6 +446,7 @@ int NdbScanOperation::nextResult(bool fetchAllowed, bool forceSend)
   int retVal = 2;
   Uint32 idx = m_current_api_receiver;
   Uint32 last = m_api_receivers_count;
+  m_curr_row = 0;
 
   if(DEBUG_NEXT_RESULT)
     ndbout_c("nextResult(%d) idx=%d last=%d", fetchAllowed, idx, last);
@@ -477,7 +457,7 @@ int NdbScanOperation::nextResult(bool fetchAllowed, bool forceSend)
   for(; idx < last; idx++){
     NdbReceiver* tRec = m_api_receivers[idx];
     if(tRec->nextResult()){
-      tRec->copyout(theReceiver);      
+      m_curr_row = tRec->copyout(theReceiver);
       retVal = 0;
       break;
     }
@@ -536,6 +516,8 @@ int NdbScanOperation::nextResult(bool fetchAllowed, bool forceSend)
 	int return_code = theNdb->receiveResponse(3*timeout);
 	if (return_code == 0 && seq == tp->getNodeSequence(nodeId)) {
 	  continue;
+	} else if(return_code == -1){
+	  retVal = -1;
 	} else {
 	  idx = last;
 	  retVal = -2; //return_code;
@@ -555,7 +537,7 @@ int NdbScanOperation::nextResult(bool fetchAllowed, bool forceSend)
       for(; idx < last; idx++){
 	NdbReceiver* tRec = m_api_receivers[idx];
 	if(tRec->nextResult()){
-	  tRec->copyout(theReceiver);      
+	  m_curr_row = tRec->copyout(theReceiver);      
 	  retVal = 0;
 	  break;
 	}
@@ -677,11 +659,17 @@ NdbScanOperation::doSend(int ProcessorId)
   return 0;
 }
 
-void NdbScanOperation::closeScan(bool forceSend, bool releaseOp)
+void NdbScanOperation::close(bool forceSend, bool releaseOp)
 {
+  DBUG_ENTER("NdbScanOperation::close");
+  DBUG_PRINT("enter", ("this: 0x%lx  tcon: 0x%lx  con: 0x%lx  force: %d  release: %d",
+                       (long)this,
+                       (long)m_transConnection, (long)theNdbCon,
+                       forceSend, releaseOp));
+
   if(m_transConnection){
     if(DEBUG_NEXT_RESULT)
-      ndbout_c("closeScan() theError.code = %d "
+      ndbout_c("close() theError.code = %d "
 	       "m_api_receivers_count = %d "
 	       "m_conf_receivers_count = %d "
 	       "m_sent_receivers_count = %d",
@@ -701,13 +689,33 @@ void NdbScanOperation::closeScan(bool forceSend, bool releaseOp)
   theNdbCon = NULL;
   m_transConnection = NULL;
 
-  if (releaseOp && tTransCon) {
+  if (tTransCon && releaseOp) 
+  {
     NdbIndexScanOperation* tOp = (NdbIndexScanOperation*)this;
-    tTransCon->releaseExecutedScanOperation(tOp);
+
+    bool ret = true;
+    if (theStatus != WaitResponse)
+    {
+      /**
+       * Not executed yet
+       */
+      ret = 
+	tTransCon->releaseScanOperation(&tTransCon->m_theFirstScanOperation,
+					&tTransCon->m_theLastScanOperation,
+					tOp);
+    }
+    else
+    {
+      ret = tTransCon->releaseScanOperation(&tTransCon->m_firstExecutedScanOp,
+					    0, tOp);
+    }
+    assert(ret);
   }
   
   tCon->theScanningOp = 0;
   theNdb->closeTransaction(tCon);
+  theNdb->theRemainingStartTransactions--;
+  DBUG_VOID_RETURN;
 }
 
 void
@@ -719,17 +727,19 @@ NdbScanOperation::execCLOSE_SCAN_REP(){
 void NdbScanOperation::release()
 {
   if(theNdbCon != 0 || m_transConnection != 0){
-    closeScan();
+    close();
   }
   for(Uint32 i = 0; i<m_allocated_receivers; i++){
     m_receivers[i]->release();
   }
+
+  NdbOperation::release();
+  
   if(theSCAN_TABREQ)
   {
     theNdb->releaseSignal(theSCAN_TABREQ);
     theSCAN_TABREQ = 0;
   }
-  NdbOperation::release();
 }
 
 /***************************************************************************
@@ -776,13 +786,14 @@ int NdbScanOperation::prepareSendScan(Uint32 aTC_ConnectPtr,
    * The number of records sent by each LQH is calculated and the kernel
    * is informed of this number by updating the SCAN_TABREQ signal
    */
-  Uint32 batch_size, batch_byte_size, first_batch_size;
+  ScanTabReq * req = CAST_PTR(ScanTabReq, theSCAN_TABREQ->getDataPtrSend());
+  Uint32 batch_size = req->first_batch_size; // User specified
+  Uint32 batch_byte_size, first_batch_size;
   theReceiver.calculate_batch_size(key_size,
                                    theParallelism,
                                    batch_size,
                                    batch_byte_size,
                                    first_batch_size);
-  ScanTabReq * req = CAST_PTR(ScanTabReq, theSCAN_TABREQ->getDataPtrSend());
   ScanTabReq::setScanBatch(req->requestInfo, batch_size);
   req->batch_byte_size= batch_byte_size;
   req->first_batch_size= first_batch_size;
@@ -796,7 +807,12 @@ int NdbScanOperation::prepareSendScan(Uint32 aTC_ConnectPtr,
   req->requestInfo = reqInfo;
   
   for(Uint32 i = 0; i<theParallelism; i++){
-    m_receivers[i]->do_get_value(&theReceiver, batch_size, key_size);
+    if (m_receivers[i]->do_get_value(&theReceiver, batch_size, 
+                                     key_size, 
+                                     m_read_range_no))
+    {
+      return -1;
+    }
   }
   return 0;
 }
@@ -824,13 +840,8 @@ NdbScanOperation::doSendScan(int aProcessorId)
   
   assert(theSCAN_TABREQ != NULL);
   tSignal = theSCAN_TABREQ;
-  if (tSignal->setSignal(GSN_SCAN_TABREQ) == -1) {
-    setErrorCode(4001);
-    return -1;
-  }
   
   Uint32 tupKeyLen = theTupKeyLen;
-  Uint32 len = theTotalNrOfKeyWordInSignal;
   Uint32 aTC_ConnectPtr = theNdbCon->theTCConPtr;
   Uint64 transId = theNdbCon->theTransactionId;
   
@@ -839,7 +850,12 @@ NdbScanOperation::doSendScan(int aProcessorId)
   // we created the ATTRINFO signals after the SCAN_TABREQ signal.
   ScanTabReq * const req = CAST_PTR(ScanTabReq, tSignal->getDataPtrSend());
   req->attrLenKeyLen = (tupKeyLen << 16) | theTotalCurrAI_Len;
-  
+  Uint32 tmp = req->requestInfo;
+  ScanTabReq::setDistributionKeyFlag(tmp, theDistrKeyIndicator_);
+  req->distributionKey = theDistributionKey;
+  req->requestInfo = tmp;
+  tSignal->setLength(ScanTabReq::StaticLength + theDistrKeyIndicator_);
+
   TransporterFacade *tp = TransporterFacade::instance();
   LinearSectionPtr ptr[3];
   ptr[0].p = m_prepared_receivers;
@@ -855,8 +871,8 @@ NdbScanOperation::doSendScan(int aProcessorId)
     tSignal = theLastKEYINFO;
     tSignal->setLength(KeyInfo::HeaderLength + theTotalNrOfKeyWordInSignal);
     
-    assert(theFirstKEYINFO != NULL);
-    tSignal = theFirstKEYINFO;
+    assert(theSCAN_TABREQ->next() != NULL);
+    tSignal = theSCAN_TABREQ->next();
     
     NdbApiSignal* last;
     do {
@@ -892,6 +908,7 @@ NdbScanOperation::doSendScan(int aProcessorId)
   }    
   theStatus = WaitResponse;  
 
+  m_curr_row = 0;
   m_sent_receivers_count = theParallelism;
   if(m_ordered)
   {
@@ -903,9 +920,9 @@ NdbScanOperation::doSendScan(int aProcessorId)
 }//NdbOperation::doSendScan()
 
 /*****************************************************************************
- * NdbOperation* takeOverScanOp(NdbConnection* updateTrans);
+ * NdbOperation* takeOverScanOp(NdbTransaction* updateTrans);
  *
- * Parameters:     The update transactions NdbConnection pointer.
+ * Parameters:     The update transactions NdbTransaction pointer.
  * Return Value:   A reference to the transferred operation object 
  *                   or NULL if no success.
  * Remark:         Take over the scanning transactions NdbOperation 
@@ -915,8 +932,8 @@ NdbScanOperation::doSendScan(int aProcessorId)
  *
  *     FUTURE IMPLEMENTATION:   (This note was moved from header file.)
  *     In the future, it will even be possible to transfer 
- *     to a NdbConnection on another Ndb-object.  
- *     In this case the receiving NdbConnection-object must call 
+ *     to a NdbTransaction on another Ndb-object.  
+ *     In this case the receiving NdbTransaction-object must call 
  *     a method receiveOpFromScan to actually receive the information.  
  *     This means that the updating transactions can be placed
  *     in separate threads and thus increasing the parallelism during
@@ -925,16 +942,9 @@ NdbScanOperation::doSendScan(int aProcessorId)
 int
 NdbScanOperation::getKeyFromKEYINFO20(Uint32* data, unsigned size)
 {
-  Uint32 idx = m_current_api_receiver;
-  Uint32 last = m_api_receivers_count;
-
-  Uint32 row;
-  NdbReceiver * tRec;
-  NdbRecAttr * tRecAttr;
-  if(idx < last && (tRec = m_api_receivers[idx]) 
-     && ((row = tRec->m_current_row) <= tRec->m_defined_rows)
-     && (tRecAttr = tRec->m_rows[row-1])){
-
+  NdbRecAttr * tRecAttr = m_curr_row;
+  if(tRecAttr)
+  {
     const Uint32 * src = (Uint32*)tRecAttr->aRef();
     memcpy(data, src, 4*size);
     return 0;
@@ -943,18 +953,12 @@ NdbScanOperation::getKeyFromKEYINFO20(Uint32* data, unsigned size)
 }
 
 NdbOperation*
-NdbScanOperation::takeOverScanOp(OperationType opType, NdbConnection* pTrans){
+NdbScanOperation::takeOverScanOp(OperationType opType, NdbTransaction* pTrans)
+{
   
-  Uint32 idx = m_current_api_receiver;
-  Uint32 last = m_api_receivers_count;
-
-  Uint32 row;
-  NdbReceiver * tRec;
-  NdbRecAttr * tRecAttr;
-  if(idx < last && (tRec = m_api_receivers[idx]) 
-     && ((row = tRec->m_current_row) <= tRec->m_defined_rows)
-     && (tRecAttr = tRec->m_rows[row-1])){
-    
+  NdbRecAttr * tRecAttr = m_curr_row;
+  if(tRecAttr)
+  {
     NdbOperation * newOp = pTrans->getNdbOperation(m_currentTable);
     if (newOp == NULL){
       return NULL;
@@ -983,13 +987,15 @@ NdbScanOperation::takeOverScanOp(OperationType opType, NdbConnection* pTrans){
     }
     const Uint32 * src = (Uint32*)tRecAttr->aRef();
     const Uint32 tScanInfo = src[len] & 0x3FFFF;
-    const Uint32 tTakeOverNode = src[len] >> 20;
+    const Uint32 tTakeOverFragment = src[len] >> 20;
     {
       UintR scanInfo = 0;
       TcKeyReq::setTakeOverScanFlag(scanInfo, 1);
-      TcKeyReq::setTakeOverScanNode(scanInfo, tTakeOverNode);
+      TcKeyReq::setTakeOverScanFragment(scanInfo, tTakeOverFragment);
       TcKeyReq::setTakeOverScanInfo(scanInfo, tScanInfo);
       newOp->theScanInfo = scanInfo;
+      newOp->theDistrKeyIndicator_ = 1;
+      newOp->theDistributionKey = tTakeOverFragment;
     }
 
     // Copy the first 8 words of key info from KEYINF20 into TCKEYREQ
@@ -1001,7 +1007,7 @@ NdbScanOperation::takeOverScanOp(OperationType opType, NdbConnection* pTrans){
     
     if(i < len){
       NdbApiSignal* tSignal = theNdb->getSignal();
-      newOp->theFirstKEYINFO = tSignal;      
+      newOp->theTCREQ->next(tSignal); 
       
       Uint32 left = len - i;
       while(tSignal && left > KeyInfo::DataLength){
@@ -1055,7 +1061,7 @@ NdbScanOperation::getBlobHandle(Uint32 anAttrId)
 }
 
 NdbIndexScanOperation::NdbIndexScanOperation(Ndb* aNdb)
-  : NdbScanOperation(aNdb)
+  : NdbScanOperation(aNdb, NdbOperation::OrderedIndexScan)
 {
 }
 
@@ -1129,6 +1135,11 @@ int
 NdbIndexScanOperation::setBound(const NdbColumnImpl* tAttrInfo, 
 				int type, const void* aValue, Uint32 len)
 {
+  if (!tAttrInfo)
+  {
+    setErrorCodeAbort(4318);    // Invalid attribute
+    return -1;
+  }
   if (theOperationType == OpenRangeScanRequest &&
       (0 <= type && type <= 4) &&
       len <= 8000) {
@@ -1136,37 +1147,28 @@ NdbIndexScanOperation::setBound(const NdbColumnImpl* tAttrInfo,
     Uint32 currLen = theTotalNrOfKeyWordInSignal;
     Uint32 remaining = KeyInfo::DataLength - currLen;
     Uint32 sizeInBytes = tAttrInfo->m_attrSize * tAttrInfo->m_arraySize;
+    bool tDistrKey = tAttrInfo->m_distributionKey;
 
-    // normalize char bound
-    CHARSET_INFO* cs = tAttrInfo->m_cs;
-    Uint32 xfrmData[2000];
-    if (cs != NULL && aValue != NULL) {
-      // current limitation: strxfrm does not increase length
-      assert(cs->strxfrm_multiply <= 1);
-      unsigned n =
-      (*cs->coll->strnxfrm)(cs,
-                            (uchar*)xfrmData, sizeof(xfrmData),
-                            (const uchar*)aValue, sizeInBytes);
-      while (n < sizeInBytes)
-        ((uchar*)xfrmData)[n++] = 0x20;
-      aValue = (char*)xfrmData;
-    }
+    len = aValue != NULL ? sizeInBytes : 0;
     if (len != sizeInBytes && (len != 0)) {
       setErrorCodeAbort(4209);
       return -1;
     }
+
     // insert attribute header
-    len = aValue != NULL ? sizeInBytes : 0;
     Uint32 tIndexAttrId = tAttrInfo->m_attrId;
     Uint32 sizeInWords = (len + 3) / 4;
     AttributeHeader ah(tIndexAttrId, sizeInWords);
     const Uint32 ahValue = ah.m_value;
 
-    const bool aligned = (UintPtr(aValue) & 3) == 0;
+    const Uint32 align = (UintPtr(aValue) & 7);
+    const bool aligned = (tDistrKey && type == BoundEQ) ? 
+      (align == 0) : (align & 3) == 0;
+
     const bool nobytes = (len & 0x3) == 0;
     const Uint32 totalLen = 2 + sizeInWords;
     Uint32 tupKeyLen = theTupKeyLen;
-    if(remaining > totalLen &&  aligned && nobytes){
+    if(remaining > totalLen && aligned && nobytes){
       Uint32 * dst = theKEYINFOptr + currLen;
       * dst ++ = type;
       * dst ++ = ahValue;
@@ -1174,12 +1176,12 @@ NdbIndexScanOperation::setBound(const NdbColumnImpl* tAttrInfo,
       theTotalNrOfKeyWordInSignal = currLen + totalLen;
     } else {
       if(!aligned || !nobytes){
-	Uint32 tempData[2002];
+        Uint32 tempData[2000];
 	tempData[0] = type;
 	tempData[1] = ahValue;
+	tempData[2 + (len >> 2)] = 0;
         memcpy(tempData+2, aValue, len);
-        while ((len & 0x3) != 0)
-          ((char*)&tempData[2])[len++] = 0;
+	
 	insertBOUNDS(tempData, 2+sizeInWords);
       } else {
 	Uint32 buf[2] = { type, ahValue };
@@ -1198,11 +1200,11 @@ NdbIndexScanOperation::setBound(const NdbColumnImpl* tAttrInfo,
      * so it's safe to use [tIndexAttrId] 
      * (instead of looping as is NdbOperation::equal_impl)
      */
-    if(type == BoundEQ && !theTupleKeyDefined[tIndexAttrId][0]){
-      theNoOfTupKeyDefined++;
-      theTupleKeyDefined[tIndexAttrId][0] = SETBOUND_EQ;
+    if(type == BoundEQ && tDistrKey && !m_multi_range)
+    {
+      theNoOfTupKeyLeft--;
+      return handle_distribution_key((Uint64*)aValue, sizeInWords);
     }
-    
     return 0;
   } else {
     setErrorCodeAbort(4228);    // XXX wrong code
@@ -1250,15 +1252,33 @@ error:
   return -1;
 }
 
-NdbResultSet*
+int
 NdbIndexScanOperation::readTuples(LockMode lm,
-				  Uint32 batch,
+				  Uint32 scan_flags,
 				  Uint32 parallel,
-				  bool order_by,
-				  bool keyinfo){
-  NdbResultSet * rs = NdbScanOperation::readTuples(lm, batch, 0, keyinfo);
-  if(rs && order_by){
-    m_ordered = 1;
+				  Uint32 batch)
+{
+  const bool order_by = scan_flags & SF_OrderBy;
+  const bool order_desc = scan_flags & SF_Descending;
+  const bool read_range_no = scan_flags & SF_ReadRangeNo;
+  m_multi_range = scan_flags & SF_MultiRange;
+
+  int res = NdbScanOperation::readTuples(lm, scan_flags, parallel, batch);
+  if(!res && read_range_no)
+  {
+    m_read_range_no = 1;
+    Uint32 word = 0;
+    AttributeHeader::init(&word, AttributeHeader::RANGE_NO, 0);
+    if(insertATTRINFO(word) == -1)
+      res = -1;
+  }
+  if(!res && order_by){
+    m_ordered = true;
+    if (order_desc) {
+      m_descending = true;
+      ScanTabReq * req = CAST_PTR(ScanTabReq, theSCAN_TABREQ->getDataPtrSend());
+      ScanTabReq::setDescendingFlag(req->requestInfo, true);
+    }
     Uint32 cnt = m_accessTable->getNoOfColumns() - 1;
     m_sort_columns = cnt; // -1 for NDB$NODE
     m_current_api_receiver = m_sent_receivers_count;
@@ -1277,7 +1297,10 @@ NdbIndexScanOperation::readTuples(LockMode lm,
 #endif
     }
   }
-  return rs;
+  m_this_bound_start = 0;
+  m_first_bound_word = theKEYINFOptr;
+  
+  return res;
 }
 
 void
@@ -1289,8 +1312,6 @@ NdbIndexScanOperation::fix_get_values(){
   Uint32 cnt = m_accessTable->getNoOfColumns() - 1;
   assert(cnt <  NDB_MAX_NO_OF_ATTRIBUTES_IN_KEY);
   
-  const NdbIndexImpl * idx = m_accessTable->m_index;
-  const NdbTableImpl * tab = m_currentTable;
   for(Uint32 i = 0; i<cnt; i++){
     Uint32 val = theTupleKeyDefined[i][0];
     switch(val){
@@ -1319,22 +1340,23 @@ NdbIndexScanOperation::compare(Uint32 skip, Uint32 cols,
 
   r1 = (skip ? r1->next() : r1);
   r2 = (skip ? r2->next() : r2);
-  
+  const int jdir = 1 - 2 * (int)m_descending;
+  assert(jdir == 1 || jdir == -1);
   while(cols > 0){
     Uint32 * d1 = (Uint32*)r1->aRef();
     Uint32 * d2 = (Uint32*)r2->aRef();
     unsigned r1_null = r1->isNULL();
     if((r1_null ^ (unsigned)r2->isNULL())){
-      return (r1_null ? -1 : 1);
+      return (r1_null ? -1 : 1) * jdir;
     }
     const NdbColumnImpl & col = NdbColumnImpl::getImpl(* r1->m_column);
-    Uint32 size = (r1->theAttrSize * r1->theArraySize + 3) / 4;
+    Uint32 len = r1->theAttrSize * r1->theArraySize;
     if(!r1_null){
-      const NdbSqlUtil::Type& sqlType = NdbSqlUtil::getType(col.m_extType);
-      int r = (*sqlType.m_cmp)(col.m_cs, d1, d2, size, size);
+      const NdbSqlUtil::Type& sqlType = NdbSqlUtil::getType(col.m_type);
+      int r = (*sqlType.m_cmp)(col.m_cs, d1, len, d2, len, true);
       if(r){
 	assert(r != NdbSqlUtil::CmpUnknown);
-	return r;
+	return r * jdir;
       }
     }
     cols--;
@@ -1348,6 +1370,7 @@ int
 NdbIndexScanOperation::next_result_ordered(bool fetchAllowed,
 					   bool forceSend){
   
+  m_curr_row = 0;
   Uint32 u_idx = 0, u_last = 0;
   Uint32 s_idx   = m_current_api_receiver; // first sorted
   Uint32 s_last  = theParallelism;         // last sorted
@@ -1387,7 +1410,11 @@ NdbIndexScanOperation::next_result_ordered(bool fetchAllowed,
 	    continue;
 	  }
 	  if(DEBUG_NEXT_RESULT) ndbout_c("return -1");
-	  setErrorCode(4028);
+	  if(return_code == -1){
+	    setErrorCode(4008);
+	  } else {
+	    setErrorCode(4028);
+	  }
 	  return -1;
 	}
 	
@@ -1422,7 +1449,7 @@ NdbIndexScanOperation::next_result_ordered(bool fetchAllowed,
 				 s_idx, s_last);
 
 
-  Uint32 cols = m_sort_columns;
+  Uint32 cols = m_sort_columns + m_read_range_no;
   Uint32 skip = m_keyInfo;
   while(u_idx < u_last){
     u_last--;
@@ -1459,7 +1486,7 @@ NdbIndexScanOperation::next_result_ordered(bool fetchAllowed,
   
   tRec = m_api_receivers[s_idx];    
   if(s_idx < s_last && tRec->nextResult()){
-    tRec->copyout(theReceiver);      
+    m_curr_row = tRec->copyout(theReceiver);      
     if(DEBUG_NEXT_RESULT) ndbout_c("return 0");
     return 0;
   }
@@ -1680,10 +1707,14 @@ NdbIndexScanOperation::reset_bounds(bool forceSend){
     theError.code = 0;
     reset_receivers(theParallelism, m_ordered);
     
-    theLastKEYINFO = theFirstKEYINFO;
-    theKEYINFOptr = ((KeyInfo*)theFirstKEYINFO->getDataPtrSend())->keyData;
+    theLastKEYINFO = theSCAN_TABREQ->next();
+    theKEYINFOptr = ((KeyInfo*)theLastKEYINFO->getDataPtrSend())->keyData;
     theTupKeyLen = 0;
     theTotalNrOfKeyWordInSignal = 0;
+    theNoOfTupKeyLeft = m_accessTable->m_noOfDistributionKeys;
+    theDistrKeyIndicator_ = 0;
+    m_this_bound_start = 0;
+    m_first_bound_word = theKEYINFOptr;
     m_transConnection
       ->remove_list((NdbOperation*&)m_transConnection->m_firstExecutedScanOp,
 		    this);
@@ -1691,4 +1722,40 @@ NdbIndexScanOperation::reset_bounds(bool forceSend){
     return 0;
   }
   return res;
+}
+
+int
+NdbIndexScanOperation::end_of_bound(Uint32 no)
+{
+  DBUG_ENTER("end_of_bound");
+  DBUG_PRINT("info", ("Range number %u", no));
+  /* Check that SF_MultiRange has been specified if more
+     than one range is specified */
+  if (no > 0 && !m_multi_range)
+    DBUG_RETURN(-1);
+  if(no < (1 << 13)) // Only 12-bits no of ranges
+  {
+    Uint32 bound_head = * m_first_bound_word;
+    bound_head |= (theTupKeyLen - m_this_bound_start) << 16 | (no << 4);
+    * m_first_bound_word = bound_head;
+    
+    m_first_bound_word = theKEYINFOptr + theTotalNrOfKeyWordInSignal;;
+    m_this_bound_start = theTupKeyLen;
+    DBUG_RETURN(0);
+  }
+  DBUG_RETURN(-1);
+}
+
+int
+NdbIndexScanOperation::get_range_no()
+{
+  NdbRecAttr* tRecAttr = m_curr_row;
+  if(m_read_range_no && tRecAttr)
+  {
+    if(m_keyInfo)
+      tRecAttr = tRecAttr->next();
+    Uint32 ret = *(Uint32*)tRecAttr->aRef();
+    return ret;
+  }
+  return -1;
 }

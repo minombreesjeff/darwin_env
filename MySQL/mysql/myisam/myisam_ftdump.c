@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2001-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -126,7 +125,6 @@ int main(int argc,char *argv[])
 
     if (count || stats)
     {
-      doc_cnt++;
       if (strcmp(buf, buf2))
       {
         if (*buf2)
@@ -151,6 +149,7 @@ int main(int argc,char *argv[])
         keylen2=keylen;
         doc_cnt=0;
       }
+      doc_cnt+= (subkeys >= 0 ? 1 : -subkeys);
     }
     if (dump)
     {
@@ -166,7 +165,6 @@ int main(int argc,char *argv[])
 
   if (count || stats)
   {
-    doc_cnt++;
     if (*buf2)
     {
       uniq++;

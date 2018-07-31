@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,20 +13,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-/*****************************************************************************
- * Name:          NdbEventOperationImpl.hpp
- * Include:
- * Link:
- * Author:        Tomas Ulin MySQL AB
- * Date:          2003-11-21
- * Version:       0.1
- * Description:   Event support
- * Documentation:
- * Adjust:  2003-11-21  Tomas Ulin   First version.
- ****************************************************************************/
-
 #ifndef NdbEventOperationImpl_H
 #define NdbEventOperationImpl_H
+
+#include <NdbEventOperation.hpp>
+#include <signaldata/SumaImpl.hpp>
+#include <transporter/TransporterDefinitions.hpp>
 
 class NdbGlobalEventBufferHandle;
 class NdbEventOperationImpl : public NdbEventOperation {
@@ -61,12 +52,17 @@ public:
   void print();
   void printAll();
 
+  const NdbError & getNdbError() const;
+  NdbError m_error;
+
   Ndb *m_ndb;
   NdbEventImpl *m_eventImpl;
   NdbGlobalEventBufferHandle *m_bufferHandle;
 
-  NdbRecAttr *theFirstRecAttrs[2];
-  NdbRecAttr *theCurrentRecAttrs[2];
+  NdbRecAttr *theFirstPkAttrs[2];
+  NdbRecAttr *theCurrentPkAttrs[2];
+  NdbRecAttr *theFirstDataAttrs[2];
+  NdbRecAttr *theCurrentDataAttrs[2];
 
   NdbEventOperation::State m_state;
   Uint32 m_eventId;
@@ -84,7 +80,7 @@ public:
   //static NdbGlobalEventBufferHandle *init(int MAX_NUMBER_ACTIVE_EVENTS);
 
   // returns bufferId 0-N if ok otherwise -1
-  int prepareAddSubscribeEvent(Uint32 eventId, int& hasSubscriber);
+  int prepareAddSubscribeEvent(NdbEventOperationImpl *, int& hasSubscriber);
   void unprepareAddSubscribeEvent(int bufferId);
   void addSubscribeEvent(int bufferId,
 			 NdbEventOperationImpl *ndbEventOperationImpl);
@@ -138,7 +134,8 @@ private:
 		 int MAX_NUMBER_ACTIVE_EVENTS);
 
   int real_prepareAddSubscribeEvent(NdbGlobalEventBufferHandle *h,
-				    Uint32 eventId, int& hasSubscriber);
+				    NdbEventOperationImpl *,
+				    int& hasSubscriber);
   void real_unprepareAddSubscribeEvent(int bufferId);
   void real_addSubscribeEvent(int bufferId, void *ndbEventOperation);
 
@@ -182,6 +179,7 @@ private:
     // local mutex for each event/buffer
     NdbMutex *p_buf_mutex;
     Uint32 gId;
+    Uint32 eventType;
     struct Data {
       SubTableData *sdata;
       LinearSectionPtr ptr[3];

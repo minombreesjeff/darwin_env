@@ -14,6 +14,51 @@
 
 @SET_MAKE@
 
+# Copyright (C) 2004-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# Copyright (C) 2004, 2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# Copyright (C) 2004, 2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
 VPATH = @srcdir@
@@ -46,23 +91,43 @@ ndbtest_PROGRAMS = flexBench$(EXEEXT) drop_all_tabs$(EXEEXT) \
 	testMgm$(EXEEXT) testNdbApi$(EXEEXT) testNodeRestart$(EXEEXT) \
 	testOIBasic$(EXEEXT) testOperations$(EXEEXT) \
 	testRestartGci$(EXEEXT) testScan$(EXEEXT) \
-	testInterpreter$(EXEEXT) testScanInterpreter$(EXEEXT) \
-	testScanPerf$(EXEEXT) testSystemRestart$(EXEEXT) \
-	testTimeout$(EXEEXT) testTransactions$(EXEEXT) \
-	testDeadlock$(EXEEXT) test_event$(EXEEXT) \
+	testInterpreter$(EXEEXT) testScanFilter$(EXEEXT) \
+	testScanInterpreter$(EXEEXT) testScanPerf$(EXEEXT) \
+	testSystemRestart$(EXEEXT) testTimeout$(EXEEXT) \
+	testTransactions$(EXEEXT) testDeadlock$(EXEEXT) \
 	ndbapi_slow_select$(EXEEXT) testReadPerf$(EXEEXT) \
-	testLcp$(EXEEXT) DbCreate$(EXEEXT) DbAsyncGenerator$(EXEEXT) \
-	testSRBank$(EXEEXT)
+	testLcp$(EXEEXT) testPartitioning$(EXEEXT) \
+	testBitfield$(EXEEXT) DbCreate$(EXEEXT) \
+	DbAsyncGenerator$(EXEEXT) testSRBank$(EXEEXT)
+EXTRA_PROGRAMS = test_event$(EXEEXT) test_event_merge$(EXEEXT) \
+	test_event_multi_table$(EXEEXT)
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	$(top_srcdir)/ndb/config/common.mk.am \
 	$(top_srcdir)/ndb/config/type_ndbapitest.mk.am
 subdir = ndb/test/ndbapi
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(ndbtestdir)"
@@ -176,6 +241,14 @@ testBasicAsynch_DEPENDENCIES = $(top_builddir)/ndb/test/src/libNDBT.a \
 	$(top_builddir)/dbug/libdbug.a \
 	$(top_builddir)/mysys/libmysys.a \
 	$(top_builddir)/strings/libmystrings.a
+am_testBitfield_OBJECTS = testBitfield.$(OBJEXT)
+testBitfield_OBJECTS = $(am_testBitfield_OBJECTS)
+testBitfield_LDADD = $(LDADD)
+testBitfield_DEPENDENCIES = $(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
 am_testBlobs_OBJECTS = testBlobs.$(OBJEXT)
 testBlobs_OBJECTS = $(am_testBlobs_OBJECTS)
 testBlobs_LDADD = $(LDADD)
@@ -272,6 +345,15 @@ testOperations_DEPENDENCIES = $(top_builddir)/ndb/test/src/libNDBT.a \
 	$(top_builddir)/dbug/libdbug.a \
 	$(top_builddir)/mysys/libmysys.a \
 	$(top_builddir)/strings/libmystrings.a
+am_testPartitioning_OBJECTS = testPartitioning.$(OBJEXT)
+testPartitioning_OBJECTS = $(am_testPartitioning_OBJECTS)
+testPartitioning_LDADD = $(LDADD)
+testPartitioning_DEPENDENCIES =  \
+	$(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
 am_testReadPerf_OBJECTS = testReadPerf.$(OBJEXT)
 testReadPerf_OBJECTS = $(am_testReadPerf_OBJECTS)
 testReadPerf_LDADD = $(LDADD)
@@ -295,6 +377,14 @@ am_testScan_OBJECTS = testScan.$(OBJEXT)
 testScan_OBJECTS = $(am_testScan_OBJECTS)
 testScan_LDADD = $(LDADD)
 testScan_DEPENDENCIES = $(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
+am_testScanFilter_OBJECTS = testScanFilter.$(OBJEXT)
+testScanFilter_OBJECTS = $(am_testScanFilter_OBJECTS)
+testScanFilter_LDADD = $(LDADD)
+testScanFilter_DEPENDENCIES = $(top_builddir)/ndb/test/src/libNDBT.a \
 	$(top_builddir)/ndb/src/libndbclient.la \
 	$(top_builddir)/dbug/libdbug.a \
 	$(top_builddir)/mysys/libmysys.a \
@@ -350,6 +440,24 @@ test_event_DEPENDENCIES = $(top_builddir)/ndb/test/src/libNDBT.a \
 	$(top_builddir)/dbug/libdbug.a \
 	$(top_builddir)/mysys/libmysys.a \
 	$(top_builddir)/strings/libmystrings.a
+am_test_event_merge_OBJECTS = test_event_merge.$(OBJEXT)
+test_event_merge_OBJECTS = $(am_test_event_merge_OBJECTS)
+test_event_merge_LDADD = $(LDADD)
+test_event_merge_DEPENDENCIES =  \
+	$(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
+am_test_event_multi_table_OBJECTS = test_event_multi_table.$(OBJEXT)
+test_event_multi_table_OBJECTS = $(am_test_event_multi_table_OBJECTS)
+test_event_multi_table_LDADD = $(LDADD)
+test_event_multi_table_DEPENDENCIES =  \
+	$(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -375,34 +483,40 @@ SOURCES = $(DbAsyncGenerator_SOURCES) $(DbCreate_SOURCES) \
 	$(flexBench_SOURCES) $(flexHammer_SOURCES) $(flexTT_SOURCES) \
 	$(ndbapi_slow_select_SOURCES) $(testBackup_SOURCES) \
 	$(testBasic_SOURCES) $(testBasicAsynch_SOURCES) \
-	$(testBlobs_SOURCES) $(testDataBuffers_SOURCES) \
-	$(testDeadlock_SOURCES) $(testDict_SOURCES) \
-	$(testIndex_SOURCES) $(testInterpreter_SOURCES) \
-	$(testLcp_SOURCES) $(testMgm_SOURCES) $(testNdbApi_SOURCES) \
+	$(testBitfield_SOURCES) $(testBlobs_SOURCES) \
+	$(testDataBuffers_SOURCES) $(testDeadlock_SOURCES) \
+	$(testDict_SOURCES) $(testIndex_SOURCES) \
+	$(testInterpreter_SOURCES) $(testLcp_SOURCES) \
+	$(testMgm_SOURCES) $(testNdbApi_SOURCES) \
 	$(testNodeRestart_SOURCES) $(testOIBasic_SOURCES) \
-	$(testOperations_SOURCES) $(testReadPerf_SOURCES) \
-	$(testRestartGci_SOURCES) $(testSRBank_SOURCES) \
-	$(testScan_SOURCES) $(testScanInterpreter_SOURCES) \
+	$(testOperations_SOURCES) $(testPartitioning_SOURCES) \
+	$(testReadPerf_SOURCES) $(testRestartGci_SOURCES) \
+	$(testSRBank_SOURCES) $(testScan_SOURCES) \
+	$(testScanFilter_SOURCES) $(testScanInterpreter_SOURCES) \
 	$(testScanPerf_SOURCES) $(testSystemRestart_SOURCES) \
 	$(testTimeout_SOURCES) $(testTransactions_SOURCES) \
-	$(test_event_SOURCES)
+	$(test_event_SOURCES) $(test_event_merge_SOURCES) \
+	$(test_event_multi_table_SOURCES)
 DIST_SOURCES = $(DbAsyncGenerator_SOURCES) $(DbCreate_SOURCES) \
 	$(create_all_tabs_SOURCES) $(create_tab_SOURCES) \
 	$(drop_all_tabs_SOURCES) $(flexAsynch_SOURCES) \
 	$(flexBench_SOURCES) $(flexHammer_SOURCES) $(flexTT_SOURCES) \
 	$(ndbapi_slow_select_SOURCES) $(testBackup_SOURCES) \
 	$(testBasic_SOURCES) $(testBasicAsynch_SOURCES) \
-	$(testBlobs_SOURCES) $(testDataBuffers_SOURCES) \
-	$(testDeadlock_SOURCES) $(testDict_SOURCES) \
-	$(testIndex_SOURCES) $(testInterpreter_SOURCES) \
-	$(testLcp_SOURCES) $(testMgm_SOURCES) $(testNdbApi_SOURCES) \
+	$(testBitfield_SOURCES) $(testBlobs_SOURCES) \
+	$(testDataBuffers_SOURCES) $(testDeadlock_SOURCES) \
+	$(testDict_SOURCES) $(testIndex_SOURCES) \
+	$(testInterpreter_SOURCES) $(testLcp_SOURCES) \
+	$(testMgm_SOURCES) $(testNdbApi_SOURCES) \
 	$(testNodeRestart_SOURCES) $(testOIBasic_SOURCES) \
-	$(testOperations_SOURCES) $(testReadPerf_SOURCES) \
-	$(testRestartGci_SOURCES) $(testSRBank_SOURCES) \
-	$(testScan_SOURCES) $(testScanInterpreter_SOURCES) \
+	$(testOperations_SOURCES) $(testPartitioning_SOURCES) \
+	$(testReadPerf_SOURCES) $(testRestartGci_SOURCES) \
+	$(testSRBank_SOURCES) $(testScan_SOURCES) \
+	$(testScanFilter_SOURCES) $(testScanInterpreter_SOURCES) \
 	$(testScanPerf_SOURCES) $(testSystemRestart_SOURCES) \
 	$(testTimeout_SOURCES) $(testTransactions_SOURCES) \
-	$(test_event_SOURCES)
+	$(test_event_SOURCES) $(test_event_merge_SOURCES) \
+	$(test_event_multi_table_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive dvi-recursive \
 	html-recursive info-recursive install-data-recursive \
 	install-exec-recursive install-info-recursive \
@@ -419,6 +533,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -432,7 +547,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -481,7 +595,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -500,34 +617,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -563,7 +688,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -599,7 +723,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -611,7 +734,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -629,7 +751,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -638,9 +759,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -666,11 +784,12 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 SUBDIRS = bank
-
 #flexTimedAsynch
 #testBlobs
 #flex_bench_mysql
@@ -698,6 +817,7 @@ testOperations_SOURCES = testOperations.cpp
 testRestartGci_SOURCES = testRestartGci.cpp
 testScan_SOURCES = testScan.cpp ScanFunctions.hpp
 testInterpreter_SOURCES = testInterpreter.cpp
+testScanFilter_SOURCES = testScanFilter.cpp
 testScanInterpreter_SOURCES = testScanInterpreter.cpp ScanFilter.hpp ScanInterpretTest.hpp 
 testScanPerf_SOURCES = testScanPerf.cpp
 testSystemRestart_SOURCES = testSystemRestart.cpp
@@ -708,9 +828,13 @@ test_event_SOURCES = test_event.cpp
 ndbapi_slow_select_SOURCES = slow_select.cpp
 testReadPerf_SOURCES = testReadPerf.cpp
 testLcp_SOURCES = testLcp.cpp
+testPartitioning_SOURCES = testPartitioning.cpp
+testBitfield_SOURCES = testBitfield.cpp
 DbCreate_SOURCES = bench/mainPopulate.cpp bench/dbPopulate.cpp bench/userInterface.cpp bench/dbPopulate.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
 DbAsyncGenerator_SOURCES = bench/mainAsyncGenerator.cpp bench/asyncGenerator.cpp bench/ndb_async2.cpp bench/dbGenerator.h bench/macros.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
+test_event_multi_table_SOURCES = test_event_multi_table.cpp
 testSRBank_SOURCES = testSRBank.cpp
+test_event_merge_SOURCES = test_event_merge.cpp
 INCLUDES_LOC = -I$(top_srcdir)/ndb/include/kernel
 ndbbindir = "$(libexecdir)"
 ndbtoolsdir = "$(bindir)"
@@ -719,14 +843,14 @@ ndblibdir = "$(pkglibdir)"
 ndbincludedir = "$(pkgincludedir)/ndb"
 ndbapiincludedir = "$(pkgincludedir)/ndb/ndbapi"
 mgmapiincludedir = "$(pkgincludedir)/ndb/mgmapi"
-INCLUDES = $(INCLUDES_LOC) -I$(top_srcdir) -I$(top_srcdir)/include \
+INCLUDES = $(INCLUDES_LOC) -I$(top_srcdir) -I$(top_builddir)/include \
+	-I$(top_builddir)/ndb/include -I$(top_srcdir)/include \
 	-I$(top_srcdir)/ndb/include -I$(top_srcdir)/ndb/include/ndbapi \
 	-I$(top_srcdir)/ndb/include/util \
 	-I$(top_srcdir)/ndb/include/portlib \
 	-I$(top_srcdir)/ndb/test/include \
 	-I$(top_srcdir)/ndb/include/mgmapi
-LDADD = $(LDADD_LOC) -L$(top_srcdir)/ndb/src/common/portlib -lmygcc \
-	$(top_builddir)/ndb/test/src/libNDBT.a \
+LDADD = $(LDADD_LOC) $(top_builddir)/ndb/test/src/libNDBT.a \
 	$(top_builddir)/ndb/src/libndbclient.la \
 	$(top_builddir)/dbug/libdbug.a \
 	$(top_builddir)/mysys/libmysys.a \
@@ -834,6 +958,9 @@ testBasic$(EXEEXT): $(testBasic_OBJECTS) $(testBasic_DEPENDENCIES)
 testBasicAsynch$(EXEEXT): $(testBasicAsynch_OBJECTS) $(testBasicAsynch_DEPENDENCIES) 
 	@rm -f testBasicAsynch$(EXEEXT)
 	$(CXXLINK) $(testBasicAsynch_LDFLAGS) $(testBasicAsynch_OBJECTS) $(testBasicAsynch_LDADD) $(LIBS)
+testBitfield$(EXEEXT): $(testBitfield_OBJECTS) $(testBitfield_DEPENDENCIES) 
+	@rm -f testBitfield$(EXEEXT)
+	$(CXXLINK) $(testBitfield_LDFLAGS) $(testBitfield_OBJECTS) $(testBitfield_LDADD) $(LIBS)
 testBlobs$(EXEEXT): $(testBlobs_OBJECTS) $(testBlobs_DEPENDENCIES) 
 	@rm -f testBlobs$(EXEEXT)
 	$(CXXLINK) $(testBlobs_LDFLAGS) $(testBlobs_OBJECTS) $(testBlobs_LDADD) $(LIBS)
@@ -870,6 +997,9 @@ testOIBasic$(EXEEXT): $(testOIBasic_OBJECTS) $(testOIBasic_DEPENDENCIES)
 testOperations$(EXEEXT): $(testOperations_OBJECTS) $(testOperations_DEPENDENCIES) 
 	@rm -f testOperations$(EXEEXT)
 	$(CXXLINK) $(testOperations_LDFLAGS) $(testOperations_OBJECTS) $(testOperations_LDADD) $(LIBS)
+testPartitioning$(EXEEXT): $(testPartitioning_OBJECTS) $(testPartitioning_DEPENDENCIES) 
+	@rm -f testPartitioning$(EXEEXT)
+	$(CXXLINK) $(testPartitioning_LDFLAGS) $(testPartitioning_OBJECTS) $(testPartitioning_LDADD) $(LIBS)
 testReadPerf$(EXEEXT): $(testReadPerf_OBJECTS) $(testReadPerf_DEPENDENCIES) 
 	@rm -f testReadPerf$(EXEEXT)
 	$(CXXLINK) $(testReadPerf_LDFLAGS) $(testReadPerf_OBJECTS) $(testReadPerf_LDADD) $(LIBS)
@@ -882,6 +1012,9 @@ testSRBank$(EXEEXT): $(testSRBank_OBJECTS) $(testSRBank_DEPENDENCIES)
 testScan$(EXEEXT): $(testScan_OBJECTS) $(testScan_DEPENDENCIES) 
 	@rm -f testScan$(EXEEXT)
 	$(CXXLINK) $(testScan_LDFLAGS) $(testScan_OBJECTS) $(testScan_LDADD) $(LIBS)
+testScanFilter$(EXEEXT): $(testScanFilter_OBJECTS) $(testScanFilter_DEPENDENCIES) 
+	@rm -f testScanFilter$(EXEEXT)
+	$(CXXLINK) $(testScanFilter_LDFLAGS) $(testScanFilter_OBJECTS) $(testScanFilter_LDADD) $(LIBS)
 testScanInterpreter$(EXEEXT): $(testScanInterpreter_OBJECTS) $(testScanInterpreter_DEPENDENCIES) 
 	@rm -f testScanInterpreter$(EXEEXT)
 	$(CXXLINK) $(testScanInterpreter_LDFLAGS) $(testScanInterpreter_OBJECTS) $(testScanInterpreter_LDADD) $(LIBS)
@@ -900,6 +1033,12 @@ testTransactions$(EXEEXT): $(testTransactions_OBJECTS) $(testTransactions_DEPEND
 test_event$(EXEEXT): $(test_event_OBJECTS) $(test_event_DEPENDENCIES) 
 	@rm -f test_event$(EXEEXT)
 	$(CXXLINK) $(test_event_LDFLAGS) $(test_event_OBJECTS) $(test_event_LDADD) $(LIBS)
+test_event_merge$(EXEEXT): $(test_event_merge_OBJECTS) $(test_event_merge_DEPENDENCIES) 
+	@rm -f test_event_merge$(EXEEXT)
+	$(CXXLINK) $(test_event_merge_LDFLAGS) $(test_event_merge_OBJECTS) $(test_event_merge_LDADD) $(LIBS)
+test_event_multi_table$(EXEEXT): $(test_event_multi_table_OBJECTS) $(test_event_multi_table_DEPENDENCIES) 
+	@rm -f test_event_multi_table$(EXEEXT)
+	$(CXXLINK) $(test_event_multi_table_LDFLAGS) $(test_event_multi_table_OBJECTS) $(test_event_multi_table_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -923,6 +1062,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBackup.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBasic.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBasicAsynch.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBitfield.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBlobs.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testDataBuffers.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testDeadlock.Po@am__quote@
@@ -935,16 +1075,20 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testNodeRestart.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testOIBasic.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testOperations.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testPartitioning.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testReadPerf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testRestartGci.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testSRBank.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testScan.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testScanFilter.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testScanInterpreter.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testScanPerf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testSystemRestart.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testTimeout.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testTransactions.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_event.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_event_merge.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_event_multi_table.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/userInterface.Po@am__quote@
 
 .cpp.o:

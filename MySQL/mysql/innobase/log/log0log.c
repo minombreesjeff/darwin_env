@@ -24,6 +24,32 @@ Created 12/9/1995 Heikki Tuuri
 #include "trx0sys.h"
 #include "trx0trx.h"
 
+/*
+General philosophy of InnoDB redo-logs:
+
+1) Every change to a contents of a data page must be done
+through mtr, which in mtr_commit() writes log records
+to the InnoDB redo log.
+
+2) Normally these changes are performed using a mlog_write_ulint()
+or similar function.
+
+3) In some page level operations only a code number of a 
+c-function and its parameters are written to the log to 
+reduce the size of the log.
+
+  3a) You should not add parameters to these kind of functions
+  (e.g. trx_undo_header_create(), trx_undo_insert_header_reuse())
+
+  3b) You should not add such functionality which either change
+  working when compared with the old or are dependent on data
+  outside of the page. These kind of functions should implement
+  self-contained page transformation and it should be unchanged
+  if you don't have very essential reasons to change log
+  semantics or format.
+
+*/
+
 /* Current free limit of space 0; protected by the log sys mutex; 0 means
 uninitialized */
 ulint	log_fsp_current_free_limit		= 0;
@@ -31,10 +57,11 @@ ulint	log_fsp_current_free_limit		= 0;
 /* Global log system variable */
 log_t*	log_sys	= NULL;
 
+#ifdef UNIV_DEBUG
 ibool	log_do_write = TRUE;
 
 ibool	log_debug_writes = FALSE;
-
+#endif /* UNIV_DEBUG */
 
 /* These control how often we print warnings if the last checkpoint is too
 old */
@@ -190,6 +217,8 @@ loop:
 
 		log_buffer_flush_to_disk();
 
+                srv_log_waits++;
+
 		ut_ad(++count < 50);
 
 		goto loop;
@@ -292,6 +321,8 @@ part_loop:
 	if (str_len > 0) {
 		goto part_loop;
 	}
+        
+        srv_log_write_requests++;
 }
 
 /****************************************************************
@@ -689,7 +720,7 @@ failure:
 "InnoDB: To get mysqld to start up, set innodb_thread_concurrency in my.cnf\n"
 "InnoDB: to a lower value, for example, to 8. After an ERROR-FREE shutdown\n"
 "InnoDB: of mysqld you can adjust the size of ib_logfiles, as explained in\n"
-"InnoDB: http://dev.mysql.com/doc/mysql/en/Adding_and_removing.html\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/adding-and-removing.html\n"
 "InnoDB: Cannot continue operation. Calling exit(1).\n",
 			(ulong)srv_thread_concurrency);
 
@@ -944,22 +975,24 @@ log_group_check_flush_completion(
 #endif /* UNIV_SYNC_DEBUG */
 
 	if (!log_sys->one_flushed && group->n_pending_writes == 0) {
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fprintf(stderr,
 				"Log flushed first to group %lu\n", (ulong) group->id);
 		}
-	
+#endif /* UNIV_DEBUG */
 		log_sys->written_to_some_lsn = log_sys->write_lsn;
 		log_sys->one_flushed = TRUE;
 
 		return(LOG_UNLOCK_NONE_FLUSHED_LOCK);
 	}
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes && (group->n_pending_writes == 0)) {
 
 		fprintf(stderr, "Log flushed to group %lu\n", (ulong) group->id);
 	}
-
+#endif /* UNIV_DEBUG */
 	return(0);
 }
 
@@ -1036,12 +1069,13 @@ log_io_complete(
 		        fil_flush(group->space_id);
 		}
 
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fprintf(stderr,
 				"Checkpoint info written to group %lu\n",
 				group->id);
 		}
-
+#endif /* UNIV_DEBUG */
 		log_io_complete_checkpoint();
 
 		return;
@@ -1103,20 +1137,25 @@ log_group_file_header_flush(
 
 	dest_offset = nth_file * group->file_size;
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr,
 			"Writing log file header to group %lu file %lu\n",
 			(ulong) group->id, (ulong) nth_file);
 	}
-
+#endif /* UNIV_DEBUG */
 	if (log_do_write) {
 		log_sys->n_log_ios++;	
 		
+                srv_os_log_pending_writes++;
+                
 		fil_io(OS_FILE_WRITE | OS_FILE_LOG, TRUE, group->space_id,
 				dest_offset / UNIV_PAGE_SIZE,
 				dest_offset % UNIV_PAGE_SIZE,
 				OS_FILE_LOG_BLOCK_SIZE,
 				buf, group);
+
+                srv_os_log_pending_writes--;
 	}
 }
 
@@ -1181,6 +1220,8 @@ loop:
 
 		log_group_file_header_flush(group,
 				next_offset / group->file_size, start_lsn);
+                srv_os_log_written+= OS_FILE_LOG_BLOCK_SIZE;
+                srv_log_writes++;
 	}
 
 	if ((next_offset % group->file_size) + len > group->file_size) {
@@ -1190,7 +1231,8 @@ loop:
 	} else {
 		write_len = len;
 	}
-	
+
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 
 		fprintf(stderr,
@@ -1214,7 +1256,7 @@ loop:
 					+ i * OS_FILE_LOG_BLOCK_SIZE));
 		}
 	}
-
+#endif /* UNIV_DEBUG */
 	/* Calculate the checksums for each log block and write them to
 	the trailer fields of the log blocks */
 
@@ -1225,9 +1267,16 @@ loop:
 	if (log_do_write) {
 		log_sys->n_log_ios++;	
 
+                srv_os_log_pending_writes++;                
+                
 		fil_io(OS_FILE_WRITE | OS_FILE_LOG, TRUE, group->space_id,
 			next_offset / UNIV_PAGE_SIZE,
 			next_offset % UNIV_PAGE_SIZE, write_len, buf, group);
+
+                srv_os_log_pending_writes--;
+
+                srv_os_log_written+= write_len; 
+                srv_log_writes++;
 	}
 
 	if (write_len < len) {
@@ -1341,6 +1390,7 @@ loop:
 		return;
 	}
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr,
 			"Writing log from %lu %lu up to lsn %lu %lu\n",
@@ -1349,7 +1399,7 @@ loop:
 			(ulong) ut_dulint_get_high(log_sys->lsn),
 			(ulong)	ut_dulint_get_low(log_sys->lsn));
 	}
-
+#endif /* UNIV_DEBUG */
 	log_sys->n_pending_writes++;
 
 	group = UT_LIST_GET_FIRST(log_sys->log_groups);
@@ -1918,12 +1968,14 @@ log_checkpoint(
 
 	log_sys->next_checkpoint_lsn = oldest_lsn;
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr, "Making checkpoint no %lu at lsn %lu %lu\n",
 			(ulong) ut_dulint_get_low(log_sys->next_checkpoint_no),
 			(ulong) ut_dulint_get_high(oldest_lsn),
 			(ulong) ut_dulint_get_low(oldest_lsn));
 	}
+#endif /* UNIV_DEBUG */
 
 	log_groups_write_checkpoint_info();
 
@@ -1986,8 +2038,6 @@ log_checkpoint_margin(void)
 	ulint	checkpoint_age;
 	ulint	advance;
 	dulint	oldest_lsn;
-	dulint	new_oldest;
-	ibool	do_preflush;
 	ibool	sync;
 	ibool	checkpoint_sync;
 	ibool	do_checkpoint;
@@ -1995,7 +2045,6 @@ log_checkpoint_margin(void)
 loop:
 	sync = FALSE;
 	checkpoint_sync = FALSE;
-	do_preflush = FALSE;
 	do_checkpoint = FALSE;
 
 	mutex_enter(&(log->mutex));
@@ -2015,21 +2064,13 @@ loop:
 		/* A flush is urgent: we have to do a synchronous preflush */
 
 		sync = TRUE;
-	
 		advance = 2 * (age - log->max_modified_age_sync);
-
-		new_oldest = ut_dulint_add(oldest_lsn, advance);
-
-		do_preflush = TRUE;
-
 	} else if (age > log->max_modified_age_async) {
 
 		/* A flush is not urgent: we do an asynchronous preflush */
 		advance = age - log->max_modified_age_async;
-
-		new_oldest = ut_dulint_add(oldest_lsn, advance);
-
-		do_preflush = TRUE;
+	} else {
+		advance = 0;
 	}
 
 	checkpoint_age = ut_dulint_minus(log->lsn, log->last_checkpoint_lsn);
@@ -2053,7 +2094,9 @@ loop:
 	
 	mutex_exit(&(log->mutex));
 
-	if (do_preflush) {
+	if (advance) {
+		dulint	new_oldest = ut_dulint_add(oldest_lsn, advance);
+
 		success = log_preflush_pool_modified_pages(new_oldest, sync);
 
 		/* If the flush succeeded, this thread has done its part
@@ -2304,9 +2347,11 @@ loop:
 			exit(1);
 		}
 
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fprintf(stderr, "Created archive file %s\n", name);
 		}
+#endif /* UNIV_DEBUG */
 
 		ret = os_file_close(file_handle);
 	
@@ -2332,7 +2377,8 @@ loop:
 
 		len = group->file_size - (next_offset % group->file_size);
 	}
-	
+
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr,
 		"Archiving starting at lsn %lu %lu, len %lu to group %lu\n",
@@ -2340,6 +2386,7 @@ loop:
 					(ulong) ut_dulint_get_low(start_lsn),
 					(ulong) len, (ulong) group->id);
 	}
+#endif /* UNIV_DEBUG */
 
 	log_sys->n_pending_archive_ios++;
 
@@ -2430,11 +2477,13 @@ log_archive_write_complete_groups(void)
 		trunc_files = n_files - 1;
 	}
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes && trunc_files) {
 		fprintf(stderr,
 			"Complete file(s) archived to group %lu\n",
 							  (ulong) group->id);
 	}
+#endif /* UNIV_DEBUG */
 
 	/* Calculate the archive file space start lsn */
 	start_lsn = ut_dulint_subtract(log_sys->next_archived_lsn,
@@ -2457,9 +2506,11 @@ log_archive_write_complete_groups(void)
 	fil_space_truncate_start(group->archive_space_id,
 					trunc_files * group->file_size);
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fputs("Archiving writes completed\n", stderr);
 	}
+#endif /* UNIV_DEBUG */
 }
 
 /**********************************************************
@@ -2476,9 +2527,11 @@ log_archive_check_completion_low(void)
 	if (log_sys->n_pending_archive_ios == 0
 			&& log_sys->archiving_phase == LOG_ARCHIVE_READ) {
 
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fputs("Archiving read completed\n", stderr);
 		}
+#endif /* UNIV_DEBUG */
 
 	    	/* Archive buffer has now been read in: start archive writes */
 
@@ -2622,6 +2675,7 @@ loop:
 
 	log_sys->next_archived_lsn = limit_lsn;
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr,
 			"Archiving from lsn %lu %lu to lsn %lu %lu\n",
@@ -2630,6 +2684,7 @@ loop:
 			(ulong) ut_dulint_get_high(limit_lsn),
 			(ulong) ut_dulint_get_low(limit_lsn));
 	}
+#endif /* UNIV_DEBUG */
 
 	/* Read the log segment to the archive buffer */
 	
@@ -2732,12 +2787,14 @@ log_archive_close_groups(
 			group->archived_file_no += 2;
 		}
 
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fprintf(stderr,
 			"Incrementing arch file no to %lu in log group %lu\n",
 				(ulong) group->archived_file_no + 2,
 			        (ulong) group->id);
 		}
+#endif /* UNIV_DEBUG */
 	}
 }
 
@@ -3004,7 +3061,10 @@ loop:
 
 	mutex_enter(&kernel_mutex);
 
-	/* Check that there are no longer transactions */
+       /* Check that there are no longer transactions. We need this wait even
+        for the 'very fast' shutdown, because the InnoDB layer may have
+        committed or prepared transactions and we don't want to lose them. */
+
 	if (trx_n_mysql_transactions > 0
 			|| UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
 		
@@ -3012,6 +3072,21 @@ loop:
 		
 		goto loop;
 	}
+
+        if (srv_fast_shutdown == 2) {
+               /* In this fastest shutdown we do not flush the buffer pool:
+               it is essentially a 'crash' of the InnoDB server.
+               Make sure that the log is all flushed to disk, so that
+               we can recover all committed transactions in a crash
+               recovery.
+               We must not write the lsn stamps to the data files, since at a
+               startup InnoDB deduces from the stamps if the previous
+               shutdown was clean. */
+
+               log_buffer_flush_to_disk();
+                return; /* We SKIP ALL THE REST !! */
+       }
+
 
 	/* Check that the master thread is suspended */
 
@@ -3049,24 +3124,13 @@ loop:
 	log_archive_all();
 #endif /* UNIV_LOG_ARCHIVE */
 
-	if (!srv_very_fast_shutdown) {
-		/* In a 'very fast' shutdown we do not flush the buffer pool:
-		it is essentially a 'crash' of the InnoDB server. */
-
 		log_make_checkpoint_at(ut_dulint_max, TRUE);
-	} else {
-		/* Make sure that the log is all flushed to disk, so that
-		we can recover all committed transactions in a crash
-		recovery */
-		log_buffer_flush_to_disk();
-	}
 
 	mutex_enter(&(log_sys->mutex));
 
 	lsn = log_sys->lsn;
 
-	if ((ut_dulint_cmp(lsn, log_sys->last_checkpoint_lsn) != 0
-	    && !srv_very_fast_shutdown)
+       if ((ut_dulint_cmp(lsn, log_sys->last_checkpoint_lsn) != 0)
 #ifdef UNIV_LOG_ARCHIVE
 	   || (srv_log_archive_on
 	       && ut_dulint_cmp(lsn,
@@ -3115,7 +3179,7 @@ loop:
 	completely flushed to disk! (We do not call fil_write... if the
 	'very fast' shutdown is enabled.) */
 
-	if (!srv_very_fast_shutdown && !buf_all_freed()) {
+       if (!buf_all_freed()) {
 
 		goto loop;
 	}
@@ -3138,7 +3202,7 @@ loop:
 
 	/* Make some checks that the server really is quiet */
 	ut_a(srv_n_threads_active[SRV_MASTER] == 0);
-	ut_a(srv_very_fast_shutdown || buf_all_freed());
+       ut_a(buf_all_freed());
 	ut_a(0 == ut_dulint_cmp(lsn, log_sys->lsn));
 
 	if (ut_dulint_cmp(lsn, srv_start_lsn) < 0) {
@@ -3153,15 +3217,7 @@ loop:
 
 	srv_shutdown_lsn = lsn;
 
-	if (!srv_very_fast_shutdown) {
-		/* In a 'very fast' shutdown we do not flush the buffer pool:
-		it is essentially a 'crash' of the InnoDB server. Then we must
-		not write the lsn stamps to the data files, since at a
-		startup InnoDB deduces from the stamps if the previous
-		shutdown was clean. */
-
 		fil_write_flushed_lsn_to_data_files(lsn, arch_log_no);
-	}
 
 	fil_flush_file_spaces(FIL_TABLESPACE);
 
@@ -3169,7 +3225,7 @@ loop:
 
 	/* Make some checks that the server really is quiet */
 	ut_a(srv_n_threads_active[SRV_MASTER] == 0);
-	ut_a(srv_very_fast_shutdown || buf_all_freed());
+       ut_a(buf_all_freed());
 	ut_a(0 == ut_dulint_cmp(lsn, log_sys->lsn));
 }
 

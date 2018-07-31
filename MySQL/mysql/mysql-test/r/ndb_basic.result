@@ -577,7 +577,7 @@ create table t1
 (a bigint, b bigint, c bigint, d bigint, 
 primary key (a,b,c,d)) 
 engine=ndb
-max_rows=200000000;
+max_rows=800000000;
 Warnings:
 Warning	1105	Ndb might have problems storing the max amount of rows specified
 insert into t1 values
@@ -667,6 +667,12 @@ counter	datavalue
 57	newval
 58	newval
 drop table t1;
+create table t1 (a int primary key auto_increment) engine = ndb;
+insert into t1() values (),(),(),(),(),(),(),(),(),(),(),();
+insert into t1(a) values (20),(28);
+insert into t1() values (),(),(),(),(),(),(),(),(),(),(),();
+insert into t1() values (21), (22);
+drop table t1;
 CREATE TABLE t1 ( b INT ) PACK_KEYS = 0 ENGINE = ndb;
 select * from t1;
 b
@@ -726,3 +732,113 @@ i	j	x	y	z
 drop table t1;
 drop table t2;
 drop table t3;
+create table atablewithareallylongandirritatingname (a int);
+insert into atablewithareallylongandirritatingname values (2);
+select * from atablewithareallylongandirritatingname;
+a
+2
+drop table atablewithareallylongandirritatingname;
+create table t1 (f1 varchar(50), f2 text,f3 int, primary key(f1)) engine=NDB;
+insert into t1 (f1,f2,f3)VALUES("111111","aaaaaa",1);
+insert into t1 (f1,f2,f3)VALUES("222222","bbbbbb",2);
+select * from t1 order by f1;
+f1	f2	f3
+111111	aaaaaa	1
+222222	bbbbbb	2
+select * from t1 order by f2;
+f1	f2	f3
+111111	aaaaaa	1
+222222	bbbbbb	2
+select * from t1 order by f3;
+f1	f2	f3
+111111	aaaaaa	1
+222222	bbbbbb	2
+drop table t1;
+Illegal ndb error code: 1186
+CREATE TABLE t1 (
+a VARBINARY(40) NOT NULL,
+b VARCHAR (256) CHARACTER SET UTF8 NOT NULL,
+c VARCHAR(256) CHARACTER SET UTF8 NOT NULL,
+PRIMARY KEY (b,c))  ENGINE=ndbcluster;
+INSERT INTO t1 VALUES
+("a","ab","abc"),("b","abc","abcd"),("c","abc","ab"),("d","ab","ab"),("e","abc","abc");
+SELECT * FROM t1 ORDER BY a;
+a	b	c
+a	ab	abc
+b	abc	abcd
+c	abc	ab
+d	ab	ab
+e	abc	abc
+DROP TABLE t1;
+create table t1 (a int not null primary key, b int not null) engine=ndb;
+create table t2 (a int not null primary key, b int not null) engine=ndb;
+insert into t1 values (1,10), (2,20), (3,30);
+insert into t2 values (1,10), (2,20), (3,30);
+select * from t1 order by a;
+a	b
+1	10
+2	20
+3	30
+delete from t1 where a > 0 order by a desc limit 1;
+select * from t1 order by a;
+a	b
+1	10
+2	20
+delete from t1,t2 using t1,t2 where t1.a = t2.a;
+select * from t2 order by a;
+a	b
+3	30
+drop table t1,t2;
+create table t1 (a int not null primary key, b int not null) engine=ndb;
+insert into t1 values (1,10), (2,20), (3,30);
+insert into t1 set a=1, b=100;
+ERROR 23000: Duplicate entry '1' for key 1
+insert ignore into t1 set a=1, b=100;
+select * from t1 order by a;
+a	b
+1	10
+2	20
+3	30
+insert into t1 set a=1, b=1000 on duplicate key update b=b+1;
+select * from t1 order by a;
+a	b
+1	11
+2	20
+3	30
+drop table t1;
+create table t1 (a int not null primary key, b int not null) engine=ndb;
+create table t2 (c int not null primary key, d int not null) engine=ndb;
+insert into t1 values (1,10), (2,10), (3,30), (4, 30);
+insert into t2 values (1,10), (2,10), (3,30), (4, 30);
+update t1 set a = 1 where a = 3;
+ERROR 23000: Duplicate entry '1' for key 1
+select * from t1 order by a;
+a	b
+1	10
+2	10
+3	30
+4	30
+update t1 set b = 1 where a > 1 order by a desc limit 1;
+select * from t1 order by a;
+a	b
+1	10
+2	10
+3	30
+4	1
+update t1,t2 set a = 1, c = 1 where a = 3 and c = 3;
+ERROR 23000: Duplicate entry '1' for key 1
+select * from t1 order by a;
+a	b
+1	10
+2	10
+3	30
+4	1
+update ignore t1,t2 set a = 1, c = 1 where a = 3 and c = 3;
+select * from t1 order by a;
+a	b
+1	10
+2	10
+3	30
+4	1
+drop table t1,t2;
+End of 5.0 tests

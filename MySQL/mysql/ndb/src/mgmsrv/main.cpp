@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,24 +39,70 @@
 #if defined NDB_OSE || defined NDB_SOFTOSE
 #include <efs.h>
 #else
-#include "CommandInterpreter.hpp"
+#include <ndb_mgmclient.hpp>
 #endif
 
 #undef DEBUG
 #define DEBUG(x) ndbout << x << endl;
 
 const char progname[] = "mgmtsrvr";
+const char *load_default_groups[]= { "mysql_cluster","ndb_mgmd",0 };
 
+// copied from mysql.cc to get readline
+extern "C" {
+#if defined( __WIN__) || defined(OS2)
+#include <conio.h>
+#elif !defined(__NETWARE__)
+#include <readline/readline.h>
+extern "C" int add_history(const char *command); /* From readline directory */
+#define HAVE_READLINE
+#endif
+}
+
+static int 
+read_and_execute(Ndb_mgmclient* com, const char * prompt, int _try_reconnect) 
+{
+  static char *line_read = (char *)NULL;
+
+  /* If the buffer has already been allocated, return the memory
+     to the free pool. */
+  if (line_read)
+  {
+    free (line_read);
+    line_read = (char *)NULL;
+  }
+#ifdef HAVE_READLINE
+  /* Get a line from the user. */
+  line_read = readline (prompt);    
+  /* If the line has any text in it, save it on the history. */
+  if (line_read && *line_read)
+    add_history (line_read);
+#else
+  static char linebuffer[254];
+  fputs(prompt, stdout);
+  linebuffer[sizeof(linebuffer)-1]=0;
+  line_read = fgets(linebuffer, sizeof(linebuffer)-1, stdin);
+  if (line_read == linebuffer) {
+    char *q=linebuffer;
+    while (*q > 31) q++;
+    *q=0;
+    line_read= strdup(linebuffer);
+  }
+#endif
+  return com->execute(line_read,_try_reconnect);
+}
 
 /**
  * @struct  MgmGlobals
  * @brief   Global Variables used in the management server
- ******************************************************************************/
+ *****************************************************************************/
+
 /** Command line arguments  */
 static int opt_daemon;   // NOT bool, bool need not be int
 static int opt_non_interactive;
 static int opt_interactive;
 static const char * opt_config_filename= 0;
+static int opt_mycnf = 0;
   
 struct MgmGlobals {
   MgmGlobals();
@@ -67,7 +112,7 @@ struct MgmGlobals {
   NodeId localNodeId;
   bool use_specific_ip;
   char * interface_name;
-  int port;
+  short unsigned int port;
   
   /** The Mgmt Server */
   MgmtSrvr * mgmObject;
@@ -87,6 +132,7 @@ static MgmGlobals *glob= 0;
  * Global variables
  */
 bool g_StopServer;
+bool g_RestartServer;
 extern EventLogger g_eventLogger;
 
 extern int global_mgmt_server_check;
@@ -97,13 +143,6 @@ enum ndb_mgmd_options {
   OPT_NO_DAEMON
 };
 NDB_STD_OPTS_VARS;
-
-#if NDB_VERSION_MAJOR <= 4
-#undef OPT_NDB_CONNECTSTRING
-#define OPT_NDB_CONNECTSTRING 1023
-#else
-
-#endif
 
 static struct my_option my_long_options[] =
 {
@@ -129,15 +168,13 @@ static struct my_option my_long_options[] =
     "Don't run as daemon, but don't read from stdin",
     (gptr*) &opt_non_interactive, (gptr*) &opt_non_interactive, 0,
     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 },
-#if NDB_VERSION_MAJOR <= 4
-  { "config-file", 'c',
-    "-c provided for backwards compatability, will be removed in 5.0."
-    " Use -f instead",
-    (gptr*) &opt_config_filename, (gptr*) &opt_config_filename, 0,
-    GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
-#endif
+  { "mycnf", 256,
+    "Read cluster config from my.cnf",
+    (gptr*) &opt_mycnf, (gptr*) &opt_mycnf, 0,
+    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 },
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
+
 static void short_usage_sub(void)
 {
   printf("Usage: %s [OPTIONS]\n", my_progname);
@@ -146,23 +183,10 @@ static void usage()
 {
   short_usage_sub();
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  ndb_std_get_one_option(optid, opt, argument ? argument :
-			 "d:t:O,/tmp/ndb_mgmd.trace");
-#if NDB_VERSION_MAJOR <= 4
-  switch (optid) {
-  case 'c':
-    printf("Warning: -c will be removed in 5.0, use -f instead\n");
-    break;
-  }
-#endif
-  return 0;
 }
 
 /*
@@ -170,7 +194,20 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
  */
 int main(int argc, char** argv)
 {
+
   NDB_INIT(argv[0]);
+
+  load_defaults("my",load_default_groups,&argc,&argv);
+
+  int ho_error;
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_mgmd.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options, 
+			       ndb_std_get_one_option)))
+    exit(ho_error);
+
+start:
   glob= new MgmGlobals;
 
   /**
@@ -184,26 +221,32 @@ int main(int argc, char** argv)
 
   global_mgmt_server_check = 1;
 
-  const char *load_default_groups[]= { "mysql_cluster","ndb_mgmd",0 };
-  load_defaults("my",load_default_groups,&argc,&argv);
-
-  int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
-    exit(ho_error);
-
   if (opt_interactive ||
       opt_non_interactive ||
       g_print_full_config) {
     opt_daemon= 0;
   }
 
+  if (opt_mycnf && opt_config_filename)
+  {
+    ndbout_c("Both --mycnf and -f is not supported");
+    return 0;
+  }
+
+  if (opt_mycnf == 0 && opt_config_filename == 0)
+  {
+    struct stat buf;
+    if (stat("config.ini", &buf) != -1)
+      opt_config_filename = "config.ini";
+  }
+  
   glob->socketServer = new SocketServer();
 
   MgmApiService * mapi = new MgmApiService();
 
   glob->mgmObject = new MgmtSrvr(glob->socketServer,
-				opt_config_filename,
-				opt_connect_str);
+				 opt_config_filename,
+				 opt_connect_str);
 
   if (g_print_full_config)
     goto the_end;
@@ -244,7 +287,8 @@ int main(int argc, char** argv)
     glob->interface_name = 0;
   }
 
-  if(!glob->socketServer->setup(mapi, glob->port, glob->interface_name)){
+  if(!glob->socketServer->setup(mapi, &glob->port, glob->interface_name))
+  {
     ndbout_c("Unable to setup management port: %d!\n"
 	     "Please check if the port is already used,\n"
 	     "(perhaps a ndb_mgmd is already running),\n"
@@ -253,7 +297,7 @@ int main(int argc, char** argv)
     delete mapi;
     goto error_end;
   }
-  
+
   if(!glob->mgmObject->check_start()){
     ndbout_c("Unable to check start management server.");
     ndbout_c("Probably caused by illegal initial configuration file.");
@@ -300,25 +344,37 @@ int main(int argc, char** argv)
   g_eventLogger.info(msg);
   
   g_StopServer = false;
+  g_RestartServer= false;
   glob->socketServer->startServer();
 
 #if ! defined NDB_OSE && ! defined NDB_SOFTOSE
   if(opt_interactive) {
-    CommandInterpreter com(* glob->mgmObject);
-    while(com.readAndExecute());
+    BaseString con_str;
+    if(glob->interface_name)
+      con_str.appfmt("host=%s:%d", glob->interface_name, glob->port);
+    else 
+      con_str.appfmt("localhost:%d", glob->port);
+    Ndb_mgmclient com(con_str.c_str(), 1);
+    while(g_StopServer != true && read_and_execute(&com, "ndb_mgm> ", 1));
   } else 
 #endif
-    {
-      while(g_StopServer != true)
-	NdbSleep_MilliSleep(500);
-    }
-  
-  g_eventLogger.info("Shutting down server...");
+  {
+    while(g_StopServer != true)
+      NdbSleep_MilliSleep(500);
+  }
+
+  if(g_RestartServer)
+    g_eventLogger.info("Restarting server...");
+  else
+    g_eventLogger.info("Shutting down server...");
   glob->socketServer->stopServer();
+  // We disconnect from the ConfigRetreiver mgmd when we delete glob below
   glob->socketServer->stopSessions(true);
   g_eventLogger.info("Shutdown complete");
  the_end:
   delete glob;
+  if(g_RestartServer)
+    goto start;
   ndb_end(opt_endinfo ? MY_CHECK_ERROR | MY_GIVE_INFO : 0);
   return 0;
  error_end:

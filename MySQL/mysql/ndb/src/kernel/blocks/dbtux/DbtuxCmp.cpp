@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,24 +17,26 @@
 #include "Dbtux.hpp"
 
 /*
- * Search key vs node prefix or entry
+ * Search key vs node prefix or entry.
  *
  * The comparison starts at given attribute position.  The position is
  * updated by number of equal initial attributes found.  The entry data
  * may be partial in which case CmpUnknown may be returned.
+ *
+ * The attributes are normalized and have variable size given in words.
  */
 int
 Dbtux::cmpSearchKey(const Frag& frag, unsigned& start, ConstData searchKey, ConstData entryData, unsigned maxlen)
 {
   const unsigned numAttrs = frag.m_numAttrs;
   const DescEnt& descEnt = getDescEnt(frag.m_descPage, frag.m_descOff);
-  // number of words of attribute data left
-  unsigned len2 = maxlen;
   // skip to right position in search key only
   for (unsigned i = 0; i < start; i++) {
     jam();
-    searchKey += AttributeHeaderSize + searchKey.ah().getDataSize();
+    searchKey += AttributeHeaderSize + ah(searchKey).getDataSize();
   }
+  // number of words of entry data left
+  unsigned len2 = maxlen;
   int ret = 0;
   while (start < numAttrs) {
     if (len2 <= AttributeHeaderSize) {
@@ -44,21 +45,23 @@ Dbtux::cmpSearchKey(const Frag& frag, unsigned& start, ConstData searchKey, Cons
       break;
     }
     len2 -= AttributeHeaderSize;
-    if (! searchKey.ah().isNULL()) {
-      if (! entryData.ah().isNULL()) {
+    if (! ah(searchKey).isNULL()) {
+      if (! ah(entryData).isNULL()) {
         jam();
-        // current attribute
+        // verify attribute id
         const DescAttr& descAttr = descEnt.m_descAttr[start];
-        // full data size
-        const unsigned size1 = AttributeDescriptor::getSizeInWords(descAttr.m_attrDesc);
-        ndbrequire(size1 != 0 && size1 == entryData.ah().getDataSize());
-        const unsigned size2 = min(size1, len2);
+        ndbrequire(ah(searchKey).getAttributeId() == descAttr.m_primaryAttrId);
+        ndbrequire(ah(entryData).getAttributeId() == descAttr.m_primaryAttrId);
+        // sizes
+        const unsigned size1 = ah(searchKey).getDataSize();
+        const unsigned size2 = min(ah(entryData).getDataSize(), len2);
         len2 -= size2;
         // compare
         NdbSqlUtil::Cmp* const cmp = c_sqlCmp[start];
         const Uint32* const p1 = &searchKey[AttributeHeaderSize];
         const Uint32* const p2 = &entryData[AttributeHeaderSize];
-        ret = (*cmp)(0, p1, p2, size1, size2);
+        const bool full = (maxlen == MaxAttrDataSize);
+        ret = (*cmp)(0, p1, size1 << 2, p2, size2 << 2, full);
         if (ret != 0) {
           jam();
           break;
@@ -70,15 +73,15 @@ Dbtux::cmpSearchKey(const Frag& frag, unsigned& start, ConstData searchKey, Cons
         break;
       }
     } else {
-      if (! entryData.ah().isNULL()) {
+      if (! ah(entryData).isNULL()) {
         jam();
         // NULL < not NULL
         ret = -1;
         break;
       }
     }
-    searchKey += AttributeHeaderSize + searchKey.ah().getDataSize();
-    entryData += AttributeHeaderSize + entryData.ah().getDataSize();
+    searchKey += AttributeHeaderSize + ah(searchKey).getDataSize();
+    entryData += AttributeHeaderSize + ah(entryData).getDataSize();
     start++;
   }
   return ret;
@@ -99,18 +102,20 @@ Dbtux::cmpSearchKey(const Frag& frag, unsigned& start, ConstData searchKey, Cons
  *
  * Following example illustrates this.  We are at (a=2, b=3).
  *
- * dir  bounds                  strict          return
+ * idir bounds                  strict          return
  * 0    a >= 2 and b >= 3       no              -1
  * 0    a >= 2 and b >  3       yes             +1
  * 1    a <= 2 and b <= 3       no              +1
  * 1    a <= 2 and b <  3       yes             -1
+ *
+ * The attributes are normalized and have variable size given in words.
  */
 int
-Dbtux::cmpScanBound(const Frag& frag, unsigned dir, ConstData boundInfo, unsigned boundCount, ConstData entryData, unsigned maxlen)
+Dbtux::cmpScanBound(const Frag& frag, unsigned idir, ConstData boundInfo, unsigned boundCount, ConstData entryData, unsigned maxlen)
 {
   const DescEnt& descEnt = getDescEnt(frag.m_descPage, frag.m_descOff);
   // direction 0-lower 1-upper
-  ndbrequire(dir <= 1);
+  ndbrequire(idir <= 1);
   // number of words of data left
   unsigned len2 = maxlen;
   // in case of no bounds, init last type to something non-strict
@@ -124,24 +129,24 @@ Dbtux::cmpScanBound(const Frag& frag, unsigned dir, ConstData boundInfo, unsigne
     // get and skip bound type (it is used after the loop)
     type = boundInfo[0];
     boundInfo += 1;
-    if (! boundInfo.ah().isNULL()) {
-      if (! entryData.ah().isNULL()) {
+    if (! ah(boundInfo).isNULL()) {
+      if (! ah(entryData).isNULL()) {
         jam();
-        // current attribute
-        const unsigned index = boundInfo.ah().getAttributeId();
+        // verify attribute id
+        const Uint32 index = ah(boundInfo).getAttributeId();
         ndbrequire(index < frag.m_numAttrs);
         const DescAttr& descAttr = descEnt.m_descAttr[index];
-        ndbrequire(entryData.ah().getAttributeId() == descAttr.m_primaryAttrId);
-        // full data size
-        const unsigned size1 = boundInfo.ah().getDataSize();
-        ndbrequire(size1 != 0 && size1 == entryData.ah().getDataSize());
-        const unsigned size2 = min(size1, len2);
+        ndbrequire(ah(entryData).getAttributeId() == descAttr.m_primaryAttrId);
+        // sizes
+        const unsigned size1 = ah(boundInfo).getDataSize();
+        const unsigned size2 = min(ah(entryData).getDataSize(), len2);
         len2 -= size2;
         // compare
         NdbSqlUtil::Cmp* const cmp = c_sqlCmp[index];
         const Uint32* const p1 = &boundInfo[AttributeHeaderSize];
         const Uint32* const p2 = &entryData[AttributeHeaderSize];
-        int ret = (*cmp)(0, p1, p2, size1, size2);
+        const bool full = (maxlen == MaxAttrDataSize);
+        int ret = (*cmp)(0, p1, size1 << 2, p2, size2 << 2, full);
         if (ret != 0) {
           jam();
           return ret;
@@ -153,17 +158,17 @@ Dbtux::cmpScanBound(const Frag& frag, unsigned dir, ConstData boundInfo, unsigne
       }
     } else {
       jam();
-      if (! entryData.ah().isNULL()) {
+      if (! ah(entryData).isNULL()) {
         jam();
         // NULL < not NULL
         return -1;
       }
     }
-    boundInfo += AttributeHeaderSize + boundInfo.ah().getDataSize();
-    entryData += AttributeHeaderSize + entryData.ah().getDataSize();
+    boundInfo += AttributeHeaderSize + ah(boundInfo).getDataSize();
+    entryData += AttributeHeaderSize + ah(entryData).getDataSize();
     boundCount -= 1;
   }
   // all attributes were equal
   const int strict = (type & 0x1);
-  return (dir == 0 ? (strict == 0 ? -1 : +1) : (strict == 0 ? +1 : -1));
+  return (idir == 0 ? (strict == 0 ? -1 : +1) : (strict == 0 ? +1 : -1));
 }

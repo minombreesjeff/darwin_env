@@ -238,9 +238,12 @@ dict_create_foreign_constraints(
 					name before it: test.table2; the
 					default database id the database of
 					parameter name */
-	const char*	name);		/* in: table full name in the
+	const char*	name,		/* in: table full name in the
 					normalized form
 					database_name/table_name */
+	ibool		reject_fks);	/* in: if TRUE, fail with error
+					code DB_CANNOT_ADD_CONSTRAINT if
+					any foreign keys are found. */
 /**************************************************************************
 Parses the CONSTRAINT id's to be dropped in an ALTER TABLE statement. */
 
@@ -382,9 +385,10 @@ CREATE TABLE. */
 void
 dict_print_info_on_foreign_key_in_create_format(
 /*============================================*/
-	FILE*		file,	/* in: file where to print */
-	trx_t*		trx,	/* in: transaction */
-	dict_foreign_t*	foreign);/* in: foreign key constraint */
+	FILE*		file,		/* in: file where to print */
+	trx_t*		trx,		/* in: transaction */
+	dict_foreign_t*	foreign,	/* in: foreign key constraint */
+	ibool		add_newline);	/* in: whether to add a newline */
 /************************************************************************
 Displays the names of the index and the table. */
 void
@@ -526,8 +530,9 @@ dict_index_add_to_cache(
 /*====================*/
 				/* out: TRUE if success */
 	dict_table_t*	table,	/* in: table on which the index is */
-	dict_index_t*	index);	/* in, own: index; NOTE! The index memory
+	dict_index_t*	index,	/* in, own: index; NOTE! The index memory
 				object is freed in this function! */
+	ulint		page_no);/* in: root page number of the index */
 /************************************************************************
 Gets the number of fields in the internal representation of an index,
 including fields added by the dictionary system. */
@@ -657,6 +662,16 @@ dict_index_get_sys_col_pos(
 	dict_index_t*	index,	/* in: index */
 	ulint		type);	/* in: DATA_ROW_ID, ... */
 /***********************************************************************
+Adds a column to index. */
+
+void
+dict_index_add_col(
+/*===============*/
+	dict_index_t*	index,		/* in: index */
+	dict_col_t*	col,		/* in: column */
+	ulint		order,		/* in: order criterion */
+	ulint		prefix_len);	/* in: column prefix length */
+/***********************************************************************
 Copies types of fields contained in index to tuple. */
 
 void
@@ -665,18 +680,6 @@ dict_index_copy_types(
 	dtuple_t*	tuple,		/* in: data tuple */
 	dict_index_t*	index,		/* in: index */
 	ulint		n_fields);	/* in: number of field types to copy */
-/************************************************************************
-Gets the value of a system column in a clustered index record. The clustered
-index must contain the system column: if the index is unique, row id is
-not contained there! */
-UNIV_INLINE
-dulint
-dict_index_rec_get_sys_col(
-/*=======================*/
-				/* out: system column value */
-	dict_index_t*	index,	/* in: clustered index describing the record */
-	ulint		type,	/* in: column type: DATA_ROLL_PTR, ... */
-	rec_t*		rec);	/* in: record */
 /*************************************************************************
 Gets the index tree where the index is stored. */
 UNIV_INLINE
@@ -706,9 +709,10 @@ dict_tree_t*
 dict_tree_create(
 /*=============*/
 				/* out, own: created tree */
-	dict_index_t*	index);	/* in: the index for which to create: in the
+	dict_index_t*	index,	/* in: the index for which to create: in the
 				case of a mixed tree, this should be the
 				index of the cluster object */
+	ulint		page_no);/* in: root page number of the index */
 /**************************************************************************
 Frees an index tree struct. */
 
@@ -738,7 +742,7 @@ dict_tree_find_index_for_tuple(
 	dtuple_t*	tuple);	/* in: tuple for which to find index */
 /***********************************************************************
 Checks if a table which is a mixed cluster member owns a record. */
-UNIV_INLINE
+
 ibool
 dict_is_mixed_table_rec(
 /*====================*/
@@ -788,6 +792,7 @@ dict_tree_copy_rec_order_prefix(
 				/* out: pointer to the prefix record */
 	dict_tree_t*	tree,	/* in: index tree */
 	rec_t*		rec,	/* in: record for which to copy prefix */
+	ulint*		n_fields,/* out: number of fields copied */
 	byte**		buf,	/* in/out: memory buffer for the copied prefix,
 				or NULL */
 	ulint*		buf_size);/* in/out: buffer size */
@@ -800,6 +805,7 @@ dict_tree_build_data_tuple(
 				/* out, own: data tuple */
 	dict_tree_t*	tree,	/* in: index tree */
 	rec_t*		rec,	/* in: record for which to build data tuple */
+	ulint		n_fields,/* in: number of data fields */
 	mem_heap_t*	heap);	/* in: memory heap where tuple created */
 /*************************************************************************
 Gets the space id of the root of the index tree. */

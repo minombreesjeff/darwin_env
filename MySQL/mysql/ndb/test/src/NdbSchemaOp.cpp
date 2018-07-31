@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -113,7 +112,7 @@ NdbSchemaOp::createAttribute( const char* anAttrName,
                               AttrType anAttrType,      
                               StorageMode aStorageMode,
                               bool nullable,
-                              StorageAttributeType aStorageAttr,
+                              int aStorageAttr,
 			      int aDistributionKeyFlag,
 			      int aDistributionGroupFlag,
 			      int aDistributionGroupNoOfBits,
@@ -158,7 +157,6 @@ NdbSchemaOp::createAttribute( const char* anAttrName,
     col.setPrimaryKey(false);
 
   col.setDistributionKey(aDistributionKeyFlag);
-  col.setDistributionGroup(aDistributionGroupFlag,aDistributionGroupNoOfBits);
   col.setAutoIncrement(aAutoIncrement);
   col.setDefaultValue(aDefaultValue != 0 ? aDefaultValue : "");
   

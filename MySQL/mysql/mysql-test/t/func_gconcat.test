@@ -29,8 +29,10 @@ select grp,group_concat(c order by c) from t1 group by grp;
 select grp,group_concat(c order by c desc) from t1 group by grp;
 select grp,group_concat(d order by a) from t1 group by grp;
 select grp,group_concat(d order by a desc) from t1 group by grp;
+--disable_warnings
 select grp,group_concat(a order by a,d+c-ascii(c)-a) from t1 group by grp;
 select grp,group_concat(a order by d+c-ascii(c),a) from t1 group by grp;
+--enable_warnings
 select grp,group_concat(c order by 1) from t1 group by grp;
 select grp,group_concat(distinct c order by c) from t1 group by grp;
 select grp,group_concat(distinct c order by c desc) from t1 group by grp;
@@ -68,7 +70,7 @@ set group_concat_max_len = 1024;
 # Test errors
 
 --error 1111
-select group_concat(sum(a)) from t1 group by grp;
+select group_concat(sum(c)) from t1 group by grp;
 --error 1054
 select grp,group_concat(c order by 2) from t1 group by grp;
 
@@ -320,6 +322,13 @@ select a, group_concat(distinct b order by b) from t1 group by a with rollup;
 drop table t1;
 
 #
+# Bug #6475
+#
+create table t1 (a char(3), b char(20), primary key (a, b));
+insert into t1 values ('ABW', 'Dutch'), ('ABW', 'English');
+select group_concat(a) from t1 group by b;
+drop table t1;
+#
 # Bug #12095: GROUP_CONCAT for one row table 
 #
 
@@ -401,3 +410,145 @@ select f2,group_concat(f1) from t1 group by f2;
 drop table t1;
 
 # End of 4.1 tests
+
+#
+# Bug#8568 "GROUP_CONCAT returns string, unless in a UNION in which case
+# returns BLOB": add a test case, the bug can not be repeated any more.
+#
+
+set names latin1;
+create table t1 (a char, b char);
+insert into t1 values ('a', 'a'), ('a', 'b'), ('b', 'a'), ('b', 'b');
+create table t2 select group_concat(b) as a from t1 where a = 'a';
+create table t3 (select group_concat(a) as a from t1 where a = 'a') union
+                (select group_concat(b) as a from t1 where a = 'b');
+select charset(a) from t2;
+select charset(a) from t3;
+drop table t1, t2, t3;
+set names default;
+
+#
+# Bug#18281 group_concat changes charset to binary
+#
+create table t1 (c1 varchar(10), c2 int);
+select charset(group_concat(c1 order by c2)) from t1;
+drop table t1;
+
+#
+# Bug #16712: group_concat returns odd string instead of intended result
+#
+CREATE TABLE t1 (a INT(10), b LONGTEXT, PRIMARY KEY (a));
+
+SET GROUP_CONCAT_MAX_LEN = 20000000;
+
+INSERT INTO t1 VALUES (1,REPEAT(CONCAT('A',CAST(CHAR(0) AS BINARY),'B'), 40000));
+INSERT INTO t1 SELECT a + 1, b FROM t1;
+
+SELECT a, CHAR_LENGTH(b) FROM t1;
+SELECT CHAR_LENGTH( GROUP_CONCAT(b) ) FROM t1;
+SET GROUP_CONCAT_MAX_LEN = 1024;
+DROP TABLE t1;
+
+#
+# Bug #22015: crash with GROUP_CONCAT over a derived table that 
+#             returns the results of aggregation by GROUP_CONCAT  
+#
+
+CREATE TABLE t1 (a int, b int);
+
+INSERT INTO t1 VALUES (2,1), (1,2), (2,2), (1,3);
+
+SELECT GROUP_CONCAT(a), x 
+  FROM (SELECT a, GROUP_CONCAT(b) x FROM t1 GROUP BY a) AS s
+    GROUP BY x;
+
+DROP TABLE t1;
+#
+# Bug#23451 GROUP_CONCAT truncates a multibyte utf8 character
+#
+set names utf8;
+create table t1
+(
+  x text character set utf8 not null,
+  y integer not null
+);
+insert into t1 values (repeat('a', 1022), 0), (repeat(_utf8 0xc3b7, 4), 0);
+let $1= 10;
+while ($1)
+{
+  eval set group_concat_max_len= 1022 + $1;
+  --disable_result_log
+  select @x:=group_concat(x) from t1 group by y;
+  --enable_result_log
+  select @@group_concat_max_len, length(@x), char_length(@x), right(@x,12), right(HEX(@x),12);
+  dec $1;
+}
+drop table t1;
+set group_concat_max_len=1024;
+set names latin1;
+
+#
+# Bug#14169 type of group_concat() result changed to blob if tmp_table was used
+#
+create table t1 (f1 int unsigned, f2 varchar(255));
+insert into t1 values (1,repeat('a',255)),(2,repeat('b',255));
+--enable_metadata
+select f2,group_concat(f1) from t1 group by f2;
+--disable_metadata
+drop table t1;
+
+#
+# Bug #26815: Unexpected built-in function behavior: group_concat(distinct
+# substring_index())
+# 
+CREATE TABLE t1(a TEXT, b CHAR(20));
+INSERT INTO t1 VALUES ("one.1","one.1"),("two.2","two.2"),("one.3","one.3");
+SELECT GROUP_CONCAT(DISTINCT UCASE(a)) FROM t1;
+SELECT GROUP_CONCAT(DISTINCT UCASE(b)) FROM t1;
+DROP TABLE t1;
+
+#
+# Bug #28273: GROUP_CONCAT and ORDER BY: No warning when result gets truncated.
+#
+CREATE TABLE t1( a VARCHAR( 10 ), b INT );
+INSERT INTO t1 VALUES ( repeat( 'a', 10 ), 1), 
+                      ( repeat( 'b', 10 ), 2);
+SET group_concat_max_len = 20;
+SELECT GROUP_CONCAT( a ) FROM t1;
+SELECT GROUP_CONCAT( DISTINCT a ) FROM t1;  
+SELECT GROUP_CONCAT( a ORDER BY b ) FROM t1;          
+SELECT GROUP_CONCAT( DISTINCT a ORDER BY b ) FROM t1; 
+SET group_concat_max_len = DEFAULT;
+DROP TABLE t1;
+# Bug #23856:GROUP_CONCAT and ORDER BY: junk from previous rows for query on I_S
+#
+SET group_concat_max_len= 65535;
+CREATE TABLE t1( a TEXT, b INTEGER );
+INSERT INTO t1 VALUES ( 'a', 0 ), ( 'b', 1 );
+SELECT GROUP_CONCAT( a ORDER BY b ) FROM t1;
+SELECT GROUP_CONCAT(DISTINCT a ORDER BY b) FROM t1;
+SELECT GROUP_CONCAT(DISTINCT a) FROM t1;
+SET group_concat_max_len= 10;
+SELECT GROUP_CONCAT(a ORDER BY b) FROM t1;
+SELECT GROUP_CONCAT(DISTINCT a ORDER BY b) FROM t1;
+SELECT GROUP_CONCAT(DISTINCT a) FROM t1;
+
+SET group_concat_max_len= 65535;
+CREATE TABLE t2( a TEXT );
+INSERT INTO t2 VALUES( REPEAT( 'a', 5000 ) );
+INSERT INTO t2 VALUES( REPEAT( 'b', 5000 ) );
+INSERT INTO t2 VALUES( REPEAT( 'a', 5000 ) );
+SELECT LENGTH( GROUP_CONCAT( DISTINCT a ) ) FROM t2;
+
+CREATE TABLE t3( a TEXT, b INT  );
+INSERT INTO t3 VALUES( REPEAT( 'a', 65534 ), 1 );
+INSERT INTO t3 VALUES( REPEAT( 'a', 65535 ), 2 );
+INSERT INTO t3 VALUES( REPEAT( 'a', 65536 ), 3 );
+SELECT LENGTH( GROUP_CONCAT( a ) ) FROM t3 WHERE b = 1;
+SELECT LENGTH( GROUP_CONCAT( a ) ) FROM t3 WHERE b = 2;
+SELECT LENGTH( GROUP_CONCAT( a ) ) FROM t3 WHERE b = 3;
+
+SET group_concat_max_len= DEFAULT;
+DROP TABLE t1, t2, t3;
+
+--echo End of 5.0 tests

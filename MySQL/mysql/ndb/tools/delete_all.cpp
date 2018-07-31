@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,6 +26,8 @@ static int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
 
 NDB_STD_OPTS_VARS;
 
+const char *load_default_groups[]= { "mysql_cluster",0 };
+
 static const char* _dbname = "TEST_DB";
 static my_bool _transactional = false;
 static struct my_option my_long_options[] =
@@ -42,42 +43,48 @@ static struct my_option my_long_options[] =
 };
 static void usage()
 {
+#ifdef NOT_USED
   char desc[] = 
     "tabname\n"\
     "This program will delete all records in the specified table using scan delete.\n";
+#endif
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_delete_all.trace");
 }
 
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_delete_all.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
 
-  Ndb::setConnectString(opt_connect_str);
-  // Connect to Ndb
-  Ndb MyNdb(_dbname);
+  Ndb_cluster_connection con(opt_connect_str);
+  con.set_name("ndb_delete_all");
+  if(con.connect(12, 5, 1) != 0)
+  {
+    ndbout << "Unable to connect to management server." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  if (con.wait_until_ready(30,0) < 0)
+  {
+    ndbout << "Cluster nodes not ready in 30 seconds." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
 
+  Ndb MyNdb(&con, _dbname );
   if(MyNdb.init() != 0){
     ERR(MyNdb.getNdbError());
     return NDBT_ProgramExit(NDBT_FAILED);
   }
   
-  // Connect to Ndb and wait for it to become ready
-  while(MyNdb.waitUntilReady() != 0)
-    ndbout << "Waiting for ndb to become ready..." << endl;
-   
   // Check if table exists in db
   int res = NDBT_OK;
   for(int i = 0; i<argc; i++){
@@ -108,7 +115,7 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
   const int            retryMax = 10;
   int deletedRows = 0;
   int check;
-  NdbConnection *pTrans;
+  NdbTransaction *pTrans;
   NdbScanOperation *pOp;
   NdbError err;
 
@@ -137,12 +144,11 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
       goto failed;
     }
     
-    NdbResultSet * rs = pOp->readTuplesExclusive(par);
-    if( rs == 0 ) {
+    if( pOp->readTuples(NdbOperation::LM_Exclusive,par) ) {
       goto failed;
     }
     
-    if(pTrans->execute(NoCommit) != 0){
+    if(pTrans->execute(NdbTransaction::NoCommit) != 0){
       err = pTrans->getNdbError();    
       if(err.status == NdbError::TemporaryError){
 	ERR(err);
@@ -153,20 +159,20 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
       goto failed;
     }
     
-    while((check = rs->nextResult(true)) == 0){
+    while((check = pOp->nextResult(true)) == 0){
       do {
-	if (rs->deleteTuple() != 0){
+	if (pOp->deleteCurrentTuple() != 0){
 	  goto failed;
 	}
 	deletedRows++;
-      } while((check = rs->nextResult(false)) == 0);
+      } while((check = pOp->nextResult(false)) == 0);
       
       if(check != -1){
         if (fetch_across_commit) {
-          check = pTrans->execute(Commit);   
+          check = pTrans->execute(NdbTransaction::Commit);   
           pTrans->restart(); // new tx id
         } else {
-          check = pTrans->execute(NoCommit);
+          check = pTrans->execute(NdbTransaction::NoCommit);
         }
       }
       
@@ -193,7 +199,8 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
       }
       goto failed;
     }
-    if (! fetch_across_commit && pTrans->execute(Commit) != 0) {
+    if (! fetch_across_commit &&
+        pTrans->execute(NdbTransaction::Commit) != 0) {
       err = pTrans->getNdbError();
       goto failed;
     }

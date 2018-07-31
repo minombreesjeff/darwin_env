@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -113,7 +112,7 @@ static my_bool init_state_maps(CHARSET_INFO *cs)
 
   /* Special handling of hex and binary strings */
   state_map[(uchar)'x']= state_map[(uchar)'X']= (uchar) MY_LEX_IDENT_OR_HEX;
-  state_map[(uchar)'b']= state_map[(uchar)'b']= (uchar) MY_LEX_IDENT_OR_BIN;
+  state_map[(uchar)'b']= state_map[(uchar)'B']= (uchar) MY_LEX_IDENT_OR_BIN;
   state_map[(uchar)'n']= state_map[(uchar)'N']= (uchar) MY_LEX_IDENT_OR_NCHAR;
   return 0;
 }
@@ -312,7 +311,7 @@ static my_bool my_read_charset_file(const char *filename, myf myflags)
 {
   char *buf;
   int  fd;
-  uint len;
+  uint len, tmp_len;
   MY_STAT stat_info;
   
   if (!my_stat(filename, &stat_info, MYF(myflags)) ||
@@ -321,12 +320,11 @@ static my_bool my_read_charset_file(const char *filename, myf myflags)
     return TRUE;
   
   if ((fd=my_open(filename,O_RDONLY,myflags)) < 0)
-  {
-    my_free(buf,myflags);
-    return TRUE;
-  }
-  len=read(fd,buf,len);
+    goto error;
+  tmp_len=my_read(fd, buf, len, myflags);
   my_close(fd,myflags);
+  if (tmp_len != len)
+    goto error;
   
   if (my_parse_charset_xml(buf,len,add_collation))
   {
@@ -340,6 +338,10 @@ static my_bool my_read_charset_file(const char *filename, myf myflags)
   
   my_free(buf, myflags);  
   return FALSE;
+
+error:
+  my_free(buf, myflags);
+  return TRUE;
 }
 
 
@@ -386,7 +388,7 @@ my_bool STDCALL init_available_charsets(myf myflags)
 static my_bool init_available_charsets(myf myflags)
 #endif
 {
-  char fname[FN_REFLEN];
+  char fname[FN_REFLEN + sizeof(MY_CHARSET_INDEX)];
   my_bool error=FALSE;
   /*
     We have to use charset_initialized to not lock on THR_LOCK_charset
@@ -517,7 +519,7 @@ CHARSET_INFO *get_charset(uint cs_number, myf flags)
 
   if (!cs && (flags & MY_WME))
   {
-    char index_file[FN_REFLEN], cs_string[23];
+    char index_file[FN_REFLEN + sizeof(MY_CHARSET_INDEX)], cs_string[23];
     strmov(get_charsets_dir(index_file),MY_CHARSET_INDEX);
     cs_string[0]='#';
     int10_to_str(cs_number, cs_string+1, 10);
@@ -537,7 +539,7 @@ CHARSET_INFO *get_charset_by_name(const char *cs_name, myf flags)
 
   if (!cs && (flags & MY_WME))
   {
-    char index_file[FN_REFLEN];
+    char index_file[FN_REFLEN + sizeof(MY_CHARSET_INDEX)];
     strmov(get_charsets_dir(index_file),MY_CHARSET_INDEX);
     my_error(EE_UNKNOWN_COLLATION, MYF(ME_BELL), cs_name, index_file);
   }
@@ -556,13 +558,13 @@ CHARSET_INFO *get_charset_by_csname(const char *cs_name,
   DBUG_PRINT("enter",("name: '%s'", cs_name));
 
   (void) init_available_charsets(MYF(0));	/* If it isn't initialized */
-  
+
   cs_number= get_charset_number(cs_name, cs_flags);
   cs= cs_number ? get_internal_charset(cs_number, flags) : NULL;
-  
+
   if (!cs && (flags & MY_WME))
   {
-    char index_file[FN_REFLEN];
+    char index_file[FN_REFLEN + sizeof(MY_CHARSET_INDEX)];
     strmov(get_charsets_dir(index_file),MY_CHARSET_INDEX);
     my_error(EE_UNKNOWN_CHARSET, MYF(ME_BELL), cs_name, index_file);
   }
@@ -571,21 +573,54 @@ CHARSET_INFO *get_charset_by_csname(const char *cs_name,
 }
 
 
-ulong escape_string_for_mysql(CHARSET_INFO *charset_info, char *to,
+/*
+  Escape string with backslashes (\)
+
+  SYNOPSIS
+    escape_string_for_mysql()
+    charset_info        Charset of the strings
+    to                  Buffer for escaped string
+    to_length           Length of destination buffer, or 0
+    from                The string to escape
+    length              The length of the string to escape
+
+  DESCRIPTION
+    This escapes the contents of a string by adding backslashes before special
+    characters, and turning others into specific escape sequences, such as
+    turning newlines into \n and null bytes into \0.
+
+  NOTE
+    To maintain compatibility with the old C API, to_length may be 0 to mean
+    "big enough"
+
+  RETURN VALUES
+    ~0          The escaped string did not fit in the to buffer
+    >=0         The length of the escaped string
+*/
+
+ulong escape_string_for_mysql(CHARSET_INFO *charset_info,
+                              char *to, ulong to_length,
                               const char *from, ulong length)
 {
   const char *to_start= to;
-  const char *end;
+  const char *end, *to_end=to_start + (to_length ? to_length-1 : 2*length);
+  my_bool overflow= FALSE;
 #ifdef USE_MB
   my_bool use_mb_flag= use_mb(charset_info);
 #endif
-  for (end= from + length; from != end; from++)
+  for (end= from + length; from < end; from++)
   {
+    char escape= 0;
 #ifdef USE_MB
-    int l;
-    if (use_mb_flag && (l= my_ismbchar(charset_info, from, end)))
+    int tmp_length;
+    if (use_mb_flag && (tmp_length= my_ismbchar(charset_info, from, end)))
     {
-      while (l--)
+      if (to + tmp_length > to_end)
+      {
+        overflow= TRUE;
+        break;
+      }
+      while (tmp_length--)
 	*to++= *from++;
       from--;
       continue;
@@ -601,48 +636,55 @@ ulong escape_string_for_mysql(CHARSET_INFO *charset_info, char *to,
      multi-byte character into a valid one. For example, 0xbf27 is not
      a valid GBK character, but 0xbf5c is. (0x27 = ', 0x5c = \)
     */
-    if (use_mb_flag && (l= my_mbcharlen(charset_info, *from)) > 1)
-    {
-      *to++= '\\';
-      *to++= *from;
-      continue;
-    }
+    if (use_mb_flag && (tmp_length= my_mbcharlen(charset_info, *from)) > 1)
+      escape= *from;
+    else
 #endif
     switch (*from) {
     case 0:				/* Must be escaped for 'mysql' */
-      *to++= '\\';
-      *to++= '0';
+      escape= '0';
       break;
     case '\n':				/* Must be escaped for logs */
-      *to++= '\\';
-      *to++= 'n';
+      escape= 'n';
       break;
     case '\r':
-      *to++= '\\';
-      *to++= 'r';
+      escape= 'r';
       break;
     case '\\':
-      *to++= '\\';
-      *to++= '\\';
+      escape= '\\';
       break;
     case '\'':
-      *to++= '\\';
-      *to++= '\'';
+      escape= '\'';
       break;
     case '"':				/* Better safe than sorry */
-      *to++= '\\';
-      *to++= '"';
+      escape= '"';
       break;
     case '\032':			/* This gives problems on Win32 */
-      *to++= '\\';
-      *to++= 'Z';
+      escape= 'Z';
       break;
-    default:
+    }
+    if (escape)
+    {
+      if (to + 2 > to_end)
+      {
+        overflow= TRUE;
+        break;
+      }
+      *to++= '\\';
+      *to++= escape;
+    }
+    else
+    {
+      if (to + 1 > to_end)
+      {
+        overflow= TRUE;
+        break;
+      }
       *to++= *from;
     }
   }
   *to= 0;
-  return (ulong) (to - to_start);
+  return overflow ? (ulong)~0 : (ulong) (to - to_start);
 }
 
 
@@ -670,3 +712,84 @@ CHARSET_INFO *fs_character_set()
   return fs_cset_cache;
 }
 #endif
+
+/*
+  Escape apostrophes by doubling them up
+
+  SYNOPSIS
+    escape_quotes_for_mysql()
+    charset_info        Charset of the strings
+    to                  Buffer for escaped string
+    to_length           Length of destination buffer, or 0
+    from                The string to escape
+    length              The length of the string to escape
+
+  DESCRIPTION
+    This escapes the contents of a string by doubling up any apostrophes that
+    it contains. This is used when the NO_BACKSLASH_ESCAPES SQL_MODE is in
+    effect on the server.
+
+  NOTE
+    To be consistent with escape_string_for_mysql(), to_length may be 0 to
+    mean "big enough"
+
+  RETURN VALUES
+    ~0          The escaped string did not fit in the to buffer
+    >=0         The length of the escaped string
+*/
+
+ulong escape_quotes_for_mysql(CHARSET_INFO *charset_info,
+                              char *to, ulong to_length,
+                              const char *from, ulong length)
+{
+  const char *to_start= to;
+  const char *end, *to_end=to_start + (to_length ? to_length-1 : 2*length);
+  my_bool overflow= FALSE;
+#ifdef USE_MB
+  my_bool use_mb_flag= use_mb(charset_info);
+#endif
+  for (end= from + length; from < end; from++)
+  {
+#ifdef USE_MB
+    int tmp_length;
+    if (use_mb_flag && (tmp_length= my_ismbchar(charset_info, from, end)))
+    {
+      if (to + tmp_length > to_end)
+      {
+        overflow= TRUE;
+        break;
+      }
+      while (tmp_length--)
+	*to++= *from++;
+      from--;
+      continue;
+    }
+    /*
+      We don't have the same issue here with a non-multi-byte character being
+      turned into a multi-byte character by the addition of an escaping
+      character, because we are only escaping the ' character with itself.
+     */
+#endif
+    if (*from == '\'')
+    {
+      if (to + 2 > to_end)
+      {
+        overflow= TRUE;
+        break;
+      }
+      *to++= '\'';
+      *to++= '\'';
+    }
+    else
+    {
+      if (to + 1 > to_end)
+      {
+        overflow= TRUE;
+        break;
+      }
+      *to++= *from;
+    }
+  }
+  *to= 0;
+  return overflow ? (ulong)~0 : (ulong) (to - to_start);
+}

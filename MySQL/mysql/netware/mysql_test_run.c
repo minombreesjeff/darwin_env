@@ -27,6 +27,7 @@
 #include "my_manage.h"
 #ifdef __NETWARE__
 #define strindex(a,b) ((char*)strindex(a,b))
+#define strstr(a,b)   ((char*)strstr(a,b))
 #endif
 
 /******************************************************************************
@@ -347,6 +348,7 @@ void start_master()
   add_arg(&al, "--character-sets-dir=%s", char_dir);
   add_arg(&al, "--tmpdir=%s", mysql_tmp_dir);
   add_arg(&al, "--language=%s", lang_dir);
+  add_arg(&al, "--log-bin-trust-routine-creators");
   add_arg(&al, "--log-slow-queries");
   add_arg(&al, "--log-queries-not-using-indexes");
 #ifdef DEBUG	//only for debug builds
@@ -522,6 +524,7 @@ void start_slave()
   add_arg(&al, "--master-retry-count=10");
   add_arg(&al, "-O");
   add_arg(&al, "slave_net_timeout=10");
+  add_arg(&al, "--log-bin-trust-routine-creators");
   add_arg(&al, "--log-slow-queries");
   add_arg(&al, "--log-queries-not-using-indexes");
 #ifdef DEBUG	//only for debug builds
@@ -945,7 +948,7 @@ void run_test(char *test)
       // increment total
       ++total_test;
     }
-    else if (err == 62)  // To reflect the changes made in client/mysqltest.c 
+    else if (err == 62)
     {
       // skip
       rstr = TEST_SKIP;
@@ -1170,6 +1173,13 @@ void setup(char *file)
   setenv("MYSQL_TCP_PORT", "3306", 1);
   snprintf(file_path, PATH_MAX*2, "%s/mysql_client_test --no-defaults --testcase--user=root --port=%u ", bin_dir, master_port); 
   setenv("MYSQL_CLIENT_TEST",file_path,1);
+  snprintf(file_path, PATH_MAX*2, "%s/mysql --no-defaults --user=root --port=%u ", bin_dir, master_port);
+  setenv("MYSQL",file_path,1); 
+  snprintf(file_path, PATH_MAX*2, "%s/mysqlshow --no-defaults --user=root --port=%u", bin_dir, master_port);
+  setenv("MYSQL_SHOW",file_path,1);
+  snprintf(file_path, PATH_MAX*2, "%s/mysqlcheck --no-defaults -uroot --port=%u", bin_dir, master_port);
+  setenv("MYSQL_CHECK",file_path,1);
+
 }
 
 /******************************************************************************

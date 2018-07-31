@@ -1,0 +1,107 @@
+.\"     Title: \fBmake_win_bin_dist\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 07/04/2007
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 5.0
+.\"
+.TH "\fBMAKE_WIN_BIN_DIST" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+make_win_bin_dist \- package MySQL distribution as ZIP archive
+.SH "SYNOPSIS"
+.HP 60
+\fBmake_win_bin_dist [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIpackage_basename\fR\fR\fB [\fR\fB\fIcopy_def\fR\fR\fB ...]\fR
+.SH "DESCRIPTION"
+.PP
+This script is used on Windows after building a MySQL distribution from source to create executable programs. It packages the binaries and support files into a ZIP archive that can be unpacked at the location where you want to install MySQL.
+.PP
+\fBmake_win_bin_dist\fR
+is a shell script, so you must have Cygwin installed to use it.
+.PP
+This program's use is subject to change. Currently, you invoke it as follows from the root directory of your source distribution:
+.sp
+.RS 3n
+.nf
+shell> \fBmake_win_bin_dist [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIpackage_basename\fR\fR\fB [\fR\fB\fIcopy_def\fR\fR\fB ...]\fR
+.fi
+.RE
+.PP
+The
+\fIpackage_basename\fR
+argument provides the basename for the resulting ZIP archive. This name will be the name of the directory that results from unpacking the archive.
+.PP
+Because you might want to include files of directories from other builds, you can instruct this script do copy them in for you, via
+\fIcopy_def\fR
+arguments, which of which is of the form
+\fIrelative_dest_name\fR=\fIsource_name\fR.
+.PP
+Example:
+.sp
+.RS 3n
+.nf
+bin/mysqld\-max.exe=../my\-max\-build/sql/release/mysqld.exe
+.fi
+.RE
+.PP
+If you specify a directory, the entire directory will be copied.
+.PP
+\fBmake_win_bin_dist\fR
+understands the following options:
+.TP 3n
+\(bu
+\fB\-\-debug\fR
+.sp
+Pack the debug binaries and produce an error if they were not built.
+.TP 3n
+\(bu
+\fB\-\-embedded\fR
+.sp
+Pack the embedded server and produce an error if it was not built. The default is to pack it if it was built.
+.TP 3n
+\(bu
+\fB\-\-exe\-suffix=\fR\fB\fIsuffix\fR\fR
+.sp
+Add a suffix to the basename of the
+\fBmysql\fR
+binary. For example, a suffix of
+\-abc
+produces a binary named
+\fBmysqld\-abc.exe\fR.
+.TP 3n
+\(bu
+\fB\-\-no\-debug\fR
+.sp
+Don't pack the debug binaries even if they were built.
+.TP 3n
+\(bu
+\fB\-\-no\-embedded\fR
+.sp
+Don't pack the embedded server even if it was built.
+.TP 3n
+\(bu
+\fB\-\-only\-debug\fR
+.sp
+Use this option when the target for this build was
+Debug, and you just want to replace the normal binaries with debug versions (that is, do not use separate
+\fIdebug\fR
+directories).
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2007 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

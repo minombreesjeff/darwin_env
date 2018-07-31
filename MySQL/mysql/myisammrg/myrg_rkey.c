@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2003, 2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,12 +40,14 @@ int myrg_rkey(MYRG_INFO *info,byte *buf,int inx, const byte *key,
 {
   byte *key_buff;
   uint pack_key_length;
+  uint16 last_used_keyseg;
   MYRG_TABLE *table;
   MI_INFO *mi;
   int err;
   DBUG_ENTER("myrg_rkey");
   LINT_INIT(key_buff);
   LINT_INIT(pack_key_length);
+  LINT_INIT(last_used_keyseg);
 
   if (_myrg_init_queue(info,inx,search_flag))
     DBUG_RETURN(my_errno);
@@ -61,10 +62,12 @@ int myrg_rkey(MYRG_INFO *info,byte *buf,int inx, const byte *key,
       /* Get the saved packed key and packed key length. */
       key_buff=(byte*) mi->lastkey+mi->s->base.max_key_length;
       pack_key_length=mi->pack_key_length;
+      last_used_keyseg= mi->last_used_keyseg;
     }
     else
     {
       mi->once_flags|= USE_PACKED_KEYS;
+      mi->last_used_keyseg= last_used_keyseg;
       err=mi_rkey(mi,0,inx,key_buff,pack_key_length,search_flag);
     }
     info->last_used_table=table+1;
@@ -88,7 +91,7 @@ int myrg_rkey(MYRG_INFO *info,byte *buf,int inx, const byte *key,
   mi=(info->current_table=(MYRG_TABLE *)queue_top(&(info->by_key)))->table;
   mi->once_flags|= RRND_PRESERVE_LASTINX;
   DBUG_PRINT("info", ("using table no: %d",
-                      info->current_table - info->open_tables + 1));
+                      (int) (info->current_table - info->open_tables + 1)));
   DBUG_DUMP("result key", (byte*) mi->lastkey, mi->lastkey_length);
   DBUG_RETURN(_myrg_mi_read_record(mi,buf));
 }

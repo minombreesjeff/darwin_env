@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,7 +36,7 @@
 #include <mgmapi_configuration.hpp>
 #include <mgmapi_config_parameters.h>
 
-int global_flag_send_heartbeat_now= 0;
+//#define DEBUG_REG
 
 // Just a C wrapper for threadMain
 extern "C" 
@@ -67,6 +66,9 @@ ClusterMgr::ClusterMgr(TransporterFacade & _facade):
   DBUG_ENTER("ClusterMgr::ClusterMgr");
   ndbSetOwnVersion();
   clusterMgrThreadMutex = NdbMutex_Create();
+  waitForHBCond= NdbCondition_Create();
+  waitingForHB= false;
+  m_max_api_reg_req_interval= 0xFFFFFFFF; // MAX_INT
   noOfAliveNodes= 0;
   noOfConnectedNodes= 0;
   theClusterMgrThread= 0;
@@ -77,7 +79,8 @@ ClusterMgr::ClusterMgr(TransporterFacade & _facade):
 ClusterMgr::~ClusterMgr()
 {
   DBUG_ENTER("ClusterMgr::~ClusterMgr");
-  doStop();  
+  doStop();
+  NdbCondition_Destroy(waitForHBCond);
   NdbMutex_Destroy(clusterMgrThreadMutex);
   DBUG_VOID_RETURN;
 }
@@ -164,6 +167,70 @@ ClusterMgr::doStop( ){
 }
 
 void
+ClusterMgr::forceHB()
+{
+    theFacade.lock_mutex();
+
+    if(waitingForHB)
+    {
+      NdbCondition_WaitTimeout(waitForHBCond, theFacade.theMutexPtr, 1000);
+      theFacade.unlock_mutex();
+      return;
+    }
+
+    waitingForHB= true;
+
+    NodeBitmask ndb_nodes;
+    ndb_nodes.clear();
+    waitForHBFromNodes.clear();
+    for(Uint32 i = 0; i < MAX_NODES; i++)
+    {
+      if(!theNodes[i].defined)
+        continue;
+      if(theNodes[i].m_info.m_type == NodeInfo::DB)
+      {
+        ndb_nodes.set(i);
+        const ClusterMgr::Node &node= getNodeInfo(i);
+        waitForHBFromNodes.bitOR(node.m_state.m_connected_nodes);
+      }
+    }
+    waitForHBFromNodes.bitAND(ndb_nodes);
+
+#ifdef DEBUG_REG
+    char buf[128];
+    ndbout << "Waiting for HB from " << waitForHBFromNodes.getText(buf) << endl;
+#endif
+    NdbApiSignal signal(numberToRef(API_CLUSTERMGR, theFacade.ownId()));
+
+    signal.theVerId_signalNumber   = GSN_API_REGREQ;
+    signal.theReceiversBlockNumber = QMGR;
+    signal.theTrace                = 0;
+    signal.theLength               = ApiRegReq::SignalLength;
+
+    ApiRegReq * req = CAST_PTR(ApiRegReq, signal.getDataPtrSend());
+    req->ref = numberToRef(API_CLUSTERMGR, theFacade.ownId());
+    req->version = NDB_VERSION;
+
+    int nodeId= 0;
+    for(int i=0;
+        (int) NodeBitmask::NotFound != (nodeId= waitForHBFromNodes.find(i));
+        i= nodeId+1)
+    {
+#ifdef DEBUG_REG
+      ndbout << "FORCE HB to " << nodeId << endl;
+#endif
+      theFacade.sendSignalUnCond(&signal, nodeId);
+    }
+
+    NdbCondition_WaitTimeout(waitForHBCond, theFacade.theMutexPtr, 1000);
+    waitingForHB= false;
+#ifdef DEBUG_REG
+    ndbout << "Still waiting for HB from " << waitForHBFromNodes.getText(buf) << endl;
+#endif
+    theFacade.unlock_mutex();
+}
+
+void
 ClusterMgr::threadMain( ){
   NdbApiSignal signal(numberToRef(API_CLUSTERMGR, theFacade.ownId()));
   
@@ -184,11 +251,8 @@ ClusterMgr::threadMain( ){
     /**
      * Start of Secure area for use of Transporter
      */
-    int send_heartbeat_now= global_flag_send_heartbeat_now;
-    global_flag_send_heartbeat_now= 0;
-
     theFacade.lock_mutex();
-    for (int i = 1; i < MAX_NODES; i++){
+    for (int i = 1; i < MAX_NDB_NODES; i++){
       /**
        * Send register request (heartbeat) to all available nodes 
        * at specified timing intervals
@@ -209,30 +273,23 @@ ClusterMgr::threadMain( ){
       }
       
       theNode.hbCounter += timeSlept;
-      if (theNode.hbCounter >= theNode.hbFrequency ||
-	  send_heartbeat_now) {
+      if (theNode.hbCounter >= m_max_api_reg_req_interval ||
+          theNode.hbCounter >= theNode.hbFrequency) {
 	/**
 	 * It is now time to send a new Heartbeat
 	 */
 	if (theNode.hbCounter >= theNode.hbFrequency) {
-	  theNode.hbSent++;
+	  theNode.m_info.m_heartbeat_cnt++;
 	  theNode.hbCounter = 0;
 	}
 
-	/**
-	 * If the node is of type REP, 
-	 * then the receiver of the signal should be API_CLUSTERMGR
-	 */
-	if (theNode.m_info.m_type == NodeInfo::REP) {
-	  signal.theReceiversBlockNumber = API_CLUSTERMGR;
-	}
-#if 0 
+#ifdef DEBUG_REG
 	ndbout_c("ClusterMgr: Sending API_REGREQ to node %d", (int)nodeId);
 #endif
 	theFacade.sendSignalUnCond(&signal, nodeId);
       }//if
       
-      if (theNode.hbSent == 4 && theNode.hbFrequency > 0){
+      if (theNode.m_info.m_heartbeat_cnt == 4 && theNode.hbFrequency > 0){
 	reportNodeFailed(i);
       }//if
     }
@@ -265,7 +322,8 @@ ClusterMgr::showState(NodeId nodeId){
 ClusterMgr::Node::Node()
   : m_state(NodeState::SL_NOTHING) { 
   compatible = nfCompleteRep = true;
-  connected = defined = m_alive = false; 
+  connected = defined = m_alive = m_api_reg_conf = false; 
+  m_state.m_connected_nodes.clear();
 }
 
 /******************************************************************************
@@ -277,7 +335,7 @@ ClusterMgr::execAPI_REGREQ(const Uint32 * theData){
   const ApiRegReq * const apiRegReq = (ApiRegReq *)&theData[0];
   const NodeId nodeId = refToNode(apiRegReq->ref);
 
-#if 0
+#ifdef DEBUG_REG
   ndbout_c("ClusterMgr: Recd API_REGREQ from node %d", nodeId);
 #endif
 
@@ -318,7 +376,7 @@ ClusterMgr::execAPI_REGCONF(const Uint32 * theData){
   const ApiRegConf * const apiRegConf = (ApiRegConf *)&theData[0];
   const NodeId nodeId = refToNode(apiRegConf->qmgrRef);
   
-#if 0 
+#ifdef DEBUG_REG
   ndbout_c("ClusterMgr: Recd API_REGCONF from node %d", nodeId);
 #endif
 
@@ -337,18 +395,31 @@ ClusterMgr::execAPI_REGCONF(const Uint32 * theData){
       node.compatible = ndbCompatible_api_ndb(NDB_VERSION,
 					      node.m_info.m_version);
   }
-  
+
+  node.m_api_reg_conf = true;
+
   node.m_state = apiRegConf->nodeState;
   if (node.compatible && (node.m_state.startLevel == NodeState::SL_STARTED  ||
-			  node.m_state.startLevel == NodeState::SL_SINGLEUSER)){
+			  node.m_state.getSingleUserMode())){
     set_node_alive(node, true);
   } else {
     set_node_alive(node, false);
   }//if
-  node.hbSent = 0;
+  node.m_info.m_heartbeat_cnt = 0;
   node.hbCounter = 0;
   if (node.m_info.m_type != NodeInfo::REP) {
     node.hbFrequency = (apiRegConf->apiHeartbeatFrequency * 10) - 50;
+  }
+
+  if(waitingForHB)
+  {
+    waitForHBFromNodes.clear(nodeId);
+
+    if(waitForHBFromNodes.isclear())
+    {
+      waitingForHB= false;
+      NdbCondition_Broadcast(waitForHBCond);
+    }
   }
 }
 
@@ -378,6 +449,10 @@ ClusterMgr::execAPI_REGREF(const Uint32 * theData){
   default:
     break;
   }
+
+  waitForHBFromNodes.clear(nodeId);
+  if(waitForHBFromNodes.isclear())
+    NdbCondition_Signal(waitForHBCond);
 }
 
 void
@@ -414,15 +489,22 @@ ClusterMgr::reportConnected(NodeId nodeId){
 
   Node & theNode = theNodes[nodeId];
   theNode.connected = true;
-  theNode.hbSent = 0;
+  theNode.m_info.m_heartbeat_cnt = 0;
   theNode.hbCounter = 0;
-  
+
+  /**
+   * make sure the node itself is marked connected even
+   * if first API_REGCONF has not arrived
+   */
+  theNode.m_state.m_connected_nodes.set(nodeId);
+
   if (theNode.m_info.m_type != NodeInfo::REP) {
     theNode.hbFrequency = 0;
   }
   theNode.m_info.m_version = 0;
   theNode.compatible = true;
   theNode.nfCompleteRep = true;
+  theNode.m_state.startLevel = NodeState::SL_NOTHING;
   
   theFacade.ReportNodeAlive(nodeId);
 }
@@ -434,29 +516,36 @@ ClusterMgr::reportDisconnected(NodeId nodeId){
 
   noOfConnectedNodes--;
   theNodes[nodeId].connected = false;
-  theNodes[nodeId].m_info.m_connectCount ++;
-  reportNodeFailed(nodeId);
+  theNodes[nodeId].m_api_reg_conf = false;
+  theNodes[nodeId].m_state.m_connected_nodes.clear();
+
+  reportNodeFailed(nodeId, true);
 }
 
 void
-ClusterMgr::reportNodeFailed(NodeId nodeId){
+ClusterMgr::reportNodeFailed(NodeId nodeId, bool disconnect){
 
   Node & theNode = theNodes[nodeId];
  
   set_node_alive(theNode, false);
+  theNode.m_info.m_connectCount ++;
+  
   if(theNode.connected)
+  {
     theFacade.doDisconnect(nodeId);
+  }
   
   const bool report = (theNode.m_state.startLevel != NodeState::SL_NOTHING);  
   theNode.m_state.startLevel = NodeState::SL_NOTHING;
   
-  if(report){
+  if(disconnect || report)
+  {
     theFacade.ReportNodeDead(nodeId);
-  }  
-
-  theNode.nfCompleteRep = false;
+  }
   
-  if(noOfAliveNodes == 0){
+  theNode.nfCompleteRep = false;
+  if(noOfAliveNodes == 0)
+  {
     theFacade.m_globalDictCache.lock();
     theFacade.m_globalDictCache.invalidate_all();
     theFacade.m_globalDictCache.unlock();

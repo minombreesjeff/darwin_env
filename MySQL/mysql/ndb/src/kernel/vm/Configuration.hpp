@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,6 +16,7 @@
 #ifndef Configuration_H
 #define Configuration_H
 
+#include <util/BaseString.hpp>
 #include <mgmapi.h>
 #include <ndb_types.h>
 
@@ -34,9 +34,9 @@ public:
 
   void fetch_configuration();
   void setupConfiguration();
-  void closeConfiguration();
+  void closeConfiguration(bool end_session= true);
   
-  bool lockPagesInMainMemory() const;
+  Uint32 lockPagesInMainMemory() const;
   
   int timeBetweenWatchDogCheck() const ;
   void timeBetweenWatchDogCheck(int value);
@@ -63,16 +63,20 @@ public:
   bool getInitialStart() const;
   void setInitialStart(bool val);
   bool getDaemonMode() const;
+  bool getForegroundMode() const;
 
   const ndb_mgm_configuration_iterator * getOwnConfigIterator() const;
 
   Uint32 get_mgmd_port() const {return m_mgmd_port;};
-  const char *get_mgmd_host() const {return m_mgmd_host;};
+  const char *get_mgmd_host() const {return m_mgmd_host.c_str();};
+  ConfigRetriever* get_config_retriever() { return m_config_retriever; };
 
   class LogLevel * m_logLevel;
 private:
   friend class Cmvmi;
   friend class Qmgr;
+  friend int reportShutdown(class Configuration *config, int error, int restart);
+
   ndb_mgm_configuration_iterator * getClusterConfigIterator() const;
 
   Uint32 _stopOnError;
@@ -89,6 +93,8 @@ private:
   
   ConfigRetriever *m_config_retriever;
 
+  Vector<BaseString> m_mgmds;
+
   /**
    * arguments to NDB process
    */
@@ -98,8 +104,9 @@ private:
   bool _initialStart;
   char * _connectString;
   Uint32 m_mgmd_port;
-  const char *m_mgmd_host;
-  bool _daemonMode;
+  BaseString m_mgmd_host;
+  bool _daemonMode; // if not, angel in foreground
+  bool _foregroundMode; // no angel, raw ndbd in foreground
 
   void calcSizeAlt(class ConfigValues * );
 };
@@ -132,6 +139,12 @@ inline
 bool
 Configuration::getDaemonMode() const {
   return _daemonMode;
+}
+
+inline
+bool
+Configuration::getForegroundMode() const {
+  return _foregroundMode;
 }
 
 #endif

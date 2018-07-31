@@ -66,7 +66,7 @@ drop table t1;
 #
 # The below checks both binary and character comparisons.
 #
-create table t1 (word varchar(255) not null, word2 varchar(255) not null, index(word));
+create table t1 (word varchar(255) not null, word2 varchar(255) not null default '', index(word));
 show create table t1;
 insert into t1 (word) values ('ss'),(0xDF),(0xE4),('ae');
 update t1 set word2=word;
@@ -134,3 +134,11 @@ SELECT * FROM t1 WHERE col1='ß' ORDER BY col1, BINARY col1;
 DROP TABLE t1;
 
 # End of 4.1 tests
+
+#
+# Bug#9509
+#
+create table t1 (s1 char(5) character set latin1 collate latin1_german2_ci);
+insert into t1 values (0xf6) /* this is o-umlaut */;
+select * from t1 where length(s1)=1 and s1='oe';
+drop table t1;

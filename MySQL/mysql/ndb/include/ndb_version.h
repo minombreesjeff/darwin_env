@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,13 +20,13 @@
 #include <version.h>
 
 /* NDB build version */
-#define NDB_VERSION_BUILD 22
+#define NDB_VERSION_BUILD 45
 
 /* NDB major version */
-#define NDB_VERSION_MAJOR 4
+#define NDB_VERSION_MAJOR 5
 
 /* NDB minor version */
-#define NDB_VERSION_MINOR 1
+#define NDB_VERSION_MINOR 0
 
 /* NDB status version */
 #define NDB_VERSION_STATUS ""
@@ -59,6 +58,13 @@ char ndb_version_string_buf[NDB_VERSION_STRING_BUF_SZ];
 
 #define NDBD_INCL_NODECONF_VERSION_4 MAKE_VERSION(4,1,17)
 #define NDBD_INCL_NODECONF_VERSION_5 MAKE_VERSION(5,0,18)
+
+#define NDBD_DICT_LOCK_VERSION_5 MAKE_VERSION(5,0,23)
+
+#define NDBD_UPDATE_FRAG_DIST_KEY_50 MAKE_VERSION(5,0,26)
+#define NDBD_UPDATE_FRAG_DIST_KEY_51 MAKE_VERSION(5,1,12)
+
+#define NDBD_QMGR_SINGLEUSER_VERSION_5 MAKE_VERSION(5,0,25)
 
 #endif
  

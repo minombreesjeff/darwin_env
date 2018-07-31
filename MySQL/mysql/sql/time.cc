@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,15 +31,6 @@ int calc_weekday(long daynr,bool sunday_first_day_of_week)
   DBUG_ENTER("calc_weekday");
   DBUG_RETURN ((int) ((daynr + 5L + (sunday_first_day_of_week ? 1L : 0L)) % 7));
 }
-
-	/* Calc days in one year. works with 0 <= year <= 99 */
-
-uint calc_days_in_year(uint year)
-{
-  return (year & 3) == 0 && (year%100 || (year%400 == 0 && year)) ?
-    366 : 365;
-}
-
 
 /*
   The bits in week_format has the following meaning:
@@ -71,7 +61,7 @@ uint calc_days_in_year(uint year)
 	next week is week 1.
 */
 
-uint calc_week(TIME *l_time, uint week_behaviour, uint *year)
+uint calc_week(MYSQL_TIME *l_time, uint week_behaviour, uint *year)
 {
   uint days;
   ulong daynr=calc_daynr(l_time->year,l_time->month,l_time->day);
@@ -189,26 +179,35 @@ ulong convert_month_to_period(ulong month)
 
 
 /*
-  Convert a timestamp string to a TIME value and produce a warning 
+  Convert a timestamp string to a MYSQL_TIME value and produce a warning 
   if string was truncated during conversion.
 
   NOTE
     See description of str_to_datetime() for more information.
 */
+
 timestamp_type
-str_to_datetime_with_warn(const char *str, uint length, TIME *l_time,
+str_to_datetime_with_warn(const char *str, uint length, MYSQL_TIME *l_time,
                           uint flags)
 {
   int was_cut;
-  timestamp_type ts_type= str_to_datetime(str, length, l_time, flags, &was_cut);
-  if (was_cut)
-    make_truncated_value_warning(current_thd, str, length, ts_type);
+  THD *thd= current_thd;
+  timestamp_type ts_type;
+  
+  ts_type= str_to_datetime(str, length, l_time,
+                           (flags | (thd->variables.sql_mode &
+                                     (MODE_INVALID_DATES |
+                                      MODE_NO_ZERO_DATE))),
+                           &was_cut);
+  if (was_cut || ts_type <= MYSQL_TIMESTAMP_ERROR)
+    make_truncated_value_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                                 str, length, ts_type,  NullS);
   return ts_type;
 }
 
 
 /*
-  Convert a datetime from broken-down TIME representation to corresponding 
+  Convert a datetime from broken-down MYSQL_TIME representation to corresponding 
   TIMESTAMP value.
 
   SYNOPSIS
@@ -224,20 +223,17 @@ str_to_datetime_with_warn(const char *str, uint length, TIME *l_time,
      0 - t contains datetime value which is out of TIMESTAMP range.
      
 */
-my_time_t TIME_to_timestamp(THD *thd, const TIME *t, bool *in_dst_time_gap)
+my_time_t TIME_to_timestamp(THD *thd, const MYSQL_TIME *t, my_bool *in_dst_time_gap)
 {
   my_time_t timestamp;
 
   *in_dst_time_gap= 0;
 
-  if (t->year < TIMESTAMP_MAX_YEAR && t->year > TIMESTAMP_MIN_YEAR ||
-      t->year == TIMESTAMP_MAX_YEAR && t->month == 1 && t->day == 1 ||
-      t->year == TIMESTAMP_MIN_YEAR && t->month == 12 && t->day == 31)
+  timestamp= thd->variables.time_zone->TIME_to_gmt_sec(t, in_dst_time_gap);
+  if (timestamp)
   {
     thd->time_zone_used= 1;
-    timestamp= thd->variables.time_zone->TIME_to_gmt_sec(t, in_dst_time_gap);
-    if (timestamp >= TIMESTAMP_MIN_VALUE && timestamp <= TIMESTAMP_MAX_VALUE)
-      return timestamp;
+    return timestamp;
   }
 
   /* If we are here we have range error. */
@@ -246,109 +242,21 @@ my_time_t TIME_to_timestamp(THD *thd, const TIME *t, bool *in_dst_time_gap)
 
 
 /*
-  Convert a time string to a TIME struct and produce a warning
+  Convert a time string to a MYSQL_TIME struct and produce a warning
   if string was cut during conversion.
 
   NOTE
     See str_to_time() for more info.
 */
 bool
-str_to_time_with_warn(const char *str, uint length, TIME *l_time)
+str_to_time_with_warn(const char *str, uint length, MYSQL_TIME *l_time)
 {
-  int was_cut;
-  bool ret_val= str_to_time(str, length, l_time, &was_cut);
-  if (was_cut)
-    make_truncated_value_warning(current_thd, str, length, MYSQL_TIMESTAMP_TIME);
+  int warning;
+  bool ret_val= str_to_time(str, length, l_time, &warning);
+  if (ret_val || warning)
+    make_truncated_value_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                                 str, length, MYSQL_TIMESTAMP_TIME, NullS);
   return ret_val;
-}
-
-
-/*
-  Convert datetime value specified as number to broken-down TIME 
-  representation and form value of DATETIME type as side-effect.
-
-  SYNOPSIS
-    number_to_TIME()
-      nr         - datetime value as number 
-      time_res   - pointer for structure for broken-down representation
-      fuzzy_date - indicates whenever we allow fuzzy dates
-      was_cut    - set ot 1 if there was some kind of error during 
-                   conversion or to 0 if everything was OK.
-  
-  DESCRIPTION
-    Convert a datetime value of formats YYMMDD, YYYYMMDD, YYMMDDHHMSS, 
-    YYYYMMDDHHMMSS to broken-down TIME representation. Return value in
-    YYYYMMDDHHMMSS format as side-effect.
-  
-    This function also checks if datetime value fits in DATETIME range.
-
-  RETURN VALUE
-    Datetime value in YYYYMMDDHHMMSS format.
-    If input value is not valid datetime value then 0 is returned. 
-*/
-
-longlong number_to_TIME(longlong nr, TIME *time_res, bool fuzzy_date, 
-                        int *was_cut)
-{
-  long part1,part2;
-
-  *was_cut= 0;
-  
-  if (nr == LL(0) || nr >= LL(10000101000000))
-    goto ok;
-  if (nr < 101)
-    goto err;
-  if (nr <= (YY_PART_YEAR-1)*10000L+1231L)
-  {
-    nr= (nr+20000000L)*1000000L;                 // YYMMDD, year: 2000-2069
-    goto ok;
-  }
-  if (nr < (YY_PART_YEAR)*10000L+101L)
-    goto err;
-  if (nr <= 991231L)
-  {
-    nr= (nr+19000000L)*1000000L;                 // YYMMDD, year: 1970-1999
-    goto ok;
-  }
-  if (nr < 10000101L)
-    goto err;
-  if (nr <= 99991231L)
-  {
-    nr= nr*1000000L;
-    goto ok;
-  }
-  if (nr < 101000000L)
-    goto err;
-  if (nr <= (YY_PART_YEAR-1)*LL(10000000000)+LL(1231235959))
-  {
-    nr= nr+LL(20000000000000);                   // YYMMDDHHMMSS, 2000-2069
-    goto ok;
-  }
-  if (nr <  YY_PART_YEAR*LL(10000000000)+ LL(101000000))
-    goto err;
-  if (nr <= LL(991231235959))
-    nr= nr+LL(19000000000000);		// YYMMDDHHMMSS, 1970-1999
-
- ok:
-  part1=(long) (nr/LL(1000000));
-  part2=(long) (nr - (longlong) part1*LL(1000000));
-  time_res->year=  (int) (part1/10000L);  part1%=10000L;
-  time_res->month= (int) part1 / 100;
-  time_res->day=   (int) part1 % 100;
-  time_res->hour=  (int) (part2/10000L);  part2%=10000L;
-  time_res->minute=(int) part2 / 100;
-  time_res->second=(int) part2 % 100;
-    
-  if (time_res->year <= 9999 && time_res->month <= 12 && 
-      time_res->day <= 31 && time_res->hour <= 23 && 
-      time_res->minute <= 59 && time_res->second <= 59 &&
-      (fuzzy_date || (time_res->month != 0 && time_res->day != 0) || nr==0))
-    return nr;
-  
- err:
-  
-  *was_cut= 1;
-  return LL(0);
 }
 
 
@@ -356,7 +264,7 @@ longlong number_to_TIME(longlong nr, TIME *time_res, bool fuzzy_date,
   Convert a system time structure to TIME
 */
 
-void localtime_to_TIME(TIME *to, struct tm *from)
+void localtime_to_TIME(MYSQL_TIME *to, struct tm *from)
 {
   to->neg=0;
   to->second_part=0;
@@ -368,7 +276,7 @@ void localtime_to_TIME(TIME *to, struct tm *from)
   to->second=   (int) from->tm_sec;
 }
 
-void calc_time_from_sec(TIME *to, long seconds, long microseconds)
+void calc_time_from_sec(MYSQL_TIME *to, long seconds, long microseconds)
 {
   long t_seconds;
   to->hour= seconds/3600L;
@@ -737,7 +645,7 @@ const char *get_date_time_format_str(KNOWN_DATE_TIME_FORMAT *format,
     MySQL doesn't support comparing of date/time/datetime strings that
     are not in arbutary order as dates are compared as strings in some
     context)
-    This functions don't check that given TIME structure members are
+    This functions don't check that given MYSQL_TIME structure members are
     in valid range. If they are not, return value won't reflect any 
     valid date either. Additionally, make_time doesn't take into
     account time->day member: it's assumed that days have been converted
@@ -745,7 +653,7 @@ const char *get_date_time_format_str(KNOWN_DATE_TIME_FORMAT *format,
 ****************************************************************************/
 
 void make_time(const DATE_TIME_FORMAT *format __attribute__((unused)),
-               const TIME *l_time, String *str)
+               const MYSQL_TIME *l_time, String *str)
 {
   uint length= (uint) my_time_to_str(l_time, (char*) str->ptr());
   str->length(length);
@@ -754,7 +662,7 @@ void make_time(const DATE_TIME_FORMAT *format __attribute__((unused)),
 
 
 void make_date(const DATE_TIME_FORMAT *format __attribute__((unused)),
-               const TIME *l_time, String *str)
+               const MYSQL_TIME *l_time, String *str)
 {
   uint length= (uint) my_date_to_str(l_time, (char*) str->ptr());
   str->length(length);
@@ -763,7 +671,7 @@ void make_date(const DATE_TIME_FORMAT *format __attribute__((unused)),
 
 
 void make_datetime(const DATE_TIME_FORMAT *format __attribute__((unused)),
-                   const TIME *l_time, String *str)
+                   const MYSQL_TIME *l_time, String *str)
 {
   uint length= (uint) my_datetime_to_str(l_time, (char*) str->ptr());
   str->length(length);
@@ -771,17 +679,17 @@ void make_datetime(const DATE_TIME_FORMAT *format __attribute__((unused)),
 }
 
 
-void make_truncated_value_warning(THD *thd, const char *str_val,
-				  uint str_length, timestamp_type time_type)
+void make_truncated_value_warning(THD *thd, MYSQL_ERROR::enum_warning_level level,
+                                  const char *str_val,
+				  uint str_length, timestamp_type time_type,
+                                  const char *field_name)
 {
   char warn_buff[MYSQL_ERRMSG_SIZE];
   const char *type_str;
-
+  CHARSET_INFO *cs= &my_charset_latin1;
   char buff[128];
   String str(buff,(uint32) sizeof(buff), system_charset_info);
-  str.length(0);
-  str.append(str_val, str_length);
-  str.append('\0');
+  str.copy(str_val, str_length, system_charset_info);
 
   switch (time_type) {
     case MYSQL_TIMESTAMP_DATE: 
@@ -795,84 +703,18 @@ void make_truncated_value_warning(THD *thd, const char *str_val,
       type_str= "datetime";
       break;
   }
-  sprintf(warn_buff, ER(ER_TRUNCATED_WRONG_VALUE),
-	  type_str, str.ptr());
-  push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
-		      ER_TRUNCATED_WRONG_VALUE, warn_buff);
+  if (field_name)
+    cs->cset->snprintf(cs, warn_buff, sizeof(warn_buff),
+                       ER(ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
+                       type_str, str.c_ptr(), field_name,
+                       (ulong) thd->row_count);
+  else
+    cs->cset->snprintf(cs, warn_buff, sizeof(warn_buff),
+                       ER(ER_TRUNCATED_WRONG_VALUE),
+                       type_str, str.c_ptr());
+  push_warning(thd, level,
+               ER_TRUNCATED_WRONG_VALUE, warn_buff);
 }
 
-
-/* Convert time value to integer in YYYYMMDDHHMMSS format */
-
-ulonglong TIME_to_ulonglong_datetime(const TIME *time)
-{
-  return ((ulonglong) (time->year * 10000UL +
-                       time->month * 100UL +
-                       time->day) * ULL(1000000) +
-          (ulonglong) (time->hour * 10000UL +
-                       time->minute * 100UL +
-                       time->second));
-}
-
-
-/* Convert TIME value to integer in YYYYMMDD format */
-
-ulonglong TIME_to_ulonglong_date(const TIME *time)
-{
-  return (ulonglong) (time->year * 10000UL + time->month * 100UL + time->day);
-}
-
-
-/*
-  Convert TIME value to integer in HHMMSS format.
-  This function doesn't take into account time->day member:
-  it's assumed that days have been converted to hours already.
-*/
-
-ulonglong TIME_to_ulonglong_time(const TIME *time)
-{
-  return (ulonglong) (time->hour * 10000UL +
-                      time->minute * 100UL +
-                      time->second);
-}
-
-
-/*
-  Convert struct TIME (date and time split into year/month/day/hour/...
-  to a number in format YYYYMMDDHHMMSS (DATETIME),
-  YYYYMMDD (DATE)  or HHMMSS (TIME).
-  
-  SYNOPSIS
-    TIME_to_ulonglong()
-
-  DESCRIPTION
-    The function is used when we need to convert value of time item
-    to a number if it's used in numeric context, i. e.:
-    SELECT NOW()+1, CURDATE()+0, CURTIMIE()+0;
-    SELECT ?+1;
-
-  NOTE
-    This function doesn't check that given TIME structure members are
-    in valid range. If they are not, return value won't reflect any 
-    valid date either.
-*/
-
-ulonglong TIME_to_ulonglong(const TIME *time)
-{
-  switch (time->time_type) {
-  case MYSQL_TIMESTAMP_DATETIME:
-    return TIME_to_ulonglong_datetime(time);
-  case MYSQL_TIMESTAMP_DATE:
-    return TIME_to_ulonglong_date(time);
-  case MYSQL_TIMESTAMP_TIME:
-    return TIME_to_ulonglong_time(time);
-  case MYSQL_TIMESTAMP_NONE:
-  case MYSQL_TIMESTAMP_ERROR:
-    return ULL(0);
-  default:
-    DBUG_ASSERT(0);
-  }
-  return 0;
-}
 
 #endif

@@ -1,11 +1,4 @@
-# This test doesn't work with the embedded version as this code
-# assumes that one query is running while we are doing queries on
-# a second connection.
-# This would work if mysqltest run would be threaded and handle each
-# connection in a separate thread.
-#
 -- source include/not_embedded.inc
-
 --disable_warnings
 drop table if exists t1,t2;
 --enable_warnings
@@ -96,3 +89,164 @@ connection locker;
 drop table t1;
 
 # End of 4.1 tests
+
+#
+# BUG#9998 - MySQL client hangs on USE "database"
+#
+create table t1(a int);
+lock tables t1 write;
+connection reader;
+show columns from t1;
+connection locker;
+unlock tables;
+drop table t1;
+
+#
+# Bug#19815 - CREATE/RENAME/DROP DATABASE can deadlock on a global read lock
+#
+connect (con1,localhost,root,,);
+connect (con2,localhost,root,,);
+#
+connection con1;
+CREATE DATABASE mysqltest_1;
+FLUSH TABLES WITH READ LOCK;
+#
+# With bug in place: acquire LOCK_mysql_create_table and
+# wait in wait_if_global_read_lock().
+connection con2;
+send DROP DATABASE mysqltest_1;
+--sleep 1
+#
+# With bug in place: try to acquire LOCK_mysql_create_table...
+# When fixed: Reject dropping db because of the read lock.
+connection con1;
+--error ER_CANT_UPDATE_WITH_READLOCK
+DROP DATABASE mysqltest_1;
+UNLOCK TABLES;
+#
+connection con2;
+reap;
+#
+connection default;
+disconnect con1;
+disconnect con2;
+# This must have been dropped by connection 2 already,
+# which waited until the global read lock was released.
+--error ER_DB_DROP_EXISTS
+DROP DATABASE mysqltest_1;
+
+#
+# Bug#16986 - Deadlock condition with MyISAM tables
+#
+
+# Need a matching user in mysql.user for multi-table select
+--source include/add_anonymous_users.inc
+
+connection locker;
+use mysql;
+LOCK TABLES columns_priv WRITE, db WRITE, host WRITE, user WRITE;
+FLUSH TABLES;
+--sleep 1
+#
+connection reader;
+use mysql;
+#NOTE:  This must be a multi-table select, otherwise the deadlock will not occur
+send SELECT user.Select_priv FROM user, db WHERE user.user = db.user LIMIT 1;
+--sleep 1
+#
+connection locker;
+# Make test case independent from earlier grants.
+--replace_result "Table is already up to date" "OK"
+OPTIMIZE TABLES columns_priv, db, host, user;
+UNLOCK TABLES;
+#
+connection reader;
+reap;
+use test;
+#
+connection locker;
+use test;
+#
+connection default;
+#
+# Test if CREATE TABLE with LOCK TABLE deadlocks.
+#
+connection writer;
+CREATE TABLE t1 (c1 int);
+LOCK TABLE t1 WRITE;
+#
+# This waits until t1 is unlocked.
+connection locker;
+send FLUSH TABLES WITH READ LOCK;
+--sleep 1
+#
+# This must not block.
+connection writer;
+CREATE TABLE t2 (c1 int);
+UNLOCK TABLES;
+#
+# This awakes now.
+connection locker;
+reap;
+UNLOCK TABLES;
+#
+connection default;
+DROP TABLE t1, t2;
+#
+# Test if CREATE TABLE SELECT with LOCK TABLE deadlocks.
+#
+connection writer;
+CREATE TABLE t1 (c1 int);
+LOCK TABLE t1 WRITE;
+#
+# This waits until t1 is unlocked.
+connection locker;
+send FLUSH TABLES WITH READ LOCK;
+--sleep 1
+#
+# This must not block.
+connection writer;
+--error 1100
+CREATE TABLE t2 AS SELECT * FROM t1;
+UNLOCK TABLES;
+#
+# This awakes now.
+connection locker;
+reap;
+UNLOCK TABLES;
+#
+connection default;
+DROP TABLE t1;
+
+--source include/delete_anonymous_users.inc
+
+#
+# Bug #17264: MySQL Server freeze
+#
+connection locker;
+# Disable warnings to allow test to run also without InnoDB
+--disable_warnings
+create table t1 (f1 int(12) unsigned not null auto_increment, primary key(f1)) engine=innodb;
+--enable_warnings
+lock tables t1 write;
+connection writer;
+--sleep 2
+delimiter //;
+send alter table t1 auto_increment=0; alter table t1 auto_increment=0; alter table t1 auto_increment=0; alter table t1 auto_increment=0; alter table t1 auto_increment=0; //
+delimiter ;//
+connection reader;
+--sleep 2
+delimiter //;
+send alter table t1 auto_increment=0; alter table t1 auto_increment=0; alter table t1 auto_increment=0; alter table t1 auto_increment=0; alter table t1 auto_increment=0; //
+delimiter ;//
+connection locker;
+--sleep 2
+unlock tables;
+connection writer;
+reap;
+connection reader;
+reap;
+connection locker;
+drop table t1;
+
+# End of 5.0 tests

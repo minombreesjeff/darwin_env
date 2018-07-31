@@ -1,11 +1,11 @@
 #!@PERL@
 # -*- perl -*-
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2006 MySQL AB
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 #
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -174,29 +174,29 @@ sub new
 
   # Some fixes that depends on the environment
   if (defined($main::opt_create_options) &&
-      $main::opt_create_options =~ /type=heap/i)
+      $main::opt_create_options =~ /engine=heap/i)
   {
     $limits{'working_blobs'}	= 0; # HEAP tables can't handle BLOB's
   }
   if (defined($main::opt_create_options) &&
-      $main::opt_create_options =~ /type=innodb/i)
+      $main::opt_create_options =~ /engine=innodb/i)
   {
     $self->{'transactions'}	= 1;	# Transactions enabled
   }
   if (defined($main::opt_create_options) &&
-      $main::opt_create_options =~ /type=ndb/i)
+      $main::opt_create_options =~ /engine=ndb/i)
   {
     $self->{'transactions'}	= 1;	# Transactions enabled
     $limits{'max_columns'}	= 90;	# Max number of columns in table
     $limits{'max_tables'}	= 32;   # No comments
   }
   if (defined($main::opt_create_options) &&
-      $main::opt_create_options =~ /type=bdb/i)
+      $main::opt_create_options =~ /engine=bdb/i)
   {
     $self->{'transactions'}	= 1;	# Transactions enabled
   }
   if (defined($main::opt_create_options) &&
-      $main::opt_create_options =~ /type=gemini/i)
+      $main::opt_create_options =~ /engine=gemini/i)
   {
     $limits{'working_blobs'}	= 0; # Blobs not implemented yet
     $limits{'max_tables'}	= 500;

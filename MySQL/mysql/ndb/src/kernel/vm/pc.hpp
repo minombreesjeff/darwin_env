@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -90,7 +89,7 @@
  * @param limit  max no of records in rec
  * @param rec    pointer to first record in an array of records
  */
-#define ptrCheckGuard(ptr, limit, rec) {\
+#define ptrCheckGuardErr(ptr, limit, rec, error) {\
   UintR TxxzLimit; \
   TxxzLimit = (limit); \
   UintR TxxxPtr; \
@@ -99,33 +98,39 @@
   if (TxxxPtr < (TxxzLimit)) { \
     ; \
   } else { \
-    progError(__LINE__, ERR_POINTER_NOTINRANGE, __FILE__); \
+    progError(__LINE__, error, __FILE__); \
   }}
-
 #define ptrAss(ptr, rec) ptr.p = &rec[ptr.i]
 #define ptrNull(ptr) ptr.p = NULL
-#define ptrGuard(ptr) if (ptr.p == NULL) \
-    progError(__LINE__, ERR_POINTER_NOTINRANGE, __FILE__)
-#define arrGuard(ind, size) if ((ind) >= (size)) \
-    progError(__LINE__, ERR_INDEX_NOTINRANGE, __FILE__)
+#define ptrGuardErr(ptr, error) if (ptr.p == NULL) \
+    progError(__LINE__, error, __FILE__)
+#define arrGuardErr(ind, size, error) if ((ind) >= (size)) \
+    progError(__LINE__, error, __FILE__)
 #else
 #define ptrCheck(ptr, limit, rec) ptr.p = &rec[ptr.i]
-#define ptrCheckGuard(ptr, limit, rec) ptr.p = &rec[ptr.i]
+#define ptrCheckGuardErr(ptr, limit, rec, error) ptr.p = &rec[ptr.i]
 #define ptrAss(ptr, rec) ptr.p = &rec[ptr.i]
 #define ptrNull(ptr) ptr.p = NULL
-#define ptrGuard(ptr)
-#define arrGuard(ind, size)
+#define ptrGuardErr(ptr, error)
+#define arrGuardErr(ind, size, error)
 #endif
+
+#define ptrCheckGuard(ptr, limit, rec) \
+  ptrCheckGuardErr(ptr, limit, rec, NDBD_EXIT_POINTER_NOTINRANGE)
+#define ptrGuard(ptr) ptrGuardErr(ptr, NDBD_EXIT_POINTER_NOTINRANGE)
+#define arrGuard(ind, size) arrGuardErr(ind, size, NDBD_EXIT_INDEX_NOTINRANGE)
 
 // -------- ERROR INSERT MACROS -------
 #ifdef ERROR_INSERT
 #define ERROR_INSERT_VARIABLE UintR cerrorInsert
 #define ERROR_INSERTED(x) (cerrorInsert == (x))
+#define ERROR_INSERTED_CLEAR(x) (cerrorInsert == (x) ? (cerrorInsert = 0, true) : false)
 #define SET_ERROR_INSERT_VALUE(x) cerrorInsert = x
 #define CLEAR_ERROR_INSERT_VALUE cerrorInsert = 0
 #else
 #define ERROR_INSERT_VARIABLE typedef void * cerrorInsert // Will generate compiler error if used
 #define ERROR_INSERTED(x) false
+#define ERROR_INSERTED_CLEAR(x) false
 #define SET_ERROR_INSERT_VALUE(x)
 #define CLEAR_ERROR_INSERT_VALUE
 #endif
@@ -197,34 +202,31 @@
 #define ndbassert(check) \
   if((check)){ \
   } else {     \
-    progError(__LINE__, ERR_NDBREQUIRE, __FILE__); \
-  }           
-
-#define ndbrequire(check) \
-  if((check)){ \
-  } else {     \
-    progError(__LINE__, ERR_NDBREQUIRE, __FILE__); \
-  }           
+    progError(__LINE__, NDBD_EXIT_NDBASSERT, __FILE__); \
+  }
 #else
 #define ndbassert(check)
+#endif
 
-#define ndbrequire(check) \
+#define ndbrequireErr(check, error) \
   if((check)){ \
   } else {     \
-    progError(__LINE__, ERR_NDBREQUIRE, __FILE__); \
-  }           
-#endif
+    progError(__LINE__, error, __FILE__); \
+  }
+
+#define ndbrequire(check) \
+  ndbrequireErr(check, NDBD_EXIT_NDBREQUIRE)
 
 #define CRASH_INSERTION(errorType) \
   if (!ERROR_INSERTED((errorType))) { \
   } else { \
-    progError(__LINE__, ERR_ERROR_INSERT, __FILE__); \
+    progError(__LINE__, NDBD_EXIT_ERROR_INSERT, __FILE__); \
   }
 
 #define CRASH_INSERTION2(errorNum, condition) \
   if (!(ERROR_INSERTED(errorNum) && condition)) { \
   } else { \
-    progError(__LINE__, ERR_ERROR_INSERT, __FILE__); \
+    progError(__LINE__, NDBD_EXIT_ERROR_INSERT, __FILE__); \
   }
 
 #define MEMCOPY_PAGE(to, from, page_size_in_bytes) \

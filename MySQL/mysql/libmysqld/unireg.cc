@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,11 +42,10 @@ static uint get_interval_id(uint *int_count,List<create_field> &create_fields,
 			    create_field *last_field);
 static bool pack_fields(File file, List<create_field> &create_fields,
                         ulong data_offset);
-static bool make_empty_rec(int file, enum db_type table_type,
+static bool make_empty_rec(THD *thd, int file, enum db_type table_type,
 			   uint table_options,
 			   List<create_field> &create_fields,
-			   uint reclength, uint null_fields,
-                           ulong data_offset);
+			   uint reclength, ulong data_offset);
 
 /*
   Create a frm (table definition) file
@@ -76,19 +74,22 @@ bool mysql_create_frm(THD *thd, my_string file_name,
 		      uint keys, KEY *key_info,
 		      handler *db_file)
 {
-  uint reclength,info_length,screens,key_info_length,maxlength,null_fields;
+  LEX_STRING str_db_type;
+  uint reclength, info_length, screens, key_info_length, maxlength, tmp_len;
+  ulong key_buff_length;
   File file;
   ulong filepos, data_offset;
   uchar fileinfo[64],forminfo[288],*keybuff;
   TYPELIB formnames;
   uchar *screen_buff;
+  char buff[128];
   DBUG_ENTER("mysql_create_frm");
 
   formnames.type_names=0;
   if (!(screen_buff=pack_screens(create_fields,&info_length,&screens,0)))
     DBUG_RETURN(1);
   if (db_file == NULL)
-    db_file= get_new_handler((TABLE*) 0, create_info->db_type);
+    db_file= get_new_handler((TABLE*) 0, thd->mem_root, create_info->db_type);
 
  /* If fixed row records, we need one bit to check for deleted rows */
   if (!(create_info->table_options & HA_OPTION_PACK_RECORD))
@@ -115,16 +116,21 @@ bool mysql_create_frm(THD *thd, my_string file_name,
     }
   }
   reclength=uint2korr(forminfo+266);
-  null_fields=uint2korr(forminfo+282);
 
-  if ((file=create_frm(file_name, db, table, reclength, fileinfo,
+  /* Calculate extra data segment length */
+  str_db_type.str= (char *) ha_get_storage_engine(create_info->db_type);
+  str_db_type.length= strlen(str_db_type.str);
+  create_info->extra_size= (2 + str_db_type.length +
+                            2 + create_info->connect_string.length);
+
+  if ((file=create_frm(thd, file_name, db, table, reclength, fileinfo,
 		       create_info, keys)) < 0)
   {
     my_free((gptr) screen_buff,MYF(0));
     DBUG_RETURN(1);
   }
 
-  uint key_buff_length=keys*(7+NAME_LEN+MAX_REF_PARTS*9)+16;
+  key_buff_length= uint4korr(fileinfo+47);
   keybuff=(uchar*) my_malloc(key_buff_length, MYF(0));
   key_info_length= pack_keys(keybuff, keys, key_info, data_offset);
   VOID(get_form_pos(file,fileinfo,&formnames));
@@ -133,14 +139,32 @@ bool mysql_create_frm(THD *thd, my_string file_name,
   maxlength=(uint) next_io_size((ulong) (uint2korr(forminfo)+1000));
   int2store(forminfo+2,maxlength);
   int4store(fileinfo+10,(ulong) (filepos+maxlength));
-  int4store(fileinfo+47,key_buff_length);
   fileinfo[26]= (uchar) test((create_info->max_rows == 1) &&
 			     (create_info->min_rows == 1) && (keys == 0));
   int2store(fileinfo+28,key_info_length);
-  strmake((char*) forminfo+47,create_info->comment ? create_info->comment : "",
-	  60);
-  forminfo[46]=(uchar) strlen((char*)forminfo+47);	// Length of comment
 
+  tmp_len= system_charset_info->cset->charpos(system_charset_info,
+                                              create_info->comment.str,
+                                              create_info->comment.str +
+                                              create_info->comment.length, 60);
+  if (tmp_len < create_info->comment.length)
+  {
+    (void) my_snprintf(buff, sizeof(buff), "Too long comment for table '%s'",
+                       table);
+    if ((thd->variables.sql_mode &
+         (MODE_STRICT_TRANS_TABLES | MODE_STRICT_ALL_TABLES)))
+    {
+      my_message(ER_UNKNOWN_ERROR, buff, MYF(0));
+      goto err;
+    }
+    push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                        ER_UNKNOWN_ERROR, ER(ER_UNKNOWN_ERROR), buff);
+    create_info->comment.length= tmp_len;
+  }
+
+  strmake((char*) forminfo+47, create_info->comment.str ?
+          create_info->comment.str : "", create_info->comment.length);
+  forminfo[46]=(uchar) create_info->comment.length;
   if (my_pwrite(file,(byte*) fileinfo,64,0L,MYF_RW) ||
       my_pwrite(file,(byte*) keybuff,key_info_length,
 		(ulong) uint2korr(fileinfo+6),MYF_RW))
@@ -148,10 +172,22 @@ bool mysql_create_frm(THD *thd, my_string file_name,
   VOID(my_seek(file,
 	       (ulong) uint2korr(fileinfo+6)+ (ulong) key_buff_length,
 	       MY_SEEK_SET,MYF(0)));
-  if (make_empty_rec(file,create_info->db_type,create_info->table_options,
-		     create_fields,reclength, null_fields, data_offset))
+  if (make_empty_rec(thd,file,create_info->db_type,create_info->table_options,
+		     create_fields,reclength, data_offset))
     goto err;
 
+  int2store(buff, create_info->connect_string.length);
+  if (my_write(file, (const byte*)buff, 2, MYF(MY_NABP)) ||
+      my_write(file, (const byte*)create_info->connect_string.str,
+               create_info->connect_string.length, MYF(MY_NABP)))
+      goto err;
+
+  int2store(buff, str_db_type.length);
+  if (my_write(file, (const byte*)buff, 2, MYF(MY_NABP)) ||
+      my_write(file, (const byte*)str_db_type.str,
+               str_db_type.length, MYF(MY_NABP)))
+    goto err;
+ 
   VOID(my_seek(file,filepos,MY_SEEK_SET,MYF(0)));
   if (my_write(file,(byte*) forminfo,288,MYF_RW) ||
       my_write(file,(byte*) screen_buff,info_length,MYF_RW) ||
@@ -232,7 +268,7 @@ err3:
     keys		number of keys to create
     key_info		Keys to create
     db_file		Handler to use. May be zero, in which case we use
-    			create_info->db_type
+                        create_info->db_type
   RETURN
     0  ok
     1  error
@@ -247,11 +283,11 @@ int rea_create_table(THD *thd, my_string file_name,
   DBUG_ENTER("rea_create_table");
 
   if (mysql_create_frm(thd, file_name, db, table, create_info,
-  		       create_fields, keys, key_info, NULL))
+                       create_fields, keys, key_info, NULL))
     DBUG_RETURN(1);
-  if (ha_create_table(file_name,create_info,0))
+  if (!create_info->frm_only && ha_create_table(file_name,create_info,0))
   {
-    my_delete(file_name,MYF(0));    
+    my_delete(file_name,MYF(0));
     DBUG_RETURN(1);
   }
   DBUG_RETURN(0);
@@ -356,16 +392,16 @@ static uint pack_keys(uchar *keybuff, uint key_count, KEY *keyinfo,
     pos[6]=pos[7]=0;				// For the future
     pos+=8;
     key_parts+=key->key_parts;
-    DBUG_PRINT("loop",("flags: %d  key_parts: %d at %lx",
-		       key->flags,key->key_parts,
-		       key->key_part));
+    DBUG_PRINT("loop", ("flags: %d  key_parts: %d at 0x%lx",
+                        key->flags, key->key_parts,
+                        (long) key->key_part));
     for (key_part=key->key_part,key_part_end=key_part+key->key_parts ;
 	 key_part != key_part_end ;
 	 key_part++)
 
     {
       uint offset;
-      DBUG_PRINT("loop",("field: %d  startpos: %lu  length: %ld",
+      DBUG_PRINT("loop",("field: %d  startpos: %lu  length: %d",
 			 key_part->fieldnr, key_part->offset + data_offset,
                          key_part->length));
       int2store(pos,key_part->fieldnr+1+FIELD_NAME_USED);
@@ -421,11 +457,12 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
 
   if (create_fields.elements > MAX_FIELDS)
   {
-    my_error(ER_TOO_MANY_FIELDS,MYF(0));
+    my_message(ER_TOO_MANY_FIELDS, ER(ER_TOO_MANY_FIELDS), MYF(0));
     DBUG_RETURN(1);
   }
 
-  totlength=reclength=0L;
+  totlength= 0L;
+  reclength= data_offset;
   no_empty=int_count=int_parts=int_length=time_stamp_pos=null_fields=
     com_length=0;
   n_length=2L;
@@ -436,6 +473,27 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   create_field *field;
   while ((field=it++))
   {
+    uint tmp_len= system_charset_info->cset->charpos(system_charset_info,
+                                                     field->comment.str,
+                                                     field->comment.str +
+                                                     field->comment.length,
+                                                     255);
+    if (tmp_len < field->comment.length)
+    {
+      char buff[128];
+      (void) my_snprintf(buff,sizeof(buff), "Too long comment for field '%s'",
+                         field->field_name);
+      if ((current_thd->variables.sql_mode &
+	   (MODE_STRICT_TRANS_TABLES | MODE_STRICT_ALL_TABLES)))
+      {
+        my_message(ER_UNKNOWN_ERROR, buff, MYF(0));
+	DBUG_RETURN(1);
+      }
+      push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                          ER_UNKNOWN_ERROR, ER(ER_UNKNOWN_ERROR), buff);
+      field->comment.length= tmp_len;
+    }
+
     totlength+= field->length;
     com_length+= field->comment.length;
     if (MTYP_TYPENR(field->unireg_check) == Field::NOEMPTY ||
@@ -454,6 +512,8 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
 	!time_stamp_pos)
       time_stamp_pos= (uint) field->offset+ (uint) data_offset + 1;
     length=field->pack_length;
+    /* Ensure we don't have any bugs when generating offsets */
+    DBUG_ASSERT(reclength == field->offset + data_offset);
     if ((uint) field->offset+ (uint) data_offset+ length > reclength)
       reclength=(uint) (field->offset+ data_offset + length);
     n_length+= (ulong) strlen(field->field_name)+1;
@@ -486,18 +546,13 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
         for (uint pos= 0; pos < field->interval->count; pos++)
         {
           char *dst;
-          uint length= field->save_interval->type_lengths[pos], hex_length;
           const char *src= field->save_interval->type_names[pos];
-          const char *srcend= src + length;
+          uint hex_length;
+          length= field->save_interval->type_lengths[pos];
           hex_length= length * 2;
           field->interval->type_lengths[pos]= hex_length;
           field->interval->type_names[pos]= dst= sql_alloc(hex_length + 1);
-          for ( ; src < srcend; src++)
-          {
-            *dst++= _dig_vec_upper[((uchar) *src) >> 4];
-            *dst++= _dig_vec_upper[((uchar) *src) & 15];
-          }
-          *dst= '\0';
+          octet2hex(dst, src, length);
         }
       }
 
@@ -526,7 +581,7 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   if (info_length+(ulong) create_fields.elements*FCOMP+288+
       n_length+int_length+com_length > 65535L || int_count > 255)
   {
-    my_error(ER_TOO_MANY_FIELDS,MYF(0));
+    my_message(ER_TOO_MANY_FIELDS, ER(ER_TOO_MANY_FIELDS), MYF(0));
     DBUG_RETURN(1);
   }
 
@@ -549,6 +604,7 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   int2store(forminfo+280,22);			/* Rows needed */
   int2store(forminfo+282,null_fields);
   int2store(forminfo+284,com_length);
+  /* Up to forminfo+288 is free to use for additional information */
   DBUG_RETURN(0);
 } /* pack_header */
 
@@ -657,29 +713,48 @@ static bool pack_fields(File file, List<create_field> &create_fields,
     {
       if (field->interval_id > int_count)
       {
-	int_count=field->interval_id;
-	tmp.append(NAMES_SEP_CHAR);
-	for (const char **pos=field->interval->type_names ; *pos ; pos++)
-	{
-          char *val= (char*) *pos;
-          uint str_len= strlen(val);
-          /*
-            Note, hack: in old frm NAMES_SEP_CHAR is used to separate
-            names in the interval (ENUM/SET). To allow names to contain
-            NAMES_SEP_CHAR, we replace it with a comma before writing frm.
-            Backward conversion is done during frm file opening,
-            See table.cc, openfrm() function
-          */
-          for (uint cnt= 0 ; cnt < str_len ; cnt++)
+        unsigned char  sep= 0;
+        unsigned char  occ[256];
+        uint           i;
+        unsigned char *val= NULL;
+
+        bzero(occ, sizeof(occ));
+
+        for (i=0; (val= (unsigned char*) field->interval->type_names[i]); i++)
+          for (uint j = 0; j < field->interval->type_lengths[i]; j++)
+            occ[(unsigned int) (val[j])]= 1;
+
+        if (!occ[(unsigned char)NAMES_SEP_CHAR])
+          sep= (unsigned char) NAMES_SEP_CHAR;
+        else if (!occ[(unsigned int)','])
+          sep= ',';
+        else
+        {
+          for (uint i=1; i<256; i++)
           {
-            char c= val[cnt];
-            if (c == NAMES_SEP_CHAR)
-              val[cnt]= ',';
+            if(!occ[i])
+            {
+              sep= i;
+              break;
+            }
           }
-	  tmp.append(*pos);
-	  tmp.append(NAMES_SEP_CHAR);
-	}
-	tmp.append('\0');			// End of intervall
+
+          if(!sep)    /* disaster, enum uses all characters, none left as separator */
+          {
+            my_message(ER_WRONG_FIELD_TERMINATORS,ER(ER_WRONG_FIELD_TERMINATORS),
+                       MYF(0));
+            DBUG_RETURN(1);
+          }
+        }
+
+        int_count= field->interval_id;
+        tmp.append(sep);
+        for (const char **pos=field->interval->type_names ; *pos ; pos++)
+        {
+          tmp.append(*pos);
+          tmp.append(sep);
+        }
+        tmp.append('\0');                      // End of intervall
       }
     }
     if (my_write(file,(byte*) tmp.ptr(),tmp.length(),MYF_RW))
@@ -703,24 +778,26 @@ static bool pack_fields(File file, List<create_field> &create_fields,
 
 	/* save an empty record on start of formfile */
 
-static bool make_empty_rec(File file,enum db_type table_type,
+static bool make_empty_rec(THD *thd, File file,enum db_type table_type,
 			   uint table_options,
 			   List<create_field> &create_fields,
-			   uint reclength, uint null_fields,
+			   uint reclength,
                            ulong data_offset)
 {
   int error;
   Field::utype type;
-  uint firstpos,null_count;
+  uint null_count;
   uchar *buff,*null_pos;
   TABLE table;
   create_field *field;
   handler *handler;
+  enum_check_fields old_count_cuted_fields= thd->count_cuted_fields;
   DBUG_ENTER("make_empty_rec");
 
   /* We need a table to generate columns for default values */
   bzero((char*) &table,sizeof(table));
-  handler= get_new_handler((TABLE*) 0, table_type);
+  table.s= &table.share_not_to_be_used;
+  handler= get_new_handler((TABLE*) 0, thd->mem_root, table_type);
 
   if (!handler ||
       !(buff=(uchar*) my_malloc((uint) reclength,MYF(MY_WME | MY_ZEROFILL))))
@@ -729,26 +806,29 @@ static bool make_empty_rec(File file,enum db_type table_type,
     DBUG_RETURN(1);
   }
 
-  table.in_use= current_thd;
-  table.db_low_byte_first= handler->low_byte_first();
-  table.blob_ptr_size=portable_sizeof_char_ptr;
+  table.in_use= thd;
+  table.s->db_low_byte_first= handler->low_byte_first();
+  table.s->blob_ptr_size= portable_sizeof_char_ptr;
 
-  firstpos=reclength;
   null_count=0;
   if (!(table_options & HA_OPTION_PACK_RECORD))
+  {
     null_count++;			// Need one bit for delete mark
-  DBUG_ASSERT(data_offset == ((null_fields + null_count + 7) / 8));
-  bfill(buff, (uint) data_offset, 255);
-  null_pos=buff;
+    *buff|= 1;
+  }
+  null_pos= buff;
 
   List_iterator<create_field> it(create_fields);
+  thd->count_cuted_fields= CHECK_FIELD_WARN;    // To find wrong default values
   while ((field=it++))
   {
+    /*
+      regfield don't have to be deleted as it's allocated with sql_alloc()
+    */
     Field *regfield=make_field((char*) buff+field->offset + data_offset,
                                field->length,
-			       field->flags & NOT_NULL_FLAG ? 0:
-			       null_pos+null_count/8,
-			       1 << (null_count & 7),
+                               null_pos + null_count / 8,
+			       null_count & 7,
 			       field->pack_flag,
 			       field->sql_type,
 			       field->charset,
@@ -758,25 +838,41 @@ static bool make_empty_rec(File file,enum db_type table_type,
                                field->interval, 
 			       field->field_name,
 			       &table);
+    if (!regfield)
+    {
+      error= 1;
+      goto err;                                 // End of memory
+    }
 
     if (!(field->flags & NOT_NULL_FLAG))
+    {
+      *regfield->null_ptr|= regfield->null_bit;
       null_count++;
+    }
 
-    if ((uint) (field->offset + data_offset) < firstpos &&
-	regfield->type() != FIELD_TYPE_NULL)
-      firstpos= field->offset + data_offset;
+    if (field->sql_type == FIELD_TYPE_BIT && !f_bit_as_char(field->pack_flag))
+      null_count+= field->length & 7;
 
     type= (Field::utype) MTYP_TYPENR(field->unireg_check);
 
     if (field->def &&
 	(regfield->real_type() != FIELD_TYPE_YEAR ||
 	 field->def->val_int() != 0))
-      (void) field->def->save_in_field(regfield, 1);
+    {
+      int res= field->def->save_in_field(regfield, 1);
+      /* If not ok or warning of level 'note' */
+      if (res != 0 && res != 3)
+      {
+        my_error(ER_INVALID_DEFAULT, MYF(0), regfield->field_name);
+        error= 1;
+        goto err;
+      }
+    }
     else if (regfield->real_type() == FIELD_TYPE_ENUM &&
 	     (field->flags & NOT_NULL_FLAG))
     {
       regfield->set_notnull();
-      regfield->store((longlong) 1);
+      regfield->store((longlong) 1, TRUE);
     }
     else if (type == Field::YES)		// Old unireg type
       regfield->store(ER(ER_YES),(uint) strlen(ER(ER_YES)),system_charset_info);
@@ -784,13 +880,21 @@ static bool make_empty_rec(File file,enum db_type table_type,
       regfield->store(ER(ER_NO), (uint) strlen(ER(ER_NO)),system_charset_info);
     else
       regfield->reset();
-    delete regfield;
   }
+  DBUG_ASSERT(data_offset == ((null_count + 7) / 8));
 
-  /* Fill not used startpos */
-  bfill((byte*) buff+data_offset, firstpos- (uint) data_offset, 255);
+  /*
+    We need to set the unused bits to 1. If the number of bits is a multiple
+    of 8 there are no unused bits.
+  */
+  if (null_count & 7)
+    *(null_pos + null_count / 8)|= ~(((uchar) 1 << (null_count & 7)) - 1);
+
   error=(int) my_write(file,(byte*) buff, (uint) reclength,MYF_RW);
+
+err:
   my_free((gptr) buff,MYF(MY_FAE));
   delete handler;
+  thd->count_cuted_fields= old_count_cuted_fields;
   DBUG_RETURN(error);
 } /* make_empty_rec */

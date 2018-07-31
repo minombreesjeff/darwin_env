@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -83,6 +82,7 @@ public:
  */
 
   struct StartRecord {
+    StartRecord() {}
     Uint64 m_startTime;
     
     void reset();
@@ -173,6 +173,7 @@ private:
 
   // Received signals
   void execDUMP_STATE_ORD(Signal* signal);
+  void execREAD_CONFIG_REQ(Signal* signal);
   void execSTTOR(Signal* signal);
   void execTCSEIZECONF(Signal* signal);
   void execTCSEIZEREF(Signal* signal);
@@ -190,7 +191,6 @@ private:
   void execNDB_STARTCONF(Signal* signal);
   void execREAD_NODESREQ(Signal* signal);
   void execNDB_STARTREF(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
 
   void execSTOP_PERM_REF(Signal* signal);
   void execSTOP_PERM_CONF(Signal* signal);
@@ -225,7 +225,7 @@ private:
   CheckNodeGroups::Output checkNodeGroups(Signal*, const NdbNodeBitmask &);
   
   // Generated statement blocks
-  void systemErrorLab(Signal* signal);
+  void systemErrorLab(Signal* signal, int line);
 
   void createSystableLab(Signal* signal, unsigned index);
   void crSystab7Lab(Signal* signal);

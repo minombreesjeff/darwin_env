@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,6 +42,7 @@ This file contains the implementation of error and warnings related
 ***********************************************************************/
 
 #include "mysql_priv.h"
+#include "sp_rcontext.h"
 
 /*
   Store a new message in an error object
@@ -63,6 +63,7 @@ void MYSQL_ERROR::set_msg(THD *thd, const char *msg_arg)
   SYNOPSIS
     mysql_reset_errors()
     thd			Thread handle
+    force               Reset warnings even if it has been done before
 
   IMPLEMENTATION
     Don't reset warnings if this has already been called for this query.
@@ -70,14 +71,16 @@ void MYSQL_ERROR::set_msg(THD *thd, const char *msg_arg)
     in which case push_warnings() has already called this function.
 */  
 
-void mysql_reset_errors(THD *thd)
+void mysql_reset_errors(THD *thd, bool force)
 {
   DBUG_ENTER("mysql_reset_errors");
-  if (thd->query_id != thd->warn_id)
+  if (thd->query_id != thd->warn_id || force)
   {
     thd->warn_id= thd->query_id;
     free_root(&thd->warn_root,MYF(0));
     bzero((char*) thd->warn_count, sizeof(thd->warn_count));
+    if (force)
+      thd->total_warn_count= 0;
     thd->warn_list.empty();
     thd->row_count= 1; // by default point to row 1
   }
@@ -104,14 +107,43 @@ MYSQL_ERROR *push_warning(THD *thd, MYSQL_ERROR::enum_warning_level level,
 {
   MYSQL_ERROR *err= 0;
   DBUG_ENTER("push_warning");
+  DBUG_PRINT("enter", ("code: %d, msg: %s", code, msg));
 
-  if (level == MYSQL_ERROR::WARN_LEVEL_NOTE && !(thd->options & OPTION_SQL_NOTES))
-    return(0);
+  if (level == MYSQL_ERROR::WARN_LEVEL_NOTE &&
+      !(thd->options & OPTION_SQL_NOTES))
+    DBUG_RETURN(0);
 
+  if (thd->query_id != thd->warn_id && !thd->spcont)
+    mysql_reset_errors(thd, 0);
+  thd->got_warning= 1;
+
+  /* Abort if we are using strict mode and we are not using IGNORE */
+  if ((int) level >= (int) MYSQL_ERROR::WARN_LEVEL_WARN &&
+      thd->really_abort_on_warning())
+  {
+    /* Avoid my_message() calling push_warning */
+    bool no_warnings_for_error= thd->no_warnings_for_error;
+    sp_rcontext *spcont= thd->spcont;
+
+    thd->no_warnings_for_error= 1;
+    thd->spcont= 0;
+
+    thd->killed= THD::KILL_BAD_DATA;
+    my_message(code, msg, MYF(0));
+
+    thd->spcont= spcont;
+    thd->no_warnings_for_error= no_warnings_for_error;
+    /* Store error in error list (as my_message() didn't do it) */
+    level= MYSQL_ERROR::WARN_LEVEL_ERROR;
+  }
+
+  if (thd->spcont &&
+      thd->spcont->handle_error(code, level, thd))
+  {
+    DBUG_RETURN(NULL);
+  }
   query_cache_abort(&thd->net);
 
-  if (thd->query_id != thd->warn_id)
-    mysql_reset_errors(thd);
 
   if (thd->warn_list.elements < thd->variables.max_error_count)
   {
@@ -121,8 +153,7 @@ MYSQL_ERROR *push_warning(THD *thd, MYSQL_ERROR::enum_warning_level level,
     */
     MEM_ROOT *old_root= thd->mem_root;
     thd->mem_root= &thd->warn_root;
-    err= new MYSQL_ERROR(thd, code, level, msg);
-    if (err)
+    if ((err= new MYSQL_ERROR(thd, code, level, msg)))
       thd->warn_list.push_back(err);
     thd->mem_root= old_root;
   }
@@ -170,14 +201,14 @@ void push_warning_printf(THD *thd, MYSQL_ERROR::enum_warning_level level,
     Takes into account the current LIMIT
 
   RETURN VALUES
-    0	ok
-    1	Error sending data to client
+    FALSE ok
+    TRUE  Error sending data to client
 */
 
 static const char *warning_level_names[]= {"Note", "Warning", "Error", "?"};
 static int warning_level_length[]= { 4, 7, 5, 1 };
 
-my_bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
+bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
 {  
   List<Item> field_list;
   DBUG_ENTER("mysqld_show_warnings");
@@ -186,26 +217,27 @@ my_bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
   field_list.push_back(new Item_return_int("Code",4, MYSQL_TYPE_LONG));
   field_list.push_back(new Item_empty_string("Message",MYSQL_ERRMSG_SIZE));
 
-  if (thd->protocol->send_fields(&field_list,1))
-    DBUG_RETURN(1);
+  if (thd->protocol->send_fields(&field_list,
+                                 Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+    DBUG_RETURN(TRUE);
 
   MYSQL_ERROR *err;
   SELECT_LEX *sel= &thd->lex->select_lex;
-  ha_rows offset= sel->offset_limit, limit= sel->select_limit;
+  SELECT_LEX_UNIT *unit= &thd->lex->unit;
+  ha_rows idx= 0;
   Protocol *protocol=thd->protocol;
-  
+
+  unit->set_limit(sel);
+
   List_iterator_fast<MYSQL_ERROR> it(thd->warn_list);
   while ((err= it++))
   {
     /* Skip levels that the user is not interested in */
     if (!(levels_to_show & ((ulong) 1 << err->level)))
       continue;
-    if (offset)
-    {
-      offset--;
+    if (++idx <= unit->offset_limit_cnt)
       continue;
-    }
-    if (limit-- == 0)
+    if (idx > unit->select_limit_cnt)
       break;
     protocol->prepare_for_resend();
     protocol->store(warning_level_names[err->level],
@@ -213,8 +245,8 @@ my_bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
     protocol->store((uint32) err->code);
     protocol->store(err->msg, strlen(err->msg), system_charset_info);
     if (protocol->write())
-      DBUG_RETURN(1);
+      DBUG_RETURN(TRUE);
   }
-  send_eof(thd);  
-  DBUG_RETURN(0);
+  send_eof(thd);
+  DBUG_RETURN(FALSE);
 }

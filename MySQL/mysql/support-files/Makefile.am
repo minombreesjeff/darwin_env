@@ -1,9 +1,9 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2001, 2003-2006 MySQL AB
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 #
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,15 +28,16 @@ EXTRA_DIST =		mysql.spec.sh \
 			binary-configure.sh \
 			magic \
 			MySQL-shared-compat.spec.sh \
-			ndb-config-2-node.ini.sh
+			ndb-config-2-node.ini.sh \
+			compiler_warnings.supp
 
-SUBDIRS = MacOSX
+SUBDIRS =		MacOSX RHEL4-SElinux
 
 pkgdata_DATA =		my-small.cnf \
 			my-medium.cnf \
 			my-large.cnf \
 			my-huge.cnf \
-      my-innodb-heavy-4G.cnf \
+			my-innodb-heavy-4G.cnf \
 			mysql-log-rotate \
 			binary-configure \
 			ndb-config-2-node.ini

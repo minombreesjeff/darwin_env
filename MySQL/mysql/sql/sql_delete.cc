@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,60 +13,97 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-
 /*
   Delete of records and truncate of tables.
 
   Multi-table deletes were introduced by Monty and Sinisa
 */
 
-
-
 #include "mysql_priv.h"
 #include "ha_innodb.h"
 #include "sql_select.h"
+#include "sp_head.h"
+#include "sql_trigger.h"
 
-int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
-                 SQL_LIST *order, ha_rows limit, ulong options)
+bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
+                  SQL_LIST *order, ha_rows limit, ulonglong options,
+                  bool reset_auto_increment)
 {
   int		error;
   TABLE		*table;
   SQL_SELECT	*select=0;
   READ_RECORD	info;
-  bool 		using_limit=limit != HA_POS_ERROR;
-  bool		transactional_table, log_delayed, safe_update, const_cond; 
+  bool          using_limit=limit != HA_POS_ERROR;
+  bool		transactional_table, safe_update, const_cond;
   ha_rows	deleted;
   uint usable_index= MAX_KEY;
+  SELECT_LEX   *select_lex= &thd->lex->select_lex;
   DBUG_ENTER("mysql_delete");
 
-  if ((open_and_lock_tables(thd, table_list)))
-    DBUG_RETURN(-1);
-  table= table_list->table;
+  if (open_and_lock_tables(thd, table_list))
+    DBUG_RETURN(TRUE);
+  if (!(table= table_list->table))
+  {
+    my_error(ER_VIEW_DELETE_MERGE_VIEW, MYF(0),
+	     table_list->view_db.str, table_list->view_name.str);
+    DBUG_RETURN(TRUE);
+  }
   error= table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
   if (error)
   {
     table->file->print_error(error, MYF(0));
     DBUG_RETURN(error);
   }
-  thd->proc_info="init";
+  thd_proc_info(thd, "init");
   table->map=1;
 
-  if ((error= mysql_prepare_delete(thd, table_list, &conds)))
-    DBUG_RETURN(error);
+  if (mysql_prepare_delete(thd, table_list, &conds))
+    DBUG_RETURN(TRUE);
+
+  /* check ORDER BY even if it can be ignored */
+  if (order && order->elements)
+  {
+    TABLE_LIST   tables;
+    List<Item>   fields;
+    List<Item>   all_fields;
+
+    bzero((char*) &tables,sizeof(tables));
+    tables.table = table;
+    tables.alias = table_list->alias;
+
+      if (select_lex->setup_ref_array(thd, order->elements) ||
+	  setup_order(thd, select_lex->ref_pointer_array, &tables,
+                    fields, all_fields, (ORDER*) order->first))
+    {
+      delete select;
+      free_underlaid_joins(thd, &thd->lex->select_lex);
+      DBUG_RETURN(TRUE);
+    }
+  }
 
   const_cond= (!conds || conds->const_item());
   safe_update=test(thd->options & OPTION_SAFE_UPDATES);
   if (safe_update && const_cond)
   {
-    send_error(thd,ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE);
-    DBUG_RETURN(1);
+    my_message(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE,
+               ER(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE), MYF(0));
+    DBUG_RETURN(TRUE);
   }
 
-  thd->lex->select_lex.no_error= thd->lex->ignore;
+  select_lex->no_error= thd->lex->ignore;
 
-  /* Test if the user wants to delete all rows */
+  /*
+    Test if the user wants to delete all rows and deletion doesn't have
+    any side-effects (because of triggers), so we can use optimized
+    handler::delete_all_rows() method.
+    We implement fast TRUNCATE for InnoDB even if triggers are present. 
+    TRUNCATE ignores triggers.
+  */
   if (!using_limit && const_cond && (!conds || conds->val_int()) &&
-      !(specialflag & (SPECIAL_NO_NEW_FUNC | SPECIAL_SAFE_MODE)))
+      !(specialflag & (SPECIAL_NO_NEW_FUNC | SPECIAL_SAFE_MODE)) &&
+      (thd->lex->sql_command == SQLCOM_TRUNCATE ||
+       !(table->triggers && table->triggers->has_delete_triggers()))
+     )
   {
     deleted= table->file->records;
     if (!(error=table->file->delete_all_rows()))
@@ -84,16 +120,32 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
     /* Handler didn't support fast delete; Delete rows one by one */
   }
 
+  if (conds)
+  {
+    Item::cond_result result;
+    conds= remove_eq_conds(thd, conds, &result);
+    if (result == Item::COND_FALSE)             // Impossible where
+      limit= 0;
+  }
+
   table->used_keys.clear_all();
   table->quick_keys.clear_all();		// Can't use 'only index'
-  select=make_select(table,0,0,conds,&error);
+  select=make_select(table, 0, 0, conds, 0, &error);
   if (error)
-    DBUG_RETURN(-1);
+    DBUG_RETURN(TRUE);
   if ((select && select->check_quick(thd, safe_update, limit)) || !limit)
   {
     delete select;
-    free_underlaid_joins(thd, &thd->lex->select_lex);
+    free_underlaid_joins(thd, select_lex);
+    thd->row_count_func= 0;
     send_ok(thd,0L);
+
+    /*
+      We don't need to call reset_auto_increment in this case, because
+      mysql_truncate always gives a NULL conds argument, hence we never
+      get here.
+    */
+
     DBUG_RETURN(0);				// Nothing to delete
   }
 
@@ -104,9 +156,10 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
     if (safe_update && !using_limit)
     {
       delete select;
-      free_underlaid_joins(thd, &thd->lex->select_lex);
-      send_error(thd,ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE);
-      DBUG_RETURN(1);
+      free_underlaid_joins(thd, select_lex);
+      my_message(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE,
+                 ER(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE), MYF(0));
+      DBUG_RETURN(TRUE);
     }
   }
   if (options & OPTION_QUICK)
@@ -114,27 +167,11 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
 
   if (order && order->elements)
   {
-    uint         length;
+    uint         length= 0;
     SORT_FIELD  *sortorder;
-    TABLE_LIST   tables;
-    List<Item>   fields;
-    List<Item>   all_fields;
     ha_rows examined_rows;
-
-    bzero((char*) &tables,sizeof(tables));
-    tables.table = table;
-    tables.alias = table_list->alias;
-
-      if (thd->lex->select_lex.setup_ref_array(thd, order->elements) ||
-	  setup_order(thd, thd->lex->select_lex.ref_pointer_array, &tables,
-                    fields, all_fields, (ORDER*) order->first))
-    {
-      delete select;
-      free_underlaid_joins(thd, &thd->lex->select_lex);
-      DBUG_RETURN(-1);			// This will force out message
-    }
     
-    if (!select && limit != HA_POS_ERROR)
+    if ((!select || table->quick_keys.is_clear_all()) && limit != HA_POS_ERROR)
       usable_index= get_index_for_order(table, (ORDER*)(order->first), limit);
 
     if (usable_index == MAX_KEY)
@@ -142,42 +179,83 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
       table->sort.io_cache= (IO_CACHE *) my_malloc(sizeof(IO_CACHE),
                                                    MYF(MY_FAE | MY_ZEROFILL));
     
-      if ( !(sortorder=make_unireg_sortorder((ORDER*) order->first, &length)) ||
+      if (!(sortorder= make_unireg_sortorder((ORDER*) order->first,
+                                             &length, NULL)) ||
 	  (table->sort.found_records = filesort(thd, table, sortorder, length,
-					   select, HA_POS_ERROR,
-					   &examined_rows))
+                                                select, HA_POS_ERROR,
+                                                &examined_rows))
 	  == HA_POS_ERROR)
       {
         delete select;
         free_underlaid_joins(thd, &thd->lex->select_lex);
-        DBUG_RETURN(-1);			// This will force out message
+        DBUG_RETURN(TRUE);
       }
       /*
         Filesort has already found and selected the rows we want to delete,
         so we don't need the where clause
       */
       delete select;
+      free_underlaid_joins(thd, select_lex);
       select= 0;
     }
   }
 
+  /* If quick select is used, initialize it before retrieving rows. */
+  if (select && select->quick && select->quick->reset())
+  {
+    delete select;
+    free_underlaid_joins(thd, select_lex);
+    DBUG_RETURN(TRUE);
+  }
   if (usable_index==MAX_KEY)
     init_read_record(&info,thd,table,select,1,1);
   else
     init_read_record_idx(&info, thd, table, 1, usable_index);
 
   deleted=0L;
-  init_ftfuncs(thd, &thd->lex->select_lex, 1);
-  thd->proc_info="updating";
+  init_ftfuncs(thd, select_lex, 1);
+  thd_proc_info(thd, "updating");
+
+  if (table->triggers)
+  {
+    table->triggers->mark_fields_used(thd, TRG_EVENT_DELETE);
+    if (table->triggers->has_triggers(TRG_EVENT_DELETE,
+                                      TRG_ACTION_AFTER))
+    {
+      /*
+	The table has AFTER DELETE triggers that might access to subject table
+	and therefore might need delete to be done immediately. So we turn-off
+	the batching.
+      */
+      (void) table->file->extra(HA_EXTRA_DELETE_CANNOT_BATCH);
+    }
+  }
+
   while (!(error=info.read_record(&info)) && !thd->killed &&
 	 !thd->net.report_error)
   {
     // thd->net.report_error is tested to disallow delete row on error
     if (!(select && select->skip_record())&& !thd->net.report_error )
     {
+
+      if (table->triggers &&
+          table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
+                                            TRG_ACTION_BEFORE, FALSE))
+      {
+        error= 1;
+        break;
+      }
+
       if (!(error=table->file->delete_row(table->record[0])))
       {
 	deleted++;
+        if (table->triggers &&
+            table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
+                                              TRG_ACTION_AFTER, FALSE))
+        {
+          error= 1;
+          break;
+        }
 	if (!--limit && using_limit)
 	{
 	  error= -1;
@@ -204,11 +282,26 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   }
   if (thd->killed && !error)
     error= 1;					// Aborted
-  thd->proc_info="end";
+  thd_proc_info(thd, "end");
   end_read_record(&info);
   free_io_cache(table);				// Will not do any harm
   if (options & OPTION_QUICK)
     (void) table->file->extra(HA_EXTRA_NORMAL);
+
+  if (reset_auto_increment && (error < 0))
+  {
+    /*
+      We're really doing a truncate and need to reset the table's
+      auto-increment counter.
+    */
+    int error2= table->file->reset_auto_increment(0);
+
+    if (error2 && (error2 != HA_ERR_WRONG_COMMAND))
+    {
+      table->file->print_error(error2, MYF(0));
+      error= 1;
+    }
+  }
 
 cleanup:
   /*
@@ -222,31 +315,22 @@ cleanup:
 
   delete select;
   transactional_table= table->file->has_transactions();
-  log_delayed= (transactional_table || table->tmp_table);
-  /*
-    We write to the binary log even if we deleted no row, because maybe the
-    user is using this command to ensure that a table is clean on master *and
-    on slave*. Think of the case of a user having played separately with the
-    master's table and slave's table and wanting to take a fresh identical
-    start now.
-    error < 0 means "really no error". error <= 0 means "maybe some error".
-  */
-  if ((deleted || (error < 0)) && (error <= 0 || !transactional_table))
+  /* See similar binlogging code in sql_update.cc, for comments */
+  if ((error < 0) || (deleted && !transactional_table))
   {
-    mysql_update_log.write(thd,thd->query, thd->query_length);
     if (mysql_bin_log.is_open())
     {
-      if (error <= 0)
+      if (error < 0)
         thd->clear_error();
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-			    log_delayed, FALSE);
+			    transactional_table, FALSE);
       if (mysql_bin_log.write(&qinfo) && transactional_table)
 	error=1;
     }
-    if (!log_delayed)
-      thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
+    if (!transactional_table)
+      thd->no_trans_update.all= TRUE;
   }
-  free_underlaid_joins(thd, &thd->lex->select_lex);
+  free_underlaid_joins(thd, select_lex);
   if (transactional_table)
   {
     if (ha_autocommit_or_rollback(thd,error >= 0))
@@ -258,15 +342,13 @@ cleanup:
     mysql_unlock_tables(thd, thd->lock);
     thd->lock=0;
   }
-  if ((error >= 0 || thd->net.report_error) &&
-      (!thd->lex->ignore || thd->is_fatal_error))
-    send_error(thd,thd->killed ? ER_SERVER_SHUTDOWN: 0);
-  else
+  if (error < 0 || (thd->lex->ignore && !thd->is_fatal_error))
   {
+    thd->row_count_func= deleted;
     send_ok(thd,deleted);
-    DBUG_PRINT("info",("%d records deleted",deleted));
+    DBUG_PRINT("info",("%ld records deleted",(long) deleted));
   }
-       DBUG_RETURN(0);
+  DBUG_RETURN(error >= 0 || thd->net.report_error);
 }
 
 
@@ -276,31 +358,49 @@ cleanup:
   SYNOPSIS
     mysql_prepare_delete()
     thd			- thread handler
-    table_list		- global table list
+    table_list		- global/local table list
     conds		- conditions
 
   RETURN VALUE
-    0  - OK
-    1  - error (message is sent to user)
-    -1 - error (message is not sent to user)
+    FALSE OK
+    TRUE  error
 */
-int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds)
+bool mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds)
 {
-  TABLE_LIST *delete_table_list= ((TABLE_LIST*) thd->lex->
-				  select_lex.table_list.first);
+  Item *fake_conds= 0;
+  SELECT_LEX *select_lex= &thd->lex->select_lex;
   DBUG_ENTER("mysql_prepare_delete");
+  List<Item> all_fields;
 
-  thd->allow_sum_func= 0;
-  if (setup_conds(thd, delete_table_list, conds) || 
-      setup_ftfuncs(&thd->lex->select_lex))
-    DBUG_RETURN(-1);
-  if (find_real_table_in_list(table_list->next, 
-			      table_list->db, table_list->real_name))
+  thd->lex->allow_sum_func= 0;
+  if (setup_tables_and_check_access(thd, &thd->lex->select_lex.context,
+                                    &thd->lex->select_lex.top_join_list,
+                                    table_list, conds, 
+                                    &select_lex->leaf_tables, FALSE, 
+                                    DELETE_ACL, SELECT_ACL) ||
+      setup_conds(thd, table_list, select_lex->leaf_tables, conds) ||
+      setup_ftfuncs(select_lex))
+    DBUG_RETURN(TRUE);
+  if (!table_list->updatable || check_key_in_view(thd, table_list))
   {
-    my_error(ER_UPDATE_TABLE_USED, MYF(0), table_list->real_name);
-    DBUG_RETURN(-1);
+    my_error(ER_NON_UPDATABLE_TABLE, MYF(0), table_list->alias, "DELETE");
+    DBUG_RETURN(TRUE);
   }
-  DBUG_RETURN(0);
+  {
+    TABLE_LIST *duplicate;
+    if ((duplicate= unique_table(thd, table_list, table_list->next_global, 0)))
+    {
+      update_non_unique_table_error(table_list, "DELETE", duplicate);
+      DBUG_RETURN(TRUE);
+    }
+  }
+
+  if (select_lex->inner_refs_list.elements &&
+    fix_inner_refs(thd, all_fields, select_lex, select_lex->ref_pointer_array))
+    DBUG_RETURN(-1);
+
+  select_lex->fix_prepare_information(thd, conds, &fake_conds);
+  DBUG_RETURN(FALSE);
 }
 
 
@@ -310,19 +410,99 @@ int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds)
 
 #define MEM_STRIP_BUF_SIZE current_thd->variables.sortbuff_size
 
-extern "C" int refposcmp2(void* arg, const void *a,const void *b)
+extern "C" int refpos_order_cmp(void* arg, const void *a,const void *b)
 {
-  /* arg is a pointer to file->ref_length */
-  return memcmp(a,b, *(int*) arg);
+  handler *file= (handler*)arg;
+  return file->cmp_ref((const byte*)a, (const byte*)b);
 }
 
-multi_delete::multi_delete(THD *thd_arg, TABLE_LIST *dt,
-			   uint num_of_tables_arg)
-  : delete_tables(dt), thd(thd_arg), deleted(0), found(0),
-    num_of_tables(num_of_tables_arg), error(0),
-    do_delete(0), transactional_tables(0), log_delayed(0), normal_tables(0)
+/*
+  make delete specific preparation and checks after opening tables
+
+  SYNOPSIS
+    mysql_multi_delete_prepare()
+    thd         thread handler
+
+  RETURN
+    FALSE OK
+    TRUE  Error
+*/
+
+bool mysql_multi_delete_prepare(THD *thd)
 {
-  tempfiles = (Unique **) sql_calloc(sizeof(Unique *) * (num_of_tables-1));
+  LEX *lex= thd->lex;
+  TABLE_LIST *aux_tables= (TABLE_LIST *)lex->auxiliary_table_list.first;
+  TABLE_LIST *target_tbl;
+  DBUG_ENTER("mysql_multi_delete_prepare");
+
+  /*
+    setup_tables() need for VIEWs. JOIN::prepare() will not do it second
+    time.
+
+    lex->query_tables also point on local list of DELETE SELECT_LEX
+  */
+  if (setup_tables_and_check_access(thd, &thd->lex->select_lex.context,
+                                    &thd->lex->select_lex.top_join_list,
+                                    lex->query_tables, &lex->select_lex.where,
+                                    &lex->select_lex.leaf_tables, FALSE, 
+                                    DELETE_ACL, SELECT_ACL))
+    DBUG_RETURN(TRUE);
+
+
+  /*
+    Multi-delete can't be constructed over-union => we always have
+    single SELECT on top and have to check underlying SELECTs of it
+  */
+  lex->select_lex.exclude_from_table_unique_test= TRUE;
+  /* Fix tables-to-be-deleted-from list to point at opened tables */
+  for (target_tbl= (TABLE_LIST*) aux_tables;
+       target_tbl;
+       target_tbl= target_tbl->next_local)
+  {
+    if (!(target_tbl->table= target_tbl->correspondent_table->table))
+    {
+      DBUG_ASSERT(target_tbl->correspondent_table->view &&
+                  target_tbl->correspondent_table->merge_underlying_list &&
+                  target_tbl->correspondent_table->merge_underlying_list->
+                  next_local);
+      my_error(ER_VIEW_DELETE_MERGE_VIEW, MYF(0),
+               target_tbl->correspondent_table->view_db.str,
+               target_tbl->correspondent_table->view_name.str);
+      DBUG_RETURN(TRUE);
+    }
+
+    if (!target_tbl->correspondent_table->updatable ||
+        check_key_in_view(thd, target_tbl->correspondent_table))
+    {
+      my_error(ER_NON_UPDATABLE_TABLE, MYF(0),
+               target_tbl->table_name, "DELETE");
+      DBUG_RETURN(TRUE);
+    }
+    /*
+      Check that table from which we delete is not used somewhere
+      inside subqueries/view.
+    */
+    {
+      TABLE_LIST *duplicate;
+      if ((duplicate= unique_table(thd, target_tbl->correspondent_table,
+                                   lex->query_tables, 0)))
+      {
+        update_non_unique_table_error(target_tbl->correspondent_table,
+                                      "DELETE", duplicate);
+        DBUG_RETURN(TRUE);
+      }
+    }
+  }
+  DBUG_RETURN(FALSE);
+}
+
+
+multi_delete::multi_delete(TABLE_LIST *dt, uint num_of_tables_arg)
+  : delete_tables(dt), deleted(0), found(0),
+    num_of_tables(num_of_tables_arg), error(0),
+    do_delete(0), transactional_tables(0), normal_tables(0)
+{
+  tempfiles= (Unique **) sql_calloc(sizeof(Unique *) * num_of_tables);
 }
 
 
@@ -332,7 +512,7 @@ multi_delete::prepare(List<Item> &values, SELECT_LEX_UNIT *u)
   DBUG_ENTER("multi_delete::prepare");
   unit= u;
   do_delete= 1;
-  thd->proc_info="deleting from main table";
+  thd_proc_info(thd, "deleting from main table");
   DBUG_RETURN(0);
 }
 
@@ -348,10 +528,11 @@ multi_delete::initialize_tables(JOIN *join)
     DBUG_RETURN(1);
 
   table_map tables_to_delete_from=0;
-  for (walk= delete_tables ; walk ; walk=walk->next)
+  for (walk= delete_tables; walk; walk= walk->next_local)
     tables_to_delete_from|= walk->table->map;
 
   walk= delete_tables;
+  delete_while_scanning= 1;
   for (JOIN_TAB *tab=join->join_tab, *end=join->join_tab+join->tables;
        tab < end;
        tab++)
@@ -360,27 +541,54 @@ multi_delete::initialize_tables(JOIN *join)
     {
       /* We are going to delete from this table */
       TABLE *tbl=walk->table=tab->table;
-      walk=walk->next;
+      walk= walk->next_local;
       /* Don't use KEYREAD optimization on this table */
       tbl->no_keyread=1;
       /* Don't use record cache */
       tbl->no_cache= 1;
       tbl->used_keys.clear_all();
       if (tbl->file->has_transactions())
-	log_delayed= transactional_tables= 1;
-      else if (tbl->tmp_table != NO_TMP_TABLE)
-	log_delayed= 1;
+	transactional_tables= 1;
       else
 	normal_tables= 1;
+      if (tbl->triggers)
+      {
+        tbl->triggers->mark_fields_used(thd, TRG_EVENT_DELETE);
+	if (tbl->triggers->has_triggers(TRG_EVENT_DELETE,
+                                      TRG_ACTION_AFTER))
+	{
+	  /*
+	    The table has AFTER DELETE triggers that might access to subject 
+	    table and therefore might need delete to be done immediately. 
+	    So we turn-off the batching.
+	  */
+	  (void) tbl->file->extra(HA_EXTRA_DELETE_CANNOT_BATCH);
+	}
+      }
+    }
+    else if ((tab->type != JT_SYSTEM && tab->type != JT_CONST) &&
+             walk == delete_tables)
+    {
+      /*
+        We are not deleting from the table we are scanning. In this
+        case send_data() shouldn't delete any rows a we may touch
+        the rows in the deleted table many times
+      */
+      delete_while_scanning= 0;
     }
   }
   walk= delete_tables;
   tempfiles_ptr= tempfiles;
-  for (walk=walk->next ; walk ; walk=walk->next)
+  if (delete_while_scanning)
+  {
+    table_being_deleted= delete_tables;
+    walk= walk->next_local;
+  }
+  for (;walk ;walk= walk->next_local)
   {
     TABLE *table=walk->table;
-    *tempfiles_ptr++= new Unique (refposcmp2,
-				  (void *) &table->file->ref_length,
+    *tempfiles_ptr++= new Unique (refpos_order_cmp,
+				  (void *) table->file,
 				  table->file->ref_length,
 				  MEM_STRIP_BUF_SIZE);
   }
@@ -391,16 +599,16 @@ multi_delete::initialize_tables(JOIN *join)
 
 multi_delete::~multi_delete()
 {
-  for (table_being_deleted=delete_tables ;
-       table_being_deleted ;
-       table_being_deleted=table_being_deleted->next)
+  for (table_being_deleted= delete_tables;
+       table_being_deleted;
+       table_being_deleted= table_being_deleted->next_local)
   {
-    TABLE *t=table_being_deleted->table;
-    free_io_cache(t);				// Alloced by unique
-    t->no_keyread=0;
+    TABLE *table= table_being_deleted->table;
+    free_io_cache(table);                       // Alloced by unique
+    table->no_keyread=0;
   }
 
-  for (uint counter= 0; counter < num_of_tables-1; counter++)
+  for (uint counter= 0; counter < num_of_tables; counter++)
   {
     if (tempfiles[counter])
       delete tempfiles[counter];
@@ -410,14 +618,15 @@ multi_delete::~multi_delete()
 
 bool multi_delete::send_data(List<Item> &values)
 {
-  int secure_counter= -1;
+  int secure_counter= delete_while_scanning ? -1 : 0;
+  TABLE_LIST *del_table;
   DBUG_ENTER("multi_delete::send_data");
 
-  for (table_being_deleted=delete_tables ;
-       table_being_deleted ;
-       table_being_deleted=table_being_deleted->next, secure_counter++)
+  for (del_table= delete_tables;
+       del_table;
+       del_table= del_table->next_local, secure_counter++)
   {
-    TABLE *table=table_being_deleted->table;
+    TABLE *table= del_table->table;
 
     /* Check if we are using outer join and we didn't find the row */
     if (table->status & (STATUS_NULL_ROW | STATUS_DELETED))
@@ -428,11 +637,22 @@ bool multi_delete::send_data(List<Item> &values)
 
     if (secure_counter < 0)
     {
-      /* If this is the table we are scanning */
+      /* We are scanning the current table */
+      DBUG_ASSERT(del_table == table_being_deleted);
+      if (table->triggers &&
+          table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
+                                            TRG_ACTION_BEFORE, FALSE))
+	DBUG_RETURN(1);
       table->status|= STATUS_DELETED;
       if (!(error=table->file->delete_row(table->record[0])))
+      {
 	deleted++;
-      else if (!table_being_deleted->next || table_being_deleted->table->file->has_transactions())
+        if (table->triggers &&
+            table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
+                                              TRG_ACTION_AFTER, FALSE))
+	  DBUG_RETURN(1);
+      }
+      else
       {
 	table->file->print_error(error,MYF(0));
 	DBUG_RETURN(1);
@@ -443,7 +663,7 @@ bool multi_delete::send_data(List<Item> &values)
       error=tempfiles[secure_counter]->unique_add((char*) table->file->ref);
       if (error)
       {
-	error=-1;
+	error= 1;                               // Fatal error
 	DBUG_RETURN(1);
       }
     }
@@ -457,7 +677,7 @@ void multi_delete::send_error(uint errcode,const char *err)
   DBUG_ENTER("multi_delete::send_error");
 
   /* First send error what ever it is ... */
-  ::send_error(thd,errcode,err);
+  my_message(errcode, err, MYF(0));
 
   /* If nothing deleted return */
   if (!deleted)
@@ -466,22 +686,24 @@ void multi_delete::send_error(uint errcode,const char *err)
   /* Something already deleted so we have to invalidate cache */
   query_cache_invalidate3(thd, delete_tables, 1);
 
-  /* Below can happen when thread is killed early ... */
-  if (!table_being_deleted)
-    table_being_deleted=delete_tables;
-
   /*
     If rows from the first table only has been deleted and it is
     transactional, just do rollback.
     The same if all tables are transactional, regardless of where we are.
     In all other cases do attempt deletes ...
   */
-  if ((table_being_deleted->table->file->has_transactions() &&
-       table_being_deleted == delete_tables) || !normal_tables)
+  if ((table_being_deleted == delete_tables &&
+       table_being_deleted->table->file->has_transactions()) ||
+      !normal_tables)
     ha_rollback_stmt(thd);
   else if (do_delete)
   {
-    VOID(do_deletes(1));
+    /*
+      We have to execute the recorded do_deletes() and write info into the
+      error log
+    */
+    error= 1;
+    send_eof();
   }
   DBUG_VOID_RETURN;
 }
@@ -494,28 +716,21 @@ void multi_delete::send_error(uint errcode,const char *err)
 	1 error
 */
 
-int multi_delete::do_deletes(bool from_send_error)
+int multi_delete::do_deletes()
 {
   int local_error= 0, counter= 0;
   DBUG_ENTER("do_deletes");
+  DBUG_ASSERT(do_delete);
 
-  if (from_send_error)
-  {
-    /* Found out table number for 'table_being_deleted*/
-    for (TABLE_LIST *aux=delete_tables;
-	 aux != table_being_deleted;
-	 aux=aux->next)
-      counter++;
-  }
-  else
-    table_being_deleted = delete_tables;
-
-  do_delete= 0;
+  do_delete= 0;                                 // Mark called
   if (!found)
     DBUG_RETURN(0);
-  for (table_being_deleted=table_being_deleted->next;
-       table_being_deleted ;
-       table_being_deleted=table_being_deleted->next, counter++)
+
+  table_being_deleted= (delete_while_scanning ? delete_tables->next_local :
+                        delete_tables);
+ 
+  for (; table_being_deleted;
+       table_being_deleted= table_being_deleted->next_local, counter++)
   { 
     TABLE *table = table_being_deleted->table;
     if (tempfiles[counter]->get(table))
@@ -533,12 +748,26 @@ int multi_delete::do_deletes(bool from_send_error)
     info.ignore_not_found_rows= 1;
     while (!(local_error=info.read_record(&info)) && !thd->killed)
     {
+      if (table->triggers &&
+          table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
+                                            TRG_ACTION_BEFORE, FALSE))
+      {
+        local_error= 1;
+        break;
+      }
       if ((local_error=table->file->delete_row(table->record[0])))
       {
 	table->file->print_error(local_error,MYF(0));
 	break;
       }
       deleted++;
+      if (table->triggers &&
+          table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
+                                            TRG_ACTION_AFTER, FALSE))
+      {
+        local_error= 1;
+        break;
+      }
     }
     end_read_record(&info);
     if (thd->killed && !local_error)
@@ -559,53 +788,50 @@ int multi_delete::do_deletes(bool from_send_error)
 
 bool multi_delete::send_eof()
 {
-  thd->proc_info="deleting from reference tables";
+  thd_proc_info(thd, "deleting from reference tables");
 
   /* Does deletes for the last n - 1 tables, returns 0 if ok */
-  int local_error= do_deletes(0);		// returns 0 if success
+  int local_error= do_deletes();		// returns 0 if success
+
+  /* compute a total error to know if something failed */
+  local_error= local_error || error;
 
   /* reset used flags */
-  thd->proc_info="end";
+  thd_proc_info(thd, "end");
 
   /*
     We must invalidate the query cache before binlog writing and
     ha_autocommit_...
   */
   if (deleted)
-    query_cache_invalidate3(thd, delete_tables, 1);
-
-  /*
-    Write the SQL statement to the binlog if we deleted
-    rows and we succeeded, or also in an error case when there
-    was a non-transaction-safe table involved, since
-    modifications in it cannot be rolled back.
-    Note that if we deleted nothing we don't write to the binlog (TODO:
-    fix this).
-  */
-  if (deleted && (error <= 0 || normal_tables))
   {
-    mysql_update_log.write(thd,thd->query,thd->query_length);
+    query_cache_invalidate3(thd, delete_tables, 1);
+  }
+
+  if ((local_error == 0) || (deleted && normal_tables))
+  {
     if (mysql_bin_log.is_open())
     {
-      if (error <= 0)
+      if (local_error == 0)
         thd->clear_error();
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-			    log_delayed, FALSE);
+			    transactional_tables, FALSE);
       if (mysql_bin_log.write(&qinfo) && !normal_tables)
 	local_error=1;  // Log write failed: roll back the SQL statement
     }
-    if (!log_delayed)
-      thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
+    if (!transactional_tables)
+      thd->no_trans_update.all= TRUE;
   }
-  /* Commit or rollback the current SQL statement */ 
+  /* Commit or rollback the current SQL statement */
   if (transactional_tables)
     if (ha_autocommit_or_rollback(thd,local_error > 0))
       local_error=1;
 
-  if (local_error)
-    ::send_error(thd);
-  else
+  if (!local_error)
+  {
+    thd->row_count_func= deleted;
     ::send_ok(thd, deleted);
+  }
   return 0;
 }
 
@@ -626,25 +852,25 @@ bool multi_delete::send_eof()
   - If we want to have a name lock on the table on exit without errors.
 */
 
-int mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
+bool mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
 {
   HA_CREATE_INFO create_info;
   char path[FN_REFLEN];
   TABLE **table_ptr;
-  int error;
+  bool error;
   DBUG_ENTER("mysql_truncate");
 
   bzero((char*) &create_info,sizeof(create_info));
   /* If it is a temporary table, close and regenerate it */
   if (!dont_send_ok && (table_ptr=find_temporary_table(thd,table_list->db,
-						       table_list->real_name)))
+						       table_list->table_name)))
   {
     TABLE *table= *table_ptr;
     table->file->info(HA_STATUS_AUTO | HA_STATUS_NO_LOCK);
-    db_type table_type=table->db_type;
-    if (!ha_supports_generate(table_type))
+    db_type table_type= table->s->db_type;
+    if (!ha_check_storage_engine_flag(table_type, HTON_CAN_RECREATE))
       goto trunc_by_del;
-    strmov(path,table->path);
+    strmov(path, table->s->path);
     *table_ptr= table->next;			// Unlink table from list
     close_temporary(table,0);
     if (thd->slave_thread)
@@ -653,49 +879,49 @@ int mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
     ha_create_table(path, &create_info,1);
     // We don't need to call invalidate() because this table is not in cache
     if ((error= (int) !(open_temporary_table(thd, path, table_list->db,
-					     table_list->real_name, 1))))
+					     table_list->table_name, 1))))
       (void) rm_temporary_table(table_type, path);
     /*
       If we return here we will not have logged the truncation to the bin log
       and we will not send_ok() to the client.
     */
-    goto end; 
+    goto end;
   }
 
   (void) sprintf(path,"%s/%s/%s%s",mysql_data_home,table_list->db,
-		 table_list->real_name,reg_ext);
+		 table_list->table_name,reg_ext);
   fn_format(path, path, "", "", MY_UNPACK_FILENAME);
 
   if (!dont_send_ok)
   {
     db_type table_type;
-    if ((table_type=get_table_type(path)) == DB_TYPE_UNKNOWN)
+    mysql_frm_type(thd, path, &table_type);
+    if (table_type == DB_TYPE_UNKNOWN)
     {
-      my_error(ER_NO_SUCH_TABLE, MYF(0), table_list->db,
-	       table_list->real_name);
-      DBUG_RETURN(-1);
+      my_error(ER_NO_SUCH_TABLE, MYF(0),
+               table_list->db, table_list->table_name);
+      DBUG_RETURN(TRUE);
     }
-    if (!ha_supports_generate(table_type))
+    if (!ha_check_storage_engine_flag(table_type, HTON_CAN_RECREATE))
       goto trunc_by_del;
     if (lock_and_wait_for_table_name(thd, table_list))
-      DBUG_RETURN(-1);
+      DBUG_RETURN(TRUE);
   }
 
   *fn_ext(path)=0;				// Remove the .frm extension
-  error= ha_create_table(path,&create_info,1) ? -1 : 0;
-  query_cache_invalidate3(thd, table_list, 0); 
+  error= ha_create_table(path,&create_info,1);
+  query_cache_invalidate3(thd, table_list, 0);
 
 end:
   if (!dont_send_ok)
   {
     if (!error)
     {
-      mysql_update_log.write(thd,thd->query,thd->query_length);
       if (mysql_bin_log.is_open())
       {
         thd->clear_error();
 	Query_log_event qinfo(thd, thd->query, thd->query_length,
-			      thd->tmp_table, FALSE);
+			      0, FALSE);
 	mysql_bin_log.write(&qinfo);
       }
       send_ok(thd);		// This should return record count
@@ -710,16 +936,17 @@ end:
     unlock_table_name(thd, table_list);
     VOID(pthread_mutex_unlock(&LOCK_open));
   }
-  DBUG_RETURN(error ? -1 : 0);
+  DBUG_RETURN(error);
 
  trunc_by_del:
   /* Probably InnoDB table */
-  ulong save_options= thd->options;
+  ulonglong save_options= thd->options;
   table_list->lock_type= TL_WRITE;
-  thd->options&= ~(ulong) (OPTION_BEGIN | OPTION_NOT_AUTOCOMMIT);
+  thd->options&= ~(OPTION_BEGIN | OPTION_NOT_AUTOCOMMIT);
   ha_enable_transaction(thd, FALSE);
+  mysql_init_select(thd->lex);
   error= mysql_delete(thd, table_list, (COND*) 0, (SQL_LIST*) 0,
-                      HA_POS_ERROR, 0);
+                      HA_POS_ERROR, LL(0), TRUE);
   ha_enable_transaction(thd, TRUE);
   thd->options= save_options;
   DBUG_RETURN(error);

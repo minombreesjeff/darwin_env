@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,8 +24,6 @@
 
 #include <ndb_version.h>
 #include <version.h>
-
-static const char * delimiter = ";"; // Delimiter in file dump
 
 const int FileNameLenC = 256;
 const int TableNameLenC = 256;
@@ -114,6 +111,14 @@ public:
   AttributeData * getData(int i) const;
 }; // class TupleS
 
+struct FragmentInfo
+{
+  Uint32 fragmentNo;
+  Uint64 noOfRecords;
+  Uint32 filePosLow;
+  Uint32 filePosHigh;
+};
+
 class TableS {
   
   friend class TupleS;
@@ -136,6 +141,13 @@ class TableS {
 
   int pos;
 
+  bool isSysTable;
+  TableS *m_main_table;
+  Uint32 m_local_id;
+
+  Uint64 m_noOfRecords;
+  Vector<FragmentInfo *> m_fragmentInfo;
+
   void createAttr(NdbDictionary::Column *column);
 
 public:
@@ -145,6 +157,12 @@ public:
 
   Uint32 getTableId() const { 
     return m_dictTable->getTableId(); 
+  }
+  Uint32 getLocalId() const { 
+    return m_local_id; 
+  }
+  Uint32 getNoOfRecords() const { 
+    return m_noOfRecords; 
   }
   /*
   void setMysqlTableName(char * tableName) {
@@ -201,6 +219,9 @@ public:
       memcpy(&val.u32,data,4);
       v= val.u32;
       break;
+    case 24:
+      v= uint3korr((unsigned char*)data);
+      break;
     case 16:
       memcpy(&val.u16,data,2);
       v= val.u16;
@@ -220,6 +241,14 @@ public:
    */
   const AttributeDesc * operator[](int attributeId) const { 
     return allAttributesDesc[attributeId]; 
+  }
+
+  bool getSysTable() const {
+    return isSysTable;
+  }
+
+  const TableS *getMainTable() const {
+    return m_main_table;
   }
 
   TableS& operator=(TableS& org) ; 
@@ -272,8 +301,10 @@ class RestoreMetaData : public BackupFile {
   Vector<TableS *> allTables;
   bool readMetaFileHeader();
   bool readMetaTableDesc();
+  bool markSysTables();
 		
   bool readGCPEntry();
+  bool readFragmentInfo();
   Uint32 readMetaTableList();
 
   Uint32 m_startGCP;
@@ -344,6 +375,7 @@ public:
       m_values_e.push_back(m_values[i]);
     m_values.clear();
   }
+  LogEntry() {}
   ~LogEntry()
   {
     Uint32 i;

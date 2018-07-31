@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2001-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -332,8 +331,8 @@ static int client_msg_raw(NET* net,int err_code,int pre,const char* fmt,
 static int authenticate(struct manager_thd* thd);
 /* returns pointer to end of line */
 static char* read_line(struct manager_thd* thd);
-static pthread_handler_decl(process_connection, arg);
-static pthread_handler_decl(process_launcher_messages, arg);
+pthread_handler_t process_connection(void *arg);
+pthread_handler_t process_launcher_messages(void *arg);
 static int exec_line(struct manager_thd* thd,char* buf,char* buf_end);
 
 #ifdef DO_STACKTRACE
@@ -557,14 +556,13 @@ HANDLE_DECL(handle_set_exec_stderr)
 static int set_exec_param(struct manager_thd* thd, char* args_start,
 			  char* args_end, PARAM_TYPE param_type)
 {
-  int num_args;
   const char* error=0;
   struct manager_exec* e;
   char* arg_p;
   char* param;
   int param_size;
 
-  if ((num_args=tokenize_args(args_start,&args_end))<2)
+  if (tokenize_args(args_start,&args_end) < 2)
   {
     error="Too few arguments";
     goto err;
@@ -607,12 +605,11 @@ err:
 
 HANDLE_DECL(handle_start_exec)
 {
-  int num_args;
   struct manager_exec* e;
   int ident_len;
   const char* error=0;
   struct timespec t;
-  if ((num_args=tokenize_args(args_start,&args_end))<1)
+  if (tokenize_args(args_start,&args_end) < 1)
   {
     error="Too few arguments";
     goto err;
@@ -656,12 +653,11 @@ err:
 
 HANDLE_DECL(handle_stop_exec)
 {
-  int num_args;
   struct timespec abstime;
   struct manager_exec* e;
   int ident_len;
   const char* error=0;
-  if ((num_args=tokenize_args(args_start,&args_end))<2)
+  if (tokenize_args(args_start,&args_end) <2)
   {
     error="Too few arguments";
     goto err;
@@ -877,7 +873,10 @@ static void manager_exec_connect(struct manager_exec* e)
   {
     if (mysql_real_connect(&e->mysql,e->con_host,e->con_user,e->con_pass,0,
 			   e->con_port,e->con_sock,0))
+    {
+      e->mysql.reconnect= 1;
       return;
+    }
     sleep(1);
   }
   e->error="Could not connect to MySQL server withing the number of tries";
@@ -1089,8 +1088,7 @@ static void log_msg(const char* fmt, int msg_type, va_list args)
   pthread_mutex_unlock(&lock_log);
 }
 
-static pthread_handler_decl(process_launcher_messages,
-			    args __attribute__((unused)))
+pthread_handler_t process_launcher_messages(void *arg __attribute__((unused)))
 {
   my_thread_init();
   for (;!in_shutdown;)
@@ -1146,7 +1144,7 @@ static pthread_handler_decl(process_launcher_messages,
   return 0;
 }
 
-static pthread_handler_decl(process_connection,arg)
+pthread_handler_t process_connection(void *arg)
 {
   struct manager_thd* thd = (struct manager_thd*)arg;
   my_thread_init();
@@ -1314,7 +1312,7 @@ static void usage()
 
 static my_bool
 get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
+	       char *argument __attribute__((unused)))
 {
   switch (optid) {
   case '#':

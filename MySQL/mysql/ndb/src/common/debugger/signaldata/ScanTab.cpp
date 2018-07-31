@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,20 +29,26 @@ printSCANTABREQ(FILE * output, const Uint32 * theData, Uint32 len, Uint16 receiv
   fprintf(output, " apiConnectPtr: H\'%.8x", 
 	  sig->apiConnectPtr);
   fprintf(output, " requestInfo: H\'%.8x:\n",  requestInfo);
-  fprintf(output, "  Parallellism: %u, Batch: %u LockMode: %u, Keyinfo: %u Holdlock: %u, RangeScan: %u ReadCommitted: %u\n",
+  fprintf(output, "  Parallellism: %u Batch: %u LockMode: %u Keyinfo: %u Holdlock: %u RangeScan: %u Descending: %u TupScan: %u\n ReadCommitted: %u DistributionKeyFlag: %u",
 	  sig->getParallelism(requestInfo), 
 	  sig->getScanBatch(requestInfo), 
 	  sig->getLockMode(requestInfo), 
 	  sig->getKeyinfoFlag(requestInfo),
 	  sig->getHoldLockFlag(requestInfo), 
 	  sig->getRangeScanFlag(requestInfo),
-	  sig->getReadCommittedFlag(requestInfo));
+          sig->getDescendingFlag(requestInfo),
+          sig->getTupScanFlag(requestInfo),
+	  sig->getReadCommittedFlag(requestInfo),
+	  sig->getDistributionKeyFlag(requestInfo));
+  
+  if(sig->getDistributionKeyFlag(requestInfo))
+    fprintf(output, " DKey: %x", sig->distributionKey);
   
   Uint32 keyLen = (sig->attrLenKeyLen >> 16);
   Uint32 attrLen = (sig->attrLenKeyLen & 0xFFFF);
   fprintf(output, " attrLen: %d, keyLen: %d tableId: %d, tableSchemaVer: %d\n",
 	  attrLen, keyLen, sig->tableId, sig->tableSchemaVersion);
-    
+  
   fprintf(output, " transId(1, 2): (H\'%.8x, H\'%.8x) storedProcId: H\'%.8x\n",
 	  sig->transId1, sig->transId2, sig->storedProcId);
   fprintf(output, " batch_byte_size: %d, first_batch_size: %d\n",

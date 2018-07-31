@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -35,6 +34,7 @@ void Qmgr::initData()
 
   Uint32 hbDBAPI = 500;
   setHbApiDelay(hbDBAPI);
+  c_connectedNodes.set(getOwnNodeId());
   c_stopReq.senderRef = 0;
 }//Qmgr::initData()
 
@@ -74,6 +74,7 @@ Qmgr::Qmgr(const class Configuration & conf)
   // Received signals
   addRecSignal(GSN_CONNECT_REP, &Qmgr::execCONNECT_REP);
   addRecSignal(GSN_NDB_FAILCONF, &Qmgr::execNDB_FAILCONF);
+  addRecSignal(GSN_READ_CONFIG_REQ, &Qmgr::execREAD_CONFIG_REQ);
   addRecSignal(GSN_STTOR, &Qmgr::execSTTOR);
   addRecSignal(GSN_CLOSE_COMCONF, &Qmgr::execCLOSE_COMCONF);
   addRecSignal(GSN_API_REGREQ, &Qmgr::execAPI_REGREQ);
@@ -81,7 +82,6 @@ Qmgr::Qmgr(const class Configuration & conf)
   addRecSignal(GSN_DISCONNECT_REP, &Qmgr::execDISCONNECT_REP);
   addRecSignal(GSN_API_FAILCONF, &Qmgr::execAPI_FAILCONF);
   addRecSignal(GSN_READ_NODESREQ, &Qmgr::execREAD_NODESREQ);
-  addRecSignal(GSN_SET_VAR_REQ,  &Qmgr::execSET_VAR_REQ);
   addRecSignal(GSN_API_BROADCAST_REP,  &Qmgr::execAPI_BROADCAST_REP);
   
   // Arbitration signals
@@ -96,6 +96,9 @@ Qmgr::Qmgr(const class Configuration & conf)
 
   addRecSignal(GSN_READ_NODESREF, &Qmgr::execREAD_NODESREF);
   addRecSignal(GSN_READ_NODESCONF, &Qmgr::execREAD_NODESCONF);
+
+  addRecSignal(GSN_DIH_RESTARTREF, &Qmgr::execDIH_RESTARTREF);
+  addRecSignal(GSN_DIH_RESTARTCONF, &Qmgr::execDIH_RESTARTCONF);
   
   initData();
 }//Qmgr::Qmgr()

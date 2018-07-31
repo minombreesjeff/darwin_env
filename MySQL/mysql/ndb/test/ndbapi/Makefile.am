@@ -1,3 +1,17 @@
+# Copyright (C) 2004-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 SUBDIRS = bank
 
@@ -25,16 +39,23 @@ testOperations \
 testRestartGci \
 testScan \
 testInterpreter \
+testScanFilter \
 testScanInterpreter \
 testScanPerf \
 testSystemRestart \
 testTimeout \
 testTransactions \
 testDeadlock \
-test_event ndbapi_slow_select testReadPerf testLcp \
+ndbapi_slow_select testReadPerf testLcp \
+testPartitioning \
+testBitfield \
 DbCreate DbAsyncGenerator \
 testSRBank
 
+EXTRA_PROGRAMS = \
+ test_event \
+ test_event_merge \
+ test_event_multi_table
 #flexTimedAsynch
 #testBlobs
 #flex_bench_mysql
@@ -63,6 +84,7 @@ testOperations_SOURCES = testOperations.cpp
 testRestartGci_SOURCES = testRestartGci.cpp
 testScan_SOURCES = testScan.cpp ScanFunctions.hpp
 testInterpreter_SOURCES = testInterpreter.cpp
+testScanFilter_SOURCES = testScanFilter.cpp
 testScanInterpreter_SOURCES = testScanInterpreter.cpp ScanFilter.hpp ScanInterpretTest.hpp 
 testScanPerf_SOURCES = testScanPerf.cpp
 testSystemRestart_SOURCES = testSystemRestart.cpp
@@ -73,9 +95,13 @@ test_event_SOURCES = test_event.cpp
 ndbapi_slow_select_SOURCES = slow_select.cpp
 testReadPerf_SOURCES = testReadPerf.cpp
 testLcp_SOURCES = testLcp.cpp
-DbCreate_SOURCES= bench/mainPopulate.cpp bench/dbPopulate.cpp bench/userInterface.cpp bench/dbPopulate.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
-DbAsyncGenerator_SOURCES= bench/mainAsyncGenerator.cpp bench/asyncGenerator.cpp bench/ndb_async2.cpp bench/dbGenerator.h bench/macros.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
+testPartitioning_SOURCES = testPartitioning.cpp
+testBitfield_SOURCES = testBitfield.cpp
+DbCreate_SOURCES = bench/mainPopulate.cpp bench/dbPopulate.cpp bench/userInterface.cpp bench/dbPopulate.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
+DbAsyncGenerator_SOURCES = bench/mainAsyncGenerator.cpp bench/asyncGenerator.cpp bench/ndb_async2.cpp bench/dbGenerator.h bench/macros.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
+test_event_multi_table_SOURCES = test_event_multi_table.cpp
 testSRBank_SOURCES = testSRBank.cpp
+test_event_merge_SOURCES = test_event_merge.cpp
 
 INCLUDES_LOC = -I$(top_srcdir)/ndb/include/kernel
 
@@ -91,6 +117,8 @@ testSRBank_LDADD = bank/libbank.a $(LDADD)
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%
+
+
 
 windoze-dsp: flexBench.dsp testBasic.dsp testBlobs.dsp \
              testScan.dsp

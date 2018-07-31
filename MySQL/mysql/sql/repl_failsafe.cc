@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB & Sasha
+/* Copyright (C) 2001-2006 MySQL AB & Sasha
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -57,6 +56,7 @@ static Slave_log_event* find_slave_event(IO_CACHE* log,
   functions like register_slave()) are working.
 */
 
+#if NOT_USED
 static int init_failsafe_rpl_thread(THD* thd)
 {
   DBUG_ENTER("init_failsafe_rpl_thread");
@@ -66,12 +66,10 @@ static int init_failsafe_rpl_thread(THD* thd)
     this thread has no other error reporting method).
   */
   thd->system_thread = thd->bootstrap = 1;
-  thd->host_or_ip= "";
+  thd->security_ctx->skip_grants();
   my_net_init(&thd->net, 0);
   thd->net.read_timeout = slave_net_timeout;
   thd->max_client_packet_length=thd->net.max_packet;
-  thd->master_access= ~(ulong)0;
-  thd->priv_user = 0;
   pthread_mutex_lock(&LOCK_thread_count);
   thd->thread_id = thread_id++;
   pthread_mutex_unlock(&LOCK_thread_count);
@@ -94,12 +92,12 @@ static int init_failsafe_rpl_thread(THD* thd)
   if (thd->variables.max_join_size == HA_POS_ERROR)
     thd->options|= OPTION_BIG_SELECTS;
 
-  thd->proc_info="Thread initialized";
+  thd_proc_info(thd, "Thread initialized");
   thd->version=refresh_version;
   thd->set_time();
   DBUG_RETURN(0);
 }
-
+#endif
 
 void change_rpl_status(RPL_STATUS from_status, RPL_STATUS to_status)
 {
@@ -161,7 +159,7 @@ int register_slave(THD* thd, uchar* packet, uint packet_length)
   SLAVE_INFO *si;
   uchar *p= packet, *p_end= packet + packet_length;
 
-  if (check_access(thd, REPL_SLAVE_ACL, any_db,0,0,0))
+  if (check_access(thd, REPL_SLAVE_ACL, any_db,0,0,0,0))
     return 1;
   if (!(si = (SLAVE_INFO*)my_malloc(sizeof(SLAVE_INFO), MYF(MY_WME))))
     goto err2;
@@ -192,7 +190,6 @@ err:
   my_message(ER_UNKNOWN_ERROR, "Wrong parameters to function register_slave",
 	     MYF(0));
 err2:
-  send_error(thd);
   return 1;
 }
 
@@ -436,7 +433,7 @@ static Slave_log_event* find_slave_event(IO_CACHE* log,
    This function is broken now. See comment for translate_master().
  */
 
-int show_new_master(THD* thd)
+bool show_new_master(THD* thd)
 {
   Protocol *protocol= thd->protocol;
   DBUG_ENTER("show_new_master");
@@ -449,23 +446,24 @@ int show_new_master(THD* thd)
   {
     if (errmsg[0])
       my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0),
-	       "SHOW NEW MASTER", errmsg);
-    DBUG_RETURN(-1);
+               "SHOW NEW MASTER", errmsg);
+    DBUG_RETURN(TRUE);
   }
   else
   {
     field_list.push_back(new Item_empty_string("Log_name", 20));
     field_list.push_back(new Item_return_int("Log_pos", 10,
 					     MYSQL_TYPE_LONGLONG));
-    if (protocol->send_fields(&field_list, 1))
-      DBUG_RETURN(-1);
+    if (protocol->send_fields(&field_list,
+                              Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+      DBUG_RETURN(TRUE);
     protocol->prepare_for_resend();
     protocol->store(lex_mi->log_file_name, &my_charset_bin);
     protocol->store((ulonglong) lex_mi->pos);
     if (protocol->write())
-      DBUG_RETURN(-1);
+      DBUG_RETURN(TRUE);
     send_eof(thd);
-    DBUG_RETURN(0);
+    DBUG_RETURN(FALSE);
   }
 }
 
@@ -504,7 +502,7 @@ int update_slave_list(MYSQL* mysql, MASTER_INFO* mi)
   int port_ind;
   DBUG_ENTER("update_slave_list");
 
-  if (mysql_real_query(mysql,"SHOW SLAVE HOSTS",16) ||
+  if (mysql_real_query(mysql, STRING_WITH_LEN("SHOW SLAVE HOSTS")) ||
       !(res = mysql_store_result(mysql)))
   {
     error= mysql_error(mysql);
@@ -530,11 +528,11 @@ HOSTS";
 
   while ((row= mysql_fetch_row(res)))
   {
-    uint32 server_id;
+    uint32 log_server_id;
     SLAVE_INFO* si, *old_si;
-    server_id = atoi(row[0]);
+    log_server_id = atoi(row[0]);
     if ((old_si= (SLAVE_INFO*)hash_search(&slave_list,
-					  (byte*)&server_id,4)))
+					  (byte*)&log_server_id,4)))
       si = old_si;
     else
     {
@@ -544,7 +542,7 @@ HOSTS";
 	pthread_mutex_unlock(&LOCK_slave_list);
 	goto err;
       }
-      si->server_id = server_id;
+      si->server_id = log_server_id;
       my_hash_insert(&slave_list, (byte*)si);
     }
     strmake(si->host, row[1], sizeof(si->host)-1);
@@ -573,13 +571,15 @@ err:
 }
 
 
+#if NOT_USED
 int find_recovery_captain(THD* thd, MYSQL* mysql)
 {
   return 0;
 }
+#endif
 
-
-pthread_handler_decl(handle_failsafe_rpl,arg)
+#if NOT_USED
+pthread_handler_t handle_failsafe_rpl(void *arg)
 {
   DBUG_ENTER("handle_failsafe_rpl");
   THD *thd = new THD;
@@ -600,7 +600,7 @@ pthread_handler_decl(handle_failsafe_rpl,arg)
   {
     bool break_req_chain = 0;
     pthread_cond_wait(&COND_rpl_status, &LOCK_rpl_status);
-    thd->proc_info="Processing request";
+    thd_proc_info(thd, "Processing request");
     while (!break_req_chain)
     {
       switch (rpl_status) {
@@ -626,9 +626,9 @@ err:
   pthread_exit(0);
   DBUG_RETURN(0);
 }
+#endif
 
-
-int show_slave_hosts(THD* thd)
+bool show_slave_hosts(THD* thd)
 {
   List<Item> field_list;
   Protocol *protocol= thd->protocol;
@@ -648,8 +648,9 @@ int show_slave_hosts(THD* thd)
   field_list.push_back(new Item_return_int("Master_id", 10,
 					   MYSQL_TYPE_LONG));
 
-  if (protocol->send_fields(&field_list, 1))
-    DBUG_RETURN(-1);
+  if (protocol->send_fields(&field_list,
+                            Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+    DBUG_RETURN(TRUE);
 
   pthread_mutex_lock(&LOCK_slave_list);
 
@@ -670,12 +671,12 @@ int show_slave_hosts(THD* thd)
     if (protocol->write())
     {
       pthread_mutex_unlock(&LOCK_slave_list);
-      DBUG_RETURN(-1);
+      DBUG_RETURN(TRUE);
     }
   }
   pthread_mutex_unlock(&LOCK_slave_list);
   send_eof(thd);
-  DBUG_RETURN(0);
+  DBUG_RETURN(FALSE);
 }
 
 
@@ -706,6 +707,7 @@ int connect_to_master(THD *thd, MYSQL* mysql, MASTER_INFO* mi)
   if (!mysql_real_connect(mysql, mi->host, mi->user, mi->password, 0,
 			mi->port, 0, 0))
     DBUG_RETURN(1);
+  mysql->reconnect= 1;
   DBUG_RETURN(0);
 }
 
@@ -736,7 +738,7 @@ static int fetch_db_tables(THD *thd, MYSQL *mysql, const char *db,
     {
       bzero((char*) &table, sizeof(table)); //just for safe
       table.db= (char*) db;
-      table.real_name= (char*) table_name;
+      table.table_name= (char*) table_name;
       table.updating= 1;
 
       if (!tables_ok(thd, &table))
@@ -756,7 +758,7 @@ static int fetch_db_tables(THD *thd, MYSQL *mysql, const char *db,
    - No active transaction (flush_relay_log_info would not work in this case)
 */
 
-int load_master_data(THD* thd)
+bool load_master_data(THD* thd)
 {
   MYSQL mysql;
   MYSQL_RES* master_status_res = 0;
@@ -778,16 +780,15 @@ int load_master_data(THD* thd)
       (error=terminate_slave_threads(active_mi,restart_thread_mask,
 				     1 /*skip lock*/)))
   {
-    send_error(thd,error);
+    my_message(error, ER(error), MYF(0));
     unlock_slave_threads(active_mi);
     pthread_mutex_unlock(&LOCK_active_mi);
-    return 1;
+    return TRUE;
   }
   
   if (connect_to_master(thd, &mysql, active_mi))
   {
-    net_printf(thd, error= ER_CONNECT_TO_MASTER,
-	       mysql_error(&mysql));
+    my_error(error= ER_CONNECT_TO_MASTER, MYF(0), mysql_error(&mysql));
     goto err;
   }
 
@@ -796,11 +797,10 @@ int load_master_data(THD* thd)
     MYSQL_RES *db_res, **table_res, **table_res_end, **cur_table_res;
     uint num_dbs;
 
-    if (mysql_real_query(&mysql, "SHOW DATABASES", 14) ||
+    if (mysql_real_query(&mysql, STRING_WITH_LEN("SHOW DATABASES")) ||
 	!(db_res = mysql_store_result(&mysql)))
     {
-      net_printf(thd, error = ER_QUERY_ON_MASTER,
-		 mysql_error(&mysql));
+      my_error(error= ER_QUERY_ON_MASTER, MYF(0), mysql_error(&mysql));
       goto err;
     }
 
@@ -813,7 +813,7 @@ int load_master_data(THD* thd)
 
     if (!(table_res = (MYSQL_RES**)thd->alloc(num_dbs * sizeof(MYSQL_RES*))))
     {
-      net_printf(thd, error = ER_OUTOFMEMORY);
+      my_message(error = ER_OUTOFMEMORY, ER(ER_OUTOFMEMORY), MYF(0));
       goto err;
     }
 
@@ -823,12 +823,12 @@ int load_master_data(THD* thd)
       we wait to issue FLUSH TABLES WITH READ LOCK for as long as we
       can to minimize the lock time.
     */
-    if (mysql_real_query(&mysql, "FLUSH TABLES WITH READ LOCK", 27) ||
-	mysql_real_query(&mysql, "SHOW MASTER STATUS",18) ||
+    if (mysql_real_query(&mysql,
+                         STRING_WITH_LEN("FLUSH TABLES WITH READ LOCK")) ||
+	mysql_real_query(&mysql, STRING_WITH_LEN("SHOW MASTER STATUS")) ||
 	!(master_status_res = mysql_store_result(&mysql)))
     {
-      net_printf(thd, error = ER_QUERY_ON_MASTER,
-		 mysql_error(&mysql));
+      my_error(error= ER_QUERY_ON_MASTER, MYF(0), mysql_error(&mysql));
       goto err;
     }
 
@@ -862,7 +862,8 @@ int load_master_data(THD* thd)
 
       if (!db_ok(db, replicate_do_db, replicate_ignore_db) ||
           !db_ok_with_wild_table(db) ||
-	  !strcmp(db,"mysql"))
+	  !strcmp(db,"mysql") ||
+          is_schema_db(db))
       {
 	*cur_table_res = 0;
 	continue;
@@ -873,17 +874,15 @@ int load_master_data(THD* thd)
 
       if (mysql_create_db(thd, db, &create_info, 1))
       {
-	send_error(thd, 0, 0);
 	cleanup_mysql_results(db_res, cur_table_res - 1, table_res);
 	goto err;
       }
 
       if (mysql_select_db(&mysql, db) ||
-	  mysql_real_query(&mysql, "SHOW TABLES", 11) ||
+	  mysql_real_query(&mysql, STRING_WITH_LEN("SHOW TABLES")) ||
 	  !(*cur_table_res = mysql_store_result(&mysql)))
       {
-	net_printf(thd, error = ER_QUERY_ON_MASTER,
-		   mysql_error(&mysql));
+	my_error(error= ER_QUERY_ON_MASTER, MYF(0), mysql_error(&mysql));
 	cleanup_mysql_results(db_res, cur_table_res - 1, table_res);
 	goto err;
       }
@@ -917,14 +916,14 @@ int load_master_data(THD* thd)
           setting active_mi, because init_master_info() sets active_mi with
           defaults.
         */
-        int error;
+        int error_2;
 
         if (init_master_info(active_mi, master_info_file, relay_log_info_file, 
 			     0, (SLAVE_IO | SLAVE_SQL)))
-          send_error(thd, ER_MASTER_INFO);
+          my_message(ER_MASTER_INFO, ER(ER_MASTER_INFO), MYF(0));
 	strmake(active_mi->master_log_name, row[0],
 		sizeof(active_mi->master_log_name));
-	active_mi->master_log_pos= my_strtoll10(row[1], (char**) 0, &error);
+	active_mi->master_log_pos= my_strtoll10(row[1], (char**) 0, &error_2);
         /* at least in recent versions, the condition below should be false */
 	if (active_mi->master_log_pos < BIN_LOG_HEADER_SIZE)
 	  active_mi->master_log_pos = BIN_LOG_HEADER_SIZE;
@@ -933,27 +932,27 @@ int load_master_data(THD* thd)
           host was specified; there could have been a problem when replication
           started, which led to relay log's IO_CACHE to not be inited.
         */
-	flush_master_info(active_mi, 0);
+        if (flush_master_info(active_mi, 0))
+          sql_print_error("Failed to flush master info file");
       }
       mysql_free_result(master_status_res);
     }
 
-    if (mysql_real_query(&mysql, "UNLOCK TABLES", 13))
+    if (mysql_real_query(&mysql, STRING_WITH_LEN("UNLOCK TABLES")))
     {
-      net_printf(thd, error = ER_QUERY_ON_MASTER,
-		 mysql_error(&mysql));
+      my_error(error= ER_QUERY_ON_MASTER, MYF(0), mysql_error(&mysql));
       goto err;
     }
   }
-  thd->proc_info="purging old relay logs";
+  thd_proc_info(thd, "purging old relay logs");
   if (purge_relay_logs(&active_mi->rli,thd,
 		       0 /* not only reset, but also reinit */,
 		       &errmsg))
   {
-    send_error(thd, 0, "Failed purging old relay logs");
+    my_error(ER_RELAY_LOG_FAIL, MYF(0), errmsg);
     unlock_slave_threads(active_mi);
     pthread_mutex_unlock(&LOCK_active_mi);
-    return 1;
+    return TRUE;
   }
   pthread_mutex_lock(&active_mi->rli.data_lock);
   active_mi->rli.group_master_log_pos = active_mi->master_log_pos;
@@ -972,7 +971,7 @@ int load_master_data(THD* thd)
   flush_relay_log_info(&active_mi->rli);
   pthread_cond_broadcast(&active_mi->rli.data_cond);
   pthread_mutex_unlock(&active_mi->rli.data_lock);
-  thd->proc_info = "starting slave";
+  thd_proc_info(thd, "starting slave");
   if (restart_thread_mask)
   {
     error=start_slave_threads(0 /* mutex not needed */,
@@ -984,7 +983,7 @@ int load_master_data(THD* thd)
 err:
   unlock_slave_threads(active_mi);
   pthread_mutex_unlock(&LOCK_active_mi);
-  thd->proc_info = 0;
+  thd_proc_info(thd, 0);
 
   mysql_close(&mysql); // safe to call since we always do mysql_init()
   if (!error)

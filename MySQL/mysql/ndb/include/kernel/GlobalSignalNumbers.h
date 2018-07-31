@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -127,6 +126,7 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 /* 68 unused */
 /* 69 unused */
 /* 70 unused */
+#define GSN_UPDATE_FRAG_DIST_KEY_ORD    70
 #define GSN_ACC_ABORTREQ                71
 #define GSN_ACC_CHECK_SCAN              72
 #define GSN_ACC_COMMITCONF              73
@@ -507,16 +507,12 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_TEST_ORD                    407
 #define GSN_TESTSIG                     408
 #define GSN_TIME_SIGNAL                 409
-/* 410 unused  */
-/* 411 unused  */
-/* 412 unused */
 #define GSN_TUP_ABORTREQ                414
 #define GSN_TUP_ADD_ATTCONF             415
 #define GSN_TUP_ADD_ATTRREF             416
 #define GSN_TUP_ADD_ATTRREQ             417
 #define GSN_TUP_ATTRINFO                418
 #define GSN_TUP_COMMITREQ               419
-/* 420 unused */
 #define GSN_TUP_LCPCONF                 421
 #define GSN_TUP_LCPREF                  422
 #define GSN_TUP_LCPREQ                  423
@@ -544,13 +540,13 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_ABORT_ALL_REF               446
 #define GSN_ABORT_ALL_CONF              447
 
-#define GSN_STATISTICS_REQ              448
+/* 448 unused - formerly GSN_STATISTICS_REQ */
 #define GSN_STOP_ORD                    449
 #define GSN_TAMPER_ORD                  450
-#define GSN_SET_VAR_REQ                 451
-#define GSN_SET_VAR_CONF                452
-#define GSN_SET_VAR_REF                 453
-#define GSN_STATISTICS_CONF             454
+/* 451 unused - formerly GSN_SET_VAR_REQ  */
+/* 452 unused - formerly GSN_SET_VAR_CONF */
+/* 453 unused - formerly GSN_SET_VAR_REF  */
+/* 454 unused - formerly GSN_STATISTICS_CONF */
 
 #define GSN_START_ORD                   455
 /* 457 unused */
@@ -591,6 +587,7 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_BLOCK_COMMIT_ORD            485
 #define GSN_UNBLOCK_COMMIT_ORD          486
 
+#define GSN_NODE_START_REP              502
 #define GSN_NODE_STATE_REP              487
 #define GSN_CHANGE_NODE_STATE_REQ       488
 #define GSN_CHANGE_NODE_STATE_CONF      489
@@ -610,8 +607,6 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_WAIT_GCP_REQ                499
 #define GSN_WAIT_GCP_REF                500
 #define GSN_WAIT_GCP_CONF               501
-
-/* 502 not used */
 
 /**
  * Trigger and index signals
@@ -682,6 +677,8 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_BACKUP_FRAGMENT_REF         546
 #define GSN_BACKUP_FRAGMENT_CONF        547
 
+#define GSN_BACKUP_FRAGMENT_COMPLETE_REP 575
+
 #define GSN_STOP_BACKUP_REQ             548
 #define GSN_STOP_BACKUP_REF             549
 #define GSN_STOP_BACKUP_CONF            550
@@ -731,13 +728,15 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_SUB_STOP_REQ                572
 #define GSN_SUB_STOP_REF                573
 #define GSN_SUB_STOP_CONF               574
-/*                                      575 unused */
+/*                                      575 used */
 #define GSN_SUB_CREATE_REQ              576
 #define GSN_SUB_CREATE_REF              577
 #define GSN_SUB_CREATE_CONF             578
+/*
 #define GSN_SUB_START_REQ               579
 #define GSN_SUB_START_REF               580
 #define GSN_SUB_START_CONF              581
+*/
 #define GSN_SUB_SYNC_REQ                582
 #define GSN_SUB_SYNC_REF                583
 #define GSN_SUB_SYNC_CONF               584
@@ -903,10 +902,11 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 /**
  * SUMA restart protocol
  */
+/*
 #define GSN_SUMA_START_ME               691
 #define GSN_SUMA_HANDOVER_REQ           692
 #define GSN_SUMA_HANDOVER_CONF          693
-
+*/
 /* not used                             694 */
 /* not used                             695 */
 /* not used                             696 */
@@ -923,6 +923,7 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 /*
  * EVENT Signals
  */
+/*
 #define GSN_SUB_GCP_COMPLETE_ACC        699
 
 #define GSN_CREATE_EVNT_REQ             700
@@ -932,10 +933,16 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_DROP_EVNT_REQ               703
 #define GSN_DROP_EVNT_CONF              704
 #define GSN_DROP_EVNT_REF               705
-
+*/
 #define GSN_TUX_BOUND_INFO		710
 
 #define GSN_ACC_LOCKREQ			711
 #define GSN_READ_PSUEDO_REQ             712
+
+/* DICT LOCK signals */
+#define GSN_DICT_LOCK_REQ               410
+#define GSN_DICT_LOCK_CONF              411
+#define GSN_DICT_LOCK_REF               412
+#define GSN_DICT_UNLOCK_ORD             420
 
 #endif

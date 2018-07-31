@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,8 +26,10 @@ uint32 my_lread(int Filedes, byte *Buffer, uint32 Count, myf MyFlags)
 {
   uint32 readbytes;
   DBUG_ENTER("my_lread");
-  DBUG_PRINT("my",("Fd: %d  Buffer: %ld  Count: %ld  MyFlags: %d",
-		   Filedes, Buffer, Count, MyFlags));
+  DBUG_PRINT("my",("Fd: %d  Buffer: 0x%lx  Count: %lu  MyFlags: %d",
+		   Filedes, (long) Buffer, (ulong) Count, MyFlags));
+
+  DBUG_PRINT("error", ("Deprecated my_lread() function should not be used."));
 
   /* Temp hack to get count to int32 while read wants int */
   if ((readbytes = (uint32) read(Filedes, Buffer, (uint) Count)) != Count)

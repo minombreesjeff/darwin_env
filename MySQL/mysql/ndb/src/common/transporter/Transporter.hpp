@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -44,6 +43,7 @@ public:
    *    Use isConnected() to check status
    */
   bool connect_client();
+  bool connect_client(NDB_SOCKET_TYPE sockfd);
   bool connect_server(NDB_SOCKET_TYPE socket);
 
   /**
@@ -69,6 +69,22 @@ public:
    */
   NodeId getLocalNodeId() const;
 
+  /**
+   * Get port we're connecting to (signed)
+   */
+  int get_s_port() { return m_s_port; };
+  
+  /**
+   * Set port to connect to (signed)
+   */
+  void set_s_port(int port) {
+    m_s_port = port;
+    if(port<0)
+      port= -port;
+    if(m_socket_client)
+      m_socket_client->set_port(port);
+  };
+
   virtual Uint32 get_free_buffer() const = 0;
   
 protected:
@@ -76,9 +92,11 @@ protected:
 	      TransporterType,
 	      const char *lHostName,
 	      const char *rHostName, 
-	      int r_port,
+	      int s_port,
+	      bool isMgmConnection,
 	      NodeId lNodeId,
-	      NodeId rNodeId, 
+	      NodeId rNodeId,
+	      NodeId serverNodeId,
 	      int byteorder, 
 	      bool compression, 
 	      bool checksum, 
@@ -104,7 +122,7 @@ protected:
   struct in_addr remoteHostAddress;
   struct in_addr localHostAddress;
 
-  const unsigned int m_r_port;
+  int m_s_port;
 
   const NodeId remoteNodeId;
   const NodeId localNodeId;
@@ -121,6 +139,12 @@ protected:
 
 private:
 
+  /**
+   * means that we transform an MGM connection into
+   * a transporter connection
+   */
+  bool isMgmConnection;
+
   SocketClient *m_socket_client;
   struct in_addr m_connect_address;
 
@@ -136,7 +160,8 @@ protected:
   TransporterRegistry &m_transporter_registry;
   void *get_callback_obj() { return m_transporter_registry.callbackObj; };
   void report_disconnect(int err){m_transporter_registry.report_disconnect(remoteNodeId,err);};
-  void report_error(enum TransporterError err){reportError(get_callback_obj(),remoteNodeId,err);};
+  void report_error(enum TransporterError err, const char *info = 0)
+    { reportError(get_callback_obj(), remoteNodeId, err, info); };
 };
 
 inline

@@ -2,8 +2,7 @@
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
+  the Free Software Foundation; version 2 of the License.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,9 +27,7 @@ class ha_blackhole: public handler
   THR_LOCK thr_lock;
 
 public:
-  ha_blackhole(TABLE *table): handler(table)
-  {
-  }
+  ha_blackhole(TABLE *table_arg);
   ~ha_blackhole()
   {
   }
@@ -46,8 +43,7 @@ public:
   {
     return(HA_NULL_IN_KEY | HA_CAN_FULLTEXT | HA_CAN_SQL_HANDLER |
            HA_DUPP_POS | HA_CAN_INDEX_BLOBS | HA_AUTO_PART_KEY |
-           HA_FILE_BASED | HA_CAN_GEOMETRY | HA_READ_RND_SAME |
-           HA_CAN_INSERT_DELAYED);
+           HA_FILE_BASED | HA_CAN_GEOMETRY | HA_READ_RND_SAME);
   }
   ulong index_flags(uint inx, uint part, bool all_parts) const
   {

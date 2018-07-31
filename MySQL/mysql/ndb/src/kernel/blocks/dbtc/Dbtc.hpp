@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -139,8 +138,9 @@
 
 #define ZNOT_FOUND 626
 #define ZALREADYEXIST 630
-#define ZINCONSISTENTHASHINDEX 892
 #define ZNOTUNIQUE 893
+
+#define ZINVALID_KEY 290
 #endif
 
 class Dbtc: public SimulatedBlock {
@@ -302,6 +302,7 @@ public:
   /* WHEN THE TRIGGER IS DEACTIVATED.         */
   /* **************************************** */
   struct TcDefinedTriggerData {
+    TcDefinedTriggerData() {}
     /**
      * Trigger id, used to identify the trigger
      */
@@ -553,7 +554,7 @@ public:
     Uint32 expectedTransIdAI;
     AttributeBuffer transIdAI; // For accumulating TransId_AI
     
-    TcIndxReq tcIndxReq;
+    TcKeyReq tcIndxReq;
     UintR connectionIndex;
     UintR indexReadTcConnect; //
     
@@ -702,6 +703,7 @@ public:
     Uint8 tckeyrec; // Ändrad från R
     Uint8 tcindxrec;
     Uint8 apiFailState; // Ändrad från R
+    Uint8 singleUserMode;
     ReturnSignal returnsignal;
     Uint8 timeOutCounter;
     
@@ -864,11 +866,11 @@ public:
     UintR  hashValue;    /* THE HASH VALUE USED TO LOCATE FRAGMENT       */
     
     Uint8  distributionKeyIndicator;
-    Uint8  distributionGroupIndicator;
-    Uint8  distributionGroupType;
+    Uint8  m_special_hash; // collation or distribution key
+    Uint8  unused2;
     Uint8  lenAiInTckeyreq;  /* LENGTH OF ATTRIBUTE INFORMATION IN TCKEYREQ */
 
-    Uint8  distributionKey;
+    Uint8  fragmentDistributionKey;  /* DIH generation no */
 
     /**
      * EXECUTION MODE OF OPERATION                    
@@ -892,16 +894,16 @@ public:
     // Second 16 byte cache line in second 64 byte cache
     // line. Diverse use.
     //---------------------------------------------------
-    UintR  distributionGroup;
+    UintR  distributionKey;
     UintR  nextCacheRec;
-    UintR  distributionKeySize;
+    UintR  unused3;
     Uint32 scanInfo;
     
     //---------------------------------------------------
     // Third 16 byte cache line in second 64
     // byte cache line. Diverse use.
     //---------------------------------------------------
-    Uint32 scanNode;
+    Uint32 unused4;
     Uint32 scanTakeOverInd;
     UintR  firstKeybuf;   /* POINTER THE LINKED LIST OF KEY BUFFERS       */
     UintR  lastKeybuf;    /* VARIABLE POINTING TO THE LAST KEY BUFFER     */
@@ -940,7 +942,8 @@ public:
       NF_CHECK_SCAN        = 0x2,
       NF_CHECK_TRANSACTION = 0x4,
       NF_CHECK_DROP_TAB    = 0x8,
-      NF_NODE_FAIL_BITS    = 0xF // All bits...
+      NF_NODE_FAIL_BITS    = 0xF, // All bits...
+      NF_STARTED           = 0x10
     };
     Uint32 m_nf_bits;
     NdbNodeBitmask m_lqh_trans_conf;
@@ -949,24 +952,41 @@ public:
   typedef Ptr<HostRecord> HostRecordPtr;
   
   /* *********** TABLE RECORD ********************************************* */
+
   /********************************************************/
   /* THIS RECORD CONTAINS THE CURRENT SCHEMA VERSION OF   */
   /* ALL TABLES IN THE SYSTEM.                            */
   /********************************************************/
   struct TableRecord {
+    TableRecord() {}
     Uint32 currentSchemaVersion;
-    Uint8 enabled;
-    Uint8 dropping;
+    Uint16 m_flags;
     Uint8 tableType;
-    Uint8 storedTable;
+    Uint8 singleUserMode;
+
+    enum {
+      TR_ENABLED      = 1 << 0,
+      TR_DROPPING     = 1 << 1,
+      TR_STORED_TABLE = 1 << 2
+    };
+    Uint8 get_enabled()     const { return (m_flags & TR_ENABLED)      != 0; }
+    Uint8 get_dropping()    const { return (m_flags & TR_DROPPING)     != 0; }
+    Uint8 get_storedTable() const { return (m_flags & TR_STORED_TABLE) != 0; }
+    void set_enabled(Uint8 f)     { f ? m_flags |= (Uint16)TR_ENABLED      : m_flags &= ~(Uint16)TR_ENABLED; }
+    void set_dropping(Uint8 f)    { f ? m_flags |= (Uint16)TR_DROPPING     : m_flags &= ~(Uint16)TR_DROPPING; }
+    void set_storedTable(Uint8 f) { f ? m_flags |= (Uint16)TR_STORED_TABLE : m_flags &= ~(Uint16)TR_STORED_TABLE; }
+
+    Uint8 noOfKeyAttr;
+    Uint8 hasCharAttr;
+    Uint8 noOfDistrKeys;
     
     bool checkTable(Uint32 schemaVersion) const {
-      return enabled && !dropping && 
+      return get_enabled() && !get_dropping() && 
 	(table_version_major(schemaVersion) == table_version_major(currentSchemaVersion));
     }
-    
+
     Uint32 getErrorCode(Uint32 schemaVersion) const;
-    
+
     struct DropTable {
       Uint32 senderRef;
       Uint32 senderData;
@@ -1145,7 +1165,7 @@ public:
     Uint32 nextScan;
 
     // Length of expected attribute information
-    Uint32 scanAiLength;
+    union { Uint32 scanAiLength; Uint32 m_booked_fragments_count; };
 
     Uint32 scanKeyLen;
 
@@ -1312,11 +1332,11 @@ private:
   void execCOMMITCONF(Signal* signal);
   void execABORTCONF(Signal* signal);
   void execNODE_FAILREP(Signal* signal);
+  void execNODE_START_REP(Signal* signal);
   void execINCL_NODEREQ(Signal* signal);
   void execTIME_SIGNAL(Signal* signal);
   void execAPI_FAILREQ(Signal* signal);
   void execSCAN_HBREP(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
 
   void execABORT_ALL_REQ(Signal* signal);
 
@@ -1414,6 +1434,10 @@ private:
   void gcpTcfinished(Signal* signal);
   void handleGcp(Signal* signal);
   void hash(Signal* signal);
+  bool handle_special_hash(Uint32 dstHash[4], 
+			     Uint32* src, Uint32 srcLen, 
+			     Uint32 tabPtrI, bool distr);
+  
   void initApiConnect(Signal* signal);
   void initApiConnectRec(Signal* signal, 
 			 ApiConnectRecord * const regApiPtr,
@@ -1459,7 +1483,7 @@ private:
   void sendContinueTimeOutControl(Signal* signal, Uint32 TapiConPtr);
   void sendKeyinfo(Signal* signal, BlockReference TBRef, Uint32 len);
   void sendlqhkeyreq(Signal* signal, BlockReference TBRef);
-  void sendSystemError(Signal* signal);
+  void sendSystemError(Signal* signal, int line);
   void sendtckeyconf(Signal* signal, UintR TcommitFlag);
   void sendTcIndxConf(Signal* signal, UintR TcommitFlag);
   void unlinkApiConnect(Signal* signal);
@@ -1535,8 +1559,8 @@ private:
                             bool holdOperation = false);
   void releaseFiredTriggerData(DLFifoList<TcFiredTriggerData>* triggers);
   // Generated statement blocks
-  void warningHandlerLab(Signal* signal);
-  void systemErrorLab(Signal* signal);
+  void warningHandlerLab(Signal* signal, int line);
+  void systemErrorLab(Signal* signal, int line);
   void sendSignalErrorRefuseLab(Signal* signal);
   void scanTabRefLab(Signal* signal, Uint32 errCode);
   void diFcountReqLab(Signal* signal, ScanRecordPtr);
@@ -1654,6 +1678,7 @@ private:
   UintR tcheckGcpId;
 
   struct TransCounters {
+    TransCounters() {}
     enum { Off, Timer, Started } c_trans_status;
     UintR cattrinfoCount;
     UintR ctransCount;
@@ -1671,7 +1696,7 @@ private:
 	c_scan_count = c_range_scan_count = 0; 
     }
     Uint32 report(Signal* signal){
-      signal->theData[0] = EventReport::TransReportCounters;
+      signal->theData[0] = NDB_LE_TransReportCounters;
       signal->theData[1] = ctransCount;
       signal->theData[2] = ccommitCount;
       signal->theData[3] = creadCount;
@@ -1792,6 +1817,7 @@ private:
    */
 public:
   struct CommitAckMarker {
+    CommitAckMarker() {}
     Uint32 transid1;
     Uint32 transid2;
     union { Uint32 nextPool; Uint32 nextHash; };
@@ -1824,9 +1850,14 @@ private:
 			Uint32 transid2);
   void removeMarkerForFailedAPI(Signal* signal, Uint32 nodeId, Uint32 bucket);
 
-  bool getAllowStartTransaction() const {
-    if(getNodeState().getSingleUserMode())
-      return true;
+  bool getAllowStartTransaction(Uint32 nodeId, Uint32 table_single_user_mode) const {
+    if (unlikely(getNodeState().getSingleUserMode()))
+    {
+      if (getNodeState().getSingleUserApi() == nodeId || table_single_user_mode)
+        return true;
+      else
+        return false;
+    }
     return getNodeState().startLevel < NodeState::SL_STOPPING_2;
   }
   
@@ -1939,5 +1970,8 @@ private:
   // those variables should be removed and exchanged for stack
   // variable communication.
   /**************************************************************************/
+
+  Uint32 c_gcp_ref;
 };
+
 #endif

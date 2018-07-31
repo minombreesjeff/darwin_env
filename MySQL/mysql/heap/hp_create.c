@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -76,9 +75,40 @@ int heap_create(const char *name, uint keys, HP_KEYDEF *keydef,
 	case HA_KEYTYPE_UINT24:
 	case HA_KEYTYPE_INT8:
 	  keyinfo->seg[j].flag|= HA_SWAP_KEY;
+          break;
+        case HA_KEYTYPE_VARBINARY1:
+          /* Case-insensitiveness is handled in coll->hash_sort */
+          keyinfo->seg[j].type= HA_KEYTYPE_VARTEXT1;
+          /* fall_through */
+        case HA_KEYTYPE_VARTEXT1:
+          if (!my_binary_compare(keyinfo->seg[j].charset))
+            keyinfo->flag|= HA_END_SPACE_KEY;
+          keyinfo->flag|= HA_VAR_LENGTH_KEY;
+          length+= 2;
+          /* Save number of bytes used to store length */
+          keyinfo->seg[j].bit_start= 1;
+          break;
+        case HA_KEYTYPE_VARBINARY2:
+          /* Case-insensitiveness is handled in coll->hash_sort */
+          /* fall_through */
+        case HA_KEYTYPE_VARTEXT2:
+          if (!my_binary_compare(keyinfo->seg[j].charset))
+            keyinfo->flag|= HA_END_SPACE_KEY;
+          keyinfo->flag|= HA_VAR_LENGTH_KEY;
+          length+= 2;
+          /* Save number of bytes used to store length */
+          keyinfo->seg[j].bit_start= 2;
+          /*
+            Make future comparison simpler by only having to check for
+            one type
+          */
+          keyinfo->seg[j].type= HA_KEYTYPE_VARTEXT1;
+          break;
 	default:
 	  break;
 	}
+        if (keyinfo->seg[j].flag & HA_END_SPACE_ARE_EQUAL)
+          keyinfo->flag|= HA_END_SPACE_KEY;
       }
       keyinfo->length= length;
       length+= keyinfo->rb_tree.size_of_element + 
@@ -89,7 +119,9 @@ int heap_create(const char *name, uint keys, HP_KEYDEF *keydef,
       if (keyinfo->algorithm == HA_KEY_ALG_BTREE)
       {
         key_segs++; /* additional HA_KEYTYPE_END segment */
-        if (keyinfo->flag & HA_NULL_PART_KEY)
+        if (keyinfo->flag & HA_VAR_LENGTH_KEY)
+          keyinfo->get_key_length= hp_rb_var_key_length;
+        else if (keyinfo->flag & HA_NULL_PART_KEY)
           keyinfo->get_key_length= hp_rb_null_key_length;
         else
           keyinfo->get_key_length= hp_rb_key_length;
@@ -138,6 +170,8 @@ int heap_create(const char *name, uint keys, HP_KEYDEF *keydef,
 	keyinfo->write_key= hp_write_key;
         keyinfo->hash_buckets= 0;
       }
+      if ((keyinfo->flag & HA_AUTO_KEY) && create_info->with_auto_increment)
+        share->auto_key= i + 1;
     }
     share->min_records= min_records;
     share->max_records= max_records;

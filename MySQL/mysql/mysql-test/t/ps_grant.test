@@ -35,7 +35,7 @@ use mysqltest;
 --source include/ps_create.inc
 --source include/ps_renew.inc
 --enable_query_log
-eval use $DB;
+use test;
 grant usage on mysqltest.* to second_user@localhost
 identified by 'looser' ;
 grant select on mysqltest.t9 to second_user@localhost
@@ -113,3 +113,19 @@ show grants for second_user@localhost ;
 drop database mysqltest;
 
 # End of 4.1 tests
+
+#
+# grant/revoke + drop user
+#
+--error 1295
+prepare stmt3 from ' grant all on test.t1 to drop_user@localhost
+identified by ''looser'' ';
+grant all on test.t1 to drop_user@localhost
+identified by 'looser' ;
+--error 1295
+prepare stmt3 from ' revoke all privileges on test.t1 from 
+drop_user@localhost ';
+revoke all privileges on test.t1 from drop_user@localhost ;
+--error 1295
+prepare stmt3 from ' drop user drop_user@localhost ';
+drop user drop_user@localhost;

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,7 +23,10 @@ extern FilteredNdbOut err;
 extern FilteredNdbOut info;
 extern FilteredNdbOut debug;
 
-static void callback(int, NdbConnection*, void*);
+static void callback(int, NdbTransaction*, void*);
+
+extern const char * g_connect_string;
+extern BaseString g_options;
 
 bool
 BackupRestore::init()
@@ -34,7 +36,14 @@ BackupRestore::init()
   if (!m_restore && !m_restore_meta)
     return true;
 
-  m_ndb = new Ndb();
+  m_cluster_connection = new Ndb_cluster_connection(g_connect_string);
+  m_cluster_connection->set_name(g_options.c_str());
+  if(m_cluster_connection->connect(12, 5, 1) != 0)
+  {
+    return false;
+  }
+
+  m_ndb = new Ndb(m_cluster_connection);
 
   if (m_ndb == NULL)
     return false;
@@ -79,6 +88,12 @@ void BackupRestore::release()
   {
     delete [] m_callback;
     m_callback= 0;
+  }
+
+  if (m_cluster_connection)
+  {
+    delete m_cluster_connection;
+    m_cluster_connection= 0;
   }
 }
 
@@ -129,14 +144,38 @@ BackupRestore::finalize_table(const TableS & table){
   bool ret= true;
   if (!m_restore && !m_restore_meta)
     return ret;
-  if (table.have_auto_inc())
+  if (!table.have_auto_inc())
+    return ret;
+
+  Uint64 max_val= table.get_max_auto_val();
+  do
   {
-    Uint64 max_val= table.get_max_auto_val();
-    Uint64 auto_val= m_ndb->readAutoIncrementValue(get_table(table.m_dictTable));
-    if (max_val+1 > auto_val || auto_val == ~(Uint64)0)
-      ret= m_ndb->setAutoIncrementValue(get_table(table.m_dictTable), max_val+1, false);
-  }
-  return ret;
+    Uint64 auto_val = ~(Uint64)0;
+    int r= m_ndb->readAutoIncrementValue(get_table(table.m_dictTable), auto_val);
+    if (r == -1 && m_ndb->getNdbError().status == NdbError::TemporaryError)
+    {
+      NdbSleep_MilliSleep(50);
+      continue; // retry
+    }
+    else if (r == -1 && m_ndb->getNdbError().code != 626)
+    {
+      ret= false;
+    }
+    else if ((r == -1 && m_ndb->getNdbError().code == 626) ||
+             max_val+1 > auto_val || auto_val == ~(Uint64)0)
+    {
+      r= m_ndb->setAutoIncrementValue(get_table(table.m_dictTable),
+                                      max_val+1, false);
+      if (r == -1 &&
+            m_ndb->getNdbError().status == NdbError::TemporaryError)
+      {
+        NdbSleep_MilliSleep(50);
+        continue; // retry
+      }
+      ret = (r == 0);
+    }
+    return (ret);
+  } while (1);
 }
 
 bool
@@ -166,7 +205,7 @@ BackupRestore::table(const TableS & table){
   BaseString tmp(name);
   Vector<BaseString> split;
   if(tmp.split(split, "/") != 3){
-    err << "Invalid table name format " << name << endl;
+    err << "Invalid table name format `" << name << "`" << endl;
     return false;
   }
 
@@ -179,22 +218,30 @@ BackupRestore::table(const TableS & table){
 
     copy.setName(split[2].c_str());
 
+    /*
+      update min and max rows to reflect the table, this to
+      ensure that memory is allocated properly in the ndb kernel
+    */
+    copy.setMinRows(table.getNoOfRecords());
+    if (table.getNoOfRecords() > copy.getMaxRows())
+    {
+      copy.setMaxRows(table.getNoOfRecords());
+    }
+
     if (dict->createTable(copy) == -1) 
     {
-      err << "Create table " << table.getTableName() << " failed: "
+      err << "Create table `" << table.getTableName() << "` failed: "
 	  << dict->getNdbError() << endl;
       return false;
     }
-    info << "Successfully restored table " << table.getTableName()<< endl ;
+    info << "Successfully restored table `"
+         << table.getTableName() << "`" << endl;
   }  
   
   const NdbDictionary::Table* tab = dict->getTable(split[2].c_str());
   if(tab == 0){
-    err << "Unable to find table: " << split[2].c_str() << endl;
+    err << "Unable to find table: `" << split[2].c_str() << "`" << endl;
     return false;
-  }
-  if(m_restore_meta){
-    m_ndb->setAutoIncrementValue(tab, ~(Uint64)0, false);
   }
   const NdbDictionary::Table* null = 0;
   m_new_tables.fill(table.m_dictTable->getTableId(), null);
@@ -209,14 +256,17 @@ BackupRestore::endOfTables(){
 
   NdbDictionary::Dictionary* dict = m_ndb->getDictionary();
   for(size_t i = 0; i<m_indexes.size(); i++){
-    const NdbTableImpl & indtab = NdbTableImpl::getImpl(* m_indexes[i]);
+    NdbTableImpl & indtab = NdbTableImpl::getImpl(* m_indexes[i]);
 
-    BaseString tmp(indtab.m_primaryTable.c_str());
     Vector<BaseString> split;
-    if(tmp.split(split, "/") != 3){
-      err << "Invalid table name format " << indtab.m_primaryTable.c_str()
-	  << endl;
-      return false;
+    {
+      BaseString tmp(indtab.m_primaryTable.c_str());
+      if (tmp.split(split, "/") != 3)
+      {
+        err << "Invalid table name format `" << indtab.m_primaryTable.c_str()
+            << "`" << endl;
+        return false;
+      }
     }
     
     m_ndb->setDatabaseName(split[0].c_str());
@@ -224,39 +274,41 @@ BackupRestore::endOfTables(){
     
     const NdbDictionary::Table * prim = dict->getTable(split[2].c_str());
     if(prim == 0){
-      err << "Unable to find base table \"" << split[2].c_str() 
-	  << "\" for index "
-	  << indtab.getName() << endl;
+      err << "Unable to find base table `" << split[2].c_str() 
+	  << "` for index `"
+	  << indtab.getName() << "`" << endl;
       return false;
     }
     NdbTableImpl& base = NdbTableImpl::getImpl(*prim);
     NdbIndexImpl* idx;
-    int id;
-    char idxName[255], buf[255];
-    if(sscanf(indtab.getName(), "%[^/]/%[^/]/%d/%s",
-	      buf, buf, &id, idxName) != 4){
-      err << "Invalid index name format " << indtab.getName() << endl;
-      return false;
+    Vector<BaseString> split_idx;
+    {
+      BaseString tmp(indtab.getName());
+      if (tmp.split(split_idx, "/") != 4)
+      {
+        err << "Invalid index name format `" << indtab.getName() << "`" << endl;
+        return false;
+      }
     }
     if(NdbDictInterface::create_index_obj_from_table(&idx, &indtab, &base))
     {
-      err << "Failed to create index " << idxName
-	  << " on " << split[2].c_str() << endl;
+      err << "Failed to create index `" << split_idx[3]
+	  << "` on " << split[2].c_str() << endl;
 	return false;
     }
-    idx->setName(idxName);
+    idx->setName(split_idx[3].c_str());
     if(dict->createIndex(* idx) != 0)
     {
       delete idx;
-      err << "Failed to create index " << idxName
-	  << " on " << split[2].c_str() << endl
+      err << "Failed to create index `" << split_idx[3].c_str()
+	  << "` on `" << split[2].c_str() << "`" << endl
 	  << dict->getNdbError() << endl;
 
       return false;
     }
     delete idx;
-    info << "Successfully created index " << idxName
-	 << " on " << split[2].c_str() << endl;
+    info << "Successfully created index `" << split_idx[3].c_str()
+	 << "` on `" << split[2].c_str() << "`" << endl;
   }
   return true;
 }
@@ -336,7 +388,7 @@ void BackupRestore::tuple_a(restore_callback_t *cb)
 	Uint32 length = (size * arraySize) / 8;
 
 	if (j == 0 && tup.getTable()->have_auto_inc(i))
-	  tup.getTable()->update_max_auto_val(dataPtr,size);
+	  tup.getTable()->update_max_auto_val(dataPtr,size*arraySize);
 
 	if (attr_desc->m_column->getPrimaryKey())
 	{
@@ -369,7 +421,8 @@ void BackupRestore::tuple_a(restore_callback_t *cb)
     }
 
     // Prepare transaction (the transaction is NOT yet sent to NDB)
-    cb->connection->executeAsynchPrepare(Commit, &callback, cb);
+    cb->connection->executeAsynchPrepare(NdbTransaction::Commit,
+					 &callback, cb);
     m_transactions++;
     return;
   }
@@ -500,7 +553,7 @@ BackupRestore::logEntry(const LogEntry & tup)
   if (!m_restore)
     return;
 
-  NdbConnection * trans = m_ndb->startTransaction();
+  NdbTransaction * trans = m_ndb->startTransaction();
   if (trans == NULL) 
   {
     // Deep shit, TODO: handle the error
@@ -549,7 +602,7 @@ BackupRestore::logEntry(const LogEntry & tup)
     const char * dataPtr = attr->Data.string_value;
     
     if (tup.m_table->have_auto_inc(attr->Desc->attrId))
-      tup.m_table->update_max_auto_val(dataPtr,size);
+      tup.m_table->update_max_auto_val(dataPtr,size*arraySize);
 
     const Uint32 length = (size / 8) * arraySize;
     if (attr->Desc->m_column->getPrimaryKey())
@@ -570,7 +623,7 @@ BackupRestore::logEntry(const LogEntry & tup)
     } // if
   }
   
-  const int ret = trans->execute(Commit);
+  const int ret = trans->execute(NdbTransaction::Commit);
   if (ret != 0)
   {
     // Both insert update and delete can fail during log running
@@ -618,12 +671,12 @@ BackupRestore::endOfLogEntrys()
  *              
  *   (This function must have three arguments: 
  *   - The result of the transaction, 
- *   - The NdbConnection object, and 
+ *   - The NdbTransaction object, and 
  *   - A pointer to an arbitrary object.)
  */
 
 static void
-callback(int result, NdbConnection* trans, void* aObject)
+callback(int result, NdbTransaction* trans, void* aObject)
 {
   restore_callback_t *cb = (restore_callback_t *)aObject;
   (cb->restore)->cback(result, cb);
@@ -637,7 +690,7 @@ BackupRestore::tuple(const TupleS & tup)
     return;
   while (1) 
   {
-    NdbConnection * trans = m_ndb->startTransaction();
+    NdbTransaction * trans = m_ndb->startTransaction();
     if (trans == NULL) 
     {
       // Deep shit, TODO: handle the error
@@ -688,7 +741,7 @@ BackupRestore::tuple(const TupleS & tup)
 	else
 	  op->setValue(i, dataPtr, length);
     }
-    int ret = trans->execute(Commit);
+    int ret = trans->execute(NdbTransaction::Commit);
     if (ret != 0)
     {
       ndbout << "execute failed: ";

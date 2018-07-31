@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,8 +35,10 @@ public:
 		  const char *lHostName,
 		  const char *rHostName, 
 		  int r_port,
+		  bool isMgmConnection,
 		  NodeId lNodeId,
-		  NodeId rNodeId, 
+		  NodeId rNodeId,
+		  NodeId serverNodeId,
 		  bool checksum, 
 		  bool signalId,
 		  key_t shmKey,
@@ -168,6 +169,8 @@ private:
   bool hasDataToRead() const {
     return reader->empty() == false;
   }
+
+  void make_error_info(char info[], int sz);
 };
 
 #endif

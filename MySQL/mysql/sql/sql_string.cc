@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -618,10 +617,9 @@ skip:
 }
 
 /*
-** replace substring with string
-** If wrong parameter or not enough memory, do nothing
+  Replace substring with string
+  If wrong parameter or not enough memory, do nothing
 */
-
 
 bool String::replace(uint32 offset,uint32 arg_length,const String &to)
 {
@@ -629,16 +627,16 @@ bool String::replace(uint32 offset,uint32 arg_length,const String &to)
 }
 
 bool String::replace(uint32 offset,uint32 arg_length,
-                     const char *to,uint32 length)
+                     const char *to, uint32 to_length)
 {
-  long diff = (long) length-(long) arg_length;
+  long diff = (long) to_length-(long) arg_length;
   if (offset+arg_length <= str_length)
   {
     if (diff < 0)
     {
-      if (length)
-	memcpy(Ptr+offset,to,length);
-      bmove(Ptr+offset+length,Ptr+offset+arg_length,
+      if (to_length)
+	memcpy(Ptr+offset,to,to_length);
+      bmove(Ptr+offset+to_length,Ptr+offset+arg_length,
 	    str_length-offset-arg_length);
     }
     else
@@ -650,8 +648,8 @@ bool String::replace(uint32 offset,uint32 arg_length,
 	bmove_upp(Ptr+str_length+diff,Ptr+str_length,
 		  str_length-offset-arg_length);
       }
-      if (length)
-	memcpy(Ptr+offset,to,length);
+      if (to_length)
+	memcpy(Ptr+offset,to,to_length);
     }
     str_length+=(uint32) diff;
   }
@@ -689,6 +687,19 @@ void String::qs_append(double *d)
   qs_append(ld);
 }
 
+void String::qs_append(int i)
+{
+  char *buff= Ptr + str_length;
+  char *end= int10_to_str(i, buff, -10);
+  str_length+= (int) (end-buff);
+}
+
+void String::qs_append(uint i)
+{
+  char *buff= Ptr + str_length;
+  char *end= int10_to_str(i, buff, 10);
+  str_length+= (int) (end-buff);
+}
 
 /*
   Compare strings according to collation, without end space.
@@ -712,8 +723,8 @@ void String::qs_append(double *d)
 int sortcmp(const String *s,const String *t, CHARSET_INFO *cs)
 {
  return cs->coll->strnncollsp(cs,
-                             (unsigned char *) s->ptr(),s->length(),
-			     (unsigned char *) t->ptr(),t->length());
+                              (unsigned char *) s->ptr(),s->length(),
+                              (unsigned char *) t->ptr(),t->length(), 0);
 }
 
 
@@ -841,6 +852,162 @@ outp:
 }
 
 
+/*
+  copy a string,
+  with optional character set conversion,
+  with optional left padding (for binary -> UCS2 conversion)
+  
+  SYNOPSIS
+    well_formed_copy_nhars()
+    to			     Store result here
+    to_length                Maxinum length of "to" string
+    to_cs		     Character set of "to" string
+    from		     Copy from here
+    from_length		     Length of from string
+    from_cs		     From character set
+    nchars                   Copy not more that nchars characters
+    well_formed_error_pos    Return position when "from" is not well formed
+                             or NULL otherwise.
+    cannot_convert_error_pos Return position where a not convertable
+                             character met, or NULL otherwise.
+    from_end_pos             Return position where scanning of "from"
+                             string stopped.
+  NOTES
+
+  RETURN
+    length of bytes copied to 'to'
+*/
+
+
+uint32
+well_formed_copy_nchars(CHARSET_INFO *to_cs,
+                        char *to, uint to_length,
+                        CHARSET_INFO *from_cs,
+                        const char *from, uint from_length,
+                        uint nchars,
+                        const char **well_formed_error_pos,
+                        const char **cannot_convert_error_pos,
+                        const char **from_end_pos)
+{
+  uint res;
+
+  if ((to_cs == &my_charset_bin) || 
+      (from_cs == &my_charset_bin) ||
+      (to_cs == from_cs) ||
+      my_charset_same(from_cs, to_cs))
+  {
+    if (to_length < to_cs->mbminlen || !nchars)
+    {
+      *from_end_pos= from;
+      *cannot_convert_error_pos= NULL;
+      *well_formed_error_pos= NULL;
+      return 0;
+    }
+
+    if (to_cs == &my_charset_bin)
+    {
+      res= min(min(nchars, to_length), from_length);
+      memmove(to, from, res);
+      *from_end_pos= from + res;
+      *well_formed_error_pos= NULL;
+      *cannot_convert_error_pos= NULL;
+    }
+    else
+    {
+      int well_formed_error;
+      uint from_offset;
+
+      if ((from_offset= (from_length % to_cs->mbminlen)) &&
+          (from_cs == &my_charset_bin))
+      {
+        /*
+          Copying from BINARY to UCS2 needs to prepend zeros sometimes:
+          INSERT INTO t1 (ucs2_column) VALUES (0x01);
+          0x01 -> 0x0001
+        */
+        uint pad_length= to_cs->mbminlen - from_offset;
+        bzero(to, pad_length);
+        memmove(to + pad_length, from, from_offset);
+        nchars--;
+        from+= from_offset;
+        from_length-= from_offset;
+        to+= to_cs->mbminlen;
+        to_length-= to_cs->mbminlen;
+      }
+
+      set_if_smaller(from_length, to_length);
+      res= to_cs->cset->well_formed_len(to_cs, from, from + from_length,
+                                        nchars, &well_formed_error);
+      memmove(to, from, res);
+      *from_end_pos= from + res;
+      *well_formed_error_pos= well_formed_error ? from + res : NULL;
+      *cannot_convert_error_pos= NULL;
+      if (from_offset)
+        res+= to_cs->mbminlen;
+    }
+  }
+  else
+  {
+    int cnvres;
+    my_wc_t wc;
+    int (*mb_wc)(struct charset_info_st *, my_wc_t *,
+                 const uchar *, const uchar *)= from_cs->cset->mb_wc;
+    int (*wc_mb)(struct charset_info_st *, my_wc_t,
+                 uchar *s, uchar *e)= to_cs->cset->wc_mb;
+    const uchar *from_end= (const uchar*) from + from_length;
+    uchar *to_end= (uchar*) to + to_length;
+    char *to_start= to;
+    *well_formed_error_pos= NULL;
+    *cannot_convert_error_pos= NULL;
+
+    for ( ; nchars; nchars--)
+    {
+      const char *from_prev= from;
+      if ((cnvres= (*mb_wc)(from_cs, &wc, (uchar*) from, from_end)) > 0)
+        from+= cnvres;
+      else if (cnvres == MY_CS_ILSEQ)
+      {
+        if (!*well_formed_error_pos)
+          *well_formed_error_pos= from;
+        from++;
+        wc= '?';
+      }
+      else if (cnvres > MY_CS_TOOSMALL)
+      {
+        /*
+          A correct multibyte sequence detected
+          But it doesn't have Unicode mapping.
+        */
+        if (!*cannot_convert_error_pos)
+          *cannot_convert_error_pos= from;
+        from+= (-cnvres);
+        wc= '?';
+      }
+      else
+        break;  // Not enough characters
+
+outp:
+      if ((cnvres= (*wc_mb)(to_cs, wc, (uchar*) to, to_end)) > 0)
+        to+= cnvres;
+      else if (cnvres == MY_CS_ILUNI && wc != '?')
+      {
+        if (!*cannot_convert_error_pos)
+          *cannot_convert_error_pos= from_prev;
+        wc= '?';
+        goto outp;
+      }
+      else
+        break;
+    }
+    *from_end_pos= from;
+    res= to - to_start;
+  }
+  return (uint32) res;
+}
+
+
+
+
 void String::print(String *str)
 {
   char *st= (char*)Ptr, *end= st+str_length;
@@ -850,22 +1017,22 @@ void String::print(String *str)
     switch (c)
     {
     case '\\':
-      str->append("\\\\", 2);
+      str->append(STRING_WITH_LEN("\\\\"));
       break;
     case '\0':
-      str->append("\\0", 2);
+      str->append(STRING_WITH_LEN("\\0"));
       break;
     case '\'':
-      str->append("\\'", 2);
+      str->append(STRING_WITH_LEN("\\'"));
       break;
     case '\n':
-      str->append("\\n", 2);
+      str->append(STRING_WITH_LEN("\\n"));
       break;
     case '\r':
-      str->append("\\r", 2);
+      str->append(STRING_WITH_LEN("\\r"));
       break;
-    case 26: //Ctrl-Z
-      str->append("\\z", 2);
+    case '\032': // Ctrl-Z
+      str->append(STRING_WITH_LEN("\\Z"));
       break;
     default:
       str->append(c);

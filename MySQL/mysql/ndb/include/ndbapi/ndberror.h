@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,6 +19,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
 
 typedef enum
 {
@@ -47,7 +48,8 @@ typedef enum
   ndberror_cl_function_not_implemented = 13,
   ndberror_cl_unknown_error_code = 14,
   ndberror_cl_node_shutdown = 15,
-  ndberror_cl_configuration = 16  
+  ndberror_cl_configuration = 16,
+  ndberror_cl_schema_object_already_exists = 17 
 } ndberror_classification_enum;
 
 
@@ -90,7 +92,9 @@ typedef  ndberror_classification_enum ndberror_classification;
 const char *ndberror_status_message(ndberror_status);
 const char *ndberror_classification_message(ndberror_classification);
 void ndberror_update(ndberror_struct *);
-int ndb_error_string(int err_no, char *str, unsigned int size);
+int ndb_error_string(int err_no, char *str, int size);
+
+#endif /* doxygen skip internal*/
 
 #ifdef __cplusplus
 }

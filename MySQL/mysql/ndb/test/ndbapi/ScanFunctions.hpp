@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -81,7 +80,6 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
   int                  check;
   NdbConnection	       *pTrans = 0;
   NdbScanOperation     *pOp = 0;
-  NdbResultSet         *rs = 0;
 
   while (true){
     if (retryAttempt >= retryMax){
@@ -111,12 +109,9 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
       return NDBT_FAILED;
     }
     
-    
-    rs = pOp->readTuples(exclusive ? 
-			 NdbScanOperation::LM_Exclusive : 
-			 NdbScanOperation::LM_Read);
-    
-    if( rs == 0 ) {
+    if( pOp->readTuples(exclusive ? 
+			NdbScanOperation::LM_Exclusive : 
+			NdbScanOperation::LM_Read) ) {
       ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
@@ -125,8 +120,7 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
     
     if (action == OnlyOpenScanOnce){
       // Call openScan one more time when it's already defined
-      NdbResultSet* rs2 = pOp->readTuples(NdbScanOperation::LM_Read);
-      if( rs2 == 0 ) {
+      if( pOp->readTuples(NdbScanOperation::LM_Read) ) {
 	ERR(pTrans->getNdbError());
 	pNdb->closeTransaction(pTrans);
 	return NDBT_FAILED;
@@ -168,7 +162,7 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
     bool abortTrans = (action==CloseWithoutStop);
     int eof;
     int rows = 0;
-    eof = rs->nextResult();
+    eof = pOp->nextResult();
     
     while(eof == 0){
       rows++;
@@ -178,7 +172,7 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
 	
 	if (action != CloseWithoutStop){
 	  // Test that we can closeTrans without stopScan
-	  rs->close();
+	  pOp->close();
 	  if( check == -1 ) {
 	    ERR(pTrans->getNdbError());
 	    pNdb->closeTransaction(pTrans);
@@ -201,7 +195,7 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
 	}
       }
 
-      eof = rs->nextResult();
+      eof = pOp->nextResult();
     }
     if (eof == -1) {
       const NdbError err = pTrans->getNdbError();
@@ -211,7 +205,7 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
 	
 	// Be cruel, call nextScanResult after error
 	for(int i=0; i<10; i++){
-	  eof = rs->nextResult();
+	  eof = pOp->nextResult();
 	  if(eof == 0){
 	    g_err << "nextScanResult returned eof = " << eof << endl
 		   << " That is an error when there are no more records" << endl;
@@ -241,7 +235,7 @@ ScanFunctions::scanReadFunctions(Ndb* pNdb,
     if (action == NextScanWhenNoMore){
       g_info << "Calling nextScanresult when there are no more records" << endl;
       for(int i=0; i<10; i++){
-	eof = rs->nextResult();
+	eof = pOp->nextResult();
 	if(eof == 0){
 	  g_err << "nextScanResult returned eof = " << eof << endl
 		 << " That is an error when there are no more records" << endl;

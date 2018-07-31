@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,26 +35,34 @@ FileInputStream::gets(char * buf, int bufLen){
 
 SocketInputStream::SocketInputStream(NDB_SOCKET_TYPE socket, 
 				     unsigned readTimeout) 
-  : m_socket(socket) { 
-  m_timeout = readTimeout; 
+  : m_socket(socket) {
+  m_startover= true;
+  m_timeout = readTimeout;
 }
 
-char* 
+char*
 SocketInputStream::gets(char * buf, int bufLen) {
-  buf[0] = 77;
   assert(bufLen >= 2);
-  int res = readln_socket(m_socket, m_timeout, buf, bufLen - 1);
+  int offset= 0;
+  if(m_startover)
+  {
+    buf[0]= '\0';
+    m_startover= false;
+  }
+  else
+    offset= strlen(buf);
+
+  int res = readln_socket(m_socket, m_timeout, buf+offset, bufLen-offset);
+
+  if(res == 0)
+  {
+    buf[0]=0;
+    return buf;
+  }
+
+  m_startover= true;
+
   if(res == -1)
     return 0;
-  if(res == 0 && buf[0] == 77){ // select return 0
-    buf[0] = 0;
-  } else if(res == 0 && buf[0] == 0){ // only newline
-    buf[0] = '\n';
-    buf[1] = 0;
-  } else {
-    int len = strlen(buf);
-    buf[len + 1] = '\0';
-    buf[len] = '\n';
-  }
   return buf;
 }

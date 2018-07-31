@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,13 +30,18 @@ waitClusterStatus(const char* _addr, ndb_mgm_node_status _status,
 		  unsigned int _timeout);
 
 enum ndb_waiter_options {
-  OPT_WAIT_STATUS_NOT_STARTED = NDB_STD_OPTIONS_LAST
+  OPT_WAIT_STATUS_NOT_STARTED = NDB_STD_OPTIONS_LAST,
+  OPT_WAIT_STATUS_SINGLE_USER
 };
 NDB_STD_OPTS_VARS;
 
 static int _no_contact = 0;
 static int _not_started = 0;
+static int _single_user = 0;
 static int _timeout = 120;
+
+const char *load_default_groups[]= { "mysql_cluster",0 };
+
 static struct my_option my_long_options[] =
 {
   NDB_STD_OPTS("ndb_desc"),
@@ -46,6 +50,10 @@ static struct my_option my_long_options[] =
     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
   { "not-started", OPT_WAIT_STATUS_NOT_STARTED, "Wait for cluster not started",
     (gptr*) &_not_started, (gptr*) &_not_started, 0,
+    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
+  { "single-user", OPT_WAIT_STATUS_SINGLE_USER,
+    "Wait for cluster to enter single user mode",
+    (gptr*) &_single_user, (gptr*) &_single_user, 0,
     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
   { "timeout", 't', "Timeout to wait",
     (gptr*) &_timeout, (gptr*) &_timeout, 0,
@@ -56,28 +64,24 @@ static struct my_option my_long_options[] =
 static void usage()
 {
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
 }
 
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_drop_table.trace");
-}
-
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   const char* _hostName = NULL;
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_waiter.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
 
-  char buf[255];
   _hostName = argv[0];
 
   if (_hostName == 0)
@@ -91,6 +95,10 @@ int main(int argc, char** argv){
   else if (_not_started)
   {
     wait_status= NDB_MGM_NODE_STATUS_NOT_STARTED;
+  }
+  else if (_single_user)
+  {
+    wait_status= NDB_MGM_NODE_STATUS_SINGLEUSER;
   }
   else 
   {

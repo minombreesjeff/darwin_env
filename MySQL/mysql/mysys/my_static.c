@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,8 +24,11 @@
 #include "my_alarm.h"
 #endif
 
+my_bool timed_mutexes= 0;
+
 	/* from my_init */
-my_string	home_dir=0,my_progname=0;
+my_string	home_dir=0;
+const char      *my_progname=0;
 char		NEAR curr_dir[FN_REFLEN]= {0},
 		NEAR home_dir_buff[FN_REFLEN]= {0};
 ulong		my_stream_opened=0,my_file_opened=0, my_tmp_file_created=0;
@@ -61,9 +63,10 @@ const char *soundex_map=	  "01230120022455012623010202";
 USED_MEM* my_once_root_block=0;			/* pointer to first block */
 uint	  my_once_extra=ONCE_ALLOC_INIT;	/* Memory to alloc / block */
 
-	/* from my_tempnam */
-#if !defined(HAVE_TEMPNAM) || defined(HPUX11)
-int _my_tempnam_used=0;
+	/* from my_largepage.c */
+#ifdef HAVE_LARGE_PAGES
+my_bool my_use_large_pages= 0;
+uint    my_large_page_size= 0;
 #endif
 
 	/* from safe_malloc */

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,11 +21,19 @@
 /*
   Limited snprintf() implementations
 
+  SYNOPSIS
+    my_vsnprintf()
+    to		Store result here
+    n		Store up to n-1 characters, followed by an end 0
+    fmt		printf format
+    ap		Arguments
+
   IMPLEMENTION:
     Supports following formats:
     %#[l]d
     %#[l]u
     %#[l]x
+    %#.#b 	Local format; note first # is ignored and second is REQUIRED
     %#.#s	Note first # is ignored
     
   RETURN
@@ -40,7 +47,7 @@ int my_vsnprintf(char *to, size_t n, const char* fmt, va_list ap)
 
   for (; *fmt ; fmt++)
   {
-    if (fmt[0] != '%')
+    if (*fmt != '%')
     {
       if (to == end)			/* End of buffer */
 	break;
@@ -52,15 +59,30 @@ int my_vsnprintf(char *to, size_t n, const char* fmt, va_list ap)
     if (*fmt == '-')
       fmt++;
     length= width= pre_zero= have_long= 0;
-    for (;my_isdigit(&my_charset_latin1,*fmt); fmt++)
+    if (*fmt == '*')
     {
-      length=length*10+ (uint) (*fmt-'0');
-      if (!length)
-        pre_zero= 1;			/* first digit was 0 */
+      fmt++;
+      length= va_arg(ap, int);
     }
+    else
+      for (; my_isdigit(&my_charset_latin1, *fmt); fmt++)
+      {
+        length= length * 10 + (uint)(*fmt - '0');
+        if (!length)
+          pre_zero= 1;			/* first digit was 0 */
+      }
     if (*fmt == '.')
-      for (fmt++;my_isdigit(&my_charset_latin1,*fmt); fmt++)
-        width=width*10+ (uint) (*fmt-'0');
+    {
+      fmt++;
+      if (*fmt == '*')
+      {
+        fmt++;
+        width= va_arg(ap, int);
+      }
+      else
+        for (; my_isdigit(&my_charset_latin1, *fmt); fmt++)
+          width= width * 10 + (uint)(*fmt - '0');
+    }
     else
       width= ~0;
     if (*fmt == 'l')
@@ -78,6 +100,16 @@ int my_vsnprintf(char *to, size_t n, const char* fmt, va_list ap)
       if (left_len <= plen)
 	plen = left_len - 1;
       to=strnmov(to,par,plen);
+      continue;
+    }
+    else if (*fmt == 'b')				/* Buffer parameter */
+    {
+      char *par = va_arg(ap, char *);
+      DBUG_ASSERT(to <= end);
+      if (to + abs(width) + 1 > end)
+        width= end - to - 1;  /* sign doesn't matter */
+      memmove(to, par, abs(width));
+      to+= width;
       continue;
     }
     else if (*fmt == 'd' || *fmt == 'u'|| *fmt== 'x')	/* Integer parameter */
@@ -120,6 +152,16 @@ int my_vsnprintf(char *to, size_t n, const char* fmt, va_list ap)
       to+= res_length;
       continue;
     }
+    else if (*fmt == 'c')                       /* Character parameter */
+    {
+      register int larg;
+      if (to == end)
+        break;
+      larg = va_arg(ap, int);
+      *to++= (char) larg;
+      continue;
+    }
+
     /* We come here on '%%', unknown code or too long parameter */
     if (to == end)
       break;

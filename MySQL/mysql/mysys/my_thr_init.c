@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,6 +20,7 @@
 
 #include "mysys_priv.h"
 #include <m_string.h>
+#include <signal.h>
 
 #ifdef THREAD
 #ifdef USE_TLS
@@ -30,7 +30,10 @@ pthread_key(struct st_my_thread_var, THR_KEY_mysys);
 #endif /* USE_TLS */
 pthread_mutex_t THR_LOCK_malloc,THR_LOCK_open,
 	        THR_LOCK_lock,THR_LOCK_isam,THR_LOCK_myisam,THR_LOCK_heap,
-	        THR_LOCK_net, THR_LOCK_charset; 
+                THR_LOCK_net, THR_LOCK_charset, THR_LOCK_threads;
+pthread_cond_t  THR_COND_threads;
+uint            THR_thread_count= 0;
+uint 		my_thread_end_wait_time= 5;
 #if !defined(HAVE_LOCALTIME_R) || !defined(HAVE_GMTIME_R)
 pthread_mutex_t LOCK_localtime_r;
 #endif
@@ -43,6 +46,25 @@ pthread_mutexattr_t my_fast_mutexattr;
 #ifdef PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
 pthread_mutexattr_t my_errorcheck_mutexattr;
 #endif
+
+#ifdef NPTL_PTHREAD_EXIT_BUG /* see my_pthread.h */
+
+/*
+ Dummy thread spawned in my_thread_global_init() below to avoid
+ race conditions in NPTL pthread_exit code.
+*/
+
+static pthread_handler_t
+nptl_pthread_exit_hack_handler(void *arg __attribute__((unused)))
+{
+  /* Do nothing! */
+  pthread_exit(0);
+  return 0;
+}
+
+#endif
+
+static uint get_thread_lib(void);
 
 /*
   initialize thread environment
@@ -57,22 +79,50 @@ pthread_mutexattr_t my_errorcheck_mutexattr;
 
 my_bool my_thread_global_init(void)
 {
-  if (pthread_key_create(&THR_KEY_mysys,0))
+  int pth_ret;
+  thd_lib_detected= get_thread_lib();
+
+  if ((pth_ret= pthread_key_create(&THR_KEY_mysys, NULL)) != 0)
   {
-    fprintf(stderr,"Can't initialize threads: error %d\n",errno);
+    fprintf(stderr,"Can't initialize threads: error %d\n", pth_ret);
     return 1;
   }
+
+#ifdef NPTL_PTHREAD_EXIT_BUG
+  /*
+    BUG#24507: Race conditions inside current NPTL pthread_exit()
+    implementation.
+
+    To avoid a possible segmentation fault during concurrent
+    executions of pthread_exit(), a dummy thread is spawned which
+    initializes internal variables of pthread lib. See bug description
+    for a full explanation.
+
+    TODO: Remove this code when fixed versions of glibc6 are in common
+    use.
+  */
+  if (thd_lib_detected == THD_LIB_NPTL)
+  {
+    pthread_t       dummy_thread;
+    pthread_attr_t  dummy_thread_attr;
+
+    pthread_attr_init(&dummy_thread_attr);
+    pthread_attr_setdetachstate(&dummy_thread_attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_create(&dummy_thread,&dummy_thread_attr,
+                   nptl_pthread_exit_hack_handler, NULL);
+  }
+#endif
 
 #ifdef PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
   /*
     Set mutex type to "fast" a.k.a "adaptive"
 
-    The mutex kind determines what happens if a thread attempts to lock
-    a mutex it already owns with pthread_mutex_lock(3). If the mutex
-    is of the ``fast'' kind, pthread_mutex_lock(3) simply suspends
-    the calling thread forever. If the mutex is of the ``error checking''
-    kind, pthread_mutex_lock(3) returns immediately with the error
-    code EDEADLK.
+    In this case the thread may steal the mutex from some other thread
+    that is waiting for the same mutex.  This will save us some
+    context switches but may cause a thread to 'starve forever' while
+    waiting for the mutex (not likely if the code within the mutex is
+    short).
   */
   pthread_mutexattr_init(&my_fast_mutexattr);
   pthread_mutexattr_settype(&my_fast_mutexattr,
@@ -80,7 +130,7 @@ my_bool my_thread_global_init(void)
 #endif
 #ifdef PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
   /*
-    Set mutex type to "errorcheck" a.k.a "adaptive"
+    Set mutex type to "errorcheck"
   */
   pthread_mutexattr_init(&my_errorcheck_mutexattr);
   pthread_mutexattr_settype(&my_errorcheck_mutexattr,
@@ -95,6 +145,8 @@ my_bool my_thread_global_init(void)
   pthread_mutex_init(&THR_LOCK_heap,MY_MUTEX_INIT_FAST);
   pthread_mutex_init(&THR_LOCK_net,MY_MUTEX_INIT_FAST);
   pthread_mutex_init(&THR_LOCK_charset,MY_MUTEX_INIT_FAST);
+  pthread_mutex_init(&THR_LOCK_threads,MY_MUTEX_INIT_FAST);
+  pthread_cond_init(&THR_COND_threads, NULL);
 #if defined( __WIN__) || defined(OS2)
   win_pthread_init();
 #endif
@@ -115,6 +167,27 @@ my_bool my_thread_global_init(void)
 
 void my_thread_global_end(void)
 {
+  struct timespec abstime;
+  my_bool all_threads_killed= 1;
+
+  set_timespec(abstime, my_thread_end_wait_time);
+  pthread_mutex_lock(&THR_LOCK_threads);
+  while (THR_thread_count > 0)
+  {
+    int error= pthread_cond_timedwait(&THR_COND_threads, &THR_LOCK_threads,
+                                      &abstime);
+    if (error == ETIMEDOUT || error == ETIME)
+    {
+      if (THR_thread_count)
+        fprintf(stderr,
+                "Error in my_thread_global_end(): %d threads didn't exit\n",
+                THR_thread_count);
+      all_threads_killed= 0;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&THR_LOCK_threads);
+
   pthread_key_delete(THR_KEY_mysys);
 #ifdef PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
   pthread_mutexattr_destroy(&my_fast_mutexattr);
@@ -130,6 +203,11 @@ void my_thread_global_end(void)
   pthread_mutex_destroy(&THR_LOCK_heap);
   pthread_mutex_destroy(&THR_LOCK_net);
   pthread_mutex_destroy(&THR_LOCK_charset);
+  if (all_threads_killed)
+  {
+    pthread_mutex_destroy(&THR_LOCK_threads);
+    pthread_cond_destroy (&THR_COND_threads);
+  }
 #if !defined(HAVE_LOCALTIME_R) || !defined(HAVE_GMTIME_R)
   pthread_mutex_destroy(&LOCK_localtime_r);
 #endif
@@ -141,10 +219,23 @@ void my_thread_global_end(void)
 static long thread_id=0;
 
 /*
-  We can't use mutex_locks here if we are using windows as
-  we may have compiled the program with SAFE_MUTEX, in which
-  case the checking of mutex_locks will not work until
-  the pthread_self thread specific variable is initialized.
+  Allocate thread specific memory for the thread, used by mysys and dbug
+
+  SYNOPSIS
+    my_thread_init()
+
+  NOTES
+    We can't use mutex_locks here if we are using windows as
+    we may have compiled the program with SAFE_MUTEX, in which
+    case the checking of mutex_locks will not work until
+    the pthread_self thread specific variable is initialized.
+
+   This function may called multiple times for a thread, for example
+   if one uses my_init() followed by mysql_server_init().
+
+  RETURN
+    0  ok
+    1  Fatal error; mysys/dbug functions can't be used
 */
 
 my_bool my_thread_init(void)
@@ -155,9 +246,6 @@ my_bool my_thread_init(void)
 #ifdef EXTRA_DEBUG_THREADS
   fprintf(stderr,"my_thread_init(): thread_id=%ld\n",pthread_self());
 #endif  
-#if !defined(__WIN__) || defined(USE_TLS) || ! defined(SAFE_MUTEX)
-  pthread_mutex_lock(&THR_LOCK_lock);
-#endif
 
 #if !defined(__WIN__) || defined(USE_TLS)
   if (my_pthread_getspecific(struct st_my_thread_var *,THR_KEY_mysys))
@@ -175,7 +263,7 @@ my_bool my_thread_init(void)
   }
   pthread_setspecific(THR_KEY_mysys,tmp);
 
-#else
+#else /* defined(__WIN__) && !(defined(USE_TLS) */
   /*
     Skip initialization if the thread specific variable is already initialized
   */
@@ -183,7 +271,6 @@ my_bool my_thread_init(void)
     goto end;
   tmp= &THR_KEY_mysys;
 #endif
-  tmp->id= ++thread_id;
 #if defined(__WIN__) && defined(EMBEDDED_LIBRARY)
   tmp->thread_self= (pthread_t)getpid();
 #endif
@@ -191,13 +278,26 @@ my_bool my_thread_init(void)
   pthread_cond_init(&tmp->suspend, NULL);
   tmp->init= 1;
 
+  pthread_mutex_lock(&THR_LOCK_threads);
+  tmp->id= ++thread_id;
+  ++THR_thread_count;
+  pthread_mutex_unlock(&THR_LOCK_threads);
 end:
-#if !defined(__WIN__) || defined(USE_TLS) || ! defined(SAFE_MUTEX)
-  pthread_mutex_unlock(&THR_LOCK_lock);
-#endif
   return error;
 }
 
+
+/*
+  Deallocate memory used by the thread for book-keeping
+
+  SYNOPSIS
+    my_thread_end()
+
+  NOTE
+    This may be called multiple times for a thread.
+    This happens for example when one calls 'mysql_server_init()'
+    mysql_server_end() and then ends with a mysql_end().
+*/
 
 void my_thread_end(void)
 {
@@ -205,8 +305,8 @@ void my_thread_end(void)
   tmp= my_pthread_getspecific(struct st_my_thread_var*,THR_KEY_mysys);
 
 #ifdef EXTRA_DEBUG_THREADS
-  fprintf(stderr,"my_thread_end(): tmp=%p,thread_id=%ld\n",
-	  tmp,pthread_self());
+  fprintf(stderr,"my_thread_end(): tmp: 0x%lx  thread_id=%ld\n",
+	  (long) tmp, pthread_self());
 #endif  
   if (tmp && tmp->init)
   {
@@ -228,6 +328,18 @@ void my_thread_end(void)
 #else
     tmp->init= 0;
 #endif
+
+    /*
+      Decrement counter for number of running threads. We are using this
+      in my_thread_global_end() to wait until all threads have called
+      my_thread_end and thus freed all memory they have allocated in
+      my_thread_init() and DBUG_xxxx
+    */
+    pthread_mutex_lock(&THR_LOCK_threads);
+    DBUG_ASSERT(THR_thread_count != 0);
+    if (--THR_thread_count == 0)
+      pthread_cond_signal(&THR_COND_threads);
+   pthread_mutex_unlock(&THR_LOCK_threads);
   }
   /* The following free has to be done, even if my_thread_var() is 0 */
 #if (!defined(__WIN__) && !defined(OS2)) || defined(USE_TLS)
@@ -289,5 +401,21 @@ const char *my_thread_name(void)
   return tmp->name;
 }
 #endif /* DBUG_OFF */
+
+
+static uint get_thread_lib(void)
+{
+#ifdef _CS_GNU_LIBPTHREAD_VERSION
+  char buff[64];
+    
+  confstr(_CS_GNU_LIBPTHREAD_VERSION, buff, sizeof(buff));
+
+  if (!strncasecmp(buff, "NPTL", 4))
+    return THD_LIB_NPTL;
+  if (!strncasecmp(buff, "linuxthreads", 12))
+    return THD_LIB_LT;
+#endif
+  return THD_LIB_OTHER;
+}
 
 #endif /* THREAD */

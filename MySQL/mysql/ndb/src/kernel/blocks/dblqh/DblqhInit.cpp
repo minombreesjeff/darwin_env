@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,11 +32,11 @@ void Dblqh::initData()
   chostFileSize = MAX_NDB_NODES;
   clcpFileSize = ZNO_CONCURRENT_LCP;
   clcpLocrecFileSize = ZLCP_LOCREC_FILE_SIZE;
-  clfoFileSize = ZLFO_FILE_SIZE;
+  clfoFileSize = 0;
   clogFileFileSize = 0;
   clogPartFileSize = ZLOG_PART_FILE_SIZE;
   cpageRefFileSize = ZPAGE_REF_FILE_SIZE;
-  cscanrecFileSize = ZSCANREC_FILE_SIZE;
+  cscanrecFileSize = 0;
   ctabrecFileSize = 0;
   ctcConnectrecFileSize = 0;
   ctcNodeFailrecFileSize = MAX_NDB_NODES;
@@ -273,8 +272,6 @@ Dblqh::Dblqh(const class Configuration & conf):
   addRecSignal(GSN_ACC_SCANREF, &Dblqh::execACC_SCANREF);
   addRecSignal(GSN_NEXT_SCANCONF, &Dblqh::execNEXT_SCANCONF);
   addRecSignal(GSN_NEXT_SCANREF, &Dblqh::execNEXT_SCANREF);
-  addRecSignal(GSN_ACC_SCAN_INFO, &Dblqh::execACC_SCAN_INFO);
-  addRecSignal(GSN_ACC_SCAN_INFO24, &Dblqh::execACC_SCAN_INFO24);
   addRecSignal(GSN_STORED_PROCCONF, &Dblqh::execSTORED_PROCCONF);
   addRecSignal(GSN_STORED_PROCREF, &Dblqh::execSTORED_PROCREF);
   addRecSignal(GSN_COPY_FRAGREQ, &Dblqh::execCOPY_FRAGREQ);
@@ -317,7 +314,6 @@ Dblqh::Dblqh(const class Configuration & conf):
   addRecSignal(GSN_FSREADCONF, &Dblqh::execFSREADCONF);
   addRecSignal(GSN_FSREADREF, &Dblqh::execFSREADREF, true);
   addRecSignal(GSN_ACC_ABORTCONF, &Dblqh::execACC_ABORTCONF);
-  addRecSignal(GSN_SET_VAR_REQ,  &Dblqh::execSET_VAR_REQ);
   addRecSignal(GSN_TIME_SIGNAL,  &Dblqh::execTIME_SIGNAL);
   addRecSignal(GSN_FSSYNCCONF,  &Dblqh::execFSSYNCCONF);
   addRecSignal(GSN_REMOVE_MARKER_ORD, &Dblqh::execREMOVE_MARKER_ORD);
@@ -337,8 +333,15 @@ Dblqh::Dblqh(const class Configuration & conf):
   addRecSignal(GSN_TUX_ADD_ATTRREF, &Dblqh::execTUX_ADD_ATTRREF);
 
   addRecSignal(GSN_READ_PSUEDO_REQ, &Dblqh::execREAD_PSUEDO_REQ);
-
+  addRecSignal(GSN_UPDATE_FRAG_DIST_KEY_ORD, 
+	       &Dblqh::execUPDATE_FRAG_DIST_KEY_ORD);
+  
   initData();
+
+  /* maximum number of log file operations */
+  clfoFileSize = clogPageFileSize;
+  if (clfoFileSize < ZLFO_MIN_FILE_SIZE)
+    clfoFileSize = ZLFO_MIN_FILE_SIZE;
 
 #ifdef VM_TRACE
   {

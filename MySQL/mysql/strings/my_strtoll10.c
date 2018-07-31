@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -55,7 +54,7 @@ static unsigned long lfactor[9]=
     from string nptr and converts it to an signed or unsigned
     long long integer value.
     Space characters and tab are ignored.
-    A sign character might precede the the digit characters. The number
+    A sign character might precede the digit characters. The number
     may have any number of pre-zero digits.
 
     The function stops reading the string nptr at the first character

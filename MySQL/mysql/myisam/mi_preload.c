@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2003, 2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -51,7 +50,7 @@ int mi_preload(MI_INFO *info, ulonglong key_map, my_bool ignore_leaves)
   my_off_t pos= share->base.keystart;
   DBUG_ENTER("mi_preload");
 
-  if (!keys || !key_map || key_file_length == pos)
+  if (!keys || !mi_is_any_key_active(key_map) || key_file_length == pos)
     DBUG_RETURN(0);
 
   block_length= keyinfo[0].block_length;

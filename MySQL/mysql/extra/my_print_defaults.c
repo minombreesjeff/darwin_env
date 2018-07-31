@@ -1,9 +1,9 @@
+
 /* Copyright (C) 2000 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,7 +23,9 @@
 
 #include <my_global.h>
 #include <my_sys.h>
+#include <m_string.h>
 #include <my_getopt.h>
+
 
 const char *config_file="my";			/* Default config file */
 uint verbose= 0, opt_defaults_file_used= 0;
@@ -31,7 +33,20 @@ const char *default_dbug_option="d:t:o,/tmp/my_print_defaults.trace";
 
 static struct my_option my_long_options[] =
 {
-  {"config-file", 'c', "The config file to be used.",
+  /*
+    NB: --config-file is troublesome, because get_defaults_options() doesn't
+    know about it, but we pretend --config-file is like --defaults-file.  In
+    fact they behave differently: see the comments at the top of
+    mysys/default.c for how --defaults-file should behave.
+
+    This --config-file option behaves as:
+    - If it has a directory name part (absolute or relative), then only this
+      file is read; no error is given if the file doesn't exist
+    - If the file has no directory name part, the standard locations are
+      searched for a file of this name (and standard filename extensions are
+      added if the file has no extension)
+  */
+  {"config-file", 'c', "Deprecated, please use --defaults-file instead.  Name of config file to read; if no extension is given, default extension (e.g., .ini or .cnf) will be added",
    (gptr*) &config_file, (gptr*) &config_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
 #ifdef DBUG_OFF
@@ -41,16 +56,21 @@ static struct my_option my_long_options[] =
   {"debug", '#', "Output debug log", (gptr*) &default_dbug_option,
    (gptr*) &default_dbug_option, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-  {"defaults-file", 'c', "Synonym for --config-file.",
+  {"defaults-file", 'c', "Like --config-file, except: if first option, then read this file only, do not read global or per-user config files; should be the first option",
    (gptr*) &config_file, (gptr*) &config_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
   {"defaults-extra-file", 'e',
-   "Read this file after the global /etc config file and before the config file in the users home directory.",
-   (gptr*) &defaults_extra_file, (gptr*) &defaults_extra_file, 0, GET_STR,
-   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   "Read this file after the global config file and before the config file in the users home directory; should be the first option",
+   (gptr*) &my_defaults_extra_file, (gptr*) &my_defaults_extra_file, 0,
+   GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"defaults-group-suffix", 'g',
+   "In addition to the given groups, read also groups with this suffix",
+   (gptr*) &my_defaults_group_suffix, (gptr*) &my_defaults_group_suffix,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"extra-file", 'e',
-   "Synonym for --defaults-extra-file.",
-   (gptr*) &defaults_extra_file, (gptr*) &defaults_extra_file, 0, GET_STR,
+   "Deprecated. Synonym for --defaults-extra-file.",
+   (gptr*) &my_defaults_extra_file,
+   (gptr*) &my_defaults_extra_file, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"no-defaults", 'n', "Return an empty string (useful for scripts).",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -77,8 +97,9 @@ static void usage(my_bool version)
   puts("Prints all arguments that is give to some program using the default files");
   printf("Usage: %s [OPTIONS] groups\n", my_progname);
   my_print_help(my_long_options);
+  my_print_default_files(config_file);
   my_print_variables(my_long_options);
-  printf("\nExample usage:\n%s --config-file=my client mysql\n", my_progname);
+  printf("\nExample usage:\n%s --defaults-file=example.cnf client mysql\n", my_progname);
 }
 
 #include <help_end.h>
@@ -127,37 +148,32 @@ static int get_options(int *argc,char ***argv)
   return 0;
 }
 
+
 int main(int argc, char **argv)
 {
-  int count, error;
-  char **load_default_groups, *tmp_arguments[3],
-       **argument, **arguments;
-  char *defaults, *extra_defaults;
+  int count, error, args_used;
+  char **load_default_groups, *tmp_arguments[6];
+  char **argument, **arguments, **org_argv;
+  char *defaults, *extra_defaults, *group_suffix;
   MY_INIT(argv[0]);
 
-  get_defaults_files(argc, argv, &defaults, &extra_defaults);
+  org_argv= argv;
+  args_used= get_defaults_options(argc, argv, &defaults, &extra_defaults,
+                                  &group_suffix);
 
-  /*
-  ** Check out the args
-  */
-  if (!(load_default_groups=(char**) my_malloc((argc+2)*sizeof(char*),
+  /* Copy defaults-xxx arguments & program name */
+  count=args_used+1;
+  arguments= tmp_arguments;
+  memcpy((char*) arguments, (char*) org_argv, count * sizeof(*org_argv));
+  arguments[count]= 0;
+
+  /* Check out the args */
+  if (!(load_default_groups=(char**) my_malloc((argc+1)*sizeof(char*),
 					       MYF(MY_WME))))
     exit(1);
   if (get_options(&argc,&argv))
     exit(1);
-
-  for (count=0; *argv ; argv++,count++)
-    load_default_groups[count]= *argv;
-  load_default_groups[count]=0;
-
-  count=0;
-  arguments=tmp_arguments;
-  arguments[count++]=my_progname;
-  if (extra_defaults)
-    arguments[count++]= extra_defaults;
-  if (defaults)
-    arguments[count++]= defaults;
-  arguments[count]= 0;
+  memcpy((char*) load_default_groups, (char*) argv, (argc + 1) * sizeof(*argv));
 
   if ((error= load_defaults(config_file, (const char **) load_default_groups,
 			   &count, &arguments)))

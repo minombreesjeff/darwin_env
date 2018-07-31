@@ -25,9 +25,10 @@ explain extended select if(u=1,st,binary st) s from t1 where st like "%a%" order
 #
 # NULLIF test
 #
-select nullif(u=0, 'test') from t1;
-explain extended select nullif(u=0, 'test') from t1;
+select nullif(u, 1) from t1;
+explain extended select nullif(u, 1) from t1;
 drop table t1;
+select nullif(1,'test');
 
 #
 # Bug 2629
@@ -62,6 +63,20 @@ drop table t1;
 SELECT NULLIF(5,5) IS NULL, NULLIF(5,5) IS NOT NULL;
 
 #
+# Bug #9669 Ordering on IF function with FROM_UNIXTIME function fails
+#
+CREATE TABLE `t1` (
+  `id` int(11) NOT NULL ,
+  `date` int(10) default NULL,
+  `text` varchar(32) NOT NULL
+);
+INSERT INTO t1 VALUES (1,1110000000,'Day 1'),(2,1111000000,'Day 2'),(3,1112000000,'Day 3');
+SELECT id, IF(date IS NULL, '-', FROM_UNIXTIME(date, '%d-%m-%Y')) AS date_ord, text FROM t1 ORDER BY date_ord ASC;
+SELECT id, IF(date IS NULL, '-', FROM_UNIXTIME(date, '%d-%m-%Y')) AS date_ord, text FROM t1 ORDER BY date_ord DESC;
+DROP TABLE t1;
+
+
+#
 # Test for bug #11142: evaluation of NULLIF when the first argument is NULL
 #
 
@@ -74,3 +89,22 @@ SELECT a, NULLIF(a,'') FROM t1 WHERE NULLIF(a,'') IS NULL;
 DROP TABLE t1;
 
 # End of 4.1 tests
+
+#
+# Bug #16272 IF function with decimal args can produce wrong result
+#
+create table t1 (f1 int, f2 int);
+insert into t1 values(1,1),(0,0);
+select f1, f2, if(f1, 40.0, 5.00) from t1 group by f1 order by f2;
+drop table t1;
+
+#
+# Bug#24532 (The return data type of IS TRUE is different from similar
+# operations)
+#
+# IF(x, unsigned, unsigned) should be unsigned.
+#
+
+select if(0, 18446744073709551610, 18446744073709551610);
+
+

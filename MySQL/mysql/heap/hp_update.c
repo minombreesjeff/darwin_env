@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,7 +36,7 @@ int heap_update(HP_INFO *info, const byte *old, const byte *heap_new)
   p_lastinx= share->keydef + info->lastinx;
   for (keydef= share->keydef, end= keydef + share->keys; keydef < end; keydef++)
   {
-    if (hp_rec_key_cmp(keydef, old, heap_new))
+    if (hp_rec_key_cmp(keydef, old, heap_new, 0))
     {
       if ((*keydef->delete_key)(info, keydef, old, pos, keydef == p_lastinx) ||
           (*keydef->write_key)(info, keydef, heap_new, pos))
@@ -60,7 +59,7 @@ int heap_update(HP_INFO *info, const byte *old, const byte *heap_new)
  err:
   if (my_errno == HA_ERR_FOUND_DUPP_KEY)
   {
-    info->errkey = keydef - share->keydef;
+    info->errkey = (int) (keydef - share->keydef);
     if (keydef->algorithm == HA_KEY_ALG_BTREE)
     {
       /* we don't need to delete non-inserted key from rb-tree */
@@ -74,7 +73,7 @@ int heap_update(HP_INFO *info, const byte *old, const byte *heap_new)
     }
     while (keydef >= share->keydef)
     {
-      if (hp_rec_key_cmp(keydef, old, heap_new))
+      if (hp_rec_key_cmp(keydef, old, heap_new, 0))
       {
 	if ((*keydef->delete_key)(info, keydef, heap_new, pos, 0) ||
 	    (*keydef->write_key)(info, keydef, old, pos))

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -54,8 +53,8 @@ int mi_assign_to_key_cache(MI_INFO *info,
   int error= 0;
   MYISAM_SHARE* share= info->s;
   DBUG_ENTER("mi_assign_to_key_cache");
-  DBUG_PRINT("enter",("old_key_cache_handle: %lx  new_key_cache_handle: %lx",
-		      share->key_cache, key_cache));
+  DBUG_PRINT("enter",("old_key_cache_handle: 0x%lx  new_key_cache_handle: 0x%lx",
+		      (long) share->key_cache, (long) key_cache));
 
   /*
     Skip operation if we didn't change key cache. This can happen if we
@@ -79,6 +78,7 @@ int mi_assign_to_key_cache(MI_INFO *info,
   if (flush_key_blocks(share->key_cache, share->kfile, FLUSH_RELEASE))
   {
     error= my_errno;
+    mi_print_error(info->s, HA_ERR_CRASHED);
     mi_mark_crashed(info);		/* Mark that table must be checked */
   }
 

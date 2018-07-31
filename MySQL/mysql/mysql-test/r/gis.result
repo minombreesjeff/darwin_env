@@ -9,35 +9,35 @@ CREATE TABLE gis_geometrycollection  (fid INTEGER NOT NULL PRIMARY KEY, g GEOMET
 CREATE TABLE gis_geometry (fid INTEGER NOT NULL PRIMARY KEY, g GEOMETRY);
 SHOW FIELDS FROM gis_point;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	point	YES		NULL	
 SHOW FIELDS FROM gis_line;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	linestring	YES		NULL	
 SHOW FIELDS FROM gis_polygon;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	polygon	YES		NULL	
 SHOW FIELDS FROM gis_multi_point;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	multipoint	YES		NULL	
 SHOW FIELDS FROM gis_multi_line;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	multilinestring	YES		NULL	
 SHOW FIELDS FROM gis_multi_polygon;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	multipolygon	YES		NULL	
 SHOW FIELDS FROM gis_geometrycollection;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	geometrycollection	YES		NULL	
 SHOW FIELDS FROM gis_geometry;
 Field	Type	Null	Key	Default	Extra
-fid	int(11)		PRI	0	
+fid	int(11)	NO	PRI		
 g	geometry	YES		NULL	
 INSERT INTO gis_point VALUES 
 (101, PointFromText('POINT(10 10)')),
@@ -228,7 +228,7 @@ explain extended select Dimension(g), GeometryType(g), IsEmpty(g), AsText(Envelo
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	gis_geometry	ALL	NULL	NULL	NULL	NULL	21	
 Warnings:
-Note	1003	select dimension(test.gis_geometry.g) AS `Dimension(g)`,geometrytype(test.gis_geometry.g) AS `GeometryType(g)`,isempty(test.gis_geometry.g) AS `IsEmpty(g)`,astext(envelope(test.gis_geometry.g)) AS `AsText(Envelope(g))` from test.gis_geometry
+Note	1003	select dimension(`test`.`gis_geometry`.`g`) AS `Dimension(g)`,geometrytype(`test`.`gis_geometry`.`g`) AS `GeometryType(g)`,isempty(`test`.`gis_geometry`.`g`) AS `IsEmpty(g)`,astext(envelope(`test`.`gis_geometry`.`g`)) AS `AsText(Envelope(g))` from `test`.`gis_geometry`
 SELECT fid, X(g) FROM gis_point;
 fid	X(g)
 101	10
@@ -245,7 +245,7 @@ explain extended select X(g),Y(g) FROM gis_point;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	gis_point	ALL	NULL	NULL	NULL	NULL	4	
 Warnings:
-Note	1003	select x(test.gis_point.g) AS `X(g)`,y(test.gis_point.g) AS `Y(g)` from test.gis_point
+Note	1003	select x(`test`.`gis_point`.`g`) AS `X(g)`,y(`test`.`gis_point`.`g`) AS `Y(g)` from `test`.`gis_point`
 SELECT fid, AsText(StartPoint(g)) FROM gis_line;
 fid	AsText(StartPoint(g))
 105	POINT(0 0)
@@ -280,7 +280,7 @@ explain extended select AsText(StartPoint(g)),AsText(EndPoint(g)),GLength(g),Num
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	gis_line	ALL	NULL	NULL	NULL	NULL	3	
 Warnings:
-Note	1003	select astext(startpoint(test.gis_line.g)) AS `AsText(StartPoint(g))`,astext(endpoint(test.gis_line.g)) AS `AsText(EndPoint(g))`,glength(test.gis_line.g) AS `GLength(g)`,numpoints(test.gis_line.g) AS `NumPoints(g)`,astext(pointn(test.gis_line.g,2)) AS `AsText(PointN(g, 2))`,isclosed(test.gis_line.g) AS `IsClosed(g)` from test.gis_line
+Note	1003	select astext(startpoint(`test`.`gis_line`.`g`)) AS `AsText(StartPoint(g))`,astext(endpoint(`test`.`gis_line`.`g`)) AS `AsText(EndPoint(g))`,glength(`test`.`gis_line`.`g`) AS `GLength(g)`,numpoints(`test`.`gis_line`.`g`) AS `NumPoints(g)`,astext(pointn(`test`.`gis_line`.`g`,2)) AS `AsText(PointN(g, 2))`,isclosed(`test`.`gis_line`.`g`) AS `IsClosed(g)` from `test`.`gis_line`
 SELECT fid, AsText(Centroid(g)) FROM gis_polygon;
 fid	AsText(Centroid(g))
 108	POINT(15 15)
@@ -310,7 +310,7 @@ explain extended select AsText(Centroid(g)),Area(g),AsText(ExteriorRing(g)),NumI
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	gis_polygon	ALL	NULL	NULL	NULL	NULL	3	
 Warnings:
-Note	1003	select astext(centroid(test.gis_polygon.g)) AS `AsText(Centroid(g))`,area(test.gis_polygon.g) AS `Area(g)`,astext(exteriorring(test.gis_polygon.g)) AS `AsText(ExteriorRing(g))`,numinteriorrings(test.gis_polygon.g) AS `NumInteriorRings(g)`,astext(interiorringn(test.gis_polygon.g,1)) AS `AsText(InteriorRingN(g, 1))` from test.gis_polygon
+Note	1003	select astext(centroid(`test`.`gis_polygon`.`g`)) AS `AsText(Centroid(g))`,area(`test`.`gis_polygon`.`g`) AS `Area(g)`,astext(exteriorring(`test`.`gis_polygon`.`g`)) AS `AsText(ExteriorRing(g))`,numinteriorrings(`test`.`gis_polygon`.`g`) AS `NumInteriorRings(g)`,astext(interiorringn(`test`.`gis_polygon`.`g`,1)) AS `AsText(InteriorRingN(g, 1))` from `test`.`gis_polygon`
 SELECT fid, IsClosed(g) FROM gis_multi_line;
 fid	IsClosed(g)
 114	0
@@ -349,7 +349,7 @@ explain extended SELECT fid, NumGeometries(g) from gis_multi_point;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	gis_multi_point	ALL	NULL	NULL	NULL	NULL	3	
 Warnings:
-Note	1003	select test.gis_multi_point.fid AS `fid`,numgeometries(test.gis_multi_point.g) AS `NumGeometries(g)` from test.gis_multi_point
+Note	1003	select `test`.`gis_multi_point`.`fid` AS `fid`,numgeometries(`test`.`gis_multi_point`.`g`) AS `NumGeometries(g)` from `test`.`gis_multi_point`
 SELECT fid, AsText(GeometryN(g, 2)) from gis_multi_point;
 fid	AsText(GeometryN(g, 2))
 111	POINT(10 10)
@@ -377,7 +377,7 @@ explain extended SELECT fid, AsText(GeometryN(g, 2)) from gis_multi_point;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	gis_multi_point	ALL	NULL	NULL	NULL	NULL	3	
 Warnings:
-Note	1003	select test.gis_multi_point.fid AS `fid`,astext(geometryn(test.gis_multi_point.g,2)) AS `AsText(GeometryN(g, 2))` from test.gis_multi_point
+Note	1003	select `test`.`gis_multi_point`.`fid` AS `fid`,astext(geometryn(`test`.`gis_multi_point`.`g`,2)) AS `AsText(GeometryN(g, 2))` from `test`.`gis_multi_point`
 SELECT g1.fid as first, g2.fid as second,
 Within(g1.g, g2.g) as w, Contains(g1.g, g2.g) as c, Overlaps(g1.g, g2.g) as o,
 Equals(g1.g, g2.g) as e, Disjoint(g1.g, g2.g) as d, Touches(g1.g, g2.g) as t,
@@ -385,7 +385,7 @@ Intersects(g1.g, g2.g) as i, Crosses(g1.g, g2.g) as r
 FROM gis_geometrycollection g1, gis_geometrycollection g2 ORDER BY first, second;
 first	second	w	c	o	e	d	t	i	r
 120	120	1	1	0	1	0	0	1	0
-120	121	0	0	0	0	0	0	1	0
+120	121	0	0	1	0	0	0	1	0
 121	120	0	0	1	0	0	0	1	0
 121	121	1	1	0	1	0	0	1	0
 explain extended SELECT g1.fid as first, g2.fid as second,
@@ -397,7 +397,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	g1	ALL	NULL	NULL	NULL	NULL	2	Using temporary; Using filesort
 1	SIMPLE	g2	ALL	NULL	NULL	NULL	NULL	2	
 Warnings:
-Note	1003	select test.g1.fid AS `first`,test.g2.fid AS `second`,within(test.g1.g,test.g2.g) AS `w`,contains(test.g1.g,test.g2.g) AS `c`,overlaps(test.g1.g,test.g2.g) AS `o`,equals(test.g1.g,test.g2.g) AS `e`,disjoint(test.g1.g,test.g2.g) AS `d`,touches(test.g1.g,test.g2.g) AS `t`,intersects(test.g1.g,test.g2.g) AS `i`,crosses(test.g1.g,test.g2.g) AS `r` from test.gis_geometrycollection g1 join test.gis_geometrycollection g2 order by test.g1.fid,test.g2.fid
+Note	1003	select `test`.`g1`.`fid` AS `first`,`test`.`g2`.`fid` AS `second`,within(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `w`,contains(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `c`,overlaps(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `o`,equals(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `e`,disjoint(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `d`,touches(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `t`,intersects(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `i`,crosses(`test`.`g1`.`g`,`test`.`g2`.`g`) AS `r` from `test`.`gis_geometrycollection` `g1` join `test`.`gis_geometrycollection` `g2` order by `test`.`g1`.`fid`,`test`.`g2`.`fid`
 DROP TABLE gis_point, gis_line, gis_polygon, gis_multi_point, gis_multi_line, gis_multi_polygon, gis_geometrycollection, gis_geometry;
 CREATE TABLE t1 (
 gp  point,
@@ -430,7 +430,7 @@ mln	multilinestring	YES		NULL
 mpg	multipolygon	YES		NULL	
 gc	geometrycollection	YES		NULL	
 gm	geometry	YES		NULL	
-fid	int(11)			0	
+fid	int(11)	NO			
 DROP TABLE t1;
 SELECT AsText(GeometryFromWKB(AsWKB(GeometryFromText('POINT(1 4)'))));
 AsText(GeometryFromWKB(AsWKB(GeometryFromText('POINT(1 4)'))))
@@ -461,9 +461,9 @@ Note	1003	select issimple(multipoint(point(3,6),point(4,10))) AS `issimple(Multi
 create table t1 (a geometry not null);
 insert into t1 values (GeomFromText('Point(1 2)'));
 insert into t1 values ('Garbage');
-ERROR HY000: Unknown error
+ERROR 22003: Cannot get geometry object from data you send to the GEOMETRY field
 insert IGNORE into t1 values ('Garbage');
-ERROR HY000: Unknown error
+ERROR 22003: Cannot get geometry object from data you send to the GEOMETRY field
 alter table t1 add spatial index(a);
 drop table t1;
 create table t1(a geometry not null, spatial index(a));
@@ -574,15 +574,17 @@ INSERT INTO t1 VALUES(GeomFromText('POINT(367894677 368542487)'));
 INSERT INTO t1 VALUES(GeomFromText('POINT(580848489 219587743)'));
 INSERT INTO t1 VALUES(GeomFromText('POINT(11247614 782797569)'));
 drop table t1;
-create table t1 select POINT(1,3);
+create table t1 select GeomFromWKB(POINT(1,3));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `POINT(1,3)` longblob NOT NULL
+  `GeomFromWKB(POINT(1,3))` geometry default NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 CREATE TABLE `t1` (`object_id` bigint(20) unsigned NOT NULL default '0', `geo`
 geometry NOT NULL default '') ENGINE=MyISAM ;
+Warnings:
+Warning	1101	BLOB/TEXT column 'geo' can't have a default value
 insert into t1 values ('85984',GeomFromText('MULTIPOLYGON(((-115.006363
 36.305435,-114.992394 36.305202,-114.991219 36.305975,-114.991163
 36.306845,-114.989432 36.309452,-114.978275 36.312642,-114.977363
@@ -655,6 +657,16 @@ t1 where object_id=85984;
 object_id	geometrytype(geo)	ISSIMPLE(GEO)	ASTEXT(centroid(geo))
 85984	MULTIPOLYGON	0	POINT(-114.87787186923 36.33101763469)
 drop table t1;
+create table t1 (fl geometry not null);
+insert into t1 values (1);
+ERROR 22003: Cannot get geometry object from data you send to the GEOMETRY field
+insert into t1 values (1.11);
+ERROR 22003: Cannot get geometry object from data you send to the GEOMETRY field
+insert into t1 values ("qwerty");
+ERROR 22003: Cannot get geometry object from data you send to the GEOMETRY field
+insert into t1 values (pointfromtext('point(1,1)'));
+ERROR 23000: Column 'fl' cannot be null
+drop table t1;
 select (asWKT(geomfromwkb((0x000000000140240000000000004024000000000000))));
 (asWKT(geomfromwkb((0x000000000140240000000000004024000000000000))))
 POINT(10 10)
@@ -671,3 +683,206 @@ Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is
 def					asbinary(g)	252	8192	0	Y	128	0	63
 asbinary(g)
 drop table t1;
+create table t1 (a TEXT, b GEOMETRY NOT NULL, SPATIAL KEY(b));
+alter table t1 disable keys;
+load data infile '../std_data_ln/bad_gis_data.dat' into table t1;
+ERROR 22004: Column was set to data type implicit default; NULL supplied for NOT NULL column 'b' at row 1
+alter table t1 enable keys;
+drop table t1;
+create table t1 (a int, b blob);
+insert into t1 values (1, ''), (2, NULL), (3, '1');
+select * from t1;
+a	b
+1	
+2	NULL
+3	1
+select
+geometryfromtext(b) IS NULL, geometryfromwkb(b) IS NULL, astext(b) IS NULL, 
+aswkb(b) IS NULL, geometrytype(b) IS NULL, centroid(b) IS NULL,
+envelope(b) IS NULL, startpoint(b) IS NULL, endpoint(b) IS NULL,
+exteriorring(b) IS NULL, pointn(b, 1) IS NULL, geometryn(b, 1) IS NULL,
+interiorringn(b, 1) IS NULL, multipoint(b) IS NULL, isempty(b) IS NULL,
+issimple(b) IS NULL, isclosed(b) IS NULL, dimension(b) IS NULL,
+numgeometries(b) IS NULL, numinteriorrings(b) IS NULL, numpoints(b) IS NULL,
+area(b) IS NULL, glength(b) IS NULL, srid(b) IS NULL, x(b) IS NULL, 
+y(b) IS NULL
+from t1;
+geometryfromtext(b) IS NULL	geometryfromwkb(b) IS NULL	astext(b) IS NULL	aswkb(b) IS NULL	geometrytype(b) IS NULL	centroid(b) IS NULL	envelope(b) IS NULL	startpoint(b) IS NULL	endpoint(b) IS NULL	exteriorring(b) IS NULL	pointn(b, 1) IS NULL	geometryn(b, 1) IS NULL	interiorringn(b, 1) IS NULL	multipoint(b) IS NULL	isempty(b) IS NULL	issimple(b) IS NULL	isclosed(b) IS NULL	dimension(b) IS NULL	numgeometries(b) IS NULL	numinteriorrings(b) IS NULL	numpoints(b) IS NULL	area(b) IS NULL	glength(b) IS NULL	srid(b) IS NULL	x(b) IS NULL	y(b) IS NULL
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1
+select 
+within(b, b) IS NULL, contains(b, b) IS NULL, overlaps(b, b) IS NULL, 
+equals(b, b) IS NULL, disjoint(b, b) IS NULL, touches(b, b) IS NULL, 
+intersects(b, b) IS NULL, crosses(b, b) IS NULL
+from t1;
+within(b, b) IS NULL	contains(b, b) IS NULL	overlaps(b, b) IS NULL	equals(b, b) IS NULL	disjoint(b, b) IS NULL	touches(b, b) IS NULL	intersects(b, b) IS NULL	crosses(b, b) IS NULL
+1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1
+select 
+point(b, b) IS NULL, linestring(b) IS NULL, polygon(b) IS NULL, multipoint(b) IS NULL, 
+multilinestring(b) IS NULL, multipolygon(b) IS NULL, 
+geometrycollection(b) IS NULL
+from t1;
+point(b, b) IS NULL	linestring(b) IS NULL	polygon(b) IS NULL	multipoint(b) IS NULL	multilinestring(b) IS NULL	multipolygon(b) IS NULL	geometrycollection(b) IS NULL
+0	1	1	1	1	1	1
+1	1	1	1	1	1	1
+0	1	1	1	1	1	1
+drop table t1;
+CREATE TABLE t1(a POINT) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (NULL);
+SELECT * FROM t1;
+a
+NULL
+DROP TABLE t1;
+End of 4.1 tests
+create table t1 (s1 geometry not null,s2 char(100));
+create trigger t1_bu before update on t1 for each row set new.s1 = null;
+insert into t1 values (null,null);
+ERROR 23000: Column 's1' cannot be null
+drop table t1;
+drop procedure if exists fn3;
+create function fn3 () returns point return GeomFromText("point(1 1)");
+show create function fn3;
+Function	sql_mode	Create Function
+fn3		CREATE DEFINER=`root`@`localhost` FUNCTION `fn3`() RETURNS point
+return GeomFromText("point(1 1)")
+select astext(fn3());
+astext(fn3())
+POINT(1 1)
+drop function fn3;
+create table t1(pt POINT);
+alter table t1 add primary key pti(pt);
+drop table t1;
+create table t1(pt GEOMETRY);
+alter table t1 add primary key pti(pt);
+ERROR 42000: BLOB/TEXT column 'pt' used in key specification without a key length
+alter table t1 add primary key pti(pt(20));
+drop table t1;
+create table t1 select GeomFromText('point(1 1)');
+desc t1;
+Field	Type	Null	Key	Default	Extra
+GeomFromText('point(1 1)')	geometry	YES		NULL	
+drop table t1;
+create table t1 (g geometry not null);
+insert into t1 values(default);
+ERROR 22003: Cannot get geometry object from data you send to the GEOMETRY field
+drop table t1;
+CREATE TABLE t1 (a GEOMETRY);
+CREATE VIEW v1 AS SELECT GeomFromwkb(ASBINARY(a)) FROM t1;
+CREATE VIEW v2 AS SELECT a FROM t1;
+DESCRIBE v1;
+Field	Type	Null	Key	Default	Extra
+GeomFromwkb(ASBINARY(a))	geometry	YES		NULL	
+DESCRIBE v2;
+Field	Type	Null	Key	Default	Extra
+a	geometry	YES		NULL	
+DROP VIEW v1,v2;
+DROP TABLE t1;
+create table t1 (name VARCHAR(100), square GEOMETRY);
+INSERT INTO t1 VALUES("center", GeomFromText('POLYGON (( 0 0, 0 2, 2 2, 2 0, 0 0))'));
+INSERT INTO t1 VALUES("small",  GeomFromText('POLYGON (( 0 0, 0 1, 1 1, 1 0, 0 0))'));
+INSERT INTO t1 VALUES("big",    GeomFromText('POLYGON (( 0 0, 0 3, 3 3, 3 0, 0 0))'));
+INSERT INTO t1 VALUES("up",     GeomFromText('POLYGON (( 0 1, 0 3, 2 3, 2 1, 0 1))'));
+INSERT INTO t1 VALUES("up2",    GeomFromText('POLYGON (( 0 2, 0 4, 2 4, 2 2, 0 2))'));
+INSERT INTO t1 VALUES("up3",    GeomFromText('POLYGON (( 0 3, 0 5, 2 5, 2 3, 0 3))'));
+INSERT INTO t1 VALUES("down",   GeomFromText('POLYGON (( 0 -1, 0  1, 2  1, 2 -1, 0 -1))'));
+INSERT INTO t1 VALUES("down2",  GeomFromText('POLYGON (( 0 -2, 0  0, 2  0, 2 -2, 0 -2))'));
+INSERT INTO t1 VALUES("down3",  GeomFromText('POLYGON (( 0 -3, 0 -1, 2 -1, 2 -3, 0 -3))'));
+INSERT INTO t1 VALUES("right",  GeomFromText('POLYGON (( 1 0, 1 2, 3 2, 3 0, 1 0))'));
+INSERT INTO t1 VALUES("right2", GeomFromText('POLYGON (( 2 0, 2 2, 4 2, 4 0, 2 0))'));
+INSERT INTO t1 VALUES("right3", GeomFromText('POLYGON (( 3 0, 3 2, 5 2, 5 0, 3 0))'));
+INSERT INTO t1 VALUES("left",   GeomFromText('POLYGON (( -1 0, -1 2,  1 2,  1 0, -1 0))'));
+INSERT INTO t1 VALUES("left2",  GeomFromText('POLYGON (( -2 0, -2 2,  0 2,  0 0, -2 0))'));
+INSERT INTO t1 VALUES("left3",  GeomFromText('POLYGON (( -3 0, -3 2, -1 2, -1 0, -3 0))'));
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrcontains  FROM t1 a1 JOIN t1 a2 ON MBRContains(   a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbrcontains
+center,small
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrdisjoint  FROM t1 a1 JOIN t1 a2 ON MBRDisjoint(   a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbrdisjoint
+down3,left3,right3,up3
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrequal     FROM t1 a1 JOIN t1 a2 ON MBREqual(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbrequal
+center
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrintersect FROM t1 a1 JOIN t1 a2 ON MBRIntersects( a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbrintersect
+big,center,down,down2,left,left2,right,right2,small,up,up2
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbroverlaps  FROM t1 a1 JOIN t1 a2 ON MBROverlaps(   a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbroverlaps
+down,left,right,up
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrtouches   FROM t1 a1 JOIN t1 a2 ON MBRTouches(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbrtouches
+down2,left2,right2,up2
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrwithin    FROM t1 a1 JOIN t1 a2 ON MBRWithin(     a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+mbrwithin
+big,center
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS contains     FROM t1 a1 JOIN t1 a2 ON Contains(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+contains
+center,small
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS disjoint     FROM t1 a1 JOIN t1 a2 ON Disjoint(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+disjoint
+down3,left3,right3,up3
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS equals       FROM t1 a1 JOIN t1 a2 ON Equals(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+equals
+center
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS intersect    FROM t1 a1 JOIN t1 a2 ON Intersects(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+intersect
+big,center,down,down2,left,left2,right,right2,small,up,up2
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS overlaps     FROM t1 a1 JOIN t1 a2 ON Overlaps(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+overlaps
+down,left,right,up
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS touches      FROM t1 a1 JOIN t1 a2 ON Touches(       a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+touches
+down2,left2,right2,up2
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS within       FROM t1 a1 JOIN t1 a2 ON Within(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+within
+big,center
+SET @vert1   = GeomFromText('POLYGON ((0 -2, 0 2, 0 -2))');
+SET @horiz1  = GeomFromText('POLYGON ((-2 0, 2 0, -2 0))');
+SET @horiz2 = GeomFromText('POLYGON ((-1 0, 3 0, -1 0))');
+SET @horiz3 = GeomFromText('POLYGON ((2 0, 3 0, 2 0))');
+SET @point1 = GeomFromText('POLYGON ((0 0))');
+SET @point2 = GeomFromText('POLYGON ((-2 0))');
+SELECT GROUP_CONCAT(a1.name ORDER BY a1.name) AS overlaps FROM t1 a1 WHERE Overlaps(a1.square, @vert1) GROUP BY a1.name;
+overlaps
+SELECT GROUP_CONCAT(a1.name ORDER BY a1.name) AS overlaps FROM t1 a1 WHERE Overlaps(a1.square, @horiz1) GROUP BY a1.name;
+overlaps
+SELECT Overlaps(@horiz1, @vert1) FROM DUAL;
+Overlaps(@horiz1, @vert1)
+0
+SELECT Overlaps(@horiz1, @horiz2) FROM DUAL;
+Overlaps(@horiz1, @horiz2)
+1
+SELECT Overlaps(@horiz1, @horiz3) FROM DUAL;
+Overlaps(@horiz1, @horiz3)
+0
+SELECT Overlaps(@horiz1, @point1) FROM DUAL;
+Overlaps(@horiz1, @point1)
+0
+SELECT Overlaps(@horiz1, @point2) FROM DUAL;
+Overlaps(@horiz1, @point2)
+0
+DROP TABLE t1;
+create table t1(f1 geometry, f2 point, f3 linestring);
+select f1 from t1 union select f1 from t1;
+f1
+insert into t1 (f2,f3) values (GeomFromText('POINT(1 1)'),
+GeomFromText('LINESTRING(0 0,1 1,2 2)'));
+select AsText(f2),AsText(f3) from t1;
+AsText(f2)	AsText(f3)
+POINT(1 1)	LINESTRING(0 0,1 1,2 2)
+select AsText(a) from (select f2 as a from t1 union select f3 from t1) t;
+AsText(a)
+POINT(1 1)
+LINESTRING(0 0,1 1,2 2)
+create table t2 as select f2 as a from t1 union select f3 from t1;
+desc t2;
+Field	Type	Null	Key	Default	Extra
+a	point	YES		NULL	
+select AsText(a) from t2;
+AsText(a)
+POINT(1 1)
+LINESTRING(0 0,1 1,2 2)
+drop table t1, t2;
+End of 5.0 tests

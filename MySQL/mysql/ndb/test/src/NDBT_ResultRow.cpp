@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -84,7 +83,7 @@ NDBT_ResultRow::header (NdbOut & out) const {
   return out;
 }
 
-BaseString NDBT_ResultRow::c_str() {
+BaseString NDBT_ResultRow::c_str() const {
   
   BaseString str;
   
@@ -136,4 +135,11 @@ NDBT_ResultRow::clone () const {
   }
   
   return row;
+}
+
+bool
+NDBT_ResultRow::operator==(const NDBT_ResultRow& other) const 
+{
+  // quick and dirty
+  return c_str() == other.c_str();
 }

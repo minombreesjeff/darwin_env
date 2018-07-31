@@ -33,6 +33,7 @@ Created 9/20/1997 Heikki Tuuri
 #include "btr0cur.h"
 #include "dict0boot.h"
 #include "fil0fil.h"
+#include "sync0sync.h"
 
 #ifdef UNIV_HOTBACKUP
 /* This is set to FALSE if the backup was originally taken with the
@@ -477,6 +478,7 @@ recv_find_max_checkpoint(
 
 	max_no = ut_dulint_zero;
 	*max_group = NULL;
+	*max_field = 0;
 	
 	buf = log_sys->checkpoint_buf;
 	
@@ -489,6 +491,7 @@ recv_find_max_checkpoint(
 			log_group_read_checkpoint_info(group, field);
 
 			if (!recv_check_cp_is_consistent(buf)) {
+#ifdef UNIV_DEBUG
 				if (log_debug_writes) {
 					fprintf(stderr, 
 	    "InnoDB: Checkpoint in group %lu at %lu invalid, %lu\n",
@@ -498,7 +501,7 @@ recv_find_max_checkpoint(
 					      + LOG_CHECKPOINT_CHECKSUM_1));
 
 				}
-
+#endif /* UNIV_DEBUG */
 				goto not_consistent;
 			}
 
@@ -511,13 +514,15 @@ recv_find_max_checkpoint(
 			checkpoint_no =
 				mach_read_from_8(buf + LOG_CHECKPOINT_NO);
 
+#ifdef UNIV_DEBUG
 			if (log_debug_writes) {
 				fprintf(stderr, 
 			"InnoDB: Checkpoint number %lu found in group %lu\n",
 				(ulong) ut_dulint_get_low(checkpoint_no),
 				(ulong) group->id);
 			}
-				
+#endif /* UNIV_DEBUG */
+
 			if (ut_dulint_cmp(checkpoint_no, max_no) >= 0) {
 				*max_group = group;
 				*max_field = field;
@@ -539,8 +544,7 @@ recv_find_max_checkpoint(
 "InnoDB: the problem may be that during an earlier attempt you managed\n"
 "InnoDB: to create the InnoDB data files, but log file creation failed.\n"
 "InnoDB: If that is the case, please refer to\n"
-"InnoDB: http://dev.mysql.com/doc/mysql/en/Error_creating_InnoDB.html\n");
-
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/error-creating-innodb.html\n");
 		return(DB_ERROR);
 	}
 
@@ -756,81 +760,143 @@ recv_parse_or_apply_log_rec_body(
 	mtr_t*	mtr)	/* in: mtr or NULL; should be non-NULL if and only if
 			page is non-NULL */
 {
-	byte*	new_ptr;
+	dict_index_t*	index = NULL;
 
-	if (type <= MLOG_8BYTES) {
-		new_ptr = mlog_parse_nbytes(type, ptr, end_ptr, page);
-
-	} else if (type == MLOG_REC_INSERT) {
-		new_ptr = page_cur_parse_insert_rec(FALSE, ptr, end_ptr, page,
-									mtr);
-	} else if (type == MLOG_REC_CLUST_DELETE_MARK) {
-		new_ptr = btr_cur_parse_del_mark_set_clust_rec(ptr, end_ptr,
-									page);
-	} else if (type == MLOG_REC_SEC_DELETE_MARK) {
-		new_ptr = btr_cur_parse_del_mark_set_sec_rec(ptr, end_ptr,
-									page);
-	} else if (type == MLOG_REC_UPDATE_IN_PLACE) {
-		new_ptr = btr_cur_parse_update_in_place(ptr, end_ptr, page);
-
-	} else if ((type == MLOG_LIST_END_DELETE)
-		   || (type == MLOG_LIST_START_DELETE)) {
-		new_ptr = page_parse_delete_rec_list(type, ptr, end_ptr, page,
-									mtr);
-	} else if (type == MLOG_LIST_END_COPY_CREATED) {
-		new_ptr = page_parse_copy_rec_list_to_created_page(ptr,
-							end_ptr, page, mtr);
-	} else if (type == MLOG_PAGE_REORGANIZE) {
-		new_ptr = btr_parse_page_reorganize(ptr, end_ptr, page, mtr);
-
-	} else if (type == MLOG_PAGE_CREATE) {
-		new_ptr = page_parse_create(ptr, end_ptr, page, mtr);
-
-	} else if (type == MLOG_UNDO_INSERT) {
-		new_ptr = trx_undo_parse_add_undo_rec(ptr, end_ptr, page);
-
-	} else if (type == MLOG_UNDO_ERASE_END) {
-		new_ptr = trx_undo_parse_erase_page_end(ptr, end_ptr, page,
-									mtr);
-	} else if (type == MLOG_UNDO_INIT) {
-		new_ptr = trx_undo_parse_page_init(ptr, end_ptr, page, mtr);
-
-	} else if (type == MLOG_UNDO_HDR_DISCARD) {
-		new_ptr = trx_undo_parse_discard_latest(ptr, end_ptr, page,
-									mtr);
-	} else if ((type == MLOG_UNDO_HDR_CREATE)
-		   || (type == MLOG_UNDO_HDR_REUSE)) {
-		new_ptr = trx_undo_parse_page_header(type, ptr, end_ptr, page,
-									mtr);
-	} else if (type == MLOG_REC_MIN_MARK) {
-		new_ptr = btr_parse_set_min_rec_mark(ptr, end_ptr, page, mtr);
-	
-	} else if (type == MLOG_REC_DELETE) {
-		new_ptr = page_cur_parse_delete_rec(ptr, end_ptr, page, mtr);
-
-	} else if (type == MLOG_IBUF_BITMAP_INIT) {
-		new_ptr = ibuf_parse_bitmap_init(ptr, end_ptr, page, mtr);
-
-	} else if (type == MLOG_INIT_FILE_PAGE) {
-		new_ptr = fsp_parse_init_file_page(ptr, end_ptr, page);
-
-	} else if (type == MLOG_WRITE_STRING) {
-		new_ptr = mlog_parse_string(ptr, end_ptr, page);
-
-	} else if (type == MLOG_FILE_CREATE
-		   || type == MLOG_FILE_RENAME
-		   || type == MLOG_FILE_DELETE) {
-		new_ptr = fil_op_log_parse_or_replay(ptr, end_ptr, type, FALSE,
+	switch (type) {
+	case MLOG_1BYTE: case MLOG_2BYTES: case MLOG_4BYTES: case MLOG_8BYTES:
+		ptr = mlog_parse_nbytes(type, ptr, end_ptr, page);
+		break;
+	case MLOG_REC_INSERT: case MLOG_COMP_REC_INSERT:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+				type == MLOG_COMP_REC_INSERT, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = page_cur_parse_insert_rec(FALSE, ptr, end_ptr,
+							index, page, mtr);
+		}
+		break;
+	case MLOG_REC_CLUST_DELETE_MARK: case MLOG_COMP_REC_CLUST_DELETE_MARK:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+			type == MLOG_COMP_REC_CLUST_DELETE_MARK, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = btr_cur_parse_del_mark_set_clust_rec(ptr,
+						end_ptr, index, page);
+		}
+		break;
+	case MLOG_COMP_REC_SEC_DELETE_MARK:
+		/* This log record type is obsolete, but we process it for
+		backward compatibility with MySQL 5.0.3 and 5.0.4. */
+		ut_a(!page || page_is_comp(page));
+		ptr = mlog_parse_index(ptr, end_ptr, TRUE, &index);
+		if (!ptr) {
+			break;
+		}
+		/* Fall through */
+	case MLOG_REC_SEC_DELETE_MARK:
+		ptr = btr_cur_parse_del_mark_set_sec_rec(ptr, end_ptr, page);
+		break;
+	case MLOG_REC_UPDATE_IN_PLACE: case MLOG_COMP_REC_UPDATE_IN_PLACE:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+			type == MLOG_COMP_REC_UPDATE_IN_PLACE, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = btr_cur_parse_update_in_place(ptr, end_ptr,
+							page, index);
+		}
+		break;
+	case MLOG_LIST_END_DELETE: case MLOG_COMP_LIST_END_DELETE:
+	case MLOG_LIST_START_DELETE: case MLOG_COMP_LIST_START_DELETE:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+			type == MLOG_COMP_LIST_END_DELETE
+			|| type == MLOG_COMP_LIST_START_DELETE, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = page_parse_delete_rec_list(type, ptr, end_ptr,
+							index, page, mtr);
+		}
+		break;
+	case MLOG_LIST_END_COPY_CREATED: case MLOG_COMP_LIST_END_COPY_CREATED:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+			type == MLOG_COMP_LIST_END_COPY_CREATED, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = page_parse_copy_rec_list_to_created_page(ptr,
+						end_ptr, index, page, mtr);
+		}
+		break;
+	case MLOG_PAGE_REORGANIZE: case MLOG_COMP_PAGE_REORGANIZE:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+				type == MLOG_COMP_PAGE_REORGANIZE, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = btr_parse_page_reorganize(ptr, end_ptr, index,
+								page, mtr);
+		}
+		break;
+	case MLOG_PAGE_CREATE: case MLOG_COMP_PAGE_CREATE:
+		ptr = page_parse_create(ptr, end_ptr,
+				type == MLOG_COMP_PAGE_CREATE, page, mtr);
+		break;
+	case MLOG_UNDO_INSERT:
+		ptr = trx_undo_parse_add_undo_rec(ptr, end_ptr, page);
+		break;
+	case MLOG_UNDO_ERASE_END:
+		ptr = trx_undo_parse_erase_page_end(ptr, end_ptr, page, mtr);
+		break;
+	case MLOG_UNDO_INIT:
+		ptr = trx_undo_parse_page_init(ptr, end_ptr, page, mtr);
+		break;
+	case MLOG_UNDO_HDR_DISCARD:
+		ptr = trx_undo_parse_discard_latest(ptr, end_ptr, page, mtr);
+		break;
+	case MLOG_UNDO_HDR_CREATE:
+	case MLOG_UNDO_HDR_REUSE:
+		ptr = trx_undo_parse_page_header(type, ptr, end_ptr,
+								page, mtr);
+		break;
+	case MLOG_REC_MIN_MARK: case MLOG_COMP_REC_MIN_MARK:
+		ptr = btr_parse_set_min_rec_mark(ptr, end_ptr,
+				type == MLOG_COMP_REC_MIN_MARK, page, mtr);
+		break;
+	case MLOG_REC_DELETE: case MLOG_COMP_REC_DELETE:
+		if (NULL != (ptr = mlog_parse_index(ptr, end_ptr,
+				type == MLOG_COMP_REC_DELETE, &index))) {
+			ut_a(!page
+			  || (ibool)!!page_is_comp(page)==index->table->comp);
+			ptr = page_cur_parse_delete_rec(ptr, end_ptr,
+							index, page, mtr);
+		}
+		break;
+	case MLOG_IBUF_BITMAP_INIT:
+		ptr = ibuf_parse_bitmap_init(ptr, end_ptr, page, mtr);
+		break;
+	case MLOG_INIT_FILE_PAGE:
+		ptr = fsp_parse_init_file_page(ptr, end_ptr, page);
+		break;
+	case MLOG_WRITE_STRING:
+		ptr = mlog_parse_string(ptr, end_ptr, page);
+		break;
+	case MLOG_FILE_CREATE:
+	case MLOG_FILE_RENAME:
+	case MLOG_FILE_DELETE:
+		ptr = fil_op_log_parse_or_replay(ptr, end_ptr, type, FALSE,
 							ULINT_UNDEFINED);
-	} else {
-		new_ptr = NULL;
-		 
+		break;
+	default:
+		ptr = NULL;
 		recv_sys->found_corrupt_log = TRUE;
 	}
 
-	ut_ad(!page || new_ptr);
+	ut_ad(!page || ptr);
+	if (index) {
+		dict_table_t*	table = index->table;
+
+		dict_mem_index_free(index);
+		dict_mem_table_free(table);
+	}
 	
-	return(new_ptr);
+	return(ptr);
 }
 
 /*************************************************************************
@@ -1110,6 +1176,7 @@ recv_recover_page(
 	}
 
 	modification_to_page = FALSE;
+	start_lsn = end_lsn = ut_dulint_zero;
 
 	recv = UT_LIST_GET_FIRST(recv_addr->rec_list);
 	
@@ -1143,6 +1210,7 @@ recv_recover_page(
 				start_lsn = recv->start_lsn;
 			}
 
+#ifdef UNIV_DEBUG
 			if (log_debug_writes) {
 				fprintf(stderr, 
      "InnoDB: Applying log rec type %lu len %lu to space %lu page no %lu\n",
@@ -1150,6 +1218,7 @@ recv_recover_page(
 					(ulong) recv_addr->space,
 					(ulong) recv_addr->page_no);
 			}
+#endif /* UNIV_DEBUG */
 
 			recv_parse_or_apply_log_rec_body(recv->type, buf,
 						buf + recv->len, page, &mtr);
@@ -1394,7 +1463,7 @@ loop:
 
 /* This page is allocated from the buffer pool and used in the function
 below */
-page_t* recv_backup_application_page	= NULL;
+static page_t* recv_backup_application_page	= NULL;
 
 /***********************************************************************
 Applies log records in the hash table to a backup. */
@@ -1736,6 +1805,8 @@ recv_parse_log_rec(
 {
 	byte*	new_ptr;
 
+	*body = NULL;
+
 	if (ptr == end_ptr) {
 
 		return(0);
@@ -1758,25 +1829,25 @@ recv_parse_log_rec(
 
 	new_ptr = mlog_parse_initial_log_record(ptr, end_ptr, type, space,
 								page_no);
-	if (!new_ptr) {
+	*body = new_ptr;
+
+	if (UNIV_UNLIKELY(!new_ptr)) {
 
 	        return(0);
 	}
 
 	/* Check that page_no is sensible */
 
-	if (*page_no > 0x8FFFFFFFUL) {
+	if (UNIV_UNLIKELY(*page_no > 0x8FFFFFFFUL)) {
 
 		recv_sys->found_corrupt_log = TRUE;
 
 		return(0);
 	}
 
-	*body = new_ptr;
-
 	new_ptr = recv_parse_or_apply_log_rec_body(*type, new_ptr, end_ptr,
 								NULL, NULL);
-	if (new_ptr == NULL) {
+	if (UNIV_UNLIKELY(new_ptr == NULL)) {
 
 		return(0);
 	}
@@ -1884,7 +1955,7 @@ recv_report_corrupt_log(
 	"InnoDB: far enough in recovery! Please run CHECK TABLE\n"
 	"InnoDB: on your InnoDB tables to check that they are ok!\n"
 	"InnoDB: If mysqld crashes after this recovery, look at\n"
-	"InnoDB: http://dev.mysql.com/doc/mysql/en/Forcing_recovery.html\n"
+	"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/forcing-recovery.html\n"
 	"InnoDB: about forcing recovery.\n", stderr);
 
 	fflush(stderr);
@@ -1970,12 +2041,14 @@ loop:
 		recv_sys->recovered_offset += len;
 		recv_sys->recovered_lsn = new_recovered_lsn;
 
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fprintf(stderr, 
 "InnoDB: Parsed a single log rec type %lu len %lu space %lu page no %lu\n",
 				(ulong) type, (ulong) len, (ulong) space,
 				(ulong) page_no);
 		}
+#endif /* UNIV_DEBUG */
 
 		if (type == MLOG_DUMMY_RECORD) {
 			/* Do nothing */
@@ -2058,13 +2131,15 @@ loop:
 							body, ptr + len);
 #endif /* UNIV_LOG_REPLICATE */
 			}
-			
+
+#ifdef UNIV_DEBUG
 			if (log_debug_writes) {
 				fprintf(stderr, 
 "InnoDB: Parsed a multi log rec type %lu len %lu space %lu page no %lu\n",
 				(ulong) type, (ulong) len, (ulong) space,
 				(ulong) page_no);
 			}
+#endif /* UNIV_DEBUG */
 
 			total_len += len;
 			n_recs++;
@@ -2471,6 +2546,7 @@ recv_group_scan_log_recs(
 		start_lsn = end_lsn;
 	}
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr,
 	"InnoDB: Scanned group %lu up to log sequence number %lu %lu\n",
@@ -2478,6 +2554,7 @@ recv_group_scan_log_recs(
 				(ulong) ut_dulint_get_high(*group_scanned_lsn),
 				(ulong) ut_dulint_get_low(*group_scanned_lsn));
 	}
+#endif /* UNIV_DEBUG */
 }
 
 /************************************************************
@@ -2853,11 +2930,8 @@ void
 recv_recovery_from_checkpoint_finish(void)
 /*======================================*/
 {
-	/* Rollback the uncommitted transactions which have no user session */
-
-	if (srv_force_recovery < SRV_FORCE_NO_TRX_UNDO) {
-		trx_rollback_or_clean_all_without_sess();
-	}
+	int 		i;
+	os_thread_id_t	recovery_thread_id;
 
 	/* Apply the hashed log records to the respective file pages */
 	
@@ -2866,10 +2940,12 @@ recv_recovery_from_checkpoint_finish(void)
 		recv_apply_hashed_log_recs(TRUE);
 	}
 
+#ifdef UNIV_DEBUG
 	if (log_debug_writes) {
 		fprintf(stderr,
 		"InnoDB: Log records applied to the database\n");
 	}
+#endif /* UNIV_DEBUG */
 
 	if (recv_needed_recovery) {
 		trx_sys_print_mysql_master_log_pos();
@@ -2890,9 +2966,26 @@ recv_recovery_from_checkpoint_finish(void)
 	/* Free the resources of the recovery system */
 
 	recv_recovery_on = FALSE;
+
 #ifndef UNIV_LOG_DEBUG
 	recv_sys_free();
 #endif
+
+#ifdef UNIV_SYNC_DEBUG
+	/* Wait for a while so that created threads have time to suspend
+	themselves before we switch the latching order checks on */
+	os_thread_sleep(1000000);
+
+	/* Switch latching order checks on in sync0sync.c */
+	sync_order_checks_on = TRUE;
+#endif
+	if (srv_force_recovery < SRV_FORCE_NO_TRX_UNDO) {
+		/* Rollback the uncommitted transactions which have no user
+		session */
+
+		os_thread_create(trx_rollback_or_clean_all_without_sess,
+				(void *)&i, &recovery_thread_id);
+	}
 }
 
 /**********************************************************
@@ -3198,6 +3291,7 @@ ask_again:
 			break;
 		}
 	
+#ifdef UNIV_DEBUG
 		if (log_debug_writes) {
 			fprintf(stderr, 
 "InnoDB: Archive read starting at lsn %lu %lu, len %lu from file %s\n",
@@ -3205,6 +3299,7 @@ ask_again:
 					(ulong) ut_dulint_get_low(start_lsn),
 					(ulong) len, name);
 		}
+#endif /* UNIV_DEBUG */
 
 		fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE,
 			group->archive_space_id, read_offset / UNIV_PAGE_SIZE,

@@ -1,3 +1,6 @@
+# Replication tests need binlog
+source include/have_log_bin.inc;
+
 connect (master,127.0.0.1,root,,test,$MASTER_MYPORT,);
 connect (master1,127.0.0.1,root,,test,$MASTER_MYPORT,);
 connect (slave,127.0.0.1,root,,test,$SLAVE_MYPORT,);
@@ -8,7 +11,8 @@ connection slave;
 --disable_warnings
 stop slave;
 --enable_warnings
-@r/slave-stopped.result show status like 'Slave_running';
+--require r/slave-stopped.result 
+show status like 'Slave_running';
 connection master;
 --disable_warnings
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8,t9;
@@ -21,7 +25,8 @@ reset slave;
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8,t9;
 --enable_warnings
 start slave;
-@r/slave-running.result show status like 'Slave_running';
+--require r/slave-running.result
+show status like 'Slave_running';
 
 # Set the default connection to 'master'
 connection master;

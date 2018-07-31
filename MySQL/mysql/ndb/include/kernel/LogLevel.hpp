@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -57,7 +56,7 @@ public:
     llInfo = CFG_LOGLEVEL_INFO - CFG_MIN_LOGLEVEL,
     llWarning = CFG_LOGLEVEL_WARNING - CFG_MIN_LOGLEVEL,
     llError = CFG_LOGLEVEL_ERROR - CFG_MIN_LOGLEVEL,
-    llGrep = CFG_LOGLEVEL_GREP - CFG_MIN_LOGLEVEL,
+    llCongestion = CFG_LOGLEVEL_CONGESTION - CFG_MIN_LOGLEVEL,
     llDebug = CFG_LOGLEVEL_DEBUG - CFG_MIN_LOGLEVEL
     ,llBackup = CFG_LOGLEVEL_BACKUP - CFG_MIN_LOGLEVEL
   };
@@ -147,7 +146,7 @@ LogLevel::set_max(const LogLevel & org){
   return * this;
 }
 
-#include <signaldata/EventSubscribeReq.hpp>
+#include "signaldata/EventSubscribeReq.hpp"
 
 inline
 LogLevel&

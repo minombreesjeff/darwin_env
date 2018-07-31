@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,7 +28,7 @@ int _mi_check_index(MI_INFO *info, int inx)
 {
   if (inx == -1)                        /* Use last index */
     inx=info->lastinx;
-  if (inx < 0 || ! (((ulonglong) 1 << inx) & info->s->state.key_map))
+  if (inx < 0 || ! mi_is_key_active(info->s->state.key_map, inx))
   {
     my_errno=HA_ERR_WRONG_INDEX;
     return -1;
@@ -159,6 +158,7 @@ int _mi_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
 
   DBUG_PRINT("exit",("found key at %lu",(ulong) info->lastpos));
   DBUG_RETURN(0);
+
 err:
   DBUG_PRINT("exit",("Error: %d",my_errno));
   info->lastpos= HA_OFFSET_ERROR;
@@ -256,6 +256,7 @@ int _mi_seq_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
     length=(*keyinfo->get_key)(keyinfo,nod_flag,&page,t_buff);
     if (length == 0 || page > end)
     {
+      mi_print_error(info->s, HA_ERR_CRASHED);
       my_errno=HA_ERR_CRASHED;
       DBUG_PRINT("error",("Found wrong key:  length: %u  page: %lx  end: %lx",
                           length, (long) page, (long) end));
@@ -396,7 +397,7 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
           if (!(*from++))
             continue;
         }
-        if (keyseg->flag & (HA_VAR_LENGTH | HA_BLOB_PART | HA_SPACE_PACK))
+        if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART | HA_SPACE_PACK))
         {
           get_key_length(l,from);
         }
@@ -412,6 +413,7 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
 
     if (page > end)
     {
+      mi_print_error(info->s, HA_ERR_CRASHED);
       my_errno=HA_ERR_CRASHED;
       DBUG_PRINT("error",("Found wrong key:  length: %u  page: %lx  end: %lx",
                           length, (long) page, (long) end));
@@ -462,14 +464,15 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
         if (len < cmplen)
         {
 	  if ((keyinfo->seg->type != HA_KEYTYPE_TEXT &&
-	       keyinfo->seg->type != HA_KEYTYPE_VARTEXT))
+	       keyinfo->seg->type != HA_KEYTYPE_VARTEXT1 &&
+               keyinfo->seg->type != HA_KEYTYPE_VARTEXT2))
 	    my_flag= -1;
 	  else
 	  {
 	    /* We have to compare k and vseg as if they were space extended */
-	    uchar *end= k+ (cmplen - len);
-	    for ( ; k < end && *k == ' '; k++) ;
-	    if (k == end)
+	    uchar *k_end= k+ (cmplen - len);
+	    for ( ; k < k_end && *k == ' '; k++) ;
+	    if (k == k_end)
 	      goto cmp_rest;		/* should never happen */
 	    if (*k < (uchar) ' ')
 	    {
@@ -481,15 +484,15 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
         }
         else if (len > cmplen)
         {
-	  uchar *end;
+	  uchar *vseg_end;
 	  if ((nextflag & SEARCH_PREFIX) && key_len_left == 0)
 	    goto fix_flag;
 
 	  /* We have to compare k and vseg as if they were space extended */
-	  for (end=vseg + (len-cmplen) ;
-	       vseg < end && *vseg == (uchar) ' ';
+	  for (vseg_end= vseg + (len-cmplen) ;
+	       vseg < vseg_end && *vseg == (uchar) ' ';
 	       vseg++, matched++) ;
-	  DBUG_ASSERT(vseg < end);
+	  DBUG_ASSERT(vseg < vseg_end);
 
 	  if (*vseg > (uchar) ' ')
 	  {
@@ -796,6 +799,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
       {
 	if (length > (uint) keyseg->length)
 	{
+          mi_print_error(keyinfo->share, HA_ERR_CRASHED);
 	  my_errno=HA_ERR_CRASHED;
 	  return 0;				/* Error */
 	}
@@ -811,6 +815,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
                        ("Found too long null packed key: %u of %u at %lx",
                         length, keyseg->length, (long) *page_pos));
 	    DBUG_DUMP("key",(char*) *page_pos,16);
+            mi_print_error(keyinfo->share, HA_ERR_CRASHED);
 	    my_errno=HA_ERR_CRASHED;
 	    return 0;
 	  }
@@ -867,6 +872,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
         DBUG_PRINT("error",("Found too long packed key: %u of %u at %lx",
                             length, keyseg->length, (long) *page_pos));
         DBUG_DUMP("key",(char*) *page_pos,16);
+        mi_print_error(keyinfo->share, HA_ERR_CRASHED);
         my_errno=HA_ERR_CRASHED;
         return 0;                               /* Error */
       }
@@ -880,7 +886,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
           continue;
       }
       if (keyseg->flag &
-          (HA_VAR_LENGTH | HA_BLOB_PART | HA_SPACE_PACK))
+          (HA_VAR_LENGTH_PART | HA_BLOB_PART | HA_SPACE_PACK))
       {
         uchar *tmp=page;
         get_key_length(length,tmp);
@@ -918,11 +924,16 @@ uint _mi_get_binary_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
   /*
     Keys are compressed the following way:
 
-    prefix length    Packed length of prefix for the prev key. (1 or 3 bytes)
+    prefix length    Packed length of prefix common with prev key (1 or 3 bytes)
     for each key segment:
       [is null]        Null indicator if can be null (1 byte, zero means null)
       [length]         Packed length if varlength (1 or 3 bytes)
+      key segment      'length' bytes of key segment value
     pointer          Reference to the data file (last_keyseg->length).
+
+    get_key_length() is a macro. It gets the prefix length from 'page'
+    and puts it into 'length'. It increments 'page' by 1 or 3, depending
+    on the packed length of the prefix length.
   */
   get_key_length(length,page);
   if (length)
@@ -932,37 +943,48 @@ uint _mi_get_binary_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
       DBUG_PRINT("error",("Found too long binary packed key: %u of %u at %lx",
                           length, keyinfo->maxlength, (long) *page_pos));
       DBUG_DUMP("key",(char*) *page_pos,16);
+      mi_print_error(keyinfo->share, HA_ERR_CRASHED);
       my_errno=HA_ERR_CRASHED;
       DBUG_RETURN(0);                                 /* Wrong key */
     }
-    from=key;  from_end=key+length;
+    /* Key is packed against prev key, take prefix from prev key. */
+    from= key;
+    from_end= key + length;
   }
   else
   {
-    from=page; from_end=page_end;               /* Not packed key */
+    /* Key is not packed against prev key, take all from page buffer. */
+    from= page;
+    from_end= page_end;
   }
 
   /*
-    The trouble is that key is split in two parts:
-     The first part is in from ...from_end-1.
-     The second part starts at page
+    The trouble is that key can be split in two parts:
+      The first part (prefix) is in from .. from_end - 1.
+      The second part starts at page.
+    The split can be at every byte position. So we need to check for
+    the end of the first part before using every byte.
   */
   for (keyseg=keyinfo->seg ; keyseg->type ;keyseg++)
   {
     if (keyseg->flag & HA_NULL_PART)
     {
+      /* If prefix is used up, switch to rest. */
       if (from == from_end) { from=page;  from_end=page_end; }
       if (!(*key++ = *from++))
         continue;                               /* Null part */
     }
-    if (keyseg->flag & (HA_VAR_LENGTH | HA_BLOB_PART | HA_SPACE_PACK))
+    if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART | HA_SPACE_PACK))
     {
-      /* Get length of dynamic length key part */
+      /* If prefix is used up, switch to rest. */
       if (from == from_end) { from=page;  from_end=page_end; }
+      /* Get length of dynamic length key part */
       if ((length= (*key++ = *from++)) == 255)
       {
+        /* If prefix is used up, switch to rest. */
         if (from == from_end) { from=page;  from_end=page_end; }
         length= (uint) ((*key++ = *from++)) << 8;
+        /* If prefix is used up, switch to rest. */
         if (from == from_end) { from=page;  from_end=page_end; }
         length+= (uint) ((*key++ = *from++));
       }
@@ -982,20 +1004,34 @@ uint _mi_get_binary_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
     key+=length;
     from+=length;
   }
+  /*
+    Last segment (type == 0) contains length of data pointer.
+    If we have mixed key blocks with data pointer and key block pointer,
+    we have to copy both.
+  */
   length=keyseg->length+nod_flag;
   if ((tmp=(uint) (from_end-from)) <= length)
   {
+    /* Remaining length is less or equal max possible length. */
     memcpy(key+tmp,page,length-tmp);            /* Get last part of key */
     *page_pos= page+length-tmp;
   }
   else
   {
+    /*
+      Remaining length is greater than max possible length.
+      This can happen only if we switched to the new key bytes already.
+      'page_end' is calculated with MI_MAX_KEY_BUFF. So it can be far
+      behind the real end of the key.
+    */
     if (from_end != page_end)
     {
       DBUG_PRINT("error",("Error when unpacking key"));
+      mi_print_error(keyinfo->share, HA_ERR_CRASHED);
       my_errno=HA_ERR_CRASHED;
       DBUG_RETURN(0);                                 /* Error */
     }
+    /* Copy data pointer and, if appropriate, key block pointer. */
     memcpy((byte*) key,(byte*) from,(size_t) length);
     *page_pos= from+length;
   }
@@ -1027,6 +1063,7 @@ uchar *_mi_get_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
       *return_key_length=(*keyinfo->get_key)(keyinfo,nod_flag,&page,key);
       if (*return_key_length == 0)
       {
+        mi_print_error(info->s, HA_ERR_CRASHED);
         my_errno=HA_ERR_CRASHED;
         DBUG_RETURN(0);
       }
@@ -1065,6 +1102,7 @@ static my_bool _mi_get_prev_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
       *return_key_length=(*keyinfo->get_key)(keyinfo,nod_flag,&page,key);
       if (*return_key_length == 0)
       {
+        mi_print_error(info->s, HA_ERR_CRASHED);
         my_errno=HA_ERR_CRASHED;
         DBUG_RETURN(1);
       }
@@ -1106,6 +1144,7 @@ uchar *_mi_get_last_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
       {
         DBUG_PRINT("error",("Couldn't find last key:  page: %lx",
                             (long) page));
+        mi_print_error(info->s, HA_ERR_CRASHED);
         my_errno=HA_ERR_CRASHED;
         DBUG_RETURN(0);
       }
@@ -1133,7 +1172,7 @@ uint _mi_keylength(MI_KEYDEF *keyinfo, register uchar *key)
     if (keyseg->flag & HA_NULL_PART)
       if (!*key++)
         continue;
-    if (keyseg->flag & (HA_SPACE_PACK | HA_BLOB_PART | HA_VAR_LENGTH))
+    if (keyseg->flag & (HA_SPACE_PACK | HA_BLOB_PART | HA_VAR_LENGTH_PART))
     {
       uint length;
       get_key_length(length,key);
@@ -1165,7 +1204,7 @@ uint _mi_keylength_part(MI_KEYDEF *keyinfo, register uchar *key,
     if (keyseg->flag & HA_NULL_PART)
       if (!*key++)
         continue;
-    if (keyseg->flag & (HA_SPACE_PACK | HA_BLOB_PART | HA_VAR_LENGTH))
+    if (keyseg->flag & (HA_SPACE_PACK | HA_BLOB_PART | HA_VAR_LENGTH_PART))
     {
       uint length;
       get_key_length(length,key);
@@ -1297,8 +1336,10 @@ int _mi_search_first(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     page=info->buff+2+nod_flag;
   } while ((pos=_mi_kpos(nod_flag,page)) != HA_OFFSET_ERROR);
 
-  info->lastkey_length=(*keyinfo->get_key)(keyinfo,nod_flag,&page,
-                                           info->lastkey);
+  if (!(info->lastkey_length=(*keyinfo->get_key)(keyinfo,nod_flag,&page,
+                                                 info->lastkey)))
+    DBUG_RETURN(-1);                            /* Crashed */
+
   info->int_keypos=page; info->int_maxpos=info->buff+mi_getint(info->buff)-1;
   info->int_nod_flag=nod_flag;
   info->int_keytree_version=keyinfo->version;
@@ -1433,7 +1474,8 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
   sort_order=0;
   if ((keyinfo->flag & HA_FULLTEXT) &&
       ((keyseg->type == HA_KEYTYPE_TEXT) ||
-       (keyseg->type == HA_KEYTYPE_VARTEXT)) &&
+       (keyseg->type == HA_KEYTYPE_VARTEXT1) ||
+       (keyseg->type == HA_KEYTYPE_VARTEXT2)) &&
       !use_strnxfrm(keyseg->charset))
     sort_order=keyseg->charset->sort_order;
 

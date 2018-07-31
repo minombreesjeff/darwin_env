@@ -16,9 +16,39 @@ Created 3/26/1996 Heikki Tuuri
 #include "que0types.h"
 #include "mem0mem.h"
 #include "read0types.h"
+#include "dict0types.h"
+#include "trx0xa.h"
 
 extern ulint	trx_n_mysql_transactions;
 
+/*****************************************************************
+Resets the new record lock info in a transaction struct. */
+UNIV_INLINE
+void
+trx_reset_new_rec_lock_info(
+/*========================*/
+	trx_t*	trx);	/* in: transaction struct */
+/*****************************************************************
+Registers that we have set a new record lock on an index. We only have space
+to store 2 indexes! If this is called to store more than 2 indexes after
+trx_reset_new_rec_lock_info(), then this function does nothing. */
+UNIV_INLINE
+void
+trx_register_new_rec_lock(
+/*======================*/
+	trx_t*		trx,	/* in: transaction struct */
+	dict_index_t*	index);	/* in: trx sets a new record lock on this
+				index */
+/*****************************************************************
+Checks if trx has set a new record lock on an index. */
+UNIV_INLINE
+ibool
+trx_new_rec_locks_contain(
+/*======================*/
+				/* out: TRUE if trx has set a new record lock
+				on index */
+	trx_t*		trx,	/* in: transaction struct */
+	dict_index_t*	index);	/* in: index */
 /************************************************************************
 Releases the search latch if trx has reserved it. */
 
@@ -26,6 +56,22 @@ void
 trx_search_latch_release_if_reserved(
 /*=================================*/
         trx_t*     trx); /* in: transaction */
+/**********************************************************************
+Set detailed error message for the transaction. */
+void
+trx_set_detailed_error(
+/*===================*/
+	trx_t*		trx,	/* in: transaction struct */
+	const char*	msg);	/* in: detailed error message */
+/*****************************************************************
+Set detailed error message for the transaction from a file. Note that the
+file is rewinded before reading from it. */
+
+void
+trx_set_detailed_error_from_file(
+/*=============================*/
+	trx_t*	trx,	/* in: transaction struct */
+	FILE*	file);	/* in: file to read message from */
 /********************************************************************
 Retrieves the error_info field from a trx. */
 
@@ -157,6 +203,32 @@ trx_commit_for_mysql(
 			/* out: 0 or error number */
 	trx_t*	trx);	/* in: trx handle */
 /**************************************************************************
+Does the transaction prepare for MySQL. */
+
+ulint
+trx_prepare_for_mysql(
+/*=================*/
+			/* out: 0 or error number */
+	trx_t*	trx);	/* in: trx handle */
+/**************************************************************************
+This function is used to find number of prepared transactions and
+their transaction objects for a recovery. */
+
+int
+trx_recover_for_mysql(
+/*==================*/
+				/* out: number of prepared transactions */
+	XID*    xid_list, 	/* in/out: prepared transactions */
+	ulint	len);		/* in: number of slots in xid_list */
+/***********************************************************************
+This function is used to find one X/Open XA distributed transaction
+which is in the prepared state */
+trx_t *
+trx_get_trx_by_xid(
+/*===============*/
+			/* out: trx or NULL */
+	XID*	xid);	/*  in: X/Open XA transaction identification */
+/**************************************************************************
 If required, flushes the log to disk if we called trx_commit_for_mysql()
 with trx->flush_log_later == TRUE. */
 
@@ -273,17 +345,33 @@ trx_commit_step(
 /*============*/
 				/* out: query thread to run next, or NULL */
 	que_thr_t*	thr);	/* in: query thread */
+
 /**************************************************************************
-Prints info about a transaction to the standard output. The caller must
-own the kernel mutex and must have called
-innobase_mysql_prepare_print_arbitrary_thd(), unless he knows that MySQL or
-InnoDB cannot meanwhile change the info printed here. */
+Prints info about a transaction to the given file. The caller must own the
+kernel mutex and must have called
+innobase_mysql_prepare_print_arbitrary_thd(), unless he knows that MySQL
+or InnoDB cannot meanwhile change the info printed here. */
 
 void
 trx_print(
 /*======*/
-	FILE*	f,	/* in: output stream */
+	FILE*	f,		/* in: output stream */
+	trx_t*	trx,		/* in: transaction */
+	uint	max_query_len);	/* in: max query length to print, or 0 to
+				   use the default max length */
+
+#ifndef UNIV_HOTBACKUP
+/**************************************************************************
+Determines if the currently running transaction has been interrupted. */
+
+ibool
+trx_is_interrupted(
+/*===============*/
+			/* out: TRUE if interrupted */
 	trx_t*	trx);	/* in: transaction */
+#else /* !UNIV_HOTBACKUP */
+#define trx_is_interrupted(trx) FALSE
+#endif /* !UNIV_HOTBACKUP */
 
 
 /* Signal to a transaction */
@@ -339,6 +427,14 @@ struct trx_struct{
 					if we can use the insert buffer for
 					them, we set this FALSE */
 	dulint		id;		/* transaction id */
+	XID		xid;		/* X/Open XA transaction 
+					identification to identify a 
+					transaction branch */
+	ibool		support_xa;	/* normally we do the XA two-phase
+					commit steps, but by setting this to
+					FALSE, one can save CPU time and about
+					150 bytes in the undo log size as then
+					we skip XA steps */
 	dulint		no;		/* transaction serialization number ==
 					max trx id when the transaction is 
 					moved to COMMITTED_IN_MEMORY state */
@@ -355,12 +451,17 @@ struct trx_struct{
 	dulint		commit_lsn;	/* lsn at the time of the commit */
 	ibool		dict_operation;	/* TRUE if the trx is used to create
 					a table, create an index, or drop a
-					table */
+					table.  This is a hint that the table
+					may need to be dropped in crash
+					recovery. */
 	dulint		table_id;	/* table id if the preceding field is
 					TRUE */
 	/*------------------------------*/
-        void*           mysql_thd;      /* MySQL thread handle corresponding
-                                        to this trx, or NULL */
+	int		active_trans;	/* 1 - if a transaction in MySQL
+					is active. 2 - if prepare_commit_mutex
+                                        was taken */
+	void*           mysql_thd;      /* MySQL thread handle corresponding
+					to this trx, or NULL */
 	char**		mysql_query_str;/* pointer to the field in mysqld_thd
 					which contains the pointer to the
 					current SQL query string */
@@ -442,9 +543,18 @@ struct trx_struct{
 	lock_t*		auto_inc_lock;	/* possible auto-inc lock reserved by
 					the transaction; note that it is also
 					in the lock list trx_locks */
-	ulint		n_lock_table_exp;/* number of explicit table locks
-					(LOCK TABLES) reserved by the
-					transaction, stored in trx_locks */
+	dict_index_t*	new_rec_locks[2];/* these are normally NULL; if
+					srv_locks_unsafe_for_binlog is TRUE,
+					in a cursor search, if we set a new
+					record lock on an index, this is set
+					to point to the index; this is
+					used in releasing the locks under the
+					cursors if we are performing an UPDATE
+					and we determine after retrieving
+					the row that it does not need to be
+					locked; thus, these can be used to
+					implement a 'mini-rollback' that
+					releases the latest record locks */
 	UT_LIST_NODE_T(trx_t)
 			trx_list;	/* list of transactions */
 	UT_LIST_NODE_T(trx_t)
@@ -511,8 +621,18 @@ struct trx_struct{
 	UT_LIST_BASE_NODE_T(lock_t) 
 			trx_locks;	/* locks reserved by the transaction */
 	/*------------------------------*/
-	mem_heap_t*	read_view_heap;	/* memory heap for the read view */
-	read_view_t*	read_view;	/* consistent read view or NULL */
+	mem_heap_t*	global_read_view_heap;	
+					/* memory heap for the global read 
+					view */
+	read_view_t*	global_read_view;
+					/* consistent read view associated
+					to a transaction or NULL */
+	read_view_t*	read_view;	/* consistent read view used in the
+					transaction or NULL, this read view
+					if defined can be normal read view 
+					associated to a transaction (i.e. 
+					same as global_read_view) or read view
+					associated to a cursor */
 	/*------------------------------*/
 	UT_LIST_BASE_NODE_T(trx_named_savept_t) 
 			trx_savepoints;	/* savepoints set with SAVEPOINT ...,
@@ -545,6 +665,9 @@ struct trx_struct{
 	trx_undo_arr_t*	undo_no_arr;	/* array of undo numbers of undo log
 					records which are currently processed
 					by a rollback operation */
+	/*------------------------------*/
+	char detailed_error[256];	/* detailed error message for last
+					error, or empty. */
 };
 
 #define TRX_MAX_N_THREADS	32	/* maximum number of concurrent
@@ -560,6 +683,7 @@ struct trx_struct{
 #define	TRX_NOT_STARTED		1
 #define	TRX_ACTIVE		2
 #define	TRX_COMMITTED_IN_MEMORY	3
+#define	TRX_PREPARED		4	/* Support for 2PC/XA */
 
 /* Transaction execution states when trx state is TRX_ACTIVE */
 #define TRX_QUE_RUNNING		1	/* transaction is running */

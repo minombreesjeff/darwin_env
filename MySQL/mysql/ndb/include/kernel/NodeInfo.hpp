@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,6 +40,7 @@ public:
   Uint32 m_type;          ///< Node type
   Uint32 m_connectCount;  ///< No of times connected
   bool   m_connected;     ///< Node is connected
+  Uint32 m_heartbeat_cnt; ///< Missed heartbeats
   
   friend NdbOut & operator<<(NdbOut&, const NodeInfo&); 
 };
@@ -52,6 +52,7 @@ NodeInfo::NodeInfo(){
   m_signalVersion = 0;
   m_type = INVALID;
   m_connectCount = 0;
+  m_heartbeat_cnt= 0;
 }
 
 inline

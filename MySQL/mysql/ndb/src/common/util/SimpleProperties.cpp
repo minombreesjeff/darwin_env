@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,6 +36,29 @@ SimpleProperties::Writer::add(Uint16 key, Uint32 value){
 }
 
 bool
+SimpleProperties::Writer::add(const char * value, int len){
+  const Uint32 valLen = (len + 3) / 4;
+
+  if ((len % 4) == 0)
+    return putWords((Uint32*)value, valLen);
+
+  const Uint32 putLen= valLen - 1;
+  if (!putWords((Uint32*)value, putLen))
+    return false;
+
+  // Special handling of last bytes
+  union {
+    Uint32 lastWord;
+    char lastBytes[4];
+  } tmp;
+  tmp.lastWord =0 ;
+  memcpy(tmp.lastBytes,
+         value + putLen*4,
+         len - putLen*4);
+  return putWord(tmp.lastWord);
+}
+
+bool
 SimpleProperties::Writer::add(Uint16 key, const char * value){
   Uint32 head = StringValue;
   head <<= 16;
@@ -46,9 +68,9 @@ SimpleProperties::Writer::add(Uint16 key, const char * value){
   Uint32 strLen = strlen(value) + 1; // Including NULL-byte
   if(!putWord(htonl(strLen)))
     return false;
-  
-  const Uint32 valLen = (strLen + 3) / 4;
-  return putWords((Uint32*)value, valLen);
+
+  return add(value, (int)strLen);
+
 }
 
 bool
@@ -60,9 +82,8 @@ SimpleProperties::Writer::add(Uint16 key, const void* value, int len){
     return false;
   if(!putWord(htonl(len)))
     return false;
-  
-  const Uint32 valLen = (len + 3) / 4;
-  return putWords((Uint32*)value, valLen);
+
+  return add((const char*)value, len);
 }
 
 SimpleProperties::Reader::Reader(){
@@ -391,6 +412,7 @@ bool
 UtilBufferWriter::putWords(const Uint32 * src, Uint32 len){
   return (m_buf.append(src, 4 * len) == 0);
 }
+
 
 Uint32
 UtilBufferWriter::getWordsUsed() const { return m_buf.length() / 4;}

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,6 +33,7 @@ struct ReceiveBuffer {
   Uint32 sizeOfData;        // In bytes
   Uint32 sizeOfBuffer;
   
+  ReceiveBuffer() {}
   bool init(int bytes);
   void destroy();
   
@@ -49,9 +49,11 @@ private:
 		  int sendBufferSize, int maxReceiveSize,
 		  const char *lHostName,
 		  const char *rHostName, 
-		  int r_port, 
+		  int r_port,
+		  bool isMgmConnection,
 		  NodeId lHostId,
 		  NodeId rHostId,
+		  NodeId serverNodeId,
 		  bool checksum, bool signalId,
 		  Uint32 reportFreq = 4096);
   
@@ -100,6 +102,10 @@ private:
   virtual void updateReceiveDataPtr(Uint32 bytesRead);
 
   virtual Uint32 get_free_buffer() const;
+
+  inline bool hasReceiveData () const {
+    return receiveBuffer.sizeOfData > 0;
+  }
 protected:
   /**
    * Setup client/server and perform connect/accept

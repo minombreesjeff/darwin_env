@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -146,7 +145,30 @@ enum ha_extra_function {
     On-the-fly switching between unique and non-unique key inserting.
   */
   HA_EXTRA_CHANGE_KEY_TO_UNIQUE,
-  HA_EXTRA_CHANGE_KEY_TO_DUP
+  HA_EXTRA_CHANGE_KEY_TO_DUP,
+  /*
+    When using HA_EXTRA_KEYREAD, overwrite only key member fields and keep 
+    other fields intact. When this is off (by default) InnoDB will use memcpy
+    to overwrite entire row.
+  */
+  HA_EXTRA_KEYREAD_PRESERVE_FIELDS,
+  /*
+    Informs handler that write_row() which tries to insert new row into the
+    table and encounters some already existing row with same primary/unique
+    key can replace old row with new row instead of reporting error (basically
+    it informs handler that we do REPLACE instead of simple INSERT).
+    Off by default.
+  */
+  HA_EXTRA_WRITE_CAN_REPLACE,
+  HA_EXTRA_WRITE_CANNOT_REPLACE,
+  /*
+    Inform handler that delete_row()/update_row() cannot batch deletes/updates
+    and should perform them immediately. This may be needed when table has 
+    AFTER DELETE/UPDATE triggers which access to subject table.
+    These flags are reset by the handler::extra(HA_EXTRA_RESET) call.
+  */
+  HA_EXTRA_DELETE_CANNOT_BATCH,
+  HA_EXTRA_UPDATE_CANNOT_BATCH
 };
 
 	/* The following is parameter to ha_panic() */
@@ -175,8 +197,13 @@ enum ha_base_keytype {
   HA_KEYTYPE_INT24=12,
   HA_KEYTYPE_UINT24=13,
   HA_KEYTYPE_INT8=14,
-  HA_KEYTYPE_VARTEXT=15,		/* Key is sorted as letters */
-  HA_KEYTYPE_VARBINARY=16		/* Key is sorted as unsigned chars */
+  /* Varchar (0-255 bytes) with length packed with 1 byte */
+  HA_KEYTYPE_VARTEXT1=15,               /* Key is sorted as letters */
+  HA_KEYTYPE_VARBINARY1=16,             /* Key is sorted as unsigned chars */
+  /* Varchar (0-65535 bytes) with length packed with 2 bytes */
+  HA_KEYTYPE_VARTEXT2=17,		/* Key is sorted as letters */
+  HA_KEYTYPE_VARBINARY2=18,		/* Key is sorted as unsigned chars */
+  HA_KEYTYPE_BIT=19
 };
 
 #define HA_MAX_KEYTYPE	31		/* Must be log2-1 */
@@ -204,23 +231,34 @@ enum ha_base_keytype {
 /* poor old NISAM has 8-bit flags :-( */
 #define HA_SORT_ALLOWS_SAME	 128	/* Intern bit when sorting records */
 #endif
+#if MYSQL_VERSION_ID < 0x50200
 /*
   Key has a part that can have end space.  If this is an unique key
   we have to handle it differently from other unique keys as we can find
-  many matching rows for one key (becaue end space are not compared)
+  many matching rows for one key (because end space are not compared)
 */
-#define HA_END_SPACE_KEY	4096
+#define HA_END_SPACE_KEY      0 /* was: 4096 */
+#else
+#error HA_END_SPACE_KEY is obsolete, please remove it
+#endif
+
 
 	/* These flags can be added to key-seg-flag */
 
 #define HA_SPACE_PACK		 1	/* Pack space in key-seg */
 #define HA_PART_KEY_SEG		 4	/* Used by MySQL for part-key-cols */
-#define HA_VAR_LENGTH		 8
+#define HA_VAR_LENGTH_PART	 8
 #define HA_NULL_PART		 16
 #define HA_BLOB_PART		 32
 #define HA_SWAP_KEY		 64
 #define HA_REVERSE_SORT		 128	/* Sort key in reverse order */
 #define HA_NO_SORT               256 /* do not bother sorting on this keyseg */
+/*
+  End space in unique/varchar are considered equal. (Like 'a' and 'a ')
+  Only needed for internal temporary tables.
+*/
+#define HA_END_SPACE_ARE_EQUAL	 512
+#define HA_BIT_PART		1024
 
 	/* optionbits for database */
 #define HA_OPTION_PACK_RECORD		1
@@ -231,7 +269,7 @@ enum ha_base_keytype {
 #define HA_OPTION_CHECKSUM		32
 #define HA_OPTION_DELAY_KEY_WRITE	64
 #define HA_OPTION_NO_PACK_KEYS		128  /* Reserved for MySQL */
-#define HA_OPTION_CREATE_FROM_ENGINE	256
+#define HA_OPTION_CREATE_FROM_ENGINE    256
 #define HA_OPTION_TEMP_COMPRESS_RECORD	((uint) 16384)	/* set by isamchk */
 #define HA_OPTION_READ_ONLY_DATA	((uint) 32768)	/* Set by isamchk */
 
@@ -243,19 +281,55 @@ enum ha_base_keytype {
 #define HA_CREATE_CHECKSUM	8
 #define HA_CREATE_DELAY_KEY_WRITE 64
 
-	/* Bits in flag to _status */
+/*
+  The following flags (OR-ed) are passed to handler::info() method.
+  The method copies misc handler information out of the storage engine
+  to data structures accessible from MySQL
 
-#define HA_STATUS_POS		1		/* Return position */
-#define HA_STATUS_NO_LOCK	2		/* Don't use external lock */
-#define HA_STATUS_TIME		4		/* Return update time */
-#define HA_STATUS_CONST		8		/* Return constants values */
-#define HA_STATUS_VARIABLE	16
-#define HA_STATUS_ERRKEY	32
-#define HA_STATUS_AUTO		64
+  Same flags are also passed down to mi_status, myrg_status, etc.
+*/
+
+/* this one is not used */
+#define HA_STATUS_POS            1
+/*
+  assuming the table keeps shared actual copy of the 'info' and
+  local, possibly outdated copy, the following flag means that
+  it should not try to get the actual data (locking the shared structure)
+  slightly outdated version will suffice
+*/
+#define HA_STATUS_NO_LOCK        2
+/* update the time of the last modification (in handler::update_time) */
+#define HA_STATUS_TIME           4
+/*
+  update the 'constant' part of the info:
+  handler::max_data_file_length, max_index_file_length, create_time
+  sortkey, ref_length, block_size, data_file_name, index_file_name.
+  handler::table->s->keys_in_use, keys_for_keyread, rec_per_key
+*/
+#define HA_STATUS_CONST          8
+/*
+  update the 'variable' part of the info:
+  handler::records, deleted, data_file_length, index_file_length,
+  delete_length, check_time, mean_rec_length
+*/
+#define HA_STATUS_VARIABLE      16
+/*
+  get the information about the key that caused last duplicate value error
+  update handler::errkey and handler::dupp_ref
+  see handler::get_dup_key()
+*/
+#define HA_STATUS_ERRKEY        32
+/*
+  update handler::auto_increment_value
+*/
+#define HA_STATUS_AUTO          64
 
 	/* Errorcodes given by functions */
 
 /* opt_sum_query() assumes these codes are > 1 */
+/* Do not add error numbers before HA_ERR_FIRST. */
+/* If necessary to add lower numbers, change HA_ERR_FIRST accordingly. */
+#define HA_ERR_FIRST            120 /*Copy first error nr.*/
 #define HA_ERR_KEY_NOT_FOUND	120	/* Didn't find key on read or update */
 #define HA_ERR_FOUND_DUPP_KEY	121	/* Dupplicate key on write */
 #define HA_ERR_RECORD_CHANGED	123	/* Uppdate with is recoverable */
@@ -292,6 +366,15 @@ enum ha_base_keytype {
 #define HA_ERR_TABLE_EXIST       156  /* The table existed in storage engine */
 #define HA_ERR_NO_CONNECTION     157  /* Could not connect to storage engine */
 #define HA_ERR_NULL_IN_SPATIAL   158  /* NULLs are not supported in spatial index */
+#define HA_ERR_TABLE_DEF_CHANGED 159  /* The table changed in storage engine */
+#define HA_ERR_TABLE_NEEDS_UPGRADE 160  /* The table changed in storage engine */
+#define HA_ERR_TABLE_READONLY    161  /* The table is not writable */
+#define HA_ERR_AUTOINC_READ_FAILED 162/* Failed to get the next autoinc value */
+#define HA_ERR_AUTOINC_ERANGE    163  /* Failed to set the row autoinc value */
+
+#define HA_ERR_LAST              163  /*Copy last error nr.*/
+/* Add error numbers before HA_ERR_LAST and change it accordingly. */
+#define HA_ERR_ERRORS            (HA_ERR_LAST - HA_ERR_FIRST + 1)
 
 	/* Other constants */
 
@@ -342,10 +425,12 @@ enum ha_base_keytype {
 #define HA_STATE_EXTEND_BLOCK	2048
 #define HA_STATE_RNEXT_SAME	4096	/* rnext_same occupied lastkey2 */
 
+/* myisampack expects no more than 32 field types. */
 enum en_fieldtype {
   FIELD_LAST=-1,FIELD_NORMAL,FIELD_SKIP_ENDSPACE,FIELD_SKIP_PRESPACE,
   FIELD_SKIP_ZERO,FIELD_BLOB,FIELD_CONSTANT,FIELD_INTERVALL,FIELD_ZERO,
-  FIELD_VARCHAR,FIELD_CHECK
+  FIELD_VARCHAR,FIELD_CHECK,
+  FIELD_enum_val_count
 };
 
 enum data_file_type {
@@ -354,12 +439,29 @@ enum data_file_type {
 
 /* For key ranges */
 
+#define NO_MIN_RANGE	1
+#define NO_MAX_RANGE	2
+#define NEAR_MIN	4
+#define NEAR_MAX	8
+#define UNIQUE_RANGE	16
+#define EQ_RANGE	32
+#define NULL_RANGE	64
+#define GEOM_FLAG      128
+
 typedef struct st_key_range
 {
   const byte *key;
   uint length;
   enum ha_rkey_function flag;
 } key_range;
+
+typedef struct st_key_multi_range
+{
+  key_range start_key;
+  key_range end_key;
+  char  *ptr;                 /* Free to use by caller (ptr to row etc) */
+  uint  range_flag;           /* key range flags see above */
+} KEY_MULTI_RANGE;
 
 
 /* For number of records */
@@ -379,5 +481,7 @@ typedef ulong		ha_rows;
 #else
 #define MAX_FILE_SIZE	LONGLONG_MAX
 #endif
+
+#define HA_VARCHAR_PACKLENGTH(field_length) ((field_length) < 256 ? 1 :2)
 
 #endif /* _my_base_h */

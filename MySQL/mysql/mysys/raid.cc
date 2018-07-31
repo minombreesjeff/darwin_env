@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -185,7 +184,7 @@ extern "C" {
   uint my_raid_write(File fd,const byte *Buffer, uint Count, myf MyFlags)
   {
     DBUG_ENTER("my_raid_write");
-    DBUG_PRINT("enter",("Fd: %d  Buffer: %lx  Count: %u  MyFlags: %d",
+    DBUG_PRINT("enter",("Fd: %d  Buffer: 0x%lx  Count: %u  MyFlags: %d",
 		      fd, Buffer, Count, MyFlags));
     if (is_raid(fd))
     {
@@ -198,7 +197,7 @@ extern "C" {
   uint my_raid_read(File fd, byte *Buffer, uint Count, myf MyFlags)
   {
     DBUG_ENTER("my_raid_read");
-    DBUG_PRINT("enter",("Fd: %d  Buffer: %lx  Count: %u  MyFlags: %d",
+    DBUG_PRINT("enter",("Fd: %d  Buffer: 0x%lx  Count: %u  MyFlags: %d",
 		      fd, Buffer, Count, MyFlags));
     if (is_raid(fd))
     {
@@ -212,8 +211,9 @@ extern "C" {
 		     myf MyFlags)
   {
     DBUG_ENTER("my_raid_pread");
-    DBUG_PRINT("enter",("Fd: %d  Buffer: %lx  Count: %u offset: %u  MyFlags: %d",
-		      Filedes, Buffer, Count, offset, MyFlags));
+    DBUG_PRINT("enter",
+               ("Fd: %d  Buffer: 0x%lx  Count: %u offset: %u  MyFlags: %d",
+                Filedes, Buffer, Count, offset, MyFlags));
      if (is_raid(Filedes))
      {
        assert(offset != MY_FILEPOS_ERROR);
@@ -231,8 +231,9 @@ extern "C" {
 		      my_off_t offset, myf MyFlags)
   {
     DBUG_ENTER("my_raid_pwrite");
-    DBUG_PRINT("enter",("Fd: %d  Buffer: %lx  Count: %u offset: %u  MyFlags: %d",
-		      Filedes, Buffer, Count, offset, MyFlags));
+    DBUG_PRINT("enter",
+               ("Fd: %d  Buffer: 0x%lx  Count: %u  offset: %u  MyFlags: %d",
+                Filedes, Buffer, Count, offset, MyFlags));
      if (is_raid(Filedes))
      {
        assert(offset != MY_FILEPOS_ERROR);
@@ -250,8 +251,8 @@ extern "C" {
 		   myf MyFlags)
   {
     DBUG_ENTER("my_raid_lock");
-    DBUG_PRINT("enter",("Fd: %d  start: %u  length: %u  MyFlags: %d",
-		      fd, start, length, MyFlags));
+    DBUG_PRINT("enter",("Fd: %d  start: %lu  length: %lu  MyFlags: %d",
+                        fd, (ulong) start, (ulong) length, MyFlags));
     if (my_disable_locking)
       DBUG_RETURN(0);
     if (is_raid(fd))
@@ -284,8 +285,8 @@ extern "C" {
   int my_raid_chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
   {
     DBUG_ENTER("my_raid_chsize");
-    DBUG_PRINT("enter",("Fd: %d  newlength: %u  MyFlags: %d",
-		      fd, newlength, MyFlags));
+    DBUG_PRINT("enter",("Fd: %d  newlength: %lu  MyFlags: %d",
+                        fd, (ulong) newlength, MyFlags));
    if (is_raid(fd))
    {
      RaidFd *raid= (*dynamic_element(&RaidFd::_raid_map,fd,RaidFd**));
@@ -413,7 +414,7 @@ RaidFd(uint raid_type, uint raid_chunks, ulong raid_chunksize)
    _fd_vector(0)
 {
   DBUG_ENTER("RaidFd::RaidFd");
-  DBUG_PRINT("enter",("RaidFd_type: %u  Disks: %u  Chunksize: %d",
+  DBUG_PRINT("enter",("RaidFd_type: %u  Disks: %u  Chunksize: %lu",
 		   raid_type, raid_chunks, raid_chunksize));
 
   /* TODO: Here we should add checks if the malloc fails */
@@ -622,7 +623,7 @@ Lock(int locktype, my_off_t start, my_off_t length, myf MyFlags)
 {
   DBUG_ENTER("RaidFd::Lock");
   DBUG_PRINT("enter",("locktype: %d  start: %lu  length: %lu  MyFlags: %d",
-		      locktype, start, length, MyFlags));
+		      locktype, (ulong) start, (ulong) length, MyFlags));
   my_off_t bufptr = start;
   // Loop until all data is locked
   while(length)
@@ -732,8 +733,8 @@ my_off_t RaidFd::
 Tell(myf MyFlags)
 {
   DBUG_ENTER("RaidFd::Tell");
-  DBUG_PRINT("enter",("MyFlags: %d _position %d",
-		   MyFlags,_position));
+  DBUG_PRINT("enter",("MyFlags: %d  _position: %lu",
+                      MyFlags, (ulong) _position));
   DBUG_RETURN(_position);
 }
 
@@ -741,8 +742,8 @@ int RaidFd::
 Chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
 {
   DBUG_ENTER("RaidFd::Chsize");
-  DBUG_PRINT("enter",("Fd: %d, newlength: %d, MyFlags: %d",
-		   fd, newlength,MyFlags));
+  DBUG_PRINT("enter",("Fd: %d  newlength: %lu  MyFlags: %d",
+                      fd, (ulong) newlength, MyFlags));
   _position = newlength;
   Calculate();
   uint _rounds = _total_block / _raid_chunks;	     // INT() assumed

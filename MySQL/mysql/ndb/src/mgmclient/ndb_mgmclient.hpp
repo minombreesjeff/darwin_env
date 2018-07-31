@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,8 +22,8 @@ class Ndb_mgmclient
 public:
   Ndb_mgmclient(const char*,int verbose=0);
   ~Ndb_mgmclient();
-  int execute(const char *_line, int _try_reconnect=-1, int *error= 0);
-  int execute(int argc, char** argv, int _try_reconnect=-1, int *error= 0);
+  int execute(const char *_line, int _try_reconnect=-1, bool interactive=1, int *error= 0);
+  int execute(int argc, char** argv, int _try_reconnect=-1, bool interactive=1, int *error= 0);
   int disconnect();
 private:
   CommandInterpreter *m_cmd;

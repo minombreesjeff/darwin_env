@@ -30,14 +30,16 @@ rm -f */*.linux
 # build	tools only
 make clean
 make
+
+# Create mysql_version.h which was deleted my previous step
+./config.status include/mysql_version.h
+                                                                                                                             
 (cd dbug; make libdbug.a)
 (cd strings; make libmystrings.a)
 (cd mysys; make libmysys.a)
 (cd heap; make libheap.a)
 (cd vio; make libvio.a)
 (cd regex; make libregex.a)
-(cd isam; make libnisam.a)
-(cd merge; make libmerge.a)
 (cd myisam; make libmyisam.a)
 (cd myisammrg; make libmyisammrg.a)
 (cd extra; make comp_err)
@@ -58,3 +60,5 @@ cp libmysql/conf_to_src libmysql/conf_to_src.linux
 cp sql/gen_lex_hash sql/gen_lex_hash.linux
 cp strings/conf_to_src strings/conf_to_src.linux
 
+# Delete mysql_version.h
+rm -f include/mysql_version.h

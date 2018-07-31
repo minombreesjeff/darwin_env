@@ -20,17 +20,19 @@ SET CHARACTER SET koi8r;
 # which contains 0x20 in the high byte.
 #
 
-CREATE TABLE t1 (word VARCHAR(64) CHARACTER SET ucs2);
-INSERT INTO t1 VALUES (_koi8r'ò'), (X'2004');
+CREATE TABLE t1 (word VARCHAR(64) CHARACTER SET ucs2, word2 CHAR(64) CHARACTER SET ucs2);
+INSERT INTO t1 VALUES (_koi8r'ò',_koi8r'ò'), (X'2004',X'2004');
 SELECT hex(word) FROM t1 ORDER BY word;
+SELECT hex(word2) FROM t1 ORDER BY word2;
 DELETE FROM t1;
 
 #
 # Check that real spaces are correctly trimmed.
 #
 
-INSERT INTO t1 VALUES (X'042000200020'), (X'200400200020');
+INSERT INTO t1 VALUES (X'042000200020',X'042000200020'), (X'200400200020', X'200400200020');
 SELECT hex(word) FROM t1 ORDER BY word;
+SELECT hex(word2) FROM t1 ORDER BY word2;
 DROP TABLE t1;
 
 #
@@ -52,7 +54,6 @@ RPAD(_ucs2 X'0420',10,_ucs2 X'0421') r;
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
 
-
 #
 # BUG3946
 #
@@ -61,6 +62,7 @@ create table t2(f1 Char(30));
 insert into t2 values ("103000"), ("22720000"), ("3401200"), ("78000");
 select lpad(f1, 12, "-o-/") from t2;
 drop table t2;
+
 ######################################################
 #
 # Test of like
@@ -296,7 +298,7 @@ INSERT INTO t1 VALUES (0xA),(0xAA),(0xAAA),(0xAAAA),(0xAAAAA);
 SELECT HEX(a) FROM t1;
 DROP TABLE t1;
 
--- the same should be also done with enum and set
+# the same should be also done with enum and set
 
 
 #
@@ -453,6 +455,23 @@ drop table t1;
 deallocate prepare stmt;
 
 #
+# Bug#22052 Trailing spaces are not removed from UNICODE fields in an index
+#
+create table t1 (
+  a char(10) unicode not null, 
+  index a (a)
+) engine=myisam;
+insert into t1 values (repeat(0x201f, 10));
+insert into t1 values (repeat(0x2020, 10));
+insert into t1 values (repeat(0x2021, 10));
+# make sure "index read" is used
+explain select hex(a) from t1 order by a;
+select hex(a) from t1 order by a;
+alter table t1 drop index a;
+select hex(a) from t1 order by a;
+drop table t1;
+
+#
 # Bug #20076: server crashes for a query with GROUP BY if MIN/MAX aggregation
 #             over a 'ucs2' field uses a temporary table 
 #
@@ -510,6 +529,17 @@ DROP TABLE t1,t2;
 select password(name) from bug20536;
 select old_password(name) from bug20536;
 
+# Disable test case as encrypt relies on 'crypt' function.
+# "decrypt" is noramlly tested in func_crypt.test which have a
+# "have_crypt.inc" test
+--disable_parsing
+# ENCRYPT relies on OS function crypt() which takes a NUL-terminated string; it
+# doesn't return good results for strings with embedded 0 bytes.  It won't be
+# fixed unless we choose to re-implement the crypt() function ourselves to take
+# an extra size_t string_length argument.
+select encrypt(name, 'SALT') from bug20536;
+--enable_parsing
+
 # QUOTE doesn't work with UCS2 data.  It would require a total rewrite
 # of Item_func_quote::val_str(), which isn't worthwhile until UCS2 is
 # supported fully as a client character set.
@@ -518,3 +548,50 @@ select quote(name) from bug20536;
 drop table bug20536;
 
 --echo End of 4.1 tests
+
+#
+# Conversion from an UCS2 string to a decimal column
+#
+CREATE TABLE t1 (a varchar(64) character set ucs2, b decimal(10,3));
+INSERT INTO t1 VALUES ("1.1", 0), ("2.1", 0);
+update t1 set b=a;
+SELECT * FROM t1;
+DROP TABLE t1;
+
+#
+# Bug#9442 Set parameter make query fail if column character set is UCS2
+#
+create table t1 (utext varchar(20) character set ucs2);
+insert into t1 values ("lily");
+insert into t1 values ("river");
+prepare stmt from 'select utext from t1 where utext like ?';
+set @param1='%%';
+execute stmt using @param1;
+execute stmt using @param1;
+select utext from t1 where utext like '%%';
+drop table t1;
+deallocate prepare stmt;
+
+#
+# Bug#22638 SOUNDEX broken for international characters
+#
+set names latin1;
+set character_set_connection=ucs2;
+select soundex(''),soundex('he'),soundex('hello all folks'),soundex('#3556 in bugdb');
+select hex(soundex('')),hex(soundex('he')),hex(soundex('hello all folks')),hex(soundex('#3556 in bugdb'));
+select 'mood' sounds like 'mud';
+# Cyrillic A, BE, VE
+select hex(soundex(_ucs2 0x041004110412));
+# Make sure that "U+00BF INVERTED QUESTION MARK" is not considered as letter
+select hex(soundex(_ucs2 0x00BF00C0));
+set names latin1;
+
+#
+# Bug #14290: character_maximum_length for text fields
+#
+create table t1(a blob, b text charset utf8, c text charset ucs2);
+select data_type, character_octet_length, character_maximum_length
+  from information_schema.columns where table_name='t1';
+drop table t1;
+
+--echo End of 5.0 tests

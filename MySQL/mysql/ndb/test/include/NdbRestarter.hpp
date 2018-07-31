@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -62,9 +61,13 @@ public:
   int dumpStateAllNodes(int * _args, int _num_args);
 
   int getMasterNodeId();
+  int getNextMasterNodeId(int nodeId);
+  int getNodeGroup(int nodeId);
   int getRandomNodeSameNodeGroup(int nodeId, int randomNumber);
   int getRandomNodeOtherNodeGroup(int nodeId, int randomNumber);
   int getRandomNotMasterNodeId(int randomNumber);
+  
+  NdbMgmHandle handle;
   
 protected:
 
@@ -88,7 +91,6 @@ protected:
   
   bool connected;
   BaseString addr;
-  NdbMgmHandle handle;
   ndb_mgm_configuration * m_config;
 protected:
   ndb_mgm_configuration * getConfig();

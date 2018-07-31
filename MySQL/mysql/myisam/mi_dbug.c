@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -131,9 +130,21 @@ void _mi_print_key(FILE *stream, register HA_KEYSEG *keyseg,
       key=end;
       break;
     }
+    case HA_KEYTYPE_BIT:
+    {
+      uint i;
+      fputs("0x",stream);
+      for (i=0 ; i < keyseg->length ; i++)
+        fprintf(stream, "%02x", (uint) *key++);
+      key= end;
+      break;
+    }
+
 #endif
-    case HA_KEYTYPE_VARTEXT:			/* VARCHAR and TEXT */
-    case HA_KEYTYPE_VARBINARY:			/* VARBINARY and BLOB */
+    case HA_KEYTYPE_VARTEXT1:                   /* VARCHAR and TEXT */
+    case HA_KEYTYPE_VARTEXT2:                   /* VARCHAR and TEXT */
+    case HA_KEYTYPE_VARBINARY1:                 /* VARBINARY and BLOB */
+    case HA_KEYTYPE_VARBINARY2:                 /* VARBINARY and BLOB */
     {
       uint tmp_length;
       get_key_length(tmp_length,key);

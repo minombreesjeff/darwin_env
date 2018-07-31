@@ -41,13 +41,13 @@ explain extended select database(), user();
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Note	1003	select sql_no_cache database() AS `database()`,user() AS `user()`
+Note	1003	select database() AS `database()`,user() AS `user()`
 create table t1 (version char(40)) select database(), user(), version() as 'version';
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `database()` char(34) character set utf8 default NULL,
-  `user()` char(77) character set utf8 NOT NULL default '',
+  `database()` varchar(34) character set utf8 default NULL,
+  `user()` varchar(77) character set utf8 NOT NULL default '',
   `version` char(40) default NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
@@ -61,8 +61,8 @@ create table t1 select charset(_utf8'a'), collation(_utf8'a');
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `charset(_utf8'a')` char(64) character set utf8 NOT NULL default '',
-  `collation(_utf8'a')` char(64) character set utf8 NOT NULL default ''
+  `charset(_utf8'a')` varchar(64) character set utf8 NOT NULL default '',
+  `collation(_utf8'a')` varchar(64) character set utf8 NOT NULL default ''
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select TRUE,FALSE,NULL;

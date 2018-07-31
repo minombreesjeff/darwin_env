@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,11 +22,13 @@
 #include <NdbDictionary.hpp>
 #include <NDBT_Table.hpp>
 
+typedef int (* NDBT_CreateTableHook)(Ndb*, NdbDictionary::Table&, int when);
+
 class NDBT_Tables {
 public:
-  
+
   static int createTable(Ndb* pNdb, const char* _name, bool _temp = false, 
-			 bool existsOK = false);
+			 bool existsOK = false, NDBT_CreateTableHook = 0);
   static int createAllTables(Ndb* pNdb, bool _temp, bool existsOK = false);
   static int createAllTables(Ndb* pNdb);
 
@@ -39,6 +40,8 @@ public:
   static const NdbDictionary::Table* getTable(const char* _nam);
   static const NdbDictionary::Table* getTable(int _num);
   static int getNumTables();
+
+  static const char** getIndexes(const char* table);
 
 private:
   static const NdbDictionary::Table* tableWithPkSize(const char* _nam, Uint32 pkSize);

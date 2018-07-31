@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +25,7 @@
 #include <pc.hpp>
 #include <ArrayList.hpp>
 #include <DLHashTable.hpp>
+#include <DLFifoList.hpp>
 #include <CArray.hpp>
 #include <KeyTable2.hpp>
 #include <SimulatedBlock.hpp>
@@ -45,11 +45,10 @@
 #include <signaldata/DropIndx.hpp>
 #include <signaldata/AlterIndx.hpp>
 #include <signaldata/BuildIndx.hpp>
-#include <signaldata/UtilPrepare.hpp>
-#include <signaldata/CreateEvnt.hpp>
 #include <signaldata/CreateTrig.hpp>
 #include <signaldata/DropTrig.hpp>
 #include <signaldata/AlterTrig.hpp>
+#include <signaldata/DictLock.hpp>
 #include "SchemaFile.hpp"
 #include <blocks/mutexes.hpp>
 #include <SafeCounter.hpp>
@@ -63,6 +62,7 @@
 /*--------------------------------------------------------------*/
 #define ZPACK_TABLE_INTO_PAGES 0
 #define ZSEND_GET_TAB_RESPONSE 3
+#define ZDICT_LOCK_POLL 4
 
 
 /*--------------------------------------------------------------*/
@@ -78,7 +78,8 @@
 /*--------------------------------------------------------------*/
 // Page constants
 /*--------------------------------------------------------------*/
-#define ZALLOCATE 1 //Variable number of page for NDBFS
+#define ZBAT_SCHEMA_FILE 0 //Variable number of page for NDBFS
+#define ZBAT_TABLE_FILE 1 //Variable number of page for NDBFS
 #define ZPAGE_HEADER_SIZE 32
 #define ZPOS_PAGE_SIZE 16
 #define ZPOS_CHECKSUM 17
@@ -92,7 +93,7 @@
 #define ZSIZE_OF_PAGES_IN_WORDS 8192
 #define ZLOG_SIZE_OF_PAGES_IN_WORDS 13
 #define ZMAX_PAGES_OF_TABLE_DEFINITION 8
-#define ZNUMBER_OF_PAGES (2 * ZMAX_PAGES_OF_TABLE_DEFINITION + 2)
+#define ZNUMBER_OF_PAGES (ZMAX_PAGES_OF_TABLE_DEFINITION + 1)
 #define ZNO_OF_FRAGRECORD 5
 
 /*--------------------------------------------------------------*/
@@ -130,6 +131,11 @@ public:
    * on disk.  Index trigger ids are volatile.
    */
   struct TableRecord : public MetaData::Table {
+    TableRecord() {}
+    Uint32 maxRowsLow;
+    Uint32 maxRowsHigh;
+    Uint32 minRowsLow;
+    Uint32 minRowsHigh;
     /****************************************************
      *    Support variables for table handling
      ****************************************************/
@@ -212,7 +218,9 @@ public:
       IL_CREATED_TC = 1 << 0    // created in TC
     };
     Uint32 indexLocal;
-
+    
+    Uint32 noOfNullBits;
+    
     inline bool equal(TableRecord & rec) const {
       return strcmp(tableName, rec.tableName) == 0;
     }
@@ -230,6 +238,11 @@ public:
     char frmData[MAX_FRM_DATA_SIZE];
 
     Uint32 fragmentCount;
+
+    /*
+     * Access rights to table during single user mode
+     */
+    Uint8 singleUserMode;
   };
 
   typedef Ptr<TableRecord> TableRecordPtr;
@@ -243,6 +256,7 @@ public:
    * attributes.  This is wrong but convenient.
    */
   struct AttributeRecord : public MetaData::Attribute {
+    AttributeRecord() {}
     union {    
     /** Pointer to the next attribute used by ArrayPool */
     Uint32 nextPool;
@@ -278,6 +292,7 @@ public:
    * trigger online creates the trigger in TC (if index) and LQH-TUP.
    */
   struct TriggerRecord {
+    TriggerRecord() {}
 
     /** Trigger state */
     enum TriggerState { 
@@ -426,6 +441,12 @@ public:
   typedef Ptr<PageRecord> PageRecordPtr;
   CArray<PageRecord> c_pageRecordArray;
 
+  struct SchemaPageRecord {
+    Uint32 word[NDB_SF_PAGE_SIZE_IN_WORDS];
+  };
+
+  CArray<SchemaPageRecord> c_schemaPageRecordArray;
+
   /**
    * A page for create index table signal.
    */
@@ -501,45 +522,6 @@ private:
 
   void execBACKUP_FRAGMENT_REQ(Signal*);
 
-  // Util signals used by Event code
-  void execUTIL_PREPARE_CONF(Signal* signal);
-  void execUTIL_PREPARE_REF (Signal* signal);
-  void execUTIL_EXECUTE_CONF(Signal* signal);
-  void execUTIL_EXECUTE_REF (Signal* signal);
-  void execUTIL_RELEASE_CONF(Signal* signal);
-  void execUTIL_RELEASE_REF (Signal* signal);
-
-
-  // Event signals from API
-  void execCREATE_EVNT_REQ (Signal* signal);
-  void execCREATE_EVNT_CONF(Signal* signal);
-  void execCREATE_EVNT_REF (Signal* signal);
-
-  void execDROP_EVNT_REQ (Signal* signal);
-
-  void execSUB_START_REQ (Signal* signal);
-  void execSUB_START_CONF (Signal* signal);
-  void execSUB_START_REF (Signal* signal);
-
-  void execSUB_STOP_REQ (Signal* signal);
-  void execSUB_STOP_CONF (Signal* signal);
-  void execSUB_STOP_REF (Signal* signal);
-
-  // Event signals from SUMA
-
-  void execCREATE_SUBID_CONF(Signal* signal);
-  void execCREATE_SUBID_REF (Signal* signal);
-
-  void execSUB_CREATE_CONF(Signal* signal);
-  void execSUB_CREATE_REF (Signal* signal);
-
-  void execSUB_SYNC_CONF(Signal* signal);
-  void execSUB_SYNC_REF (Signal* signal);
-
-  void execSUB_REMOVE_REQ(Signal* signal);
-  void execSUB_REMOVE_CONF(Signal* signal);
-  void execSUB_REMOVE_REF(Signal* signal);
-
   // Trigger signals
   void execCREATE_TRIG_REQ(Signal* signal);
   void execCREATE_TRIG_CONF(Signal* signal);
@@ -577,6 +559,9 @@ private:
   void execALTER_TAB_REF(Signal* signal);
   void execALTER_TAB_CONF(Signal* signal);
   bool check_ndb_versions() const;
+
+  void execDICT_LOCK_REQ(Signal* signal);
+  void execDICT_UNLOCK_ORD(Signal* signal);
 
   /*
    *  2.4 COMMON STORED VARIABLES
@@ -653,16 +638,20 @@ private:
   struct ReadSchemaRecord {
     /** Page Id of schema page */
     Uint32 pageId;
+    /** First page to read */
+    Uint32 firstPage;
+    /** Number of pages to read */
+    Uint32 noOfPages;
     /** State, indicates from where it was called */
     enum SchemaReadState {
       IDLE = 0,
-      INITIAL_READ = 1
+      INITIAL_READ_HEAD = 1,
+      INITIAL_READ = 2
     };
     SchemaReadState schemaReadState;
   };
   ReadSchemaRecord c_readSchemaRecord;
 
-private:
   /**
    * This record stores all the state needed 
    * when a schema file is being written to disk
@@ -670,6 +659,12 @@ private:
   struct WriteSchemaRecord {
     /** Page Id of schema page */
     Uint32 pageId;
+    /** Rewrite entire file */
+    Uint32 newFile;
+    /** First page to write */
+    Uint32 firstPage;
+    /** Number of pages to write */
+    Uint32 noOfPages;
     /** Schema Files Handled, local state variable */
     Uint32 noOfSchemaFilesHandled;
 
@@ -750,21 +745,33 @@ private:
    * Word 4: Currently zero
    ****************************************************************************/
   struct SchemaRecord {
-    /**    Schema page       */
+    /**    Schema file first page (0)   */
     Uint32 schemaPage;
 
-    /**    Old Schema page (used at node restart)   */
+    /**    Old Schema file first page (used at node restart)    */
     Uint32 oldSchemaPage;
     
     Callback m_callback;
   };
   SchemaRecord c_schemaRecord;
 
-  void initSchemaFile(SchemaFile *, Uint32 sz);
-  void computeChecksum(SchemaFile *);
-  bool validateChecksum(const SchemaFile *);
-  SchemaFile::TableEntry * getTableEntry(void * buf, Uint32 tableId, 
-					 bool allowTooBig = false);
+  /*
+   * Schema file, list of schema pages.  Use an array until a pool
+   * exists and NDBFS interface can use it.
+   */
+  struct XSchemaFile {
+    SchemaFile* schemaPage;
+    Uint32 noOfPages;
+  };
+  // 0-normal 1-old
+  XSchemaFile c_schemaFile[2];
+
+  void initSchemaFile(XSchemaFile *, Uint32 firstPage, Uint32 lastPage,
+                      bool initEntries);
+  void resizeSchemaFile(XSchemaFile * xsf, Uint32 noOfPages);
+  void computeChecksum(XSchemaFile *, Uint32 pageNo);
+  bool validateChecksum(const XSchemaFile *);
+  SchemaFile::TableEntry * getTableEntry(XSchemaFile *, Uint32 tableId);
 
   Uint32 computeChecksum(const Uint32 * src, Uint32 len);
 
@@ -786,12 +793,43 @@ private:
   // State variables
   /* ----------------------------------------------------------------------- */
   
+#ifndef ndb_dbdict_log_block_state
   enum BlockState {
     BS_IDLE = 0,
     BS_CREATE_TAB = 1,
     BS_BUSY = 2,
-    BS_NODE_FAILURE = 3
+    BS_NODE_FAILURE = 3,
+    BS_NODE_RESTART = 4
   };
+#else // quick hack to log changes
+  enum {
+    BS_IDLE = 0,
+    BS_CREATE_TAB = 1,
+    BS_BUSY = 2,
+    BS_NODE_FAILURE = 3,
+    BS_NODE_RESTART = 4
+  };
+  struct BlockState;
+  friend struct BlockState;
+  struct BlockState {
+    BlockState() :
+      m_value(BS_IDLE) {
+    }
+    BlockState(int value) :
+      m_value(value) {
+    }
+    operator int() const {
+      return m_value;
+    }
+    BlockState& operator=(const BlockState& bs) {
+      Dbdict* dict = (Dbdict*)globalData.getBlock(DBDICT);
+      dict->infoEvent("DICT: bs %d->%d", m_value, bs.m_value);
+      m_value = bs.m_value;
+      return *this;
+    }
+    int m_value;
+  };
+#endif
   BlockState c_blockState;
 
   struct PackTable {
@@ -834,6 +872,7 @@ private:
    * seize/release invokes ctor/dtor automatically.
    */
   struct OpRecordCommon {
+    OpRecordCommon() {}
     Uint32 key;         // key shared between master and slaves
     Uint32 nextHash;
     Uint32 prevHash;
@@ -849,6 +888,7 @@ private:
    * Create table record
    */
   struct CreateTableRecord : OpRecordCommon {
+    CreateTableRecord() {}
     Uint32 m_senderRef;
     Uint32 m_senderData;
     Uint32 m_coordinatorRef;
@@ -887,6 +927,7 @@ private:
    * Drop table record
    */
   struct DropTableRecord : OpRecordCommon {
+    DropTableRecord() {}
     DropTableReq m_request;
     
     Uint32 m_requestType;
@@ -1314,119 +1355,6 @@ private:
   typedef Ptr<OpBuildIndex> OpBuildIndexPtr;
 
   /**
-   * Operation record for Util Signals.
-   */
-  struct OpSignalUtil : OpRecordCommon{
-    Callback m_callback;
-    Uint32 m_userData;
-  };
-  typedef Ptr<OpSignalUtil> OpSignalUtilPtr;
-
-  /**
-   * Operation record for subscribe-start-stop
-   */
-  struct OpSubEvent : OpRecordCommon {
-    Uint32 m_senderRef;
-    Uint32 m_senderData;
-    Uint32 m_errorCode;
-    RequestTracker m_reqTracker;
-  };
-  typedef Ptr<OpSubEvent> OpSubEventPtr;
-
-  static const Uint32 sysTab_NDBEVENTS_0_szs[];
-
-  /**
-   * Operation record for create event.
-   */
-  struct OpCreateEvent : OpRecordCommon {
-    // original request (event id will be added)
-    CreateEvntReq m_request;
-    //AttributeMask m_attrListBitmask;
-    //    AttributeList m_attrList;
-    sysTab_NDBEVENTS_0 m_eventRec;
-    //    char m_eventName[MAX_TAB_NAME_SIZE];
-    //    char m_tableName[MAX_TAB_NAME_SIZE];
-
-    // coordinator DICT
-    RequestTracker m_reqTracker;
-    // state info
-    CreateEvntReq::RequestType m_requestType;
-    Uint32 m_requestFlag;
-    // error info
-    CreateEvntRef::ErrorCode m_errorCode;
-    Uint32 m_errorLine;
-    Uint32 m_errorNode;
-    // ctor
-    OpCreateEvent() {
-      memset(&m_request, 0, sizeof(m_request));
-      m_requestType = CreateEvntReq::RT_UNDEFINED;
-      m_requestFlag = 0;
-      m_errorCode = CreateEvntRef::NoError;
-      m_errorLine = 0;
-      m_errorNode = 0;
-    }
-    void init(const CreateEvntReq* req, Dbdict* dp) {
-      m_request = *req;
-      m_errorCode = CreateEvntRef::NoError;
-      m_errorLine = 0;
-      m_errorNode = 0;
-      m_requestType = req->getRequestType();
-      m_requestFlag = req->getRequestFlag();
-    }
-    bool hasError() {
-      return m_errorCode != CreateEvntRef::NoError;
-    }
-    void setError(const CreateEvntRef* ref) {
-      if (ref != 0 && ! hasError()) {
-        m_errorCode = ref->getErrorCode();
-        m_errorLine = ref->getErrorLine();
-        m_errorNode = ref->getErrorNode();
-      }
-    }
-
-  };
-  typedef Ptr<OpCreateEvent> OpCreateEventPtr;
-
-  /**
-   * Operation record for drop event.
-   */
-  struct OpDropEvent : OpRecordCommon {
-    // original request
-    DropEvntReq m_request;
-    //    char m_eventName[MAX_TAB_NAME_SIZE];
-    sysTab_NDBEVENTS_0 m_eventRec;
-    RequestTracker m_reqTracker;
-    // error info
-    DropEvntRef::ErrorCode m_errorCode;
-    Uint32 m_errorLine;
-    Uint32 m_errorNode;
-    // ctor
-    OpDropEvent() {
-      memset(&m_request, 0, sizeof(m_request));
-      m_errorCode = DropEvntRef::NoError;
-      m_errorLine = 0;
-      m_errorNode = 0;
-    }
-    void init(const DropEvntReq* req) {
-      m_request = *req;
-      m_errorCode = DropEvntRef::NoError;
-      m_errorLine = 0;
-      m_errorNode = 0;
-    }
-    bool hasError() {
-      return m_errorCode != DropEvntRef::NoError;
-    }
-    void setError(const DropEvntRef* ref) {
-      if (ref != 0 && ! hasError()) {
-        m_errorCode = ref->getErrorCode();
-        m_errorLine = ref->getErrorLine();
-        m_errorNode = ref->getErrorNode();
-      }
-    }
-  };
-  typedef Ptr<OpDropEvent> OpDropEventPtr;
-
-  /**
    * Operation record for create trigger.
    */
   struct OpCreateTrigger : OpRecordCommon {
@@ -1646,10 +1574,6 @@ public:
   STATIC_CONST( opDropIndexSize = sizeof(OpDropIndex) );
   STATIC_CONST( opAlterIndexSize = sizeof(OpAlterIndex) );
   STATIC_CONST( opBuildIndexSize = sizeof(OpBuildIndex) );
-  STATIC_CONST( opCreateEventSize = sizeof(OpCreateEvent) );
-  STATIC_CONST( opSubEventSize = sizeof(OpSubEvent) );
-  STATIC_CONST( opDropEventSize = sizeof(OpDropEvent) );
-  STATIC_CONST( opSignalUtilSize = sizeof(OpSignalUtil) );
   STATIC_CONST( opCreateTriggerSize = sizeof(OpCreateTrigger) );
   STATIC_CONST( opDropTriggerSize = sizeof(OpDropTrigger) );
   STATIC_CONST( opAlterTriggerSize = sizeof(OpAlterTrigger) );
@@ -1660,10 +1584,6 @@ private:
     Uint32 u_opDropTable    [PTR_ALIGN(opDropTableSize)];
     Uint32 u_opCreateIndex  [PTR_ALIGN(opCreateIndexSize)];
     Uint32 u_opDropIndex    [PTR_ALIGN(opDropIndexSize)];
-    Uint32 u_opCreateEvent  [PTR_ALIGN(opCreateEventSize)];
-    Uint32 u_opSubEvent     [PTR_ALIGN(opSubEventSize)];
-    Uint32 u_opDropEvent    [PTR_ALIGN(opDropEventSize)];
-    Uint32 u_opSignalUtil   [PTR_ALIGN(opSignalUtilSize)];
     Uint32 u_opAlterIndex   [PTR_ALIGN(opAlterIndexSize)];
     Uint32 u_opBuildIndex   [PTR_ALIGN(opBuildIndexSize)];
     Uint32 u_opCreateTrigger[PTR_ALIGN(opCreateTriggerSize)];
@@ -1680,16 +1600,79 @@ private:
   KeyTable2<OpDropIndex, OpRecordUnion> c_opDropIndex;
   KeyTable2<OpAlterIndex, OpRecordUnion> c_opAlterIndex;
   KeyTable2<OpBuildIndex, OpRecordUnion> c_opBuildIndex;
-  KeyTable2<OpCreateEvent, OpRecordUnion> c_opCreateEvent;
-  KeyTable2<OpSubEvent, OpRecordUnion> c_opSubEvent;
-  KeyTable2<OpDropEvent, OpRecordUnion> c_opDropEvent;
-  KeyTable2<OpSignalUtil, OpRecordUnion> c_opSignalUtil;
   KeyTable2<OpCreateTrigger, OpRecordUnion> c_opCreateTrigger;
   KeyTable2<OpDropTrigger, OpRecordUnion> c_opDropTrigger;
   KeyTable2<OpAlterTrigger, OpRecordUnion> c_opAlterTrigger;
 
   // Unique key for operation  XXX move to some system table
   Uint32 c_opRecordSequence;
+
+  /*
+   * Master DICT can be locked in 2 mutually exclusive ways:
+   *
+   * 1) for schema ops, via operation records
+   * 2) against schema ops, via a lock queue
+   *
+   * Current use of 2) is by a starting node, to prevent schema ops
+   * until started.  The ops are refused (BlockState != BS_IDLE),
+   * not queued.
+   *
+   * Master failure is not handled, in node start case the starting
+   * node will crash too anyway.  Use lock table in future..
+   *
+   * The lock queue is "serial" but other behaviour is possible
+   * by checking lock types e.g. to allow parallel node starts.
+   *
+   * Checking release of last op record is not convenient with
+   * current structure (5.0).  Instead we poll via continueB.
+   *
+   * XXX only table ops check BlockState
+   */
+  struct DictLockType;
+  friend struct DictLockType;
+
+  struct DictLockType {
+    DictLockReq::LockType lockType;
+    BlockState blockState;
+    const char* text;
+  };
+
+  struct DictLockRecord;
+  friend struct DictLockRecord;
+
+  struct DictLockRecord {
+    DictLockReq req;
+    const DictLockType* lt;
+    bool locked;
+  union {
+    Uint32 nextPool;
+    Uint32 nextList;
+    };
+    Uint32 prevList;
+  };
+
+  typedef Ptr<DictLockRecord> DictLockPtr;
+  ArrayPool<DictLockRecord> c_dictLockPool;
+  DLFifoList<DictLockRecord> c_dictLockQueue;
+  bool c_dictLockPoll;
+
+  static const DictLockType* getDictLockType(Uint32 lockType);
+  void sendDictLockInfoEvent(Uint32 pollCount);
+  void sendDictLockInfoEvent(DictLockPtr lockPtr, const char* text);
+
+  // check if any schema op exists (conflicting with dict lock)
+  bool hasDictLockSchemaOp();
+
+  void checkDictLockQueue(Signal* signal, bool poll);
+  void sendDictLockConf(Signal* signal, DictLockPtr lockPtr);
+  void sendDictLockRef(Signal* signal, DictLockReq req, Uint32 errorCode);
+
+  // control polling i.e. continueB loop
+  void setDictLockPoll(Signal* signal, bool on, Uint32 pollCount);
+
+  // NF handling
+  void removeStaleDictLocks(Signal* signal, const Uint32* theFailedNodes);
+
 
   // Statement blocks
 
@@ -1713,7 +1696,8 @@ private:
   bool getNewAttributeRecord(TableRecordPtr tablePtr,
 			     AttributeRecordPtr & attrPtr);
   void packTableIntoPages(Signal* signal, Uint32 tableId, Uint32 pageId);
-  void packTableIntoPagesImpl(SimpleProperties::Writer &, TableRecordPtr);
+  void packTableIntoPagesImpl(SimpleProperties::Writer &, TableRecordPtr,
+			      Signal* signal= 0);
   
   void sendGET_TABINFOREQ(Signal* signal,
                           Uint32 tableId);
@@ -1761,7 +1745,8 @@ private:
   void openSchemaFile(Signal* signal,
                       Uint32 fileNo,
                       Uint32 fsPtr,
-                      bool writeFlag);
+                      bool writeFlag,
+                      bool newFile);
   void writeSchemaFile(Signal* signal, Uint32 filePtr, Uint32 fsPtr);
   void writeSchemaConf(Signal* signal,
                                FsConnectRecordPtr fsPtr);
@@ -1803,6 +1788,7 @@ private:
   void readSchemaRef(Signal* signal, FsConnectRecordPtr fsPtr);
   void closeReadSchemaConf(Signal* signal,
                            FsConnectRecordPtr fsPtr);
+  bool convertSchemaFileTo_5_0_6(XSchemaFile*);
 
   /* ------------------------------------------------------------ */
   // Get table definitions
@@ -1879,101 +1865,6 @@ private:
   void buildIndex_fromOnline(Signal* signal, OpBuildIndexPtr opPtr);
   void buildIndex_sendSlaveReq(Signal* signal, OpBuildIndexPtr opPtr);
   void buildIndex_sendReply(Signal* signal, OpBuildIndexPtr opPtr, bool);
-
-  // Events
-  void 
-  createEventUTIL_PREPARE(Signal* signal,
-			  Uint32 callbackData,
-			  Uint32 returnCode);
-  void 
-  createEventUTIL_EXECUTE(Signal *signal, 
-			  Uint32 callbackData,
-			  Uint32 returnCode);
-  void 
-  dropEventUTIL_PREPARE_READ(Signal* signal,
-			     Uint32 callbackData,
-			     Uint32 returnCode);
-  void 
-  dropEventUTIL_EXECUTE_READ(Signal* signal,
-			     Uint32 callbackData,
-			     Uint32 returnCode);
-  void
-  dropEventUTIL_PREPARE_DELETE(Signal* signal,
-			       Uint32 callbackData,
-			       Uint32 returnCode);
-  void 
-  dropEventUTIL_EXECUTE_DELETE(Signal *signal, 
-			       Uint32 callbackData,
-			       Uint32 returnCode);
-  void
-  dropEventUtilPrepareRef(Signal* signal,
-			  Uint32 callbackData,
-			  Uint32 returnCode);
-  void
-  dropEventUtilExecuteRef(Signal* signal,
-			  Uint32 callbackData,
-			  Uint32 returnCode);
-  int
-  sendSignalUtilReq(Callback *c,
-		    BlockReference ref, 
-		    GlobalSignalNumber gsn, 
-		    Signal* signal, 
-		    Uint32 length, 
-		    JobBufferLevel jbuf,
-		    LinearSectionPtr ptr[3],
-		    Uint32 noOfSections);
-  int
-  recvSignalUtilReq(Signal* signal, Uint32 returnCode);
-
-  void completeSubStartReq(Signal* signal, Uint32 ptrI,	Uint32 returnCode);
-  void completeSubStopReq(Signal* signal, Uint32 ptrI, Uint32 returnCode);
-  void completeSubRemoveReq(Signal* signal, Uint32 ptrI, Uint32 returnCode);
-  
-  void dropEvent_sendReply(Signal* signal,
-			   OpDropEventPtr evntRecPtr);
-
-  void createEvent_RT_USER_CREATE(Signal* signal, OpCreateEventPtr evntRecPtr);
-  void createEventComplete_RT_USER_CREATE(Signal* signal,
-					  OpCreateEventPtr evntRecPtr);
-  void createEvent_RT_USER_GET(Signal* signal, OpCreateEventPtr evntRecPtr);
-  void createEventComplete_RT_USER_GET(Signal* signal, OpCreateEventPtr evntRecPtr);
-
-  void createEvent_RT_DICT_AFTER_GET(Signal* signal, OpCreateEventPtr evntRecPtr);
-
-  void createEvent_nodeFailCallback(Signal* signal, Uint32 eventRecPtrI,
-				    Uint32 returnCode);
-  void createEvent_sendReply(Signal* signal, OpCreateEventPtr evntRecPtr,
-			     LinearSectionPtr *ptr = NULL, int noLSP = 0);
-
-  void prepareTransactionEventSysTable (Callback *c,
-					Signal* signal,
-					Uint32 senderData,
-					UtilPrepareReq::OperationTypeValue prepReq);
-  void prepareUtilTransaction(Callback *c,
-			      Signal* signal,
-			      Uint32 senderData,
-			      Uint32 tableId,
-			      const char *tableName,
-			      UtilPrepareReq::OperationTypeValue prepReq,
-			      Uint32 noAttr,
-			      Uint32 attrIds[],
-			      const char *attrNames[]);
-
-  void executeTransEventSysTable(Callback *c,
-				 Signal *signal,
-				 const Uint32 ptrI,
-				 sysTab_NDBEVENTS_0& m_eventRec,
-				 const Uint32 prepareId,
-				 UtilPrepareReq::OperationTypeValue prepReq);
-  void executeTransaction(Callback *c,
-			  Signal* signal, 
-			  Uint32 senderData,
-			  Uint32 prepareId,
-			  Uint32 noAttr,
-			  LinearSectionPtr headerPtr,
-			  LinearSectionPtr dataPtr);
-
-  void parseReadEventSys(Signal *signal, sysTab_NDBEVENTS_0& m_eventRec);
 
   // create trigger
   void createTrigger_recvReply(Signal* signal, const CreateTrigConf* conf,
@@ -2117,6 +2008,8 @@ private:
   int getMetaTable(MetaData::Table& table, const char* tableName);
   int getMetaAttribute(MetaData::Attribute& attribute, const MetaData::Table& table, Uint32 attributeId);
   int getMetaAttribute(MetaData::Attribute& attribute, const MetaData::Table& table, const char* attributeName);
+
+  int checkSingleUserMode(Uint32 senderRef);
 };
 
 #endif

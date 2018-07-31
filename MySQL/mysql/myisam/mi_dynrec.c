@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -81,7 +80,7 @@ int _mi_write_blob_record(MI_INFO *info, const byte *record)
 #endif
   if (!(rec_buff=(byte*) my_alloca(reclength)))
   {
-    my_errno=ENOMEM;
+    my_errno= HA_ERR_OUT_OF_MEM; /* purecov: inspected */
     return(-1);
   }
   reclength2= _mi_rec_pack(info,rec_buff+ALIGN_SIZE(MI_MAX_DYN_BLOCK_HEADER),
@@ -115,7 +114,7 @@ int _mi_update_blob_record(MI_INFO *info, my_off_t pos, const byte *record)
 #endif
   if (!(rec_buff=(byte*) my_alloca(reclength)))
   {
-    my_errno=ENOMEM;
+    my_errno= HA_ERR_OUT_OF_MEM; /* purecov: inspected */
     return(-1);
   }
   reclength=_mi_rec_pack(info,rec_buff+ALIGN_SIZE(MI_MAX_DYN_BLOCK_HEADER),
@@ -149,7 +148,9 @@ static int write_dynamic_record(MI_INFO *info, const byte *record,
   {
     if (_mi_find_writepos(info,reclength,&filepos,&length))
       goto err;
-    if (_mi_write_part_record(info,filepos,length,info->s->state.dellink,
+    if (_mi_write_part_record(info,filepos,length,
+                              (info->append_insert_at_end ?
+                               HA_OFFSET_ERROR : info->s->state.dellink),
 			      (byte**) &record,&reclength,&flag))
       goto err;
   } while (reclength);
@@ -171,7 +172,8 @@ static int _mi_find_writepos(MI_INFO *info,
   ulong tmp;
   DBUG_ENTER("_mi_find_writepos");
 
-  if (info->s->state.dellink != HA_OFFSET_ERROR)
+  if (info->s->state.dellink != HA_OFFSET_ERROR &&
+      !info->append_insert_at_end)
   {
     /* Deleted blocks exists;  Get last used block */
     *filepos=info->s->state.dellink;
@@ -420,8 +422,9 @@ int _mi_write_part_record(MI_INFO *info,
   else if (length-long_block < *reclength+4)
   {						/* To short block */
     if (next_filepos == HA_OFFSET_ERROR)
-      next_filepos=info->s->state.dellink != HA_OFFSET_ERROR ?
-	info->s->state.dellink : info->state->data_file_length;
+      next_filepos= (info->s->state.dellink != HA_OFFSET_ERROR &&
+                     !info->append_insert_at_end ?
+                     info->s->state.dellink : info->state->data_file_length);
     if (*flag == 0)				/* First block */
     {
       if (*reclength > MI_MAX_BLOCK_LENGTH)
@@ -768,11 +771,21 @@ uint _mi_rec_pack(MI_INFO *info, register byte *to, register const byte *from)
       }
       else if (type == FIELD_VARCHAR)
       {
-	uint tmp_length=uint2korr(from);
-	store_key_length_inc(to,tmp_length);
-	memcpy(to,from+2,tmp_length);
-	to+=tmp_length;
-	continue;
+        uint pack_length= HA_VARCHAR_PACKLENGTH(rec->length -1);
+	uint tmp_length;
+        if (pack_length == 1)
+        {
+          tmp_length= (uint) *(uchar*) from;
+          *to++= *from;
+        }
+        else
+        {
+          tmp_length= uint2korr(from);
+          store_key_length_inc(to,tmp_length);
+        }
+        memcpy(to, from+pack_length,tmp_length);
+        to+= tmp_length;
+        continue;
       }
       else
       {
@@ -878,9 +891,20 @@ my_bool _mi_rec_check(MI_INFO *info,const char *record, byte *rec_buff,
       }
       else if (type == FIELD_VARCHAR)
       {
-	uint tmp_length=uint2korr(record);
-	to+=get_pack_length(tmp_length)+tmp_length;
-	continue;
+        uint pack_length= HA_VARCHAR_PACKLENGTH(rec->length -1);
+	uint tmp_length;
+        if (pack_length == 1)
+        {
+          tmp_length= (uint) *(uchar*) record;
+          to+= 1+ tmp_length;
+          continue;
+        }
+        else
+        {
+          tmp_length= uint2korr(record);
+          to+= get_pack_length(tmp_length)+tmp_length;
+        }
+        continue;
       }
       else
       {
@@ -894,9 +918,7 @@ my_bool _mi_rec_check(MI_INFO *info,const char *record, byte *rec_buff,
       }
     }
     else
-    {
-      to+=length;
-    }
+      to+= length;
   }
   if (packed_length != (uint) (to - rec_buff) + test(info->s->calc_checksum) ||
       (bit != 1 && (flag & ~(bit - 1))))
@@ -944,13 +966,27 @@ ulong _mi_rec_unpack(register MI_INFO *info, register byte *to, byte *from,
     {
       if (type == FIELD_VARCHAR)
       {
-	get_key_length(length,from);
-	if (length > rec_length-2)
-	  goto err;
-	int2store(to,length);
-	memcpy(to+2,from,length);
-	from+=length;
-	continue;
+        uint pack_length= HA_VARCHAR_PACKLENGTH(rec_length-1);
+        if (pack_length == 1)
+        {
+          length= (uint) *(uchar*) from;
+          if (length > rec_length-1)
+            goto err;
+          *to= *from++;
+        }
+        else
+        {
+          get_key_length(length, from);
+          if (length > rec_length-2)
+            goto err;
+          int2store(to,length);
+        }
+        if (from+length > from_end)
+          goto err;
+        memcpy(to+pack_length, from, length);
+        from+= length;
+        min_pack_length--;
+        continue;
       }
       if (flag & bit)
       {
@@ -992,9 +1028,11 @@ ulong _mi_rec_unpack(register MI_INFO *info, register byte *to, byte *from,
       {
 	uint size_length=rec_length- mi_portable_sizeof_char_ptr;
 	ulong blob_length=_mi_calc_blob_length(size_length,from);
-	if ((ulong) (from_end-from) - size_length < blob_length ||
-	    min_pack_length > (uint) (from_end -(from+size_length+blob_length)))
-	  goto err;
+        ulong from_left= (ulong) (from_end - from);
+        if (from_left < size_length ||
+            from_left - size_length < blob_length ||
+            from_left - size_length - blob_length < min_pack_length)
+          goto err;
 	memcpy((byte*) to,(byte*) from,(size_t) size_length);
 	from+=size_length;
 	memcpy_fixed((byte*) to+size_length,(byte*) &from,sizeof(char*));
@@ -1018,17 +1056,19 @@ ulong _mi_rec_unpack(register MI_INFO *info, register byte *to, byte *from,
       if (min_pack_length > (uint) (from_end - from))
 	goto err;
       min_pack_length-=rec_length;
-      memcpy(to,(byte*) from,(size_t) rec_length); from+=rec_length;
+      memcpy(to, (byte*) from, (size_t) rec_length);
+      from+=rec_length;
     }
   }
   if (info->s->calc_checksum)
     from++;
   if (to == to_end && from == from_end && (bit == 1 || !(flag & ~(bit-1))))
     DBUG_RETURN(found_length);
+
 err:
-  my_errno=HA_ERR_RECORD_DELETED;
-  DBUG_PRINT("error",("to_end: %lx -> %lx  from_end: %lx -> %lx",
-		      to,to_end,from,from_end));
+  my_errno= HA_ERR_WRONG_IN_RECORD;
+  DBUG_PRINT("error",("to_end: 0x%lx -> 0x%lx  from_end: 0x%lx -> 0x%lx",
+		      (long) to, (long) to_end, (long) from, (long) from_end));
   DBUG_DUMP("from",(byte*) info->rec_buff,info->s->base.min_pack_length);
   DBUG_RETURN(MY_FILE_ERROR);
 } /* _mi_rec_unpack */

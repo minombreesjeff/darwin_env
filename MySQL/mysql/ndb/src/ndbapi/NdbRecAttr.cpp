@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,17 +14,6 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
-/************************************************************************************************
-Name:          NdbRecAttr.C
-Include:
-Link:
-Author:        UABRONM Mikael Ronström UAB/B/SD                         
-Date:          971206
-Version:       0.1
-Description:   Interface between TIS and NDB
-Documentation:
-Adjust:  971206  UABRONM First version
-************************************************************************************************/
 #include <ndb_global.h>
 #include <NdbOut.hpp>
 #include <NdbRecAttr.hpp>
@@ -67,7 +55,7 @@ NdbRecAttr::setup(const NdbColumnImpl* anAttrInfo, char* aValue)
 
   if (theStorageX)
     delete[] theStorageX;
-
+  
   // check alignment to signal data
   // a future version could check alignment per data type as well
   
@@ -95,6 +83,7 @@ NdbRecAttr::setup(const NdbColumnImpl* anAttrInfo, char* aValue)
     theRef = tRef;
     return 0;
   }
+  errno = ENOMEM;
   return -1;
 }
 
@@ -114,7 +103,11 @@ NdbRecAttr::copyout()
 NdbRecAttr *
 NdbRecAttr::clone() const {
   NdbRecAttr * ret = new NdbRecAttr(0);
-
+  if (ret == NULL)
+  {
+    errno = ENOMEM;
+    return NULL;
+  }
   ret->theAttrId = theAttrId;
   ret->theNULLind = theNULLind;
   ret->theAttrSize = theAttrSize;
@@ -128,6 +121,12 @@ NdbRecAttr::clone() const {
     ret->theValue = 0;
   } else {
     ret->theStorageX = new Uint64[((n + 7) >> 3)];
+    if (ret->theStorageX == NULL)
+    {
+      delete ret;
+      errno = ENOMEM;
+      return NULL;
+    }
     ret->theRef = (char*)ret->theStorageX;    
     ret->theValue = 0;
   }
@@ -152,196 +151,341 @@ NdbRecAttr::receive_data(const Uint32 * data, Uint32 sz){
   return false;
 }
 
-NdbOut& operator<<(NdbOut& out, const NdbRecAttr &r)
+NdbRecordPrintFormat::NdbRecordPrintFormat()
+{
+  fields_terminated_by= ";";
+  start_array_enclosure= "[";
+  end_array_enclosure= "]";
+  fields_enclosed_by= "";
+  fields_optionally_enclosed_by= "\"";
+  lines_terminated_by= "\n";
+  hex_prefix= "H'";
+  null_string= "[NULL]";
+  hex_format= 0;
+}
+NdbRecordPrintFormat::~NdbRecordPrintFormat() {}
+static const NdbRecordPrintFormat default_print_format;
+
+static void
+ndbrecattr_print_string(NdbOut& out, const NdbRecordPrintFormat &f,
+                        const char *type, bool is_binary,
+			const char *aref, unsigned sz)
+{
+  const unsigned char* ref = (const unsigned char*)aref;
+  int i, len, printable= 1;
+  // trailing zeroes are not printed
+  for (i=sz-1; i >= 0; i--)
+    if (ref[i] == 0) sz--;
+    else break;
+  if (!is_binary)
+  {
+    // trailing spaces are not printed
+    for (i=sz-1; i >= 0; i--)
+      if (ref[i] == 32) sz--;
+      else break;
+  }
+  if (is_binary && f.hex_format)
+  {
+    if (sz == 0)
+    {
+      out.print("0x0");
+      return;
+    }
+    out.print("0x");
+    for (len = 0; len < (int)sz; len++)
+      out.print("%02X", (int)ref[len]);
+    return;
+  }
+  if (sz == 0) return; // empty
+
+  for (len=0; len < (int)sz && ref[i] != 0; len++)
+    if (printable && !isprint((int)ref[i]))
+      printable= 0;
+
+  if (printable)
+    out.print("%.*s", len, ref);
+  else
+  {
+    out.print("0x");
+    for (i=0; i < len; i++)
+      out.print("%02X", (int)ref[i]);
+  }
+  if (len != (int)sz)
+  {
+    out.print("[");
+    for (i= len+1; ref[i] != 0; i++)
+    out.print("%u]",len-i);
+    assert((int)sz > i);
+    ndbrecattr_print_string(out,f,type,is_binary,aref+i,sz-i);
+  }
+}
+
+NdbOut&
+ndbrecattr_print_formatted(NdbOut& out, const NdbRecAttr &r,
+                           const NdbRecordPrintFormat &f)
 {
   if (r.isNULL())
   {
-    out << "[NULL]";
+    out << f.null_string;
     return out;
   }
-
+  
   const NdbDictionary::Column* c = r.getColumn();
   uint length = c->getLength();
-  if (length > 1)
-    out << "[";
-
-  for (Uint32 j = 0; j < length; j++) 
   {
-    if (j > 0)
-      out << " ";
-
-    switch(r.getType())
-      {
-      case NdbDictionary::Column::Bigunsigned:
-	out << r.u_64_value();
-	break;
-      case NdbDictionary::Column::Unsigned:
-	out << r.u_32_value();
-	break;
-      case NdbDictionary::Column::Smallunsigned:
-	out << r.u_short_value();
-	break;
-      case NdbDictionary::Column::Tinyunsigned:
-	out << (unsigned) r.u_char_value();
-	break;
-      case NdbDictionary::Column::Bigint:
-	out << r.int64_value();
-	break;
-      case NdbDictionary::Column::Int:
-	out << r.int32_value();
-	break;
-      case NdbDictionary::Column::Smallint:
-	out << r.short_value();
-	break;
-      case NdbDictionary::Column::Tinyint:
-	out << (int) r.char_value();
-	break;
-      case NdbDictionary::Column::Char:
-	out.print("%.*s", r.arraySize(), r.aRef());
-	j = length;
-	break;
-      case NdbDictionary::Column::Varchar:
-	{
-	  short len = ntohs(r.u_short_value());
-	  out.print("%.*s", len, r.aRef()+2);
-	}
-	j = length;
+    const char *fields_optionally_enclosed_by;
+    if (f.fields_enclosed_by[0] == '\0')
+      fields_optionally_enclosed_by=
+        f.fields_optionally_enclosed_by;
+    else
+      fields_optionally_enclosed_by= "";
+    out << f.fields_enclosed_by;
+    Uint32 j;
+    switch(r.getType()){
+    case NdbDictionary::Column::Bigunsigned:
+      out << r.u_64_value();
       break;
-      case NdbDictionary::Column::Float:
-	out << r.float_value();
-	break;
-      case NdbDictionary::Column::Double:
-	out << r.double_value();
-	break;
-      case NdbDictionary::Column::Olddecimal:
-        {
-          short len = 1 + c->getPrecision() + (c->getScale() > 0);
-          out.print("%.*s", len, r.aRef());
-        }
-        break;
-      case NdbDictionary::Column::Olddecimalunsigned:
-        {
-          short len = 0 + c->getPrecision() + (c->getScale() > 0);
-          out.print("%.*s", len, r.aRef());
-        }
-	break;
-      // for dates cut-and-paste from field.cc
-      case NdbDictionary::Column::Datetime:
-        {
-          ulonglong tmp=r.u_64_value();
-          long part1,part2,part3;
-          part1=(long) (tmp/LL(1000000));
-          part2=(long) (tmp - (ulonglong) part1*LL(1000000));
-          char buf[40];
-          char* pos=(char*) buf+19;
-          *pos--=0;
-          *pos--= (char) ('0'+(char) (part2%10)); part2/=10; 
-          *pos--= (char) ('0'+(char) (part2%10)); part3= (int) (part2 / 10);
-          *pos--= ':';
-          *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
-          *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
-          *pos--= ':';
-          *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
-          *pos--= (char) ('0'+(char) part3);
-          *pos--= '/';
-          *pos--= (char) ('0'+(char) (part1%10)); part1/=10;
-          *pos--= (char) ('0'+(char) (part1%10)); part1/=10;
-          *pos--= '-';
-          *pos--= (char) ('0'+(char) (part1%10)); part1/=10;
-          *pos--= (char) ('0'+(char) (part1%10)); part3= (int) (part1/10);
-          *pos--= '-';
-          *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
-          *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
-          *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
-          *pos=(char) ('0'+(char) part3);
-          out << buf;
-        }
-	break;
-      case NdbDictionary::Column::Date:
-        {
-          uint32 tmp=(uint32) uint3korr(r.aRef());
-          int part;
-          char buf[40];
-          char *pos=(char*) buf+10;
-          *pos--=0;
-          part=(int) (tmp & 31);
-          *pos--= (char) ('0'+part%10);
-          *pos--= (char) ('0'+part/10);
-          *pos--= '-';
-          part=(int) (tmp >> 5 & 15);
-          *pos--= (char) ('0'+part%10);
-          *pos--= (char) ('0'+part/10);
-          *pos--= '-';
-          part=(int) (tmp >> 9);
-          *pos--= (char) ('0'+part%10); part/=10;
-          *pos--= (char) ('0'+part%10); part/=10;
-          *pos--= (char) ('0'+part%10); part/=10;
-          *pos=   (char) ('0'+part);
-          out << buf;
-        }
-	break;
-      case NdbDictionary::Column::Time:
-        {
-          long tmp=(long) sint3korr(r.aRef());
-          int hour=(uint) (tmp/10000);
-          int minute=(uint) (tmp/100 % 100);
-          int second=(uint) (tmp % 100);
-          char buf[40];
-          sprintf(buf, "%02d:%02d:%02d", hour, minute, second);
-          out << buf;
-        }
-	break;
-      case NdbDictionary::Column::Year:
-        {
-          uint year = 1900 + r.u_char_value();
-          char buf[40];
-          sprintf(buf, "%04d", year);
-          out << buf;
-        }
-	break;
-      case NdbDictionary::Column::Timestamp:
-        {
-          time_t time = r.u_32_value();
-          out << (uint)time;
-        }
-	break;
-      case NdbDictionary::Column::Blob:
-        {
-          const NdbBlob::Head* h = (const NdbBlob::Head*)r.aRef();
-          out << h->length << ":";
-          const unsigned char* p = (const unsigned char*)(h + 1);
-          unsigned n = r.arraySize() - sizeof(*h);
-          for (unsigned k = 0; k < n && k < h->length; k++)
-            out.print("%02X", (int)p[k]);
-          j = length;
-        }
-        break;
-      case NdbDictionary::Column::Text:
-        {
-          const NdbBlob::Head* h = (const NdbBlob::Head*)r.aRef();
-          out << h->length << ":";
-          const unsigned char* p = (const unsigned char*)(h + 1);
-          unsigned n = r.arraySize() - sizeof(*h);
-          for (unsigned k = 0; k < n && k < h->length; k++)
-            out.print("%c", (int)p[k]);
-          j = length;
-        }
-        break;
-      default: /* no print functions for the rest, just print type */
-	out << (int) r.getType();
-	j = length;
-	if (j > 1)
-	  out << " " << j << " times";
-	break;
+    case NdbDictionary::Column::Bit:
+      out << f.hex_prefix << "0x";
+      {
+        const Uint32 *buf = (Uint32 *)r.aRef();
+        int k = (length+31)/32;
+        while (k > 0 && (buf[--k] == 0));
+        out.print("%X", buf[k]);
+        while (k > 0)
+          out.print("%.8X", buf[--k]);
       }
-  }
+      break;
+    case NdbDictionary::Column::Unsigned:
+      if (length > 1)
+        out << f.start_array_enclosure;
+      out << *(Uint32*)r.aRef();
+      for (j = 1; j < length; j++)
+        out << " " << *((Uint32*)r.aRef() + j);
+      if (length > 1)
+        out << f.end_array_enclosure;
+      break;
+    case NdbDictionary::Column::Mediumunsigned:
+      out << r.u_medium_value();
+      break;
+    case NdbDictionary::Column::Smallunsigned:
+      out << r.u_short_value();
+      break;
+    case NdbDictionary::Column::Tinyunsigned:
+      out << (unsigned) r.u_8_value();
+      break;
+    case NdbDictionary::Column::Bigint:
+      out << r.int64_value();
+      break;
+    case NdbDictionary::Column::Int:
+      out << r.int32_value();
+      break;
+    case NdbDictionary::Column::Mediumint:
+      out << r.medium_value();
+      break;
+    case NdbDictionary::Column::Smallint:
+      out << r.short_value();
+      break;
+    case NdbDictionary::Column::Tinyint:
+      out << (int) r.int8_value();
+      break;
+    case NdbDictionary::Column::Binary:
+      if (!f.hex_format)
+        out << fields_optionally_enclosed_by;
+      j = r.arraySize();
+      ndbrecattr_print_string(out,f,"Binary", true, r.aRef(), j);
+      if (!f.hex_format)
+        out << fields_optionally_enclosed_by;
+      break;
+    case NdbDictionary::Column::Char:
+      out << fields_optionally_enclosed_by;
+      j = length;
+      ndbrecattr_print_string(out,f,"Char", false, r.aRef(), r.arraySize());
+      out << fields_optionally_enclosed_by;
+      break;
+    case NdbDictionary::Column::Varchar:
+    {
+      out << fields_optionally_enclosed_by;
+      unsigned len = *(const unsigned char*)r.aRef();
+      ndbrecattr_print_string(out,f,"Varchar", false, r.aRef()+1,len);
+      j = length;
+      out << fields_optionally_enclosed_by;
+    }
+    break;
+    case NdbDictionary::Column::Varbinary:
+    {
+      if (!f.hex_format)
+        out << fields_optionally_enclosed_by;
+      unsigned len = *(const unsigned char*)r.aRef();
+      ndbrecattr_print_string(out,f,"Varbinary", true, r.aRef()+1,len);
+      j = length;
+      if (!f.hex_format)
+        out << fields_optionally_enclosed_by;
+    }
+    break;
+    case NdbDictionary::Column::Float:
+      out << r.float_value();
+      break;
+    case NdbDictionary::Column::Double:
+      out << r.double_value();
+      break;
+    case NdbDictionary::Column::Olddecimal:
+    {
+      short len = 1 + c->getPrecision() + (c->getScale() > 0);
+      out.print("%.*s", len, r.aRef());
+    }
+    break;
+    case NdbDictionary::Column::Olddecimalunsigned:
+    {
+      short len = 0 + c->getPrecision() + (c->getScale() > 0);
+      out.print("%.*s", len, r.aRef());
+    }
+    break;
+    case NdbDictionary::Column::Decimal:
+    case NdbDictionary::Column::Decimalunsigned:
+      goto unknown;   // TODO
+      break;
+      // for dates cut-and-paste from field.cc
+    case NdbDictionary::Column::Datetime:
+    {
+      ulonglong tmp=r.u_64_value();
+      long part1,part2,part3;
+      part1=(long) (tmp/LL(1000000));
+      part2=(long) (tmp - (ulonglong) part1*LL(1000000));
+      char buf[40];
+      char* pos=(char*) buf+19;
+      *pos--=0;
+      *pos--= (char) ('0'+(char) (part2%10)); part2/=10; 
+      *pos--= (char) ('0'+(char) (part2%10)); part3= (int) (part2 / 10);
+      *pos--= ':';
+      *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
+      *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
+      *pos--= ':';
+      *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
+      *pos--= (char) ('0'+(char) part3);
+      *pos--= '/';
+      *pos--= (char) ('0'+(char) (part1%10)); part1/=10;
+      *pos--= (char) ('0'+(char) (part1%10)); part1/=10;
+      *pos--= '-';
+      *pos--= (char) ('0'+(char) (part1%10)); part1/=10;
+      *pos--= (char) ('0'+(char) (part1%10)); part3= (int) (part1/10);
+      *pos--= '-';
+      *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
+      *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
+      *pos--= (char) ('0'+(char) (part3%10)); part3/=10;
+      *pos=(char) ('0'+(char) part3);
+      out << buf;
+    }
+    break;
+    case NdbDictionary::Column::Date:
+    {
+      uint32 tmp=(uint32) uint3korr(r.aRef());
+      int part;
+      char buf[40];
+      char *pos=(char*) buf+10;
+      *pos--=0;
+      part=(int) (tmp & 31);
+      *pos--= (char) ('0'+part%10);
+      *pos--= (char) ('0'+part/10);
+      *pos--= '-';
+      part=(int) (tmp >> 5 & 15);
+      *pos--= (char) ('0'+part%10);
+      *pos--= (char) ('0'+part/10);
+      *pos--= '-';
+      part=(int) (tmp >> 9);
+      *pos--= (char) ('0'+part%10); part/=10;
+      *pos--= (char) ('0'+part%10); part/=10;
+      *pos--= (char) ('0'+part%10); part/=10;
+      *pos=   (char) ('0'+part);
+      out << buf;
+    }
+    break;
+    case NdbDictionary::Column::Time:
+    {
+      long tmp=(long) sint3korr(r.aRef());
+      int hour=(uint) (tmp/10000);
+      int minute=(uint) (tmp/100 % 100);
+      int second=(uint) (tmp % 100);
+      char buf[40];
+      sprintf(buf, "%02d:%02d:%02d", hour, minute, second);
+      out << buf;
+    }
+    break;
+    case NdbDictionary::Column::Year:
+    {
+      uint year = 1900 + r.u_8_value();
+      char buf[40];
+      sprintf(buf, "%04d", year);
+      out << buf;
+    }
+    break;
+    case NdbDictionary::Column::Timestamp:
+    {
+      time_t time = r.u_32_value();
+      out << (uint)time;
+    }
+    break;
+    case NdbDictionary::Column::Blob:
+    case NdbDictionary::Column::Text:
+    {
+      // user defined aRef() may not be aligned to Uint64
+      NdbBlob::Head head;
+      memcpy(&head, r.aRef(), sizeof(head));
+      out << head.length << ":";
+      const unsigned char* p = (const unsigned char*)r.aRef() + sizeof(head);
+      if (r.arraySize() < sizeof(head))
+        out << "***error***"; // really cannot happen
+      else {
+        unsigned n = r.arraySize() - sizeof(head);
+        for (unsigned k = 0; k < n && k < head.length; k++) {
+          if (r.getType() == NdbDictionary::Column::Blob)
+            out.print("%02X", (int)p[k]);
+          else
+            out.print("%c", (int)p[k]);
+        }
+      }
+      j = length;
+    }
+    break;
+    case NdbDictionary::Column::Longvarchar:
+    {
+      out << fields_optionally_enclosed_by;
+      unsigned len = uint2korr(r.aRef());
+      ndbrecattr_print_string(out,f,"Longvarchar", false, r.aRef()+2,len);
+      j = length;
+      out << fields_optionally_enclosed_by;
+    }
+    break;
+    case NdbDictionary::Column::Longvarbinary:
+    {
+      if (!f.hex_format)
+        out << fields_optionally_enclosed_by;
+      unsigned len = uint2korr(r.aRef());
+      ndbrecattr_print_string(out,f,"Longvarbinary", true, r.aRef()+2,len);
+      j = length;
+      if (!f.hex_format)
+        out << fields_optionally_enclosed_by;
+    }
+    break;
 
-  if (length > 1)
-  {
-    out << "]";
+    case NdbDictionary::Column::Undefined:
+    unknown:
+    //default: /* no print functions for the rest, just print type */
+    out << (int) r.getType();
+    j = length;
+    if (j > 1)
+      out << " " << j << " times";
+    break;
+    }
+    out << f.fields_enclosed_by;
   }
 
   return out;
+}
+
+NdbOut& operator<<(NdbOut& out, const NdbRecAttr &r)
+{
+  return ndbrecattr_print_formatted(out, r, default_print_format);
 }
 
 Int64
@@ -374,4 +518,16 @@ NdbRecAttr::double_value() const
   double val;
   memcpy(&val,theRef,sizeof(val));
   return val;
+}
+
+Int32
+NdbRecAttr::medium_value() const
+{
+  return sint3korr((unsigned char *)theRef);
+}
+
+Uint32
+NdbRecAttr::u_medium_value() const
+{
+  return uint3korr((unsigned char*)theRef);
 }

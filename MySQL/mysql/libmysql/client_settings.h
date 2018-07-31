@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2003-2005 MySQL AB
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
    
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,7 +20,7 @@ extern my_string	mysql_unix_port;
                              CLIENT_TRANSACTIONS | \
 			     CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION)
 
-sig_handler pipe_sig_handler(int sig);
+sig_handler my_pipe_sig_handler(int sig);
 void read_user_name(char *name);
 my_bool handle_local_infile(MYSQL *mysql, const char *net_filename);
 
@@ -32,7 +31,7 @@ my_bool handle_local_infile(MYSQL *mysql, const char *net_filename);
 
 #if !defined(__WIN__) && defined(SIGPIPE) && !defined(THREAD)
 #define init_sigpipe_variables  sig_return old_signal_handler=(sig_return) 0;
-#define set_sigpipe(mysql)     if ((mysql)->client_flag & CLIENT_IGNORE_SIGPIPE) old_signal_handler=signal(SIGPIPE,pipe_sig_handler)
+#define set_sigpipe(mysql)     if ((mysql)->client_flag & CLIENT_IGNORE_SIGPIPE) old_signal_handler=signal(SIGPIPE, my_pipe_sig_handler)
 #define reset_sigpipe(mysql) if ((mysql)->client_flag & CLIENT_IGNORE_SIGPIPE) signal(SIGPIPE,old_signal_handler);
 #else
 #define init_sigpipe_variables
@@ -43,7 +42,7 @@ my_bool handle_local_infile(MYSQL *mysql, const char *net_filename);
 void mysql_read_default_options(struct st_mysql_options *options,
 				const char *filename,const char *group);
 void mysql_detach_stmt_list(LIST **stmt_list);
-MYSQL * STDCALL
+MYSQL *
 cli_mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
 		       const char *passwd, const char *db,
 		       uint port, const char *unix_socket,ulong client_flag);

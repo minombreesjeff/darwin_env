@@ -1,3 +1,18 @@
+/* Copyright (C) 2004-2006 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; version 2 of the License.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+
 #ifndef MGMAPI_CONFIG_PARAMTERS_H
 #define MGMAPI_CONFIG_PARAMTERS_H
 
@@ -105,7 +120,7 @@
 #define CFG_LOGLEVEL_INFO         256
 #define CFG_LOGLEVEL_WARNING      257
 #define CFG_LOGLEVEL_ERROR        258
-#define CFG_LOGLEVEL_GREP         259
+#define CFG_LOGLEVEL_CONGESTION   259
 #define CFG_LOGLEVEL_DEBUG        260
 #define CFG_LOGLEVEL_BACKUP       261
 #define CFG_MAX_LOGLEVEL          261
@@ -122,6 +137,7 @@
 #define CFG_CONNECTION_HOSTNAME_1     407
 #define CFG_CONNECTION_HOSTNAME_2     408
 #define CFG_CONNECTION_GROUP          409
+#define CFG_CONNECTION_NODE_ID_SERVER 410
 
 #define CFG_TCP_SERVER                452
 #define CFG_TCP_SEND_BUFFER_SIZE      454

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -64,6 +63,7 @@
 // DbtupSystemRestart.cpp 26000
 // DbtupIndex.cpp         28000
 // DbtupDebug.cpp         30000
+// DbtupScan.cpp          32000
 //------------------------------------------------------------------
 
 /*
@@ -195,6 +195,7 @@
 #define ZTRY_TO_UPDATE_ERROR 888
 #define ZCALL_ERROR 890
 #define ZTEMPORARY_RESOURCE_FAILURE 891
+#define ZUNSUPPORTED_BRANCH 892
 
 #define ZSTORED_SEIZE_ATTRINBUFREC_ERROR 873 // Part of Scan
 
@@ -206,6 +207,8 @@
 #define ZMUST_BE_ABORTED_ERROR 898
 #define ZTUPLE_DELETED_ERROR 626
 #define ZINSERT_ERROR 630
+
+#define ZINVALID_CHAR_FORMAT 744
 
 
           /* SOME WORD POSITIONS OF FIELDS IN SOME HEADERS */
@@ -493,26 +496,73 @@ struct DiskBufferSegmentInfo {
 typedef Ptr<DiskBufferSegmentInfo> DiskBufferSegmentInfoPtr;
 
 struct Fragoperrec {
-  bool   definingFragment;
+  Uint64 minRows;
+  Uint64 maxRows;
   Uint32 nextFragoprec;
   Uint32 lqhPtrFrag;
   Uint32 fragidFrag;
   Uint32 tableidFrag;
   Uint32 fragPointer;
   Uint32 attributeCount;
-  Uint32 freeNullBit;
+  Uint32 currNullBit;
+  Uint32 noOfNullBits;
   Uint32 noOfNewAttrCount;
   Uint32 charsetIndex;
   BlockReference lqhBlockrefFrag;
   bool inUse;
+  bool definingFragment;
 };
 typedef Ptr<Fragoperrec> FragoperrecPtr;
+
+  // Position for use by scan
+  struct PagePos {
+    Uint32 m_fragId;            // "base" fragment id
+    Uint32 m_fragBit;           // two fragments in 5.0
+    Uint32 m_pageId;
+    Uint32 m_tupleNo;
+    bool m_match;
+  };
+
+  // Tup scan op (compare Dbtux::ScanOp)
+  struct ScanOp {
+    enum {
+      Undef = 0,
+      First = 1,                // before first entry
+      Locked = 4,               // at current entry (no lock needed)
+      Next = 5,                 // looking for next extry
+      Last = 6,                 // after last entry
+      Invalid = 9               // cannot return REF to LQH currently
+    };
+    Uint16 m_state;
+    Uint16 m_lockwait;          // unused
+    Uint32 m_userPtr;           // scanptr.i in LQH
+    Uint32 m_userRef;
+    Uint32 m_tableId;
+    Uint32 m_fragId;            // "base" fragment id
+    Uint32 m_fragPtrI[2];
+    Uint32 m_transId1;
+    Uint32 m_transId2;
+    PagePos m_scanPos;
+    union {
+    Uint32 nextPool;
+    Uint32 nextList;
+    };
+    Uint32 prevList;
+  };
+  typedef Ptr<ScanOp> ScanOpPtr;
+  ArrayPool<ScanOp> c_scanOpPool;
+
+  void scanFirst(Signal* signal, ScanOpPtr scanPtr);
+  void scanNext(Signal* signal, ScanOpPtr scanPtr);
+  void scanClose(Signal* signal, ScanOpPtr scanPtr);
+  void releaseScanOp(ScanOpPtr& scanPtr);
 
 struct Fragrecord {
   Uint32 nextStartRange;
   Uint32 currentPageRange;
   Uint32 rootPageRange;
   Uint32 noOfPages;
+  Uint32 noOfPagesToGrow;
   Uint32 emptyPrimPage;
 
   Uint32 firstusedOprec;
@@ -529,6 +579,9 @@ struct Fragrecord {
   Uint32 fragTableId;
   Uint32 fragmentId;
   Uint32 nextfreefrag;
+
+  DLList<ScanOp> m_scanList;
+  Fragrecord(ArrayPool<ScanOp> & scanOpPool) : m_scanList(scanOpPool) {}
 };
 typedef Ptr<Fragrecord> FragrecordPtr;
 
@@ -694,6 +747,7 @@ typedef Ptr<RestartInfoRecord> RestartInfoRecordPtr;
   /* WHEN THE TRIGGER IS DEACTIVATED.         */
   /* **************************************** */
 struct TupTriggerData {
+  TupTriggerData() {}
   
   /**
    * Trigger id, used by DICT/TRIX to identify the trigger
@@ -1019,7 +1073,14 @@ public:
    * for md5 summing and when returning keyinfo.  Returns number of
    * words or negative (-terrorCode) on error.
    */
-  int tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* dataOut);
+  int tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* dataOut, bool xfrmFlag);
+
+  /*
+   * ACC reads primary key without headers into an array of words.  At
+   * this point in ACC deconstruction, ACC still uses logical references
+   * to fragment and tuple.
+   */
+  int accReadPk(Uint32 tableId, Uint32 fragId, Uint32 fragPageId, Uint32 pageIndex, Uint32* dataOut, bool xfrmFlag);
 
   /*
    * TUX checks if tuple is visible to scan.
@@ -1056,7 +1117,6 @@ private:
   void execFSREADCONF(Signal* signal);
   void execNDB_STTOR(Signal* signal);
   void execREAD_CONFIG_REQ(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
   void execDROP_TAB_REQ(Signal* signal);
   void execALTER_TAB_REQ(Signal* signal);
   void execFSREMOVECONF(Signal* signal);
@@ -1068,6 +1128,11 @@ private:
   void execBUILDINDXREQ(Signal* signal);
   void buildIndex(Signal* signal, Uint32 buildPtrI);
   void buildIndexReply(Signal* signal, const BuildIndexRec* buildRec);
+
+  // Tup scan
+  void execACC_SCANREQ(Signal* signal);
+  void execNEXT_SCANREQ(Signal* signal);
+  void execACC_CHECK_SCAN(Signal* signal);
 
 //------------------------------------------------------------------
 //------------------------------------------------------------------
@@ -1618,19 +1683,11 @@ private:
                              Uint32  attrDescriptor,
                              Uint32  attrDes2);
 
-// *****************************************************************
-// Read char routines optionally (tXfrmFlag) apply strxfrm
-// *****************************************************************
 
-  bool readCharNotNULL(Uint32* outBuffer,
-                       AttributeHeader* ahOut,
-                       Uint32  attrDescriptor,
-                       Uint32  attrDes2);
-
-  bool readCharNULLable(Uint32* outBuffer,
-                        AttributeHeader* ahOut,
-                        Uint32  attrDescriptor,
-                        Uint32  attrDes2);
+  bool readBitsNULLable(Uint32* outBuffer, AttributeHeader*, Uint32, Uint32);
+  bool updateBitsNULLable(Uint32* inBuffer, Uint32, Uint32);
+  bool readBitsNotNULL(Uint32* outBuffer, AttributeHeader*, Uint32, Uint32);
+  bool updateBitsNotNULL(Uint32* inBuffer, Uint32, Uint32);
 
 //------------------------------------------------------------------
 //------------------------------------------------------------------
@@ -1737,8 +1794,7 @@ private:
                        Uint32* const mainBuffer,
                        Uint32& noMainWords,
                        Uint32* const copyBuffer,
-                       Uint32& noCopyWords,
-		       bool xfrm);
+                       Uint32& noCopyWords);
 
   void sendTrigAttrInfo(Signal*        signal, 
                         Uint32*        data, 

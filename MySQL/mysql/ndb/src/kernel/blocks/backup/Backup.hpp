@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -46,6 +45,7 @@ public:
 protected:
 
   void execSTTOR(Signal* signal);
+  void execREAD_CONFIG_REQ(Signal* signal);
   void execDUMP_STATE_ORD(Signal* signal);
   void execREAD_NODESCONF(Signal* signal);
   void execNODE_FAILREP(Signal* signal);
@@ -67,6 +67,7 @@ protected:
   void execBACKUP_DATA(Signal* signal);
   void execSTART_BACKUP_REQ(Signal* signal);
   void execBACKUP_FRAGMENT_REQ(Signal* signal);
+  void execBACKUP_FRAGMENT_COMPLETE_REP(Signal* signal);
   void execSTOP_BACKUP_REQ(Signal* signal);
   void execBACKUP_STATUS_REQ(Signal* signal);
   void execABORT_BACKUP_ORD(Signal* signal);
@@ -182,10 +183,12 @@ public:
   typedef Ptr<Attribute> AttributePtr;
   
   struct Fragment {
+    Uint64 noOfRecords;
     Uint32 tableId;
-    Uint32 node;
-    Uint16 scanned;  // 0 = not scanned x = scanned by node x
-    Uint16 scanning; // 0 = not scanning x = scanning on node x
+    Uint8  node;
+    Uint8  scanned;  // 0 = not scanned x = scanned by node x
+    Uint8  scanning; // 0 = not scanning x = scanning on node x
+    Uint8  unused1;
     Uint32 nextPool;
   };
   typedef Ptr<Fragment> FragmentPtr;
@@ -193,9 +196,10 @@ public:
   struct Table {
     Table(ArrayPool<Attribute> &, ArrayPool<Fragment> &);
     
+    Uint64 noOfRecords;
+
     Uint32 tableId;
     Uint32 schemaVersion;
-    Uint32 frag_mask;
     Uint32 tableType;
     Uint32 noOfNull;
     Uint32 noOfAttributes;
@@ -269,8 +273,8 @@ public:
     Uint32 tablePtr;    // Ptr.i to current table
 
     FsBuffer dataBuffer;
-    Uint32 noOfRecords;
-    Uint32 noOfBytes;
+    Uint64 noOfRecords;
+    Uint64 noOfBytes;
     Uint32 maxRecordSize;
     
   private:
@@ -528,8 +532,6 @@ public:
   ArrayPool<Fragment> c_fragmentPool;
   ArrayPool<Node> c_nodePool;
   ArrayPool<TriggerRecord> c_triggerPool;
-
-  Uint32 calculate_frag_mask(Uint32);
 
   void checkFile(Signal*, BackupFilePtr);
   void checkScan(Signal*, BackupFilePtr);

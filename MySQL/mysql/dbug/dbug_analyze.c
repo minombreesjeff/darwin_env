@@ -51,6 +51,7 @@
 
 #include <my_global.h>
 #include <m_string.h>
+#include <my_pthread.h>
 
 static char *my_name;
 static int verbose;
@@ -168,7 +169,7 @@ register unsigned long *child_time;
 	*name_pos = temp->pos;
 	*time_entered = temp->time;
 	*child_time = temp->children;
-	DBUG_PRINT ("pop", ("%d %d %d",*name_pos,*time_entered,*child_time));
+	DBUG_PRINT ("pop", ("%d %lu %lu",*name_pos,*time_entered,*child_time));
 	rtnval = stacktop--;
     }
     DBUG_RETURN (rtnval);
@@ -246,7 +247,7 @@ char *m_name;
 	modules[n_items].m_stkuse = 0;
 	DBUG_RETURN (n_items++);
     }
-    while (cmp = strcmp (m_name,modules[ind].name)) {
+    while ((cmp = strcmp (m_name,modules[ind].name))) {
 	if (cmp < 0) {	/* In left subtree */
 	    if (s_table[ind].lchild == MAXPROCS) {
 		/* Add as left child */
@@ -308,7 +309,7 @@ FILE *inf;
   unsigned long fn_ssz;
   unsigned long lastuse;
   unsigned int pos;
-  unsigned long time;
+  unsigned long local_time;
   unsigned int oldpos;
   unsigned long oldtime;
   unsigned long oldchild;
@@ -333,16 +334,16 @@ FILE *inf;
        * function is found on the stack.
        */
       while (pop (&oldpos, &oldtime, &oldchild)) {
-	DBUG_PRINT ("popped", ("%d %d", oldtime, oldchild));
-	time = fn_time - oldtime;
+	DBUG_PRINT ("popped", ("%lu %lu", oldtime, oldchild));
+	local_time = fn_time - oldtime;
 	t = top ();
-	t -> children += time;
+	t -> children += local_time;
 	DBUG_PRINT ("update", ("%s", modules[t -> pos].name));
-	DBUG_PRINT ("update", ("%d", t -> children));
-	time -= oldchild;
-	modules[oldpos].m_time += time;
+	DBUG_PRINT ("update", ("%lu", t -> children));
+	local_time -= oldchild;
+	modules[oldpos].m_time += local_time;
 	modules[oldpos].m_calls++;
-	tot_time += time;
+	tot_time += local_time;
 	tot_calls++;
 	if (pos == oldpos) {
 	  goto next_line;	/* Should be a break2 */
@@ -354,11 +355,11 @@ FILE *inf;
        * it so that it works the next time too.
        */
       t = top ();
-      time = fn_time - t -> time - t -> children;
+      local_time = fn_time - t -> time - t -> children;
       t -> time = fn_time; t -> children = 0;
-      modules[pos].m_time += time;
+      modules[pos].m_time += local_time;
       modules[pos].m_calls++;
-      tot_time += time;
+      tot_time += local_time;
       tot_calls++;
       break;
     case 'S':
@@ -392,7 +393,7 @@ FILE *inf;
       }
       break;
     default:
-      fprintf (stderr, "unknown record type '%s'\n", buf[0]);
+      fprintf (stderr, "unknown record type '%c'\n", buf[0]);
       break;
     }
   next_line:;
@@ -404,13 +405,13 @@ FILE *inf;
    * time of fn_time.
    */
   while (pop (&oldpos,&oldtime,&oldchild)) {
-    time = fn_time - oldtime;
+    local_time = fn_time - oldtime;
     t = top ();
-    t -> children += time;
-    time -= oldchild;
-    modules[oldpos].m_time += time;
+    t -> children += local_time;
+    local_time -= oldchild;
+    modules[oldpos].m_time += local_time;
     modules[oldpos].m_calls++;
-    tot_time += time;
+    tot_time += local_time;
     tot_calls++;
   }
   DBUG_VOID_RETURN;
@@ -450,10 +451,11 @@ FILE *outf;
 unsigned long int sum_calls, sum_time;
 {
     DBUG_ENTER ("out_trailer");
-    if (verbose) {
-	fprintf (outf, "======\t==========\t===========\t==========\t========\n");
-	fprintf (outf, "%6d\t%10.2f\t%11d\t%10.2f\t\t%-15s\n",
-		sum_calls, 100.0, sum_time, 100.0, "Totals");
+    if (verbose)
+    {
+      fprintf(outf, "======\t==========\t===========\t==========\t========\n");
+      fprintf(outf, "%6ld\t%10.2f\t%11ld\t%10.2f\t\t%-15s\n",
+              sum_calls, 100.0, sum_time, 100.0, "Totals");
     }
     DBUG_VOID_RETURN;
 }
@@ -470,17 +472,17 @@ unsigned long int *called, *timed;
 {
     char *name = m -> name;
     register unsigned int calls = m -> m_calls;
-    register unsigned long time = m -> m_time;
+    register unsigned long local_time = m -> m_time;
     register unsigned long stkuse = m -> m_stkuse;
     unsigned int import;
     double per_time = 0.0;
     double per_calls = 0.0;
-    double ms_per_call, ftime;
+    double ms_per_call, local_ftime;
 
     DBUG_ENTER ("out_item");
 
     if (tot_time > 0) {
-	per_time = (double) (time * 100) / (double) tot_time;
+	per_time = (double) (local_time * 100) / (double) tot_time;
     }
     if (tot_calls > 0) {
 	per_calls = (double) (calls * 100) / (double) tot_calls;
@@ -488,19 +490,19 @@ unsigned long int *called, *timed;
     import = (unsigned int) (per_time * per_calls);
 
     if (verbose) {
-	fprintf (outf, "%6d\t%10.2f\t%11d\t%10.2f  %10d\t%-15s\n",
-		calls, per_calls, time, per_time, import, name);
+	fprintf (outf, "%6d\t%10.2f\t%11ld\t%10.2f  %10d\t%-15s\n",
+		calls, per_calls, local_time, per_time, import, name);
     } else {
-	ms_per_call = time;
+	ms_per_call = local_time;
 	ms_per_call /= calls;
-	ftime = time;
-	ftime /= 1000;
-	fprintf (outf, "%8.2f%8.3f%8u%8.3f%8.2f%8u%8u  %-s\n",
-		per_time, ftime, calls, ms_per_call, per_calls, import,
-		 stkuse, name);
+	local_ftime = local_time;
+	local_ftime /= 1000;
+	fprintf(outf, "%8.2f%8.3f%8u%8.3f%8.2f%8u%8lu  %-s\n",
+                per_time, local_ftime, calls, ms_per_call, per_calls, import,
+                stkuse, name);
     }
     *called = calls;
-    *timed = time;
+    *timed = local_time;
     DBUG_VOID_RETURN;
 }
 
@@ -515,22 +517,22 @@ FILE *outf;
 register unsigned int root;
 register unsigned long int *s_calls, *s_time;
 {
-    unsigned long int calls, time;
+    unsigned long int calls, local_time;
 
     DBUG_ENTER ("out_body");
-    DBUG_PRINT ("out_body", ("%d,%d",*s_calls,*s_time));
+    DBUG_PRINT ("out_body", ("%lu,%lu",*s_calls,*s_time));
     if (root == MAXPROCS) {
-	DBUG_PRINT ("out_body", ("%d,%d",*s_calls,*s_time));
+	DBUG_PRINT ("out_body", ("%lu,%lu",*s_calls,*s_time));
     } else {
 	while (root != MAXPROCS) {
 	    out_body (outf, s_table[root].lchild,s_calls,s_time);
-	    out_item (outf, &modules[s_table[root].pos],&calls,&time);
-	    DBUG_PRINT ("out_body", ("-- %d -- %d --", calls, time));
+	    out_item (outf, &modules[s_table[root].pos],&calls,&local_time);
+	    DBUG_PRINT ("out_body", ("-- %lu -- %lu --", calls, local_time));
 	    *s_calls += calls;
-	    *s_time += time;
+	    *s_time += local_time;
 	    root = s_table[root].rchild;
 	}
-	DBUG_PRINT ("out_body", ("%d,%d", *s_calls, *s_time));
+	DBUG_PRINT ("out_body", ("%lu,%lu", *s_calls, *s_time));
     }
     DBUG_VOID_RETURN;
 }
@@ -572,6 +574,13 @@ int main (int argc, char **argv)
     FILE *infile;
     FILE *outfile = {stdout};
 
+#ifdef THREAD
+#if defined(HAVE_PTHREAD_INIT)
+  pthread_init();                       /* Must be called before DBUG_ENTER */
+#endif
+  my_thread_global_init();
+#endif /* THREAD */
+  {
     DBUG_ENTER ("main");
     DBUG_PROCESS (argv[0]);
     my_name = argv[0];
@@ -600,6 +609,7 @@ int main (int argc, char **argv)
     process (infile);
     output (outfile);
     DBUG_RETURN (EX_OK);
+}
 }
 
 #ifdef MSDOS

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqldump\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLDUMP\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLDUMP\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -63,7 +63,7 @@ and
 fall into this category. For example, use of
 \fB\-\-opt\fR
 is the same as specifying
-\fB\-\-add\-drop\-table \-\-add\-locks \-\-create\-options \-\-disable\-keys \-\-extended\-insert \-\-lock\-tables \-\-quick \-\-set\-charset\fR. Note that as of MySQL 4.1, all of the options that
+\fB\-\-add\-drop\-table \-\-add\-locks \-\-create\-options \-\-disable\-keys \-\-extended\-insert \-\-lock\-tables \-\-quick \-\-set\-charset\fR. Note that all of the options that
 \fB\-\-opt\fR
 stands for also are on by default because
 \fB\-\-opt\fR
@@ -81,7 +81,7 @@ To select the effect of
 except for some features, use the
 \fB\-\-skip\fR
 option for each feature. For example, to disable extended inserts and memory buffering, use
-\fB\-\-opt \-\-skip\-extended\-insert \-\-skip\-quick\fR. (As of MySQL 4.1,
+\fB\-\-opt \-\-skip\-extended\-insert \-\-skip\-quick\fR. (As of MySQL 5.0,
 \fB\-\-skip\-extended\-insert \-\-skip\-quick\fR
 is sufficient because
 \fB\-\-opt\fR
@@ -109,7 +109,7 @@ option (or
 \fB\-\-quick\fR).
 \fB\-\-opt\fR
 (and hence
-\fB\-\-quick\fR) is enabled by default as of MySQL 4.1 to enable memory buffering, use
+\fB\-\-quick\fR) is enabled by default as of MySQL 5.0 to enable memory buffering, use
 \fB\-\-skip\-quick\fR.
 .PP
 If you are using a recent version of
@@ -183,7 +183,7 @@ Add a
 DROP DATABASE
 statement before each
 CREATE DATABASE
-statement. Added in MySQL 4.1.13.
+statement.
 .TP 3n
 \(bu
 \fB\-\-add\-drop\-table\fR
@@ -202,7 +202,7 @@ LOCK TABLES
 and
 UNLOCK TABLES
 statements. This results in faster inserts when the dump file is reloaded. See
-Section\ 2.13, \(lqSpeed of INSERT Statements\(rq.
+Section\ 2.17, \(lqSpeed of INSERT Statements\(rq.
 .TP 3n
 \(bu
 \fB\-\-all\-databases\fR,
@@ -221,24 +221,24 @@ Allow creation of column names that are keywords. This works by prefixing each c
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-comments\fR,
 \fB\-i\fR
 .sp
 Write additional information in the dump file such as program version, server version, and host. This option is enabled by default. To suppress this additional information, use
-\fB\-\-skip\-comments\fR. This option was added in MySQL 4.0.17.
+\fB\-\-skip\-comments\fR.
 .TP 3n
 \(bu
 \fB\-\-compact\fR
 .sp
 Produce less verbose output. This option suppresses comments and enables the
 \fB\-\-skip\-add\-drop\-table\fR,
-\fB\-\-no\-set\-names\fR,
+\fB\-\-skip\-set\-charset\fR,
 \fB\-\-skip\-disable\-keys\fR, and
 \fB\-\-skip\-add\-locks\fR
-options. Added in MySQL 4.1.2.
+options.
 .TP 3n
 \(bu
 \fB\-\-compatible=\fR\fB\fIname\fR\fR
@@ -284,9 +284,7 @@ Compress all information sent between the client and the server if both support 
 .sp
 Include all MySQL\-specific table options in the
 CREATE TABLE
-statements. Before MySQL 4.1.2, use
-\fB\-\-all\fR
-instead.
+statements.
 .TP 3n
 \(bu
 \fB\-\-databases\fR,
@@ -316,9 +314,9 @@ string is often
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq. If no character set is specified,
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq. If no character set is specified,
 \fBmysqldump\fR
-from MySQL 4.1.2 or later uses
+uses
 utf8, and earlier versions use
 latin1.
 .TP 3n
@@ -335,10 +333,7 @@ statements.
 \fB\-\-delete\-master\-logs\fR
 .sp
 On a master replication server, delete the binary logs after performing the dump operation. This option automatically enables
-\fB\-\-first\-slave\fR
-before MySQL 4.1.8 and enables
-\fB\-\-master\-data\fR
-thereafter. It was added in MySQL 3.23.57 (for MySQL 3.23) and MySQL 4.0.13 (for MySQL 4.0).
+\fB\-\-master\-data\fR.
 .TP 3n
 \(bu
 \fB\-\-disable\-keys\fR,
@@ -350,9 +345,9 @@ statements with
 /*!40000 ALTER TABLE \fItbl_name\fR DISABLE KEYS */;
 and
 /*!40000 ALTER TABLE \fItbl_name\fR ENABLE KEYS */;
-statements. This makes loading the dump file into a MySQL 4.0 or newer server faster because the indexes are created after all rows are inserted. This option is effective for
+statements. This makes loading the dump file faster because the indexes are created after all rows are inserted. This option is effective only for non\-unique indexes of
 MyISAM
-tables only.
+tables.
 .TP 3n
 \(bu
 \fB\-\-extended\-insert\fR,
@@ -380,9 +375,8 @@ Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
 \fB\-\-first\-slave\fR,
 \fB\-x\fR
 .sp
-Deprecated. Renamed to
-\fB\-\-lock\-all\-tables\fR
-in MySQL 4.1.8.
+Deprecated. Now renamed to
+\fB\-\-lock\-all\-tables\fR.
 .TP 3n
 \(bu
 \fB\-\-flush\-logs\fR,
@@ -405,10 +399,33 @@ or
 \fB\-\-master\-data\fR.
 .TP 3n
 \(bu
+\fB\-\-flush\-privileges\fR
+.sp
+Emit a
+FLUSH PRIVILEGES
+statement after dumping the
+mysql
+database. This option should be used any time the dump contains the
+mysql
+database and any other database that depends on the data in the
+mysql
+database for proper restoration. This option was added in MySQL 5.0.26.
+.TP 3n
+\(bu
 \fB\-\-force\fR,
 \fB\-f\fR
 .sp
 Continue even if an SQL error occurs during a table dump.
+.sp
+One use for this option is to cause
+\fBmysqldump\fR
+to continue executing even when it encounters a view that has become invalid because the defintion refers to a table that has been dropped. Without
+\fB\-\-force\fR,
+\fBmysqldump\fR
+exits with an error message. With
+\fB\-\-force\fR,
+\fBmysqldump\fR
+prints the error message, but it also writes a SQL comment containing the view definition to the dump output and continues executing.
 .TP 3n
 \(bu
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
@@ -426,17 +443,14 @@ becomes
 0x616263). The affected data types are
 BINARY,
 VARBINARY, and
-BLOB
-in MySQL 4.1 and up, and
-CHAR BINARY,
-VARCHAR BINARY, and
-BLOB
-in MySQL 4.0. This option was added in MySQL 4.0.23 and 4.1.8.
+BLOB. As of MySQL 5.0.13,
+BIT
+columns are affected as well.
 .TP 3n
 \(bu
 \fB\-\-ignore\-table=\fR\fB\fIdb_name.tbl_name\fR\fR
 .sp
-Do not dump the given table, which must be specified using both the database and table names. To ignore multiple tables, use this option multiple times. This option was added in MySQL 4.1.9.
+Do not dump the given table, which must be specified using both the database and table names. To ignore multiple tables, use this option multiple times.
 .TP 3n
 \(bu
 \fB\-\-insert\-ignore\fR
@@ -445,7 +459,7 @@ Write
 INSERT
 statements with the
 IGNORE
-option. This option was added in MySQL 4.1.12.
+option.
 .TP 3n
 \(bu
 \fB\-\-lines\-terminated\-by=...\fR
@@ -463,7 +477,7 @@ Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
 Lock all tables across all databases. This is achieved by acquiring a global read lock for the duration of the whole dump. This option automatically turns off
 \fB\-\-single\-transaction\fR
 and
-\fB\-\-lock\-tables\fR. Added in MySQL 4.1.8.
+\fB\-\-lock\-tables\fR.
 .TP 3n
 \(bu
 \fB\-\-lock\-tables\fR,
@@ -498,8 +512,6 @@ CHANGE MASTER
 statement is written as an SQL comment. (This is the default action if
 \fIvalue\fR
 is omitted.)
-\fIvalue\fR
-may be given as of MySQL 4.1.8; before that, do not specify an option value.
 .sp
 The
 \fB\-\-master\-data\fR
@@ -555,7 +567,7 @@ statement for the table.
 This option is shorthand; it is the same as specifying
 \fB\-\-add\-drop\-table \-\-add\-locks \-\-create\-options \-\-disable\-keys \-\-extended\-insert \-\-lock\-tables \-\-quick \-\-set\-charset\fR. It should give you a fast dump operation and produce a dump file that can be reloaded into a MySQL server quickly.
 .sp
-\fIAs of MySQL 4.1, \fR\fI\fB\-\-opt\fR\fR\fI is enabled by default. Use \fR\fI\fB\-\-skip\-opt\fR\fR\fI to disable it.\fR
+\fIThe \fR\fI\fB\-\-opt\fR\fR\fI option is enabled by default. Use \fR\fI\fB\-\-skip\-opt\fR\fR\fI to disable it.\fR
 See the discussion at the beginning of this section for information about selectively enabling or disabling certain of the options affected by
 \fB\-\-opt\fR.
 .TP 3n
@@ -566,7 +578,7 @@ Sorts each table's rows by its primary key, or by its first unique index, if suc
 MyISAM
 table to be loaded into an
 InnoDB
-table, but will make the dump itself take considerably longer. This option was added in MySQL 4.1.8.
+table, but will make the dump itself take considerably longer.
 .TP 3n
 \(bu
 \fB\-\-password[=\fR\fB\fIpassword\fR\fR\fB]\fR,
@@ -583,7 +595,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 7.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -594,7 +606,7 @@ The TCP/IP port number to use for the connection.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use. Added in MySQL 4.1.
+The connection protocol to use.
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -610,9 +622,7 @@ to retrieve rows for a table from the server a row at a time rather than retriev
 .sp
 Quote database, table, and column names within \(oq`\(cq characters. If the
 ANSI_QUOTES
-SQL mode is enabled, names are quoted within \(oq"\(cq characters. As of MySQL 4.1.1,
-\fB\-\-quote\-names\fR
-is enabled by default. It can be disabled with
+SQL mode is enabled, names are quoted within \(oq"\(cq characters. This option is enabled by default. It can be disabled with
 \fB\-\-skip\-quote\-names\fR, but this option should be given after any option such as
 \fB\-\-compatible\fR
 that may enable
@@ -622,7 +632,36 @@ that may enable
 \fB\-\-result\-file=\fR\fB\fIfile\fR\fR,
 \fB\-r \fR\fB\fIfile\fR\fR
 .sp
-Direct output to a given file. This option should be used on Windows to prevent newline \(oq\n\(cq characters from being converted to \(oq\\r\n\(cq carriage return/newline sequences. The result file is created and its contents overwritten, even if an error occurs while generating the dump. The previous contents are lost.
+Direct output to a given file. This option should be used on Windows to prevent newline \(oq\\n\(cq characters from being converted to \(oq\\r\\n\(cq carriage return/newline sequences. The result file is created and its contents overwritten, even if an error occurs while generating the dump. The previous contents are lost.
+.TP 3n
+\(bu
+\fB\-\-routines\fR,
+\fB\-R\fR
+.sp
+Dump stored routines (functions and procedures) from the dumped databases. Use of this option requires the
+SELECT
+privilege for the
+mysql.proc
+table. The output generated by using
+\fB\-\-routines\fR
+contains
+CREATE PROCEDURE
+and
+CREATE FUNCTION
+statements to re\-create the routines. However, these statements do not include attributes such as the routine creation and modification timestamps. This means that when the routines are reloaded, they will be created with the timestamps equal to the reload time.
+.sp
+If you require routines to be re\-created with their original timestamp attributes, do not use
+\fB\-\-routines\fR. Instead, dump and reload the contents of the
+mysql.proc
+table directly, using a MySQL account that has appropriate privileges for the
+mysql
+database.
+.sp
+This option was added in MySQL 5.0.13. Before that, stored routines are not dumped. Routine
+DEFINER
+values are not dumped until MySQL 5.0.20. This means that before 5.0.20, when routines are reloaded, they will be created with the definer set to the reloading user. If you require routines to be re\-created with their original definer, dump and load the contents of the
+mysql.proc
+table directly as described earlier.
 .TP 3n
 \(bu
 \fB\-\-set\-charset\fR
@@ -632,7 +671,7 @@ SET NAMES \fIdefault_character_set\fR
 to the output. This option is enabled by default. To suppress the
 SET NAMES
 statement, use
-\fB\-\-skip\-set\-charset\fR. This option was added in MySQL 4.1.2.
+\fB\-\-skip\-set\-charset\fR.
 .TP 3n
 \(bu
 \fB\-\-single\-transaction\fR
@@ -656,9 +695,9 @@ tables dumped while using this option may still change state.
 .sp
 The
 \fB\-\-single\-transaction\fR
-option was added in MySQL 4.0.2. This option is mutually exclusive with the
+option and the
 \fB\-\-lock\-tables\fR
-option, because
+option are mutually exclusive, because
 LOCK TABLES
 causes any pending transactions to be committed implicitly.
 .sp
@@ -700,7 +739,7 @@ option.
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 7.7.3, \(lqSSL Command Options\(rq.
+Section\ 6.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-tab=\fR\fB\fIpath\fR\fR,
@@ -721,7 +760,7 @@ By default, the
 data files are formatted using tab characters between column values and a newline at the end of each line. The format can be specified explicitly using the
 \fB\-\-fields\-\fR\fB\fIxxx\fR\fR
 and
-\fB\-\-lines\-\-\fR\fB\fIxxx\fR\fR
+\fB\-\-lines\-terminated\-by\fR
 options.
 .sp
 \fBNote\fR: This option should be used only when
@@ -742,6 +781,28 @@ or
 option.
 \fBmysqldump\fR
 regards all name arguments following the option as table names.
+.TP 3n
+\(bu
+\fB\-\-triggers\fR
+.sp
+Dump triggers for each dumped table. This option is enabled by default; disable it with
+\fB\-\-skip\-triggers\fR. This option was added in MySQL 5.0.11. Before that, triggers are not dumped.
+.TP 3n
+\(bu
+\fB\-\-tz\-utc\fR
+.sp
+Add
+SET TIME_ZONE='+00:00'
+to the dump file so that
+TIMESTAMP
+columns can be dumped and reloaded between servers in different time zones. Without this option,
+TIMESTAMP
+columns are dumped and reloaded in the time zones local to the source and destination servers, which can cause the values to change.
+\fB\-\-tz\-utc\fR
+also protects against changes due to daylight saving time.
+\fB\-\-tz\-utc\fR
+is enabled by default. To disable it, use
+\fB\-\-skip\-tz\-utc\fR. This option was added in MySQL 5.0.15.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
@@ -785,6 +846,95 @@ Examples:
 .sp
 Write dump output as well\-formed XML.
 .sp
+\fBNULL\fR\fB, \fR\fB'NULL'\fR\fB, and Empty Values\fR: For some column named
+\fIcolumn_name\fR, the
+NULL
+value, an empty string, and the string value
+\'NULL'
+are distinguished from one another in the output generated by this option as follows:
+.TS
+allbox tab(:);
+l l
+l l
+l l
+l l.
+T{
+\fBValue\fR:
+T}:T{
+\fBXML Representation\fR:
+T}
+T{
+NULL (\fIunknown value\fR)
+T}:T{
+<field name="\fIcolumn_name\fR"
+                      xsi:nil="true" />
+T}
+T{
+\'' (\fIempty string\fR)
+T}:T{
+<field
+                      name="\fIcolumn_name\fR"></field>
+T}
+T{
+\'NULL' (\fIstring value\fR)
+T}:T{
+<field
+                      name="\fIcolumn_name\fR">NULL</field>
+T}
+.TE
+.sp
+Beginning with MySQL 5.0.26, the output from the
+\fBmysql\fR
+client when run using the
+\fB\-\-xml\fR
+option also follows these rules. (See
+the section called \(lq\fBMYSQL\fR OPTIONS\(rq.)
+.sp
+Beginning with MySQL 5.0.40, XML output from
+\fBmysqldump\fR
+includes the XML namespace, as shown here:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqldump \-\-xml \-u root world City\fR
+<?xml version="1.0"?>
+<mysqldump xmlns:xsi="http://www.w3.org/2001/XMLSchema\-instance">
+<database name="world">
+<table_structure name="City">
+<field Field="ID" Type="int(11)" Null="NO" Key="PRI" Extra="auto_increment" />
+<field Field="Name" Type="char(35)" Null="NO" Key="" Default="" Extra="" />
+<field Field="CountryCode" Type="char(3)" Null="NO" Key="" Default="" Extra="" />
+<field Field="District" Type="char(20)" Null="NO" Key="" Default="" Extra="" />
+<field Field="Population" Type="int(11)" Null="NO" Key="" Default="0" Extra="" />
+<key Table="City" Non_unique="0" Key_name="PRIMARY" Seq_in_index="1" Column_name="ID" Collation="A" Cardinality="4079"
+Null="" Index_type="BTREE" Comment="" />
+<options Name="City" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="4079" Avg_row_length="67" Data_length="27329
+3" Max_data_length="18858823439613951" Index_length="43008" Data_free="0" Auto_increment="4080" Create_time="2007\-03\-31 01:47:01" Updat
+e_time="2007\-03\-31 01:47:02" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+</table_structure>
+<table_data name="City">
+<row>
+<field name="ID">1</field>
+<field name="Name">Kabul</field>
+<field name="CountryCode">AFG</field>
+<field name="District">Kabol</field>
+<field name="Population">1780000</field>
+</row>
+\fI...\fR
+<row>
+<field name="ID">4079</field>
+<field name="Name">Rafah</field>
+<field name="CountryCode">PSE</field>
+<field name="District">Rafah</field>
+<field name="Population">92020</field>
+</row>
+</table_data>
+</database>
+</mysqldump>
+.fi
+.RE
+.sp
+.sp
 .RE
 .PP
 You can also set the following variables by using
@@ -794,7 +944,7 @@ syntax:
 \(bu
 max_allowed_packet
 .sp
-The maximum size of the buffer for client/server communication. The value of the variable can be up to 16MB before MySQL 4.0, and up to 1GB from MySQL 4.0 on.
+The maximum size of the buffer for client/server communication. The maximum is 1GB.
 .TP 3n
 \(bu
 net_buffer_length
@@ -816,7 +966,8 @@ It is also possible to set variables by using
 \fB\-\-set\-variable=\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
 or
 \fB\-O \fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-syntax. However, this syntax is deprecated as of MySQL 4.0.
+syntax.
+\fIThis syntax is deprecated\fR.
 .PP
 The most common use of
 \fBmysqldump\fR
@@ -891,7 +1042,7 @@ statement is issued, the MySQL server may get stalled until that long statement 
 For point\-in\-time recovery (also known as
 \(lqroll\-forward,\(rq
 when you need to restore an old backup and replay the changes that happened since that backup), it is often useful to rotate the binary log (see
-Section\ 10.4, \(lqThe Binary Log\(rq) or at least know the binary log coordinates to which the dump corresponds:
+Section\ 9.3, \(lqThe Binary Log\(rq) or at least know the binary log coordinates to which the dump corresponds:
 .sp
 .RS 3n
 .nf
@@ -912,16 +1063,19 @@ The
 \fB\-\-master\-data\fR
 and
 \fB\-\-single\-transaction\fR
-options can be used simultaneously as of MySQL 4.1.8, which provides a convenient way to make an online backup suitable for point\-in\-time recovery if tables are stored using the
+options can be used simultaneously, which provides a convenient way to make an online backup suitable for point\-in\-time recovery if tables are stored using the
 InnoDB
 storage engine.
 .PP
 For more information on making backups, see
-Section\ 8.1, \(lqDatabase Backups\(rq, and
-Section\ 8.2, \(lqExample Backup and Recovery Strategy\(rq.
+Section\ 7.1, \(lqDatabase Backups\(rq, and
+Section\ 7.2, \(lqExample Backup and Recovery Strategy\(rq.
+.PP
+If you encounter problems backing up views, please read the section that covers restrictions on views which describes a workaround for backing up views when this fails due to insufficient privileges. See
+Section\ 4, \(lqRestrictions on Views\(rq.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -929,35 +1083,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

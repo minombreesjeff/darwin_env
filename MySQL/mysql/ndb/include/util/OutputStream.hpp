@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,6 +24,8 @@
  */
 class OutputStream {
 public:
+  OutputStream() {}
+  virtual ~OutputStream() {}
   virtual int print(const char * fmt, ...) = 0;
   virtual int println(const char * fmt, ...) = 0;
   virtual void flush() {};
@@ -34,7 +35,8 @@ class FileOutputStream : public OutputStream {
   FILE * f;
 public:
   FileOutputStream(FILE * file = stdout);
-  
+  FILE *getFile() { return f; }
+
   int print(const char * fmt, ...);
   int println(const char * fmt, ...);
   void flush() { fflush(f); }
@@ -42,10 +44,10 @@ public:
 
 class SocketOutputStream : public OutputStream {
   NDB_SOCKET_TYPE m_socket;
-  unsigned m_timeout;
+  unsigned m_timeout_ms;
 public:
-  SocketOutputStream(NDB_SOCKET_TYPE socket, unsigned writeTimeout = 1000);
-  
+  SocketOutputStream(NDB_SOCKET_TYPE socket, unsigned write_timeout_ms = 1000);
+
   int print(const char * fmt, ...);
   int println(const char * fmt, ...);
 };
@@ -60,6 +62,7 @@ public:
 
 class NullOutputStream : public OutputStream {
 public:
+  NullOutputStream() {}
   int print(const char * /* unused */, ...) { return 1;}
   int println(const char * /* unused */, ...) { return 1;}
 };

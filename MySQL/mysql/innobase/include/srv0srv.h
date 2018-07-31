@@ -40,6 +40,12 @@ be holding any InnoDB latches. */
 extern mutex_t	srv_dict_tmpfile_mutex;
 /* Temporary file for output from the data dictionary */
 extern FILE*	srv_dict_tmpfile;
+/* Mutex for locking srv_misc_tmpfile.
+This mutex has a very low rank; threads reserving it should not
+acquire any further latches or sleep before releasing this one. */
+extern mutex_t	srv_misc_tmpfile_mutex;
+/* Temporary file for miscellanous diagnostic output */
+extern FILE*	srv_misc_tmpfile;
 
 /* Server parameters which are read from the initfile */
 
@@ -71,7 +77,7 @@ extern ulint	srv_n_log_groups;
 extern ulint	srv_n_log_files;
 extern ulint	srv_log_file_size;
 extern ulint	srv_log_buffer_size;
-extern ulint	srv_flush_log_at_trx_commit;
+extern ulong	srv_flush_log_at_trx_commit;
 
 extern byte	srv_latin1_ordering[256];/* The sort order table of the latin1
 					character set */
@@ -99,20 +105,24 @@ extern ulint	srv_max_n_open_files;
 extern ulint	srv_max_dirty_pages_pct;
 
 extern ulint	srv_force_recovery;
-extern ulint	srv_thread_concurrency;
+extern ulong	srv_thread_concurrency;
+extern ulong	srv_commit_concurrency;
 
 extern ulint	srv_max_n_threads;
 
 extern lint	srv_conc_n_threads;
 
-extern ibool	srv_fast_shutdown;
-extern ibool	srv_very_fast_shutdown;  /* if this TRUE, do not flush the
+extern ulint	srv_fast_shutdown;       /* If this is 1, do not do a
+					 purge and index buffer merge.
+					 If this 2, do not even flush the
 					 buffer pool to data files at the
-					 shutdown; we effectively 'crash'
-					 InnoDB */
+					 shutdown: we effectively 'crash'
+					 InnoDB (but lose no committed
+					 transactions). */
 extern ibool	srv_innodb_status;
 
 extern ibool	srv_use_doublewrite_buf;
+extern ibool	srv_use_checksums;
 
 extern ibool    srv_set_thread_priorities;
 extern int      srv_query_thread_priority;
@@ -137,7 +147,9 @@ extern ibool    srv_print_innodb_table_monitor;
 extern ibool	srv_lock_timeout_and_monitor_active;
 extern ibool	srv_error_monitor_active; 
 
-extern ulint	srv_n_spin_wait_rounds;
+extern ulong	srv_n_spin_wait_rounds;
+extern ulong	srv_n_free_tickets_to_enter;
+extern ulong	srv_thread_sleep_delay;
 extern ulint	srv_spin_wait_delay;
 extern ibool	srv_priority_boost;
 		
@@ -189,6 +201,63 @@ i/o handler thread */
 extern const char* srv_io_thread_op_info[];
 extern const char* srv_io_thread_function[];
 
+/* the number of the log write requests done */
+extern ulint srv_log_write_requests;
+
+/* the number of physical writes to the log performed */
+extern ulint srv_log_writes;
+
+/* amount of data written to the log files in bytes */
+extern ulint srv_os_log_written;
+
+/* amount of writes being done to the log files */
+extern ulint srv_os_log_pending_writes;
+
+/* we increase this counter, when there we don't have enough space in the
+log buffer and have to flush it */
+extern ulint srv_log_waits;
+
+/* variable that counts amount of data read in total (in bytes) */
+extern ulint srv_data_read;
+
+/* here we count the amount of data written in total (in bytes) */
+extern ulint srv_data_written;
+
+/* this variable counts the amount of times, when the doublewrite buffer
+was flushed */
+extern ulint srv_dblwr_writes;
+
+/* here we store the number of pages that have been flushed to the
+doublewrite buffer */
+extern ulint srv_dblwr_pages_written;
+
+/* in this variable we store the number of write requests issued */
+extern ulint srv_buf_pool_write_requests;
+
+/* here we store the number of times when we had to wait for a free page
+in the buffer pool. It happens when the buffer pool is full and we need
+to make a flush, in order to be able to read or create a page. */
+extern ulint srv_buf_pool_wait_free;
+
+/* variable to count the number of pages that were written from the
+buffer pool to disk */
+extern ulint srv_buf_pool_flushed;
+
+/* variable to count the number of buffer pool reads that led to the
+reading of a disk page */
+extern ulint srv_buf_pool_reads;
+
+/* variable to count the number of sequential read-aheads were done */
+extern ulint srv_read_ahead_seq;
+
+/* variable to count the number of random read-aheads were done */
+extern ulint srv_read_ahead_rnd;
+
+/* In this structure we store status variables to be passed to MySQL */
+typedef struct export_var_struct export_struc;
+
+extern export_struc export_vars;
+
 typedef struct srv_sys_struct	srv_sys_t;
 
 /* The server system */
@@ -238,6 +307,12 @@ ulint
 srv_boot(void);
 /*==========*/
 			/* out: DB_SUCCESS or error code */
+/*************************************************************************
+Initializes the server. */
+
+void
+srv_init(void);
+/*==========*/
 /*************************************************************************
 Frees the OS fast mutex created in srv_boot(). */
 
@@ -410,6 +485,12 @@ srv_printf_innodb_monitor(
 	ulint*	trx_end);	/* out: file position of the end of
 				the list of active transactions */
 
+/**********************************************************************
+Function to pass InnoDB status variables to MySQL */
+
+void
+srv_export_innodb_status(void);
+/*=====================*/
 
 /* Types for the threads existing in the system. Threads of types 4 - 9
 are called utility threads. Note that utility threads are mainly disk
@@ -435,6 +516,53 @@ typedef struct srv_slot_struct	srv_slot_t;
 /* Thread table is an array of slots */
 typedef srv_slot_t	srv_table_t;
 
+/* In this structure we store status variables to be passed to MySQL */
+struct export_var_struct{
+        ulint innodb_data_pending_reads;
+        ulint innodb_data_pending_writes;
+        ulint innodb_data_pending_fsyncs;
+        ulint innodb_data_fsyncs;
+        ulint innodb_data_read;
+        ulint innodb_data_writes;
+        ulint innodb_data_written;
+        ulint innodb_data_reads;
+        ulint innodb_buffer_pool_pages_total;
+        ulint innodb_buffer_pool_pages_data;
+        ulint innodb_buffer_pool_pages_dirty;
+        ulint innodb_buffer_pool_pages_misc;
+        ulint innodb_buffer_pool_pages_free;
+        ulint innodb_buffer_pool_pages_latched;
+        ulint innodb_buffer_pool_read_requests;
+        ulint innodb_buffer_pool_reads;
+        ulint innodb_buffer_pool_wait_free;
+        ulint innodb_buffer_pool_pages_flushed;
+        ulint innodb_buffer_pool_write_requests;
+        ulint innodb_buffer_pool_read_ahead_seq;
+        ulint innodb_buffer_pool_read_ahead_rnd;
+        ulint innodb_dblwr_pages_written;
+        ulint innodb_dblwr_writes;
+        ulint innodb_log_waits;
+        ulint innodb_log_write_requests;
+        ulint innodb_log_writes;
+        ulint innodb_os_log_written;
+        ulint innodb_os_log_fsyncs;
+        ulint innodb_os_log_pending_writes;
+        ulint innodb_os_log_pending_fsyncs;
+        ulint innodb_page_size;
+        ulint innodb_pages_created;
+        ulint innodb_pages_read;
+        ulint innodb_pages_written;
+        ulint innodb_row_lock_waits;
+        ulint innodb_row_lock_current_waits;
+        ib_longlong innodb_row_lock_time;
+        ulint innodb_row_lock_time_avg;
+        ulint innodb_row_lock_time_max;
+        ulint innodb_rows_read;
+        ulint innodb_rows_inserted;
+        ulint innodb_rows_updated;
+        ulint innodb_rows_deleted;
+};
+
 /* The server system struct */
 struct srv_sys_struct{
 	os_event_t	operational;	/* created threads must wait for the
@@ -443,6 +571,10 @@ struct srv_sys_struct{
 	srv_table_t*	threads;	/* server thread table */
 	UT_LIST_BASE_NODE_T(que_thr_t)
 			tasks;		/* task queue */
+	dict_index_t*	dummy_ind1;	/* dummy index for old-style
+					supremum and infimum records */
+	dict_index_t*	dummy_ind2;	/* dummy index for new-style
+					supremum and infimum records */
 };
 
 extern ulint	srv_n_threads_active[];

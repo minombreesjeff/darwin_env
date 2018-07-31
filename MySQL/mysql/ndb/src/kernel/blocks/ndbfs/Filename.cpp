@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,7 +19,6 @@
 
 #include "Filename.hpp"
 #include "ErrorHandlingMacros.hpp"
-#include "Error.hpp"
 #include "RefConvert.hpp"
 #include "DebuggerNames.hpp"
 
@@ -52,7 +50,7 @@ Filename::init(Uint32 nodeid,
   DBUG_ENTER("Filename::init");
 
   if (pFileSystemPath == NULL) {
-    ERROR_SET(fatal, AFS_ERROR_NOPATH, ""," Filename::init()");
+    ERROR_SET(fatal, NDBD_EXIT_AFS_NOPATH, "","Missing FileSystemPath");
     return;
   }
 
@@ -109,7 +107,7 @@ Filename::set(BlockReference blockReference,
     {
       const char* blockName = getBlockName( refToBlock(blockReference) );
       if (blockName == NULL){
-	ERROR_SET(ecError, AFS_ERROR_PARAMETER,"","No Block Name");
+	ERROR_SET(ecError, NDBD_EXIT_AFS_PARAMETER,"","No Block Name");
 	return;
       }
       BaseString::snprintf(buf, sizeof(buf), "%s%s", blockName, DIR_SEPARATOR);
@@ -165,7 +163,7 @@ Filename::set(BlockReference blockReference,
     const Uint32 diskNo = FsOpenReq::v1_getDisk(filenumber);
 
     if(diskNo == 0xFF){
-      ERROR_SET(ecError, AFS_ERROR_PARAMETER,"","Invalid disk specification");
+      ERROR_SET(ecError, NDBD_EXIT_AFS_PARAMETER,"","Invalid disk specification");
     }
 
     BaseString::snprintf(buf, sizeof(buf), "D%d%s", diskNo, DIR_SEPARATOR);
@@ -174,10 +172,10 @@ Filename::set(BlockReference blockReference,
   }
   break;
   default:
-    ERROR_SET(ecError, AFS_ERROR_PARAMETER,"","Wrong version");
+    ERROR_SET(ecError, NDBD_EXIT_AFS_PARAMETER,"","Wrong version");
   }
   if (type >= noOfExtensions){
-    ERROR_SET(ecError, AFS_ERROR_PARAMETER,"","File Type doesn't exist");
+    ERROR_SET(ecError, NDBD_EXIT_AFS_PARAMETER,"","File Type doesn't exist");
     return;
   }
   strcat(theName, fileExtension[type]);

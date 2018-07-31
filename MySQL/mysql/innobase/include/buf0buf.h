@@ -52,11 +52,17 @@ Created 11/5/1995 Heikki Tuuri
 /* Modes for buf_page_get_known_nowait */
 #define BUF_MAKE_YOUNG	51
 #define BUF_KEEP_OLD	52
+/* Magic value to use instead of checksums when they are disabled */
+#define BUF_NO_CHECKSUM_MAGIC 0xDEADBEEFUL
 
 extern buf_pool_t* 	buf_pool; 	/* The buffer pool of the database */
+#ifdef UNIV_DEBUG
 extern ibool		buf_debug_prints;/* If this is set TRUE, the program
 					prints info whenever read or flush
 					occurs */
+#endif /* UNIV_DEBUG */
+extern ulint srv_buf_pool_write_requests; /* variable to count write request
+                                          issued */
 
 /************************************************************************
 Creates the buffer pool. */
@@ -378,10 +384,10 @@ Returns the value of the modify clock. The caller must have an s-lock
 or x-lock on the block. */
 UNIV_INLINE
 dulint
-buf_frame_get_modify_clock(
+buf_block_get_modify_clock(
 /*=======================*/
 				/* out: value */
-	buf_frame_t*	frame);	/* in: pointer to a frame */
+	buf_block_t*	block);	/* in: block */
 /************************************************************************
 Calculates a page checksum which is stored to the page when it is written
 to a file. Note that we must be careful to calculate the same value
@@ -455,8 +461,8 @@ Gets the mutex number protecting the page record lock hash chain in the lock
 table. */
 UNIV_INLINE
 mutex_t*
-buf_frame_get_lock_mutex(
-/*=====================*/
+buf_frame_get_mutex(
+/*================*/
 			/* out: mutex */
 	byte*	ptr);	/* in: pointer to within a buffer frame */
 /***********************************************************************
@@ -476,12 +482,20 @@ buf_pool_is_block(
 /*==============*/
 			/* out: TRUE if pointer to block */
 	void*	ptr);	/* in: pointer to memory */
+#ifdef UNIV_DEBUG
 /*************************************************************************
 Validates the buffer pool data structure. */
 
 ibool
 buf_validate(void);
 /*==============*/
+/*************************************************************************
+Prints info of the buffer pool data structure. */
+
+void
+buf_print(void);
+/*============*/
+#endif /* UNIV_DEBUG */
 /************************************************************************
 Prints a page to stderr. */
 
@@ -490,11 +504,11 @@ buf_page_print(
 /*===========*/
 	byte*	read_buf);	/* in: a database page */
 /*************************************************************************
-Prints info of the buffer pool data structure. */
+Returns the number of latched pages in the buffer pool. */
 
-void
-buf_print(void);
-/*============*/
+ulint
+buf_get_latched_pages_number(void);
+/*==============================*/
 /*************************************************************************
 Returns the number of pending buf pool ios. */
 
@@ -699,7 +713,10 @@ struct buf_block_struct{
 
 	ulint		magic_n;	/* magic number to check */
 	ulint		state;		/* state of the control block:
-					BUF_BLOCK_NOT_USED, ... */
+					BUF_BLOCK_NOT_USED, ...; changing
+					this is only allowed when a thread
+					has BOTH the buffer pool mutex AND
+					block->mutex locked */
 	byte*		frame;		/* pointer to buffer frame which
 					is of size UNIV_PAGE_SIZE, and
 					aligned to an address divisible by
@@ -717,8 +734,12 @@ struct buf_block_struct{
 	ulint		offset;		/* page number within the space */
 	ulint		lock_hash_val;	/* hashed value of the page address
 					in the record lock hash table */
-	mutex_t*	lock_mutex;	/* mutex protecting the chain in the
-					record lock hash table */
+	mutex_t		mutex;		/* mutex protecting this block:
+					state (also protected by the buffer
+					pool mutex), io_fix, buf_fix_count,
+					and accessed; we introduce this new
+					mutex in InnoDB-5.1 to relieve
+					contention on the buffer pool mutex */
 	rw_lock_t	lock;		/* read-write lock of the buffer
 					frame */
 	buf_block_t*	hash;		/* node used in chaining to the page
@@ -774,20 +795,27 @@ struct buf_block_struct{
 					in heuristic algorithms, because of
 					the possibility of a wrap-around! */
 	ulint		freed_page_clock;/* the value of freed_page_clock
-					buffer pool when this block was
-					last time put to the head of the
-					LRU list */
+					of the buffer pool when this block was
+					the last time put to the head of the
+					LRU list; a thread is allowed to
+					read this for heuristic purposes
+					without holding any mutex or latch */
 	ibool		old;		/* TRUE if the block is in the old
 					blocks in the LRU list */
 	ibool		accessed;	/* TRUE if the page has been accessed
 					while in the buffer pool: read-ahead
 					may read in pages which have not been
-					accessed yet */
+					accessed yet; this is protected by
+					block->mutex; a thread is allowed to
+					read this for heuristic purposes
+					without holding any mutex or latch */
 	ulint		buf_fix_count;	/* count of how manyfold this block
-					is currently bufferfixed */
+					is currently bufferfixed; this is
+					protected by block->mutex */
 	ulint		io_fix;		/* if a read is pending to the frame,
 					io_fix is BUF_IO_READ, in the case
-					of a write BUF_IO_WRITE, otherwise 0 */
+					of a write BUF_IO_WRITE, otherwise 0;
+					this is protected by block->mutex */
 	/* 4. Optimistic search field */
 
 	dulint		modify_clock;	/* this clock is incremented every
@@ -817,7 +845,13 @@ struct buf_block_struct{
 					records with the same prefix should be
 					indexed in the hash index */
 					
-	/* The following 4 fields are protected by btr_search_latch: */
+	/* These 6 fields may only be modified when we have
+	an x-latch on btr_search_latch AND
+	a) we are holding an s-latch or x-latch on block->lock or
+	b) we know that block->buf_fix_count == 0.
+
+	An exception to this is when we init or create a page
+	in the buffer pool in buf0buf.c. */
 
 	ibool		is_hashed;	/* TRUE if hash index has already been
 					built on this page; note that it does
@@ -834,6 +868,8 @@ struct buf_block_struct{
 	ulint		curr_side;	/* BTR_SEARCH_LEFT_SIDE or
 					BTR_SEARCH_RIGHT_SIDE in hash
 					indexing */
+	dict_index_t*	index;		/* Index for which the adaptive
+					hash index has been created. */
 	/* 6. Debug fields */
 #ifdef UNIV_SYNC_DEBUG
 	rw_lock_t	debug_latch;	/* in the debug version, each thread
@@ -940,7 +976,9 @@ struct buf_pool_struct{
 					number of buffer blocks removed from
 					the end of the LRU list; NOTE that
 					this counter may wrap around at 4
-					billion! */
+					billion! A thread is allowed to
+					read this for heuristic purposes
+					without holding any mutex or latch */
 	ulint		LRU_flush_ended;/* when an LRU flush ends for a page,
 					this is incremented by one; this is
 					set to zero when a buffer block is

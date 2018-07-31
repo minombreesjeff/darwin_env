@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -55,6 +54,8 @@ typedef struct ErrorBundle {
 #define NI ndberror_cl_function_not_implemented
 #define UE ndberror_cl_unknown_error_code
 
+#define OE ndberror_cl_schema_object_already_exists
+
 static const char* empty_string = "";
 
 /*
@@ -66,6 +67,7 @@ static const char* empty_string = "";
  *  600 - ACC
  *  700 - DICT
  *  800 - TUP
+ *  900 - TUX
  * 1200 - LQH
  * 1300 - BACKUP
  * 4000 - API
@@ -75,6 +77,7 @@ static const char* empty_string = "";
  * 4400 - ""
  * 4500 - ""
  * 4600 - ""
+ * 4700 - "" Event
  * 5000 - Management server
  */
 
@@ -134,10 +137,12 @@ ErrorBundle ErrorCodes[] = {
   /**
    * Unknown result
    */
+  { 4007, UR, "Send to ndbd node failed" },
   { 4008, UR, "Receive from NDB failed" },
   { 4009, UR, "Cluster Failure" },
   { 4012, UR, 
     "Request ndbd time-out, maybe due to high load or communication problems"}, 
+  { 4013, UR, "Request timed out in waiting for node failure"}, 
   { 4024, UR, 
     "Time-out, most likely caused by simple read or cluster failure" }, 
   
@@ -174,11 +179,13 @@ ErrorBundle ErrorCodes[] = {
   { 623,  IS, "623" },
   { 624,  IS, "624" },
   { 625,  IS, "Out of memory in Ndb Kernel, hash index part (increase IndexMemory)" },
-  { 800,  IS, "Too many ordered indexes (increase MaxNoOfOrderedIndexes)" },
+  { 640,  IS, "Too many hash indexes (should not happen)" },
   { 826,  IS, "Too many tables and attributes (increase MaxNoOfAttributes or MaxNoOfTables)" },
   { 827,  IS, "Out of memory in Ndb Kernel, table data (increase DataMemory)" },
   { 902,  IS, "Out of memory in Ndb Kernel, ordered index data (increase DataMemory)" },
-  { 832,  IS, "832" },
+  { 903,  IS, "Too many ordered indexes (increase MaxNoOfOrderedIndexes)" },
+  { 904,  IS, "Out of fragment records (increase MaxNoOfOrderedIndexes)" },
+  { 905,  IS, "Out of attribute records (increase MaxNoOfAttributes)" },
 
   /**
    * TimeoutExpired 
@@ -203,7 +210,7 @@ ErrorBundle ErrorCodes[] = {
   /**
    * Internal errors
    */
-  { 892,  IE, "Inconsistent hash index. The index needs to be dropped and recreated" },
+  { 896,  IE, "Tuple corrupted - wrong checksum or column data in invalid format" },
   { 901,  IE, "Inconsistent ordered index. The index needs to be dropped and recreated" },
   { 202,  IE, "202" },
   { 203,  IE, "203" },
@@ -220,6 +227,7 @@ ErrorBundle ErrorCodes[] = {
   { 277,  IE, "277" },
   { 278,  IE, "278" },
   { 287,  IE, "Index corrupted" },
+  { 290,  IE, "Corrupt key in TC, unable to xfrm" },
   { 631,  IE, "631" },
   { 632,  IE, "632" },
   { 702,  IE, "Request to non-master" },
@@ -258,7 +266,10 @@ ErrorBundle ErrorCodes[] = {
   /**
    * Application error
    */
+  { 299,  AE, "Operation not allowed or aborted due to single user mode" },
+  { 763,  AE, "Alter table requires cluster nodes to have exact same version" },
   { 823,  AE, "Too much attrinfo from application in tuple manager" },
+  { 831,  AE, "Too many nullable/bitfields in table definition" },
   { 876,  AE, "876" },
   { 877,  AE, "877" },
   { 878,  AE, "878" },
@@ -268,9 +279,10 @@ ErrorBundle ErrorCodes[] = {
   { 885,  AE, "Stack underflow in interpreter" },
   { 886,  AE, "More than 65535 instructions executed in interpreter" },
   { 897,  AE, "Update attempt of primary key via ndbcluster internal api (if this occurs via the MySQL server it is a bug, please report)" },
+  { 892,  AE, "Unsupported type in scan filter" },
   { 4256, AE, "Must call Ndb::init() before this function" },
   { 4257, AE, "Tried to read too much - too many getValue calls" },
-
+  
   /** 
    * Scan application errors
    */
@@ -287,29 +299,53 @@ ErrorBundle ErrorCodes[] = {
   { 4608, AE, "You can not takeOverScan unless you have used openScanExclusive"},
   { 4609, AE, "You must call nextScanResult before trying to takeOverScan"},
   { 4232, AE, "Parallelism can only be between 1 and 240" },
-  { 290,  AE, "Scan not started or has been closed by kernel due to timeout" },
+
+  /** 
+   * Event schema errors
+   */
+
+  { 4713,  SE, "Column defined in event does not exist in table"},
+  
+  /** 
+   * Event application errors
+   */
+
+  { 4707,  AE, "Too many event have been defined"},
+  { 4708,  AE, "Event name is too long"},
+  { 4709,  AE, "Can't accept more subscribers"},
+  {  746,  OE, "Event name already exists"},
+  { 4710,  AE, "Event not found"},
+  { 4711,  AE, "Creation of event failed"},
+  { 4712,  AE, "Stopped event operation does not exist. Already stopped?"},
+
+  /** 
+   * Event internal errors
+   */
+
+  { 4731,  IE, "Event not found"},
 
   /**
    * SchemaError
    */
   { 701,  SE, "System busy with other schema operation" },
+  { 711,  SE, "System busy with node restart, schema operations not allowed" },
   { 703,  SE, "Invalid table format" },
   { 704,  SE, "Attribute name too long" },
   { 705,  SE, "Table name too long" },
   { 707,  SE, "No more table metadata records (increase MaxNoOfTables)" },  
   { 708,  SE, "No more attribute metadata records (increase MaxNoOfAttributes)" },
   { 709,  SE, "No such table existed" },
-  { 721,  SE, "Table or index with given name already exists" },
+  { 721,  OE, "Table or index with given name already exists" },
   { 723,  SE, "No such table existed" },
-  { 736,  SE, "Wrong attribute size" },
+  { 736,  SE, "Unsupported array size" },
   { 737,  SE, "Attribute array size too big" },
   { 738,  SE, "Record too big" },
   { 739,  SE, "Unsupported primary key length" },
   { 740,  SE, "Nullable primary key not supported" },
   { 741,  SE, "Unsupported alter table" },
-  { 742,  SE, "Unsupported attribute type in index" },
   { 743,  SE, "Unsupported character set in table or index" },
   { 744,  SE, "Character string is invalid for given character set" },
+  { 745,  SE, "Distribution key not supported for char attribute (use binary attribute)" },
   { 761,  SE, "Unable to drop table as backup is in progress" },
   { 762,  SE, "Unable to alter table as backup is in progress" },
   { 241,  SE, "Invalid schema object version" },
@@ -317,6 +353,9 @@ ErrorBundle ErrorCodes[] = {
   { 284,  SE, "Table not defined in transaction coordinator" },
   { 285,  SE, "Unknown table error in transaction coordinator" },
   { 881,  SE, "Unable to create table, out of data pages (increase DataMemory) " },
+  { 906,  SE, "Unsupported attribute type in index" },
+  { 907,  SE, "Unsupported character set in table or index" },
+  { 908,  IS, "Invalid ordered index tree node size" },
   { 1225, SE, "Table not defined in local query handler" },
   { 1226, SE, "Table is being dropped" },
   { 1228, SE, "Cannot use drop table for drop index" },
@@ -341,7 +380,7 @@ ErrorBundle ErrorCodes[] = {
   { 1305, IE, "Backup definition not implemented" },
   { 1306, AE, "Backup not supported in diskless mode (change Diskless)" },
 
-  { 1321, IE, "Backup aborted by application" },
+  { 1321, UD, "Backup aborted by user request" },
   { 1322, IE, "Backup already completed" },
   { 1323, IE, "1323" },
   { 1324, IE, "Backup log buffer full" },
@@ -364,7 +403,7 @@ ErrorBundle ErrorCodes[] = {
    * Still uncategorized
    */
   { 720,  AE, "Attribute name reused in table definition" },
-  { 4004, AE, "Attribute name not found in the Table" },
+  { 4004, AE, "Attribute name or id not found in the table" },
   
   { 4100, AE, "Status Error in NDB" },
   { 4101, AE, "No connections to NDB available and connect failed" },
@@ -461,8 +500,7 @@ ErrorBundle ErrorCodes[] = {
   { 4241, AE, "Index name too long" },
   { 4242, AE, "Too many indexes" },
   { 4243, AE, "Index not found" },
-  { 4244, AE, "Index or table with given name already exists" },
-  { 4245, AE, "Index attribute must be defined as stored, i.e. the StorageAttributeType must be defined as NormalStorageAttribute"},
+  { 4244, OE, "Index or table with given name already exists" },
   { 4247, AE, "Illegal index/trigger create/drop/alter request" },
   { 4248, AE, "Trigger/index name invalid" },
   { 4249, AE, "Invalid table" },
@@ -479,13 +517,15 @@ ErrorBundle ErrorCodes[] = {
   { 4262, UD, "NdbScanFilter: Condition is out of bounds"},
   { 4263, IE, "Invalid blob attributes or invalid blob parts table" },
   { 4264, AE, "Invalid usage of blob attribute" },
-  { 4265, AE, "Method is not valid in current blob state" },
+  { 4265, AE, "The blob method is not valid in current blob state" },
   { 4266, AE, "Invalid blob seek position" },
   { 4267, IE, "Corrupted blob value" },
   { 4268, IE, "Error in blob head update forced rollback of transaction" },
-  { 4268, IE, "Unknown blob error" },
   { 4269, IE, "No connection to ndb management server" },
-  { 4335, AE, "Only one autoincrement column allowed per table. Having a table without primary key uses an autoincremented hidden key, i.e. a table without a primary key can not have an autoincremented column" }
+  { 4270, IE, "Unknown blob error" },
+  { 4335, AE, "Only one autoincrement column allowed per table. Having a table without primary key uses an autoincremented hidden key, i.e. a table without a primary key can not have an autoincremented column" },
+  { 4271, AE, "Invalid index object, not retrieved via getIndex()" },
+  { 4275, AE, "The blob method is incompatible with operation type or lock mode" }
 };
 
 static
@@ -642,11 +682,14 @@ const char *ndberror_classification_message(ndberror_classification classificati
   return empty_string;
 }
 
-int ndb_error_string(int err_no, char *str, unsigned int size)
+int ndb_error_string(int err_no, char *str, int size)
 {
   ndberror_struct error;
-  unsigned int len;
+  int len;
 
+  assert(size > 1);
+  if(size <= 1) 
+    return 0;
   error.code = err_no;
   ndberror_update(&error);
 
@@ -656,5 +699,7 @@ int ndb_error_string(int err_no, char *str, unsigned int size)
 		ndberror_classification_message(error.classification));
   str[size-1]= '\0';
   
-  return len;
+  if (error.classification != UE)
+    return len;
+  return -len;
 }

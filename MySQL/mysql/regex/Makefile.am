@@ -1,9 +1,9 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2003, 2005-2006 MySQL AB
 # 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 # 
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,8 +15,7 @@
 # Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
 # MA 02111-1307, USA
 
-INCLUDES =		@MT_INCLUDES@ \
-			-I$(top_builddir)/include -I$(top_srcdir)/include
+INCLUDES =		-I$(top_builddir)/include -I$(top_srcdir)/include
 noinst_LIBRARIES =	libregex.a
 LDADD=			libregex.a $(top_builddir)/strings/libmystrings.a
 noinst_HEADERS =	cclass.h cname.h regex2.h utils.h engine.c my_regex.h
@@ -26,7 +25,7 @@ re_SOURCES =		split.c debug.c main.c
 re_LDFLAGS= @NOINST_LDFLAGS@
 EXTRA_DIST =		tests CHANGES COPYRIGHT WHATSNEW regexp.c \
 			debug.ih engine.ih main.ih regcomp.ih regerror.ih \
-			regex.3 regex.7
+			regex.3 regex.7 CMakeLists.txt
 
 test: re tests
 	./re < tests

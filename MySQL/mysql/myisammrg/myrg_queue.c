@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2003, 2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,12 +17,26 @@
 
 static int queue_key_cmp(void *keyseg, byte *a, byte *b)
 {
-  MI_INFO *aa=((MYRG_TABLE *)a)->table;
-  MI_INFO *bb=((MYRG_TABLE *)b)->table;
+  MYRG_TABLE *ma= (MYRG_TABLE *)a;
+  MYRG_TABLE *mb= (MYRG_TABLE *)b;
+  MI_INFO *aa= ma->table;
+  MI_INFO *bb= mb->table;
   uint not_used[2];
   int ret= ha_key_cmp((HA_KEYSEG *)keyseg, aa->lastkey, bb->lastkey,
 		       USE_WHOLE_KEY, SEARCH_FIND, not_used);
-  return ret < 0 ? -1 : ret > 0 ? 1 : 0;
+  if (ret < 0)
+    return -1;
+  if (ret > 0)
+    return 1;
+ 
+  /*
+    If index tuples have the same values, let the record with least rowid
+    value be "smaller", so index scans return records ordered by (keytuple,
+    rowid). This is used by index_merge access method, grep for ROR in
+    sql/opt_range.cc for details.
+  */
+  return (ma->file_offset < mb->file_offset)? -1 : (ma->file_offset > 
+                                                    mb->file_offset) ? 1 : 0;
 } /* queue_key_cmp */
 
 

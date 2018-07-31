@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2002-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,7 +30,7 @@ protected:
   String *packet;
   String *convert;
   uint field_pos;
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   enum enum_field_types *field_types;
 #endif
   uint field_count;
@@ -50,17 +49,15 @@ public:
   Protocol(THD *thd_arg) { init(thd_arg); }
   virtual ~Protocol() {}
   void init(THD* thd_arg);
-  bool send_fields(List<Item> *list, uint flag);
-  bool send_records_num(List<Item> *list, ulonglong records);
+
+  enum { SEND_NUM_ROWS= 1, SEND_DEFAULTS= 2, SEND_EOF= 4 };
+  virtual bool send_fields(List<Item> *list, uint flags);
+
   bool store(I_List<i_string> *str_list);
   bool store(const char *from, CHARSET_INFO *cs);
   String *storage_packet() { return packet; }
   inline void free() { packet->free(); }
-#ifndef EMBEDDED_LIBRARY
-  bool write();
-#else
   virtual bool write();
-#endif
   inline  bool store(uint32 from)
   { return store_long((longlong) from); }
   inline  bool store(longlong from)
@@ -83,15 +80,22 @@ public:
   virtual bool store_short(longlong from)=0;
   virtual bool store_long(longlong from)=0;
   virtual bool store_longlong(longlong from, bool unsigned_flag)=0;
+  virtual bool store_decimal(const my_decimal *)=0;
   virtual bool store(const char *from, uint length, CHARSET_INFO *cs)=0;
   virtual bool store(const char *from, uint length, 
   		     CHARSET_INFO *fromcs, CHARSET_INFO *tocs)=0;
   virtual bool store(float from, uint32 decimals, String *buffer)=0;
   virtual bool store(double from, uint32 decimals, String *buffer)=0;
-  virtual bool store(TIME *time)=0;
-  virtual bool store_date(TIME *time)=0;
-  virtual bool store_time(TIME *time)=0;
+  virtual bool store(MYSQL_TIME *time)=0;
+  virtual bool store_date(MYSQL_TIME *time)=0;
+  virtual bool store_time(MYSQL_TIME *time)=0;
   virtual bool store(Field *field)=0;
+#ifdef EMBEDDED_LIBRARY
+  int begin_dataset();
+  virtual void remove_last_row() {}
+#else
+  void remove_last_row() {}
+#endif
 };
 
 
@@ -108,15 +112,19 @@ public:
   virtual bool store_short(longlong from);
   virtual bool store_long(longlong from);
   virtual bool store_longlong(longlong from, bool unsigned_flag);
+  virtual bool store_decimal(const my_decimal *);
   virtual bool store(const char *from, uint length, CHARSET_INFO *cs);
   virtual bool store(const char *from, uint length,
   		     CHARSET_INFO *fromcs, CHARSET_INFO *tocs);
-  virtual bool store(TIME *time);
-  virtual bool store_date(TIME *time);
-  virtual bool store_time(TIME *time);
+  virtual bool store(MYSQL_TIME *time);
+  virtual bool store_date(MYSQL_TIME *time);
+  virtual bool store_time(MYSQL_TIME *time);
   virtual bool store(float nr, uint32 decimals, String *buffer);
   virtual bool store(double from, uint32 decimals, String *buffer);
   virtual bool store(Field *field);
+#ifdef EMBEDDED_LIBRARY
+  void remove_last_row();
+#endif
 };
 
 
@@ -138,46 +146,25 @@ public:
   virtual bool store_short(longlong from);
   virtual bool store_long(longlong from);
   virtual bool store_longlong(longlong from, bool unsigned_flag);
+  virtual bool store_decimal(const my_decimal *);
   virtual bool store(const char *from,uint length, CHARSET_INFO *cs);
   virtual bool store(const char *from, uint length,
   		     CHARSET_INFO *fromcs, CHARSET_INFO *tocs);
-  virtual bool store(TIME *time);
-  virtual bool store_date(TIME *time);
-  virtual bool store_time(TIME *time);
+  virtual bool store(MYSQL_TIME *time);
+  virtual bool store_date(MYSQL_TIME *time);
+  virtual bool store_time(MYSQL_TIME *time);
   virtual bool store(float nr, uint32 decimals, String *buffer);
   virtual bool store(double from, uint32 decimals, String *buffer);
   virtual bool store(Field *field);
 };
 
-class Protocol_cursor :public Protocol_simple
-{
-public:
-  MEM_ROOT *alloc;
-  MYSQL_FIELD *fields;
-  MYSQL_ROWS *data;
-  MYSQL_ROWS **prev_record;
-  ulong row_count;
-
-  Protocol_cursor() {}
-  Protocol_cursor(THD *thd_arg, MEM_ROOT *ini_alloc) :Protocol_simple(thd_arg), alloc(ini_alloc) {}
-  bool prepare_for_send(List<Item> *item_list) 
-  {
-    fields= NULL;
-    data= NULL;
-    prev_record= &data;
-    return Protocol_simple::prepare_for_send(item_list);
-  }
-  bool send_fields(List<Item> *list, uint flag);
-  bool write();
-};
-
 void send_warning(THD *thd, uint sql_errno, const char *err=0);
-void net_printf(THD *thd,uint sql_errno, ...);
+void net_printf_error(THD *thd, uint sql_errno, ...);
+void net_send_error(THD *thd, uint sql_errno=0, const char *err=0);
 void send_ok(THD *thd, ha_rows affected_rows=0L, ulonglong id=0L,
 	     const char *info=0);
-void send_eof(THD *thd, bool no_flush=0);
+void send_eof(THD *thd);
 bool send_old_password_request(THD *thd);
-char *net_store_length(char *packet,uint length);
 char *net_store_data(char *to,const char *from, uint length);
 char *net_store_data(char *to,int32 from);
 char *net_store_data(char *to,longlong from);

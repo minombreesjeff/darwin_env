@@ -17,6 +17,10 @@ Created 9/5/1995 Heikki Tuuri
 #include "os0sync.h"
 #include "sync0arr.h"
 
+#ifndef UNIV_HOTBACKUP
+extern my_bool  timed_mutexes;
+#endif /* UNIV_HOTBACKUP */
+
 /**********************************************************************
 Initializes the synchronization data structures. */
 
@@ -35,8 +39,11 @@ location (which must be appropriately aligned). The mutex is initialized
 in the reset state. Explicit freeing of the mutex with mutex_free is
 necessary only if the memory block containing it is freed. */
 
-
-#define mutex_create(M)	mutex_create_func((M), __FILE__, __LINE__)
+#ifdef UNIV_DEBUG
+# define mutex_create(M) mutex_create_func((M), #M, __FILE__, __LINE__)
+#else
+# define mutex_create(M) mutex_create_func((M), __FILE__, __LINE__)
+#endif
 /*===================*/
 /**********************************************************************
 Creates, or rather, initializes a mutex object in a specified memory
@@ -48,6 +55,9 @@ void
 mutex_create_func(
 /*==============*/
 	mutex_t*	mutex,		/* in: pointer to memory */
+#ifdef UNIV_DEBUG
+	const char*	cmutex_name,	/* in: mutex name */
+#endif /* UNIV_DEBUG */
 	const char*	cfile_name,	/* in: file name where created */
 	ulint		cline);		/* in: file line where created */
 /**********************************************************************
@@ -413,6 +423,8 @@ or row lock! */
 /*------------------------------------- Insert buffer tree */
 #define	SYNC_IBUF_BITMAP_MUTEX	351
 #define	SYNC_IBUF_BITMAP	350
+/*------------------------------------- MySQL query cache mutex */
+/*------------------------------------- MySQL binlog mutex */
 /*-------------------------------*/
 #define	SYNC_KERNEL		300
 #define SYNC_REC_LOCK		299
@@ -447,6 +459,7 @@ Do not use its fields directly! The structure used in the spin lock
 implementation of a mutual exclusion semaphore. */
 
 struct mutex_struct {
+	os_event_t	event;	/* Used by sync0arr.c for the wait queue */
 	ulint	lock_word;	/* This ulint is the target of the atomic
 				test-and-set instruction in Win32 */
 #if !defined(_WIN32) || !defined(UNIV_CAN_USE_X86_ASSEMBLER)
@@ -471,6 +484,19 @@ struct mutex_struct {
 	const char*	cfile_name;/* File name where mutex created */
 	ulint	cline;		/* Line where created */
 	ulint	magic_n;
+#ifndef UNIV_HOTBACKUP
+	ulong		count_os_wait; /* count of os_wait */
+# ifdef UNIV_DEBUG
+	ulong		count_using; /* count of times mutex used */
+	ulong		count_spin_loop; /* count of spin loops */
+	ulong		count_spin_rounds; /* count of spin rounds */
+	ulong		count_os_yield; /* count of os_wait */
+	ulonglong	lspent_time; /* mutex os_wait timer msec */
+	ulonglong	lmax_spent_time; /* mutex os_wait timer msec */
+	const char*	cmutex_name;/* mutex name */
+	ulint		mutex_type;/* 0 - usual mutex 1 - rw_lock mutex	 */
+# endif /* UNIV_DEBUG */
+#endif /* !UNIV_HOTBACKUP */
 };
 
 #define MUTEX_MAGIC_N	(ulint)979585
@@ -503,6 +529,14 @@ extern ibool	sync_order_checks_on;
 
 /* This variable is set to TRUE when sync_init is called */
 extern ibool	sync_initialized;
+
+/* Global list of database mutexes (not OS mutexes) created. */
+typedef UT_LIST_BASE_NODE_T(mutex_t)  ut_list_base_node_t;
+extern ut_list_base_node_t  mutex_list;
+
+/* Mutex protecting the mutex_list variable */
+extern mutex_t mutex_list_mutex;
+
 
 #ifndef UNIV_NONINL
 #include "sync0sync.ic"

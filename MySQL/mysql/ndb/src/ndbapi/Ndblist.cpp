@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -19,7 +18,6 @@
 #include <NdbOperation.hpp>
 #include <NdbIndexOperation.hpp>
 #include <NdbIndexScanOperation.hpp>
-#include <NdbConnection.hpp>
 #include "NdbApiSignal.hpp"
 #include <NdbRecAttr.hpp>
 #include "NdbUtil.hpp"
@@ -51,10 +49,10 @@ Ndb::checkFailedNode()
       /**
        * Release all connections in idle list (for node)
        */
-      NdbConnection * tNdbCon = theConnectionArray[node_id];
+      NdbTransaction * tNdbCon = theConnectionArray[node_id];
       theConnectionArray[node_id] = NULL;
       while (tNdbCon != NULL) {
-        NdbConnection* tempNdbCon = tNdbCon;
+        NdbTransaction* tempNdbCon = tNdbCon;
         tNdbCon = tNdbCon->next();
         releaseNdbCon(tempNdbCon);
       }
@@ -71,12 +69,15 @@ Ndb::checkFailedNode()
  *                 if createConIdleList was succesful
  *                 Return -1: In all other case.  
  * Parameters:     aNrOfCon : Number of connections offered to the application.
- * Remark:         Create connection idlelist with NdbConnection objects.
+ * Remark:         Create connection idlelist with NdbTransaction objects.
  ***************************************************************************/ 
 int 
 Ndb::createConIdleList(int aNrOfCon)
 {
-  theImpl->theConIdleList.fill(this, aNrOfCon);
+  if (theImpl->theConIdleList.fill(this, aNrOfCon))
+  {
+    return -1;
+  }
   return aNrOfCon; 
 }
 
@@ -92,7 +93,10 @@ Ndb::createConIdleList(int aNrOfCon)
 int 
 Ndb::createOpIdleList(int aNrOfOp)
 { 
-  theImpl->theOpIdleList.fill(this, aNrOfOp);
+  if (theImpl->theOpIdleList.fill(this, aNrOfOp))
+  {
+    return -1;
+  }
   return aNrOfOp; 
 }
 
@@ -123,23 +127,16 @@ Ndb::getNdbCall()
 }
 
 /***************************************************************************
- * NdbConnection* getNdbCon();
+ * NdbTransaction* getNdbCon();
  *
  * Return Value:   Return a connection if the  getNdbCon was successful.
  *                Return NULL : In all other case.  
  * Remark:         Get a connection from theConIdleList and return the object .
  ***************************************************************************/ 
-NdbConnection*
+NdbTransaction*
 Ndb::getNdbCon()
 {
-  NdbConnection* tNdbCon = theImpl->theConIdleList.seize(this);
-  if (unlikely(theImpl->theConIdleList.m_alloc_cnt > theMaxNoOfTransactions)) 
-  {
-    theImpl->theConIdleList.release(tNdbCon);
-    ndbout << "theNoOfAllocatedTransactions = " << theNoOfAllocatedTransactions << " theMaxNoOfTransactions = " << theMaxNoOfTransactions << endl;
-    return NULL;
-  }//if
-  
+  NdbTransaction* tNdbCon = theImpl->theConIdleList.seize(this);
   tNdbCon->theMagicNumber = 0x37412619;
   return tNdbCon;
 }
@@ -290,13 +287,13 @@ Ndb::releaseNdbCall(NdbCall* aNdbCall)
 }
 
 /***************************************************************************
-void releaseNdbCon(NdbConnection* aNdbCon);
+void releaseNdbCon(NdbTransaction* aNdbCon);
 
-Parameters:     aNdbCon: The NdbConnection object.
+Parameters:     aNdbCon: The NdbTransaction object.
 Remark:         Add a Connection object into the signal idlelist.
 ***************************************************************************/
 void
-Ndb::releaseNdbCon(NdbConnection* aNdbCon)
+Ndb::releaseNdbCon(NdbTransaction* aNdbCon)
 {
   aNdbCon->theMagicNumber = 0xFE11DD;
   theImpl->theConIdleList.release(aNdbCon);
@@ -368,9 +365,20 @@ Remark:         Add a NdbScanOperation object into the signal idlelist.
 void
 Ndb::releaseScanOperation(NdbIndexScanOperation* aScanOperation)
 {
+  DBUG_ENTER("Ndb::releaseScanOperation");
+  DBUG_PRINT("enter", ("op: 0x%lx", (long)aScanOperation));
+#ifdef ndb_release_check_dup
+  { NdbIndexScanOperation* tOp = theScanOpIdleList;
+    while (tOp != NULL) {
+      assert(tOp != aScanOperation);
+    tOp = (NdbIndexScanOperation*)tOp->theNext;
+    }
+  }
+#endif
   aScanOperation->theNdbCon = NULL;
   aScanOperation->theMagicNumber = 0xFE11D2;
   theImpl->theScanOpIdleList.release(aScanOperation);
+  DBUG_VOID_RETURN;
 }
 
 /***************************************************************************
@@ -426,18 +434,19 @@ Ndb::releaseSignalsInList(NdbApiSignal** pList){
 void
 Ndb::releaseNdbBlob(NdbBlob* aBlob)
 {
+  aBlob->release();
   theImpl->theNdbBlobIdleList.release(aBlob);
 }
 
 /****************************************************************************
-int releaseConnectToNdb(NdbConnection* aConnectConnection);
+int releaseConnectToNdb(NdbTransaction* aConnectConnection);
 
 Return Value:   -1 if error 
 Parameters:     aConnectConnection : Seized schema connection to DBTC
 Remark:         Release and disconnect from DBTC a connection and seize it to theConIdleList.
 *****************************************************************************/
 void
-Ndb::releaseConnectToNdb(NdbConnection* a_con)     
+Ndb::releaseConnectToNdb(NdbTransaction* a_con)     
 {
   DBUG_ENTER("Ndb::releaseConnectToNdb");
   NdbApiSignal          tSignal(theMyRef);
@@ -455,7 +464,7 @@ Ndb::releaseConnectToNdb(NdbConnection* a_con)
   tSignal.setData((tConPtr = a_con->getTC_ConnectPtr()), 1);
   tSignal.setData(theMyRef, 2);
   tSignal.setData(a_con->ptr2int(), 3); 
-  a_con->Status(NdbConnection::DisConnecting);
+  a_con->Status(NdbTransaction::DisConnecting);
   a_con->theMagicNumber = 0x37412619;
   int ret_code = sendRecSignal(node_id,
                                WAIT_TC_RELEASE,

@@ -3,6 +3,7 @@
 # Preparing playground
 --disable_warnings
 drop table if exists t1, t2;
+drop function if exists f1;
 --enable_warnings
 
 
@@ -48,6 +49,11 @@ insert into t1 (i, ts) values
   (unix_timestamp('2003-03-30 01:59:59'),'2003-03-30 01:59:59'),
   (unix_timestamp('2003-03-30 02:30:00'),'2003-03-30 02:30:00'),
   (unix_timestamp('2003-03-30 03:00:00'),'2003-03-30 03:00:00');
+# Values around and in spring time-gap
+insert into t1 (i, ts) values
+  (unix_timestamp(20030330015959),20030330015959),
+  (unix_timestamp(20030330023000),20030330023000),
+  (unix_timestamp(20030330030000),20030330030000);
 # Normal value with DST
 insert into t1 (i, ts) values
   (unix_timestamp('2003-05-01 00:00:00'),'2003-05-01 00:00:00');
@@ -107,21 +113,21 @@ create table t1 (ts timestamp);
 set time_zone='UTC';
 insert into t1 values ('0000-00-00 00:00:00'),('1969-12-31 23:59:59'),
                       ('1970-01-01 00:00:00'),('1970-01-01 00:00:01'),
-                      ('2037-12-31 23:59:59'),('2038-01-01 00:00:00');
+                      ('2038-01-19 03:14:07'),('2038-01-19 03:14:08');
 select * from t1;
 delete from t1;
 # MET time zone has range shifted by one hour
 set time_zone='MET';
 insert into t1 values ('0000-00-00 00:00:00'),('1970-01-01 00:30:00'),
                       ('1970-01-01 01:00:00'),('1970-01-01 01:00:01'),
-                      ('2038-01-01 00:59:59'),('2038-01-01 01:00:00');
+                      ('2038-01-19 04:14:07'),('2038-01-19 04:14:08');
 select * from t1;
 delete from t1;
 # same for +01:30 time zone
 set time_zone='+01:30';
 insert into t1 values ('0000-00-00 00:00:00'),('1970-01-01 01:00:00'),
                       ('1970-01-01 01:30:00'),('1970-01-01 01:30:01'),
-                      ('2038-01-01 01:29:59'),('2038-01-01 01:30:00');
+                      ('2038-01-19 04:44:07'),('2038-01-19 04:44:08');
 select * from t1;
 
 drop table t1;
@@ -171,8 +177,8 @@ select convert_tz('2003-10-26 01:00:00', 'MET', 'UTC');
 select convert_tz('2003-10-26 02:00:00', 'MET', 'UTC');
 select convert_tz('2003-10-26 02:59:59', 'MET', 'UTC');
 select convert_tz('2003-10-26 04:00:00', 'MET', 'UTC');
-select convert_tz('2038-01-01 00:59:59', 'MET', 'UTC');
-select convert_tz('2038-01-01 01:00:00', 'MET', 'UTC');
+select convert_tz('2038-01-19 04:14:07', 'MET', 'UTC');
+select convert_tz('2038-01-19 04:14:08', 'MET', 'UTC');
 select convert_tz('2103-01-01 04:00:00', 'MET', 'UTC');
 
 # Let us test variable time zone argument
@@ -200,7 +206,7 @@ select convert_tz(ts, @@time_zone, 'Japan') from t1;
 drop table t1;
 
 #
-# Test for bug #7705 "CONVERT_TZ() crashes with subquery/WHERE on index 
+# Test for bug #7705 "CONVERT_TZ() crashes with subquery/WHERE on index
 # column". Queries in which one of time zone arguments of CONVERT_TZ() is
 # determined as constant only at val() stage (not at fix_fields() stage),
 # should not crash server.
@@ -217,3 +223,22 @@ select * from t1;
 drop table t1;
 
 # End of 4.1 tests
+
+#
+# Test for bug #11081 "Using a CONVERT_TZ function in a stored function
+# or trigger fails".
+#
+create table t1 (ldt datetime, udt datetime);
+create function f1(i datetime) returns datetime
+  return convert_tz(i, 'UTC', 'Europe/Moscow');
+create trigger t1_bi before insert on t1 for each row
+  set new.udt:= convert_tz(new.ldt, 'Europe/Moscow', 'UTC');
+# This should work without errors
+insert into t1 (ldt) values ('2006-04-19 16:30:00');
+select * from t1;
+# This should work without errors as well
+select ldt, f1(udt) as ldt2 from t1;
+drop table t1;
+drop function f1;
+
+# End of 5.0 tests

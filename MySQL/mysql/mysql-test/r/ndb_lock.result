@@ -87,6 +87,19 @@ x	y	z
 rollback;
 commit;
 begin;
+select * from t1 where y = 'one' or y = 'three' for update;
+x	y	z
+#	#	#
+#	#	#
+begin;
+select * from t1 where x = 2 for update;
+x	y	z
+2	two	2
+select * from t1 where x = 1 for update;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+commit;
+begin;
 select * from t1 where y = 'one' or y = 'three' order by x for update;
 x	y	z
 1	one	1
@@ -108,7 +121,7 @@ select * from t1 where x = 1 for update;
 x	y	z
 1	one	1
 select * from t1 where x = 2 for update;
-ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+Got one of the listed errors
 rollback;
 commit;
 begin;
@@ -117,6 +130,22 @@ x	y	z
 1	one	1
 begin;
 select * from t1 where x = 1 lock in share mode;
+x	y	z
+1	one	1
+select * from t1 where x = 2 for update;
+x	y	z
+2	two	2
+select * from t1 where x = 1 for update;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+commit;
+begin;
+select * from t1 where y = 'one' or y = 'three' lock in share mode;
+x	y	z
+#	#	#
+#	#	#
+begin;
+select * from t1 where y = 'one' lock in share mode;
 x	y	z
 1	one	1
 select * from t1 where x = 2 for update;

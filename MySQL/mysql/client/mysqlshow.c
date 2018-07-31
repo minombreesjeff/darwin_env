@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +27,8 @@
 #include <sslopt-vars.h>
 
 static my_string host=0,opt_password=0,user=0;
-static my_bool opt_show_keys=0,opt_compress=0,opt_status=0, tty_password=0;
+static my_bool opt_show_keys= 0, opt_compress= 0, opt_count=0, opt_status= 0, 
+  tty_password= 0, opt_table_type= 0;
 static uint opt_verbose=0;
 static char *default_charset= (char*) MYSQL_DEFAULT_CHARSET_NAME;
 
@@ -70,8 +70,7 @@ int main(int argc, char **argv)
     char *pos= argv[argc-1], *to;
     for (to= pos ; *pos ; pos++, to++)
     {
-      switch (*pos)
-      {
+      switch (*pos) {
       case '*':
 	*pos= '%';
 	first_argument_uses_wildcards= 1;
@@ -109,6 +108,8 @@ int main(int argc, char **argv)
   if (opt_use_ssl)
     mysql_ssl_set(&mysql, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
 		  opt_ssl_capath, opt_ssl_cipher);
+  mysql_options(&mysql,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
+                (char*)&opt_ssl_verify_server_cert);
 #endif
   if (opt_protocol)
     mysql_options(&mysql,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
@@ -125,6 +126,7 @@ int main(int argc, char **argv)
     fprintf(stderr,"%s: %s\n",my_progname,mysql_error(&mysql));
     exit(1);
   }
+  mysql.reconnect= 1;
 
   switch (argc)
   {
@@ -165,6 +167,10 @@ static struct my_option my_long_options[] =
   {"default-character-set", OPT_DEFAULT_CHARSET,
    "Set the default character set.", (gptr*) &default_charset,
    (gptr*) &default_charset, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"count", OPT_COUNT,
+   "Show number of rows per table (may be slow for not MyISAM tables)",
+   (gptr*) &opt_count, (gptr*) &opt_count, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+   0, 0, 0},
   {"compress", 'C', "Use compression in server/client protocol.",
    (gptr*) &opt_compress, (gptr*) &opt_compress, 0, GET_BOOL, NO_ARG, 0, 0, 0,
    0, 0, 0},
@@ -183,7 +189,7 @@ static struct my_option my_long_options[] =
    "Password to use when connecting to server. If password is not given it's asked from the tty.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
-   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0,
+   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0,
    0},
 #ifdef __WIN__
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
@@ -196,6 +202,9 @@ static struct my_option my_long_options[] =
    "Base name of shared memory.", (gptr*) &shared_memory_base_name, (gptr*) &shared_memory_base_name,
    0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
+  {"show-table-type", 't', "Show table type column.",
+   (gptr*) &opt_table_type, (gptr*) &opt_table_type, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
   {"socket", 'S', "Socket file to use for connection.",
    (gptr*) &opt_mysql_unix_port, (gptr*) &opt_mysql_unix_port, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -226,7 +235,7 @@ static void print_version(void)
 static void usage(void)
 {
   print_version();
-  puts("Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB");
+  puts("Copyright (C) 2000-2006 MySQL AB");
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
   puts("Shows the structure of a mysql database (databases,tables and columns)\n");
   printf("Usage: %s [OPTIONS] [database [table [column]]]\n",my_progname);
@@ -312,6 +321,14 @@ get_options(int *argc,char ***argv)
   
   if (tty_password)
     opt_password=get_tty_password(NullS);
+  if (opt_count)
+  {
+    /*
+      We need to set verbose to 2 as we need to change the output to include
+      the number-of-rows column
+    */
+    opt_verbose= 2;
+  }
   return;
 }
 
@@ -326,7 +343,7 @@ list_dbs(MYSQL *mysql,const char *wild)
   char query[255];
   MYSQL_FIELD *field;
   MYSQL_RES *result;
-  MYSQL_ROW row, trow, rrow;
+  MYSQL_ROW row= NULL, rrow;
 
   if (!(result=mysql_list_dbs(mysql,wild)))
   {
@@ -334,6 +351,26 @@ list_dbs(MYSQL *mysql,const char *wild)
 	    mysql_error(mysql));
     return 1;
   }
+
+  /*
+    If a wildcard was used, but there was only one row and it's name is an
+    exact match, we'll assume they really wanted to see the contents of that
+    database. This is because it is fairly common for database names to
+    contain the underscore (_), like INFORMATION_SCHEMA.
+   */
+  if (wild && mysql_num_rows(result) == 1)
+  {
+    row= mysql_fetch_row(result);
+    if (!my_strcasecmp(&my_charset_latin1, row[0], wild))
+    {
+      mysql_free_result(result);
+      if (opt_status)
+        return list_table_status(mysql, wild, NULL);
+      else
+        return list_tables(mysql, wild, NULL);
+    }
+  }
+
   if (wild)
     printf("Wildcard: %s\n",wild);
 
@@ -350,17 +387,13 @@ list_dbs(MYSQL *mysql,const char *wild)
   else
     print_header(header,length,"Tables",6,"Total Rows",12,NullS);
 
-  while ((row = mysql_fetch_row(result)))
+  /* The first row may have already been read up above. */
+  while (row || (row= mysql_fetch_row(result)))
   {
     counter++;
 
     if (opt_verbose)
     {
-      /*
-       *  Original code by MG16373;  Slightly modified by Monty.
-       *  Print now the count of tables and rows for each database.
-       */
-
       if (!(mysql_select_db(mysql,row[0])))
       {
 	MYSQL_RES *tresult = mysql_list_tables(mysql,(char*)NULL);
@@ -370,6 +403,8 @@ list_dbs(MYSQL *mysql,const char *wild)
 	  rowcount = 0;
 	  if (opt_verbose > 1)
 	  {
+            /* Print the count of tables and rows for each database */
+            MYSQL_ROW trow;
 	    while ((trow = mysql_fetch_row(tresult)))
 	    {
 	      sprintf(query,"SELECT COUNT(*) FROM `%s`",trow[0]);
@@ -407,6 +442,8 @@ list_dbs(MYSQL *mysql,const char *wild)
       print_row(row[0],length,tables,6,NullS);
     else
       print_row(row[0],length,tables,6,rows,12,NullS);
+
+    row= NULL;
   }
 
   print_trailer(length,
@@ -426,7 +463,7 @@ list_tables(MYSQL *mysql,const char *db,const char *table)
 {
   const char *header;
   uint head_length, counter = 0;
-  char query[255], rows[64], fields[16];
+  char query[255], rows[NAME_LEN], fields[16];
   MYSQL_FIELD *field;
   MYSQL_RES *result;
   MYSQL_ROW row, rrow;
@@ -437,7 +474,20 @@ list_tables(MYSQL *mysql,const char *db,const char *table)
 	    mysql_error(mysql));
     return 1;
   }
-  if (!(result=mysql_list_tables(mysql,table)))
+  if (table)
+  {
+    /*
+      We just hijack the 'rows' variable for a bit to store the escaped
+      table name
+    */
+    mysql_real_escape_string(mysql, rows, table, (unsigned long)strlen(table));
+    my_snprintf(query, sizeof(query), "show%s tables like '%s'",
+                opt_table_type ? " full" : "", rows);
+  }
+  else
+    my_snprintf(query, sizeof(query), "show%s tables",
+                opt_table_type ? " full" : "");
+  if (mysql_query(mysql, query) || !(result= mysql_store_result(mysql)))
   {
     fprintf(stderr,"%s: Cannot list tables in %s: %s\n",my_progname,db,
 	    mysql_error(mysql));
@@ -454,19 +504,30 @@ list_tables(MYSQL *mysql,const char *db,const char *table)
   if (head_length < field->max_length)
     head_length=field->max_length;
 
-  if (!opt_verbose)
-    print_header(header,head_length,NullS);
-  else if (opt_verbose == 1)
-    print_header(header,head_length,"Columns",8,NullS);
+  if (opt_table_type)
+  {
+    if (!opt_verbose)
+      print_header(header,head_length,"table_type",10,NullS);
+    else if (opt_verbose == 1)
+      print_header(header,head_length,"table_type",10,"Columns",8,NullS);
+    else
+    {
+      print_header(header,head_length,"table_type",10,"Columns",8,
+		   "Total Rows",10,NullS);
+    }
+  }
   else
-    print_header(header,head_length,"Columns",8, "Total Rows",10,NullS);
+  {
+    if (!opt_verbose)
+      print_header(header,head_length,NullS);
+    else if (opt_verbose == 1)
+      print_header(header,head_length,"Columns",8,NullS);
+    else
+      print_header(header,head_length,"Columns",8, "Total Rows",10,NullS);
+  }
 
   while ((row = mysql_fetch_row(result)))
   {
-    /*
-     *   Modified by MG16373
-     *   Print now the count of rows for each table.
-     */
     counter++;
     if (opt_verbose > 0)
     {
@@ -486,6 +547,7 @@ list_tables(MYSQL *mysql,const char *db,const char *table)
 
 	  if (opt_verbose > 1)
 	  {
+            /* Print the count of rows for each table */
 	    sprintf(query,"SELECT COUNT(*) FROM `%s`",row[0]);
 	    if (!(mysql_query(mysql,query)))
 	    {
@@ -508,17 +570,31 @@ list_tables(MYSQL *mysql,const char *db,const char *table)
 	strmov(rows,"N/A");
       }
     }
-    if (!opt_verbose)
-      print_row(row[0],head_length,NullS);
-    else if (opt_verbose == 1)
-      print_row(row[0],head_length, fields,8, NullS);
-    else 
-      print_row(row[0],head_length, fields,8, rows,10, NullS);
+    if (opt_table_type)
+    {
+      if (!opt_verbose)
+	print_row(row[0],head_length,row[1],10,NullS);
+      else if (opt_verbose == 1)
+	print_row(row[0],head_length,row[1],10,fields,8,NullS);
+      else
+	print_row(row[0],head_length,row[1],10,fields,8,rows,10,NullS);
+    }
+    else
+    {
+      if (!opt_verbose)
+	print_row(row[0],head_length,NullS);
+      else if (opt_verbose == 1)
+	print_row(row[0],head_length, fields,8, NullS);
+      else
+	print_row(row[0],head_length, fields,8, rows,10, NullS);
+    }
   }
 
   print_trailer(head_length,
-		(opt_verbose > 0 ? 8 : 0),
-		(opt_verbose > 1 ? 10 :0),
+		(opt_table_type ? 10 : opt_verbose > 0 ? 8 : 0),
+		(opt_table_type ? (opt_verbose > 0 ? 8 : 0) 
+		 : (opt_verbose > 1 ? 10 :0)),
+		!opt_table_type ? 0 : opt_verbose > 1 ? 10 :0,
 		0);
 
   if (counter && opt_verbose)
@@ -536,7 +612,7 @@ list_table_status(MYSQL *mysql,const char *db,const char *wild)
   MYSQL_RES *result;
   MYSQL_ROW row;
 
-  end=strxmov(query,"show table status from ",db,NullS);
+  end=strxmov(query,"show table status from `",db,"`",NullS);
   if (wild && wild[0])
     strxmov(end," like '",wild,"'",NullS);
   if (mysql_query(mysql,query) || !(result=mysql_store_result(mysql)))
@@ -562,8 +638,8 @@ list_table_status(MYSQL *mysql,const char *db,const char *wild)
 }
 
 /*
-** list fields uses field interface as an example of how to parse
-** a MYSQL FIELD
+  list fields uses field interface as an example of how to parse
+  a MYSQL FIELD
 */
 
 static int
@@ -573,6 +649,8 @@ list_fields(MYSQL *mysql,const char *db,const char *table,
   char query[1024],*end;
   MYSQL_RES *result;
   MYSQL_ROW row;
+  ulong rows;
+  LINT_INIT(rows);
 
   if (mysql_select_db(mysql,db))
   {
@@ -580,6 +658,21 @@ list_fields(MYSQL *mysql,const char *db,const char *table,
 	    mysql_error(mysql));
     return 1;
   }
+
+  if (opt_count)
+  {
+    sprintf(query,"select count(*) from `%s`", table);
+    if (mysql_query(mysql,query) || !(result=mysql_store_result(mysql)))
+    {
+      fprintf(stderr,"%s: Cannot get record count for db: %s, table: %s: %s\n",
+              my_progname,db,table,mysql_error(mysql));
+      return 1;
+    }
+    row= mysql_fetch_row(result);
+    rows= (ulong) strtoull(row[0], (char**) 0, 10);
+    mysql_free_result(result);
+  }
+
   end=strmov(strmov(strmov(query,"show /*!32332 FULL */ columns from `"),table),"`");
   if (wild && wild[0])
     strxmov(end," like '",wild,"'",NullS);
@@ -590,8 +683,9 @@ list_fields(MYSQL *mysql,const char *db,const char *table,
     return 1;
   }
 
-  printf("Database: %s  Table: %s  Rows: %lu", db,table,
-	 (ulong) mysql->extra_info);
+  printf("Database: %s  Table: %s", db, table);
+  if (opt_count)
+    printf("  Rows: %lu", rows);
   if (wild && wild[0])
     printf("  Wildcard: %s",wild);
   putchar('\n');
@@ -625,7 +719,7 @@ list_fields(MYSQL *mysql,const char *db,const char *table,
 
 
 /*****************************************************************************
-** General functions to print a nice ascii-table from data
+ General functions to print a nice ascii-table from data
 *****************************************************************************/
 
 static void

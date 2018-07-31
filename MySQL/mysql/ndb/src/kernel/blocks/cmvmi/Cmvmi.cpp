@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -72,16 +71,13 @@ Cmvmi::Cmvmi(const Configuration & conf) :
   addRecSignal(GSN_SET_LOGLEVELORD,  &Cmvmi::execSET_LOGLEVELORD);
   addRecSignal(GSN_EVENT_REP,  &Cmvmi::execEVENT_REP);
   addRecSignal(GSN_STTOR,  &Cmvmi::execSTTOR);
+  addRecSignal(GSN_READ_CONFIG_REQ,  &Cmvmi::execREAD_CONFIG_REQ);
   addRecSignal(GSN_CLOSE_COMREQ,  &Cmvmi::execCLOSE_COMREQ);
   addRecSignal(GSN_ENABLE_COMORD,  &Cmvmi::execENABLE_COMORD);
   addRecSignal(GSN_OPEN_COMREQ,  &Cmvmi::execOPEN_COMREQ);
   addRecSignal(GSN_TEST_ORD,  &Cmvmi::execTEST_ORD);
 
-  addRecSignal(GSN_STATISTICS_REQ,  &Cmvmi::execSTATISTICS_REQ);
   addRecSignal(GSN_TAMPER_ORD,  &Cmvmi::execTAMPER_ORD);
-  addRecSignal(GSN_SET_VAR_REQ,  &Cmvmi::execSET_VAR_REQ);
-  addRecSignal(GSN_SET_VAR_CONF,  &Cmvmi::execSET_VAR_CONF);
-  addRecSignal(GSN_SET_VAR_REF,  &Cmvmi::execSET_VAR_REF);
   addRecSignal(GSN_STOP_ORD,  &Cmvmi::execSTOP_ORD);
   addRecSignal(GSN_START_ORD,  &Cmvmi::execSTART_ORD);
   addRecSignal(GSN_EVENT_SUBSCRIBE_REQ, 
@@ -90,6 +86,7 @@ Cmvmi::Cmvmi(const Configuration & conf) :
   addRecSignal(GSN_DUMP_STATE_ORD, &Cmvmi::execDUMP_STATE_ORD);
 
   addRecSignal(GSN_TESTSIG, &Cmvmi::execTESTSIG);
+  addRecSignal(GSN_NODE_START_REP, &Cmvmi::execNODE_START_REP, true);
   
   subscriberPool.setSize(5);
 
@@ -135,6 +132,7 @@ Cmvmi::~Cmvmi()
 
 #ifdef ERROR_INSERT
 NodeBitmask c_error_9000_nodes_mask;
+extern Uint32 MAX_RECEIVED_SIGNALS;
 #endif
 
 void Cmvmi::execNDB_TAMPER(Signal* signal) 
@@ -164,6 +162,22 @@ void Cmvmi::execNDB_TAMPER(Signal* signal)
     kill(getpid(), SIGABRT);
   }
 #endif
+
+#ifdef ERROR_INSERT
+  if (signal->theData[0] == 9003)
+  {
+    if (MAX_RECEIVED_SIGNALS < 1024)
+    {
+      MAX_RECEIVED_SIGNALS = 1024;
+    }
+    else
+    {
+      MAX_RECEIVED_SIGNALS = 1 + (rand() % 128);
+    }
+    ndbout_c("MAX_RECEIVED_SIGNALS: %d", MAX_RECEIVED_SIGNALS);
+    CLEAR_ERROR_INSERT_VALUE;
+  }
+#endif
 }//execNDB_TAMPER()
 
 void Cmvmi::execSET_LOGLEVELORD(Signal* signal) 
@@ -191,7 +205,13 @@ void Cmvmi::execEVENT_REP(Signal* signal)
   // to the graphical management interface.
   //-----------------------------------------------------------------------
   EventReport * const eventReport = (EventReport *)&signal->theData[0]; 
-  EventReport::EventType eventType = eventReport->getEventType();
+  Ndb_logevent_type eventType = eventReport->getEventType();
+  Uint32 nodeId= eventReport->getNodeId();
+  if (nodeId == 0)
+  {
+    nodeId= refToNode(signal->getSendersBlockRef());
+    eventReport->setNodeId(nodeId);
+  }
 
   jamEntry();
   
@@ -201,7 +221,8 @@ void Cmvmi::execEVENT_REP(Signal* signal)
   Uint32 threshold;
   LogLevel::EventCategory eventCategory;
   Logger::LoggerLevel severity;  
-  if (EventLoggerBase::event_lookup(eventType,eventCategory,threshold,severity))
+  EventLoggerBase::EventTextFunction textF;
+  if (EventLoggerBase::event_lookup(eventType,eventCategory,threshold,severity,textF))
     return;
   
   SubscriberPtr ptr;
@@ -304,6 +325,27 @@ void Cmvmi::sendSTTORRY(Signal* signal)
 }//Cmvmi::sendSTTORRY
 
 
+void 
+Cmvmi::execREAD_CONFIG_REQ(Signal* signal)
+{
+  jamEntry();
+
+  const ReadConfigReq * req = (ReadConfigReq*)signal->getDataPtr();
+
+  Uint32 ref = req->senderRef;
+  Uint32 senderData = req->senderData;
+
+  const ndb_mgm_configuration_iterator * p = 
+    theConfiguration.getOwnConfigIterator();
+  ndbrequire(p != 0);
+
+  ReadConfigConf * conf = (ReadConfigConf*)signal->getDataPtrSend();
+  conf->senderRef = reference();
+  conf->senderData = senderData;
+  sendSignal(ref, GSN_READ_CONFIG_CONF, signal, 
+	     ReadConfigConf::SignalLength, JBB);
+}
+
 void Cmvmi::execSTTOR(Signal* signal)
 {
   Uint32 theStartPhase  = signal->theData[1];
@@ -311,6 +353,16 @@ void Cmvmi::execSTTOR(Signal* signal)
   jamEntry();
   if (theStartPhase == 1){
     jam();
+
+    if(theConfig.lockPagesInMainMemory() == 1)
+    {
+      int res = NdbMem_MemLockAll(0);
+      if(res != 0){
+	g_eventLogger.warning("Failed to memlock pages");
+	warningEvent("Failed to memlock pages");
+      }
+    }
+    
     sendSTTORRY(signal);
     return;
   } else if (theStartPhase == 3) {
@@ -330,18 +382,6 @@ void Cmvmi::execSTTOR(Signal* signal)
     signal->theData[2] = NodeInfo::REP;
     execOPEN_COMREQ(signal);    
     globalData.theStartLevel = NodeState::SL_STARTED;
-    sendSTTORRY(signal);
-  } else {
-    jam();
-
-    if(theConfig.lockPagesInMainMemory()){
-      int res = NdbMem_MemLockAll();
-      if(res != 0){
-	g_eventLogger.warning("Failed to memlock pages");
-	warningEvent("Failed to memlock pages");
-      }
-    }
-    
     sendSTTORRY(signal);
   }
 }
@@ -366,7 +406,7 @@ void Cmvmi::execCLOSE_COMREQ(Signal* signal)
       //-----------------------------------------------------
       // Report that the connection to the node is closed
       //-----------------------------------------------------
-      signal->theData[0] = EventReport::CommunicationClosed;
+      signal->theData[0] = NDB_LE_CommunicationClosed;
       signal->theData[1] = i;
       sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
       
@@ -396,7 +436,8 @@ void Cmvmi::execOPEN_COMREQ(Signal* signal)
   if(len == 2){
 
 #ifdef ERROR_INSERT
-    if (! (ERROR_INSERTED(9000) && c_error_9000_nodes_mask.get(tStartingNode)))
+    if (! ((ERROR_INSERTED(9000) || ERROR_INSERTED(9002)) 
+	   && c_error_9000_nodes_mask.get(tStartingNode)))
 #endif
     {
       globalTransporterRegistry.do_connect(tStartingNode);
@@ -405,7 +446,7 @@ void Cmvmi::execOPEN_COMREQ(Signal* signal)
       //-----------------------------------------------------
       // Report that the connection to the node is opened
       //-----------------------------------------------------
-      signal->theData[0] = EventReport::CommunicationOpened;
+      signal->theData[0] = NDB_LE_CommunicationOpened;
       signal->theData[1] = tStartingNode;
       sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
       //-----------------------------------------------------
@@ -417,14 +458,15 @@ void Cmvmi::execOPEN_COMREQ(Signal* signal)
 	jam();
 
 #ifdef ERROR_INSERT
-	if (ERROR_INSERTED(9000) && c_error_9000_nodes_mask.get(i))
+	if ((ERROR_INSERTED(9000) || ERROR_INSERTED(9002))
+	    && c_error_9000_nodes_mask.get(i))
 	  continue;
 #endif
 	
 	globalTransporterRegistry.do_connect(i);
 	globalTransporterRegistry.setIOState(i, HaltIO);
 	
-	signal->theData[0] = EventReport::CommunicationOpened;
+	signal->theData[0] = NDB_LE_CommunicationOpened;
 	signal->theData[1] = i;
 	sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
       }
@@ -449,7 +491,7 @@ void Cmvmi::execENABLE_COMORD(Signal* signal)
     //-----------------------------------------------------
   // Report that the version of the node
   //-----------------------------------------------------
-  signal->theData[0] = EventReport::ConnectedApiVersion;
+  signal->theData[0] = NDB_LE_ConnectedApiVersion;
   signal->theData[1] = tStartingNode;
   signal->theData[2] = getNodeInfo(tStartingNode).m_version;
 
@@ -491,7 +533,7 @@ void Cmvmi::execDISCONNECT_REP(Signal *signal)
 
   cancelSubscription(hostId);
 
-  signal->theData[0] = EventReport::Disconnected;
+  signal->theData[0] = NDB_LE_Disconnected;
   signal->theData[1] = hostId;
   sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
 }
@@ -541,7 +583,7 @@ void Cmvmi::execCONNECT_REP(Signal *signal){
   //------------------------------------------
   // Also report this event to the Event handler
   //------------------------------------------
-  signal->theData[0] = EventReport::Connected;
+  signal->theData[0] = NDB_LE_Connected;
   signal->theData[1] = hostId;
   signal->header.theLength = 2;
   
@@ -668,28 +710,11 @@ Cmvmi::execTEST_ORD(Signal * signal){
       // Do nothing
       break;
     }
+    globalSignalLoggers.flushSignalLog();
   }
 
 #endif
 }
-
-void Cmvmi::execSTATISTICS_REQ(Signal* signal) 
-{
-  // TODO Note ! This is only a test implementation...
-
-  static int stat1 = 0;
-  jamEntry();
-
-  //ndbout << "data 1: " << signal->theData[1];
-
-  int x = signal->theData[0];
-  stat1++;
-  signal->theData[0] = stat1;
-  sendSignal(x, GSN_STATISTICS_CONF, signal, 7, JBB);
-
-}//execSTATISTICS_REQ()
-
-
 
 void Cmvmi::execSTOP_ORD(Signal* signal) 
 {
@@ -758,6 +783,21 @@ Cmvmi::execSTART_ORD(Signal* signal) {
   
   if(globalData.theStartLevel == NodeState::SL_CMVMI){
     jam();
+
+    if(theConfig.lockPagesInMainMemory() == 2)
+    {
+      int res = NdbMem_MemLockAll(1);
+      if(res != 0)
+      {
+	g_eventLogger.warning("Failed to memlock pages");
+	warningEvent("Failed to memlock pages");
+      }
+      else
+      {
+	g_eventLogger.info("Locked future allocations");
+      }
+    }
+    
     globalData.theStartLevel  = NodeState::SL_STARTING;
     globalData.theRestartFlag = system_started;
     /**
@@ -794,167 +834,13 @@ void Cmvmi::execTAMPER_ORD(Signal* signal)
   // to be able to indicate if we really introduced an error.
 #ifdef ERROR_INSERT
   TamperOrd* const tamperOrd = (TamperOrd*)&signal->theData[0];
-  
+  signal->theData[2] = 0;
   signal->theData[1] = tamperOrd->errorNo;
   signal->theData[0] = 5;
   sendSignal(DBDIH_REF, GSN_DIHNDBTAMPER, signal, 3,JBB);
 #endif
 
 }//execTAMPER_ORD()
-
-
-
-void Cmvmi::execSET_VAR_REQ(Signal* signal) 
-{
-#if 0
-
-  SetVarReq* const setVarReq = (SetVarReq*)&signal->theData[0];
-  ConfigParamId var = setVarReq->variable();
-  jamEntry();
-  switch (var) {
-    
-    // NDBCNTR_REF
-    
-    // DBTC
-  case TransactionDeadlockDetectionTimeout:
-  case TransactionInactiveTime:
-  case NoOfConcurrentProcessesHandleTakeover:
-    sendSignal(DBTC_REF, GSN_SET_VAR_REQ, signal, 3, JBB);
-    break;
-    
-    // DBDIH
-  case TimeBetweenLocalCheckpoints:
-  case TimeBetweenGlobalCheckpoints:
-    sendSignal(DBDIH_REF, GSN_SET_VAR_REQ, signal, 3, JBB);
-    break;
-
-    // DBLQH
-  case NoOfConcurrentCheckpointsDuringRestart:
-  case NoOfConcurrentCheckpointsAfterRestart:
-    sendSignal(DBLQH_REF, GSN_SET_VAR_REQ, signal, 3, JBB);
-    break;
-
-    // DBACC
-  case NoOfDiskPagesToDiskDuringRestartACC:
-  case NoOfDiskPagesToDiskAfterRestartACC:
-    sendSignal(DBACC_REF, GSN_SET_VAR_REQ, signal, 3, JBB);
-    break;
-
-    // DBTUP
-  case NoOfDiskPagesToDiskDuringRestartTUP:
-  case NoOfDiskPagesToDiskAfterRestartTUP:
-    sendSignal(DBTUP_REF, GSN_SET_VAR_REQ, signal, 3, JBB);
-    break;
-
-    // DBDICT
-
-    // NDBCNTR
-  case TimeToWaitAlive:
-
-    // QMGR
-  case HeartbeatIntervalDbDb: // TODO ev till Ndbcnt också
-  case HeartbeatIntervalDbApi:
-  case ArbitTimeout:
-    sendSignal(QMGR_REF, GSN_SET_VAR_REQ, signal, 3, JBB);
-    break;
-
-    // NDBFS
-
-    // CMVMI
-  case MaxNoOfSavedMessages:
-  case LockPagesInMainMemory:
-  case TimeBetweenWatchDogCheck:
-  case StopOnError:
-    handleSET_VAR_REQ(signal);
-    break;
-
-
-    // Not possible to update (this could of course be handled by each block
-    // instead but I havn't investigated where they belong)
-  case Id:
-  case ExecuteOnComputer:
-  case ShmKey:
-  case MaxNoOfConcurrentOperations:
-  case MaxNoOfConcurrentTransactions:
-  case MemorySpaceIndexes:
-  case MemorySpaceTuples:
-  case MemoryDiskPages:
-  case NoOfFreeDiskClusters:
-  case NoOfDiskClusters:
-  case NoOfFragmentLogFiles:
-  case NoOfDiskClustersPerDiskFile:
-  case NoOfDiskFiles:
-  case MaxNoOfSavedEvents:
-  default:
-
-    int mgmtSrvr = setVarReq->mgmtSrvrBlockRef();
-    sendSignal(mgmtSrvr, GSN_SET_VAR_REF, signal, 0, JBB);
-  } // switch
-
-#endif
-}//execSET_VAR_REQ()
-
-
-void Cmvmi::execSET_VAR_CONF(Signal* signal) 
-{
-  int mgmtSrvr = signal->theData[0];
-  sendSignal(mgmtSrvr, GSN_SET_VAR_CONF, signal, 0, JBB);
-
-}//execSET_VAR_CONF()
-
-
-void Cmvmi::execSET_VAR_REF(Signal* signal) 
-{
-  int mgmtSrvr = signal->theData[0];
-  sendSignal(mgmtSrvr, GSN_SET_VAR_REF, signal, 0, JBB);
-
-}//execSET_VAR_REF()
-
-
-void Cmvmi::handleSET_VAR_REQ(Signal* signal) {
-#if 0
-  SetVarReq* const setVarReq = (SetVarReq*)&signal->theData[0];
-  ConfigParamId var = setVarReq->variable();
-  int val = setVarReq->value();
-
-  switch (var) {
-  case MaxNoOfSavedMessages:
-    theConfig.maxNoOfErrorLogs(val);
-    sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    break;
-    
-  case LockPagesInMainMemory:
-    int result;
-    if (val == 0) {
-      result = NdbMem_MemUnlockAll();
-    }
-    else {
-      result = NdbMem_MemLockAll();
-    }
-    if (result == 0) {
-      sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    }
-    else {
-      sendSignal(CMVMI_REF, GSN_SET_VAR_REF, signal, 1, JBB);
-    }
-    break;
-
-  case TimeBetweenWatchDogCheck:
-    theConfig.timeBetweenWatchDogCheck(val);
-    sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    break;
-
-  case StopOnError:
-    theConfig.stopOnError(val);
-    sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    break;
-    
-  default:
-    sendSignal(CMVMI_REF, GSN_SET_VAR_REF, signal, 1, JBB);
-    return;
-  } // switch
-#endif
-}
 
 #ifdef VM_TRACE
 class RefSignalTest {
@@ -1060,6 +946,24 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
     }
   }
   
+  if (arg == DumpStateOrd::CmvmiDumpSubscriptions)
+  {
+    SubscriberPtr ptr;
+    subscribers.first(ptr);  
+    g_eventLogger.info("List subscriptions:");
+    while(ptr.i != RNIL)
+    {
+      g_eventLogger.info("Subscription: %u, nodeId: %u, ref: 0x%x",
+                         ptr.i,  refToNode(ptr.p->blockRef), ptr.p->blockRef);
+      for(Uint32 i = 0; i < LogLevel::LOGLEVEL_CATEGORIES; i++)
+      {
+        Uint32 level = ptr.p->logLevel.getLogLevel((LogLevel::EventCategory)i);
+        g_eventLogger.info("Category %u Level %u", i, level);
+      }
+      subscribers.next(ptr);
+    }
+  }
+
   if (arg == DumpStateOrd::CmvmiDumpLongSignalMemory){
     infoEvent("Cmvmi: g_sectionSegmentPool size: %d free: %d",
 	      g_sectionSegmentPool.getSize(),
@@ -1115,9 +1019,9 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
   }
 
 #ifdef ERROR_INSERT
-  if (arg == 9000)
+  if (arg == 9000 || arg == 9002)
   {
-    SET_ERROR_INSERT_VALUE(9000);
+    SET_ERROR_INSERT_VALUE(arg);
     for (Uint32 i = 1; i<signal->getLength(); i++)
       c_error_9000_nodes_mask.set(signal->theData[i]);
   }
@@ -1164,6 +1068,17 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
 #endif
 }//Cmvmi::execDUMP_STATE_ORD()
 
+void
+Cmvmi::execNODE_START_REP(Signal* signal)
+{
+#ifdef ERROR_INSERT
+  if (ERROR_INSERTED(9002) && signal->theData[0] == getOwnNodeId())
+  {
+    signal->theData[0] = 9001;
+    execDUMP_STATE_ORD(signal);
+  }
+#endif
+}
 
 BLOCK_FUNCTIONS(Cmvmi)
 
@@ -1205,7 +1120,7 @@ Cmvmi::execTESTSIG(Signal* signal){
     fprintf(stdout, "\n");
     
     for(i = 0; i<signal->header.m_noOfSections; i++){
-      SegmentedSectionPtr ptr;
+      SegmentedSectionPtr ptr(0,0,0);
       ndbout_c("-- Section %d --", i);
       signal->getSection(ptr, i);
       ndbrequire(ptr.p != 0);
@@ -1263,7 +1178,7 @@ Cmvmi::execTESTSIG(Signal* signal){
     LinearSectionPtr ptr[3];
     const Uint32 secs = signal->getNoOfSections();
     for(i = 0; i<secs; i++){
-      SegmentedSectionPtr sptr;
+      SegmentedSectionPtr sptr(0,0,0);
       signal->getSection(sptr, i);
       ptr[i].sz = sptr.sz;
       ptr[i].p = new Uint32[sptr.sz];
@@ -1312,7 +1227,7 @@ Cmvmi::execTESTSIG(Signal* signal){
     LinearSectionPtr ptr[3];
     const Uint32 secs = signal->getNoOfSections();
     for(i = 0; i<secs; i++){
-      SegmentedSectionPtr sptr;
+      SegmentedSectionPtr sptr(0,0,0);
       signal->getSection(sptr, i);
       ptr[i].sz = sptr.sz;
       ptr[i].p = new Uint32[sptr.sz];
@@ -1378,7 +1293,7 @@ Cmvmi::execTESTSIG(Signal* signal){
     const Uint32 secs = signal->getNoOfSections();
     memset(g_test, 0, sizeof(g_test));
     for(i = 0; i<secs; i++){
-      SegmentedSectionPtr sptr;
+      SegmentedSectionPtr sptr(0,0,0);
       signal->getSection(sptr, i);
       g_test[i].sz = sptr.sz;
       g_test[i].p = new Uint32[sptr.sz];

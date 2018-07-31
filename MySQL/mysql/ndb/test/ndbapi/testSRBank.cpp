@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,7 +22,7 @@
 #include "bank/Bank.hpp"
 
 int runCreateBank(NDBT_Context* ctx, NDBT_Step* step){
-  Bank bank;
+  Bank bank(ctx->m_cluster_connection);
   int overWriteExisting = true;
   if (bank.createAndLoadBank(overWriteExisting, 10) != NDBT_OK)
     return NDBT_FAILED;
@@ -43,7 +42,7 @@ int runBankTimer(NDBT_Context* ctx, NDBT_Step* step){
   ctx->incProperty("ThreadCount");
   while (!ctx->isTestStopped()) 
   {
-    Bank bank;
+    Bank bank(ctx->m_cluster_connection);
     while(!ctx->isTestStopped() && ctx->getProperty("SR") <= 1)
       if(bank.performIncreaseTime(wait, yield) == NDBT_FAILED)
 	break;
@@ -63,7 +62,7 @@ int runBankTransactions(NDBT_Context* ctx, NDBT_Step* step){
   ctx->incProperty("ThreadCount");
   while (!ctx->isTestStopped()) 
   {
-    Bank bank;
+    Bank bank(ctx->m_cluster_connection);
     while(!ctx->isTestStopped() && ctx->getProperty("SR") <= 1)
       if(bank.performTransactions(0, 1) == NDBT_FAILED)
 	break;
@@ -83,7 +82,7 @@ int runBankGL(NDBT_Context* ctx, NDBT_Step* step){
   ctx->incProperty("ThreadCount");
   while (ctx->isTestStopped() == false) 
   {
-    Bank bank;
+    Bank bank(ctx->m_cluster_connection);
     while(!ctx->isTestStopped() && ctx->getProperty("SR") <= 1)
       if (bank.performMakeGLs(yield) != NDBT_OK)
       {
@@ -102,7 +101,7 @@ int runBankGL(NDBT_Context* ctx, NDBT_Step* step){
 }
 
 int runBankSum(NDBT_Context* ctx, NDBT_Step* step){
-  Bank bank;
+  Bank bank(ctx->m_cluster_connection);
   int wait = 2000; // Max ms between each sum of accounts
   int yield = 1; // Loops before bank returns 
   int result = NDBT_OK;
@@ -160,7 +159,7 @@ int runSR(NDBT_Context* ctx, NDBT_Step* step)
     {
       int wait = 0;
       int yield = 1;
-      Bank bank;
+      Bank bank(ctx->m_cluster_connection);
       if (bank.performSumAccounts(wait, yield) != 0)
       {
 	ndbout << "bank.performSumAccounts FAILED" << endl;
@@ -183,7 +182,7 @@ int runSR(NDBT_Context* ctx, NDBT_Step* step)
 }
 
 int runDropBank(NDBT_Context* ctx, NDBT_Step* step){
-  Bank bank;
+  Bank bank(ctx->m_cluster_connection);
   if (bank.dropBank() != NDBT_OK)
     return NDBT_FAILED;
   return NDBT_OK;

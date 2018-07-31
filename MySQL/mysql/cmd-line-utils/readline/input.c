@@ -21,6 +21,10 @@
    59 Temple Place, Suite 330, Boston, MA 02111 USA. */
 #define READLINE_LIBRARY
 
+#if defined (__TANDEM)
+#  include <floss.h>
+#endif
+
 #include "config_readline.h"
 
 #include <sys/types.h>
@@ -152,6 +156,12 @@ _rl_unget_char (key)
   return (0);
 }
 
+int
+_rl_pushed_input_available ()
+{
+  return (push_index != pop_index);
+}
+
 /* If a character is available to be read, then read it and stuff it into
    IBUFFER.  Otherwise, just return.  Returns number of characters read
    (0 if none available) and -1 on error (EIO). */
@@ -160,7 +170,7 @@ rl_gather_tyi ()
 {
   int tty;
   register int tem, result;
-  int chars_avail;
+  int chars_avail, k;
   char input;
 #if defined(HAVE_SELECT)
   fd_set readfds, exceptfds;
@@ -200,6 +210,11 @@ rl_gather_tyi ()
       fcntl (tty, F_SETFL, tem);
       if (chars_avail == -1 && errno == EAGAIN)
 	return 0;
+      if (chars_avail == 0)	/* EOF */
+	{
+	  rl_stuff_char (EOF);
+	  return (0);
+	}
     }
 #endif /* O_NDELAY */
 
@@ -223,7 +238,12 @@ rl_gather_tyi ()
   if (result != -1)
     {
       while (chars_avail--)
-	rl_stuff_char ((*rl_getc_function) (rl_instream));
+	{
+	  k = (*rl_getc_function) (rl_instream);
+	  rl_stuff_char (k);
+	  if (k == NEWLINE || k == RETURN)
+	    break;
+	}
     }
   else
     {
@@ -385,7 +405,7 @@ rl_read_key ()
   else
     {
       /* If input is coming from a macro, then use that. */
-      if ((c = _rl_next_macro_key ()))
+      if ((c= _rl_next_macro_key ()))
 	return (c);
 
       /* If the user has an event function, then call it periodically. */
@@ -509,17 +529,17 @@ _rl_read_mbchar (mbchar, size)
    may be FIRST.  Used by the search functions, among others.  Very similar
    to _rl_read_mbchar. */
 int
-_rl_read_mbstring (first, mb, mblen)
+_rl_read_mbstring (first, mb, mb_len)
      int first;
      char *mb;
-     int mblen;
+     int mb_len;
 {
   int i, c;
   mbstate_t ps;
 
   c = first;
-  memset (mb, 0, mblen);
-  for (i = 0; i < mblen; i++)
+  memset (mb, 0, mb_len);
+  for (i = 0; i < mb_len; i++)
     {
       mb[i] = (char)c;
       memset (&ps, 0, sizeof (mbstate_t));

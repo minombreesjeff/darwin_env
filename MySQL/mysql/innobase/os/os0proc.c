@@ -69,6 +69,10 @@ byte*		os_awe_window;
 ulint		os_awe_window_size;
 #endif
 
+ibool os_use_large_pages;
+/* Large page size. This may be a boot-time option on some platforms */
+ulint os_large_page_size;
+
 /********************************************************************
 Windows AWE support. Tries to enable the "lock pages in memory" privilege for
 the current process so that the current process can allocate memory-locked
@@ -288,6 +292,9 @@ os_awe_allocate_physical_mem(
 
 	return(TRUE);	
 #else
+	UT_NOT_USED(n_megabytes);
+	UT_NOT_USED(page_info);
+	
 	return(FALSE);
 #endif
 }
@@ -345,6 +352,8 @@ os_awe_allocate_virtual_mem_window(
 
 	return(ptr);
 #else
+	UT_NOT_USED(size);
+	
 	return(NULL);
 #endif
 }
@@ -472,6 +481,10 @@ os_awe_map_physical_mem_to_window(
 
 	return(TRUE);
 #else
+	UT_NOT_USED(ptr);
+	UT_NOT_USED(n_mem_pages);
+	UT_NOT_USED(page_info);
+
 	return(FALSE);
 #endif
 }	
@@ -513,6 +526,89 @@ os_mem_alloc_nocache(
 #else
 	return(ut_malloc(n));
 #endif
+}
+
+/********************************************************************
+Allocates large pages memory. */
+
+void*
+os_mem_alloc_large(
+/*=================*/
+      /* out: allocated memory */
+  ulint	n, /* in: number of bytes */
+	ibool set_to_zero, /* in: TRUE if allocated memory should be set
+        to zero if UNIV_SET_MEM_TO_ZERO is defined */
+	ibool	assert_on_error) /* in: if TRUE, we crash mysqld if the memory
+				cannot be allocated */
+{
+#ifdef HAVE_LARGE_PAGES
+  ulint size;
+  int shmid;
+  void *ptr = NULL;
+  struct shmid_ds buf;
+  
+  if (!os_use_large_pages || !os_large_page_size) {
+    goto skip;
+  }
+
+#ifdef UNIV_LINUX
+  /* Align block size to os_large_page_size */
+  size = ((n - 1) & ~(os_large_page_size - 1)) + os_large_page_size;
+  
+  shmid = shmget(IPC_PRIVATE, (size_t)size, SHM_HUGETLB | SHM_R | SHM_W);
+  if (shmid < 0) {
+    fprintf(stderr, "InnoDB: HugeTLB: Warning: Failed to allocate %lu bytes. "
+            "errno %d\n", n, errno);
+  } else {
+    ptr = shmat(shmid, NULL, 0);
+    if (ptr == (void *)-1) {
+      fprintf(stderr, "InnoDB: HugeTLB: Warning: Failed to attach shared memory "
+              "segment, errno %d\n", errno);
+    }
+    /*
+      Remove the shared memory segment so that it will be automatically freed
+      after memory is detached or process exits
+    */
+    shmctl(shmid, IPC_RMID, &buf);
+  }
+#endif
+  
+  if (ptr) {
+    if (set_to_zero) {
+#ifdef UNIV_SET_MEM_TO_ZERO
+      memset(ptr, '\0', size);
+#endif
+    }
+
+    return(ptr);
+  }
+
+  fprintf(stderr, "InnoDB HugeTLB: Warning: Using conventional memory pool\n");
+skip:
+#endif /* HAVE_LARGE_PAGES */
+  
+	return(ut_malloc_low(n, set_to_zero, assert_on_error));
+}
+
+/********************************************************************
+Frees large pages memory. */
+
+void
+os_mem_free_large(
+/*=================*/
+	void	*ptr)	/* in: number of bytes */
+{
+#ifdef HAVE_LARGE_PAGES
+  if (os_use_large_pages && os_large_page_size
+#ifdef UNIV_LINUX
+      && !shmdt(ptr)
+#endif
+      ) {
+    return;
+  }
+#endif
+
+  ut_free(ptr);
 }
 
 /********************************************************************

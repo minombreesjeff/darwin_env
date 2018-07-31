@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -332,6 +331,7 @@ void Dbtup::initFragRange(Fragrecord* const regFragPtr)
   regFragPtr->rootPageRange = RNIL;
   regFragPtr->currentPageRange = RNIL;
   regFragPtr->noOfPages = 0;
+  regFragPtr->noOfPagesToGrow = 2;
   regFragPtr->nextStartRange = 0;
 }//initFragRange()
 
@@ -393,14 +393,15 @@ Uint32 Dbtup::allocFragPages(Fragrecord* const regFragPtr, Uint32 tafpNoAllocReq
 
 void Dbtup::allocMoreFragPages(Fragrecord* const regFragPtr) 
 {
-  Uint32 noAllocPages = regFragPtr->noOfPages >> 3; // 12.5%
-  noAllocPages += regFragPtr->noOfPages >> 4; // 6.25%
+  Uint32 noAllocPages = regFragPtr->noOfPagesToGrow >> 3; // 12.5%
+  noAllocPages += regFragPtr->noOfPagesToGrow >> 4; // 6.25%
   noAllocPages += 2;
 /* -----------------------------------------------------------------*/
 // We will grow by 18.75% plus two more additional pages to grow
 // a little bit quicker in the beginning.
 /* -----------------------------------------------------------------*/
-  allocFragPages(regFragPtr, noAllocPages);
+  Uint32 allocated = allocFragPages(regFragPtr, noAllocPages);
+  regFragPtr->noOfPagesToGrow += allocated;
 }//Dbtup::allocMoreFragPages()
 
 Uint32 Dbtup::leafPageRangeFull(Fragrecord*  const regFragPtr, PageRangePtr currPageRangePtr)
@@ -451,6 +452,13 @@ Uint32 Dbtup::leafPageRangeFull(Fragrecord*  const regFragPtr, PageRangePtr curr
       ptrCheckGuard(parentPageRangePtr, cnoOfPageRangeRec, pageRange);
       if (parentPageRangePtr.p->currentIndexPos < 3) {
         ljam();
+
+        if (c_noOfFreePageRanges < tiprNoLevels) 
+        {
+          ljam();
+          return RNIL;
+        }//if
+	
 /* ---------------------------------------------------------------- */
 /*       WE HAVE FOUND AN EMPTY ENTRY IN A PAGE RANGE RECORD.       */
 /*       ALLOCATE A NEW PAGE RANGE RECORD, FILL IN THE START RANGE, */

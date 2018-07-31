@@ -1,10 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & Alexey Botchkov & MySQL Finland AB 
-   & TCX DataKonsult AB
+/* Copyright (C) 2002-2005 MySQL AB & Alexey Botchkov
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
    
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -188,6 +186,10 @@ static int split_rtree_node(SplitStruct *node, int n_entries,
   int next_node;
   int i;
   SplitStruct *end = node + n_entries;
+  LINT_INIT(a);
+  LINT_INIT(b);
+  LINT_INIT(next);
+  LINT_INIT(next_node);
 
   if (all_size < min_size * 2)
   {
@@ -257,20 +259,20 @@ int rtree_split_page(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page, uchar *key,
   int n_dim;
   uchar *source_cur, *cur1, *cur2;
   uchar *new_page;
-  int err_code = 0;
-
-  uint nod_flag = mi_test_if_nod(page);
-  uint full_length = key_length + (nod_flag ? nod_flag : 
-                                   info->s->base.rec_reflength);
-
-  int max_keys = (mi_getint(page)-2) / (full_length);
+  int err_code= 0;
+  uint nod_flag= mi_test_if_nod(page);
+  uint full_length= key_length + (nod_flag ? nod_flag : 
+                                  info->s->base.rec_reflength);
+  int max_keys= (mi_getint(page)-2) / (full_length);
+  DBUG_ENTER("rtree_split_page");
+  DBUG_PRINT("rtree", ("splitting block"));
 
   n_dim = keyinfo->keysegs / 2;
   
   if (!(coord_buf= (double*) my_alloca(n_dim * 2 * sizeof(double) *
-				       (max_keys + 1 + 4) +
-				       sizeof(SplitStruct) * (max_keys + 1))))
-    return -1;
+                                       (max_keys + 1 + 4) +
+                                       sizeof(SplitStruct) * (max_keys + 1))))
+    DBUG_RETURN(-1); /* purecov: inspected */
 
   task= (SplitStruct *)(coord_buf + n_dim * 2 * (max_keys + 1 + 4));
 
@@ -312,8 +314,7 @@ int rtree_split_page(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page, uchar *key,
   cur1 = rt_PAGE_FIRST_KEY(page, nod_flag);
   cur2 = rt_PAGE_FIRST_KEY(new_page, nod_flag);
 
-  n1 = 0;
-  n2 = 0;
+  n1= n2 = 0;
   for (cur = task; cur < stop; ++cur)
   {
     uchar *to;
@@ -342,12 +343,13 @@ int rtree_split_page(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page, uchar *key,
   else
     err_code= _mi_write_keypage(info, keyinfo, *new_page_offs,
                                 DFLT_INIT_HITS, new_page);
+  DBUG_PRINT("rtree", ("split new block: %lu", (ulong) *new_page_offs));
 
   my_afree((byte*)new_page);
 
 split_err:
   my_afree((byte*) coord_buf);
-  return err_code;
+  DBUG_RETURN(err_code);
 }
 
 #endif /*HAVE_RTREE_KEYS*/

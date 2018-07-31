@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -320,7 +319,7 @@ static int t_ctype[][TOT_LEVELS] = {
     /*0xFC*/ { IGNORE, IGNORE, IGNORE, IGNORE, X },
     /*0xFD*/ { IGNORE, IGNORE, IGNORE, IGNORE, X },
     /*0xFE*/ { IGNORE, IGNORE, IGNORE, IGNORE, X },
-/* Utilize 0xFF for max_sort_chr in my_like_range_tis620 */
+    /* Utilize 0xFF for max_sort_chr in my_like_range_tis620 */
     /*0xFF*/ { 255 /*IGNORE*/, IGNORE, IGNORE, IGNORE, X },
 };
 
@@ -541,7 +540,7 @@ int my_strnncoll_tis620(CHARSET_INFO *cs __attribute__((unused)),
 
   tc1= buf;
   if ((len1 + len2 +2) > (int) sizeof(buf))
-    tc1= (uchar*) malloc(len1+len2+2);
+    tc1= (uchar*) my_str_malloc(len1+len2+2);
   tc2= tc1 + len1+1;
   memcpy((char*) tc1, (char*) s1, len1);
   tc1[len1]= 0;		/* if length(s1)> len1, need to put 'end of string' */
@@ -551,7 +550,7 @@ int my_strnncoll_tis620(CHARSET_INFO *cs __attribute__((unused)),
   thai2sortable(tc2, len2);
   i= strcmp((char*)tc1, (char*)tc2);
   if (tc1 != buf)
-    free(tc1);
+    my_str_free(tc1);
   return i;
 }
 
@@ -559,16 +558,20 @@ int my_strnncoll_tis620(CHARSET_INFO *cs __attribute__((unused)),
 static
 int my_strnncollsp_tis620(CHARSET_INFO * cs __attribute__((unused)),
 			  const uchar *a0, uint a_length, 
-			  const uchar *b0, uint b_length)
+			  const uchar *b0, uint b_length,
+                          my_bool diff_if_only_endspace_difference)
 {
-  uchar	buf[80] ;
-  uchar *end, *a, *b, *alloced= NULL;
+  uchar	buf[80], *end, *a, *b, *alloced= NULL;
   uint length;
   int res= 0;
+
+#ifndef VARCHAR_WITH_DIFF_ENDSPACE_ARE_DIFFERENT_FOR_UNIQUE
+  diff_if_only_endspace_difference= 0;
+#endif
   
   a= buf;
   if ((a_length + b_length +2) > (int) sizeof(buf))
-    alloced= a= (uchar*) malloc(a_length+b_length+2);
+    alloced= a= (uchar*) my_str_malloc(a_length+b_length+2);
   
   b= a + a_length+1;
   memcpy((char*) a, (char*) a0, a_length);
@@ -590,6 +593,8 @@ int my_strnncollsp_tis620(CHARSET_INFO * cs __attribute__((unused)),
   if (a_length != b_length)
   {
     int swap= 1;
+    if (diff_if_only_endspace_difference)
+      res= 1;                                   /* Assume 'a' is bigger */
     /*
       Check the next not space character of the longer key. If it's < ' ',
       then it's smaller than the other key.
@@ -600,6 +605,7 @@ int my_strnncollsp_tis620(CHARSET_INFO * cs __attribute__((unused)),
       a_length= b_length;
       a= b;
       swap= -1;					/* swap sign of result */
+      res= -res;
     }
     for (end= a + a_length-length; a < end ; a++)
     {
@@ -614,7 +620,7 @@ int my_strnncollsp_tis620(CHARSET_INFO * cs __attribute__((unused)),
 ret:
   
   if (alloced)
-    free(alloced);
+    my_str_free(alloced);
   return res;
 }
 
@@ -849,11 +855,13 @@ static MY_COLLATION_HANDLER my_collation_ci_handler =
     my_strnncoll_tis620,
     my_strnncollsp_tis620,
     my_strnxfrm_tis620,
+    my_strnxfrmlen_simple,
     my_like_range_simple,
     my_wildcmp_8bit,	/* wildcmp   */
     my_strcasecmp_8bit,
     my_instr_simple,				/* QQ: To be fixed */
     my_hash_sort_simple,
+    my_propagate_simple
 };
 
 static MY_CHARSET_HANDLER my_charset_handler=
@@ -882,6 +890,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
     my_strntoull_8bit,
     my_strntod_8bit,
     my_strtoll10_8bit,
+    my_strntoull10rnd_8bit,
     my_scan_8bit
 };
 
@@ -903,13 +912,17 @@ CHARSET_INFO my_charset_tis620_thai_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     4,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
@@ -931,13 +944,17 @@ CHARSET_INFO my_charset_tis620_bin=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_8bit_bin_handler

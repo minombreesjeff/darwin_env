@@ -1,15 +1,14 @@
 /* Copyright (C) 2000-2003 MySQL AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
-   
+   the Free Software Foundation; version 2 of the License.
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -92,11 +91,6 @@ extern my_bool opt_skip_slave_start, opt_reckless_slave;
 extern my_bool opt_log_slave_updates;
 extern ulonglong relay_log_space_limit;
 struct st_master_info;
-
-enum enum_binlog_formats {
-  BINLOG_FORMAT_CURRENT=0, /* 0 is important for easy 'if (mi->old_format)' */
-  BINLOG_FORMAT_323_LESS_57, 
-  BINLOG_FORMAT_323_GEQ_57 };
 
 /*
   3 possible values for MASTER_INFO::slave_running and
@@ -214,6 +208,8 @@ typedef struct st_relay_log_info
   ulonglong group_relay_log_pos;
   char event_relay_log_name[FN_REFLEN];
   ulonglong event_relay_log_pos;
+  ulonglong future_event_relay_log_pos;
+
   /* 
      Original log name and position of the group we're currently executing
      (whose coordinates are group_relay_log_name/pos in the relay log)
@@ -295,6 +291,7 @@ typedef struct st_relay_log_info
     UNTIL_LOG_NAMES_CMP_EQUAL= 0, UNTIL_LOG_NAMES_CMP_GREATER= 1
   } until_log_names_cmp_result;
 
+  char cached_charset[6];
   /*
     trans_retries varies between 0 to slave_transaction_retries and counts how
     many times the slave has retried the present transaction; gets reset to 0
@@ -338,12 +335,14 @@ typedef struct st_relay_log_info
       until_log_names_cmp_result= UNTIL_LOG_NAMES_CMP_UNKNOWN;
   }
   
-  inline void inc_event_relay_log_pos(ulonglong val)
+  inline void inc_event_relay_log_pos()
   {
-    event_relay_log_pos+= val;
+    event_relay_log_pos= future_event_relay_log_pos;
   }
 
-  void inc_group_relay_log_pos(ulonglong val, ulonglong log_pos, bool skip_lock=0);
+  void inc_group_relay_log_pos(ulonglong log_pos,
+			       bool skip_lock=0);
+
   int wait_for_pos(THD* thd, String* log_name, longlong log_pos, 
 		   longlong timeout);
   void close_temporary_tables();
@@ -355,6 +354,14 @@ typedef struct st_relay_log_info
     return ((until_condition == UNTIL_MASTER_POS) ? group_master_log_pos :
 	    group_relay_log_pos);
   }
+  /*
+    Last charset (6 bytes) seen by slave SQL thread is cached here; it helps
+    the thread save 3 get_charset() per Query_log_event if the charset is not
+    changing from event to event (common situation).
+    When the 6 bytes are equal to 0 is used to mean "cache is invalidated".
+  */
+  void cached_charset_invalidate();
+  bool cached_charset_compare(char *charset);
 } RELAY_LOG_INFO;
 
 
@@ -403,11 +410,11 @@ typedef struct st_master_info
   my_bool ssl; // enables use of SSL connection if true
   char ssl_ca[FN_REFLEN], ssl_capath[FN_REFLEN], ssl_cert[FN_REFLEN];
   char ssl_cipher[FN_REFLEN], ssl_key[FN_REFLEN];
-  
+
   my_off_t master_log_pos;
   File fd; // we keep the file open, so we need to remember the file pointer
   IO_CACHE file;
-  
+
   pthread_mutex_t data_lock,run_lock;
   pthread_cond_t data_cond,start_cond,stop_cond;
   THD *io_thd;
@@ -420,11 +427,10 @@ typedef struct st_master_info
   int events_till_abort;
 #endif
   bool inited;
-  enum enum_binlog_formats old_format;
   volatile bool abort_slave;
   volatile uint slave_running;
   volatile ulong slave_run_id;
-  /* 
+  /*
      The difference in seconds between the clock of the master and the clock of
      the slave (second - first). It must be signed as it may be <0 or >0.
      clock_diff_with_master is computed when the I/O thread starts; for this the
@@ -433,16 +439,16 @@ typedef struct st_master_info
      clock_of_slave - last_timestamp_executed_by_SQL_thread - clock_diff_with_master
 
   */
-  long clock_diff_with_master; 
-  
+  long clock_diff_with_master;
+
   st_master_info()
-    :ssl(0), fd(-1),  io_thd(0), inited(0), old_format(BINLOG_FORMAT_CURRENT),
+    :ssl(0), fd(-1),  io_thd(0), inited(0),
      abort_slave(0),slave_running(0), slave_run_id(0)
   {
     host[0] = 0; user[0] = 0; password[0] = 0;
     ssl_ca[0]= 0; ssl_capath[0]= 0; ssl_cert[0]= 0;
     ssl_cipher[0]= 0; ssl_key[0]= 0;
-    
+
     bzero((char*) &file, sizeof(file));
     pthread_mutex_init(&run_lock, MY_MUTEX_INIT_FAST);
     pthread_mutex_init(&data_lock, MY_MUTEX_INIT_FAST);
@@ -493,7 +499,7 @@ typedef struct st_table_rule_ent
 
 int init_slave();
 void init_slave_skip_errors(const char* arg);
-bool flush_master_info(MASTER_INFO* mi, bool flush_relay_log_cache);
+int flush_master_info(MASTER_INFO* mi, bool flush_relay_log_cache);
 bool flush_relay_log_info(RELAY_LOG_INFO* rli);
 int register_slave_on_master(MYSQL* mysql);
 int terminate_slave_threads(MASTER_INFO* mi, int thread_mask,
@@ -519,18 +525,15 @@ int start_slave_thread(pthread_handler h_func, pthread_mutex_t* start_lock,
 		       MASTER_INFO* mi,
                        bool high_priority);
 
-/* If fd is -1, dump to NET */
-int mysql_table_dump(THD* thd, const char* db,
-		     const char* tbl_name, int fd = -1);
-
 /* retrieve table from master and copy to slave*/
 int fetch_master_table(THD* thd, const char* db_name, const char* table_name,
 		       MASTER_INFO* mi, MYSQL* mysql, bool overwrite);
 
 void table_rule_ent_hash_to_str(String* s, HASH* h);
 void table_rule_ent_dynamic_array_to_str(String* s, DYNAMIC_ARRAY* a);
-int show_master_info(THD* thd, MASTER_INFO* mi);
-int show_binlog_info(THD* thd);
+bool show_master_info(THD* thd, MASTER_INFO* mi);
+bool show_binlog_info(THD* thd);
+bool rpl_master_has_bug(RELAY_LOG_INFO *rli, uint bug_id);
 
 /* See if the query uses any tables that should not be replicated */
 bool tables_ok(THD* thd, TABLE_LIST* tables);
@@ -547,7 +550,6 @@ int add_table_rule(HASH* h, const char* table_spec);
 int add_wild_table_rule(DYNAMIC_ARRAY* a, const char* table_spec);
 void init_table_rule_hash(HASH* h, bool* h_inited);
 void init_table_rule_array(DYNAMIC_ARRAY* a, bool* a_inited);
-const char *rewrite_db(const char* db, uint32 *new_db_len);
 const char *print_slave_db_safe(const char *db);
 int check_expected_error(THD* thd, RELAY_LOG_INFO* rli, int error_code);
 void skip_load_data_infile(NET* net);
@@ -563,20 +565,22 @@ int init_master_info(MASTER_INFO* mi, const char* master_info_fname,
 		     bool abort_if_no_master_info_file,
 		     int thread_mask);
 void end_master_info(MASTER_INFO* mi);
-int init_relay_log_info(RELAY_LOG_INFO* rli, const char* info_fname);
 void end_relay_log_info(RELAY_LOG_INFO* rli);
 void lock_slave_threads(MASTER_INFO* mi);
 void unlock_slave_threads(MASTER_INFO* mi);
 void init_thread_mask(int* mask,MASTER_INFO* mi,bool inverse);
 int init_relay_log_pos(RELAY_LOG_INFO* rli,const char* log,ulonglong pos,
-		       bool need_data_lock, const char** errmsg);
+		       bool need_data_lock, const char** errmsg,
+                       bool look_for_description_event);
 
 int purge_relay_logs(RELAY_LOG_INFO* rli, THD *thd, bool just_reset,
 		     const char** errmsg);
+void set_slave_thread_options(THD* thd);
+void set_slave_thread_default_charset(THD* thd, RELAY_LOG_INFO *rli);
 void rotate_relay_log(MASTER_INFO* mi);
 
-extern "C" pthread_handler_decl(handle_slave_io,arg);
-extern "C" pthread_handler_decl(handle_slave_sql,arg);
+pthread_handler_t handle_slave_io(void *arg);
+pthread_handler_t handle_slave_sql(void *arg);
 extern bool volatile abort_loop;
 extern MASTER_INFO main_mi, *active_mi; /* active_mi for multi-master */
 extern LIST master_list;
@@ -584,7 +588,8 @@ extern HASH replicate_do_table, replicate_ignore_table;
 extern DYNAMIC_ARRAY  replicate_wild_do_table, replicate_wild_ignore_table;
 extern bool do_table_inited, ignore_table_inited,
 	    wild_do_table_inited, wild_ignore_table_inited;
-extern bool table_rules_on, replicate_same_server_id;
+extern bool table_rules_on;
+extern my_bool replicate_same_server_id;
 
 extern int disconnect_slave_event_count, abort_slave_event_count ;
 

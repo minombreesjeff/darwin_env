@@ -89,11 +89,28 @@ DIST_COMMON = $(noinst_HEADERS) $(srcdir)/Makefile.am \
 noinst_PROGRAMS = conf_to_src$(EXEEXT)
 subdir = libmysql
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = libmysql.ver
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
@@ -113,11 +130,12 @@ am__DEPENDENCIES_1 = my_init.lo my_static.lo my_malloc.lo \
 	safemalloc.lo my_alloc.lo mf_format.lo mf_path.lo \
 	mf_unixpath.lo my_fopen.lo my_symlink.lo my_fstream.lo \
 	mf_loadpath.lo my_pthread.lo my_thr_init.lo thr_mutex.lo \
-	mulalloc.lo string.lo default.lo my_compress.lo array.lo \
-	my_once.lo list.lo my_net.lo charset.lo charset-def.lo hash.lo \
-	mf_iocache.lo mf_iocache2.lo my_seek.lo my_sleep.lo \
-	my_pread.lo mf_cache.lo md5.lo sha1.lo my_getopt.lo \
-	my_gethostbyname.lo my_port.lo
+	mulalloc.lo string.lo default.lo default_modify.lo \
+	my_compress.lo array.lo my_once.lo list.lo my_net.lo \
+	charset.lo charset-def.lo hash.lo mf_iocache.lo mf_iocache2.lo \
+	my_seek.lo my_sleep.lo my_pread.lo mf_cache.lo md5.lo sha1.lo \
+	my_getopt.lo my_gethostbyname.lo my_port.lo my_rename.lo \
+	my_chsize.lo
 am__DEPENDENCIES_2 = my_lib.lo
 am__DEPENDENCIES_3 = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2)
 am__DEPENDENCIES_4 = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
@@ -126,11 +144,11 @@ am__DEPENDENCIES_4 = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
 	strcend.lo bcmp.lo ctype-latin1.lo bchange.lo bmove.lo \
 	bmove_upp.lo longlong2str.lo strtoull.lo strtoll.lo llstr.lo \
 	my_vsnprintf.lo ctype.lo ctype-simple.lo ctype-bin.lo \
-	ctype-mb.lo ctype-big5.lo ctype-cp932.lo ctype-czech.lo \
-	ctype-euc_kr.lo ctype-win1250ch.lo ctype-utf8.lo \
-	ctype-extra.lo ctype-ucs2.lo ctype-gb2312.lo ctype-gbk.lo \
-	ctype-sjis.lo ctype-tis620.lo ctype-ujis.lo ctype-uca.lo \
-	xml.lo my_strtoll10.lo
+	ctype-mb.lo ctype-big5.lo ctype-czech.lo ctype-cp932.lo \
+	ctype-eucjpms.lo ctype-euc_kr.lo ctype-win1250ch.lo \
+	ctype-utf8.lo ctype-extra.lo ctype-ucs2.lo ctype-gb2312.lo \
+	ctype-gbk.lo ctype-sjis.lo ctype-tis620.lo ctype-ujis.lo \
+	ctype-uca.lo xml.lo my_strtoll10.lo str_alloc.lo
 am__DEPENDENCIES_5 = dbug.lo
 am__DEPENDENCIES_6 = pack.lo client.lo my_time.lo
 am__DEPENDENCIES_7 = vio.lo viosocket.lo viossl.lo viosslfactories.lo
@@ -138,7 +156,11 @@ am__DEPENDENCIES_8 = net.lo
 am__DEPENDENCIES_9 = $(am__DEPENDENCIES_3) $(am__DEPENDENCIES_4) \
 	$(am__DEPENDENCIES_5) $(am__DEPENDENCIES_6) \
 	$(am__DEPENDENCIES_7) $(am__DEPENDENCIES_8)
-libmysqlclient_la_DEPENDENCIES = $(am__DEPENDENCIES_9)
+@HAVE_YASSL_TRUE@am__DEPENDENCIES_10 =  \
+@HAVE_YASSL_TRUE@	$(top_builddir)/extra/yassl/src/libyassl.la \
+@HAVE_YASSL_TRUE@	$(top_builddir)/extra/yassl/taocrypt/src/libtaocrypt.la
+libmysqlclient_la_DEPENDENCIES = $(am__DEPENDENCIES_9) \
+	$(am__DEPENDENCIES_10)
 am__objects_1 = libmysql.lo password.lo manager.lo get_password.lo \
 	errmsg.lo
 am_libmysqlclient_la_OBJECTS = $(am__objects_1)
@@ -170,6 +192,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -183,7 +206,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -214,6 +236,9 @@ DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
 DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DDEFAULT_CHARSET_HOME="\"$(MYSQLBASEdir)\"" \
 			-DDATADIR="\"$(MYSQLDATAdir)\"" \
+			-DDEFAULT_HOME_ENV=MYSQL_HOME \
+			-DDEFAULT_GROUP_SUFFIX_ENV=MYSQL_GROUP_SUFFIX \
+			-DDEFAULT_SYSCONFDIR="\"$(sysconfdir)\"" \
 			-DSHAREDIR="\"$(MYSQLSHAREdir)\"" $(target_defs)
 
 DEPDIR = @DEPDIR@
@@ -235,7 +260,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -247,41 +275,49 @@ LD_VERSION_SCRIPT = @LD_VERSION_SCRIPT@
 LIBDL = @LIBDL@
 LIBEDIT_LOBJECTS = @LIBEDIT_LOBJECTS@
 LIBOBJS = @LIBOBJS@
-LIBS = @CLIENT_LIBS@
+LIBS = @CLIENT_LIBS@ 
 LIBTOOL = @LIBTOOL@
 LIB_EXTRA_CCFLAGS = @LIB_EXTRA_CCFLAGS@
 LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -317,7 +353,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -353,7 +388,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -365,7 +399,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -383,7 +416,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -392,9 +424,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -420,8 +449,10 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 target_defs = -DUNDEF_THREADS_HACK -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@
 INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include \
@@ -443,11 +474,11 @@ mystringsobjects = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
 			bchange.lo bmove.lo bmove_upp.lo longlong2str.lo \
 			strtoull.lo strtoll.lo llstr.lo my_vsnprintf.lo \
 			ctype.lo ctype-simple.lo ctype-bin.lo ctype-mb.lo \
-			ctype-big5.lo ctype-cp932.lo ctype-czech.lo ctype-euc_kr.lo \
+			ctype-big5.lo ctype-czech.lo ctype-cp932.lo ctype-eucjpms.lo ctype-euc_kr.lo \
 			ctype-win1250ch.lo ctype-utf8.lo ctype-extra.lo \
 			ctype-ucs2.lo ctype-gb2312.lo ctype-gbk.lo \
 			ctype-sjis.lo ctype-tis620.lo ctype-ujis.lo \
-			ctype-uca.lo xml.lo my_strtoll10.lo
+			ctype-uca.lo xml.lo my_strtoll10.lo str_alloc.lo 
 
 mystringsextra = strto.c
 dbugobjects = dbug.lo # IT IS IN SAFEMALLOC.C sanity.lo
@@ -462,12 +493,14 @@ mysysobjects1 = my_init.lo my_static.lo my_malloc.lo my_realloc.lo \
 			mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo \
 			my_symlink.lo my_fstream.lo \
 			mf_loadpath.lo my_pthread.lo my_thr_init.lo \
-			thr_mutex.lo mulalloc.lo string.lo default.lo \
+			thr_mutex.lo mulalloc.lo string.lo \
+                        default.lo default_modify.lo \
 			my_compress.lo array.lo my_once.lo list.lo my_net.lo \
                         charset.lo charset-def.lo hash.lo mf_iocache.lo \
                         mf_iocache2.lo my_seek.lo my_sleep.lo \
-			my_pread.lo mf_cache.lo md5.lo sha1.lo\
-			my_getopt.lo my_gethostbyname.lo my_port.lo
+			my_pread.lo mf_cache.lo md5.lo sha1.lo \
+			my_getopt.lo my_gethostbyname.lo my_port.lo \
+                        my_rename.lo my_chsize.lo
 
 sqlobjects = net.lo
 sql_cmn_objects = pack.lo client.lo my_time.lo
@@ -483,15 +516,18 @@ vio_objects = vio.lo viosocket.lo viossl.lo viosslfactories.lo
 CLEANFILES = $(target_libadd) $(SHLIBOBJS) \
 			$(target)
 
+@HAVE_YASSL_TRUE@yassl_las = $(top_builddir)/extra/yassl/src/libyassl.la \
+@HAVE_YASSL_TRUE@	    $(top_builddir)/extra/yassl/taocrypt/src/libtaocrypt.la
+
 conf_to_src_SOURCES = conf_to_src.c
 conf_to_src_LDADD = 
 #force static linking of conf_to_src - essential when linking against
 #custom installation of libc
 conf_to_src_LDFLAGS = @NOINST_LDFLAGS@
 libmysqlclient_la_SOURCES = $(target_sources)
-libmysqlclient_la_LIBADD = $(target_libadd)
+libmysqlclient_la_LIBADD = $(target_libadd) $(yassl_las)
 libmysqlclient_la_LDFLAGS = $(target_ldflags)
-EXTRA_DIST = Makefile.shared libmysql.def
+EXTRA_DIST = Makefile.shared libmysql.def dll.c mytest.c CMakeLists.txt
 noinst_HEADERS = client_settings.h
 
 # This part requires GNUmake
@@ -880,6 +916,9 @@ do-lib-dist:
 	echo '	$$(AR) r $$@ $$?'  >>$$dir/Makefile; \
 	gtar cvzf $$dir.tar.gz $$dir; \
 	cd $$dir; gmake
+
+# Don't update the files from bitkeeper
+%::SCCS/s.%
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2002, 2004, 2006 MySQL AB
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
- the Free Software Foundation; either version 2 of the License, or
- (at your option) any later version.
+ the Free Software Foundation; version 2 of the License.
 
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -245,7 +244,7 @@ static void SHA1ProcessMessageBlock(SHA1_CONTEXT *context)
   uint32	temp;		   /* Temporary word value	  */
   uint32	W[80];		   /* Word sequence		  */
   uint32	A, B, C, D, E;	   /* Word buffers		  */
-  int index;
+  int idx;
 
   /*
     Initialize the first 16 words in the array W
@@ -253,11 +252,11 @@ static void SHA1ProcessMessageBlock(SHA1_CONTEXT *context)
 
   for (t = 0; t < 16; t++)
   {
-    index=t*4;
-    W[t] = context->Message_Block[index] << 24;
-    W[t] |= context->Message_Block[index + 1] << 16;
-    W[t] |= context->Message_Block[index + 2] << 8;
-    W[t] |= context->Message_Block[index + 3];
+    idx=t*4;
+    W[t] = context->Message_Block[idx] << 24;
+    W[t] |= context->Message_Block[idx + 1] << 16;
+    W[t] |= context->Message_Block[idx + 2] << 8;
+    W[t] |= context->Message_Block[idx + 3];
   }
 
 

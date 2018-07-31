@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -126,6 +125,68 @@ NdbRestarter::getMasterNodeId(){
   }
 
   return node;
+}
+
+int
+NdbRestarter::getNodeGroup(int nodeId){
+  if (!isConnected())
+    return -1;
+  
+  if (getStatus() != 0)
+    return -1;
+  
+  for(size_t i = 0; i < ndbNodes.size(); i++)
+  {
+    if(ndbNodes[i].node_id == nodeId)
+    {
+      return ndbNodes[i].node_group;
+    }
+  }
+  
+  return -1;
+}
+
+int
+NdbRestarter::getNextMasterNodeId(int nodeId){
+  if (!isConnected())
+    return -1;
+  
+  if (getStatus() != 0)
+    return -1;
+  
+  size_t i;
+  for(i = 0; i < ndbNodes.size(); i++)
+  {
+    if(ndbNodes[i].node_id == nodeId)
+    {
+      break;
+    }
+  }
+  assert(i < ndbNodes.size());
+  if (i == ndbNodes.size())
+    return -1;
+
+  int dynid = ndbNodes[i].dynamic_id;
+  int minid = dynid;
+  for (i = 0; i<ndbNodes.size(); i++)
+    if (ndbNodes[i].dynamic_id > minid)
+      minid = ndbNodes[i].dynamic_id;
+  
+  for (i = 0; i<ndbNodes.size(); i++)
+    if (ndbNodes[i].dynamic_id > dynid && 
+	ndbNodes[i].dynamic_id < minid)
+    {
+      minid = ndbNodes[i].dynamic_id;
+    }
+  
+  if (minid != ~0)
+  {
+    for (i = 0; i<ndbNodes.size(); i++)
+      if (ndbNodes[i].dynamic_id == minid)
+	return ndbNodes[i].node_id;
+  }
+  
+  return getMasterNodeId();
 }
 
 int

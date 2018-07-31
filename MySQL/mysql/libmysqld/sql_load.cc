@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,6 +20,8 @@
 #include <my_dir.h>
 #include <m_ctype.h>
 #include "sql_repl.h"
+#include "sp_head.h"
+#include "sql_trigger.h"
 
 class READ_INFO {
   File	file;
@@ -71,17 +72,48 @@ public:
   void set_io_cache_arg(void* arg) { cache.arg = arg; }
 };
 
-static int read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,
-			     List<Item> &fields, READ_INFO &read_info,
-			     ulong skip_lines);
-static int read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
-			  List<Item> &fields, READ_INFO &read_info,
-			  String &enclosed, ulong skip_lines);
+static int read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
+                             List<Item> &fields_vars, List<Item> &set_fields,
+                             List<Item> &set_values, READ_INFO &read_info,
+			     ulong skip_lines,
+			     bool ignore_check_option_errors);
+static int read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
+                          List<Item> &fields_vars, List<Item> &set_fields,
+                          List<Item> &set_values, READ_INFO &read_info,
+			  String &enclosed, ulong skip_lines,
+			  bool ignore_check_option_errors);
+#ifndef EMBEDDED_LIBRARY
+static bool write_execute_load_query_log_event(THD *thd,
+					       bool duplicates, bool ignore,
+					       bool transactional_table);
+#endif /* EMBEDDED_LIBRARY */
 
-int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
-	       List<Item> &fields, enum enum_duplicates handle_duplicates,
-               bool ignore,
-	       bool read_file_from_client,thr_lock_type lock_type)
+/*
+  Execute LOAD DATA query
+
+  SYNOPSYS
+    mysql_load()
+      thd - current thread
+      ex  - sql_exchange object representing source file and its parsing rules
+      table_list  - list of tables to which we are loading data
+      fields_vars - list of fields and variables to which we read
+                    data from file
+      set_fields  - list of fields mentioned in set clause
+      set_values  - expressions to assign to fields in previous list
+      handle_duplicates - indicates whenever we should emit error or
+                          replace row if we will meet duplicates.
+      ignore -          - indicates whenever we should ignore duplicates
+      read_file_from_client - is this LOAD DATA LOCAL ?
+
+  RETURN VALUES
+    TRUE - error / FALSE - success
+*/
+
+bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
+	        List<Item> &fields_vars, List<Item> &set_fields,
+                List<Item> &set_values,
+                enum enum_duplicates handle_duplicates, bool ignore,
+                bool read_file_from_client)
 {
   char name[FN_REFLEN];
   File file;
@@ -89,6 +121,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   int error;
   String *field_term=ex->field_term,*escaped=ex->escaped;
   String *enclosed=ex->enclosed;
+  Item *unused_conds= 0;
   bool is_fifo=0;
 #ifndef EMBEDDED_LIBRARY
   LOAD_FILE_INFO lf_info;
@@ -100,8 +133,8 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     loaded is located
   */
   char *tdb= thd->db ? thd->db : db;		// Result is never null
-  bool transactional_table, log_delayed;
   ulong skip_lines= ex->skip_lines;
+  bool transactional_table;
   DBUG_ENTER("mysql_load");
 
 #ifdef EMBEDDED_LIBRARY
@@ -112,60 +145,116 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   {
     my_message(ER_WRONG_FIELD_TERMINATORS,ER(ER_WRONG_FIELD_TERMINATORS),
 	       MYF(0));
-    DBUG_RETURN(-1);
+    DBUG_RETURN(TRUE);
+  }
+  if (open_and_lock_tables(thd, table_list))
+    DBUG_RETURN(TRUE);
+  if (setup_tables_and_check_access(thd, &thd->lex->select_lex.context,
+                                    &thd->lex->select_lex.top_join_list,
+                                    table_list, &unused_conds,
+                                    &thd->lex->select_lex.leaf_tables, FALSE,
+                                    INSERT_ACL | UPDATE_ACL,
+                                    INSERT_ACL | UPDATE_ACL))
+     DBUG_RETURN(-1);
+  if (!table_list->table ||               // do not suport join view
+      !table_list->updatable ||           // and derived tables
+      check_key_in_view(thd, table_list))
+  {
+    my_error(ER_NON_UPDATABLE_TABLE, MYF(0), table_list->alias, "LOAD");
+    DBUG_RETURN(TRUE);
+  }
+  if (table_list->prepare_where(thd, 0, TRUE) ||
+      table_list->prepare_check_option(thd))
+  {
+    DBUG_RETURN(TRUE);
   }
   /*
-    This needs to be done before external_lock
-  */
-  ha_enable_transaction(thd, FALSE); 
-  if (!(table = open_ltable(thd,table_list,lock_type)))
-    DBUG_RETURN(-1);
-  transactional_table= table->file->has_transactions();
-  log_delayed= (transactional_table || table->tmp_table);
+    Let us emit an error if we are loading data to table which is used
+    in subselect in SET clause like we do it for INSERT.
 
-  if (!fields.elements)
+    The main thing to fix to remove this restriction is to ensure that the
+    table is marked to be 'used for insert' in which case we should never
+    mark this table as as 'const table' (ie, one that has only one row).
+  */
+  if (unique_table(thd, table_list, table_list->next_global, 0))
+  {
+    my_error(ER_UPDATE_TABLE_USED, MYF(0), table_list->table_name);
+    DBUG_RETURN(TRUE);
+  }
+
+  table= table_list->table;
+  transactional_table= table->file->has_transactions();
+
+  if (!fields_vars.elements)
   {
     Field **field;
     for (field=table->field; *field ; field++)
-      fields.push_back(new Item_field(*field));
+      fields_vars.push_back(new Item_field(*field));
+    table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
+    /*
+      Let us also prepare SET clause, altough it is probably empty
+      in this case.
+    */
+    if (setup_fields(thd, 0, set_fields, 1, 0, 0) ||
+        setup_fields(thd, 0, set_values, 1, 0, 0))
+      DBUG_RETURN(TRUE);
   }
   else
   {						// Part field list
-    thd->dupp_field=0;
-    if (setup_tables(table_list) ||
-	setup_fields(thd, 0, table_list, fields, 1, 0, 0))
-      DBUG_RETURN(-1);
-    if (thd->dupp_field)
-    {
-      my_error(ER_FIELD_SPECIFIED_TWICE, MYF(0), thd->dupp_field->field_name);
-      DBUG_RETURN(-1);
-    }
+    /* TODO: use this conds for 'WITH CHECK OPTIONS' */
+    if (setup_fields(thd, 0, fields_vars, 1, 0, 0) ||
+        setup_fields(thd, 0, set_fields, 1, 0, 0) ||
+        check_that_all_fields_are_given_values(thd, table, table_list))
+      DBUG_RETURN(TRUE);
+    /*
+      Check whenever TIMESTAMP field with auto-set feature specified
+      explicitly.
+    */
+    if (table->timestamp_field &&
+        table->timestamp_field->query_id == thd->query_id)
+      table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
+    /*
+      Fix the expressions in SET clause. This should be done after
+      check_that_all_fields_are_given_values() and setting use_timestamp
+      since it may update query_id for some fields.
+    */
+    if (setup_fields(thd, 0, set_values, 1, 0, 0))
+      DBUG_RETURN(TRUE);
   }
 
-  uint tot_length=0;
-  bool use_blobs=0,use_timestamp=0;
-  List_iterator_fast<Item> it(fields);
+  prepare_triggers_for_insert_stmt(thd, table, handle_duplicates);
 
-  Item_field *field;
-  while ((field=(Item_field*) it++))
+  uint tot_length=0;
+  bool use_blobs= 0, use_vars= 0;
+  List_iterator_fast<Item> it(fields_vars);
+  Item *item;
+
+  while ((item= it++))
   {
-    if (field->field->flags & BLOB_FLAG)
+    if (item->type() == Item::FIELD_ITEM)
     {
-      use_blobs=1;
-      tot_length+=256;				// Will be extended if needed
+      Field *field= ((Item_field*)item)->field;
+      if (field->flags & BLOB_FLAG)
+      {
+        use_blobs= 1;
+        tot_length+= 256;			// Will be extended if needed
+      }
+      else
+        tot_length+= field->field_length;
     }
     else
-      tot_length+=field->field->field_length;
-    if (!field_term->length() && !(field->field->flags & NOT_NULL_FLAG))
-      field->field->set_notnull();
-    if (field->field == table->timestamp_field)
-      use_timestamp=1;
+      use_vars= 1;
   }
   if (use_blobs && !ex->line_term->length() && !field_term->length())
   {
     my_message(ER_BLOBS_AND_NO_TERMINATED,ER(ER_BLOBS_AND_NO_TERMINATED),
 	       MYF(0));
-    DBUG_RETURN(-1);
+    DBUG_RETURN(TRUE);
+  }
+  if (use_vars && !field_term->length() && !enclosed->length())
+  {
+    my_error(ER_LOAD_FROM_FIXED_SIZE_ROWS_TO_VAR, MYF(0));
+    DBUG_RETURN(TRUE);
   }
 
   /* We can't give an error in the middle when using LOCAL files */
@@ -197,7 +286,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 #if !defined(__WIN__) && !defined(OS2) && ! defined(__NETWARE__)
       MY_STAT stat_info;
       if (!my_stat(name,&stat_info,MYF(MY_WME)))
-	DBUG_RETURN(-1);
+	DBUG_RETURN(TRUE);
 
       // if we are not in slave thread, the file must be:
       if (!thd->slave_thread &&
@@ -208,15 +297,24 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 	    ((stat_info.st_mode & S_IFREG) == S_IFREG ||
 	     (stat_info.st_mode & S_IFIFO) == S_IFIFO)))
       {
-	my_error(ER_TEXTFILE_NOT_READABLE,MYF(0),name);
-	DBUG_RETURN(-1);
+	my_error(ER_TEXTFILE_NOT_READABLE, MYF(0), name);
+	DBUG_RETURN(TRUE);
       }
       if ((stat_info.st_mode & S_IFIFO) == S_IFIFO)
 	is_fifo = 1;
 #endif
+
+      if (opt_secure_file_priv &&
+          strncmp(opt_secure_file_priv, name, strlen(opt_secure_file_priv)))
+      {
+        /* Read only allowed from within dir specified by secure_file_priv */
+        my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--secure-file-priv");
+        DBUG_RETURN(TRUE);
+      }
+
     }
     if ((file=my_open(name,O_RDONLY,MYF(MY_WME))) < 0)
-      DBUG_RETURN(-1);
+      DBUG_RETURN(TRUE);
   }
 
   COPY_INFO info;
@@ -225,34 +323,27 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   info.handle_duplicates=handle_duplicates;
   info.escape_char=escaped->length() ? (*escaped)[0] : INT_MAX;
 
-  READ_INFO read_info(file,tot_length,thd->variables.collation_database,
+  READ_INFO read_info(file,tot_length,
+                      ex->cs ? ex->cs : thd->variables.collation_database,
 		      *field_term,*ex->line_start, *ex->line_term, *enclosed,
 		      info.escape_char, read_file_from_client, is_fifo);
   if (read_info.error)
   {
     if	(file >= 0)
       my_close(file,MYF(0));			// no files in net reading
-    DBUG_RETURN(-1);				// Can't allocate buffers
+    DBUG_RETURN(TRUE);				// Can't allocate buffers
   }
 
 #ifndef EMBEDDED_LIBRARY
   if (mysql_bin_log.is_open())
   {
     lf_info.thd = thd;
-    lf_info.ex = ex;
-    lf_info.db = db;
-    lf_info.table_name = table_list->real_name;
-    lf_info.fields = &fields;
-    lf_info.ignore= ignore;
-    lf_info.handle_dup = handle_duplicates;
     lf_info.wrote_create_file = 0;
     lf_info.last_pos_in_file = HA_POS_ERROR;
-    lf_info.log_delayed= log_delayed;
+    lf_info.log_delayed= transactional_table;
     read_info.set_io_cache_arg((void*) &lf_info);
   }
 #endif /*!EMBEDDED_LIBRARY*/
-
-  restore_record(table,default_values);
 
   thd->count_cuted_fields= CHECK_FIELD_WARN;		/* calc cuted fields */
   thd->cuted_fields=0L;
@@ -270,30 +361,45 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   if (!(error=test(read_info.error)))
   {
-    if (use_timestamp)
-      table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
 
     table->next_number_field=table->found_next_number_field;
     if (ignore ||
 	handle_duplicates == DUP_REPLACE)
       table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-    table->file->start_bulk_insert((ha_rows) 0);
+    if (handle_duplicates == DUP_REPLACE)
+    {
+      if (!table->triggers ||
+          !table->triggers->has_delete_triggers())
+        table->file->extra(HA_EXTRA_WRITE_CAN_REPLACE);
+      table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
+    }
+    if (!thd->prelocked_mode)
+      table->file->start_bulk_insert((ha_rows) 0);
     table->copy_blobs=1;
+
+    thd->no_trans_update.stmt= FALSE;
+    thd->abort_on_warning= (!ignore &&
+                            (thd->variables.sql_mode &
+                             (MODE_STRICT_TRANS_TABLES |
+                              MODE_STRICT_ALL_TABLES)));
+
     if (!field_term->length() && !enclosed->length())
-      error=read_fixed_length(thd,info,table,fields,read_info,
-			      skip_lines);
+      error= read_fixed_length(thd, info, table_list, fields_vars,
+                               set_fields, set_values, read_info,
+			       skip_lines, ignore);
     else
-      error=read_sep_field(thd,info,table,fields,read_info,*enclosed,
-			   skip_lines);
-    if (table->file->end_bulk_insert() && !error)
+      error= read_sep_field(thd, info, table_list, fields_vars,
+                            set_fields, set_values, read_info,
+			    *enclosed, skip_lines, ignore);
+    if (!thd->prelocked_mode && table->file->end_bulk_insert() && !error)
     {
       table->file->print_error(my_errno, MYF(0));
       error= 1;
     }
     table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
+    table->file->extra(HA_EXTRA_WRITE_CANNOT_REPLACE);
     table->next_number_field=0;
   }
-  ha_enable_transaction(thd, TRUE);
   if (file >= 0)
     my_close(file,MYF(0));
   free_blobs(table);				/* if pack_blob was used */
@@ -308,9 +414,6 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   if (error)
   {
-    if (transactional_table)
-      ha_autocommit_or_rollback(thd,error);
-
     if (read_file_from_client)
       while (!read_info.next_line())
 	;
@@ -343,74 +446,102 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       /* If the file was not empty, wrote_create_file is true */
       if (lf_info.wrote_create_file)
       {
-        Delete_file_log_event d(thd, db, log_delayed);
-        mysql_bin_log.write(&d);
+	if ((info.copied || info.deleted) && !transactional_table)
+	  write_execute_load_query_log_event(thd, handle_duplicates,
+					     ignore, transactional_table);
+	else
+	{
+	  Delete_file_log_event d(thd, db, transactional_table);
+	  mysql_bin_log.write(&d);
+	}
       }
     }
 #endif /*!EMBEDDED_LIBRARY*/
+    if (transactional_table)
+      ha_autocommit_or_rollback(thd,error);
+
     error= -1;				// Error on read
     goto err;
   }
   sprintf(name, ER(ER_LOAD_INFO), (ulong) info.records, (ulong) info.deleted,
 	  (ulong) (info.records - info.copied), (ulong) thd->cuted_fields);
-  send_ok(thd,info.copied+info.deleted,0L,name);
-  // on the slave thd->query is never initialized
-  if (!thd->slave_thread)
-    mysql_update_log.write(thd,thd->query,thd->query_length);
 
-  if (!log_delayed)
-    thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
+  if (!transactional_table)
+    thd->no_trans_update.all= TRUE;
 #ifndef EMBEDDED_LIBRARY
   if (mysql_bin_log.is_open())
   {
     /*
       As already explained above, we need to call end_io_cache() or the last
-      block will be logged only after Execute_load_log_event (which is wrong),
-      when read_info is destroyed.
+      block will be logged only after Execute_load_query_log_event (which is
+      wrong), when read_info is destroyed.
     */
-    read_info.end_io_cache(); 
+    read_info.end_io_cache();
     if (lf_info.wrote_create_file)
-    {
-      Execute_load_log_event e(thd, db, log_delayed);
-      mysql_bin_log.write(&e);
-    }
+      write_execute_load_query_log_event(thd, handle_duplicates,
+					 ignore, transactional_table);
   }
 #endif /*!EMBEDDED_LIBRARY*/
   if (transactional_table)
-    error=ha_autocommit_or_rollback(thd,error); 
+    error=ha_autocommit_or_rollback(thd,error);
+
+  /* ok to client sent only after binlog write and engine commit */
+  send_ok(thd, info.copied + info.deleted, 0L, name);
 err:
   if (thd->lock)
   {
     mysql_unlock_tables(thd, thd->lock);
     thd->lock=0;
   }
+  table->auto_increment_field_not_null= FALSE;
+  thd->abort_on_warning= 0;
   DBUG_RETURN(error);
 }
+
+
+#ifndef EMBEDDED_LIBRARY
+
+/* Not a very useful function; just to avoid duplication of code */
+static bool write_execute_load_query_log_event(THD *thd,
+					       bool duplicates, bool ignore,
+					       bool transactional_table)
+{
+  Execute_load_query_log_event
+    e(thd, thd->query, thd->query_length,
+      (char*)thd->lex->fname_start - (char*)thd->query,
+      (char*)thd->lex->fname_end - (char*)thd->query,
+      (duplicates == DUP_REPLACE) ? LOAD_DUP_REPLACE :
+      (ignore ? LOAD_DUP_IGNORE : LOAD_DUP_ERROR),
+      transactional_table, FALSE);
+  return mysql_bin_log.write(&e);
+}
+
+#endif
 
 /****************************************************************************
 ** Read of rows of fixed size + optional garage + optonal newline
 ****************************************************************************/
 
 static int
-read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
-		  READ_INFO &read_info, ulong skip_lines)
+read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
+                  List<Item> &fields_vars, List<Item> &set_fields,
+                  List<Item> &set_values, READ_INFO &read_info,
+                  ulong skip_lines, bool ignore_check_option_errors)
 {
-  List_iterator_fast<Item> it(fields);
+  List_iterator_fast<Item> it(fields_vars);
   Item_field *sql_field;
+  TABLE *table= table_list->table;
   ulonglong id;
+  bool no_trans_update_stmt, err;
   DBUG_ENTER("read_fixed_length");
 
   id= 0;
-  
-  /* No fields can be null in this format. mark all fields as not null */
-  while ((sql_field= (Item_field*) it++))
-      sql_field->field->set_notnull();
-
+ 
   while (!read_info.read_fixed_length())
   {
     if (thd->killed)
     {
-      my_error(ER_SERVER_SHUTDOWN,MYF(0));
+      thd->send_kill_message();
       DBUG_RETURN(1);
     }
     if (skip_lines)
@@ -429,23 +560,38 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
 #ifdef HAVE_purify
     read_info.row_end[0]=0;
 #endif
+    no_trans_update_stmt= !table->file->has_transactions();
+
+    restore_record(table, s->default_values);
+    /*
+      There is no variables in fields_vars list in this format so
+      this conversion is safe.
+    */
     while ((sql_field= (Item_field*) it++))
     {
       Field *field= sql_field->field;                  
+      if (field == table->next_number_field)
+        table->auto_increment_field_not_null= TRUE;
+      /*
+        No fields specified in fields_vars list can be null in this format.
+        Mark field as not null, we should do this for each row because of
+        restore_record...
+      */
+      field->set_notnull();
+
       if (pos == read_info.row_end)
       {
         thd->cuted_fields++;			/* Not enough fields */
         push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
                             ER_WARN_TOO_FEW_RECORDS, 
                             ER(ER_WARN_TOO_FEW_RECORDS), thd->row_count);
-	      field->reset();
+        if (!field->maybe_null() && field->type() == FIELD_TYPE_TIMESTAMP)
+            ((Field_timestamp*) field)->set_time();
       }
       else
       {
 	uint length;
 	byte save_chr;
-        if (field == table->next_number_field)
-          table->auto_increment_field_not_null= TRUE;
 	if ((length=(uint) (read_info.row_end-pos)) >
 	    field->field_length)
 	  length=field->field_length;
@@ -463,16 +609,39 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
                           ER_WARN_TOO_MANY_RECORDS, 
                           ER(ER_WARN_TOO_MANY_RECORDS), thd->row_count); 
     }
-    if (write_record(table,&info))
+
+    if (thd->killed ||
+        fill_record_n_invoke_before_triggers(thd, set_fields, set_values,
+                                             ignore_check_option_errors,
+                                             table->triggers,
+                                             TRG_EVENT_INSERT))
       DBUG_RETURN(1);
+
+    switch (table_list->view_check_option(thd,
+                                          ignore_check_option_errors)) {
+    case VIEW_CHECK_SKIP:
+      read_info.next_line();
+      goto continue_loop;
+    case VIEW_CHECK_ERROR:
+      DBUG_RETURN(-1);
+    }
+
+    err= write_record(thd, table, &info);
+    table->auto_increment_field_not_null= FALSE;
+    if (err)
+      DBUG_RETURN(1);
+    thd->no_trans_update.stmt= no_trans_update_stmt;
+   
     /*
       If auto_increment values are used, save the first one for
       LAST_INSERT_ID() and for the binary/update log.
     */
     if (!id && thd->insert_id_used)
       id= thd->last_insert_id;
-    if (table->next_number_field)
-      table->next_number_field->reset();	// Clear for next record
+    /*
+      We don't need to reset auto-increment field since we are restoring
+      its default value at the beginning of each loop iteration.
+    */
     if (read_info.next_line())			// Skip to next line
       break;
     if (read_info.line_cuted)
@@ -483,6 +652,7 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
                           ER(ER_WARN_TOO_MANY_RECORDS), thd->row_count); 
     }
     thd->row_count++;
+continue_loop:;
   }
   if (id && !read_info.error)
     thd->insert_id(id);			// For binary/update log
@@ -492,82 +662,154 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
 
 
 static int
-read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
-	       List<Item> &fields, READ_INFO &read_info,
-	       String &enclosed, ulong skip_lines)
+read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
+               List<Item> &fields_vars, List<Item> &set_fields,
+               List<Item> &set_values, READ_INFO &read_info,
+	       String &enclosed, ulong skip_lines,
+	       bool ignore_check_option_errors)
 {
-  List_iterator_fast<Item> it(fields);
-  Item_field *sql_field;
+  List_iterator_fast<Item> it(fields_vars);
+  Item *item;
+  TABLE *table= table_list->table;
   uint enclosed_length;
   ulonglong id;
+  bool no_trans_update_stmt, err;
   DBUG_ENTER("read_sep_field");
 
   enclosed_length=enclosed.length();
   id= 0;
+  no_trans_update_stmt= !table->file->has_transactions();
 
   for (;;it.rewind())
   {
     if (thd->killed)
     {
-      my_error(ER_SERVER_SHUTDOWN,MYF(0));
+      thd->send_kill_message();
       DBUG_RETURN(1);
     }
-    while ((sql_field=(Item_field*) it++))
+
+    restore_record(table, s->default_values);
+
+    while ((item= it++))
     {
       uint length;
       byte *pos;
 
       if (read_info.read_field())
 	break;
+
+      /* If this line is to be skipped we don't want to fill field or var */
+      if (skip_lines)
+        continue;
+
       pos=read_info.row_start;
       length=(uint) (read_info.row_end-pos);
-      Field *field=sql_field->field;
 
       if (!read_info.enclosed &&
-	  (enclosed_length && length == 4 && !memcmp(pos,"NULL",4)) ||
+	  (enclosed_length && length == 4 &&
+           !memcmp(pos, STRING_WITH_LEN("NULL"))) ||
 	  (length == 1 && read_info.found_null))
       {
-	field->reset();
-	field->set_null();
-	if (!field->maybe_null())
-	{
-	  if (field->type() == FIELD_TYPE_TIMESTAMP)
-	    ((Field_timestamp*) field)->set_time();
-	  else if (field != table->next_number_field)      
-	    field->set_warning((uint) MYSQL_ERROR::WARN_LEVEL_WARN, 
-			       ER_WARN_NULL_TO_NOTNULL, 1);
+        if (item->type() == Item::FIELD_ITEM)
+        {
+          Field *field= ((Item_field *)item)->field;
+          if (field->reset())
+          {
+            my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0), field->field_name,
+                     thd->row_count);
+            DBUG_RETURN(1);
+          }
+          field->set_null();
+          if (!field->maybe_null())
+          {
+            if (field->type() == FIELD_TYPE_TIMESTAMP)
+              ((Field_timestamp*) field)->set_time();
+            else if (field != table->next_number_field)
+              field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
+                                 ER_WARN_NULL_TO_NOTNULL, 1);
+          }
 	}
+        else
+          ((Item_user_var_as_out_param *)item)->set_null_value(
+                                                  read_info.read_charset);
 	continue;
       }
-      if (field == table->next_number_field)
-        table->auto_increment_field_not_null= TRUE;
-      field->set_notnull();
-      read_info.row_end[0]=0;			// Safe to change end marker
-      field->store((char*) read_info.row_start,length,read_info.read_charset);
+
+      if (item->type() == Item::FIELD_ITEM)
+      {
+
+        Field *field= ((Item_field *)item)->field;
+        field->set_notnull();
+        read_info.row_end[0]=0;			// Safe to change end marker
+        if (field == table->next_number_field)
+          table->auto_increment_field_not_null= TRUE;
+        field->store((char*) pos, length, read_info.read_charset);
+      }
+      else
+        ((Item_user_var_as_out_param *)item)->set_value((char*) pos, length,
+                                                read_info.read_charset);
     }
     if (read_info.error)
       break;
     if (skip_lines)
     {
-      if (!--skip_lines)
-	thd->cuted_fields= 0L;			// Reset warnings
+      skip_lines--;
       continue;
     }
-    if (sql_field)
-    {						// Last record
-      if (sql_field == (Item_field*) fields.head())
+    if (item)
+    {
+      /* Have not read any field, thus input file is simply ended */
+      if (item == fields_vars.head())
 	break;
-      for (; sql_field ; sql_field=(Item_field*) it++)
+      for (; item ; item= it++)
       {
-	sql_field->field->set_null();
-	sql_field->field->reset();
-	thd->cuted_fields++;
- 	push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
-                	    ER_WARN_TOO_FEW_RECORDS,
-                	    ER(ER_WARN_TOO_FEW_RECORDS), thd->row_count);
+        if (item->type() == Item::FIELD_ITEM)
+        {
+          Field *field= ((Item_field *)item)->field;
+          if (field->reset())
+          {
+            my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0),field->field_name,
+                     thd->row_count);
+            DBUG_RETURN(1);
+          }
+          if (!field->maybe_null() && field->type() == FIELD_TYPE_TIMESTAMP)
+              ((Field_timestamp*) field)->set_time();
+          /*
+            QQ: We probably should not throw warning for each field.
+            But how about intention to always have the same number
+            of warnings in THD::cuted_fields (and get rid of cuted_fields
+            in the end ?)
+          */
+          thd->cuted_fields++;
+          push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                              ER_WARN_TOO_FEW_RECORDS,
+                              ER(ER_WARN_TOO_FEW_RECORDS), thd->row_count);
+        }
+        else
+          ((Item_user_var_as_out_param *)item)->set_null_value(
+                                                  read_info.read_charset);
       }
     }
-    if (write_record(table,&info))
+
+    if (thd->killed ||
+        fill_record_n_invoke_before_triggers(thd, set_fields, set_values,
+                                             ignore_check_option_errors,
+                                             table->triggers,
+                                             TRG_EVENT_INSERT))
+      DBUG_RETURN(1);
+
+    switch (table_list->view_check_option(thd,
+                                          ignore_check_option_errors)) {
+    case VIEW_CHECK_SKIP:
+      read_info.next_line();
+      goto continue_loop;
+    case VIEW_CHECK_ERROR:
+      DBUG_RETURN(-1);
+    }
+
+    err= write_record(thd, table, &info);
+    table->auto_increment_field_not_null= FALSE;
+    if (err)
       DBUG_RETURN(1);
     /*
       If auto_increment values are used, save the first one for
@@ -575,8 +817,11 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
     */
     if (!id && thd->insert_id_used)
       id= thd->last_insert_id;
-    if (table->next_number_field)
-      table->next_number_field->reset();	// Clear for next record
+    /*
+      We don't need to reset auto-increment field since we are restoring
+      its default value at the beginning of each loop iteration.
+    */
+    thd->no_trans_update.stmt= no_trans_update_stmt;
     if (read_info.next_line())			// Skip to next line
       break;
     if (read_info.line_cuted)
@@ -585,8 +830,11 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
       push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
                           ER_WARN_TOO_MANY_RECORDS, ER(ER_WARN_TOO_MANY_RECORDS), 
                           thd->row_count);   
+      if (thd->killed)
+        DBUG_RETURN(1);
     }
     thd->row_count++;
+continue_loop:;
   }
   if (id && !read_info.error)
     thd->insert_id(id);			// For binary/update log
@@ -675,12 +923,11 @@ READ_INFO::READ_INFO(File file_par, uint tot_length, CHARSET_INFO *cs,
       my_free((gptr) buffer,MYF(0)); /* purecov: inspected */
       error=1;
     }
-    else 
+    else
     {
       /*
 	init_io_cache() will not initialize read_function member
-	if the cache is READ_NET. The reason is explained in
-	mysys/mf_iocache.c. So we work around the problem with a
+	if the cache is READ_NET. So we work around the problem with a
 	manual assignment
       */
       need_end_io_cache = 1;

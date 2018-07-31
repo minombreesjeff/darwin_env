@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,12 +67,15 @@ TCP_Transporter::TCP_Transporter(TransporterRegistry &t_reg,
                                  const char *lHostName,
                                  const char *rHostName, 
                                  int r_port,
+				 bool isMgmConnection_arg,
 				 NodeId lNodeId,
                                  NodeId rNodeId,
+				 NodeId serverNodeId,
                                  bool chksm, bool signalId,
                                  Uint32 _reportFreq) :
   Transporter(t_reg, tt_TCP_TRANSPORTER,
-	      lHostName, rHostName, r_port, lNodeId, rNodeId,
+	      lHostName, rHostName, r_port, isMgmConnection_arg,
+	      lNodeId, rNodeId, serverNodeId,
 	      0, false, chksm, signalId),
   m_sendBuffer(sendBufSize)
 {
@@ -153,6 +155,8 @@ TCP_Transporter::initTransporter() {
 
 void
 TCP_Transporter::setSocketOptions(){
+  int sockOptKeepAlive  = 1;
+
   if (setsockopt(theSocket, SOL_SOCKET, SO_RCVBUF,
                  (char*)&sockOptRcvBufSize, sizeof(sockOptRcvBufSize)) < 0) {
 #ifdef DEBUG_TRANSPORTER
@@ -167,6 +171,11 @@ TCP_Transporter::setSocketOptions(){
 #endif
   }//if
   
+  if (setsockopt(theSocket, SOL_SOCKET, SO_KEEPALIVE,
+                 (char*)&sockOptKeepAlive, sizeof(sockOptKeepAlive)) < 0) {
+    ndbout_c("The setsockopt SO_KEEPALIVE error code = %d", InetErrno);
+  }//if
+
   //-----------------------------------------------
   // Set the TCP_NODELAY option so also small packets are sent
   // as soon as possible

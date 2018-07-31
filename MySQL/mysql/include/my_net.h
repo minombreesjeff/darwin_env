@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -61,6 +60,14 @@ C_MODE_START
 
 #if defined(MSDOS) || defined(__WIN__)
 #define O_NONBLOCK 1    /* For emulation of fcntl() */
+
+/*
+  SHUT_RDWR is called SD_BOTH in windows and
+  is defined to 2 in winsock2.h
+  #define SD_BOTH 0x02
+*/
+#define SHUT_RDWR 0x02
+
 #endif
 
 /*
@@ -70,6 +77,11 @@ C_MODE_START
 */
 #ifndef HAVE_IN_ADDR_T
 #define in_addr_t uint32
+#endif
+
+/* On some operating systems (e.g. Solaris) INADDR_NONE is not defined */
+#ifndef INADDR_NONE
+#define INADDR_NONE -1                          /* Error value from inet_addr */
 #endif
 
 /* Thread safe or portable version of some functions */

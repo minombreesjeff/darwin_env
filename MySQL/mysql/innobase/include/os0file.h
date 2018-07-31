@@ -17,6 +17,8 @@ Created 10/21/1995 Heikki Tuuri
 #include <time.h>
 #endif
 
+typedef	struct fil_node_struct	fil_node_t;
+
 #ifdef UNIV_DO_FLUSH
 extern ibool	os_do_not_call_flush_at_each_write;
 #endif /* UNIV_DO_FLUSH */
@@ -25,6 +27,9 @@ extern ibool	os_aio_print_debug;
 
 extern ulint	os_file_n_pending_preads;
 extern ulint	os_file_n_pending_pwrites;
+
+extern ulint    os_n_pending_reads;
+extern ulint    os_n_pending_writes;
 
 #ifdef __WIN__
 
@@ -428,6 +433,17 @@ os_file_read(
 				offset */
 	ulint		n);	/* in: number of bytes to read */	
 /***********************************************************************
+Rewind file to its start, read at most size - 1 bytes from it to str, and
+NUL-terminate str. All errors are silently ignored. This function is
+mostly meant to be used with temporary files. */
+
+void
+os_file_read_string(
+/*================*/
+	FILE*	file,	/* in: file to read from */
+	char*	str,	/* in: buffer where to read */
+	ulint	size);	/* in: size of buffer */
+/***********************************************************************
 Requests a synchronous positioned read operation. This function does not do
 any error handling. In case of error it returns FALSE. */
 
@@ -563,7 +579,7 @@ os_aio(
 	ulint		offset_high, /* in: most significant 32 bits of
 				offset */
 	ulint		n,	/* in: number of bytes to read or write */	
-	void*		message1,/* in: messages for the aio handler (these
+	fil_node_t*	message1,/* in: messages for the aio handler (these
 				can be used to identify a completed aio
 				operation); if mode is OS_AIO_SYNC, these
 				are ignored */
@@ -621,7 +637,7 @@ os_aio_windows_handle(
 				ignored */
 	ulint	pos,		/* this parameter is used only in sync aio:
 				wait for the aio slot at this position */  
-	void**	message1,	/* out: the messages passed with the aio
+	fil_node_t**message1,	/* out: the messages passed with the aio
 				request; note that also in the case where
 				the aio operation failed, these output
 				parameters are valid and can be used to
@@ -641,7 +657,7 @@ os_aio_posix_handle(
 /*================*/
 				/* out: TRUE if the aio operation succeeded */
 	ulint	array_no,	/* in: array number 0 - 3 */
-	void**	message1,	/* out: the messages passed with the aio
+	fil_node_t**message1,	/* out: the messages passed with the aio
 				request; note that also in the case where
 				the aio operation failed, these output
 				parameters are valid and can be used to
@@ -661,7 +677,7 @@ os_aio_simulated_handle(
 				i/o thread, segment 1 the log i/o thread,
 				then follow the non-ibuf read threads, and as
 				the last are the non-ibuf write threads */
-	void**	message1,	/* out: the messages passed with the aio
+	fil_node_t**message1,	/* out: the messages passed with the aio
 				request; note that also in the case where
 				the aio operation failed, these output
 				parameters are valid and can be used to
@@ -688,6 +704,8 @@ Refreshes the statistics used to print per-second averages. */
 void
 os_aio_refresh_stats(void);
 /*======================*/
+
+#ifdef UNIV_DEBUG
 /**************************************************************************
 Checks that all slots in the system have been freed, that is, there are
 no pending io operations. */
@@ -695,6 +713,7 @@ no pending io operations. */
 ibool
 os_aio_all_slots_free(void);
 /*=======================*/
+#endif /* UNIV_DEBUG */
 
 /***********************************************************************
 This function returns information about the specified file */

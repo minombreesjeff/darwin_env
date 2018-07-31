@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -53,7 +52,7 @@ _hash_init(HASH *hash,CHARSET_INFO *charset,
 	   void (*free_element)(void*),uint flags CALLER_INFO_PROTO)
 {
   DBUG_ENTER("hash_init");
-  DBUG_PRINT("enter",("hash: 0x%lx  size: %d",hash,size));
+  DBUG_PRINT("enter",("hash: 0x%lx  size: %d", (long) hash, size));
 
   hash->records=0;
   if (my_init_dynamic_array_ci(&hash->array,sizeof(HASH_LINK),size,0))
@@ -103,13 +102,13 @@ static inline void hash_free_elements(HASH *hash)
     hash_free()
     hash   the hash to delete elements of
 
-  NOTES: Hash can't be reused wuthing calling hash_init again.
+  NOTES: Hash can't be reused without calling hash_init again.
 */
 
 void hash_free(HASH *hash)
 {
   DBUG_ENTER("hash_free");
-  DBUG_PRINT("enter",("hash: 0x%lxd",hash));
+  DBUG_PRINT("enter",("hash: 0x%lxd", (long) hash));
 
   hash_free_elements(hash);
   hash->free= 0;
@@ -129,7 +128,7 @@ void hash_free(HASH *hash)
 void my_hash_reset(HASH *hash)
 {
   DBUG_ENTER("my_hash_reset");
-  DBUG_PRINT("enter",("hash: 0x%lxd",hash));
+  DBUG_PRINT("enter",("hash: 0x%lxd", (long) hash));
 
   hash_free_elements(hash);
   reset_dynamic(&hash->array);
@@ -289,9 +288,8 @@ static void movelink(HASH_LINK *array,uint find,uint next_link,uint newlink)
     record being compared against.
 
   RETURN
-    < 0  key of record <  key
     = 0  key of record == key
-    > 0  key of record >  key
+    != 0 key of record != key
  */
 
 static int hashcmp(const HASH *hash, HASH_LINK *pos, const byte *key,
@@ -645,7 +643,8 @@ my_bool hash_check(HASH *hash)
 	if ((rec_link=hash_rec_mask(hash,hash_info,blength,records)) != i)
 	{
 	  DBUG_PRINT("error",
-		     ("Record in wrong link at %d: Start %d  Record: 0x%lx  Record-link %d", idx,i,hash_info->data,rec_link));
+		     ("Record in wrong link at %d: Start %d  Record: 0x%lx  Record-link %d",
+                      idx, i, (long) hash_info->data, rec_link));
 	  error=1;
 	}
 	else
@@ -656,12 +655,12 @@ my_bool hash_check(HASH *hash)
   }
   if (found != records)
   {
-    DBUG_PRINT("error",("Found %ld of %ld records"));
+    DBUG_PRINT("error",("Found %u of %u records", found, records));
     error=1;
   }
   if (records)
     DBUG_PRINT("info",
-	       ("records: %ld   seeks: %d   max links: %d   hitrate: %.2f",
+	       ("records: %u   seeks: %d   max links: %d   hitrate: %.2f",
 		records,seek,max_links,(float) seek / (float) records));
   return error;
 }

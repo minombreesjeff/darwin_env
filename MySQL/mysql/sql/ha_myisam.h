@@ -1,9 +1,8 @@
-/* Copyright (C) 2000,2004 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,14 +42,9 @@ class ha_myisam: public handler
   int repair(THD *thd, MI_CHECK &param, bool optimize);
 
  public:
-  ha_myisam(TABLE *table): handler(table), file(0),
-    int_table_flags(HA_NULL_IN_KEY | HA_CAN_FULLTEXT | HA_CAN_SQL_HANDLER |
-		    HA_DUPP_POS | HA_CAN_INDEX_BLOBS | HA_AUTO_PART_KEY |
-		    HA_FILE_BASED | HA_CAN_GEOMETRY | HA_READ_RND_SAME |
-                    HA_CAN_INSERT_DELAYED),
-    can_enable_indexes(1)
-  {}
+  ha_myisam(TABLE *table_arg);
   ~ha_myisam() {}
+  handler *clone(MEM_ROOT *mem_root);
   const char *table_type() const { return "MyISAM"; }
   const char *index_type(uint key_number);
   const char **bas_ext() const;
@@ -115,7 +109,7 @@ class ha_myisam: public handler
   int create(const char *name, TABLE *form, HA_CREATE_INFO *create_info);
   THR_LOCK_DATA **store_lock(THD *thd, THR_LOCK_DATA **to,
 			     enum thr_lock_type lock_type);
-  longlong get_auto_increment();
+  ulonglong get_auto_increment();
   int rename_table(const char * from, const char * to);
   int delete_table(const char *name);
   int check(THD* thd, HA_CHECK_OPT* check_opt);

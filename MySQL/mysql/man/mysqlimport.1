@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlimport\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLIMPORT\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLIMPORT\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -60,7 +60,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-columns=\fR\fB\fIcolumn_list\fR\fR,
@@ -89,7 +89,7 @@ string often is
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-delete\fR,
@@ -143,7 +143,7 @@ lines of the data file.
 .sp
 This option has the same meaning as the corresponding clause for
 LOAD DATA INFILE. For example, to import Windows files that have lines terminated with carriage return/linefeed pairs, use
-\fB\-\-lines\-terminated\-by="\\r\n"\fR. (You might have to double the backslashes, depending on the escaping conventions of your command interpreter.) See
+\fB\-\-lines\-terminated\-by="\\r\\n"\fR. (You might have to double the backslashes, depending on the escaping conventions of your command interpreter.) See
 Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
 .TP 3n
 \(bu
@@ -151,6 +151,10 @@ Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
 \fB\-L\fR
 .sp
 Read input files locally from the client host.
+.PP
+\fBMySQL Enterprise\fR. For expert advice on the security implications of enabling
+LOCAL, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-lock\-tables\fR,
@@ -165,7 +169,9 @@ tables for writing before processing any text files. This ensures that all table
 .sp
 Use
 LOW_PRIORITY
-when loading the table.
+when loading the table. This affects only storage engines that use only table\-level locking (MyISAM,
+MEMORY,
+MERGE).
 .TP 3n
 \(bu
 \fB\-\-password[=\fR\fB\fIpassword\fR\fR\fB]\fR,
@@ -182,7 +188,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 7.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -193,7 +199,7 @@ The TCP/IP port number to use for the connection.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use. Added in MySQL 4.1.
+The connection protocol to use.
 .TP 3n
 \(bu
 \fB\-\-replace\fR,
@@ -226,7 +232,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 7.7.3, \(lqSSL Command Options\(rq.
+Section\ 6.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
@@ -263,8 +269,8 @@ w imptest.txt
 32
 q
 shell> \fBod \-c imptest.txt\fR
-0000000   1   0   0  \\t   M   a   x       S   y   d   o   w  \n   1   0
-0000020   1  \\t   C   o   u   n   t       D   r   a   c   u   l   a  \n
+0000000   1   0   0  \\t   M   a   x       S   y   d   o   w  \\n   1   0
+0000020   1  \\t   C   o   u   n   t       D   r   a   c   u   l   a  \\n
 0000040
 shell> \fBmysqlimport \-\-local test imptest.txt\fR
 test.imptest: Records: 2  Deleted: 0  Skipped: 0  Warnings: 0
@@ -279,7 +285,7 @@ shell> \fBmysql \-e 'SELECT * FROM imptest' test\fR
 .RE
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -287,35 +293,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

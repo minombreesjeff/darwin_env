@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -53,9 +52,9 @@ NdbDictionary::Column::operator=(const NdbDictionary::Column& column)
   return *this;
 }
 
-void 
+int
 NdbDictionary::Column::setName(const char * name){
-  m_impl.m_name.assign(name);
+  return !m_impl.m_name.assign(name);
 }
 
 const char* 
@@ -176,50 +175,14 @@ NdbDictionary::Column::getPrimaryKey() const {
   return m_impl.m_pk;
 }
 
-void
-NdbDictionary::Column::setTupleKey(bool val){
-  m_impl.m_tupleKey = val;
-}
-
-bool 
-NdbDictionary::Column::getTupleKey() const {
-  return m_impl.m_tupleKey;
-}
-
 void 
-NdbDictionary::Column::setDistributionKey(bool val){
+NdbDictionary::Column::setPartitionKey(bool val){
   m_impl.m_distributionKey = val;
 }
 
 bool 
-NdbDictionary::Column::getDistributionKey() const{
+NdbDictionary::Column::getPartitionKey() const{
   return m_impl.m_distributionKey;
-}
-
-void
-NdbDictionary::Column::setDistributionGroup(bool val, int bits){
-  m_impl.m_distributionGroup = val;
-  m_impl.m_distributionGroupBits = bits;
-}
-
-bool 
-NdbDictionary::Column::getDistributionGroup() const {
-  return m_impl.m_distributionGroup;
-}
-
-int 
-NdbDictionary::Column::getDistributionGroupBits() const{
-  return m_impl.m_distributionGroupBits;
-}
-
-void 
-NdbDictionary::Column::setIndexOnlyStorage(bool val){
-  m_impl.m_indexOnly = val;
-}
-
-bool 
-NdbDictionary::Column::getIndexOnlyStorage() const {
-  return m_impl.m_indexOnly;
 }
 
 const NdbDictionary::Table * 
@@ -245,10 +208,10 @@ NdbDictionary::Column::setAutoIncrementInitialValue(Uint64 val){
   m_impl.m_autoIncrementInitialValue = val;
 }
 
-void
+int
 NdbDictionary::Column::setDefaultValue(const char* defaultValue)
 {
-  m_impl.m_defaultValue.assign(defaultValue);
+  return !m_impl.m_defaultValue.assign(defaultValue);
 }
 
 const char*
@@ -265,6 +228,12 @@ NdbDictionary::Column::getColumnNo() const {
 bool
 NdbDictionary::Column::equal(const NdbDictionary::Column & col) const {
   return m_impl.equal(col.m_impl);
+}
+
+int
+NdbDictionary::Column::getSizeInBytes() const 
+{
+  return m_impl.m_attrSize * m_impl.m_arraySize;
 }
 
 /*****************************************************************
@@ -304,9 +273,9 @@ NdbDictionary::Table::operator=(const NdbDictionary::Table& table)
   return *this;
 }
 
-void 
+int
 NdbDictionary::Table::setName(const char * name){
-  m_impl.setName(name);
+  return m_impl.setName(name);
 }
 
 const char * 
@@ -319,18 +288,30 @@ NdbDictionary::Table::getTableId() const {
   return m_impl.m_tableId;
 }
 
-void 
+int
 NdbDictionary::Table::addColumn(const Column & c){
   NdbColumnImpl* col = new NdbColumnImpl;
+  if (col ==  NULL)
+  {
+    errno = ENOMEM;
+    return -1;
+  }
   (* col) = NdbColumnImpl::getImpl(c);
-  m_impl.m_columns.push_back(col);
+  if (m_impl.m_columns.push_back(col))
+  {
+    return -1;
+  }
   if(c.getPrimaryKey()){
     m_impl.m_noOfKeys++;
   }
   if (col->getBlobType()) {
     m_impl.m_noOfBlobs++;
   }
-  m_impl.buildColumnHash();
+  if (m_impl.buildColumnHash())
+  {
+    return -1;
+  }
+  return 0;
 }
 
 const NdbDictionary::Column*
@@ -415,6 +396,30 @@ NdbDictionary::Table::getNoOfPrimaryKeys() const {
   return m_impl.m_noOfKeys;
 }
 
+void
+NdbDictionary::Table::setMaxRows(Uint64 maxRows)
+{
+  m_impl.m_max_rows = maxRows;
+}
+
+Uint64
+NdbDictionary::Table::getMaxRows() const
+{
+  return m_impl.m_max_rows;
+}
+
+void
+NdbDictionary::Table::setMinRows(Uint64 minRows)
+{
+  m_impl.m_min_rows = minRows;
+}
+
+Uint64
+NdbDictionary::Table::getMinRows() const
+{
+  return m_impl.m_min_rows;
+}
+
 const char*
 NdbDictionary::Table::getPrimaryKey(int no) const {
   int count = 0;
@@ -437,9 +442,21 @@ NdbDictionary::Table::getFrmLength() const {
   return m_impl.m_frm.length();
 }
 
+enum NdbDictionary::Table::SingleUserMode
+NdbDictionary::Table::getSingleUserMode() const
+{
+  return (enum SingleUserMode)m_impl.m_single_user_mode;
+}
+
 void
+NdbDictionary::Table::setSingleUserMode(enum NdbDictionary::Table::SingleUserMode mode)
+{
+  m_impl.m_single_user_mode = (Uint8)mode;
+}
+
+int
 NdbDictionary::Table::setFrm(const void* data, Uint32 len){
-  m_impl.m_frm.assign(data, len);
+  return m_impl.m_frm.assign(data, len);
 }
 
 NdbDictionary::Object::Status
@@ -462,10 +479,14 @@ NdbDictionary::Table::getRowSizeInBytes() const {
   int sz = 0;
   for(int i = 0; i<getNoOfColumns(); i++){
     const NdbDictionary::Column * c = getColumn(i);
-    const NdbColumnImpl & col = NdbColumnImpl::getImpl(* c);
-    sz += (((col.m_attrSize * col.m_arraySize) + 3) / 4);
+    sz += (c->getSizeInBytes()+ 3) / 4;
   }
   return sz * 4;
+}
+
+int
+NdbDictionary::Table::getReplicaCount() const {  
+  return m_impl.m_replicaCount;
 }
 
 int
@@ -482,6 +503,7 @@ NdbDictionary::Table::createTableInDb(Ndb* pNdb, bool equalOk) const {
 /*****************************************************************
  * Index facade
  */
+
 NdbDictionary::Index::Index(const char * name)
   : m_impl(* new NdbIndexImpl(* this))
 {
@@ -500,9 +522,9 @@ NdbDictionary::Index::~Index(){
   }
 }
 
-void 
+int
 NdbDictionary::Index::setName(const char * name){
-  m_impl.setName(name);
+  return m_impl.setName(name);
 }
 
 const char * 
@@ -510,9 +532,9 @@ NdbDictionary::Index::getName() const {
   return m_impl.getName();
 }
 
-void 
+int
 NdbDictionary::Index::setTable(const char * table){
-  m_impl.setTable(table);
+  return m_impl.setTable(table);
 }
 
 const char * 
@@ -547,39 +569,56 @@ NdbDictionary::Index::getIndexColumn(int no) const {
     return NULL;
 }
 
-void
+int
 NdbDictionary::Index::addColumn(const Column & c){
   NdbColumnImpl* col = new NdbColumnImpl;
+  if (col == NULL)
+  {
+    errno = ENOMEM;
+    return -1;
+  }
   (* col) = NdbColumnImpl::getImpl(c);
-  m_impl.m_columns.push_back(col);
+  if (m_impl.m_columns.push_back(col))
+  {
+    return -1;
+  }
+  return 0;
 }
 
-void
+int
 NdbDictionary::Index::addColumnName(const char * name){
   const Column c(name);
-  addColumn(c);
+  return addColumn(c);
 }
 
-void
+int
 NdbDictionary::Index::addIndexColumn(const char * name){
   const Column c(name);
-  addColumn(c);
+  return addColumn(c);
 }
 
-void
+int
 NdbDictionary::Index::addColumnNames(unsigned noOfNames, const char ** names){
   for(unsigned i = 0; i < noOfNames; i++) {
     const Column c(names[i]);
-    addColumn(c);
+    if (addColumn(c))
+    {
+      return -1;
+    }
   }
+  return 0;
 }
 
-void
+int
 NdbDictionary::Index::addIndexColumns(int noOfNames, const char ** names){
   for(int i = 0; i < noOfNames; i++) {
     const Column c(names[i]);
-    addColumn(c);
+    if (addColumn(c))
+    {
+      return -1;
+    }
   }
+  return 0;
 }
 
 void
@@ -610,96 +649,6 @@ NdbDictionary::Index::getObjectStatus() const {
 int 
 NdbDictionary::Index::getObjectVersion() const {
   return m_impl.m_version;
-}
-
-/*****************************************************************
- * Event facade
- */
-NdbDictionary::Event::Event(const char * name)
-  : m_impl(* new NdbEventImpl(* this))
-{
-  setName(name);
-}
-
-NdbDictionary::Event::Event(NdbEventImpl & impl)
-  : m_impl(impl) 
-{
-}
-
-NdbDictionary::Event::~Event()
-{
-  NdbEventImpl * tmp = &m_impl;
-  if(this != tmp){
-    delete tmp;
-  }
-}
-
-void 
-NdbDictionary::Event::setName(const char * name)
-{
-  m_impl.setName(name);
-}
-
-void 
-NdbDictionary::Event::setTable(const char * table)
-{
-  m_impl.setTable(table);
-}
-
-void
-NdbDictionary::Event::addTableEvent(const TableEvent t)
-{
-  m_impl.addTableEvent(t);
-}
-
-void
-NdbDictionary::Event::setDurability(const EventDurability d)
-{
-  m_impl.setDurability(d);
-}
-
-void
-NdbDictionary::Event::addColumn(const Column & c){
-  NdbColumnImpl* col = new NdbColumnImpl;
-  (* col) = NdbColumnImpl::getImpl(c);
-  m_impl.m_columns.push_back(col);
-}
-
-void
-NdbDictionary::Event::addEventColumn(unsigned attrId)
-{
-  m_impl.m_attrIds.push_back(attrId);
-}
-
-void
-NdbDictionary::Event::addEventColumn(const char * name)
-{
-  const Column c(name);
-  addColumn(c);
-}
-
-void
-NdbDictionary::Event::addEventColumns(int n, const char ** names)
-{
-  for (int i = 0; i < n; i++)
-    addEventColumn(names[i]);
-}
-
-NdbDictionary::Object::Status
-NdbDictionary::Event::getObjectStatus() const
-{
-  return m_impl.m_status;
-}
-
-int 
-NdbDictionary::Event::getObjectVersion() const
-{
-  return m_impl.m_version;
-}
-
-void NdbDictionary::Event::print()
-{
-  m_impl.print();
 }
 
 /*****************************************************************
@@ -742,7 +691,8 @@ NdbDictionary::Dictionary::alterTable(const Table & t){
 }
 
 const NdbDictionary::Table * 
-NdbDictionary::Dictionary::getTable(const char * name, void **data){
+NdbDictionary::Dictionary::getTable(const char * name, void **data) const
+{
   NdbTableImpl * t = m_impl.getTable(name, data);
   if(t)
     return t->m_facade;
@@ -755,15 +705,18 @@ void NdbDictionary::Dictionary::set_local_table_data_size(unsigned sz)
 }
 
 const NdbDictionary::Table * 
-NdbDictionary::Dictionary::getTable(const char * name){
+NdbDictionary::Dictionary::getTable(const char * name) const
+{
   return getTable(name, 0);
 }
 
 void
 NdbDictionary::Dictionary::invalidateTable(const char * name){
+  DBUG_ENTER("NdbDictionaryImpl::invalidateTable");
   NdbTableImpl * t = m_impl.getTable(name);
   if(t)
     m_impl.invalidateObject(* t);
+  DBUG_VOID_RETURN;
 }
 
 void
@@ -794,7 +747,7 @@ NdbDictionary::Dictionary::dropIndex(const Index & ind)
 
 const NdbDictionary::Index * 
 NdbDictionary::Dictionary::getIndex(const char * indexName,
-				    const char * tableName)
+				    const char * tableName) const
 {
   NdbIndexImpl * i = m_impl.getIndex(indexName, tableName);
   if(i)
@@ -804,7 +757,7 @@ NdbDictionary::Dictionary::getIndex(const char * indexName,
 
 const NdbDictionary::Index * 
 NdbDictionary::Dictionary::getIndex(const char * indexName,
-				    const Table & t)
+				    const Table & t) const
 {
   NdbIndexImpl * i = m_impl.getIndex(indexName, & NdbTableImpl::getImpl(t));
   if(i)
@@ -815,11 +768,13 @@ NdbDictionary::Dictionary::getIndex(const char * indexName,
 void
 NdbDictionary::Dictionary::invalidateIndex(const char * indexName,
                                            const char * tableName){
+  DBUG_ENTER("NdbDictionaryImpl::invalidateIndex");
   NdbIndexImpl * i = m_impl.getIndex(indexName, tableName);
   if(i) {
     assert(i->m_table != 0);
     m_impl.invalidateObject(* i->m_table);
   }
+  DBUG_VOID_RETURN;
 }
 
 void
@@ -834,7 +789,7 @@ NdbDictionary::Dictionary::removeCachedIndex(const char * indexName,
 
 const NdbDictionary::Table *
 NdbDictionary::Dictionary::getIndexTable(const char * indexName, 
-					 const char * tableName)
+					 const char * tableName) const
 {
   NdbIndexImpl * i = m_impl.getIndex(indexName, tableName);
   NdbTableImpl * t = m_impl.getTable(tableName);
@@ -845,28 +800,6 @@ NdbDictionary::Dictionary::getIndexTable(const char * indexName,
   return 0;
 }
 
-
-int
-NdbDictionary::Dictionary::createEvent(const Event & ev)
-{
-  return m_impl.createEvent(NdbEventImpl::getImpl(ev));
-}
-
-int 
-NdbDictionary::Dictionary::dropEvent(const char * eventName)
-{
-  return m_impl.dropEvent(eventName);
-}
-
-const NdbDictionary::Event *
-NdbDictionary::Dictionary::getEvent(const char * eventName)
-{
-  NdbEventImpl * t = m_impl.getEvent(eventName);
-  if(t)
-    return t->m_facade;
-  return 0;
-}
-
 int
 NdbDictionary::Dictionary::listObjects(List& list, Object::Type type)
 {
@@ -874,7 +807,25 @@ NdbDictionary::Dictionary::listObjects(List& list, Object::Type type)
 }
 
 int
+NdbDictionary::Dictionary::listObjects(List& list, Object::Type type) const
+{
+  return m_impl.listObjects(list, type);
+}
+
+int
 NdbDictionary::Dictionary::listIndexes(List& list, const char * tableName)
+{
+  const NdbDictionary::Table* tab= getTable(tableName);
+  if(tab == 0)
+  {
+    return -1;
+  }
+  return m_impl.listIndexes(list, tab->getTableId());
+}
+
+int
+NdbDictionary::Dictionary::listIndexes(List& list,
+				       const char * tableName) const
 {
   const NdbDictionary::Table* tab= getTable(tableName);
   if(tab == 0)
@@ -940,6 +891,12 @@ operator<<(NdbOut& out, const NdbDictionary::Column& col)
   case NdbDictionary::Column::Olddecimalunsigned:
     out << "Olddecimalunsigned(" << col.getPrecision() << "," << col.getScale() << ")";
     break;
+  case NdbDictionary::Column::Decimal:
+    out << "Decimal(" << col.getPrecision() << "," << col.getScale() << ")";
+    break;
+  case NdbDictionary::Column::Decimalunsigned:
+    out << "Decimalunsigned(" << col.getPrecision() << "," << col.getScale() << ")";
+    break;
   case NdbDictionary::Column::Char:
     out << "Char(" << col.getLength() << ";" << csname << ")";
     break;
@@ -978,9 +935,36 @@ operator<<(NdbOut& out, const NdbDictionary::Column& col)
   case NdbDictionary::Column::Undefined:
     out << "Undefined";
     break;
+  case NdbDictionary::Column::Bit:
+    out << "Bit(" << col.getLength() << ")";
+    break;
+  case NdbDictionary::Column::Longvarchar:
+    out << "Longvarchar(" << col.getLength() << ";" << csname << ")";
+    break;
+  case NdbDictionary::Column::Longvarbinary:
+    out << "Longvarbinary(" << col.getLength() << ")";
+    break;
   default:
     out << "Type" << (Uint32)col.getType();
     break;
+  }
+  // show unusual (non-MySQL) array size
+  if (col.getLength() != 1) {
+    switch (col.getType()) {
+    case NdbDictionary::Column::Char:
+    case NdbDictionary::Column::Varchar:
+    case NdbDictionary::Column::Binary:
+    case NdbDictionary::Column::Varbinary:
+    case NdbDictionary::Column::Blob:
+    case NdbDictionary::Column::Text:
+    case NdbDictionary::Column::Bit:
+    case NdbDictionary::Column::Longvarchar:
+    case NdbDictionary::Column::Longvarbinary:
+      break;
+    default:
+      out << " [" << col.getLength() << "]";
+      break;
+    }
   }
   if (col.getPrimaryKey())
     out << " PRIMARY KEY";
@@ -989,13 +973,15 @@ operator<<(NdbOut& out, const NdbDictionary::Column& col)
   else
     out << " NULL";
 
-  if (col.getDistributionKey())
+  if(col.getDistributionKey())
     out << " DISTRIBUTION KEY";
-  
+
   return out;
 }
 
 const NdbDictionary::Column * NdbDictionary::Column::FRAGMENT = 0;
+const NdbDictionary::Column * NdbDictionary::Column::FRAGMENT_MEMORY = 0;
 const NdbDictionary::Column * NdbDictionary::Column::ROW_COUNT = 0;
 const NdbDictionary::Column * NdbDictionary::Column::COMMIT_COUNT = 0;
-
+const NdbDictionary::Column * NdbDictionary::Column::ROW_SIZE = 0;
+const NdbDictionary::Column * NdbDictionary::Column::RANGE_NO = 0;

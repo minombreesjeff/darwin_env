@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,6 +15,8 @@
 
 #ifndef NDB_LIMITS_H
 #define NDB_LIMITS_H
+
+#include <mysql.h>
 
 #define RNIL    0xffffff00
 
@@ -50,17 +51,17 @@
  **/
 #define MAX_TUPLES_PER_PAGE 8191
 #define MAX_TUPLES_BITS 13 		/* 13 bits = 8191 tuples per page */
-/*#define MAX_NO_OF_TUPLEKEY 16 Not currently used */
-#define MAX_TABLES 1600
+#define MAX_TABLES 20320                /* SchemaFile.hpp */
 #define MAX_TAB_NAME_SIZE 128
-#define MAX_ATTR_NAME_SIZE 32
+#define MAX_ATTR_NAME_SIZE NAME_LEN       /* From mysql_com.h */
 #define MAX_ATTR_DEFAULT_VALUE_SIZE 128
 #define MAX_ATTRIBUTES_IN_TABLE 128
 #define MAX_ATTRIBUTES_IN_INDEX 32
 #define MAX_TUPLE_SIZE_IN_WORDS 2013
-#define MAX_FIXED_KEY_LENGTH_IN_WORDS 8
 #define MAX_KEY_SIZE_IN_WORDS 1023
 #define MAX_FRM_DATA_SIZE 6000
+#define MAX_NULL_BITS 4096
+#define MAX_FRAGMENT_DATA_BYTES (4+(2 * 8 * MAX_REPLICAS * MAX_NDB_NODES))
 
 #define MAX_WORDS_META_FILE 24576
 
@@ -118,6 +119,11 @@
  * Blobs.
  */
 #define NDB_BLOB_HEAD_SIZE 2        /* sizeof(NdbBlob::Head) >> 2 */
+
+/*
+ * Character sets.
+ */
+#define MAX_XFRM_MULTIPLY 8         /* max expansion when normalizing */
 
 /*
  * Long signals

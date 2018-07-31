@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,7 +24,9 @@
  */
 class InputStream {
 public:
+  virtual ~InputStream() {}
   virtual char* gets(char * buf, int bufLen) = 0;
+  InputStream() {}
 };
 
 class FileInputStream : public InputStream {
@@ -40,6 +41,7 @@ extern FileInputStream Stdin;
 class SocketInputStream : public InputStream {
   NDB_SOCKET_TYPE m_socket;
   unsigned m_timeout;
+  bool m_startover;
 public:
   SocketInputStream(NDB_SOCKET_TYPE socket, unsigned readTimeout = 1000);
   char* gets(char * buf, int bufLen);

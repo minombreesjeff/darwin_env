@@ -2,7 +2,7 @@
 -- source include/not_embedded.inc
 
 --disable_warnings
-drop table if exists t1, t2, t3, t4, t5, t6, t7;
+drop table if exists t1, t2, t3, t4, t5, t6, t7, t8;
 --enable_warnings
 
 #
@@ -83,15 +83,36 @@ delete from t2 where a = 1;
 insert into t2 values(8, 2, 3);
 select * from t2 order by a;
 
+# Bug #24818 CREATE UNIQUE INDEX (...) USING HASH on a NDB table crashes mysqld
+create unique index bi using hash on t2(b);
+-- error 1062
+insert into t2 values(9, 3, 1);
+alter table t2 drop index bi;
+insert into t2 values(9, 3, 1);
+select * from t2 order by a;
+
 drop table t2;
 
--- error 1121
 CREATE TABLE t2 (
   a int unsigned NOT NULL PRIMARY KEY,
   b int unsigned not null,
   c int unsigned,
   UNIQUE USING HASH (b, c)	
 ) engine=ndbcluster;
+
+
+insert t2 values(1,1,NULL),(2,2,2),(3,3,NULL),(4,4,4),(5,5,NULL),(6,6,6),(7,7,NULL),(8,3,NULL),(9,3,NULL);
+
+select * from t2 where c IS NULL order by a;
+select * from t2 where b = 3 AND c IS NULL order by a;
+select * from t2 where (b = 3 OR b = 5) AND c IS NULL order by a;
+set @old_ecpd = @@session.engine_condition_pushdown;
+set engine_condition_pushdown = true;
+explain select * from t2 where (b = 3 OR b = 5) AND c IS NULL AND a < 9 order by a;
+select * from t2 where (b = 3 OR b = 5) AND c IS NULL AND a < 9 order by a;
+set engine_condition_pushdown = @old_ecpd;
+
+drop table t2;
 
 #
 # Show use of PRIMARY KEY USING HASH indexes 
@@ -183,8 +204,8 @@ INSERT INTO t3 VALUES (1,'V1',NULL);
 CREATE TABLE t4 (
   uid bigint(20) unsigned NOT NULL default '0',
   gid bigint(20) unsigned NOT NULL,
-  rid bigint(20) unsigned NOT NULL default '-1',
-  cid bigint(20) unsigned NOT NULL default '-1',
+  rid bigint(20) unsigned NOT NULL,
+  cid bigint(20) unsigned NOT NULL,
   UNIQUE KEY m (uid,gid,rid,cid)
 ) engine=ndbcluster;
 INSERT INTO t4 VALUES (1,1,2,4);
@@ -210,8 +231,8 @@ CREATE TABLE t7 (
   mid bigint(20) unsigned NOT NULL PRIMARY KEY,
   uid bigint(20) unsigned NOT NULL default '0',
   gid bigint(20) unsigned NOT NULL,
-  rid bigint(20) unsigned NOT NULL default '-1',
-  cid bigint(20) unsigned NOT NULL default '-1',
+  rid bigint(20) unsigned NOT NULL,
+  cid bigint(20) unsigned NOT NULL,
   UNIQUE KEY m (uid,gid,rid,cid)
 ) engine=ndbcluster;
 INSERT INTO t7 VALUES(1, 1, 1, 1, 1);
@@ -306,6 +327,20 @@ INSERT INTO t1 (month, year, code) VALUES (4,2004,'12');
 INSERT INTO t1 (month, year, code) VALUES (5,2004,'12');
 
 select * from t1 where code = '12' and month = 4 and year = 2004 ;
+
+drop table t1;
+
+# bug#15918 Unique Key Limit in NDB Engine
+
+create table t1 (a int primary key, b varchar(1000) not null, unique key (b))
+engine=ndb charset=utf8;
+
+insert into t1 values (1, repeat(_utf8 0xe288ab6474, 200));
+--error 1062
+insert into t1 values (2, repeat(_utf8 0xe288ab6474, 200));
+select a, sha1(b) from t1;
+
+# perl -e 'print pack("H2000","e288ab6474"x200)' | sha1sum
 
 drop table t1;
 

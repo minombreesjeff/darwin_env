@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,7 +19,6 @@
 #include "Ndbfs.hpp"
 #include "AsyncFile.hpp"
 #include "Filename.hpp"
-#include "Error.hpp"
 
 #include <signaldata/FsOpenReq.hpp>
 #include <signaldata/FsCloseReq.hpp>
@@ -45,6 +43,7 @@ VoidFs::VoidFs(const Configuration & conf) :
   BLOCK_CONSTRUCTOR(VoidFs);
   
   // Set received signals
+  addRecSignal(GSN_READ_CONFIG_REQ, &VoidFs::execREAD_CONFIG_REQ);
   addRecSignal(GSN_DUMP_STATE_ORD,  &VoidFs::execDUMP_STATE_ORD);
   addRecSignal(GSN_STTOR,  &VoidFs::execSTTOR);
   addRecSignal(GSN_FSOPENREQ, &VoidFs::execFSOPENREQ);
@@ -59,6 +58,21 @@ VoidFs::VoidFs(const Configuration & conf) :
 
 VoidFs::~VoidFs()
 {
+}
+
+void 
+VoidFs::execREAD_CONFIG_REQ(Signal* signal)
+{
+  const ReadConfigReq * req = (ReadConfigReq*)signal->getDataPtr();
+
+  Uint32 ref = req->senderRef;
+  Uint32 senderData = req->senderData;
+
+  ReadConfigConf * conf = (ReadConfigConf*)signal->getDataPtrSend();
+  conf->senderRef = reference();
+  conf->senderData = senderData;
+  sendSignal(ref, GSN_READ_CONFIG_CONF, signal, 
+	     ReadConfigConf::SignalLength, JBB);
 }
 
 void

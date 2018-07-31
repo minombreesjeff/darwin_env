@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,14 +20,16 @@
 static NdbPool* m_pool = 0;
 
 bool
-create_instance(Uint32 max_ndb_objects,
+create_instance(Ndb_cluster_connection* cc,
+		Uint32 max_ndb_objects,
                 Uint32 no_conn_obj,
                 Uint32 init_no_ndb_objects)
 {
   if (m_pool != NULL) {
     return false;
   }
-  m_pool = NdbPool::create_instance(max_ndb_objects,
+  m_pool = NdbPool::create_instance(cc, 
+				    max_ndb_objects,
                                     no_conn_obj,
                                     init_no_ndb_objects);
   if (m_pool == NULL) {

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,6 +23,7 @@
 #include <NdbMutex.h>
 #include "DictCache.hpp"
 #include <BlockNumbers.h>
+#include <mgmapi.h>
 
 class ClusterMgr;
 class ArbitMgr;
@@ -43,10 +43,6 @@ extern "C" {
   void atexit_stop_instance();
 }
 
-/**
- * Max number of Ndb objects in different threads.  
- * (Ndb objects should not be shared by different threads.)
- */
 class TransporterFacade
 {
 public:
@@ -115,6 +111,11 @@ public:
   Uint32 get_batch_byte_size();
   Uint32 get_batch_size();
 
+  TransporterRegistry* get_registry() { return theTransporterRegistry;};
+
+  // heart beat received from a node (e.g. a signal came)
+  void hb_received(NodeId n);
+
 private:
   /**
    * Send a signal unconditional of node status (used by ClusterMgr)
@@ -128,13 +129,13 @@ private:
   friend class GrepSS;
   friend class Ndb;
   friend class Ndb_cluster_connection_impl;
-  friend class NdbConnection;
+  friend class NdbTransaction;
   
   int sendSignalUnCond(NdbApiSignal *, NodeId nodeId);
 
   bool isConnected(NodeId aNodeId);
   void doStop();
-  
+
   TransporterRegistry* theTransporterRegistry;
   SocketServer m_socket_server;
   int sendPerformedLastInterval;
@@ -172,6 +173,10 @@ private:
    * Block number handling
    */
 public:
+  /**
+   * Max number of Ndb objects.  
+   * (Ndb objects should not be shared by different threads.)
+   */
   STATIC_CONST( MAX_NO_THREADS = 4711 );
   Uint32 m_waitfor_timeout; // in milli seconds...
 private:
@@ -301,10 +306,17 @@ TransporterFacade::get_node_alive(NodeId n) const {
 }
 
 inline
+void
+TransporterFacade::hb_received(NodeId n) {
+  theClusterMgr->hb_received(n);
+}
+
+inline
 bool
 TransporterFacade::get_node_stopping(NodeId n) const {
   const ClusterMgr::Node & node = theClusterMgr->getNodeInfo(n);
-  return ((node.m_state.startLevel == NodeState::SL_STOPPING_1) ||
+  return (!node.m_state.getSingleUserMode() &&
+          (node.m_state.startLevel == NodeState::SL_STOPPING_1) ||
           (node.m_state.startLevel == NodeState::SL_STOPPING_2));
 }
 
@@ -315,16 +327,9 @@ TransporterFacade::getIsNodeSendable(NodeId n) const {
   const Uint32 startLevel = node.m_state.startLevel;
 
   if (node.m_info.m_type == NodeInfo::DB) {
-    if(node.m_state.singleUserMode && 
-       ownId() == node.m_state.singleUserApi) {
-      return (node.compatible && 
-              (node.m_state.startLevel == NodeState::SL_STOPPING_1 ||
-               node.m_state.startLevel == NodeState::SL_STARTED ||
-               node.m_state.startLevel == NodeState::SL_SINGLEUSER));
-      }
-      else
-        return node.compatible && (startLevel == NodeState::SL_STARTED ||
-                                 startLevel == NodeState::SL_STOPPING_1);
+    return node.compatible && (startLevel == NodeState::SL_STARTED ||
+                               startLevel == NodeState::SL_STOPPING_1 ||
+                               node.m_state.getSingleUserMode());
   } else if (node.m_info.m_type == NodeInfo::REP) {
     /**
      * @todo Check that REP node actually has received API_REG_REQ

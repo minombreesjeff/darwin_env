@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -2625,14 +2624,22 @@ int my_strnncoll_gbk(CHARSET_INFO *cs __attribute__((unused)),
 
 static int my_strnncollsp_gbk(CHARSET_INFO * cs __attribute__((unused)),
 			      const uchar *a, uint a_length, 
-			      const uchar *b, uint b_length)
+			      const uchar *b, uint b_length,
+                              my_bool diff_if_only_endspace_difference)
 {
   uint length= min(a_length, b_length);
   int res= my_strnncoll_gbk_internal(&a, &b, length);
+
+#ifndef VARCHAR_WITH_DIFF_ENDSPACE_ARE_DIFFERENT_FOR_UNIQUE
+  diff_if_only_endspace_difference= 0;
+#endif
+
   if (!res && a_length != b_length)
   {
     const uchar *end;
     int swap= 1;
+    if (diff_if_only_endspace_difference)
+      res= 1;                                   /* Assume 'a' is bigger */
     /*
       Check the next not space character of the longer key. If it's < ' ',
       then it's smaller than the other key.
@@ -2643,6 +2650,7 @@ static int my_strnncollsp_gbk(CHARSET_INFO * cs __attribute__((unused)),
       a_length= b_length;
       a= b;
       swap= -1;				/* swap sign of result */
+      res= -res;
     }
     for (end= a + a_length-length; a < end ; a++)
     {
@@ -2735,22 +2743,26 @@ static my_bool my_like_range_gbk(CHARSET_INFO *cs __attribute__((unused)),
     }
     if (*ptr == w_many)		/* '%' in SQL */
     {
-      *min_length= (uint) (min_str - min_org);
+      /*
+        Calculate length of keys:
+        'a\0\0... is the smallest possible string when we have space expand
+        a\ff\ff... is the biggest possible string
+      */
+      *min_length= ((cs->state & MY_CS_BINSORT) ? (uint) (min_str - min_org) :
+                    res_length);
       *max_length= res_length;
       do {
 	*min_str++= 0;
-	*max_str++ = max_sort_char;
+	*max_str++= max_sort_char;
       } while (min_str != min_end);
       return 0;
     }
     *min_str++= *max_str++ = *ptr;
   }
+
   *min_length= *max_length = (uint) (min_str - min_org);
   while (min_str != min_end)
-  {
-    *min_str++ = ' ';			/* Because if key compression */
-    *max_str++ = ' ';
-  }
+    *min_str++= *max_str++= ' ';           /* Because if key compression */
   return 0;
 }
 
@@ -9967,11 +9979,13 @@ static MY_COLLATION_HANDLER my_collation_ci_handler =
   my_strnncoll_gbk,
   my_strnncollsp_gbk,
   my_strnxfrm_gbk,
+  my_strnxfrmlen_simple,
   my_like_range_gbk,
   my_wildcmp_mb,
   my_strcasecmp_mb,
   my_instr_mb,
   my_hash_sort_simple,
+  my_propagate_simple
 };
 
 static MY_CHARSET_HANDLER my_charset_handler=
@@ -10000,6 +10014,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
   my_strntoull_8bit,
   my_strntod_8bit,
   my_strtoll10_8bit,
+  my_strntoull10rnd_8bit,
   my_scan_8bit
 };
 
@@ -10020,13 +10035,17 @@ CHARSET_INFO my_charset_gbk_chinese_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
@@ -10048,13 +10067,17 @@ CHARSET_INFO my_charset_gbk_bin=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler

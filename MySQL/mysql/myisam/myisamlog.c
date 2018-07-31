@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -475,7 +474,7 @@ static int examine_log(my_string file_name, char **table_names)
       {
 	if (!curr_file_info->closed)
 	  files_open--;
-	VOID(tree_delete(&tree, (gptr) curr_file_info, tree.custom_arg));
+        VOID(tree_delete(&tree, (gptr) curr_file_info, 0, tree.custom_arg));
       }
       break;
     case MI_LOG_EXTRA:
@@ -810,7 +809,7 @@ static int find_record_with_key(struct file_info *file_info, byte *record)
 
   for (key=0 ; key < info->s->base.keys ; key++)
   {
-    if ((((ulonglong) 1 << key) & info->s->state.key_map) &&
+    if (mi_is_key_active(info->s->state.key_map, key) &&
 	info->s->keyinfo[key].flag & HA_NOSAME)
     {
       VOID(_mi_make_key(info,key,tmp_key,record,0L));

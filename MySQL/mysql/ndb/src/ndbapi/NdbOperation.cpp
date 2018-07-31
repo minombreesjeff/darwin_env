@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +14,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include <ndb_global.h>
-#include <NdbConnection.hpp>
+#include <NdbTransaction.hpp>
 #include <NdbOperation.hpp>
 #include "NdbApiSignal.hpp"
 #include "NdbRecAttr.hpp"
@@ -37,7 +36,8 @@
  *                aTable: Pointers to the Table object
  * Remark:        Creat an object of NdbOperation. 
  ****************************************************************************/
-NdbOperation::NdbOperation(Ndb* aNdb) :
+NdbOperation::NdbOperation(Ndb* aNdb, NdbOperation::Type aType) :
+  m_type(aType),
   theReceiver(aNdb),
   theErrorLine(0),
   theNdb(aNdb),
@@ -49,7 +49,6 @@ NdbOperation::NdbOperation(Ndb* aNdb) :
   theCurrentATTRINFO(NULL),
   theTotalCurrAI_Len(0),
   theAI_LenInCurrAI(0),
-  theFirstKEYINFO(NULL),
   theLastKEYINFO(NULL),
 
   theFirstLabel(NULL),
@@ -68,13 +67,11 @@ NdbOperation::NdbOperation(Ndb* aNdb) :
   //theSchemaVersion(0), 
   theTotalNrOfKeyWordInSignal(8),
   theTupKeyLen(0),
-  theNoOfTupKeyDefined(0),
+  theNoOfTupKeyLeft(0),
   theOperationType(NotDefined),
   theStatus(Init),
   theMagicNumber(0xFE11D0),
   theScanInfo(0),
-  theDistrKeySize(0),
-  theDistributionGroup(0),
   m_tcReqGSN(GSN_TCKEYREQ),
   m_keyInfoGSN(GSN_KEYINFO),
   m_attrInfoGSN(GSN_ATTRINFO),
@@ -131,7 +128,7 @@ NdbOperation::setErrorCodeAbort(int anErrorCode)
  *****************************************************************************/
 
 int
-NdbOperation::init(const NdbTableImpl* tab, NdbConnection* myConnection){
+NdbOperation::init(const NdbTableImpl* tab, NdbTransaction* myConnection){
   NdbApiSignal* tSignal;
   theStatus		= Init;
   theError.code		= 0;
@@ -145,14 +142,11 @@ NdbOperation::init(const NdbTableImpl* tab, NdbConnection* myConnection){
 
   theFirstATTRINFO    = NULL;
   theCurrentATTRINFO  = NULL;
-  theFirstKEYINFO     = NULL;
   theLastKEYINFO      = NULL;  
   
 
-  theTupKeyLen		= 0;
-  theNoOfTupKeyDefined	= 0;
-  theDistrKeySize	= 0;
-  theDistributionGroup	= 0;
+  theTupKeyLen	    = 0;
+  theNoOfTupKeyLeft = tab->getNoOfPrimaryKeys();
 
   theTotalCurrAI_Len	= 0;
   theAI_LenInCurrAI	= 0;
@@ -161,9 +155,7 @@ NdbOperation::init(const NdbTableImpl* tab, NdbConnection* myConnection){
   theSimpleIndicator	= 0;
   theDirtyIndicator	= 0;
   theInterpretIndicator	= 0;
-  theDistrGroupIndicator= 0;
-  theDistrGroupType     = 0;
-  theDistrKeyIndicator  = 0;
+  theDistrKeyIndicator_  = 0;
   theScanInfo        	= 0;
   theTotalNrOfKeyWordInSignal = 8;
   theMagicNumber        = 0xABCDEF01;
@@ -184,7 +176,11 @@ NdbOperation::init(const NdbTableImpl* tab, NdbConnection* myConnection){
   tcKeyReq->scanInfo = 0;
   theKEYINFOptr = &tcKeyReq->keyInfo[0];
   theATTRINFOptr = &tcKeyReq->attrInfo[0];
-  theReceiver.init(NdbReceiver::NDB_OPERATION, this);
+  if (theReceiver.init(NdbReceiver::NDB_OPERATION, this))
+  {
+    // theReceiver sets the error code of its owner
+    return -1;
+  }
   return 0;
 }
 
@@ -210,11 +206,16 @@ NdbOperation::release()
   NdbBlob* tBlob;
   NdbBlob* tSaveBlob;
 
-  if (theTCREQ != NULL)
+  tSignal = theTCREQ;
+  while (tSignal != NULL)
   {
-    theNdb->releaseSignal(theTCREQ);
-  }
+    tSaveSignal = tSignal;
+    tSignal = tSignal->next();
+    theNdb->releaseSignal(tSaveSignal);
+  }				
   theTCREQ = NULL;
+  theLastKEYINFO = NULL;
+
   tSignal = theFirstATTRINFO;
   while (tSignal != NULL)
   {
@@ -224,15 +225,7 @@ NdbOperation::release()
   }
   theFirstATTRINFO = NULL;
   theCurrentATTRINFO = NULL;
-  tSignal = theFirstKEYINFO;
-  while (tSignal != NULL)
-  {
-    tSaveSignal = tSignal;
-    tSignal = tSignal->next();
-    theNdb->releaseSignal(tSaveSignal);
-  }				
-  theFirstKEYINFO = NULL;
-  theLastKEYINFO = NULL;
+
   if (theInterpretIndicator == 1)
   {
     tBranch = theFirstBranch;
@@ -329,13 +322,31 @@ NdbOperation::setValue( Uint32 anAttrId,
 NdbBlob*
 NdbOperation::getBlobHandle(const char* anAttrName)
 {
-  return getBlobHandle(theNdbCon, m_currentTable->getColumn(anAttrName));
+  const NdbColumnImpl* col = m_currentTable->getColumn(anAttrName);
+  if (col == NULL)
+  {
+    setErrorCode(4004);
+    return NULL;
+  }
+  else
+  {
+    return getBlobHandle(theNdbCon, col);
+  }
 }
 
 NdbBlob*
 NdbOperation::getBlobHandle(Uint32 anAttrId)
 {
-  return getBlobHandle(theNdbCon, m_currentTable->getColumn(anAttrId));
+  const NdbColumnImpl* col = m_currentTable->getColumn(anAttrId);
+  if (col == NULL)
+  {
+    setErrorCode(4004);
+    return NULL;
+  }
+  else
+  {
+    return getBlobHandle(theNdbCon, col);
+  }
 }
 
 int
@@ -402,4 +413,10 @@ const char*
 NdbOperation::getTableName() const
 {
   return m_currentTable->m_externalName.c_str();
+}
+
+const NdbDictionary::Table*
+NdbOperation::getTable() const
+{
+  return m_currentTable;
 }

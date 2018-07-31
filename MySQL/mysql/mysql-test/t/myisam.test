@@ -450,11 +450,14 @@ drop table t1;
 # Test text and unique
 #
 create table t1 (a int not null auto_increment primary key, b text not null, unique b (b(20)));
-insert into t1 (b) values ('a'),('a '),('a  ');
+insert into t1 (b) values ('a'),('b'),('c');
 select concat(b,'.') from t1;
 update t1 set b='b ' where a=2;
 --error 1062
 update t1 set b='b  ' where a > 1;
+--error 1062
+insert into t1 (b) values ('b');
+select * from t1;
 delete from t1 where b='b';
 select a,concat(b,'.') from t1;
 drop table t1;
@@ -495,7 +498,7 @@ insert into t1 values (1),(2),(3),(4),(5),(6);
 insert into t2 values (1,1),(2,1);
 lock tables t1 read local, t2 read local;
 select straight_join * from t1,t2 force index (primary) where t1.a=t2.a;
-connect (root,localhost,root,,test,$MASTER_MYPORT,master.sock);
+connect (root,localhost,root,,test,$MASTER_MYPORT,$MASTER_MYSOCK);
 insert into t2 values(2,0);
 disconnect root;
 connection default;
@@ -609,20 +612,6 @@ check table t1;
 drop table t1;
 
 
-# BUG#9622 - ANALYZE TABLE and ALTER TABLE .. ENABLE INDEX produce
-# different statistics on the same table with NULL values.
-create table t1 (a int, key(a));
-
-insert into t1 values (1),(2),(3),(4),(NULL),(NULL),(NULL),(NULL);
-analyze table t1;
-show keys from t1;
-
-alter table t1 disable keys;
-alter table t1 enable keys;
-show keys from t1;
-
-drop table t1;
-
 #
 # Bug#12296 - CHECKSUM TABLE reports 0 for the table
 # This happened if the first record was marked as deleted.
@@ -638,7 +627,10 @@ checksum table t1;
 checksum table t2;
 drop table t1, t2;
 
+#
 # BUG#12232: New myisam_stats_method variable.
+#
+
 show variables like 'myisam_stats_method';
 
 create table t1 (a int, key(a));
@@ -854,40 +846,319 @@ DROP TABLE t1;
 #
 SET @@myisam_repair_threads=1;
 SHOW VARIABLES LIKE 'myisam_repair%';
-# Bug#8706 - temporary table with data directory option fails
+
 #
-connect (session1,localhost,root,,);
-connect (session2,localhost,root,,);
+# BUG#21310 - Trees in SQL causing a "crashed" table with MyISAM storage
+#             engine
+#
 
-connection session1;
-disable_query_log;
-eval create temporary table t1 (a int) engine=myisam data directory="$MYSQL_TEST_DIR/var/log" select 9 a;
-enable_query_log;
-# If running test suite with a non standard tmp dir, the "show create table"
-# will print "DATA_DIRECTORY=". Use replace_result to mask it out
---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
+# A simplified test case that reflect crashed table issue.
+CREATE TABLE t1(a VARCHAR(16));
+INSERT INTO t1 VALUES('aaaaaaaa'),(NULL);
+UPDATE t1 AS ta1, t1 AS ta2 SET ta1.a='aaaaaaaaaaaaaaaa';
+SELECT * FROM t1;
+DROP TABLE t1;
+
+# A test case that reflect wrong result set.
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES(1),(2);
+UPDATE t1,t1 AS t2 SET t1.a=t1.a+2 WHERE t1.a=t2.a-1;
+SELECT * FROM t1 ORDER BY a;
+DROP TABLE t1;
+
+#
+# Bug#24607 - MyISAM pointer size determined incorrectly
+#
+CREATE TABLE t1 (c1 TEXT) AVG_ROW_LENGTH=70100 MAX_ROWS=4100100100;
+--replace_column 5 X 6 X 7 X 9 X 10 X 11 X 12 X 13 X 14 X 16 X
+SHOW TABLE STATUS LIKE 't1';
+DROP TABLE t1;
+
+#
+# Bug#26231 - select count(*) on myisam table returns wrong value
+#             when index is used
+#
+CREATE TABLE t1 (c1 TEXT NOT NULL, KEY c1 (c1(10))) ENGINE=MyISAM;
+# Fill at least two key blocks. "Tab, A" must be in both blocks. 
+INSERT INTO t1 VALUES
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)), (CHAR(9,65)),
+  (''), (''), (''), (''),
+  (' B'), (' B'), (' B'), (' B');
+SELECT DISTINCT COUNT(*) FROM t1 WHERE c1 = '';
+SELECT DISTINCT length(c1), c1 FROM t1 WHERE c1 = '';
+SELECT DISTINCT COUNT(*) FROM t1 IGNORE INDEX (c1) WHERE c1 = '';
+SELECT DISTINCT length(c1), c1 FROM t1 IGNORE INDEX (c1) WHERE c1 = '';
+SELECT DISTINCT length(c1), c1 FROM t1 ORDER BY c1;
+DROP TABLE t1;
+
+--echo End of 4.1 tests
+
+
+# Test varchar
+#
+
+let $default=`select @@storage_engine`;
+set storage_engine=MyISAM;
+source include/varchar.inc;
+
+#
+# Some errors/warnings on create
+#
+
+create table t1 (v varchar(65530), key(v));
+drop table if exists t1;
+create table t1 (v varchar(65536));
 show create table t1;
-
-connection session2;
-disable_query_log;
-eval create temporary table t1 (a int) engine=myisam data directory="$MYSQL_TEST_DIR/var/log" select 99 a;
-enable_query_log;
-# If running test suite with a non standard tmp dir, the "show create table"
-# will print "DATA_DIRECTORY=". Use replace_result to mask it out
---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
+drop table t1;
+create table t1 (v varchar(65530) character set utf8);
 show create table t1;
-
-connection default;
-create table t1 (a int) engine=myisam select 42 a;
-
-connection session1;
-select * from t1;
-disconnect session1;
-connection session2;
-select * from t1;
-disconnect session2;
-connection default;
-select * from t1;
 drop table t1;
 
-# End of 4.1 tests
+# MyISAM specific varchar tests
+--error 1118
+create table t1 (v varchar(65535));
+
+eval set storage_engine=$default;
+
+#
+# Test how DROP TABLE works if the index or data file doesn't exists
+
+create table t1 (a int) engine=myisam;
+system rm $MYSQLTEST_VARDIR/master-data/test/t1.MYI ;
+drop table if exists t1;
+create table t1 (a int) engine=myisam;
+system rm $MYSQLTEST_VARDIR/master-data/test/t1.MYI ;
+--error 1051,6
+drop table t1;
+create table t1 (a int) engine=myisam;
+system rm $MYSQLTEST_VARDIR/master-data/test/t1.MYD ;
+--error 1105,6,29
+drop table t1;
+--error 1051
+drop table t1;
+
+#
+# Test concurrent insert
+# First with static record length
+#
+set @save_concurrent_insert=@@concurrent_insert;
+set global concurrent_insert=1;
+create table t1 (a int);
+insert into t1 values (1),(2),(3),(4),(5);
+lock table t1 read local;
+connect (con1,localhost,root,,);
+connection con1;
+# Insert in table without hole
+insert into t1 values(6),(7);
+connection default;
+unlock tables;
+delete from t1 where a>=3 and a<=4;
+lock table t1 read local;
+connection con1;
+set global concurrent_insert=2;
+# Insert in table with hole -> Should insert at end
+insert into t1 values (8),(9);
+connection default;
+unlock tables;
+# Insert into hole
+insert into t1 values (10),(11),(12);
+select * from t1;
+check table t1;
+drop table t1;
+disconnect con1;
+
+# Same test with dynamic record length
+create table t1 (a int, b varchar(30) default "hello");
+insert into t1 (a) values (1),(2),(3),(4),(5);
+lock table t1 read local;
+connect (con1,localhost,root,,);
+connection con1;
+# Insert in table without hole
+insert into t1 (a) values(6),(7);
+connection default;
+unlock tables;
+delete from t1 where a>=3 and a<=4;
+lock table t1 read local;
+connection con1;
+set global concurrent_insert=2;
+# Insert in table with hole -> Should insert at end
+insert into t1 (a) values (8),(9);
+connection default;
+unlock tables;
+# Insert into hole
+insert into t1 (a) values (10),(11),(12);
+select a from t1;
+check table t1;
+drop table t1;
+disconnect con1;
+set global concurrent_insert=@save_concurrent_insert;
+
+
+# BUG#9622 - ANALYZE TABLE and ALTER TABLE .. ENABLE INDEX produce
+# different statistics on the same table with NULL values.
+create table t1 (a int, key(a));
+
+insert into t1 values (1),(2),(3),(4),(NULL),(NULL),(NULL),(NULL);
+analyze table t1;
+show keys from t1;
+
+alter table t1 disable keys;
+alter table t1 enable keys;
+show keys from t1;
+
+drop table t1;
+
+#
+# Bug#10056 - PACK_KEYS option take values greater than 1 while creating table
+#
+create table t1 (c1 int) engine=myisam pack_keys=0;
+create table t2 (c1 int) engine=myisam pack_keys=1;
+create table t3 (c1 int) engine=myisam pack_keys=default;
+--error 1064
+create table t4 (c1 int) engine=myisam pack_keys=2;
+drop table t1, t2, t3;
+
+#
+# Bug#28476: force index on a disabled myisam index gives error 124
+#
+CREATE TABLE t1(a INT, b INT, KEY inx (a), UNIQUE KEY uinx (b)) ENGINE=MyISAM;
+INSERT INTO t1(a,b) VALUES (1,1),(2,2),(3,3),(4,4),(5,5);
+SELECT a FROM t1 FORCE INDEX (inx) WHERE a=1;
+ALTER TABLE t1 DISABLE KEYS;
+SELECT a FROM t1 FORCE INDEX (inx) WHERE a=1;
+SELECT a FROM t1 USE INDEX (inx) WHERE a=1;
+SELECT b FROM t1 FORCE INDEX (uinx) WHERE b=1;
+SELECT b FROM t1 USE INDEX (uinx) WHERE b=1;
+SELECT a FROM t1 FORCE INDEX (inx,uinx) WHERE a=1;
+ALTER TABLE t1 ENABLE KEYS;
+SELECT a FROM t1 FORCE INDEX (inx) WHERE a=1;
+DROP TABLE t1;
+
+--echo End of 5.0 tests

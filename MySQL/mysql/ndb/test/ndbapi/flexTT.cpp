@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -169,6 +168,8 @@ tellThreads(StartType what)
     ThreadStart[i] = what;
 }
 
+static Ndb_cluster_connection *g_cluster_connection= 0;
+
 NDB_COMMAND(flexTT, "flexTT", "flexTT", "flexTT", 65535)
 {
   ndb_init();
@@ -226,7 +227,14 @@ NDB_COMMAND(flexTT, "flexTT", "flexTT", "flexTT", 65535)
   setAttrNames();
   setTableNames();
 
-  Ndb * pNdb = new Ndb("TEST_DB");      
+  Ndb_cluster_connection con;
+  if(con.connect(12, 5, 1) != 0)
+  {
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  g_cluster_connection= &con;
+
+  Ndb * pNdb = new Ndb(g_cluster_connection, "TEST_DB");      
   pNdb->init();
   tNodeId = pNdb->getNodeId();
 
@@ -334,7 +342,7 @@ threadLoop(void* ThreadData)
   void * mem = malloc(sizeof(TransNdb)*tNoOfParallelTrans);
   TransNdb* pTransData = (TransNdb*)mem;
 
-  localNdb = new Ndb("TEST_DB");
+  localNdb = new Ndb(g_cluster_connection, "TEST_DB");
   localNdb->init(1024);
   localNdb->waitUntilReady();
 

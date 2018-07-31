@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,7 +26,7 @@
   also info->read_pos is set to info->read_end.
   If called through open_cached_file(), then the temporary file will
   only be created if a write exeeds the file buffer or if one calls
-  flush_io_cache().
+  my_b_flush_io_cache().
 
   If one uses SEQ_READ_APPEND, then two buffers are allocated, one for
   reading and another for writing.  Reads are first done from disk and
@@ -43,7 +42,7 @@ TODO:
   each time the write buffer gets full and it's written to disk, we will
   always do a disk read to read a part of the buffer from disk to the
   read buffer.
-  This should be fixed so that when we do a flush_io_cache() and
+  This should be fixed so that when we do a my_b_flush_io_cache() and
   we have been reading the write buffer, we should transfer the rest of the
   write buffer to the read buffer before we start to reuse it.
 */
@@ -158,19 +157,42 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
 		  pbool use_async_io, myf cache_myflags)
 {
   uint min_cache;
+  my_off_t pos;
   my_off_t end_of_file= ~(my_off_t) 0;
   DBUG_ENTER("init_io_cache");
   DBUG_PRINT("enter",("cache: 0x%lx  type: %d  pos: %ld",
 		      (ulong) info, (int) type, (ulong) seek_offset));
 
   info->file= file;
-  info->type= 0;		/* Don't set it until mutex are created */
+  info->type= TYPE_NOT_SET;	    /* Don't set it until mutex are created */
   info->pos_in_file= seek_offset;
   info->pre_close = info->pre_read = info->post_read = 0;
   info->arg = 0;
   info->alloced_buffer = 0;
   info->buffer=0;
-  info->seek_not_done= test(file >= 0);
+  info->seek_not_done= 0;
+
+  if (file >= 0)
+  {
+    pos= my_tell(file, MYF(0));
+    if ((pos == (my_off_t) -1) && (my_errno == ESPIPE))
+    {
+      /*
+         This kind of object doesn't support seek() or tell(). Don't set a
+         flag that will make us again try to seek() later and fail.
+      */
+      info->seek_not_done= 0;
+      /*
+        Additionally, if we're supposed to start somewhere other than the
+        the beginning of whatever this file is, then somebody made a bad
+        assumption.
+      */
+      DBUG_ASSERT(seek_offset == 0);
+    }
+    else
+      info->seek_not_done= test(seek_offset != pos);
+  }
+
   info->disk_writes= 0;
 #ifdef THREAD
   info->share=0;
@@ -183,8 +205,10 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
   {						/* Assume file isn't growing */
     if (!(cache_myflags & MY_DONT_CHECK_FILESIZE))
     {
-      /* Calculate end of file to not allocate to big buffers */
+      /* Calculate end of file to avoid allocating oversized buffers */
       end_of_file=my_seek(file,0L,MY_SEEK_END,MYF(0));
+      /* Need to reset seek_not_done now that we just did a seek. */
+      info->seek_not_done= end_of_file == seek_offset ? 0 : 1;
       if (end_of_file < seek_offset)
 	end_of_file=seek_offset;
       /* Trim cache size if the file is very small */
@@ -199,11 +223,11 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
   if (type != READ_NET && type != WRITE_NET)
   {
     /* Retry allocating memory in smaller blocks until we get one */
+    cachesize=(uint) ((ulong) (cachesize + min_cache-1) &
+			(ulong) ~(min_cache-1));
     for (;;)
     {
       uint buffer_block;
-      cachesize=(uint) ((ulong) (cachesize + min_cache-1) &
-			(ulong) ~(min_cache-1));
       if (cachesize < min_cache)
 	cachesize = min_cache;
       buffer_block = cachesize;
@@ -222,7 +246,8 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
       }
       if (cachesize == min_cache)
 	DBUG_RETURN(2);				/* Can't alloc cache */
-      cachesize= (uint) ((long) cachesize*3/4); /* Try with less memory */
+      /* Try with less memory */
+      cachesize= (uint) ((ulong) cachesize*3/4 & (ulong)~(min_cache-1));
     }
   }
 
@@ -330,7 +355,11 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
     {
       info->read_end=info->write_pos;
       info->end_of_file=my_b_tell(info);
-      info->seek_not_done=1;
+      /*
+        Trigger a new seek only if we have a valid
+        file handle.
+      */
+      info->seek_not_done= (info->file != -1);
     }
     else if (type == WRITE_CACHE)
     {
@@ -359,7 +388,7 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
     if (info->type == WRITE_CACHE && type == READ_CACHE)
       info->end_of_file=my_b_tell(info);
     /* flush cache if we want to reuse it */
-    if (!clear_cache && flush_io_cache(info))
+    if (!clear_cache && my_b_flush_io_cache(info,1))
       DBUG_RETURN(1);
     info->pos_in_file=seek_offset;
     /* Better to do always do a seek */
@@ -439,11 +468,34 @@ int _my_b_read(register IO_CACHE *info, byte *Buffer, uint Count)
 
   /* pos_in_file always point on where info->buffer was read */
   pos_in_file=info->pos_in_file+(uint) (info->read_end - info->buffer);
+
+  /* 
+    Whenever a function which operates on IO_CACHE flushes/writes
+    some part of the IO_CACHE to disk it will set the property
+    "seek_not_done" to indicate this to other functions operating
+    on the IO_CACHE.
+  */
   if (info->seek_not_done)
-  {					/* File touched, do seek */
-    VOID(my_seek(info->file,pos_in_file,MY_SEEK_SET,MYF(0)));
-    info->seek_not_done=0;
+  {
+    if ((my_seek(info->file,pos_in_file,MY_SEEK_SET,MYF(0)) 
+        != MY_FILEPOS_ERROR))
+    {
+      /* No error, reset seek_not_done flag. */
+      info->seek_not_done= 0;
+    }
+    else
+    {
+      /*
+        If the seek failed and the error number is ESPIPE, it is because
+        info->file is a pipe or socket or FIFO.  We never should have tried
+        to seek on that.  See Bugs#25807 and #22828 for more info.
+      */
+      DBUG_ASSERT(my_errno != ESPIPE);
+      info->error= -1;
+      DBUG_RETURN(1);
+    }
   }
+
   diff_length=(uint) (pos_in_file & (IO_SIZE-1));
   if (Count >= (uint) (IO_SIZE+(IO_SIZE-diff_length)))
   {					/* Fill first intern buffer */
@@ -575,7 +627,8 @@ void init_io_cache_share(IO_CACHE *read_cache, IO_CACHE_SHARE *cshare,
   DBUG_ENTER("init_io_cache_share");
   DBUG_PRINT("io_cache_share", ("read_cache: 0x%lx  share: 0x%lx  "
                                 "write_cache: 0x%lx  threads: %u",
-                                read_cache, cshare, write_cache, num_threads));
+                                (long) read_cache, (long) cshare,
+                                (long) write_cache, num_threads));
 
   DBUG_ASSERT(num_threads > 1);
   DBUG_ASSERT(read_cache->type == READ_CACHE);
@@ -637,7 +690,7 @@ void remove_io_thread(IO_CACHE *cache)
   pthread_mutex_lock(&cshare->mutex);
   DBUG_PRINT("io_cache_share", ("%s: 0x%lx",
                                 (cache == cshare->source_cache) ?
-                                "writer" : "reader", cache));
+                                "writer" : "reader", (long) cache));
 
   /* Remove from share. */
   total= --cshare->total_threads;
@@ -713,7 +766,7 @@ static int lock_io_cache(IO_CACHE *cache, my_off_t pos)
   cshare->running_threads--;
   DBUG_PRINT("io_cache_share", ("%s: 0x%lx  pos: %lu  running: %u",
                                 (cache == cshare->source_cache) ?
-                                "writer" : "reader", cache, (ulong) pos,
+                                "writer" : "reader", (long) cache, (ulong) pos,
                                 cshare->running_threads));
 
   if (cshare->source_cache)
@@ -852,7 +905,7 @@ static void unlock_io_cache(IO_CACHE *cache)
   DBUG_PRINT("io_cache_share", ("%s: 0x%lx  pos: %lu  running: %u",
                                 (cache == cshare->source_cache) ?
                                 "writer" : "reader",
-                                cache, (ulong) cshare->pos_in_file,
+                                (long) cache, (ulong) cshare->pos_in_file,
                                 cshare->total_threads));
 
   cshare->running_threads= cshare->total_threads;
@@ -944,8 +997,22 @@ int _my_b_read_r(register IO_CACHE *cache, byte *Buffer, uint Count)
         len= 0;
       else
       {
-        if (cache->seek_not_done)             /* File touched, do seek */
-          VOID(my_seek(cache->file, pos_in_file, MY_SEEK_SET, MYF(0)));
+        /*
+          Whenever a function which operates on IO_CACHE flushes/writes
+          some part of the IO_CACHE to disk it will set the property
+          "seek_not_done" to indicate this to other functions operating
+          on the IO_CACHE.
+        */
+        if (cache->seek_not_done)
+        {
+          if (my_seek(cache->file, pos_in_file, MY_SEEK_SET, MYF(0))
+              == MY_FILEPOS_ERROR)
+          {
+            cache->error= -1;
+            unlock_io_cache(cache);
+            DBUG_RETURN(1);
+          }
+        }
         len= (int) my_read(cache->file, cache->buffer, length, cache->myflags);
       }
       DBUG_PRINT("io_cache_share", ("read %d bytes", len));
@@ -972,7 +1039,7 @@ int _my_b_read_r(register IO_CACHE *cache, byte *Buffer, uint Count)
       cache->read_end=    cshare->read_end;
       cache->pos_in_file= cshare->pos_in_file;
 
-      len= ((cache->error == -1) ? -1 : cache->read_end - cache->buffer);
+      len= (int) ((cache->error == -1) ? -1 : cache->read_end - cache->buffer);
     }
     cache->read_pos=      cache->buffer;
     cache->seek_not_done= 0;
@@ -1047,11 +1114,16 @@ static void copy_to_read_buffer(IO_CACHE *write_cache,
 
 
 /*
-  Do sequential read from the SEQ_READ_APPEND cache
-  we do this in three stages:
+  Do sequential read from the SEQ_READ_APPEND cache.
+  
+  We do this in three stages:
    - first read from info->buffer
    - then if there are still data to read, try the file descriptor
    - afterwards, if there are still data to read, try append buffer
+
+  RETURNS
+    0  Success
+    1  Failed to read
 */
 
 int _my_b_seq_read(register IO_CACHE *info, byte *Buffer, uint Count)
@@ -1079,7 +1151,13 @@ int _my_b_seq_read(register IO_CACHE *info, byte *Buffer, uint Count)
     With read-append cache we must always do a seek before we read,
     because the write could have moved the file pointer astray
   */
-  VOID(my_seek(info->file,pos_in_file,MY_SEEK_SET,MYF(0)));
+  if (my_seek(info->file,pos_in_file,MY_SEEK_SET,MYF(0))
+      == MY_FILEPOS_ERROR)
+  {
+   info->error= -1;
+   unlock_append_buffer(info);
+   return (1);
+  }
   info->seek_not_done=0;
 
   diff_length=(uint) (pos_in_file & (IO_SIZE-1));
@@ -1195,6 +1273,21 @@ read_append_buffer:
 
 #ifdef HAVE_AIOWAIT
 
+/*
+  Read from the IO_CACHE into a buffer and feed asynchronously
+  from disk when needed.
+
+  SYNOPSIS
+    _my_b_async_read()
+      info                      IO_CACHE pointer
+      Buffer                    Buffer to retrieve count bytes from file
+      Count                     Number of bytes to read into Buffer
+
+  RETURN VALUE
+    -1          An error has occurred; my_errno is set.
+     0          Success
+     1          An error has occurred; IO_CACHE to error state.
+*/
 int _my_b_async_read(register IO_CACHE *info, byte *Buffer, uint Count)
 {
   uint length,read_length,diff_length,left_length,use_length,org_Count;
@@ -1285,13 +1378,20 @@ int _my_b_async_read(register IO_CACHE *info, byte *Buffer, uint Count)
       info->error=(int) (read_length+left_length);
       return 1;
     }
-    VOID(my_seek(info->file,next_pos_in_file,MY_SEEK_SET,MYF(0)));
+    
+    if (my_seek(info->file,next_pos_in_file,MY_SEEK_SET,MYF(0))
+        == MY_FILEPOS_ERROR)
+    {
+      info->error= -1;
+      return (1);
+    }
+
     read_length=IO_SIZE*2- (uint) (next_pos_in_file & (IO_SIZE-1));
     if (Count < read_length)
     {					/* Small block, read to cache */
       if ((read_length=my_read(info->file,info->request_pos,
 			       read_length, info->myflags)) == (uint) -1)
-	return info->error= -1;
+        return info->error= -1;
       use_length=min(Count,read_length);
       memcpy(Buffer,info->request_pos,(size_t) use_length);
       info->read_pos=info->request_pos+Count;
@@ -1378,7 +1478,15 @@ int _my_b_get(IO_CACHE *info)
   return (int) (uchar) buff;
 }
 
-	/* Returns != 0 if error on write */
+/* 
+   Write a byte buffer to IO_CACHE and flush to disk
+   if IO_CACHE is full.
+
+   RETURN VALUE
+    1 On error on write
+    0 On success
+   -1 On error; my_errno contains error code.
+*/
 
 int _my_b_write(register IO_CACHE *info, const byte *Buffer, uint Count)
 {
@@ -1396,14 +1504,24 @@ int _my_b_write(register IO_CACHE *info, const byte *Buffer, uint Count)
   Count-=rest_length;
   info->write_pos+=rest_length;
 
-  if (flush_io_cache(info))
+  if (my_b_flush_io_cache(info,1))
     return 1;
   if (Count >= IO_SIZE)
   {					/* Fill first intern buffer */
     length=Count & (uint) ~(IO_SIZE-1);
     if (info->seek_not_done)
-    {					/* File touched, do seek */
-      VOID(my_seek(info->file,info->pos_in_file,MY_SEEK_SET,MYF(0)));
+    {
+      /*
+        Whenever a function which operates on IO_CACHE flushes/writes
+        some part of the IO_CACHE to disk it will set the property
+        "seek_not_done" to indicate this to other functions operating
+        on the IO_CACHE.
+      */
+      if (my_seek(info->file,info->pos_in_file,MY_SEEK_SET,MYF(0)))
+      {
+        info->error= -1;
+        return (1);
+      }
       info->seek_not_done=0;
     }
     if (my_write(info->file,Buffer,(uint) length,info->myflags | MY_NABP))
@@ -1683,6 +1801,7 @@ int end_io_cache(IO_CACHE *info)
   int error=0;
   IO_CACHE_CALLBACK pre_close;
   DBUG_ENTER("end_io_cache");
+  DBUG_PRINT("enter",("cache: 0x%lx", (ulong) info));
 
 #ifdef THREAD
   /*
@@ -1701,14 +1820,14 @@ int end_io_cache(IO_CACHE *info)
   {
     info->alloced_buffer=0;
     if (info->file != -1)			/* File doesn't exist */
-      error=flush_io_cache(info);
+      error= my_b_flush_io_cache(info,1);
     my_free((gptr) info->buffer,MYF(MY_WME));
     info->buffer=info->read_pos=(byte*) 0;
   }
   if (info->type == SEQ_READ_APPEND)
   {
     /* Destroy allocated mutex */
-    info->type=0;
+    info->type= TYPE_NOT_SET;
 #ifdef THREAD
     pthread_mutex_destroy(&info->append_buffer_lock);
 #endif

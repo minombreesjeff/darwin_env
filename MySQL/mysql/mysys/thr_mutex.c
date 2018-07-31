@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -103,7 +102,7 @@ int safe_mutex_lock(safe_mutex_t *mp,const char *file, uint line)
     fflush(stderr);
     abort();
   }
-    
+
   pthread_mutex_lock(&mp->global);
   if (mp->count > 0 && pthread_equal(pthread_self(),mp->thread))
   {
@@ -121,6 +120,7 @@ int safe_mutex_lock(safe_mutex_t *mp,const char *file, uint line)
     fflush(stderr);
     abort();
   }
+  mp->thread= pthread_self();
   if (mp->count++)
   {
     fprintf(stderr,"safe_mutex: Error in thread libray: Got mutex at %s, \
@@ -128,7 +128,6 @@ line %d more than 1 time\n", file,line);
     fflush(stderr);
     abort();
   }
-  mp->thread=pthread_self();
   mp->file= file;
   mp->line=line;
   pthread_mutex_unlock(&mp->global);
@@ -154,6 +153,7 @@ int safe_mutex_unlock(safe_mutex_t *mp,const char *file, uint line)
     fflush(stderr);
     abort();
   }
+  mp->thread= 0;
   mp->count--;
 #ifdef __WIN__
   pthread_mutex_unlock(&mp->mutex);
@@ -207,6 +207,7 @@ int safe_cond_wait(pthread_cond_t *cond, safe_mutex_t *mp, const char *file,
     fflush(stderr);
     abort();
   }
+  mp->thread=pthread_self();
   if (mp->count++)
   {
     fprintf(stderr,
@@ -215,7 +216,6 @@ int safe_cond_wait(pthread_cond_t *cond, safe_mutex_t *mp, const char *file,
     fflush(stderr);
     abort();
   }
-  mp->thread=pthread_self();
   mp->file= file;
   mp->line=line;
   pthread_mutex_unlock(&mp->global);
@@ -239,12 +239,13 @@ int safe_cond_timedwait(pthread_cond_t *cond, safe_mutex_t *mp,
   pthread_mutex_unlock(&mp->global);
   error=pthread_cond_timedwait(cond,&mp->mutex,abstime);
 #ifdef EXTRA_DEBUG
-  if (error && (error != EINTR && error != ETIMEDOUT))
+  if (error && (error != EINTR && error != ETIMEDOUT && error != ETIME))
   {
     fprintf(stderr,"safe_mutex: Got error: %d (%d) when doing a safe_mutex_timedwait at %s, line %d\n", error, errno, file, line);
   }
 #endif
   pthread_mutex_lock(&mp->global);
+  mp->thread=pthread_self();
   if (mp->count++)
   {
     fprintf(stderr,
@@ -253,7 +254,6 @@ int safe_cond_timedwait(pthread_cond_t *cond, safe_mutex_t *mp,
     fflush(stderr);
     abort();
   }
-  mp->thread=pthread_self();
   mp->file= file;
   mp->line=line;
   pthread_mutex_unlock(&mp->global);

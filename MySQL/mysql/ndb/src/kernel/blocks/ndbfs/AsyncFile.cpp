@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,12 +17,11 @@
 #include <my_sys.h>
 #include <my_pthread.h>
 
-#include <Error.hpp>
 #include "AsyncFile.hpp"
 
 #include <ErrorHandlingMacros.hpp>
 #include <kernel_types.h>
-#include <NdbMem.h>
+#include <ndbd_malloc.hpp>
 #include <NdbThread.h>
 #include <signaldata/FsOpenReq.hpp>
 
@@ -96,6 +94,7 @@ AsyncFile::AsyncFile() :
   theReportTo(0),
   theMemoryChannelPtr(NULL)
 {
+  m_current_request= m_last_request= 0;
 }
 
 void
@@ -161,7 +160,7 @@ AsyncFile::run()
   theStartFlag = true;
   // Create write buffer for bigger writes
   theWriteBufferSize = WRITEBUFFERSIZE;
-  theWriteBuffer = (char *) NdbMem_Allocate(theWriteBufferSize); 
+  theWriteBuffer = (char *) ndbd_malloc(theWriteBufferSize); 
   NdbMutex_Unlock(theStartMutexPtr);
   NdbCondition_Signal(theStartConditionPtr);
   
@@ -177,6 +176,7 @@ AsyncFile::run()
       endReq();
       return;
     }//if
+    m_current_request= request;
     switch (request->action) {
     case Request:: open:
       openReq(request);
@@ -226,6 +226,8 @@ AsyncFile::run()
       abort();
       break;
     }//switch
+    m_last_request= request;
+    m_current_request= 0;
     
     // No need to signal as ndbfs only uses tryRead
     theReportTo->writeChannelNoSignal(request);
@@ -509,7 +511,7 @@ AsyncFile::extendfile(Request* request) {
   DEBUG(ndbout_c("extendfile: maxOffset=%d, size=%d", maxOffset, maxSize));
 
   // Allocate a buffer and fill it with zeros
-  void* pbuf = NdbMem_Allocate(maxSize);
+  void* pbuf = ndbd_malloc(maxSize);
   memset(pbuf, 0, maxSize);
   for (int p = 0; p <= maxOffset; p = p + maxSize) {
     int return_value;
@@ -517,16 +519,18 @@ AsyncFile::extendfile(Request* request) {
                          p,
                          SEEK_SET);
     if((return_value == -1 ) || (return_value != p)) {
+      ndbd_free(pbuf,maxSize);
       return -1;
     }
     return_value = ::write(theFd, 
                            pbuf,
                            maxSize);
     if ((return_value == -1) || (return_value != maxSize)) {
+      ndbd_free(pbuf,maxSize);
       return -1;
     }
   }
-  free(pbuf);
+  ndbd_free(pbuf,maxSize);
   
   DEBUG(ndbout_c("extendfile: \"%s\" OK!", theFileName.c_str()));
   return 0;
@@ -876,7 +880,7 @@ AsyncFile::rmrfReq(Request * request, char * path, bool removePath){
 void AsyncFile::endReq()
 {
   // Thread is ended with return
-  if (theWriteBuffer) NdbMem_Free(theWriteBuffer);
+  if (theWriteBuffer) ndbd_free(theWriteBuffer, theWriteBufferSize);
 }
 
 
@@ -1033,3 +1037,60 @@ void printErrorAndFlags(Uint32 used_flags) {
 
 }
 #endif
+
+NdbOut&
+operator<<(NdbOut& out, const Request& req)
+{
+  out << "[ Request: file: " << hex << req.file 
+      << " userRef: " << hex << req.theUserReference
+      << " userData: " << dec << req.theUserPointer
+      << " theFilePointer: " << req.theFilePointer
+      << " action: ";
+  switch(req.action){
+  case Request::open:
+    out << "open";
+    break;
+  case Request::close:
+    out << "close";
+    break;
+  case Request::closeRemove:
+    out << "closeRemove";
+    break;
+  case Request::read:   // Allways leave readv directly after 
+    out << "read";
+    break;
+  case Request::readv:
+    out << "readv";
+    break;
+  case Request::write:// Allways leave writev directly after 
+    out << "write";
+    break;
+  case Request::writev:
+    out << "writev";
+    break;
+  case Request::writeSync:// Allways leave writevSync directly after 
+    out << "writeSync";
+    break;
+    // writeSync because SimblockAsyncFileSystem depends on it
+  case Request::writevSync:
+    out << "writevSync";
+    break;
+  case Request::sync:
+    out << "sync";
+    break;
+  case Request::end:
+    out << "end";
+    break;
+  case Request::append:
+    out << "append";
+    break;
+  case Request::rmrf:
+    out << "rmrf";
+    break;
+  default:
+    out << (Uint32)req.action;
+    break;
+  }
+  out << " ]";
+  return out;
+}

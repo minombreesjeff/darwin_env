@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -173,7 +172,7 @@ Dbtup::tuxReadAttrs(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32 tu
 }
 
 int
-Dbtup::tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* dataOut)
+Dbtup::tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* dataOut, bool xfrmFlag)
 {
   ljamEntry();
   // use own variables instead of globals
@@ -186,7 +185,6 @@ Dbtup::tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* data
   PagePtr pagePtr;
   pagePtr.i = pageId;
   ptrCheckGuard(pagePtr, cnoOfPage, page);
-  const Uint32 tabDescriptor = tablePtr.p->tabDescriptor;
   const Uint32* attrIds = &tableDescriptor[tablePtr.p->readKeyArray].tabDescr;
   const Uint32 numAttrs = tablePtr.p->noOfKeyAttr;
   // read pk attributes from original tuple
@@ -200,8 +198,7 @@ Dbtup::tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* data
   operPtr.i = RNIL;
   operPtr.p = NULL;
   // do it
-  int ret = readAttributes(pagePtr.p, pageOffset, attrIds,
-			   numAttrs, dataOut, ZNIL, true);
+  int ret = readAttributes(pagePtr.p, pageOffset, attrIds, numAttrs, dataOut, ZNIL, xfrmFlag);
   // restore globals
   tabptr = tabptr_old;
   fragptr = fragptr_old;
@@ -226,6 +223,26 @@ Dbtup::tuxReadPk(Uint32 fragPtrI, Uint32 pageId, Uint32 pageOffset, Uint32* data
   } else {
     ret = terrorCode ? (-(int)terrorCode) : -1;
   }
+  return ret;
+}
+
+int
+Dbtup::accReadPk(Uint32 tableId, Uint32 fragId, Uint32 fragPageId, Uint32 pageIndex, Uint32* dataOut, bool xfrmFlag)
+{
+  ljamEntry();
+  // get table
+  TablerecPtr tablePtr;
+  tablePtr.i = tableId;
+  ptrCheckGuard(tablePtr, cnoOfTablerec, tablerec);
+  // get fragment
+  FragrecordPtr fragPtr;
+  getFragmentrec(fragPtr, fragId, tablePtr.p);
+  // get real page id and tuple offset
+  Uint32 pageId = getRealpid(fragPtr.p, fragPageId);
+  ndbrequire((pageIndex & 0x1) == 0);
+  Uint32 pageOffset = ZPAGE_HEADER_SIZE + (pageIndex >> 1) * tablePtr.p->tupheadsize;
+  // use TUX routine - optimize later
+  int ret = tuxReadPk(fragPtr.i, pageId, pageOffset, dataOut, xfrmFlag);
   return ret;
 }
 

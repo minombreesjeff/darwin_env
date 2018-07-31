@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,6 +33,8 @@ public:
     Head();
     Uint32 firstItem;
     Uint32 lastItem;
+
+    inline bool isEmpty() const { return firstItem == RNIL;}
   };
   
   DLFifoList(ArrayPool<T> & thePool);
@@ -114,6 +115,13 @@ public:
    * NOTE ptr must be both p & i
    */
   bool hasNext(const Ptr<T> &) const;
+
+  /**
+   * Check if prev exists i.e. this is not first
+   *
+   * NOTE ptr must be both p & i
+   */
+  bool hasPrev(const Ptr<T> &) const;
 
   Uint32 noOfElements() const {
     Uint32 c = 0;
@@ -355,6 +363,13 @@ inline
 bool
 DLFifoList<T>::hasNext(const Ptr<T> & p) const {
   return p.p->nextList != RNIL;
+}
+
+template <class T>
+inline
+bool
+DLFifoList<T>::hasPrev(const Ptr<T> & p) const {
+  return p.p->prevList != RNIL;
 }
 
 #endif

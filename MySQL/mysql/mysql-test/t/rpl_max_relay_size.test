@@ -32,13 +32,14 @@ reset slave;
 --echo # Test 1
 --echo #
 
+set @my_max_binlog_size= @@global.max_binlog_size;
 set global max_binlog_size=8192;
 set global max_relay_log_size=8192-1; # mapped to 4096
 select @@global.max_relay_log_size;
 start slave;
 sync_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 --vertical_results
 show slave status;
 
@@ -53,7 +54,7 @@ select @@global.max_relay_log_size;
 start slave;
 sync_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 --vertical_results
 show slave status;
 
@@ -68,7 +69,7 @@ select @@global.max_relay_log_size;
 start slave;
 sync_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 --vertical_results
 show slave status;
 
@@ -82,7 +83,7 @@ reset slave;
 # (to make sure it does not crash).
 flush logs;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 --vertical_results
 show slave status;
 
@@ -103,7 +104,7 @@ save_master_pos;
 connection slave;
 sync_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 --vertical_results
 show slave status;
 
@@ -118,7 +119,7 @@ save_master_pos;
 connection slave;
 sync_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 1 # 33 #
+--replace_column 1 # 8 # 9 # 23 # 33 #
 --vertical_results
 show slave status;
 
@@ -127,4 +128,10 @@ connection master;
 flush logs;
 show master status;
 
-# End of 4.1 tests
+# Restore max_binlog_size
+connection slave;
+set global max_binlog_size= @my_max_binlog_size;
+
+--echo #
+--echo # End of 4.1 tests
+--echo # 

@@ -1,0 +1,182 @@
+.\"     Title: \fBndb_waiter\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 07/04/2007
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 5.0
+.\"
+.TH "\fBNDB_WAITER\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+ndb_waiter \- wait for cluster to reach a given status
+.SH "SYNOPSIS"
+.HP 19
+\fBndb_waiter \fR\fB\fIoptions\fR\fR
+.SH "DESCRIPTION"
+.PP
+\fBndb_waiter\fR
+repeatedly (each 100 milliseconds) prints out the status of all cluster data nodes until either the cluster reaches a given status or the
+\fB\-\-timeout\fR
+limit is exceeded, then exits. By default, it waits for the cluster to achieve
+STARTED
+status, in which all nodes have started and connected to the cluster. This can be overridden using the
+\fB\-\-no\-contact\fR
+and
+\fB\-\-not\-started\fR
+options (see
+Additional Options).
+.PP
+The node states reported by this utility are as follows:
+.TP 3n
+\(bu
+NO_CONTACT: The node cannot be contacted.
+.TP 3n
+\(bu
+UNKNOWN: The node can be contacted, but its status is not yet known. Usually, this means that the node has received a
+START
+or
+RESTART
+command from the management server, but has not yet acted on it.
+.TP 3n
+\(bu
+NOT_STARTED: The node has stopped, but remains in contact with the cluster. This is seen when restarting the node using the management client's
+RESTART
+command.
+.TP 3n
+\(bu
+STARTING: The node's
+\fBndbd\fR
+process has started, but the node has not yet joined the cluster.
+.TP 3n
+\(bu
+STARTED: The node is operational, and has joined the cluster.
+.TP 3n
+\(bu
+SHUTTING_DOWN: The node is shutting down.
+.TP 3n
+\(bu
+SINGLE USER MODE: This is shown for all cluster data nodes when the cluster is in single user mode.
+.sp
+.RE
+.PP
+\fBUsage\fR:
+.sp
+.RS 3n
+.nf
+ndb_waiter [\-c \fIconnect_string\fR]
+.fi
+.RE
+.PP
+\fBAdditional Options\fR:
+.TP 3n
+\(bu
+\fB\-\-no\-contact\fR,
+\fB\-n\fR
+.sp
+Instead of waiting for the
+STARTED
+state,
+\fBndb_waiter\fR
+continues running until the cluster reaches
+NO_CONTACT
+status before exiting.
+.TP 3n
+\(bu
+\fB\-\-not\-started\fR
+.sp
+Instead of waiting for the
+STARTED
+state,
+\fBndb_waiter\fR
+continues running until the cluster reaches
+NOT_STARTED
+status before exiting.
+.TP 3n
+\(bu
+\fB\-\-timeout=\fR\fB\fIseconds\fR\fR,
+\fB\-t \fR\fB\fIseconds\fR\fR
+.sp
+Time to wait. The program exits if the desired state is not achieved within this number of seconds. The default is 120 seconds (1200 reporting cycles).
+.sp
+.RE
+.PP
+\fBSample Output\fR:
+.PP
+Shown here is the output from
+\fBndb_waiter\fR
+when run against a 4\-node cluster in which two nodes have been shut down and then started again manually. Duplicate reports (indicated by
+\(lq...\(rq) are omitted.
+.sp
+.RS 3n
+.nf
+shell> \fB./ndb_waiter \-c localhost\fR
+Connecting to mgmsrv at (localhost)
+State node 1 STARTED
+State node 2 NO_CONTACT
+State node 3 STARTED
+State node 4 NO_CONTACT
+Waiting for cluster enter state STARTED
+...
+State node 1 STARTED
+State node 2 UNKNOWN
+State node 3 STARTED
+State node 4 NO_CONTACT
+Waiting for cluster enter state STARTED
+...
+State node 1 STARTED
+State node 2 STARTING
+State node 3 STARTED
+State node 4 NO_CONTACT
+Waiting for cluster enter state STARTED
+...
+State node 1 STARTED
+State node 2 STARTING
+State node 3 STARTED
+State node 4 UNKNOWN
+Waiting for cluster enter state STARTED
+...
+State node 1 STARTED
+State node 2 STARTING
+State node 3 STARTED
+State node 4 STARTING
+Waiting for cluster enter state STARTED
+...
+State node 1 STARTED
+State node 2 STARTED
+State node 3 STARTED
+State node 4 STARTING
+Waiting for cluster enter state STARTED
+...
+State node 1 STARTED
+State node 2 STARTED
+State node 3 STARTED
+State node 4 STARTED
+Waiting for cluster enter state STARTED
+NDBT_ProgramExit: 0 \- OK
+.fi
+.RE
+.PP
+\fBNote\fR: If no connectstring is specified, then
+\fBndb_waiter\fR
+tries to connect to a management on
+localhost, and reports
+Connecting to mgmsrv at (null).
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2007 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

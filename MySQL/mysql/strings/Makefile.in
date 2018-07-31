@@ -14,12 +14,11 @@
 
 @SET_MAKE@
 
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2006 MySQL AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -61,11 +60,28 @@ subdir = strings
 DIST_COMMON = README $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	ChangeLog
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
@@ -77,7 +93,6 @@ am__strip_dir = `echo $$p | sed -e 's|^.*/||'`;
 am__installdirs = "$(DESTDIR)$(pkglibdir)"
 pkglibLIBRARIES_INSTALL = $(INSTALL_DATA)
 LIBRARIES = $(pkglib_LIBRARIES)
-ARFLAGS = cru
 libmystrings_a_AR = $(AR) $(ARFLAGS)
 libmystrings_a_DEPENDENCIES =
 am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
@@ -90,11 +105,11 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 	int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c \
 	strtoul.c strtoll.c strtoull.c llstr.c strnlen.c ctype.c \
 	ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c \
-	ctype-czech.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c \
-	ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c \
-	ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c \
-	ctype-latin1.c my_vsnprintf.c xml.c ctype-extra.c \
-	my_strtoll10.c longlong2str_asm.c
+	ctype-czech.c ctype-eucjpms.c ctype-euc_kr.c ctype-gb2312.c \
+	ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c \
+	ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c \
+	ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c decimal.c \
+	ctype-extra.c my_strtoll10.c str_alloc.c longlong2str_asm.c
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@am__objects_1 = bmove_upp-sparc.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	strappend-sparc.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	strend-sparc.$(OBJEXT) \
@@ -142,6 +157,7 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-big5.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-cp932.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-czech.$(OBJEXT) \
+@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-eucjpms.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-euc_kr.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-gb2312.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-gbk.$(OBJEXT) \
@@ -156,8 +172,10 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-latin1.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	my_vsnprintf.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	xml.$(OBJEXT) \
+@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	decimal.$(OBJEXT) \
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	ctype-extra.$(OBJEXT) \
-@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	my_strtoll10.$(OBJEXT)
+@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	my_strtoll10.$(OBJEXT) \
+@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@	str_alloc.$(OBJEXT)
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@am__objects_2 = strcont.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	strfill.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	strcend.$(OBJEXT) \
@@ -186,6 +204,7 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-big5.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-cp932.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-czech.$(OBJEXT) \
+@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-eucjpms.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-euc_kr.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-gb2312.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-gbk.$(OBJEXT) \
@@ -200,8 +219,10 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-latin1.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	my_vsnprintf.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	xml.$(OBJEXT) \
+@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	decimal.$(OBJEXT) \
 @ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	ctype-extra.$(OBJEXT) \
-@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	my_strtoll10.$(OBJEXT)
+@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	my_strtoll10.$(OBJEXT) \
+@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@	str_alloc.$(OBJEXT)
 @ASSEMBLER_x86_TRUE@am__objects_2 = bfill.$(OBJEXT) bmove.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	bmove512.$(OBJEXT) bchange.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	strxnmov.$(OBJEXT) int2str.$(OBJEXT) \
@@ -214,6 +235,7 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 @ASSEMBLER_x86_TRUE@	ctype-mb.$(OBJEXT) ctype-big5.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	ctype-cp932.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	ctype-czech.$(OBJEXT) \
+@ASSEMBLER_x86_TRUE@	ctype-eucjpms.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	ctype-euc_kr.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	ctype-gb2312.$(OBJEXT) ctype-gbk.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	ctype-sjis.$(OBJEXT) \
@@ -223,7 +245,8 @@ am__libmystrings_a_SOURCES_DIST = bmove_upp-sparc.s strappend-sparc.s \
 @ASSEMBLER_x86_TRUE@	ctype-win1250ch.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	ctype-bin.$(OBJEXT) ctype-latin1.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	my_vsnprintf.$(OBJEXT) xml.$(OBJEXT) \
-@ASSEMBLER_x86_TRUE@	ctype-extra.$(OBJEXT) \
+@ASSEMBLER_x86_TRUE@	decimal.$(OBJEXT) ctype-extra.$(OBJEXT) \
+@ASSEMBLER_x86_TRUE@	str_alloc.$(OBJEXT) \
 @ASSEMBLER_x86_TRUE@	longlong2str_asm.$(OBJEXT)
 am_libmystrings_a_OBJECTS = $(am__objects_1) $(am__objects_2)
 libmystrings_a_OBJECTS = $(am_libmystrings_a_OBJECTS)
@@ -258,6 +281,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -271,7 +295,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -320,7 +343,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -339,34 +365,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -402,7 +436,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -438,7 +471,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -450,7 +482,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -468,7 +499,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -477,9 +507,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -505,12 +532,12 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
-INCLUDES = @MT_INCLUDES@ \
-			-I$(top_builddir)/include -I$(top_srcdir)/include
-
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include
 pkglib_LIBRARIES = libmystrings.a
 #no assembler
 @ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@ASRCS = 
@@ -522,15 +549,15 @@ pkglib_LIBRARIES = libmystrings.a
 @ASSEMBLER_x86_TRUE@ASRCS = strings-x86.s longlong2str-x86.s my_strtoll10-x86.s
 # These file MUST all be on the same line!! Otherwise automake
 # generats a very broken makefile
-@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@CSRCS = strxmov.c bmove_upp.c strappend.c strcont.c strend.c strfill.c strcend.c is_prefix.c strstr.c strinstr.c strmake.c strnmov.c strmov.c longlong2str.c bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c strnlen.c ctype.c ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c ctype-czech.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c ctype-extra.c my_strtoll10.c
-@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@CSRCS = strcont.c strfill.c strcend.c is_prefix.c longlong2str.c bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c strnlen.c strxmov.c ctype.c ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c ctype-czech.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c ctype-extra.c my_strtoll10.c
-@ASSEMBLER_x86_TRUE@CSRCS = bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c strnlen.c ctype.c ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c ctype-czech.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c ctype-extra.c longlong2str_asm.c
+@ASSEMBLER_sparc32_FALSE@@ASSEMBLER_x86_FALSE@CSRCS = strxmov.c bmove_upp.c strappend.c strcont.c strend.c strfill.c strcend.c is_prefix.c strstr.c strinstr.c strmake.c strnmov.c strmov.c longlong2str.c bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c strnlen.c ctype.c ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c ctype-czech.c ctype-eucjpms.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c decimal.c ctype-extra.c my_strtoll10.c str_alloc.c
+@ASSEMBLER_sparc32_TRUE@@ASSEMBLER_x86_FALSE@CSRCS = strcont.c strfill.c strcend.c is_prefix.c longlong2str.c bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c strnlen.c strxmov.c ctype.c ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c ctype-czech.c ctype-eucjpms.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c decimal.c ctype-extra.c my_strtoll10.c str_alloc.c
+@ASSEMBLER_x86_TRUE@CSRCS = bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c strtod.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c strnlen.c ctype.c ctype-simple.c ctype-mb.c ctype-big5.c ctype-cp932.c ctype-czech.c ctype-eucjpms.c ctype-euc_kr.c ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-tis620.c ctype-ujis.c ctype-utf8.c ctype-ucs2.c ctype-uca.c ctype-win1250ch.c ctype-bin.c ctype-latin1.c my_vsnprintf.c xml.c decimal.c ctype-extra.c str_alloc.c longlong2str_asm.c
 libmystrings_a_SOURCES = $(ASRCS) $(CSRCS)
 # Default charset definitions
-EXTRA_DIST = ctype-big5.c ctype-cp932.c ctype-czech.c ctype-euc_kr.c ctype-win1250ch.c \
-                        ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-utf8.c \
-                        ctype-ucs2.c ctype-uca.c ctype-tis620.c ctype-ujis.c \
-                        xml.c strto.c strings-x86.s \
+EXTRA_DIST = ctype-big5.c ctype-cp932.c ctype-czech.c ctype-eucjpms.c ctype-euc_kr.c ctype-win1250ch.c \
+			ctype-gb2312.c ctype-gbk.c ctype-sjis.c ctype-utf8.c \
+			ctype-ucs2.c ctype-uca.c ctype-tis620.c ctype-ujis.c \
+			xml.c decimal.c strto.c strings-x86.s \
 			longlong2str.c longlong2str-x86.s longlong2str_asm.c \
 			my_strtoll10.c my_strtoll10-x86.s \
 			strxmov.c bmove_upp.c strappend.c strcont.c strend.c \
@@ -539,7 +566,7 @@ EXTRA_DIST = ctype-big5.c ctype-cp932.c ctype-czech.c ctype-euc_kr.c ctype-win12
 			bmove_upp-sparc.s strappend-sparc.s strend-sparc.s \
 			strinstr-sparc.s strmake-sparc.s strmov-sparc.s \
 			strnmov-sparc.s strstr-sparc.s strxmov-sparc.s \
-                        t_ctype.h
+			t_ctype.h CMakeLists.txt
 
 libmystrings_a_LIBADD = 
 conf_to_src_SOURCES = conf_to_src.c xml.c ctype.c bcmp.c
@@ -547,6 +574,10 @@ conf_to_src_LDADD =
 #force static linking of conf_to_src - essential when linking against
 #custom installation of libc
 conf_to_src_LDFLAGS = @NOINST_LDFLAGS@
+
+# This is because the dependency tracking misses @FOO@ vars in sources.
+#strtoull.o:		@CHARSET_OBJS@
+FLAGS = $(DEFS) $(INCLUDES) $(CPPFLAGS) $(CFLAGS) @NOINST_LDFLAGS@
 all: all-am
 
 .SUFFIXES:
@@ -642,6 +673,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-cp932.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-czech.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-euc_kr.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-eucjpms.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-extra.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-gb2312.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-gbk.Po@am__quote@
@@ -656,6 +688,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-utf8.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype-win1250ch.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ctype.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/decimal.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/int2str.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/is_prefix.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/llstr.Po@am__quote@
@@ -665,6 +698,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_vsnprintf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/r_strinstr.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/str2int.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/str_alloc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/strappend.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/strcend.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/strcont.Po@am__quote@
@@ -896,15 +930,13 @@ uninstall-am: uninstall-info-am uninstall-pkglibLIBRARIES
 	uninstall-info-am uninstall-pkglibLIBRARIES
 
 
-# This is because the dependency tracking misses @FOO@ vars in sources.
-#strtoull.o:		@CHARSET_OBJS@
+str_test: str_test.c $(pkglib_LIBRARIES)
+	$(LINK) $(FLAGS) -DMAIN $(INCLUDES) $(srcdir)/str_test.c $(LDADD) $(pkglib_LIBRARIES)
 
-# On Linux gcc can compile the assembly files
-@ASSEMBLER_TRUE@%.o	: %.s
-@ASSEMBLER_TRUE@	$(AS) $(ASFLAGS) -o $@ $<
-
-str_test: str_test.c $(LIBRARIES)
-	$(LINK) $(FLAGS) -DMAIN $INCLUDES $(srcdir)/str_test.c $(LDADD) $(LIBS) $(pkglib_LIBRARIES)
+test_decimal$(EXEEXT): decimal.c $(pkglib_LIBRARIES)
+	$(CP) $(srcdir)/decimal.c ./test_decimal.c
+	$(LINK) $(FLAGS) -DMAIN  ./test_decimal.c $(LDADD) $(pkglib_LIBRARIES)
+	$(RM) -f ./test_decimal.c
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

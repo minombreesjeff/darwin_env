@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,8 +27,9 @@ int mi_close(register MI_INFO *info)
   int error=0,flag;
   MYISAM_SHARE *share=info->s;
   DBUG_ENTER("mi_close");
-  DBUG_PRINT("enter",("base: %lx  reopen: %u  locks: %u",
-		      info,(uint) share->reopen, (uint) share->tot_locks));
+  DBUG_PRINT("enter",("base: 0x%lx  reopen: %u  locks: %u",
+		      (long) info, (uint) share->reopen,
+                      (uint) share->tot_locks));
 
   pthread_mutex_lock(&THR_LOCK_myisam);
   if (info->lock_type == F_EXTRA_LCK)

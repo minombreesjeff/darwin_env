@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,11 +67,17 @@ int heap_write(HP_INFO *info, const byte *record)
   DBUG_RETURN(0);
 
 err:
-  DBUG_PRINT("info",("Duplicate key: %d", keydef - share->keydef));
+  if (my_errno == HA_ERR_FOUND_DUPP_KEY)
+    DBUG_PRINT("info",("Duplicate key: %d", (int) (keydef - share->keydef)));
   info->errkey= keydef - share->keydef;
-  if (keydef->algorithm == HA_KEY_ALG_BTREE)
+  /*
+    We don't need to delete non-inserted key from rb-tree.  Also, if
+    we got ENOMEM, the key wasn't inserted, so don't try to delete it
+    either.  Otherwise for HASH index on HA_ERR_FOUND_DUPP_KEY the key
+    was inserted and we have to delete it.
+  */
+  if (keydef->algorithm == HA_KEY_ALG_BTREE || my_errno == ENOMEM)
   {
-    /* we don't need to delete non-inserted key from rb-tree */
     keydef--;
   }
   while (keydef >= share->keydef)
@@ -100,12 +105,11 @@ int hp_rb_write_key(HP_INFO *info, HP_KEYDEF *keyinfo, const byte *record,
   heap_rb_param custom_arg;
   uint old_allocated;
 
-  info->last_pos= NULL; /* For heap_rnext/heap_rprev */
   custom_arg.keyseg= keyinfo->seg;
   custom_arg.key_length= hp_rb_make_key(keyinfo, info->recbuf, record, recpos);
   if (keyinfo->flag & HA_NOSAME)
   {
-    custom_arg.search_flag= SEARCH_FIND | SEARCH_SAME;
+    custom_arg.search_flag= SEARCH_FIND | SEARCH_UPDATE;
     keyinfo->rb_tree.flag= TREE_NO_DUPS;
   }
   else
@@ -138,7 +142,7 @@ static byte *next_free_record_pos(HP_SHARE *info)
     pos=info->del_link;
     info->del_link= *((byte**) pos);
     info->deleted--;
-    DBUG_PRINT("exit",("Used old position: %lx",pos));
+    DBUG_PRINT("exit",("Used old position: 0x%lx",(long) pos));
     DBUG_RETURN(pos);
   }
   if (!(block_pos=(info->records % info->block.records_in_block)))
@@ -153,9 +157,9 @@ static byte *next_free_record_pos(HP_SHARE *info)
       DBUG_RETURN(NULL);
     info->data_length+=length;
   }
-  DBUG_PRINT("exit",("Used new position: %lx",
-		     (byte*) info->block.level_info[0].last_blocks+block_pos*
-		     info->block.recbuffer));
+  DBUG_PRINT("exit",("Used new position: 0x%lx",
+		     (long) ((byte*) info->block.level_info[0].last_blocks+
+                             block_pos * info->block.recbuffer)));
   DBUG_RETURN((byte*) info->block.level_info[0].last_blocks+
 	      block_pos*info->block.recbuffer);
 }
@@ -370,7 +374,7 @@ int hp_write_key(HP_INFO *info, HP_KEYDEF *keyinfo,
       pos=empty;
       do
       {
-	if (! hp_rec_key_cmp(keyinfo, record, pos->ptr_to_rec))
+	if (! hp_rec_key_cmp(keyinfo, record, pos->ptr_to_rec, 1))
 	{
 	  DBUG_RETURN(my_errno=HA_ERR_FOUND_DUPP_KEY);
 	}

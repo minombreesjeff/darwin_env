@@ -14,12 +14,11 @@
 
 @SET_MAKE@
 
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2006 MySQL AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,6 +30,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 #called from the top level Makefile
+
 
 
 srcdir = @srcdir@
@@ -63,13 +63,34 @@ subdir = sql
 DIST_COMMON = $(noinst_HEADERS) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in sql_yacc.cc sql_yacc.h
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
+LTLIBRARIES = $(noinst_LTLIBRARIES)
+udf_example_la_LIBADD =
+am_udf_example_la_OBJECTS = udf_example.lo
+udf_example_la_OBJECTS = $(am_udf_example_la_OBJECTS)
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 libexecPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
@@ -105,29 +126,36 @@ am_mysqld_OBJECTS = sql_lex.$(OBJEXT) sql_handler.$(OBJEXT) \
 	set_var.$(OBJEXT) sql_parse.$(OBJEXT) sql_yacc.$(OBJEXT) \
 	sql_base.$(OBJEXT) table.$(OBJEXT) sql_select.$(OBJEXT) \
 	sql_insert.$(OBJEXT) sql_prepare.$(OBJEXT) sql_error.$(OBJEXT) \
-	sql_locale.$(OBJEXT) sql_update.$(OBJEXT) sql_delete.$(OBJEXT) \
-	uniques.$(OBJEXT) sql_do.$(OBJEXT) procedure.$(OBJEXT) \
-	item_uniq.$(OBJEXT) sql_test.$(OBJEXT) log.$(OBJEXT) \
-	log_event.$(OBJEXT) init.$(OBJEXT) derror.$(OBJEXT) \
-	sql_acl.$(OBJEXT) unireg.$(OBJEXT) des_key_file.$(OBJEXT) \
-	discover.$(OBJEXT) time.$(OBJEXT) opt_range.$(OBJEXT) \
-	opt_sum.$(OBJEXT) records.$(OBJEXT) filesort.$(OBJEXT) \
-	handler.$(OBJEXT) ha_heap.$(OBJEXT) ha_myisam.$(OBJEXT) \
-	ha_myisammrg.$(OBJEXT) ha_berkeley.$(OBJEXT) \
-	ha_innodb.$(OBJEXT) ha_isam.$(OBJEXT) ha_isammrg.$(OBJEXT) \
-	ha_ndbcluster.$(OBJEXT) sql_db.$(OBJEXT) sql_table.$(OBJEXT) \
-	sql_rename.$(OBJEXT) sql_crypt.$(OBJEXT) sql_load.$(OBJEXT) \
-	mf_iocache.$(OBJEXT) field_conv.$(OBJEXT) sql_show.$(OBJEXT) \
-	sql_udf.$(OBJEXT) sql_analyse.$(OBJEXT) sql_cache.$(OBJEXT) \
-	slave.$(OBJEXT) sql_repl.$(OBJEXT) sql_union.$(OBJEXT) \
-	sql_derived.$(OBJEXT) client.$(OBJEXT) sql_client.$(OBJEXT) \
+	sql_locale.$(OBJEXT) sql_profile.$(OBJEXT) \
+	sql_update.$(OBJEXT) sql_delete.$(OBJEXT) uniques.$(OBJEXT) \
+	sql_do.$(OBJEXT) procedure.$(OBJEXT) item_uniq.$(OBJEXT) \
+	sql_test.$(OBJEXT) log.$(OBJEXT) log_event.$(OBJEXT) \
+	init.$(OBJEXT) derror.$(OBJEXT) sql_acl.$(OBJEXT) \
+	unireg.$(OBJEXT) des_key_file.$(OBJEXT) discover.$(OBJEXT) \
+	time.$(OBJEXT) opt_range.$(OBJEXT) opt_sum.$(OBJEXT) \
+	records.$(OBJEXT) filesort.$(OBJEXT) handler.$(OBJEXT) \
+	ha_heap.$(OBJEXT) ha_myisam.$(OBJEXT) ha_myisammrg.$(OBJEXT) \
+	ha_berkeley.$(OBJEXT) ha_innodb.$(OBJEXT) \
+	ha_ndbcluster.$(OBJEXT) ha_ndbcluster_cond.$(OBJEXT) \
+	sql_db.$(OBJEXT) sql_table.$(OBJEXT) sql_rename.$(OBJEXT) \
+	sql_crypt.$(OBJEXT) sql_load.$(OBJEXT) mf_iocache.$(OBJEXT) \
+	field_conv.$(OBJEXT) sql_show.$(OBJEXT) sql_udf.$(OBJEXT) \
+	sql_analyse.$(OBJEXT) sql_cache.$(OBJEXT) slave.$(OBJEXT) \
+	sql_repl.$(OBJEXT) sql_union.$(OBJEXT) sql_derived.$(OBJEXT) \
+	client.$(OBJEXT) sql_client.$(OBJEXT) \
 	mini_client_errors.$(OBJEXT) pack.$(OBJEXT) \
-	stacktrace.$(OBJEXT) repl_failsafe.$(OBJEXT) gstream.$(OBJEXT) \
-	spatial.$(OBJEXT) sql_help.$(OBJEXT) protocol_cursor.$(OBJEXT) \
-	tztime.$(OBJEXT) my_time.$(OBJEXT) ha_example.$(OBJEXT) \
-	ha_archive.$(OBJEXT) ha_tina.$(OBJEXT) ha_blackhole.$(OBJEXT)
+	stacktrace.$(OBJEXT) repl_failsafe.$(OBJEXT) \
+	sql_olap.$(OBJEXT) sql_view.$(OBJEXT) gstream.$(OBJEXT) \
+	spatial.$(OBJEXT) sql_help.$(OBJEXT) sql_cursor.$(OBJEXT) \
+	tztime.$(OBJEXT) my_time.$(OBJEXT) my_user.$(OBJEXT) \
+	my_decimal.$(OBJEXT) sp_head.$(OBJEXT) sp_pcontext.$(OBJEXT) \
+	sp_rcontext.$(OBJEXT) sp.$(OBJEXT) sp_cache.$(OBJEXT) \
+	parse_file.$(OBJEXT) sql_trigger.$(OBJEXT) \
+	ha_example.$(OBJEXT) ha_archive.$(OBJEXT) ha_tina.$(OBJEXT) \
+	ha_blackhole.$(OBJEXT) ha_federated.$(OBJEXT)
 mysqld_OBJECTS = $(am_mysqld_OBJECTS)
 mysqld_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2) \
+	$(am__DEPENDENCIES_2) $(am__DEPENDENCIES_2) \
 	$(am__DEPENDENCIES_2)
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
@@ -151,10 +179,10 @@ CXXLINK = $(LIBTOOL) --tag=CXX --mode=link $(CXXLD) $(AM_CXXFLAGS) \
 YACCCOMPILE = $(YACC) $(YFLAGS) $(AM_YFLAGS)
 LTYACCCOMPILE = $(LIBTOOL) --mode=compile $(YACC) $(YFLAGS) \
 	$(AM_YFLAGS)
-SOURCES = $(gen_lex_hash_SOURCES) $(mysql_tzinfo_to_sql_SOURCES) \
-	$(mysqld_SOURCES)
-DIST_SOURCES = $(gen_lex_hash_SOURCES) $(mysql_tzinfo_to_sql_SOURCES) \
-	$(mysqld_SOURCES)
+SOURCES = $(udf_example_la_SOURCES) $(gen_lex_hash_SOURCES) \
+	$(mysql_tzinfo_to_sql_SOURCES) $(mysqld_SOURCES)
+DIST_SOURCES = $(udf_example_la_SOURCES) $(gen_lex_hash_SOURCES) \
+	$(mysql_tzinfo_to_sql_SOURCES) $(mysqld_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive dvi-recursive \
 	html-recursive info-recursive install-data-recursive \
 	install-exec-recursive install-info-recursive \
@@ -172,6 +200,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -185,7 +214,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -239,7 +267,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -258,34 +289,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -321,7 +360,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -357,7 +395,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -369,7 +406,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -387,7 +423,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -396,9 +431,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -424,21 +456,23 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 MYSQLDATAdir = $(localstatedir)
 MYSQLSHAREdir = $(pkgdatadir)
 MYSQLBASEdir = $(prefix)
-INCLUDES = @MT_INCLUDES@ @ZLIB_INCLUDES@ \
+INCLUDES = @ZLIB_INCLUDES@ \
 			@bdb_includes@ @innodb_includes@ @ndbcluster_includes@ \
 			-I$(top_builddir)/include -I$(top_srcdir)/include \
-			-I$(top_srcdir)/regex -I$(srcdir) $(openssl_includes)
+			-I$(top_srcdir)/regex -I$(srcdir) \
+                        $(openssl_includes)
 
 SUBDIRS = share
 gen_lex_hash_LDFLAGS = @NOINST_LDFLAGS@
-LDADD = @isam_libs@ \
-			$(top_builddir)/myisam/libmyisam.a \
+LDADD = $(top_builddir)/myisam/libmyisam.a \
 			$(top_builddir)/myisammrg/libmyisammrg.a \
 			$(top_builddir)/heap/libheap.a \
 			$(top_builddir)/vio/libvio.a \
@@ -451,7 +485,9 @@ mysqld_LDADD = @MYSQLD_EXTRA_LDFLAGS@ \
 			@bdb_libs@ @innodb_libs@ @pstack_libs@ \
                         @innodb_system_libs@ \
 			@ndbcluster_libs@ @ndbcluster_system_libs@ \
-			$(LDADD)  $(CXXLDFLAGS) $(WRAPLIBS) @LIBDL@ @openssl_libs@
+			$(LDADD)  $(CXXLDFLAGS) $(WRAPLIBS) @LIBDL@ \
+			$(yassl_libs) $(openssl_libs) \
+			@MYSQLD_EXTRA_LIBS@
 
 noinst_HEADERS = item.h item_func.h item_sum.h item_cmpfunc.h \
 			item_strfunc.h item_timefunc.h item_uniq.h \
@@ -459,17 +495,24 @@ noinst_HEADERS = item.h item_func.h item_sum.h item_cmpfunc.h \
 			mysql_priv.h item_geofunc.h sql_bitmap.h \
 			procedure.h sql_class.h sql_lex.h sql_list.h \
 			sql_manager.h sql_map.h sql_string.h unireg.h \
-			field.h handler.h mysqld_suffix.h \
-			ha_isammrg.h ha_isam.h ha_myisammrg.h\
+			sql_error.h field.h handler.h mysqld_suffix.h \
+ 			sql_profile.h \
+			ha_myisammrg.h\
 			ha_heap.h ha_myisam.h ha_berkeley.h ha_innodb.h \
-			ha_ndbcluster.h opt_range.h protocol.h \
+			ha_ndbcluster.h ha_ndbcluster_cond.h \
+			opt_range.h protocol.h \
 			sql_select.h structs.h table.h sql_udf.h hash_filo.h\
 			lex.h lex_symbol.h sql_acl.h sql_crypt.h  \
 			log_event.h sql_repl.h slave.h \
 			stacktrace.h sql_sort.h sql_cache.h set_var.h \
 			spatial.h gstream.h client_settings.h tzfile.h \
-                        tztime.h examples/ha_example.h examples/ha_archive.h \
-			examples/ha_tina.h ha_blackhole.h
+                        tztime.h my_decimal.h\
+			sp_head.h sp_pcontext.h sp_rcontext.h sp.h sp_cache.h \
+			parse_file.h sql_view.h	sql_trigger.h \
+			sql_array.h sql_cursor.h \
+			examples/ha_example.h ha_archive.h \
+			examples/ha_tina.h ha_blackhole.h  \
+			ha_federated.h
 
 mysqld_SOURCES = sql_lex.cc sql_handler.cc \
 			item.cc item_sum.cc item_buff.cc item_func.cc \
@@ -484,6 +527,7 @@ mysqld_SOURCES = sql_lex.cc sql_handler.cc \
 			set_var.cc sql_parse.cc sql_yacc.yy \
 			sql_base.cc table.cc sql_select.cc sql_insert.cc \
                         sql_prepare.cc sql_error.cc sql_locale.cc \
+			sql_profile.cc \
 			sql_update.cc sql_delete.cc uniques.cc sql_do.cc \
 			procedure.cc item_uniq.cc sql_test.cc \
 			log.cc log_event.cc init.cc derror.cc sql_acl.cc \
@@ -492,25 +536,38 @@ mysqld_SOURCES = sql_lex.cc sql_handler.cc \
 		   	records.cc filesort.cc handler.cc \
 		        ha_heap.cc ha_myisam.cc ha_myisammrg.cc \
 	                ha_berkeley.cc ha_innodb.cc \
-			ha_isam.cc ha_isammrg.cc ha_ndbcluster.cc \
+			ha_ndbcluster.cc ha_ndbcluster_cond.cc \
 			sql_db.cc sql_table.cc sql_rename.cc sql_crypt.cc \
 			sql_load.cc mf_iocache.cc field_conv.cc sql_show.cc \
 			sql_udf.cc sql_analyse.cc sql_analyse.h sql_cache.cc \
 			slave.cc sql_repl.cc sql_union.cc sql_derived.cc \
 			client.c sql_client.cc mini_client_errors.c pack.c\
 			stacktrace.c repl_failsafe.h repl_failsafe.cc \
-			gstream.cc spatial.cc sql_help.cc protocol_cursor.cc \
-			tztime.cc my_time.c \
-			examples/ha_example.cc examples/ha_archive.cc \
-			examples/ha_tina.cc ha_blackhole.cc
+			sql_olap.cc sql_view.cc \
+			gstream.cc spatial.cc sql_help.cc sql_cursor.cc \
+			tztime.cc my_time.c my_user.c my_decimal.cc\
+			sp_head.cc sp_pcontext.cc  sp_rcontext.cc sp.cc \
+			sp_cache.cc parse_file.cc sql_trigger.cc \
+			examples/ha_example.cc ha_archive.cc \
+			examples/ha_tina.cc ha_blackhole.cc \
+			ha_federated.cc
 
 gen_lex_hash_SOURCES = gen_lex_hash.cc
 gen_lex_hash_LDADD = $(LDADD) $(CXXLDFLAGS)
 mysql_tzinfo_to_sql_SOURCES = mysql_tzinfo_to_sql.cc
 mysql_tzinfo_to_sql_LDADD = @MYSQLD_EXTRA_LDFLAGS@ $(LDADD) $(CXXLDFLAGS)
 BUILT_SOURCES = sql_yacc.cc sql_yacc.h lex_hash.h
-EXTRA_DIST = udf_example.cc $(BUILT_SOURCES)
-AM_YFLAGS = -d
+EXTRA_DIST = $(BUILT_SOURCES) nt_servc.cc nt_servc.h \
+			message.mc examples/CMakeLists.txt CMakeLists.txt \
+			udf_example.c udf_example.def
+
+DISTCLEANFILES = lex_hash.h sql_yacc.output
+AM_YFLAGS = -d --debug --verbose
+
+# For testing of udf_example.so
+noinst_LTLIBRARIES = udf_example.la
+udf_example_la_SOURCES = udf_example.c
+udf_example_la_LDFLAGS = -module -rpath $(pkglibdir)
 all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-recursive
 
@@ -545,6 +602,17 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
+
+clean-noinstLTLIBRARIES:
+	-test -z "$(noinst_LTLIBRARIES)" || rm -f $(noinst_LTLIBRARIES)
+	@list='$(noinst_LTLIBRARIES)'; for p in $$list; do \
+	  dir="`echo $$p | sed -e 's|/[^/]*$$||'`"; \
+	  test "$$dir" != "$$p" || dir=.; \
+	  echo "rm -f \"$${dir}/so_locations\""; \
+	  rm -f "$${dir}/so_locations"; \
+	done
+udf_example.la: $(udf_example_la_OBJECTS) $(udf_example_la_DEPENDENCIES) 
+	$(LINK)  $(udf_example_la_LDFLAGS) $(udf_example_la_OBJECTS) $(udf_example_la_LIBADD) $(LIBS)
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	test -z "$(bindir)" || $(mkdir_p) "$(DESTDIR)$(bindir)"
@@ -630,13 +698,13 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_berkeley.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_blackhole.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_example.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_federated.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_heap.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_innodb.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_isam.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_isammrg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_myisam.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_myisammrg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_ndbcluster.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_ndbcluster_cond.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_tina.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/handler.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hash_filo.Po@am__quote@
@@ -660,22 +728,29 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/log_event.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_iocache.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mini_client_errors.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_decimal.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_lock.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_time.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_user.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mysql_tzinfo_to_sql.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mysqld.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/net_serv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/opt_range.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/opt_sum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pack.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/parse_file.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/password.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/procedure.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/protocol.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/protocol_cursor.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/records.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/repl_failsafe.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/set_var.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/slave.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_cache.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_head.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_pcontext.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_rcontext.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/spatial.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_acl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_analyse.Po@am__quote@
@@ -684,6 +759,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_class.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_crypt.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_cursor.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_db.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_delete.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_derived.Po@am__quote@
@@ -698,8 +774,10 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_locale.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_manager.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_map.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_olap.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_parse.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_prepare.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_profile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_rename.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_repl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_select.Po@am__quote@
@@ -708,9 +786,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_string.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_table.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_test.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_trigger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_udf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_union.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_update.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_view.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_yacc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stacktrace.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/strfunc.Po@am__quote@
@@ -718,6 +798,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thr_malloc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/time.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tztime.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/udf_example.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/uniques.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/unireg.Po@am__quote@
 
@@ -776,20 +857,6 @@ ha_example.obj: examples/ha_example.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='examples/ha_example.cc' object='ha_example.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ha_example.obj `if test -f 'examples/ha_example.cc'; then $(CYGPATH_W) 'examples/ha_example.cc'; else $(CYGPATH_W) '$(srcdir)/examples/ha_example.cc'; fi`
-
-ha_archive.o: examples/ha_archive.cc
-@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ha_archive.o -MD -MP -MF "$(DEPDIR)/ha_archive.Tpo" -c -o ha_archive.o `test -f 'examples/ha_archive.cc' || echo '$(srcdir)/'`examples/ha_archive.cc; \
-@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/ha_archive.Tpo" "$(DEPDIR)/ha_archive.Po"; else rm -f "$(DEPDIR)/ha_archive.Tpo"; exit 1; fi
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='examples/ha_archive.cc' object='ha_archive.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ha_archive.o `test -f 'examples/ha_archive.cc' || echo '$(srcdir)/'`examples/ha_archive.cc
-
-ha_archive.obj: examples/ha_archive.cc
-@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ha_archive.obj -MD -MP -MF "$(DEPDIR)/ha_archive.Tpo" -c -o ha_archive.obj `if test -f 'examples/ha_archive.cc'; then $(CYGPATH_W) 'examples/ha_archive.cc'; else $(CYGPATH_W) '$(srcdir)/examples/ha_archive.cc'; fi`; \
-@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/ha_archive.Tpo" "$(DEPDIR)/ha_archive.Po"; else rm -f "$(DEPDIR)/ha_archive.Tpo"; exit 1; fi
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='examples/ha_archive.cc' object='ha_archive.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ha_archive.obj `if test -f 'examples/ha_archive.cc'; then $(CYGPATH_W) 'examples/ha_archive.cc'; else $(CYGPATH_W) '$(srcdir)/examples/ha_archive.cc'; fi`
 
 ha_tina.o: examples/ha_tina.cc
 @am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ha_tina.o -MD -MP -MF "$(DEPDIR)/ha_tina.Tpo" -c -o ha_tina.o `test -f 'examples/ha_tina.cc' || echo '$(srcdir)/'`examples/ha_tina.cc; \
@@ -1014,7 +1081,7 @@ distdir: $(DISTFILES)
 check-am: all-am
 check: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) check-recursive
-all-am: Makefile $(PROGRAMS) $(HEADERS)
+all-am: Makefile $(LTLIBRARIES) $(PROGRAMS) $(HEADERS)
 installdirs: installdirs-recursive
 installdirs-am:
 	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"; do \
@@ -1041,6 +1108,7 @@ clean-generic:
 
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
+	-test -z "$(DISTCLEANFILES)" || rm -f $(DISTCLEANFILES)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -1051,13 +1119,13 @@ maintainer-clean-generic:
 clean: clean-recursive
 
 clean-am: clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
-	clean-libtool mostlyclean-am
+	clean-libtool clean-noinstLTLIBRARIES mostlyclean-am
 
 distclean: distclean-recursive
 	-rm -rf ./$(DEPDIR)
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
-	distclean-libtool distclean-local distclean-tags
+	distclean-libtool distclean-tags
 
 dvi: dvi-recursive
 
@@ -1104,10 +1172,10 @@ uninstall-info: uninstall-info-recursive
 
 .PHONY: $(RECURSIVE_TARGETS) CTAGS GTAGS all all-am check check-am \
 	clean clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
-	clean-libtool clean-recursive ctags ctags-recursive distclean \
-	distclean-compile distclean-generic distclean-libtool \
-	distclean-local distclean-recursive distclean-tags distdir dvi \
-	dvi-am html html-am info info-am install install-am \
+	clean-libtool clean-noinstLTLIBRARIES clean-recursive ctags \
+	ctags-recursive distclean distclean-compile distclean-generic \
+	distclean-libtool distclean-recursive distclean-tags distdir \
+	dvi dvi-am html html-am info info-am install install-am \
 	install-binPROGRAMS install-data install-data-am install-exec \
 	install-exec-am install-info install-info-am \
 	install-libexecPROGRAMS install-man install-strip installcheck \
@@ -1133,6 +1201,8 @@ link_sources: mysql_tzinfo_to_sql.cc
 	@LN_CP_F@ $(top_srcdir)/sql-common/client.c client.c
 	rm -f my_time.c
 	@LN_CP_F@ $(top_srcdir)/sql-common/my_time.c my_time.c
+	rm -f my_user.c
+	@LN_CP_F@ $(top_srcdir)/sql-common/my_user.c my_user.c
 
 mysql_tzinfo_to_sql.o:	$(mysql_tzinfo_to_sql_SOURCES)
 			$(CXXCOMPILE) -c $(INCLUDES) -DTZINFO2SQL $<
@@ -1143,25 +1213,23 @@ mysql_tzinfo_to_sql.o:	$(mysql_tzinfo_to_sql_SOURCES)
 sql_yacc.cc:	sql_yacc.yy
 sql_yacc.h:	sql_yacc.yy
 
+# Be careful here, note that we use VPATH and might or might not have
+# a pregenerated "sql_yacc.cc" in $(srcdir) or one we just built in
+# $(builddir). And it has to work if $(srcdir) == $(builddir).
 sql_yacc.o:	sql_yacc.cc sql_yacc.h $(HEADERS)
+		@SED@ -e 's/__attribute__ ((__unused__))//' $< > sql_yacc.cc-new
+		@MV@ sql_yacc.cc-new sql_yacc.cc
 		@echo "Note: The following compile may take a long time."
 		@echo "If it fails, re-run configure with --with-low-memory"
-		$(CXXCOMPILE) $(LM_CFLAGS) -c $<
+		$(CXXCOMPILE) $(LM_CFLAGS) -c sql_yacc.cc
 
 # This generates lex_hash.h
 # NOTE Built sources should depend on their sources not the tool
 # this avoid the rebuild of the built files in a source dist
 lex_hash.h:	gen_lex_hash.cc lex.h
 		$(MAKE) $(AM_MAKEFLAGS) gen_lex_hash$(EXEEXT)
-		./gen_lex_hash$(EXEEXT) > $@
-
-# For testing of udf_example.so;  Works on platforms with gcc
-# (This is not part of our build process but only provided as an example)
-udf_example.so:	udf_example.cc
-		$(CXXCOMPILE) -shared -o $@ $<
-
-distclean-local:
-		rm -f lex_hash.h
+		./gen_lex_hash$(EXEEXT) > $@-t
+		$(MV) $@-t $@
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

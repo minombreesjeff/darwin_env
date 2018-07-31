@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -59,7 +58,8 @@ typedef struct st_tree_element {
 typedef struct st_tree {
   TREE_ELEMENT *root,null_element;
   TREE_ELEMENT **parents[MAX_TREE_HEIGHT];
-  uint offset_to_key,elements_in_tree,size_of_element,memory_limit,allocated;
+  uint offset_to_key,elements_in_tree,size_of_element;
+  ulong memory_limit, allocated;
   qsort_cmp2 compare;
   void *custom_arg;
   MEM_ROOT mem_root;
@@ -69,7 +69,7 @@ typedef struct st_tree {
 } TREE;
 
 	/* Functions on whole tree */
-void init_tree(TREE *tree, uint default_alloc_size, uint memory_limit,
+void init_tree(TREE *tree, ulong default_alloc_size, ulong memory_limit,
                int size, qsort_cmp2 compare, my_bool with_delete,
 	       tree_element_free free_element, void *custom_arg);
 void delete_tree(TREE*);
@@ -84,7 +84,7 @@ TREE_ELEMENT *tree_insert(TREE *tree,void *key, uint key_size,
 void *tree_search(TREE *tree, void *key, void *custom_arg);
 int tree_walk(TREE *tree,tree_walk_action action,
 	      void *argument, TREE_WALK visit);
-int tree_delete(TREE *tree, void *key, void *custom_arg);
+int tree_delete(TREE *tree, void *key, uint key_size, void *custom_arg);
 void *tree_search_key(TREE *tree, const void *key, 
                       TREE_ELEMENT **parents, TREE_ELEMENT ***last_pos,
                       enum ha_rkey_function flag, void *custom_arg);

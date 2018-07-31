@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +27,7 @@ class ha_myisammrg: public handler
   MYRG_INFO *file;
 
  public:
-  ha_myisammrg(TABLE *table): handler(table), file(0) {}
+  ha_myisammrg(TABLE *table_arg);
   ~ha_myisammrg() {}
   const char *table_type() const { return "MRG_MyISAM"; }
   const char **bas_ext() const;
@@ -37,7 +36,7 @@ class ha_myisammrg: public handler
   {
     return (HA_REC_NOT_IN_SEQ | HA_AUTO_PART_KEY | HA_READ_RND_SAME |
 	    HA_NULL_IN_KEY | HA_CAN_INDEX_BLOBS | HA_FILE_BASED |
-            HA_CAN_INSERT_DELAYED | HA_ANY_INDEX_MAY_BE_UNIQUE);
+            HA_ANY_INDEX_MAY_BE_UNIQUE | HA_CAN_BIT_FIELD);
   }
   ulong index_flags(uint inx, uint part, bool all_parts) const
   {

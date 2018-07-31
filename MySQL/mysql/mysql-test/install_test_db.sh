@@ -1,30 +1,49 @@
 #!/bin/sh
-# Copyright (C) 1997-2002 MySQL AB
-# For a more info consult the file COPYRIGHT distributed with this file
+# Copyright (C) 1997-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 # This scripts creates the privilege tables db, host, user, tables_priv,
 # columns_priv in the mysql database, as well as the func table.
 
 if [ x$1 = x"--bin" ]; then
   shift 1
+  BINARY_DIST=1
+
+  bindir=../bin
+  scriptdir=bin
+  libexecdir=../libexec
 
   # Check if it's a binary distribution or a 'make install'
   if test -x ../libexec/mysqld
   then
     execdir=../libexec
+  elif test -x ../../sbin/mysqld  # RPM installation
+  then
+    execdir=../../sbin
+    bindir=../../bin
+    scriptdir=../bin
+    libexecdir=../../libexec
   else
     execdir=../bin
   fi
-  bindir=../bin
-  BINARY_DIST=1
   fix_bin=mysql-test
-  scriptdir=../bin
-  libexecdir=../libexec
 else
   execdir=../sql
   bindir=../client
   fix_bin=.
-  scriptdir=../scripts
+  scriptdir=scripts
   libexecdir=../libexec
 fi
 
@@ -48,14 +67,17 @@ fi
 mdata=$data/mysql
 EXTRA_ARG=""
 
-if test ! -x $execdir/mysqld
+mysqld=
+if test -x $execdir/mysqld
 then
+  mysqld=$execdir/mysqld
+else
   if test ! -x $libexecdir/mysqld
   then
     echo "mysqld is missing - looked in $execdir and in $libexecdir"
     exit 1
   else
-    execdir=$libexecdir
+    mysqld=$libexecdir/mysqld
   fi
 fi
 
@@ -78,15 +100,14 @@ if [ x$BINARY_DIST = x1 ] ; then
 basedir=..
 else
 basedir=.
-EXTRA_ARG="--language=../sql/share/english/ --character-sets-dir=../sql/share/charsets/"
+EXTRA_ARG="--windows"
 fi
 
-mysqld_boot=" $execdir/mysqld --no-defaults --bootstrap --skip-grant-tables \
-    --basedir=$basedir --datadir=$ldata --skip-innodb --skip-ndbcluster --skip-bdb \
-    $EXTRA_ARG"
-echo "running $mysqld_boot"
+INSTALL_CMD="$scriptdir/mysql_install_db --no-defaults $EXTRA_ARG --basedir=$basedir --datadir=mysql-test/$ldata --srcdir=."
+echo "running $INSTALL_CMD"
 
-if $scriptdir/mysql_create_system_tables test $mdata $hostname | $mysqld_boot
+cd ..
+if $INSTALL_CMD
 then
     exit 0
 else

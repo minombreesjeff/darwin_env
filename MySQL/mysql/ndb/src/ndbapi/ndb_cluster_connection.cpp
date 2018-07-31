@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +27,8 @@
 #include <ndb_limits.h>
 #include <ConfigRetriever.hpp>
 #include <ndb_version.h>
-#include <Vector.hpp>
+#include <mgmapi_debug.h>
+#include <mgmapi_internal.h>
 #include <md5_hash.hpp>
 
 #include <EventLogger.hpp>
@@ -85,7 +85,7 @@ const char *Ndb_cluster_connection::get_connectstring(char *buf,
   return 0;
 }
 
-extern "C" pthread_handler_decl(run_ndb_cluster_connection_connect_thread, me)
+pthread_handler_t run_ndb_cluster_connection_connect_thread(void *me)
 {
   g_run_connect_thread= 1;
   ((Ndb_cluster_connection_impl*) me)->connect_thread();
@@ -180,6 +180,12 @@ Ndb_cluster_connection::no_db_nodes()
   return m_impl.m_all_nodes.size();
 }
 
+unsigned
+Ndb_cluster_connection::node_id()
+{
+  return m_impl.m_transporter_facade->ownId();
+}
+
 
 int
 Ndb_cluster_connection::wait_until_ready(int timeout,
@@ -251,30 +257,25 @@ unsigned Ndb_cluster_connection::get_connect_count() const
 Ndb_cluster_connection_impl::Ndb_cluster_connection_impl(const char *
 							 connect_string)
   : Ndb_cluster_connection(*this),
-    m_optimized_node_selection(1)
+    m_optimized_node_selection(1),
+    m_name(0)
 {
   DBUG_ENTER("Ndb_cluster_connection");
-  DBUG_PRINT("enter",("Ndb_cluster_connection this=0x%x", this));
+  DBUG_PRINT("enter",("Ndb_cluster_connection this=0x%lx", (long) this));
 
   g_eventLogger.createConsoleHandler();
   g_eventLogger.setCategory("NdbApi");
   g_eventLogger.enable(Logger::LL_ON, Logger::LL_ERROR);
-  
-  m_transporter_facade=
-    TransporterFacade::theFacadeInstance= new TransporterFacade();
 
   m_connect_thread= 0;
   m_connect_callback= 0;
 
   if (ndb_global_event_buffer_mutex == NULL)
-  {
     ndb_global_event_buffer_mutex= NdbMutex_Create();
-  }
+
 #ifdef VM_TRACE
   if (ndb_print_state_mutex == NULL)
-  {
     ndb_print_state_mutex= NdbMutex_Create();
-  }
 #endif
   m_config_retriever=
     new ConfigRetriever(connect_string, NDB_VERSION, NODE_TYPE_API);
@@ -285,14 +286,21 @@ Ndb_cluster_connection_impl::Ndb_cluster_connection_impl(const char *
     delete m_config_retriever;
     m_config_retriever= 0;
   }
-
+  if (m_name)
+  {
+    NdbMgmHandle h= m_config_retriever->get_mgmHandle();
+    ndb_mgm_set_name(h, m_name);
+  }
+  m_transporter_facade=
+    TransporterFacade::theFacadeInstance= 
+    new TransporterFacade();
+  
   DBUG_VOID_RETURN;
 }
 
 Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl()
 {
   DBUG_ENTER("~Ndb_cluster_connection");
-  DBUG_PRINT("enter",("~Ndb_cluster_connection this=0x%x", this));
   TransporterFacade::stop_instance();
   if (m_connect_thread)
   {
@@ -310,10 +318,10 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl()
     TransporterFacade::theFacadeInstance= 0;
   }
   if (m_config_retriever)
+  {
     delete m_config_retriever;
-
-  //  fragmentToNodeMap.release();
-
+    m_config_retriever= NULL;
+  }
   if (ndb_global_event_buffer_mutex != NULL)
   {
     NdbMutex_Destroy(ndb_global_event_buffer_mutex);
@@ -326,11 +334,26 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl()
     ndb_print_state_mutex= NULL;
   }
 #endif
+  if (m_name)
+    free(m_name);
 
   DBUG_VOID_RETURN;
 }
 
 void
+Ndb_cluster_connection_impl::set_name(const char *name)
+{
+  if (m_name)
+    free(m_name);
+  m_name= strdup(name);
+  if (m_config_retriever && m_name)
+  {
+    NdbMgmHandle h= m_config_retriever->get_mgmHandle();
+    ndb_mgm_set_name(h, m_name);
+  }
+}
+
+int
 Ndb_cluster_connection_impl::init_nodes_vector(Uint32 nodeid,
 					       const ndb_mgm_configuration 
 					       &config)
@@ -379,7 +402,10 @@ Ndb_cluster_connection_impl::init_nodes_vector(Uint32 nodeid,
       break;
     }
     }
-    m_impl.m_all_nodes.push_back(Node(group,remoteNodeId));
+    if (m_impl.m_all_nodes.push_back(Node(group,remoteNodeId)))
+    {
+      DBUG_RETURN(-1);
+    }
     DBUG_PRINT("info",("saved %d %d", group,remoteNodeId));
     for (int i= m_impl.m_all_nodes.size()-2;
 	 i >= 0 && m_impl.m_all_nodes[i].group > m_impl.m_all_nodes[i+1].group;
@@ -426,7 +452,7 @@ Ndb_cluster_connection_impl::init_nodes_vector(Uint32 nodeid,
 
   do_test();
 #endif
-  DBUG_VOID_RETURN;
+  DBUG_RETURN(0);
 }
 
 void
@@ -481,11 +507,17 @@ Ndb_cluster_connection_impl::do_test()
   delete [] nodes;
 }
 
+void Ndb_cluster_connection::set_name(const char *name)
+{
+  m_impl.set_name(name);
+}
+
 int Ndb_cluster_connection::connect(int no_retries, int retry_delay_in_seconds,
 				    int verbose)
 {
+  struct ndb_mgm_reply mgm_reply;
+
   DBUG_ENTER("Ndb_cluster_connection::connect");
-  const char* error = 0;
   do {
     if (m_impl.m_config_retriever == 0)
       DBUG_RETURN(-1);
@@ -501,9 +533,27 @@ int Ndb_cluster_connection::connect(int no_retries, int retry_delay_in_seconds,
     ndb_mgm_configuration * props = m_impl.m_config_retriever->getConfig();
     if(props == 0)
       break;
-    m_impl.m_transporter_facade->start_instance(nodeId, props);
 
-    m_impl.init_nodes_vector(nodeId, *props);
+    m_impl.m_transporter_facade->start_instance(nodeId, props);
+    if (m_impl.init_nodes_vector(nodeId, *props))
+    {
+      ndbout_c("Ndb_cluster_connection::connect: malloc failure");
+      DBUG_RETURN(-1);
+    }
+
+    for(unsigned i=0;
+	i<m_impl.m_transporter_facade->get_registry()->m_transporter_interface.size();
+	i++)
+      ndb_mgm_set_connection_int_parameter(m_impl.m_config_retriever->get_mgmHandle(),
+					   nodeId,
+					   m_impl.m_transporter_facade->get_registry()
+					     ->m_transporter_interface[i]
+					     .m_remote_nodeId,
+					   CFG_CONNECTION_SERVER_PORT,
+					   m_impl.m_transporter_facade->get_registry()
+					     ->m_transporter_interface[i]
+					     .m_s_service_port,
+					   &mgm_reply);
 
     ndb_mgm_destroy_configuration(props);
     m_impl.m_transporter_facade->connected();
@@ -540,111 +590,6 @@ void Ndb_cluster_connection_impl::connect_thread()
     (*m_connect_callback)();
   DBUG_VOID_RETURN;
 }
-
-/*
- * Hint handling to select node
- * ToDo: fix this
- */
-
-void
-Ndb_cluster_connection_impl::FragmentToNodeMap::init(Uint32 noOfNodes,
-						     Uint8 nodeIds[])
-{
-  kValue           = 6;
-  noOfFragments    = 2 * noOfNodes;
-
-  /**
-   * Compute hashValueMask and hashpointerValue
-   */
-  {
-    Uint32 topBit = (1 << 31);
-    for(int i = 31; i>=0; i--){
-      if((noOfFragments & topBit) != 0)
-	break;
-      topBit >>= 1;
-    }
-    hashValueMask    = topBit - 1;
-    hashpointerValue = noOfFragments - (hashValueMask + 1);
-  }
-  
-  /**
-   * This initialization depends on
-   * the fact that:
-   *  primary node for fragment i = i % noOfNodes
-   *
-   * This algorithm should be implemented in Dbdih
-   */
-  {
-    if (fragment2PrimaryNodeMap != 0)
-      abort();
-
-    fragment2PrimaryNodeMap = new Uint32[noOfFragments];
-    Uint32 i;  
-    for(i = 0; i<noOfNodes; i++){
-      fragment2PrimaryNodeMap[i] = nodeIds[i];
-    }
-    
-    // Sort them (bubble sort)
-    for(i = 0; i<noOfNodes-1; i++)
-      for(Uint32 j = i+1; j<noOfNodes; j++)
-	if(fragment2PrimaryNodeMap[i] > fragment2PrimaryNodeMap[j]){
-	  Uint32 tmp = fragment2PrimaryNodeMap[i];
-	  fragment2PrimaryNodeMap[i] = fragment2PrimaryNodeMap[j];
-	  fragment2PrimaryNodeMap[j] = tmp;
-	}
-    
-    for(i = 0; i<noOfNodes; i++){
-      fragment2PrimaryNodeMap[i+noOfNodes] = fragment2PrimaryNodeMap[i];
-    }
-  }
-}
-
-void
-Ndb_cluster_connection_impl::FragmentToNodeMap::release(){
-  delete [] fragment2PrimaryNodeMap;
-  fragment2PrimaryNodeMap = 0;
-}
-
-static const Uint32 MAX_KEY_LEN_64_WORDS = 4;
-Uint32
-Ndb_cluster_connection_impl::guess_primary_node(const char *keyData,
-						Uint32 keyLen)
-{
-  Uint64 tempData[MAX_KEY_LEN_64_WORDS];
-  
-  const Uint32 usedKeyLen = (keyLen + 3) >> 2; // In words
-  const char * usedKeyData = 0;
-  
-  /**
-   * If   key data buffer is not aligned (on 64 bit boundary)
-   *   or key len is not a multiple of 4
-   * Use temp data
-   */
-  if(((((UintPtr)keyData) & 7) == 0) && ((keyLen & 3) == 0)) {
-    usedKeyData = keyData;
-  } else {
-    memcpy(&tempData[0], keyData, keyLen);
-    const int slack = keyLen & 3;
-    if(slack > 0) {
-      memset(&((char *)&tempData[0])[keyLen], 0, (4 - slack));
-    }//if
-    usedKeyData = (char *)&tempData[0];
-  }//if
-  
-  Uint32 hashValue = md5_hash((Uint64 *)usedKeyData, usedKeyLen);
-
-  hashValue >>= fragmentToNodeMap.kValue;
-
-  Uint32 fragmentId = hashValue &
-    fragmentToNodeMap.hashValueMask;
-
-  if(fragmentId < fragmentToNodeMap.hashpointerValue) {
-    fragmentId = hashValue &
-                 ((fragmentToNodeMap.hashValueMask << 1) + 1);
-  }//if
-  return fragmentId;
-}
-
 
 template class Vector<Ndb_cluster_connection_impl::Node>;
 

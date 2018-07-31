@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -140,10 +139,10 @@ my_string ip_to_hostname(struct in_addr *in, uint *errors)
   uint i;
   host_entry *entry;
   DBUG_ENTER("ip_to_hostname");
-  *errors= 0;
+  *errors=0;
 
   /* We always treat the loopback address as "localhost". */
-  if (in->s_addr == htonl(INADDR_LOOPBACK))
+  if (in->s_addr == htonl(INADDR_LOOPBACK))   // is expanded inline by gcc
     DBUG_RETURN((char *)my_localhost);
 
   /* Check first if we have name in cache */

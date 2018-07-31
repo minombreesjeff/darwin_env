@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,7 +37,7 @@ struct Ndb_free_list_t
   Ndb_free_list_t();
   ~Ndb_free_list_t();
   
-  void fill(Ndb*, Uint32 cnt);
+  int fill(Ndb*, Uint32 cnt);
   T* seize(Ndb*);
   void release(T*);
   void clear();
@@ -75,6 +74,30 @@ public:
 
   int m_optimized_node_selection;
 
+  BaseString m_dbname; // Database name
+  BaseString m_schemaname; // Schema name
+
+  BaseString m_prefix; // Buffer for preformatted internal name <db>/<schema>/
+
+  int update_prefix()
+  {
+    if (!m_prefix.assfmt("%s%c%s%c", m_dbname.c_str(), table_name_separator,
+                         m_schemaname.c_str(), table_name_separator))
+    {
+      return -1;
+    }
+    return 0;
+  }
+
+/*
+  We need this friend accessor function to work around a HP compiler problem,
+  where template class friends are not working.
+*/
+  static inline void setNdbError(Ndb &ndb,int code){
+    ndb.theError.code = code;
+    return;
+  }
+
   /**
    * NOTE free lists must be _after_ theNdbObjectIdMap take
    *   assure that destructors are run in correct order
@@ -92,7 +115,7 @@ public:
   Ndb_free_list_t<NdbIndexScanOperation> theScanOpIdleList;
   Ndb_free_list_t<NdbOperation>  theOpIdleList;  
   Ndb_free_list_t<NdbIndexOperation> theIndexOpIdleList;
-  Ndb_free_list_t<NdbConnection> theConIdleList; 
+  Ndb_free_list_t<NdbTransaction> theConIdleList; 
 };
 
 #ifdef VM_TRACE
@@ -123,9 +146,9 @@ Ndb::void2rec(void* val){
 }
 
 inline
-NdbConnection *
+NdbTransaction *
 Ndb::void2con(void* val){
-  return (NdbConnection*)val;
+  return (NdbTransaction*)val;
 }
 
 inline
@@ -141,7 +164,7 @@ Ndb::void2rec_iop(void* val){
 }
 
 inline 
-NdbConnection * 
+NdbTransaction * 
 NdbReceiver::getTransaction(){ 
   return ((NdbOperation*)m_owner)->theNdbCon;
 }
@@ -184,7 +207,7 @@ Ndb_free_list_t<T>::~Ndb_free_list_t()
     
 template<class T>
 inline
-void
+int
 Ndb_free_list_t<T>::fill(Ndb* ndb, Uint32 cnt)
 {
   if (m_free_list == 0)
@@ -192,18 +215,28 @@ Ndb_free_list_t<T>::fill(Ndb* ndb, Uint32 cnt)
     m_free_cnt++;
     m_alloc_cnt++;
     m_free_list = new T(ndb);
+    if (m_free_list == 0)
+    {
+      NdbImpl::setNdbError(*ndb, 4000);
+      assert(false);
+      return -1;
+    }
   }
   while(m_alloc_cnt < cnt)
   {
     T* obj= new T(ndb);
     if(obj == 0)
-      return;
-    
+    {
+      NdbImpl::setNdbError(*ndb, 4000);
+      assert(false);
+      return -1;
+    }
     obj->next(m_free_list);
     m_free_cnt++;
     m_alloc_cnt++;
     m_free_list = obj;
   }
+  return 0;
 }
 
 template<class T>
@@ -224,7 +257,11 @@ Ndb_free_list_t<T>::seize(Ndb* ndb)
   {
     m_alloc_cnt++;
   }
-  
+  else
+  {
+    NdbImpl::setNdbError(*ndb, 4000);
+    assert(false);
+  }
   return tmp;
 }
 

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,14 +30,16 @@ Transporter::Transporter(TransporterRegistry &t_reg,
 			 TransporterType _type,
 			 const char *lHostName,
 			 const char *rHostName, 
-			 int r_port,
+			 int s_port,
+			 bool _isMgmConnection,
 			 NodeId lNodeId,
-			 NodeId rNodeId, 
+			 NodeId rNodeId,
+			 NodeId serverNodeId,
 			 int _byteorder, 
 			 bool _compression, bool _checksum, bool _signalId)
-  : m_r_port(r_port), remoteNodeId(rNodeId), localNodeId(lNodeId),
-    isServer(lNodeId < rNodeId),
-    m_packer(_signalId, _checksum),
+  : m_s_port(s_port), remoteNodeId(rNodeId), localNodeId(lNodeId),
+    isServer(lNodeId==serverNodeId),
+    m_packer(_signalId, _checksum),  isMgmConnection(_isMgmConnection),
     m_type(_type),
     m_transporter_registry(t_reg)
 {
@@ -58,13 +59,10 @@ Transporter::Transporter(TransporterRegistry &t_reg,
   }
   strncpy(localHostName, lHostName, sizeof(localHostName));
 
-  if (strlen(lHostName) > 0)
-    Ndb_getInAddr(&localHostAddress, lHostName);
-
-  DBUG_PRINT("info",("rId=%d lId=%d isServer=%d rHost=%s lHost=%s r_port=%d",
+  DBUG_PRINT("info",("rId=%d lId=%d isServer=%d rHost=%s lHost=%s s_port=%d",
 		     remoteNodeId, localNodeId, isServer,
 		     remoteHostName, localHostName,
-		     r_port));
+		     s_port));
 
   byteOrder       = _byteorder;
   compressionUsed = _compression;
@@ -75,12 +73,19 @@ Transporter::Transporter(TransporterRegistry &t_reg,
   m_timeOutMillis = 1000;
 
   m_connect_address.s_addr= 0;
+  if(s_port<0)
+    s_port= -s_port; // was dynamic
+
   if (isServer)
     m_socket_client= 0;
   else
-    m_socket_client= new SocketClient(remoteHostName, r_port,
+  {
+    m_socket_client= new SocketClient(remoteHostName, s_port,
 				      new SocketAuthSimple("ndbd",
 							   "ndbd passwd"));
+
+    m_socket_client->set_connect_timeout((m_timeOutMillis+999)/1000);
+  }
   DBUG_VOID_RETURN;
 }
 
@@ -102,7 +107,7 @@ Transporter::connect_server(NDB_SOCKET_TYPE sockfd) {
   {
     struct sockaddr_in addr;
     SOCKET_SIZE_TYPE addrlen= sizeof(addr);
-    int r= getpeername(sockfd, (struct sockaddr*)&addr, &addrlen);
+    getpeername(sockfd, (struct sockaddr*)&addr, &addrlen);
     m_connect_address= (&addr)->sin_addr;
   }
 
@@ -117,22 +122,55 @@ Transporter::connect_server(NDB_SOCKET_TYPE sockfd) {
 
 bool
 Transporter::connect_client() {
+  NDB_SOCKET_TYPE sockfd;
+
   if(m_connected)
     return true;
-  NDB_SOCKET_TYPE sockfd = m_socket_client->connect();
-  
+
+  if(isMgmConnection)
+  {
+    sockfd= m_transporter_registry.connect_ndb_mgmd(m_socket_client);
+  }
+  else
+  {
+    if (!m_socket_client->init())
+    {
+      return false;
+    }
+    if (strlen(localHostName) > 0)
+    {
+      if (m_socket_client->bind(localHostName, 0) != 0)
+	return false;
+    }
+    sockfd= m_socket_client->connect();
+  }
+
+  return connect_client(sockfd);
+}
+
+bool
+Transporter::connect_client(NDB_SOCKET_TYPE sockfd) {
+
+  if(m_connected)
+    return true;
+
   if (sockfd == NDB_INVALID_SOCKET)
     return false;
 
   DBUG_ENTER("Transporter::connect_client");
 
+  DBUG_PRINT("info",("port %d isMgmConnection=%d",m_s_port,isMgmConnection));
+
+  SocketOutputStream s_output(sockfd);
+  SocketInputStream s_input(sockfd);
+
   // send info about own id
   // send info about own transporter type
-  SocketOutputStream s_output(sockfd);
+
   s_output.println("%d %d", localNodeId, m_type);
   // get remote id
   int nodeId, remote_transporter_type= -1;
-  SocketInputStream s_input(sockfd);
+
   char buf[256];
   if (s_input.gets(buf, 256) == 0) {
     NDB_CLOSE_SOCKET(sockfd);
@@ -175,7 +213,7 @@ Transporter::connect_client() {
   {
     struct sockaddr_in addr;
     SOCKET_SIZE_TYPE addrlen= sizeof(addr);
-    int r= getpeername(sockfd, (struct sockaddr*)&addr, &addrlen);
+    getpeername(sockfd, (struct sockaddr*)&addr, &addrlen);
     m_connect_address= (&addr)->sin_addr;
   }
 

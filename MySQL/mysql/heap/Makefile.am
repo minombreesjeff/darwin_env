@@ -1,9 +1,8 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2002, 2005-2006 MySQL AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,8 +13,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-INCLUDES =		@MT_INCLUDES@ \
-			-I$(top_builddir)/include -I$(top_srcdir)/include 
+INCLUDES =		-I$(top_builddir)/include -I$(top_srcdir)/include 
 LDADD =			libheap.a ../mysys/libmysys.a ../dbug/libdbug.a \
 			../strings/libmystrings.a
 pkglib_LIBRARIES =	libheap.a
@@ -29,6 +27,6 @@ libheap_a_SOURCES =	hp_open.c hp_extra.c hp_close.c hp_panic.c hp_info.c \
 			hp_rnext.c hp_rlast.c hp_rprev.c hp_clear.c \
 			hp_rkey.c hp_block.c \
 			hp_hash.c _check.c _rectest.c hp_static.c
-
+EXTRA_DIST =	CMakeLists.txt
 # Don't update the files from bitkeeper
 %::SCCS/s.%

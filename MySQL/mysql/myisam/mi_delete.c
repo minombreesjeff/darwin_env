@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,6 +44,12 @@ int mi_delete(MI_INFO *info,const byte *record)
 
 	/* Test if record is in datafile */
 
+  DBUG_EXECUTE_IF("myisam_pretend_crashed_table_on_usage",
+                  mi_print_error(info->s, HA_ERR_CRASHED);
+                  DBUG_RETURN(my_errno= HA_ERR_CRASHED););
+  DBUG_EXECUTE_IF("my_error_test_undefined_error",
+                  mi_print_error(info->s, INT_MAX);
+                  DBUG_RETURN(my_errno= INT_MAX););
   if (!(info->update & HA_STATE_AKTIV))
   {
     DBUG_RETURN(my_errno=HA_ERR_KEY_NOT_FOUND);	/* No database read */
@@ -68,7 +73,7 @@ int mi_delete(MI_INFO *info,const byte *record)
   old_key=info->lastkey2;
   for (i=0 ; i < share->base.keys ; i++ )
   {
-    if (((ulonglong) 1 << i) & info->s->state.key_map)
+    if (mi_is_key_active(info->s->state.key_map, i))
     {
       info->s->keyinfo[i].version++;
       if (info->s->keyinfo[i].flag & HA_FULLTEXT )
@@ -89,7 +94,7 @@ int mi_delete(MI_INFO *info,const byte *record)
 
   if ((*share->delete_record)(info))
     goto err;				/* Remove record from database */
-  info->s->state.checksum-=info->checksum;
+  info->state->checksum-=info->checksum;
 
   info->update= HA_STATE_CHANGED+HA_STATE_DELETED+HA_STATE_ROW_CHANGED;
   info->state->records--;
@@ -111,13 +116,19 @@ err:
   mi_sizestore(lastpos,info->lastpos);
   myisam_log_command(MI_LOG_DELETE,info,(byte*) lastpos, sizeof(lastpos),0);
   if (save_errno != HA_ERR_RECORD_CHANGED)
+  {
+    mi_print_error(info->s, HA_ERR_CRASHED);
     mi_mark_crashed(info);		/* mark table crashed */
+  }
   VOID(_mi_writeinfo(info,WRITEINFO_UPDATE_KEYFILE));
   info->update|=HA_STATE_WRITTEN;	/* Buffer changed */
   allow_break();			/* Allow SIGHUP & SIGINT */
   my_errno=save_errno;
   if (save_errno == HA_ERR_KEY_NOT_FOUND)
+  {
+    mi_print_error(info->s, HA_ERR_CRASHED);
     my_errno=HA_ERR_CRASHED;
+  }
 
   DBUG_RETURN(my_errno);
 } /* mi_delete */
@@ -144,6 +155,7 @@ static int _mi_ck_real_delete(register MI_INFO *info, MI_KEYDEF *keyinfo,
 
   if ((old_root=*root) == HA_OFFSET_ERROR)
   {
+    mi_print_error(info->s, HA_ERR_CRASHED);
     DBUG_RETURN(my_errno=HA_ERR_CRASHED);
   }
   if (!(root_buff= (uchar*) my_alloca((uint) keyinfo->block_length+
@@ -152,7 +164,7 @@ static int _mi_ck_real_delete(register MI_INFO *info, MI_KEYDEF *keyinfo,
     DBUG_PRINT("error",("Couldn't allocate memory"));
     DBUG_RETURN(my_errno=ENOMEM);
   }
-  DBUG_PRINT("info",("root_page: %ld",old_root));
+  DBUG_PRINT("info",("root_page: %ld", (long) old_root));
   if (!_mi_fetch_keypage(info,keyinfo,old_root,DFLT_INIT_HITS,root_buff,0))
   {
     error= -1;
@@ -255,12 +267,18 @@ static int d_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
       my_off_t root;
       uchar *kpos=keypos;
 
-      tmp_key_length=(*keyinfo->get_key)(keyinfo,nod_flag,&kpos,lastkey);
+      if (!(tmp_key_length=(*keyinfo->get_key)(keyinfo,nod_flag,&kpos,lastkey)))
+      {
+        mi_print_error(info->s, HA_ERR_CRASHED);
+        my_errno= HA_ERR_CRASHED;
+        DBUG_RETURN(-1);
+      }
       root=_mi_dpos(info,nod_flag,kpos);
       if (subkeys == -1)
       {
         /* the last entry in sub-tree */
-        _mi_dispose(info, keyinfo, root,DFLT_INIT_HITS);
+        if (_mi_dispose(info, keyinfo, root,DFLT_INIT_HITS))
+          DBUG_RETURN(-1);
         /* fall through to normal delete */
       }
       else
@@ -304,6 +322,7 @@ static int d_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     if (!nod_flag)
     {
       DBUG_PRINT("error",("Didn't find key"));
+      mi_print_error(info->s, HA_ERR_CRASHED);
       my_errno=HA_ERR_CRASHED;		/* This should newer happend */
       goto err;
     }
@@ -315,13 +334,10 @@ static int d_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   {						/* Found key */
     uint tmp;
     length=mi_getint(anc_buff);
-    tmp=remove_key(keyinfo,nod_flag,keypos,lastkey,anc_buff+length,
-		   &next_block);
-    if (tmp == 0)
-    {
-      DBUG_PRINT("exit",("Return: %d",0));
-      DBUG_RETURN(0);
-    }
+    if (!(tmp= remove_key(keyinfo,nod_flag,keypos,lastkey,anc_buff+length,
+                          &next_block)))
+      goto err;
+
     length-= tmp;
 
     mi_putint(anc_buff,length,nod_flag);
@@ -370,6 +386,7 @@ static int d_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   my_afree((byte*) leaf_buff);
   DBUG_PRINT("exit",("Return: %d",ret_value));
   DBUG_RETURN(ret_value);
+
 err:
   my_afree((byte*) leaf_buff);
   DBUG_PRINT("exit",("Error: %d",my_errno));
@@ -392,7 +409,7 @@ static int del(register MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *key,
   MYISAM_SHARE *share=info->s;
   MI_KEY_PARAM s_temp;
   DBUG_ENTER("del");
-  DBUG_PRINT("enter",("leaf_page: %ld  keypos: 0x%lx", leaf_page,
+  DBUG_PRINT("enter",("leaf_page: %ld  keypos: 0x%lx", (long) leaf_page,
 		      (ulong) keypos));
   DBUG_DUMP("leaf_buff",(byte*) leaf_buff,mi_getint(leaf_buff));
 
@@ -563,10 +580,10 @@ static int underflow(register MI_INFO *info, register MI_KEYDEF *keyinfo,
 
     /* remove key from anc_buff */
 
-    s_length=remove_key(keyinfo,key_reflength,keypos,anc_key,
-			anc_buff+anc_length,(my_off_t *) 0);
-    if (!s_length)
+    if (!(s_length=remove_key(keyinfo,key_reflength,keypos,anc_key,
+                              anc_buff+anc_length,(my_off_t *) 0)))
       goto err;
+
     anc_length-=s_length;
     mi_putint(anc_buff,anc_length,key_reflength);
 
@@ -579,7 +596,8 @@ static int underflow(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     else
     {						/* Page is full */
       endpos=anc_buff+anc_length;
-      DBUG_PRINT("test",("anc_buff: %lx  endpos: %lx",anc_buff,endpos));
+      DBUG_PRINT("test",("anc_buff: 0x%lx  endpos: 0x%lx",
+                         (long) anc_buff, (long) endpos));
       if (keypos != anc_buff+2+key_reflength &&
 	  !_mi_get_last_key(info,keyinfo,anc_buff,anc_key,keypos,&length))
 	goto err;
@@ -672,10 +690,10 @@ static int underflow(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   mi_putint(buff,buff_length,nod_flag);
 
   /* remove key from anc_buff */
-  s_length=remove_key(keyinfo,key_reflength,keypos,anc_key,
-		      anc_buff+anc_length,(my_off_t *) 0);
-  if (!s_length)
+  if (!(s_length= remove_key(keyinfo,key_reflength,keypos,anc_key,
+                             anc_buff+anc_length,(my_off_t *) 0)))
     goto err;
+
   anc_length-=s_length;
   mi_putint(anc_buff,anc_length,key_reflength);
 
@@ -735,6 +753,7 @@ static int underflow(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   if (_mi_write_keypage(info,keyinfo,next_page,DFLT_INIT_HITS,buff))
     goto err;
   DBUG_RETURN(anc_length <= (uint) keyinfo->block_length/2);
+
 err:
   DBUG_RETURN(-1);
 } /* underflow */
@@ -756,7 +775,7 @@ static uint remove_key(MI_KEYDEF *keyinfo, uint nod_flag,
   int s_length;
   uchar *start;
   DBUG_ENTER("remove_key");
-  DBUG_PRINT("enter",("keypos: %lx  page_end: %lx",keypos,page_end));
+  DBUG_PRINT("enter",("keypos: 0x%lx  page_end: 0x%lx",(long) keypos, (long) page_end));
 
   start=keypos;
   if (!(keyinfo->flag &
@@ -772,6 +791,7 @@ static uint remove_key(MI_KEYDEF *keyinfo, uint nod_flag,
     /* Calculate length of key */
     if (!(*keyinfo->get_key)(keyinfo,nod_flag,&keypos,lastkey))
       DBUG_RETURN(0);				/* Error */
+
     if (next_block && nod_flag)
       *next_block= _mi_kpos(nod_flag,keypos);
     s_length=(int) (keypos-start);

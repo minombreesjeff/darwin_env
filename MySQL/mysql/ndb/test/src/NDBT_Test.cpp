@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,6 +14,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include <ndb_global.h>
+#include <my_pthread.h>
 
 #include "NDBT.hpp"
 #include "NDBT_Test.hpp"
@@ -26,7 +26,9 @@
 
 // No verbose outxput
 
-NDBT_Context::NDBT_Context(){
+NDBT_Context::NDBT_Context(Ndb_cluster_connection& con)
+  : m_cluster_connection(con)
+{
   tab = NULL;
   suite = NULL;
   testcase = NULL;
@@ -248,7 +250,7 @@ int NDBT_Step::execute(NDBT_Context* ctx) {
   g_info << "  |- " << name << " started [" << ctx->suite->getDate() << "]" 
 	 << endl;
   
-  result = setUp();
+  result = setUp(ctx->m_cluster_connection);
   if (result != NDBT_OK){
     return result;
   }
@@ -288,10 +290,10 @@ NDBT_NdbApiStep::NDBT_NdbApiStep(NDBT_TestCase* ptest,
 
 
 int
-NDBT_NdbApiStep::setUp(){
-  ndb = new Ndb( "TEST_DB" );
+NDBT_NdbApiStep::setUp(Ndb_cluster_connection& con){
+  ndb = new Ndb(&con, "TEST_DB" );
   ndb->init(1024);
-
+  
   int result = ndb->waitUntilReady(300); // 5 minutes
   if (result != 0){
     g_err << name << ": Ndb was not ready" << endl;
@@ -626,7 +628,6 @@ int NDBT_TestCase::execute(NDBT_Context* ctx){
   return res;
 }
 
-
 void NDBT_TestCase::startTimer(NDBT_Context* ctx){
   timer.doStart();
 }
@@ -757,14 +758,15 @@ int NDBT_TestSuite::addTest(NDBT_TestCase* pTest){
   return 0;
 }
 
-int NDBT_TestSuite::executeAll(const char* _testname){
+int NDBT_TestSuite::executeAll(Ndb_cluster_connection& con,
+			       const char* _testname){
 
   if(tests.size() == 0)
     return NDBT_FAILED;
-  Ndb ndb("TEST_DB");
+  Ndb ndb(&con, "TEST_DB");
   ndb.init(1024);
 
-  int result = ndb.waitUntilReady(300); // 5 minutes
+  int result = ndb.waitUntilReady(500); // 5 minutes
   if (result != 0){
     g_err << name <<": Ndb was not ready" << endl;
     return NDBT_FAILED;
@@ -777,18 +779,19 @@ int NDBT_TestSuite::executeAll(const char* _testname){
   for (int t=0; t < NDBT_Tables::getNumTables(); t++){
     const NdbDictionary::Table* ptab = NDBT_Tables::getTable(t);
     ndbout << "|- " << ptab->getName() << endl;
-    execute(&ndb, ptab, _testname);
+    execute(con, &ndb, ptab, _testname);
   }
   testSuiteTimer.doStop();
   return reportAllTables(_testname);
 }
 
 int 
-NDBT_TestSuite::executeOne(const char* _tabname, const char* _testname){
+NDBT_TestSuite::executeOne(Ndb_cluster_connection& con,
+			   const char* _tabname, const char* _testname){
   
   if(tests.size() == 0)
     return NDBT_FAILED;
-  Ndb ndb("TEST_DB");
+  Ndb ndb(&con, "TEST_DB");
   ndb.init(1024);
 
   int result = ndb.waitUntilReady(300); // 5 minutes
@@ -805,7 +808,7 @@ NDBT_TestSuite::executeOne(const char* _tabname, const char* _testname){
 
   ndbout << "|- " << ptab->getName() << endl;
 
-  execute(&ndb, ptab, _testname);
+  execute(con, &ndb, ptab, _testname);
 
   if (numTestsFail > 0){
     return NDBT_FAILED;
@@ -814,7 +817,65 @@ NDBT_TestSuite::executeOne(const char* _tabname, const char* _testname){
   }
 }
 
-void NDBT_TestSuite::execute(Ndb* ndb, const NdbDictionary::Table* pTab, 
+int 
+NDBT_TestSuite::executeOneCtx(Ndb_cluster_connection& con,
+			   const NdbDictionary::Table *ptab, const char* _testname){
+  
+  testSuiteTimer.doStart(); 
+  
+  do{
+    if(tests.size() == 0)
+      break;
+
+    Ndb ndb(&con, "TEST_DB");
+    ndb.init(1024);
+
+    int result = ndb.waitUntilReady(300); // 5 minutes
+    if (result != 0){
+      g_err << name <<": Ndb was not ready" << endl;
+      break;
+    }
+
+    ndbout << name << " started [" << getDate() << "]" << endl;
+    ndbout << "|- " << ptab->getName() << endl;
+
+    for (unsigned t = 0; t < tests.size(); t++){
+
+      if (_testname != NULL && 
+	      strcasecmp(tests[t]->getName(), _testname) != 0)
+        continue;
+
+      tests[t]->initBeforeTest();
+    
+      ctx = new NDBT_Context(con);
+      ctx->setTab(ptab);
+      ctx->setNumRecords(records);
+      ctx->setNumLoops(loops);
+      if(remote_mgm != NULL)
+        ctx->setRemoteMgm(remote_mgm);
+      ctx->setSuite(this);
+    
+      result = tests[t]->execute(ctx);
+      if (result != NDBT_OK)
+        numTestsFail++;
+      else
+        numTestsOk++;
+      numTestsExecuted++;
+
+    delete ctx;
+  }
+
+    if (numTestsFail > 0)
+      break;
+  }while(0);
+
+  testSuiteTimer.doStop();
+  int res = report(_testname);
+  return NDBT_ProgramExit(res);
+}
+
+void NDBT_TestSuite::execute(Ndb_cluster_connection& con,
+			     Ndb* ndb, const NdbDictionary::Table* pTab, 
 			     const char* _testname){
   int result; 
 
@@ -856,14 +917,14 @@ void NDBT_TestSuite::execute(Ndb* ndb, const NdbDictionary::Table* pTab,
       pTab2 = pTab;
     } 
     
-    ctx = new NDBT_Context();
+    ctx = new NDBT_Context(con);
     ctx->setTab(pTab2);
     ctx->setNumRecords(records);
     ctx->setNumLoops(loops);
     if(remote_mgm != NULL)
       ctx->setRemoteMgm(remote_mgm);
     ctx->setSuite(this);
-
+    
     result = tests[t]->execute(ctx);
     tests[t]->saveTestResult(pTab, result);
     if (result != NDBT_OK)
@@ -1035,14 +1096,19 @@ int NDBT_TestSuite::execute(int argc, const char** argv){
   loops = _loops;
   timer = _timer;
 
+  Ndb_cluster_connection con;
+  if(con.connect(12, 5, 1))
+  {
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  
   if(optind == argc){
     // No table specified
-    res = executeAll(_testname);
+    res = executeAll(con, _testname);
   } else {
     testSuiteTimer.doStart(); 
-    Ndb ndb("TEST_DB"); ndb.init();
     for(int i = optind; i<argc; i++){
-      executeOne(argv[i], _testname);
+      executeOne(con, argv[i], _testname);
     }
     testSuiteTimer.doStop();
     res = report(_testname);

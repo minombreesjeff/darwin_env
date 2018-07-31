@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,11 +19,13 @@
 #include <NdbTick.h>
 #include <kernel_types.h>
 #include <ndb_version.h>
+#include <ndb_limits.h>
 
 #include "VMSignal.hpp"
 #include <RefConvert.hpp>
 #include <BlockNumbers.h>
 #include <GlobalSignalNumbers.h>
+
 #include "pc.hpp"
 #include <NodeInfo.hpp>
 #include <NodeState.hpp>
@@ -32,7 +33,6 @@
 #include "LongSignal.hpp"
 #include <SignalLoggerManager.hpp>
 
-#include <Error.hpp>
 #include <ErrorReporter.hpp>
 #include <ErrorHandlingMacros.hpp>
 
@@ -385,6 +385,28 @@ protected:
    */
   const NodeInfo & getNodeInfo(NodeId nodeId) const;
   NodeInfo & setNodeInfo(NodeId);
+
+  /**********************
+   * Xfrm stuff
+   */
+  
+  /**
+   * @return length
+   */
+  Uint32 xfrm_key(Uint32 tab, const Uint32* src, 
+		  Uint32 *dst, Uint32 dstSize,
+		  Uint32 keyPartLen[MAX_ATTRIBUTES_IN_INDEX]) const;
+
+  Uint32 xfrm_attr(Uint32 attrDesc, CHARSET_INFO* cs,
+                   const Uint32* src, Uint32 & srcPos,
+                   Uint32* dst, Uint32 & dstPos, Uint32 dstSize) const;
+  
+  /**
+   *
+   */
+  Uint32 create_distr_key(Uint32 tableId,
+			  Uint32 *data, 
+			  const Uint32 keyPaLen[MAX_ATTRIBUTES_IN_INDEX])const;
   
 private:
   NewVARIABLE* NewVarRef;      /* New Base Address Table for block  */
@@ -400,6 +422,7 @@ private:
 
   void execSIGNAL_DROPPED_REP(Signal* signal);
   void execCONTINUE_FRAGMENTED(Signal* signal);
+  void execNODE_START_REP(Signal* signal);
 
   Uint32 c_fragmentIdCounter;
   ArrayPool<FragmentInfo> c_fragmentInfoPool;
@@ -483,7 +506,6 @@ private:
   void execUTIL_UNLOCK_REF(Signal* signal);
   void execUTIL_UNLOCK_CONF(Signal* signal);
 
-  void execREAD_CONFIG_REQ(Signal* signal);
 protected:
   void execUPGRADE(Signal* signal);
 
@@ -544,11 +566,11 @@ SimulatedBlock::executeFunction(GlobalSignalNumber gsn, Signal* signal){
   char errorMsg[255];
   if (!(gsn <= MAX_GSN)) {
     BaseString::snprintf(errorMsg, 255, "Illegal signal received (GSN %d too high)", gsn);
-    ERROR_SET(fatal, ERR_ERROR_PRGERR, errorMsg, errorMsg);
+    ERROR_SET(fatal, NDBD_EXIT_PRGERR, errorMsg, errorMsg);
   }
   if (!(theExecArray[gsn] != 0)) {
     BaseString::snprintf(errorMsg, 255, "Illegal signal received (GSN %d not added)", gsn);
-    ERROR_SET(fatal, ERR_ERROR_PRGERR, errorMsg, errorMsg);
+    ERROR_SET(fatal, NDBD_EXIT_PRGERR, errorMsg, errorMsg);
   }
   ndbrequire(false);
 }

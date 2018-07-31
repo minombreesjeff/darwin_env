@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,13 +59,18 @@ public:
   void set(longlong nr) { value=(double) nr; }
   void set(const char *str,uint length,CHARSET_INFO *cs)
   {
-    int err;
+    int err_not_used;
     char *end_not_used;
-    value= my_strntod(cs, (char*) str, length, &end_not_used, &err);
+    value= my_strntod(cs,(char*) str,length, &end_not_used, &err_not_used);
   }
-  double val() { return value; }
+  double val_real() { return value; }
   longlong val_int() { return (longlong) value; }
-  String *val_str(String *s) { s->set(value,decimals,default_charset()); return s; }
+  String *val_str(String *s)
+  {
+    s->set(value,decimals,default_charset());
+    return s;
+  }
+  my_decimal *val_decimal(my_decimal *);
   unsigned int size_of() { return sizeof(*this);}  
 };
 
@@ -82,9 +86,10 @@ public:
   void set(longlong nr) { value=nr; }
   void set(const char *str,uint length, CHARSET_INFO *cs)
   { int err; value=my_strntoll(cs,str,length,10,NULL,&err); }
-  double val() { return (double) value; }
+  double val_real() { return (double) value; }
   longlong val_int() { return value; }
   String *val_str(String *s) { s->set(value, default_charset()); return s; }
+  my_decimal *val_decimal(my_decimal *);
   unsigned int size_of() { return sizeof(*this);}  
 };
 
@@ -95,18 +100,18 @@ public:
   Item_proc_string(const char *name_par,uint length) :Item_proc(name_par)
     { this->max_length=length; }
   enum Item_result result_type () const { return STRING_RESULT; }
-  enum_field_types field_type() const { return MYSQL_TYPE_STRING; }
+  enum_field_types field_type() const { return MYSQL_TYPE_VARCHAR; }
   void set(double nr) { str_value.set(nr, 2, default_charset()); }
   void set(longlong nr) { str_value.set(nr, default_charset()); }
   void set(const char *str, uint length, CHARSET_INFO *cs)
   { str_value.copy(str,length,cs); }
-  double val() 
+  double val_real()
   { 
-    int err;
-    CHARSET_INFO *cs= str_value.charset();
+    int err_not_used;
     char *end_not_used;
+    CHARSET_INFO *cs= str_value.charset();
     return my_strntod(cs, (char*) str_value.ptr(), str_value.length(),
-		      &end_not_used, &err);
+		      &end_not_used, &err_not_used);
   }
   longlong val_int()
   { 
@@ -118,6 +123,7 @@ public:
   {
     return null_value ? (String*) 0 : (String*) &str_value;
   }
+  my_decimal *val_decimal(my_decimal *);
   unsigned int size_of() { return sizeof(*this);}  
 };
 

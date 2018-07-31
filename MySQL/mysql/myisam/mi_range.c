@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004, 2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -145,8 +144,42 @@ static ha_rows _mi_record_pos(MI_INFO *info, const byte *key, uint key_len,
   if (!(nextflag & (SEARCH_FIND | SEARCH_NO_FIND | SEARCH_LAST)))
     key_len=USE_WHOLE_KEY;
 
+  /*
+    my_handler.c:mi_compare_text() has a flag 'skip_end_space'.
+    This is set in my_handler.c:ha_key_cmp() in dependence on the
+    compare flags 'nextflag' and the column type.
+
+    TEXT columns are of type HA_KEYTYPE_VARTEXT. In this case the
+    condition is skip_end_space= ((nextflag & (SEARCH_FIND |
+    SEARCH_UPDATE)) == SEARCH_FIND).
+
+    SEARCH_FIND is used for an exact key search. The combination
+    SEARCH_FIND | SEARCH_UPDATE is used in write/update/delete
+    operations with a comment like "Not real duplicates", whatever this
+    means. From the condition above we can see that 'skip_end_space' is
+    always false for these operations. The result is that trailing space
+    counts in key comparison and hence, emtpy strings ('', string length
+    zero, but not NULL) compare less that strings starting with control
+    characters and these in turn compare less than strings starting with
+    blanks.
+
+    When estimating the number of records in a key range, we request an
+    exact search for the minimum key. This translates into a plain
+    SEARCH_FIND flag. Using this alone would lead to a 'skip_end_space'
+    compare. Empty strings would be expected above control characters.
+    Their keys would not be found because they are located below control
+    characters.
+
+    This is the reason that we add the SEARCH_UPDATE flag here. It makes
+    the key estimation compare in the same way like key write operations
+    do. Olny so we will find the keys where they have been inserted.
+
+    Adding the flag unconditionally does not hurt as it is used in the
+    above mentioned condition only. So it can safely be used together
+    with other flags.
+  */
   pos=_mi_search_pos(info,keyinfo,key_buff,key_len,
-		     nextflag | SEARCH_SAVE_BUFF,
+		     nextflag | SEARCH_SAVE_BUFF | SEARCH_UPDATE,
 		     info->s->state.key_root[inx]);
   if (pos >= 0.0)
   {
@@ -171,6 +204,7 @@ static double _mi_search_pos(register MI_INFO *info,
   uchar *keypos,*buff;
   double offset;
   DBUG_ENTER("_mi_search_pos");
+  LINT_INIT(max_keynr);
 
   if (pos == HA_OFFSET_ERROR)
     DBUG_RETURN(0.5);
@@ -187,9 +221,9 @@ static double _mi_search_pos(register MI_INFO *info,
     if (flag == MI_FOUND_WRONG_KEY)
       DBUG_RETURN(-1);				/* error */
     /*
-    ** Didn't found match. keypos points at next (bigger) key
-    *  Try to find a smaller, better matching key.
-    ** Matches keynr + [0-1]
+      Didn't found match. keypos points at next (bigger) key
+      Try to find a smaller, better matching key.
+      Matches keynr + [0-1]
     */
     if (flag > 0 && ! nod_flag)
       offset= 1.0;
@@ -200,8 +234,8 @@ static double _mi_search_pos(register MI_INFO *info,
   else
   {
     /*
-    ** Found match. Keypos points at the start of the found key
-    ** Matches keynr+1
+      Found match. Keypos points at the start of the found key
+      Matches keynr+1
     */
     offset=1.0;					/* Matches keynr+1 */
     if ((nextflag & SEARCH_FIND) && nod_flag &&
@@ -209,8 +243,8 @@ static double _mi_search_pos(register MI_INFO *info,
 	 key_len != USE_WHOLE_KEY))
     {
       /*
-      ** There may be identical keys in the tree. Try to match on of those.
-      ** Matches keynr + [0-1]
+        There may be identical keys in the tree. Try to match on of those.
+        Matches keynr + [0-1]
       */
       if ((offset=_mi_search_pos(info,keyinfo,key,key_len,SEARCH_FIND,
 				 _mi_kpos(nod_flag,keypos))) < 0)
@@ -228,7 +262,8 @@ err:
 
 	/* Get keynummer of current key and max number of keys in nod */
 
-static uint _mi_keynr(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page, uchar *keypos, uint *ret_max_key)
+static uint _mi_keynr(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
+                      uchar *keypos, uint *ret_max_key)
 {
   uint nod_flag,keynr,max_key;
   uchar t_buff[MI_MAX_KEY_BUFF],*end;
@@ -237,7 +272,7 @@ static uint _mi_keynr(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page, u
   nod_flag=mi_test_if_nod(page);
   page+=2+nod_flag;
 
-  if (!(keyinfo->flag & (HA_VAR_LENGTH_KEY| HA_BINARY_PACK_KEY)))
+  if (!(keyinfo->flag & (HA_VAR_LENGTH_KEY | HA_BINARY_PACK_KEY)))
   {
     *ret_max_key= (uint) (end-page)/(keyinfo->keylength+nod_flag);
     return (uint) (keypos-page)/(keyinfo->keylength+nod_flag);

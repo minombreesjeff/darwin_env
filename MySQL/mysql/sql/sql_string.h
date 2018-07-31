@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,12 +23,22 @@
 #define NOT_FIXED_DEC			31
 #endif
 
+#define STRING_WITH_LEN(X)  ((const char*) X), ((uint) (sizeof(X) - 1))
+
 class String;
 int sortcmp(const String *a,const String *b, CHARSET_INFO *cs);
 String *copy_if_not_alloced(String *a,String *b,uint32 arg_length);
 uint32 copy_and_convert(char *to, uint32 to_length, CHARSET_INFO *to_cs,
 			const char *from, uint32 from_length,
 			CHARSET_INFO *from_cs, uint *errors);
+uint32 well_formed_copy_nchars(CHARSET_INFO *to_cs,
+                               char *to, uint to_length,
+                               CHARSET_INFO *from_cs,
+                               const char *from, uint from_length,
+                               uint nchars,
+                               const char **well_formed_error_pos,
+                               const char **cannot_convert_error_pos,
+                               const char **from_end_pos);
 
 class String
 {
@@ -72,18 +81,20 @@ public:
   static void *operator new(size_t size, MEM_ROOT *mem_root)
   { return (void*) alloc_root(mem_root, (uint) size); }
   static void operator delete(void *ptr_arg,size_t size)
-    {}
+  { TRASH(ptr_arg, size); }
   static void operator delete(void *ptr_arg, MEM_ROOT *mem_root)
-    {}
+  { /* never called */ }
   ~String() { free(); }
 
-  inline void set_charset(CHARSET_INFO *charset) { str_charset= charset; }
+  inline void set_charset(CHARSET_INFO *charset_arg)
+  { str_charset= charset_arg; }
   inline CHARSET_INFO *charset() const { return str_charset; }
   inline uint32 length() const { return str_length;}
   inline uint32 alloced_length() const { return Alloced_length;}
   inline char& operator [] (uint32 i) const { return Ptr[i]; }
   inline void length(uint32 len) { str_length=len ; }
   inline bool is_empty() { return (str_length == 0); }
+  inline void mark_as_const() { Alloced_length= 0;}
   inline const char *ptr() const { return Ptr; }
   inline char *c_ptr()
   {
@@ -141,6 +152,34 @@ public:
   bool set(longlong num, CHARSET_INFO *cs);
   bool set(ulonglong num, CHARSET_INFO *cs);
   bool set(double num,uint decimals, CHARSET_INFO *cs);
+
+  /*
+    PMG 2004.11.12
+    This is a method that works the same as perl's "chop". It simply
+    drops the last character of a string. This is useful in the case
+    of the federated storage handler where I'm building a unknown
+    number, list of values and fields to be used in a sql insert
+    statement to be run on the remote server, and have a comma after each.
+    When the list is complete, I "chop" off the trailing comma
+
+    ex. 
+      String stringobj; 
+      stringobj.append("VALUES ('foo', 'fi', 'fo',");
+      stringobj.chop();
+      stringobj.append(")");
+
+    In this case, the value of string was:
+
+    VALUES ('foo', 'fi', 'fo',
+    VALUES ('foo', 'fi', 'fo'
+    VALUES ('foo', 'fi', 'fo')
+      
+  */
+  inline void chop()
+  {
+    Ptr[str_length--]= '\0'; 
+  }
+
   inline void free()
   {
     if (alloced)
@@ -176,10 +215,6 @@ public:
 	Alloced_length=arg_length;
       }
     }
-  }
-  inline void shrink_to_length()
-  {
-    Alloced_length= str_length;
   }
   bool is_alloced() { return alloced; }
   inline String& operator = (const String &s)
@@ -236,8 +271,6 @@ public:
   }
   bool fill(uint32 max_length,char fill);
   void strip_sp();
-  inline void caseup() { my_caseup(str_charset,Ptr,str_length); }
-  inline void casedn() { my_casedn(str_charset,Ptr,str_length); }
   friend int sortcmp(const String *a,const String *b, CHARSET_INFO *cs);
   friend int stringcmp(const String *a,const String *b);
   friend String *copy_if_not_alloced(String *a,String *b,uint32 arg_length);
@@ -293,6 +326,8 @@ public:
      Ptr[str_length]= c;
      str_length++;
   }
+  void qs_append(int i);
+  void qs_append(uint i);
 
   /* Inline (general) functions used by the protocol functions */
 
@@ -328,3 +363,9 @@ public:
     return (s->alloced && Ptr >= s->Ptr && Ptr < s->Ptr + s->str_length);
   }
 };
+
+static inline bool check_if_only_end_space(CHARSET_INFO *cs, char *str, 
+                                           char *end)
+{
+  return str+ cs->cset->scan(cs, str, end, MY_SEQ_SPACES) == end;
+}

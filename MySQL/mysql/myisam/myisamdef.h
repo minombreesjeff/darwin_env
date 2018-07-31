@@ -1,9 +1,8 @@
-/* Copyright (C) 2000,2004 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,6 +37,7 @@ typedef struct st_mi_status_info
   my_off_t key_empty;			/* lost space in indexfile */
   my_off_t key_file_length;
   my_off_t data_file_length;
+  ha_checksum checksum;
 } MI_STATUS_INFO;
 
 typedef struct st_mi_state_info
@@ -263,6 +263,7 @@ struct st_myisam_info {
   enum ha_rkey_function last_key_func;  /* CONTAIN, OVERLAP, etc */
   uint  save_lastkey_length;
   uint  pack_key_length;                /* For MYISAMMRG */
+  uint16 last_used_keyseg;              /* For MyISAMMRG */
   int	errkey;				/* Got last error on this key */
   int   lock_type;			/* How database was locked */
   int   tmp_lock_type;			/* When locked by readinfo */
@@ -274,10 +275,14 @@ struct st_myisam_info {
   uint  preload_buff_size;              /* When preloading indexes */
   myf lock_wait;			/* is 0 or MY_DONT_WAIT */
   my_bool was_locked;			/* Was locked in panic */
+  my_bool append_insert_at_end;		/* Set if concurrent insert */
   my_bool quick_mode;
   my_bool page_changed;		/* If info->buff can't be used for rnext */
   my_bool buff_used;		/* If info->buff has to be reread for rnext */
   my_bool once_flags;           /* For MYISAMMRG */
+#ifdef __WIN__
+  my_bool owned_by_merge;                       /* This MyISAM table is part of a merge union */
+#endif
 #ifdef THREAD
   THR_LOCK_DATA lock;
 #endif
@@ -375,6 +380,8 @@ typedef struct st_mi_sort_param
                                      }while(0)
 #define mi_is_crashed(x) ((x)->s->state.changed & STATE_CRASHED)
 #define mi_is_crashed_on_repair(x) ((x)->s->state.changed & STATE_CRASHED_ON_REPAIR)
+#define mi_print_error(SHARE, ERRNO)                     \
+        mi_report_error((ERRNO), (SHARE)->index_file_name)
 
 /* Functions to store length of space packed keys, VARCHAR or BLOB keys */
 
@@ -589,7 +596,7 @@ extern uint _mi_pack_key(MI_INFO *info,uint keynr,uchar *key,uchar *old,
 extern int _mi_read_key_record(MI_INFO *info,my_off_t filepos,byte *buf);
 extern int _mi_read_cache(IO_CACHE *info,byte *buff,my_off_t pos,
 			  uint length,int re_read_if_possibly);
-extern void update_auto_increment(MI_INFO *info,const byte *record);
+extern ulonglong retrieve_auto_increment(MI_INFO *info,const byte *record);
 
 extern byte *mi_alloc_rec_buff(MI_INFO *,ulong, byte**);
 #define mi_get_rec_buff_ptr(info,buf)                              \
@@ -688,6 +695,7 @@ extern void _myisam_log_command(enum myisam_log_commands command,
 extern void _myisam_log_record(enum myisam_log_commands command,MI_INFO *info,
 			      const byte *record,my_off_t filepos,
 			      int result);
+extern void mi_report_error(int errcode, const char *file_name);
 extern my_bool _mi_memmap_file(MI_INFO *info);
 extern void _mi_unmap_file(MI_INFO *info);
 extern uint save_pack_length(uint version, byte *block_buff, ulong length);
@@ -695,10 +703,10 @@ extern uint read_pack_length(uint version, const uchar *buf, ulong *length);
 extern uint calc_pack_length(uint version, ulong length);
 
 uint mi_state_info_write(File file, MI_STATE_INFO *state, uint pWrite);
-char *mi_state_info_read(char *ptr, MI_STATE_INFO *state);
+uchar *mi_state_info_read(uchar *ptr, MI_STATE_INFO *state);
 uint mi_state_info_read_dsk(File file, MI_STATE_INFO *state, my_bool pRead);
 uint mi_base_info_write(File file, MI_BASE_INFO *base);
-char *my_n_base_info_read(char *ptr, MI_BASE_INFO *base);
+uchar *my_n_base_info_read(uchar *ptr, MI_BASE_INFO *base);
 int mi_keyseg_write(File file, const HA_KEYSEG *keyseg);
 char *mi_keyseg_read(char *ptr, HA_KEYSEG *keyseg);
 uint mi_keydef_write(File file, MI_KEYDEF *keydef);
@@ -722,8 +730,9 @@ int _mi_cmp_dynamic_unique(MI_INFO *info, MI_UNIQUEDEF *def,
 			   const byte *record, my_off_t pos);
 int mi_unique_comp(MI_UNIQUEDEF *def, const byte *a, const byte *b,
 		   my_bool null_are_equal);
-void mi_get_status(void* param);
+void mi_get_status(void* param, int concurrent_insert);
 void mi_update_status(void* param);
+void mi_restore_status(void* param);
 void mi_copy_status(void* to,void *from);
 my_bool mi_check_status(void* param);
 void mi_disable_non_unique_index(MI_INFO *info, ha_rows rows);
@@ -735,7 +744,7 @@ int mi_open_keyfile(MYISAM_SHARE *share);
 void mi_setup_functions(register MYISAM_SHARE *share);
 
     /* Functions needed by mi_check */
-volatile my_bool *killed_ptr(MI_CHECK *param);
+volatile int *killed_ptr(MI_CHECK *param);
 void mi_check_print_error _VARARGS((MI_CHECK *param, const char *fmt,...));
 void mi_check_print_warning _VARARGS((MI_CHECK *param, const char *fmt,...));
 void mi_check_print_info _VARARGS((MI_CHECK *param, const char *fmt,...));
@@ -743,7 +752,7 @@ int flush_pending_blocks(MI_SORT_PARAM *param);
 int sort_ft_buf_flush(MI_SORT_PARAM *sort_param);
 int thr_write_keys(MI_SORT_PARAM *sort_param);
 #ifdef THREAD
-pthread_handler_decl(thr_find_all_keys,arg);
+pthread_handler_t thr_find_all_keys(void *arg);
 #endif
 int flush_blocks(MI_CHECK *param, KEY_CACHE *key_cache, File file);
 

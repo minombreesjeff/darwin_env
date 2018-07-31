@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,16 +32,31 @@ extern "C" {
 #endif
 #include "my_handler.h"
 
-	/* defines used by myisam-funktions */
+/*
+  There is a hard limit for the maximum number of keys as there are only
+  8 bits in the index file header for the number of keys in a table.
+  This means that 0..255 keys can exist for a table. The idea of
+  MI_MAX_POSSIBLE_KEY is to ensure that one can use myisamchk & tools on
+  a MyISAM table for which one has more keys than MyISAM is normally
+  compiled for. If you don't have this, you will get a core dump when
+  running myisamchk compiled for 128 keys on a table with 255 keys.
+*/
+#define MI_MAX_POSSIBLE_KEY         255             /* For myisam_chk */
+#if MAX_INDEXES > MI_MAX_POSSIBLE_KEY
+#define MI_MAX_KEY                  MI_MAX_POSSIBLE_KEY /* Max allowed keys */
+#else
+#define MI_MAX_KEY                  MAX_INDEXES         /* Max allowed keys */
+#endif
 
-/* The following defines can be increased if necessary */
-#define MI_MAX_KEY	64		/* Max allowed keys */
-#define MI_MAX_KEY_SEG	16		/* Max segments for key */
-#define MI_MAX_KEY_LENGTH 1000
+#define MI_MAX_POSSIBLE_KEY_BUFF    (1024+6+6)      /* For myisam_chk */
+/*
+  The following defines can be increased if necessary.
+  But beware the dependency of MI_MAX_POSSIBLE_KEY_BUFF and MI_MAX_KEY_LENGTH.
+*/
+#define MI_MAX_KEY_LENGTH           1000            /* Max length in bytes */
+#define MI_MAX_KEY_SEG              16              /* Max segments for key */
 
 #define MI_MAX_KEY_BUFF  (MI_MAX_KEY_LENGTH+MI_MAX_KEY_SEG*6+8+8)
-#define MI_MAX_POSSIBLE_KEY_BUFF (1024+6+6)	/* For myisam_chk */
-#define MI_MAX_POSSIBLE_KEY	64		/* For myisam_chk */
 #define MI_MAX_MSG_BUF      1024 /* used in CHECK TABLE, REPAIR TABLE */
 #define MI_NAME_IEXT	".MYI"
 #define MI_NAME_DEXT	".MYD"
@@ -55,6 +69,63 @@ extern "C" {
 #define MI_MAX_KEY_BLOCK_LENGTH	16384
 
 #define mi_portable_sizeof_char_ptr 8
+
+/*
+  In the following macros '_keyno_' is 0 .. keys-1.
+  If there can be more keys than bits in the key_map, the highest bit
+  is for all upper keys. They cannot be switched individually.
+  This means that clearing of high keys is ignored, setting one high key
+  sets all high keys.
+*/
+#define MI_KEYMAP_BITS      (8 * SIZEOF_LONG_LONG)
+#define MI_KEYMAP_HIGH_MASK (ULL(1) << (MI_KEYMAP_BITS - 1))
+#define mi_get_mask_all_keys_active(_keys_) \
+                            (((_keys_) < MI_KEYMAP_BITS) ? \
+                             ((ULL(1) << (_keys_)) - ULL(1)) : \
+                             (~ ULL(0)))
+
+#if MI_MAX_KEY > MI_KEYMAP_BITS
+
+#define mi_is_key_active(_keymap_,_keyno_) \
+                            (((_keyno_) < MI_KEYMAP_BITS) ? \
+                             test((_keymap_) & (ULL(1) << (_keyno_))) : \
+                             test((_keymap_) & MI_KEYMAP_HIGH_MASK))
+#define mi_set_key_active(_keymap_,_keyno_) \
+                            (_keymap_)|= (((_keyno_) < MI_KEYMAP_BITS) ? \
+                                          (ULL(1) << (_keyno_)) : \
+                                          MI_KEYMAP_HIGH_MASK)
+#define mi_clear_key_active(_keymap_,_keyno_) \
+                            (_keymap_)&= (((_keyno_) < MI_KEYMAP_BITS) ? \
+                                          (~ (ULL(1) << (_keyno_))) : \
+                                          (~ (ULL(0))) /*ignore*/ )
+
+#else
+
+#define mi_is_key_active(_keymap_,_keyno_) \
+                            test((_keymap_) & (ULL(1) << (_keyno_)))
+#define mi_set_key_active(_keymap_,_keyno_) \
+                            (_keymap_)|= (ULL(1) << (_keyno_))
+#define mi_clear_key_active(_keymap_,_keyno_) \
+                            (_keymap_)&= (~ (ULL(1) << (_keyno_)))
+
+#endif
+
+#define mi_is_any_key_active(_keymap_) \
+                            test((_keymap_))
+#define mi_is_all_keys_active(_keymap_,_keys_) \
+                            ((_keymap_) == mi_get_mask_all_keys_active(_keys_))
+#define mi_set_all_keys_active(_keymap_,_keys_) \
+                            (_keymap_)= mi_get_mask_all_keys_active(_keys_)
+#define mi_clear_all_keys_active(_keymap_) \
+                            (_keymap_)= 0
+#define mi_intersect_keys_active(_to_,_from_) \
+                            (_to_)&= (_from_)
+#define mi_is_any_intersect_keys_active(_keymap1_,_keys_,_keymap2_) \
+                            ((_keymap1_) & (_keymap2_) & \
+                             mi_get_mask_all_keys_active(_keys_))
+#define mi_copy_keys_active(_to_,_maxkeys_,_from_) \
+                            (_to_)= (mi_get_mask_all_keys_active(_maxkeys_) & \
+                                     (_from_))
 
 	/* Param to/from mi_info */
 
@@ -107,12 +178,13 @@ typedef struct st_mi_create_info
 } MI_CREATE_INFO;
 
 struct st_myisam_info;			/* For referense */
+struct st_mi_isam_share;
 typedef struct st_myisam_info MI_INFO;
-
 struct st_mi_s_param;
 
 typedef struct st_mi_keydef		/* Key definition with open & info */
 {
+  struct st_mi_isam_share *share;       /* Pointer to base (set in mi_open) */
   uint16 keysegs;			/* Number of key-segment */
   uint16 flag;				/* NOSAME, PACK_USED */
 
@@ -189,10 +261,10 @@ typedef struct st_columndef		/* column information */
 typedef void (* invalidator_by_filename)(const char * filename);
 
 extern my_string myisam_log_filename;		/* Name of logfile */
-extern uint myisam_block_size;
+extern ulong myisam_block_size;
+extern ulong myisam_concurrent_insert;
 extern my_bool myisam_flush,myisam_delay_key_write,myisam_single_user;
-extern my_bool myisam_concurrent_insert;
-extern my_off_t myisam_max_temp_length,myisam_max_extra_temp_length;
+extern my_off_t myisam_max_temp_length;
 extern ulong myisam_bulk_insert_tree_size, myisam_data_pointer_size;
 
 	/* Prototypes for myisam-functions */
@@ -295,6 +367,7 @@ extern uint mi_get_pointer_length(ulonglong file_length, uint def);
 */
 
 #define TT_USEFRM               1
+#define TT_FOR_UPGRADE          2
 
 #define O_NEW_INDEX	1		/* Bits set in out_flag */
 #define O_NEW_DATA	2
@@ -362,8 +435,8 @@ typedef struct st_mi_check_param
   ha_checksum key_crc[MI_MAX_POSSIBLE_KEY];
   ulong rec_per_key_part[MI_MAX_KEY_SEG*MI_MAX_POSSIBLE_KEY];
   void *thd;
-  char *db_name,*table_name;
-  char *op_name;
+  const char *db_name, *table_name;
+  const char *op_name;
   enum_mi_stats_method stats_method;
 } MI_CHECK;
 

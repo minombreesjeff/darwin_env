@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004, 2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,7 +28,7 @@ int heap_rrnd(register HP_INFO *info, byte *record, byte *pos)
 {
   HP_SHARE *share=info->s;
   DBUG_ENTER("heap_rrnd");
-  DBUG_PRINT("enter",("info: %lx  pos: %lx",info,pos));
+  DBUG_PRINT("enter",("info: 0x%lx  pos: %lx",(long) info, (long) pos));
 
   info->lastinx= -1;
   if (!(info->current_ptr= pos))
@@ -44,7 +43,7 @@ int heap_rrnd(register HP_INFO *info, byte *record, byte *pos)
   }
   info->update=HA_STATE_PREV_FOUND | HA_STATE_NEXT_FOUND | HA_STATE_AKTIV;
   memcpy(record,info->current_ptr,(size_t) share->reclength);
-  DBUG_PRINT("exit",("found record at %lx",info->current_ptr));
+  DBUG_PRINT("exit", ("found record at 0x%lx", (long) info->current_ptr));
   info->current_hash_ptr=0;			/* Can't use rnext */
   DBUG_RETURN(0);
 } /* heap_rrnd */
@@ -64,7 +63,7 @@ int heap_rrnd_old(register HP_INFO *info, byte *record, ulong pos)
 {
   HP_SHARE *share=info->s;
   DBUG_ENTER("heap_rrnd");
-  DBUG_PRINT("enter",("info: %lx  pos: %ld",info,pos));
+  DBUG_PRINT("enter",("info: 0x%lx  pos: %ld",info,pos));
 
   info->lastinx= -1;
   if (pos == (ulong) -1)
@@ -98,7 +97,7 @@ end:
   }
   info->update=HA_STATE_PREV_FOUND | HA_STATE_NEXT_FOUND | HA_STATE_AKTIV;
   memcpy(record,info->current_ptr,(size_t) share->reclength);
-  DBUG_PRINT("exit",("found record at %lx",info->current_ptr));
+  DBUG_PRINT("exit",("found record at 0x%lx",info->current_ptr));
   info->current_hash_ptr=0;			/* Can't use rnext */
   DBUG_RETURN(0);
 } /* heap_rrnd */

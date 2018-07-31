@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -53,12 +52,14 @@ public:
   
   enum ErrorCode {
     Busy = 701,
+    BusyWithNR = 711,
     NotMaster = 702,
     NoSuchTable         = 709,
     InvalidTableVersion = 241,
     DropInProgress      = 283,
     NoDropTableRecordAvailable = 1229,
-    BackupInProgress = 761
+    BackupInProgress = 761,
+    SingleUser = 299
   };
 };
 

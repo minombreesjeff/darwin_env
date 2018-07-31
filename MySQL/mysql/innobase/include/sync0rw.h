@@ -61,8 +61,12 @@ Creates, or rather, initializes an rw-lock object in a specified memory
 location (which must be appropriately aligned). The rw-lock is initialized
 to the non-locked state. Explicit freeing of the rw-lock with rw_lock_free
 is necessary only if the memory block containing it is freed. */
+#ifdef UNIV_DEBUG
+# define rw_lock_create(L) rw_lock_create_func((L), #L, __FILE__, __LINE__)
+#else /* UNIV_DEBUG */
+# define rw_lock_create(L) rw_lock_create_func((L), __FILE__, __LINE__)
+#endif /* UNIV_DEBUG */
 
-#define rw_lock_create(L)	rw_lock_create_func((L), __FILE__, __LINE__)
 /*=====================*/
 /**********************************************************************
 Creates, or rather, initializes an rw-lock object in a specified memory
@@ -74,6 +78,9 @@ void
 rw_lock_create_func(
 /*================*/
 	rw_lock_t*	lock,		/* in: pointer to memory */
+#ifdef UNIV_DEBUG
+	const char*	cmutex_name, 	/* in: mutex name */
+#endif /* UNIV_DEBUG */
 	const char*	cfile_name,	/* in: file name where created */
 	ulint		cline);		/* in: file line where created */
 /**********************************************************************
@@ -410,6 +417,7 @@ blocked by readers, a writer may queue for the lock by setting the writer
 field. Then no new readers are allowed in. */
 
 struct rw_lock_struct {
+	os_event_t	event;	/* Used by sync0arr.c for thread queueing */
 	ulint	reader_count;	/* Number of readers who have locked this
 				lock in the shared mode */
 	ulint	writer; 	/* This field is set to RW_LOCK_EX if there

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -92,6 +91,8 @@ void ndbSetOwnVersion() {}
 
 #ifndef TEST_VERSION
 struct NdbUpGradeCompatible ndbCompatibleTable_full[] = {
+  { MAKE_VERSION(5,0,NDB_VERSION_BUILD), MAKE_VERSION(5,0,12), UG_Range},
+  { MAKE_VERSION(5,0,11), MAKE_VERSION(5,0,2), UG_Range},
   { MAKE_VERSION(4,1,NDB_VERSION_BUILD), MAKE_VERSION(4,1,15), UG_Range },
   { MAKE_VERSION(4,1,14), MAKE_VERSION(4,1,10), UG_Range },
   { MAKE_VERSION(4,1,10), MAKE_VERSION(4,1,9), UG_Exact },
@@ -101,6 +102,8 @@ struct NdbUpGradeCompatible ndbCompatibleTable_full[] = {
 };
 
 struct NdbUpGradeCompatible ndbCompatibleTable_upgrade[] = {
+  { MAKE_VERSION(5,0,12), MAKE_VERSION(5,0,11), UG_Exact },
+  { MAKE_VERSION(5,0,2), MAKE_VERSION(4,1,8), UG_Exact },
   { MAKE_VERSION(4,1,15), MAKE_VERSION(4,1,14), UG_Exact },
   { MAKE_VERSION(3,5,4), MAKE_VERSION(3,5,3), UG_Exact },
   { 0, 0, UG_Null }

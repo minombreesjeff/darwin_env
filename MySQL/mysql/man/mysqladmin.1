@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqladmin\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLADMIN\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLADMIN\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -55,6 +55,9 @@ and all its tables.
 extended\-status
 .sp
 Display the server status variables and their values.
+.PP
+\fBMySQL Enterprise\fR. For expert advice on using server status variables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 flush\-hosts
@@ -85,7 +88,7 @@ Flush all tables.
 \(bu
 flush\-threads
 .sp
-Flush the thread cache. (Added in MySQL 3.23.16.)
+Flush the thread cache.
 .TP 3n
 \(bu
 kill \fIid\fR,\fIid\fR,...
@@ -97,8 +100,13 @@ old\-password \fInew\-password\fR
 .sp
 This is like the
 password
-command but stores the password using the old (pre\-4.1) password\-hashing format. This command was added in MySQL 4.1.0. (See
-Section\ 6.9, \(lqPassword Hashing as of MySQL 4.1\(rq.)
+command but stores the password using the old (pre\-4.1) password\-hashing format. (See
+Section\ 5.9, \(lqPassword Hashing as of MySQL 4.1\(rq.)
+.PP
+\fBMySQL Enterprise\fR. For expert advice on the security implications of using the
+old\-password
+command, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 password \fInew\-password\fR
@@ -126,8 +134,8 @@ ping
 .sp
 Check whether the server is alive. The return status from
 \fBmysqladmin\fR
-is 0 if the server is running, 1 if it is not. Beginning with MySQL 4.0.22, the status is 0 even in case of an error such as
-Access denied, because that means the server is running but refused the connection, which is different from the server not running.
+is 0 if the server is running, 1 if it is not. This is 0 even in case of an error such as
+Access denied, because this means that the server is running but refused the connection, which is different from the server not running.
 .TP 3n
 \(bu
 processlist
@@ -137,7 +145,8 @@ SHOW PROCESSLIST
 statement. If the
 \fB\-\-verbose\fR
 option is given, the output is like that of
-SHOW FULL PROCESSLIST.
+SHOW FULL PROCESSLIST. (See
+Section\ 5.4.21, \(lqSHOW PROCESSLIST Syntax\(rq.)
 .TP 3n
 \(bu
 reload
@@ -157,7 +166,7 @@ Stop the server.
 \(bu
 start\-slave
 .sp
-Start replication on a slave server. (Added in MySQL 3.23.16.)
+Start replication on a slave server.
 .TP 3n
 \(bu
 status
@@ -167,12 +176,15 @@ Display a short server status message.
 \(bu
 stop\-slave
 .sp
-Stop replication on a slave server. (Added in MySQL 3.23.16.)
+Stop replication on a slave server.
 .TP 3n
 \(bu
 variables
 .sp
 Display the server system variables and their values.
+.PP
+\fBMySQL Enterprise\fR. For expert advice on using server system variables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 version
@@ -222,7 +234,7 @@ Slow queries
 The number of queries that have taken more than
 long_query_time
 seconds. See
-Section\ 10.5, \(lqThe Slow Query Log\(rq.
+Section\ 9.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 Opens
@@ -278,7 +290,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-compress\fR,
@@ -310,7 +322,7 @@ string often is
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq. Added in MySQL 4.1.9.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -341,7 +353,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 7.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -352,7 +364,7 @@ The TCP/IP port number to use for the connection.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use. Added in MySQL 4.1.
+The connection protocol to use.
 .TP 3n
 \(bu
 \fB\-\-relative\fR,
@@ -393,7 +405,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 7.7.3, \(lqSSL Command Options\(rq.
+Section\ 6.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
@@ -450,10 +462,11 @@ It is also possible to set variables by using
 \fB\-\-set\-variable=\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
 or
 \fB\-O \fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-syntax. However, this syntax is deprecated as of MySQL 4.0.
+syntax.
+\fIThis syntax is deprecated\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -461,35 +474,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

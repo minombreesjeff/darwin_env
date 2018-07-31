@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -139,7 +138,7 @@ SignalLoggerManager::log(LogMode logMode, const char * params)
   } else {
     for (int i = 0; i < count; ++i){
       BlockNumber number = getBlockNo(blocks[i]);
-      cnt += log(SLM_ON, number-MIN_BLOCK_NO, logMode);
+      cnt += log(SLM_ON, number, logMode);
     }
   }
   for(int i = 0; i<count; i++){
@@ -383,7 +382,7 @@ SignalLoggerManager::sendSignalWithDelay(Uint32 delayInMilliSeconds,
  * Generic messages in the signal log
  */
 void
-SignalLoggerManager::log(BlockNumber bno, const char * msg)
+SignalLoggerManager::log(BlockNumber bno, const char * msg, ...)
 {
   // Normalise blocknumber for use in logModes array
   const BlockNumber bno2 = bno - MIN_BLOCK_NO;
@@ -391,7 +390,12 @@ SignalLoggerManager::log(BlockNumber bno, const char * msg)
 
   if(outputStream != 0 &&
      logModes[bno2] != LogOff){
-    fprintf(outputStream, "%s: %s\n", getBlockName(bno, "API"), msg);
+    va_list ap;
+    va_start(ap, msg);
+    fprintf(outputStream, "%s: ", getBlockName(bno, "API"));
+    vfprintf(outputStream, msg, ap);
+    fprintf(outputStream, "\n");
+    va_end(ap);
   }
 }
 

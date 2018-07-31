@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +25,8 @@
 #ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
+
+#define MYSQL_LEX 1
 
 #include "mysql_priv.h"
 #include "procedure.h"
@@ -59,7 +60,11 @@ int compare_ulonglong2(void* cmp_arg __attribute__((unused)),
   return compare_ulonglong(s,t);
 }
 
-static bool append_escaped(String *to_str, String *from_str);
+int compare_decimal2(int* len, const char *s, const char *t)
+{
+  return memcmp(s, t, *len);
+}
+
 
 Procedure *
 proc_analyse_init(THD *thd, ORDER *param, select_result *result,
@@ -81,8 +86,13 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
   else if (param->next)
   {
     // first parameter
+    if (!(*param->item)->fixed && (*param->item)->fix_fields(thd, param->item))
+    {
+      DBUG_PRINT("info", ("fix_fields() for the first parameter failed"));
+      goto err;
+    }
     if ((*param->item)->type() != Item::INT_ITEM ||
-	(*param->item)->val() < 0)
+	(*param->item)->val_real() < 0)
     {
       my_error(ER_WRONG_PARAMETERS_TO_PROCEDURE, MYF(0), proc_name);
       goto err;
@@ -95,8 +105,13 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
       goto err;
     }
     // second parameter
+    if (!(*param->item)->fixed && (*param->item)->fix_fields(thd, param->item))
+    {
+      DBUG_PRINT("info", ("fix_fields() for the second parameter failed"));
+      goto err;
+    }
     if ((*param->item)->type() != Item::INT_ITEM ||
-	(*param->item)->val() < 0)
+	(*param->item)->val_real() < 0)
     {
       my_error(ER_WRONG_PARAMETERS_TO_PROCEDURE, MYF(0), proc_name);
       goto err;
@@ -104,7 +119,7 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
     pc->max_treemem = (uint) (*param->item)->val_int();
   }
   else if ((*param->item)->type() != Item::INT_ITEM ||
-	   (*param->item)->val() < 0)
+	   (*param->item)->val_real() < 0)
   {
     my_error(ER_WRONG_PARAMETERS_TO_PROCEDURE, MYF(0), proc_name);
     goto err;
@@ -129,20 +144,30 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
     Item *item;
     while ((item = it++))
     {
-      if (item->result_type() == INT_RESULT)
-      {
+      field_info *new_field;
+      switch (item->result_type()) {
+      case INT_RESULT:
         // Check if fieldtype is ulonglong
         if (item->type() == Item::FIELD_ITEM &&
             ((Item_field*) item)->field->type() == FIELD_TYPE_LONGLONG &&
             ((Field_longlong*) ((Item_field*) item)->field)->unsigned_flag)
-          *f_info++ = new field_ulonglong(item, pc);
+          new_field= new field_ulonglong(item, pc);
         else
-          *f_info++ = new field_longlong(item, pc);
+          new_field= new field_longlong(item, pc);
+        break;
+      case REAL_RESULT:
+        new_field= new field_real(item, pc);
+        break;
+      case DECIMAL_RESULT:
+        new_field= new field_decimal(item, pc);
+        break;
+      case STRING_RESULT:
+        new_field= new field_str(item, pc);
+        break;
+      default:
+        goto err;
       }
-      if (item->result_type() == REAL_RESULT)
-        *f_info++ = new field_real(item, pc);
-      if (item->result_type() == STRING_RESULT)
-        *f_info++ = new field_str(item, pc);
+      *f_info++= new_field;
     }
   }
   DBUG_RETURN(pc);
@@ -262,7 +287,7 @@ bool get_ev_num_info(EV_NUM_INFO *ev_info, NUM_INFO *info, const char *num)
   }
   else		// ulonglong is as big as bigint in MySQL
   {
-    if ((check_ulonglong(num, info->integers) == REAL_NUM))
+    if ((check_ulonglong(num, info->integers) == DECIMAL_NUM))
       return 0;
     ev_info->ullval = (ulonglong) max(ev_info->ullval, info->ullval);
     ev_info->max_dval =  (double) max(ev_info->max_dval, info->dval);
@@ -370,7 +395,7 @@ void field_str::add()
 void field_real::add()
 {
   char buff[MAX_FIELD_WIDTH], *ptr, *end;
-  double num = item->val();
+  double num= item->val_real();
   uint length, zero_count, decs;
   TREE_ELEMENT *element;
 
@@ -448,6 +473,88 @@ void field_real::add()
       max_arg = num;
   }
 } // field_real::add
+
+
+void field_decimal::add()
+{
+  /*TODO - remove rounding stuff after decimal_div returns proper frac */
+  my_decimal dec_buf, *dec= item->val_decimal(&dec_buf);
+  my_decimal rounded;
+  uint length;
+  TREE_ELEMENT *element;
+
+  if (item->null_value)
+  {
+    nulls++;
+    return;
+  }
+
+  my_decimal_round(E_DEC_FATAL_ERROR, dec, item->decimals, FALSE,&rounded);
+  dec= &rounded;
+
+  length= my_decimal_string_length(dec);
+
+  if (decimal_is_zero(dec))
+    empty++;
+
+  if (room_in_tree)
+  {
+    char buf[DECIMAL_MAX_FIELD_SIZE];
+    my_decimal2binary(E_DEC_FATAL_ERROR, dec, buf,
+                      item->max_length, item->decimals);
+    if (!(element = tree_insert(&tree, (void*)buf, 0, tree.custom_arg)))
+    {
+      room_in_tree = 0;    // Remove tree, out of RAM ?
+      delete_tree(&tree);
+    }
+    /*
+      if element->count == 1, this element can be found only once from tree
+      if element->count == 2, or more, this element is already in tree
+    */
+    else if (element->count == 1 && (tree_elements++) >= pc->max_tree_elements)
+    {
+      room_in_tree = 0;  // Remove tree, too many elements
+      delete_tree(&tree);
+    }
+  }
+
+  if (!found)
+  {
+    found = 1;
+    min_arg = max_arg = sum[0] = *dec;
+    min_arg.fix_buffer_pointer();
+    max_arg.fix_buffer_pointer();
+    sum[0].fix_buffer_pointer();
+    my_decimal_mul(E_DEC_FATAL_ERROR, sum_sqr, dec, dec);
+    cur_sum= 0;
+    min_length = max_length = length;
+  }
+  else if (!decimal_is_zero(dec))
+  {
+    int next_cur_sum= cur_sum ^ 1;
+    my_decimal sqr_buf;
+
+    my_decimal_add(E_DEC_FATAL_ERROR, sum+next_cur_sum, sum+cur_sum, dec);
+    my_decimal_mul(E_DEC_FATAL_ERROR, &sqr_buf, dec, dec);
+    my_decimal_add(E_DEC_FATAL_ERROR,
+                   sum_sqr+next_cur_sum, sum_sqr+cur_sum, &sqr_buf);
+    cur_sum= next_cur_sum;
+    if (length < min_length)
+      min_length = length;
+    if (length > max_length)
+      max_length = length;
+    if (my_decimal_cmp(dec, &min_arg) < 0)
+    {
+      min_arg= *dec;
+      min_arg.fix_buffer_pointer();
+    }
+    if (my_decimal_cmp(dec, &max_arg) > 0)
+    {
+      max_arg= *dec;
+      max_arg.fix_buffer_pointer();
+    }
+  }
+}
 
 
 void field_longlong::add()
@@ -637,13 +744,13 @@ bool analyse::end_of_records()
       tree_info.found = 0;
       tree_info.item = (*f)->item;
 
-      tmp_str.set("ENUM(", 5,&my_charset_bin);
+      tmp_str.set(STRING_WITH_LEN("ENUM("),&my_charset_bin);
       tree_walk(&(*f)->tree, (*f)->collect_enum(), (char*) &tree_info,
 		left_root_right);
       tmp_str.append(')');
 
       if (!(*f)->nulls)
-	tmp_str.append(" NOT NULL");
+	tmp_str.append(STRING_WITH_LEN(" NOT NULL"));
       output_str_length = tmp_str.length();
       func_items[9]->set(tmp_str.ptr(), tmp_str.length(), tmp_str.charset());
       if (result->send_data(result_fields))
@@ -653,35 +760,35 @@ bool analyse::end_of_records()
 
     ans.length(0);
     if (!(*f)->treemem && !(*f)->tree_elements)
-      ans.append("CHAR(0)", 7);
+      ans.append(STRING_WITH_LEN("CHAR(0)"));
     else if ((*f)->item->type() == Item::FIELD_ITEM)
     {
       switch (((Item_field*) (*f)->item)->field->real_type())
       {
       case FIELD_TYPE_TIMESTAMP:
-	ans.append("TIMESTAMP", 9);
+	ans.append(STRING_WITH_LEN("TIMESTAMP"));
 	break;
       case FIELD_TYPE_DATETIME:
-	ans.append("DATETIME", 8);
+	ans.append(STRING_WITH_LEN("DATETIME"));
 	break;
       case FIELD_TYPE_DATE:
       case FIELD_TYPE_NEWDATE:
-	ans.append("DATE", 4);
+	ans.append(STRING_WITH_LEN("DATE"));
 	break;
       case FIELD_TYPE_SET:
-	ans.append("SET", 3);
+	ans.append(STRING_WITH_LEN("SET"));
 	break;
       case FIELD_TYPE_YEAR:
-	ans.append("YEAR", 4);
+	ans.append(STRING_WITH_LEN("YEAR"));
 	break;
       case FIELD_TYPE_TIME:
-	ans.append("TIME", 4);
+	ans.append(STRING_WITH_LEN("TIME"));
 	break;
       case FIELD_TYPE_DECIMAL:
-	ans.append("DECIMAL", 7);
+	ans.append(STRING_WITH_LEN("DECIMAL"));
 	// if item is FIELD_ITEM, it _must_be_ Field_num in this case
 	if (((Field_num*) ((Item_field*) (*f)->item)->field)->zerofill)
-	  ans.append(" ZEROFILL");
+	  ans.append(STRING_WITH_LEN(" ZEROFILL"));
 	break;
       default:
 	(*f)->get_opt_type(&ans, rows);
@@ -689,7 +796,7 @@ bool analyse::end_of_records()
       }
     }
     if (!(*f)->nulls)
-      ans.append(" NOT NULL");
+      ans.append(STRING_WITH_LEN(" NOT NULL"));
     func_items[9]->set(ans.ptr(), ans.length(), ans.charset());
     if (result->send_data(result_fields))
       return -1;
@@ -733,18 +840,18 @@ void field_str::get_opt_type(String *answer, ha_rows total_rows)
       sprintf(buff, "BIGINT(%d)", num_info.integers);
     answer->append(buff, (uint) strlen(buff));
     if (ev_num_info.llval >= 0 && ev_num_info.min_dval >= 0)
-      answer->append(" UNSIGNED");
+      answer->append(STRING_WITH_LEN(" UNSIGNED"));
     if (num_info.zerofill)
-      answer->append(" ZEROFILL");
+      answer->append(STRING_WITH_LEN(" ZEROFILL"));
   }
   else if (max_length < 256)
   {
     if (must_be_blob)
     {
       if (item->collation.collation == &my_charset_bin)
-	answer->append("TINYBLOB", 8);
+	answer->append(STRING_WITH_LEN("TINYBLOB"));
       else
-	answer->append("TINYTEXT", 8);
+	answer->append(STRING_WITH_LEN("TINYTEXT"));
     }
     else if ((max_length * (total_rows - nulls)) < (sum + total_rows))
     {
@@ -760,23 +867,23 @@ void field_str::get_opt_type(String *answer, ha_rows total_rows)
   else if (max_length < (1L << 16))
   {
     if (item->collation.collation == &my_charset_bin)
-      answer->append("BLOB", 4);
+      answer->append(STRING_WITH_LEN("BLOB"));
     else
-      answer->append("TEXT", 4);
+      answer->append(STRING_WITH_LEN("TEXT"));
   }
   else if (max_length < (1L << 24))
   {
     if (item->collation.collation == &my_charset_bin)
-      answer->append("MEDIUMBLOB", 10);
+      answer->append(STRING_WITH_LEN("MEDIUMBLOB"));
     else
-      answer->append("MEDIUMTEXT", 10);
+      answer->append(STRING_WITH_LEN("MEDIUMTEXT"));
   }
   else
   {
     if (item->collation.collation == &my_charset_bin)
-      answer->append("LONGBLOB", 8);
+      answer->append(STRING_WITH_LEN("LONGBLOB"));
     else
-      answer->append("LONGTEXT", 8);
+      answer->append(STRING_WITH_LEN("LONGTEXT"));
   }
 } // field_str::get_opt_type
 
@@ -806,14 +913,14 @@ void field_real::get_opt_type(String *answer,
       sprintf(buff, "BIGINT(%d)", len);
     answer->append(buff, (uint) strlen(buff));
     if (min_arg >= 0)
-      answer->append(" UNSIGNED");
+      answer->append(STRING_WITH_LEN(" UNSIGNED"));
   }
   else if (item->decimals == NOT_FIXED_DEC)
   {
     if (min_arg >= -FLT_MAX && max_arg <= FLT_MAX)
-      answer->append("FLOAT", 5);      
+      answer->append(STRING_WITH_LEN("FLOAT"));
     else
-      answer->append("DOUBLE", 6);
+      answer->append(STRING_WITH_LEN("DOUBLE"));
   }
   else
   {
@@ -830,7 +937,7 @@ void field_real::get_opt_type(String *answer,
       // a single number shouldn't be zerofill
       (max_length - (item->decimals + 1)) != 1 &&
       ((Field_num*) ((Item_field*) item)->field)->zerofill)
-    answer->append(" ZEROFILL");
+    answer->append(STRING_WITH_LEN(" ZEROFILL"));
 } // field_real::get_opt_type
 
 
@@ -854,14 +961,14 @@ void field_longlong::get_opt_type(String *answer,
     sprintf(buff, "BIGINT(%d)", (int) max_length);
   answer->append(buff, (uint) strlen(buff));
   if (min_arg >= 0)
-    answer->append(" UNSIGNED");
+    answer->append(STRING_WITH_LEN(" UNSIGNED"));
 
   // if item is FIELD_ITEM, it _must_be_ Field_num in this class
   if ((item->type() == Item::FIELD_ITEM) &&
       // a single number shouldn't be zerofill
       max_length != 1 &&
       ((Field_num*) ((Item_field*) item)->field)->zerofill)
-    answer->append(" ZEROFILL");
+    answer->append(STRING_WITH_LEN(" ZEROFILL"));
 } // field_longlong::get_opt_type
 
 
@@ -886,8 +993,86 @@ void field_ulonglong::get_opt_type(String *answer,
       // a single number shouldn't be zerofill
       max_length != 1 &&
       ((Field_num*) ((Item_field*) item)->field)->zerofill)
-    answer->append(" ZEROFILL");
+    answer->append(STRING_WITH_LEN(" ZEROFILL"));
 } //field_ulonglong::get_opt_type
+
+
+void field_decimal::get_opt_type(String *answer,
+                                 ha_rows total_rows __attribute__((unused)))
+{
+  my_decimal zero;
+  char buff[MAX_FIELD_WIDTH];
+  uint length;
+
+  my_decimal_set_zero(&zero);
+  my_bool is_unsigned= (my_decimal_cmp(&zero, &min_arg) >= 0);
+
+  length= my_sprintf(buff, (buff, "DECIMAL(%d, %d)",
+                            (int) (max_length - (item->decimals ? 1 : 0)),
+                            item->decimals));
+  if (is_unsigned)
+    length= (uint) (strmov(buff+length, " UNSIGNED")- buff);
+  answer->append(buff, length);
+}
+
+
+String *field_decimal::get_min_arg(String *str)
+{
+  my_decimal2string(E_DEC_FATAL_ERROR, &min_arg, 0, 0, '0', str);
+  return str;
+}
+
+
+String *field_decimal::get_max_arg(String *str)
+{
+  my_decimal2string(E_DEC_FATAL_ERROR, &max_arg, 0, 0, '0', str);
+  return str;
+}
+
+
+String *field_decimal::avg(String *s, ha_rows rows)
+{
+  if (!(rows - nulls))
+  {
+    s->set((double) 0.0, 1,my_thd_charset);
+    return s;
+  }
+  my_decimal num, avg_val, rounded_avg;
+  int prec_increment= current_thd->variables.div_precincrement;
+
+  int2my_decimal(E_DEC_FATAL_ERROR, rows - nulls, FALSE, &num);
+  my_decimal_div(E_DEC_FATAL_ERROR, &avg_val, sum+cur_sum, &num, prec_increment);
+  /* TODO remove this after decimal_div returns proper frac */
+  my_decimal_round(E_DEC_FATAL_ERROR, &avg_val,
+                   min(sum[cur_sum].frac + prec_increment, DECIMAL_MAX_SCALE),
+                   FALSE,&rounded_avg);
+  my_decimal2string(E_DEC_FATAL_ERROR, &rounded_avg, 0, 0, '0', s);
+  return s;
+}
+
+
+String *field_decimal::std(String *s, ha_rows rows)
+{
+  if (!(rows - nulls))
+  {
+    s->set((double) 0.0, 1,my_thd_charset);
+    return s;
+  }
+  my_decimal num, tmp, sum2, sum2d;
+  double std_sqr;
+  int prec_increment= current_thd->variables.div_precincrement;
+
+  int2my_decimal(E_DEC_FATAL_ERROR, rows - nulls, FALSE, &num);
+  my_decimal_mul(E_DEC_FATAL_ERROR, &sum2, sum+cur_sum, sum+cur_sum);
+  my_decimal_div(E_DEC_FATAL_ERROR, &tmp, &sum2, &num, prec_increment);
+  my_decimal_sub(E_DEC_FATAL_ERROR, &sum2, sum_sqr+cur_sum, &tmp);
+  my_decimal_div(E_DEC_FATAL_ERROR, &tmp, &sum2, &num, prec_increment);
+  my_decimal2double(E_DEC_FATAL_ERROR, &tmp, &std_sqr);
+  s->set(((double) std_sqr <= 0.0 ? 0.0 : sqrt(std_sqr)),
+         min(item->decimals + prec_increment, NOT_FIXED_DEC), my_thd_charset);
+
+  return s;
+}
 
 
 int collect_string(String *element,
@@ -922,6 +1107,28 @@ int collect_real(double *element, element_count count __attribute__((unused)),
   info->str->append('\'');
   return 0;
 } // collect_real
+
+
+int collect_decimal(char *element, element_count count,
+                    TREE_INFO *info)
+{
+  char buff[DECIMAL_MAX_STR_LENGTH];
+  String s(buff, sizeof(buff),&my_charset_bin);
+
+  if (info->found)
+    info->str->append(',');
+  else
+    info->found = 1;
+  my_decimal dec;
+  binary2my_decimal(E_DEC_FATAL_ERROR, element, &dec,
+                    info->item->max_length, info->item->decimals);
+  
+  info->str->append('\'');
+  my_decimal2string(E_DEC_FATAL_ERROR, &dec, 0, 0, '0', &s);
+  info->str->append(s);
+  info->str->append('\'');
+  return 0;
+}
 
 
 int collect_longlong(longlong *element,
@@ -1025,12 +1232,12 @@ uint check_ulonglong(const char *str, uint length)
     bigger = LONG_NUM;
   }
   else if (length > ulonglong_len)
-    return REAL_NUM;
+    return DECIMAL_NUM;
   else
   {
     cmp = ulonglong_str;
     smaller = LONG_NUM;
-    bigger = REAL_NUM;
+    bigger = DECIMAL_NUM;
   }
   while (*cmp && *cmp++ == *str++) ;
   return ((uchar) str[-1] <= (uchar) cmp[-1]) ? smaller : bigger;
@@ -1055,7 +1262,7 @@ uint check_ulonglong(const char *str, uint length)
     1 Out of memory
 */
 
-static bool append_escaped(String *to_str, String *from_str)
+bool append_escaped(String *to_str, String *from_str)
 {
   char *from, *end, c;
 

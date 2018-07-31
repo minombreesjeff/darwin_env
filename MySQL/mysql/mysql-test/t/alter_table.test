@@ -278,7 +278,7 @@ insert into t1 values ('тест');
 select a,hex(a) from t1;
 alter table t1 change a a char(10) character set cp1251;
 select a,hex(a) from t1;
-alter table t1 change a a binary(10);
+alter table t1 change a a binary(4);
 select a,hex(a) from t1;
 alter table t1 change a a char(10) character set cp1251;
 select a,hex(a) from t1;
@@ -338,6 +338,16 @@ alter table t1 drop key a;
 drop table t1;
 
 #
+# BUG 12207 alter table ... discard table space on MyISAM table causes ERROR 2013 (HY000)
+#
+# Some platforms (Mac OS X, Windows) will send the error message using small letters.
+CREATE TABLE T12207(a int) ENGINE=MYISAM;
+--replace_result t12207 T12207
+--error 1031
+ALTER TABLE T12207 DISCARD TABLESPACE;
+DROP TABLE T12207;
+
+#
 # Bug #6479  ALTER TABLE ... changing charset fails for TEXT columns
 #
 # The column's character set was changed but the actual data was not
@@ -362,27 +372,124 @@ alter table t1 add unique ( a(1) );
 drop table t1;
 
 #
+# Bug #24395: ALTER TABLE DISABLE KEYS doesn't work when modifying the table
+#
+# This problem happens if the data change is compatible.
+# Changing to the same type is compatible for example.
+#
+--disable_warnings
+drop table if exists t1;
+--enable_warnings
+create table t1 (a int, key(a));
+show indexes from t1;
+--echo "this used not to disable the index"
+alter table t1 modify a int, disable keys;
+show indexes from t1;
+
+alter table t1 enable keys;
+show indexes from t1;
+
+alter table t1 modify a bigint, disable keys;
+show indexes from t1;
+
+alter table t1 enable keys;
+show indexes from t1;
+
+alter table t1 add b char(10), disable keys;
+show indexes from t1;
+
+alter table t1 add c decimal(10,2), enable keys;
+show indexes from t1;
+
+--echo "this however did"
+alter table t1 disable keys;
+show indexes from t1;
+
+desc t1;
+
+alter table t1 add d decimal(15,5);
+--echo "The key should still be disabled"
+show indexes from t1;
+
+drop table t1;
+
+--echo "Now will test with one unique index"
+create table t1(a int, b char(10), unique(a));
+show indexes from t1;
+alter table t1 disable keys;
+show indexes from t1;
+alter table t1 enable keys;
+
+--echo "If no copy on noop change, this won't touch the data file"
+--echo "Unique index, no change"
+alter table t1 modify a int, disable keys;
+show indexes from t1;
+
+--echo "Change the type implying data copy"
+--echo "Unique index, no change"
+alter table t1 modify a bigint, disable keys;
+show indexes from t1;
+
+alter table t1 modify a bigint;
+show indexes from t1;
+
+alter table t1 modify a int;
+show indexes from t1;
+
+drop table t1;
+
+--echo "Now will test with one unique and one non-unique index"
+create table t1(a int, b char(10), unique(a), key(b));
+show indexes from t1;
+alter table t1 disable keys;
+show indexes from t1;
+alter table t1 enable keys;
+
+
+--echo "If no copy on noop change, this won't touch the data file"
+--echo "The non-unique index will be disabled"
+alter table t1 modify a int, disable keys;
+show indexes from t1;
+alter table t1 enable keys;
+show indexes from t1;
+
+--echo "Change the type implying data copy"
+--echo "The non-unique index will be disabled"
+alter table t1 modify a bigint, disable keys;
+show indexes from t1;
+
+--echo "Change again the type, but leave the indexes as_is"
+alter table t1 modify a int;
+show indexes from t1;
+--echo "Try the same. When data is no copied on similar tables, this is noop"
+alter table t1 modify a int;
+show indexes from t1;
+
+drop table t1;
+
+
+#
 # Bug#11493 - Alter table rename to default database does not work without
 #             db name qualifying
 #
-create database mysqltest1;
+create database mysqltest;
 create table t1 (c1 int);
 # Move table to other database.
-alter table t1 rename mysqltest1.t1;
+alter table t1 rename mysqltest.t1;
 # Assure that it has moved.
 --error 1051
 drop table t1;
 # Move table back.
-alter table mysqltest1.t1 rename t1;
+alter table mysqltest.t1 rename t1;
 # Assure that it is back.
 drop table t1;
 # Now test for correct message if no database is selected.
 # Create t1 in 'test'.
 create table t1 (c1 int);
 # Change to other db.
-use mysqltest1;
+use mysqltest;
 # Drop the current db. This de-selects any db.
-drop database mysqltest1;
+drop database mysqltest;
 # Now test for correct message.
 --error 1046
 alter table test.t1 rename t1;
@@ -392,4 +499,188 @@ alter table test.t1 rename test.t1;
 use test;
 drop table t1;
 
+#
+# BUG#23404 - ROW_FORMAT=FIXED option is lost is an index is added to the
+# table
+#
+CREATE TABLE t1(a INT) ROW_FORMAT=FIXED;
+CREATE INDEX i1 ON t1(a);
+SHOW CREATE TABLE t1;
+DROP INDEX i1 ON t1;
+SHOW CREATE TABLE t1;
+DROP TABLE t1;
+
+#
+# Bug#24219 - ALTER TABLE ... RENAME TO ... , DISABLE KEYS leads to crash
+#
+--disable_warnings
+DROP TABLE IF EXISTS bug24219;
+DROP TABLE IF EXISTS bug24219_2;
+--enable_warnings
+
+CREATE TABLE bug24219 (a INT, INDEX(a));
+
+SHOW INDEX FROM bug24219;
+
+ALTER TABLE bug24219 RENAME TO bug24219_2, DISABLE KEYS;
+
+SHOW INDEX FROM bug24219_2;
+
+DROP TABLE bug24219_2;
+
+#
+# Bug#24562 (ALTER TABLE ... ORDER BY ... with complex expression asserts)
+#
+
+--disable_warnings
+drop table if exists table_24562;
+--enable_warnings
+
+create table table_24562(
+  section int,
+  subsection int,
+  title varchar(50));
+
+insert into table_24562 values
+(1, 0, "Introduction"),
+(1, 1, "Authors"),
+(1, 2, "Acknowledgements"),
+(2, 0, "Basics"),
+(2, 1, "Syntax"),
+(2, 2, "Client"),
+(2, 3, "Server"),
+(3, 0, "Intermediate"),
+(3, 1, "Complex queries"),
+(3, 2, "Stored Procedures"),
+(3, 3, "Stored Functions"),
+(4, 0, "Advanced"),
+(4, 1, "Replication"),
+(4, 2, "Load balancing"),
+(4, 3, "High availability"),
+(5, 0, "Conclusion");
+
+select * from table_24562;
+
+alter table table_24562 add column reviewer varchar(20),
+order by title;
+
+select * from table_24562;
+
+update table_24562 set reviewer="Me" where section=2;
+update table_24562 set reviewer="You" where section=3;
+
+alter table table_24562
+order by section ASC, subsection DESC;
+
+select * from table_24562;
+
+alter table table_24562
+order by table_24562.subsection ASC, table_24562.section DESC;
+
+select * from table_24562;
+
+--error ER_PARSE_ERROR
+alter table table_24562 order by 12;
+--error ER_PARSE_ERROR
+alter table table_24562 order by (section + 12);
+--error ER_PARSE_ERROR
+alter table table_24562 order by length(title);
+--error ER_PARSE_ERROR
+alter table table_24562 order by (select 12 from dual);
+
+--error ER_BAD_FIELD_ERROR
+alter table table_24562 order by no_such_col;
+
+drop table table_24562;
+
 # End of 4.1 tests
+
+#
+# Bug #14693 (ALTER SET DEFAULT doesn't work)
+#
+
+create table t1 (mycol int(10) not null);
+alter table t1 alter column mycol set default 0;
+desc t1;
+drop table t1;
+
+#
+# Bug#6073 "ALTER table minor glich": ALTER TABLE complains that an index
+# without # prefix is not allowed for TEXT columns, while index
+# is defined with prefix.
+# 
+create table t1 (t varchar(255) default null, key t (t(80)))
+engine=myisam default charset=latin1;
+alter table t1 change t t text;
+drop table t1;
+
+#
+# Bug #26794: Adding an index with a prefix on a SPATIAL type breaks ALTER
+# TABLE
+#
+CREATE TABLE t1 (a varchar(500));
+
+ALTER TABLE t1 ADD b GEOMETRY NOT NULL, ADD SPATIAL INDEX(b);
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ADD KEY(b(50));
+SHOW CREATE TABLE t1;
+
+ALTER TABLE t1 ADD c POINT;
+SHOW CREATE TABLE t1;
+
+--error ER_WRONG_SUB_KEY
+CREATE TABLE t2 (a INT, KEY (a(20)));
+
+ALTER TABLE t1 ADD d INT;
+--error ER_WRONG_SUB_KEY
+ALTER TABLE t1 ADD KEY (d(20));
+
+DROP TABLE t1;
+# Bug#25262 Auto Increment lost when changing Engine type
+#
+
+create table t1(id int(8) primary key auto_increment) engine=heap;
+
+insert into t1 values (null);
+insert into t1 values (null);
+
+select * from t1;
+
+# Set auto increment to 50
+alter table t1 auto_increment = 50;
+
+# Alter to myisam
+alter table t1 engine = myisam;
+
+# This insert should get id 50
+insert into t1 values (null);
+select * from t1;
+
+# Alter to heap again
+alter table t1 engine = heap;
+insert into t1 values (null);
+select * from t1;
+
+drop table t1;
+
+#
+# Bug#27507: Wrong DATETIME value was allowed by ALTER TABLE in the
+#            NO_ZERO_DATE mode.
+#
+set @orig_sql_mode = @@sql_mode;
+set sql_mode="no_zero_date";
+create table t1(f1 int);
+alter table t1 add column f2 datetime not null, add column f21 date not null;
+insert into t1 values(1,'2000-01-01','2000-01-01');
+--error 1292
+alter table t1 add column f3 datetime not null;
+--error 1292
+alter table t1 add column f3 date not null;
+--error 1292
+alter table t1 add column f4 datetime not null default '2002-02-02',
+  add column f41 date not null;
+alter table t1 add column f4 datetime not null default '2002-02-02',
+  add column f41 date not null default '2002-02-02';
+select * from t1;
+drop table t1;
+set sql_mode= @orig_sql_mode;

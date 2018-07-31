@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,7 +36,12 @@ enum enum_vio_type
   VIO_TYPE_SSL, VIO_TYPE_SHARED_MEMORY
 };
 
-Vio*	vio_new(my_socket sd, enum enum_vio_type type, my_bool localhost);
+
+#define VIO_LOCALHOST 1                         /* a localhost connection */
+#define VIO_BUFFERED_READ 2                     /* use buffered read */
+#define VIO_READ_BUFFER_SIZE 16384              /* size of read buffer */
+
+Vio*	vio_new(my_socket sd, enum enum_vio_type type, uint flags);
 #ifdef __WIN__
 Vio* vio_new_win32pipe(HANDLE hPipe);
 Vio* vio_new_win32shared_memory(NET *net,HANDLE handle_file_map,
@@ -57,8 +61,9 @@ int vio_close_pipe(Vio * vio);
 void	vio_delete(Vio* vio);
 int	vio_close(Vio* vio);
 void    vio_reset(Vio* vio, enum enum_vio_type type,
-                  my_socket sd, HANDLE hPipe, my_bool localhost);
+                  my_socket sd, HANDLE hPipe, uint flags);
 int	vio_read(Vio *vio, gptr	buf, int size);
+int     vio_read_buff(Vio *vio, gptr buf, int size);
 int	vio_write(Vio *vio, const gptr buf, int size);
 int	vio_blocking(Vio *vio, my_bool onoff, my_bool *old_mode);
 my_bool	vio_is_blocking(Vio *vio);
@@ -83,7 +88,6 @@ my_bool	vio_peer_addr(Vio* vio, char *buf, uint16 *port);
 /* Remotes in_addr */
 void	vio_in_addr(Vio *vio, struct in_addr *in);
 my_bool	vio_poll_read(Vio *vio,uint timeout);
-void	vio_timeout(Vio *vio,uint which, uint timeout);
 
 #ifdef HAVE_OPENSSL
 #include <openssl/opensslv.h>
@@ -95,36 +99,32 @@ void	vio_timeout(Vio *vio,uint which, uint timeout);
 #endif
 
 #define HEADER_DES_LOCL_H dummy_something
+#define YASSL_MYSQL_COMPATIBLE
+#ifndef YASSL_PREFIX
+#define YASSL_PREFIX
+#endif
+/* Set yaSSL to use same type as MySQL do for socket handles */
+typedef my_socket YASSL_SOCKET_T;
+#define YASSL_SOCKET_T_DEFINED
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-struct st_VioSSLAcceptorFd 
+struct st_VioSSLFd
 {
   SSL_CTX *ssl_context;
-  SSL_METHOD *ssl_method;
-  struct st_VioSSLAcceptorFd *session_id_context;
 };
 
-/* One copy for client */
-struct st_VioSSLConnectorFd
-{
-  SSL_CTX *ssl_context;
-  /* function pointers which are only once for SSL client */ 
-  SSL_METHOD *ssl_method;
-};
+int sslaccept(struct st_VioSSLFd*, Vio *, long timeout);
+int sslconnect(struct st_VioSSLFd*, Vio *, long timeout);
 
-int sslaccept(struct st_VioSSLAcceptorFd*, Vio *, long timeout);
-int sslconnect(struct st_VioSSLConnectorFd*, Vio *, long timeout);
-
-struct st_VioSSLConnectorFd
+struct st_VioSSLFd
 *new_VioSSLConnectorFd(const char *key_file, const char *cert_file,
 		       const char *ca_file,  const char *ca_path,
 		       const char *cipher);
-struct st_VioSSLAcceptorFd
+struct st_VioSSLFd
 *new_VioSSLAcceptorFd(const char *key_file, const char *cert_file,
 		      const char *ca_file,const char *ca_path,
 		      const char *cipher);
-Vio *new_VioSSL(struct st_VioSSLAcceptorFd *fd, Vio *sd, int state);
 #endif /* HAVE_OPENSSL */
 
 #ifdef HAVE_SMEM
@@ -133,11 +133,13 @@ int vio_write_shared_memory(Vio *vio, const gptr buf, int size);
 int vio_close_shared_memory(Vio * vio);
 #endif
 
+void vio_end(void);
+
 #ifdef	__cplusplus
 }
 #endif
 
-#if defined(HAVE_VIO) && !defined(DONT_MAP_VIO)
+#if !defined(DONT_MAP_VIO)
 #define vio_delete(vio) 			(vio)->viodelete(vio)
 #define vio_errno(vio)	 			(vio)->vioerrno(vio)
 #define vio_read(vio, buf, size)                ((vio)->read)(vio,buf,size)
@@ -153,7 +155,7 @@ int vio_close_shared_memory(Vio * vio);
 #define vio_peer_addr(vio, buf, prt)		(vio)->peer_addr(vio, buf, prt)
 #define vio_in_addr(vio, in)			(vio)->in_addr(vio, in)
 #define vio_timeout(vio, which, seconds)	(vio)->timeout(vio, which, seconds)
-#endif /* defined(HAVE_VIO) && !defined(DONT_MAP_VIO) */
+#endif /* !defined(DONT_MAP_VIO) */
 
 /* This enumerator is used in parser - should be always visible */
 enum SSL_type
@@ -178,7 +180,10 @@ struct st_vio
   struct sockaddr_in	remote;		/* Remote internet address */
   enum enum_vio_type	type;		/* Type of connection */
   char			desc[30];	/* String description */
-#ifdef HAVE_VIO
+  char                  *read_buffer;   /* buffer for vio_read_buff */
+  char                  *read_pos;      /* start of unfetched data in the
+                                           read buffer */
+  char                  *read_end;      /* end of unfetched data */
   /* function pointers. They are similar for socket/SSL/whatever */
   void    (*viodelete)(Vio*);
   int     (*vioerrno)(Vio*);
@@ -194,7 +199,9 @@ struct st_vio
   my_bool (*was_interrupted)(Vio*);
   int     (*vioclose)(Vio*);
   void	  (*timeout)(Vio*, unsigned int which, unsigned int timeout);
+#ifdef HAVE_OPENSSL
   void	  *ssl_arg;
+#endif
 #ifdef HAVE_SMEM
   HANDLE  handle_file_map;
   char    *handle_map;
@@ -207,6 +214,5 @@ struct st_vio
   char    *shared_memory_pos;
   NET     *net;
 #endif /* HAVE_SMEM */
-#endif /* HAVE_VIO */
 };
 #endif /* vio_violite_h_ */

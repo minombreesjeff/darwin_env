@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -121,7 +120,7 @@ static struct my_option my_long_options[] =
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
   {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
-   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0,
+   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0,
    0},
   {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -165,7 +164,7 @@ static void print_version(void)
 static void usage(void)
 {
   print_version();
-  puts("Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB");
+  puts("Copyright (C) 2000-2006 MySQL AB");
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
   printf("\
 Loads tables from text files in various formats.  The base name of the\n\
@@ -384,6 +383,8 @@ static MYSQL *db_connect(char *host, char *database, char *user, char *passwd)
   if (opt_use_ssl)
     mysql_ssl_set(&mysql_connection, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
 		  opt_ssl_capath, opt_ssl_cipher);
+  mysql_options(&mysql_connection,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
+                (char*)&opt_ssl_verify_server_cert);
 #endif
   if (opt_protocol)
     mysql_options(&mysql_connection,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
@@ -398,6 +399,7 @@ static MYSQL *db_connect(char *host, char *database, char *user, char *passwd)
     ignore_errors=0;	  /* NO RETURN FROM db_error */
     db_error(&mysql_connection);
   }
+  mysql_connection.reconnect= 0;
   if (verbose)
     fprintf(stdout, "Selecting database %s\n", database);
   if (mysql_select_db(sock, database))
@@ -518,7 +520,7 @@ int main(int argc, char **argv)
     return(1); /* purecov: deadcode */
   }
 
-  if (mysql_query(sock, "set @@character_set_database=binary;"))
+  if (mysql_query(sock, "/*!40101 set @@character_set_database=binary */;"))
   {
     db_error(sock); /* We shall countinue here, if --force was given */
     return(1);

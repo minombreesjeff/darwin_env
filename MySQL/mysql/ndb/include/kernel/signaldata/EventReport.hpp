@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,6 +16,7 @@
 #ifndef SD_EVENT_REPORT_H
 #define SD_EVENT_REPORT_H
 
+#include <ndb_logevent.h>
 #include "SignalData.hpp"
 
 /**
@@ -67,98 +67,35 @@ public:
      4) Add SentHeartbeat in EventLogger::getText()
 
    */
-  enum EventType {
-    // CONNECTION
-    Connected = 0,
-    Disconnected = 1,
-    CommunicationClosed = 2,
-    CommunicationOpened = 3,
-    ConnectedApiVersion = 51,
-    // CHECKPOINT
-    GlobalCheckpointStarted = 4,
-    GlobalCheckpointCompleted = 5,
-    LocalCheckpointStarted = 6,
-    LocalCheckpointCompleted = 7,
-    LCPStoppedInCalcKeepGci = 8,
-    LCPFragmentCompleted = 9,
-    // STARTUP
-    NDBStartStarted = 10,
-    NDBStartCompleted = 11,
-    STTORRYRecieved = 12,
-    StartPhaseCompleted = 13,
-    CM_REGCONF = 14,
-    CM_REGREF = 15,
-    FIND_NEIGHBOURS = 16,
-    NDBStopStarted = 17,
-    NDBStopAborted = 18,
-    StartREDOLog = 19,
-    StartLog = 20,
-    UNDORecordsExecuted = 21,
-
-    // NODERESTART
-    NR_CopyDict = 22,
-    NR_CopyDistr = 23,
-    NR_CopyFragsStarted = 24,
-    NR_CopyFragDone = 25,
-    NR_CopyFragsCompleted = 26,
-    
-    // NODEFAIL
-    NodeFailCompleted = 27,
-    NODE_FAILREP = 28,
-    ArbitState = 29,
-    ArbitResult = 30,
-    GCP_TakeoverStarted = 31,
-    GCP_TakeoverCompleted = 32,
-    LCP_TakeoverStarted = 33,
-    LCP_TakeoverCompleted = 34,
-    
-    // STATISTIC
-    TransReportCounters = 35,
-    OperationReportCounters = 36,
-    TableCreated = 37,
-    UndoLogBlocked = 38,
-    JobStatistic = 39,
-    SendBytesStatistic = 40,
-    ReceiveBytesStatistic = 41,
-    MemoryUsage = 50,
-
-    // ERROR
-    TransporterError = 42,
-    TransporterWarning = 43,
-    MissedHeartbeat = 44,
-    DeadDueToHeartbeat = 45,
-    WarningEvent = 46,
-    // INFO
-    SentHeartbeat = 47,
-    CreateLogBytes = 48,
-    InfoEvent = 49,
-
-    // SINGLE USER
-    SingleUser = 52,
-    /* unused 53 */
-
-    //BACKUP
-    BackupStarted = 54,
-    BackupFailedToStart = 55,
-    BackupCompleted = 56,
-    BackupAborted = 57
-  };
-  
-  void setEventType(EventType type);
-  EventType getEventType() const;
+  void setNodeId(Uint32 nodeId);
+  Uint32 getNodeId() const;
+  void setEventType(Ndb_logevent_type type);
+  Ndb_logevent_type getEventType() const;
   UintR eventType;    // DATA 0
 };
 
 inline
 void
-EventReport::setEventType(EventType type){
-  eventType = (UintR) type;
+EventReport::setNodeId(Uint32 nodeId){
+  eventType = (nodeId << 16) | (eventType & 0xFFFF);
 }
 
 inline
-EventReport::EventType
+Uint32
+EventReport::getNodeId() const {
+  return eventType >> 16;
+}
+
+inline
+void
+EventReport::setEventType(Ndb_logevent_type type){
+  eventType = (eventType & 0xFFFF0000) | (((UintR) type) & 0xFFFF);
+}
+
+inline
+Ndb_logevent_type
 EventReport::getEventType() const {
-  return (EventType)eventType;
+  return (Ndb_logevent_type)(eventType & 0xFFFF);
 }
 
 #endif

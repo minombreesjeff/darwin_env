@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2001, 2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,7 +31,7 @@ int mi_rsame_with_pos(MI_INFO *info, byte *record, int inx, my_off_t filepos)
 {
   DBUG_ENTER("mi_rsame_with_pos");
 
-  if (inx < -1 || ! (((ulonglong) 1 << inx) & info->s->state.key_map))
+  if (inx < -1 || ! mi_is_key_active(info->s->state.key_map, inx))
   {
     DBUG_RETURN(my_errno=HA_ERR_WRONG_INDEX);
   }

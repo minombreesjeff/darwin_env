@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,6 +35,17 @@ typedef struct keyuse_t {
     satisfied if val has NULL 'value'.
   */
   bool null_rejecting;
+  /*
+    !NULL - This KEYUSE was created from an equality that was wrapped into
+            an Item_func_trig_cond. This means the equality (and validity of 
+            this KEYUSE element) can be turned on and off. The on/off state 
+            is indicted by the pointed value:
+              *cond_guard == TRUE <=> equality condition is on
+              *cond_guard == FALSE <=> equality condition is off
+
+    NULL  - Otherwise (the source equality can't be turned off)
+  */
+  bool *cond_guard;
 } KEYUSE;
 
 class store_key;
@@ -50,6 +60,18 @@ typedef struct st_table_ref
   byte          *key_buff2;               // key_buff+key_length
   store_key     **key_copy;               //
   Item          **items;                  // val()'s for each keypart
+  /*  
+    Array of pointers to trigger variables. Some/all of the pointers may be
+    NULL.  The ref access can be used iff
+    
+      for each used key part i, (!cond_guards[i] || *cond_guards[i]) 
+
+    This array is used by subquery code. The subquery code may inject
+    triggered conditions, i.e. conditions that can be 'switched off'. A ref 
+    access created from such condition is not valid when at least one of the 
+    underlying conditions is switched off (see subquery code for more details)
+  */
+  bool          **cond_guards;
   /*
     (null_rejecting & (1<<i)) means the condition is '=' and no matching
     rows will be produced if items[i] IS NULL (see add_not_null_conds())
@@ -85,24 +107,65 @@ typedef struct st_join_cache {
 /*
 ** The structs which holds the join connections and join states
 */
-
 enum join_type { JT_UNKNOWN,JT_SYSTEM,JT_CONST,JT_EQ_REF,JT_REF,JT_MAYBE_REF,
 		 JT_ALL, JT_RANGE, JT_NEXT, JT_FT, JT_REF_OR_NULL,
-		 JT_UNIQUE_SUBQUERY, JT_INDEX_SUBQUERY};
+		 JT_UNIQUE_SUBQUERY, JT_INDEX_SUBQUERY, JT_INDEX_MERGE};
 
 class JOIN;
 
+enum enum_nested_loop_state
+{
+  NESTED_LOOP_KILLED= -2, NESTED_LOOP_ERROR= -1,
+  NESTED_LOOP_OK= 0, NESTED_LOOP_NO_MORE_ROWS= 1,
+  NESTED_LOOP_QUERY_LIMIT= 3, NESTED_LOOP_CURSOR_LIMIT= 4
+};
+
+
+/* Values for JOIN_TAB::packed_info */
+#define TAB_INFO_HAVE_VALUE 1
+#define TAB_INFO_USING_INDEX 2
+#define TAB_INFO_USING_WHERE 4
+#define TAB_INFO_FULL_SCAN_ON_NULL 8
+
+typedef enum_nested_loop_state
+(*Next_select_func)(JOIN *, struct st_join_table *, bool);
+typedef int (*Read_record_func)(struct st_join_table *tab);
+Next_select_func setup_end_select_func(JOIN *join);
+
 typedef struct st_join_table {
+  st_join_table() {}                          /* Remove gcc warning */
   TABLE		*table;
   KEYUSE	*keyuse;			/* pointer to first used key */
   SQL_SELECT	*select;
   COND		*select_cond;
-  QUICK_SELECT	*quick;
-  Item		*on_expr;
+  QUICK_SELECT_I *quick;
+  Item	       **on_expr_ref;   /* pointer to the associated on expression   */
+  COND_EQUAL    *cond_equal;    /* multiple equalities for the on expression */
+  st_join_table *first_inner;   /* first inner table for including outerjoin */
+  bool           found;         /* true after all matches or null complement */
+  bool           not_null_compl;/* true before null complement is added      */
+  st_join_table *last_inner;    /* last table table for embedding outer join */
+  st_join_table *first_upper;  /* first inner table for embedding outer join */
+  st_join_table *first_unmatched; /* used for optimization purposes only     */
+  
+  /* Special content for EXPLAIN 'Extra' column or NULL if none */
   const char	*info;
-  int		(*read_first_record)(struct st_join_table *tab);
-  int		(*next_select)(JOIN *,struct st_join_table *,bool);
+  /* 
+    Bitmap of TAB_INFO_* bits that encodes special line for EXPLAIN 'Extra'
+    column, or 0 if there is no info.
+  */
+  uint          packed_info;
+
+  Read_record_func read_first_record;
+  Next_select_func next_select;
   READ_RECORD	read_record;
+  /* 
+    Currently the following two fields are used only for a [NOT] IN subquery
+    if it is executed by an alternative full table scan when the left operand of
+    the subquery predicate is evaluated to NULL.
+  */  
+  Read_record_func save_read_first_record;/* to save read_first_record */ 
+  int (*save_read_record) (READ_RECORD *);/* to save read_record.read_record */
   double	worst_seeks;
   key_map	const_keys;			/* Keys with constant part */
   key_map	checked_keys;			/* Keys checked in find_best */
@@ -118,14 +181,28 @@ typedef struct st_join_table {
   TABLE_REF	ref;
   JOIN_CACHE	cache;
   JOIN		*join;
-
+  /* Bitmap of nested joins this table is part of */
+  nested_join_map embedding_map;
+  
   void cleanup();
+  inline bool is_using_loose_index_scan()
+  {
+    return (select && select->quick &&
+            (select->quick->get_type() ==
+             QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX));
+  }
 } JOIN_TAB;
+
+enum_nested_loop_state sub_select_cache(JOIN *join, JOIN_TAB *join_tab, bool
+                                        end_of_records);
+enum_nested_loop_state sub_select(JOIN *join,JOIN_TAB *join_tab, bool
+                                  end_of_records);
 
 
 typedef struct st_position			/* Used in find_best */
 {
   double records_read;
+  double read_time;
   JOIN_TAB *table;
   KEYUSE *key;
 } POSITION;
@@ -142,20 +219,45 @@ typedef struct st_rollup
 
 class JOIN :public Sql_alloc
 {
- public:
-  JOIN_TAB *join_tab,**best_ref,**map2table;
-  JOIN_TAB *join_tab_save; //saved join_tab for subquery reexecution
+  JOIN(const JOIN &rhs);                        /* not implemented */
+  JOIN& operator=(const JOIN &rhs);             /* not implemented */
+public:
+  JOIN_TAB *join_tab,**best_ref;
+  JOIN_TAB **map2table;    // mapping between table indexes and JOIN_TABs
+  JOIN_TAB *join_tab_save; // saved join_tab for subquery reexecution
   TABLE    **table,**all_tables,*sort_by_table;
   uint	   tables,const_tables;
   uint	   send_group_parts;
   bool	   sort_and_group,first_record,full_join,group, no_field_update;
   bool	   do_send_rows;
+  /*
+    TRUE when we want to resume nested loop iterations when
+    fetching data from a cursor
+  */
+  bool     resume_nested_loop;
   table_map const_table_map,found_const_table_map,outer_join;
   ha_rows  send_records,found_records,examined_rows,row_limit, select_limit;
+  /*
+    Used to fetch no more than given amount of rows per one
+    fetch operation of server side cursor.
+    The value is checked in end_send and end_send_group in fashion, similar
+    to offset_limit_cnt:
+      - fetch_limit= HA_POS_ERROR if there is no cursor.
+      - when we open a cursor, we set fetch_limit to 0,
+      - on each fetch iteration we add num_rows to fetch to fetch_limit
+  */
+  ha_rows  fetch_limit;
   POSITION positions[MAX_TABLES+1],best_positions[MAX_TABLES+1];
+  
+  /* 
+    Bitmap of nested joins embedding the position at the end of the current 
+    partial join (valid only during join optimizer run).
+  */
+  nested_join_map cur_embedding_map;
+
   double   best_read;
   List<Item> *fields;
-  List<Item_buff> group_fields, group_fields_cache;
+  List<Cached_item> group_fields, group_fields_cache;
   TABLE    *tmp_table;
   // used to store 2 possible tmp table of SELECT
   TABLE    *exec_tmp_table1, *exec_tmp_table2;
@@ -167,7 +269,7 @@ class JOIN :public Sql_alloc
   Item	    *having;
   Item      *tmp_having; // To store having when processed temporary table
   Item      *having_history; // Store having for explain
-  uint	    select_options;
+  ulonglong  select_options;
   select_result *result;
   TMP_TABLE_PARAM tmp_table_param;
   MYSQL_LOCK *lock;
@@ -195,9 +297,9 @@ class JOIN :public Sql_alloc
   /* Is set if we have a GROUP BY and we have ORDER BY on a constant. */
   bool          skip_sort_order;
 
-  bool need_tmp, hidden_group_fields, buffer_result;
+  bool need_tmp, hidden_group_fields;
   DYNAMIC_ARRAY keyuse;
-  Item::cond_result cond_value;
+  Item::cond_result cond_value, having_value;
   List<Item> all_fields; // to store all fields that used in query
   //Above list changed to use temporary table
   List<Item> tmp_all_fields1, tmp_all_fields2, tmp_all_fields3;
@@ -210,8 +312,11 @@ class JOIN :public Sql_alloc
   ORDER *order, *group_list, *proc_param; //hold parameters of mysql_select
   COND *conds;                            // ---"---
   Item *conds_history;                    // store WHERE for explain
-  TABLE_LIST *tables_list;           //hold 'tables' parameter of mysql_selec
+  TABLE_LIST *tables_list;           //hold 'tables' parameter of mysql_select
+  List<TABLE_LIST> *join_list;       // list of joined tables in reverse order
+  COND_EQUAL *cond_equal;
   SQL_SELECT *select;                //created in optimisation phase
+  JOIN_TAB *return_tab;              //used only for outer joins
   Item **ref_pointer_array; //used pointer reference for this select
   // Copy of above to be used with different lists
   Item **items0, **items1, **items2, **items3, **current_ref_pointer_array;
@@ -221,35 +326,46 @@ class JOIN :public Sql_alloc
   bool union_part; // this subselect is part of union 
   bool optimized; // flag to avoid double optimization in EXPLAIN
 
-  JOIN(THD *thd_arg, List<Item> &fields_arg, ulong select_options_arg,
+  /* 
+    storage for caching buffers allocated during query execution. 
+    These buffers allocations need to be cached as the thread memory pool is
+    cleared only at the end of the execution of the whole query and not caching
+    allocations that occur in repetition at execution time will result in 
+    excessive memory usage.
+  */  
+  SORT_FIELD *sortorder;                        // make_unireg_sortorder()
+  TABLE **table_reexec;                         // make_simple_join()
+  JOIN_TAB *join_tab_reexec;                    // make_simple_join()
+  /* end of allocation caching storage */
+
+  JOIN(THD *thd_arg, List<Item> &fields_arg, ulonglong select_options_arg,
        select_result *result_arg)
     :fields_list(fields_arg)
   {
     init(thd_arg, fields_arg, select_options_arg, result_arg);
   }
 
-  JOIN(JOIN &join)
-    :Sql_alloc(), fields_list(join.fields_list)
-  {
-    init(join.thd, join.fields_list, join.select_options,
-         join.result);
-  }
-
-  void init(THD *thd_arg, List<Item> &fields_arg, ulong select_options_arg,
+  void init(THD *thd_arg, List<Item> &fields_arg, ulonglong select_options_arg,
        select_result *result_arg)
   {
     join_tab= join_tab_save= 0;
     table= 0;
     tables= 0;
     const_tables= 0;
+    join_list= 0;
     sort_and_group= 0;
     first_record= 0;
     do_send_rows= 1;
+    resume_nested_loop= FALSE;
     send_records= 0;
     found_records= 0;
+    fetch_limit= HA_POS_ERROR;
     examined_rows= 0;
     exec_tmp_table1= 0;
     exec_tmp_table2= 0;
+    sortorder= 0;
+    table_reexec= 0;
+    join_tab_reexec= 0;
     thd= thd_arg;
     sum_funcs= sum_funcs2= 0;
     procedure= 0;
@@ -266,17 +382,16 @@ class JOIN :public Sql_alloc
     skip_sort_order= 0;
     need_tmp= 0;
     hidden_group_fields= 0; /*safety*/
-    buffer_result= test(select_options & OPTION_BUFFER_RESULT) &&
-      !test(select_options & OPTION_FOUND_ROWS);
-    all_fields= fields_arg;
-    fields_list= fields_arg;
     error= 0;
     select= 0;
+    return_tab= 0;
     ref_pointer_array= items0= items1= items2= items3= 0;
     ref_pointer_array_size= 0;
     zero_result_cause= 0;
     optimized= 0;
+    cond_equal= 0;
 
+    all_fields= fields_arg;
     fields_list= fields_arg;
     bzero((char*) &keyuse,sizeof(keyuse));
     tmp_table_param.init();
@@ -291,11 +406,11 @@ class JOIN :public Sql_alloc
   int optimize();
   int reinit();
   void exec();
-  int cleanup();
+  int destroy();
   void restore_tmp();
   bool alloc_func_list();
   bool make_sum_func_list(List<Item> &all_fields, List<Item> &send_fields,
-			  bool before_group_by);
+			  bool before_group_by, bool recompute= FALSE);
 
   inline void set_items_ref_array(Item **ptr)
   {
@@ -314,16 +429,30 @@ class JOIN :public Sql_alloc
 			  Item_sum ***func);
   int rollup_send_data(uint idx);
   int rollup_write_data(uint idx, TABLE *table);
-  bool test_in_subselect(Item **where);
-  void join_free(bool full);
+  void remove_subq_pushed_predicates(Item **where);
+  /*
+    Release memory and, if possible, the open tables held by this execution
+    plan (and nested plans). It's used to release some tables before
+    the end of execution in order to increase concurrency and reduce
+    memory consumption.
+  */
+  void join_free();
+  /* Cleanup this JOIN, possibly for reuse */
+  void cleanup(bool full);
   void clear();
   bool save_join_tab();
+  bool init_save_join_tab();
   bool send_row_on_empty_set()
   {
     return (do_send_rows && tmp_table_param.sum_func_count != 0 &&
 	    !group_list);
   }
-  int change_result(select_result *result);
+  bool change_result(select_result *result);
+  bool is_top_level_join() const
+  {
+    return (unit == &thd->lex->unit && (unit->fake_select_lex == 0 ||
+                                        select_lex == unit->fake_select_lex));
+  }
 };
 
 
@@ -338,7 +467,7 @@ void TEST_join(JOIN *join);
 bool store_val_in_field(Field *field, Item *val, enum_check_fields check_flag);
 TABLE *create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
 			ORDER *group, bool distinct, bool save_sum_fields,
-			ulong select_options, ha_rows rows_limit,
+			ulonglong select_options, ha_rows rows_limit,
 			char* alias);
 void free_tmp_table(THD *thd, TABLE *entry);
 void count_field_types(TMP_TABLE_PARAM *param, List<Item> &fields,
@@ -351,37 +480,69 @@ void copy_fields(TMP_TABLE_PARAM *param);
 void copy_funcs(Item **func_ptr);
 bool create_myisam_from_heap(THD *thd, TABLE *table, TMP_TABLE_PARAM *param,
 			     int error, bool ignore_last_dupp_error);
-
+uint find_shortest_key(TABLE *table, const key_map *usable_keys);
+Field* create_tmp_field_from_field(THD *thd, Field* org_field,
+                                   const char *name, TABLE *table,
+                                   Item_field *item, uint convert_blob_length);
+                                                                      
 /* functions from opt_sum.cc */
+bool simple_pred(Item_func *func_item, Item **args, bool *inv_order);
 int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds);
+
+/* from sql_delete.cc, used by opt_range.cc */
+extern "C" int refpos_order_cmp(void* arg, const void *a,const void *b);
 
 /* class to copying an field/item to a key struct */
 
 class store_key :public Sql_alloc
 {
+public:
+  bool null_key; /* TRUE <=> the value of the key has a null part */
+  enum store_key_result { STORE_KEY_OK, STORE_KEY_FATAL, STORE_KEY_CONV };
+  store_key(THD *thd, Field *field_arg, char *ptr, char *null, uint length)
+    :null_key(0), null_ptr(null), err(0)
+  {
+    if (field_arg->type() == FIELD_TYPE_BLOB)
+    {
+      /* Key segments are always packed with a 2 byte length prefix */
+      to_field=new Field_varstring(ptr, length, 2, (uchar*) null, 1, 
+				   Field::NONE, field_arg->field_name,
+				   field_arg->table, field_arg->charset());
+    }
+    else
+      to_field=field_arg->new_key_field(thd->mem_root, field_arg->table,
+                                        ptr, (uchar*) null, 1);
+  }
+  virtual ~store_key() {}			/* Not actually needed */
+  virtual const char *name() const=0;
+
+  /**
+    @brief sets ignore truncation warnings mode and calls the real copy method
+
+    @details this function makes sure truncation warnings when preparing the
+    key buffers don't end up as errors (because of an enclosing INSERT/UPDATE).
+  */
+  enum store_key_result copy()
+  {
+    enum store_key_result result;
+    enum_check_fields saved_count_cuted_fields= 
+      to_field->table->in_use->count_cuted_fields;
+
+    to_field->table->in_use->count_cuted_fields= CHECK_FIELD_IGNORE;
+
+    result= copy_inner();
+
+    to_field->table->in_use->count_cuted_fields= saved_count_cuted_fields;
+
+    return result;
+  }
+
  protected:
   Field *to_field;				// Store data here
   char *null_ptr;
   char err;
- public:
-  enum store_key_result { STORE_KEY_OK, STORE_KEY_FATAL, STORE_KEY_CONV };
-  store_key(THD *thd, Field *field_arg, char *ptr, char *null, uint length)
-    :null_ptr(null),err(0)
-  {
-    if (field_arg->type() == FIELD_TYPE_BLOB)
-      to_field=new Field_varstring(ptr, length, (uchar*) null, 1, 
-				   Field::NONE, field_arg->field_name,
-				   field_arg->table, field_arg->charset());
-    else
-    {
-      to_field=field_arg->new_field(thd->mem_root,field_arg->table);
-      if (to_field)
-	to_field->move_field(ptr, (uchar*) null, 1);
-    }
-  }
-  virtual ~store_key() {}			/* Not actually needed */
-  virtual enum store_key_result copy()=0;
-  virtual const char *name() const=0;
+
+  virtual enum store_key_result copy_inner()=0;
 };
 
 
@@ -401,12 +562,15 @@ class store_key_field: public store_key
       copy_field.set(to_field,from_field,0);
     }
   }
-  enum store_key_result copy()
+  const char *name() const { return field_name; }
+
+ protected: 
+  enum store_key_result copy_inner()
   {
     copy_field.do_copy(&copy_field);
+    null_key= to_field->is_null();
     return err != 0 ? STORE_KEY_FATAL : STORE_KEY_OK;
   }
-  const char *name() const { return field_name; }
 };
 
 
@@ -421,13 +585,15 @@ public:
 	       null_ptr_arg ? null_ptr_arg : item_arg->maybe_null ?
 	       &err : NullS, length), item(item_arg)
   {}
-  enum store_key_result copy()
+  const char *name() const { return "func"; }
+
+ protected:  
+  enum store_key_result copy_inner()
   {
     int res= item->save_in_field(to_field, 1);
+    null_key= to_field->is_null() || item->null_value;
     return (err != 0 || res > 2 ? STORE_KEY_FATAL : (store_key_result) res); 
-	                 
   }
-  const char *name() const { return "func"; }
 };
 
 
@@ -443,7 +609,10 @@ public:
 		    &err : NullS, length, item_arg), inited(0)
   {
   }
-  enum store_key_result copy()
+  const char *name() const { return "const"; }
+
+protected:  
+  enum store_key_result copy_inner()
   {
     int res;
     if (!inited)
@@ -455,9 +624,9 @@ public:
           err= res;
       }
     }
+    null_key= to_field->is_null() || item->null_value;
     return (err > 2 ?  STORE_KEY_FATAL : (store_key_result) err);
   }
-  const char *name() const { return "const"; }
 };
 
 bool cp_buffer_from_ref(THD *thd, TABLE_REF *ref);

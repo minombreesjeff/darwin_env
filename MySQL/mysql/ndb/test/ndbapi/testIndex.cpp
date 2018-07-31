@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1145,20 +1144,18 @@ runUniqueNullTransactions(NDBT_Context* ctx, NDBT_Step* step){
   pTrans = pNdb->startTransaction();
   NdbScanOperation * sOp;
   NdbOperation * uOp;
-  NdbResultSet * rs;
   int eof;
   if(!pTrans) goto done;
   sOp = pTrans->getNdbScanOperation(pTab->getName());
   if(!sOp) goto done;
-  rs = sOp->readTuples(NdbScanOperation::LM_Exclusive);
-  if(!rs) goto done;
+  if(sOp->readTuples(NdbScanOperation::LM_Exclusive)) goto done;
   if(pTrans->execute(NoCommit) == -1) goto done;
-  while((eof = rs->nextResult(true)) == 0){
+  while((eof = sOp->nextResult(true)) == 0){
     do {
-      NdbOperation * uOp = rs->updateTuple();
+      NdbOperation * uOp = sOp->updateCurrentTuple();
       if(uOp == 0) goto done;
       uOp->setValue(colId, 0);
-    } while((eof = rs->nextResult(false)) == 0);
+    } while((eof = sOp->nextResult(false)) == 0);
     eof = pTrans->execute(Commit);
     if(eof == -1) goto done;
   }
@@ -1241,7 +1238,64 @@ runBug21384(NDBT_Context* ctx, NDBT_Step* step)
   return NDBT_OK;
 }
 
+int 
+runBug25059(NDBT_Context* ctx, NDBT_Step* step)
+{
+  Ndb* pNdb = GETNDB(step);
+  NdbDictionary::Dictionary * dict = pNdb->getDictionary();
+  const NdbDictionary::Index * idx = dict->getIndex(pkIdxName, *ctx->getTab());
 
+  HugoOperations ops(*ctx->getTab(), idx);
+  
+  int res = NDBT_OK;
+  int loops = ctx->getNumLoops();
+  const int rows = ctx->getNumRecords();
+  
+  while (res == NDBT_OK && loops--)
+  {
+    ops.startTransaction(pNdb);
+    ops.pkReadRecord(pNdb, 10 + rand() % rows, rows);
+    int tmp;
+    if (tmp = ops.execute_Commit(pNdb, AO_IgnoreError))
+    {
+      if (tmp == 4012)
+	res = NDBT_FAILED;
+      else
+	if (ops.getTransaction()->getNdbError().code == 4012)
+	  res = NDBT_FAILED;
+    }
+    ops.closeTransaction(pNdb);
+  }
+  
+  loops = ctx->getNumLoops();
+  while (res == NDBT_OK && loops--)
+  {
+    ops.startTransaction(pNdb);
+    ops.pkUpdateRecord(pNdb, 10 + rand() % rows, rows);
+    int tmp;
+    int arg;
+    switch(rand() % 2){
+    case 0:
+      arg = AbortOnError;
+      break;
+    case 1:
+      arg = AO_IgnoreError;
+      ndbout_c("ignore error");
+      break;
+    }
+    if (tmp = ops.execute_Commit(pNdb, (AbortOption)arg))
+    {
+      if (tmp == 4012)
+	res = NDBT_FAILED;
+      else
+	if (ops.getTransaction()->getNdbError().code == 4012)
+	  res = NDBT_FAILED;
+    }
+    ops.closeTransaction(pNdb);
+  }  
+  
+  return res;
+}
 
 NDBT_TESTSUITE(testIndex);
 TESTCASE("CreateAll", 
@@ -1321,7 +1375,7 @@ TESTCASE("CreateLoadDrop_O",
 TESTCASE("NFNR1", 
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
-  //TC_PROPERTY("Threads", 2);
+  TC_PROPERTY("PauseThreads", 2);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(runLoadTable);
@@ -1336,6 +1390,7 @@ TESTCASE("NFNR1_O",
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("OrderedIndex", 1);
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 2);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(runLoadTable);
@@ -1349,6 +1404,7 @@ TESTCASE("NFNR1_O",
 TESTCASE("NFNR2", 
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 2);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(createPkIndex);
@@ -1365,6 +1421,7 @@ TESTCASE("NFNR2_O",
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("OrderedIndex", 1);
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 1);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(createPkIndex);
@@ -1380,6 +1437,7 @@ TESTCASE("NFNR2_O",
 TESTCASE("NFNR3", 
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 2);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(createPkIndex);
@@ -1395,6 +1453,7 @@ TESTCASE("NFNR3_O",
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("OrderedIndex", 1);
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 2);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(createPkIndex);
@@ -1409,6 +1468,7 @@ TESTCASE("NFNR3_O",
 TESTCASE("NFNR4", 
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 4);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(createPkIndex);
@@ -1427,6 +1487,7 @@ TESTCASE("NFNR4_O",
 	 "Test that indexes are correctly maintained during node fail and node restart"){ 
   TC_PROPERTY("OrderedIndex", 1);
   TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("PauseThreads", 4);
   INITIALIZER(runClearTable);
   INITIALIZER(createRandomIndex);
   INITIALIZER(createPkIndex);
@@ -1558,6 +1619,14 @@ TESTCASE("Bug21384",
   STEP(runBug21384);
   FINALIZER(createPkIndex_Drop);
   FINALIZER(runClearTable);
+}
+TESTCASE("Bug25059", 
+	 "Test that unique indexes and nulls"){ 
+  TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  INITIALIZER(createPkIndex);
+  INITIALIZER(runLoadTable);
+  STEP(runBug25059);
+  FINALIZER(createPkIndex_Drop);
 }
 NDBT_TESTSUITE_END(testIndex);
 

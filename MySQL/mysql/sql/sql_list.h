@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,16 +20,10 @@
 
 /* mysql standard class memory allocator */
 
-#ifdef SAFEMALLOC
-#define TRASH(XX,YY) bfill((XX), (YY), 0x8F)
-#else
-#define TRASH(XX,YY) /* no-op */
-#endif
-
 class Sql_alloc
 {
 public:
-  static void *operator new(size_t size)
+  static void *operator new(size_t size) throw ()
   {
     return (void*) sql_alloc((uint) size);
   }
@@ -38,7 +31,9 @@ public:
   {
     return (void*) sql_alloc((uint) size);
   }
-  static void *operator new(size_t size, MEM_ROOT *mem_root)
+  static void *operator new[](size_t size, MEM_ROOT *mem_root) throw ()
+  { return (void*) alloc_root(mem_root, (uint) size); }
+  static void *operator new(size_t size, MEM_ROOT *mem_root) throw ()
   { return (void*) alloc_root(mem_root, (uint) size); }
   static void operator delete(void *ptr, size_t size) { TRASH(ptr, size); }
   static void operator delete(void *ptr, MEM_ROOT *mem_root)
@@ -66,21 +61,24 @@ public:
   pointer.
 */
 
-class list_node :public Sql_alloc
+
+/**
+  list_node - a node of a single-linked list.
+  @note We never call a destructor for instances of this class.
+*/
+
+struct list_node :public Sql_alloc
 {
-public:
   list_node *next;
   void *info;
   list_node(void *info_par,list_node *next_par)
     :next(next_par),info(info_par)
-    {}
+  {}
   list_node()					/* For end_of_list */
-    {
-      info=0;
-      next= this;
-    }
-  friend class base_list;
-  friend class base_list_iterator;
+  {
+    info= 0;
+    next= this;
+  }
 };
 
 
@@ -96,16 +94,71 @@ public:
 
   inline void empty() { elements=0; first= &end_of_list; last=&first;}
   inline base_list() { empty(); }
+  /**
+    This is a shallow copy constructor that implicitly passes the ownership
+    from the source list to the new instance. The old instance is not
+    updated, so both objects end up sharing the same nodes. If one of
+    the instances then adds or removes a node, the other becomes out of
+    sync ('last' pointer), while still operational. Some old code uses and
+    relies on this behaviour. This logic is quite tricky: please do not use
+    it in any new code.
+  */
   inline base_list(const base_list &tmp) :Sql_alloc()
   {
-    elements=tmp.elements;
-    first=tmp.first;
-    last=tmp.last;
+    elements= tmp.elements;
+    first= tmp.first;
+    last= elements ? tmp.last : &first;
+  }
+  /**
+    Construct a deep copy of the argument in memory root mem_root.
+    The elements themselves are copied by pointer.
+  */
+  inline base_list(const base_list &rhs, MEM_ROOT *mem_root)
+  {
+    if (rhs.elements)
+    {
+      /*
+        It's okay to allocate an array of nodes at once: we never
+        call a destructor for list_node objects anyway.
+      */
+      first= (list_node*) alloc_root(mem_root,
+                                     sizeof(list_node) * rhs.elements);
+      if (first)
+      {
+        elements= rhs.elements;
+        list_node *dst= first;
+        list_node *src= rhs.first;
+        for (; dst < first + elements - 1; dst++, src= src->next)
+        {
+          dst->info= src->info;
+          dst->next= dst + 1;
+        }
+        /* Copy the last node */
+        dst->info= src->info;
+        dst->next= &end_of_list;
+        /* Setup 'last' member */
+        last= &dst->next;
+        return;
+      }
+    }
+    elements= 0;
+    first= &end_of_list;
+    last= &first;
   }
   inline base_list(bool error) { }
   inline bool push_back(void *info)
   {
     if (((*last)=new list_node(info, &end_of_list)))
+    {
+      last= &(*last)->next;
+      elements++;
+      return 0;
+    }
+    return 1;
+  }
+  inline bool push_back(void *info, MEM_ROOT *mem_root)
+  {
+    if (((*last)=new (mem_root) list_node(info, &end_of_list)))
     {
       last= &(*last)->next;
       elements++;
@@ -129,32 +182,12 @@ public:
   void remove(list_node **prev)
   {
     list_node *node=(*prev)->next;
-    if (&(*prev)->next == last)
-    {
-      /*
-        We're removing the last element from the list. Adjust "last" to point
-        to the previous element.
-        The other way to fix this would be to change this function to
-        remove_next() and have base_list_iterator save ptr to previous node
-        (one extra assignment in iterator++) but as the remove() of the last
-        element isn't a common operation it's faster to just walk through the
-        list from the beginning here.
-      */
-      list_node *cur= first;
-      if (cur == *prev)
-      {
-        last= &first;
-      }
-      else
-      {
-        while (cur->next != *prev)
-          cur= cur->next;
-        last= &(cur->next);
-      }
-    }
+    if (!--elements)
+      last= &first;
+    else if (last == &(*prev)->next)
+      last= prev;
     delete *prev;
     *prev=node;
-    elements--;
   }
   inline void concat(base_list *list)
   {
@@ -173,6 +206,30 @@ public:
     if (!--elements)
       last= &first;
     return tmp->info;
+  }
+  inline void disjoin(base_list *list)
+  {
+    list_node **prev= &first;
+    list_node *node= first;
+    list_node *list_first= list->first;
+    elements=0;
+    while (node && node != list_first)
+    {
+      prev= &node->next;
+      node= node->next;
+      elements++;
+    }
+    *prev= *last;
+    last= prev;
+  }
+  inline void prepand(base_list *list)
+  {
+    if (!list->is_empty())
+    {
+      *list->last= first;
+      first= list->first;
+      elements+= list->elements;
+    }
   }
   inline list_node* last_node() { return *last; }
   inline list_node* first_node() { return first;}
@@ -256,9 +313,20 @@ protected:
     ls.elements= elm;
   }
 public:
-  base_list_iterator(base_list &list_par) 
-    :list(&list_par), el(&list_par.first), prev(0), current(0)
+  base_list_iterator() 
+    :list(0), el(0), prev(0), current(0)
   {}
+
+  base_list_iterator(base_list &list_par) 
+  { init(list_par); }
+
+  inline void init(base_list &list_par)
+  {
+    list= &list_par;
+    el= &list_par.first;
+    prev= 0;
+    current= 0;
+  }
 
   inline void *next(void)
   {
@@ -327,11 +395,18 @@ template <class T> class List :public base_list
 public:
   inline List() :base_list() {}
   inline List(const List<T> &tmp) :base_list(tmp) {}
+  inline List(const List<T> &tmp, MEM_ROOT *mem_root) :
+    base_list(tmp, mem_root) {}
   inline bool push_back(T *a) { return base_list::push_back(a); }
+  inline bool push_back(T *a, MEM_ROOT *mem_root)
+  { return base_list::push_back(a, mem_root); }
   inline bool push_front(T *a) { return base_list::push_front(a); }
   inline T* head() {return (T*) base_list::head(); }
   inline T** head_ref() {return (T**) base_list::head_ref(); }
   inline T* pop()  {return (T*) base_list::pop(); }
+  inline void concat(List<T> *list) { base_list::concat(list); }
+  inline void disjoin(List<T> *list) { base_list::disjoin(list); }
+  inline void prepand(List<T> *list) { base_list::prepand(list); }
   void delete_elements(void)
   {
     list_node *element,*next;
@@ -349,9 +424,13 @@ template <class T> class List_iterator :public base_list_iterator
 {
 public:
   List_iterator(List<T> &a) : base_list_iterator(a) {}
+  List_iterator() : base_list_iterator() {}
+  inline void init(List<T> &a) { base_list_iterator::init(a); }
   inline T* operator++(int) { return (T*) base_list_iterator::next(); }
   inline T *replace(T *a)   { return (T*) base_list_iterator::replace(a); }
   inline T *replace(List<T> &a) { return (T*) base_list_iterator::replace(a); }
+  inline void rewind(void)  { base_list_iterator::rewind(); }
+  inline void remove()      { base_list_iterator::remove(); }
   inline void after(T *a)   { base_list_iterator::after(a); }
   inline T** ref(void)	    { return (T**) base_list_iterator::ref(); }
 };
@@ -368,6 +447,8 @@ protected:
 
 public:
   inline List_iterator_fast(List<T> &a) : base_list_iterator(a) {}
+  inline List_iterator_fast() : base_list_iterator() {}
+  inline void init(List<T> &a) { base_list_iterator::init(a); }
   inline T* operator++(int) { return (T*) base_list_iterator::next_fast(); }
   inline void rewind(void)  { base_list_iterator::rewind(); }
   void sublist(List<T> &list_arg, uint el_arg)
@@ -411,9 +492,14 @@ struct ilink
 
 template <class T> class I_List_iterator;
 
+/*
+  WARNING: copy constructor of this class does not create a usable
+  copy, as its members may point at each other.
+*/
+
 class base_ilist
 {
-  public:
+public:
   struct ilink *first,last;
   inline void empty() { first= &last; last.prev= &first; }
   base_ilist() { empty(); }

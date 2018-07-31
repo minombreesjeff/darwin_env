@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,13 +13,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-
 #include <ndb_global.h>
 #include <NdbOperation.hpp>
 #include "NdbApiSignal.hpp"
-#include <NdbConnection.hpp>
+#include <NdbTransaction.hpp>
 #include <Ndb.hpp>
-#include "NdbRecAttr.hpp"
+#include <NdbRecAttr.hpp>
 #include "NdbUtil.hpp"
 #include "Interpreter.hpp"
 #include <NdbIndexScanOperation.hpp>
@@ -84,7 +82,7 @@ NdbOperation::incCheck(const NdbColumnImpl* tNdbColumnImpl)
     }
     return tNdbColumnImpl->m_attrId;
   } else {
-    if (theNdbCon->theCommitStatus == NdbConnection::Started)
+    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
       setErrorCodeAbort(4200);
   }
   return -1;
@@ -136,7 +134,7 @@ NdbOperation::write_attrCheck(const NdbColumnImpl* tNdbColumnImpl)
     }
     return tNdbColumnImpl->m_attrId;
   } else {
-    if (theNdbCon->theCommitStatus == NdbConnection::Started)
+    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
       setErrorCodeAbort(4200);
   }
   return -1;
@@ -184,7 +182,7 @@ NdbOperation::read_attrCheck(const NdbColumnImpl* tNdbColumnImpl)
     }
     return tNdbColumnImpl->m_attrId;
   } else {
-    if (theNdbCon->theCommitStatus == NdbConnection::Started)
+    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
       setErrorCodeAbort(4200);
   }
   return -1;
@@ -220,7 +218,7 @@ NdbOperation::initial_interpreterCheck()
     }
     return 0;
   } else {
-    if (theNdbCon->theCommitStatus == NdbConnection::Started)
+    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
       setErrorCodeAbort(4200);
   }
   return -1;
@@ -246,7 +244,7 @@ NdbOperation::labelCheck()
     }
     return 0;
   } else {
-    if (theNdbCon->theCommitStatus == NdbConnection::Started)
+    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
       setErrorCodeAbort(4200);
   }
   return -1;
@@ -266,7 +264,7 @@ NdbOperation::intermediate_interpreterCheck()
     }
     return 0;
   } else {
-    if (theNdbCon->theCommitStatus == NdbConnection::Started)
+    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
       setErrorCodeAbort(4200);
   }
   return -1;
@@ -1012,33 +1010,56 @@ NdbOperation::insertCall(Uint32 aCall)
 
 int
 NdbOperation::branch_col(Uint32 type, 
-			 Uint32 ColId, const char * val, Uint32 len, 
+			 Uint32 ColId, const void * val, Uint32 len, 
 			 bool nopad, Uint32 Label){
 
+  DBUG_ENTER("NdbOperation::branch_col");
+  DBUG_PRINT("enter", ("type: %u  col:%u  val: 0x%lx  len: %u  label: %u",
+                       type, ColId, (long) val, len, Label));
+  if (val != NULL)
+    DBUG_DUMP("value", (char*)val, len);
+
   if (initial_interpreterCheck() == -1)
-    return -1;
+    DBUG_RETURN(-1);
 
   Interpreter::BinaryCondition c = (Interpreter::BinaryCondition)type;
-
-  const NdbDictionary::Column * col = 
+  
+  const NdbColumnImpl * col = 
     m_currentTable->getColumn(ColId);
   
   if(col == 0){
     abort();
   }
 
-  Uint32 vc = col->getType() == NdbDictionary::Column::Varchar;
-  Uint32 colLen = col->getLength() + 2 * vc;
-  Uint32 al = (4 - (colLen & 3)) & 0x3;
-  
-  if (insertATTRINFO(Interpreter::BranchCol(c, al, vc, nopad)) == -1)
-    return -1;
+  if (val == NULL)
+    len = 0;
+  else {
+    if (! col->getStringType()) {
+      // prevent assert in NdbSqlUtil on length error
+      Uint32 sizeInBytes = col->m_attrSize * col->m_arraySize;
+      if (len != 0 && len != sizeInBytes)
+      {
+        setErrorCodeAbort(4209);
+        DBUG_RETURN(-1);
+      }
+      len = sizeInBytes;
+    }
+  }
+
+  Uint32 tempData[2000];
+  if (((UintPtr)val & 3) != 0) {
+    memcpy(tempData, val, len);
+    val = tempData;
+  }
+
+  if (insertATTRINFO(Interpreter::BranchCol(c, 0, 0, false)) == -1)
+    DBUG_RETURN(-1);
   
   if (insertBranch(Label) == -1)
-    return -1;
+    DBUG_RETURN(-1);
   
   if (insertATTRINFO(Interpreter::BranchCol_2(ColId, len)))
-    return -1;
+    DBUG_RETURN(-1);
   
   Uint32 len2 = Interpreter::mod4(len);
   if(len2 == len){
@@ -1049,64 +1070,64 @@ NdbOperation::branch_col(Uint32 type,
     Uint32 tmp = 0;
     for (Uint32 i = 0; i < len-len2; i++) {
       char* p = (char*)&tmp;
-      p[i] = val[len2+i];
+      p[i] = ((char*)val)[len2+i];
     }
     insertATTRINFO(tmp);
   }
   
   theErrorLine++;
-  return 0;
+  DBUG_RETURN(0);
 }
 
 int 
-NdbOperation::branch_col_eq(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_eq(Uint32 ColId, const void * val, Uint32 len, 
 			    bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_eq %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::EQ, ColId, val, len, nopad, Label);
 }
 
 int
-NdbOperation::branch_col_ne(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_ne(Uint32 ColId, const void * val, Uint32 len, 
 			    bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_ne %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::NE, ColId, val, len, nopad, Label);
 }
 int
-NdbOperation::branch_col_lt(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_lt(Uint32 ColId, const void * val, Uint32 len, 
 			    bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_lt %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::LT, ColId, val, len, nopad, Label);
 }
 int
-NdbOperation::branch_col_le(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_le(Uint32 ColId, const void * val, Uint32 len, 
 			    bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_le %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::LE, ColId, val, len, nopad, Label);
 }
 int
-NdbOperation::branch_col_gt(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_gt(Uint32 ColId, const void * val, Uint32 len, 
 			    bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_gt %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::GT, ColId, val, len, nopad, Label);
 }
 
 int
-NdbOperation::branch_col_ge(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_ge(Uint32 ColId, const void * val, Uint32 len, 
 			    bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_ge %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::GE, ColId, val, len, nopad, Label);
 }
 
 int
-NdbOperation::branch_col_like(Uint32 ColId, const char * val, Uint32 len, 
+NdbOperation::branch_col_like(Uint32 ColId, const void * val, Uint32 len, 
 			      bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_like %u %.*s(%u,%d) -> %u", ColId, len, val, len, nopad, Label));
   return branch_col(Interpreter::LIKE, ColId, val, len, nopad, Label);
 }
 
 int
-NdbOperation::branch_col_notlike(Uint32 ColId, const char * val, Uint32 len, 
-			      bool nopad, Uint32 Label){
+NdbOperation::branch_col_notlike(Uint32 ColId, const void * val, Uint32 len, 
+				 bool nopad, Uint32 Label){
   INT_DEBUG(("branch_col_notlike %u %.*s(%u,%d) -> %u", ColId,len,val,len,nopad,Label));
   return branch_col(Interpreter::NOT_LIKE, ColId, val, len, nopad, Label);
 }

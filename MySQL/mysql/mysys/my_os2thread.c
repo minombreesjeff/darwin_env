@@ -5,8 +5,8 @@
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
+   License as published by the Free Software Foundation; version 2
+   of the License.
 
    This library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -51,7 +51,7 @@ void win_pthread_init(void)
 ** in the new thread.
 */
 
-static pthread_handler_decl(pthread_start,param)
+pthread_handler_t pthread_start(void *param)
 {
   DBUG_ENTER("pthread_start");
   pthread_handler func=((struct pthread_map *) param)->func;

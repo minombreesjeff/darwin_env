@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -390,6 +389,7 @@ Dbtup::commitRecord(Signal* signal,
 
   fragptr.p = regFragPtr;
   tabptr.p = regTabPtr;
+  Uint32 hashValue = firstOpPtr.p->hashValue;
 
   if (opType == ZINSERT_DELETE) {
     ljam();
@@ -412,6 +412,7 @@ Dbtup::commitRecord(Signal* signal,
 //--------------------------------------------------------------------
     Uint32 saveOpType = regOperPtr->optype;
     regOperPtr->optype = ZINSERT;
+    regOperPtr->hashValue = hashValue;
     operPtr.p = regOperPtr;
 
     checkDetachedTriggers(signal,
@@ -444,6 +445,8 @@ Dbtup::commitRecord(Signal* signal,
     befOpPtr.p->changeMask.clear();
     befOpPtr.p->changeMask.bitOR(attributeMask);
     befOpPtr.p->gci = regOperPtr->gci;
+    befOpPtr.p->optype = ZUPDATE;
+    befOpPtr.p->hashValue = hashValue;
     
     befOpPtr.p->optype = opType;
     operPtr.p = befOpPtr.p;
@@ -478,11 +481,13 @@ Dbtup::commitRecord(Signal* signal,
     Uint32 fragPageId = befOpPtr.p->fragPageId;
     Uint32 pageIndex  = befOpPtr.p->pageIndex;
 
+    befOpPtr.p->optype = ZDELETE;
     befOpPtr.p->realPageId = befOpPtr.p->realPageIdC;
     befOpPtr.p->pageOffset = befOpPtr.p->pageOffsetC;
     befOpPtr.p->fragPageId = befOpPtr.p->fragPageIdC;
     befOpPtr.p->pageIndex  = befOpPtr.p->pageIndexC;
     befOpPtr.p->gci = regOperPtr->gci;
+    befOpPtr.p->hashValue = hashValue;
 
     befOpPtr.p->optype = opType;
     operPtr.p = befOpPtr.p;

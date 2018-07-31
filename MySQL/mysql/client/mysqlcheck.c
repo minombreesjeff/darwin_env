@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,7 +33,7 @@ static my_bool opt_alldbs = 0, opt_check_only_changed = 0, opt_extended = 0,
                opt_compress = 0, opt_databases = 0, opt_fast = 0,
                opt_medium_check = 0, opt_quick = 0, opt_all_in_1 = 0,
                opt_silent = 0, opt_auto_repair = 0, ignore_errors = 0,
-               tty_password = 0, opt_frm = 0;
+               tty_password = 0, opt_frm = 0, opt_upgrade= 0;
 static uint verbose = 0, opt_mysql_port=0;
 static my_string opt_mysql_unix_port = 0;
 static char *opt_password = 0, *current_user = 0, 
@@ -77,6 +76,9 @@ static struct my_option my_long_options[] =
    0, 0, 0, 0},
   {"check-only-changed", 'C',
    "Check only tables that have changed since last check or haven't been closed properly.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"check-upgrade", 'g',
+   "Check tables for version-dependent changes. May be used with --auto-repair to correct tables requiring version-dependent updates.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"compress", OPT_COMPRESS, "Use compression in server/client protocol.",
    (gptr*) &opt_compress, (gptr*) &opt_compress, 0, GET_BOOL, NO_ARG, 0, 0, 0,
@@ -122,7 +124,7 @@ static struct my_option my_long_options[] =
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
   {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
-   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0,
+   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0,
    0},
   {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
    0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -146,14 +148,14 @@ static struct my_option my_long_options[] =
 #include <sslopt-longopts.h>
   {"tables", OPT_TABLES, "Overrides option --databases (-B).", 0, 0, 0,
    GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-#ifndef DONT_ALLOW_USER_CHANGE
-  {"user", 'u', "User for login if not current user.", (gptr*) &current_user,
-   (gptr*) &current_user, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"use-frm", OPT_FRM,
    "When used with REPAIR, get table structure from .frm file, so the table can be repaired even if .MYI header is corrupted.",
    (gptr*) &opt_frm, (gptr*) &opt_frm, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
    0},
+#ifndef DONT_ALLOW_USER_CHANGE
+  {"user", 'u', "User for login if not current user.", (gptr*) &current_user,
+   (gptr*) &current_user, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"verbose", 'v', "Print info about the various stages.", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
   {"version", 'V', "Output version information and exit.", 0, 0, 0, GET_NO_ARG,
@@ -267,6 +269,10 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case 'r':
     what_to_do = DO_REPAIR;
+    break;
+  case 'g':
+    what_to_do= DO_CHECK;
+    opt_upgrade= 1;
     break;
   case 'W':
 #ifdef __WIN__
@@ -447,13 +453,16 @@ static int process_all_tables_in_db(char *database)
 {
   MYSQL_RES *res;
   MYSQL_ROW row;
+  uint num_columns;
 
   LINT_INIT(res);
   if (use_db(database))
     return 1;
-  if (mysql_query(sock, "SHOW TABLES") ||
+  if (mysql_query(sock, "SHOW /*!50002 FULL*/ TABLES") ||
 	!((res= mysql_store_result(sock))))
     return 1;
+
+  num_columns= mysql_num_fields(res);
 
   if (opt_all_in_1)
   {
@@ -477,6 +486,9 @@ static int process_all_tables_in_db(char *database)
     }
     for (end = tables + 1; (row = mysql_fetch_row(res)) ;)
     {
+      if ((num_columns == 2) && (strcmp(row[1], "VIEW") == 0))
+        continue;
+
       end= fix_table_name(end, row[0]);
       *end++= ',';
     }
@@ -488,7 +500,12 @@ static int process_all_tables_in_db(char *database)
   else
   {
     while ((row = mysql_fetch_row(res)))
+    {
+      if ((num_columns == 2) && (strcmp(row[1], "VIEW") == 0))
+        continue;
+
       handle_request_for_tables(row[0], strlen(row[0]));
+    }
   }
   mysql_free_result(res);
   return 0;
@@ -497,6 +514,9 @@ static int process_all_tables_in_db(char *database)
 
 static int use_db(char *database)
 {
+  if (mysql_get_server_version(sock) >= 50003 &&
+      !my_strcasecmp(&my_charset_latin1, database, "information_schema"))
+    return 1;
   if (mysql_select_db(sock, database))
   {
     DBerror(sock, "when selecting the database");
@@ -522,6 +542,7 @@ static int handle_request_for_tables(char *tables, uint length)
     if (opt_medium_check)       end = strmov(end, " MEDIUM"); /* Default */
     if (opt_extended)           end = strmov(end, " EXTENDED");
     if (opt_check_only_changed) end = strmov(end, " CHANGED");
+    if (opt_upgrade)            end = strmov(end, " FOR UPGRADE");
     break;
   case DO_REPAIR:
     op = "REPAIR";
@@ -643,6 +664,7 @@ static int dbConnect(char *host, char *user, char *passwd)
     DBerror(&mysql_connection, "when trying to connect");
     return 1;
   }
+  mysql_connection.reconnect= 1;
   return 0;
 } /* dbConnect */
 

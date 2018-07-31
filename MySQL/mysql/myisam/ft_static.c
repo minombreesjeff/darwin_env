@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,23 +24,25 @@ char ft_boolean_syntax[]="+ -><()~*:\"\"&|";
 
 const HA_KEYSEG ft_keysegs[FT_SEGS]={
 {
-    HA_KEYTYPE_VARTEXT,               /* type */
-    63,                               /* language (will be overwritten) */
-    0, 0, 0,                          /* null_bit, bit_start, bit_end */
-    HA_VAR_LENGTH | HA_PACK_KEY,      /* flag */
-    HA_FT_MAXBYTELEN,                 /* length */
-    HA_FT_WLEN,                       /* start */
-    0,                                /* null_pos */
-    NULL                              /* charset  */
-  },
-  {
-/*
-  Note, this (and the last HA_KEYTYPE_END) segment should NOT
-  be packed in any way, otherwise w_search() won't be able to
-  update key entry 'in vivo'
-*/
-      HA_FT_WTYPE, 63, 0, 0, 0, HA_NO_SORT, HA_FT_WLEN, 0, 0, NULL
-  }
+  0,                                            /* charset  */
+  HA_FT_WLEN,                                   /* start */
+  0,                                            /* null_pos */
+  0,                                            /* Bit pos */
+  HA_VAR_LENGTH_PART | HA_PACK_KEY,             /* flag */
+  HA_FT_MAXBYTELEN,                             /* length */
+  HA_KEYTYPE_VARTEXT2,                          /* type */
+  63,                                           /* language (will be overwritten) */
+  0,                                            /* null_bit */
+  2, 0, 0                                       /* bit_start, bit_end, bit_length */
+},
+{
+  /*
+      Note, this (and the last HA_KEYTYPE_END) segment should NOT
+      be packed in any way, otherwise w_search() won't be able to
+      update key entry 'in vivo'
+    */
+  0, 0, 0, 0, HA_NO_SORT, HA_FT_WLEN, HA_FT_WTYPE, 63, 0, 0, 0, 0
+}
 };
 
 const struct _ft_vft _ft_vft_nlq = {

@@ -86,6 +86,9 @@ scan_again:
 	block = UT_LIST_GET_LAST(buf_pool->LRU);
 
 	while (block != NULL) {
+
+		mutex_enter(&block->mutex);
+
 	        ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 
 		if (block->space == id
@@ -112,6 +115,8 @@ scan_again:
 			if (block->is_hashed) {
 				page_no = block->offset;
 			
+				mutex_exit(&block->mutex);
+
 				mutex_exit(&(buf_pool->mutex));
 
 				/* Note that the following call will acquire
@@ -138,6 +143,7 @@ scan_again:
 			buf_LRU_block_free_hashed_page(block);
 		}
 next_page:
+		mutex_exit(&block->mutex);
 		block = UT_LIST_GET_PREV(LRU, block);
 	}
 
@@ -211,18 +217,24 @@ buf_LRU_search_and_free_block(
 
 	while (block != NULL) {
 	        ut_a(block->in_LRU_list);
+
+		mutex_enter(&block->mutex);
+
 		if (buf_flush_ready_for_replace(block)) {
 
+#ifdef UNIV_DEBUG
 			if (buf_debug_prints) {
 				fprintf(stderr,
 				"Putting space %lu page %lu to free list\n",
 					(ulong) block->space,
 				        (ulong) block->offset);
 			}
+#endif /* UNIV_DEBUG */
 
 			buf_LRU_block_remove_hashed_page(block);
 
 			mutex_exit(&(buf_pool->mutex));
+			mutex_exit(&block->mutex);
 
 			/* Remove possible adaptive hash index built on the
 			page; in the case of AWE the block may not have a
@@ -231,15 +243,21 @@ buf_LRU_search_and_free_block(
 			if (block->frame) {
 				btr_search_drop_page_hash_index(block->frame);
 			}
-			mutex_enter(&(buf_pool->mutex));
 
 			ut_a(block->buf_fix_count == 0);
 
+			mutex_enter(&(buf_pool->mutex));
+			mutex_enter(&block->mutex);
+
 			buf_LRU_block_free_hashed_page(block);
 			freed = TRUE;
+			mutex_exit(&block->mutex);
 
 			break;
 		}
+
+		mutex_exit(&block->mutex);
+
 		block = UT_LIST_GET_PREV(LRU, block);
 		distance++;
 
@@ -292,14 +310,14 @@ buf_LRU_try_free_flushed_blocks(void)
 }	
 
 /**********************************************************************
-Returns TRUE if less than 15 % of the buffer pool is available. This can be
+Returns TRUE if less than 25 % of the buffer pool is available. This can be
 used in heuristics to prevent huge transactions eating up the whole buffer
 pool for their locks. */
 
 ibool
 buf_LRU_buf_pool_running_out(void)
 /*==============================*/
-				/* out: TRUE if less than 15 % of buffer pool
+				/* out: TRUE if less than 25 % of buffer pool
 				left */
 {
 	ibool	ret	= FALSE;
@@ -307,7 +325,7 @@ buf_LRU_buf_pool_running_out(void)
 	mutex_enter(&(buf_pool->mutex));
 
 	if (!recv_recovery_on && UT_LIST_GET_LEN(buf_pool->free)
-	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 7) {
+	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 4) {
 		
 		ret = TRUE;
 	}
@@ -338,11 +356,11 @@ loop:
 	mutex_enter(&(buf_pool->mutex));
 
 	if (!recv_recovery_on && UT_LIST_GET_LEN(buf_pool->free)
-	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 10) {
+	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 20) {
 	   	ut_print_timestamp(stderr);
 
 	   	fprintf(stderr,
-"  InnoDB: ERROR: over 9 / 10 of the buffer pool is occupied by\n"
+"  InnoDB: ERROR: over 95 percent of the buffer pool is occupied by\n"
 "InnoDB: lock heaps or the adaptive hash index! Check that your\n"
 "InnoDB: transactions do not set too many row locks.\n"
 "InnoDB: Your buffer pool size is %lu MB. Maybe you should make\n"
@@ -354,17 +372,17 @@ loop:
 		ut_error;
 	   
 	} else if (!recv_recovery_on && UT_LIST_GET_LEN(buf_pool->free)
-	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 5) {
+	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 3) {
 
 		if (!buf_lru_switched_on_innodb_mon) {
 
-	   		/* Over 80 % of the buffer pool is occupied by lock
+	   		/* Over 67 % of the buffer pool is occupied by lock
 			heaps or the adaptive hash index. This may be a memory
 			leak! */
 
 	   		ut_print_timestamp(stderr);
 	   		fprintf(stderr,
-"  InnoDB: WARNING: over 4 / 5 of the buffer pool is occupied by\n"
+"  InnoDB: WARNING: over 67 percent of the buffer pool is occupied by\n"
 "InnoDB: lock heaps or the adaptive hash index! Check that your\n"
 "InnoDB: transactions do not set too many row locks.\n"
 "InnoDB: Your buffer pool size is %lu MB. Maybe you should make\n"
@@ -413,7 +431,11 @@ loop:
 			}
 		}
 		
+		mutex_enter(&block->mutex);
+
 		block->state = BUF_BLOCK_READY_FOR_USE;
+
+		mutex_exit(&block->mutex);
 
 		mutex_exit(&(buf_pool->mutex));
 
@@ -465,6 +487,7 @@ loop:
 	/* No free block was found: try to flush the LRU list */
 
 	buf_flush_free_margin();
+        ++srv_buf_pool_wait_free;
 
 	os_aio_simulated_wake_handler_threads();
 
@@ -815,6 +838,7 @@ buf_LRU_block_free_non_file_page(
 {
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
+	ut_ad(mutex_own(&block->mutex));
 #endif /* UNIV_SYNC_DEBUG */
 	ut_ad(block);
 	
@@ -854,6 +878,7 @@ buf_LRU_block_remove_hashed_page(
 {
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
+	ut_ad(mutex_own(&block->mutex));
 #endif /* UNIV_SYNC_DEBUG */
 	ut_ad(block);
 	
@@ -911,6 +936,7 @@ buf_LRU_block_free_hashed_page(
 {
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
+	ut_ad(mutex_own(&block->mutex));
 #endif /* UNIV_SYNC_DEBUG */
 	ut_a(block->state == BUF_BLOCK_REMOVE_HASH);
 
@@ -918,7 +944,8 @@ buf_LRU_block_free_hashed_page(
 
 	buf_LRU_block_free_non_file_page(block);
 }
-				
+
+#ifdef UNIV_DEBUG
 /**************************************************************************
 Validates the LRU list. */
 
@@ -1049,3 +1076,4 @@ buf_LRU_print(void)
 
 	mutex_exit(&(buf_pool->mutex));
 }
+#endif /* UNIV_DEBUG */

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,6 +37,7 @@ extern "C" int add_history(const char *command); /* From readline directory */
 #include "ndb_mgmclient.hpp"
 
 const char *progname = "ndb_mgm";
+const char *load_default_groups[]= { "mysql_cluster","ndb_mgm",0 };
 
 
 static Ndb_mgmclient* com;
@@ -87,15 +87,10 @@ static void usage()
 {
   short_usage_sub();
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_mgm.trace");
 }
 
 static int 
@@ -128,18 +123,19 @@ read_and_execute(int _try_reconnect)
     line_read= strdup(linebuffer);
   }
 #endif
-  return com->execute(line_read,_try_reconnect);
+  return com->execute(line_read, _try_reconnect, 1);
 }
 
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *_host = 0;
-  int _port = 0;
-  const char *load_default_groups[]= { "mysql_cluster","ndb_mgm",0 };
 
   load_defaults("my",load_default_groups,&argc,&argv);
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_mgm.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     exit(ho_error);
 
   char buf[MAXHOSTNAMELEN+10];
@@ -166,7 +162,7 @@ int main(int argc, char** argv){
   }
   else
   {
-    com->execute(opt_execute_str,_try_reconnect, &ret);
+    com->execute(opt_execute_str,_try_reconnect, 0, &ret);
   }
   delete com;
 

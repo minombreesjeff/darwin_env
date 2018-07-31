@@ -9,7 +9,7 @@ reset master;
 connection master;
 # 'test' is the current database
 create table t1(a int, b int, unique(b));
-load data infile '../../std_data/rpl_loaddata.dat' into table test.t1;
+load data infile '../std_data_ln/rpl_loaddata.dat' into table test.t1;
 
 # Test logging on slave;
 
@@ -17,6 +17,9 @@ save_master_pos;
 connection slave;
 sync_with_master;
 select count(*) from t1; # check that LOAD was replicated
-show binlog events from 79; # should be nothing
+show binlog events from 98; # should be nothing
+
+connection master;
+drop table t1;
 
 # End of 4.1 tests

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlcheck\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLCHECK\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLCHECK\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -20,8 +20,6 @@ mysqlcheck \- a table maintenance and repair program
 The
 \fBmysqlcheck\fR
 client checks, repairs, optimizes, and analyzes tables.
-\fBmysqlcheck\fR
-is available as of MySQL 3.23.38.
 .PP
 \fBmysqlcheck\fR
 is similar in function to
@@ -63,6 +61,14 @@ test.t
 note     : The storage engine for the table doesn't support check
 .fi
 .RE
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBCaution\fR
+.PP
+It is best to make a backup of a table before performing a table repair operation; under some circumstances the operation might cause data loss. Possible causes include but are not limited to filesystem errors.
 .PP
 There are three general ways to invoke
 \fBmysqlcheck\fR:
@@ -147,6 +153,9 @@ Instead of issuing a statement for each table, execute a single statement for ea
 \fB\-a\fR
 .sp
 Analyze the tables.
+.PP
+\fBMySQL Enterprise\fR. For expert advice on optimizing tables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-auto\-repair\fR
@@ -157,7 +166,7 @@ If a checked table is corrupted, automatically fix it. Any necessary repairs are
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-check\fR,
@@ -170,6 +179,16 @@ Check the tables for errors. This is the default operation.
 \fB\-C\fR
 .sp
 Check only tables that have changed since the last check or that have not been closed properly.
+.TP 3n
+\(bu
+\fB\-\-check\-upgrade\fR,
+\fB\-g\fR
+.sp
+Invoke
+CHECK TABLE
+with the
+FOR UPGRADE
+option to check tables for incompatibilities with the current version of the server. This option was added in MySQL 5.0.19.
 .TP 3n
 \(bu
 \fB\-\-compress\fR
@@ -199,7 +218,7 @@ string is often
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-extended\fR,
@@ -256,7 +275,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 7.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -267,7 +286,7 @@ The TCP/IP port number to use for the connection.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use. This option was added in MySQL 4.1.
+The connection protocol to use.
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -302,7 +321,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 7.7.3, \(lqSSL Command Options\(rq.
+Section\ 6.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-tables\fR
@@ -322,7 +341,7 @@ tables, get the table structure from the
 \fI.frm\fR
 file so that the table can be repaired even if the
 \fI.MYI\fR
-header is corrupted. This option was added in MySQL 4.0.5.
+header is corrupted.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
@@ -343,7 +362,7 @@ Verbose mode. Print information about the various stages of program operation.
 Display version information and exit.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -351,35 +370,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

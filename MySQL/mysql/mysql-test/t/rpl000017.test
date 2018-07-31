@@ -1,5 +1,7 @@
-connect (master,localhost,root,,test,$MASTER_MYPORT,master.sock);
-connect (slave,localhost,root,,test,$SLAVE_MYPORT,slave.sock);
+-- source include/have_log_bin.inc
+
+connect (master,localhost,root,,test,$MASTER_MYPORT,$MASTER_MYSOCK);
+connect (slave,localhost,root,,test,$SLAVE_MYPORT,$SLAVE_MYSOCK);
 connection master;
 reset master;
 grant replication slave on *.* to replicate@localhost identified by 'aaaaaaaaaaaaaaab';
@@ -16,6 +18,7 @@ sync_slave_with_master;
 select * from t1;
 connection master;
 drop table t1;
+delete from mysql.user where user="replicate";
 sync_slave_with_master;
 
 # End of 4.1 tests

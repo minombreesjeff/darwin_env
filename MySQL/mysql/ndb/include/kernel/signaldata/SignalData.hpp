@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,8 +17,8 @@
 #define SIGNAL_DATA_H
 
 #include <ndb_global.h>
-#include <ndb_limits.h>
-#include <kernel_types.h>
+#include <kernel/ndb_limits.h>
+#include <kernel/kernel_types.h>
 #include <BaseString.hpp>
 
 #define ASSERT_BOOL(flag, message) assert(flag<=1)
@@ -177,9 +176,16 @@ GSN_PRINT_SIGNATURE(printFAIL_REP);
 GSN_PRINT_SIGNATURE(printDISCONNECT_REP);
 GSN_PRINT_SIGNATURE(printSUB_CREATE_REQ);
 GSN_PRINT_SIGNATURE(printSUB_CREATE_CONF);
+GSN_PRINT_SIGNATURE(printSUB_CREATE_REF);
+GSN_PRINT_SIGNATURE(printSUB_REMOVE_REQ);
+GSN_PRINT_SIGNATURE(printSUB_REMOVE_CONF);
+GSN_PRINT_SIGNATURE(printSUB_REMOVE_REF);
 GSN_PRINT_SIGNATURE(printSUB_START_REQ);
 GSN_PRINT_SIGNATURE(printSUB_START_REF);
 GSN_PRINT_SIGNATURE(printSUB_START_CONF);
+GSN_PRINT_SIGNATURE(printSUB_STOP_REQ);
+GSN_PRINT_SIGNATURE(printSUB_STOP_REF);
+GSN_PRINT_SIGNATURE(printSUB_STOP_CONF);
 GSN_PRINT_SIGNATURE(printSUB_SYNC_REQ);
 GSN_PRINT_SIGNATURE(printSUB_SYNC_REF);
 GSN_PRINT_SIGNATURE(printSUB_SYNC_CONF);

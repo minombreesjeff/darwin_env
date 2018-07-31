@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -258,15 +257,31 @@ class BackupFragmentConf {
 
   friend bool printBACKUP_FRAGMENT_CONF(FILE *, const Uint32 *, Uint32, Uint16);
 public:
-  STATIC_CONST( SignalLength = 6 );
+  STATIC_CONST( SignalLength = 8 );
 
 private:
   Uint32 backupId;
   Uint32 backupPtr;
   Uint32 tableId;
   Uint32 fragmentNo;
-  Uint32 noOfRecords;
-  Uint32 noOfBytes;
+  Uint32 noOfRecordsLow;
+  Uint32 noOfBytesLow;
+  Uint32 noOfRecordsHigh;
+  Uint32 noOfBytesHigh;
+};
+
+class BackupFragmentCompleteRep {
+public:
+  STATIC_CONST( SignalLength = 8 );
+
+  Uint32 backupId;
+  Uint32 backupPtr;
+  Uint32 tableId;
+  Uint32 fragmentNo;
+  Uint32 noOfTableRowsLow;
+  Uint32 noOfFragmentRowsLow;
+  Uint32 noOfTableRowsHigh;
+  Uint32 noOfFragmentRowsHigh;
 };
 
 class StopBackupReq {

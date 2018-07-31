@@ -1,7 +1,7 @@
 # bug in decimal() with negative numbers by kaido@tradenet.ee
 
 --disable_warnings
-DROP TABLE IF EXISTS t1, t2, t3;
+DROP TABLE IF EXISTS t1, t2;
 --enable_warnings
 SET SQL_WARNINGS=1;
 
@@ -165,6 +165,8 @@ insert into t1 values ("00000000000001"),("+0000000000001"),("-0000000000001");
 insert into t1 values ("+111111111.11"),("111111111.11"),("-11111111.11");
 insert into t1 values ("-111111111.11"),("+1111111111.11"),("1111111111.11");
 insert into t1 values ("1e+1000"),("1e-1000"),("-1e+1000");
+insert into t1 values ("1e+4294967296"),("1e-4294967296");
+insert into t1 values ("1e+18446744073709551615"),("1e+18446744073709551616"),("1e-9223372036854775807"),("1e-9223372036854775809");
 insert into t1 values ("123.4e"),("123.4e+2"),("123.4e-2"),("123e1"),("123e+0");
 select * from t1;
 drop  table t1;
@@ -201,6 +203,7 @@ insert into t1 values (+111111111.11),(111111111.11),(-11111111.11);
 insert into t1 values (-111111111.11),(+1111111111.11),(1111111111.11);
 insert into t1 values (1e+100),(1e-100),(-1e+100);
 insert into t1 values (123.4e0),(123.4e+2),(123.4e-2),(123e1),(123e+0);
+insert into t1 values (MID("987",1,2)),("987 "),("987.6e+2 ");
 select * from t1;
 drop  table t1;
 
@@ -244,9 +247,8 @@ CREATE TABLE t1 (a_dec DECIMAL(-1,0));
 CREATE TABLE t1 (a_dec DECIMAL(-2,1));
 --error 1064
 CREATE TABLE t1 (a_dec DECIMAL(-1,1));
+--error 1427
 CREATE TABLE t1 (a_dec DECIMAL(0,11));
-SHOW CREATE TABLE t1;
-DROP TABLE t1;
 
 #
 #  Zero prepend overflow bug
@@ -276,16 +278,133 @@ update t1 set b=a;
 select * from t1;                                                               
 drop table t1;                                                                  
 
-#
-# Bug #13372 (decimal union)
-#
-create table t1 (d decimal(10,1));
-create table t2 (d decimal(10,9));
-insert into t1 values ("100000000.0");
-insert into t2 values ("1.23456780");
-create table t3 select * from t2 union select * from t1;
-select * from t3;
-show create table t3;
-drop table t1, t2, t3;
-
 # End of 4.1 tests
+
+#
+# Test for BUG#8397: decimal type in subselects (Item_cache_decimal)
+#
+CREATE TABLE t1
+(EMPNUM   CHAR(3) NOT NULL,
+HOURS    DECIMAL(5));
+CREATE TABLE t2
+(EMPNUM   CHAR(3) NOT NULL,
+HOURS    BIGINT);
+
+INSERT INTO t1 VALUES ('E1',40);
+INSERT INTO t1 VALUES ('E8',NULL);
+INSERT INTO t2 VALUES ('E1',40);
+
+SELECT EMPNUM FROM t1 WHERE HOURS IN (SELECT HOURS FROM t2);
+SELECT EMPNUM FROM t1 WHERE HOURS IN (SELECT HOURS FROM t1);
+
+DROP TABLE t1,t2;
+
+#
+# Test limits of decimal
+#
+create table t1 (d decimal(64,0));
+insert into t1 values (1);
+select * from t1;
+drop table t1;
+create table t1 (d decimal(5));
+show create table t1;
+drop table t1;
+create table t1 (d decimal);
+show create table t1;
+drop table t1;
+--error 1426
+create table t1 (d decimal(66,0));
+
+#
+# Test example from manual
+#
+
+CREATE TABLE t1 (i INT, d1 DECIMAL(9,2), d2 DECIMAL(9,2));
+INSERT INTO t1 VALUES (1, 101.40, 21.40), (1, -80.00, 0.00),
+(2, 0.00, 0.00), (2, -13.20, 0.00), (2, 59.60, 46.40),
+(2, 30.40, 30.40), (3, 37.00, 7.40), (3, -29.60, 0.00),
+(4, 60.00, 15.40), (4, -10.60, 0.00), (4, -34.00, 0.00),
+(5, 33.00, 0.00), (5, -25.80, 0.00), (5, 0.00, 7.20),
+(6, 0.00, 0.00), (6, -51.40, 0.00);
+
+SELECT i, SUM(d1) AS a, SUM(d2) AS b FROM t1 GROUP BY i HAVING a <> b;
+SELECT i, ROUND(SUM(d1), 2) AS a, ROUND(SUM(d2), 2) AS b FROM t1 GROUP BY i
+HAVING a <> b;
+drop table t1;
+
+#
+# A test case for Bug#4956 "strange result, insert into longtext, parameter
+# with numeric value": ensure that conversion is done identically no matter
+# where the input data comes from.
+#
+create table t1 (c1 varchar(100), c2 longtext);
+insert into t1 set c1= 'non PS, 1.0 as constant', c2=1.0;
+prepare stmt from "insert into t1 set c1='PS, 1.0 as constant    ', c2=1.0";
+execute stmt;
+set @a=1.0;
+insert into t1 set c1='non PS, 1.0 in parameter', c2=@a;
+prepare stmt from "insert into t1 set c1='PS, 1.0 in parameter    ', c2=?";
+execute stmt using @a;
+select * from t1;
+deallocate prepare stmt;
+drop table t1;
+
+#
+# A test case for Bug#5673 "Rounding problem in 4.0.21 inserting decimal
+# value into a char field": this is a regression bug in 4.0 tree caused by
+# a fix for some other decimal conversion issue. The patch never was
+# approved to get into 4.0 (maybe because it was considered too intrusive)
+#
+
+create table t1 (
+  strippedproductid char(15) not null default '',
+  zlevelprice decimal(10,2) default null,
+  primary key (strippedproductid)
+);
+
+create table t2 (
+  productid char(15) not null default '',
+  zlevelprice char(21) default null,
+  primary key (productid)
+);
+
+insert into t1 values ('002trans','49.99');
+insert into t1 values ('003trans','39.98');
+insert into t1 values ('004trans','31.18');
+
+insert INTO t2 SELECT * FROM t1;
+
+select * from t2; 
+drop table t1, t2;
+
+#
+# Bug #17826 'type_decimal' fails with ps-protocol
+#
+create table t1 (f1 decimal(5));
+insert into t1 values (40);
+flush tables;
+select f1 from t1 where f1 in (select f1 from t1);
+drop table t1;
+
+#
+# Bug#22183: Unhandled NULL caused server crash
+#
+create table t1 as
+ select from_days(s) as date,t
+ from (select 1 as s,'t' as t union select null, null ) as sub1;
+select group_concat(t) from t1 group by week(date)/10;
+drop table t1;
+
+#
+# Bug#28980: ROUND(<dec expr>, <int col>) returned double values
+#
+
+CREATE TABLE t1 (
+  qty decimal(16,6) default NULL, 
+  dps tinyint(3) unsigned default NULL 
+);
+INSERT INTO t1 VALUES (1.1325,3);
+
+SELECT ROUND(qty,3), dps, ROUND(qty,dps) FROM t1;
+
+DROP TABLE t1;

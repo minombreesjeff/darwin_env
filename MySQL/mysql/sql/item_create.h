@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +27,9 @@ Item *create_func_bit_length(Item* a);
 Item *create_func_coercibility(Item* a);
 Item *create_func_ceiling(Item* a);
 Item *create_func_char_length(Item* a);
-Item *create_func_cast(Item *a, Cast_target cast_type, int len, CHARSET_INFO *cs);
+Item *create_func_cast(Item *a, Cast_target cast_type,
+                       const char *len, const char *dec,
+                       CHARSET_INFO *cs);
 Item *create_func_connection_id(void);
 Item *create_func_conv(Item* a, Item *b, Item *c);
 Item *create_func_cos(Item* a);
@@ -64,6 +65,7 @@ Item *create_func_ltrim(Item* a);
 Item *create_func_md5(Item* a);
 Item *create_func_mod(Item* a, Item *b);
 Item *create_func_monthname(Item* a);
+Item *create_func_name_const(Item *a, Item *b);
 Item *create_func_nullif(Item* a, Item *b);
 Item *create_func_oct(Item *);
 Item *create_func_ord(Item* a);
@@ -71,8 +73,6 @@ Item *create_func_period_add(Item* a, Item *b);
 Item *create_func_period_diff(Item* a, Item *b);
 Item *create_func_pi(void);
 Item *create_func_pow(Item* a, Item *b);
-Item *create_func_current_user(void);
-Item *create_func_quarter(Item* a);
 Item *create_func_radians(Item *a);
 Item *create_func_release_lock(Item* a);
 Item *create_func_repeat(Item* a, Item *b);
@@ -83,6 +83,7 @@ Item *create_func_sec_to_time(Item* a);
 Item *create_func_sign(Item* a);
 Item *create_func_sin(Item* a);
 Item *create_func_sha(Item* a);
+Item *create_func_sleep(Item* a);
 Item *create_func_soundex(Item* a);
 Item *create_func_space(Item *);
 Item *create_func_sqrt(Item* a);

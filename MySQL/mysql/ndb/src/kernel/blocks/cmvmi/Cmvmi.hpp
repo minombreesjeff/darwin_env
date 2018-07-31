@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -48,6 +47,7 @@ private:
   void execNDB_TAMPER(Signal* signal);
   void execSET_LOGLEVELORD(Signal* signal);
   void execEVENT_REP(Signal* signal);
+  void execREAD_CONFIG_REQ(Signal* signal);
   void execSTTOR(Signal* signal);
   void execCLOSE_COMREQ(Signal* signal);
   void execENABLE_COMORD(Signal* signal);
@@ -55,23 +55,18 @@ private:
   void execSIZEALT_ACK(Signal* signal);
   void execTEST_ORD(Signal* signal);
 
-  void execSTATISTICS_REQ(Signal* signal);
   void execSTOP_ORD(Signal* signal);
   void execSTART_ORD(Signal* signal);
   void execTAMPER_ORD(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
-  void execSET_VAR_CONF(Signal* signal);
-  void execSET_VAR_REF(Signal* signal);
 
   void execDUMP_STATE_ORD(Signal* signal);
 
   void execEVENT_SUBSCRIBE_REQ(Signal *);
   void cancelSubscription(NodeId nodeId);
-  
-  void handleSET_VAR_REQ(Signal* signal);
 
   void execTESTSIG(Signal* signal);
-
+  void execNODE_START_REP(Signal* signal);
+  
   char theErrorMessage[256];
   void sendSTTORRY(Signal* signal);
 

@@ -910,7 +910,7 @@ fsp_header_init(
 	if (space == 0) {
 		fsp_fill_free_list(FALSE, space, header, mtr);
 		btr_create(DICT_CLUSTERED | DICT_UNIVERSAL | DICT_IBUF, space,
-				ut_dulint_add(DICT_IBUF_ID_MIN, space), mtr);
+			ut_dulint_add(DICT_IBUF_ID_MIN, space), FALSE, mtr);
 	} else {
 		fsp_fill_free_list(TRUE, space, header, mtr);
 	}
@@ -2325,7 +2325,6 @@ fseg_alloc_free_page_low(
 	dulint		seg_id;
 	ulint		used;
 	ulint		reserved;
-	fil_addr_t	first;
 	xdes_t*		descr;		/* extent of the hinted page */
 	ulint		ret_page;	/* the allocated page offset, FIL_NULL
 					if could not be allocated */
@@ -2428,6 +2427,8 @@ fseg_alloc_free_page_low(
 	} else if (reserved - used > 0) {
 		/* 5. We take any unused page from the segment
 		==============================================*/
+		fil_addr_t	first;
+
 		if (flst_get_len(seg_inode + FSEG_NOT_FULL, mtr) > 0) {
 			first = flst_get_first(seg_inode + FSEG_NOT_FULL,
 									mtr);
@@ -2435,6 +2436,7 @@ fseg_alloc_free_page_low(
 			first = flst_get_first(seg_inode + FSEG_FREE, mtr);
 		} else {
 			ut_error;
+			return(FIL_NULL);
 		}
 
 		ret_descr = xdes_lst_get_descriptor(space, first, mtr);
@@ -2973,7 +2975,7 @@ fseg_free_page_low(
 	crash:
 		fputs(
 "InnoDB: Please refer to\n"
-"InnoDB: http://dev.mysql.com/doc/mysql/en/Forcing_recovery.html\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/forcing-recovery.html\n"
 "InnoDB: about forcing recovery.\n", stderr);
 		ut_error;
 	}

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,245 +16,697 @@
 /**
    @mainpage                            NDB API Programmers' Guide
 
-   This guide assumes a basic familiarity with NDB Cluster concepts.
-   Some of the fundamental ones are described in section @ref secConcepts.
-   
-   The <em>NDB API</em> is an NDB Cluster application interface 
-   that implements both synchronous and asynchronous transactions.
+   This guide assumes a basic familiarity with MySQL Cluster concepts found
+   on http://dev.mysql.com/doc/mysql/en/NDBCluster.html .
+   Some of the fundamental ones are also described in section @ref secConcepts.
+
+   The NDB API is a MySQL Cluster application interface 
+   that implements transactions.
    The NDB API consists of the following fundamental classes:
-   - Ndb is the main class representing the database, 
-   - NdbConnection represents a transaction, 
-   - NdbOperation represents a transaction operation using primary key,
-   - NdbIndexOperation represents a transaction operation using a secondary
-     index,
-   - NdbRecAttr represents the value of an attribute, and
+   - Ndb_cluster_connection, representing a connection to a cluster, 
+   - Ndb is the main class, representing a connection to a database, 
+   - NdbTransaction represents a transaction, 
+   - NdbOperation represents an operation using a primary key,
+   - NdbScanOperation represents an operation performing a full table scan.
+   - NdbIndexOperation represents an operation using a unique hash index,
+   - NdbIndexScanOperation represents an operation performing a scan using
+     an ordered index,
+   - NdbRecAttr represents an attribute value
    - NdbDictionary represents meta information about tables and attributes.
-   - NdbError represents an error condition
-   There are also some auxiliary classes.
+     
+   In addition, the NDB API defines a structure NdbError, which contains the 
+   specification for an error.
+
+   There are also some auxiliary classes, which are listed in the class hierarchy.
      
    The main structure of an application program is as follows:
-   -# Construct and initialize Ndb object(s).
-   -# Define and execute (synchronous or asynchronous) transactions.
-   -# Delete Ndb objects
+   -# Connect to a cluster using the Ndb_cluster_connection
+      object.
+   -# Initiate a database connection by constructing and initialising one or more Ndb objects.
+   -# Define and execute transactions using the NdbTransaction class.
+   -# Delete Ndb objects.
+   -# Terminate the connection to the cluster (terminate instance of Ndb_cluster_connection).
 
-   The main structure of a transaction is as follows:
-   -# Start transaction
-   -# Add and define operations (associated with the transaction)
-   -# Execute transaction
+   The procedure for using transactions is as follows:
+   -# Start transaction (instantiate an NdbTransaction object)
+   -# Add and define operations associated with the transaction using instances of one or more of the
+      NdbOperation, NdbScanOperation, NdbIndexOperation, and NdbIndexScanOperation classes
+   -# Execute transaction (call NdbTransaction::execute())
 
-   The execute can be of two different types, 
-   <em>Commit</em> or <em>NoCommit</em>.
-   (The execute can also be divided into three 
-   steps: prepare, send, and poll to get asynchronous
-   transactions.  More about this later.)
-   
-   If the execute is of type NoCommit, 
-   then the application program executes part of a transaction,
-   but without committing the transaction.
-   After a NoCommit type of execute, the program can continue 
+   The operation can be of two different types, 
+   <var>Commit</var> or <var>NoCommit</var>.
+   If the operation is of type <var>NoCommit</var>, 
+   then the application program executes the operation part of a transaction,
+   but without actually committing the transaction.
+   After executing a <var>NoCommit</var> operation, the program can continue 
    to add and define more operations to the transaction
    for later execution.
 
-   If the execute is of type Commit, then the transaction is
-   committed and no further adding and defining of operations 
-   is allowed.
-
+   If the operation is of type <var>Commit</var>, then the transaction is
+   immediately committed. The transaction <em>must</em> be closed after it has been 
+   commited (event if commit fails), and no further addition or definition of 
+   operations for this transaction is allowed.
 
    @section secSync                     Synchronous Transactions
   
-   Synchronous transactions are defined and executed in the following way.
+   Synchronous transactions are defined and executed as follows:
   
-    -# Start (create) transaction (the transaction will be 
-       referred to by an NdbConnection object, 
-       typically created by Ndb::startTransaction).
-       At this step the transaction is being defined.
-       It is not yet sent to the NDB kernel.
-    -# Add and define operations to the transaction 
-       (using NdbConnection::getNdbOperation and
-       methods from class NdbOperation).
-       The transaction is still not sent to the NDB kernel.
-    -# Execute the transaction (using NdbConnection::execute).
-    -# Close the transaction (using Ndb::closeTransaction).
+    -# Start (create) the transaction, which is
+       referenced by an NdbTransaction object 
+       (typically created using Ndb::startTransaction()).
+       At this point, the transaction is only being defined,
+       and is not yet sent to the NDB kernel.
+    -# Define operations and add them to the transaction, using one or more of
+       - NdbTransaction::getNdbOperation()
+       - NdbTransaction::getNdbScanOperation()
+       - NdbTransaction::getNdbIndexOperation()
+       - NdbTransaction::getNdbIndexScanOperation()
+       along with the appropriate methods of the respective NdbOperation class 
+       (or one possiblt one or more of its subclasses).
+       Note that the transaction has still not yet been sent to the NDB kernel.
+    -# Execute the transaction, using the NdbTransaction::execute() method.
+    -# Close the transaction (call Ndb::closeTransaction()).
   
-   See example program in section @ref ndbapi_example1.cpp.
+   For an example of this process, see the program listing in 
+   @ref ndbapi_simple.cpp.
 
    To execute several parallel synchronous transactions, one can either 
-   use multiple Ndb objects in several threads or start multiple 
-   applications programs.  
-   Another way to execute several parallel transactions is to use
-   asynchronous transactions.
-  
-  
+   use multiple Ndb objects in several threads, or start multiple 
+   application programs.  
+
    @section secNdbOperations            Operations
 
-   Each transaction (NdbConnection object) consist of a list of 
-   operations (NdbOperation or NdbIndexOperation objects.  
-   NdbIndexOperation is used for accessing tables through secondary indexes).   
-   Operations are of two different kinds:
-   -# standard operations, and
-   -# interpreted program operations.
+   A NdbTransaction consists of a list of operations, each of which is represented 
+   by an instance of NdbOperation, NdbScanOperation, NdbIndexOperation, or
+   NdbIndexScanOperation.
 
-   <h3>Standard Operations</h3>
-   After the operation is created using NdbConnection::getNdbOperation
-   (or NdbConnection::getNdbIndexOperation),
-   it is defined in the following three steps:
-   -# Defining standard operation type
-      (e.g. using NdbOperation::readTuple)
-   -# Specifying search conditions 
-      (e.g. using NdbOperation::equal)
-   -# Specify attribute actions 
-      (e.g. using NdbOperation::getValue)
+   <h3>Single row operations</h3>
+   After the operation is created using NdbTransaction::getNdbOperation()
+   (or NdbTransaction::getNdbIndexOperation()), it is defined in the following 
+   three steps:
+   -# Define the standard operation type, using NdbOperation::readTuple()
+   -# Specify search conditions, using NdbOperation::equal()
+   -# Specify attribute actions, using NdbOperation::getValue()
 
-   Example code (using an NdbOperation):
+   Here are two brief examples illustrating this process. For the sake of 
+   brevity, we omit error handling.
+   
+   This first example uses an NdbOperation:
    @code
-     MyOperation = MyConnection->getNdbOperation("MYTABLENAME"); // 1. Create
-     if (MyOperation == NULL) APIERROR(MyConnection->getNdbError());
-    
-     MyOperation->readTuple();                  // 2. Define type of operation
-     MyOperation->equal("ATTR1", i);            // 3. Specify Search Conditions
-    
-     MyRecAttr = MyOperation->getValue("ATTR2", NULL);   // 4. Attribute Actions
-     if (MyRecAttr == NULL) APIERROR(MyConnection->getNdbError());
-   @endcode
-   For more examples, see @ref ndbapi_example1.cpp and @ref ndbapi_example2.cpp.
+     // 1. Retrieve table object
+     myTable= myDict->getTable("MYTABLENAME");
 
-   Example code using an NdbIndexOperation:
+     // 2. Create
+     myOperation= myTransaction->getNdbOperation(myTable);
+    
+     // 3. Define type of operation and lock mode
+     myOperation->readTuple(NdbOperation::LM_Read);
+
+     // 4. Specify Search Conditions
+     myOperation->equal("ATTR1", i);
+    
+     // 5. Attribute Actions
+     myRecAttr= myOperation->getValue("ATTR2", NULL);
+   @endcode
+   For additional examples of this sort, see @ref ndbapi_simple.cpp.
+
+   The second example uses an NdbIndexOperation:
    @code
-     MyOperation =                              // 1. Create
-     	MyConnection->getNdbIndexOperation("MYINDEX", "MYTABLENAME");
-     if (MyOperation == NULL) APIERROR(MyConnection->getNdbError());
+     // 1. Retrieve index object
+     myIndex= myDict->getIndex("MYINDEX", "MYTABLENAME");
 
-     MyOperation->readTuple();                  // 2. Define type of operation
-     MyOperation->equal("ATTR1", i);            // 3. Specify Search Conditions
+     // 2. Create
+     myOperation= myTransaction->getNdbIndexOperation(myIndex);
 
-     MyRecAttr = MyOperation->getValue("ATTR2", NULL); // 4. Attribute Actions 
-     if (MyRecAttr == NULL) APIERROR(MyConnection->getNdbError());
+     // 3. Define type of operation and lock mode
+     myOperation->readTuple(NdbOperation::LM_Read);
+
+     // 4. Specify Search Conditions
+     myOperation->equal("ATTR1", i);
+
+     // 5. Attribute Actions 
+     myRecAttr = myOperation->getValue("ATTR2", NULL);
    @endcode
-   For more examples, see @ref ndbapi_example4.cpp.
+   Another example of this second type can be found in 
+   @ref ndbapi_simple_index.cpp.
 
+   We will now discuss in somewhat greater detail each step involved in the 
+   creation and use of synchronous transactions.
 
-   <h4>Step 1: Define Standard Operation Type</h4>
-   The following types of standard operations exist:
-    -# NdbOperation::insertTuple : 
+   <h4>Step 1: Define single row operation type</h4>
+   The following operation types are supported:
+    -# NdbOperation::insertTuple() : 
        inserts a non-existing tuple
-    -# NdbOperation::writeTuple : 
+    -# NdbOperation::writeTuple() : 
        updates an existing tuple if is exists,
        otherwise inserts a new tuple
-    -# NdbOperation::updateTuple : 
+    -# NdbOperation::updateTuple() : 
        updates an existing tuple
-    -# NdbOperation::deleteTuple : 
+    -# NdbOperation::deleteTuple() : 
        deletes an existing tuple
-    -# NdbOperation::readTuple : 
-       reads an existing tuple
-    -# NdbOperation::readTupleExclusive : 
-       reads an existing tuple using an exclusive lock
-    -# NdbOperation::simpleRead : 
-       reads an existing tuple (using shared read lock),
-       but releases lock immediately after read
-    -# NdbOperation::committedRead : 
-       reads committed tuple
-    -# NdbOperation::dirtyUpdate : 
-       updates an existing tuple, but releases lock immediately
-       after read (uses dirty lock)
-    -# NdbOperation::dirtyWrite : 
-       updates or writes a tuple, but releases lock immediately
-       after read (uses dirty lock)
+    -# NdbOperation::readTuple() : 
+       reads an existing tuple with specified lock mode
 
    All of these operations operate on the unique tuple key.
    (When NdbIndexOperation is used then all of these operations 
-   operate on a defined secondary index.)
-
-
-   Some comments:
-   - NdbOperation::simpleRead and 
-     NdbOperation::committedRead can execute on the same transaction
-     as the above operations but will release its locks immediately
-     after reading the tuple. 
-     NdbOperation::simpleRead will always read the latest version 
-     of the tuple. 
-     Thus it will wait until it can acquire a shared read lock on 
-     the tuple. 
-     NdbOperation::committedRead will read the latest committed 
-     version of the tuple. 
-     <br>
-     Both NdbOperation::simpleRead and NdbOperation::committedRead 
-     are examples of consistent reads which are not repeatable.
-     All reads read the latest version if updates were made by the same
-     transaction.
-     Errors on simple read are only reported by the NdbOperation object.
-     These error codes are not transferred to the NdbConnection object.
-   - NdbOperation::dirtyUpdate and NdbOperation::dirtyWrite 
-     will execute in the same transaction
-     but will release the lock immediately after updating the
-     tuple.
-     It will wait on the lock until it can acquire an exclusive
-     write lock.
-     In a replicated version of NDB Cluster NdbOperation::dirtyUpdate 
-     can lead to inconsistency between the replicas.
-     Examples of when it could be used is
-     to update statistical counters on tuples which are "hot-spots".
+   operate on a defined unique hash index.)
 
    @note If you want to define multiple operations within the same transaction,
-         then you need to call NdbConnection::getNdbOperation 
-	 (or NdbConnection::getNdbIndexOperation) for each
-         operation.
-
+         then you need to call NdbTransaction::getNdbOperation() or
+	 NdbTransaction::getNdbIndexOperation() for each operation.
 
    <h4>Step 2: Specify Search Conditions</h4>
-   The search condition is used to select tuples.
-   (In the current NdbIndexOperation implementation 
-   this means setting the value of
-   the secondary index attributes of the wanted tuple.)
-
-   If a tuple identity is used, then NdbOperation::setTupleId 
-   is used to define the search key when inserting new tuples.
-   Otherwise, NdbOperation::equal is used.
-   
-   For NdbOperation::insertTuple it is also allowed to define the 
-   search key by using NdbOperation::setValue.
-   The NDB API will automatically detect that it is
-   supposed to use NdbOperation::equal instead. 
-   For NdbOperation::insertTuple it is not necessary to use
-   NdbOperation::setValue on key attributes before other attributes.
-
+   The search condition is used to select tuples. Search conditions are set using NdbOperation::equal().
 
    <h4>Step 3: Specify Attribute Actions</h4>
-   Now it is time to define which attributes should be read or updated.
-   Deletes can neither read nor set values, read can only read values and
-   updates can only set values.
-   Normally the attribute is defined by its name but it is
-   also possible to use the attribute identity to define the
+   Next, it is necessary to determine which attributes should be read or updated.
+   It is important to remember that: 
+   - Deletes can neither read nor set values, but only delete them
+   - Reads can only read values
+   - Updates can only set values
+   Normally the attribute is identified by name, but it is
+   also possible to use the attribute's identity to determine the
    attribute.
-   The mapping from name to identity is performed by the Table object.
 
-   NdbIndexOperation::getValue returns an NdbRecAttr object
+   NdbOperation::getValue() returns an NdbRecAttr object
    containing the read value.
-   To get the value, there is actually two methods.
-   The application can either
+   To obtain the actual value, one of two methods can be used;
+   the application can either
    - use its own memory (passed through a pointer aValue) to
-     NdbIndexOperation::getValue, or
+     NdbOperation::getValue(), or
    - receive the attribute value in an NdbRecAttr object allocated
      by the NDB API.
 
-   The NdbRecAttr object is released when Ndb::closeTransaction
+   The NdbRecAttr object is released when Ndb::closeTransaction()
    is called.
-   Thus, the application can not reference this object after
-   Ndb::closeTransaction have been called.
-   The result of reading data from an NdbRecAttr object before
-   calling NdbConnection::execute is undefined.
+   Thus, the application cannot reference this object following
+   any subsequent call to Ndb::closeTransaction().
+   Attempting to read data from an NdbRecAttr object before
+   calling NdbTransaction::execute() yields an undefined result.
 
 
+   @subsection secScan              Scan Operations 
+   
+   Scans are roughly the equivalent of SQL cursors, providing a means to
+   preform high-speed row processing. A scan can be performed 
+   on either a table (using @ref NdbScanOperation) or 
+   an ordered index (by means of an @ref NdbIndexScanOperation).
 
+   Scan operations are characterised by the following:
+   - They can perform only reads (shared, exclusive or dirty)
+   - They can potentially work with multiple rows
+   - They can be used to update or delete multiple rows
+   - They can operate on several nodes in parallel
+
+   After the operation is created using NdbTransaction::getNdbScanOperation()
+   (or NdbTransaction::getNdbIndexScanOperation()), 
+   it is carried out in the following three steps:
+   -# Define the standard operation type, using NdbScanOperation::readTuples()
+   -# Specify search conditions, using @ref NdbScanFilter and/or 
+      @ref NdbIndexScanOperation::setBound()
+   -# Specify attribute actions, using NdbOperation::getValue()
+   -# Executing the transaction, using NdbTransaction::execute()
+   -# Traversing the result set by means of succssive calls to 
+      NdbScanOperation::nextResult()
+
+   Here are two brief examples illustrating this process. Once again, in order
+   to keep things relatively short and simple, we will forego any error handling.
+   
+   This first example performs a table scan, using an NdbScanOperation:
+   @code
+     // 1. Retrieve table object
+     myTable= myDict->getTable("MYTABLENAME");
+    
+     // 2. Create
+     myOperation= myTransaction->getNdbScanOperation(myTable);
+    
+     // 3. Define type of operation and lock mode
+     myOperation->readTuples(NdbOperation::LM_Read);
+
+     // 4. Specify Search Conditions
+     NdbScanFilter sf(myOperation);
+     sf.begin(NdbScanFilter::OR);
+     sf.eq(0, i);   // Return rows with column 0 equal to i or
+     sf.eq(1, i+1); // column 1 equal to (i+1)
+     sf.end();
+
+     // 5. Attribute Actions
+     myRecAttr= myOperation->getValue("ATTR2", NULL);
+   @endcode
+
+   Our second example uses an NdbIndexScanOperation to perform an index scan:
+   @code
+     // 1. Retrieve index object
+     myIndex= myDict->getIndex("MYORDEREDINDEX", "MYTABLENAME");
+
+     // 2. Create
+     myOperation= myTransaction->getNdbIndexScanOperation(myIndex);
+
+     // 3. Define type of operation and lock mode
+     myOperation->readTuples(NdbOperation::LM_Read);
+
+     // 4. Specify Search Conditions
+     // All rows with ATTR1 between i and (i+1)
+     myOperation->setBound("ATTR1", NdbIndexScanOperation::BoundGE, i);
+     myOperation->setBound("ATTR1", NdbIndexScanOperation::BoundLE, i+1);
+
+     // 5. Attribute Actions 
+     myRecAttr = MyOperation->getValue("ATTR2", NULL);
+   @endcode
+
+   Some additional discussion of each step required to perform a scan follows:
+
+   <h4>Step 1: Define Scan Operation Type</h4>
+   It is important to remember that only a single operation is supported for each scan operation 
+   (@ref NdbScanOperation::readTuples() or @ref NdbIndexScanOperation::readTuples()).
+
+   @note If you want to define multiple scan operations within the same 
+         transaction, then you need to call 
+	 NdbTransaction::getNdbScanOperation() or 
+	 NdbTransaction::getNdbIndexScanOperation() separately for <b>each</b> operation.
+
+   <h4>Step 2: Specify Search Conditions</h4>
+   The search condition is used to select tuples.
+   If no search condition is specified, the scan will return all rows
+   in the table.
+
+   The search condition can be an @ref NdbScanFilter (which can be used on both
+   @ref NdbScanOperation and @ref NdbIndexScanOperation) or bounds which
+   can only be used on index scans (@ref NdbIndexScanOperation::setBound()).
+   An index scan can use both NdbScanFilter and bounds.
+
+   @note When NdbScanFilter is used, each row is examined, whether or not it is
+   actually returned. However, when using bounds, only rows within the bounds will be examined.
+
+   <h4>Step 3: Specify Attribute Actions</h4>
+
+   Next, it is necessary to define which attributes should be read.
+   As with transaction attributes, scan attributes are defined by name but it is
+   also possible to use the attributes' identities to define attributes.
+
+   As previously discussed (see @ref secSync), the value read is returned as 
+   an NdbRecAttr object by the NdbOperation::getValue() method.
+
+   <h3>Using Scan to Update/Delete</h3>
+   Scanning can also be used to update or delete rows.
+   This is performed by
+   -# Scanning using exclusive locks (using NdbOperation::LM_Exclusive)
+   -# When iterating through the result set, for each row optionally calling 
+      either NdbScanOperation::updateCurrentTuple() or 
+      NdbScanOperation::deleteCurrentTuple()
+   -# (If performing NdbScanOperation::updateCurrentTuple():) 
+      Setting new values for records simply by using @ref NdbOperation::setValue().
+      NdbOperation::equal() should <em>not</em> be called in such cases, as the primary 
+      key is retrieved from the scan.
+
+   @note The actual update or delete will not be performed until the next 
+   call to NdbTransaction::execute(), just as with single row operations. 
+   NdbTransaction::execute() also must be called before any locks are released;
+   see @ref secScanLocks for more information.
+
+   <h4>Features Specific to Index Scans</h4> 
+   
+   When performing an index scan, it is possible to 
+   scan only a subset of a table using @ref NdbIndexScanOperation::setBound().
+   In addition, result sets can be sorted in either ascending or descending order, using
+   @ref NdbIndexScanOperation::readTuples(). Note that rows are returned unordered 
+   by default, that is, unless <var>sorted</var> is set to <b>true</b>.
+   It is also important to note that, when using NdbIndexScanOperation::BoundEQ 
+   on a partition key, only fragments containing rows will actually be scanned.
+   
+   @note When performing a sorted scan, any value passed as the 
+   NdbIndexScanOperation::readTuples() method's <code>parallel</code> argument 
+   will be ignored and maximum parallelism will be used instead. In other words, all 
+   fragments which it is possible to scan will be scanned simultaneously and in parallel 
+   in such cases.
+
+   @subsection secScanLocks Lock handling with scans
+
+   Performing scans on either a tables or an index has the potential 
+   return a great many records; however, Ndb will lock only a predetermined 
+   number of rows per fragment at a time.
+   How many rows will be locked per fragment is controlled by the 
+   <var>batch</var> parameter passed to NdbScanOperation::readTuples().
+
+   In order to allow the application to handle how locks are released, 
+   NdbScanOperation::nextResult() has a Boolean parameter <var>fetch_allow</var>.
+   If NdbScanOperation::nextResult() is called with <var>fetch_allow</var> equal to 
+   <b>false</b>, then no locks may be released as result of the function call. 
+   Otherwise the locks for the current batch may be released.
+
+   This next example shows a scan delete that handle locks in an efficient manner.
+   For the sake of brevity, we omit error-handling.
+   @code
+     int check;
+
+     // Outer loop for each batch of rows
+     while((check = MyScanOperation->nextResult(true)) == 0)
+     {
+       do
+       {
+         // Inner loop for each row within batch
+         MyScanOperation->deleteCurrentTuple();
+       } while((check = MyScanOperation->nextResult(false)) == 0);
+
+       // When no more rows in batch, exeute all defined deletes       
+       MyTransaction->execute(NoCommit);
+     }
+   @endcode
+
+   See @ref ndbapi_scan.cpp for a more complete example of a scan.
+
+   @section secError                    Error Handling
+
+   Errors can occur either when operations making up a transaction are being 
+   defined, or when the transaction is actually being executed. Catching and 
+   handling either sort of error requires testing the value returned by 
+   NdbTransaction::execute(), and then, if an error is indicated (that is, 
+   if this value is equal to -1), using the following two methods in order to 
+   identify the error's type and location:
+
+   - NdbTransaction::getNdbErrorOperation() returns a reference to the 
+     operation causing the most recent error.
+   - NdbTransaction::getNdbErrorLine() yields the method number of the 
+     erroneous method in the operation.
+   
+   This short example illustrates how to detect an error and to use these 
+   two methods to identify it:
+
+   @code
+     theTransaction = theNdb->startTransaction();
+     theOperation = theTransaction->getNdbOperation("TEST_TABLE");
+     if (theOperation == NULL) goto error;
+     theOperation->readTuple(NdbOperation::LM_Read);
+     theOperation->setValue("ATTR_1", at1);
+     theOperation->setValue("ATTR_2", at1);  //  Error occurs here
+     theOperation->setValue("ATTR_3", at1);
+     theOperation->setValue("ATTR_4", at1);
+    
+     if (theTransaction->execute(Commit) == -1) {
+       errorLine = theTransaction->getNdbErrorLine();
+       errorOperation = theTransaction->getNdbErrorOperation();
+     }
+   @endcode
+
+   Here <code>errorLine</code> will be 3, as the error occurred in the 
+   third method called on the NdbOperation object (in this case, 
+   <code>theOperation</code>); if the result of 
+   NdbTransaction::getNdbErrorLine() is 0, this means that the error 
+   occurred when the operations were executed. In this example, 
+   <code>errorOperation</code> will be a pointer to the <code>theOperation</code> 
+   object. The NdbTransaction::getNdbError() method returns an NdbError 
+   object providing information about the error.
+
+   @note Transactions are <b>not</b> automatically closed when an error occurs. Call
+   Ndb::closeTransaction() to close the transaction.
+
+   One recommended way to handle a transaction failure 
+   (i.e. an error is reported) is to:
+   -# Rollback transaction (call NdbTransaction::execute() with a special parameter)
+   -# Close transaction (call NdbTransaction::closeTransaction())
+   -# If the error was temporary, attempt to restart the transaction
+
+   Several errors can occur when a transaction contains multiple 
+   operations which are simultaneously executed.
+   In this case the application has to go through all operations
+   and query their NdbError objects to find out what really happened.
+
+   It is also important to note that errors can occur even when a commit is 
+   reported as successful. In order to handle such situations, the NDB API 
+   provides an additional NdbTransaction::commitStatus() method to check the 
+   transactions's commit status.
+
+******************************************************************************/
+
+/**
+ * @page ndbapi_simple.cpp ndbapi_simple.cpp
+ * @include ndbapi_simple.cpp 
+ */
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
+ * @page ndbapi_async.cpp ndbapi_async.cpp
+ * @include ndbapi_async.cpp 
+ */
+/**
+ * @page ndbapi_async1.cpp ndbapi_async1.cpp
+ * @include ndbapi_async1.cpp 
+ */
+#endif
+
+/**
+ * @page ndbapi_retries.cpp ndbapi_retries.cpp
+ * @include ndbapi_retries.cpp 
+ */
+
+/**
+ * @page ndbapi_simple_index.cpp ndbapi_simple_index.cpp
+ * @include ndbapi_simple_index.cpp 
+ */
+
+/**
+ * @page ndbapi_scan.cpp ndbapi_scan.cpp
+ * @include ndbapi_scan.cpp
+ */
+
+/**
+ * @page ndbapi_event.cpp ndbapi_event.cpp
+ * @include ndbapi_event.cpp
+ */
+
+
+/**
+   @page secAdapt  Adaptive Send Algorithm
+
+   At the time of "sending" a transaction 
+   (using NdbTransaction::execute()), the transactions 
+   are in reality <em>not</em> immediately transfered to the NDB Kernel.  
+   Instead, the "sent" transactions are only kept in a 
+   special send list (buffer) in the Ndb object to which they belong.
+   The adaptive send algorithm decides when transactions should
+   actually be transferred to the NDB kernel.
+  
+   The NDB API is designed as a multi-threaded interface and so
+   it is often desirable to transfer database operations from more than 
+   one thread at a time. 
+   The NDB API keeps track of which Ndb objects are active in transferring
+   information to the NDB kernel and the expected amount of threads to 
+   interact with the NDB kernel.
+   Note that a given instance of Ndb should be used in at most one thread; 
+   different threads should <em>not</em> use the same Ndb object.
+  
+   There are four conditions leading to the transfer of database 
+   operations from Ndb object buffers to the NDB kernel:
+   -# The NDB Transporter (TCP/IP, OSE, SCI or shared memory)
+      decides that a buffer is full and sends it off. 
+      The buffer size is implementation-dependent and
+      may change between MySQL Cluster releases.
+      On TCP/IP the buffer size is usually around 64 KB;
+      on OSE/Delta it is usually less than 2000 bytes. 
+      Since each Ndb object provides a single buffer per storage node, 
+      the notion of a "full" buffer is local to this storage node.
+   -# The accumulation of statistical data on transferred information
+      may force sending of buffers to all storage nodes.
+   -# Every 10 ms, a special transmission thread checks whether or not
+      any send activity has occurred. If not, then the thread will 
+      force transmission to all nodes. 
+      This means that 20 ms is the maximum time database operations 
+      are kept waiting before being sent off. The 10-millisecond limit 
+      is likely to become a configuration parameter in
+      future releases of MySQL Cluster; however, for checks that
+      are more frequent than each 10 ms, 
+      additional support from the operating system is required.
+   -# For methods that are affected by the adaptive send alorithm
+      (such as NdbTransaction::execute()), there is a <var>force</var> 
+      parameter 
+      that overrides its default behaviour in this regard and forces 
+      immediate transmission to all nodes. See the inidvidual NDB API class 
+      listings for more information.
+
+   @note The conditions listed above are subject to change in future releases 
+   of MySQL Cluster.
+*/
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
+
+   For each of these "sent" transactions, there are three 
+   possible states:
+   -# Waiting to be transferred to NDB Kernel.
+   -# Has been transferred to the NDB Kernel and is currently 
+      being processed.
+   -# Has been transferred to the NDB Kernel and has 
+      finished processing.
+      Now it is waiting for a call to a poll method.  
+      (When the poll method is invoked, 
+      then the transaction callback method will be executed.)
+      
+   The poll method invoked (either Ndb::pollNdb() or Ndb::sendPollNdb())
+   will return when:
+   -# at least 'minNoOfEventsToWakeup' of the transactions
+      in the send list have transitioned to state 3 as described above, and 
+   -# all of these transactions have executed their callback methods.
+*/
+#endif
+
+/**
+   @page secConcepts  MySQL Cluster Concepts
+
+   The <em>NDB Kernel</em> is the collection of storage nodes
+   belonging to a MySQL Cluster.
+   The application programmer can for most purposes view the
+   set of all storage nodes as a single entity.
+   Each storage node is made up of three main components:
+   - TC : The transaction co-ordinator
+   - ACC : Index storage component
+   - TUP : Data storage component
+
+   When an application program executes a transaction,
+   it connects to one transaction co-ordinator on one storage node.  
+   Usually, the programmer does not need to specify which TC should be used, 
+   but in some cases when performance is important, the programmer can
+   provide "hints" to use a certain TC.  
+   (If the node with the desired transaction co-ordinator is down, then another TC will 
+   automatically take over the work.)
+
+   Every storage node has an ACC and a TUP which store 
+   the indexes and data portions of the database table fragment.
+   Even though one TC is responsible for the transaction,
+   several ACCs and TUPs on other storage nodes might be involved in the 
+   execution of the transaction.
+
+
+   @section secNdbKernelConnection   Selecting a Transaction Co-ordinator 
+
+   The default method is to select the transaction co-ordinator (TC) determined to be
+   the "closest" storage node, using a heuristic for proximity based on
+   the type of transporter connection. In order of closest to most distant, these are
+   - SCI 
+   - SHM
+   - TCP/IP (localhost)
+   - TCP/IP (remote host)
+   If there are several connections available with the same proximity, they will each be 
+   selected in a round robin fashion for every transaction. Optionally
+   one may set the method for TC selection to round-robin mode, where each new set of 
+   transactions is placed on the next DB node. The pool of connections from which this
+   selection is made consists of all available connections.
+   
+   As noted previously, the application programmer can provide hints to the NDB API as to 
+   which transaction co-ordinator it should use. This is done by
+   providing a <em>table</em> and <em>partition key</em> 
+   (usually the primary key).
+   By using the primary key as the partition key, 
+   the transaction will be placed on the node where the primary replica
+   of that record resides.
+   Note that this is only a hint; the system can be 
+   reconfigured at any time, in which case the NDB API will choose a transaction
+   co-ordinator without using the hint.
+   For more information, see NdbDictionary::Column::getPartitionKey() and
+   Ndb::startTransaction(). The application programmer can specify
+   the partition key from SQL by using the construct, 
+   <code>CREATE TABLE ... ENGINE=NDB PARTITION BY KEY (<var>attribute-list</var>);</code>.
+
+
+   @section secRecordStruct          NDB Record Structure 
+   The NDB Cluster engine used by MySQL Cluster is a relational database engine
+   storing records in tables just as with any other RDBMS.
+   Table rows represent records as tuples of relational data.
+   When a new table is created, its attribute schema is specified for the table as a whole,
+   and thus each record of the table has the same structure. Again, this is typical
+   of relational databases, and NDB is no different in this regard.
+   
+
+   @subsection secKeys               Primary Keys
+   Each record has from 1 up to 32 attributes which belong
+   to the primary key of the table.
+   
+   @section secTrans                 Transactions
+
+   Transactions are committed first to main memory, 
+   and then to disk after a global checkpoint (GCP) is issued.
+   Since all data is (in most NDB Cluster configurations) 
+   synchronously replicated and stored on multiple NDB nodes,
+   the system can still handle processor failures without loss 
+   of data.
+   However, in the case of a system failure (e.g. the whole system goes down), 
+   then all (committed or not) transactions occurring since the latest GCP are lost.
+
+
+   @subsection secConcur                Concurrency Control
+   NDB Cluster uses pessimistic concurrency control based on locking.
+   If a requested lock (implicit and depending on database operation)
+   cannot be attained within a specified time, 
+   then a timeout error occurs.
+
+   Concurrent transactions as requested by parallel application programs and 
+   thread-based applications can sometimes deadlock when they try to access 
+   the same information simultaneously.
+   Thus, applications need to be written in a manner so that timeout errors
+   occurring due to such deadlocks are handled gracefully. This generally
+   means that the transaction encountering a timeout should be rolled back 
+   and restarted.
+
+
+   @section secHint                 Hints and Performance
+
+   Placing the transaction co-ordinator in close proximity
+   to the actual data used in the transaction can in many cases
+   improve performance significantly. This is particularly true for
+   systems using TCP/IP. For example, a Solaris system using a single 500 MHz processor
+   has a cost model for TCP/IP communication which can be represented by the formula
+
+     <code>[30 microseconds] + ([100 nanoseconds] * [<var>number of bytes</var>])</code>
+
+   This means that if we can ensure that we use "popular" links we increase
+   buffering and thus drastically reduce the communication cost.
+   The same system using SCI has a different cost model:
+
+     <code>[5 microseconds] + ([10 nanoseconds] * [<var>number of bytes</var>])</code>
+
+   Thus, the efficiency of an SCI system is much less dependent on selection of 
+   transaction co-ordinators. 
+   Typically, TCP/IP systems spend 30-60% of their working time on communication,
+   whereas for SCI systems this figure is closer to 5-10%. 
+   Thus, employing SCI for data transport means that less care from the NDB API 
+   programmer is required and greater scalability can be achieved, even for 
+   applications using data from many different parts of the database.
+
+   A simple example is an application that uses many simple updates where
+   a transaction needs to update one record. 
+   This record has a 32 bit primary key, 
+   which is also the partition key. 
+   Then the keyData will be the address of the integer 
+   of the primary key and keyLen will be 4.
+*/
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
+   (A transaction's execution can also be divided into three 
+   steps: prepare, send, and poll. This allows us to perform asynchronous
+   transactions.  More about this later.)
+*/
+#endif
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
+   Another way to execute several parallel transactions is to use
+   asynchronous transactions.
+*/
+#endif  
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
+   Operations are of two different kinds:
+   -# standard operations, and
+   -# interpreted program operations.
+*/
+#endif
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
    <h3>Interpreted Program Operations</h3>
    The following types of interpreted program operations exist:
     -# NdbOperation::interpretedUpdateTuple :
        updates a tuple using an interpreted program
     -# NdbOperation::interpretedDeleteTuple :
        delete a tuple using an interpreted program
-    -# NdbOperation::openScanRead : 
-       scans a table with read lock on each tuple
-    -# NdbOperation::openScanExclusive : 
-       scans a table with exclusive update lock on each tuple
 
    The operations interpretedUpdateTuple and interpretedDeleteTuple both
    work using the unique tuple key.
@@ -306,124 +757,10 @@
       There might be zero NdbOperation::getValue calls.
    -# The fifth step is possible subroutine definitions using
       NdbOperation::def_subroutine and NdbOperation::ret_sub.
-
-
-   @subsection secScan              Scanning 
-   The most common use of interpreted programs is for scanning
-   tables.  Scanning is a search of all tuples in a table.  
-   Tuples which satisfy conditions (a search filter) 
-   stated in the interpreted program 
-   are sent to the application.
-
-   Reasons for using scan transactions include
-   need to use a search key different from the primary key
-   and any secondary index.
-   Or that the query needs to access so many tuples so that 
-   it is more efficient to scan the entire table.
-
-   Scanning can also be used to update information.  
-   The scanning transaction itself is however 
-   not allowed to update any tuples.
-   To do updates via scanning transactions, the tuples 
-   need to be handed over to another transaction which is 
-   executing the actual update.
-
-   Even though a scan operation is part of a transaction, 
-   the scan transaction is not a normal transaction.
-   The locks are <em>not</em> kept throughout the entire 
-   scan transaction, since this would imply non-optimal performance.  
-   <em>
-   A transaction containing a scan operation can only 
-   contain that operation.  
-   No other operations are allowed in the same transaction.
-   </em>
-
-   The NdbOperation::openScanRead operation 
-   only sets a temporary read lock while
-   reading the tuple. 
-   The tuple lock is released already when the
-   result of the read reaches the application. 
-   The NdbOperation::openScanExclusive operation sets an 
-   exclusive lock on the tuple 
-   and sends the result to the application. 
-   Thus when the application reads the data it is still
-   locked with the exclusive lock. 
-
-   If the application desires to update the tuple it may transfer
-   the tuple to another transaction which updates the tuple.
-   The updating transaction can consist of a combination of tuples 
-   received from the scan and normal operations. 
-
-   For transferred operations it is not necessary to provide the
-   primary key.  It is part of the transfer. 
-   You only need to give the operation type and the 
-   actions to perform on the tuple.
-
-   The scan transaction starts like a usual transaction,
-   but is of the following form:
-    -# Start transaction
-    -# Get NdbOperation for the table to be scanned
-    -# Set the operation type using NdbOperation::openScanRead or 
-       NdbOperation::openScanExclusive
-    -# Search conditions are defined by an interpreted program
-       (setValue and write_attr are not allowed, since scan transactions
-       are only allowed to read information).
-       The instruction interpret_exit_nok does in this case
-       not abort the transaction, it only skips the tuple and 
-       proceeds with the next.  
-       The skipped tuple will not be reported to the application.
-    -# Call NdbConnection::executeScan to define (and start) the scan.
-    -# Call NdbConnection::nextScanResult to proceed with next tuple.  
-       When calling NdbConnection::nextScanResult, the lock on any 
-       previous tuples are released.
-       <br>
-       If the tuple should be updated then it must be transferred over
-       to another updating transaction.  
-       This is performed by calling
-       NdbOperation::takeOverForUpdate or takeOverForDelete on 
-       the scanning transactions NdbOperation object with the updating 
-       transactions NdbConnection object as parameter.  
-       <p>
-       If NdbOperation::takeOverFor* returns NULL then the 
-       operation was not successful, otherwise it returns a reference
-       to the NdbOperation which the updating transaction has received
-    -# Use Ndb::closeTransaction as usual to close the transaction. 
-       This can be performed even if there are more tuples to scan.
-
-   See also example program in section @ref select_all.cpp.
-
-   However, a new scan api is under development, using NdbScanOperation
-   and NdbScanFilter. NdbScanFilter makes it easier to define a search
-   criteria and is recommended instead of using Interpreted Programs.
-
-   The scan transaction starts like a usual transaction,
-   but is of the following form:
-    -# Start transaction
-    -# Get NdbScanOperation for the table to be scanned
-    -# NdbScanOperation::readTuplesExclusive returns a handle to a 
-       NdbResultSet. 
-    -# Search conditions are defined by NdbScanFilter
-    -# Call NdbConnection::execute(NoCommit) to start the scan.
-    -# Call NdbResultSet::nextResult to proceed with next tuple.  
-       When calling NdbResultSet::nextResult(false), the lock on any 
-       previous tuples are released and the next tuple cached in the API
-       is fetched. 
-       <br>
-       If the tuple should be updated then define a new update operation 
-       (NdbOperation) using NdbResultSet::updateTuple().
-       The new update operation can the be used to modify the tuple.
-       When nextResult(false) returns != 0, then no more tuples 
-       are cached in the API. Updated tuples is now commit using 
-       NdbConnection::execute(Commit).
-       After the commit, more tuples are fetched from NDB using 
-       nextResult(true).
-    -# Use Ndb::closeTransaction as usual to close the transaction. 
-       This can be performed even if there are more tuples to scan.
-
-       See the scan example program in @ref ndbapi_scan.cppn for example
-       usage of the new scan api.
-
-
+*/
+#endif
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
    <h3>Interpreted Programs</h3>
    Interpretation programs are executed in a
    register-based virtual machine.
@@ -494,8 +831,11 @@
          The parameter used by NdbOperation::def_subroutine 
 	 should match the automatic numbering to make it easier to 
 	 debug the interpreted program.
+*/
+#endif
 
-
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
    @section secAsync                    Asynchronous Transactions
    The asynchronous interface is used to increase the speed of
    transaction executing by better utilizing the connection
@@ -508,7 +848,7 @@
    chunks of data are sent when actually sending and thus decreasing 
    the operating system overhead.
 
-   The synchronous call to NdbConnection::execute 
+   The synchronous call to NdbTransaction::execute 
    normally performs three main steps:<br>
    -# <b>Prepare</b> 
       Check transaction status
@@ -520,7 +860,7 @@
    -# <b>Poll</b>
       Wait for response from NDB kernel.
 
-   The asynchronous method NdbConnection::executeAsynchPrepare 
+   The asynchronous method NdbTransaction::executeAsynchPrepare 
    only perform step 1.
    (The abort part in step 1 is only prepared for.  The actual 
    aborting of the transaction is performed in a later step.)
@@ -531,11 +871,11 @@
        synchronous transactions)
    -# Add and define operations (also as in the synchronous case)
    -# <b>Prepare</b> transactions 
-       (using NdbConnection::executeAsynchPrepare or 
-       NdbConnection::executeAsynch)
+       (using NdbTransaction::executeAsynchPrepare or 
+       NdbTransaction::executeAsynch)
    -# <b>Send</b> transactions to NDB Kernel
        (using Ndb::sendPreparedTransactions, 
-       NdbConnection::executeAsynch, or Ndb::sendPollNdb)
+       NdbTransaction::executeAsynch, or Ndb::sendPollNdb)
    -# <b>Poll</b> NDB kernel to find completed transactions 
        (using Ndb::pollNdb or Ndb::sendPollNdb)
    -# Close transactions (same way as for the synchronous transactions)
@@ -546,24 +886,24 @@
    - (Prepare-Send-Poll).  This is the one-step variant provided
      by synchronous transactions.
    - (Prepare-Send)-Poll.  This is the two-step variant using
-     NdbConnection::executeAsynch and Ndb::pollNdb.
+     NdbTransaction::executeAsynch and Ndb::pollNdb.
    - Prepare-(Send-Poll).  This is the two-step variant using
-     NdbConnection::executeAsynchPrepare and Ndb::sendPollNdb.
+     NdbTransaction::executeAsynchPrepare and Ndb::sendPollNdb.
    - Prepare-Send-Poll.  This is the three-step variant using
-     NdbConnection::executeAsynchPrepare, Ndb::sendPreparedTransactions, and
+     NdbTransaction::executeAsynchPrepare, Ndb::sendPreparedTransactions, and
      Ndb::pollNdb.
   
    Transactions first has to be prepared by using method
-   NdbConnection::executeAsynchPrepare or NdbConnection::executeAsynch.
+   NdbTransaction::executeAsynchPrepare or NdbTransaction::executeAsynch.
    The difference between these is that 
-   NdbConnection::executeAsynch also sends the transaction to 
+   NdbTransaction::executeAsynch also sends the transaction to 
    the NDB kernel.
    One of the arguments to these methods is a callback method.
    The callback method is executed during polling (item 5 above).
   
-   Note that NdbConnection::executeAsynchPrepare does not 
+   Note that NdbTransaction::executeAsynchPrepare does not 
    send the transaction to the NDB kernel.  When using 
-   NdbConnection::executeAsynchPrepare, you either have to call 
+   NdbTransaction::executeAsynchPrepare, you either have to call 
    Ndb::sendPreparedTransactions or Ndb::sendPollNdb to send the 
    database operations.
    (Ndb::sendPollNdb also polls Ndb for completed transactions.)
@@ -583,276 +923,34 @@
   
    The poll method returns the number of transactions that 
    have finished processing and executed their callback methods.
-  
+
    @note When an asynchronous transaction has been started and sent to
          the NDB kernel, it is not allowed to execute any methods on
          objects belonging to this transaction until the transaction
          callback method have been executed.
          (The transaction is stated and sent by either
-	 NdbConnection::executeAsynch or through the combination of
-         NdbConnection::executeAsynchPrepare and either
+	 NdbTransaction::executeAsynch or through the combination of
+         NdbTransaction::executeAsynchPrepare and either
          Ndb::sendPreparedTransactions or Ndb::sendPollNdb).
 
-   More about how transactions are send the NDB Kernel is 
+   More about how transactions are sent the NDB Kernel is 
    available in section @ref secAdapt.
-
-
-   @section secError                    Error Handling
-
-   Errors can occur when
-   -# operations are being defined, or when the
-   -# transaction is being executed.
-
-   One recommended way to handle a transaction failure 
-   (i.e. an error is reported) is to:
-   -# Rollback transaction (NdbConnection::execute with a special parameter)
-   -# Close transaction
-   -# Restart transaction (if the error was temporary)
-
-   @note Transaction are not automatically closed when an error occur.
-
-   Several errors can occur when a transaction holds multiple 
-   operations which are simultaneously executed.
-   In this case the application has to go through the operation
-   objects and query for their NdbError objects to find out what really
-   happened.
-
-   NdbConnection::getNdbErrorOperation returns a reference to the 
-   operation causing the latest error.
-   NdbConnection::getNdbErrorLine delivers the method number of the 
-   erroneous method in the operation.
-
-   @code
-     theConnection = theNdb->startTransaction();
-     theOperation = theConnection->getNdbOperation("TEST_TABLE");
-     if (theOperation == NULL) goto error;
-     theOperation->readTuple();
-     theOperation->setValue("ATTR_1", at1);
-     theOperation->setValue("ATTR_2", at1); //Here an error occurs
-     theOperation->setValue("ATTR_3", at1);
-     theOperation->setValue("ATTR_4", at1);
-    
-     if (theConnection->execute(Commit) == -1) {
-       errorLine = theConnection->getNdbErrorLine();
-       errorOperation = theConnection->getNdbErrorOperation();
-   @endcode
-
-   Here errorLine will be 3 as the error occurred in the third method 
-   on the operation object.
-   Getting errorLine == 0 means that the error occurred when executing the 
-   operations.
-   Here errorOperation will be a pointer to the theOperation object.
-   NdbConnection::getNdbError will return the NdbError object 
-   including holding information about the error.
-
-   Since errors could have occurred even when a commit was reported,
-   there is also a special method, NdbConnection::commitStatus,
-   to check the commit status of the transaction.
-
-*******************************************************************************/
-
-/**
- * @page ndbapi_example1.cpp ndbapi_example1.cpp
- * @include ndbapi_example1.cpp 
- */
-
-/**
- * @page ndbapi_example2.cpp ndbapi_example2.cpp
- * @include ndbapi_example2.cpp 
- */
-
-/**
- * @page ndbapi_example3.cpp ndbapi_example3.cpp
- * @include ndbapi_example3.cpp 
- */
-
-/**
- * @page ndbapi_example4.cpp ndbapi_example4.cpp
- * @include ndbapi_example4.cpp 
- */
-
-/**
- * @page select_all.cpp select_all.cpp
- * @include select_all.cpp 
- */
-
-/**
- * @page ndbapi_async.cpp ndbapi_async.cpp
- * @include ndbapi_async.cpp
- */
-
-/**
- * @page ndbapi_scan.cpp ndbapi_scan.cpp
- * @include ndbapi_scan.cpp
- */
-
-
-/**
-   @page secAdapt  Adaptive Send Algorithm
-
-   At the time of "sending" the transaction 
-   (using NdbConnection::execute, NdbConnection::executeAsynch, 
-   Ndb::sendPreparedTransactions, or Ndb::sendPollNdb), the transactions 
-   are in reality <em>not</em> immediately transfered to the NDB Kernel.  
-   Instead, the "sent" transactions are only kept in a 
-   special send list (buffer) in the Ndb object to which they belong.
-   The adaptive send algorithm decides when transactions should
-   be transfered to the NDB kernel.
-  
-   For each of these "sent" transactions, there are three 
-   possible states:
-   -# Waiting to be transfered to NDB Kernel.
-   -# Has been transfered to the NDB Kernel and is currently 
-      being processed.
-   -# Has been transfered to the NDB Kernel and has 
-      finished processing.
-      Now it is waiting for a call to a poll method.  
-      (When the poll method is invoked, 
-      then the transaction callback method will be executed.)
-      
-   The poll method invoked (either Ndb::pollNdb or Ndb::sendPollNdb)
-   will return when:
-   -# at least 'minNoOfEventsToWakeup' of the transactions
-      in the send list have transitioned to state 3 as described above, and 
-   -# all of these transactions have executed their callback methods.
-  
-  
-   Since the NDB API is designed as a multi-threaded interface, 
-   it is desirable to transfer database operations from more than 
-   one thread at a time. 
-   The NDB API keeps track of which Ndb objects are active in transfering
-   information to the NDB kernel and the expected amount of threads to 
-   interact with the NDB kernel.
-   Note that an Ndb object should be used in at most one thread. 
-   Two different threads should <em>not</em> use the same Ndb object.
-  
-   There are four reasons leading to transfering of database 
-   operations:
-   -# The NDB Transporter (TCP/IP, OSE, SCI or shared memory)
-      decides that a buffer is full and sends it off. 
-      The buffer size is implementation dependent and
-      might change between NDB Cluster releases.
-      On TCP/IP the buffer size is usually around 64 kByte and 
-      on OSE/Delta it is usually less than 2000 bytes. 
-      In each Ndb object there is one buffer per DB node, 
-      so this criteria of a full buffer is only 
-      local to the connection to one DB node.
-   -# Statistical information on the transfered information
-      may force sending of buffers to all DB nodes.
-   -# Every 10 ms a special send-thread checks whether 
-      any send activity has occurred.  If not, then the thread will 
-      force sending to all nodes. 
-      This means that 20 ms is the maximum time database operations 
-      are waiting before being sent off. The 10 millisecond limit 
-      is likely to become a configuration parameter in
-      later releases of NDB Cluster.
-      However, to support faster than 10 ms checks, 
-      there has to be support from the operating system.
-   -# When calling NdbConnection::execute synchronously or calling any 
-      of the poll-methods, there is a force parameter that overrides the 
-      adaptive algorithm and forces the send to all nodes.
-
-   @note The times mentioned above are examples.  These might 
-         change in later releases of NDB Cluster.
 */
+#endif
+
 
 /**
-   @page secConcepts  NDB Cluster Concepts
-
-   The <em>NDB Kernel</em> is the collection of database (DB) nodes
-   belonging to an NDB Cluster.
-   The application programmer can for most purposes view the
-   set of all DB nodes as one entity.
-   Each DB node has three main components:
-   - TC : The transaction coordinator
-   - ACC : The index storage
-   - TUP : The data storage
-
-   When the application program executes a transaction,
-   it connects to one TC on one DB node.  
-   Usually, the programmer does not need to specify which TC to use, 
-   but some cases when performance is important,
-   transactions can be hinted to use a certain TC.  
-   (If the node with the TC is down, then another TC will 
-   automatically take over the work.)
-
-   Every DB node has an ACC and a TUP which stores 
-   the index and the data part of the database.
-   Even though one TC is responsible for the transaction,
-   several ACCs and TUPs on other DB nodes might be involved in the 
-   execution of the transaction.
-
-
-   @section secNdbKernelConnection   Selecting Transaction Coordinator 
-   The default method is round robin, 
-   where each new set of transactions
-   is placed on the next DB node.
-   The application chooses a TC for a number of transactions
-   and then lets the next TC (on the next DB node) carry out
-   the next set of transactions.
    
-   The application programmer can however hint the NDB API which 
-   transaction coordinator to use
-   by providing a <em>distribution key</em> (usually the primary key).
-   By using the primary key as distribution key, 
-   the transaction will be placed on the node where the primary replica
-   of that record resides.
-   Note that this is only a hint, the system can be 
-   reconfigured and then the NDB API will choose a transaction
-   coordinator without using the hint.
-   For more information, see NdbDictionary::Column::setDistributionKey.
-
-
-   @section secRecordStruct          Record Structure 
-   NDB Cluster is a relational database with tables of records.
-   Table rows represent tuples of relational data stored as records.
-   When created, the attribute schema of the table is specified,
-   and thus each record of the table has the same schema.
-   
-
-   @subsection secKeys               Tuple Keys
-   Each record has from zero up to four attributes which belong
-   to the primary key of the table.
-   If no attribute belongs to the primary key, then
-   the NDB Cluster creates an attribute named <em>NDB$TID</em>
-   which stores a tuple identity.
-   The <em>tuple key</em> of a table is thus either 
-   the primary key attributes or the special NDB$TID attribute.
-
+   Put this back when real array ops are supported
+   i.e. get/setValue("kalle[3]");
 
    @subsection secArrays             Array Attributes
-   A table attribute in NDB Cluster can be of <em>array type</em>.
-   This means that the attribute consists of an array of 
-   <em>elements</em>.  The <em>attribute size</em> is the size
-   of one element of the array (expressed in bits) and the 
-   <em>array size</em> is the number of elements of the array.
-   
+   A table attribute in NDB Cluster can be of type <var>Array</var>,
+   meaning that the attribute consists of an ordered sequence of 
+   elements. In such cases, <var>attribute size</var> is the size
+   (expressed in bits) of any one element making up the array; the 
+   <var>array size</var> is the number of elements in the array.
 
-   @section secTrans                 Transactions
-
-   Transactions are committed to main memory, 
-   and are committed to disk after a global checkpoint, GCP.
-   Since all data is (in most NDB Cluster configurations) 
-   synchronously replicated and stored on multiple NDB nodes,
-   the system can still handle processor failures without loss 
-   of data.
-   However, in the case of a system failure (e.g. the whole system goes down), 
-   then all (committed or not) transactions after the latest GCP are lost.
-
-
-   @subsection secConcur                Concurrency Control
-   NDB Cluster uses pessimistic concurrency control based on locking.
-   If a requested lock (implicit and depending on database operation)
-   cannot be attained within a specified time, 
-   then a timeout error occurs.
-
-   Concurrent transactions (parallel application programs, thread-based 
-   applications, or applications with asynchronous transactions)
-   sometimes deadlock when they try to access the same information.
-   Applications need to be programmed so that timeout errors
-   occurring due to deadlocks are handled.  This generally
-   means that the transaction encountering timeout
-   should be rolled back and restarted.
 */
 
 #ifndef Ndb_H
@@ -866,11 +964,10 @@
 
 class NdbObjectIdMap;
 class NdbOperation;
-class NdbEventOperationImpl;
 class NdbScanOperation;
 class NdbIndexScanOperation;
 class NdbIndexOperation;
-class NdbConnection;
+class NdbTransaction;
 class NdbApiSignal;
 class NdbRecAttr;
 class NdbLabel;
@@ -879,12 +976,11 @@ class NdbSubroutine;
 class NdbCall;
 class Table;
 class BaseString;
-class NdbEventOperation;
 class NdbBlob;
 class NdbReceiver;
+class Ndb_local_table_info;
 template <class T> struct Ndb_free_list_t;
 
-typedef void (* NdbEventCallback)(NdbEventOperation*, Ndb*, void*);
 
 #if defined NDB_OSE
 /**
@@ -896,10 +992,6 @@ typedef void (* NdbEventCallback)(NdbEventOperation*, Ndb*, void*);
 #else
 #define WAITFOR_RESPONSE_TIMEOUT 120000 // Milliseconds
 #endif
-
-#define NDB_MAX_INTERNAL_TABLE_LENGTH NDB_MAX_DATABASE_NAME_SIZE + \
-                                      NDB_MAX_SCHEMA_NAME_SIZE + \
-                                      NDB_MAX_TAB_NAME_SIZE*2
 
 /**
  * @class Ndb 
@@ -928,6 +1020,11 @@ typedef void (* NdbEventCallback)(NdbEventOperation*, Ndb*, void*);
  *       Semaphores, mutexes and so forth are easy ways of issuing memory 
  *       barriers without having to bother about the memory barrier concept.
  *
+ */
+
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+// to be documented later
+/*
  * If one Ndb object is used to handle parallel transactions through the 
  * asynchronous programming interface, please read the notes regarding
  * asynchronous transactions (Section @ref secAsync).
@@ -938,12 +1035,14 @@ typedef void (* NdbEventCallback)(NdbEventOperation*, Ndb*, void*);
  *       asynchronous transaction or the methods for 
  *       synchronous transactions but not both.
  */
+#endif
+
 class Ndb
 {
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   friend class NdbReceiver;
   friend class NdbOperation;
-  friend class NdbEventOperationImpl;
-  friend class NdbConnection;
+  friend class NdbTransaction;
   friend class Table;
   friend class NdbApiSignal;
   friend class NdbIndexOperation;
@@ -952,6 +1051,8 @@ class Ndb
   friend class NdbDictionaryImpl;
   friend class NdbDictInterface;
   friend class NdbBlob;
+  friend class NdbImpl;
+#endif
 
 public:
   /** 
@@ -959,29 +1060,26 @@ public:
    * @{
    */
   /**
-   * The starting point of your application code is to create an 
-   * Ndb object.  
-   * This object represents the NDB kernel and is the main
-   * object used in interaction with the NDB kernel.
+   * The Ndb object represents a connection to a database.
    *
-   * @param aCatalogName is the name of the catalog you want to use.
-   * @note The catalog name provides a name space for the tables and
+   * @note The init() method must be called before the Ndb object may actually be used.
+   *
+   * @param ndb_cluster_connection is a connection to the cluster containing
+   *        the database to be used
+   * @param aCatalogName is the name of the catalog to be used.
+   * @note The catalog name provides a namespace for the tables and
    *       indexes created in any connection from the Ndb object.
    * @param aSchemaName is the name of the schema you 
-   *        want to use. It is optional and defaults to the "def" schema.
-   * @note The schema name provides an additional name space 
+   *        want to use.
+   * @note The schema name provides an additional namespace 
    *       for the tables and indexes created in a given catalog.
-   * @note The methods get/setDatabaseName and get/setDatabaseSchemaName
-   *       are equivalent to get/setCatalogName and get/setSchemaName.
-   *       The get/setDatabaseName and get/setDatabaseSchemaName are
-   *       deprecated.
    */
-  Ndb(const char* aCatalogName = "", const char* aSchemaName = "def");
   Ndb(Ndb_cluster_connection *ndb_cluster_connection,
       const char* aCatalogName = "", const char* aSchemaName = "def");
 
   ~Ndb();
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    * The current catalog name can be fetched by getCatalogName.
    *
@@ -994,7 +1092,7 @@ public:
    *
    * @param aCatalogName is the new name of the current catalog
    */
-  void setCatalogName(const char * aCatalogName);
+  int setCatalogName(const char * aCatalogName);
 
   /**
    * The current schema name can be fetched by getSchemaName.
@@ -1008,8 +1106,8 @@ public:
    *
    * @param aSchemaName is the new name of the current schema
    */
-  void setSchemaName(const char * aSchemaName);
-
+  int setSchemaName(const char * aSchemaName);
+#endif
 
   /**
    * The current database name can be fetched by getDatabaseName.
@@ -1023,7 +1121,7 @@ public:
    *
    * @param aDatabaseName is the new name of the current database
    */
-  void setDatabaseName(const char * aDatabaseName);
+  int setDatabaseName(const char * aDatabaseName);
 
   /**
    * The current database schema name can be fetched by getDatabaseSchemaName.
@@ -1037,25 +1135,24 @@ public:
    *
    * @param aDatabaseSchemaName is the new name of the current database schema
    */
-  void setDatabaseSchemaName(const char * aDatabaseSchemaName);
+  int setDatabaseSchemaName(const char * aDatabaseSchemaName);
 
   /**
-   * Before anything else it is necessary to initialize (start)
-   * the Ndb object.
+   * Initializes the Ndb object
    *
    * @param  maxNoOfTransactions 
    *         Maximum number of parallel 
-   *         NdbConnection objects that should be handled by the Ndb object.
-   *         A value larger than 1024 will be downgraded to 1024. 
-   *         This means that one Ndb object can handle at most 1024 parallel
-   *         transactions. 
-   * @return 0 if successful, -1 otherwise.
+   *         NdbTransaction objects that can be handled by the Ndb object.
+   *         Maximum value is 1024.
    *
-   * @note   The internal implementation multiplies this value 
-   *         with 3.
+   * @note each scan or index scan operation uses one extra
+   *       NdbTransaction object
+   *
+   * @return 0 if successful, -1 otherwise.
    */
   int init(int maxNoOfTransactions = 4);
 
+#ifndef DOXYGEN_SHOULD_SKIP_DEPRECATED
   /**
    * Wait for Ndb object to successfully set-up connections to 
    * the NDB kernel. 
@@ -1068,8 +1165,8 @@ public:
    * @return  0: Ndb is ready and timeout has not occurred.<br>
    *          -1: Timeout has expired
    */
-
   int waitUntilReady(int timeout = 60);
+#endif
 
   /** @} *********************************************************************/
 
@@ -1079,30 +1176,15 @@ public:
    */
 
   /**
-   * Query the database for schema information 
-   * (without performing any transaction).
+   * Get an object for retrieving or manipulating database schema information 
+   *
+   * @note this object operates outside any transaction
    *
    * @return Object containing meta information about all tables 
    *         in NDB Cluster.
    */
   class NdbDictionary::Dictionary* getDictionary() const;
   
-  NdbEventOperation* createEventOperation(const char* eventName,
-					  const int bufferLength);
-  int dropEventOperation(NdbEventOperation*);
-  void monitorEvent(NdbEventOperation *, NdbEventCallback, void*);
-  int pollEvents(int aMillisecondNumber);
-
-  /**
-   * Get the application node identity.  
-   *
-   * Each node (DB nodes, Applications, and Management Servers) 
-   * has its own node identity in the NDB Cluster.
-   * See documentation for the management server configuration file.
-   *
-   * @return Node id of this application.
-   */
-  int getNodeId();
 
   /** @} *********************************************************************/
 
@@ -1112,79 +1194,33 @@ public:
    */
 
   /**
-   * This method returns an NdbConnection which caters for the transaction. 
-   * When the transaction is completed it must be closed. 
-   * The Ndb::closeTransaction also return the NdbConnection object 
-   * and all other memory related to the transaction. 
-   * Failure to close the transaction will lead to memory leakage. 
-   * The transaction must be closed independent of its outcome, i.e.
-   * even if there is an error.
+   * Start a transaction
+   *
+   * @note When the transaction is completed it must be closed using
+   *       Ndb::closeTransaction or NdbTransaction::close. 
+   *       The transaction must be closed independent of its outcome, i.e.
+   *       even if there is an error.
+   *
+   * @param  table    Pointer to table object used for deciding 
+   *                  which node to run the Transaction Coordinator on
+   * @param  keyData  Pointer to partition key corresponding to
+   *                  <var>table</var>
+   * @param  keyLen   Length of partition key expressed in bytes
    * 
-   * NDB API can be hinted to select a particular transaction coordinator.
-   * The default method is round robin where each set of new transactions 
-   * is placed on the next NDB kernel node. 
-   * By providing a distribution key (usually the primary key
-   * of the mostly used table of the transaction) for a record
-   * the transaction will be placed on the node where the primary replica
-   * of that record resides. 
-   * Note that this is only a hint, the system can
-   * be under reconfiguration and then the NDB API 
-   * will use select the transaction coordinator without using 
-   * this hint.
-   *
-   * Placing the transaction coordinator close
-   * to the actual data used in the transaction can in many cases
-   * improve performance significantly. This is particularly true for
-   * systems using TCP/IP. A system using Solaris and a 500 MHz processor
-   * has a cost model for TCP/IP communication which is:
-   *
-   *   30 microseconds + (100 nanoseconds * no of Bytes)
-   *
-   * This means that if we can ensure that we use "popular" links we increase
-   * buffering and thus drastically reduce the communication cost.
-   * Systems using SCI has a different cost model which is:
-   *
-   *   5 microseconds + (10 nanoseconds *  no of Bytes)
-   *
-   * Thus SCI systems are much less dependent on selection of 
-   * transaction coordinators. 
-   * Typically TCP/IP systems spend 30-60% of the time during communication,
-   * whereas SCI systems typically spend 5-10% of the time during
-   * communication. 
-   * Thus SCI means that less care from the NDB API programmer is
-   * needed and great scalability can be achieved even for applications using
-   * data from many parts of the database.
-   *
-   * A simple example is an application that uses many simple updates where
-   * a transaction needs to update one record. 
-   * This record has a 32 bit primary key, 
-   * which is also the distribution key. 
-   * Then the keyData will be the address of the integer 
-   * of the primary key and keyLen will be 4.
-   *
-   * @note Transaction priorities are not yet supported.
-   *
-   * @param  prio     The priority of the transaction.<br>
-   *                  Priority 0 is the highest priority and is used
-   *                  for short transactions with requirements on low delay.<br>
-   *                  Priority 1 is a medium priority for short transactions.
-   *                  <br>
-   *                  Priority 2 is a medium priority for long transactions.<br>
-   *                  Priority 3 is a low priority for long transactions.<br>
-   *                  <em>This parameter is not currently used,
-   *                      and can be set to any value</em>
-   * @param  keyData  Pointer to distribution key
-   * @param  keyLen   Length of distribution key expressed in bytes
-   * 
-   * @return NdbConnection object, or NULL if method failed.
+   * @return NdbTransaction object, or NULL on failure.
    */
-  NdbConnection* startTransaction(Uint32        prio = 0, 
-				  const char *  keyData = 0, 
-				  Uint32        keyLen = 0);
+  NdbTransaction* startTransaction(const NdbDictionary::Table *table= 0,
+				   const char  *keyData = 0, 
+				   Uint32       keyLen = 0);
 
   /**
-   * When a transactions is completed, the transaction has to be closed.
+   * Close a transaction.
    *
+   * @note should be called after the transaction has completed, irrespective
+   *       of success or failure
+   */
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  /**
    * @note It is not allowed to call Ndb::closeTransaction after sending the
    *       transaction asynchronously with either 
    *       Ndb::sendPreparedTransactions or
@@ -1194,11 +1230,13 @@ public:
    *       has completed before calling Ndb::closeTransaction).
    *       If the transaction is not committed it will be aborted.
    */
-  void closeTransaction(NdbConnection* aConnection);
-  
+#endif
+  void closeTransaction(NdbTransaction*);
 
   /** @} *********************************************************************/
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  // to be documented later
   /** 
    * @name Asynchronous Transactions
    * @{
@@ -1209,11 +1247,10 @@ public:
    * Will return as soon as at least 'minNoOfEventsToWakeUp' 
    * of them have completed, or the maximum time given as timeout has passed.
    *
-   * @param aMillisecondNumber Maximum time to wait for transactions
-   *                           to complete.
-   *                           Polling without wait is achieved by setting the 
-   *                           timer to zero.
-   *                           Time is expressed in milliseconds.
+   * @param aMillisecondNumber 
+   *        Maximum time to wait for transactions to complete. Polling 
+   *        without wait is achieved by setting the timer to zero.
+   *        Time is expressed in milliseconds.
    * @param minNoOfEventsToWakeup Minimum number of transactions 
    *            which has to wake up before the poll-call will return.
    *            If minNoOfEventsToWakeup is
@@ -1275,9 +1312,9 @@ public:
   int  sendPollNdb(int aMillisecondNumber = WAITFOR_RESPONSE_TIMEOUT,
 		   int minNoOfEventsToWakeup = 1,
 		   int forceSend = 0);
-  
   /** @} *********************************************************************/
-
+#endif
+  
   /** 
    * @name Error Handling
    * @{
@@ -1286,7 +1323,7 @@ public:
   /**
    * Get the NdbError object
    *
-   * The NdbError object is valid until you call a new NDB API method.
+   * @note The NdbError object is valid until a new NDB API method is called.
    */
   const NdbError & getNdbError() const;
   
@@ -1298,37 +1335,29 @@ public:
   const NdbError & getNdbError(int errorCode);
 
 
-  /**
-   * setConnectString
-   * @param connectString - the connectString has the following format:
-   * @code
-   * "nodeid=<ID>;host=host://<HOSTNAME>:<PORT>;
-   *  host=host://<HOSTNAME2>:<PORT>;..."
-   * @endcode
-   * or
-   * @code
-   * "nodeid=<ID>;host=<HOSTNAME>:<PORT>;host=<HOSTNAME2>:<PORT>;..."
-   * @endcode
-   */
-  static void setConnectString(const char * connectString);
-
-  bool usingFullyQualifiedNames();
-
   /** @} *********************************************************************/
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  /**
+   * Get the application node identity.  
+   *
+   * @return Node id of this application.
+   */
+  int getNodeId();
+
+  bool usingFullyQualifiedNames();
 
   /**
    * Different types of tampering with the NDB Cluster.
    * <b>Only for debugging purposes only.</b>
    */
   enum TamperType	{ 
-    LockGlbChp = 1,               ///< Lock GCP
-    UnlockGlbChp,                 ///< Unlock GCP
-    CrashNode,                    ///< Crash an NDB node
-    ReadRestartGCI,               ///< Request the restart GCI id from NDB Cluster
-    InsertError                   ///< Execute an error in NDB Cluster 
-                                  ///< (may crash system)
+    LockGlbChp = 1,           ///< Lock GCP
+    UnlockGlbChp,             ///< Unlock GCP
+    CrashNode,                ///< Crash an NDB node
+    ReadRestartGCI,           ///< Request the restart GCI id from NDB Cluster
+    InsertError               ///< Execute an error in NDB Cluster 
+                              ///< (may crash system)
   };
 
   /**
@@ -1347,9 +1376,7 @@ public:
    *          on type of tampering.
    */
   int NdbTamper(TamperType aAction, int aNode);  
-#endif
 
-#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    * Return a unique tuple id for a table.  The id sequence is
    * ascending but may contain gaps.
@@ -1358,33 +1385,33 @@ public:
    *
    * @param cacheSize number of values to cache in this Ndb object
    *
-   * @return tuple id or 0 on error
+   * @return 0 or -1 on error, and tupleId in out parameter
    */
-  Uint64 getAutoIncrementValue(const char* aTableName, 
-			       Uint32 cacheSize = 1);
-  Uint64 getAutoIncrementValue(const NdbDictionary::Table * aTable, 
-			       Uint32 cacheSize = 1);
-  Uint64 readAutoIncrementValue(const char* aTableName);
-  Uint64 readAutoIncrementValue(const NdbDictionary::Table * aTable);
-  bool setAutoIncrementValue(const char* aTableName, Uint64 val, 
-			     bool increase = false);
-  bool setAutoIncrementValue(const NdbDictionary::Table * aTable, Uint64 val, 
-			     bool increase = false);
-  Uint64 getTupleIdFromNdb(const char* aTableName, 
-			   Uint32 cacheSize = 1000);
-  Uint64 getTupleIdFromNdb(Uint32 aTableId, 
-			   Uint32 cacheSize = 1000);
-  Uint64 readTupleIdFromNdb(Uint32 aTableId);
-  bool setTupleIdInNdb(const char* aTableName, Uint64 val, 
-		       bool increase);
-  bool setTupleIdInNdb(Uint32 aTableId, Uint64 val, bool increase);
-  Uint64 opTupleIdOnNdb(Uint32 aTableId, Uint64 opValue, Uint32 op);
-#endif
+  int getAutoIncrementValue(const char* aTableName, 
+                            Uint64 & tupleId, Uint32 cacheSize);
+  int getAutoIncrementValue(const NdbDictionary::Table * aTable, 
+                            Uint64 & tupleId, Uint32 cacheSize);
+  int readAutoIncrementValue(const char* aTableName,
+                             Uint64 & tupleId);
+  int readAutoIncrementValue(const NdbDictionary::Table * aTable,
+                             Uint64 & tupleId);
+  int setAutoIncrementValue(const char* aTableName,
+                            Uint64 tupleId, bool increase);
+  int setAutoIncrementValue(const NdbDictionary::Table * aTable,
+                            Uint64 tupleId, bool increase);
+private:
+  int getTupleIdFromNdb(Ndb_local_table_info* info,
+                        Uint64 & tupleId, Uint32 cacheSize);
+  int readTupleIdFromNdb(Ndb_local_table_info* info,
+                         Uint64 & tupleId);
+  int setTupleIdInNdb(Ndb_local_table_info* info,
+                      Uint64 tupleId, bool increase);
+  int opTupleIdOnNdb(Ndb_local_table_info* info, Uint64 & opValue, Uint32 op);
+public:
 
-#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    */
-  NdbConnection* hupp( NdbConnection* );
+  NdbTransaction* hupp( NdbTransaction* );
   Uint32 getReference() const { return theMyRef;}
 
   struct Free_list_usage
@@ -1411,11 +1438,11 @@ private:
   void connected(Uint32 block_reference);
  
 
-  NdbConnection*  startTransactionLocal(Uint32 aPrio, Uint32 aFragmentId); 
+  NdbTransaction*  startTransactionLocal(Uint32 aPrio, Uint32 aFragmentId); 
 
 // Connect the connection object to the Database.
   int NDB_connect(Uint32 tNode);
-  NdbConnection* doConnect(Uint32 nodeId); 
+  NdbTransaction* doConnect(Uint32 nodeId); 
   void    doDisconnect();	 
   
   NdbReceiver*	        getNdbScanRec();// Get a NdbScanReceiver from idle list
@@ -1447,8 +1474,8 @@ private:
 
   void                  check_send_timeout();
   void                  remove_sent_list(Uint32);
-  Uint32                insert_completed_list(NdbConnection*);
-  Uint32                insert_sent_list(NdbConnection*);
+  Uint32                insert_completed_list(NdbTransaction*);
+  Uint32                insert_sent_list(NdbTransaction*);
 
   // Handle a received signal. Used by both
   // synchronous and asynchronous interface
@@ -1488,20 +1515,20 @@ private:
   void	freeNdbScanRec();   // Free the first idle NdbScanRec obj
   void  freeNdbBlob();      // Free the first etc
 
-  NdbConnection* getNdbCon();	// Get a connection from idle list
+  NdbTransaction* getNdbCon();	// Get a connection from idle list
   
   /**
-   * Get a connected NdbConnection to nodeId
+   * Get a connected NdbTransaction to nodeId
    *   Returns NULL if none found
    */
-  NdbConnection* getConnectedNdbConnection(Uint32 nodeId);
+  NdbTransaction* getConnectedNdbTransaction(Uint32 nodeId);
 
   // Release and disconnect from DBTC a connection
   // and seize it to theConIdleList
-  void	releaseConnectToNdb (NdbConnection* aConnectConnection);
+  void	releaseConnectToNdb (NdbTransaction*);
 
   // Release a connection to idle list
-  void 	releaseNdbCon (NdbConnection* aConnection);
+  void 	releaseNdbCon (NdbTransaction*);
   
   int	checkInitState();		// Check that we are initialized
   void	report_node_failure(Uint32 node_id);           // Report Failed node
@@ -1511,28 +1538,30 @@ private:
 
   int   NDB_connect();     // Perform connect towards NDB Kernel
 
-  // Release arrays of NdbConnection pointers
+  // Release arrays of NdbTransaction pointers
   void  releaseTransactionArrays();     
 
-  Uint32  pollCompleted(NdbConnection** aCopyArray);
+  Uint32  pollCompleted(NdbTransaction** aCopyArray);
   void    sendPrepTrans(int forceSend);
-  void    reportCallback(NdbConnection** aCopyArray, Uint32 aNoOfComplTrans);
+  void    reportCallback(NdbTransaction** aCopyArray, Uint32 aNoOfComplTrans);
   void    waitCompletedTransactions(int milliSecs, int noOfEventsToWaitFor);
-  void    completedTransaction(NdbConnection* aTransaction);
-  void    completedScanTransaction(NdbConnection* aTransaction);
+  void    completedTransaction(NdbTransaction* aTransaction);
+  void    completedScanTransaction(NdbTransaction* aTransaction);
 
   void    abortTransactionsAfterNodeFailure(Uint16 aNodeId);
 
   static
-  const char * externalizeTableName(const char * internalTableName, bool fullyQualifiedNames);
+  const char * externalizeTableName(const char * internalTableName,
+                                    bool fullyQualifiedNames);
   const char * externalizeTableName(const char * internalTableName);
-  const char * internalizeTableName(const char * externalTableName);
+  const BaseString internalize_table_name(const char * external_name) const;
 
   static
-  const char * externalizeIndexName(const char * internalIndexName, bool fullyQualifiedNames);
+  const char * externalizeIndexName(const char * internalIndexName,
+                                    bool fullyQualifiedNames);
   const char * externalizeIndexName(const char * internalIndexName);
-  const char * internalizeIndexName(const NdbTableImpl * table,
-				    const char * externalIndexName);
+  const BaseString internalize_index_name(const NdbTableImpl * table,
+                                          const char * external_name) const;
 
   static
   const BaseString getDatabaseFromInternalName(const char * internalName);
@@ -1541,21 +1570,21 @@ private:
 
   void*              int2void     (Uint32 val);
   NdbReceiver*       void2rec     (void* val);
-  NdbConnection*     void2con     (void* val);
+  NdbTransaction*     void2con     (void* val);
   NdbOperation*      void2rec_op  (void* val);
   NdbIndexOperation* void2rec_iop (void* val);
 
 /******************************************************************************
  *	These are the private variables in this class.	
  *****************************************************************************/
-  NdbConnection**       thePreparedTransactionsArray;
-  NdbConnection**       theSentTransactionsArray;
-  NdbConnection**       theCompletedTransactionsArray;
+  NdbTransaction**       thePreparedTransactionsArray;
+  NdbTransaction**       theSentTransactionsArray;
+  NdbTransaction**       theCompletedTransactionsArray;
 
   Uint32                theNoOfPreparedTransactions;
   Uint32                theNoOfSentTransactions;
   Uint32                theNoOfCompletedTransactions;
-  Uint32                theNoOfAllocatedTransactions;
+  Uint32                theRemainingStartTransactions;
   Uint32                theMaxNoOfTransactions;
   Uint32                theMinNoOfEventsToWakeUp;
 
@@ -1563,30 +1592,20 @@ private:
 
   bool fullyQualifiedNames;
 
-  // Ndb database name.
-  char                  theDataBase[NDB_MAX_DATABASE_NAME_SIZE];
-  // Ndb database schema name.  
-  char                  theDataBaseSchema[NDB_MAX_SCHEMA_NAME_SIZE];
-  char                  prefixName[NDB_MAX_INTERNAL_TABLE_LENGTH];
-  char *                prefixEnd;		
+
 
   class NdbImpl * theImpl;
   class NdbDictionaryImpl* theDictionary;
   class NdbGlobalEventBufferHandle* theGlobalEventBufferHandle;
 
-  NdbConnection*	theTransactionList;
-  NdbConnection**       theConnectionArray;
+  NdbTransaction*	theTransactionList;
+  NdbTransaction**      theConnectionArray;
 
   Uint32   theMyRef;        // My block reference  
   Uint32   theNode;         // The node number of our node
   
   Uint64               the_last_check_time;
   Uint64               theFirstTransId;
-  
-  // The tupleId is retreived from DB the 
-  // tupleId is unique for each tableid. 
-  Uint64               theFirstTupleId[2048]; 
-  Uint64               theLastTupleId[2048];           
 
   Uint32		theRestartGCI;	// the Restart GCI used by DIHNDBTAMPER
   

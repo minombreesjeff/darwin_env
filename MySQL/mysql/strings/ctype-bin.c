@@ -2,8 +2,8 @@
    
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
+   License as published by the Free Software Foundation; version 2
+   of the License.
    
    This library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -86,6 +86,14 @@ static int my_strnncoll_binary(CHARSET_INFO * cs __attribute__((unused)),
 }
 
 
+uint my_lengthsp_binary(CHARSET_INFO *cs __attribute__((unused)),
+		        const char *ptr __attribute__((unused)),
+		        uint length)
+{
+  return length;
+}
+
+
 /*
   Compare two strings. Result is sign(first_argument - second_argument)
 
@@ -110,7 +118,9 @@ static int my_strnncoll_binary(CHARSET_INFO * cs __attribute__((unused)),
 
 static int my_strnncollsp_binary(CHARSET_INFO * cs __attribute__((unused)),
                                  const uchar *s, uint slen,
-                                 const uchar *t, uint tlen)
+                                 const uchar *t, uint tlen,
+                                 my_bool diff_if_only_endspace_difference
+                                 __attribute__((unused)))
 {
   return my_strnncoll_binary(cs,s,slen,t,tlen,0);
 }
@@ -137,6 +147,9 @@ static int my_strnncoll_8bit_bin(CHARSET_INFO * cs __attribute__((unused)),
     slen		Length of 's'
     t			String to compare
     tlen		Length of 't'
+    diff_if_only_endspace_difference
+		        Set to 1 if the strings should be regarded as different
+                        if they only difference in end space
 
   NOTE
    This function is used for character strings with binary collations.
@@ -151,10 +164,16 @@ static int my_strnncoll_8bit_bin(CHARSET_INFO * cs __attribute__((unused)),
 
 static int my_strnncollsp_8bit_bin(CHARSET_INFO * cs __attribute__((unused)),
                                    const uchar *a, uint a_length, 
-                                   const uchar *b, uint b_length)
+                                   const uchar *b, uint b_length,
+                                   my_bool diff_if_only_endspace_difference)
 {
   const uchar *end;
   uint length;
+  int res;
+
+#ifndef VARCHAR_WITH_DIFF_ENDSPACE_ARE_DIFFERENT_FOR_UNIQUE
+  diff_if_only_endspace_difference= 0;
+#endif
 
   end= a + (length= min(a_length, b_length));
   while (a < end)
@@ -162,6 +181,7 @@ static int my_strnncollsp_8bit_bin(CHARSET_INFO * cs __attribute__((unused)),
     if (*a++ != *b++)
       return ((int) a[-1] - (int) b[-1]);
   }
+  res= 0;
   if (a_length != b_length)
   {
     int swap= 1;
@@ -169,12 +189,15 @@ static int my_strnncollsp_8bit_bin(CHARSET_INFO * cs __attribute__((unused)),
       Check the next not space character of the longer key. If it's < ' ',
       then it's smaller than the other key.
     */
+    if (diff_if_only_endspace_difference)
+      res= 1;                                   /* Assume 'a' is bigger */
     if (a_length < b_length)
     {
       /* put shorter key in s */
       a_length= b_length;
       a= b;
       swap= -1;					/* swap sign of result */
+      res= -res;
     }
     for (end= a + a_length-length; a < end ; a++)
     {
@@ -182,21 +205,25 @@ static int my_strnncollsp_8bit_bin(CHARSET_INFO * cs __attribute__((unused)),
 	return (*a < ' ') ? -swap : swap;
     }
   }
-  return 0;
+  return res;
 }
 
 
 /* This function is used for all conversion functions */
 
-static void my_case_str_bin(CHARSET_INFO *cs __attribute__((unused)),
+static uint my_case_str_bin(CHARSET_INFO *cs __attribute__((unused)),
 			    char *str __attribute__((unused)))
 {
+  return 0;
 }
 
-static void my_case_bin(CHARSET_INFO *cs __attribute__((unused)),
-			char *str __attribute__((unused)),
-			uint length __attribute__((unused)))
+static uint my_case_bin(CHARSET_INFO *cs __attribute__((unused)),
+                        char *src __attribute__((unused)),
+                        uint srclen,
+                        char *dst __attribute__((unused)),
+                        uint dstlen __attribute__((unused)))
 {
+  return srclen;
 }
 
 
@@ -241,6 +268,29 @@ static int my_wc_mb_bin(CHARSET_INFO *cs __attribute__((unused)),
     return 1;
   }
   return MY_CS_ILUNI;
+}
+
+
+void my_hash_sort_8bit_bin(CHARSET_INFO *cs __attribute__((unused)),
+		      const uchar *key, uint len,ulong *nr1, ulong *nr2)
+{
+  const uchar *pos = key;
+  
+  key+= len;
+  
+  /*
+     Remove trailing spaces. We have to do this to be able to compare
+    'A ' and 'A' as identical
+  */
+  while (key > pos && key[-1] == ' ')
+    key--;
+
+  for (; pos < (uchar*) key ; pos++)
+  {
+    nr1[0]^=(ulong) ((((uint) nr1[0] & 63)+nr2[0]) * 
+	     ((uint)*pos)) + (nr1[0] << 8);
+    nr2[0]+=3;
+  }
 }
 
 
@@ -388,7 +438,7 @@ uint my_instr_bin(CHARSET_INFO *cs __attribute__((unused)),
       {
         match->beg= 0;
         match->end= 0;
-        match->mblen= 0;
+        match->mb_len= 0;
       }
       return 1;		/* Empty string is always found */
     }
@@ -415,14 +465,14 @@ skip:
         if (nmatch > 0)
 	{
 	  match[0].beg= 0;
-	  match[0].end= str- (const uchar*)b-1;
-	  match[0].mblen= match[0].end;
+	  match[0].end= (uint) (str- (const uchar*)b-1);
+	  match[0].mb_len= match[0].end;
 
 	  if (nmatch > 1)
 	  {
 	    match[1].beg= match[0].end;
 	    match[1].end= match[0].end+s_length;
-	    match[1].mblen= match[1].end-match[1].beg;
+	    match[1].mb_len= match[1].end-match[1].beg;
 	  }
 	}
 	return 2;
@@ -439,11 +489,13 @@ MY_COLLATION_HANDLER my_collation_8bit_bin_handler =
     my_strnncoll_8bit_bin,
     my_strnncollsp_8bit_bin,
     my_strnxfrm_8bit_bin,
+    my_strnxfrmlen_simple,
     my_like_range_simple,
     my_wildcmp_bin,
     my_strcasecmp_bin,
     my_instr_bin,
-    my_hash_sort_bin
+    my_hash_sort_8bit_bin,
+    my_propagate_simple
 };
 
 
@@ -453,11 +505,13 @@ static MY_COLLATION_HANDLER my_collation_binary_handler =
     my_strnncoll_binary,
     my_strnncollsp_binary,
     my_strnxfrm_bin,
+    my_strnxfrmlen_simple,
     my_like_range_simple,
     my_wildcmp_bin,
     my_strcasecmp_bin,
     my_instr_bin,
-    my_hash_sort_bin
+    my_hash_sort_bin,
+    my_propagate_simple
 };
 
 
@@ -469,7 +523,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
     my_numchars_8bit,
     my_charpos_8bit,
     my_well_formed_len_8bit,
-    my_lengthsp_8bit,
+    my_lengthsp_binary,
     my_numcells_8bit,
     my_mb_wc_bin,
     my_wc_mb_bin,
@@ -487,6 +541,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
     my_strntoull_8bit,
     my_strntod_8bit,
     my_strtoll10_8bit,
+    my_strntoull10rnd_8bit,
     my_scan_8bit
 };
 
@@ -494,7 +549,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
 CHARSET_INFO my_charset_bin =
 {
     63,0,0,			/* number        */
-    MY_CS_COMPILED|MY_CS_BINSORT|MY_CS_PRIMARY,/* state        */
+    MY_CS_COMPILED|MY_CS_BINSORT|MY_CS_PRIMARY,/* state */
     "binary",			/* cs name    */
     "binary",			/* name          */
     "",				/* comment       */
@@ -507,13 +562,17 @@ CHARSET_INFO my_charset_bin =
     NULL,			/* sort_order_big*/
     NULL,			/* tab_to_uni    */
     NULL,			/* tab_from_uni  */
+    my_unicase_default,         /* caseinfo     */
     NULL,			/* state_map    */
     NULL,			/* ident_map    */
     1,				/* strxfrm_multiply */
+    1,                          /* caseup_multiply  */
+    1,                          /* casedn_multiply  */
     1,				/* mbminlen      */
     1,				/* mbmaxlen      */
     0,				/* min_sort_char */
     255,			/* max_sort_char */
+    0,                          /* pad char      */
     0,                          /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_binary_handler

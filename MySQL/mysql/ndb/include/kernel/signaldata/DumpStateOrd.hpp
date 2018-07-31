@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,6 +67,7 @@ public:
     // 100-105 TUP and ACC  
     // 200-240 UTIL
     // 300-305 TRIX
+    QmgrErr935 = 935,
     NdbfsDumpFileStat = 400,
     NdbfsDumpAllFiles = 401,
     NdbfsDumpOpenFiles = 402,
@@ -107,6 +107,10 @@ public:
     CmvmiDumpLongSignalMemory = 2601,
     CmvmiSetRestartOnErrorInsert = 2602,
     CmvmiTestLongSigWithDelay = 2603,
+    CmvmiDumpSubscriptions = 2604, /* note: done to respective outfile
+                                      to be able to debug if events
+                                      for some reason does not end up
+                                      in clusterlog */
     // 7000 DIH
     // 7001 DIH
     // 7002 DIH

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,7 +30,8 @@ private:
     BUFFER_UNDERFLOW  = 1,
     BUFFER_FULL_SCAN  = 2,
     BUFFER_FULL_FRAG_COMPLETE = 3,
-    BUFFER_FULL_META  = 4
+    BUFFER_FULL_META  = 4,
+    BACKUP_FRAGMENT_INFO = 5
   };
 };
 

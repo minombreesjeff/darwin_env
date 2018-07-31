@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -186,7 +185,7 @@ terribly wrong...\n");
 
 #if defined(__alpha__) && defined(__GNUC__)
     uchar** new_fp = find_prev_fp(pc, fp);
-    if (frame_count == SIGRETURN_FRAME_COUNT - 1)
+    if (frame_count == sigreturn_frame_count - 1)
     {
       new_fp += 90;
     }
@@ -222,7 +221,7 @@ terribly wrong...\n");
   fprintf(stderr, "Stack trace seems successful - bottom reached\n");
 
 end:
-  fprintf(stderr, "Please read http://dev.mysql.com/doc/mysql/en/Using_stack_trace.html and follow instructions on how to resolve the stack trace. Resolved\n\
+  fprintf(stderr, "Please read http://dev.mysql.com/doc/mysql/en/using-stack-trace.html and follow instructions on how to resolve the stack trace. Resolved\n\
 stack trace is much more helpful in diagnosing the problem, so please do \n\
 resolve it\n");
 }

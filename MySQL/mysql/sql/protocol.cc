@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,9 +23,14 @@
 #endif
 
 #include "mysql_priv.h"
+#include "sp_rcontext.h"
 #include <stdarg.h>
 
 static const unsigned int PACKET_BUFFER_EXTRA_ALLOC= 1024;
+void net_send_error_packet(THD *thd, uint sql_errno, const char *err);
+#ifndef EMBEDDED_LIBRARY
+static void write_eof_packet(THD *thd, NET *net);
+#endif
 
 #ifndef EMBEDDED_LIBRARY
 bool Protocol::net_store_data(const char *from, uint length)
@@ -43,31 +47,43 @@ bool Protocol_prep::net_store_data(const char *from, uint length)
       packet->realloc(packet_length+9+length))
     return 1;
   char *to=(char*) net_store_length((char*) packet->ptr()+packet_length,
-				    (ulonglong) length);
+				    length);
   memcpy(to,from,length);
   packet->length((uint) (to+length-packet->ptr()));
   return 0;
 }
 
 
-	/* Send a error string to client */
+/*
+   Send a error string to client
 
-void send_error(THD *thd, uint sql_errno, const char *err)
+   Design note:
+
+   net_printf_error and net_send_error are low-level functions
+   that shall be used only when a new connection is being
+   established or at server startup.
+   For SIGNAL/RESIGNAL and GET DIAGNOSTICS functionality it's
+   critical that every error that can be intercepted is issued in one
+   place only, my_message_sql.
+*/
+void net_send_error(THD *thd, uint sql_errno, const char *err)
 {
-#ifndef EMBEDDED_LIBRARY 
-  uint length;
-  char buff[MYSQL_ERRMSG_SIZE+2], *pos;
-#endif
-  const char *orig_err= err;
   NET *net= &thd->net;
-  DBUG_ENTER("send_error");
+  bool generate_warning= thd->killed != THD::KILL_CONNECTION;
+  DBUG_ENTER("net_send_error");
   DBUG_PRINT("enter",("sql_errno: %d  err: %s", sql_errno,
 		      err ? err : net->last_error[0] ?
 		      net->last_error : "NULL"));
 
-#ifndef EMBEDDED_LIBRARY  /* TODO query cache in embedded library*/
-  query_cache_abort(net);
-#endif
+  DBUG_ASSERT(!thd->spcont);
+
+  if (net && net->no_send_error)
+  {
+    thd->clear_error();
+    DBUG_PRINT("info", ("sending error messages prohibited"));
+    DBUG_VOID_RETURN;
+  }
+
   thd->query_error=  1; // needed to catch query errors during replication
   if (!err)
   {
@@ -76,97 +92,51 @@ void send_error(THD *thd, uint sql_errno, const char *err)
     else
     {
       if ((err=net->last_error)[0])
+      {
 	sql_errno=net->last_errno;
+        generate_warning= 0;            // This warning has already been given
+      }
       else
       {
 	sql_errno=ER_UNKNOWN_ERROR;
 	err=ER(sql_errno);	 /* purecov: inspected */
       }
     }
-    orig_err= err;
   }
 
-#ifdef EMBEDDED_LIBRARY
-  net->last_errno= sql_errno;
-  strmake(net->last_error, err, sizeof(net->last_error)-1);
-  strmov(net->sqlstate, mysql_errno_to_sqlstate(sql_errno));
-#else
-
-  if (net->vio == 0)
+  if (generate_warning)
   {
-    if (thd->bootstrap)
-    {
-      /* In bootstrap it's ok to print on stderr */
-      fprintf(stderr,"ERROR: %d  %s\n",sql_errno,err);
-    }
-    DBUG_VOID_RETURN;
+    /* Error that we have not got with my_error() */
+    push_warning(thd, MYSQL_ERROR::WARN_LEVEL_ERROR, sql_errno, err);
   }
 
-  if (net->return_errno)
-  {				// new client code; Add errno before message
-    int2store(buff,sql_errno);
-    pos= buff+2;
-    if (thd->client_capabilities & CLIENT_PROTOCOL_41)
-    {
-      /* The first # is to make the protocol backward compatible */
-      buff[2]= '#';
-      pos= strmov(buff+3, mysql_errno_to_sqlstate(sql_errno));
-    }
-    length= (uint) (strmake(pos, err, MYSQL_ERRMSG_SIZE-1) - buff);
-    err=buff;
-  }
-  else
-  {
-    length=(uint) strlen(err);
-    set_if_smaller(length,MYSQL_ERRMSG_SIZE-1);
-  }
-  VOID(net_write_command(net,(uchar) 255, "", 0, (char*) err,length));
-#endif  /* EMBEDDED_LIBRARY*/
-  if (!thd->killed)
-    push_warning(thd, MYSQL_ERROR::WARN_LEVEL_ERROR, sql_errno,
-                 orig_err ? orig_err : ER(sql_errno));
+  net_send_error_packet(thd, sql_errno, err);
+
   thd->is_fatal_error=0;			// Error message is given
   thd->net.report_error= 0;
 
   /* Abort multi-result sets */
-  thd->lex->found_colon= 0;
   thd->server_status&= ~SERVER_MORE_RESULTS_EXISTS;
   DBUG_VOID_RETURN;
 }
-
-
-/*
-  Send a warning to the end user
-
-  SYNOPSIS
-    send_warning()
-    thd			Thread handler
-    sql_errno		Warning number (error message)
-    err			Error string.  If not set, use ER(sql_errno)
-
-  DESCRIPTION
-    Register the warning so that the user can get it with mysql_warnings()
-    Send an ok (+ warning count) to the end user.
-*/
-
-void send_warning(THD *thd, uint sql_errno, const char *err)
-{
-  DBUG_ENTER("send_warning");  
-  push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN, sql_errno,
-	       err ? err : ER(sql_errno));
-  send_ok(thd);
-  DBUG_VOID_RETURN;
-}
-
 
 /*
    Write error package and flush to client
    It's a little too low level, but I don't want to use another buffer for
    this
+
+   Design note:
+
+   net_printf_error and net_send_error are low-level functions
+   that shall be used only when a new connection is being
+   established or at server startup.
+   For SIGNAL/RESIGNAL and GET DIAGNOSTICS functionality it's
+   critical that every error that can be intercepted is issued in one
+   place only, my_message_sql.
 */
 
 void
-net_printf(THD *thd, uint errcode, ...)
+net_printf_error(THD *thd, uint errcode, ...)
 {
   va_list args;
   uint length,offset;
@@ -179,8 +149,17 @@ net_printf(THD *thd, uint errcode, ...)
 #endif
   NET *net= &thd->net;
 
-  DBUG_ENTER("net_printf");
+  DBUG_ENTER("net_printf_error");
   DBUG_PRINT("enter",("message: %u",errcode));
+
+  DBUG_ASSERT(!thd->spcont);
+
+  if (net && net->no_send_error)
+  {
+    thd->clear_error();
+    DBUG_PRINT("info", ("sending error messages prohibited"));
+    DBUG_VOID_RETURN;
+  }
 
   thd->query_error=  1; // needed to catch query errors during replication
 #ifndef EMBEDDED_LIBRARY
@@ -188,8 +167,8 @@ net_printf(THD *thd, uint errcode, ...)
 #endif
   va_start(args,errcode);
   /*
-    The following is needed to make net_printf() work with 0 argument for
-    errorcode and use the argument after that as the format string. This
+    The following is needed to make net_printf_error() work with 0 argument
+    for errorcode and use the argument after that as the format string. This
     is useful for rare errors that are not worth the hassle to put in
     errmsg.sys, but at the same time, the message is not fixed text
   */
@@ -252,7 +231,7 @@ net_printf(THD *thd, uint errcode, ...)
   strmake(net->last_error, text_pos, length);
   strmake(net->sqlstate, mysql_errno_to_sqlstate(errcode), SQLSTATE_LENGTH);
 #endif
-  if (!thd->killed)
+  if (thd->killed != THD::KILL_CONNECTION)
     push_warning(thd, MYSQL_ERROR::WARN_LEVEL_ERROR, errcode,
                  text_pos ? text_pos : ER(errcode));
   thd->is_fatal_error=0;			// Error message is given
@@ -294,11 +273,16 @@ send_ok(THD *thd, ha_rows affected_rows, ulonglong id, const char *message)
   DBUG_ENTER("send_ok");
 
   if (net->no_send_ok || !net->vio)	// hack for re-parsing queries
+  {
+    DBUG_PRINT("info", ("no send ok: %s, vio present: %s",
+                        (net->no_send_ok ? "YES" : "NO"),
+                        (net->vio ? "YES" : "NO")));
     DBUG_VOID_RETURN;
+  }
 
   buff[0]=0;					// No fields
-  pos=net_store_length(buff+1,(ulonglong) affected_rows);
-  pos=net_store_length(pos, (ulonglong) id);
+  pos=net_store_length(buff+1,affected_rows);
+  pos=net_store_length(pos, id);
   if (thd->client_capabilities & CLIENT_PROTOCOL_41)
   {
     DBUG_PRINT("info",
@@ -326,6 +310,9 @@ send_ok(THD *thd, ha_rows affected_rows, ulonglong id, const char *message)
   VOID(net_flush(net));
   /* We can't anymore send an error to the client */
   thd->net.report_error= 0;
+  thd->net.no_send_error= 1;
+  DBUG_PRINT("info", ("OK sent, so no more error sending allowed"));
+
   DBUG_VOID_RETURN;
 }
 
@@ -346,7 +333,7 @@ static char eof_buff[1]= { (char) 254 };        /* Marker for end of fields */
     254			Marker (1 byte)
     warning_count	Stored in 2 bytes; New in 4.1 protocol
     status_flag		Stored in 2 bytes;
-			For flags like SERVER_STATUS_MORE_RESULTS
+			For flags like SERVER_MORE_RESULTS_EXISTS
 
     Note that the warning count will not be sent if 'no_flush' is set as
     we don't want to report the warning count until all data is sent to the
@@ -354,37 +341,50 @@ static char eof_buff[1]= { (char) 254 };        /* Marker for end of fields */
 */    
 
 void
-send_eof(THD *thd, bool no_flush)
+send_eof(THD *thd)
 {
   NET *net= &thd->net;
   DBUG_ENTER("send_eof");
-  if (net->vio != 0)
+  if (net->vio != 0 && !net->no_send_eof)
   {
-    if (thd->client_capabilities & CLIENT_PROTOCOL_41)
-    {
-      uchar buff[5];
-      uint tmp= min(thd->total_warn_count, 65535);
-      buff[0]=254;
-      int2store(buff+1, tmp);
-      /*
-	The following test should never be true, but it's better to do it
-	because if 'is_fatal_error' is set the server is not going to execute
-	other queries (see the if test in dispatch_command / COM_QUERY)
-      */
-      if (thd->is_fatal_error)
-	thd->server_status&= ~SERVER_MORE_RESULTS_EXISTS;
-      int2store(buff+3, thd->server_status);
-      VOID(my_net_write(net,(char*) buff,5));
-      VOID(net_flush(net));
-    }
-    else
-    {
-      VOID(my_net_write(net,eof_buff,1));
-      if (!no_flush)
-	VOID(net_flush(net));
-    }
+    write_eof_packet(thd, net);
+    VOID(net_flush(net));
+    thd->net.no_send_error= 1;
+    DBUG_PRINT("info", ("EOF sent, so no more error sending allowed"));
   }
   DBUG_VOID_RETURN;
+}
+
+
+/*
+  Format EOF packet according to the current protocol and
+  write it to the network output buffer.
+*/
+
+static void write_eof_packet(THD *thd, NET *net)
+{
+  if (thd->client_capabilities & CLIENT_PROTOCOL_41)
+  {
+    uchar buff[5];
+    /*
+      Don't send warn count during SP execution, as the warn_list
+      is cleared between substatements, and mysqltest gets confused
+    */
+    uint tmp= (thd->spcont ? 0 : min(thd->total_warn_count, 65535));
+    buff[0]= 254;
+    int2store(buff+1, tmp);
+    /*
+      The following test should never be true, but it's better to do it
+      because if 'is_fatal_error' is set the server is not going to execute
+      other queries (see the if test in dispatch_command / COM_QUERY)
+    */
+    if (thd->is_fatal_error)
+      thd->server_status&= ~SERVER_MORE_RESULTS_EXISTS;
+    int2store(buff+3, thd->server_status);
+    VOID(my_net_write(net, (char*) buff, 5));
+  }
+  else
+    VOID(my_net_write(net, eof_buff, 1));
 }
 
 /*
@@ -404,6 +404,47 @@ bool send_old_password_request(THD *thd)
   return my_net_write(net, eof_buff, 1) || net_flush(net);
 }
 
+
+void net_send_error_packet(THD *thd, uint sql_errno, const char *err)
+{
+  NET *net= &thd->net;
+  uint length;
+  char buff[MYSQL_ERRMSG_SIZE+2], *pos;
+
+  DBUG_ENTER("send_error_packet");
+
+  if (net->vio == 0)
+  {
+    if (thd->bootstrap)
+    {
+      /* In bootstrap it's ok to print on stderr */
+      fprintf(stderr,"ERROR: %d  %s\n",sql_errno,err);
+    }
+    DBUG_VOID_RETURN;
+  }
+
+  if (net->return_errno)
+  {				// new client code; Add errno before message
+    int2store(buff,sql_errno);
+    pos= buff+2;
+    if (thd->client_capabilities & CLIENT_PROTOCOL_41)
+    {
+      /* The first # is to make the protocol backward compatible */
+      buff[2]= '#';
+      pos= strmov(buff+3, mysql_errno_to_sqlstate(sql_errno));
+    }
+    length= (uint) (strmake(pos, err, MYSQL_ERRMSG_SIZE-1) - buff);
+    err=buff;
+  }
+  else
+  {
+    length=(uint) strlen(err);
+    set_if_smaller(length,MYSQL_ERRMSG_SIZE-1);
+  }
+  VOID(net_write_command(net,(uchar) 255, "", 0, (char*) err,length));
+  DBUG_VOID_RETURN;
+}
+
 #endif /* EMBEDDED_LIBRARY */
 
 /*
@@ -416,7 +457,7 @@ bool send_old_password_request(THD *thd)
   ulonglong for bigger numbers.
 */
 
-char *net_store_length(char *pkg, uint length)
+static char *net_store_length_fast(char *pkg, uint length)
 {
   uchar *packet=(uchar*) pkg;
   if (length < 251)
@@ -439,7 +480,7 @@ char *net_store_length(char *pkg, uint length)
 
 char *net_store_data(char *to,const char *from, uint length)
 {
-  to=net_store_length(to,length);
+  to=net_store_length_fast(to,length);
   memcpy(to,from,length);
   return to+length;
 }
@@ -448,7 +489,7 @@ char *net_store_data(char *to,int32 from)
 {
   char buff[20];
   uint length=(uint) (int10_to_str(from,buff,10)-buff);
-  to=net_store_length(to,length);
+  to=net_store_length_fast(to,length);
   memcpy(to,buff,length);
   return to+length;
 }
@@ -457,7 +498,7 @@ char *net_store_data(char *to,longlong from)
 {
   char buff[22];
   uint length=(uint) (longlong10_to_str(from,buff,10)-buff);
-  to=net_store_length(to,length);
+  to=net_store_length_fast(to,length);
   memcpy(to,buff,length);
   return to+length;
 }
@@ -472,7 +513,7 @@ void Protocol::init(THD *thd_arg)
   thd=thd_arg;
   packet= &thd->packet;
   convert= &thd->convert_buffer;
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   field_types= 0;
 #endif
 }
@@ -497,6 +538,7 @@ bool Protocol::flush()
     flag	Bit mask with the following functions:
 		1 send number of rows
 		2 send default values
+                4 don't write eof packet
 
   DESCRIPTION
     Sum fields has table name empty and field_name.
@@ -507,7 +549,7 @@ bool Protocol::flush()
 */
 
 #ifndef EMBEDDED_LIBRARY
-bool Protocol::send_fields(List<Item> *list, uint flag)
+bool Protocol::send_fields(List<Item> *list, uint flags)
 {
   List_iterator_fast<Item> it(*list);
   Item *item;
@@ -518,13 +560,13 @@ bool Protocol::send_fields(List<Item> *list, uint flag)
   CHARSET_INFO *thd_charset= thd->variables.character_set_results;
   DBUG_ENTER("send_fields");
 
-  if (flag & 1)
+  if (flags & SEND_NUM_ROWS)
   {				// Packet with number of elements
-    char *pos=net_store_length(buff, (uint) list->elements);
+    char *pos=net_store_length(buff, list->elements);
     (void) my_net_write(&thd->net, buff,(uint) (pos-buff));
   }
 
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   field_types= (enum_field_types*) thd->alloc(sizeof(field_types) *
 					      list->elements);
   uint count= 0;
@@ -536,11 +578,16 @@ bool Protocol::send_fields(List<Item> *list, uint flag)
     CHARSET_INFO *cs= system_charset_info;
     Send_field field;
     item->make_field(&field);
+
+    /* Keep things compatible for old clients */
+    if (field.type == MYSQL_TYPE_VARCHAR)
+      field.type= MYSQL_TYPE_VAR_STRING;
+
     prot.prepare_for_resend();
 
     if (thd->client_capabilities & CLIENT_PROTOCOL_41)
     {
-      if (prot.store("def", 3, cs, thd_charset) ||
+      if (prot.store(STRING_WITH_LEN("def"), cs, thd_charset) ||
 	  prot.store(field.db_name, (uint) strlen(field.db_name),
 		     cs, thd_charset) ||
 	  prot.store(field.table_name, (uint) strlen(field.table_name),
@@ -626,31 +673,23 @@ bool Protocol::send_fields(List<Item> *list, uint flag)
       }
     }
     local_packet->length((uint) (pos - local_packet->ptr()));
-    if (flag & 2)
+    if (flags & SEND_DEFAULTS)
       item->send(&prot, &tmp);			// Send default value
     if (prot.write())
       break;					/* purecov: inspected */
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
     field_types[count++]= field.type;
 #endif
   }
 
-  my_net_write(&thd->net, eof_buff, 1);
+  if (flags & SEND_EOF)
+    write_eof_packet(thd, &thd->net);
   DBUG_RETURN(prepare_for_send(list));
 
 err:
-  send_error(thd,ER_OUT_OF_RESOURCES);		/* purecov: inspected */
+  my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES),
+             MYF(0));	/* purecov: inspected */
   DBUG_RETURN(1);				/* purecov: inspected */
-}
-
-
-bool Protocol::send_records_num(List<Item> *list, ulonglong records)
-{
-  char *pos;
-  char buff[20];
-  pos=net_store_length(buff, (uint) list->elements);
-  pos=net_store_length(pos, records);
-  return my_net_write(&thd->net, buff,(uint) (pos-buff));
 }
 
 
@@ -722,14 +761,14 @@ bool Protocol::store(I_List<i_string>* str_list)
 void Protocol_simple::prepare_for_resend()
 {
   packet->length(0);
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   field_pos= 0;
 #endif
 }
 
 bool Protocol_simple::store_null()
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   field_pos++;
 #endif
   char buff[1];
@@ -763,9 +802,11 @@ bool Protocol::store_string_aux(const char *from, uint length,
 bool Protocol_simple::store(const char *from, uint length,
 			    CHARSET_INFO *fromcs, CHARSET_INFO *tocs)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_DECIMAL ||
+              field_types[field_pos] == MYSQL_TYPE_BIT ||
+              field_types[field_pos] == MYSQL_TYPE_NEWDECIMAL ||
 	      (field_types[field_pos] >= MYSQL_TYPE_ENUM &&
 	       field_types[field_pos] <= MYSQL_TYPE_GEOMETRY));
   field_pos++;
@@ -778,9 +819,11 @@ bool Protocol_simple::store(const char *from, uint length,
 			    CHARSET_INFO *fromcs)
 {
   CHARSET_INFO *tocs= this->thd->variables.character_set_results;
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_DECIMAL ||
+              field_types[field_pos] == MYSQL_TYPE_BIT ||
+              field_types[field_pos] == MYSQL_TYPE_NEWDECIMAL ||
 	      (field_types[field_pos] >= MYSQL_TYPE_ENUM &&
 	       field_types[field_pos] <= MYSQL_TYPE_GEOMETRY));
   field_pos++;
@@ -791,7 +834,7 @@ bool Protocol_simple::store(const char *from, uint length,
 
 bool Protocol_simple::store_tiny(longlong from)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 || field_types[field_pos] == MYSQL_TYPE_TINY);
   field_pos++;
 #endif
@@ -803,8 +846,9 @@ bool Protocol_simple::store_tiny(longlong from)
 
 bool Protocol_simple::store_short(longlong from)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
+	      field_types[field_pos] == MYSQL_TYPE_YEAR ||
 	      field_types[field_pos] == MYSQL_TYPE_SHORT);
   field_pos++;
 #endif
@@ -816,7 +860,7 @@ bool Protocol_simple::store_short(longlong from)
 
 bool Protocol_simple::store_long(longlong from)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
               field_types[field_pos] == MYSQL_TYPE_INT24 ||
               field_types[field_pos] == MYSQL_TYPE_LONG);
@@ -830,7 +874,7 @@ bool Protocol_simple::store_long(longlong from)
 
 bool Protocol_simple::store_longlong(longlong from, bool unsigned_flag)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_LONGLONG);
   field_pos++;
@@ -843,9 +887,23 @@ bool Protocol_simple::store_longlong(longlong from, bool unsigned_flag)
 }
 
 
+bool Protocol_simple::store_decimal(const my_decimal *d)
+{
+#ifndef DBUG_OFF
+  DBUG_ASSERT(field_types == 0 ||
+              field_types[field_pos] == MYSQL_TYPE_NEWDECIMAL);
+  field_pos++;
+#endif
+  char buff[DECIMAL_MAX_STR_LENGTH];
+  String str(buff, sizeof(buff), &my_charset_bin);
+  (void) my_decimal2string(E_DEC_FATAL_ERROR, d, 0, 0, 0, &str);
+  return net_store_data(str.ptr(), str.length());
+}
+
+
 bool Protocol_simple::store(float from, uint32 decimals, String *buffer)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_FLOAT);
   field_pos++;
@@ -857,7 +915,7 @@ bool Protocol_simple::store(float from, uint32 decimals, String *buffer)
 
 bool Protocol_simple::store(double from, uint32 decimals, String *buffer)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_DOUBLE);
   field_pos++;
@@ -871,7 +929,7 @@ bool Protocol_simple::store(Field *field)
 {
   if (field->is_null())
     return store_null();
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   field_pos++;
 #endif
   char buff[MAX_FIELD_WIDTH];
@@ -890,9 +948,9 @@ bool Protocol_simple::store(Field *field)
 */
 
 
-bool Protocol_simple::store(TIME *tm)
+bool Protocol_simple::store(MYSQL_TIME *tm)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_DATETIME ||
 	      field_types[field_pos] == MYSQL_TYPE_TIMESTAMP);
@@ -913,9 +971,9 @@ bool Protocol_simple::store(TIME *tm)
 }
 
 
-bool Protocol_simple::store_date(TIME *tm)
+bool Protocol_simple::store_date(MYSQL_TIME *tm)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_DATE);
   field_pos++;
@@ -932,9 +990,9 @@ bool Protocol_simple::store_date(TIME *tm)
         we support 0-6 decimals for time.
 */
 
-bool Protocol_simple::store_time(TIME *tm)
+bool Protocol_simple::store_time(MYSQL_TIME *tm)
 {
-#ifndef DEBUG_OFF
+#ifndef DBUG_OFF
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_TIME);
   field_pos++;
@@ -994,12 +1052,6 @@ void Protocol_prep::prepare_for_resend()
 bool Protocol_prep::store(const char *from, uint length, CHARSET_INFO *fromcs)
 {
   CHARSET_INFO *tocs= thd->variables.character_set_results;
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_DECIMAL ||
-	      (field_types[field_pos] >= MYSQL_TYPE_ENUM &&
-	       field_types[field_pos] <= MYSQL_TYPE_GEOMETRY));
-#endif
   field_pos++;
   return store_string_aux(from, length, fromcs, tocs);
 }
@@ -1007,12 +1059,6 @@ bool Protocol_prep::store(const char *from, uint length, CHARSET_INFO *fromcs)
 bool Protocol_prep::store(const char *from,uint length,
 			  CHARSET_INFO *fromcs, CHARSET_INFO *tocs)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_DECIMAL ||
-	      (field_types[field_pos] >= MYSQL_TYPE_ENUM &&
-	       field_types[field_pos] <= MYSQL_TYPE_GEOMETRY));
-#endif
   field_pos++;
   return store_string_aux(from, length, fromcs, tocs);
 }
@@ -1030,10 +1076,6 @@ bool Protocol_prep::store_null()
 
 bool Protocol_prep::store_tiny(longlong from)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_TINY);
-#endif
   char buff[1];
   field_pos++;
   buff[0]= (uchar) from;
@@ -1043,11 +1085,6 @@ bool Protocol_prep::store_tiny(longlong from)
 
 bool Protocol_prep::store_short(longlong from)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-        field_types[field_pos] == MYSQL_TYPE_SHORT ||
-        field_types[field_pos] == MYSQL_TYPE_YEAR);
-#endif
   field_pos++;
   char *to= packet->prep_append(2, PACKET_BUFFER_EXTRA_ALLOC);
   if (!to)
@@ -1059,11 +1096,6 @@ bool Protocol_prep::store_short(longlong from)
 
 bool Protocol_prep::store_long(longlong from)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_INT24 ||
-	      field_types[field_pos] == MYSQL_TYPE_LONG);
-#endif
   field_pos++;
   char *to= packet->prep_append(4, PACKET_BUFFER_EXTRA_ALLOC);
   if (!to)
@@ -1075,10 +1107,6 @@ bool Protocol_prep::store_long(longlong from)
 
 bool Protocol_prep::store_longlong(longlong from, bool unsigned_flag)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_LONGLONG);
-#endif
   field_pos++;
   char *to= packet->prep_append(8, PACKET_BUFFER_EXTRA_ALLOC);
   if (!to)
@@ -1087,13 +1115,21 @@ bool Protocol_prep::store_longlong(longlong from, bool unsigned_flag)
   return 0;
 }
 
+bool Protocol_prep::store_decimal(const my_decimal *d)
+{
+#ifndef DBUG_OFF
+  DBUG_ASSERT(field_types == 0 ||
+              field_types[field_pos] == MYSQL_TYPE_NEWDECIMAL);
+  field_pos++;
+#endif
+  char buff[DECIMAL_MAX_STR_LENGTH];
+  String str(buff, sizeof(buff), &my_charset_bin);
+  (void) my_decimal2string(E_DEC_FATAL_ERROR, d, 0, 0, 0, &str);
+  return store(str.ptr(), str.length(), str.charset());
+}
 
 bool Protocol_prep::store(float from, uint32 decimals, String *buffer)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_FLOAT);
-#endif
   field_pos++;
   char *to= packet->prep_append(4, PACKET_BUFFER_EXTRA_ALLOC);
   if (!to)
@@ -1105,10 +1141,6 @@ bool Protocol_prep::store(float from, uint32 decimals, String *buffer)
 
 bool Protocol_prep::store(double from, uint32 decimals, String *buffer)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_DOUBLE);
-#endif
   field_pos++;
   char *to= packet->prep_append(8, PACKET_BUFFER_EXTRA_ALLOC);
   if (!to)
@@ -1130,14 +1162,8 @@ bool Protocol_prep::store(Field *field)
 }
 
 
-bool Protocol_prep::store(TIME *tm)
+bool Protocol_prep::store(MYSQL_TIME *tm)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_DATETIME ||
-	      field_types[field_pos] == MYSQL_TYPE_DATE ||
-	      field_types[field_pos] == MYSQL_TYPE_TIMESTAMP);
-#endif
   char buff[12],*pos;
   uint length;
   field_pos++;
@@ -1162,7 +1188,7 @@ bool Protocol_prep::store(TIME *tm)
   return packet->append(buff, length+1, PACKET_BUFFER_EXTRA_ALLOC);
 }
 
-bool Protocol_prep::store_date(TIME *tm)
+bool Protocol_prep::store_date(MYSQL_TIME *tm)
 {
   tm->hour= tm->minute= tm->second=0;
   tm->second_part= 0;
@@ -1170,12 +1196,8 @@ bool Protocol_prep::store_date(TIME *tm)
 }
 
 
-bool Protocol_prep::store_time(TIME *tm)
+bool Protocol_prep::store_time(MYSQL_TIME *tm)
 {
-#ifndef DEBUG_OFF
-  DBUG_ASSERT(field_types == 0 ||
-	      field_types[field_pos] == MYSQL_TYPE_TIME);
-#endif
   char buff[13], *pos;
   uint length;
   field_pos++;
@@ -1202,12 +1224,3 @@ bool Protocol_prep::store_time(TIME *tm)
   buff[0]=(char) length;			// Length is stored first
   return packet->append(buff, length+1, PACKET_BUFFER_EXTRA_ALLOC);
 }
-
-#ifdef EMBEDDED_LIBRARY
-/* Should be removed when we define the Protocol_cursor's future */
-bool Protocol_cursor::write()
-{
-  return Protocol_simple::write();
-}
-#endif
-

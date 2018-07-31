@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,6 +15,7 @@
 
 #define DBTUX_META_CPP
 #include "Dbtux.hpp"
+#include <my_sys.h>
 
 /*
  * Create index.
@@ -84,7 +84,6 @@ Dbtux::execTUXFRAGREQ(Signal* signal)
     new (fragPtr.p) Frag(c_scanOpPool);
     fragPtr.p->m_tableId = req->primaryTableId;
     fragPtr.p->m_indexId = req->tableId;
-    fragPtr.p->m_fragOff = req->fragOff;
     fragPtr.p->m_fragId = req->fragId;
     fragPtr.p->m_numAttrs = req->noOfAttr;
     fragPtr.p->m_storeNullKey = true;  // not yet configurable
@@ -112,7 +111,6 @@ Dbtux::execTUXFRAGREQ(Signal* signal)
       indexPtr.p->m_state = Index::Defining;
       indexPtr.p->m_tableType = (DictTabInfo::TableType)req->tableType;
       indexPtr.p->m_tableId = req->primaryTableId;
-      indexPtr.p->m_fragOff = req->fragOff;
       indexPtr.p->m_numAttrs = req->noOfAttr;
       indexPtr.p->m_storeNullKey = true;  // not yet configurable
       // allocate attribute descriptors
@@ -128,7 +126,6 @@ Dbtux::execTUXFRAGREQ(Signal* signal)
           indexPtr.p->m_state == Index::Defining &&
           indexPtr.p->m_tableType == (DictTabInfo::TableType)req->tableType &&
           indexPtr.p->m_tableId == req->primaryTableId &&
-          indexPtr.p->m_fragOff == req->fragOff &&
           indexPtr.p->m_numAttrs == req->noOfAttr);
     }
     // copy metadata address to each fragment
@@ -203,7 +200,7 @@ Dbtux::execTUX_ADD_ATTRREQ(Signal* signal)
     DescAttr& descAttr = descEnt.m_descAttr[attrId];
     descAttr.m_attrDesc = req->attrDescriptor;
     descAttr.m_primaryAttrId = req->primaryAttrId;
-    descAttr.m_typeId = req->extTypeInfo & 0xFF;
+    descAttr.m_typeId = AttributeDescriptor::getType(req->attrDescriptor);
     descAttr.m_charset = (req->extTypeInfo >> 16);
 #ifdef VM_TRACE
     if (debugFlags & DebugMeta) {
@@ -218,17 +215,16 @@ Dbtux::execTUX_ADD_ATTRREQ(Signal* signal)
       errorCode = TuxAddAttrRef::InvalidAttributeType;
       break;
     }
-#ifdef dbtux_uses_charset
     if (descAttr.m_charset != 0) {
-      CHARSET_INFO *cs = get_charset(descAttr.m_charset, MYF(0));
-      // here use the non-binary type
-      if (! NdbSqlUtil::usable_in_ordered_index(descAttr.m_typeId, cs)) {
+      uint err;
+      CHARSET_INFO *cs = all_charsets[descAttr.m_charset];
+      ndbrequire(cs != 0);
+      if ((err = NdbSqlUtil::check_column_for_ordered_index(descAttr.m_typeId, cs))) {
         jam();
-        errorCode = TuxAddAttrRef::InvalidCharset;
+        errorCode = (TuxAddAttrRef::ErrorCode) err;
         break;
       }
     }
-#endif
     const bool lastAttr = (indexPtr.p->m_numAttrs == fragOpPtr.p->m_numAttrsRecvd);
     if (ERROR_INSERTED(12003) && fragOpPtr.p->m_fragNo == 0 && attrId == 0 ||
         ERROR_INSERTED(12004) && fragOpPtr.p->m_fragNo == 0 && lastAttr ||

@@ -1,24 +1,20 @@
 .\"     Title: \fBmyisampack\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAMPACK\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYISAMPACK\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
 myisampack \- generate compressed, read\-only MyISAM tables
-.br
-pack_isam \- generate compressed, read\-only ISAM tables
 .SH "SYNOPSIS"
 .HP 35
 \fBmyisampack [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIfile_name\fR\fR\fB ...\fR
-.HP 32
-\fBpack_isam [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIfile_name\fR\fR\fB \&...\fR
 .SH "DESCRIPTION"
 .PP
 The
@@ -78,7 +74,7 @@ columns. (The older
 \fBpack_isam\fR
 program for
 ISAM
-tables does not have this capability.)
+tables did not have this capability.)
 .sp
 .RE
 .PP
@@ -122,7 +118,7 @@ Make a backup of each table's data file using the name
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
@@ -162,18 +158,6 @@ Join all tables named on the command line into a single table
 \fIbig_tbl_name\fR. All tables that are to be combined
 \fImust\fR
 have identical structure (same column names and types, same indexes, and so forth).
-.TP 3n
-\(bu
-\fB\-\-packlength=\fR\fB\fIlen\fR\fR,
-\fB\-p \fR\fB\fIlen\fR\fR
-.sp
-Specify the row length storage size, in bytes. The value should be 1, 2, or 3.
-\fBmyisampack\fR
-stores all rows with length pointers of 1, 2, or 3 bytes. In most normal cases,
-\fBmyisampack\fR
-can determine the correct length value before it begins packing the file, but it may notice during the packing process that it could have used a shorter length. In this case,
-\fBmyisampack\fR
-prints a note that you could use a shorter row length the next time you pack the same file.
 .TP 3n
 \(bu
 \fB\-\-silent\fR,
@@ -557,7 +541,7 @@ or
 \fBisamchk\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -565,35 +549,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

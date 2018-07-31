@@ -59,7 +59,7 @@ drop table t1;
 #
 # Test inserting and updating with NULL
 #
-CREATE TABLE t1 (a varchar(16) NOT NULL, b smallint(6) NOT NULL, c datetime NOT NULL, d smallint(6) NOT NULL);
+CREATE TABLE t1 (a varchar(16) NOT NULL default '', b smallint(6) NOT NULL default 0, c datetime NOT NULL default '0000-00-00 00:00:00', d smallint(6) NOT NULL default 0);
 INSERT INTO t1 SET a = "", d= "2003-01-14 03:54:55";
 UPDATE t1 SET d=1/NULL;
 UPDATE t1 SET d=NULL;
@@ -100,9 +100,9 @@ drop table t1;
 select cast(NULL as signed);
 
 #
-# Test case for bug #4256
+# IS NULL is unable to use index in range if column is declared not null
+# (Bug #4256)
 #
-
 create table t1(i int, key(i));
 insert into t1 values(1);
 insert into t1 select i*2 from t1;
@@ -114,9 +114,12 @@ insert into t1 select i*2 from t1;
 insert into t1 select i*2 from t1;
 insert into t1 select i*2 from t1;
 insert into t1 select i*2 from t1;
+insert into t1 values(null);
 explain select * from t1 where i=2 or i is null;
+select count(*) from t1 where i=2 or i is null;
 alter table t1 change i i int not null;
 explain select * from t1 where i=2 or i is null;
+select count(*) from t1 where i=2 or i is null;
 drop table t1;
 
 #
@@ -174,7 +177,7 @@ drop table t1;
 # non-null string collation, i.e. case insensitively,
 # rather than according to NULL's collation, i.e. case sensitively
 #
--- in field
+# in field
 select 
   case 'str' when 'STR' then 'str' when null then 'null' end as c01,
   case 'str' when null then 'null' when 'STR' then 'str' end as c02,

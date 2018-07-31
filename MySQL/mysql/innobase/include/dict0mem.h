@@ -54,7 +54,8 @@ dict_mem_table_create(
 					of the table is placed; this parameter
 					is ignored if the table is made
 					a member of a cluster */
-	ulint		n_cols);	/* in: number of columns */
+	ulint		n_cols,		/* in: number of columns */
+	ibool		comp);		/* in: TRUE=compact page format */
 /********************************************************************
 Free a table memory object. */
 
@@ -158,12 +159,12 @@ struct dict_col_struct{
 				in some of the functions below */
 };
 
-/* DICT_MAX_COL_PREFIX_LEN is measured in bytes. Starting from 4.1.6, we
-set max col prefix len to < 3 * 256, so that one can create a column prefix
-index on 255 characters of a TEXT field also in the UTF-8 charset. In that
-charset, a character may take at most 3 bytes. */
+/* DICT_MAX_INDEX_COL_LEN is measured in bytes and is the max index column
+length + 1. Starting from 4.1.6, we set it to < 3 * 256, so that one can
+create a column prefix index on 255 characters of a TEXT field also in the
+UTF-8 charset. In that charset, a character may take at most 3 bytes. */
 
-#define DICT_MAX_COL_PREFIX_LEN	768
+#define DICT_MAX_INDEX_COL_LEN		768
 
 /* Data structure for a field in an index */
 struct dict_field_struct{
@@ -175,9 +176,16 @@ struct dict_field_struct{
 					prefix in bytes in a MySQL index of
 					type, e.g., INDEX (textcol(25));
 					must be smaller than
-					DICT_MAX_COL_PREFIX_LEN; NOTE that
+					DICT_MAX_INDEX_COL_LEN; NOTE that
 					in the UTF-8 charset, MySQL sets this
 					to 3 * the prefix len in UTF-8 chars */
+	ulint		fixed_len;	/* 0 or the fixed length of the
+					column if smaller than
+					DICT_MAX_INDEX_COL_LEN */
+	ulint		fixed_offs;	/* offset to the field, or
+					ULINT_UNDEFINED if it is not fixed
+					within the record (due to preceding
+					variable-length fields) */
 };
 
 /* Data structure for an index tree */
@@ -217,7 +225,6 @@ struct dict_index_struct{
 	const char*	table_name; /* table name */
 	dict_table_t*	table;	/* back pointer to table */
 	ulint		space;	/* space where the index tree is placed */
-	ulint		page_no;/* page number of the index tree root */
 	ulint		trx_id_offset;/* position of the the trx id column
 				in a clustered index record, if the fields
 				before it are known to be of a fixed size,
@@ -232,6 +239,7 @@ struct dict_index_struct{
 	ulint		n_def;	/* number of fields defined so far */
 	ulint		n_fields;/* number of fields in the index */
 	dict_field_t*	fields;	/* array of field descriptions */
+	ulint		n_nullable;/* number of nullable fields */
 	UT_LIST_NODE_T(dict_index_t)
 			indexes;/* list of indexes of the table */
 	dict_tree_t*	tree;	/* index tree struct */
@@ -327,6 +335,7 @@ struct dict_table_struct{
 	ibool		tablespace_discarded;/* this flag is set TRUE when the
 				user calls DISCARD TABLESPACE on this table,
 				and reset to FALSE in IMPORT TABLESPACE */
+	ibool		comp;	/* flag: TRUE=compact page format */
 	hash_node_t	name_hash; /* hash chain node */
 	hash_node_t	id_hash; /* hash chain node */
 	ulint		n_def;	/* number of columns defined so far */

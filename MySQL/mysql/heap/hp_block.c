@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -76,7 +75,7 @@ int hp_get_new_block(HP_BLOCK *block, ulong *alloc_length)
     and my_default_record_cache_size we get about 1/128 unused memory.
    */
   *alloc_length=sizeof(HP_PTRS)*i+block->records_in_block* block->recbuffer;
-  if (!(root=(HP_PTRS*) my_malloc(*alloc_length,MYF(0))))
+  if (!(root=(HP_PTRS*) my_malloc(*alloc_length,MYF(MY_WME))))
     return 1;
 
   if (i == 0)

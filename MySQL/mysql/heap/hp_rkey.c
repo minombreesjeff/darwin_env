@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004, 2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,7 +22,7 @@ int heap_rkey(HP_INFO *info, byte *record, int inx, const byte *key,
   HP_SHARE *share= info->s;
   HP_KEYDEF *keyinfo= share->keydef + inx;
   DBUG_ENTER("heap_rkey");
-  DBUG_PRINT("enter",("base: %lx  inx: %d",info,inx));
+  DBUG_PRINT("enter",("info: 0x%lx  inx: %d", (long) info, inx));
 
   if ((uint) inx >= share->keys)
   {
@@ -64,7 +63,7 @@ int heap_rkey(HP_INFO *info, byte *record, int inx, const byte *key,
       info->update= 0;
       DBUG_RETURN(my_errno);
     }
-    if (!(keyinfo->flag & HA_NOSAME))
+    if (!(keyinfo->flag & HA_NOSAME) || (keyinfo->flag & HA_END_SPACE_KEY))
       memcpy(info->lastkey, key, (size_t) keyinfo->length);
   }
   memcpy(record, pos, (size_t) share->reclength);

@@ -39,58 +39,38 @@ column definitions, or records in the insert buffer, we use this
 charset-collation code for them. */
 
 ulint	data_mysql_default_charset_coll		= 99999999;
-ulint	data_mysql_latin1_swedish_charset_coll	= 99999999;
 
-dtype_t		dtype_binary_val = {DATA_BINARY, 0, 0, 0};
+dtype_t		dtype_binary_val = {DATA_BINARY, 0, 0, 0, 0, 0};
 dtype_t* 	dtype_binary 	= &dtype_binary_val;
 
 /*************************************************************************
-Checks if a string type has to be compared by the MySQL comparison functions.
-InnoDB internally only handles binary byte string comparisons, as well as
-latin1_swedish_ci strings. For example, UTF-8 strings have to be compared
-by MySQL. */
-
-ibool
-dtype_str_needs_mysql_cmp(
-/*======================*/
-				/* out: TRUE if a string type that requires
-				comparison with MySQL functions */
-	dtype_t*	dtype)	/* in: type struct */
-{
-	if (dtype->mtype == DATA_MYSQL
-	    || dtype->mtype == DATA_VARMYSQL
-	    || (dtype->mtype == DATA_BLOB
-	        && 0 == (dtype->prtype & DATA_BINARY_TYPE)
-		&& dtype_get_charset_coll(dtype->prtype) !=
-				data_mysql_latin1_swedish_charset_coll)) {
-		return(TRUE);
-	}
-
-	return(FALSE);
-}
-
-/*************************************************************************
-For the documentation of this function, see innobase_get_at_most_n_mbchars()
-in ha_innodb.cc. */
+Determine how many bytes the first n characters of the given string occupy.
+If the string is shorter than n characters, returns the number of bytes
+the characters in the string occupy. */
 
 ulint
 dtype_get_at_most_n_mbchars(
 /*========================*/
-	dtype_t*	dtype,
-	ulint		prefix_len,
-	ulint		data_len,
-	const char*	str)
+					/* out: length of the prefix,
+					in bytes */
+	const dtype_t*	dtype,		/* in: data type */
+	ulint		prefix_len,	/* in: length of the requested
+					prefix, in characters, multiplied by
+					dtype_get_mbmaxlen(dtype) */
+	ulint		data_len,	/* in: length of str (in bytes) */
+	const char*	str)		/* in: the string whose prefix
+					length is being determined */
 {
+#ifndef UNIV_HOTBACKUP
 	ut_a(data_len != UNIV_SQL_NULL);
+	ut_ad(!dtype->mbmaxlen || !(prefix_len % dtype->mbmaxlen));
 
-	if (dtype_str_needs_mysql_cmp(dtype)) {
+	if (dtype->mbminlen != dtype->mbmaxlen) {
+		ut_a(!(prefix_len % dtype->mbmaxlen));
 		return(innobase_get_at_most_n_mbchars(
 				dtype_get_charset_coll(dtype->prtype),
 				prefix_len, data_len, str));
 	}
-
-	/* We assume here that the string types that InnoDB itself can compare
-	are single-byte charsets! */
 
 	if (prefix_len < data_len) {
 
@@ -99,6 +79,12 @@ dtype_get_at_most_n_mbchars(
 	}
 
 	return(data_len);
+#else /* UNIV_HOTBACKUP */
+	/* This function depends on MySQL code that is not included in
+	InnoDB Hot Backup builds.  Besides, this function should never
+	be called in InnoDB Hot Backup. */
+	ut_error;
+#endif /* UNIV_HOTBACKUP */
 }
 
 /*************************************************************************
@@ -206,8 +192,10 @@ dtype_validate(
 	ut_a((type->mtype >= DATA_VARCHAR) && (type->mtype <= DATA_MYSQL));
 	
 	if (type->mtype == DATA_SYS) {
-		ut_a(type->prtype <= DATA_MIX_ID);
+		ut_a((type->prtype & DATA_MYSQL_TYPE_MASK) < DATA_N_SYS_COLS);
 	}
+
+	ut_a(type->mbminlen <= type->mbmaxlen);
 
 	return(TRUE);
 }
@@ -264,7 +252,7 @@ dtype_print(
 		} else if (prtype == DATA_ENGLISH) {
 			fputs("DATA_ENGLISH", stderr);
 		} else {
-			fprintf(stderr, "prtype %lu", (ulong) mtype);
+			fprintf(stderr, "prtype %lu", (ulong) prtype);
 		}
 	}
 

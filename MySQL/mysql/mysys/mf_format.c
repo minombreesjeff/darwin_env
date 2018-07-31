@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,13 +16,12 @@
 #include "mysys_priv.h"
 #include <m_string.h>
 
-	/*
-	  Formats a filename with possible replace of directory of extension
-	  Function can handle the case where 'to' == 'name'
-	  For a description of the flag values, consult my_sys.h
-	  The arguments should be in unix format.
-	*/
-
+/*
+  Formats a filename with possible replace of directory of extension
+  Function can handle the case where 'to' == 'name'
+  For a description of the flag values, consult my_sys.h
+  The arguments should be in unix format.
+*/
 
 my_string fn_format(my_string to, const char *name, const char *dir,
 		    const char *extension, uint flag)
@@ -54,6 +52,7 @@ my_string fn_format(my_string to, const char *name, const char *dir,
     pack_dirname(dev,dev);			/* Put in ./.. and ~/.. */
   if (flag & MY_UNPACK_FILENAME)
     (void) unpack_dirname(dev,dev);		/* Replace ~/.. with dir */
+
   if ((pos= (char*) strchr(name,FN_EXTCHAR)) != NullS)
   {
     if ((flag & MY_REPLACE_EXT) == 0)		/* If we should keep old ext */

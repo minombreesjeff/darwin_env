@@ -4,17 +4,30 @@
 
 select CAST(1-2 AS UNSIGNED);
 select CAST(CAST(1-2 AS UNSIGNED) AS SIGNED INTEGER);
+select CAST('10 ' as unsigned integer);
 select cast(-5 as unsigned) | 1, cast(-5 as unsigned) & -1;
 select cast(-5 as unsigned) -1, cast(-5 as unsigned) + 1;
 select ~5, cast(~5 as signed);
 explain extended select ~5, cast(~5 as signed);
 select cast(5 as unsigned) -6.0;
-select cast(NULL as signed), cast(1/0 as signed); 
+select cast(NULL as signed), cast(1/0 as signed);
+#
+# Bug #28250: Run-Time Check Failure #3 - The variable 'value' is being used 
+# without being def
+# 
+# The following line causes Run-Time Check Failure on 
+# binaries built with Visual C++ 2005
 select cast(NULL as unsigned), cast(1/0 as unsigned); 
 select cast("A" as binary) = "a", cast(BINARY "a" as CHAR) = "A";
 select cast("2001-1-1" as DATE), cast("2001-1-1" as DATETIME);
 select cast("1:2:3" as TIME);
 select CONVERT("2004-01-22 21:45:33",DATE);
+select 10+'10';
+select 10.0+'10';
+select 10E+0+'10';
+
+# The following cast creates warnings
+
 select CONVERT(DATE "2004-01-22 21:45:33" USING latin1);
 select CONVERT(DATE "2004-01-22 21:45:33",CHAR);
 select CONVERT(DATE "2004-01-22 21:45:33",CHAR(4));
@@ -24,6 +37,11 @@ select CAST(0xb3 as signed);
 select CAST(0x8fffffffffffffff as signed);
 select CAST(0xffffffffffffffff as unsigned);
 select CAST(0xfffffffffffffffe as signed);
+select cast('-10a' as signed integer);
+select cast('a10' as unsigned integer);
+select 10+'a';
+select 10.0+cast('a' as decimal);
+select 10E+0+'a';
 
 # out-of-range cases
 select cast('18446744073709551616' as unsigned);
@@ -52,7 +70,8 @@ select
   cast(_latin1'a '  AS char)    as c2,
   cast(_latin1'abc' AS char(2)) as c3,
   cast(_latin1'a  ' AS char(2)) as c4,
-  cast(_latin1'a'   AS char(2)) as c5;
+  hex(cast(_latin1'a'   AS char(2))) as c5;
+select cast(1000 as CHAR(3));
 
 create table t1 select
   cast(_latin1'ab'  AS char)    as c1,
@@ -60,7 +79,7 @@ create table t1 select
   cast(_latin1'abc' AS char(2)) as c3,
   cast(_latin1'a  ' AS char(2)) as c4,
   cast(_latin1'a'   AS char(2)) as c5;
-select * from t1;
+select c1,c2,c3,c4,hex(c5) from t1;
 show create table t1;
 drop table t1;
 
@@ -88,7 +107,7 @@ drop table t1;
 # Bug 2202
 # CAST from BINARY to non-BINARY and from non-BINARY to BINARY
 #
-create table t1 (a binary(10), b char(10) character set koi8r);
+create table t1 (a binary(4), b char(4) character set koi8r);
 insert into t1 values (_binary'тест',_binary'тест');
 select a,b,cast(a as char character set cp1251),cast(b as binary) from t1;
 set names koi8r;
@@ -148,12 +167,6 @@ select cast(repeat('1',20) as unsigned);
 select cast(repeat('1',20) as signed);
 
 #
-# Bug#8663 cant use bgint unsigned as input to cast
-#
-select cast(19999999999999999999 as unsigned);
-
-
-#
 # Bug #13344: cast of large decimal to signed int not handled correctly
 #
 select cast(1.0e+300 as signed int);
@@ -164,7 +177,64 @@ select cast(1.0e+300 as signed int);
 CREATE TABLE t1 (f1 double);
 INSERT INTO t1 SET f1 = -1.0e+30 ;
 INSERT INTO t1 SET f1 = +1.0e+30 ;
+# Expected result is +-1e+30, but Windows returns +-1e+030.
+--replace_result 1e+030 1e+30
 SELECT f1 AS double_val, CAST(f1 AS SIGNED INT) AS cast_val FROM t1;
 DROP TABLE t1;					   
 
-# End of 4.1 tests
+#
+# Bug #23938: cast(NULL as DATE)
+#
+
+select isnull(date(NULL)), isnull(cast(NULL as DATE));
+
+#
+# Bug#23656: Wrong result of CAST from DATE to int
+#
+SELECT CAST(cast('01-01-01' as date) AS UNSIGNED);
+SELECT CAST(cast('01-01-01' as date) AS SIGNED);
+
+--echo End of 4.1 tests
+
+
+#decimal-related additions
+select cast('1.2' as decimal(3,2));
+select 1e18 * cast('1.2' as decimal(3,2));
+select cast(cast('1.2' as decimal(3,2)) as signed);
+set @v1=1e18;
+select cast(@v1 as decimal(22, 2));
+select cast(-1e18 as decimal(22,2));
+
+create table t1(s1 time);
+insert into t1 values ('11:11:11');
+select cast(s1 as decimal(7,2)) from t1;
+drop table t1;
+
+#
+# Test for bug #11283: field conversion from varchar, and text types to decimal
+#
+
+CREATE TABLE t1 (v varchar(10), tt tinytext, t text,
+                 mt mediumtext, lt longtext);
+INSERT INTO t1 VALUES ('1.01', '2.02', '3.03', '4.04', '5.05');
+
+SELECT CAST(v AS DECIMAL), CAST(tt AS DECIMAL), CAST(t AS DECIMAL),
+       CAST(mt AS DECIMAL), CAST(lt AS DECIMAL) from t1;
+
+DROP TABLE t1;
+
+#
+# Bug #10237 (CAST(NULL DECIMAL) crashes server)
+#
+select cast(NULL as decimal(6)) as t1;
+
+
+#
+# Bug #17903: cast to char results in binary
+#
+set names latin1;
+select hex(cast('a' as char(2) binary));
+select hex(cast('a' as binary(2)));
+select hex(cast('a' as char(2) binary));
+
+--echo End of 5.0 tests

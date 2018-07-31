@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -479,7 +478,9 @@ static int my_strnncoll_win1250ch(CHARSET_INFO *cs __attribute__((unused)),
 static
 int my_strnncollsp_win1250ch(CHARSET_INFO * cs, 
 			     const uchar *s, uint slen, 
-			     const uchar *t, uint tlen)
+			     const uchar *t, uint tlen,
+                             my_bool diff_if_only_endspace_difference
+                             __attribute__((unused)))
 {
   for ( ; slen && s[slen-1] == ' ' ; slen--);
   for ( ; tlen && t[tlen-1] == ' ' ; tlen--);
@@ -634,15 +635,23 @@ my_like_range_win1250ch(CHARSET_INFO *cs __attribute__((unused)),
       ptr++;					/* Skip escape */
     else if (*ptr == w_one || *ptr == w_many)	/* '_' or '%' in SQL */
       break;
-    *min_str = like_range_prefix_min_win1250ch[(uint) (uchar) (*ptr)];
+    *min_str= like_range_prefix_min_win1250ch[(uint) (uchar) (*ptr)];
     if (*min_str != min_sort_char)
       only_min_found= 0;
     min_str++;
-    *max_str++ = like_range_prefix_max_win1250ch[(uint) (uchar) (*ptr)];
+    *max_str++= like_range_prefix_max_win1250ch[(uint) (uchar) (*ptr)];
   }
 
-  *min_length = (uint) (min_str - min_org);
-  *max_length = res_length;
+  if (cs->state & MY_CS_BINSORT)
+    *min_length= (uint) (min_str - min_org);
+  else
+  {
+    /* 'a\0\0... is the smallest possible string */
+    *min_length= res_length;
+  }
+  /* a\ff\ff... is the biggest possible string */
+  *max_length= res_length;
+
   while (min_str != min_end)
   {
     *min_str++ = min_sort_char;
@@ -658,11 +667,13 @@ static MY_COLLATION_HANDLER my_collation_czech_ci_handler =
   my_strnncoll_win1250ch,
   my_strnncollsp_win1250ch,
   my_strnxfrm_win1250ch,
+  my_strnxfrmlen_simple,
   my_like_range_win1250ch,
   my_wildcmp_8bit,
   my_strcasecmp_8bit,
   my_instr_simple,
-  my_hash_sort_simple
+  my_hash_sort_simple,
+  my_propagate_simple
 };
 
 
@@ -682,13 +693,17 @@ CHARSET_INFO my_charset_cp1250_czech_ci =
   NULL,				/* sort_order_big*/
   tab_cp1250_uni,		/* tab_to_uni   */
   idx_uni_cp1250,		/* tab_from_uni */
+  my_unicase_default,           /* caseinfo     */
   NULL,				/* state_map    */
   NULL,				/* ident_map    */
   2,				/* strxfrm_multiply */
+  1,                            /* caseup_multiply  */
+  1,                            /* casedn_multiply  */
   1,				/* mbminlen  */
   1,				/* mbmaxlen  */
   0,				/* min_sort_char */
   0,				/* max_sort_char */
+  ' ',                          /* pad char      */
   0,                            /* escape_with_backslash_is_dangerous */
   &my_charset_8bit_handler,
   &my_collation_czech_ci_handler

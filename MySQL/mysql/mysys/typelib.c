@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -49,7 +48,7 @@ int find_type(my_string x, TYPELIB *typelib, uint full_name)
   reg1 my_string i;
   reg2 const char *j;
   DBUG_ENTER("find_type");
-  DBUG_PRINT("enter",("x: '%s'  lib: 0x%lx",x,typelib));
+  DBUG_PRINT("enter",("x: '%s'  lib: 0x%lx", x, (long) typelib));
 
   if (!typelib->count)
   {
@@ -118,4 +117,55 @@ const char *get_type(TYPELIB *typelib, uint nr)
   if (nr < (uint) typelib->count && typelib->type_names)
     return(typelib->type_names[nr]);
   return "?";
+}
+
+
+/*
+  Create a copy of a specified TYPELIB structure.
+
+  SYNOPSIS
+    copy_typelib()
+    root	pointer to a MEM_ROOT object for allocations
+    from	pointer to a source TYPELIB structure
+
+  RETURN
+    pointer to the new TYPELIB structure on successful copy, or
+    NULL otherwise
+*/
+
+TYPELIB *copy_typelib(MEM_ROOT *root, TYPELIB *from)
+{
+  TYPELIB *to;
+  uint i;
+
+  if (!from)
+    return NULL;
+
+  if (!(to= (TYPELIB*) alloc_root(root, sizeof(TYPELIB))))
+    return NULL;
+
+  if (!(to->type_names= (const char **)
+        alloc_root(root, (sizeof(char *) + sizeof(int)) * (from->count + 1))))
+    return NULL;
+  to->type_lengths= (unsigned int *)(to->type_names + from->count + 1);
+  to->count= from->count;
+  if (from->name)
+  {
+    if (!(to->name= strdup_root(root, from->name)))
+      return NULL;
+  }
+  else
+    to->name= NULL;
+
+  for (i= 0; i < from->count; i++)
+  {
+    if (!(to->type_names[i]= strmake_root(root, from->type_names[i],
+                                          from->type_lengths[i])))
+      return NULL;
+    to->type_lengths[i]= from->type_lengths[i];
+  }
+  to->type_names[to->count]= NULL;
+  to->type_lengths[to->count]= 0;
+
+  return to;
 }

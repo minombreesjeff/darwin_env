@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,11 +23,6 @@ extern "C" {
 
 #ifndef USE_ALARM_THREAD
 #define USE_ONE_SIGNAL_HAND		/* One must call process_alarm */
-#endif
-#ifdef HAVE_LINUXTHREADS
-#define THR_CLIENT_ALARM SIGALRM
-#else
-#define THR_CLIENT_ALARM SIGUSR1
 #endif
 #ifdef HAVE_rts_threads
 #undef USE_ONE_SIGNAL_HAND
@@ -97,6 +91,9 @@ typedef struct st_alarm {
   pthread_t thread;
   my_bool malloced;
 } ALARM;
+
+extern uint thr_client_alarm;
+extern pthread_t alarm_thread;
 
 #define thr_alarm_init(A) (*(A))=0
 #define thr_alarm_in_use(A) (*(A)!= 0)

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,7 +26,9 @@ LocalConfig::LocalConfig(){
 
 bool
 LocalConfig::init(const char *connectString,
-		  const char *fileName) {
+		  const char *fileName)
+{
+  DBUG_ENTER("LocalConfig::init");
   /** 
    * Escalation:
    *  1. Check connectString
@@ -38,21 +39,25 @@ LocalConfig::init(const char *connectString,
    *  6. Check defaultConnectString
    */
   
+  _ownNodeId= 0;
+
   //1. Check connectString
   if(connectString != 0 && connectString[0] != 0){
     if(readConnectString(connectString, "connect string")){
-      return true;
-    }
-    return false;
+      if (ids.size())
+	DBUG_RETURN(true);
+      // only nodeid given, continue to find hosts
+    } else
+      DBUG_RETURN(false);
   }
 
   //2. Check given filename
   if (fileName && strlen(fileName) > 0) {
     bool fopenError;
     if(readFile(fileName, fopenError)){
-      return true;
+      DBUG_RETURN(true);
     }
-    return false;
+    DBUG_RETURN(false);
   }
 
   //3. Check environment variable
@@ -60,44 +65,44 @@ LocalConfig::init(const char *connectString,
   if(NdbEnv_GetEnv("NDB_CONNECTSTRING", buf, sizeof(buf)) &&
      strlen(buf) != 0){
     if(readConnectString(buf, "NDB_CONNECTSTRING")){
-      return true;
+      DBUG_RETURN(true);
     }
-    return false;
+    DBUG_RETURN(false);
   }
   
   //4. Check Ndb.cfg in NDB_HOME
   {
     bool fopenError;
-    char *buf= NdbConfig_NdbCfgName(1 /*true*/);
-    NdbAutoPtr<char> tmp_aptr(buf);
-    if(readFile(buf, fopenError))
-      return true;
+    char *buf2= NdbConfig_NdbCfgName(1 /*true*/);
+    NdbAutoPtr<char> tmp_aptr(buf2);
+    if(readFile(buf2, fopenError))
+      DBUG_RETURN(true);
     if (!fopenError)
-      return false;
+      DBUG_RETURN(false);
   }
 
   //5. Check Ndb.cfg in cwd
   {
     bool fopenError;
-    char *buf= NdbConfig_NdbCfgName(0 /*false*/);
-    NdbAutoPtr<char> tmp_aptr(buf);
-    if(readFile(buf, fopenError))
-      return true;
+    char *buf2= NdbConfig_NdbCfgName(0 /*false*/);
+    NdbAutoPtr<char> tmp_aptr(buf2);
+    if(readFile(buf2, fopenError))
+      DBUG_RETURN(true);
     if (!fopenError)
-      return false;
+      DBUG_RETURN(false);
   }
 
   //7. Check
   {
-    char buf[256];
-    BaseString::snprintf(buf, sizeof(buf), "host=localhost:%s", NDB_PORT);
-    if(readConnectString(buf, "default connect string"))
-      return true;
+    char buf2[256];
+    BaseString::snprintf(buf2, sizeof(buf2), "host=localhost:%s", NDB_PORT);
+    if(readConnectString(buf2, "default connect string"))
+      DBUG_RETURN(true);
   }
 
   setError(0, "");
 
-  return false;
+  DBUG_RETURN(false);
 }
 
 LocalConfig::~LocalConfig(){
@@ -142,6 +147,7 @@ const char *nodeIdTokens[] = {
 const char *hostNameTokens[] = {
   "host://%[^:]:%i",
   "host=%[^:]:%i",
+  "mgmd=%[^:]:%i",
   "%[^:^=^ ]:%i",
   "%s %i",
   0
@@ -207,33 +213,19 @@ LocalConfig::parseString(const char * connectString, BaseString &err){
   char * copy = strdup(connectString);
   NdbAutoPtr<char> tmp_aptr(copy);
 
-  bool b_nodeId = false;
-  bool found_other = false;
-
   for (char *tok = strtok_r(copy,";,",&for_strtok); tok != 0;
        tok = strtok_r(NULL, ";,", &for_strtok)) {
     if (tok[0] == '#') continue;
 
-    if (!b_nodeId) // only one nodeid definition allowed
-      if (b_nodeId = parseNodeId(tok))
+    if (!_ownNodeId) // only one nodeid definition allowed
+      if (parseNodeId(tok))
 	continue;
-    if (found_other = parseHostName(tok))
+    if (parseHostName(tok))
       continue;
-    if (found_other = parseFileName(tok))
+    if (parseFileName(tok))
       continue;
     
     err.assfmt("Unexpected entry: \"%s\"", tok);
-    return false;
-  }
-
-  if (b_nodeId && !found_other) 
-  {
-    BaseString tmp;
-    tmp.assfmt("host=localhost:%s", NDB_PORT);
-    if(parseHostName(tmp.c_str()))
-      return true;
-    
-    err.appfmt("Missing host/file name extry in \"%s\"", connectString);
     return false;
   }
 

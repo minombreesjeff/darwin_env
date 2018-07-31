@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -63,13 +62,16 @@ TransporterFacade* TransporterFacade::theFacadeInstance = NULL;
  *****************************************************************************/
 
 void
-reportError(void * callbackObj, NodeId nodeId, TransporterError errorCode){
+reportError(void * callbackObj, NodeId nodeId,
+	    TransporterError errorCode, const char *info)
+{
 #ifdef REPORT_TRANSPORTER
-  ndbout_c("REPORT_TRANSP: reportError (nodeId=%d, errorCode=%d)", 
-	   (int)nodeId, (int)errorCode);
+  ndbout_c("REPORT_TRANSP: reportError (nodeId=%d, errorCode=%d) %s", 
+	   (int)nodeId, (int)errorCode, info ? info : "");
 #endif
-  if(errorCode & 0x8000) {
-    ndbout_c("reportError (%d, %d)\n", (int)nodeId, (int)errorCode);
+  if(errorCode & TE_DO_DISCONNECT) {
+    ndbout_c("reportError (%d, %d) %s", (int)nodeId, (int)errorCode,
+	     info ? info : "");
     ((TransporterFacade*)(callbackObj))->doDisconnect(nodeId);
   }
 }
@@ -127,6 +129,10 @@ reportDisconnect(void * callbackObj, NodeId nodeId, Uint32 error){
   //TransporterFacade::instance()->reportDisconnected(nodeId);
 }
 
+void
+transporter_recv_from(void * callbackObj, NodeId nodeId){
+  ((TransporterFacade*)(callbackObj))->hb_received(nodeId);
+}
 
 /****************************************************************************
  * 
@@ -529,43 +535,32 @@ TransporterFacade::init(Uint32 nodeId, const ndb_mgm_configuration* props)
   iter.first();
   theClusterMgr->init(iter);
   
-  /**
-   * Unless there is a "Name", the initiated transporter is within 
-   * an NDB Cluster.  (If "Name" is defined, then the transporter
-   * is used to connect to a different system, i.e. NDB Cluster.)
-   */
-#if 0  
-  if (!props->contains("Name")) {
-#endif
-    iter.first();
-    if(iter.find(CFG_NODE_ID, nodeId)){
-      TRP_DEBUG( "Node info missing from config." );
-      DBUG_RETURN(false);
-    }
-    
-    Uint32 rank = 0;
-    if(!iter.get(CFG_NODE_ARBIT_RANK, &rank) && rank>0){
-      theArbitMgr = new ArbitMgr(* this);
-      theArbitMgr->setRank(rank);
-      Uint32 delay = 0;
-      iter.get(CFG_NODE_ARBIT_DELAY, &delay);
-      theArbitMgr->setDelay(delay);
-    }
-    Uint32 scan_batch_size= 0;
-    if (!iter.get(CFG_MAX_SCAN_BATCH_SIZE, &scan_batch_size)) {
-      m_scan_batch_size= scan_batch_size;
-    }
-    Uint32 batch_byte_size= 0;
-    if (!iter.get(CFG_BATCH_BYTE_SIZE, &batch_byte_size)) {
-      m_batch_byte_size= batch_byte_size;
-    }
-    Uint32 batch_size= 0;
-    if (!iter.get(CFG_BATCH_SIZE, &batch_size)) {
-      m_batch_size= batch_size;
-    }
-#if 0
+  iter.first();
+  if(iter.find(CFG_NODE_ID, nodeId)){
+    TRP_DEBUG( "Node info missing from config." );
+    DBUG_RETURN(false);
   }
-#endif
+  
+  Uint32 rank = 0;
+  if(!iter.get(CFG_NODE_ARBIT_RANK, &rank) && rank>0){
+    theArbitMgr = new ArbitMgr(* this);
+    theArbitMgr->setRank(rank);
+    Uint32 delay = 0;
+    iter.get(CFG_NODE_ARBIT_DELAY, &delay);
+    theArbitMgr->setDelay(delay);
+  }
+  Uint32 scan_batch_size= 0;
+  if (!iter.get(CFG_MAX_SCAN_BATCH_SIZE, &scan_batch_size)) {
+    m_scan_batch_size= scan_batch_size;
+  }
+  Uint32 batch_byte_size= 0;
+  if (!iter.get(CFG_BATCH_BYTE_SIZE, &batch_byte_size)) {
+    m_batch_byte_size= batch_byte_size;
+  }
+  Uint32 batch_size= 0;
+  if (!iter.get(CFG_BATCH_SIZE, &batch_size)) {
+    m_batch_size= batch_size;
+  }
   
   Uint32 timeout = 120000;
   iter.first();

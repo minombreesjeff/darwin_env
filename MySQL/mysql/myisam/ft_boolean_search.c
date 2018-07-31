@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2001-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,7 +67,7 @@ struct st_ftb_expr
   my_off_t  docid[2];
   float     weight;
   float     cur_weight;
-  byte     *quot, *qend;
+  LIST     *phrase;               /* phrase words */
   uint      yesses;               /* number of "yes" words matched */
   uint      nos;                  /* number of "no"  words matched */
   uint      ythresh;              /* number of "yes" words in expr */
@@ -132,20 +131,22 @@ static int FTB_WORD_cmp_list(CHARSET_INFO *cs, FTB_WORD **a, FTB_WORD **b)
 }
 
 static void _ftb_parse_query(FTB *ftb, byte **start, byte *end,
-                      FTB_EXPR *up, uint depth)
+                      FTB_EXPR *up, uint depth, byte *up_quot)
 {
   byte        res;
   FTB_PARAM   param;
   FT_WORD     w;
   FTB_WORD   *ftbw;
   FTB_EXPR   *ftbe;
+  FT_WORD    *phrase_word;
+  LIST       *phrase_list;
   uint  extra=HA_FT_WLEN+ftb->info->s->rec_reflength; /* just a shortcut */
 
   if (ftb->state != UNINITIALIZED)
     return;
 
   param.prev=' ';
-  param.quot=up->quot;
+  param.quot= up_quot;
   while ((res=ft_get_word(ftb->charset,start,end,&w,&param)))
   {
     int   r=param.plusminus;
@@ -172,6 +173,14 @@ static void _ftb_parse_query(FTB *ftb, byte **start, byte *end,
         if (param.yesno > 0) up->ythresh++;
         queue_insert(& ftb->queue, (byte *)ftbw);
         ftb->with_scan|=(param.trunc & FTB_FLAG_TRUNC);
+      case 4: /* not indexed word (stopword or too short/long) */
+        if (! up_quot) break;
+        phrase_word= (FT_WORD *)alloc_root(&ftb->mem_root, sizeof(FT_WORD));
+        phrase_list= (LIST *)alloc_root(&ftb->mem_root, sizeof(LIST));
+        phrase_word->pos= w.pos;
+        phrase_word->len= w.len;
+        phrase_list->data= (void *)phrase_word;
+        up->phrase= list_add(up->phrase, phrase_list);
         break;
       case 2: /* left bracket */
         ftbe=(FTB_EXPR *)alloc_root(&ftb->mem_root, sizeof(FTB_EXPR));
@@ -182,13 +191,14 @@ static void _ftb_parse_query(FTB *ftb, byte **start, byte *end,
         ftbe->up=up;
         ftbe->ythresh=ftbe->yweaks=0;
         ftbe->docid[0]=ftbe->docid[1]=HA_OFFSET_ERROR;
-        if ((ftbe->quot=param.quot)) ftb->with_scan|=2;
+        ftbe->phrase= NULL;
+        if (param.quot) ftb->with_scan|=2;
         if (param.yesno > 0) up->ythresh++;
-        _ftb_parse_query(ftb, start, end, ftbe, depth+1);
+        _ftb_parse_query(ftb, start, end, ftbe, depth+1, param.quot);
         param.quot=0;
         break;
       case 3: /* right bracket */
-        if (up->quot) up->qend=param.quot;
+        if (up_quot) up->phrase= list_reverse(up->phrase);
         return;
     }
   }
@@ -212,6 +222,7 @@ static int _ft2_search(FTB *ftb, FTB_WORD *ftbw, my_bool init_search)
   byte *lastkey_buf=ftbw->word+ftbw->off;
   LINT_INIT(off);
 
+  LINT_INIT(off);
   if (ftbw->flags & FTB_FLAG_TRUNC)
     lastkey_buf+=ftbw->len;
 
@@ -410,12 +421,12 @@ FT_INFO * ft_init_boolean_search(MI_INFO *info, uint keynr, byte *query,
   ftbe->weight=1;
   ftbe->flags=FTB_FLAG_YES;
   ftbe->nos=1;
-  ftbe->quot=0;
   ftbe->up=0;
   ftbe->ythresh=ftbe->yweaks=0;
   ftbe->docid[0]=ftbe->docid[1]=HA_OFFSET_ERROR;
+  ftbe->phrase= NULL;
   ftb->root=ftbe;
-  _ftb_parse_query(ftb, &query, query+query_len, ftbe, 0);
+  _ftb_parse_query(ftb, &query, query+query_len, ftbe, 0, NULL);
   ftb->list=(FTB_WORD **)alloc_root(&ftb->mem_root,
                                      sizeof(FTB_WORD *)*ftb->queue.elements);
   memcpy(ftb->list, ftb->queue.root+1, sizeof(FTB_WORD *)*ftb->queue.elements);
@@ -431,29 +442,46 @@ err:
 }
 
 
-/* returns 1 if str0 ~= /\bstr1\b/ */
-static int _ftb_strstr(const byte *s0, const byte *e0,
-                const byte *s1, const byte *e1,
-                CHARSET_INFO *cs)
+/*
+  Checks if given buffer matches phrase list.
+
+  SYNOPSIS
+    _ftb_check_phrase()
+    s0     start of buffer
+    e0     end of buffer
+    phrase broken into list phrase
+    cs     charset info
+
+  RETURN VALUE
+    1 is returned if phrase found, 0 else.
+*/
+
+static int _ftb_check_phrase(const byte *s0, const byte *e0,
+                LIST *phrase, CHARSET_INFO *cs)
 {
-  const byte *p0= s0;
-  my_bool s_after= true_word_char(cs, s1[0]);
-  my_bool e_before= true_word_char(cs, e1[-1]);
-  uint p0_len;
-  my_match_t m[2];
+  FT_WORD h_word;
+  const byte *h_start= s0;
+  DBUG_ENTER("_ftb_strstr");
+  DBUG_ASSERT(phrase);
 
-  while (p0 < e0)
+  while (ft_simple_get_word(cs, (byte **)&h_start, e0, &h_word, FALSE))
   {
-    if (cs->coll->instr(cs, p0, e0 - p0, s1, e1 - s1, m, 2) != 2)
-      return(0);
-    if ((!s_after || p0 + m[1].beg == s0 || !true_word_char(cs, p0[m[1].beg-1])) &&
-        (!e_before || p0 + m[1].end == e0 || !true_word_char(cs, p0[m[1].end])))
-      return(1);
-    p0+= m[1].beg;
-    p0+= (p0_len= my_mbcharlen(cs, *(uchar *)p0)) ? p0_len : 1;
+    FT_WORD *n_word;
+    LIST *phrase_element= phrase;
+    const byte *h_start1= h_start;
+    for (;;)
+    {
+      n_word= (FT_WORD *)phrase_element->data;
+      if (my_strnncoll(cs, (const uchar *) h_word.pos, h_word.len,
+		       (const uchar *) n_word->pos, n_word->len))
+        break;
+      if (! (phrase_element= phrase_element->next))
+        DBUG_RETURN(1);
+      if (! ft_simple_get_word(cs, (byte **)&h_start1, e0, &h_word, FALSE))
+        DBUG_RETURN(0);
+    }
   }
-
-  return(0);
+  DBUG_RETURN(0);
 }
 
 
@@ -462,7 +490,7 @@ static void _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw, FT_SEG_ITERATOR *ftsi_
   FT_SEG_ITERATOR ftsi;
   FTB_EXPR *ftbe;
   float weight=ftbw->weight;
-  int  yn=ftbw->flags, ythresh, mode=(ftsi_orig != 0);
+  int  yn_flag= ftbw->flags, ythresh, mode=(ftsi_orig != 0);
   my_off_t curdoc=ftbw->docid[mode];
 
   for (ftbe=ftbw->up; ftbe; ftbe=ftbe->up)
@@ -476,15 +504,15 @@ static void _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw, FT_SEG_ITERATOR *ftsi_
     }
     if (ftbe->nos)
       break;
-    if (yn & FTB_FLAG_YES)
+    if (yn_flag & FTB_FLAG_YES)
     {
       weight /= ftbe->ythresh;
       ftbe->cur_weight += weight;
       if ((int) ++ftbe->yesses == ythresh)
       {
-        yn=ftbe->flags;
+        yn_flag=ftbe->flags;
         weight=ftbe->cur_weight*ftbe->weight;
-        if (mode && ftbe->quot)
+        if (mode && ftbe->phrase)
         {
           int not_found=1;
 
@@ -493,8 +521,8 @@ static void _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw, FT_SEG_ITERATOR *ftsi_
           {
             if (!ftsi.pos)
               continue;
-            not_found = ! _ftb_strstr(ftsi.pos, ftsi.pos+ftsi.len,
-                                      ftbe->quot, ftbe->qend, ftb->charset);
+            not_found = ! _ftb_check_phrase(ftsi.pos, ftsi.pos+ftsi.len,
+                                      ftbe->phrase, ftb->charset);
           }
           if (not_found) break;
         } /* ftbe->quot */
@@ -503,14 +531,14 @@ static void _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw, FT_SEG_ITERATOR *ftsi_
         break;
     }
     else
-    if (yn & FTB_FLAG_NO)
+    if (yn_flag & FTB_FLAG_NO)
     {
       /*
         NOTE: special sort function of queue assures that all
-        (yn & FTB_FLAG_NO) != 0
+        (yn_flag & FTB_FLAG_NO) != 0
         events for every particular subexpression will
         "auto-magically" happen BEFORE all the
-        (yn & FTB_FLAG_YES) != 0 events. So no
+        (yn_flag & FTB_FLAG_YES) != 0 events. So no
         already matched expression can become not-matched again.
       */
       ++ftbe->nos;
@@ -523,8 +551,8 @@ static void _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw, FT_SEG_ITERATOR *ftsi_
       ftbe->cur_weight +=  weight;
       if ((int) ftbe->yesses < ythresh)
         break;
-      if (!(yn & FTB_FLAG_WONLY))
-        yn= ((int) ftbe->yesses++ == ythresh) ? ftbe->flags : FTB_FLAG_WONLY ;
+      if (!(yn_flag & FTB_FLAG_WONLY))
+        yn_flag= ((int) ftbe->yesses++ == ythresh) ? ftbe->flags : FTB_FLAG_WONLY ;
       weight*= ftbe->weight;
     }
   }
@@ -642,8 +670,8 @@ float ft_boolean_find_relevance(FT_INFO *ftb, byte *record, uint length)
       continue;
 
     end=ftsi.pos+ftsi.len;
-    while (ft_simple_get_word(ftb->charset,
-                              (byte **) &ftsi.pos, (byte *) end, &word))
+    while (ft_simple_get_word(ftb->charset, (byte **) &ftsi.pos,
+                              (byte *) end, &word, TRUE))
     {
       int a, b, c;
       for (a=0, b=ftb->queue.elements, c=(a+b)/2; b-a>1; c=(a+b)/2)

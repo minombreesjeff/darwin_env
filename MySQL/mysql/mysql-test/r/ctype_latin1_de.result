@@ -220,11 +220,11 @@ select * from t1 where match a against ("te*" in boolean mode)+0;
 a
 test
 drop table t1;
-create table t1 (word varchar(255) not null, word2 varchar(255) not null, index(word));
+create table t1 (word varchar(255) not null, word2 varchar(255) not null default '', index(word));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `word` varchar(255) collate latin1_german2_ci NOT NULL default '',
+  `word` varchar(255) collate latin1_german2_ci NOT NULL,
   `word2` varchar(255) collate latin1_german2_ci NOT NULL default '',
   KEY `word` (`word`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_german2_ci
@@ -338,3 +338,9 @@ ss
 ss
 ß
 DROP TABLE t1;
+create table t1 (s1 char(5) character set latin1 collate latin1_german2_ci);
+insert into t1 values (0xf6) /* this is o-umlaut */;
+select * from t1 where length(s1)=1 and s1='oe';
+s1
+ö
+drop table t1;

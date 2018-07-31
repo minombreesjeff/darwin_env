@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -192,13 +191,13 @@ public:
   enum ErrorCode {
     NoError = 0,
     Busy = 701,
+    BusyWithNR = 711,
     NotMaster = 702,
     TriggerNotFound = 4238,
     TriggerExists = 4239,
     IndexNameTooLong = 4241,
     TooManyIndexes = 4242,
     IndexExists = 4244,
-    AttributeNotStored = 4245,
     AttributeNullable = 4246,
     BadRequestType = 4247,
     InvalidName = 4248,
@@ -207,7 +206,8 @@ public:
     NotUnique = 4251,
     AllocationError = 4252,
     CreateIndexTableFailed = 4253,
-    InvalidAttributeOrder = 4255
+    DuplicateAttributes = 4258,
+    SingleUser = 299
   };
 
   CreateIndxConf m_conf;

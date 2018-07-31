@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,9 +31,12 @@ public:
   Item_str_func(Item *a,Item *b,Item *c,Item *d, Item* e) :Item_func(a,b,c,d,e) {decimals=NOT_FIXED_DEC; }
   Item_str_func(List<Item> &list) :Item_func(list) {decimals=NOT_FIXED_DEC; }
   longlong val_int();
-  double val();
+  double val_real();
+  my_decimal *val_decimal(my_decimal *);
   enum Item_result result_type () const { return STRING_RESULT; }
   void left_right_max_length();
+  String *check_well_formed_result(String *str);
+  bool fix_fields(THD *thd, Item **ref);
 };
 
 class Item_func_md5 :public Item_str_func
@@ -141,13 +143,14 @@ public:
 
 class Item_str_conv :public Item_str_func
 {
+protected:
+  uint multiply;
+  uint (*converter)(CHARSET_INFO *cs, char *src, uint srclen,
+                                      char *dst, uint dstlen);
+  String tmp_value;
 public:
   Item_str_conv(Item *item) :Item_str_func(item) {}
-  void fix_length_and_dec()
-  {
-    collation.set(args[0]->collation);
-    max_length = args[0]->max_length;
-  }
+  String *val_str(String *);
 };
 
 
@@ -155,16 +158,28 @@ class Item_func_lcase :public Item_str_conv
 {
 public:
   Item_func_lcase(Item *item) :Item_str_conv(item) {}
-  String *val_str(String *);
   const char *func_name() const { return "lcase"; }
+  void fix_length_and_dec()
+  {
+    collation.set(args[0]->collation);
+    multiply= collation.collation->casedn_multiply;
+    converter= collation.collation->cset->casedn;
+    max_length= args[0]->max_length * multiply;
+  }
 };
 
 class Item_func_ucase :public Item_str_conv
 {
 public:
   Item_func_ucase(Item *item) :Item_str_conv(item) {}
-  String *val_str(String *);
   const char *func_name() const { return "ucase"; }
+  void fix_length_and_dec()
+  {
+    collation.set(args[0]->collation);
+    multiply= collation.collation->caseup_multiply;
+    converter= collation.collation->cset->caseup;
+    max_length= args[0]->max_length * multiply;
+  }
 };
 
 
@@ -209,7 +224,7 @@ public:
   Item_func_substr_index(Item *a,Item *b,Item *c) :Item_str_func(a,b,c) {}
   String *val_str(String *);
   void fix_length_and_dec();
-  const char *func_name() const { return "substr_index"; }
+  const char *func_name() const { return "substring_index"; }
 };
 
 
@@ -256,7 +271,7 @@ public:
   Returns strcat('*', octet2hex(sha1(sha1(password)))). '*' stands for new
   password format, sha1(sha1(password) is so-called hash_stage2 value.
   Length of returned string is always 41 byte. To find out how entire
-  authentification procedure works, see comments in password.c.
+  authentication procedure works, see comments in password.c.
 */
 
 class Item_func_password :public Item_str_func
@@ -333,7 +348,7 @@ public:
   }
   String *val_str(String *);
   void fix_length_and_dec() { maybe_null=1; max_length = 13; }
-  const char *func_name() const { return "ecrypt"; }
+  const char *func_name() const { return "encrypt"; }
 };
 
 #include "sql_crypt.h"
@@ -343,19 +358,24 @@ class Item_func_encode :public Item_str_func
 {
  protected:
   SQL_CRYPT sql_crypt;
+  String seed;
 public:
-  Item_func_encode(Item *a, char *seed):
-    Item_str_func(a),sql_crypt(seed) {}
+  Item_func_encode(Item *a, char *seed_arg):
+    Item_str_func(a), sql_crypt(seed_arg)
+    {
+      seed.copy(seed_arg, strlen(seed_arg), default_charset_info);
+    }
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "encode"; }
+  void print(String *str);
 };
 
 
 class Item_func_decode :public Item_func_encode
 {
 public:
-  Item_func_decode(Item *a, char *seed): Item_func_encode(a,seed) {}
+  Item_func_decode(Item *a, char *seed_arg): Item_func_encode(a, seed_arg) {}
   String *val_str(String *);
   const char *func_name() const { return "decode"; }
 };
@@ -367,7 +387,14 @@ public:
   Item_func_sysconst()
   { collation.set(system_charset_info,DERIVATION_SYSCONST); }
   Item *safe_charset_converter(CHARSET_INFO *tocs);
+  /*
+    Used to create correct Item name in new converted item in
+    safe_charset_converter, return string representation of this function
+    call
+  */
+  virtual const char *fully_qualified_func_name() const = 0;
 };
+
 
 class Item_func_database :public Item_func_sysconst
 {
@@ -380,18 +407,46 @@ public:
     maybe_null=1;
   }
   const char *func_name() const { return "database"; }
+  const char *fully_qualified_func_name() const { return "database()"; }
 };
+
 
 class Item_func_user :public Item_func_sysconst
 {
+protected:
+  bool init (const char *user, const char *host);
+
 public:
-  Item_func_user() :Item_func_sysconst() {}
-  String *val_str(String *);
-  void fix_length_and_dec() 
-  { 
-    max_length= (USERNAME_LENGTH+HOSTNAME_LENGTH+1)*system_charset_info->mbmaxlen;
+  Item_func_user()
+  {
+    str_value.set("", 0, system_charset_info);
+  }
+  String *val_str(String *)
+  {
+    DBUG_ASSERT(fixed == 1);
+    return (null_value ? 0 : &str_value);
+  }
+  bool fix_fields(THD *thd, Item **ref);
+  void fix_length_and_dec()
+  {
+    max_length= ((USERNAME_LENGTH + HOSTNAME_LENGTH + 1) *
+                 system_charset_info->mbmaxlen);
   }
   const char *func_name() const { return "user"; }
+  const char *fully_qualified_func_name() const { return "user()"; }
+};
+
+
+class Item_func_current_user :public Item_func_user
+{
+  Name_resolution_context *context;
+
+public:
+  Item_func_current_user(Name_resolution_context *context_arg)
+    : context(context_arg) {}
+  bool fix_fields(THD *thd, Item **ref);
+  const char *func_name() const { return "current_user"; }
+  const char *fully_qualified_func_name() const { return "current_user()"; }
 };
 
 
@@ -410,7 +465,7 @@ class Item_func_elt :public Item_str_func
 {
 public:
   Item_func_elt(List<Item> &list) :Item_str_func(list) {}
-  double val();
+  double val_real();
   longlong val_int();
   String *val_str(String *str);
   void fix_length_and_dec();
@@ -426,13 +481,12 @@ class Item_func_make_set :public Item_str_func
 public:
   Item_func_make_set(Item *a,List<Item> &list) :Item_str_func(list),item(a) {}
   String *val_str(String *str);
-  bool fix_fields(THD *thd, TABLE_LIST *tlist, Item **ref)
+  bool fix_fields(THD *thd, Item **ref)
   {
     DBUG_ASSERT(fixed == 0);
-    return (!item->fixed &&
-            item->fix_fields(thd, tlist, &item) ||
+    return ((!item->fixed && item->fix_fields(thd, &item)) ||
 	    item->check_cols(1) ||
-	    Item_func::fix_fields(thd, tlist, ref));
+	    Item_func::fix_fields(thd, ref));
   }
   void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields);
   void fix_length_and_dec();
@@ -444,6 +498,7 @@ public:
     return item->walk(processor, arg) ||
       Item_str_func::walk(processor, arg);
   }
+  Item *transform(Item_transformer transformer, byte *arg);
   void print(String *str);
 };
 
@@ -457,7 +512,9 @@ public:
   void fix_length_and_dec()
   {
     collation.set(default_charset());
-    max_length=args[0]->max_length+(args[0]->max_length-args[0]->decimals)/3;
+    uint char_length= args[0]->max_length/args[0]->collation.collation->mbmaxlen;
+    max_length= ((char_length + (char_length-args[0]->decimals)/3) *
+                 collation.collation->mbmaxlen);
   }
   const char *func_name() const { return "format"; }
   void print(String *);
@@ -468,14 +525,13 @@ class Item_func_char :public Item_str_func
 {
 public:
   Item_func_char(List<Item> &list) :Item_str_func(list)
-  { collation.set(default_charset()); }
+  { collation.set(&my_charset_bin); }
   Item_func_char(List<Item> &list, CHARSET_INFO *cs) :Item_str_func(list)
-  { collation.set(cs); }
+  { collation.set(cs); }  
   String *val_str(String *);
   void fix_length_and_dec() 
-  { 
-    maybe_null=0;
-    max_length=arg_count * collation.collation->mbmaxlen;
+  {
+    max_length= arg_count * collation.collation->mbmaxlen;
   }
   const char *func_name() const { return "char"; }
 };
@@ -525,7 +581,7 @@ public:
   void fix_length_and_dec()
   {
     collation.set(default_charset());
-    decimals=0; max_length=64;
+    max_length= 64;
   }
 };
 
@@ -549,7 +605,11 @@ class Item_func_unhex :public Item_str_func
 {
   String tmp_value;
 public:
-  Item_func_unhex(Item *a) :Item_str_func(a) {}
+  Item_func_unhex(Item *a) :Item_str_func(a) 
+  { 
+    /* there can be bad hex strings */
+    maybe_null= 1; 
+  }
   const char *func_name() const { return "unhex"; }
   String *val_str(String *);
   void fix_length_and_dec()
@@ -580,6 +640,7 @@ public:
     max_length=args[0]->max_length;
   }
   void print(String *str);
+  const char *func_name() const { return "cast_as_binary"; }
 };
 
 
@@ -656,6 +717,7 @@ public:
                                  str->charset(), conv_charset, &errors))
         null_value= 1;
       use_cached_value= 1;
+      str_value.mark_as_const();
       safe= (errors == 0);
     }
     else
@@ -685,7 +747,13 @@ public:
   void fix_length_and_dec();
   bool eq(const Item *item, bool binary_cmp) const;
   const char *func_name() const { return "collate"; }
-  void print(String *str) { print_op(str); }
+  enum Functype functype() const { return COLLATE_FUNC; }
+  void print(String *str);
+  Item_field *filed_for_view_update()
+  {
+    /* this function is transparent for view updating */
+    return args[0]->filed_for_view_update();
+  }
 };
 
 class Item_func_charset :public Item_str_func
@@ -722,7 +790,7 @@ class Item_func_crc32 :public Item_int_func
 {
   String value;
 public:
-  Item_func_crc32(Item *a) :Item_int_func(a) {}
+  Item_func_crc32(Item *a) :Item_int_func(a) { unsigned_flag= 1; }
   const char *func_name() const { return "crc32"; }
   void fix_length_and_dec() { max_length=10; }
   longlong val_int();
@@ -759,7 +827,7 @@ class Item_func_uncompress: public Item_str_func
   String buffer;
 public:
   Item_func_uncompress(Item *a): Item_str_func(a){}
-  void fix_length_and_dec(){max_length= MAX_BLOB_WIDTH;}
+  void fix_length_and_dec(){ maybe_null= 1; max_length= MAX_BLOB_WIDTH; }
   const char *func_name() const{return "uncompress";}
   String *val_str(String *) ZLIB_DEPENDED_FUNCTION
 };

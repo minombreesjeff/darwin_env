@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -77,6 +76,7 @@ public:
   enum ErrorCode {
     NoError = 0,
     Busy = 701,
+    BusyWithNR = 711,
     NotMaster = 702,
     InvalidFormat = 703,
     AttributeNameTooLong = 704,
@@ -86,11 +86,13 @@ public:
     NoMoreAttributeRecords = 708,
     AttributeNameTwice = 720,
     TableAlreadyExist = 721,
+    InvalidArraySize = 736,
     ArraySizeTooBig = 737,
     RecordTooBig = 738,
     InvalidPrimaryKeySize  = 739,
     NullablePrimaryKey = 740,
-    InvalidCharset = 743
+    InvalidCharset = 743,
+    SingleUser = 299
   };
 
 private:

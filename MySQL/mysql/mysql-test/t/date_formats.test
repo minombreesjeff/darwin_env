@@ -122,12 +122,15 @@ SET datetime_format=default;
 --disable_ps_protocol
 select str_to_date(concat('15-01-2001',' 2:59:58.999'),
 	           concat('%d-%m-%Y',' ','%H:%i:%s.%f'));
+select STR_TO_DATE('2004.12.12 22.30.61','%Y.%m.%d %T');
 --enable_ps_protocol
 
 create table t1 (date char(30), format char(30) not null);
 insert into t1 values
 ('2003-01-02 10:11:12', '%Y-%m-%d %H:%i:%S'),
 ('03-01-02 8:11:2.123456', '%y-%m-%d %H:%i:%S.%#'),
+('0003-01-02 8:11:2.123456', '%Y-%m-%d %H:%i:%S.%#'),
+('03-01-02 8:11:2.123456',   '%Y-%m-%d %H:%i:%S.%#'),
 ('2003-01-02 10:11:12 PM', '%Y-%m-%d %h:%i:%S %p'),
 ('2003-01-02 01:11:12.12345AM', '%Y-%m-%d %h:%i:%S.%f%p'),
 ('2003-01-02 02:11:12.12345AM', '%Y-%m-%d %h:%i:%S.%f %p'),
@@ -292,6 +295,10 @@ select str_to_date( 1, IF(1=1,NULL,NULL) );
 
 #
 # Bug#11326
+# TIME_FORMAT using "%r" returns wrong hour using 24:00:00 in TIME column
+#
+# This tests that 24:00:00 does not return PM, when it should be AM.
+# Some other values are being tested same time.
 #
 
 SELECT TIME_FORMAT("24:00:00", '%r');
@@ -303,6 +310,10 @@ SELECT TIME_FORMAT("25:00:00", '%r');
 
 #
 # Bug#11324
+# TIME_FORMAT using "%l:%i" returns 36:00 with 24:00:00 in TIME column
+#
+# This tests that 24:00:00 does not change to "36:00 AM". Testing
+# some other values same time.
 #
 
 SELECT TIME_FORMAT("00:00:00", '%l %p');
@@ -316,5 +327,13 @@ SELECT TIME_FORMAT("25:00:00", '%l %p');
 # Bug#20729:  Bad date_format() call makes mysql server crash
 #
 SELECT DATE_FORMAT('%Y-%m-%d %H:%i:%s', 1151414896);
+
+#
+# Bug #22029: str_to_date returning NULL
+#
+
+select str_to_date('04 /30/2004', '%m /%d/%Y');
+select str_to_date('04/30 /2004', '%m /%d /%Y');
+select str_to_date('04/30/2004 ', '%m/%d/%Y ');
 
 --echo "End of 4.1 tests"

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqld\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLD\fR" "8" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLD\fR" "8" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -37,9 +37,8 @@ The server shutdown process
 .sp
 .RE
 .PP
-\fBNote\fR: Not all storage engines (also known in older versions of MySQL as
-\(lqtable types\(rq) are supported by all MySQL server binaries and configurations. To find out how to determine which storage engines are supported by your MySQL server installation, see
-Section\ 5.4.8, \(lqSHOW ENGINES Syntax\(rq.
+\fBNote\fR: Not all storage engines are supported by all MySQL server binaries and configurations. To find out how to determine which storage engines are supported by your MySQL server installation, see
+Section\ 5.4.10, \(lqSHOW ENGINES Syntax\(rq.
 .SH "COMMAND OPTIONS"
 .PP
 When you start the
@@ -47,6 +46,9 @@ When you start the
 server, you can specify program options using any of the methods described in
 Section\ 3, \(lqSpecifying Program Options\(rq. The most common methods are to provide options in an option file or on the command line. However, in most cases it is desirable to make sure that the server uses the same options each time it runs. The best way to ensure this is to list them in an option file. See
 Section\ 3.2, \(lqUsing Option Files\(rq.
+.PP
+\fBMySQL Enterprise\fR. For expert advice on setting command options, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .PP
 \fBmysqld\fR
 reads options from the
@@ -77,25 +79,23 @@ groups, where
 is the name of the application into which the server is embedded.
 .PP
 \fBmysqld\fR
-accepts many command options. For a list, execute
-\fBmysqld \-\-help\fR. Before MySQL 4.1.1,
-\fB\-\-help\fR
-prints the full help message. As of 4.1.1, it prints a brief message; to see the full list, use
+accepts many command options. For a brief summary, execute
+\fBmysqld \-\-help\fR. To see the full list, use
 \fBmysqld \-\-verbose \-\-help\fR.
 .PP
 The following list shows some of the most common server options. Additional options are described in other sections:
 .TP 3n
 \(bu
 Options that affect security: See
-Section\ 5.3, \(lqSecurity\-Related \fBmysqld\fR Options\(rq.
+Section\ 4.3, \(lqSecurity\-Related \fBmysqld\fR Options\(rq.
 .TP 3n
 \(bu
 SSL\-related options: See
-Section\ 7.7.3, \(lqSSL Command Options\(rq.
+Section\ 6.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 Binary log control options: See
-Section\ 10.4, \(lqThe Binary Log\(rq.
+Section\ 9.3, \(lqThe Binary Log\(rq.
 .TP 3n
 \(bu
 Replication\-related options: See
@@ -105,8 +105,8 @@ Section\ 8, \(lqReplication Startup Options\(rq.
 Options specific to particular storage engines: See
 Section\ 1.1, \(lqMyISAM Startup Options\(rq,
 Section\ 5.3, \(lqBDB Startup Options\(rq,
-Section\ 2.5, \(lqInnoDB Startup Options and System Variables\(rq, and
-Section\ 6.5.1, \(lqMySQL Cluster\-Related Command Options for \fBmysqld\fR\(rq.
+Section\ 2.4, \(lqInnoDB Startup Options and System Variables\(rq, and
+Section\ 5.2.1, \(lqMySQL Cluster\-Related Command Options for \fBmysqld\fR\(rq.
 .sp
 .RE
 .PP
@@ -116,20 +116,23 @@ You can also set the values of server system variables by using variable names a
 \fB\-\-help\fR,
 \fB\-?\fR
 .sp
-Display a short help message and exit. Before MySQL 4.1.1,
-\fB\-\-help\fR
-displays the full help message. As of 4.1.1, it displays an abbreviated message only. Use both the
+Display a short help message and exit. Use both the
 \fB\-\-verbose\fR
 and
 \fB\-\-help\fR
 options to see the full message.
 .TP 3n
 \(bu
+\fB\-\-abort\-slave\-event\-count\fR
+.sp
+This option is used internally by the MySQL test suite for replication testing and debugging.
+.TP 3n
+\(bu
 \fB\-\-allow\-suspicious\-udfs\fR
 .sp
 This option controls whether user\-defined functions that have only an
 xxx
-symbol for the main function can be loaded. By default, the option is off and only UDFs that have at least one auxiliary symbol can be loaded; this prevents attempts at loading functions from shared object files other than those containing legitimate UDFs. This option was added in MySQL 4.0.24, and 4.1.10a. See
+symbol for the main function can be loaded. By default, the option is off and only UDFs that have at least one auxiliary symbol can be loaded; this prevents attempts at loading functions from shared object files other than those containing legitimate UDFs. This option was added in version 5.0.3. See
 Section\ 2.4.6, \(lqUser\-Defined Function Security Precautions\(rq.
 .TP 3n
 \(bu
@@ -148,7 +151,7 @@ the section called \(lqSQL MODES\(rq.
 The path to the MySQL installation directory. All paths are usually resolved relative to this directory.
 .TP 3n
 \(bu
-\fB\-\-big\-tables\fR
+\fBbig\-tables\fR
 .sp
 Allow large result sets by saving all temporary sets in files. This option prevents most
 \(lqtable full\(rq
@@ -165,18 +168,30 @@ The IP address to bind to.
 This option is used by the
 \fBmysql_install_db\fR
 script to create the MySQL privilege tables without having to start a full MySQL server.
+.sp
+This option is unavailable if MySQL was configured with the
+\fB\-\-disable\-grant\-options\fR
+option. See
+Section\ 4.14.2, \(lqTypical \fBconfigure\fR Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-character\-set\-client\-handshake\fR
 .sp
 Don't ignore character set information sent by the client. To ignore client information and use the default server character set, use
-\fB\-\-skip\-character\-set\-client\-handshake\fR; this makes MySQL 4.1 and higher behave like MySQL 4.0. This option was added in MySQL 4.1.15.
+\fB\-\-skip\-character\-set\-client\-handshake\fR; this makes MySQL behave like MySQL 4.0.
+.TP 3n
+\(bu
+\fB\-\-character\-set\-filesystem=\fR\fB\fIcharset_name\fR\fR
+.sp
+The filesystem character set. This option sets the
+character_set_filesystem
+system variable. It was added in MySQL 5.0.19.
 .TP 3n
 \(bu
 \fB\-\-character\-set\-server=\fR\fB\fIcharset_name\fR\fR,
@@ -185,9 +200,9 @@ Don't ignore character set information sent by the client. To ignore client info
 Use
 \fIcharset_name\fR
 as the default server character set. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq. If you use this option to specify a non\-default character set, you should also use
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq. If you use this option to specify a non\-default character set, you should also use
 \fB\-\-collation\-server\fR
-to specify the collation. This option is available as of MySQL 4.1.3.
+to specify the collation.
 .TP 3n
 \(bu
 \fB\-\-chroot=\fR\fB\fIpath\fR\fR
@@ -196,9 +211,7 @@ Put the
 \fBmysqld\fR
 server in a closed environment during startup by using the
 chroot()
-system call. This is a recommended security measure as of MySQL 4.0. (MySQL 3.23 is not able to provide a
-chroot()
-jail that is 100% closed.) Note that use of this option somewhat limits
+system call. This is a recommended security measure. Note that use of this option somewhat limits
 LOAD DATA INFILE
 and
 SELECT ... INTO OUTFILE.
@@ -208,8 +221,8 @@ SELECT ... INTO OUTFILE.
 .sp
 Use
 \fIcollation_name\fR
-as the default server collation. This option is available as of MySQL 4.1.3. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+as the default server collation. See
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-console\fR
@@ -255,18 +268,23 @@ is doing. The
 string often is
 \'d:t:o,\fIfile_name\fR'. The default is
 \'d:t:i:o,mysqld.trace'. See
-Section\ 1.2, \(lqCreating Trace Files\(rq.
+[1]\&\fIMySQL Internals: Porting\fR.
+.sp
+As of MySQL 5.0.25, using
+\fB\-\-with\-debug\fR
+to configure MySQL with debugging support enables you to use the
+\fB\-\-debug="d,parser_debug"\fR
+option when you start the server. This causes the Bison parser that is used to process SQL statements to dump a parser trace to the server's standard error output. Typically, this output is written to the error log.
 .TP 3n
 \(bu
-\fB\-\-default\-character\-set=\fR\fB\fIcharset_name\fR\fR,
-\fB\-C \fR\fB\fIcharset_name\fR\fR
+\fB\-\-default\-character\-set=\fR\fB\fIcharset_name\fR\fR
+(\fIDEPRECATED\fR)
 .sp
 Use
 \fIcharset_name\fR
 as the default character set. This option is deprecated in favor of
-\fB\-\-character\-set\-server\fR
-as of MySQL 4.1.3. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+\fB\-\-character\-set\-server\fR. See
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-default\-collation=\fR\fB\fIcollation_name\fR\fR
@@ -274,21 +292,20 @@ Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 Use
 \fIcollation_name\fR
 as the default collation. This option is deprecated in favor of
-\fB\-\-collation\-server\fR
-as of MySQL 4.1.3. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+\fB\-\-collation\-server\fR. See
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-default\-storage\-engine=\fR\fB\fItype\fR\fR
 .sp
-This option is a synonym for
-\fB\-\-default\-table\-type\fR. It is available as of MySQL 4.1.2.
+Set the default storage engine (table type) for tables. See
+Chapter\ 14, Storage Engines.
 .TP 3n
 \(bu
 \fB\-\-default\-table\-type=\fR\fB\fItype\fR\fR
 .sp
-Set the default table type (storage engine) for tables. See
-Chapter\ 14, Storage Engines and Table Types.
+This option is a synonym for
+\fB\-\-default\-storage\-engine\fR.
 .TP 3n
 \(bu
 \fB\-\-default\-time\-zone=\fR\fB\fItimezone\fR\fR
@@ -297,7 +314,7 @@ Set the default server time zone. This option sets the global
 time_zone
 system variable. If this option is not given, the default time zone is the same as the system time zone (given by the value of the
 system_time_zone
-system variable. This option is available as of MySQL 4.1.3.
+system variable.
 .TP 3n
 \(bu
 \fB\-\-delay\-key\-write[={OFF|ON|ALL}]\fR
@@ -314,7 +331,7 @@ option.
 ALL
 delays key writes for all
 MyISAM
-tables. Available as of MySQL 4.0.3. See
+tables. See
 Section\ 5.2, \(lqTuning Server Parameters\(rq, and
 Section\ 1.1, \(lqMyISAM Startup Options\(rq.
 .sp
@@ -323,15 +340,6 @@ ALL, you should not use
 MyISAM
 tables from within another program (such as another MySQL server or
 \fBmyisamchk\fR) when the tables are in use. Doing so leads to index corruption.
-.TP 3n
-\(bu
-\fB\-\-delay\-key\-write\-for\-all\-tables\fR
-.sp
-Old form of
-\fB\-\-delay\-key\-write=ALL\fR
-for use prior to MySQL 4.0.3. As of 4.0.3, use
-\fB\-\-delay\-key\-write\fR
-instead.
 .TP 3n
 \(bu
 \fB\-\-des\-key\-file=\fR\fB\fIfile_name\fR\fR
@@ -343,12 +351,17 @@ DES_DECRYPT()
 functions.
 .TP 3n
 \(bu
+\fB\-\-disconnect\-slave\-event\-count\fR
+.sp
+This option is used internally by the MySQL test suite for replication testing and debugging.
+.TP 3n
+\(bu
 \fB\-\-enable\-named\-pipe\fR
 .sp
-Enable support for named pipes. This option applies only on Windows NT, 2000, XP, and 2003 systems, and can be used only with the
+Enable support for named pipes. This option can be used only with the
 \fBmysqld\-nt\fR
 and
-\fBmysqld\-max\-nt\fR
+\fBmysqld\-debug\fR
 servers that support named\-pipe connections.
 .TP 3n
 \(bu
@@ -368,43 +381,44 @@ Enable external locking (system locking), which is disabled by default as of MyS
 lockd
 does not fully work (such as Linux), it is easy for
 \fBmysqld\fR
-to deadlock. This option was named
-\fB\-\-enable\-locking\fR
-before MySQL 4.0.3.
+to deadlock. This option previously was named
+\fB\-\-enable\-locking\fR.
 .sp
-\fBNote\fR: If you use this option to enable updates to
-MyISAM
-tables from many MySQL processes, you must ensure that the following conditions are satisfied:
-.RS 3n
-.TP 3n
-\(bu
-You should not use the query cache for queries that use tables that are updated by another process.
-.TP 3n
-\(bu
-You should not use
-\fB\-\-delay\-key\-write=ALL\fR
-or
-DELAY_KEY_WRITE=1
-on any shared tables.
-.RE
-.IP "" 3n
-The easiest way to ensure this is to always use
-\fB\-\-external\-locking\fR
-together with
-\fB\-\-delay\-key\-write=OFF\fR
-and
-\fB\-\-query\-cache\-size=0\fR. (This is not done by default because in many setups it is useful to have a mixture of the preceding options.)
+For more information about external locking, including conditions under which it can and cannot be used, see
+Section\ 3.4, \(lqExternal Locking\(rq.
 .TP 3n
 \(bu
 \fB\-\-flush\fR
 .sp
 Flush (synchronize) all changes to disk after each SQL statement. Normally, MySQL does a write of all changes to disk only after each SQL statement and lets the operating system handle the synchronizing to disk. See
-Section\ 4.2, \(lqWhat to Do If MySQL Keeps Crashing\(rq.
+Section\ 1.4.2, \(lqWhat to Do If MySQL Keeps Crashing\(rq.
+.TP 3n
+\(bu
+\fB\-\-enable\-pstack\fR
+.sp
+Print a symbolic stack trace on failure.
+.TP 3n
+\(bu
+\fB\-\-gdb\fR
+.sp
+Install an interrupt handler for
+SIGINT
+(needed to stop
+\fBmysqld\fR
+with
+^C
+to set breakpoints) and disable stack tracing and core file handling. See
+[1]\&\fIMySQL Internals: Porting\fR.
 .TP 3n
 \(bu
 \fB\-\-init\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Read SQL statements from this file at startup. Each statement must be on a single line and should not include comments.
+.sp
+This option is unavailable if MySQL was configured with the
+\fB\-\-disable\-grant\-options\fR
+option. See
+Section\ 4.14.2, \(lqTypical \fBconfigure\fR Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-innodb\-safe\-binlog\fR
@@ -412,7 +426,7 @@ Read SQL statements from this file at startup. Each statement must be on a singl
 Adds consistency guarantees between the content of
 InnoDB
 tables and the binary log. See
-Section\ 10.4, \(lqThe Binary Log\(rq.
+Section\ 9.3, \(lqThe Binary Log\(rq. This option was removed in MySQL 5.0.3, having been made obsolete by the introduction of XA transaction support.
 .TP 3n
 \(bu
 \fB\-\-innodb\-\fR\fB\fIxxx\fR\fR
@@ -420,7 +434,7 @@ Section\ 10.4, \(lqThe Binary Log\(rq.
 The
 InnoDB
 options are listed in
-Section\ 2.5, \(lqInnoDB Startup Options and System Variables\(rq.
+Section\ 2.4, \(lqInnoDB Startup Options and System Variables\(rq.
 .TP 3n
 \(bu
 \fB\-\-language=\fR\fB\fIlang_name\fR\fR\fB, \-L \fR\fB\fIlang_name\fR\fR
@@ -428,14 +442,27 @@ Section\ 2.5, \(lqInnoDB Startup Options and System Variables\(rq.
 Return client error messages in the given language.
 \fIlang_name\fR
 can be given as the language name or as the full pathname to the directory where the language files are installed. See
-Section\ 9.2, \(lqSetting the Error Message Language\(rq.
+Section\ 8.2, \(lqSetting the Error Message Language\(rq.
+.TP 3n
+\(bu
+\fB\-\-large\-pages\fR
+.sp
+Some hardware/operating system architectures support memory pages greater than the default (usually 4KB). The actual implementation of this support depends on the underlying hardware and OS. Applications that perform a lot of memory accesses may obtain performance improvements by using large pages due to reduced Translation Lookaside Buffer (TLB) misses.
+.sp
+Currently, MySQL supports only the Linux implementation of large pages support (which is called HugeTLB in Linux). We have plans to extend this support to FreeBSD, Solaris and possibly other platforms.
+.sp
+Before large pages can be used on Linux, it is necessary to configure the HugeTLB memory pool. For reference, consult the
+\fIhugetlbpage.txt\fR
+file in the Linux kernel source.
+.sp
+This option is disabled by default. It was added in MySQL 5.0.3.
 .TP 3n
 \(bu
 \fB\-\-log[=\fR\fB\fIfile_name\fR\fR\fB]\fR,
 \fB\-l [\fR\fB\fIfile_name\fR\fR\fB]\fR
 .sp
 Log connections and SQL statements received from clients to this file. See
-Section\ 10.2, \(lqThe General Query Log\(rq. If you omit the filename, MySQL uses
+Section\ 9.2, \(lqThe General Query Log\(rq. If you omit the filename, MySQL uses
 \fI\fIhost_name\fR\fR\fI.log\fR
 as the filename.
 .TP 3n
@@ -443,10 +470,10 @@ as the filename.
 \fB\-\-log\-bin[=\fR\fB\fIbase_name\fR\fR\fB]\fR
 .sp
 Enable binary logging. The server logs all statements that change data to the binary log, which is used for backup and replication. See
-Section\ 10.4, \(lqThe Binary Log\(rq.
+Section\ 9.3, \(lqThe Binary Log\(rq.
 .sp
 The option value, if given, is the basename for the log sequence. The server creates binary log files in sequence by adding a numeric suffix to the basename. It is recommended that you specify a basename (see
-Section\ 8.4, \(lqOpen Issues in MySQL\(rq, for the reason). Otherwise, MySQL uses
+Section\ 1.8.1, \(lqOpen Issues in MySQL\(rq, for the reason). Otherwise, MySQL uses
 \fI\fIhost_name\fR\fR\fI\-bin\fR
 as the basename.
 .TP 3n
@@ -454,16 +481,38 @@ as the basename.
 \fB\-\-log\-bin\-index[=\fR\fB\fIfile_name\fR\fR\fB]\fR
 .sp
 The index file for binary log filenames. See
-Section\ 10.4, \(lqThe Binary Log\(rq. If you omit the filename, and if you didn't specify one with
+Section\ 9.3, \(lqThe Binary Log\(rq. If you omit the filename, and if you didn't specify one with
 \fB\-\-log\-bin\fR, MySQL uses
 \fI\fIhost_name\fR\fR\fI\-bin.index\fR
 as the filename.
 .TP 3n
 \(bu
+\fB\-\-log\-bin\-trust\-function\-creators[={0|1}]\fR
+.sp
+With no argument or an argument of 1, this option sets the
+log_bin_trust_function_creators
+system variable to 1. With an argument of 0, this option sets the system variable to 0.
+log_bin_trust_function_creators
+affects how MySQL enforces restrictions on stored function creation. See
+Section\ 4, \(lqBinary Logging of Stored Routines and Triggers\(rq.
+.sp
+This option was added in MySQL 5.0.16.
+.TP 3n
+\(bu
+\fB\-\-log\-bin\-trust\-routine\-creators[={0|1}]\fR
+.sp
+This is the old name for
+\fB\-\-log\-bin\-trust\-function\-creators\fR. Before MySQL 5.0.16, it also applies to stored procedures, not just stored functions and sets the
+log_bin_trust_routine_creators
+system variable. As of 5.0.16, this option is deprecated. It is recognized for backward compatibility but its use results in a warning.
+.sp
+This option was added in MySQL 5.0.6.
+.TP 3n
+\(bu
 \fB\-\-log\-error[=\fR\fB\fIfile_name\fR\fR\fB]\fR
 .sp
 Log errors and startup messages to this file. See
-Section\ 10.1, \(lqThe Error Log\(rq. If you omit the filename, MySQL uses
+Section\ 9.1, \(lqThe Error Log\(rq. If you omit the filename, MySQL uses
 \fI\fIhost_name\fR\fR\fI.err\fR. If the filename has no extension, the server adds an extension of
 \fI.err\fR.
 .TP 3n
@@ -471,21 +520,16 @@ Section\ 10.1, \(lqThe Error Log\(rq. If you omit the filename, MySQL uses
 \fB\-\-log\-isam[=\fR\fB\fIfile_name\fR\fR\fB]\fR
 .sp
 Log all
-ISAM/MyISAM
+MyISAM
 changes to this file (used only when debugging
-ISAM/MyISAM).
+MyISAM).
 .TP 3n
 \(bu
 \fB\-\-log\-long\-format\fR
+(\fIDEPRECATED\fR)
 .sp
-Log extra information to the update log, binary update log, and slow query log, if they have been activated. For example, the username and timestamp are logged for queries. Before MySQL 4.1, if you are using
-\fB\-\-log\-slow\-queries\fR
-and
-\fB\-\-log\-long\-format\fR, queries that are not using indexes also are logged to the slow query log.
-\fB\-\-log\-long\-format\fR
-is deprecated as of MySQL version 4.1, when
-\fB\-\-log\-short\-format\fR
-was introduced. (Long log format is the default setting since version 4.1.) Also note that starting with MySQL 4.1, the
+Log extra information to the update log, binary update log, and slow query log, if they have been activated. For example, the username and timestamp are logged for all queries. This option is deprecated, as it now represents the default logging behavior. (See the description for
+\fB\-\-log\-short\-format\fR.) The
 \fB\-\-log\-queries\-not\-using\-indexes\fR
 option is available for the purpose of logging queries that do not use indexes to the slow query log.
 .TP 3n
@@ -493,13 +537,13 @@ option is available for the purpose of logging queries that do not use indexes t
 \fB\-\-log\-queries\-not\-using\-indexes\fR
 .sp
 If you are using this option with
-\fB\-\-log\-slow\-queries\fR, queries that do not use indexes also are logged to the slow query log. This option is available as of MySQL 4.1. See
-Section\ 10.5, \(lqThe Slow Query Log\(rq.
+\fB\-\-log\-slow\-queries\fR, queries that do not use indexes are logged to the slow query log. See
+Section\ 9.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 \fB\-\-log\-short\-format\fR
 .sp
-Log less information to the update log, binary update log, and slow query log, if they have been activated. For example, the username and timestamp are not logged for queries. This option was introduced in MySQL 4.1.
+Log less information to the update log, binary update log, and slow query log, if they have been activated. For example, the username and timestamp are not logged for queries.
 .TP 3n
 \(bu
 \fB\-\-log\-slow\-admin\-statements\fR
@@ -509,8 +553,6 @@ OPTIMIZE TABLE,
 ANALYZE TABLE, and
 ALTER TABLE
 to the slow query log.
-.sp
-This option was added in MySQL 4.1.13. (It is unnecessary in MySQL 4.0 because slow administrative statements are logged by default.)
 .TP 3n
 \(bu
 \fB\-\-log\-slow\-queries[=\fR\fB\fIfile_name\fR\fR\fB]\fR
@@ -518,22 +560,22 @@ This option was added in MySQL 4.1.13. (It is unnecessary in MySQL 4.0 because s
 Log all queries that have taken more than
 long_query_time
 seconds to execute to this file. See
-Section\ 10.5, \(lqThe Slow Query Log\(rq. Note that the default for the amount of information logged has changed in MySQL 4.1. See the
+Section\ 9.4, \(lqThe Slow Query Log\(rq. See the descriptions of the
 \fB\-\-log\-long\-format\fR
 and
 \fB\-\-log\-short\-format\fR
 options for details.
 .TP 3n
 \(bu
-\fB\-\-log\-update[=\fR\fB\fIfile_name\fR\fR\fB]\fR
+\fB\-\-log\-tc=\fR\fB\fIfile_name\fR\fR
 .sp
-Log updates to
-\fIfileN\fR
-where
-\fIN\fR
-is a unique number if not given. See
-Section\ 10.3, \(lqThe Update Log\(rq. The update log is now deprecated; you should use the binary log instead (\fB\-\-log\-bin\fR). See
-Section\ 10.4, \(lqThe Binary Log\(rq.
+The name of the memory\-mapped transaction coordinator log file (for XA transactions that affect multiple storage engines when the binary log is disabled). The default name is
+\fItc.log\fR. The file is created under the data directory if not given as a full pathname. Currently, this option is unused. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+\fB\-\-log\-tc\-size=\fR\fB\fIsize\fR\fR
+.sp
+The size in bytes of the memory\-mapped transaction coordinator log. The default size is 24KB. Added in MySQL 5.0.3.
 .TP 3n
 \(bu
 \fB\-\-log\-warnings[=\fR\fB\fIlevel\fR\fR\fB]\fR,
@@ -541,16 +583,11 @@ Section\ 10.4, \(lqThe Binary Log\(rq.
 .sp
 Print out warnings such as
 Aborted connection...
-to the error log. Enabling this option is recommended, for example, if you use replication (you get more information about what is happening, such as messages about network failures and reconnections). This option is enabled by default as of MySQL 4.0.19 and 4.1.2; to disable it, use
-\fB\-\-log\-warnings=0\fR. As of MySQL 4.0.21 and 4.1.3, a
+to the error log. Enabling this option is recommended, for example, if you use replication (you get more information about what is happening, such as messages about network failures and reconnections). This option is enabled (1) by default, and the default
 \fIlevel\fR
-argument can be given. If omitted, the default
-\fIlevel\fR
-is 1. Aborted connections are not logged to the error log unless the value is greater than 1. See
-Section\ 2.10, \(lqCommunication Errors and Aborted Connections\(rq.
-.sp
-Before MySQL 4.0.21 and 4.1.3, this is a boolean option, not an integer\-valued option. Before 4.0, this option was named
-\fB\-\-warnings\fR.
+value if omitted is 1. To disable this option, use
+\fB\-\-log\-warnings=0\fR. Aborted connections are not logged to the error log unless the value is greater than 1. See
+Section\ 1.2.10, \(lqCommunication Errors and Aborted Connections\(rq.
 .TP 3n
 \(bu
 \fB\-\-low\-priority\-updates\fR
@@ -562,8 +599,15 @@ UPDATE) lower priority than selects. This can also be done via
 {INSERT | REPLACE | DELETE | UPDATE} LOW_PRIORITY ...
 to lower the priority of only one query, or by
 SET LOW_PRIORITY_UPDATES=1
-to change the priority in one thread. See
+to change the priority in one thread. This affects only storage engines that use only table\-level locking (MyISAM,
+MEMORY,
+MERGE). See
 Section\ 3.2, \(lqTable Locking Issues\(rq.
+.TP 3n
+\(bu
+\fB\-\-max\-binlog\-dump\-events\fR
+.sp
+This option is used internally by the MySQL test suite for replication testing and debugging.
 .TP 3n
 \(bu
 \fB\-\-memlock\fR
@@ -576,7 +620,7 @@ system call. This might help if you have a problem where the operating system is
 \fBmysqld\fR
 to swap on disk. Note that use of this option requires that you run the server as
 root, which is normally not a good idea for security reasons. See
-Section\ 5.5, \(lqHow to Run MySQL as a Normal User\(rq.
+Section\ 4.5, \(lqHow to Run MySQL as a Normal User\(rq.
 .TP 3n
 \(bu
 \fB\-\-myisam\-recover[=\fR\fB\fIoption\fR\fR\fB[,\fR\fB\fIoption\fR\fR\fB]...]]\fR
@@ -634,14 +678,15 @@ T}
 T{
 QUICK
 T}:T{
-do not check the rows in the table if there are not any delete blocks.
+Don't check the rows in the table if there aren't any delete blocks.
 T}
 .TE
 .sp
 Before the server automatically repairs a table, it writes a note about the repair to the error log. If you want to be able to recover from most problems without user intervention, you should use the options
 BACKUP,FORCE. This forces a repair of a table even if some rows would be deleted, but it keeps the old data file as a backup so that you can later examine what happened.
 .sp
-This option is available as of MySQL 3.23.25.
+See
+Section\ 1.1, \(lqMyISAM Startup Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-ndb\-connectstring=\fR\fB\fIconnect_string\fR\fR
@@ -649,59 +694,27 @@ This option is available as of MySQL 3.23.25.
 When using the
 NDB
 storage engine, it is possible to point out the management server that distributes the cluster configuration by setting the connect string option. See
-Section\ 4.4.2, \(lqThe Cluster connectstring\(rq, for syntax.
+Section\ 3.4.2, \(lqThe Cluster Connectstring\(rq, for syntax.
 .TP 3n
 \(bu
 \fB\-\-ndbcluster\fR
 .sp
 If the binary includes support for the
 NDB Cluster
-storage engine (from version 4.1.3, the MySQL\-Max binaries are built with
-NDB Cluster
-enabled), this option enables the engine, which is disabled by default. Using the
-NDB Cluster
-storage engine is necessary for using MySQL Cluster. See
+storage engine, this option enables the engine, which is disabled by default. See
 Chapter\ 15, MySQL Cluster.
-.TP 3n
-\(bu
-\fB\-\-new\fR
-.sp
-The
-\fB\-\-new\fR
-option can be used to make the server behave as 4.1 in certain respects, easing a 4.0 to 4.1 upgrade:
-.RS 3n
-.TP 3n
-\(bu
-Hexadecimal strings such as
-0xFF
-are treated as strings by default rather than as numbers. (Works in 4.0.12 and up.)
-.TP 3n
-\(bu
-TIMESTAMP
-is returned as a string with the format
-\'YYYY\-MM\-DD HH:MM:SS'. (Works in 4.0.13 and up.) See
-Chapter\ 11, Data Types.
-.RE
-.IP "" 3n
-This option can be used to help you see how your applications behave in MySQL 4.1, without actually upgrading to 4.1.
 .TP 3n
 \(bu
 \fB\-\-old\-passwords\fR
 .sp
 Force the server to generate short (pre\-4.1) password hashes for new passwords. This is useful for compatibility when the server must support older client programs. See
-Section\ 6.9, \(lqPassword Hashing as of MySQL 4.1\(rq.
-.TP 3n
-\(bu
-\fB\-\-old\-protocol\fR,
-\fB\-o\fR
-.sp
-Use the 3.20 protocol for compatibility with some very old clients.
+Section\ 5.9, \(lqPassword Hashing as of MySQL 4.1\(rq.
 .TP 3n
 \(bu
 \fB\-\-one\-thread\fR
 .sp
 Only use one thread (for debugging under Linux). This option is available only if the server is built with debugging enabled. See
-Section\ 1, \(lqDebugging a MySQL Server\(rq.
+[1]\&\fIMySQL Internals: Porting\fR.
 .TP 3n
 \(bu
 \fB\-\-open\-files\-limit=\fR\fB\fIcount\fR\fR
@@ -737,46 +750,70 @@ root
 system user.
 .TP 3n
 \(bu
+\fB\-\-port\-open\-timeout=\fR\fB\fInum\fR\fR
+.sp
+On some systems, when the server is stopped, the TCP/IP port might not become available immediately. If the server is restarted quickly afterward, its attempt to reopen the port can fail. This option indicates how many seconds the server should wait for the TCP/IP port to become free if it cannot be opened. The default is not to wait. This option was added in MySQL 5.0.19.
+.TP 3n
+\(bu
 \fB\-\-safe\-mode\fR
 .sp
 Skip some optimization stages.
 .TP 3n
 \(bu
 \fB\-\-safe\-show\-database\fR
+(\fIDEPRECATED\fR)
 .sp
-With this option, the
-SHOW DATABASES
-statement displays only the names of those databases for which the user has some kind of privilege. As of MySQL 4.0.2, this option is deprecated and does not do anything (it is enabled by default), because there is a
-SHOW DATABASES
-privilege that can be used to control access to database names on a per\-account basis. See
-Section\ 6.3, \(lqPrivileges Provided by MySQL\(rq.
+See
+Section\ 5.3, \(lqPrivileges Provided by MySQL\(rq.
 .TP 3n
 \(bu
 \fB\-\-safe\-user\-create\fR
 .sp
 If this option is enabled, a user cannot create new MySQL users by using the
 GRANT
-statement, if the user doesn't have the
+statement unless the user has the
 INSERT
 privilege for the
 mysql.user
-table or any column in the table.
+table or any column in the table. If you want a user to have the ability to create new users that have those privileges that the user has the right to grant, you should grant the user the following privilege:
+.sp
+.RS 3n
+.nf
+GRANT INSERT(user) ON mysql.user TO '\fIuser_name\fR'@'\fIhost_name\fR';
+.fi
+.RE
+This ensures that the user cannot change any privilege columns directly, but has to use the
+GRANT
+statement to give privileges to other users.
 .TP 3n
 \(bu
 \fB\-\-secure\-auth\fR
 .sp
-Disallow authentication by clients that attempt to use accounts that have old (pre\-4.1) passwords. This option is available as of MySQL 4.1.1.
+Disallow authentication by clients that attempt to use accounts that have old (pre\-4.1) passwords.
+.TP 3n
+\(bu
+\fB\-\-secure\-file\-priv=\fR\fB\fIpath\fR\fR
+.sp
+This option limits the effect of the
+LOAD_FILE()
+function and the
+LOAD DATA
+and
+SELECT ... INTO OUTFILE
+statements to work only with files in the specified directory.
+.sp
+This option was added in MySQL 5.0.38.
 .TP 3n
 \(bu
 \fB\-\-shared\-memory\fR
 .sp
-Enable shared\-memory connections by local clients. This option is available only on Windows. It was added in MySQL 4.1.0.
+Enable shared\-memory connections by local clients. This option is available only on Windows.
 .TP 3n
 \(bu
 \fB\-\-shared\-memory\-base\-name=\fR\fB\fIname\fR\fR
 .sp
 The name of shared memory to use for shared\-memory connections. This option is available only on Windows. The default name is
-MYSQL. The name is case sensitive. This option was added in MySQL 4.1.0.
+MYSQL. The name is case sensitive.
 .TP 3n
 \(bu
 \fB\-\-skip\-bdb\fR
@@ -796,30 +833,10 @@ tables. (This is to be used only if you think you have found a bug in this featu
 Section\ 3.3, \(lqConcurrent Inserts\(rq.
 .TP 3n
 \(bu
-\fB\-\-skip\-delay\-key\-write\fR
-.sp
-Ignore the
-DELAY_KEY_WRITE
-option for all tables. As of MySQL 4.0.3, you should use
-\fB\-\-delay\-key\-write=OFF\fR
-instead. See
-Section\ 5.2, \(lqTuning Server Parameters\(rq.
-.TP 3n
-\(bu
 \fB\-\-skip\-external\-locking\fR
 .sp
-Do not use external locking (system locking). With external locking disabled, you must shut down the server to use
-\fBmyisamchk\fR
-or
-\fBisamchk\fR. See
-Section\ 4.3, \(lqMySQL Stability\(rq. As of MySQL 3.23, you can use the
-CHECK TABLE
-and
-REPAIR TABLE
-statements to check and repair
-MyISAM
-tables. This option previously was named
-\fB\-\-skip\-locking\fR.
+Do not use external locking (system locking). For more information about external locking, including conditions under which it can and cannot be used, see
+Section\ 3.4, \(lqExternal Locking\(rq.
 .sp
 External locking has been disabled by default since MySQL 4.0.
 .TP 3n
@@ -834,12 +851,17 @@ or
 command from a system shell, or by issuing a MySQL
 FLUSH PRIVILEGES
 statement after connecting to the server. This option also suppresses loading of user\-defined functions (UDFs).
+.sp
+This option is unavailable if MySQL was configured with the
+\fB\-\-disable\-grant\-options\fR
+option. See
+Section\ 4.14.2, \(lqTypical \fBconfigure\fR Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-skip\-host\-cache\fR
 .sp
 Do not use the internal hostname cache for faster name\-to\-IP resolution. Instead, query the DNS server every time a client connects. See
-Section\ 5.5, \(lqHow MySQL Uses DNS\(rq.
+Section\ 5.9, \(lqHow MySQL Uses DNS\(rq.
 .TP 3n
 \(bu
 \fB\-\-skip\-innodb\fR
@@ -851,21 +873,11 @@ InnoDB
 tables.
 .TP 3n
 \(bu
-\fB\-\-skip\-isam\fR
-.sp
-Disable the
-ISAM
-storage engine. As of MySQL 4.1,
-ISAM
-is disabled by default, so this option applies only if the server was configured with support for
-ISAM. This option was added in MySQL 4.1.1.
-.TP 3n
-\(bu
 \fB\-\-skip\-merge\fR
 .sp
 Disable the
 MERGE
-storage engine. This option was added in MySQL 4.1.21. It can be used if the following behavior is undesirable: If a user has access to
+storage engine. This option was added in MySQL 5.0.24. It can be used if the following behavior is undesirable: If a user has access to
 MyISAM
 table
 \fIt\fR, that user can create a
@@ -887,7 +899,7 @@ Do not resolve hostnames when checking client connections. Use only IP numbers. 
 Host
 column values in the grant tables must be IP numbers or
 localhost. See
-Section\ 5.5, \(lqHow MySQL Uses DNS\(rq.
+Section\ 5.9, \(lqHow MySQL Uses DNS\(rq.
 .TP 3n
 \(bu
 \fB\-\-skip\-ndbcluster\fR
@@ -899,26 +911,20 @@ NDB Cluster
 storage engine support; the server allocates memory and other resources for this storage engine only if the
 \fB\-\-ndbcluster\fR
 option is given explicitly. See
-Section\ 4.3, \(lqQuick Test Setup of MySQL Cluster\(rq, for an example of usage.
+Section\ 3.3, \(lqQuick Test Setup of MySQL Cluster\(rq, for an example of usage.
 .TP 3n
 \(bu
 \fB\-\-skip\-networking\fR
 .sp
-Do not listen for TCP/IP connections at all. All interaction with
+Don't listen for TCP/IP connections at all. All interaction with
 \fBmysqld\fR
 must be made via named pipes or shared memory (on Windows) or Unix socket files (on Unix). This option is highly recommended for systems where only local clients are allowed. See
-Section\ 5.5, \(lqHow MySQL Uses DNS\(rq.
+Section\ 5.9, \(lqHow MySQL Uses DNS\(rq.
 .TP 3n
 \(bu
-\fB\-\-skip\-new\fR
+\fB\-\-sporadic\-binlog\-dump\-fail\fR
 .sp
-do not use new, possibly wrong routines.
-.TP 3n
-\(bu
-\fB\-\-skip\-symlink\fR
-.sp
-This is the old form of
-\fB\-\-skip\-symbolic\-links\fR, for use before MySQL 4.0.13.
+This option is used internally by the MySQL test suite for replication testing and debugging.
 .TP 3n
 \(bu
 \fB\-\-ssl*\fR
@@ -926,12 +932,12 @@ This is the old form of
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to allow clients to connect via SSL and indicate where to find SSL keys and certificates. See
-Section\ 7.7.3, \(lqSSL Command Options\(rq.
+Section\ 6.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-standalone\fR
 .sp
-Available on Windows NT\-based systems only; instructs the MySQL server not to run as a service.
+Instructs the MySQL server not to run as a service.
 .TP 3n
 \(bu
 \fB\-\-symbolic\-links\fR,
@@ -958,14 +964,12 @@ CREATE TABLE
 statement. If you delete or rename the table, the files that its symbolic links point to also are deleted or renamed. See
 Section\ 6.1.2, \(lqUsing Symbolic Links for Tables on Unix\(rq.
 .RE
-.IP "" 3n
-This option was added in MySQL 4.0.13.
 .TP 3n
 \(bu
 \fB\-\-skip\-safemalloc\fR
 .sp
 If MySQL is configured with
-\fB\-\-with\-debug=full\fR, all MySQL programs check for memory overruns during each memory allocation and memory freeing operation. This checking is very slow, so for the server you can avoid it when you do not need it by using the
+\fB\-\-with\-debug=full\fR, all MySQL programs check for memory overruns during each memory allocation and memory freeing operation. This checking is very slow, so for the server you can avoid it when you don't need it by using the
 \fB\-\-skip\-safemalloc\fR
 option.
 .TP 3n
@@ -987,10 +991,10 @@ global privilege is considered a privilege for the database.
 \(bu
 \fB\-\-skip\-stack\-trace\fR
 .sp
-do not write stack traces. This option is useful when you are running
+Don't write stack traces. This option is useful when you are running
 \fBmysqld\fR
 under a debugger. On some systems, you also must use this option to get a core file. See
-Section\ 1, \(lqDebugging a MySQL Server\(rq.
+[1]\&\fIMySQL Internals: Porting\fR.
 .TP 3n
 \(bu
 \fB\-\-skip\-thread\-priority\fR
@@ -1009,7 +1013,32 @@ MySQL
 \fB\-\-sql\-mode=\fR\fB\fIvalue\fR\fR\fB[,\fR\fB\fIvalue\fR\fR\fB[,\fR\fB\fIvalue\fR\fR\fB...]]\fR
 .sp
 Set the SQL mode. See
-the section called \(lqSQL MODES\(rq. This option was added in 3.23.41.
+the section called \(lqSQL MODES\(rq.
+.TP 3n
+\(bu
+\fB\-\-sysdate\-is\-now\fR
+.sp
+As of MySQL 5.0.13,
+SYSDATE()
+by default returns the time at which it executes, not the time at which the statement in which it occurs begins executing. This differs from the behavior of
+NOW(). This option causes
+SYSDATE()
+to be an alias for
+NOW(). For information about the implications for binary logging and replication, see the description for
+SYSDATE()
+in
+Section\ 6, \(lqDate and Time Functions\(rq
+and for
+SET TIMESTAMP
+in
+Section\ 5.3, \(lqSET Syntax\(rq.
+.sp
+This option was added in MySQL 5.0.20.
+.TP 3n
+\(bu
+\fB\-\-tc\-heuristic\-recover={COMMIT|ROLLBACK}\fR
+.sp
+The type of decision to use in the heuristic recovery process. Currently, this option is unused. Added in MySQL 5.0.3.
 .TP 3n
 \(bu
 \fB\-\-temp\-pool\fR
@@ -1036,10 +1065,10 @@ Section\ 4.6, \(lqSET TRANSACTION Syntax\(rq.
 .sp
 The path of the directory to use for creating temporary files. It might be useful if your default
 /tmp
-directory resides on a partition that is too small to hold temporary tables. Starting from MySQL 4.1.0, this option accepts several paths that are used in round\-robin fashion. Paths should be separated by colon characters (\(oq:\(cq) on Unix and semicolon characters (\(oq;\(cq) on Windows, NetWare, and OS/2. If the MySQL server is acting as a replication slave, you should not set
+directory resides on a partition that is too small to hold temporary tables. This option accepts several paths that are used in round\-robin fashion. Paths should be separated by colon characters (\(oq:\(cq) on Unix and semicolon characters (\(oq;\(cq) on Windows, NetWare, and OS/2. If the MySQL server is acting as a replication slave, you should not set
 \fB\-\-tmpdir\fR
 to point to a directory on a memory\-based filesystem or to a directory that is cleared when the server host restarts. For more information about the storage location of temporary files, see
-Section\ 4.4, \(lqWhere MySQL Stores Temporary Files\(rq. A replication slave needs some of its temporary files to survive a machine restart so that it can replicate temporary tables or
+Section\ 1.4.4, \(lqWhere MySQL Stores Temporary Files\(rq. A replication slave needs some of its temporary files to survive a machine restart so that it can replicate temporary tables or
 LOAD DATA INFILE
 operations. If files in the temporary file directory are lost when the server restarts, replication fails.
 .TP 3n
@@ -1062,9 +1091,9 @@ when starting
 as
 root. The server changes its user ID during its startup sequence, causing it to run as that particular user rather than as
 root. See
-Section\ 5.1, \(lqGeneral Security Guidelines\(rq.
+Section\ 4.1, \(lqGeneral Security Guidelines\(rq.
 .sp
-Starting from MySQL 3.23.56 and 4.0.12: To avoid a possible security hole where a user adds a
+To avoid a possible security hole where a user adds a
 \fB\-\-user=root\fR
 option to a
 \fImy.cnf\fR
@@ -1101,7 +1130,7 @@ Display version information and exit.
 .sp
 .RE
 .PP
-As of MySQL 4.0, you can assign a value to a server system variable by using an option of the form
+You can assign a value to a server system variable by using an option of the form
 \fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR. For example,
 \fB\-\-key_buffer_size=32M\fR
 sets the
@@ -1118,9 +1147,9 @@ command\-line option.
 It is also possible to set variables by using
 \fB\-\-set\-variable=\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
 or
-\fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
+\fB\-O \fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
 syntax.
-\fIThis syntax is deprecated as of MySQL 4.0.\fR
+\fIThis syntax is deprecated\fR.
 .PP
 You can change the values of most system variables for a running server with the
 SET
@@ -1133,16 +1162,14 @@ Section\ 5.2, \(lqTuning Server Parameters\(rq, includes information on optimizi
 .PP
 The
 \fBmysql\fR
-server maintains many system variables that indicate how it is configured. Each system variable has a default value. System variables can be set at server startup using options on the command line or in an option file. As of MySQL 4.0.3, most of them can be changed dynamically while the server is running by means of the
+server maintains many system variables that indicate how it is configured. Each system variable has a default value. System variables can be set at server startup using options on the command line or in an option file. Most of them can be changed dynamically while the server is running by means of the
 SET
 statement, which enables you to modify operation of the server without having to stop and restart it. You can refer to system variable values in expressions.
 .PP
 There are several ways to see the names and values of system variables:
 .TP 3n
 \(bu
-To see the values that a server will use based on its compiled\-in defaults and any option files that it reads, use this command (omit
-\fB\-\-verbose\fR
-before MySQL 4.1.1):
+To see the values that a server will use based on its compiled\-in defaults and any option files that it reads, use this command:
 .sp
 .RS 3n
 .nf
@@ -1151,9 +1178,7 @@ mysqld \-\-verbose \-\-help
 .RE
 .TP 3n
 \(bu
-To see the values that a server will use based on its compiled\-in defaults, ignoring the settings in any option files, use this command (omit
-\fB\-\-verbose\fR
-before MySQL 4.1.1):
+To see the values that a server will use based on its compiled\-in defaults, ignoring the settings in any option files, use this command:
 .sp
 .RS 3n
 .nf
@@ -1168,7 +1193,8 @@ statement.
 .sp
 .RE
 .PP
-This section provides a description of each system variable. Variables with no version indicated have been present since at least MySQL 3.22.
+This section provides a description of each system variable. Variables with no version indicated are present in all MySQL 5.0 releases. For historical information concerning their implementation, please see
+MySQL 3.23, 4.0, 4.1 Reference Manual.
 .PP
 For additional system variable information, see these sections:
 .TP 3n
@@ -1179,11 +1205,11 @@ the section called \(lqUSING SYSTEM VARIABLES\(rq, discusses the syntax for sett
 the section called \(lqDynamic System Variables\(rq, lists the variables that can be set at runtime.
 .TP 3n
 \(bu
-Information on tuning sytem variables can be found in
+Information on tuning system variables can be found in
 Section\ 5.2, \(lqTuning Server Parameters\(rq.
 .TP 3n
 \(bu
-Section\ 2.5, \(lqInnoDB Startup Options and System Variables\(rq, lists
+Section\ 2.4, \(lqInnoDB Startup Options and System Variables\(rq, lists
 InnoDB
 system variables.
 .sp
@@ -1217,16 +1243,229 @@ does not.
 Values for buffer sizes, lengths, and stack sizes are given in bytes unless otherwise specified.
 .TP 3n
 \(bu
-ansi_mode
+auto_increment_increment
 .sp
-This is
-ON
-if
+auto_increment_increment
+and
+auto_increment_offset
+are intended for use with master\-to\-master replication, and can be used to control the operation of
+AUTO_INCREMENT
+columns. Both variables can be set globally or locally, and each can assume an integer value between 1 and 65,535 inclusive. Setting the value of either of these two variables to 0 causes its value to be set to 1 instead. Attempting to set the value of either of these two variables to an integer greater than 65,535 or less than 0 causes its value to be set to 65,535 instead. Attempting to set the value of
+auto_increment_increment
+or
+auto_increment_offset
+to a non\-integer value gives rise to an error, and the actual value of the variable remains unchanged.
+.sp
+These two variables affect
+AUTO_INCREMENT
+column behavior as follows:
+.RS 3n
+.TP 3n
+\(bu
+auto_increment_increment
+controls the interval between successive column values. For example:
+.sp
+.RS 3n
+.nf
+mysql> \fBSHOW VARIABLES LIKE 'auto_inc%';\fR
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| Variable_name            | Value |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| auto_increment_increment | 1     |
+| auto_increment_offset    | 1     |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+2 rows in set (0.00 sec)
+mysql> \fBCREATE TABLE autoinc1\fR
+    \-> \fB(col INT NOT NULL AUTO_INCREMENT PRIMARY KEY);\fR
+  Query OK, 0 rows affected (0.04 sec)
+mysql> \fBSET @@auto_increment_increment=10;\fR
+Query OK, 0 rows affected (0.00 sec)
+mysql> \fBSHOW VARIABLES LIKE 'auto_inc%';\fR
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| Variable_name            | Value |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| auto_increment_increment | 10    |
+| auto_increment_offset    | 1     |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+2 rows in set (0.01 sec)
+mysql> \fBINSERT INTO autoinc1 VALUES (NULL), (NULL), (NULL), (NULL);\fR
+Query OK, 4 rows affected (0.00 sec)
+Records: 4  Duplicates: 0  Warnings: 0
+mysql> \fBSELECT col FROM autoinc1;\fR
++\-\-\-\-\-+
+| col |
++\-\-\-\-\-+
+|   1 |
+|  11 |
+|  21 |
+|  31 |
++\-\-\-\-\-+
+4 rows in set (0.00 sec)
+.fi
+.RE
+(Note how
+SHOW VARIABLES
+is used here to obtain the current values for these variables.)
+.TP 3n
+\(bu
+auto_increment_offset
+determines the starting point for the
+AUTO_INCREMENT
+column value. Consider the following, assuming that these statements are executed during the same session as the example given in the description for
+auto_increment_increment:
+.sp
+.RS 3n
+.nf
+mysql> \fBSET @@auto_increment_offset=5;\fR
+Query OK, 0 rows affected (0.00 sec)
+mysql> \fBSHOW VARIABLES LIKE 'auto_inc%';\fR
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| Variable_name            | Value |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| auto_increment_increment | 10    |
+| auto_increment_offset    | 5     |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+2 rows in set (0.00 sec)
+mysql> \fBCREATE TABLE autoinc2\fR
+    \-> \fB(col INT NOT NULL AUTO_INCREMENT PRIMARY KEY);\fR
+Query OK, 0 rows affected (0.06 sec)
+mysql> \fBINSERT INTO autoinc2 VALUES (NULL), (NULL), (NULL), (NULL);\fR
+Query OK, 4 rows affected (0.00 sec)
+Records: 4  Duplicates: 0  Warnings: 0
+mysql> \fBSELECT col FROM autoinc2;\fR
++\-\-\-\-\-+
+| col |
++\-\-\-\-\-+
+|   5 |
+|  15 |
+|  25 |
+|  35 |
++\-\-\-\-\-+
+4 rows in set (0.02 sec)
+.fi
+.RE
+If the value of
+auto_increment_offset
+is greater than that of
+auto_increment_increment, the value of
+auto_increment_offset
+is ignored.
+.RE
+.IP "" 3n
+Should one or both of these variables be changed and then new rows inserted into a table containing an
+AUTO_INCREMENT
+column, the results may seem counterintuitive because the series of
+AUTO_INCREMENT
+values is calculated without regard to any values already present in the column, and the next value inserted is the least value in the series that is greater than the maximum existing value in the
+AUTO_INCREMENT
+column. In other words, the series is calculated like so:
+.sp
+auto_increment_offset + \fIN\fR \(mu auto_increment_increment
+.sp
+where
+\fIN\fR
+is a positive integer value in the series [1, 2, 3, ...]. For example:
+.sp
+.RS 3n
+.nf
+mysql> \fBSHOW VARIABLES LIKE 'auto_inc%';\fR
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| Variable_name            | Value |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+| auto_increment_increment | 10    |
+| auto_increment_offset    | 5     |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-+
+2 rows in set (0.00 sec)
+mysql> \fBSELECT col FROM autoinc1;\fR
++\-\-\-\-\-+
+| col |
++\-\-\-\-\-+
+|   1 |
+|  11 |
+|  21 |
+|  31 |
++\-\-\-\-\-+
+4 rows in set (0.00 sec)
+mysql> \fBINSERT INTO autoinc1 VALUES (NULL), (NULL), (NULL), (NULL);\fR
+Query OK, 4 rows affected (0.00 sec)
+Records: 4  Duplicates: 0  Warnings: 0
+mysql> \fBSELECT col FROM autoinc1;\fR
++\-\-\-\-\-+
+| col |
++\-\-\-\-\-+
+|   1 |
+|  11 |
+|  21 |
+|  31 |
+|  35 |
+|  45 |
+|  55 |
+|  65 |
++\-\-\-\-\-+
+8 rows in set (0.00 sec)
+.fi
+.RE
+The values shown for
+auto_increment_increment
+and
+auto_increment_offset
+generate the series 5 +
+\fIN\fR
+\(mu 10, that is, [5, 15, 25, 35, 45, ...]. The greatest value present in the
+col
+column prior to the
+INSERT
+is 31, and the next available value in the
+AUTO_INCREMENT
+series is 35, so the inserted values for
+col
+begin at that point and the results are as shown for the
+SELECT
+query.
+.sp
+It is important to remember that it is not possible to confine the effects of these two variables to a single table, and thus they do not take the place of the sequences offered by some other database management systems; these variables control the behavior of all
+AUTO_INCREMENT
+columns in
+\fIall\fR
+tables on the MySQL server. If one of these variables is set globally, its effects persist until the global value is changed or overridden by setting them locally, or until
 \fBmysqld\fR
-was started with
-\fB\-\-ansi\fR. See
-Section\ 9.3, \(lqRunning MySQL in ANSI Mode\(rq. This variable was added in MySQL 3.23.6 and removed in 3.23.41. See the description for
-sql_mode.
+is restarted. If set locally, the new value affects
+AUTO_INCREMENT
+columns for all tables into which new rows are inserted by the current user for the duration of the session, unless the values are changed during that session.
+.sp
+The
+auto_increment_increment
+variable was added in MySQL 5.0.2. Its default value is 1. See
+Section\ 13, \(lqAuto\-Increment in Multiple\-Master Replication\(rq.
+.sp
+auto_increment_increment
+is supported for use with
+NDB
+tables beginning with MySQL 5.0.46. Previously, setting it when using MySQL Cluster tables produced unpredictable results.
+.TP 3n
+\(bu
+auto_increment_offset
+.sp
+This variable was introduced in MySQL 5.0.2. Its default value is 1. For particulars, see the description for
+auto_increment_increment.
+.sp
+auto_increment_offset
+is supported for use with
+NDB
+tables beginning with MySQL 5.0.46. Previously, setting it when using MySQL Cluster tables produced unpredictable results.
+.TP 3n
+\(bu
+automatic_sp_privileges
+.sp
+When this variable has a value of 1 (the default), the server automatically grants the
+EXECUTE
+and
+ALTER ROUTINE
+privileges to the creator of a stored routine, if the user cannot already execute and alter or drop the routine. (The
+ALTER ROUTINE
+privileges is required to drop the routine.) The server also automatically drops those privileges when the creator drops the routine. If
+automatic_sp_privileges
+is 0, the server does not automatically add and drop these privileges. This variable was added in MySQL 5.0.3.
 .TP 3n
 \(bu
 back_log
@@ -1253,13 +1492,13 @@ bdb_cache_size
 .sp
 The size of the buffer that is allocated for caching indexes and rows for
 BDB
-tables. If you do not use
+tables. If you don't use
 BDB
 tables, you should start
 \fBmysqld\fR
 with
 \fB\-\-skip\-bdb\fR
-to not allocate memory for this cache. This variable was added in MySQL 3.23.14.
+to not allocate memory for this cache.
 .TP 3n
 \(bu
 bdb_home
@@ -1268,20 +1507,20 @@ The base directory for
 BDB
 tables. This should be assigned the same value as the
 datadir
-variable. This variable was added in MySQL 3.23.14.
+variable.
 .TP 3n
 \(bu
 bdb_log_buffer_size
 .sp
 The size of the buffer that is allocated for caching indexes and rows for
 BDB
-tables. If you do not use
+tables. If you don't use
 BDB
 tables, you should set this to 0 or start
 \fBmysqld\fR
 with
 \fB\-\-skip\-bdb\fR
-in order not to allocate memory for this cache. This variable was added in MySQL 3.23.31.
+to not allocate memory for this cache.
 .TP 3n
 \(bu
 bdb_logdir
@@ -1290,7 +1529,7 @@ The directory where the
 BDB
 storage engine writes its log files. This variable can be set with the
 \fB\-\-bdb\-logdir\fR
-option. This variable was added in MySQL 3.23.14.
+option.
 .TP 3n
 \(bu
 bdb_max_lock
@@ -1307,7 +1546,6 @@ bdb: Lock table is out of available locks
 Got error 12 from ...
 .fi
 .RE
-This variable was added in MySQL 3.23.29.
 .TP 3n
 \(bu
 bdb_shared_data
@@ -1318,31 +1556,30 @@ if you are using
 \fB\-\-bdb\-shared\-data\fR
 to start Berkeley DB in multi\-process mode. (Do not use
 DB_PRIVATE
-when initializing Berkeley DB.) This variable was added in MySQL 3.23.29.
+when initializing Berkeley DB.)
 .TP 3n
 \(bu
 bdb_tmpdir
 .sp
 The
 BDB
-temporary file directory. This variable was added in MySQL 3.23.14.
-.TP 3n
-\(bu
-bdb_version
-.sp
-See the description for
-version_bdb.
+temporary file directory.
 .TP 3n
 \(bu
 binlog_cache_size
 .sp
-The size of the cache to hold the SQL statements for the binary log during a transaction. A binary log cache is allocated for each client if the server supports any transactional storage engines and, starting from MySQL 4.1.2, if the server has the binary log enabled (\fB\-\-log\-bin\fR
+The size of the cache to hold the SQL statements for the binary log during a transaction. A binary log cache is allocated for each client if the server supports any transactional storage engines and if the server has the binary log enabled (\fB\-\-log\-bin\fR
 option). If you often use large, multiple\-statement transactions, you can increase this cache size to get more performance. The
 Binlog_cache_use
 and
 Binlog_cache_disk_use
-status variables can be useful for tuning the size of this variable. This variable was added in MySQL 3.23.29. See
-Section\ 10.4, \(lqThe Binary Log\(rq.
+status variables can be useful for tuning the size of this variable. See
+Section\ 9.3, \(lqThe Binary Log\(rq.
+.PP
+\fBMySQL Enterprise\fR. For recommendations on the optimum setting for
+binlog_cache_size
+subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 bulk_insert_buffer_size
@@ -1352,93 +1589,166 @@ uses a special tree\-like cache to make bulk inserts faster for
 INSERT ... SELECT,
 INSERT ... VALUES (...), (...), ..., and
 LOAD DATA INFILE
-when adding data to non\-empty tables. This variable limits the size of the cache tree in bytes per thread. Setting it to 0 disables this optimization. The default value is 8MB. This variable was added in MySQL 4.0.3. This variable previously was named
-myisam_bulk_insert_tree_size.
-.TP 3n
-\(bu
-character_set
-.sp
-The default character set. This variable was added in MySQL 3.23.3, then removed in MySQL 4.1.1 and replaced by the various
-character_set_\fIxxx\fR
-variables.
+when adding data to non\-empty tables. This variable limits the size of the cache tree in bytes per thread. Setting it to 0 disables this optimization. The default value is 8MB.
 .TP 3n
 \(bu
 character_set_client
 .sp
-The character set for statements that arrive from the client. This variable was added in MySQL 4.1.1.
+The character set for statements that arrive from the client.
 .TP 3n
 \(bu
 character_set_connection
 .sp
-The character set used for literals that do not have a character set introducer and for number\-to\-string conversion. This variable was added in MySQL 4.1.1.
+The character set used for literals that do not have a character set introducer and for number\-to\-string conversion.
 .TP 3n
 \(bu
 character_set_database
 .sp
 The character set used by the default database. The server sets this variable whenever the default database changes. If there is no default database, the variable has the same value as
-character_set_server. This variable was added in MySQL 4.1.1.
+character_set_server.
+.TP 3n
+\(bu
+character_set_filesystem
+.sp
+The filesystem character set. This variable is used to interpret string literals that refer to filenames, such as in the
+LOAD DATA INFILE
+and
+SELECT ... INTO OUTFILE
+statements and the
+LOAD_FILE()
+function. Such filenames are converted from
+character_set_client
+to
+character_set_filesystem
+before the file opening attempt occurs. The default value is
+binary, which means that no conversion occurs. For systems on which multi\-byte filenames are allowed, a different value may be more appropriate. For example, if the system represents filenames using UTF\-8, set
+character_set_filesystem
+to
+\'utf8'. This variable was added in MySQL 5.0.19.
 .TP 3n
 \(bu
 character_set_results
 .sp
-The character set used for returning query results to the client. This variable was added in MySQL 4.1.1.
+The character set used for returning query results to the client.
 .TP 3n
 \(bu
 character_set_server
 .sp
-The server default character set. This variable was added in MySQL 4.1.1.
+The server's default character set.
 .TP 3n
 \(bu
 character_set_system
 .sp
 The character set used by the server for storing identifiers. The value is always
-utf8. This variable was added in MySQL 4.1.1.
-.TP 3n
-\(bu
-character_sets
-.sp
-The supported character sets. This variable was added in MySQL 3.23.15 and removed in MySQL 4.1.1. (Use
-SHOW CHARACTER SET
-for a list of character sets.)
+utf8.
 .TP 3n
 \(bu
 character_sets_dir
 .sp
-The directory where character sets are installed. This variable was added in MySQL 4.1.2.
+The directory where character sets are installed.
 .TP 3n
 \(bu
 collation_connection
 .sp
-The collation of the connection character set. This variable was added in MySQL 4.1.1.
+The collation of the connection character set.
 .TP 3n
 \(bu
 collation_database
 .sp
 The collation used by the default database. The server sets this variable whenever the default database changes. If there is no default database, the variable has the same value as
-collation_server. This variable was added in MySQL 4.1.1.
+collation_server.
 .TP 3n
 \(bu
 collation_server
 .sp
-The server default collation. This variable was added in MySQL 4.1.1.
+The server's default collation.
+.TP 3n
+\(bu
+completion_type
+.sp
+The transaction completion type:
+.RS 3n
+.TP 3n
+\(bu
+If the value is 0 (the default),
+COMMIT
+and
+ROLLBACK
+are unaffected.
+.TP 3n
+\(bu
+If the value is 1,
+COMMIT
+and
+ROLLBACK
+are equivalent to
+COMMIT AND CHAIN
+and
+ROLLBACK AND CHAIN, respectively. (A new transaction starts immediately with the same isolation level as the just\-terminated transaction.)
+.TP 3n
+\(bu
+If the value is 2,
+COMMIT
+and
+ROLLBACK
+are equivalent to
+COMMIT RELEASE
+and
+ROLLBACK RELEASE, respectively. (The server disconnects after terminating the transaction.)
+.RE
+.IP "" 3n
+This variable was added in MySQL 5.0.3
 .TP 3n
 \(bu
 concurrent_insert
 .sp
-If
-ON
-(the default), MySQL allows
+If 1 (the default), MySQL allows
 INSERT
 and
 SELECT
 statements to run concurrently for
 MyISAM
-tables that have no free blocks in the middle. You can turn this option off by starting
+tables that have no free blocks in the middle of the data file. You can turn this option off by starting
 \fBmysqld\fR
 with
 \fB\-\-safe\fR
 or
-\fB\-\-skip\-new\fR. This variable was added in MySQL 3.23.7.
+\fB\-\-skip\-new\fR.
+.sp
+In MySQL 5.0.6, this variable was changed to take three integer values:
+.TS
+allbox tab(:);
+l l
+l l
+l l
+l l.
+T{
+\fBValue\fR
+T}:T{
+\fBDescription\fR
+T}
+T{
+0
+T}:T{
+Off
+T}
+T{
+1
+T}:T{
+(Default) Enables concurrent insert for MyISAM tables
+                      that don't have holes
+T}
+T{
+2
+T}:T{
+Enables concurrent inserts for all MyISAM tables,
+                      even those that have holes. For a table with a
+                      hole, new rows are inserted at the end of the
+                      table if it is in use by another thread.
+                      Otherwise, MySQL acquires a normal write lock and
+                      inserts the row into the hole.
+T}
+.TE
 .sp
 See also
 Section\ 3.3, \(lqConcurrent Inserts\(rq.
@@ -1450,12 +1760,6 @@ The number of seconds that the
 \fBmysqld\fR
 server waits for a connect packet before responding with
 Bad handshake.
-.TP 3n
-\(bu
-convert_character_set
-.sp
-The current character set mapping that was set by
-SET CHARACTER SET. This variable was removed in MySQL 4.1.
 .TP 3n
 \(bu
 datadir
@@ -1480,7 +1784,7 @@ default_week_format
 The default mode value to use for the
 WEEK()
 function. See
-Section\ 5, \(lqDate and Time Functions\(rq. This variable is available as of MySQL 4.0.14.
+Section\ 6, \(lqDate and Time Functions\(rq.
 .TP 3n
 \(bu
 delay_key_write
@@ -1534,11 +1838,8 @@ option (for example,
 the section called \(lqCOMMAND OPTIONS\(rq, and
 Section\ 1.1, \(lqMyISAM Startup Options\(rq.
 .sp
-Note that enabling external locking with
-\fB\-\-external\-locking\fR
-offers no protection against index corruption for tables that use delayed key writes.
-.sp
-This variable was added in MySQL 3.23.8.
+Note that if you enable external locking with
+\fB\-\-external\-locking\fR, there is no protection against index corruption for tables that use delayed key writes.
 .TP 3n
 \(bu
 delayed_insert_limit
@@ -1570,38 +1871,83 @@ INSERT DELAYED
 statement waits until there is room in the queue again.
 .TP 3n
 \(bu
+div_precision_increment
+.sp
+This variable indicates the number of digits of precision by which to increase the result of division operations performed with the
+/
+operator. The default value is 4. The minimum and maximum values are 0 and 30, respectively. The following example illustrates the effect of increasing the default value.
+.sp
+.RS 3n
+.nf
+mysql> \fBSELECT 1/7;\fR
++\-\-\-\-\-\-\-\-+
+| 1/7    |
++\-\-\-\-\-\-\-\-+
+| 0.1429 |
++\-\-\-\-\-\-\-\-+
+mysql> \fBSET div_precision_increment = 12;\fR
+mysql> \fBSELECT 1/7;\fR
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+| 1/7            |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+| 0.142857142857 |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+.fi
+.RE
+This variable was added in MySQL 5.0.6.
+.TP 3n
+\(bu
+engine_condition_pushdown
+.sp
+This variable applies to NDB. By default it is 0 (OFF): If you execute a query such as
+SELECT * FROM t WHERE mycol = 42, where
+mycol
+is a non\-indexed column, the query is executed as a full table scan on every NDB node. Each node sends every row to the MySQL server, which applies the
+WHERE
+condition. If
+engine_condition_pushdown
+is set to 1 (ON), the condition is
+\(lqpushed down\(rq
+to the storage engine and sent to the NDB nodes. Each node uses the condition to perform the scan, and only sends back to the MySQL server the rows that match the condition.
+.sp
+This variable was added in MySQL 5.0.3. Before that, the default
+NDB
+behavior is the same as for a value of
+OFF.
+.TP 3n
+\(bu
 expire_logs_days
 .sp
 The number of days for automatic binary log removal. The default is 0, which means
 \(lqno automatic removal.\(rq
-Possible removals happen at startup and at binary log rotation. This variable was added in MySQL 4.1.0.
+Possible removals happen at startup and at binary log rotation.
 .TP 3n
 \(bu
 flush
 .sp
 If
 ON, the server flushes (synchronizes) all changes to disk after each SQL statement. Normally, MySQL does a write of all changes to disk only after each SQL statement and lets the operating system handle the synchronizing to disk. See
-Section\ 4.2, \(lqWhat to Do If MySQL Keeps Crashing\(rq. This variable is set to
+Section\ 1.4.2, \(lqWhat to Do If MySQL Keeps Crashing\(rq. This variable is set to
 ON
 if you start
 \fBmysqld\fR
 with the
 \fB\-\-flush\fR
-option. This variable was added in MySQL 3.22.9.
+option.
 .TP 3n
 \(bu
 flush_time
 .sp
 If this is set to a non\-zero value, all tables are closed every
 flush_time
-seconds to free up resources and synchronize unflushed data to disk. We recommend that this option be used only on Windows 9x or Me, or on systems with minimal resources. This variable was added in MySQL 3.22.18.
+seconds to free up resources and synchronize unflushed data to disk. We recommend that this option be used only on systems with minimal resources.
 .TP 3n
 \(bu
 ft_boolean_syntax
 .sp
 The list of operators supported by boolean full\-text searches performed using
 IN BOOLEAN MODE. See
-Section\ 7.1, \(lqBoolean Full\-Text Searches\(rq. This variable was added as a read\-only variable in MySQL 4.0.1. It can be modified as of MySQL 4.1.2.
+Section\ 8.1, \(lqBoolean Full\-Text Searches\(rq.
 .sp
 The default variable value is
 \'+\ \-><()~*:""&|'. The rules for changing the value are as follows:
@@ -1631,7 +1977,7 @@ ft_max_word_len
 .sp
 The maximum length of the word to be included in a
 FULLTEXT
-index. This variable was added in MySQL 4.0.0.
+index.
 .sp
 \fBNote\fR:
 FULLTEXT
@@ -1643,7 +1989,7 @@ ft_min_word_len
 .sp
 The minimum length of the word to be included in a
 FULLTEXT
-index. This variable was added in MySQL 4.0.0.
+index.
 .sp
 \fBNote\fR:
 FULLTEXT
@@ -1654,7 +2000,7 @@ REPAIR TABLE \fItbl_name\fR QUICK.
 ft_query_expansion_limit
 .sp
 The number of top matches to use for full\-text searches performed using
-WITH QUERY EXPANSION. This variable was added in MySQL 4.1.1.
+WITH QUERY EXPANSION.
 .TP 3n
 \(bu
 ft_stopword_file
@@ -1663,7 +2009,7 @@ The file from which to read the list of stopwords for full\-text searches. All t
 \fInot\fR
 honored. By default, a built\-in list of stopwords is used (as defined in the
 \fImyisam/ft_static.c\fR
-file). Setting this variable to the empty string ('') disables stopword filtering. This variable was added in MySQL 4.0.10.
+file). Setting this variable to the empty string ('') disables stopword filtering.
 .sp
 \fBNote\fR:
 FULLTEXT
@@ -1675,7 +2021,7 @@ group_concat_max_len
 .sp
 The maximum allowed result length for the
 GROUP_CONCAT()
-function. The default is 1024. This variable was added in MySQL 4.1.0.
+function. The default is 1024.
 .TP 3n
 \(bu
 have_archive
@@ -1687,7 +2033,7 @@ supports
 ARCHIVE
 tables,
 NO
-if not. This variable was added in MySQL 4.1.3.
+if not.
 .TP 3n
 \(bu
 have_bdb
@@ -1701,7 +2047,7 @@ tables.
 DISABLED
 if
 \fB\-\-skip\-bdb\fR
-is used. This variable was added in MySQL 3.23.30.
+is used.
 .TP 3n
 \(bu
 have_blackhole_engine
@@ -1713,7 +2059,7 @@ supports
 BLACKHOLE
 tables,
 NO
-if not. This variable was added in MySQL 4.1.11.
+if not.
 .TP 3n
 \(bu
 have_compress
@@ -1727,7 +2073,7 @@ if not. If not, the
 COMPRESS()
 and
 UNCOMPRESS()
-functions cannot be used. This variable was added in MySQL 4.1.1.
+functions cannot be used.
 .TP 3n
 \(bu
 have_crypt
@@ -1739,7 +2085,7 @@ system call is available to the server,
 NO
 if not. If not, the
 ENCRYPT()
-function cannot be used. This variable was added in MySQL 4.0.10.
+function cannot be used.
 .TP 3n
 \(bu
 have_csv
@@ -1748,10 +2094,10 @@ YES
 if
 \fBmysqld\fR
 supports
-ARCHIVE
+CSV
 tables,
 NO
-if not. This variable was added in MySQL 4.1.4.
+if not.
 .TP 3n
 \(bu
 have_example_engine
@@ -1763,7 +2109,18 @@ supports
 EXAMPLE
 tables,
 NO
-if not. This variable was added in MySQL 4.1.4.
+if not.
+.sp
+have_federated_engine
+.sp
+YES
+if
+\fBmysqld\fR
+supports
+FEDERATED
+tables,
+NO
+if not. This variable was added in MySQL 5.0.3.
 .TP 3n
 \(bu
 have_geometry
@@ -1771,7 +2128,7 @@ have_geometry
 YES
 if the server supports spatial data types,
 NO
-if not. This variable was added in MySQL 4.1.3.
+if not.
 .TP 3n
 \(bu
 have_innodb
@@ -1785,21 +2142,30 @@ tables.
 DISABLED
 if
 \fB\-\-skip\-innodb\fR
-is used. This variable was added in MySQL 3.23.37.
+is used.
 .TP 3n
 \(bu
 have_isam
+.sp
+In MySQL 5.0, this variable appears only for reasons of backward compatibility. It is always
+NO
+because
+ISAM
+tables are no longer supported.
+.TP 3n
+\(bu
+have_merge_engine
 .sp
 YES
 if
 \fBmysqld\fR
 supports
-ISAM
+MERGE
 tables.
 DISABLED
 if
-\fB\-\-skip\-isam\fR
-is used. This variable was added in MySQL 3.23.30.
+\fB\-\-skip\-merge\fR
+is used. This variable was added in MySQL 5.0.24.
 .TP 3n
 \(bu
 have_ndbcluster
@@ -1813,7 +2179,7 @@ tables.
 DISABLED
 if
 \fB\-\-skip\-ndbcluster\fR
-is used. This variable was added in MySQL 4.1.2.
+is used.
 .TP 3n
 \(bu
 have_openssl
@@ -1821,9 +2187,9 @@ have_openssl
 YES
 if
 \fBmysqld\fR
-supports SSL (encryption) connections,
+supports SSL connections,
 NO
-if not. This variable was added in MySQL 3.23.43.
+if not.
 .TP 3n
 \(bu
 have_query_cache
@@ -1833,19 +2199,16 @@ if
 \fBmysqld\fR
 supports the query cache,
 NO
-if not. This variable was added in MySQL 4.0.2.
+if not.
 .TP 3n
 \(bu
 have_raid
 .sp
-YES
-if
-\fBmysqld\fR
-supports the
-RAID
-option,
+In MySQL 5.0, this variable appears only for reasons of backward compatibility. It is always
 NO
-if not. This variable was added in MySQL 3.23.30.
+because
+RAID
+tables are no longer supported.
 .TP 3n
 \(bu
 have_rtree_keys
@@ -1857,7 +2220,7 @@ indexes are available,
 NO
 if not. (These are used for spatial indexes in
 MyISAM
-tables.) This variable was added in MySQL 4.1.3.
+tables.)
 .TP 3n
 \(bu
 have_symlink
@@ -1870,8 +2233,11 @@ DATA DIRECTORY
 and
 INDEX DIRECTORY
 table options, and on Windows for support of data directory symlinks.
+.TP 3n
+\(bu
+hostname
 .sp
-This variable was added in MySQL 4.0.0.
+The server sets this variable to the server hostname at startup. This variable was added in MySQL 5.0.38.
 .TP 3n
 \(bu
 init_connect
@@ -1906,15 +2272,20 @@ SUPER
 privilege enables them to open a connection and fix the
 init_connect
 value.
-.sp
-This variable was added in MySQL 4.1.2.
 .TP 3n
 \(bu
 init_file
 .sp
 The name of the file specified with the
 \fB\-\-init\-file\fR
-option when you start the server. This should be a file containing SQL statements that you want the server to execute when it starts. Each statement must be on a single line and should not include comments. This variable was added in MySQL 3.23.2.
+option when you start the server. This should be a file containing SQL statements that you want the server to execute when it starts. Each statement must be on a single line and should not include comments.
+.sp
+Note that the
+\fB\-\-init\-file\fR
+option is unavailable if MySQL was configured with the
+\fB\-\-disable\-grant\-options\fR
+option. See
+Section\ 4.14.2, \(lqTypical \fBconfigure\fR Options\(rq.
 .TP 3n
 \(bu
 init_slave
@@ -1922,14 +2293,14 @@ init_slave
 This variable is similar to
 init_connect, but is a string to be executed by a slave server each time the SQL thread starts. The format of the string is the same as for the
 init_connect
-variable. This variable was added in MySQL 4.1.2.
+variable.
 .TP 3n
 \(bu
 innodb_\fIxxx\fR
 .sp
 InnoDB
 system variables are listed in
-Section\ 2.5, \(lqInnoDB Startup Options and System Variables\(rq.
+Section\ 2.4, \(lqInnoDB Startup Options and System Variables\(rq.
 .TP 3n
 \(bu
 interactive_timeout
@@ -1952,8 +2323,6 @@ key_buffer_size
 .sp
 Index blocks for
 MyISAM
-and
-ISAM
 tables are buffered and are shared by all threads.
 key_buffer_size
 is the size of the buffer used for index blocks. The key buffer is also known as the key cache.
@@ -1966,7 +2335,7 @@ Increase the value to get better index handling (for all reads and multiple writ
 .sp
 For even more speed when writing many rows at the same time, use
 LOCK TABLES. See
-Section\ 2.13, \(lqSpeed of INSERT Statements\(rq.
+Section\ 2.17, \(lqSpeed of INSERT Statements\(rq.
 .sp
 You can check the performance of the key buffer by issuing a
 SHOW STATUS
@@ -1988,9 +2357,9 @@ The fraction of the key buffer in use can be determined using
 key_buffer_size
 in conjunction with the
 Key_blocks_unused
-status variable and the buffer block size. From MySQL 4.1.1 on, the buffer block size is available from the
+status variable and the buffer block size, which is available from the
 key_cache_block_size
-server variable. The fraction of the buffer in use is:
+system variable:
 .sp
 .RS 3n
 .nf
@@ -1999,22 +2368,7 @@ server variable. The fraction of the buffer in use is:
 .RE
 This value is an approximation because some space in the key buffer may be allocated internally for administrative structures.
 .sp
-Before MySQL 4.1.1, key cache blocks are 1024 bytes, and before MySQL 4.1.2,
-Key_blocks_unused
-is unavailable. The
-Key_blocks_used
-variable can be used as follows to determine the fraction of the key buffer in use:
-.sp
-.RS 3n
-.nf
-(Key_blocks_used \(mu 1024) / key_buffer_size
-.fi
-.RE
-However,
-Key_blocks_used
-indicates the maximum number of blocks that have ever been in use at once, so this formula does not necessarily represent the current fraction of the buffer that is in use.
-.sp
-As of MySQL 4.1, it is possible to create multiple
+It is possible to create multiple
 MyISAM
 key caches. The size limit of 4GB applies to each cache individually, not as a group. See
 Section\ 4.6, \(lqThe MyISAM Key Cache\(rq.
@@ -2022,19 +2376,19 @@ Section\ 4.6, \(lqThe MyISAM Key Cache\(rq.
 \(bu
 key_cache_age_threshold
 .sp
-This value controls the demotion of buffers from the hot sub\-chain of a key cache to the warm sub\-chain. Lower values cause demotion to happen more quickly. The minimum value is 100. The default value is 300. This variable was added in MySQL 4.1.1. See
+This value controls the demotion of buffers from the hot sub\-chain of a key cache to the warm sub\-chain. Lower values cause demotion to happen more quickly. The minimum value is 100. The default value is 300. See
 Section\ 4.6, \(lqThe MyISAM Key Cache\(rq.
 .TP 3n
 \(bu
 key_cache_block_size
 .sp
-The size in bytes of blocks in the key cache. The default value is 1024. This variable was added in MySQL 4.1.1. See
+The size in bytes of blocks in the key cache. The default value is 1024. See
 Section\ 4.6, \(lqThe MyISAM Key Cache\(rq.
 .TP 3n
 \(bu
 key_cache_division_limit
 .sp
-The division point between the hot and warm sub\-chains of the key cache buffer chain. The value is the percentage of the buffer chain to use for the warm sub\-chain. Allowable values range from 1 to 100. The default value is 100. This variable was added in MySQL 4.1.1. See
+The division point between the hot and warm sub\-chains of the key cache buffer chain. The value is the percentage of the buffer chain to use for the warm sub\-chain. Allowable values range from 1 to 100. The default value is 100. See
 Section\ 4.6, \(lqThe MyISAM Key Cache\(rq.
 .TP 3n
 \(bu
@@ -2047,7 +2401,7 @@ large_file_support
 .sp
 Whether
 \fBmysqld\fR
-was compiled with options for large file support. This variable was added in MySQL 3.23.28.
+was compiled with options for large file support.
 .TP 3n
 \(bu
 large_pages
@@ -2055,9 +2409,25 @@ large_pages
 Whether large page support is enabled. This variable was added in MySQL 5.0.3.
 .TP 3n
 \(bu
+lc_time_names
+.sp
+This variable specifies the locale that controls the language used to display day and month names and abbreviations. This variable affects the output from the
+DATE_FORMAT(),
+DAYNAME()
+and
+MONTHNAME()
+functions. Locale names are POSIX\-style values such as
+\'ja_JP'
+or
+\'pt_BR'. The default value is
+\'en_US'
+regardless of your system's locale setting. For further information, see
+Section\ 8.9, \(lqMySQL Server Locale Support\(rq. This variable was added in MySQL 5.0.25.
+.TP 3n
+\(bu
 license
 .sp
-The type of license the server has. This variable was added in MySQL 4.0.19.
+The type of license the server has.
 .TP 3n
 \(bu
 local_infile
@@ -2067,7 +2437,7 @@ LOCAL
 is supported for
 LOAD DATA INFILE
 statements. See
-Section\ 5.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq. This variable was added in MySQL 4.0.3.
+Section\ 4.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq.
 .TP 3n
 \(bu
 locked_in_memory
@@ -2075,29 +2445,63 @@ locked_in_memory
 Whether
 \fBmysqld\fR
 was locked in memory with
-\fB\-\-memlock\fR. This variable was added in MySQL 3.23.25.
+\fB\-\-memlock\fR.
 .TP 3n
 \(bu
 log
 .sp
 Whether logging of all statements to the general query log is enabled. See
-Section\ 10.2, \(lqThe General Query Log\(rq.
+Section\ 9.2, \(lqThe General Query Log\(rq.
 .TP 3n
 \(bu
 log_bin
 .sp
-Whether the binary log is enabled. This variable was added in MySQL 3.23.14. See
-Section\ 10.4, \(lqThe Binary Log\(rq.
+Whether the binary log is enabled. See
+Section\ 9.3, \(lqThe Binary Log\(rq.
+.TP 3n
+\(bu
+log_bin_trust_function_creators
+.sp
+This variable applies when binary logging is enabled. It controls whether stored function creators can be trusted not to create stored functions that will cause unsafe events to be written to the binary log. If set to 0 (the default), users are not allowed to create or alter stored functions unless they have the
+SUPER
+privilege in addition to the
+CREATE ROUTINE
+or
+ALTER ROUTINE
+privilege. A setting of 0 also enforces the restriction that a function must be declared with the
+DETERMINISTIC
+characteristic, or with the
+READS SQL DATA
+or
+NO SQL
+characteristic. If the variable is set to 1, MySQL does not enforce these restrictions on stored function creation. See
+Section\ 4, \(lqBinary Logging of Stored Routines and Triggers\(rq.
+.sp
+This variable was added in MySQL 5.0.16.
+.TP 3n
+\(bu
+log_bin_trust_routine_creators
+.sp
+This is the old name for
+log_bin_trust_function_creators. Before MySQL 5.0.16, it also applies to stored procedures, not just stored functions. As of 5.0.16, this variable is deprecated. It is recognized for backward compatibility but its use results in a warning.
+.sp
+This variable was added in MySQL 5.0.6.
 .TP 3n
 \(bu
 log_error
 .sp
-The location of the error log. This variable was added in MySQL 4.0.10.
+The location of the error log.
+.TP 3n
+\(bu
+log_queries_not_using_indexes
+.sp
+Whether queries that do not use indexes are logged to the slow query log. See
+Section\ 9.4, \(lqThe Slow Query Log\(rq. This variable was added in MySQL 5.0.23.
 .TP 3n
 \(bu
 log_slave_updates
 .sp
-Whether updates received by a slave server from a master server should be logged to the slave's own binary log. Binary logging must be enabled on the slave for this variable to have any effect. This variable was added in MySQL 3.23.17. See
+Whether updates received by a slave server from a master server should be logged to the slave's own binary log. Binary logging must be enabled on the slave for this variable to have any effect. See
 Section\ 8, \(lqReplication Startup Options\(rq.
 .TP 3n
 \(bu
@@ -2107,19 +2511,13 @@ Whether slow queries should be logged.
 \(lqSlow\(rq
 is determined by the value of the
 long_query_time
-variable. This variable was added in MySQL 4.0.2. See
-Section\ 10.5, \(lqThe Slow Query Log\(rq.
-.TP 3n
-\(bu
-log_update
-.sp
-Whether the update log is enabled. This variable was added in MySQL 3.22.18. Note that the binary log is preferable to the update log, which is unavailable as of MySQL 5.0. See
-Section\ 10.3, \(lqThe Update Log\(rq.
+variable. See
+Section\ 9.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 log_warnings
 .sp
-Whether to produce additional warning messages. This variable was added in MySQL 4.0.3. It is enabled by default as of MySQL 4.0.19 and 4.1.2. As of MySQL 4.0.21 and 4.1.3, the variable can take values greater than 1 and aborted connections are not logged to the error log unless the value is greater than 1.
+Whether to produce additional warning messages. It is enabled (1) by default and can be disabled by setting it to 0. Aborted connections are not logged to the error log unless the value is greater than 1.
 .TP 3n
 \(bu
 long_query_time
@@ -2129,7 +2527,7 @@ Slow_queries
 status variable. If you are using the
 \fB\-\-log\-slow\-queries\fR
 option, the query is logged to the slow query log file. This value is measured in real time, not CPU time, so a query that is under the threshold on a lightly loaded system might be above the threshold on a heavily loaded one. The minimum value is 1. The default is 10. See
-Section\ 10.5, \(lqThe Slow Query Log\(rq.
+Section\ 9.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 low_priority_updates
@@ -2144,8 +2542,10 @@ statements wait until there is no pending
 SELECT
 or
 LOCK TABLE READ
-on the affected table. This variable previously was named
-sql_low_priority_updates. It was added in MySQL 3.22.5.
+on the affected table. This affects only storage engines that use only table\-level locking (MyISAM,
+MEMORY,
+MERGE). This variable previously was named
+sql_low_priority_updates.
 .TP 3n
 \(bu
 lower_case_file_system
@@ -2154,22 +2554,21 @@ This variable describes the case sensitivity of filenames on the filesystem wher
 OFF
 means filenames are case sensitive,
 ON
-means they are not case sensitive. This variable was added in MySQL 4.0.19.
+means they are not case sensitive.
 .TP 3n
 \(bu
 lower_case_table_names
 .sp
-If set to 1 table names are stored in lowercase on disk and table name comparisons are not case sensitive. This variable was added in MySQL 3.23.6. If set to 2 (new in 4.0.18), table names are stored as given but compared in lowercase. From MySQL 4.0.2, this option also applies to database names. From 4.1.1, it also applies to table aliases. See
+If set to 1, table names are stored in lowercase on disk and table name comparisons are not case sensitive. If set to 2 table names are stored as given but compared in lowercase. This option also applies to database names and table aliases. See
 Section\ 2.2, \(lqIdentifier Case Sensitivity\(rq.
 .sp
-\fBNote\fR: If you are using
+If you are using
 InnoDB
 tables, you should set this variable to 1 on all platforms to force names to be converted to lowercase.
 .sp
 You should
 \fInot\fR
-set this variable to 0 if you are running MySQL on a system that does not have case\-sensitive filenames (such as Windows or Mac OS X).
-\fINew in 4.0.18\fR: If this variable is not set at startup and the filesystem on which the data directory is located does not have case\-sensitive filenames, MySQL automatically sets
+set this variable to 0 if you are running MySQL on a system that does not have case\-sensitive filenames (such as Windows or Mac OS X). If this variable is not set at startup and the filesystem on which the data directory is located does not have case\-sensitive filenames, MySQL automatically sets
 lower_case_table_names
 to 2.
 .TP 3n
@@ -2190,19 +2589,19 @@ columns or long strings. It should be as big as the largest
 BLOB
 you want to use. The protocol limit for
 max_allowed_packet
-is 16MB before MySQL 4.0 and 1GB thereafter.
+is 1GB.
 .TP 3n
 \(bu
 max_binlog_cache_size
 .sp
-If a multiple\-statement transaction requires more than this amount of memory, the server generates a
+If a multiple\-statement transaction requires more than this many bytes of memory, the server generates a
 Multi\-statement transaction required more than 'max_binlog_cache_size' bytes of storage
-error. This variable was added in MySQL 3.23.29.
+error. The minimum value is 4096, the maximum and default values are 4GB.
 .TP 3n
 \(bu
 max_binlog_size
 .sp
-If a write to the binary log causes the current log file size to exceed the value of this variable, the server rotates the binary logs (closes the current file and opens the next one). You cannot set this variable to more than 1GB or to less than 4096 bytes. (The minimum before MYSQL 4.0.14 is 1024 bytes.) The default value is 1GB. This variable was added in MySQL 3.23.33.
+If a write to the binary log causes the current log file size to exceed the value of this variable, the server rotates the binary logs (closes the current file and opens the next one). You cannot set this variable to more than 1GB or to less than 4096 bytes. The default value is 1GB.
 .sp
 A transaction is written in one chunk to the binary log, so it is never split between several binary logs. Therefore, if you have big transactions, you might see binary logs larger than
 max_binlog_size.
@@ -2212,8 +2611,6 @@ max_relay_log_size
 is 0, the value of
 max_binlog_size
 applies to relay logs as well.
-max_relay_log_size
-was added in MySQL 4.0.14.
 .TP 3n
 \(bu
 max_connect_errors
@@ -2225,11 +2622,17 @@ statement.
 \(bu
 max_connections
 .sp
-The number of simultaneous client connections allowed. Increasing this value increases the number of file descriptors that
+The number of simultaneous client connections allowed. By default, this is 100. See
+Section\ 1.2.6, \(lqToo many connections\(rq, for more information.
+.PP
+\fBMySQL Enterprise\fR. For notification that the maximum number of connections is getting dangerously high and for advice on setting the optimum value for
+max_connections
+subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
+Increasing this value increases the number of file descriptors that
 \fBmysqld\fR
 requires. See
-Section\ 4.8, \(lqHow MySQL Opens and Closes Tables\(rq, for comments on file descriptor limits. See also
-Section\ 2.6, \(lqToo many connections\(rq.
+Section\ 4.8, \(lqHow MySQL Opens and Closes Tables\(rq, for comments on file descriptor limits.
 .TP 3n
 \(bu
 max_delayed_threads
@@ -2242,41 +2645,46 @@ threads are in use, the row is inserted as if the
 DELAYED
 attribute wasn't specified. If you set this to 0, MySQL never creates a thread to handle
 DELAYED
-rows; in effect, doing so disables
+rows; in effect, this disables
 DELAYED
-entirely. This variable was added in MySQL 3.23.0.
+entirely.
 .TP 3n
 \(bu
 max_error_count
 .sp
 The maximum number of error, warning, and note messages to be stored for display by the
 SHOW ERRORS
-or
+and
 SHOW WARNINGS
-statements. This variable was added in MySQL 4.1.0.
+statements.
 .TP 3n
 \(bu
 max_heap_table_size
 .sp
 This variable sets the maximum size to which
 MEMORY
-(HEAP) tables are allowed to grow. The value of the variable is used to calculate
+tables are allowed to grow. The value of the variable is used to calculate
 MEMORY
 table
 MAX_ROWS
 values. Setting this variable has no effect on any existing
 MEMORY
 table, unless the table is re\-created with a statement such as
-CREATE TABLE, or altered with
+CREATE TABLE
+or altered with
 ALTER TABLE
 or
-TRUNCATE TABLE. This variable was added in MySQL 3.23.0.
+TRUNCATE TABLE.
+.PP
+\fBMySQL Enterprise\fR. Subscribers to the MySQL Network Monitoring and Advisory Service receive recommendations for the optimum setting for
+max_heap_table_size. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 max_insert_delayed_threads
 .sp
 This variable is a synonym for
-max_delayed_threads. It was added in MySQL 4.0.19.
+max_delayed_threads.
 .TP 3n
 \(bu
 max_join_size
@@ -2315,12 +2723,12 @@ max_length_for_sort_data
 The cutoff on the size of index values that determines which
 filesort
 algorithm to use. See
-Section\ 2.9, \(lqORDER BY Optimization\(rq. This variable was added in MySQL 4.1.1
+Section\ 2.11, \(lqORDER BY Optimization\(rq.
 .TP 3n
 \(bu
 max_prepared_stmt_count
 .sp
-This variable limits the total number of prepared statements in the server. It can be used in environments where there is the potential for denial\-of\-service attacks based on running the server out of memory by preparing huge numbers of statements. The default value is 16,382. The allowable range of values is from 0 to 1 million. If the value is set lower than the current number of prepared statements, existing statements are not affected and can be used, but no new statements can be prepared until the current number drops below the limit. This variable was added in MySQL 4.1.19.
+This variable limits the total number of prepared statements in the server. It can be used in environments where there is the potential for denial\-of\-service attacks based on running the server out of memory by preparing huge numbers of statements. The default value is 16,382. The allowable range of values is from 0 to 1 million. If the value is set lower than the current number of prepared statements, existing statements are not affected and can be used, but no new statements can be prepared until the current number drops below the limit. This variable was added in MySQL 5.0.21.
 .TP 3n
 \(bu
 max_relay_log_size
@@ -2333,18 +2741,14 @@ for both the binary log and the relay log. If
 max_relay_log_size
 is greater than 0, it constrains the size of the relay log, which enables you to have different sizes for the two logs. You must set
 max_relay_log_size
-to between 4096 bytes and 1GB (inclusive), or to
-0. The default value is
-0. This variable was added in MySQL 4.0.14. See
+to between 4096 bytes and 1GB (inclusive), or to 0. The default value is 0. See
 Section\ 3, \(lqReplication Implementation Details\(rq.
 .TP 3n
 \(bu
 max_seeks_for_key
 .sp
 Limit the assumed maximum number of seeks when looking up rows based on a key. The MySQL optimizer assumes that no more than this number of key seeks are required when searching for matching rows in a table by scanning an index, regardless of the actual cardinality of the index (see
-Section\ 5.4.11, \(lqSHOW INDEX Syntax\(rq). By setting this to a low value (say, 100), you can force MySQL to prefer indexes instead of table scans.
-.sp
-This variable was added in MySQL 4.0.14.
+Section\ 5.4.13, \(lqSHOW INDEX Syntax\(rq). By setting this to a low value (say, 100), you can force MySQL to prefer indexes instead of table scans.
 .TP 3n
 \(bu
 max_sort_length
@@ -2358,6 +2762,13 @@ max_sort_length
 bytes of each value are used; the rest are ignored.
 .TP 3n
 \(bu
+max_sp_recursion_depth
+.sp
+The number of times that a stored procedure may call itself. The default value for this option is 0, which completely disallows recursion in stored procedures. The maximum value is 255.
+.sp
+This variable can be set globally and per session.
+.TP 3n
+\(bu
 max_tmp_tables
 .sp
 The maximum number of temporary tables a client can keep open at the same time. (This option does not yet do anything.)
@@ -2365,18 +2776,29 @@ The maximum number of temporary tables a client can keep open at the same time. 
 \(bu
 max_user_connections
 .sp
-The maximum number of simultaneous connections allowed to any given MySQL account. A value of
-0
-means
+The maximum number of simultaneous connections allowed to any given MySQL account. A value of 0 means
 \(lqno limit.\(rq
-This variable was added in MySQL 3.23.34.
 .sp
-This variable has only a global form.
+Before MySQL 5.0.3, this variable has only global scope. Beginning with MySQL 5.0.3, it also has a read\-only session scope. The session variable has the same value as the global variable unless the current account has a non\-zero
+MAX_USER_CONNECTIONS
+resource limit. In that case, the session value reflects the account limit.
 .TP 3n
 \(bu
 max_write_lock_count
 .sp
-After this many write locks, allow some pending read lock requests to be processed in between. This variable was added in MySQL 3.23.7.
+After this many write locks, allow some pending read lock requests to be processed in between.
+.TP 3n
+\(bu
+multi_range_count
+.sp
+The maximum number of ranges to send to a table handler at once during range selects. The default value is 256. Sending multiple ranges to a handler at once can improve the performance of certain selects dramatically. This especially true for the NDB Cluster table handler, which needs to send the range requests to all nodes. Sending a batch of those requests at once reduces the communication costs significantly. This variable was added in MySQL 5.0.3.
+.TP 3n
+\(bu
+myisam_block_size
+.sp
+The block size to be used for
+MyISAM
+index pages.
 .TP 3n
 \(bu
 myisam_data_pointer_size
@@ -2387,17 +2809,18 @@ for
 MyISAM
 tables when no
 MAX_ROWS
-option is specified. This variable cannot be less than 2 or larger than 7. The default value is
-4. This variable was added in MySQL 4.1.2. See
-Section\ 2.11, \(lqThe table is full\(rq.
+option is specified. This variable cannot be less than 2 or larger than 7. The default value is 6 (4 before MySQL 5.0.6). This variable was added in MySQL 4.1.2. See
+Section\ 1.2.11, \(lqThe table is full\(rq.
 .TP 3n
 \(bu
 myisam_max_extra_sort_file_size
+(\fIDEPRECATED\fR)
 .sp
 If the temporary file used for fast
 MyISAM
-index creation would be larger than using the key cache by the amount specified here, prefer the key cache method. This is mainly used to force long character keys in large tables to use the slower key cache method to create the index. This variable was added in MySQL 3.23.37.
-\fBNote\fR: The value is given in megabytes before 4.0.3 and in bytes thereafter.
+index creation would be larger than using the key cache by the amount specified here, prefer the key cache method. This is mainly used to force long character keys in large tables to use the slower key cache method to create the index. The value is given in bytes.
+.sp
+\fBNote\fR: This variable was removed in MySQL 5.0.6.
 .TP 3n
 \(bu
 myisam_max_sort_file_size
@@ -2407,8 +2830,7 @@ MyISAM
 index (during
 REPAIR TABLE,
 ALTER TABLE, or
-LOAD DATA INFILE). If the file size would be larger than this value, the index is created using the key cache instead, which is slower. This variable was added in MySQL 3.23.37.
-\fBNote\fR: The value is given in megabytes before 4.0.3 and in bytes thereafter.
+LOAD DATA INFILE). If the file size would be larger than this value, the index is created using the key cache instead, which is slower. The value is given in bytes.
 .sp
 The default value is 2GB. If
 MyISAM
@@ -2420,7 +2842,7 @@ myisam_recover_options
 The value of the
 \fB\-\-myisam\-recover\fR
 option. See
-the section called \(lqCOMMAND OPTIONS\(rq. This variable was added in MySQL 3.23.36.
+the section called \(lqCOMMAND OPTIONS\(rq.
 .TP 3n
 \(bu
 myisam_repair_threads
@@ -2433,7 +2855,7 @@ process. The default value is 1.
 .sp
 \fBNote\fR: Multi\-threaded repair is still
 \fIbeta\-quality\fR
-code. This variable was added in MySQL 4.0.13.
+code.
 .TP 3n
 \(bu
 myisam_sort_buffer_size
@@ -2445,7 +2867,7 @@ REPAIR TABLE
 or when creating indexes with
 CREATE INDEX
 or
-ALTER TABLE. This variable was added in MySQL 3.23.16.
+ALTER TABLE.
 .TP 3n
 \(bu
 myisam_stats_method
@@ -2472,13 +2894,19 @@ forms a distinct value group of size 1.
 The method that is used for generating table statistics influences how the optimizer chooses indexes for query execution, as described in
 Section\ 4.7, \(lqMyISAM Index Statistics Collection\(rq.
 .sp
-This variable was added in MySQL 4.1.15/5.0.14. For older versions, the statistics collection method is equivalent to
+This variable was added in MySQL 5.0.14. For older versions, the statistics collection method is equivalent to
 nulls_equal.
+.TP 3n
+\(bu
+multi_read_range
+.sp
+Specifies the maximum number of ranges to send to a storage engine during range selects. The default value is 256. Sending multiple ranges to an engine is a feature that can improve the performance of certain selects dramatically, particularly for
+NDBCLUSTER. This engine needs to send the range requests to all nodes, and sending many of those requests at once reduces the communication costs significantly. This variable was added in MySQL 5.0.3.
 .TP 3n
 \(bu
 named_pipe
 .sp
-On Windows, indicates whether the server supports connections over named pipes. This variable was added in MySQL 3.23.50.
+(Windows only.) Indicates whether the server supports connections over named pipes.
 .TP 3n
 \(bu
 ndb_autoincrement_prefetch_sz
@@ -2518,7 +2946,7 @@ ON.
 \(bu
 ndb_index_stat_cache_entries
 .sp
-Sets the granularity of the statistics by determining the number of starting and ending keys to store in the statistics memory cache. Zero means no caching takes place; in this case, the data nodes are always queries directly. Default value:
+Sets the granularity of the statistics by determining the number of starting and ending keys to store in the statistics memory cache. Zero means no caching takes place; in this case, the data nodes are always queried directly. Default value:
 32.
 .TP 3n
 \(bu
@@ -2536,6 +2964,15 @@ How often to query data nodes instead of the statistics cache. For example, a va
 20
 (the default) means to direct every 20th
 query to the data nodes.
+.TP 3n
+\(bu
+ndb_optimized_node_selection
+.sp
+Causes an SQL node to contact the nearest data node in the cluster. Enabled by default. Set to
+0
+or
+OFF
+to disable, in which case the SQL node attempts to contact data nodes in succession.
 .TP 3n
 \(bu
 ndb_report_thresh_binlog_epoch_slip
@@ -2585,7 +3022,9 @@ bytes as needed. The result buffer shrinks to
 net_buffer_length
 after each SQL statement.
 .sp
-This variable should not normally be changed, but if you have very little memory, you can set it to the expected length of statements sent by clients. If statements exceed this length, the connection buffer is automatically enlarged.
+This variable should not normally be changed, but if you have very little memory, you can set it to the expected length of statements sent by clients. If statements exceed this length, the connection buffer is automatically enlarged. The maximum value to which
+net_buffer_length
+can be set is 1MB.
 .TP 3n
 \(bu
 net_read_timeout
@@ -2595,28 +3034,30 @@ net_read_timeout
 is the timeout value controlling when to abort. When the server is writing to the client,
 net_write_timeout
 is the timeout value controlling when to abort. See also
-slave_net_timeout. This variable was added in MySQL 3.23.20.
+slave_net_timeout.
 .TP 3n
 \(bu
 net_retry_count
 .sp
-If a read on a communication port is interrupted, retry this many times before giving up. This value should be set quite high on FreeBSD because internal interrupts are sent to all threads. This variable was added in MySQL 3.23.7.
+If a read on a communication port is interrupted, retry this many times before giving up. This value should be set quite high on FreeBSD because internal interrupts are sent to all threads.
 .TP 3n
 \(bu
 net_write_timeout
 .sp
 The number of seconds to wait for a block to be written to a connection before aborting the write. This timeout applies only to TCP/IP connections, not to connections made via Unix socket files, named pipes, or shared memory. See also
-net_read_timeout. This variable was added in MySQL 3.23.20.
+net_read_timeout.
 .TP 3n
 \(bu
 new
 .sp
-This variable is used in MySQL 4.0 to turn on some 4.1 behaviors. This variable was added in MySQL 4.0.12.
+This variable was used in MySQL 4.0 to turn on some 4.1 behaviors, and is retained for backward compatibility. In MySQL 5.0, its value is always
+OFF.
 .TP 3n
 \(bu
 old_passwords
 .sp
-Whether the server should use pre\-4.1\-style passwords for MySQL user accounts. This variable was added in MySQL 4.1.1.
+Whether the server should use pre\-4.1\-style passwords for MySQL user accounts. See
+Section\ 1.2.3, \(lqClient does not support authentication protocol\(rq.
 .TP 3n
 \(bu
 one_shot
@@ -2634,14 +3075,24 @@ to open. This is the real value allowed by the system and might be different fro
 option to
 \fBmysqld\fR
 or
-\fBmysqld_safe\fR. The value is 0 on systems where MySQL can't change the number of open files. This variable was added in MySQL 3.23.20.
+\fBmysqld_safe\fR. The value is 0 on systems where MySQL can't change the number of open files.
+.TP 3n
+\(bu
+optimizer_prune_level
+.sp
+Controls the heuristics applied during query optimization to prune less\-promising partial plans from the optimizer search space. A value of 0 disables heuristics so that the optimizer performs an exhaustive search. A value of 1 causes the optimizer to prune plans based on the number of rows retrieved by intermediate plans. This variable was added in MySQL 5.0.1.
+.TP 3n
+\(bu
+optimizer_search_depth
+.sp
+The maximum depth of search performed by the query optimizer. Values larger than the number of relations in a query result in better query plans, but take longer to generate an execution plan for a query. Values smaller than the number of relations in a query return an execution plan quicker, but the resulting plan may be far from being optimal. If set to 0, the system automatically picks a reasonable value. If set to the maximum number of tables used in a query plus 2, the optimizer switches to the algorithm used in MySQL 5.0.0 (and previous versions) for performing searches. This variable was added in MySQL 5.0.1.
 .TP 3n
 \(bu
 pid_file
 .sp
 The pathname of the process ID (PID) file. This variable can be set with the
 \fB\-\-pid\-file\fR
-option. This variable was added in MySQL 3.23.23.
+option.
 .TP 3n
 \(bu
 port
@@ -2653,46 +3104,47 @@ option.
 \(bu
 preload_buffer_size
 .sp
-The size of the buffer that is allocated when preloading indexes. This variable was added in MySQL 4.1.1.
+The size of the buffer that is allocated when preloading indexes.
 .TP 3n
 \(bu
 prepared_stmt_count
 .sp
 The current number of prepared statements. (The maximum number of statements is given by the
 max_prepared_stmt_count
-system variable.) This variable was added in MySQL 4.1.19.
+system variable.) This variable was added in MySQL 5.0.21. In MySQL 5.0.32, it was converted to the global
+Prepared_stmt_count
+status variable.
 .TP 3n
 \(bu
 protocol_version
 .sp
-The version of the client/server protocol used by the MySQL server. This variable was added in MySQL 3.23.18.
+The version of the client/server protocol used by the MySQL server.
 .TP 3n
 \(bu
 query_alloc_block_size
 .sp
-The allocation size of memory blocks that are allocated for objects created during statement parsing and execution. If you have problems with memory fragmentation, it might help to increase this a bit. This variable was added in MySQL 4.0.16.
+The allocation size of memory blocks that are allocated for objects created during statement parsing and execution. If you have problems with memory fragmentation, it might help to increase this a bit.
 .TP 3n
 \(bu
 query_cache_limit
 .sp
-Don't cache results that are larger than this number of bytes. The default value is 1MB. This variable was added in MySQL 4.0.1.
+Don't cache results that are larger than this number of bytes. The default value is 1MB.
 .TP 3n
 \(bu
 query_cache_min_res_unit
 .sp
-The minimum size for blocks allocated by the query cache. The default value is 4KB. Tuning information for this variable is given in
-Section\ 12.3, \(lqQuery Cache Configuration\(rq. This variable is present from MySQL 4.1.
+The minimum size (in bytes) for blocks allocated by the query cache. The default value is 4096 (4KB). Tuning information for this variable is given in
+Section\ 5.4.3, \(lqQuery Cache Configuration\(rq.
 .TP 3n
 \(bu
 query_cache_size
 .sp
-The amount of memory allocated for caching query results. The default value is
-0, which disables the query cache. The allowable values are multiples of 1024; other values are rounded down to the nearest multiple. Note that
+The amount of memory allocated for caching query results. The default value is 0, which disables the query cache. The allowable values are multiples of 1024; other values are rounded down to the nearest multiple. Note that
 query_cache_size
 bytes of memory are allocated even if
 query_cache_type
-is set to
-0. This variable was added in MySQL 4.0.1.
+is set to 0. See
+Section\ 5.4.3, \(lqQuery Cache Configuration\(rq, for more information.
 .TP 3n
 \(bu
 query_cache_type
@@ -2701,7 +3153,7 @@ Set the query cache type. Setting the
 GLOBAL
 value sets the type for all clients that connect thereafter. Individual clients can set the
 SESSION
-value to affect their own use of the query cache.
+value to affect their own use of the query cache. Possible values are shown in the following table:
 .TS
 allbox tab(:);
 l l
@@ -2719,8 +3171,7 @@ T}:T{
 Don't cache results in or retrieve results from the query cache. Note
                       that this does not deallocate the query cache
                       buffer. To do that, you should set
-                      query_cache_size to
-                      0.
+                      query_cache_size to 0.
 T}
 T{
 1 or ON
@@ -2736,7 +3187,8 @@ Cache results only for queries that begin with SELECT
 T}
 .TE
 .sp
-This variable was added in MySQL 4.0.3.
+This variable defaults to
+ON.
 .TP 3n
 \(bu
 query_cache_wlock_invalidate
@@ -2747,7 +3199,7 @@ lock on a
 MyISAM
 table, other clients are not blocked from issuing statements that read from the table if the query results are present in the query cache. Setting this variable to 1 causes acquisition of a
 WRITE
-lock for a table to invalidate any queries in the query cache that refer to the table. This forces other clients that attempt to access the table to wait while the lock is in effect. This variable was added in MySQL 4.0.19.
+lock for a table to invalidate any queries in the query cache that refer to the table. This forces other clients that attempt to access the table to wait while the lock is in effect.
 .TP 3n
 \(bu
 query_prealloc_size
@@ -2756,50 +3208,59 @@ The size of the persistent buffer used for statement parsing and execution. This
 query_prealloc_size
 value might be helpful in improving performance, because it can reduce the need for the server to perform memory allocation during query execution operations.
 .sp
-This variable was added in MySQL 4.0.16.
 .TP 3n
 \(bu
 range_alloc_block_size
 .sp
-The size of blocks that are allocated when doing range optimization. This variable was added in MySQL 4.0.16.
+The size of blocks that are allocated when doing range optimization.
 .TP 3n
 \(bu
 read_buffer_size
 .sp
-Each thread that does a sequential scan allocates a buffer of this size for each table it scans. If you do many sequential scans, you might want to increase this value. This variable was added in MySQL 4.0.3. Previously, it was named
-record_buffer.
+Each thread that does a sequential scan allocates a buffer of this size (in bytes) for each table it scans. If you do many sequential scans, you might want to increase this value, which defaults to 131072.
+.sp
+read_buffer_size
+and
+read_rnd_buffer_size
+are not specific to any storage engine and apply in a general manner for optimization. See
+Section\ 5.7, \(lqHow MySQL Uses Memory\(rq, for example.
 .TP 3n
 \(bu
 read_only
 .sp
-When the variable is set to
-ON
-for a replication slave server, it causes the slave to allow no updates except from slave threads or from users that have the
+When this variable is set to
+ON, the server allows no updates except from users that have the
 SUPER
-privilege. This can be useful to ensure that a slave server accepts updates only from its master server and not from clients. This variable was added in MySQL 4.0.14.
+privilege or (on a slave server) from updates performed by slave threads. On a slave server, this can be useful to ensure that the slave accepts updates only from its master server and not from clients. As of MySQL 5.0.16, this variable does not apply to
+TEMPORARY
+tables.
+.sp
+read_only
+exists only as a
+GLOBAL
+variable, so changes to its value require the
+SUPER
+privilege. Changes to
+read_only
+on a master server are not replicated to slave servers. The value can be set on a slave server independent of the setting on the master.
 .TP 3n
 \(bu
 read_rnd_buffer_size
 .sp
 When reading rows in sorted order following a key\-sorting operation, the rows are read through this buffer to avoid disk seeks. Setting the variable to a large value can improve
 ORDER BY
-performance by a lot. However, this is a buffer allocated for each client, so you should not set the global variable to a large value. Instead, change the session variable only from within those clients that need to run large queries. This variable was added in MySQL 4.0.3. Previously, it was named
-record_rnd_buffer.
+performance by a lot. However, this is a buffer allocated for each client, so you should not set the global variable to a large value. Instead, change the session variable only from within those clients that need to run large queries.
+.sp
+read_buffer_size
+and
+read_rnd_buffer_size
+are not specific to any storage engine and apply in a general manner for optimization. See
+Section\ 5.7, \(lqHow MySQL Uses Memory\(rq, for example.
 .TP 3n
 \(bu
 relay_log_purge
 .sp
-Disables or enables automatic purging of relay logs as soon as they are not needed any more. The default value is 1 (ON). This variable was added in MySQL 4.1.1.
-.TP 3n
-\(bu
-safe_show_database
-.sp
-Do not show databases for which the user has no database or table privileges. This can improve security if you are concerned about people being able to see what databases other users have. See also
-skip_show_database.
-.sp
-This variable was removed in MySQL 4.0.5. Beginning with this version, you should instead use the
-SHOW DATABASES
-privilege to control access by MySQL accounts to databases.
+Disables or enables automatic purging of relay log files as soon as they are not needed any more. The default value is 1 (ON).
 .TP 3n
 \(bu
 rpl_recovery_rank
@@ -2815,26 +3276,41 @@ option, it blocks connections from all accounts that have passwords stored in th
 ON, otherwise it is
 OFF.
 .sp
-You should enable this option if you want to prevent all use of passwords in the old format (and hence insecure communication over the network). This variable was added in MySQL 4.1.1.
+You should enable this option if you want to prevent all use of passwords employing the old format (and hence insecure communication over the network).
 .sp
-Server startup fails with an error if this option is enabled and the privilege tables are in pre\-4.1 format.
+Server startup fails with an error if this option is enabled and the privilege tables are in pre\-4.1 format. See
+Section\ 1.2.3, \(lqClient does not support authentication protocol\(rq.
+.TP 3n
+\(bu
+secure_file_priv
+.sp
+By default, this variable is empty. If set to the name of a directory, it limits the effect of the
+LOAD_FILE()
+function and the
+LOAD DATA
+and
+SELECT ... INTO OUTFILE
+statements to work only with files in that directory.
+.sp
+This variable was added in MySQL 5.0.38.
 .TP 3n
 \(bu
 server_id
 .sp
 The server ID. This value is set by the
 \fB\-\-server\-id\fR
-option. It is used for replication to enable master and slave servers to identify themselves uniquely. This variable was added in MySQL 3.23.26.
+option. It is used for replication to enable master and slave servers to identify themselves uniquely.
 .TP 3n
 \(bu
 shared_memory
 .sp
-(Windows only.) Whether the server allows shared\-memory connections. This variable was added in MySQL 4.1.1.
+(Windows only.) Whether the server allows shared\-memory connections.
 .TP 3n
 \(bu
 shared_memory_base_name
 .sp
-(Windows only.) The name of shared memory to use for shared\-memory connections. This is useful when running multiple MySQL instances on a single physical machine. This variable was added in MySQL 4.1.0.
+(Windows only.) The name of shared memory to use for shared\-memory connections. This is useful when running multiple MySQL instances on a single physical machine. The default name is
+MYSQL. The name is case sensitive.
 .TP 3n
 \(bu
 skip_external_locking
@@ -2845,8 +3321,7 @@ if
 \fBmysqld\fR
 uses external locking,
 ON
-if external locking is disabled. This variable was added in MySQL 4.0.3. Previously, it was named
-skip_locking.
+if external locking is disabled.
 .TP 3n
 \(bu
 skip_networking
@@ -2858,7 +3333,7 @@ ON. This variable can be set to
 ON
 with the
 \fB\-\-skip\-networking\fR
-option. This variable was added in MySQL 3.22.23.
+option.
 .TP 3n
 \(bu
 skip_show_database
@@ -2867,8 +3342,7 @@ This prevents people from using the
 SHOW DATABASES
 statement if they do not have the
 SHOW DATABASES
-privilege. This can improve security if you are concerned about people being able to see what databases other users have. See also
-safe_show_database. This variable was added in MySQL 3.23.4. As of MySQL 4.0.2, its effect also depends on the
+privilege. This can improve security if you have concerns about users being able to see databases belonging to other users. Its effect depends on the
 SHOW DATABASES
 privilege: If the variable value is
 ON, the
@@ -2878,58 +3352,55 @@ SHOW DATABASES
 privilege, and the statement displays all database names. If the value is
 OFF,
 SHOW DATABASES
-is allowed to all users, but displays each database name only if the user has the
+is allowed to all users, but displays the names of only those databases for which the user has the
 SHOW DATABASES
-privilege or some privilege for the database. Note that any global privilege is a privilege for the database.
+or other privilege.
 .TP 3n
 \(bu
 slave_compressed_protocol
 .sp
-Whether to use compression of the master/slave protocol if both the slave and the master support it. This variable was added in MySQL 4.0.3.
+Whether to use compression of the slave/master protocol if both the slave and the master support it.
 .TP 3n
 \(bu
 slave_load_tmpdir
 .sp
 The name of the directory where the slave creates temporary files for replicating
 LOAD DATA INFILE
-statements. This variable was added in MySQL 4.0.0.
+statements.
 .TP 3n
 \(bu
 slave_net_timeout
 .sp
-The number of seconds to wait for more data from a master/slave connection before aborting the read. This timeout applies only to TCP/IP connections, not to connections made via Unix socket files, named pipes, or shared memory. This variable was added in MySQL 3.23.40.
+The number of seconds to wait for more data from a master/slave connection before aborting the read. This timeout applies only to TCP/IP connections, not to connections made via Unix socket files, named pipes, or shared memory.
 .TP 3n
 \(bu
 slave_skip_errors
 .sp
-The replication errors that the slave should skip (ignore). This variable was added in MySQL 3.23.47.
+The replication errors that the slave should skip (ignore).
 .TP 3n
 \(bu
 slave_transaction_retries
 .sp
 If a replication slave SQL thread fails to execute a transaction because of an
 InnoDB
-deadlock or
+deadlock or exceeded
 InnoDB's
 innodb_lock_wait_timeout
-or
-NDB Cluster's
+or NDBCluster's
 TransactionDeadlockDetectionTimeout
 or
-TransactionInactiveTimeout
-was exceeded, it automatically retries
+TransactionInactiveTimeout, it automatically retries
 slave_transaction_retries
-times before stopping with an error. The default in MySQL 4.1 is
-0. You must explicitly set the value to greater than 0 to enable the
+times before stopping with an error. The default priot to MySQL 4.0.3 is 0. You must explicitly set the value greater than 0 to enable the
 \(lqretry\(rq
-behavior, which is probably a good idea.
+behavior, which is probably a good idea. In MySQL 5.0.3 or newer, the default is 10.
 .TP 3n
 \(bu
 slow_launch_time
 .sp
 If creating a thread takes longer than this many seconds, the server increments the
 Slow_launch_threads
-status variable. This variable was added in MySQL 3.23.15.
+status variable.
 .TP 3n
 \(bu
 socket
@@ -2951,25 +3422,54 @@ ORDER BY
 or
 GROUP BY
 operations. See
-Section\ 4.4, \(lqWhere MySQL Stores Temporary Files\(rq.
+Section\ 1.4.4, \(lqWhere MySQL Stores Temporary Files\(rq.
 .TP 3n
 \(bu
 sql_mode
 .sp
-The current server SQL mode. This variable was added in MySQL 3.23.41. It can be set dynamically as of MySQL 4.1.1. See
+The current server SQL mode, which can be set dynamically. See
 the section called \(lqSQL MODES\(rq.
 .TP 3n
 \(bu
 sql_slave_skip_counter
 .sp
 The number of events from the master that a slave server should skip. See
-Section\ 6.2.6, \(lqSET GLOBAL SQL_SLAVE_SKIP_COUNTER Syntax\(rq. This variable was added in MySQL 3.23.33.
+Section\ 6.2.6, \(lqSET GLOBAL SQL_SLAVE_SKIP_COUNTER Syntax\(rq.
+.TP 3n
+\(bu
+ssl_ca
+.sp
+The path to a file with a list of trusted SSL CAs. This variable was added in MySQL 5.0.23.
+.TP 3n
+\(bu
+ssl_capath
+.sp
+The path to a directory that contains trusted SSL CA certificates in PEM format. This variable was added in MySQL 5.0.23.
+.TP 3n
+\(bu
+ssl_cert
+.sp
+The name of the SSL certificate file to use for establishing a secure connection. This variable was added in MySQL 5.0.23.
+.TP 3n
+\(bu
+ssl_cipher
+.sp
+A list of allowable ciphers to use for SSL encryption. The cipher list has the same format as the
+openssl ciphers
+command. This variable was added in MySQL 5.0.23.
+.TP 3n
+\(bu
+ssl_key
+.sp
+The name of the SSL key file to use for establishing a secure connection. This variable was added in MySQL 5.0.23.
 .TP 3n
 \(bu
 storage_engine
 .sp
-This variable is a synonym for
-table_type. It was added in MySQL 4.1.2.
+The default storage engine (table type). To set the storage engine at server startup, use the
+\fB\-\-default\-storage\-engine\fR
+option. See
+the section called \(lqCOMMAND OPTIONS\(rq.
 .TP 3n
 \(bu
 sync_binlog
@@ -2977,7 +3477,7 @@ sync_binlog
 If the value of this variable is positive, the MySQL server synchronizes its binary log to disk (using
 fdatasync()) after every
 sync_binlog
-writes to the binary log. Note that there is one write to the binary log per statement if autocommit is enabled, and one write per transaction otherwise. The default value is 0, which does no synchronizing to disk. A value of 1 is the safest choice, because in the event of a crash you lose at most one statement or transaction from the binary log. However, it is also the slowest choice (unless the disk has a battery\-backed cache, which makes synchronization very fast). This variable was added in MySQL 4.1.3.
+writes to the binary log. Note that there is one write to the binary log per statement if autocommit is enabled, and one write per transaction otherwise. The default value is 0, which does no synchronizing to disk. A value of 1 is the safest choice, because in the event of a crash you lose at most one statement or transaction from the binary log. However, it is also the slowest choice (unless the disk has a battery\-backed cache, which makes synchronization very fast).
 .sp
 If the value of
 sync_binlog
@@ -2989,7 +3489,7 @@ sync_frm
 If this variable is set to 1, when any non\-temporary table is created its
 \fI.frm\fR
 file is synchronized to disk (using
-fdatasync()). This is slower but safer in case of a crash. The default is 1. This was added as a command\-line option in MySQL 4.0.18. It is also a settable global variable as of MySQL 4.1.3.
+fdatasync()). This is slower but safer in case of a crash. The default is 1.
 .TP 3n
 \(bu
 system_time_zone
@@ -3001,7 +3501,13 @@ environment variable. It also can be specified using the
 \fB\-\-timezone\fR
 option of the
 \fBmysqld_safe\fR
-script. This variable was added in MySQL 4.1.3.
+script.
+.sp
+The
+system_time_zone
+variable differs from
+time_zone. Although they might have the same value, the latter variable is used to initialize the time zone for each client that connects. See
+Section\ 8.8, \(lqMySQL Server Time Zone Support\(rq.
 .TP 3n
 \(bu
 table_cache
@@ -3013,7 +3519,7 @@ Opened_tables
 status variable. See
 the section called \(lqSTATUS VARIABLES\(rq. If the value of
 Opened_tables
-is large and you do not do
+is large and you don't do
 FLUSH TABLES
 often (which just forces all tables to be closed and reopened), then you should increase the value of the
 table_cache
@@ -3021,12 +3527,19 @@ variable. For more information about the table cache, see
 Section\ 4.8, \(lqHow MySQL Opens and Closes Tables\(rq.
 .TP 3n
 \(bu
+table_lock_wait_timeout
+.sp
+Specifies a wait timeout for table\-level locks, in seconds. The default timeout is 50 seconds. The timeout is active only if the connection has open cursors. This variable can also be set globally at runtime (you need the
+SUPER
+privilege to do this). It's available as of MySQL 5.0.10.
+.TP 3n
+\(bu
 table_type
 .sp
-The default table type (storage engine). To set the table type at server startup, use the
-\fB\-\-default\-table\-type\fR
-option. This variable was added in MySQL 3.23.0. See
-the section called \(lqCOMMAND OPTIONS\(rq.
+This variable is a synonym for
+storage_engine. In MySQL 5.0,
+storage_engine
+is the preferred name.
 .TP 3n
 \(bu
 thread_cache_size
@@ -3038,7 +3551,7 @@ Connections
 and
 Threads_created
 status variables, you can see how efficient the thread cache is. For details, see
-the section called \(lqSTATUS VARIABLES\(rq. This variable was added in MySQL 3.23.16.
+the section called \(lqSTATUS VARIABLES\(rq.
 .TP 3n
 \(bu
 thread_concurrency
@@ -3047,7 +3560,7 @@ On Solaris,
 \fBmysqld\fR
 calls
 thr_setconcurrency()
-with this value. This function enables applications to give the threads system a hint about the desired number of threads that should be run at the same time. This variable was added in MySQL 3.23.7.
+with this value. This function enables applications to give the threads system a hint about the desired number of threads that should be run at the same time.
 .TP 3n
 \(bu
 thread_stack
@@ -3055,7 +3568,7 @@ thread_stack
 The stack size for each thread. Many of the limits detected by the
 crash\-me
 test are dependent on this value. The default is large enough for normal operation. See
-Section\ 1.4, \(lqThe MySQL Benchmark Suite\(rq. The default is 64KB before MySQL 4.0.10 and 192KB thereafter.
+Section\ 1.4, \(lqThe MySQL Benchmark Suite\(rq. The default is 192KB.
 .TP 3n
 \(bu
 time_format
@@ -3071,22 +3584,21 @@ The current time zone. This variable is used to initialize the time zone for eac
 \(lquse the value of system_time_zone\(rq). The value can be specified explicitly at server startup with the
 \fB\-\-default\-time\-zone\fR
 option. See
-Section\ 9.8, \(lqMySQL Server Time Zone Support\(rq. This variable was added in MySQL 4.1.3.
+Section\ 8.8, \(lqMySQL Server Time Zone Support\(rq.
 .TP 3n
 \(bu
-timezone
+timed_mutexes
 .sp
-The time zone for the server. This is set from the
-TZ
-environment variable when
-\fBmysqld\fR
-is started. The time zone also can be set by giving a
-\fB\-\-timezone\fR
-argument to
-\fBmysqld_safe\fR. This variable was added in MySQL 3.23.15. As of MySQL 4.1.3, it is obsolete and has been replaced by the
-system_time_zone
-variable. See
-Section\ 4.6, \(lqTime Zone Problems\(rq.
+This variable controls whether
+InnoDB
+mutexes are timed. If this variable is set to 0 or
+OFF
+(the default), mutex timing is disabled. If the variable is set to 1 or
+ON, mutex timing is enabled. With timing enabled, the
+os_wait_times
+value in the output from
+SHOW ENGINE INNODB MUTEX
+indicates the amount of time (in ms) spent in operating system waits. Otherwise, the value is 0. This variable was added in MySQL 5.0.3.
 .TP 3n
 \(bu
 tmp_table_size
@@ -3107,7 +3619,7 @@ queries and you have lots of memory.
 \(bu
 tmpdir
 .sp
-The directory used for temporary files and temporary tables. Starting from MySQL 4.1, this variable can be set to a list of several paths that are used in round\-robin fashion. Paths should be separated by colon characters (\(oq:\(cq) on Unix and semicolon characters (\(oq;\(cq) on Windows, NetWare, and OS/2.
+The directory used for temporary files and temporary tables. This variable can be set to a list of several paths that are used in round\-robin fashion. Paths should be separated by colon characters (\(oq:\(cq) on Unix and semicolon characters (\(oq;\(cq) on Windows, NetWare, and OS/2.
 .sp
 The multiple\-directory feature can be used to spread the load between several physical disks. If the MySQL server is acting as a replication slave, you should not set
 tmpdir
@@ -3120,14 +3632,12 @@ tmpdir
 value and you can set
 tmpdir
 to a non\-permanent location.
-.sp
-This variable was added in MySQL 3.22.4.
 .TP 3n
 \(bu
 transaction_alloc_block_size
 .sp
 The amount in bytes by which to increase a per\-transaction memory pool which needs memory. See the description of
-transaction_prealloc_size. This variable was added in MySQL 4.0.16.
+transaction_prealloc_size.
 .TP 3n
 \(bu
 transaction_prealloc_size
@@ -3143,18 +3653,13 @@ By making
 transaction_prealloc_size
 sufficiently large to contain all statements within a single transaction, you can avoid many
 malloc()
-calls. This variable was added in MySQL 4.0.16.
-.sp
-The
-system_time_zone
-variable differs from
-time_zone. Although they might have the same value, the latter variable is used to initialize the time zone for each client that connects. See
-Section\ 9.8, \(lqMySQL Server Time Zone Support\(rq.
+calls.
 .TP 3n
 \(bu
 tx_isolation
 .sp
-The default transaction isolation level. This variable was added in MySQL 4.0.3.
+The default transaction isolation level. Defaults to
+REPEATABLE\-READ.
 .sp
 This variable is set by the
 SET TRANSACTION ISOLATION LEVEL
@@ -3170,20 +3675,50 @@ SET tx_isolation = 'READ\-COMMITTED';
 .RE
 .TP 3n
 \(bu
+updatable_views_with_limit
+.sp
+This variable controls whether updates to a view can be made when the view does not contain all columns of the primary key defined in the underlying table, if the update statement contains a
+LIMIT
+clause. (Such updates often are generated by GUI tools.) An update is an
+UPDATE
+or
+DELETE
+statement. Primary key here means a
+PRIMARY KEY, or a
+UNIQUE
+index in which no column can contain
+NULL.
+.sp
+The variable can have two values:
+.RS 3n
+.TP 3n
+\(bu
+1
+or
+YES: Issue a warning only (not an error message). This is the default value.
+.TP 3n
+\(bu
+0
+or
+NO: Prohibit the update.
+.RE
+.IP "" 3n
+This variable was added in MySQL 5.0.2.
+.TP 3n
+\(bu
 version
 .sp
 The version number for the server.
+.sp
+Starting with MySQL 5.0.24, the version number will also indicate whether the server is a standard release (Community) or Enterprise release (for example,
+5.0.28\-enterprise\-gpl\-nt).
 .TP 3n
 \(bu
 version_bdb
 .sp
 The
 BDB
-storage engine version. This variable was added in MySQL 3.23.31 with the name
-bdb_version
-and renamed to
-version_bdb
-in MySQL 4.1.1.
+storage engine version.
 .TP 3n
 \(bu
 version_comment
@@ -3192,22 +3727,28 @@ The
 \fBconfigure\fR
 script has a
 \fB\-\-with\-comment\fR
-option that allows a comment to be specified when building MySQL. This variable contains the value of that comment. This variable was added in MySQL 4.0.17.
+option that allows a comment to be specified when building MySQL. This variable contains the value of that comment.
+.sp
+For precompiled binaries, this variable will hold the server version and license information. Starting with MySQL 5.0.24,
+version_comment
+will include the full server type and license. For community users this will appear as
+MySQL Community Edition \- Standard (GPL). For Enterprise users, the version might be displayed as
+MySQL Enterprise Server (GPL). The corresponding license for your MySQL binary is shown in parentheses. For server compiled from source, the default value will be the same as that for Community releases.
 .TP 3n
 \(bu
 version_compile_machine
 .sp
-The type of machine or architecture on which MySQL was built. This variable was added in MySQL 4.1.1.
+The type of machine or architecture on which MySQL was built.
 .TP 3n
 \(bu
 version_compile_os
 .sp
-The type of operating system on which MySQL was built. This variable was added in MySQL 4.0.19.
+The type of operating system on which MySQL was built.
 .TP 3n
 \(bu
 wait_timeout
 .sp
-The number of seconds the server waits for activity on a non\-interactive connection before closing it. This timeout applies only to TCP/IP connections, not to connections made via Unix socket files, named pipes, or shared memory.
+The number of seconds the server waits for activity on a non\-interactive connection before closing it. This timeout applies only to TCP/IP and Unix socket file connections, not to connections made via named pipes, or shared memory.
 .sp
 On thread startup, the session
 wait_timeout
@@ -3220,16 +3761,21 @@ CLIENT_INTERACTIVE
 connect option to
 mysql_real_connect()). See also
 interactive_timeout.
+.sp
+.RE
+.PP
+\fBMySQL Enterprise\fR. Expert use of server system variables is part of the service offered by the MySQL Network Monitoring and Advisory Service. To subscribe see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .SH "USING SYSTEM VARIABLES"
 .PP
 The
 \fBmysql\fR
 server maintains many system variables that indicate how it is configured.
-the section called \(lqSYSTEM VARIABLES\(rq, describes the meaning of these variables. Each system variable has a default value. System variables can be set at server startup using options on the command line or in an option file. As of MySQL 4.0.3, most of them can be changed dynamically while the server is running by means of the
+the section called \(lqSYSTEM VARIABLES\(rq, describes the meaning of these variables. Each system variable has a default value. System variables can be set at server startup using options on the command line or in an option file. Most of them can be changed dynamically while the server is running by means of the
 SET
 statement, which enables you to modify operation of the server without having to stop and restart it. You can refer to system variable values in expressions.
 .PP
-Beginning with MySQL 4.0.3, the server maintains two kinds of system variables. Global variables affect the overall operation of the server. Session variables affect its operation for individual client connections. A given system variable can have both a global and a session value. Global and session system variables are related as follows:
+The server maintains two kinds of system variables. Global variables affect the overall operation of the server. Session variables affect its operation for individual client connections. A given system variable can have both a global and a session value. Global and session system variables are related as follows:
 .TP 3n
 \(bu
 When the server starts, it initializes all global variables to their default values. These defaults can be changed by options specified on the command line or in an option file. (See
@@ -3257,15 +3803,6 @@ mysqld \-\-query_cache_size=16M \-\-max_allowed_packet=1G
 .fi
 .RE
 .PP
-Before MySQL 4.0.2, use this syntax instead:
-.sp
-.RS 3n
-.nf
-mysqld \-\-set\-variable=query_cache_size=16M \\
-       \-\-set\-variable=max_allowed_packet=1G
-.fi
-.RE
-.PP
 Within an option file, those variables are set like this:
 .sp
 .RS 3n
@@ -3273,16 +3810,6 @@ Within an option file, those variables are set like this:
 [mysqld]
 query_cache_size=16M
 max_allowed_packet=1G
-.fi
-.RE
-.PP
-Or like this before MySQL 4.0.2:
-.sp
-.RS 3n
-.nf
-[mysqld]
-set\-variable=query_cache_size=16M
-set\-variable=max_allowed_packet=1G
 .fi
 .RE
 .PP
@@ -3302,7 +3829,7 @@ statement, you can specify this maximum by using an option of the form
 at server startup. For example, to prevent the value of
 query_cache_size
 from being increased to more than 32MB at runtime, use the option
-\fB\-\-maximum\-query_cache_size=32M\fR. This feature is available as of MySQL 4.0.2.
+\fB\-\-maximum\-query_cache_size=32M\fR.
 .PP
 Many system variables are dynamic and can be changed while the server runs by using the
 SET
@@ -3460,13 +3987,16 @@ statement:
 .RS 3n
 .nf
 mysql> \fBSHOW VARIABLES;\fR
-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
++\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
 | Variable_name                   | Value                               |
-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
++\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+| auto_increment_increment        | 1                                   |
+| auto_increment_offset           | 1                                   |
+| automatic_sp_privileges         | ON                                  |
 | back_log                        | 50                                  |
-| basedir                         | /usr/local/mysql                    |
+| basedir                         | /                                   |
 | bdb_cache_size                  | 8388600                             |
-| bdb_home                        | /usr/local/mysql                    |
+| bdb_home                        | /var/lib/mysql/                     |
 | bdb_log_buffer_size             | 32768                               |
 | bdb_logdir                      |                                     |
 | bdb_max_lock                    | 10000                               |
@@ -3480,7 +4010,7 @@ mysql> \fBSHOW VARIABLES;\fR
 | character_set_results           | latin1                              |
 | character_set_server            | latin1                              |
 | character_set_system            | utf8                                |
-| character_sets_dir              | /usr/local/mysql/share/charsets/    |
+| character_sets_dir              | /usr/share/mysql/charsets/          |
 | collation_connection            | latin1_swedish_ci                   |
 | collation_database              | latin1_swedish_ci                   |
 | collation_server                | latin1_swedish_ci                   |
@@ -3489,15 +4019,18 @@ mysql> \fBSHOW VARIABLES;\fR
 | innodb_autoextend_increment     | 8                                   |
 | innodb_buffer_pool_awe_mem_mb   | 0                                   |
 | innodb_buffer_pool_size         | 8388608                             |
+| innodb_checksums                | ON                                  |
+| innodb_commit_concurrency       | 0                                   |
+| innodb_concurrency_tickets      | 500                                 |
 | innodb_data_file_path           | ibdata1:10M:autoextend              |
 | innodb_data_home_dir            |                                     |
 ...
-| version                         | 4.1.18\-max\-log                      |
-| version_comment                 | MySQL Community Edition \- Max (GPL) |
+| version                         | 5.0.19                              |
+| version_comment                 | MySQL Community Edition \- (GPL)     |
 | version_compile_machine         | i686                                |
 | version_compile_os              | pc\-linux\-gnu                        |
 | wait_timeout                    | 28800                               |
-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
++\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
 .fi
 .RE
 .PP
@@ -3559,7 +4092,7 @@ SESSION
 variable changed.
 .SS "Structured System Variables"
 .PP
-Structured system variables are supported beginning with MySQL 4.1.1. A structured variable differs from a regular system variable in two respects:
+A structured variable differs from a regular system variable in two respects:
 .TP 3n
 \(bu
 Its value is a structure with components that specify server parameters considered to be closely related.
@@ -3569,7 +4102,7 @@ There might be several instances of a given type of structured variable. Each on
 .sp
 .RE
 .PP
-In MySQL 4.1 (4.1.1 and above), MySQL supports one structured variable type. It specifies parameters that govern the operation of key caches. A key cache structured variable has these components:
+MySQL 5.0 supports one structured variable type, which specifies parameters governing the operation of key caches. A key cache structured variable has these components:
 .TP 3n
 \(bu
 key_buffer_size
@@ -3585,7 +4118,7 @@ key_cache_age_threshold
 .sp
 .RE
 .PP
-The purpose of this section is to describe the syntax for referring to structured variables. Key cache variables are used for syntax examples, but specific details about how key caches operate are found elsewhere, in
+This section describes the syntax for referring to structured variables. Key cache variables are used for syntax examples, but specific details about how key caches operate are found elsewhere, in
 Section\ 4.6, \(lqThe MyISAM Key Cache\(rq.
 .PP
 To refer to a component of a structured variable instance, you can use a compound name in
@@ -3642,9 +4175,9 @@ for referring to non\-structured system variables.
 .sp
 .RE
 .PP
-At the moment, the first two rules have no possibility of being violated because the only structured variable type is the one for key caches. These rules will assume greater significance if some other type of structured variable is created in the future.
+Currently, the first two rules have no possibility of being violated because the only structured variable type is the one for key caches. These rules will assume greater significance if some other type of structured variable is created in the future.
 .PP
-With one exception, it is allowable to refer to structured variable components using compound names in any context where simple variable names can occur. For example, you can assign a value to a structured variable using a command\-line option:
+With one exception, you can refer to structured variable components using compound names in any context where simple variable names can occur. For example, you can assign a value to a structured variable using a command\-line option:
 .sp
 .RS 3n
 .nf
@@ -3661,7 +4194,7 @@ hot_cache.key_buffer_size=64K
 .fi
 .RE
 .PP
-If you start the server with such an option, it creates a key cache named
+If you start the server with this option, it creates a key cache named
 hot_cache
 with a size of 64KB in addition to the default key cache that has a default size of 8MB.
 .PP
@@ -3723,10 +4256,10 @@ This is the exception to being able to use structured variable names anywhere a 
 .\" end of SS subsection "Structured System Variables"
 .SS "Dynamic System Variables"
 .PP
-Beginning with MySQL 4.0.3, many server system variables are dynamic and can be set at runtime using
+Many server system variables are dynamic and can be set at runtime using
 SET GLOBAL
 or
-SET SESSION. You can also select their values using
+SET SESSION. You can also obtain their values using
 SELECT. See
 the section called \(lqUSING SYSTEM VARIABLES\(rq.
 .PP
@@ -3879,6 +4412,18 @@ l l l
 l l l
 l l l
 l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
+l l l
 l l l.
 T{
 \fBVariable Name\fR
@@ -3888,11 +4433,102 @@ T}:T{
 \fBType\fR
 T}
 T{
-collation_connection
+character_set_results
 T}:T{
 string
 T}:T{
 GLOBAL | SESSION
+T}
+T{
+server_id
+T}:T{
+numeric
+T}:T{
+GLOBAL
+T}
+T{
+slave_compressed_protocol
+T}:T{
+boolean
+T}:T{
+GLOBAL
+T}
+T{
+slave_net_timeout
+T}:T{
+numeric
+T}:T{
+GLOBAL
+T}
+T{
+slave_transaction_retries
+T}:T{
+numeric
+T}:T{
+GLOBAL
+T}
+T{
+slow_launch_time
+T}:T{
+numeric
+T}:T{
+GLOBAL
+T}
+T{
+sort_buffer_size
+T}:T{
+numeric
+T}:T{
+GLOBAL | SESSION
+T}
+T{
+sql_auto_is_null
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+sql_big_selects
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+sql_big_tables
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+sql_buffer_result
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+character_set_server
+T}:T{
+string
+T}:T{
+GLOBAL | SESSION
+T}
+T{
+sql_log_bin
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+sql_log_off
+T}:T{
+boolean
+T}:T{
+SESSION
 T}
 T{
 sql_log_update
@@ -3951,6 +4587,13 @@ T}:T{
 SESSION
 T}
 T{
+collation_connection
+T}:T{
+string
+T}:T{
+GLOBAL | SESSION
+T}
+T{
 sql_slave_skip_counter
 T}:T{
 numeric
@@ -3961,13 +4604,6 @@ T{
 updatable_views_with_limit
 T}:T{
 enumeration
-T}:T{
-GLOBAL | SESSION
-T}
-T{
-collation_server
-T}:T{
-string
 T}:T{
 GLOBAL | SESSION
 T}
@@ -4028,6 +4664,13 @@ T}:T{
 GLOBAL | SESSION
 T}
 T{
+collation_server
+T}:T{
+string
+T}:T{
+GLOBAL | SESSION
+T}
+T{
 timestamp
 T}:T{
 boolean
@@ -4040,13 +4683,6 @@ T}:T{
 enumeration
 T}:T{
 GLOBAL | SESSION
-T}
-T{
-concurrent_insert
-T}:T{
-boolean
-T}:T{
-GLOBAL
 T}
 T{
 transaction_alloc_block_size
@@ -4091,18 +4727,25 @@ T}:T{
 SESSION
 T}
 T{
-connect_timeout
+completion_type
+T}:T{
+numeric
+T}:T{
+GLOBAL | SESSION
+T}
+T{
+concurrent_insert
 T}:T{
 numeric
 T}:T{
 GLOBAL
 T}
 T{
-convert_character_set
+connect_timeout
 T}:T{
-string
+numeric
 T}:T{
-GLOBAL | SESSION
+GLOBAL
 T}
 T{
 default_week_format
@@ -4126,6 +4769,13 @@ T}:T{
 GLOBAL
 T}
 T{
+autocommit
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
 delayed_insert_timeout
 T}:T{
 numeric
@@ -4140,11 +4790,18 @@ T}:T{
 GLOBAL
 T}
 T{
-autocommit
+div_precision_increment
+T}:T{
+numeric
+T}:T{
+GLOBAL | SESSION
+T}
+T{
+engine_condition_pushdown
 T}:T{
 boolean
 T}:T{
-SESSION
+GLOBAL | SESSION
 T}
 T{
 error_count
@@ -4184,7 +4841,14 @@ T}
 T{
 ft_boolean_syntax
 T}:T{
-numeric
+string
+T}:T{
+GLOBAL
+T}
+T{
+automatic_sp_privileges
+T}:T{
+boolean
 T}:T{
 GLOBAL
 T}
@@ -4210,18 +4874,18 @@ T}:T{
 GLOBAL
 T}
 T{
-innodb_concurrency_tickets
+innodb_commit_concurrency
 T}:T{
 numeric
 T}:T{
 GLOBAL
 T}
 T{
-big_tables
+innodb_concurrency_tickets
 T}:T{
-boolean
+numeric
 T}:T{
-SESSION
+GLOBAL
 T}
 T{
 innodb_max_dirty_pages_pct
@@ -4238,6 +4902,13 @@ T}:T{
 GLOBAL
 T}
 T{
+innodb_support_xa
+T}:T{
+boolean
+T}:T{
+GLOBAL | SESSION
+T}
+T{
 innodb_sync_spin_loops
 T}:T{
 numeric
@@ -4250,6 +4921,20 @@ T}:T{
 boolean
 T}:T{
 GLOBAL | SESSION
+T}
+T{
+big_tables
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+innodb_thread_concurrency
+T}:T{
+numeric
+T}:T{
+GLOBAL
 T}
 T{
 innodb_thread_sleep_delay
@@ -4294,16 +4979,30 @@ T}:T{
 SESSION
 T}
 T{
-binlog_cache_size
+lc_time_names
 T}:T{
-numeric
+string
 T}:T{
-GLOBAL
+GLOBAL | SESSION
 T}
 T{
 local_infile
 T}:T{
 boolean
+T}:T{
+GLOBAL
+T}
+T{
+log_queries_not_using_indexes
+T}:T{
+boolean
+T}:T{
+GLOBAL
+T}
+T{
+binlog_cache_size
+T}:T{
+numeric
 T}:T{
 GLOBAL
 T}
@@ -4371,14 +5070,14 @@ T}:T{
 GLOBAL
 T}
 T{
-bulk_insert_buffer_size
+max_error_count
 T}:T{
 numeric
 T}:T{
 GLOBAL | SESSION
 T}
 T{
-max_error_count
+bulk_insert_buffer_size
 T}:T{
 numeric
 T}:T{
@@ -4448,13 +5147,6 @@ T}:T{
 GLOBAL
 T}
 T{
-character_set_client
-T}:T{
-string
-T}:T{
-GLOBAL | SESSION
-T}
-T{
 max_write_lock_count
 T}:T{
 numeric
@@ -4462,7 +5154,14 @@ T}:T{
 GLOBAL
 T}
 T{
-multi_read_range
+character_set_client
+T}:T{
+string
+T}:T{
+GLOBAL | SESSION
+T}
+T{
+multi_range_count
 T}:T{
 numeric
 T}:T{
@@ -4472,6 +5171,13 @@ T{
 myisam_data_pointer_size
 T}:T{
 numeric
+T}:T{
+GLOBAL
+T}
+T{
+log_bin_trust_function_creators
+T}:T{
+boolean
 T}:T{
 GLOBAL
 T}
@@ -4567,6 +5273,20 @@ T}:T{
 GLOBAL | SESSION
 T}
 T{
+profiling
+T}:T{
+boolean
+T}:T{
+SESSION
+T}
+T{
+profiling_history_size
+T}:T{
+numeric
+T}:T{
+SESSION
+T}
+T{
 query_alloc_block_size
 T}:T{
 numeric
@@ -4588,6 +5308,13 @@ T}:T{
 GLOBAL
 T}
 T{
+character_set_filesystem
+T}:T{
+string
+T}:T{
+GLOBAL | SESSION
+T}
+T{
 query_cache_type
 T}:T{
 enumeration
@@ -4598,13 +5325,6 @@ T{
 query_cache_wlock_invalidate
 T}:T{
 boolean
-T}:T{
-GLOBAL | SESSION
-T}
-T{
-character_set_results
-T}:T{
-string
 T}:T{
 GLOBAL | SESSION
 T}
@@ -4664,118 +5384,52 @@ boolean
 T}:T{
 GLOBAL
 T}
-T{
-server_id
-T}:T{
-numeric
-T}:T{
-GLOBAL
-T}
-T{
-slave_compressed_protocol
-T}:T{
-boolean
-T}:T{
-GLOBAL
-T}
-T{
-character_set_server
-T}:T{
-string
-T}:T{
-GLOBAL | SESSION
-T}
-T{
-slave_net_timeout
-T}:T{
-numeric
-T}:T{
-GLOBAL
-T}
-T{
-slave_transaction_retries
-T}:T{
-numeric
-T}:T{
-GLOBAL
-T}
-T{
-slow_launch_time
-T}:T{
-numeric
-T}:T{
-GLOBAL
-T}
-T{
-sort_buffer_size
-T}:T{
-numeric
-T}:T{
-GLOBAL | SESSION
-T}
-T{
-sql_auto_is_null
-T}:T{
-boolean
-T}:T{
-SESSION
-T}
-T{
-sql_big_selects
-T}:T{
-boolean
-T}:T{
-SESSION
-T}
-T{
-sql_big_tables
-T}:T{
-boolean
-T}:T{
-SESSION
-T}
-T{
-sql_buffer_result
-T}:T{
-boolean
-T}:T{
-SESSION
-T}
-T{
-sql_log_bin
-T}:T{
-boolean
-T}:T{
-SESSION
-T}
-T{
-sql_log_off
-T}:T{
-boolean
-T}:T{
-SESSION
-T}
 .TE
 .sp
+.PP
+\fBMySQL Enterprise\fR. Improper configuration of system variables can adversely affect performance and security. The MySQL Network Monitoring and Advisory Service continually monitors system variables and provides expert advice about appropriate settings. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .\" end of SS subsection "Dynamic System Variables"
 .SH "STATUS VARIABLES"
 .PP
 The server maintains many status variables that provide information about its operation. You can view these variables and their values by using the
-SHOW STATUS
-statement:
+SHOW [GLOBAL] STATUS
+statement. The optional
+GLOBAL
+keyword aggregates the values over all connections.
 .sp
 .RS 3n
 .nf
-mysql> \fBSHOW STATUS;\fR
-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-+
-| Variable_name            | Value      |
-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-+
-| Aborted_clients          | 0          |
-| Aborted_connects         | 0          |
-| Bytes_received           | 155372598  |
-| Bytes_sent               | 1176560426 |
-| Connections              | 30023      |
+mysql> \fBSHOW GLOBAL STATUS;\fR
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-+
+| Variable_name                     | Value      |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-+
+| Aborted_clients                   | 0          |
+| Aborted_connects                  | 0          |
+| Bytes_received                    | 155372598  |
+| Bytes_sent                        | 1176560426 |
 ...
+| Connections                       | 30023      |
+| Created_tmp_disk_tables           | 0          |
+| Created_tmp_files                 | 3          |
+| Created_tmp_tables                | 2          |
+...
+| Threads_created                   | 217        |
+| Threads_running                   | 88         |
+| Uptime                            | 1389872    |
++\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-+
+.fi
+.RE
+.PP
+\fBNote\fR: Before MySQL 5.0.2,
+SHOW STATUS
+returned global status values. Because the default as of 5.0.2 is to return session values, this is incompatible with previous versions. To issue a
+SHOW STATUS
+statement that will retrieve global status values for all versions of MySQL, write it like this:
+.sp
+.RS 3n
+.nf
+SHOW /*!50002 GLOBAL */ STATUS;
 .fi
 .RE
 .PP
@@ -4783,52 +5437,52 @@ Many status variables are reset to 0 by the
 FLUSH STATUS
 statement.
 .PP
-The status variables have the following meanings. The
-Com_\fIxxx\fR
-statement counter variables were added beginning with MySQL 3.23.47. The
-Qcache_\fIxxx\fR
-query cache variables were added beginning with MySQL 4.0.1. Otherwise, variables with no version indicated have been present since at least MySQL 3.22.
+\fBMySQL Enterprise\fR. For expert advice on using status variables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
+.PP
+The status variables have the following meanings. Variables with no version indicated were already present prior to MySQL 5.0. For information regarding their implementation history, see
+MySQL 3.23, 4.0, 4.1 Reference Manual.
 .TP 3n
 \(bu
 Aborted_clients
 .sp
 The number of connections that were aborted because the client died without closing the connection properly. See
-Section\ 2.10, \(lqCommunication Errors and Aborted Connections\(rq.
+Section\ 1.2.10, \(lqCommunication Errors and Aborted Connections\(rq.
 .TP 3n
 \(bu
 Aborted_connects
 .sp
 The number of failed attempts to connect to the MySQL server. See
-Section\ 2.10, \(lqCommunication Errors and Aborted Connections\(rq.
+Section\ 1.2.10, \(lqCommunication Errors and Aborted Connections\(rq.
 .TP 3n
 \(bu
 Binlog_cache_disk_use
 .sp
 The number of transactions that used the temporary binary log cache but that exceeded the value of
 binlog_cache_size
-and used a temporary file to store statements from the transaction. This variable was added in MySQL 4.1.2.
+and used a temporary file to store statements from the transaction.
 .TP 3n
 \(bu
 Binlog_cache_use
 .sp
-The number of transactions that used the temporary binary log cache. This variable was added in MySQL 4.1.2.
+The number of transactions that used the temporary binary log cache.
 .TP 3n
 \(bu
 Bytes_received
 .sp
-The number of bytes received from all clients. This variable was added in MySQL 3.23.7.
+The number of bytes received from all clients.
 .TP 3n
 \(bu
 Bytes_sent
 .sp
-The number of bytes sent to all clients. This variable was added in MySQL 3.23.7.
+The number of bytes sent to all clients.
 .TP 3n
 \(bu
 Com_\fIxxx\fR
 .sp
 The
 Com_\fIxxx\fR
-statement counter variables were added beginning with MySQL 3.23.47. They indicate the number of times each
+statement counter variables indicate the number of times each
 \fIxxx\fR
 statement has been executed. There is one status variable for each type of statement. For example,
 Com_delete
@@ -4842,11 +5496,15 @@ statements, respectively. However, if a query result is returned from query cach
 Qcache_hits
 status variable, not
 Com_select. See
-Section\ 12.4, \(lqQuery Cache Status and Maintenance\(rq.
+Section\ 5.4.4, \(lqQuery Cache Status and Maintenance\(rq.
 .sp
-New
+All of the
 Com_stmt_\fIxxx\fR
-status variables have been added in MySQL 4.1.13:
+variables are increased even if a prepared statement argument is unknown or an error occurred during execution. In other words, their values correspond to the number of requests issued, not to the number of requests successfully completed.
+.sp
+The
+Com_stmt_\fIxxx\fR
+status variables were added in 5.0.8:
 .RS 3n
 .TP 3n
 \(bu
@@ -4854,6 +5512,9 @@ Com_stmt_prepare
 .TP 3n
 \(bu
 Com_stmt_execute
+.TP 3n
+\(bu
+Com_stmt_fetch
 .TP 3n
 \(bu
 Com_stmt_send_long_data
@@ -4886,10 +5547,13 @@ PREPARE,
 EXECUTE, and
 DEALLOCATE PREPARE
 statements.
+Com_stmt_fetch
+stands for the total number of network round\-trips issued when fetching from cursors.
+.TP 3n
+\(bu
+Compression
 .sp
-All of the
-Com_stmt_\fIxxx\fR
-variables are increased even if their argument (a prepared statement) is unknown or an error occurred during execution; in other words, their values correspond to the number of requests issued, not to the number of requests successfully completed.
+Whether the client connection uses compression in the client/server protocol. Added in MySQL 5.0.16.
 .TP 3n
 \(bu
 Connections
@@ -4899,14 +5563,14 @@ The number of connection attempts (successful or not) to the MySQL server.
 \(bu
 Created_tmp_disk_tables
 .sp
-The number of temporary tables on disk created automatically by the server while executing statements. This variable was added in MySQL 3.23.24.
+The number of temporary tables on disk created automatically by the server while executing statements.
 .TP 3n
 \(bu
 Created_tmp_files
 .sp
 How many temporary files
 \fBmysqld\fR
-has created. This variable was added in MySQL 3.23.28.
+has created.
 .TP 3n
 \(bu
 Created_tmp_tables
@@ -4951,7 +5615,12 @@ Handler_commit
 .sp
 The number of internal
 COMMIT
-statements. This variable was added in MySQL 4.0.2.
+statements.
+.TP 3n
+\(bu
+Handler_delete
+.sp
+The number of times that rows have been deleted from tables.
 .TP 3n
 \(bu
 Handler_discover
@@ -4960,12 +5629,12 @@ The MySQL server can ask the
 NDB Cluster
 storage engine if it knows about a table with a given name. This is called discovery.
 Handler_discover
-indicates the number of times that tables have been discovered. This variable was added in MySQL 4.1.2.
+indicates the number of times that tables have been discovered via this mechanism.
 .TP 3n
 \(bu
-Handler_delete
+Handler_prepare
 .sp
-The number of times a row was deleted from a table.
+A counter for the prepare phase of two\-phase commit operations. Added in MySQL 5.0.3.
 .TP 3n
 \(bu
 Handler_read_first
@@ -4989,7 +5658,7 @@ The number of requests to read the next row in key order. This value is incremen
 Handler_read_prev
 .sp
 The number of requests to read the previous row in key order. This read method is mainly used to optimize
-ORDER BY ... DESC. This variable was added in MySQL 3.23.6.
+ORDER BY ... DESC.
 .TP 3n
 \(bu
 Handler_read_rnd
@@ -5004,9 +5673,17 @@ The number of requests to read the next row in the data file. This value is high
 \(bu
 Handler_rollback
 .sp
-The number of internal
-ROLLBACK
-statements. This variable was added in MySQL 4.0.2.
+The number of requests for a storage engine to perform a rollback operation.
+.TP 3n
+\(bu
+Handler_savepoint
+.sp
+The number of requests for a storage engine to place a savepoint. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Handler_savepoint_rollback
+.sp
+The number of requests for a storage engine to roll back to a savepoint. Added in MySQL 5.0.3.
 .TP 3n
 \(bu
 Handler_update
@@ -5019,10 +5696,260 @@ Handler_write
 The number of requests to insert a row in a table.
 .TP 3n
 \(bu
+Innodb_buffer_pool_pages_data
+.sp
+The number of pages containing data (dirty or clean). Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_pages_dirty
+.sp
+The number of pages currently dirty. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_pages_flushed
+.sp
+The number of buffer pool page\-flush requests. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_pages_free
+.sp
+The number of free pages. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_pages_latched
+.sp
+The number of latched pages in
+InnoDB
+buffer pool. These are pages currently being read or written or that cannot be flushed or removed for some other reason. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_pages_misc
+.sp
+The number of pages that are busy because they have been allocated for administrative overhead such as row locks or the adaptive hash index. This value can also be calculated as
+Innodb_buffer_pool_pages_total
+\(en
+Innodb_buffer_pool_pages_free
+\(en
+Innodb_buffer_pool_pages_data. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_pages_total
+.sp
+The total size of buffer pool, in pages. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_read_ahead_rnd
+.sp
+The number of
+\(lqrandom\(rq
+read\-aheads initiated by
+InnoDB. This happens when a query scans a large portion of a table but in random order. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_read_ahead_seq
+.sp
+The number of sequential read\-aheads initiated by
+InnoDB. This happens when
+InnoDB
+does a sequential full table scan. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_read_requests
+.sp
+The number of logical read requests
+InnoDB
+has done. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_reads
+.sp
+The number of logical reads that
+InnoDB
+could not satisfy from the buffer pool and had to do a single\-page read. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_wait_free
+.sp
+Normally, writes to the
+InnoDB
+buffer pool happen in the background. However, if it is necessary to read or create a page and no clean pages are available, it is also necessary to wait for pages to be flushed first. This counter counts instances of these waits. If the buffer pool size has been set properly, this value should be small. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_buffer_pool_write_requests
+.sp
+The number writes done to the
+InnoDB
+buffer pool. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_fsyncs
+.sp
+The number of
+fsync()
+operations so far. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_pending_fsyncs
+.sp
+The current number of pending
+fsync()
+operations. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_pending_reads
+.sp
+The current number of pending reads. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_pending_writes
+.sp
+The current number of pending writes. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_read
+.sp
+The amount of data read so far, in bytes. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_reads
+.sp
+The total number of data reads. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_writes
+.sp
+The total number of data writes. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_data_written
+.sp
+The amount of data written so far, in bytes. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_dblwr_writes,
+Innodb_dblwr_pages_written
+.sp
+The number of doublewrite operations that have been performed and the number of pages that have been written for this purpose. Added in MySQL 5.0.2. See
+Section\ 2.14.1, \(lqInnoDB Disk I/O\(rq.
+.TP 3n
+\(bu
+Innodb_log_waits
+.sp
+The number of times that the log buffer was too small and a wait was required for it to be flushed before continuing. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_log_write_requests
+.sp
+The number of log write requests. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_log_writes
+.sp
+The number of physical writes to the log file. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_os_log_fsyncs
+.sp
+The number of
+fsync()
+writes done to the log file. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_os_log_pending_fsyncs
+.sp
+The number of pending log file
+fsync()
+operations. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_os_log_pending_writes
+.sp
+The number of pending log file writes. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_os_log_written
+.sp
+The number of bytes written to the log file. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_page_size
+.sp
+The compiled\-in
+InnoDB
+page size (default 16KB). Many values are counted in pages; the page size allows them to be easily converted to bytes. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_pages_created
+.sp
+The number of pages created. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_pages_read
+.sp
+The number of pages read. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_pages_written
+.sp
+The number of pages written. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_row_lock_current_waits
+.sp
+The number of row locks currently being waited for. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Innodb_row_lock_time
+.sp
+The total time spent in acquiring row locks, in milliseconds. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Innodb_row_lock_time_avg
+.sp
+The average time to acquire a row lock, in milliseconds. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Innodb_row_lock_time_max
+.sp
+The maximum time to acquire a row lock, in milliseconds. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Innodb_row_lock_waits
+.sp
+The number of times a row lock had to be waited for. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Innodb_rows_deleted
+.sp
+The number of rows deleted from
+InnoDB
+tables. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_rows_inserted
+.sp
+The number of rows inserted into
+InnoDB
+tables. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_rows_read
+.sp
+The number of rows read from
+InnoDB
+tables. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
+Innodb_rows_updated
+.sp
+The number of rows updated in
+InnoDB
+tables. Added in MySQL 5.0.2.
+.TP 3n
+\(bu
 Key_blocks_not_flushed
 .sp
-The number of key blocks in the key cache that have changed but have not yet been flushed to disk. This variable was added in MySQL 4.1.1. It used to be known as
-Not_flushed_key_blocks.
+The number of key blocks in the key cache that have changed but have not yet been flushed to disk.
 .TP 3n
 \(bu
 Key_blocks_unused
@@ -5030,7 +5957,7 @@ Key_blocks_unused
 The number of unused blocks in the key cache. You can use this value to determine how much of the key cache is in use; see the discussion of
 key_buffer_size
 in
-the section called \(lqSYSTEM VARIABLES\(rq. This variable was added in MySQL 4.1.2.
+the section called \(lqSYSTEM VARIABLES\(rq.
 .TP 3n
 \(bu
 Key_blocks_used
@@ -5063,9 +5990,55 @@ Key_writes
 The number of physical writes of a key block to disk.
 .TP 3n
 \(bu
+Last_query_cost
+.sp
+The total cost of the last compiled query as computed by the query optimizer. This is useful for comparing the cost of different query plans for the same query. The default value of 0 means that no query has been compiled yet. This variable was added in MySQL 5.0.1, with a default value of \-1. In MySQL 5.0.7, the default was changed to 0; also in version 5.0.7, the scope of
+Last_query_cost
+was changed to session rather than global.
+.sp
+Prior to MySQL 5.0.16, this variable was not updated for queries served from the query cache.
+.TP 3n
+\(bu
 Max_used_connections
 .sp
 The maximum number of connections that have been in use simultaneously since the server started.
+.TP 3n
+\(bu
+Ndb_cluster_node_id
+.sp
+If the server is acting as a MySQL Cluster node, then the value of this variable its node ID in the cluster.
+.sp
+If the server is not part of a MySQL Cluster, then the value of this variable is 0.
+.TP 3n
+\(bu
+Ndb_config_from_host
+.sp
+If the server is part of a MySQL Cluster, the value of this variable is the hostname or IP address of the Cluster management server from which it gets its configuration data.
+.sp
+If the server is not part of a MySQL Cluster, then the value of this variable is an empty string.
+.sp
+Prior to MySQL 5.0.23, this variable was named
+Ndb_connected_host.
+.TP 3n
+\(bu
+Ndb_config_from_port
+.sp
+If the server is part of a MySQL Cluster, the value of this variable is the number of the port through which it is connected to the Cluster management server from which it gets its configuration data.
+.sp
+If the server is not part of a MySQL Cluster, then the value of this variable is 0.
+.sp
+Prior to MySQL 5.0.23, this variable was named
+Ndb_connected_port.
+.TP 3n
+\(bu
+Ndb_number_of_data_nodes
+.sp
+If the server is part of a MySQL Cluster, the value of this variable is the number of data nodes in the cluster.
+.sp
+If the server is not part of a MySQL Cluster, then the value of this variable is 0.
+.sp
+Prior to MySQL 5.0.29, this variable was named
+Ndb_number_of_storage_nodes.
 .TP 3n
 \(bu
 Not_flushed_delayed_rows
@@ -5073,13 +6046,6 @@ Not_flushed_delayed_rows
 The number of rows waiting to be written in
 INSERT DELAY
 queues.
-.TP 3n
-\(bu
-Not_flushed_key_blocks
-.sp
-The old name for
-Key_blocks_not_flushed
-before MySQL 4.1.1.
 .TP 3n
 \(bu
 Open_files
@@ -5104,6 +6070,13 @@ Opened_tables
 is big, your
 table_cache
 value is probably too small.
+.TP 3n
+\(bu
+Prepared_stmt_count
+.sp
+The current number of prepared statements. (The maximum number of statements is given by the
+max_prepared_stmt_count
+system variable.) This variable was added in MySQL 5.0.32.
 .TP 3n
 \(bu
 Qcache_free_blocks
@@ -5160,52 +6133,52 @@ The status of fail\-safe replication (not yet implemented).
 \(bu
 Select_full_join
 .sp
-The number of joins that perform table scans because they do not use indexes. If this value is not 0, you should carefully check the indexes of your tables. This variable was added in MySQL 3.23.25.
+The number of joins that perform table scans because they do not use indexes. If this value is not 0, you should carefully check the indexes of your tables.
 .TP 3n
 \(bu
 Select_full_range_join
 .sp
-The number of joins that used a range search on a reference table. This variable was added in MySQL 3.23.25.
+The number of joins that used a range search on a reference table.
 .TP 3n
 \(bu
 Select_range
 .sp
-The number of joins that used ranges on the first table. This is normally not critical issue even if the value is quite large. This variable was added in MySQL 3.23.25.
+The number of joins that used ranges on the first table.
+This is normally not a critical issue even if the value is quite large.
 .TP 3n
 \(bu
 Select_range_check
 .sp
-The number of joins without keys that check for key usage after each row. (If this is not equal to
-0, you should very carefully check the indexes of your tables.) This variable was added in MySQL 3.23.25.
+The number of joins without keys that check for key usage after each row. If this is not 0, you should carefully check the indexes of your tables.
 .TP 3n
 \(bu
 Select_scan
 .sp
-The number of joins that did a full scan of the first table. This variable was added in MySQL 3.23.25.
+The number of joins that did a full scan of the first table.
 .TP 3n
 \(bu
 Slave_open_temp_tables
 .sp
-The number of temporary tables that the slave SQL thread currently has open. This variable was added in MySQL 3.23.29.
+The number of temporary tables that the slave SQL thread currently has open.
 .TP 3n
 \(bu
 Slave_running
 .sp
 This is
 ON
-if this server is a slave that is connected to a master. This variable was added in MySQL 3.23.16.
+if this server is a slave that is connected to a master.
 .TP 3n
 \(bu
 Slave_retried_transactions
 .sp
-Total (since startup) number of times the replication slave SQL thread has retried transactions. This variable was added in MySQL 4.1.11.
+The total number of times since startup that the replication slave SQL thread has retried transactions. This variable was added in version 5.0.4.
 .TP 3n
 \(bu
 Slow_launch_threads
 .sp
 The number of threads that have taken more than
 slow_launch_time
-seconds to create. This variable was added in MySQL 3.23.15.
+seconds to create.
 .TP 3n
 \(bu
 Slow_queries
@@ -5213,49 +6186,77 @@ Slow_queries
 The number of queries that have taken more than
 long_query_time
 seconds. See
-Section\ 10.5, \(lqThe Slow Query Log\(rq.
+Section\ 9.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 Sort_merge_passes
 .sp
 The number of merge passes that the sort algorithm has had to do. If this value is large, you should consider increasing the value of the
 sort_buffer_size
-system variable. This variable was added in MySQL 3.23.28.
+system variable.
 .TP 3n
 \(bu
 Sort_range
 .sp
-The number of sorts that were done with ranges. This variable was added in MySQL 3.23.25.
+The number of sorts that were done using ranges.
 .TP 3n
 \(bu
 Sort_rows
 .sp
-The number of sorted rows. This variable was added in MySQL 3.23.25.
+The number of sorted rows.
 .TP 3n
 \(bu
 Sort_scan
 .sp
-The number of sorts that were done by scanning the table. This variable was added in MySQL 3.23.25.
+The number of sorts that were done by scanning the table.
 .TP 3n
 \(bu
 Ssl_\fIxxx\fR
 .sp
-Variables used for SSL connections. These variables were added in MySQL 4.0.0.
+Variables used for SSL connections.
 .TP 3n
 \(bu
 Table_locks_immediate
 .sp
-The number of times that a table lock was acquired immediately. This variable was added in MySQL 3.23.33.
+The number of times that a table lock was acquired immediately.
 .TP 3n
 \(bu
 Table_locks_waited
 .sp
-The number of times that a table lock could not be acquired immediately and a wait was needed. If this is high and you have performance problems, you should first optimize your queries, and then either split your table or tables or use replication. This variable was added in MySQL 3.23.33.
+The number of times that a table lock could not be acquired immediately and a wait was needed. If this is high and you have performance problems, you should first optimize your queries, and then either split your table or tables or use replication.
+.TP 3n
+\(bu
+Tc_log_max_pages_used
+.sp
+For the memory\-mapped implementation of the log that is used by
+\fBmysqld\fR
+when it acts as the transaction coordinator for recovery of internal XA transactions, this variable indicates the largest number of pages used for the log since the server started. If the product of
+Tc_log_max_pages_used
+and
+Tc_log_page_size
+is always significantly less than the log size, the size is larger than necessary and can be reduced. (The size is set by the
+\fB\-\-log\-tc\-size\fR
+option. Currently, this variable is unused: It is unneeded for binary log\-based recovery, and the memory\-mapped recovery log method is not used unless the number of storage engines capable of two\-phase commit is greater than one. (InnoDB
+is the only applicable engine.) Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Tc_log_page_size
+.sp
+The page size used for the memory\-mapped implementation of the XA recovery log. The default value is determined using
+getpagesize(). Currently, this variable is unused for the same reasons as described for
+Tc_log_max_pages_used. Added in MySQL 5.0.3.
+.TP 3n
+\(bu
+Tc_log_page_waits
+.sp
+For the memory\-mapped implementation of the recovery log, this variable increments each time the server was not able to commit a transaction and had to wait for a free page in the log. If this value is large, you might want to increase the log size (with the
+\fB\-\-log\-tc\-size\fR
+option). For binary log\-based recovery, this variable increments each time the binary log cannot be closed because there are two\-phase commits in progress. (The close operation waits until all such transactions are finished.) Added in MySQL 5.0.3.
 .TP 3n
 \(bu
 Threads_cached
 .sp
-The number of threads in the thread cache. This variable was added in MySQL 3.23.17.
+The number of threads in the thread cache.
 .TP 3n
 \(bu
 Threads_connected
@@ -5270,9 +6271,7 @@ Threads_created
 is big, you may want to increase the
 thread_cache_size
 value. The cache miss rate can be calculated as
-Threads_created
-divided by
-Connections. This variable was added in MySQL 3.23.31.
+Threads_created/Connections.
 .TP 3n
 \(bu
 Threads_running
@@ -5285,7 +6284,10 @@ Uptime
 The number of seconds that the server has been up.
 .SH "SQL MODES"
 .PP
-The MySQL server can operate in different SQL modes, and (as of MySQL 4.1) can apply these modes differentially for different clients. This capability enables each application to tailor the server's operating mode to its own requirements.
+The MySQL server can operate in different SQL modes, and can apply these modes differently for different clients. This capability enables each application to tailor the server's operating mode to its own requirements.
+.PP
+For answers to some questions that are often asked about server SQL modes in MySQL, see
+Section\ 3, \(lqMySQL 5.0 FAQ \(em Server SQL Mode\(rq.
 .PP
 Modes define what SQL syntax MySQL should support and what kind of data validation checks it should perform. This makes it easier to use MySQL in different environments and to use MySQL together with other database servers.
 .PP
@@ -5293,13 +6295,26 @@ You can set the default SQL mode by starting
 \fBmysqld\fR
 with the
 \fB\-\-sql\-mode="\fR\fB\fImodes\fR\fR\fB"\fR
-option.
+option, or by using
+\fBsql\-mode="\fR\fB\fImodes\fR\fR\fB"\fR
+in
+\fImy.cnf\fR
+(Unix operating systems) or
+\fImy.ini\fR
+(Windows).
 \fImodes\fR
-is a list of different modes separated by comma (\(oq,\(cq) characters. The default value is empty (no modes set). The
+is a list of different modes separated by comma (\(lq,\(rq) characters. The default value is empty (no modes set). The
 \fImodes\fR
-value also can be empty (\fB\-\-sql\-mode=""\fR) if you want to clear it explicitly.
+value also can be empty (\fB\-\-sql\-mode=""\fR
+on the command line, or
+\fBsql\-mode=""\fR
+in
+\fImy.cnf\fR
+on Unix systems or in
+\fImy.ini\fR
+on Windows) if you want to clear it explicitly.
 .PP
-Beginning with MySQL 4.1, you can change the SQL mode at runtime by using a
+You can change the SQL mode at runtime by using a
 SET [GLOBAL|SESSION] sql_mode='\fImodes\fR'
 statement to set the
 sql_mode
@@ -5326,40 +6341,148 @@ SELECT @@session.sql_mode;
 .PP
 The most important
 sql_mode
-value is
-ANSI, which changes syntax and behavior to be more conformant to standard SQL. This mode is available beginning in MySQL 4.1.1.
+values are probably these:
+.TP 3n
+\(bu
+ANSI
+.sp
+This mode changes syntax and behavior to conform more closely to standard SQL.
+.TP 3n
+\(bu
+STRICT_TRANS_TABLES
+.sp
+If a value could not be inserted as given into a transactional table, abort the statement. For a non\-transactional table, abort the statement if the value occurs in a single\-row statement or the first row of a multiple\-row statement. More detail is given later in this section. (Implemented in MySQL 5.0.2)
+.TP 3n
+\(bu
+TRADITIONAL
+.sp
+Make MySQL behave like a
+\(lqtraditional\(rq
+SQL database system. A simple description of this mode is
+\(lqgive an error instead of a warning\(rq
+when inserting an incorrect value into a column.
+\fBNote\fR: The
+INSERT/UPDATE
+aborts as soon as the error is noticed. This may not be what you want if you are using a non\-transactional storage engine, because data changes made prior to the error may not be rolled back, resulting in a
+\(lqpartially done\(rq
+update. (Added in MySQL 5.0.2)
+.sp
+.RE
+.PP
+When this manual refers to
+\(lqstrict mode,\(rq
+it means a mode where at least one of
+STRICT_TRANS_TABLES
+or
+STRICT_ALL_TABLES
+is enabled.
 .PP
 The following list describes all supported modes:
+.TP 3n
+\(bu
+ALLOW_INVALID_DATES
+.sp
+Don't do full checking of dates. Check only that the month is in the range from 1 to 12 and the day is in the range from 1 to 31. This is very convenient for Web applications where you obtain year, month, and day in three different fields and you want to store exactly what the user inserted (without date validation). This mode applies to
+DATE
+and
+DATETIME
+columns. It does not apply
+TIMESTAMP
+columns, which always require a valid date.
+.sp
+This mode is implemented in MySQL 5.0.2. Before 5.0.2, this was the default MySQL date\-handling mode. As of 5.0.2, the server requires that month and day values be legal, and not merely in the range 1 to 12 and 1 to 31, respectively. With strict mode disabled, invalid dates such as
+\'2004\-04\-31'
+are converted to
+\'0000\-00\-00'
+and a warning is generated. With strict mode enabled, invalid dates generate an error. To allow such dates, enable
+ALLOW_INVALID_DATES.
 .TP 3n
 \(bu
 ANSI_QUOTES
 .sp
 Treat \(oq"\(cq as an identifier quote character (like the \(oq`\(cq quote character) and not as a string quote character. You can still use \(oq`\(cq to quote identifiers with this mode enabled. With
 ANSI_QUOTES
-enabled, you cannot use double quotes to quote literal strings, because it is interpreted as an identifier. (Added in MySQL 4.0.0)
+enabled, you cannot use double quotes to quote literal strings, because it is interpreted as an identifier.
+.TP 3n
+\(bu
+ERROR_FOR_DIVISION_BY_ZERO
+.sp
+Produce an error in strict mode (otherwise a warning) when a division by zero (or
+MOD(X,0)) occurs during an
+INSERT
+or
+UPDATE. If this mode is not enabled, MySQL instead returns
+NULL
+for divisions by zero. For
+INSERT IGNORE
+or
+UPDATE IGNORE, MySQL generates a warning for divisions by zero, but the result of the operation is
+NULL. (Implemented in MySQL 5.0.2)
+.TP 3n
+\(bu
+HIGH_NOT_PRECEDENCE
+.sp
+From MySQL 5.0.2 on, the precedence of the
+NOT
+operator is such that expressions such as
+NOT a BETWEEN b AND c
+are parsed as
+NOT (a BETWEEN b AND c). Before MySQL 5.0.2, the expression is parsed as
+(NOT a) BETWEEN b AND c. The old higher\-precedence behavior can be obtained by enabling the
+HIGH_NOT_PRECEDENCE
+SQL mode. (Added in MySQL 5.0.2)
+.sp
+.RS 3n
+.nf
+mysql> \fBSET sql_mode = '';\fR
+mysql> \fBSELECT NOT 1 BETWEEN \-5 AND 5;\fR
+        \-> 0
+mysql> \fBSET sql_mode = 'HIGH_NOT_PRECEDENCE';\fR
+mysql> \fBSELECT NOT 1 BETWEEN \-5 AND 5;\fR
+        \-> 1
+.fi
+.RE
 .TP 3n
 \(bu
 IGNORE_SPACE
 .sp
-Allow spaces between a function name and the \(oq(\(cq character. This forces all function names to be treated as reserved words. As a result, if you want to access any database, table, or column name that is a reserved word, you must quote it. For example, because there is a
-USER()
-function, the name of the
-user
-table in the
-mysql
-database and the
-User
-column in that table become reserved, so you must quote them:
+Allow spaces between a function name and the \(oq(\(cq character. This causes built\-in function names to be treated as reserved words. As a result, identifiers that are the same as function names must be quoted as described in
+Section\ 2, \(lqDatabase, Table, Index, Column, and Alias Names\(rq. For example, because there is a
+COUNT()
+function, the use of
+count
+as a table name in the following statement causes an error:
 .sp
 .RS 3n
 .nf
-SELECT "User" FROM mysql."user";
+mysql> \fBCREATE TABLE count (i INT);\fR
+ERROR 1064 (42000): You have an error in your SQL syntax
 .fi
 .RE
-(Added in MySQL 4.0.0)
+The table name should be quoted:
 .sp
-See
-Section\ 1.1, \(lqMyISAM Startup Options\(rq.
+.RS 3n
+.nf
+mysql> \fBCREATE TABLE `count` (i INT);\fR
+Query OK, 0 rows affected (0.00 sec)
+.fi
+.RE
+The
+IGNORE_SPACE
+SQL mode applies to built\-in functions, not to user\-defined functions or stored functions. It is always allowable to have spaces after a UDF or stored function name, regardless of whether
+IGNORE_SPACE
+is enabled.
+.sp
+For further discussion of
+IGNORE_SPACE, see
+Section\ 2.3, \(lqFunction Name Parsing and Resolution\(rq.
+.TP 3n
+\(bu
+NO_AUTO_CREATE_USER
+.sp
+Prevent the
+GRANT
+statement from automatically creating new users if it would otherwise do so, unless a non\-empty password also is specified. (Added in MySQL 5.0.2)
 .TP 3n
 \(bu
 NO_AUTO_VALUE_ON_ZERO
@@ -5377,7 +6500,7 @@ suppresses this behavior for
 0
 so that only
 NULL
-generates the next sequence number. (Added in MySQL 4.1.1)
+generates the next sequence number.
 .sp
 This mode can be useful if
 0
@@ -5391,11 +6514,15 @@ and then reload it, MySQL normally generates new sequence numbers when it encoun
 0
 values, resulting in a table with contents different from the one that was dumped. Enabling
 NO_AUTO_VALUE_ON_ZERO
-before reloading the dump file solves this problem. As of MySQL 4.1.1,
+before reloading the dump file solves this problem.
 \fBmysqldump\fR
-automatically includes a statement in the dump output that enables
-NO_AUTO_VALUE_ON_ZERO
-to avoid this problem.
+now automatically includes in its output a statement that enables
+NO_AUTO_VALUE_ON_ZERO, to avoid this problem.
+.TP 3n
+\(bu
+NO_BACKSLASH_ESCAPES
+.sp
+Disable the use of the backslash character (\(oq\\\(cq) as an escape character within strings. With this mode enabled, backslash becomes an ordinary character like any other. (Implemented in MySQL 5.0.1)
 .TP 3n
 \(bu
 NO_DIR_IN_CREATE
@@ -5404,7 +6531,24 @@ When creating a table, ignore all
 INDEX DIRECTORY
 and
 DATA DIRECTORY
-directives. This option is useful on slave replication servers. (Added in MySQL 4.0.15)
+directives. This option is useful on slave replication servers.
+.TP 3n
+\(bu
+NO_ENGINE_SUBSTITUTION
+.sp
+Control automatic substitution of the default storage engine when a statement such as
+CREATE TABLE
+or
+ALTER TABLE
+specifies a storage engine that is disabled or not compiled in. (Implemented in MySQL 5.0.8)
+.sp
+With
+NO_ENGINE_SUBSTITUTION
+disabled, the default engine is used and a warning occurs if the desired engine is known but disabled or not compiled in. If the desired engine is invalid (not a known engine name), an error occurs and the table is not created or altered.
+.sp
+With
+NO_ENGINE_SUBSTITUTION
+enabled, an error occurs and the table is not created or altered if the desired engine is unavailable for any reason (whether disabled or invalid).
 .TP 3n
 \(bu
 NO_FIELD_OPTIONS
@@ -5412,7 +6556,7 @@ NO_FIELD_OPTIONS
 Do not print MySQL\-specific column options in the output of
 SHOW CREATE TABLE. This mode is used by
 \fBmysqldump\fR
-in portability mode. (Added in MySQL 4.1.1)
+in portability mode.
 .TP 3n
 \(bu
 NO_KEY_OPTIONS
@@ -5420,7 +6564,7 @@ NO_KEY_OPTIONS
 Do not print MySQL\-specific index options in the output of
 SHOW CREATE TABLE. This mode is used by
 \fBmysqldump\fR
-in portability mode. (Added in MySQL 4.1.1)
+in portability mode.
 .TP 3n
 \(bu
 NO_TABLE_OPTIONS
@@ -5429,7 +6573,7 @@ Do not print MySQL\-specific table options (such as
 ENGINE) in the output of
 SHOW CREATE TABLE. This mode is used by
 \fBmysqldump\fR
-in portability mode. (Added in MySQL 4.1.1)
+in portability mode.
 .TP 3n
 \(bu
 NO_UNSIGNED_SUBTRACTION
@@ -5470,7 +6614,7 @@ mysql> \fBDESCRIBE t2;\fR
 Note that this means that
 BIGINT UNSIGNED
 is not 100% usable in all contexts. See
-Section\ 8, \(lqCast Functions and Operators\(rq. (Added in MySQL 4.0.2)
+Section\ 9, \(lqCast Functions and Operators\(rq.
 .sp
 .RS 3n
 .nf
@@ -5492,13 +6636,31 @@ mysql> \fBSELECT CAST(0 AS UNSIGNED) \- 1;\fR
 .RE
 .TP 3n
 \(bu
+NO_ZERO_DATE
+.sp
+In strict mode, don't allow
+\'0000\-00\-00'
+as a valid date. You can still insert zero dates with the
+IGNORE
+option. When not in strict mode, the date is accepted but a warning is generated. (Added in MySQL 5.0.2)
+.TP 3n
+\(bu
+NO_ZERO_IN_DATE
+.sp
+In strict mode, don't accept dates where the month or day part is 0. If used with the
+IGNORE
+option, MySQL inserts a
+\'0000\-00\-00'
+date for any such date. When not in strict mode, the date is accepted but a warning is generated. (Added in MySQL 5.0.2)
+.TP 3n
+\(bu
 ONLY_FULL_GROUP_BY
 .sp
 Do not allow queries for which the
 SELECT
 list refers to non\-aggregated columns that are not named in the
 GROUP BY
-clause. (Added in MySQL 4.0.0) The following query is invalid with this mode enabled because
+clause. The following query is invalid with this mode enabled because
 address
 is not named in the
 GROUP BY
@@ -5509,6 +6671,11 @@ clause:
 SELECT name, address, MAX(age) FROM t GROUP BY name;
 .fi
 .RE
+As of MySQL 5.0.23, this mode also restricts references to non\-aggregated columns in the
+HAVING
+clause that are not named in the
+GROUP BY
+clause.
 .TP 3n
 \(bu
 PIPES_AS_CONCAT
@@ -5517,7 +6684,7 @@ Treat
 ||
 as a string concatenation operator (same as
 CONCAT()) rather than as a synonym for
-OR. (Added in MySQL 4.0.0)
+OR.
 .TP 3n
 \(bu
 REAL_AS_FLOAT
@@ -5528,11 +6695,71 @@ as a synonym for
 FLOAT. By default, MySQL treats
 REAL
 as a synonym for
-DOUBLE. (Added in MySQL 4.0.0)
+DOUBLE.
+.TP 3n
+\(bu
+STRICT_ALL_TABLES
+.sp
+Enable strict mode for all storage engines. Invalid data values are rejected. Additional detail follows. (Added in MySQL 5.0.2)
+.TP 3n
+\(bu
+STRICT_TRANS_TABLES
+.sp
+Enable strict mode for transactional storage engines, and when possible for non\-transactional storage engines. Additional details follow. (Implemented in MySQL 5.0.2)
 .sp
 .RE
 .PP
-The following special modes are provided as shorthand for combinations of mode values from the preceding list. All are available as of MySQL 4.1.1.
+Strict mode controls how MySQL handles input values that are invalid or missing. A value can be invalid for several reasons. For example, it might have the wrong data type for the column, or it might be out of range. A value is missing when a new row to be inserted does not contain a value for a non\-NULL
+column that has no explicit
+DEFAULT
+clause in its definition. (For a
+NULL
+column,
+NULL
+is inserted if the value is missing.)
+.PP
+For transactional tables, an error occurs for invalid or missing values in a statement when either of the
+STRICT_ALL_TABLES
+or
+STRICT_TRANS_TABLES
+modes are enabled. The statement is aborted and rolled back.
+.PP
+For non\-transactional tables, the behavior is the same for either mode, if the bad value occurs in the first row to be inserted or updated. The statement is aborted and the table remains unchanged. If the statement inserts or modifies multiple rows and the bad value occurs in the second or later row, the result depends on which strict option is enabled:
+.TP 3n
+\(bu
+For
+STRICT_ALL_TABLES, MySQL returns an error and ignores the rest of the rows. However, in this case, the earlier rows still have been inserted or updated. This means that you might get a partial update, which might not be what you want. To avoid this, it's best to use single\-row statements because these can be aborted without changing the table.
+.TP 3n
+\(bu
+For
+STRICT_TRANS_TABLES, MySQL converts an invalid value to the closest valid value for the column and insert the adjusted value. If a value is missing, MySQL inserts the implicit default value for the column data type. In either case, MySQL generates a warning rather than an error and continues processing the statement. Implicit defaults are described in
+Section\ 1.4, \(lqData Type Default Values\(rq.
+.sp
+.RE
+.PP
+Strict mode disallows invalid date values such as
+\'2004\-04\-31'. It does not disallow dates with zero parts such as
+\'2004\-04\-00'
+or
+\(lqzero\(rq
+dates. To disallow these as well, enable the
+NO_ZERO_IN_DATE
+and
+NO_ZERO_DATE
+SQL modes in addition to strict mode.
+.PP
+If you are not using strict mode (that is, neither
+STRICT_TRANS_TABLES
+nor
+STRICT_ALL_TABLES
+is enabled), MySQL inserts adjusted values for invalid or missing values and produces warnings. In strict mode, you can produce this behavior by using
+INSERT IGNORE
+or
+UPDATE IGNORE. See
+Section\ 5.4.28, \(lqSHOW WARNINGS Syntax\(rq.
+.PP
+The following special modes are provided as shorthand for combinations of mode values from the preceding list. All are available in MySQL 5.0 beginning with version 5.0.0, except for
+TRADITIONAL, which was implemented in MySQL 5.0.2.
 .PP
 The descriptions include all mode values that are available in the most recent version of MySQL. For older versions, a combination mode does not include individual mode values that are not available except in newer versions.
 .TP 3n
@@ -5543,10 +6770,36 @@ Equivalent to
 REAL_AS_FLOAT,
 PIPES_AS_CONCAT,
 ANSI_QUOTES,
-IGNORE_SPACE. Before MySQL 4.1.11,
+IGNORE_SPACE. Before MySQL 5.0.3,
 ANSI
 also includes
-ONLY_FULL_GROUP_BY. See
+ONLY_FULL_GROUP_BY.
+.sp
+As of MySQL 5.0.40,
+ANSI
+mode also causes the server to return an error for queries where a set function
+\fIS\fR
+with an outer reference
+\fIS\fR(\fIouter_ref\fR)
+cannot be aggregated in the outer query against which the outer reference has been resolved. This is such a query:
+.sp
+.RS 3n
+.nf
+SELECT * FROM t1 WHERE t1.a IN (SELECT MAX(t1.b) FROM t2 WHERE ...);
+.fi
+.RE
+Here,
+MAX(t1.b)
+cannot aggregated in the outer query because it appears in the
+WHERE
+clause of that query. Standard SQL requires an error in this situation. If
+ANSI
+mode is not enabled, the server treats
+\fIS\fR(\fIouter_ref\fR)
+in such queries the same way that it would interpret
+\fIS\fR(\fIconst\fR), as was always done prior to 5.0.40.
+.sp
+See
 Section\ 9.3, \(lqRunning MySQL in ANSI Mode\(rq.
 .TP 3n
 \(bu
@@ -5569,7 +6822,8 @@ ANSI_QUOTES,
 IGNORE_SPACE,
 NO_KEY_OPTIONS,
 NO_TABLE_OPTIONS,
-NO_FIELD_OPTIONS.
+NO_FIELD_OPTIONS,
+NO_AUTO_CREATE_USER.
 .TP 3n
 \(bu
 MSSQL
@@ -5586,13 +6840,15 @@ NO_FIELD_OPTIONS.
 MYSQL323
 .sp
 Equivalent to
-NO_FIELD_OPTIONS.
+NO_FIELD_OPTIONS,
+HIGH_NOT_PRECEDENCE.
 .TP 3n
 \(bu
 MYSQL40
 .sp
 Equivalent to
-NO_FIELD_OPTIONS.
+NO_FIELD_OPTIONS,
+HIGH_NOT_PRECEDENCE.
 .TP 3n
 \(bu
 ORACLE
@@ -5603,7 +6859,8 @@ ANSI_QUOTES,
 IGNORE_SPACE,
 NO_KEY_OPTIONS,
 NO_TABLE_OPTIONS,
-NO_FIELD_OPTIONS.
+NO_FIELD_OPTIONS,
+NO_AUTO_CREATE_USER.
 .TP 3n
 \(bu
 POSTGRESQL
@@ -5615,6 +6872,17 @@ IGNORE_SPACE,
 NO_KEY_OPTIONS,
 NO_TABLE_OPTIONS,
 NO_FIELD_OPTIONS.
+.TP 3n
+\(bu
+TRADITIONAL
+.sp
+Equivalent to
+STRICT_TRANS_TABLES,
+STRICT_ALL_TABLES,
+NO_ZERO_IN_DATE,
+NO_ZERO_DATE,
+ERROR_FOR_DIVISION_BY_ZERO,
+NO_AUTO_CREATE_USER.
 .SH "THE SHUTDOWN PROCESS"
 .PP
 The server shutdown process takes place as follows:
@@ -5630,11 +6898,7 @@ command.
 \fBmysqladmin\fR
 can be used on any platform supported by MySQL. Other operating system\-specific shutdown initiation methods are possible as well: The server shuts down on Unix when it receives a
 SIGTERM
-signal. A server running as a service on Windows shuts down when the services manager tells it to. (On Windows, a user with Administrator rights can also shut down the server using
-NET STOP \fIservice_name\fR, where
-\fIservice_name\fR
-is the name of the MySQL service. By default, this is
-MySQL.)
+signal. A server running as a service on Windows shuts down when the services manager tells it to.
 .TP 3n
 2.
 The server creates a shutdown thread if necessary.
@@ -5685,13 +6949,15 @@ Each storage engine performs any actions necessary for tables that it manages. F
 MyISAM
 flushes any pending index writes for a table.
 InnoDB
-flushes its buffer pool to disk, writes the current LSN to the tablespace, and terminates its own internal threads.
+flushes its buffer pool to disk (starting from 5.0.5: unless
+innodb_fast_shutdown
+is 2), writes the current LSN to the tablespace, and terminates its own internal threads.
 .TP 3n
 6.
 The server exits.
 .SH "SERVER\-SIDE HELP"
 .PP
-As of MySQL 4.1, MySQL Server supports a
+MySQL Server supports a
 HELP
 statement that returns online information from the MySQL Reference manual (see
 Section\ 3.2, \(lqHELP Syntax\(rq). The proper operation of this statement requires that the help tables in the
@@ -5704,7 +6970,7 @@ For a MySQL binary distribution on Unix, help table setup occurs when you run
 \fBmysql_install_db\fR. For an RPM distribution on Linux or binary distribution on Windows, help table setup occurs as part of the MySQL installation process.
 .PP
 For a MySQL source distribution, you can find the
-\fIfill_help_tables_sql\fR
+\fIfill_help_tables.sql\fR
 file in the
 \fIscripts\fR
 directory. To load the file manually, make sure that you have initialized the
@@ -5727,43 +6993,18 @@ If you are working with BitKeeper and a MySQL development source tree, the tree 
 as just described.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
 Please email
 <docs@mysql.com>
 for more information.
+.SH "REFERENCES"
+.TP 3
+1.\ MySQL Internals: Porting
+\%http://forge.mysql.com/wiki/MySQL_Internals_Porting
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

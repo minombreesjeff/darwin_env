@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,7 +51,15 @@ Config *
 MgmtSrvr::readConfig() {
   Config *conf;
   InitConfigFileParser parser;
-  conf = parser.parseConfig(m_configFilename.c_str());
+  if (m_configFilename.length())
+  {
+    conf = parser.parseConfig(m_configFilename.c_str());
+  }
+  else 
+  {
+    ndbout_c("Reading cluster configuration using my.cnf");
+    conf = parser.parse_mycnf();
+  }
   return conf;
 }
 

@@ -111,7 +111,7 @@ a	b
 1	a
 2	b
 3	c
-explain select * from (select * from t1,t2 where t1.a=t2.a) t1;
+explain select * from (select t1.*, t2.a as t2a from t1,t2 where t1.a=t2.a) t1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	<derived2>	system	NULL	NULL	NULL	NULL	1	
 2	DERIVED	t2	system	NULL	NULL	NULL	NULL	1	
@@ -149,8 +149,8 @@ SELECT * FROM (SELECT (SELECT * FROM (SELECT 1 as a) as a )) as b;
 (SELECT * FROM (SELECT 1 as a) as a )
 1
 select * from (select 1 as a) b  left join (select 2 as a) c using(a);
-a	a
-1	NULL
+a
+1
 SELECT * FROM (SELECT 1 UNION SELECT a) b;
 ERROR 42S22: Unknown column 'a' in 'field list'
 SELECT 1 as a FROM (SELECT a UNION SELECT 1) b;
@@ -202,6 +202,7 @@ drop table t1,t2;
 SELECT a.x FROM (SELECT 1 AS x) AS a HAVING a.x = 1;
 x
 1
+create user mysqltest_1;
 create table t1 select 1 as a;
 select 2 as a from (select * from t1) b;
 ERROR 3D000: No database selected
@@ -276,7 +277,7 @@ select * from t1;
 N	M
 3	0
 delete P1.*,p2.* from `t1` AS P1 INNER JOIN (SELECT N FROM `t1` GROUP BY N HAVING Count(M) > 1) AS p2 ON P1.N = p2.N;
-ERROR HY000: The target table p2 of the DELETE is not updatable
+ERROR 42S02: Unknown table 'p2' in MULTI DELETE
 delete P1.* from `t1` AS P1 INNER JOIN (SELECT aaa FROM `t1` GROUP BY N HAVING Count(M) > 1) AS P2 ON P1.N = P2.N;
 ERROR 42S22: Unknown column 'aaa' in 'field list'
 drop table t1;
@@ -318,11 +319,11 @@ create table t2 (a int, b int, primary key (a));
 insert into t2 values (1,7),(2,7);
 explain select a from t2 where a>1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t2	range	PRIMARY	PRIMARY	4	NULL	2	Using where; Using index
+1	SIMPLE	t2	index	PRIMARY	PRIMARY	4	NULL	2	Using where; Using index
 explain select a from (select a from t2 where a>1) tt;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	<derived2>	system	NULL	NULL	NULL	NULL	1	
-2	DERIVED	t2	range	PRIMARY	PRIMARY	4	NULL	2	Using where; Using index
+2	DERIVED	t2	index	PRIMARY	PRIMARY	4	NULL	2	Using where; Using index
 drop table t2;
 CREATE TABLE `t1` ( `itemid` int(11) NOT NULL default '0', `grpid` varchar(15) NOT NULL default '', `vendor` int(11) NOT NULL default '0', `date_` date NOT NULL default '0000-00-00', `price` decimal(12,2) NOT NULL default '0.00', PRIMARY KEY  (`itemid`,`grpid`,`vendor`,`date_`), KEY `itemid` (`itemid`,`vendor`), KEY `itemid_2` (`itemid`,`date_`));
 insert into t1 values (128, 'rozn', 2, now(), 10),(128, 'rozn', 1, now(), 10);
@@ -339,6 +340,11 @@ select distinct sum(b) from (select a,b from t1) y group by a;
 sum(b)
 4
 drop table t1;
+CREATE TABLE t1 (a char(10), b char(10));
+INSERT INTO t1 VALUES ('root','localhost'), ('root','%');
+SELECT * FROM (SELECT (SELECT a.a FROM t1 AS a WHERE a.a = b.a) FROM t1 AS b) AS c;
+ERROR 21000: Subquery returns more than 1 row
+DROP TABLE t1;
 create table t1(a int);
 create table t2(a int);
 create table t3(a int);
@@ -358,3 +364,21 @@ a
 3
 3
 drop table t1, t2, t3;
+create table t1 (a int);
+create table t2 (a int);
+select * from (select * from t1,t2) foo;
+ERROR 42S21: Duplicate column name 'a'
+drop table t1,t2;
+create table t1 (ID int unsigned not null auto_increment,
+DATA varchar(5) not null, primary key (ID));
+create table t2 (ID int unsigned not null auto_increment,
+DATA varchar(5) not null, FID int unsigned not null,
+primary key (ID));
+select A.* from (t1 inner join (select * from t2) as A on t1.ID = A.FID);
+ID	DATA	FID
+select t2.* from ((select * from t1) as A inner join t2 on A.ID = t2.FID);
+ID	DATA	FID
+select t2.* from (select * from t1) as A inner join t2 on A.ID = t2.FID;
+ID	DATA	FID
+drop table t1, t2;
+drop user mysqltest_1;

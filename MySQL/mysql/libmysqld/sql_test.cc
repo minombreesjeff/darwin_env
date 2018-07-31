@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -79,7 +78,7 @@ void print_cached_tables(void)
   {
     TABLE *entry=(TABLE*) hash_element(&open_cache,idx);
     printf("%-14.14s %-32s%6ld%8ld%10ld%6d  %s\n",
-	   entry->table_cache_key,entry->real_name,entry->version,
+	   entry->s->db, entry->s->table_name, entry->s->version,
 	   entry->in_use ? entry->in_use->thread_id : 0L,
 	   entry->in_use ? entry->in_use->dbug_thread_id : 0L,
 	   entry->db_stat ? 1 : 0, entry->in_use ? lock_descriptions[(int)entry->reginfo.lock_type] : "Not in use");
@@ -131,7 +130,7 @@ void TEST_filesort(SORT_FIELD *sortorder,uint s_length)
     {
       if (sortorder->field->table_name)
       {
-	out.append(sortorder->field->table_name);
+	out.append(*sortorder->field->table_name);
 	out.append('.');
       }
       out.append(sortorder->field->field_name ? sortorder->field->field_name:
@@ -167,7 +166,7 @@ TEST_join(JOIN *join)
     TABLE *form=tab->table;
     char key_map_buff[128];
     fprintf(DBUG_FILE,"%-16.16s  type: %-7s  q_keys: %s  refs: %d  key: %d  len: %d\n",
-	    form->table_name,
+	    form->alias,
 	    join_type_str[tab->type],
 	    tab->keys.print(key_map_buff),
 	    tab->ref.key_parts,
@@ -181,9 +180,10 @@ TEST_join(JOIN *join)
 		"                  quick select checked for each record (keys: %s)\n",
 		tab->select->quick_keys.print(buf));
       else if (tab->select->quick)
-	fprintf(DBUG_FILE,"                  quick select used on key %s, length: %d\n",
-		form->key_info[tab->select->quick->index].name,
-		tab->select->quick->max_used_key_length);
+      {
+	fprintf(DBUG_FILE, "                  quick select used:\n");
+        tab->select->quick->dbug_dump(18, FALSE);
+      }
       else
 	VOID(fputs("                  select used\n",DBUG_FILE));
     }
@@ -200,6 +200,106 @@ TEST_join(JOIN *join)
   }
   DBUG_UNLOCK_FILE;
   DBUG_VOID_RETURN;
+}
+
+
+/* 
+  Print the current state during query optimization.
+
+  SYNOPSIS
+    print_plan()
+    join         pointer to the structure providing all context info for
+                 the query
+    read_time    the cost of the best partial plan
+    record_count estimate for the number of records returned by the best
+                 partial plan
+    idx          length of the partial QEP in 'join->positions';
+                 also an index in the array 'join->best_ref';
+    info         comment string to appear above the printout
+
+  DESCRIPTION
+    This function prints to the log file DBUG_FILE the members of 'join' that
+    are used during query optimization (join->positions, join->best_positions,
+    and join->best_ref) and few other related variables (read_time,
+    record_count).
+    Useful to trace query optimizer functions.
+
+  RETURN
+    None
+*/
+
+void
+print_plan(JOIN* join, uint idx, double record_count, double read_time,
+           double current_read_time, const char *info)
+{
+  uint i;
+  POSITION pos;
+  JOIN_TAB *join_table;
+  JOIN_TAB **plan_nodes;
+  TABLE*   table;
+
+  if (info == 0)
+    info= "";
+
+  DBUG_LOCK_FILE;
+  if (join->best_read == DBL_MAX)
+  {
+    fprintf(DBUG_FILE,
+    "%s; idx:%u, best: DBL_MAX, atime: %g, itime: %g, count: %g\n",
+    info, idx, current_read_time, read_time, record_count);
+  }
+  else
+  {
+    fprintf(DBUG_FILE,
+    "%s; idx:%u, best: %g, accumulated: %g, increment: %g, count: %g\n",
+    info, idx, join->best_read, current_read_time, read_time, record_count);
+  }
+
+  /* Print the tables in JOIN->positions */
+  fputs("     POSITIONS: ", DBUG_FILE);
+  for (i= 0; i < idx ; i++)
+  {
+    pos = join->positions[i];
+    table= pos.table->table;
+    if (table)
+      fputs(table->s->table_name, DBUG_FILE);
+    fputc(' ', DBUG_FILE);
+  }
+  fputc('\n', DBUG_FILE);
+
+  /*
+    Print the tables in JOIN->best_positions only if at least one complete plan
+    has been found. An indicator for this is the value of 'join->best_read'.
+  */
+  if (join->best_read < DBL_MAX)
+  {
+    fputs("BEST_POSITIONS: ", DBUG_FILE);
+    for (i= 0; i < idx ; i++)
+    {
+      pos= join->best_positions[i];
+      table= pos.table->table;
+      if (table)
+        fputs(table->s->table_name, DBUG_FILE);
+      fputc(' ', DBUG_FILE);
+    }
+  }
+  fputc('\n', DBUG_FILE);
+
+  /* Print the tables in JOIN->best_ref */
+  fputs("      BEST_REF: ", DBUG_FILE);
+  for (plan_nodes= join->best_ref ; *plan_nodes ; plan_nodes++)
+  {
+    join_table= (*plan_nodes);
+    fputs(join_table->table->s->table_name, DBUG_FILE);
+    fprintf(DBUG_FILE, "(%lu,%lu,%lu)",
+            (ulong) join_table->found_records,
+            (ulong) join_table->records,
+            (ulong) join_table->read_time);
+    fputc(' ', DBUG_FILE);
+  }
+  fputc('\n', DBUG_FILE);
+
+  DBUG_UNLOCK_FILE;
 }
 
 #endif
@@ -233,12 +333,12 @@ static void push_locks_into_array(DYNAMIC_ARRAY *ar, THR_LOCK_DATA *data,
   if (data)
   {
     TABLE *table=(TABLE *)data->debug_print_param;
-    if (table && table->tmp_table == NO_TMP_TABLE)
+    if (table && table->s->tmp_table == NO_TMP_TABLE)
     {
       TABLE_LOCK_INFO table_lock_info;
-      table_lock_info.thread_id=table->in_use->thread_id;
-      memcpy(table_lock_info.table_name, table->table_cache_key,
-	     table->key_length);
+      table_lock_info.thread_id= table->in_use->thread_id;
+      memcpy(table_lock_info.table_name, table->s->table_cache_key,
+	     table->s->key_length);
       table_lock_info.table_name[strlen(table_lock_info.table_name)]='.';
       table_lock_info.waiting=wait;
       table_lock_info.lock_text=text;
@@ -344,29 +444,24 @@ reads:          %10s\n\n",
 }
 
 
-void mysql_print_status(THD *thd)
+void mysql_print_status()
 {
   char current_dir[FN_REFLEN];
+  STATUS_VAR tmp;
+
+  calc_sum_of_all_status(&tmp);
   printf("\nStatus information:\n\n");
-  my_getwd(current_dir, sizeof(current_dir),MYF(0));
+  VOID(my_getwd(current_dir, sizeof(current_dir),MYF(0)));
   printf("Current dir: %s\n", current_dir);
   printf("Running threads: %d  Stack size: %ld\n", thread_count,
 	 (long) thread_stack);
-  if (thd)
-    thd->proc_info="locks";
   thr_print_locks();				// Write some debug info
 #ifndef DBUG_OFF
-  if (thd)
-    thd->proc_info="table cache";
   print_cached_tables();
 #endif
   /* Print key cache status */
-  if (thd)
-    thd->proc_info="key cache";
   puts("\nKey caches:");
   process_key_caches(print_key_cache_status);
-  if (thd)
-    thd->proc_info="status";
   pthread_mutex_lock(&LOCK_status);
   printf("\nhandler status:\n\
 read_key:   %10lu\n\
@@ -376,16 +471,20 @@ read_first: %10lu\n\
 write:      %10lu\n\
 delete      %10lu\n\
 update:     %10lu\n",
-	 ha_read_key_count, ha_read_next_count,
-	 ha_read_rnd_count, ha_read_first_count,
-	 ha_write_count, ha_delete_count, ha_update_count);
+	 tmp.ha_read_key_count,
+	 tmp.ha_read_next_count,
+	 tmp.ha_read_rnd_count,
+	 tmp.ha_read_first_count,
+	 tmp.ha_write_count,
+	 tmp.ha_delete_count,
+	 tmp.ha_update_count);
   pthread_mutex_unlock(&LOCK_status);
   printf("\nTable status:\n\
 Opened tables: %10lu\n\
 Open tables:   %10lu\n\
 Open files:    %10lu\n\
 Open streams:  %10lu\n",
-	 opened_tables,
+	 tmp.opened_tables,
 	 (ulong) cached_tables(),
 	 (ulong) my_file_opened,
 	 (ulong) my_stream_opened);
@@ -403,8 +502,6 @@ Next alarm time: %lu\n",
 #endif
   display_table_locks();
   fflush(stdout);
-  if (thd)
-    thd->proc_info="malloc";
   my_checkmalloc();
   TERMINATE(stdout);				// Write malloc information
 
@@ -435,6 +532,4 @@ Estimated memory (with thread stack):    %ld\n",
 	 (long) (thread_count * thread_stack + info.hblkhd + info.arena));
 #endif
   puts("");
-  if (thd)
-    thd->proc_info=0;
 }

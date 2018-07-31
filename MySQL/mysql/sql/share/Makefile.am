@@ -2,8 +2,7 @@
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,6 +15,8 @@
 
 ## Process this file with automake to create Makefile.in
 
+EXTRA_DIST= errmsg.txt
+
 dist-hook:
 	for dir in charsets @AVAILABLE_LANGUAGES@; do \
 	  test -d $(distdir)/$$dir || mkdir $(distdir)/$$dir; \
@@ -25,10 +26,14 @@ dist-hook:
 	$(INSTALL_DATA) $(srcdir)/charsets/README $(distdir)/charsets
 	$(INSTALL_DATA) $(srcdir)/charsets/Index.xml $(distdir)/charsets
 
-all-local: @AVAILABLE_LANGUAGES_ERRORS@
+all-local:	english/errmsg.sys
 
-# this is ugly, but portable
-@AVAILABLE_LANGUAGES_ERRORS_RULES@
+# Use the english errmsg.sys as a flag that all errmsg.sys needs to be
+# created. Normally these are created by extra/Makefile
+
+english/errmsg.sys: errmsg.txt
+	rm -f $(top_builddir)/include/mysqld_error.h
+	(cd $(top_builddir)/extra && $(MAKE))
 
 install-data-local:
 	for lang in @AVAILABLE_LANGUAGES@; \
@@ -36,10 +41,10 @@ install-data-local:
 		$(mkinstalldirs) $(DESTDIR)$(pkgdatadir)/$$lang; \
 		$(INSTALL_DATA) $(srcdir)/$$lang/errmsg.sys \
 			        $(DESTDIR)$(pkgdatadir)/$$lang/errmsg.sys; \
-		$(INSTALL_DATA) $(srcdir)/$$lang/errmsg.txt \
-			        $(DESTDIR)$(pkgdatadir)/$$lang/errmsg.txt; \
 	done
 	$(mkinstalldirs) $(DESTDIR)$(pkgdatadir)/charsets
+		$(INSTALL_DATA) $(srcdir)/errmsg.txt \
+	        $(DESTDIR)$(pkgdatadir)/errmsg.txt; \
 	$(INSTALL_DATA) $(srcdir)/charsets/README $(DESTDIR)$(pkgdatadir)/charsets/README
 	$(INSTALL_DATA) $(srcdir)/charsets/*.xml $(DESTDIR)$(pkgdatadir)/charsets
 
@@ -47,14 +52,11 @@ install-data-local:
 uninstall-local:
 	@RM@ -f -r $(DESTDIR)$(pkgdatadir)
 
+distclean-local:
+	@RM@ -f */errmsg.sys
+
 # Do nothing
 link_sources:
-
-fix_errors:
-	for lang in @AVAILABLE_LANGUAGES@; \
-	do \
-	../../extra/comp_err -C$(srcdir)/charsets/ $(srcdir)/$$lang/errmsg.txt $(srcdir)/$$lang/errmsg.sys; \
-        done
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

@@ -21,8 +21,7 @@
  *	all copies and derivative works.  Thank you.			      *
  *									      *
  *	The author makes no warranty of any kind  with	respect  to  this     *
- *	product  and  explicitly disclaims any implied warranties of mer-     *ct_lex.table_list.first=0;
-  thd->lex.selec
+ *      product  and  explicitly disclaims any implied warranties of mer-     *
  *	chantability or fitness for any particular purpose.		      *
  *									      *
  ******************************************************************************
@@ -60,8 +59,8 @@
  *
  *	Michael Widenius:
  *	DBUG_DUMP	- To dump a block of memory.
- *	PUSH_FLAG "O"	- To be used insted of "o" if we don't
- *			  want flushing (for slow systems)
+ *      PUSH_FLAG "O"   - To be used insted of "o" if we
+ *                        want flushing after each write
  *	PUSH_FLAG "A"	- as 'O', but we will append to the out file instead
  *			  of creating a new one.
  *	Check of malloc on entry/exit (option "S")
@@ -272,6 +271,8 @@ static unsigned long Clock (void);
 static void CloseFile(FILE *fp);
 	/* Push current debug state */
 static void PushState(void);
+	/* Free memory associated with debug state. */
+static void FreeState (struct state *state);
 	/* Test for tracing enabled */
 static BOOLEAN DoTrace(CODE_STATE *state);
 	/* Test to see if file is writable */
@@ -631,22 +632,7 @@ void _db_pop_ ()
     stack = discard -> next_state;
     _db_fp_ = stack -> out_file;
     _db_pfp_ = stack -> prof_file;
-    if (discard -> keywords != NULL) {
-      FreeList (discard -> keywords);
-    }
-    if (discard -> functions != NULL) {
-      FreeList (discard -> functions);
-    }
-    if (discard -> processes != NULL) {
-      FreeList (discard -> processes);
-    }
-    if (discard -> p_functions != NULL) {
-      FreeList (discard -> p_functions);
-    }
-    CloseFile (discard -> out_file);
-    if (discard -> prof_file)
-      CloseFile (discard -> prof_file);
-    free ((char *) discard);
+    FreeState(discard);
     if (!(stack->flags & DEBUG_ON))
       _db_on_=0;
   }
@@ -938,7 +924,7 @@ void _db_doprnt_ (const char *format,...)
 /*
  *  FUNCTION
  *
- *	      _db_dump_    dump a string until '\0' is found
+ *            _db_dump_    dump a string in hex
  *
  *  SYNOPSIS
  *
@@ -979,7 +965,7 @@ uint length)
     {
       fprintf(_db_fp_, "%s: ", state->func);
     }
-    sprintf(dbuff,"%s: Memory: %lx  Bytes: (%d)\n",
+    sprintf(dbuff,"%s: Memory: 0x%lx  Bytes: (%d)\n",
 	    keyword,(ulong) memory, length);
     (void) fputs(dbuff,_db_fp_);
 
@@ -1161,6 +1147,71 @@ static void PushState ()
   stack=new_malloc;
 }
 
+/*
+ *  FUNCTION
+ *
+ *	FreeState    Free memory associated with a struct state.
+ *
+ *  SYNOPSIS
+ *
+ *	static void FreeState (state)
+ *	struct state *state;
+ *
+ *  DESCRIPTION
+ *
+ *	Deallocates the memory allocated for various information in a
+ *	state.
+ *
+ */
+static void FreeState (
+struct state *state)
+{
+  if (state -> keywords != NULL) {
+    FreeList (state -> keywords);
+  }
+  if (state -> functions != NULL) {
+    FreeList (state -> functions);
+  }
+  if (state -> processes != NULL) {
+    FreeList (state -> processes);
+  }
+  if (state -> p_functions != NULL) {
+    FreeList (state -> p_functions);
+  }
+  CloseFile (state -> out_file);
+  if (state -> prof_file)
+    CloseFile (state -> prof_file);
+  free ((char *) state);
+}
+
+
+/*
+ *  FUNCTION
+ *
+ *	_db_end_    End debugging, freeing state stack memory.
+ *
+ *  SYNOPSIS
+ *
+ *	static VOID _db_end_ ()
+ *
+ *  DESCRIPTION
+ *
+ *	Ends debugging, de-allocating the memory allocated to the
+ *	state stack.
+ *
+ *	To be called at the very end of the program.
+ *
+ */
+void _db_end_ ()
+{
+  reg1 struct state *discard;
+  while((discard= stack) != NULL) {
+    stack= discard -> next_state;
+    FreeState (discard);
+  }
+  _db_on_=0;
+}
+
 
 /*
  *  FUNCTION
@@ -1230,6 +1281,33 @@ static BOOLEAN DoProfile ()
 }
 #endif
 
+/*
+ *  FUNCTION
+ *
+ *      _db_strict_keyword_     test keyword for member of keyword list
+ *
+ *  SYNOPSIS
+ *
+ *      BOOLEAN _db_strict_keyword_ (keyword)
+ *      char *keyword;
+ *
+ *  DESCRIPTION
+ *
+ *      Similar to _db_keyword_, but keyword is NOT accepted if keyword list
+ *      is empty. Used in DBUG_EXECUTE_IF() - for actions that must not be
+ *      executed by default.
+ *
+ *      Returns TRUE if keyword accepted, FALSE otherwise.
+ *
+ */
+
+BOOLEAN _db_strict_keyword_ (
+const char *keyword)
+{
+  if (stack -> keywords == NULL)
+    return FALSE;
+  return _db_keyword_ (keyword);
+}
 
 /*
  *  FUNCTION

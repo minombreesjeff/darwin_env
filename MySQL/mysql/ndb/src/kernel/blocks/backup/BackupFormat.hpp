@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,7 +31,8 @@ struct BackupFormat {
     FRAGMENT_FOOTER   = 3,
     TABLE_LIST        = 4,
     TABLE_DESCRIPTION = 5,
-    GCP_ENTRY         = 6
+    GCP_ENTRY         = 6,
+    FRAGMENT_INFO     = 7
   };
 
   struct FileHeader {
@@ -125,6 +125,20 @@ struct BackupFormat {
       Uint32 SectionLength;
       Uint32 StartGCP;
       Uint32 StopGCP;
+    };
+
+    /**
+     * Fragment Info
+     */
+    struct FragmentInfo {
+      Uint32 SectionType;
+      Uint32 SectionLength;
+      Uint32 TableId;
+      Uint32 FragmentNo;
+      Uint32 NoOfRecordsLow;
+      Uint32 NoOfRecordsHigh;
+      Uint32 FilePosLow;
+      Uint32 FilePosHigh;
     };
   };
 

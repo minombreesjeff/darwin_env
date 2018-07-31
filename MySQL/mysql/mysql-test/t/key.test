@@ -129,7 +129,11 @@ create table t2
 INSERT t2 select * from t1;
 SELECT * FROM t2 WHERE name='[T,U]_axpy';
 SELECT * FROM t2 WHERE name='[T,U]_axpby';
-drop table t1,t2;
+# Test possible problems with warnings in CREATE ... SELECT
+CREATE TABLE t3 SELECT * FROM t2 WHERE name='[T,U]_axpby';
+SELECT * FROM t2 WHERE name='[T,U]_axpby';
+
+drop table t1,t2,t3;
 
 #
 # Test bug with long primary key
@@ -295,7 +299,7 @@ drop table t1;
 # create dedicated error code for this and
 # and change my_printf_error() to my_error
 
---error 1105
+--error 1391
 create table t1 (c char(10), index (c(0)));
 
 #
@@ -348,5 +352,95 @@ insert into t1 values (2,' \t\tTest String');
 insert into t1 values (3,' \n\tTest String');
 update t1 set c2 = 'New Test String' where c1 = 1;
 select * from t1;
+drop table t1;
+
+#
+# If we use a partial field for a key that is actually the length of the
+# field, and we extend the field, we end up with a key that includes the
+# whole new length of the field.
+#
+create table t1 (a varchar(10), b varchar(10), key(a(10),b(10)));
+show create table t1;
+alter table t1 modify b varchar(20);
+show create table t1;
+alter table t1 modify a varchar(20);
+show create table t1;
+drop table t1;
+
+#
+# Bug #11227: Incorrectly reporting 'MUL' vs. 'UNI' on varchar
+#
+create table t1 (a int not null primary key, b varchar(20) not null unique);
+desc t1;
+drop table t1;
+create table t1 (a int not null primary key, b int not null unique);
+desc t1;
+drop table t1;
+create table t1 (a int not null primary key, b varchar(20) not null, unique (b(10)));
+desc t1;
+drop table t1;
+create table t1 (a int not null primary key, b varchar(20) not null, c varchar(20) not null, unique(b(10),c(10)));
+desc t1;
+drop table t1;
 
 # End of 4.1 tests
+
+#
+# Bug #24778: Innodb: No result when using ORDER BY
+#
+CREATE TABLE t1 (
+  a INTEGER auto_increment PRIMARY KEY,
+  b INTEGER NOT NULL,
+  c INTEGER NOT NULL,
+  d CHAR(64)
+);
+
+CREATE TABLE t2 (
+  a INTEGER auto_increment PRIMARY KEY,
+  b INTEGER NOT NULL,
+  c SMALLINT NOT NULL,
+  d DATETIME NOT NULL,
+  e SMALLINT NOT NULL,
+  f INTEGER NOT NULL,
+  g INTEGER NOT NULL,  
+  h SMALLINT NOT NULL,
+  i INTEGER NOT NULL,
+  j INTEGER NOT NULL,
+  UNIQUE INDEX (b),
+  INDEX (b, d, e, f, g, h, i, j, c),
+  INDEX (c)
+);
+
+INSERT INTO t2 VALUES 
+  (NULL, 1, 254, '1000-01-01 00:00:00', 257, 0, 0, 0, 0, 0),
+  (NULL, 2, 1, '2004-11-30 12:00:00', 1, 0, 0, 0, 0, 0),
+  (NULL, 3, 1, '2004-11-30 12:00:00', 1, 0, 0, 2, -21600, 0),
+  (NULL, 4, 1, '2004-11-30 12:00:00', 1, 0, 0, 2, -10800, 0),
+  (NULL, 5, 1, '2004-11-30 12:00:00', 1, 0, 0, 5, -10800, 0),
+  (NULL, 6, 1, '2004-11-30 12:00:00', 102, 0, 0, 0, 0, 0),
+  (NULL, 7, 1, '2004-11-30 12:00:00', 105, 2, 0, 0, 0, 0),
+  (NULL, 8, 1, '2004-11-30 12:00:00', 105, 10, 0, 0, 0, 0);
+
+INSERT INTO t1 (b, c, d) VALUES
+  (3388000, -553000, NULL),
+  (3388000, -553000, NULL);
+
+SELECT *
+FROM t2 c JOIN t1 pa ON c.b = pa.a 
+WHERE c.c = 1
+ORDER BY c.b, c.d
+;
+
+DROP TABLE t1, t2;
+
+
+#
+# Bug #20604: Test for disabled keys with aggregate functions and FORCE INDEX.
+#
+CREATE TABLE t1( a TINYINT, KEY(a) ) ENGINE=MyISAM;
+INSERT INTO t1 VALUES( 1 );
+ALTER TABLE t1 DISABLE KEYS;
+EXPLAIN SELECT MAX(a) FROM t1 FORCE INDEX(a);
+DROP TABLE t1;
+
+--echo End of 5.0 tests.

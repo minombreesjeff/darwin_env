@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -342,8 +341,7 @@ int Bank::getBalanceForAccountType(const Uint32 accountType,
     return NDBT_FAILED;
   }
 
-  NdbResultSet* rs = pOp->readTuples();
-  if( rs == 0 ) {
+  if( pOp->readTuples() ) {
     ERR(pScanTrans->getNdbError());
     m_ndb.closeTransaction(pScanTrans);
     return NDBT_FAILED;
@@ -379,7 +377,7 @@ int Bank::getBalanceForAccountType(const Uint32 accountType,
     
   int eof;
   int rows = 0;
-  eof = rs->nextResult();
+  eof = pOp->nextResult();
     
   while(eof == 0){
     rows++;
@@ -391,7 +389,7 @@ int Bank::getBalanceForAccountType(const Uint32 accountType,
       balance += b;
     }
 		
-    eof = rs->nextResult();
+    eof = pOp->nextResult();
   }
   if (eof == -1) {
     ERR(pScanTrans->getNdbError());

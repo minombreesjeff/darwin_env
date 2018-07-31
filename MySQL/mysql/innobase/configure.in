@@ -102,6 +102,8 @@ case "$target_os" in
 	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
        osf*)
 	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
+       *solaris*|*SunOS*)
+	 CFLAGS="$CFLAGS -DUNIV_SOLARIS";;
        sysv5uw7*)
 	 # Problem when linking on SCO
 	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
@@ -116,6 +118,13 @@ case "$target" in
        s390-*-*)
 	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
 esac
+
+# must go in pair with AR as set by MYSQL_CHECK_AR
+if test -z "$ARFLAGS"
+then
+  ARFLAGS="cru"
+fi
+AC_SUBST(ARFLAGS)
 
 AC_OUTPUT(Makefile os/Makefile ut/Makefile btr/Makefile dnl
 		buf/Makefile data/Makefile dnl

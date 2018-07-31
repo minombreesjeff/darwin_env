@@ -11,7 +11,12 @@
 --disable_warnings
 drop table if exists t5, t6, t7, t8;
 drop database if exists mysqltest ;
+
+# Cleanup from other tests
 drop database if exists client_test_db;
+drop database if exists testtets;
+drop table if exists t1Aa,t2Aa,v1Aa,v2Aa;
+drop view if exists t1Aa,t2Aa,v1Aa,v2Aa;
 --enable_warnings
 
 --disable_query_log
@@ -287,6 +292,14 @@ prepare stmt4 from ' show databases ';
 execute stmt4;
 prepare stmt4 from ' show tables from test like ''t2%'' ';
 execute stmt4;
+prepare stmt4 from ' show columns from t2 where field in (select ?) ';
+SET @arg00="a";
+execute stmt4 using @arg00;
+SET @arg00="b";
+execute stmt4 using @arg00;
+SET @arg00=1;
+execute stmt4 using @arg00;
+
 prepare stmt4 from ' show columns from t2 from test like ''a%'' ';
 execute stmt4;
 create index t2_idx on t2(b);
@@ -294,19 +307,17 @@ prepare stmt4 from ' show index from t2 from test ';
 execute stmt4;
 prepare stmt4 from ' show table status from test like ''t2%'' ';
 # egalize date and time values
---replace_column 12 # 13 # 14 #
---replace_result 2147483647 64424509439
+--replace_column 8 # 12 # 13 # 14 #
 # Bug#4288 : prepared statement 'show table status ..', wrong output on execute
 execute stmt4;
 # try the same with the big table
 prepare stmt4 from ' show table status from test like ''t9%'' ';
 # egalize date and time values
---replace_column 12 # 13 # 14 #
---replace_result 2147483647 4294967295
+--replace_column 8 # 12 # 13 # 14 #
 # Bug#4288
 execute stmt4;
---replace_column 2 #
 prepare stmt4 from ' show status like ''Threads_running'' ';
+--replace_column 2 #
 execute stmt4;
 prepare stmt4 from ' show variables like ''sql_mode'' ';
 execute stmt4;
@@ -405,11 +416,11 @@ deallocate prepare stmt_do ;
 deallocate prepare stmt_set ;
 
 ## nonsense like prepare of prepare,execute or deallocate
---error 1064
+--error ER_UNSUPPORTED_PS 
 prepare stmt1 from ' prepare stmt2 from '' select 1 ''  ' ;
---error 1064
+--error ER_UNSUPPORTED_PS 
 prepare stmt1 from ' execute stmt2 ' ;
---error 1064
+--error ER_UNSUPPORTED_PS 
 prepare stmt1 from ' deallocate prepare never_prepared ' ;
 
 ## switch the database connection
@@ -423,20 +434,6 @@ create database mysqltest ;
 --error 1295
 prepare stmt3 from ' drop database mysqltest ';
 drop database mysqltest ;
-
-## grant/revoke + drop user
---error 1295
-prepare stmt3 from ' grant all on test.t1 to drop_user@localhost
-identified by ''looser'' ';
-grant all on test.t1 to drop_user@localhost
-identified by 'looser' ;
---error 1295
-prepare stmt3 from ' revoke all privileges on test.t1 from 
-drop_user@localhost ';
-revoke all privileges on test.t1 from drop_user@localhost ;
---error 1295
-prepare stmt3 from ' drop user drop_user@localhost ';
-drop user drop_user@localhost;
 
 #### table related commands
 ## describe
@@ -457,13 +454,10 @@ into table t1 fields terminated by ''\t'' ';
 prepare stmt1 from ' select * into outfile ''data.txt'' from t1 ';
 execute stmt1 ;
 ## 
---error 1295
 prepare stmt1 from ' optimize table t1 ' ;
---error 1295
 prepare stmt1 from ' analyze table t1 ' ;
 --error 1295
 prepare stmt1 from ' checksum table t1 ' ;
---error 1295
 prepare stmt1 from ' repair table t1 ' ;
 --error 1295
 prepare stmt1 from ' restore table t1 from ''data.txt'' ' ;
@@ -473,9 +467,7 @@ prepare stmt1 from ' handler t1 open ';
 
 
 ## commit/rollback
---error 1295
 prepare stmt3 from ' commit ' ;
---error 1295
 prepare stmt3 from ' rollback ' ;
 
 
@@ -487,10 +479,10 @@ select 'a' || 'b' ;
 prepare stmt4 from ' SET sql_mode="" ';
 execute stmt4;
 # check if the sql_mode is not ansi
-select 'a' || 'b' ;
+select '2' || '3' ;
 # Will a switch of the sqlmode affect the execution of already prepared 
 # statements ?
-prepare stmt5 from ' select ''a'' || ''b'' ' ;
+prepare stmt5 from ' select ''2'' || ''3'' ' ;
 execute stmt5;
 SET sql_mode=ansi;
 execute stmt5;
@@ -576,11 +568,8 @@ execute stmt3 using @arg00;
 select m from t3;
 drop table t3;
 
---error 1295
 prepare stmt3 from ' create index t2_idx on t2(b) ';
---error 1295
 prepare stmt3 from ' drop index t2_idx on t2 ' ; 
---error 1295
 prepare stmt3 from ' alter table t2 drop primary key ';
 
 ## RENAME TABLE
@@ -599,7 +588,7 @@ prepare stmt1 from ' rename table t5 to t6, t7 to t8 ' ;
 create table t5 (a int) ;
 # rename must fail, t7 does not exist
 # Clean up the filename here because embedded server reports whole path
---replace_result \\ / $MYSQL_TEST_DIR . /var/master-data/ /
+--replace_result \\ / $MYSQLTEST_VARDIR . /master-data/ / t7.frm t7
 --error 1017
 execute stmt1 ;
 create table t7 (a int) ;
@@ -840,7 +829,7 @@ execute stmt1 ;
 --disable_metadata
 --horizontal_results
 
-drop table t5 ;
+drop table t1, t5, t9;
 
 ##### RULES OF THUMB TO PRESERVE THE SYSTEMATICS OF THE PS TEST CASES #####
 #

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,6 +15,8 @@
 
 #ifndef ATTRIBUTE_LIST_HPP
 #define ATTRIBUTE_LIST_HPP
+
+#include "ndb_limits.h"
 
 /**
  * Masks and lists used by index and trigger.  Must be plain old Uint32 data.

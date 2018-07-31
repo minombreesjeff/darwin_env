@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +27,7 @@
 LIST *list_add(LIST *root, LIST *element)
 {
   DBUG_ENTER("list_add");
-  DBUG_PRINT("enter",("root: 0x%lx  element: %lx", root, element));
+  DBUG_PRINT("enter",("root: 0x%lx  element: 0x%lx", (long) root, (long) element));
   if (root)
   {
     if (root->prev)			/* If add in mid of list */

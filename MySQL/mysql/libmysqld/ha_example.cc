@@ -2,8 +2,7 @@
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
+  the Free Software Foundation; version 2 of the License.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -71,6 +70,31 @@
 
 #ifdef HAVE_EXAMPLE_DB
 #include "ha_example.h"
+
+
+handlerton example_hton= {
+  "EXAMPLE",
+  SHOW_OPTION_YES,
+  "Example storage engine", 
+  DB_TYPE_EXAMPLE_DB,
+  NULL,    /* We do need to write one! */
+  0,       /* slot */
+  0,       /* savepoint size. */
+  NULL,    /* close_connection */
+  NULL,    /* savepoint */
+  NULL,    /* rollback to savepoint */
+  NULL,    /* release savepoint */
+  NULL,    /* commit */
+  NULL,    /* rollback */
+  NULL,    /* prepare */
+  NULL,    /* recover */
+  NULL,    /* commit_by_xid */
+  NULL,    /* rollback_by_xid */
+  NULL,    /* create_cursor_read_view */
+  NULL,    /* set_cursor_read_view */
+  NULL,    /* close_cursor_read_view */
+  HTON_CAN_RECREATE
+};
 
 /* Variables for example share methods */
 static HASH example_open_tables; // Hash used to track open tables
@@ -179,13 +203,29 @@ static int free_share(EXAMPLE_SHARE *share)
 }
 
 
+ha_example::ha_example(TABLE *table_arg)
+  :handler(&example_hton, table_arg)
+{}
+
 /*
   If frm_error() is called then we will use this to to find out what file extentions
   exist for the storage engine. This is also used by the default rename_table and
   delete_table method in handler.cc.
+
+  For engines that have two file name extentions (separate meta/index file
+  and data file), the order of elements is relevant. First element of engine
+  file name extentions array should be meta/index file extention. Second
+  element - data file extention. This order is assumed by
+  prepare_for_repair() when REPAIR TABLE ... USE_FRM is issued.
 */
+static const char *ha_example_exts[] = {
+  NullS
+};
+
 const char **ha_example::bas_ext() const
-{ static const char *ext[]= { NullS }; return ext; }
+{
+  return ha_example_exts;
+}
 
 
 /*
@@ -412,7 +452,7 @@ int ha_example::rnd_next(byte *buf)
   position() is called after each call to rnd_next() if the data needs
   to be ordered. You can do something like the following to store
   the position:
-  ha_store_ptr(ref, ref_length, current_position);
+  my_store_ptr(ref, ref_length, current_position);
 
   The server uses ref to store data. ref_length in the above case is
   the size needed to store current_position. ref is just a byte array
@@ -445,6 +485,8 @@ int ha_example::rnd_pos(byte * buf, byte *pos)
 
 /*
   ::info() is used to return information to the optimizer.
+  see my_base.h for the complete description
+
   Currently this table handler doesn't implement most of the fields
   really needed. SHOW also makes use of this data
   Another note, you will probably want to have the following in your

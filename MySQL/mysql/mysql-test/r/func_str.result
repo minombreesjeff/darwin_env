@@ -1,4 +1,4 @@
-drop table if exists t1;
+drop table if exists t1,t2;
 set names latin1;
 select 'hello',"'hello'",'""hello""','''h''e''l''l''o''',"hel""lo",'hel\'lo';
 hello	'hello'	""hello""	'h'e'l'l'o'	hel"lo	hel'lo
@@ -21,6 +21,9 @@ length(_latin1'\n\t\n\b\0\\_\\%\\')
 select concat('monty',' was here ','again'),length('hello'),char(ascii('h')),ord('h');
 concat('monty',' was here ','again')	length('hello')	char(ascii('h'))	ord('h')
 monty was here again	5	h	104
+select hex(char(256));
+hex(char(256))
+0100
 select locate('he','hello'),locate('he','hello',2),locate('lo','hello',2) ;
 locate('he','hello')	locate('he','hello',2)	locate('lo','hello',2)
 1	0	4
@@ -30,6 +33,9 @@ instr('hello','HE')	instr('hello',binary 'HE')	instr(binary 'hello','HE')
 select position(binary 'll' in 'hello'),position('a' in binary 'hello');
 position(binary 'll' in 'hello')	position('a' in binary 'hello')
 3	0
+select left('hello',null), right('hello',null);
+left('hello',null)	right('hello',null)
+NULL	NULL
 select left('hello',2),right('hello',2),substring('hello',2,2),mid('hello',1,5) ;
 left('hello',2)	right('hello',2)	substring('hello',2,2)	mid('hello',1,5)
 he	lo	el	hello
@@ -165,6 +171,9 @@ the king of the
 select concat(':',ltrim('  left  '),':',rtrim('  right  '),':');
 concat(':',ltrim('  left  '),':',rtrim('  right  '),':')
 :left  :  right:
+select concat(':',trim(leading from '  left  '),':',trim(trailing from '  right  '),':');
+concat(':',trim(leading from '  left  '),':',trim(trailing from '  right  '),':')
+:left  :  right:
 select concat(':',trim(LEADING FROM ' left'),':',trim(TRAILING FROM ' right '),':');
 concat(':',trim(LEADING FROM ' left'),':',trim(TRAILING FROM ' right '),':')
 :left: right:
@@ -284,7 +293,7 @@ lpad('STRING', 20, CONCAT('p','a','d') )
 padpadpadpadpaSTRING
 select LEAST(NULL,'HARRY','HARRIOT',NULL,'HAROLD'),GREATEST(NULL,'HARRY','HARRIOT',NULL,'HAROLD');
 LEAST(NULL,'HARRY','HARRIOT',NULL,'HAROLD')	GREATEST(NULL,'HARRY','HARRIOT',NULL,'HAROLD')
-HAROLD	HARRY
+NULL	NULL
 select least(1,2,3) | greatest(16,32,8), least(5,4)*1,greatest(-1.0,1.0)*1,least(3,2,1)*1.0,greatest(1,1.1,1.0),least("10",9),greatest("A","B","0");
 least(1,2,3) | greatest(16,32,8)	least(5,4)*1	greatest(-1.0,1.0)*1	least(3,2,1)*1.0	greatest(1,1.1,1.0)	least("10",9)	greatest("A","B","0")
 33	4	1.0	1.0	1.1	9	B
@@ -350,6 +359,8 @@ Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - t
 select position("0" in "baaa" in (1)),position("0" in "1" in (1,2,3)),position("sql" in ("mysql"));
 position("0" in "baaa" in (1))	position("0" in "1" in (1,2,3))	position("sql" in ("mysql"))
 1	0	3
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: 'baaa'
 select position(("1" in (1,2,3)) in "01");
 position(("1" in (1,2,3)) in "01")
 2
@@ -376,7 +387,7 @@ category int(10) unsigned default NULL,
 program int(10) unsigned default NULL,
 bugdesc text,
 created datetime default NULL,
-modified timestamp(14) NOT NULL,
+modified timestamp NOT NULL,
 bugstatus int(10) unsigned default NULL,
 submitter int(10) unsigned default NULL
 ) ENGINE=MyISAM;
@@ -507,9 +518,9 @@ select FIELD(_latin2'b','A','B');
 ERROR HY000: Illegal mix of collations (latin2_general_ci,COERCIBLE), (latin1_swedish_ci,COERCIBLE), (latin1_swedish_ci,COERCIBLE) for operation 'field'
 select FIELD('b',_latin2'A','B');
 ERROR HY000: Illegal mix of collations (latin1_swedish_ci,COERCIBLE), (latin2_general_ci,COERCIBLE), (latin1_swedish_ci,COERCIBLE) for operation 'field'
-select FIELD('b',_latin2'A','B',1);
-FIELD('b',_latin2'A','B',1)
-1
+select FIELD('1',_latin2'3','2',1);
+FIELD('1',_latin2'3','2',1)
+3
 select POSITION(_latin1'B' IN _latin1'abcd');
 POSITION(_latin1'B' IN _latin1'abcd')
 2
@@ -534,9 +545,9 @@ select SUBSTRING_INDEX(_latin1'abcdabcdabcd',_latin1'd',2);
 SUBSTRING_INDEX(_latin1'abcdabcdabcd',_latin1'd',2)
 abcdabc
 select SUBSTRING_INDEX(_latin1'abcdabcdabcd',_latin2'd',2);
-ERROR HY000: Illegal mix of collations (latin1_swedish_ci,COERCIBLE) and (latin2_general_ci,COERCIBLE) for operation 'substr_index'
+ERROR HY000: Illegal mix of collations (latin1_swedish_ci,COERCIBLE) and (latin2_general_ci,COERCIBLE) for operation 'substring_index'
 select SUBSTRING_INDEX(_latin1'abcdabcdabcd' COLLATE latin1_general_ci,_latin1'd' COLLATE latin1_bin,2);
-ERROR HY000: Illegal mix of collations (latin1_general_ci,EXPLICIT) and (latin1_bin,EXPLICIT) for operation 'substr_index'
+ERROR HY000: Illegal mix of collations (latin1_general_ci,EXPLICIT) and (latin1_bin,EXPLICIT) for operation 'substring_index'
 select _latin1'B' between _latin1'a' and _latin1'c';
 _latin1'B' between _latin1'a' and _latin1'c'
 1
@@ -593,7 +604,7 @@ collation(hex(130))	coercibility(hex(130))
 latin1_swedish_ci	4
 select collation(char(130)), coercibility(hex(130));
 collation(char(130))	coercibility(hex(130))
-latin1_swedish_ci	4
+binary	4
 select collation(format(130,10)), coercibility(format(130,10));
 collation(format(130,10))	coercibility(format(130,10))
 latin1_swedish_ci	4
@@ -711,37 +722,37 @@ Warning	1265	Data truncated for column 'format(130,10)' at row 1
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `bin(130)` char(64) NOT NULL default '',
-  `oct(130)` char(64) NOT NULL default '',
-  `conv(130,16,10)` char(64) NOT NULL default '',
-  `hex(130)` char(6) NOT NULL default '',
-  `char(130)` char(1) NOT NULL default '',
-  `format(130,10)` char(4) NOT NULL default '',
-  `left(_latin2'a',1)` char(1) character set latin2 NOT NULL default '',
-  `right(_latin2'a',1)` char(1) character set latin2 NOT NULL default '',
-  `lcase(_latin2'a')` char(1) character set latin2 NOT NULL default '',
-  `ucase(_latin2'a')` char(1) character set latin2 NOT NULL default '',
-  `substring(_latin2'a',1,1)` char(1) character set latin2 NOT NULL default '',
-  `concat(_latin2'a',_latin2'b')` char(2) character set latin2 NOT NULL default '',
-  `lpad(_latin2'a',4,_latin2'b')` char(4) character set latin2 NOT NULL default '',
-  `rpad(_latin2'a',4,_latin2'b')` char(4) character set latin2 NOT NULL default '',
-  `concat_ws(_latin2'a',_latin2'b')` char(1) character set latin2 NOT NULL default '',
-  `make_set(255,_latin2'a',_latin2'b',_latin2'c')` char(5) character set latin2 NOT NULL default '',
-  `export_set(255,_latin2'y',_latin2'n',_latin2' ')` char(127) character set latin2 NOT NULL default '',
-  `trim(_latin2' a ')` char(3) character set latin2 NOT NULL default '',
-  `ltrim(_latin2' a ')` char(3) character set latin2 NOT NULL default '',
-  `rtrim(_latin2' a ')` char(3) character set latin2 NOT NULL default '',
-  `trim(LEADING _latin2' ' FROM _latin2' a ')` char(3) character set latin2 NOT NULL default '',
-  `trim(TRAILING _latin2' ' FROM _latin2' a ')` char(3) character set latin2 NOT NULL default '',
-  `trim(BOTH _latin2' ' FROM _latin2' a ')` char(3) character set latin2 NOT NULL default '',
-  `repeat(_latin2'a',10)` char(10) character set latin2 NOT NULL default '',
-  `reverse(_latin2'ab')` char(2) character set latin2 NOT NULL default '',
-  `quote(_latin2'ab')` char(6) character set latin2 NOT NULL default '',
-  `soundex(_latin2'ab')` char(4) character set latin2 NOT NULL default '',
-  `substring(_latin2'ab',1)` char(2) character set latin2 NOT NULL default '',
-  `insert(_latin2'abcd',2,3,_latin2'ef')` char(6) character set latin2 NOT NULL default '',
-  `replace(_latin2'abcd',_latin2'b',_latin2'B')` char(4) character set latin2 NOT NULL default '',
-  `encode('abcd','ab')` binary(4) NOT NULL default ''
+  `bin(130)` varchar(64) NOT NULL default '',
+  `oct(130)` varchar(64) NOT NULL default '',
+  `conv(130,16,10)` varchar(64) NOT NULL default '',
+  `hex(130)` varchar(6) NOT NULL default '',
+  `char(130)` varbinary(1) NOT NULL default '',
+  `format(130,10)` varchar(4) NOT NULL default '',
+  `left(_latin2'a',1)` varchar(1) character set latin2 NOT NULL default '',
+  `right(_latin2'a',1)` varchar(1) character set latin2 NOT NULL default '',
+  `lcase(_latin2'a')` varchar(1) character set latin2 NOT NULL default '',
+  `ucase(_latin2'a')` varchar(1) character set latin2 NOT NULL default '',
+  `substring(_latin2'a',1,1)` varchar(1) character set latin2 NOT NULL default '',
+  `concat(_latin2'a',_latin2'b')` varchar(2) character set latin2 NOT NULL default '',
+  `lpad(_latin2'a',4,_latin2'b')` varchar(4) character set latin2 NOT NULL default '',
+  `rpad(_latin2'a',4,_latin2'b')` varchar(4) character set latin2 NOT NULL default '',
+  `concat_ws(_latin2'a',_latin2'b')` varchar(1) character set latin2 NOT NULL default '',
+  `make_set(255,_latin2'a',_latin2'b',_latin2'c')` varchar(5) character set latin2 NOT NULL default '',
+  `export_set(255,_latin2'y',_latin2'n',_latin2' ')` varchar(127) character set latin2 NOT NULL default '',
+  `trim(_latin2' a ')` varchar(3) character set latin2 NOT NULL default '',
+  `ltrim(_latin2' a ')` varchar(3) character set latin2 NOT NULL default '',
+  `rtrim(_latin2' a ')` varchar(3) character set latin2 NOT NULL default '',
+  `trim(LEADING _latin2' ' FROM _latin2' a ')` varchar(3) character set latin2 NOT NULL default '',
+  `trim(TRAILING _latin2' ' FROM _latin2' a ')` varchar(3) character set latin2 NOT NULL default '',
+  `trim(BOTH _latin2' ' FROM _latin2' a ')` varchar(3) character set latin2 NOT NULL default '',
+  `repeat(_latin2'a',10)` varchar(10) character set latin2 NOT NULL default '',
+  `reverse(_latin2'ab')` varchar(2) character set latin2 NOT NULL default '',
+  `quote(_latin2'ab')` varchar(6) character set latin2 NOT NULL default '',
+  `soundex(_latin2'ab')` varchar(4) character set latin2 NOT NULL default '',
+  `substring(_latin2'ab',1)` varchar(2) character set latin2 NOT NULL default '',
+  `insert(_latin2'abcd',2,3,_latin2'ef')` varchar(6) character set latin2 NOT NULL default '',
+  `replace(_latin2'abcd',_latin2'b',_latin2'B')` varchar(4) character set latin2 NOT NULL default '',
+  `encode('abcd','ab')` varbinary(4) NOT NULL default ''
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 create table t1 (a char character set latin2);
@@ -806,13 +817,16 @@ explain extended select md5('hello'), sha('abc'), sha1('abc'), soundex(''), 'moo
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Note	1003	select md5(_latin1'hello') AS `md5('hello')`,sha(_latin1'abc') AS `sha('abc')`,sha(_latin1'abc') AS `sha1('abc')`,soundex(_latin1'') AS `soundex('')`,(soundex(_latin1'mood') = soundex(_latin1'mud')) AS `'mood' sounds like 'mud'`,aes_decrypt(aes_encrypt(_latin1'abc',_latin1'1'),_latin1'1') AS `aes_decrypt(aes_encrypt('abc','1'),'1')`,concat(_latin1'*',repeat(_latin1' ',5),_latin1'*') AS `concat('*',space(5),'*')`,reverse(_latin1'abc') AS `reverse('abc')`,rpad(_latin1'a',4,_latin1'1') AS `rpad('a',4,'1')`,lpad(_latin1'a',4,_latin1'1') AS `lpad('a',4,'1')`,concat_ws(_latin1',',_latin1'',NULL,_latin1'a') AS `concat_ws(',','',NULL,'a')`,make_set(255,_latin2'a',_latin2'b',_latin2'c') AS `make_set(255,_latin2'a',_latin2'b',_latin2'c')`,elt(2,1) AS `elt(2,1)`,locate(_latin1'a',_latin1'b',2) AS `locate("a","b",2)`,format(130,10) AS `format(130,10)`,char(0) AS `char(0)`,conv(130,16,10) AS `conv(130,16,10)`,hex(130) AS `hex(130)`,cast(_latin1'HE' as char charset binary) AS `binary 'HE'`,export_set(255,_latin2'y',_latin2'n',_latin2' ') AS `export_set(255,_latin2'y',_latin2'n',_latin2' ')`,field((_latin1'b' collate _latin1'latin1_bin'),_latin1'A',_latin1'B') AS `FIELD('b' COLLATE latin1_bin,'A','B')`,find_in_set(_latin1'B',_latin1'a,b,c,d') AS `FIND_IN_SET(_latin1'B',_latin1'a,b,c,d')`,collation(conv(130,16,10)) AS `collation(conv(130,16,10))`,coercibility(conv(130,16,10)) AS `coercibility(conv(130,16,10))`,length(_latin1'\n	\r\0\\_\\%\\') AS `length('\n\t\r\b\0\_\%\\')`,bit_length(_latin1'\n	\r\0\\_\\%\\') AS `bit_length('\n\t\r\b\0\_\%\\')`,bit_length(_latin1'\n	\r\0\\_\\%\\') AS `bit_length('\n\t\r\b\0\_\%\\')`,concat(_latin1'monty',_latin1' was here ',_latin1'again') AS `concat('monty',' was here ','again')`,length(_latin1'hello') AS `length('hello')`,char(ascii(_latin1'h')) AS `char(ascii('h'))`,ord(_latin1'h') AS `ord('h')`,quote((1 / 0)) AS `quote(1/0)`,crc32(_latin1'123') AS `crc32("123")`,replace(_latin1'aaaa',_latin1'a',_latin1'b') AS `replace('aaaa','a','b')`,insert(_latin1'txs',2,1,_latin1'hi') AS `insert('txs',2,1,'hi')`,left(_latin2'a',1) AS `left(_latin2'a',1)`,right(_latin2'a',1) AS `right(_latin2'a',1)`,lcase(_latin2'a') AS `lcase(_latin2'a')`,ucase(_latin2'a') AS `ucase(_latin2'a')`,substr(_latin1'abcdefg',3,2) AS `SUBSTR('abcdefg',3,2)`,substr_index(_latin1'1abcd;2abcd;3abcd;4abcd',_latin1';',2) AS `substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2)`,trim(_latin2' a ') AS `trim(_latin2' a ')`,ltrim(_latin2' a ') AS `ltrim(_latin2' a ')`,rtrim(_latin2' a ') AS `rtrim(_latin2' a ')`,decode(encode(repeat(_latin1'a',100000))) AS `decode(encode(repeat("a",100000),"monty"),"monty")`
+Note	1003	select md5(_latin1'hello') AS `md5('hello')`,sha(_latin1'abc') AS `sha('abc')`,sha(_latin1'abc') AS `sha1('abc')`,soundex(_latin1'') AS `soundex('')`,(soundex(_latin1'mood') = soundex(_latin1'mud')) AS `'mood' sounds like 'mud'`,aes_decrypt(aes_encrypt(_latin1'abc',_latin1'1'),_latin1'1') AS `aes_decrypt(aes_encrypt('abc','1'),'1')`,concat(_latin1'*',repeat(_latin1' ',5),_latin1'*') AS `concat('*',space(5),'*')`,reverse(_latin1'abc') AS `reverse('abc')`,rpad(_latin1'a',4,_latin1'1') AS `rpad('a',4,'1')`,lpad(_latin1'a',4,_latin1'1') AS `lpad('a',4,'1')`,concat_ws(_latin1',',_latin1'',NULL,_latin1'a') AS `concat_ws(',','',NULL,'a')`,make_set(255,_latin2'a',_latin2'b',_latin2'c') AS `make_set(255,_latin2'a',_latin2'b',_latin2'c')`,elt(2,1) AS `elt(2,1)`,locate(_latin1'a',_latin1'b',2) AS `locate("a","b",2)`,format(130,10) AS `format(130,10)`,char(0) AS `char(0)`,conv(130,16,10) AS `conv(130,16,10)`,hex(130) AS `hex(130)`,cast(_latin1'HE' as char charset binary) AS `binary 'HE'`,export_set(255,_latin2'y',_latin2'n',_latin2' ') AS `export_set(255,_latin2'y',_latin2'n',_latin2' ')`,field((_latin1'b' collate latin1_bin),_latin1'A',_latin1'B') AS `FIELD('b' COLLATE latin1_bin,'A','B')`,find_in_set(_latin1'B',_latin1'a,b,c,d') AS `FIND_IN_SET(_latin1'B',_latin1'a,b,c,d')`,collation(conv(130,16,10)) AS `collation(conv(130,16,10))`,coercibility(conv(130,16,10)) AS `coercibility(conv(130,16,10))`,length(_latin1'\n	\r\0\\_\\%\\') AS `length('\n\t\r\b\0\_\%\\')`,bit_length(_latin1'\n	\r\0\\_\\%\\') AS `bit_length('\n\t\r\b\0\_\%\\')`,bit_length(_latin1'\n	\r\0\\_\\%\\') AS `bit_length('\n\t\r\b\0\_\%\\')`,concat(_latin1'monty',_latin1' was here ',_latin1'again') AS `concat('monty',' was here ','again')`,length(_latin1'hello') AS `length('hello')`,char(ascii(_latin1'h')) AS `char(ascii('h'))`,ord(_latin1'h') AS `ord('h')`,quote((1 / 0)) AS `quote(1/0)`,crc32(_latin1'123') AS `crc32("123")`,replace(_latin1'aaaa',_latin1'a',_latin1'b') AS `replace('aaaa','a','b')`,insert(_latin1'txs',2,1,_latin1'hi') AS `insert('txs',2,1,'hi')`,left(_latin2'a',1) AS `left(_latin2'a',1)`,right(_latin2'a',1) AS `right(_latin2'a',1)`,lcase(_latin2'a') AS `lcase(_latin2'a')`,ucase(_latin2'a') AS `ucase(_latin2'a')`,substr(_latin1'abcdefg',3,2) AS `SUBSTR('abcdefg',3,2)`,substring_index(_latin1'1abcd;2abcd;3abcd;4abcd',_latin1';',2) AS `substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2)`,trim(_latin2' a ') AS `trim(_latin2' a ')`,ltrim(_latin2' a ') AS `ltrim(_latin2' a ')`,rtrim(_latin2' a ') AS `rtrim(_latin2' a ')`,decode(encode(repeat(_latin1'a',100000),'monty'),'monty') AS `decode(encode(repeat("a",100000),"monty"),"monty")`
 SELECT lpad(12345, 5, "#");
 lpad(12345, 5, "#")
 12345
 SELECT conv(71, 10, 36), conv('1Z', 36, 10);
 conv(71, 10, 36)	conv('1Z', 36, 10)
 1Z	71
+SELECT conv(71, 10, 37), conv('1Z', 37, 10), conv(0,1,10),conv(0,0,10), conv(0,-1,10);
+conv(71, 10, 37)	conv('1Z', 37, 10)	conv(0,1,10)	conv(0,0,10)	conv(0,-1,10)
+NULL	NULL	NULL	NULL	NULL
 create table t1 (id int(1), str varchar(10)) DEFAULT CHARSET=utf8;
 insert into t1 values (1,'aaaaaaaaaa'), (2,'bbbbbbbbbb');
 create table t2 (id int(1), str varchar(10)) DEFAULT CHARSET=utf8;
@@ -826,16 +840,16 @@ drop table t1, t2;
 create table t1 (c1 INT, c2 INT UNSIGNED);
 insert into t1 values ('21474836461','21474836461');
 Warnings:
-Warning	1265	Data truncated for column 'c1' at row 1
-Warning	1265	Data truncated for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
 insert into t1 values ('-21474836461','-21474836461');
 Warnings:
-Warning	1265	Data truncated for column 'c1' at row 1
-Warning	1265	Data truncated for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
 show warnings;
 Level	Code	Message
-Warning	1265	Data truncated for column 'c1' at row 1
-Warning	1265	Data truncated for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
 select * from t1;
 c1	c2
 2147483647	4294967295
@@ -854,6 +868,12 @@ select trim(null from 'kate') as "must_be_null";
 must_be_null
 NULL
 select trim('xyz' from null) as "must_be_null";
+must_be_null
+NULL
+select trim(leading NULL from 'kate') as "must_be_null";
+must_be_null
+NULL
+select trim(trailing NULL from 'xyz') as "must_be_null";
 must_be_null
 NULL
 CREATE TABLE t1 (
@@ -1042,26 +1062,1003 @@ EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(s) > 'ab';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
 Warnings:
-Note	1003	select test.t1.s AS `s` from test.t1 where (trim(test.t1.s) > _latin1'ab')
+Note	1003	select `test`.`t1`.`s` AS `s` from `test`.`t1` where (trim(`test`.`t1`.`s`) > _latin1'ab')
 EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM('y' FROM s) > 'ab';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
 Warnings:
-Note	1003	select test.t1.s AS `s` from test.t1 where (trim(both _latin1'y' from test.t1.s) > _latin1'ab')
+Note	1003	select `test`.`t1`.`s` AS `s` from `test`.`t1` where (trim(both _latin1'y' from `test`.`t1`.`s`) > _latin1'ab')
 EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(LEADING 'y' FROM s) > 'ab';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
 Warnings:
-Note	1003	select test.t1.s AS `s` from test.t1 where (trim(leading _latin1'y' from test.t1.s) > _latin1'ab')
+Note	1003	select `test`.`t1`.`s` AS `s` from `test`.`t1` where (trim(leading _latin1'y' from `test`.`t1`.`s`) > _latin1'ab')
 EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(TRAILING 'y' FROM s) > 'ab';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
 Warnings:
-Note	1003	select test.t1.s AS `s` from test.t1 where (trim(trailing _latin1'y' from test.t1.s) > _latin1'ab')
+Note	1003	select `test`.`t1`.`s` AS `s` from `test`.`t1` where (trim(trailing _latin1'y' from `test`.`t1`.`s`) > _latin1'ab')
 EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(BOTH 'y' FROM s) > 'ab';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
 Warnings:
-Note	1003	select test.t1.s AS `s` from test.t1 where (trim(both _latin1'y' from test.t1.s) > _latin1'ab')
+Note	1003	select `test`.`t1`.`s` AS `s` from `test`.`t1` where (trim(both _latin1'y' from `test`.`t1`.`s`) > _latin1'ab')
 DROP TABLE t1;
+create table t1(f1 varchar(4));
+explain extended select encode(f1,'zxcv') as 'enc' from t1;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	system	NULL	NULL	NULL	NULL	0	const row not found
+Warnings:
+Note	1003	select encode('','zxcv') AS `enc` from `test`.`t1`
+explain extended select decode(f1,'zxcv') as 'enc' from t1;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	system	NULL	NULL	NULL	NULL	0	const row not found
+Warnings:
+Note	1003	select decode('','zxcv') AS `enc` from `test`.`t1`
+drop table t1;
 End of 4.1 tests
+create table t1 (d decimal default null);
+insert into t1 values (null);
+select format(d, 2) from t1;
+format(d, 2)
+NULL
+drop table t1;
+create table t1 (c varchar(40));
+insert into t1 values ('y,abc'),('y,abc');
+select c, substring_index(lcase(c), @q:=',', -1) as res from t1;
+c	res
+y,abc	abc
+y,abc	abc
+drop table t1;
+select cast(rtrim('  20.06 ') as decimal(19,2));
+cast(rtrim('  20.06 ') as decimal(19,2))
+20.06
+select cast(ltrim('  20.06 ') as decimal(19,2));
+cast(ltrim('  20.06 ') as decimal(19,2))
+20.06
+select cast(rtrim(ltrim('  20.06 ')) as decimal(19,2));
+cast(rtrim(ltrim('  20.06 ')) as decimal(19,2))
+20.06
+select conv("18383815659218730760",10,10) + 0;
+conv("18383815659218730760",10,10) + 0
+1.8383815659219e+19
+select "18383815659218730760" + 0;
+"18383815659218730760" + 0
+1.8383815659219e+19
+CREATE TABLE t1 (code varchar(10));
+INSERT INTO t1 VALUES ('a12'), ('A12'), ('a13');
+SELECT ASCII(code), code FROM t1 WHERE code='A12';
+ASCII(code)	code
+97	a12
+65	A12
+SELECT ASCII(code), code FROM t1 WHERE code='A12' AND ASCII(code)=65;
+ASCII(code)	code
+65	A12
+INSERT INTO t1 VALUES ('a12 '), ('A12  ');
+SELECT LENGTH(code), code FROM t1 WHERE code='A12';
+LENGTH(code)	code
+3	a12
+3	A12
+4	a12 
+5	A12  
+SELECT LENGTH(code), code FROM t1 WHERE code='A12' AND LENGTH(code)=5;
+LENGTH(code)	code
+5	A12  
+ALTER TABLE t1 ADD INDEX (code);
+CREATE TABLE t2 (id varchar(10) PRIMARY KEY);
+INSERT INTO t2 VALUES ('a11'), ('a12'), ('a13'), ('a14');
+SELECT * FROM t1 INNER JOIN t2 ON t1.code=t2.id 
+WHERE t2.id='a12' AND (LENGTH(code)=5 OR code < 'a00');
+code	id
+A12  	a12
+EXPLAIN EXTENDED 
+SELECT * FROM t1 INNER JOIN t2 ON code=id 
+WHERE id='a12' AND (LENGTH(code)=5 OR code < 'a00');
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t2	const	PRIMARY	PRIMARY	12	const	1	Using index
+1	SIMPLE	t1	ref	code	code	13	const	3	Using where; Using index
+Warnings:
+Note	1003	select `test`.`t1`.`code` AS `code`,'a12' AS `id` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`code` = _latin1'a12') and (length(`test`.`t1`.`code`) = 5))
+DROP TABLE t1,t2;
+select locate('he','hello',-2);
+locate('he','hello',-2)
+0
+select locate('lo','hello',-4294967295);
+locate('lo','hello',-4294967295)
+0
+select locate('lo','hello',4294967295);
+locate('lo','hello',4294967295)
+0
+select locate('lo','hello',-4294967296);
+locate('lo','hello',-4294967296)
+0
+select locate('lo','hello',4294967296);
+locate('lo','hello',4294967296)
+0
+select locate('lo','hello',-4294967297);
+locate('lo','hello',-4294967297)
+0
+select locate('lo','hello',4294967297);
+locate('lo','hello',4294967297)
+0
+select locate('lo','hello',-18446744073709551615);
+locate('lo','hello',-18446744073709551615)
+0
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select locate('lo','hello',18446744073709551615);
+locate('lo','hello',18446744073709551615)
+0
+select locate('lo','hello',-18446744073709551616);
+locate('lo','hello',-18446744073709551616)
+0
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select locate('lo','hello',18446744073709551616);
+locate('lo','hello',18446744073709551616)
+0
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select locate('lo','hello',-18446744073709551617);
+locate('lo','hello',-18446744073709551617)
+0
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select locate('lo','hello',18446744073709551617);
+locate('lo','hello',18446744073709551617)
+0
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select left('hello', 10);
+left('hello', 10)
+hello
+select left('hello', 0);
+left('hello', 0)
+
+select left('hello', -1);
+left('hello', -1)
+
+select left('hello', -4294967295);
+left('hello', -4294967295)
+
+select left('hello', 4294967295);
+left('hello', 4294967295)
+hello
+select left('hello', -4294967296);
+left('hello', -4294967296)
+
+select left('hello', 4294967296);
+left('hello', 4294967296)
+hello
+select left('hello', -4294967297);
+left('hello', -4294967297)
+
+select left('hello', 4294967297);
+left('hello', 4294967297)
+hello
+select left('hello', -18446744073709551615);
+left('hello', -18446744073709551615)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select left('hello', 18446744073709551615);
+left('hello', 18446744073709551615)
+hello
+select left('hello', -18446744073709551616);
+left('hello', -18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select left('hello', 18446744073709551616);
+left('hello', 18446744073709551616)
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select left('hello', -18446744073709551617);
+left('hello', -18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select left('hello', 18446744073709551617);
+left('hello', 18446744073709551617)
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select right('hello', 10);
+right('hello', 10)
+hello
+select right('hello', 0);
+right('hello', 0)
+
+select right('hello', -1);
+right('hello', -1)
+
+select right('hello', -4294967295);
+right('hello', -4294967295)
+
+select right('hello', 4294967295);
+right('hello', 4294967295)
+hello
+select right('hello', -4294967296);
+right('hello', -4294967296)
+
+select right('hello', 4294967296);
+right('hello', 4294967296)
+hello
+select right('hello', -4294967297);
+right('hello', -4294967297)
+
+select right('hello', 4294967297);
+right('hello', 4294967297)
+hello
+select right('hello', -18446744073709551615);
+right('hello', -18446744073709551615)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select right('hello', 18446744073709551615);
+right('hello', 18446744073709551615)
+hello
+select right('hello', -18446744073709551616);
+right('hello', -18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select right('hello', 18446744073709551616);
+right('hello', 18446744073709551616)
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select right('hello', -18446744073709551617);
+right('hello', -18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select right('hello', 18446744073709551617);
+right('hello', 18446744073709551617)
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 2, -1);
+substring('hello', 2, -1)
+
+select substring('hello', -1, 1);
+substring('hello', -1, 1)
+o
+select substring('hello', -2, 1);
+substring('hello', -2, 1)
+l
+select substring('hello', -4294967295, 1);
+substring('hello', -4294967295, 1)
+
+select substring('hello', 4294967295, 1);
+substring('hello', 4294967295, 1)
+
+select substring('hello', -4294967296, 1);
+substring('hello', -4294967296, 1)
+
+select substring('hello', 4294967296, 1);
+substring('hello', 4294967296, 1)
+
+select substring('hello', -4294967297, 1);
+substring('hello', -4294967297, 1)
+
+select substring('hello', 4294967297, 1);
+substring('hello', 4294967297, 1)
+
+select substring('hello', -18446744073709551615, 1);
+substring('hello', -18446744073709551615, 1)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 18446744073709551615, 1);
+substring('hello', 18446744073709551615, 1)
+
+select substring('hello', -18446744073709551616, 1);
+substring('hello', -18446744073709551616, 1)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 18446744073709551616, 1);
+substring('hello', 18446744073709551616, 1)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', -18446744073709551617, 1);
+substring('hello', -18446744073709551617, 1)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 18446744073709551617, 1);
+substring('hello', 18446744073709551617, 1)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 1, -1);
+substring('hello', 1, -1)
+
+select substring('hello', 1, -4294967295);
+substring('hello', 1, -4294967295)
+
+select substring('hello', 1, 4294967295);
+substring('hello', 1, 4294967295)
+hello
+select substring('hello', 1, -4294967296);
+substring('hello', 1, -4294967296)
+
+select substring('hello', 1, 4294967296);
+substring('hello', 1, 4294967296)
+hello
+select substring('hello', 1, -4294967297);
+substring('hello', 1, -4294967297)
+
+select substring('hello', 1, 4294967297);
+substring('hello', 1, 4294967297)
+hello
+select substring('hello', 1, -18446744073709551615);
+substring('hello', 1, -18446744073709551615)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 1, 18446744073709551615);
+substring('hello', 1, 18446744073709551615)
+hello
+select substring('hello', 1, -18446744073709551616);
+substring('hello', 1, -18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 1, 18446744073709551616);
+substring('hello', 1, 18446744073709551616)
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 1, -18446744073709551617);
+substring('hello', 1, -18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 1, 18446744073709551617);
+substring('hello', 1, 18446744073709551617)
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', -1, -1);
+substring('hello', -1, -1)
+
+select substring('hello', -4294967295, -4294967295);
+substring('hello', -4294967295, -4294967295)
+
+select substring('hello', 4294967295, 4294967295);
+substring('hello', 4294967295, 4294967295)
+
+select substring('hello', -4294967296, -4294967296);
+substring('hello', -4294967296, -4294967296)
+
+select substring('hello', 4294967296, 4294967296);
+substring('hello', 4294967296, 4294967296)
+
+select substring('hello', -4294967297, -4294967297);
+substring('hello', -4294967297, -4294967297)
+
+select substring('hello', 4294967297, 4294967297);
+substring('hello', 4294967297, 4294967297)
+
+select substring('hello', -18446744073709551615, -18446744073709551615);
+substring('hello', -18446744073709551615, -18446744073709551615)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 18446744073709551615, 18446744073709551615);
+substring('hello', 18446744073709551615, 18446744073709551615)
+
+select substring('hello', -18446744073709551616, -18446744073709551616);
+substring('hello', -18446744073709551616, -18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 18446744073709551616, 18446744073709551616);
+substring('hello', 18446744073709551616, 18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', -18446744073709551617, -18446744073709551617);
+substring('hello', -18446744073709551617, -18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select substring('hello', 18446744073709551617, 18446744073709551617);
+substring('hello', 18446744073709551617, 18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', -1, 1, 'hi');
+insert('hello', -1, 1, 'hi')
+hello
+select insert('hello', -4294967295, 1, 'hi');
+insert('hello', -4294967295, 1, 'hi')
+hello
+select insert('hello', 4294967295, 1, 'hi');
+insert('hello', 4294967295, 1, 'hi')
+hello
+select insert('hello', -4294967296, 1, 'hi');
+insert('hello', -4294967296, 1, 'hi')
+hello
+select insert('hello', 4294967296, 1, 'hi');
+insert('hello', 4294967296, 1, 'hi')
+hello
+select insert('hello', -4294967297, 1, 'hi');
+insert('hello', -4294967297, 1, 'hi')
+hello
+select insert('hello', 4294967297, 1, 'hi');
+insert('hello', 4294967297, 1, 'hi')
+hello
+select insert('hello', -18446744073709551615, 1, 'hi');
+insert('hello', -18446744073709551615, 1, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 18446744073709551615, 1, 'hi');
+insert('hello', 18446744073709551615, 1, 'hi')
+hello
+select insert('hello', -18446744073709551616, 1, 'hi');
+insert('hello', -18446744073709551616, 1, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 18446744073709551616, 1, 'hi');
+insert('hello', 18446744073709551616, 1, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', -18446744073709551617, 1, 'hi');
+insert('hello', -18446744073709551617, 1, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 18446744073709551617, 1, 'hi');
+insert('hello', 18446744073709551617, 1, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 1, -1, 'hi');
+insert('hello', 1, -1, 'hi')
+hi
+select insert('hello', 1, -4294967295, 'hi');
+insert('hello', 1, -4294967295, 'hi')
+hi
+select insert('hello', 1, 4294967295, 'hi');
+insert('hello', 1, 4294967295, 'hi')
+hi
+select insert('hello', 1, -4294967296, 'hi');
+insert('hello', 1, -4294967296, 'hi')
+hi
+select insert('hello', 1, 4294967296, 'hi');
+insert('hello', 1, 4294967296, 'hi')
+hi
+select insert('hello', 1, -4294967297, 'hi');
+insert('hello', 1, -4294967297, 'hi')
+hi
+select insert('hello', 1, 4294967297, 'hi');
+insert('hello', 1, 4294967297, 'hi')
+hi
+select insert('hello', 1, -18446744073709551615, 'hi');
+insert('hello', 1, -18446744073709551615, 'hi')
+hi
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 1, 18446744073709551615, 'hi');
+insert('hello', 1, 18446744073709551615, 'hi')
+hi
+select insert('hello', 1, -18446744073709551616, 'hi');
+insert('hello', 1, -18446744073709551616, 'hi')
+hi
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 1, 18446744073709551616, 'hi');
+insert('hello', 1, 18446744073709551616, 'hi')
+hi
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 1, -18446744073709551617, 'hi');
+insert('hello', 1, -18446744073709551617, 'hi')
+hi
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 1, 18446744073709551617, 'hi');
+insert('hello', 1, 18446744073709551617, 'hi')
+hi
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', -1, -1, 'hi');
+insert('hello', -1, -1, 'hi')
+hello
+select insert('hello', -4294967295, -4294967295, 'hi');
+insert('hello', -4294967295, -4294967295, 'hi')
+hello
+select insert('hello', 4294967295, 4294967295, 'hi');
+insert('hello', 4294967295, 4294967295, 'hi')
+hello
+select insert('hello', -4294967296, -4294967296, 'hi');
+insert('hello', -4294967296, -4294967296, 'hi')
+hello
+select insert('hello', 4294967296, 4294967296, 'hi');
+insert('hello', 4294967296, 4294967296, 'hi')
+hello
+select insert('hello', -4294967297, -4294967297, 'hi');
+insert('hello', -4294967297, -4294967297, 'hi')
+hello
+select insert('hello', 4294967297, 4294967297, 'hi');
+insert('hello', 4294967297, 4294967297, 'hi')
+hello
+select insert('hello', -18446744073709551615, -18446744073709551615, 'hi');
+insert('hello', -18446744073709551615, -18446744073709551615, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 18446744073709551615, 18446744073709551615, 'hi');
+insert('hello', 18446744073709551615, 18446744073709551615, 'hi')
+hello
+select insert('hello', -18446744073709551616, -18446744073709551616, 'hi');
+insert('hello', -18446744073709551616, -18446744073709551616, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 18446744073709551616, 18446744073709551616, 'hi');
+insert('hello', 18446744073709551616, 18446744073709551616, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', -18446744073709551617, -18446744073709551617, 'hi');
+insert('hello', -18446744073709551617, -18446744073709551617, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select insert('hello', 18446744073709551617, 18446744073709551617, 'hi');
+insert('hello', 18446744073709551617, 18446744073709551617, 'hi')
+hello
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select repeat('hello', -1);
+repeat('hello', -1)
+
+select repeat('hello', -4294967295);
+repeat('hello', -4294967295)
+
+select repeat('hello', 4294967295);
+repeat('hello', 4294967295)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select repeat('hello', -4294967296);
+repeat('hello', -4294967296)
+
+select repeat('hello', 4294967296);
+repeat('hello', 4294967296)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select repeat('hello', -4294967297);
+repeat('hello', -4294967297)
+
+select repeat('hello', 4294967297);
+repeat('hello', 4294967297)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select repeat('hello', -18446744073709551615);
+repeat('hello', -18446744073709551615)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select repeat('hello', 18446744073709551615);
+repeat('hello', 18446744073709551615)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select repeat('hello', -18446744073709551616);
+repeat('hello', -18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select repeat('hello', 18446744073709551616);
+repeat('hello', 18446744073709551616)
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select repeat('hello', -18446744073709551617);
+repeat('hello', -18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select repeat('hello', 18446744073709551617);
+repeat('hello', 18446744073709551617)
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select space(-1);
+space(-1)
+
+select space(-4294967295);
+space(-4294967295)
+
+select space(4294967295);
+space(4294967295)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select space(-4294967296);
+space(-4294967296)
+
+select space(4294967296);
+space(4294967296)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select space(-4294967297);
+space(-4294967297)
+
+select space(4294967297);
+space(4294967297)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select space(-18446744073709551615);
+space(-18446744073709551615)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select space(18446744073709551615);
+space(18446744073709551615)
+NULL
+Warnings:
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select space(-18446744073709551616);
+space(-18446744073709551616)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select space(18446744073709551616);
+space(18446744073709551616)
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select space(-18446744073709551617);
+space(-18446744073709551617)
+
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select space(18446744073709551617);
+space(18446744073709551617)
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of repeat() was larger than max_allowed_packet (1048576) - truncated
+select rpad('hello', -1, '1');
+rpad('hello', -1, '1')
+NULL
+select rpad('hello', -4294967295, '1');
+rpad('hello', -4294967295, '1')
+NULL
+select rpad('hello', 4294967295, '1');
+rpad('hello', 4294967295, '1')
+NULL
+Warnings:
+Warning	1301	Result of rpad() was larger than max_allowed_packet (1048576) - truncated
+select rpad('hello', -4294967296, '1');
+rpad('hello', -4294967296, '1')
+NULL
+select rpad('hello', 4294967296, '1');
+rpad('hello', 4294967296, '1')
+NULL
+Warnings:
+Warning	1301	Result of rpad() was larger than max_allowed_packet (1048576) - truncated
+select rpad('hello', -4294967297, '1');
+rpad('hello', -4294967297, '1')
+NULL
+select rpad('hello', 4294967297, '1');
+rpad('hello', 4294967297, '1')
+NULL
+Warnings:
+Warning	1301	Result of rpad() was larger than max_allowed_packet (1048576) - truncated
+select rpad('hello', -18446744073709551615, '1');
+rpad('hello', -18446744073709551615, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select rpad('hello', 18446744073709551615, '1');
+rpad('hello', 18446744073709551615, '1')
+NULL
+Warnings:
+Warning	1301	Result of rpad() was larger than max_allowed_packet (1048576) - truncated
+select rpad('hello', -18446744073709551616, '1');
+rpad('hello', -18446744073709551616, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select rpad('hello', 18446744073709551616, '1');
+rpad('hello', 18446744073709551616, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of rpad() was larger than max_allowed_packet (1048576) - truncated
+select rpad('hello', -18446744073709551617, '1');
+rpad('hello', -18446744073709551617, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select rpad('hello', 18446744073709551617, '1');
+rpad('hello', 18446744073709551617, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of rpad() was larger than max_allowed_packet (1048576) - truncated
+select lpad('hello', -1, '1');
+lpad('hello', -1, '1')
+NULL
+select lpad('hello', -4294967295, '1');
+lpad('hello', -4294967295, '1')
+NULL
+select lpad('hello', 4294967295, '1');
+lpad('hello', 4294967295, '1')
+NULL
+Warnings:
+Warning	1301	Result of lpad() was larger than max_allowed_packet (1048576) - truncated
+select lpad('hello', -4294967296, '1');
+lpad('hello', -4294967296, '1')
+NULL
+select lpad('hello', 4294967296, '1');
+lpad('hello', 4294967296, '1')
+NULL
+Warnings:
+Warning	1301	Result of lpad() was larger than max_allowed_packet (1048576) - truncated
+select lpad('hello', -4294967297, '1');
+lpad('hello', -4294967297, '1')
+NULL
+select lpad('hello', 4294967297, '1');
+lpad('hello', 4294967297, '1')
+NULL
+Warnings:
+Warning	1301	Result of lpad() was larger than max_allowed_packet (1048576) - truncated
+select lpad('hello', -18446744073709551615, '1');
+lpad('hello', -18446744073709551615, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select lpad('hello', 18446744073709551615, '1');
+lpad('hello', 18446744073709551615, '1')
+NULL
+Warnings:
+Warning	1301	Result of lpad() was larger than max_allowed_packet (1048576) - truncated
+select lpad('hello', -18446744073709551616, '1');
+lpad('hello', -18446744073709551616, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select lpad('hello', 18446744073709551616, '1');
+lpad('hello', 18446744073709551616, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of lpad() was larger than max_allowed_packet (1048576) - truncated
+select lpad('hello', -18446744073709551617, '1');
+lpad('hello', -18446744073709551617, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+select lpad('hello', 18446744073709551617, '1');
+lpad('hello', 18446744073709551617, '1')
+NULL
+Warnings:
+Error	1292	Truncated incorrect DECIMAL value: ''
+Error	1292	Truncated incorrect DECIMAL value: ''
+Warning	1301	Result of lpad() was larger than max_allowed_packet (1048576) - truncated
+SET @orig_sql_mode = @@SQL_MODE;
+SET SQL_MODE=traditional;
+SELECT CHAR(0xff,0x8f USING utf8);
+CHAR(0xff,0x8f USING utf8)
+NULL
+Warnings:
+Error	1300	Invalid utf8 character string: 'FF8F'
+SELECT CHAR(0xff,0x8f USING utf8) IS NULL;
+CHAR(0xff,0x8f USING utf8) IS NULL
+1
+Warnings:
+Error	1300	Invalid utf8 character string: 'FF8F'
+SET SQL_MODE=@orig_sql_mode;
+select substring('abc', cast(2 as unsigned int));
+substring('abc', cast(2 as unsigned int))
+bc
+select repeat('a', cast(2 as unsigned int));
+repeat('a', cast(2 as unsigned int))
+aa
+select rpad('abc', cast(5 as unsigned integer), 'x');
+rpad('abc', cast(5 as unsigned integer), 'x')
+abcxx
+select lpad('abc', cast(5 as unsigned integer), 'x');
+lpad('abc', cast(5 as unsigned integer), 'x')
+xxabc
+create table t1(f1 longtext);
+insert into t1 values ("123"),("456");
+select substring(f1,1,1) from t1 group by 1;
+substring(f1,1,1)
+1
+4
+create table t2(f1 varchar(3));
+insert into t1 values ("123"),("456");
+select substring(f1,4,1), substring(f1,-4,1) from t2;
+substring(f1,4,1)	substring(f1,-4,1)
+drop table t1,t2;
+DROP TABLE IF EXISTS t1;
+CREATE TABLE `t1` (
+`id` varchar(20) NOT NULL,
+`tire` tinyint(3) unsigned NOT NULL,
+PRIMARY KEY (`id`)
+);
+INSERT INTO `t1` (`id`, `tire`) VALUES ('A', 0), ('B', 1),('C', 2);
+SELECT REPEAT( '#', tire ) AS A,
+REPEAT( '#', tire % 999 ) AS B, tire FROM `t1`;
+A	B	tire
+		0
+#	#	1
+##	##	2
+SELECT REPEAT('0', CAST(0 AS UNSIGNED));
+REPEAT('0', CAST(0 AS UNSIGNED))
+
+SELECT REPEAT('0', -2);
+REPEAT('0', -2)
+
+SELECT REPEAT('0', 2);
+REPEAT('0', 2)
+00
+DROP TABLE t1;
+SELECT UNHEX('G');
+UNHEX('G')
+NULL
+SELECT UNHEX('G') IS NULL;
+UNHEX('G') IS NULL
+1
+SELECT INSERT('abc', 3, 3, '1234');
+INSERT('abc', 3, 3, '1234')
+ab1234
+SELECT INSERT('abc', 4, 3, '1234');
+INSERT('abc', 4, 3, '1234')
+abc1234
+SELECT INSERT('abc', 5, 3, '1234');
+INSERT('abc', 5, 3, '1234')
+abc
+SELECT INSERT('abc', 6, 3, '1234');
+INSERT('abc', 6, 3, '1234')
+abc
+CREATE TABLE t1 (a INT);
+CREATE VIEW v1 AS SELECT CRC32(a) AS C FROM t1;
+INSERT INTO t1 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10);
+SELECT CRC32(a), COUNT(*) FROM t1 GROUP BY 1;
+CRC32(a)	COUNT(*)
+450215437	1
+498629140	1
+1790921346	1
+1842515611	1
+2212294583	1
+2226203566	1
+2366072709	1
+2707236321	1
+4088798008	1
+4194326291	1
+SELECT CRC32(a), COUNT(*) FROM t1 GROUP BY 1 ORDER BY 1;
+CRC32(a)	COUNT(*)
+450215437	1
+498629140	1
+1790921346	1
+1842515611	1
+2212294583	1
+2226203566	1
+2366072709	1
+2707236321	1
+4088798008	1
+4194326291	1
+SELECT * FROM (SELECT CRC32(a) FROM t1) t2;
+CRC32(a)
+2212294583
+450215437
+1842515611
+4088798008
+2226203566
+498629140
+1790921346
+4194326291
+2366072709
+2707236321
+CREATE TABLE t2 SELECT CRC32(a) FROM t1;
+desc t2;
+Field	Type	Null	Key	Default	Extra
+CRC32(a)	int(10) unsigned	YES		NULL	
+SELECT * FROM v1;
+C
+2212294583
+450215437
+1842515611
+4088798008
+2226203566
+498629140
+1790921346
+4194326291
+2366072709
+2707236321
+SELECT * FROM (SELECT * FROM v1) x;
+C
+2212294583
+450215437
+1842515611
+4088798008
+2226203566
+498629140
+1790921346
+4194326291
+2366072709
+2707236321
+DROP TABLE t1, t2;
+DROP VIEW v1;
+End of 5.0 tests

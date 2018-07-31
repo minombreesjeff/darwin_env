@@ -17,7 +17,7 @@ explain extended select * from t1 where MATCH(a,b) AGAINST ("collections");
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	fulltext	a	a	0		1	Using where
 Warnings:
-Note	1003	select test.t1.a AS `a`,test.t1.b AS `b` from test.t1 where (match test.t1.a,test.t1.b against (_latin1'collections'))
+Note	1003	select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against (_latin1'collections'))
 select * from t1 where MATCH(a,b) AGAINST ("indexes");
 a	b
 Full-text indexes	are called collections
@@ -78,7 +78,7 @@ explain extended select * from t1 where MATCH(a,b) AGAINST("support -collections
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	fulltext	a	a	0		1	Using where
 Warnings:
-Note	1003	select test.t1.a AS `a`,test.t1.b AS `b` from test.t1 where (match test.t1.a,test.t1.b against (_latin1'support -collections' in boolean mode))
+Note	1003	select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against (_latin1'support -collections' in boolean mode))
 select * from t1 where MATCH(a,b) AGAINST("support  collections" IN BOOLEAN MODE);
 a	b
 MySQL has now support	for full-text search
@@ -130,6 +130,9 @@ a	b
 select * from t1 where MATCH a,b AGAINST ('"Now sUPPort"' IN BOOLEAN MODE);
 a	b
 MySQL has now support	for full-text search
+select * from t1 where MATCH a,b AGAINST ('"now   support"' IN BOOLEAN MODE);
+a	b
+MySQL has now support	for full-text search
 select * from t1 where MATCH a,b AGAINST ('"text search"  "now support"' IN BOOLEAN MODE);
 a	b
 MySQL has now support	for full-text search
@@ -151,8 +154,6 @@ a	b
 select * from t1 where MATCH a,b AGAINST ('+collections -supp* -foobar*' IN BOOLEAN MODE);
 a	b
 Full-text indexes	are called collections
-select * from t1 where MATCH a,b AGAINST ('"xt indexes"' IN BOOLEAN MODE);
-a	b
 select * from t1 where MATCH a,b AGAINST('"space model' IN BOOLEAN MODE);
 a	b
 Full-text search in MySQL	implements vector space model
@@ -220,14 +221,14 @@ select t1.id FROM t2 as ttxt,t1,t1 as ticket2
 WHERE ticket2.id = ttxt.ticket AND t1.id = ticket2.ticket and
 match(ttxt.inhalt) against ('foobar');
 id
-select t1.id FROM t2 as ttxt,t1 INNER JOIN t1 as ticket2 ON
-ticket2.id = ttxt.ticket
-WHERE t1.id = ticket2.ticket and match(ttxt.inhalt) against ('foobar');
+select ticket2.id FROM t2 as ttxt,t2 INNER JOIN t1 as ticket2 ON
+ticket2.id = t2.ticket
+WHERE ticket2.id = ticket2.ticket and match(ttxt.inhalt) against ('foobar');
 id
 INSERT INTO t1 VALUES (3,3);
-select t1.id FROM t2 as ttxt,t1
-INNER JOIN t1 as ticket2 ON ticket2.id = ttxt.ticket
-WHERE t1.id = ticket2.ticket and
+select ticket2.id FROM t2 as ttxt,t2
+INNER JOIN t1 as ticket2 ON ticket2.id = t2.ticket
+WHERE ticket2.id = ticket2.ticket and
 match(ttxt.inhalt) against ('foobar');
 id
 3
@@ -336,8 +337,8 @@ insert into t2 values (1, 1, 'xxfoo');
 insert into t2 values (2, 1, 'xxbar');
 insert into t2 values (3, 1, 'xxbuz');
 select * from t1 join t2 using(`t1_id`) where match (t1.name, t2.name) against('xxfoo' in boolean mode);
-t1_id	name	t2_id	t1_id	name
-1	data1	1	1	xxfoo
+t1_id	name	t2_id	name
+1	data1	1	xxfoo
 select * from t2 where match name against ('*a*b*c*d*e*f*' in boolean mode);
 t2_id	t1_id	name
 drop table t1,t2;
@@ -371,10 +372,10 @@ t	collation(t)	FORMAT(MATCH t AGAINST ('Osnabruck'),6)
 aus Osnabrück	utf8_general_ci	1.591140
 alter table t1 modify t varchar(200) collate latin1_german2_ci not null;
 Warnings:
-Warning	1265	Data truncated for column 't' at row 3
-Warning	1265	Data truncated for column 't' at row 4
-Warning	1265	Data truncated for column 't' at row 5
-Warning	1265	Data truncated for column 't' at row 6
+Warning	1366	Incorrect string value: '\xD0\xAD\xD1\x82\xD0\xBE...' for column 't' at row 3
+Warning	1366	Incorrect string value: '\xD0\x9E\xD1\x82\xD0\xBB...' for column 't' at row 4
+Warning	1366	Incorrect string value: '\xD0\x9D\xD0\xB5 \xD0...' for column 't' at row 5
+Warning	1366	Incorrect string value: '\xD0\xB8 \xD0\xB1\xD1...' for column 't' at row 6
 SELECT t, collation(t) FROM t1 WHERE MATCH t AGAINST ('Osnabrück');
 t	collation(t)
 aus Osnabrück	latin1_german2_ci
@@ -436,14 +437,29 @@ SELECT a FROM t1 WHERE MATCH a AGAINST('testword\'\'' IN BOOLEAN MODE);
 a
 testword''
 DROP TABLE t1;
+CREATE TABLE t1 (a VARCHAR(10000), FULLTEXT(a));
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` varchar(10000) default NULL,
+  FULLTEXT KEY `a` (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+DROP TABLE t1;
 CREATE TABLE t1 (a TEXT, FULLTEXT KEY(a));
 INSERT INTO t1 VALUES('test'),('test1'),('test');
-PREPARE stmt from "SELECT a, MATCH(a) AGAINST('test1 test') FROM t1 WHERE MATCH(a) AGAINST('test1 test')";
+PREPARE stmt from "SELECT a, FORMAT(MATCH(a) AGAINST('test1 test'),6) FROM t1 WHERE MATCH(a) AGAINST('test1 test')";
 EXECUTE stmt;
-a	MATCH(a) AGAINST('test1 test')
-test1	0.68526661396027
+a	FORMAT(MATCH(a) AGAINST('test1 test'),6)
+test1	0.685267
 EXECUTE stmt;
-a	MATCH(a) AGAINST('test1 test')
-test1	0.68526661396027
+a	FORMAT(MATCH(a) AGAINST('test1 test'),6)
+test1	0.685267
 DEALLOCATE PREPARE stmt;
+DROP TABLE t1;
+CREATE TABLE t1 (a VARCHAR(255), FULLTEXT(a));
+SELECT * FROM t1 IGNORE INDEX(a) WHERE MATCH(a) AGAINST('test');
+a
+ALTER TABLE t1 DISABLE KEYS;
+SELECT * FROM t1 WHERE MATCH(a) AGAINST('test');
+ERROR HY000: Can't find FULLTEXT index matching the column list
 DROP TABLE t1;

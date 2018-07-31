@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,11 +23,14 @@
 
 class HugoOperations : public UtilTransactions {
 public:  
-  HugoOperations(const NdbDictionary::Table&);
+  HugoOperations(const NdbDictionary::Table&,
+		 const NdbDictionary::Index* idx = 0);
+
   ~HugoOperations();
   int startTransaction(Ndb*);
+  int setTransaction(NdbTransaction*);
   int closeTransaction(Ndb*);
-  NdbConnection* getTransaction();
+  NdbTransaction* getTransaction();
   void refresh();
 
   void setTransactionId(Uint64);
@@ -42,6 +44,10 @@ public:
 		    int recordNo,
 		    int numRecords = 1,
 		    int updatesValue = 0);
+
+  int pkWritePartialRecord(Ndb*,
+			   int recordNo,
+			   int numRecords = 1);
   
   int pkReadRecord(Ndb*,
 		   int recordNo,
@@ -73,10 +79,13 @@ public:
 		      int attrId, 
 		      int rowId,
 		      int updateId);
+  
   int equalForAttr(NdbOperation*,
 		   int attrId, 
 		   int rowId);
-
+  
+  int setValues(NdbOperation*, int rowId, int updateId);
+  
   int verifyUpdatesValue(int updatesValue, int _numRows = 0);
 
   int indexReadRecords(Ndb*, const char * idxName, int recordNo,
@@ -93,8 +102,11 @@ public:
 		      NdbScanOperation::LM_CommittedRead, 
 		      int numRecords = 1);
 
+  NdbIndexScanOperation* pIndexScanOp;
 
-  int execute_async(Ndb*, ExecType, AbortOption = AbortOnError);
+  NDBT_ResultRow& get_row(Uint32 idx) { return *rows[idx];}
+
+  int execute_async(Ndb*, NdbTransaction::ExecType, NdbTransaction::AbortOption = NdbTransaction::AbortOnError);
   int wait_async(Ndb*, int timeout = -1);
 
 protected:
@@ -106,16 +118,14 @@ protected:
 
   Vector<BaseString> savedRecords;
 
-  struct RsPair { NdbResultSet* m_result_set; int records; };
+  struct RsPair { NdbScanOperation* m_result_set; int records; };
   Vector<RsPair> m_result_sets;
   Vector<RsPair> m_executed_result_sets;
 
-  NdbConnection* pTrans;
-
   int m_async_reply;
   int m_async_return;
-  friend void HugoOperations_async_callback(int, NdbConnection*, void*);
-  void callback(int res, NdbConnection*);
+  friend void HugoOperations_async_callback(int, NdbTransaction*, void*);
+  void callback(int res, NdbTransaction*);
 };
 
 #endif

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -136,6 +135,8 @@ ParserRow<CPCDAPISession> commands[] =
     CPCD_ARG("id", Int, Mandatory, "Id of process"),
   
   CPCD_CMD("list processes", &CPCDAPISession::listProcesses, ""),
+
+  CPCD_CMD("show version", &CPCDAPISession::showVersion, ""),
   
   CPCD_END()
 };
@@ -359,6 +360,7 @@ CPCDAPISession::listProcesses(Parser_t::Context & /* unused */,
     m_output->println("stdout: %s", p->m_stdout.c_str());
     m_output->println("stderr: %s", p->m_stderr.c_str());    
     m_output->println("ulimit: %s", p->m_ulimit.c_str());    
+    m_output->println("shutdown: %s", p->m_shutdown_options.c_str());    
     switch(p->m_status){
     case STOPPED:
       m_output->println("status: stopped");
@@ -382,6 +384,17 @@ CPCDAPISession::listProcesses(Parser_t::Context & /* unused */,
   m_output->println("");
 
   m_cpcd.m_processes.unlock();
+}
+
+void
+CPCDAPISession::showVersion(Parser_t::Context & /* unused */,
+                            const class Properties & args){
+  CPCD::RequestStatus rs;
+
+  m_output->println("show version");
+  m_output->println("compile time: %s %s", __DATE__, __TIME__);
+
+  m_output->println("");
 }
 
 template class Vector<ParserRow<CPCDAPISession> const*>;

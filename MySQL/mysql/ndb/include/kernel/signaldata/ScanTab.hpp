@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,8 +32,9 @@ class ScanTabReq {
   /**
    * Sender(s)
    */
-  friend class NdbConnection;
-  friend class NdbScanOperation; 
+  friend class NdbTransaction;
+  friend class NdbScanOperation;
+  friend class NdbIndexScanOperation;
 
   /**
    * For printing
@@ -65,7 +65,12 @@ private:
   UintR buddyConPtr;          // DATA 8
   UintR batch_byte_size;      // DATA 9
   UintR first_batch_size;     // DATA 10
-  
+
+  /**
+   * Optional
+   */
+  Uint32 distributionKey;
+
   /**
    * Get:ers for requestInfo
    */
@@ -74,8 +79,11 @@ private:
   static Uint8 getHoldLockFlag(const UintR & requestInfo);
   static Uint8 getReadCommittedFlag(const UintR & requestInfo);
   static Uint8 getRangeScanFlag(const UintR & requestInfo);
+  static Uint8 getDescendingFlag(const UintR & requestInfo);
+  static Uint8 getTupScanFlag(const UintR & requestInfo);
   static Uint8 getKeyinfoFlag(const UintR & requestInfo);
   static Uint16 getScanBatch(const UintR & requestInfo);
+  static Uint8 getDistributionKeyFlag(const UintR & requestInfo);
 
   /**
    * Set:ers for requestInfo
@@ -86,8 +94,11 @@ private:
   static void setHoldLockFlag(UintR & requestInfo, Uint32 flag);
   static void setReadCommittedFlag(UintR & requestInfo, Uint32 flag);
   static void setRangeScanFlag(UintR & requestInfo, Uint32 flag);
+  static void setDescendingFlag(UintR & requestInfo, Uint32 flag);
+  static void setTupScanFlag(UintR & requestInfo, Uint32 flag);
   static void setKeyinfoFlag(UintR & requestInfo, Uint32 flag);
   static void setScanBatch(Uint32& requestInfo, Uint32 sz);
+  static void setDistributionKeyFlag(Uint32& requestInfo, Uint32 flag);
 };
 
 /**
@@ -98,16 +109,19 @@ private:
  h = Hold lock mode        - 1  Bit 10
  c = Read Committed        - 1  Bit 11
  k = Keyinfo               - 1  Bit 12
+ t = Tup scan              - 1  Bit 13
+ z = Descending (TUX)      - 1  Bit 14
  x = Range Scan (TUX)      - 1  Bit 15
  b = Scan batch            - 10 Bit 16-25 (max 1023)
+ d = Distribution key flag - 1  Bit 26
 
            1111111111222222222233
  01234567890123456789012345678901
- ppppppppl hck  xbbbbbbbbbb
+ ppppppppl hcktzxbbbbbbbbbbd
 */
 
-#define PARALLELL_SHIFT     (0)
-#define PARALLELL_MASK      (255)
+#define PARALLEL_SHIFT     (0)
+#define PARALLEL_MASK      (255)
 
 #define LOCK_MODE_SHIFT     (8)
 #define LOCK_MODE_MASK      (1)
@@ -124,13 +138,22 @@ private:
 #define RANGE_SCAN_SHIFT        (15)
 #define RANGE_SCAN_MASK         (1)
 
+#define DESCENDING_SHIFT        (14)
+#define DESCENDING_MASK         (1)
+
+#define TUP_SCAN_SHIFT          (13)
+#define TUP_SCAN_MASK           (1)
+
 #define SCAN_BATCH_SHIFT (16)
 #define SCAN_BATCH_MASK  (1023)
+
+#define SCAN_DISTR_KEY_SHIFT (26)
+#define SCAN_DISTR_KEY_MASK (1)
 
 inline
 Uint8
 ScanTabReq::getParallelism(const UintR & requestInfo){
-  return (Uint8)((requestInfo >> PARALLELL_SHIFT) & PARALLELL_MASK);
+  return (Uint8)((requestInfo >> PARALLEL_SHIFT) & PARALLEL_MASK);
 }
 
 inline
@@ -158,6 +181,18 @@ ScanTabReq::getRangeScanFlag(const UintR & requestInfo){
 }
 
 inline
+Uint8
+ScanTabReq::getDescendingFlag(const UintR & requestInfo){
+  return (Uint8)((requestInfo >> DESCENDING_SHIFT) & DESCENDING_MASK);
+}
+
+inline
+Uint8
+ScanTabReq::getTupScanFlag(const UintR & requestInfo){
+  return (Uint8)((requestInfo >> TUP_SCAN_SHIFT) & TUP_SCAN_MASK);
+}
+
+inline
 Uint16
 ScanTabReq::getScanBatch(const Uint32 & requestInfo){
   return (Uint16)((requestInfo >> SCAN_BATCH_SHIFT) & SCAN_BATCH_MASK);
@@ -172,44 +207,65 @@ ScanTabReq::clearRequestInfo(UintR & requestInfo){
 inline
 void 
 ScanTabReq::setParallelism(UintR & requestInfo, Uint32 type){
-  ASSERT_MAX(type, PARALLELL_MASK, "ScanTabReq::setParallellism");
-  requestInfo |= (type << PARALLELL_SHIFT);
+  ASSERT_MAX(type, PARALLEL_MASK, "ScanTabReq::setParallelism");
+  requestInfo= (requestInfo & ~(PARALLEL_MASK << PARALLEL_SHIFT)) |
+               ((type & PARALLEL_MASK) << PARALLEL_SHIFT);
 }
 
 inline
 void 
 ScanTabReq::setLockMode(UintR & requestInfo, Uint32 mode){
   ASSERT_MAX(mode, LOCK_MODE_MASK,  "ScanTabReq::setLockMode");
-  requestInfo |= (mode << LOCK_MODE_SHIFT);
+  requestInfo= (requestInfo & ~(LOCK_MODE_MASK << LOCK_MODE_SHIFT)) |
+               ((mode & LOCK_MODE_MASK) << LOCK_MODE_SHIFT);
 }
 
 inline
 void 
 ScanTabReq::setHoldLockFlag(UintR & requestInfo, Uint32 flag){
   ASSERT_BOOL(flag, "ScanTabReq::setHoldLockFlag");
-  requestInfo |= (flag << HOLD_LOCK_SHIFT);
+  requestInfo= (requestInfo & ~(HOLD_LOCK_MASK << HOLD_LOCK_SHIFT)) |
+               ((flag & HOLD_LOCK_MASK) << HOLD_LOCK_SHIFT);
 }
 
 inline
 void 
 ScanTabReq::setReadCommittedFlag(UintR & requestInfo, Uint32 flag){
   ASSERT_BOOL(flag, "ScanTabReq::setReadCommittedFlag");
-  requestInfo |= (flag << READ_COMMITTED_SHIFT);
+  requestInfo= (requestInfo & ~(READ_COMMITTED_MASK << READ_COMMITTED_SHIFT)) |
+               ((flag & READ_COMMITTED_MASK) << READ_COMMITTED_SHIFT);
 }
 
 inline
 void 
 ScanTabReq::setRangeScanFlag(UintR & requestInfo, Uint32 flag){
   ASSERT_BOOL(flag, "ScanTabReq::setRangeScanFlag");
-  requestInfo |= (flag << RANGE_SCAN_SHIFT);
+  requestInfo= (requestInfo & ~(RANGE_SCAN_MASK << RANGE_SCAN_SHIFT)) |
+               ((flag & RANGE_SCAN_MASK) << RANGE_SCAN_SHIFT);
+}
+
+inline
+void 
+ScanTabReq::setDescendingFlag(UintR & requestInfo, Uint32 flag){
+  ASSERT_BOOL(flag, "ScanTabReq::setDescendingFlag");
+  requestInfo= (requestInfo & ~(DESCENDING_MASK << DESCENDING_SHIFT)) |
+               ((flag & DESCENDING_MASK) << DESCENDING_SHIFT);
+}
+
+inline
+void 
+ScanTabReq::setTupScanFlag(UintR & requestInfo, Uint32 flag){
+  ASSERT_BOOL(flag, "ScanTabReq::setTupScanFlag");
+  requestInfo= (requestInfo & ~(TUP_SCAN_MASK << TUP_SCAN_SHIFT)) |
+               ((flag & TUP_SCAN_MASK) << TUP_SCAN_SHIFT);
 }
 
 inline
 void
 ScanTabReq::setScanBatch(Uint32 & requestInfo, Uint32 flag){
   ASSERT_MAX(flag, SCAN_BATCH_MASK,  "ScanTabReq::setScanBatch");
-  requestInfo &= ~(SCAN_BATCH_MASK << SCAN_BATCH_SHIFT);
-  requestInfo |= (flag << SCAN_BATCH_SHIFT);
+  requestInfo= (requestInfo & ~(SCAN_BATCH_MASK << SCAN_BATCH_SHIFT)) |
+               ((flag & SCAN_BATCH_MASK) << SCAN_BATCH_SHIFT);
 }
 
 inline
@@ -222,9 +278,23 @@ inline
 void 
 ScanTabReq::setKeyinfoFlag(UintR & requestInfo, Uint32 flag){
   ASSERT_BOOL(flag, "ScanTabReq::setKeyinfoFlag");
-  requestInfo |= (flag << KEYINFO_SHIFT);
+  requestInfo= (requestInfo & ~(KEYINFO_MASK << KEYINFO_SHIFT)) |
+               ((flag & KEYINFO_MASK) << KEYINFO_SHIFT);
 }
 
+inline
+Uint8
+ScanTabReq::getDistributionKeyFlag(const UintR & requestInfo){
+  return (Uint8)((requestInfo >> SCAN_DISTR_KEY_SHIFT) & 1);
+}
+
+inline
+void 
+ScanTabReq::setDistributionKeyFlag(UintR & requestInfo, Uint32 flag){
+  ASSERT_BOOL(flag, "ScanTabReq::setKeyinfoFlag");
+  requestInfo= (requestInfo & ~(SCAN_DISTR_KEY_MASK << SCAN_DISTR_KEY_SHIFT)) |
+               ((flag & SCAN_DISTR_KEY_MASK) << SCAN_DISTR_KEY_SHIFT);
+}
 
 /**
  * 
@@ -235,7 +305,7 @@ class ScanTabConf {
   /**
    * Reciver(s) 
    */
-  friend class NdbConnection;         // Reciver
+  friend class NdbTransaction;         // Reciver
 
   /**
    * Sender(s)
@@ -303,7 +373,7 @@ class ScanTabRef {
   /**
    * Reciver(s)
    */
-  friend class NdbConnection;         // Reciver
+  friend class NdbTransaction;         // Reciver
 
   /**
    * Sender(s)

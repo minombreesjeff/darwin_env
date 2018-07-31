@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,6 +15,8 @@
 
 #ifndef CARRAY_HPP
 #define CARRAY_HPP
+
+#include "ndbd_malloc.hpp"
 
 /**
  * Template class used for implementing an c - array
@@ -31,7 +32,7 @@ public:
    *
    * Note, can currently only be called once
    */
-  bool setSize(Uint32 noOfElements);
+  bool setSize(Uint32 noOfElements, bool exit_on_error = true);
 
   /**
    * Get size
@@ -69,7 +70,7 @@ template <class T>
 inline
 CArray<T>::~CArray(){
   if(theArray != 0){
-    NdbMem_Free(theArray);
+    ndbd_free(theArray, size * sizeof(T));
     theArray = 0;
   }
 }
@@ -82,13 +83,19 @@ CArray<T>::~CArray(){
 template <class T>
 inline
 bool
-CArray<T>::setSize(Uint32 noOfElements){
+CArray<T>::setSize(Uint32 noOfElements, bool exit_on_error){
   if(size == noOfElements)
     return true;
   
-  theArray = (T *)NdbMem_Allocate(noOfElements * sizeof(T));
+  theArray = (T *)ndbd_malloc(noOfElements * sizeof(T));
   if(theArray == 0)
-    return false;
+  {
+    if (!exit_on_error)
+      return false;
+    ErrorReporter::handleAssert("CArray<T>::setSize malloc failed",
+				__FILE__, __LINE__, NDBD_EXIT_MEMALLOC);
+    return false; // not reached
+  }
   size = noOfElements;
   return true;
 }

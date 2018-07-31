@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,11 +74,11 @@ static int run_test(const char *filename)
   recinfo[1].length= (key_field == FIELD_BLOB ? 4+mi_portable_sizeof_char_ptr :
 		      key_length);
   if (key_field == FIELD_VARCHAR)
-    recinfo[1].length+=2;
+    recinfo[1].length+= HA_VARCHAR_PACKLENGTH(key_length);;
   recinfo[2].type=extra_field;
   recinfo[2].length= (extra_field == FIELD_BLOB ? 4 + mi_portable_sizeof_char_ptr : 24);
   if (extra_field == FIELD_VARCHAR)
-    recinfo[2].length+=2;
+    recinfo[2].length+= HA_VARCHAR_PACKLENGTH(recinfo[2].length);
   if (opt_unique)
   {
     recinfo[3].type=FIELD_CHECK;
@@ -88,6 +87,9 @@ static int run_test(const char *filename)
   rec_length=recinfo[0].length+recinfo[1].length+recinfo[2].length+
     recinfo[3].length;
 
+  if (key_type == HA_KEYTYPE_VARTEXT1 &&
+      key_length > 255)
+    key_type= HA_KEYTYPE_VARTEXT2;
 
   /* Define a key over the first column */
   keyinfo[0].seg=keyseg;
@@ -134,7 +136,7 @@ static int run_test(const char *filename)
       uniqueseg[1].flag|= HA_BLOB_PART;
     }
     else if (extra_field == FIELD_VARCHAR)
-      uniqueseg[1].flag|= HA_VAR_LENGTH;
+      uniqueseg[1].flag|= HA_VAR_LENGTH_PART;
   }
   else
     uniques=0;
@@ -234,7 +236,7 @@ static int run_test(const char *filename)
       pos=HA_OFFSET_ERROR;
     }
     if (found != row_count)
-      printf("Found %ld of %ld rows\n", found,row_count);
+      printf("Found %ld of %ld rows\n", (ulong) found, (ulong) row_count);
   }
 
   if (!silent)
@@ -300,7 +302,8 @@ static int run_test(const char *filename)
     if ((error=mi_rrnd(file,read_record,i == 1 ? 0L : HA_OFFSET_ERROR)) == -1)
     {
       if (found != row_count-deleted)
-	printf("Found only %ld of %ld rows\n",found,row_count-deleted);
+	printf("Found only %ld of %ld rows\n", (ulong) found,
+	       (ulong) (row_count - deleted));
       break;
     }
     if (!error)
@@ -330,7 +333,8 @@ static void create_key_part(char *key,uint rownr)
   {
     sprintf(key,"%*d",keyinfo[0].seg[0].length,rownr);
   }
-  else if (keyinfo[0].seg[0].type == HA_KEYTYPE_VARTEXT)
+  else if (keyinfo[0].seg[0].type == HA_KEYTYPE_VARTEXT1 ||
+           keyinfo[0].seg[0].type == HA_KEYTYPE_VARTEXT2)
   {						/* Alpha record */
     /* Create a key that may be easily packed */
     bfill(key,keyinfo[0].seg[0].length,rownr < 10 ? 'A' : 'B');
@@ -372,7 +376,7 @@ static void create_key(char *key,uint rownr)
     }
     *key++=0;
   }
-  if (keyinfo[0].seg[0].flag & (HA_BLOB_PART | HA_VAR_LENGTH))
+  if (keyinfo[0].seg[0].flag & (HA_BLOB_PART | HA_VAR_LENGTH_PART))
   {
     uint tmp;
     create_key_part(key+2,rownr);
@@ -410,11 +414,14 @@ static void create_record(char *record,uint rownr)
   }
   else if (recinfo[1].type == FIELD_VARCHAR)
   {
-    uint tmp;
-    create_key_part(pos+2,rownr);
-    tmp=strlen(pos+2);
-    int2store(pos,tmp);
-    pos+=recinfo[1].length;
+    uint tmp, pack_length= HA_VARCHAR_PACKLENGTH(recinfo[1].length-1);
+    create_key_part(pos+pack_length,rownr);
+    tmp= strlen(pos+pack_length);
+    if (pack_length == 1)
+      *(uchar*) pos= (uchar) tmp;
+    else
+      int2store(pos,tmp);
+    pos+= recinfo[1].length;
   }
   else
   {
@@ -434,10 +441,13 @@ static void create_record(char *record,uint rownr)
   }
   else if (recinfo[2].type == FIELD_VARCHAR)
   {
-    uint tmp;
-    sprintf(pos+2,"... row: %d", rownr);
-    tmp=strlen(pos+2);
-    int2store(pos,tmp);
+    uint tmp, pack_length= HA_VARCHAR_PACKLENGTH(recinfo[1].length-1);
+    sprintf(pos+pack_length, "... row: %d", rownr);
+    tmp= strlen(pos+pack_length);
+    if (pack_length == 1)
+      *(uchar*) pos= (uchar) tmp;
+    else
+      int2store(pos,tmp);
   }
   else
   {
@@ -461,19 +471,25 @@ static void update_record(char *record)
     ptr=blob_key;
     memcpy_fixed(pos+4,&ptr,sizeof(char*));	/* Store pointer to new key */
     if (keyinfo[0].seg[0].type != HA_KEYTYPE_NUM)
-      my_casedn(default_charset_info,blob_key,length);
+      default_charset_info->cset->casedn(default_charset_info,
+                                         blob_key, length, blob_key, length);
     pos+=recinfo[1].length;
   }
   else if (recinfo[1].type == FIELD_VARCHAR)
   {
-    uint length=uint2korr(pos);
-    my_casedn(default_charset_info,pos+2,length);
+    uint pack_length= HA_VARCHAR_PACKLENGTH(recinfo[1].length-1);
+    uint length= pack_length == 1 ? (uint) *(uchar*) pos : uint2korr(pos);
+    default_charset_info->cset->casedn(default_charset_info,
+                                       pos + pack_length, length,
+                                       pos + pack_length, length);
     pos+=recinfo[1].length;
   }
   else
   {
     if (keyinfo[0].seg[0].type != HA_KEYTYPE_NUM)
-      my_casedn(default_charset_info,pos,keyinfo[0].seg[0].length);
+      default_charset_info->cset->casedn(default_charset_info,
+                                         pos, keyinfo[0].seg[0].length,
+                                         pos, keyinfo[0].seg[0].length);
     pos+=recinfo[1].length;
   }
 
@@ -493,10 +509,14 @@ static void update_record(char *record)
   else if (recinfo[2].type == FIELD_VARCHAR)
   {
     /* Second field is longer than 10 characters */
-    uint length=uint2korr(pos);
-    bfill(pos+2+length,recinfo[2].length-length-2,'.');
-    length=recinfo[2].length-2;
-    int2store(pos,length);
+    uint pack_length= HA_VARCHAR_PACKLENGTH(recinfo[1].length-1);
+    uint length= pack_length == 1 ? (uint) *(uchar*) pos : uint2korr(pos);
+    bfill(pos+pack_length+length,recinfo[2].length-length-pack_length,'.');
+    length=recinfo[2].length-pack_length;
+    if (pack_length == 1)
+      *(uchar*) pos= (uchar) length;
+    else
+      int2store(pos,length);
   }
   else
   {
@@ -519,12 +539,12 @@ static struct my_option my_long_options[] =
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"insert_rows", 'i', "Undocumented", (gptr*) &insert_count,
    (gptr*) &insert_count, 0, GET_UINT, REQUIRED_ARG, 1000, 0, 0, 0, 0, 0},
-  {"key_alpha", 'a', "Undocumented",
+  {"key_alpha", 'a', "Use a key of type HA_KEYTYPE_TEXT",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"key_binary_pack", 'B', "Undocumented",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"key_blob", 'b', "Undocumented",
-   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"key_cache", 'K', "Undocumented", (gptr*) &key_cacheing,
    (gptr*) &key_cacheing, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"key_length", 'k', "Undocumented", (gptr*) &key_length, (gptr*) &key_length,
@@ -535,9 +555,9 @@ static struct my_option my_long_options[] =
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"key_space_pack", 'p', "Undocumented",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"key_varchar", 'w', "Undocumented",
+  {"key_varchar", 'w', "Test VARCHAR keys",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"null_fields", 'N', "Undocumented",
+  {"null_fields", 'N', "Define fields with NULL",
    (gptr*) &null_fields, (gptr*) &null_fields, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
   {"row_fixed_size", 'S', "Undocumented",
@@ -562,7 +582,7 @@ static struct my_option my_long_options[] =
 
 static my_bool
 get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
+	       char *argument __attribute__((unused)))
 {
   switch(optid) {
   case 'a':
@@ -604,7 +624,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     key_field=FIELD_BLOB;			/* blob key */
     extra_field= FIELD_BLOB;
     pack_seg|= HA_BLOB_PART;
-    key_type= HA_KEYTYPE_VARTEXT;
+    key_type= HA_KEYTYPE_VARTEXT1;
     break;
   case 'k':
     if (key_length < 4 || key_length > MI_MAX_KEY_LENGTH)
@@ -616,11 +636,11 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   case 'w':
     key_field=FIELD_VARCHAR;			/* varchar keys */
     extra_field= FIELD_VARCHAR;
-    key_type= HA_KEYTYPE_VARTEXT;
-    pack_seg|= HA_VAR_LENGTH;
+    key_type= HA_KEYTYPE_VARTEXT1;
+    pack_seg|= HA_VAR_LENGTH_PART;
     create_flag|= HA_PACK_RECORD;
     break;
-  case 'K':				/* Use key cacheing */
+  case 'K':                                     /* Use key cacheing */
     key_cacheing=1;
     break;
   case 'V':

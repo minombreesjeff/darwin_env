@@ -12,7 +12,8 @@ Created 1/16/1996 Heikki Tuuri
 #include "univ.i"
 
 extern ulint	data_mysql_default_charset_coll;
-extern ulint	data_mysql_latin1_swedish_charset_coll;
+#define DATA_MYSQL_LATIN1_SWEDISH_CHARSET_COLL 8
+#define DATA_MYSQL_BINARY_CHARSET_COLL 63
 
 /* SQL data type struct */
 typedef struct dtype_struct		dtype_t;
@@ -24,7 +25,11 @@ extern dtype_t* 	dtype_binary;
 /*-------------------------------------------*/
 /* The 'MAIN TYPE' of a column */
 #define	DATA_VARCHAR	1	/* character varying of the
-				latin1_swedish_ci charset-collation */
+				latin1_swedish_ci charset-collation; note
+				that the MySQL format for this, DATA_BINARY,
+				DATA_VARMYSQL, is also affected by whether the
+				'precise type' contains
+				DATA_MYSQL_TRUE_VARCHAR */
 #define DATA_CHAR	2	/* fixed length character of the
 				latin1_swedish_ci charset-collation */
 #define DATA_FIXBINARY	3	/* binary string of fixed length */
@@ -32,7 +37,9 @@ extern dtype_t* 	dtype_binary;
 #define DATA_BLOB	5	/* binary large object, or a TEXT type;
 				if prtype & DATA_BINARY_TYPE == 0, then this is
 				actually a TEXT column (or a BLOB created
-				with < 4.0.14) */
+				with < 4.0.14; since column prefix indexes
+				came only in 4.0.14, the missing flag in BLOBs
+				created before that does not cause any harm) */
 #define	DATA_INT	6	/* integer: can be any size 1 - 8 bytes */
 #define	DATA_SYS_CHILD	7	/* address of the child page in node pointer */
 #define	DATA_SYS	8	/* system column */
@@ -102,6 +109,8 @@ columns, and for them the precise type is usually not used at all.
 
 #define DATA_MYSQL_TYPE_MASK 255 /* AND with this mask to extract the MySQL
 				 type from the precise type */
+#define DATA_MYSQL_TRUE_VARCHAR 15 /* MySQL type code for the >= 5.0.3
+				   format true VARCHAR */
 
 /* Precise data types for system columns and the length of those columns;
 NOTE: the values must run from 0 up in the order given! All codes must
@@ -134,6 +143,10 @@ be less than 256 */
 				In earlier versions this was set for some
 				BLOB columns.
 */
+#define	DATA_LONG_TRUE_VARCHAR 4096	/* this is ORed to the precise data
+				type when the column is true VARCHAR where
+				MySQL uses 2 bytes to store the data len;
+				for shorter VARCHARs MySQL uses only 1 byte */
 /*-------------------------------------------*/
 
 /* This many bytes we need to store the type information affecting the
@@ -145,28 +158,31 @@ store the charset-collation number; one byte is left unused, though */
 #define DATA_NEW_ORDER_NULL_TYPE_BUF_SIZE	6
 
 /*************************************************************************
-Checks if a string type has to be compared by the MySQL comparison functions.
-InnoDB internally only handles binary byte string comparisons, as well as
-latin1_swedish_ci strings. For example, UTF-8 strings have to be compared
-by MySQL. */
-
-ibool
-dtype_str_needs_mysql_cmp(
-/*======================*/
-				/* out: TRUE if a string type that requires
-				comparison with MySQL functions */
-	dtype_t*	dtype);	/* in: type struct */
+Gets the MySQL type code from a dtype. */
+UNIV_INLINE
+ulint
+dtype_get_mysql_type(
+/*=================*/
+				/* out: MySQL type code; this is NOT an InnoDB
+				type code! */
+	dtype_t*	type);	/* in: type struct */
 /*************************************************************************
-For the documentation of this function, see innobase_get_at_most_n_mbchars()
-in ha_innodb.cc. */
+Determine how many bytes the first n characters of the given string occupy.
+If the string is shorter than n characters, returns the number of bytes
+the characters in the string occupy. */
 
 ulint
 dtype_get_at_most_n_mbchars(
 /*========================*/
-	dtype_t*	dtype,
-	ulint		prefix_len,
-	ulint		data_len,
-	const char*	str);
+					/* out: length of the prefix,
+					in bytes */
+	const dtype_t*	dtype,		/* in: data type */
+	ulint		prefix_len,	/* in: length of the requested
+					prefix, in characters, multiplied by
+					dtype_get_mbmaxlen(dtype) */
+	ulint		data_len,	/* in: length of str (in bytes) */
+	const char*	str);		/* in: the string whose prefix
+					length is being determined */
 /*************************************************************************
 Checks if a data main type is a string type. Also a BLOB is considered a
 string type. */
@@ -271,6 +287,24 @@ dtype_get_prec(
 /*===========*/
 	dtype_t*	type);
 /*************************************************************************
+Gets the minimum length of a character, in bytes. */
+UNIV_INLINE
+ulint
+dtype_get_mbminlen(
+/*===============*/
+				/* out: minimum length of a char, in bytes,
+				or 0 if this is not a character type */
+	const dtype_t*	type);	/* in: type */
+/*************************************************************************
+Gets the maximum length of a character, in bytes. */
+UNIV_INLINE
+ulint
+dtype_get_mbmaxlen(
+/*===============*/
+				/* out: maximum length of a char, in bytes,
+				or 0 if this is not a character type */
+	const dtype_t*	type);	/* in: type */
+/*************************************************************************
 Gets the padding character code for the type. */
 UNIV_INLINE
 ulint
@@ -278,7 +312,7 @@ dtype_get_pad_char(
 /*===============*/
 				/* out: padding character code, or
 				ULINT_UNDEFINED if no padding specified */
-	dtype_t*	type);	/* in: type */
+	const dtype_t*	type);	/* in: type */
 /***************************************************************************
 Returns the size of a fixed size data type, 0 if not a fixed size type. */
 UNIV_INLINE
@@ -287,6 +321,14 @@ dtype_get_fixed_size(
 /*=================*/
 				/* out: fixed size, or 0 */
 	dtype_t*	type);	/* in: type */
+/***************************************************************************
+Returns the minimum size of a data type. */
+UNIV_INLINE
+ulint
+dtype_get_min_size(
+/*===============*/
+				/* out: minimum size */
+	const dtype_t*	type);	/* in: type */
 /***************************************************************************
 Returns a stored SQL NULL size for a type. For fixed length types it is
 the fixed length of the type, otherwise 0. */
@@ -324,7 +366,9 @@ dtype_new_store_for_order_and_null_size(
 	byte*		buf,	/* in: buffer for
 				DATA_NEW_ORDER_NULL_TYPE_BUF_SIZE
 				bytes where we store the info */
-	dtype_t*	type);	/* in: type struct */
+	dtype_t*	type,	/* in: type struct */
+	ulint		prefix_len);/* in: prefix length to
+				replace type->len, or 0 */
 /**************************************************************************
 Reads to a type the stored information which determines its alphabetical
 ordering and the storage size of an SQL NULL value. This is the 4.1.x storage
@@ -352,16 +396,34 @@ dtype_print(
 /*========*/
 	dtype_t*	type);	/* in: type */
 
-/* Structure for an SQL data type */
+/* Structure for an SQL data type.
+If you add fields to this structure, be sure to initialize them everywhere.
+This structure is initialized in the following functions:
+dtype_set()
+dtype_read_for_order_and_null_size()
+dtype_new_read_for_order_and_null_size()
+sym_tab_add_null_lit() */
 
 struct dtype_struct{
 	ulint	mtype;		/* main data type */
-	ulint	prtype;		/* precise type; MySQL data type */
+	ulint	prtype;		/* precise type; MySQL data type, charset code,
+				flags to indicate nullability, signedness,
+				whether this is a binary string, whether this
+				is a true VARCHAR where MySQL uses 2 bytes to
+				store the length */
 
-	/* the remaining two fields do not affect alphabetical ordering: */
+	/* the remaining fields do not affect alphabetical ordering: */
 
-	ulint	len;		/* length */
+	ulint	len;		/* length; for MySQL data this is
+				field->pack_length(), except that for a
+				>= 5.0.3 type true VARCHAR this is the
+				maximum byte length of the string data
+				(in addition to the string, MySQL uses 1 or
+				2 bytes to store the string length) */
 	ulint	prec;		/* precision */
+
+	ulint	mbminlen;	/* minimum length of a character, in bytes */
+	ulint	mbmaxlen;	/* maximum length of a character, in bytes */
 };
 
 #ifndef UNIV_NONINL

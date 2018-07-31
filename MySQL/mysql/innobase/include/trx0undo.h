@@ -14,6 +14,7 @@ Created 3/26/1996 Heikki Tuuri
 #include "mtr0mtr.h"
 #include "trx0sys.h"
 #include "page0types.h"
+#include "trx0xa.h"
 
 /***************************************************************************
 Builds a roll pointer dulint. */
@@ -36,7 +37,7 @@ trx_undo_decode_roll_ptr(
 	ibool*	is_insert,	/* out: TRUE if insert undo log */
 	ulint*	rseg_id,	/* out: rollback segment id */
 	ulint*	page_no,	/* out: page number */
-	ulint*	offset);		/* out: offset of the undo entry within page */
+	ulint*	offset);	/* out: offset of the undo entry within page */
 /***************************************************************************
 Returns TRUE if the roll pointer is of the insert type. */
 UNIV_INLINE
@@ -239,6 +240,18 @@ trx_undo_set_state_at_finish(
 	trx_t*		trx,	/* in: transaction */
 	trx_undo_t*	undo,	/* in: undo log memory copy */
 	mtr_t*		mtr);	/* in: mtr */
+/**********************************************************************
+Sets the state of the undo log segment at a transaction prepare. */
+
+page_t*
+trx_undo_set_state_at_prepare(
+/*==========================*/
+				/* out: undo log segment header page,
+				x-latched */
+	trx_t*		trx,	/* in: transaction */
+	trx_undo_t*	undo,	/* in: undo log memory copy */
+	mtr_t*		mtr);	/* in: mtr */
+
 /**************************************************************************
 Adds the update undo log header as the first in the history list, and
 frees the memory object, or puts it to the list of cached update undo log
@@ -295,7 +308,6 @@ trx_undo_parse_discard_latest(
 	page_t*	page,	/* in: page or NULL */
 	mtr_t*	mtr);	/* in: mtr or NULL */
 
-
 /* Types of an undo log segment */
 #define	TRX_UNDO_INSERT		1	/* contains undo entries for inserts */
 #define	TRX_UNDO_UPDATE		2	/* contains undo entries for updates
@@ -310,6 +322,8 @@ trx_undo_parse_discard_latest(
 #define	TRX_UNDO_TO_PURGE	4	/* update undo segment will not be
 					reused: it can be freed in purge when
 					all undo data in it is removed */
+#define	TRX_UNDO_PREPARED	5	/* contains an undo log of an 
+					prepared transaction */
 
 /* Transaction undo log memory object; this is protected by the undo_mutex
 in the corresponding transaction object */
@@ -332,6 +346,8 @@ struct trx_undo_struct{
 					field */
 	dulint		trx_id;		/* id of the trx assigned to the undo
 					log */
+	XID             xid;		/* X/Open XA transaction 
+					identification */
 	ibool		dict_operation;	/* TRUE if a dict operation trx */
 	dulint		table_id;	/* if a dict operation, then the table
 					id */
@@ -386,7 +402,8 @@ struct trx_undo_struct{
 #define TRX_UNDO_PAGE_HDR_SIZE	(6 + FLST_NODE_SIZE)
 
 /* An update undo segment with just one page can be reused if it has
-< this number bytes used */
+< this number bytes used; we must leave space at least for one new undo
+log header on the page */
 
 #define TRX_UNDO_PAGE_REUSE_LIMIT	(3 * UNIV_PAGE_SIZE / 4)
 
@@ -436,7 +453,10 @@ page of an update undo log segment. */
 					log start, and therefore this is not
 					necessarily the same as this log
 					header end offset */
-#define	TRX_UNDO_DICT_OPERATION	20	/* TRUE if the transaction is a table
+#define	TRX_UNDO_XID_EXISTS	20	/* TRUE if undo log header includes
+					X/Open XA transaction identification
+					XID */
+#define	TRX_UNDO_DICT_TRANS	21	/* TRUE if the transaction is a table
 					create, index create, or drop
 					transaction: in recovery
 					the transaction cannot be rolled back
@@ -452,7 +472,25 @@ page of an update undo log segment. */
 #define TRX_UNDO_HISTORY_NODE	34	/* If the log is put to the history
 					list, the file list node is here */
 /*-------------------------------------------------------------*/
-#define TRX_UNDO_LOG_HDR_SIZE	(34 + FLST_NODE_SIZE)
+#define TRX_UNDO_LOG_OLD_HDR_SIZE (34 + FLST_NODE_SIZE)
+
+/* Note: the writing of the undo log old header is coded by a log record
+MLOG_UNDO_HDR_CREATE or MLOG_UNDO_HDR_REUSE. The appending of an XID to the
+header is logged separately. In this sense, the XID is not really a member
+of the undo log header. TODO: do not append the XID to the log header if XA
+is not needed by the user. The XID wastes about 150 bytes of space in every
+undo log. In the history list we may have millions of undo logs, which means
+quite a large overhead. */
+
+/* X/Open XA Transaction Identification (XID)                  */
+
+#define	TRX_UNDO_XA_FORMAT	(TRX_UNDO_LOG_OLD_HDR_SIZE)
+#define	TRX_UNDO_XA_TRID_LEN	(TRX_UNDO_XA_FORMAT + 4)
+#define	TRX_UNDO_XA_BQUAL_LEN	(TRX_UNDO_XA_TRID_LEN + 4)
+#define	TRX_UNDO_XA_XID		(TRX_UNDO_XA_BQUAL_LEN + 4)
+/*--------------------------------------------------------------*/
+#define TRX_UNDO_LOG_XA_HDR_SIZE (TRX_UNDO_XA_XID + XIDDATASIZE)
+				/* Total size of the header with the XA XID */
 
 #ifndef UNIV_NONINL
 #include "trx0undo.ic"

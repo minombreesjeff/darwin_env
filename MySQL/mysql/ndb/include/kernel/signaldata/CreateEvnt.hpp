@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,6 +16,7 @@
 #ifndef CREATE_EVNT_HPP
 #define CREATE_EVNT_HPP
 
+#include <ndberror.h>
 #include "SignalData.hpp"
 #include <NodeBitmask.hpp>
 #include <signaldata/DictTabInfo.hpp>
@@ -101,7 +101,7 @@ public:
     Busy = 701,
     NotMaster = 702,
     SeizeError = 703,
-    EventNotFound = 4238,
+    EventNotFound = 4710,
     EventNameTooLong = 4241,
     TooManyEvents = 4242,
     BadRequestType = 4247,
@@ -363,12 +363,10 @@ struct CreateEvntRef {
     Busy = 701,
     NotMaster = 702,
     SeizeError = 703,
-    EventNotFound = 4238,
-    EventExists = 4239,
-    EventNameTooLong = 4241,
-    TooManyEvents = 4242,
-    //    EventExists = 4244,
-    AttributeNotStored = 4245,
+    TooManyEvents = 4707,
+    EventNameTooLong = 4708,
+    EventNameExists = 746,
+    EventNotFound = 4731,
     AttributeNullable = 4246,
     BadRequestType = 4247,
     InvalidName = 4248,
@@ -376,7 +374,7 @@ struct CreateEvntRef {
     InvalidEventType = 4250,
     NotUnique = 4251,
     AllocationError = 4252,
-    CreateEventTableFailed = 4253,
+    CreateEventTableFailed = 4711,
     InvalidAttributeOrder = 4255,
     Temporary = 0x1 << 16
   };

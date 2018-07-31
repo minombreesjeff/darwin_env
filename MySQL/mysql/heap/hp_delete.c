@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004-200 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,7 +23,7 @@ int heap_delete(HP_INFO *info, const byte *record)
   HP_SHARE *share=info->s;
   HP_KEYDEF *keydef, *end, *p_lastinx;
   DBUG_ENTER("heap_delete");
-  DBUG_PRINT("enter",("info: %lx  record: %lx",info,record));
+  DBUG_PRINT("enter",("info: 0x%lx  record: 0x%lx", (long) info, (long) record));
 
   test_active(info);
 
@@ -82,7 +81,8 @@ int hp_rb_delete_key(HP_INFO *info, register HP_KEYDEF *keyinfo,
   custom_arg.key_length= hp_rb_make_key(keyinfo, info->recbuf, record, recpos);
   custom_arg.search_flag= SEARCH_SAME;
   old_allocated= keyinfo->rb_tree.allocated;
-  res= tree_delete(&keyinfo->rb_tree, info->recbuf, &custom_arg);
+  res= tree_delete(&keyinfo->rb_tree, info->recbuf, custom_arg.key_length,
+                   &custom_arg);
   info->s->index_length-= (old_allocated - keyinfo->rb_tree.allocated);
   return res;
 }
@@ -126,7 +126,7 @@ int hp_delete_key(HP_INFO *info, register HP_KEYDEF *keyinfo,
 
   while (pos->ptr_to_rec != recpos)
   {
-    if (flag && !hp_rec_key_cmp(keyinfo, record, pos->ptr_to_rec))
+    if (flag && !hp_rec_key_cmp(keyinfo, record, pos->ptr_to_rec, 0))
       last_ptr=pos;				/* Previous same key */
     gpos=pos;
     if (!(pos=pos->next_key))
@@ -142,8 +142,8 @@ int hp_delete_key(HP_INFO *info, register HP_KEYDEF *keyinfo,
     /* Save for heap_rnext/heap_rprev */
     info->current_hash_ptr=last_ptr;
     info->current_ptr = last_ptr ? last_ptr->ptr_to_rec : 0;
-    DBUG_PRINT("info",("Corrected current_ptr to point at: %lx",
-		       info->current_ptr));
+    DBUG_PRINT("info",("Corrected current_ptr to point at: 0x%lx",
+		       (long) info->current_ptr));
   }
   empty=pos;
   if (gpos)

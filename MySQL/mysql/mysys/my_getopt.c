@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2002-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -59,13 +58,18 @@ char *disabled_my_option= (char*) "0";
 
 my_bool my_getopt_print_errors= 1;
 
-static void default_reporter(enum loglevel level __attribute__((unused)),
+static void default_reporter(enum loglevel level,
                              const char *format, ...)
 {
   va_list args;
   va_start(args, format);
+  if (level == WARNING_LEVEL)
+    fprintf(stderr, "%s", "Warning: ");
+  else if (level == INFORMATION_LEVEL)
+    fprintf(stderr, "%s", "Info: ");
   vfprintf(stderr, format, args);
   va_end(args);
+  fflush(stderr);
 }
 
 /* 
@@ -180,7 +184,7 @@ int handle_options(int *argc, char ***argv,
 	}
 	opt_str= check_struct_option(cur_arg, key_name);
 	optend= strcend(opt_str, '=');
-	length= optend - opt_str;
+	length= (uint) (optend - opt_str);
 	if (*optend == '=')
 	  optend++;
 	else
@@ -190,6 +194,7 @@ int handle_options(int *argc, char ***argv,
 	  Find first the right option. Return error in case of an ambiguous,
 	  or unknown option
 	*/
+        LINT_INIT(prev_found);
 	optp= longopts;
 	if (!(opt_found= findopt(opt_str, length, &optp, &prev_found)))
 	{
@@ -205,7 +210,8 @@ int handle_options(int *argc, char ***argv,
 	    {
 	      if (!getopt_compare_strings(special_opt_prefix[i], opt_str,
 					  special_opt_prefix_lengths[i]) &&
-		  opt_str[special_opt_prefix_lengths[i]] == '-')
+		  (opt_str[special_opt_prefix_lengths[i]] == '-' ||
+		   opt_str[special_opt_prefix_lengths[i]] == '_'))
 	      {
 		/*
 		  We were called with a special prefix, we can reuse opt_found
@@ -322,7 +328,7 @@ int handle_options(int *argc, char ***argv,
 	  return EXIT_NO_ARGUMENT_ALLOWED;
 	}
 	value= optp->var_type & GET_ASK_ADDR ?
-	  (*getopt_get_addr)(key_name, strlen(key_name), optp) : optp->value;
+	  (*getopt_get_addr)(key_name, (uint) strlen(key_name), optp) : optp->value;
   
 	if (optp->arg_type == NO_ARG)
 	{
@@ -341,11 +347,24 @@ int handle_options(int *argc, char ***argv,
 	      --enable-'option-name'.
 	      *optend was set to '0' if one used --disable-option
 	      */
-	    my_bool tmp= (my_bool) (!optend || *optend == '1');
-	    *((my_bool*) value)= tmp;
 	    (*argc)--;
+	    if (!optend || *optend == '1' ||
+		!my_strcasecmp(&my_charset_latin1, optend, "true"))
+	      *((my_bool*) value)= (my_bool) 1;
+	    else if (*optend == '0' ||
+		     !my_strcasecmp(&my_charset_latin1, optend, "false"))
+	      *((my_bool*) value)= (my_bool) 0;
+	    else
+	    {
+	      my_getopt_error_reporter(WARNING_LEVEL,
+				       "%s: ignoring option '--%s' due to \
+invalid value '%s'\n",
+				       my_progname, optp->name, optend);
+	      continue;
+	    }
 	    get_one_option(optp->id, optp,
-			   tmp ? (char*) "1" : disabled_my_option);
+			   *((my_bool*) value) ?
+			   (char*) "1" : disabled_my_option);
 	    continue;
 	  }
 	  argument= optend;
@@ -518,7 +537,7 @@ static char *check_struct_option(char *cur_arg, char *key_name)
   */
   if (end - ptr > 1)
   {
-    uint len= ptr - cur_arg;
+    uint len= (uint) (ptr - cur_arg);
     set_if_smaller(len, FN_REFLEN-1);
     strmake(key_name, cur_arg, len);
     return ++ptr;
@@ -586,16 +605,27 @@ static int setval(const struct my_option *opts, gptr *value, char *argument,
   return 0;
 }
 
+
 /* 
-  function: findopt
+  Find option
 
-  Arguments: opt_pattern, length of opt_pattern, opt_struct, first found
-  name (ffname)
+  SYNOPSIS
+    findopt()
+    optpat	Prefix of option to find (with - or _)
+    length	Length of optpat
+    opt_res	Options
+    ffname	Place for pointer to first found name
 
-  Go through all options in the my_option struct. Return number
-  of options found that match the pattern and in the argument
-  list the option found, if any. In case of ambiguous option, store
-  the name in ffname argument
+  IMPLEMENTATION
+    Go through all options in the my_option struct. Return number
+    of options found that match the pattern and in the argument
+    list the option found, if any. In case of ambiguous option, store
+    the name in ffname argument
+
+    RETURN
+    0    No matching options
+    #   Number of matching options
+        ffname points to first matching option
 */
 
 static int findopt(char *optpat, uint length,
@@ -610,12 +640,21 @@ static int findopt(char *optpat, uint length,
     if (!getopt_compare_strings(opt->name, optpat, length)) /* match found */
     {
       (*opt_res)= opt;
-      if (!count)
-	*ffname= (char *) opt->name;	/* We only need to know one prev */
       if (!opt->name[length])		/* Exact match */
 	return 1;
-      if (!count || strcmp(*ffname, opt->name)) /* Don't count synonyms */
+      if (!count)
+      {
+	count= 1;
+	*ffname= (char *) opt->name;	/* We only need to know one prev */
+      }
+      else if (strcmp(*ffname, opt->name))
+      {
+	/*
+	  The above test is to not count same option twice
+	  (see mysql.cc, option "help")
+	*/
 	count++;
+      }
     }
   }
   return count;
@@ -832,7 +871,7 @@ void my_print_help(const struct my_option *options)
     if (strlen(optp->name))
     {
       printf("--%s", optp->name);
-      col+= 2 + strlen(optp->name);
+      col+= 2 + (uint) strlen(optp->name);
       if ((optp->var_type & GET_TYPE_MASK) == GET_STR ||
 	  (optp->var_type & GET_TYPE_MASK) == GET_STR_ALLOC)
       {
@@ -903,7 +942,7 @@ void my_print_variables(const struct my_option *options)
     if (value)
     {
       printf("%s", optp->name);
-      length= strlen(optp->name);
+      length= (uint) strlen(optp->name);
       for (; length < name_space; length++)
 	putchar(' ');
       switch ((optp->var_type & GET_TYPE_MASK)) {

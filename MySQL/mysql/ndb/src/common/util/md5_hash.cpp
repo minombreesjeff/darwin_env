@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,7 +74,7 @@ void byteReverse(unsigned char *buf, unsigned longs)
  * reflect the addition of 16 longwords of new data.  MD5Update blocks
  * the data and converts bytes into longwords for this routine.
  */
-void MD5Transform(Uint32 buf[4], Uint32 const in[16])
+static void MD5Transform(Uint32 buf[4], Uint32 const in[16])
 {
     register Uint32 a, b, c, d;
 
@@ -162,13 +161,13 @@ void MD5Transform(Uint32 buf[4], Uint32 const in[16])
  * Start MD5 accumulation.  Set bit count to 0 and buffer to mysterious
  * initialization constants.
  */
-Uint32 md5_hash(const Uint64* keybuf, Uint32 no_of_32_words)
+void md5_hash(Uint32 result[4], const Uint64* keybuf, Uint32 no_of_32_words)
 {
-/*
- * This is the external interface of the module
- * It is assumed that keybuf is placed on 8 byte
- * alignment.
- */
+  /**
+   * This is the external interface of the module
+   * It is assumed that keybuf is placed on 8 byte
+   * alignment.
+   */
   Uint32 i;
   Uint32 buf[4];
   Uint64 transform64_buf[8];
@@ -230,6 +229,10 @@ Uint32 md5_hash(const Uint64* keybuf, Uint32 no_of_32_words)
     byteReverse((unsigned char *)transform32_buf, 16);
     MD5Transform(buf, transform32_buf);    
   }
-  return buf[0];
+
+  result[0] = buf[0];
+  result[1] = buf[1];
+  result[2] = buf[2];
+  result[3] = buf[3];
 }
 

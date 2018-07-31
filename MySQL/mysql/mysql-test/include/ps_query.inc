@@ -52,7 +52,6 @@ execute stmt1;
 
 ##### parameter used for keyword like SELECT (must fail)
 set @arg00='SELECT' ;
-# mysqltest gives no output for the next statement, Why ??
 --error 1064
 @arg00 a from t1 where a=1;
 --error 1064
@@ -300,10 +299,8 @@ set @arg00=1;
 prepare stmt1 from ' select a,b from t1 order by a
 limit 1 ';
 execute stmt1 ;
-# currently (May 2004, Version 4.1) it is impossible
--- error 1064
-prepare stmt1 from ' select a,b from t1
-limit ? ';
+prepare stmt1 from ' select a,b from t1 order by a limit ? ';
+execute stmt1 using @arg00;
 
 ##### parameter used in many places
 set @arg00='b' ;

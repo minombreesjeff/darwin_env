@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -19,11 +18,11 @@
 
 #include <ndb_types.h>
 #include <NdbDictionary.hpp>
-#include <NdbConnection.hpp>
+#include <NdbTransaction.hpp>
 #include <NdbError.hpp>
 
 class Ndb;
-class NdbConnection;
+class NdbTransaction;
 class NdbOperation;
 class NdbRecAttr;
 class NdbTableImpl;
@@ -67,29 +66,56 @@ class NdbColumnImpl;
  * cases NdbBlob is forced to do implicit executes.  To avoid this,
  * operate on complete blob parts.
  *
- * Use NdbConnection::executePendingBlobOps to flush your reads and
+ * Use NdbTransaction::executePendingBlobOps to flush your reads and
  * writes.  It avoids execute penalty if nothing is pending.  It is not
  * needed after execute (obviously) or after next scan result.
  *
  * NdbBlob methods return -1 on error and 0 on success, and use output
  * parameters when necessary.
  *
- * Operation types:
- * - insertTuple must use setValue if blob column is non-nullable
- * - readTuple with exclusive lock can also update existing value
- * - updateTuple can overwrite with setValue or update existing value
- * - writeTuple always overwrites and must use setValue if non-nullable
+ * Usage notes for different operation types:
+ *
+ * - insertTuple must use setValue if blob attribute is non-nullable
+ *
+ * - readTuple or scan readTuples with lock mode LM_CommittedRead is
+ *   automatically upgraded to lock mode LM_Read if any blob attributes
+ *   are accessed (to guarantee consistent view)
+ *
+ * - readTuple (with any lock mode) can only read blob value
+ *
+ * - updateTuple can either overwrite existing value with setValue or
+ *   update it in active phase
+ *
+ * - writeTuple always overwrites blob value and must use setValue if
+ *   blob attribute is non-nullable
+ *
  * - deleteTuple creates implicit non-accessible blob handles
- * - scan with exclusive lock can also update existing value
- * - scan "lock takeover" update op must do its own getBlobHandle
+ *
+ * - scan readTuples (any lock mode) can use its blob handles only
+ *   to read blob value
+ *
+ * - scan readTuples with lock mode LM_Exclusive can update row and blob
+ *   value using updateCurrentTuple, where the operation returned must
+ *   create its own blob handles explicitly
+ *
+ * - scan readTuples with lock mode LM_Exclusive can delete row (and
+ *   therefore blob values) using deleteCurrentTuple, which creates
+ *   implicit non-accessible blob handles
+ *
+ * - the operation returned by lockCurrentTuple cannot update blob value
  *
  * Bugs / limitations:
- * - lock mode upgrade should be handled automatically
- * - lock mode vs allowed operation is not checked
+ *
  * - too many pending blob ops can blow up i/o buffers
+ *
  * - table and its blob part tables are not created atomically
+ */
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+/**
  * - there is no support for an asynchronous interface
  */
+#endif
+
 class NdbBlob {
 public:
   /**
@@ -102,6 +128,9 @@ public:
     Closed = 3,
     Invalid = 9
   };
+  /**
+   * Get the state of a NdbBlob object.
+   */
   State getState();
   /**
    * Inline blob header.
@@ -111,7 +140,7 @@ public:
   };
   /**
    * Prepare to read blob value.  The value is available after execute.
-   * Use getNull to check for NULL and getLength to get the real length
+   * Use getNull() to check for NULL and getLength() to get the real length
    * and to check for truncation.  Sets current read/write position to
    * after the data read.
    */
@@ -124,10 +153,10 @@ public:
    */
   int setValue(const void* data, Uint32 bytes);
   /**
-   * Callback for setActiveHook.  Invoked immediately when the prepared
-   * operation has been executed (but not committed).  Any getValue or
-   * setValue is done first.  The blob handle is active so readData or
-   * writeData etc can be used to manipulate blob value.  A user-defined
+   * Callback for setActiveHook().  Invoked immediately when the prepared
+   * operation has been executed (but not committed).  Any getValue() or
+   * setValue() is done first.  The blob handle is active so readData or
+   * writeData() etc can be used to manipulate blob value.  A user-defined
    * argument is passed along.  Returns non-zero on error.
    */
   typedef int ActiveHook(NdbBlob* me, void* arg);
@@ -186,23 +215,33 @@ public:
   /**
    * Return error object.  The error may be blob specific (below) or may
    * be copied from a failed implicit operation.
+   *
+   * The error code is copied back to the operation unless the operation
+   * already has a non-zero error code.
    */
   const NdbError& getNdbError() const;
   /**
    * Return info about all blobs in this operation.
+   *
+   * Get first blob in list.
    */
-  // Get first blob in list
   NdbBlob* blobsFirstBlob();
-  // Get next blob in list after this one
+  /**
+   * Return info about all blobs in this operation.
+   *
+   * Get next blob in list. Initialize with blobsFirstBlob().
+   */
   NdbBlob* blobsNextBlob();
 
 private:
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   friend class Ndb;
-  friend class NdbConnection;
+  friend class NdbTransaction;
   friend class NdbOperation;
   friend class NdbScanOperation;
   friend class NdbDictionaryImpl;
   friend class NdbResultSet; // atNextResult
+#endif
   // state
   State theState;
   void setState(State newState);
@@ -211,7 +250,7 @@ private:
   static void getBlobTable(NdbTableImpl& bt, const NdbTableImpl* t, const NdbColumnImpl* c);
   // ndb api stuff
   Ndb* theNdb;
-  NdbConnection* theNdbCon;
+  NdbTransaction* theNdbCon;
   NdbOperation* theNdbOp;
   const NdbTableImpl* theTable;
   const NdbTableImpl* theAccessTable;
@@ -275,6 +314,7 @@ private:
   bool isWriteOp();
   bool isDeleteOp();
   bool isScanOp();
+  bool isReadOnlyOp();
   bool isTakeOverOp();
   // computations
   Uint32 getPartNumber(Uint64 pos);
@@ -302,15 +342,15 @@ private:
   // callbacks
   int invokeActiveHook();
   // blob handle maintenance
-  int atPrepare(NdbConnection* aCon, NdbOperation* anOp, const NdbColumnImpl* aColumn);
-  int preExecute(ExecType anExecType, bool& batch);
-  int postExecute(ExecType anExecType);
+  int atPrepare(NdbTransaction* aCon, NdbOperation* anOp, const NdbColumnImpl* aColumn);
+  int preExecute(NdbTransaction::ExecType anExecType, bool& batch);
+  int postExecute(NdbTransaction::ExecType anExecType);
   int preCommit();
   int atNextResult();
   // errors
-  void setErrorCode(int anErrorCode, bool invalidFlag = true);
-  void setErrorCode(NdbOperation* anOp, bool invalidFlag = true);
-  void setErrorCode(NdbConnection* aCon, bool invalidFlag = true);
+  void setErrorCode(int anErrorCode, bool invalidFlag = false);
+  void setErrorCode(NdbOperation* anOp, bool invalidFlag = false);
+  void setErrorCode(NdbTransaction* aCon, bool invalidFlag = false);
 #ifdef VM_TRACE
   int getOperationType() const;
   friend class NdbOut& operator<<(NdbOut&, const NdbBlob&);

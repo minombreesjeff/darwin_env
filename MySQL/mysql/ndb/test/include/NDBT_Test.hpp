@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,6 +24,7 @@
 #include <NdbCondition.h>
 #include <NdbTimer.hpp>
 #include <Vector.hpp>
+#include <NdbApi.hpp>
 #include <NdbDictionary.hpp>
 
 class NDBT_Step;
@@ -34,7 +34,9 @@ class NDBT_TestCaseImpl1;
 
 class NDBT_Context {
 public:
-  NDBT_Context();
+  Ndb_cluster_connection& m_cluster_connection;
+  
+  NDBT_Context(Ndb_cluster_connection&);
   ~NDBT_Context();
   const NdbDictionary::Table* getTab();
   NDBT_TestSuite* getSuite();
@@ -121,7 +123,7 @@ public:
 		NDBT_TESTFUNC* pfunc);
   virtual ~NDBT_Step() {}
   int execute(NDBT_Context*);
-  virtual int setUp() = 0;
+  virtual int setUp(Ndb_cluster_connection&) = 0;
   virtual void tearDown() = 0;
   void setContext(NDBT_Context*);
   NDBT_Context* getContext();
@@ -143,7 +145,7 @@ public:
 		  const char* pname,
 		  NDBT_TESTFUNC* pfunc);
   virtual ~NDBT_NdbApiStep() {}
-  virtual int setUp();
+  virtual int setUp(Ndb_cluster_connection&);
   virtual void tearDown();
 
   Ndb* getNdb();
@@ -323,6 +325,12 @@ public:
   // supply argc and argv as parameters
   int execute(int, const char**);
 
+  // NDBT's test tables are fixed and it always create 
+  // and drop fixed table when execute, add this method 
+  // in order to run CTX only and adapt to some new 
+  // customized testsuite
+  int executeOneCtx(Ndb_cluster_connection&,
+		 const NdbDictionary::Table* ptab, const char* testname = NULL);
 
   // These function can be used from main in the test program 
   // to control the behaviour of the testsuite
@@ -350,10 +358,13 @@ public:
 
   int addTest(NDBT_TestCase* pTest);
 private:
-  int executeOne(const char* _tabname, const char* testname = NULL);
-  int executeAll(const char* testname = NULL);
-
-  void execute(Ndb*, const NdbDictionary::Table*, const char* testname = NULL);
+  int executeOne(Ndb_cluster_connection&,
+		 const char* _tabname, const char* testname = NULL);
+  int executeAll(Ndb_cluster_connection&,
+		 const char* testname = NULL);
+  void execute(Ndb_cluster_connection&,
+	       Ndb*, const NdbDictionary::Table*, const char* testname = NULL);
+  
   int report(const char* _tcname = NULL);
   int reportAllTables(const char* );
   const char* name;

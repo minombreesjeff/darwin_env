@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2001, 2003-2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,8 +39,12 @@ ha_checksum mi_checksum(MI_INFO *info, const byte *buf)
     }
     case FIELD_VARCHAR:
     {
-      length=uint2korr(buf);
-      pos=buf+2;
+      uint pack_length= HA_VARCHAR_PACKLENGTH(rec->length-1);
+      if (pack_length == 1)
+        length= (ulong) *(uchar*) buf;
+      else
+        length= uint2korr(buf);
+      pos= buf+pack_length;
       break;
     }
     default:

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqld_safe\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLD_SAFE\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLD_SAFE\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -26,18 +26,14 @@ server on Unix and NetWare.
 \fBmysqld_safe\fR
 adds some safety features such as restarting the server when an error occurs and logging runtime information to an error log file. NetWare\-specific behaviors are listed later in this section.
 .PP
-\fBNote\fR: Before MySQL 4.0,
-\fBmysqld_safe\fR
-is named
-\fBsafe_mysqld\fR. To preserve backward compatibility, MySQL binary distributions include
+\fBNote\fR: To preserve backward compatibility with older versions of MySQL, MySQL binary distributions still include
 \fBsafe_mysqld\fR
 as a symbolic link to
-\fBmysqld_safe\fR
-until MySQL 5.1.
+\fBmysqld_safe\fR. However, you should not rely on this because it is removed as of MySQL 5.1.
 .PP
 By default,
 \fBmysqld_safe\fR
-tries to start an executable named
+before MySQL 5.0.27 tries to start an executable named
 \fBmysqld\-max\fR
 if it exists, and
 \fBmysqld\fR
@@ -95,7 +91,7 @@ on the command line are passed to
 \fBmysqld_safe\fR
 and that
 \fBmysqld\fR
-does not support, do not specify them on the command line. Instead, list them in the
+doesn't support, do not specify them on the command line. Instead, list them in the
 [mysqld_safe]
 group of an option file. See
 Section\ 3.2, \(lqUsing Option Files\(rq.
@@ -109,10 +105,15 @@ sections in option files. For backward compatibility, it also reads
 [safe_mysqld]
 sections, although you should rename such sections to
 [mysqld_safe]
-when you begin using MySQL 4.0 or later.
+in MySQL 5.0 installations.
 .PP
 \fBmysqld_safe\fR
 supports the following options:
+.TP 3n
+\(bu
+\fB\-\-help\fR
+.sp
+Display a help message and exit. (Added in MySQL 5.0.3)
 .TP 3n
 \(bu
 \fB\-\-autoclose\fR
@@ -154,19 +155,12 @@ The path to the data directory.
 \(bu
 \fB\-\-defaults\-extra\-file=\fR\fB\fIpath\fR\fR
 .sp
-The name of an option file to be read in addition to the usual option files. This must be the first option on the command line if it is used.
+The name of an option file to be read in addition to the usual option files. This must be the first option on the command line if it is used. As of MySQL 5.0.6, if the file does not exist or is otherwise inaccessible, the server will exit with an error.
 .TP 3n
 \(bu
 \fB\-\-defaults\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 The name of an option file to be read instead of the usual option files. This must be the first option on the command line if it is used.
-.TP 3n
-\(bu
-\fB\-\-err\-log=\fR\fB\fIfile_name\fR\fR
-.sp
-The old form of the
-\fB\-\-log\-error\fR
-option, to be used before MySQL 4.0.
 .TP 3n
 \(bu
 \fB\-\-ledir=\fR\fB\fIpath\fR\fR
@@ -179,7 +173,7 @@ cannot find the server, use this option to indicate the pathname to the director
 \fB\-\-log\-error=\fR\fB\fIfile_name\fR\fR
 .sp
 Write the error log to the given file. See
-Section\ 10.1, \(lqThe Error Log\(rq.
+Section\ 9.1, \(lqThe Error Log\(rq.
 .TP 3n
 \(bu
 \fB\-\-mysqld=\fR\fB\fIprog_name\fR\fR
@@ -199,10 +193,10 @@ This option is similar to the
 \fB\-\-mysqld\fR
 option, but you specify only the suffix for the server program name. The basename is assumed to be
 \fBmysqld\fR. For example, if you use
-\fB\-\-mysqld\-version=max\fR,
+\fB\-\-mysqld\-version=debug\fR,
 \fBmysqld_safe\fR
 starts the
-\fBmysqld\-max\fR
+\fBmysqld\-debug\fR
 program in the
 ledir
 directory. If the argument to
@@ -220,7 +214,7 @@ directory.
 .sp
 Use the
 nice
-program to set the server's scheduling priority to the given value. This option was added in MySQL 4.0.14.
+program to set the server's scheduling priority to the given value.
 .TP 3n
 \(bu
 \fB\-\-no\-defaults\fR
@@ -237,7 +231,7 @@ should be able to open. The option value is passed to
 \fBmysqld_safe\fR
 as
 root
-for this to work properly.
+for this to work properly!
 .TP 3n
 \(bu
 \fB\-\-pid\-file=\fR\fB\fIfile_name\fR\fR
@@ -301,7 +295,7 @@ mysql> \fBmysqld_safe \-\-defaults\-file=\fR\fB\fIfile_name\fR\fR\fB \-\-port=\f
 The
 \fBmysqld_safe\fR
 script is written so that it normally can start a server that was installed from either a source or a binary distribution of MySQL, even though these types of distributions typically install the server in slightly different locations. (See
-Section\ 1.5, \(lqInstallation Layouts\(rq.)
+Section\ 4.6, \(lqInstallation Layouts\(rq.)
 \fBmysqld_safe\fR
 expects one of the following conditions to be true:
 .TP 3n
@@ -379,8 +373,6 @@ Runs a number of system and option checks.
 2.
 Runs a check on
 MyISAM
-and
-ISAM
 tables.
 .TP 3n
 3.
@@ -405,7 +397,7 @@ screen output to the
 file in the data directory.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -413,35 +405,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,6 +23,9 @@
 NDB_STD_OPTS_VARS;
 
 static const char* _dbname = "TEST_DB";
+
+const char *load_default_groups[]= { "mysql_cluster",0 };
+
 static struct my_option my_long_options[] =
 {
   NDB_STD_OPTS("ndb_desc"),
@@ -34,43 +36,47 @@ static struct my_option my_long_options[] =
 };
 static void usage()
 {
+#ifdef NOT_USED
   char desc[] = 
     "[<table> <index>]+\n"\
     "This program will drop index(es) in Ndb\n";
+#endif
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_drop_index.trace");
 }
 
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   if (argc < 1) {
     usage();
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   }
   
-  Ndb::setConnectString(opt_connect_str);
-  // Connect to Ndb
-  Ndb MyNdb(_dbname);
+  Ndb_cluster_connection con(opt_connect_str);
+  con.set_name("ndb_drop_index");
+  if(con.connect(12, 5, 1) != 0)
+  {
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  if (con.wait_until_ready(30,3) < 0)
+  {
+    ndbout << "Cluster nodes not ready in 30 seconds." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+
+  Ndb MyNdb(&con, _dbname );
   if(MyNdb.init() != 0){
     ERR(MyNdb.getNdbError());
     return NDBT_ProgramExit(NDBT_FAILED);
   }
-  
-  while(MyNdb.waitUntilReady() != 0)
-    ndbout << "Waiting for ndb to become ready..." << endl;
   
   int res = 0;
   for(int i = 0; i+1<argc; i += 2){

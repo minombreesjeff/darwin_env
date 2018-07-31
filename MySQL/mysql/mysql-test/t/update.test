@@ -31,7 +31,7 @@ CREATE TABLE t1
  clicks int(10) unsigned DEFAULT '0' NOT NULL,
  iclicks int(10) unsigned DEFAULT '0' NOT NULL,
  uclicks int(10) unsigned DEFAULT '0' NOT NULL,
- ts timestamp(14),
+ ts timestamp,
  PRIMARY KEY (place_id,ts)
  );
 
@@ -52,7 +52,7 @@ CREATE TABLE t1 (
   replyto varchar(255) NOT NULL default '',
   subject varchar(100) NOT NULL default '',
   timestamp int(10) unsigned NOT NULL default '0',
-  tstamp timestamp(14) NOT NULL,
+  tstamp timestamp NOT NULL,
   status int(3) NOT NULL default '0',
   type varchar(15) NOT NULL default '',
   assignment int(10) unsigned NOT NULL default '0',
@@ -306,4 +306,128 @@ create table t1(f1 int, `*f2` int);
 insert into t1 values (1,1);
 update t1 set `*f2`=1;
 drop table t1;
+
+#
+# Bug#25126: Wrongly resolved field leads to a crash
+#
+create table t1(f1 int);
+--error 1054
+update t1 set f2=1 order by f2;
+drop table t1;
 # End of 4.1 tests
+
+#
+# Bug #24035: performance degradation with condition int_field=big_decimal
+#
+
+CREATE TABLE t1 (
+  request_id int unsigned NOT NULL auto_increment,
+  user_id varchar(12) default NULL,
+  time_stamp datetime NOT NULL default '0000-00-00 00:00:00',
+  ip_address varchar(15) default NULL,
+  PRIMARY KEY (request_id),
+  KEY user_id_2 (user_id,time_stamp)
+);
+
+INSERT INTO t1 (user_id) VALUES ('user1');
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+INSERT INTO t1(user_id) SELECT user_id FROM t1;
+
+flush status;
+SELECT user_id FROM t1 WHERE request_id=9999999999999; 
+show status like '%Handler_read%';
+SELECT user_id FROM t1 WHERE request_id=999999999999999999999999999999; 
+show status like '%Handler_read%';
+UPDATE t1 SET user_id=null WHERE request_id=9999999999999;
+show status like '%Handler_read%';
+UPDATE t1 SET user_id=null WHERE request_id=999999999999999999999999999999;
+show status like '%Handler_read%';
+
+DROP TABLE t1;
+
+#
+# Bug #24010: INSERT INTO ... SELECT fails on unique constraint with data it 
+# doesn't select
+#
+CREATE TABLE t1 (
+
+  a INT(11),
+  quux decimal( 31, 30 ),
+
+  UNIQUE KEY bar (a),
+  KEY quux (quux)
+);
+
+INSERT INTO
+ t1 ( a, quux )
+VALUES
+    ( 1,    1 ),
+    ( 2,  0.1 );
+
+INSERT INTO t1( a )
+  SELECT @newA := 1 + a FROM t1 WHERE quux <= 0.1;
+
+SELECT * FROM t1;
+
+DROP TABLE t1;
+
+#
+# Bug #22364: Inconsistent "matched rows" when executing UPDATE
+#
+
+connect (con1,localhost,root,,test);
+connection con1;
+
+set tmp_table_size=1024;
+
+# Create the test tables
+create table t1 (id int, a int, key idx(a));
+create table t2 (id int unsigned not null auto_increment primary key, a int);
+insert into t2(a) values(1),(2),(3),(4),(5),(6),(7),(8);
+insert into t2(a) select a from t2; 
+insert into t2(a) select a from t2;
+insert into t2(a) select a from t2; 
+update t2 set a=id;
+insert into t1 select * from t2;
+
+# Check that the number of matched rows is correct when the temporary
+# table is small enough to not be converted to MyISAM
+select count(*) from t1 join t2 on (t1.a=t2.a);
+--enable_info
+update t1 join t2 on (t1.a=t2.a) set t1.id=t2.id;
+--disable_info
+
+# Increase table sizes
+insert into t2(a) select a from t2; 
+update t2 set a=id; 
+truncate t1; 
+insert into t1 select * from t2; 
+
+# Check that the number of matched rows is correct when the temporary
+# table has to be converted to MyISAM
+select count(*) from t1 join t2 on (t1.a=t2.a);
+--enable_info
+update t1 join t2 on (t1.a=t2.a) set t1.id=t2.id;
+--disable_info
+
+# Check that the number of matched rows is correct when there are duplicate
+# key errors
+update t1 set a=1;
+update t2 set a=1;
+select count(*) from t1 join t2 on (t1.a=t2.a);
+--enable_info
+update t1 join t2 on (t1.a=t2.a) set t1.id=t2.id;
+--disable_info
+
+drop table t1,t2;
+
+connection default;
+disconnect con1;
+
+--echo End of 5.0 tests

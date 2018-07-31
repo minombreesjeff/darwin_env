@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -122,7 +121,7 @@ struct NdbThread* NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
   assert(result==0);
 
   pthread_attr_destroy(&thread_attr);
-  DBUG_PRINT("exit",("ret: %lx", tmpThread));
+  DBUG_PRINT("exit",("ret: 0x%lx", (long) tmpThread));
   DBUG_RETURN(tmpThread);
 }
 
@@ -131,7 +130,7 @@ void NdbThread_Destroy(struct NdbThread** p_thread)
 {
   DBUG_ENTER("NdbThread_Destroy");
   if (*p_thread != NULL){
-    DBUG_PRINT("enter",("*p_thread: %lx", * p_thread));
+    DBUG_PRINT("enter",("*p_thread: 0x%lx", (long) *p_thread));
     free(* p_thread); 
     * p_thread = 0;
   }

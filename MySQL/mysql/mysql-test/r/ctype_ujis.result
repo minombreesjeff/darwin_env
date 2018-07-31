@@ -123,7 +123,7 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=MyISAM DEFAULT CHARSET=ujis
 SHOW COLUMNS FROM t1;
 Field	Type	Null	Key	Default	Extra
-a	char(1)				
+a	char(1)	NO			
 b	enum('あ','い')	YES		NULL	
 DROP TABLE t1;
 CREATE TABLE t1
@@ -2313,3 +2313,33 @@ hex(convert(_ujis 0xA5FE41 using ucs2))
 select hex(convert(_ujis 0x8FABF841 using ucs2));
 hex(convert(_ujis 0x8FABF841 using ucs2))
 003F0041
+DROP TABLE IF EXISTS t1, t2;
+DROP PROCEDURE IF EXISTS sp1;
+set names ujis;
+set character_set_database = ujis;
+set character_set_server = ujis;
+CREATE TABLE t1(c1 char(2)) default charset = ujis;
+CREATE TABLE t2(c2 char(2)) default charset = ujis;
+INSERT INTO t1 VALUES(_ujis 0xA4A2);
+CREATE PROCEDURE sp1()
+BEGIN
+DECLARE a CHAR(2) CHARSET ujis;
+DECLARE cur1 CURSOR FOR SELECT c1 FROM t1;
+OPEN cur1;
+FETCH cur1 INTO a;
+INSERT INTO t2 VALUES (a);
+CLOSE cur1;
+END|
+CALL sp1();
+SELECT c1,c2 FROM t1,t2;
+c1	c2
+あ	あ
+SELECT hex(convert(_latin1 0xA4A2 using ujis)),hex(c2) FROM t1,t2;
+hex(convert(_latin1 0xA4A2 using ujis))	hex(c2)
+8FA2F0A1F1	A4A2
+DROP PROCEDURE sp1;
+DROP TABLE t1;
+DROP TABLE t2;
+set names default;
+set character_set_database=default;
+set character_set_server=default;

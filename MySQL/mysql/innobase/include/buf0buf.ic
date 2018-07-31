@@ -11,10 +11,11 @@ Created 11/5/1995 Heikki Tuuri
 #include "buf0rea.h"
 #include "mtr0mtr.h"
 
+#ifdef UNIV_DEBUG
 extern ulint		buf_dbg_counter; /* This is used to insert validation
 					operations in execution in the
 					debug version */
-					
+#endif /* UNIV_DEBUG */
 /************************************************************************
 Recommends a move of a block to the start of the LRU list if there is danger
 of dropping from the buffer pool. NOTE: does not reserve the buffer pool
@@ -26,12 +27,8 @@ buf_block_peek_if_too_old(
 				/* out: TRUE if should be made younger */
 	buf_block_t*	block)	/* in: block to make younger */
 {
-	if (buf_pool->freed_page_clock >= block->freed_page_clock 
-				+ 1 + (buf_pool->curr_size / 1024)) {
-		return(TRUE);
-	}
-
-	return(FALSE);
+	return(buf_pool->freed_page_clock >= block->freed_page_clock
+				+ 1 + (buf_pool->curr_size / 1024));
 }
 
 /*************************************************************************
@@ -210,16 +207,16 @@ buf_block_align(
 
 	frame_zero = buf_pool->frame_zero;
 
-	if ((ulint)ptr < (ulint)frame_zero
-	    || (ulint)ptr > (ulint)(buf_pool->high_end)) {
+	if (UNIV_UNLIKELY((ulint)ptr < (ulint)frame_zero)
+	    || UNIV_UNLIKELY((ulint)ptr > (ulint)(buf_pool->high_end))) {
 
 		ut_print_timestamp(stderr);	
 		fprintf(stderr,
 "InnoDB: Error: trying to access a stray pointer %p\n"
 "InnoDB: buf pool start is at %p, end at %p\n"
 "InnoDB: Probable reason is database corruption or memory\n"
-"InnoDB: corruption. If this happens in an InnoDB database recovery,\n"
-"InnoDB: you can look from section 6.1 at http://www.innodb.com/ibman.html\n"
+"InnoDB: corruption. If this happens in an InnoDB database recovery, see\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/forcing-recovery.html\n"
 "InnoDB: how to force recovery.\n",
  			ptr, frame_zero,
 			buf_pool->high_end);
@@ -246,16 +243,16 @@ buf_frame_align(
 
 	frame = ut_align_down(ptr, UNIV_PAGE_SIZE);
 
-	if (((ulint)frame < (ulint)(buf_pool->frame_zero))
-	    || (ulint)frame >= (ulint)(buf_pool->high_end)) {
+	if (UNIV_UNLIKELY((ulint)frame < (ulint)(buf_pool->frame_zero))
+	    || UNIV_UNLIKELY((ulint)frame >= (ulint)(buf_pool->high_end))) {
 
 		ut_print_timestamp(stderr);	
 		fprintf(stderr,
 "InnoDB: Error: trying to access a stray pointer %p\n"
 "InnoDB: buf pool start is at %p, end at %p\n"
 "InnoDB: Probable reason is database corruption or memory\n"
-"InnoDB: corruption. If this happens in an InnoDB database recovery,\n"
-"InnoDB: you can look from section 6.1 at http://www.innodb.com/ibman.html\n"
+"InnoDB: corruption. If this happens in an InnoDB database recovery, see\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/forcing-recovery.html\n"
 "InnoDB: how to force recovery.\n",
  			ptr, buf_pool->frame_zero,
 			buf_pool->high_end);
@@ -333,8 +330,8 @@ Gets the mutex number protecting the page record lock hash chain in the lock
 table. */
 UNIV_INLINE
 mutex_t*
-buf_frame_get_lock_mutex(
-/*=====================*/
+buf_frame_get_mutex(
+/*================*/
 			/* out: mutex */
 	byte*	ptr)	/* in: pointer to within a buffer frame */
 {
@@ -342,7 +339,7 @@ buf_frame_get_lock_mutex(
 
 	block = buf_block_align(ptr);
 
-	return(block->lock_mutex);
+	return(&block->mutex);
 }
 
 /*************************************************************************
@@ -485,17 +482,11 @@ Returns the value of the modify clock. The caller must have an s-lock
 or x-lock on the block. */
 UNIV_INLINE
 dulint
-buf_frame_get_modify_clock(
+buf_block_get_modify_clock(
 /*=======================*/
 				/* out: value */
-	buf_frame_t*	frame)	/* in: pointer to a frame */
+	buf_block_t*	block)	/* in: block */
 {
-	buf_block_t*	block;
-
-	ut_ad(frame);
-
-	block = buf_block_align(frame);
-
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(rw_lock_own(&(block->lock), RW_LOCK_SHARED)
 	      || rw_lock_own(&(block->lock), RW_LOCK_EXCLUSIVE));
@@ -521,6 +512,7 @@ buf_block_buf_fix_inc_debug(
 	ret = rw_lock_s_lock_func_nowait(&(block->debug_latch), file, line);
 
 	ut_ad(ret == TRUE);
+	ut_ad(mutex_own(&block->mutex));
 #endif
 	block->buf_fix_count++;
 }
@@ -533,6 +525,9 @@ buf_block_buf_fix_inc(
 /*==================*/
 	buf_block_t*	block)	/* in: block to bufferfix */
 {
+#ifdef UNIV_SYNC_DEBUG
+	ut_ad(mutex_own(&block->mutex));
+#endif
 	block->buf_fix_count++;
 }
 #endif /* UNIV_SYNC_DEBUG */
@@ -627,15 +622,16 @@ buf_page_release(
 	
 	ut_ad(block);
 
-	mutex_enter_fast(&(buf_pool->mutex));
-
 	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 	ut_a(block->buf_fix_count > 0);
 
 	if (rw_latch == RW_X_LATCH && mtr->modifications) {
-
+		mutex_enter(&buf_pool->mutex);
 		buf_flush_note_modification(block, mtr);
+		mutex_exit(&buf_pool->mutex);
 	}
+
+	mutex_enter(&block->mutex);
 
 #ifdef UNIV_SYNC_DEBUG
 	rw_lock_s_unlock(&(block->debug_latch));
@@ -643,7 +639,7 @@ buf_page_release(
 	buf_fix_count = block->buf_fix_count;
 	block->buf_fix_count = buf_fix_count - 1;
 
-	mutex_exit(&(buf_pool->mutex));
+	mutex_exit(&block->mutex);
 
 	if (rw_latch == RW_S_LATCH) {
 		rw_lock_s_unlock(&(block->lock));

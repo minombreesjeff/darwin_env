@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,16 +20,14 @@
 #include "ndb_cluster_connection.hpp"
 #include "ndbapi_limits.h"
 #include "Ndb.hpp"
-#include "NdbConnection.hpp"
+#include "NdbTransaction.hpp"
 #include "NdbOperation.hpp"
 #include "NdbScanOperation.hpp"
 #include "NdbIndexOperation.hpp"
 #include "NdbIndexScanOperation.hpp"
 #include "NdbScanFilter.hpp"
 #include "NdbRecAttr.hpp"
-#include "NdbResultSet.hpp"
 #include "NdbDictionary.hpp"
-#include "NdbEventOperation.hpp"
 #include "NdbPool.hpp"
 #include "NdbBlob.hpp"
 #endif

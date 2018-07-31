@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -80,7 +79,7 @@ typedef struct st_key_part_info {	/* Info about a key part */
   uint16 store_length;
   uint16 key_type;
   uint16 fieldnr;			/* Fieldnum in UNIREG */
-  uint8 key_part_flag;			/* 0 or HA_REVERSE_SORT */
+  uint16 key_part_flag;			/* 0 or HA_REVERSE_SORT */
   uint8 type;
   uint8 null_bit;			/* Position to null_bit */
 } KEY_PART_INFO ;
@@ -104,6 +103,7 @@ typedef struct st_key {
   union {
     int  bdb_return_if_eq;
   } handler;
+  struct st_table *table;
 } KEY;
 
 
@@ -142,12 +142,11 @@ typedef struct st_read_record {			/* Parameter to read_record */
 
 
 /*
-  Originally MySQL used TIME structure inside server only, but since
+  Originally MySQL used MYSQL_TIME structure inside server only, but since
   4.1 it's exported to user in the new client API. Define aliases for
   new names to keep existing code simple.
 */
 
-typedef struct st_mysql_time TIME;
 typedef enum enum_mysql_timestamp_type timestamp_type;
 
 
@@ -169,9 +168,12 @@ typedef struct st_known_date_time_format {
 enum SHOW_TYPE
 {
   SHOW_UNDEF,
-  SHOW_LONG, SHOW_LONGLONG, SHOW_INT, SHOW_CHAR, SHOW_CHAR_PTR, SHOW_BOOL,
-  SHOW_MY_BOOL, SHOW_OPENTABLES, SHOW_STARTTIME, SHOW_QUESTION,
+  SHOW_LONG, SHOW_LONGLONG, SHOW_INT, SHOW_CHAR, SHOW_CHAR_PTR, 
+  SHOW_DOUBLE_STATUS,
+  SHOW_BOOL, SHOW_MY_BOOL, SHOW_OPENTABLES, SHOW_STARTTIME, SHOW_QUESTION,
   SHOW_LONG_CONST, SHOW_INT_CONST, SHOW_HAVE, SHOW_SYS, SHOW_HA_ROWS,
+  SHOW_VARS,
+  SHOW_FLUSHTIME,
 #ifdef HAVE_OPENSSL
   SHOW_SSL_CTX_SESS_ACCEPT, 	SHOW_SSL_CTX_SESS_ACCEPT_GOOD,
   SHOW_SSL_GET_VERSION, 	SHOW_SSL_CTX_GET_SESSION_CACHE_MODE,
@@ -186,8 +188,11 @@ enum SHOW_TYPE
   SHOW_SSL_CTX_SESS_TIMEOUTS, SHOW_SSL_CTX_SESS_CACHE_FULL,
   SHOW_SSL_GET_CIPHER_LIST,
 #endif /* HAVE_OPENSSL */
+  SHOW_NET_COMPRESSION,
   SHOW_RPL_STATUS, SHOW_SLAVE_RUNNING, SHOW_SLAVE_RETRIED_TRANS,
-  SHOW_KEY_CACHE_LONG, SHOW_KEY_CACHE_CONST_LONG, SHOW_KEY_CACHE_LONGLONG
+  SHOW_KEY_CACHE_LONG, SHOW_KEY_CACHE_CONST_LONG, SHOW_KEY_CACHE_LONGLONG,
+  SHOW_LONG_STATUS, SHOW_LONG_CONST_STATUS, SHOW_SLAVE_SKIP_ERRORS,
+  SHOW_LONGLONG_STATUS
 };
 
 enum SHOW_COMP_OPTION { SHOW_OPTION_YES, SHOW_OPTION_NO, SHOW_OPTION_DISABLED};
@@ -209,16 +214,65 @@ typedef struct	st_lex_user {
 } LEX_USER;
 
 
+/*
+  This structure specifies the maximum amount of resources which
+  can be consumed by each account. Zero value of a member means
+  there is no limit.
+*/
 typedef struct user_resources {
-  uint questions, updates, connections, bits;
+  /* Maximum number of queries/statements per hour. */
+  uint questions;
+  /*
+     Maximum number of updating statements per hour (which statements are
+     updating is defined by uc_update_queries array).
+  */
+  uint updates;
+  /* Maximum number of connections established per hour. */
+  uint conn_per_hour;
+  /* Maximum number of concurrent connections. */
+  uint user_conn;
+  /*
+     Values of this enum and specified_limits member are used by the
+     parser to store which user limits were specified in GRANT statement.
+  */
+  enum {QUERIES_PER_HOUR= 1, UPDATES_PER_HOUR= 2, CONNECTIONS_PER_HOUR= 4,
+        USER_CONNECTIONS= 8};
+  uint specified_limits;
 } USER_RESOURCES;
 
+
+/*
+  This structure is used for counting resources consumed and for checking
+  them against specified user limits.
+*/
 typedef struct  user_conn {
-  char *user, *host;
-  uint len, connections, conn_per_hour, updates, questions, user_len;
+  /*
+     Pointer to user+host key (pair separated by '\0') defining the entity
+     for which resources are counted (By default it is user account thus
+     priv_user/priv_host pair is used. If --old-style-user-limits option
+     is enabled, resources are counted for each user+host separately).
+  */
+  char *user;
+  /* Pointer to host part of the key. */
+  char *host;
+  /* Total length of the key. */
+  uint len;
+  /* Current amount of concurrent connections for this account. */
+  uint connections;
+  /*
+     Current number of connections per hour, number of updating statements
+     per hour and total number of statements per hour for this account.
+  */
+  uint conn_per_hour, updates, questions;
+  /* Maximum amount of resources which account is allowed to consume. */
   USER_RESOURCES user_resources;
+  /*
+     The moment of time when per hour counters were reset last time
+     (i.e. start of "hour" for conn_per_hour, updates, questions counters).
+  */
   time_t intime;
 } USER_CONN;
+
 	/* Bits in form->update */
 #define REG_MAKE_DUPP		1	/* Make a copy of record when read */
 #define REG_NEW_RECORD		2	/* Write a new record if not found */

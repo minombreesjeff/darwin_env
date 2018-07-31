@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +27,7 @@ class Ndb;
 class NdbApiSignal;
 class NdbRecAttr;
 class NdbOperation;
-class NdbConnection;
+class NdbTransaction;
 class NdbColumnImpl;
 class NdbBlob;
 
@@ -38,14 +37,17 @@ class NdbBlob;
  */
 class NdbOperation
 {
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   friend class Ndb;
-  friend class NdbConnection;
+  friend class NdbTransaction;
   friend class NdbScanOperation;
   friend class NdbScanReceiver;
   friend class NdbScanFilter;
   friend class NdbScanFilterImpl;
   friend class NdbReceiver;
   friend class NdbBlob;
+#endif
+
 public:
   /** 
    * @name Define Standard Operation Type
@@ -53,21 +55,51 @@ public:
    */
 
   /**
+   * Different access types (supported by sub-classes of NdbOperation)
+   */
+
+  enum Type {
+    PrimaryKeyAccess     ///< Read, insert, update, or delete using pk
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 0                  // NdbOperation
+#endif
+    ,UniqueIndexAccess   ///< Read, update, or delete using unique index
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 1                  // NdbIndexOperation
+#endif
+    ,TableScan          ///< Full table scan
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 2                  // NdbScanOperation
+#endif
+    ,OrderedIndexScan   ///< Ordered index scan
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 3                  // NdbIndexScanOperation
+#endif
+  };
+  
+  /**
    * Lock when performing read
    */
-  
+
   enum LockMode {
-    LM_Read = 0,
-    LM_Exclusive = 1,
-    LM_CommittedRead = 2,
+    LM_Read                 ///< Read with shared lock
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 0
+#endif
+    ,LM_Exclusive           ///< Read with exclusive lock
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 1
+#endif
+    ,LM_CommittedRead       ///< Ignore locks, read last committed value
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+    = 2,
     LM_Dirty = 2
 #endif
   };
 
   /**
    * Define the NdbOperation to be a standard operation of type insertTuple.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * adds a new tuple to the table.
    *
    * @return 0 if successful otherwise -1.
@@ -76,7 +108,7 @@ public:
 		
   /**
    * Define the NdbOperation to be a standard operation of type updateTuple.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * updates a tuple in the table.
    *
    * @return 0 if successful otherwise -1.
@@ -85,7 +117,7 @@ public:
 
   /**
    * Define the NdbOperation to be a standard operation of type writeTuple.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * writes a tuple to the table.
    * If the tuple exists, it updates it, otherwise an insert takes place.
    *
@@ -95,7 +127,7 @@ public:
 
   /**
    * Define the NdbOperation to be a standard operation of type deleteTuple.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * delete a tuple.
    *
    * @return 0 if successful otherwise -1.
@@ -104,16 +136,17 @@ public:
 		
   /**
    * Define the NdbOperation to be a standard operation of type readTuple.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * reads a tuple.
    *
    * @return 0 if successful otherwise -1.
    */
   virtual int 			readTuple(LockMode);
 
+#ifndef DOXYGEN_SHOULD_SKIP_DEPRECATED
   /**
    * Define the NdbOperation to be a standard operation of type readTuple.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * reads a tuple.
    *
    * @return 0 if successful otherwise -1.
@@ -123,7 +156,7 @@ public:
   /**
    * Define the NdbOperation to be a standard operation of type 
    * readTupleExclusive.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * read a tuple using an exclusive lock.
    *
    * @return 0 if successful otherwise -1.
@@ -133,7 +166,7 @@ public:
   /**
    * Define the NdbOperation to be a standard operation of type 
    * simpleRead.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * reads an existing tuple (using shared read lock), 
    * but releases lock immediately after read.
    *
@@ -150,10 +183,9 @@ public:
    */
   virtual int			simpleRead();
 
-#ifndef DOXYGEN_SHOULD_SKIP_DEPRECATED
   /**
    * Define the NdbOperation to be a standard operation of type committedRead.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * read latest committed value of the record.
    *
    * This means that if another transaction is updating the 
@@ -166,11 +198,10 @@ public:
    * @depricated
    */
   virtual int			dirtyRead();
-#endif
 
   /**
    * Define the NdbOperation to be a standard operation of type committedRead.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * read latest committed value of the record.
    *
    * This means that if another transaction is updating the 
@@ -184,7 +215,7 @@ public:
 
   /**
    * Define the NdbOperation to be a standard operation of type dirtyUpdate.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * updates without two-phase commit.
    *
    * @return 0 if successful otherwise -1.
@@ -193,13 +224,15 @@ public:
 
   /**
    * Define the NdbOperation to be a standard operation of type dirtyWrite.
-   * When calling NdbConnection::execute, this operation 
+   * When calling NdbTransaction::execute, this operation 
    * writes without two-phase commit.
    *
    * @return 0 if successful otherwise -1.
    */
   virtual int			dirtyWrite();
+#endif
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /** @} *********************************************************************/
   /** 
    * @name Define Interpreted Program Operation Type
@@ -219,6 +252,7 @@ public:
    * @return 0 if successful otherwise -1.
    */
   virtual int			interpretedDeleteTuple();
+#endif
 
   /** @} *********************************************************************/
 
@@ -233,10 +267,13 @@ public:
    * use several equals (then all of them must be satisfied for the
    * tuple to be selected).
    *
-   * @note There are 10 versions of NdbOperation::equal with
+   * @note For insertTuple() it is also allowed to define the
+   *       search key by using setValue().
+   *
+   * @note There are 10 versions of equal() with
    *       slightly different parameters.
    *
-   * @note When using NdbOperation::equal with a string (char *) as
+   * @note When using equal() with a string (char *) as
    *       second argument, the string needs to be padded with 
    *       zeros in the following sense:
    *       @code
@@ -244,6 +281,8 @@ public:
    *       strncpy(buf, str, sizeof(buf));
    *       NdbOperation->equal("Attr1", buf);
    *       @endcode
+   *
+   * 
    * 
    * @param   anAttrName   Attribute name 
    * @param   aValue       Attribute value.
@@ -261,21 +300,6 @@ public:
   int  equal(Uint32 anAttrId, Int64 aValue);	
   int  equal(Uint32 anAttrId, Uint64 aValue);
 	
-  /**
-   * Generate a tuple id and set it as search argument.
-   *
-   * The Tuple id has NDB$TID as attribute name and 0 as attribute id.
-   *
-   * The generated tuple id is returned by the method.
-   * If zero is returned there is an error.
-   *
-   * This is mostly used for tables without any primary key 
-   * attributes.
-   * 
-   * @return    Generated tuple id if successful, otherwise 0.
-   */
-  Uint64       setTupleId();			
-
   /** @} *********************************************************************/
   /** 
    * @name Specify Attribute Actions for Operations
@@ -302,7 +326,7 @@ public:
    * @note This method does not fetch the attribute value from 
    *       the database!  The NdbRecAttr object returned by this method 
    *       is <em>not</em> readable/printable before the 
-   *       transaction has been executed with NdbConnection::execute.
+   *       transaction has been executed with NdbTransaction::execute.
    *
    * @param anAttrName  Attribute name 
    * @param aValue      If this is non-NULL, then the attribute value 
@@ -338,6 +362,12 @@ public:
    * If length is not provided or set to zero, 
    * then the API will assume that the pointer
    * is correct and not bother with checking it.
+   *
+   * @note For insertTuple() the NDB API will automatically detect that 
+   *       it is supposed to use equal() instead. 
+   *
+   * @note For insertTuple() it is not necessary to use
+   *       setValue() on key attributes before other attributes.
    *
    * @note There are 14 versions of NdbOperation::setValue with
    *       slightly different parameters.
@@ -375,6 +405,7 @@ public:
   virtual NdbBlob* getBlobHandle(const char* anAttrName);
   virtual NdbBlob* getBlobHandle(Uint32 anAttrId);
  
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /** @} *********************************************************************/
   /** 
    * @name Specify Interpreted Program Instructions
@@ -587,21 +618,25 @@ public:
    * @param  Label   label to jump to
    * @return -1 if unsuccessful
    */
-  int branch_col_eq(Uint32 ColId, const char * val, Uint32 len, 
+  int branch_col_eq(Uint32 ColId, const void * val, Uint32 len, 
 		    bool nopad, Uint32 Label);
-  int branch_col_ne(Uint32 ColId, const char * val, Uint32 len, 
+  int branch_col_ne(Uint32 ColId, const void * val, Uint32 len, 
 		    bool nopad, Uint32 Label);
-  int branch_col_lt(Uint32 ColId, const char * val, Uint32 len, 
+  int branch_col_lt(Uint32 ColId, const void * val, Uint32 len, 
 		    bool nopad, Uint32 Label);
-  int branch_col_le(Uint32 ColId, const char * val, Uint32 len, 
+  int branch_col_le(Uint32 ColId, const void * val, Uint32 len, 
 		    bool nopad, Uint32 Label);
-  int branch_col_gt(Uint32 ColId, const char * val, Uint32 len, 
+  int branch_col_gt(Uint32 ColId, const void * val, Uint32 len, 
 		    bool nopad, Uint32 Label);
-  int branch_col_ge(Uint32 ColId, const char * val, Uint32 len, 
+  int branch_col_ge(Uint32 ColId, const void * val, Uint32 len, 
 		    bool nopad, Uint32 Label);
-  int branch_col_like(Uint32 ColId, const char *, Uint32 len, 
+  /**
+   * The argument is always plain char, even if the field is varchar
+   * (changed in 5.0.22).
+   */
+  int branch_col_like(Uint32 ColId, const void *, Uint32 len, 
 		      bool nopad, Uint32 Label);
-  int branch_col_notlike(Uint32 ColId, const char *, Uint32 len, 
+  int branch_col_notlike(Uint32 ColId, const void *, Uint32 len, 
 			 bool nopad, Uint32 Label);
   
   /**
@@ -673,6 +708,7 @@ public:
    * @return -1 if unsuccessful. 
    */
   int   ret_sub();
+#endif
 
   /** @} *********************************************************************/
 
@@ -700,8 +736,19 @@ public:
    */
   const char* getTableName() const;
 
+  /**
+   * Get table object for this operation
+   */
+  const NdbDictionary::Table * getTable() const;
+
+  /**
+   * Get the type of access for this operation
+   */
+  const Type getType() const;
+
   /** @} *********************************************************************/
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    * Type of operation
    */
@@ -717,9 +764,26 @@ public:
     NotDefined2,                  ///< Internal for debugging
     NotDefined                    ///< Internal for debugging
   };
+#endif
 
+  /**
+   * Return lock mode for operation
+   */
   LockMode getLockMode() const { return theLockMode; }
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  void setAbortOption(Int8 ao) { m_abortOption = ao; }
+  
+  /**
+   * Set/get partition key
+   */
+  void setPartitionId(Uint32 id);
+  void setPartitionHash(Uint32 key);
+  void setPartitionHash(const Uint64 *, Uint32 len);
+  Uint32 getPartitionId() const;
+#endif
+protected:
+  int handle_distribution_key(const Uint64 *, Uint32 len);
 protected:
 /******************************************************************************
  * These are the methods used to create and delete the NdbOperation objects.
@@ -732,15 +796,22 @@ protected:
 //--------------------------------------------------------------
 // Initialise after allocating operation to a transaction		      
 //--------------------------------------------------------------
-  int init(const class NdbTableImpl*, NdbConnection* aCon);
+  int init(const class NdbTableImpl*, NdbTransaction* aCon);
   void initInterpreter();
 
-  NdbOperation(Ndb* aNdb);	
+  NdbOperation(Ndb* aNdb, Type aType = PrimaryKeyAccess);	
   virtual ~NdbOperation();
   void	next(NdbOperation*);		// Set next pointer		      
   NdbOperation*	    next();	        // Get next pointer		       
+public:
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
+  const NdbOperation* next() const;
+  const NdbRecAttr* getFirstRecAttr() const;
+#endif
+protected:
 
-  enum OperationStatus{ 
+  enum OperationStatus
+  { 
     Init,                       
     OperationDefined,
     TupleKeyDefined,
@@ -761,7 +832,7 @@ protected:
   
   void		    Status(OperationStatus);    // Set the status information
 
-  void		    NdbCon(NdbConnection*);	// Set reference to connection
+  void		    NdbCon(NdbTransaction*);	// Set reference to connection
   						// object.
 
   virtual void	    release();			// Release all operations 
@@ -798,7 +869,7 @@ protected:
   virtual int equal_impl(const NdbColumnImpl*,const char* aValue, Uint32 len);
   virtual NdbRecAttr* getValue_impl(const NdbColumnImpl*, char* aValue = 0);
   int setValue(const NdbColumnImpl* anAttrObject, const char* aValue, Uint32 len);
-  NdbBlob* getBlobHandle(NdbConnection* aCon, const NdbColumnImpl* anAttrObject);
+  NdbBlob* getBlobHandle(NdbTransaction* aCon, const NdbColumnImpl* anAttrObject);
   int incValue(const NdbColumnImpl* anAttrObject, Uint32 aValue);
   int incValue(const NdbColumnImpl* anAttrObject, Uint64 aValue);
   int subValue(const NdbColumnImpl* anAttrObject, Uint32 aValue);
@@ -806,17 +877,16 @@ protected:
   int read_attr(const NdbColumnImpl* anAttrObject, Uint32 RegDest);
   int write_attr(const NdbColumnImpl* anAttrObject, Uint32 RegSource);
   int branch_reg_reg(Uint32 type, Uint32, Uint32, Uint32);
-  int branch_col(Uint32 type, Uint32, const char *, Uint32, bool, Uint32 Label);
+  int branch_col(Uint32 type, Uint32, const void *, Uint32, bool, Uint32 Label);
   int branch_col_null(Uint32 type, Uint32 col, Uint32 Label);
   
   // Handle ATTRINFO signals   
-  int 	      insertATTRINFO(Uint32 aData);
-  int         insertATTRINFOloop(const Uint32* aDataPtr, Uint32 aLength);
-
-  int 	      insertKEYINFO(const char* aValue,	
-			    Uint32 aStartPosition,	
-			    Uint32 aKeyLenInByte,	
-			    Uint32 anAttrBitsInLastWord);
+  int insertATTRINFO(Uint32 aData);
+  int insertATTRINFOloop(const Uint32* aDataPtr, Uint32 aLength);
+  
+  int insertKEYINFO(const char* aValue,	
+		    Uint32 aStartPosition,	
+		    Uint32 aKeyLenInByte);
   
   virtual void setErrorCode(int aErrorCode);
   virtual void setErrorCodeAbort(int aErrorCode);
@@ -838,9 +908,13 @@ protected:
   // get table or index key from prepared signals
   int getKeyFromTCREQ(Uint32* data, unsigned size);
 
+  virtual void setReadLockMode(LockMode lockMode);
+
 /******************************************************************************
  * These are the private variables that are defined in the operation objects.
  *****************************************************************************/
+
+  Type m_type;
 
   NdbReceiver theReceiver;
 
@@ -848,16 +922,20 @@ protected:
   int 	   theErrorLine;		// Error line       
 
   Ndb*		   theNdb;	      	// Point back to the Ndb object.
-  NdbConnection*   theNdbCon;	       	// Point back to the connection object.
+  NdbTransaction*   theNdbCon;	       	// Point back to the connection object.
   NdbOperation*	   theNext;	       	// Next pointer to operation.
-  NdbApiSignal*	   theTCREQ;		// The TC[KEY/INDX]REQ signal object
+
+  union {
+    NdbApiSignal* theTCREQ;		// The TC[KEY/INDX]REQ signal object
+    NdbApiSignal* theSCAN_TABREQ;
+  };
+
   NdbApiSignal*	   theFirstATTRINFO;	// The first ATTRINFO signal object 
   NdbApiSignal*	   theCurrentATTRINFO;	// The current ATTRINFO signal object  
   Uint32	   theTotalCurrAI_Len;	// The total number of attribute info
   		      			// words currently defined    
   Uint32	   theAI_LenInCurrAI;	// The number of words defined in the
 		      		     	// current ATTRINFO signal
-  NdbApiSignal*	   theFirstKEYINFO;	// The first KEYINFO signal object 
   NdbApiSignal*	   theLastKEYINFO;	// The first KEYINFO signal object 
 
   class NdbLabel*	    theFirstLabel;
@@ -874,8 +952,8 @@ protected:
   Uint32*           theKEYINFOptr;       // Pointer to where to write KEYINFO
   Uint32*           theATTRINFOptr;      // Pointer to where to write ATTRINFO
 
-  const class NdbTableImpl* m_currentTable;      // The current table
-  const class NdbTableImpl* m_accessTable;
+  const class NdbTableImpl* m_currentTable; // The current table
+  const class NdbTableImpl* m_accessTable;  // Index table (== current for pk)
 
   // Set to TRUE when a tuple key attribute has been defined. 
   Uint32	    theTupleKeyDefined[NDB_MAX_NO_OF_ATTRIBUTES_IN_KEY][3];
@@ -883,18 +961,18 @@ protected:
   Uint32	    theTotalNrOfKeyWordInSignal;     // The total number of
   						     // keyword in signal.
 
-  Uint32	    theTupKeyLen;	   // Length of the tuple key in words
-  Uint32	    theNoOfTupKeyDefined;  // The number of tuple key attributes
-		       			   // currently defined   
-  OperationType	  theOperationType;        // Read Request, Update Req......   
-
+  Uint32	    theTupKeyLen;	// Length of the tuple key in words
+		       		        // left until done
+  Uint8	theNoOfTupKeyLeft;  // The number of tuple key attributes
+  OperationType	theOperationType;        // Read Request, Update Req......   
+  
   LockMode        theLockMode;	   // Can be set to WRITE if read operation 
   OperationStatus theStatus;	   // The status of the operation.	
+  
   Uint32         theMagicNumber;  // Magic number to verify that object 
                                    // is correct
   Uint32 theScanInfo;      	   // Scan info bits (take over flag etc)
-  Uint32 theDistrKeySize;         // Distribution Key size if used
-  Uint32 theDistributionGroup;    // Distribution Group if used
+  Uint32 theDistributionKey;       // Distribution Key size if used
 
   Uint32 theSubroutineSize;	   // Size of subroutines for interpretation
   Uint32 theInitialReadSize;	   // Size of initial reads for interpretation
@@ -902,14 +980,12 @@ protected:
   Uint32 theFinalUpdateSize;	   // Size of final updates for interpretation
   Uint32 theFinalReadSize;	   // Size of final reads for interpretation
 
-  Uint8  theStartIndicator;	   // Indicator of whether start operation
-  Uint8  theCommitIndicator;	   // Indicator of whether commit operation
-  Uint8  theSimpleIndicator;	   // Indicator of whether simple operation
-  Uint8  theDirtyIndicator;	   // Indicator of whether dirty operation
-  Uint8  theInterpretIndicator;   // Indicator of whether interpreted operation
-  Uint8  theDistrGroupIndicator;  // Indicates whether distribution grp is used
-  Uint8  theDistrGroupType;       // Type of distribution group used
-  Uint8  theDistrKeyIndicator;    // Indicates whether distr. key is used
+  Uint8  theStartIndicator;	 // Indicator of whether start operation
+  Uint8  theCommitIndicator;	 // Indicator of whether commit operation
+  Uint8  theSimpleIndicator;	 // Indicator of whether simple operation
+  Uint8  theDirtyIndicator;	 // Indicator of whether dirty operation
+  Uint8  theInterpretIndicator;  // Indicator of whether interpreted operation
+  Int8  theDistrKeyIndicator_;    // Indicates whether distr. key is used
 
   Uint16 m_tcReqGSN;
   Uint16 m_keyInfoGSN;
@@ -933,6 +1009,7 @@ protected:
 #include <stdlib.h>
 #endif
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
 
 inline
 int
@@ -987,6 +1064,33 @@ NdbOperation::next()
   return theNext;
 }
 
+inline
+const NdbOperation*
+NdbOperation::next() const 
+{
+  return theNext;
+}
+
+inline
+const NdbRecAttr*
+NdbOperation::getFirstRecAttr() const 
+{
+  return theReceiver.theFirstRecAttr;
+}
+
+/******************************************************************************
+Type getType()
+                                                                                
+Return Value    Return the Type.
+Remark:         Gets type of access.
+******************************************************************************/
+inline
+const NdbOperation::Type
+NdbOperation::getType() const
+{
+  return m_type;
+}
+                                                                                
 /******************************************************************************
 OperationStatus  Status();
 
@@ -1016,14 +1120,14 @@ NdbOperation::Status( OperationStatus aStatus )
 }
 
 /******************************************************************************
-void NdbCon(NdbConnection* aNdbCon);
+void NdbCon(NdbTransaction* aNdbCon);
 
-Parameters:    aNdbCon: Pointers to NdbConnection object.
+Parameters:    aNdbCon: Pointers to NdbTransaction object.
 Remark:        Set the reference to the connection in the operation object.
 ******************************************************************************/
 inline
 void
-NdbOperation::NdbCon(NdbConnection* aNdbCon)
+NdbOperation::NdbCon(NdbTransaction* aNdbCon)
 {
   theNdbCon = aNdbCon;
 }
@@ -1167,5 +1271,7 @@ NdbOperation::setValue(Uint32 anAttrId, double aPar)
 {
   return setValue(anAttrId, (const char*)&aPar, (Uint32)8);
 }
+
+#endif // doxygen
 
 #endif

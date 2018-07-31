@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,6 +67,7 @@ public:
    */
   class Table {
   public:
+    Table() {}
     /* Table id (array index in DICT and other blocks) */
     Uint32 tableId;
 
@@ -86,14 +86,8 @@ public:
     /* Primary table of index otherwise RNIL */
     Uint32 primaryTableId;
 
-    /* Type of storage (memory/disk, not used) */
-    DictTabInfo::StorageType storageType;
-
     /* Type of fragmentation (small/medium/large) */
     DictTabInfo::FragmentType fragmentType;
-
-    /* Key type of fragmentation (pk/dist key/dist group) */
-    DictTabInfo::FragmentKeyType fragmentKeyType;
 
     /* Global checkpoint identity when table created */
     Uint32 gciTableCreated;
@@ -166,7 +160,6 @@ public:
     Uint32 attributeDescriptor;
 
     /* Extended attributes */
-    Uint32 extType;
     Uint32 extPrecision;
     Uint32 extScale;
     Uint32 extLength;

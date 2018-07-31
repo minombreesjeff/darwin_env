@@ -1,24 +1,64 @@
-%define mysql_version		@VERSION@
+# Copyright (C) 2000-2007 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; see the file COPYING. If not, write to the
+# Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston
+# MA  02110-1301  USA.
+
+%define mysql_version   @VERSION@
+
 # use "rpmbuild --with static" or "rpm --define '_with_static 1'" (for RPM 3.x)
 # to enable static linking (off by default)
 %{?_with_static:%define STATIC_BUILD 1}
 %{!?_with_static:%define STATIC_BUILD 0}
+
+# use "rpmbuild --with yassl" or "rpm --define '_with_yassl 1'" (for RPM 3.x)
+# to build with yaSSL support (off by default)
+%{?_with_yassl:%define YASSL_BUILD 1}
+%{!?_with_yassl:%define YASSL_BUILD 0}
+
 %if %{STATIC_BUILD}
 %define release 0
 %else
 %define release 0.glibc23
 %endif
 %define license GPL
-%define mysqld_user		mysql
-%define mysqld_group	mysql
-%define server_suffix -standard
-%define mysqldatadir /var/lib/mysql
+%define mysqld_user     mysql
+%define mysqld_group    mysql
+%define server_suffix   -community
+%define mysqldatadir    /var/lib/mysql
 
 # We don't package all files installed into the build root by intention -
 # See BUG#998 for details.
 %define _unpackaged_files_terminate_build 0
 
 %define see_base For a description of MySQL see the base MySQL RPM or http://www.mysql.com
+
+# On SuSE 9 no separate "debuginfo" package is built. To enable basic
+# debugging on that platform, we don't strip binaries on SuSE 9. We
+# disable the strip of binaries by redefining the RPM macro
+# "__os_install_post" leaving out the script calls that normally does
+# this. We do this in all cases, as on platforms where "debuginfo" is
+# created, a script "find-debuginfo.sh" will be called that will do
+# the strip anyway, part of separating the executable and debug
+# information into separate files put into separate packages.
+#
+# Some references (shows more advanced conditional usage):
+# http://www.redhat.com/archives/rpm-list/2001-November/msg00257.html
+# http://www.redhat.com/archives/rpm-list/2003-February/msg00275.html
+# http://www.redhat.com/archives/rhl-devel-list/2004-January/msg01546.html
+# http://lists.opensuse.org/archive/opensuse-commit/2006-May/1171.html
+
+%define __os_install_post /usr/lib/rpm/brp-compress
 
 Name: MySQL
 Summary:	MySQL: a very fast and reliable SQL database server
@@ -46,12 +86,9 @@ is intended for mission-critical, heavy-load production systems as well
 as for embedding into mass-deployed software. MySQL is a trademark of
 MySQL AB.
 
-The MySQL software has Dual Licensing, which means you can use the MySQL
-software free of charge under the GNU General Public License
-(http://www.gnu.org/licenses/). You can also purchase commercial MySQL
-licenses from MySQL AB if you do not wish to be bound by the terms of
-the GPL. See the chapter "Licensing and Support" in the manual for
-further info.
+Copyright (C) 2000-2007 MySQL AB
+This software comes with ABSOLUTELY NO WARRANTY. This is free software,
+and you are welcome to modify and redistribute it under the GPL license.
 
 The MySQL web site (http://www.mysql.com/) provides the latest
 news and information about the MySQL software. Also please see the
@@ -62,7 +99,7 @@ Summary:	MySQL: a very fast and reliable SQL database server
 Group:		Applications/Databases
 Requires: coreutils grep procps /usr/sbin/useradd /usr/sbin/groupadd /sbin/chkconfig
 Provides:	msqlormysql mysql-server mysql MySQL
-Obsoletes:	MySQL mysql mysql-server
+Obsoletes:	MySQL mysql mysql-server mysql-Max
 
 %description server
 The MySQL(TM) software delivers a very fast, multi-threaded, multi-user,
@@ -71,12 +108,9 @@ is intended for mission-critical, heavy-load production systems as well
 as for embedding into mass-deployed software. MySQL is a trademark of
 MySQL AB.
 
-The MySQL software has Dual Licensing, which means you can use the MySQL
-software free of charge under the GNU General Public License
-(http://www.gnu.org/licenses/). You can also purchase commercial MySQL
-licenses from MySQL AB if you do not wish to be bound by the terms of
-the GPL. See the chapter "Licensing and Support" in the manual for
-further info.
+Copyright (C) 2000-2007 MySQL AB
+This software comes with ABSOLUTELY NO WARRANTY. This is free software,
+and you are welcome to modify and redistribute it under the GPL license.
 
 The MySQL web site (http://www.mysql.com/) provides the latest
 news and information about the MySQL software. Also please see the
@@ -86,7 +120,7 @@ This package includes the MySQL server binary (incl. InnoDB) as well
 as related utilities to run and administrate a MySQL server.
 
 If you want to access and work with the database, you have to install
-package "MySQL-client" as well!
+the package "MySQL-client" as well!
 
 %package client
 Summary: MySQL - Client
@@ -107,8 +141,6 @@ Group:		Applications/Databases
 This package contains the ndbcluster storage engine. 
 It is necessary to have this package installed on all 
 computers that should store ndbcluster table data.
-Note that this storage engine can only be used in conjunction
-with the MySQL Max server.
 
 %{see_base}
 
@@ -170,52 +202,31 @@ necessary to develop MySQL client applications.
 %package shared
 Summary: MySQL - Shared libraries
 Group: Applications/Databases
+Provides: mysql-shared
+Obsoletes: mysql-shared
 
 %description shared
 This package contains the shared libraries (*.so*) which certain
 languages and applications need to dynamically load and use MySQL.
 
-%package Max
-Summary: MySQL - server with extended functionality
-Group: Applications/Databases
-Provides: mysql-Max
-Obsoletes: mysql-Max
-Requires: MySQL-server >= @MYSQL_BASE_VERSION@
-
-%description Max 
-Optional MySQL server binary that supports additional features like:
-
- - Berkeley DB Storage Engine
- - Ndbcluster Storage Engine interface
- - Archive Storage Engine
- - CSV Storage Engine
- - Example Storage Engine
- - MyISAM RAID
- - User Defined Functions (UDFs).
-
-To activate this binary, just install this package in addition to
-the standard MySQL package.
-
-Please note that this is a dynamically linked binary!
-
-%package embedded
-Requires: %{name}-devel
-Summary: MySQL - embedded library
-Group: Applications/Databases
-Obsoletes: mysql-embedded
-
-%description embedded
-This package contains the MySQL server as an embedded library.
-
-The embedded MySQL server library makes it possible to run a
-full-featured MySQL server inside the client application.
-The main benefits are increased speed and more simple management
-for embedded applications.
-
-The API is identical for the embedded MySQL version and the
-client/server version.
-
-%{see_base}
+#%package embedded
+#Requires: %{name}-devel
+#Summary: MySQL - embedded library
+#Group: Applications/Databases
+#Obsoletes: mysql-embedded
+#
+#%description embedded
+#This package contains the MySQL server as an embedded library.
+#
+#The embedded MySQL server library makes it possible to run a
+#full-featured MySQL server inside the client application.
+#The main benefits are increased speed and more simple management
+#for embedded applications.
+#
+#The API is identical for the embedded MySQL version and the
+#client/server version.
+#
+#%{see_base}
 
 %prep
 %setup -n mysql-%{mysql_version}
@@ -241,6 +252,9 @@ sh -c  "PATH=\"${MYSQL_BUILD_PATH:-$PATH}\" \
             --with-unix-socket-path=/var/lib/mysql/mysql.sock \
 	    --with-pic \
             --prefix=/ \
+%if %{YASSL_BUILD}
+	    --with-yassl \
+%endif
             --exec-prefix=%{_exec_prefix} \
             --libexecdir=%{_sbindir} \
             --libdir=%{_libdir} \
@@ -251,11 +265,9 @@ sh -c  "PATH=\"${MYSQL_BUILD_PATH:-$PATH}\" \
             --includedir=%{_includedir} \
             --mandir=%{_mandir} \
 	    --enable-thread-safe-client \
-	    --with-readline ;
+	    --with-readline ; \
 	    # Add this for more debugging support
 	    # --with-debug
-	    # Add this for MyISAM RAID support:
-	    # --with-raid
 	    "
 
  # benchdir does not fit in above model. Maybe a separate bench distribution
@@ -286,9 +298,6 @@ mkdir -p $RBR%{_libdir}/mysql
 PATH=${MYSQL_BUILD_PATH:-/bin:/usr/bin}
 export PATH
 
-# Build the Max binary (includes BDB and UDFs and therefore
-# cannot be linked statically against the patched glibc)
-
 # Use gcc for C and C++ code (to avoid a dependency on libstdc++ and
 # including exceptions into the code
 if [ -z "$CXX" -a -z "$CC" ]
@@ -297,45 +306,51 @@ then
 	export CXX="gcc"
 fi
 
-BuildMySQL "--enable-shared \
-		--with-extra-charsets=all \
-		--with-berkeley-db \
+#
+# Only link statically on our i386 build host (which has a specially
+# patched static glibc installed) - ia64 and x86_64 run glibc-2.3 (unpatched)
+# so don't link statically there
+#
+for servertype in '--with-debug=full' ' '
+do
+  BuildMySQL "\
+%if %{STATIC_BUILD}
+		--enable-shared \
+		--with-mysqld-ldflags='-all-static' \
+		--with-client-ldflags='-all-static' \
+		$USE_OTHER_LIBC_DIR \
+%else
+		--enable-shared \
+		--with-zlib-dir=bundled \
+%endif
+		--with-extra-charsets=complex \
+		--with-comment=\"MySQL Community Edition (GPL)\" \
+		--with-server-suffix='%{server_suffix}' \
+		--with-archive-storage-engine \
 		--with-innodb \
 		--with-ndbcluster \
-		--with-raid \
-		--with-archive-storage-engine \
 		--with-csv-storage-engine \
 		--with-example-storage-engine \
 		--with-blackhole-storage-engine \
-		--with-embedded-server \
-		--with-comment=\"MySQL Community Edition - Experimental (GPL)\" \
-		--with-server-suffix='-max'"
+		--with-federated-storage-engine \
+		--with-big-tables $servertype"
+  if test "$servertype" != ' '
+  then
+    # if this is not the regular build, we save the server binary
+    ./libtool --mode=execute cp sql/mysqld sql/mysqld-debug
+    ./libtool --mode=execute nm --numeric-sort sql/mysqld-debug > sql/mysqld-debug.sym
+    echo "# debug"
+    make test-bt
+    make clean
+  fi
+done
 
-# We might want to save the config log file
-if test -n "$MYSQL_MAXCONFLOG_DEST"
-then
-  cp -fp config.log "$MYSQL_MAXCONFLOG_DEST"
-fi
-
-make -i test-force || true
-
-# Save mysqld-max
-./libtool --mode=execute cp sql/mysqld sql/mysqld-max
-./libtool --mode=execute nm --numeric-sort sql/mysqld-max > sql/mysqld-max.sym
-
-# Save the perror binary so it supports the NDB error codes (BUG#13740)
-./libtool --mode=execute cp extra/perror extra/perror.ndb
-
-# Install the ndb binaries
-(cd ndb; make install DESTDIR=$RBR)
-
-# Install embedded server library in the build root
-install -m 644 libmysqld/libmysqld.a $RBR%{_libdir}/mysql/
+./libtool --mode=execute nm --numeric-sort sql/mysqld > sql/mysqld.sym
 
 # Include libgcc.a in the devel subpackage (BUG 4921)
 if expr "$CC" : ".*gcc.*" > /dev/null ;
 then
-  libgcc=`$CC --print-libgcc-file`
+  libgcc=`$CC $CFLAGS --print-libgcc-file`
   if [ -f $libgcc ]
   then
     %define have_libgcc 1
@@ -343,36 +358,10 @@ then
   fi
 fi
 
-# Save libraries
+# Save the libraries
 (cd libmysql/.libs; tar cf $RBR/shared-libs.tar *.so*)
 (cd libmysql_r/.libs; tar rf $RBR/shared-libs.tar *.so*)
-
-# Now clean up
-make clean
-
-#
-# Only link statically on our i386 build host (which has a specially
-# patched static glibc installed) - ia64 and x86_64 run glibc-2.3 (unpatched)
-# so don't link statically there
-#
-BuildMySQL "--disable-shared \
-%if %{STATIC_BUILD}
-		--with-mysqld-ldflags='-all-static' \
-		--with-client-ldflags='-all-static' \
-		$USE_OTHER_LIBC_DIR \
-%else
-		--with-zlib-dir=bundled \
-%endif
-		--with-extra-charsets=complex \
-		--with-comment=\"MySQL Community Edition - Standard (GPL)\" \
-		--with-server-suffix='%{server_suffix}' \
-		--without-embedded-server \
-		--without-berkeley-db \
-		--with-innodb \
-		--without-vio \
-		--without-openssl"
-
-./libtool --mode=execute nm --numeric-sort sql/mysqld > sql/mysqld.sym
+(cd ndb/src/.libs; tar rf $RBR/shared-libs.tar *.so*)
 
 # We might want to save the config log file
 if test -n "$MYSQL_CONFLOG_DEST"
@@ -380,7 +369,8 @@ then
   cp -fp config.log "$MYSQL_CONFLOG_DEST"
 fi
 
-make -i test-force || true
+echo "# standard"
+make test-bt
 
 %install
 RBR=$RPM_BUILD_ROOT
@@ -395,26 +385,30 @@ install -d $RBR%{_libdir}
 install -d $RBR%{_mandir}
 install -d $RBR%{_sbindir}
 
-
 # Install all binaries stripped 
 make install-strip DESTDIR=$RBR benchdir_root=%{_datadir}
+
+# Install the ndb binaries
+(cd ndb; make install DESTDIR=$RBR)
+
+# Install the saved debug server
+install -s -m 755 $MBD/sql/mysqld-debug $RBR%{_sbindir}/mysqld-debug
 
 # Install shared libraries (Disable for architectures that don't support it)
 (cd $RBR%{_libdir}; tar xf $RBR/shared-libs.tar; rm -f $RBR/shared-libs.tar)
 
-# install saved mysqld-max
-install -s -m755 $MBD/sql/mysqld-max $RBR%{_sbindir}/mysqld-max
-
-# install saved perror binary with NDB support (BUG#13740)
-install -s -m755 $MBD/extra/perror.ndb $RBR%{_bindir}/perror
-
 # install symbol files ( for stack trace resolution)
-install -m644 $MBD/sql/mysqld-max.sym $RBR%{_libdir}/mysql/mysqld-max.sym
-install -m644 $MBD/sql/mysqld.sym $RBR%{_libdir}/mysql/mysqld.sym
+# install -m 644 $MBD/sql/mysqld-max.sym $RBR%{_libdir}/mysql/mysqld-max.sym
+install -m 644 $MBD/sql/mysqld.sym $RBR%{_libdir}/mysql/mysqld.sym
+install -m 644 $MBD/sql/mysqld-debug.sym $RBR%{_libdir}/mysql/mysqld-debug.sym
 
 # Install logrotate and autostart
-install -m644 $MBD/support-files/mysql-log-rotate $RBR%{_sysconfdir}/logrotate.d/mysql
-install -m755 $MBD/support-files/mysql.server $RBR%{_sysconfdir}/init.d/mysql
+install -m 644 $MBD/support-files/mysql-log-rotate $RBR%{_sysconfdir}/logrotate.d/mysql
+install -m 755 $MBD/support-files/mysql.server $RBR%{_sysconfdir}/init.d/mysql
+
+# Install embedded server library in the build root
+# FIXME No libmysqld on 5.0 yet
+#install -m 644 libmysqld/libmysqld.a $RBR%{_libdir}/mysql/
 
 # Create a symlink "rcmysql", pointing to the init.script. SuSE users
 # will appreciate that, as all services usually offer this.
@@ -424,9 +418,11 @@ ln -s %{_sysconfdir}/init.d/mysql $RPM_BUILD_ROOT%{_sbindir}/rcmysql
 # (safe_mysqld will be gone in MySQL 4.1)
 ln -sf ./mysqld_safe $RBR%{_bindir}/safe_mysqld
 
-# Touch the place where the my.cnf config file might be located
+# Touch the place where the my.cnf config file and mysqlmanager.passwd
+# (MySQL Instance Manager password file) might be located
 # Just to make sure it's in the file list and marked as a config file
 touch $RBR%{_sysconfdir}/my.cnf
+touch $RBR%{_sysconfdir}/mysqlmanager.passwd
 
 %pre server
 # Shut down a previously installed server first
@@ -446,7 +442,7 @@ fi
 mysql_datadir=%{mysqldatadir}
 
 # Create data directory if needed
-if test ! -d $mysql_datadir; then mkdir -m755 $mysql_datadir; fi
+if test ! -d $mysql_datadir; then mkdir -m 755 $mysql_datadir; fi
 if test ! -d $mysql_datadir/mysql; then mkdir $mysql_datadir/mysql; fi
 if test ! -d $mysql_datadir/test; then mkdir $mysql_datadir/test; fi
 
@@ -475,6 +471,8 @@ chown -R %{mysqld_user}:%{mysqld_group} $mysql_datadir
 # Initiate databases if needed
 %{_bindir}/mysql_install_db --rpm --user=%{mysqld_user}
 
+# Upgrade databases if needed would go here - but it cannot be automated yet
+
 # Change permissions again to fix any new files.
 chown -R %{mysqld_user}:%{mysqld_group} $mysql_datadir
 
@@ -488,18 +486,17 @@ chmod -R og-rw $mysql_datadir/mysql
 # Allow safe_mysqld to start mysqld and print a message before we exit
 sleep 2
 
+echo "Thank you for installing the MySQL Community Server! For Production
+systems, we recommend MySQL Enterprise, which contains enterprise-ready
+software, intelligent advisory services, and full production support with
+scheduled service packs and more.  Visit www.mysql.com/enterprise for more
+information." 
 
 %post ndb-storage
 mysql_clusterdir=/var/lib/mysql-cluster
 
 # Create cluster directory if needed
-if test ! -d $mysql_clusterdir; then mkdir -m755 $mysql_clusterdir; fi
-
-
-%post Max
-# Restart mysqld, to use the new binary.
-echo "Restarting mysqld."
-%{_sysconfdir}/init.d/mysql restart > /dev/null 2>&1
+if test ! -d $mysql_clusterdir; then mkdir -m 755 $mysql_clusterdir; fi
 
 %preun server
 if test $1 = 0
@@ -538,9 +535,7 @@ fi
 
 %doc %attr(644, root, root) %{_infodir}/mysql.info*
 
-%doc %attr(644, root, man) %{_mandir}/man1/mysqlman.1*
-%doc %attr(644, root, man) %{_mandir}/man1/isamchk.1*
-%doc %attr(644, root, man) %{_mandir}/man1/isamlog.1*
+%doc %attr(644, root, man) %{_mandir}/man1/my_print_defaults.1*
 %doc %attr(644, root, man) %{_mandir}/man1/myisam_ftdump.1*
 %doc %attr(644, root, man) %{_mandir}/man1/myisamchk.1*
 %doc %attr(644, root, man) %{_mandir}/man1/myisamlog.1*
@@ -550,25 +545,28 @@ fi
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld_multi.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld_safe.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysql_fix_privilege_tables.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_install_db.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_upgrade.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqlhotcopy.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysqlman.1*
+%doc %attr(644, root, man) %{_mandir}/man8/mysqlmanager.8*
 %doc %attr(644, root, man) %{_mandir}/man1/mysql.server.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysqltest.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_tzinfo_to_sql.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysql_zap.1*
-%doc %attr(644, root, man) %{_mandir}/man1/pack_isam.1*
 %doc %attr(644, root, man) %{_mandir}/man1/perror.1*
 %doc %attr(644, root, man) %{_mandir}/man1/replace.1*
 %doc %attr(644, root, man) %{_mandir}/man1/safe_mysqld.1*
 
 %ghost %config(noreplace,missingok) %{_sysconfdir}/my.cnf
+%ghost %config(noreplace,missingok) %{_sysconfdir}/mysqlmanager.passwd
 
-%attr(755, root, root) %{_bindir}/isamchk
-%attr(755, root, root) %{_bindir}/isamlog
 %attr(755, root, root) %{_bindir}/my_print_defaults
 %attr(755, root, root) %{_bindir}/myisam_ftdump
 %attr(755, root, root) %{_bindir}/myisamchk
 %attr(755, root, root) %{_bindir}/myisamlog
 %attr(755, root, root) %{_bindir}/myisampack
 %attr(755, root, root) %{_bindir}/mysql_convert_table_format
-%attr(755, root, root) %{_bindir}/mysql_create_system_tables
 %attr(755, root, root) %{_bindir}/mysql_explain_log
 %attr(755, root, root) %{_bindir}/mysql_fix_extensions
 %attr(755, root, root) %{_bindir}/mysql_fix_privilege_tables
@@ -576,6 +574,7 @@ fi
 %attr(755, root, root) %{_bindir}/mysql_secure_installation
 %attr(755, root, root) %{_bindir}/mysql_setpermission
 %attr(755, root, root) %{_bindir}/mysql_tzinfo_to_sql
+%attr(755, root, root) %{_bindir}/mysql_upgrade
 %attr(755, root, root) %{_bindir}/mysql_zap
 %attr(755, root, root) %{_bindir}/mysqlbug
 %attr(755, root, root) %{_bindir}/mysqld_multi
@@ -583,7 +582,6 @@ fi
 %attr(755, root, root) %{_bindir}/mysqldumpslow
 %attr(755, root, root) %{_bindir}/mysqlhotcopy
 %attr(755, root, root) %{_bindir}/mysqltest
-%attr(755, root, root) %{_bindir}/pack_isam
 %attr(755, root, root) %{_bindir}/perror
 %attr(755, root, root) %{_bindir}/replace
 %attr(755, root, root) %{_bindir}/resolve_stack_dump
@@ -591,6 +589,8 @@ fi
 %attr(755, root, root) %{_bindir}/safe_mysqld
 
 %attr(755, root, root) %{_sbindir}/mysqld
+%attr(755, root, root) %{_sbindir}/mysqld-debug
+%attr(755, root, root) %{_sbindir}/mysqlmanager
 %attr(755, root, root) %{_sbindir}/rcmysql
 %attr(644, root, root) %{_libdir}/mysql/mysqld.sym
 
@@ -640,23 +640,35 @@ fi
 
 %files ndb-tools
 %defattr(-,root,root,0755)
+%attr(755, root, root) %{_bindir}/ndb_config
+%attr(755, root, root) %{_bindir}/ndb_desc
+%attr(755, root, root) %{_bindir}/ndb_error_reporter
 %attr(755, root, root) %{_bindir}/ndb_mgm
 %attr(755, root, root) %{_bindir}/ndb_restore
-%attr(755, root, root) %{_bindir}/ndb_waiter
 %attr(755, root, root) %{_bindir}/ndb_select_all
 %attr(755, root, root) %{_bindir}/ndb_select_count
-%attr(755, root, root) %{_bindir}/ndb_desc
 %attr(755, root, root) %{_bindir}/ndb_show_tables
-%attr(755, root, root) %{_bindir}/ndb_test_platform
-%attr(755, root, root) %{_bindir}/ndb_config
 %attr(755, root, root) %{_bindir}/ndb_size.pl
+%attr(755, root, root) %{_bindir}/ndb_test_platform
+%attr(755, root, root) %{_bindir}/ndb_waiter
 %attr(-, root, root) %{_datadir}/mysql/ndb_size.tmpl
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_config.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_desc.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_error_reporter.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_select_all.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_select_count.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_show_tables.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_size.pl.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_waiter.1*
 
 %files ndb-extra
 %defattr(-,root,root,0755)
+%attr(755, root, root) %{_bindir}/ndb_delete_all
 %attr(755, root, root) %{_bindir}/ndb_drop_index
 %attr(755, root, root) %{_bindir}/ndb_drop_table
-%attr(755, root, root) %{_bindir}/ndb_delete_all
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_delete_all.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_drop_index.1*
+%doc %attr(644, root, man) %{_mandir}/man1/ndb_drop_table.1*
 
 %files devel
 %defattr(-, root, root, 0755)
@@ -669,7 +681,6 @@ fi
 %{_includedir}/mysql/*
 %{_libdir}/mysql/libdbug.a
 %{_libdir}/mysql/libheap.a
-%{_libdir}/mysql/libmerge.a
 %if %{have_libgcc}
 %{_libdir}/mysql/libmygcc.a
 %endif
@@ -681,7 +692,8 @@ fi
 %{_libdir}/mysql/libmysqlclient_r.la
 %{_libdir}/mysql/libmystrings.a
 %{_libdir}/mysql/libmysys.a
-%{_libdir}/mysql/libnisam.a
+%{_libdir}/mysql/libndbclient.a
+%{_libdir}/mysql/libndbclient.la
 %{_libdir}/mysql/libvio.a
 %if %{STATIC_BUILD}
 %else
@@ -699,26 +711,95 @@ fi
 %attr(-, root, root) %{_datadir}/sql-bench
 %attr(-, root, root) %{_datadir}/mysql-test
 %attr(755, root, root) %{_bindir}/mysql_client_test
-%attr(755, root, root) %{_bindir}/mysqlmanager
-%attr(755, root, root) %{_bindir}/mysqlmanagerc
-%attr(755, root, root) %{_bindir}/mysqlmanager-pwgen
+%attr(755, root, root) %{_bindir}/mysqltestmanager
+%attr(755, root, root) %{_bindir}/mysqltestmanager-pwgen
+%attr(755, root, root) %{_bindir}/mysqltestmanagerc
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_client_test.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql-stress-test.pl.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql-test-run.pl.1*
 
-%files Max
-%defattr(-, root, root, 0755)
-%attr(755, root, root) %{_sbindir}/mysqld-max
-%attr(644, root, root) %{_libdir}/mysql/mysqld-max.sym
-
-%files embedded
-%defattr(-, root, root, 0755)
-%attr(644, root, root) %{_libdir}/mysql/libmysqld.a
+#%files embedded
+#%defattr(-, root, root, 0755)
+# %attr(644, root, root) %{_libdir}/mysql/libmysqld.a
 
 # The spec file changelog only includes changes made to the spec file
 # itself - note that they must be ordered by date (important when
 # merging BK trees)
-%changelog 
+%changelog
+* Sat Apr 07 2007 Kent Boortz <kent@mysql.com>
+
+- Removed man page for "mysql_create_system_tables"
+
+* Wed Mar 21 2007 Daniel Fischer <df@mysql.com>
+
+- Add debug server.
+
+* Mon Mar 19 2007 Daniel Fischer <df@mysql.com>
+
+- Remove Max RPMs; the server RPMs contain a mysqld compiled with all
+  features that previously only were built into Max.
+
+* Fri Mar 02 2007 Joerg Bruehe <joerg@mysql.com>
+
+- Add several man pages for NDB which are now created.
+
+* Wed Jan 31 2007 Daniel Fischer <df@mysql.com>
+
+- add MTR_BUILD_THREAD=auto to test runs.
+
+* Fri Jan 05 2007 Kent Boortz <kent@mysql.com>
+
+- Add CFLAGS to gcc call with --print-libgcc-file, to make sure the
+  correct "libgcc.a" path is returned for the 32/64 bit architecture.
+
+* Mon Dec 18 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Fix the move of "mysqlmanager" to section 8: Directory name was wrong.
+
+* Thu Dec 14 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Include the new man pages for "my_print_defaults" and "mysql_tzinfo_to_sql"
+  in the server RPM.
+- The "mysqlmanager" man page got moved from section 1 to 8.
+
+* Thu Nov 16 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Explicitly note that the "MySQL-shared" RPMs (as built by MySQL AB) 
+  replace "mysql-shared" (as distributed by SuSE) to allow easy upgrading
+  (bug#22081).
+
+* Wed Nov 15 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Switch from "make test*" to explicit calls of the test suite,
+  so that "report features" can be used.
+
+* Mon Jul 10 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Fix a typing error in the "make" target for the Perl script to run the tests.
+
+* Tue Jul 04 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Use the Perl script to run the tests, because it will automatically check
+  whether the server is configured with SSL.
+
 * Tue Jun 27 2006 Joerg Bruehe <joerg@mysql.com>
 
 - move "mysqldumpslow" from the client RPM to the server RPM (bug#20216)
+
+- Revert all previous attempts to call "mysql_upgrade" during RPM upgrade,
+  there are some more aspects which need to be solved before this is possible.
+  For now, just ensure the binary "mysql_upgrade" is delivered and installed.
+
+* Thu Jun 22 2006 Joerg Bruehe <joerg@mysql.com>
+
+- Close a gap of the previous version by explicitly using
+  a newly created temporary directory for the socket to be used
+  in the "mysql_upgrade" operation, overriding any local setting.
+
+* Tue Jun 20 2006 Joerg Bruehe <joerg@mysql.com>
+
+- To run "mysql_upgrade", we need a running server;
+  start it in isolation and skip password checks.
 
 * Sat May 20 2006 Kent Boortz <kent@mysql.com>
 
@@ -735,12 +816,17 @@ fi
 - Use "./libtool --mode=execute" instead of searching for the
   executable in current directory and ".libs".
 
+* Fri Apr 28 2006 Kent Boortz <kent@mysql.com>
+
+- Install and run "mysql_upgrade"
+
 * Sat Apr 01 2006 Kent Boortz <kent@mysql.com>
 
 - Set $LDFLAGS from $MYSQL_BUILD_LDFLAGS
 
 * Fri Mar 03 2006 Kent Boortz <kent@mysql.com>
 
+- Don't output an embedded package as it is empty
 - Can't use bundled zlib when doing static build. Might be a
   automake/libtool problem, having two .la files, "libmysqlclient.la"
   and "libz.la", on the same command line to link "thread_test"
@@ -764,6 +850,7 @@ fi
 - Avoid using the "bundled" zlib on "shared" builds: 
   As it is not installed (on the build system), this gives dependency 
   problems with "libtool" causing the build to fail.
+  (Change was done on Nov 11, but left uncommented.)
 
 * Tue Nov 22 2005 Joerg Bruehe <joerg@mysql.com>
 
@@ -773,6 +860,34 @@ fi
 * Thu Oct 27 2005 Lenz Grimmer <lenz@grimmer.com>
 
 - added more man pages
+
+* Wed Oct 19 2005 Kent Boortz <kent@mysql.com>
+
+- Made yaSSL support an option (off by default)
+
+* Wed Oct 19 2005 Kent Boortz <kent@mysql.com>
+
+- Enabled yaSSL support
+
+* Sat Oct 15 2005 Kent Boortz <kent@mysql.com>
+
+- Give mode arguments the same way in all places
+- Moved copy of mysqld.a to "standard" build, but
+  disabled it as we don't do embedded yet in 5.0
+
+* Fri Oct 14 2005 Kent Boortz <kent@mysql.com>
+
+- For 5.x, always compile with --with-big-tables
+- Copy the config.log file to location outside
+  the build tree
+
+* Fri Oct 14 2005 Kent Boortz <kent@mysql.com>
+
+- Removed unneeded/obsolete configure options
+- Added archive engine to standard server
+- Removed the embedded server from experimental server
+- Changed suffix "-Max" => "-max"
+- Changed comment string "Max" => "Experimental"
 
 * Thu Oct 13 2005 Lenz Grimmer <lenz@mysql.com>
 
@@ -813,6 +928,7 @@ fi
 * Mon Jun 06 2005 Lenz Grimmer <lenz@mysql.com>
 
 - added mysql_client_test to the "bench" subpackage (BUG 10676)
+- added the libndbclient static and shared libraries (BUG 10676)
 
 * Wed Jun 01 2005 Lenz Grimmer <lenz@mysql.com>
 
@@ -834,6 +950,21 @@ fi
 - removed the MySQL manual files (html/ps/texi) - they have been removed
   from the MySQL sources and are now available seperately.
 
+* Mon Apr 4 2005 Petr Chardin <petr@mysql.com>
+
+- old mysqlmanager, mysqlmanagerc and mysqlmanager-pwger renamed into
+  mysqltestmanager, mysqltestmanager and mysqltestmanager-pwgen respectively
+
+* Fri Mar 18 2005 Lenz Grimmer <lenz@mysql.com>
+
+- Disabled RAID in the Max binaries once and for all (it has finally been
+  removed from the source tree)
+
+* Sun Feb 20 2005 Petr Chardin <petr@mysql.com>
+
+- Install MySQL Instance Manager together with mysqld, touch mysqlmanager
+  password file
+
 * Mon Feb 14 2005 Lenz Grimmer <lenz@mysql.com>
 
 - Fixed the compilation comments and moved them into the separate build sections
@@ -848,6 +979,15 @@ fi
 * Fri Jan 14 2005 Lenz Grimmer <lenz@mysql.com>
 
 - replaced obsoleted "BuildPrereq" with "BuildRequires" instead
+
+* Thu Jan 13 2005 Lenz Grimmer <lenz@mysql.com>
+
+- enabled the "Federated" storage engine for the max binary
+
+* Tue Jan 04 2005 Petr Chardin <petr@mysql.com>
+
+- ISAM and merge storage engines were purged. As well as appropriate
+  tools and manpages (isamchk and isamlog)
 
 * Thu Dec 31 2004 Lenz Grimmer <lenz@mysql.com>
 

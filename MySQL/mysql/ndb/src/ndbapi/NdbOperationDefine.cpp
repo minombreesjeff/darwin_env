@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,28 +13,17 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-
-/*****************************************************************************
- * Name:          NdbOperationDefine.C
- * Include:
- * Link:
- * Author:        UABMNST Mona Natterkvist UAB/B/SD                         
- * Date:          970829
- * Version:       0.1
- * Description:   Interface between TIS and NDB
- * Documentation:
- * Adjust:  971022  UABMNST   First version.
- *****************************************************************************/
-#include "NdbOperation.hpp"
+#include <ndb_global.h>
+#include <NdbOperation.hpp>
 #include "NdbApiSignal.hpp"
-#include "NdbConnection.hpp"
-#include "Ndb.hpp"
-#include "NdbRecAttr.hpp"
+#include <NdbTransaction.hpp>
+#include <Ndb.hpp>
+#include <NdbRecAttr.hpp>
 #include "NdbUtil.hpp"
 #include "NdbOut.hpp"
 #include "NdbImpl.hpp"
 #include <NdbIndexScanOperation.hpp>
-#include "NdbBlob.hpp"
+#include <NdbBlob.hpp>
 
 #include <Interpreter.hpp>
 
@@ -48,7 +36,7 @@
 int
 NdbOperation::insertTuple()
 {
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -68,7 +56,7 @@ NdbOperation::insertTuple()
 int
 NdbOperation::updateTuple()
 {  
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -88,7 +76,7 @@ NdbOperation::updateTuple()
 int
 NdbOperation::writeTuple()
 {  
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -128,7 +116,7 @@ NdbOperation::readTuple(NdbOperation::LockMode lm)
 int
 NdbOperation::readTuple()
 { 
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -149,7 +137,7 @@ NdbOperation::readTuple()
 int
 NdbOperation::deleteTuple()
 {
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;  
@@ -170,7 +158,7 @@ NdbOperation::deleteTuple()
 int
 NdbOperation::readTupleExclusive()
 { 
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -247,7 +235,7 @@ NdbOperation::committedRead()
 int
 NdbOperation::dirtyUpdate()
 {
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -270,7 +258,7 @@ NdbOperation::dirtyUpdate()
 int
 NdbOperation::dirtyWrite()
 {
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -293,7 +281,7 @@ NdbOperation::dirtyWrite()
 int
 NdbOperation::interpretedUpdateTuple()
 {
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -316,7 +304,7 @@ NdbOperation::interpretedUpdateTuple()
 int
 NdbOperation::interpretedDeleteTuple()
 {
-  NdbConnection* tNdbCon = theNdbCon;
+  NdbTransaction* tNdbCon = theNdbCon;
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
@@ -334,6 +322,36 @@ NdbOperation::interpretedDeleteTuple()
   }//if
 }//NdbOperation::interpretedDeleteTuple()
 
+void
+NdbOperation::setReadLockMode(LockMode lockMode)
+{
+  /* We only support changing lock mode for read operations at this time. */
+  assert(theOperationType == ReadRequest || theOperationType == ReadExclusive);
+  switch (lockMode)
+  {
+    case LM_CommittedRead:
+      theOperationType= ReadRequest;
+      theSimpleIndicator= 1;
+      theDirtyIndicator= 1;
+      break;
+    case LM_Read:
+      theNdbCon->theSimpleState= 0;
+      theOperationType= ReadRequest;
+      theSimpleIndicator= 0;
+      theDirtyIndicator= 0;
+      break;
+    case LM_Exclusive:
+      theNdbCon->theSimpleState= 0;
+      theOperationType= ReadExclusive;
+      theSimpleIndicator= 0;
+      theDirtyIndicator= 0;
+      break;
+    default:
+      /* Not supported / invalid. */
+      assert(false);
+  }
+  theLockMode= lockMode;
+}
 
 
 /******************************************************************************
@@ -350,7 +368,6 @@ NdbOperation::getValue_impl(const NdbColumnImpl* tAttrInfo, char* aValue)
 {
   NdbRecAttr* tRecAttr;
   if ((tAttrInfo != NULL) &&
-      (!tAttrInfo->m_indexOnly) && 
       (theStatus != Init)){
     if (theStatus != GetValue) {
       if (theInterpretIndicator == 1) {
@@ -398,10 +415,6 @@ NdbOperation::getValue_impl(const NdbColumnImpl* tAttrInfo, char* aValue)
       setErrorCodeAbort(4004);      
       return NULL;
     }//if
-    if (tAttrInfo->m_indexOnly){
-      setErrorCodeAbort(4208);
-      return NULL;
-    }//if
   }//if
   setErrorCodeAbort(4200);
   return NULL;
@@ -422,6 +435,14 @@ int
 NdbOperation::setValue( const NdbColumnImpl* tAttrInfo, 
 			const char* aValuePassed, Uint32 len)
 {
+  DBUG_ENTER("NdbOperation::setValue");
+  DBUG_PRINT("enter", ("col: %s  op: %d  val: 0x%lx  len: %u",
+                       tAttrInfo->m_name.c_str(),
+                       theOperationType,
+                       (long) aValuePassed, len));
+  if (aValuePassed != NULL)
+    DBUG_DUMP("value", (char*)aValuePassed, len);
+
   int tReturnCode;
   Uint32 tAttrId;
   Uint32 tData;
@@ -437,7 +458,7 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
         ;
       } else {
         setErrorCodeAbort(4234);
-        return -1;
+        DBUG_RETURN(-1);
       }//if
     } else {
       if (tStatus == GetValue) {
@@ -448,7 +469,7 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
 	// to set values in the tuple by setValue.
 	//--------------------------------------------------------------------
         if (insertATTRINFO(Interpreter::EXIT_OK) == -1){
-          return -1;
+          DBUG_RETURN(-1);
 	}
         theInterpretedSize = theTotalCurrAI_Len - 
           (theInitialReadSize + 5);
@@ -459,47 +480,47 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
 	// setValue used in the wrong context. Application coding error.
 	//-------------------------------------------------------------------
         setErrorCodeAbort(4234); //Wrong error code
-        return -1;
+        DBUG_RETURN(-1);
       }//if
       theStatus = SetValueInterpreted;
     }//if
   } else if (tOpType == InsertRequest) {
     if ((theStatus != SetValue) && (theStatus != OperationDefined)) {
       setErrorCodeAbort(4234);
-      return -1;
+      DBUG_RETURN(-1);
     }//if
   } else if (tOpType == ReadRequest || tOpType == ReadExclusive) {
     setErrorCodeAbort(4504);
-    return -1;
+    DBUG_RETURN(-1);
   } else if (tOpType == DeleteRequest) {
     setErrorCodeAbort(4504);
-    return -1;
+    DBUG_RETURN(-1);
   } else if (tOpType == OpenScanRequest || tOpType == OpenRangeScanRequest) {
     setErrorCodeAbort(4228);
-    return -1;
+    DBUG_RETURN(-1);
   } else {
     //---------------------------------------------------------------------
     // setValue with undefined operation type. 
     // Probably application coding error.
     //---------------------------------------------------------------------
     setErrorCodeAbort(4108);
-    return -1;
+    DBUG_RETURN(-1);
   }//if
   if (tAttrInfo == NULL) {
     setErrorCodeAbort(4004);      
-    return -1;
+    DBUG_RETURN(-1);
   }//if
   if (tAttrInfo->m_pk) {
     if (theOperationType == InsertRequest) {
-      return equal_impl(tAttrInfo, aValuePassed, len);
+      DBUG_RETURN(equal_impl(tAttrInfo, aValuePassed, len));
     } else {
       setErrorCodeAbort(4202);      
-      return -1;
+      DBUG_RETURN(-1);
     }//if
   }//if
   if (len > 8000) {
     setErrorCodeAbort(4216);
-    return -1;
+    DBUG_RETURN(-1);
   }//if
   
   tAttrId = tAttrInfo->m_attrId;
@@ -512,33 +533,19 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
       insertATTRINFO(ahValue);
       // Insert Attribute Id with the value
       // NULL into ATTRINFO part. 
-      return 0;
+      DBUG_RETURN(0);
     } else {
       /***********************************************************************
        * Setting a NULL value on a NOT NULL attribute is not allowed.
        **********************************************************************/
       setErrorCodeAbort(4203);      
-      return -1;
+      DBUG_RETURN(-1);
     }//if
   }//if
   
   // Insert Attribute Id into ATTRINFO part. 
   const Uint32 sizeInBytes = tAttrInfo->m_attrSize * tAttrInfo->m_arraySize;
 
-  CHARSET_INFO* cs = tAttrInfo->m_cs;
-  int dummy_error;
-  // invalid data can crash kernel
-  if (cs != NULL &&
-      // fast fix bug#7340
-      tAttrInfo->m_type != NdbDictionary::Column::Text &&
-     (*cs->cset->well_formed_len)(cs,
-                                   aValue,
-                                   aValue + sizeInBytes,
-                                   sizeInBytes,
-                                   &dummy_error) != sizeInBytes) {
-    setErrorCodeAbort(744);
-    return -1;
-  }
 #if 0
   tAttrSize = tAttrInfo->theAttrSize;
   tArraySize = tAttrInfo->theArraySize;
@@ -552,12 +559,11 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
   const Uint32 bitsInLastWord = 8 * (sizeInBytes & 3) ;
   if (len != sizeInBytes && (len != 0)) {
     setErrorCodeAbort(4209);
-    return -1;
+    DBUG_RETURN(-1);
   }//if
   const Uint32 totalSizeInWords = (sizeInBytes + 3)/4; // Including bits in last word
   const Uint32 sizeInWords = sizeInBytes / 4;          // Excluding bits in last word
-  AttributeHeader& ah = AttributeHeader::init(&ahValue, tAttrId, 
-					      totalSizeInWords);
+  (void) AttributeHeader::init(&ahValue, tAttrId, totalSizeInWords);
   insertATTRINFO( ahValue );
 
   /***********************************************************************
@@ -580,7 +586,7 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
   
   tReturnCode = insertATTRINFOloop((Uint32*)aValue, sizeInWords);
   if (tReturnCode == -1) {
-    return tReturnCode;
+    DBUG_RETURN(tReturnCode);
   }//if
   if (bitsInLastWord != 0) {
     tData = *(Uint32*)(aValue + sizeInWords*4);
@@ -589,15 +595,15 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
     tData = convertEndian(tData);
     tReturnCode = insertATTRINFO(tData);
     if (tReturnCode == -1) {
-      return tReturnCode;
+      DBUG_RETURN(tReturnCode);
     }//if
   }//if
   theErrorLine++;  
-  return 0;
+  DBUG_RETURN(0);
 }//NdbOperation::setValue()
 
 NdbBlob*
-NdbOperation::getBlobHandle(NdbConnection* aCon, const NdbColumnImpl* tAttrInfo)
+NdbOperation::getBlobHandle(NdbTransaction* aCon, const NdbColumnImpl* tAttrInfo)
 {
   NdbBlob* tBlob = theBlobList;
   NdbBlob* tLastBlob = NULL;

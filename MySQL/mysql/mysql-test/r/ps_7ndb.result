@@ -10,8 +10,8 @@ create table t9
 c1  tinyint, c2  smallint, c3  mediumint, c4  int,
 c5  integer, c6  bigint, c7  float, c8  double,
 c9  double precision, c10 real, c11 decimal(7, 4), c12 numeric(8, 4),
-c13 date, c14 datetime, c15 timestamp(14), c16 time,
-c17 year, c18 bit, c19 bool, c20 char,
+c13 date, c14 datetime, c15 timestamp, c16 time,
+c17 year, c18 tinyint, c19 bool, c20 char,
 c21 char(10), c22 varchar(30), c23 tinyblob, c24 tinytext,
 c25 blob, c26 text, c27 mediumblob, c28 mediumtext,
 c29 longblob, c30 longtext, c31 enum('one', 'two', 'three'),
@@ -59,17 +59,17 @@ def	test	t9	t9	c7	c7	4	12	1	Y	32768	31	63
 def	test	t9	t9	c8	c8	5	22	1	Y	32768	31	63
 def	test	t9	t9	c9	c9	5	22	1	Y	32768	31	63
 def	test	t9	t9	c10	c10	5	22	1	Y	32768	31	63
-def	test	t9	t9	c11	c11	0	9	6	Y	32768	4	63
-def	test	t9	t9	c12	c12	0	10	6	Y	32768	4	63
+def	test	t9	t9	c11	c11	246	9	6	Y	0	4	63
+def	test	t9	t9	c12	c12	246	10	6	Y	0	4	63
 def	test	t9	t9	c13	c13	10	10	10	Y	128	0	63
 def	test	t9	t9	c14	c14	12	19	19	Y	128	0	63
 def	test	t9	t9	c15	c15	7	19	19	N	1249	0	63
 def	test	t9	t9	c16	c16	11	8	8	Y	128	0	63
 def	test	t9	t9	c17	c17	13	4	4	Y	32864	0	63
-def	test	t9	t9	c18	c18	1	1	1	Y	32768	0	63
+def	test	t9	t9	c18	c18	1	4	1	Y	32768	0	63
 def	test	t9	t9	c19	c19	1	1	1	Y	32768	0	63
 def	test	t9	t9	c20	c20	254	1	1	Y	0	0	8
-def	test	t9	t9	c21	c21	253	10	10	Y	0	0	8
+def	test	t9	t9	c21	c21	254	10	10	Y	0	0	8
 def	test	t9	t9	c22	c22	253	30	30	Y	0	0	8
 def	test	t9	t9	c23	c23	252	255	8	Y	144	0	63
 def	test	t9	t9	c24	c24	252	255	8	Y	16	0	8
@@ -85,6 +85,8 @@ c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14	c15	c16	c17	c18	c19	c20	c21	c22	c
 1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 9	9	9	9	9	9	9	9	9	9	9.0000	9.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	0	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	two	tuesday
 set @arg00='SELECT' ;
+@arg00 a from t1 where a=1;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '@arg00 a from t1 where a=1' at line 1
 prepare stmt1 from ' ? a from t1 where a=1 ';
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '? a from t1 where a=1' at line 1
 set @arg00=1 ;
@@ -444,9 +446,10 @@ limit 1 ';
 execute stmt1 ;
 a	b
 1	one
-prepare stmt1 from ' select a,b from t1
-limit ? ';
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '?' at line 2
+prepare stmt1 from ' select a,b from t1 order by a limit ? ';
+execute stmt1 using @arg00;
+a	b
+1	one
 set @arg00='b' ;
 set @arg01=0 ;
 set @arg02=2 ;
@@ -530,44 +533,44 @@ the join statement is:
 SELECT * FROM t2 right join t1 using(a) order by t2.a 
 prepare stmt1 from @query9  ;
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 the join statement is:
 SELECT * FROM t2 natural right join t1 order by t2.a 
 prepare stmt1 from @query8 ;
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b
+1	one
+2	two
+3	three
+4	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b
+1	one
+2	two
+3	three
+4	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b
+1	one
+2	two
+3	three
+4	four
 the join statement is:
 SELECT * FROM t2 right join t1 on(t1.a=t2.a) order by t2.a 
 prepare stmt1 from @query7 ;
@@ -593,44 +596,44 @@ the join statement is:
 SELECT * FROM t2 left join t1 using(a) order by t2.a 
 prepare stmt1 from @query6 ;
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 the join statement is:
 SELECT * FROM t2 natural left join t1 order by t2.a 
 prepare stmt1 from @query5 ;
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b
+1	one
+2	two
+3	three
+4	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b
+1	one
+2	two
+3	three
+4	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b
+1	one
+2	two
+3	three
+4	four
 the join statement is:
 SELECT * FROM t2 left join t1 on(t1.a=t2.a) order by t2.a 
 prepare stmt1 from @query4 ;
@@ -656,23 +659,23 @@ the join statement is:
 SELECT * FROM t2 join t1 using(a) order by t2.a 
 prepare stmt1 from @query3 ;
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 execute stmt1 ;
-a	b	a	b
-1	one	1	one
-2	two	2	two
-3	three	3	three
-4	four	4	four
+a	b	b
+1	one	one
+2	two	two
+3	three	three
+4	four	four
 the join statement is:
 SELECT * FROM t2 natural join t1 order by t2.a 
 prepare stmt1 from @query2 ;
@@ -1155,7 +1158,7 @@ def					table	253	64	2	Y	0	31	8
 def					type	253	10	3	Y	0	31	8
 def					possible_keys	253	4096	0	Y	0	31	8
 def					key	253	64	0	Y	0	31	8
-def					key_len	8	3	0	Y	32928	0	63
+def					key_len	253	4096	0	Y	128	31	63
 def					ref	253	1024	0	Y	0	31	8
 def					rows	8	10	1	Y	32928	0	63
 def					Extra	253	255	0	N	1	31	8
@@ -1206,7 +1209,6 @@ execute stmt1 using @arg00;
 select a,b from t1 where b=@arg00;
 a	b
 prepare stmt1 from 'truncate table t1' ;
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 test_sequence
 ------ update tests ------
 delete from t1 ;
@@ -1285,7 +1287,7 @@ set @arg00=NULL;
 set @arg01=2;
 execute stmt1 using @arg00, @arg01;
 Warnings:
-Warning	1263	Data truncated; NULL supplied to NOT NULL column 'a' at row 1
+Warning	1048	Column 'a' cannot be null
 select a,b from t1 order by a;
 a	b
 0	two
@@ -1365,10 +1367,8 @@ execute stmt1 ;
 select a,b from t1 where b = 'bla' ;
 a	b
 2	bla
-prepare stmt1 from 'update t1 set b=''bla''
-where a=2
-limit ?';
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '?' at line 3
+prepare stmt1 from 'update t1 set b=''bla'' where a=2 limit ?';
+execute stmt1 using @arg00;
 test_sequence
 ------ insert tests ------
 delete from t1 ;
@@ -1696,8 +1696,8 @@ affected rows: 3
 info: Records: 3  Duplicates: 0  Warnings: 0
 select a,b from t2 order by a ;
 a	b
-3	duplicate
-4	duplicate
+3	duplicate 
+4	duplicate 
 103	three
 delete from t2 ;
 prepare stmt1 from ' insert into t2 (b,a) 
@@ -1715,8 +1715,8 @@ affected rows: 3
 info: Records: 3  Duplicates: 0  Warnings: 0
 select a,b from t2 order by a ;
 a	b
-3	duplicate
-4	duplicate
+3	duplicate 
+4	duplicate 
 103	three
 drop table t2;
 drop table if exists t5 ;
@@ -1758,15 +1758,15 @@ NULL                        as const12, @arg12 as param12,
 show create table t5 ;
 Table	Create Table
 t5	CREATE TABLE `t5` (
-  `const01` bigint(1) NOT NULL default '0',
+  `const01` int(1) NOT NULL default '0',
   `param01` bigint(20) default NULL,
-  `const02` double(3,1) NOT NULL default '0.0',
-  `param02` double default NULL,
+  `const02` decimal(2,1) NOT NULL default '0.0',
+  `param02` decimal(65,30) default NULL,
   `const03` double NOT NULL default '0',
   `param03` double default NULL,
-  `const04` char(3) NOT NULL default '',
+  `const04` varchar(3) NOT NULL default '',
   `param04` longtext,
-  `const05` binary(3) NOT NULL default '',
+  `const05` varbinary(3) NOT NULL default '',
   `param05` longblob,
   `const06` varchar(10) NOT NULL default '',
   `param06` longtext,
@@ -1782,21 +1782,21 @@ t5	CREATE TABLE `t5` (
   `param11` bigint(20) default NULL,
   `const12` binary(0) default NULL,
   `param12` bigint(20) default NULL,
-  `param13` double default NULL,
+  `param13` decimal(65,30) default NULL,
   `param14` longtext,
   `param15` longblob
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 select * from t5 ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def	test	t5	t5	const01	const01	8	1	1	N	32769	0	63
+def	test	t5	t5	const01	const01	3	1	1	N	32769	0	63
 def	test	t5	t5	param01	param01	8	20	1	Y	32768	0	63
-def	test	t5	t5	const02	const02	5	3	3	N	32769	1	63
-def	test	t5	t5	param02	param02	5	20	1	Y	32768	31	63
-def	test	t5	t5	const03	const03	5	23	1	N	32769	31	63
-def	test	t5	t5	param03	param03	5	20	1	Y	32768	31	63
-def	test	t5	t5	const04	const04	254	3	3	N	1	0	8
+def	test	t5	t5	const02	const02	246	4	3	N	1	1	63
+def	test	t5	t5	param02	param02	246	67	32	Y	0	30	63
+def	test	t5	t5	const03	const03	5	17	1	N	32769	31	63
+def	test	t5	t5	param03	param03	5	23	1	Y	32768	31	63
+def	test	t5	t5	const04	const04	253	3	3	N	1	0	8
 def	test	t5	t5	param04	param04	252	4294967295	3	Y	16	0	8
-def	test	t5	t5	const05	const05	254	3	3	N	129	0	63
+def	test	t5	t5	const05	const05	253	3	3	N	129	0	63
 def	test	t5	t5	param05	param05	252	4294967295	3	Y	144	0	63
 def	test	t5	t5	const06	const06	253	10	10	N	1	0	8
 def	test	t5	t5	param06	param06	252	4294967295	10	Y	16	0	8
@@ -1812,13 +1812,13 @@ def	test	t5	t5	const11	const11	3	4	4	Y	32768	0	63
 def	test	t5	t5	param11	param11	8	20	4	Y	32768	0	63
 def	test	t5	t5	const12	const12	254	0	0	Y	128	0	63
 def	test	t5	t5	param12	param12	8	20	0	Y	32768	0	63
-def	test	t5	t5	param13	param13	5	20	0	Y	32768	31	63
+def	test	t5	t5	param13	param13	246	67	0	Y	0	30	63
 def	test	t5	t5	param14	param14	252	4294967295	0	Y	16	0	8
 def	test	t5	t5	param15	param15	252	4294967295	0	Y	144	0	63
 const01	8
 param01	8
 const02	8.0
-param02	8
+param02	8.000000000000000000000000000000
 const03	8
 param03	8
 const04	abc
@@ -1900,40 +1900,40 @@ from t9 where c1= 1 ;
 1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	1	Y	128	31	63
-def					@arg03	254	20	1	Y	128	31	63
-def					@arg04	254	20	1	Y	128	31	63
-def					@arg05	254	20	1	Y	128	31	63
-def					@arg06	254	20	1	Y	128	31	63
-def					@arg07	254	20	1	Y	128	31	63
-def					@arg08	254	20	1	Y	128	31	63
-def					@arg09	254	20	1	Y	128	31	63
-def					@arg10	254	20	1	Y	128	31	63
-def					@arg11	254	20	1	Y	128	31	63
-def					@arg12	254	20	1	Y	128	31	63
-def					@arg13	254	8192	10	Y	128	31	63
-def					@arg14	254	8192	19	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	8	Y	128	31	63
-def					@arg17	254	20	4	Y	128	31	63
-def					@arg18	254	20	1	Y	128	31	63
-def					@arg19	254	20	1	Y	128	31	63
-def					@arg20	254	8192	1	Y	0	31	8
-def					@arg21	254	8192	10	Y	0	31	8
-def					@arg22	254	8192	30	Y	0	31	8
-def					@arg23	254	8192	8	Y	128	31	63
-def					@arg24	254	8192	8	Y	0	31	8
-def					@arg25	254	8192	4	Y	128	31	63
-def					@arg26	254	8192	4	Y	0	31	8
-def					@arg27	254	8192	10	Y	128	31	63
-def					@arg28	254	8192	10	Y	0	31	8
-def					@arg29	254	8192	8	Y	128	31	63
-def					@arg30	254	8192	8	Y	0	31	8
-def					@arg31	254	8192	3	Y	0	31	8
-def					@arg32	254	8192	6	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	1	Y	128	0	63
+def					@arg03	253	20	1	Y	128	0	63
+def					@arg04	253	20	1	Y	128	0	63
+def					@arg05	253	20	1	Y	128	0	63
+def					@arg06	253	20	1	Y	128	0	63
+def					@arg07	253	23	1	Y	128	31	63
+def					@arg08	253	23	1	Y	128	31	63
+def					@arg09	253	23	1	Y	128	31	63
+def					@arg10	253	23	1	Y	128	31	63
+def					@arg11	253	83	6	Y	128	30	63
+def					@arg12	253	83	6	Y	128	30	63
+def					@arg13	253	8192	10	Y	128	31	63
+def					@arg14	253	8192	19	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	8	Y	128	31	63
+def					@arg17	253	20	4	Y	128	0	63
+def					@arg18	253	20	1	Y	128	0	63
+def					@arg19	253	20	1	Y	128	0	63
+def					@arg20	253	8192	1	Y	0	31	8
+def					@arg21	253	8192	10	Y	0	31	8
+def					@arg22	253	8192	30	Y	0	31	8
+def					@arg23	253	8192	8	Y	128	31	63
+def					@arg24	253	8192	8	Y	0	31	8
+def					@arg25	253	8192	4	Y	128	31	63
+def					@arg26	253	8192	4	Y	0	31	8
+def					@arg27	253	8192	10	Y	128	31	63
+def					@arg28	253	8192	10	Y	0	31	8
+def					@arg29	253	8192	8	Y	128	31	63
+def					@arg30	253	8192	8	Y	0	31	8
+def					@arg31	253	8192	3	Y	0	31	8
+def					@arg32	253	8192	6	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
-1	1	1	1	1	1	1	1	1	1	1	1	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
+1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 select @arg01:=  c1, @arg02:=  c2, @arg03:=  c3, @arg04:=  c4,
 @arg05:=  c5, @arg06:=  c6, @arg07:=  c7, @arg08:=  c8,
 @arg09:=  c9, @arg10:= c10, @arg11:= c11, @arg12:= c12,
@@ -1947,38 +1947,38 @@ from t9 where c1= 0 ;
 0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	1991-01-01 01:01:01	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	0	Y	128	31	63
-def					@arg03	254	20	0	Y	128	31	63
-def					@arg04	254	20	0	Y	128	31	63
-def					@arg05	254	20	0	Y	128	31	63
-def					@arg06	254	20	0	Y	128	31	63
-def					@arg07	254	20	0	Y	128	31	63
-def					@arg08	254	20	0	Y	128	31	63
-def					@arg09	254	20	0	Y	128	31	63
-def					@arg10	254	20	0	Y	128	31	63
-def					@arg11	254	20	0	Y	128	31	63
-def					@arg12	254	20	0	Y	128	31	63
-def					@arg13	254	8192	0	Y	128	31	63
-def					@arg14	254	8192	0	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	0	Y	128	31	63
-def					@arg17	254	20	0	Y	128	31	63
-def					@arg18	254	20	0	Y	128	31	63
-def					@arg19	254	20	0	Y	128	31	63
-def					@arg20	254	8192	0	Y	0	31	8
-def					@arg21	254	8192	0	Y	0	31	8
-def					@arg22	254	8192	0	Y	0	31	8
-def					@arg23	254	8192	0	Y	128	31	63
-def					@arg24	254	8192	0	Y	0	31	8
-def					@arg25	254	8192	0	Y	128	31	63
-def					@arg26	254	8192	0	Y	0	31	8
-def					@arg27	254	8192	0	Y	128	31	63
-def					@arg28	254	8192	0	Y	0	31	8
-def					@arg29	254	8192	0	Y	128	31	63
-def					@arg30	254	8192	0	Y	0	31	8
-def					@arg31	254	8192	0	Y	0	31	8
-def					@arg32	254	8192	0	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	0	Y	128	0	63
+def					@arg03	253	20	0	Y	128	0	63
+def					@arg04	253	20	0	Y	128	0	63
+def					@arg05	253	20	0	Y	128	0	63
+def					@arg06	253	20	0	Y	128	0	63
+def					@arg07	253	23	0	Y	128	31	63
+def					@arg08	253	23	0	Y	128	31	63
+def					@arg09	253	23	0	Y	128	31	63
+def					@arg10	253	23	0	Y	128	31	63
+def					@arg11	253	83	0	Y	128	30	63
+def					@arg12	253	83	0	Y	128	30	63
+def					@arg13	253	8192	0	Y	128	31	63
+def					@arg14	253	8192	0	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	0	Y	128	31	63
+def					@arg17	253	20	0	Y	128	0	63
+def					@arg18	253	20	0	Y	128	0	63
+def					@arg19	253	20	0	Y	128	0	63
+def					@arg20	253	8192	0	Y	0	31	8
+def					@arg21	253	8192	0	Y	0	31	8
+def					@arg22	253	8192	0	Y	0	31	8
+def					@arg23	253	8192	0	Y	128	31	63
+def					@arg24	253	8192	0	Y	0	31	8
+def					@arg25	253	8192	0	Y	128	31	63
+def					@arg26	253	8192	0	Y	0	31	8
+def					@arg27	253	8192	0	Y	128	31	63
+def					@arg28	253	8192	0	Y	0	31	8
+def					@arg29	253	8192	0	Y	128	31	63
+def					@arg30	253	8192	0	Y	0	31	8
+def					@arg31	253	8192	0	Y	0	31	8
+def					@arg32	253	8192	0	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
 0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	1991-01-01 01:01:01	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 prepare stmt1 from "select 
@@ -1997,78 +1997,78 @@ execute stmt1 using @my_key ;
 1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	1	Y	128	31	63
-def					@arg03	254	20	1	Y	128	31	63
-def					@arg04	254	20	1	Y	128	31	63
-def					@arg05	254	20	1	Y	128	31	63
-def					@arg06	254	20	1	Y	128	31	63
-def					@arg07	254	20	1	Y	128	31	63
-def					@arg08	254	20	1	Y	128	31	63
-def					@arg09	254	20	1	Y	128	31	63
-def					@arg10	254	20	1	Y	128	31	63
-def					@arg11	254	20	1	Y	128	31	63
-def					@arg12	254	20	1	Y	128	31	63
-def					@arg13	254	8192	10	Y	128	31	63
-def					@arg14	254	8192	19	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	8	Y	128	31	63
-def					@arg17	254	20	4	Y	128	31	63
-def					@arg18	254	20	1	Y	128	31	63
-def					@arg19	254	20	1	Y	128	31	63
-def					@arg20	254	8192	1	Y	0	31	8
-def					@arg21	254	8192	10	Y	0	31	8
-def					@arg22	254	8192	30	Y	0	31	8
-def					@arg23	254	8192	8	Y	128	31	63
-def					@arg24	254	8192	8	Y	0	31	8
-def					@arg25	254	8192	4	Y	128	31	63
-def					@arg26	254	8192	4	Y	0	31	8
-def					@arg27	254	8192	10	Y	128	31	63
-def					@arg28	254	8192	10	Y	0	31	8
-def					@arg29	254	8192	8	Y	128	31	63
-def					@arg30	254	8192	8	Y	0	31	8
-def					@arg31	254	8192	3	Y	0	31	8
-def					@arg32	254	8192	6	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	1	Y	128	0	63
+def					@arg03	253	20	1	Y	128	0	63
+def					@arg04	253	20	1	Y	128	0	63
+def					@arg05	253	20	1	Y	128	0	63
+def					@arg06	253	20	1	Y	128	0	63
+def					@arg07	253	23	1	Y	128	31	63
+def					@arg08	253	23	1	Y	128	31	63
+def					@arg09	253	23	1	Y	128	31	63
+def					@arg10	253	23	1	Y	128	31	63
+def					@arg11	253	83	6	Y	128	30	63
+def					@arg12	253	83	6	Y	128	30	63
+def					@arg13	253	8192	10	Y	128	31	63
+def					@arg14	253	8192	19	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	8	Y	128	31	63
+def					@arg17	253	20	4	Y	128	0	63
+def					@arg18	253	20	1	Y	128	0	63
+def					@arg19	253	20	1	Y	128	0	63
+def					@arg20	253	8192	1	Y	0	31	8
+def					@arg21	253	8192	10	Y	0	31	8
+def					@arg22	253	8192	30	Y	0	31	8
+def					@arg23	253	8192	8	Y	128	31	63
+def					@arg24	253	8192	8	Y	0	31	8
+def					@arg25	253	8192	4	Y	128	31	63
+def					@arg26	253	8192	4	Y	0	31	8
+def					@arg27	253	8192	10	Y	128	31	63
+def					@arg28	253	8192	10	Y	0	31	8
+def					@arg29	253	8192	8	Y	128	31	63
+def					@arg30	253	8192	8	Y	0	31	8
+def					@arg31	253	8192	3	Y	0	31	8
+def					@arg32	253	8192	6	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
-1	1	1	1	1	1	1	1	1	1	1	1	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
+1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 set @my_key= 0 ;
 execute stmt1 using @my_key ;
 @arg01:=  c1	@arg02:=  c2	@arg03:=  c3	@arg04:=  c4	@arg05:=  c5	@arg06:=  c6	@arg07:=  c7	@arg08:=  c8	@arg09:=  c9	@arg10:= c10	@arg11:= c11	@arg12:= c12	@arg13:= c13	@arg14:= c14	@arg15:= c15	@arg16:= c16	@arg17:= c17	@arg18:= c18	@arg19:= c19	@arg20:= c20	@arg21:= c21	@arg22:= c22	@arg23:= c23	@arg24:= c24	@arg25:= c25	@arg26:= c26	@arg27:= c27	@arg28:= c28	@arg29:= c29	@arg30:= c30	@arg31:= c31	@arg32:= c32
 0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	1991-01-01 01:01:01	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	0	Y	128	31	63
-def					@arg03	254	20	0	Y	128	31	63
-def					@arg04	254	20	0	Y	128	31	63
-def					@arg05	254	20	0	Y	128	31	63
-def					@arg06	254	20	0	Y	128	31	63
-def					@arg07	254	20	0	Y	128	31	63
-def					@arg08	254	20	0	Y	128	31	63
-def					@arg09	254	20	0	Y	128	31	63
-def					@arg10	254	20	0	Y	128	31	63
-def					@arg11	254	20	0	Y	128	31	63
-def					@arg12	254	20	0	Y	128	31	63
-def					@arg13	254	8192	0	Y	128	31	63
-def					@arg14	254	8192	0	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	0	Y	128	31	63
-def					@arg17	254	20	0	Y	128	31	63
-def					@arg18	254	20	0	Y	128	31	63
-def					@arg19	254	20	0	Y	128	31	63
-def					@arg20	254	8192	0	Y	0	31	8
-def					@arg21	254	8192	0	Y	0	31	8
-def					@arg22	254	8192	0	Y	0	31	8
-def					@arg23	254	8192	0	Y	128	31	63
-def					@arg24	254	8192	0	Y	0	31	8
-def					@arg25	254	8192	0	Y	128	31	63
-def					@arg26	254	8192	0	Y	0	31	8
-def					@arg27	254	8192	0	Y	128	31	63
-def					@arg28	254	8192	0	Y	0	31	8
-def					@arg29	254	8192	0	Y	128	31	63
-def					@arg30	254	8192	0	Y	0	31	8
-def					@arg31	254	8192	0	Y	0	31	8
-def					@arg32	254	8192	0	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	0	Y	128	0	63
+def					@arg03	253	20	0	Y	128	0	63
+def					@arg04	253	20	0	Y	128	0	63
+def					@arg05	253	20	0	Y	128	0	63
+def					@arg06	253	20	0	Y	128	0	63
+def					@arg07	253	23	0	Y	128	31	63
+def					@arg08	253	23	0	Y	128	31	63
+def					@arg09	253	23	0	Y	128	31	63
+def					@arg10	253	23	0	Y	128	31	63
+def					@arg11	253	83	0	Y	128	30	63
+def					@arg12	253	83	0	Y	128	30	63
+def					@arg13	253	8192	0	Y	128	31	63
+def					@arg14	253	8192	0	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	0	Y	128	31	63
+def					@arg17	253	20	0	Y	128	0	63
+def					@arg18	253	20	0	Y	128	0	63
+def					@arg19	253	20	0	Y	128	0	63
+def					@arg20	253	8192	0	Y	0	31	8
+def					@arg21	253	8192	0	Y	0	31	8
+def					@arg22	253	8192	0	Y	0	31	8
+def					@arg23	253	8192	0	Y	128	31	63
+def					@arg24	253	8192	0	Y	0	31	8
+def					@arg25	253	8192	0	Y	128	31	63
+def					@arg26	253	8192	0	Y	0	31	8
+def					@arg27	253	8192	0	Y	128	31	63
+def					@arg28	253	8192	0	Y	0	31	8
+def					@arg29	253	8192	0	Y	128	31	63
+def					@arg30	253	8192	0	Y	0	31	8
+def					@arg31	253	8192	0	Y	0	31	8
+def					@arg32	253	8192	0	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
 0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	1991-01-01 01:01:01	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 prepare stmt1 from "select ? := c1 from t9 where c1= 1" ;
@@ -2085,40 +2085,40 @@ into @arg01, @arg02, @arg03, @arg04, @arg05, @arg06, @arg07, @arg08,
 from t9 where c1= 1 ;
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	1	Y	128	31	63
-def					@arg03	254	20	1	Y	128	31	63
-def					@arg04	254	20	1	Y	128	31	63
-def					@arg05	254	20	1	Y	128	31	63
-def					@arg06	254	20	1	Y	128	31	63
-def					@arg07	254	20	1	Y	128	31	63
-def					@arg08	254	20	1	Y	128	31	63
-def					@arg09	254	20	1	Y	128	31	63
-def					@arg10	254	20	1	Y	128	31	63
-def					@arg11	254	20	1	Y	128	31	63
-def					@arg12	254	20	1	Y	128	31	63
-def					@arg13	254	8192	10	Y	128	31	63
-def					@arg14	254	8192	19	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	8	Y	128	31	63
-def					@arg17	254	20	4	Y	128	31	63
-def					@arg18	254	20	1	Y	128	31	63
-def					@arg19	254	20	1	Y	128	31	63
-def					@arg20	254	8192	1	Y	0	31	8
-def					@arg21	254	8192	10	Y	0	31	8
-def					@arg22	254	8192	30	Y	0	31	8
-def					@arg23	254	8192	8	Y	128	31	63
-def					@arg24	254	8192	8	Y	0	31	8
-def					@arg25	254	8192	4	Y	128	31	63
-def					@arg26	254	8192	4	Y	0	31	8
-def					@arg27	254	8192	10	Y	128	31	63
-def					@arg28	254	8192	10	Y	0	31	8
-def					@arg29	254	8192	8	Y	128	31	63
-def					@arg30	254	8192	8	Y	0	31	8
-def					@arg31	254	8192	3	Y	0	31	8
-def					@arg32	254	8192	6	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	1	Y	128	0	63
+def					@arg03	253	20	1	Y	128	0	63
+def					@arg04	253	20	1	Y	128	0	63
+def					@arg05	253	20	1	Y	128	0	63
+def					@arg06	253	20	1	Y	128	0	63
+def					@arg07	253	23	1	Y	128	31	63
+def					@arg08	253	23	1	Y	128	31	63
+def					@arg09	253	23	1	Y	128	31	63
+def					@arg10	253	23	1	Y	128	31	63
+def					@arg11	253	83	6	Y	128	30	63
+def					@arg12	253	83	6	Y	128	30	63
+def					@arg13	253	8192	10	Y	128	31	63
+def					@arg14	253	8192	19	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	8	Y	128	31	63
+def					@arg17	253	20	4	Y	128	0	63
+def					@arg18	253	20	1	Y	128	0	63
+def					@arg19	253	20	1	Y	128	0	63
+def					@arg20	253	8192	1	Y	0	31	8
+def					@arg21	253	8192	10	Y	0	31	8
+def					@arg22	253	8192	30	Y	0	31	8
+def					@arg23	253	8192	8	Y	128	31	63
+def					@arg24	253	8192	8	Y	0	31	8
+def					@arg25	253	8192	4	Y	128	31	63
+def					@arg26	253	8192	4	Y	0	31	8
+def					@arg27	253	8192	10	Y	128	31	63
+def					@arg28	253	8192	10	Y	0	31	8
+def					@arg29	253	8192	8	Y	128	31	63
+def					@arg30	253	8192	8	Y	0	31	8
+def					@arg31	253	8192	3	Y	0	31	8
+def					@arg32	253	8192	6	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
-1	1	1	1	1	1	1	1	1	1	1	1	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
+1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 select c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12,
 c13, c14, c15, c16, c17, c18, c19, c20, c21, c22, c23, c24,
 c25, c26, c27, c28, c29, c30, c31, c32
@@ -2129,38 +2129,38 @@ into @arg01, @arg02, @arg03, @arg04, @arg05, @arg06, @arg07, @arg08,
 from t9 where c1= 0 ;
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	0	Y	128	31	63
-def					@arg03	254	20	0	Y	128	31	63
-def					@arg04	254	20	0	Y	128	31	63
-def					@arg05	254	20	0	Y	128	31	63
-def					@arg06	254	20	0	Y	128	31	63
-def					@arg07	254	20	0	Y	128	31	63
-def					@arg08	254	20	0	Y	128	31	63
-def					@arg09	254	20	0	Y	128	31	63
-def					@arg10	254	20	0	Y	128	31	63
-def					@arg11	254	20	0	Y	128	31	63
-def					@arg12	254	20	0	Y	128	31	63
-def					@arg13	254	8192	0	Y	128	31	63
-def					@arg14	254	8192	0	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	0	Y	128	31	63
-def					@arg17	254	20	0	Y	128	31	63
-def					@arg18	254	20	0	Y	128	31	63
-def					@arg19	254	20	0	Y	128	31	63
-def					@arg20	254	8192	0	Y	0	31	8
-def					@arg21	254	8192	0	Y	0	31	8
-def					@arg22	254	8192	0	Y	0	31	8
-def					@arg23	254	8192	0	Y	128	31	63
-def					@arg24	254	8192	0	Y	0	31	8
-def					@arg25	254	8192	0	Y	128	31	63
-def					@arg26	254	8192	0	Y	0	31	8
-def					@arg27	254	8192	0	Y	128	31	63
-def					@arg28	254	8192	0	Y	0	31	8
-def					@arg29	254	8192	0	Y	128	31	63
-def					@arg30	254	8192	0	Y	0	31	8
-def					@arg31	254	8192	0	Y	0	31	8
-def					@arg32	254	8192	0	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	0	Y	128	0	63
+def					@arg03	253	20	0	Y	128	0	63
+def					@arg04	253	20	0	Y	128	0	63
+def					@arg05	253	20	0	Y	128	0	63
+def					@arg06	253	20	0	Y	128	0	63
+def					@arg07	253	23	0	Y	128	31	63
+def					@arg08	253	23	0	Y	128	31	63
+def					@arg09	253	23	0	Y	128	31	63
+def					@arg10	253	23	0	Y	128	31	63
+def					@arg11	253	83	0	Y	128	30	63
+def					@arg12	253	83	0	Y	128	30	63
+def					@arg13	253	8192	0	Y	128	31	63
+def					@arg14	253	8192	0	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	0	Y	128	31	63
+def					@arg17	253	20	0	Y	128	0	63
+def					@arg18	253	20	0	Y	128	0	63
+def					@arg19	253	20	0	Y	128	0	63
+def					@arg20	253	8192	0	Y	0	31	8
+def					@arg21	253	8192	0	Y	0	31	8
+def					@arg22	253	8192	0	Y	0	31	8
+def					@arg23	253	8192	0	Y	128	31	63
+def					@arg24	253	8192	0	Y	0	31	8
+def					@arg25	253	8192	0	Y	128	31	63
+def					@arg26	253	8192	0	Y	0	31	8
+def					@arg27	253	8192	0	Y	128	31	63
+def					@arg28	253	8192	0	Y	0	31	8
+def					@arg29	253	8192	0	Y	128	31	63
+def					@arg30	253	8192	0	Y	0	31	8
+def					@arg31	253	8192	0	Y	0	31	8
+def					@arg32	253	8192	0	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
 0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	1991-01-01 01:01:01	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 prepare stmt1 from "select c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12,
@@ -2175,76 +2175,76 @@ set @my_key= 1 ;
 execute stmt1 using @my_key ;
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	1	Y	128	31	63
-def					@arg03	254	20	1	Y	128	31	63
-def					@arg04	254	20	1	Y	128	31	63
-def					@arg05	254	20	1	Y	128	31	63
-def					@arg06	254	20	1	Y	128	31	63
-def					@arg07	254	20	1	Y	128	31	63
-def					@arg08	254	20	1	Y	128	31	63
-def					@arg09	254	20	1	Y	128	31	63
-def					@arg10	254	20	1	Y	128	31	63
-def					@arg11	254	20	1	Y	128	31	63
-def					@arg12	254	20	1	Y	128	31	63
-def					@arg13	254	8192	10	Y	128	31	63
-def					@arg14	254	8192	19	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	8	Y	128	31	63
-def					@arg17	254	20	4	Y	128	31	63
-def					@arg18	254	20	1	Y	128	31	63
-def					@arg19	254	20	1	Y	128	31	63
-def					@arg20	254	8192	1	Y	0	31	8
-def					@arg21	254	8192	10	Y	0	31	8
-def					@arg22	254	8192	30	Y	0	31	8
-def					@arg23	254	8192	8	Y	128	31	63
-def					@arg24	254	8192	8	Y	0	31	8
-def					@arg25	254	8192	4	Y	128	31	63
-def					@arg26	254	8192	4	Y	0	31	8
-def					@arg27	254	8192	10	Y	128	31	63
-def					@arg28	254	8192	10	Y	0	31	8
-def					@arg29	254	8192	8	Y	128	31	63
-def					@arg30	254	8192	8	Y	0	31	8
-def					@arg31	254	8192	3	Y	0	31	8
-def					@arg32	254	8192	6	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	1	Y	128	0	63
+def					@arg03	253	20	1	Y	128	0	63
+def					@arg04	253	20	1	Y	128	0	63
+def					@arg05	253	20	1	Y	128	0	63
+def					@arg06	253	20	1	Y	128	0	63
+def					@arg07	253	23	1	Y	128	31	63
+def					@arg08	253	23	1	Y	128	31	63
+def					@arg09	253	23	1	Y	128	31	63
+def					@arg10	253	23	1	Y	128	31	63
+def					@arg11	253	83	6	Y	128	30	63
+def					@arg12	253	83	6	Y	128	30	63
+def					@arg13	253	8192	10	Y	128	31	63
+def					@arg14	253	8192	19	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	8	Y	128	31	63
+def					@arg17	253	20	4	Y	128	0	63
+def					@arg18	253	20	1	Y	128	0	63
+def					@arg19	253	20	1	Y	128	0	63
+def					@arg20	253	8192	1	Y	0	31	8
+def					@arg21	253	8192	10	Y	0	31	8
+def					@arg22	253	8192	30	Y	0	31	8
+def					@arg23	253	8192	8	Y	128	31	63
+def					@arg24	253	8192	8	Y	0	31	8
+def					@arg25	253	8192	4	Y	128	31	63
+def					@arg26	253	8192	4	Y	0	31	8
+def					@arg27	253	8192	10	Y	128	31	63
+def					@arg28	253	8192	10	Y	0	31	8
+def					@arg29	253	8192	8	Y	128	31	63
+def					@arg30	253	8192	8	Y	0	31	8
+def					@arg31	253	8192	3	Y	0	31	8
+def					@arg32	253	8192	6	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
-1	1	1	1	1	1	1	1	1	1	1	1	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
+1	1	1	1	1	1	1	1	1	1	1.0000	1.0000	2004-02-29	2004-02-29 11:11:11	2004-02-29 11:11:11	11:11:11	2004	1	1	a	123456789a	123456789a123456789b123456789c	tinyblob	tinytext	blob	text	mediumblob	mediumtext	longblob	longtext	one	monday
 set @my_key= 0 ;
 execute stmt1 using @my_key ;
 execute full_info ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					@arg01	254	20	1	Y	128	31	63
-def					@arg02	254	20	0	Y	128	31	63
-def					@arg03	254	20	0	Y	128	31	63
-def					@arg04	254	20	0	Y	128	31	63
-def					@arg05	254	20	0	Y	128	31	63
-def					@arg06	254	20	0	Y	128	31	63
-def					@arg07	254	20	0	Y	128	31	63
-def					@arg08	254	20	0	Y	128	31	63
-def					@arg09	254	20	0	Y	128	31	63
-def					@arg10	254	20	0	Y	128	31	63
-def					@arg11	254	20	0	Y	128	31	63
-def					@arg12	254	20	0	Y	128	31	63
-def					@arg13	254	8192	0	Y	128	31	63
-def					@arg14	254	8192	0	Y	128	31	63
-def					@arg15	254	8192	19	Y	128	31	63
-def					@arg16	254	8192	0	Y	128	31	63
-def					@arg17	254	20	0	Y	128	31	63
-def					@arg18	254	20	0	Y	128	31	63
-def					@arg19	254	20	0	Y	128	31	63
-def					@arg20	254	8192	0	Y	0	31	8
-def					@arg21	254	8192	0	Y	0	31	8
-def					@arg22	254	8192	0	Y	0	31	8
-def					@arg23	254	8192	0	Y	128	31	63
-def					@arg24	254	8192	0	Y	0	31	8
-def					@arg25	254	8192	0	Y	128	31	63
-def					@arg26	254	8192	0	Y	0	31	8
-def					@arg27	254	8192	0	Y	128	31	63
-def					@arg28	254	8192	0	Y	0	31	8
-def					@arg29	254	8192	0	Y	128	31	63
-def					@arg30	254	8192	0	Y	0	31	8
-def					@arg31	254	8192	0	Y	0	31	8
-def					@arg32	254	8192	0	Y	0	31	8
+def					@arg01	253	20	1	Y	128	0	63
+def					@arg02	253	20	0	Y	128	0	63
+def					@arg03	253	20	0	Y	128	0	63
+def					@arg04	253	20	0	Y	128	0	63
+def					@arg05	253	20	0	Y	128	0	63
+def					@arg06	253	20	0	Y	128	0	63
+def					@arg07	253	23	0	Y	128	31	63
+def					@arg08	253	23	0	Y	128	31	63
+def					@arg09	253	23	0	Y	128	31	63
+def					@arg10	253	23	0	Y	128	31	63
+def					@arg11	253	83	0	Y	128	30	63
+def					@arg12	253	83	0	Y	128	30	63
+def					@arg13	253	8192	0	Y	128	31	63
+def					@arg14	253	8192	0	Y	128	31	63
+def					@arg15	253	8192	19	Y	128	31	63
+def					@arg16	253	8192	0	Y	128	31	63
+def					@arg17	253	20	0	Y	128	0	63
+def					@arg18	253	20	0	Y	128	0	63
+def					@arg19	253	20	0	Y	128	0	63
+def					@arg20	253	8192	0	Y	0	31	8
+def					@arg21	253	8192	0	Y	0	31	8
+def					@arg22	253	8192	0	Y	0	31	8
+def					@arg23	253	8192	0	Y	128	31	63
+def					@arg24	253	8192	0	Y	0	31	8
+def					@arg25	253	8192	0	Y	128	31	63
+def					@arg26	253	8192	0	Y	0	31	8
+def					@arg27	253	8192	0	Y	128	31	63
+def					@arg28	253	8192	0	Y	0	31	8
+def					@arg29	253	8192	0	Y	128	31	63
+def					@arg30	253	8192	0	Y	0	31	8
+def					@arg31	253	8192	0	Y	0	31	8
+def					@arg32	253	8192	0	Y	0	31	8
 @arg01	@arg02	@arg03	@arg04	@arg05	@arg06	@arg07	@arg08	@arg09	@arg10	@arg11	@arg12	@arg13	@arg14	@arg15	@arg16	@arg17	@arg18	@arg19	@arg20	@arg21	@arg22	@arg23	@arg24	@arg25	@arg26	@arg27	@arg28	@arg29	@arg30	@arg31	@arg32
 0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	1991-01-01 01:01:01	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 prepare stmt1 from "select c1 into ? from t9 where c1= 1" ;
@@ -2555,12 +2555,12 @@ set @arg00= 9223372036854775807 ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c1' at row 1
-Warning	1264	Data truncated; out of range for column 'c2' at row 1
-Warning	1264	Data truncated; out of range for column 'c3' at row 1
-Warning	1264	Data truncated; out of range for column 'c4' at row 1
-Warning	1264	Data truncated; out of range for column 'c5' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
 c1	127
 c2	32767
@@ -2572,18 +2572,18 @@ c7	9.22337e+18
 c8	9.22337203685478e+18
 c9	9.22337203685478e+18
 c10	9.22337203685478e+18
-c12	99999.9999
+c12	9999.9999
 execute my_delete ;
 set @arg00= '9223372036854775807' ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c1' at row 1
-Warning	1264	Data truncated; out of range for column 'c2' at row 1
-Warning	1264	Data truncated; out of range for column 'c3' at row 1
-Warning	1265	Data truncated for column 'c4' at row 1
-Warning	1265	Data truncated for column 'c5' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
 c1	127
 c2	32767
@@ -2595,18 +2595,18 @@ c7	9.22337e+18
 c8	9.22337203685478e+18
 c9	9.22337203685478e+18
 c10	9.22337203685478e+18
-c12	99999.9999
+c12	9999.9999
 execute my_delete ;
 set @arg00= -9223372036854775808 ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c1' at row 1
-Warning	1264	Data truncated; out of range for column 'c2' at row 1
-Warning	1264	Data truncated; out of range for column 'c3' at row 1
-Warning	1264	Data truncated; out of range for column 'c4' at row 1
-Warning	1264	Data truncated; out of range for column 'c5' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
 c1	-128
 c2	-32768
@@ -2624,12 +2624,12 @@ set @arg00= '-9223372036854775808' ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c1' at row 1
-Warning	1264	Data truncated; out of range for column 'c2' at row 1
-Warning	1264	Data truncated; out of range for column 'c3' at row 1
-Warning	1265	Data truncated for column 'c4' at row 1
-Warning	1265	Data truncated for column 'c5' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
 c1	-128
 c2	-32768
@@ -2647,14 +2647,14 @@ set @arg00= 1.11111111111111111111e+50 ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c1' at row 1
-Warning	1264	Data truncated; out of range for column 'c2' at row 1
-Warning	1264	Data truncated; out of range for column 'c3' at row 1
-Warning	1264	Data truncated; out of range for column 'c4' at row 1
-Warning	1264	Data truncated; out of range for column 'c5' at row 1
-Warning	1264	Data truncated; out of range for column 'c6' at row 1
-Warning	1264	Data truncated; out of range for column 'c7' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c6' at row 1
+Warning	1264	Out of range value adjusted for column 'c7' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
 c1	127
 c2	32767
@@ -2666,45 +2666,45 @@ c7	3.40282e+38
 c8	1.11111111111111e+50
 c9	1.11111111111111e+50
 c10	1.11111111111111e+50
-c12	99999.9999
+c12	9999.9999
 execute my_delete ;
 set @arg00= '1.11111111111111111111e+50' ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1265	Data truncated for column 'c1' at row 1
-Warning	1265	Data truncated for column 'c2' at row 1
-Warning	1265	Data truncated for column 'c3' at row 1
-Warning	1265	Data truncated for column 'c4' at row 1
-Warning	1265	Data truncated for column 'c5' at row 1
-Warning	1265	Data truncated for column 'c6' at row 1
-Warning	1264	Data truncated; out of range for column 'c7' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c6' at row 1
+Warning	1264	Out of range value adjusted for column 'c7' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
-c1	1
-c2	1
-c3	1
-c4	1
-c5	1
-c6	1
+c1	127
+c2	32767
+c3	8388607
+c4	2147483647
+c5	2147483647
+c6	9223372036854775807
 c7	3.40282e+38
 c8	1.11111111111111e+50
 c9	1.11111111111111e+50
 c10	1.11111111111111e+50
-c12	99999.9999
+c12	9999.9999
 execute my_delete ;
 set @arg00= -1.11111111111111111111e+50 ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c1' at row 1
-Warning	1264	Data truncated; out of range for column 'c2' at row 1
-Warning	1264	Data truncated; out of range for column 'c3' at row 1
-Warning	1264	Data truncated; out of range for column 'c4' at row 1
-Warning	1264	Data truncated; out of range for column 'c5' at row 1
-Warning	1264	Data truncated; out of range for column 'c6' at row 1
-Warning	1264	Data truncated; out of range for column 'c7' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c6' at row 1
+Warning	1264	Out of range value adjusted for column 'c7' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
 c1	-128
 c2	-32768
@@ -2722,21 +2722,21 @@ set @arg00= '-1.11111111111111111111e+50' ;
 execute my_insert using @arg00, @arg00, @arg00, @arg00, @arg00, @arg00,
 @arg00, @arg00, @arg00, @arg00, @arg00 ;
 Warnings:
-Warning	1265	Data truncated for column 'c1' at row 1
-Warning	1265	Data truncated for column 'c2' at row 1
-Warning	1265	Data truncated for column 'c3' at row 1
-Warning	1265	Data truncated for column 'c4' at row 1
-Warning	1265	Data truncated for column 'c5' at row 1
-Warning	1265	Data truncated for column 'c6' at row 1
-Warning	1264	Data truncated; out of range for column 'c7' at row 1
-Warning	1264	Data truncated; out of range for column 'c12' at row 1
+Warning	1264	Out of range value adjusted for column 'c1' at row 1
+Warning	1264	Out of range value adjusted for column 'c2' at row 1
+Warning	1264	Out of range value adjusted for column 'c3' at row 1
+Warning	1264	Out of range value adjusted for column 'c4' at row 1
+Warning	1264	Out of range value adjusted for column 'c5' at row 1
+Warning	1264	Out of range value adjusted for column 'c6' at row 1
+Warning	1264	Out of range value adjusted for column 'c7' at row 1
+Warning	1264	Out of range value adjusted for column 'c12' at row 1
 execute my_select ;
-c1	-1
-c2	-1
-c3	-1
-c4	-1
-c5	-1
-c6	-1
+c1	-128
+c2	-32768
+c3	-8388608
+c4	-2147483648
+c5	-2147483648
+c6	-9223372036854775808
 c7	-3.40282e+38
 c8	-1.11111111111111e+50
 c9	-1.11111111111111e+50
@@ -2801,10 +2801,10 @@ c1	c20	c21	c22	c23	c24	c25	c26	c27	c28	c29	c30
 41	4	41	41	41	41	41	41	41	41	41	41
 42	4	42	42	42	42	42	42	42	42	42	42
 43	4	43	43	43	43	43	43	43	43	43	43
-50	5	50	50	50.00	50.00	50.00	50.00	50.00	50.00	50.00	50.00
-51	5	51	51	51	51	51	51	51	51	51	51
-52	5	52	52	52.00	52.00	52.00	52.00	52.00	52.00	52.00	52.00
-53	5	53	53	53.00	53.00	53.00	53.00	53.00	53.00	53.00	53.00
+50	5	50.0	50.0	50.0	50.0	50.0	50.0	50.0	50.0	50.0	50.0
+51	5	51.0	51.0	51.0	51.0	51.0	51.0	51.0	51.0	51.0	51.0
+52	5	52.0	52.0	52.0	52.0	52.0	52.0	52.0	52.0	52.0	52.0
+53	5	53.0	53.0	53.0	53.0	53.0	53.0	53.0	53.0	53.0	53.0
 54	5	54	54	54.00	54.00	54.00	54.00	54.00	54.00	54.00	54.00
 55	5	55	55	55	55	55	55	55	55	55	55
 56	6	56	56	56.00	56.00	56.00	56.00	56.00	56.00	56.00	56.00
@@ -2944,61 +2944,68 @@ delete from t9 ;
 test_sequence
 -- insert into date/time columns --
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
+Warning	1265	Data truncated for column 'c17' at row 1
+Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
+Warning	1265	Data truncated for column 'c17' at row 1
+Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
+Warning	1265	Data truncated for column 'c17' at row 1
+Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
-Warning	1265	Data truncated for column 'c17' at row 1
-Warnings:
-Warning	1265	Data truncated for column 'c17' at row 1
-Warnings:
-Warning	1265	Data truncated for column 'c17' at row 1
-Warnings:
-Warning	1264	Data truncated; out of range for column 'c13' at row 1
-Warning	1265	Data truncated for column 'c14' at row 1
+Warning	1264	Out of range value adjusted for column 'c13' at row 1
+Warning	1264	Out of range value adjusted for column 'c14' at row 1
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c13' at row 1
-Warning	1265	Data truncated for column 'c14' at row 1
+Warning	1264	Out of range value adjusted for column 'c13' at row 1
+Warning	1264	Out of range value adjusted for column 'c14' at row 1
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c13' at row 1
-Warning	1265	Data truncated for column 'c14' at row 1
+Warning	1264	Out of range value adjusted for column 'c13' at row 1
+Warning	1264	Out of range value adjusted for column 'c14' at row 1
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
-Warning	1264	Data truncated; out of range for column 'c13' at row 1
-Warning	1265	Data truncated for column 'c14' at row 1
+Warning	1264	Out of range value adjusted for column 'c13' at row 1
+Warning	1264	Out of range value adjusted for column 'c14' at row 1
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
+Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
+Warning	1265	Data truncated for column 'c15' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
 Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
-Warnings:
-Warning	1265	Data truncated for column 'c15' at row 1
-Warning	1264	Data truncated; out of range for column 'c16' at row 1
-Warning	1264	Data truncated; out of range for column 'c17' at row 1
+Warning	1264	Out of range value adjusted for column 'c16' at row 1
+Warning	1264	Out of range value adjusted for column 'c17' at row 1
 select c1, c13, c14, c15, c16, c17 from t9 order by c1 ;
 c1	c13	c14	c15	c16	c17
 20	1991-01-01	1991-01-01 01:01:01	1991-01-01 01:01:01	01:01:01	1991
@@ -3029,31 +3036,31 @@ test_sequence
 -- select .. where date/time column = .. --
 set @arg00= '1991-01-01 01:01:01' ;
 select 'true' as found from t9 
-where c1= 20 and c13= '1991-01-01 01:01:01' and c14= '1991-01-01 01:01:01' and
+where c1= 20 and c13= CAST('1991-01-01 01:01:01' AS DATE) and c14= '1991-01-01 01:01:01' and
 c15= '1991-01-01 01:01:01' and c16= '1991-01-01 01:01:01' and
 c17= '1991-01-01 01:01:01' ;
 found
 true
 select 'true' as found from t9 
-where c1= 20 and c13= @arg00 and c14= @arg00 and c15= @arg00 and c16= @arg00
+where c1= 20 and c13= CAST(@arg00 AS DATE) and c14= @arg00 and c15= @arg00 and c16= @arg00
 and c17= @arg00 ;
 found
 true
 prepare stmt1 from "select 'true' as found from t9 
-where c1= 20 and c13= '1991-01-01 01:01:01' and c14= '1991-01-01 01:01:01' and
+where c1= 20 and c13= CAST('1991-01-01 01:01:01' AS DATE) and c14= '1991-01-01 01:01:01' and
   c15= '1991-01-01 01:01:01' and c16= '1991-01-01 01:01:01' and
   c17= '1991-01-01 01:01:01'" ;
 execute stmt1 ;
 found
 true
 prepare stmt1 from "select 'true' as found from t9 
-where c1= 20 and c13= ? and c14= ? and c15= ? and c16= ? and c17= ?" ;
+where c1= 20 and c13= CAST(? AS DATE) and c14= ? and c15= ? and c16= ? and c17= ?" ;
 execute stmt1 using @arg00, @arg00, @arg00, @arg00, @arg00 ;
 found
 true
 set @arg00= CAST('1991-01-01 01:01:01' as datetime) ;
 select 'true' as found from t9 
-where c1= 20 and c13= CAST('1991-01-01 01:01:01' as datetime) and
+where c1= 20 and c13= CAST('1991-01-01 00:00:00' as datetime) and
 c14= CAST('1991-01-01 01:01:01' as datetime) and
 c15= CAST('1991-01-01 01:01:01' as datetime) and
 c16= CAST('1991-01-01 01:01:01' as datetime) and
@@ -3061,12 +3068,12 @@ c17= CAST('1991-01-01 01:01:01' as datetime) ;
 found
 true
 select 'true' as found from t9 
-where c1= 20 and c13= @arg00 and c14= @arg00 and c15= @arg00 and c16= @arg00
+where c1= 20 and c13= CAST(@arg00 AS DATE) and c14= @arg00 and c15= @arg00 and c16= @arg00
 and c17= @arg00 ;
 found
 true
 prepare stmt1 from "select 'true' as found from t9 
-where c1= 20 and c13= CAST('1991-01-01 01:01:01' as datetime) and
+where c1= 20 and c13= CAST('1991-01-01 00:00:00' as datetime) and
   c14= CAST('1991-01-01 01:01:01' as datetime) and
   c15= CAST('1991-01-01 01:01:01' as datetime) and
   c16= CAST('1991-01-01 01:01:01' as datetime) and
@@ -3075,7 +3082,7 @@ execute stmt1 ;
 found
 true
 prepare stmt1 from "select 'true' as found from t9 
-where c1= 20 and c13= ? and c14= ? and c15= ? and c16= ? and c17= ?" ;
+where c1= 20 and c13= CAST(? AS DATE) and c14= ? and c15= ? and c16= ? and c17= ?" ;
 execute stmt1 using @arg00, @arg00, @arg00, @arg00, @arg00 ;
 found
 true

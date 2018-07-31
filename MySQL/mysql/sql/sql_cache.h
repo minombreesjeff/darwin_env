@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2001-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -69,6 +68,7 @@ class Query_cache;
 
 struct Query_cache_block_table
 {
+  Query_cache_block_table() {}                /* Remove gcc warning */
   TABLE_COUNTER_TYPE n;		// numbr in table (from 0)
   Query_cache_block_table *next, *prev;
   Query_cache_table *parent;
@@ -78,6 +78,7 @@ struct Query_cache_block_table
 
 struct Query_cache_block
 {
+  Query_cache_block() {}                      /* Remove gcc warning */
   enum block_type {FREE, QUERY, RESULT, RES_CONT, RES_BEG,
 		   RES_INCOMPLETE, TABLE, INCOMPLETE};
 
@@ -112,6 +113,7 @@ struct Query_cache_query
   NET *wri;
   ulong len;
   uint8 tbls_type;
+  unsigned int last_pkt_nr;
 
   inline void init_n_lock();
   void unlock_n_destroy();
@@ -125,7 +127,7 @@ struct Query_cache_query
   inline void tables_type(uint8 type)      { tbls_type= type; }
   inline ulong length()			   { return len; }
   inline ulong add(ulong packet_len)	   { return(len+= packet_len); }
-  inline void length(ulong length)	   { len= length; }
+  inline void length(ulong length_arg)	   { len= length_arg; }
   inline gptr query()
   {
     return (gptr)(((byte*)this)+
@@ -142,17 +144,26 @@ struct Query_cache_query
 
 struct Query_cache_table
 {
+  Query_cache_table() {}                      /* Remove gcc warning */
   char *tbl;
   uint32 key_len;
   uint8 table_type;
+  /* unique for every engine reference */
+  qc_engine_callback callback_func;
+  /* data need by some engines */
+  ulonglong engine_data_buff;
 
   inline char *db()			     { return (char *) data(); }
   inline char *table()			     { return tbl; }
-  inline void table(char *table)	     { tbl= table; }
+  inline void table(char *table_arg)	     { tbl= table_arg; }
   inline uint32 key_length()                 { return key_len; }
   inline void key_length(uint32 len)         { key_len= len; }
   inline uint8 type()                        { return table_type; }
   inline void type(uint8 t)                  { table_type= t; }
+  inline qc_engine_callback callback()       { return callback_func; }
+  inline void callback(qc_engine_callback fn){ callback_func= fn; }
+  inline ulonglong engine_data()             { return engine_data_buff; }
+  inline void engine_data(ulonglong data_arg){ engine_data_buff= data_arg; }
   inline gptr data()
   {
     return (gptr)(((byte*)this)+
@@ -162,6 +173,7 @@ struct Query_cache_table
 
 struct Query_cache_result
 {
+  Query_cache_result() {}                     /* Remove gcc warning */
   Query_cache_block *query;
 
   inline gptr data()
@@ -182,12 +194,12 @@ extern "C"
   byte *query_cache_table_get_key(const byte *record, uint *length,
 				  my_bool not_used);
 }
-void query_cache_insert(NET *thd, const char *packet, ulong length);
 extern "C" void query_cache_invalidate_by_MyISAM_filename(const char* filename);
 
 
 struct Query_cache_memory_bin
 {
+  Query_cache_memory_bin() {}                 /* Remove gcc warning */
 #ifndef DBUG_OFF
   ulong size;
 #endif
@@ -206,6 +218,7 @@ struct Query_cache_memory_bin
 
 struct Query_cache_memory_bin_step
 {
+  Query_cache_memory_bin_step() {}            /* Remove gcc warning */
   ulong size;
   ulong increment;
   uint idx;
@@ -226,6 +239,12 @@ public:
   ulong free_memory, queries_in_cache, hits, inserts, refused,
     free_memory_blocks, total_blocks, lowmem_prunes;
 
+private:
+  pthread_cond_t COND_flush_finished;
+  bool flush_in_progress;
+
+  void free_query_internal(Query_cache_block *point);
+
 protected:
   /*
     The following mutex is locked when searching or changing global
@@ -234,6 +253,12 @@ protected:
     LOCK SEQUENCE (to prevent deadlocks):
       1. structure_guard_mutex
       2. query block (for operation inside query (query block/results))
+
+    Thread doing cache flush releases the mutex once it sets
+    flush_in_progress flag, so other threads may bypass the cache as
+    if it is disabled, not waiting for reset to finish.  The exception
+    is other threads that were going to do cache flush---they'll wait
+    till the end of a flush operation.
   */
   pthread_mutex_t structure_guard_mutex;
   byte *cache;					// cache memory
@@ -276,12 +301,18 @@ protected:
   void invalidate_table(TABLE *table);
   void invalidate_table(byte *key, uint32  key_length);
   void invalidate_table(Query_cache_block *table_block);
+  TABLE_COUNTER_TYPE
+    register_tables_from_list(TABLE_LIST *tables_used,
+                              TABLE_COUNTER_TYPE counter,
+                              Query_cache_block_table *block_table);
   my_bool register_all_tables(Query_cache_block *block,
 			      TABLE_LIST *tables_used,
 			      TABLE_COUNTER_TYPE tables);
   my_bool insert_table(uint key_len, char *key,
 		       Query_cache_block_table *node,
-		       uint32 db_length, uint8 cache_type);
+		       uint32 db_length, uint8 cache_type,
+		       qc_engine_callback callback,
+		       ulonglong engine_data);
   void unlink_table(Query_cache_block_table *node);
   Query_cache_block *get_free_block (ulong len, my_bool not_less,
 				      ulong min);
@@ -337,6 +368,7 @@ protected:
     If query is cacheable return number tables in query
     (query without tables not cached)
   */
+  static
   TABLE_COUNTER_TYPE is_cacheable(THD *thd, uint32 query_len, char *query,
 				  LEX *lex, TABLE_LIST *tables_used,
 				  uint8 *tables_type);
@@ -389,13 +421,14 @@ protected:
 
   void destroy();
 
+  friend void query_cache_init_query(NET *net);
   friend void query_cache_insert(NET *net, const char *packet, ulong length);
   friend void query_cache_end_of_result(THD *thd);
   friend void query_cache_abort(NET *net);
 
   /*
     The following functions are only used when debugging
-    We don't protect these with ifndef DEBUG_OFF to not have to recompile
+    We don't protect these with ifndef DBUG_OFF to not have to recompile
     everything if we want to add checks of the cache at some places.
   */
   void wreck(uint line, const char *message);
@@ -414,6 +447,8 @@ protected:
 
 extern Query_cache query_cache;
 extern TYPELIB query_cache_type_typelib;
+void query_cache_init_query(NET *net);
+void query_cache_insert(NET *net, const char *packet, ulong length);
 void query_cache_end_of_result(THD *thd);
 void query_cache_abort(NET *net);
 

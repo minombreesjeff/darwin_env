@@ -42,7 +42,7 @@ CREATE TABLE t2 (a int not null);
 insert into t2 values(1);
 select * from (select * from t1 where t1.a=(select a from t2 where t2.a=t1.a)) a;
 select * from (select * from t1 where t1.a=(select t2.a from t2 where t2.a=t1.a) union select t1.a, t1.b from t1) a;
-explain select * from (select * from t1,t2 where t1.a=t2.a) t1;
+explain select * from (select t1.*, t2.a as t2a from t1,t2 where t1.a=t2.a) t1;
 drop table t1, t2;
 create table t1(a int not null, t char(8), index(a));
 disable_query_log;
@@ -99,7 +99,8 @@ SELECT a.x FROM (SELECT 1 AS x) AS a HAVING a.x = 1;
 #
 # Test for select if database is not selected.
 #
-# Connect without a database
+# Connect without a database as user mysqltest_1
+create user mysqltest_1;
 create table t1 select 1 as a;
 connect (con1,localhost,mysqltest_1,,*NO-ONE*,$MASTER_MYPORT,$MASTER_MYSOCK);
 connection con1;
@@ -140,7 +141,6 @@ select * from ( select * from t1 union select * from t1) a,(select * from t1 uni
 explain select * from ( select * from t1 union select * from t1) a,(select * from t1 union select * from t1) b;
 drop table t1;
 
-
 #
 # multi-update & multi-delete with derived tables
 #
@@ -158,7 +158,7 @@ UPDATE `t1` AS P1 INNER JOIN (SELECT aaaa FROM `t1` GROUP BY N HAVING Count(M) >
 delete P1.* from `t1` AS P1 INNER JOIN (SELECT N FROM `t1` GROUP BY N HAVING Count(M) > 1) AS P2 ON P1.N = P2.N;
 select * from t1;
 --replace_result P2 p2
---error 1288
+--error ER_UNKNOWN_TABLE 
 delete P1.*,P2.* from `t1` AS P1 INNER JOIN (SELECT N FROM `t1` GROUP BY N HAVING Count(M) > 1) AS P2 ON P1.N = P2.N;
 -- error 1054
 delete P1.* from `t1` AS P1 INNER JOIN (SELECT aaa FROM `t1` GROUP BY N HAVING Count(M) > 1) AS P2 ON P1.N = P2.N;
@@ -224,6 +224,19 @@ select distinct sum(b) from t1 group by a;
 select distinct sum(b) from (select a,b from t1) y group by a;
 drop table t1;
 
+
+#
+# Test for bug #7413 "Subquery with non-scalar results participating in
+# select list of derived table crashes server" aka "VIEW with sub query can
+# cause the MySQL server to crash". If we have encountered problem during
+# filling of derived table we should report error and perform cleanup
+# properly.
+#
+CREATE TABLE t1 (a char(10), b char(10));
+INSERT INTO t1 VALUES ('root','localhost'), ('root','%');
+--error 1242
+SELECT * FROM (SELECT (SELECT a.a FROM t1 AS a WHERE a.a = b.a) FROM t1 AS b) AS c;
+DROP TABLE t1;
 #
 # test of union subquery in the FROM clause with complex distinct/all (BUG#6565)
 #
@@ -236,5 +249,31 @@ insert into t3 values(3),(3);
 select * from t1 union distinct select * from t2 union all select * from t3;
 select * from (select * from t1 union distinct select * from t2 union all select * from t3) X;
 drop table t1, t2, t3;
+
+#
+# Bug #11864 non unique names are allowed in subquery
+#
+create table t1 (a int);
+create table t2 (a int);
+--error 1060
+select * from (select * from t1,t2) foo;
+drop table t1,t2;
+
+#
+# Bug#10586 - query works with 4.1.8, but not with 4.1.11
+#
+create table t1 (ID int unsigned not null auto_increment,
+                 DATA varchar(5) not null, primary key (ID));
+create table t2 (ID int unsigned not null auto_increment,
+                 DATA varchar(5) not null, FID int unsigned not null,
+                 primary key (ID));
+select A.* from (t1 inner join (select * from t2) as A on t1.ID = A.FID);
+select t2.* from ((select * from t1) as A inner join t2 on A.ID = t2.FID);
+select t2.* from (select * from t1) as A inner join t2 on A.ID = t2.FID;
+drop table t1, t2;
+
+disconnect con1;
+connection default;
+drop user mysqltest_1;
 
 # End of 4.1 tests

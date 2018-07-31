@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,7 +38,7 @@ uint my_read(File Filedes, byte *Buffer, uint Count, myf MyFlags)
   uint readbytes, save_count;
   DBUG_ENTER("my_read");
   DBUG_PRINT("my",("Fd: %d  Buffer: 0x%lx  Count: %u  MyFlags: %d",
-                   Filedes, Buffer, Count, MyFlags));
+                   Filedes, (long) Buffer, Count, MyFlags));
   save_count= Count;
 
   for (;;)
@@ -48,13 +47,14 @@ uint my_read(File Filedes, byte *Buffer, uint Count, myf MyFlags)
     if ((readbytes= (uint) read(Filedes, Buffer, Count)) != Count)
     {
       my_errno= errno ? errno : -1;
-      DBUG_PRINT("warning",("Read only %ld bytes off %ld from %d, errno: %d",
-                            readbytes, Count, Filedes, my_errno));
+      DBUG_PRINT("warning",("Read only %d bytes off %u from %d, errno: %d",
+                            (int) readbytes, Count, Filedes, my_errno));
 #ifdef THREAD
-      if ((int) readbytes <= 0 && errno == EINTR)
-      {
-        DBUG_PRINT("debug", ("my_read() was interrupted and returned %d", (int) readbytes));
-        continue;				/* Interrupted */
+      if ((readbytes == 0 || (int) readbytes == -1) && errno == EINTR)
+      {  
+        DBUG_PRINT("debug", ("my_read() was interrupted and returned %d",
+                             (int) readbytes));
+        continue;                              /* Interrupted */
       }
 #endif
       if (MyFlags & (MY_WME | MY_FAE | MY_FNABP))

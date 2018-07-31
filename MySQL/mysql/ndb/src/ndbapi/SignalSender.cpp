@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -133,6 +132,8 @@ SignalSender::getNoOfConnectedNodes() const {
 
 SendStatus
 SignalSender::sendSignal(Uint16 nodeId, const SimpleSignal * s){
+  assert(getNodeInfo(nodeId).m_api_reg_conf == true ||
+         s->readSignalNumber() == GSN_API_REGREQ);
   return theFacade->theTransporterRegistry->prepareSend(&s->header,
 							1, // JBB
 							&s->theData[0],
@@ -146,6 +147,10 @@ SignalSender::waitFor(Uint32 timeOutMillis, T & t)
 {
   SimpleSignal * s = t.check(m_jobBuffer);
   if(s != 0){
+    if (m_usedBuffer.push_back(s))
+    {
+      return 0;
+    }
     return s;
   }
   
@@ -160,7 +165,10 @@ SignalSender::waitFor(Uint32 timeOutMillis, T & t)
     
     SimpleSignal * s = t.check(m_jobBuffer);
     if(s != 0){
-      m_usedBuffer.push_back(s);
+      if (m_usedBuffer.push_back(s))
+      {
+        return 0;
+      }
       return s;
     }
     
@@ -173,6 +181,7 @@ SignalSender::waitFor(Uint32 timeOutMillis, T & t)
 
 class WaitForAny {
 public:
+  WaitForAny() {}
   SimpleSignal * check(Vector<SimpleSignal*> & m_jobBuffer){
     if(m_jobBuffer.size() > 0){
       SimpleSignal * s = m_jobBuffer[0];
@@ -192,6 +201,7 @@ SignalSender::waitFor(Uint32 timeOutMillis){
 
 class WaitForNode {
 public:
+  WaitForNode() {}
   Uint32 m_nodeId;
   SimpleSignal * check(Vector<SimpleSignal*> & m_jobBuffer){
     Uint32 len = m_jobBuffer.size();

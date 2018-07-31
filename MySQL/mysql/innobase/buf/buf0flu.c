@@ -114,6 +114,7 @@ buf_flush_ready_for_replace(
 {
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
+	ut_ad(mutex_own(&block->mutex));
 #endif /* UNIV_SYNC_DEBUG */
 	if (block->state != BUF_BLOCK_FILE_PAGE) {
 		ut_print_timestamp(stderr);
@@ -148,6 +149,7 @@ buf_flush_ready_for_flush(
 {
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
+	ut_ad(mutex_own(&(block->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
 	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 
@@ -230,7 +232,7 @@ buf_flush_buffered_writes(void)
 	ulint		len2;
 	ulint		i;
 
-	if (trx_doublewrite == NULL) {
+	if (!srv_use_doublewrite_buf || trx_doublewrite == NULL) {
 		os_aio_simulated_wake_handler_threads();
 
 		return;
@@ -281,6 +283,10 @@ buf_flush_buffered_writes(void)
 		}
 	}
 
+        /* increment the doublewrite flushed pages counter */
+        srv_dblwr_pages_written+= trx_doublewrite->first_free;
+        srv_dblwr_writes++;
+        
 	if (trx_doublewrite->first_free > TRX_SYS_DOUBLEWRITE_BLOCK_SIZE) {
 		len = TRX_SYS_DOUBLEWRITE_BLOCK_SIZE * UNIV_PAGE_SIZE;
 	} else {
@@ -452,7 +458,8 @@ buf_flush_init_for_writing(
 	/* Store the new formula checksum */
 
 	mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM,
-					buf_calc_page_new_checksum(page));
+					srv_use_checksums ?
+                  buf_calc_page_new_checksum(page) : BUF_NO_CHECKSUM_MAGIC);
 
 	/* We overwrite the first 4 bytes of the end lsn field to store
 	the old formula checksum. Since it depends also on the field
@@ -460,7 +467,8 @@ buf_flush_init_for_writing(
 	new formula checksum. */
 
 	mach_write_to_4(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM,
-					buf_calc_page_old_checksum(page));
+					srv_use_checksums ?
+                  buf_calc_page_old_checksum(page) : BUF_NO_CHECKSUM_MAGIC);
 }
 
 /************************************************************************
@@ -497,7 +505,7 @@ buf_flush_write_block_low(
 #endif	
 	buf_flush_init_for_writing(block->frame, block->newest_modification,
 						block->space, block->offset);
-	if (!trx_doublewrite) {
+	if (!srv_use_doublewrite_buf || !trx_doublewrite) {
 		fil_io(OS_FILE_WRITE | OS_AIO_SIMULATED_WAKE_LATER,
 			FALSE, block->space, block->offset, 0, UNIV_PAGE_SIZE,
 		 			(void*)block->frame, (void*)block);
@@ -533,8 +541,15 @@ buf_flush_try_page(
 
 	ut_a(!block || block->state == BUF_BLOCK_FILE_PAGE);
 
+	if (!block) {
+		mutex_exit(&(buf_pool->mutex));
+		return(0);
+	}
+
+	mutex_enter(&block->mutex);
+
 	if (flush_type == BUF_FLUSH_LIST
-	    && block && buf_flush_ready_for_flush(block, flush_type)) {
+	    && buf_flush_ready_for_flush(block, flush_type)) {
 	
 		block->io_fix = BUF_IO_WRITE;
 
@@ -572,6 +587,7 @@ buf_flush_try_page(
 			locked = TRUE;
 		}
 
+		mutex_exit(&block->mutex);
 		mutex_exit(&(buf_pool->mutex));
 
 		if (!locked) {
@@ -580,18 +596,20 @@ buf_flush_try_page(
 			rw_lock_s_lock_gen(&(block->lock), BUF_IO_WRITE);
 		}
 
+#ifdef UNIV_DEBUG
 		if (buf_debug_prints) {
 			fprintf(stderr,
 				"Flushing page space %lu, page no %lu \n",
 				(ulong) block->space, (ulong) block->offset);
 		}
+#endif /* UNIV_DEBUG */
 
 		buf_flush_write_block_low(block);
 		
 		return(1);
 
-	} else if (flush_type == BUF_FLUSH_LRU && block
-			&& buf_flush_ready_for_flush(block, flush_type)) {
+	} else if (flush_type == BUF_FLUSH_LRU
+		   && buf_flush_ready_for_flush(block, flush_type)) {
 
 		/* VERY IMPORTANT:
 		Because any thread may call the LRU flush, even when owning
@@ -631,14 +649,15 @@ buf_flush_try_page(
 		buf_pool mutex: this ensures that the latch is acquired
 		immediately. */
 		
+		mutex_exit(&block->mutex);
 		mutex_exit(&(buf_pool->mutex));
 
 		buf_flush_write_block_low(block);
 
 		return(1);
 
-	} else if (flush_type == BUF_FLUSH_SINGLE_PAGE && block
-			&& buf_flush_ready_for_flush(block, flush_type)) {
+	} else if (flush_type == BUF_FLUSH_SINGLE_PAGE
+		   && buf_flush_ready_for_flush(block, flush_type)) {
 	
 		block->io_fix = BUF_IO_WRITE;
 
@@ -664,25 +683,29 @@ buf_flush_try_page(
 
 		(buf_pool->n_flush[flush_type])++;
 
+		mutex_exit(&block->mutex);
 		mutex_exit(&(buf_pool->mutex));
 
 		rw_lock_s_lock_gen(&(block->lock), BUF_IO_WRITE);
 
+#ifdef UNIV_DEBUG
 		if (buf_debug_prints) {
 			fprintf(stderr,
 			"Flushing single page space %lu, page no %lu \n",
 						(ulong) block->space,
 			                        (ulong) block->offset);
 		}
+#endif /* UNIV_DEBUG */
 
 		buf_flush_write_block_low(block);
 		
 		return(1);
-	} else {
-		mutex_exit(&(buf_pool->mutex));
+	}
 
-		return(0);
-	}		
+	mutex_exit(&block->mutex);
+	mutex_exit(&(buf_pool->mutex));
+
+	return(0);
 }
 
 /***************************************************************
@@ -727,34 +750,48 @@ buf_flush_try_neighbors(
 		block = buf_page_hash_get(space, i);
 		ut_a(!block || block->state == BUF_BLOCK_FILE_PAGE);
 
-		if (block && flush_type == BUF_FLUSH_LRU && i != offset
-		    && !block->old) {
+		if (!block) {
+
+			continue;
+
+		} else if (flush_type == BUF_FLUSH_LRU && i != offset
+			   && !block->old) {
 
 		        /* We avoid flushing 'non-old' blocks in an LRU flush,
 		        because the flushed blocks are soon freed */
 
 		        continue;
-		}
+		} else {
 
-		if (block && buf_flush_ready_for_flush(block, flush_type)
-		   && (i == offset || block->buf_fix_count == 0)) {
-			/* We only try to flush those neighbors != offset
-			where the buf fix count is zero, as we then know that
-			we probably can latch the page without a semaphore
-			wait. Semaphore waits are expensive because we must
-			flush the doublewrite buffer before we start
-			waiting. */
+			mutex_enter(&block->mutex);
 
-			mutex_exit(&(buf_pool->mutex));
+			if (buf_flush_ready_for_flush(block, flush_type)
+			    && (i == offset || block->buf_fix_count == 0)) {
+				/* We only try to flush those
+				neighbors != offset where the buf fix count is
+				zero, as we then know that we probably can
+				latch the page without a semaphore wait.
+				Semaphore waits are expensive because we must
+				flush the doublewrite buffer before we start
+				waiting. */
 
-			/* Note: as we release the buf_pool mutex above, in
-			buf_flush_try_page we cannot be sure the page is still
-			in a flushable state: therefore we check it again
-			inside that function. */
+				mutex_exit(&block->mutex);
 
-			count += buf_flush_try_page(space, i, flush_type);
+				mutex_exit(&(buf_pool->mutex));
 
-			mutex_enter(&(buf_pool->mutex));
+				/* Note: as we release the buf_pool mutex
+				above, in buf_flush_try_page we cannot be sure
+				the page is still in a flushable state:
+				therefore we check it again inside that
+				function. */
+
+				count += buf_flush_try_page(space, i,
+							    flush_type);
+
+				mutex_enter(&(buf_pool->mutex));
+			} else {
+				mutex_exit(&block->mutex);
+			}
 		}
 	}
 				
@@ -848,12 +885,15 @@ buf_flush_batch(
 	    	while ((block != NULL) && !found) {
 			ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 
+			mutex_enter(&block->mutex);
+
 			if (buf_flush_ready_for_flush(block, flush_type)) {
 
 				found = TRUE;
 				space = block->space;
 				offset = block->offset;
 	    
+				mutex_exit(&block->mutex);
 				mutex_exit(&(buf_pool->mutex));
 
 				old_page_count = page_count;
@@ -871,9 +911,13 @@ buf_flush_batch(
 
 			} else if (flush_type == BUF_FLUSH_LRU) {
 
+				mutex_exit(&block->mutex);
+
 				block = UT_LIST_GET_PREV(LRU, block);
 			} else {
 				ut_ad(flush_type == BUF_FLUSH_LIST);
+
+				mutex_exit(&block->mutex);
 
 				block = UT_LIST_GET_PREV(flush_list, block);
 			}
@@ -900,6 +944,7 @@ buf_flush_batch(
 
 	buf_flush_buffered_writes();
 
+#ifdef UNIV_DEBUG
 	if (buf_debug_prints && page_count > 0) {
 		ut_a(flush_type == BUF_FLUSH_LRU
 			|| flush_type == BUF_FLUSH_LIST);
@@ -908,7 +953,11 @@ buf_flush_batch(
 			: "Flushed %lu pages in flush list flush\n",
 			(ulong) page_count);
 	}
+#endif /* UNIV_DEBUG */
 	
+        if (page_count != ULINT_UNDEFINED)
+          srv_buf_pool_flushed+= page_count;
+
 	return(page_count);
 }
 
@@ -951,9 +1000,13 @@ buf_flush_LRU_recommendation(void)
 	       				+ BUF_FLUSH_EXTRA_MARGIN)
 	       && (distance < BUF_LRU_FREE_SEARCH_LEN)) {
 
+		mutex_enter(&block->mutex);
+
 		if (buf_flush_ready_for_replace(block)) {
 			n_replaceable++;
 		}
+
+		mutex_exit(&block->mutex);
 
 		distance++;
 			

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,7 +29,7 @@ class TupFragReq {
   friend class Dblqh;
   friend class Dbtup;
 public:
-  STATIC_CONST( SignalLength = 14 );
+  STATIC_CONST( SignalLength = 17 );
 private:
   Uint32 userPtr;
   Uint32 userRef;
@@ -38,7 +37,18 @@ private:
   Uint32 tableId;
   Uint32 noOfAttr;
   Uint32 fragId;
-  Uint32 todo[8];
+  Uint32 maxRowsLow;
+  Uint32 maxRowsHigh;
+  Uint32 minRowsLow;
+  Uint32 minRowsHigh;
+  Uint32 noOfNullAttr;
+  Uint32 schemaVersion;
+  Uint32 noOfKeyAttr;
+  Uint16 noOfNewAttr;
+  Uint16 noOfCharsets;
+  Uint32 checksumIndicator;
+  Uint32 noOfAttributeGroups;
+  Uint32 globalCheckpointIdIndicator;
 };
 
 class TupFragConf {
@@ -104,9 +114,9 @@ public:
   STATIC_CONST( SignalLength = 2 );
   enum ErrorCode {
     NoError = 0,
-    InvalidRequest = 800,
-    NoFreeFragment = 604,
-    NoFreeAttributes = 827
+    InvalidRequest = 903,
+    NoFreeFragment = 904,
+    NoFreeAttributes = 905
   };
 private:
   Uint32 userPtr;
@@ -145,7 +155,9 @@ public:
   STATIC_CONST( SignalLength = 2 );
   enum ErrorCode {
     NoError = 0,
-    InvalidCharset = 743
+    InvalidCharset = 743,
+    TooManyBitsUsed = 831,
+    UnsupportedType = 906
   };
 private:
   Uint32 userPtr;
@@ -185,9 +197,9 @@ public:
   STATIC_CONST( SignalLength = 2 );
   enum ErrorCode {
     NoError = 0,
-    InvalidAttributeType = 742,
-    InvalidCharset = 743,
-    InvalidNodeSize = 832
+    InvalidAttributeType = 906,
+    InvalidCharset = 907,
+    InvalidNodeSize = 908
   };
 private:
   Uint32 userPtr;

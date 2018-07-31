@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2003, 2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,7 +40,7 @@ int mi_delete_all_rows(MI_INFO *info)
   info->state->key_file_length=share->base.keystart;
   info->state->data_file_length=0;
   info->state->empty=info->state->key_empty=0;
-  state->checksum=0;
+  info->state->checksum=0;
 
   for (i=share->base.max_key_block_length/MI_MIN_KEY_BLOCK_LENGTH ; i-- ; )
     state->key_del[i]= HA_OFFSET_ERROR;

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,6 +46,7 @@ Revision history:
 
  * *************************************************** */
 
+#include <ndb_global.h>
 #include <NdbApi.hpp>
 
 #include <NdbMain.h>
@@ -174,6 +174,8 @@ tellThreads(ThreadNdb* threadArrayP, const StartType what)
     threadArrayP[i].threadStart = what;
     } // for
 } // tellThreads
+
+static Ndb_cluster_connection *g_cluster_connection= 0;
  
 NDB_COMMAND(flexHammer, "flexHammer", "flexHammer", "flexHammer", 65535)
 //main(int argc, const char** argv)
@@ -213,7 +215,13 @@ NDB_COMMAND(flexHammer, "flexHammer", "flexHammer", "flexHammer", 65535)
   // NdbThread_SetConcurrencyLevel(tNoOfThreads + 2);
 
   // Create and init Ndb object
-  pMyNdb = new Ndb("TEST_DB");
+  Ndb_cluster_connection con;
+  if(con.connect(12, 5, 1) != 0)
+  {
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  g_cluster_connection= &con;
+  pMyNdb = new Ndb(g_cluster_connection, "TEST_DB");
   pMyNdb->init();
 
   // Wait for Ndb to become ready
@@ -345,7 +353,7 @@ flexHammerThread(void* pArg)
   for (i = 0; i < MAXATTRSIZE; i++)
     attrValue[i] = 0; 
   // Ndb object for each thread
-  pMyNdb = new Ndb( "TEST_DB" );
+  pMyNdb = new Ndb(g_cluster_connection, "TEST_DB" );
   pMyNdb->init();
   if (pMyNdb->waitUntilReady(10000) != 0) {
     // Error, NDB is not ready

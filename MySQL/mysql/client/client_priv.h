@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2001-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,10 +44,12 @@ enum options_client
   OPT_COMPATIBLE, OPT_RECONNECT, OPT_DELIMITER, OPT_SECURE_AUTH,
   OPT_OPEN_FILES_LIMIT, OPT_SET_CHARSET, OPT_CREATE_OPTIONS,
   OPT_START_POSITION, OPT_STOP_POSITION, OPT_START_DATETIME, OPT_STOP_DATETIME,
-  OPT_SIGINT_IGNORE, OPT_HEXBLOB, OPT_ORDER_BY_PRIMARY
+  OPT_SIGINT_IGNORE, OPT_HEXBLOB, OPT_ORDER_BY_PRIMARY, OPT_COUNT,
 #ifdef HAVE_NDBCLUSTER_DB
-  ,OPT_NDBCLUSTER,OPT_NDB_CONNECTSTRING
+  OPT_NDBCLUSTER, OPT_NDB_CONNECTSTRING,
 #endif
-  ,OPT_IGNORE_TABLE,OPT_INSERT_IGNORE,OPT_DROP_DATABASE,
-  OPT_AUTO_CLOSE
+  OPT_TRIGGERS,
+  OPT_IGNORE_TABLE,OPT_INSERT_IGNORE,OPT_SHOW_WARNINGS,OPT_DROP_DATABASE,
+  OPT_TZ_UTC, OPT_AUTO_CLOSE, OPT_SSL_VERIFY_SERVER_CERT,
+  OPT_DEBUG_INFO, OPT_ERROR_LOG_FILE
 };

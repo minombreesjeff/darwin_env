@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,6 +22,7 @@
 #include <AttributeHeader.hpp>
 #include <ArrayPool.hpp>
 #include <DataBuffer.hpp>
+#include <DLFifoList.hpp>
 #include <md5_hash.hpp>
 
 // big brother
@@ -121,41 +121,17 @@ private:
   // forward declarations
   struct DescEnt;
 
-  /*
-   * Pointer to array of Uint32.
-   */
-  struct Data {
-  private:
-    Uint32* m_data;
-  public:
-    Data();
-    Data(Uint32* data);
-    Data& operator=(Uint32* data);
-    operator Uint32*() const;
-    Data& operator+=(size_t n);
-    AttributeHeader& ah() const;
-  };
-  friend class Data;
+  // Pointer to array of Uint32 represents attribute data and bounds
 
-  /*
-   * Pointer to array of constant Uint32.
-   */
-  struct ConstData;
-  friend struct ConstData;
-  struct ConstData {
-  private:
-    const Uint32* m_data;
-  public:
-    ConstData();
-    ConstData(const Uint32* data);
-    ConstData& operator=(const Uint32* data);
-    operator const Uint32*() const;
-    ConstData& operator+=(size_t n);
-    const AttributeHeader& ah() const;
-    // non-const pointer can be cast to const pointer
-    ConstData(Data data);
-    ConstData& operator=(Data data);
-  };
+  typedef Uint32 *Data;
+  inline AttributeHeader& ah(Data data) {
+    return *reinterpret_cast<AttributeHeader*>(data);
+  }
+
+  typedef const Uint32* ConstData;
+  inline const AttributeHeader& ah(ConstData data) {
+    return *reinterpret_cast<const AttributeHeader*>(data);
+  }
 
   // AttributeHeader size is assumed to be 1 word
   STATIC_CONST( AttributeHeaderSize = 1 );
@@ -212,6 +188,7 @@ private:
     unsigned m_fragBit : 1;     // which duplicated table fragment
     TreeEnt();
     // methods
+    bool eqtuple(const TreeEnt ent) const;
     bool eq(const TreeEnt ent) const;
     int cmp(const TreeEnt ent) const;
   };
@@ -289,8 +266,7 @@ private:
   struct TreePos {
     TupLoc m_loc;               // physical node address
     Uint16 m_pos;               // position 0 to m_occup
-    Uint8 m_match;              // at an existing entry
-    Uint8 m_dir;                // see scanNext()
+    Uint8 m_dir;                // see scanNext
     TreePos();
   };
 
@@ -357,6 +333,18 @@ private:
   typedef DataBuffer<ScanBoundSegmentSize>::ConstDataBufferIterator ScanBoundIterator;
   typedef DataBuffer<ScanBoundSegmentSize>::DataBufferPool ScanBoundPool;
   ScanBoundPool c_scanBoundPool;
+
+  // ScanLock
+  struct ScanLock {
+    Uint32 m_accLockOp;
+    union {
+    Uint32 nextPool;
+    Uint32 nextList;
+    };
+    Uint32 prevList;
+  };
+  typedef Ptr<ScanLock> ScanLockPtr;
+  ArrayPool<ScanLock> c_scanLockPool;
  
   /*
    * Scan operation.
@@ -381,12 +369,13 @@ private:
     enum {
       Undef = 0,
       First = 1,                // before first entry
-      Current = 2,              // at current before locking
-      Blocked = 3,              // at current waiting for ACC lock
-      Locked = 4,               // at current and locked or no lock needed
-      Next = 5,                 // looking for next extry
-      Last = 6,                 // after last entry
-      Aborting = 7,             // lock wait at scan close
+      Current = 2,              // at some entry
+      Found = 3,                // return current as next scan result
+      Blocked = 4,              // found and waiting for ACC lock
+      Locked = 5,               // found and locked or no lock needed
+      Next = 6,                 // looking for next extry
+      Last = 7,                 // after last entry
+      Aborting = 8,             // lock wait at scan close
       Invalid = 9               // cannot return REF to LQH currently
     };
     Uint16 m_state;
@@ -402,9 +391,11 @@ private:
     Uint32 m_savePointId;
     // lock waited for or obtained and not yet passed to LQH
     Uint32 m_accLockOp;
+    // locks obtained and passed to LQH but not yet returned by LQH
+    DLFifoList<ScanLock>::Head m_accLockOps;
     Uint8 m_readCommitted;      // no locking
     Uint8 m_lockMode;
-    Uint8 m_keyInfo;
+    Uint8 m_descending;
     ScanBound m_boundMin;
     ScanBound m_boundMax;
     ScanBound* m_bound[2];      // pointers to above 2
@@ -417,13 +408,6 @@ private:
     Uint32 nextList;
     };
     Uint32 prevList;
-    /*
-     * Locks obtained and passed to LQH but not yet returned by LQH.
-     * The max was increased from 16 to 992 (default 64).  Record max
-     * ever used in this scan.  TODO fix quadratic behaviour
-     */
-    Uint32 m_maxAccLockOps;
-    Uint32 m_accLockOps[MaxAccLockOps];
     ScanOp(ScanBoundPool& scanBoundPool);
   };
   typedef Ptr<ScanOp> ScanOpPtr;
@@ -447,7 +431,7 @@ private:
     State m_state;
     DictTabInfo::TableType m_tableType;
     Uint32 m_tableId;
-    Uint16 m_fragOff;           // offset for duplicate fragId bits
+    Uint16 unused;
     Uint16 m_numFrags;
     Uint32 m_fragId[MaxIndexFragments];
     Uint32 m_fragPtrI[MaxIndexFragments];
@@ -473,7 +457,7 @@ private:
   struct Frag {
     Uint32 m_tableId;           // copy from index level
     Uint32 m_indexId;
-    Uint16 m_fragOff;
+    Uint16 unused;
     Uint16 m_fragId;
     Uint32 m_descPage;          // copy from index level
     Uint16 m_descOff;
@@ -563,6 +547,7 @@ private:
   void readKeyAttrs(const Frag& frag, TreeEnt ent, unsigned start, Data keyData);
   void readTablePk(const Frag& frag, TreeEnt ent, Data pkData, unsigned& pkSize);
   void copyAttrs(const Frag& frag, ConstData data1, Data data2, unsigned maxlen2 = MaxAttrDataSize);
+  void unpackBound(const ScanBound& bound, Data data);
 
   /*
    * DbtuxMeta.cpp
@@ -637,19 +622,24 @@ private:
   void execACCKEYREF(Signal* signal);
   void execACC_ABORTCONF(Signal* signal);
   void scanFirst(ScanOpPtr scanPtr);
-  void scanNext(ScanOpPtr scanPtr);
+  void scanFind(ScanOpPtr scanPtr);
+  void scanNext(ScanOpPtr scanPtr, bool fromMaintReq);
+  bool scanCheck(ScanOpPtr scanPtr, TreeEnt ent);
   bool scanVisible(ScanOpPtr scanPtr, TreeEnt ent);
   void scanClose(Signal* signal, ScanOpPtr scanPtr);
-  void addAccLockOp(ScanOp& scan, Uint32 accLockOp);
-  void removeAccLockOp(ScanOp& scan, Uint32 accLockOp);
+  void abortAccLockOps(Signal* signal, ScanOpPtr scanPtr);
+  void addAccLockOp(ScanOpPtr scanPtr, Uint32 accLockOp);
+  void removeAccLockOp(ScanOpPtr scanPtr, Uint32 accLockOp);
   void releaseScanOp(ScanOpPtr& scanPtr);
 
   /*
    * DbtuxSearch.cpp
    */
-  void searchToAdd(Frag& frag, ConstData searchKey, TreeEnt searchEnt, TreePos& treePos);
-  void searchToRemove(Frag& frag, ConstData searchKey, TreeEnt searchEnt, TreePos& treePos);
-  void searchToScan(Frag& frag, ConstData boundInfo, unsigned boundCount, TreePos& treePos);
+  bool searchToAdd(Frag& frag, ConstData searchKey, TreeEnt searchEnt, TreePos& treePos);
+  bool searchToRemove(Frag& frag, ConstData searchKey, TreeEnt searchEnt, TreePos& treePos);
+  void searchToScan(Frag& frag, ConstData boundInfo, unsigned boundCount, bool descending, TreePos& treePos);
+  void searchToScanAscending(Frag& frag, ConstData boundInfo, unsigned boundCount, TreePos& treePos);
+  void searchToScanDescending(Frag& frag, ConstData boundInfo, unsigned boundCount, TreePos& treePos);
 
   /*
    * DbtuxCmp.cpp
@@ -692,7 +682,8 @@ private:
     DebugMeta = 1,              // log create and drop index
     DebugMaint = 2,             // log maintenance ops
     DebugTree = 4,              // log and check tree after each op
-    DebugScan = 8               // log scans
+    DebugScan = 8,              // log scans
+    DebugLock = 16              // log ACC locks
   };
   STATIC_CONST( DataFillByte = 0xa2 );
   STATIC_CONST( NodeFillByte = 0xa4 );
@@ -734,99 +725,6 @@ private:
   static unsigned min(unsigned x, unsigned y);
   static unsigned max(unsigned x, unsigned y);
 };
-
-// Dbtux::Data
-
-inline
-Dbtux::Data::Data() :
-  m_data(0)
-{
-}
-
-inline
-Dbtux::Data::Data(Uint32* data) :
-  m_data(data)
-{
-}
-
-inline Dbtux::Data&
-Dbtux::Data::operator=(Uint32* data)
-{
-  m_data = data;
-  return *this;
-}
-
-inline
-Dbtux::Data::operator Uint32*() const
-{
-  return m_data;
-}
-
-inline Dbtux::Data&
-Dbtux::Data::operator+=(size_t n)
-{
-  m_data += n;
-  return *this;
-}
-
-inline AttributeHeader&
-Dbtux::Data::ah() const
-{
-  return *reinterpret_cast<AttributeHeader*>(m_data);
-}
-
-// Dbtux::ConstData
-
-inline
-Dbtux::ConstData::ConstData() :
-  m_data(0)
-{
-}
-
-inline
-Dbtux::ConstData::ConstData(const Uint32* data) :
-  m_data(data)
-{
-}
-
-inline Dbtux::ConstData&
-Dbtux::ConstData::operator=(const Uint32* data)
-{
-  m_data = data;
-  return *this;
-}
-
-inline
-Dbtux::ConstData::operator const Uint32*() const
-{
-  return m_data;
-}
-
-inline Dbtux::ConstData&
-Dbtux::ConstData::operator+=(size_t n)
-{
-  m_data += n;
-  return *this;
-}
-
-inline const AttributeHeader&
-Dbtux::ConstData::ah() const
-{
-  return *reinterpret_cast<const AttributeHeader*>(m_data);
-}
-
-inline
-Dbtux::ConstData::ConstData(Data data) :
-  m_data(static_cast<Uint32*>(data))
-{
-}
-
-inline Dbtux::ConstData&
-Dbtux::ConstData::operator=(Data data)
-{
-  m_data = static_cast<Uint32*>(data);
-  return *this;
-}
 
 // Dbtux::TupLoc
 
@@ -897,6 +795,14 @@ Dbtux::TreeEnt::TreeEnt() :
 }
 
 inline bool
+Dbtux::TreeEnt::eqtuple(const TreeEnt ent) const
+{
+  return
+    m_tupLoc == ent.m_tupLoc &&
+    m_fragBit == ent.m_fragBit;
+}
+
+inline bool
 Dbtux::TreeEnt::eq(const TreeEnt ent) const
 {
   return
@@ -908,6 +814,11 @@ Dbtux::TreeEnt::eq(const TreeEnt ent) const
 inline int
 Dbtux::TreeEnt::cmp(const TreeEnt ent) const
 {
+  // compare frag first to improve cacheing in 5.0
+  if (m_fragBit < ent.m_fragBit)
+    return -1;
+  if (m_fragBit > ent.m_fragBit)
+    return +1;
   if (m_tupLoc.getPageId() < ent.m_tupLoc.getPageId())
     return -1;
   if (m_tupLoc.getPageId() > ent.m_tupLoc.getPageId())
@@ -916,14 +827,25 @@ Dbtux::TreeEnt::cmp(const TreeEnt ent) const
     return -1;
   if (m_tupLoc.getPageOffset() > ent.m_tupLoc.getPageOffset())
     return +1;
-  if (m_tupVersion < ent.m_tupVersion)
-    return -1;
-  if (m_tupVersion > ent.m_tupVersion)
-    return +1;
-  if (m_fragBit < ent.m_fragBit)
-    return -1;
-  if (m_fragBit > ent.m_fragBit)
-    return +1;
+  /*
+   * Guess if one tuple version has wrapped around.  This is well
+   * defined ordering on existing versions since versions are assigned
+   * consecutively and different versions exists only on uncommitted
+   * tuple.  Assuming max 2**14 uncommitted ops on same tuple.
+   */
+  const unsigned version_wrap_limit = (1 << (ZTUP_VERSION_BITS - 1));
+  if (m_tupVersion < ent.m_tupVersion) {
+    if (ent.m_tupVersion - m_tupVersion < version_wrap_limit)
+      return -1;
+    else
+      return +1;
+  }
+  if (m_tupVersion > ent.m_tupVersion) {
+    if (m_tupVersion - ent.m_tupVersion < version_wrap_limit)
+      return +1;
+    else
+      return -1;
+  }
   return 0;
 }
 
@@ -990,7 +912,6 @@ inline
 Dbtux::TreePos::TreePos() :
   m_loc(),
   m_pos(ZNIL),
-  m_match(false),
   m_dir(255)
 {
 }
@@ -1026,25 +947,20 @@ Dbtux::ScanOp::ScanOp(ScanBoundPool& scanBoundPool) :
   m_transId2(0),
   m_savePointId(0),
   m_accLockOp(RNIL),
+  m_accLockOps(),
   m_readCommitted(0),
   m_lockMode(0),
-  m_keyInfo(0),
+  m_descending(0),
   m_boundMin(scanBoundPool),
   m_boundMax(scanBoundPool),
   m_scanPos(),
   m_scanEnt(),
-  m_nodeScan(RNIL),
-  m_maxAccLockOps(0)
+  m_nodeScan(RNIL)
 {
   m_bound[0] = &m_boundMin;
   m_bound[1] = &m_boundMax;
   m_boundCnt[0] = 0;
   m_boundCnt[1] = 0;
-#ifdef VM_TRACE
-  for (unsigned i = 0; i < MaxAccLockOps; i++) {
-    m_accLockOps[i] = 0x1f1f1f1f;
-  }
-#endif
 }
 
 // Dbtux::Index
@@ -1072,7 +988,6 @@ inline
 Dbtux::Frag::Frag(ArrayPool<ScanOp>& scanOpPool) :
   m_tableId(RNIL),
   m_indexId(RNIL),
-  m_fragOff(ZNIL),
   m_fragId(ZNIL),
   m_descPage(RNIL),
   m_descOff(0),

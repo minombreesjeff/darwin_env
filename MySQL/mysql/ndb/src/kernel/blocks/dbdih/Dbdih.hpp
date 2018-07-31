@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -694,7 +693,6 @@ private:
   void execFSREADREF(Signal *);
   void execFSWRITECONF(Signal *);
   void execFSWRITEREF(Signal *);
-  void execSET_VAR_REQ(Signal *);
   void execCHECKNODEGROUPSREQ(Signal *);
   void execSTART_INFOREQ(Signal*);
   void execSTART_INFOREF(Signal*);
@@ -717,6 +715,9 @@ private:
   void waitDropTabWritingToFile(Signal *, TabRecordPtr tabPtr);
   void checkPrepDropTabComplete(Signal *, TabRecordPtr tabPtr);
   void checkWaitDropTabFailedLqh(Signal *, Uint32 nodeId, Uint32 tableId);
+
+  void execDICT_LOCK_CONF(Signal* signal);
+  void execDICT_LOCK_REF(Signal* signal);
 
   // Statement blocks
 //------------------------------------
@@ -935,6 +936,7 @@ private:
   void initialStartCompletedLab(Signal *);
   void allNodesLcpCompletedLab(Signal *);
   void nodeRestartPh2Lab(Signal *);
+  void nodeRestartPh2Lab2(Signal *);
   void initGciFilesLab(Signal *);
   void dictStartConfLab(Signal *);
   void nodeDictStartConfLab(Signal *);
@@ -1285,6 +1287,7 @@ public:
 private:
   
   struct LcpState {
+    LcpState() {}
     LcpStatus lcpStatus;
     Uint32 lcpStatusUpdatedPlace;
 
@@ -1364,6 +1367,7 @@ private:
   Uint32 csystemnodes;
   Uint32 currentgcp;
   Uint32 c_newest_restorable_gci;
+  Uint32 c_set_initial_start_flag;
 
   enum GcpMasterTakeOverState {
     GMTOS_IDLE = 0,
@@ -1391,6 +1395,7 @@ public:
 private:
   class MasterTakeOverState {
   public:
+    MasterTakeOverState() {}
     void set(LcpMasterTakeOverState s, Uint32 line) { 
       state = s; updatePlace = line;
     }
@@ -1478,6 +1483,7 @@ private:
    * SwitchReplicaRecord - Should only be used by master
    */
   struct SwitchReplicaRecord {
+    SwitchReplicaRecord() {}
     void clear(){}
 
     Uint32 nodeId;
@@ -1596,6 +1602,35 @@ private:
    * Reply from nodeId
    */
   void startInfoReply(Signal *, Uint32 nodeId);
+
+  // DIH specifics for execNODE_START_REP (sendDictUnlockOrd)
+  void execNODE_START_REP(Signal* signal);
+
+  /*
+   * Lock master DICT.  Only current use is by starting node
+   * during NR.  A pool of slave records is convenient anyway.
+   */
+  struct DictLockSlaveRecord {
+    Uint32 lockPtr;
+    Uint32 lockType;
+    bool locked;
+    Callback callback;
+    Uint32 nextPool;
+  };
+
+  typedef Ptr<DictLockSlaveRecord> DictLockSlavePtr;
+  ArrayPool<DictLockSlaveRecord> c_dictLockSlavePool;
+
+  // slave
+  void sendDictLockReq(Signal* signal, Uint32 lockType, Callback c);
+  void recvDictLockConf(Signal* signal);
+  void sendDictUnlockOrd(Signal* signal, Uint32 lockSlavePtrI);
+
+  // NR
+  Uint32 c_dictLockSlavePtrI_nodeRestart; // userPtr for NR
+  void recvDictLockConf_nodeRestart(Signal* signal, Uint32 data, Uint32 ret);
+
+  Uint32 c_error_7181_ref;
 };
 
 #if (DIH_CDATA_SIZE < _SYSFILE_SIZE32)

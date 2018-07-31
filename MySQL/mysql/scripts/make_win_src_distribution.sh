@@ -1,4 +1,18 @@
 #!/bin/sh
+# Copyright (C) 2003-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 # Terminate loudly on error, we don't want partial package
 set -e
@@ -203,7 +217,7 @@ copy_dir_files()
        print_debug "Creating directory '$arg'"
        mkdir $BASE/$arg
      fi
-    for i in *.c *.cpp *.h *.ih *.i *.ic *.asm *.def *.hpp *.yy \
+    for i in *.c *.cpp *.h *.ih *.i *.ic *.asm *.def *.hpp *.yy *dsp *.dsw \
              README INSTALL* LICENSE AUTHORS NEWS ChangeLog \
              *.inc *.test *.result *.pem Moscow_leap des_key_file \
              *.vcproj *.sln *.dat *.000001 *.require *.opt *.cnf
@@ -253,8 +267,8 @@ copy_dir_dirs() {
 # Input directories to be copied
 #
 
-for i in client dbug extra heap include isam \
-         libmysql libmysqld merge myisam \
+for i in client dbug extra heap include \
+         libmysql libmysqld myisam \
          myisammrg mysys regex sql strings sql-common sql/examples \
          tools vio zlib
 do
@@ -270,7 +284,7 @@ make -C $SOURCE/ndb windoze || true
 # Input directories to be copied recursively
 #
 
-for i in bdb innobase ndb
+for i in bdb innobase ndb extra/yassl server-tools
 do
   copy_dir_dirs $i
 done

@@ -1,61 +1,69 @@
 dnl -*- ksh -*-
 dnl Process this file with autoconf to produce a configure script.
 
+AC_PREREQ(2.52)dnl		Minimum Autoconf version required.
+
 AC_INIT(sql/mysqld.cc)
 AC_CANONICAL_SYSTEM
 # The Docs Makefile.am parses this line!
 # remember to also change ndb version below and update version.c in ndb
-AM_INIT_AUTOMAKE(mysql, 4.1.22)
+AM_INIT_AUTOMAKE(mysql, 5.0.45)
 AM_CONFIG_HEADER(config.h)
 
 PROTOCOL_VERSION=10
 DOT_FRM_VERSION=6
 # See the libtool docs for information on how to do shared lib versions.
-SHARED_LIB_MAJOR_VERSION=14
+SHARED_LIB_MAJOR_VERSION=15
 SHARED_LIB_VERSION=$SHARED_LIB_MAJOR_VERSION:0:0
 
+NDB_SHARED_LIB_MAJOR_VERSION=2
+NDB_SHARED_LIB_VERSION=$NDB_SHARED_LIB_MAJOR_VERSION:0:0
+
+
 # ndb version
-NDB_VERSION_MAJOR=4
-NDB_VERSION_MINOR=1
-NDB_VERSION_BUILD=22
+NDB_VERSION_MAJOR=5
+NDB_VERSION_MINOR=0
+NDB_VERSION_BUILD=45
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
 # Remember that regexps needs to quote [ and ] since this is run through m4
 MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|[[a-z]]*-.*$||"`
 MYSQL_BASE_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|\.[[^.]]*$||"`
-MYSQL_VERSION_ID=`echo $MYSQL_NO_DASH_VERSION. | sed -e 's/[[^0-9.]]//g; s/\./  /g; s/ \([[0-9]]\) / 0\\1 /g; s/ //g'`
+MYSQL_VERSION_ID=`echo $MYSQL_NO_DASH_VERSION | sed -e 's|[[^0-9.]].*$||;s|$|.|' | sed -e 's/[[^0-9.]]//g; s/\./  /g; s/ \([[0-9]]\) / 0\\1 /g; s/ //g'`
+
+# Add previous major version for debian package upgrade path
+MYSQL_PREVIOUS_BASE_VERSION=4.1
 
 # The port should be constant for a LONG time
 MYSQL_TCP_PORT_DEFAULT=3306
 MYSQL_UNIX_ADDR_DEFAULT="/tmp/mysql.sock"
 
+dnl Include m4 
+sinclude(config/ac-macros/alloca.m4)
+sinclude(config/ac-macros/check_cpu.m4)
+sinclude(config/ac-macros/character_sets.m4)
+sinclude(config/ac-macros/compiler_flag.m4)
+sinclude(config/ac-macros/ha_archive.m4)
+sinclude(config/ac-macros/ha_berkeley.m4)
+sinclude(config/ac-macros/ha_blackhole.m4)
+sinclude(config/ac-macros/ha_example.m4)
+sinclude(config/ac-macros/ha_federated.m4)
+sinclude(config/ac-macros/ha_innodb.m4)
+sinclude(config/ac-macros/ha_ndbcluster.m4)
+sinclude(config/ac-macros/ha_tina.m4)
+sinclude(config/ac-macros/large_file.m4)
+sinclude(config/ac-macros/misc.m4)
+sinclude(config/ac-macros/openssl.m4)
+sinclude(config/ac-macros/readline.m4)
+sinclude(config/ac-macros/yassl.m4)
+sinclude(config/ac-macros/zlib.m4)
+
 # Remember to add a directory sql/share/LANGUAGE
 AVAILABLE_LANGUAGES="\
 czech danish dutch english estonian french german greek hungarian \
-italian japanese japanese-sjis korean norwegian norwegian-ny polish portuguese \
+italian japanese korean norwegian norwegian-ny polish portuguese \
 romanian russian serbian slovak spanish swedish ukrainian"
-
-# Generate make rules for all error messages
-AVAILABLE_LANGUAGES_ERRORS=
-AVAILABLE_LANGUAGES_ERRORS_RULES=ac_available_languages_fragment
-rm -f $AVAILABLE_LANGUAGES_ERRORS_RULES
-for i in $AVAILABLE_LANGUAGES
-do
-  AVAILABLE_LANGUAGES_ERRORS="$AVAILABLE_LANGUAGES_ERRORS $i/errmsg.sys"
-  case $host_os in
-    netware* | modesto*)
-      echo "$i/errmsg.sys: $i/errmsg.txt
-	\$(top_builddir)/extra/comp_err.linux -C\$(srcdir)/charsets/ $i/errmsg.txt $i/errmsg.sys" \
-      >> $AVAILABLE_LANGUAGES_ERRORS_RULES
-      ;;
-    *)
-  echo "$i/errmsg.sys: $i/errmsg.txt
-	\$(top_builddir)/extra/comp_err -C\$(srcdir)/charsets/ $i/errmsg.txt $i/errmsg.sys" \
-    >> $AVAILABLE_LANGUAGES_ERRORS_RULES
-      ;;
-  esac
-done
 
 #####
 #####
@@ -63,6 +71,7 @@ done
 AC_SUBST(MYSQL_NO_DASH_VERSION)
 AC_SUBST(MYSQL_BASE_VERSION)
 AC_SUBST(MYSQL_VERSION_ID)
+AC_SUBST(MYSQL_PREVIOUS_BASE_VERSION)
 AC_SUBST(PROTOCOL_VERSION)
 AC_DEFINE_UNQUOTED([PROTOCOL_VERSION], [$PROTOCOL_VERSION],
                    [mysql client protocol version])
@@ -71,9 +80,10 @@ AC_DEFINE_UNQUOTED([DOT_FRM_VERSION], [$DOT_FRM_VERSION],
                    [Version of .frm files])
 AC_SUBST(SHARED_LIB_MAJOR_VERSION)
 AC_SUBST(SHARED_LIB_VERSION)
+AC_SUBST(NDB_SHARED_LIB_MAJOR_VERSION)
+AC_SUBST(NDB_SHARED_LIB_VERSION)
+
 AC_SUBST(AVAILABLE_LANGUAGES)
-AC_SUBST(AVAILABLE_LANGUAGES_ERRORS)
-AC_SUBST_FILE(AVAILABLE_LANGUAGES_ERRORS_RULES)
 
 AC_SUBST([NDB_VERSION_MAJOR])
 AC_SUBST([NDB_VERSION_MINOR])
@@ -90,14 +100,22 @@ AC_DEFINE_UNQUOTED([NDB_VERSION_STATUS], ["$NDB_VERSION_STATUS"],
 
 
 # Canonicalize the configuration name.
-SYSTEM_TYPE="$host_vendor-$host_os"
-MACHINE_TYPE="$host_cpu"
+
+# Check whether --with-system-type or --without-system-type was given.
+AC_ARG_WITH(system-type,
+    [  --with-system-type      Set the system type, like "sun-solaris10"],
+    [SYSTEM_TYPE="$withval"],
+    [SYSTEM_TYPE="$host_vendor-$host_os"])
+AC_ARG_WITH(machine-type,
+    [  --with-machine-type     Set the machine type, like "powerpc"],
+    [MACHINE_TYPE="$withval"],
+    [MACHINE_TYPE="$host_cpu"])
 AC_SUBST(SYSTEM_TYPE)
 AC_DEFINE_UNQUOTED([SYSTEM_TYPE], ["$SYSTEM_TYPE"],
-                   [Name of system, eg solaris])
+                   [Name of system, eg sun-solaris])
 AC_SUBST(MACHINE_TYPE)
 AC_DEFINE_UNQUOTED([MACHINE_TYPE], ["$MACHINE_TYPE"],
-                   [Machine type name, eg sun10])
+                   [Machine type name, eg sparc])
 
 # Detect intel x86 like processor
 BASE_MACHINE_TYPE=$MACHINE_TYPE
@@ -120,14 +138,11 @@ AC_SUBST(SAVE_LDFLAGS)
 AC_SUBST(SAVE_CXXLDFLAGS)
 AC_SUBST(CXXLDFLAGS)
 
-AC_PREREQ(2.52)dnl		Minimum Autoconf version required.
-
 #AC_ARG_PROGRAM			# Automaticly invoked by AM_INIT_AUTOMAKE
+
 AM_SANITY_CHECK
 # This is needed is SUBDIRS is set
 AC_PROG_MAKE_SET
-# This generates rules for webpage generation for the MySQL homepage.
-AM_CONDITIONAL(LOCAL, test -d ../web/SitePages)
 
 ##############################################################################
 # The below section needs to be done before AC_PROG_CC
@@ -136,6 +151,7 @@ AM_CONDITIONAL(LOCAL, test -d ../web/SitePages)
 # Hack for OS X/Darwin and Metrowerks CodeWarrior
 AC_ARG_WITH(darwin-mwcc,
 [  --with-darwin-mwcc      Use Metrowerks CodeWarrior wrappers on OS X/Darwin],[
+ if [ "with_darwin_mwcc" = yes ] ; then
   builddir=`pwd`
   ccwrapper="$builddir/support-files/MacOSX/mwcc-wrapper"
   arwrapper="$builddir/support-files/MacOSX/mwar-wrapper"
@@ -147,7 +163,7 @@ AC_ARG_WITH(darwin-mwcc,
   export CC CXX LD AR RANLIB
   AC_SUBST(AR)
   AC_SUBST(RANLIB)
-  with_darwin_mwcc=yes
+ fi
 ])
 
 AM_CONDITIONAL(DARWIN_MWCC, test x$with_darwin_mwcc = xyes)
@@ -201,23 +217,8 @@ then
 else
 CC_VERSION=""
 fi
-case $SYSTEM_TYPE in
-  *netware*)
-CXX_VERSION=`$CXX -version | grep -i version`
-    ;;
-  *)
-CXX_VERSION=`$CXX --version | sed 1q`
-    ;;
-esac
-if test $? -eq "0"
-then
-  AC_MSG_CHECKING("C++ compiler version");
-  AC_MSG_RESULT("$CXX $CXX_VERSION")
-else
-CXX_VERSION=""
-fi
-AC_SUBST(CXX_VERSION)
 AC_SUBST(CC_VERSION)
+MYSQL_CHECK_CXX_VERSION
 
 # Fix for sgi gcc / sgiCC which tries to emulate gcc
 if test "$CC" = "sgicc"
@@ -236,6 +237,7 @@ then
 else
   AC_PATH_PROG(AS, as, as)
 fi
+
 # Still need ranlib for readline; local static use only so no libtool.
 AC_PROG_RANLIB
 # We use libtool
@@ -247,6 +249,13 @@ AC_PROG_LIBTOOL
 LIBTOOL="$LIBTOOL --preserve-dup-deps"
 AC_SUBST(LIBTOOL)dnl
 
+AC_SUBST(NM)dnl
+
+# NM= "$NM -X64"
+#archive_expsym_cmds= `echo "$archive_expsym_cmds" | sed -e '/"$(CC)"//'`
+#archive_expsym_cmds= "$CC -q64 $archive_expsym_cmds"
+#  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed -e 's/-fbranch-probabilities//; s/-Wall//; s/-ansi//; s/-pedantic//; s/-Wcheck//'`
+
 #AC_LIBTOOL_DLOPEN AC_LIBTOOL_WIN32_DLL AC_DISABLE_FAST_INSTALL AC_DISABLE_SHARED AC_DISABLE_STATIC
 
 # AC_PROG_INSTALL
@@ -254,7 +263,7 @@ AC_PROG_INSTALL
 test -z "$INSTALL_SCRIPT" && INSTALL_SCRIPT='${INSTALL_PROGRAM}'
 
 # Not critical since the generated file is distributed
-AC_PROG_YACC
+AC_CHECK_PROGS(YACC, ['bison -y -p MYSQL'])
 AC_CHECK_PROG(PDFMANUAL, pdftex, manual.pdf)
 AC_CHECK_PROG(DVIS,      tex,    manual.dvi)
 
@@ -296,48 +305,6 @@ AC_TRY_RUN([
     ;;
 esac
 
-
-# option, cache_name, variable,
-# code to execute if yes, code to exectute if fail
-AC_DEFUN([AC_SYS_COMPILER_FLAG],
-[
-  AC_MSG_CHECKING($1)
-  OLD_CFLAGS="[$]CFLAGS"
-  AC_CACHE_VAL(mysql_cv_option_$2,
-  [
-    CFLAGS="[$]OLD_CFLAGS $1"
-    AC_TRY_RUN([int main(){exit(0);}],mysql_cv_option_$2=yes,mysql_cv_option_$2=no,mysql_cv_option_$2=no)
- ])
-
-  CFLAGS="[$]OLD_CFLAGS"
-  
-  if test x"[$]mysql_cv_option_$2" = "xyes" ; then
-    $3="[$]$3 $1"
-    AC_MSG_RESULT(yes)
-    $5
-  else
-    AC_MSG_RESULT(no)
-    $4
-  fi
-])
-
-# arch, option, cache_name, variable
-AC_DEFUN([AC_SYS_CPU_COMPILER_FLAG],
-[
- if test "`uname -m 2>/dev/null`" = "$1" ; then
-    AC_SYS_COMPILER_FLAG($2,$3,$4)
- fi
-])
-
-# os, option, cache_name, variable
-AC_DEFUN([AC_SYS_OS_COMPILER_FLAG],
-[
- if test "x$mysql_cv_sys_os" = "x$1" ; then
-    AC_SYS_COMPILER_FLAG($2,$3,$4)
- fi
-])
-
-# We need some special hacks when running slowaris
 AC_PATH_PROG(uname_prog, uname, no)
 
 # We should go through this and put all the explictly system dependent
@@ -364,7 +331,7 @@ case "$target_os" in
          AC_SYS_COMPILER_FLAG(-belf,sco_belf_option,CFLAGS,[],[
          case "$LDFLAGS" in
            *-belf*) ;;
-           *) echo "Adding -belf option to ldflags."
+           *) AC_MSG_WARN([Adding -belf option to ldflags.])
               LDFLAGS="$LDFLAGS -belf"
            ;;
          esac
@@ -375,7 +342,7 @@ case "$target_os" in
          case "$LDFLAGS" in
            *-belf*) ;;
            *)
-	     echo "Adding -belf option to ldflags."
+	     AC_MSG_WARN([Adding -belf option to ldflags.])
              LDFLAGS="$LDFLAGS -belf"
            ;;
          esac
@@ -395,6 +362,10 @@ case "$target_os" in
       # Use the built-in alloca()
       CFLAGS="$CFLAGS -Kalloca"
       CXXFLAGS="$CFLAGS -Kalloca"
+      # Use no_implicit for templates
+      CXXFLAGS="$CXXFLAGS -Tno_implicit"
+      AC_DEFINE([HAVE_EXPLICIT_TEMPLATE_INSTANTIATION],
+        [1], [Defined by configure. Use explicit template instantiation.])
     fi
   ;;
 esac
@@ -405,33 +376,22 @@ AC_SUBST(CXXFLAGS)
 AC_SUBST(LD)
 AC_SUBST(INSTALL_SCRIPT)
 
-export CC CXX CFLAGS LD LDFLAGS AR
+export CC CXX CFLAGS LD LDFLAGS AR ARFLAGS
 
-ndb_cxxflags_fix=
-if test "$GXX" = "yes"
+if test "$GCC" = "yes"
 then
   # mysqld requires -fno-implicit-templates.
   # Disable exceptions as they seams to create problems with gcc and threads.
   # mysqld doesn't use run-time-type-checking, so we disable it.
+  # We should use -Wno-invalid-offsetof flag to disable some warnings from gcc
+  # regarding offset() usage in C++ which are done in a safe manner in the
+  # server
   CXXFLAGS="$CXXFLAGS -fno-implicit-templates -fno-exceptions -fno-rtti"
-
-  # If you are using 'gcc' 3.0 (not g++) to compile C++ programs on Linux,
-  # we will gets some problems when linking static programs.
-  # The following code is used to fix this problem.
-
-  if echo $CXX | grep gcc > /dev/null 2>&1
-  then
-    AC_MSG_CHECKING([if CXX is gcc 3 or 4])
-    if $CXX -v 2>&1 | grep 'version [[34]]' > /dev/null 2>&1
-    then
-      AC_MSG_RESULT([yes])
-      AC_MSG_NOTICE([using MySQL tricks to avoid linking C++ code with C++ libraries])
-      CXXFLAGS="$CXXFLAGS -DUSE_MYSYS_NEW -DDEFINE_CXA_PURE_VIRTUAL"
-    else
-      AC_MSG_RESULT([no])
-    fi
-  fi
+  AC_DEFINE([HAVE_EXPLICIT_TEMPLATE_INSTANTIATION],
+    [1], [Defined by configure. Use explicit template instantiation.])
 fi
+
+MYSQL_PROG_AR
 
 # libmysqlclient versioning when linked with GNU ld.
 if $LD --version 2>/dev/null|grep -q GNU; then
@@ -440,9 +400,10 @@ if $LD --version 2>/dev/null|grep -q GNU; then
 fi
 AC_SUBST(LD_VERSION_SCRIPT)
 
+
 # Avoid bug in fcntl on some versions of linux
 AC_MSG_CHECKING([if we should use 'skip-external-locking' as default for $target_os])
-# Any wariation of Linux
+# Any variation of Linux
 if expr "$target_os" : "[[Ll]]inux.*" > /dev/null
 then
   MYSQLD_DEFAULT_SWITCHES="--skip-external-locking"
@@ -508,42 +469,62 @@ AC_SUBST(DOXYGEN)
 AC_SUBST(PDFLATEX)
 AC_SUBST(MAKEINDEX)
 
+# icheck, used for ABI check
+AC_PATH_PROG(ICHECK, icheck, no)
+# "icheck" is also the name of a file system check program on Tru64.
+# Verify the program found is really the interface checker.
+if test "x$ICHECK" != "xno"
+then
+  AC_MSG_CHECKING(if $ICHECK works as expected)
+  echo "int foo;" > conftest.h
+  $ICHECK --canonify -o conftest.ic conftest.h 2>/dev/null
+  if test -f "conftest.ic"
+  then
+    AC_MSG_RESULT(yes)
+  else
+    AC_MSG_RESULT(no)
+    ICHECK=no
+  fi
+  rm -f conftest.ic conftest.h
+fi
+AC_SUBST(ICHECK)
+
 # Lock for PS
 AC_PATH_PROG(PS, ps, ps)
 AC_MSG_CHECKING("how to check if pid exists")
 PS=$ac_cv_path_PS
 # Linux style
-if $PS p $$ 2> /dev/null | grep $0 > /dev/null
+if $PS p $$ 2> /dev/null | grep `echo $0 | sed s/\-//` > /dev/null
 then
-  FIND_PROC="$PS p \$\$PID | grep -v grep | grep mysqld > /dev/null"
+  FIND_PROC="$PS p \$\$PID | grep -v grep | grep \$\$MYSQLD > /dev/null"
 # Solaris
 elif $PS -fp $$ 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS -p \$\$PID | grep -v grep | grep mysqld > /dev/null"
+  FIND_PROC="$PS -p \$\$PID | grep -v grep | grep \$\$MYSQLD > /dev/null"
 # BSD style
 elif $PS -uaxww 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS -uaxww | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
+  FIND_PROC="$PS -uaxww | grep -v grep | grep \$\$MYSQLD | grep \" \$\$PID \" > /dev/null"
 # SysV style
 elif $PS -ef 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS -ef | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
+  FIND_PROC="$PS -ef | grep -v grep | grep \$\$MYSQLD | grep \" \$\$PID \" > /dev/null"
 # Do anybody use this?
 elif $PS $$ 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS \$\$PID | grep -v grep | grep mysqld > /dev/null"
+  FIND_PROC="$PS \$\$PID | grep -v grep | grep \$\$MYSQLD > /dev/null"
 else
   case $SYSTEM_TYPE in
-    *freebsd*)
-      FIND_PROC="$PS p \$\$PID | grep -v grep | grep mysqld > /dev/null"
+    *freebsd*|*dragonfly*)
+      FIND_PROC="$PS p \$\$PID | grep -v grep | grep \$\$MYSQLD > /dev/null"
       ;;
     *darwin*)
-      FIND_PROC="$PS -uaxww | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
+      FIND_PROC="$PS -uaxww | grep -v grep | grep \$\$MYSQLD | grep \" \$\$PID \" > /dev/null"
       ;;
     *cygwin*)
-      FIND_PROC="$PS -e | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
+      FIND_PROC="$PS -e | grep -v grep | grep \$\$MYSQLD | grep \" \$\$PID \" > /dev/null"
       ;;
-    *netware* | *modesto*)
+    *netware*)
       FIND_PROC=
       ;;
     *)
@@ -574,13 +555,17 @@ AM_PROG_CC_STDC
 
 # We need an assembler, too
 AM_PROG_AS
+CCASFLAGS="$CCASFLAGS $ASFLAGS"
+
+# Check if we need noexec stack for assembler
+AC_CHECK_NOEXECSTACK
 
 if test "$am_cv_prog_cc_stdc" = "no"
 then
   AC_MSG_ERROR([MySQL requires an ANSI C compiler (and a C++ compiler). Try gcc. See the Installation chapter in the Reference Manual.])
 fi
 
-NOINST_LDFLAGS=
+NOINST_LDFLAGS="-static"
 
 static_nss=""
 STATIC_NSS_FLAGS=""
@@ -663,18 +648,6 @@ AC_ARG_WITH(server-suffix,
     )
 AC_SUBST(MYSQL_SERVER_SUFFIX)
 
-# Set flags if we wants to have MIT threads.
-AC_ARG_WITH(mit-threads,
-    [  --with-mit-threads      Always use included thread lib.],
-    [ with_mit_threads=$withval ],
-    [ with_mit_threads=no ]
-    )
-
-if test "$with_mit_threads" = "yes"
-then
-  enable_largefile="no"		# Will not work on Linux.
-fi
-
 # Set flags if we want to force to use pthreads
 AC_ARG_WITH(pthread,
     [  --with-pthread          Force use of pthread library.],
@@ -718,7 +691,7 @@ AC_ARG_ENABLE(assembler,
 
 AC_MSG_CHECKING(if we should use assembler functions)
 # For now we only support assembler on i386 and sparc systems
-AM_CONDITIONAL(ASSEMBLER_x86, test "$ENABLE_ASSEMBLER" = "yes" -a "$BASE_MACHINE_TYPE" = "i386")
+AM_CONDITIONAL(ASSEMBLER_x86, test "$ENABLE_ASSEMBLER" = "yes" -a "$BASE_MACHINE_TYPE" = "i386" && $AS strings/strings-x86.s -o checkassembler >/dev/null 2>&1 && test -f checkassembler && (rm -f checkassembler; exit 0;))
 AM_CONDITIONAL(ASSEMBLER_sparc32, test "$ENABLE_ASSEMBLER" = "yes" -a "$BASE_MACHINE_TYPE" = "sparc")
 AM_CONDITIONAL(ASSEMBLER_sparc64, test "$ENABLE_ASSEMBLER" = "yes" -a "$BASE_MACHINE_TYPE" = "sparcv9")
 AM_CONDITIONAL(ASSEMBLER, test "$ASSEMBLER_x86_TRUE" = "" -o "$ASSEMBLER_sparc32_TRUE" = "")
@@ -730,17 +703,17 @@ else
   AC_MSG_RESULT([no])
 fi
 
+# Add query profiler
+AC_ARG_ENABLE(profiling,
+    AS_HELP_STRING([--disable-profiling], [Build a version without query profiling code]),
+    [ ENABLED_PROFILING=$enableval ],
+    [ ENABLED_PROFILING=yes ])
 
-AC_MSG_CHECKING(if we should use RAID)
-AC_ARG_WITH(raid,
-    [  --with-raid             Enable RAID Support],
-    [   USE_RAID=$withval ],
-    [   USE_RAID=no ]
-    )
-if test "$USE_RAID" = "yes"
+if test "$ENABLED_PROFILING" = "yes"
 then
+  AC_DEFINE([ENABLED_PROFILING], [1],
+            [If SHOW PROFILE should be enabled])
   AC_MSG_RESULT([yes])
-  AC_DEFINE([USE_RAID], [1], [Use MySQL RAID])
 else
   AC_MSG_RESULT([no])
 fi
@@ -790,6 +763,22 @@ else
   AC_MSG_RESULT([no])
 fi
 
+# If we should allow init-file, skip-grant-table and bootstrap options
+AC_MSG_CHECKING(If we should should enable init-file, skip-grant-table options and bootstrap)
+AC_ARG_ENABLE(grant-options,
+    [  --disable-grant-options Disables the use of --init-file, --skip-grant-tables and --bootstrap options],
+    [ mysql_grant_options_enabled=$enableval ],
+    [ mysql_grant_options_enabled=yes ]
+    )
+if test "$mysql_grant_options_enabled" = "yes"
+then
+  AC_MSG_RESULT([yes])
+else
+  AC_DEFINE([DISABLE_GRANT_OPTIONS], [1],
+            [Disables the use of --init-file, --skip-grant-tables and --bootstrap options])
+  AC_MSG_RESULT([no])
+fi
+
 MYSQL_SYS_LARGEFILE
 
 # Types that must be checked AFTER large file support is checked
@@ -808,7 +797,9 @@ AC_CHECK_HEADERS(fcntl.h float.h floatingpoint.h ieeefp.h limits.h \
  strings.h string.h synch.h sys/mman.h sys/socket.h netinet/in.h arpa/inet.h \
  sys/timeb.h sys/types.h sys/un.h sys/vadvise.h sys/wait.h term.h \
  unistd.h utime.h sys/utime.h termio.h termios.h sched.h crypt.h alloca.h \
- sys/ioctl.h malloc.h sys/malloc.h linux/config.h sys/resource.h sys/param.h)
+ sys/ioctl.h malloc.h sys/malloc.h sys/ipc.h sys/shm.h linux/config.h \
+ sys/prctl.h \
+ sys/resource.h sys/param.h)
 
 #--------------------------------------------------------------------
 # Check for system libraries. Adds the library to $LIBS
@@ -829,10 +820,28 @@ AC_CHECK_FUNC(p2open, , AC_CHECK_LIB(gen, p2open))
 AC_CHECK_FUNC(bind, , AC_CHECK_LIB(bind, bind))
 # Check if crypt() exists in libc or libcrypt, sets LIBS if needed
 AC_SEARCH_LIBS(crypt, crypt, AC_DEFINE(HAVE_CRYPT, 1, [crypt]))
+AC_SEARCH_LIBS(inet_aton, [socket nsl resolv])
 
-# For sem_xxx functions on Solaris 2.6
-AC_CHECK_FUNC(sem_init, , AC_CHECK_LIB(posix4, sem_init))
+# For the sched_yield() function on Solaris
+AC_CHECK_FUNC(sched_yield, , AC_CHECK_LIB(posix4, sched_yield))
+
 MYSQL_CHECK_ZLIB_WITH_COMPRESS
+
+# For large pages support
+if test "$TARGET_LINUX" = "true"
+then
+  # For SHM_HUGETLB on Linux
+  AC_CHECK_DECLS(SHM_HUGETLB, 
+      AC_DEFINE([HAVE_LARGE_PAGES], [1], 
+                [Define if you have large pages support])
+      AC_DEFINE([HUGETLB_USE_PROC_MEMINFO], [1],
+                [Define if /proc/meminfo shows the huge page size (Linux only)])
+      , ,
+      [
+#include <sys/shm.h>
+      ]
+  )
+fi
 
 #--------------------------------------------------------------------
 # Check for TCP wrapper support
@@ -926,7 +935,7 @@ int main()
     [ USE_PSTACK=no ])
   pstack_libs=
   pstack_dirs=
-  if test "$USE_PSTACK" = yes -a "$TARGET_LINUX" = "true" -a "$BASE_MACHINE_TYPE" = "i386" -a "$with_mit_threads" = "no"
+  if test "$USE_PSTACK" = yes -a "$TARGET_LINUX" = "true" -a "$BASE_MACHINE_TYPE" = "i386"
   then
     have_libiberty= have_libbfd=
     my_save_LIBS="$LIBS"
@@ -1011,6 +1020,7 @@ esac
 MAX_C_OPTIMIZE="-O3"
 MAX_CXX_OPTIMIZE="-O3"
 
+ndb_cxxflags_fix=
 case $SYSTEM_TYPE-$MACHINE_TYPE-$ac_cv_prog_gcc in
 # workaround for Sun Forte/x86 see BUG#4681
   *solaris*-i?86-no)
@@ -1032,7 +1042,7 @@ case $SYSTEM_TYPE in
   *solaris2.7*)
     # Solaris 2.7 has a broken /usr/include/widec.h
     # Make a fixed copy in ./include
-    echo "Fixing broken include files for $SYSTEM_TYPE"
+    AC_MSG_WARN([Fixing broken include files for $SYSTEM_TYPE])
     echo "  - Creating local copy of widec.h"
     if test ! -d include
     then
@@ -1046,7 +1056,7 @@ case $SYSTEM_TYPE in
   *solaris2.8*)
     # Solaris 2.8 has a broken /usr/include/widec.h
     # Make a fixed copy in ./include
-    echo "Fixing broken include files for $SYSTEM_TYPE"
+    AC_MSG_WARN([Fixing broken include files for $SYSTEM_TYPE])
     echo "  - Creating local copy of widec.h"
     if test ! -d include
     then
@@ -1058,7 +1068,7 @@ case $SYSTEM_TYPE in
     CXXFLAGS="$CXXFLAGS -DHAVE_CURSES_H -I$builddir/include -DHAVE_RWLOCK_T"
     ;;
   *solaris2.5.1*)
-    echo "Enabling getpass() workaround for Solaris 2.5.1"
+    AC_MSG_WARN([Enabling getpass() workaround for Solaris 2.5.1])
     CFLAGS="$CFLAGS -DHAVE_BROKEN_GETPASS -DSOLARIS -DHAVE_RWLOCK_T";
     CXXFLAGS="$CXXFLAGS -DHAVE_RWLOCK_T -DSOLARIS"
     ;;
@@ -1067,26 +1077,26 @@ case $SYSTEM_TYPE in
     CXXFLAGS="$CXXFLAGS -DHAVE_RWLOCK_T"
     ;;
   *SunOS*)
-    echo "Enabling getpass() workaround for SunOS"
+    AC_MSG_WARN([Enabling getpass() workaround for SunOS])
     CFLAGS="$CFLAGS -DHAVE_BROKEN_GETPASS -DSOLARIS";
     ;;
   *hpux10.20*)
-    echo "Enabling workarounds for hpux 10.20"
+    AC_MSG_WARN([Enabling workarounds for hpux 10.20])
     CFLAGS="$CFLAGS -DHAVE_BROKEN_SNPRINTF -DSIGNALS_DONT_BREAK_READ -DDO_NOT_REMOVE_THREAD_WRAPPERS -DHPUX10 -DSIGNAL_WITH_VIO_CLOSE -DHAVE_BROKEN_PTHREAD_COND_TIMEDWAIT -DHAVE_POSIX1003_4a_MUTEX"
     CXXFLAGS="$CXXFLAGS -DHAVE_BROKEN_SNPRINTF -D_INCLUDE_LONGLONG -DSIGNALS_DONT_BREAK_READ -DDO_NOT_REMOVE_THREAD_WRAPPERS -DHPUX10 -DSIGNAL_WITH_VIO_CLOSE -DHAVE_BROKEN_PTHREAD_COND_TIMEDWAIT -DHAVE_POSIX1003_4a_MUTEX"
     if test "$with_named_thread" = "no"
     then 
-      echo "Using --with-named-thread=-lpthread"
+      AC_MSG_WARN([Using --with-named-thread=-lpthread])
       with_named_thread="-lcma"
     fi
     ;;
   *hpux11.*)
-    echo "Enabling workarounds for hpux 11"
+    AC_MSG_WARN([Enabling workarounds for hpux 11])
     CFLAGS="$CFLAGS -DHPUX11  -DSNPRINTF_RETURN_TRUNC -DHAVE_BROKEN_PREAD -DDONT_USE_FINITE -DHAVE_BROKEN_GETPASS -DNO_FCNTL_NONBLOCK -DDO_NOT_REMOVE_THREAD_WRAPPERS -DHAVE_BROKEN_PTHREAD_COND_TIMEDWAIT"
     CXXFLAGS="$CXXFLAGS -DHPUX11  -DSNPRINTF_RETURN_TRUNC -DHAVE_BROKEN_PREAD -DDONT_USE_FINITE -D_INCLUDE_LONGLONG -DNO_FCNTL_NONBLOCK -DDO_NOT_REMOVE_THREAD_WRAPPERS -DHAVE_BROKEN_PTHREAD_COND_TIMEDWAIT"
     if test "$with_named_thread" = "no"
     then 
-      echo "Using --with-named-thread=-lpthread"
+      AC_MSG_WARN([Using --with-named-thread=-lpthread])
       with_named_thread="-lpthread"
     fi
     # Fixes for HPUX 11.0 compiler
@@ -1125,7 +1135,7 @@ case $SYSTEM_TYPE in
   *darwin6*)
     if test "$ac_cv_prog_gcc" = "yes"
     then
-      FLAGS="-D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
+      FLAGS="-D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DDONT_DECLARE_CXA_PURE_VIRTUAL "
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -1140,8 +1150,8 @@ case $SYSTEM_TYPE in
       MAX_C_OPTIMIZE="-O"
     fi
     ;;
-  *freebsd*)
-    echo "Adding fix for interrupted reads"
+  *freebsd*|*dragonfly*)
+    AC_MSG_WARN([Adding fix for interrupted reads])
     OSVERSION=`sysctl -a | grep osreldate | awk '{ print $2 }'`
     if test "$OSVERSION" -gt "480100" && \
        test "$OSVERSION" -lt "500000" || \
@@ -1154,13 +1164,13 @@ case $SYSTEM_TYPE in
     fi
     ;;
   *netbsd*)
-    echo "Adding flag -Dunix"
+    AC_MSG_WARN([Adding flag -Dunix])
     CFLAGS="$CFLAGS -Dunix"
     CXXFLAGS="$CXXFLAGS -Dunix"
     OVERRIDE_MT_LD_ADD="\$(top_srcdir)/mit-pthreads/obj/libpthread.a"
     ;;
   *bsdi*)
-    echo "Adding fix for BSDI"
+    AC_MSG_WARN([Adding fix for BSDI])
     CFLAGS="$CFLAGS -D__BSD__ -DHAVE_BROKEN_REALPATH"
     AC_DEFINE_UNQUOTED([SOCKOPT_OPTLEN_TYPE], [size_t],
                        [Last argument to get/setsockopt])
@@ -1168,13 +1178,13 @@ case $SYSTEM_TYPE in
    *sgi-irix6*)
     if test "$with_named_thread" = "no"
     then 
-      echo "Using --with-named-thread=-lpthread"
+      AC_MSG_WARN([Using --with-named-thread=-lpthread])
       with_named_thread="-lpthread"
     fi
     CXXFLAGS="$CXXFLAGS -D_BOOL"
     ;;
     *aix4.3*)
-      echo "Adding defines for AIX"
+      AC_MSG_WARN([Adding defines for AIX])
       CFLAGS="$CFLAGS -Wa,-many -DUNDEF_HAVE_INITGROUPS -DSIGNALS_DONT_BREAK_READ"
       CXXFLAGS="$CXXFLAGS -Wa,-many -DUNDEF_HAVE_INITGROUPS -DSIGNALS_DONT_BREAK_READ"
     ;;
@@ -1182,11 +1192,11 @@ dnl Is this the right match for DEC OSF on alpha?
     *dec-osf*)
       if test "$ac_cv_prog_gcc" = "yes" && test "$host_cpu" = "alpha"
       then
-	  echo "Adding defines for DEC OSF on alpha"
+	  AC_MSG_WARN([Adding defines for DEC OSF on alpha])
 	  CFLAGS="$CFLAGS -mieee"
 	  CXXFLAGS="$CXXFLAGS -mieee"
       fi
-      echo "Adding defines for OSF1"
+      AC_MSG_WARN([Adding defines for OSF1])
       # gethostbyname_r is deprecated and doesn't work ok on OSF1
       CFLAGS="$CFLAGS -DUNDEF_HAVE_GETHOSTBYNAME_R -DSNPRINTF_RETURN_TRUNC"
       CXXFLAGS="$CXXFLAGS -DUNDEF_HAVE_GETHOSTBYNAME_R -DSNPRINTF_RETURN_TRUNC"
@@ -1204,7 +1214,7 @@ dnl Is this the right match for DEC OSF on alpha?
     # Edit Makefile.in files.
     #
     echo -n "configuring Makefile.in files for NetWare... "
-    for file in sql/Makefile.in libmysql/Makefile.in libmysql_r/Makefile.in sql/share/Makefile.in strings/Makefile.in client/Makefile.in
+    for file in sql/Makefile.in libmysql/Makefile.in libmysql_r/Makefile.in extra/Makefile.in strings/Makefile.in client/Makefile.in
     do
     # echo "#### $file ####"
       filedir="`dirname $file`"
@@ -1223,28 +1233,32 @@ dnl Is this the right match for DEC OSF on alpha?
         sql/Makefile.in)
           # Use gen_lex_hash.linux instead of gen_lex_hash
           # Add library dependencies to mysqld_DEPENDENCIES
-          lib_DEPENDENCIES="\$(bdb_libs_with_path) \$(innodb_libs) \$(ndbcluster_libs) \$(pstack_libs) \$(innodb_system_libs) \$(openssl_libs)"
+          lib_DEPENDENCIES="\$(bdb_libs_with_path) \$(innodb_libs) \$(ndbcluster_libs) \$(pstack_libs) \$(innodb_system_libs) \$(openssl_libs) \$(yassl_libs)"
           cat > $filesed << EOF
 s,\(^.*\$(MAKE) gen_lex_hash\)\$(EXEEXT),#\1,
 s,\(\./gen_lex_hash\)\$(EXEEXT),\1.linux,
 s%\(mysqld_DEPENDENCIES = \) %\1$lib_DEPENDENCIES %
 EOF
           ;;
-        sql/share/Makefile.in)
+        extra/Makefile.in)
           cat > $filesed << EOF
-s,\(extra/comp_err\),\1.linux,
+s,\(extra/comp_err\)\$(EXEEXT),\1.linux,
 EOF
           ;;
         libmysql/Makefile.in)
           cat > $filesed << EOF
 s,\(\./conf_to_src\)\( \$(top_srcdir)\),\1.linux\2,
 s,\(: conf_to_src\),\1.linux,
+s,libyassl.la,.libs/libyassl.a,
+s,libtaocrypt.la,.libs/libtaocrypt.a,
 EOF
           ;;
         libmysql_r/Makefile.in)
           cat > $filesed << EOF
 s,\(\./conf_to_src\)\( \$(top_srcdir)\),\1.linux\2,
 s,\(: conf_to_src\),\1.linux,
+s,libyassl.la,.libs/libyassl.a,
+s,libtaocrypt.la,.libs/libtaocrypt.a,
 EOF
           ;;
         strings/Makefile.in)
@@ -1279,6 +1293,7 @@ EOF
     #
     echo -n "making sure specific build files are writable... "
     for file in \
+        Docs/manual.chm \
         Docs/mysql.info \
         Docs/INSTALL-BINARY \
         INSTALL-SOURCE \
@@ -1301,7 +1316,7 @@ esac
 
 with_posix_threads="no"
 # Search thread lib on Linux
-if test "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
+if test "$with_named_thread" = "no"
 then
     AC_MSG_CHECKING("Linux threads")
     if test "$TARGET_LINUX" = "true"
@@ -1458,20 +1473,20 @@ then
           AC_MSG_CHECKING("for gcc")
           if expr "$CC" : ".*gcc.*"
           then
-	    CC="$CC -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
-	    CXX="$CXX -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
+	    CC="$CC -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK"
+	    CXX="$CXX -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK"
           else
-	    CC="$CC -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
-	    CXX="$CXX -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
+	    CC="$CC -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK"
+	    CXX="$CXX -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK"
           fi
         else
-          { echo "configure: error: Can't find thread libs on SCO UnixWare7. See the Installation chapter in the Reference Manual." 1>&2; exit 1; };
+          AC_MSG_ERROR([configure: error: Can't find thread libs on SCO UnixWare7. See the Installation chapter in the Reference Manual.]) 
         fi
       else
         AC_MSG_RESULT("no")
       fi
     else
-      AC_MSG_ERROR([On SCO UNIX MySQL requires that the FSUThreads package is installed. See the Installation chapter in the Reference Manual.]);
+      AC_MSG_ERROR([On SCO UNIX MySQL requires that the FSUThreads package is installed. See the Installation chapter in the Reference Manual.])
     fi
   else
     AC_MSG_RESULT("no")
@@ -1507,8 +1522,7 @@ then
       fi
       AC_MSG_RESULT(yes)
     else
-      AC_MSG_RESULT(failed)
-      { echo "configure: error: Can't find thread libs on SCO UnixWare7. See the Installation chapter in the Reference Manual." 1>&2; exit 1; };
+      AC_MSG_ERROR([configure: error: Can't find thread library on SCO/Caldera system. See the Installation chapter in the Reference Manual.]) 
     fi
   else
     AC_MSG_RESULT(no)
@@ -1516,7 +1530,7 @@ then
 fi
 
 # Hack for Siemens UNIX
-if test "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
+if test "$with_named_thread" = "no"
 then
   AC_MSG_CHECKING("Siemens threads")
   if test -f /usr/lib/libxnet.so -a "$SYSTEM_TYPE" = "sni-sysv4"
@@ -1544,7 +1558,7 @@ fi
 # Hack for Solaris >= 2.5
 # We want both the new and the old interface
  
-if test "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
+if test "$with_named_thread" = "no"
 then
   AC_MSG_CHECKING("Solaris threads")
   if test -f /usr/lib/libpthread.so -a -f /usr/lib/libthread.so
@@ -1562,14 +1576,21 @@ if test "$with_named_thread" != "no"
 then
   LIBS="$with_named_thread $LIBS $with_named_thread"
   with_posix_threads="yes"
-  with_mit_threads="no"
   AC_MSG_RESULT("$with_named_thread")
 else
   AC_MSG_RESULT("no")
-  if test "$with_mit_threads" = "no"
+  # pthread_create is in standard libraries (As in BSDI 3.0)
+  AC_MSG_CHECKING("for pthread_create in -libc");
+  AC_TRY_LINK(
+  [#include <pthread.h>],
+  [ (void) pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
+  with_posix_threads=yes, with_posix_threads=no)
+  AC_MSG_RESULT("$with_posix_threads")
+  if test "$with_posix_threads" = "no"
   then
-    # pthread_create is in standard libraries (As in BSDI 3.0)
-    AC_MSG_CHECKING("for pthread_create in -libc");
+    AC_MSG_CHECKING("for pthread_create in -lpthread");
+    ac_save_LIBS="$LIBS"
+    LIBS="$LIBS -lpthread"
     AC_TRY_LINK(
     [#include <pthread.h>],
     [ (void) pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
@@ -1577,39 +1598,23 @@ else
     AC_MSG_RESULT("$with_posix_threads")
     if test "$with_posix_threads" = "no"
     then
-      AC_MSG_CHECKING("for pthread_create in -lpthread");
-      ac_save_LIBS="$LIBS"
-      LIBS="$LIBS -lpthread"
+      LIBS=" $ac_save_LIBS -lpthreads"
+      AC_MSG_CHECKING("for pthread_create in -lpthreads");
       AC_TRY_LINK(
       [#include <pthread.h>],
-      [ (void) pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
+      [ pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
       with_posix_threads=yes, with_posix_threads=no)
       AC_MSG_RESULT("$with_posix_threads")
       if test "$with_posix_threads" = "no"
       then
-        LIBS=" $ac_save_LIBS -lpthreads"
-        AC_MSG_CHECKING("for pthread_create in -lpthreads");
+        # This is for FreeBSD
+        LIBS="$ac_save_LIBS -pthread"
+        AC_MSG_CHECKING("for pthread_create in -pthread");
         AC_TRY_LINK(
         [#include <pthread.h>],
         [ pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
         with_posix_threads=yes, with_posix_threads=no)
         AC_MSG_RESULT("$with_posix_threads")
-        if test "$with_posix_threads" = "no"
-        then
-	  # This is for FreeBSD
-	  LIBS="$ac_save_LIBS -pthread"
-	  AC_MSG_CHECKING("for pthread_create in -pthread");
-	  AC_TRY_LINK(
-	  [#include <pthread.h>],
-	  [ pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
-	  with_posix_threads=yes, with_posix_threads=no)
-          AC_MSG_RESULT("$with_posix_threads")
-          if test "$with_posix_threads" = "no"
-	  then
-	    with_mit_threads="yes"
-	    LIBS="$ac_save_LIBS"
-	  fi
-	fi
       fi
     fi
   fi
@@ -1636,20 +1641,41 @@ else
 fi
 #---END:
 
-# Check for dlopen, needed for user definable functions
-# This must be checked after threads on AIX
-# We only need this for mysqld, not for the clients.
+# dlopen, dlerror
+case "$with_mysqld_ldflags " in
 
-my_save_LIBS="$LIBS"
-LIBS=""
-AC_CHECK_LIB(dl,dlopen)
-LIBDL=$LIBS
-LIBS="$my_save_LIBS"
-AC_SUBST(LIBDL)
+  *"-all-static "*)
+    # No need to check for dlopen when mysqld is linked with
+    # -all-static as it won't be able to load any functions.
+    # NOTE! It would be better if it was possible to test if dlopen
+    # can be used, but a good way to test it couldn't be found
+
+    ;;
+
+  *)
+    # Check for dlopen, needed for user definable functions
+    # This must be checked after threads on AIX
+    # We only need this for mysqld, not for the clients.
+
+    my_save_LIBS="$LIBS"
+    LIBS=""
+    AC_CHECK_LIB(dl,dlopen)
+    LIBDL=$LIBS
+    LIBS="$my_save_LIBS"
+    AC_SUBST(LIBDL)
+
+    my_save_LIBS="$LIBS"
+    LIBS="$LIBS $LIBDL"
+    AC_CHECK_FUNCS(dlopen dlerror)
+    LIBS="$my_save_LIBS"
+
+    ;;
+esac
+
 
 # System characteristics
 case $SYSTEM_TYPE in
-  *netware* | *modesto*) ;;
+  *netware*) ;;
   *)
 AC_SYS_RESTARTABLE_SYSCALLS
     ;;
@@ -1679,10 +1705,12 @@ else
 fi
 
 if expr "$SYSTEM_TYPE" : ".*netware.*" > /dev/null; then
-  DEBUG_CFLAGS="$DEBUG_CFLAGS -DDEBUG -sym internal,codeview4"
-  DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -DDEBUG -sym internal,codeview4"
-  OPTIMIZE_CFLAGS="$OPTIMIZE_CFLAGS -DNDEBUG"
-  OPTIMIZE_CXXFLAGS="$OPTIMIZE_CXXFLAGS -DNDEBUG"
+  DEBUG_CFLAGS="-g -DDEBUG -sym internal,codeview4"
+  DEBUG_CXXFLAGS="-g -DDEBUG -sym internal,codeview4"
+  DEBUG_OPTIMIZE_CC="-DDEBUG"
+  DEBUG_OPTIMIZE_CXX="-DDEBUG"
+  OPTIMIZE_CFLAGS="-O3 -DNDEBUG"
+  OPTIMIZE_CXXFLAGS="-O3 -DNDEBUG"
 fi
 
 # If the user specified CFLAGS, we won't add any optimizations
@@ -1710,8 +1738,8 @@ then
 elif test "$with_debug" = "full"
 then
   # Full debug. Very slow in some cases
-  CFLAGS="$DEBUG_CFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC -DUNIV_DEBUG $CFLAGS"
-  CXXFLAGS="$DEBUG_CXXFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC -DUNIV_DEBUG $CXXFLAGS"
+  CFLAGS="$DEBUG_CFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC $CFLAGS"
+  CXXFLAGS="$DEBUG_CXXFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC $CXXFLAGS"
 else
   # Optimized version. No debug
   CFLAGS="$OPTIMIZE_CFLAGS -DDBUG_OFF $CFLAGS"
@@ -1730,6 +1758,12 @@ AC_ARG_WITH(client-ldflags,
     [CLIENT_EXTRA_LDFLAGS=$withval],
     [CLIENT_EXTRA_LDFLAGS=])
 AC_SUBST(CLIENT_EXTRA_LDFLAGS)
+
+AC_ARG_WITH(mysqld-libs,
+    [  --with-mysqld-libs   Extra libraries to link with for mysqld],
+    [MYSQLD_EXTRA_LIBS=$withval],
+    [MYSQLD_EXTRA_LIBS=])
+AC_SUBST(MYSQLD_EXTRA_LIBS)
 
 AC_ARG_WITH(lib-ccflags,
     [  --with-lib-ccflags      Extra CC options for libraries],
@@ -1784,6 +1818,7 @@ AC_TYPE_OFF_T
 AC_STRUCT_ST_RDEV
 AC_HEADER_TIME
 AC_STRUCT_TM
+MYSQL_NEEDS_MYSYS_NEW
 # AC_CHECK_SIZEOF return 0 when it does not find the size of a
 # type. We want a error instead.
 AC_CHECK_SIZEOF(char, 1)
@@ -1798,6 +1833,7 @@ examine config.log for possible errors.  If you want to report this, use
 'scripts/mysqlbug' and include at least the last 20 rows from config.log!])
 fi
 AC_CHECK_SIZEOF(char*, 4)
+AC_CHECK_SIZEOF(short, 2)
 AC_CHECK_SIZEOF(int, 4)
 if test "$ac_cv_sizeof_int" -eq 0
 then
@@ -1819,6 +1855,13 @@ if test "$ac_cv_sizeof_off_t" -eq 0
 then
   AC_MSG_ERROR("MySQL needs a off_t type.")
 fi
+
+dnl
+dnl check if time_t is unsigned
+dnl
+
+MYSQL_CHECK_TIME_T
+
 
 # do we need #pragma interface/#pragma implementation ?
 # yes if it's gcc 2.x, and not icc pretending to be gcc, and not cygwin
@@ -1923,6 +1966,7 @@ MYSQL_HAVE_TIOCSTAT
 MYSQL_STRUCT_DIRENT_D_INO
 MYSQL_STRUCT_DIRENT_D_NAMLEN
 MYSQL_TYPE_SIGHANDLER
+MYSQL_CHECK_MULTIBYTE
 if test "$with_named_curses" = "no"
 then
   MYSQL_CHECK_LIB_TERMCAP
@@ -1930,6 +1974,19 @@ else
   TERMCAP_LIB="$with_named_curses"
 fi
 AC_SUBST(TERMCAP_LIB)
+
+# Check if the termcap function 'tgoto' is already declared in
+# system header files or if it need to be declared locally
+AC_CHECK_DECLS(tgoto,,,[
+#ifdef HAVE_CURSES_H
+# include <curses.h>
+#elif HAVE_NCURSES_H
+# include <ncurses.h>
+#endif
+#ifdef HAVE_TERM_H
+# include <term.h>
+#endif
+])
 
 LIBEDIT_LOBJECTS=""
 AC_CHECK_FUNC(strunvis, ,[LIBEDIT_LOBJECTS="$LIBEDIT_LOBJECTS unvis.o"])
@@ -1955,7 +2012,7 @@ if test "$GCC" != "yes"; then
   AC_SYS_COMPILER_FLAG(-nolib_inline,nolib_inline,CFLAGS,[],[])
 fi
 
-AC_FUNC_MMAP
+#AC_FUNC_MMAP
 AC_TYPE_SIGNAL
 MYSQL_TYPE_QSORT
 AC_FUNC_UTIME_NULL
@@ -1966,7 +2023,7 @@ AC_CHECK_FUNCS(alarm bcmp bfill bmove bzero chsize cuserid fchmod fcntl \
   getcwd gethostbyaddr_r gethostbyname_r getpass getpassphrase getpwnam \
   getpwuid getrlimit getrusage getwd gmtime_r index initgroups isnan \
   localtime_r locking longjmp lrand48 madvise mallinfo memcpy memmove \
-  mkstemp mlockall perror poll pread pthread_attr_create \
+  mkstemp mlockall perror poll pread pthread_attr_create mmap getpagesize \
   pthread_attr_getstacksize pthread_attr_setprio pthread_attr_setschedparam \
   pthread_attr_setstacksize pthread_condattr_create pthread_getsequence_np \
   pthread_key_delete pthread_rwlock_rdlock pthread_setprio \
@@ -1974,7 +2031,7 @@ AC_CHECK_FUNCS(alarm bcmp bfill bmove bzero chsize cuserid fchmod fcntl \
   realpath rename rint rwlock_init setupterm \
   shmget shmat shmdt shmctl sigaction sigemptyset sigaddset \
   sighold sigset sigthreadmask \
-  snprintf socket stpcpy strcasecmp strerror strnlen strpbrk strstr strtol \
+  snprintf socket stpcpy strcasecmp strerror strsignal strnlen strpbrk strstr strtol \
   strtoll strtoul strtoull tell tempnam thr_setconcurrency vidattr)
 
 #
@@ -1991,12 +2048,20 @@ case "$target" in
     ;;
 esac
 
-# isinf() could be a function or a macro (HPUX)
-AC_MSG_CHECKING(for isinf with <math.h>)
-AC_TRY_LINK([#include <math.h>], [float f = 0.0; isinf(f)],
- AC_MSG_RESULT(yes)
- AC_DEFINE(HAVE_ISINF, [1], [isinf() macro or function]),
- AC_MSG_RESULT(no))
+# Check that isinf() is available in math.h and can be used in both C and C++ 
+# code
+AC_MSG_CHECKING(for isinf in <math.h>)
+AC_TRY_LINK([#include <math.h>], [float f = 0.0; int r = isinf(f); return r],
+  AC_MSG_RESULT(yes)
+  AC_MSG_CHECKING(whether isinf() can be used in C++ code)
+  AC_LANG_SAVE
+  AC_LANG_CPLUSPLUS
+  AC_TRY_LINK([#include <math.h>], [float f = 0.0; int r = isinf(f); return r],
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(HAVE_ISINF, [1], [isinf() macro or function]),
+    AC_MSG_RESULT(no))
+  AC_LANG_RESTORE,
+  AC_MSG_RESULT(no))
  
 CFLAGS="$ORG_CFLAGS"
 
@@ -2008,11 +2073,6 @@ then
   AC_MSG_ERROR("Found fseeko symbol but large_file_support is not enabled!");
 fi]
 )
-
-my_save_LIBS="$LIBS"
-LIBS="$LIBS $LIBDL"
-AC_CHECK_FUNCS(dlopen dlerror)
-LIBS="$my_save_LIBS"
 
 # Check definition of gethostbyaddr_r (glibc2 defines this with 8 arguments)
 ac_save_CXXFLAGS="$CXXFLAGS"
@@ -2032,9 +2092,12 @@ AC_CHECK_DECLS(madvise, [], [], [#if HAVE_SYS_MMAN_H
 # with respect to ANSI C++
 # We also remove the -fbranch-probabilities option as this will give warnings
 # about not profiled code, which confuses configure
+# We also must remove -W and -Wcheck which on icc produces warnings that
+# we don't want to catch with -Werror
+
 if test "$ac_cv_prog_gxx" = "yes" -a "$with_other_libc" = "no"
 then
-  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed 's/-fbranch-probabilities//'`
+  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed -e 's/-fbranch-probabilities//; s/-Wall//; s/-ansi//; s/-pedantic//; s/-Wcheck//'`
 fi
 
 AC_TRY_COMPILE(
@@ -2069,7 +2132,7 @@ AC_LANG_SAVE
 AC_LANG_CPLUSPLUS
 if test "$ac_cv_prog_gxx" = "yes" -a "$with_other_libc" = "no"
 then
-  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed 's/-fbranch-probabilities//'`
+  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed -e 's/-fbranch-probabilities//; s/-Wall//; s/-ansi//; s/-pedantic//; s/-Wcheck//'`
 fi
 AC_TRY_COMPILE(
 [#undef inline
@@ -2102,7 +2165,7 @@ AC_LANG_SAVE
 AC_LANG_CPLUSPLUS
 if test "$ac_cv_prog_gxx" = "yes" -a "$with_other_libc" = "no"
 then
-  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed 's/-fbranch-probabilities//'`
+  CXXFLAGS=`echo "$CXXFLAGS -Werror" | sed -e 's/-fbranch-probabilities//; s/-Wall//; s/-ansi//; s/-pedantic//; s/-Wcheck//'`
 fi
 AC_TRY_COMPILE(
 [#undef inline
@@ -2128,11 +2191,9 @@ then
 fi
 
 
-if test "$with_mit_threads" = "no"
-then
-  # Check definition of pthread_getspecific
-  AC_CACHE_CHECK("args to pthread_getspecific", mysql_cv_getspecific_args,
-  AC_TRY_COMPILE(
+# Check definition of pthread_getspecific
+AC_CACHE_CHECK("args to pthread_getspecific", mysql_cv_getspecific_args,
+AC_TRY_COMPILE(
 [#if !defined(SCO) && !defined(__osf__) && !defined(_REENTRANT)
 #define _REENTRANT
 #endif
@@ -2165,7 +2226,6 @@ mysql_cv_mutex_init_args=POSIX, mysql_cv_mutex_init_args=other))
     AC_DEFINE([HAVE_NONPOSIX_PTHREAD_MUTEX_INIT], [1],
               [For some non posix threads])
   fi
-fi
 #---END:
 
 #---START: Used in for client configure
@@ -2323,18 +2383,29 @@ if test "$with_tools" = "yes"
 then
   if test "$THREAD_SAFE_CLIENT" = "no"
   then
-    echo "Warning: extra-tools disabled because --enable-thread-safe-client wasn't used"
+    AC_MSG_WARN([extra-tools disabled because --enable-thread-safe-client wasn't used])
   else
     tools_dirs="tools"
     AC_CONFIG_FILES(tools/Makefile)
   fi
 fi
+
+AC_ARG_WITH([mysqlmanager],
+  AC_HELP_STRING([--with-mysqlmanager], [Build the mysqlmanager binary: yes/no (default: build if server is built.)]),
+  [if test "x${withval}" != "xno"; then
+    tools_dirs="$tools_dirs server-tools"
+   fi],
+  [if test "x${with_server}" = "xyes"; then
+     tools_dirs="$tools_dirs server-tools"
+   fi]
+)
+
 AC_SUBST(tools_dirs)
 
 #MYSQL_CHECK_CPU
-MYSQL_CHECK_MYSQLFS
 MYSQL_CHECK_VIO
 MYSQL_CHECK_OPENSSL
+MYSQL_CHECK_YASSL
 
 libmysqld_dirs=
 linked_libmysqld_targets=
@@ -2374,22 +2445,6 @@ AC_ARG_WITH(man,
     [with_man=$withval],
     [with_man=yes]
 )
-
-if test "$with_man" = "yes"
-then
-  man_dirs="man"
-  man1_files=`ls -1 $srcdir/man/*.1 | sed -e 's;^.*man/;;'`
-  man1_files=`echo $man1_files`
-  man8_files=`ls -1 $srcdir/man/*.8 | sed -e 's;^.*man/;;'`
-  man8_files=`echo $man8_files`
-else
-  man_dirs=""
-  man1_files=""
-  man8_files=""
-fi
-AC_SUBST(man_dirs)
-AC_SUBST(man1_files)
-AC_SUBST(man8_files)
 
 # Shall we build the bench code?
 AC_ARG_WITH(bench,
@@ -2447,6 +2502,7 @@ readline_basedir=""
 readline_dir=""
 readline_h_ln_cmd=""
 readline_link=""
+want_to_use_readline="no"
 
 if expr "$SYSTEM_TYPE" : ".*netware.*" > /dev/null; then
     # For NetWare, do not need readline
@@ -2471,6 +2527,7 @@ then
     readline_link="\$(top_builddir)/cmd-line-utils/readline/libreadline.a"
     readline_h_ln_cmd="\$(LN) -s \$(top_srcdir)/cmd-line-utils/readline readline"
     compile_readline=yes
+    want_to_use_readline="yes"
     AC_DEFINE_UNQUOTED(USE_NEW_READLINE_INTERFACE, 1)
 else
     # Use system readline library
@@ -2480,10 +2537,12 @@ else
     MYSQL_CHECK_NEW_RL_INTERFACE
     MYSQL_CHECK_READLINE_DECLARES_HIST_ENTRY
     AC_LANG_RESTORE
-    if [test "$mysql_cv_new_rl_interface" = "yes"]
+    if [test "$mysql_cv_new_rl_interface" = "yes"] && [test -d "./cmd-line-utils/readline"]
     then
-        # Use the new readline interface
+        # Use the new readline interface, but only if the package includes a bundled libreadline
+        # this way we avoid linking commercial source with GPL readline
         readline_link="-lreadline"
+        want_to_use_readline="yes"
     elif [test "$mysql_cv_libedit_interface" = "yes"]; then
         # Use libedit
         readline_link="-ledit"
@@ -2493,6 +2552,15 @@ else
           versions of libedit or readline])
     fi
 fi
+
+# if there is no readline, but we want to build with readline, we fail
+if [test "$want_to_use_readline" = "yes"] && [test ! -d "./cmd-line-utils/readline"]
+then
+    AC_MSG_ERROR([This commercially licensed MySQL source package can't
+          be built with libreadline. Please use --with-libedit to use
+          the bundled version of libedit instead.])
+fi
+
 fi
 
 AC_SUBST(readline_dir)
@@ -2501,433 +2569,8 @@ AC_SUBST(readline_basedir)
 AC_SUBST(readline_link)
 AC_SUBST(readline_h_ln_cmd)
 
-
-dnl In order to add new charset, you must add charset name to
-dnl this CHARSETS_AVAILABLE list and sql/share/charsets/Index.xml.
-dnl If the character set uses strcoll or other special handling,
-dnl you must also create strings/ctype-$charset_name.c
-
-AC_DIVERT_PUSH(0)
-
-define(CHARSETS_AVAILABLE0,binary)
-define(CHARSETS_AVAILABLE1,armscii8 ascii big5 cp1250 cp1251 cp1256 cp1257)
-define(CHARSETS_AVAILABLE2,cp850 cp852 cp866 cp932 dec8 euckr gb2312 gbk geostd8)
-define(CHARSETS_AVAILABLE3,greek hebrew hp8 keybcs2 koi8r koi8u)
-define(CHARSETS_AVAILABLE4,latin1 latin2 latin5 latin7 macce macroman)
-define(CHARSETS_AVAILABLE5,sjis swe7 tis620 ucs2 ujis utf8)
-
-DEFAULT_CHARSET=latin1
-CHARSETS_AVAILABLE="CHARSETS_AVAILABLE0 CHARSETS_AVAILABLE1 CHARSETS_AVAILABLE2 CHARSETS_AVAILABLE3 CHARSETS_AVAILABLE4 CHARSETS_AVAILABLE5"
-CHARSETS_COMPLEX="big5 cp1250 cp932 euckr gb2312 gbk latin1 latin2 sjis tis620 ucs2 ujis utf8"
-
-AC_DIVERT_POP
-
-AC_ARG_WITH(charset,
-   [  --with-charset=CHARSET
-                          Default character set, use one of:
-                          CHARSETS_AVAILABLE0
-                          CHARSETS_AVAILABLE1
-                          CHARSETS_AVAILABLE2
-                          CHARSETS_AVAILABLE3
-                          CHARSETS_AVAILABLE4
-                          CHARSETS_AVAILABLE5],
-   [default_charset="$withval"],
-   [default_charset="$DEFAULT_CHARSET"])
-
-AC_ARG_WITH(collation,
-   [  --with-collation=COLLATION
-                          Default collation],
-   [default_collation="$withval"],
-   [default_collation="default"])
-
-
-AC_ARG_WITH(extra-charsets,
-  [  --with-extra-charsets=CHARSET[,CHARSET,...]
-                          Use charsets in addition to default (none, complex,
-                          all, or a list selected from the above sets)],
-  [extra_charsets="$withval"],
-  [extra_charsets="none"])
-
-
-AC_MSG_CHECKING("character sets")
-
-CHARSETS="$default_charset latin1 utf8"
-
-if test "$extra_charsets" = no; then
-  CHARSETS="$CHARSETS"
-elif test "$extra_charsets" = none; then
-  CHARSETS="$CHARSETS"
-elif test "$extra_charsets" = complex; then
-  CHARSETS="$CHARSETS $CHARSETS_COMPLEX"
-  AC_DEFINE([DEFINE_ALL_CHARACTER_SETS],1,[all charsets are available])
-elif test "$extra_charsets" = all; then
-  CHARSETS="$CHARSETS $CHARSETS_AVAILABLE"
-  AC_DEFINE([DEFINE_ALL_CHARACTER_SETS],1,[all charsets are available])
-else
-  EXTRA_CHARSETS=`echo $extra_charsets | sed -e 's/,/ /g'`
-  CHARSETS="$CHARSETS $EXTRA_CHARSETS"
-fi
-
-for cs in $CHARSETS
-do
-  case $cs in 
-    armscii8)
-      AC_DEFINE(HAVE_CHARSET_armscii8, 1,
-                [Define to enable charset armscii8])
-      ;;
-    ascii)
-      AC_DEFINE(HAVE_CHARSET_ascii, 1,
-                [Define to enable ascii character set])
-      ;;
-    big5)
-      AC_DEFINE(HAVE_CHARSET_big5, 1, [Define to enable charset big5])
-      AC_DEFINE([USE_MB], [1], [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, [1], [ ])
-      ;;
-    binary)
-      ;;
-    cp1250)
-      AC_DEFINE(HAVE_CHARSET_cp1250, 1, [Define to enable cp1250])
-      ;;
-    cp1251)
-      AC_DEFINE(HAVE_CHARSET_cp1251, 1, [Define to enable charset cp1251])
-      ;;
-    cp1256)
-      AC_DEFINE(HAVE_CHARSET_cp1256, 1, [Define to enable charset cp1256])
-      ;;
-    cp1257)
-      AC_DEFINE(HAVE_CHARSET_cp1257, 1, [Define to enable charset cp1257])
-      ;;
-    cp850)
-      AC_DEFINE(HAVE_CHARSET_cp850, 1, [Define to enable charset cp850])
-      ;;
-    cp852)
-      AC_DEFINE(HAVE_CHARSET_cp852, 1, [Define to enable charset cp852])
-      ;;
-    cp866)
-      AC_DEFINE(HAVE_CHARSET_cp866, 1, [Define to enable charset cp866])
-      ;;
-    cp932)
-      AC_DEFINE(HAVE_CHARSET_cp932, 1, [Define to enable charset cp932])
-      AC_DEFINE([USE_MB], 1, [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    dec8)
-      AC_DEFINE(HAVE_CHARSET_dec8, 1, [Define to enable charset dec8])
-      ;;
-    euckr)
-      AC_DEFINE(HAVE_CHARSET_euckr, 1, [Define to enable charset euckr])
-      AC_DEFINE([USE_MB], [1], [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    gb2312)
-      AC_DEFINE(HAVE_CHARSET_gb2312, 1, [Define to enable charset gb2312])
-      AC_DEFINE([USE_MB], 1, [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    gbk)
-      AC_DEFINE(HAVE_CHARSET_gbk, 1, [Define to enable charset gbk])
-      AC_DEFINE([USE_MB], [1], [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    geostd8)
-      AC_DEFINE(HAVE_CHARSET_geostd8, 1, [Define to enable charset geostd8])
-      ;;
-    greek)
-      AC_DEFINE(HAVE_CHARSET_greek, 1, [Define to enable charset greek])
-      ;;
-    hebrew)
-      AC_DEFINE(HAVE_CHARSET_hebrew, 1, [Define to enable charset hebrew])
-      ;;
-    hp8)
-      AC_DEFINE(HAVE_CHARSET_hp8, 1, [Define to enable charset hp8])
-      ;;
-    keybcs2)
-      AC_DEFINE(HAVE_CHARSET_keybcs2, 1, [Define to enable charset keybcs2])
-      ;;
-    koi8r)
-      AC_DEFINE(HAVE_CHARSET_koi8r, 1, [Define to enable charset koi8r])
-      ;;
-    koi8u)
-      AC_DEFINE(HAVE_CHARSET_koi8u, 1, [Define to enable charset koi8u])
-      ;;
-    latin1)
-      AC_DEFINE(HAVE_CHARSET_latin1, 1, [Define to enable charset latin1])
-      ;;
-    latin2)
-      AC_DEFINE(HAVE_CHARSET_latin2, 1, [Define to enable charset latin2])
-      ;;
-    latin5)
-      AC_DEFINE(HAVE_CHARSET_latin5, 1, [Define to enable charset latin5])
-      ;;
-    latin7)
-      AC_DEFINE(HAVE_CHARSET_latin7, 1, [Define to enable charset latin7])
-      ;;
-    macce)
-      AC_DEFINE(HAVE_CHARSET_macce, 1, [Define to enable charset macce])
-      ;;
-    macroman)
-      AC_DEFINE(HAVE_CHARSET_macroman, 1,
-                [Define to enable charset macroman])
-      ;;
-    sjis)
-      AC_DEFINE(HAVE_CHARSET_sjis, 1, [Define to enable charset sjis])
-      AC_DEFINE([USE_MB], 1, [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    swe7)
-      AC_DEFINE(HAVE_CHARSET_swe7, 1, [Define to enable charset swe7])
-      ;;
-    tis620)
-      AC_DEFINE(HAVE_CHARSET_tis620, 1, [Define to enable charset tis620])
-      ;;
-    ucs2)
-      AC_DEFINE(HAVE_CHARSET_ucs2, 1, [Define to enable charset ucs2])
-      AC_DEFINE([USE_MB], [1], [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    ujis)
-      AC_DEFINE(HAVE_CHARSET_ujis, 1, [Define to enable charset ujis])
-      AC_DEFINE([USE_MB], [1], [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    utf8)
-      AC_DEFINE(HAVE_CHARSET_utf8, 1, [Define to enable ut8])
-      AC_DEFINE([USE_MB], 1, [Use multi-byte character routines])
-      AC_DEFINE(USE_MB_IDENT, 1)
-      ;;
-    *)
-      AC_MSG_ERROR([Charset '$cs' not available. (Available are: $CHARSETS_AVAILABLE).
-      See the Installation chapter in the Reference Manual.]);
-  esac
-done
-
-
-      default_charset_collations=""
-
-case $default_charset in 
-    armscii8)
-      default_charset_default_collation="armscii8_general_ci"
-      default_charset_collations="armscii8_general_ci armscii8_bin"
-      ;;
-    ascii)
-      default_charset_default_collation="ascii_general_ci"
-      default_charset_collations="ascii_general_ci ascii_bin"
-      ;;
-    big5)
-      default_charset_default_collation="big5_chinese_ci"
-      default_charset_collations="big5_chinese_ci big5_bin"
-      ;;
-    binary)
-      default_charset_default_collation="binary"
-      default_charset_collations="binary"
-      ;;
-    cp1250)
-      default_charset_default_collation="cp1250_general_ci"
-      default_charset_collations="cp1250_general_ci cp1250_czech_cs cp1250_bin"
-      ;;
-    cp1251)
-      default_charset_default_collation="cp1251_general_ci"
-      default_charset_collations="cp1251_general_ci cp1251_general_cs cp1251_bin cp1251_bulgarian_ci cp1251_ukrainian_ci"
-      ;;
-    cp1256)
-      default_charset_default_collation="cp1256_general_ci"
-      default_charset_collations="cp1256_general_ci cp1256_bin"
-      ;;
-    cp1257)
-      default_charset_default_collation="cp1257_general_ci"
-      default_charset_collations="cp1257_general_ci cp1257_lithuanian_ci cp1257_bin"
-      ;;
-    cp850)
-      default_charset_default_collation="cp850_general_ci"
-      default_charset_collations="cp850_general_ci cp850_bin"
-      ;;
-    cp852)
-      default_charset_default_collation="cp852_general_ci"
-      default_charset_collations="cp852_general_ci cp852_bin"
-      ;;
-    cp866)
-      default_charset_default_collation="cp866_general_ci"
-      default_charset_collations="cp866_general_ci cp866_bin"
-      ;;
-    cp932)
-      default_charset_default_collation="cp932_japanese_ci"
-      default_charset_collations="cp932_japanese_ci cp932_bin"
-      ;;
-    dec8)
-      default_charset_default_collation="dec8_swedish_ci"
-      default_charset_collations="dec8_swedish_ci dec8_bin"
-      ;;
-    euckr)
-      default_charset_default_collation="euckr_korean_ci"
-      default_charset_collations="euckr_korean_ci euckr_bin"
-      ;;
-    gb2312)
-      default_charset_default_collation="gb2312_chinese_ci"
-      default_charset_collations="gb2312_chinese_ci gb2312_bin"
-      ;;
-    gbk)
-      default_charset_default_collation="gbk_chinese_ci"
-      default_charset_collations="gbk_chinese_ci gbk_bin"
-      ;;
-    geostd8)
-      default_charset_default_collation="geostd8_general_ci"
-      default_charset_collations="geostd8_general_ci geostd8_bin"
-      ;;
-    greek)
-      default_charset_default_collation="greek_general_ci"
-      default_charset_collations="greek_general_ci greek_bin"
-      ;;
-    hebrew)
-      default_charset_default_collation="hebrew_general_ci"
-      default_charset_collations="hebrew_general_ci hebrew_bin"
-      ;;
-    hp8)
-      default_charset_default_collation="hp8_english_ci"
-      default_charset_collations="hp8_english_ci hp8_bin"
-      ;;
-    keybcs2)
-      default_charset_default_collation="keybcs2_general_ci"
-      default_charset_collations="keybcs2_general_ci keybcs2_bin"
-      ;;
-    koi8r)
-      default_charset_default_collation="koi8r_general_ci"
-      default_charset_collations="koi8r_general_ci koi8r_bin"
-      ;;
-    koi8u)
-      default_charset_default_collation="koi8u_general_ci"
-      default_charset_collations="koi8u_general_ci koi8u_bin"
-      ;;
-    latin1)
-      default_charset_default_collation="latin1_swedish_ci"
-      default_charset_collations="latin1_general_ci latin1_general_cs latin1_bin latin1_german1_ci latin1_german2_ci latin1_danish_ci latin1_spanish_ci latin1_swedish_ci"
-      ;;
-    latin2)
-      default_charset_default_collation="latin2_general_ci"
-      default_charset_collations="latin2_general_ci latin2_bin latin2_czech_cs latin2_hungarian_ci latin2_croatian_ci"
-      ;;
-    latin5)
-      default_charset_default_collation="latin5_turkish_ci"
-      default_charset_collations="latin5_turkish_ci latin5_bin"
-      ;;
-    latin7)
-      default_charset_default_collation="latin7_general_ci"
-      default_charset_collations="latin7_general_ci latin7_general_cs latin7_bin latin7_estonian_cs"
-      ;;
-    macce)
-      default_charset_default_collation="macce_general_ci"
-      default_charset_collations="macce_general_ci macce_bin"
-      ;;
-    macroman)
-      default_charset_default_collation="macroman_general_ci"
-      default_charset_collations="macroman_general_ci macroman_bin"
-      ;;
-    sjis)
-      default_charset_default_collation="sjis_japanese_ci"
-      default_charset_collations="sjis_japanese_ci sjis_bin"
-      ;;
-    swe7)
-      default_charset_default_collation="swe7_swedish_ci"
-      default_charset_collations="swe7_swedish_ci swe7_bin"
-      ;;
-    tis620)
-      default_charset_default_collation="tis620_thai_ci"
-      default_charset_collations="tis620_thai_ci tis620_bin"
-      ;;
-    ucs2)
-      default_charset_default_collation="ucs2_general_ci"
-      define(UCSC1, ucs2_general_ci ucs2_bin)
-      define(UCSC2, ucs2_czech_ci ucs2_danish_ci)
-      define(UCSC3, ucs2_estonian_ci ucs2_icelandic_ci)
-      define(UCSC4, ucs2_latvian_ci ucs2_lithuanian_ci)
-      define(UCSC5, ucs2_persian_ci ucs2_polish_ci ucs2_romanian_ci)
-      define(UCSC6, ucs2_slovak_ci ucs2_slovenian_ci)
-      define(UCSC7, ucs2_spanish2_ci ucs2_spanish_ci)
-      define(UCSC8, ucs2_swedish_ci ucs2_turkish_ci)
-      define(UCSC9, ucs2_unicode_ci)
-      UCSC="UCSC1 UCSC2 UCSC3 UCSC4 UCSC5 UCSC6 UCSC7 UCSC8 UCSC9"
-      default_charset_collations="$UCSC"
-      ;;
-    ujis)
-      default_charset_default_collation="ujis_japanese_ci"
-      default_charset_collations="ujis_japanese_ci ujis_bin"
-      ;;
-    utf8)
-      default_charset_default_collation="utf8_general_ci"
-      if test "$default_collation" = "utf8_general_cs"; then
-        # For those who explicitly desire "utf8_general_cs", support it,
-        # and then also set the CPP switch enabling that code.
-        UTFC="utf8_general_cs"
-        AC_DEFINE([HAVE_UTF8_GENERAL_CS], [1], [certain Japanese customer])
-      else
-        define(UTFC1, utf8_general_ci utf8_bin)
-        define(UTFC2, utf8_czech_ci utf8_danish_ci)
-        define(UTFC3, utf8_estonian_ci utf8_icelandic_ci)
-        define(UTFC4, utf8_latvian_ci utf8_lithuanian_ci)
-        define(UTFC5, utf8_persian_ci utf8_polish_ci utf8_romanian_ci)
-        define(UTFC6, utf8_slovak_ci utf8_slovenian_ci)
-        define(UTFC7, utf8_spanish2_ci utf8_spanish_ci)
-        define(UTFC8, utf8_swedish_ci utf8_turkish_ci)
-        define(UTFC9, utf8_unicode_ci)
-        UTFC="UTFC1 UTFC2 UTFC3 UTFC4 UTFC5 UTFC6 UTFC7 UTFC8 UTFC9"
-      fi
-      default_charset_collations="$UTFC"
-      ;;
-    *)
-      AC_MSG_ERROR([Charset $cs not available. (Available are: $CHARSETS_AVAILABLE).
-      See the Installation chapter in the Reference Manual.]);
-esac
-
-if test "$default_collation" = default; then
-  default_collation=$default_charset_default_collation
-fi
-
-valid_default_collation=no
-for cl in $default_charset_collations
-do
-  if test x"$cl" = x"$default_collation"
-  then
-    valid_default_collation=yes
-    break
-  fi
-done
-
-if test x$valid_default_collation = xyes
-then
-  AC_MSG_RESULT([default: $default_charset, collation: $default_collation; compiled in: $CHARSETS])
-else
-  AC_MSG_ERROR([
-      Collation $default_collation is not valid for character set $default_charset.
-      Valid collations are: $default_charset_collations.
-      See the Installation chapter in the Reference Manual.
-  ]);
-fi
-
-AC_DEFINE_UNQUOTED([MYSQL_DEFAULT_CHARSET_NAME], ["$default_charset"],
-                   [Define the default charset name])
-AC_DEFINE_UNQUOTED([MYSQL_DEFAULT_COLLATION_NAME], ["$default_collation"],
-                   [Define the default charset name])
-
-
-# Shall we build the UCA-based Unicode collations
-AC_ARG_WITH(uca,
-    [  --without-uca           Skip building of the national Unicode collations.],
-    [with_uca=$withval],
-    [with_uca=yes]
-)
-
-AC_MSG_CHECKING([whether to compile national Unicode collations])
-
-if test "$with_uca" = "yes"
-then
-  AC_MSG_RESULT(yes)
-  AC_DEFINE([HAVE_UCA_COLLATIONS], [1], [national Unicode collations])
-else
-  AC_MSG_RESULT(no)
-fi
-
 MYSQL_CHECK_BIG_TABLES
-MYSQL_CHECK_ISAM
+MYSQL_CHECK_MAX_INDEXES
 MYSQL_CHECK_BDB
 MYSQL_CHECK_INNODB
 MYSQL_CHECK_EXAMPLEDB
@@ -2935,6 +2578,61 @@ MYSQL_CHECK_ARCHIVEDB
 MYSQL_CHECK_CSVDB
 MYSQL_CHECK_BLACKHOLEDB
 MYSQL_CHECK_NDBCLUSTER
+MYSQL_CHECK_FEDERATED
+
+# Include man pages, if desired, adapted to the configured parts.
+if test X"$with_man" = Xyes
+then
+  # First, create the list of all man pages present.
+  MANLISTFIL=manlist.$$
+  TMPLISTFIL=`echo $MANLISTFIL | sed -e 's/manlist/tmplist/'`
+  if test -f $MANLISTFIL -o -f $TMPLISTFIL
+  then
+    echo "Temp file '$MANLISTFIL' or '$TMPLISTFIL' already exists in '`pwd`' - aborting"
+    exit 1
+  fi
+  touch $MANLISTFIL $TMPLISTFIL
+
+  ls $srcdir/man/*.[[18]] > $MANLISTFIL
+
+  # Then, remove all those pages from the list which are specific to parts
+  # (table handlers, features, ...) which are not configured in this run.
+  AC_MSG_CHECKING("for man pages to remove")
+  MAN_DROP="dropping"
+  if test X"$have_ndbcluster" != Xyes
+  then
+    MAN_DROP="$MAN_DROP ndbcluster"
+    grep -v '/ndb' $MANLISTFIL > $TMPLISTFIL ; mv -f $TMPLISTFIL $MANLISTFIL
+  fi
+  if test X"$with_embedded_server" != Xyes
+  then
+    MAN_DROP="$MAN_DROP embedded"
+    grep -v 'embedded' $MANLISTFIL > $TMPLISTFIL ; mv -f $TMPLISTFIL $MANLISTFIL
+  fi
+  if test X"$have_innodb" != Xyes
+  then
+    MAN_DROP="$MAN_DROP innodb"
+    grep -v 'inno' $MANLISTFIL > $TMPLISTFIL ; mv -f $TMPLISTFIL $MANLISTFIL
+  fi
+  AC_MSG_RESULT([$MAN_DROP])
+
+  # Finally, split the man pages into sections 1 and 8.
+  # Get rid of line breaks.
+  man1_files=`sed -n -e '/\.1$/s/^.*man\///p' <$MANLISTFIL`
+  man8_files=`sed -n -e '/\.8$/s/^.*man\///p' <$MANLISTFIL`
+
+  man_dirs="man"
+  man1_files=`echo $man1_files`
+  man8_files=`echo $man8_files`
+  rm -f $MANLISTFIL $TMPLISTFIL
+else
+  man_dirs=""
+  man1_files=""
+  man8_files=""
+fi
+AC_SUBST(man_dirs)
+AC_SUBST(man1_files)
+AC_SUBST(man8_files)
 
 # If we have threads generate some library functions and test programs
 sql_server_dirs=
@@ -2943,7 +2641,7 @@ thread_dirs=
 
 dnl This probably should be cleaned up more - for now the threaded
 dnl client is just using plain-old libs.
-sql_client_dirs="libmysql strings regex client"
+sql_client_dirs="strings regex mysys libmysql client"
 linked_client_targets="linked_libmysql_sources"
 
 if test "$THREAD_SAFE_CLIENT" != "no"
@@ -2982,23 +2680,15 @@ then
   AC_DEFINE([THREAD], [1],
             [Define if you want to have threaded code. This may be undef on client code])
   # Avoid _PROGRAMS names
-  THREAD_LPROGRAMS="test_thr_alarm\$(EXEEXT) test_thr_lock\$(EXEEXT)"
-  AC_SUBST(THREAD_LPROGRAMS)
-  THREAD_LOBJECTS="thr_alarm.o thr_lock.o thr_mutex.o thr_rwlock.o my_pthread.o my_thr_init.o"
+  THREAD_LOBJECTS="thr_alarm.o thr_lock.o thr_mutex.o thr_rwlock.o my_pthread.o my_thr_init.o mf_keycache.o"
   AC_SUBST(THREAD_LOBJECTS)
   server_scripts="mysqld_safe mysql_install_db"
-  sql_server_dirs="strings dbug mysys extra regex"
+  sql_server_dirs="strings mysys dbug extra regex"
 
 
   #
   # Configuration for optional table handlers
   #
-
-  if test X"$have_isam" != Xno
-  then
-    sql_server_dirs="$sql_server_dirs isam merge"
-    AC_CONFIG_FILES(isam/Makefile merge/Makefile)
-  fi
 
   if test X"$have_berkeley_db" != Xno; then
     if test X"$have_berkeley_db" != Xyes; then
@@ -3101,29 +2791,6 @@ esac
   # END of configuration for optional table handlers
   #
   sql_server_dirs="$sql_server_dirs myisam myisammrg heap vio sql"
-
-  if test "$with_posix_threads" = "no" -o "$with_mit_threads" = "yes"
-  then
-    # MIT user level threads
-    thread_dirs="mit-pthreads"
-    AC_DEFINE([HAVE_mit_thread], [1], [Do we use user level threads])
-    MT_INCLUDES="-I\$(top_srcdir)/mit-pthreads/include"
-    AC_SUBST(MT_INCLUDES)
-    if test -n "$OVERRIDE_MT_LD_ADD"
-    then 
-      MT_LD_ADD="$OVERRIDE_MT_LD_ADD"
-    else
-      MT_LD_ADD="-L \$(top_srcdir)/mit-pthreads/obj/ -lpthread"
-    fi
-    AC_SUBST(MT_LD_ADD)
-    echo ""
-    echo "Configuring MIT Pthreads"
-    # We will never install so installation paths are not needed.
-    (cd mit-pthreads && sh ./configure) || exit 1
-    echo "End of MIT Pthreads configuration"
-    echo ""
-    LIBS="$MT_LD_ADD $LIBS"
-  fi
 fi
 
 # IMPORTANT - do not modify LIBS past this line - this hack is the only way
@@ -3151,12 +2818,6 @@ do
 done
 AC_SUBST(sql_union_dirs)
 
-#if test "$with_posix_threads" = "no" -o "$with_mit_threads" = "yes"
-#then
-  # MIT pthreads does now support connecting with unix sockets
-  # AC_DEFINE([HAVE_THREADS_WITHOUT_SOCKETS], [], [MIT pthreads does not support connecting with unix sockets])
-#fi
-
 # Some usefull subst
 AC_SUBST(CC)
 AC_SUBST(GXX)
@@ -3170,6 +2831,7 @@ case $SYSTEM_TYPE in
     MAKE_BINARY_DISTRIBUTION_OPTIONS=
     ;;
 esac
+
 
 if test X"$have_ndbcluster" = Xyes
 then
@@ -3207,12 +2869,6 @@ then
   ndb_port="1186"
 fi
 AC_SUBST([ndb_port])
-
-if test X"$ndb_port_base" = Xdefault
-then
-  ndb_port_base="2202"
-fi
-AC_SUBST([ndb_port_base])
 
 ndb_transporter_opt_objs=""
 if test "$ac_cv_func_shmget" = "yes" &&
@@ -3252,11 +2908,26 @@ then
 fi
 AC_SUBST([ndb_bin_am_ldflags])
 AC_SUBST([ndb_opt_subdirs])
+
+NDB_SIZEOF_CHARP="$ac_cv_sizeof_charp"
+NDB_SIZEOF_CHAR="$ac_cv_sizeof_char"
+NDB_SIZEOF_SHORT="$ac_cv_sizeof_short"
+NDB_SIZEOF_INT="$ac_cv_sizeof_int"
+NDB_SIZEOF_LONG="$ac_cv_sizeof_long"
+NDB_SIZEOF_LONG_LONG="$ac_cv_sizeof_long_long"
+AC_SUBST([NDB_SIZEOF_CHARP])
+AC_SUBST([NDB_SIZEOF_CHAR])
+AC_SUBST([NDB_SIZEOF_SHORT])
+AC_SUBST([NDB_SIZEOF_INT])
+AC_SUBST([NDB_SIZEOF_LONG])
+AC_SUBST([NDB_SIZEOF_LONG_LONG])
+
 AC_CONFIG_FILES(ndb/Makefile ndb/include/Makefile dnl
    ndb/src/Makefile ndb/src/common/Makefile dnl
    ndb/docs/Makefile dnl
    ndb/tools/Makefile dnl
-   ndb/src/common/debugger/Makefile ndb/src/common/debugger/signaldata/Makefile dnl
+   ndb/src/common/debugger/Makefile dnl
+   ndb/src/common/debugger/signaldata/Makefile dnl
    ndb/src/common/portlib/Makefile dnl
    ndb/src/common/util/Makefile dnl
    ndb/src/common/logger/Makefile dnl
@@ -3294,6 +2965,7 @@ AC_CONFIG_FILES(ndb/Makefile ndb/include/Makefile dnl
    ndb/test/tools/Makefile dnl
    ndb/test/run-test/Makefile mysql-test/ndb/Makefile dnl
    ndb/include/ndb_version.h ndb/include/ndb_global.h dnl
+   ndb/include/ndb_types.h dnl
    )
 fi
 
@@ -3310,13 +2982,17 @@ AC_CONFIG_FILES(Makefile extra/Makefile mysys/Makefile dnl
  sql-common/Makefile SSL/Makefile dnl
  dbug/Makefile scripts/Makefile dnl
  include/Makefile sql-bench/Makefile dnl
+ server-tools/Makefile server-tools/instance-manager/Makefile dnl
  tests/Makefile Docs/Makefile support-files/Makefile dnl
- support-files/MacOSX/Makefile mysql-test/Makefile dnl
+ support-files/MacOSX/Makefile support-files/RHEL4-SElinux/Makefile dnl
+ mysql-test/Makefile dnl
  netware/Makefile dnl
  include/mysql_version.h dnl
  cmd-line-utils/Makefile dnl
  cmd-line-utils/libedit/Makefile dnl
+ win/Makefile dnl
  zlib/Makefile dnl
+ debian/Makefile debian/defs.mk debian/control dnl
  cmd-line-utils/readline/Makefile)
  AC_CONFIG_COMMANDS([default], , test -z "$CONFIG_HEADERS" || echo timestamp > stamp-h)
  AC_OUTPUT

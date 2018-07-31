@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,7 +19,7 @@
 #include "NdbDictionaryImpl.hpp"
 #include <NdbRecAttr.hpp>
 #include <AttributeHeader.hpp>
-#include <NdbConnection.hpp>
+#include <NdbTransaction.hpp>
 #include <TransporterFacade.hpp>
 #include <signaldata/TcKeyConf.hpp>
 
@@ -33,7 +32,7 @@ NdbReceiver::NdbReceiver(Ndb *aNdb) :
 {
   theCurrentRecAttr = theFirstRecAttr = 0;
   m_defined_rows = 0;
-  m_rows = new NdbRecAttr*[0];
+  m_rows = NULL;
 }
  
 NdbReceiver::~NdbReceiver()
@@ -46,19 +45,26 @@ NdbReceiver::~NdbReceiver()
   DBUG_VOID_RETURN;
 }
 
-void
+int
 NdbReceiver::init(ReceiverType type, void* owner)
 {
   theMagicNumber = 0x11223344;
   m_type = type;
   m_owner = owner;
-  if (m_id == NdbObjectIdMap::InvalidId) {
-    if (m_ndb)
-      m_id = m_ndb->theImpl->theNdbObjectIdMap.map(this);
-  }
-
   theFirstRecAttr = NULL;
   theCurrentRecAttr = NULL;
+  if (m_id == NdbObjectIdMap::InvalidId) {
+    if (m_ndb)
+    {
+      m_id = m_ndb->theImpl->theNdbObjectIdMap.map(this);
+      if (m_id == NdbObjectIdMap::InvalidId)
+      {
+        setErrorCode(4000);
+        return -1;
+      }
+    }
+  }
+  return 0;
 }
 
 void
@@ -121,7 +127,15 @@ NdbReceiver::calculate_batch_size(Uint32 key_size,
    * no more than MAX_SCAN_BATCH_SIZE is sent from all nodes in total per
    * batch.
    */
-  batch_byte_size= max_batch_byte_size;
+  if (batch_size == 0)
+  {
+    batch_byte_size= max_batch_byte_size;
+  }
+  else
+  {
+    batch_byte_size= batch_size * tot_size;
+  }
+  
   if (batch_byte_size * parallelism > max_scan_batch_size) {
     batch_byte_size= max_scan_batch_size / parallelism;
   }
@@ -139,12 +153,19 @@ NdbReceiver::calculate_batch_size(Uint32 key_size,
   return;
 }
 
-void
-NdbReceiver::do_get_value(NdbReceiver * org, Uint32 rows, Uint32 key_size){
+int
+NdbReceiver::do_get_value(NdbReceiver * org, 
+			  Uint32 rows, 
+			  Uint32 key_size,
+			  Uint32 range_no){
   if(rows > m_defined_rows){
     delete[] m_rows;
     m_defined_rows = rows;
-    m_rows = new NdbRecAttr*[rows + 1]; 
+    if ((m_rows = new NdbRecAttr*[rows + 1]) == NULL)
+    {
+      setErrorCode(4000);
+      return -1;
+    }
   }
   m_rows[rows] = 0;
   
@@ -155,7 +176,7 @@ NdbReceiver::do_get_value(NdbReceiver * org, Uint32 rows, Uint32 key_size){
     key.m_attrSize = 4;
     key.m_nullable = true; // So that receive works w.r.t KEYINFO20
   }
-  m_key_info = key_size;
+  m_hidden_count = (key_size ? 1 : 0) + range_no ;
   
   for(Uint32 i = 0; i<rows; i++){
     NdbRecAttr * prev = theCurrentRecAttr;
@@ -164,9 +185,15 @@ NdbReceiver::do_get_value(NdbReceiver * org, Uint32 rows, Uint32 key_size){
     // Put key-recAttr fir on each row
     if(key_size && !getValue(&key, (char*)0)){
       abort();
-      return ; // -1
+      return -1;
     }
     
+    if(range_no && 
+       !getValue(&NdbColumnImpl::getImpl(* NdbDictionary::Column::RANGE_NO),0))
+    {
+      abort();
+    }
+
     NdbRecAttr* tRecAttr = org->theFirstRecAttr;
     while(tRecAttr != 0){
       if(getValue(&NdbColumnImpl::getImpl(*tRecAttr->m_column), (char*)0) != 0)
@@ -177,7 +204,7 @@ NdbReceiver::do_get_value(NdbReceiver * org, Uint32 rows, Uint32 key_size){
     
     if(tRecAttr){
       abort();
-      return ;// -1;
+      return -1;
     }
 
     // Store first recAttr for each row in m_rows[i]
@@ -189,17 +216,17 @@ NdbReceiver::do_get_value(NdbReceiver * org, Uint32 rows, Uint32 key_size){
   } 
 
   prepareSend();
-  return;
+  return 0;
 }
 
-void
+NdbRecAttr*
 NdbReceiver::copyout(NdbReceiver & dstRec){
-  NdbRecAttr* src = m_rows[m_current_row++];
-  NdbRecAttr* dst = dstRec.theFirstRecAttr;
-  Uint32 tmp = m_key_info;
-  if(tmp > 0){
+  NdbRecAttr *src = m_rows[m_current_row++];
+  NdbRecAttr *dst = dstRec.theFirstRecAttr;
+  NdbRecAttr *start = src;
+  Uint32 tmp = m_hidden_count;
+  while(tmp--)
     src = src->next();
-  }
   
   while(dst){
     Uint32 len = ((src->theAttrSize * src->theArraySize)+3)/4;
@@ -207,6 +234,8 @@ NdbReceiver::copyout(NdbReceiver & dstRec){
     src = src->next();
     dst = dst->next();
   }
+
+  return start;
 }
 
 int

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -66,6 +65,7 @@ void Dbtup::initData()
   undoPage = 0;
   totNoOfPagesAllocated = 0;
   cnoOfAllocatedPages = 0;
+  CLEAR_ERROR_INSERT_VALUE;
   
   // Records with constant sizes
 }//Dbtup::initData()
@@ -75,24 +75,7 @@ Dbtup::Dbtup(const class Configuration & conf)
   c_storedProcPool(),
   c_buildIndexList(c_buildIndexPool)
 {
-  Uint32 log_page_size= 0;
   BLOCK_CONSTRUCTOR(Dbtup);
-
-  const ndb_mgm_configuration_iterator * p = conf.getOwnConfigIterator();
-  ndbrequire(p != 0);
-
-  ndb_mgm_get_int_parameter(p, CFG_DB_UNDO_DATA_BUFFER,  
-			    &log_page_size);
-
-  /**
-   * Always set page size in half MBytes
-   */
-  cnoOfUndoPage= (log_page_size / sizeof(UndoPage));
-  Uint32 mega_byte_part= cnoOfUndoPage & 15;
-  if (mega_byte_part != 0) {
-    jam();
-    cnoOfUndoPage+= (16 - mega_byte_part);
-  }
 
   addRecSignal(GSN_DEBUG_SIG, &Dbtup::execDEBUG_SIG);
   addRecSignal(GSN_CONTINUEB, &Dbtup::execCONTINUEB);
@@ -121,7 +104,6 @@ Dbtup::Dbtup(const class Configuration & conf)
   addRecSignal(GSN_FSREADCONF, &Dbtup::execFSREADCONF);
   addRecSignal(GSN_NDB_STTOR, &Dbtup::execNDB_STTOR);
   addRecSignal(GSN_READ_CONFIG_REQ, &Dbtup::execREAD_CONFIG_REQ, true);
-  addRecSignal(GSN_SET_VAR_REQ,  &Dbtup::execSET_VAR_REQ);
 
   // Trigger Signals
   addRecSignal(GSN_CREATE_TRIG_REQ, &Dbtup::execCREATE_TRIG_REQ);
@@ -137,7 +119,29 @@ Dbtup::Dbtup(const class Configuration & conf)
   // Ordered index related
   addRecSignal(GSN_BUILDINDXREQ, &Dbtup::execBUILDINDXREQ);
 
+  // Tup scan
+  addRecSignal(GSN_ACC_SCANREQ, &Dbtup::execACC_SCANREQ);
+  addRecSignal(GSN_NEXT_SCANREQ, &Dbtup::execNEXT_SCANREQ);
+  addRecSignal(GSN_ACC_CHECK_SCAN, &Dbtup::execACC_CHECK_SCAN);
+
   initData();
+
+  attrbufrec = 0;  
+  checkpointInfo = 0;  
+  diskBufferSegmentInfo = 0;  
+  fragoperrec = 0;
+  fragrecord = 0;  
+  hostBuffer = 0;  
+  localLogInfo = 0;  
+  operationrec = 0;
+  page = 0;  
+  pageRange = 0;
+  pendingFileOpenInfo = 0;  
+  restartInfoRecord = 0;  
+  tablerec = 0;  
+  tableDescriptor = 0;  
+  undoPage = 0;
+  cnoOfPage = cnoOfAllocatedPages = 0;
 }//Dbtup::Dbtup()
 
 Dbtup::~Dbtup() 
@@ -522,7 +526,7 @@ void Dbtup::execCONTINUEB(Signal* signal)
   case ZREPORT_MEMORY_USAGE:{
     ljam();
     static int c_currentMemUsed = 0;
-    int now = (cnoOfAllocatedPages * 100)/cnoOfPage;
+    int now = cnoOfPage ? (cnoOfAllocatedPages * 100)/cnoOfPage : 0;
     const int thresholds[] = { 100, 90, 80, 0 };
     
     Uint32 i = 0;
@@ -565,7 +569,6 @@ void Dbtup::execSTTOR(Signal* signal)
   switch (startPhase) {
   case ZSTARTPHASE1:
     ljam();
-    CLEAR_ERROR_INSERT_VALUE;
     cownref = calcTupBlockRef(0);
     break;
   default:
@@ -598,6 +601,20 @@ void Dbtup::execREAD_CONFIG_REQ(Signal* signal)
     theConfiguration.getOwnConfigIterator();
   ndbrequire(p != 0);
   
+  Uint32 log_page_size= 0;
+  ndb_mgm_get_int_parameter(p, CFG_DB_UNDO_DATA_BUFFER,  
+			    &log_page_size);
+
+  /**
+   * Always set page size in half MBytes
+   */
+  cnoOfUndoPage= (log_page_size / sizeof(UndoPage));
+  Uint32 mega_byte_part= cnoOfUndoPage & 15;
+  if (mega_byte_part != 0) {
+    jam();
+    cnoOfUndoPage+= (16 - mega_byte_part);
+  }
+
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_TUP_FRAG, &cnoOfFragrec));
 
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_TUP_OP_RECS, &cnoOfOprec));
@@ -617,12 +634,19 @@ void Dbtup::execREAD_CONFIG_REQ(Signal* signal)
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_NO_TRIGGERS, 
 					&noOfTriggers));
 
+  Uint32 nScanOp;       // use TUX config for now
+  ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_TUX_SCAN_OP, &nScanOp));
+
+
   cnoOfTabDescrRec = (cnoOfTabDescrRec & 0xFFFFFFF0) + 16;
+
+  initRecords();
+
   c_storedProcPool.setSize(noOfStoredProc);
   c_buildIndexPool.setSize(c_noOfBuildIndexRec);
   c_triggerPool.setSize(noOfTriggers);
+  c_scanOpPool.setSize(nScanOp);
 
-  initRecords();
   czero = 0;
   cminusOne = czero - 1;
   clastBitMask = 1;
@@ -644,7 +668,22 @@ void Dbtup::execREAD_CONFIG_REQ(Signal* signal)
 
 void Dbtup::initRecords() 
 {
+  unsigned i;
+
   // Records with dynamic sizes
+  page = (Page*)allocRecord("Page", 
+			    sizeof(Page), 
+			    cnoOfPage,
+			    false);
+  
+  undoPage = (UndoPage*)allocRecord("UndoPage",
+				    sizeof(UndoPage),
+				    cnoOfUndoPage);
+  
+  operationrec = (Operationrec*)allocRecord("Operationrec",
+					    sizeof(Operationrec),
+					    cnoOfOprec);
+
   attrbufrec = (Attrbufrec*)allocRecord("Attrbufrec", 
 					sizeof(Attrbufrec), 
 					cnoOfAttrbufrec);
@@ -665,6 +704,11 @@ void Dbtup::initRecords()
   fragrecord = (Fragrecord*)allocRecord("Fragrecord",
 					sizeof(Fragrecord), 
 					cnoOfFragrec);
+  
+  for (i = 0; i<cnoOfFragrec; i++) {
+    void * p = &fragrecord[i];
+    new (p) Fragrecord(c_scanOpPool);
+  }
 
   hostBuffer = (HostBuffer*)allocRecord("HostBuffer",
 					sizeof(HostBuffer), 
@@ -674,15 +718,6 @@ void Dbtup::initRecords()
 					    sizeof(LocalLogInfo), 
 					    cnoOfParallellUndoFiles);
 
-  operationrec = (Operationrec*)allocRecord("Operationrec",
-					    sizeof(Operationrec),
-					    cnoOfOprec);
-
-  page = (Page*)allocRecord("Page", 
-			    sizeof(Page), 
-			    cnoOfPage,
-			    false);
-  
   pageRange = (PageRange*)allocRecord("PageRange",
 				      sizeof(PageRange), 
 				      cnoOfPageRangeRec);
@@ -702,7 +737,7 @@ void Dbtup::initRecords()
 				    sizeof(Tablerec), 
 				    cnoOfTablerec);
   
-  for(unsigned i = 0; i<cnoOfTablerec; i++) {
+  for (i = 0; i<cnoOfTablerec; i++) {
     void * p = &tablerec[i];
     new (p) Tablerec(c_triggerPool);
   }
@@ -711,11 +746,6 @@ void Dbtup::initRecords()
     allocRecord("TableDescriptor",
 		sizeof(TableDescriptor),
 		cnoOfTabDescrRec);
-  
-  undoPage = (UndoPage*)allocRecord("UndoPage",
-				    sizeof(UndoPage),
-				    cnoOfUndoPage);
-  
   
   // Initialize BAT for interface to file system
   NewVARIABLE* bat = allocateBat(3);
@@ -1283,33 +1313,6 @@ void Dbtup::seizePendingFileOpenInfoRecord(PendingFileOpenInfoPtr& pfoiPtr)
   cfirstfreePfo = pfoiPtr.p->pfoNextRec;
   pfoiPtr.p->pfoNextRec = RNIL;
 }//Dbtup::seizePendingFileOpenInfoRecord()
-
-void Dbtup::execSET_VAR_REQ(Signal* signal) 
-{
-#if 0
-  SetVarReq* const setVarReq = (SetVarReq*)signal->getDataPtrSend();
-  ConfigParamId var = setVarReq->variable();
-  int val = setVarReq->value();
-
-  switch (var) {
-
-  case NoOfDiskPagesToDiskAfterRestartTUP:
-    clblPagesPerTick = val;
-    sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    break;
-
-  case NoOfDiskPagesToDiskDuringRestartTUP:
-    // Valid only during start so value not set.
-    sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    break;
-
-  default:
-    sendSignal(CMVMI_REF, GSN_SET_VAR_REF, signal, 1, JBB);
-  } // switch
-#endif
-
-}//execSET_VAR_REQ()
-
 
 
 

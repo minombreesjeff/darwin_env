@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,6 +20,9 @@
 
 #include <pc.hpp>
 #include <SimulatedBlock.hpp>
+
+// primary key is stored in TUP
+#include <Dbtup.hpp>
 
 #ifdef DBACC_C
 // Debug Macros
@@ -98,7 +100,6 @@ ndbout << "Ptr: " << ptr.p->word32 << " \tIndex: " << tmp_string << " \tValue: "
 #define ZPOS_PREV_PAGE 11
 #define ZNORMAL_PAGE_TYPE 0
 #define ZOVERFLOW_PAGE_TYPE 1
-#define ZLONG_PAGE_TYPE 2
 #define ZDEFAULT_LIST 3
 #define ZWORDS_IN_PAGE 2048
 /* --------------------------------------------------------------------------------- */
@@ -131,16 +132,6 @@ ndbout << "Ptr: " << ptr.p->word32 << " \tIndex: " << tmp_string << " \tValue: "
 #define ZPAGEZERO_KEY_LENGTH 32
 #define ZPAGEZERO_NODETYPE 33
 #define ZPAGEZERO_SLACK_CHECK 34
-/* --------------------------------------------------------------------------------- */
-/*       CONSTANTS FOR THE LONG KEY PAGES                                            */
-/* --------------------------------------------------------------------------------- */
-/* --------------------------------------------------------------------------------- */
-// Maximum number of elements in long key page = (ZWORDS_IN_PAGE - ZHEAD_SIZE) /
-// (MinKeySize + IndexSize) = (2048 - 32) / (8 + 1) = 224. MinKeySize is actually 9
-// because 8 is the largest normal key size.
-#define ZMAX_NO_OF_LONGKEYS_IN_PAGE 225
-#define ZMAX_LONG_KEY_ARRAY_INDEX 3
-#define ZACTIVE_LONG_KEY_LEN 1
 /* --------------------------------------------------------------------------------- */
 /*       CONSTANTS IN ALPHABETICAL ORDER                                             */
 /* --------------------------------------------------------------------------------- */
@@ -392,49 +383,6 @@ enum State {
 
 // Records
 
-
-//---------------------------------------------------------------------------------- 
-// LONGKEY PAGE RECORD                                                          
-//     
-// A long key page consist of a header part, a key data part and an index part. The 
-// page starts with a header of size HEAD_SIZE. As you can see below, not every word 
-// in the header is used. After the header comes the data part, where the actual 
-// keys are stored. A key is always inserted after the existing keys in the data 
-// part. If we have a fragmented data part and a new key doesn't fit after the 
-// existing keys we reorganize the keys. The index part starts at the end of the 
-// page and grows towards the end of the data part. This means that the limit 
-// between the data part and the index part is floating. Each inserted key have a 
-// word in the index part that describes size and position of the key in the data 
-// part. The free indexes in the index part are single linked.
-//---------------------------------------------------------------------------------- 
-  union LongKeyPage {
-    struct {
-      Uint32 pageId; // ZPOS_PAGE_ID 0
-      Uint32 b;
-      // The number of keys in page.
-      Uint32 noOfElements; // ZPOS_NO_ELEM_IN_PAGE 2
-      Uint32 d;
-      Uint32 e;
-      // The free area in the data part of page.
-      Uint32 freeArea; // ZPOS_FREE_AREA_IN_PAGE 5
-      // The index position, which defines the limit between the data and the index part.
-      Uint32 highestIndex;  // ZPOS_LAST_INDEX 6
-      // The position where to insert the actual key in the data part.
-      Uint32 insertPos; // ZPOS_INSERT_INDEX 7
-      // Position in a page array where the pages are stored in a double linked list.
-      // Based on the free area in the page.  Values 0 to 3.
-      Uint32 pageArrayPos; // ZPOS_ARRAY_POS 8
-      // Next free position in the index part.
-      Uint32 nextFreeIndex; // ZPOS_NEXT_FREE_INDEX 9
-      // Next page in the double linked list.
-      Uint32 nextPage; // ZPOS_NEXT_PAGE  10
-      // Previous page in the double linked list.
-      Uint32 prevPage; // ZPOS_PREV_PAGE 11
-    } header;
-    // This is kept to keep the logic and to make changes to a minimum.
-    Uint32 word32[2048];
-  };
-
 /* --------------------------------------------------------------------------------- */
 /* UNDO HEADER RECORD                                                                */
 /* --------------------------------------------------------------------------------- */
@@ -444,9 +392,7 @@ enum State {
       ZPAGE_INFO = 0,
       ZOVER_PAGE_INFO = 1,
       ZOP_INFO = 2,
-      ZUNDO_INSERT_LONG_KEY = 3,
-      ZUNDO_DELETE_LONG_KEY = 4,
-      ZNO_UNDORECORD_TYPES = 5
+      ZNO_UNDORECORD_TYPES = 3
     };
     UintR tableId;
     UintR rootFragId;
@@ -660,10 +606,10 @@ struct Fragmentrec {
 
 //-----------------------------------------------------------------------------
 // elementLength: Length of element in bucket and overflow pages
-// keyLength: Length of key (== 0 if long key or variable key length)
+// keyLength: Length of key
 //-----------------------------------------------------------------------------
   Uint8 elementLength;
-  Uint8 keyLength;
+  Uint16 keyLength;
 
 //-----------------------------------------------------------------------------
 // This flag is used to avoid sending a big number of expand or shrink signals
@@ -689,6 +635,11 @@ struct Fragmentrec {
 //-----------------------------------------------------------------------------
   Uint8 nodetype;
   Uint8 stopQueOp;
+
+//-----------------------------------------------------------------------------
+// flag to avoid accessing table record if no char attributes
+//-----------------------------------------------------------------------------
+  Uint8 hasCharAttr;
 };
 
   typedef Ptr<Fragmentrec> FragmentrecPtr;
@@ -771,6 +722,7 @@ struct Operationrec {
   State transactionstate;
   Uint16 elementContainer;
   Uint16 tupkeylen;
+  Uint32 xfrmtupkeylen;
   Uint32 userblockref;
   Uint32 scanBits;
   Uint8 elementIsDisappeared;
@@ -783,7 +735,7 @@ struct Operationrec {
   Uint8 dirtyRead;
   Uint8 commitDeleteCheckFlag;
   Uint8 isAccLockReq;
-  Uint32 nextOpList;
+  Uint8 isUndoLogReq;
 }; /* p2c: size = 168 bytes */
 
   typedef Ptr<Operationrec> OperationrecPtr;
@@ -914,6 +866,9 @@ public:
   Dbacc(const class Configuration &);
   virtual ~Dbacc();
 
+  // pointer to TUP instance in this thread
+  Dbtup* c_tup;
+
 private:
   BLOCK_DEFINES(Dbacc);
 
@@ -956,7 +911,6 @@ private:
   void execDROP_TAB_REQ(Signal* signal);
   void execFSREMOVECONF(Signal* signal);
   void execREAD_CONFIG_REQ(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
   void execDUMP_STATE_ORD(Signal* signal);
 
   // Statement blocks
@@ -972,10 +926,8 @@ private:
   void initFragGeneral(FragmentrecPtr);
   void verifyFragCorrect(FragmentrecPtr regFragPtr);
   void sendFSREMOVEREQ(Signal* signal, Uint32 tableId);
-  void sendDROP_TABFILECONF(Signal* signal, TabrecPtr tabPtr);
   void releaseFragResources(Signal* signal, Uint32 fragIndex);
   void releaseRootFragRecord(Signal* signal, RootfragmentrecPtr rootPtr);
-  void sendREL_TABMEMCONF(Signal* signal, TabrecPtr tabPtr);
   void releaseRootFragResources(Signal* signal, Uint32 tableId);
   void releaseDirResources(Signal* signal,
                            Uint32 fragIndex,
@@ -1051,7 +1003,6 @@ private:
   void releaseScanRec(Signal* signal);
   bool searchScanContainer(Signal* signal);
   void sendNextScanConf(Signal* signal);
-  void sendScaninfo(Signal* signal);
   void setlock(Signal* signal);
   void takeOutActiveScanOp(Signal* signal);
   void takeOutScanLockQueue(Uint32 scanRecIndex);
@@ -1063,15 +1014,8 @@ private:
   void increaselistcont(Signal* signal);
   void seizeLeftlist(Signal* signal);
   void seizeRightlist(Signal* signal);
-  void allocLongOverflowPage(Signal* signal);
-  void allocSpecificLongOverflowPage(Signal* signal);
-  void getLongKeyPage(Signal* signal);
-  void initLongOverpage(Signal* signal);
-  void storeLongKeys(Signal* signal);
-  void storeLongKeysAtPos(Signal* signal);
-  void reorgLongPage(Signal* signal);
+  Uint32 readTablePk(Uint32 localkey1);
   void getElement(Signal* signal);
-  void searchLongKey(Signal* signal, bool verify);
   void getdirindex(Signal* signal);
   void commitdelete(Signal* signal, bool systemRestart);
   void deleteElement(Signal* signal);
@@ -1079,15 +1023,6 @@ private:
   void releaseLeftlist(Signal* signal);
   void releaseRightlist(Signal* signal);
   void checkoverfreelist(Signal* signal);
-  void deleteLongKey(Signal* signal);
-  void removeFromPageArrayList(Signal* signal);
-  void insertPageArrayList(Signal* signal);
-  void checkPageArrayList(Signal* signal, const char *);
-  void checkPageB4Insert(Uint32, const char *); 
-  void checkPageB4Remove(Uint32, const char *); 
-  void checkIndexInLongKeyPage(Uint32, const char *);
-  void printoutInfoAndShutdown(LongKeyPage *);
-  void releaseLongPage(Signal* signal);
   void abortOperation(Signal* signal);
   void accAbortReqLab(Signal* signal, bool sendConf);
   void commitOperation(Signal* signal);
@@ -1105,7 +1040,6 @@ private:
   void initLcpConnRec(Signal* signal);
   void initOverpage(Signal* signal);
   void initPage(Signal* signal);
-  void initPageZero(Signal* signal);
   void initRootfragrec(Signal* signal);
   void putOpInFragWaitQue(Signal* signal);
   void putOverflowRecInFrag(Signal* signal);
@@ -1135,7 +1069,7 @@ private:
   void seizeRootfragrec(Signal* signal);
   void seizeScanRec(Signal* signal);
   void seizeSrVerRec(Signal* signal);
-  void sendSystemerror(Signal* signal);
+  void sendSystemerror(Signal* signal, int line);
   void takeRecOutOfFreeOverdir(Signal* signal);
   void takeRecOutOfFreeOverpage(Signal* signal);
   void sendScanHbRep(Signal* signal, Uint32);
@@ -1159,8 +1093,6 @@ private:
   void refaccConnectLab(Signal* signal);
   void srReadOverPagesLab(Signal* signal);
   void releaseScanLab(Signal* signal);
-  void exeoperationLab(Signal* signal);
-  void saveKeyDataLab(Signal* signal);
   void lcpOpenUndofileConfLab(Signal* signal);
   void srFsOpenConfLab(Signal* signal);
   void checkSyncUndoPagesLab(Signal* signal);
@@ -1172,13 +1104,12 @@ private:
   void srReadPagesLab(Signal* signal);
   void srDoUndoLab(Signal* signal);
   void ndbrestart1Lab(Signal* signal);
-  void initialiseRecordsLab(Signal* signal, Uint32 returnRef, Uint32 retData);
+  void initialiseRecordsLab(Signal* signal, Uint32 ref, Uint32 data);
   void srReadPagesAllocLab(Signal* signal);
   void checkNextBucketLab(Signal* signal);
   void endsavepageLab(Signal* signal);
   void saveZeroPageLab(Signal* signal);
   void srAllocPage0011Lab(Signal* signal);
-  void allocscanrecLab(Signal* signal);
   void sendLcpFragidconfLab(Signal* signal);
   void savepagesLab(Signal* signal);
   void saveOverPagesLab(Signal* signal);
@@ -1192,6 +1123,8 @@ private:
   void lcp_write_op_to_undolog(Signal* signal);
   void reenable_expand_after_redo_log_exection_complete(Signal*);
 
+  // charsets
+  void xfrmKeyData(Signal* signal);
 
   // Initialisation
   void initData();
@@ -1281,8 +1214,6 @@ private:
 /* --------------------------------------------------------------------------------- */
   Page8 *page8;
   /* 8 KB PAGE                       */
-  Page8Ptr aslpPageptr;
-  Page8Ptr alpPageptr;
   Page8Ptr ancPageptr;
   Page8Ptr colPageptr;
   Page8Ptr ccoPageptr;
@@ -1293,29 +1224,17 @@ private:
   Page8Ptr gdiPageptr;
   Page8Ptr gePageptr;
   Page8Ptr gflPageptr;
-  Page8Ptr glkPageptr;
   Page8Ptr idrPageptr;
   Page8Ptr ilcPageptr;
-  Page8Ptr iloPageptr;
   Page8Ptr inpPageptr;
   Page8Ptr iopPageptr;
-  Page8Ptr ipzPageptr;
   Page8Ptr lastPageptr;
   Page8Ptr lastPrevpageptr;
   Page8Ptr lcnPageptr;
   Page8Ptr lcnCopyPageptr;
   Page8Ptr lupPageptr;
-  Page8Ptr dlkPageptr;
-  Page8Ptr ipaPagePtr;
   Page8Ptr priPageptr;
   Page8Ptr pwiPageptr;
-  Page8Ptr rfpPageptr;
-  Page8Ptr relpPageptr;
-  Page8Ptr rlopPageptr;
-  Page8Ptr slkPageptr;
-  Page8Ptr slkCopyPageptr;
-  Page8Ptr slkapPageptr;
-  Page8Ptr slkapCopyPageptr;
   Page8Ptr ciPageidptr;
   Page8Ptr gsePageidptr;
   Page8Ptr isoPageptr;
@@ -1329,7 +1248,6 @@ private:
   Page8Ptr ropPageptr;
   Page8Ptr rpPageptr;
   Page8Ptr slPageptr;
-  Page8Ptr slpPageptr;
   Page8Ptr spPageptr;
   Uint32 cfirstfreepage;
   Uint32 cfreepage;
@@ -1347,7 +1265,6 @@ private:
 /* --------------------------------------------------------------------------------- */
   Rootfragmentrec *rootfragmentrec;
   RootfragmentrecPtr rootfragrecptr;
-  RootfragmentrecPtr tmprootfrgptr;
   Uint32 crootfragmentsize;
   Uint32 cfirstfreerootfrag;
 /* --------------------------------------------------------------------------------- */
@@ -1380,7 +1297,6 @@ private:
   Uint32 tpriElementptr;
   Uint32 tgseElementptr;
   Uint32 tgseContainerptr;
-  Uint32 tiloIndex;
   Uint32 trlHead;
   Uint32 trlRelCon;
   Uint32 trlNextused;
@@ -1389,20 +1305,12 @@ private:
   Uint32 tlupElemIndex;
   Uint32 tlupIndex;
   Uint32 tlupForward;
-  Uint32 tslkPageIndex;
-  Uint32 tslkKeyLen;
-  Uint32 tslkapKeyLen;
-  Uint32 tslkapPageIndex;
-  Uint32 tipaArrayPos;
-  Uint32 trfpArrayPos;
-  Uint32 tdlkLogicalPageIndex;
   Uint32 tancNext;
   Uint32 tancBufType;
   Uint32 tancContainerptr;
   Uint32 tancPageindex;
   Uint32 tancPageid;
   Uint32 tidrResult;
-  Uint32 tidrKeyLen;
   Uint32 tidrElemhead;
   Uint32 tidrForward;
   Uint32 tidrPageindex;
@@ -1420,15 +1328,11 @@ private:
   Uint32 tdelForward;
   Uint32 tiopPageId;
   Uint32 tipPageId;
-  Uint32 ttupKeyLength;
   Uint32 tgeLocked;
   Uint32 tgeResult;
   Uint32 tgeContainerptr;
   Uint32 tgeElementptr;
   Uint32 tgeForward;
-  Uint32 tslcResult;
-  Uint32 tslcPagedir;
-  Uint32 tslcPageIndex;
   Uint32 tundoElemIndex;
   Uint32 texpReceivedBucket;
   Uint32 texpDirInd;
@@ -1453,7 +1357,6 @@ private:
   Uint32 tscanFlag;
   Uint32 theadundoindex;
   Uint32 tgflBufType;
-  Uint32 thashvalue;
   Uint32 tgseIsforward;
   Uint32 tsscIsforward;
   Uint32 trscIsforward;
@@ -1462,21 +1365,10 @@ private:
   Uint32 tisoIsforward;
   Uint32 tgseIsLocked;
   Uint32 tsscIsLocked;
-  Uint32 tkey1;
-  Uint32 tkey2;
-  Uint32 tkey3;
-  Uint32 tkey4;
   Uint32 tkeylen;
-  Uint32 tkSize;
-  Uint32 tlhfragbits;
-  Uint32 tlhdirbits;
-  Uint32 tlocalkeylen;
-  Uint32 tmaxloadfactor;
-  Uint32 tminloadfactor;
   Uint32 tmp;
   Uint32 tmpP;
   Uint32 tmpP2;
-  Uint32 taslpDirIndex;
   Uint32 tmp1;
   Uint32 tmp2;
   Uint32 tgflPageindex;
@@ -1490,9 +1382,6 @@ private:
   Uint32 trsbPageindex;
   Uint32 tnciPageindex;
   Uint32 tlastPrevconptr;
-  Uint32 treqinfo;
-  Uint32 transactionid1;
-  Uint32 transactionid2;
   Uint32 tresult;
   Uint32 tslUpdateHeader;
   Uint32 tuserptr;
@@ -1505,15 +1394,12 @@ private:
   Uint32 tgdiPageindex;
   Uint32 tiopIndex;
   Uint32 tnciTmp;
-  Uint32 tlenKeyinfo;
   Uint32 tullIndex;
   Uint32 turlIndex;
   Uint32 tlfrTmp1;
   Uint32 tlfrTmp2;
-  Uint32 tudqeIndex;
   Uint32 tscanTrid1;
   Uint32 tscanTrid2;
-  Uint32 taccscanTmp;
 
   Uint16 clastUndoPageIdWritten;
   Uint32 cactiveCheckpId;
@@ -1557,10 +1443,13 @@ private:
   Uint32 cexcPrevpageindex;
   Uint32 cexcPrevforward;
   Uint32 clocalkey[32];
-  Uint32 ckeys[2048];
+  union {
+  Uint32 ckeys[2048 * MAX_XFRM_MULTIPLY];
+  Uint64 ckeys_align;
+  };
   
   Uint32 c_errorInsert3000_TableId;
-  Uint32 cSrUndoRecords[5];
+  Uint32 cSrUndoRecords[UndoHeader::ZNO_UNDORECORD_TYPES];
 };
 
 #endif

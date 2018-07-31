@@ -2,9 +2,13 @@
 # Test of update statement that uses many tables.
 #
 
+# Requires grants, so won't work with embedded server test
+-- source include/not_embedded.inc
+
 --disable_warnings
 drop table if exists t1,t2,t3;
 drop database if exists mysqltest;
+drop view if exists v1;
 --error 0,1141,1147
 revoke all privileges on mysqltest.t1 from mysqltest_1@localhost;
 --error 0,1141,1147
@@ -457,3 +461,76 @@ create table t2(a int);
 delete from t1,t2 using t1,t2 where t1.a=(select a from t1);
 drop table t1, t2;
 # End of 4.1 tests
+
+#
+# Test for bug #1980.
+#
+--disable_warnings
+create table t1 ( c char(8) not null ) engine=innodb;
+--enable_warnings
+
+insert into t1 values ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9');
+insert into t1 values ('A'),('B'),('C'),('D'),('E'),('F');
+
+alter table t1 add b char(8) not null;
+alter table t1 add a char(8) not null;
+alter table t1 add primary key (a,b,c);
+update t1 set a=c, b=c;
+
+create table t2 like t1;
+insert into t2 select * from t1;
+
+delete t1,t2 from t2,t1 where t1.a<'B' and t2.b=t1.b;
+
+drop table t1,t2;
+
+--disable_warnings
+create table t1 ( c char(8) not null ) engine=bdb;
+--enable_warnings
+
+insert into t1 values ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9');
+insert into t1 values ('A'),('B'),('C'),('D'),('E'),('F');
+
+alter table t1 add b char(8) not null;
+alter table t1 add a char(8) not null;
+alter table t1 add primary key (a,b,c);
+update t1 set a=c, b=c;
+
+create table t2 like t1;
+insert into t2 select * from t1;
+
+delete t1,t2 from t2,t1 where t1.a<'B' and t2.b=t1.b;
+
+drop table t1,t2;
+
+create table t1 (a int, b int);
+insert into t1 values (1, 2), (2, 3), (3, 4);
+create table t2 (a int);
+insert into t2 values (10), (20), (30);
+create view v1 as select a as b, a/10 as a from t2;
+
+connect (locker,localhost,root,,test);
+connection locker;
+lock table t1 write;
+
+connect (changer,localhost,root,,test);
+connection changer;
+send alter table t1 add column c int default 100 after a;
+
+connect (updater,localhost,root,,test);
+connection updater;
+send update t1, v1 set t1.b=t1.a+t1.b+v1.b where t1.a=v1.a;
+
+connection locker;
+sleep 2;
+unlock tables;
+
+connection changer;
+reap;
+
+connection updater;
+reap;
+select * from t1;
+select * from t2;
+drop view v1;
+drop table t1, t2;

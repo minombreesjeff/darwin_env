@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -311,7 +310,6 @@ operator<<(NdbOut& out, const Dbtux::TreePos& pos)
   out << "[TreePos " << hex << &pos;
   out << " [loc " << pos.m_loc << "]";
   out << " [pos " << dec << pos.m_pos << "]";
-  out << " [match " << dec << pos.m_match << "]";
   out << " [dir " << dec << pos.m_dir << "]";
   out << "]";
   return out;
@@ -331,6 +329,7 @@ operator<<(NdbOut& out, const Dbtux::DescAttr& descAttr)
 NdbOut&
 operator<<(NdbOut& out, const Dbtux::ScanOp& scan)
 {
+  Dbtux* tux = (Dbtux*)globalData.getBlock(DBTUX);
   out << "[ScanOp " << hex << &scan;
   out << " [state " << dec << scan.m_state << "]";
   out << " [lockwait " << dec << scan.m_lockwait << "]";
@@ -340,14 +339,20 @@ operator<<(NdbOut& out, const Dbtux::ScanOp& scan)
   out << " [savePointId " << dec << scan.m_savePointId << "]";
   out << " [accLockOp " << hex << scan.m_accLockOp << "]";
   out << " [accLockOps";
-  for (unsigned i = 0; i < Dbtux::MaxAccLockOps; i++) {
-    if (scan.m_accLockOps[i] != RNIL)
-      out << " " << hex << scan.m_accLockOps[i];
+  {
+    DLFifoList<Dbtux::ScanLock>::Head head = scan.m_accLockOps;
+    LocalDLFifoList<Dbtux::ScanLock> list(tux->c_scanLockPool, head);
+    Dbtux::ScanLockPtr lockPtr;
+    list.first(lockPtr);
+    while (lockPtr.i != RNIL) {
+      out << " " << hex << lockPtr.p->m_accLockOp;
+      list.next(lockPtr);
+    }
   }
   out << "]";
   out << " [readCommitted " << dec << scan.m_readCommitted << "]";
   out << " [lockMode " << dec << scan.m_lockMode << "]";
-  out << " [keyInfo " << dec << scan.m_keyInfo << "]";
+  out << " [descending " << dec << scan.m_descending << "]";
   out << " [pos " << scan.m_scanPos << "]";
   out << " [ent " << scan.m_scanEnt << "]";
   for (unsigned i = 0; i <= 1; i++) {
@@ -368,14 +373,12 @@ operator<<(NdbOut& out, const Dbtux::ScanOp& scan)
 NdbOut&
 operator<<(NdbOut& out, const Dbtux::Index& index)
 {
+  Dbtux* tux = (Dbtux*)globalData.getBlock(DBTUX);
   out << "[Index " << hex << &index;
   out << " [tableId " << dec << index.m_tableId << "]";
-  out << " [fragOff " << dec << index.m_fragOff << "]";
   out << " [numFrags " << dec << index.m_numFrags << "]";
   for (unsigned i = 0; i < index.m_numFrags; i++) {
     out << " [frag " << dec << i << " ";
-    // dangerous and wrong
-    Dbtux* tux = (Dbtux*)globalData.getBlock(DBTUX);
     const Dbtux::Frag& frag = *tux->c_fragPool.getPtr(index.m_fragPtrI[i]);
     out << frag;
     out << "]";
@@ -393,7 +396,6 @@ operator<<(NdbOut& out, const Dbtux::Frag& frag)
   out << "[Frag " << hex << &frag;
   out << " [tableId " << dec << frag.m_tableId << "]";
   out << " [indexId " << dec << frag.m_indexId << "]";
-  out << " [fragOff " << dec << frag.m_fragOff << "]";
   out << " [fragId " << dec << frag.m_fragId << "]";
   out << " [descPage " << hex << frag.m_descPage << "]";
   out << " [descOff " << dec << frag.m_descOff << "]";

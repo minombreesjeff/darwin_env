@@ -1,9 +1,8 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2006 MySQL AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,6 +14,11 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 ## Process this file with automake to create Makefile.in
+
+BUILT_SOURCES = mysql_fix_privilege_tables.sql \
+		mysql_fix_privilege_tables_sql.c
+
+EXTRA_PROGRAMS = 	comp_sql
 
 bin_SCRIPTS =		@server_scripts@ \
 			msql2mysql \
@@ -32,8 +36,8 @@ bin_SCRIPTS =		@server_scripts@ \
 			mysqldumpslow \
 			mysql_explain_log \
 			mysql_tableinfo \
-			mysqld_multi \
-			mysql_create_system_tables
+			mysql_upgrade_shell \
+			mysqld_multi
 
 noinst_SCRIPTS =	make_binary_distribution \
 			make_sharedlib_distribution \
@@ -59,17 +63,23 @@ EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			mysql_explain_log.sh \
 			mysqld_multi.sh \
 			mysql_tableinfo.sh \
-			mysqld_safe.sh \
-			mysql_create_system_tables.sh
+			mysql_upgrade_shell.sh \
+			mysqld_safe.sh
 
 EXTRA_DIST =		$(EXTRA_SCRIPTS) \
 			mysqlaccess.conf \
-			mysqlbug
+			mysqlbug \
+			make_win_bin_dist \
+			mysql_fix_privilege_tables_sql.c \
+			mysql_system_tables_fix.sql \
+			CMakeLists.txt
 
-dist_pkgdata_DATA =		fill_help_tables.sql mysql_fix_privilege_tables.sql
+dist_pkgdata_DATA =	fill_help_tables.sql \
+			mysql_fix_privilege_tables.sql \
+			mysql_system_tables.sql \
+			mysql_system_tables_data.sql \
+			mysql_test_data_timezone.sql
 
-# mysqlbug should be distributed built so that people can report build
-# failures with it.
 CLEANFILES =		@server_scripts@ \
 			make_binary_distribution \
 			make_sharedlib_distribution \
@@ -87,14 +97,38 @@ CLEANFILES =		@server_scripts@ \
 			mysqldumpslow \
 			mysql_explain_log \
 			mysql_tableinfo \
+			mysql_upgrade_shell \
 			mysqld_multi \
-			make_win_src_distribution \
-			mysql_create_system_tables
+			make_win_src_distribution
 
-DISTCLEANFILES =	mysqlbug
+# mysqlbug should be distributed built so that people can report build
+# failures with it.
+DISTCLEANFILES =        $(BUILT_SOURCES) mysqlbug
 
 # We want the right version and configure comand line in mysqlbug
 mysqlbug: ${top_builddir}/config.status mysqlbug.sh
+
+# Build mysql_fix_privilege_tables.sql from the files that contain
+# the system tables for this version of MySQL plus any commands
+# needed to upgrade the system tables from an older version
+mysql_fix_privilege_tables.sql: mysql_system_tables.sql \
+				mysql_system_tables_fix.sql
+	@echo "Building $@";
+	@cat mysql_system_tables.sql mysql_system_tables_fix.sql > $@
+
+#
+# Build mysql_fix_privilege_tables_sql.c from
+# mysql_fix_privileges_tables.sql using comp_sql
+# The "sleep" ensures the generated file has a younger timestamp than its source
+# (which may have been generated in this very same "make" run).
+#
+mysql_fix_privilege_tables_sql.c: comp_sql.c mysql_fix_privilege_tables.sql
+	$(MAKE) $(AM_MAKEFLAGS) comp_sql$(EXEEXT)
+	sleep 2
+	$(top_builddir)/scripts/comp_sql$(EXEEXT) \
+	  mysql_fix_privilege_tables \
+	    $(top_srcdir)/scripts/mysql_fix_privilege_tables.sql $@
+
 
 SUFFIXES = .sh
 
@@ -111,6 +145,7 @@ SUFFIXES = .sh
 	  -e 's!@''pkglibdir''@!$(pkglibdir)!g' \
 	  -e 's!@''pkgincludedir''@!$(pkgincludedir)!g' \
 	  -e 's!@''pkgdatadir''@!$(pkgdatadir)!g' \
+	  -e 's!@''sysconfdir''@!$(sysconfdir)!g' \
 	  -e 's!@''CC''@!@CC@!'\
 	  -e 's!@''CXX''@!@CXX@!'\
 	  -e 's!@''GXX''@!@GXX@!'\
@@ -149,6 +184,7 @@ SUFFIXES = .sh
 	$< > $@-t
 	@CHMOD@ +x $@-t
 	@MV@ $@-t $@
+
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

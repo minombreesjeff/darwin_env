@@ -24,8 +24,9 @@ sync_slave_with_master;
 select * from mysqltest.t1;
 connection master;
 --replace_column 2 # 5 #
-show binlog events from 79;
+show binlog events from 98;
 drop database mysqltest;
 sync_slave_with_master;
 
 # End of 4.1 tests
+#

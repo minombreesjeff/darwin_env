@@ -89,6 +89,9 @@ but in the MySQL Embedded Server Library and ibbackup it is not the default
 directory, and we must set the base file path explicitly */
 const char*	fil_path_to_mysql_datadir	= ".";
 
+/* The number of fsyncs done to the log */
+ulint	fil_n_log_flushes                       = 0;
+
 ulint	fil_n_pending_log_flushes		= 0;
 ulint	fil_n_pending_tablespace_flushes	= 0;
 
@@ -96,7 +99,6 @@ ulint	fil_n_pending_tablespace_flushes	= 0;
 fil_addr_t	fil_addr_null = {FIL_NULL, 0};
 
 /* File node of a tablespace or the log data space */
-typedef	struct fil_node_struct	fil_node_t;
 struct fil_node_struct {
 	fil_space_t*	space;	/* backpointer to the space where this node
 				belongs */
@@ -248,9 +250,6 @@ struct fil_system_struct {
 /* The tablespace memory cache. This variable is NULL before the module is
 initialized. */
 fil_system_t*	fil_system	= NULL;
-
-/* The tablespace memory cache hash table size */
-#define	FIL_SYSTEM_HASH_SIZE	50 /* TODO: make bigger! */
 
 
 /************************************************************************
@@ -1322,11 +1321,17 @@ fil_init(
 /*=====*/
 	ulint	max_n_open)	/* in: max number of open files */
 {
+	ulint	hash_size;
+
 	ut_a(fil_system == NULL);
 
-	/*printf("Initializing the tablespace cache with max %lu open files\n",
-							       max_n_open); */
-	fil_system = fil_system_create(FIL_SYSTEM_HASH_SIZE, max_n_open);
+	if (srv_file_per_table) {
+		hash_size = 50000;
+	} else {
+		hash_size = 5000;
+	}
+
+	fil_system = fil_system_create(hash_size, max_n_open);
 }
 
 /***********************************************************************
@@ -1713,30 +1718,38 @@ fil_op_write_log(
 	mtr_t*		mtr)		/* in: mini-transaction handle */
 {
 	byte*	log_ptr;
+	ulint	len;
 
-	log_ptr = mlog_open(mtr, 30);
-	
+	log_ptr = mlog_open(mtr, 11 + 2);
+
+	if (!log_ptr) {
+		/* Logging in mtr is switched off during crash recovery:
+		in that case mlog_open returns NULL */
+		return;
+	}
+
 	log_ptr = mlog_write_initial_log_record_for_file_op(type, space_id, 0,
 								log_ptr, mtr);
 	/* Let us store the strings as null-terminated for easier readability
 	and handling */
 
-	mach_write_to_2(log_ptr, ut_strlen(name) + 1);
+	len = strlen(name) + 1;
+
+	mach_write_to_2(log_ptr, len);
 	log_ptr += 2;
-	
 	mlog_close(mtr, log_ptr);
 
-	mlog_catenate_string(mtr, (byte*) name, ut_strlen(name) + 1);
+	mlog_catenate_string(mtr, (byte*) name, len);
 
 	if (type == MLOG_FILE_RENAME) {
-		log_ptr = mlog_open(mtr, 30);
-		mach_write_to_2(log_ptr, ut_strlen(new_name) + 1);
+		ulint	len = strlen(new_name) + 1;
+		log_ptr = mlog_open(mtr, 2 + len);
+		ut_a(log_ptr);
+		mach_write_to_2(log_ptr, len);
 		log_ptr += 2;
-	
 		mlog_close(mtr, log_ptr);
 
-		mlog_catenate_string(mtr, (byte*) new_name,
-						ut_strlen(new_name) + 1);
+		mlog_catenate_string(mtr, (byte*) new_name, len);
 	}
 }
 #endif
@@ -2676,8 +2689,7 @@ fil_open_single_table_tablespace(
 "InnoDB: It is also possible that this is a temporary table #sql...,\n"
 "InnoDB: and MySQL removed the .ibd file for this.\n"
 "InnoDB: Please refer to\n"
-"InnoDB:"
-" http://dev.mysql.com/doc/mysql/en/InnoDB_troubleshooting_datadict.html\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/innodb-troubleshooting.html\n"
 "InnoDB: for how to resolve the issue.\n", stderr);
 
 		mem_free(filepath);
@@ -2716,8 +2728,7 @@ fil_open_single_table_tablespace(
 "InnoDB: Have you moved InnoDB .ibd files around without using the\n"
 "InnoDB: commands DISCARD TABLESPACE and IMPORT TABLESPACE?\n"
 "InnoDB: Please refer to\n"
-"InnoDB:"
-" http://dev.mysql.com/doc/mysql/en/InnoDB_troubleshooting_datadict.html\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/innodb-troubleshooting.html\n"
 "InnoDB: for how to resolve the issue.\n", (ulong) space_id, (ulong) id);
 
 		ret = FALSE;
@@ -3362,8 +3373,7 @@ fil_space_for_table_exists_in_mem(
 	error_exit:
 		fputs(
 "InnoDB: Please refer to\n"
-"InnoDB:"
-" http://dev.mysql.com/doc/mysql/en/InnoDB_troubleshooting_datadict.html\n"
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/innodb-troubleshooting.html\n"
 "InnoDB: for how to resolve the issue.\n", stderr);
 
 		mem_free(path);
@@ -3547,6 +3557,7 @@ fil_extend_space_to_desired_size(
 
 	*actual_size = space->size;
 
+#ifndef UNIV_HOTBACKUP
 	if (space_id == 0) {
 		ulint pages_per_mb = (1024 * 1024) / UNIV_PAGE_SIZE;
 
@@ -3556,6 +3567,7 @@ fil_extend_space_to_desired_size(
 		srv_data_file_sizes[srv_n_data_files - 1] =
 				(node->size / pages_per_mb) * pages_per_mb;
 	}
+#endif /* !UNIV_HOTBACKUP */
 
 	/*
         printf("Extended %s to %lu, actual size %lu pages\n", space->name,
@@ -3811,6 +3823,31 @@ fil_node_complete_io(
 }
 
 /************************************************************************
+Report information about an invalid page access. */
+static
+void
+fil_report_invalid_page_access(
+/*===========================*/
+	ulint		block_offset,	/* in: block offset */
+	ulint		space_id,	/* in: space id */
+	const char*	space_name,	/* in: space name */
+	ulint		byte_offset,	/* in: byte offset */
+	ulint		len,		/* in: I/O length */
+	ulint		type)		/* in: I/O type */
+{
+	fprintf(stderr,
+	"InnoDB: Error: trying to access page number %lu in space %lu,\n"
+	"InnoDB: space name %s,\n"
+	"InnoDB: which is outside the tablespace bounds.\n"
+	"InnoDB: Byte offset %lu, len %lu, i/o type %lu.\n"
+	"InnoDB: If you get this error at mysqld startup, please check that\n"
+	"InnoDB: your my.cnf matches the ibdata files that you have in the\n"
+	"InnoDB: MySQL server.\n",
+		(ulong) block_offset, (ulong) space_id, space_name,
+		(ulong) byte_offset, (ulong) len, (ulong) type);
+}
+
+/************************************************************************
 Reads or writes data. This operation is asynchronous (aio). */
 
 ulint
@@ -3884,6 +3921,12 @@ fil_io(
 		mode = OS_AIO_NORMAL;
 	}
 
+        if (type == OS_FILE_READ) {
+                srv_data_read+= len;
+        } else if (type == OS_FILE_WRITE) {
+                srv_data_written+= len;
+        }
+
 	/* Reserve the fil_system mutex and make sure that we can open at
 	least one file while holding it, if the file is not already open */
 
@@ -3910,14 +3953,8 @@ fil_io(
 
 	for (;;) {
 		if (node == NULL) {
-			fprintf(stderr,
-	"InnoDB: Error: trying to access page number %lu in space %lu,\n"
-	"InnoDB: space name %s,\n"
-	"InnoDB: which is outside the tablespace bounds.\n"
-	"InnoDB: Byte offset %lu, len %lu, i/o type %lu\n", 
- 			(ulong) block_offset, (ulong) space_id,
-			space->name, (ulong) byte_offset, (ulong) len,
-			(ulong) type);
+			fil_report_invalid_page_access(block_offset, space_id,
+				space->name, byte_offset, len, type);
  			
 			ut_error;
 		}
@@ -3946,15 +3983,10 @@ fil_io(
 	if (space->purpose == FIL_TABLESPACE && space->id != 0
 	    && node->size <= block_offset) {
 
-	        fprintf(stderr,
-	"InnoDB: Error: trying to access page number %lu in space %lu,\n"
-	"InnoDB: space name %s,\n"
-	"InnoDB: which is outside the tablespace bounds.\n"
-	"InnoDB: Byte offset %lu, len %lu, i/o type %lu\n", 
- 			(ulong) block_offset, (ulong) space_id,
-			space->name, (ulong) byte_offset, (ulong) len,
-			(ulong) type);
- 		ut_a(0);
+		fil_report_invalid_page_access(block_offset, space_id,
+			space->name, byte_offset, len, type);
+
+		ut_error;
 	}
 
 	/* Now we have made the changes in the data structures of system */
@@ -4085,7 +4117,7 @@ fil_aio_wait(
 	if (os_aio_use_native_aio) {
 		srv_set_io_thread_op_info(segment, "native aio handle");
 #ifdef WIN_ASYNC_IO
-		ret = os_aio_windows_handle(segment, 0, (void**) &fil_node,
+		ret = os_aio_windows_handle(segment, 0, &fil_node,
 					    &message, &type);
 #elif defined(POSIX_ASYNC_IO)
 		ret = os_aio_posix_handle(segment, &fil_node, &message);
@@ -4096,7 +4128,7 @@ fil_aio_wait(
 	} else {
 		srv_set_io_thread_op_info(segment, "simulated aio handle");
 
-		ret = os_aio_simulated_handle(segment, (void**) &fil_node,
+		ret = os_aio_simulated_handle(segment, &fil_node,
 	                                               &message, &type);
 	}
 	
@@ -4169,6 +4201,7 @@ fil_flush(
 				fil_n_pending_tablespace_flushes++;
 			} else {
 				fil_n_pending_log_flushes++;
+				fil_n_log_flushes++;
 			}
 #ifdef __WIN__
 			if (node->is_raw_disk) {
@@ -4252,29 +4285,47 @@ fil_flush_file_spaces(
 {
 	fil_system_t*	system	= fil_system;
 	fil_space_t*	space;
+	ulint*		space_ids;
+	ulint		n_space_ids;
+	ulint		i;
 
 	mutex_enter(&(system->mutex));
 
-	space = UT_LIST_GET_FIRST(system->unflushed_spaces);
+	n_space_ids = UT_LIST_GET_LEN(system->unflushed_spaces);
+	if (n_space_ids == 0) {
 
-	while (space) {
+		mutex_exit(&system->mutex);
+		return;
+	}
+
+	/* Assemble a list of space ids to flush.  Previously, we
+	traversed system->unflushed_spaces and called UT_LIST_GET_NEXT()
+	on a space that was just removed from the list by fil_flush().
+	Thus, the space could be dropped and the memory overwritten. */
+	space_ids = mem_alloc(n_space_ids * sizeof *space_ids);
+
+	n_space_ids = 0;
+
+	for (space = UT_LIST_GET_FIRST(system->unflushed_spaces);
+	     space;
+	     space = UT_LIST_GET_NEXT(unflushed_spaces, space)) {
+
 		if (space->purpose == purpose && !space->is_being_deleted) {
 
-			space->n_pending_flushes++; /* prevent dropping of the
-						    space while we are
-						    flushing */
-			mutex_exit(&(system->mutex));
-
-			fil_flush(space->id);
-
-			mutex_enter(&(system->mutex));
-
-			space->n_pending_flushes--;
+			space_ids[n_space_ids++] = space->id;
 		}
-		space = UT_LIST_GET_NEXT(unflushed_spaces, space);
 	}
-	
-	mutex_exit(&(system->mutex));
+
+	mutex_exit(&system->mutex);
+
+	/* Flush the spaces.  It will not hurt to call fil_flush() on
+	a non-existing space id. */
+	for (i = 0; i < n_space_ids; i++) {
+
+		fil_flush(space_ids[i]);
+	}
+
+	mem_free(space_ids);
 }
 
 /**********************************************************************

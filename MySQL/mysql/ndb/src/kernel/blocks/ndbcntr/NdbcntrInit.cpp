@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -63,6 +62,7 @@ Ndbcntr::Ndbcntr(const class Configuration & conf):
   
   // Received signals
   addRecSignal(GSN_DUMP_STATE_ORD, &Ndbcntr::execDUMP_STATE_ORD);
+  addRecSignal(GSN_READ_CONFIG_REQ, &Ndbcntr::execREAD_CONFIG_REQ);
   addRecSignal(GSN_STTOR, &Ndbcntr::execSTTOR);
   addRecSignal(GSN_TCSEIZECONF, &Ndbcntr::execTCSEIZECONF);
   addRecSignal(GSN_TCSEIZEREF, &Ndbcntr::execTCSEIZEREF);
@@ -80,7 +80,6 @@ Ndbcntr::Ndbcntr(const class Configuration & conf):
   addRecSignal(GSN_NDB_STARTCONF, &Ndbcntr::execNDB_STARTCONF);
   addRecSignal(GSN_READ_NODESREQ, &Ndbcntr::execREAD_NODESREQ);
   addRecSignal(GSN_NDB_STARTREF, &Ndbcntr::execNDB_STARTREF);
-  addRecSignal(GSN_SET_VAR_REQ, &Ndbcntr::execSET_VAR_REQ);
 
   addRecSignal(GSN_STOP_PERM_REF, &Ndbcntr::execSTOP_PERM_REF);
   addRecSignal(GSN_STOP_PERM_CONF, &Ndbcntr::execSTOP_PERM_CONF);

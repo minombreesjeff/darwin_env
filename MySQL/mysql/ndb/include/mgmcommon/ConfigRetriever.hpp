@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,10 +27,12 @@
 class ConfigRetriever {
 public:
   ConfigRetriever(const char * _connect_string,
-		  Uint32 version, Uint32 nodeType);
+		  Uint32 version, Uint32 nodeType,
+		  const char * _bind_address = 0);
   ~ConfigRetriever();
 
   int do_connect(int no_retries, int retry_delay_in_seconds, int verbose);
+  int disconnect();
   
   /**
    * Get configuration for current node.
@@ -75,6 +76,9 @@ public:
   Uint32 get_mgmd_port() const;
   const char *get_mgmd_host() const;
   const char *get_connectstring(char *buf, int buf_sz) const;
+  NdbMgmHandle get_mgmHandle() { return m_handle; };
+  NdbMgmHandle* get_mgmHandlePtr() { return &m_handle; };
+  void end_session(bool end) { m_end_session= end; };
 
   Uint32 get_configuration_nodeid() const;
 private:
@@ -89,6 +93,8 @@ private:
   void setError(ErrorType, const char * errorMsg);
   
   Uint32      _ownNodeId;
+  bool m_end_session;
+
   /*
   Uint32      m_mgmd_port;
   const char *m_mgmd_host;

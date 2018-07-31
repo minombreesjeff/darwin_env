@@ -5,9 +5,6 @@
 --disable_warnings
 drop table if exists t1,t2,t3,t4,t5,t6;
 --enable_warnings
-# PS doesn't work correctly with found_rows: to be fixed
---disable_ps_protocol
-
 
 CREATE TABLE t1 (a int not null, b char (10) not null);
 insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
@@ -258,7 +255,7 @@ create temporary table t1 select a from t1 union select a from t2;
 drop temporary table t1;
 --error 1093
 create table t1 select a from t1 union select a from t2;
---error 1109
+--error 1054
 select a from t1 union select a from t2 order by t2.a;
 drop table t1,t2;
 
@@ -393,8 +390,8 @@ create table t1 SELECT da from t2 UNION select dt from t2;
 select * from t1;
 show create table t1;
 drop table t1;
-create table t1 SELECT dt from t2 UNION select sc from t2;
-select * from t1;
+create table t1 SELECT dt from t2 UNION select trim(sc) from t2;
+select trim(dt) from t1;
 show create table t1;
 drop table t1;
 create table t1 SELECT dt from t2 UNION select sv from t2;
@@ -744,6 +741,36 @@ create table t2 select a from t1 union select b from t1;
 show columns from t2;
 drop table t2, t1;
 
+# 
+# Bug #14216: UNION + DECIMAL wrong values in result
+#
+create table t1 (f1 decimal(60,25), f2 decimal(60,25));
+insert into t1 values (0.0,0.0);
+select f1 from t1 union all select f2 from t1;
+select 'XXXXXXXXXXXXXXXXXXXX' as description, f1 from t1
+union all
+select 'YYYYYYYYYYYYYYYYYYYY' as description, f2 from t1;
+drop table t1;
+create table t1 (f1 decimal(60,24), f2 decimal(60,24));
+insert into t1 values (0.0,0.0);
+select f1 from t1 union all select f2 from t1;
+select 'XXXXXXXXXXXXXXXXXXXX' as description, f1 from t1
+union all
+select 'YYYYYYYYYYYYYYYYYYYY' as description, f2 from t1;
+drop table t1;
+
+#
+# Test that union with VARCHAR produces dynamic row tables
+#
+
+create table t1 (a varchar(5));
+create table t2 select * from t1 union select 'abcdefghijkl';
+show create table t2;
+select row_format from information_schema.TABLES where table_schema="test" and table_name="t2";
+alter table t2 ROW_FORMAT=fixed;
+show create table t2;
+drop table t1,t2;
+
 #
 # correct conversion long string to TEXT (BUG#10025)
 #
@@ -765,22 +792,89 @@ select 99 union all select id from t1 order by 1;
 select id from t1 union all select 99 order by 1;
 drop table t1;
 
-# 
-# Bug #14216: UNION + DECIMAL wrong values in result
-#
-create table t1 (f1 decimal(60,25), f2 decimal(60,25));
-insert into t1 values (0.0,0.0);
-select f1 from t1 union all select f2 from t1;
-select 'XXXXXXXXXXXXXXXXXXXX' as description, f1 from t1
-union all
-select 'YYYYYYYYYYYYYYYYYYYY' as description, f2 from t1;
-drop table t1;
-create table t1 (f1 decimal(60,24), f2 decimal(60,24));
-insert into t1 values (0.0,0.0);
-select f1 from t1 union all select f2 from t1;
-select 'XXXXXXXXXXXXXXXXXXXX' as description, f1 from t1
-union all
-select 'YYYYYYYYYYYYYYYYYYYY' as description, f2 from t1;
-drop table t1;
-
 # End of 4.1 tests
+
+#
+# Bug#12185: Data type aggregation may produce wrong result
+#
+create table t1(f1 char(1), f2 char(5), f3 binary(1), f4 binary(5), f5 timestamp, f6 varchar(1) character set utf8 collate utf8_general_ci, f7 text);
+create table t2 as select *, f6 as f8 from t1 union select *, f7 from t1;
+show create table t2;
+drop table t1, t2;
+
+#
+# Bug#18175: Union select over 129 tables with a sum function fails.
+#
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1)) union
+(select avg(1)) union (select avg(1)) union (select avg(1));
+
+#
+# Bug #16881: password() and union select
+# (The issue was poor handling of character set aggregation.)
+#
+select _utf8'12' union select _latin1'12345';
+
+#
+# Bug #26661: UNION with ORDER BY undefined column in FROM list
+#
+
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (3),(1),(2),(4),(1);
+
+SELECT a FROM (SELECT a FROM t1 UNION SELECT a FROM t1 ORDER BY a) AS test;
+--error 1054 
+SELECT a FROM (SELECT a FROM t1 UNION SELECT a FROM t1 ORDER BY c) AS test;
+
+DROP TABLE t1;
+
+#
+# Bug#23345: Wrongly allowed INTO in a non-last select of a UNION.
+#
+--error 1221
+(select 1 into @var) union (select 1);
+(select 1) union (select 1 into @var);
+select @var;
+--error 1172
+(select 2) union (select 1 into @var);
+--echo End of 5.0 tests

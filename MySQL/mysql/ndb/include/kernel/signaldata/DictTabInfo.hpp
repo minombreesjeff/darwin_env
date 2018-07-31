@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,18 +23,40 @@
 #include <trigger_definitions.h>
 #include <NdbSqlUtil.hpp>
 
+#ifndef my_decimal_h
+
+// sql/my_decimal.h requires many more sql/*.h new to ndb
+// for now, copy the bit we need  TODO proper fix
+
+#define DECIMAL_MAX_LENGTH ((8 * 9) - 8)
+
+#ifndef NOT_FIXED_DEC
+#define NOT_FIXED_DEC                   31
+#endif
+
+C_MODE_START
+extern int decimal_bin_size(int, int);
+C_MODE_END
+
+inline int my_decimal_get_binary_size(uint precision, uint scale)
+{
+  return decimal_bin_size((int)precision, (int)scale);
+}
+
+#endif
+
 #define DTIMAP(x, y, z) \
-  { DictTabInfo::y, offsetof(x, z), SimpleProperties::Uint32Value, 0, (~0), 0 }
+  { DictTabInfo::y, my_offsetof(x, z), SimpleProperties::Uint32Value, 0, (~0), 0 }
 
 #define DTIMAP2(x, y, z, u, v) \
-  { DictTabInfo::y, offsetof(x, z), SimpleProperties::Uint32Value, u, v, 0 }
+  { DictTabInfo::y, my_offsetof(x, z), SimpleProperties::Uint32Value, u, v, 0 }
 
 #define DTIMAPS(x, y, z, u, v) \
-  { DictTabInfo::y, offsetof(x, z), SimpleProperties::StringValue, u, v, 0 }
+  { DictTabInfo::y, my_offsetof(x, z), SimpleProperties::StringValue, u, v, 0 }
 
 #define DTIMAPB(x, y, z, u, v, l) \
-  { DictTabInfo::y, offsetof(x, z), SimpleProperties::BinaryValue, u, v, \
-                     offsetof(x, l) }
+  { DictTabInfo::y, my_offsetof(x, z), SimpleProperties::BinaryValue, u, v, \
+                     my_offsetof(x, l) }
 
 #define DTIBREAK(x) \
   { DictTabInfo::x, 0, SimpleProperties::InvalidValue, 0, 0, 0 }
@@ -85,10 +106,6 @@ public:
     MaxLoadFactor      = 11, //Default 80
     KeyLength          = 12, //Default 1  (No of words in primary key)
     FragmentTypeVal    = 13, //Default AllNodesSmallTable
-    TableStorageVal    = 14, //Default StorageType::MainMemory
-    ScanOptimised      = 15, //Default updateOptimised
-    FragmentKeyTypeVal = 16, //Default PrimaryKey
-    SecondTableId      = 17, //Mandatory between DICT's otherwise not allowed
     TableTypeVal       = 18, //Default TableType::UserTable
     PrimaryTable       = 19, //Mandatory for index otherwise RNIL
     PrimaryTableId     = 20, //ditto
@@ -99,22 +116,30 @@ public:
     CustomTriggerId    = 25,
     FrmLen             = 26,
     FrmData            = 27,
+
     FragmentCount      = 128, // No of fragments in table (!fragment replicas)
+    FragmentDataLen    = 129,
+    FragmentData       = 130, // CREATE_FRAGMENTATION reply
+
+    MaxRowsLow         = 139,
+    MaxRowsHigh        = 140,
+    MinRowsLow         = 143,
+    MinRowsHigh        = 144,
+
+    SingleUserMode     = 152,
+
     TableEnd           = 999,
     
     AttributeName          = 1000, // String, Mandatory
     AttributeId        = 1001, //Mandatory between DICT's otherwise not allowed
-    AttributeType          = 1002, //Default UnSignedType
+    AttributeType          = 1002, //for osu 4.1->5.0.x
     AttributeSize          = 1003, //Default DictTabInfo::a32Bit
     AttributeArraySize     = 1005, //Default 1
     AttributeKeyFlag       = 1006, //Default noKey
     AttributeStorage       = 1007, //Default MainMemory
     AttributeNullableFlag  = 1008, //Default NotNullable
-    AttributeDGroup        = 1009, //Default NotDGroup
     AttributeDKey          = 1010, //Default NotDKey
-    AttributeStoredInd     = 1011, //Default NotStored
-    AttributeGroup         = 1012, //Default 0
-    AttributeExtType       = 1013, //Default 0 (undefined)
+    AttributeExtType       = 1013, //Default ExtUnsigned
     AttributeExtPrecision  = 1014, //Default 0
     AttributeExtScale      = 1015, //Default 0
     AttributeExtLength     = 1016, //Default 0
@@ -127,12 +152,7 @@ public:
   // have a default value. Thus the default values are part of the protocol.
   // ----------------------------------------------------------------------
 
-  // FragmentKeyType constants
-  enum FragmentKeyType { 
-    PrimaryKey = 0,
-    DistributionKey = 1,
-    DistributionGroup = 2
-  };
+
   
   // FragmentType constants
   enum FragmentType {
@@ -142,12 +162,6 @@ public:
     SingleFragment = 3
   };
   
-  // TableStorage AND AttributeStorage constants
-  enum StorageType {
-    MainMemory = 0,
-    DiskMemory = 1
-  };
-
   // TableType constants + objects
   enum TableType {
     UndefTableType = 0,
@@ -220,40 +234,18 @@ public:
     StorePermanent = 2
   };
   
-  // ScanOptimised constants
-  STATIC_CONST( updateOptimised = 0 );
-  STATIC_CONST( scanOptimised = 1 );
-  
-  // AttributeType constants
-  STATIC_CONST( SignedType = 0 );
-  STATIC_CONST( UnSignedType = 1 );
-  STATIC_CONST( FloatingPointType = 2 );
-  STATIC_CONST( StringType = 3 );
-  
   // AttributeSize constants
+  STATIC_CONST( aBit = 0 );
   STATIC_CONST( an8Bit = 3 );
   STATIC_CONST( a16Bit = 4 );
   STATIC_CONST( a32Bit = 5 );
   STATIC_CONST( a64Bit = 6 );
   STATIC_CONST( a128Bit = 7 );
-  
-  // AttributeDGroup constants
-  STATIC_CONST( NotDGroup = 0 );
-  STATIC_CONST( DGroup = 1 );
-  
-  // AttributeDKey constants
-  STATIC_CONST( NotDKey = 0 );
-  STATIC_CONST( DKey = 1 );
-  
-  // AttributeStoredInd constants
-  STATIC_CONST( NotStored = 0 );
-  STATIC_CONST( Stored = 1 );
- 
+    
   // Table data interpretation
   struct Table {
     char   TableName[MAX_TAB_NAME_SIZE];
     Uint32 TableId;
-    Uint32 SecondTableId;
     char   PrimaryTable[MAX_TAB_NAME_SIZE]; // Only used when "index"
     Uint32 PrimaryTableId;
     Uint32 TableLoggedFlag;
@@ -267,8 +259,6 @@ public:
     Uint32 KeyLength;
     Uint32 FragmentType;
     Uint32 TableStorage;
-    Uint32 ScanOptimised;
-    Uint32 FragmentKeyType;
     Uint32 TableType;
     Uint32 TableVersion;
     Uint32 IndexState;
@@ -279,7 +269,15 @@ public:
     Uint32 FrmLen;
     char   FrmData[MAX_FRM_DATA_SIZE];
     Uint32 FragmentCount;
-
+    Uint32 FragmentDataLen;
+    Uint16 FragmentData[(MAX_FRAGMENT_DATA_BYTES+1)/2];
+    Uint32 MaxRowsLow;
+    Uint32 MaxRowsHigh;
+    Uint32 MinRowsLow;
+    Uint32 MinRowsHigh;
+    Uint32 SingleUserMode;
+    
+    Table() {}
     void init();
   };
 
@@ -305,6 +303,8 @@ public:
     ExtDouble = NdbSqlUtil::Type::Double,
     ExtOlddecimal = NdbSqlUtil::Type::Olddecimal,
     ExtOlddecimalunsigned = NdbSqlUtil::Type::Olddecimalunsigned,
+    ExtDecimal = NdbSqlUtil::Type::Decimal,
+    ExtDecimalunsigned = NdbSqlUtil::Type::Decimalunsigned,
     ExtChar = NdbSqlUtil::Type::Char,
     ExtVarchar = NdbSqlUtil::Type::Varchar,
     ExtBinary = NdbSqlUtil::Type::Binary,
@@ -313,6 +313,9 @@ public:
     ExtDate = NdbSqlUtil::Type::Date,
     ExtBlob = NdbSqlUtil::Type::Blob,
     ExtText = NdbSqlUtil::Type::Text,
+    ExtBit = NdbSqlUtil::Type::Bit,
+    ExtLongvarchar = NdbSqlUtil::Type::Longvarchar,
+    ExtLongvarbinary = NdbSqlUtil::Type::Longvarbinary,
     ExtTime = NdbSqlUtil::Type::Time,
     ExtYear = NdbSqlUtil::Type::Year,
     ExtTimestamp = NdbSqlUtil::Type::Timestamp
@@ -322,16 +325,12 @@ public:
   struct Attribute {
     char   AttributeName[MAX_TAB_NAME_SIZE];
     Uint32 AttributeId;
-    Uint32 AttributeType;
+    Uint32 AttributeType; // for osu 4.1->5.0.x
     Uint32 AttributeSize;
     Uint32 AttributeArraySize;
     Uint32 AttributeKeyFlag;
-    Uint32 AttributeStorage;
     Uint32 AttributeNullableFlag;
-    Uint32 AttributeDGroup;
     Uint32 AttributeDKey;
-    Uint32 AttributeStoredInd;
-    Uint32 AttributeGroup;
     Uint32 AttributeExtType;
     Uint32 AttributeExtPrecision;
     Uint32 AttributeExtScale;
@@ -339,6 +338,7 @@ public:
     Uint32 AttributeAutoIncrement;
     char   AttributeDefaultValue[MAX_ATTR_DEFAULT_VALUE_SIZE];
     
+    Attribute() {}
     void init();
 
     inline
@@ -347,132 +347,125 @@ public:
       return ((1 << AttributeSize) * AttributeArraySize + 31) >> 5;
     }
 
-    // translate to old kernel types and sizes
+    // compute old-sty|e attribute size and array size
     inline bool
     translateExtType() {
       switch (AttributeExtType) {
       case DictTabInfo::ExtUndefined:
-        break;
+        return false;
       case DictTabInfo::ExtTinyint:
-        AttributeType = DictTabInfo::SignedType;
-        AttributeSize = DictTabInfo::an8Bit;
-        AttributeArraySize = AttributeExtLength;
-	return true;
       case DictTabInfo::ExtTinyunsigned:
-        AttributeType = DictTabInfo::UnSignedType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = AttributeExtLength;
-	return true;
+	break;
       case DictTabInfo::ExtSmallint:
-        AttributeType = DictTabInfo::SignedType;
-        AttributeSize = DictTabInfo::a16Bit;
-        AttributeArraySize = AttributeExtLength;
-	return true;
       case DictTabInfo::ExtSmallunsigned:
-        AttributeType = DictTabInfo::UnSignedType;
         AttributeSize = DictTabInfo::a16Bit;
         AttributeArraySize = AttributeExtLength;
-	return true;
+	break;
       case DictTabInfo::ExtMediumint:
-        AttributeType = DictTabInfo::SignedType;
-        AttributeSize = DictTabInfo::an8Bit;
-        AttributeArraySize = 3 * AttributeExtLength;
-	return true;
       case DictTabInfo::ExtMediumunsigned:
-        AttributeType = DictTabInfo::UnSignedType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = 3 * AttributeExtLength;
-	return true;
+	break;
       case DictTabInfo::ExtInt:	
-        AttributeType = DictTabInfo::SignedType;
-        AttributeSize = DictTabInfo::a32Bit;
-        AttributeArraySize = AttributeExtLength;
-        return true;
       case DictTabInfo::ExtUnsigned:
-        AttributeType = DictTabInfo::UnSignedType;
         AttributeSize = DictTabInfo::a32Bit;
         AttributeArraySize = AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtBigint:
-        AttributeType = DictTabInfo::SignedType;
-        AttributeSize = DictTabInfo::a64Bit;
-        AttributeArraySize = AttributeExtLength;
-        return true;
       case DictTabInfo::ExtBigunsigned:
-        AttributeType = DictTabInfo::UnSignedType;
         AttributeSize = DictTabInfo::a64Bit;
         AttributeArraySize = AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtFloat:
-        AttributeType = DictTabInfo::FloatingPointType;
         AttributeSize = DictTabInfo::a32Bit;
         AttributeArraySize = AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtDouble:
-        AttributeType = DictTabInfo::FloatingPointType;
         AttributeSize = DictTabInfo::a64Bit;
         AttributeArraySize = AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtOlddecimal:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize =
           (1 + AttributeExtPrecision + (int(AttributeExtScale) > 0)) *
           AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtOlddecimalunsigned:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize =
           (0 + AttributeExtPrecision + (int(AttributeExtScale) > 0)) *
           AttributeExtLength;
-        return true;
+        break;
+      case DictTabInfo::ExtDecimal:
+      case DictTabInfo::ExtDecimalunsigned:
+        {
+          // copy from Field_new_decimal ctor
+          uint precision = AttributeExtPrecision;
+          uint scale = AttributeExtScale;
+          if (precision > DECIMAL_MAX_LENGTH || scale >= NOT_FIXED_DEC)
+            precision = DECIMAL_MAX_LENGTH;
+          uint bin_size = my_decimal_get_binary_size(precision, scale);
+          AttributeSize = DictTabInfo::an8Bit;
+          AttributeArraySize = bin_size * AttributeExtLength;
+        }
+        break;
       case DictTabInfo::ExtChar:
       case DictTabInfo::ExtBinary:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtVarchar:
       case DictTabInfo::ExtVarbinary:
-        AttributeType = DictTabInfo::StringType;
+        if (AttributeExtLength > 0xff)
+          return false;
         AttributeSize = DictTabInfo::an8Bit;
-        AttributeArraySize = AttributeExtLength + 2;
-        return true;
+        AttributeArraySize = AttributeExtLength + 1;
+        break;
       case DictTabInfo::ExtDatetime:
-        AttributeType = DictTabInfo::StringType;
+        // to fix
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = 8 * AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtDate:
-        AttributeType = DictTabInfo::StringType;
+        // to fix
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = 3 * AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtBlob:
       case DictTabInfo::ExtText:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
-        // head + inline part [ attr precision lower half ]
+        // head + inline part (length in precision lower half)
         AttributeArraySize = (NDB_BLOB_HEAD_SIZE << 2) + (AttributeExtPrecision & 0xFFFF);
-        return true;
+        break;
+      case DictTabInfo::ExtBit:
+	AttributeSize = DictTabInfo::aBit;
+	AttributeArraySize = AttributeExtLength;
+	break;
+      case DictTabInfo::ExtLongvarchar:
+      case DictTabInfo::ExtLongvarbinary:
+        if (AttributeExtLength > 0xffff)
+          return false;
+        AttributeSize = DictTabInfo::an8Bit;
+        AttributeArraySize = AttributeExtLength + 2;
+        break;
       case DictTabInfo::ExtTime:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = 3 * AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtYear:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = 1 * AttributeExtLength;
-        return true;
+        break;
       case DictTabInfo::ExtTimestamp:
-        AttributeType = DictTabInfo::StringType;
         AttributeSize = DictTabInfo::an8Bit;
         AttributeArraySize = 4 * AttributeExtLength;
-        return true;
+        break;
+      default:
+        return false;
       };
-      return false;
+      return true;
     }
     
     inline void print(FILE *out) {
@@ -483,9 +476,7 @@ public:
       fprintf(out, "AttributeKeyFlag = %d\n", AttributeKeyFlag);
       fprintf(out, "AttributeStorage = %d\n", AttributeStorage);
       fprintf(out, "AttributeNullableFlag = %d\n", AttributeNullableFlag);
-      fprintf(out, "AttributeDGroup = %d\n", AttributeDGroup);
       fprintf(out, "AttributeDKey = %d\n", AttributeDKey);
-      fprintf(out, "AttributeStoredInd = %d\n", AttributeStoredInd);
       fprintf(out, "AttributeGroup = %d\n", AttributeGroup);
       fprintf(out, "AttributeAutoIncrement = %d\n", AttributeAutoIncrement);
       fprintf(out, "AttributeExtType = %d\n", AttributeExtType);
@@ -519,6 +510,22 @@ private:
    */
   
   Uint32 tabInfoData[DataLength];
+
+public:
+  enum Depricated 
+  {
+    AttributeDGroup    = 1009, //Default NotDGroup
+    AttributeStoredInd = 1011, //Default NotStored
+    SecondTableId      = 17, //Mandatory between DICT's otherwise not allowed
+    FragmentKeyTypeVal = 16 //Default PrimaryKey
+  };
+  
+  enum Unimplemented 
+  {
+    TableStorageVal    = 14, //Default StorageType::MainMemory
+    ScanOptimised      = 15, //Default updateOptimised
+    AttributeGroup     = 1012 //Default 0
+  };
 };
 
 #endif

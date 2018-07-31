@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,7 +39,13 @@ int main(int argc, const char** argv){
   }
 
   // Connect to Ndb
-  Ndb MyNdb( "TEST_DB" );
+  Ndb_cluster_connection con;
+  if(con.connect(12, 5, 1) != 0)
+  {
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+
+  Ndb MyNdb(&con, "TEST_DB" );
   
   if(MyNdb.init() != 0){
     ERR(MyNdb.getNdbError());

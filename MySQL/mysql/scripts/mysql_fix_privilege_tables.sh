@@ -1,4 +1,19 @@
 #!/bin/sh
+# Copyright (C) 2000-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 # This script is a wrapper to pipe the mysql_fix_privilege_tables.sql
 # through the mysql client program to the mysqld server
 
@@ -7,13 +22,14 @@ password=""
 host="localhost"
 user="root"
 sql_only=0
-basedir=""
+basedir="@prefix@"
 verbose=0
 args=""
 port=""
 socket=""
 database="mysql"
 bindir=""
+pkgdatadir="@pkgdatadir@"
 print_defaults_bindir="."
 
 file=mysql_fix_privilege_tables.sql
@@ -89,40 +105,35 @@ done
 parse_arguments `$print_defaults $defaults mysql_install_db mysql_fix_privilege_tables`
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 
-if test -z "$basedir"
-then
-  basedir=@prefix@
-  if test -z "$bindir"
-  then
-     bindir=@bindir@
-  fi
-  execdir=@libexecdir@ 
-  pkgdatadir=@pkgdatadir@
-else
-  if test -z "$bindir"
-  then
-    bindir="$basedir/bin"
-  fi
-  if test -x "$basedir/libexec/mysqld"
-  then
-    execdir="$basedir/libexec"
-  elif test -x "@libexecdir@/mysqld"
-  then
-    execdir="@libexecdir@"
-  else
-    execdir="$basedir/bin"
-  fi
-fi
-
 if test -z "$password"
 then
   password=$old_style_password
 fi
 
-cmd="$bindir/mysql --no-defaults --force --user=$user --host=$host"
-if test ! -z "$password" ; then
-  cmd="$cmd --password=$password"
+# Find where 'mysql' command is located
+
+dirname=`dirname "$0"`
+
+if test -z "$bindir"
+then
+  for i in @bindir@ $basedir/bin "$dirname/../client"
+  do
+    if test -f $i/mysql
+    then
+      bindir=$i
+      break
+    fi
+  done
 fi
+
+if test -z "$bindir"
+then
+  echo "Could not find MySQL command-line client (mysql)."
+  echo "Please use --basedir to specify the directory where MySQL is installed."
+  exit 1
+fi
+
+cmd="$bindir/mysql --no-defaults --force --user=$user --host=$host"
 if test ! -z "$port"; then
   cmd="$cmd --port=$port"
 fi
@@ -138,7 +149,7 @@ fi
 
 # Find where first mysql_fix_privilege_tables.sql is located
 for i in $basedir/support-files $basedir/share $basedir/share/mysql \
-        $basedir/scripts @pkgdatadir@ . ./scripts
+        $basedir/scripts $pkgdatadir . "$dirname"
 do
   if test -f $i/$file
   then
@@ -164,10 +175,7 @@ s_echo()
 }
 
 s_echo "This script updates all the mysql privilege tables to be usable by"
-s_echo "MySQL 4.0 and above."
-s_echo ""
-s_echo "This is needed if you want to use the new GRANT functions,"
-s_echo "CREATE AGGREGATE FUNCTION, or the more secure passwords in 4.1"
+s_echo "the current version of MySQL"
 s_echo ""
 
 if test $verbose = 1
@@ -178,18 +186,29 @@ then
   s_echo ""
 fi
 
+run_cmd() {
+  # Password argument is added here to allow for spaces in password.
+  
+  if test ! -z "$password"
+  then
+    cat $sql_file | $cmd --password="$password"
+  else
+    cat $sql_file | $cmd
+  fi
+}
+
 if test $verbose = 0
 then
-  cat $sql_file | $cmd > /dev/null 2>&1
+  run_cmd > /dev/null 2>&1
 else
-  cat $sql_file | $cmd > /dev/null
+  run_cmd > /dev/null
 fi
 if test $? = 0
 then
   s_echo "done"
 else
   s_echo "Got a failure from command:"
-  s_echo "$cmd"
+  s_echo "cat $sql_file | $cmd"
   s_echo "Please check the above output and try again."
   if test $verbose = 0
   then

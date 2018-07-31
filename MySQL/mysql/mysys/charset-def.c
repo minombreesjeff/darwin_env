@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,6 +41,8 @@ extern CHARSET_INFO my_charset_ucs2_slovak_uca_ci;
 extern CHARSET_INFO my_charset_ucs2_spanish2_uca_ci;
 extern CHARSET_INFO my_charset_ucs2_roman_uca_ci;
 extern CHARSET_INFO my_charset_ucs2_persian_uca_ci;
+extern CHARSET_INFO my_charset_ucs2_esperanto_uca_ci;
+extern CHARSET_INFO my_charset_ucs2_hungarian_uca_ci;
 #endif
 
 #ifdef HAVE_CHARSET_utf8
@@ -62,6 +63,8 @@ extern CHARSET_INFO my_charset_utf8_slovak_uca_ci;
 extern CHARSET_INFO my_charset_utf8_spanish2_uca_ci;
 extern CHARSET_INFO my_charset_utf8_roman_uca_ci;
 extern CHARSET_INFO my_charset_utf8_persian_uca_ci;
+extern CHARSET_INFO my_charset_utf8_esperanto_uca_ci;
+extern CHARSET_INFO my_charset_utf8_hungarian_uca_ci;
 #ifdef HAVE_UTF8_GENERAL_CS
 extern CHARSET_INFO my_charset_utf8_general_cs;
 #endif
@@ -95,6 +98,11 @@ my_bool init_compiled_charsets(myf flags __attribute__((unused)))
 
 #ifdef HAVE_CHARSET_latin2
   add_compiled_collation(&my_charset_latin2_czech_ci);
+#endif
+
+#ifdef HAVE_CHARSET_eucjpms
+  add_compiled_collation(&my_charset_eucjpms_japanese_ci);
+  add_compiled_collation(&my_charset_eucjpms_bin);
 #endif
 
 #ifdef HAVE_CHARSET_euckr
@@ -143,6 +151,8 @@ my_bool init_compiled_charsets(myf flags __attribute__((unused)))
   add_compiled_collation(&my_charset_ucs2_spanish2_uca_ci);
   add_compiled_collation(&my_charset_ucs2_roman_uca_ci);
   add_compiled_collation(&my_charset_ucs2_persian_uca_ci);
+  add_compiled_collation(&my_charset_ucs2_esperanto_uca_ci);
+  add_compiled_collation(&my_charset_ucs2_hungarian_uca_ci);
 #endif
 #endif
 
@@ -175,6 +185,8 @@ my_bool init_compiled_charsets(myf flags __attribute__((unused)))
   add_compiled_collation(&my_charset_utf8_spanish2_uca_ci);
   add_compiled_collation(&my_charset_utf8_roman_uca_ci);
   add_compiled_collation(&my_charset_utf8_persian_uca_ci);
+  add_compiled_collation(&my_charset_utf8_esperanto_uca_ci);
+  add_compiled_collation(&my_charset_utf8_hungarian_uca_ci);
 #endif
 #endif
 

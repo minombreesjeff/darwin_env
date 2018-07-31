@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,11 +24,12 @@
 #include <TransporterRegistry.hpp>
 #include <SignalLoggerManager.hpp>
 #include <FastScheduler.hpp>
-#include <NdbMem.h>
+#include "ndbd_malloc.hpp"
 #include <signaldata/EventReport.hpp>
 #include <signaldata/ContinueFragmented.hpp>
 #include <signaldata/NodeStateSignalData.hpp>
 #include <signaldata/FsRef.hpp>
+#include <signaldata/SignalDroppedRep.hpp>
 #include <DebuggerNames.hpp>
 #include "LongSignal.hpp"
 
@@ -140,7 +140,6 @@ SimulatedBlock::installSimulatedBlockFunctions(){
   a[GSN_UTIL_LOCK_CONF]   = &SimulatedBlock::execUTIL_LOCK_CONF;
   a[GSN_UTIL_UNLOCK_REF]  = &SimulatedBlock::execUTIL_UNLOCK_REF;
   a[GSN_UTIL_UNLOCK_CONF] = &SimulatedBlock::execUTIL_UNLOCK_CONF;
-  a[GSN_READ_CONFIG_REQ] = &SimulatedBlock::execREAD_CONFIG_REQ;
   a[GSN_FSOPENREF]    = &SimulatedBlock::execFSOPENREF;
   a[GSN_FSCLOSEREF]   = &SimulatedBlock::execFSCLOSEREF;
   a[GSN_FSWRITEREF]   = &SimulatedBlock::execFSWRITEREF;
@@ -148,6 +147,7 @@ SimulatedBlock::installSimulatedBlockFunctions(){
   a[GSN_FSREMOVEREF]  = &SimulatedBlock::execFSREMOVEREF;
   a[GSN_FSSYNCREF]    = &SimulatedBlock::execFSSYNCREF;
   a[GSN_FSAPPENDREF]  = &SimulatedBlock::execFSAPPENDREF;
+  a[GSN_NODE_START_REP] = &SimulatedBlock::execNODE_START_REP;
 }
 
 void
@@ -156,8 +156,8 @@ SimulatedBlock::addRecSignalImpl(GlobalSignalNumber gsn,
   if(gsn > MAX_GSN || (!force &&  theExecArray[gsn] != 0)){
     char errorMsg[255];
     BaseString::snprintf(errorMsg, 255, 
- 	     "Illeagal signal (%d %d)", gsn, MAX_GSN); 
-    ERROR_SET(fatal, ERR_ERROR_PRGERR, errorMsg, errorMsg);
+ 	     "GSN %d(%d))", gsn, MAX_GSN); 
+    ERROR_SET(fatal, NDBD_EXIT_ILLEGAL_SIGNAL, errorMsg, errorMsg);
   }
   theExecArray[gsn] = f;
 }
@@ -173,8 +173,7 @@ SimulatedBlock::signal_error(Uint32 gsn, Uint32 len, Uint32 recBlockNo,
 	   "Signal (GSN: %d, Length: %d, Rec Block No: %d)", 
 	   gsn, len, recBlockNo);
   
-  ErrorReporter::handleError(ecError, 
-			     BLOCK_ERROR_BNR_ZERO,
+  ErrorReporter::handleError(NDBD_EXIT_BLOCK_BNR_ZERO,
 			     probData, 
 			     objRef);
 }
@@ -658,25 +657,27 @@ SimulatedBlock::allocRecord(const char * type, size_t s, size_t n, bool clear)
 
   void * p = NULL;
   size_t size = n*s;
+  Uint64 real_size = (Uint64)((Uint64)n)*((Uint64)s);
   refresh_watch_dog(); 
-  if (size > 0){
+  if (real_size > 0){
 #ifdef VM_TRACE_MEM
-    ndbout_c("%s::allocRecord(%s, %u, %u) = %u bytes", 
+    ndbout_c("%s::allocRecord(%s, %u, %u) = %llu bytes", 
 	     getBlockName(number()), 
 	     type,
 	     s,
 	     n,
-	     size);
+	     real_size);
 #endif
-    p = NdbMem_Allocate(size);
+    if( real_size == (Uint64)size )
+      p = ndbd_malloc(size);
     if (p == NULL){
       char buf1[255];
       char buf2[255];
       BaseString::snprintf(buf1, sizeof(buf1), "%s could not allocate memory for %s", 
 	       getBlockName(number()), type);
-      BaseString::snprintf(buf2, sizeof(buf2), "Requested: %ux%u = %u bytes", 
-	       (Uint32)s, (Uint32)n, (Uint32)size);
-      ERROR_SET(fatal, ERR_MEMALLOC, buf1, buf2);
+      BaseString::snprintf(buf2, sizeof(buf2), "Requested: %ux%u = %llu bytes", 
+	       (Uint32)s, (Uint32)n, (Uint64)real_size);
+      ERROR_SET(fatal, NDBD_EXIT_MEMALLOC, buf1, buf2);
     }
 
     if(clear){
@@ -699,11 +700,9 @@ void
 SimulatedBlock::deallocRecord(void ** ptr, 
 			      const char * type, size_t s, size_t n){
   (void)type;
-  (void)s;
-  (void)n;
 
   if(* ptr != 0){
-    NdbMem_Free(* ptr);
+      ndbd_free(* ptr, n*s);
     * ptr = 0;
   }
 }
@@ -733,7 +732,7 @@ SimulatedBlock::progError(int line, int err_code, const char* extra) const {
   BaseString::snprintf(&buf[0], 100, "%s (Line: %d) 0x%.8x", 
 	   aBlockName, line, magicStatus);
 
-  ErrorReporter::handleError(ecError, err_code, extra, buf);
+  ErrorReporter::handleError(err_code, extra, buf);
 
 }
 
@@ -743,7 +742,7 @@ SimulatedBlock::infoEvent(const char * msg, ...) const {
     return;
   
   Uint32 theData[25];
-  theData[0] = EventReport::InfoEvent;
+  theData[0] = NDB_LE_InfoEvent;
   char * buf = (char *)&(theData[1]);
   
   va_list ap;
@@ -784,7 +783,7 @@ SimulatedBlock::warningEvent(const char * msg, ...) const {
     return;
   
   Uint32 theData[25];
-  theData[0] = EventReport::WarningEvent;
+  theData[0] = NDB_LE_WarningEvent;
   char * buf = (char *)&(theData[1]);
   
   va_list ap;
@@ -854,9 +853,12 @@ SimulatedBlock::execNDB_TAMPER(Signal * signal){
 
 void
 SimulatedBlock::execSIGNAL_DROPPED_REP(Signal * signal){
-  ErrorReporter::handleError(ecError,
-			     ERR_OUT_OF_LONG_SIGNAL_MEMORY,
-			     "Signal lost, out of long signal memory",
+  char msg[64];
+  const SignalDroppedRep * const rep = (SignalDroppedRep *)&signal->theData[0];
+  snprintf(msg, sizeof(msg), "%s GSN: %u (%u,%u)", getBlockName(number()),
+	   rep->originalGsn, rep->originalLength,rep->originalSectionCount);
+  ErrorReporter::handleError(NDBD_EXIT_OUT_OF_LONG_SIGNAL_MEMORY,
+			     msg,
 			     __FILE__,
 			     NST_ErrorHandler);
 }
@@ -911,6 +913,11 @@ SimulatedBlock::execCONTINUE_FRAGMENTED(Signal * signal){
   ContinueFragmented * sig = (ContinueFragmented*)signal->getDataPtrSend();
   sig->line = __LINE__;
   sendSignal(reference(), GSN_CONTINUE_FRAGMENTED, signal, 1, JBB);
+}
+
+void
+SimulatedBlock::execNODE_START_REP(Signal* signal)
+{
 }
 
 #ifdef VM_TRACE_TIME
@@ -1739,20 +1746,6 @@ void SimulatedBlock::execUTIL_UNLOCK_CONF(Signal* signal){
   c_mutexMgr.execUTIL_UNLOCK_CONF(signal);
 }
 
-void 
-SimulatedBlock::execREAD_CONFIG_REQ(Signal* signal){
-  const ReadConfigReq * req = (ReadConfigReq*)signal->getDataPtr();
-
-  Uint32 ref = req->senderRef;
-  Uint32 senderData = req->senderData;
-
-  ReadConfigConf * conf = (ReadConfigConf*)signal->getDataPtrSend();
-  conf->senderRef = reference();
-  conf->senderData = senderData;
-  sendSignal(ref, GSN_READ_CONFIG_CONF, signal, 
-	     ReadConfigConf::SignalLength, JBB);
-}
-
 void
 SimulatedBlock::ignoreMutexUnlockCallback(Signal* signal, 
 					  Uint32 ptrI, Uint32 retVal){
@@ -1865,3 +1858,128 @@ SimulatedBlock::init_globals_list(void ** tmp, size_t cnt){
 }
 
 #endif
+
+#include "KeyDescriptor.hpp"
+
+Uint32
+SimulatedBlock::xfrm_key(Uint32 tab, const Uint32* src, 
+			 Uint32 *dst, Uint32 dstSize,
+			 Uint32 keyPartLen[MAX_ATTRIBUTES_IN_INDEX]) const
+{
+  const KeyDescriptor * desc = g_key_descriptor_pool.getPtr(tab);
+  const Uint32 noOfKeyAttr = desc->noOfKeyAttr;
+
+  Uint32 i = 0;
+  Uint32 srcPos = 0;
+  Uint32 dstPos = 0;
+  while (i < noOfKeyAttr) 
+  {
+    const KeyDescriptor::KeyAttr& keyAttr = desc->keyAttr[i];
+    Uint32 dstWords =
+      xfrm_attr(keyAttr.attributeDescriptor, keyAttr.charsetInfo,
+                src, srcPos, dst, dstPos, dstSize);
+    keyPartLen[i++] = dstWords;
+    if (unlikely(dstWords == 0))
+      return 0;
+  }
+
+  return dstPos;
+}
+
+Uint32
+SimulatedBlock::xfrm_attr(Uint32 attrDesc, CHARSET_INFO* cs,
+                          const Uint32* src, Uint32 & srcPos,
+                          Uint32* dst, Uint32 & dstPos, Uint32 dstSize) const
+{
+  Uint32 srcBytes = AttributeDescriptor::getSizeInBytes(attrDesc);
+  Uint32 srcWords = (srcBytes + 3) / 4;
+  Uint32 dstWords = ~0;
+  uchar* dstPtr = (uchar*)&dst[dstPos];
+  const uchar* srcPtr = (const uchar*)&src[srcPos];
+  
+  if (cs == NULL) 
+  {
+    jam();
+    memcpy(dstPtr, srcPtr, srcWords << 2);
+    dstWords = srcWords;
+  } 
+  else 
+  {
+    jam();
+    Uint32 typeId = AttributeDescriptor::getType(attrDesc);
+    Uint32 lb, len;
+    bool ok = NdbSqlUtil::get_var_length(typeId, srcPtr, srcBytes, lb, len);
+    if (unlikely(!ok))
+      return 0;
+    Uint32 xmul = cs->strxfrm_multiply;
+    if (xmul == 0)
+      xmul = 1;
+    /*
+     * Varchar end-spaces are ignored in comparisons.  To get same hash
+     * we blank-pad to maximum length via strnxfrm.
+     */
+    Uint32 dstLen = xmul * (srcBytes - lb);
+    ndbrequire(dstLen <= ((dstSize - dstPos) << 2));
+    int n = NdbSqlUtil::strnxfrm_bug7284(cs, dstPtr, dstLen, srcPtr + lb, len);
+    if (unlikely(n == -1))
+      return 0;
+    while ((n & 3) != 0) 
+    {
+      dstPtr[n++] = 0;
+    }
+    dstWords = (n >> 2);
+  }
+  dstPos += dstWords;
+  srcPos += srcWords;
+  return dstWords;
+}
+
+Uint32
+SimulatedBlock::create_distr_key(Uint32 tableId,
+				 Uint32 *data, 
+				 const Uint32 
+				 keyPartLen[MAX_ATTRIBUTES_IN_INDEX]) const 
+{
+  const KeyDescriptor* desc = g_key_descriptor_pool.getPtr(tableId);
+  const Uint32 noOfKeyAttr = desc->noOfKeyAttr;
+  Uint32 noOfDistrKeys = desc->noOfDistrKeys;
+  
+  Uint32 *src = data;
+  Uint32 *dst = data;
+  Uint32 i = 0;
+  Uint32 dstPos = 0;
+  
+  if(keyPartLen)
+  {
+    while (i < noOfKeyAttr && noOfDistrKeys) 
+    {
+      Uint32 attr = desc->keyAttr[i].attributeDescriptor;
+      Uint32 len = keyPartLen[i];
+      if(AttributeDescriptor::getDKey(attr))
+      {
+	noOfDistrKeys--;
+	memmove(dst+dstPos, src, len << 2);
+	dstPos += len;
+      }
+      src += len;
+      i++;
+    }
+  }
+  else
+  {
+    while (i < noOfKeyAttr && noOfDistrKeys) 
+    {
+      Uint32 attr = desc->keyAttr[i].attributeDescriptor;
+      Uint32 len = AttributeDescriptor::getSizeInWords(attr);
+      if(AttributeDescriptor::getDKey(attr))
+      {
+	noOfDistrKeys--;
+	memmove(dst+dstPos, src, len << 2);
+	dstPos += len;
+      }
+      src += len;
+      i++;
+    }
+  }
+  return dstPos;
+}

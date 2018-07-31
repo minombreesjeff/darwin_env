@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,6 +13,11 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
+#include <my_global.h>
+#include <mysql.h>
+#include <mysql_embed.h>
+#include <mysqld_error.h>
+#include <my_pthread.h>
 #include "embedded_priv.h"
 #include <my_sys.h>
 #include <mysys_err.h>
@@ -150,10 +154,25 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
 
   if (!user)
     user= "";
-  mysql->user=my_strdup(user,MYF(0));
+   /* 
+      We need to alloc some space for mysql->info but don't want to
+      put extra 'my_free's in mysql_close.
+      So we alloc it with the 'user' string to be freed at once
+   */
+  mysql->user= my_strdup(user, MYF(0));
 
   port=0;
   unix_socket=0;
+
+  /* Send client information for access check */
+  client_flag|=CLIENT_CAPABILITIES;
+  if (client_flag & CLIENT_MULTI_STATEMENTS)
+    client_flag|= CLIENT_MULTI_RESULTS;
+  client_flag&= ~CLIENT_COMPRESS;
+  if (db)
+    client_flag|=CLIENT_CONNECT_WITH_DB;
+
+  mysql->info_buffer= my_malloc(MYSQL_ERRMSG_SIZE, MYF(0));
   mysql->thd= create_embedded_thd(client_flag);
 
   init_embedded_mysql(mysql, client_flag);
@@ -164,11 +183,6 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
   if (check_embedded_connection(mysql, db))
     goto error;
 
-  /* Send client information for access check */
-  client_flag|=CLIENT_CAPABILITIES;
-  client_flag&= ~CLIENT_COMPRESS;
-  if (db)
-    client_flag|=CLIENT_CONNECT_WITH_DB;
   mysql->server_status= SERVER_STATUS_AUTOCOMMIT;
 
   if (mysql->options.init_commands)
@@ -191,11 +205,10 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
     }
   }
 
-  DBUG_PRINT("exit",("Mysql handler: %lx",mysql));
+  DBUG_PRINT("exit",("Mysql handler: 0x%lx", (long) mysql));
   DBUG_RETURN(mysql);
 
 error:
-  embedded_get_error(mysql);
   DBUG_PRINT("error",("message: %u (%s)", mysql->net.last_errno,
 		      mysql->net.last_error));
   {

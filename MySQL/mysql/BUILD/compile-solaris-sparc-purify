@@ -15,30 +15,29 @@ do
     --purecov*) mode=purecov ;;
     --quantify) mode=quantify ;;
     --cxxfilt)  shift ; cxxfilt=$1 ;;
-    -h | --help ) cat <<EOF; exit 0 ;;
-Usage: $0 [ options ]
-
-Where the 'options' are
-
-  --debug               Compile with DBUG enabled
-  --purify              Only prepare for Purify
-  --purecov             Only prepare for PureCover
-  --quantify            Only prepare for Quantify
-  --cxxfilt <cxxfilt>   Path to cxxfilt/c++filt program 
-                        This program is needed for gcc 3.X 
-EOF
-   *)  echo "No such option '$1'" ; exit 1 ;;
+    -h | --help )
+      echo "Usage: $0 [ options ]"
+      echo "Where the 'options' are"
+      echo "  --help | -h           Display this help"
+      echo "  --debug               Compile with DBUG enabled"
+      echo "  --purify              Only prepare for Purify"
+      echo "  --purecov             Only prepare for PureCover"
+      echo "  --quantify            Only prepare for Quantify"
+      echo "  --cxxfilt <cxxfilt>   Path to cxxfilt/c++filt program"
+      echo "                        This program is needed for gcc 3.X"
+      exit 0 ;;
+    *)  echo "No such option '$1'" ; exit 1 ;;
   esac
   shift
 done
 
 gmake -k clean || true 
 /bin/rm -f */.deps/*.P config.cache
-aclocal && autoheader && aclocal && automake && autoconf
-(cd bdb/dist && sh s_all)
-(cd innobase && aclocal && autoheader && aclocal && automake && autoconf)
+ 
+path=`dirname $0`
+. "$path/autorun.sh"
 
-CFLAGS="-g -Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wimplicit-int -Wparentheses -Wsign-compare -Wwrite-strings -Wunused  -DHAVE_purify -DEXTRA_DEBUG -O2" CXX=gcc CXXLD=g++ CXXFLAGS="-g -Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Woverloaded-virtual -Wsign-promo -Wreorder -Wctor-dtor-privacy -Wnon-virtual-dtor -felide-constructors -fno-exceptions -fno-rtti  -DHAVE_purify -DEXTRA_DEBUG -O2" ./configure --prefix=/usr/local/mysql --enable-assembler --with-extra-charsets=complex --enable-thread-safe-client --with-berkeley-db --with-innodb $EXTRA_CONFIG_FLAGS
+CFLAGS="-g -Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wimplicit-int -Wparentheses -Wsign-compare -Wwrite-strings -Wunused  -DHAVE_purify -DEXTRA_DEBUG -O2" CXX=gcc CXXLD=g++ CXXFLAGS="-g -Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Woverloaded-virtual -Wsign-promo -Wreorder -Wctor-dtor-privacy -Wnon-virtual-dtor -felide-constructors -fno-exceptions -fno-rtti  -DHAVE_purify -DEXTRA_DEBUG -O2" ./configure --prefix=/usr/local/mysql --enable-assembler --with-extra-charsets=complex --enable-thread-safe-client --with-berkeley-db --with-embedded-server --with-innodb $EXTRA_CONFIG_FLAGS
 
 gmake -j 4
 

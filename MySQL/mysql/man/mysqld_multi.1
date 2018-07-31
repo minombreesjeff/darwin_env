@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqld_multi\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLD_MULTI\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYSQLD_MULTI\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -20,7 +20,8 @@ mysqld_multi \- manage multiple MySQL servers
 \fBmysqld_multi\fR
 is designed to manage several
 \fBmysqld\fR
-processes that listen for connections on different Unix socket files and TCP/IP ports. It can start or stop servers, or report their current status.
+processes that listen for connections on different Unix socket files and TCP/IP ports. It can start or stop servers, or report their current status. The MySQL Instance Manager is an alternative means of managing multiple servers (see
+\fBmysqlmanager\fR(8)).
 .PP
 \fBmysqld_multi\fR
 searches for groups named
@@ -38,8 +39,8 @@ to specify which servers you want to start, stop, or obtain a status report for.
 [mysqld]
 group used for starting
 \fBmysqld\fR. (See, for example,
-Section\ 10.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number. For more information on which options must be unique per server in a multiple\-server environment, see
-Section\ 11, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
+Section\ 4.15.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number. For more information on which options must be unique per server in a multiple\-server environment, see
+Section\ 10, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
 .PP
 To invoke
 \fBmysqld_multi\fR, use the following syntax:
@@ -111,7 +112,7 @@ shell> \fBmysqld_multi \-\-example\fR
 supports the following options:
 .TP 3n
 \(bu
-\fB\- \-help\fR
+\fB\-\-help\fR
 .sp
 Display a help message and exit.
 .TP 3n
@@ -172,7 +173,7 @@ should start and the pathname of the directory where the server is located. (See
 .RS 3n
 .nf
 [mysqld38]
-mysqld = mysqld\-max
+mysqld = mysqld\-debug
 ledir  = /opt/local/mysql/libexec
 .fi
 .RE
@@ -193,7 +194,7 @@ The password of the MySQL account to use when invoking
 \(bu
 \fB\-\-silent\fR
 .sp
-Silent mode; disable warnings. This option was added in MySQL 4.1.6.
+Silent mode; disable warnings.
 .TP 3n
 \(bu
 \fB\-\-tcp\-ip\fR
@@ -213,7 +214,7 @@ The username of the MySQL account to use when invoking
 \(bu
 \fB\-\-verbose\fR
 .sp
-Be more verbose. This option was added in MySQL 4.1.6.
+Be more verbose.
 .TP 3n
 \(bu
 \fB\-\-version\fR
@@ -241,7 +242,7 @@ servers with the same data directory. Use separate data directories, unless you
 what you are doing. Starting multiple servers with the same data directory does
 \fInot\fR
 give you extra performance in a threaded system. See
-Section\ 11, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
+Section\ 10, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
 .TP 3n
 \(bu
 \fBImportant\fR: Make sure that the data directory for each server is fully accessible to the Unix account that the specific
@@ -253,7 +254,7 @@ use the Unix
 account for this, unless you
 \fIknow\fR
 what you are doing. See
-Section\ 5.5, \(lqHow to Run MySQL as a Normal User\(rq.
+Section\ 4.5, \(lqHow to Run MySQL as a Normal User\(rq.
 .TP 3n
 \(bu
 Make sure that the MySQL account used for stopping the
@@ -275,7 +276,7 @@ mysql> \fBGRANT SHUTDOWN ON *.*\fR
 .fi
 .RE
 See
-Section\ 6.2, \(lqHow the Privilege System Works\(rq. You have to do this for each
+Section\ 5.2, \(lqHow the Privilege System Works\(rq. You have to do this for each
 \fBmysqld\fR
 server. Change the connection parameters appropriately when connecting to each one. Note that the hostname part of the account name must allow you to connect as
 multi_admin
@@ -334,7 +335,7 @@ option for
 \fBmysqld_multi\fR
 script as the Unix
 root
-user. Having the option in the option file does not matter; you merely get a warning if you are not the superuser and the
+user. Having the option in the option file doesn't matter; you just get a warning if you are not the superuser and the
 \fBmysqld\fR
 processes are started under your own Unix account.
 .sp
@@ -394,7 +395,7 @@ See
 Section\ 3.2, \(lqUsing Option Files\(rq.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -402,35 +403,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamchk(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

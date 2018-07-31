@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,20 +36,20 @@
 #define SHAREDIR	"share/"
 #endif
 
-#define ER(X) errmesg[(X)-1000]
-#define ER_SAFE(X) (((X) >= 1000 && (X) < ER_ERROR_MESSAGES + 1000) ? ER(X) : "Invalid error code")
+#define ER(X) errmesg[(X) - ER_ERROR_FIRST]
+#define ER_SAFE(X) (((X) >= ER_ERROR_FIRST && (X) <= ER_ERROR_LAST) ? ER(X) : "Invalid error code")
 
 
 #define ERRMAPP 1				/* Errormap f|r my_error */
 #define LIBLEN FN_REFLEN-FN_LEN			/* Max l{ngd p} dev */
-#define MAX_DBKEY_LENGTH (FN_LEN*2+1+1+4+4)     /* extra 4+4 bytes for slave tmp
-						 * tables */
+/* extra 4+4 bytes for slave tmp tables */
+#define MAX_DBKEY_LENGTH (NAME_LEN*2+1+1+4+4)
 #define MAX_ALIAS_NAME 256
 #define MAX_FIELD_NAME 34			/* Max colum name length +2 */
 #define MAX_SYS_VAR_LENGTH 32
-#define MAX_KEY 64				/* Max used keys */
+#define MAX_KEY MAX_INDEXES                     /* Max used keys */
 #define MAX_REF_PARTS 16			/* Max parts used as ref */
-#define MAX_KEY_LENGTH 1024			/* max possible key */
+#define MAX_KEY_LENGTH 3072			/* max possible key */
 #if SIZEOF_OFF_T > 4
 #define MAX_REFLENGTH 8				/* Max length for record ref */
 #else
@@ -60,9 +59,13 @@
 
 #define MAX_MBWIDTH		3		/* Max multibyte sequence */
 #define MAX_FIELD_CHARLENGTH	255
-#define CONVERT_IF_BIGGER_TO_BLOB 255
+#define MAX_FIELD_VARCHARLENGTH	65535
+#define CONVERT_IF_BIGGER_TO_BLOB 512		/* Used for CREATE ... SELECT */
+
 /* Max column width +1 */
 #define MAX_FIELD_WIDTH		(MAX_FIELD_CHARLENGTH*MAX_MBWIDTH+1)
+
+#define MAX_BIT_FIELD_LENGTH    64      /* Max length in bits for bit fields */
 
 #define MAX_DATE_WIDTH		10	/* YYYY-MM-DD */
 #define MAX_TIME_WIDTH		23	/* -DDDDDD HH:MM:SS.###### */
@@ -119,12 +122,12 @@
 #define SPECIAL_LOG_QUERIES_NOT_USING_INDEXES 4096 /* Log q not using indexes */
 
 	/* Extern defines */
-#define store_record(A,B) bmove_align((A)->B,(A)->record[0],(size_t) (A)->reclength)
-#define restore_record(A,B) bmove_align((A)->record[0],(A)->B,(size_t) (A)->reclength)
-#define cmp_record(A,B) memcmp((A)->record[0],(A)->B,(size_t) (A)->reclength)
+#define store_record(A,B) bmove_align((A)->B,(A)->record[0],(size_t) (A)->s->reclength)
+#define restore_record(A,B) bmove_align((A)->record[0],(A)->B,(size_t) (A)->s->reclength)
+#define cmp_record(A,B) memcmp((A)->record[0],(A)->B,(size_t) (A)->s->reclength)
 #define empty_record(A) { \
-                          restore_record((A),default_values); \
-                          bfill((A)->null_flags,(A)->null_bytes,255);\
+                          restore_record((A),s->default_values); \
+                          bfill((A)->null_flags,(A)->s->null_bytes,255);\
                         }
 
 	/* Defines for use with openfrm, openprt and openfrd */
@@ -142,11 +145,14 @@
 #define DONT_GIVE_ERROR		256	/* Don't do frm_error on openfrm  */
 #define READ_SCREENS		1024	/* Read screens, info and helpfile */
 #define DELAYED_OPEN		4096	/* Open table later */
-
+#define NO_ERR_ON_NEW_FRM	8192	/* stop error sending on new format */
+#define OPEN_VIEW_NO_PARSE     16384    /* Open frm only if it's a view,
+                                           but do not parse view itself */
 #define SC_INFO_LENGTH 4		/* Form format constant */
 #define TE_INFO_LENGTH 3
 #define MTYP_NOEMPTY_BIT 128
 
+#define FRM_VER_TRUE_VARCHAR (FRM_VER+4)
 /*
   Minimum length pattern before Turbo Boyer-Moore is used
   for SELECT "text" LIKE "%pattern%", excluding the two

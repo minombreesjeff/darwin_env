@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -151,11 +150,11 @@ gptr _mymalloc(uint size, const char *filename, uint lineno, myf MyFlags)
       char buff[SC_MAXWIDTH];
       my_errno=errno;
       sprintf(buff,"Out of memory at line %d, '%s'", lineno, filename);
-      my_message(EE_OUTOFMEMORY,buff,MYF(ME_BELL+ME_WAITTANG));
+      my_message(EE_OUTOFMEMORY, buff, MYF(ME_BELL+ME_WAITTANG+ME_NOREFRESH));
       sprintf(buff,"needed %d byte (%ldk), memory in use: %ld bytes (%ldk)",
 	      size, (size + 1023L) / 1024L,
 	      sf_malloc_max_memory, (sf_malloc_max_memory + 1023L) / 1024L);
-      my_message(EE_OUTOFMEMORY,buff,MYF(ME_BELL+ME_WAITTANG));
+      my_message(EE_OUTOFMEMORY, buff, MYF(ME_BELL+ME_WAITTANG+ME_NOREFRESH));
     }
     DBUG_PRINT("error",("Out of memory, in use: %ld at line %d, '%s'",
 			sf_malloc_max_memory,lineno, filename));
@@ -194,7 +193,7 @@ gptr _mymalloc(uint size, const char *filename, uint lineno, myf MyFlags)
   if ((MyFlags & MY_ZEROFILL) || !sf_malloc_quick)
     bfill(data, size, (char) (MyFlags & MY_ZEROFILL ? 0 : ALLOC_VAL));
   /* Return a pointer to the real data */
-  DBUG_PRINT("exit",("ptr: 0x%lx", data));
+  DBUG_PRINT("exit",("ptr: 0x%lx", (long) data));
   if (sf_min_adress > data)
     sf_min_adress= data;
   if (sf_max_adress < data)
@@ -259,7 +258,7 @@ void _myfree(gptr ptr, const char *filename, uint lineno, myf myflags)
 {
   struct st_irem *irem;
   DBUG_ENTER("_myfree");
-  DBUG_PRINT("enter",("ptr: 0x%lx", ptr));
+  DBUG_PRINT("enter",("ptr: 0x%lx", (long) ptr));
 
   if (!sf_malloc_quick)
     (void) _sanity (filename, lineno);
@@ -410,7 +409,7 @@ void TERMINATE(FILE *file)
       }
       DBUG_PRINT("safe",
 		 ("%6u bytes at 0x%09lx, allocated at line %4d in '%s'",
-		  irem->datasize, data, irem->linenum, irem->filename));
+		  irem->datasize, (long) data, irem->linenum, irem->filename));
       irem= irem->next;
     }
   }
@@ -447,7 +446,7 @@ static int _checkchunk(register struct st_irem *irem, const char *filename,
     fprintf(stderr, " discovered at %s:%d\n", filename, lineno);
     (void) fflush(stderr);
     DBUG_PRINT("safe",("Underrun at 0x%lx, allocated at %s:%d",
-		       data, irem->filename, irem->linenum));
+		       (long) data, irem->filename, irem->linenum));
     flag=1;
   }
 
@@ -463,7 +462,7 @@ static int _checkchunk(register struct st_irem *irem, const char *filename,
     fprintf(stderr, " discovered at '%s:%d'\n", filename, lineno);
     (void) fflush(stderr);
     DBUG_PRINT("safe",("Overrun at 0x%lx, allocated at %s:%d",
-		       data,
+		       (long) data,
 		       irem->filename,
 		       irem->linenum));
     flag=1;
@@ -525,7 +524,7 @@ char *_my_strdup(const char *from, const char *filename, uint lineno,
 } /* _my_strdup */
 
 
-char *_my_strdup_with_length(const byte *from, uint length,
+char *_my_strdup_with_length(const char *from, uint length,
 			     const char *filename, uint lineno,
 			     myf MyFlags)
 {

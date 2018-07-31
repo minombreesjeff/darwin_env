@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,7 +23,7 @@
 typedef struct st_bitmap
 {
   uchar *bitmap;
-  uint bitmap_size;
+  uint bitmap_size; /* number of bytes occupied by the above */
   /*
      mutex will be acquired for the duration of each bitmap operation if
      thread_safe flag in bitmap_init was set.  Otherwise, we optimize by not
@@ -45,11 +44,16 @@ extern my_bool bitmap_is_prefix(const MY_BITMAP *map, uint prefix_size);
 extern my_bool bitmap_is_set(const MY_BITMAP *map, uint bitmap_bit);
 extern my_bool bitmap_is_set_all(const MY_BITMAP *map);
 extern my_bool bitmap_is_subset(const MY_BITMAP *map1, const MY_BITMAP *map2);
+extern my_bool bitmap_test_and_set(MY_BITMAP *map, uint bitmap_bit);
+extern my_bool bitmap_fast_test_and_set(MY_BITMAP *map, uint bitmap_bit);
 extern uint bitmap_set_next(MY_BITMAP *map);
+extern uint bitmap_get_first(const MY_BITMAP *map);
+extern uint bitmap_bits_set(const MY_BITMAP *map);
 extern void bitmap_clear_all(MY_BITMAP *map);
 extern void bitmap_clear_bit(MY_BITMAP *map, uint bitmap_bit);
 extern void bitmap_free(MY_BITMAP *map);
 extern void bitmap_intersect(MY_BITMAP *map, const MY_BITMAP *map2);
+extern void bitmap_set_above(MY_BITMAP *map, uint from_byte, uint use_bit);
 extern void bitmap_set_all(MY_BITMAP *map);
 extern void bitmap_set_bit(MY_BITMAP *map, uint bitmap_bit);
 extern void bitmap_set_prefix(MY_BITMAP *map, uint prefix_size);

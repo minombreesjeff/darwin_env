@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,13 +29,16 @@ static int
 select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
 	     int parallelism,
 	     int* count_rows,
-	     UtilTransactions::ScanLock lock);
+	     NdbOperation::LockMode lock);
 
 NDB_STD_OPTS_VARS;
 
 static const char* _dbname = "TEST_DB";
 static int _parallelism = 240;
 static int _lock = 0;
+
+const char *load_default_groups[]= { "mysql_cluster",0 };
+
 static struct my_option my_long_options[] =
 {
   NDB_STD_OPTS("ndb_desc"),
@@ -53,46 +55,52 @@ static struct my_option my_long_options[] =
 };
 static void usage()
 {
+#ifdef NOT_USED
   char desc[] = 
     "tabname1 ... tabnameN\n"\
     "This program will count the number of records in tables\n";
+#endif
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_select_count.trace");
 }
 
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_select_count.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   if (argc < 1) {
     usage();
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   }
 
-  Ndb::setConnectString(opt_connect_str);
-  // Connect to Ndb
-  Ndb MyNdb(_dbname);
+  Ndb_cluster_connection con(opt_connect_str);
+  con.set_name("ndb_select_count");
+  if(con.connect(12, 5, 1) != 0)
+  {
+    ndbout << "Unable to connect to management server." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  if (con.wait_until_ready(30,0) < 0)
+  {
+    ndbout << "Cluster nodes not ready in 30 seconds." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
 
+  Ndb MyNdb(&con, _dbname );
   if(MyNdb.init() != 0){
     ERR(MyNdb.getNdbError());
     return NDBT_ProgramExit(NDBT_FAILED);
   }
 
-  // Connect to Ndb and wait for it to become ready
-  while(MyNdb.waitUntilReady() != 0)
-    ndbout << "Waiting for ndb to become ready..." << endl;
-   
   for(int i = 0; i<argc; i++){
     // Check if table exists in db
     const NdbDictionary::Table * pTab = NDBT_Table::discoverTableFromDb(&MyNdb, argv[i]);
@@ -103,7 +111,7 @@ int main(int argc, char** argv){
 
     int rows = 0;
     if (select_count(&MyNdb, pTab, _parallelism, &rows, 
-		     (UtilTransactions::ScanLock)_lock) != 0){
+		     (NdbOperation::LockMode)_lock) != 0){
       return NDBT_ProgramExit(NDBT_FAILED);
     }
     
@@ -116,12 +124,12 @@ int
 select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
 	     int parallelism,
 	     int* count_rows,
-	     UtilTransactions::ScanLock lock){
+	     NdbOperation::LockMode lock){
   
   int                  retryAttempt = 0;
   const int            retryMax = 100;
   int                  check;
-  NdbConnection	       *pTrans;
+  NdbTransaction       *pTrans;
   NdbScanOperation	       *pOp;
 
   while (true){
@@ -151,8 +159,7 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
       return NDBT_FAILED;
     }
 
-    NdbResultSet * rs = pOp->readTuples(NdbScanOperation::LM_Dirty); 
-    if( rs == 0 ) {
+    if( pOp->readTuples(NdbScanOperation::LM_Dirty) ) {
       ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
@@ -167,9 +174,10 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
     }
   
     Uint64 tmp;
+    Uint32 row_size;
     pOp->getValue(NdbDictionary::Column::ROW_COUNT, (char*)&tmp);
-    
-    check = pTrans->execute(NoCommit);
+    pOp->getValue(NdbDictionary::Column::ROW_SIZE, (char*)&row_size);
+    check = pTrans->execute(NdbTransaction::NoCommit);
     if( check == -1 ) {
       ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
@@ -178,7 +186,7 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
     
     Uint64 row_count = 0;
     int eof;
-    while((eof = rs->nextResult(true)) == 0){
+    while((eof = pOp->nextResult(true)) == 0){
       row_count += tmp;
     }
     

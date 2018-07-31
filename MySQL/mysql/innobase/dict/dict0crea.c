@@ -63,8 +63,8 @@ dict_create_sys_tables_tuple(
 	dfield = dtuple_get_nth_field(entry, 2);
 
 	ptr = mem_heap_alloc(heap, 4);
-	mach_write_to_4(ptr, table->n_def);
-
+	mach_write_to_4(ptr, table->n_def
+			| ((ulint) table->comp << 31));
 	dfield_set_data(dfield, ptr, 4);
 	/* 5: TYPE -----------------------------*/
 	dfield = dtuple_get_nth_field(entry, 3);
@@ -81,16 +81,6 @@ dict_create_sys_tables_tuple(
 
 	dfield_set_data(dfield, ptr, 8);
 	/* 7: MIX_LEN --------------------------*/
-
-	/* Track corruption reported on mailing list Jan 14, 2005 */
-	if (table->mix_len != 0 && table->mix_len != 0x80000000) {
-		fprintf(stderr,
-"InnoDB: Error: mix_len is %lu in table %s\n", (ulong)table->mix_len,
-							table->name);
-		mem_analyze_corruption((byte*)&(table->mix_len));
-	
-		ut_error;
-	}
 
 	dfield = dtuple_get_nth_field(entry, 5);
 
@@ -219,6 +209,8 @@ dict_build_table_def_step(
 	const char*	path_or_name;
 	ibool		is_path;
 	mtr_t		mtr;
+	ulint		i;
+	ulint		row_len;
 
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(dict_sys->mutex)));
@@ -229,6 +221,15 @@ dict_build_table_def_step(
 	table->id = dict_hdr_get_new_id(DICT_HDR_TABLE_ID);
 
 	thr_get_trx(thr)->table_id = table->id;
+
+	row_len = 0;
+	for (i = 0; i < table->n_def; i++) {
+		row_len += dtype_get_min_size(dict_col_get_type(
+						&table->cols[i]));
+	}
+	if (row_len > BTR_PAGE_MAX_REC_SIZE) {
+		return(DB_TOO_BIG_RECORD);
+	}
 
 	if (table->type == DICT_TABLE_CLUSTER_MEMBER) {
 
@@ -554,9 +555,7 @@ dict_build_index_def_step(
 	table in the same tablespace */
 
 	index->space = table->space;
-
-	index->page_no = FIL_NULL;
-	
+	node->page_no = FIL_NULL;
 	row = dict_create_sys_indexes_tuple(index, node->heap);
 	node->ind_row = row;
 
@@ -634,18 +633,18 @@ dict_create_index_tree_step(
 
 	btr_pcur_move_to_next_user_rec(&pcur, &mtr);
 
-	index->page_no = btr_create(index->type, index->space, index->id,
-									&mtr);
+	node->page_no = btr_create(index->type, index->space, index->id,
+							table->comp, &mtr);
 	/* printf("Created a new index tree in space %lu root page %lu\n",
 					index->space, index->page_no); */
 
 	page_rec_write_index_page_no(btr_pcur_get_rec(&pcur),
 					DICT_SYS_INDEXES_PAGE_NO_FIELD,
-					index->page_no, &mtr);
+					node->page_no, &mtr);
 	btr_pcur_close(&pcur);
 	mtr_commit(&mtr);
 
-	if (index->page_no == FIL_NULL) {
+	if (node->page_no == FIL_NULL) {
 
 		return(DB_OUT_OF_FILE_SPACE);
 	}
@@ -671,8 +670,9 @@ dict_drop_index_tree(
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
-	
-	ptr = rec_get_nth_field(rec, DICT_SYS_INDEXES_PAGE_NO_FIELD, &len);
+
+	ut_a(!dict_sys->sys_indexes->comp);
+	ptr = rec_get_nth_field_old(rec, DICT_SYS_INDEXES_PAGE_NO_FIELD, &len);
 
 	ut_ad(len == 4);
 	
@@ -684,8 +684,9 @@ dict_drop_index_tree(
 		return;
 	}
 
-	ptr = rec_get_nth_field(rec, DICT_SYS_INDEXES_SPACE_NO_FIELD, &len);
-	
+	ptr = rec_get_nth_field_old(rec,
+				DICT_SYS_INDEXES_SPACE_NO_FIELD, &len);
+
 	ut_ad(len == 4);
 
 	space = mtr_read_ulint(ptr, MLOG_4BYTES, mtr);
@@ -710,8 +711,137 @@ dict_drop_index_tree(
 							 root_page_no); */
 	btr_free_root(space, root_page_no, mtr);
 
+	page_rec_write_index_page_no(rec,
+				DICT_SYS_INDEXES_PAGE_NO_FIELD, FIL_NULL, mtr);
+}
+
+/***********************************************************************
+Truncates the index tree associated with a row in SYS_INDEXES table. */
+
+ulint
+dict_truncate_index_tree(
+/*=====================*/
+				/* out: new root page number, or
+				FIL_NULL on failure */
+	dict_table_t*	table,	/* in: the table the index belongs to */
+	btr_pcur_t*	pcur,	/* in/out: persistent cursor pointing to
+				record in the clustered index of
+				SYS_INDEXES table. The cursor may be
+				repositioned in this call. */
+	mtr_t*		mtr)	/* in: mtr having the latch
+				on the record page. The mtr may be
+				committed and restarted in this call. */
+{
+	ulint		root_page_no;
+	ulint		space;
+	ulint		type;
+	dulint		index_id;
+	rec_t*		rec;
+	byte*		ptr;
+	ulint		len;
+	ulint		comp;
+	dict_index_t*	index;
+
+#ifdef UNIV_SYNC_DEBUG
+	ut_ad(mutex_own(&(dict_sys->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
+
+	ut_a(!dict_sys->sys_indexes->comp);
+	rec = btr_pcur_get_rec(pcur);
+	ptr = rec_get_nth_field_old(rec, DICT_SYS_INDEXES_PAGE_NO_FIELD, &len);
+
+	ut_ad(len == 4);
+
+	root_page_no = mtr_read_ulint(ptr, MLOG_4BYTES, mtr);
+
+	if (root_page_no == FIL_NULL) {
+		/* The tree has been freed. */
+
+		ut_print_timestamp(stderr);
+		fprintf(stderr, "  InnoDB: Trying to TRUNCATE"
+			" a missing index of table %s!\n", table->name);
+		return(FIL_NULL);
+	}
+
+	ptr = rec_get_nth_field_old(rec,
+				DICT_SYS_INDEXES_SPACE_NO_FIELD, &len);
+
+	ut_ad(len == 4);
+
+	space = mtr_read_ulint(ptr, MLOG_4BYTES, mtr);
+
+	if (!fil_tablespace_exists_in_mem(space)) {
+		/* It is a single table tablespace and the .ibd file is
+		missing: do nothing */
+
+		ut_print_timestamp(stderr);
+		fprintf(stderr, "  InnoDB: Trying to TRUNCATE"
+			" a missing .ibd file of table %s!\n", table->name);
+		return(FIL_NULL);
+	}
+
+	ptr = rec_get_nth_field_old(rec,
+				DICT_SYS_INDEXES_TYPE_FIELD, &len);
+	ut_ad(len == 4);
+	type = mach_read_from_4(ptr);
+
+	ptr = rec_get_nth_field_old(rec, 1, &len);
+	ut_ad(len == 8);
+	index_id = mach_read_from_8(ptr);
+
+	/* We free all the pages but the root page first; this operation
+	may span several mini-transactions */
+
+	btr_free_but_not_root(space, root_page_no);
+
+	/* Then we free the root page in the same mini-transaction where
+	we create the b-tree and write its new root page number to the
+	appropriate field in the SYS_INDEXES record: this mini-transaction
+	marks the B-tree totally truncated */
+
+	comp = page_is_comp(btr_page_get(
+				space, root_page_no, RW_X_LATCH, mtr));
+
+	btr_free_root(space, root_page_no, mtr);
+	/* We will temporarily write FIL_NULL to the PAGE_NO field
+	in SYS_INDEXES, so that the database will not get into an
+	inconsistent state in case it crashes between the mtr_commit()
+	below and the following mtr_commit() call. */
 	page_rec_write_index_page_no(rec, DICT_SYS_INDEXES_PAGE_NO_FIELD,
 							FIL_NULL, mtr);
+
+	/* We will need to commit the mini-transaction in order to avoid
+	deadlocks in the btr_create() call, because otherwise we would
+	be freeing and allocating pages in the same mini-transaction. */
+	btr_pcur_store_position(pcur, mtr);
+	mtr_commit(mtr);
+
+	mtr_start(mtr);
+	btr_pcur_restore_position(BTR_MODIFY_LEAF, pcur, mtr);
+
+	/* Find the index corresponding to this SYS_INDEXES record. */
+	for (index = UT_LIST_GET_FIRST(table->indexes);
+			index;
+			index = UT_LIST_GET_NEXT(indexes, index)) {
+		if (!ut_dulint_cmp(index->id, index_id)) {
+			break;
+		}
+	}
+
+	root_page_no = btr_create(type, space, index_id, comp, mtr);
+	if (index) {
+		index->tree->page = root_page_no;
+	} else {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+			"  InnoDB: Index %lu %lu of table %s is missing\n"
+			"InnoDB: from the data dictionary during TRUNCATE!\n",
+			ut_dulint_get_high(index_id),
+			ut_dulint_get_low(index_id),
+			table->name);
+	}
+
+	return(root_page_no);
 }
 
 /*************************************************************************
@@ -770,6 +900,7 @@ ind_create_graph_create(
 	node->index = index;
 
 	node->state = INDEX_BUILD_INDEX_DEF;
+	node->page_no = FIL_NULL;
 	node->heap = mem_heap_create(256);
 
 	node->ind_def = ins_node_create(INS_DIRECT,
@@ -989,7 +1120,8 @@ dict_create_index_step(
 
 	if (node->state == INDEX_ADD_TO_CACHE) {
 
-		success = dict_index_add_to_cache(node->table, node->index);
+		success = dict_index_add_to_cache(node->table, node->index,
+				node->page_no);
 
 		ut_a(success);
 

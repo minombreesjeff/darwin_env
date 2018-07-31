@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,6 +40,34 @@ static struct st_procedure_def {
   { "analyse",proc_analyse_init }		// Analyse a result
 };
 
+
+my_decimal *Item_proc_string::val_decimal(my_decimal *decimal_value)
+{
+  if (null_value)
+    return 0;
+  string2my_decimal(E_DEC_FATAL_ERROR, &str_value, decimal_value);
+  return (decimal_value);
+}
+
+
+my_decimal *Item_proc_int::val_decimal(my_decimal *decimal_value)
+{
+  if (null_value)
+    return 0;
+  int2my_decimal(E_DEC_FATAL_ERROR, value, unsigned_flag, decimal_value);
+  return (decimal_value);
+}
+
+
+my_decimal *Item_proc_real::val_decimal(my_decimal *decimal_value)
+{
+  if (null_value)
+    return 0;
+  double2my_decimal(E_DEC_FATAL_ERROR, value, decimal_value);
+  return (decimal_value);
+}
+
+
 /*****************************************************************************
 ** Setup handling of procedure
 ** Return 0 if everything is ok
@@ -65,8 +92,7 @@ setup_procedure(THD *thd,ORDER *param,select_result *result,
       DBUG_RETURN(proc);
     }
   }
-  my_printf_error(ER_UNKNOWN_PROCEDURE,ER(ER_UNKNOWN_PROCEDURE),MYF(0),
-		  (*param->item)->name);
+  my_error(ER_UNKNOWN_PROCEDURE, MYF(0), (*param->item)->name);
   *error=1;
   DBUG_RETURN(0);
 }

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,7 +44,7 @@ int my_getwd(my_string buf, uint size, myf MyFlags)
 {
   my_string pos;
   DBUG_ENTER("my_getwd");
-  DBUG_PRINT("my",("buf: 0x%lx  size: %d  MyFlags %d", buf,size,MyFlags));
+  DBUG_PRINT("my",("buf: 0x%lx  size: %d  MyFlags %d", (long) buf,size,MyFlags));
 
 #if ! defined(MSDOS)
   if (curr_dir[0])				/* Current pos is saved here */

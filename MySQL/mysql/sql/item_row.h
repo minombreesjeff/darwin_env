@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,7 +38,7 @@ public:
   {
     illegal_method_call((const char*)"make_field");
   };
-  double val()
+  double val_real()
   {
     illegal_method_call((const char*)"val");
     return 0;
@@ -54,7 +53,12 @@ public:
     illegal_method_call((const char*)"val_str");
     return 0;
   };
-  bool fix_fields(THD *thd, TABLE_LIST *tables, Item **ref);
+  my_decimal *val_decimal(my_decimal *)
+  {
+    illegal_method_call((const char*)"val_decimal");
+    return 0;
+  };
+  bool fix_fields(THD *thd, Item **ref);
   void cleanup();
   void split_sum_func(THD *thd, Item **ref_pointer_array, List<Item> &fields);
   table_map used_tables() const { return used_tables_cache; };
@@ -64,9 +68,10 @@ public:
   void print(String *str);
 
   bool walk(Item_processor processor, byte *arg);
+  Item *transform(Item_transformer transformer, byte *arg);
 
   uint cols() { return arg_count; }
-  Item* el(uint i) { return items[i]; }
+  Item* element_index(uint i) { return items[i]; }
   Item** addr(uint i) { return items + i; }
   bool check_cols(uint c);
   bool null_inside() { return with_null; };

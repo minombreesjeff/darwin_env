@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -121,13 +120,11 @@ set_field_to_null(Field *field)
   field->reset();
   if (current_thd->count_cuted_fields == CHECK_FIELD_WARN)
   {
-    field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
-                       ER_WARN_DATA_TRUNCATED, 1);
+    field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
     return 0;
   }
   if (!current_thd->no_errors)
-    my_printf_error(ER_BAD_NULL_ERROR,ER(ER_BAD_NULL_ERROR),MYF(0),
-		    field->field_name);
+    my_error(ER_BAD_NULL_ERROR, MYF(0), field->field_name);
   return -1;
 }
 
@@ -176,17 +173,15 @@ set_field_to_null_with_conversions(Field *field, bool no_conversions)
   if (field == field->table->next_number_field)
   {
     field->table->auto_increment_field_not_null= FALSE;
-    return 0;					// field is set in handler.cc
+    return 0;				  // field is set in fill_record()
   }
   if (current_thd->count_cuted_fields == CHECK_FIELD_WARN)
   {
-    field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
-                       ER_WARN_NULL_TO_NOTNULL, 1);
+    field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN, ER_BAD_NULL_ERROR, 1);
     return 0;
   }
   if (!current_thd->no_errors)
-    my_printf_error(ER_BAD_NULL_ERROR,ER(ER_BAD_NULL_ERROR),MYF(0),
-		    field->field_name);
+    my_error(ER_BAD_NULL_ERROR, MYF(0), field->field_name);
   return -1;
 }
 
@@ -232,7 +227,7 @@ static void do_copy_not_null(Copy_field *copy)
   if (*copy->from_null_ptr & copy->from_bit)
   {
     copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
-                                ER_WARN_DATA_TRUNCATED, 1);
+                                WARN_DATA_TRUNCATED, 1);
     copy->to_field->reset();
   }
   else
@@ -307,20 +302,44 @@ static void do_field_string(Copy_field *copy)
   char buff[MAX_FIELD_WIDTH];
   copy->tmp.set_quick(buff,sizeof(buff),copy->tmp.charset());
   copy->from_field->val_str(&copy->tmp);
-  copy->to_field->store(copy->tmp.c_ptr_quick(),copy->tmp.length(),copy->tmp.charset());
+  copy->to_field->store(copy->tmp.c_ptr_quick(),copy->tmp.length(),
+                        copy->tmp.charset());
+}
+
+
+static void do_field_varbinary_pre50(Copy_field *copy)
+{
+  char buff[MAX_FIELD_WIDTH];
+  copy->tmp.set_quick(buff,sizeof(buff),copy->tmp.charset());
+  copy->from_field->val_str(&copy->tmp);
+
+  /* Use the same function as in 4.1 to trim trailing spaces */
+  uint length= my_lengthsp_8bit(&my_charset_bin, copy->tmp.c_ptr_quick(),
+                                copy->from_field->field_length);
+
+  copy->to_field->store(copy->tmp.c_ptr_quick(), length,
+                        copy->tmp.charset());
 }
 
 
 static void do_field_int(Copy_field *copy)
 {
-  longlong value=copy->from_field->val_int();
-  copy->to_field->store(value);
+  longlong value= copy->from_field->val_int();
+  copy->to_field->store(value,
+                        test(copy->from_field->flags & UNSIGNED_FLAG));
 }
 
 static void do_field_real(Copy_field *copy)
 {
   double value=copy->from_field->val_real();
   copy->to_field->store(value);
+}
+
+
+static void do_field_decimal(Copy_field *copy)
+{
+  my_decimal value;
+  copy->to_field->store_decimal(copy->from_field->val_decimal(&value));
 }
 
 
@@ -341,7 +360,7 @@ static void do_cut_string(Copy_field *copy)
                      MY_SEQ_SPACES) < copy->from_length - copy->to_length)
   {
     copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
-                                ER_WARN_DATA_TRUNCATED, 1);
+                                WARN_DATA_TRUNCATED, 1);
   }
 }
 
@@ -369,7 +388,7 @@ static void do_cut_string_complex(Copy_field *copy)
                      MY_SEQ_SPACES) < (copy->from_length - copy_length))
   {
     copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
-                                ER_WARN_DATA_TRUNCATED, 1);
+                                WARN_DATA_TRUNCATED, 1);
   }
 
   if (copy_length < copy->to_length)
@@ -377,6 +396,16 @@ static void do_cut_string_complex(Copy_field *copy)
                    copy->to_length - copy_length, ' ');
 }
 
+
+
+
+static void do_expand_binary(Copy_field *copy)
+{
+  CHARSET_INFO *cs= copy->from_field->charset();
+  memcpy(copy->to_ptr,copy->from_ptr,copy->from_length);
+  cs->cset->fill(cs, copy->to_ptr+copy->from_length,
+                     copy->to_length-copy->from_length, '\0');
+}
 
 
 
@@ -388,19 +417,77 @@ static void do_expand_string(Copy_field *copy)
                      copy->to_length-copy->from_length, ' ');
 }
 
-static void do_varstring(Copy_field *copy)
+
+static void do_varstring1(Copy_field *copy)
 {
-  uint length=uint2korr(copy->from_ptr);
-  if (length > copy->to_length-2)
+  uint length= (uint) *(uchar*) copy->from_ptr;
+  if (length > copy->to_length- 1)
   {
-    length=copy->to_length-2;
+    length=copy->to_length - 1;
     if (current_thd->count_cuted_fields)
       copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
-                                  ER_WARN_DATA_TRUNCATED, 1);
+                                  WARN_DATA_TRUNCATED, 1);
+  }
+  *(uchar*) copy->to_ptr= (uchar) length;
+  memcpy(copy->to_ptr+1, copy->from_ptr + 1, length);
+}
+
+
+static void do_varstring1_mb(Copy_field *copy)
+{
+  int well_formed_error;
+  CHARSET_INFO *cs= copy->from_field->charset();
+  uint from_length= (uint) *(uchar*) copy->from_ptr;
+  const char *from_ptr= copy->from_ptr + 1;
+  uint to_char_length= (copy->to_length - 1) / cs->mbmaxlen;
+  uint length= cs->cset->well_formed_len(cs, from_ptr, from_ptr + from_length,
+                                         to_char_length, &well_formed_error);
+  if (length < from_length)
+  {
+    if (current_thd->count_cuted_fields)
+      copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
+                                  WARN_DATA_TRUNCATED, 1);
+  }
+  *(uchar*) copy->to_ptr= (uchar) length;
+  memcpy(copy->to_ptr + 1, from_ptr, length);
+}
+
+
+static void do_varstring2(Copy_field *copy)
+{
+  uint length=uint2korr(copy->from_ptr);
+  if (length > copy->to_length- HA_KEY_BLOB_LENGTH)
+  {
+    length=copy->to_length-HA_KEY_BLOB_LENGTH;
+    if (current_thd->count_cuted_fields)
+      copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
+                                  WARN_DATA_TRUNCATED, 1);
   }
   int2store(copy->to_ptr,length);
-  memcpy(copy->to_ptr+2, copy->from_ptr,length);
+  memcpy(copy->to_ptr+HA_KEY_BLOB_LENGTH, copy->from_ptr + HA_KEY_BLOB_LENGTH,
+         length);
 }
+
+
+static void do_varstring2_mb(Copy_field *copy)
+{
+  int well_formed_error;
+  CHARSET_INFO *cs= copy->from_field->charset();
+  uint char_length= (copy->to_length - HA_KEY_BLOB_LENGTH) / cs->mbmaxlen;
+  uint from_length= uint2korr(copy->from_ptr);
+  const char *from_beg= copy->from_ptr + HA_KEY_BLOB_LENGTH;
+  uint length= cs->cset->well_formed_len(cs, from_beg, from_beg + from_length,
+                                         char_length, &well_formed_error);
+  if (length < from_length)
+  {
+    if (current_thd->count_cuted_fields)
+      copy->to_field->set_warning(MYSQL_ERROR::WARN_LEVEL_WARN,
+                                  WARN_DATA_TRUNCATED, 1);
+  }  
+  int2store(copy->to_ptr, length);
+  memcpy(copy->to_ptr+HA_KEY_BLOB_LENGTH, from_beg, length);
+}
+ 
 
 /***************************************************************************
 ** The different functions that fills in a Copy_field class
@@ -442,7 +529,21 @@ void Copy_field::set(char *to,Field *from)
 }
 
 
+/*
+  To do: 
 
+  If 'save\ is set to true and the 'from' is a blob field, do_copy is set to
+  do_save_blob rather than do_conv_blob.  The only differences between them
+  appears to be:
+
+  - do_save_blob allocates and uses an intermediate buffer before calling 
+    Field_blob::store. Is this in order to trigger the call to 
+    well_formed_copy_nchars, by changing the pointer copy->tmp.ptr()?
+    That call will take place anyway in all known cases.
+
+  - The above causes a truncation to MAX_FIELD_WIDTH. Is this the intended 
+    effect? Truncation is handled by well_formed_copy_nchars anyway.
+ */
 void Copy_field::set(Field *to,Field *from,bool save)
 {
   if (to->type() == FIELD_TYPE_NULL)
@@ -507,26 +608,49 @@ void Copy_field::set(Field *to,Field *from,bool save)
 
 void (*Copy_field::get_copy_func(Field *to,Field *from))(Copy_field*)
 {
+  bool compatible_db_low_byte_first= (to->table->s->db_low_byte_first ==
+                                     from->table->s->db_low_byte_first);
   if (to->flags & BLOB_FLAG)
   {
     if (!(from->flags & BLOB_FLAG) || from->charset() != to->charset())
       return do_conv_blob;
-    if (from_length != to_length ||
-	to->table->db_low_byte_first != from->table->db_low_byte_first)
+    if (from_length != to_length || !compatible_db_low_byte_first)
     {
       // Correct pointer to point at char pointer
-      to_ptr+=to_length - to->table->blob_ptr_size;
-      from_ptr+=from_length- from->table->blob_ptr_size;
+      to_ptr+=   to_length - to->table->s->blob_ptr_size;
+      from_ptr+= from_length- from->table->s->blob_ptr_size;
       return do_copy_blob;
     }
   }
   else
   {
+    if (to->real_type() == FIELD_TYPE_BIT ||
+        from->real_type() == FIELD_TYPE_BIT)
+      return do_field_int;
+    if (to->result_type() == DECIMAL_RESULT)
+      return do_field_decimal;
     // Check if identical fields
     if (from->result_type() == STRING_RESULT)
     {
+      /*
+        Detect copy from pre 5.0 varbinary to varbinary as of 5.0 and
+        use special copy function that removes trailing spaces and thus
+        repairs data.
+      */
+      if (from->type() == MYSQL_TYPE_VAR_STRING && !from->has_charset() &&
+          to->type() == MYSQL_TYPE_VARCHAR && !to->has_charset())
+        return do_field_varbinary_pre50;
+
+      /*
+        If we are copying date or datetime's we have to check the dates
+        if we don't allow 'all' dates.
+      */
       if (to->real_type() != from->real_type() ||
-	  to->table->db_low_byte_first != from->table->db_low_byte_first)
+          !compatible_db_low_byte_first ||
+          ((to->table->in_use->variables.sql_mode &
+            (MODE_NO_ZERO_IN_DATE | MODE_NO_ZERO_DATE | MODE_INVALID_DATES)) &&
+           to->type() == FIELD_TYPE_DATE ||
+           to->type() == FIELD_TYPE_DATETIME))
       {
 	if (from->real_type() == FIELD_TYPE_ENUM ||
 	    from->real_type() == FIELD_TYPE_SET)
@@ -542,18 +666,33 @@ void (*Copy_field::get_copy_func(Field *to,Field *from))(Copy_field*)
       }
       else if (to->charset() != from->charset())
 	return do_field_string;
-      else if (to->real_type() == FIELD_TYPE_VAR_STRING && to_length !=
-	       from_length)
-	return do_varstring;
+      else if (to->real_type() == MYSQL_TYPE_VARCHAR)
+      {
+        if (((Field_varstring*) to)->length_bytes !=
+            ((Field_varstring*) from)->length_bytes)
+          return do_field_string;
+        if (to_length != from_length)
+          return (((Field_varstring*) to)->length_bytes == 1 ?
+                  (from->charset()->mbmaxlen == 1 ? do_varstring1 :
+                                                    do_varstring1_mb) :
+                  (from->charset()->mbmaxlen == 1 ? do_varstring2 :
+                                                    do_varstring2_mb));
+      }
       else if (to_length < from_length)
 	return (from->charset()->mbmaxlen == 1 ?
                 do_cut_string : do_cut_string_complex);
       else if (to_length > from_length)
-	return do_expand_string;
+      {
+        if ((to->flags & BINARY_FLAG) != 0)
+          return do_expand_binary;
+        else
+          return do_expand_string;
+      }
+
     }
     else if (to->real_type() != from->real_type() ||
 	     to_length != from_length ||
-	     to->table->db_low_byte_first != from->table->db_low_byte_first)
+             !compatible_db_low_byte_first)
     {
       if (to->real_type() == FIELD_TYPE_DECIMAL ||
 	  to->result_type() == STRING_RESULT)
@@ -564,8 +703,7 @@ void (*Copy_field::get_copy_func(Field *to,Field *from))(Copy_field*)
     }
     else
     {
-      if (!to->eq_def(from) ||
-	  to->table->db_low_byte_first != from->table->db_low_byte_first)
+      if (!to->eq_def(from) || !compatible_db_low_byte_first)
       {
 	if (to->real_type() == FIELD_TYPE_DECIMAL)
 	  return do_field_string;
@@ -591,33 +729,51 @@ void (*Copy_field::get_copy_func(Field *to,Field *from))(Copy_field*)
 
 /* Simple quick field convert that is called on insert */
 
-void field_conv(Field *to,Field *from)
+int field_conv(Field *to,Field *from)
 {
-  if (to->real_type() == from->real_type())
+  if (to->real_type() == from->real_type() &&
+      !(to->type() == FIELD_TYPE_BLOB && to->table->copy_blobs))
   {
     if (to->pack_length() == from->pack_length() &&
         !(to->flags & UNSIGNED_FLAG && !(from->flags & UNSIGNED_FLAG)) &&
 	to->real_type() != FIELD_TYPE_ENUM &&
 	to->real_type() != FIELD_TYPE_SET &&
-        (to->real_type() != FIELD_TYPE_DECIMAL ||
+        to->real_type() != FIELD_TYPE_BIT &&
+        (to->real_type() != FIELD_TYPE_NEWDECIMAL ||
          (to->field_length == from->field_length &&
-          (((Field_num*) to)->dec == ((Field_num*) from)->dec))) &&
+          (((Field_num*)to)->dec == ((Field_num*)from)->dec))) &&
         from->charset() == to->charset() &&
-	to->table->db_low_byte_first == from->table->db_low_byte_first)
+	to->table->s->db_low_byte_first == from->table->s->db_low_byte_first &&
+        (!(to->table->in_use->variables.sql_mode &
+           (MODE_NO_ZERO_IN_DATE | MODE_NO_ZERO_DATE | MODE_INVALID_DATES)) ||
+         to->type() != FIELD_TYPE_DATE &&
+         to->type() != FIELD_TYPE_DATETIME) &&
+        (from->real_type() != MYSQL_TYPE_VARCHAR ||
+         ((Field_varstring*)from)->length_bytes ==
+          ((Field_varstring*)to)->length_bytes))
     {						// Identical fields
-      memcpy(to->ptr,from->ptr,to->pack_length());
-      return;
+#ifdef HAVE_purify
+      /* This may happen if one does 'UPDATE ... SET x=x' */
+      if (to->ptr != from->ptr)
+#endif
+        memcpy(to->ptr,from->ptr,to->pack_length());
+      return 0;
     }
   }
   if (to->type() == FIELD_TYPE_BLOB)
   {						// Be sure the value is stored
     Field_blob *blob=(Field_blob*) to;
     from->val_str(&blob->value);
-    if (!blob->value.is_alloced() &&
-	from->real_type() != FIELD_TYPE_STRING)
+    /*
+      Copy value if copy_blobs is set, or source is not a string and
+      we have a pointer to its internal string conversion buffer.
+    */
+    if (to->table->copy_blobs ||
+        (!blob->value.is_alloced() &&
+         from->real_type() != MYSQL_TYPE_STRING &&
+         from->real_type() != MYSQL_TYPE_VARCHAR))
       blob->value.copy();
-    blob->store(blob->value.ptr(),blob->value.length(),from->charset());
-    return;
+    return blob->store(blob->value.ptr(),blob->value.length(),from->charset());
   }
   if ((from->result_type() == STRING_RESULT &&
        (to->result_type() == STRING_RESULT ||
@@ -628,10 +784,21 @@ void field_conv(Field *to,Field *from)
     char buff[MAX_FIELD_WIDTH];
     String result(buff,sizeof(buff),from->charset());
     from->val_str(&result);
-    to->store(result.c_ptr_quick(),result.length(),from->charset());
+    /*
+      We use c_ptr_quick() here to make it easier if to is a float/double
+      as the conversion routines will do a copy of the result doesn't
+      end with \0. Can be replaced with .ptr() when we have our own
+      string->double conversion.
+    */
+    return to->store(result.c_ptr_quick(),result.length(),from->charset());
   }
   else if (from->result_type() == REAL_RESULT)
-    to->store(from->val_real());
+    return to->store(from->val_real());
+  else if (from->result_type() == DECIMAL_RESULT)
+  {
+    my_decimal buff;
+    return to->store_decimal(from->val_decimal(&buff));
+  }
   else
-    to->store(from->val_int());
+    return to->store(from->val_int(), test(from->flags & UNSIGNED_FLAG));
 }

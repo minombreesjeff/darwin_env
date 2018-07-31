@@ -23,16 +23,6 @@ special big record storage structure */
 
 #define	BTR_PAGE_MAX_REC_SIZE	(UNIV_PAGE_SIZE / 2 - 200)
 
-/* Maximum key size in a B-tree: the records on non-leaf levels must be
-shorter than this */
-
-#define	BTR_PAGE_MAX_KEY_SIZE	1024
-
-/* If data in page drops below this limit, we try to compress it.
-NOTE! The value has to be > 2 * BTR_MAX_KEY_SIZE */
-
-#define BTR_COMPRESS_LIMIT	(UNIV_PAGE_SIZE / 4 + 1);
-
 /* Latching modes for the search function (in btr0cur.*) */
 #define BTR_SEARCH_LEAF		RW_S_LATCH
 #define BTR_MODIFY_LEAF		RW_X_LATCH
@@ -155,7 +145,8 @@ ulint
 btr_node_ptr_get_child_page_no(
 /*===========================*/
 			   	/* out: child node address */
-	rec_t*	rec);		/* in: node pointer record */
+	rec_t*		rec,	/* in: node pointer record */
+	const ulint*	offsets);/* in: array returned by rec_get_offsets() */
 /****************************************************************
 Creates the root node for a new index tree. */
 
@@ -167,6 +158,7 @@ btr_create(
 	ulint	type,	/* in: type of the index */
 	ulint	space,	/* in: space where created */
 	dulint	index_id,/* in: index id */
+	ulint	comp,	/* in: nonzero=compact page format */
 	mtr_t*	mtr);	/* in: mini-transaction handle */
 /****************************************************************
 Frees a B-tree except the root page, which MUST be freed after this
@@ -210,8 +202,9 @@ Reorganizes an index page. */
 void
 btr_page_reorganize(
 /*================*/
-	page_t*	page,	/* in: page to be reorganized */
-	mtr_t*	mtr);	/* in: mtr */
+	page_t*		page,	/* in: page to be reorganized */
+	dict_index_t*	index,	/* in: record descriptor */
+	mtr_t*		mtr);	/* in: mtr */
 /*****************************************************************
 Decides if the page should be split at the convergence point of
 inserts converging to left. */
@@ -273,6 +266,7 @@ void
 btr_set_min_rec_mark(
 /*=================*/
 	rec_t*	rec,	/* in: record */
+	ulint	comp,	/* in: nonzero=compact page format */
 	mtr_t*	mtr);	/* in: mtr */
 /*****************************************************************
 Deletes on the upper level the node pointer to a page. */
@@ -332,6 +326,7 @@ btr_parse_set_min_rec_mark(
 			/* out: end of log record or NULL */
 	byte*	ptr,	/* in: buffer */
 	byte*	end_ptr,/* in: buffer end */
+	ulint	comp,	/* in: nonzero=compact page format */
 	page_t*	page,	/* in: page or NULL */
 	mtr_t*	mtr);	/* in: mtr or NULL */
 /***************************************************************
@@ -340,11 +335,12 @@ Parses a redo log record of reorganizing a page. */
 byte*
 btr_parse_page_reorganize(
 /*======================*/
-			/* out: end of log record or NULL */
-	byte*	ptr,	/* in: buffer */
-	byte*	end_ptr,/* in: buffer end */
-	page_t*	page,	/* in: page or NULL */
-	mtr_t*	mtr);	/* in: mtr or NULL */
+				/* out: end of log record or NULL */
+	byte*		ptr,	/* in: buffer */
+	byte*		end_ptr,/* in: buffer end */
+	dict_index_t*	index,	/* in: record descriptor */
+	page_t*		page,	/* in: page or NULL */
+	mtr_t*		mtr);	/* in: mtr or NULL */
 /******************************************************************
 Gets the number of pages in a B-tree. */
 
@@ -392,6 +388,7 @@ btr_page_free_low(
 	page_t*		page,	/* in: page to be freed, x-latched */	
 	ulint		level,	/* in: page level */
 	mtr_t*		mtr);	/* in: mtr */
+#ifdef UNIV_BTR_PRINT
 /*****************************************************************
 Prints size info of a B-tree. */
 
@@ -408,6 +405,7 @@ btr_print_tree(
 	dict_tree_t*	tree,	/* in: tree */
 	ulint		width);	/* in: print this many entries from start
 				and end */
+#endif /* UNIV_BTR_PRINT */
 /****************************************************************
 Checks the size and number of fields in a record based on the definition of
 the index. */
@@ -428,7 +426,8 @@ ibool
 btr_validate_tree(
 /*==============*/
 				/* out: TRUE if ok */
-	dict_tree_t*	tree);	/* in: tree */
+	dict_tree_t*	tree,	/* in: tree */
+	trx_t*		trx);	/* in: transaction or NULL */
 
 #define BTR_N_LEAF_PAGES 	1
 #define BTR_TOTAL_SIZE		2

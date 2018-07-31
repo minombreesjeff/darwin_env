@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,7 +15,7 @@
 
 #include <ndb_global.h>
 #include <NdbOperation.hpp>
-#include <NdbConnection.hpp>
+#include <NdbTransaction.hpp>
 #include "NdbApiSignal.hpp"
 #include <Ndb.hpp>
 #include <NdbRecAttr.hpp>
@@ -65,7 +64,7 @@ NdbOperation::doSend(int aNodeId, Uint32 lastFlag)
   if (tReturnCode == -1) {
     return -1;
   }
-  NdbApiSignal *tSignal = theFirstKEYINFO;
+  NdbApiSignal *tSignal = theTCREQ->next();
   while (tSignal != NULL) {
     NdbApiSignal* tnextSignal = tSignal->next();
     tReturnCode = tp->sendSignal(tSignal, aNodeId);
@@ -177,8 +176,6 @@ NdbOperation::prepareSend(Uint32 aTC_ConnectPtr, Uint64 aTransId)
 // Simple state is set if start and commit is set and it is
 // a read request. Otherwise it is set to zero.
 //-------------------------------------------------------------
-  Uint8 tReadInd = (theOperationType == ReadRequest);
-  Uint8 tSimpleState = tReadInd & tSimpleIndicator;
 
   tcKeyReq->transId1           = tTransId1;
   tcKeyReq->transId2           = tTransId2;
@@ -205,16 +202,12 @@ NdbOperation::prepareSend(Uint32 aTC_ConnectPtr, Uint64 aTransId)
   tcKeyReq->setKeyLength(tReqInfo, tTupKeyLen);
   
   // A simple read is always ignore error
-  abortOption = tSimpleIndicator ? AO_IgnoreError : abortOption;
+  abortOption = tSimpleIndicator ? (Uint8) AO_IgnoreError : abortOption;
   tcKeyReq->setAbortOption(tReqInfo, abortOption);
   
-  Uint8 tDistrKeyIndicator = theDistrKeyIndicator;
-  Uint8 tDistrGroupIndicator = theDistrGroupIndicator;
-  Uint8 tDistrGroupType = theDistrGroupType;
+  Uint8 tDistrKeyIndicator = theDistrKeyIndicator_;
   Uint8 tScanIndicator = theScanInfo & 1;
 
-  tcKeyReq->setDistributionGroupFlag(tReqInfo, tDistrGroupIndicator);
-  tcKeyReq->setDistributionGroupTypeFlag(tReqInfo, tDistrGroupType);
   tcKeyReq->setDistributionKeyFlag(tReqInfo, tDistrKeyIndicator);
   tcKeyReq->setScanIndFlag(tReqInfo, tScanIndicator);
 
@@ -225,15 +218,13 @@ NdbOperation::prepareSend(Uint32 aTC_ConnectPtr, Uint64 aTransId)
 //-------------------------------------------------------------
   Uint32* tOptionalDataPtr = &tcKeyReq->scanInfo;
   Uint32 tDistrGHIndex = tScanIndicator;
-  Uint32 tDistrKeyIndex = tDistrGHIndex + tDistrGroupIndicator;
+  Uint32 tDistrKeyIndex = tDistrGHIndex;
 
   Uint32 tScanInfo = theScanInfo;
-  Uint32 tDistributionGroup = theDistributionGroup;
-  Uint32 tDistrKeySize = theDistrKeySize;
+  Uint32 tDistrKey = theDistributionKey;
 
   tOptionalDataPtr[0] = tScanInfo;
-  tOptionalDataPtr[tDistrGHIndex] = tDistributionGroup;
-  tOptionalDataPtr[tDistrKeyIndex] = tDistrKeySize;
+  tOptionalDataPtr[tDistrKeyIndex] = tDistrKey;
 
 //-------------------------------------------------------------
 // The next is step is to compress the key data part of the
@@ -273,7 +264,7 @@ NdbOperation::prepareSend(Uint32 aTC_ConnectPtr, Uint64 aTransId)
     /**
      *	Set transid, TC connect ptr and length in the KEYINFO signals
      */
-    NdbApiSignal* tSignal = theFirstKEYINFO;
+    NdbApiSignal* tSignal = theTCREQ->next();
     Uint32 remainingKey = tTupKeyLen - TcKeyReq::MaxKeyInfo;
     do {
       Uint32* tSigDataPtr = tSignal->getDataPtrSend();
@@ -555,10 +546,11 @@ NdbOperation::receiveTCKEYREF( NdbApiSignal* aSignal)
   theStatus = Finished;
   // blobs want this
   if (m_abortOption != AO_IgnoreError)
-    theNdbCon->theReturnStatus = NdbConnection::ReturnFailure;
-
+  {
+    theNdbCon->theReturnStatus = NdbTransaction::ReturnFailure;
+  }
   theError.code = aSignal->readData(4);
-  theNdbCon->setOperationErrorCodeAbort(aSignal->readData(4), m_abortOption);
+  theNdbCon->setOperationErrorCodeAbort(aSignal->readData(4), ao);
 
   if(theOperationType != ReadRequest || !theSimpleIndicator) // not simple read
     return theNdbCon->OpCompleteFailure(ao, m_abortOption != AO_IgnoreError);

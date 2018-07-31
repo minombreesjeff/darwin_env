@@ -14,12 +14,12 @@
 
 @SET_MAKE@
 
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2001-2006 MySQL AB
 # 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 # 
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -61,11 +61,28 @@ subdir = libmysqld
 DIST_COMMON = $(noinst_HEADERS) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
+	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
+	$(top_srcdir)/config/ac-macros/character_sets.m4 \
+	$(top_srcdir)/config/ac-macros/compiler_flag.m4 \
+	$(top_srcdir)/config/ac-macros/ha_archive.m4 \
+	$(top_srcdir)/config/ac-macros/ha_berkeley.m4 \
+	$(top_srcdir)/config/ac-macros/ha_blackhole.m4 \
+	$(top_srcdir)/config/ac-macros/ha_example.m4 \
+	$(top_srcdir)/config/ac-macros/ha_federated.m4 \
+	$(top_srcdir)/config/ac-macros/ha_innodb.m4 \
+	$(top_srcdir)/config/ac-macros/ha_ndbcluster.m4 \
+	$(top_srcdir)/config/ac-macros/ha_tina.m4 \
+	$(top_srcdir)/config/ac-macros/large_file.m4 \
+	$(top_srcdir)/config/ac-macros/misc.m4 \
+	$(top_srcdir)/config/ac-macros/openssl.m4 \
+	$(top_srcdir)/config/ac-macros/readline.m4 \
+	$(top_srcdir)/config/ac-macros/yassl.m4 \
+	$(top_srcdir)/config/ac-macros/zlib.m4 \
 	$(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
@@ -77,7 +94,6 @@ am__strip_dir = `echo $$p | sed -e 's|^.*/||'`;
 am__installdirs = "$(DESTDIR)$(pkglibdir)"
 pkglibLIBRARIES_INSTALL = $(INSTALL_DATA)
 LIBRARIES = $(noinst_LIBRARIES) $(pkglib_LIBRARIES)
-ARFLAGS = cru
 libmysqld_a_AR = $(AR) $(ARFLAGS)
 libmysqld_a_LIBADD =
 am_libmysqld_a_OBJECTS =
@@ -91,13 +107,12 @@ am__objects_2 = errmsg.$(OBJEXT) get_password.$(OBJEXT) \
 	my_time.$(OBJEXT)
 am__objects_3 = derror.$(OBJEXT) field.$(OBJEXT) field_conv.$(OBJEXT) \
 	strfunc.$(OBJEXT) filesort.$(OBJEXT) ha_innodb.$(OBJEXT) \
-	ha_berkeley.$(OBJEXT) ha_heap.$(OBJEXT) ha_isam.$(OBJEXT) \
-	ha_isammrg.$(OBJEXT) ha_myisam.$(OBJEXT) \
-	ha_myisammrg.$(OBJEXT) handler.$(OBJEXT) sql_handler.$(OBJEXT) \
-	hostname.$(OBJEXT) init.$(OBJEXT) password.$(OBJEXT) \
-	item.$(OBJEXT) item_buff.$(OBJEXT) item_cmpfunc.$(OBJEXT) \
-	item_create.$(OBJEXT) item_func.$(OBJEXT) \
-	item_strfunc.$(OBJEXT) item_sum.$(OBJEXT) \
+	ha_berkeley.$(OBJEXT) ha_heap.$(OBJEXT) ha_federated.$(OBJEXT) \
+	ha_myisam.$(OBJEXT) ha_myisammrg.$(OBJEXT) handler.$(OBJEXT) \
+	sql_handler.$(OBJEXT) hostname.$(OBJEXT) init.$(OBJEXT) \
+	password.$(OBJEXT) item.$(OBJEXT) item_buff.$(OBJEXT) \
+	item_cmpfunc.$(OBJEXT) item_create.$(OBJEXT) \
+	item_func.$(OBJEXT) item_strfunc.$(OBJEXT) item_sum.$(OBJEXT) \
 	item_timefunc.$(OBJEXT) item_geofunc.$(OBJEXT) \
 	item_uniq.$(OBJEXT) item_subselect.$(OBJEXT) \
 	item_row.$(OBJEXT) key.$(OBJEXT) lock.$(OBJEXT) log.$(OBJEXT) \
@@ -105,22 +120,25 @@ am__objects_3 = derror.$(OBJEXT) field.$(OBJEXT) field_conv.$(OBJEXT) \
 	net_serv.$(OBJEXT) opt_range.$(OBJEXT) opt_sum.$(OBJEXT) \
 	procedure.$(OBJEXT) records.$(OBJEXT) sql_acl.$(OBJEXT) \
 	sql_load.$(OBJEXT) discover.$(OBJEXT) sql_locale.$(OBJEXT) \
-	sql_analyse.$(OBJEXT) sql_base.$(OBJEXT) sql_cache.$(OBJEXT) \
-	sql_class.$(OBJEXT) sql_crypt.$(OBJEXT) sql_db.$(OBJEXT) \
-	sql_delete.$(OBJEXT) sql_error.$(OBJEXT) sql_insert.$(OBJEXT) \
-	sql_lex.$(OBJEXT) sql_list.$(OBJEXT) sql_manager.$(OBJEXT) \
-	sql_map.$(OBJEXT) sql_parse.$(OBJEXT) sql_prepare.$(OBJEXT) \
-	sql_derived.$(OBJEXT) sql_rename.$(OBJEXT) \
-	sql_select.$(OBJEXT) sql_do.$(OBJEXT) sql_show.$(OBJEXT) \
-	set_var.$(OBJEXT) sql_string.$(OBJEXT) sql_table.$(OBJEXT) \
-	sql_test.$(OBJEXT) sql_udf.$(OBJEXT) sql_update.$(OBJEXT) \
-	sql_yacc.$(OBJEXT) table.$(OBJEXT) thr_malloc.$(OBJEXT) \
-	time.$(OBJEXT) unireg.$(OBJEXT) uniques.$(OBJEXT) \
-	stacktrace.$(OBJEXT) sql_union.$(OBJEXT) hash_filo.$(OBJEXT) \
-	spatial.$(OBJEXT) gstream.$(OBJEXT) sql_help.$(OBJEXT) \
-	tztime.$(OBJEXT) ha_blackhole.$(OBJEXT)
-am__objects_4 = ha_example.$(OBJEXT) ha_archive.$(OBJEXT) \
-	ha_tina.$(OBJEXT)
+	sql_profile.$(OBJEXT) sql_analyse.$(OBJEXT) sql_base.$(OBJEXT) \
+	sql_cache.$(OBJEXT) sql_class.$(OBJEXT) sql_crypt.$(OBJEXT) \
+	sql_db.$(OBJEXT) sql_delete.$(OBJEXT) sql_error.$(OBJEXT) \
+	sql_insert.$(OBJEXT) sql_lex.$(OBJEXT) sql_list.$(OBJEXT) \
+	sql_manager.$(OBJEXT) sql_map.$(OBJEXT) sql_parse.$(OBJEXT) \
+	sql_prepare.$(OBJEXT) sql_derived.$(OBJEXT) \
+	sql_rename.$(OBJEXT) sql_select.$(OBJEXT) sql_do.$(OBJEXT) \
+	sql_show.$(OBJEXT) set_var.$(OBJEXT) sql_string.$(OBJEXT) \
+	sql_table.$(OBJEXT) sql_test.$(OBJEXT) sql_udf.$(OBJEXT) \
+	sql_update.$(OBJEXT) sql_yacc.$(OBJEXT) table.$(OBJEXT) \
+	thr_malloc.$(OBJEXT) time.$(OBJEXT) unireg.$(OBJEXT) \
+	uniques.$(OBJEXT) stacktrace.$(OBJEXT) sql_union.$(OBJEXT) \
+	hash_filo.$(OBJEXT) spatial.$(OBJEXT) gstream.$(OBJEXT) \
+	sql_help.$(OBJEXT) tztime.$(OBJEXT) sql_cursor.$(OBJEXT) \
+	sp_head.$(OBJEXT) sp_pcontext.$(OBJEXT) sp.$(OBJEXT) \
+	sp_cache.$(OBJEXT) sp_rcontext.$(OBJEXT) parse_file.$(OBJEXT) \
+	sql_view.$(OBJEXT) sql_trigger.$(OBJEXT) my_decimal.$(OBJEXT) \
+	ha_blackhole.$(OBJEXT) ha_archive.$(OBJEXT) my_user.$(OBJEXT)
+am__objects_4 = ha_example.$(OBJEXT) ha_tina.$(OBJEXT)
 am_libmysqld_int_a_OBJECTS = $(am__objects_1) $(am__objects_2) \
 	$(am__objects_3) $(am__objects_4)
 libmysqld_int_a_OBJECTS = $(am_libmysqld_int_a_OBJECTS)
@@ -162,6 +180,7 @@ AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
 AR = @AR@
+ARFLAGS = @ARFLAGS@
 AS = @AS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
@@ -175,7 +194,6 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
-AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
@@ -228,7 +246,10 @@ HAVE_NDBCLUSTER_DB_FALSE = @HAVE_NDBCLUSTER_DB_FALSE@
 HAVE_NDBCLUSTER_DB_TRUE = @HAVE_NDBCLUSTER_DB_TRUE@
 HAVE_NETWARE_FALSE = @HAVE_NETWARE_FALSE@
 HAVE_NETWARE_TRUE = @HAVE_NETWARE_TRUE@
+HAVE_YASSL_FALSE = @HAVE_YASSL_FALSE@
+HAVE_YASSL_TRUE = @HAVE_YASSL_TRUE@
 HOSTNAME = @HOSTNAME@
+ICHECK = @ICHECK@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -247,34 +268,42 @@ LM_CFLAGS = @LM_CFLAGS@
 LN = @LN@
 LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
-LOCAL_FALSE = @LOCAL_FALSE@
-LOCAL_TRUE = @LOCAL_TRUE@
 LTLIBOBJS = @LTLIBOBJS@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAKEINDEX = @MAKEINDEX@
 MAKEINFO = @MAKEINFO@
 MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
-MT_INCLUDES = @MT_INCLUDES@
-MT_LD_ADD = @MT_LD_ADD@
 MV = @MV@
 MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
 MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_EXTRA_LIBS = @MYSQLD_EXTRA_LIBS@
 MYSQLD_USER = @MYSQLD_USER@
 MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
 MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_PREVIOUS_BASE_VERSION = @MYSQL_PREVIOUS_BASE_VERSION@
 MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
 MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
 MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
 MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NDB_DEFS = @NDB_DEFS@
+NDB_LD_VERSION_SCRIPT = @NDB_LD_VERSION_SCRIPT@
 NDB_SCI_INCLUDES = @NDB_SCI_INCLUDES@
 NDB_SCI_LIBS = @NDB_SCI_LIBS@
+NDB_SHARED_LIB_MAJOR_VERSION = @NDB_SHARED_LIB_MAJOR_VERSION@
+NDB_SHARED_LIB_VERSION = @NDB_SHARED_LIB_VERSION@
+NDB_SIZEOF_CHAR = @NDB_SIZEOF_CHAR@
+NDB_SIZEOF_CHARP = @NDB_SIZEOF_CHARP@
+NDB_SIZEOF_INT = @NDB_SIZEOF_INT@
+NDB_SIZEOF_LONG = @NDB_SIZEOF_LONG@
+NDB_SIZEOF_LONG_LONG = @NDB_SIZEOF_LONG_LONG@
+NDB_SIZEOF_SHORT = @NDB_SIZEOF_SHORT@
 NDB_VERSION_BUILD = @NDB_VERSION_BUILD@
 NDB_VERSION_MAJOR = @NDB_VERSION_MAJOR@
 NDB_VERSION_MINOR = @NDB_VERSION_MINOR@
 NDB_VERSION_STATUS = @NDB_VERSION_STATUS@
+NM = @NM@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 NON_THREADED_LIBS = @NON_THREADED_LIBS@
 OBJEXT = @OBJEXT@
@@ -310,7 +339,6 @@ TAR = @TAR@
 TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
-THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
@@ -346,7 +374,6 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
-fs_dirs = @fs_dirs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -358,7 +385,6 @@ innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
 install_sh = @install_sh@
-isam_libs = @isam_libs@
 libdir = @libdir@
 libexecdir = @libexecdir@
 libmysqld_dirs = @libmysqld_dirs@
@@ -376,7 +402,6 @@ ndb_cxxflags_fix = @ndb_cxxflags_fix@
 ndb_mgmclient_libs = @ndb_mgmclient_libs@
 ndb_opt_subdirs = @ndb_opt_subdirs@
 ndb_port = @ndb_port@
-ndb_port_base = @ndb_port_base@
 ndb_transporter_opt_objs = @ndb_transporter_opt_objs@
 ndbcluster_includes = @ndbcluster_includes@
 ndbcluster_libs = @ndbcluster_libs@
@@ -385,9 +410,6 @@ netware_dir = @netware_dir@
 oldincludedir = @oldincludedir@
 openssl_includes = @openssl_includes@
 openssl_libs = @openssl_libs@
-orbit_idl = @orbit_idl@
-orbit_includes = @orbit_includes@
-orbit_libs = @orbit_libs@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 pstack_dirs = @pstack_dirs@
@@ -413,15 +435,19 @@ target_vendor = @target_vendor@
 thread_dirs = @thread_dirs@
 tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
-vio_dir = @vio_dir@
-vio_libs = @vio_libs@
+yassl_dir = @yassl_dir@
+yassl_h_ln_cmd = @yassl_h_ln_cmd@
+yassl_libs = @yassl_libs@
+yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 MYSQLDATAdir = $(localstatedir)
 MYSQLSHAREdir = $(pkgdatadir)
 MYSQLBASEdir = $(prefix)
-INCLUDES = @MT_INCLUDES@ @bdb_includes@ \
+INCLUDES = @bdb_includes@  @innodb_includes@ @ndbcluster_includes@ \
 			-I$(top_builddir)/include -I$(top_srcdir)/include \
-			-I$(top_srcdir)/sql -I$(top_srcdir)/sql/examples -I$(top_srcdir)/regex \
+			-I$(top_builddir)/sql -I$(top_srcdir)/sql \
+			-I$(top_srcdir)/sql/examples \
+			-I$(top_srcdir)/regex \
 			$(openssl_includes) @ZLIB_INCLUDES@
 
 noinst_LIBRARIES = libmysqld_int.a
@@ -431,10 +457,10 @@ libmysqld_sources = libmysqld.c lib_sql.cc emb_qcache.cc
 libmysqlsources = errmsg.c get_password.c libmysql.c client.c pack.c \
                         my_time.c
 
-sqlexamplessources = ha_example.cc ha_archive.cc ha_tina.cc
+sqlexamplessources = ha_example.cc ha_tina.cc
 noinst_HEADERS = embedded_priv.h emb_qcache.h
 sqlsources = derror.cc field.cc field_conv.cc strfunc.cc filesort.cc \
-	ha_innodb.cc ha_berkeley.cc ha_heap.cc ha_isam.cc ha_isammrg.cc \
+	ha_innodb.cc ha_berkeley.cc ha_heap.cc ha_federated.cc \
 	ha_myisam.cc ha_myisammrg.cc handler.cc sql_handler.cc \
 	hostname.cc init.cc password.c \
 	item.cc item_buff.cc item_cmpfunc.cc item_create.cc \
@@ -444,6 +470,7 @@ sqlsources = derror.cc field.cc field_conv.cc strfunc.cc filesort.cc \
 	protocol.cc net_serv.cc opt_range.cc \
 	opt_sum.cc procedure.cc records.cc sql_acl.cc \
 	sql_load.cc discover.cc sql_locale.cc \
+	sql_profile.cc \
 	sql_analyse.cc sql_base.cc sql_cache.cc sql_class.cc \
 	sql_crypt.cc sql_db.cc sql_delete.cc sql_error.cc sql_insert.cc \
 	sql_lex.cc sql_list.cc sql_manager.cc sql_map.cc sql_parse.cc \
@@ -452,8 +479,10 @@ sqlsources = derror.cc field.cc field_conv.cc strfunc.cc filesort.cc \
 	sql_string.cc sql_table.cc sql_test.cc sql_udf.cc \
 	sql_update.cc sql_yacc.cc table.cc thr_malloc.cc time.cc \
 	unireg.cc uniques.cc stacktrace.c sql_union.cc hash_filo.cc \
-	spatial.cc gstream.cc sql_help.cc tztime.cc \
-	ha_blackhole.cc
+	spatial.cc gstream.cc sql_help.cc tztime.cc sql_cursor.cc \
+	sp_head.cc sp_pcontext.cc sp.cc sp_cache.cc sp_rcontext.cc \
+	parse_file.cc sql_view.cc sql_trigger.cc my_decimal.cc \
+	ha_blackhole.cc ha_archive.cc my_user.c
 
 libmysqld_int_a_SOURCES = $(libmysqld_sources) $(libmysqlsources) $(sqlsources) $(sqlexamplessources)
 libmysqld_a_SOURCES = 
@@ -467,7 +496,7 @@ INC_LIB = $(top_builddir)/regex/libregex.a \
 		$(top_builddir)/mysys/libmysys.a \
 		$(top_builddir)/strings/libmystrings.a \
 		$(top_builddir)/dbug/libdbug.a \
-		$(top_builddir)/vio/libvio.a
+		$(top_builddir)/vio/libvio.a @NDB_SCI_LIBS@
 
 all: all-recursive
 
@@ -559,10 +588,9 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_berkeley.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_blackhole.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_example.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_federated.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_heap.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_innodb.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_isam.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_isammrg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_myisam.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_myisammrg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_tina.Po@am__quote@
@@ -589,16 +617,24 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lock.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/log_event.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_decimal.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_time.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_user.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/net_serv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/opt_range.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/opt_sum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pack.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/parse_file.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/password.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/procedure.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/protocol.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/records.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/set_var.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_cache.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_head.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_pcontext.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sp_rcontext.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/spatial.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_acl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_analyse.Po@am__quote@
@@ -606,6 +642,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_cache.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_class.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_crypt.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_cursor.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_db.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_delete.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_derived.Po@am__quote@
@@ -622,6 +659,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_map.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_parse.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_prepare.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_profile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_rename.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_select.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_show.Po@am__quote@
@@ -629,9 +667,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_string.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_table.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_test.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_trigger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_udf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_union.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_update.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_view.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sql_yacc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stacktrace.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/strfunc.Po@am__quote@
@@ -977,43 +1017,51 @@ sql_yacc.cc sql_yacc.h: $(top_srcdir)/sql/sql_yacc.yy
 # To make it easy for the end user to use the embedded library we
 # generate a total libmysqld.a from all library files,
 
+# note - InnoDB libraries have circular dependencies, so in INC_LIB
+# few libraries are present two times. Metrowerks linker doesn't like
+# it at all. Traditional ar has no problems with it, but still there's no
+# need to add the same file twice to the library, so 'sort -u' save us
+# some time and spares unnecessary work.
+
 libmysqld.a:	libmysqld_int.a $(INC_LIB)
-@DARWIN_MWCC_TRUE@	mwld -lib -o $@ libmysqld_int.a `ls -1 $(INC_LIB) | sort -u`
+@DARWIN_MWCC_TRUE@	mwld -lib -o $@ libmysqld_int.a `echo $(INC_LIB) | sort -u`
+@DARWIN_MWCC_FALSE@		-rm -f libmysqld.a
 @DARWIN_MWCC_FALSE@		if test "$(host_os)" = "netware" ; \
 @DARWIN_MWCC_FALSE@		then \
 @DARWIN_MWCC_FALSE@		  $(libmysqld_a_AR) libmysqld.a libmysqld_int.a $(INC_LIB) ; \
 @DARWIN_MWCC_FALSE@		else \
-@DARWIN_MWCC_FALSE@		  if test ! -d tmp ; then mkdir tmp ; fi ; \
-@DARWIN_MWCC_FALSE@		  rm -f $@ libmysqld_int2.a tmp/*.o tmp/*.a ; \
-@DARWIN_MWCC_FALSE@		  cp $(INC_LIB) tmp ; \
-@DARWIN_MWCC_FALSE@		  cp libmysqld_int.a libmysqld_int2.a ; \
-@DARWIN_MWCC_FALSE@		  cd tmp ; \
-@DARWIN_MWCC_FALSE@		  for file in *.a ; do \
-@DARWIN_MWCC_FALSE@		    bfile=`basename $$file .a` ; \
-@DARWIN_MWCC_FALSE@		    $(AR) x $$file; \
-@DARWIN_MWCC_FALSE@		    for obj in *.o ; do mv $$obj $${bfile}_$$obj ; done ; \
-@DARWIN_MWCC_FALSE@		    $(AR) q ../libmysqld_int2.a *.o ; \
-@DARWIN_MWCC_FALSE@		    rm -f *.o ; \
-@DARWIN_MWCC_FALSE@		  done ; \
-@DARWIN_MWCC_FALSE@		  cd .. ; \
-@DARWIN_MWCC_FALSE@		  mv libmysqld_int2.a libmysqld.a ; \
-@DARWIN_MWCC_FALSE@		  rm -f tmp/* ; \
+@DARWIN_MWCC_FALSE@		  for arc in ./libmysqld_int.a $(INC_LIB); do \
+@DARWIN_MWCC_FALSE@		    arpath=`echo $$arc|sed 's|[^/]*$$||'`; \
+@DARWIN_MWCC_FALSE@		    $(AR) t $$arc|sed "s|^|$$arpath|"; \
+@DARWIN_MWCC_FALSE@		  done | sort -u | xargs $(AR) cq libmysqld.a ; \
 @DARWIN_MWCC_FALSE@		  $(RANLIB) libmysqld.a	; \
 @DARWIN_MWCC_FALSE@		fi
 
 #libmysqld_la_LDFLAGS = -version-info @SHARED_LIB_VERSION@
 #CLEANFILES =		$(libmysqld_la_LIBADD) libmysqld.la
 
-# This is called from the toplevel makefile
+# This is called from the toplevel makefile. If we can link now
+# to an existing file in source, we do that, else we assume it
+# will show up in the build tree eventually (generated file).
 link_sources:
 	  set -x; \
 	  for f in $(sqlsources); do \
 	    rm -f $$f; \
-	    @LN_CP_F@ $(top_srcdir)/sql/$$f $$f; \
+	    if test -e $(top_srcdir)/sql/$$f ; \
+	    then \
+	      @LN_CP_F@ $(top_srcdir)/sql/$$f $$f; \
+	    else \
+	      @LN_CP_F@ $(top_builddir)/sql/$$f $$f; \
+	    fi ; \
 	  done; \
 	  for f in $(libmysqlsources); do \
 	    rm -f $$f; \
-	    @LN_CP_F@ $(top_srcdir)/libmysql/$$f $$f; \
+	    if test -e $(top_srcdir)/libmysql/$$f ; \
+	    then \
+	      @LN_CP_F@ $(top_srcdir)/libmysql/$$f $$f; \
+	    else \
+	      @LN_CP_F@ $(top_builddir)/libmysql/$$f $$f; \
+	    fi ; \
 	  done; \
 	  for f in $(sqlexamplessources); do \
 	    rm -f $$f; \

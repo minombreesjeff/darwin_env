@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -607,7 +606,7 @@ void Dbtup::executeTrigger(Signal* signal,
     for everybody else.
     */
     signal->theData[0] = trigPtr->triggerId;
-    signal->theData[1] = regOperPtr->fragId;
+    signal->theData[1] = regOperPtr->fragId >> 1; // send "real" frag id
     EXECUTE_DIRECT(BACKUP, GSN_BACKUP_TRIG_REQ, signal, 2);
     ljamEntry();
     if (signal->theData[0] == 0) {
@@ -622,8 +621,7 @@ void Dbtup::executeTrigger(Signal* signal,
                        mainBuffer,
                        noMainWords,
                        copyBuffer,
-                       noCopyWords,
-		       (ref == BACKUP ? false : true))) {
+                       noCopyWords)) {
     ljam();
     return;
   }//if
@@ -728,8 +726,7 @@ bool Dbtup::readTriggerInfo(TupTriggerData* const trigPtr,
                             Uint32*  const mainBuffer,
                             Uint32& noMainWords,
                             Uint32* const copyBuffer,
-                            Uint32& noCopyWords,
-			    bool xfrm)
+                            Uint32& noCopyWords)
 {
   noCopyWords = 0;
   noMainWords = 0;
@@ -759,7 +756,7 @@ bool Dbtup::readTriggerInfo(TupTriggerData* const trigPtr,
 			  regTabPtr->noOfKeyAttr,
 			  keyBuffer,
 			  ZATTR_BUFFER_SIZE,
-			  xfrm);
+			  false);
   ndbrequire(ret != -1);
   noPrimKey= ret;
 
@@ -802,7 +799,7 @@ bool Dbtup::readTriggerInfo(TupTriggerData* const trigPtr,
 			    numAttrsToRead,
 			    mainBuffer,
 			    ZATTR_BUFFER_SIZE,
-			    xfrm);
+			    false);
     ndbrequire(ret != -1);
     noMainWords= ret;
   } else {
@@ -828,7 +825,7 @@ bool Dbtup::readTriggerInfo(TupTriggerData* const trigPtr,
 			    numAttrsToRead,
 			    copyBuffer,
 			    ZATTR_BUFFER_SIZE,
-			    xfrm);
+			    false);
 
     ndbrequire(ret != -1);
     noCopyWords = ret;

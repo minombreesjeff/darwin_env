@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -316,11 +315,16 @@ int runScanReadIndex(NDBT_Context* ctx, NDBT_Step* step){
   while (pIdx && i<loops && !ctx->isTestStopped()) {
     g_info << i << ": ";
     bool sort = (rand() % 100) > 50 ? true : false;
+    bool desc = (rand() % 100) > 50 ? true : false;
+    desc = false;       // random causes too many deadlocks
+    int scan_flags =
+      (NdbScanOperation::SF_OrderBy & -(int)sort) |
+      (NdbScanOperation::SF_Descending & -(int)desc);
     NdbOperation::LockMode lm = (NdbOperation::LockMode)(rand() % 3);
     if (hugoTrans.scanReadRecords(GETNDB(step), pIdx,
 				  records, abort, parallelism,
 				  lm,
-				  sort) != 0){
+				  scan_flags) != 0){
       return NDBT_FAILED;
     }
     i++;
@@ -333,6 +337,8 @@ int runScanReadCommitted(NDBT_Context* ctx, NDBT_Step* step){
   int records = ctx->getNumRecords();
   int parallelism = ctx->getProperty("Parallelism", 240);
   int abort = ctx->getProperty("AbortProb", 5);
+  bool tupScan = ctx->getProperty("TupScan");
+  int scan_flags = (NdbScanOperation::SF_TupScan & -(int)tupScan);
 
   int i = 0;
   HugoTransactions hugoTrans(*ctx->getTab());
@@ -340,7 +346,8 @@ int runScanReadCommitted(NDBT_Context* ctx, NDBT_Step* step){
     g_info << i << ": ";
     if (hugoTrans.scanReadRecords(GETNDB(step), records, 
 				  abort, parallelism, 
-				  NdbOperation::LM_CommittedRead) != 0){
+				  NdbOperation::LM_CommittedRead,
+                                  scan_flags) != 0){
       return NDBT_FAILED;
     }
     i++;
@@ -622,7 +629,7 @@ int runRestarter(NDBT_Context* ctx, NDBT_Step* step){
     
     int nodeId = restarter.getDbNodeId(lastId);
     lastId = (lastId + 1) % restarter.getNumDbNodes();
-    if(restarter.restartOneDbNode(nodeId) != 0){
+    if(restarter.restartOneDbNode(nodeId, false, false, true) != 0){
       g_err << "Failed to restartNextDbNode" << endl;
       result = NDBT_FAILED;
       break;
@@ -1013,8 +1020,7 @@ int runScanRestart(NDBT_Context* ctx, NDBT_Step* step){
       return NDBT_FAILED;
     }
     
-    NdbResultSet* rs = pOp->readTuples();
-    if( rs == 0 ) {
+    if( pOp->readTuples() ) {
       ERR(pCon->getNdbError());
       return NDBT_FAILED;
     }
@@ -1042,7 +1048,7 @@ int runScanRestart(NDBT_Context* ctx, NDBT_Step* step){
 
     int res;
     int row = 0;
-    while(row < record && (res = rs->nextResult()) == 0) {
+    while(row < record && (res = pOp->nextResult()) == 0) {
       if(calc.verifyRowValues(&tmpRow) != 0){
 	abort();
 	return NDBT_FAILED;
@@ -1055,14 +1061,14 @@ int runScanRestart(NDBT_Context* ctx, NDBT_Step* step){
       return NDBT_FAILED;
     }
     g_info << " restarting" << endl;
-    if((res = rs->restart()) != 0){
+    if((res = pOp->restart()) != 0){
       ERR(pCon->getNdbError());
       abort();
       return NDBT_FAILED;
     }      
 
     row = 0;
-    while((res = rs->nextResult()) == 0) {
+    while((res = pOp->nextResult()) == 0) {
       if(calc.verifyRowValues(&tmpRow) != 0){
 	abort();
 	return NDBT_FAILED;
@@ -1079,6 +1085,77 @@ int runScanRestart(NDBT_Context* ctx, NDBT_Step* step){
   return NDBT_OK;
 }
 
+
+int 
+runScanParallelism(NDBT_Context* ctx, NDBT_Step* step){
+  int loops = ctx->getNumLoops() + 3;
+  int records = ctx->getNumRecords();
+  int abort = ctx->getProperty("AbortProb", 15);
+  
+  Uint32 fib[] = { 1, 2 };
+  Uint32 parallelism = 0; // start with 0
+  int i = 0;
+  HugoTransactions hugoTrans(*ctx->getTab());
+  while (i<loops && !ctx->isTestStopped()) {
+    g_info << i << ": ";
+
+    if (hugoTrans.scanReadRecords(GETNDB(step), records, abort, parallelism,
+				  NdbOperation::LM_Read) != 0){
+      return NDBT_FAILED;
+    }
+    if (hugoTrans.scanReadRecords(GETNDB(step), records, abort, parallelism,
+				  NdbOperation::LM_Exclusive) != 0){
+      return NDBT_FAILED;
+    }
+    if (hugoTrans.scanReadRecords(GETNDB(step), records, abort, parallelism,
+				  NdbOperation::LM_CommittedRead) != 0){
+      return NDBT_FAILED;
+    }
+    if (hugoTrans.scanUpdateRecords(GETNDB(step), records, abort, parallelism)
+	!= 0){
+      return NDBT_FAILED;
+    }
+    i++;
+    parallelism = fib[0];
+    Uint32 next = fib[0] + fib[1];
+    fib[0] = fib[1];
+    fib[1] = next;
+  }
+  return NDBT_OK;
+}
+
+int
+runBug24447(NDBT_Context* ctx, NDBT_Step* step){
+  int loops = 1; //ctx->getNumLoops();
+  int records = ctx->getNumRecords();
+  int abort = ctx->getProperty("AbortProb", 15);
+  NdbRestarter restarter;
+  HugoTransactions hugoTrans(*ctx->getTab());
+  int i = 0;
+  while (i<loops && !ctx->isTestStopped()) 
+  {
+    g_info << i++ << ": ";
+
+    int nodeId = restarter.getRandomNotMasterNodeId(rand());
+    if (nodeId == -1)
+      nodeId = restarter.getMasterNodeId();
+    if (restarter.insertErrorInNode(nodeId, 8038) != 0)
+    {
+      ndbout << "Could not insert error in node="<<nodeId<<endl;
+      return NDBT_FAILED;
+    }
+
+    for (Uint32 j = 0; i<10; i++)
+    {
+      hugoTrans.scanReadRecords(GETNDB(step), records, abort, 0, 
+				NdbOperation::LM_CommittedRead);
+    }
+
+  }
+  restarter.insertErrorInAllNodes(0);
+  
+  return NDBT_OK;
+}
 
 NDBT_TESTSUITE(testScan);
 TESTCASE("ScanRead", 
@@ -1113,6 +1190,18 @@ TESTCASE("ScanReadCommitted240",
 	 "downgraded to the maximum parallelism value for the current config)"){
   INITIALIZER(runLoadTable);
   TC_PROPERTY("Parallelism", 240);
+  TC_PROPERTY("TupScan", (Uint32)0);
+  STEP(runScanReadCommitted);
+  FINALIZER(runClearTable);
+}
+TESTCASE("ScanTupReadCommitted240", 
+	 "Verify scan requirement: It should be possible to scan read committed with "\
+	 "parallelism, test with parallelism 240(240 would automatically be "\
+	 "downgraded to the maximum parallelism value for the current config). "\
+         "Scans TUP pages directly without using ACC."){
+  INITIALIZER(runLoadTable);
+  TC_PROPERTY("Parallelism", 240);
+  TC_PROPERTY("TupScan", 1);
   STEP(runScanReadCommitted);
   FINALIZER(runClearTable);
 }
@@ -1538,6 +1627,18 @@ TESTCASE("ScanRestart",
 	 "Verify restart functionallity"){
   INITIALIZER(runLoadTable);
   STEP(runScanRestart);
+  FINALIZER(runClearTable);
+}
+TESTCASE("ScanParallelism", 
+	 "Test scan with different parallelism"){
+  INITIALIZER(runLoadTable);
+  STEP(runScanParallelism);
+  FINALIZER(runClearTable);
+}
+TESTCASE("Bug24447",
+	 ""){
+  INITIALIZER(runLoadTable);
+  STEP(runBug24447);
   FINALIZER(runClearTable);
 }
 NDBT_TESTSUITE_END(testScan);

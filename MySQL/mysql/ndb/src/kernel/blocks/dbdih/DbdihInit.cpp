@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -66,11 +65,16 @@ void Dbdih::initData()
   waitGCPProxyPool.setSize(ZPROXY_FILE_SIZE);
   waitGCPMasterPool.setSize(ZPROXY_MASTER_FILE_SIZE);
 
+  c_dictLockSlavePool.setSize(1); // assert single usage
+  c_dictLockSlavePtrI_nodeRestart = RNIL;
+
   cgcpOrderBlocked = 0;
   c_lcpState.ctcCounter = 0;
   cwaitLcpSr       = false;
   c_blockCommit    = false;
   c_blockCommitNo  = 1;
+  cntrlblockref    = RNIL;
+  c_set_initial_start_flag = FALSE;
 }//Dbdih::initData()
 
 void Dbdih::initRecords() 
@@ -213,7 +217,6 @@ Dbdih::Dbdih(const class Configuration & config):
   addRecSignal(GSN_FSREADREF, &Dbdih::execFSREADREF, true);
   addRecSignal(GSN_FSWRITECONF, &Dbdih::execFSWRITECONF);
   addRecSignal(GSN_FSWRITEREF, &Dbdih::execFSWRITEREF, true);
-  addRecSignal(GSN_SET_VAR_REQ, &Dbdih::execSET_VAR_REQ);
 
   addRecSignal(GSN_START_INFOREQ, 
                &Dbdih::execSTART_INFOREQ);
@@ -262,8 +265,22 @@ Dbdih::Dbdih(const class Configuration & config):
 
   addRecSignal(GSN_CREATE_FRAGMENTATION_REQ, 
 	       &Dbdih::execCREATE_FRAGMENTATION_REQ);
+
+  addRecSignal(GSN_DICT_LOCK_CONF, &Dbdih::execDICT_LOCK_CONF);
+  addRecSignal(GSN_DICT_LOCK_REF, &Dbdih::execDICT_LOCK_REF);
+  addRecSignal(GSN_NODE_START_REP, &Dbdih::execNODE_START_REP, true);
   
-  initData();
+  apiConnectRecord = 0;  
+  connectRecord = 0;  
+  fileRecord = 0;  
+  fragmentstore = 0;
+  pageRecord = 0;  
+  replicaRecord = 0;  
+  tabRecord = 0;
+  createReplicaRecord = 0;  
+  nodeGroupRecord = 0;  
+  nodeRecord = 0;
+  takeOverRecord = 0;
 }//Dbdih::Dbdih()
 
 Dbdih::~Dbdih() 

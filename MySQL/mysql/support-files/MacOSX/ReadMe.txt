@@ -1,11 +1,10 @@
-2.5 Installing MySQL on Mac OS X
-================================
+2.4.10 Installing MySQL on Mac OS X
+-----------------------------------
 
-Beginning with MySQL 4.0.11, you can install MySQL on Mac OS X 10.3.x
-(`Panther') or newer using a Mac OS X binary package in PKG format
-instead of the binary tarball distribution.  Please note that older
-versions of Mac OS X (for example, 10.1.x or 10.2.x) are not supported
-by this package.
+You can install MySQL on Mac OS X 10.3.x (`Panther') or newer using a
+Mac OS X binary package in PKG format instead of the binary tarball
+distribution. Please note that older versions of Mac OS X (for example,
+10.1.x or 10.2.x) are *not* supported by this package.
 
 The package is located inside a disk image (`.dmg') file that you first
 need to mount by double-clicking its icon in the Finder. It should then
@@ -18,9 +17,9 @@ all running MySQL server instances by either using the MySQL Manager
 Application (on Mac OS X Server) or via `mysqladmin shutdown' on the
 command line.
 
-To install the MySQL PKG file, double-click on the package icon.  This
-launches the Mac OS X Package Installer, which guides you through the
-installation of MySQL.
+To actually install the MySQL PKG file, double-click on the package
+icon. This launches the Mac OS X Package Installer, which guides you
+through the installation of MySQL.
 
 Due to a bug in the Mac OS X package installer, you may see this error
 message in the destination disk selection dialog:
@@ -28,16 +27,16 @@ message in the destination disk selection dialog:
      You cannot install this software on this disk. (null)
 
 If this error occurs, simply click the `Go Back' button once to return
-to the previous screen.  Then click `Continue' to advance to the
+to the previous screen. Then click `Continue' to advance to the
 destination disk selection again, and you should be able to choose the
-destination disk correctly. We have reported this bug to Apple and it
-is investigating this problem.
+destination disk correctly. We have reported this bug to Apple and it is
+investigating this problem.
 
 The Mac OS X PKG of MySQL installs itself into
 `/usr/local/mysql-VERSION' and also installs a symbolic link,
 `/usr/local/mysql', that points to the new location. If a directory
 named `/usr/local/mysql' exists, it is renamed to
-`/usr/local/mysql.bak' first. In addition, the installer creates the
+`/usr/local/mysql.bak' first. Additionally, the installer creates the
 grant tables in the `mysql' database by executing `mysql_install_db'.
 
 The installation layout is similar to that of a `tar' file binary
@@ -64,10 +63,10 @@ Version*
 This manual section covers the installation of the official MySQL Mac
 OS X PKG only. Make sure to read Apple's help information about
 installing MySQL: Run the `Help View' application, select `Mac OS X
-Server' help, search for `MySQL', and read the item entitled
-`Installing MySQL'.
+Server' help, do a search for `MySQL,' and read the item entitled
+`Installing MySQL.'
 
-For pre-installed versions of MySQL on Mac OS X Server, note especially
+For preinstalled versions of MySQL on Mac OS X Server, note especially
 that you should start `mysqld' with `safe_mysqld' instead of
 `mysqld_safe' if MySQL is older than version 4.0.
 
@@ -79,15 +78,15 @@ If you are upgrading from Marc's 3.23.x versions or from the Mac OS X
 Server version of MySQL to the official MySQL PKG, you also need to
 convert the existing MySQL privilege tables to the current format,
 because some new security privileges have been added. See *Note
-mysql-fix-privilege-tables::.
+mysql-upgrade::.
 
 If you want MySQL to start automatically during system startup, you
-also need to install the MySQL Startup Item. Starting with MySQL
-4.0.15, it is part of the Mac OS X installation disk images as a
-separate installation package. Simply double-click the
-`MySQLStartupItem.pkg' icon and follow the instructions to install it.
-The Startup Item need be installed only once. There is no need to
-install it each time you upgrade the MySQL package later.
+also need to install the MySQL Startup Item. It is part of the Mac OS X
+installation disk images as a separate installation package. Simply
+double-click the `MySQLStartupItem.pkg' icon and follow the
+instructions to install it. The Startup Item need be installed only
+once. There is no need to install it each time you upgrade the MySQL
+package later.
 
 The Startup Item for MySQL is installed into
 `/Library/StartupItems/MySQLCOM'. (Before MySQL 4.1.2, the location was
@@ -114,12 +113,7 @@ If you have installed the Startup Item, use this command:
      (ENTER YOUR PASSWORD, IF NECESSARY)
      (PRESS CONTROL-D OR ENTER "EXIT" TO EXIT THE SHELL)
 
-For versions of MySQL older than 4.1.3, substitute
-`/Library/StartupItems/MySQLCOM/MySQLCOM' with
-`/Library/StartupItems/MySQL/MySQL' above.
-
-If you do not use the Startup Item, enter the following command
-sequence:
+If you don't use the Startup Item, enter the following command sequence:
 
      shell> cd /usr/local/mysql
      shell> sudo ./bin/mysqld_safe
@@ -168,7 +162,7 @@ Unfortunately, the Mac OS X Installer does not yet offer the
 functionality required to properly upgrade previously installed
 packages.
 
-To use your existing databases with the new installation, you will need
+To use your existing databases with the new installation, you'll need
 to copy the contents of the old data directory to the new data
 directory. Make sure that neither the old server nor the new one is
 running when you do this. After you have copied over the MySQL database
@@ -178,10 +172,10 @@ save disk space. Additionally, you should also remove older versions of
 the Package Receipt directories located in
 `/Library/Receipts/mysql-VERSION.pkg'.
 
-File: manual.info,  Node: solaris-installation,  Next: netware-installation,  Prev: mac-os-x-installation,  Up: installing
+File: manual.info,  Node: solaris-installation,  Next: netware-installation,  Prev: mac-os-x-installation,  Up: installing-cs
 
-2.6 Installing MySQL on Solaris
-===============================
+2.4.11 Installing MySQL on Solaris
+----------------------------------
 
 If you install MySQL using a binary tarball distribution on Solaris,
 you may run into trouble even before you get the MySQL distribution
@@ -193,8 +187,14 @@ distribution. You can find a precompiled copy for Solaris at
 `http://dev.mysql.com/downloads/os-solaris.html'.
 
 You can install MySQL on Solaris using a binary package in PKG format
-instead of the binary tarball distribution. Some basic PKG-handling
-commands follow:
+instead of the binary tarball distribution. Before installing using the
+binary PKG format, you should create the `mysql' user and group, for
+example:
+
+     groupadd mysql
+     useradd -g mysql mysql
+
+Some basic PKG-handling commands follow:
 
    * To add a package:
 

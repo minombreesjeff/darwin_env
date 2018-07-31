@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -67,6 +66,7 @@ int main(int argc,char **argv)
 
   bzero((char*) keyinfo,sizeof(keyinfo));
   bzero((char*) recinfo,sizeof(recinfo));
+  bzero((char*) keyseg,sizeof(keyseg));
   keyinfo[0].seg= &keyseg[0][0];
   keyinfo[0].seg[0].start=0;
   keyinfo[0].seg[0].length=8;

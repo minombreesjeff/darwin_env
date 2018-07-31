@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2002-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -145,15 +144,46 @@ struct MBR
     return (xmin<x) && (xmax>x) && (ymin<y) && (ymax>y);
   }
 
+  /**
+    The dimension maps to an integer as:
+    - Polygon -> 2
+    - Horizontal or vertical line -> 1
+    - Point -> 0
+    - Invalid MBR -> -1
+  */
+  int dimension() const
+  {
+    int d= 0;
+
+    if (xmin > xmax)
+      return -1;
+    else if (xmin < xmax)
+      d++;
+
+    if (ymin > ymax)
+      return -1;
+    else if (ymin < ymax)
+      d++;
+
+    return d;
+  }
+
   int overlaps(const MBR *mbr)
   {
-    int lb= mbr->inner_point(xmin, ymin);
-    int rb= mbr->inner_point(xmax, ymin);
-    int rt= mbr->inner_point(xmax, ymax);
-    int lt= mbr->inner_point(xmin, ymax);
+    /*
+      overlaps() requires that some point inside *this is also inside
+      *mbr, and that both geometries and their intersection are of the
+      same dimension.
+    */
+    int d = dimension();
 
-    int a = lb+rb+rt+lt;
-    return (a>0) && (a<4) && (!within(mbr));
+    if (d != mbr->dimension() || d <= 0 || contains(mbr) || within(mbr))
+      return 0;
+
+    MBR intersection(max(xmin, mbr->xmin), max(ymin, mbr->ymin),
+                     min(xmax, mbr->xmax), min(ymax, mbr->ymax));
+
+    return (d == intersection.dimension());
   }
 };
 
@@ -165,8 +195,8 @@ struct Geometry_buffer;
 class Geometry
 {
 public:
-  Geometry() {}                                 /* remove gcc warning */
-  virtual ~Geometry() {}                        /* remove gcc warning */
+  Geometry() {}                               /* Remove gcc warning */
+  virtual ~Geometry() {}                        /* Remove gcc warning */
   static void *operator new(size_t size, void *buffer)
   {
     return buffer;
@@ -175,7 +205,10 @@ public:
   static void operator delete(void *ptr, void *buffer)
   {}
 
-  static void operator delete(void *buffer) {}  /* remove gcc warning */
+  static void operator delete(void *buffer)
+  {}
+
+  static String bad_geometry_data;
 
   enum wkbType
   {
@@ -186,7 +219,7 @@ public:
     wkb_multilinestring= 5,
     wkb_multipolygon= 6,
     wkb_geometrycollection= 7,
-    wkb_end=7
+    wkb_last=7
   };
   enum wkbByteOrder
   {
@@ -215,7 +248,7 @@ public:
   virtual bool dimension(uint32 *dim, const char **end) const=0;
   virtual int get_x(double *x) const { return -1; }
   virtual int get_y(double *y) const { return -1; }
-  virtual int length(double *len) const  { return -1; }
+  virtual int geom_length(double *len) const  { return -1; }
   virtual int area(double *ar, const char **end) const { return -1;}
   virtual int is_closed(int *closed) const { return -1; }
   virtual int num_interior_ring(uint32 *n_int_rings) const { return -1; }
@@ -244,8 +277,8 @@ public:
   static Geometry *create_from_wkt(Geometry_buffer *buffer,
 				   Gis_read_stream *trs, String *wkt,
 				   bool init_stream=1);
-  static int create_from_wkb(Geometry_buffer *buffer,
-                             const char *wkb, uint32 len, String *res);
+  static Geometry *create_from_wkb(Geometry_buffer *buffer, const char *wkb, 
+                                   uint32 len, String *res);
   int as_wkt(String *wkt, const char **end)
   {
     uint32 len= get_class_info()->m_name.length;
@@ -271,12 +304,12 @@ public:
   }
 
   bool envelope(String *result) const;
-  static Class_info *ci_collection[wkb_end+1];
+  static Class_info *ci_collection[wkb_last+1];
 
 protected:
   static Class_info *find_class(int type_id)
   {
-    return ((type_id < wkb_point) || (type_id > wkb_end)) ?
+    return ((type_id < wkb_point) || (type_id > wkb_last)) ?
       NULL : ci_collection[type_id];
   }  
   static Class_info *find_class(const char *name, uint32 len);
@@ -301,6 +334,8 @@ protected:
 class Gis_point: public Geometry
 {
 public:
+  Gis_point() {}                              /* Remove gcc warning */
+  virtual ~Gis_point() {}                     /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
@@ -348,12 +383,14 @@ public:
 class Gis_line_string: public Geometry
 {
 public:
+  Gis_line_string() {}                        /* Remove gcc warning */
+  virtual ~Gis_line_string() {}               /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
-  int length(double *len) const;
+  int geom_length(double *len) const;
   int is_closed(int *closed) const;
   int num_points(uint32 *n_points) const;
   int start_point(String *point) const;
@@ -374,6 +411,8 @@ public:
 class Gis_polygon: public Geometry
 {
 public:
+  Gis_polygon() {}                            /* Remove gcc warning */
+  virtual ~Gis_polygon() {}                   /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
@@ -400,6 +439,8 @@ public:
 class Gis_multi_point: public Geometry
 {
 public:
+  Gis_multi_point() {}                        /* Remove gcc warning */
+  virtual ~Gis_multi_point() {}               /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
@@ -422,6 +463,8 @@ public:
 class Gis_multi_line_string: public Geometry
 {
 public:
+  Gis_multi_line_string() {}                  /* Remove gcc warning */
+  virtual ~Gis_multi_line_string() {}         /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
@@ -429,7 +472,7 @@ public:
   bool get_mbr(MBR *mbr, const char **end) const;
   int num_geometries(uint32 *num) const;
   int geometry_n(uint32 num, String *result) const;
-  int length(double *len) const;
+  int geom_length(double *len) const;
   int is_closed(int *closed) const;
   bool dimension(uint32 *dim, const char **end) const
   {
@@ -446,6 +489,8 @@ public:
 class Gis_multi_polygon: public Geometry
 {
 public:
+  Gis_multi_polygon() {}                      /* Remove gcc warning */
+  virtual ~Gis_multi_polygon() {}             /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
@@ -470,6 +515,8 @@ public:
 class Gis_geometry_collection: public Geometry
 {
 public:
+  Gis_geometry_collection() {}                /* Remove gcc warning */
+  virtual ~Gis_geometry_collection() {}       /* Remove gcc warning */
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);

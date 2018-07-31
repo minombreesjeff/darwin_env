@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,6 +40,7 @@ protected:
   BLOCK_DEFINES(Ndbfs);
 
   // The signal processing functions
+  void execREAD_CONFIG_REQ(Signal* signal);
   void execDUMP_STATE_ORD(Signal* signal);
   void execFSOPENREQ(Signal* signal);
   void execFSCLOSEREQ(Signal* signal);
@@ -103,6 +103,7 @@ protected:
   BLOCK_DEFINES(VoidFs);
 
   // The signal processing functions
+  void execREAD_CONFIG_REQ(Signal* signal);
   void execDUMP_STATE_ORD(Signal* signal);
   void execFSOPENREQ(Signal* signal);
   void execFSCLOSEREQ(Signal* signal);

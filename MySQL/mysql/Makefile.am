@@ -1,9 +1,8 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2006 MySQL AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,20 +19,21 @@ AUTOMAKE_OPTIONS =	foreign
 
 # These are built from source in the Docs directory
 EXTRA_DIST =		INSTALL-SOURCE INSTALL-WIN-SOURCE \
-			README COPYING EXCEPTIONS-CLIENT
-SUBDIRS =		. include @docs_dirs@ @zlib_dir@ \
-			@readline_topdir@ sql-common \
+			README COPYING EXCEPTIONS-CLIENT CMakeLists.txt
+SUBDIRS =		. include @docs_dirs@ @zlib_dir@ @yassl_dir@ \
+			@readline_topdir@ sql-common scripts \
 			@thread_dirs@ pstack \
-			@sql_union_dirs@ scripts @man_dirs@ tests \
+			@sql_union_dirs@ @man_dirs@ tests \
 			netware @libmysqld_dirs@ \
-			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
+			@bench_dirs@ support-files @tools_dirs@
 
 DIST_SUBDIRS =		. include @docs_dirs@ zlib \
 			@readline_topdir@ sql-common \
 			@thread_dirs@ pstack \
 			@sql_union_dirs@ scripts @man_dirs@ tests SSL\
 			BUILD netware os2 @libmysqld_dirs@ \
-			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
+			@bench_dirs@ support-files @tools_dirs@ win \
+			debian
 
 # Run these targets before any others, also make part of clean target,
 # to make sure we create new links after a clean.
@@ -48,6 +48,14 @@ BUILT_SOURCES = linked_client_sources linked_server_sources \
 # it will never be called.
 CLEANFILES = $(BUILT_SOURCES) bdb/build_unix/db.h
 DISTCLEANFILES = ac_available_languages_fragment
+
+# Our current filtering of "sql_yacc.cc" in "sql/Makefile.am" creates
+# a problem, if a VPATH build and "sql_yacc.cc" was part of the source
+# distribution we end up with one "sql_yacc.cc" in the source tree,
+# and one in the build tree. This breaks "distcleancheck", until this
+# is sorted out we redefine the find that scans for files not removed
+
+distcleancheck_listfiles = find . -name sql_yacc.cc -o -type f -print
 
 linked_include_sources:
 	cd include; $(MAKE) link_sources
@@ -89,12 +97,25 @@ bin-dist:		all
 	$(top_builddir)/scripts/make_binary_distribution @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 
 # Remove BK's "SCCS" subdirectories from source distribution
+# Create initial database files for Windows installations.
 dist-hook:
 	rm -rf `find $(distdir) -type d -name SCCS -print`
+	rm -f  `find $(distdir) -type l -print`
+	mkdir -p $(distdir)/win
+	scripts/mysql_install_db --no-defaults --windows \
+		--basedir=$(top_builddir) \
+		--datadir=$(distdir)/win/data \
+		--srcdir=$(top_srcdir)
 
 tags:
 	support-files/build-tags
-.PHONY:		init-db bin-dist
+
+.PHONY:	init-db bin-dist \
+  test    test-force    test-full    test-force-full    test-force-mem \
+  test-pl test-force-pl test-full-pl test-force-full-pl test-force-pl-mem \
+  test-ps test-ns test-ext-funcs test-ext \
+  test-fast test-fast-cursor test-fast-view test-fast-prepare \
+  test-full-qa
 
 # Target 'test' will run the regression test suite using the built server.
 #
@@ -104,23 +125,77 @@ tags:
 # will then calculate the various port numbers it needs from this,
 # making sure each user use different ports.
 
-test:
+test-ps:
 	cd mysql-test ; \
-	./mysql-test-run && \
-	./mysql-test-run --ps-protocol
+	@PERL@ ./mysql-test-run.pl $(force) $(mem) --ps-protocol
+
+test-ns:
+	cd mysql-test ; \
+	@PERL@ ./mysql-test-run.pl $(force) $(mem)
+
+test:	test-ns test-ps
+
+# To ease script-writing, although in 5.0 it is identical to 'test'
+test-full:	test
 
 test-force:
-	cd mysql-test; \
-	./mysql-test-run --force && \
-	./mysql-test-run --ps-protocol --force
+	$(MAKE) force=--force test
 
-# We are testing a new Perl version of the test script
-test-pl:
-	cd mysql-test; \
-	./mysql-test-run.pl && \
-	./mysql-test-run.pl --ps-protocol
+test-force-full:
+	$(MAKE) force=--force test-full
 
-test-force-pl:
-	cd mysql-test; \
-	./mysql-test-run.pl --force && \
-	./mysql-test-run.pl --ps-protocol --force
+#used by autopush.pl to run memory based tests
+test-force-mem:
+	$(MAKE) force=--force mem=--mem test
+
+test-bt:
+	-cd mysql-test ; MTR_BUILD_THREAD=auto \
+	@PERL@ ./mysql-test-run.pl --force --comment=normal --report-features
+	-cd mysql-test ; MTR_BUILD_THREAD=auto \
+	@PERL@ ./mysql-test-run.pl --force --comment=ps --ps-protocol
+	-cd mysql-test ; MTR_BUILD_THREAD=auto \
+	@PERL@ ./mysql-test-run.pl --force --comment=funcs1_ps --ps-protocol --suite=funcs_1
+	-cd mysql-test ; MTR_BUILD_THREAD=auto \
+	@PERL@ ./mysql-test-run.pl --force --comment=funcs2 --suite=funcs_2
+	-cd mysql-test ; MTR_BUILD_THREAD=auto \
+	@PERL@ ./mysql-test-run.pl --force --comment=rowlock --suite=row_lock
+
+test-bt-debug:
+	-cd mysql-test ; MTR_BUILD_THREAD=auto \
+	@PERL@ ./mysql-test-run.pl --force --comment=debug --report-features
+
+# Keep these for a while
+test-pl:	test
+test-full-pl:	test-full
+test-force-pl:	test-force
+test-force-pl-mem:  test-force-mem
+test-force-full-pl: test-force-full
+
+test-ext-funcs:
+	cd mysql-test ; \
+	@PERL@ ./mysql-test-run.pl --force --suite=funcs_1 ; \
+	@PERL@ ./mysql-test-run.pl --force --suite=funcs_2
+
+test-ext:	test-ext-funcs
+
+test-fast:
+	cd mysql-test ; \
+	@PERL@ ./mysql-test-run.pl $(subset) --force --skip-ndb --skip-innodb --skip-im --skip-rpl ; \
+	@PERL@ ./mysql-test-run.pl $(subset) --force --suite=funcs_1 --do-test=myisam
+
+test-fast-view:
+	$(MAKE) subset=--view-protocol test-fast
+
+test-fast-cursor:
+	$(MAKE) subset=--cursor-protocol test-fast
+
+test-fast-prepare:
+	$(MAKE) subset=--ps-protocol test-fast
+
+test-full-qa:
+	$(MAKE) force=--force test-pl \
+	test-ext test-fast-view \
+	test-fast-cursor
+
+# Don't update the files from bitkeeper
+%::SCCS/s.%

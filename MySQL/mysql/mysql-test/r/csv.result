@@ -4913,8 +4913,7 @@ bonfire
 Colombo
 nondecreasing
 DROP TABLE t1;
-ALTER TABLE t2 RENAME t1
-#;
+ALTER TABLE t2 RENAME t1;
 DROP TABLE t1;
 CREATE TABLE t1 (
 Period smallint(4) unsigned zerofill DEFAULT '0000' NOT NULL,
@@ -4976,3 +4975,37 @@ c1
 4
 5
 DROP TABLE bug14672;
+create table t1 (a int) engine=csv;
+insert t1 values (1);
+delete from t1;
+affected rows: 1
+delete from t1;
+affected rows: 0
+insert t1 values (1),(2);
+delete from t1;
+affected rows: 2
+insert t1 values (1),(2),(3);
+flush tables;
+delete from t1;
+affected rows: 3
+insert t1 values (1),(2),(3),(4);
+flush tables;
+select count(*) from t1;
+count(*)
+4
+delete from t1;
+affected rows: 4
+insert t1 values (1),(2),(3),(4),(5);
+truncate table t1;
+affected rows: 0
+drop table t1;
+create table bug15205 (val int(11) default null) engine=csv;
+create table bug15205_2 (val int(11) default null) engine=csv;
+select * from bug15205;
+ERROR HY000: Got error 1 from storage engine
+select * from bug15205_2;
+val
+select * from bug15205;
+val
+drop table bug15205;
+drop table bug15205_2;

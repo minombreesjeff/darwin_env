@@ -49,14 +49,25 @@ create table `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 create table a (`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` int);
 
 #
-# Some wrong defaults, so these creates should fail too
+# Some wrong defaults, so these creates should fail too (Bug #5902)
 #
 --error 1067
-create table test (a datetime default now());
+create table t1 (a datetime default now());
 --error 1294
-create table test (a datetime on update now());
+create table t1 (a datetime on update now());
 --error 1067
-create table test (a int default 100 auto_increment);
+create table t1 (a int default 100 auto_increment);
+--error 1067
+create table t1 (a tinyint default 1000);
+--error 1067
+create table t1 (a varchar(5) default 'abcdef');
+
+create table t1 (a varchar(5) default 'abcde');
+insert into t1 values();
+select * from t1;
+--error 1067
+alter table t1 alter column a set default 'abcdef';
+drop table t1;
 
 #
 # test of dummy table names
@@ -266,8 +277,8 @@ create table t3 like t1;
 show create table t3;
 select * from t3;
 # Disable PS becasue of @@warning_count
---disable_ps_protocol
 create table if not exists t3 like t1;
+--disable_ps_protocol
 select @@warning_count;
 --enable_ps_protocol
 create temporary table t3 like t2;
@@ -395,12 +406,14 @@ select database();
 drop database mysqltest;
 select database();
 
-# Connect without a database
+# Connect without a database as user mysqltest_1
+create user mysqltest_1;
 connect (user1,localhost,mysqltest_1,,*NO-ONE*);
 connection user1;
 select database(), user();
 connection default;
 disconnect user1;
+drop user mysqltest_1;
 use test;
 
 #
@@ -489,8 +502,7 @@ drop table t1,t2;
 # Bug #12537: UNION produces longtext instead of varchar
 #
 CREATE TABLE t1 (f1 VARCHAR(255) CHARACTER SET utf8);
-CREATE TABLE t2 AS SELECT LEFT(f1,86) AS f2 FROM t1 UNION SELECT LEFT(f1,86)
-AS f2 FROM t1;
+CREATE TABLE t2 AS SELECT LEFT(f1,171) AS f2 FROM t1 UNION SELECT LEFT(f1,171) AS f2 FROM t1;
 DESC t2;
 DROP TABLE t1,t2;
 
@@ -507,13 +519,22 @@ DROP TABLE t12913;
 create database mysqltest;
 use mysqltest;
 drop database mysqltest;
---error 1102
+--error ER_NO_DB_ERROR 
 create table test.t1 like x;
 --disable_warnings
 drop table if exists test.t1;
 --enable_warnings
 
 #
+# Bug #6859: Bogus error message on attempt to CREATE TABLE t LIKE view
+#
+create database mysqltest;
+use mysqltest;
+create view v1 as select 'foo' from dual;
+--error 1347
+create table t1 like v1;
+drop view v1;
+drop database mysqltest;
 # Bug #6008 MySQL does not create warnings when
 # creating database and using IF NOT EXISTS
 #
@@ -531,6 +552,7 @@ create table t1 (
   a varchar(112) charset utf8 collate utf8_bin not null,
   primary key (a)
 ) select 'test' as a ;
+#--warning 1364
 show create table t1;
 drop table t1;
 
@@ -543,6 +565,7 @@ CREATE TABLE t2 (
 );
 insert into t2 values(111);
 
+#--warning 1364
 create table t1 ( 
   a varchar(12) charset utf8 collate utf8_bin not null, 
   b int not null, primary key (a)
@@ -550,6 +573,23 @@ create table t1 (
 show create table t1;
 drop table t1;
 
+#--warning 1364
+create table t1 ( 
+  a varchar(12) charset utf8 collate utf8_bin not null, 
+  b int not null, primary key (a)
+) select a, 1 as c from t2 ;
+show create table t1;
+drop table t1;
+
+#--warning 1364
+create table t1 ( 
+  a varchar(12) charset utf8 collate utf8_bin not null, 
+  b int null, primary key (a)
+) select a, 1 as c from t2 ;
+show create table t1;
+drop table t1;
+
+#--warning 1364
 create table t1 ( 
   a varchar(12) charset utf8 collate utf8_bin not null,
   b int not null, primary key (a)
@@ -557,6 +597,7 @@ create table t1 (
 show create table t1;
 drop table t1;
 
+#--warning 1364
 create table t1 ( 
   a varchar(12) charset utf8 collate utf8_bin,
   b int not null, primary key (a)
@@ -570,6 +611,7 @@ create table t1 (
 );
 insert into t1 values (1,1,1, 1,1,1, 1,1,1);
 
+#--warning 1364
 create table t2 ( 
   a1 varchar(12) charset utf8 collate utf8_bin not null,
   a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int,
@@ -577,17 +619,20 @@ create table t2 (
 ) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1 ;
 drop table t2;
 
+#--warning 1364
 create table t2 ( 
   a1 varchar(12) charset utf8 collate utf8_bin,
   a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
 ) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1;
 
 drop table t1, t2;
+#--warning 1364
 create table t1 ( 
   a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
 );
 insert into t1 values (1,1,1, 1,1,1, 1,1,1);
 
+#--warning 1364
 create table t2 ( 
   a1 varchar(12) charset utf8 collate utf8_bin not null,
   a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int,
@@ -606,7 +651,139 @@ drop table t1, t2;
 #
 # Bug #15316 SET value having comma not correctly handled
 #
---error 1105
+--error 1367
 create table t1(a set("a,b","c,d") not null);
 
 # End of 4.1 tests
+
+
+#
+# Bug #14155: Maximum value of MAX_ROWS handled incorrectly on 64-bit
+# platforms
+#
+create table t1 (i int) engine=myisam max_rows=100000000000;
+show create table t1;
+alter table t1 max_rows=100;
+show create table t1;
+alter table t1 max_rows=100000000000;
+show create table t1;
+drop table t1;
+
+
+#
+# Tests for errors happening at various stages of CREATE TABLES ... SELECT
+#
+# (Also checks that it behaves atomically in the sense that in case
+#  of error it is automatically dropped if it has not existed before.)
+#
+# Error during open_and_lock_tables() of tables
+--error ER_NO_SUCH_TABLE
+create table t1 select * from t2;
+# Rather special error which also caught during open tables pahse
+--error ER_UPDATE_TABLE_USED
+create table t1 select * from t1;
+# Error which happens before select_create::prepare()
+--error ER_CANT_AGGREGATE_2COLLATIONS
+create table t1 select coalesce('a' collate latin1_swedish_ci,'b' collate latin1_bin);
+# Error during table creation
+--error ER_KEY_COLUMN_DOES_NOT_EXITS
+create table t1 (primary key(a)) select "b" as b;
+# Error in select_create::prepare() which is not related to table creation
+create table t1 (a int);
+--error ER_WRONG_VALUE_COUNT_ON_ROW
+create table if not exists t1 select 1 as a, 2 as b;
+drop table t1;
+# Finally error which happens during insert
+--error ER_DUP_ENTRY
+create table t1 (primary key (a)) (select 1 as a) union all (select 1 as a);
+# What happens if table already exists ?
+create table t1 (i int);
+--error ER_TABLE_EXISTS_ERROR
+create table t1 select 1 as i;
+create table if not exists t1 select 1 as i;
+select * from t1;
+# Error before select_create::prepare()
+--error ER_CANT_AGGREGATE_2COLLATIONS
+create table t1 select coalesce('a' collate latin1_swedish_ci,'b' collate latin1_bin);
+select * from t1;
+# Error which happens during insertion of rows
+alter table t1 add primary key (i);
+--error ER_DUP_ENTRY
+create table if not exists t1 (select 2 as i) union all (select 2 as i);
+select * from t1;
+drop table t1;
+
+
+# Base vs temporary tables dillema (a.k.a. bug#24508 "Inconsistent
+# results of CREATE TABLE ... SELECT when temporary table exists").
+# In this situation we either have to create non-temporary table and
+# insert data in it or insert data in temporary table without creation
+# of permanent table. Since currently temporary tables always shadow
+# permanent tables we adopt second approach.
+create temporary table t1 (j int);
+create table if not exists t1 select 1;
+select * from t1;
+drop temporary table t1;
+--error ER_NO_SUCH_TABLE
+select * from t1;
+--error ER_BAD_TABLE_ERROR
+drop table t1;
+
+
+#
+# CREATE TABLE ... SELECT and LOCK TABLES
+#
+# There is little sense in using CREATE TABLE ... SELECT under
+# LOCK TABLES as it mostly does not work. At least we check that
+# the server doesn't crash, hang and produces sensible errors.
+# Includes test for bug #20662 "Infinite loop in CREATE TABLE
+# IF NOT EXISTS ... SELECT with locked tables".
+create table t1 (i int);
+insert into t1 values (1), (2);
+lock tables t1 read;
+--error ER_TABLE_NOT_LOCKED
+create table t2 select * from t1;
+--error ER_TABLE_NOT_LOCKED
+create table if not exists t2 select * from t1;
+unlock tables;
+create table t2 (j int);
+lock tables t1 read;
+--error ER_TABLE_NOT_LOCKED
+create table t2 select * from t1;
+# This should not be ever allowed as it will undermine
+# lock-all-at-once approach
+--error ER_TABLE_NOT_LOCKED
+create table if not exists t2 select * from t1;
+unlock tables;
+lock table t1 read, t2 read;
+--error ER_TABLE_NOT_LOCKED_FOR_WRITE
+create table t2 select * from t1;
+--error ER_TABLE_NOT_LOCKED_FOR_WRITE
+create table if not exists t2 select * from t1;
+unlock tables;
+lock table t1 read, t2 write;
+--error ER_TABLE_EXISTS_ERROR
+create table t2 select * from t1;
+# This is the only case which really works.
+create table if not exists t2 select * from t1;
+select * from t1;
+unlock tables;
+drop table t2;
+
+# OTOH CREATE TEMPORARY TABLE ... SELECT should work
+# well under LOCK TABLES.
+lock tables t1 read;
+create temporary table t2 select * from t1;
+create temporary table if not exists t2 select * from t1;
+select * from t2;
+unlock tables;
+drop table t1, t2;
+
+
+#
+# Bug#21772: can not name a column 'upgrade' when create a table
+#
+create table t1 (upgrade int);
+drop table t1;
+
+--echo End of 5.0 tests

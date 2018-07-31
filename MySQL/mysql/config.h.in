@@ -14,11 +14,18 @@
 /* all charsets are available */
 #undef DEFINE_ALL_CHARACTER_SETS
 
+/* Disables the use of --init-file, --skip-grant-tables and --bootstrap
+   options */
+#undef DISABLE_GRANT_OPTIONS
+
 /* Version of .frm files */
 #undef DOT_FRM_VERSION
 
 /* If LOAD DATA LOCAL INFILE should be enabled by default */
 #undef ENABLED_LOCAL_INFILE
+
+/* If SHOW PROFILE should be enabled */
+#undef ENABLED_PROFILING
 
 /* Do we have FIONREAD */
 #undef FIONREAD_IN_SYS_IOCTL
@@ -114,6 +121,9 @@
 /* Define to enable charset dec8 */
 #undef HAVE_CHARSET_dec8
 
+/* Define to enable charset eucjpms */
+#undef HAVE_CHARSET_eucjpms
+
 /* Define to enable charset euckr */
 #undef HAVE_CHARSET_euckr
 
@@ -208,6 +218,14 @@
    don't. */
 #undef HAVE_DECL_MADVISE
 
+/* Define to 1 if you have the declaration of `SHM_HUGETLB', and to 0 if you
+   don't. */
+#undef HAVE_DECL_SHM_HUGETLB
+
+/* Define to 1 if you have the declaration of `tgoto', and to 0 if you don't.
+   */
+#undef HAVE_DECL_TGOTO
+
 /* Whether we are using DEC threads */
 #undef HAVE_DEC_THREADS
 
@@ -232,6 +250,9 @@
 /* Builds Example DB */
 #undef HAVE_EXAMPLE_DB
 
+/* Defined by configure. Use explicit template instantiation. */
+#undef HAVE_EXPLICIT_TEMPLATE_INSTANTIATION
+
 /* Define to 1 if you have the `fchmod' function. */
 #undef HAVE_FCHMOD
 
@@ -246,6 +267,9 @@
 
 /* Define to 1 if you have the `fdatasync' function. */
 #undef HAVE_FDATASYNC
+
+/* Define to enable Federated Handler */
+#undef HAVE_FEDERATED_DB
 
 /* Define to 1 if you have the `fgetln' function. */
 #undef HAVE_FGETLN
@@ -353,9 +377,6 @@
 /* system headers define in_addr_t */
 #undef HAVE_IN_ADDR_T
 
-/* Using old ISAM tables */
-#undef HAVE_ISAM
-
 /* isinf() macro or function */
 #undef HAVE_ISINF
 
@@ -364,6 +385,15 @@
 
 /* Define to 1 if you have the `issetugid' function. */
 #undef HAVE_ISSETUGID
+
+/* Define if mysql_cv_langinfo_codeset=yes */
+#undef HAVE_LANGINFO_CODESET
+
+/* Define to 1 if you have the <langinfo.h> header file. */
+#undef HAVE_LANGINFO_H
+
+/* Define if you have large pages support */
+#undef HAVE_LARGE_PAGES
 
 /* Define to 1 if you have the `bind' library (-lbind). */
 #undef HAVE_LIBBIND
@@ -437,6 +467,18 @@
 /* Define to 1 if you have the <malloc.h> header file. */
 #undef HAVE_MALLOC_H
 
+/* Define if you have mbrlen */
+#undef HAVE_MBRLEN
+
+/* Define if you have mbrtowc */
+#undef HAVE_MBRTOWC
+
+/* Define if you have mbsrtowcs */
+#undef HAVE_MBSRTOWCS
+
+/* Define if mysql_cv_have_mbstate_t=yes */
+#undef HAVE_MBSTATE_T
+
 /* Define to 1 if you have the `memcpy' function. */
 #undef HAVE_MEMCPY
 
@@ -452,7 +494,7 @@
 /* Define to 1 if you have the `mlockall' function. */
 #undef HAVE_MLOCKALL
 
-/* Define to 1 if you have a working `mmap' system call. */
+/* Define to 1 if you have the `mmap' function. */
 #undef HAVE_MMAP
 
 /* Using Ndb Cluster DB */
@@ -479,11 +521,8 @@
 /* Define to 1 if the system has the type `off_t'. */
 #undef HAVE_OFF_T
 
-/* OpenSSL */
+/* Defined by configure. Using yaSSL for OpenSSL emulation. */
 #undef HAVE_OPENSSL
-
-/* ORBIT */
-#undef HAVE_ORBIT
 
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
@@ -709,6 +748,9 @@
 /* Define to 1 if you have the `strpbrk' function. */
 #undef HAVE_STRPBRK
 
+/* Define to 1 if you have the `strsignal' function. */
+#undef HAVE_STRSIGNAL
+
 /* Define to 1 if you have the `strstr' function. */
 #undef HAVE_STRSTR
 
@@ -749,6 +791,9 @@
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #undef HAVE_SYS_IOCTL_H
 
+/* Define to 1 if you have the <sys/ipc.h> header file. */
+#undef HAVE_SYS_IPC_H
+
 /* Define to 1 if you have the <sys/malloc.h> header file. */
 #undef HAVE_SYS_MALLOC_H
 
@@ -761,6 +806,9 @@
 /* Define to 1 if you have the <sys/param.h> header file. */
 #undef HAVE_SYS_PARAM_H
 
+/* Define to 1 if you have the <sys/prctl.h> header file. */
+#undef HAVE_SYS_PRCTL_H
+
 /* Define to 1 if you have the <sys/ptem.h> header file. */
 #undef HAVE_SYS_PTEM_H
 
@@ -772,6 +820,9 @@
 
 /* Define to 1 if you have the <sys/select.h> header file. */
 #undef HAVE_SYS_SELECT_H
+
+/* Define to 1 if you have the <sys/shm.h> header file. */
+#undef HAVE_SYS_SHM_H
 
 /* Define to 1 if you have the <sys/socket.h> header file. */
 #undef HAVE_SYS_SOCKET_H
@@ -872,8 +923,10 @@
 /* Define to 1 if you have the `vidattr' function. */
 #undef HAVE_VIDATTR
 
-/* Virtual IO */
-#undef HAVE_VIO
+/* Define to enable buffered read. This works only if syscalls read/recv
+   return as soon as there is some data in the kernel buffer, no matter how
+   big the given buffer is. */
+#undef HAVE_VIO_READ_BUFF
 
 /* Found vis.h and the strvis() function */
 #undef HAVE_VIS_H
@@ -881,14 +934,35 @@
 /* Define to 1 if you have the `vprintf' function. */
 #undef HAVE_VPRINTF
 
-/* Do we use user level threads */
-#undef HAVE_mit_thread
+/* Define to 1 if you have the <wchar.h> header file. */
+#undef HAVE_WCHAR_H
+
+/* Define if you check wcsdup */
+#undef HAVE_WCSDUP
+
+/* Define if you have wctomb */
+#undef HAVE_WCTOMB
+
+/* Define to 1 if you have the <wctype.h> header file. */
+#undef HAVE_WCTYPE_H
+
+/* Define if you have wcwidth */
+#undef HAVE_WCWIDTH
+
+/* Defined by configure. Using yaSSL for OpenSSL emulation. */
+#undef HAVE_YASSL
+
+/* Define if /proc/meminfo shows the huge page size (Linux only) */
+#undef HUGETLB_USE_PROC_MEMINFO
 
 /* Define if you have -lwrap */
 #undef LIBWRAP
 
-/* Machine type name, eg sun10 */
+/* Machine type name, eg sparc */
 #undef MACHINE_TYPE
+
+/* Maximum number of indexes per table */
+#undef MAX_INDEXES
 
 /* Define the default charset name */
 #undef MYSQL_DEFAULT_CHARSET_NAME
@@ -962,6 +1036,9 @@
 /* */
 #undef SIZEOF_OFF_T
 
+/* The size of a `short', as computed by sizeof. */
+#undef SIZEOF_SHORT
+
 /* The base type of the last arg to accept */
 #undef SOCKET_SIZE_TYPE
 
@@ -1000,7 +1077,7 @@
 /* The struct rlimit type to use with setrlimit */
 #undef STRUCT_RLIMIT
 
-/* Name of system, eg solaris */
+/* Name of system, eg sun-solaris */
 #undef SYSTEM_TYPE
 
 /* Whether we build for Linux */
@@ -1012,6 +1089,9 @@
 
 /* Should be client be thread safe */
 #undef THREAD_SAFE_CLIENT
+
+/* Define to 1 if time_t is unsigned */
+#undef TIME_T_UNSIGNED
 
 /* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
 #undef TIME_WITH_SYS_TIME
@@ -1032,15 +1112,15 @@
 /* */
 #undef USE_MB_IDENT
 
+/* Needs to use mysys_new helpers */
+#undef USE_MYSYS_NEW
+
 /* used new readline interface (are rl_completion_func_t and
    rl_compentry_func_t defined) */
 #undef USE_NEW_READLINE_INTERFACE
 
 /* the pstack backtrace library */
 #undef USE_PSTACK
-
-/* Use MySQL RAID */
-#undef USE_RAID
 
 /* Version number of package */
 #undef VERSION

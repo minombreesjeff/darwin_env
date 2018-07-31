@@ -1,9 +1,8 @@
-/* Copyright (C) 2000-2004 MySQL AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -161,7 +160,7 @@ static struct my_option my_long_options[] =
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
   {"port", 'P', "Port number to use for connection.", (gptr*) &tcp_port,
-   (gptr*) &tcp_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0, 0},
+   (gptr*) &tcp_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
     0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"relative", 'r',
@@ -340,6 +339,8 @@ int main(int argc,char *argv[])
   if (opt_use_ssl)
     mysql_ssl_set(&mysql, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
 		  opt_ssl_capath, opt_ssl_cipher);
+  mysql_options(&mysql,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
+                (char*)&opt_ssl_verify_server_cert);
 #endif
   if (opt_protocol)
     mysql_options(&mysql,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
@@ -431,6 +432,7 @@ static my_bool sql_connect(MYSQL *mysql, uint wait)
     if (mysql_real_connect(mysql,host,user,opt_password,NullS,tcp_port,
 			   unix_port, 0))
     {
+      mysql->reconnect= 1;
       if (info)
       {
 	fputs("\n",stderr);
@@ -568,6 +570,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
 	return -1;
       }
       mysql_close(mysql);	/* Close connection to avoid error messages */
+      argc=1;                   /* force SHUTDOWN to be the last command    */
       if (got_pidfile)
       {
 	if (opt_verbose)
@@ -610,7 +613,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
     case ADMIN_VER:
       new_line=1;
       print_version();
-      puts("Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB");
+      puts("Copyright (C) 2000-2006 MySQL AB");
       puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
       printf("Server version\t\t%s\n", mysql_get_server_info(mysql));
       printf("Protocol version\t%d\n", mysql_get_proto_info(mysql));
@@ -726,7 +729,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
       void (*func) (MYSQL_RES*, MYSQL_ROW, uint);
 
       new_line = 1;
-      if (mysql_query(mysql, "show status") ||
+      if (mysql_query(mysql, "show /*!50002 GLOBAL */ status") ||
 	  !(res = mysql_store_result(mysql)))
       {
 	my_printf_error(0, "unable to show status; error: '%s'", MYF(ME_BELL),
@@ -999,7 +1002,7 @@ static void print_version(void)
 static void usage(void)
 {
   print_version();
-  puts("Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB");
+  puts("Copyright (C) 2000-2006 MySQL AB");
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
   puts("Administration program for the mysqld daemon.");
   printf("Usage: %s [OPTIONS] command command....\n", my_progname);
@@ -1345,6 +1348,3 @@ static my_bool wait_pidfile(char *pidfile, time_t last_modified,
   }
   DBUG_RETURN(error);
 }
-#ifdef __GNUC__
-FIX_GCC_LINKING_PROBLEM
-#endif

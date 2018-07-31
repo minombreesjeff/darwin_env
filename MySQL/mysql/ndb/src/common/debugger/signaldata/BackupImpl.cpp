@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -100,8 +99,10 @@ printBACKUP_FRAGMENT_CONF(FILE * out, const Uint32 * data, Uint32 l, Uint16 b){
   BackupFragmentConf* sig = (BackupFragmentConf*)data;
   fprintf(out, " backupPtr: %d backupId: %d\n",
 	  sig->backupPtr, sig->backupId);
-  fprintf(out, " tableId: %d fragmentNo: %d records: %d bytes: %d\n",
-	  sig->tableId, sig->fragmentNo, sig->noOfRecords, sig->noOfBytes);
+  fprintf(out, " tableId: %d fragmentNo: %d records: %llu bytes: %llu\n",
+	  sig->tableId, sig->fragmentNo,
+          sig->noOfRecordsLow + (((Uint64)sig->noOfRecordsHigh) << 32),
+          sig->noOfBytesLow + (((Uint64)sig->noOfBytesHigh) << 32));
   return true;
 }
 

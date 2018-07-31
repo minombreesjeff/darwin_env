@@ -1,10 +1,10 @@
 #!@PERL@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2003, 2005 MySQL AB
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 #
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -447,7 +447,7 @@ All benchmarks takes the following options:
 --create-options=#
   Extra argument to all create statements.  If you for example want to
   create all MySQL tables as BDB tables use:
-  --create-options=TYPE=BDB
+  --create-options=ENGINE=BDB
 
 --database (Default $opt_database)
   In which database the test tables are created.

@@ -500,9 +500,9 @@ dtuple_convert_big_rec(
 	
 	ut_a(dtuple_check_typed_no_assert(entry));
 
-	size = rec_get_converted_size(entry);
+	size = rec_get_converted_size(index, entry);
 
-	if (size > 1000000000) {
+	if (UNIV_UNLIKELY(size > 1000000000)) {
 		fprintf(stderr,
 "InnoDB: Warning: tuple size very big: %lu\n", (ulong) size);
 		fputs("InnoDB: Tuple contents: ", stderr);
@@ -524,9 +524,10 @@ dtuple_convert_big_rec(
 
 	n_fields = 0;
 
-	while ((rec_get_converted_size(entry)
-					>= page_get_free_space_of_empty() / 2)
-	       || rec_get_converted_size(entry) >= REC_MAX_DATA_SIZE) {
+	while (rec_get_converted_size(index, entry)
+			>= ut_min(page_get_free_space_of_empty(
+					index->table->comp) / 2,
+					REC_MAX_DATA_SIZE)) {
 
 		longest = 0;
 		for (i = dict_index_get_n_unique_in_tree(index);
@@ -545,9 +546,7 @@ dtuple_convert_big_rec(
 				}
 			}
 				
-			if (!is_externally_stored
-			    && dict_index_get_nth_type(index, i)->mtype
-			       == DATA_BLOB) {
+			if (!is_externally_stored) {
 
 				dfield = dtuple_get_nth_field(entry, i);
 
@@ -562,12 +561,12 @@ dtuple_convert_big_rec(
 		}
 	
 		/* We do not store externally fields which are smaller than
-		DICT_MAX_COL_PREFIX_LEN */
+		DICT_MAX_INDEX_COL_LEN */
 
-		ut_a(DICT_MAX_COL_PREFIX_LEN > REC_1BYTE_OFFS_LIMIT);
+		ut_a(DICT_MAX_INDEX_COL_LEN > REC_1BYTE_OFFS_LIMIT);
 
 		if (longest < BTR_EXTERN_FIELD_REF_SIZE + 10
-						+ DICT_MAX_COL_PREFIX_LEN) {
+						+ DICT_MAX_INDEX_COL_LEN) {
 			/* Cannot shorten more */
 
 			mem_heap_free(heap);
@@ -589,10 +588,10 @@ dtuple_convert_big_rec(
 		dfield = dtuple_get_nth_field(entry, longest_i);
 		vector->fields[n_fields].field_no = longest_i;
 
-		ut_a(dfield->len > DICT_MAX_COL_PREFIX_LEN);
+		ut_a(dfield->len > DICT_MAX_INDEX_COL_LEN);
 		
 		vector->fields[n_fields].len = dfield->len
-						- DICT_MAX_COL_PREFIX_LEN;
+						- DICT_MAX_INDEX_COL_LEN;
 
 		vector->fields[n_fields].data = mem_heap_alloc(heap,
 						vector->fields[n_fields].len);

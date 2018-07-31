@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,6 +22,8 @@
 #include <trigger_definitions.h>
 #include <SimpleProperties.hpp>
 #include <signaldata/DictTabInfo.hpp>
+
+extern NdbRecordPrintFormat g_ndbrecord_print_format;
 
 Uint16 Twiddle16(Uint16 in); // Byte shift 16-bit data
 Uint32 Twiddle32(Uint32 in); // Byte shift 32-bit data
@@ -55,7 +56,12 @@ BackupFile::Twiddle(const AttributeDesc* attr_desc, AttributeData* attr_data, Ui
     return true;
   case 64:
     for(i = 0; i<arraySize; i++){
-      attr_data->u_int64_value[i] = Twiddle64(attr_data->u_int64_value[i]);
+      // allow unaligned
+      char* p = (char*)&attr_data->u_int64_value[i];
+      Uint64 x;
+      memcpy(&x, p, sizeof(Uint64));
+      x = Twiddle64(x);
+      memcpy(p, &x, sizeof(Uint64));
     }
     return true;
   default:
@@ -80,7 +86,12 @@ RestoreMetaData::RestoreMetaData(const char* path, Uint32 nodeId, Uint32 bNo) {
 
 RestoreMetaData::~RestoreMetaData(){
   for(Uint32 i= 0; i < allTables.size(); i++)
-    delete allTables[i];
+  {
+    TableS *table = allTables[i];
+    for(Uint32 j= 0; j < table->m_fragmentInfo.size(); j++)
+      delete table->m_fragmentInfo[j];
+    delete table;
+  }
   allTables.clear();
 }
 
@@ -109,7 +120,12 @@ RestoreMetaData::loadContent()
       return 0;
     }
   }
+  if (! markSysTables())
+    return 0;
   if(!readGCPEntry())
+    return 0;
+
+  if(!readFragmentInfo())
     return 0;
   return 1;
 }
@@ -164,6 +180,49 @@ RestoreMetaData::readMetaTableDesc() {
 }
 
 bool
+RestoreMetaData::markSysTables()
+{
+  Uint32 i;
+  for (i = 0; i < getNoOfTables(); i++) {
+    TableS* table = allTables[i];
+    table->m_local_id = i;
+    const char* tableName = table->getTableName();
+    if ( // XXX should use type
+        strcmp(tableName, "SYSTAB_0") == 0 ||
+        strcmp(tableName, "NDB$EVENTS_0") == 0 ||
+        strcmp(tableName, "sys/def/SYSTAB_0") == 0 ||
+        strcmp(tableName, "sys/def/NDB$EVENTS_0") == 0)
+      table->isSysTable = true;
+  }
+  for (i = 0; i < getNoOfTables(); i++) {
+    TableS* blobTable = allTables[i];
+    const char* blobTableName = blobTable->getTableName();
+    // yet another match blob
+    int cnt, id1, id2;
+    char buf[256];
+    cnt = sscanf(blobTableName, "%[^/]/%[^/]/NDB$BLOB_%d_%d",
+                 buf, buf, &id1, &id2);
+    if (cnt == 4) {
+      Uint32 j;
+      for (j = 0; j < getNoOfTables(); j++) {
+        TableS* table = allTables[j];
+        if (table->getTableId() == (Uint32) id1) {
+          if (table->isSysTable)
+            blobTable->isSysTable = true;
+          blobTable->m_main_table = table;
+          break;
+        }
+      }
+      if (j == getNoOfTables()) {
+        err << "Restore: Bad primary table id in " << blobTableName << endl;
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool
 RestoreMetaData::readGCPEntry() {
 
   Uint32 data[4];
@@ -192,6 +251,52 @@ RestoreMetaData::readGCPEntry() {
   return true;
 }
 
+bool
+RestoreMetaData::readFragmentInfo()
+{
+  BackupFormat::CtlFile::FragmentInfo fragInfo;
+  TableS * table = 0;
+  Uint32 tableId = RNIL;
+
+  while (buffer_read(&fragInfo, 4, 2) == 2)
+  {
+    fragInfo.SectionType = ntohl(fragInfo.SectionType);
+    fragInfo.SectionLength = ntohl(fragInfo.SectionLength);
+
+    if (fragInfo.SectionType != BackupFormat::FRAGMENT_INFO)
+    {
+      err << "readFragmentInfo invalid section type: " <<
+        fragInfo.SectionType << endl;
+      return false;
+    }
+
+    if (buffer_read(&fragInfo.TableId, (fragInfo.SectionLength-2)*4, 1) != 1)
+    {
+      err << "readFragmentInfo invalid section length: " <<
+        fragInfo.SectionLength << endl;
+      return false;
+    }
+
+    fragInfo.TableId = ntohl(fragInfo.TableId);
+    if (fragInfo.TableId != tableId)
+    {
+      tableId = fragInfo.TableId;
+      table = getTable(tableId);
+    }
+
+    FragmentInfo * tmp = new FragmentInfo;
+    tmp->fragmentNo = ntohl(fragInfo.FragmentNo);
+    tmp->noOfRecords = ntohl(fragInfo.NoOfRecordsLow) +
+      (((Uint64)ntohl(fragInfo.NoOfRecordsHigh)) << 32);
+    tmp->filePosLow = ntohl(fragInfo.FilePosLow);
+    tmp->filePosHigh = ntohl(fragInfo.FilePosHigh);
+
+    table->m_fragmentInfo.push_back(tmp);
+    table->m_noOfRecords += tmp->noOfRecords;
+  }
+  return true;
+}
+
 TableS::TableS(Uint32 version, NdbTableImpl* tableImpl)
   : m_dictTable(tableImpl)
 {
@@ -199,7 +304,10 @@ TableS::TableS(Uint32 version, NdbTableImpl* tableImpl)
   m_noOfNullable = m_nullBitmaskSize = 0;
   m_auto_val_id= ~(Uint32)0;
   m_max_auto_val= 0;
+  m_noOfRecords= 0;
   backupVersion = version;
+  isSysTable = false;
+  m_main_table = NULL;
   
   for (int i = 0; i < tableImpl->getNoOfColumns(); i++)
     createAttr(tableImpl->getColumn(i));
@@ -346,6 +454,7 @@ RestoreDataIterator::getNextTuple(int  & res)
 
     attr_data->null = false;
     attr_data->void_value = ptr;
+    attr_data->size = 4*sz;
 
     if(!Twiddle(attr_desc, attr_data))
       {
@@ -367,6 +476,7 @@ RestoreDataIterator::getNextTuple(int  & res)
 
     attr_data->null = false;
     attr_data->void_value = ptr;
+    attr_data->size = 4*sz;
 
     if(!Twiddle(attr_desc, attr_data))
       {
@@ -403,6 +513,7 @@ RestoreDataIterator::getNextTuple(int  & res)
     
     attr_data->null = false;
     attr_data->void_value = &data->Data[0];
+    attr_data->size = sz*4;
 
     /**
      * Compute array size
@@ -645,8 +756,9 @@ bool RestoreDataIterator::readFragmentHeader(int & ret)
     return false;
   }
 
+  info.setLevel(254);
   info << "_____________________________________________________" << endl
-       << "Restoring data in table: " << m_currentTable->getTableName() 
+       << "Processing data in table: " << m_currentTable->getTableName() 
        << "(" << Header.TableId << ") fragment " 
        << Header.FragmentNo << endl;
   
@@ -865,13 +977,14 @@ operator<<(NdbOut& ndbout, const AttributeS& attr){
 
   if (data.null)
   {
-    ndbout << "<NULL>";
+    ndbout << g_ndbrecord_print_format.null_string;
     return ndbout;
   }
   
   NdbRecAttr tmprec(0);
-  tmprec.setup(desc.m_column, (char *)data.void_value);
-  ndbout << tmprec;
+  tmprec.setup(desc.m_column, 0);
+  tmprec.receive_data((Uint32*)data.void_value, (data.size+3)/4);
+  ndbrecattr_print_formatted(ndbout, tmprec, g_ndbrecord_print_format);
 
   return ndbout;
 }
@@ -880,17 +993,15 @@ operator<<(NdbOut& ndbout, const AttributeS& attr){
 NdbOut& 
 operator<<(NdbOut& ndbout, const TupleS& tuple)
 {
-  ndbout << tuple.getTable()->getTableName() << "; ";
   for (int i = 0; i < tuple.getNoOfAttributes(); i++) 
   {
+    if (i > 0)
+      ndbout << g_ndbrecord_print_format.fields_terminated_by;
     AttributeData * attr_data = tuple.getData(i);
     const AttributeDesc * attr_desc = tuple.getDesc(i);
     const AttributeS attr = {attr_desc, *attr_data};
     debug << i << " " << attr_desc->m_column->getName();
     ndbout << attr;
-    
-    if (i != (tuple.getNoOfAttributes() - 1))
-      ndbout << delimiter << " ";
   } // for
   return ndbout;
 }
@@ -925,23 +1036,17 @@ operator<<(NdbOut& ndbout, const LogEntry& logE)
   return ndbout;
 }
 
+#include <NDBT.hpp>
 
 NdbOut & 
 operator<<(NdbOut& ndbout, const TableS & table){
-  ndbout << endl << "Table: " << table.getTableName() << endl;
-  for (int j = 0; j < table.getNoOfAttributes(); j++) 
-  {
-    const AttributeDesc * desc = table[j];
-    ndbout << desc->m_column->getName() << ": "
-	   << (Uint32) desc->m_column->getType();
-    ndbout << " key: "  << (Uint32) desc->m_column->getPrimaryKey();
-    ndbout << " array: " << desc->arraySize;
-    ndbout << " size: " << desc->size << endl;
-  } // for
+  
+  ndbout << (* (NDBT_Table*)table.m_dictTable) << endl;
   return ndbout;
 }
 
 template class Vector<TableS*>;
 template class Vector<AttributeS*>;
 template class Vector<AttributeDesc*>;
+template class Vector<FragmentInfo*>;
 

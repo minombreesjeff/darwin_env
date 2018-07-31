@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -143,7 +142,7 @@ private:
    * Get:ers for scanInfo
    */
   static Uint8  getTakeOverScanFlag(const UintR & scanInfo);
-  static Uint16 getTakeOverScanNode(const UintR & scanInfo);
+  static Uint16 getTakeOverScanFragment(const UintR & scanInfo);
   static Uint32 getTakeOverScanInfo(const UintR & scanInfo);
 
 
@@ -172,7 +171,7 @@ private:
    * Set:ers for scanInfo
    */
   static void setTakeOverScanFlag(UintR & scanInfo, Uint8 flag);
-  static void setTakeOverScanNode(UintR & scanInfo, Uint16 node);
+  static void setTakeOverScanFragment(UintR & scanInfo, Uint16 fragment);
   static void setTakeOverScanInfo(UintR & scanInfo, Uint32 aScanInfo);
 };
 
@@ -239,8 +238,8 @@ private:
 
 #define TAKE_OVER_SHIFT      (0)
 
-#define TAKE_OVER_NODE_SHIFT (20)
-#define TAKE_OVER_NODE_MASK  (4095)
+#define TAKE_OVER_FRAG_SHIFT (20)
+#define TAKE_OVER_FRAG_MASK  (4095)
 
 #define SCAN_INFO_SHIFT      (1)
 #define SCAN_INFO_MASK       (262143)
@@ -486,8 +485,8 @@ TcKeyReq::getTakeOverScanFlag(const UintR & scanInfo){
 
 inline
 Uint16
-TcKeyReq::getTakeOverScanNode(const UintR & scanInfo){
-  return (Uint16)((scanInfo >> TAKE_OVER_NODE_SHIFT) & TAKE_OVER_NODE_MASK);
+TcKeyReq::getTakeOverScanFragment(const UintR & scanInfo){
+  return (Uint16)((scanInfo >> TAKE_OVER_FRAG_SHIFT) & TAKE_OVER_FRAG_MASK);
 }
 
 inline
@@ -506,9 +505,9 @@ TcKeyReq::setTakeOverScanFlag(UintR & scanInfo, Uint8 flag){
 
 inline
 void
-TcKeyReq::setTakeOverScanNode(UintR & scanInfo, Uint16 node){
+TcKeyReq::setTakeOverScanFragment(UintR & scanInfo, Uint16 node){
 //  ASSERT_MAX(node, TAKE_OVER_NODE_MASK, "TcKeyReq::setTakeOverScanNode");
-  scanInfo |= (node << TAKE_OVER_NODE_SHIFT);
+  scanInfo |= (node << TAKE_OVER_FRAG_SHIFT);
 }
 
 inline

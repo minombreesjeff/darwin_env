@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,8 +21,6 @@
 
 void unireg_init(ulong options)
 {
-  uint i;
-  double nr;
   DBUG_ENTER("unireg_init");
 
   MYSYS_PROGRAM_DONT_USE_CURSES();
@@ -39,12 +36,6 @@ void unireg_init(ulong options)
 #endif
 
   VOID(strmov(reg_ext,".frm"));
-  specialflag=SPECIAL_SAME_DB_NAME;
-  /* Make a tab of powers of 10 */
-  for (i=0,nr=1.0; i < array_elements(log_10) ; i++)
-  {					/* It's used by filesort... */
-    log_10[i]= nr ; nr*= 10.0;
-  }
-  specialflag|=options;			/* Set options from argv */
+  specialflag=SPECIAL_SAME_DB_NAME | options;  /* Set options from argv */
   DBUG_VOID_RETURN;
 }

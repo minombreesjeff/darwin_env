@@ -1,5 +1,4 @@
-# Requires use of multiple simultaneous connections, not supported with
-# embedded server testing
+# Uses GRANT commands that usually disabled in embedded server
 -- source include/not_embedded.inc
 
 #
@@ -8,7 +7,9 @@
 
 --disable_warnings
 drop table if exists t1,t2;
+drop table if exists t1aa,t2aa;
 drop database if exists mysqltest;
+drop database if exists mysqltest1;
 
 delete from mysql.user where user='mysqltest_1' || user='mysqltest_2' || user='mysqltest_3';
 delete from mysql.db where user='mysqltest_1' || user='mysqltest_2' || user='mysqltest_3';
@@ -105,7 +106,7 @@ drop table t1;
 # Do a create table that tries to cover all types and options
 #
 create table t1 (
-type_bool bool not null,
+type_bool bool not null default 0,
 type_tiny tinyint not null auto_increment primary key,
 type_short smallint(3),
 type_mediumint mediumint,
@@ -116,9 +117,9 @@ empty_char char(0),
 type_char char(2),
 type_varchar varchar(10),
 type_timestamp timestamp not null,
-type_date date not null,
-type_time time not null,
-type_datetime datetime not null,
+type_date date not null default '0000-00-00',
+type_time time not null default '00:00:00',
+type_datetime datetime not null default '0000-00-00 00:00:00',
 type_year year,
 type_enum enum ('red', 'green', 'blue'),
 type_set enum ('red', 'green', 'blue'),
@@ -176,16 +177,24 @@ CREATE TABLE `a/b` (i INT);
 #CREATE TABLE ```ab````cd``` (i INT);
 #SHOW CREATE TABLE ```ab````cd```;
 #DROP TABLE ```ab````cd```;
-
+#
 #CREATE TABLE ```a` (i INT);
 #SHOW CREATE TABLE ```a`;
 #DROP TABLE ```a`;
-
-SET sql_mode= 'ANSI_QUOTES';
-
+#
+#SET sql_mode= 'ANSI_QUOTES';
+#
 #CREATE TABLE """a" (i INT);
 #SHOW CREATE TABLE """a";
 #DROP TABLE """a";
+#
+#Bug #4374 SHOW TABLE STATUS FROM ignores collation_connection
+#set names latin1;
+#create database `ä`;
+#create table `ä`.`ä` (a int) engine=heap;
+#--replace_column 7 # 8 # 9 #
+#show table status from `ä` LIKE 'ä';
+#drop database `ä`;
 #########################################################
 # end of part that must be uncommented when WL#1324 is done
 #########################################################
@@ -214,7 +223,7 @@ select @@max_heap_table_size;
 
 CREATE TABLE t1 (
  a int(11) default NULL,
- KEY a TYPE BTREE (a)
+ KEY a USING BTREE (a)
 ) ENGINE=HEAP;
 
 CREATE TABLE t2 (
@@ -225,7 +234,7 @@ CREATE TABLE t2 (
 CREATE TABLE t3 (
  a int(11) default NULL,
  b int(11) default NULL,
- KEY a TYPE BTREE (a),
+ KEY a USING BTREE (a),
  index(b)
 ) ENGINE=HEAP;
 
@@ -283,25 +292,25 @@ connect (con1,localhost,mysqltest_1,,mysqltest);
 connection con1;
 select * from t1;
 show create database mysqltest;
---error 1044
+--error 1142
 drop table t1;
 --error 1044
 drop database mysqltest;
 
 connect (con2,localhost,mysqltest_2,,test);
 connection con2;
---error 1044
+--error 1142
 select * from mysqltest.t1;
 --error 1044
 show create database mysqltest;
---error 1044
+--error 1142
 drop table mysqltest.t1;
 --error 1044
 drop database mysqltest;
 
 connect (con3,localhost,mysqltest_3,,test);
 connection con3;
---error 1044
+--error 1142
 select * from mysqltest.t1;
 --error 1044
 show create database mysqltest;
@@ -316,7 +325,6 @@ delete from mysql.db
 where user='mysqltest_1' || user='mysqltest_2' || user='mysqltest_3';
 flush privileges;
 
-#Bug #4374 SHOW TABLE STATUS FROM ignores collation_connection
 # This test fails on MAC OSX, so it is temporary disabled.
 # This needs WL#1324 to be done.
 #set names latin1;
@@ -383,7 +391,7 @@ DROP TABLE t1;
 flush tables;
 
 # Create a junk frm file on disk
-system echo "this is a junk file for test" >> var/master-data/test/t1.frm ;
+system echo "this is a junk file for test" >> $MYSQLTEST_VARDIR/master-data/test/t1.frm ;
 --replace_column 6 # 7 # 8 # 9 #
 SHOW TABLE STATUS like 't1';
 --error 1033
@@ -391,4 +399,123 @@ show create table t1;
 drop table t1;
 
 
-# End of 4.1 tests
+--echo End of 4.1 tests
+
+#
+# BUG 12183 -  SHOW OPEN TABLES behavior doesn't match grammar
+# First we close all open tables with FLUSH tables and then we open some.
+CREATE TABLE txt1(a int);
+CREATE TABLE tyt2(a int);
+CREATE TABLE urkunde(a int);
+FLUSH TABLES;
+SELECT 1 FROM mysql.db, mysql.proc, mysql.user, mysql.time_zone, mysql.time_zone_name, txt1, tyt2, urkunde LIMIT 0;
+SHOW OPEN TABLES;
+SHOW OPEN TABLES FROM mysql;
+SHOW OPEN TABLES FROM mysql LIKE 'u%';
+SHOW OPEN TABLES LIKE 't%';
+SHOW OPEN TABLES LIKE '%o%';
+FLUSH TABLES;
+SHOW OPEN TABLES;
+DROP TABLE txt1;
+DROP TABLE tyt2;
+DROP TABLE urkunde;
+#
+# BUG #12591 (SHOW TABLES FROM dbname produces wrong error message)
+#
+--error 1049
+SHOW TABLES FROM non_existing_database;
+
+
+#
+# Bug#17203: "sql_no_cache sql_cache" in views created from prepared
+# statement
+#
+# The problem was that initial user setting was forgotten, and current
+# runtime-determined values of the flags were shown instead.
+#
+--disable_warnings
+DROP VIEW IF EXISTS v1;
+DROP PROCEDURE IF EXISTS p1;
+--enable_warnings
+
+# Check that SHOW CREATE VIEW shows SQL_CACHE flag exaclty as
+# specified by the user.
+CREATE VIEW v1 AS SELECT 1;
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+CREATE VIEW v1 AS SELECT SQL_CACHE 1;
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+CREATE VIEW v1 AS SELECT SQL_NO_CACHE 1;
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+# Usage of NOW() disables caching, but we still have show what the
+# user have specified.
+CREATE VIEW v1 AS SELECT NOW();
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+CREATE VIEW v1 AS SELECT SQL_CACHE NOW();
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+CREATE VIEW v1 AS SELECT SQL_NO_CACHE NOW();
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+# Check that SQL_NO_CACHE always wins.
+CREATE VIEW v1 AS SELECT SQL_CACHE SQL_NO_CACHE NOW();
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+CREATE VIEW v1 AS SELECT SQL_NO_CACHE SQL_CACHE NOW();
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+CREATE VIEW v1 AS SELECT SQL_CACHE SQL_NO_CACHE SQL_CACHE NOW();
+SHOW CREATE VIEW v1;
+DROP VIEW v1;
+
+# Check CREATE VIEW in a prepared statement in a procedure.
+delimiter |;
+CREATE PROCEDURE p1()
+BEGIN
+  SET @s= 'CREATE VIEW v1 AS SELECT SQL_CACHE 1';
+  PREPARE stmt FROM @s;
+  EXECUTE stmt;
+  DROP PREPARE stmt;
+END |
+delimiter ;|
+CALL p1();
+SHOW CREATE VIEW v1;
+
+DROP PROCEDURE p1;
+DROP VIEW v1;
+
+
+#
+# Check that SHOW TABLES and SHOW COLUMNS give a error if there is no
+# referenced database and table respectively.
+#
+--error ER_BAD_DB_ERROR
+SHOW TABLES FROM no_such_database;
+--error ER_NO_SUCH_TABLE
+SHOW COLUMNS FROM no_such_table;
+
+
+#
+# Bug #19764: SHOW commands end up in the slow log as table scans
+#
+flush status;
+show status like 'slow_queries';
+show tables;
+show status like 'slow_queries';
+# Table scan query, to ensure that slow_queries does still get incremented
+# (mysqld is started with --log-queries-not-using-indexes)
+select 1 from information_schema.tables limit 1;
+show status like 'slow_queries';
+
+--echo End of 5.0 tests

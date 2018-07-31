@@ -2,8 +2,7 @@
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
+  the Free Software Foundation; version 2 of the License.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -54,6 +53,30 @@ pthread_mutex_t tina_mutex;
 static HASH tina_open_tables;
 static int tina_init= 0;
 
+handlerton tina_hton= {
+  "CSV",
+  SHOW_OPTION_YES,
+  "CSV storage engine", 
+  DB_TYPE_CSV_DB,
+  NULL,    /* One needs to be written! */
+  0,       /* slot */
+  0,       /* savepoint size. */
+  NULL,    /* close_connection */
+  NULL,    /* savepoint */
+  NULL,    /* rollback to savepoint */
+  NULL,    /* release savepoint */
+  NULL,    /* commit */
+  NULL,    /* rollback */
+  NULL,    /* prepare */
+  NULL,    /* recover */
+  NULL,    /* commit_by_xid */
+  NULL,    /* rollback_by_xid */
+  NULL,    /* create_cursor_read_view */
+  NULL,    /* set_cursor_read_view */
+  NULL,    /* close_cursor_read_view */
+  HTON_CAN_RECREATE
+};
+
 /*****************************************************************************
  ** TINA tables
  *****************************************************************************/
@@ -77,13 +100,34 @@ static byte* tina_get_key(TINA_SHARE *share,uint *length,
   return (byte*) share->table_name;
 }
 
+
+int free_mmap(TINA_SHARE *share)
+{
+  DBUG_ENTER("ha_tina::free_mmap");
+  if (share->mapped_file)
+  {
+    /*
+      Invalidate the mapped in pages. Some operating systems (eg OpenBSD)
+      would reuse already cached pages even if the file has been altered
+      using fd based I/O. This may be optimized by perhaps only invalidating
+      the last page but optimization of deprecated code is not important.
+    */
+    msync(share->mapped_file, 0, MS_INVALIDATE);
+    if (munmap(share->mapped_file, share->file_stat.st_size))
+      DBUG_RETURN(1);
+  }
+  share->mapped_file= NULL;
+  DBUG_RETURN(0);
+}
+
 /*
   Reloads the mmap file.
 */
 int get_mmap(TINA_SHARE *share, int write)
 {
   DBUG_ENTER("ha_tina::get_mmap");
-  if (share->mapped_file && munmap(share->mapped_file, share->file_stat.st_size))
+  
+  if (free_mmap(share))
     DBUG_RETURN(1);
 
   if (my_fstat(share->data_file, &share->file_stat, MYF(MY_WME)) == -1)
@@ -160,15 +204,17 @@ static TINA_SHARE *get_share(const char *table_name, TABLE *table)
     share->table_name_length=length;
     share->table_name=tmp_name;
     strmov(share->table_name,table_name);
-    fn_format(data_file_name, table_name, "", ".CSV",MY_REPLACE_EXT|MY_UNPACK_FILENAME);
+    fn_format(data_file_name, table_name, "", ".CSV",
+              MY_REPLACE_EXT | MY_UNPACK_FILENAME);
+
+    if ((share->data_file= my_open(data_file_name, O_RDWR|O_APPEND,
+                                   MYF(0))) == -1)
+      goto error;
+
     if (my_hash_insert(&tina_open_tables, (byte*) share))
       goto error;
     thr_lock_init(&share->lock);
     pthread_mutex_init(&share->mutex,MY_MUTEX_INIT_FAST);
-
-    if ((share->data_file= my_open(data_file_name, O_RDWR|O_APPEND,
-                                   MYF(0))) == -1)
-      goto error2;
 
     /* We only use share->data_file for writing, so we scan to the end to append */
     if (my_seek(share->data_file, 0, SEEK_END, MYF(0)) == MY_FILEPOS_ERROR)
@@ -188,6 +234,7 @@ error3:
 error2:
   thr_lock_delete(&share->lock);
   pthread_mutex_destroy(&share->mutex);
+  hash_delete(&tina_open_tables, (byte*) share);
 error:
   pthread_mutex_unlock(&tina_mutex);
   my_free((gptr) share, MYF(0));
@@ -206,8 +253,7 @@ static int free_share(TINA_SHARE *share)
   int result_code= 0;
   if (!--share->use_count){
     /* Drop the mapped file */
-    if (share->mapped_file) 
-      munmap(share->mapped_file, share->file_stat.st_size);
+    free_mmap(share);
     result_code= my_close(share->data_file,MYF(0));
     hash_delete(&tina_open_tables, (byte*) share);
     thr_lock_delete(&share->lock);
@@ -217,6 +263,17 @@ static int free_share(TINA_SHARE *share)
   pthread_mutex_unlock(&tina_mutex);
 
   DBUG_RETURN(result_code);
+}
+
+bool tina_end()
+{
+  if (tina_init)
+  {
+    hash_free(&tina_open_tables);
+    VOID(pthread_mutex_destroy(&tina_mutex));
+  }
+  tina_init= 0;
+  return FALSE;
 }
 
 
@@ -231,6 +288,21 @@ byte * find_eoln(byte *data, off_t begin, off_t end)
       return data + x;
 
   return 0;
+}
+
+
+ha_tina::ha_tina(TABLE *table_arg)
+  :handler(&tina_hton, table_arg),
+  /*
+    These definitions are found in hanler.h
+    These are not probably completely right.
+  */
+  current_position(0), next_position(0), chain_alloced(0),
+  chain_size(DEFAULT_CHAIN_LENGTH), records_is_known(0)
+{
+  /* Set our original buffers from pre-allocated memory */
+  buffer.set(byte_buffer, IO_SIZE, system_charset_info);
+  chain= chain_buffer;
 }
 
 /*
@@ -379,7 +451,7 @@ int ha_tina::find_current_row(byte *buf)
   }
   next_position= (end_ptr - share->mapped_file)+1;
   /* Maybe use \N for null? */
-  memset(buf, 0, table->null_bytes); /* We do not implement nulls! */
+  memset(buf, 0, table->s->null_bytes); /* We do not implement nulls! */
 
   DBUG_RETURN(0);
 }
@@ -388,8 +460,15 @@ int ha_tina::find_current_row(byte *buf)
   If frm_error() is called in table.cc this is called to find out what file
   extensions exist for this handler.
 */
+static const char *ha_tina_exts[] = {
+  ".CSV",
+  NullS
+};
+
 const char **ha_tina::bas_ext() const
-{ static const char *ext[]= { ".CSV", NullS }; return ext; }
+{
+  return ha_tina_exts;
+}
 
 
 /* 
@@ -430,12 +509,19 @@ int ha_tina::write_row(byte * buf)
   int size;
   DBUG_ENTER("ha_tina::write_row");
 
-  statistic_increment(ha_write_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_write_count, &LOCK_status);
 
   if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_INSERT)
     table->timestamp_field->set_time();
 
   size= encode_quote(buf);
+
+  /*
+    we are going to alter the file so we must invalidate the in memory pages
+    otherwise we risk a race between the in memory pages and the disk pages.
+  */
+  if (free_mmap(share))
+    DBUG_RETURN(-1);
 
   if (my_write(share->data_file, buffer.ptr(), size, MYF(MY_WME | MY_NABP)))
     DBUG_RETURN(-1);
@@ -449,6 +535,7 @@ int ha_tina::write_row(byte * buf)
   */
   if (get_mmap(share, 0) > 0) 
     DBUG_RETURN(-1);
+  records++;
   DBUG_RETURN(0);
 }
 
@@ -466,7 +553,8 @@ int ha_tina::update_row(const byte * old_data, byte * new_data)
   int size;
   DBUG_ENTER("ha_tina::update_row");
 
-  statistic_increment(ha_update_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_rnd_next_count,
+		      &LOCK_status);
 
   if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_UPDATE)
     table->timestamp_field->set_time();
@@ -476,8 +564,26 @@ int ha_tina::update_row(const byte * old_data, byte * new_data)
   if (chain_append())
     DBUG_RETURN(-1);
 
+  /*
+    we are going to alter the file so we must invalidate the in memory pages
+    otherwise we risk a race between the in memory pages and the disk pages.
+  */
+  if (free_mmap(share))
+    DBUG_RETURN(-1);
+
   if (my_write(share->data_file, buffer.ptr(), size, MYF(MY_WME | MY_NABP)))
     DBUG_RETURN(-1);
+
+  /* 
+    Ok, this is means that we will be doing potentially bad things 
+    during a bulk update on some OS'es. Ideally, we should extend the length
+    of the file, redo the mmap and then write all the updated rows. Upon
+    finishing the bulk update, truncate the file length to the final length.
+    Since this code is all being deprecated, not point now to optimize.
+  */
+  if (get_mmap(share, 0) > 0) 
+    DBUG_RETURN(-1);
+
   DBUG_RETURN(0);
 }
 
@@ -493,7 +599,7 @@ int ha_tina::update_row(const byte * old_data, byte * new_data)
 int ha_tina::delete_row(const byte * buf)
 {
   DBUG_ENTER("ha_tina::delete_row");
-  statistic_increment(ha_delete_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_delete_count,&LOCK_status);
 
   if (chain_append())
     DBUG_RETURN(-1);
@@ -612,6 +718,7 @@ int ha_tina::rnd_init(bool scan)
 
   current_position= next_position= 0;
   records= 0;
+  records_is_known= 0;
   chain_ptr= chain;
 #ifdef HAVE_MADVISE
   if (scan)
@@ -636,7 +743,8 @@ int ha_tina::rnd_next(byte *buf)
 {
   DBUG_ENTER("ha_tina::rnd_next");
 
-  statistic_increment(ha_read_rnd_next_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_rnd_next_count,
+		      &LOCK_status);
 
   current_position= next_position;
   if (!share->mapped_file) 
@@ -652,7 +760,7 @@ int ha_tina::rnd_next(byte *buf)
   In the case of an order by rows will need to be sorted.
   ::position() is called after each call to ::rnd_next(), 
   the data it stores is to a byte array. You can store this
-  data via ha_store_ptr(). ref_length is a variable defined to the 
+  data via my_store_ptr(). ref_length is a variable defined to the 
   class that is the sizeof() of position being stored. In our case  
   its just a position. Look at the bdb code if you want to see a case 
   where something other then a number is stored.
@@ -660,21 +768,22 @@ int ha_tina::rnd_next(byte *buf)
 void ha_tina::position(const byte *record)
 {
   DBUG_ENTER("ha_tina::position");
-  ha_store_ptr(ref, ref_length, current_position);
+  my_store_ptr(ref, ref_length, current_position);
   DBUG_VOID_RETURN;
 }
 
 
 /* 
   Used to fetch a row from a posiion stored with ::position(). 
-  ha_get_ptr() retrieves the data for you.
+  my_get_ptr() retrieves the data for you.
 */
 
 int ha_tina::rnd_pos(byte * buf, byte *pos)
 {
   DBUG_ENTER("ha_tina::rnd_pos");
-  statistic_increment(ha_read_rnd_count,&LOCK_status);
-  current_position= ha_get_ptr(pos,ref_length);
+  statistic_increment(table->in_use->status_var.ha_read_rnd_next_count,
+		      &LOCK_status);
+  current_position= my_get_ptr(pos,ref_length);
   DBUG_RETURN(find_current_row(buf));
 }
 
@@ -687,7 +796,7 @@ int ha_tina::info(uint flag)
 {
   DBUG_ENTER("ha_tina::info");
   /* This is a lie, but you don't want the optimizer to see zero or 1 */
-  if (records < 2) 
+  if (!records_is_known && records < 2) 
     records= 2;
   DBUG_RETURN(0);
 }
@@ -722,6 +831,8 @@ int ha_tina::rnd_end()
 {
   DBUG_ENTER("ha_tina::rnd_end");
 
+  records_is_known= 1;
+
   /* First position will be truncate position, second will be increment */
   if ((chain_ptr - chain)  > 0)
   {
@@ -749,15 +860,14 @@ int ha_tina::rnd_end()
       length= length - (size_t)(ptr->end - ptr->begin);
     }
 
+    /* Invalidate all cached mmap pages */
+    if (free_mmap(share))
+      DBUG_RETURN(-1);
+
     /* Truncate the file to the new size */
     if (my_chsize(share->data_file, length, 0, MYF(MY_WME)))
       DBUG_RETURN(-1);
 
-    if (munmap(share->mapped_file, length))
-      DBUG_RETURN(-1);
-
-    /* We set it to null so that get_mmap() won't try to unmap it */
-    share->mapped_file= NULL;
     if (get_mmap(share, 0) > 0) 
       DBUG_RETURN(-1);
   }
@@ -766,17 +876,25 @@ int ha_tina::rnd_end()
 }
 
 /* 
-  Truncate table and others of its ilk call this. 
+  DELETE without WHERE calls it
 */
 int ha_tina::delete_all_rows()
 {
   DBUG_ENTER("ha_tina::delete_all_rows");
+
+  if (!records_is_known)
+    return (my_errno=HA_ERR_WRONG_COMMAND);
+
+  /* Invalidate all cached mmap pages */
+  if (free_mmap(share)) 
+    DBUG_RETURN(-1);
 
   int rc= my_chsize(share->data_file, 0, 0, MYF(MY_WME));
 
   if (get_mmap(share, 0) > 0) 
     DBUG_RETURN(-1);
 
+  records=0;
   DBUG_RETURN(rc);
 }
 
@@ -802,21 +920,6 @@ THR_LOCK_DATA **ha_tina::store_lock(THD *thd,
   *to++= &lock;
   return to;
 }
-
-/* 
-  Range optimizer calls this.
-  I need to update the information on this.
-*/
-ha_rows ha_tina::records_in_range(int inx,
-                                  const byte *start_key,uint start_key_len,
-                                  enum ha_rkey_function start_search_flag,
-                                  const byte *end_key,uint end_key_len,
-                                  enum ha_rkey_function end_search_flag)
-{
-  DBUG_ENTER("ha_tina::records_in_range ");
-  DBUG_RETURN(records); // Good guess
-}
-
 
 /* 
   Create a table. You do not want to leave the table open after a call to

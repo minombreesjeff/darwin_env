@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -159,6 +158,7 @@ Dbtux::execREAD_CONFIG_REQ(Signal* signal)
   Uint32 nFragment;
   Uint32 nAttribute;
   Uint32 nScanOp; 
+  Uint32 nScanBatch;
 
   const ndb_mgm_configuration_iterator * p = 
     theConfiguration.getOwnConfigIterator();
@@ -168,9 +168,11 @@ Dbtux::execREAD_CONFIG_REQ(Signal* signal)
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_TUX_FRAGMENT, &nFragment));
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_TUX_ATTRIBUTE, &nAttribute));
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_TUX_SCAN_OP, &nScanOp));
+  ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_BATCH_SIZE, &nScanBatch));
 
   const Uint32 nDescPage = (nIndex * DescHeadSize + nAttribute * DescAttrSize + DescPageSize - 1) / DescPageSize;
   const Uint32 nScanBoundWords = nScanOp * ScanBoundSegmentSize * 4;
+  const Uint32 nScanLock = nScanOp * nScanBatch;
   
   c_indexPool.setSize(nIndex);
   c_fragPool.setSize(nFragment);
@@ -178,6 +180,7 @@ Dbtux::execREAD_CONFIG_REQ(Signal* signal)
   c_fragOpPool.setSize(MaxIndexFragments);
   c_scanOpPool.setSize(nScanOp);
   c_scanBoundPool.setSize(nScanBoundWords);
+  c_scanLockPool.setSize(nScanLock);
   /*
    * Index id is physical array index.  We seize and initialize all
    * index records now.
@@ -217,10 +220,11 @@ Dbtux::setKeyAttrs(const Frag& frag)
   const unsigned numAttrs = frag.m_numAttrs;
   const DescEnt& descEnt = getDescEnt(frag.m_descPage, frag.m_descOff);
   for (unsigned i = 0; i < numAttrs; i++) {
+    jam();
     const DescAttr& descAttr = descEnt.m_descAttr[i];
     Uint32 size = AttributeDescriptor::getSizeInWords(descAttr.m_attrDesc);
     // set attr id and fixed size
-    keyAttrs.ah() = AttributeHeader(descAttr.m_primaryAttrId, size);
+    ah(keyAttrs) = AttributeHeader(descAttr.m_primaryAttrId, size);
     keyAttrs += 1;
     // set comparison method pointer
     const NdbSqlUtil::Type& sqlType = NdbSqlUtil::getTypeBinary(descAttr.m_typeId);
@@ -244,6 +248,26 @@ Dbtux::readKeyAttrs(const Frag& frag, TreeEnt ent, unsigned start, Data keyData)
   jamEntry();
   // TODO handle error
   ndbrequire(ret > 0);
+#ifdef VM_TRACE
+  if (debugFlags & (DebugMaint | DebugScan)) {
+    debugOut << "readKeyAttrs:" << endl;
+    ConstData data = keyData;
+    Uint32 totalSize = 0;
+    for (Uint32 i = start; i < frag.m_numAttrs; i++) {
+      Uint32 attrId = ah(data).getAttributeId();
+      Uint32 dataSize = ah(data).getDataSize();
+      debugOut << i << " attrId=" << attrId << " size=" << dataSize;
+      data += 1;
+      for (Uint32 j = 0; j < dataSize; j++) {
+        debugOut << " " << hex << data[0];
+        data += 1;
+      }
+      debugOut << endl;
+      totalSize += 1 + dataSize;
+    }
+    ndbassert((int)totalSize == ret);
+  }
+#endif
 }
 
 void
@@ -251,7 +275,7 @@ Dbtux::readTablePk(const Frag& frag, TreeEnt ent, Data pkData, unsigned& pkSize)
 {
   const Uint32 tableFragPtrI = frag.m_tupTableFragPtrI[ent.m_fragBit];
   const TupLoc tupLoc = ent.m_tupLoc;
-  int ret = c_tup->tuxReadPk(tableFragPtrI, tupLoc.getPageId(), tupLoc.getPageOffset(), pkData);
+  int ret = c_tup->tuxReadPk(tableFragPtrI, tupLoc.getPageId(), tupLoc.getPageOffset(), pkData, true);
   jamEntry();
   // TODO handle error
   ndbrequire(ret > 0);
@@ -269,7 +293,7 @@ Dbtux::copyAttrs(const Frag& frag, ConstData data1, Data data2, unsigned maxlen2
   unsigned len2 = maxlen2;
   while (n != 0) {
     jam();
-    const unsigned dataSize = data1.ah().getDataSize();
+    const unsigned dataSize = ah(data1).getDataSize();
     // copy header
     if (len2 == 0)
       return;
@@ -291,6 +315,19 @@ Dbtux::copyAttrs(const Frag& frag, ConstData data1, Data data2, unsigned maxlen2
 #ifdef VM_TRACE
   memset(data2, DataFillByte, len2 << 2);
 #endif
+}
+
+void
+Dbtux::unpackBound(const ScanBound& bound, Data dest)
+{
+  ScanBoundIterator iter;
+  bound.first(iter);
+  const unsigned n = bound.getSize();
+  unsigned j;
+  for (j = 0; j < n; j++) {
+    dest[j] = *iter.data;
+    bound.next(iter);
+  }
 }
 
 BLOCK_FUNCTIONS(Dbtux)

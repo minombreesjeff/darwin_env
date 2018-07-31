@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -48,7 +47,7 @@ const
 NDBT_Attribute T2Attribs[] = {
   NDBT_Attribute("KOL1", NdbDictionary::Column::Bigunsigned, 1, true), 
   NDBT_Attribute("KOL2", NdbDictionary::Column::Unsigned),
-  NDBT_Attribute("KOL3", NdbDictionary::Column::Unsigned),
+  NDBT_Attribute("KOL3", NdbDictionary::Column::Bit, 23),
   NDBT_Attribute("KOL4", NdbDictionary::Column::Unsigned, 
 		 1, false, true), // Nullable 
   NDBT_Attribute("KOL5", NdbDictionary::Column::Unsigned)
@@ -799,6 +798,17 @@ NDBT_Tables::getNumTables(){
   return numTestTables;
 }
 
+const char**
+NDBT_Tables::getIndexes(const char* table)
+{
+  Uint32 i = 0;
+  for (i = 0; indexes[i].m_table != 0; i++) {
+    if (strcmp(indexes[i].m_table, table) == 0)
+      return indexes[i].m_indexes;
+  }
+  return 0;
+}
+
 int
 NDBT_Tables::createAllTables(Ndb* pNdb, bool _temp, bool existsOk){
   
@@ -820,21 +830,25 @@ NDBT_Tables::createAllTables(Ndb* pNdb){
 
 int
 NDBT_Tables::createTable(Ndb* pNdb, const char* _name, bool _temp, 
-			 bool existsOk){
+			 bool existsOk, NDBT_CreateTableHook f){
   
   const NdbDictionary::Table* tab = NDBT_Tables::getTable(_name);
   if (tab == NULL){
     ndbout << "Could not create table " << _name 
 	   << ", it doesn't exist in list of tables "\
-              "that NDBT_Tables can create!" << endl;
+      "that NDBT_Tables can create!" << endl;
     return NDBT_WRONGARGS;
   }
-
+  
   int r = 0;
   do {
     NdbDictionary::Table tmpTab(* tab);
     tmpTab.setStoredTable(_temp ? 0 : 1);
-  
+    if(f != 0 && f(pNdb, tmpTab, 0))
+    {
+      ndbout << "Failed to create table" << endl;
+      return NDBT_FAILED;
+    }      
     r = pNdb->getDictionary()->createTable(tmpTab);
     if(r == -1){
       if(!existsOk){
@@ -883,6 +897,11 @@ NDBT_Tables::createTable(Ndb* pNdb, const char* _name, bool _temp,
 	}
       }
     }
+    if(f != 0 && f(pNdb, tmpTab, 1))
+    {
+      ndbout << "Failed to create table" << endl;
+      return NDBT_FAILED;
+    }      
   } while(false);
   
   return r;

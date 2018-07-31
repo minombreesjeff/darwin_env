@@ -1,9 +1,8 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2003, 2006 MySQL AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,8 +16,8 @@
 ## Process this file with automake to create Makefile.in
 
 EXTRA_DIST=	NOTES cacert.pem client-cert.pem client-key.pem \
-		client-req.pem run-client run-server server-cert.pem \
-		server-key.pem server-req.pem
+		run-client run-server server-cert.pem \
+		server-key.pem
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

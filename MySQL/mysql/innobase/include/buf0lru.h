@@ -26,14 +26,14 @@ void
 buf_LRU_try_free_flushed_blocks(void);
 /*==================================*/
 /**********************************************************************
-Returns TRUE if less than 15 % of the buffer pool is available. This can be
+Returns TRUE if less than 25 % of the buffer pool is available. This can be
 used in heuristics to prevent huge transactions eating up the whole buffer
 pool for their locks. */
 
 ibool
 buf_LRU_buf_pool_running_out(void);
 /*==============================*/
-				/* out: TRUE if less than 15 % of buffer pool
+				/* out: TRUE if less than 25 % of buffer pool
 				left */
 
 /*#######################################################################
@@ -122,6 +122,7 @@ void
 buf_LRU_make_block_old(
 /*===================*/
 	buf_block_t*	block);	/* in: control block */
+#ifdef UNIV_DEBUG
 /**************************************************************************
 Validates the LRU list. */
 
@@ -134,6 +135,7 @@ Prints the LRU list. */
 void
 buf_LRU_print(void);
 /*===============*/
+#endif /* UNIV_DEBUG */
 
 #ifndef UNIV_NONINL
 #include "buf0lru.ic"

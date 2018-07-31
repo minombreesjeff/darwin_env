@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -55,11 +54,11 @@
  *  local segment, the SCI transporter connects to a segment created by another 
  *  transporter at a remote node, and the maps the remote segment into its  
  *  virtual address space. However, since NDB Cluster relies on redundancy 
- *  at the network level, by using dual SCI adapters communica 
- * 
+ *  at the network level, by using dual SCI adapters communication can be
+ *  maintained even if one of the adapter cards fails (or anything on the
+ *  network this adapter card exists in e.g. an SCI switch failure).
  * 
  */ 
-
 
 /**  
  * class SCITransporter 
@@ -85,16 +84,6 @@ public:
   sci_error_t createSequence(Uint32 adapterid);      
    
    
-  /** 
-   * starts a sequence for error checking. 
-   * The actual checking that a sequence is correct is done implicitly 
-   * in SCIMemCpy (in doSend).  
-   * @param adapterid the adapter on which to start the sequence. 
-   * @return SCI_ERR_OK if ok, otherwize something else. 
-   */ 
-  sci_error_t startSequence(Uint32 adapterid);          
- 
- 
   /** Initiate Local Segment: create a memory segment, 
    * prepare a memory segment, map the local segment  
    * into  memory space and make segment available. 
@@ -140,13 +129,15 @@ private:
                   const char *local_host,
                   const char *remote_host,
                   int port,
+		  bool isMgmConnection,
                   Uint32 packetSize,  
 		  Uint32 bufferSize, 
 		  Uint32 nAdapters, 
 		  Uint16 remoteSciNodeId0,  
 		  Uint16 remoteSciNodeId1,  
 		  NodeId localNodeID,  
-		  NodeId remoteNodeID,  
+		  NodeId remoteNodeID,
+		  NodeId serverNodeId,
 		  bool checksum,  
 		  bool signalId, 
 		  Uint32 reportFreq = 4096); 
@@ -158,7 +149,6 @@ private:
   bool m_mapped; 
   bool m_initLocal; 
   bool m_sciinit; 
-  Uint32 m_swapCounter; 
   Uint32 m_failCounter; 
   /** 
    * For statistics on transfered packets  
@@ -193,7 +183,6 @@ private:
    * Statistics 
    */ 
   Uint32 m_reportFreq; 
- 
  
   Uint32 m_adapters;   
   Uint32 m_numberOfRemoteNodes; 

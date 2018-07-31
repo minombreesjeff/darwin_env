@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,7 +21,7 @@
 struct restore_callback_t {
   class BackupRestore *restore;
   class TupleS tup;
-  class NdbConnection *connection;
+  class NdbTransaction *connection;
   int    retries;
   int error_code;
   restore_callback_t *next;
@@ -35,6 +34,7 @@ public:
   BackupRestore(Uint32 parallelism=1) 
   {
     m_ndb = 0;
+    m_cluster_connection = 0;
     m_logCount = m_dataCount = 0;
     m_restore = false;
     m_restore_meta = false;
@@ -64,6 +64,7 @@ public:
   virtual bool has_temp_error();
   void connectToMysql();
   Ndb * m_ndb;
+  Ndb_cluster_connection * m_cluster_connection;
   bool m_restore;
   bool m_restore_meta;
   Uint32 m_logCount;

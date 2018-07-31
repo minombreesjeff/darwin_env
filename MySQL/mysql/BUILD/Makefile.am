@@ -1,9 +1,9 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2002, 2004-2005 MySQL AB
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# License as published by the Free Software Foundation; version 2
+# of the License.
 #
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -19,6 +19,7 @@
 
 EXTRA_DIST =		FINISH.sh \
 			SETUP.sh \
+			autorun.sh \
 			check-cpu \
 			cleanup \
 			compile-alpha \
@@ -27,6 +28,7 @@ EXTRA_DIST =		FINISH.sh \
 			compile-alpha-debug \
 			compile-amd64-debug-max \
 			compile-amd64-max \
+			compile-amd64-max-sci \
 			compile-darwin-mwcc \
 			compile-dist \
 			compile-hpux11-parisc2-aCC \
@@ -36,10 +38,15 @@ EXTRA_DIST =		FINISH.sh \
 			compile-pentium-debug \
 			compile-pentium-debug-max \
 			compile-pentium-debug-max-no-embedded \
+			compile-pentium-debug-max-no-ndb \
 			compile-pentium-debug-no-bdb \
 			compile-pentium-debug-openssl \
+			compile-pentium-debug-yassl \
 			compile-pentium-gcov \
 			compile-pentium-gprof \
+			compile-pentium-icc \
+			compile-pentium-icc-valgrind-max \
+			compile-pentium-icc-yassl \
 			compile-pentium-max \
 			compile-pentium-myodbc \
 			compile-pentium-mysqlfs-debug \
@@ -47,10 +54,12 @@ EXTRA_DIST =		FINISH.sh \
 			compile-pentium-valgrind-max \
 			compile-pentium64-debug \
 			compile-pentium64-debug-max \
+			compile-pentium64-max-sci \
 			compile-pentium64-valgrind-max \
 			compile-ppc \
 			compile-ppc-debug \
 			compile-ppc-debug-max \
+			compile-ppc-debug-max-no-ndb \
 			compile-ppc-max \
 			compile-solaris-sparc \
 			compile-solaris-sparc-debug \

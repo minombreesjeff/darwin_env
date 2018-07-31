@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,13 +37,13 @@ gptr my_malloc(unsigned int size, myf my_flags)
     if (my_flags & MY_FAE)
       error_handler_hook=fatal_error_handler_hook;
     if (my_flags & (MY_FAE+MY_WME))
-      my_error(EE_OUTOFMEMORY, MYF(ME_BELL+ME_WAITTANG),size);
+      my_error(EE_OUTOFMEMORY, MYF(ME_BELL+ME_WAITTANG+ME_NOREFRESH),size);
     if (my_flags & MY_FAE)
       exit(1);
   }
   else if (my_flags & MY_ZEROFILL)
     bzero(point,size);
-  DBUG_PRINT("exit",("ptr: 0x%lx",point));
+  DBUG_PRINT("exit",("ptr: 0x%lx", (long) point));
   DBUG_RETURN(point);
 } /* my_malloc */
 
@@ -55,7 +54,7 @@ gptr my_malloc(unsigned int size, myf my_flags)
 void my_no_flags_free(gptr ptr)
 {
   DBUG_ENTER("my_free");
-  DBUG_PRINT("my",("ptr: 0x%lx",ptr));
+  DBUG_PRINT("my",("ptr: 0x%lx", (long) ptr));
   if (ptr)
     free(ptr);
   DBUG_VOID_RETURN;
@@ -83,7 +82,7 @@ char *my_strdup(const char *from, myf my_flags)
 }
 
 
-char *my_strdup_with_length(const byte *from, uint length, myf my_flags)
+char *my_strdup_with_length(const char *from, uint length, myf my_flags)
 {
   gptr ptr;
   if ((ptr=my_malloc(length+1,my_flags)) != 0)

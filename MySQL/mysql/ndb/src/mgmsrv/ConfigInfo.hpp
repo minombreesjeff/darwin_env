@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,8 +26,11 @@
  * A MANDATORY parameters must be specified in the config file
  * An UNDEFINED parameter may or may not be specified in the config file
  */
-static const char* MANDATORY = (char*)~(UintPtr)0;// Default value for mandatory params.
-static const char* UNDEFINED = 0;                 // Default value for undefined params.
+
+// Default value for mandatory params.
+#define MANDATORY ((char*)~(UintPtr)0)
+// Default value for undefined params.
+#define UNDEFINED ((char*) 0)
 
 /**
  * @class  ConfigInfo

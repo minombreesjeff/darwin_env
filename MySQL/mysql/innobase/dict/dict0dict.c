@@ -27,6 +27,9 @@ Created 1/8/1996 Heikki Tuuri
 #include "que0que.h"
 #include "rem0cmp.h"
 
+/* Implement isspace() in a locale-independent way. (Bug #24299) */
+#define ib_isspace(c) ((char) (c) && strchr(" \v\f\t\r\n", c))
+
 dict_sys_t*	dict_sys	= NULL;	/* the dictionary system */
 
 rw_lock_t	dict_operation_lock;	/* table create, drop, etc. reserve
@@ -53,6 +56,7 @@ rw_lock_t	dict_operation_lock;	/* table create, drop, etc. reserve
 /* Identifies generated InnoDB foreign key names */
 static char	dict_ibfk[] = "_ibfk_";
 
+#ifndef UNIV_HOTBACKUP
 /**********************************************************************
 Compares NUL-terminated UTF-8 strings case insensitively.
 
@@ -76,6 +80,7 @@ void
 innobase_casedn_str(
 /*================*/
 	char*	a);	/* in/out: string to put in lower case */
+#endif /* !UNIV_HOTBACKUP */
 
 /**************************************************************************
 Adds a column to the data dictionary hash table. */
@@ -623,7 +628,8 @@ dict_table_get_on_id(
 		CREATE, for example, we already have the mutex! */
 
 #ifdef UNIV_SYNC_DEBUG
-		ut_ad(mutex_own(&(dict_sys->mutex)));
+		ut_ad(mutex_own(&(dict_sys->mutex))
+		      || trx->dict_operation_lock_mode == RW_X_LATCH);
 #endif /* UNIV_SYNC_DEBUG */
 
 		return(dict_table_get_on_id_low(table_id, trx));
@@ -824,23 +830,22 @@ dict_table_add_to_cache(
 	system columns. */
 
 	dict_mem_table_add_col(table, "DB_ROW_ID", DATA_SYS,
-			       DATA_ROW_ID, 0, 0);
+			DATA_ROW_ID | DATA_NOT_NULL, DATA_ROW_ID_LEN, 0);
 #if DATA_ROW_ID != 0
 #error "DATA_ROW_ID != 0"
 #endif
 	dict_mem_table_add_col(table, "DB_TRX_ID", DATA_SYS,
-			       DATA_TRX_ID, 0, 0);
+			DATA_TRX_ID | DATA_NOT_NULL, DATA_TRX_ID_LEN, 0);
 #if DATA_TRX_ID != 1
 #error "DATA_TRX_ID != 1"
 #endif
 	dict_mem_table_add_col(table, "DB_ROLL_PTR", DATA_SYS,
-			       DATA_ROLL_PTR, 0, 0);
+			DATA_ROLL_PTR | DATA_NOT_NULL, DATA_ROLL_PTR_LEN, 0);
 #if DATA_ROLL_PTR != 2
 #error "DATA_ROLL_PTR != 2"
 #endif
-
 	dict_mem_table_add_col(table, "DB_MIX_ID", DATA_SYS,
-			       DATA_MIX_ID, 0, 0);
+			DATA_MIX_ID | DATA_NOT_NULL, DATA_MIX_ID_LEN, 0);
 #if DATA_MIX_ID != 3
 #error "DATA_MIX_ID != 3"
 #endif
@@ -1248,15 +1253,13 @@ dict_table_remove_from_cache(
 	/* Remove table from LRU list of tables */
 	UT_LIST_REMOVE(table_LRU, dict_sys->table_LRU, table);
 
-	mutex_free(&(table->autoinc_mutex));
-
 	size = mem_heap_get_size(table->heap);
 
 	ut_ad(dict_sys->size >= size);
 
 	dict_sys->size -= size;
 
-	mem_heap_free(table->heap);
+	dict_mem_table_free(table);
 }
 
 /**************************************************************************
@@ -1379,7 +1382,7 @@ dict_col_reposition_in_cache(
 
 /********************************************************************
 If the given column name is reserved for InnoDB system columns, return
-TRUE.*/
+TRUE. */
 
 ibool
 dict_col_name_is_reserved(
@@ -1417,8 +1420,9 @@ dict_index_add_to_cache(
 /*====================*/
 				/* out: TRUE if success */
 	dict_table_t*	table,	/* in: table on which the index is */
-	dict_index_t*	index)	/* in, own: index; NOTE! The index memory
+	dict_index_t*	index,	/* in, own: index; NOTE! The index memory
 				object is freed in this function! */
+	ulint		page_no)/* in: root page number of the index */
 {
 	dict_index_t*	new_index;
 	dict_tree_t*	tree;
@@ -1483,7 +1487,7 @@ dict_index_add_to_cache(
 
 	/* Increment the ord_part counts in columns which are ordering */
 
-	if (index->type & DICT_UNIVERSAL) {
+	if (UNIV_UNLIKELY(index->type & DICT_UNIVERSAL)) {
 		n_ord = new_index->n_fields;
 	} else {
 		n_ord = dict_index_get_n_unique(new_index);
@@ -1504,16 +1508,15 @@ dict_index_add_to_cache(
 		tree = dict_index_get_tree(
 					UT_LIST_GET_FIRST(cluster->indexes));
 		new_index->tree = tree;
-		new_index->page_no = tree->page;
 	} else {
 		/* Create an index tree memory object for the index */
-		tree = dict_tree_create(new_index);
+		tree = dict_tree_create(new_index, page_no);
 		ut_ad(tree);
 
 		new_index->tree = tree;
 	}
 
-	if (!(new_index->type & DICT_UNIVERSAL)) {
+	if (!UNIV_UNLIKELY(new_index->type & DICT_UNIVERSAL)) {
 
 		new_index->stat_n_diff_key_vals =
 			mem_heap_alloc(new_index->heap,
@@ -1582,7 +1585,7 @@ dict_index_remove_from_cache(
 
 	dict_sys->size -= size;
 
-	mem_heap_free(index->heap);
+	dict_mem_index_free(index);
 }
 
 /***********************************************************************
@@ -1630,7 +1633,7 @@ dict_index_find_cols(
 	
 /***********************************************************************
 Adds a column to index. */
-UNIV_INLINE
+
 void
 dict_index_add_col(
 /*===============*/
@@ -1646,6 +1649,34 @@ dict_index_add_col(
 	field = dict_index_get_nth_field(index, index->n_def - 1);
 
 	field->col = col;
+	field->fixed_len = dtype_get_fixed_size(&col->type);
+
+	if (prefix_len && field->fixed_len > prefix_len) {
+		field->fixed_len = prefix_len;
+	}
+
+	/* Long fixed-length fields that need external storage are treated as
+	variable-length fields, so that the extern flag can be embedded in
+	the length word. */
+
+	if (field->fixed_len > DICT_MAX_INDEX_COL_LEN) {
+		field->fixed_len = 0;
+	}
+
+	if (!(dtype_get_prtype(&col->type) & DATA_NOT_NULL)) {
+		index->n_nullable++;
+	}
+
+	if (index->n_def > 1) {
+		const dict_field_t*	field2 =
+			dict_index_get_nth_field(index, index->n_def - 2);
+		field->fixed_offs = (!field2->fixed_len ||
+					field2->fixed_offs == ULINT_UNDEFINED)
+				? ULINT_UNDEFINED
+				: field2->fixed_len + field2->fixed_offs;
+	} else {
+		field->fixed_offs = 0;
+	}
 }
 
 /***********************************************************************
@@ -1686,7 +1717,7 @@ dict_index_copy_types(
 	dtype_t*	type;
 	ulint		i;
 
-	if (index->type & DICT_UNIVERSAL) {
+	if (UNIV_UNLIKELY(index->type & DICT_UNIVERSAL)) {
 		dtuple_set_types_binary(tuple, n_fields);
 
 		return;
@@ -1764,7 +1795,6 @@ dict_index_build_internal_clust(
 	new_index->n_user_defined_cols = index->n_fields;
 	
 	new_index->id = index->id;
-	new_index->page_no = index->page_no;
 
 	if (table->type != DICT_TABLE_ORDINARY) {
 		/* The index is mixed: copy common key prefix fields */
@@ -1783,7 +1813,7 @@ dict_index_build_internal_clust(
 		dict_index_copy(new_index, index, 0, index->n_fields);
 	}
 
-	if (index->type & DICT_UNIVERSAL) {
+	if (UNIV_UNLIKELY(index->type & DICT_UNIVERSAL)) {
 		/* No fixed number of fields determines an entry uniquely */
 
 		new_index->n_uniq = ULINT_MAX;
@@ -1943,7 +1973,6 @@ dict_index_build_internal_non_clust(
 	new_index->n_user_defined_cols = index->n_fields;
 	
 	new_index->id = index->id;
-	new_index->page_no = index->page_no;
 
 	/* Copy fields from index to new_index */
 	dict_index_copy(new_index, index, 0, index->n_fields);
@@ -2111,10 +2140,14 @@ dict_foreign_find_index(
 	ulint		n_cols,	/* in: number of columns */
 	dict_index_t*	types_idx, /* in: NULL or an index to whose types the
 				   column types must match */
-	ibool		check_charsets)	/* in: whether to check charsets.
+	ibool		check_charsets,	/* in: whether to check charsets.
 					only has an effect if types_idx !=
 					NULL. */
+	ulint		check_null)
+				/* in: nonzero if none of the columns must
+				be declared NOT NULL */
 {
+#ifndef UNIV_HOTBACKUP
 	dict_index_t*	index;
 	const char*	col_name;
 	ulint		i;
@@ -2125,10 +2158,11 @@ dict_foreign_find_index(
 		if (dict_index_get_n_fields(index) >= n_cols) {
 
 			for (i = 0; i < n_cols; i++) {
-				col_name = dict_index_get_nth_field(index, i)
-							->col->name;
-				if (dict_index_get_nth_field(index, i)
-						->prefix_len != 0) {
+				dict_field_t*	field
+					= dict_index_get_nth_field(index, i);
+
+				col_name = field->col->name;
+				if (field->prefix_len != 0) {
 					/* We do not accept column prefix
 					indexes here */
 					
@@ -2138,6 +2172,13 @@ dict_foreign_find_index(
 				if (0 != innobase_strcasecmp(columns[i],
 								col_name)) {
 				  	break;
+				}
+
+				if (check_null
+				    && (field->col->type.prtype
+					& DATA_NOT_NULL)) {
+
+					return(NULL);
 				}
 
 				if (types_idx && !cmp_types_are_equal(
@@ -2160,6 +2201,12 @@ dict_foreign_find_index(
 	}
 
 	return(NULL);
+#else /* UNIV_HOTBACKUP */
+	/* This function depends on MySQL code that is not included in
+	InnoDB Hot Backup builds.  Besides, this function should never
+	be called in InnoDB Hot Backup. */
+	ut_error;
+#endif /* UNIV_HOTBACKUP */
 }
 
 /**************************************************************************
@@ -2191,13 +2238,13 @@ dict_foreign_error_report(
 	dict_foreign_error_report_low(file, fk->foreign_table_name);
 	fputs(msg, file);
 	fputs(" Constraint:\n", file);
-	dict_print_info_on_foreign_key_in_create_format(file, NULL, fk);
+	dict_print_info_on_foreign_key_in_create_format(file, NULL, fk, TRUE);
 	putc('\n', file);
 	if (fk->foreign_index) {
 		fputs("The index in the foreign key in table is ", file);
 		ut_print_name(file, NULL, fk->foreign_index->name);
-		fputs(
-"\nSee http://dev.mysql.com/doc/mysql/en/InnoDB_foreign_key_constraints.html\n"
+		fputs("\n"
+"See http://dev.mysql.com/doc/refman/5.0/en/innodb-foreign-key-constraints.html\n"
 "for correct foreign key definition.\n",
 		file);
 	}
@@ -2255,7 +2302,7 @@ dict_foreign_add_to_cache(
 		index = dict_foreign_find_index(ref_table,
 			(const char**) for_in_cache->referenced_col_names,
 			for_in_cache->n_fields,
-			for_in_cache->foreign_index, check_charsets);
+			for_in_cache->foreign_index, check_charsets, FALSE);
 
 		if (index == NULL) {
 			dict_foreign_error_report(ef, for_in_cache,
@@ -2282,13 +2329,17 @@ dict_foreign_add_to_cache(
 		index = dict_foreign_find_index(for_table,
 			(const char**) for_in_cache->foreign_col_names,
 			for_in_cache->n_fields,
-			for_in_cache->referenced_index, check_charsets);
+			for_in_cache->referenced_index, check_charsets,
+			for_in_cache->type
+			& (DICT_FOREIGN_ON_DELETE_SET_NULL
+			   | DICT_FOREIGN_ON_UPDATE_SET_NULL));
 
 		if (index == NULL) {
 			dict_foreign_error_report(ef, for_in_cache,
 "there is no index in the table which would contain\n"
 "the columns as the first columns, or the data types in the\n"
-"table do not match to the ones in the referenced table.");
+"table do not match to the ones in the referenced table\n"
+"or one of the ON ... SET NULL columns is declared NOT NULL.");
 
 			if (for_in_cache == foreign) {
 				if (added_to_referenced_list) {
@@ -2374,7 +2425,7 @@ dict_accept(
 
 	*success = FALSE;
 	
-	while (isspace(*ptr)) {
+	while (ib_isspace(*ptr)) {
 		ptr++;
 	}
 
@@ -2419,7 +2470,7 @@ dict_scan_id(
 
 	*id = NULL;
 
-	while (isspace(*ptr)) {
+	while (ib_isspace(*ptr)) {
 		ptr++;
 	}
 
@@ -2450,7 +2501,7 @@ dict_scan_id(
 			len++;
 		}
 	} else {
-		while (!isspace(*ptr) && *ptr != '(' && *ptr != ')'
+		while (!ib_isspace(*ptr) && *ptr != '(' && *ptr != ')'
 		       && (accept_also_dot || *ptr != '.')
 		       && *ptr != ',' && *ptr != '\0') {
 
@@ -2480,15 +2531,15 @@ dict_scan_id(
 	if (heap && !quote) {
 		/* EMS MySQL Manager sometimes adds characters 0xA0 (in
 		latin1, a 'non-breakable space') to the end of a table name.
-		But isspace(0xA0) is not true, which confuses our foreign key
-		parser. After the UTF-8 conversion in ha_innodb.cc, bytes 0xC2
-		and 0xA0 are at the end of the string.
+		After the UTF-8 conversion in ha_innodb.cc, bytes 0xC2
+		and 0xA0 are at the end of the string, and ib_isspace()
+		does not work for multi-byte UTF-8 characters.
 
-		TODO: we should lex the string using thd->charset_info, and
-		my_isspace(). Only after that, convert id names to UTF-8. */
+		In MySQL 5.1 we lex the string using thd->charset_info, and
+		my_isspace(). This workaround is not needed there. */
 
 		b = (byte*)(*id);
-		id_len = strlen(b);
+		id_len = strlen((char*) b);
 		
 		if (id_len >= 3 && b[id_len - 1] == 0xA0
 			       && b[id_len - 2] == 0xC2) {
@@ -2517,6 +2568,7 @@ dict_scan_col(
 	const char**	name)	/* out,own: the column name; NULL if no name
 				was scannable */
 {
+#ifndef UNIV_HOTBACKUP
 	dict_col_t*	col;
 	ulint		i;
 
@@ -2550,6 +2602,12 @@ dict_scan_col(
 	}
 	
 	return(ptr);
+#else /* UNIV_HOTBACKUP */
+	/* This function depends on MySQL code that is not included in
+	InnoDB Hot Backup builds.  Besides, this function should never
+	be called in InnoDB Hot Backup. */
+	ut_error;
+#endif /* UNIV_HOTBACKUP */
 }
 
 /*************************************************************************
@@ -2567,6 +2625,7 @@ dict_scan_table_name(
 	const char**	ref_name)/* out,own: the table name;
 				NULL if no name was scannable */
 {
+#ifndef UNIV_HOTBACKUP
 	const char*	database_name	= NULL;
 	ulint		database_name_len = 0;
 	const char*	table_name	= NULL;
@@ -2648,6 +2707,12 @@ dict_scan_table_name(
 	*table = dict_table_get_low(ref);
 
 	return(ptr);
+#else /* UNIV_HOTBACKUP */
+	/* This function depends on MySQL code that is not included in
+	InnoDB Hot Backup builds.  Besides, this function should never
+	be called in InnoDB Hot Backup. */
+	ut_error;
+#endif /* UNIV_HOTBACKUP */
 }
 
 /*************************************************************************
@@ -2850,8 +2915,12 @@ dict_create_foreign_constraints_low(
 				table2 can be written also with the database
 				name before it: test.table2; the default
 				database is the database of parameter name */
-	const char*	name)	/* in: table full name in the normalized form
+	const char*	name,	/* in: table full name in the normalized form
 				database_name/table_name */
+	ibool		reject_fks)
+				/* in: if TRUE, fail with error code
+				DB_CANNOT_ADD_CONSTRAINT if any foreign
+				keys are found. */
 {
 	dict_table_t*	table;
 	dict_table_t*	referenced_table;
@@ -2956,11 +3025,11 @@ loop:
 
 		ut_a(success);
 
-		if (!isspace(*ptr) && *ptr != '"' && *ptr != '`') {
+		if (!ib_isspace(*ptr) && *ptr != '"' && *ptr != '`') {
 	        	goto loop;
 		}
 
-		while (isspace(*ptr)) {
+		while (ib_isspace(*ptr)) {
 			ptr++;
 		}
 
@@ -2973,6 +3042,18 @@ loop:
 	}
 
 	if (*ptr == '\0') {
+		/* The proper way to reject foreign keys for temporary
+		   tables would be to split the lexing and syntactical
+		   analysis of foreign key clauses from the actual adding
+		   of them, so that ha_innodb.cc could first parse the SQL
+		   command, determine if there are any foreign keys, and
+		   if so, immediately reject the command if the table is a
+		   temporary one. For now, this kludge will work. */
+		if (reject_fks && (UT_LIST_GET_LEN(table->foreign_list) > 0))
+		{
+			return DB_CANNOT_ADD_CONSTRAINT;
+		}
+		
 		/**********************************************************/
 		/* The following call adds the foreign key constraints
 		to the data dictionary system tables on disk */
@@ -2990,7 +3071,7 @@ loop:
 		goto loop;
 	}
 
-	if (!isspace(*ptr)) {
+	if (!ib_isspace(*ptr)) {
 	        goto loop;
 	}
 
@@ -3060,7 +3141,8 @@ col_loop1:
 	/* Try to find an index which contains the columns
 	as the first fields and in the right order */
 
-	index = dict_foreign_find_index(table, column_names, i, NULL, TRUE);
+	index = dict_foreign_find_index(table, column_names, i,
+					NULL, TRUE, FALSE);
 
 	if (!index) {
 		mutex_enter(&dict_foreign_err_mutex);
@@ -3069,7 +3151,7 @@ col_loop1:
 		ut_print_name(ef, NULL, name);
 		fprintf(ef, " where the columns appear\n"
 "as the first columns. Constraint:\n%s\n"
-"See http://dev.mysql.com/doc/mysql/en/InnoDB_foreign_key_constraints.html\n"
+"See http://dev.mysql.com/doc/refman/5.0/en/innodb-foreign-key-constraints.html\n"
 "for correct foreign key definition.\n",
 			start_of_latest_foreign);
 		mutex_exit(&dict_foreign_err_mutex);
@@ -3078,7 +3160,7 @@ col_loop1:
 	}
 	ptr = dict_accept(ptr, "REFERENCES", &success);
 
-	if (!success || !isspace(*ptr)) {
+	if (!success || !ib_isspace(*ptr)) {
 		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
 									ptr);
 		return(DB_CANNOT_ADD_CONSTRAINT);
@@ -3325,7 +3407,7 @@ try_find_index:
 
 	if (referenced_table) {
 		index = dict_foreign_find_index(referenced_table,
-			column_names, i, foreign->foreign_index, TRUE);
+			column_names, i, foreign->foreign_index, TRUE, FALSE);
 		if (!index) {
 			dict_foreign_free(foreign);
 			mutex_enter(&dict_foreign_err_mutex);
@@ -3337,7 +3419,7 @@ try_find_index:
 "Note that the internal storage type of ENUM and SET changed in\n"
 "tables created with >= InnoDB-4.1.12, and such columns in old tables\n"
 "cannot be referenced by such columns in new tables.\n"
-"See http://dev.mysql.com/doc/mysql/en/InnoDB_foreign_key_constraints.html\n"
+"See http://dev.mysql.com/doc/refman/5.0/en/innodb-foreign-key-constraints.html\n"
 "for correct foreign key definition.\n",
 				start_of_latest_foreign);
 			mutex_exit(&dict_foreign_err_mutex);
@@ -3395,9 +3477,12 @@ dict_create_foreign_constraints(
 					name before it: test.table2; the
 					default database id the database of
 					parameter name */
-	const char*	name)		/* in: table full name in the
+	const char*	name,		/* in: table full name in the
 					normalized form
 					database_name/table_name */
+	ibool		reject_fks)	/* in: if TRUE, fail with error
+					code DB_CANNOT_ADD_CONSTRAINT if
+					any foreign keys are found. */
 {
 	char*		str;
 	ulint		err;
@@ -3406,7 +3491,8 @@ dict_create_foreign_constraints(
 	str = dict_strip_comments(sql_string);
 	heap = mem_heap_create(10000);
 
-	err = dict_create_foreign_constraints_low(trx, heap, str, name);
+	err = dict_create_foreign_constraints_low(trx, heap, str, name,
+		reject_fks);
 
 	mem_heap_free(heap);
 	mem_free(str);
@@ -3461,7 +3547,7 @@ loop:
 
 	ptr = dict_accept(ptr, "DROP", &success);
 
-	if (!isspace(*ptr)) {
+	if (!ib_isspace(*ptr)) {
 
 	        goto loop;
 	}
@@ -3596,9 +3682,10 @@ dict_tree_t*
 dict_tree_create(
 /*=============*/
 				/* out, own: created tree */
-	dict_index_t*	index)	/* in: the index for which to create: in the
+	dict_index_t*	index,	/* in: the index for which to create: in the
 				case of a mixed tree, this should be the
 				index of the cluster object */
+	ulint		page_no)/* in: root page number of the index */
 {
 	dict_tree_t*	tree;
 
@@ -3608,7 +3695,7 @@ dict_tree_create(
 
 	tree->type = index->type;
 	tree->space = index->space;
-	tree->page = index->page_no;
+	tree->page = page_no;
 
 	tree->id = index->id;
 	
@@ -3659,12 +3746,13 @@ dict_tree_find_index_low(
 	table = index->table;
 	
 	if ((index->type & DICT_CLUSTERED)
-				&& (table->type != DICT_TABLE_ORDINARY)) {
+			&& UNIV_UNLIKELY(table->type != DICT_TABLE_ORDINARY)) {
 
 		/* Get the mix id of the record */
+		ut_a(!table->comp);
 
 		mix_id = mach_dulint_read_compressed(
-				rec_get_nth_field(rec, table->mix_len, &len));
+			rec_get_nth_field_old(rec, table->mix_len, &len));
 
 		while (ut_dulint_cmp(table->mix_id, mix_id) != 0) {
 
@@ -3743,6 +3831,29 @@ dict_tree_find_index_for_tuple(
 	return(index);
 }
 
+/***********************************************************************
+Checks if a table which is a mixed cluster member owns a record. */
+
+ibool
+dict_is_mixed_table_rec(
+/*====================*/
+				/* out: TRUE if the record belongs to this
+				table */
+	dict_table_t*	table,	/* in: table in a mixed cluster */
+	rec_t*		rec)	/* in: user record in the clustered index */
+{
+	byte*	mix_id_field;
+	ulint	len;
+
+	ut_ad(!table->comp);
+
+	mix_id_field = rec_get_nth_field_old(rec,
+					table->mix_len, &len);
+
+	return(len == table->mix_id_len
+		&& !ut_memcmp(table->mix_id_buf, mix_id_field, len));
+}
+
 /**************************************************************************
 Checks that a tuple has n_fields_cmp value in a sensible range, so that
 no comparison can occur with the page number field in a node pointer. */
@@ -3791,13 +3902,14 @@ dict_tree_build_node_ptr(
 
 	ind = dict_tree_find_index_low(tree, rec);
 	
-	if (tree->type & DICT_UNIVERSAL) {
+	if (UNIV_UNLIKELY(tree->type & DICT_UNIVERSAL)) {
 		/* In a universal index tree, we take the whole record as
 		the node pointer if the reord is on the leaf level,
 		on non-leaf levels we remove the last field, which
 		contains the page number of the child page */
 
-		n_unique = rec_get_n_fields(rec);
+		ut_a(!ind->table->comp);
+		n_unique = rec_get_n_fields_old(rec);
 
 		if (level > 0) {
 		        ut_a(n_unique > 1);
@@ -3826,9 +3938,11 @@ dict_tree_build_node_ptr(
 	field = dtuple_get_nth_field(tuple, n_unique);
 	dfield_set_data(field, buf, 4);
 
-	dtype_set(dfield_get_type(field), DATA_SYS_CHILD, 0, 0, 0);
+	dtype_set(dfield_get_type(field), DATA_SYS_CHILD, DATA_NOT_NULL, 4, 0);
 
-	rec_copy_prefix_to_dtuple(tuple, rec, n_unique, heap);
+	rec_copy_prefix_to_dtuple(tuple, rec, ind, n_unique, heap);
+	dtuple_set_info_bits(tuple, dtuple_get_info_bits(tuple) |
+					REC_STATUS_NODE_PTR);
 
 	ut_ad(dtuple_check_typed(tuple));
 
@@ -3845,27 +3959,27 @@ dict_tree_copy_rec_order_prefix(
 				/* out: pointer to the prefix record */
 	dict_tree_t*	tree,	/* in: index tree */
 	rec_t*		rec,	/* in: record for which to copy prefix */
+	ulint*		n_fields,/* out: number of fields copied */
 	byte**		buf,	/* in/out: memory buffer for the copied prefix,
 				or NULL */
 	ulint*		buf_size)/* in/out: buffer size */
 {
-	dict_index_t*	ind;
-	rec_t*		order_rec;
-	ulint		n_fields;
-	
-	ind = dict_tree_find_index_low(tree, rec);
+	dict_index_t*	index;
+	ulint		n;
 
-	n_fields = dict_index_get_n_unique_in_tree(ind);
-	
-	if (tree->type & DICT_UNIVERSAL) {
+	UNIV_PREFETCH_R(rec);
+	index = dict_tree_find_index_low(tree, rec);
 
-		n_fields = rec_get_n_fields(rec);
+	if (UNIV_UNLIKELY(tree->type & DICT_UNIVERSAL)) {
+		ut_a(!index->table->comp);
+		n = rec_get_n_fields_old(rec);
+	} else {
+		n = dict_index_get_n_unique_in_tree(index);
 	}
 
-	order_rec = rec_copy_prefix_to_buf(rec, n_fields, buf, buf_size);
-
-	return(order_rec);
-}	
+	*n_fields = n;
+	return(rec_copy_prefix_to_buf(rec, index, n, buf, buf_size));
+}
 
 /**************************************************************************
 Builds a typed data tuple out of a physical record. */
@@ -3876,21 +3990,21 @@ dict_tree_build_data_tuple(
 				/* out, own: data tuple */
 	dict_tree_t*	tree,	/* in: index tree */
 	rec_t*		rec,	/* in: record for which to build data tuple */
+	ulint		n_fields,/* in: number of data fields */
 	mem_heap_t*	heap)	/* in: memory heap where tuple created */
 {
 	dtuple_t*	tuple;
 	dict_index_t*	ind;
-	ulint		n_fields;
 
 	ind = dict_tree_find_index_low(tree, rec);
 
-	n_fields = rec_get_n_fields(rec);
+	ut_ad(ind->table->comp || n_fields <= rec_get_n_fields_old(rec));
 	
 	tuple = dtuple_create(heap, n_fields); 
 
 	dict_index_copy_types(tuple, ind, n_fields);
 
-	rec_copy_prefix_to_dtuple(tuple, rec, n_fields, heap);
+	rec_copy_prefix_to_dtuple(tuple, rec, ind, n_fields, heap);
 
 	ut_ad(dtuple_check_typed(tuple));
 
@@ -3908,6 +4022,27 @@ dict_index_calc_min_rec_len(
 	ulint	sum	= 0;
 	ulint	i;
 
+	if (UNIV_LIKELY(index->table->comp)) {
+		ulint nullable = 0;
+		sum = REC_N_NEW_EXTRA_BYTES;
+		for (i = 0; i < dict_index_get_n_fields(index); i++) {
+			dtype_t*t = dict_index_get_nth_type(index, i);
+			ulint	size = dtype_get_fixed_size(t);
+			sum += size;
+			if (!size) {
+				size = dtype_get_len(t);
+				sum += size < 128 ? 1 : 2;
+			}
+			if (!(dtype_get_prtype(t) & DATA_NOT_NULL))
+				nullable++;
+		}
+
+		/* round the NULL flags up to full bytes */
+		sum += (nullable + 7) / 8;
+
+		return(sum);
+	}
+
 	for (i = 0; i < dict_index_get_n_fields(index); i++) {
 		sum += dtype_get_fixed_size(dict_index_get_nth_type(index, i));
 	}
@@ -3918,7 +4053,7 @@ dict_index_calc_min_rec_len(
 		sum += dict_index_get_n_fields(index);
 	}
 
-	sum += REC_N_EXTRA_BYTES;
+	sum += REC_N_OLD_EXTRA_BYTES;
 
 	return(sum);
 }
@@ -3944,8 +4079,7 @@ dict_update_statistics_low(
 		fprintf(stderr,
 			"  InnoDB: cannot calculate statistics for table %s\n"
 "InnoDB: because the .ibd file is missing.  For help, please refer to\n"
-"InnoDB: "
-"http://dev.mysql.com/doc/mysql/en/InnoDB_troubleshooting_datadict.html\n",
+"InnoDB: http://dev.mysql.com/doc/refman/5.0/en/innodb-troubleshooting.html\n",
 			table->name);
 
 		return;
@@ -4207,9 +4341,11 @@ dict_index_print_low(
 
 	putc('\n', stderr);
 
-/*	btr_print_size(tree); */
+#ifdef UNIV_BTR_PRINT
+	btr_print_size(tree);
 
-/*	btr_print_tree(tree, 7); */
+	btr_print_tree(tree, 7);
+#endif /* UNIV_BTR_PRINT */
 }
 
 /**************************************************************************
@@ -4237,9 +4373,10 @@ CREATE TABLE. */
 void
 dict_print_info_on_foreign_key_in_create_format(
 /*============================================*/
-	FILE*		file,	/* in: file where to print */
-	trx_t*		trx,	/* in: transaction */
-	dict_foreign_t*	foreign)/* in: foreign key constraint */
+	FILE*		file,		/* in: file where to print */
+	trx_t*		trx,		/* in: transaction */
+	dict_foreign_t*	foreign,	/* in: foreign key constraint */
+	ibool		add_newline)	/* in: whether to add a newline */
 {
 	const char*	stripped_id;
 	ulint	i;
@@ -4252,7 +4389,16 @@ dict_print_info_on_foreign_key_in_create_format(
 		stripped_id = foreign->id;
 	}
 
-	fputs(",\n  CONSTRAINT ", file);
+	putc(',', file);
+	
+	if (add_newline) {
+		/* SHOW CREATE TABLE wants constraints each printed nicely
+		on its own line, while error messages want no newlines
+		inserted. */
+		fputs("\n ", file);
+	}
+	
+	fputs(" CONSTRAINT ", file);
 	ut_print_name(file, trx, stripped_id);
 	fputs(" FOREIGN KEY (", file);
 
@@ -4354,7 +4500,7 @@ dict_print_info_on_foreign_keys(
 	while (foreign != NULL) {
 		if (create_table_format) {
 			dict_print_info_on_foreign_key_in_create_format(
-						file, trx, foreign);
+						file, trx, foreign, TRUE);
 		} else {
 			ulint	i;
 			fputs("; (", file);

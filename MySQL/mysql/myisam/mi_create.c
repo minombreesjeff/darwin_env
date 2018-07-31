@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,7 +42,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   myf create_flag;
   uint fields,length,max_key_length,packed,pointer,real_length_diff,
        key_length,info_length,key_segs,options,min_key_length_skip,
-       base_pos,varchar_count,long_varchar_count,varchar_length,
+       base_pos,long_varchar_count,varchar_length,
        max_key_block_length,unique_key_parts,fulltext_keys,offset;
   ulong reclength, real_reclength,min_pack_length;
   char filename[FN_REFLEN],linkname[FN_REFLEN], *linkname_ptr;
@@ -74,7 +73,6 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   }
   LINT_INIT(dfile);
   LINT_INIT(file);
-  pthread_mutex_lock(&THR_LOCK_myisam);
   errpos=0;
   options=0;
   bzero((byte*) &share,sizeof(share));
@@ -101,7 +99,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 
 	/* Start by checking fields and field-types used */
 
-  reclength=varchar_count=varchar_length=long_varchar_count=packed=
+  reclength=varchar_length=long_varchar_count=packed=
     min_pack_length=pack_reclength=0;
   for (rec=recinfo, fields=0 ;
        fields != columns ;
@@ -132,14 +130,15 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
       }
       else if (type == FIELD_VARCHAR)
       {
-	varchar_count++;
-	varchar_length+=rec->length-2;
+	varchar_length+= rec->length-1;          /* Used for min_pack_length */
 	packed--;
-	pack_reclength+=1;
-	if (test(rec->length > 257))
-	{					/* May be packed on 3 bytes */
+	pack_reclength++;
+        min_pack_length++;
+        /* We must test for 257 as length includes pack-length */
+        if (test(rec->length >= 257))
+	{
 	  long_varchar_count++;
-	  pack_reclength+=2;
+	  pack_reclength+= 2;			/* May be packed on 3 bytes */
 	}
       }
       else if (type != FIELD_SKIP_ZERO)
@@ -158,6 +157,10 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
       rec--;
       if (rec->type == (int) FIELD_SKIP_ZERO && rec->length == 1)
       {
+        /*
+          NOTE1: here we change a field type FIELD_SKIP_ZERO ->
+          FIELD_NORMAL
+        */
 	rec->type=(int) FIELD_NORMAL;
 	packed--;
 	min_pack_length++;
@@ -171,12 +174,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   /* We can't use checksum with static length rows */
   if (!(options & HA_OPTION_PACK_RECORD))
     options&= ~HA_OPTION_CHECKSUM;
-  if (options & (HA_OPTION_PACK_RECORD | HA_OPTION_COMPRESS_RECORD))
-    min_pack_length+=varchar_count;		/* Min length to pack */
-  else
-  {
-    min_pack_length+=varchar_length+2*varchar_count;
-  }
+  if (!(options & (HA_OPTION_PACK_RECORD | HA_OPTION_COMPRESS_RECORD)))
+    min_pack_length+= varchar_length;
   if (flags & HA_CREATE_TMP_TABLE)
   {
     options|= HA_OPTION_TMP_TABLE;
@@ -224,7 +223,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
       reclength=pointer+1;		/* reserve place for delete link */
   }
   else
-    reclength+=long_varchar_count;	/* We need space for this! */
+    reclength+= long_varchar_count;	/* We need space for varchar! */
 
   max_key_length=0; tot_length=0 ; key_segs=0;
   fulltext_keys=0;
@@ -267,7 +266,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	   j++, keyseg++)
       {
         if (keyseg->type != HA_KEYTYPE_BINARY &&
-	    keyseg->type != HA_KEYTYPE_VARBINARY)
+	    keyseg->type != HA_KEYTYPE_VARBINARY1 &&
+            keyseg->type != HA_KEYTYPE_VARBINARY2)
         {
           my_errno=HA_WRONG_CREATE_OPTION;
           goto err;
@@ -282,8 +282,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
       goto err;
 #endif /*HAVE_SPATIAL*/
     }
-    else
-    if (keydef->flag & HA_FULLTEXT)
+    else if (keydef->flag & HA_FULLTEXT)
     {
       keydef->flag=HA_FULLTEXT | HA_PACK_KEY | HA_VAR_LENGTH_KEY;
       options|=HA_OPTION_PACK_KEYS;             /* Using packed keys */
@@ -292,10 +291,21 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	   j++, keyseg++)
       {
         if (keyseg->type != HA_KEYTYPE_TEXT &&
-	    keyseg->type != HA_KEYTYPE_VARTEXT)
+	    keyseg->type != HA_KEYTYPE_VARTEXT1 &&
+            keyseg->type != HA_KEYTYPE_VARTEXT2)
         {
           my_errno=HA_WRONG_CREATE_OPTION;
           goto err;
+        }
+        if (!(keyseg->flag & HA_BLOB_PART) &&
+	    (keyseg->type == HA_KEYTYPE_VARTEXT1 ||
+             keyseg->type == HA_KEYTYPE_VARTEXT2))
+        {
+          /* Make a flag that this is a VARCHAR */
+          keyseg->flag|= HA_VAR_LENGTH_PART;
+          /* Store in bit_start number of bytes used to pack the length */
+          keyseg->bit_start= ((keyseg->type == HA_KEYTYPE_VARTEXT1)?
+                              1 : 2);
         }
       }
 
@@ -317,7 +327,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 
 	/* Only use HA_PACK_KEY when first segment is a variable length key */
 	if (!(keydef->seg[0].flag & (HA_SPACE_PACK | HA_BLOB_PART |
-				     HA_VAR_LENGTH)))
+				     HA_VAR_LENGTH_PART)))
 	{
 	  /* pack relative to previous key */
 	  keydef->flag&= ~HA_PACK_KEY;
@@ -351,12 +361,27 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	case HA_KEYTYPE_UINT24:
 	case HA_KEYTYPE_INT8:
 	  keyseg->flag|= HA_SWAP_KEY;
-	  /* fall through */
+          break;
+        case HA_KEYTYPE_VARTEXT1:
+        case HA_KEYTYPE_VARTEXT2:
+        case HA_KEYTYPE_VARBINARY1:
+        case HA_KEYTYPE_VARBINARY2:
+          if (!(keyseg->flag & HA_BLOB_PART))
+          {
+            /* Make a flag that this is a VARCHAR */
+            keyseg->flag|= HA_VAR_LENGTH_PART;
+            /* Store in bit_start number of bytes used to pack the length */
+            keyseg->bit_start= ((keyseg->type == HA_KEYTYPE_VARTEXT1 ||
+                                 keyseg->type == HA_KEYTYPE_VARBINARY1) ?
+                                1 : 2);
+          }
+          break;
 	default:
 	  break;
 	}
 	if (keyseg->flag & HA_SPACE_PACK)
 	{
+          DBUG_ASSERT(!(keyseg->flag & HA_VAR_LENGTH_PART));
 	  keydef->flag |= HA_SPACE_PACK_USED | HA_VAR_LENGTH_KEY;
 	  options|=HA_OPTION_PACK_KEYS;		/* Using packed keys */
 	  length++;				/* At least one length byte */
@@ -367,8 +392,10 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	    length+=2;
 	  }
 	}
-	if (keyseg->flag & (HA_VAR_LENGTH | HA_BLOB_PART))
+	if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART))
 	{
+          DBUG_ASSERT(!test_all_bits(keyseg->flag,
+                                    (HA_VAR_LENGTH_PART | HA_BLOB_PART)));
 	  keydef->flag|=HA_VAR_LENGTH_KEY;
 	  length++;				/* At least one length byte */
 	  options|=HA_OPTION_PACK_KEYS;		/* Using packed keys */
@@ -404,8 +431,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	key_segs)
       share.state.rec_per_key_part[key_segs-1]=1L;
     length+=key_length;
-    keydef->block_length= MI_BLOCK_SIZE(length-real_length_diff,
-                                        pointer,MI_MAX_KEYPTR_SIZE);
+    keydef->block_length= (uint16) MI_BLOCK_SIZE(length-real_length_diff,
+                                                 pointer,MI_MAX_KEYPTR_SIZE);
     if (keydef->block_length > MI_MAX_KEY_BLOCK_LENGTH ||
         length >= MI_MAX_KEY_BUFF)
     {
@@ -497,7 +524,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   mi_int2store(share.state.header.key_parts,key_segs);
   mi_int2store(share.state.header.unique_key_parts,unique_key_parts);
 
-  share.state.key_map = ((ulonglong) 1 << keys)-1;
+  mi_set_all_keys_active(share.state.key_map, keys);
   share.base.keystart = share.state.state.key_file_length=
     MY_ALIGN(info_length, myisam_block_size);
   share.base.max_key_block_length=max_key_block_length;
@@ -528,6 +555,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     MI_EXTEND_BLOCK_LENGTH;
   if (! (flags & HA_DONT_TOUCH_DATA))
     share.state.create_time= (long) time((time_t*) 0);
+
+  pthread_mutex_lock(&THR_LOCK_myisam);
 
   if (ci->index_file_name)
   {
@@ -657,10 +686,12 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     {
       HA_KEYSEG sseg;
       sseg.type=SPTYPE;
-      sseg.language= 7;
+      sseg.language= 7;                         /* Binary */
       sseg.null_bit=0;
       sseg.bit_start=0;
       sseg.bit_end=0;
+      sseg.bit_length= 0;
+      sseg.bit_pos= 0;
       sseg.length=SPLEN;
       sseg.null_pos=0;
       sseg.start=j*SPLEN;
@@ -678,7 +709,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   {
     tmp_keydef.keysegs=1;
     tmp_keydef.flag=		HA_UNIQUE_CHECK;
-    tmp_keydef.block_length=	myisam_block_size;
+    tmp_keydef.block_length=	(uint16)myisam_block_size;
     tmp_keydef.keylength=	MI_UNIQUE_HASH_LENGTH + pointer;
     tmp_keydef.minlength=tmp_keydef.maxlength=tmp_keydef.keylength;
     tmp_keyseg.type=		MI_UNIQUE_HASH_TYPE;
@@ -694,11 +725,31 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   DBUG_PRINT("info", ("write unique definitions"));
   for (i=0 ; i < share.state.header.uniques ; i++)
   {
+    HA_KEYSEG *keyseg_end;
+    keyseg= uniquedefs[i].seg;
     if (mi_uniquedef_write(file, &uniquedefs[i]))
       goto err;
-    for (j=0 ; j < uniquedefs[i].keysegs ; j++)
+    for (keyseg= uniquedefs[i].seg, keyseg_end= keyseg+ uniquedefs[i].keysegs;
+         keyseg < keyseg_end;
+         keyseg++)
     {
-      if (mi_keyseg_write(file, &uniquedefs[i].seg[j]))
+      switch (keyseg->type) {
+      case HA_KEYTYPE_VARTEXT1:
+      case HA_KEYTYPE_VARTEXT2:
+      case HA_KEYTYPE_VARBINARY1:
+      case HA_KEYTYPE_VARBINARY2:
+        if (!(keyseg->flag & HA_BLOB_PART))
+        {
+          keyseg->flag|= HA_VAR_LENGTH_PART;
+          keyseg->bit_start= ((keyseg->type == HA_KEYTYPE_VARTEXT1 ||
+                               keyseg->type == HA_KEYTYPE_VARBINARY1) ?
+                              1 : 2);
+        }
+        break;
+      default:
+        break;
+      }
+      if (mi_keyseg_write(file, keyseg))
 	goto err;
     }
   }
@@ -768,18 +819,19 @@ uint mi_get_pointer_length(ulonglong file_length, uint def)
   if (file_length)				/* If not default */
   {
 #ifdef NOT_YET_READY_FOR_8_BYTE_POINTERS
-    if (file_length >= (longlong) 1 << 56)
+    if (file_length >= ULL(1) << 56)
       def=8;
+    else
 #endif
-    if (file_length >= (longlong) 1 << 48)
+    if (file_length >= ULL(1) << 48)
       def=7;
-    if (file_length >= (longlong) 1 << 40)
+    else if (file_length >= ULL(1) << 40)
       def=6;
-    else if (file_length >= (longlong) 1 << 32)
+    else if (file_length >= ULL(1) << 32)
       def=5;
-    else if (file_length >= (1L << 24))
+    else if (file_length >= ULL(1) << 24)
       def=4;
-    else if (file_length >= (1L << 16))
+    else if (file_length >= ULL(1) << 16)
       def=3;
     else
       def=2;

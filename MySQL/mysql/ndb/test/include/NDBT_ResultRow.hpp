@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,7 +26,7 @@ public:
   const NdbRecAttr * attributeStore(int i) const ;
   const NdbRecAttr * attributeStore(const char* name) const ;
   
-  BaseString c_str();
+  BaseString c_str() const ;
 
   NdbOut & header (NdbOut &) const;
   friend NdbOut & operator << (NdbOut&, const NDBT_ResultRow &);
@@ -36,6 +35,11 @@ public:
    * Make copy of NDBT_ResultRow 
    */
   NDBT_ResultRow * clone() const;
+
+  bool operator==(const NDBT_ResultRow&) const ;
+  bool operator!=(const NDBT_ResultRow& other) const { 
+    return ! (*this == other);
+  }
   
 private:
   int cols;

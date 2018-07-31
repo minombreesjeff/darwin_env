@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,6 +59,7 @@ public:
    */
   class Service {
   public:
+    Service() {}
     virtual ~Service(){}
     
     /**
@@ -89,7 +89,7 @@ public:
    *   bind & listen
    * Returns false if no success
    */
-  bool setup(Service *, unsigned short port, const char * pinterface = 0);
+  bool setup(Service *, unsigned short *port, const char * pinterface = 0);
   
   /**
    * start/stop the server
@@ -105,7 +105,8 @@ public:
   void stopSessions(bool wait = false);
   
   void foreachSession(void (*f)(Session*, void*), void *data);
-
+  void checkSessions();
+  
 private:
   struct SessionInstance {
     Service * m_service;
@@ -116,12 +117,13 @@ private:
     Service * m_service;
     NDB_SOCKET_TYPE m_socket;
   };
-  MutexVector<SessionInstance> m_sessions;
+  NdbLockable m_session_mutex;
+  Vector<SessionInstance> m_sessions;
   MutexVector<ServiceInstance> m_services;
   unsigned m_maxSessions;
   
   void doAccept();
-  void checkSessions();
+  void checkSessionsImpl();
   void startSession(SessionInstance &);
   
   /**

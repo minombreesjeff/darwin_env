@@ -1,9 +1,12 @@
+# mysqltest should be fixed
+-- source include/not_embedded.inc
 #
 # Test of temporary tables
 #
 
 --disable_warnings
 drop table if exists t1,t2;
+drop view if exists v1;
 --enable_warnings
 
 CREATE TABLE t1 (c int not null, d char (10) not null);
@@ -90,6 +93,20 @@ select * from t1 group by d;
 show status like "created_tmp%tables";
 drop table t1;
 
+# Fix for BUG#8921: Check that temporary table is ingored by view commands.
+create temporary table v1 as select 'This is temp. table' A;
+create view v1 as select 'This is view' A;
+select * from v1;
+show create table v1;
+show create view v1;
+drop view v1;
+select * from v1;
+create view v1 as select 'This is view again' A;
+select * from v1;
+drop table v1;
+select * from v1;
+drop view v1;
+
 # Bug #8497: tmpdir with extra slashes would cause failures
 #
 create table t1 (a int, b int, index(a), index(b));
@@ -146,3 +163,19 @@ DROP TABLE t1;
 
 
 --echo End of 4.1 tests.
+
+#
+# Bug #24791: Union with AVG-groups generates wrong results
+#
+CREATE TABLE t1 ( c FLOAT( 20, 14 ) );
+INSERT INTO t1 VALUES( 12139 );
+
+CREATE TABLE t2 ( c FLOAT(30,18) );
+INSERT INTO t2 VALUES( 123456 );
+
+SELECT AVG( c ) FROM t1 UNION SELECT 1;
+SELECT 1 UNION SELECT AVG( c ) FROM t1;
+SELECT 1 UNION SELECT * FROM t2 UNION SELECT 1;
+SELECT c/1 FROM t1 UNION SELECT 1;
+
+DROP TABLE t1, t2;

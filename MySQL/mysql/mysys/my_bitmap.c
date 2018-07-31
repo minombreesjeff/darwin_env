@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,6 +28,9 @@
     * bitmap_intersect() is an exception :)
       (for for Bitmap::intersect(ulonglong map2buff))
 
+  If THREAD is defined all bitmap operations except bitmap_init/bitmap_free
+  are thread-safe.
+
   TODO:
   Make assembler THREAD safe versions of these using test-and-set instructions
 */
@@ -37,7 +39,7 @@
 #include <my_bitmap.h>
 #include <m_string.h>
 
-static inline void bitmap_lock(MY_BITMAP* map)
+static inline void bitmap_lock(MY_BITMAP *map __attribute__((unused)))
 {
 #ifdef THREAD
   if (map->mutex)
@@ -45,7 +47,7 @@ static inline void bitmap_lock(MY_BITMAP* map)
 #endif
 }
 
-static inline void bitmap_unlock(MY_BITMAP* map)
+static inline void bitmap_unlock(MY_BITMAP *map __attribute__((unused)))
 {
 #ifdef THREAD
   if (map->mutex)
@@ -66,7 +68,7 @@ my_bool bitmap_init(MY_BITMAP *map, uchar *buf, uint bitmap_size,
 					(thread_safe ?
 					 sizeof(pthread_mutex_t) : 0),
 					MYF(MY_WME | MY_ZEROFILL))))
-    return 1;
+    DBUG_RETURN(1);
   map->bitmap_size=bitmap_size;
 #ifdef THREAD
   if (thread_safe)
@@ -105,6 +107,52 @@ void bitmap_set_bit(MY_BITMAP *map, uint bitmap_bit)
   bitmap_unlock(map);
 }
 
+
+/*
+  test if bit already set and set it if it was not (thread unsafe method)
+
+  SYNOPSIS
+    bitmap_fast_test_and_set()
+    MAP   bit map struct
+    BIT   bit number
+
+  RETURN
+    0    bit was not set
+    !=0  bit was set
+*/
+
+my_bool bitmap_fast_test_and_set(MY_BITMAP *map, uint bitmap_bit)
+{
+  uchar *value= map->bitmap + (bitmap_bit / 8);
+  uchar bit= 1 << ((bitmap_bit) & 7);
+  uchar res= (*value) & bit;
+  *value|= bit;
+  return res;
+}
+
+
+/*
+  test if bit already set and set it if it was not (thread safe method)
+
+  SYNOPSIS
+    bitmap_fast_test_and_set()
+    map          bit map struct
+    bitmap_bit   bit number
+
+  RETURN
+    0    bit was not set
+    !=0  bit was set
+*/
+
+my_bool bitmap_test_and_set(MY_BITMAP *map, uint bitmap_bit)
+{
+  my_bool res;
+  DBUG_ASSERT(map->bitmap && bitmap_bit < map->bitmap_size*8);
+  bitmap_lock(map);
+  res= bitmap_fast_test_and_set(map, bitmap_bit);
+  bitmap_unlock(map);
+  return res;
+}
 
 uint bitmap_set_next(MY_BITMAP *map)
 {
@@ -290,6 +338,37 @@ void bitmap_intersect(MY_BITMAP *map, const MY_BITMAP *map2)
 }
 
 
+/*
+  Set/clear all bits above a bit.
+
+  SYNOPSIS
+    bitmap_set_above()
+    map                  RETURN The bitmap to change.
+    from_byte                   The bitmap buffer byte offset to start with.
+    use_bit                     The bit value (1/0) to use for all upper bits.
+
+  NOTE
+    You can only set/clear full bytes.
+    The function is meant for the situation that you copy a smaller bitmap
+    to a bigger bitmap. Bitmap lengths are always multiple of eigth (the
+    size of a byte). Using 'from_byte' saves multiplication and division
+    by eight during parameter passing.
+
+  RETURN
+    void
+*/
+
+void bitmap_set_above(MY_BITMAP *map, uint from_byte, uint use_bit)
+{
+  uchar use_byte= use_bit ? 0xff : 0;
+  uchar *to= map->bitmap + from_byte;
+  uchar *end= map->bitmap + map->bitmap_size;
+
+  while (to < end)
+    *to++= use_byte;
+}
+
+
 void bitmap_subtract(MY_BITMAP *map, const MY_BITMAP *map2)
 {
   uchar *to=map->bitmap, *from=map2->bitmap, *end;
@@ -325,5 +404,68 @@ void bitmap_union(MY_BITMAP *map, const MY_BITMAP *map2)
 
   bitmap_unlock((MY_BITMAP *)map2);
   bitmap_unlock(map);
+}
+
+
+/*
+  SYNOPSIS
+    bitmap_bits_set()
+      map
+  RETURN
+    Number of set bits in the bitmap.
+*/
+
+uint bitmap_bits_set(const MY_BITMAP *map)
+{  
+  uchar *m= map->bitmap;
+  uchar *end= m + map->bitmap_size;
+  uint res= 0;
+
+  DBUG_ASSERT(map->bitmap);
+  bitmap_lock((MY_BITMAP *)map);
+  while (m < end)
+  {
+    res+= my_count_bits_ushort(*m++);
+  }
+  bitmap_unlock((MY_BITMAP *)map);
+  return res;
+}
+
+
+/* 
+  SYNOPSIS
+    bitmap_get_first()
+      map
+  RETURN 
+    Number of first unset bit in the bitmap or MY_BIT_NONE if all bits are set.
+*/
+
+uint bitmap_get_first(const MY_BITMAP *map)
+{
+  uchar *bitmap=map->bitmap;
+  uint bit_found = MY_BIT_NONE;
+  uint bitmap_size=map->bitmap_size;
+  uint i;
+
+  DBUG_ASSERT(map->bitmap);
+  bitmap_lock((MY_BITMAP *)map);
+  for (i=0; i < bitmap_size ; i++, bitmap++)
+  {
+    if (*bitmap != 0xff)
+    {						/* Found slot with free bit */
+      uint b;
+      for (b=0; ; b++)
+      {
+	if (!(*bitmap & (1 << b)))
+	{
+	  bit_found = (i*8)+b;
+	  break;
+	}
+      }
+      break;					/* Found bit */
+    }
+  }
+  bitmap_unlock((MY_BITMAP *)map);
+  return bit_found;
 }
 

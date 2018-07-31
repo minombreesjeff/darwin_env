@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,26 +22,27 @@
 
 /*
   This class represents abstract time zone and provides 
-  basic interface for TIME <-> my_time_t conversion.
+  basic interface for MYSQL_TIME <-> my_time_t conversion.
   Actual time zones which are specified by DB, or via offset 
   or use system functions are its descendants.
 */
 class Time_zone: public Sql_alloc 
 {
 public:
+  Time_zone() {}                              /* Remove gcc warning */
   /*
-    Converts local time in broken down TIME representation to 
+    Converts local time in broken down MYSQL_TIME representation to 
     my_time_t (UTC seconds since Epoch) represenation.
     Returns 0 in case of error. Sets in_dst_time_gap to true if date provided
     falls into spring time-gap (or lefts it untouched otherwise).
   */
-  virtual my_time_t TIME_to_gmt_sec(const TIME *t, 
-                                    bool *in_dst_time_gap) const = 0;
+  virtual my_time_t TIME_to_gmt_sec(const MYSQL_TIME *t, 
+                                    my_bool *in_dst_time_gap) const = 0;
   /*
     Converts time in my_time_t representation to local time in
-    broken down TIME representation.
+    broken down MYSQL_TIME representation.
   */
-  virtual void   gmt_sec_to_TIME(TIME *tmp, my_time_t t) const = 0;
+  virtual void   gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const = 0;
   /*
     Because of constness of String returned by get_name() time zone name 
     have to be already zeroended to be able to use String::ptr() instead
@@ -59,11 +59,22 @@ public:
 
 extern Time_zone * my_tz_UTC;
 extern Time_zone * my_tz_SYSTEM;
-extern TABLE_LIST * my_tz_get_table_list(THD *thd);
+extern TABLE_LIST * my_tz_get_table_list(THD *thd, TABLE_LIST ***global_next_ptr);
 extern Time_zone * my_tz_find(const String *name, TABLE_LIST *tz_tables);
+extern Time_zone * my_tz_find_with_opening_tz_tables(THD *thd, const String *name);
 extern my_bool     my_tz_init(THD *org_thd, const char *default_tzname, my_bool bootstrap);
 extern void        my_tz_free();
 
+extern TABLE_LIST fake_time_zone_tables_list;
+
+/*
+  Number of elements in table list produced by my_tz_get_table_list()
+  (this table list contains tables which are needed for dynamical loading
+  of time zone descriptions). Actually it is imlementation detail that
+  should not be used anywhere outside of tztime.h and tztime.cc.
+*/
+
+static const int MY_TZ_TABLES_COUNT= 4;
 
 /*
   Check if we have pointer to the begining of list of implicitly used time
@@ -87,18 +98,12 @@ inline bool my_tz_check_n_skip_implicit_tables(TABLE_LIST **table,
 {
   if (*table == tz_tables)
   {
-    for (int i= 0; i < 4; i++)
+    for (int i= 0; i < MY_TZ_TABLES_COUNT; i++)
       (*table)[i].grant.privilege= SELECT_ACL;
-    (*table)+= 3;
+    (*table)+= MY_TZ_TABLES_COUNT - 1;
     return TRUE;
   }
   return FALSE;
 }
-
-/* 
-  Maximum length of time zone name that we support 
-  (Time zone name is char(64) in db)
-*/
-#define MAX_TIME_ZONE_NAME_LENGTH 72
 
 #endif /* !defined(TESTTIME) && !defined(TZINFO2SQL) */

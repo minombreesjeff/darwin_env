@@ -1,9 +1,8 @@
-/* Copyright (C) 2000,2004 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,15 +30,20 @@ class ha_heap: public handler
   uint    records_changed;
   uint    key_stat_version;
 public:
-  ha_heap(TABLE *table): handler(table), file(0), records_changed(0),
-      key_stat_version(0) {}
+  ha_heap(TABLE *table);
   ~ha_heap() {}
-  const char *table_type() const { return "HEAP"; }
+  const char *table_type() const
+  {
+    return (table->in_use->variables.sql_mode & MODE_MYSQL323) ?
+           "HEAP" : "MEMORY";
+  }
   const char *index_type(uint inx)
   {
     return ((table->key_info[inx].algorithm == HA_KEY_ALG_BTREE) ? "BTREE" :
 	    "HASH");
   }
+  /* Rows also use a fixed-size format */
+  enum row_type get_row_type() const { return ROW_TYPE_FIXED; }
   const char **bas_ext() const;
   ulong table_flags() const
   {
@@ -66,7 +70,7 @@ public:
   int write_row(byte * buf);
   int update_row(const byte * old_data, byte * new_data);
   int delete_row(const byte * buf);
-  longlong get_auto_increment();
+  ulonglong get_auto_increment();
   int index_read(byte * buf, const byte * key,
 		 uint key_len, enum ha_rkey_function find_flag);
   int index_read_idx(byte * buf, uint idx, const byte * key,
@@ -95,6 +99,12 @@ public:
 
   THR_LOCK_DATA **store_lock(THD *thd, THR_LOCK_DATA **to,
 			     enum thr_lock_type lock_type);
+  int cmp_ref(const byte *ref1, const byte *ref2)
+  {
+    HEAP_PTR ptr1=*(HEAP_PTR*)ref1;
+    HEAP_PTR ptr2=*(HEAP_PTR*)ref2;
+    return ptr1 < ptr2? -1 : (ptr1 > ptr2? 1 : 0);
+  }
 private:
   void update_key_stats();
 };

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,8 +28,10 @@
 
 static Ndb_cluster_connection *ndb_cluster_connection= 0;
 static Ndb* ndb = 0;
-static NdbDictionary::Dictionary* dic = 0;
+static const NdbDictionary::Dictionary * dic = 0;
 static int _unqualified = 0;
+
+const char *load_default_groups[]= { "mysql_cluster",0 };
 
 static void
 fatal(char const* fmt, ...)
@@ -188,6 +189,7 @@ static struct my_option my_long_options[] =
 };
 static void usage()
 {
+#ifdef NOT_USED
   char desc[] = 
     "tabname\n"\
     "This program list all system objects in  NDB Cluster.\n"\
@@ -195,40 +197,43 @@ static void usage()
     " ex: ndb_show_tables -t 2 would show all UserTables\n"\
     "To show all indexes for a table write table name as final argument\n"\
     "  ex: ndb_show_tables T1\n";
+#endif
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_show_tables.trace");
 }
 
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
   const char* _tabname;
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_show_tables.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   _tabname = argv[0];
 
   ndb_cluster_connection = new Ndb_cluster_connection(opt_connect_str);
+  ndb_cluster_connection->set_name("ndb_show_tables");
   if (ndb_cluster_connection->connect(12,5,1))
-    fatal("unable to connect");
+    fatal("Unable to connect to management server.");
+  if (ndb_cluster_connection->wait_until_ready(30,0) < 0)
+    fatal("Cluster nodes not ready in 30 seconds.");
+
   ndb = new Ndb(ndb_cluster_connection, _dbname);
   if (ndb->init() != 0)
     fatal("init");
-  if (ndb->waitUntilReady(30) < 0)
-    fatal("waitUntilReady");
   dic = ndb->getDictionary();
   for (int i = 0; _loops == 0 || i < _loops; i++) {
     list(_tabname, (NdbDictionary::Object::Type)_type);
   }
+  delete ndb;
+  delete ndb_cluster_connection;
   return NDBT_ProgramExit(NDBT_OK);
 }
 

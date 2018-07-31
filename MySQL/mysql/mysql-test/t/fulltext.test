@@ -59,6 +59,7 @@ select * from t1 where MATCH a,b AGAINST ("+call* +coll*" IN BOOLEAN MODE);
 
 select * from t1 where MATCH a,b AGAINST ('"support now"' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('"Now sUPPort"' IN BOOLEAN MODE);
+select * from t1 where MATCH a,b AGAINST ('"now   support"' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('"text search"  "now support"' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('"text search" -"now support"' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('"text search" +"now support"' IN BOOLEAN MODE);
@@ -68,7 +69,6 @@ select * from t1 where MATCH a,b AGAINST ('"xt indexes"' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('+(support collections) +foobar*' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('+(+(support collections)) +foobar*' IN BOOLEAN MODE);
 select * from t1 where MATCH a,b AGAINST ('+collections -supp* -foobar*' IN BOOLEAN MODE);
-select * from t1 where MATCH a,b AGAINST ('"xt indexes"' IN BOOLEAN MODE);
 
 # bug#2708, bug#3870 crash
 
@@ -128,14 +128,14 @@ WHERE ticket2.id = ttxt.ticket AND t1.id = ticket2.ticket and
 match(ttxt.inhalt) against ('foobar');
 
 # In the following query MySQL didn't use the fulltext index
-select t1.id FROM t2 as ttxt,t1 INNER JOIN t1 as ticket2 ON
-ticket2.id = ttxt.ticket
-WHERE t1.id = ticket2.ticket and match(ttxt.inhalt) against ('foobar');
+select ticket2.id FROM t2 as ttxt,t2 INNER JOIN t1 as ticket2 ON
+ticket2.id = t2.ticket
+WHERE ticket2.id = ticket2.ticket and match(ttxt.inhalt) against ('foobar');
 
 INSERT INTO t1 VALUES (3,3);
-select t1.id FROM t2 as ttxt,t1
-INNER JOIN t1 as ticket2 ON ticket2.id = ttxt.ticket
-WHERE t1.id = ticket2.ticket and
+select ticket2.id FROM t2 as ttxt,t2
+INNER JOIN t1 as ticket2 ON ticket2.id = t2.ticket
+WHERE ticket2.id = ticket2.ticket and
       match(ttxt.inhalt) against ('foobar');
 
 # Check that we get 'fulltext' index in SHOW CREATE
@@ -358,15 +358,33 @@ SELECT a FROM t1 WHERE MATCH a AGAINST('testword\'\'' IN BOOLEAN MODE);
 DROP TABLE t1;
 
 #
+# BUG#13835: max key length is 1000 bytes when trying to create
+#            a fulltext index
+#
+CREATE TABLE t1 (a VARCHAR(10000), FULLTEXT(a));
+SHOW CREATE TABLE t1;
+DROP TABLE t1;
+
+#
 # BUG#14496: Crash or strange results with prepared statement,
 #            MATCH and FULLTEXT
 #
 CREATE TABLE t1 (a TEXT, FULLTEXT KEY(a));
 INSERT INTO t1 VALUES('test'),('test1'),('test');
-PREPARE stmt from "SELECT a, MATCH(a) AGAINST('test1 test') FROM t1 WHERE MATCH(a) AGAINST('test1 test')";
+PREPARE stmt from "SELECT a, FORMAT(MATCH(a) AGAINST('test1 test'),6) FROM t1 WHERE MATCH(a) AGAINST('test1 test')";
 EXECUTE stmt;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+DROP TABLE t1;
+
+#
+# BUG#25951 - ignore/use index does not work with fulltext
+#
+CREATE TABLE t1 (a VARCHAR(255), FULLTEXT(a));
+SELECT * FROM t1 IGNORE INDEX(a) WHERE MATCH(a) AGAINST('test');
+ALTER TABLE t1 DISABLE KEYS;
+--error 1191
+SELECT * FROM t1 WHERE MATCH(a) AGAINST('test');
 DROP TABLE t1;
 
 # End of 4.1 tests

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,6 +32,11 @@ public:
   static Ndb_local_table_info *create(NdbTableImpl *table_impl, Uint32 sz=0);
   static void destroy(Ndb_local_table_info *);
   NdbTableImpl *m_table_impl;
+
+  // range of cached tuple ids per thread
+  Uint64 m_first_tuple_id;
+  Uint64 m_last_tuple_id;
+
   Uint64 m_local_data[1]; // Must be last member. Used to access extra space.
 private:
   Ndb_local_table_info(NdbTableImpl *table_impl);
@@ -63,7 +67,7 @@ public:
   GlobalDictCache();
   ~GlobalDictCache();
   
-  NdbTableImpl * get(const char * name);
+  NdbTableImpl * get(const char * name, int *error);
   
   NdbTableImpl* put(const char * name, NdbTableImpl *);
   void drop(NdbTableImpl *);
@@ -82,6 +86,8 @@ public:
   };
   
 private:
+  void printCache();
+
   struct TableVersion {
     Uint32 m_version;
     Uint32 m_refCount;

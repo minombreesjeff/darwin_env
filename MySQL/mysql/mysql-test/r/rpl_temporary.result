@@ -7,12 +7,12 @@ start slave;
 reset master;
 SET @save_select_limit=@@session.sql_select_limit;
 SET @@session.sql_select_limit=10, @@session.pseudo_thread_id=100;
-ERROR HY000: Access denied; you need the SUPER privilege for this operation
+ERROR 42000: Access denied; you need the SUPER privilege for this operation
 SELECT @@session.sql_select_limit = @save_select_limit;
 @@session.sql_select_limit = @save_select_limit
 1
 SET @@session.sql_select_limit=10, @@session.sql_log_bin=0;
-ERROR HY000: Access denied; you need the SUPER privilege for this operation
+ERROR 42000: Access denied; you need the SUPER privilege for this operation
 SELECT @@session.sql_select_limit = @save_select_limit;
 @@session.sql_select_limit = @save_select_limit
 1
@@ -37,20 +37,20 @@ f
 5
 7
 show binlog events;
-Log_name	Pos	Event_type	Server_id	Orig_log_pos	Info
-master-bin.000001	4	Start	1	4	Server ver: VERSION, Binlog ver: 3
-master-bin.000001	79	Query	1	79	use `test`; drop table if exists t1,t2
-master-bin.000001	140	Query	1	140	use `test`; create table t1(f int)
-master-bin.000001	197	Query	1	197	use `test`; create table t2(f int)
-master-bin.000001	254	Query	1	254	use `test`; insert into t1 values (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)
-master-bin.000001	351	Query	1	351	use `test`; create temporary table t3(f int)
-master-bin.000001	418	Query	1	418	use `test`; insert into t3 select * from t1 where f<6
-master-bin.000001	494	Query	1	494	use `test`; create temporary table t3(f int)
-master-bin.000001	561	Query	1	561	use `test`; insert into t2 select count(*) from t3
-master-bin.000001	634	Query	1	634	use `test`; insert into t3 select * from t1 where f>=4
-master-bin.000001	711	Query	1	711	use `test`; drop temporary table t3
-master-bin.000001	769	Query	1	769	use `test`; insert into t2 select count(*) from t3
-master-bin.000001	842	Query	1	842	use `test`; drop temporary table t3
+Log_name	Pos	Event_type	Server_id	End_log_pos	Info
+master-bin.000001	#	Format_desc	1	#	Server ver: VERSION, Binlog ver: 4
+master-bin.000001	#	Query	1	#	use `test`; drop table if exists t1,t2
+master-bin.000001	#	Query	1	#	use `test`; create table t1(f int)
+master-bin.000001	#	Query	1	#	use `test`; create table t2(f int)
+master-bin.000001	#	Query	1	#	use `test`; insert into t1 values (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)
+master-bin.000001	#	Query	1	#	use `test`; create temporary table t3(f int)
+master-bin.000001	#	Query	1	#	use `test`; insert into t3 select * from t1 where f<6
+master-bin.000001	#	Query	1	#	use `test`; create temporary table t3(f int)
+master-bin.000001	#	Query	1	#	use `test`; insert into t2 select count(*) from t3
+master-bin.000001	#	Query	1	#	use `test`; insert into t3 select * from t1 where f>=4
+master-bin.000001	#	Query	1	#	use `test`; drop temporary table t3
+master-bin.000001	#	Query	1	#	use `test`; insert into t2 select count(*) from t3
+master-bin.000001	#	Query	1	#	use `test`; drop temporary table t3
 drop table t1, t2;
 use test;
 SET TIMESTAMP=1040323920;
@@ -89,6 +89,29 @@ f
 7
 drop table t1,t2;
 create temporary table t3 (f int);
+create temporary table t4 (f int);
+create table t5 (f int);
+drop table if exists t999;
+create temporary table t999(
+id int,
+user char(255),
+host char(255),
+db char(255),
+Command char(255),
+time int,
+State char(255),
+info char(255)
+);
+LOAD DATA INFILE "./tmp/bl_dump_thread_id" into table t999;
+drop table t999;
+insert into t4 values (1);
+kill `select id from information_schema.processlist where command='Binlog Dump'`;
+insert into t5 select * from t4;
+select * from t5 /* must be 1 after reconnection */;
+f
+1
+drop temporary table t4;
+drop table t5;
 set @@session.pseudo_thread_id=100;
 create temporary table t101 (id int);
 create temporary table t102 (id int);

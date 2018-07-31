@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -93,8 +92,6 @@ void Dbtup::rfrReadRestartInfoLab(Signal* signal, RestartInfoRecordPtr riPtr)
   seizeDiskBufferSegmentRecord(dbsiPtr);
   riPtr.p->sriDataBufferSegmentP = dbsiPtr.i;
   Uint32 retPageRef = RNIL;
-  Uint32 noAllocPages = 1;
-  Uint32 noOfPagesAllocated;
   {
     /**
      * Use low pages for 0-pages during SR
@@ -187,7 +184,7 @@ Dbtup::rfrInitRestartInfoLab(Signal* signal, DiskBufferSegmentInfoPtr dbsiPtr)
   const Uint32 pageCount = riPtr.p->sriNumDataPages - regFragPtr.p->noOfPages;
   if(pageCount > 0){
     Uint32 noAllocPages = allocFragPages(regFragPtr.p, pageCount);
-    ndbrequire(noAllocPages == pageCount);
+    ndbrequireErr(noAllocPages == pageCount, NDBD_EXIT_SR_OUT_OF_DATAMEMORY);
   }//if
   ndbrequire(getNoOfPages(regFragPtr.p) == riPtr.p->sriNumDataPages);
 
@@ -418,7 +415,7 @@ void Dbtup::xlcRestartCompletedLab(Signal* signal)
 {
   cnoOfLocalLogInfo = 0;
 
-  signal->theData[0] = EventReport::UNDORecordsExecuted;
+  signal->theData[0] = NDB_LE_UNDORecordsExecuted;
   signal->theData[1] = DBTUP; // From block
   signal->theData[2] = 0;     // Total records executed
   for (int i = 0; i < 10; i++) {

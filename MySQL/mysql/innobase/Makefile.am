@@ -1,10 +1,8 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-# & Innobase Oy
+# Copyright (C) 2001, 2004, 2006 MySQL AB & Innobase Oy
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation; version 2 of the License.
 # 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,6 +23,7 @@ noinst_HEADERS = ib_config.h
 SUBDIRS =		os ut btr buf data dict dyn eval fil fsp fut \
 			ha ibuf include lock log mach mem mtr page \
 			pars que read rem row srv sync thr trx usr
+EXTRA_DIST = CMakeLists.txt
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

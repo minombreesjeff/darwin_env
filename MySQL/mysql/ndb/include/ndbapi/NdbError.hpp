@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,7 +40,7 @@
  * The <em>error messages</em> and <em>error details</em> may
  * change without notice.
  * 
- * For example of use, see @ref ndbapi_example3.cpp.
+ * For example of use, see @ref ndbapi_retries.cpp.
  */
 struct NdbError {
   /**
@@ -168,7 +167,12 @@ struct NdbError {
     /**
      * Node shutdown
      */
-    NodeShutdown = ndberror_cl_node_shutdown
+    NodeShutdown = ndberror_cl_node_shutdown,
+
+    /**
+     * Schema object already exists
+     */
+    SchemaObjectExists = ndberror_cl_schema_object_already_exists
   };
   
   /**
@@ -199,6 +203,7 @@ struct NdbError {
    */
   char * details;
 
+#ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   NdbError(){
     status = UnknownResult;
     classification = NoError;
@@ -222,6 +227,7 @@ struct NdbError {
     ndberror.details = details;
     return ndberror;
   }
+#endif
 };
 
 class NdbOut& operator <<(class NdbOut&, const NdbError &);

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,7 +20,7 @@
 #include <ndb_types.h>
 
 class Ndb;
-class NdbConnection;
+class NdbTransaction;
 
 class NdbReceiver
 {
@@ -30,7 +29,7 @@ class NdbReceiver
   friend class NdbScanOperation;
   friend class NdbIndexOperation;
   friend class NdbIndexScanOperation;
-  friend class NdbConnection;
+  friend class NdbTransaction;
 public:
   enum ReceiverType	{ NDB_UNINITIALIZED,
 			  NDB_OPERATION = 1,
@@ -39,7 +38,7 @@ public:
   };
   
   NdbReceiver(Ndb *aNdb);
-  void init(ReceiverType type, void* owner);
+  int init(ReceiverType type, void* owner);
   void release();
   ~NdbReceiver();
   
@@ -51,14 +50,14 @@ public:
     return m_type;
   }
   
-  inline NdbConnection * getTransaction();
+  inline NdbTransaction * getTransaction();
   void* getOwner(){
     return m_owner;
   }
   
   bool checkMagicNumber() const;
 
-  inline void next(NdbReceiver* next) { m_next = next;}
+  inline void next(NdbReceiver* next_arg) { m_next = next_arg;}
   inline NdbReceiver* next() { return m_next; }
   
   void setErrorCode(int);
@@ -67,7 +66,7 @@ private:
   Ndb* m_ndb;
   Uint32 m_id;
   Uint32 m_tcPtrI;
-  Uint32 m_key_info;
+  Uint32 m_hidden_count;
   ReceiverType m_type;
   void* m_owner;
   NdbReceiver* m_next;
@@ -76,7 +75,7 @@ private:
    * At setup
    */
   class NdbRecAttr * getValue(const class NdbColumnImpl*, char * user_dst_ptr);
-  void do_get_value(NdbReceiver*, Uint32 rows, Uint32 key_size);
+  int do_get_value(NdbReceiver*, Uint32 rows, Uint32 key_size, Uint32 range);
   void prepareSend();
   void calculate_batch_size(Uint32, Uint32, Uint32&, Uint32&, Uint32&);
 
@@ -97,7 +96,7 @@ private:
   Uint32 m_received_result_length;
   
   bool nextResult() const { return m_current_row < m_result_rows; }
-  void copyout(NdbReceiver&);
+  NdbRecAttr* copyout(NdbReceiver&);
 };
 
 #ifdef NDB_NO_DROPPED_SIGNAL
@@ -146,5 +145,5 @@ NdbReceiver::execSCANOPCONF(Uint32 tcPtrI, Uint32 len, Uint32 rows){
   return (tmp == len ? 1 : 0);
 }
 
-#endif
+#endif // DOXYGEN_SHOULD_SKIP_INTERNAL
 #endif

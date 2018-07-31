@@ -56,15 +56,31 @@ subdate("1997-12-31 23:59:59.000001", 10)
 select datediff("1997-12-31 23:59:59.000001","1997-12-30");
 datediff("1997-12-31 23:59:59.000001","1997-12-30")
 1
+select datediff("1997-11-30 23:59:59.000001","1997-12-31");
+datediff("1997-11-30 23:59:59.000001","1997-12-31")
+-31
+SET @@SQL_MODE="ALLOW_INVALID_DATES";
 select datediff("1997-11-31 23:59:59.000001","1997-12-31");
 datediff("1997-11-31 23:59:59.000001","1997-12-31")
 -30
-select datediff("1997-11-31 23:59:59.000001",null);
-datediff("1997-11-31 23:59:59.000001",null)
+SET @@SQL_MODE="";
+select datediff("1997-11-31 23:59:59.000001","1997-12-31");
+datediff("1997-11-31 23:59:59.000001","1997-12-31")
 NULL
-select weekofyear("1997-11-31 23:59:59.000001");
-weekofyear("1997-11-31 23:59:59.000001")
-49
+Warnings:
+Warning	1292	Truncated incorrect datetime value: '1997-11-31 23:59:59.000001'
+select datediff("1997-11-30 23:59:59.000001",null);
+datediff("1997-11-30 23:59:59.000001",null)
+NULL
+select weekofyear("1997-11-30 23:59:59.000001");
+weekofyear("1997-11-30 23:59:59.000001")
+48
+select makedate(03,1);
+makedate(03,1)
+2003-01-01
+select makedate('0003',1);
+makedate('0003',1)
+2003-01-01
 select makedate(1997,1);
 makedate(1997,1)
 1997-01-01
@@ -97,7 +113,9 @@ subtime("02:01:01.999999", "01:01:01.999999")
 01:00:00.000000
 select timediff("1997-01-01 23:59:59.000001","1995-12-31 23:59:59.000002");
 timediff("1997-01-01 23:59:59.000001","1995-12-31 23:59:59.000002")
-8807:59:59.999999
+838:59:59
+Warnings:
+Warning	1292	Truncated incorrect time value: '8807:59:59.999999'
 select timediff("1997-12-31 23:59:59.000001","1997-12-30 01:01:01.000002");
 timediff("1997-12-31 23:59:59.000001","1997-12-30 01:01:01.000002")
 46:58:57.999999
@@ -173,12 +191,12 @@ date("1997-12-31 23:59:59.000001") as f8,
 time("1997-12-31 23:59:59.000001") as f9;
 describe t1;
 Field	Type	Null	Key	Default	Extra
-f1	date			0000-00-00	
+f1	date	NO		0000-00-00	
 f2	datetime	YES		NULL	
 f3	time	YES		NULL	
 f4	time	YES		NULL	
 f5	time	YES		NULL	
-f6	time			00:00:00	
+f6	time	NO		00:00:00	
 f7	datetime	YES		NULL	
 f8	date	YES		NULL	
 f9	time	YES		NULL	
@@ -205,16 +223,20 @@ ttt	qqq
 NULL	NULL
 NULL	NULL
 2001-01-01 02:02:02	26:02:02
-SELECT TIMEDIFF(t1,t4) As ttt, TIMEDIFF(t2, t3) As qqq from test;
-ttt	qqq
--744:00:00	NULL
-26305:01:02	22:58:58
--26305:01:02	-22:58:58
-NULL	26:02:02
-00:00:00	-26:02:02
-NULL	NULL
-NULL	NULL
-00:00:00	-24:00:00
+SELECT TIMEDIFF(t1, t4) As ttt, TIMEDIFF(t2, t3) As qqq,
+TIMEDIFF(t3, t2) As eee, TIMEDIFF(t2, t4) As rrr from test;
+ttt	qqq	eee	rrr
+-744:00:00	NULL	NULL	NULL
+838:59:59	22:58:58	-22:58:58	NULL
+-838:59:59	-22:58:58	22:58:58	NULL
+NULL	26:02:02	-26:02:02	NULL
+00:00:00	-26:02:02	26:02:02	NULL
+NULL	NULL	NULL	NULL
+NULL	NULL	NULL	NULL
+00:00:00	-24:00:00	24:00:00	NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '26305:01:02'
+Warning	1292	Truncated incorrect time value: '-26305:01:02'
 drop table t1, test;
 select addtime("-01:01:01.01", "-23:59:59.1") as a;
 a

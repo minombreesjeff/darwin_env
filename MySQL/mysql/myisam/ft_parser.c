@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -93,12 +92,14 @@ my_bool ft_boolean_check_syntax_string(const byte *str)
   return 0;
 }
 
-/* returns:
- * 0 - eof
- * 1 - word found
- * 2 - left bracket
- * 3 - right bracket
- */
+/*
+  RETURN VALUE
+  0 - eof
+  1 - word found
+  2 - left bracket
+  3 - right bracket
+  4 - stopword found
+*/
 byte ft_get_word(CHARSET_INFO *cs, byte **start, byte *end,
                  FT_WORD *word, FTB_PARAM *param)
 {
@@ -163,6 +164,11 @@ byte ft_get_word(CHARSET_INFO *cs, byte **start, byte *end,
       *start=doc;
       return 1;
     }
+    else if (length) /* make sure length > 0 (if start contains spaces only) */
+    {
+      *start= doc;
+      return 4;
+    }
   }
   if (param->quot)
   {
@@ -172,18 +178,19 @@ byte ft_get_word(CHARSET_INFO *cs, byte **start, byte *end,
   return 0;
 }
 
-byte ft_simple_get_word(CHARSET_INFO *cs, byte **start, byte *end,
-                        FT_WORD *word)
+byte ft_simple_get_word(CHARSET_INFO *cs, byte **start, const byte *end,
+                        FT_WORD *word, my_bool skip_stopwords)
 {
   byte *doc= *start;
   uint mwc, length, mbl;
   DBUG_ENTER("ft_simple_get_word");
 
-  while (doc<end)
+  do
   {
-    for (;doc<end;doc++)
+    for (;; doc++)
     {
-      if (true_word_char(cs,*doc)) break;
+      if (doc >= end) DBUG_RETURN(0);
+      if (true_word_char(cs, *doc)) break;
     }
 
     mwc= length= 0;
@@ -197,13 +204,14 @@ byte ft_simple_get_word(CHARSET_INFO *cs, byte **start, byte *end,
 
     word->len= (uint)(doc-word->pos) - mwc;
 
-    if (length >= ft_min_word_len && length < ft_max_word_len &&
-        !is_stopword(word->pos, word->len))
+    if (skip_stopwords == FALSE ||
+        (length >= ft_min_word_len && length < ft_max_word_len &&
+         !is_stopword(word->pos, word->len)))
     {
       *start= doc;
       DBUG_RETURN(1);
     }
-  }
+  } while (doc < end);
   DBUG_RETURN(0);
 }
 
@@ -221,7 +229,7 @@ int ft_parse(TREE *wtree, byte *doc, int doclen, my_bool with_alloc)
   FT_WORD w;
   DBUG_ENTER("ft_parse");
 
-  while (ft_simple_get_word(wtree->custom_arg, &doc,end,&w))
+  while (ft_simple_get_word(wtree->custom_arg, &doc, end, &w, TRUE))
   {
     if (with_alloc)
     {

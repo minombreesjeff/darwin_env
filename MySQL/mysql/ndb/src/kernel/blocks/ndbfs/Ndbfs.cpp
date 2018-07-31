@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -19,7 +18,6 @@
 #include "Ndbfs.hpp"
 #include "AsyncFile.hpp"
 #include "Filename.hpp"
-#include "Error.hpp"
 
 #include <signaldata/FsOpenReq.hpp>
 #include <signaldata/FsCloseReq.hpp>
@@ -57,26 +55,10 @@ Ndbfs::Ndbfs(const Configuration & conf) :
   theLastId(0),
   m_maxOpenedFiles(0)
 {
-  theFileSystemPath = conf.fileSystemPath();
-  theBackupFilePath = conf.backupFilePath();
-
-  theRequestPool = new Pool<Request>;
-
-  const ndb_mgm_configuration_iterator * p = conf.getOwnConfigIterator();
-  ndbrequire(p != 0);
-
-  m_maxFiles = 40;
-  ndb_mgm_get_int_parameter(p, CFG_DB_MAX_OPEN_FILES, &m_maxFiles);
-  
-  // Create idle AsyncFiles
-  Uint32 noIdleFiles = m_maxFiles > 27  ? 27 : m_maxFiles ;
-  for (Uint32 i = 0; i < noIdleFiles; i++){
-    theIdleFiles.push_back(createAsyncFile());
-  }
-
   BLOCK_CONSTRUCTOR(Ndbfs);
 
   // Set received signals
+  addRecSignal(GSN_READ_CONFIG_REQ, &Ndbfs::execREAD_CONFIG_REQ);
   addRecSignal(GSN_DUMP_STATE_ORD,  &Ndbfs::execDUMP_STATE_ORD);
   addRecSignal(GSN_STTOR,  &Ndbfs::execSTTOR);
   addRecSignal(GSN_FSOPENREQ, &Ndbfs::execFSOPENREQ);
@@ -88,6 +70,8 @@ Ndbfs::Ndbfs(const Configuration & conf) :
   addRecSignal(GSN_FSAPPENDREQ, &Ndbfs::execFSAPPENDREQ);
   addRecSignal(GSN_FSREMOVEREQ, &Ndbfs::execFSREMOVEREQ);
    // Set send signals
+
+  theRequestPool = 0;
 }
 
 Ndbfs::~Ndbfs()
@@ -102,7 +86,41 @@ Ndbfs::~Ndbfs()
   }//for
   theFiles.clear();
 
-  delete theRequestPool;
+  if (theRequestPool)
+    delete theRequestPool;
+}
+
+void 
+Ndbfs::execREAD_CONFIG_REQ(Signal* signal)
+{
+  const ReadConfigReq * req = (ReadConfigReq*)signal->getDataPtr();
+
+  Uint32 ref = req->senderRef;
+  Uint32 senderData = req->senderData;
+
+  const ndb_mgm_configuration_iterator * p = 
+    theConfiguration.getOwnConfigIterator();
+  ndbrequire(p != 0);
+
+  theFileSystemPath = theConfiguration.fileSystemPath();
+  theBackupFilePath = theConfiguration.backupFilePath();
+
+  theRequestPool = new Pool<Request>;
+
+  m_maxFiles = 40;
+  ndb_mgm_get_int_parameter(p, CFG_DB_MAX_OPEN_FILES, &m_maxFiles);
+  
+  // Create idle AsyncFiles
+  Uint32 noIdleFiles = m_maxFiles > 27  ? 27 : m_maxFiles ;
+  for (Uint32 i = 0; i < noIdleFiles; i++){
+    theIdleFiles.push_back(createAsyncFile());
+  }
+
+  ReadConfigConf * conf = (ReadConfigConf*)signal->getDataPtrSend();
+  conf->senderRef = reference();
+  conf->senderData = senderData;
+  sendSignal(ref, GSN_READ_CONFIG_CONF, signal, 
+	     ReadConfigConf::SignalLength, JBB);
 }
 
 /* Received a restart signal.
@@ -551,13 +569,13 @@ AsyncFile*
 Ndbfs::createAsyncFile(){
 
   // Check limit of open files
-  if (theFiles.size()+1 ==  m_maxFiles) {
+  if (theFiles.size() ==  m_maxFiles) {
     // Print info about all open files
     for (unsigned i = 0; i < theFiles.size(); i++){
       AsyncFile* file = theFiles[i];
       ndbout_c("%2d (0x%x): %s", i, file, file->isOpen()?"OPEN":"CLOSED");
     }
-    ERROR_SET(fatal, AFS_ERROR_MAXOPEN,""," Ndbfs::createAsyncFile");
+    ERROR_SET(fatal, NDBD_EXIT_AFS_MAXOPEN,""," Ndbfs::createAsyncFile");
   }
 
   AsyncFile* file = new AsyncFile;
@@ -1006,6 +1024,30 @@ Ndbfs::execDUMP_STATE_ORD(Signal* signal)
     }
     return;
   }
+
+  if(signal->theData[0] == 404)
+  {
+    ndbrequire(signal->getLength() == 2);
+    Uint32 file= signal->theData[1];
+    AsyncFile* openFile = theOpenFiles.find(file);
+    ndbrequire(openFile);
+    ndbout_c("File: %s %p", openFile->theFileName.c_str(), openFile);
+    Request* curr = openFile->m_current_request;
+    Request* last = openFile->m_last_request;
+    if(curr)
+      ndbout << "Current request: " << *curr << endl;
+    if(last)
+       ndbout << "Last request: " << *last << endl;
+
+    ndbout << "theReportTo " << *openFile->theReportTo << endl;
+    ndbout << "theMemoryChannelPtr" << *openFile->theMemoryChannelPtr << endl;
+
+    ndbout << "All files: " << endl;
+    for (unsigned i = 0; i < theFiles.size(); i++){
+      AsyncFile* file = theFiles[i];
+      ndbout_c("%2d (0x%x): %s", i,file, file->isOpen()?"OPEN":"CLOSED");
+    }
+  }
 }//Ndbfs::execDUMP_STATE_ORD()
 
 
@@ -1016,3 +1058,4 @@ template class Vector<AsyncFile*>;
 template class Vector<OpenFiles::OpenFileItem>;
 template class MemoryChannel<Request>;
 template class Pool<Request>;
+template NdbOut& operator<<(NdbOut&, const MemoryChannel<Request>&);

@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004, 2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -63,8 +62,9 @@ HP_INFO *heap_open(const char *name, int mode)
 #ifndef DBUG_OFF
   info->opt_flag= READ_CHECK_USED;		/* Check when changing */
 #endif
-  DBUG_PRINT("exit",("heap: %lx  reclength: %d  records_in_block: %d",
-		     info,share->reclength,share->block.records_in_block));
+  DBUG_PRINT("exit",("heap: 0x%lx  reclength: %d  records_in_block: %d",
+		     (long) info, share->reclength,
+                     share->block.records_in_block));
   DBUG_RETURN(info);
 }
 
@@ -82,7 +82,7 @@ HP_SHARE *hp_find_named_heap(const char *name)
     info= (HP_SHARE*) pos->data;
     if (!strcmp(name, info->name))
     {
-      DBUG_PRINT("exit", ("Old heap_database: %lx",info));
+      DBUG_PRINT("exit", ("Old heap_database: 0x%lx", (long) info));
       DBUG_RETURN(info);
     }
   }

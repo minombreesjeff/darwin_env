@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -83,3 +82,50 @@ Ndb_getInAddr(struct in_addr * dst, const char *address) {
   return -1;
 }
 #endif
+
+int Ndb_check_socket_hup(NDB_SOCKET_TYPE sock)
+{
+#ifdef HAVE_POLL
+  struct pollfd pfd[1];
+  int r;
+
+  pfd[0].fd= sock;
+  pfd[0].events= POLLHUP | POLLIN | POLLOUT | POLLNVAL;
+  pfd[0].revents= 0;
+  r= poll(pfd,1,0);
+  if(pfd[0].revents & (POLLHUP|POLLERR))
+    return 1;
+
+  return 0;
+#else /* HAVE_POLL */
+  fd_set readfds, writefds, errorfds;
+  struct timeval tv= {0,0};
+  int s_err;
+  int s_err_size= sizeof(s_err);
+
+  FD_ZERO(&readfds);
+  FD_ZERO(&writefds);
+  FD_ZERO(&errorfds);
+
+  FD_SET(sock, &readfds);
+  FD_SET(sock, &writefds);
+  FD_SET(sock, &errorfds);
+
+  if(select(1, &readfds, &writefds, &errorfds, &tv)<0)
+    return 1;
+
+  if(FD_ISSET(sock,&errorfds))
+    return 1;
+
+  s_err=0;
+  if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*) &s_err, &s_err_size) != 0)
+    return(1);
+
+  if (s_err)
+  {                                             /* getsockopt could succeed */
+    return(1);                                 /* but return an error... */
+  }
+
+  return 0;
+#endif /* HAVE_POLL */
+}

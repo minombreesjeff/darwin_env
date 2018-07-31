@@ -80,8 +80,13 @@ static void
 make_history_line_current (entry)
      HIST_ENTRY *entry;
 {
-  rl_replace_line (entry->line, 0);
+#if 0
+  rl_replace_line (entry->line, 1);
   rl_undo_list = (UNDO_LIST *)entry->data;
+#else
+  _rl_replace_text (entry->line, 0, rl_end);
+  _rl_fix_point (1);
+#endif
 
   if (_rl_saved_line_for_history)
     _rl_free_history_entry (_rl_saved_line_for_history);
@@ -186,6 +191,11 @@ noninc_search (dir, pchar)
   rl_maybe_save_line ();
   saved_point = rl_point;
   saved_mark = rl_mark;
+
+  /* Clear the undo list, since reading the search string should create its
+     own undo list, and the whole list will end up being freed when we
+     finish reading the search string. */
+  rl_undo_list = 0;
 
   /* Use the line buffer to read the search string. */
   rl_line_buffer[0] = 0;
@@ -293,8 +303,7 @@ noninc_search (dir, pchar)
 /* Search forward through the history list for a string.  If the vi-mode
    code calls this, KEY will be `?'. */
 int
-rl_noninc_forward_search (count, key)
-     int count __attribute__((unused)), key __attribute__((unused));
+rl_noninc_forward_search (int count __attribute__((unused)), int key)
 {
   noninc_search (1, (key == '?') ? '?' : 0);
   return 0;
@@ -303,8 +312,7 @@ rl_noninc_forward_search (count, key)
 /* Reverse search the history list for a string.  If the vi-mode code
    calls this, KEY will be `/'. */
 int
-rl_noninc_reverse_search (count, key)
-     int count __attribute__((unused)), key __attribute__((unused));
+rl_noninc_reverse_search (int count __attribute__((unused)), int key)
 {
   noninc_search (-1, (key == '/') ? '/' : 0);
   return 0;
@@ -313,8 +321,8 @@ rl_noninc_reverse_search (count, key)
 /* Search forward through the history list for the last string searched
    for.  If there is no saved search string, abort. */
 int
-rl_noninc_forward_search_again (count, key)
-     int count __attribute__((unused)), key __attribute__((unused));
+rl_noninc_forward_search_again (int count __attribute__((unused)),
+                                int key  __attribute__((unused)))
 {
   if (!noninc_search_string)
     {
@@ -328,8 +336,8 @@ rl_noninc_forward_search_again (count, key)
 /* Reverse search in the history list for the last string searched
    for.  If there is no saved search string, abort. */
 int
-rl_noninc_reverse_search_again (count, key)
-     int count __attribute__((unused)), key __attribute__((unused));
+rl_noninc_reverse_search_again (int count __attribute__((unused)),
+                                int key  __attribute__((unused)))
 {
   if (!noninc_search_string)
     {

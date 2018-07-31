@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -88,6 +87,13 @@
 extern "C" {
 #endif
 
+/*
+  my_str_malloc() and my_str_free() are assigned to implementations in
+  strings/alloc.c, but can be overridden in the calling program.
+ */
+extern void *(*my_str_malloc)(size_t);
+extern void (*my_str_free)(void *);
+
 #if defined(HAVE_STPCPY) && !defined(HAVE_mit_thread)
 #define strmov(A,B) stpcpy((A),(B))
 #ifndef stpcpy
@@ -98,6 +104,9 @@ extern char *stpcpy(char *, const char *);	/* For AIX with gcc 2.95.3 */
 /* Declared in int2str() */
 extern char NEAR _dig_vec_upper[];
 extern char NEAR _dig_vec_lower[];
+
+/* Defined in strtod.c */
+extern const double log_10[309];
 
 #ifdef BAD_STRING_COMPILER
 #define strmov(A,B)  (memccpy(A,B,0,INT_MAX)-1)

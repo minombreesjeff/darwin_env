@@ -105,9 +105,7 @@ insert into t2 values (2,"t2:2"), (3,"t2:3");
 insert into t1 select * from t2;
 select * from t1;
 # REPLACE .. SELECT is not yet supported by PS
---disable_ps_protocol
 replace into t1 select * from t2;
---enable_ps_protocol
 select * from t1;
 drop table t1,t2;
 
@@ -198,9 +196,9 @@ insert into t1 select t2.a from t2 group by t2.a on duplicate key update a= a + 
 #Some error cases
 --error 1052
 insert into t1 select t2.a from t2 on duplicate key update a= a + t2.b;
---error 1109
+--error 1054
 insert into t1 select t2.a from t2 on duplicate key update t2.a= a + t2.b;
---error 1109
+--error 1054
 insert into t1 select t2.a from t2 group by t2.a on duplicate key update a= t1.a + t2.b;
 drop table t1,t2,t3;
 
@@ -222,7 +220,7 @@ create table t2(x int, z int);
 insert into t1(x,y) select x,z from t2 on duplicate key update x=values(x);
 --error 1054
 insert into t1(x,y) select x,z from t2 on duplicate key update x=values(z);
---error 1109
+--error 1054
 insert into t1(x,y) select x,z from t2 on duplicate key update x=values(t2.x);
 drop table t1,t2; 
 
@@ -240,3 +238,97 @@ INSERT INTO t1 SELECT a + 2 FROM t1 LIMIT 1;
 DROP TABLE t1;
 
 # End of 4.1 tests
+
+#
+# Bug #18080: INSERT ... SELECT ... JOIN results in ambiguous field list error
+#
+CREATE TABLE t1 (x int, y int);
+CREATE TABLE t2 (z int, y int);
+CREATE TABLE t3 (a int, b int);
+INSERT INTO t3 (SELECT x, y FROM t1 JOIN t2 USING (y) WHERE z = 1);
+DROP TABLE IF EXISTS t1,t2,t3;
+
+#
+# Bug #21774: Column count doesn't match value count at row x
+#
+CREATE DATABASE bug21774_1;
+CREATE DATABASE bug21774_2;
+
+CREATE TABLE bug21774_1.t1(id VARCHAR(10) NOT NULL,label VARCHAR(255));
+CREATE TABLE bug21774_2.t1(id VARCHAR(10) NOT NULL,label VARCHAR(255));
+CREATE TABLE bug21774_1.t2(id VARCHAR(10) NOT NULL,label VARCHAR(255));
+
+INSERT INTO bug21774_2.t1 SELECT t1.* FROM bug21774_1.t1;
+
+use bug21774_1;
+INSERT INTO bug21774_2.t1 SELECT t1.* FROM t1;
+
+DROP DATABASE bug21774_1;
+DROP DATABASE bug21774_2;
+USE test;
+
+#
+# Bug#19978: INSERT .. ON DUPLICATE erroneously reports some records were
+#            updated.
+#
+create table t1(f1 int primary key, f2 int);
+--enable_info
+insert into t1 values (1,1);
+insert into t1 values (1,1) on duplicate key update f2=1;
+insert into t1 values (1,1) on duplicate key update f2=2;
+--disable_info
+select * from t1;
+drop table t1;
+
+#
+# Bug#23170: LAST_INSERT_ID isn't reset to 0 in INSERT .. SELECT if no rows
+#            were inserted.
+#
+create table t1(f1 int primary key auto_increment, f2 int unique);
+insert into t1(f2) values(1);
+select @@identity;
+insert ignore t1(f2) values(1);
+select @@identity;
+insert ignore t1(f2) select 1;
+select @@identity;
+drop table t1;
+
+#
+# Bug#16630: wrong result, when INSERT t1 SELECT ... FROM t1 ON DUPLICATE
+#
+CREATE TABLE t1 (f1 INT, f2 INT );
+CREATE TABLE t2  (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (1,1),(2,2),(10,10);
+INSERT INTO t2 (f1, f2) SELECT f1, f2 FROM t1;
+INSERT INTO t2 (f1, f2)
+  SELECT f1, f1 FROM t2 src WHERE f1 < 2
+  ON DUPLICATE KEY UPDATE f1 = 100 + src.f1;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+#
+# Bug #26207: inserts don't work with shortened index
+#
+SET SQL_MODE='STRICT_TRANS_TABLES,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+
+CREATE TABLE t1 (c VARCHAR(30), INDEX ix_c (c(10)));
+CREATE TABLE t2 (d VARCHAR(10)); 
+INSERT INTO t1 (c) VALUES ('7_chars'), ('13_characters'); 
+
+EXPLAIN
+  SELECT (SELECT SUM(LENGTH(c)) FROM t1 WHERE c='13_characters') FROM t1;
+
+SELECT (SELECT SUM(LENGTH(c)) FROM t1 WHERE c='13_characters') FROM t1;
+
+INSERT INTO t2 (d) 
+  SELECT (SELECT SUM(LENGTH(c)) FROM t1 WHERE c='13_characters') FROM t1;
+
+INSERT INTO t2 (d) 
+  SELECT (SELECT SUM(LENGTH(c)) FROM t1 WHERE c='7_chars') FROM t1;
+
+INSERT INTO t2 (d)
+  SELECT (SELECT SUM(LENGTH(c)) FROM t1 WHERE c IN (SELECT t1.c FROM t1)) 
+  FROM t1;
+
+SELECT * FROM t2;
+DROP TABLE t1,t2;

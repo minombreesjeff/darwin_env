@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,6 +33,7 @@ class AccScanReq {
    */
   friend class Dbacc;
   friend class Dbtux;
+  friend class Dbtup;
 public:
   STATIC_CONST( SignalLength = 8 );
   
@@ -51,30 +51,29 @@ private:
    * Previously there where also a scan type
    */
   static Uint32 getLockMode(const Uint32 & requestInfo);
-  static Uint32 getKeyinfoFlag(const Uint32 & requestInfo);
   static Uint32 getReadCommittedFlag(const Uint32 & requestInfo);
+  static Uint32 getDescendingFlag(const Uint32 & requestInfo);
   
   static void setLockMode(Uint32 & requestInfo, Uint32 lockMode);
-  static void setKeyinfoFlag(Uint32 & requestInfo, Uint32 keyinfo);
   static void setReadCommittedFlag(Uint32 & requestInfo, Uint32 readCommitted);
+  static void setDescendingFlag(Uint32 & requestInfo, Uint32 descending);
 };
 
 /**
  * Request Info
  *
  * l = Lock Mode             - 1  Bit 2
- * k = Keyinfo               - 1  Bit 4
  * h = Read Committed        - 1  Bit 5
+ * z = Descending (TUX)      - 1  Bit 6
  *
  *           1111111111222222222233
  * 01234567890123456789012345678901
- *   l kh    
+ *   l  hz   
  */
 #define AS_LOCK_MODE_SHIFT       (2)
 #define AS_LOCK_MODE_MASK        (1)
-
-#define AS_KEYINFO_SHIFT         (4)
 #define AS_READ_COMMITTED_SHIFT  (5)
+#define AS_DESCENDING_SHIFT      (6)
 
 inline 
 Uint32
@@ -84,14 +83,14 @@ AccScanReq::getLockMode(const Uint32 & requestInfo){
 
 inline
 Uint32
-AccScanReq::getKeyinfoFlag(const Uint32 & requestInfo){
-  return (requestInfo >> AS_KEYINFO_SHIFT) & 1;
+AccScanReq::getReadCommittedFlag(const Uint32 & requestInfo){
+  return (requestInfo >> AS_READ_COMMITTED_SHIFT) & 1;
 }
 
 inline
 Uint32
-AccScanReq::getReadCommittedFlag(const Uint32 & requestInfo){
-  return (requestInfo >> AS_READ_COMMITTED_SHIFT) & 1;
+AccScanReq::getDescendingFlag(const Uint32 & requestInfo){
+  return (requestInfo >> AS_DESCENDING_SHIFT) & 1;
 }
 
 inline
@@ -103,16 +102,16 @@ AccScanReq::setLockMode(UintR & requestInfo, UintR val){
 
 inline
 void
-AccScanReq::setKeyinfoFlag(UintR & requestInfo, UintR val){
-  ASSERT_BOOL(val, "AccScanReq::setKeyinfoFlag");
-  requestInfo |= (val << AS_KEYINFO_SHIFT);
+AccScanReq::setReadCommittedFlag(UintR & requestInfo, UintR val){
+  ASSERT_BOOL(val, "AccScanReq::setReadCommittedFlag");
+  requestInfo |= (val << AS_READ_COMMITTED_SHIFT);
 }
 
 inline
 void
-AccScanReq::setReadCommittedFlag(UintR & requestInfo, UintR val){
-  ASSERT_BOOL(val, "AccScanReq::setReadCommittedFlag");
-  requestInfo |= (val << AS_READ_COMMITTED_SHIFT);
+AccScanReq::setDescendingFlag(UintR & requestInfo, UintR val){
+  ASSERT_BOOL(val, "AccScanReq::setDescendingFlag");
+  requestInfo |= (val << AS_DESCENDING_SHIFT);
 }
 
 class AccScanConf {
@@ -121,6 +120,7 @@ class AccScanConf {
    */
   friend class Dbacc;
   friend class Dbtux;
+  friend class Dbtup;
 
   /**
    * Reciver(s)
@@ -149,6 +149,7 @@ private:
 class AccCheckScan {
   friend class Dbacc;
   friend class Dbtux;
+  friend class Dbtup;
   friend class Dblqh;
   enum {
     ZCHECK_LCP_STOP = 0,

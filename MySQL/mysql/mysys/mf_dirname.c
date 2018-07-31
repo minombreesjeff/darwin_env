@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -72,7 +71,9 @@ uint dirname_part(my_string to, const char *name)
 
   SYNPOSIS
     convert_dirname()
-    to				Store result here
+    to				Store result here. Must be at least of size
+    				min(FN_REFLEN, strlen(from) + 1) to make room
+    				for adding FN_LIBCHAR at the end.
     from			Original filename
     from_end			Pointer at end of filename (normally end \0)
 
@@ -108,7 +109,7 @@ char *convert_dirname(char *to, const char *from, const char *from_end)
 
 #if FN_LIBCHAR != '/' || defined(FN_C_BEFORE_DIR_2)
   {
-    for (; *from && from != from_end; from++)
+    for (; from != from_end && *from ; from++)
     {
       if (*from == '/')
 	*to++= FN_LIBCHAR;

@@ -1,5 +1,6 @@
 drop table if exists t1,t2,t3;
 drop database if exists mysqltest;
+drop view if exists v1;
 revoke all privileges on mysqltest.t1 from mysqltest_1@localhost;
 revoke all privileges on mysqltest.* from mysqltest_1@localhost;
 delete from mysql.user where user=_binary'mysqltest_1';
@@ -134,16 +135,16 @@ create table t1 (n numeric(10));
 create table t2 (n numeric(10));
 insert into t2 values (1),(2),(4),(8),(16),(32);
 select * from t2 left outer join t1  using (n);
-n	n
-1	NULL
-2	NULL
-4	NULL
-8	NULL
-16	NULL
-32	NULL
+n
+1
+2
+4
+8
+16
+32
 delete  t1,t2 from t2 left outer join t1  using (n);
 select * from t2 left outer join t1  using (n);
-n	n
+n
 drop table t1,t2 ;
 create table t1 (n int(10) not null primary key, d int(10));
 create table t2 (n int(10) not null primary key, d int(10));
@@ -479,4 +480,47 @@ create table t1(a int);
 create table t2(a int);
 delete from t1,t2 using t1,t2 where t1.a=(select a from t1);
 ERROR HY000: You can't specify target table 't1' for update in FROM clause
+drop table t1, t2;
+create table t1 ( c char(8) not null ) engine=innodb;
+insert into t1 values ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9');
+insert into t1 values ('A'),('B'),('C'),('D'),('E'),('F');
+alter table t1 add b char(8) not null;
+alter table t1 add a char(8) not null;
+alter table t1 add primary key (a,b,c);
+update t1 set a=c, b=c;
+create table t2 like t1;
+insert into t2 select * from t1;
+delete t1,t2 from t2,t1 where t1.a<'B' and t2.b=t1.b;
+drop table t1,t2;
+create table t1 ( c char(8) not null ) engine=bdb;
+insert into t1 values ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9');
+insert into t1 values ('A'),('B'),('C'),('D'),('E'),('F');
+alter table t1 add b char(8) not null;
+alter table t1 add a char(8) not null;
+alter table t1 add primary key (a,b,c);
+update t1 set a=c, b=c;
+create table t2 like t1;
+insert into t2 select * from t1;
+delete t1,t2 from t2,t1 where t1.a<'B' and t2.b=t1.b;
+drop table t1,t2;
+create table t1 (a int, b int);
+insert into t1 values (1, 2), (2, 3), (3, 4);
+create table t2 (a int);
+insert into t2 values (10), (20), (30);
+create view v1 as select a as b, a/10 as a from t2;
+lock table t1 write;
+alter table t1 add column c int default 100 after a;
+update t1, v1 set t1.b=t1.a+t1.b+v1.b where t1.a=v1.a;
+unlock tables;
+select * from t1;
+a	c	b
+1	100	13
+2	100	25
+3	100	37
+select * from t2;
+a
+10
+20
+30
+drop view v1;
 drop table t1, t2;

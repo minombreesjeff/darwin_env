@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2005 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +14,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "myisamdef.h"
-#ifdef HAVE_MMAP
+#ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
 
@@ -186,7 +185,10 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
     if (info->opt_flag & WRITE_CACHE_USED)
     {
       if ((error=flush_io_cache(&info->rec_cache)))
+      {
+        mi_print_error(info->s, HA_ERR_CRASHED);
 	mi_mark_crashed(info);			/* Fatal error found */
+      }
     }
     break;
   case HA_EXTRA_NO_READCHECK:
@@ -241,7 +243,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
       error=1;					/* Not possibly if not lock */
       break;
     }
-    if (share->state.key_map)
+    if (mi_is_any_key_active(share->state.key_map))
     {
       MI_KEYDEF *key=share->keyinfo;
       uint i;
@@ -249,7 +251,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
       {
         if (!(key->flag & HA_NOSAME) && info->s->base.auto_key != i+1)
         {
-          share->state.key_map&= ~ ((ulonglong) 1 << i);
+          mi_clear_key_active(share->state.key_map, i);
           info->update|= HA_STATE_CHANGED;
         }
       }
@@ -285,6 +287,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
     {
       error=my_errno;
       share->changed=1;
+      mi_print_error(info->s, HA_ERR_CRASHED);
       mi_mark_crashed(info);			/* Fatal error found */
     }
     if (info->opt_flag & (READ_CACHE_USED | WRITE_CACHE_USED))
@@ -339,6 +342,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
       if (error)
       {
 	share->changed=1;
+        mi_print_error(info->s, HA_ERR_CRASHED);
 	mi_mark_crashed(info);			/* Fatal error found */
       }
     }

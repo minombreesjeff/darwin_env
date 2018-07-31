@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -50,6 +49,7 @@
 #define ZAPI_HB_HANDLING 3
 #define ZTIMER_HANDLING 4
 #define ZARBIT_HANDLING 5
+#define ZSTART_FAILURE_LIMIT 6
 
 /* Error Codes ------------------------------*/
 #define ZERRTOOMANY 1101
@@ -101,6 +101,7 @@ public:
   };
 
   struct StartRecord {
+    StartRecord() {}
     void reset(){ 
       m_startKey++; 
       m_startNode = 0; 
@@ -113,8 +114,19 @@ public:
     
     Uint32 m_gsn;
     SignalCounter m_nodes;
-  } c_start;
+    Uint32 m_latest_gci;
 
+    Uint32 m_start_type;
+    NdbNodeBitmask m_skip_nodes;
+    NdbNodeBitmask m_starting_nodes;
+    NdbNodeBitmask m_starting_nodes_w_log;
+
+    Uint16 m_president_candidate;
+    Uint32 m_president_candidate_gci;
+    Uint16 m_regReqReqSent;
+    Uint16 m_regReqReqRecv;
+  } c_start;
+  
   NdbNodeBitmask c_definedNodes; // DB nodes in config
   NdbNodeBitmask c_clusterNodes; // DB nodes in cluster
   NodeBitmask c_connectedNodes;  // All kinds of connected nodes
@@ -125,15 +137,14 @@ public:
    * i.e. nodes that connect to use, when we already have elected president
    */
   NdbNodeBitmask c_readnodes_nodes;
-  
+
   Uint32 c_maxDynamicId;
   
   // Records
   struct NodeRec {
     UintR ndynamicId;
     Phase phase;
-    UintR alarmCount;
-    
+
     QmgrState sendPrepFailReqStatus;
     QmgrState sendCommitFailReqStatus;
     QmgrState sendPresToStatus;
@@ -159,6 +170,7 @@ public:
   };
 
   struct ArbitRec {
+    ArbitRec() {}
     ArbitState state;		// state
     bool newstate;		// flag to initialize new state
     unsigned thread;		// identifies a continueB "thread"
@@ -225,17 +237,20 @@ private:
   void execDUMP_STATE_ORD(Signal* signal);
   void execCONNECT_REP(Signal* signal);
   void execNDB_FAILCONF(Signal* signal);
+  void execREAD_CONFIG_REQ(Signal* signal);
   void execSTTOR(Signal* signal);
   void execCM_INFOCONF(Signal* signal);
   void execCLOSE_COMCONF(Signal* signal);
   void execAPI_REGREQ(Signal* signal);
   void execAPI_FAILCONF(Signal* signal);
   void execREAD_NODESREQ(Signal* signal);
-  void execSET_VAR_REQ(Signal* signal);
 
   void execREAD_NODESREF(Signal* signal);
   void execREAD_NODESCONF(Signal* signal);
 
+  void execDIH_RESTARTREF(Signal* signal);
+  void execDIH_RESTARTCONF(Signal* signal);
+  
   void execAPI_VERSION_REQ(Signal* signal);
   void execAPI_BROADCAST_REP(Signal* signal);
 
@@ -252,6 +267,7 @@ private:
 
   // Statement blocks
   void check_readnodes_reply(Signal* signal, Uint32 nodeId, Uint32 gsn);
+  Uint32 check_startup(Signal* signal);
 
   void node_failed(Signal* signal, Uint16 aFailedNode);
   void checkStartInterface(Signal* signal);
@@ -324,7 +340,7 @@ private:
   void stateArbitChoose(Signal* signal);
   void stateArbitCrash(Signal* signal);
   void computeArbitNdbMask(NodeBitmask& aMask);
-  void reportArbitEvent(Signal* signal, EventReport::EventType type);
+  void reportArbitEvent(Signal* signal, Ndb_logevent_type type);
 
   // Initialisation
   void initData();
@@ -374,12 +390,12 @@ private:
   /* Status flags ----------------------------------*/
 
   Uint32 c_restartPartialTimeout;
+  Uint32 c_restartPartionedTimeout;
+  Uint32 c_restartFailureTimeout;
+  Uint64 c_start_election_time;
 
   Uint16 creadyDistCom;
-  Uint16 c_regReqReqSent;
-  Uint16 c_regReqReqRecv;
-  Uint64 c_stopElectionTime;
-  Uint16 cpresidentCandidate;
+
   Uint16 cdelayRegreq;
   Uint16 cpresidentAlive;
   Uint16 cnoFailedNodes;
@@ -410,6 +426,10 @@ private:
   
   StopReq c_stopReq;
   bool check_multi_node_shutdown(Signal* signal);
+
+#ifdef ERROR_INSERT
+  Uint32 c_error_insert_extra;
+#endif
 };
 
 #endif

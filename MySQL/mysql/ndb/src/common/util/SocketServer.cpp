@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,6 +41,8 @@ SocketServer::~SocketServer() {
     delete m_sessions[i].m_session;
   }
   for(i = 0; i<m_services.size(); i++){
+    if(m_services[i].m_socket)
+      NDB_CLOSE_SOCKET(m_services[i].m_socket);
     delete m_services[i].m_service;
   }
 }
@@ -84,15 +85,15 @@ SocketServer::tryBind(unsigned short port, const char * intface) {
 
 bool
 SocketServer::setup(SocketServer::Service * service, 
-		    unsigned short port, 
+		    unsigned short * port,
 		    const char * intface){
   DBUG_ENTER("SocketServer::setup");
-  DBUG_PRINT("enter",("interface=%s, port=%d", intface, port));
+  DBUG_PRINT("enter",("interface=%s, port=%u", intface, *port));
   struct sockaddr_in servaddr;
   memset(&servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  servaddr.sin_port = htons(port);
+  servaddr.sin_port = htons(*port);
   
   if(intface != 0){
     if(Ndb_getInAddr(&servaddr.sin_addr, intface))
@@ -123,7 +124,17 @@ SocketServer::setup(SocketServer::Service * service,
     NDB_CLOSE_SOCKET(sock);
     DBUG_RETURN(false);
   }
-  
+
+  /* Get the port we bound to */
+  SOCKET_SIZE_TYPE sock_len = sizeof(servaddr);
+  if(getsockname(sock,(struct sockaddr*)&servaddr,&sock_len)<0) {
+    ndbout_c("An error occurred while trying to find out what"
+	     " port we bound to. Error: %s",strerror(errno));
+    NDB_CLOSE_SOCKET(sock);
+    DBUG_RETURN(false);
+  }
+
+  DBUG_PRINT("info",("bound to %u",ntohs(servaddr.sin_port)));
   if (listen(sock, m_maxSessions > 32 ? 32 : m_maxSessions) == -1){
     DBUG_PRINT("error",("listen() - %d - %s",
 			errno, strerror(errno)));
@@ -135,6 +146,9 @@ SocketServer::setup(SocketServer::Service * service,
   i.m_socket = sock;
   i.m_service = service;
   m_services.push_back(i);
+
+  *port = ntohs(servaddr.sin_port);
+
   DBUG_RETURN(true);
 }
 
@@ -169,9 +183,12 @@ SocketServer::doAccept(){
 	SessionInstance s;
 	s.m_service = si.m_service;
 	s.m_session = si.m_service->newSession(childSock);
-	if(s.m_session != 0){
+	if(s.m_session != 0)
+	{
+	  m_session_mutex.lock();
 	  m_sessions.push_back(s);
 	  startSession(m_sessions.back());
+	  m_session_mutex.unlock();
 	}
 	
 	continue;
@@ -225,10 +242,13 @@ void
 SocketServer::doRun(){
 
   while(!m_stopThread){
-    checkSessions();
+    m_session_mutex.lock();
+    checkSessionsImpl();
     if(m_sessions.size() < m_maxSessions){
+      m_session_mutex.unlock();
       doAccept();
     } else {
+      m_session_mutex.unlock();
       NdbSleep_MilliSleep(200);
     }
   }
@@ -261,17 +281,30 @@ transfer(NDB_SOCKET_TYPE sock){
 void
 SocketServer::foreachSession(void (*func)(SocketServer::Session*, void *), void *data)
 {
+  m_session_mutex.lock();
   for(int i = m_sessions.size() - 1; i >= 0; i--){
     (*func)(m_sessions[i].m_session, data);
   }
-  checkSessions();
+  m_session_mutex.unlock();
 }
 
 void
-SocketServer::checkSessions(){
-  for(int i = m_sessions.size() - 1; i >= 0; i--){
-    if(m_sessions[i].m_session->m_stopped){
-      if(m_sessions[i].m_thread != 0){
+SocketServer::checkSessions()
+{
+  m_session_mutex.lock();
+  checkSessionsImpl();
+  m_session_mutex.unlock();  
+}
+
+void
+SocketServer::checkSessionsImpl()
+{
+  for(int i = m_sessions.size() - 1; i >= 0; i--)
+  {
+    if(m_sessions[i].m_session->m_stopped)
+    {
+      if(m_sessions[i].m_thread != 0)
+      {
 	void* ret;
 	NdbThread_WaitFor(m_sessions[i].m_thread, &ret);
 	NdbThread_Destroy(&m_sessions[i].m_thread);
@@ -286,19 +319,26 @@ SocketServer::checkSessions(){
 void
 SocketServer::stopSessions(bool wait){
   int i;
+  m_session_mutex.lock();
   for(i = m_sessions.size() - 1; i>=0; i--)
   {
     m_sessions[i].m_session->stopSession();
     m_sessions[i].m_session->m_stop = true; // to make sure
   }
+  m_session_mutex.unlock();
+  
   for(i = m_services.size() - 1; i>=0; i--)
     m_services[i].m_service->stopSessions();
   
   if(wait){
+    m_session_mutex.lock();
     while(m_sessions.size() > 0){
-      checkSessions();
+      checkSessionsImpl();
+      m_session_mutex.unlock();
       NdbSleep_MilliSleep(100);
+      m_session_mutex.lock();
     }
+    m_session_mutex.unlock();
   }
 }
 
@@ -314,11 +354,18 @@ sessionThread_C(void* _sc){
     return 0;
   }
   
-  if(!si->m_stop){
-    si->m_stopped = false;
-    si->runSession();
-  } else {
-    NDB_CLOSE_SOCKET(si->m_socket);
+  /**
+   * may have m_stopped set if we're transforming a mgm
+   * connection into a transporter connection.
+   */
+  if(!si->m_stopped)
+  {
+    if(!si->m_stop){
+      si->m_stopped = false;
+      si->runSession();
+    } else {
+      NDB_CLOSE_SOCKET(si->m_socket);
+    }
   }
   
   si->m_stopped = true;
@@ -326,4 +373,4 @@ sessionThread_C(void* _sc){
 }
 
 template class MutexVector<SocketServer::ServiceInstance>;
-template class MutexVector<SocketServer::SessionInstance>;
+template class Vector<SocketServer::SessionInstance>;

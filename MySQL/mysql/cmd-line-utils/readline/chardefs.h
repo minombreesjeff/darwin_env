@@ -59,7 +59,11 @@
 #define largest_char 255		    /* Largest character value. */
 
 #define CTRL_CHAR(c) ((c) < control_character_threshold && (((c) & 0x80) == 0))
+#if largest_char >= 255
+#define META_CHAR(c) ((c) > meta_character_threshold)
+#else
 #define META_CHAR(c) ((c) > meta_character_threshold && (c) <= largest_char)
+#endif
 
 #define CTRL(c) ((c) & control_character_mask)
 #define META(c) ((c) | meta_character_bit)
@@ -77,7 +81,11 @@
 #  define isxdigit(c)   (isdigit((c)) || ((c) >= 'a' && (c) <= 'f') || ((c) >= 'A' && (c) <= 'F'))
 #endif
 
-#define NON_NEGATIVE(c)	((unsigned char)(c) == (c))
+#if defined (CTYPE_NON_ASCII)
+#  define NON_NEGATIVE(c) 1
+#else
+#  define NON_NEGATIVE(c) ((unsigned char)(c) == (c))
+#endif
 
 /* Some systems define these; we want our definitions. */
 #undef ISPRINT

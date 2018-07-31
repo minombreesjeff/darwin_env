@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,15 +38,17 @@
   DESCRIPTION
     This function prepares memory root for further use, sets initial size of
     chunk for memory allocation and pre-allocates first block if specified.
-    Altough error can happen during execution of this function if pre_alloc_size
-    is non-0 it won't be reported. Instead it will be reported as error in first
-    alloc_root() on this memory root.
+    Altough error can happen during execution of this function if
+    pre_alloc_size is non-0 it won't be reported. Instead it will be
+    reported as error in first alloc_root() on this memory root.
 */
+
 void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
 		     uint pre_alloc_size __attribute__((unused)))
 {
   DBUG_ENTER("init_alloc_root");
-  DBUG_PRINT("enter",("root: 0x%lx", mem_root));
+  DBUG_PRINT("enter",("root: 0x%lx", (long) mem_root));
+
   mem_root->free= mem_root->used= mem_root->pre_alloc= 0;
   mem_root->min_malloc= 32;
   mem_root->block_size= block_size - ALLOC_ROOT_MIN_BLOCK_SIZE;
@@ -71,6 +72,7 @@ void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
   DBUG_VOID_RETURN;
 }
 
+
 /*
   SYNOPSIS
     reset_root_defaults()
@@ -86,7 +88,7 @@ void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
     reuse one of existing blocks as prealloc block, or malloc new one of
     requested size. If no blocks can be reused, all unused blocks are freed
     before allocation.
- */
+*/
 
 void reset_root_defaults(MEM_ROOT *mem_root, uint block_size,
                          uint pre_alloc_size __attribute__((unused)))
@@ -131,6 +133,10 @@ void reset_root_defaults(MEM_ROOT *mem_root, uint block_size,
         mem->next= *prev;
         *prev= mem_root->pre_alloc= mem; 
       }
+      else
+      {
+        mem_root->pre_alloc= 0;
+      }
     }
   }
   else
@@ -144,7 +150,7 @@ gptr alloc_root(MEM_ROOT *mem_root,unsigned int Size)
 #if defined(HAVE_purify) && defined(EXTRA_DEBUG)
   reg1 USED_MEM *next;
   DBUG_ENTER("alloc_root");
-  DBUG_PRINT("enter",("root: 0x%lx", mem_root));
+  DBUG_PRINT("enter",("root: 0x%lx", (long) mem_root));
 
   DBUG_ASSERT(alloc_root_inited(mem_root));
 
@@ -158,15 +164,16 @@ gptr alloc_root(MEM_ROOT *mem_root,unsigned int Size)
   next->next= mem_root->used;
   next->size= Size;
   mem_root->used= next;
-  DBUG_PRINT("exit",("ptr: 0x%lx", (((char*) next)+
-                                    ALIGN_SIZE(sizeof(USED_MEM)))));
+  DBUG_PRINT("exit",("ptr: 0x%lx", (long) (((char*) next)+
+                                           ALIGN_SIZE(sizeof(USED_MEM)))));
   DBUG_RETURN((gptr) (((char*) next)+ALIGN_SIZE(sizeof(USED_MEM))));
 #else
   uint get_size, block_size;
   gptr point;
   reg1 USED_MEM *next= 0;
   reg2 USED_MEM **prev;
-
+  DBUG_ENTER("alloc_root");
+  DBUG_PRINT("enter",("root: 0x%lx", (long) mem_root));
   DBUG_ASSERT(alloc_root_inited(mem_root));
 
   Size= ALIGN_SIZE(Size);
@@ -213,15 +220,63 @@ gptr alloc_root(MEM_ROOT *mem_root,unsigned int Size)
     mem_root->used= next;
     mem_root->first_block_usage= 0;
   }
-  return(point);
+  DBUG_PRINT("exit",("ptr: 0x%lx", (ulong) point));
+  DBUG_RETURN(point);
 #endif
 }
 
-#ifdef SAFEMALLOC
-#define TRASH(X) bfill(((char*)(X) + ((X)->size-(X)->left)), (X)->left, 0xa5)
-#else
-#define TRASH /* no-op */
-#endif
+
+/*
+  Allocate many pointers at the same time.
+
+  DESCRIPTION
+    ptr1, ptr2, etc all point into big allocated memory area.
+
+  SYNOPSIS
+    multi_alloc_root()
+      root               Memory root
+      ptr1, length1      Multiple arguments terminated by a NULL pointer
+      ptr2, length2      ...
+      ...
+      NULL
+
+  RETURN VALUE
+    A pointer to the beginning of the allocated memory block
+    in case of success or NULL if out of memory.
+*/
+
+gptr multi_alloc_root(MEM_ROOT *root, ...)
+{
+  va_list args;
+  char **ptr, *start, *res;
+  uint tot_length, length;
+  DBUG_ENTER("multi_alloc_root");
+
+  va_start(args, root);
+  tot_length= 0;
+  while ((ptr= va_arg(args, char **)))
+  {
+    length= va_arg(args, uint);
+    tot_length+= ALIGN_SIZE(length);
+  }
+  va_end(args);
+
+  if (!(start= (char*) alloc_root(root, tot_length)))
+    DBUG_RETURN(0);                            /* purecov: inspected */
+
+  va_start(args, root);
+  res= start;
+  while ((ptr= va_arg(args, char **)))
+  {
+    *ptr= res;
+    length= va_arg(args, uint);
+    res+= ALIGN_SIZE(length);
+  }
+  va_end(args);
+  DBUG_RETURN((gptr) start);
+}
+
+#define TRASH_MEM(X) TRASH(((char*)(X) + ((X)->size-(X)->left)), (X)->left)
 
 /* Mark all data in blocks free for reusage */
 
@@ -235,7 +290,7 @@ static inline void mark_blocks_free(MEM_ROOT* root)
   for (next= root->free; next; next= *(last= &next->next))
   {
     next->left= next->size - ALIGN_SIZE(sizeof(USED_MEM));
-    TRASH(next);
+    TRASH_MEM(next);
   }
 
   /* Combine the free and the used list */
@@ -245,7 +300,7 @@ static inline void mark_blocks_free(MEM_ROOT* root)
   for (; next; next= next->next)
   {
     next->left= next->size - ALIGN_SIZE(sizeof(USED_MEM));
-    TRASH(next);
+    TRASH_MEM(next);
   }
 
   /* Now everything is set; Indicate that nothing is used anymore */
@@ -257,13 +312,27 @@ static inline void mark_blocks_free(MEM_ROOT* root)
 /*
   Deallocate everything used by alloc_root or just move
   used blocks to free list if called with MY_USED_TO_FREE
+
+  SYNOPSIS
+    free_root()
+      root		Memory root
+      MyFlags		Flags for what should be freed:
+
+        MY_MARK_BLOCKS_FREED	Don't free blocks, just mark them free
+        MY_KEEP_PREALLOC	If this is not set, then free also the
+        		        preallocated block
+
+  NOTES
+    One can call this function either with root block initialised with
+    init_alloc_root() or with a bzero()-ed block.
+    It's also safe to call this multiple times with the same mem_root.
 */
 
 void free_root(MEM_ROOT *root, myf MyFlags)
 {
   reg1 USED_MEM *next,*old;
   DBUG_ENTER("free_root");
-  DBUG_PRINT("enter",("root: 0x%lx  flags: %u", root, (uint) MyFlags));
+  DBUG_PRINT("enter",("root: 0x%lx  flags: %u", (long) root, (uint) MyFlags));
 
   if (!root)					/* QQ: Should be deleted */
     DBUG_VOID_RETURN; /* purecov: inspected */
@@ -292,7 +361,7 @@ void free_root(MEM_ROOT *root, myf MyFlags)
   {
     root->free=root->pre_alloc;
     root->free->left=root->pre_alloc->size-ALIGN_SIZE(sizeof(USED_MEM));
-    TRASH(root->pre_alloc);
+    TRASH_MEM(root->pre_alloc);
     root->free->next=0;
   }
   root->block_num= 4;
@@ -328,7 +397,7 @@ void set_prealloc_root(MEM_ROOT *root, char *ptr)
 
 char *strdup_root(MEM_ROOT *root,const char *str)
 {
-  return strmake_root(root, str, strlen(str));
+  return strmake_root(root, str, (uint) strlen(str));
 }
 
 char *strmake_root(MEM_ROOT *root,const char *str, uint len)

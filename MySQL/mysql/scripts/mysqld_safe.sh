@@ -31,9 +31,7 @@ Usage: $0 [OPTIONS]
   --defaults-file=FILE       Use the specified defaults file
   --defaults-extra-file=FILE Also use defaults from the specified file
   --ledir=DIRECTORY          Look for mysqld in the specified directory
-  --err-log=FILE             Obsolete, use '--log-error'
   --log-error=FILE           Log errors to the specified log file
-  --open-files=LIMIT         Obsolete, use '--open-files-limit'
   --open-files-limit=LIMIT   Limit the number of open files
   --core-file-size=LIMIT     Limit core files to the specified size
   --timezone=TZ              Set the system timezone
@@ -78,11 +76,7 @@ parse_arguments() {
 
       # mysqld_safe-specific options - must be set in my.cnf ([mysqld_safe])!
       --ledir=*)   ledir=`echo "$arg" | sed -e "s;--ledir=;;"` ;;
-      # err-log should be removed in 5.0
-      --err-log=*) err_log=`echo "$arg" | sed -e "s;--err-log=;;"` ;;
       --log-error=*) err_log=`echo "$arg" | sed -e "s;--log-error=;;"` ;;
-      # QQ The --open-files should be removed in 5.0
-      --open-files=*) open_files=`echo "$arg" | sed -e "s;--open-files=;;"` ;;
       --open-files-limit=*) open_files=`echo "$arg" | sed -e "s;--open-files-limit=;;"` ;;
       --core-file-size=*) core_file_size=`echo "$arg" | sed -e "s;--core-file-size=;;"` ;;
       --timezone=*) TZ=`echo "$arg" | sed -e "s;--timezone=;;"` ; export TZ; ;;
@@ -143,7 +137,7 @@ fi
 if test -d $MY_BASEDIR_VERSION/data/mysql
 then
   DATADIR=$MY_BASEDIR_VERSION/data
-  if test -z "$defaults"
+  if test -z "$defaults" -a -r "$DATADIR/my.cnf"
   then
     defaults="--defaults-extra-file=$DATADIR/my.cnf"
   fi
@@ -155,6 +149,28 @@ then
 else
   DATADIR=@localstatedir@
 fi
+
+if test -z "$MYSQL_HOME"
+then 
+  if test -r "$MY_BASEDIR_VERSION/my.cnf" && test -r "$DATADIR/my.cnf"
+  then
+    echo "WARNING: Found two instances of my.cnf -"
+    echo "$MY_BASEDIR_VERSION/my.cnf and"
+    echo "$DATADIR/my.cnf"
+    echo "IGNORING $DATADIR/my.cnf"
+    echo
+    MYSQL_HOME=$MY_BASEDIR_VERSION
+  elif test -r "$DATADIR/my.cnf"
+  then
+    echo "WARNING: Found $DATADIR/my.cnf"
+    echo "Datadir is deprecated place for my.cnf, please move it to $MY_BASEDIR_VERSION"
+    echo
+    MYSQL_HOME=$DATADIR
+  else
+    MYSQL_HOME=$MY_BASEDIR_VERSION
+  fi
+fi
+export MYSQL_HOME
 
 user=@MYSQLD_USER@
 niceness=0
@@ -195,6 +211,7 @@ if [ ! -d $mysql_unix_port_dir ]
 then
   mkdir $mysql_unix_port_dir
   chown $user $mysql_unix_port_dir
+  chmod 755 $mysql_unix_port_dir
 fi
 
 # Use the mysqld-max binary by default if the user doesn't specify a binary
@@ -305,10 +322,13 @@ then
     ulimit -n $open_files
     args="--open-files-limit=$open_files $args"
   fi
-  if test -n "$core_file_size"
-  then
-    ulimit -c $core_file_size
-  fi
+fi
+
+# Try to set the core file size (even if we aren't root) because many systems
+# don't specify a hard limit on core file size.
+if test -n "$core_file_size"
+then
+  ulimit -c $core_file_size
 fi
 
 #

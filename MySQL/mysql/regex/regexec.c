@@ -15,11 +15,12 @@
 #include "utils.h"
 #include "regex2.h"
 
-static int nope = 0;		/* for use in asserts; shuts lint up */
+/* for use in asserts */
+#define nope 0
 
 /* macros for manipulating states, small version */
 #define	states	long
-#define	states1	states		/* for later use in regexec() decision */
+#define	states1	long		/* for later use in regexec() decision. Ensure Win64 definition is correct.*/
 #define	CLEAR(v)	((v) = 0)
 #define	SET0(v, n)	((v) &= ~((states) 1 << (n)))
 #define	SET1(v, n)	((v) |= (states) 1 << (n))

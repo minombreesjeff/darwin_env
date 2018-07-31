@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,8 +32,10 @@ int vio_read(Vio * vio, gptr buf, int size)
 {
   int r;
   DBUG_ENTER("vio_read");
-  DBUG_PRINT("enter", ("sd=%d, buf=%p, size=%d", vio->sd, buf, size));
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, (long) buf, size));
 
+  /* Ensure nobody uses vio_read_buff and vio_read simultaneously */
+  DBUG_ASSERT(vio->read_end == vio->read_pos);
 #ifdef __WIN__
   r = recv(vio->sd, buf, size,0);
 #else
@@ -52,11 +53,55 @@ int vio_read(Vio * vio, gptr buf, int size)
 }
 
 
+/*
+  Buffered read: if average read size is small it may
+  reduce number of syscalls.
+*/
+
+int vio_read_buff(Vio *vio, gptr buf, int size)
+{
+  int rc;
+#define VIO_UNBUFFERED_READ_MIN_SIZE 2048
+  DBUG_ENTER("vio_read_buff");
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, (long) buf, size));
+
+  if (vio->read_pos < vio->read_end)
+  {
+    rc= min(vio->read_end - vio->read_pos, size);
+    memcpy(buf, vio->read_pos, rc);
+    vio->read_pos+= rc;
+    /*
+      Do not try to read from the socket now even if rc < size:
+      vio_read can return -1 due to an error or non-blocking mode, and
+      the safest way to handle it is to move to a separate branch.
+    */
+  }
+  else if (size < VIO_UNBUFFERED_READ_MIN_SIZE)
+  {
+    rc= vio_read(vio, vio->read_buffer, VIO_READ_BUFFER_SIZE);
+    if (rc > 0)
+    {
+      if (rc > size)
+      {
+        vio->read_pos= vio->read_buffer + size;
+        vio->read_end= vio->read_buffer + rc;
+        rc= size;
+      }
+      memcpy(buf, vio->read_buffer, rc);
+    }
+  }
+  else
+    rc= vio_read(vio, buf, size);
+  DBUG_RETURN(rc);
+#undef VIO_UNBUFFERED_READ_MIN_SIZE
+}
+
+
 int vio_write(Vio * vio, const gptr buf, int size)
 {
   int r;
   DBUG_ENTER("vio_write");
-  DBUG_PRINT("enter", ("sd=%d, buf=%p, size=%d", vio->sd, buf, size));
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, (long) buf, size));
 #ifdef __WIN__
   r = send(vio->sd, buf, size,0);
 #else
@@ -159,13 +204,14 @@ int vio_fastsend(Vio * vio __attribute__((unused)))
   {
 #ifdef __WIN__
     BOOL nodelay= 1;
-    r= setsockopt(vio->sd, IPPROTO_TCP, TCP_NODELAY, (const char*) &nodelay,
-                  sizeof(nodelay));
 #else
     int nodelay = 1;
-    r= setsockopt(vio->sd, IPPROTO_TCP, TCP_NODELAY, (void*) &nodelay,
+#endif
+
+    r= setsockopt(vio->sd, IPPROTO_TCP, TCP_NODELAY,
+                  IF_WIN(const char*, void*) &nodelay,
                   sizeof(nodelay));
-#endif                                          /* __WIN__ */
+
   }
   if (r)
   {
@@ -181,7 +227,7 @@ int vio_keepalive(Vio* vio, my_bool set_keep_alive)
   int r=0;
   uint opt = 0;
   DBUG_ENTER("vio_keepalive");
-  DBUG_PRINT("enter", ("sd=%d, set_keep_alive=%d", vio->sd, (int)
+  DBUG_PRINT("enter", ("sd: %d  set_keep_alive: %d", vio->sd, (int)
 		       set_keep_alive));
   if (vio->type != VIO_TYPE_NAMEDPIPE)
   {
@@ -230,7 +276,7 @@ int vio_close(Vio * vio)
  if (vio->type != VIO_CLOSED)
   {
     DBUG_ASSERT(vio->sd >= 0);
-    if (shutdown(vio->sd,2))
+    if (shutdown(vio->sd, SHUT_RDWR))
       r= -1;
     if (closesocket(vio->sd))
       r= -1;
@@ -335,28 +381,39 @@ my_bool vio_poll_read(Vio *vio,uint timeout)
 
 void vio_timeout(Vio *vio, uint which, uint timeout)
 {
-/* TODO: some action should be taken if socket timeouts are not supported. */
 #if defined(SO_SNDTIMEO) && defined(SO_RCVTIMEO)
+  int r;
+  DBUG_ENTER("vio_timeout");
 
+  {
 #ifdef __WIN__
-
-  /* Windows expects time in milliseconds as int. */
+  /* Windows expects time in milliseconds as int */
   int wait_timeout= (int) timeout * 1000;
-
-#else  /* ! __WIN__ */
-
+#else
   /* POSIX specifies time as struct timeval. */
   struct timeval wait_timeout;
   wait_timeout.tv_sec= timeout;
   wait_timeout.tv_usec= 0;
+#endif
 
-#endif /* ! __WIN__ */
+  r= setsockopt(vio->sd, SOL_SOCKET, which ? SO_SNDTIMEO : SO_RCVTIMEO,
+                IF_WIN(const char*, const void*)&wait_timeout,
+                sizeof(wait_timeout));
 
-  /* TODO: return value should be checked. */
-  (void) setsockopt(vio->sd, SOL_SOCKET, which ? SO_SNDTIMEO : SO_RCVTIMEO,
-                    (char*) &wait_timeout, sizeof(wait_timeout));
+  }
 
-#endif /* defined(SO_SNDTIMEO) && defined(SO_RCVTIMEO) */
+#ifndef DBUG_OFF
+  if (r != 0)
+    DBUG_PRINT("error", ("setsockopt failed: %d, errno: %d", r, socket_errno));
+#endif
+
+  DBUG_VOID_RETURN;
+#else
+/*
+  Platforms not suporting setting of socket timeout should either use
+  thr_alarm or just run without read/write timeout(s)
+*/
+#endif
 }
 
 
@@ -365,7 +422,7 @@ int vio_read_pipe(Vio * vio, gptr buf, int size)
 {
   DWORD length;
   DBUG_ENTER("vio_read_pipe");
-  DBUG_PRINT("enter", ("sd=%d, buf=%p, size=%d", vio->sd, buf, size));
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, buf, size));
 
   if (!ReadFile(vio->hPipe, buf, size, &length, NULL))
     DBUG_RETURN(-1);
@@ -379,7 +436,7 @@ int vio_write_pipe(Vio * vio, const gptr buf, int size)
 {
   DWORD length;
   DBUG_ENTER("vio_write_pipe");
-  DBUG_PRINT("enter", ("sd=%d, buf=%p, size=%d", vio->sd, buf, size));
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, buf, size));
 
   if (!WriteFile(vio->hPipe, (char*) buf, size, &length, NULL))
     DBUG_RETURN(-1);
@@ -424,7 +481,7 @@ int vio_read_shared_memory(Vio * vio, gptr buf, int size)
   char *current_postion;
 
   DBUG_ENTER("vio_read_shared_memory");
-  DBUG_PRINT("enter", ("sd=%d, buf=%p, size=%d", vio->sd, buf, size));
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, buf, size));
 
   remain_local = size;
   current_postion=buf;
@@ -485,7 +542,7 @@ int vio_write_shared_memory(Vio * vio, const gptr buf, int size)
   char *current_postion;
 
   DBUG_ENTER("vio_write_shared_memory");
-  DBUG_PRINT("enter", ("sd=%d, buf=%p, size=%d", vio->sd, buf, size));
+  DBUG_PRINT("enter", ("sd: %d  buf: 0x%lx  size: %d", vio->sd, buf, size));
 
   remain = size;
   current_postion = buf;
@@ -513,9 +570,13 @@ int vio_write_shared_memory(Vio * vio, const gptr buf, int size)
 }
 
 
+/**
+ Close shared memory and DBUG_PRINT any errors that happen on closing.
+ @return Zero if all closing functions succeed, and nonzero otherwise.
+*/
 int vio_close_shared_memory(Vio * vio)
 {
-  int r;
+  int error_count= 0;
   DBUG_ENTER("vio_close_shared_memory");
   if (vio->type != VIO_CLOSED)
   {
@@ -528,18 +589,45 @@ int vio_close_shared_memory(Vio * vio)
       Close all handlers. UnmapViewOfFile and CloseHandle return non-zero
       result if they are success.
     */
-    r= UnmapViewOfFile(vio->handle_map) || CloseHandle(vio->event_server_wrote) ||
-       CloseHandle(vio->event_server_read) || CloseHandle(vio->event_client_wrote) ||
-       CloseHandle(vio->event_client_read) || CloseHandle(vio->handle_file_map);
-    if (!r)
+    if (UnmapViewOfFile(vio->handle_map) == 0) 
     {
-      DBUG_PRINT("vio_error", ("close() failed, error: %d",r));
-      /* FIXME: error handling (not critical for MySQL) */
+      error_count++;
+      DBUG_PRINT("vio_error", ("UnmapViewOfFile() failed"));
+    }
+    if (CloseHandle(vio->event_server_wrote) == 0)
+    {
+      error_count++;
+      DBUG_PRINT("vio_error", ("CloseHandle(vio->esw) failed"));
+    }
+    if (CloseHandle(vio->event_server_read) == 0)
+    {
+      error_count++;
+      DBUG_PRINT("vio_error", ("CloseHandle(vio->esr) failed"));
+    }
+    if (CloseHandle(vio->event_client_wrote) == 0)
+    {
+      error_count++;
+      DBUG_PRINT("vio_error", ("CloseHandle(vio->ecw) failed"));
+    }
+    if (CloseHandle(vio->event_client_read) == 0)
+    {
+      error_count++;
+      DBUG_PRINT("vio_error", ("CloseHandle(vio->ecr) failed"));
+    }
+    if (CloseHandle(vio->handle_file_map) == 0)
+    {
+      error_count++;
+      DBUG_PRINT("vio_error", ("CloseHandle(vio->hfm) failed"));
+    }
+    if (CloseHandle(vio->event_conn_closed) == 0)
+    {
+      error_count++;
+      DBUG_PRINT("vio_error", ("CloseHandle(vio->ecc) failed"));
     }
   }
   vio->type= VIO_CLOSED;
   vio->sd=   -1;
-  DBUG_RETURN(!r);
+  DBUG_RETURN(error_count);
 }
 #endif /* HAVE_SMEM */
 #endif /* __WIN__ */

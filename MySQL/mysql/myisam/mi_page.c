@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2004, 2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,7 +26,7 @@ uchar *_mi_fetch_keypage(register MI_INFO *info, MI_KEYDEF *keyinfo,
   uchar *tmp;
   uint page_size;
   DBUG_ENTER("_mi_fetch_keypage");
-  DBUG_PRINT("enter",("page: %ld",page));
+  DBUG_PRINT("enter",("page: %ld", (long) page));
 
   tmp=(uchar*) key_cache_read(info->s->key_cache,
                              info->s->kfile, page, level, (byte*) buff,
@@ -40,6 +39,7 @@ uchar *_mi_fetch_keypage(register MI_INFO *info, MI_KEYDEF *keyinfo,
   {
     DBUG_PRINT("error",("Got errno: %d from key_cache_read",my_errno));
     info->last_keypage=HA_OFFSET_ERROR;
+    mi_print_error(info->s, HA_ERR_CRASHED);
     my_errno=HA_ERR_CRASHED;
     DBUG_RETURN(0);
   }
@@ -51,6 +51,7 @@ uchar *_mi_fetch_keypage(register MI_INFO *info, MI_KEYDEF *keyinfo,
 			(ulong) page, page_size));
     DBUG_DUMP("page", (char*) tmp, keyinfo->block_length);
     info->last_keypage = HA_OFFSET_ERROR;
+    mi_print_error(info->s, HA_ERR_CRASHED);
     my_errno = HA_ERR_CRASHED;
     tmp = 0;
   }
@@ -78,7 +79,7 @@ int _mi_write_keypage(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     my_errno=EINVAL;
     DBUG_RETURN((-1));
   }
-  DBUG_PRINT("page",("write page at: %lu",(long) page,buff));
+  DBUG_PRINT("page",("write page at: %lu",(long) page));
   DBUG_DUMP("buff",(byte*) buff,mi_getint(buff));
 #endif
 

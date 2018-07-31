@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -83,7 +82,7 @@ bool Gis_read_stream::get_next_number(double *d)
   }
 
   *d = my_strntod(m_charset, (char *)m_cur,
-		  m_limit-m_cur, &endptr, &err);
+		  (uint) (m_limit-m_cur), &endptr, &err);
   if (err)
     return 1;
   if (endptr)
@@ -115,6 +114,6 @@ bool Gis_read_stream::check_next_symbol(char symbol)
 void Gis_read_stream::set_error_msg(const char *msg)
 {
   size_t len= strlen(msg);			// ok in this context
-  m_err_msg= (char *) my_realloc(m_err_msg, len + 1, MYF(MY_ALLOW_ZERO_PTR));
+  m_err_msg= (char *) my_realloc(m_err_msg, (uint) len + 1, MYF(MY_ALLOW_ZERO_PTR));
   memcpy(m_err_msg, msg, len + 1);
 }

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -84,12 +83,12 @@ static void rb_delete_fixup(TREE *tree,TREE_ELEMENT ***parent);
 static int test_rb_tree(TREE_ELEMENT *element);
 #endif
 
-void init_tree(TREE *tree, uint default_alloc_size, uint memory_limit,
+void init_tree(TREE *tree, ulong default_alloc_size, ulong memory_limit,
                int size, qsort_cmp2 compare, my_bool with_delete,
 	       tree_element_free free_element, void *custom_arg)
 {
   DBUG_ENTER("init_tree");
-  DBUG_PRINT("enter",("tree: 0x%lx  size: %d",tree,size));
+  DBUG_PRINT("enter",("tree: 0x%lx  size: %d", (long) tree, size));
 
   if (default_alloc_size < DEFAULT_ALLOC_SIZE)
     default_alloc_size= DEFAULT_ALLOC_SIZE;
@@ -128,7 +127,7 @@ void init_tree(TREE *tree, uint default_alloc_size, uint memory_limit,
   }
   if (!(tree->with_delete=with_delete))
   {
-    init_alloc_root(&tree->mem_root, default_alloc_size,0);
+    init_alloc_root(&tree->mem_root, (uint) default_alloc_size, 0);
     tree->mem_root.min_malloc=(sizeof(TREE_ELEMENT)+tree->size_of_element);
   }
   DBUG_VOID_RETURN;
@@ -137,7 +136,7 @@ void init_tree(TREE *tree, uint default_alloc_size, uint memory_limit,
 static void free_tree(TREE *tree, myf free_flags)
 {
   DBUG_ENTER("free_tree");
-  DBUG_PRINT("enter",("tree: 0x%lx",tree));
+  DBUG_PRINT("enter",("tree: 0x%lx", (long) tree));
 
   if (tree->root)				/* If initialized */
   {
@@ -263,12 +262,15 @@ TREE_ELEMENT *tree_insert(TREE *tree, void *key, uint key_size,
     if (tree->flag & TREE_NO_DUPS)
       return(NULL);
     element->count++;
+    /* Avoid a wrap over of the count. */
+    if (! element->count)
+      element->count--;
   }
   DBUG_EXECUTE("check_tree", test_rb_tree(tree->root););
   return element;
 }
 
-int tree_delete(TREE *tree, void *key, void *custom_arg)
+int tree_delete(TREE *tree, void *key, uint key_size, void *custom_arg)
 {
   int cmp,remove_colour;
   TREE_ELEMENT *element,***parent, ***org_parent, *nod;
@@ -323,8 +325,7 @@ int tree_delete(TREE *tree, void *key, void *custom_arg)
     rb_delete_fixup(tree,parent);
   if (tree->free)
     (*tree->free)(ELEMENT_KEY(tree,element), free_free, tree->custom_arg);
-  /* This doesn't include key_size, but better than nothing */
-  tree->allocated-= sizeof(TREE_ELEMENT)+tree->size_of_element;
+  tree->allocated-= sizeof(TREE_ELEMENT) + tree->size_of_element + key_size;
   my_free((gptr) element,MYF(0));
   tree->elements_in_tree--;
   return 0;

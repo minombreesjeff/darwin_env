@@ -80,6 +80,9 @@ const char *client_errors[]=
   "Row retrieval was canceled by mysql_stmt_close() call",
   "Attempt to read column without prior row fetch",
   "Prepared statement contains no metadata",
+  "Attempt to read a row while there is no result set associated with the statement",
+  "This feature is not implemented yet",
+  "Lost connection to MySQL server at '%s', system error: %d",
   ""
 };
 
@@ -141,6 +144,9 @@ const char *client_errors[]=
   "Row retrieval was canceled by mysql_stmt_close() call",
   "Attempt to read column without prior row fetch",
   "Prepared statement contains no metadata",
+  "Attempt to read a row while there is no result set associated with the statement",
+  "This feature is not implemented yet",
+  "Lost connection to MySQL server at '%s', system error: %d",
   ""
 };
 
@@ -200,12 +206,41 @@ const char *client_errors[]=
   "Row retrieval was canceled by mysql_stmt_close() call",
   "Attempt to read column without prior row fetch",
   "Prepared statement contains no metadata",
+  "Attempt to read a row while there is no result set associated with the statement",
+  "This feature is not implemented yet",
+  "Lost connection to MySQL server at '%s', system error: %d",
   ""
 };
 #endif
 
 
+/*
+  Register client error messages for use with my_error().
+
+  SYNOPSIS
+    init_client_errs()
+
+  RETURN
+    void
+*/
+
 void init_client_errs(void)
 {
-  my_errmsg[CLIENT_ERRMAP] = &client_errors[0];
+  (void) my_error_register(client_errors, CR_ERROR_FIRST, CR_ERROR_LAST);
+}
+
+
+/*
+  Unregister client error messages.
+
+  SYNOPSIS
+    finish_client_errs()
+
+  RETURN
+    void
+*/
+
+void finish_client_errs(void)
+{
+  (void) my_error_unregister(CR_ERROR_FIRST, CR_ERROR_LAST);
 }

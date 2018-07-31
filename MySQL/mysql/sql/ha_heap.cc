@@ -1,9 +1,8 @@
-/* Copyright (C) 2000,2004 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,12 +22,48 @@
 #include <myisampack.h>
 #include "ha_heap.h"
 
+handlerton heap_hton= {
+  "MEMORY",
+  SHOW_OPTION_YES,
+  "Hash based, stored in memory, useful for temporary tables", 
+  DB_TYPE_HEAP,
+  NULL,
+  0,       /* slot */
+  0,       /* savepoint size. */
+  NULL,    /* close_connection */
+  NULL,    /* savepoint */
+  NULL,    /* rollback to savepoint */
+  NULL,    /* release savepoint */
+  NULL,    /* commit */
+  NULL,    /* rollback */
+  NULL,    /* prepare */
+  NULL,    /* recover */
+  NULL,    /* commit_by_xid */
+  NULL,    /* rollback_by_xid */
+  NULL,    /* create_cursor_read_view */
+  NULL,    /* set_cursor_read_view */
+  NULL,    /* close_cursor_read_view */
+  HTON_CAN_RECREATE
+};
+
 /*****************************************************************************
 ** HEAP tables
 *****************************************************************************/
 
+ha_heap::ha_heap(TABLE *table_arg)
+  :handler(&heap_hton, table_arg), file(0), records_changed(0),
+  key_stat_version(0)
+{}
+
+
+static const char *ha_heap_exts[] = {
+  NullS
+};
+
 const char **ha_heap::bas_ext() const
-{ static const char *ext[1]= { NullS }; return ext; }
+{
+  return ha_heap_exts;
+}
 
 /*
   Hash index statistics is updated (copied from HP_KEYDEF::hash_buckets to 
@@ -98,16 +133,17 @@ int ha_heap::close(void)
 void ha_heap::set_keys_for_scanning(void)
 {
   btree_keys.clear_all();
-  for (uint i= 0 ; i < table->keys ; i++)
+  for (uint i= 0 ; i < table->s->keys ; i++)
   {
     if (table->key_info[i].algorithm == HA_KEY_ALG_BTREE)
       btree_keys.set_bit(i);
   }
 }
 
+
 void ha_heap::update_key_stats()
 {
-  for (uint i= 0; i < table->keys; i++)
+  for (uint i= 0; i < table->s->keys; i++)
   {
     KEY *key=table->key_info+i;
     if (!key->rec_per_key)
@@ -131,17 +167,21 @@ void ha_heap::update_key_stats()
   key_stat_version= file->s->key_stat_version;
 }
 
+
 int ha_heap::write_row(byte * buf)
 {
   int res;
-  statistic_increment(ha_write_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_write_count,&LOCK_status);
   if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_INSERT)
     table->timestamp_field->set_time();
   if (table->next_number_field && buf == table->record[0])
-    update_auto_increment();
+  {
+    if ((res= update_auto_increment()))
+      return res;
+  }
   res= heap_write(file,buf);
-  if (!res && ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > 
-              file->s->records)
+  if (!res && (++records_changed*HEAP_STATS_UPDATE_THRESHOLD > 
+               file->s->records))
   {
     /*
        We can perform this safely since only one writer at the time is
@@ -155,7 +195,7 @@ int ha_heap::write_row(byte * buf)
 int ha_heap::update_row(const byte * old_data, byte * new_data)
 {
   int res;
-  statistic_increment(ha_update_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_update_count,&LOCK_status);
   if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_UPDATE)
     table->timestamp_field->set_time();
   res= heap_update(file,old_data,new_data);
@@ -174,9 +214,9 @@ int ha_heap::update_row(const byte * old_data, byte * new_data)
 int ha_heap::delete_row(const byte * buf)
 {
   int res;
-  statistic_increment(ha_delete_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_delete_count,&LOCK_status);
   res= heap_delete(file,buf);
-  if (!res && table->tmp_table == NO_TMP_TABLE && 
+  if (!res && table->s->tmp_table == NO_TMP_TABLE && 
       ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > file->s->records)
   {
     /*
@@ -192,7 +232,8 @@ int ha_heap::index_read(byte * buf, const byte * key, uint key_len,
 			enum ha_rkey_function find_flag)
 {
   DBUG_ASSERT(inited==INDEX);
-  statistic_increment(ha_read_key_count, &LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_key_count,
+		      &LOCK_status);
   int error = heap_rkey(file,buf,active_index, key, key_len, find_flag);
   table->status = error ? STATUS_NOT_FOUND : 0;
   return error;
@@ -201,7 +242,8 @@ int ha_heap::index_read(byte * buf, const byte * key, uint key_len,
 int ha_heap::index_read_last(byte *buf, const byte *key, uint key_len)
 {
   DBUG_ASSERT(inited==INDEX);
-  statistic_increment(ha_read_key_count, &LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_key_count,
+		      &LOCK_status);
   int error= heap_rkey(file, buf, active_index, key, key_len,
 		       HA_READ_PREFIX_LAST);
   table->status= error ? STATUS_NOT_FOUND : 0;
@@ -211,7 +253,8 @@ int ha_heap::index_read_last(byte *buf, const byte *key, uint key_len)
 int ha_heap::index_read_idx(byte * buf, uint index, const byte * key,
 			    uint key_len, enum ha_rkey_function find_flag)
 {
-  statistic_increment(ha_read_key_count, &LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_key_count,
+		      &LOCK_status);
   int error = heap_rkey(file, buf, index, key, key_len, find_flag);
   table->status = error ? STATUS_NOT_FOUND : 0;
   return error;
@@ -220,7 +263,8 @@ int ha_heap::index_read_idx(byte * buf, uint index, const byte * key,
 int ha_heap::index_next(byte * buf)
 {
   DBUG_ASSERT(inited==INDEX);
-  statistic_increment(ha_read_next_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_next_count,
+		      &LOCK_status);
   int error=heap_rnext(file,buf);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
@@ -229,7 +273,8 @@ int ha_heap::index_next(byte * buf)
 int ha_heap::index_prev(byte * buf)
 {
   DBUG_ASSERT(inited==INDEX);
-  statistic_increment(ha_read_prev_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_prev_count,
+		      &LOCK_status);
   int error=heap_rprev(file,buf);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
@@ -238,7 +283,8 @@ int ha_heap::index_prev(byte * buf)
 int ha_heap::index_first(byte * buf)
 {
   DBUG_ASSERT(inited==INDEX);
-  statistic_increment(ha_read_first_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_first_count,
+		      &LOCK_status);
   int error=heap_rfirst(file, buf, active_index);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
@@ -247,7 +293,8 @@ int ha_heap::index_first(byte * buf)
 int ha_heap::index_last(byte * buf)
 {
   DBUG_ASSERT(inited==INDEX);
-  statistic_increment(ha_read_last_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_last_count,
+		      &LOCK_status);
   int error=heap_rlast(file, buf, active_index);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
@@ -260,7 +307,8 @@ int ha_heap::rnd_init(bool scan)
 
 int ha_heap::rnd_next(byte *buf)
 {
-  statistic_increment(ha_read_rnd_next_count,&LOCK_status);
+  statistic_increment(table->in_use->status_var.ha_read_rnd_next_count,
+		      &LOCK_status);
   int error=heap_scan(file, buf);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
@@ -269,10 +317,11 @@ int ha_heap::rnd_next(byte *buf)
 int ha_heap::rnd_pos(byte * buf, byte *pos)
 {
   int error;
-  HEAP_PTR position;
-  statistic_increment(ha_read_rnd_count,&LOCK_status);
-  memcpy_fixed((char*) &position,pos,sizeof(HEAP_PTR));
-  error=heap_rrnd(file, buf, position);
+  HEAP_PTR heap_position;
+  statistic_increment(table->in_use->status_var.ha_read_rnd_count,
+		      &LOCK_status);
+  memcpy_fixed((char*) &heap_position, pos, sizeof(HEAP_PTR));
+  error=heap_rrnd(file, buf, heap_position);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
 }
@@ -284,19 +333,19 @@ void ha_heap::position(const byte *record)
 
 int ha_heap::info(uint flag)
 {
-  HEAPINFO info;
-  (void) heap_info(file,&info,flag);
+  HEAPINFO hp_info;
+  (void) heap_info(file,&hp_info,flag);
 
-  records = info.records;
-  deleted = info.deleted;
-  errkey  = info.errkey;
-  mean_rec_length=info.reclength;
-  data_file_length=info.data_length;
-  index_file_length=info.index_length;
-  max_data_file_length= info.max_records* info.reclength;
-  delete_length= info.deleted * info.reclength;
+  records= hp_info.records;
+  deleted= hp_info.deleted;
+  errkey=  hp_info.errkey;
+  mean_rec_length= hp_info.reclength;
+  data_file_length= hp_info.data_length;
+  index_file_length= hp_info.index_length;
+  max_data_file_length= hp_info.max_records* hp_info.reclength;
+  delete_length= hp_info.deleted * hp_info.reclength;
   if (flag & HA_STATUS_AUTO)
-    auto_increment_value= info.auto_increment;
+    auto_increment_value= hp_info.auto_increment;
   /*
     If info() is called for the first time after open(), we will still
     have to update the key statistics. Hoping that a table lock is now
@@ -315,7 +364,7 @@ int ha_heap::extra(enum ha_extra_function operation)
 int ha_heap::delete_all_rows()
 {
   heap_clear(file);
-  if (table->tmp_table == NO_TMP_TABLE)
+  if (table->s->tmp_table == NO_TMP_TABLE)
   {
     /*
        We can perform this safely since only one writer at the time is
@@ -494,23 +543,25 @@ ha_rows ha_heap::records_in_range(uint inx, key_range *min_key,
 int ha_heap::create(const char *name, TABLE *table_arg,
 		    HA_CREATE_INFO *create_info)
 {
-  uint key, parts, mem_per_row= 0;
+  uint key, parts, mem_per_row= 0, keys= table_arg->s->keys;
   uint auto_key= 0, auto_key_type= 0;
   ha_rows max_rows;
   HP_KEYDEF *keydef;
   HA_KEYSEG *seg;
   char buff[FN_REFLEN];
   int error;
+  TABLE_SHARE *share= table_arg->s;
+  bool found_real_auto_increment= 0;
 
-  for (key= parts= 0; key < table_arg->keys; key++)
+  for (key= parts= 0; key < keys; key++)
     parts+= table_arg->key_info[key].key_parts;
 
-  if (!(keydef= (HP_KEYDEF*) my_malloc(table_arg->keys * sizeof(HP_KEYDEF) +
+  if (!(keydef= (HP_KEYDEF*) my_malloc(keys * sizeof(HP_KEYDEF) +
 				       parts * sizeof(HA_KEYSEG),
 				       MYF(MY_WME))))
     return my_errno;
-  seg= my_reinterpret_cast(HA_KEYSEG*) (keydef + table_arg->keys);
-  for (key= 0; key < table_arg->keys; key++)
+  seg= my_reinterpret_cast(HA_KEYSEG*) (keydef + keys);
+  for (key= 0; key < keys; key++)
   {
     KEY *pos= table_arg->key_info+key;
     KEY_PART_INFO *key_part=     pos->key_part;
@@ -533,23 +584,30 @@ int ha_heap::create(const char *name, TABLE *table_arg,
     default:
       DBUG_ASSERT(0); // cannot happen
     }
-    keydef[key].algorithm= ((pos->algorithm == HA_KEY_ALG_UNDEF) ?
-			    HA_KEY_ALG_HASH : pos->algorithm);
 
     for (; key_part != key_part_end; key_part++, seg++)
     {
       Field *field= key_part->field;
+
       if (pos->algorithm == HA_KEY_ALG_BTREE)
 	seg->type= field->key_type();
       else
       {
-        if ((seg->type = field->key_type()) != (int) HA_KEYTYPE_TEXT)
+        if ((seg->type = field->key_type()) != (int) HA_KEYTYPE_TEXT &&
+            seg->type != HA_KEYTYPE_VARTEXT1 &&
+            seg->type != HA_KEYTYPE_VARTEXT2 &&
+            seg->type != HA_KEYTYPE_VARBINARY1 &&
+            seg->type != HA_KEYTYPE_VARBINARY2)
           seg->type= HA_KEYTYPE_BINARY;
       }
       seg->start=   (uint) key_part->offset;
       seg->length=  (uint) key_part->length;
-      seg->flag =   0;
-      seg->charset= field->charset();
+      seg->flag=    key_part->key_part_flag;
+
+      if (field->flags & (ENUM_FLAG | SET_FLAG))
+        seg->charset= &my_charset_bin;
+      else
+        seg->charset= field->charset();
       if (field->null_ptr)
       {
 	seg->null_bit= field->null_bit;
@@ -562,7 +620,7 @@ int ha_heap::create(const char *name, TABLE *table_arg,
       }
       if (field->flags & AUTO_INCREMENT_FLAG &&
           table_arg->found_next_number_field &&
-          key == table_arg->next_number_index)
+          key == share->next_number_index)
       {
         /*
           Store key number and type for found auto_increment key
@@ -573,21 +631,29 @@ int ha_heap::create(const char *name, TABLE *table_arg,
       }
     }
   }
-  mem_per_row+= MY_ALIGN(table_arg->reclength + 1, sizeof(char*));
+  mem_per_row+= MY_ALIGN(share->reclength + 1, sizeof(char*));
+  max_rows = (ha_rows) (table->in_use->variables.max_heap_table_size /
+			(ulonglong) mem_per_row);
+  if (table_arg->found_next_number_field)
+  {
+    keydef[share->next_number_index].flag|= HA_AUTO_KEY;
+    found_real_auto_increment= share->next_number_key_offset == 0;
+  }
   HP_CREATE_INFO hp_create_info;
   hp_create_info.auto_key= auto_key;
   hp_create_info.auto_key_type= auto_key_type;
   hp_create_info.auto_increment= (create_info->auto_increment_value ?
 				  create_info->auto_increment_value - 1 : 0);
   hp_create_info.max_table_size=current_thd->variables.max_heap_table_size;
+  hp_create_info.with_auto_increment= found_real_auto_increment;
   max_rows = (ha_rows) (hp_create_info.max_table_size / mem_per_row);
   error= heap_create(fn_format(buff,name,"","",
                                MY_REPLACE_EXT|MY_UNPACK_FILENAME),
-		     table_arg->keys,keydef, table_arg->reclength,
-		     (ulong) ((table_arg->max_rows < max_rows &&
-			       table_arg->max_rows) ?
-			      table_arg->max_rows : max_rows),
-		     (ulong) table_arg->min_rows, &hp_create_info);
+		     keys, keydef, share->reclength,
+		     (ulong) ((share->max_rows < max_rows &&
+			       share->max_rows) ? 
+			      share->max_rows : max_rows),
+		     (ulong) share->min_rows, &hp_create_info);
   my_free((gptr) keydef, MYF(0));
   if (file)
     info(HA_STATUS_NO_LOCK | HA_STATUS_CONST | HA_STATUS_VARIABLE);
@@ -602,7 +668,7 @@ void ha_heap::update_create_info(HA_CREATE_INFO *create_info)
     create_info->auto_increment_value= auto_increment_value;
 }
 
-longlong ha_heap::get_auto_increment()
+ulonglong ha_heap::get_auto_increment()
 {
   ha_heap::info(HA_STATUS_AUTO);
   return auto_increment_value;

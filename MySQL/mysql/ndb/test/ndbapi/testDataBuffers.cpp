@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -209,7 +208,7 @@ makeOff(int k)
 }
 
 static int
-testcase(int flag)
+testcase(Ndb_cluster_connection&cc, int flag)
 {
     ndbout << "--- case " << flag << " ---" << endl;
     sprintf(tab, "TB%02d", flag);
@@ -437,9 +436,9 @@ testcase(int flag)
 	if ((con = ndb->startTransaction()) == 0)
 	    return ndberror("startTransaction key=%d", key);
 	if ((op = sop = con->getNdbScanOperation(tab)) == 0)
-	    return ndberror("getNdbOperation key=%d", key);
-	if ((rs = sop->readTuples(1)) == 0)
-	    return ndberror("openScanRead key=%d", key);
+	  return ndberror("getNdbOperation key=%d", key);
+	if (sop->readTuples(1))
+	  return ndberror("openScanRead key=%d", key);
 	{
 	    col& c = ccol[0];
 	    if (op->load_const_u32(1, key) < 0)
@@ -482,7 +481,7 @@ testcase(int flag)
 	if (con->execute(NoCommit) < 0)
 	    return ndberror("executeScan key=%d", key);
 	int ret, cnt = 0;
-	while ((ret = rs->nextResult()) == 0) {
+	while ((ret = sop->nextResult()) == 0) {
 	    if (key != newkey)
 		return ndberror("unexpected key=%d newkey=%d", key, newkey);
 	    for (i = 1; i < attrcnt; i++) {
@@ -601,7 +600,13 @@ NDB_COMMAND(testDataBuffers, "testDataBuffers", "testDataBuffers", "testDataBuff
 
     unsigned ok = true;
 
-    ndb = new Ndb("TEST_DB");
+    Ndb_cluster_connection con;
+    if(con.connect(12, 5, 1))
+    {
+      return NDBT_ProgramExit(NDBT_FAILED);
+    }
+
+    ndb = new Ndb(&con, "TEST_DB");
     if (ndb->init() != 0)
     {
 	ndberror("init");
@@ -618,7 +623,7 @@ NDB_COMMAND(testDataBuffers, "testDataBuffers", "testDataBuffers", "testDataBuff
     for (i = 1; 0 == loopcnt || i <= loopcnt; i++) {
 	ndbout << "=== loop " << i << " ===" << endl;
 	for (int flag = 0; flag < (1<<testbits); flag++) {
-	    if (testcase(flag) < 0) {
+	    if (testcase(con, flag) < 0) {
 		ok = false;
 		if (! kontinue)
 		    goto out;

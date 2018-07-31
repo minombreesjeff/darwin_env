@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB & Sasha
+/* Copyright (C) 2001-2005 MySQL AB & Sasha
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,18 +30,18 @@ extern pthread_cond_t COND_rpl_status;
 extern TYPELIB rpl_role_typelib, rpl_status_typelib;
 extern const char* rpl_role_type[], *rpl_status_type[];
 
-pthread_handler_decl(handle_failsafe_rpl,arg);
+pthread_handler_t handle_failsafe_rpl(void *arg);
 void change_rpl_status(RPL_STATUS from_status, RPL_STATUS to_status);
 int find_recovery_captain(THD* thd, MYSQL* mysql);
 int update_slave_list(MYSQL* mysql, MASTER_INFO* mi);
 
 extern HASH slave_list;
 
-int load_master_data(THD* thd);
+bool load_master_data(THD* thd);
 int connect_to_master(THD *thd, MYSQL* mysql, MASTER_INFO* mi);
 
-int show_new_master(THD* thd);
-int show_slave_hosts(THD* thd);
+bool show_new_master(THD* thd);
+bool show_slave_hosts(THD* thd);
 int translate_master(THD* thd, LEX_MASTER_INFO* mi, char* errmsg);
 void init_slave_list();
 void end_slave_list();

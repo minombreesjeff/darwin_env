@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,7 +23,6 @@
 #include <NdbMain.h>
 #include <NDBT.hpp> 
 #include <NdbSleep.h>
-#include <NdbScanFilter.hpp>
  
 int scanReadRecords(Ndb*, 
 		    const NdbDictionary::Table*, 
@@ -34,14 +32,17 @@ int scanReadRecords(Ndb*,
 		    bool headers,
 		    bool useHexFormat,
 		    char delim,
-		    bool orderby);
+		    bool orderby,
+                    bool descending);
 
 NDB_STD_OPTS_VARS;
 
 static const char* _dbname = "TEST_DB";
 static const char* _delimiter = "\t";
-static int _unqualified, _header, _parallelism, _useHexFormat, _lock,
-  _order;
+static int _header, _parallelism, _useHexFormat, _lock,
+  _order, _descending;
+
+const char *load_default_groups[]= { "mysql_cluster",0 };
 
 static struct my_option my_long_options[] =
 {
@@ -58,6 +59,9 @@ static struct my_option my_long_options[] =
   { "order", 'o', "Sort resultset according to index",
     (gptr*) &_order, (gptr*) &_order, 0,
     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
+  { "descending", 'z', "Sort descending (requires order flag)",
+    (gptr*) &_descending, (gptr*) &_descending, 0,
+    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 }, 
   { "header", 'h', "Print header",
     (gptr*) &_header, (gptr*) &_header, 0,
     GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0 }, 
@@ -71,6 +75,7 @@ static struct my_option my_long_options[] =
 };
 static void usage()
 {
+#ifdef NOT_USED
   char desc[] = 
     "tabname\n"\
     "This program reads all records from one table in NDB Cluster\n"\
@@ -78,44 +83,49 @@ static void usage()
     "(It only print error messages if it encounters a permanent error.)\n"\
     "It can also be used to dump the content of a table to file \n"\
     "  ex: select_all --no-header --delimiter=';' T4 > T4.data\n";
+#endif
   ndb_std_print_version();
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+  puts("");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
-}
-static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
-{
-  return ndb_std_get_one_option(optid, opt, argument ? argument :
-				"d:t:O,/tmp/ndb_select_all.trace");
 }
 
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
-  const char *load_default_groups[]= { "mysql_cluster",0 };
   load_defaults("my",load_default_groups,&argc,&argv);
   const char* _tabname;
   int ho_error;
-  if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+#ifndef DBUG_OFF
+  opt_debug= "d:t:O,/tmp/ndb_select_all.trace";
+#endif
+  if ((ho_error=handle_options(&argc, &argv, my_long_options,
+			       ndb_std_get_one_option)))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   if ((_tabname = argv[0]) == 0) {
     usage();
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   }
 
-  Ndb::setConnectString(opt_connect_str);
-  // Connect to Ndb
-  Ndb MyNdb(_dbname);
+  Ndb_cluster_connection con(opt_connect_str);
+  con.set_name("ndb_select_all");
+  if(con.connect(12, 5, 1) != 0)
+  {
+    ndbout << "Unable to connect to management server." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
+  if (con.wait_until_ready(30,0) < 0)
+  {
+    ndbout << "Cluster nodes not ready in 30 seconds." << endl;
+    return NDBT_ProgramExit(NDBT_FAILED);
+  }
 
+  Ndb MyNdb(&con, _dbname );
   if(MyNdb.init() != 0){
     ERR(MyNdb.getNdbError());
     return NDBT_ProgramExit(NDBT_FAILED);
   }
 
-  // Connect to Ndb and wait for it to become ready
-  while(MyNdb.waitUntilReady() != 0)
-    ndbout << "Waiting for ndb to become ready..." << endl;
-   
   // Check if table exists in db
   const NdbDictionary::Table* pTab = NDBT_Table::discoverTableFromDb(&MyNdb, _tabname);
   const NdbDictionary::Index * pIdx = 0;
@@ -138,6 +148,11 @@ int main(int argc, char** argv){
     return NDBT_ProgramExit(NDBT_WRONGARGS);
   }
 
+  if (_descending && ! _order) {
+    ndbout << " Descending flag given without order flag" << endl;
+    return NDBT_ProgramExit(NDBT_WRONGARGS);
+  }
+
   if (scanReadRecords(&MyNdb, 
 		      pTab, 
 		      pIdx,
@@ -145,7 +160,7 @@ int main(int argc, char** argv){
 		      _lock,
 		      _header, 
 		      _useHexFormat, 
-		      (char)*_delimiter, _order) != 0){
+		      (char)*_delimiter, _order, _descending) != 0){
     return NDBT_ProgramExit(NDBT_FAILED);
   }
 
@@ -160,12 +175,12 @@ int scanReadRecords(Ndb* pNdb,
 		    int _lock,
 		    bool headers,
 		    bool useHexFormat,
-		    char delimiter, bool order){
+		    char delimiter, bool order, bool descending){
 
   int                  retryAttempt = 0;
   const int            retryMax = 100;
   int                  check;
-  NdbConnection	       *pTrans;
+  NdbTransaction       *pTrans;
   NdbScanOperation	       *pOp;
   NdbIndexScanOperation * pIOp= 0;
 
@@ -202,7 +217,7 @@ int scanReadRecords(Ndb* pNdb,
       return -1;
     }
 
-    NdbResultSet * rs;
+    int rs;
     switch(_lock + (3 * order)){
     case 1:
       rs = pOp->readTuples(NdbScanOperation::LM_Read, 0, parallel);
@@ -212,20 +227,20 @@ int scanReadRecords(Ndb* pNdb,
       break;
     case 3:
       rs = pIOp->readTuples(NdbScanOperation::LM_CommittedRead, 0, parallel, 
-			    true);
+			    true, descending);
       break;
     case 4:
-      rs = pIOp->readTuples(NdbScanOperation::LM_Read, 0, parallel, true);
+      rs = pIOp->readTuples(NdbScanOperation::LM_Read, 0, parallel, true, descending);
       break;
     case 5:
-      rs = pIOp->readTuples(NdbScanOperation::LM_Exclusive, 0, parallel, true);
+      rs = pIOp->readTuples(NdbScanOperation::LM_Exclusive, 0, parallel, true, descending);
       break;
     case 0:
     default:
       rs = pOp->readTuples(NdbScanOperation::LM_CommittedRead, 0, parallel);
       break;
     }
-    if( rs == 0 ){
+    if( rs != 0 ){
       ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return -1;
@@ -291,7 +306,7 @@ int scanReadRecords(Ndb* pNdb,
       }
     }
 
-    check = pTrans->execute(NoCommit);   
+    check = pTrans->execute(NdbTransaction::NoCommit);   
     if( check == -1 ) {
       const NdbError err = pTrans->getNdbError();
       
@@ -311,7 +326,7 @@ int scanReadRecords(Ndb* pNdb,
     
     int eof;
     int rows = 0;
-    eof = rs->nextResult();
+    eof = pOp->nextResult();
     
     while(eof == 0){
       rows++;
@@ -322,7 +337,7 @@ int scanReadRecords(Ndb* pNdb,
 	ndbout << (*row) << endl;
       }
 
-      eof = rs->nextResult();
+      eof = pOp->nextResult();
     }
     if (eof == -1) {
       const NdbError err = pTrans->getNdbError();

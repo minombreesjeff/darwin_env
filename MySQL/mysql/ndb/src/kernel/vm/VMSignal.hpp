@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,6 +41,16 @@ struct NodeReceiverGroup {
   NodeBitmask m_nodes;
 };
 
+template <unsigned T> struct SignalT
+{
+  SignalHeader header;
+  SegmentedSectionPtr m_sectionPtr[3]; 
+  union {
+    Uint32 theData[T];
+    Uint64 dummyAlign;
+  };
+};
+
 /**
  * class used for passing argumentes to blocks
  */
@@ -78,10 +87,16 @@ public:
 #define VMS_DATA_SIZE \
   (MAX_ATTRIBUTES_IN_TABLE + MAX_TUPLE_SIZE_IN_WORDS + MAX_KEY_SIZE_IN_WORDS)
 
+#if VMS_DATA_SIZE > 8192
+#error "VMSignal buffer is too small"
+#endif
+  
   SignalHeader header; // 28 bytes
   SegmentedSectionPtr m_sectionPtr[3]; 
-  Uint32 theData[25+VMS_DATA_SIZE];  // 2048 32-bit words -> 8K Bytes
-  
+  union {
+    Uint32 theData[8192];  // 8192 32-bit words -> 32K Bytes
+    Uint64 dummyAlign;
+  };
   void garbage_register();
 };
 

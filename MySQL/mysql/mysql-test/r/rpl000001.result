@@ -5,7 +5,7 @@ reset slave;
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8,t9;
 start slave;
 create table t1 (word char(20) not null);
-load data infile '../../std_data/words.dat' into table t1;
+load data infile '../std_data_ln/words.dat' into table t1;
 load data local infile 'MYSQL_TEST_DIR/std_data/words.dat' into table t1;
 select * from t1 limit 10;
 word
@@ -33,39 +33,24 @@ select sum(length(word)) from t1;
 sum(length(word))
 1022
 drop table t1,t3;
+create table t1 (n int) engine=myisam;
 reset master;
 stop slave;
 reset slave;
-create table t1(n int);
-select get_lock("hold_slave",10);
-get_lock("hold_slave",10)
-1
-explain extended select get_lock("hold_slave",10);
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-Warnings:
-Note	1003	select sql_no_cache get_lock(_latin1'hold_slave',10) AS `get_lock("hold_slave",10)`
+lock tables t1 read;
 start slave;
-select release_lock("hold_slave");
-release_lock("hold_slave")
-1
-explain extended select release_lock("hold_slave");
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-Warnings:
-Note	1003	select sql_no_cache release_lock(_latin1'hold_slave') AS `release_lock("hold_slave")`
 unlock tables;
 create table t2(id int);
 insert into t2 values(connection_id());
 create temporary table t3(n int);
 insert into t3 select get_lock('crash_lock%20C', 1) from t2;
- update t1 set n = n + get_lock('crash_lock%20C', 2);
+update t1 set n = n + get_lock('crash_lock%20C', 2);
 select (@id := id) - id from t2;
 (@id := id) - id
 0
 kill @id;
 drop table t2;
-ERROR 08S01: Server shutdown in progress
+Got one of the listed errors
 set global sql_slave_skip_counter=1;
 start slave;
 select count(*) from t1;
@@ -76,6 +61,10 @@ create table t1 (n int);
 insert into t1 values(3456);
 insert into mysql.user (Host, User, Password)
 VALUES ("10.10.10.%", "blafasel2", password("blafasel2"));
+Warnings:
+Warning	1364	Field 'ssl_cipher' doesn't have a default value
+Warning	1364	Field 'x509_issuer' doesn't have a default value
+Warning	1364	Field 'x509_subject' doesn't have a default value
 select select_priv,user from mysql.user where user = _binary'blafasel2';
 select_priv	user
 N	blafasel2
@@ -90,3 +79,4 @@ select select_priv,user from mysql.user where user = _binary'blafasel2';
 select_priv	user
 Y	blafasel2
 drop table t1;
+delete from mysql.user where user="blafasel2";

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,9 +16,19 @@
 #include <my_global.h>
 #include "m_string.h"
 #include "m_ctype.h"
+#include "my_sys.h"  /* Needed for MY_ERRNO_ERANGE */
 #include <errno.h>
 
 #include "stdarg.h"
+
+/*
+  Returns the number of bytes required for strnxfrm().
+*/
+uint my_strnxfrmlen_simple(CHARSET_INFO *cs, uint len)
+{
+  return len * (cs->strxfrm_multiply ? cs->strxfrm_multiply : 1);
+}
+
 
 /*
   Converts a string into its sort key.
@@ -112,6 +121,9 @@ int my_strnncoll_simple(CHARSET_INFO * cs, const uchar *s, uint slen,
     a_length		Length of 'a'
     b			Second string to compare
     b_length		Length of 'b'
+    diff_if_only_endspace_difference
+		        Set to 1 if the strings should be regarded as different
+                        if they only difference in end space
 
   IMPLEMENTATION
     If one string is shorter as the other, then we space extend the other
@@ -130,10 +142,16 @@ int my_strnncoll_simple(CHARSET_INFO * cs, const uchar *s, uint slen,
 */
 
 int my_strnncollsp_simple(CHARSET_INFO * cs, const uchar *a, uint a_length, 
-			  const uchar *b, uint b_length)
+			  const uchar *b, uint b_length,
+                          my_bool diff_if_only_endspace_difference)
 {
   const uchar *map= cs->sort_order, *end;
   uint length;
+  int res;
+
+#ifndef VARCHAR_WITH_DIFF_ENDSPACE_ARE_DIFFERENT_FOR_UNIQUE
+  diff_if_only_endspace_difference= 0;
+#endif
 
   end= a + (length= min(a_length, b_length));
   while (a < end)
@@ -141,9 +159,12 @@ int my_strnncollsp_simple(CHARSET_INFO * cs, const uchar *a, uint a_length,
     if (map[*a++] != map[*b++])
       return ((int) map[a[-1]] - (int) map[b[-1]]);
   }
+  res= 0;
   if (a_length != b_length)
   {
     int swap= 1;
+    if (diff_if_only_endspace_difference)
+      res= 1;                                   /* Assume 'a' is bigger */
     /*
       Check the next not space character of the longer key. If it's < ' ',
       then it's smaller than the other key.
@@ -154,6 +175,7 @@ int my_strnncollsp_simple(CHARSET_INFO * cs, const uchar *a, uint a_length,
       a_length= b_length;
       a= b;
       swap= -1;                                 /* swap sign of result */
+      res= -res;
     }
     for (end= a + a_length-length; a < end ; a++)
     {
@@ -161,36 +183,52 @@ int my_strnncollsp_simple(CHARSET_INFO * cs, const uchar *a, uint a_length,
 	return (*a < ' ') ? -swap : swap;
     }
   }
-  return 0;
+  return res;
 }
 
 
-void my_caseup_str_8bit(CHARSET_INFO * cs,char *str)
+uint my_caseup_str_8bit(CHARSET_INFO * cs,char *str)
 {
-  register uchar *map=cs->to_upper;
-  while ((*str = (char) map[(uchar) *str]) != 0)
+  register uchar *map= cs->to_upper;
+  char *str_orig= str;
+  while ((*str= (char) map[(uchar) *str]) != 0)
     str++;
+  return str - str_orig;
 }
 
-void my_casedn_str_8bit(CHARSET_INFO * cs,char *str)
+
+uint my_casedn_str_8bit(CHARSET_INFO * cs,char *str)
 {
-  register uchar *map=cs->to_lower;
-  while ((*str = (char) map[(uchar)*str]) != 0)
+  register uchar *map= cs->to_lower;
+  char *str_orig= str;
+  while ((*str= (char) map[(uchar) *str]) != 0)
     str++;
+  return str - str_orig;
 }
 
-void my_caseup_8bit(CHARSET_INFO * cs, char *str, uint length)
+
+uint my_caseup_8bit(CHARSET_INFO * cs, char *src, uint srclen,
+                    char *dst __attribute__((unused)),
+                    uint dstlen __attribute__((unused)))
 {
-  register uchar *map=cs->to_upper;
-  for ( ; length>0 ; length--, str++)
-    *str= (char) map[(uchar)*str];
+  uint srclen0= srclen;
+  register uchar *map= cs->to_upper;
+  DBUG_ASSERT(src == dst && srclen == dstlen);
+  for ( ; srclen > 0 ; srclen--, src++)
+    *src= (char) map[(uchar) *src];
+  return srclen0;
 }
 
-void my_casedn_8bit(CHARSET_INFO * cs, char *str, uint length)
+uint my_casedn_8bit(CHARSET_INFO * cs, char *src, uint srclen,
+                    char *dst __attribute__((unused)),
+                    uint dstlen __attribute__((unused)))
 {
+  uint srclen0= srclen;
   register uchar *map=cs->to_lower;
-  for ( ; length>0 ; length--, str++)
-    *str= (char) map[(uchar) *str];
+  DBUG_ASSERT(src == dst && srclen == dstlen);
+  for ( ; srclen > 0 ; srclen--, src++)
+    *src= (char) map[(uchar) *src];
+  return srclen0;
 }
 
 int my_strcasecmp_8bit(CHARSET_INFO * cs,const char *s, const char *t)
@@ -259,14 +297,19 @@ void my_hash_sort_simple(CHARSET_INFO *cs,
 			 ulong *nr1, ulong *nr2)
 {
   register uchar *sort_order=cs->sort_order;
-  const uchar *pos = key;
+  const uchar *end= key + len;
   
-  key+= len;
+  /*
+    Remove end space. We have to do this to be able to compare
+    'A ' and 'A' as identical
+  */
+  while (end > key && end[-1] == ' ')
+    end--;
   
-  for (; pos < (uchar*) key ; pos++)
+  for (; key < (uchar*) end ; key++)
   {
     nr1[0]^=(ulong) ((((uint) nr1[0] & 63)+nr2[0]) * 
-	     ((uint) sort_order[(uint) *pos])) + (nr1[0] << 8);
+	     ((uint) sort_order[(uint) *key])) + (nr1[0] << 8);
     nr2[0]+=3;
   }
 }
@@ -1018,8 +1061,10 @@ my_bool my_like_range_simple(CHARSET_INFO *cs,
     }
     if (*ptr == w_many)				/* '%' in SQL */
     {
-      *min_length= (uint) (min_str - min_org);
-      *max_length=res_length;
+      /* Calculate length of keys */
+      *min_length= ((cs->state & MY_CS_BINSORT) ? (uint) (min_str - min_org) :
+                    res_length);
+      *max_length= res_length;
       do
       {
 	*min_str++= 0;
@@ -1029,10 +1074,10 @@ my_bool my_like_range_simple(CHARSET_INFO *cs,
     }
     *min_str++= *max_str++ = *ptr;
   }
-  *min_length= *max_length = (uint) (min_str - min_org);
 
+ *min_length= *max_length = (uint) (min_str - min_org);
   while (min_str != min_end)
-    *min_str++ = *max_str++ = ' ';	/* Because if key compression */
+    *min_str++= *max_str++ = ' ';      /* Because if key compression */
   return 0;
 }
 
@@ -1128,7 +1173,7 @@ uint my_instr_simple(CHARSET_INFO *cs,
       {
         match->beg= 0;
         match->end= 0;
-        match->mblen= 0;
+        match->mb_len= 0;
       }
       return 1;		/* Empty string is always found */
     }
@@ -1155,14 +1200,14 @@ skip:
 	if (nmatch > 0)
 	{
 	  match[0].beg= 0;
-	  match[0].end= str- (const uchar*)b-1;
-	  match[0].mblen= match[0].end;
+	  match[0].end= (uint) (str- (const uchar*)b-1);
+	  match[0].mb_len= match[0].end;
 	  
 	  if (nmatch > 1)
 	  {
 	    match[1].beg= match[0].end;
 	    match[1].end= match[0].end+s_length;
-	    match[1].mblen= match[1].end-match[1].beg;
+	    match[1].mb_len= match[1].end-match[1].beg;
 	  }
 	}
 	return 2;
@@ -1275,6 +1320,9 @@ static my_bool create_fromuni(CHARSET_INFO *cs, void *(*alloc)(uint))
 
 static my_bool my_cset_init_8bit(CHARSET_INFO *cs, void *(*alloc)(uint))
 {
+  cs->caseup_multiply= 1;
+  cs->casedn_multiply= 1;
+  cs->pad_char= ' ';
   return create_fromuni(cs, alloc);
 }
 
@@ -1312,6 +1360,395 @@ longlong my_strtoll10_8bit(CHARSET_INFO *cs __attribute__((unused)),
 }
 
 
+#undef  ULONGLONG_MAX
+/*
+  Needed under MetroWerks Compiler, since MetroWerks compiler does not
+  properly handle a constant expression containing a mod operator
+*/
+#if defined(__NETWARE__) && defined(__MWERKS__)
+static ulonglong ulonglong_max= ~(ulonglong) 0;
+#define ULONGLONG_MAX ulonglong_max
+#else
+#define ULONGLONG_MAX           (~(ulonglong) 0)
+#endif /* __NETWARE__ && __MWERKS__ */
+
+    
+#define CUTOFF  (ULONGLONG_MAX / 10)
+#define CUTLIM  (ULONGLONG_MAX % 10)
+#define DIGITS_IN_ULONGLONG 20
+
+static ulonglong d10[DIGITS_IN_ULONGLONG]=
+{
+  1,
+  10,
+  100,
+  1000,
+  10000,
+  100000,
+  1000000,
+  10000000,
+  100000000,
+  1000000000,
+  10000000000ULL,
+  100000000000ULL,
+  1000000000000ULL,
+  10000000000000ULL,
+  100000000000000ULL,
+  1000000000000000ULL,
+  10000000000000000ULL,
+  100000000000000000ULL,
+  1000000000000000000ULL,
+  10000000000000000000ULL
+};
+
+
+/*
+
+  Convert a string to unsigned long long integer value
+  with rounding.
+  
+  SYNOPSYS
+    my_strntoull10_8bit()
+      cs              in      pointer to character set
+      str             in      pointer to the string to be converted
+      length          in      string length
+      unsigned_flag   in      whether the number is unsigned
+      endptr          out     pointer to the stop character
+      error           out     returned error code
+
+  DESCRIPTION
+    This function takes the decimal representation of integer number
+    from string str and converts it to an signed or unsigned
+    long long integer value.
+    Space characters and tab are ignored.
+    A sign character might precede the digit characters.
+    The number may have any number of pre-zero digits.
+    The number may have decimal point and exponent.
+    Rounding is always done in "away from zero" style:
+      0.5  ->   1
+     -0.5  ->  -1
+
+    The function stops reading the string str after "length" bytes
+    or at the first character that is not a part of correct number syntax:
+
+    <signed numeric literal> ::=
+      [ <sign> ] <exact numeric literal> [ E [ <sign> ] <unsigned integer> ]
+
+    <exact numeric literal> ::=
+                        <unsigned integer> [ <period> [ <unsigned integer> ] ]
+                      | <period> <unsigned integer>
+    <unsigned integer>   ::= <digit>...
+     
+  RETURN VALUES
+    Value of string as a signed/unsigned longlong integer
+
+    endptr cannot be NULL. The function will store the end pointer
+    to the stop character here.
+
+    The error parameter contains information how things went:
+    0	     ok
+    ERANGE   If the the value of the converted number is out of range
+    In this case the return value is:
+    - ULONGLONG_MAX if unsigned_flag and the number was too big
+    - 0 if unsigned_flag and the number was negative
+    - LONGLONG_MAX if no unsigned_flag and the number is too big
+    - LONGLONG_MIN if no unsigned_flag and the number it too big negative
+    
+    EDOM If the string didn't contain any digits.
+    In this case the return value is 0.
+*/
+
+ulonglong
+my_strntoull10rnd_8bit(CHARSET_INFO *cs __attribute__((unused)),
+                       const char *str, uint length, int unsigned_flag,
+                       char **endptr, int *error)
+{
+  const char *dot, *end9, *beg, *end= str + length;
+  ulonglong ull;
+  ulong ul;
+  unsigned char ch;
+  int shift= 0, digits= 0, negative, addon;
+
+  /* Skip leading spaces and tabs */
+  for ( ; str < end && (*str == ' ' || *str == '\t') ; str++);
+
+  if (str >= end)
+    goto ret_edom;
+
+  if ((negative= (*str == '-')) || *str=='+') /* optional sign */
+  {
+    if (++str == end)
+      goto ret_edom;
+  }
+
+  beg= str;
+  end9= (str + 9) > end ? end : (str + 9);
+  /* Accumulate small number into ulong, for performance purposes */
+  for (ul= 0 ; str < end9 && (ch= (unsigned char) (*str - '0')) < 10; str++)
+  {
+    ul= ul * 10 + ch;
+  }
+  
+  if (str >= end) /* Small number without dots and expanents */
+  {
+    *endptr= (char*) str;
+    if (negative)
+    {
+      if (unsigned_flag)
+      {
+        *error= ul ? MY_ERRNO_ERANGE : 0;
+        return 0;
+      }
+      else
+      {
+        *error= 0;
+        return (ulonglong) (longlong) -(long) ul;
+      }
+    }
+    else
+    {
+      *error=0;
+      return (ulonglong) ul;
+    }
+  }
+  
+  digits= str - beg;
+
+  /* Continue to accumulate into ulonglong */
+  for (dot= NULL, ull= ul; str < end; str++)
+  {
+    if ((ch= (unsigned char) (*str - '0')) < 10)
+    {
+      if (ull < CUTOFF || (ull == CUTOFF && ch <= CUTLIM))
+      {
+        ull= ull * 10 + ch;
+        digits++;
+        continue;
+      }
+      /*
+        Adding the next digit would overflow.
+        Remember the next digit in "addon", for rounding.
+        Scan all digits with an optional single dot.
+      */
+      if (ull == CUTOFF)
+      {
+        ull= ULONGLONG_MAX;
+        addon= 1;
+        str++;
+      }
+      else
+        addon= (*str >= '5');
+      for ( ; str < end && (ch= (unsigned char) (*str - '0')) < 10; str++)
+      {
+        if (!dot)
+          shift++;
+      }
+      if (str < end && *str == '.' && !dot)
+      {
+        str++;
+        for ( ; str < end && (ch= (unsigned char) (*str - '0')) < 10; str++);
+      }
+      goto exp;
+    }
+    
+    if (*str == '.')
+    {
+      if (dot)
+      {
+        /* The second dot character */
+        addon= 0;
+        goto exp;
+      }
+      else
+      {
+        dot= str + 1;
+      }
+      continue;
+    }
+    
+    /* Unknown character, exit the loop */
+    break; 
+  }
+  shift= dot ? dot - str : 0; /* Right shift */
+  addon= 0;
+
+exp:    /* [ E [ <sign> ] <unsigned integer> ] */
+
+  if (!digits)
+  {
+    str= beg;
+    goto ret_edom;
+  }
+  
+  if (str < end && (*str == 'e' || *str == 'E'))
+  {
+    str++;
+    if (str < end)
+    {
+      int negative_exp, exponent;
+      if ((negative_exp= (*str == '-')) || *str=='+')
+      {
+        if (++str == end)
+          goto ret_sign;
+      }
+      for (exponent= 0 ;
+           str < end && (ch= (unsigned char) (*str - '0')) < 10;
+           str++)
+      {
+        exponent= exponent * 10 + ch;
+      }
+      shift+= negative_exp ? -exponent : exponent;
+    }
+  }
+  
+  if (shift == 0) /* No shift, check addon digit */
+  {
+    if (addon)
+    {
+      if (ull == ULONGLONG_MAX)
+        goto ret_too_big;
+      ull++;
+    }
+    goto ret_sign;
+  }
+
+  if (shift < 0) /* Right shift */
+  {
+    ulonglong d, r;
+    
+    if (-shift >= DIGITS_IN_ULONGLONG)
+      goto ret_zero; /* Exponent is a big negative number, return 0 */
+    
+    d= d10[-shift];
+    r= (ull % d) * 2;
+    ull /= d;
+    if (r >= d)
+      ull++;
+    goto ret_sign;
+  }
+
+  if (shift > DIGITS_IN_ULONGLONG) /* Huge left shift */
+  {
+    if (!ull)
+      goto ret_sign;
+    goto ret_too_big;
+  }
+
+  for ( ; shift > 0; shift--, ull*= 10) /* Left shift */
+  {
+    if (ull > CUTOFF)
+      goto ret_too_big; /* Overflow, number too big */
+  }
+
+ret_sign:
+  *endptr= (char*) str;
+
+  if (!unsigned_flag)
+  {
+    if (negative)
+    {
+      if (ull > (ulonglong) LONGLONG_MIN)
+      {
+        *error= MY_ERRNO_ERANGE;
+        return (ulonglong) LONGLONG_MIN;
+      }
+      *error= 0;
+      return (ulonglong) -(longlong) ull;
+    }
+    else
+    {
+      if (ull > (ulonglong) LONGLONG_MAX)
+      {
+        *error= MY_ERRNO_ERANGE;
+        return (ulonglong) LONGLONG_MAX;
+      }
+      *error= 0;
+      return ull;
+    }
+  }
+
+  /* Unsigned number */
+  if (negative && ull)
+  {
+    *error= MY_ERRNO_ERANGE;
+    return 0;
+  }
+  *error= 0;
+  return ull;
+
+ret_zero:
+  *endptr= (char*) str;
+  *error= 0;
+  return 0;
+
+ret_edom:
+  *endptr= (char*) str;
+  *error= MY_ERRNO_EDOM;
+  return 0;
+  
+ret_too_big:
+  *endptr= (char*) str;
+  *error= MY_ERRNO_ERANGE;
+  return unsigned_flag ?
+         ULONGLONG_MAX :
+         negative ? (ulonglong) LONGLONG_MIN : (ulonglong) LONGLONG_MAX;
+}
+
+
+/*
+  Check if a constant can be propagated
+
+  SYNOPSIS:
+    my_propagate_simple()
+    cs		Character set information
+    str		String to convert to double
+    length	Optional length for string.
+    
+  NOTES:
+   Takes the string in the given charset and check
+   if it can be safely propagated in the optimizer.
+   
+   create table t1 (
+     s char(5) character set latin1 collate latin1_german2_ci);
+   insert into t1 values (0xf6); -- o-umlaut
+   select * from t1 where length(s)=1 and s='oe';
+
+   The above query should return one row.
+   We cannot convert this query into:
+   select * from t1 where length('oe')=1 and s='oe';
+   
+   Currently we don't check the constant itself,
+   and decide not to propagate a constant
+   just if the collation itself allows tricky things
+   like expansions and contractions. In the future
+   we can write a more sophisticated functions to
+   check the constants. For example, 'oa' can always
+   be safety propagated in German2 because unlike 
+   'oe' it does not have any special meaning.
+
+  RETURN
+    1 if constant can be safely propagated
+    0 if it is not safe to propagate the constant
+*/
+
+
+
+my_bool my_propagate_simple(CHARSET_INFO *cs __attribute__((unused)),
+                            const uchar *str __attribute__((unused)),
+                            uint length __attribute__((unused)))
+{
+  return 1;
+}
+
+
+my_bool my_propagate_complex(CHARSET_INFO *cs __attribute__((unused)),
+                             const uchar *str __attribute__((unused)),
+                             uint length __attribute__((unused)))
+{
+  return 0;
+}
+
+
 MY_CHARSET_HANDLER my_charset_8bit_handler=
 {
     my_cset_init_8bit,
@@ -1338,6 +1775,7 @@ MY_CHARSET_HANDLER my_charset_8bit_handler=
     my_strntoull_8bit,
     my_strntod_8bit,
     my_strtoll10_8bit,
+    my_strntoull10rnd_8bit,
     my_scan_8bit
 };
 
@@ -1347,9 +1785,11 @@ MY_COLLATION_HANDLER my_collation_8bit_simple_ci_handler =
     my_strnncoll_simple,
     my_strnncollsp_simple,
     my_strnxfrm_simple,
+    my_strnxfrmlen_simple,
     my_like_range_simple,
     my_wildcmp_8bit,
     my_strcasecmp_8bit,
     my_instr_simple,
-    my_hash_sort_simple
+    my_hash_sort_simple,
+    my_propagate_simple
 };

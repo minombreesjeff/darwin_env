@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -141,50 +140,6 @@ int runClearTable(NDBT_Context* ctx, NDBT_Step* step){
          << " failed on line " << __LINE__ << endl; \
   result = NDBT_FAILED; \
   break; }
-
-int runTimeoutTrans(NDBT_Context* ctx, NDBT_Step* step){
-  int result = NDBT_OK;
-  int loops = ctx->getNumLoops();
-  NdbConfig conf(GETNDB(step)->getNodeId()+1);
-  unsigned int nodeId = conf.getMasterNodeId();
-  int stepNo = step->getStepNo();
-
-  int timeout = ctx->getProperty("TransactionInactiveTimeout",TIMEOUT);
-
-  int minSleep = (int)(timeout * 1.5);
-  int maxSleep = timeout * 2;
-  ndbout << "TransactionInactiveTimeout="<< timeout
-	 << ", minSleep="<<minSleep
-	 << ", maxSleep="<<maxSleep<<endl;
-
-  HugoOperations hugoOps(*ctx->getTab());
-  Ndb* pNdb = GETNDB(step);
-
-  for (int l = 0; l < loops && result == NDBT_OK; l++){
-
-    do{
-      // Commit transaction
-      CHECK(hugoOps.startTransaction(pNdb) == 0);
-      CHECK(hugoOps.pkReadRecord(pNdb, stepNo) == 0);
-      CHECK(hugoOps.execute_NoCommit(pNdb) == 0);
-      
-      int sleep = minSleep + myRandom48(maxSleep-minSleep);   
-      ndbout << "Sleeping for " << sleep << " milliseconds" << endl;
-      NdbSleep_MilliSleep(sleep);
-      
-      // Expect that transaction has timed-out
-      int ret = hugoOps.execute_Commit(pNdb);
-      CHECK(ret != 0);
-      NdbError err = pNdb->getNdbError(ret);
-      CHECK(err.classification == NdbError::TimeoutExpired);
-      
-    } while(false);
-
-    hugoOps.closeTransaction(pNdb);
-  }
-
-  return result;
-}
 
 int runTimeoutTrans2(NDBT_Context* ctx, NDBT_Step* step){
   int result = NDBT_OK;
@@ -432,6 +387,45 @@ int runBuddyTransNoTimeout(NDBT_Context* ctx, NDBT_Step* step){
   return result;
 }
 
+int runBuddyTransTimeout(NDBT_Context* ctx, NDBT_Step* step){
+  int result = NDBT_OK;
+  int loops = ctx->getNumLoops();
+  int records = ctx->getNumRecords();
+  int stepNo = step->getStepNo();
+  ndbout << "TransactionInactiveTimeout="<< TIMEOUT <<endl;
+
+  HugoOperations hugoOps(*ctx->getTab());
+  Ndb* pNdb = GETNDB(step);
+
+  for (int l = 1; l < loops && result == NDBT_OK; l++){
+
+    NdbTransaction* pTrans = 0;
+    do{
+      pTrans = pNdb->startTransaction();
+      NdbScanOperation* pOp = pTrans->getNdbScanOperation(ctx->getTab());
+      CHECK(pOp->readTuples(NdbOperation::LM_Read, 0, 0, 1) == 0);
+      CHECK(pTrans->execute(NoCommit) == 0);
+      
+      int sleep = 2 * TIMEOUT;
+      ndbout << "Sleeping for " << sleep << " milliseconds" << endl;
+      NdbSleep_MilliSleep(sleep);
+    
+      int res = 0;
+      while((res = pOp->nextResult()) == 0);
+      ndbout_c("res: %d", res);
+      CHECK(res == -1);
+      
+    } while(false);
+    
+    if (pTrans)
+    {
+      pTrans->close();
+    }
+  }
+  
+  return result;
+}
+
 int 
 runError4012(NDBT_Context* ctx, NDBT_Step* step){
   int result = NDBT_OK;
@@ -502,27 +496,6 @@ TESTCASE("DontTimeoutTransaction5",
   FINALIZER(resetTransactionTimeout);
   FINALIZER(runClearTable);
 }
-TESTCASE("TimeoutTransaction", 
-	 "Test that the transaction does timeout "\
-	 "if we sleep during the transaction. Use a sleep "\
-	 "value which is larger than TransactionInactiveTimeout"){
-  INITIALIZER(runLoadTable);
-  INITIALIZER(setTransactionTimeout);
-  STEPS(runTimeoutTrans, 1);
-  FINALIZER(resetTransactionTimeout);
-  FINALIZER(runClearTable);
-}
-TESTCASE("TimeoutTransaction5", 
-	 "Test that the transaction does timeout " \
-	 "if we sleep during the transaction. Use a sleep " \
-	 "value which is larger than TransactionInactiveTimeout" \
-	 "Five simultaneous threads"){
-  INITIALIZER(runLoadTable);
-  INITIALIZER(setTransactionTimeout);
-  STEPS(runTimeoutTrans, 5);
-  FINALIZER(resetTransactionTimeout);
-  FINALIZER(runClearTable);
-}
 TESTCASE("TimeoutRandTransaction", 
 	 "Test that the transaction does timeout "\
 	 "if we sleep during the transaction. Use a sleep "\
@@ -560,6 +533,15 @@ TESTCASE("BuddyTransNoTimeout5",
   FINALIZER(resetTransactionTimeout);
   FINALIZER(runClearTable);
 }
+TESTCASE("BuddyTransTimeout1", 
+	 "Start a scan and check that it gets aborted"){
+  INITIALIZER(runLoadTable);
+  INITIALIZER(setTransactionTimeout);
+  STEPS(runBuddyTransTimeout, 1);
+  FINALIZER(resetTransactionTimeout);
+  FINALIZER(runClearTable);
+}
+#if 0
 TESTCASE("Error4012", ""){
   TC_PROPERTY("TransactionDeadlockTimeout", 120000);
   INITIALIZER(runLoadTable);
@@ -568,7 +550,7 @@ TESTCASE("Error4012", ""){
   STEPS(runError4012, 2);
   FINALIZER(runClearTable);
 }
-
+#endif
 NDBT_TESTSUITE_END(testTimeout);
 
 int main(int argc, const char** argv){

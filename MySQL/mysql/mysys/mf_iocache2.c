@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -65,6 +64,13 @@ my_off_t my_b_append_tell(IO_CACHE* info)
   return res;
 }
 
+my_off_t my_b_safe_tell(IO_CACHE *info)
+{
+  if (unlikely(info->type == SEQ_READ_APPEND))
+    return my_b_append_tell(info);
+  return my_b_tell(info);
+}
+
 /*
   Make next read happen at the given position
   For write cache, make next write happen at the given position
@@ -72,7 +78,7 @@ my_off_t my_b_append_tell(IO_CACHE* info)
 
 void my_b_seek(IO_CACHE *info,my_off_t pos)
 {
-  my_off_t offset;  
+  my_off_t offset;
   DBUG_ENTER("my_b_seek");
   DBUG_PRINT("enter",("pos: %lu", (ulong) pos));
 
@@ -84,10 +90,10 @@ void my_b_seek(IO_CACHE *info,my_off_t pos)
      b) see if there is a better way to make it work
   */
   if (info->type == SEQ_READ_APPEND)
-    flush_io_cache(info);
-  
+    VOID(flush_io_cache(info));
+
   offset=(pos - info->pos_in_file);
-  
+
   if (info->type == READ_CACHE || info->type == SEQ_READ_APPEND)
   {
     /* TODO: explain why this works if pos < info->pos_in_file */
@@ -112,7 +118,7 @@ void my_b_seek(IO_CACHE *info,my_off_t pos)
       info->write_pos = info->write_buffer + offset;
       DBUG_VOID_RETURN;
     }
-    flush_io_cache(info);
+    VOID(flush_io_cache(info));
     /* Correct buffer end so that we write in increments of IO_SIZE */
     info->write_end=(info->write_buffer+info->buffer_length-
 		     (pos & (IO_SIZE-1)));
@@ -245,74 +251,126 @@ uint my_b_printf(IO_CACHE *info, const char* fmt, ...)
 uint my_b_vprintf(IO_CACHE *info, const char* fmt, va_list args)
 {
   uint out_length=0;
+  uint minimum_width; /* as yet unimplemented */
+  uint minimum_width_sign;
+  uint precision; /* as yet unimplemented for anything but %b */
 
-  for (; *fmt ; fmt++)
+  /*
+    Store the location of the beginning of a format directive, for the
+    case where we learn we shouldn't have been parsing a format string
+    at all, and we don't want to lose the flag/precision/width/size
+    information.
+   */
+  const char* backtrack;
+
+  for (; *fmt != '\0'; fmt++)
   {
-    if (*fmt++ != '%')
+    /* Copy everything until '%' or end of string */
+    const char *start=fmt;
+    uint length;
+    
+    for (; (*fmt != '\0') && (*fmt != '%'); fmt++) ;
+
+    length= (uint) (fmt - start);
+    out_length+=length;
+    if (my_b_write(info, start, length))
+      goto err;
+
+    if (*fmt == '\0')				/* End of format */
     {
-      /* Copy everything until '%' or end of string */
-      const char *start=fmt-1;
-      uint length;
-      for (; *fmt && *fmt != '%' ; fmt++ ) ;
-      length= (uint) (fmt - start);
-      out_length+=length;
-      if (my_b_write(info, start, length))
-	goto err;
-      if (!*fmt)				/* End of format */
-      {
-	return out_length;
-      }
-      fmt++;
-      /* Found one '%' */
+      return out_length;
     }
+
+    /* 
+      By this point, *fmt must be a percent;  Keep track of this location and
+      skip over the percent character. 
+    */
+    DBUG_ASSERT(*fmt == '%');
+    backtrack= fmt;
+    fmt++;
+
+    minimum_width= 0;
+    precision= 0;
+    minimum_width_sign= 1;
     /* Skip if max size is used (to be compatible with printf) */
-    while (my_isdigit(&my_charset_latin1, *fmt) || *fmt == '.' || *fmt == '-')
+    while (*fmt == '-') { fmt++; minimum_width_sign= -1; }
+    if (*fmt == '*') {
+      precision= (int) va_arg(args, int);
       fmt++;
+    } else {
+      while (my_isdigit(&my_charset_latin1, *fmt)) {
+        minimum_width=(minimum_width * 10) + (*fmt - '0');
+        fmt++;
+      }
+    }
+    minimum_width*= minimum_width_sign;
+
+    if (*fmt == '.') {
+      fmt++;
+      if (*fmt == '*') {
+        precision= (int) va_arg(args, int);
+        fmt++;
+      } else {
+        while (my_isdigit(&my_charset_latin1, *fmt)) {
+          precision=(precision * 10) + (*fmt - '0');
+          fmt++;
+        }
+      }
+    }
+
     if (*fmt == 's')				/* String parameter */
     {
       reg2 char *par = va_arg(args, char *);
-      uint length = (uint) strlen(par);
-      out_length+=length;
-      if (my_b_write(info, par, length))
+      uint length2 = (uint) strlen(par);
+      /* TODO: implement minimum width and precision */
+      out_length+= length2;
+      if (my_b_write(info, par, length2))
 	goto err;
+    }
+    else if (*fmt == 'b')                       /* Sized buffer parameter, only precision makes sense */
+    {
+      char *par = va_arg(args, char *);
+      out_length+= precision;
+      if (my_b_write(info, par, precision))
+        goto err;
     }
     else if (*fmt == 'd' || *fmt == 'u')	/* Integer parameter */
     {
       register int iarg;
-      uint length;
+      uint length2;
       char buff[17];
 
       iarg = va_arg(args, int);
       if (*fmt == 'd')
-	length= (uint) (int10_to_str((long) iarg,buff, -10) - buff);
+	length2= (uint) (int10_to_str((long) iarg,buff, -10) - buff);
       else
-	length= (uint) (int10_to_str((long) (uint) iarg,buff,10)- buff);
-      out_length+=length;
-      if (my_b_write(info, buff, length))
+	length2= (uint) (int10_to_str((long) (uint) iarg,buff,10)- buff);
+      out_length+= length2;
+      if (my_b_write(info, buff, length2))
 	goto err;
     }
     else if ((*fmt == 'l' && fmt[1] == 'd') || fmt[1] == 'u')
       /* long parameter */
     {
       register long iarg;
-      uint length;
+      uint length2;
       char buff[17];
 
       iarg = va_arg(args, long);
       if (*++fmt == 'd')
-	length= (uint) (int10_to_str(iarg,buff, -10) - buff);
+	length2= (uint) (int10_to_str(iarg,buff, -10) - buff);
       else
-	length= (uint) (int10_to_str(iarg,buff,10)- buff);
-      out_length+=length;
-      if (my_b_write(info, buff, length))
+	length2= (uint) (int10_to_str(iarg,buff,10)- buff);
+      out_length+= length2;
+      if (my_b_write(info, buff, length2))
 	goto err;
     }
     else
     {
       /* %% or unknown code */
-      if (my_b_write(info, "%", 1))
-	goto err;
-      out_length++;
+      if (my_b_write(info, backtrack, fmt-backtrack))
+        goto err;
+      out_length+= fmt-backtrack;
     }
   }
   return out_length;

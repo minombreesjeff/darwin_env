@@ -1,24 +1,20 @@
 .\"     Title: \fBmyisamchk\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 11/02/2006
+.\"      Date: 07/04/2007
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 4.1
+.\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAMCHK\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.TH "\fBMYISAMCHK\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
 myisamchk \- MyISAM table\-maintenance utility
-.br
-isamchk \- ISAM table\-maintenance utility
 .SH "SYNOPSIS"
 .HP 33
 \fBmyisamchk [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fItbl_name\fR\fR\fB ...\fR
-.HP 29
-\fBisamchk [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fItbl_name\fR\fR\fB \&...\fR
 .SH "DESCRIPTION"
 .PP
 The
@@ -31,14 +27,15 @@ tables (tables that have
 \fI.MYD\fR
 and
 \fI.MYI\fR
-files for storing data and indexes). A related utility,
-\fBisamchk\fR, works with
-ISAM
-tables (tables that have
-\fI.ISD\fR
-and
-\fI.ISM\fR
 files for storing data and indexes).
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBCaution\fR
+.PP
+It is best to make a backup of a table before performing a table repair operation; under some circumstances the operation might cause data loss. Possible causes include but are not limited to filesystem errors.
 .PP
 Invoke
 \fBmyisamchk\fR
@@ -70,7 +67,7 @@ somewhere other than in the database directory, you must specify the path to the
 \fBmyisamchk\fR
 has no idea where the database is located. In fact,
 \fBmyisamchk\fR
-does not actually care whether the files you are working on are located in a database directory. You can copy the files that correspond to a database table into some other location and perform recovery operations on them there.
+doesn't actually care whether the files you are working on are located in a database directory. You can copy the files that correspond to a database table into some other location and perform recovery operations on them there.
 .PP
 You can name several tables on the
 \fBmyisamchk\fR
@@ -105,8 +102,6 @@ shell> \fBmyisamchk \fR\fB\fI/path/to/datadir/*/*\fR\fR\fB.MYI\fR
 .PP
 The recommended way to quickly check all
 MyISAM
-and
-ISAM
 tables is:
 .sp
 .RS 3n
@@ -118,9 +113,7 @@ shell> \fBisamchk \-\-silent \fR\fB\fI/path/to/datadir/*/*\fR\fR\fB.ISM\fR
 .PP
 If you want to check all
 MyISAM
-and
-ISAM
-tables and repair any that are corrupted, you can use the following commands:
+tables and repair any that are corrupted, you can use the following command:
 .sp
 .RS 3n
 .nf
@@ -134,12 +127,25 @@ shell> \fBisamchk \-\-silent \-\-force \-\-key_buffer_size=64M \\\fR
 .fi
 .RE
 .PP
-These commands assume that you have more than 64MB free. For more information about memory allocation with
+This command assumes that you have more than 64MB free. For more information about memory allocation with
 \fBmyisamchk\fR, see
 the section called \(lq\fBMYISAMCHK\fR MEMORY USAGE\(rq.
 .PP
-You must ensure that no other program is using the tables while you are running
-\fBmyisamchk\fR. Otherwise, when you run
+\fBMySQL Enterprise\fR. For expert advice on checking and repairing tables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+\fIYou must ensure that no other program is using the tables while you are running \fR\fI\fBmyisamchk\fR\fR. The most effective means of doing so is to shut down the MySQL server while running
+\fBmyisamchk\fR, or to lock all tables that
+\fBmyisamchk\fR
+is being used on.
+.PP
+Otherwise, when you run
 \fBmyisamchk\fR, it may display the following error message:
 .sp
 .RS 3n
@@ -150,17 +156,22 @@ warning: clients are using or haven't closed the table properly
 .PP
 This means that you are trying to check a table that has been updated by another program (such as the
 \fBmysqld\fR
-server) that hasn't yet closed the file or that has died without closing the file properly.
+server) that hasn't yet closed the file or that has died without closing the file properly, which can sometimes lead to the corruption of one or more
+MyISAM
+tables.
 .PP
 If
 \fBmysqld\fR
 is running, you must force it to flush any table modifications that are still buffered in memory by using
 FLUSH TABLES. You should then ensure that no one is using the tables while you are running
-\fBmyisamchk\fR. The easiest way to avoid this problem is to use
+\fBmyisamchk\fR
+.PP
+However, the easiest way to avoid this problem is to use
 CHECK TABLE
 instead of
 \fBmyisamchk\fR
-to check tables.
+to check tables. See
+Section\ 5.2.3, \(lqCHECK TABLE Syntax\(rq.
 .SH "\fBMYISAMCHK\fR GENERAL OPTIONS"
 .PP
 The options described in this section can be used for any type of table maintenance operation performed by
@@ -212,7 +223,7 @@ Display version information and exit.
 \fB\-\-wait\fR,
 \fB\-w\fR
 .sp
-Instead of terminating with an error if the table is locked, wait until the table is unlocked before continuing. Note that if you are running
+Instead of terminating with an error if the table is locked, wait until the table is unlocked before continuing. If you are running
 \fBmysqld\fR
 with external locking disabled, the table can be locked only by another
 \fBmyisamchk\fR
@@ -346,7 +357,7 @@ sort_buffer_size
 variables to about 25% of your available memory. You can set both variables to large values, because only one of them is used at a time.
 .PP
 myisam_block_size
-is the size used for index blocks. It is available as of MySQL 4.0.0.
+is the size used for index blocks.
 .PP
 stats_method
 influences how
@@ -359,9 +370,9 @@ system variable. For more information, see the description of
 myisam_stats_method
 in
 the section called \(lqSYSTEM VARIABLES\(rq, and
-Section\ 4.7, \(lqMyISAM Index Statistics Collection\(rq.
+Section\ 4.7, \(lqMyISAM Index Statistics Collection\(rq. For MySQL 5.0,
 stats_method
-was added in MySQL 4.1.15/5.0.14. For older versions, the statistics collection method is equivalent to
+was added in MySQL 5.0.14. For older versions, the statistics collection method is equivalent to
 nulls_equal.
 .PP
 The
@@ -501,7 +512,7 @@ operation. This finds only 99.99% of all errors, which should be good enough in 
 .sp
 Don't mark the table as checked. This is useful if you use
 \fBmyisamchk\fR
-to check a table that is in use by some other application that does not use locking, such as
+to check a table that is in use by some other application that doesn't use locking, such as
 \fBmysqld\fR
 when run with external locking disabled.
 .TP 3n
@@ -534,7 +545,7 @@ file as
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-correct\-checksum\fR
@@ -551,7 +562,7 @@ Maximum length of the data file (when re\-creating data file when it is
 \fB\-\-extend\-check\fR,
 \fB\-e\fR
 .sp
-Do a repair that tries to recover every possible row from the data file. Normally, this also finds a lot of garbage rows. Don't use this option unless you are totally desperate.
+Do a repair that tries to recover every possible row from the data file. Normally, this also finds a lot of garbage rows. Don't use this option unless you are desperate.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -565,12 +576,8 @@ Overwrite old intermediate files (files with names like
 \fB\-k \fR\fB\fIval\fR\fR
 .sp
 For
-\fBmyisamchk\fR, the option value is a bit\-value that indicates which indexes to update. Each binary bit of the option value corresponds to a table index, where the first index is bit 0. For
-\fBisamchk\fR, the option value indicates that only the first
-\fIval\fR
-of the table indexes should be updated. In either case, an option value of 0 disables updates to all indexes, which can be used to get faster inserts. Deactivated indexes can be reactivated by using
-\fBmyisamchk \-r\fR
-or (\fBisamchk \-r\fR).
+\fBmyisamchk\fR, the option value is a bit\-value that indicates which indexes to update. Each binary bit of the option value corresponds to a table index, where the first index is bit 0. An option value of 0 disables updates to all indexes, which can be used to get faster inserts. Deactivated indexes can be reactivated by using
+\fBmyisamchk \-r\fR.
 .TP 3n
 \(bu
 \fB\-\-no\-symlinks\fR,
@@ -585,7 +592,7 @@ repairs the table that a symlink points to. This option does not exist as of MyS
 .sp
 Skip rows larger than the given length if
 \fBmyisamchk\fR
-cannot allocate memory to hold them. This option was added in MySQL 4.1.1.
+cannot allocate memory to hold them.
 .TP 3n
 \(bu
 \fB\-\-parallel\-recover\fR,
@@ -594,8 +601,8 @@ cannot allocate memory to hold them. This option was added in MySQL 4.1.1.
 Uses the same technique as
 \fB\-r\fR
 and
-\fB\-n\fR, but creates all the keys in parallel, using different threads. This option was added in MySQL 4.0.2.
-\fIThis is beta\-quality code; use at your own risk!\fR.
+\fB\-n\fR, but creates all the keys in parallel, using different threads.
+\fIThis is beta\-quality code. Use at your own risk!\fR
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -609,13 +616,13 @@ to modify the original data file in case of duplicate keys.
 \fB\-\-recover\fR,
 \fB\-r\fR
 .sp
-Do a repair that can fix almost any problem except unique keys that are not unique (which is an extremely unlikely error with
-ISAM/MyISAM
+Do a repair that can fix almost any problem except unique keys that aren't unique (which is an extremely unlikely error with
+MyISAM
 tables). If you want to recover a table, this is the option to try first. You should try
 \fB\-\-safe\-recover\fR
 only if
 \fBmyisamchk\fR
-reports that the table cannot be recovered by
+reports that the table can't be recovered using
 \fB\-\-recover\fR. (In the unlikely case that
 \fB\-\-recover\fR
 fails, the data file remains intact.)
@@ -631,7 +638,7 @@ Do a repair using an old recovery method that reads through all rows in order an
 \fB\-\-recover\fR, but can handle a couple of very unlikely cases that
 \fB\-\-recover\fR
 cannot. This recovery method also uses much less disk space than
-\fB\-\-recover\fR. Normally, you should repair first using
+\fB\-\-recover\fR. Normally, you should repair first with
 \fB\-\-recover\fR, and then with
 \fB\-\-safe\-recover\fR
 only if
@@ -646,12 +653,12 @@ key_buffer_size.
 .sp
 Change the character set used by the table indexes. This option was replaced by
 \fB\-\-set\-collation\fR
-in MySQL 4.1.1.
+in MySQL 5.0.3.
 .TP 3n
 \(bu
 \fB\-\-set\-collation=\fR\fB\fIname\fR\fR
 .sp
-Specify the collation to use for sorting table indexes. The character set name is implied by the first part of the collation name. This option was added in MySQL 4.1.11.
+Specify the collation to use for sorting table indexes. The character set name is implied by the first part of the collation name. This option was added in MySQL 5.0.3.
 .TP 3n
 \(bu
 \fB\-\-sort\-recover\fR,
@@ -659,7 +666,7 @@ Specify the collation to use for sorting table indexes. The character set name i
 .sp
 Force
 \fBmyisamchk\fR
-to use sorting to resolve the keys even if the temporary files should be very big.
+to use sorting to resolve the keys even if the temporary files would be very large.
 .TP 3n
 \(bu
 \fB\-\-tmpdir=\fR\fB\fIpath\fR\fR,
@@ -669,9 +676,9 @@ Path of the directory to be used for storing temporary files. If this is not set
 \fBmyisamchk\fR
 uses the value of the
 TMPDIR
-environment variable. Starting from MySQL 4.1,
+environment variable.
 tmpdir
-can be set to a list of directory paths that are used successively in round\-robin fashion for creating temporary files. The separator character between directory names should be colon (\(oq:\(cq) on Unix and semicolon (\(oq;\(cq) on Windows, NetWare, and OS/2.
+can be set to a list of directory paths that are used successively in round\-robin fashion for creating temporary files. The separator character between directory names is the colon (\(oq:\(cq) on Unix and the semicolon (\(oq;\(cq) on Windows, NetWare, and OS/2.
 .TP 3n
 \(bu
 \fB\-\-unpack\fR,
@@ -693,6 +700,9 @@ Analyze the distribution of key values. This improves join performance by enabli
 command or the
 SHOW INDEX FROM \fItbl_name\fR
 statement.
+.PP
+\fBMySQL Enterprise\fR. For expert advice on optimizing tables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
+\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-block\-search=\fR\fB\fIoffset\fR\fR,
@@ -739,7 +749,7 @@ SHOW INDEX, which displays a table's indexes in the same order that
 \fBmyisamchk\fR
 sees them. Indexes are numbered beginning with 1.
 .sp
-If keys are not packed (PACK_KEYS=0)), they have the same length, so when
+If keys are not packed (PACK_KEYS=0), they have the same length, so when
 \fBmyisamchk\fR
 sorts and moves records, it just overwrites record offsets in the index. If keys are packed (PACK_KEYS=1),
 \fBmyisamchk\fR
@@ -783,11 +793,10 @@ also needs a lot of disk space:
 .TP 3n
 \(bu
 Double the size of the data file (the original file and a copy). This space is not needed if you do a repair with
-\fB\-\-quick\fR; in this case, only the index file is re\-created.
-\fIThis space must be available on the same filesystem as the original data file\fR, as the copy is created in the same directory as the original.
+\fB\-\-quick\fR; in this case, only the index file is re\-created. This space is needed on the same filesystem as the original data file! (The copy is created in the same directory as the original.)
 .TP 3n
 \(bu
-Space for the new index file that replaces the old one. The old index file is truncated at the start of the repair operation, so you usually ignore this space. This space must be available on the same filesystem as the original data file.
+Space for the new index file that replaces the old one. The old index file is truncated at the start of the repair operation, so you usually ignore this space. This space is needed on the same filesystem as the original index file!
 .TP 3n
 \(bu
 When using
@@ -818,7 +827,7 @@ instead of
 \fB\-\-recover\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2006 MySQL AB
+Copyright 1997\-2007 MySQL AB
 .PP
 This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
 .PP
@@ -826,35 +835,6 @@ Please email
 <docs@mysql.com>
 for more information.
 .SH "SEE ALSO"
-isamchk(1),
-isamlog(1),
-msql2mysql(1),
-myisam_ftdump(1),
-myisamlog(1),
-myisampack(1),
-mysql(1),
-mysql.server(1),
-mysql_config(1),
-mysql_explain_log(1),
-mysql_fix_privilege_tables(1),
-mysql_zap(1),
-mysqlaccess(1),
-mysqladmin(1),
-mysqlbinlog(1),
-mysqlcheck(1),
-mysqld(1),
-mysqld(8),
-mysqld_multi(1),
-mysqld_safe(1),
-mysqldump(1),
-mysqlhotcopy(1),
-mysqlimport(1),
-mysqlshow(1),
-pack_isam(1),
-perror(1),
-replace(1),
-safe_mysqld(1)
-.P
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,14 +29,14 @@ public:
   const T& operator[](unsigned i) const;
   unsigned size() const { return m_size; };
   
-  void push_back(const T &);
+  int push_back(const T &);
   T& back();
   
   void erase(unsigned index);
   
   void clear();
   
-  void fill(unsigned new_size, T & obj);
+  int fill(unsigned new_size, T & obj);
 
   Vector<T>& operator=(const Vector<T>&);
 
@@ -53,6 +52,14 @@ private:
 template<class T>
 Vector<T>::Vector(int i){
   m_items = new T[i];
+  if (m_items == NULL)
+  {
+    errno = ENOMEM;
+    m_size = 0;
+    m_arraySize = 0;
+    m_incSize = 0;
+    return;
+  }
   m_size = 0;
   m_arraySize = i;
   m_incSize = 50;
@@ -61,6 +68,10 @@ Vector<T>::Vector(int i){
 template<class T>
 Vector<T>::~Vector(){
   delete[] m_items;
+  // safety for placement new usage
+  m_items = 0;
+  m_size = 0;
+  m_arraySize = 0;
 }
 
 template<class T>
@@ -86,10 +97,15 @@ Vector<T>::back(){
 }
 
 template<class T>
-void
+int
 Vector<T>::push_back(const T & t){
   if(m_size == m_arraySize){
     T * tmp = new T [m_arraySize + m_incSize];
+    if(tmp == NULL)
+    {
+      errno = ENOMEM;
+      return -1;
+    }
     for (unsigned k = 0; k < m_size; k++)
       tmp[k] = m_items[k];
     delete[] m_items;
@@ -98,6 +114,8 @@ Vector<T>::push_back(const T & t){
   }
   m_items[m_size] = t;
   m_size++;
+
+  return 0;
 }
 
 template<class T>
@@ -118,10 +136,12 @@ Vector<T>::clear(){
 }
 
 template<class T>
-void 
+int
 Vector<T>::fill(unsigned new_size, T & obj){
   while(m_size <= new_size)
-    push_back(obj);
+    if (push_back(obj))
+      return -1;
+  return 0;
 }
 
 template<class T>
@@ -145,8 +165,8 @@ struct MutexVector : public NdbLockable {
   const T& operator[](unsigned i) const;
   unsigned size() const { return m_size; };
   
-  void push_back(const T &);
-  void push_back(const T &, bool lockMutex);
+  int push_back(const T &);
+  int push_back(const T &, bool lockMutex);
   T& back();
   
   void erase(unsigned index);
@@ -155,7 +175,7 @@ struct MutexVector : public NdbLockable {
   void clear();
   void clear(bool lockMutex);
 
-  void fill(unsigned new_size, T & obj);
+  int fill(unsigned new_size, T & obj);
 private:
   T * m_items;
   unsigned m_size;
@@ -166,6 +186,14 @@ private:
 template<class T>
 MutexVector<T>::MutexVector(int i){
   m_items = new T[i];
+  if (m_items == NULL)
+  {
+    errno = ENOMEM;
+    m_size = 0;
+    m_arraySize = 0;
+    m_incSize = 0;
+    return;
+  }
   m_size = 0;
   m_arraySize = i;
   m_incSize = 50;
@@ -174,6 +202,10 @@ MutexVector<T>::MutexVector(int i){
 template<class T>
 MutexVector<T>::~MutexVector(){
   delete[] m_items;
+  // safety for placement new usage
+  m_items = 0;
+  m_size = 0;
+  m_arraySize = 0;
 }
 
 template<class T>
@@ -199,11 +231,17 @@ MutexVector<T>::back(){
 }
 
 template<class T>
-void
+int
 MutexVector<T>::push_back(const T & t){
   lock();
   if(m_size == m_arraySize){
     T * tmp = new T [m_arraySize + m_incSize];
+    if (tmp == NULL)
+    {
+      errno = ENOMEM;
+      unlock();
+      return -1;
+    }
     for (unsigned k = 0; k < m_size; k++)
       tmp[k] = m_items[k];
     delete[] m_items;
@@ -213,15 +251,23 @@ MutexVector<T>::push_back(const T & t){
   m_items[m_size] = t;
   m_size++;
   unlock();
+  return 0;
 }
 
 template<class T>
-void
+int
 MutexVector<T>::push_back(const T & t, bool lockMutex){
   if(lockMutex) 
     lock();
   if(m_size == m_arraySize){
     T * tmp = new T [m_arraySize + m_incSize];
+    if (tmp == NULL)
+    {
+      errno = ENOMEM;
+      if(lockMutex) 
+        unlock();
+      return -1;
+    }
     for (unsigned k = 0; k < m_size; k++)
       tmp[k] = m_items[k];
     delete[] m_items;
@@ -232,6 +278,7 @@ MutexVector<T>::push_back(const T & t, bool lockMutex){
   m_size++;
   if(lockMutex)
     unlock();
+  return 0;
 }
 
 template<class T>
@@ -279,10 +326,12 @@ MutexVector<T>::clear(bool l){
 }
 
 template<class T>
-void 
+int
 MutexVector<T>::fill(unsigned new_size, T & obj){
   while(m_size <= new_size)
-    push_back(obj);
+    if (push_back(obj))
+      return -1;
+  return 0;
 }
 
 #endif

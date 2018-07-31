@@ -165,9 +165,9 @@ explain extended select issimple(MultiPoint(Point(3, 6), Point(4, 10))), issimpl
 
 create table t1 (a geometry not null);
 insert into t1 values (GeomFromText('Point(1 2)'));
--- error 1105
+-- error 1416
 insert into t1 values ('Garbage');
--- error 1105
+-- error 1416
 insert IGNORE into t1 values ('Garbage');
 alter table t1 add spatial index(a);
 
@@ -281,7 +281,7 @@ INSERT INTO t1 VALUES(GeomFromText('POINT(580848489 219587743)'));
 INSERT INTO t1 VALUES(GeomFromText('POINT(11247614 782797569)')); 
 drop table t1;
 
-create table t1 select POINT(1,3);
+create table t1 select GeomFromWKB(POINT(1,3));
 show create table t1;
 drop table t1;
 
@@ -360,10 +360,20 @@ t1 where object_id=85984;
 
 drop table t1;
 
+create table t1 (fl geometry not null);
+--error 1416
+insert into t1 values (1);
+--error 1416
+insert into t1 values (1.11);
+--error 1416
+insert into t1 values ("qwerty");
+--error 1048
+insert into t1 values (pointfromtext('point(1,1)'));
+
+drop table t1;
+
 select (asWKT(geomfromwkb((0x000000000140240000000000004024000000000000))));
 select (asWKT(geomfromwkb((0x010100000000000000000024400000000000002440))));
-
-# End of 4.1 tests
 
 --enable_metadata
 create table t1 (g GEOMETRY);
@@ -371,3 +381,193 @@ select * from t1;
 select asbinary(g) from t1;
 --disable_metadata
 drop table t1;
+
+create table t1 (a TEXT, b GEOMETRY NOT NULL, SPATIAL KEY(b));
+alter table t1 disable keys;
+--error 1263
+load data infile '../std_data_ln/bad_gis_data.dat' into table t1;
+alter table t1 enable keys;
+drop table t1;
+
+#
+# Bug #26038: is null and bad data
+#
+
+create table t1 (a int, b blob);
+insert into t1 values (1, ''), (2, NULL), (3, '1');
+select * from t1;
+
+select
+  geometryfromtext(b) IS NULL, geometryfromwkb(b) IS NULL, astext(b) IS NULL, 
+  aswkb(b) IS NULL, geometrytype(b) IS NULL, centroid(b) IS NULL,
+  envelope(b) IS NULL, startpoint(b) IS NULL, endpoint(b) IS NULL,
+  exteriorring(b) IS NULL, pointn(b, 1) IS NULL, geometryn(b, 1) IS NULL,
+  interiorringn(b, 1) IS NULL, multipoint(b) IS NULL, isempty(b) IS NULL,
+  issimple(b) IS NULL, isclosed(b) IS NULL, dimension(b) IS NULL,
+  numgeometries(b) IS NULL, numinteriorrings(b) IS NULL, numpoints(b) IS NULL,
+  area(b) IS NULL, glength(b) IS NULL, srid(b) IS NULL, x(b) IS NULL, 
+  y(b) IS NULL
+from t1;
+
+select 
+  within(b, b) IS NULL, contains(b, b) IS NULL, overlaps(b, b) IS NULL, 
+  equals(b, b) IS NULL, disjoint(b, b) IS NULL, touches(b, b) IS NULL, 
+  intersects(b, b) IS NULL, crosses(b, b) IS NULL
+from t1;
+
+select 
+  point(b, b) IS NULL, linestring(b) IS NULL, polygon(b) IS NULL, multipoint(b) IS NULL, 
+  multilinestring(b) IS NULL, multipolygon(b) IS NULL, 
+  geometrycollection(b) IS NULL
+from t1;
+
+drop table t1;
+
+#
+# Bug #27164: Crash when mixing InnoDB and MyISAM Geospatial tables
+#
+CREATE TABLE t1(a POINT) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (NULL);
+SELECT * FROM t1;
+DROP TABLE t1;
+
+--echo End of 4.1 tests
+
+#
+# Bug #12281 (Geometry: crash in trigger)
+#
+
+create table t1 (s1 geometry not null,s2 char(100));
+create trigger t1_bu before update on t1 for each row set new.s1 = null;
+--error 1048
+insert into t1 values (null,null);
+drop table t1;
+
+#
+# Bug #10499 (function creation with GEOMETRY datatype)
+#
+--disable_warnings
+drop procedure if exists fn3;
+--enable_warnings
+create function fn3 () returns point return GeomFromText("point(1 1)"); 
+show create function fn3;
+select astext(fn3());
+drop function fn3;
+
+#
+# Bug #12267 (primary key over GIS)
+#
+create table t1(pt POINT);
+alter table t1 add primary key pti(pt);
+drop table t1;
+create table t1(pt GEOMETRY);
+--error 1170
+alter table t1 add primary key pti(pt);
+alter table t1 add primary key pti(pt(20));
+drop table t1;
+
+
+create table t1 select GeomFromText('point(1 1)');
+desc t1;
+drop table t1;
+
+#
+# Bug #20691 (DEFAULT over NOT NULL field)
+#
+create table t1 (g geometry not null);
+--error ER_CANT_CREATE_GEOMETRY_OBJECT
+insert into t1 values(default);
+drop table t1;
+
+#
+# Bug #27300: create view with geometry functions lost columns types 
+#
+CREATE TABLE t1 (a GEOMETRY);
+CREATE VIEW v1 AS SELECT GeomFromwkb(ASBINARY(a)) FROM t1;
+CREATE VIEW v2 AS SELECT a FROM t1;
+DESCRIBE v1;
+DESCRIBE v2;
+
+DROP VIEW v1,v2;
+DROP TABLE t1;
+
+#
+# Bug#24563: MBROverlaps does not seem to function propertly
+# Bug#54888: MBROverlaps missing in 5.1?
+#
+
+# Test all MBR* functions and their non-MBR-prefixed aliases,
+# using shifted squares to verify the spatial relations.
+
+create table t1 (name VARCHAR(100), square GEOMETRY);
+
+INSERT INTO t1 VALUES("center", GeomFromText('POLYGON (( 0 0, 0 2, 2 2, 2 0, 0 0))'));
+
+INSERT INTO t1 VALUES("small",  GeomFromText('POLYGON (( 0 0, 0 1, 1 1, 1 0, 0 0))'));
+INSERT INTO t1 VALUES("big",    GeomFromText('POLYGON (( 0 0, 0 3, 3 3, 3 0, 0 0))'));
+
+INSERT INTO t1 VALUES("up",     GeomFromText('POLYGON (( 0 1, 0 3, 2 3, 2 1, 0 1))'));
+INSERT INTO t1 VALUES("up2",    GeomFromText('POLYGON (( 0 2, 0 4, 2 4, 2 2, 0 2))'));
+INSERT INTO t1 VALUES("up3",    GeomFromText('POLYGON (( 0 3, 0 5, 2 5, 2 3, 0 3))'));
+
+INSERT INTO t1 VALUES("down",   GeomFromText('POLYGON (( 0 -1, 0  1, 2  1, 2 -1, 0 -1))'));
+INSERT INTO t1 VALUES("down2",  GeomFromText('POLYGON (( 0 -2, 0  0, 2  0, 2 -2, 0 -2))'));
+INSERT INTO t1 VALUES("down3",  GeomFromText('POLYGON (( 0 -3, 0 -1, 2 -1, 2 -3, 0 -3))'));
+
+INSERT INTO t1 VALUES("right",  GeomFromText('POLYGON (( 1 0, 1 2, 3 2, 3 0, 1 0))'));
+INSERT INTO t1 VALUES("right2", GeomFromText('POLYGON (( 2 0, 2 2, 4 2, 4 0, 2 0))'));
+INSERT INTO t1 VALUES("right3", GeomFromText('POLYGON (( 3 0, 3 2, 5 2, 5 0, 3 0))'));
+
+INSERT INTO t1 VALUES("left",   GeomFromText('POLYGON (( -1 0, -1 2,  1 2,  1 0, -1 0))'));
+INSERT INTO t1 VALUES("left2",  GeomFromText('POLYGON (( -2 0, -2 2,  0 2,  0 0, -2 0))'));
+INSERT INTO t1 VALUES("left3",  GeomFromText('POLYGON (( -3 0, -3 2, -1 2, -1 0, -3 0))'));
+
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrcontains  FROM t1 a1 JOIN t1 a2 ON MBRContains(   a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrdisjoint  FROM t1 a1 JOIN t1 a2 ON MBRDisjoint(   a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrequal     FROM t1 a1 JOIN t1 a2 ON MBREqual(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrintersect FROM t1 a1 JOIN t1 a2 ON MBRIntersects( a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbroverlaps  FROM t1 a1 JOIN t1 a2 ON MBROverlaps(   a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrtouches   FROM t1 a1 JOIN t1 a2 ON MBRTouches(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrwithin    FROM t1 a1 JOIN t1 a2 ON MBRWithin(     a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS contains     FROM t1 a1 JOIN t1 a2 ON Contains(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS disjoint     FROM t1 a1 JOIN t1 a2 ON Disjoint(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS equals       FROM t1 a1 JOIN t1 a2 ON Equals(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS intersect    FROM t1 a1 JOIN t1 a2 ON Intersects(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS overlaps     FROM t1 a1 JOIN t1 a2 ON Overlaps(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS touches      FROM t1 a1 JOIN t1 a2 ON Touches(       a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS within       FROM t1 a1 JOIN t1 a2 ON Within(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+
+# Overlaps needs a few more tests, with point and line dimensions
+
+SET @vert1   = GeomFromText('POLYGON ((0 -2, 0 2, 0 -2))');
+SET @horiz1  = GeomFromText('POLYGON ((-2 0, 2 0, -2 0))');
+SET @horiz2 = GeomFromText('POLYGON ((-1 0, 3 0, -1 0))');
+SET @horiz3 = GeomFromText('POLYGON ((2 0, 3 0, 2 0))');
+SET @point1 = GeomFromText('POLYGON ((0 0))');
+SET @point2 = GeomFromText('POLYGON ((-2 0))');
+
+SELECT GROUP_CONCAT(a1.name ORDER BY a1.name) AS overlaps FROM t1 a1 WHERE Overlaps(a1.square, @vert1) GROUP BY a1.name;
+SELECT GROUP_CONCAT(a1.name ORDER BY a1.name) AS overlaps FROM t1 a1 WHERE Overlaps(a1.square, @horiz1) GROUP BY a1.name;
+SELECT Overlaps(@horiz1, @vert1) FROM DUAL;
+SELECT Overlaps(@horiz1, @horiz2) FROM DUAL;
+SELECT Overlaps(@horiz1, @horiz3) FROM DUAL;
+SELECT Overlaps(@horiz1, @point1) FROM DUAL;
+SELECT Overlaps(@horiz1, @point2) FROM DUAL;
+
+DROP TABLE t1;
+
+#
+# Bug#28763: Selecting geometry fields in UNION caused server crash.
+#
+create table t1(f1 geometry, f2 point, f3 linestring);
+select f1 from t1 union select f1 from t1;
+insert into t1 (f2,f3) values (GeomFromText('POINT(1 1)'),
+  GeomFromText('LINESTRING(0 0,1 1,2 2)'));
+select AsText(f2),AsText(f3) from t1;
+select AsText(a) from (select f2 as a from t1 union select f3 from t1) t;
+create table t2 as select f2 as a from t1 union select f3 from t1;
+desc t2;
+select AsText(a) from t2; 
+drop table t1, t2;
+--echo End of 5.0 tests

@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -213,7 +212,7 @@ static int my_strnncoll_cp932_internal(CHARSET_INFO *cs,
       uint a_char= cp932code(*a, *(a+1));
       uint b_char= cp932code(*b, *(b+1));
       if (a_char != b_char)
-	return (int) a_char - (int) b_char;
+	return a_char - b_char;
       a += 2;
       b += 2;
     } else
@@ -244,7 +243,9 @@ static int my_strnncoll_cp932(CHARSET_INFO *cs __attribute__((unused)),
 
 static int my_strnncollsp_cp932(CHARSET_INFO *cs __attribute__((unused)),
                                 const uchar *a, uint a_length, 
-                                const uchar *b, uint b_length)
+                                const uchar *b, uint b_length,
+                                my_bool diff_if_only_endspace_difference
+                                __attribute__((unused)))
 {
   const uchar *a_end= a + a_length;
   const uchar *b_end= b + b_length;
@@ -322,13 +323,11 @@ static my_bool my_like_range_cp932(CHARSET_INFO *cs __attribute__((unused)),
 				  uint res_length, char *min_str,char *max_str,
 				  uint *min_length,uint *max_length)
 {
-  const char *end= ptr + ptr_length;
+  const char *end=ptr+ptr_length;
   char *min_org=min_str;
   char *min_end=min_str+res_length;
-  uint charlen= res_length / cs->mbmaxlen;
 
-  for ( ; ptr < end && min_str < min_end && charlen > 0 ; charlen--)
-  {
+  while (ptr < end && min_str < min_end) {
     if (ismbchar_cp932(cs, ptr, end)) {
       *min_str++ = *max_str++ = *ptr++;
       if (min_str < min_end)
@@ -5380,11 +5379,11 @@ my_mb_wc_cp932(CHARSET_INFO *cs  __attribute__((unused)),
 
 static
 uint my_numcells_cp932(CHARSET_INFO *cs __attribute__((unused)),
-                      const char *str, const char *strend)
+                      const char *str, const char *str_end)
 {
   uint clen= 0;
   const unsigned char *b= (const unsigned char *) str;
-  const unsigned char *e= (const unsigned char *) strend;
+  const unsigned char *e= (const unsigned char *) str_end;
   
   for (clen= 0; b < e; )
   {
@@ -5456,11 +5455,13 @@ static MY_COLLATION_HANDLER my_collation_ci_handler =
   my_strnncoll_cp932,
   my_strnncollsp_cp932,
   my_strnxfrm_cp932,
+  my_strnxfrmlen_simple,
   my_like_range_cp932,
   my_wildcmp_mb,	/* wildcmp  */
   my_strcasecmp_8bit,
   my_instr_mb,
   my_hash_sort_simple,
+  my_propagate_simple
 };
 
 
@@ -5490,6 +5491,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
   my_strntoull_8bit,
   my_strntod_8bit,
   my_strtoll10_8bit,
+  my_strntoull10rnd_8bit,
   my_scan_8bit
 };
 
@@ -5510,13 +5512,17 @@ CHARSET_INFO my_charset_cp932_japanese_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,			/* caseup_multiply  */
+    1,			/* casedn_multiply  */
     1,			/* mbminlen   */
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
@@ -5538,13 +5544,17 @@ CHARSET_INFO my_charset_cp932_bin=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,			/* caseup_multiply  */
+    1,			/* casedn_multiply  */
     1,			/* mbminlen   */
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler

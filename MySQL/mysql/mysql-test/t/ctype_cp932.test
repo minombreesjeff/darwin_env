@@ -379,35 +379,62 @@ INSERT INTO t1 VALUES
 (0xF9F8),(0xF9F9),(0xF9FA),(0xF9FB),(0xF9FC);
 
 #Test that all the characters are stored correctly
-SELECT HEX(c1) FROM t1 ORDER BY BINARY c1;
+SELECT HEX(c1) FROM t1;
 
 #Test conversion to ucs2
-CREATE TABLE t2 SELECT CONVERT(c1 USING ucs2) AS c1 FROM t1 ORDER BY BINARY c1;
-SELECT HEX(c1) FROM t2 ORDER BY BINARY c1;
+CREATE TABLE t2 SELECT CONVERT(c1 USING ucs2) AS c1 FROM t1;
+SELECT HEX(c1) FROM t2;
 
 #Test round trip conversion
-CREATE TABLE t3 SELECT CONVERT(c1 USING cp932) AS c1 FROM t2 ORDER BY BINARY c1;
-SELECT HEX(c1) FROM t3 ORDER BY BINARY c1;
+CREATE TABLE t3 SELECT CONVERT(c1 USING cp932) AS c1 FROM t2;
+SELECT HEX(c1) FROM t3;
 
-#eucjpms is only available from version 5.0
-#skip this test in version 4.1
-#
 #Test conversion to eucjpms
-#CREATE TABLE t4 SELECT CONVERT(c1 USING eucjpms) AS c1 FROM t1 ORDER BY BINARY c1;
-#SELECT HEX(c1) FROM t4 ORDER BY BINARY c1;
+CREATE TABLE t4 SELECT CONVERT(c1 USING eucjpms) AS c1 FROM t1;
+SELECT HEX(c1) FROM t4;
 
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
-#DROP TABLE t4;
+DROP TABLE t4;
 
 SET collation_connection='cp932_japanese_ci';
 -- source include/ctype_filesort.inc
--- source include/ctype_innodb_like.inc
--- source include/ctype_like_escape.inc
 SET collation_connection='cp932_bin';
 -- source include/ctype_filesort.inc
--- source include/ctype_innodb_like.inc
--- source include/ctype_like_escape.inc
 
-# End of 4.1 tests
+#
+# Bug#12547: Inserting long string into varchar causes table crash in cp932
+#
+create table t1 (col1 varchar(1)) character set cp932;
+insert into t1 values ('a');
+insert into t1 values ('ab');
+select * from t1;
+insert into t1 values ('abc');
+select * from t1;
+drop table t1;
+
+#
+# BUG#16217 - MySQL client misinterpretes multi-byte char as escape `\' 
+#
+
+# new command \C or charset
+--exec $MYSQL --default-character-set=utf8 test -e "\C cp932 \g"
+--exec $MYSQL --default-character-set=cp932 test -e "charset utf8;"
+
+# its usage to switch internally in mysql to requested charset
+--exec $MYSQL --default-character-set=utf8 test -e "charset cp932; select 'ソ'; create table t1 (c_cp932 TEXT CHARACTER SET cp932); insert into t1 values('ソ'); select * from t1;  drop table t1;"
+--exec $MYSQL --default-character-set=utf8 test -e "charset cp932; select 'ソ'"
+--exec $MYSQL --default-character-set=utf8 test -e "/*charset cp932 */; set character_set_client= cp932; select 'ソ'"
+--exec $MYSQL --default-character-set=utf8 test -e "/*!\C cp932 */; set character_set_client= cp932; select 'ソ'"
+
+#
+# Bug#25815 Data truncated for column TEXT
+#
+set names utf8;
+create table t1 (a text) default character set cp932;
+insert into t1 values (_utf8 0xE38182);
+show warnings;
+select * from t1;
+select hex(a) from t1;
+drop table t1;

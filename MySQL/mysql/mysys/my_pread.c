@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,7 +29,7 @@ uint my_pread(File Filedes, byte *Buffer, uint Count, my_off_t offset,
   int error;
   DBUG_ENTER("my_pread");
   DBUG_PRINT("my",("Fd: %d  Seek: %lu  Buffer: 0x%lx  Count: %u  MyFlags: %d",
-		   Filedes, (ulong) offset, Buffer, Count, MyFlags));
+		   Filedes, (ulong) offset, (long) Buffer, Count, MyFlags));
 
   for (;;)
   {
@@ -49,11 +48,15 @@ uint my_pread(File Filedes, byte *Buffer, uint Count, my_off_t offset,
     if (error)
     {
       my_errno=errno;
-      DBUG_PRINT("warning",("Read only %ld bytes off %ld from %d, errno: %d",
-			    readbytes,Count,Filedes,my_errno));
+      DBUG_PRINT("warning",("Read only %d bytes off %u from %d, errno: %d",
+			    (int) readbytes, Count,Filedes,my_errno));
 #ifdef THREAD
-      if (readbytes == 0 && errno == EINTR)
-	continue;				/* Interrupted */
+      if ((readbytes == 0 || (int) readbytes == -1) && errno == EINTR)
+      {
+        DBUG_PRINT("debug", ("my_pread() was interrupted and returned %d",
+                             (int) readbytes));
+        continue;                              /* Interrupted */
+      }
 #endif
       if (MyFlags & (MY_WME | MY_FAE | MY_FNABP))
       {
@@ -83,7 +86,7 @@ uint my_pwrite(int Filedes, const byte *Buffer, uint Count, my_off_t offset,
   ulong written;
   DBUG_ENTER("my_pwrite");
   DBUG_PRINT("my",("Fd: %d  Seek: %lu  Buffer: 0x%lx  Count: %d  MyFlags: %d",
-		   Filedes, (ulong) offset,Buffer, Count, MyFlags));
+		   Filedes, (ulong) offset, (long) Buffer, Count, MyFlags));
   errors=0; written=0L;
 
   for (;;)
@@ -124,8 +127,8 @@ uint my_pwrite(int Filedes, const byte *Buffer, uint Count, my_off_t offset,
       VOID(sleep(MY_WAIT_FOR_USER_TO_FIX_PANIC));
       continue;
     }
-    if ((writenbytes == 0 && my_errno == EINTR) ||
-	(writenbytes > 0 && (uint) writenbytes != (uint) -1))
+    if ((writenbytes > 0 && (uint) writenbytes != (uint) -1) ||
+        my_errno == EINTR)
       continue;					/* Retry */
 #endif
     if (MyFlags & (MY_NABP | MY_FNABP))

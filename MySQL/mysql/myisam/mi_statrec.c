@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2002, 2004-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,7 +22,8 @@ int _mi_write_static_record(MI_INFO *info, const byte *record)
 {
   uchar temp[8];				/* max pointer length */
 
-  if (info->s->state.dellink != HA_OFFSET_ERROR)
+  if (info->s->state.dellink != HA_OFFSET_ERROR &&
+      !info->append_insert_at_end)
   {
     my_off_t filepos=info->s->state.dellink;
     info->rec_cache.seek_not_done=1;		/* We have done a seek */
@@ -254,8 +254,8 @@ int _mi_read_rnd_static_record(MI_INFO *info, byte *buf,
   if (filepos >= info->state->data_file_length)
   {
     DBUG_PRINT("test",("filepos: %ld (%ld)  records: %ld  del: %ld",
-		       filepos/share->base.reclength,filepos,
-		       info->state->records, info->state->del));
+		       (long) filepos/share->base.reclength, (long) filepos,
+		       (long) info->state->records, (long) info->state->del));
     fast_mi_writeinfo(info);
     DBUG_RETURN(my_errno=HA_ERR_END_OF_FILE);
   }

@@ -4,25 +4,17 @@ extra_configs="$extra_configs $local_infile_configs"
 configure="./configure $base_configs $extra_configs"
 
 commands="\
-$make -k clean || true 
+$make -k distclean || true 
 /bin/rm -rf */.deps/*.P config.cache innobase/config.cache bdb/build_unix/config.cache bdb/dist/autom4te.cache autom4te.cache innobase/autom4te.cache;
 
-aclocal    || (echo \"Can't execute aclocal\"     && exit 1)
-autoheader || (echo \"Can't execute autoheader\"  && exit 1)
-aclocal    || (echo \"Can't execute aclocal\"     && exit 1)
-automake   || (echo \"Can't execute automake\"    && exit 1)
-autoconf   || (echo \"Can't execute autoconf\"    && exit 1)
-(cd bdb/dist && sh s_all)
-(cd innobase && aclocal && autoheader && aclocal && automake && autoconf)
-if [ -d gemini ]
-then
-   (cd gemini && aclocal && autoheader && aclocal && automake && autoconf)
-fi"
+
+path=`dirname $0`
+. \"$path/autorun.sh\""
 
 if [ -z "$just_clean" ]
 then
 commands="$commands
-CFLAGS=\"$cflags\" CXX=\"$CXX\" CXXFLAGS=\"$cxxflags\" CXXLDFLAGS=\"$CXXLDFLAGS\" \
+CC=\"$CC\" CFLAGS=\"$cflags\" CXX=\"$CXX\" CXXFLAGS=\"$cxxflags\" CXXLDFLAGS=\"$CXXLDFLAGS\" \
 $configure"
 fi
 

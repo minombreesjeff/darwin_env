@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -381,15 +380,10 @@ const GsnName SignalNames [] = {
   ,{ GSN_TUP_WRITELOG_REQ,       "TUP_WRITELOG_REQ" }
   ,{ GSN_LQH_WRITELOG_REQ,       "LQH_WRITELOG_REQ" }
 
-  ,{ GSN_STATISTICS_REQ,         "STATISTICS_REQ" }
   ,{ GSN_START_ORD,              "START_ORD" }
   ,{ GSN_STOP_ORD,               "STOP_ORD" }
   ,{ GSN_TAMPER_ORD,             "TAMPER_ORD" }
-  ,{ GSN_SET_VAR_REQ,            "SET_VAR_REQ" }
-  ,{ GSN_SET_VAR_CONF,           "SET_VAR_CONF" }
-  ,{ GSN_SET_VAR_REF,            "SET_VAR_REF" }
-  ,{ GSN_STATISTICS_CONF,        "STATISTICS_CONF" }
-  
+
   ,{ GSN_EVENT_SUBSCRIBE_REQ,    "EVENT_SUBSCRIBE_REQ" }
   ,{ GSN_EVENT_SUBSCRIBE_CONF,   "EVENT_SUBSCRIBE_CONF" }
   ,{ GSN_EVENT_SUBSCRIBE_REF,    "EVENT_SUBSCRIBE_REF" }
@@ -398,6 +392,8 @@ const GsnName SignalNames [] = {
   ,{ GSN_TUP_COM_BLOCK,          "TUP_COM_BLOCK" }
   ,{ GSN_TUP_COM_UNBLOCK,        "TUP_COM_UNBLOCK" }
   ,{ GSN_DUMP_STATE_ORD,         "DUMP_STATE_ORD" }
+
+  ,{ GSN_NODE_START_REP, "NODE_START_REP" }
 
   ,{ GSN_START_INFOREQ,  "START_INFOREQ" }
   ,{ GSN_START_INFOREF,  "START_INFOREF" }
@@ -502,18 +498,6 @@ const GsnName SignalNames [] = {
   //,{ GSN_TCINDEXNEXTCONF, 	"TCINDEXNEXTCONF" }
   //,{ GSN_TCINDEXNEXREF, 	"TCINDEXNEXREF" }
 
-  ,{ GSN_CREATE_EVNT_REQ,        "CREATE_EVNT_REQ" }
-  ,{ GSN_CREATE_EVNT_CONF,       "CREATE_EVNT_CONF" }
-  ,{ GSN_CREATE_EVNT_REF,        "CREATE_EVNT_REF" }
-
-  ,{ GSN_SUMA_START_ME,          "SUMA_START_ME" }  
-  ,{ GSN_SUMA_HANDOVER_REQ,      "SUMA_HANDOVER_REQ"}
-  ,{ GSN_SUMA_HANDOVER_CONF,     "SUMA_HANDOVER_CONF"} 
-
-  ,{ GSN_DROP_EVNT_REQ,          "DROP_EVNT_REQ" }
-  ,{ GSN_DROP_EVNT_CONF,         "DROP_EVNT_CONF" }
-  ,{ GSN_DROP_EVNT_REF,          "DROP_EVNT_REF" }
-
   ,{ GSN_BACKUP_TRIG_REQ,        "BACKUP_TRIG_REQ" }
   ,{ GSN_BACKUP_REQ,             "BACKUP_REQ" }
   ,{ GSN_BACKUP_DATA,            "BACKUP_DATA" }
@@ -578,12 +562,9 @@ const GsnName SignalNames [] = {
   ,{ GSN_SUB_CREATE_REQ,         "SUB_CREATE_REQ" }
   ,{ GSN_SUB_CREATE_REF,         "SUB_CREATE_REF" }
   ,{ GSN_SUB_CREATE_CONF,        "SUB_CREATE_CONF" }
-  ,{ GSN_SUB_START_REQ,          "SUB_START_REQ" }
-  ,{ GSN_SUB_START_REF,          "SUB_START_REF" }
-  ,{ GSN_SUB_START_CONF,         "SUB_START_CONF" }
-  ,{ GSN_SUB_STOP_REQ,           "SUB_STOP_REQ" }
-  ,{ GSN_SUB_STOP_REF,           "SUB_STOP_REF" }
-  ,{ GSN_SUB_STOP_CONF,          "SUB_STOP_CONF" }
+  ,{ GSN_SUB_REMOVE_REQ,         "SUB_REMOVE_REQ" }
+  ,{ GSN_SUB_REMOVE_REF,         "SUB_REMOVE_REF" }
+  ,{ GSN_SUB_REMOVE_CONF,        "SUB_REMOVE_CONF" }
   ,{ GSN_SUB_SYNC_REQ,           "SUB_SYNC_REQ" }
   ,{ GSN_SUB_SYNC_REF,           "SUB_SYNC_REF" }
   ,{ GSN_SUB_SYNC_CONF,          "SUB_SYNC_CONF" }
@@ -593,7 +574,6 @@ const GsnName SignalNames [] = {
   ,{ GSN_SUB_SYNC_CONTINUE_REF,  "SUB_SYNC_CONTINUE_REF" }
   ,{ GSN_SUB_SYNC_CONTINUE_CONF, "SUB_SYNC_CONTINUE_CONF" }
   ,{ GSN_SUB_GCP_COMPLETE_REP,   "SUB_GCP_COMPLETE_REP" }
-  ,{ GSN_SUB_GCP_COMPLETE_ACC,   "SUB_GCP_COMPLETE_ACC" }
 
   ,{ GSN_CREATE_SUBID_REQ,         "CREATE_SUBID_REQ" }
   ,{ GSN_CREATE_SUBID_REF,         "CREATE_SUBID_REF" }
@@ -644,6 +624,13 @@ const GsnName SignalNames [] = {
   ,{ GSN_TUX_MAINT_REF,  "TUX_MAINT_REF" }
   ,{ GSN_TUX_BOUND_INFO,  "TUX_BOUND_INFO" }
   ,{ GSN_ACC_LOCKREQ,  "ACC_LOCKREQ" }
-  
+
+  /* DICT LOCK */
+  ,{ GSN_DICT_LOCK_REQ,          "DICT_LOCK_REQ" }
+  ,{ GSN_DICT_LOCK_CONF,         "DICT_LOCK_CONF" }
+  ,{ GSN_DICT_LOCK_REF,          "DICT_LOCK_REF" }
+  ,{ GSN_DICT_UNLOCK_ORD,        "DICT_UNLOCK_ORD" }
+
+  ,{ GSN_UPDATE_FRAG_DIST_KEY_ORD, "UPDATE_FRAG_DIST_KEY_ORD" }
 };
 const unsigned short NO_OF_SIGNAL_NAMES = sizeof(SignalNames)/sizeof(GsnName);

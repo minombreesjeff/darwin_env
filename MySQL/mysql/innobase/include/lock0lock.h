@@ -19,7 +19,9 @@ Created 5/7/1996 Heikki Tuuri
 #include "read0types.h"
 #include "hash0hash.h"
 
+#ifdef UNIV_DEBUG
 extern ibool	lock_print_waits;
+#endif /* UNIV_DEBUG */
 /* Buffer for storing information about the most recent deadlock error */
 extern FILE*	lock_latest_err_file;
 
@@ -47,7 +49,8 @@ lock_sec_rec_some_has_impl_off_kernel(
 				/* out: transaction which has the x-lock, or
 				NULL */
 	rec_t*		rec,	/* in: user record */
-	dict_index_t*	index);	/* in: secondary index */
+	dict_index_t*	index,	/* in: secondary index */
+	const ulint*	offsets);/* in: rec_get_offsets(rec, index) */
 /*************************************************************************
 Checks if some transaction has an implicit x-lock on a record in a clustered
 index. */
@@ -58,15 +61,8 @@ lock_clust_rec_some_has_impl(
 				/* out: transaction which has the x-lock, or
 				NULL */
 	rec_t*		rec,	/* in: user record */
-	dict_index_t*	index);	/* in: clustered index */
-/*****************************************************************
-Resets the lock bits for a single record. Releases transactions
-waiting for lock requests here. */
-
-void
-lock_rec_reset_and_release_wait(
-/*============================*/
-	rec_t*	rec);	/* in: record whose locks bits should be reset */
+	dict_index_t*	index,	/* in: clustered index */
+	const ulint*	offsets);/* in: rec_get_offsets(rec, index) */
 /*****************************************************************
 Makes a record to inherit the locks of another record as gap type
 locks, but does not reset the lock bits of the other record. Also
@@ -214,6 +210,7 @@ actual record is being moved. */
 void
 lock_rec_store_on_page_infimum(
 /*===========================*/
+	page_t*	page,	/* in: page containing the record */
 	rec_t*	rec);	/* in: record whose lock state is stored
 			on the infimum record of the same page; lock
 			bits are reset on the record */
@@ -275,6 +272,7 @@ lock_clust_rec_modify_check_and_lock(
 				does nothing */
 	rec_t*		rec,	/* in: record which should be modified */
 	dict_index_t*	index,	/* in: clustered index */
+	const ulint*	offsets,/* in: rec_get_offsets(rec, index) */
 	que_thr_t*	thr);	/* in: query thread */
 /*************************************************************************
 Checks if locks of other transactions prevent an immediate modify
@@ -308,6 +306,7 @@ lock_sec_rec_read_check_and_lock(
 				which should be read or passed over by a read
 				cursor */
 	dict_index_t*	index,	/* in: secondary index */
+	const ulint*	offsets,/* in: rec_get_offsets(rec, index) */
 	ulint		mode,	/* in: mode of the lock which the read cursor
 				should set on records: LOCK_S or LOCK_X; the
 				latter is possible in SELECT FOR UPDATE */
@@ -333,6 +332,34 @@ lock_clust_rec_read_check_and_lock(
 				which should be read or passed over by a read
 				cursor */
 	dict_index_t*	index,	/* in: clustered index */
+	const ulint*	offsets,/* in: rec_get_offsets(rec, index) */
+	ulint		mode,	/* in: mode of the lock which the read cursor
+				should set on records: LOCK_S or LOCK_X; the
+				latter is possible in SELECT FOR UPDATE */
+	ulint		gap_mode,/* in: LOCK_ORDINARY, LOCK_GAP, or
+				LOCK_REC_NOT_GAP */
+	que_thr_t*	thr);	/* in: query thread */
+/*************************************************************************
+Checks if locks of other transactions prevent an immediate read, or passing
+over by a read cursor, of a clustered index record. If they do, first tests
+if the query thread should anyway be suspended for some reason; if not, then
+puts the transaction and the query thread to the lock wait state and inserts a
+waiting request for a record lock to the lock queue. Sets the requested mode
+lock on the record. This is an alternative version of
+lock_clust_rec_read_check_and_lock() that does not require the parameter
+"offsets". */
+
+ulint
+lock_clust_rec_read_check_and_lock_alt(
+/*===================================*/
+				/* out: DB_SUCCESS, DB_LOCK_WAIT,
+				DB_DEADLOCK, or DB_QUE_THR_SUSPENDED */
+	ulint		flags,	/* in: if BTR_NO_LOCKING_FLAG bit is set,
+				does nothing */
+	rec_t*		rec,	/* in: user record or page supremum record
+				which should be read or passed over by a read
+				cursor */
+	dict_index_t*	index,	/* in: clustered index */
 	ulint		mode,	/* in: mode of the lock which the read cursor
 				should set on records: LOCK_S or LOCK_X; the
 				latter is possible in SELECT FOR UPDATE */
@@ -350,6 +377,7 @@ lock_clust_rec_cons_read_sees(
 	rec_t*		rec,	/* in: user record which should be read or
 				passed over by a read cursor */
 	dict_index_t*	index,	/* in: clustered index */
+	const ulint*	offsets,/* in: rec_get_offsets(rec, index) */
 	read_view_t*	view);	/* in: consistent read view */
 /*************************************************************************
 Checks that a non-clustered index record is seen in a consistent read. */
@@ -379,9 +407,7 @@ lock_table(
 				/* out: DB_SUCCESS, DB_LOCK_WAIT,
 				DB_DEADLOCK, or DB_QUE_THR_SUSPENDED */
 	ulint		flags,	/* in: if BTR_NO_LOCKING_FLAG bit is set,
-				does nothing;
-				if LOCK_TABLE_EXP bits are set,
-				creates an explicit table lock */
+				does nothing */
 	dict_table_t*	table,	/* in: database table in dictionary cache */
 	ulint		mode,	/* in: lock mode */
 	que_thr_t*	thr);	/* in: query thread */
@@ -393,6 +419,18 @@ lock_is_on_table(
 /*=============*/
 				/* out: TRUE if there are lock(s) */
 	dict_table_t*	table);	/* in: database table in dictionary cache */
+/*****************************************************************
+Removes a granted record lock of a transaction from the queue and grants
+locks to other transactions waiting in the queue if they now are entitled
+to a lock. */
+
+void
+lock_rec_unlock(
+/*============*/
+	trx_t*	trx,  		/* in: transaction that has set a record
+				lock */
+	rec_t*	rec,		/* in: record */
+	ulint	lock_mode);	/* in: LOCK_S or LOCK_X */
 /*************************************************************************
 Releases a table lock.
 Releases possible other transactions waiting for this lock. */
@@ -416,15 +454,6 @@ because of these locks. */
 void
 lock_release_off_kernel(
 /*====================*/
-	trx_t*	trx);	/* in: transaction */
-/*************************************************************************
-Releases table locks explicitly requested with LOCK TABLES (indicated by
-lock type LOCK_TABLE_EXP), and releases possible other transactions waiting
-because of these locks. */
-
-void
-lock_release_tables_off_kernel(
-/*===========================*/
 	trx_t*	trx);	/* in: transaction */
 /*************************************************************************
 Cancels a waiting lock request and releases possible other transactions
@@ -499,6 +528,7 @@ lock_check_trx_id_sanity(
 	dulint		trx_id,		/* in: trx id */
 	rec_t*		rec,		/* in: user record */
 	dict_index_t*	index,		/* in: clustered index */
+	const ulint*	offsets,	/* in: rec_get_offsets(rec, index) */
 	ibool		has_kernel_mutex);/* in: TRUE if the caller owns the
 					kernel mutex */
 /*************************************************************************
@@ -509,7 +539,8 @@ lock_rec_queue_validate(
 /*====================*/
 				/* out: TRUE if ok */
 	rec_t*		rec,	/* in: record to look at */
-	dict_index_t*	index);	/* in: index, or NULL if not known */
+	dict_index_t*	index,	/* in: index, or NULL if not known */
+	const ulint*	offsets);/* in: rec_get_offsets(rec, index) */
 /*************************************************************************
 Prints info of a table lock. */
 
@@ -583,7 +614,6 @@ extern lock_sys_t*	lock_sys;
 /* Lock types */
 #define LOCK_TABLE	16	/* these type values should be so high that */
 #define	LOCK_REC	32	/* they can be ORed to the lock mode */
-#define LOCK_TABLE_EXP	80	/* explicit table lock (80 = 16 + 64) */
 #define LOCK_TYPE_MASK	0xF0UL	/* mask used to extract lock type from the
 				type_mode field in a lock */
 /* Waiting lock flag */

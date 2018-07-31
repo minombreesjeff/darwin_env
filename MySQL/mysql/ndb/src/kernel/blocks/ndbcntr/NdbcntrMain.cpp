@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -51,6 +50,10 @@
 #include <NdbOut.hpp>
 #include <NdbTick.h>
 
+// used during shutdown for reporting current startphase
+// accessed from Emulator.cpp, NdbShutdown()
+Uint32 g_currentStartPhase;
+
 /**
  * ALL_BLOCKS Used during start phases and while changing node state
  *
@@ -72,8 +75,8 @@ static BlockInfo ALL_BLOCKS[] = {
   { DBDICT_REF,  1 ,  6000,  6003 },
   { NDBFS_REF,   0 ,  2000,  2999 },
   { NDBCNTR_REF, 0 ,  1000,  1999 },
+  { CMVMI_REF,   1 ,  9000,  9999 }, // before QMGR
   { QMGR_REF,    1 ,     1,   999 },
-  { CMVMI_REF,   1 ,  9000,  9999 },
   { TRIX_REF,    1 ,     0,     0 },
   { BACKUP_REF,  1 , 10000, 10999 },
   { DBUTIL_REF,  1 , 11000, 11999 },
@@ -82,6 +85,24 @@ static BlockInfo ALL_BLOCKS[] = {
 };
 
 static const Uint32 ALL_BLOCKS_SZ = sizeof(ALL_BLOCKS)/sizeof(BlockInfo);
+
+static BlockReference readConfigOrder[ALL_BLOCKS_SZ] = {
+  DBTUP_REF,
+  DBACC_REF,
+  DBTC_REF,
+  DBLQH_REF,
+  DBTUX_REF,
+  DBDICT_REF,
+  DBDIH_REF,
+  NDBFS_REF,
+  NDBCNTR_REF,
+  QMGR_REF,
+  CMVMI_REF,
+  TRIX_REF,
+  BACKUP_REF,
+  DBUTIL_REF,
+  SUMA_REF
+};
 
 /*******************************/
 /*  CONTINUEB                  */
@@ -119,7 +140,7 @@ void Ndbcntr::execCONTINUEB(Signal* signal)
       else
 	tmp.appfmt(" %d", to_3);
       
-      progError(__LINE__, ERR_SYSTEM_ERROR, tmp.c_str());
+      progError(__LINE__, NDBD_EXIT_RESTART_TIMEOUT, tmp.c_str());
     }
     
     signal->theData[0] = ZSTARTUP;
@@ -132,7 +153,7 @@ void Ndbcntr::execCONTINUEB(Signal* signal)
     break;
   default:
     jam();
-    systemErrorLab(signal);
+    systemErrorLab(signal, __LINE__);
     return;
     break;
   }//switch
@@ -150,13 +171,6 @@ void Ndbcntr::execSYSTEM_ERROR(Signal* signal)
   
   jamEntry();
   switch (sysErr->errorCode){
-  case SystemError::StartInProgressError:    
-    BaseString::snprintf(buf, sizeof(buf), 
-	     "Node %d killed this node because "
-	     "master start in progress error",     
-	     killingNode);
-    break;
-
   case SystemError::GCPStopDetected:
     BaseString::snprintf(buf, sizeof(buf), 
 	     "Node %d killed this node because "
@@ -164,21 +178,8 @@ void Ndbcntr::execSYSTEM_ERROR(Signal* signal)
 	     killingNode);
     break;
 
-  case SystemError::ScanfragTimeout:
-    BaseString::snprintf(buf, sizeof(buf), 
-	     "Node %d killed this node because "
-	     "a fragment scan timed out and could not be stopped",     
-	     killingNode);
-    break;
-
-  case SystemError::ScanfragStateError:
-    BaseString::snprintf(buf, sizeof(buf), 
-	     "Node %d killed this node because "
-	     "the state of a fragment scan was out of sync.",     
-	     killingNode);
-    break;
-    
   case SystemError::CopyFragRefError:
+    CRASH_INSERTION(1000);
     BaseString::snprintf(buf, sizeof(buf), 
 			 "Killed by node %d as "
 			 "copyfrag failed, error: %u",
@@ -192,11 +193,30 @@ void Ndbcntr::execSYSTEM_ERROR(Signal* signal)
     break;
   }
 
-  progError(__LINE__, 
-	    ERR_SYSTEM_ERROR,
-	    buf);
+  progError(__LINE__, NDBD_EXIT_SYSTEM_ERROR, buf);
   return;
 }//Ndbcntr::execSYSTEM_ERROR()
+
+void 
+Ndbcntr::execREAD_CONFIG_REQ(Signal* signal)
+{
+  jamEntry();
+
+  const ReadConfigReq * req = (ReadConfigReq*)signal->getDataPtr();
+
+  Uint32 ref = req->senderRef;
+  Uint32 senderData = req->senderData;
+
+  const ndb_mgm_configuration_iterator * p = 
+    theConfiguration.getOwnConfigIterator();
+  ndbrequire(p != 0);
+
+  ReadConfigConf * conf = (ReadConfigConf*)signal->getDataPtrSend();
+  conf->senderRef = reference();
+  conf->senderData = senderData;
+  sendSignal(ref, GSN_READ_CONFIG_CONF, signal, 
+	     ReadConfigConf::SignalLength, JBB);
+}
 
 void Ndbcntr::execSTTOR(Signal* signal) 
 {
@@ -321,7 +341,7 @@ void Ndbcntr::execNDB_STTORRY(Signal* signal)
     break;
   default:
     jam();
-    systemErrorLab(signal);
+    systemErrorLab(signal, __LINE__);
     return;
     break;
   }//switch
@@ -361,7 +381,7 @@ void Ndbcntr::startPhase1Lab(Signal* signal)
 void Ndbcntr::execREAD_NODESREF(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal);
+  systemErrorLab(signal, __LINE__);
   return;
 }//Ndbcntr::execREAD_NODESREF()
 
@@ -372,7 +392,7 @@ void Ndbcntr::execREAD_NODESREF(Signal* signal)
 void Ndbcntr::execNDB_STARTREF(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal);
+  systemErrorLab(signal, __LINE__);
   return;
 }//Ndbcntr::execNDB_STARTREF()
 
@@ -506,6 +526,9 @@ Ndbcntr::execCNTR_START_REF(Signal * signal){
     cmasterNodeId = ref->masterNodeId;
     sendCntrStartReq(signal);
     return;
+  case CntrStartRef::StopInProgress:
+    jam();
+    progError(__LINE__, NDBD_EXIT_RESTART_DURING_SHUTDOWN);
   }
   ndbrequire(false);
 }
@@ -567,6 +590,13 @@ Ndbcntr::execCNTR_START_REP(Signal* signal){
   Uint32 nodeId = signal->theData[0];
   c_startedNodes.set(nodeId);
   c_start.m_starting.clear(nodeId);
+
+  /**
+   * Inform all interested blocks that node has started
+   */
+  for(Uint32 i = 0; i<ALL_BLOCKS_SZ; i++){
+    sendSignal(ALL_BLOCKS[i].Ref, GSN_NODE_START_REP, signal, 1, JBB);
+  }
   
   if(!c_start.m_starting.isclear()){
     jam();
@@ -789,24 +819,15 @@ Ndbcntr::trySystemRestart(Signal* signal){
    */
   const bool allNodes = c_start.m_waiting.equal(c_allDefinedNodes);
   const bool allClusterNodes = c_start.m_waiting.equal(c_clusterNodes);
-  const Uint64 now = NdbTick_CurrentMillisecond();
 
   if(!allClusterNodes){
     jam();
     return false;
   }
   
-  if(!allNodes && c_start.m_startPartialTimeout > now){
-    jam();
-    return false;
-  }
-
   NodeState::StartType srType = NodeState::ST_SYSTEM_RESTART;
-  if(c_start.m_waiting.equal(c_start.m_withoutLog)){
-    if(!allNodes){
-      jam();
-      return false;
-    }
+  if(c_start.m_waiting.equal(c_start.m_withoutLog))
+  {
     jam();
     srType = NodeState::ST_INITIAL_START;
     c_start.m_starting = c_start.m_withoutLog; // Used for starting...
@@ -836,10 +857,6 @@ Ndbcntr::trySystemRestart(Signal* signal){
 	ndbrequire(false); // All nodes -> partitioning, which is not allowed
       }
       
-      if(c_start.m_startPartitionedTimeout > now){
-	jam();
-	return false;
-      }
       break;
     }    
     
@@ -1346,7 +1363,7 @@ void Ndbcntr::execCNTR_WAITREP(Signal* signal)
     break;
   default:
     jam();
-    systemErrorLab(signal);
+    systemErrorLab(signal, __LINE__);
     break;
   }//switch
 }//Ndbcntr::execCNTR_WAITREP()
@@ -1358,6 +1375,13 @@ void Ndbcntr::execNODE_FAILREP(Signal* signal)
 {
   jamEntry();
 
+  if (ERROR_INSERTED(1001))
+  {
+    sendSignalWithDelay(reference(), GSN_NODE_FAILREP, signal, 100, 
+                        signal->getLength());
+    return;
+  }
+  
   const NodeFailRep * nodeFail = (NodeFailRep *)&signal->theData[0];
   NdbNodeBitmask allFailed; 
   allFailed.assign(NdbNodeBitmask::Size, nodeFail->theNodes);
@@ -1373,7 +1397,6 @@ void Ndbcntr::execNODE_FAILREP(Signal* signal)
   const bool tMasterFailed = allFailed.get(cmasterNodeId);
   const bool tStarted = !failedStarted.isclear();
   const bool tStarting = !failedStarting.isclear();
-  const bool tWaiting = !failedWaiting.isclear();
 
   if(tMasterFailed){
     jam();
@@ -1402,22 +1425,19 @@ void Ndbcntr::execNODE_FAILREP(Signal* signal)
     const bool tStartConf = (phase > 2) || (phase == 2 && cndbBlocksCount > 0);
 
     if(tMasterFailed){
-      progError(__LINE__,
-		ERR_SR_OTHERNODEFAILED,
+      progError(__LINE__, NDBD_EXIT_SR_OTHERNODEFAILED,
 		"Unhandled node failure during restart");
     }
     
     if(tStartConf && tStarting){
       // One of other starting nodes has crashed...
-      progError(__LINE__,
-		ERR_SR_OTHERNODEFAILED,
+      progError(__LINE__, NDBD_EXIT_SR_OTHERNODEFAILED,
 		"Unhandled node failure of starting node during restart");
     }
 
     if(tStartConf && tStarted){
       // One of other started nodes has crashed...      
-      progError(__LINE__,
-		ERR_SR_OTHERNODEFAILED,
+      progError(__LINE__, NDBD_EXIT_SR_OTHERNODEFAILED,
 		"Unhandled node failure of started node during restart");
     }
     
@@ -1450,9 +1470,6 @@ void Ndbcntr::execNODE_FAILREP(Signal* signal)
 	     NodeFailRep::SignalLength, JBB);
   
   sendSignal(BACKUP_REF, GSN_NODE_FAILREP, signal,
-	     NodeFailRep::SignalLength, JBB);
-
-  sendSignal(SUMA_REF, GSN_NODE_FAILREP, signal,
 	     NodeFailRep::SignalLength, JBB);
 
   if (c_stopRec.stopReq.senderRef)
@@ -1512,10 +1529,15 @@ void Ndbcntr::execNODE_FAILREP(Signal* signal)
       
       break;
     }
+    case StopRecord::SR_BLOCK_GCP_START_GCP:
+    case StopRecord::SR_WAIT_COMPLETE_GCP:
+    case StopRecord::SR_UNBLOCK_GCP_START_GCP:
+    case StopRecord::SR_CLUSTER_SHUTDOWN:
+      break;
     }
   }
   
-  signal->theData[0] = EventReport::NODE_FAILREP;
+  signal->theData[0] = NDB_LE_NODE_FAILREP;
   signal->theData[2] = 0;
   
   Uint32 nodeId = 0;
@@ -1587,9 +1609,9 @@ void Ndbcntr::execREAD_NODESREQ(Signal* signal)
 /*----------------------------------------------------------------------*/
 // SENDS APPL_ERROR TO QMGR AND THEN SET A POINTER OUT OF BOUNDS
 /*----------------------------------------------------------------------*/
-void Ndbcntr::systemErrorLab(Signal* signal) 
+void Ndbcntr::systemErrorLab(Signal* signal, int line) 
 {
-  progError(0, 0); /* BUG INSERTION */
+  progError(line, NDBD_EXIT_NDBREQUIRE); /* BUG INSERTION */
   return;
 }//Ndbcntr::systemErrorLab()
 
@@ -1598,10 +1620,9 @@ void Ndbcntr::systemErrorLab(Signal* signal)
 /*       |-2048| # 1 00000001    |                                           */
 /*       |  :  |   :             |                                           */
 /*       | -1  | # 1 00000001    |                                           */
-/*       |  0  |   0             |                                           */
-/*       |  1  |   0             |                                           */
-/*       |  :  |   :             |                                           */
-/*       | 2047|   0             |                                           */
+/*       |  1  |   0             | tupleid sequence now created on first use */
+/*       |  :  |   :             |                   v                       */
+/*       | 2048|   0             |                   v                       */
 /*---------------------------------------------------------------------------*/
 void Ndbcntr::createSystableLab(Signal* signal, unsigned index)
 {
@@ -1630,19 +1651,16 @@ void Ndbcntr::createSystableLab(Signal* signal, unsigned index)
   //w.add(DictTabInfo::NoOfVariable, (Uint32)0);
   //w.add(DictTabInfo::KeyLength, 1);
   w.add(DictTabInfo::TableTypeVal, (Uint32)table.tableType);
+  w.add(DictTabInfo::SingleUserMode, (Uint32)NDB_SUM_READ_WRITE);
 
   for (unsigned i = 0; i < table.columnCount; i++) {
     const SysColumn& column = table.columnList[i];
     ndbassert(column.pos == i);
     w.add(DictTabInfo::AttributeName, column.name);
     w.add(DictTabInfo::AttributeId, (Uint32)column.pos);
-    //w.add(DictTabInfo::AttributeType, DictTabInfo::UnSignedType);
-    //w.add(DictTabInfo::AttributeSize, DictTabInfo::a32Bit);
-    //w.add(DictTabInfo::AttributeArraySize, 1);
     w.add(DictTabInfo::AttributeKeyFlag, (Uint32)column.keyFlag);
     //w.add(DictTabInfo::AttributeStorage, (Uint32)DictTabInfo::MainMemory);
     w.add(DictTabInfo::AttributeNullableFlag, (Uint32)column.nullable);
-    // ext type overrides
     w.add(DictTabInfo::AttributeExtType, (Uint32)column.type);
     w.add(DictTabInfo::AttributeExtLength, (Uint32)column.length);
     w.add(DictTabInfo::AttributeEnd, (Uint32)true);
@@ -1665,7 +1683,7 @@ void Ndbcntr::createSystableLab(Signal* signal, unsigned index)
 void Ndbcntr::execCREATE_TABLE_REF(Signal* signal) 
 {
   jamEntry();
-  progError(0,0);
+  progError(__LINE__,NDBD_EXIT_NDBREQUIRE, "CREATE_TABLE_REF");
   return;
 }//Ndbcntr::execDICTTABREF()
 
@@ -1814,8 +1832,7 @@ void Ndbcntr::crSystab8Lab(Signal* signal)
     jam();
     ckey = 1;
     ctransidPhase = ZFALSE;
-    crSystab7Lab(signal);
-    return;
+    // skip 2nd loop - tupleid sequence now created on first use
   }//if
   signal->theData[0] = ctcConnectionP;
   signal->theData[1] = reference();
@@ -1866,28 +1883,28 @@ void Ndbcntr::execGETGCICONF(Signal* signal)
 void Ndbcntr::execTCKEYREF(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal);
+  systemErrorLab(signal, __LINE__);
   return;
 }//Ndbcntr::execTCKEYREF()
 
 void Ndbcntr::execTCROLLBACKREP(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal);
+  systemErrorLab(signal, __LINE__);
   return;
 }//Ndbcntr::execTCROLLBACKREP()
 
 void Ndbcntr::execTCRELEASEREF(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal);
+  systemErrorLab(signal, __LINE__);
   return;
 }//Ndbcntr::execTCRELEASEREF()
 
 void Ndbcntr::execTCSEIZEREF(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal);
+  systemErrorLab(signal, __LINE__);
   return;
 }//Ndbcntr::execTCSEIZEREF()
 
@@ -2016,23 +2033,6 @@ Ndbcntr::execDUMP_STATE_ORD(Signal* signal)
 
 }//Ndbcntr::execDUMP_STATE_ORD()
 
-void Ndbcntr::execSET_VAR_REQ(Signal* signal) {
-#if 0
-  SetVarReq* const setVarReq = (SetVarReq*)&signal->theData[0];
-  ConfigParamId var = setVarReq->variable();
-
-  switch (var) {
-  case TimeToWaitAlive:
-    // Valid only during start so value not set.
-    sendSignal(CMVMI_REF, GSN_SET_VAR_CONF, signal, 1, JBB);
-    break;
-
-  default:
-    sendSignal(CMVMI_REF, GSN_SET_VAR_REF, signal, 1, JBB);
-  }// switch
-#endif
-}//Ndbcntr::execSET_VAR_REQ()
-
 void Ndbcntr::updateNodeState(Signal* signal, const NodeState& newState) const{
   NodeStateRep * const stateRep = (NodeStateRep *)&signal->theData[0];
 
@@ -2058,7 +2058,7 @@ Ndbcntr::execRESUME_REQ(Signal* signal){
   
   jamEntry();
 
-  signal->theData[0] = EventReport::SingleUser;
+  signal->theData[0] = NDB_LE_SingleUser;
   signal->theData[1] = 2;
   sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
 
@@ -2103,7 +2103,9 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
     return;
   }
 
-  if(c_stopRec.stopReq.senderRef != 0){
+  if(c_stopRec.stopReq.senderRef != 0 ||
+     (cmasterNodeId == getOwnNodeId() && !c_start.m_starting.isclear()))
+  {
     /**
      * Requested a system shutdown
      */
@@ -2117,11 +2119,13 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
     /**
      * Requested a node shutdown
      */
-    if(StopReq::getSystemStop(c_stopRec.stopReq.requestInfo))
+    if(c_stopRec.stopReq.senderRef &&
+       StopReq::getSystemStop(c_stopRec.stopReq.requestInfo))
       ref->errorCode = StopRef::SystemShutdownInProgress;
     else
       ref->errorCode = StopRef::NodeShutdownInProgress;
     ref->senderData = senderData;
+    ref->masterNodeId = cmasterNodeId;
     
     if (senderRef != RNIL)
       sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
@@ -2133,6 +2137,7 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
     jam();
     ref->errorCode = StopRef::UnsupportedNodeShutdown;
     ref->senderData = senderData;
+    ref->masterNodeId = cmasterNodeId;
     if (senderRef != RNIL)
       sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
     return;
@@ -2143,6 +2148,7 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
     jam();
     ref->errorCode = StopRef::MultiNodeShutdownNotMaster;
     ref->senderData = senderData;
+    ref->masterNodeId = cmasterNodeId;
     if (senderRef != RNIL)
       sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
     return;
@@ -2190,13 +2196,13 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
       jam();
       return;
     }
-    signal->theData[0] = EventReport::NDBStopStarted;
+    signal->theData[0] = NDB_LE_NDBStopStarted;
     signal->theData[1] = StopReq::getSystemStop(c_stopRec.stopReq.requestInfo) ? 1 : 0;
     sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
   }
   else
   {
-    signal->theData[0] = EventReport::SingleUser;
+    signal->theData[0] = NDB_LE_SingleUser;
     signal->theData[1] = 0;
     sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
   }
@@ -2261,7 +2267,33 @@ Ndbcntr::StopRecord::checkNodeFail(Signal* signal){
   {
     NdbNodeBitmask tmp;
     tmp.assign(NdbNodeBitmask::Size, stopReq.nodes);
+
+    NdbNodeBitmask ndbStopNodes;
+    ndbStopNodes.assign(NdbNodeBitmask::Size, stopReq.nodes);
+    ndbStopNodes.bitAND(ndbMask);
+    ndbStopNodes.copyto(NdbNodeBitmask::Size, stopReq.nodes);
+
     ndbMask.bitANDC(tmp);
+
+    bool allNodesStopped = true;
+    int i ;
+    for( i = 0; i < (int) NdbNodeBitmask::Size; i++ ){
+      if ( stopReq.nodes[i] != 0 ){
+        allNodesStopped = false;
+        break;
+      }
+    }
+  
+    if ( allNodesStopped ) {
+      StopConf * const stopConf = (StopConf *)&signal->theData[0];
+      stopConf->senderData = stopReq.senderData;
+      stopConf->nodeState  = (Uint32) NodeState::SL_NOTHING;
+      cntr.sendSignal(stopReq.senderRef, GSN_STOP_CONF, signal,
+                       StopConf::SignalLength, JBB);
+      stopReq.senderRef = 0;
+      return false;
+    }
+
   }
   else
   {
@@ -2286,6 +2318,7 @@ Ndbcntr::StopRecord::checkNodeFail(Signal* signal){
   
   ref->senderData = stopReq.senderData;
   ref->errorCode = StopRef::NodeShutdownWouldCauseSystemCrash;
+  ref->masterNodeId = cntr.cmasterNodeId;
   
   const BlockReference bref = stopReq.senderRef;
   if (bref != RNIL)
@@ -2299,7 +2332,7 @@ Ndbcntr::StopRecord::checkNodeFail(Signal* signal){
     cntr.updateNodeState(signal, newState);
   }
 
-  signal->theData[0] = EventReport::NDBStopAborted;
+  signal->theData[0] = NDB_LE_NDBStopAborted;
   cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 1, JBB);
   
   return false;
@@ -2407,7 +2440,7 @@ void Ndbcntr::execABORT_ALL_CONF(Signal* signal){
 
     c_stopRec.stopReq.senderRef = 0; // the command is done
 
-    signal->theData[0] = EventReport::SingleUser;
+    signal->theData[0] = NDB_LE_SingleUser;
     signal->theData[1] = 1;
     signal->theData[2] = c_stopRec.stopReq.singleUserApi;
     sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 3, JBB);
@@ -2428,12 +2461,11 @@ void Ndbcntr::execABORT_ALL_CONF(Signal* signal){
 
 void Ndbcntr::execABORT_ALL_REF(Signal* signal){
   jamEntry();
-  AbortAllRef *abortAllRef = (AbortAllRef *)&signal->theData[0];
-  AbortAllRef::ErrorCode errorCode = (AbortAllRef::ErrorCode) abortAllRef->errorCode;
 
   StopRef * const stopRef = (StopRef *)&signal->theData[0];
   stopRef->senderData = c_stopRec.stopReq.senderData;
   stopRef->errorCode = StopRef::TransactionAbortFailed;
+  stopRef->masterNodeId = cmasterNodeId;
   sendSignal(c_stopRec.stopReq.senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
 }
 
@@ -2695,7 +2727,7 @@ Ndbcntr::execFSREMOVECONF(Signal* signal){
 }
 
 void Ndbcntr::Missra::execSTART_ORD(Signal* signal){
-  signal->theData[0] = EventReport::NDBStartStarted;
+  signal->theData[0] = NDB_LE_NDBStartStarted;
   signal->theData[1] = NDB_VERSION;
   cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
 
@@ -2713,7 +2745,7 @@ void Ndbcntr::Missra::sendNextREAD_CONFIG_REQ(Signal* signal){
     req->senderRef = cntr.reference();
     req->noOfParameters = 0;
     
-    const BlockReference ref = ALL_BLOCKS[currentBlockIndex].Ref;
+    const BlockReference ref = readConfigOrder[currentBlockIndex];
 
 #if 0 
     ndbout_c("sending READ_CONFIG_REQ to %s(ref=%x index=%d)", 
@@ -2744,7 +2776,8 @@ void Ndbcntr::Missra::execREAD_CONFIG_CONF(Signal* signal){
   const ReadConfigConf * conf = (ReadConfigConf*)signal->getDataPtr();
 
   const Uint32 ref = conf->senderRef;
-  ndbrequire(refToBlock(ALL_BLOCKS[currentBlockIndex].Ref) == refToBlock(ref));
+  ndbrequire(refToBlock(readConfigOrder[currentBlockIndex])
+	     == refToBlock(ref));
 
   currentBlockIndex++;
   sendNextREAD_CONFIG_REQ(signal);
@@ -2772,11 +2805,12 @@ void Ndbcntr::Missra::execSTTORRY(Signal* signal){
 
 void Ndbcntr::Missra::sendNextSTTOR(Signal* signal){
 
-  for(; currentStartPhase < 255 ; currentStartPhase++){
+  for(; currentStartPhase < 255 ;
+      currentStartPhase++, g_currentStartPhase = currentStartPhase){
     jam();
     
     const Uint32 start = currentBlockIndex;
-    
+
     if (currentStartPhase == ZSTART_PHASE_6)
     {
       // Ndbd has passed the critical startphases.
@@ -2825,14 +2859,14 @@ void Ndbcntr::Missra::sendNextSTTOR(Signal* signal){
        * At least one wanted this start phase,  report it
        */
       jam();
-      signal->theData[0] = EventReport::StartPhaseCompleted;
+      signal->theData[0] = NDB_LE_StartPhaseCompleted;
       signal->theData[1] = currentStartPhase;
       signal->theData[2] = cntr.ctypeOfStart;    
       cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 3, JBB);
     }
   }
 
-  signal->theData[0] = EventReport::NDBStartCompleted;
+  signal->theData[0] = NDB_LE_NDBStartCompleted;
   signal->theData[1] = NDB_VERSION;
   cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
   
@@ -2923,7 +2957,8 @@ UpgradeStartup::execCM_APPCHG(SimulatedBlock & block, Signal* signal){
       return;
     }
   }
-  block.progError(0,0);
+  block.progError(__LINE__,NDBD_EXIT_NDBREQUIRE,
+		  "UpgradeStartup::execCM_APPCHG");
 }
 
 void
@@ -2936,7 +2971,9 @@ UpgradeStartup::sendCntrMasterReq(Ndbcntr& cntr, Signal* signal, Uint32 n){
   }
   
   if(node == NdbNodeBitmask::NotFound){
-    cntr.progError(0,0);
+    cntr.progError(__LINE__,NDBD_EXIT_NDBREQUIRE,
+		   "UpgradeStartup::sendCntrMasterReq "
+		   "NdbNodeBitmask::NotFound");
   }
 
   CntrMasterReq * const cntrMasterReq = (CntrMasterReq*)&signal->theData[0];
@@ -2978,5 +3015,6 @@ UpgradeStartup::execCNTR_MASTER_REPLY(SimulatedBlock & block, Signal* signal){
     }
     }
   }
-  block.progError(0,0);
+  block.progError(__LINE__,NDBD_EXIT_NDBREQUIRE,
+		  "UpgradeStartup::execCNTR_MASTER_REPLY");
 }

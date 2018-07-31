@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,13 +74,13 @@ extern "C" static void sig_child(int signo, siginfo_t*, void*);
 const char *progname = "ndb_cpcd";
 
 int main(int argc, char** argv){
-  int save_argc= argc;
-  char** save_argv= argv;
   const char *load_default_groups[]= { "ndb_cpcd",0 };
   MY_INIT(argv[0]);
 
   load_defaults("ndb_cpcd",load_default_groups,&argc,&argv);
   if (handle_options(&argc, &argv, my_long_options, get_one_option)) {
+    print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
+    puts("");
     my_print_help(my_long_options);
     my_print_variables(my_long_options);
     exit(1);
@@ -138,7 +137,8 @@ int main(int argc, char** argv){
   
   SocketServer * ss = new SocketServer();
   CPCDAPIService * serv = new CPCDAPIService(cpcd);
-  if(!ss->setup(serv, port)){
+  unsigned short real_port= port; // correct type
+  if(!ss->setup(serv, &real_port)){
     logger.critical("Cannot setup server: %s", strerror(errno));
     sleep(1);
     delete ss;

@@ -99,6 +99,10 @@ row_purge_remove_clust_if_poss_low(
 	ibool		success;
 	ulint		err;
 	mtr_t		mtr;
+	rec_t*		rec;
+	mem_heap_t*	heap		= NULL;
+	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
+	*offsets_ = (sizeof offsets_) / sizeof *offsets_;
 
 	index = dict_table_get_first_index(node->table);
 	
@@ -117,13 +121,22 @@ row_purge_remove_clust_if_poss_low(
 		return(TRUE);
 	}
 
+	rec = btr_pcur_get_rec(pcur);
+
 	if (0 != ut_dulint_cmp(node->roll_ptr,
-		row_get_rec_roll_ptr(btr_pcur_get_rec(pcur), index))) {
-		
+		row_get_rec_roll_ptr(rec, index, rec_get_offsets(
+			rec, index, offsets_, ULINT_UNDEFINED, &heap)))) {
+		if (UNIV_LIKELY_NULL(heap)) {
+			mem_heap_free(heap);
+		}
 		/* Someone else has modified the record later: do not remove */
 		btr_pcur_commit_specify_mtr(pcur, &mtr);
 
 		return(TRUE);
+	}
+
+	if (UNIV_LIKELY_NULL(heap)) {
+		mem_heap_free(heap);
 	}
 
 	if (mode == BTR_MODIFY_LEAF) {

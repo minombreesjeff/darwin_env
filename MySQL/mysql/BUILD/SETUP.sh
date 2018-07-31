@@ -10,6 +10,11 @@ prefix_configs="--prefix=/usr/local/mysql"
 just_print=
 just_configure=
 full_debug=
+if test -n "$MYSQL_BUILD_PREFIX"
+then
+  prefix_configs="--prefix=$MYSQL_BUILD_PREFIX"
+fi
+
 while test $# -gt 0
 do
   case "$1" in
@@ -29,6 +34,7 @@ Note:  this script is intended for internal use by MySQL developers.
 EOF
   * )
     echo "Unknown option '$1'"
+    echo "Use -h or --help for usage"
     exit 1
     break ;;
   esac
@@ -39,25 +45,32 @@ set -e
 export AM_MAKEFLAGS
 AM_MAKEFLAGS="-j 4"
 
+# SSL library to use.
+SSL_LIBRARY=--with-yassl
+
 # If you are not using codefusion add "-Wpointer-arith" to WARNINGS
 # The following warning flag will give too many warnings:
-# -Wshadow -Wunused  -Winline (The later isn't usable in C++ as
+# -Wunused  -Winline (The later isn't usable in C++ as
 # __attribute()__ doesn't work with gnu C++)
-global_warnings="-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings"
-#debug_extra_warnings="-Wuninitialized"
+
+global_warnings="-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Wunused-function -Wunused-label -Wunused-value -Wunused-variable"
+#
+# For more warnings, uncomment the following line
+# global_warnings="$global_warnings -Wshadow"
+
 c_warnings="$global_warnings -Wunused"
 cxx_warnings="$global_warnings -Woverloaded-virtual -Wsign-promo -Wreorder -Wctor-dtor-privacy -Wnon-virtual-dtor"
-
-base_max_configs="--with-innodb --with-berkeley-db --with-ndbcluster --with-archive-storage-engine --with-raid --with-openssl --with-raid --with-vio"
-max_leave_isam_configs="--with-innodb --with-berkeley-db --with-ndbcluster --with-archive-storage-engine --with-raid --with-openssl --with-raid --with-vio --with-embedded-server"
-max_no_es_configs="$max_leave_isam_configs --without-isam"
-max_configs="$max_no_es_configs --with-embedded-server"
+base_max_configs="--with-innodb --with-ndbcluster --with-archive-storage-engine --with-big-tables --with-blackhole-storage-engine --with-federated-storage-engine --with-csv-storage-engine $SSL_LIBRARY"
+base_max_no_ndb_configs="--with-innodb --without-ndbcluster --with-archive-storage-engine --with-big-tables --with-blackhole-storage-engine --with-federated-storage-engine --with-csv-storage-engine $SSL_LIBRARY"
+max_leave_isam_configs="--with-innodb --with-ndbcluster --with-archive-storage-engine --with-federated-storage-engine --with-blackhole-storage-engine --with-csv-storage-engine $SSL_LIBRARY --with-embedded-server --with-big-tables"
+max_configs="$base_max_configs --with-embedded-server"
+max_no_ndb_configs="$base_max_no_ndb_configs --with-embedded-server"
 
 path=`dirname $0`
 . "$path/check-cpu"
 
 alpha_cflags="$check_cpu_cflags -Wa,-m$cpu_flag"
-amd64_cflags="$check_cpu_cflags -DBIG_TABLES"
+amd64_cflags="$check_cpu_cflags"
 pentium_cflags="$check_cpu_cflags"
 pentium64_cflags="$check_cpu_cflags -m64"
 ppc_cflags="$check_cpu_cflags"
@@ -73,9 +86,18 @@ debug_cflags="-DUNIV_MUST_NOT_INLINE -DEXTRA_DEBUG -DFORCE_INIT_OF_VARS -DSAFEMA
 debug_extra_cflags="-O1 -Wuninitialized"
 
 base_cxxflags="-felide-constructors -fno-exceptions -fno-rtti"
-amd64_cxxflags="-DBIG_TABLES"
+amd64_cxxflags=""				# If dropping '--with-big-tables', add here  "-DBIG_TABLES"
 
-base_configs="$prefix_configs --enable-assembler --with-extra-charsets=complex --enable-thread-safe-client --with-readline"
+base_configs="$prefix_configs --enable-assembler --with-extra-charsets=complex --enable-thread-safe-client --with-big-tables"
+
+if test -d "$path/../cmd-line-utils/readline"
+then
+    base_configs="$base_configs --with-readline"
+elif test -d "$path/../cmd-line-utils/libedit"
+then
+    base_configs="$base_configs --with-libedit"
+fi
+
 static_link="--with-mysqld-ldflags=-all-static --with-client-ldflags=-all-static"
 amd64_configs=""
 alpha_configs=""	# Not used yet
@@ -97,6 +119,10 @@ then
   make=gmake
 else
   make=make
+fi
+
+if test -z "$CC" ; then
+  CC=gcc
 fi
 
 if test -z "$CXX" ; then

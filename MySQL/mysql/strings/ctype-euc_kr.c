@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -8676,11 +8675,13 @@ static MY_COLLATION_HANDLER my_collation_ci_handler =
   my_strnncoll_simple,  /* strnncoll  */
   my_strnncollsp_simple,
   my_strnxfrm_simple,	/* strnxfrm   */
+  my_strnxfrmlen_simple,
   my_like_range_simple, /* like_range */
   my_wildcmp_mb,	/* wildcmp    */
   my_strcasecmp_mb,
   my_instr_mb,
   my_hash_sort_simple,
+  my_propagate_simple
 };
 
 static MY_CHARSET_HANDLER my_charset_handler=
@@ -8709,6 +8710,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
   my_strntoull_8bit,
   my_strntod_8bit,
   my_strtoll10_8bit,
+  my_strntoull10rnd_8bit,
   my_scan_8bit
 };
 
@@ -8729,13 +8731,17 @@ CHARSET_INFO my_charset_euckr_korean_ci=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     2,			/* mbmaxlen   */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
@@ -8758,13 +8764,17 @@ CHARSET_INFO my_charset_euckr_bin=
     NULL,		/* sort_order_big*/
     NULL,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
+    my_unicase_default, /* caseinfo     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
+    1,                  /* caseup_multiply  */
+    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     2,			/* mbmaxlen   */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    ' ',                /* pad char      */
     0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler

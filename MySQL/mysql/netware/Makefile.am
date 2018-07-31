@@ -23,17 +23,18 @@ mysqld_safe_SOURCES=		mysqld_safe.c my_manage.c
 mysql_install_db_SOURCES=	mysql_install_db.c my_manage.c
 mysql_test_run_SOURCES=		mysql_test_run.c my_manage.c
 libmysql_SOURCES=		libmysqlmain.c
-libmysql_LDADD =		../libmysql/.libs/libmysqlclient.a @openssl_libs@
+libmysql_LDADD =		../libmysql/.libs/libmysqlclient.a \
+				@openssl_libs@ @yassl_libs@
 
 netware_build_files =           client/mysql.def client/mysqladmin.def \
                                 client/mysqlbinlog.def client/mysqlcheck.def \
                                 client/mysqldump.def client/mysqlimport.def \
                                 client/mysqlshow.def client/mysqltest.def \
+				client/mysql_upgrade.def \
+				tests/mysql_client_test.def \
                                 extra/my_print_defaults.def \
                                 extra/perror.def extra/replace.def \
                                 extra/resolveip.def extra/comp_err.def \
-				isam/isamchk.def \
-                                isam/isamlog.def isam/pack_isam.def \
                                 libmysqld/libmysqld.def myisam/myisamchk.def \
                                 myisam/myisamlog.def myisam/myisampack.def \
                                 sql/mysqld.def extra/mysql_waitpid.def \
@@ -47,8 +48,21 @@ link_sources:
 	  @LN_CP_F@ $(srcdir)/$$org ../$$f; \
 	done
 else
-EXTRA_DIST=	comp_err.def init_db.sql install_test_db.ncf \
-		isamchk.def isamlog.def libmysql.def libmysql.imp \
+
+BUILT_SOURCES =                 libmysql.imp init_db.sql test_db.sql
+DISTCLEANFILES =                libmysql.imp
+CLEANFILES =                    init_db.sql test_db.sql
+
+# Create the libmysql.imp from libmysql/libmysql.def
+libmysql.imp: $(top_srcdir)/libmysql/libmysql.def
+	$(AWK) 'BEGIN{x=0;} \
+             END{printf("\n");} \
+             x==1 {printf(" %s",$$1); x++; next} \
+             x>1 {printf(",\n %s", $$1); next} \
+             /EXPORTS/{x=1}' $(top_srcdir)/libmysql/libmysql.def > libmysql.imp
+
+EXTRA_DIST=	$(BUILT_SOURCES) comp_err.def install_test_db.ncf \
+		libmysql.def \
 		libmysqlmain.c my_manage.c my_manage.h \
 		my_print_defaults.def myisam_ftdump.def myisamchk.def \
 		myisamlog.def myisampack.def mysql.def mysql.xdc \
@@ -58,8 +72,9 @@ EXTRA_DIST=	comp_err.def init_db.sql install_test_db.ncf \
 		mysql_test_run.def mysql_waitpid.def mysqladmin.def \
 		mysqlbinlog.def mysqlcheck.def mysqld.def \
 		mysqld_safe.c mysqld_safe.def mysqldump.def mysqlimport.def \
-		mysqlshow.def mysqltest.def pack_isam.def perror.def \
-		replace.def resolve_stack_dump.def resolveip.def test_db.sql \
+		mysqlshow.def mysqltest.def mysql_upgrade.def perror.def \
+		mysql_client_test.def \
+		replace.def resolve_stack_dump.def resolveip.def \
 		static_init_db.sql \
 		BUILD/apply-patch BUILD/compile-AUTOTOOLS \
 		BUILD/compile-linux-tools BUILD/compile-netware-END \
@@ -70,6 +85,26 @@ EXTRA_DIST=	comp_err.def init_db.sql install_test_db.ncf \
 		BUILD/cron-build BUILD/crontab BUILD/knetware.imp \
 		BUILD/mwasmnlm BUILD/mwccnlm BUILD/mwenv BUILD/mwldnlm \
 		BUILD/nwbootstrap BUILD/openssl.imp BUILD/save-patch
+
+
+# Build init_db.sql from the files that contain
+# the system tables for this version of MySQL plus any commands
+init_db.sql: $(top_srcdir)/scripts/mysql_system_tables.sql \
+	     $(top_srcdir)/scripts/mysql_system_tables_data.sql
+	@echo "Building $@";
+	@echo "CREATE DATABASE mysql;" > $@;
+	@echo "CREATE DATABASE test;" >> $@;
+	@echo "use mysql;" >> $@;
+	@cat $(top_srcdir)/scripts/mysql_system_tables.sql \
+	     $(top_srcdir)/scripts/mysql_system_tables_fix.sql >> $@;
+
+# Build test_db.sql from init_db.sql plus
+# some test data
+test_db.sql: init_db.sql $(top_srcdir)/scripts/mysql_test_data_timezone.sql
+	@echo "Building $@";
+	@cat init_db.sql \
+	     $(top_srcdir)/scripts/mysql_test_data_timezone.sql >> $@;
+
 endif
 
 # Don't update the files from bitkeeper

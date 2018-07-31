@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,6 +51,10 @@
 #include <signal.h>
 #include <errno.h>
 
+#ifdef __NETWARE__
+#include <sys/select.h>
+#endif
+
 #ifdef EMBEDDED_LIBRARY
 #undef MYSQL_SERVER
 #undef MYSQL_CLIENT
@@ -72,7 +75,7 @@
   /* The following is because alarms doesn't work on windows. */
 #define NO_ALARM
 #endif
-  
+
 #ifndef NO_ALARM
 #include "my_pthread.h"
 void sql_print_error(const char *format,...);
@@ -83,7 +86,6 @@ void sql_print_error(const char *format,...);
 #include "thr_alarm.h"
 
 #ifdef MYSQL_SERVER
-#define USE_QUERY_CACHE
 /*
   The following variables/functions should really not be declared
   extern, but as it's hard to include mysql_priv.h here, we have to
@@ -92,12 +94,19 @@ void sql_print_error(const char *format,...);
 extern uint test_flags;
 extern ulong bytes_sent, bytes_received, net_big_packet_count;
 extern pthread_mutex_t LOCK_bytes_sent , LOCK_bytes_received;
+#ifndef MYSQL_INSTANCE_MANAGER
+#ifdef HAVE_QUERY_CACHE
+#define USE_QUERY_CACHE
+extern void query_cache_init_query(NET *net);
 extern void query_cache_insert(NET *net, const char *packet, ulong length);
-#else
-#undef statistic_add
-#undef statistic_increment
-#define statistic_add(A,B,C)
-#define statistic_increment(A,B)
+#endif // HAVE_QUERY_CACHE
+#define update_statistics(A) A
+#endif /* MYSQL_INSTANCE_MANGER */
+#endif /* defined(MYSQL_SERVER) && !defined(MYSQL_INSTANCE_MANAGER) */
+
+#if !defined(MYSQL_SERVER) || defined(MYSQL_INSTANCE_MANAGER)
+#define update_statistics(A)
+#define thd_increment_bytes_sent(N)
 #endif
 
 #define TEST_BLOCKING		8
@@ -118,7 +127,7 @@ my_bool my_net_init(NET *net, Vio* vio)
     DBUG_RETURN(1);
   net->buff_end=net->buff+net->max_packet;
   net->vio = vio;
-  net->no_send_ok = 0;
+  net->no_send_ok= net->no_send_eof= net->no_send_error= 0;
   net->error=0; net->return_errno=0; net->return_status=0;
   net->pkt_nr=net->compress_pkt_nr=0;
   net->write_pos=net->read_pos = net->buff;
@@ -126,7 +135,11 @@ my_bool my_net_init(NET *net, Vio* vio)
   net->compress=0; net->reading_or_writing=0;
   net->where_b = net->remain_in_buf=0;
   net->last_errno=0;
-  net->query_cache_query=0;
+#ifdef USE_QUERY_CACHE
+  query_cache_init_query(net);
+#else
+  net->query_cache_query= 0;
+#endif
   net->report_error= 0;
 
   if (vio != 0)					/* If real connection */
@@ -191,29 +204,135 @@ my_bool net_realloc(NET *net, ulong length)
   DBUG_RETURN(0);
 }
 
-	/* Remove unwanted characters from connection */
+
+/*
+  Check if there is any data to be read from the socket
+
+  SYNOPSIS
+    net_data_is_ready()
+    sd   socket descriptor
+
+  DESCRIPTION
+    Check if there is any data to be read from the socket.
+
+  RETURN VALUES
+    0	No data to read
+    1	Data or EOF to read
+    -1  Don't know if data is ready or not
+*/
+
+#if !defined(EMBEDDED_LIBRARY)
+
+static int net_data_is_ready(my_socket sd)
+{
+#ifdef HAVE_POLL
+  struct pollfd ufds;
+  int res;
+
+  ufds.fd= sd;
+  ufds.events= POLLIN | POLLPRI;
+  if (!(res= poll(&ufds, 1, 0)))
+    return 0;
+  if (res < 0 || !(ufds.revents & (POLLIN | POLLPRI)))
+    return 0;
+  return 1;
+#else
+  fd_set sfds;
+  struct timeval tv;
+  int res;
+
+#ifndef __WIN__
+  /* Windows uses an _array_ of 64 fd's as default, so it's safe */
+  if (sd >= FD_SETSIZE)
+    return -1;
+#define NET_DATA_IS_READY_CAN_RETURN_MINUS_ONE
+#endif
+
+  FD_ZERO(&sfds);
+  FD_SET(sd, &sfds);
+
+  tv.tv_sec= tv.tv_usec= 0;
+
+  if ((res= select(sd+1, &sfds, NULL, NULL, &tv)) < 0)
+    return 0;
+  else
+    return test(res ? FD_ISSET(sd, &sfds) : 0);
+#endif /* HAVE_POLL */
+}
+
+#endif /* EMBEDDED_LIBRARY */
+
+/*
+  Remove unwanted characters from connection
+  and check if disconnected
+
+  SYNOPSIS
+    net_clear()
+    net			NET handler
+
+  DESCRIPTION
+    Read from socket until there is nothing more to read. Discard
+    what is read.
+
+    If there is anything when to read 'net_clear' is called this
+    normally indicates an error in the protocol.
+
+    When connection is properly closed (for TCP it means with
+    a FIN packet), then select() considers a socket "ready to read",
+    in the sense that there's EOF to read, but read() returns 0.
+
+*/
 
 void net_clear(NET *net)
 {
+#if !defined(EMBEDDED_LIBRARY)
+  int count, ready;
+#endif
   DBUG_ENTER("net_clear");
-#if !defined(EXTRA_DEBUG) && !defined(EMBEDDED_LIBRARY)
+
+#if !defined(EMBEDDED_LIBRARY)
+  while((ready= net_data_is_ready(net->vio->sd)) > 0)
   {
-    int count;					/* One may get 'unused' warn */
+    /* The socket is ready */
+    if ((count= vio_read(net->vio, (char*) (net->buff),
+                         (uint32) net->max_packet)) > 0)
+    {
+      DBUG_PRINT("info",("skipped %d bytes from file: %s",
+                         count, vio_description(net->vio)));
+#if defined(EXTRA_DEBUG) && (MYSQL_VERSION_ID < 51000)
+      fprintf(stderr,"skipped %d bytes from file: %s\n",
+              count, vio_description(net->vio));
+#endif
+    }
+    else
+    {
+      DBUG_PRINT("info",("socket ready but only EOF to read - disconnected"));
+      net->error= 2;
+      break;
+    }
+  }
+#ifdef NET_DATA_IS_READY_CAN_RETURN_MINUS_ONE
+  /* 'net_data_is_ready' returned "don't know" */
+  if (ready == -1)
+  {
+    /* Read unblocking to clear net */
     my_bool old_mode;
     if (!vio_blocking(net->vio, FALSE, &old_mode))
     {
-      while ((count = vio_read(net->vio, (char*) (net->buff),
-			       (uint32) net->max_packet)) > 0)
+      while ((count= vio_read(net->vio, (char*) (net->buff),
+                              (uint32) net->max_packet)) > 0)
 	DBUG_PRINT("info",("skipped %d bytes from file: %s",
 			   count, vio_description(net->vio)));
       vio_blocking(net->vio, TRUE, &old_mode);
     }
   }
-#endif /* EXTRA_DEBUG */
+#endif
+#endif
   net->pkt_nr=net->compress_pkt_nr=0;		/* Ready for new command */
   net->write_pos=net->buff;
   DBUG_VOID_RETURN;
 }
+
 
 	/* Flush write_buffer if not empty. */
 
@@ -445,9 +564,8 @@ net_real_write(NET *net,const char *packet,ulong len)
   my_bool net_blocking = vio_is_blocking(net->vio);
   DBUG_ENTER("net_real_write");
 
-#if defined(MYSQL_SERVER) && defined(HAVE_QUERY_CACHE)
-  if (net->query_cache_query != 0)
-    query_cache_insert(net, packet, len);
+#if defined(MYSQL_SERVER) && defined(USE_QUERY_CACHE)
+  query_cache_insert(net, packet, len);
 #endif
 
   if (net->error == 2)
@@ -484,14 +602,17 @@ net_real_write(NET *net,const char *packet,ulong len)
   }
 #endif /* HAVE_COMPRESS */
 
-  /* DBUG_DUMP("net",packet,len); */
+#ifdef DEBUG_DATA_PACKETS
+  DBUG_DUMP("data",packet,len);
+#endif
+
 #ifndef NO_ALARM
   thr_alarm_init(&alarmed);
   if (net_blocking)
-    thr_alarm(&alarmed,(uint) net->write_timeout,&alarm_buff);
+    thr_alarm(&alarmed, net->write_timeout, &alarm_buff);
 #else
   alarmed=0;
-  vio_timeout(net->vio, 1, net->write_timeout);
+  /* Write timeout is set in my_net_set_write_timeout */
 #endif /* NO_ALARM */
 
   pos=(char*) packet; end=pos+len;
@@ -503,7 +624,7 @@ net_real_write(NET *net,const char *packet,ulong len)
 #if (!defined(__WIN__) && !defined(__EMX__) && !defined(OS2))
       if ((interrupted || length==0) && !thr_alarm_in_use(&alarmed))
       {
-        if (!thr_alarm(&alarmed,(uint) net->write_timeout,&alarm_buff))
+        if (!thr_alarm(&alarmed, net->write_timeout, &alarm_buff))
         {                                       /* Always true for client */
 	  my_bool old_mode;
 	  while (vio_blocking(net->vio, TRUE, &old_mode) < 0)
@@ -554,7 +675,7 @@ net_real_write(NET *net,const char *packet,ulong len)
       break;
     }
     pos+=length;
-    statistic_add(bytes_sent,length,&LOCK_bytes_sent);
+    update_statistics(thd_increment_bytes_sent(length));
   }
 #ifndef __WIN__
  end:
@@ -625,7 +746,7 @@ static my_bool my_net_skip_rest(NET *net, uint32 remain, thr_alarm_t *alarmed,
   DBUG_PRINT("enter",("bytes_to_skip: %u", (uint) remain));
 
   /* The following is good for debugging */
-  statistic_increment(net_big_packet_count,&LOCK_bytes_received);
+  update_statistics(thd_increment_net_big_packet_count(1));
 
   if (!thr_alarm_in_use(alarmed))
   {
@@ -641,7 +762,7 @@ static my_bool my_net_skip_rest(NET *net, uint32 remain, thr_alarm_t *alarmed,
       uint length= min(remain, net->max_packet);
       if (net_safe_read(net, (char*) net->buff, length, alarmed))
 	DBUG_RETURN(1);
-      statistic_add(bytes_received, length, &LOCK_bytes_received);
+      update_statistics(thd_increment_bytes_received(length));
       remain -= (uint32) length;
     }
     if (old != MAX_PACKET_LENGTH)
@@ -684,7 +805,7 @@ my_real_read(NET *net, ulong *complen)
   if (net_blocking)
     thr_alarm(&alarmed,net->read_timeout,&alarm_buff);
 #else
-  vio_timeout(net->vio, 0, net->read_timeout);
+  /* Read timeout is set in my_net_set_read_timeout */
 #endif /* NO_ALARM */
 
     pos = net->buff + net->where_b;		/* net->packet -4 */
@@ -697,7 +818,7 @@ my_real_read(NET *net, ulong *complen)
         {
           my_bool interrupted = vio_should_retry(net->vio);
 
-	  DBUG_PRINT("info",("vio_read returned %d,  errno: %d",
+	  DBUG_PRINT("info",("vio_read returned %ld  errno: %d",
 			     length, vio_errno(net->vio)));
 #if (!defined(__WIN__) && !defined(__EMX__) && !defined(OS2)) || defined(MYSQL_SERVER)
 	  /*
@@ -766,7 +887,7 @@ my_real_read(NET *net, ulong *complen)
 	}
 	remain -= (uint32) length;
 	pos+= (ulong) length;
-	statistic_add(bytes_received,(ulong) length,&LOCK_bytes_received);
+	update_statistics(thd_increment_bytes_received(length));
       }
       if (i == 0)
       {					/* First parts is packet length */
@@ -995,3 +1116,28 @@ my_net_read(NET *net)
   return len;
 }
 
+
+void my_net_set_read_timeout(NET *net, uint timeout)
+{
+  DBUG_ENTER("my_net_set_read_timeout");
+  DBUG_PRINT("enter", ("timeout: %d", timeout));
+  net->read_timeout= timeout;
+#ifdef NO_ALARM
+  if (net->vio)
+    vio_timeout(net->vio, 0, timeout);
+#endif
+  DBUG_VOID_RETURN;
+}
+
+
+void my_net_set_write_timeout(NET *net, uint timeout)
+{
+  DBUG_ENTER("my_net_set_write_timeout");
+  DBUG_PRINT("enter", ("timeout: %d", timeout));
+  net->write_timeout= timeout;
+#ifdef NO_ALARM
+  if (net->vio)
+    vio_timeout(net->vio, 1, timeout);
+#endif
+  DBUG_VOID_RETURN;
+}

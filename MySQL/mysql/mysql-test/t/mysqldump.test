@@ -1,8 +1,16 @@
 # Embedded server doesn't support external clients
 --source include/not_embedded.inc
+--source include/have_log_bin.inc
+
+# Binlog is required
+--source include/have_log_bin.inc
 
 --disable_warnings
-DROP TABLE IF EXISTS t1, `"t"1`, t2, t3;
+DROP TABLE IF EXISTS t1, `"t"1`, t1aa, t2, t2aa, t3;
+drop database if exists mysqldump_test_db;
+drop database if exists db1;
+drop database if exists db2;
+drop view if exists v1, v2, v3;
 --enable_warnings
 
 # XML output
@@ -12,31 +20,31 @@ INSERT INTO t1 VALUES (1), (2);
 --exec $MYSQL_DUMP --skip-create --skip-comments -X test t1
 DROP TABLE t1;
 
-#
-# Bug #2005
-#
+--echo #
+--echo # Bug #2005
+--echo #
 
-CREATE TABLE t1 (a decimal(240, 20));
+CREATE TABLE t1 (a decimal(64, 20));
 INSERT INTO t1 VALUES ("1234567890123456789012345678901234567890"),
 ("0987654321098765432109876543210987654321");
 --exec $MYSQL_DUMP --compact test t1
 DROP TABLE t1;
 
-#
-# Bug #2055
-#
+--echo #
+--echo # Bug #2055
+--echo #
 
 CREATE TABLE t1 (a double);
-INSERT INTO t1 VALUES (-9e999999);
+INSERT INTO t1 VALUES ('-9e999999');
 # The following replaces is here because some systems replaces the above
 # double with '-inf' and others with MAX_DOUBLE
 --replace_result (-1.79769313486232e+308) (RES) (NULL) (RES)
 --exec $MYSQL_DUMP --compact test t1
 DROP TABLE t1;
 
-#
-# Bug #3361 mysqldump quotes DECIMAL values inconsistently
-#
+--echo #
+--echo # Bug #3361 mysqldump quotes DECIMAL values inconsistently
+--echo #
 
 CREATE TABLE t1 (a DECIMAL(10,5), b FLOAT);
 
@@ -65,28 +73,28 @@ INSERT INTO t1 VALUES (1, "test", "tes"), (2, "TEST", "TES");
 --exec $MYSQL_DUMP --skip-create --compact -X test t1
 DROP TABLE t1;
 
-#
-# Bug #1707
-#
+--echo #
+--echo # Bug #1707
+--echo #
 
 CREATE TABLE t1 (`a"b"` char(2));
 INSERT INTO t1 VALUES ("1\""), ("\"2");
 --exec $MYSQL_DUMP --compact --skip-create -X test t1
 DROP TABLE t1;
 
-#
-# Bug #1994
-# Bug #4261
-#
+--echo #
+--echo # Bug #1994
+--echo # Bug #4261
+--echo #
 
 CREATE TABLE t1 (a  VARCHAR(255)) DEFAULT CHARSET koi8r;
 INSERT INTO t1  VALUES (_koi8r x'C1C2C3C4C5'), (NULL);
 --exec $MYSQL_DUMP --skip-comments --skip-extended-insert test t1
 DROP TABLE t1;
 
-#
-# Bug #2634
-#
+--echo #
+--echo # Bug #2634
+--echo #
 
 CREATE TABLE t1 (a int) ENGINE=MYISAM;
 INSERT INTO t1 VALUES (1), (2);
@@ -94,17 +102,17 @@ INSERT INTO t1 VALUES (1), (2);
 --exec $MYSQL_DUMP --skip-comments --compatible=mysql323 test t1
 DROP TABLE t1;
 
-#
-# Bug #2592 'mysqldump doesn't quote "tricky" names correctly'
-#
+--echo #
+--echo # Bug #2592 'mysqldump doesn't quote "tricky" names correctly'
+--echo #
 
 create table ```a` (i int);
 --exec $MYSQL_DUMP --compact test
 drop table ```a`;
 
-#
-# Bug #2591 "mysqldump quotes names inconsistently"
-#
+--echo #
+--echo # Bug #2591 "mysqldump quotes names inconsistently"
+--echo #
 
 create table t1(a int);
 --exec $MYSQL_DUMP --comments=0 test
@@ -115,25 +123,25 @@ set global sql_mode='ANSI_QUOTES';
 set global sql_mode='';
 drop table t1;
 
-#
-# Bug #2705 'mysqldump --tab extra output'
-#
+--echo #
+--echo # Bug #2705 'mysqldump --tab extra output'
+--echo #
 
 create table t1(a int);
 insert into t1 values (1),(2),(3);
---exec $MYSQL_DUMP --skip-comments --tab=$MYSQL_TEST_DIR/var/tmp/ test
---exec cat $MYSQL_TEST_DIR/var/tmp/t1.sql
---exec cat $MYSQL_TEST_DIR/var/tmp/t1.txt
---exec rm $MYSQL_TEST_DIR/var/tmp/t1.sql
---exec rm $MYSQL_TEST_DIR/var/tmp/t1.txt
---exec $MYSQL_DUMP --tab=$MYSQL_TEST_DIR/var/tmp/ test
---exec rm $MYSQL_TEST_DIR/var/tmp/t1.sql
---exec rm $MYSQL_TEST_DIR/var/tmp/t1.txt
+--exec $MYSQL_DUMP --skip-comments --tab=$MYSQLTEST_VARDIR/tmp/ test
+--cat_file $MYSQLTEST_VARDIR/tmp/t1.sql
+--cat_file $MYSQLTEST_VARDIR/tmp/t1.txt
+--remove_file $MYSQLTEST_VARDIR/tmp/t1.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/t1.txt
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ test
+--remove_file $MYSQLTEST_VARDIR/tmp/t1.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/t1.txt
 drop table t1;
 
-#
-# Bug #6101: create database problem
-#
+--echo #
+--echo # Bug #6101: create database problem
+--echo #
 
 --exec $MYSQL_DUMP --skip-comments --databases test
 
@@ -141,32 +149,34 @@ create database mysqldump_test_db character set latin2 collate latin2_bin;
 --exec $MYSQL_DUMP --skip-comments --databases mysqldump_test_db
 drop database mysqldump_test_db;
 
-#
-# Bug #7020
-# Check that we don't dump in UTF8 in compatible mode by default,
-# but use the default compiled values, or the values given in
-# --default-character-set=xxx. However, we should dump in UTF8
-# if it is explicitely set.
+--echo #
+--echo # Bug #7020
+--echo # Check that we don't dump in UTF8 in compatible mode by default,
+--echo # but use the default compiled values, or the values given in
+--echo # --default-character-set=xxx. However, we should dump in UTF8
+--echo # if it is explicitely set.
 
 CREATE TABLE t1 (a  CHAR(10));
 INSERT INTO t1  VALUES (_latin1 'ÄÖÜß');
 --exec $MYSQL_DUMP --character-sets-dir=$CHARSETSDIR --skip-comments test t1
-#
-# Bug#8063: make test mysqldump [ fail ]
-# We cannot tes this command because its output depends
-# on --default-character-set incompiled into "mysqldump" program.
-# If the future we can move this command into a separate test with
-# checking that "mysqldump" is compiled with "latin1"
-#
+
+--echo #
+--echo # Bug#8063: make test mysqldump [ fail ]
+--echo # We cannot tes this command because its output depends
+--echo # on --default-character-set incompiled into "mysqldump" program.
+--echo # If the future we can move this command into a separate test with
+--echo # checking that "mysqldump" is compiled with "latin1"
+--echo #
+
 #--exec $MYSQL_DUMP --character-sets-dir=$CHARSETSDIR --skip-comments --compatible=mysql323 test t1
 --exec $MYSQL_DUMP --character-sets-dir=$CHARSETSDIR --skip-comments --compatible=mysql323 --default-character-set=cp850 test t1
 --exec $MYSQL_DUMP --character-sets-dir=$CHARSETSDIR --skip-comments --default-character-set=cp850 --compatible=mysql323 test t1
 --exec $MYSQL_DUMP --character-sets-dir=$CHARSETSDIR --skip-comments --default-character-set=utf8 --compatible=mysql323 test t1
 DROP TABLE t1;
 
-#
-# WL #2319: Exclude Tables from dump
-#
+--echo #
+--echo # WL #2319: Exclude Tables from dump
+--echo #
 
 CREATE TABLE t1 (a int);
 CREATE TABLE t2 (a int);
@@ -176,30 +186,30 @@ INSERT INTO t2 VALUES (4),(5),(6);
 DROP TABLE t1;
 DROP TABLE t2;
 
-#
-#  Bug  #8830
-#
+--echo #
+--echo #  Bug  #8830
+--echo #
 
 CREATE TABLE t1 (`b` blob);
 INSERT INTO `t1` VALUES (0x602010000280100005E71A);
 --exec $MYSQL_DUMP --skip-extended-insert --hex-blob test --skip-comments t1
 DROP TABLE t1;
 
-#
-# Test for --insert-ignore
-#
+--echo #
+--echo # Test for --insert-ignore
+--echo #
 
-CREATE TABLE t1 (a decimal(240, 20));
-INSERT INTO t1 VALUES ("1234567890123456789012345678901234567890"),
-("0987654321098765432109876543210987654321");
---exec $MYSQL_DUMP --insert-ignore --skip-comments test t1
---exec $MYSQL_DUMP --insert-ignore --skip-comments --delayed-insert test t1
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (1),(2),(3);
+INSERT INTO t1 VALUES (4),(5),(6);
+--exec $MYSQL_DUMP --skip-comments --insert-ignore test t1
+--exec $MYSQL_DUMP --skip-comments --insert-ignore --delayed-insert test t1
 DROP TABLE t1;
 
-#
-# Bug #10286: mysqldump -c crashes on table that has many fields with long
-# names
-# 
+--echo #
+--echo # Bug #10286: mysqldump -c crashes on table that has many fields with long
+--echo # names
+--echo # 
 create table t1 (
  F_c4ca4238a0b923820dcc509a6f75849b int,
  F_c81e728d9d4c2f636f067f89cc14862c int,
@@ -535,18 +545,18 @@ insert into t1 (F_8d3bba7425e7c98c50f52ca1b52d3735) values (1);
 --exec $MYSQL_DUMP --skip-comments -c test
 drop table t1;
 
-#
-# Test for --add-drop-database
-#
+--echo #
+--echo # Test for --add-drop-database
+--echo #
 
 CREATE TABLE t1 (a int);
 INSERT INTO t1 VALUES (1),(2),(3);
 --exec $MYSQL_DUMP --add-drop-database --skip-comments --databases test
 DROP TABLE t1;
 
-#
-# Bug #9558 mysqldump --no-data db t1 t2 format still dumps data
-#
+--echo #
+--echo # Bug #9558 mysqldump --no-data db t1 t2 format still dumps data
+--echo #
 
 CREATE DATABASE mysqldump_test_db;
 USE mysqldump_test_db;
@@ -556,14 +566,16 @@ INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (1), (2);
 --exec $MYSQL_DUMP --skip-comments --no-data mysqldump_test_db
 --exec $MYSQL_DUMP --skip-comments --no-data mysqldump_test_db t1 t2
+--exec $MYSQL_DUMP --skip-comments --skip-create --xml --no-data mysqldump_test_db
+--exec $MYSQL_DUMP --skip-comments --skip-create --xml --no-data mysqldump_test_db t1 t2
 DROP TABLE t1, t2;
 DROP DATABASE mysqldump_test_db;
 
-#
-#  Testing with tables and databases that don't exists
-#  or contains illegal characters
-# (Bug #9358 mysqldump crashes if tablename starts with \)
-#
+--echo #
+--echo #  Testing with tables and databases that don't exists
+--echo #  or contains illegal characters
+--echo # (Bug #9358 mysqldump crashes if tablename starts with \)
+--echo #
 create database mysqldump_test_db;
 use mysqldump_test_db;
 create table t1(a varchar(30) primary key, b int not null);
@@ -595,19 +607,19 @@ select '------ Testing with illegal table names ------' as test_sequence ;
 --exec $MYSQL_DUMP --compact --skip-comments mysqldump_test_db  "t/1" 2>&1
 
 --error 6
---exec $MYSQL_DUMP --compact --skip-comments "mysqldump_test_db" "T_1"
+--exec $MYSQL_DUMP --compact --skip-comments mysqldump_test_db "T_1" 2>&1
 
 --error 6
---exec $MYSQL_DUMP --compact --skip-comments "mysqldump_test_db" "T%1"
+--exec $MYSQL_DUMP --compact --skip-comments mysqldump_test_db "T%1" 2>&1
 
 --error 6
---exec $MYSQL_DUMP --compact --skip-comments "mysqldump_test_db" "T'1"
+--exec $MYSQL_DUMP --compact --skip-comments mysqldump_test_db "T'1" 2>&1
 
 --error 6
---exec $MYSQL_DUMP --compact --skip-comments "mysqldump_test_db" "T_1"
+--exec $MYSQL_DUMP --compact --skip-comments mysqldump_test_db "T_1" 2>&1
 
 --error 6
---exec $MYSQL_DUMP --compact --skip-comments "mysqldump_test_db" "T_"
+--exec $MYSQL_DUMP --compact --skip-comments mysqldump_test_db "T_" 2>&1
 
 --disable_query_log
 select '------ Testing with illegal database names ------' as test_sequence ;
@@ -623,9 +635,9 @@ drop database mysqldump_test_db;
 use test;
 
 
-#
-# Bug #9657 mysqldump xml ( -x ) does not format NULL fields correctly
-#
+--echo #
+--echo # Bug #9657 mysqldump xml ( -x ) does not format NULL fields correctly
+--echo #
 
 create table t1 (a int(10));
 create table t2 (pk int primary key auto_increment,
@@ -635,28 +647,30 @@ insert into t2 (a, b) values (NULL, NULL),(10, NULL),(NULL, "twenty"),(30, "thir
 --exec $MYSQL_DUMP  --skip-comments --xml --no-create-info test
 drop table t1, t2;
 
-#
-# BUG #12123
-#
+--echo #
+--echo # BUG #12123
+--echo #
+
 create table t1 (a text character set utf8, b text character set latin1);
 insert t1 values (0x4F736E616272C3BC636B, 0x4BF66C6E);
 select * from t1;
---exec $MYSQL_DUMP --tab=$MYSQL_TEST_DIR/var/tmp/ test
---exec $MYSQL test < $MYSQL_TEST_DIR/var/tmp/t1.sql
---exec $MYSQL_IMPORT test $MYSQL_TEST_DIR/var/tmp/t1.txt
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ test
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/t1.sql
+--exec $MYSQL_IMPORT test $MYSQLTEST_VARDIR/tmp/t1.txt
 select * from t1;
 
 drop table t1;
 
-#
-# BUG#15328 Segmentation fault occured if my.cnf is invalid for escape sequence
-#
+--echo #
+--echo # BUG#15328 Segmentation fault occured if my.cnf is invalid for escape sequence
+--echo #
 
---exec $MYSQL_MY_PRINT_DEFAULTS --defaults-file=$MYSQL_TEST_DIR/std_data/bug15328.cnf mysqldump
+--exec $MYSQL_MY_PRINT_DEFAULTS --config-file=$MYSQL_TEST_DIR/std_data/bug15328.cnf mysqldump
 
+--echo #
+--echo # BUG #19025 mysqldump doesn't correctly dump "auto_increment = [int]"
+--echo #
 
-# BUG #19025 mysqldump doesn't correctly dump "auto_increment = [int]"
-#
 create table `t1` (
     t1_name varchar(255) default null,
     t1_id int(10) unsigned not null auto_increment,
@@ -683,9 +697,9 @@ show create table `t1`;
 
 drop table `t1`;
 
-#
-# Bug #18536: wrong table order
-#
+--echo #
+--echo # Bug #18536: wrong table order
+--echo #
 
 create table t1(a int);
 create table t2(a int);
@@ -694,12 +708,839 @@ create table t3(a int);
 --exec $MYSQL_DUMP --skip-comments --force --no-data test t3 t1 non_existing t2
 drop table t1, t2, t3;
 
-#
-# Bug #21288: mysqldump segmentation fault when using --where
-#
+--echo #
+--echo # Bug #21288: mysqldump segmentation fault when using --where
+--echo #
+
 create table t1 (a int);
 --error 2
---exec $MYSQL_DUMP --skip-comments --force test t1 --where='xx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' 2>&1
+--exec $MYSQL_DUMP --skip-comments --force test t1 --where="xx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" 2>&1
 drop table t1;
 
+--echo #
+--echo # BUG#13926: --order-by-primary fails if PKEY contains quote character
+--echo #
+
+--disable_warnings
+DROP TABLE IF EXISTS `t1`;
+CREATE TABLE `t1` (
+  `a b` INT,
+  `c"d` INT,
+  `e``f` INT,
+  PRIMARY KEY (`a b`, `c"d`, `e``f`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+insert into t1 values (0815, 4711, 2006);
+
+--exec $MYSQL_DUMP --skip-comments --compatible=ansi --order-by-primary test t1
+--exec $MYSQL_DUMP --skip-comments --order-by-primary test t1
+DROP TABLE `t1`;
+--enable_warnings
+
 --echo End of 4.1 tests
+
+--echo #
+--echo # Bug #10213 mysqldump crashes when dumping VIEWs(on MacOS X)
+--echo #
+
+create database db1;
+use db1;
+
+CREATE TABLE t2 (
+  a varchar(30) default NULL,
+  KEY a (a(5))
+);
+
+INSERT INTO t2 VALUES ('alfred');
+INSERT INTO t2 VALUES ('angie');
+INSERT INTO t2 VALUES ('bingo');
+INSERT INTO t2 VALUES ('waffle');
+INSERT INTO t2 VALUES ('lemon');
+create view v2 as select * from t2 where a like 'a%' with check option;
+--exec $MYSQL_DUMP  --skip-comments db1
+drop table t2;
+drop view v2;
+drop database db1;
+use test;
+
+--echo #
+--echo # Bug 10713 mysqldump includes database in create view and referenced tables
+--echo #
+
+# create table and views in db2
+create database db2;
+use db2;
+create table t1 (a int);
+create table t2 (a int, b varchar(10), primary key(a));
+insert into t2 values (1, "on"), (2, "off"), (10, "pol"), (12, "meg");
+insert into t1 values (289), (298), (234), (456), (789);
+create view v1 as select * from t2;
+create view v2 as select * from t1;
+
+# dump tables and view from db2
+--exec $MYSQL_DUMP db2 > $MYSQLTEST_VARDIR/tmp/bug10713.sql
+
+# drop the db, tables and views
+drop table t1, t2;
+drop view v1, v2;
+drop database db2;
+use test;
+
+# create db1 and reload dump
+create database db1;
+use db1;
+--exec $MYSQL db1 < $MYSQLTEST_VARDIR/tmp/bug10713.sql
+
+# check that all tables and views could be created
+show tables;
+select * from t2 order by a;
+
+drop table t1, t2;
+drop database db1;
+use test;
+
+#
+# dump of view
+#
+create table t1(a int);
+create view v1 as select * from t1;
+--exec $MYSQL_DUMP --skip-comments test
+drop view v1;
+drop table t1;
+
+--echo #
+--echo # Bug #10213 mysqldump crashes when dumping VIEWs(on MacOS X)
+--echo #
+
+create database mysqldump_test_db;
+use mysqldump_test_db;
+
+CREATE TABLE t2 (
+  a varchar(30) default NULL,
+  KEY a (a(5))
+);
+
+INSERT INTO t2 VALUES ('alfred');
+INSERT INTO t2 VALUES ('angie');
+INSERT INTO t2 VALUES ('bingo');
+INSERT INTO t2 VALUES ('waffle');
+INSERT INTO t2 VALUES ('lemon');
+create view v2 as select * from t2 where a like 'a%' with check option;
+--exec $MYSQL_DUMP  --skip-comments mysqldump_test_db
+drop table t2;
+drop view v2;
+drop database mysqldump_test_db;
+use test;
+
+--echo #
+--echo # Bug #9756
+--echo #
+
+CREATE TABLE t1 (a char(10));
+INSERT INTO t1 VALUES ('\'');
+--exec $MYSQL_DUMP --skip-comments test t1
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #10927 mysqldump: Can't reload dump with view that consist of other view
+--echo #
+
+create table t1(a int, b int, c varchar(30));
+
+insert into t1 values(1, 2, "one"), (2, 4, "two"), (3, 6, "three");
+
+create view v3 as
+select * from t1;
+
+create  view v1 as
+select * from v3 where b in (1, 2, 3, 4, 5, 6, 7);
+
+create  view v2 as
+select v3.a from v3, v1 where v1.a=v3.a and v3.b=3 limit 1;
+
+--exec $MYSQL_DUMP --skip-comments test
+
+drop view v1, v2, v3;
+drop table t1;
+
+--echo #
+--echo # Test for dumping triggers
+--echo #
+
+CREATE TABLE t1 (a int, b bigint default NULL);
+CREATE TABLE t2 (a int);
+delimiter |;
+create trigger trg1 before insert on t1 for each row
+begin
+  if new.a > 10 then
+    set new.a := 10;
+    set new.a := 11;
+  end if;
+end|
+create trigger trg2 before update on t1 for each row begin
+  if old.a % 2 = 0 then set new.b := 12; end if;
+end|
+set sql_mode="traditional"|
+create trigger trg3 after update on t1 for each row
+begin
+  if new.a = -1 then
+    set @fired:= "Yes";
+  end if;
+end|
+create trigger trg4 before insert on t2 for each row
+begin
+  if new.a > 10 then
+    set @fired:= "No";
+  end if;
+end|
+set sql_mode=default|
+delimiter ;|
+--replace_column 6 '0000-00-00 00:00:00'
+show triggers like "t1";
+INSERT INTO t1 (a) VALUES (1),(2),(3),(22);
+update t1 set a = 4 where a=3;
+# Triggers should be dumped by default
+--exec $MYSQL_DUMP --skip-comments --databases test
+# Skip dumping triggers
+--exec $MYSQL_DUMP --skip-comments --databases --skip-triggers test
+# Dump and reload...
+--exec $MYSQL_DUMP --skip-comments --databases test > $MYSQLTEST_VARDIR/tmp/mysqldump.sql
+drop table t1;
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/mysqldump.sql
+# Check that tables have been reloaded
+show tables;
+--replace_column 6 #
+show triggers;
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bugs #9136, #12917: problems with --defaults-extra-file option
+--echo #
+
+--write_file $MYSQLTEST_VARDIR/tmp/tmp.cnf
+[mysqltest1]
+port=1234
+EOF
+--exec $MYSQL_MY_PRINT_DEFAULTS -c $MYSQLTEST_VARDIR/tmp/tmp.cnf mysqltest1
+--exec $MYSQL_MY_PRINT_DEFAULTS -e $MYSQLTEST_VARDIR/tmp/tmp.cnf mysqltest1 mysqltest1
+--remove_file $MYSQLTEST_VARDIR/tmp/tmp.cnf
+
+--echo #
+--echo # Test of fix to BUG 12597
+--echo #
+
+DROP TABLE IF EXISTS `test1`;
+CREATE TABLE `test1` (
+  `a1` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+DROP TABLE IF EXISTS `test2`;
+CREATE TABLE `test2` (
+  `a2` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+DELIMITER //;
+CREATE TRIGGER `testref` BEFORE INSERT ON `test1` FOR EACH ROW BEGIN
+INSERT INTO test2 SET a2 = NEW.a1; END  //
+DELIMITER ;//
+
+INSERT INTO `test1` VALUES (1);
+SELECT * FROM `test2`;
+
+# dump
+--exec $MYSQL_DUMP --skip-comments --databases test > $MYSQLTEST_VARDIR/tmp/mysqldump.sql
+
+#DROP TRIGGER testref;
+#DROP TABLE test1;
+#DROP TABLE test2;
+# restore
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/mysqldump.sql
+SHOW TRIGGERS;
+SELECT * FROM `test1`;
+SELECT * FROM `test2`;
+
+DROP TRIGGER testref;
+DROP TABLE test1;
+DROP TABLE test2;
+
+--echo #
+--echo # BUG#9056 - mysqldump does not dump routines
+--echo #
+
+--disable_warnings
+DROP TABLE IF EXISTS t1;
+DROP FUNCTION IF EXISTS bug9056_func1;
+DROP FUNCTION IF EXISTS bug9056_func2;
+DROP PROCEDURE IF EXISTS bug9056_proc1;
+DROP PROCEDURE IF EXISTS bug9056_proc2;
+DROP PROCEDURE IF EXISTS `a'b`;
+--enable_warnings
+
+CREATE TABLE t1 (id int);
+INSERT INTO t1 VALUES(1), (2), (3), (4), (5);
+
+DELIMITER //;
+CREATE FUNCTION `bug9056_func1`(a INT, b INT) RETURNS int(11) RETURN a+b //
+CREATE PROCEDURE `bug9056_proc1`(IN a INT, IN b INT, OUT c INT)
+BEGIN SELECT a+b INTO c; end  //
+
+create function bug9056_func2(f1 char binary) returns char binary
+begin
+  set f1= concat( 'hello', f1 );
+  return f1;
+end //
+
+CREATE PROCEDURE bug9056_proc2(OUT a INT) 
+BEGIN 
+  select sum(id) from t1 into a; 
+END //
+
+DELIMITER ;//
+
+set sql_mode='ansi';
+create procedure `a'b` () select 1; # to fix syntax highlighting :')
+set sql_mode='';
+
+# Dump the DB and ROUTINES 
+--exec $MYSQL_DUMP --skip-comments --routines --databases test
+
+# ok, now blow it all away
+DROP FUNCTION bug9056_func1;
+DROP FUNCTION bug9056_func2;
+DROP PROCEDURE bug9056_proc1;
+DROP PROCEDURE bug9056_proc2;
+DROP PROCEDURE `a'b`;
+drop table t1;
+
+--echo #
+--echo # BUG# 13052 - mysqldump timestamp reloads broken
+--echo #
+
+--disable_warnings
+drop table if exists t1;
+--enable_warnings
+
+create table t1 (`d` timestamp, unique (`d`));
+set time_zone='+00:00';
+insert into t1 values ('2003-10-25 22:00:00'),('2003-10-25 23:00:00');
+# results should show two different time values
+select * from t1;
+set time_zone='Europe/Moscow';
+# results should show two same time values, despite unique
+select * from t1;
+set global time_zone='Europe/Moscow';
+--exec $MYSQL_DUMP --skip-comments --databases test
+--exec $MYSQL_DUMP --skip-tz-utc --skip-comments --databases test
+drop table t1;
+set global time_zone=default;
+set time_zone=default;
+
+--echo #
+--echo # Test of fix to BUG 13146 - ansi quotes break loading of triggers 
+--echo #
+
+--disable_warnings
+DROP TABLE IF EXISTS `t1 test`;
+DROP TABLE IF EXISTS `t2 test`;
+--enable_warnings
+
+CREATE TABLE `t1 test` (
+  `a1` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+CREATE TABLE `t2 test` (
+  `a2` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+DELIMITER //;
+CREATE TRIGGER `test trig` BEFORE INSERT ON `t1 test` FOR EACH ROW BEGIN
+INSERT INTO `t2 test` SET a2 = NEW.a1; END  //
+DELIMITER ;//
+
+INSERT INTO `t1 test` VALUES (1);
+INSERT INTO `t1 test` VALUES (2);
+INSERT INTO `t1 test` VALUES (3);
+SELECT * FROM `t2 test`;
+# dump with compatible=ansi. Everything except triggers should be double 
+# quoted
+--exec $MYSQL_DUMP --skip-comments --compatible=ansi --triggers test
+
+DROP TRIGGER `test trig`;
+DROP TABLE `t1 test`;
+DROP TABLE `t2 test`;
+
+--echo #
+--echo # BUG# 12838 mysqldump -x with views exits with error 
+--echo #
+
+--disable_warnings
+drop table if exists t1;
+--enable_warnings
+create table t1 (a int, b varchar(32), c varchar(32));
+insert into t1 values (1, 'first value', 'xxxx');
+insert into t1 values (2, 'second value', 'tttt');
+insert into t1 values (3, 'third value', 'vvv vvv');
+
+create view v1 as select * from t1;
+create view v0 as select * from v1;
+create view v2 as select * from v0;
+
+select * from v2;
+--exec $MYSQL_DUMP -x --skip-comments --databases test
+
+drop view v2;
+drop view v0;
+drop view v1;
+drop table t1;
+
+--echo #
+--echo # BUG#14554 - mysqldump does not separate words "ROW" and "BEGIN"
+--echo # for tables with trigger created in the IGNORE_SPACE sql mode.
+--echo #
+
+SET @old_sql_mode = @@SQL_MODE;
+SET SQL_MODE = IGNORE_SPACE;
+
+CREATE TABLE t1 (a INT);
+DELIMITER |;
+CREATE TRIGGER tr1 BEFORE INSERT ON t1
+       FOR EACH ROW
+       BEGIN
+         SET new.a = 0;
+       END|
+DELIMITER ;|
+
+SET SQL_MODE = @old_sql_mode;
+
+--exec $MYSQL_DUMP --skip-comments --databases test
+
+DROP TRIGGER tr1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #13318: Bad result with empty field and --hex-blob
+--echo # 
+
+create table t1 (a binary(1), b blob);
+insert into t1 values ('','');
+--exec $MYSQL_DUMP --skip-comments --skip-extended-insert --hex-blob test t1
+--exec $MYSQL_DUMP --skip-comments --hex-blob test t1
+drop table t1;
+
+--echo #
+--echo # Bug 14871 Invalid view dump output
+--echo #
+
+create table t1 (a int);
+insert into t1 values (289), (298), (234), (456), (789);
+create definer = CURRENT_USER view v1 as select * from t1;
+create SQL SECURITY INVOKER view v2 as select * from t1;
+create view v3 as select * from t1 with local check option;
+create algorithm=merge view v4 as select * from t1 with cascaded check option;
+create algorithm =temptable view v5 as select * from t1;
+
+# dump tables and views
+--exec $MYSQL_DUMP test > $MYSQLTEST_VARDIR/tmp/bug14871.sql
+
+# drop the db, tables and views
+drop table t1;
+drop view v1, v2, v3, v4, v5;
+
+# Reload dump
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/bug14871.sql
+
+# check that all tables and views could be created
+show tables;
+select * from v3 order by a;
+
+drop table t1;
+drop view v1, v2, v3, v4, v5;
+
+--echo #
+--echo # Bug #16878 dump of trigger
+--echo #
+
+create table t1 (a int, created datetime);
+create table t2 (b int, created datetime);
+create trigger tr1 before insert on t1 for each row set
+new.created=now();
+delimiter |;
+create trigger tr2 after insert on t1
+for each row
+begin
+  insert into t2 set b=new.a and created=new.created;
+end|
+delimiter ;|
+
+# dump table and trigger
+--exec $MYSQL_DUMP test > $MYSQLTEST_VARDIR/tmp/bug16878.sql
+drop trigger tr1;
+drop trigger tr2;
+drop table t1, t2;
+
+# reload dump
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/bug16878.sql
+--replace_column 6 #
+show triggers;
+drop trigger tr1;
+drop trigger tr2;
+drop table t1, t2;
+
+--echo #
+--echo # Bug#18462 mysqldump does not dump view structures correctly
+--echo #
+
+create table t (qty int, price int);
+insert into t values(3, 50);
+insert into t values(5, 51);
+create view v1 as select qty, price, qty*price as value from t;
+create view v2 as select qty from v1;
+--echo mysqldump {
+--exec $MYSQL_DUMP --compact -F --tab $MYSQLTEST_VARDIR/tmp test
+--cat_file $MYSQLTEST_VARDIR/tmp/v1.sql
+--echo } mysqldump {
+--cat_file $MYSQLTEST_VARDIR/tmp/v2.sql
+--echo } mysqldump
+drop view v1;
+drop view v2;
+drop table t;
+
+
+--echo #
+--echo # Bug#14857 Reading dump files with single statement stored routines fails.
+--echo # fixed by patch for bug#16878
+--echo #
+
+DELIMITER |;
+/*!50003 CREATE FUNCTION `f`() RETURNS bigint(20)
+return 42 */|
+/*!50003 CREATE PROCEDURE `p`()
+select 42 */|
+DELIMITER ;|
+show create function f;
+show create procedure p;
+drop function f;
+drop procedure p;
+
+--echo #
+--echo # Bug #17371 Unable to dump a schema with invalid views
+--echo #
+
+create table t1 ( id serial );
+create view v1 as select * from t1;
+drop table t1;
+# mysqldump gets 1356 from server, but gives us 2
+--echo mysqldump {
+--error 2
+--exec $MYSQL_DUMP --force -N --compact --skip-comments test
+--echo } mysqldump
+drop view v1;
+
+--echo # BUG#17201 Spurious 'DROP DATABASE' in output,
+--echo # also confusion between tables and views.
+--echo # Example code from Markus Popp
+
+create database mysqldump_test_db;
+use mysqldump_test_db;
+create table t1 (id int);
+create view v1 as select * from t1;
+insert into t1 values (1232131);
+insert into t1 values (4711);
+insert into t1 values (3231);
+insert into t1 values (0815);
+--exec $MYSQL_DUMP --skip-comments --add-drop-database --databases mysqldump_test_db
+drop view v1;
+drop table t1;
+drop database mysqldump_test_db;
+
+--echo #
+--echo # Bug21014 Segmentation fault of mysqldump on view
+--echo #
+
+create database mysqldump_tables;
+use mysqldump_tables;
+create table basetable ( id serial, tag varchar(64) );
+
+create database mysqldump_views;
+use mysqldump_views;
+create view nasishnasifu as select mysqldump_tables.basetable.id from mysqldump_tables.basetable;
+
+--exec $MYSQL_DUMP --skip-comments --compact --databases mysqldump_tables mysqldump_views
+
+drop view nasishnasifu;
+drop database mysqldump_views;
+drop table mysqldump_tables.basetable;
+drop database mysqldump_tables;
+
+--echo #
+--echo # Bug20221 Dumping of multiple databases containing view(s) yields maleformed dumps
+--echo #
+
+create database mysqldump_dba;
+use mysqldump_dba;
+create table t1 (f1 int, f2 int);
+insert into t1 values (1,1);
+create view v1 as select f1, f2 from t1;
+
+create database mysqldump_dbb;
+use mysqldump_dbb;
+create table t1 (f1 int, f2 int);
+insert into t1 values (2,2);
+create view v1 as select f1, f2 from t1;
+
+--exec $MYSQL_DUMP --skip-comments --add-drop-database --databases mysqldump_dba mysqldump_dbb > $MYSQLTEST_VARDIR/tmp/bug20221_backup
+
+drop view v1;
+drop table t1;
+drop database mysqldump_dbb;
+use mysqldump_dba;
+drop view v1;
+drop table t1;
+drop database mysqldump_dba;
+
+--exec $MYSQL < $MYSQLTEST_VARDIR/tmp/bug20221_backup
+
+select * from mysqldump_dba.v1;
+select * from mysqldump_dbb.v1;
+
+use mysqldump_dba;
+drop view v1;
+drop table t1;
+drop database mysqldump_dba;
+use mysqldump_dbb;
+drop view v1;
+drop table t1;
+drop database mysqldump_dbb;
+use test;
+
+--echo #
+--echo # Bug#21215 mysqldump creating incomplete backups without warning
+--echo #
+
+# Create user without sufficient privs to perform the requested operation
+create user mysqltest_1@localhost;
+create table t1(a int, b varchar(34));
+
+# To get consistent output, reset the master, starts over from first log
+reset master;
+
+# Execute mysqldump, will fail on FLUSH TABLES
+--error 2
+--exec $MYSQL_DUMP --compact --master-data -u mysqltest_1 test 2>&1
+
+# Execute mysqldump, will fail on FLUSH TABLES
+# use --force, should no affect behaviour
+--error 2
+--exec $MYSQL_DUMP --compact --force --master-data -u mysqltest_1 test 2>&1
+
+# Add RELOAD grants
+grant RELOAD on *.* to mysqltest_1@localhost;
+
+# Execute mysqldump, will fail on SHOW MASTER STATUS
+--error 2
+--exec $MYSQL_DUMP --compact --master-data -u mysqltest_1 test 2>&1
+
+# Execute mysqldump, will fail on SHOW MASTER STATUS.
+# use --force, should not alter behaviour
+--error 2
+--exec $MYSQL_DUMP --compact --force --master-data -u mysqltest_1 test 2>&1
+
+# Add REPLICATION CLIENT grants
+grant REPLICATION CLIENT on *.* to mysqltest_1@localhost;
+
+# Execute mysqldump, should now succeed
+--exec $MYSQL_DUMP --compact --master-data -u mysqltest_1 test 2>&1
+
+# Clean up
+drop table t1;
+drop user mysqltest_1@localhost;
+
+--echo #
+--echo # Bug #21527 mysqldump incorrectly tries to LOCK TABLES on the 
+--echo # information_schema database.
+--echo #
+--echo # Bug #21424 mysqldump failing to export/import views
+--echo #
+
+# Do as root
+connect (root,localhost,root,,test,$MASTER_MYPORT,$MASTER_MYSOCK);
+connection root;
+create database mysqldump_myDB;
+use mysqldump_myDB;
+create user myDB_User@localhost;
+grant create, create view, select, insert on mysqldump_myDB.* to myDB_User@localhost;
+create table t1 (c1 int);
+insert into t1 values (3);
+
+# Do as a user
+connect (user1,localhost,myDB_User,,mysqldump_myDB,$MASTER_MYPORT,$MASTER_MYSOCK);
+connection user1;
+use mysqldump_myDB;
+create table u1 (f1 int);
+insert into u1 values (4);
+create view v1 (c1) as select * from t1;
+
+# Backup should not fail for Bug #21527. Flush priviliges test begins.
+--exec $MYSQL_DUMP --skip-comments --add-drop-table --flush-privileges --ignore-table=mysql.general_log --ignore-table=mysql.slow_log --databases mysqldump_myDB mysql > $MYSQLTEST_VARDIR/tmp/bug21527.sql
+
+# Clean up
+connection root;
+use mysqldump_myDB;
+drop view v1;
+drop table t1;
+drop table u1;
+revoke all privileges on mysqldump_myDB.* from myDB_User@localhost;
+drop user myDB_User@localhost;
+drop database mysqldump_myDB;
+flush privileges;
+
+--echo # Bug #21424 continues from here.
+--echo # Restore. Flush Privileges test ends.  
+--echo #
+
+--exec $MYSQL < $MYSQLTEST_VARDIR/tmp/bug21527.sql
+
+# Do as a user
+connection user1;
+use mysqldump_myDB;
+
+# Ultimate test for correct data.
+select * from mysqldump_myDB.v1;
+select * from mysqldump_myDB.u1;
+
+#Final cleanup.
+connection root;
+use mysqldump_myDB;
+drop view v1;
+drop table t1;
+drop table u1;
+revoke all privileges on mysqldump_myDB.* from myDB_User@localhost;
+drop user myDB_User@localhost;
+drop database mysqldump_myDB;
+use test;
+
+--echo #
+--echo # Bug #19745: mysqldump --xml produces invalid xml
+--echo #
+
+--disable_warnings
+DROP TABLE IF EXISTS t1;
+--enable_warnings
+
+CREATE TABLE t1 (f1 int(10), data MEDIUMBLOB);
+INSERT INTO t1 VALUES(1,0xff00fef0);
+
+--exec $MYSQL_DUMP --xml --hex-blob --skip-create-options test t1
+
+DROP TABLE t1;
+
+
+
+--echo #
+--echo # Bug#26346:  	stack + buffer overrun in mysqldump
+--echo #
+
+CREATE TABLE t1(a int);
+INSERT INTO t1 VALUES (1), (2);
+
+# too long a file path causes an error
+--error 1
+--exec $MYSQL_DUMP --tab=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test 2>&1
+
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ --fields-terminated-by=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ --fields-enclosed-by=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ --fields-optionally-enclosed-by=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ --fields-escaped-by=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test
+--exec $MYSQL_DUMP --tab=$MYSQLTEST_VARDIR/tmp/ --lines-terminated-by=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test
+
+--remove_file $MYSQLTEST_VARDIR/tmp/t1.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/t1.txt
+
+DROP TABLE t1;
+
+#
+# Bug #25993: crashe with a merge table and -c
+#
+
+CREATE TABLE t2 (a int);
+CREATE TABLE t3 (a int);
+CREATE TABLE t1 (a int) ENGINE=merge UNION=(t2, t3);
+--exec $MYSQL_DUMP --skip-comments -c test
+DROP TABLE t1, t2, t3;
+
+--echo #
+--echo # Bug #23491: MySQLDump prefix function call in a view by database name
+--echo #
+
+# Setup
+create database bug23491_original;
+create database bug23491_restore;
+use bug23491_original;
+create table t1 (c1 int);
+create view v1 as select * from t1;
+create procedure p1() select 1;
+create function f1() returns int return 1;
+create view v2 as select f1();
+create function f2() returns int return f1();
+create view v3 as select bug23491_original.f1();
+
+# Backup.
+--exec $MYSQL_DUMP --skip-comments -uroot --opt --routines bug23491_original > $MYSQLTEST_VARDIR/tmp/bug23491_backup.sql
+
+# Restore.
+--exec $MYSQL bug23491_restore < $MYSQLTEST_VARDIR/tmp/bug23491_backup.sql
+
+# Verify
+use bug23491_restore;
+show create view bug23491_restore.v2;
+show create view bug23491_restore.v3;
+
+# Cleanup
+drop database bug23491_original;
+drop database bug23491_restore;
+use test;
+
+
+
+--echo # 
+--echo # Bug 27293: mysqldump crashes when dumping routines
+--echo # defined by a different user
+--echo #
+--echo # Bug #22761: mysqldump reports no errors when using
+--echo # --routines without mysql.proc privileges
+--echo #
+
+create database mysqldump_test_db;
+
+grant all privileges on mysqldump_test_db.*  to user1;
+grant all privileges on mysqldump_test_db.*  to user2;
+
+connect (user27293,localhost,user1,,mysqldump_test_db,$MASTER_MYPORT,$MASTER_MYSOCK);
+connection user27293;
+
+create procedure mysqldump_test_db.sp1() select 'hello';
+
+--error 2
+--exec $MYSQL_DUMP -f --compact --user=user2 --password=  -h 127.0.0.1 -P $MASTER_MYPORT --routines mysqldump_test_db
+
+--exec $MYSQL_DUMP -f --compact --user=user1 --password=  -h 127.0.0.1 -P $MASTER_MYPORT --routines mysqldump_test_db
+
+drop procedure sp1;
+
+connection default;
+drop user user1;
+drop user user2;
+
+drop database mysqldump_test_db;
+
+--echo #
+--echo # Bug #28522: buffer overrun by '\0' byte using --hex-blob.
+--echo #
+
+CREATE TABLE t1 (c1 INT, c2 LONGBLOB);
+INSERT INTO t1 SET c1=11, c2=REPEAT('q',509);
+--exec $MYSQL_DUMP --skip-create --compact --hex-blob test t1
+DROP TABLE t1;
+
+--echo #
+--echo # End of 5.0 tests
+--echo #

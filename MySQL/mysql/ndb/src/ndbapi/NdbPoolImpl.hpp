@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -92,7 +91,8 @@ class NdbPool {
     Uint16 prev_db_object;
   };
   public:
-    static NdbPool* create_instance(Uint32 max_ndb_objects = 240,
+    static NdbPool* create_instance(Ndb_cluster_connection*,
+				    Uint32 max_ndb_objects = 240,
                                     Uint32 no_conn_obj = 4,
                                     Uint32 init_no_ndb_objects = 8);
     static void drop_instance();
@@ -104,7 +104,8 @@ class NdbPool {
     bool init(Uint32 initial_no_of_ndb_objects = 8);
     void release_all();
     static bool initPoolMutex();
-    NdbPool(Uint32 max_no_of_ndb_objects, Uint32 no_conn_objects);
+    NdbPool(Ndb_cluster_connection*, 
+	    Uint32 max_no_of_ndb_objects, Uint32 no_conn_objects);
     ~NdbPool();
   /*
   We have three lists:
@@ -158,5 +159,7 @@ class NdbPool {
     Uint16      m_input_queue;
     Uint16      m_output_queue;
     Uint16      m_signal_count;
+
+  Ndb_cluster_connection * m_cluster_connection;
 };
 #endif

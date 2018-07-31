@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,6 +33,9 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
   LINT_INIT(changed);
   LINT_INIT(old_checksum);
 
+  DBUG_EXECUTE_IF("myisam_pretend_crashed_table_on_usage",
+                  mi_print_error(info->s, HA_ERR_CRASHED);
+                  DBUG_RETURN(my_errno= HA_ERR_CRASHED););
   if (!(info->update & HA_STATE_AKTIV))
   {
     DBUG_RETURN(my_errno=HA_ERR_KEY_NOT_FOUND);
@@ -84,7 +86,7 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
   changed=0;
   for (i=0 ; i < share->base.keys ; i++)
   {
-    if (((ulonglong) 1 << i) & share->state.key_map)
+    if (mi_is_key_active(share->state.key_map, i))
     {
       if (share->keyinfo[i].flag & HA_FULLTEXT )
       {
@@ -161,9 +163,10 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
       key_changed|= HA_STATE_CHANGED;		/* Must update index file */
   }
   if (auto_key_changed)
-    update_auto_increment(info,newrec);
+    set_if_bigger(info->s->state.auto_increment,
+                  retrieve_auto_increment(info, newrec));
   if (share->calc_checksum)
-    share->state.checksum+=(info->checksum - old_checksum);
+    info->state->checksum+=(info->checksum - old_checksum);
 
   info->update= (HA_STATE_CHANGED | HA_STATE_ROW_CHANGED | HA_STATE_AKTIV |
 		 key_changed);
@@ -193,7 +196,8 @@ err:
   save_errno=my_errno;
   if (changed)
     key_changed|= HA_STATE_CHANGED;
-  if (my_errno == HA_ERR_FOUND_DUPP_KEY || my_errno == HA_ERR_RECORD_FILE_FULL)
+  if (my_errno == HA_ERR_FOUND_DUPP_KEY || my_errno == HA_ERR_OUT_OF_MEM ||
+      my_errno == HA_ERR_RECORD_FILE_FULL)
   {
     info->errkey= (int) i;
     flag=0;
@@ -219,7 +223,10 @@ err:
     } while (i-- != 0);
   }
   else
+  {
+    mi_print_error(info->s, HA_ERR_CRASHED);
     mi_mark_crashed(info);
+  }
   info->update= (HA_STATE_CHANGED | HA_STATE_AKTIV | HA_STATE_ROW_CHANGED |
 		 key_changed);
 
@@ -228,6 +235,9 @@ err:
   VOID(_mi_writeinfo(info,WRITEINFO_UPDATE_KEYFILE));
   allow_break();				/* Allow SIGHUP & SIGINT */
   if (save_errno == HA_ERR_KEY_NOT_FOUND)
+  {
+    mi_print_error(info->s, HA_ERR_CRASHED);
     save_errno=HA_ERR_CRASHED;
+  }
   DBUG_RETURN(my_errno=save_errno);
 } /* mi_update */

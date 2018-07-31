@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +25,14 @@ uint my_quick_read(File Filedes,byte *Buffer,uint Count,myf MyFlags)
 
   if ((readbytes = (uint) read(Filedes, Buffer, Count)) != Count)
   {
+#ifndef DBUG_OFF
+    if ((readbytes == 0 || (int) readbytes == -1) && errno == EINTR)
+    {  
+      DBUG_PRINT("error", ("my_quick_read() was interrupted and returned %d"
+                           ".  This function does not retry the read!",
+                           (int) readbytes));
+    }
+#endif
     my_errno=errno;
     return readbytes;
   }
@@ -35,8 +42,24 @@ uint my_quick_read(File Filedes,byte *Buffer,uint Count,myf MyFlags)
 
 uint my_quick_write(File Filedes,const byte *Buffer,uint Count)
 {
-  if ((uint) write(Filedes,Buffer,Count) != Count)
+#ifndef DBUG_OFF
+  uint writtenbytes;
+#endif
+
+  if ((
+#ifndef DBUG_OFF
+       writtenbytes =
+#endif
+       (uint) write(Filedes,Buffer,Count)) != Count)
   {
+#ifndef DBUG_OFF
+    if ((writtenbytes == 0 || (int) writtenbytes == -1) && errno == EINTR)
+    {  
+      DBUG_PRINT("error", ("my_quick_write() was interrupted and returned %d"
+                           ".  This function does not retry the write!",
+                           (int) writtenbytes));
+    }
+#endif
     my_errno=errno;
     return (uint) -1;
   }

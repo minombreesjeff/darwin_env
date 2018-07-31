@@ -52,9 +52,9 @@ KEY NAME (NAME));
 ALTER TABLE t1 CHANGE NAME NAME CHAR(80) not null;
 SHOW FULL COLUMNS FROM t1;
 Field	Type	Collation	Null	Key	Default	Extra	Privileges	Comment
-GROUP_ID	int(10) unsigned	NULL		PRI	0		#	
-LANG_ID	smallint(5) unsigned	NULL		PRI	0		#	
-NAME	char(80)	latin1_swedish_ci		MUL			#	
+GROUP_ID	int(10) unsigned	NULL	NO	PRI	0		#	
+LANG_ID	smallint(5) unsigned	NULL	NO	PRI	0		#	
+NAME	char(80)	latin1_swedish_ci	NO	MUL			#	
 DROP TABLE t1;
 create table t1 (n int);
 insert into t1 values(9),(3),(12),(10);
@@ -179,7 +179,7 @@ alter table t1 rename t2;
 alter table t2 rename t1, add c char(10) comment "no comment";
 show columns from t1;
 Field	Type	Null	Key	Default	Extra
-i	int(10) unsigned		PRI	NULL	auto_increment
+i	int(10) unsigned	NO	PRI	NULL	auto_increment
 c	char(10)	YES		NULL	
 drop table t1;
 create table t1 (a int, b int);
@@ -314,7 +314,7 @@ INSERT INTO t1 VALUES ('localhost','root'),('localhost',''),('games','monty');
 SHOW INDEX FROM t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
 t1	0	PRIMARY	1	Host	A	NULL	NULL	NULL		BTREE	
-t1	0	PRIMARY	2	User	A	3	NULL	NULL		BTREE	
+t1	0	PRIMARY	2	User	A	0	NULL	NULL		BTREE	
 ALTER TABLE t1 ENABLE KEYS;
 UNLOCK TABLES;
 CHECK TABLES t1;
@@ -338,7 +338,7 @@ INSERT INTO t1 VALUES ('localhost','root'),('localhost','');
 SHOW INDEX FROM t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
 t1	0	PRIMARY	1	Host	A	NULL	NULL	NULL		BTREE	
-t1	0	PRIMARY	2	User	A	2	NULL	NULL		BTREE	
+t1	0	PRIMARY	2	User	A	0	NULL	NULL		BTREE	
 t1	1	Host	1	Host	A	NULL	NULL	NULL		BTREE	disabled
 ALTER TABLE t1 ENABLE KEYS;
 SHOW INDEX FROM t1;
@@ -389,7 +389,7 @@ alter table t1 modify a varchar(10);
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(10) NOT NULL default '',
+  `a` varchar(10) NOT NULL,
   PRIMARY KEY  (`a`)
 ) ENGINE=MRG_MyISAM DEFAULT CHARSET=latin1 UNION=(`t1`)
 flush tables;
@@ -397,7 +397,7 @@ alter table t1 modify a varchar(10) not null;
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(10) NOT NULL default '',
+  `a` varchar(10) NOT NULL,
   PRIMARY KEY  (`a`)
 ) ENGINE=MRG_MyISAM DEFAULT CHARSET=latin1 UNION=(`t1`)
 drop table if exists t1, t2;
@@ -405,17 +405,26 @@ create table t1 (a int, b int, c int, d int, e int, f int, g int, h int,i int, p
 insert into t1 (a) values(1);
 show table status like 't1';
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	MyISAM	9	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
+t1	MyISAM	10	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
 alter table t1 modify a int;
 show table status like 't1';
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	MyISAM	9	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
+t1	MyISAM	10	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
 drop table t1;
 create table t1 (a int not null, b int not null, c int not null, d int not null, e int not null, f int not null, g int not null, h int not null,i int not null, primary key (a,b,c,d,e,f,g,i,h)) engine=MyISAM;
 insert into t1 (a) values(1);
+Warnings:
+Warning	1364	Field 'b' doesn't have a default value
+Warning	1364	Field 'c' doesn't have a default value
+Warning	1364	Field 'd' doesn't have a default value
+Warning	1364	Field 'e' doesn't have a default value
+Warning	1364	Field 'f' doesn't have a default value
+Warning	1364	Field 'g' doesn't have a default value
+Warning	1364	Field 'h' doesn't have a default value
+Warning	1364	Field 'i' doesn't have a default value
 show table status like 't1';
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	MyISAM	9	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
+t1	MyISAM	10	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
 drop table t1;
 set names koi8r;
 create table t1 (a char(10) character set koi8r);
@@ -427,7 +436,7 @@ alter table t1 change a a char(10) character set cp1251;
 select a,hex(a) from t1;
 a	hex(a)
 ‘≈”‘	F2E5F1F2
-alter table t1 change a a binary(10);
+alter table t1 change a a binary(4);
 select a,hex(a) from t1;
 a	hex(a)
 ÚÂÒÚ	F2E5F1F2
@@ -501,7 +510,7 @@ ALTER TABLE t1 DROP PRIMARY KEY;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL default '0',
+  `a` int(11) NOT NULL,
   `b` int(11) default NULL,
   UNIQUE KEY `b` (`b`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
@@ -514,6 +523,10 @@ alter table t1 drop key no_such_key;
 ERROR 42000: Can't DROP 'no_such_key'; check that column/key exists
 alter table t1 drop key a;
 drop table t1;
+CREATE TABLE T12207(a int) ENGINE=MYISAM;
+ALTER TABLE T12207 DISCARD TABLESPACE;
+ERROR HY000: Table storage engine for 'T12207' doesn't have this option
+DROP TABLE T12207;
 create table t1 (a text) character set koi8r;
 insert into t1 values (_koi8r'‘≈”‘');
 select hex(a) from t1;
@@ -528,18 +541,365 @@ create table t1 ( a timestamp );
 alter table t1 add unique ( a(1) );
 ERROR HY000: Incorrect sub part key; the used key part isn't a string, the used length is longer than the key part, or the storage engine doesn't support unique sub keys
 drop table t1;
-create database mysqltest1;
+drop table if exists t1;
+create table t1 (a int, key(a));
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+"this used not to disable the index"
+alter table t1 modify a int, disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled
+alter table t1 enable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 modify a bigint, disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled
+alter table t1 enable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 add b char(10), disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled
+alter table t1 add c decimal(10,2), enable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+"this however did"
+alter table t1 disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled
+desc t1;
+Field	Type	Null	Key	Default	Extra
+a	bigint(20)	YES	MUL	NULL	
+b	char(10)	YES		NULL	
+c	decimal(10,2)	YES		NULL	
+alter table t1 add d decimal(15,5);
+"The key should still be disabled"
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled
+drop table t1;
+"Now will test with one unique index"
+create table t1(a int, b char(10), unique(a));
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 enable keys;
+"If no copy on noop change, this won't touch the data file"
+"Unique index, no change"
+alter table t1 modify a int, disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+"Change the type implying data copy"
+"Unique index, no change"
+alter table t1 modify a bigint, disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 modify a bigint;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 modify a int;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+drop table t1;
+"Now will test with one unique and one non-unique index"
+create table t1(a int, b char(10), unique(a), key(b));
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	
+alter table t1 disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	disabled
+alter table t1 enable keys;
+"If no copy on noop change, this won't touch the data file"
+"The non-unique index will be disabled"
+alter table t1 modify a int, disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	disabled
+alter table t1 enable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	
+"Change the type implying data copy"
+"The non-unique index will be disabled"
+alter table t1 modify a bigint, disable keys;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	disabled
+"Change again the type, but leave the indexes as_is"
+alter table t1 modify a int;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	disabled
+"Try the same. When data is no copied on similar tables, this is noop"
+alter table t1 modify a int;
+show indexes from t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	0	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+t1	1	b	1	b	A	NULL	NULL	NULL	YES	BTREE	disabled
+drop table t1;
+create database mysqltest;
 create table t1 (c1 int);
-alter table t1 rename mysqltest1.t1;
+alter table t1 rename mysqltest.t1;
 drop table t1;
 ERROR 42S02: Unknown table 't1'
-alter table mysqltest1.t1 rename t1;
+alter table mysqltest.t1 rename t1;
 drop table t1;
 create table t1 (c1 int);
-use mysqltest1;
-drop database mysqltest1;
+use mysqltest;
+drop database mysqltest;
 alter table test.t1 rename t1;
 ERROR 3D000: No database selected
 alter table test.t1 rename test.t1;
 use test;
 drop table t1;
+CREATE TABLE t1(a INT) ROW_FORMAT=FIXED;
+CREATE INDEX i1 ON t1(a);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) default NULL,
+  KEY `i1` (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 ROW_FORMAT=FIXED
+DROP INDEX i1 ON t1;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 ROW_FORMAT=FIXED
+DROP TABLE t1;
+DROP TABLE IF EXISTS bug24219;
+DROP TABLE IF EXISTS bug24219_2;
+CREATE TABLE bug24219 (a INT, INDEX(a));
+SHOW INDEX FROM bug24219;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+bug24219	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	
+ALTER TABLE bug24219 RENAME TO bug24219_2, DISABLE KEYS;
+SHOW INDEX FROM bug24219_2;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+bug24219_2	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled
+DROP TABLE bug24219_2;
+drop table if exists table_24562;
+create table table_24562(
+section int,
+subsection int,
+title varchar(50));
+insert into table_24562 values
+(1, 0, "Introduction"),
+(1, 1, "Authors"),
+(1, 2, "Acknowledgements"),
+(2, 0, "Basics"),
+(2, 1, "Syntax"),
+(2, 2, "Client"),
+(2, 3, "Server"),
+(3, 0, "Intermediate"),
+(3, 1, "Complex queries"),
+(3, 2, "Stored Procedures"),
+(3, 3, "Stored Functions"),
+(4, 0, "Advanced"),
+(4, 1, "Replication"),
+(4, 2, "Load balancing"),
+(4, 3, "High availability"),
+(5, 0, "Conclusion");
+select * from table_24562;
+section	subsection	title
+1	0	Introduction
+1	1	Authors
+1	2	Acknowledgements
+2	0	Basics
+2	1	Syntax
+2	2	Client
+2	3	Server
+3	0	Intermediate
+3	1	Complex queries
+3	2	Stored Procedures
+3	3	Stored Functions
+4	0	Advanced
+4	1	Replication
+4	2	Load balancing
+4	3	High availability
+5	0	Conclusion
+alter table table_24562 add column reviewer varchar(20),
+order by title;
+select * from table_24562;
+section	subsection	title	reviewer
+1	2	Acknowledgements	NULL
+4	0	Advanced	NULL
+1	1	Authors	NULL
+2	0	Basics	NULL
+2	2	Client	NULL
+3	1	Complex queries	NULL
+5	0	Conclusion	NULL
+4	3	High availability	NULL
+3	0	Intermediate	NULL
+1	0	Introduction	NULL
+4	2	Load balancing	NULL
+4	1	Replication	NULL
+2	3	Server	NULL
+3	3	Stored Functions	NULL
+3	2	Stored Procedures	NULL
+2	1	Syntax	NULL
+update table_24562 set reviewer="Me" where section=2;
+update table_24562 set reviewer="You" where section=3;
+alter table table_24562
+order by section ASC, subsection DESC;
+select * from table_24562;
+section	subsection	title	reviewer
+1	2	Acknowledgements	NULL
+1	1	Authors	NULL
+1	0	Introduction	NULL
+2	3	Server	Me
+2	2	Client	Me
+2	1	Syntax	Me
+2	0	Basics	Me
+3	3	Stored Functions	You
+3	2	Stored Procedures	You
+3	1	Complex queries	You
+3	0	Intermediate	You
+4	3	High availability	NULL
+4	2	Load balancing	NULL
+4	1	Replication	NULL
+4	0	Advanced	NULL
+5	0	Conclusion	NULL
+alter table table_24562
+order by table_24562.subsection ASC, table_24562.section DESC;
+select * from table_24562;
+section	subsection	title	reviewer
+5	0	Conclusion	NULL
+4	0	Advanced	NULL
+3	0	Intermediate	You
+2	0	Basics	Me
+1	0	Introduction	NULL
+4	1	Replication	NULL
+3	1	Complex queries	You
+2	1	Syntax	Me
+1	1	Authors	NULL
+4	2	Load balancing	NULL
+3	2	Stored Procedures	You
+2	2	Client	Me
+1	2	Acknowledgements	NULL
+4	3	High availability	NULL
+3	3	Stored Functions	You
+2	3	Server	Me
+alter table table_24562 order by 12;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '12' at line 1
+alter table table_24562 order by (section + 12);
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(section + 12)' at line 1
+alter table table_24562 order by length(title);
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'length(title)' at line 1
+alter table table_24562 order by (select 12 from dual);
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(select 12 from dual)' at line 1
+alter table table_24562 order by no_such_col;
+ERROR 42S22: Unknown column 'no_such_col' in 'order clause'
+drop table table_24562;
+create table t1 (mycol int(10) not null);
+alter table t1 alter column mycol set default 0;
+desc t1;
+Field	Type	Null	Key	Default	Extra
+mycol	int(10)	NO		0	
+drop table t1;
+create table t1 (t varchar(255) default null, key t (t(80)))
+engine=myisam default charset=latin1;
+alter table t1 change t t text;
+drop table t1;
+CREATE TABLE t1 (a varchar(500));
+ALTER TABLE t1 ADD b GEOMETRY NOT NULL, ADD SPATIAL INDEX(b);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` varchar(500) default NULL,
+  `b` geometry NOT NULL,
+  SPATIAL KEY `b` (`b`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+ALTER TABLE t1 ADD KEY(b(50));
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` varchar(500) default NULL,
+  `b` geometry NOT NULL,
+  SPATIAL KEY `b` (`b`),
+  KEY `b_2` (`b`(50))
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+ALTER TABLE t1 ADD c POINT;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` varchar(500) default NULL,
+  `b` geometry NOT NULL,
+  `c` point default NULL,
+  SPATIAL KEY `b` (`b`),
+  KEY `b_2` (`b`(50))
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+CREATE TABLE t2 (a INT, KEY (a(20)));
+ERROR HY000: Incorrect sub part key; the used key part isn't a string, the used length is longer than the key part, or the storage engine doesn't support unique sub keys
+ALTER TABLE t1 ADD d INT;
+ALTER TABLE t1 ADD KEY (d(20));
+ERROR HY000: Incorrect sub part key; the used key part isn't a string, the used length is longer than the key part, or the storage engine doesn't support unique sub keys
+DROP TABLE t1;
+create table t1(id int(8) primary key auto_increment) engine=heap;
+insert into t1 values (null);
+insert into t1 values (null);
+select * from t1;
+id
+1
+2
+alter table t1 auto_increment = 50;
+alter table t1 engine = myisam;
+insert into t1 values (null);
+select * from t1;
+id
+1
+2
+50
+alter table t1 engine = heap;
+insert into t1 values (null);
+select * from t1;
+id
+1
+2
+50
+51
+drop table t1;
+set @orig_sql_mode = @@sql_mode;
+set sql_mode="no_zero_date";
+create table t1(f1 int);
+alter table t1 add column f2 datetime not null, add column f21 date not null;
+insert into t1 values(1,'2000-01-01','2000-01-01');
+alter table t1 add column f3 datetime not null;
+ERROR 22007: Incorrect datetime value: '0000-00-00 00:00:00' for column 'f3' at row 1
+alter table t1 add column f3 date not null;
+ERROR 22007: Incorrect date value: '0000-00-00' for column 'f3' at row 1
+alter table t1 add column f4 datetime not null default '2002-02-02',
+add column f41 date not null;
+ERROR 22007: Incorrect date value: '0000-00-00' for column 'f41' at row 1
+alter table t1 add column f4 datetime not null default '2002-02-02',
+add column f41 date not null default '2002-02-02';
+select * from t1;
+f1	f2	f21	f4	f41
+1	2000-01-01 00:00:00	2000-01-01	2002-02-02 00:00:00	2002-02-02
+drop table t1;
+set sql_mode= @orig_sql_mode;

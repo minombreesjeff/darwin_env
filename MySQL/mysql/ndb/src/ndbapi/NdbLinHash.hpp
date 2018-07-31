@@ -2,8 +2,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -192,7 +191,7 @@ template <class C>
 inline
 Int32
 NdbLinHash<C>::insertKey( const char* str, Uint32 len, Uint32 lkey1, C* data )
-{
+{ 
   const Uint32 hash = Hash(str, len);
   int dir, seg;
   getBucket(hash, &dir, &seg);
@@ -219,8 +218,9 @@ NdbLinHash<C>::insertKey( const char* str, Uint32 len, Uint32 lkey1, C* data )
   chain->localkey1 = lkey1;
   chain->next = 0;
   chain->theData = data;
+  len++; // Null terminated
   chain->str = new Uint32[((len + 3) >> 2)];
-  memcpy( &chain->str[0], str, len );
+  memcpy( &chain->str[0], str, len);
   if (oldChain != 0) 
     oldChain->next = chain;
   else
@@ -426,19 +426,26 @@ NdbLinHash<C>::getNext(NdbElement_t<C> * curr){
     return curr->next;
   
   int dir = 0, seg = 0;
-
-  if(curr != 0){
+  int counts;
+  if(curr != 0)
+  {
     getBucket(curr->hash, &dir, &seg);
+    counts = seg + 1;
+  }
+  else
+  {
+    counts = 0;
   }
   
   for(int countd = dir; countd < DIRECTORYSIZE;countd++ ){
     if (directory[countd] != 0) {
-      for(int counts = seg + 1; counts < SEGMENTSIZE; counts++ ){
+      for(; counts < SEGMENTSIZE; counts++ ){
 	if (directory[countd]->elements[counts] != 0) {
 	  return directory[countd]->elements[counts];
 	}   
       }
     }
+    counts = 0;
   }
 
   return 0;

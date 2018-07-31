@@ -1,3 +1,18 @@
+# Copyright (C) 2004-2006 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 #SUBDIRS = signal-sender
 
 noinst_LTLIBRARIES = libndbapi.la
@@ -14,19 +29,16 @@ libndbapi_la_SOURCES = \
         Ndberr.cpp    \
         ndberror.c    \
         NdbErrorOut.cpp    \
-        NdbConnection.cpp       \
-        NdbConnectionScan.cpp \
+        NdbTransaction.cpp       \
+        NdbTransactionScan.cpp \
         NdbOperation.cpp        \
         NdbOperationSearch.cpp  \
         NdbOperationScan.cpp    \
         NdbOperationInt.cpp     \
         NdbOperationDefine.cpp  \
         NdbOperationExec.cpp    \
-        NdbResultSet.cpp        \
         NdbScanOperation.cpp    NdbScanFilter.cpp \
         NdbIndexOperation.cpp   \
-        NdbEventOperation.cpp   \
-        NdbEventOperationImpl.cpp   \
         NdbApiSignal.cpp        \
         NdbRecAttr.cpp  \
         NdbUtil.cpp \
@@ -36,7 +48,8 @@ libndbapi_la_SOURCES = \
         DictCache.cpp \
         ndb_cluster_connection.cpp \
 	NdbBlob.cpp \
-        SignalSender.cpp
+        SignalSender.cpp \
+        ObjectMap.cpp
 
 INCLUDES_LOC = -I$(top_srcdir)/ndb/src/mgmapi
 

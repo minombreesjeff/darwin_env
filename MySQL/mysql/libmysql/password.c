@@ -1,9 +1,8 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000-2006 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation; version 2 of the License.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -65,7 +64,7 @@
 #include <sha1.h>
 #include "mysql.h"
 
-/************ MySQL 3.23-4.0 authentification routines: untouched ***********/
+/************ MySQL 3.23-4.0 authentication routines: untouched ***********/
 
 /*
   New (MySQL 3.21+) random generation structure initialization
@@ -146,7 +145,7 @@ void hash_password(ulong *result, const char *password, uint password_len)
 void make_scrambled_password_323(char *to, const char *password)
 {
   ulong hash_res[2];
-  hash_password(hash_res, password, strlen(password));
+  hash_password(hash_res, password, (uint) strlen(password));
   sprintf(to, "%08lx%08lx", hash_res[0], hash_res[1]);
 }
 
@@ -172,7 +171,7 @@ void scramble_323(char *to, const char *message, const char *password)
   {
     char extra, *to_start=to;
     const char *message_end= message + SCRAMBLE_LENGTH_323;
-    hash_password(hash_pass,password, strlen(password));
+    hash_password(hash_pass,password, (uint) strlen(password));
     hash_password(hash_message, message, SCRAMBLE_LENGTH_323);
     randominit(&rand_st,hash_pass[0] ^ hash_message[0],
                hash_pass[1] ^ hash_message[1]);
@@ -281,7 +280,7 @@ void make_password_from_salt_323(char *to, const ulong *salt)
 
 
 /*
-     **************** MySQL 4.1.1 authentification routines *************
+     **************** MySQL 4.1.1 authentication routines *************
 */
 
 /*
@@ -316,18 +315,21 @@ void create_random_string(char *to, uint length, struct rand_struct *rand_st)
     octet2hex()
     buf       OUT output buffer. Must be at least 2*len+1 bytes
     str, len  IN  the beginning and the length of the input string
+
+  RETURN
+    buf+len*2
 */
 
-static void
-octet2hex(char *to, const uint8 *str, uint len)
+char *octet2hex(char *to, const char *str, uint len)
 {
-  const uint8 *str_end= str + len; 
+  const byte *str_end= str + len; 
   for (; str != str_end; ++str)
   {
-    *to++= _dig_vec_upper[(*str & 0xF0) >> 4];
-    *to++= _dig_vec_upper[*str & 0x0F];
+    *to++= _dig_vec_upper[((uchar) *str) >> 4];
+    *to++= _dig_vec_upper[((uchar) *str) & 0x0F];
   }
   *to= '\0';
+  return to;
 }
 
 
@@ -394,7 +396,7 @@ make_scrambled_password(char *to, const char *password)
 
   mysql_sha1_reset(&sha1_context);
   /* stage 1: hash password */
-  mysql_sha1_input(&sha1_context, (uint8 *) password, strlen(password));
+  mysql_sha1_input(&sha1_context, (uint8 *) password, (uint) strlen(password));
   mysql_sha1_result(&sha1_context, (uint8 *) to);
   /* stage 2: hash stage1 output */
   mysql_sha1_reset(&sha1_context);
@@ -403,7 +405,7 @@ make_scrambled_password(char *to, const char *password)
   mysql_sha1_result(&sha1_context, hash_stage2);
   /* convert hash_stage2 to hex string */
   *to++= PVERSION41_CHAR;
-  octet2hex(to, hash_stage2, SHA1_HASH_SIZE);
+  octet2hex(to, (char*) hash_stage2, SHA1_HASH_SIZE);
 }
   
 
@@ -433,7 +435,7 @@ scramble(char *to, const char *message, const char *password)
 
   mysql_sha1_reset(&sha1_context);
   /* stage 1: hash password */
-  mysql_sha1_input(&sha1_context, (uint8 *) password, strlen(password));
+  mysql_sha1_input(&sha1_context, (uint8 *) password, (uint) strlen(password));
   mysql_sha1_result(&sha1_context, hash_stage1);
   /* stage 2: hash stage 1; note that hash_stage2 is stored in the database */
   mysql_sha1_reset(&sha1_context);
@@ -470,7 +472,7 @@ scramble(char *to, const char *message, const char *password)
 */
 
 my_bool
-check_scramble(const char *scramble, const char *message,
+check_scramble(const char *scramble_arg, const char *message,
                const uint8 *hash_stage2)
 {
   SHA1_CONTEXT sha1_context;
@@ -483,7 +485,7 @@ check_scramble(const char *scramble, const char *message,
   mysql_sha1_input(&sha1_context, hash_stage2, SHA1_HASH_SIZE);
   mysql_sha1_result(&sha1_context, buf);
   /* encrypt scramble */
-    my_crypt((char *) buf, buf, (const uchar *) scramble, SCRAMBLE_LENGTH);
+    my_crypt((char *) buf, buf, (const uchar *) scramble_arg, SCRAMBLE_LENGTH);
   /* now buf supposedly contains hash_stage1: so we can get hash_stage2 */
   mysql_sha1_reset(&sha1_context);
   mysql_sha1_input(&sha1_context, buf, SHA1_HASH_SIZE);
@@ -493,7 +495,8 @@ check_scramble(const char *scramble, const char *message,
 
 
 /*
-    Convert scrambled password from asciiz hex string to binary form.
+  Convert scrambled password from asciiz hex string to binary form.
+
   SYNOPSIS
     get_salt_from_password()
     res       OUT buf to hold password. Must be at least SHA1_HASH_SIZE
@@ -517,5 +520,5 @@ void get_salt_from_password(uint8 *hash_stage2, const char *password)
 void make_password_from_salt(char *to, const uint8 *hash_stage2)
 {
   *to++= PVERSION41_CHAR;
-  octet2hex(to, hash_stage2, SHA1_HASH_SIZE);
+  octet2hex(to, (char*) hash_stage2, SHA1_HASH_SIZE);
 }
