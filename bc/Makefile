@@ -35,7 +35,8 @@ AEP_Filename   = $(AEP_ProjVers).tar.gz
 AEP_ExtractDir = $(AEP_ProjVers)
 AEP_Patches    = patch-Makefile.in \
                  patch-bc__bc.y \
-                 patch-bc__util.c
+                 patch-bc__util.c \
+		 patch-bc__load.c
 
 ifeq ($(suffix $(AEP_Filename)),.bz2)
 AEP_ExtractOption = j
