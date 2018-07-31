@@ -23,6 +23,8 @@ a	b
 6	g
 create TEMPORARY TABLE t2 engine=heap select * from t1;
 create TEMPORARY TABLE IF NOT EXISTS t2 (a int) engine=heap;
+Warnings:
+Note	1050	Table 't2' already exists
 CREATE TEMPORARY TABLE t1 (a int not null, b char (10) not null);
 ERROR 42S01: Table 't1' already exists
 ALTER TABLE t1 RENAME t2;
@@ -106,3 +108,20 @@ d	c
 bar	2
 foo	1
 drop table t1, t2;
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (i INT);
+LOCK TABLE t1 WRITE;
+CREATE TEMPORARY TABLE t1 (i INT);
+The following command should not block
+DROP TEMPORARY TABLE t1;
+DROP TABLE t1;
+CREATE TABLE t1 (i INT);
+CREATE TEMPORARY TABLE t2 (i INT);
+DROP TEMPORARY TABLE t2, t1;
+ERROR 42S02: Unknown table 't1'
+SELECT * FROM t2;
+ERROR 42S02: Table 'test.t2' doesn't exist
+SELECT * FROM t1;
+i
+DROP TABLE t1;
+End of 4.1 tests.

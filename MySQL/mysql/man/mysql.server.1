@@ -1,0 +1,98 @@
+.\"     Title: \fBmysql.server\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 11/02/2006
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 4.1
+.\"
+.TH "\fBMYSQL.SERVER\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+mysql.server \- MySQL server startup script
+.SH "SYNOPSIS"
+.HP 19
+\fBmysql {start|stop}\fR
+.SH "DESCRIPTION"
+.PP
+MySQL distributions on Unix include a script named
+\fBmysql.server\fR. It can be used on systems such as Linux and Solaris that use System V\-style run directories to start and stop system services. It is also used by the Mac OS X Startup Item for MySQL.
+.PP
+\fBmysql.server\fR
+can be found in the
+\fIsupport\-files\fR
+directory under your MySQL installation directory or in a MySQL source distribution.
+.PP
+If you use the Linux server RPM package (MySQL\-server\-\fIVERSION\fR.rpm), the
+\fBmysql.server\fR
+script will be installed in the
+\fI/etc/init.d\fR
+directory with the name
+\fImysql\fR. You need not install it manually. See
+Section\ 4, \(lqInstalling MySQL on Linux\(rq, for more information on the Linux RPM packages.
+.PP
+Some vendors provide RPM packages that install a startup script under a different name such as
+\fBmysqld\fR.
+.PP
+If you install MySQL from a source distribution or using a binary distribution format that does not install
+\fBmysql.server\fR
+automatically, you can install it manually. Instructions are provided in
+Section\ 10.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.
+.PP
+\fBmysql.server\fR
+reads options from the
+[mysql.server]
+and
+[mysqld]
+sections of option files. For backward compatibility, it also reads
+[mysql_server]
+sections, although you should rename such sections to
+[mysql.server]
+when you begin using MySQL 4.0 or later.
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2006 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+isamchk(1),
+isamlog(1),
+msql2mysql(1),
+myisam_ftdump(1),
+myisamchk(1),
+myisamlog(1),
+myisampack(1),
+mysql(1),
+mysql_config(1),
+mysql_explain_log(1),
+mysql_fix_privilege_tables(1),
+mysql_zap(1),
+mysqlaccess(1),
+mysqladmin(1),
+mysqlbinlog(1),
+mysqlcheck(1),
+mysqld(1),
+mysqld(8),
+mysqld_multi(1),
+mysqld_safe(1),
+mysqldump(1),
+mysqlhotcopy(1),
+mysqlimport(1),
+mysqlshow(1),
+pack_isam(1),
+perror(1),
+replace(1),
+safe_mysqld(1)
+.P
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

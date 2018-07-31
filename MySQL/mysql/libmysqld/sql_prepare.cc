@@ -312,7 +312,7 @@ static void set_param_float(Item_param *param, uchar **pos, ulong len)
     return;
   float4get(data,*pos);
 #else
-  data= *(float*) *pos;
+  floatget(data, *pos);
 #endif
   param->set_double((double) data);
   *pos+= 4;
@@ -326,7 +326,7 @@ static void set_param_double(Item_param *param, uchar **pos, ulong len)
     return;
   float8get(data,*pos);
 #else
-  data= *(double*) *pos;
+  doubleget(data, *pos);
 #endif
   param->set_double((double) data);
   *pos+= 8;
@@ -528,7 +528,9 @@ static void setup_one_conversion_function(THD *thd, Item_param *param,
   case MYSQL_TYPE_LONG_BLOB:
   case MYSQL_TYPE_BLOB:
     param->set_param_func= set_param_str;
-    param->value.cs_info.character_set_client= &my_charset_bin;
+    param->value.cs_info.character_set_of_placeholder= &my_charset_bin;
+    param->value.cs_info.character_set_client=
+      thd->variables.character_set_client;
     param->value.cs_info.final_character_set_of_str_value= &my_charset_bin;
     param->item_type= Item::STRING_ITEM;
     param->item_result_type= STRING_RESULT;
@@ -544,6 +546,7 @@ static void setup_one_conversion_function(THD *thd, Item_param *param,
       CHARSET_INFO *tocs= thd->variables.collation_connection;
       uint32 dummy_offset;
 
+      param->value.cs_info.character_set_of_placeholder= fromcs;
       param->value.cs_info.character_set_client= fromcs;
 
       /*
@@ -580,10 +583,8 @@ static bool insert_params_withlog(Prepared_statement *stmt, uchar *null_array,
   Item_param **begin= stmt->param_array;
   Item_param **end= begin + stmt->param_count;
   uint32 length= 0;
-
   String str; 
   const String *res;
-
   DBUG_ENTER("insert_params_withlog"); 
 
   if (query->copy(stmt->query, stmt->query_length, default_charset_info))
@@ -1592,10 +1593,12 @@ int mysql_stmt_prepare(THD *thd, char *packet, uint packet_length,
     }
   }
 
-  if (thd->stmt_map.insert(stmt))
+  if (thd->stmt_map.insert(thd, stmt))
   {
-    delete stmt;
-    send_error(thd, ER_OUT_OF_RESOURCES);
+    /*
+      The error is sent in the insert. The statement itself
+      will be also deleted there (this is how the hash works).
+    */
     DBUG_RETURN(1);
   }
 
@@ -1661,13 +1664,19 @@ int mysql_stmt_prepare(THD *thd, char *packet, uint packet_length,
   {
     stmt->setup_set_params();
     SELECT_LEX *sl= stmt->lex->all_selects_list;
-    /*
-      Save WHERE clause pointers, because they may be changed during query
-      optimisation.
-    */
     for (; sl; sl= sl->next_select_in_list())
     {
+      /*
+        Save WHERE, HAVING clause pointers, because they may be changed
+        during query optimisation.
+      */
       sl->prep_where= sl->where;
+      sl->prep_having= sl->having;
+      /*
+        Switch off a temporary flag that prevents evaluation of
+        subqueries in statement prepare.
+      */
+      sl->uncacheable&= ~UNCACHEABLE_PREPARE;
     }
     stmt->state= Item_arena::PREPARED;
   }
@@ -1688,12 +1697,17 @@ static void reset_stmt_for_execute(Prepared_statement *stmt)
     /* remove option which was put by mysql_explain_union() */
     sl->options&= ~SELECT_DESCRIBE;
     /*
-      Copy WHERE clause pointers to avoid damaging they by optimisation
+      Copy WHERE, HAVING clause pointers to avoid damaging they by optimisation
     */
     if (sl->prep_where)
     {
       sl->where= sl->prep_where->copy_andor_structure(thd);
       sl->where->cleanup();
+    }
+    if (sl->prep_having)
+    {
+      sl->having= sl->prep_having->copy_andor_structure(thd);
+      sl->having->cleanup();
     }
     DBUG_ASSERT(sl->join == 0);
     ORDER *order;
@@ -1713,14 +1727,9 @@ static void reset_stmt_for_execute(Prepared_statement *stmt)
 	 tables;
 	 tables= tables->next)
     {
-      /*
-        Reset old pointers to TABLEs: they are not valid since the tables
-        were closed in the end of previous prepare or execute call.
-      */
-      tables->table= 0;
-      tables->table_list= 0;
+      tables->reinit_before_use(thd);
     }
-    
+
     {
       SELECT_LEX_UNIT *unit= sl->master_unit();
       unit->unclean();
@@ -1728,6 +1737,17 @@ static void reset_stmt_for_execute(Prepared_statement *stmt)
       /* for derived tables & PS (which can't be reset by Item_subquery) */
       unit->reinit_exec_mechanism();
     }
+  }
+  /*
+    Cleanup of the special case of DELETE t1, t2 FROM t1, t2, t3 ...
+    (multi-delete).  We do a full clean up, although at the moment all we
+    need to clean in the tables of MULTI-DELETE list is 'table' member.
+  */
+  for (TABLE_LIST *tables= (TABLE_LIST*) lex->auxilliary_table_list.first;
+       tables;
+       tables= tables->next)
+  {
+    tables->reinit_before_use(thd);
   }
   lex->current_select= &lex->select_lex;
   if (lex->result)

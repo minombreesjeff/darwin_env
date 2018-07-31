@@ -148,3 +148,44 @@ select * from t1 where reckey=1.08E2;
 select * from t1 where reckey=109;
 select * from t1 where reckey=1.09E2;
 drop table t1;
+
+#
+# Bug #13372 (decimal union)
+#
+create table t1 (d double(10,1));
+create table t2 (d double(10,9));
+insert into t1 values ("100000000.0");
+insert into t2 values ("1.23456780");
+create table t3 select * from t2 union select * from t1;
+select * from t3;
+show create table t3;
+drop table t1, t2, t3;
+
+
+#
+# Bug #9855 (inconsistent column type for create select
+#
+create table t1 select  105213674794682365.00 + 0.0 x;
+show warnings;
+desc  t1;
+drop table t1;
+
+create table t1 select 0.0 x;
+desc t1;
+create table t2 select 105213674794682365.00 y;
+desc t2;
+create table t3 select x+y a from t1,t2;
+show warnings;
+desc t3;
+drop table t1,t2,t3;
+
+#
+# Bug #22129: A small double precision number becomes zero
+#
+# check if underflows are detected correctly
+select 1e-308, 1.00000001e-300, 100000000e-300;
+
+# check if overflows are detected correctly
+select 10e307;
+
+--echo End of 4.1 tests

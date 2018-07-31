@@ -28,7 +28,6 @@ void	vio_ignore_timeout(Vio *vio, uint which, uint timeout);
 #ifdef HAVE_OPENSSL
 #include "my_net.h"			/* needed because of struct in_addr */
 
-void	vio_ssl_delete(Vio* vio);
 int	vio_ssl_read(Vio *vio,gptr buf,	int size);
 int	vio_ssl_write(Vio *vio,const gptr buf,int size);
 void	vio_ssl_timeout(Vio *vio, uint which, uint timeout);
@@ -39,6 +38,8 @@ int vio_ssl_fastsend(Vio *vio);
 int vio_ssl_keepalive(Vio *vio, my_bool onoff);
 /* Whenever we should retry the last read/write operation. */
 my_bool vio_ssl_should_retry(Vio *vio);
+/* Check that operation was timed out */
+my_bool	vio_ssl_was_interrupted(Vio *vio);
 /* When the workday is over... */
 int vio_ssl_close(Vio *vio);
 /* Return last error number */

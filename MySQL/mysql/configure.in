@@ -5,18 +5,19 @@ AC_INIT(sql/mysqld.cc)
 AC_CANONICAL_SYSTEM
 # The Docs Makefile.am parses this line!
 # remember to also change ndb version below and update version.c in ndb
-AM_INIT_AUTOMAKE(mysql, 4.1.13a)
+AM_INIT_AUTOMAKE(mysql, 4.1.22)
 AM_CONFIG_HEADER(config.h)
 
 PROTOCOL_VERSION=10
 DOT_FRM_VERSION=6
 # See the libtool docs for information on how to do shared lib versions.
-SHARED_LIB_VERSION=14:0:0
+SHARED_LIB_MAJOR_VERSION=14
+SHARED_LIB_VERSION=$SHARED_LIB_MAJOR_VERSION:0:0
 
 # ndb version
 NDB_VERSION_MAJOR=4
 NDB_VERSION_MINOR=1
-NDB_VERSION_BUILD=13
+NDB_VERSION_BUILD=22
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
@@ -37,7 +38,7 @@ romanian russian serbian slovak spanish swedish ukrainian"
 
 # Generate make rules for all error messages
 AVAILABLE_LANGUAGES_ERRORS=
-AVAILABLE_LANGUAGES_ERRORS_RULES=$srcdir/ac_available_languages_fragment
+AVAILABLE_LANGUAGES_ERRORS_RULES=ac_available_languages_fragment
 rm -f $AVAILABLE_LANGUAGES_ERRORS_RULES
 for i in $AVAILABLE_LANGUAGES
 do
@@ -68,6 +69,7 @@ AC_DEFINE_UNQUOTED([PROTOCOL_VERSION], [$PROTOCOL_VERSION],
 AC_SUBST(DOT_FRM_VERSION)
 AC_DEFINE_UNQUOTED([DOT_FRM_VERSION], [$DOT_FRM_VERSION],
                    [Version of .frm files])
+AC_SUBST(SHARED_LIB_MAJOR_VERSION)
 AC_SUBST(SHARED_LIB_VERSION)
 AC_SUBST(AVAILABLE_LANGUAGES)
 AC_SUBST(AVAILABLE_LANGUAGES_ERRORS)
@@ -118,7 +120,7 @@ AC_SUBST(SAVE_LDFLAGS)
 AC_SUBST(SAVE_CXXLDFLAGS)
 AC_SUBST(CXXLDFLAGS)
 
-AC_PREREQ(2.58)dnl		Minimum Autoconf version required.
+AC_PREREQ(2.52)dnl		Minimum Autoconf version required.
 
 #AC_ARG_PROGRAM			# Automaticly invoked by AM_INIT_AUTOMAKE
 AM_SANITY_CHECK
@@ -381,19 +383,19 @@ case "$target_os" in
        ;;
      esac
   ;;
-  sysv5UnixWare*) 
+  sysv5UnixWare* | sysv5OpenUNIX8*) 
     if test "$GCC" != "yes"; then
-      # We are using built-in inline function
+      # Use the built-in alloca()
       CFLAGS="$CFLAGS -Kalloca"
     fi
     CXXFLAGS="$CXXFLAGS -DNO_CPLUSPLUS_ALLOCA"
   ;;
-  sysv5OpenUNIX8*) 
+  sysv5SCO_SV6.0.0*)
     if test "$GCC" != "yes"; then
-      # We are using built-in inline function
+      # Use the built-in alloca()
       CFLAGS="$CFLAGS -Kalloca"
+      CXXFLAGS="$CFLAGS -Kalloca"
     fi
-    CXXFLAGS="$CXXFLAGS -DNO_CPLUSPLUS_ALLOCA"
   ;;
 esac
 AC_SUBST(CC)
@@ -431,19 +433,26 @@ then
   fi
 fi
 
+# libmysqlclient versioning when linked with GNU ld.
+if $LD --version 2>/dev/null|grep -q GNU; then
+  LD_VERSION_SCRIPT="-Wl,--version-script=\$(top_builddir)/libmysql/libmysql.ver"
+  AC_CONFIG_FILES(libmysql/libmysql.ver)
+fi
+AC_SUBST(LD_VERSION_SCRIPT)
+
 # Avoid bug in fcntl on some versions of linux
-AC_MSG_CHECKING("if we should use 'skip-locking' as default for $target_os")
+AC_MSG_CHECKING([if we should use 'skip-external-locking' as default for $target_os])
 # Any wariation of Linux
 if expr "$target_os" : "[[Ll]]inux.*" > /dev/null
 then
-  MYSQLD_DEFAULT_SWITCHES="--skip-locking"
+  MYSQLD_DEFAULT_SWITCHES="--skip-external-locking"
   TARGET_LINUX="true"
-  AC_MSG_RESULT("yes")
+  AC_MSG_RESULT([yes])
   AC_DEFINE([TARGET_OS_LINUX], [1], [Whether we build for Linux])
 else
   MYSQLD_DEFAULT_SWITCHES=""
   TARGET_LINUX="false"
-  AC_MSG_RESULT("no")
+  AC_MSG_RESULT([no])
 fi
 AC_SUBST(MYSQLD_DEFAULT_SWITCHES)
 AC_SUBST(TARGET_LINUX)
@@ -818,9 +827,8 @@ AC_CHECK_FUNC(yp_get_default_domain, ,
 AC_CHECK_FUNC(p2open, , AC_CHECK_LIB(gen, p2open))
 # This may get things to compile even if bind-8 is installed
 AC_CHECK_FUNC(bind, , AC_CHECK_LIB(bind, bind))
-# For crypt() on Linux
-AC_CHECK_LIB(crypt, crypt)
-AC_CHECK_FUNC(crypt, AC_DEFINE([HAVE_CRYPT], [1], [crypt])) 
+# Check if crypt() exists in libc or libcrypt, sets LIBS if needed
+AC_SEARCH_LIBS(crypt, crypt, AC_DEFINE(HAVE_CRYPT, 1, [crypt]))
 
 # For sem_xxx functions on Solaris 2.6
 AC_CHECK_FUNC(sem_init, , AC_CHECK_LIB(posix4, sem_init))
@@ -872,6 +880,9 @@ AC_SUBST(WRAPLIBS)
 if test "$TARGET_LINUX" = "true"; then
   AC_MSG_CHECKING([for atomic operations])
 
+  AC_LANG_SAVE
+  AC_LANG_CPLUSPLUS
+
   atom_ops=
   AC_TRY_RUN([
 #include <asm/atomic.h>
@@ -906,6 +917,8 @@ int main()
 
   if test -z "$atom_ops"; then atom_ops="no"; fi
   AC_MSG_RESULT($atom_ops)
+
+  AC_LANG_RESTORE
 
   AC_ARG_WITH(pstack,
     [  --with-pstack           Use the pstack backtrace library],
@@ -1102,7 +1115,7 @@ case $SYSTEM_TYPE in
   *darwin5*)
     if test "$ac_cv_prog_gcc" = "yes"
     then
-      FLAGS="-traditional-cpp -DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
+      FLAGS="-traditional-cpp -DHAVE_DARWIN5_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -1112,17 +1125,16 @@ case $SYSTEM_TYPE in
   *darwin6*)
     if test "$ac_cv_prog_gcc" = "yes"
     then
-      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
+      FLAGS="-D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
     fi
     ;;
-  *darwin[[7-8]]*)
-    # don't forget to escape [] like above
+  *darwin*)
     if test "$ac_cv_prog_gcc" = "yes"
     then
-      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DIGNORE_SIGHUP_SIGQUIT"
+      FLAGS="-D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DIGNORE_SIGHUP_SIGQUIT"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -1440,8 +1452,6 @@ then
           if expr "$SYSTEM_TYPE" : ".*unixware7.0.0" > /dev/null
           then
             AC_DEFINE(HAVE_UNIXWARE7_THREADS, [1])
-          else
-            AC_DEFINE(HAVE_UNIXWARE7_POSIX, [1])
           fi
           AC_MSG_RESULT("yes")
           # We must have cc
@@ -1467,87 +1477,41 @@ then
     AC_MSG_RESULT("no")
   fi
 fi
-# Hack for SCO UnixWare7
+
+#
+# Check for SCO threading libraries
 #
 if test "$with_named_thread" = "no"
 then
-  AC_MSG_CHECKING("SCO UnixWare7 native threads")
-  if expr "$SYSTEM_TYPE" : ".*UnixWare*" > /dev/null
+  AC_MSG_CHECKING([SCO OpenServer 6, UnixWare 7 or OpenUNIX 8 native threads])
+  if expr "$SYSTEM_TYPE" : ".*UnixWare.*" > /dev/null || \
+     expr "$SYSTEM_TYPE" : ".*SCO_SV6.*" > /dev/null || \
+     expr "$SYSTEM_TYPE" : ".*OpenUNIX.*" > /dev/null
   then
     if test -f /usr/lib/libthread.so -o -f /usr/lib/libthreadT.so
     then
       MYSQL_REMOVE_SOCKET_FROM_LIBS_HACK
-      if expr "$CC" : ".*gcc.*"
-        then
-          with_named_thread="-pthread -lsocket -lnsl"
-      else
-        with_named_thread="-Kthread -lsocket -lnsl"
-      fi
-      if expr "$SYSTEM_TYPE" : ".*unixware7.0.0" > /dev/null
+      if expr "$CC" : ".*gcc.*" > /dev/null
       then
-        AC_DEFINE(HAVE_UNIXWARE7_THREADS, [1])
-      else
-        AC_DEFINE(HAVE_UNIXWARE7_POSIX, [1])
-      fi
-      # We must have cc
-      AC_MSG_CHECKING("for gcc")
-      if expr "$CC" : ".*gcc.*"
-      then
+        with_named_thread="-pthread -lsocket -lnsl"
 	CC="$CC -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
 	CXX="$CXX -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
       else
+        with_named_thread="-Kthread -lsocket -lnsl"
 	CC="$CC -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
 	CXX="$CXX -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
       fi
-      AC_MSG_RESULT("yes")
+      if expr "$SYSTEM_TYPE" : ".*unixware7.0.0" > /dev/null
+      then
+        AC_DEFINE(HAVE_UNIXWARE7_THREADS, [1], [Have UnixWare 7 (or similar) almost-POSIX threading library])
+      fi
+      AC_MSG_RESULT(yes)
     else
+      AC_MSG_RESULT(failed)
       { echo "configure: error: Can't find thread libs on SCO UnixWare7. See the Installation chapter in the Reference Manual." 1>&2; exit 1; };
     fi
   else
-    AC_MSG_RESULT("no")
-  fi
-fi
-
-# Hack for Caldera OpenUNIX8
-#
-if test "$with_named_thread" = "no"
-then
-  AC_MSG_CHECKING("OpenUNIX8 native threads")
-  if expr "$SYSTEM_TYPE" : ".*OpenUNIX*" > /dev/null
-  then
-    if test -f /usr/lib/libthread.so -o -f /usr/lib/libthreadT.so
-    then
-      MYSQL_REMOVE_SOCKET_FROM_LIBS_HACK
-      if expr "$CC" : ".*gcc.*"
-      then
-          with_named_thread="-pthread -lsocket -lnsl"
-      else
-        with_named_thread="-Kthread -lsocket -lnsl"
-      fi
-      if expr "$SYSTEM_TYPE" : ".*unixware7.0.0" > /dev/null
-      then
-        AC_DEFINE([HAVE_UNIXWARE7_THREADS], [1],
-                  [UNIXWARE7 threads are not posix])
-      else
-        AC_DEFINE([HAVE_UNIXWARE7_POSIX], [1],
-                  [new UNIXWARE7 threads that are not yet posix])
-      fi
-      # We must have cc
-      AC_MSG_CHECKING("for gcc")
-      if expr "$CC" : ".*gcc.*"
-      then
-	CC="$CC -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
-	CXX="$CXX -pthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
-      else
- 	CC="$CC -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
- 	CXX="$CXX -Kthread -DUNIXWARE_7 -DHAVE_BROKEN_RWLOCK";
-      fi
-      AC_MSG_RESULT("yes")
-    else
-      { echo "configure: error: Can't find thread libs on Caldera OpenUNIX 8. See the Installation chapter in the Reference Manual." 1>&2; exit 1; };
-    fi
-  else
-    AC_MSG_RESULT("no")
+    AC_MSG_RESULT(no)
   fi
 fi
 
@@ -1719,6 +1683,19 @@ if expr "$SYSTEM_TYPE" : ".*netware.*" > /dev/null; then
   DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -DDEBUG -sym internal,codeview4"
   OPTIMIZE_CFLAGS="$OPTIMIZE_CFLAGS -DNDEBUG"
   OPTIMIZE_CXXFLAGS="$OPTIMIZE_CXXFLAGS -DNDEBUG"
+fi
+
+# If the user specified CFLAGS, we won't add any optimizations
+if test -n "$SAVE_CFLAGS"
+then
+  OPTIMIZE_CFLAGS=""
+  DEBUG_OPTIMIZE_CC=""
+fi
+# Ditto for CXXFLAGS
+if test -n "$SAVE_CXXFLAGS"
+then
+  OPTIMIZE_CXXFLAGS=""
+  DEBUG_OPTIMIZE_CXX=""
 fi
 
 AC_ARG_WITH(debug,
@@ -2043,6 +2020,13 @@ AC_CACHE_CHECK([style of gethost* routines], mysql_cv_gethost_style,
 AC_LANG_SAVE
 AC_LANG_CPLUSPLUS
 
+# Test whether madvise() is declared in C++ code -- it is not on some
+# systems, such as Solaris
+AC_CHECK_DECLS(madvise, [], [], [#if HAVE_SYS_MMAN_H
+#include <sys/types.h>
+#include <sys/mman.h>
+#endif])
+
 # Do not treat warnings as errors if we are linking against other libc
 # this is to work around gcc not being permissive on non-system includes
 # with respect to ANSI C++
@@ -2342,6 +2326,7 @@ then
     echo "Warning: extra-tools disabled because --enable-thread-safe-client wasn't used"
   else
     tools_dirs="tools"
+    AC_CONFIG_FILES(tools/Makefile)
   fi
 fi
 AC_SUBST(tools_dirs)
@@ -2352,9 +2337,12 @@ MYSQL_CHECK_VIO
 MYSQL_CHECK_OPENSSL
 
 libmysqld_dirs=
+linked_libmysqld_targets=
 if test "$with_embedded_server" = "yes"
 then
   libmysqld_dirs=libmysqld
+  linked_libmysqld_targets="linked_libmysqld_sources linked_libmysqldex_sources"
+  AC_CONFIG_FILES(libmysqld/Makefile libmysqld/examples/Makefile)
   # We can't build embedded library without building the server, because
   # we depend on libmysys, libmystrings, libmyisam, etc.
   with_server=yes
@@ -2363,6 +2351,7 @@ fi
 # mysql_config --libmysqld-libs will print out something like
 # -L/path/to/lib/mysql -lmysqld -lmyisam -lmysys -lmystrings -ldbug ...
 AC_SUBST([libmysqld_dirs])
+AC_SUBST([linked_libmysqld_targets])
 
 # Shall we build the docs?
 AC_ARG_WITH(docs,
@@ -2389,10 +2378,18 @@ AC_ARG_WITH(man,
 if test "$with_man" = "yes"
 then
   man_dirs="man"
+  man1_files=`ls -1 $srcdir/man/*.1 | sed -e 's;^.*man/;;'`
+  man1_files=`echo $man1_files`
+  man8_files=`ls -1 $srcdir/man/*.8 | sed -e 's;^.*man/;;'`
+  man8_files=`echo $man8_files`
 else
   man_dirs=""
+  man1_files=""
+  man8_files=""
 fi
 AC_SUBST(man_dirs)
+AC_SUBST(man1_files)
+AC_SUBST(man8_files)
 
 # Shall we build the bench code?
 AC_ARG_WITH(bench,
@@ -2462,7 +2459,7 @@ then
     readline_basedir="libedit"
     readline_dir="$readline_topdir/$readline_basedir"
     readline_link="\$(top_builddir)/cmd-line-utils/libedit/libedit.a"
-    readline_h_ln_cmd="\$(LN) -s \$(top_builddir)/cmd-line-utils/libedit/readline readline"
+    readline_h_ln_cmd="\$(LN) -s \$(top_srcdir)/cmd-line-utils/libedit/readline readline"
     compile_libedit=yes
     AC_DEFINE_UNQUOTED(HAVE_HIST_ENTRY, 1)
     AC_DEFINE_UNQUOTED(USE_LIBEDIT_INTERFACE, 1)
@@ -2472,7 +2469,7 @@ then
     readline_basedir="readline"
     readline_dir="$readline_topdir/$readline_basedir"
     readline_link="\$(top_builddir)/cmd-line-utils/readline/libreadline.a"
-    readline_h_ln_cmd="\$(LN) -s \$(top_builddir)/cmd-line-utils/readline readline"
+    readline_h_ln_cmd="\$(LN) -s \$(top_srcdir)/cmd-line-utils/readline readline"
     compile_readline=yes
     AC_DEFINE_UNQUOTED(USE_NEW_READLINE_INTERFACE, 1)
 else
@@ -2953,6 +2950,7 @@ if test "$THREAD_SAFE_CLIENT" != "no"
 then
   sql_client_dirs="libmysql_r $sql_client_dirs"
   linked_client_targets="$linked_client_targets linked_libmysql_r_sources"
+  AC_CONFIG_FILES(libmysql_r/Makefile)
   AC_DEFINE([THREAD_SAFE_CLIENT], [1], [Should be client be thread safe])
 fi
 
@@ -3009,7 +3007,7 @@ then
       AC_CONFIG_FILES(bdb/Makefile)
 
       echo "CONFIGURING FOR BERKELEY DB" 
-      bdb_conf_flags="--disable-shared"
+      bdb_conf_flags="--disable-shared --build=$build_alias"
       if test $with_debug = "yes"
       then
         bdb_conf_flags="$bdb_conf_flags --enable-debug --enable-diagnostic"
@@ -3281,7 +3279,6 @@ AC_CONFIG_FILES(ndb/Makefile ndb/include/Makefile dnl
    ndb/src/kernel/blocks/backup/Makefile dnl
    ndb/src/kernel/blocks/dbutil/Makefile dnl
    ndb/src/kernel/blocks/suma/Makefile dnl
-   ndb/src/kernel/blocks/grep/Makefile dnl
    ndb/src/kernel/blocks/dbtux/Makefile dnl
    ndb/src/kernel/vm/Makefile dnl
    ndb/src/mgmapi/Makefile dnl
@@ -3308,12 +3305,11 @@ AC_CONFIG_FILES(Makefile extra/Makefile mysys/Makefile dnl
  myisam/Makefile myisammrg/Makefile dnl
  os2/Makefile os2/include/Makefile os2/include/sys/Makefile dnl
  man/Makefile BUILD/Makefile vio/Makefile dnl
- libmysql_r/Makefile libmysqld/Makefile libmysqld/examples/Makefile dnl
  libmysql/Makefile client/Makefile dnl
  pstack/Makefile pstack/aout/Makefile sql/Makefile sql/share/Makefile dnl
  sql-common/Makefile SSL/Makefile dnl
  dbug/Makefile scripts/Makefile dnl
- include/Makefile sql-bench/Makefile tools/Makefile dnl
+ include/Makefile sql-bench/Makefile dnl
  tests/Makefile Docs/Makefile support-files/Makefile dnl
  support-files/MacOSX/Makefile mysql-test/Makefile dnl
  netware/Makefile dnl

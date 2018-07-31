@@ -20,6 +20,7 @@
 #include <ndb_limits.h>
 #include <NdbTCP.h>
 #include <NdbOut.hpp>
+#include <NDBT_ReturnCodes.h>
 
 #include "consumer_restore.hpp"
 #include "consumer_printer.hpp"
@@ -116,14 +117,14 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     if (ga_nodeId == 0)
     {
       printf("Error in --nodeid,-n setting, see --help\n");
-      exit(1);
+      exit(NDBT_ProgramExit(NDBT_WRONGARGS));
     }
     break;
   case 'b':
     if (ga_backupId == 0)
     {
       printf("Error in --backupid,-b setting, see --help\n");
-      exit(1);
+      exit(NDBT_ProgramExit(NDBT_WRONGARGS));
     }
     break;
   }
@@ -136,7 +137,7 @@ readArguments(int *pargc, char*** pargv)
   load_defaults("my",load_default_groups,pargc,pargv);
   if (handle_options(pargc, pargv, my_long_options, get_one_option))
   {
-    exit(1);
+    exit(NDBT_ProgramExit(NDBT_WRONGARGS));
   }
 
   BackupPrinter* printer = new BackupPrinter();
@@ -226,6 +227,15 @@ free_data_callback()
     g_consumers[i]->tuple_free();
 }
 
+static void exitHandler(int code)
+{
+  NDBT_ProgramExit(code);
+  if (opt_core)
+    abort();
+  else
+    exit(code);
+}
+
 int
 main(int argc, char** argv)
 {
@@ -233,7 +243,7 @@ main(int argc, char** argv)
 
   if (!readArguments(&argc, &argv))
   {
-    return -1;
+    exitHandler(NDBT_FAILED);
   }
 
   Ndb::setConnectString(opt_connect_str);
@@ -245,14 +255,15 @@ main(int argc, char** argv)
   if (!metaData.readHeader())
   {
     ndbout << "Failed to read " << metaData.getFilename() << endl << endl;
-    return -1;
+    exitHandler(NDBT_FAILED);
   }
 
   const BackupFormat::FileHeader & tmp = metaData.getFileHeader();
   const Uint32 version = tmp.NdbVersion;
   
+  char buf[NDB_VERSION_STRING_BUF_SZ];
   ndbout << "Ndb version in backup files: " 
-	 <<  getVersionString(version, 0) << endl;
+	 <<  getVersionString(version, 0, buf, sizeof(buf)) << endl;
   
   /**
    * check wheater we can restore the backup (right version).
@@ -262,20 +273,20 @@ main(int argc, char** argv)
   if (res == 0)
   {
     ndbout_c("Restore: Failed to load content");
-    return -1;
+    exitHandler(NDBT_FAILED);
   }
   
   if (metaData.getNoOfTables() == 0) 
   {
     ndbout_c("Restore: The backup contains no tables ");
-    return -1;
+    exitHandler(NDBT_FAILED);
   }
 
 
   if (!metaData.validateFooter()) 
   {
     ndbout_c("Restore: Failed to validate footer.");
-    return -1;
+    exitHandler(NDBT_FAILED);
   }
 
   Uint32 i;
@@ -284,7 +295,7 @@ main(int argc, char** argv)
     if (!g_consumers[i]->init())
     {
       clearConsumers();
-      return -11;
+      exitHandler(NDBT_FAILED);
     }
 
   }
@@ -299,7 +310,7 @@ main(int argc, char** argv)
 	  ndbout_c("Restore: Failed to restore table: %s. "
 		   "Exiting...", 
 		   metaData[i]->getTableName());
-	  return -11;
+	  exitHandler(NDBT_FAILED);
 	} 
     }
   }
@@ -308,7 +319,7 @@ main(int argc, char** argv)
     if (!g_consumers[i]->endOfTables())
     {
       ndbout_c("Restore: Failed while closing tables");
-      return -11;
+      exitHandler(NDBT_FAILED);
     } 
   
   if (ga_restore || ga_print) 
@@ -321,7 +332,7 @@ main(int argc, char** argv)
       if (!dataIter.readHeader())
       {
 	ndbout << "Failed to read header of data file. Exiting..." ;
-	return -11;
+	exitHandler(NDBT_FAILED);
       }
       
       
@@ -339,12 +350,12 @@ main(int argc, char** argv)
 	{
 	  ndbout_c("Restore: An error occured while restoring data. "
 		   "Exiting...");
-	  return -1;
+	  exitHandler(NDBT_FAILED);
 	}
 	if (!dataIter.validateFragmentFooter()) {
 	  ndbout_c("Restore: Error validating fragment footer. "
 		   "Exiting...");
-	  return -1;
+	  exitHandler(NDBT_FAILED);
 	}
       } // while (dataIter.readFragmentHeader(res))
       
@@ -352,7 +363,7 @@ main(int argc, char** argv)
       {
 	err << "Restore: An error occured while restoring data. Exiting... "
 	    << "res=" << res << endl;
-	return -1;
+	exitHandler(NDBT_FAILED);
       }
       
       
@@ -365,7 +376,7 @@ main(int argc, char** argv)
       if (!logIter.readHeader())
       {
 	err << "Failed to read header of data file. Exiting..." << endl;
-	return -1;
+	exitHandler(NDBT_FAILED);
       }
       
       const LogEntry * logEntry = 0;
@@ -379,7 +390,7 @@ main(int argc, char** argv)
       {
 	err << "Restore: An restoring the data log. Exiting... res=" 
 	    << res << endl;
-	return -1;
+	exitHandler(NDBT_FAILED);
       }
       logIter.validateFooter(); //not implemented
       for (i= 0; i < g_consumers.size(); i++)
@@ -394,14 +405,25 @@ main(int argc, char** argv)
 	      ndbout_c("Restore: Failed to finalize restore table: %s. "
 		       "Exiting...", 
 		       metaData[i]->getTableName());
-	      return -11;
+	      exitHandler(NDBT_FAILED);
 	    } 
 	}
       }
     }
   }
+  for(Uint32 i= 0; i < g_consumers.size(); i++) 
+  {
+    if (g_consumers[i]->has_temp_error())
+    {
+      clearConsumers();
+      ndbout_c("\nRestore successful, but encountered temporary error, "
+               "please look at configuration.");
+      return NDBT_ProgramExit(NDBT_TEMPORARY);
+    }
+  }
+
   clearConsumers();
-  return 0;
+  return NDBT_ProgramExit(NDBT_OK);
 } // main
 
 template class Vector<BackupConsumer*>;

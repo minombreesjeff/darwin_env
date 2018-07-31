@@ -77,9 +77,10 @@ public:
                               ///< changes to take effect
       Retrieved,              ///< The object exist and has been read 
                               ///< into main memory from NDB Kernel
-      Invalid                 ///< The object has been invalidated
+      Invalid,                ///< The object has been invalidated
                               ///< and should not be used
-      
+      Altered                 ///< Table has been altered in NDB kernel
+                              ///< but is still valid for usage
     };
 
     /**
@@ -118,6 +119,7 @@ public:
       StateBuilding = 2,      ///< Building, not yet usable
       StateDropping = 3,      ///< Offlining or dropping, not usable
       StateOnline = 4,        ///< Online, usable
+      StateBackup = 5,        ///< Online, being backuped, usable
       StateBroken = 9         ///< Broken, should be dropped and re-created
     };
 
@@ -954,14 +956,14 @@ public:
 
     /**
      * Create defined table given defined Table instance
-     * @param Table Table to create
+     * @param Table instance to create
      * @return 0 if successful otherwise -1.
      */
     int createTable(const Table &);
 
     /**
      * Drop table given retrieved Table instance
-     * @param Table Table to drop
+     * @param Table instance to drop
      * @return 0 if successful otherwise -1.
      */
     int dropTable(Table &);
@@ -1025,7 +1027,15 @@ public:
      */
     int dropIndex(const char * indexName,
 		  const char * tableName);
-    
+
+
+    /**
+     * Drop index the defined Index instance
+     * @param Index to drop
+     * @return 0 if successful otherwise -1.
+     */
+    int dropIndex(const Index &);    
+
     /**
      * Get index with given name, NULL if undefined
      * @param indexName  Name of index to get.
@@ -1034,6 +1044,15 @@ public:
      */
     const Index * getIndex(const char * indexName,
 			   const char * tableName);
+
+    /**
+     * Get index with given name, NULL if undefined
+     * @param indexName  Name of index to get.
+     * @param Table instance table that index belongs to.
+     * @return  index if successful, otherwise 0.
+     */
+    const Index * getIndex(const char * indexName,
+			   const Table & table);
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
     /**

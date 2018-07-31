@@ -58,9 +58,30 @@ public:
   Item_sum(THD *thd, Item_sum *item);
   enum Type type() const { return SUM_FUNC_ITEM; }
   virtual enum Sumfunctype sum_func () const=0;
+
+  /*
+    This method is similar to add(), but it is called when the current
+    aggregation group changes. Thus it performs a combination of
+    clear() and add().
+  */
   inline bool reset() { clear(); return add(); };
+
+  /*
+    Prepare this item for evaluation of an aggregate value. This is
+    called by reset() when a group changes, or, for correlated
+    subqueries, between subquery executions.  E.g. for COUNT(), this
+    method should set count= 0;
+  */
   virtual void clear()= 0;
+
+  /*
+    This method is called for the next row in the same group. Its
+    purpose is to aggregate the new value to the previous values in
+    the group (i.e. since clear() was called last time). For example,
+    for COUNT(), do count++.
+  */
   virtual bool add()=0;
+
   /*
     Called when new group is started and results are being saved in
     a temporary table. Similar to reset(), but must also store value in
@@ -86,7 +107,17 @@ public:
   void make_field(Send_field *field);
   void print(String *str);
   void fix_num_length_and_dec();
-  void no_rows_in_result() { reset(); }
+
+  /*
+    This function is called by the execution engine to assign 'NO ROWS
+    FOUND' value to an aggregate item, when the underlying result set
+    has no rows. Such value, in a general case, may be different from
+    the default value of the item after 'clear()': e.g. a numeric item
+    may be initialized to 0 by clear() and to NULL by
+    no_rows_in_result().
+  */
+  void no_rows_in_result() { clear(); }
+
   virtual bool setup(THD *thd) {return 0;}
   virtual void make_unique() {}
   Item *get_tmp_table_item(THD *thd);
@@ -185,6 +216,7 @@ class Item_sum_count_distinct :public Item_sum_int
   TMP_TABLE_PARAM *tmp_table_param;
   TREE tree_base;
   TREE *tree;
+  bool force_copy_fields;
   /*
     Following is 0 normal object and pointer to original one for copy 
     (to correctly free resources)
@@ -226,15 +258,16 @@ class Item_sum_count_distinct :public Item_sum_int
   public:
   Item_sum_count_distinct(List<Item> &list)
     :Item_sum_int(list), table(0), used_table_cache(~(table_map) 0),
-     tmp_table_param(0), tree(&tree_base), original(0), use_tree(0),
-     always_null(0)
+     tmp_table_param(0), tree(&tree_base), force_copy_fields(0), original(0),
+     use_tree(0), always_null(0)
   { quick_group= 0; }
   Item_sum_count_distinct(THD *thd, Item_sum_count_distinct *item)
     :Item_sum_int(thd, item), table(item->table),
      used_table_cache(item->used_table_cache),
      field_lengths(item->field_lengths),
      tmp_table_param(item->tmp_table_param),
-     tree(item->tree), original(item), key_length(item->key_length),
+     tree(item->tree), force_copy_fields(item->force_copy_fields),
+     original(item), key_length(item->key_length),
      max_elements_in_tree(item->max_elements_in_tree),
      rec_offset(item->rec_offset), use_tree(item->use_tree),
      always_null(item->always_null)
@@ -302,6 +335,11 @@ class Item_sum_avg :public Item_sum_num
   void no_rows_in_result() {}
   const char *func_name() const { return "avg"; }
   Item *copy_or_same(THD* thd);
+  void cleanup()
+  {
+    clear();
+    Item_sum_num::cleanup();
+  }
 };
 
 class Item_sum_variance;
@@ -359,6 +397,11 @@ class Item_sum_variance : public Item_sum_num
   void no_rows_in_result() {}
   const char *func_name() const { return "variance"; }
   Item *copy_or_same(THD* thd);
+  void cleanup()
+  {
+    clear();
+    Item_sum_num::cleanup();
+  }
 };
 
 class Item_sum_std;
@@ -483,6 +526,11 @@ public:
   void update_field();
   void fix_length_and_dec()
   { decimals=0; max_length=21; unsigned_flag=1; maybe_null=null_value=0; }
+  void cleanup()
+  {
+    clear();
+    Item_sum_int::cleanup();
+  }
 };
 
 
@@ -685,6 +733,7 @@ class Item_func_group_concat : public Item_sum
   bool distinct;
   bool warning_for_row;
   bool always_null;
+  bool force_copy_fields;
 
   friend int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
 					      byte* key2);
@@ -709,6 +758,7 @@ class Item_func_group_concat : public Item_sum
   uint arg_count_field;
   uint field_list_offset;
   uint count_cut_values;
+  bool no_appended;
   /*
     Following is 0 normal object and pointer to original one for copy 
     (to correctly free resources)
@@ -725,6 +775,13 @@ class Item_func_group_concat : public Item_sum
   enum Sumfunctype sum_func () const {return GROUP_CONCAT_FUNC;}
   const char *func_name() const { return "group_concat"; }
   virtual Item_result result_type () const { return STRING_RESULT; }
+  enum_field_types field_type() const
+  {
+    if (max_length/collation.collation->mbmaxlen > CONVERT_IF_BIGGER_TO_BLOB)
+      return FIELD_TYPE_BLOB;
+    else
+      return MYSQL_TYPE_VAR_STRING;
+  }
   void clear();
   bool add();
   void reset_field();

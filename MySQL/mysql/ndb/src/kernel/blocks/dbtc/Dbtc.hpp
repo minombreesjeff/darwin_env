@@ -211,14 +211,6 @@ public:
     LTS_ACTIVE = 1
   };
 
-  enum TakeOverState {
-    TOS_NOT_DEFINED = 0,
-    TOS_IDLE = 1,
-    TOS_ACTIVE = 2,
-    TOS_COMPLETED = 3,
-    TOS_NODE_FAILED = 4
-  };
-
   enum FailState {
     FS_IDLE = 0,
     FS_LISTENING = 1,
@@ -636,6 +628,7 @@ public:
     ConnectionState apiConnectstate;
     UintR transid[2];
     UintR firstTcConnect;
+    NdbNodeBitmask m_transaction_nodes; 
     
     //---------------------------------------------------
     // Second 16 byte cache line. Hot variables.
@@ -725,7 +718,7 @@ public:
     
     // Index data
     
-    bool isIndexOp;      // Used to mark on-going TcKeyReq as indx table access
+    Uint8 isIndexOp;      // Used to mark on-going TcKeyReq as indx table access
     bool indexOpReturn;
     UintR noIndexOp;     // No outstanding index ops
 
@@ -813,7 +806,7 @@ public:
     UintR savedState[LqhKeyConf::SignalLength];
     
     // Index data
-    bool isIndexOp; // Used to mark on-going TcKeyReq as index table access
+    Uint8 isIndexOp; // Used to mark on-going TcKeyReq as index table access
     UintR indexOp;
     UintR currentIndexId;
     UintR attrInfoLen;
@@ -932,7 +925,6 @@ public:
   struct HostRecord {
     HostState hostStatus;
     LqhTransState lqhTransStatus;
-    TakeOverState takeOverStatus;
     bool  inPackedList;
     UintR noOfPackedWordsLqh;
     UintR packedWordsLqh[26];
@@ -941,6 +933,17 @@ public:
     UintR noOfWordsTCINDXCONF;
     UintR packedWordsTCINDXCONF[30];
     BlockReference hostLqhBlockRef;
+
+    enum NodeFailBits
+    {
+      NF_TAKEOVER          = 0x1,
+      NF_CHECK_SCAN        = 0x2,
+      NF_CHECK_TRANSACTION = 0x4,
+      NF_CHECK_DROP_TAB    = 0x8,
+      NF_NODE_FAIL_BITS    = 0xF // All bits...
+    };
+    Uint32 m_nf_bits;
+    NdbNodeBitmask m_lqh_trans_conf;
   }; /* p2c: size = 128 bytes */
   
   typedef Ptr<HostRecord> HostRecordPtr;
@@ -958,7 +961,8 @@ public:
     Uint8 storedTable;
     
     bool checkTable(Uint32 schemaVersion) const {
-      return enabled && !dropping && (schemaVersion == currentSchemaVersion);
+      return enabled && !dropping && 
+	(table_version_major(schemaVersion) == table_version_major(currentSchemaVersion));
     }
     
     Uint32 getErrorCode(Uint32 schemaVersion) const;
@@ -1396,7 +1400,7 @@ private:
 		   const UintR scanParallel, 
 		   const UintR noOprecPerFrag);
   void initScanfragrec(Signal* signal);
-  void releaseScanResources(ScanRecordPtr);
+  void releaseScanResources(ScanRecordPtr, bool not_started = false);
   ScanRecordPtr seizeScanrec(Signal* signal);
   void sendScanFragReq(Signal*, ScanRecord*, ScanFragRec*);
   void sendScanTabConf(Signal* signal, ScanRecordPtr);
@@ -1539,7 +1543,8 @@ private:
   void signalErrorRefuseLab(Signal* signal);
   void abort080Lab(Signal* signal);
   void packKeyData000Lab(Signal* signal, BlockReference TBRef, Uint32 len);
-  void abortScanLab(Signal* signal, ScanRecordPtr, Uint32 errCode);
+  void abortScanLab(Signal* signal, ScanRecordPtr, Uint32 errCode, 
+		    bool not_started = false);
   void sendAbortedAfterTimeout(Signal* signal, int Tcheck);
   void abort010Lab(Signal* signal);
   void abort015Lab(Signal* signal);
@@ -1577,7 +1582,7 @@ private:
   void wrongSchemaVersionErrorLab(Signal* signal);
   void noFreeConnectionErrorLab(Signal* signal);
   void tckeyreq050Lab(Signal* signal);
-  void timeOutFoundLab(Signal* signal, UintR anAdd);
+  void timeOutFoundLab(Signal* signal, UintR anAdd, Uint32 errCode);
   void completeTransAtTakeOverLab(Signal* signal, UintR TtakeOverInd);
   void completeTransAtTakeOverDoLast(Signal* signal, UintR TtakeOverInd);
   void completeTransAtTakeOverDoOne(Signal* signal, UintR TtakeOverInd);
@@ -1599,6 +1604,9 @@ private:
   void checkScanFragList(Signal*, Uint32 failedNodeId, ScanRecord * scanP, 
 			 LocalDLList<ScanFragRec>::Head&);
 
+  void nodeFailCheckTransactions(Signal*,Uint32 transPtrI,Uint32 failedNodeId);
+  void checkNodeFailComplete(Signal* signal, Uint32 failedNodeId, Uint32 bit);
+  
   // Initialisation
   void initData();
   void initRecords();
@@ -1625,6 +1633,7 @@ private:
   HostRecord *hostRecord;
   HostRecordPtr hostptr;
   UintR chostFilesize;
+  NdbNodeBitmask c_alive_nodes;
 
   GcpRecord *gcpRecord;
   GcpRecordPtr gcpPtr;

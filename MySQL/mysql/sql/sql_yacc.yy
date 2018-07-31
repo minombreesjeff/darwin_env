@@ -528,6 +528,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, ulong *yystacksize);
 %token	NOW_SYM
 %token	OLD_PASSWORD
 %token	PASSWORD
+%token  PARAM_MARKER
 %token	POINTFROMTEXT
 %token	POINT_SYM
 %token	POLYFROMTEXT
@@ -643,7 +644,8 @@ bool my_yyoverflow(short **a, YYSTYPE **b, ulong *yystacksize);
 	NUM_literal
 
 %type <item_list>
-	expr_list udf_expr_list when_list ident_list ident_list_arg
+	expr_list udf_expr_list udf_sum_expr_list when_list ident_list 
+        ident_list_arg
 
 %type <key_type>
 	key_type opt_unique_or_fulltext constraint_key_type
@@ -2458,7 +2460,7 @@ select_into:
 select_from:
 	  FROM join_table_list where_clause group_clause having_clause
 	       opt_order_clause opt_limit_clause procedure_clause
-        | FROM DUAL_SYM opt_limit_clause
+        | FROM DUAL_SYM where_clause opt_limit_clause
           /* oracle compatibility: oracle always requires FROM clause,
              and DUAL is system table without fields.
              Is "SELECT 1 FROM DUAL" any better than "SELECT 1" ?
@@ -2597,7 +2599,12 @@ expr_expr:
 	 expr IN_SYM '(' expr_list ')'
 	  { $4->push_front($1); $$= new Item_func_in(*$4); }
 	| expr NOT IN_SYM '(' expr_list ')'
-	  { $5->push_front($1); $$= new Item_func_not(new Item_func_in(*$5)); }
+    {
+      $5->push_front($1);
+      Item_func_in *item= new Item_func_in(*$5);
+      item->negate();
+      $$= item;
+    }
         | expr IN_SYM in_subselect
           { $$= new Item_in_subselect($1, $3); }
 	| expr NOT IN_SYM in_subselect
@@ -2607,7 +2614,11 @@ expr_expr:
 	| expr BETWEEN_SYM no_and_expr AND_SYM expr
 	  { $$= new Item_func_between($1,$3,$5); }
 	| expr NOT BETWEEN_SYM no_and_expr AND_SYM expr
-	  { $$= new Item_func_not(new Item_func_between($1,$4,$6)); }
+    {
+      Item_func_between *item= new Item_func_between($1,$4,$6);
+      item->negate();
+      $$= item;
+    }
 	| expr OR_OR_CONCAT expr { $$= or_or_concat(YYTHD, $1,$3); }
 	| expr OR_SYM expr	{ $$= new Item_cond_or($1,$3); }
         | expr XOR expr		{ $$= new Item_cond_xor($1,$3); }
@@ -2655,7 +2666,11 @@ no_in_expr:
 	no_in_expr BETWEEN_SYM no_and_expr AND_SYM expr
 	  { $$= new Item_func_between($1,$3,$5); }
 	| no_in_expr NOT BETWEEN_SYM no_and_expr AND_SYM expr
-	  { $$= new Item_func_not(new Item_func_between($1,$4,$6)); }
+    {
+      Item_func_between *item= new Item_func_between($1,$4,$6);
+      item->negate();
+      $$= item;
+    }
 	| no_in_expr OR_OR_CONCAT expr	{ $$= or_or_concat(YYTHD, $1,$3); }
 	| no_in_expr OR_SYM expr	{ $$= new Item_cond_or($1,$3); }
         | no_in_expr XOR expr		{ $$= new Item_cond_xor($1,$3); }
@@ -2703,7 +2718,12 @@ no_and_expr:
 	  no_and_expr IN_SYM '(' expr_list ')'
 	  { $4->push_front($1); $$= new Item_func_in(*$4); }
 	| no_and_expr NOT IN_SYM '(' expr_list ')'
-	  { $5->push_front($1); $$= new Item_func_not(new Item_func_in(*$5)); }
+    {
+      $5->push_front($1);
+      Item_func_in *item= new Item_func_in(*$5);
+      item->negate();
+      $$= item;
+    }
         | no_and_expr IN_SYM in_subselect
           { $$= new Item_in_subselect($1, $3); }
 	| no_and_expr NOT IN_SYM in_subselect
@@ -2713,7 +2733,11 @@ no_and_expr:
 	| no_and_expr BETWEEN_SYM no_and_expr AND_SYM expr
 	  { $$= new Item_func_between($1,$3,$5); }
 	| no_and_expr NOT BETWEEN_SYM no_and_expr AND_SYM expr
-	  { $$= new Item_func_not(new Item_func_between($1,$4,$6)); }
+    {
+      Item_func_between *item= new Item_func_between($1,$4,$6);
+      item->negate();
+      $$= item;
+    }
 	| no_and_expr OR_OR_CONCAT expr	{ $$= or_or_concat(YYTHD, $1,$3); }
 	| no_and_expr OR_SYM expr	{ $$= new Item_cond_or($1,$3); }
         | no_and_expr XOR expr		{ $$= new Item_cond_xor($1,$3); }
@@ -2900,6 +2924,8 @@ simple_expr:
 	  { $$= new Item_func_atan($3,$5); }
 	| CHAR_SYM '(' expr_list ')'
 	  { $$= new Item_func_char(*$3); }
+	| CHAR_SYM '(' expr_list USING charset_name ')'
+	  { $$= new Item_func_char(*$3, $5); }
 	| CHARSET '(' expr ')'
 	  { $$= new Item_func_charset($3); }
 	| COALESCE '(' expr_list ')'
@@ -3114,21 +3140,21 @@ simple_expr:
 	  { $$= new Item_func_trim($5,$3); }
 	| TRUNCATE_SYM '(' expr ',' expr ')'
 	  { $$= new Item_func_round($3,$5,1); }
-	| UDA_CHAR_SUM '(' udf_expr_list ')'
+	| UDA_CHAR_SUM '(' udf_sum_expr_list ')'
 	  {
 	    if ($3 != NULL)
 	      $$ = new Item_sum_udf_str($1, *$3);
 	    else
 	      $$ = new Item_sum_udf_str($1);
 	  }
-	| UDA_FLOAT_SUM '(' udf_expr_list ')'
+	| UDA_FLOAT_SUM '(' udf_sum_expr_list ')'
 	  {
 	    if ($3 != NULL)
 	      $$ = new Item_sum_udf_float($1, *$3);
 	    else
 	      $$ = new Item_sum_udf_float($1);
 	  }
-	| UDA_INT_SUM '(' udf_expr_list ')'
+	| UDA_INT_SUM '(' udf_sum_expr_list ')'
 	  {
 	    if ($3 != NULL)
 	      $$ = new Item_sum_udf_int($1, *$3);
@@ -3265,6 +3291,21 @@ fulltext_options:
 udf_expr_list:
 	/* empty */	{ $$= NULL; }
 	| expr_list	{ $$= $1;};
+
+udf_sum_expr_list:
+	{
+	  LEX *lex= Lex;
+	  if (lex->current_select->inc_in_sum_expr())
+	  {
+	    yyerror(ER(ER_SYNTAX_ERROR));
+	    YYABORT;
+	  }
+	}
+	udf_expr_list
+	{
+	  Select->in_sum_expr--;
+	  $$= $2;
+	};
 
 sum_expr:
 	AVG_SYM '(' in_sum_expr ')'
@@ -3523,9 +3564,8 @@ select_derived2:
         {
 	  LEX *lex= Lex;
 	  lex->derived_tables= 1;
-	  if (((int)lex->sql_command >= (int)SQLCOM_HA_OPEN &&
-	       lex->sql_command <= (int)SQLCOM_HA_READ) ||
-	       lex->sql_command == (int)SQLCOM_KILL)
+          if (lex->sql_command == (int)SQLCOM_HA_READ ||
+              lex->sql_command == (int)SQLCOM_KILL)
 	  {
 	    yyerror(ER(ER_SYNTAX_ERROR));
 	    YYABORT;
@@ -3750,15 +3790,33 @@ order_clause:
 	ORDER_SYM BY
         {
 	  LEX *lex=Lex;
-	  if (lex->current_select->linkage != GLOBAL_OPTIONS_TYPE &&
-	      lex->current_select->olap !=
-	      UNSPECIFIED_OLAP_TYPE)
+          SELECT_LEX *sel= lex->current_select;
+          SELECT_LEX_UNIT *unit= sel-> master_unit();
+	  if (sel->linkage != GLOBAL_OPTIONS_TYPE &&
+	      sel->olap != UNSPECIFIED_OLAP_TYPE)
 	  {
 	    net_printf(lex->thd, ER_WRONG_USAGE,
 		       "CUBE/ROLLUP",
 		       "ORDER BY");
 	    YYABORT;
 	  }
+          if (lex->sql_command != SQLCOM_ALTER_TABLE && !unit->fake_select_lex)
+          {
+            /*
+              A query of the of the form (SELECT ...) ORDER BY order_list is
+              executed in the same way as the query
+              SELECT ... ORDER BY order_list
+              unless the SELECT construct contains ORDER BY or LIMIT clauses.
+              Otherwise we create a fake SELECT_LEX if it has not been created
+              yet.
+            */
+            SELECT_LEX *first_sl= unit->first_select();
+            if (!first_sl->next_select() &&
+                (first_sl->order_list.elements || 
+                 first_sl->select_limit != HA_POS_ERROR) &&            
+                unit->add_fake_select_lex(lex->thd))
+              YYABORT;
+          }
 	} order_list;
 
 order_list:
@@ -4272,12 +4330,10 @@ single_multi:
 	}
 	where_clause opt_order_clause
 	delete_limit_clause {}
-	| table_wild_list
-	  { mysql_init_multi_delete(Lex); }
-          FROM join_table_list where_clause
-	| FROM table_wild_list
-	  { mysql_init_multi_delete(Lex); }
-	  USING join_table_list where_clause
+	| table_wild_list {mysql_init_multi_delete(Lex);}
+          FROM join_table_list {fix_multi_delete_lex(Lex);} where_clause
+	| FROM table_wild_list { mysql_init_multi_delete(Lex);}
+	  USING join_table_list {fix_multi_delete_lex(Lex);} where_clause
 	  {}
 	;
 
@@ -4289,14 +4345,17 @@ table_wild_one:
 	ident opt_wild opt_table_alias
 	{
 	  if (!Select->add_table_to_list(YYTHD, new Table_ident($1), $3,
-					 TL_OPTION_UPDATING, Lex->lock_option))
+					 TL_OPTION_UPDATING | 
+                                         TL_OPTION_ALIAS, Lex->lock_option))
 	    YYABORT;
         }
 	| ident '.' ident opt_wild opt_table_alias
 	  {
 	    if (!Select->add_table_to_list(YYTHD,
 					   new Table_ident(YYTHD, $1, $3, 0),
-					   $5, TL_OPTION_UPDATING,
+					   $5, 
+                                           TL_OPTION_UPDATING | 
+                                           TL_OPTION_ALIAS,
 					   Lex->lock_option))
 	      YYABORT;
 	  }
@@ -4510,6 +4569,9 @@ show_engine_param:
 	STATUS_SYM
 	  {
 	    switch (Lex->create_info.db_type) {
+	    case DB_TYPE_NDBCLUSTER:
+	      Lex->sql_command = SQLCOM_SHOW_NDBCLUSTER_STATUS;
+	      break;
 	    case DB_TYPE_INNODB:
 	      Lex->sql_command = SQLCOM_SHOW_INNODB_STATUS;
 	      break;
@@ -4675,7 +4737,10 @@ purge_option:
         }
 	| BEFORE_SYM expr
 	{
-	  if ($2->check_cols(1) || $2->fix_fields(Lex->thd, 0, &$2))
+	  if (!$2)
+	    /* Can only be an out of memory situation, no need for a message */
+	    YYABORT;
+	  if ($2->fix_fields(Lex->thd, 0, &$2) || $2->check_cols(1))
 	  {
 	    net_printf(Lex->thd, ER_WRONG_ARGUMENTS, "PURGE LOGS BEFORE");
 	    YYABORT;
@@ -4694,16 +4759,15 @@ purge_option:
 /* kill threads */
 
 kill:
-	KILL_SYM expr
+	KILL_SYM { Lex->sql_command= SQLCOM_KILL; } expr
 	{
 	  LEX *lex=Lex;
-	  if ($2->fix_fields(lex->thd, 0, &$2) || $2->check_cols(1))
+	  if ($3->fix_fields(lex->thd, 0, &$3) || $3->check_cols(1))
 	  {
 	    send_error(lex->thd, ER_SET_CONSTANTS_ONLY);
 	    YYABORT;
 	  }
-          lex->sql_command=SQLCOM_KILL;
-	  lex->thread_id= (ulong) $2->val_int();
+	  lex->thread_id= (ulong) $3->val_int();
 	};
 
 /* change database */
@@ -4739,14 +4803,16 @@ load:	LOAD DATA_SYM load_data_lock opt_local INFILE TEXT_STRING_sys
 	LOAD TABLE_SYM table_ident FROM MASTER_SYM
         {
 	  Lex->sql_command = SQLCOM_LOAD_MASTER_TABLE;
+	  WARN_DEPRECATED("LOAD TABLE FROM MASTER", "mysqldump or future BACKUP/RESTORE DATABASE facility");
 	  if (!Select->add_table_to_list(YYTHD, $3, NULL, TL_OPTION_UPDATING))
 	    YYABORT;
-
+	  
         }
         |
 	LOAD DATA_SYM FROM MASTER_SYM
         {
 	  Lex->sql_command = SQLCOM_LOAD_MASTER_DATA;
+	  WARN_DEPRECATED("LOAD DATA FROM MASTER", "mysqldump or future BACKUP/RESTORE DATABASE facility");
         };
 
 opt_local:
@@ -4835,7 +4901,7 @@ text_literal:
 	| NCHAR_STRING
 	{ $$=  new Item_string($1.str,$1.length,national_charset_info); }
 	| UNDERSCORE_CHARSET TEXT_STRING
-	  { $$ = new Item_string($2.str,$2.length,Lex->charset); }
+	  { $$ = new Item_string($2.str,$2.length,Lex->underscore_charset); }
 	| text_literal TEXT_STRING_literal
 	  { ((Item_string*) $1)->append($2.str,$2.length); }
 	;
@@ -4857,23 +4923,15 @@ text_string:
 	;
 
 param_marker:
-        '?'
+        PARAM_MARKER
         {
           THD *thd=YYTHD;
 	  LEX *lex= thd->lex;
-          if (thd->command == COM_PREPARE)
+          Item_param *item= new Item_param((uint) (lex->tok_start -
+                                                   (uchar *) thd->query));
+          if (!($$= item) || lex->param_list.push_back(item))
           {
-            Item_param *item= new Item_param((uint) (lex->tok_start -
-                                                     (uchar *) thd->query));
-            if (!($$= item) || lex->param_list.push_back(item))
-            {
-	      send_error(thd, ER_OUT_OF_RESOURCES);
-	      YYABORT;
-            }
-          }
-          else
-          {
-            yyerror(ER(ER_SYNTAX_ERROR));
+            send_error(thd, ER_OUT_OF_RESOURCES);
             YYABORT;
           }
         }
@@ -4910,7 +4968,7 @@ literal:
 	      (String*) 0;
 	    $$= new Item_string(str ? str->ptr() : "",
 				str ? str->length() : 0,
-				Lex->charset);
+				Lex->underscore_charset);
 	  }
 	| DATE_SYM text_literal { $$ = $2; }
 	| TIME_SYM text_literal { $$ = $2; }
@@ -6125,9 +6183,8 @@ subselect_start:
 	'(' SELECT_SYM
 	{
 	  LEX *lex=Lex;
-	  if (((int)lex->sql_command >= (int)SQLCOM_HA_OPEN &&
-	       lex->sql_command <= (int)SQLCOM_HA_READ) ||
-	       lex->sql_command == (int)SQLCOM_KILL)
+          if (lex->sql_command == (int)SQLCOM_HA_READ ||
+              lex->sql_command == (int)SQLCOM_KILL)
 	  {
             yyerror(ER(ER_SYNTAX_ERROR));
 	    YYABORT;

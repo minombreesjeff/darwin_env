@@ -95,7 +95,7 @@ static int my_ucs2_uni(CHARSET_INFO *cs __attribute__((unused)),
 		       my_wc_t * pwc, const uchar *s, const uchar *e)
 {
   if (s+2 > e) /* Need 2 characters */
-    return MY_CS_TOOFEW(0);
+    return MY_CS_TOOSMALL2;
   
   *pwc= ((unsigned char)s[0]) * 256  + ((unsigned char)s[1]);
   return 2;
@@ -105,7 +105,7 @@ static int my_uni_ucs2(CHARSET_INFO *cs __attribute__((unused)) ,
 		       my_wc_t wc, uchar *r, uchar *e)
 {
   if ( r+2 > e ) 
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOSMALL2;
   
   r[0]= (uchar) (wc >> 8);
   r[1]= (uchar) (wc & 0xFF);
@@ -215,7 +215,7 @@ static int my_strnncoll_ucs2(CHARSET_INFO *cs,
     s+=s_res;
     t+=t_res;
   }
-  return t_is_prefix ? t-te : ((se-s) - (te-t));
+  return t_is_prefix ? (int) (t - te) : (int) ((se - s) - (te - t));
 }
 
 /*
@@ -253,8 +253,8 @@ static int my_strnncollsp_ucs2(CHARSET_INFO *cs __attribute__((unused)),
   uint minlen;
 
   /* extra safety to make sure the lengths are even numbers */
-  slen= (slen >> 1) << 1;
-  tlen= (tlen >> 1) << 1;
+  slen= slen & ~(uint) 1;
+  tlen= tlen & ~(uint) 1;
 
   se= s + slen;
   te= t + tlen;
@@ -326,7 +326,7 @@ static int my_strncasecmp_ucs2(CHARSET_INFO *cs,
     s+=s_res;
     t+=t_res;
   }
-  return ( (se-s) - (te-t) );
+  return (int) ( (se-s) - (te-t) );
 }
 
 
@@ -1043,7 +1043,7 @@ int my_ll10tostr_ucs2(CHARSET_INFO *cs __attribute__((unused)),
   while (long_val != 0)
   {
     long quo= long_val/10;
-    *--p = '0' + (long_val - quo*10);
+    *--p = (char) ('0' + (long_val - quo*10));
     long_val= quo;
   }
   
@@ -1349,14 +1349,51 @@ int my_strnncoll_ucs2_bin(CHARSET_INFO *cs,
     s+=s_res;
     t+=t_res;
   }
-  return t_is_prefix ? t-te : ((se-s) - (te-t));
+  return t_is_prefix ? (int) (t - te) : (int) ((se-s) - (te-t));
 }
 
-static int my_strnncollsp_ucs2_bin(CHARSET_INFO *cs, 
+static int my_strnncollsp_ucs2_bin(CHARSET_INFO *cs __attribute__((unused)), 
                                    const uchar *s, uint slen, 
                                    const uchar *t, uint tlen)
 {
-  return my_strnncoll_ucs2_bin(cs,s,slen,t,tlen,0);
+  const uchar *se, *te;
+  uint minlen;
+
+  /* extra safety to make sure the lengths are even numbers */
+  slen= (slen >> 1) << 1;
+  tlen= (tlen >> 1) << 1;
+
+  se= s + slen;
+  te= t + tlen;
+
+  for (minlen= min(slen, tlen); minlen; minlen-= 2)
+  {
+    int s_wc= s[0] * 256 + s[1];
+    int t_wc= t[0] * 256 + t[1];
+    if ( s_wc != t_wc )
+      return  s_wc > t_wc ? 1 : -1;
+
+    s+= 2;
+    t+= 2;
+  }
+
+  if (slen != tlen)
+  {
+    int swap= 1;
+    if (slen < tlen)
+    {
+      s= t;
+      se= te;
+      swap= -1;
+    }
+
+    for ( ; s < se ; s+= 2)
+    {
+      if (s[0] || s[1] != ' ')
+        return (s[0] == 0 && s[1] < ' ') ? -swap : swap;
+    }
+  }
+  return 0;
 }
 
 
@@ -1426,10 +1463,12 @@ my_bool my_like_range_ucs2(CHARSET_INFO *cs,
   const char *end=ptr+ptr_length;
   char *min_org=min_str;
   char *min_end=min_str+res_length;
+  uint charlen= res_length / cs->mbmaxlen;
   
-  for (; ptr + 1 < end && min_str + 1 < min_end ; ptr+=2)
+  for ( ; ptr + 1 < end && min_str + 1 < min_end && charlen > 0
+        ; ptr+=2, charlen--)
   {
-    if (ptr[0] == '\0' && ptr[1] == escape && ptr+2 < end)
+    if (ptr[0] == '\0' && ptr[1] == escape && ptr + 1 < end)
     {
       ptr+=2;					/* Skip escape */
       *min_str++= *max_str++ = ptr[0];
@@ -1494,7 +1533,7 @@ ulong my_scan_ucs2(CHARSET_INFO *cs __attribute__((unused)),
       if (str[0] != '\0' || str[1] != ' ')
         break;
     }
-    return str - str0;
+    return (ulong) (str - str0);
   default:
     return 0;
   }
@@ -1583,6 +1622,7 @@ CHARSET_INFO my_charset_ucs2_general_ci=
     2,			/* mbmaxlen     */
     0,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_general_ci_handler
 };
@@ -1610,6 +1650,7 @@ CHARSET_INFO my_charset_ucs2_bin=
     2,			/* mbmaxlen     */
     0,			/* min_sort_char */
     0xFFFF,		/* max_sort_char */
+    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_ucs2_handler,
     &my_collation_ucs2_bin_handler
 };

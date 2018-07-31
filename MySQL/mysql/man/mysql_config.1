@@ -1,0 +1,156 @@
+.\"     Title: \fBmysql_config\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 11/02/2006
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 4.1
+.\"
+.TH "\fBMYSQL_CONFIG\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+mysql_config \- get compile options for compiling clients
+.SH "SYNOPSIS"
+.HP 21
+\fBmysql_config \fR\fB\fIoptions\fR\fR
+.SH "DESCRIPTION"
+.PP
+\fBmysql_config\fR
+provides you with useful information for compiling your MySQL client and connecting it to MySQL.
+.PP
+\fBmysql_config\fR
+supports the following options:
+.TP 3n
+\(bu
+\fB\-\-cflags\fR
+.sp
+Compiler flags to find include files and critical compiler flags and defines used when compiling the
+libmysqlclient
+library.
+.TP 3n
+\(bu
+\fB\-\-include\fR
+.sp
+Compiler options to find MySQL include files. (Note that normally you would use
+\fB\-\-cflags\fR
+instead of this option.)
+.TP 3n
+\(bu
+\fB\-\-libmysqld\-libs\fR,
+\fB\-\-embedded\fR
+.sp
+Libraries and options required to link with the MySQL embedded server.
+.TP 3n
+\(bu
+\fB\-\-libs\fR
+.sp
+Libraries and options required to link with the MySQL client library.
+.TP 3n
+\(bu
+\fB\-\-libs_r\fR
+.sp
+Libraries and options required to link with the thread\-safe MySQL client library.
+.TP 3n
+\(bu
+\fB\-\-port\fR
+.sp
+The default TCP/IP port number, defined when configuring MySQL.
+.TP 3n
+\(bu
+\fB\-\-socket\fR
+.sp
+The default Unix socket file, defined when configuring MySQL.
+.TP 3n
+\(bu
+\fB\-\-version\fR
+.sp
+Version number for the MySQL distribution.
+.sp
+.RE
+.PP
+If you invoke
+\fBmysql_config\fR
+with no options, it displays a list of all options that it supports, and their values:
+.sp
+.RS 3n
+.nf
+shell> \fBmysql_config\fR
+Usage: /usr/local/mysql/bin/mysql_config [options]
+Options:
+  \-\-cflags         [\-I/usr/local/mysql/include/mysql \-mcpu=pentiumpro]
+  \-\-include        [\-I/usr/local/mysql/include/mysql]
+  \-\-libs           [\-L/usr/local/mysql/lib/mysql \-lmysqlclient \-lz
+                    \-lcrypt \-lnsl \-lm \-L/usr/lib \-lssl \-lcrypto]
+  \-\-libs_r         [\-L/usr/local/mysql/lib/mysql \-lmysqlclient_r
+                    \-lpthread \-lz \-lcrypt \-lnsl \-lm \-lpthread]
+  \-\-socket         [/tmp/mysql.sock]
+  \-\-port           [3306]
+  \-\-version        [4.0.16]
+  \-\-libmysqld\-libs [\-L/usr/local/mysql/lib/mysql \-lmysqld \-lpthread \-lz
+                    \-lcrypt \-lnsl \-lm \-lpthread \-lrt]
+.fi
+.RE
+.PP
+You can use
+\fBmysql_config\fR
+within a command line to include the value that it displays for a particular option. For example, to compile a MySQL client program, use
+\fBmysql_config\fR
+as follows:
+.sp
+.RS 3n
+.nf
+shell> \fBCFG=/usr/local/mysql/bin/mysql_config\fR
+shell> \fBsh \-c "gcc \-o progname `$CFG \-\-cflags` progname.c `$CFG \-\-libs`"\fR
+.fi
+.RE
+.PP
+When you use
+\fBmysql_config\fR
+this way, be sure to invoke it within backtick (\(oq`\(cq) characters. That tells the shell to execute it and substitute its output into the surrounding command.
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2006 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+isamchk(1),
+isamlog(1),
+msql2mysql(1),
+myisam_ftdump(1),
+myisamchk(1),
+myisamlog(1),
+myisampack(1),
+mysql(1),
+mysql.server(1),
+mysql_explain_log(1),
+mysql_fix_privilege_tables(1),
+mysql_zap(1),
+mysqlaccess(1),
+mysqladmin(1),
+mysqlbinlog(1),
+mysqlcheck(1),
+mysqld(1),
+mysqld(8),
+mysqld_multi(1),
+mysqld_safe(1),
+mysqldump(1),
+mysqlhotcopy(1),
+mysqlimport(1),
+mysqlshow(1),
+pack_isam(1),
+perror(1),
+replace(1),
+safe_mysqld(1)
+.P
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

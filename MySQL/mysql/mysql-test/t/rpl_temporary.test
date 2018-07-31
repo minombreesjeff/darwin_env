@@ -128,4 +128,49 @@ drop table t1,t2;
 create temporary table t3 (f int);
 sync_with_master;
 
-# The server will now close done
+#
+# BUG#17263 incorrect generation DROP temp tables
+# Temporary tables of connection are dropped in batches
+# where a batch correspond to pseudo_thread_id
+# value was set up at the moment of temp table creation
+#
+connection con1;
+set @@session.pseudo_thread_id=100;
+create temporary table t101 (id int);
+create temporary table t102 (id int);
+set @@session.pseudo_thread_id=200;
+create temporary table t201 (id int);
+create temporary table `t``201` (id int);
+# emulate internal temp table not to come to binlog
+create temporary table `#sql_not_user_table202` (id int);
+set @@session.pseudo_thread_id=300;
+create temporary table t301 (id int);
+create temporary table t302 (id int);
+create temporary table `#sql_not_user_table303` (id int);
+disconnect con1;
+
+#now do something to show that slave is ok after DROP temp tables
+connection master;
+create table t1(f int);
+insert into t1 values (1);
+
+sync_slave_with_master;
+#connection slave;
+select * from t1 /* must be 1 */;
+
+connection master; 
+drop table t1;
+
+#
+#14157: utf8 encoding in binlog without set character_set_client
+#
+--exec $MYSQL --character-sets-dir=../sql/share/charsets/ --default-character-set=latin1 test -e 'create table t1 (a int); set names latin1; create temporary table `äöüÄÖÜ` (a int); insert into `äöüÄÖÜ` values (1); insert into t1 select * from `äöüÄÖÜ`'
+
+sync_slave_with_master;
+#connection slave;
+select * from t1;
+
+connection master; 
+drop table t1;
+
+# End of 4.1 tests

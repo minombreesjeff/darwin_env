@@ -22,6 +22,7 @@ extern const char	*not_error_sqlstate;
 extern "C" {
 #endif
 
+extern CHARSET_INFO *default_client_charset_info;
 MYSQL_FIELD *unpack_fields(MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
 			   my_bool default_value, uint server_capabilities);
 void free_rows(MYSQL_DATA *cur);
@@ -33,7 +34,8 @@ void mysql_read_default_options(struct st_mysql_options *options,
 my_bool
 cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
 		     const char *header, ulong header_length,
-		     const char *arg, ulong arg_length, my_bool skip_check);
+		     const char *arg, ulong arg_length, my_bool skip_check,
+                     MYSQL_STMT *stmt);
 
 void set_stmt_errmsg(MYSQL_STMT * stmt, const char *err, int errcode,
 		     const char *sqlstate);

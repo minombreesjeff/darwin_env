@@ -64,16 +64,22 @@ ClusterMgr::ClusterMgr(TransporterFacade & _facade):
   theStop(0),
   theFacade(_facade)
 {
+  DBUG_ENTER("ClusterMgr::ClusterMgr");
   ndbSetOwnVersion();
   clusterMgrThreadMutex = NdbMutex_Create();
   noOfAliveNodes= 0;
   noOfConnectedNodes= 0;
   theClusterMgrThread= 0;
+  m_connect_count = 0;
+  DBUG_VOID_RETURN;
 }
 
-ClusterMgr::~ClusterMgr(){
+ClusterMgr::~ClusterMgr()
+{
+  DBUG_ENTER("ClusterMgr::~ClusterMgr");
   doStop();  
   NdbMutex_Destroy(clusterMgrThreadMutex);
+  DBUG_VOID_RETURN;
 }
 
 void
@@ -152,7 +158,6 @@ ClusterMgr::doStop( ){
   if (theClusterMgrThread) {
     NdbThread_WaitFor(theClusterMgrThread, &status);  
     NdbThread_Destroy(&theClusterMgrThread);
-    theClusterMgrThread= 0;
   }
   NdbMutex_Unlock(clusterMgrThreadMutex);
   DBUG_VOID_RETURN;
@@ -452,6 +457,10 @@ ClusterMgr::reportNodeFailed(NodeId nodeId){
   theNode.nfCompleteRep = false;
   
   if(noOfAliveNodes == 0){
+    theFacade.m_globalDictCache.lock();
+    theFacade.m_globalDictCache.invalidate_all();
+    theFacade.m_globalDictCache.unlock();
+    m_connect_count ++;
     NFCompleteRep rep;
     for(Uint32 i = 1; i<MAX_NODES; i++){
       if(theNodes[i].defined && theNodes[i].nfCompleteRep == false){
@@ -468,6 +477,8 @@ ClusterMgr::reportNodeFailed(NodeId nodeId){
 ArbitMgr::ArbitMgr(TransporterFacade & _fac)
   : theFacade(_fac)
 {
+  DBUG_ENTER("ArbitMgr::ArbitMgr");
+
   theThreadMutex = NdbMutex_Create();
   theInputCond = NdbCondition_Create();
   theInputMutex = NdbMutex_Create();
@@ -485,13 +496,17 @@ ArbitMgr::ArbitMgr(TransporterFacade & _fac)
   memset(&theChooseReq1, 0, sizeof(theChooseReq1));
   memset(&theChooseReq2, 0, sizeof(theChooseReq2));
   memset(&theStopOrd, 0, sizeof(theStopOrd));
+
+  DBUG_VOID_RETURN;
 }
 
 ArbitMgr::~ArbitMgr()
 {
+  DBUG_ENTER("ArbitMgr::~ArbitMgr");
   NdbMutex_Destroy(theThreadMutex);
   NdbCondition_Destroy(theInputCond);
   NdbMutex_Destroy(theInputMutex);
+  DBUG_VOID_RETURN;
 }
 
 // Start arbitrator thread.  This is kernel request.
@@ -508,7 +523,7 @@ ArbitMgr::doStart(const Uint32* theData)
     sendSignalToThread(aSignal);
     void* value;
     NdbThread_WaitFor(theThread, &value);
-    theThread = NULL;
+    NdbThread_Destroy(&theThread);
     theState = StateInit;
     theInputFull = false;
   }
@@ -547,7 +562,7 @@ ArbitMgr::doStop(const Uint32* theData)
     sendSignalToThread(aSignal);
     void* value;
     NdbThread_WaitFor(theThread, &value);
-    theThread = NULL;
+    NdbThread_Destroy(&theThread);
     theState = StateInit;
   }
   NdbMutex_Unlock(theThreadMutex);

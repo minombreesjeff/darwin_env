@@ -128,7 +128,8 @@ private:
   friend class GrepSS;
   friend class Ndb;
   friend class Ndb_cluster_connection_impl;
-
+  friend class NdbConnection;
+  
   int sendSignalUnCond(NdbApiSignal *, NodeId nodeId);
 
   bool isConnected(NodeId aNodeId);
@@ -172,6 +173,7 @@ private:
    */
 public:
   STATIC_CONST( MAX_NO_THREADS = 4711 );
+  Uint32 m_waitfor_timeout; // in milli seconds...
 private:
 
   struct ThreadData {
@@ -261,6 +263,12 @@ TransporterFacade::unlock_mutex()
 }
 
 #include "ClusterMgr.hpp"
+
+inline
+unsigned Ndb_cluster_connection_impl::get_connect_count() const
+{
+  return TransporterFacade::instance()->theClusterMgr->m_connect_count;
+}
 
 inline
 bool

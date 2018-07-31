@@ -1150,6 +1150,7 @@ objectStateMapping[] = {
   { DictTabInfo::StateBuilding,      NdbDictionary::Object::StateBuilding },
   { DictTabInfo::StateDropping,      NdbDictionary::Object::StateDropping },
   { DictTabInfo::StateOnline,        NdbDictionary::Object::StateOnline },
+  { DictTabInfo::StateBackup,        NdbDictionary::Object::StateBackup },
   { DictTabInfo::StateBroken,        NdbDictionary::Object::StateBroken }, 
   { -1, -1 }
 };
@@ -1438,25 +1439,22 @@ int NdbDictionaryImpl::alterTable(NdbTableImpl &impl)
   const char * originalExternalName = externalName.c_str();
 
   DBUG_ENTER("NdbDictionaryImpl::alterTable");
-  if(!get_local_table_info(originalInternalName, false)){
+  Ndb_local_table_info * local = 0;
+  if((local= get_local_table_info(originalInternalName, false)) == 0)
+  {
     m_error.code = 709;
     DBUG_RETURN(-1);
   }
+
   // Alter the table
   int ret = m_receiver.alterTable(m_ndb, impl);
   if(ret == 0){
     // Remove cached information and let it be refreshed at next access
-    if (m_localHash.get(originalInternalName) != NULL) {
-      m_localHash.drop(originalInternalName);
-      m_globalHash->lock();
-      NdbTableImpl * cachedImpl = m_globalHash->get(originalInternalName);
-      // If in local cache it must be in global
-      if (!cachedImpl)
-	abort();
-      cachedImpl->m_status = NdbDictionary::Object::Invalid;
-      m_globalHash->drop(cachedImpl);
-      m_globalHash->unlock();
-    }
+    m_globalHash->lock();
+    local->m_table_impl->m_status = NdbDictionary::Object::Invalid;
+    m_globalHash->drop(local->m_table_impl);
+    m_globalHash->unlock();
+    m_localHash.drop(originalInternalName);
   }
   DBUG_RETURN(ret);
 }
@@ -2149,7 +2147,7 @@ NdbDictionaryImpl::dropIndex(const char * indexName,
     m_error.code = 4243;
     return -1;
   }
-  int ret = dropIndex(*idx, tableName);
+  int ret = dropIndex(*idx);
   // If index stored in cache is incompatible with the one in the kernel
   // we must clear the cache and try again
   if (ret == INCOMPATIBLE_VERSION) {
@@ -2171,40 +2169,23 @@ NdbDictionaryImpl::dropIndex(const char * indexName,
 }
 
 int
-NdbDictionaryImpl::dropIndex(NdbIndexImpl & impl, const char * tableName)
+NdbDictionaryImpl::dropIndex(NdbIndexImpl & impl)
 {
-  const char * indexName = impl.getName();
-  if (tableName || m_ndb.usingFullyQualifiedNames()) {
     NdbTableImpl * timpl = impl.m_table;
     
     if (timpl == 0) {
       m_error.code = 709;
       return -1;
     }
-
-    const char * internalIndexName = (tableName)
-      ?
-      m_ndb.internalizeIndexName(getTable(tableName), indexName)
-      :
-      m_ndb.internalizeTableName(indexName); // Index is also a table
-
-    if(impl.m_status == NdbDictionary::Object::New){
-      return dropIndex(indexName, tableName);
-    }
-    
     int ret = m_receiver.dropIndex(impl, *timpl);
     if(ret == 0){
-      m_localHash.drop(internalIndexName);
+      m_localHash.drop(timpl->m_internalName.c_str());
       m_globalHash->lock();
-      impl.m_table->m_status = NdbDictionary::Object::Invalid;
-      m_globalHash->drop(impl.m_table);
+      timpl->m_status = NdbDictionary::Object::Invalid;
+      m_globalHash->drop(timpl);
       m_globalHash->unlock();
     }
     return ret;
-  }
-
-  m_error.code = 4243;
-  return -1;
 }
 
 int

@@ -42,6 +42,8 @@
 #include <signaldata/FsRemoveReq.hpp>
 #include <signaldata/ReadConfig.hpp>
 
+#include <signaldata/FailRep.hpp>
+
 #include <AttributeHeader.hpp>
 #include <Configuration.hpp>
 #include <DebuggerNames.hpp>
@@ -76,7 +78,6 @@ static BlockInfo ALL_BLOCKS[] = {
   { BACKUP_REF,  1 , 10000, 10999 },
   { DBUTIL_REF,  1 , 11000, 11999 },
   { SUMA_REF,    1 , 13000, 13999 },
-  { GREP_REF,    1 ,     0,     0 },
   { DBTUX_REF,   1 , 12000, 12999 }
 };
 
@@ -145,6 +146,7 @@ void Ndbcntr::execSYSTEM_ERROR(Signal* signal)
   const SystemError * const sysErr = (SystemError *)signal->getDataPtr();
   char buf[100];
   int killingNode = refToNode(sysErr->errorRef);
+  Uint32 data1 = sysErr->data1;
   
   jamEntry();
   switch (sysErr->errorCode){
@@ -175,12 +177,12 @@ void Ndbcntr::execSYSTEM_ERROR(Signal* signal)
 	     "the state of a fragment scan was out of sync.",     
 	     killingNode);
     break;
-
+    
   case SystemError::CopyFragRefError:
     BaseString::snprintf(buf, sizeof(buf), 
-	     "Node %d killed this node because "
-	     "it could not copy a fragment during node restart",     
-	     killingNode);
+			 "Killed by node %d as "
+			 "copyfrag failed, error: %u",
+			 killingNode, data1);
     break;
 
   default:
@@ -1453,16 +1455,74 @@ void Ndbcntr::execNODE_FAILREP(Signal* signal)
   sendSignal(SUMA_REF, GSN_NODE_FAILREP, signal,
 	     NodeFailRep::SignalLength, JBB);
 
-  sendSignal(GREP_REF, GSN_NODE_FAILREP, signal,
-	     NodeFailRep::SignalLength, JBB);
+  if (c_stopRec.stopReq.senderRef)
+  {
+    jam();
+    switch(c_stopRec.m_state){
+    case StopRecord::SR_WAIT_NODE_FAILURES:
+    {
+      jam();
+      NdbNodeBitmask tmp;
+      tmp.assign(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+      tmp.bitANDC(allFailed);      
+      tmp.copyto(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+      
+      if (tmp.isclear())
+      {
+	jam();
+	if (c_stopRec.stopReq.senderRef != RNIL)
+	{
+	  jam();
+	  StopConf * const stopConf = (StopConf *)&signal->theData[0];
+	  stopConf->senderData = c_stopRec.stopReq.senderData;
+	  stopConf->nodeState  = (Uint32) NodeState::SL_SINGLEUSER;
+	  sendSignal(c_stopRec.stopReq.senderRef, GSN_STOP_CONF, signal, 
+		     StopConf::SignalLength, JBB);
+	}
 
+	c_stopRec.stopReq.senderRef = 0;
+	WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
+	req->senderRef = reference();
+	req->senderData = StopRecord::SR_UNBLOCK_GCP_START_GCP;
+	req->requestType = WaitGCPReq::UnblockStartGcp;
+	sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
+		   WaitGCPReq::SignalLength, JBA);
+      }
+      break;
+    }
+    case StopRecord::SR_QMGR_STOP_REQ:
+    {
+      NdbNodeBitmask tmp;
+      tmp.assign(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+      tmp.bitANDC(allFailed);      
+
+      if (tmp.isclear())
+      {
+	Uint32 nodeId = allFailed.find(0);
+	tmp.set(nodeId);
+
+	StopConf* conf = (StopConf*)signal->getDataPtrSend();
+	conf->senderData = c_stopRec.stopReq.senderData;
+	conf->nodeId = nodeId;
+	sendSignal(reference(), 
+		   GSN_STOP_CONF, signal, StopConf::SignalLength, JBB);
+      }
+
+      tmp.copyto(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+      
+      break;
+    }
+    }
+  }
+  
+  signal->theData[0] = EventReport::NODE_FAILREP;
+  signal->theData[2] = 0;
+  
   Uint32 nodeId = 0;
   while(!allFailed.isclear()){
     nodeId = allFailed.find(nodeId + 1);
     allFailed.clear(nodeId);
-    signal->theData[0] = EventReport::NODE_FAILREP;
     signal->theData[1] = nodeId;
-    signal->theData[2] = 0;
     sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 3, JBB);
   }//for
 
@@ -1910,13 +1970,15 @@ void
 Ndbcntr::execDUMP_STATE_ORD(Signal* signal)
 {
   DumpStateOrd * const & dumpState = (DumpStateOrd *)&signal->theData[0];
-  if(signal->theData[0] == 13){
+  Uint32 arg = dumpState->args[0];
+
+  if(arg == 13){
     infoEvent("Cntr: cstartPhase = %d, cinternalStartphase = %d, block = %d", 
 	      cstartPhase, cinternalStartphase, cndbBlocksCount);
     infoEvent("Cntr: cmasterNodeId = %d", cmasterNodeId);
   }
 
-  if (dumpState->args[0] == DumpStateOrd::NdbcntrTestStopOnError){
+  if (arg == DumpStateOrd::NdbcntrTestStopOnError){
     if (theConfiguration.stopOnError() == true)
       ((Configuration&)theConfiguration).stopOnError(false);
     
@@ -1929,6 +1991,28 @@ Ndbcntr::execDUMP_STATE_ORD(Signal* signal)
 	       SystemError::SignalLength, JBA);
   }
 
+  if (arg == DumpStateOrd::NdbcntrStopNodes)
+  {
+    NdbNodeBitmask mask;
+    for(Uint32 i = 1; i<signal->getLength(); i++)
+      mask.set(signal->theData[i]);
+
+    StopReq* req = (StopReq*)signal->getDataPtrSend();
+    req->senderRef = RNIL;
+    req->senderData = 123;
+    req->requestInfo = 0;
+    req->singleuser = 0;
+    req->singleUserApi = 0;
+    mask.copyto(NdbNodeBitmask::Size, req->nodes);
+    StopReq::setPerformRestart(req->requestInfo, 1);
+    StopReq::setNoStart(req->requestInfo, 1);
+    StopReq::setStopNodes(req->requestInfo, 1);
+    StopReq::setStopAbort(req->requestInfo, 1);
+    
+    sendSignal(reference(), GSN_STOP_REQ, signal,
+	       StopReq::SignalLength, JBB);
+    return;
+  }
 
 }//Ndbcntr::execDUMP_STATE_ORD()
 
@@ -1952,6 +2036,11 @@ void Ndbcntr::execSET_VAR_REQ(Signal* signal) {
 void Ndbcntr::updateNodeState(Signal* signal, const NodeState& newState) const{
   NodeStateRep * const stateRep = (NodeStateRep *)&signal->theData[0];
 
+  if (newState.startLevel == NodeState::SL_STARTED)
+  {
+    CRASH_INSERTION(1000);
+  }
+
   stateRep->nodeState = newState;
   stateRep->nodeState.masterNodeId = cmasterNodeId;
   stateRep->nodeState.setNodeGroup(c_nodeGroup);
@@ -1968,6 +2057,11 @@ Ndbcntr::execRESUME_REQ(Signal* signal){
   //ResumeRef * const ref = (ResumeRef *)&signal->theData[0];
   
   jamEntry();
+
+  signal->theData[0] = EventReport::SingleUser;
+  signal->theData[1] = 2;
+  sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
+
   //Uint32 senderData = req->senderData;
   //BlockReference senderRef = req->senderRef;
   NodeState newState(NodeState::SL_STARTED);		  
@@ -1984,9 +2078,12 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
   Uint32 senderData = req->senderData;
   BlockReference senderRef = req->senderRef;
   bool abort = StopReq::getStopAbort(req->requestInfo);
+  bool stopnodes = StopReq::getStopNodes(req->requestInfo);
 
-  if(getNodeState().startLevel < NodeState::SL_STARTED || 
-     abort && !singleuser){
+  if(!singleuser && 
+     (getNodeState().startLevel < NodeState::SL_STARTED || 
+      (abort && !stopnodes)))
+  {
     /**
      * Node is not started yet
      *
@@ -2006,12 +2103,11 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
     return;
   }
 
-  if(c_stopRec.stopReq.senderRef != 0 && !singleuser){
-    jam();
+  if(c_stopRec.stopReq.senderRef != 0){
     /**
      * Requested a system shutdown
      */
-    if(StopReq::getSystemStop(req->requestInfo)){
+    if(!singleuser && StopReq::getSystemStop(req->requestInfo)){
       jam();
       sendSignalWithDelay(reference(), GSN_STOP_REQ, signal, 100,
 			  StopReq::SignalLength);
@@ -2026,30 +2122,85 @@ Ndbcntr::execSTOP_REQ(Signal* signal){
     else
       ref->errorCode = StopRef::NodeShutdownInProgress;
     ref->senderData = senderData;
-    sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
+    
+    if (senderRef != RNIL)
+      sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
+    return;
+  }
+
+  if (stopnodes && !abort)
+  {
+    jam();
+    ref->errorCode = StopRef::UnsupportedNodeShutdown;
+    ref->senderData = senderData;
+    if (senderRef != RNIL)
+      sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
+    return;
+  }
+
+  if (stopnodes && cmasterNodeId != getOwnNodeId())
+  {
+    jam();
+    ref->errorCode = StopRef::MultiNodeShutdownNotMaster;
+    ref->senderData = senderData;
+    if (senderRef != RNIL)
+      sendSignal(senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
     return;
   }
   
   c_stopRec.stopReq = * req;
   c_stopRec.stopInitiatedTime = NdbTick_CurrentMillisecond();
   
-  if(StopReq::getSystemStop(c_stopRec.stopReq.requestInfo) && !singleuser) {
+  if (stopnodes)
+  {
     jam();
-    if(StopReq::getPerformRestart(c_stopRec.stopReq.requestInfo)){
-      ((Configuration&)theConfiguration).stopOnError(false);
-    }
-  }
-  if(!singleuser) {
-    if(!c_stopRec.checkNodeFail(signal)){
+
+    if(!c_stopRec.checkNodeFail(signal))
+    {
       jam();
       return;
     }
+
+    char buf[100];
+    NdbNodeBitmask mask;
+    mask.assign(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+    infoEvent("Initiating shutdown abort of %s", mask.getText(buf));
+    ndbout_c("Initiating shutdown abort of %s", mask.getText(buf));    
+
+    WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
+    req->senderRef = reference();
+    req->senderData = StopRecord::SR_BLOCK_GCP_START_GCP;
+    req->requestType = WaitGCPReq::BlockStartGcp;
+    sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
+	       WaitGCPReq::SignalLength, JBB);
+    return;
   }
-  
-  signal->theData[0] = EventReport::NDBStopStarted;
-  signal->theData[1] = StopReq::getSystemStop(c_stopRec.stopReq.requestInfo) ? 1 : 0;
-  sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
-  
+  else if(!singleuser) 
+  {
+    if(StopReq::getSystemStop(c_stopRec.stopReq.requestInfo)) 
+    {
+      jam();
+      if(StopReq::getPerformRestart(c_stopRec.stopReq.requestInfo))
+      {
+	((Configuration&)theConfiguration).stopOnError(false);
+      }
+    }
+    if(!c_stopRec.checkNodeFail(signal))
+    {
+      jam();
+      return;
+    }
+    signal->theData[0] = EventReport::NDBStopStarted;
+    signal->theData[1] = StopReq::getSystemStop(c_stopRec.stopReq.requestInfo) ? 1 : 0;
+    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
+  }
+  else
+  {
+    signal->theData[0] = EventReport::SingleUser;
+    signal->theData[1] = 0;
+    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
+  }
+
   NodeState newState(NodeState::SL_STOPPING_1, 
 		     StopReq::getSystemStop(c_stopRec.stopReq.requestInfo));
   
@@ -2105,7 +2256,17 @@ Ndbcntr::StopRecord::checkNodeFail(Signal* signal){
    */
   NodeBitmask ndbMask; 
   ndbMask.assign(cntr.c_startedNodes);
-  ndbMask.clear(cntr.getOwnNodeId());
+
+  if (StopReq::getStopNodes(stopReq.requestInfo))
+  {
+    NdbNodeBitmask tmp;
+    tmp.assign(NdbNodeBitmask::Size, stopReq.nodes);
+    ndbMask.bitANDC(tmp);
+  }
+  else
+  {
+    ndbMask.clear(cntr.getOwnNodeId());
+  }
   
   CheckNodeGroups* sd = (CheckNodeGroups*)&signal->theData[0];
   sd->blockRef = cntr.reference();
@@ -2127,13 +2288,16 @@ Ndbcntr::StopRecord::checkNodeFail(Signal* signal){
   ref->errorCode = StopRef::NodeShutdownWouldCauseSystemCrash;
   
   const BlockReference bref = stopReq.senderRef;
-  cntr.sendSignal(bref, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
+  if (bref != RNIL)
+    cntr.sendSignal(bref, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
   
   stopReq.senderRef = 0;
 
-  NodeState newState(NodeState::SL_STARTED); 
-
-  cntr.updateNodeState(signal, newState);
+  if (cntr.getNodeState().startLevel != NodeState::SL_SINGLEUSER)
+  {
+    NodeState newState(NodeState::SL_STARTED); 
+    cntr.updateNodeState(signal, newState);
+  }
 
   signal->theData[0] = EventReport::NDBStopAborted;
   cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 1, JBB);
@@ -2175,23 +2339,23 @@ Ndbcntr::StopRecord::checkTcTimeout(Signal* signal){
     if(stopReq.getSystemStop(stopReq.requestInfo)  || stopReq.singleuser){
       jam();
       if(stopReq.singleuser) 
-	{
-	  jam();
-	   AbortAllReq * req = (AbortAllReq*)&signal->theData[0];
-	   req->senderRef = cntr.reference();
-	   req->senderData = 12;
-	   cntr.sendSignal(DBTC_REF, GSN_ABORT_ALL_REQ, signal, 
-		      AbortAllReq::SignalLength, JBB);
-	} 
+      {
+	jam();
+	AbortAllReq * req = (AbortAllReq*)&signal->theData[0];
+	req->senderRef = cntr.reference();
+	req->senderData = 12;
+	cntr.sendSignal(DBTC_REF, GSN_ABORT_ALL_REQ, signal, 
+			AbortAllReq::SignalLength, JBB);
+      } 
       else
-	{
-	  WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
-	  req->senderRef = cntr.reference();
-	  req->senderData = 12;
-	  req->requestType = WaitGCPReq::CompleteForceStart;
-	  cntr.sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
-			  WaitGCPReq::SignalLength, JBB);
-	}
+      {
+	WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
+	req->senderRef = cntr.reference();
+	req->senderData = StopRecord::SR_CLUSTER_SHUTDOWN;
+	req->requestType = WaitGCPReq::CompleteForceStart;
+	cntr.sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
+			WaitGCPReq::SignalLength, JBB);
+      }
     } else {
       jam();
       StopPermReq * req = (StopPermReq*)&signal->theData[0];
@@ -2229,12 +2393,24 @@ void Ndbcntr::execABORT_ALL_CONF(Signal* signal){
   jamEntry();
   if(c_stopRec.stopReq.singleuser) {
     jam();
+
     NodeState newState(NodeState::SL_SINGLEUSER);    
     newState.setSingleUser(true);
     newState.setSingleUserApi(c_stopRec.stopReq.singleUserApi);
     updateNodeState(signal, newState);    
     c_stopRec.stopInitiatedTime = NdbTick_CurrentMillisecond();
 
+    StopConf * const stopConf = (StopConf *)&signal->theData[0];
+    stopConf->senderData = c_stopRec.stopReq.senderData;
+    stopConf->nodeState  = (Uint32) NodeState::SL_SINGLEUSER;
+    sendSignal(c_stopRec.stopReq.senderRef, GSN_STOP_CONF, signal, StopConf::SignalLength, JBB);
+
+    c_stopRec.stopReq.senderRef = 0; // the command is done
+
+    signal->theData[0] = EventReport::SingleUser;
+    signal->theData[1] = 1;
+    signal->theData[2] = c_stopRec.stopReq.singleUserApi;
+    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 3, JBB);
   }
   else 
     {
@@ -2252,7 +2428,13 @@ void Ndbcntr::execABORT_ALL_CONF(Signal* signal){
 
 void Ndbcntr::execABORT_ALL_REF(Signal* signal){
   jamEntry();
-  ndbrequire(false);
+  AbortAllRef *abortAllRef = (AbortAllRef *)&signal->theData[0];
+  AbortAllRef::ErrorCode errorCode = (AbortAllRef::ErrorCode) abortAllRef->errorCode;
+
+  StopRef * const stopRef = (StopRef *)&signal->theData[0];
+  stopRef->senderData = c_stopRec.stopReq.senderData;
+  stopRef->errorCode = StopRef::TransactionAbortFailed;
+  sendSignal(c_stopRec.stopReq.senderRef, GSN_STOP_REF, signal, StopRef::SignalLength, JBB);
 }
 
 void
@@ -2335,7 +2517,7 @@ void Ndbcntr::execWAIT_GCP_REF(Signal* signal){
 
   WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
   req->senderRef = reference();
-  req->senderData = 12;
+  req->senderData = StopRecord::SR_CLUSTER_SHUTDOWN;
   req->requestType = WaitGCPReq::CompleteForceStart;
   sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
 	     WaitGCPReq::SignalLength, JBB);
@@ -2344,29 +2526,129 @@ void Ndbcntr::execWAIT_GCP_REF(Signal* signal){
 void Ndbcntr::execWAIT_GCP_CONF(Signal* signal){
   jamEntry();
 
-  ndbrequire(StopReq::getSystemStop(c_stopRec.stopReq.requestInfo));
-  NodeState newState(NodeState::SL_STOPPING_3, true); 
+  WaitGCPConf* conf = (WaitGCPConf*)signal->getDataPtr();
 
-  /**
-   * Inform QMGR so that arbitrator won't kill us
-   */
-  NodeStateRep * rep = (NodeStateRep *)&signal->theData[0];
-  rep->nodeState = newState;
-  rep->nodeState.masterNodeId = cmasterNodeId;
-  rep->nodeState.setNodeGroup(c_nodeGroup);
-  EXECUTE_DIRECT(QMGR, GSN_NODE_STATE_REP, signal, NodeStateRep::SignalLength);
+  switch(conf->senderData){
+  case StopRecord::SR_BLOCK_GCP_START_GCP:
+  {
+    jam();
+    /**
+     * 
+     */
+    if(!c_stopRec.checkNodeFail(signal))
+    {
+      jam();
+      goto unblock;
+    }
+    
+    WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
+    req->senderRef = reference();
+    req->senderData = StopRecord::SR_WAIT_COMPLETE_GCP;
+    req->requestType = WaitGCPReq::CompleteIfRunning;
 
-  if(StopReq::getPerformRestart(c_stopRec.stopReq.requestInfo)){
-    jam();
-    StartOrd * startOrd = (StartOrd *)&signal->theData[0];
-    startOrd->restartInfo = c_stopRec.stopReq.requestInfo;
-    sendSignalWithDelay(CMVMI_REF, GSN_START_ORD, signal, 500, 
-			StartOrd::SignalLength);
-  } else {
-    jam();
-    sendSignalWithDelay(CMVMI_REF, GSN_STOP_ORD, signal, 500, 1);
+    sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
+	       WaitGCPReq::SignalLength, JBB);
+    return;
   }
-  return;
+  case StopRecord::SR_UNBLOCK_GCP_START_GCP:
+  {
+    jam();
+    return;
+  }
+  case StopRecord::SR_WAIT_COMPLETE_GCP:
+  {
+    jam();
+    if(!c_stopRec.checkNodeFail(signal))
+    {
+      jam();
+      goto unblock;
+    }
+
+    NdbNodeBitmask tmp;
+    tmp.assign(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+    c_stopRec.m_stop_req_counter = tmp;
+    NodeReceiverGroup rg(QMGR, tmp);
+    StopReq * stopReq = (StopReq *)&signal->theData[0];
+    * stopReq = c_stopRec.stopReq;
+    stopReq->senderRef = reference();
+    sendSignal(rg, GSN_STOP_REQ, signal, StopReq::SignalLength, JBA);
+    c_stopRec.m_state = StopRecord::SR_QMGR_STOP_REQ; 
+    return;
+  }
+  case StopRecord::SR_CLUSTER_SHUTDOWN:
+  {
+    jam();
+    break;
+  }
+  }
+  
+  {  
+    ndbrequire(StopReq::getSystemStop(c_stopRec.stopReq.requestInfo));
+    NodeState newState(NodeState::SL_STOPPING_3, true); 
+    
+    /**
+     * Inform QMGR so that arbitrator won't kill us
+     */
+    NodeStateRep * rep = (NodeStateRep *)&signal->theData[0];
+    rep->nodeState = newState;
+    rep->nodeState.masterNodeId = cmasterNodeId;
+    rep->nodeState.setNodeGroup(c_nodeGroup);
+    EXECUTE_DIRECT(QMGR, GSN_NODE_STATE_REP, signal, 
+		   NodeStateRep::SignalLength);
+    
+    if(StopReq::getPerformRestart(c_stopRec.stopReq.requestInfo)){
+      jam();
+      StartOrd * startOrd = (StartOrd *)&signal->theData[0];
+      startOrd->restartInfo = c_stopRec.stopReq.requestInfo;
+      sendSignalWithDelay(CMVMI_REF, GSN_START_ORD, signal, 500, 
+			  StartOrd::SignalLength);
+    } else {
+      jam();
+      sendSignalWithDelay(CMVMI_REF, GSN_STOP_ORD, signal, 500, 1);
+    }
+    return;
+  }
+  
+unblock:
+  WaitGCPReq * req = (WaitGCPReq*)&signal->theData[0];
+  req->senderRef = reference();
+  req->senderData = StopRecord::SR_UNBLOCK_GCP_START_GCP;
+  req->requestType = WaitGCPReq::UnblockStartGcp;
+  sendSignal(DBDIH_REF, GSN_WAIT_GCP_REQ, signal, 
+	     WaitGCPReq::SignalLength, JBB);
+}
+
+void
+Ndbcntr::execSTOP_CONF(Signal* signal)
+{
+  jamEntry();
+  StopConf *conf = (StopConf*)signal->getDataPtr();
+  ndbrequire(c_stopRec.m_state == StopRecord::SR_QMGR_STOP_REQ);
+  c_stopRec.m_stop_req_counter.clearWaitingFor(conf->nodeId);
+  if (c_stopRec.m_stop_req_counter.done())
+  {
+    char buf[100];
+    NdbNodeBitmask mask;
+    mask.assign(NdbNodeBitmask::Size, c_stopRec.stopReq.nodes);
+    infoEvent("Stopping of %s", mask.getText(buf));
+    ndbout_c("Stopping of %s", mask.getText(buf));    
+
+    /**
+     * Kill any node...
+     */
+    FailRep * const failRep = (FailRep *)&signal->theData[0];
+    failRep->failCause = FailRep::ZMULTI_NODE_SHUTDOWN;
+    NodeReceiverGroup rg(QMGR, c_clusterNodes);
+    Uint32 nodeId = 0;
+    while ((nodeId = NdbNodeBitmask::find(c_stopRec.stopReq.nodes, nodeId+1))
+	   != NdbNodeBitmask::NotFound)
+    {
+      failRep->failNodeId = nodeId;
+      sendSignal(rg, GSN_FAIL_REP, signal, FailRep::SignalLength, JBA);
+    }
+    c_stopRec.m_state = StopRecord::SR_WAIT_NODE_FAILURES;
+    return;
+  }
 }
 
 void Ndbcntr::execSTTORRY(Signal* signal){
@@ -2381,7 +2663,6 @@ void Ndbcntr::execREAD_CONFIG_CONF(Signal* signal){
 
 void Ndbcntr::execSTART_ORD(Signal* signal){
   jamEntry();
-  ndbrequire(NO_OF_BLOCKS == ALL_BLOCKS_SZ);
   c_missra.execSTART_ORD(signal);
 }
 
@@ -2398,12 +2679,6 @@ Ndbcntr::clearFilesystem(Signal* signal){
   sendSignal(NDBFS_REF, GSN_FSREMOVEREQ, signal, 
              FsRemoveReq::SignalLength, JBA);
   c_fsRemoveCount++;
-}
-
-void
-Ndbcntr::execFSREMOVEREF(Signal* signal){
-  jamEntry();
-  ndbrequire(0);
 }
 
 void
@@ -2456,7 +2731,7 @@ void Ndbcntr::Missra::sendNextREAD_CONFIG_REQ(Signal* signal){
    * Finished...
    */
   currentStartPhase = 0;
-  for(Uint32 i = 0; i<NO_OF_BLOCKS; i++){
+  for(Uint32 i = 0; i<ALL_BLOCKS_SZ; i++){
     if(ALL_BLOCKS[i].NextSP < currentStartPhase)
       currentStartPhase = ALL_BLOCKS[i].NextSP;
   }
@@ -2502,6 +2777,14 @@ void Ndbcntr::Missra::sendNextSTTOR(Signal* signal){
     
     const Uint32 start = currentBlockIndex;
     
+    if (currentStartPhase == ZSTART_PHASE_6)
+    {
+      // Ndbd has passed the critical startphases.
+      // Change error handler from "startup" state
+      // to normal state.
+      ErrorReporter::setErrorHandlerShutdownType();
+    }
+
     for(; currentBlockIndex < ALL_BLOCKS_SZ; currentBlockIndex++){
       jam();
       if(ALL_BLOCKS[currentBlockIndex].NextSP == currentStartPhase){
@@ -2548,7 +2831,7 @@ void Ndbcntr::Missra::sendNextSTTOR(Signal* signal){
       cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 3, JBB);
     }
   }
-  
+
   signal->theData[0] = EventReport::NDBStartCompleted;
   signal->theData[1] = NDB_VERSION;
   cntr.sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);

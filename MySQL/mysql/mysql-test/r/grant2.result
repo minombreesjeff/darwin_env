@@ -94,5 +94,62 @@ i
 2
 3
 REVOKE ALL ON mysqltest_1.t1 FROM mysqltest_1@'127.0.0.0/255.0.0.0';
+delete from mysql.user where user like 'mysqltest\_1';
+flush privileges;
 drop table mysqltest_1.t1;
+grant all on mysqltest_1.* to mysqltest_1@'127.0.0.1';
+select current_user();
+current_user()
+mysqltest_1@127.0.0.1
+set password = password('changed');
+select host, length(password) from mysql.user where user like 'mysqltest\_1';
+host	length(password)
+127.0.0.1	41
+revoke all on mysqltest_1.* from mysqltest_1@'127.0.0.1';
+delete from mysql.user where user like 'mysqltest\_1';
+flush privileges;
+grant all on mysqltest_1.* to mysqltest_1@'127.0.0.0/255.0.0.0';
+select current_user();
+current_user()
+mysqltest_1@127.0.0.0/255.0.0.0
+set password = password('changed');
+select host, length(password) from mysql.user where user like 'mysqltest\_1';
+host	length(password)
+127.0.0.0/255.0.0.0	41
+revoke all on mysqltest_1.* from mysqltest_1@'127.0.0.0/255.0.0.0';
+delete from mysql.user where user like 'mysqltest\_1';
+flush privileges;
 drop database mysqltest_1;
+set password = password("changed");
+ERROR 42000: Access denied for user ''@'localhost' to database 'mysql'
+lock table mysql.user write;
+ flush privileges;
+ grant all on *.* to 'mysqltest_1'@'localhost';
+unlock tables;
+lock table mysql.user write;
+ set password for 'mysqltest_1'@'localhost' = password('');
+ revoke all on *.* from 'mysqltest_1'@'localhost';
+unlock tables;
+drop user 'mysqltest_1'@'localhost';
+insert into mysql.user (user, host) values
+('mysqltest_1', 'host1'),
+('mysqltest_2', 'host2'),
+('mysqltest_3', 'host3'),
+('mysqltest_4', 'host4'),
+('mysqltest_5', 'host5'),
+('mysqltest_6', 'host6'),
+('mysqltest_7', 'host7');
+flush privileges;
+drop user mysqltest_3@host3;
+drop user mysqltest_1@host1, mysqltest_2@host2, mysqltest_4@host4,
+mysqltest_5@host5, mysqltest_6@host6, mysqltest_7@host7;
+create database mysqltest_1;
+grant select, insert, update on `mysqltest\_1`.* to mysqltest_1@localhost;
+set sql_log_off = 1;
+ERROR HY000: Access denied; you need the SUPER privilege for this operation
+set sql_log_bin = 0;
+ERROR HY000: Access denied; you need the SUPER privilege for this operation
+delete from mysql.user where user like 'mysqltest\_1';
+delete from mysql.db where user like 'mysqltest\_1';
+drop database mysqltest_1;
+flush privileges;

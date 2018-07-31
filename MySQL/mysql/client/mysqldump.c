@@ -164,6 +164,10 @@ static struct my_option my_long_options[] =
   {"allow-keywords", OPT_KEYWORDS,
    "Allow creation of column names that are keywords.", (gptr*) &opt_keywords,
    (gptr*) &opt_keywords, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#ifdef __NETWARE__
+  {"autoclose", OPT_AUTO_CLOSE, "Auto close the screen on exit for Netware.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"character-sets-dir", OPT_CHARSETS_DIR,
    "Directory where character sets are.", (gptr*) &charsets_dir,
    (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -561,6 +565,11 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	       char *argument)
 {
   switch (optid) {
+#ifdef __NETWARE__
+  case OPT_AUTO_CLOSE:
+    setscreenmode(SCR_AUTOCLOSE_ON_EXIT);
+    break;
+#endif
   case 'p':
     if (argument)
     {
@@ -774,8 +783,8 @@ static int get_options(int *argc, char ***argv)
 static void DBerror(MYSQL *mysql, const char *when)
 {
   DBUG_ENTER("DBerror");
-  my_printf_error(0,"Got error: %d: %s %s", MYF(0),
-		  mysql_errno(mysql), mysql_error(mysql), when);
+  fprintf(stderr, "%s: Got error: %d: %s %s\n", my_progname,
+          mysql_errno(mysql), mysql_error(mysql), when);
   safe_exit(EX_MYSQLERR);
   DBUG_VOID_RETURN;
 } /* DBerror */
@@ -802,9 +811,9 @@ static int mysql_query_with_error_report(MYSQL *mysql_con, MYSQL_RES **res,
   if (mysql_query(mysql_con, query) ||
       (res && !((*res)= mysql_store_result(mysql_con))))
   {
-    my_printf_error(0, "%s: Couldn't execute '%s': %s (%d)",
-                    MYF(0), my_progname, query,
-                    mysql_error(mysql_con), mysql_errno(mysql_con));
+    fprintf(stderr, "%s: Couldn't execute '%s': %s (%d)\n",
+            my_progname, query,
+            mysql_error(mysql_con), mysql_errno(mysql_con));
     return 1;
   }
   return 0;
@@ -1696,13 +1705,19 @@ static void dumpTable(uint numFields, char *table)
       check_io(md_result_file);
     }
     if (mysql_query_with_error_report(sock, 0, query))
+    {
       DBerror(sock, "when retrieving data from server");
+      goto err;
+    }
     if (quick)
       res=mysql_use_result(sock);
     else
       res=mysql_store_result(sock);
     if (!res)
+    {
       DBerror(sock, "when retrieving data from server");
+      goto err;
+    }
     if (verbose)
       fprintf(stderr, "-- Retrieving rows...\n");
     if (mysql_num_fields(res) != numFields)
@@ -1713,15 +1728,16 @@ static void dumpTable(uint numFields, char *table)
       goto err;
     }
 
-    if (opt_disable_keys)
-    {
-      fprintf(md_result_file, "\n/*!40000 ALTER TABLE %s DISABLE KEYS */;\n",
-	      opt_quoted_table);
-      check_io(md_result_file);
-    }
     if (opt_lock)
     {
       fprintf(md_result_file,"LOCK TABLES %s WRITE;\n", opt_quoted_table);
+      check_io(md_result_file);
+    }
+    /* Moved disable keys to after lock per bug 15977 */
+    if (opt_disable_keys)
+    {
+      fprintf(md_result_file, "/*!40000 ALTER TABLE %s DISABLE KEYS */;\n",
+	      opt_quoted_table);
       check_io(md_result_file);
     }
 
@@ -1982,15 +1998,17 @@ static void dumpTable(uint numFields, char *table)
       error= EX_CONSCHECK;
       goto err;
     }
-    if (opt_lock)
-    {
-      fputs("UNLOCK TABLES;\n", md_result_file);
-      check_io(md_result_file);
-    }
+
+    /* Moved enable keys to before unlock per bug 15977 */
     if (opt_disable_keys)
     {
       fprintf(md_result_file,"/*!40000 ALTER TABLE %s ENABLE KEYS */;\n",
 	      opt_quoted_table);
+      check_io(md_result_file);
+    }
+    if (opt_lock)
+    {
+      fputs("UNLOCK TABLES;\n", md_result_file);
       check_io(md_result_file);
     }
     if (opt_autocommit)
@@ -2206,14 +2224,14 @@ static int dump_all_tables_in_db(char *database)
   different case (e.g.  T1 vs t1)
   
   RETURN
-    int - 0 if a tablename was retrieved.  1 if not
+    pointer to the table name
+    0 if error
 */
 
-static int get_actual_table_name(const char *old_table_name, 
-                                  char *new_table_name, 
-                                  int buf_size)
+static char *get_actual_table_name(const char *old_table_name, MEM_ROOT *root)
 {
-  int retval;
+  char *name= 0;
+  ulong *lengths;
   MYSQL_RES  *tableRes;
   MYSQL_ROW  row;
   char query[50 + 2*NAME_LEN];
@@ -2232,40 +2250,36 @@ static int get_actual_table_name(const char *old_table_name,
   }
 
   tableRes= mysql_store_result( sock );
-  retval = 1;
   if (tableRes != NULL)
   {
     my_ulonglong numRows= mysql_num_rows(tableRes);
     if (numRows > 0)
     {
       row= mysql_fetch_row( tableRes );
-      strmake(new_table_name, row[0], buf_size-1);
-      retval= 0;
-      DBUG_PRINT("info", ("new_table_name: %s", new_table_name));
+      lengths= mysql_fetch_lengths(tableRes);
+      name= strmake_root(root, row[0], lengths[0]);
     }
     mysql_free_result(tableRes);
   }
-  DBUG_PRINT("exit", ("retval: %d", retval));
-  DBUG_RETURN(retval);
+  DBUG_PRINT("exit", ("new_table_name: %s", name));
+  DBUG_RETURN(name);
 }
 
 
 static int dump_selected_tables(char *db, char **table_names, int tables)
 {
-  uint numrows, i;
+  uint numrows;
   char table_buff[NAME_LEN*+3];
-  char new_table_name[NAME_LEN];
   DYNAMIC_STRING lock_tables_query;
-  HASH dump_tables;
+  MEM_ROOT root;
+  char **dump_tables, **pos;
   DBUG_ENTER("dump_selected_tables");
 
   if (init_dumping(db))
     return 1;
 
-  /* Init hash table for storing the actual name of tables to dump */
-  if (hash_init(&dump_tables, charset_info, 16, 0, 0,
-                (hash_get_key) get_table_key, (hash_free_key) free_table_ent,
-                0))
+  init_alloc_root(&root, 8192, 0);
+  if (!(dump_tables= pos= (char**) alloc_root(&root, tables * sizeof(char *))))
     exit(EX_EOM);
 
   init_dynamic_string(&lock_tables_query, "LOCK TABLES ", 256, 1024);
@@ -2273,22 +2287,16 @@ static int dump_selected_tables(char *db, char **table_names, int tables)
   {
 
     /* the table name passed on commandline may be wrong case */
-    if (!get_actual_table_name(*table_names,
-                               new_table_name, sizeof(new_table_name) ))
+    if ((*pos= get_actual_table_name(*table_names, &root)))
     {
       /* Add found table name to lock_tables_query */
       if (lock_tables)
       {
         dynstr_append(&lock_tables_query,
-                      quote_name(new_table_name, table_buff, 1));
+                      quote_name(*pos, table_buff, 1));
         dynstr_append(&lock_tables_query, " READ /*!32311 LOCAL */,");
       }
-
-      /* Add found table name to dump_tables list */
-      if (my_hash_insert(&dump_tables,
-                         (byte*)my_strdup(new_table_name, MYF(0))))
-        exit(EX_EOM);
-
+      pos++;
     }
     else
     {
@@ -2317,15 +2325,14 @@ static int dump_selected_tables(char *db, char **table_names, int tables)
     print_xml_tag1(md_result_file, "", "database name=", db, "\n");
 
   /* Dump each selected table */
-  for (i= 0 ; i < dump_tables.records ; i++)
+  for (; dump_tables < pos; dump_tables++)
   {
-    const char *table_name= hash_element(&dump_tables, i);
-    DBUG_PRINT("info",("Dumping table %s", table_name));
-    numrows= getTableStructure(table_name, db);
+    DBUG_PRINT("info",("Dumping table %s", *dump_tables));
+    numrows= getTableStructure(*dump_tables, db);
     if (!dFlag && numrows > 0)
-      dumpTable(numrows, table_name);
+      dumpTable(numrows, *dump_tables);
   }
-  hash_free(&dump_tables);
+  free_root(&root, MYF(0));
   my_free(order_by, MYF(MY_ALLOW_ZERO_PTR));
   order_by= 0;
   if (opt_xml)
@@ -2370,7 +2377,7 @@ static int do_show_master_status(MYSQL *mysql_con)
     {
       /* SHOW MASTER STATUS reports nothing and --force is not enabled */
       my_printf_error(0, "Error: Binlogging on server not active", 
-		      MYF(0), mysql_error(mysql_con));
+		      MYF(0));
       mysql_free_result(master);
       return 1;
     }
@@ -2548,8 +2555,11 @@ static const char *check_if_ignore_table(const char *table_name)
     mysql_free_result(res);
     return 0;					/* assume table is ok */
   }
-  if (strcmp(row[1], (result= "MRG_MyISAM")) &&
-      strcmp(row[1], (result= "MRG_ISAM")))
+  /* Some forward-compatibility: don't dump data from a VIEW */
+  if (!row[1])
+    result= "VIEW";
+  else if (strcmp(row[1], (result= "MRG_MyISAM")) &&
+           strcmp(row[1], (result= "MRG_ISAM")))
     result= 0;
   mysql_free_result(res);
   return result;

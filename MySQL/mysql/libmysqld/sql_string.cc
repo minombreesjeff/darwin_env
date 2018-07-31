@@ -248,6 +248,10 @@ bool String::copy(const char *str,uint32 arg_length, CHARSET_INFO *cs)
    0  No conversion needed
    1  Either character set conversion or adding leading  zeros
       (e.g. for UCS-2) must be done
+
+  NOTE
+  to_cs may be NULL for "no conversion" if the system variable
+  character_set_results is NULL.
 */
 
 bool String::needs_conversion(uint32 arg_length,
@@ -256,7 +260,8 @@ bool String::needs_conversion(uint32 arg_length,
 			      uint32 *offset)
 {
   *offset= 0;
-  if ((to_cs == &my_charset_bin) || 
+  if (!to_cs ||
+      (to_cs == &my_charset_bin) || 
       (to_cs == from_cs) ||
       my_charset_same(from_cs, to_cs) ||
       ((from_cs == &my_charset_bin) &&
@@ -806,8 +811,18 @@ copy_and_convert(char *to, uint32 to_length, CHARSET_INFO *to_cs,
       from++;
       wc= '?';
     }
+    else if (cnvres > MY_CS_TOOSMALL)
+    {
+      /*
+        A correct multibyte sequence detected
+        But it doesn't have Unicode mapping.
+      */
+      error_count++;
+      from+= (-cnvres);
+      wc= '?';
+    }
     else
-      break;					// Impossible char.
+      break;  // Not enough characters
 
 outp:
     if ((cnvres= (*wc_mb)(to_cs, wc, (uchar*) to, to_end)) > 0)

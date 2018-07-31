@@ -152,6 +152,7 @@ int deny_severity = LOG_WARNING;
 #define zVOLSTATE_MAINTENANCE 3
 
 #ifdef __NETWARE__
+#include <nks/netware.h>
 #include <nks/vm.h>
 #include <library.h>
 #include <monitor.h>
@@ -270,6 +271,7 @@ arg_cmp_func Arg_comparator::comparator_matrix[4][2] =
 bool opt_log, opt_update_log, opt_bin_log, opt_slow_log;
 bool opt_error_log= IF_WIN(1,0);
 bool opt_disable_networking=0, opt_skip_show_db=0;
+bool opt_character_set_client_handshake= 1;
 bool lower_case_table_names_used= 0;
 bool server_id_supplied = 0;
 bool opt_endinfo,using_udf_functions, locked_in_memory;
@@ -285,6 +287,7 @@ my_bool opt_safe_user_create = 0, opt_no_mix_types = 0;
 my_bool opt_show_slave_auth_info, opt_sql_bin_update = 0;
 my_bool opt_log_slave_updates= 0;
 my_bool	opt_console= 0, opt_bdb, opt_innodb, opt_isam, opt_ndbcluster;
+my_bool opt_merge;
 #ifdef HAVE_NDBCLUSTER_DB
 const char *opt_ndbcluster_connectstring= 0;
 my_bool	opt_ndb_shm, opt_ndb_optimized_node_selection;
@@ -334,6 +337,22 @@ ulong specialflag=0,opened_tables=0,created_tmp_tables=0,
 ulong binlog_cache_use= 0, binlog_cache_disk_use= 0;
 ulong max_connections,max_used_connections,
       max_connect_errors, max_user_connections = 0;
+/*
+  Limit of the total number of prepared statements in the server.
+  Is necessary to protect the server against out-of-memory attacks.
+*/
+ulong max_prepared_stmt_count;
+/*
+  Current total number of prepared statements in the server. This number
+  is exact, and therefore may not be equal to the difference between
+  `com_stmt_prepare' and `com_stmt_close' (global status variables), as
+  the latter ones account for all registered attempts to prepare
+  a statement (including unsuccessful ones).  Prepared statements are
+  currently connection-local: if the same SQL query text is prepared in
+  two different connections, this counts as two distinct prepared
+  statements.
+*/
+ulong prepared_stmt_count=0;
 ulong thread_id=1L,current_pid;
 ulong slow_launch_threads = 0, sync_binlog_period;
 ulong expire_logs_days = 0;
@@ -359,6 +378,7 @@ key_map key_map_full(0);                        // Will be initialized later
 
 const char *opt_date_time_formats[3];
 
+char compiled_default_collation_name[]= MYSQL_DEFAULT_COLLATION_NAME;
 char *language_ptr, *default_collation_name, *default_character_set_name;
 char mysql_data_home_buff[2], *mysql_data_home=mysql_real_data_home;
 struct passwd *user_info;
@@ -367,6 +387,7 @@ char *mysqld_unix_port, *opt_mysql_tmpdir;
 char *my_bind_addr_str;
 const char **errmesg;			/* Error messages */
 const char *myisam_recover_options_str="OFF";
+const char *myisam_stats_method_str="nulls_unequal";
 const char *sql_mode_str="OFF";
 /* name of reference on left espression in rewritten IN subquery */
 const char *in_left_expr_name= "<left expr>";
@@ -382,6 +403,7 @@ Le_creator le_creator;
 
 
 FILE *bootstrap_file;
+FILE *stderror_file=0;
 
 I_List<i_string_pair> replicate_rewrite_db;
 I_List<i_string> replicate_do_db, replicate_ignore_db;
@@ -400,7 +422,7 @@ CHARSET_INFO *system_charset_info, *files_charset_info ;
 CHARSET_INFO *national_charset_info, *table_alias_charset;
 
 SHOW_COMP_OPTION have_berkeley_db, have_innodb, have_isam, have_ndbcluster, 
-  have_example_db, have_archive_db, have_csv_db;
+  have_example_db, have_archive_db, have_csv_db, have_merge_db;
 SHOW_COMP_OPTION have_raid, have_openssl, have_symlink, have_query_cache;
 SHOW_COMP_OPTION have_geometry, have_rtree_keys;
 SHOW_COMP_OPTION have_crypt, have_compress;
@@ -417,6 +439,17 @@ pthread_mutex_t LOCK_mysql_create_db, LOCK_Acl, LOCK_open, LOCK_thread_count,
 		LOCK_crypt, LOCK_bytes_sent, LOCK_bytes_received,
 	        LOCK_global_system_variables,
 		LOCK_user_conn, LOCK_slave_list, LOCK_active_mi;
+/*
+  The below lock protects access to two global server variables:
+  max_prepared_stmt_count and prepared_stmt_count. These variables
+  set the limit and hold the current total number of prepared statements
+  in the server, respectively. As PREPARE/DEALLOCATE rate in a loaded
+  server may be fairly high, we need a dedicated lock.
+*/
+pthread_mutex_t LOCK_prepared_stmt_count;
+#ifdef HAVE_OPENSSL
+pthread_mutex_t LOCK_des_key_file;
+#endif
 rw_lock_t	LOCK_grant, LOCK_sys_init_connect, LOCK_sys_init_slave;
 pthread_cond_t COND_refresh,COND_thread_count, COND_slave_stopped,
 	       COND_slave_start;
@@ -507,8 +540,22 @@ HANDLE smem_event_connect_request= 0;
 
 #include "sslopt-vars.h"
 #ifdef HAVE_OPENSSL
+#include <openssl/crypto.h>
+
+typedef struct CRYPTO_dynlock_value
+{
+  rw_lock_t lock;
+} openssl_lock_t;
+
 char *des_key_file;
 struct st_VioSSLAcceptorFd *ssl_acceptor_fd;
+static openssl_lock_t *openssl_stdlocks;
+
+static openssl_lock_t *openssl_dynlock_create(const char *, int);
+static void openssl_dynlock_destroy(openssl_lock_t *, const char *, int);
+static void openssl_lock_function(int, int, const char *, int);
+static void openssl_lock(int, openssl_lock_t *, const char *, int);
+static unsigned long openssl_id_function();
 #endif /* HAVE_OPENSSL */
 
 
@@ -645,9 +692,12 @@ static void close_connections(void)
   }
 #endif
   end_thr_alarm(0);			 // Abort old alarms.
-  end_slave();
 
-  /* First signal all threads that it's time to die */
+  /*
+    First signal all threads that it's time to die
+    This will give the threads some time to gracefully abort their
+    statements and inform their clients that the server is about to die.
+  */
 
   THD *tmp;
   (void) pthread_mutex_lock(&LOCK_thread_count); // For unlink from list
@@ -657,7 +707,10 @@ static void close_connections(void)
   {
     DBUG_PRINT("quit",("Informing thread %ld that it's time to die",
 		       tmp->thread_id));
-    tmp->killed=1;
+    /* We skip slave threads on this first loop through. */
+    if (tmp->slave_thread) continue;
+
+    tmp->killed= 1;
     if (tmp->mysys_var)
     {
       tmp->mysys_var->abort=1;
@@ -673,10 +726,16 @@ static void close_connections(void)
   }
   (void) pthread_mutex_unlock(&LOCK_thread_count); // For unlink from list
 
-  if (thread_count)
-    sleep(1);					// Give threads time to die
+  end_slave();
 
-  /* Force remaining threads to die by closing the connection to the client */
+  if (thread_count)
+    sleep(2);					// Give threads time to die
+
+  /*
+    Force remaining threads to die by closing the connection to the client
+    This will ensure that threads that are waiting for a command from the
+    client on a blocking read call are aborted.
+  */
 
   for (;;)
   {
@@ -691,8 +750,9 @@ static void close_connections(void)
 #ifndef __bsdi__				// Bug in BSDI kernel
     if (tmp->vio_ok())
     {
-      sql_print_error(ER(ER_FORCING_CLOSE),my_progname,
-		      tmp->thread_id,tmp->user ? tmp->user : "");
+      if (global_system_variables.log_warnings)
+        sql_print_warning(ER(ER_FORCING_CLOSE),my_progname,
+                          tmp->thread_id,tmp->user ? tmp->user : "");
       close_connection(tmp,0,0);
     }
 #endif
@@ -805,7 +865,20 @@ void kill_mysql(void)
   DBUG_VOID_RETURN;
 }
 
-	/* Force server down. kill all connections and threads and exit */
+/*
+  Force server down. Kill all connections and threads and exit
+
+  SYNOPSIS
+  kill_server
+
+  sig_ptr       Signal number that caused kill_server to be called.
+
+  NOTE!
+    A signal number of 0 mean that the function was not called
+    from a signal handler and there is thus no signal to block
+    or stop, we just want to kill the server.
+
+*/
 
 #if defined(OS2) || defined(__NETWARE__)
 extern "C" void kill_server(int sig_ptr)
@@ -826,7 +899,8 @@ static void __cdecl kill_server(int sig_ptr)
     RETURN_FROM_KILL_SERVER;
   kill_in_progress=TRUE;
   abort_loop=1;					// This should be set
-  signal(sig,SIG_IGN);
+  if (sig != 0) // 0 is not a valid signal number
+    my_sigset(sig,SIG_IGN);
   if (sig == MYSQL_KILL_SIGNAL || sig == 0)
     sql_print_information(ER(ER_NORMAL_SHUTDOWN),my_progname);
   else
@@ -874,21 +948,16 @@ extern "C" pthread_handler_decl(kill_server_thread,arg __attribute__((unused)))
 }
 #endif
 
-#if defined(__amiga__)
-#undef sigset
-#define sigset signal
-#endif
-
 extern "C" sig_handler print_signal_warning(int sig)
 {
   if (!DBUG_IN_USE)
   {
     if (global_system_variables.log_warnings)
-      sql_print_warning("Got signal %d from thread %d",
-		      sig,my_thread_id());
+      sql_print_warning("Got signal %d from thread %ld",
+                        sig, my_thread_id());
   }
 #ifdef DONT_REMEMBER_SIGNAL
-  sigset(sig,print_signal_warning);		/* int. thread system calls */
+  my_sigset(sig,print_signal_warning);		/* int. thread system calls */
 #endif
 #if !defined(__WIN__) && !defined(OS2) && !defined(__NETWARE__)
   if (sig == SIGALRM)
@@ -1006,10 +1075,9 @@ void clean_up(bool print_message)
 #ifdef HAVE_OPENSSL
   if (ssl_acceptor_fd)
     my_free((gptr) ssl_acceptor_fd, MYF(MY_ALLOW_ZERO_PTR));
-  free_des_key_file();
 #endif /* HAVE_OPENSSL */
 #ifdef USE_REGEX
-  regex_end();
+  my_regex_end();
 #endif
 
   if (print_message && errmesg)
@@ -1076,6 +1144,12 @@ static void clean_up_mutexes()
   (void) pthread_mutex_destroy(&LOCK_bytes_sent);
   (void) pthread_mutex_destroy(&LOCK_bytes_received);
   (void) pthread_mutex_destroy(&LOCK_user_conn);
+#ifdef HAVE_OPENSSL
+  (void) pthread_mutex_destroy(&LOCK_des_key_file);
+  for (int i= 0; i < CRYPTO_num_locks(); ++i)
+    (void) rwlock_destroy(&openssl_stdlocks[i].lock);
+  OPENSSL_free(openssl_stdlocks);
+#endif
 #ifdef HAVE_REPLICATION
   (void) pthread_mutex_destroy(&LOCK_rpl_status);
   (void) pthread_cond_destroy(&COND_rpl_status);
@@ -1084,6 +1158,7 @@ static void clean_up_mutexes()
   (void) rwlock_destroy(&LOCK_sys_init_connect);
   (void) rwlock_destroy(&LOCK_sys_init_slave);
   (void) pthread_mutex_destroy(&LOCK_global_system_variables);
+  (void) pthread_mutex_destroy(&LOCK_prepared_stmt_count);
   (void) pthread_cond_destroy(&COND_thread_count);
   (void) pthread_cond_destroy(&COND_refresh);
   (void) pthread_cond_destroy(&COND_thread_cache);
@@ -1369,8 +1444,8 @@ static void server_init(void)
 
     if (strlen(mysqld_unix_port) > (sizeof(UNIXaddr.sun_path) - 1))
     {
-      sql_print_error("The socket file path is too long (> %d): %s",
-                    sizeof(UNIXaddr.sun_path) - 1, mysqld_unix_port);
+      sql_print_error("The socket file path is too long (> %lu): %s",
+                      sizeof(UNIXaddr.sun_path) - 1, mysqld_unix_port);
       unireg_abort(1);
     }
     if ((unix_sock= socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
@@ -1548,23 +1623,6 @@ void flush_thread_cache()
 }
 
 
-/*
-  Aborts a thread nicely. Commes here on SIGPIPE
-  TODO: One should have to fix that thr_alarm know about this
-  thread too.
-*/
-
-#ifdef THREAD_SPECIFIC_SIGPIPE
-extern "C" sig_handler abort_thread(int sig __attribute__((unused)))
-{
-  THD *thd=current_thd;
-  DBUG_ENTER("abort_thread");
-  if (thd)
-    thd->killed=1;
-  DBUG_VOID_RETURN;
-}
-#endif
-
 /******************************************************************************
   Setup a signal thread with handles all signals.
   Because Linux doesn't support schemas use a mutex to check that
@@ -1731,6 +1789,7 @@ ulong neb_event_callback(struct EventBlock *eblock)
     if (!memcmp(&voldata->volID, &datavolid, sizeof(VolumeID_t)))
     {
       consoleprintf("MySQL data volume is deactivated, shutting down MySQL Server \n");
+      event_flag= TRUE;
       nw_panic = TRUE;
       event_flag= TRUE;
       kill_server(0);
@@ -1979,8 +2038,8 @@ static void init_signals(void)
   DBUG_ENTER("init_signals");
 
   if (test_flags & TEST_SIGINT)
-    sigset(THR_KILL_SIGNAL,end_thread_signal);
-  sigset(THR_SERVER_ALARM,print_signal_warning); // Should never be called!
+    my_sigset(THR_KILL_SIGNAL,end_thread_signal);
+  my_sigset(THR_SERVER_ALARM,print_signal_warning); // Should never be called!
 
   if (!(test_flags & TEST_NO_STACKTRACE) || (test_flags & TEST_CORE_ON_SIGNAL))
   {
@@ -2014,13 +2073,8 @@ static void init_signals(void)
   }
 #endif
   (void) sigemptyset(&set);
-#ifdef THREAD_SPECIFIC_SIGPIPE
-  sigset(SIGPIPE,abort_thread);
+  my_sigset(SIGPIPE,SIG_IGN);
   sigaddset(&set,SIGPIPE);
-#else
-  (void) signal(SIGPIPE,SIG_IGN);		// Can't know which thread
-  sigaddset(&set,SIGPIPE);
-#endif
   sigaddset(&set,SIGINT);
 #ifndef IGNORE_SIGHUP_SIGQUIT
   sigaddset(&set,SIGQUIT);
@@ -2472,19 +2526,43 @@ static int init_common_variables(const char *conf_file_name, int argc,
 
   /* connections and databases needs lots of files */
   {
-    uint files, wanted_files;
+    uint files, wanted_files, max_open_files;
 
-    wanted_files= 10+(uint) max(max_connections*5,
-				 max_connections+table_cache_size*2);
-    set_if_bigger(wanted_files, open_files_limit);
-    files= my_set_max_open_files(wanted_files);
+    /* MyISAM requires two file handles per table. */
+    wanted_files= 10+max_connections+table_cache_size*2;
+    /*
+      We are trying to allocate no less than max_connections*5 file
+      handles (i.e. we are trying to set the limit so that they will
+      be available).  In addition, we allocate no less than how much
+      was already allocated.  However below we report a warning and
+      recompute values only if we got less file handles than were
+      explicitly requested.  No warning and re-computation occur if we
+      can't get max_connections*5 but still got no less than was
+      requested (value of wanted_files).
+    */
+    max_open_files= max(max(wanted_files, max_connections*5),
+                        open_files_limit);
+    files= my_set_max_open_files(max_open_files);
 
     if (files < wanted_files)
     {
       if (!open_files_limit)
       {
-	max_connections=	(ulong) min((files-10),max_connections);
-	table_cache_size= (ulong) max((files-10-max_connections)/2,64);
+        /*
+          If we have requested too much file handles than we bring
+          max_connections in supported bounds.
+        */
+        max_connections= (ulong) min(files-10-TABLE_OPEN_CACHE_MIN*2,
+                                     max_connections);
+        /*
+          Decrease table_cache_size according to max_connections, but
+          not below TABLE_OPEN_CACHE_MIN.  Outer min() ensures that we
+          never increase table_cache_size automatically (that could
+          happen if max_connections is decreased above).
+        */
+        table_cache_size= (ulong) min(max((files-10-max_connections)/2,
+                                          TABLE_OPEN_CACHE_MIN),
+                                      table_cache_size);    
 	DBUG_PRINT("warning",
 		   ("Changed limits: max_open_files: %u  max_connections: %ld  table_cache: %ld",
 		    files, max_connections, table_cache_size));
@@ -2506,7 +2584,7 @@ static int init_common_variables(const char *conf_file_name, int argc,
   set_var_init();
   mysys_uses_curses=0;
 #ifdef USE_REGEX
-  regex_init(&my_charset_latin1);
+  my_regex_init(&my_charset_latin1);
 #endif
   if (!(default_charset_info= get_charset_by_csname(default_character_set_name,
 						    MY_CS_PRIMARY,
@@ -2555,6 +2633,55 @@ static int init_common_variables(const char *conf_file_name, int argc,
   if (my_dbopt_init())
     return 1;
 
+  /*
+    Ensure that lower_case_table_names is set on system where we have case
+    insensitive names.  If this is not done the users MyISAM tables will
+    get corrupted if accesses with names of different case.
+  */
+  DBUG_PRINT("info", ("lower_case_table_names: %d", lower_case_table_names));
+  if (!lower_case_table_names &&
+      (lower_case_file_system=
+       (test_if_case_insensitive(mysql_real_data_home) == 1)))
+  {
+    if (lower_case_table_names_used)
+    {
+      if (global_system_variables.log_warnings)
+	sql_print_warning("\
+You have forced lower_case_table_names to 0 through a command-line \
+option, even though your file system '%s' is case insensitive.  This means \
+that you can corrupt a MyISAM table by accessing it with different cases. \
+You should consider changing lower_case_table_names to 1 or 2",
+			mysql_real_data_home);
+    }
+    else
+    {
+      if (global_system_variables.log_warnings)
+	sql_print_warning("Setting lower_case_table_names=2 because file system for %s is case insensitive", mysql_real_data_home);
+      lower_case_table_names= 2;
+    }
+  }
+  else if (lower_case_table_names == 2 &&
+           !(lower_case_file_system=
+             (test_if_case_insensitive(mysql_real_data_home) == 1)))
+  {
+    if (global_system_variables.log_warnings)
+      sql_print_warning("lower_case_table_names was set to 2, even though your "
+                        "the file system '%s' is case sensitive.  Now setting "
+                        "lower_case_table_names to 0 to avoid future problems.",
+			mysql_real_data_home);
+    lower_case_table_names= 0;
+  }
+  else
+  {
+    lower_case_file_system=
+      (test_if_case_insensitive(mysql_real_data_home) == 1);
+  }
+
+  /* Reset table_alias_charset, now that lower_case_table_names is set. */
+  table_alias_charset= (lower_case_table_names ?
+			files_charset_info :
+			&my_charset_bin);
+
   return 0;
 }
 
@@ -2578,7 +2705,11 @@ static int init_thread_environment()
   (void) pthread_mutex_init(&LOCK_user_conn, MY_MUTEX_INIT_FAST);
   (void) pthread_mutex_init(&LOCK_active_mi, MY_MUTEX_INIT_FAST);
   (void) pthread_mutex_init(&LOCK_global_system_variables, MY_MUTEX_INIT_FAST);
+  (void) pthread_mutex_init(&LOCK_prepared_stmt_count, MY_MUTEX_INIT_FAST);
   (void) pthread_mutex_init(&LOCK_uuid_generator, MY_MUTEX_INIT_FAST);
+#ifdef HAVE_OPENSSL
+  (void) pthread_mutex_init(&LOCK_des_key_file,MY_MUTEX_INIT_FAST);
+#endif
   (void) my_rwlock_init(&LOCK_sys_init_connect, NULL);
   (void) my_rwlock_init(&LOCK_sys_init_slave, NULL);
   (void) my_rwlock_init(&LOCK_grant, NULL);
@@ -2605,8 +2736,88 @@ static int init_thread_environment()
     sql_print_error("Can't create thread-keys");
     return 1;
   }
+#ifdef HAVE_OPENSSL
+  openssl_stdlocks= (openssl_lock_t*) OPENSSL_malloc(CRYPTO_num_locks() *
+                                                     sizeof(openssl_lock_t));
+  for (int i= 0; i < CRYPTO_num_locks(); ++i)
+    (void) my_rwlock_init(&openssl_stdlocks[i].lock, NULL); 
+  CRYPTO_set_dynlock_create_callback(openssl_dynlock_create);
+  CRYPTO_set_dynlock_destroy_callback(openssl_dynlock_destroy);
+  CRYPTO_set_dynlock_lock_callback(openssl_lock);
+  CRYPTO_set_locking_callback(openssl_lock_function);
+  CRYPTO_set_id_callback(openssl_id_function);
+#endif
   return 0;
 }
+
+
+#ifdef HAVE_OPENSSL
+static unsigned long openssl_id_function()
+{ 
+  return (unsigned long) pthread_self();
+} 
+
+
+static openssl_lock_t *openssl_dynlock_create(const char *file, int line)
+{ 
+  openssl_lock_t *lock= new openssl_lock_t;
+  my_rwlock_init(&lock->lock, NULL);
+  return lock;
+}
+
+
+static void openssl_dynlock_destroy(openssl_lock_t *lock, const char *file, 
+				    int line)
+{
+  rwlock_destroy(&lock->lock);
+  delete lock;
+}
+
+
+static void openssl_lock_function(int mode, int n, const char *file, int line)
+{
+  if (n < 0 || n > CRYPTO_num_locks())
+  {
+    /* Lock number out of bounds. */
+    sql_print_error("Fatal: OpenSSL interface problem (n = %d)", n);
+    abort();
+  }
+  openssl_lock(mode, &openssl_stdlocks[n], file, line);
+}
+
+
+static void openssl_lock(int mode, openssl_lock_t *lock, const char *file, 
+			 int line)
+{
+  int err;
+  char const *what;
+
+  switch (mode) {
+  case CRYPTO_LOCK|CRYPTO_READ:
+    what = "read lock";
+    err = rw_rdlock(&lock->lock);
+    break;
+  case CRYPTO_LOCK|CRYPTO_WRITE:
+    what = "write lock";
+    err = rw_wrlock(&lock->lock);
+    break;
+  case CRYPTO_UNLOCK|CRYPTO_READ:
+  case CRYPTO_UNLOCK|CRYPTO_WRITE:
+    what = "unlock";
+    err = rw_unlock(&lock->lock);
+    break;
+  default:
+    /* Unknown locking mode. */
+    sql_print_error("Fatal: OpenSSL interface problem (mode=0x%x)", mode);
+    abort();
+  }
+  if (err)
+  {
+    sql_print_error("Fatal: can't %s OpenSSL lock", what);
+    abort();
+  }
+}
+#endif /* HAVE_OPENSSL */
 
 
 static void init_ssl()
@@ -2636,6 +2847,7 @@ static int init_server_components()
 
   query_cache_result_size_limit(query_cache_limit);
   query_cache_set_min_res_unit(query_cache_min_res_unit);
+  query_cache_init();
   query_cache_resize(query_cache_size);
   randominit(&sql_rand,(ulong) start_time,(ulong) start_time/2);
   reset_floating_point_exceptions();
@@ -2706,7 +2918,7 @@ server.");
 #ifndef EMBEDDED_LIBRARY
       if (freopen(log_error_file, "a+", stdout))
 #endif
-	freopen(log_error_file, "a+", stderr);
+	stderror_file= freopen(log_error_file, "a+", stderr);
     }
   }
 
@@ -2948,53 +3160,15 @@ int main(int argc, char **argv)
     }
   }
 #endif
+#ifdef __NETWARE__
+  /* Increasing stacksize of threads on NetWare */
+  
+  pthread_attr_setstacksize(&connection_attrib, NW_THD_STACKSIZE);
+#endif
+
   thread_stack_min=thread_stack - STACK_MIN_SIZE;
 
   (void) thr_setconcurrency(concurrency);	// 10 by default
-
-  /*
-    Ensure that lower_case_table_names is set on system where we have case
-    insensitive names.  If this is not done the users MyISAM tables will
-    get corrupted if accesses with names of different case.
-  */
-  DBUG_PRINT("info", ("lower_case_table_names: %d", lower_case_table_names));
-  if (!lower_case_table_names &&
-      (lower_case_file_system=
-       (test_if_case_insensitive(mysql_real_data_home) == 1)))
-  {
-    if (lower_case_table_names_used)
-    {
-      if (global_system_variables.log_warnings)
-	sql_print_warning("\
-You have forced lower_case_table_names to 0 through a command-line \
-option, even though your file system '%s' is case insensitive.  This means \
-that you can corrupt a MyISAM table by accessing it with different cases. \
-You should consider changing lower_case_table_names to 1 or 2",
-			mysql_real_data_home);
-    }
-    else
-    {
-      if (global_system_variables.log_warnings)
-	sql_print_warning("Setting lower_case_table_names=2 because file system for %s is case insensitive", mysql_real_data_home);
-      lower_case_table_names= 2;
-    }
-  }
-  else if (lower_case_table_names == 2 &&
-           !(lower_case_file_system=
-             (test_if_case_insensitive(mysql_real_data_home) == 1)))
-  {
-    if (global_system_variables.log_warnings)
-      sql_print_warning("lower_case_table_names was set to 2, even though your "
-                        "the file system '%s' is case sensitive.  Now setting "
-                        "lower_case_table_names to 0 to avoid future problems.",
-			mysql_real_data_home);
-    lower_case_table_names= 0;
-  }
-
-  /* Reset table_alias_charset, now that lower_case_table_names is set. */
-  table_alias_charset= (lower_case_table_names ?
-			files_charset_info :
-			&my_charset_bin);
 
   select_thread=pthread_self();
   select_thread_in_use=1;
@@ -3056,7 +3230,7 @@ we force server id to 2, but this MySQL server will not act as a slave.");
   */
   error_handler_hook = my_message_sql;
   start_signal_handler();				// Creates pidfile
-  if (acl_init((THD *)0, opt_noacl) || 
+  if (acl_init(opt_noacl) ||
       my_tz_init((THD *)0, default_tz_name, opt_bootstrap))
   {
     abort_loop=1;
@@ -3073,7 +3247,7 @@ we force server id to 2, but this MySQL server will not act as a slave.");
     exit(1);
   }
   if (!opt_noacl)
-    (void) grant_init((THD *)0);
+    (void) grant_init();
 
 #ifdef HAVE_DLOPEN
   if (!opt_noacl)
@@ -3363,7 +3537,6 @@ static int bootstrap(FILE *file)
 
   THD *thd= new THD;
   thd->bootstrap=1;
-  thd->client_capabilities=0;
   my_net_init(&thd->net,(st_vio*) 0);
   thd->max_client_packet_length= thd->net.max_packet;
   thd->master_access= ~(ulong)0;
@@ -4136,13 +4309,15 @@ enum options_mysqld
   OPT_MAX_BINLOG_CACHE_SIZE, OPT_MAX_BINLOG_SIZE,
   OPT_MAX_CONNECTIONS, OPT_MAX_CONNECT_ERRORS,
   OPT_MAX_DELAYED_THREADS, OPT_MAX_HEP_TABLE_SIZE,
-  OPT_MAX_JOIN_SIZE, OPT_MAX_RELAY_LOG_SIZE, OPT_MAX_SORT_LENGTH, 
+  OPT_MAX_JOIN_SIZE, OPT_MAX_PREPARED_STMT_COUNT,
+  OPT_MAX_RELAY_LOG_SIZE, OPT_MAX_SORT_LENGTH,
   OPT_MAX_SEEKS_FOR_KEY, OPT_MAX_TMP_TABLES, OPT_MAX_USER_CONNECTIONS,
   OPT_MAX_LENGTH_FOR_SORT_DATA,
   OPT_MAX_WRITE_LOCK_COUNT, OPT_BULK_INSERT_BUFFER_SIZE,
   OPT_MAX_ERROR_COUNT, OPT_MYISAM_DATA_POINTER_SIZE,
   OPT_MYISAM_BLOCK_SIZE, OPT_MYISAM_MAX_EXTRA_SORT_FILE_SIZE,
   OPT_MYISAM_MAX_SORT_FILE_SIZE, OPT_MYISAM_SORT_BUFFER_SIZE,
+  OPT_MYISAM_STATS_METHOD,
   OPT_NET_BUFFER_LENGTH, OPT_NET_RETRY_COUNT,
   OPT_NET_READ_TIMEOUT, OPT_NET_WRITE_TIMEOUT,
   OPT_OPEN_FILES_LIMIT,
@@ -4192,6 +4367,7 @@ enum options_mysqld
   OPT_EXPIRE_LOGS_DAYS,
   OPT_GROUP_CONCAT_MAX_LEN,
   OPT_DEFAULT_COLLATION,
+  OPT_CHARACTER_SET_CLIENT_HANDSHAKE,
   OPT_INIT_CONNECT,
   OPT_INIT_SLAVE,
   OPT_SECURE_AUTH,
@@ -4200,7 +4376,8 @@ enum options_mysqld
   OPT_DATETIME_FORMAT,
   OPT_LOG_QUERIES_NOT_USING_INDEXES,
   OPT_DEFAULT_TIME_ZONE,
-  OPT_LOG_SLOW_ADMIN_STATEMENTS
+  OPT_LOG_SLOW_ADMIN_STATEMENTS,
+  OPT_MERGE
 };
 
 
@@ -4271,6 +4448,11 @@ Disable with --skip-bdb (will save memory).",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"bootstrap", OPT_BOOTSTRAP, "Used by mysql installation scripts.", 0, 0, 0,
    GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"character-set-client-handshake", OPT_CHARACTER_SET_CLIENT_HANDSHAKE,
+   "Don't ignore client side character set value sent during handshake.",
+   (gptr*) &opt_character_set_client_handshake,
+   (gptr*) &opt_character_set_client_handshake,
+    0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
   {"character-set-server", 'C', "Set the default character set.",
    (gptr*) &default_character_set_name, (gptr*) &default_character_set_name,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
@@ -4305,7 +4487,7 @@ Disable with --skip-bdb (will save memory).",
    (gptr*) &default_collation_name, (gptr*) &default_collation_name,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
   {"default-storage-engine", OPT_STORAGE_ENGINE,
-   "Set the default storage engine (table tyoe) for tables.", 0, 0,
+   "Set the default storage engine (table type) for tables.", 0, 0,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"default-table-type", OPT_STORAGE_ENGINE,
    "(deprecated) Use --default-storage-engine.", 0, 0,
@@ -4555,6 +4737,9 @@ master-ssl",
 #endif /* HAVE_REPLICATION */
   {"memlock", OPT_MEMLOCK, "Lock mysqld in memory.", (gptr*) &locked_in_memory,
    (gptr*) &locked_in_memory, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"merge", OPT_MERGE, "Enable Merge storage engine. Disable with \
+--skip-merge.",
+   (gptr*) &opt_merge, (gptr*) &opt_merge, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0},
   {"myisam-recover", OPT_MYISAM_RECOVER,
    "Syntax: myisam-recover[=option[,option...]], where option can be DEFAULT, BACKUP, FORCE or QUICK.",
    (gptr*) &myisam_recover_options_str, (gptr*) &myisam_recover_options_str, 0,
@@ -5116,6 +5301,10 @@ The minimum value for this variable is 4096.",
     (gptr*) &global_system_variables.max_length_for_sort_data,
     (gptr*) &max_system_variables.max_length_for_sort_data, 0, GET_ULONG,
     REQUIRED_ARG, 1024, 4, 8192*1024L, 0, 1, 0},
+  {"max_prepared_stmt_count", OPT_MAX_PREPARED_STMT_COUNT,
+   "Maximum number of prepared statements in the server.",
+   (gptr*) &max_prepared_stmt_count, (gptr*) &max_prepared_stmt_count,
+   0, GET_ULONG, REQUIRED_ARG, 16382, 0, 1*1024*1024, 0, 1, 0},
   {"max_relay_log_size", OPT_MAX_RELAY_LOG_SIZE,
    "If non-zero: relay log will be rotated automatically when the size exceeds this value; if zero (the default): when the size exceeds max_binlog_size. 0 excepted, the minimum value for this variable is 4096.",
    (gptr*) &max_relay_log_size, (gptr*) &max_relay_log_size, 0, GET_ULONG,
@@ -5176,6 +5365,12 @@ The minimum value for this variable is 4096.",
    (gptr*) &global_system_variables.myisam_sort_buff_size,
    (gptr*) &max_system_variables.myisam_sort_buff_size, 0,
    GET_ULONG, REQUIRED_ARG, 8192*1024, 4, ~0L, 0, 1, 0},
+  {"myisam_stats_method", OPT_MYISAM_STATS_METHOD,
+   "Specifies how MyISAM index statistics collection code should threat NULLs. "
+   "Possible values of name are \"nulls_unequal\" (default behavior for 4.1/5.0), "
+   "\"nulls_equal\" (emulate 4.0 behavior), and \"nulls_ignored\".",
+   (gptr*) &myisam_stats_method_str, (gptr*) &myisam_stats_method_str, 0,
+    GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"net_buffer_length", OPT_NET_BUFFER_LENGTH,
    "Buffer length for TCP/IP and socket communication.",
    (gptr*) &global_system_variables.net_buffer_length,
@@ -5241,7 +5436,8 @@ The minimum value for this variable is 4096.",
    "Persistent buffer for query parsing and execution",
    (gptr*) &global_system_variables.query_prealloc_size,
    (gptr*) &max_system_variables.query_prealloc_size, 0, GET_ULONG,
-   REQUIRED_ARG, QUERY_ALLOC_PREALLOC_SIZE, 16384, ~0L, 0, 1024, 0},
+   REQUIRED_ARG, QUERY_ALLOC_PREALLOC_SIZE, QUERY_ALLOC_PREALLOC_SIZE,
+   ~0L, 0, 1024, 0},
   {"range_alloc_block_size", OPT_RANGE_ALLOC_BLOCK_SIZE,
    "Allocation block size for storing ranges during optimization",
    (gptr*) &global_system_variables.range_alloc_block_size,
@@ -5339,8 +5535,8 @@ The minimum value for this variable is 4096.",
    0, 0, 0, 0},
   {"table_cache", OPT_TABLE_CACHE,
    "The number of open tables for all threads.", (gptr*) &table_cache_size,
-   (gptr*) &table_cache_size, 0, GET_ULONG, REQUIRED_ARG, 64, 1, 512*1024L,
-   0, 1, 0},
+   (gptr*) &table_cache_size, 0, GET_ULONG, REQUIRED_ARG,
+   TABLE_OPEN_CACHE_DEFAULT, 1, 512*1024L, 0, 1, 0},
   {"thread_cache_size", OPT_THREAD_CACHE_SIZE,
    "How many threads we should keep in a cache for reuse.",
    (gptr*) &thread_cache_size, (gptr*) &thread_cache_size, 0, GET_ULONG,
@@ -5463,6 +5659,7 @@ struct show_var_st status_vars[]= {
   {"Com_show_keys",	       (char*) (com_stat+(uint) SQLCOM_SHOW_KEYS),SHOW_LONG},
   {"Com_show_logs",	       (char*) (com_stat+(uint) SQLCOM_SHOW_LOGS),SHOW_LONG},
   {"Com_show_master_status",   (char*) (com_stat+(uint) SQLCOM_SHOW_MASTER_STAT),SHOW_LONG},
+  {"Com_show_ndb_status",      (char*) (com_stat+(uint) SQLCOM_SHOW_NDBCLUSTER_STATUS),SHOW_LONG},
   {"Com_show_new_master",      (char*) (com_stat+(uint) SQLCOM_SHOW_NEW_MASTER),SHOW_LONG},
   {"Com_show_open_tables",     (char*) (com_stat+(uint) SQLCOM_SHOW_OPEN_TABLES),SHOW_LONG},
   {"Com_show_privileges",      (char*) (com_stat+(uint) SQLCOM_SHOW_PRIVILEGES),SHOW_LONG},
@@ -5476,11 +5673,11 @@ struct show_var_st status_vars[]= {
   {"Com_show_warnings",        (char*) (com_stat+(uint) SQLCOM_SHOW_WARNS),SHOW_LONG},
   {"Com_slave_start",	       (char*) (com_stat+(uint) SQLCOM_SLAVE_START),SHOW_LONG},
   {"Com_slave_stop",	       (char*) (com_stat+(uint) SQLCOM_SLAVE_STOP),SHOW_LONG},
-  {"Com_stmt_prepare",         (char*) &com_stmt_prepare, SHOW_LONG},
-  {"Com_stmt_execute",         (char*) &com_stmt_execute, SHOW_LONG},
-  {"Com_stmt_send_long_data",  (char*) &com_stmt_send_long_data, SHOW_LONG},
-  {"Com_stmt_reset",           (char*) &com_stmt_reset, SHOW_LONG},
   {"Com_stmt_close",           (char*) &com_stmt_close, SHOW_LONG},
+  {"Com_stmt_execute",         (char*) &com_stmt_execute, SHOW_LONG},
+  {"Com_stmt_prepare",         (char*) &com_stmt_prepare, SHOW_LONG},
+  {"Com_stmt_reset",           (char*) &com_stmt_reset, SHOW_LONG},
+  {"Com_stmt_send_long_data",  (char*) &com_stmt_send_long_data, SHOW_LONG},
   {"Com_truncate",	       (char*) (com_stat+(uint) SQLCOM_TRUNCATE),SHOW_LONG},
   {"Com_unlock_tables",	       (char*) (com_stat+(uint) SQLCOM_UNLOCK_TABLES),SHOW_LONG},
   {"Com_update",	       (char*) (com_stat+(uint) SQLCOM_UPDATE),SHOW_LONG},
@@ -5512,13 +5709,13 @@ struct show_var_st status_vars[]= {
   {"Key_blocks_used",          (char*) &dflt_key_cache_var.blocks_used,
    SHOW_KEY_CACHE_CONST_LONG},
   {"Key_read_requests",        (char*) &dflt_key_cache_var.global_cache_r_requests,
-   SHOW_KEY_CACHE_LONG},
+   SHOW_KEY_CACHE_LONGLONG},
   {"Key_reads",                (char*) &dflt_key_cache_var.global_cache_read,
-   SHOW_KEY_CACHE_LONG},
+   SHOW_KEY_CACHE_LONGLONG},
   {"Key_write_requests",       (char*) &dflt_key_cache_var.global_cache_w_requests,
-   SHOW_KEY_CACHE_LONG},
+   SHOW_KEY_CACHE_LONGLONG},
   {"Key_writes",               (char*) &dflt_key_cache_var.global_cache_write,
-   SHOW_KEY_CACHE_LONG},
+   SHOW_KEY_CACHE_LONGLONG},
   {"Max_used_connections",     (char*) &max_used_connections,  SHOW_LONG},
   {"Not_flushed_delayed_rows", (char*) &delayed_rows_in_use,    SHOW_LONG_CONST},
   {"Open_files",               (char*) &my_file_opened,         SHOW_LONG_CONST},
@@ -5546,8 +5743,8 @@ struct show_var_st status_vars[]= {
   {"Select_range_check",       (char*) &select_range_check_count, SHOW_LONG},
   {"Select_scan",	       (char*) &select_scan_count,	SHOW_LONG},
   {"Slave_open_temp_tables",   (char*) &slave_open_temp_tables, SHOW_LONG},
-  {"Slave_running",            (char*) 0,                       SHOW_SLAVE_RUNNING},
   {"Slave_retried_transactions",(char*) 0,                      SHOW_SLAVE_RETRIED_TRANS},
+  {"Slave_running",            (char*) 0,                       SHOW_SLAVE_RUNNING},
   {"Slow_launch_threads",      (char*) &slow_launch_threads,    SHOW_LONG},
   {"Slow_queries",             (char*) &long_query_count,       SHOW_LONG},
   {"Sort_merge_passes",	       (char*) &filesort_merge_passes,  SHOW_LONG},
@@ -5727,6 +5924,7 @@ static void mysql_init_variables(void)
   query_id= thread_id= 1L;
   strmov(server_version, MYSQL_SERVER_VERSION);
   myisam_recover_options_str= sql_mode_str= "OFF";
+  myisam_stats_method_str= "nulls_unequal";
   my_bind_addr = htonl(INADDR_ANY);
   threads.empty();
   thread_cache.empty();
@@ -5763,7 +5961,7 @@ static void mysql_init_variables(void)
   /* Variables in libraries */
   charsets_dir= 0;
   default_character_set_name= (char*) MYSQL_DEFAULT_CHARSET_NAME;
-  default_collation_name= (char*) MYSQL_DEFAULT_COLLATION_NAME;
+  default_collation_name= compiled_default_collation_name;
   sys_charset_system.value= (char*) system_charset_info->csname;
 
 
@@ -5775,6 +5973,12 @@ static void mysql_init_variables(void)
   global_system_variables.max_join_size= (ulonglong) HA_POS_ERROR;
   max_system_variables.max_join_size=   (ulonglong) HA_POS_ERROR;
   global_system_variables.old_passwords= 0;
+  
+  /*
+    Default behavior for 4.1 and 5.0 is to treat NULL values as unequal
+    when collecting index statistics for MyISAM tables.
+  */
+  global_system_variables.myisam_stats_method= MI_STATS_METHOD_NULLS_NOT_EQUAL;
 
   /* Variables that depends on compile options */
 #ifndef DBUG_OFF
@@ -5912,7 +6116,8 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     strmake(mysql_home,argument,sizeof(mysql_home)-1);
     break;
   case 'C':
-    default_collation_name= 0;
+    if (default_collation_name == compiled_default_collation_name)
+      default_collation_name= 0;
     break;
   case 'l':
     opt_log=1;
@@ -6299,6 +6504,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       have_berkeley_db= SHOW_OPTION_DISABLED;
 #endif
     break;
+  case OPT_MERGE:
+    have_merge_db= opt_merge ? SHOW_OPTION_YES : SHOW_OPTION_DISABLED;
+    break;
   case OPT_ISAM:
 #ifdef HAVE_ISAM
     if (opt_isam)
@@ -6354,6 +6562,31 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       }
     }
     ha_open_options|=HA_OPEN_ABORT_IF_CRASHED;
+    break;
+  }
+  case OPT_MYISAM_STATS_METHOD:
+  {
+    int method;
+    ulong method_conv;
+    myisam_stats_method_str= argument;
+    if ((method=find_type(argument, &myisam_stats_method_typelib, 2)) <= 0)
+    {
+      fprintf(stderr, "Invalid value of myisam_stats_method: %s.\n", argument);
+      exit(1);
+    }
+    switch (method-1) {
+    case 2:
+      method_conv= MI_STATS_METHOD_IGNORE_NULLS;
+      break;
+    case 1:
+      method_conv= MI_STATS_METHOD_NULLS_EQUAL;
+      break;
+    case 0:
+    default:
+      method_conv= MI_STATS_METHOD_NULLS_NOT_EQUAL;
+      break;
+    }
+    global_system_variables.myisam_stats_method= method_conv;
     break;
   }
   case OPT_SQL_MODE:

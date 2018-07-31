@@ -70,7 +70,13 @@ typedef struct st_key_part_info {	/* Info about a key part */
   Field *field;
   uint	offset;				/* offset in record (from 0) */
   uint	null_offset;			/* Offset to null_bit in record */
-  uint16 length;			/* Length of key_part */
+  uint16 length;                        /* Length of keypart value in bytes */
+  /* 
+    Number of bytes required to store the keypart value. This may be
+    different from the "length" field as it also counts
+     - possible NULL-flag byte (see HA_KEY_NULL_LENGTH)
+     - possible HA_KEY_BLOB_LENGTH bytes needed to store actual value length.
+  */
   uint16 store_length;
   uint16 key_type;
   uint16 fieldnr;			/* Fieldnum in UNIREG */
@@ -181,7 +187,7 @@ enum SHOW_TYPE
   SHOW_SSL_GET_CIPHER_LIST,
 #endif /* HAVE_OPENSSL */
   SHOW_RPL_STATUS, SHOW_SLAVE_RUNNING, SHOW_SLAVE_RETRIED_TRANS,
-  SHOW_KEY_CACHE_LONG, SHOW_KEY_CACHE_CONST_LONG
+  SHOW_KEY_CACHE_LONG, SHOW_KEY_CACHE_CONST_LONG, SHOW_KEY_CACHE_LONGLONG
 };
 
 enum SHOW_COMP_OPTION { SHOW_OPTION_YES, SHOW_OPTION_NO, SHOW_OPTION_DISABLED};

@@ -45,6 +45,123 @@ www.	.se
 select substring_index('.tcx.se','.',-2),substring_index('.tcx.se','.tcx',-1);
 substring_index('.tcx.se','.',-2)	substring_index('.tcx.se','.tcx',-1)
 tcx.se	.se
+select substring_index('aaaaaaaaa1','a',1);
+substring_index('aaaaaaaaa1','a',1)
+
+select substring_index('aaaaaaaaa1','aa',1);
+substring_index('aaaaaaaaa1','aa',1)
+
+select substring_index('aaaaaaaaa1','aa',2);
+substring_index('aaaaaaaaa1','aa',2)
+aa
+select substring_index('aaaaaaaaa1','aa',3);
+substring_index('aaaaaaaaa1','aa',3)
+aaaa
+select substring_index('aaaaaaaaa1','aa',4);
+substring_index('aaaaaaaaa1','aa',4)
+aaaaaa
+select substring_index('aaaaaaaaa1','aa',5);
+substring_index('aaaaaaaaa1','aa',5)
+aaaaaaaaa1
+select substring_index('aaaaaaaaa1','aaa',1);
+substring_index('aaaaaaaaa1','aaa',1)
+
+select substring_index('aaaaaaaaa1','aaa',2);
+substring_index('aaaaaaaaa1','aaa',2)
+aaa
+select substring_index('aaaaaaaaa1','aaa',3);
+substring_index('aaaaaaaaa1','aaa',3)
+aaaaaa
+select substring_index('aaaaaaaaa1','aaa',4);
+substring_index('aaaaaaaaa1','aaa',4)
+aaaaaaaaa1
+select substring_index('aaaaaaaaa1','aaaa',1);
+substring_index('aaaaaaaaa1','aaaa',1)
+
+select substring_index('aaaaaaaaa1','aaaa',2);
+substring_index('aaaaaaaaa1','aaaa',2)
+aaaa
+select substring_index('aaaaaaaaa1','1',1);
+substring_index('aaaaaaaaa1','1',1)
+aaaaaaaaa
+select substring_index('aaaaaaaaa1','a',-1);
+substring_index('aaaaaaaaa1','a',-1)
+1
+select substring_index('aaaaaaaaa1','aa',-1);
+substring_index('aaaaaaaaa1','aa',-1)
+1
+select substring_index('aaaaaaaaa1','aa',-2);
+substring_index('aaaaaaaaa1','aa',-2)
+aa1
+select substring_index('aaaaaaaaa1','aa',-3);
+substring_index('aaaaaaaaa1','aa',-3)
+aaaa1
+select substring_index('aaaaaaaaa1','aa',-4);
+substring_index('aaaaaaaaa1','aa',-4)
+aaaaaa1
+select substring_index('aaaaaaaaa1','aa',-5);
+substring_index('aaaaaaaaa1','aa',-5)
+aaaaaaaaa1
+select substring_index('aaaaaaaaa1','aaa',-1);
+substring_index('aaaaaaaaa1','aaa',-1)
+1
+select substring_index('aaaaaaaaa1','aaa',-2);
+substring_index('aaaaaaaaa1','aaa',-2)
+aaa1
+select substring_index('aaaaaaaaa1','aaa',-3);
+substring_index('aaaaaaaaa1','aaa',-3)
+aaaaaa1
+select substring_index('aaaaaaaaa1','aaa',-4);
+substring_index('aaaaaaaaa1','aaa',-4)
+
+select substring_index('the king of thethe hill','the',-2);
+substring_index('the king of thethe hill','the',-2)
+the hill
+select substring_index('the king of the the hill','the',-2);
+substring_index('the king of the the hill','the',-2)
+ the hill
+select substring_index('the king of the  the hill','the',-2);
+substring_index('the king of the  the hill','the',-2)
+  the hill
+select substring_index('the king of the  the hill',' the ',-1);
+substring_index('the king of the  the hill',' the ',-1)
+hill
+select substring_index('the king of the  the hill',' the ',-2);
+substring_index('the king of the  the hill',' the ',-2)
+ the hill
+select substring_index('the king of the  the hill',' ',-1);
+substring_index('the king of the  the hill',' ',-1)
+hill
+select substring_index('the king of the  the hill',' ',-2);
+substring_index('the king of the  the hill',' ',-2)
+the hill
+select substring_index('the king of the  the hill',' ',-3);
+substring_index('the king of the  the hill',' ',-3)
+ the hill
+select substring_index('the king of the  the hill',' ',-4);
+substring_index('the king of the  the hill',' ',-4)
+the  the hill
+select substring_index('the king of the  the hill',' ',-5);
+substring_index('the king of the  the hill',' ',-5)
+of the  the hill
+select substring_index('the king of the.the hill','the',-2);
+substring_index('the king of the.the hill','the',-2)
+.the hill
+select substring_index('the king of thethethe.the hill','the',-3);
+substring_index('the king of thethethe.the hill','the',-3)
+the.the hill
+select substring_index('the king of thethethe.the hill','the',-1);
+substring_index('the king of thethethe.the hill','the',-1)
+ hill
+select substring_index('the king of the the hill','the',1);
+substring_index('the king of the the hill','the',1)
+
+select substring_index('the king of the the hill','the',2);
+substring_index('the king of the the hill','the',2)
+the king of 
+select substring_index('the king of the the hill','the',3);
+substring_index('the king of the the hill','the',3)
+the king of the 
 select concat(':',ltrim('  left  '),':',rtrim('  right  '),':');
 concat(':',ltrim('  left  '),':',rtrim('  right  '),':')
 :left  :  right:
@@ -868,3 +985,83 @@ drop table t1;
 select hex(29223372036854775809), hex(-29223372036854775809);
 hex(29223372036854775809)	hex(-29223372036854775809)
 FFFFFFFFFFFFFFFF	FFFFFFFFFFFFFFFF
+create table t1 (i int);
+insert into t1 values (1000000000),(1);
+select lpad(i, 7, ' ') as t from t1;
+Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
+def					t	253	7	7	Y	128	31	63
+t
+1000000
+      1
+select rpad(i, 7, ' ') as t from t1;
+Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
+def					t	253	7	7	Y	128	31	63
+t
+1000000
+1      
+drop table t1;
+select load_file("lkjlkj");
+load_file("lkjlkj")
+NULL
+select ifnull(load_file("lkjlkj"),"it's null");
+ifnull(load_file("lkjlkj"),"it's null")
+it's null
+create table t1 (f1 varchar(4), f2 varchar(64), unique key k1 (f1,f2));
+insert into t1 values ( 'test',md5('test')), ('test', sha('test'));
+select * from t1 where f1='test' and (f2= md5("test") or f2= md5("TEST"));
+f1	f2
+test	098f6bcd4621d373cade4e832627b4f6
+select * from t1 where f1='test' and (f2= md5("TEST") or f2= md5("test"));
+f1	f2
+test	098f6bcd4621d373cade4e832627b4f6
+select * from t1 where f1='test' and (f2= sha("test") or f2= sha("TEST"));
+f1	f2
+test	a94a8fe5ccb19ba61c4c0873d391e987982fbbd3
+select * from t1 where f1='test' and (f2= sha("TEST") or f2= sha("test"));
+f1	f2
+test	a94a8fe5ccb19ba61c4c0873d391e987982fbbd3
+drop table t1;
+CREATE TABLE t1 (a varchar(10));
+INSERT INTO t1 VALUES ('abc'), ('xyz');
+SELECT a, CONCAT(a,' ',a) AS c FROM t1
+HAVING LEFT(c,LENGTH(c)-INSTR(REVERSE(c)," ")) = a;
+a	c
+abc	abc abc
+xyz	xyz xyz
+SELECT a, CONCAT(a,' ',a) AS c FROM t1
+HAVING LEFT(CONCAT(a,' ',a),
+LENGTH(CONCAT(a,' ',a))-
+INSTR(REVERSE(CONCAT(a,' ',a))," ")) = a;
+a	c
+abc	abc abc
+xyz	xyz xyz
+DROP TABLE t1;
+CREATE TABLE t1 (s varchar(10));
+INSERT INTO t1 VALUES ('yadda'), ('yaddy');
+EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(s) > 'ab';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1003	select test.t1.s AS `s` from test.t1 where (trim(test.t1.s) > _latin1'ab')
+EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM('y' FROM s) > 'ab';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1003	select test.t1.s AS `s` from test.t1 where (trim(both _latin1'y' from test.t1.s) > _latin1'ab')
+EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(LEADING 'y' FROM s) > 'ab';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1003	select test.t1.s AS `s` from test.t1 where (trim(leading _latin1'y' from test.t1.s) > _latin1'ab')
+EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(TRAILING 'y' FROM s) > 'ab';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1003	select test.t1.s AS `s` from test.t1 where (trim(trailing _latin1'y' from test.t1.s) > _latin1'ab')
+EXPLAIN EXTENDED SELECT s FROM t1 WHERE TRIM(BOTH 'y' FROM s) > 'ab';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1003	select test.t1.s AS `s` from test.t1 where (trim(both _latin1'y' from test.t1.s) > _latin1'ab')
+DROP TABLE t1;
+End of 4.1 tests

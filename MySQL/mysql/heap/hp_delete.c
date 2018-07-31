@@ -73,14 +73,17 @@ int hp_rb_delete_key(HP_INFO *info, register HP_KEYDEF *keyinfo,
   int res;
 
   if (flag) 
+  {
     info->last_pos= NULL; /* For heap_rnext/heap_rprev */
+    info->lastkey_len= 0;
+  }
 
   custom_arg.keyseg= keyinfo->seg;
   custom_arg.key_length= hp_rb_make_key(keyinfo, info->recbuf, record, recpos);
   custom_arg.search_flag= SEARCH_SAME;
   old_allocated= keyinfo->rb_tree.allocated;
   res= tree_delete(&keyinfo->rb_tree, info->recbuf, &custom_arg);
-  info->s->index_length+= (keyinfo->rb_tree.allocated-old_allocated);
+  info->s->index_length-= (old_allocated - keyinfo->rb_tree.allocated);
   return res;
 }
 

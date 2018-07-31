@@ -16,6 +16,31 @@
 
 /* Describe, check and repair of MyISAM tables */
 
+/*
+  About checksum calculation.
+
+  There are two types of checksums. Table checksum and row checksum.
+
+  Row checksum is an additional byte at the end of dynamic length
+  records. It must be calculated if the table is configured for them.
+  Otherwise they must not be used. The variable
+  MYISAM_SHARE::calc_checksum determines if row checksums are used.
+  MI_INFO::checksum is used as temporary storage during row handling.
+  For parallel repair we must assure that only one thread can use this
+  variable. There is no problem on the write side as this is done by one
+  thread only. But when checking a record after read this could go
+  wrong. But since all threads read through a common read buffer, it is
+  sufficient if only one thread checks it.
+
+  Table checksum is an eight byte value in the header of the index file.
+  It can be calculated even if row checksums are not used. The variable
+  MI_CHECK::glob_crc is calculated over all records.
+  MI_SORT_PARAM::calc_checksum determines if this should be done. This
+  variable is not part of MI_CHECK because it must be set per thread for
+  parallel repair. The global glob_crc must be changed by one thread
+  only. And it is sufficient to calculate the checksum once only.
+*/
+
 #include "ftdefs.h"
 #include <m_ctype.h>
 #include <stdarg.h>
@@ -41,8 +66,7 @@ static int chk_index(MI_CHECK *param, MI_INFO *info,MI_KEYDEF *keyinfo,
 		     ha_checksum *key_checksum, uint level);
 static uint isam_key_length(MI_INFO *info,MI_KEYDEF *keyinfo);
 static ha_checksum calc_checksum(ha_rows count);
-static int writekeys(MI_CHECK *param, MI_INFO *info,byte *buff,
-		     my_off_t filepos);
+static int writekeys(MI_SORT_PARAM *sort_param);
 static int sort_one_index(MI_CHECK *param, MI_INFO *info,MI_KEYDEF *keyinfo,
 			  my_off_t pagepos, File new_file);
 static int sort_key_read(MI_SORT_PARAM *sort_param,void *key);
@@ -80,6 +104,7 @@ void myisamchk_init(MI_CHECK *param)
   param->start_check_pos=0;
   param->max_record_length= LONGLONG_MAX;
   param->key_cache_block_size= KEY_CACHE_BLOCK_SIZE;
+  param->stats_method= MI_STATS_METHOD_NULLS_NOT_EQUAL;
 }
 
 	/* Check the status flags for the table */
@@ -390,7 +415,10 @@ int chk_key(MI_CHECK *param, register MI_INFO *info)
     found_keys++;
 
     param->record_checksum=init_checksum;
+    
     bzero((char*) &param->unique_count,sizeof(param->unique_count));
+    bzero((char*) &param->notnull_count,sizeof(param->notnull_count));
+
     if ((!(param->testflag & T_SILENT)))
       printf ("- check data record references index: %d\n",key+1);
     if (keyinfo->flag & HA_FULLTEXT)
@@ -495,7 +523,9 @@ int chk_key(MI_CHECK *param, register MI_INFO *info)
 
     if (param->testflag & T_STATISTICS)
       update_key_parts(keyinfo, rec_per_key_part, param->unique_count,
-		       (ulonglong) info->state->records);
+                       param->stats_method == MI_STATS_METHOD_IGNORE_NULLS?
+                       param->notnull_count: NULL, 
+                       (ulonglong)info->state->records);
   }
   if (param->testflag & T_INFO)
   {
@@ -551,6 +581,96 @@ err:
   return 1;
 }
 
+
+/*
+  "Ignore NULLs" statistics collection method: process first index tuple.
+
+  SYNOPSIS
+    mi_collect_stats_nonulls_first()
+      keyseg   IN     Array of key part descriptions
+      notnull  INOUT  Array, notnull[i] = (number of {keypart1...keypart_i}
+                                           tuples that don't contain NULLs)
+      key      IN     Key values tuple
+
+  DESCRIPTION
+    Process the first index tuple - find out which prefix tuples don't
+    contain NULLs, and update the array of notnull counters accordingly.
+*/
+
+static
+void mi_collect_stats_nonulls_first(HA_KEYSEG *keyseg, ulonglong *notnull,
+                                    uchar *key)
+{
+  uint first_null, kp;
+  first_null= ha_find_null(keyseg, key) - keyseg;
+  /*
+    All prefix tuples that don't include keypart_{first_null} are not-null
+    tuples (and all others aren't), increment counters for them.
+  */
+  for (kp= 0; kp < first_null; kp++)
+    notnull[kp]++;
+}
+
+
+/*
+  "Ignore NULLs" statistics collection method: process next index tuple.
+
+  SYNOPSIS
+    mi_collect_stats_nonulls_next()
+      keyseg   IN     Array of key part descriptions
+      notnull  INOUT  Array, notnull[i] = (number of {keypart1...keypart_i}
+                                           tuples that don't contain NULLs)
+      prev_key IN     Previous key values tuple
+      last_key IN     Next key values tuple
+
+  DESCRIPTION
+    Process the next index tuple:
+    1. Find out which prefix tuples of last_key don't contain NULLs, and
+       update the array of notnull counters accordingly.
+    2. Find the first keypart number where the prev_key and last_key tuples
+       are different(A), or last_key has NULL value(B), and return it, so the 
+       caller can count number of unique tuples for each key prefix. We don't 
+       need (B) to be counted, and that is compensated back in 
+       update_key_parts().
+
+  RETURN
+    1 + number of first keypart where values differ or last_key tuple has NULL
+*/
+
+static
+int mi_collect_stats_nonulls_next(HA_KEYSEG *keyseg, ulonglong *notnull,
+                                  uchar *prev_key, uchar *last_key)
+{
+  uint diffs[2];
+  uint first_null_seg, kp;
+  HA_KEYSEG *seg;
+
+  /* 
+     Find the first keypart where values are different or either of them is
+     NULL. We get results in diffs array:
+     diffs[0]= 1 + number of first different keypart
+     diffs[1]=offset: (last_key + diffs[1]) points to first value in
+                      last_key that is NULL or different from corresponding
+                      value in prev_key.
+  */
+  ha_key_cmp(keyseg, prev_key, last_key, USE_WHOLE_KEY, 
+             SEARCH_FIND | SEARCH_NULL_ARE_NOT_EQUAL, diffs);
+  seg= keyseg + diffs[0] - 1;
+
+  /* Find first NULL in last_key */
+  first_null_seg= ha_find_null(seg, last_key + diffs[1]) - keyseg;
+  for (kp= 0; kp < first_null_seg; kp++)
+    notnull[kp]++;
+
+  /* 
+    Return 1+ number of first key part where values differ. Don't care if
+    these were NULLs and not .... We compensate for that in
+    update_key_parts.
+  */
+  return diffs[0];
+}
+
+
 	/* Check if index is ok */
 
 static int chk_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
@@ -558,10 +678,11 @@ static int chk_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
 		     ha_checksum *key_checksum, uint level)
 {
   int flag;
-  uint used_length,comp_flag,nod_flag,key_length=0,not_used;
+  uint used_length,comp_flag,nod_flag,key_length=0;
   uchar key[MI_MAX_POSSIBLE_KEY_BUFF],*temp_buff,*keypos,*old_keypos,*endpos;
   my_off_t next_page,record;
   char llbuff[22];
+  uint diff_pos[2];
   DBUG_ENTER("chk_index");
   DBUG_DUMP("buff",(byte*) buff,mi_getint(buff));
 
@@ -619,7 +740,7 @@ static int chk_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
     }
     if ((*keys)++ &&
 	(flag=ha_key_cmp(keyinfo->seg,info->lastkey,key,key_length,
-			 comp_flag, &not_used)) >=0)
+			 comp_flag, diff_pos)) >=0)
     {
       DBUG_DUMP("old",(byte*) info->lastkey, info->lastkey_length);
       DBUG_DUMP("new",(byte*) key, key_length);
@@ -635,11 +756,23 @@ static int chk_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
     {
       if (*keys != 1L)				/* not first_key */
       {
-	uint diff;
-	ha_key_cmp(keyinfo->seg,info->lastkey,key,USE_WHOLE_KEY,
-		   SEARCH_FIND | SEARCH_NULL_ARE_NOT_EQUAL,
-		   &diff);
-	param->unique_count[diff-1]++;
+        if (param->stats_method == MI_STATS_METHOD_NULLS_NOT_EQUAL)
+          ha_key_cmp(keyinfo->seg,info->lastkey,key,USE_WHOLE_KEY,
+                     SEARCH_FIND | SEARCH_NULL_ARE_NOT_EQUAL,
+                     diff_pos);
+        else if (param->stats_method == MI_STATS_METHOD_IGNORE_NULLS)
+        {
+          diff_pos[0]= mi_collect_stats_nonulls_next(keyinfo->seg, 
+                                                  param->notnull_count,
+                                                  info->lastkey, key);
+        }
+	param->unique_count[diff_pos[0]-1]++;
+      }
+      else
+      {  
+        if (param->stats_method == MI_STATS_METHOD_IGNORE_NULLS)
+          mi_collect_stats_nonulls_first(keyinfo->seg, param->notnull_count,
+                                         key);
       }
     }
     (*key_checksum)+= mi_byte_checksum((byte*) key,
@@ -992,7 +1125,8 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
 	goto err;
       start_recpos=pos;
       splits++;
-      VOID(_mi_pack_get_block_info(info,&block_info, -1, start_recpos));
+      VOID(_mi_pack_get_block_info(info, &info->bit_buff, &block_info,
+                                   &info->rec_buff, -1, start_recpos));
       pos=block_info.filepos+block_info.rec_len;
       if (block_info.rec_len < (uint) info->s->min_pack_length ||
 	  block_info.rec_len > (uint) info->s->max_pack_length)
@@ -1006,7 +1140,8 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
       if (_mi_read_cache(&param->read_cache,(byte*) info->rec_buff,
 			block_info.filepos, block_info.rec_len, READING_NEXT))
 	goto err;
-      if (_mi_pack_rec_unpack(info,record,info->rec_buff,block_info.rec_len))
+      if (_mi_pack_rec_unpack(info, &info->bit_buff, record,
+                              info->rec_buff, block_info.rec_len))
       {
 	mi_check_print_error(param,"Found wrong record at %s",
 			     llstr(start_recpos,llbuff));
@@ -1035,7 +1170,7 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
       {
 	if ((((ulonglong) 1 << key) & info->s->state.key_map))
 	{
-	  if(!(keyinfo->flag & HA_FULLTEXT))
+          if(!(keyinfo->flag & HA_FULLTEXT))
 	  {
 	    uint key_length=_mi_make_key(info,key,info->lastkey,record,
 					 start_recpos);
@@ -1044,14 +1179,22 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
 	      /* We don't need to lock the key tree here as we don't allow
 		 concurrent threads when running myisamchk
 	      */
-	      if (_mi_search(info,keyinfo,info->lastkey,key_length,
-			     SEARCH_SAME, info->s->state.key_root[key]))
-	      {
-		mi_check_print_error(param,"Record at: %10s  Can't find key for index: %2d",
-			    llstr(start_recpos,llbuff),key+1);
-		if (error++ > MAXERR || !(param->testflag & T_VERBOSE))
-		  goto err2;
-	      }
+              int search_result=
+#ifdef HAVE_RTREE_KEYS
+                (keyinfo->flag & HA_SPATIAL) ?
+                rtree_find_first(info, key, info->lastkey, key_length,
+                                 MBR_EQUAL | MBR_DATA) : 
+#endif
+                _mi_search(info,keyinfo,info->lastkey,key_length,
+                           SEARCH_SAME, info->s->state.key_root[key]);
+              if (search_result)
+              {
+                mi_check_print_error(param,"Record at: %10s  "
+                                     "Can't find key for index: %2d",
+                                     llstr(start_recpos,llbuff),key+1);
+                if (error++ > MAXERR || !(param->testflag & T_VERBOSE))
+                  goto err2;
+              }
 	    }
 	    else
 	      key_checksum[key]+=mi_byte_checksum((byte*) info->lastkey,
@@ -1252,7 +1395,8 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
 			   param->temp_filename);
       goto err;
     }
-    if (filecopy(param,new_file,info->dfile,0L,new_header_length,
+    if (new_header_length &&
+        filecopy(param,new_file,info->dfile,0L,new_header_length,
 		 "datafile-header"))
       goto err;
     info->s->state.dellink= HA_OFFSET_ERROR;
@@ -1281,7 +1425,7 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
   info->state->empty=0;
   param->glob_crc=0;
   if (param->testflag & T_CALC_CHECKSUM)
-    param->calc_checksum=1;
+    sort_param.calc_checksum= 1;
 
   info->update= (short) (HA_STATE_CHANGED | HA_STATE_ROW_CHANGED);
   for (i=0 ; i < info->s->base.keys ; i++)
@@ -1305,7 +1449,7 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
   lock_memory(param);			/* Everything is alloced */
   while (!(error=sort_get_next_record(&sort_param)))
   {
-    if (writekeys(param,info,(byte*)sort_param.record,sort_param.filepos))
+    if (writekeys(&sort_param))
     {
       if (my_errno != HA_ERR_FOUND_DUPP_KEY)
 	goto err;
@@ -1450,11 +1594,13 @@ err:
 
 /* Uppate keyfile when doing repair */
 
-static int writekeys(MI_CHECK *param, register MI_INFO *info, byte *buff,
-		     my_off_t filepos)
+static int writekeys(MI_SORT_PARAM *sort_param)
 {
   register uint i;
-  uchar *key;
+  uchar    *key;
+  MI_INFO  *info=   sort_param->sort_info->info;
+  byte     *buff=   sort_param->record;
+  my_off_t filepos= sort_param->filepos;
   DBUG_ENTER("writekeys");
 
   key=info->lastkey+info->s->base.max_key_length;
@@ -1508,8 +1654,8 @@ static int writekeys(MI_CHECK *param, register MI_INFO *info, byte *buff,
     }
   }
   /* Remove checksum that was added to glob_crc in sort_get_next_record */
-  if (param->calc_checksum)
-    param->glob_crc-= info->checksum;
+  if (sort_param->calc_checksum)
+    sort_param->sort_info->param->glob_crc-= info->checksum;
   DBUG_PRINT("error",("errno: %d",my_errno));
   DBUG_RETURN(-1);
 } /* writekeys */
@@ -1725,9 +1871,10 @@ static int sort_one_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
 	_mi_kpointer(info,keypos-nod_flag,param->new_file_pos); /* Save new pos */
 	if (sort_one_index(param,info,keyinfo,next_page,new_file))
 	{
-	  DBUG_PRINT("error",("From page: %ld, keyoffset: %d  used_length: %d",
-			      (ulong) pagepos, (int) (keypos - buff),
-			      (int) used_length));
+	  DBUG_PRINT("error",
+		     ("From page: %ld, keyoffset: %lu  used_length: %d",
+		      (ulong) pagepos, (ulong) (keypos - buff),
+		      (int) used_length));
 	  DBUG_DUMP("buff",(byte*) buff,used_length);
 	  goto err;
 	}
@@ -1948,7 +2095,8 @@ int mi_repair_by_sort(MI_CHECK *param, register MI_INFO *info,
 			   param->temp_filename);
       goto err;
     }
-    if (filecopy(param, new_file,info->dfile,0L,new_header_length,
+    if (new_header_length &&
+        filecopy(param, new_file,info->dfile,0L,new_header_length,
 		 "datafile-header"))
       goto err;
     if (param->testflag & T_UNPACK)
@@ -2009,11 +2157,11 @@ int mi_repair_by_sort(MI_CHECK *param, register MI_INFO *info,
   sort_param.sort_info=&sort_info;
   sort_param.fix_datafile= (my_bool) (! rep_quick);
   sort_param.master =1;
-
+  
   del=info->state->del;
   param->glob_crc=0;
   if (param->testflag & T_CALC_CHECKSUM)
-    param->calc_checksum=1;
+    sort_param.calc_checksum= 1;
 
   rec_per_key_part= param->rec_per_key_part;
   for (sort_param.key=0 ; sort_param.key < share->base.keys ;
@@ -2075,14 +2223,16 @@ int mi_repair_by_sort(MI_CHECK *param, register MI_INFO *info,
       param->retry_repair=1;
       goto err;
     }
-    param->calc_checksum=0;			/* No need to calc glob_crc */
+    /* No need to calculate checksum again. */
+    sort_param.calc_checksum= 0;
 
     /* Set for next loop */
     sort_info.max_records= (ha_rows) info->state->records;
 
     if (param->testflag & T_STATISTICS)
       update_key_parts(sort_param.keyinfo, rec_per_key_part, sort_param.unique,
-		       (ulonglong) info->state->records);
+                       param->stats_method == MI_STATS_METHOD_IGNORE_NULLS?
+                       sort_param.notnull: NULL,(ulonglong) info->state->records);
     share->state.key_map|=(ulonglong) 1 << sort_param.key;
 
     if (sort_param.fix_datafile)
@@ -2237,6 +2387,28 @@ err:
     Each key is handled by a separate thread.
     TODO: make a number of threads a parameter
 
+    In parallel repair we use one thread per index. There are two modes:
+
+    Quick
+
+      Only the indexes are rebuilt. All threads share a read buffer.
+      Every thread that needs fresh data in the buffer enters the shared
+      cache lock. The last thread joining the lock reads the buffer from
+      the data file and wakes all other threads.
+
+    Non-quick
+
+      The data file is rebuilt and all indexes are rebuilt to point to
+      the new record positions. One thread is the master thread. It
+      reads from the old data file and writes to the new data file. It
+      also creates one of the indexes. The other threads read from a
+      buffer which is filled by the master. If they need fresh data,
+      they enter the shared cache lock. If the masters write buffer is
+      full, it flushes it to the new data file and enters the shared
+      cache lock too. When all threads joined in the lock, the master
+      copies its write buffer to the read buffer for the other threads
+      and wakes them.
+
   RESULT
     0	ok
     <>0	Error
@@ -2259,6 +2431,7 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
   ulong   *rec_per_key_part;
   HA_KEYSEG *keyseg;
   char llbuff[22];
+  IO_CACHE new_data_cache; /* For non-quick repair. */
   IO_CACHE_SHARE io_share;
   SORT_INFO sort_info;
   ulonglong key_map=share->state.key_map;
@@ -2280,19 +2453,55 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
   if (info->s->options & (HA_OPTION_CHECKSUM | HA_OPTION_COMPRESS_RECORD))
     param->testflag|=T_CALC_CHECKSUM;
 
+  /*
+    Quick repair (not touching data file, rebuilding indexes):
+    {
+      Read  cache is (MI_CHECK *param)->read_cache using info->dfile.
+    }
+
+    Non-quick repair (rebuilding data file and indexes):
+    {
+      Master thread:
+
+        Read  cache is (MI_CHECK *param)->read_cache using info->dfile.
+        Write cache is (MI_INFO   *info)->rec_cache  using new_file.
+
+      Slave threads:
+
+        Read  cache is new_data_cache synced to master rec_cache.
+
+      The final assignment of the filedescriptor for rec_cache is done
+      after the cache creation.
+
+      Don't check file size on new_data_cache, as the resulting file size
+      is not known yet.
+
+      As rec_cache and new_data_cache are synced, write_buffer_length is
+      used for the read cache 'new_data_cache'. Both start at the same
+      position 'new_header_length'.
+    }
+  */
+  DBUG_PRINT("info", ("is quick repair: %d", rep_quick));
   bzero((char*)&sort_info,sizeof(sort_info));
+  /* Initialize pthread structures before goto err. */
+  pthread_mutex_init(&sort_info.mutex, MY_MUTEX_INIT_FAST);
+  pthread_cond_init(&sort_info.cond, 0);
+
   if (!(sort_info.key_block=
-	alloc_key_blocks(param,
-			 (uint) param->sort_key_blocks,
-			 share->base.max_key_block_length))
-      || init_io_cache(&param->read_cache,info->dfile,
-		       (uint) param->read_buffer_length,
-		       READ_CACHE,share->pack.header_length,1,MYF(MY_WME)) ||
-      (! rep_quick &&
-       init_io_cache(&info->rec_cache,info->dfile,
-		     (uint) param->write_buffer_length,
-		     WRITE_CACHE,new_header_length,1,
-		     MYF(MY_WME | MY_WAIT_IF_FULL) & param->myf_rw)))
+	alloc_key_blocks(param, (uint) param->sort_key_blocks,
+			 share->base.max_key_block_length)) ||
+      init_io_cache(&param->read_cache, info->dfile,
+                    (uint) param->read_buffer_length,
+                    READ_CACHE, share->pack.header_length, 1, MYF(MY_WME)) ||
+      (!rep_quick &&
+       (init_io_cache(&info->rec_cache, info->dfile,
+                      (uint) param->write_buffer_length,
+                      WRITE_CACHE, new_header_length, 1,
+                      MYF(MY_WME | MY_WAIT_IF_FULL) & param->myf_rw) ||
+        init_io_cache(&new_data_cache, -1,
+                      (uint) param->write_buffer_length,
+                      READ_CACHE, new_header_length, 1,
+                      MYF(MY_WME | MY_DONT_CHECK_FILESIZE)))))
     goto err;
   sort_info.key_block_end=sort_info.key_block+param->sort_key_blocks;
   info->opt_flag|=WRITE_CACHE_USED;
@@ -2315,7 +2524,8 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
 			   param->temp_filename);
       goto err;
     }
-    if (filecopy(param, new_file,info->dfile,0L,new_header_length,
+    if (new_header_length &&
+        filecopy(param, new_file,info->dfile,0L,new_header_length,
 		 "datafile-header"))
       goto err;
     if (param->testflag & T_UNPACK)
@@ -2382,8 +2592,6 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
 
   del=info->state->del;
   param->glob_crc=0;
-  if (param->testflag & T_CALC_CHECKSUM)
-    param->calc_checksum=1;
 
   if (!(sort_param=(MI_SORT_PARAM *)
         my_malloc((uint) share->base.keys *
@@ -2433,6 +2641,7 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
     sort_param[i].sort_info=&sort_info;
     sort_param[i].master=0;
     sort_param[i].fix_datafile=0;
+    sort_param[i].calc_checksum= 0;
 
     sort_param[i].filepos=new_header_length;
     sort_param[i].max_pos=sort_param[i].pos=share->pack.header_length;
@@ -2469,19 +2678,45 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
   sort_info.total_keys=i;
   sort_param[0].master= 1;
   sort_param[0].fix_datafile= (my_bool)(! rep_quick);
+  sort_param[0].calc_checksum= test(param->testflag & T_CALC_CHECKSUM);
 
   sort_info.got_error=0;
-  pthread_mutex_init(&sort_info.mutex, MY_MUTEX_INIT_FAST);
-  pthread_cond_init(&sort_info.cond, 0);
   pthread_mutex_lock(&sort_info.mutex);
 
-  init_io_cache_share(&param->read_cache, &io_share, i);
+  /*
+    Initialize the I/O cache share for use with the read caches and, in
+    case of non-quick repair, the write cache. When all threads join on
+    the cache lock, the writer copies the write cache contents to the
+    read caches.
+  */
+  if (i > 1)
+  {
+    if (rep_quick)
+      init_io_cache_share(&param->read_cache, &io_share, NULL, i);
+    else
+      init_io_cache_share(&new_data_cache, &io_share, &info->rec_cache, i);
+  }
+  else
+    io_share.total_threads= 0; /* share not used */
+
   (void) pthread_attr_init(&thr_attr);
   (void) pthread_attr_setdetachstate(&thr_attr,PTHREAD_CREATE_DETACHED);
 
   for (i=0 ; i < sort_info.total_keys ; i++)
   {
-    sort_param[i].read_cache=param->read_cache;
+    /*
+      Copy the properly initialized IO_CACHE structure so that every
+      thread has its own copy. In quick mode param->read_cache is shared
+      for use by all threads. In non-quick mode all threads but the
+      first copy the shared new_data_cache, which is synchronized to the
+      write cache of the first thread. The first thread copies
+      param->read_cache, which is not shared.
+    */
+    sort_param[i].read_cache= ((rep_quick || !i) ? param->read_cache :
+                               new_data_cache);
+    DBUG_PRINT("io_cache_share", ("thread: %u  read_cache: 0x%lx",
+                                  i, (long) &sort_param[i].read_cache));
+
     /*
       two approaches: the same amount of memory for each thread
       or the memory for the same number of keys for each thread...
@@ -2499,7 +2734,10 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
 		       (void *) (sort_param+i)))
     {
       mi_check_print_error(param,"Cannot start a repair thread");
-      remove_io_thread(&param->read_cache);
+      /* Cleanup: Detach from the share. Avoid others to be blocked. */
+      if (io_share.total_threads)
+        remove_io_thread(&sort_param[i].read_cache);
+      DBUG_PRINT("error", ("Cannot start a repair thread"));
       sort_info.got_error=1;
     }
     else
@@ -2521,6 +2759,11 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
 
   if (sort_param[0].fix_datafile)
   {
+    /*
+      Append some nuls to the end of a memory mapped file. Destroy the
+      write cache. The master thread did already detach from the share
+      by remove_io_thread() in sort.c:thr_find_all_keys().
+    */
     if (write_data_suffix(&sort_info,1) || end_io_cache(&info->rec_cache))
       goto err;
     if (param->testflag & T_SAFE_REPAIR)
@@ -2536,8 +2779,14 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
       sort_param->filepos;
     /* Only whole records */
     share->state.version=(ulong) time((time_t*) 0);
+
+    /*
+      Exchange the data file descriptor of the table, so that we use the
+      new file from now on.
+     */
     my_close(info->dfile,MYF(0));
     info->dfile=new_file;
+
     share->data_file_type=sort_info.new_data_file_type;
     share->pack.header_length=(ulong) new_header_length;
   }
@@ -2592,7 +2841,20 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
 
 err:
   got_error|= flush_blocks(param, share->key_cache, share->kfile);
+  /*
+    Destroy the write cache. The master thread did already detach from
+    the share by remove_io_thread() or it was not yet started (if the
+    error happend before creating the thread).
+  */
   VOID(end_io_cache(&info->rec_cache));
+  /*
+    Destroy the new data cache in case of non-quick repair. All slave
+    threads did either detach from the share by remove_io_thread()
+    already or they were not yet started (if the error happend before
+    creating the threads).
+  */
+  if (!rep_quick)
+    VOID(end_io_cache(&new_data_cache));
   if (!got_error)
   {
     /* Replace the actual file with the temporary file */
@@ -2723,12 +2985,41 @@ static int sort_ft_key_read(MI_SORT_PARAM *sort_param, void *key)
 } /* sort_ft_key_read */
 
 
-	/* Read next record from file using parameters in sort_info */
-	/* Return -1 if end of file, 0 if ok and > 0 if error */
+/*
+  Read next record from file using parameters in sort_info.
+
+  SYNOPSIS
+    sort_get_next_record()
+      sort_param                Information about and for the sort process
+
+  NOTE
+
+    Dynamic Records With Non-Quick Parallel Repair
+
+      For non-quick parallel repair we use a synchronized read/write
+      cache. This means that one thread is the master who fixes the data
+      file by reading each record from the old data file and writing it
+      to the new data file. By doing this the records in the new data
+      file are written contiguously. Whenever the write buffer is full,
+      it is copied to the read buffer. The slaves read from the read
+      buffer, which is not associated with a file. Thus read_cache.file
+      is -1. When using _mi_read_cache(), the slaves must always set
+      flag to READING_NEXT so that the function never tries to read from
+      file. This is safe because the records are contiguous. There is no
+      need to read outside the cache. This condition is evaluated in the
+      variable 'parallel_flag' for quick reference. read_cache.file must
+      be >= 0 in every other case.
+
+  RETURN
+    -1          end of file
+    0           ok
+    > 0         error
+*/
 
 static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 {
   int searching;
+  int parallel_flag;
   uint found_record,b_type,left_length;
   my_off_t pos;
   byte *to;
@@ -2766,7 +3057,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
       sort_param->max_pos=(sort_param->pos+=share->base.pack_reclength);
       if (*sort_param->record)
       {
-	if (param->calc_checksum)
+	if (sort_param->calc_checksum)
 	  param->glob_crc+= (info->checksum=
 			     mi_static_checksum(info,sort_param->record));
 	DBUG_RETURN(0);
@@ -2781,6 +3072,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
     LINT_INIT(to);
     pos=sort_param->pos;
     searching=(sort_param->fix_datafile && (param->testflag & T_EXTEND));
+    parallel_flag= (sort_param->read_cache.file < 0) ? READING_NEXT : 0;
     for (;;)
     {
       found_record=block_info.second_read= 0;
@@ -2811,7 +3103,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
                            (byte*) block_info.header,pos,
 			   MI_BLOCK_INFO_HEADER_LENGTH,
 			   (! found_record ? READING_NEXT : 0) |
-			   READING_HEADER))
+                           parallel_flag | READING_HEADER))
 	{
 	  if (found_record)
 	  {
@@ -2988,9 +3280,31 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 			      llstr(sort_param->start_recpos,llbuff));
 	  goto try_next;
 	}
-	if (_mi_read_cache(&sort_param->read_cache,to,block_info.filepos,
-			   block_info.data_len,
-			   (found_record == 1 ? READING_NEXT : 0)))
+        /*
+          Copy information that is already read. Avoid accessing data
+          below the cache start. This could happen if the header
+          streched over the end of the previous buffer contents.
+        */
+        {
+          uint header_len= (uint) (block_info.filepos - pos);
+          uint prefetch_len= (MI_BLOCK_INFO_HEADER_LENGTH - header_len);
+
+          if (prefetch_len > block_info.data_len)
+            prefetch_len= block_info.data_len;
+          if (prefetch_len)
+          {
+            memcpy(to, block_info.header + header_len, prefetch_len);
+            block_info.filepos+= prefetch_len;
+            block_info.data_len-= prefetch_len;
+            left_length-= prefetch_len;
+            to+= prefetch_len;
+          }
+        }
+        if (block_info.data_len &&
+            _mi_read_cache(&sort_param->read_cache,to,block_info.filepos,
+                           block_info.data_len,
+                           (found_record == 1 ? READING_NEXT : 0) |
+                           parallel_flag))
 	{
 	  mi_check_print_info(param,
 			      "Read error for block at: %s (error: %d); Skipped",
@@ -3020,13 +3334,14 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
       {
 	if (sort_param->read_cache.error < 0)
 	  DBUG_RETURN(1);
-	if (info->s->calc_checksum)
-	  info->checksum=mi_checksum(info,sort_param->record);
+	if (sort_param->calc_checksum)
+	  info->checksum= mi_checksum(info, sort_param->record);
 	if ((param->testflag & (T_EXTEND | T_REP)) || searching)
 	{
 	  if (_mi_rec_check(info, sort_param->record, sort_param->rec_buff,
                             sort_param->find_length,
                             (param->testflag & T_QUICK) &&
+                            sort_param->calc_checksum &&
                             test(info->s->calc_checksum)))
 	  {
 	    mi_check_print_info(param,"Found wrong packed record at %s",
@@ -3034,7 +3349,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	    goto try_next;
 	  }
 	}
-	if (param->calc_checksum)
+	if (sort_param->calc_checksum)
 	  param->glob_crc+= info->checksum;
 	DBUG_RETURN(0);
       }
@@ -3061,7 +3376,8 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	DBUG_RETURN(1);		/* Something wrong with data */
       }
       sort_param->start_recpos=sort_param->pos;
-      if (_mi_pack_get_block_info(info,&block_info,-1,sort_param->pos))
+      if (_mi_pack_get_block_info(info, &sort_param->bit_buff, &block_info,
+                                  &sort_param->rec_buff, -1, sort_param->pos))
 	DBUG_RETURN(-1);
       if (!block_info.rec_len &&
 	  sort_param->pos + MEMMAP_EXTRA_MARGIN ==
@@ -3085,15 +3401,14 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 			      llstr(sort_param->pos,llbuff));
 	continue;
       }
-      if (_mi_pack_rec_unpack(info,sort_param->record,sort_param->rec_buff,
-			      block_info.rec_len))
+      if (_mi_pack_rec_unpack(info, &sort_param->bit_buff, sort_param->record,
+                              sort_param->rec_buff, block_info.rec_len))
       {
 	if (! searching)
 	  mi_check_print_info(param,"Found wrong record at %s",
 			      llstr(sort_param->pos,llbuff));
 	continue;
       }
-      info->checksum=mi_checksum(info,sort_param->record);
       if (!sort_param->fix_datafile)
       {
 	sort_param->filepos=sort_param->pos;
@@ -3103,8 +3418,9 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
       sort_param->max_pos=(sort_param->pos=block_info.filepos+
 			 block_info.rec_len);
       info->packed_length=block_info.rec_len;
-      if (param->calc_checksum)
-	param->glob_crc+= info->checksum;
+      if (sort_param->calc_checksum)
+	param->glob_crc+= (info->checksum=
+                           mi_checksum(info, sort_param->record));
       DBUG_RETURN(0);
     }
   }
@@ -3112,7 +3428,20 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 }
 
 
-	/* Write record to new file */
+/*
+  Write record to new file.
+
+  SYNOPSIS
+    sort_write_record()
+      sort_param                Sort parameters.
+
+  NOTE
+    This is only called by a master thread if parallel repair is used.
+
+  RETURN
+    0           OK
+    1           Error
+*/
 
 int sort_write_record(MI_SORT_PARAM *sort_param)
 {
@@ -3161,6 +3490,7 @@ int sort_write_record(MI_SORT_PARAM *sort_param)
 	}
 	from=sort_info->buff+ALIGN_SIZE(MI_MAX_DYN_BLOCK_HEADER);
       }
+      /* We can use info->checksum here as only one thread calls this. */
       info->checksum=mi_checksum(info,sort_param->record);
       reclength=_mi_rec_pack(info,from,sort_param->record);
       flag=0;
@@ -3189,9 +3519,11 @@ int sort_write_record(MI_SORT_PARAM *sort_param)
       break;
     case COMPRESSED_RECORD:
       reclength=info->packed_length;
-      length=save_pack_length(block_buff,reclength);
+      length= save_pack_length((uint) share->pack.version, block_buff,
+                               reclength);
       if (info->s->base.blobs)
-	length+=save_pack_length(block_buff+length,info->blob_length);
+	length+= save_pack_length((uint) share->pack.version,
+	                          block_buff + length, info->blob_length);
       if (my_b_write(&info->rec_cache,block_buff,length) ||
 	  my_b_write(&info->rec_cache,(byte*) sort_param->rec_buff,reclength))
       {
@@ -3224,15 +3556,15 @@ int sort_write_record(MI_SORT_PARAM *sort_param)
 static int sort_key_cmp(MI_SORT_PARAM *sort_param, const void *a,
 			const void *b)
 {
-  uint not_used;
+  uint not_used[2];
   return (ha_key_cmp(sort_param->seg, *((uchar**) a), *((uchar**) b),
-		     USE_WHOLE_KEY, SEARCH_SAME,&not_used));
+		     USE_WHOLE_KEY, SEARCH_SAME, not_used));
 } /* sort_key_cmp */
 
 
 static int sort_key_write(MI_SORT_PARAM *sort_param, const void *a)
 {
-  uint diff_pos;
+  uint diff_pos[2];
   char llbuff[22],llbuff2[22];
   SORT_INFO *sort_info=sort_param->sort_info;
   MI_CHECK *param= sort_info->param;
@@ -3242,15 +3574,26 @@ static int sort_key_write(MI_SORT_PARAM *sort_param, const void *a)
   {
     cmp=ha_key_cmp(sort_param->seg,sort_info->key_block->lastkey,
 		   (uchar*) a, USE_WHOLE_KEY,SEARCH_FIND | SEARCH_UPDATE,
-		   &diff_pos);
-    ha_key_cmp(sort_param->seg,sort_info->key_block->lastkey,
-               (uchar*) a, USE_WHOLE_KEY,SEARCH_FIND | SEARCH_NULL_ARE_NOT_EQUAL,
-               &diff_pos);
-    sort_param->unique[diff_pos-1]++;
+		   diff_pos);
+    if (param->stats_method == MI_STATS_METHOD_NULLS_NOT_EQUAL)
+      ha_key_cmp(sort_param->seg,sort_info->key_block->lastkey,
+                 (uchar*) a, USE_WHOLE_KEY, 
+                 SEARCH_FIND | SEARCH_NULL_ARE_NOT_EQUAL, diff_pos);
+    else if (param->stats_method == MI_STATS_METHOD_IGNORE_NULLS)
+    {
+      diff_pos[0]= mi_collect_stats_nonulls_next(sort_param->seg,
+                                                 sort_param->notnull,
+                                                 sort_info->key_block->lastkey,
+                                                 (uchar*)a);
+    }
+    sort_param->unique[diff_pos[0]-1]++;
   }
   else
   {
     cmp= -1;
+    if (param->stats_method == MI_STATS_METHOD_IGNORE_NULLS)
+      mi_collect_stats_nonulls_first(sort_param->seg, sort_param->notnull,
+                                     (uchar*)a);
   }
   if ((sort_param->keyinfo->flag & HA_NOSAME) && cmp == 0)
   {
@@ -3557,7 +3900,7 @@ static int sort_delete_record(MI_SORT_PARAM *sort_param)
 	DBUG_RETURN(1);
       }
     }
-    if (param->calc_checksum)
+    if (sort_param->calc_checksum)
       param->glob_crc-=(*info->s->calc_checksum)(info, sort_param->record);
   }
   error=flush_io_cache(&info->rec_cache) || (*info->s->delete_record)(info);
@@ -3662,6 +4005,7 @@ int recreate_table(MI_CHECK *param, MI_INFO **org_info, char *filename)
   ha_rows max_records;
   ulonglong file_length,tmp_length;
   MI_CREATE_INFO create_info;
+  DBUG_ENTER("recreate_table");
 
   error=1;					/* Default error */
   info= **org_info;
@@ -3671,7 +4015,7 @@ int recreate_table(MI_CHECK *param, MI_INFO **org_info, char *filename)
   unpack= (share.options & HA_OPTION_COMPRESS_RECORD) &&
     (param->testflag & T_UNPACK);
   if (!(keyinfo=(MI_KEYDEF*) my_alloca(sizeof(MI_KEYDEF)*share.base.keys)))
-    return 0;
+    DBUG_RETURN(0);
   memcpy((byte*) keyinfo,(byte*) share.keyinfo,
 	 (size_t) (sizeof(MI_KEYDEF)*share.base.keys));
 
@@ -3680,14 +4024,14 @@ int recreate_table(MI_CHECK *param, MI_INFO **org_info, char *filename)
 				       (key_parts+share.base.keys))))
   {
     my_afree((gptr) keyinfo);
-    return 1;
+    DBUG_RETURN(1);
   }
   if (!(recdef=(MI_COLUMNDEF*)
 	my_alloca(sizeof(MI_COLUMNDEF)*(share.base.fields+1))))
   {
     my_afree((gptr) keyinfo);
     my_afree((gptr) keysegs);
-    return 1;
+    DBUG_RETURN(1);
   }
   if (!(uniquedef=(MI_UNIQUEDEF*)
 	my_alloca(sizeof(MI_UNIQUEDEF)*(share.state.header.uniques+1))))
@@ -3695,7 +4039,7 @@ int recreate_table(MI_CHECK *param, MI_INFO **org_info, char *filename)
     my_afree((gptr) recdef);
     my_afree((gptr) keyinfo);
     my_afree((gptr) keysegs);
-    return 1;
+    DBUG_RETURN(1);
   }
 
   /* Copy the column definitions */
@@ -3768,6 +4112,11 @@ int recreate_table(MI_CHECK *param, MI_INFO **org_info, char *filename)
   create_info.language = (param->language ? param->language :
 			  share.state.header.language);
   create_info.key_file_length=  status_info.key_file_length;
+  /*
+    Allow for creating an auto_increment key. This has an effect only if
+    an auto_increment key exists in the original table.
+  */
+  create_info.with_auto_increment= TRUE;
   /* We don't have to handle symlinks here because we are using
      HA_DONT_TOUCH_DATA */
   if (mi_create(filename,
@@ -3812,7 +4161,7 @@ end:
   my_afree((gptr) keyinfo);
   my_afree((gptr) recdef);
   my_afree((gptr) keysegs);
-  return error;
+  DBUG_RETURN(error);
 }
 
 
@@ -3915,6 +4264,8 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
 			       my_bool repair_only)
 {
   byte *record;
+  DBUG_ENTER("update_auto_increment_key");
+
   if (!info->s->base.auto_key ||
       !(((ulonglong) 1 << (info->s->base.auto_key-1)
 	 & info->s->state.key_map)))
@@ -3923,7 +4274,7 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
       mi_check_print_info(param,
 			  "Table: %s doesn't have an auto increment key\n",
 			  param->isam_file_name);
-    return;
+    DBUG_VOID_RETURN;
   }
   if (!(param->testflag & T_SILENT) &&
       !(param->testflag & T_REP))
@@ -3936,7 +4287,7 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
 				  MYF(0))))
   {
     mi_check_print_error(param,"Not enough memory for extra record");
-    return;
+    DBUG_VOID_RETURN;
   }
 
   mi_extra(info,HA_EXTRA_KEYREAD,0);
@@ -3947,7 +4298,7 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
       mi_extra(info,HA_EXTRA_NO_KEYREAD,0);
       my_free((char*) record, MYF(0));
       mi_check_print_error(param,"%d when reading last record",my_errno);
-      return;
+      DBUG_VOID_RETURN;
     }
     if (!repair_only)
       info->s->state.auto_increment=param->auto_increment_value;
@@ -3963,29 +4314,40 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
   mi_extra(info,HA_EXTRA_NO_KEYREAD,0);
   my_free((char*) record, MYF(0));
   update_state_info(param, info, UPDATE_AUTO_INC);
-  return;
+  DBUG_VOID_RETURN;
 }
 
 
 /*
   Update statistics for each part of an index
-  
+
   SYNOPSIS
     update_key_parts()
-      keyinfo               Index information (only key->keysegs used)
+      keyinfo           IN  Index information (only key->keysegs used)
       rec_per_key_part  OUT Store statistics here
-      unique            IN  Array of #distinct values collected over index
-                            run.
+      unique            IN  Array of (#distinct tuples)
+      notnull_tuples    IN  Array of (#tuples), or NULL
       records               Number of records in the table
-      
-  NOTES
+
+  DESCRIPTION
+    This function is called produce index statistics values from unique and 
+    notnull_tuples arrays after these arrays were produced with sequential
+    index scan (the scan is done in two places: chk_index() and
+    sort_key_write()).
+
+    This function handles all 3 index statistics collection methods.
+
     Unique is an array:
-    unique[0]= (#different values of {keypart1}) - 1
-    unique[1]= (#different values of {keypart2,keypart1} tuple) - unique[0] - 1
-    ...
-    Here we assume that NULL != NULL (see SEARCH_NULL_ARE_NOT_EQUAL). The
-    'unique' array is collected in one sequential scan through the entire
-    index. This is done in two places: in chk_index() and in sort_key_write().
+      unique[0]= (#different values of {keypart1}) - 1
+      unique[1]= (#different values of {keypart1,keypart2} tuple)-unique[0]-1
+      ...
+
+    For MI_STATS_METHOD_IGNORE_NULLS method, notnull_tuples is an array too:
+      notnull_tuples[0]= (#of {keypart1} tuples such that keypart1 is not NULL)
+      notnull_tuples[1]= (#of {keypart1,keypart2} tuples such that all 
+                          keypart{i} are not NULL)
+      ...
+    For all other statistics collection methods notnull_tuples==NULL.
 
     Output is an array:
     rec_per_key_part[k] = 
@@ -3997,25 +4359,53 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
         index tuples}
      
      = #tuples-in-the-index / #distinct-tuples-in-the-index.
+    
+    The #tuples-in-the-index and #distinct-tuples-in-the-index have different 
+    meaning depending on which statistics collection method is used:
+    
+    MI_STATS_METHOD_*  how are nulls compared?  which tuples are counted?
+     NULLS_EQUAL            NULL == NULL           all tuples in table
+     NULLS_NOT_EQUAL        NULL != NULL           all tuples in table
+     IGNORE_NULLS               n/a             tuples that don't have NULLs
 */
 
 void update_key_parts(MI_KEYDEF *keyinfo, ulong *rec_per_key_part,
-			     ulonglong *unique, ulonglong records)
+                      ulonglong *unique, ulonglong *notnull,
+                      ulonglong records)
 {
-  ulonglong count=0,tmp;
+  ulonglong count=0,tmp, unique_tuples;
+  ulonglong tuples= records;
   uint parts;
   for (parts=0 ; parts < keyinfo->keysegs  ; parts++)
   {
     count+=unique[parts];
-    if (count == 0)
-      tmp=records;
+    unique_tuples= count + 1;    
+    if (notnull)
+    {
+      tuples= notnull[parts];
+      /* 
+        #(unique_tuples not counting tuples with NULLs) = 
+          #(unique_tuples counting tuples with NULLs as different) - 
+          #(tuples with NULLs)
+      */
+      unique_tuples -= (records - notnull[parts]);
+    }
+    
+    if (unique_tuples == 0)
+      tmp= 1;
+    else if (count == 0)
+      tmp= tuples; /* 1 unique tuple */
     else
-      tmp= (records + (count+1)/2) / (count+1);
-    /* for some weird keys (e.g. FULLTEXT) tmp can be <1 here.
-       let's ensure it is not */
+      tmp= (tuples + unique_tuples/2) / unique_tuples;
+
+    /* 
+      for some weird keys (e.g. FULLTEXT) tmp can be <1 here. 
+      let's ensure it is not
+    */
     set_if_bigger(tmp,1);
     if (tmp >= (ulonglong) ~(ulong) 0)
       tmp=(ulonglong) ~(ulong) 0;
+
     *rec_per_key_part=(ulong) tmp;
     rec_per_key_part++;
   }

@@ -22,6 +22,11 @@ functions */
 #define _WIN32_WINNT     0x0500
 #endif
 
+#if defined(_MSC_VER) && _MSC_VER >= 1400
+/* Avoid endless warnings about sprintf() etc. being unsafe. */
+#define _CRT_SECURE_NO_DEPRECATE 1
+#endif
+
 #include <sys/locking.h>
 #include <windows.h>
 #include <math.h>			/* Because of rint() */
@@ -192,10 +197,10 @@ typedef uint rf_SetTimer;
 
 /* Convert some simple functions to Posix */
 
-#define sigset(A,B) signal((A),(B))
+#define my_sigset(A,B) signal((A),(B))
 #define finite(A) _finite(A)
 #define sleep(A)  Sleep((A)*1000)
-#define popen(A) popen(A,B) _popen((A),(B))
+#define popen(A,B) _popen((A),(B))
 #define pclose(A) _pclose(A)
 
 #ifndef __BORLANDC__
@@ -278,11 +283,12 @@ inline double ulonglong2double(ulonglong value)
 			  *((T)+4)=(uchar) (((A) >> 32)); }
 #define int8store(T,A)	*((ulonglong *) (T))= (ulonglong) (A)
 
-#define doubleget(V,M)	{ *((long *) &V) = *((long*) M); \
-			  *(((long *) &V)+1) = *(((long*) M)+1); }
-#define doublestore(T,V) { *((long *) T) = *((long*) &V); \
-			   *(((long *) T)+1) = *(((long*) &V)+1); }
+#define doubleget(V,M)	do { *((long *) &V) = *((long*) M); \
+			    *(((long *) &V)+1) = *(((long*) M)+1); } while(0)
+#define doublestore(T,V) do { *((long *) T) = *((long*) &V); \
+			      *(((long *) T)+1) = *(((long*) &V)+1); } while(0)
 #define float4get(V,M) { *((long *) &(V)) = *((long*) (M)); }
+#define floatget(V,M) memcpy((byte*) &V,(byte*) (M),sizeof(float))
 #define floatstore(T,V) memcpy((byte*)(T), (byte*)(&V), sizeof(float))
 #define float8get(V,M) doubleget((V),(M))
 #define float4store(V,M) memcpy((byte*) V,(byte*) (&M),sizeof(float))
@@ -376,8 +382,15 @@ inline double ulonglong2double(ulonglong value)
 
 #define shared_memory_buffer_length 16000
 #define default_shared_memory_base_name "MYSQL"
+
+#ifdef CYBOZU
+#define MYSQL_DEFAULT_CHARSET_NAME "utf8"
+#define MYSQL_DEFAULT_COLLATION_NAME "utf8_general_cs"
+#define HAVE_UTF8_GENERAL_CS 1
+#else
 #define MYSQL_DEFAULT_CHARSET_NAME "latin1"
 #define MYSQL_DEFAULT_COLLATION_NAME "latin1_swedish_ci"
+#endif
 
 #define HAVE_SPATIAL 1
 #define HAVE_RTREE_KEYS 1
@@ -385,8 +398,10 @@ inline double ulonglong2double(ulonglong value)
 /* Define charsets you want */
 /* #undef HAVE_CHARSET_armscii8 */
 /* #undef HAVE_CHARSET_ascii */
+#ifndef CYBOZU
 #define HAVE_CHARSET_big5 1
 #define HAVE_CHARSET_cp1250 1
+#endif
 /* #undef HAVE_CHARSET_cp1251 */
 /* #undef HAVE_CHARSET_cp1256 */
 /* #undef HAVE_CHARSET_cp1257 */
@@ -395,26 +410,32 @@ inline double ulonglong2double(ulonglong value)
 /* #undef HAVE_CHARSET_cp866 */
 #define HAVE_CHARSET_cp932 1
 /* #undef HAVE_CHARSET_dec8 */
+#ifndef CYBOZU
 #define HAVE_CHARSET_euckr 1
 #define HAVE_CHARSET_gb2312 1
 #define HAVE_CHARSET_gbk 1
+#endif
 /* #undef HAVE_CHARSET_greek */
 /* #undef HAVE_CHARSET_hebrew */
 /* #undef HAVE_CHARSET_hp8 */
 /* #undef HAVE_CHARSET_keybcs2 */
 /* #undef HAVE_CHARSET_koi8r */
 /* #undef HAVE_CHARSET_koi8u */
+#ifndef CYBOZU
 #define HAVE_CHARSET_latin1 1
 #define HAVE_CHARSET_latin2 1
+#endif
 /* #undef HAVE_CHARSET_latin5 */
 /* #undef HAVE_CHARSET_latin7 */
 /* #undef HAVE_CHARSET_macce */
 /* #undef HAVE_CHARSET_macroman */
 #define HAVE_CHARSET_sjis 1
 /* #undef HAVE_CHARSET_swe7 */
+#ifndef CYBOZU
 #define HAVE_CHARSET_tis620 1
 #define HAVE_CHARSET_ucs2 1
 #define HAVE_CHARSET_ujis 1
+#endif
 #define HAVE_CHARSET_utf8 1
 #define HAVE_UCA_COLLATIONS 1
 

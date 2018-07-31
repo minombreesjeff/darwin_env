@@ -190,7 +190,7 @@ static int com_quit(String *str,char*),
 	   com_connect(String *str,char*), com_status(String *str,char*),
 	   com_use(String *str,char*), com_source(String *str, char*),
 	   com_rehash(String *str, char*), com_tee(String *str, char*),
-           com_notee(String *str, char*),
+           com_notee(String *str, char*), com_charset(String *str,char*),
            com_prompt(String *str, char*), com_delimiter(String *str, char*);
 
 #ifdef USE_POPEN
@@ -254,7 +254,7 @@ static COMMANDS commands[] = {
   { "quit",   'q', com_quit,   0, "Quit mysql." },
   { "rehash", '#', com_rehash, 0, "Rebuild completion hash." },
   { "source", '.', com_source, 1,
-    "Execute a SQL script file. Takes a file name as an argument."},
+    "Execute an SQL script file. Takes a file name as an argument."},
   { "status", 's', com_status, 0, "Get status information from the server."},
 #ifdef USE_POPEN
   { "system", '!', com_shell,  1, "Execute a system shell command."},
@@ -263,6 +263,8 @@ static COMMANDS commands[] = {
     "Set outfile [to_outfile]. Append everything into given outfile." },
   { "use",    'u', com_use,    1,
     "Use another database. Takes database name as argument." },
+  { "charset_name",    'C', com_charset,    1,
+    "Switch to another charset. Might be needed for processing binlog." },
   /* Get bash-like expansion for some commands */
   { "create table",     0, 0, 0, ""},
   { "create database",  0, 0, 0, ""},
@@ -508,6 +510,10 @@ static struct my_option my_long_options[] =
    0, 0, 0, 0, 0},
   {"help", 'I', "Synonym for -?", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
    0, 0, 0, 0, 0},
+#ifdef __NETWARE__
+  {"autoclose", OPT_AUTO_CLOSE, "Auto close the screen on exit for Netware.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"auto-rehash", OPT_AUTO_REHASH,
    "Enable automatic rehashing. One doesn't need to use 'rehash' to get table and field completion, but startup and reconnecting may take a longer time. Disable with --disable-auto-rehash.",
    (gptr*) &rehash, (gptr*) &rehash, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
@@ -544,13 +550,13 @@ static struct my_option my_long_options[] =
   {"force", 'f', "Continue even if we get an sql error.",
    (gptr*) &ignore_errors, (gptr*) &ignore_errors, 0, GET_BOOL, NO_ARG, 0, 0,
    0, 0, 0, 0},
-  {"no-named-commands", 'g',
-   "Named commands are disabled. Use \\* form only, or use named commands only in the beginning of a line ending with a semicolon (;) Since version 10.9 the client now starts with this option ENABLED by default! Disable with '-G'. Long format commands still work from the first line. WARNING: option deprecated; use --disable-named-commands instead.",
-   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"named-commands", 'G',
    "Enable named commands. Named commands mean this program's internal commands; see mysql> help . When enabled, the named commands can be used from any line of the query, otherwise only from the first line, before an enter. Disable with --disable-named-commands. This option is disabled by default.",
    (gptr*) &named_cmds, (gptr*) &named_cmds, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
+  {"no-named-commands", 'g',
+   "Named commands are disabled. Use \\* form only, or use named commands only in the beginning of a line ending with a semicolon (;) Since version 10.9 the client now starts with this option ENABLED by default! Disable with '-G'. Long format commands still work from the first line. WARNING: option deprecated; use --disable-named-commands instead.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"ignore-spaces", 'i', "Ignore space after function names.", 0, 0, 0,
    GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"local-infile", OPT_LOCAL_INFILE, "Enable/disable LOAD DATA LOCAL INFILE.",
@@ -568,13 +574,6 @@ static struct my_option my_long_options[] =
    (gptr*) &line_numbers, (gptr*) &line_numbers, 0, GET_BOOL,
    NO_ARG, 1, 0, 0, 0, 0, 0},  
   {"skip-line-numbers", 'L', "Don't write line number for errors. WARNING: -L is deprecated, use long version of this option instead.", 0, 0, 0, GET_NO_ARG,
-   NO_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef USE_POPEN
-  {"no-pager", OPT_NOPAGER,
-   "Disable pager and print to stdout. See interactive help (\\h) also. WARNING: option deprecated; use --disable-pager instead.",
-   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-#endif
-  {"no-tee", OPT_NOTEE, "Disable outfile. See interactive help (\\h) also. WARNING: option deprecated; use --disable-tee instead", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
   {"unbuffered", 'n', "Flush buffer after each query.", (gptr*) &unbuffered,
    (gptr*) &unbuffered, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -595,8 +594,11 @@ static struct my_option my_long_options[] =
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
 #ifdef USE_POPEN
   {"pager", OPT_PAGER,
-   "Pager to use to display results. If you don't supply an option the default pager is taken from your ENV variable PAGER. Valid pagers are less, more, cat [> filename], etc. See interactive help (\\h) also. This option does not work in batch mode.",
+   "Pager to use to display results. If you don't supply an option the default pager is taken from your ENV variable PAGER. Valid pagers are less, more, cat [> filename], etc. See interactive help (\\h) also. This option does not work in batch mode. Disable with --disable-pager. This option is disabled by default.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+  {"no-pager", OPT_NOPAGER,
+   "Disable pager and print to stdout. See interactive help (\\h) also. WARNING: option deprecated; use --disable-pager instead.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
   {"password", 'p',
    "Password to use when connecting to server. If password is not given it's asked from the tty.",
@@ -637,8 +639,10 @@ static struct my_option my_long_options[] =
   {"debug-info", 'T', "Print some debug info at exit.", (gptr*) &info_flag,
    (gptr*) &info_flag, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"tee", OPT_TEE,
-   "Append everything into outfile. See interactive help (\\h) also. Does not work in batch mode.",
+   "Append everything into outfile. See interactive help (\\h) also. Does not work in batch mode. Disable with --disable-tee. This option is disabled by default.",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"no-tee", OPT_NOTEE, "Disable outfile. See interactive help (\\h) also. WARNING: option deprecated; use --disable-tee instead", 0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
 #ifndef DONT_ALLOW_USER_CHANGE
   {"user", 'u', "User for login if not current user.", (gptr*) &current_user,
    (gptr*) &current_user, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -729,6 +733,11 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	       char *argument)
 {
   switch(optid) {
+#ifdef __NETWARE__
+  case OPT_AUTO_CLOSE:
+    setscreenmode(SCR_AUTOCLOSE_ON_EXIT);
+    break;
+#endif
   case OPT_CHARSETS_DIR:
     strmov(mysql_charsets_dir, argument);
     charsets_dir = mysql_charsets_dir;
@@ -929,10 +938,15 @@ static int get_options(int argc, char **argv)
 
 static int read_lines(bool execute_commands)
 {
-#if defined( __WIN__) || defined(OS2) || defined(__NETWARE__)
+#if defined(OS2) || defined(__NETWARE__)
   char linebuffer[254];
   String buffer;
 #endif
+#if defined(__WIN__)
+  String tmpbuf;
+  String buffer;
+#endif
+
   char	*line;
   char	in_string=0;
   ulong line_number=0;
@@ -963,7 +977,7 @@ static int read_lines(bool execute_commands)
 
 #if defined( __WIN__) || defined(OS2) || defined(__NETWARE__)
       tee_fputs(prompt, stdout);
-#ifdef __NETWARE__
+#if defined(__NETWARE__)
       line=fgets(linebuffer, sizeof(linebuffer)-1, stdin);
       /* Remove the '\n' */
       if (line)
@@ -972,7 +986,22 @@ static int read_lines(bool execute_commands)
         if (p != NULL)
           *p = '\0';
       }
-#else
+#elif defined(__WIN__)
+      if (!tmpbuf.is_alloced())
+        tmpbuf.alloc(65535);
+      buffer.length(0);
+      unsigned long clen;
+      do
+      {
+        line= my_cgets((char *) tmpbuf.ptr(), tmpbuf.alloced_length()-1, &clen);
+        buffer.append(line, clen);
+        /* 
+           if we got buffer fully filled than there is a chance that
+           something else is still in console input buffer
+        */
+      } while (tmpbuf.alloced_length() <= clen);
+      line= buffer.c_ptr();
+#else /* OS2 */
       buffer.length(0);
       /* _cgets() expects the buffer size - 3 as the first byte */
       linebuffer[0]= (char) sizeof(linebuffer) - 3;
@@ -1021,7 +1050,7 @@ static int read_lines(bool execute_commands)
       (We want to allow help, print and clear anywhere at line start
     */
     if (execute_commands && (named_cmds || glob_buffer.is_empty()) 
-	&& !in_string && (com=find_command(line,0)))
+	&& !ml_comment && !in_string && (com=find_command(line,0)))
     {
       if ((*com->func)(&glob_buffer,line) > 0)
 	break;
@@ -1048,9 +1077,14 @@ static int read_lines(bool execute_commands)
 	status.exit_status=0;
     }
   }
+
 #if defined( __WIN__) || defined(OS2) || defined(__NETWARE__)
   buffer.free();
 #endif
+#if defined( __WIN__)
+  tmpbuf.free();
+#endif
+
   return status.exit_status;
 }
 
@@ -1123,11 +1157,17 @@ static bool add_line(String &buffer,char *line,char *in_string,
 #ifdef USE_MB
     int l;
     if (use_mb(charset_info) &&
-        (l = my_ismbchar(charset_info, pos, strend))) {
-	while (l--)
-	    *out++ = *pos++;
-	pos--;
-	continue;
+        (l= my_ismbchar(charset_info, pos, strend)))
+    {
+      if (!*ml_comment)
+      {
+        while (l--)
+          *out++ = *pos++;
+        pos--;
+      }
+      else
+        pos+= l - 1;
+      continue;
     }
 #endif
     if (!*ml_comment && inchar == '\\')
@@ -1563,11 +1603,8 @@ You can turn off this feature to get a quicker startup with -A\n\n");
       mysql_free_result(fields);
     }
     else
-    {
-      tee_fprintf(stdout,
-		  "Didn't find any fields in table '%s'\n",table_row[0]);
       field_names[i]= 0;
-    }
+
     i++;
   }
   mysql_free_result(tables);
@@ -1686,7 +1723,14 @@ static int com_server_help(String *buffer __attribute__((unused)),
   
   if (help_arg[0] != '\'')
   {
-    (void) strxnmov(cmd_buf, sizeof(cmd_buf), "help '", help_arg, "'", NullS);
+	char *end_arg= strend(help_arg);
+	if(--end_arg)
+	{
+		while (my_isspace(charset_info,*end_arg))
+          end_arg--;
+		*++end_arg= '\0';
+	}
+	(void) strxnmov(cmd_buf, sizeof(cmd_buf), "help '", help_arg, "'", NullS);
     server_cmd= cmd_buf;
   }
   
@@ -1772,13 +1816,21 @@ com_help(String *buffer __attribute__((unused)),
 {
   reg1 int i, j;
   char * help_arg= strchr(line,' '), buff[32], *end;
-
   if (help_arg)
-    return com_server_help(buffer,line,help_arg+1);
+  {
+    while (my_isspace(charset_info,*help_arg))
+      help_arg++;
+	if (*help_arg)	  
+	  return com_server_help(buffer,line,help_arg);
+  }
 
-  put_info("\nFor the complete MySQL Manual online, visit:\n   http://www.mysql.com/documentation\n", INFO_INFO);
-  put_info("For info on technical support from MySQL developers, visit:\n   http://www.mysql.com/support\n", INFO_INFO);
-  put_info("For info on MySQL books, utilities, consultants, etc., visit:\n   http://www.mysql.com/portal\n", INFO_INFO);
+  put_info("\nFor information about MySQL products and services, visit:\n"
+           "   http://www.mysql.com/\n"
+           "For developer information, including the MySQL Reference Manual, "
+           "visit:\n"
+           "   http://dev.mysql.com/\n"
+           "To buy MySQL Network Support, training, or other products, visit:\n"
+           "   https://shop.mysql.com/\n", INFO_INFO);
   put_info("List of all MySQL commands:", INFO_INFO);
   if (!named_cmds)
     put_info("Note that all text commands must be first on line and end with ';'",INFO_INFO);
@@ -1809,6 +1861,28 @@ com_clear(String *buffer,char *line __attribute__((unused)))
   return 0;
 }
 
+	/* ARGSUSED */
+static int
+com_charset(String *buffer __attribute__((unused)), char *line)
+{
+  char buff[256], *param;
+  CHARSET_INFO * new_cs;
+  strmake(buff, line, sizeof(buff) - 1);
+  param= get_arg(buff, 0);
+  if (!param || !*param)
+  {
+    return put_info("Usage: \\C char_setname | charset charset_name", 
+		    INFO_ERROR, 0);
+  }
+  new_cs= get_charset_by_csname(param, MY_CS_PRIMARY, MYF(MY_WME));
+  if (new_cs)
+  {
+    charset_info= new_cs;
+    put_info("Charset changed", INFO_INFO);
+  }
+  else put_info("Charset is not found", INFO_INFO);
+  return 0;
+}
 
 /*
   Execute command
@@ -2080,9 +2154,14 @@ print_table_data(MYSQL_RES *result)
     (void) tee_fputs("|", PAGER);
     for (uint off=0; (field = mysql_fetch_field(result)) ; off++)
     {
-      tee_fprintf(PAGER, " %-*s|",(int) min(field->max_length,
+      uint name_length= (uint) strlen(field->name);
+      uint numcells= charset_info->cset->numcells(charset_info,
+                                                  field->name,
+                                                  field->name + name_length);
+      uint display_length= field->max_length + name_length - numcells;
+      tee_fprintf(PAGER, " %-*s|",(int) min(display_length,
                                             MAX_COLUMN_LENGTH),
-		  field->name);
+                  field->name);
       num_flag[off]= IS_NUM(field->type);
     }
     (void) tee_fputs("\n", PAGER);
@@ -2550,7 +2629,7 @@ com_connect(String *buffer, char *line)
   bzero(buff, sizeof(buff));
   if (buffer)
   {
-    strmov(buff, line);
+    strmake(buff, line, sizeof(buff) - 1);
     tmp= get_arg(buff, 0);
     if (tmp && *tmp)
     {
@@ -2664,7 +2743,7 @@ com_use(String *buffer __attribute__((unused)), char *line)
   char *tmp, buff[FN_REFLEN + 1];
 
   bzero(buff, sizeof(buff));
-  strmov(buff, line);
+  strmake(buff, line, sizeof(buff) - 1);
   tmp= get_arg(buff, 0);
   if (!tmp || !*tmp)
   {

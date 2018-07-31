@@ -53,6 +53,7 @@ static int port = MYSQL_PORT;
 static const char* sock= 0;
 static const char* user = 0;
 static char* pass = 0;
+static char *charset= 0;
 
 static ulonglong start_position, stop_position;
 #define start_position_mot ((my_off_t)start_position)
@@ -431,6 +432,11 @@ end:
 
 static struct my_option my_long_options[] =
 {
+
+#ifdef __NETWARE__
+  {"autoclose", OPT_AUTO_CLOSE, "Auto close the screen on exit for Netware.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 #ifndef DBUG_OFF
   {"debug", '#', "Output debug log.", (gptr*) &default_dbug_option,
    (gptr*) &default_dbug_option, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
@@ -476,6 +482,9 @@ static struct my_option my_long_options[] =
    "Used to reserve file descriptors for usage by this program",
    (gptr*) &open_files_limit, (gptr*) &open_files_limit, 0, GET_ULONG,
    REQUIRED_ARG, MY_NFILE, 8, OS_FILE_LIMIT, 0, 1, 0},
+  {"set-charset", OPT_SET_CHARSET,
+   "Add 'SET NAMES character_set' to the output.", (gptr*) &charset,
+   (gptr*) &charset, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"short-form", 's', "Just show the queries, no extra info.",
    (gptr*) &short_form, (gptr*) &short_form, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
@@ -616,6 +625,11 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 {
   bool tty_password=0;
   switch (optid) {
+#ifdef __NETWARE__
+  case OPT_AUTO_CLOSE:
+    setscreenmode(SCR_AUTOCLOSE_ON_EXIT);
+    break;
+#endif
 #ifndef DBUG_OFF
   case '#':
     DBUG_PUSH(argument ? argument : default_dbug_option);
@@ -1085,6 +1099,13 @@ int main(int argc, char** argv)
     fprintf(result_file,
             "/*!32316 SET @OLD_SQL_LOG_BIN=@@SQL_LOG_BIN, SQL_LOG_BIN=0*/;\n");
 
+  if (charset)
+    fprintf(result_file,
+            "\n/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;"
+            "\n/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;"
+            "\n/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;"  
+            "\n/*!40101 SET NAMES %s */;\n", charset);
+
   for (save_stop_position= stop_position, stop_position= ~(my_off_t)0 ;
        (--argc >= 0) && !stop_passed ; )
   {
@@ -1101,6 +1122,12 @@ int main(int argc, char** argv)
 
   if (disable_log_bin)
     fprintf(result_file, "/*!32316 SET SQL_LOG_BIN=@OLD_SQL_LOG_BIN*/;\n");
+
+  if (charset)
+    fprintf(result_file,
+            "/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;\n"
+            "/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;\n"
+            "/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;\n");
 
   if (tmpdir.list)
     free_tmpdir(&tmpdir);

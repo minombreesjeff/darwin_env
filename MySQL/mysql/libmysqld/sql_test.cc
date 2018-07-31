@@ -271,7 +271,7 @@ static void display_table_locks(void)
 
   VOID(my_init_dynamic_array(&saved_table_locks,sizeof(TABLE_LOCK_INFO),open_cache.records + 20,50));
   VOID(pthread_mutex_lock(&THR_LOCK_lock));
-  for (list=thr_lock_thread_list ; list ; list=rest(list))
+  for (list= thr_lock_thread_list; list; list= list_rest(list))
   {
     THR_LOCK *lock=(THR_LOCK*) list->data;
 
@@ -309,6 +309,11 @@ end:
 
 static int print_key_cache_status(const char *name, KEY_CACHE *key_cache)
 {
+  char llbuff1[22];
+  char llbuff2[22];
+  char llbuff3[22];
+  char llbuff4[22];
+
   if (!key_cache->key_cache_inited)
   {
     printf("%s: Not in use\n", name);
@@ -322,16 +327,18 @@ Division_limit: %10lu\n\
 Age_limit:      %10lu\n\
 blocks used:    %10lu\n\
 not flushed:    %10lu\n\
-w_requests:     %10lu\n\
-writes:         %10lu\n\
-r_requests:     %10lu\n\
-reads:          %10lu\n\n",
+w_requests:     %10s\n\
+writes:         %10s\n\
+r_requests:     %10s\n\
+reads:          %10s\n\n",
 	   name,
 	   (ulong) key_cache->param_buff_size, key_cache->param_block_size,
 	   key_cache->param_division_limit, key_cache->param_age_threshold,
 	   key_cache->blocks_used,key_cache->global_blocks_changed,
-	   key_cache->global_cache_w_requests,key_cache->global_cache_write,
-	   key_cache->global_cache_r_requests,key_cache->global_cache_read);
+	   llstr(key_cache->global_cache_w_requests,llbuff1),
+           llstr(key_cache->global_cache_write,llbuff2),
+	   llstr(key_cache->global_cache_r_requests,llbuff3),
+           llstr(key_cache->global_cache_read,llbuff4));
   }
   return 0;
 }

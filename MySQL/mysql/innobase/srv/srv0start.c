@@ -1052,7 +1052,8 @@ innobase_start_or_create_for_mysql(void)
 
 	        fprintf(stderr,
 "InnoDB: Error: You have specified innodb_buffer_pool_awe_mem_mb\n"
-"InnoDB: in my.cnf, but AWE can only be used in Windows 2000 and later.\n");
+"InnoDB: in my.cnf, but AWE can only be used in Windows 2000 and later.\n"
+"InnoDB: To use AWE, InnoDB must be compiled with __WIN2000__ defined.\n");
 
 	        return(DB_ERROR);
 	}
@@ -1175,6 +1176,13 @@ NetWare. */
 		if (!srv_monitor_file) {
 			return(DB_ERROR);
 		}
+	}
+
+	mutex_create(&srv_dict_tmpfile_mutex);
+	mutex_set_level(&srv_dict_tmpfile_mutex, SYNC_DICT_OPERATION);
+	srv_dict_tmpfile = os_file_create_tmpfile();
+	if (!srv_dict_tmpfile) {
+		return(DB_ERROR);
 	}
 
 	/* Restrict the maximum number of file i/o threads */
@@ -1803,8 +1811,13 @@ innobase_shutdown_for_mysql(void)
 			mem_free(srv_monitor_file_name);
 		}
 	}
-	
+	if (srv_dict_tmpfile) {
+		fclose(srv_dict_tmpfile);
+		srv_dict_tmpfile = 0;
+	}
+
 	mutex_free(&srv_monitor_file_mutex);
+	mutex_free(&srv_dict_tmpfile_mutex);
 
 	/* 3. Free all InnoDB's own mutexes and the os_fast_mutexes inside
 	them */

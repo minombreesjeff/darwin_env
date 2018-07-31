@@ -1,0 +1,147 @@
+.\"     Title: \fBperror\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 11/02/2006
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 4.1
+.\"
+.TH "\fBPERROR\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+perror \- explain error codes
+.SH "SYNOPSIS"
+.HP 31
+\fBperror [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIerrorcode\fR\fR\fB ...\fR
+.SH "DESCRIPTION"
+.PP
+For most system errors, MySQL displays, in addition to an internal text message, the system error code in one of the following styles:
+.sp
+.RS 3n
+.nf
+message ... (errno: #)
+message ... (Errcode: #)
+.fi
+.RE
+.PP
+You can find out what the error code means by examining the documentation for your system or by using the
+\fBperror\fR
+utility.
+.PP
+\fBperror\fR
+prints a description for a system error code or for a storage engine (table handler) error code.
+.PP
+Invoke
+\fBperror\fR
+like this:
+.sp
+.RS 3n
+.nf
+shell> \fBperror [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIerrorcode\fR\fR\fB ...\fR
+.fi
+.RE
+.PP
+Example:
+.sp
+.RS 3n
+.nf
+shell> \fBperror 13 64\fR
+Error code  13:  Permission denied
+Error code  64:  Machine is not on the network
+.fi
+.RE
+.PP
+To obtain the error message for a MySQL Cluster error code, invoke
+\fBperror\fR
+with the
+\fB\-\-ndb\fR
+option:
+.sp
+.RS 3n
+.nf
+shell> \fBperror \-\-ndb \fR\fB\fIerrorcode\fR\fR
+.fi
+.RE
+.PP
+Note that the meaning of system error messages may be dependent on your operating system. A given error code may mean different things on different operating systems.
+.PP
+\fBperror\fR
+supports the following options:
+.TP 3n
+\(bu
+\fB\-\-help\fR,
+\fB\-\-info\fR,
+\fB\-I\fR,
+\fB\-?\fR
+.sp
+Display a help message and exit.
+.TP 3n
+\(bu
+\fB\-\-ndb\fR
+.sp
+Print the error message for a MySQL Cluster error code.
+.TP 3n
+\(bu
+\fB\-\-silent\fR,
+\fB\-s\fR
+.sp
+Silent mode. Print only the error message.
+.TP 3n
+\(bu
+\fB\-\-verbose\fR,
+\fB\-v\fR
+.sp
+Verbose mode. Print error code and message. This is the default behavior.
+.TP 3n
+\(bu
+\fB\-\-version\fR,
+\fB\-V\fR
+.sp
+Display version information and exit.
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2006 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+isamchk(1),
+isamlog(1),
+msql2mysql(1),
+myisam_ftdump(1),
+myisamchk(1),
+myisamlog(1),
+myisampack(1),
+mysql(1),
+mysql.server(1),
+mysql_config(1),
+mysql_explain_log(1),
+mysql_fix_privilege_tables(1),
+mysql_zap(1),
+mysqlaccess(1),
+mysqladmin(1),
+mysqlbinlog(1),
+mysqlcheck(1),
+mysqld(1),
+mysqld(8),
+mysqld_multi(1),
+mysqld_safe(1),
+mysqldump(1),
+mysqlhotcopy(1),
+mysqlimport(1),
+mysqlshow(1),
+pack_isam(1),
+replace(1),
+safe_mysqld(1)
+.P
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

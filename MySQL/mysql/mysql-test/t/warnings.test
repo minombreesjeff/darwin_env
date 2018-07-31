@@ -118,6 +118,10 @@ create table t1 (id int) engine=isam;
 alter table t1 engine=isam;
 drop table t1;
 
+create table t1 (id int) engine=merge;
+alter table t1 engine=merge;
+drop table t1;
+
 #
 # Test for deprecated TYPE= syntax
 #
@@ -155,3 +159,5 @@ select * from t1 limit 0;
 select * from t1 limit 1, 0;
 select * from t1 limit 0, 0;
 drop table t1;
+
+# End of 4.1 tests

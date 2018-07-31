@@ -37,8 +37,9 @@ static char *add_load_option(char *ptr,const char *object,
 			     const char *statement);
 
 static my_bool	verbose=0,lock_tables=0,ignore_errors=0,opt_delete=0,
-		replace=0,silent=0,ignore=0,opt_compress=0,opt_local_file=0,
+		replace=0,silent=0,ignore=0,opt_compress=0,
                 opt_low_priority= 0, tty_password= 0;
+static uint     opt_local_file=0;
 static MYSQL	mysql_connection;
 static char	*opt_password=0, *current_user=0,
 		*current_host=0, *current_db=0, *fields_terminated=0,
@@ -57,6 +58,10 @@ static char *shared_memory_base_name=0;
 
 static struct my_option my_long_options[] =
 {
+#ifdef __NETWARE__
+  {"autoclose", OPT_AUTO_CLOSE, "Auto close the screen on exit for Netware.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"character-sets-dir", OPT_CHARSETS_DIR,
    "Directory where character sets are.", (gptr*) &charsets_dir,
    (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -182,6 +187,11 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	       char *argument)
 {
   switch(optid) {
+#ifdef __NETWARE__
+  case OPT_AUTO_CLOSE:
+    setscreenmode(SCR_AUTOCLOSE_ON_EXIT);
+    break;
+#endif
   case 'p':
     if (argument)
     {
@@ -507,6 +517,13 @@ int main(int argc, char **argv)
     free_defaults(argv_to_free);
     return(1); /* purecov: deadcode */
   }
+
+  if (mysql_query(sock, "set @@character_set_database=binary;"))
+  {
+    db_error(sock); /* We shall countinue here, if --force was given */
+    return(1);
+  }
+
   if (lock_tables)
     lock_table(sock, argc, argv);
   for (; *argv != NULL; argv++)

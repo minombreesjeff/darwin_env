@@ -709,9 +709,9 @@ void field_str::get_opt_type(String *answer, ha_rows total_rows)
     else if (num_info.decimals) // DOUBLE(%d,%d) sometime
     {
       if (num_info.dval > -FLT_MAX && num_info.dval < FLT_MAX)
-	sprintf(buff, "FLOAT(%d,%d)", num_info.integers, num_info.decimals);
+	sprintf(buff, "FLOAT(%d,%d)", (num_info.integers + num_info.decimals), num_info.decimals);
       else
-	sprintf(buff, "DOUBLE(%d,%d)", num_info.integers, num_info.decimals);
+	sprintf(buff, "DOUBLE(%d,%d)", (num_info.integers + num_info.decimals), num_info.decimals);
     }
     else if (ev_num_info.llval >= -128 &&
 	     ev_num_info.ullval <=
@@ -788,19 +788,22 @@ void field_real::get_opt_type(String *answer,
 
   if (!max_notzero_dec_len)
   {
+    int len= (int) max_length - ((item->decimals == NOT_FIXED_DEC) ?
+				 0 : (item->decimals + 1));
+
     if (min_arg >= -128 && max_arg <= (min_arg >= 0 ? 255 : 127))
-      sprintf(buff, "TINYINT(%d)", (int) max_length - (item->decimals + 1));
+      sprintf(buff, "TINYINT(%d)", len);
     else if (min_arg >= INT_MIN16 && max_arg <= (min_arg >= 0 ?
 						 UINT_MAX16 : INT_MAX16))
-      sprintf(buff, "SMALLINT(%d)", (int) max_length - (item->decimals + 1));
+      sprintf(buff, "SMALLINT(%d)", len);
     else if (min_arg >= INT_MIN24 && max_arg <= (min_arg >= 0 ?
 						 UINT_MAX24 : INT_MAX24))
-      sprintf(buff, "MEDIUMINT(%d)", (int) max_length - (item->decimals + 1));
+      sprintf(buff, "MEDIUMINT(%d)", len);
     else if (min_arg >= INT_MIN32 && max_arg <= (min_arg >= 0 ?
 						 UINT_MAX32 : INT_MAX32))
-      sprintf(buff, "INT(%d)", (int) max_length - (item->decimals + 1));
+      sprintf(buff, "INT(%d)", len);
     else
-      sprintf(buff, "BIGINT(%d)", (int) max_length - (item->decimals + 1));
+      sprintf(buff, "BIGINT(%d)", len);
     answer->append(buff, (uint) strlen(buff));
     if (min_arg >= 0)
       answer->append(" UNSIGNED");
@@ -815,10 +818,10 @@ void field_real::get_opt_type(String *answer,
   else
   {
     if (min_arg >= -FLT_MAX && max_arg <= FLT_MAX)
-      sprintf(buff, "FLOAT(%d,%d)", (int) max_length - (item->decimals + 1),
+      sprintf(buff, "FLOAT(%d,%d)", (int) max_length - (item->decimals + 1) + max_notzero_dec_len,
 	      max_notzero_dec_len);
     else
-      sprintf(buff, "DOUBLE(%d,%d)", (int) max_length - (item->decimals + 1),
+      sprintf(buff, "DOUBLE(%d,%d)", (int) max_length - (item->decimals + 1) + max_notzero_dec_len,
 	      max_notzero_dec_len);
     answer->append(buff, (uint) strlen(buff));
   }
