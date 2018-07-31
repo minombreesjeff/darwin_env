@@ -266,8 +266,7 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, byte *query,
     so if ndocs == 0, FT_INFO.doc[] must not be accessed.
    */
   dlist=(FT_INFO *)my_malloc(sizeof(FT_INFO)+
-			     sizeof(FT_DOC)*
-			     (int)(aio.dtree.elements_in_tree-1),
+			     sizeof(FT_DOC)*(aio.dtree.elements_in_tree-1),
 			     MYF(0));
   if (!dlist)
     goto err;

@@ -138,31 +138,19 @@ public:
   {
     return (null_value=args[0]->get_time(ltime));
   }
-  bool is_null() { 
-    (void) val_int();  /* Discard result. It sets null_value as side-effect. */ 
-    return null_value; 
-  }
+  bool is_null() { (void) val_int(); return null_value; }
   friend class udf_handler;
   Field *tmp_table_field() { return result_field; }
   Field *tmp_table_field(TABLE *t_arg);
   Item *get_tmp_table_item(THD *thd);
   
   bool agg_arg_collations(DTCollation &c, Item **items, uint nitems,
-                          uint flags= 0)
-  {
-    return agg_item_collations(c, func_name(), items, nitems, flags);
-  }
+                          uint flags= 0);
   bool agg_arg_collations_for_comparison(DTCollation &c,
                                          Item **items, uint nitems,
-                                         uint flags= 0)
-  {
-    return agg_item_collations_for_comparison(c, func_name(),
-                                              items, nitems, flags);
-  }
-  bool agg_arg_charsets(DTCollation &c, Item **items, uint nitems, uint flags)
-  {
-    return agg_item_charsets(c, func_name(), items, nitems, flags);
-  }
+                                         uint flags= 0);
+  bool agg_arg_charsets(DTCollation &c, Item **items, uint nitems,
+                        uint flags= 0);
   bool walk(Item_processor processor, byte *arg);
 };
 
@@ -758,7 +746,6 @@ public:
   longlong val_int();
   const char *func_name() const { return "last_insert_id"; }
   void fix_length_and_dec() { if (arg_count) max_length= args[0]->max_length; }
-  bool fix_fields(THD *thd, TABLE_LIST *tables, Item **ref);
 };
 
 class Item_func_benchmark :public Item_int_func
@@ -941,6 +928,7 @@ class user_var_entry;
 class Item_func_set_user_var :public Item_func
 {
   enum Item_result cached_result_type;
+  LEX_STRING name;
   user_var_entry *entry;
   char buffer[MAX_FIELD_WIDTH];
   String value;
@@ -954,7 +942,6 @@ class Item_func_set_user_var :public Item_func
   
 
 public:
-  LEX_STRING name; // keep it public
   Item_func_set_user_var(LEX_STRING a,Item *b)
     :Item_func(b), cached_result_type(INT_RESULT), name(a)
   {}
@@ -975,10 +962,10 @@ public:
 
 class Item_func_get_user_var :public Item_func
 {
+  LEX_STRING name;
   user_var_entry *var_entry;
 
 public:
-  LEX_STRING name; // keep it public
   Item_func_get_user_var(LEX_STRING a):
     Item_func(), name(a) {}
   double val();
@@ -998,29 +985,6 @@ public:
   table_map used_tables() const
   { return const_item() ? 0 : RAND_TABLE_BIT; }
   bool eq(const Item *item, bool binary_cmp) const;
-};
-
-
-/* A system variable */
-
-class Item_func_get_system_var :public Item_func
-{
-  sys_var *var;
-  enum_var_type var_type;
-  LEX_STRING component;
-public:
-  Item_func_get_system_var(sys_var *var_arg, enum_var_type var_type_arg,
-                           LEX_STRING *component_arg, const char *name_arg,
-                           size_t name_len_arg);
-  bool fix_fields(THD *thd, TABLE_LIST *tables, Item **ref);
-  /*
-    Stubs for pure virtual methods. Should never be called: this
-    item is always substituted with a constant in fix_fields().
-  */
-  double val()              { DBUG_ASSERT(0); return 0.0; }
-  longlong val_int()        { DBUG_ASSERT(0); return 0; }
-  String* val_str(String*)  { DBUG_ASSERT(0); return 0; }
-  void fix_length_and_dec() { DBUG_ASSERT(0); }
 };
 
 
@@ -1059,13 +1023,16 @@ public:
     if (!master && ft_handler)
     {
       ft_handler->please->close_search(ft_handler);
+      ft_handler=0;
+      if (join_key)
+	table->file->ft_handler=0;
+      table->fulltext_searched=0;
     }
     if (concat)
     {
       delete concat;
       concat= 0;
     }
-    ft_handler= 0;
     DBUG_VOID_RETURN;
   }
   enum Functype functype() const { return FT_FUNC; }

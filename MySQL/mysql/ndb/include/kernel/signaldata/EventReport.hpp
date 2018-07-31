@@ -133,9 +133,9 @@ public:
     CreateLogBytes = 48,
     InfoEvent = 49,
 
-    // SINGLE USER
-    SingleUser = 52,
-    /* unused 53 */
+    //GREP
+    GrepSubscriptionInfo = 52,
+    GrepSubscriptionAlert = 53,
 
     //BACKUP
     BackupStarted = 54,

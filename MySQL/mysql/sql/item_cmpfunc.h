@@ -44,7 +44,7 @@ public:
   inline int set_compare_func(Item_bool_func2 *owner_arg)
   {
     return set_compare_func(owner_arg, item_cmp_type((*a)->result_type(),
-                                                     (*b)->result_type()));
+						     (*b)->result_type()));
   }
   inline int set_cmp_func(Item_bool_func2 *owner_arg,
 			  Item **a1, Item **a2,
@@ -57,9 +57,8 @@ public:
   inline int set_cmp_func(Item_bool_func2 *owner_arg,
 			  Item **a1, Item **a2)
   {
-    return set_cmp_func(owner_arg, a1, a2,
-                        item_cmp_type((*a1)->result_type(),
-                                      (*a2)->result_type()));
+    return set_cmp_func(owner_arg, a1, a2, item_cmp_type((*a1)->result_type(),
+							 (*a2)->result_type()));
   }
   inline int compare() { return (this->*func)(); }
 
@@ -124,8 +123,6 @@ public:
 class Comp_creator
 {
 public:
-  Comp_creator() {}                             /* Remove gcc warning */
-  virtual ~Comp_creator() {}                    /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const = 0;
   virtual const char* symbol(bool invert) const = 0;
   virtual bool eqne_op() const = 0;
@@ -135,8 +132,6 @@ public:
 class Eq_creator :public Comp_creator
 {
 public:
-  Eq_creator() {}                               /* Remove gcc warning */
-  virtual ~Eq_creator() {}                      /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const;
   virtual const char* symbol(bool invert) const { return invert? "<>" : "="; }
   virtual bool eqne_op() const { return 1; }
@@ -146,8 +141,6 @@ public:
 class Ne_creator :public Comp_creator
 {
 public:
-  Ne_creator() {}                               /* Remove gcc warning */
-  virtual ~Ne_creator() {}                      /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const;
   virtual const char* symbol(bool invert) const { return invert? "=" : "<>"; }
   virtual bool eqne_op() const { return 1; }
@@ -157,8 +150,6 @@ public:
 class Gt_creator :public Comp_creator
 {
 public:
-  Gt_creator() {}                               /* Remove gcc warning */
-  virtual ~Gt_creator() {}                      /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const;
   virtual const char* symbol(bool invert) const { return invert? "<=" : ">"; }
   virtual bool eqne_op() const { return 0; }
@@ -168,8 +159,6 @@ public:
 class Lt_creator :public Comp_creator
 {
 public:
-  Lt_creator() {}                               /* Remove gcc warning */
-  virtual ~Lt_creator() {}                      /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const;
   virtual const char* symbol(bool invert) const { return invert? ">=" : "<"; }
   virtual bool eqne_op() const { return 0; }
@@ -179,8 +168,6 @@ public:
 class Ge_creator :public Comp_creator
 {
 public:
-  Ge_creator() {}                               /* Remove gcc warning */
-  virtual ~Ge_creator() {}                      /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const;
   virtual const char* symbol(bool invert) const { return invert? "<" : ">="; }
   virtual bool eqne_op() const { return 0; }
@@ -190,8 +177,6 @@ public:
 class Le_creator :public Comp_creator
 {
 public:
-  Le_creator() {}                               /* Remove gcc warning */
-  virtual ~Le_creator() {}                      /* Remove gcc warning */
   virtual Item_bool_func2* create(Item *a, Item *b) const;
   virtual const char* symbol(bool invert) const { return invert? ">" : "<="; }
   virtual bool eqne_op() const { return 0; }
@@ -268,7 +253,6 @@ public:
   void set_sum_test(Item_sum_hybrid *item) { test_sum_item= item; };
   void set_sub_test(Item_maxmin_subselect *item) { test_sub_item= item; };
   bool empty_underlying_subquery();
-  Item *neg_transformer(THD *thd);
 };
 
 
@@ -279,7 +263,6 @@ public:
   Item_func_nop_all(Item *a) :Item_func_not_all(a) {}
   longlong val_int();
   const char *func_name() const { return "<nop>"; }
-  Item *neg_transformer(THD *thd);
 };
 
 
@@ -375,49 +358,17 @@ public:
 };
 
 
-/*
-  The class Item_func_opt_neg is defined to factor out the functionality
-  common for the classes Item_func_between and Item_func_in. The objects
-  of these classes can express predicates or there negations.
-  The alternative approach would be to create pairs Item_func_between,
-  Item_func_notbetween and Item_func_in, Item_func_notin.
-
-*/
-
-class Item_func_opt_neg :public Item_int_func
-{
-public:
-  bool negated;     /* <=> the item represents NOT <func> */
-  bool pred_level;  /* <=> [NOT] <func> is used on a predicate level */
-public:
-  Item_func_opt_neg(Item *a, Item *b, Item *c)
-    :Item_int_func(a, b, c), negated(0), pred_level(0) {}
-  Item_func_opt_neg(List<Item> &list)
-    :Item_int_func(list), negated(0), pred_level(0) {}
-public:
-  inline void negate() { negated= !negated; }
-  inline void top_level_item() { pred_level= 1; }
-  Item *neg_transformer(THD *thd)
-  {
-    negated= !negated;
-    return this;
-  }
-};
-
-
-class Item_func_between :public Item_func_opt_neg
+class Item_func_between :public Item_int_func
 {
   DTCollation cmp_collation;
 public:
   Item_result cmp_type;
   String value0,value1,value2;
-  Item_func_between(Item *a, Item *b, Item *c)
-    :Item_func_opt_neg(a, b, c) {}
+  Item_func_between(Item *a,Item *b,Item *c) :Item_int_func(a,b,c) {}
   longlong val_int();
   optimize_type select_optimize() const { return OPTIMIZE_KEY; }
   enum Functype functype() const   { return BETWEEN; }
   const char *func_name() const { return "between"; }
-  bool fix_fields(THD *, struct st_table_list *, Item **);
   void fix_length_and_dec();
   void print(String *str);
   CHARSET_INFO *compare_collation() { return cmp_collation.collation; }
@@ -482,9 +433,15 @@ public:
   longlong val_int();
   String *val_str(String *str);
   enum Item_result result_type () const { return cached_result_type; }
-  bool fix_fields(THD *, struct st_table_list *, Item **);
+  bool fix_fields(THD *thd,struct st_table_list *tlist, Item **ref)
+  {
+    DBUG_ASSERT(fixed == 0);
+    args[0]->top_level_item();
+    return Item_func::fix_fields(thd, tlist, ref);
+  }
   void fix_length_and_dec();
   const char *func_name() const { return "if"; }
+  table_map not_null_tables() const { return 0; }
 };
 
 
@@ -779,7 +736,7 @@ public:
   }
 };
 
-class Item_func_in :public Item_func_opt_neg
+class Item_func_in :public Item_int_func
 {
   Item_result cmp_type;
   in_vector *array;
@@ -788,12 +745,11 @@ class Item_func_in :public Item_func_opt_neg
   DTCollation cmp_collation;
  public:
   Item_func_in(List<Item> &list)
-    :Item_func_opt_neg(list), array(0), in_item(0), have_null(0)
+    :Item_int_func(list), array(0), in_item(0), have_null(0)
   {
     allowed_arg_cols= 0;  // Fetch this value from first argument
   }
   longlong val_int();
-  bool fix_fields(THD *, struct st_table_list *, Item **);
   void fix_length_and_dec();
   void cleanup()
   {
@@ -813,6 +769,12 @@ class Item_func_in :public Item_func_opt_neg
   bool nulls_in_row();
   bool is_bool_func() { return 1; }
   CHARSET_INFO *compare_collation() { return cmp_collation.collation; }
+  /*
+    IN() protect from NULL only first argument, if construction like
+    "expression IN ()" will be allowed, we will need to check number of
+    argument here, because "NOT(NULL IN ())" is TRUE.
+  */
+  table_map not_null_tables() const { return args[0]->not_null_tables(); }
 };
 
 /* Functions used by where clause */
@@ -843,7 +805,7 @@ public:
     else
     {
       args[0]->update_used_tables();
-      if ((const_item_cache= !(used_tables_cache= args[0]->used_tables())))
+      if (!(used_tables_cache=args[0]->used_tables()))
       {
 	/* Remember if the value is always NULL or never NULL */
 	cached_value= (longlong) args[0]->is_null();
@@ -870,11 +832,6 @@ public:
   longlong val_int();
   const char *func_name() const { return "<is_not_null_test>"; }
   void update_used_tables();
-  /*
-    we add RAND_TABLE_BIT to prevent moving this item from HAVING to WHERE
-  */
-  table_map used_tables() const
-    { return used_tables_cache | RAND_TABLE_BIT; }
 };
 
 
@@ -917,7 +874,7 @@ class Item_func_like :public Item_bool_func2
   Item *escape_item;
 
 public:
-  int escape;
+  char escape;
 
   Item_func_like(Item *a,Item *b, Item *escape_arg)
     :Item_bool_func2(a,b), canDoTurboBM(FALSE), pattern(0), pattern_len(0), 
@@ -928,16 +885,15 @@ public:
   cond_result eq_cmp_result() const { return COND_TRUE; }
   const char *func_name() const { return "like"; }
   bool fix_fields(THD *thd, struct st_table_list *tlist, Item **ref);
-  void cleanup();
 };
 
 #ifdef USE_REGEX
 
-#include "my_regex.h"
+#include <regex.h>
 
 class Item_func_regex :public Item_bool_func
 {
-  my_regex_t preg;
+  regex_t preg;
   bool regex_compiled;
   bool regex_is_const;
   String prev_regexp;

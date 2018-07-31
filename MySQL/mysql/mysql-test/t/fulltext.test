@@ -338,35 +338,3 @@ SET NAMES latin1;
 INSERT INTO t1 VALUES('Mit freundlichem Grüß aus Osnabrück');
 SELECT COUNT(*) FROM t1 WHERE MATCH(t) AGAINST ('"osnabrück"' IN BOOLEAN MODE);
 DROP TABLE t1;
-
-#
-# BUG#11684 - repair crashes mysql when table has fulltext index
-#
-
-CREATE TABLE t1 (a VARCHAR(30), FULLTEXT(a));
-INSERT INTO t1 VALUES('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
-SET myisam_repair_threads=2;
-REPAIR TABLE t1;
-SET myisam_repair_threads=@@global.myisam_repair_threads;
-
-#
-# BUG#5686 - #1034 - Incorrect key file for table - only utf8
-#
-INSERT INTO t1 VALUES('testword\'\'');
-SELECT a FROM t1 WHERE MATCH a AGAINST('testword' IN BOOLEAN MODE);
-SELECT a FROM t1 WHERE MATCH a AGAINST('testword\'\'' IN BOOLEAN MODE);
-DROP TABLE t1;
-
-#
-# BUG#14496: Crash or strange results with prepared statement,
-#            MATCH and FULLTEXT
-#
-CREATE TABLE t1 (a TEXT, FULLTEXT KEY(a));
-INSERT INTO t1 VALUES('test'),('test1'),('test');
-PREPARE stmt from "SELECT a, MATCH(a) AGAINST('test1 test') FROM t1 WHERE MATCH(a) AGAINST('test1 test')";
-EXECUTE stmt;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-DROP TABLE t1;
-
-# End of 4.1 tests

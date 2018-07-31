@@ -41,13 +41,7 @@ public:
   protected:
     friend class SocketServer;
     friend void* sessionThread_C(void*);
-    Session(NDB_SOCKET_TYPE sock): m_socket(sock)
-      {
-	DBUG_ENTER("SocketServer::Session");
-	DBUG_PRINT("enter",("NDB_SOCKET: %d", m_socket));
-	m_stop = m_stopped = false;
-	DBUG_VOID_RETURN;
-      }
+    Session(NDB_SOCKET_TYPE sock): m_socket(sock){ m_stop = m_stopped = false;}
     
     bool m_stop;    // Has the session been ordered to stop?
     bool m_stopped; // Has the session stopped?
@@ -74,7 +68,7 @@ public:
   /**
    * Constructor / Destructor
    */
-  SocketServer(unsigned maxSessions = ~(unsigned)0);
+  SocketServer(int maxSessions = 32);
   ~SocketServer();
   
   /**

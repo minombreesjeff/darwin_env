@@ -230,10 +230,7 @@ int wait_for_server_start(char *bin_dir __attribute__((unused)),
                           char *user, char *password, int port,char *tmp_dir)
 {
   arg_list_t al;
-  int err= 0;
-#ifndef __WIN__
-  int i;
-#endif
+  int err= 0, i;
   char trash[FN_REFLEN];
 
   /* mysqladmin file */

@@ -47,9 +47,9 @@ show create table t3;
 
 # The following should give errors
 create table t4 (a int not null, b char(10), key(a)) engine=MERGE UNION=(t1,t2);
---error 1168
+--error 1016
 select * from t4;
---error 1168
+--error 1016
 alter table t4 add column c int;
 
 #
@@ -286,38 +286,6 @@ create table t3 engine=merge union=(t1, t2) select * from t1;
 create table t3 engine=merge union=(t1, t2) select * from t2;
 drop table t1, t2;
 
-#
-# Bug#9112 - Merge table with composite index producing invalid results with some queries
-# This test case will fail only without the bugfix and some
-# non-deterministic circumstances. It depends on properly initialized
-# "un-initialized" memory. At the time it happens with a standard
-# non-debug build. But there is no guarantee that this will be always so.
-#
-create table t1 (
- a double(14,4),
- b varchar(10),
- index (a,b)
-) engine=merge union=(t2,t3);
-
-create table t2 (
- a double(14,4),
- b varchar(10),
- index (a,b)
-) engine=myisam;
-
-create table t3 (
- a double(14,4),
- b varchar(10),
- index (a,b)
-) engine=myisam;
-
-insert into t2 values ( null, '');
-insert into t2 values ( 9999999999.999, '');
-insert into t3 select * from t2;
-select min(a), max(a) from t1;
-flush tables;
-select min(a), max(a) from t1;
-drop table t1, t2, t3;
 # BUG#6699 : no sorting on 'ref' retrieval 
 create table t1 (a int,b int,c int, index (a,b,c));
 create table t2 (a int,b int,c int, index (a,b,c));
@@ -350,55 +318,3 @@ INSERT INTO t2 (b) VALUES (1) ON DUPLICATE KEY UPDATE b=3;
 SELECT b FROM t2;
 DROP TABLE t1, t2;
 
-
-#
-# BUG#5390 - problems with merge tables
-# Problem #1: INSERT...SELECT
-#
-#drop table if exists t1, t2, t3;
-create table t1(a int);
-create table t2(a int);
-insert into t1 values (1);
-insert into t2 values (2);
-create table t3 (a int) engine=merge union=(t1, t2) insert_method=first;
-select * from t3;
-#
-insert t2 select * from t2;
-select * from t2;
-#
-insert t3 select * from t1;
-select * from t3;
-#
-insert t1 select * from t3;
-select * from t1;
-select * from t2;
-select * from t3;
-check table t1, t2;
-drop table t1, t2, t3;
-
-#
-# BUG#21617 - crash when selecting from merge table with inconsistent
-# indexes
-#
-CREATE TABLE t1(a INT);
-INSERT INTO t1 VALUES(2),(1);
-CREATE TABLE t2(a INT, KEY(a)) ENGINE=MERGE UNION=(t1);
---error 1030
-SELECT * FROM t2 WHERE a=2;
-DROP TABLE t1, t2;
-
-#
-# BUG#10974 - No error message if merge table based on union of innodb,
-# memory
-#
-CREATE TABLE t1(a INT) ENGINE=MEMORY;
-CREATE TABLE t2(a INT) ENGINE=MERGE UNION=(t1);
---error 1168
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-CREATE TABLE t2(a INT) ENGINE=MERGE UNION=(t3);
---error 1168
-SELECT * FROM t2;
-DROP TABLE t2;
-
-# End of 4.1 tests

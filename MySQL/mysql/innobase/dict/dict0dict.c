@@ -1377,38 +1377,6 @@ dict_col_reposition_in_cache(
 	HASH_INSERT(dict_col_t, hash, dict_sys->col_hash, fold, col);
 }
 
-/********************************************************************
-If the given column name is reserved for InnoDB system columns, return
-TRUE.*/
-
-ibool
-dict_col_name_is_reserved(
-/*======================*/
-				/* out: TRUE if name is reserved */
-	const char*	name)	/* in: column name */
-{
-	/* This check reminds that if a new system column is added to
-	the program, it should be dealt with here. */
-#if DATA_N_SYS_COLS != 4
-#error "DATA_N_SYS_COLS != 4"
-#endif
-
-	static const char*	reserved_names[] = {
-		"DB_ROW_ID", "DB_TRX_ID", "DB_ROLL_PTR", "DB_MIX_ID"
-	};
-
-	ulint			i;
-
-	for (i = 0; i < UT_ARR_SIZE(reserved_names); i++) {
-		if (strcmp(name, reserved_names[i]) == 0) {
-
-			return(TRUE);
-		}
-	}
-
-	return(FALSE);
-}
-
 /**************************************************************************
 Adds an index to the dictionary cache. */
 
@@ -2109,11 +2077,8 @@ dict_foreign_find_index(
 	dict_table_t*	table,	/* in: table */
 	const char**	columns,/* in: array of column names */
 	ulint		n_cols,	/* in: number of columns */
-	dict_index_t*	types_idx, /* in: NULL or an index to whose types the
-				   column types must match */
-	ibool		check_charsets)	/* in: whether to check charsets.
-					only has an effect if types_idx !=
-					NULL. */
+	dict_index_t*	types_idx)/* in: NULL or an index to whose types the
+				column types must match */
 {
 	dict_index_t*	index;
 	const char*	col_name;
@@ -2142,8 +2107,7 @@ dict_foreign_find_index(
 
 				if (types_idx && !cmp_types_are_equal(
 				     dict_index_get_nth_type(index, i),
-				     dict_index_get_nth_type(types_idx, i),
-				     check_charsets)) {
+				     dict_index_get_nth_type(types_idx, i))) {
 
 				  	break;
 				}		
@@ -2192,9 +2156,8 @@ dict_foreign_error_report(
 	fputs(msg, file);
 	fputs(" Constraint:\n", file);
 	dict_print_info_on_foreign_key_in_create_format(file, NULL, fk);
-	putc('\n', file);
 	if (fk->foreign_index) {
-		fputs("The index in the foreign key in table is ", file);
+		fputs("\nThe index in the foreign key in table is ", file);
 		ut_print_name(file, NULL, fk->foreign_index->name);
 		fputs(
 "\nSee http://dev.mysql.com/doc/mysql/en/InnoDB_foreign_key_constraints.html\n"
@@ -2215,8 +2178,7 @@ dict_foreign_add_to_cache(
 /*======================*/
 					/* out: DB_SUCCESS or error code */
 	dict_foreign_t*	foreign,	/* in, own: foreign key constraint */
-	ibool		check_charsets)	/* in: TRUE=check charset
-					compatibility */
+	ibool		check_types)	/* in: TRUE=check type compatibility */
 {
 	dict_table_t*	for_table;
 	dict_table_t*	ref_table;
@@ -2252,10 +2214,16 @@ dict_foreign_add_to_cache(
 	}
 
 	if (for_in_cache->referenced_table == NULL && ref_table) {
+		dict_index_t*	types_idx;
+		if (check_types) {
+			types_idx = for_in_cache->foreign_index;
+		} else {
+			types_idx = NULL;
+		}
 		index = dict_foreign_find_index(ref_table,
 			(const char**) for_in_cache->referenced_col_names,
 			for_in_cache->n_fields,
-			for_in_cache->foreign_index, check_charsets);
+			types_idx);
 
 		if (index == NULL) {
 			dict_foreign_error_report(ef, for_in_cache,
@@ -2279,10 +2247,16 @@ dict_foreign_add_to_cache(
 	}
 
 	if (for_in_cache->foreign_table == NULL && for_table) {
+		dict_index_t*	types_idx;
+		if (check_types) {
+			types_idx = for_in_cache->referenced_index;
+		} else {
+			types_idx = NULL;
+		}
 		index = dict_foreign_find_index(for_table,
 			(const char**) for_in_cache->foreign_col_names,
 			for_in_cache->n_fields,
-			for_in_cache->referenced_index, check_charsets);
+			types_idx);
 
 		if (index == NULL) {
 			dict_foreign_error_report(ef, for_in_cache,
@@ -2788,8 +2762,7 @@ dict_table_get_highest_foreign_id(
 		if (ut_strlen(foreign->id) > ((sizeof dict_ibfk) - 1) + len
 		    && 0 == ut_memcmp(foreign->id, table->name, len)
 		    && 0 == ut_memcmp(foreign->id + len,
-				dict_ibfk, (sizeof dict_ibfk) - 1)
-		    && foreign->id[len + ((sizeof dict_ibfk) - 1)] != '0') {
+				dict_ibfk, (sizeof dict_ibfk) - 1)) {
 			/* It is of the >= 4.0.18 format */
 
 			id = strtoul(foreign->id + len + ((sizeof dict_ibfk) - 1),
@@ -3060,7 +3033,7 @@ col_loop1:
 	/* Try to find an index which contains the columns
 	as the first fields and in the right order */
 
-	index = dict_foreign_find_index(table, column_names, i, NULL, TRUE);
+	index = dict_foreign_find_index(table, column_names, i, NULL);
 
 	if (!index) {
 		mutex_enter(&dict_foreign_err_mutex);
@@ -3325,7 +3298,8 @@ try_find_index:
 
 	if (referenced_table) {
 		index = dict_foreign_find_index(referenced_table,
-			column_names, i, foreign->foreign_index, TRUE);
+						column_names, i,
+						foreign->foreign_index);
 		if (!index) {
 			dict_foreign_free(foreign);
 			mutex_enter(&dict_foreign_err_mutex);

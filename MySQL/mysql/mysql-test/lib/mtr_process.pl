@@ -12,17 +12,16 @@ use strict;
 #use POSIX ":sys_wait_h";
 use POSIX 'WNOHANG';
 
-sub mtr_run ($$$$$$;$);
-sub mtr_spawn ($$$$$$;$);
+sub mtr_run ($$$$$$);
+sub mtr_spawn ($$$$$$);
 sub mtr_stop_mysqld_servers ($);
 sub mtr_kill_leftovers ();
 sub mtr_record_dead_children ();
 sub mtr_exit ($);
 sub sleep_until_file_created ($$$);
-sub mtr_kill_processes ($);
 
 # static in C
-sub spawn_impl ($$$$$$$$);
+sub spawn_impl ($$$$$$$);
 
 ##############################################################################
 #
@@ -33,43 +32,37 @@ sub spawn_impl ($$$$$$$$);
 # This function try to mimic the C version used in "netware/mysql_test_run.c"
 # FIXME learn it to handle append mode as well, a "new" flag or a "append"
 
-sub mtr_run ($$$$$$;$) {
+sub mtr_run ($$$$$$) {
   my $path=       shift;
   my $arg_list_t= shift;
   my $input=      shift;
   my $output=     shift;
   my $error=      shift;
   my $pid_file=   shift;
-  my $spawn_opts= shift;
 
-  return spawn_impl($path,$arg_list_t,'run',$input,$output,$error,$pid_file,
-    $spawn_opts);
+  return spawn_impl($path,$arg_list_t,'run',$input,$output,$error,$pid_file);
 }
 
-sub mtr_run_test ($$$$$$;$) {
+sub mtr_run_test ($$$$$$) {
   my $path=       shift;
   my $arg_list_t= shift;
   my $input=      shift;
   my $output=     shift;
   my $error=      shift;
   my $pid_file=   shift;
-  my $spawn_opts= shift;
 
-  return spawn_impl($path,$arg_list_t,'test',$input,$output,$error,$pid_file,
-    $spawn_opts);
+  return spawn_impl($path,$arg_list_t,'test',$input,$output,$error,$pid_file);
 }
 
-sub mtr_spawn ($$$$$$;$) {
+sub mtr_spawn ($$$$$$) {
   my $path=       shift;
   my $arg_list_t= shift;
   my $input=      shift;
   my $output=     shift;
   my $error=      shift;
   my $pid_file=   shift;
-  my $spawn_opts= shift;
 
-  return spawn_impl($path,$arg_list_t,'spawn',$input,$output,$error,$pid_file,
-    $spawn_opts);
+  return spawn_impl($path,$arg_list_t,'spawn',$input,$output,$error,$pid_file);
 }
 
 
@@ -79,7 +72,7 @@ sub mtr_spawn ($$$$$$;$) {
 #
 ##############################################################################
 
-sub spawn_impl ($$$$$$$$) {
+sub spawn_impl ($$$$$$$) {
   my $path=       shift;
   my $arg_list_t= shift;
   my $mode=       shift;
@@ -87,7 +80,6 @@ sub spawn_impl ($$$$$$$$) {
   my $output=     shift;
   my $error=      shift;
   my $pid_file=   shift;                 # FIXME
-  my $spawn_opts= shift;
 
   if ( $::opt_script_debug )
   {
@@ -97,18 +89,6 @@ sub spawn_impl ($$$$$$$$) {
     print STDERR "#### ", "STDOUT $output\n" if $output;
     print STDERR "#### ", "STDERR $error\n" if $error;
     print STDERR "#### ", "$mode : $path ", join(" ",@$arg_list_t), "\n";
-    print STDERR "#### ", "spawn options:\n";
-    if ($spawn_opts)
-    {
-      foreach my $key (sort keys %{$spawn_opts})
-      {
-        print STDERR "#### ", "  - $key: $spawn_opts->{$key}\n";
-      }
-    }
-    else
-    {
-      print STDERR "#### ", "  none\n";
-    }
     print STDERR "#### ", "-" x 78, "\n";
   }
 
@@ -155,18 +135,11 @@ sub spawn_impl ($$$$$$$$) {
 #       $ENV{'COMSPEC'}= "$::glob_cygwin_shell -c";
       }
 
-      my $log_file_open_mode = '>';
-
-      if ($spawn_opts and $spawn_opts->{'append_log_file'})
-      {
-        $log_file_open_mode = '>>';
-      }
-
       if ( $output )
       {
-        if ( ! open(STDOUT,$log_file_open_mode,$output) )
+        if ( ! open(STDOUT,">",$output) )
         {
-          mtr_child_error("can't redirect STDOUT to \"$output\": $!");
+          mtr_error("can't redirect STDOUT to \"$output\": $!");
         }
       }
 
@@ -176,14 +149,14 @@ sub spawn_impl ($$$$$$$$) {
         {
           if ( ! open(STDERR,">&STDOUT") )
           {
-            mtr_child_error("can't dup STDOUT: $!");
+            mtr_error("can't dup STDOUT: $!");
           }
         }
         else
         {
-          if ( ! open(STDERR,$log_file_open_mode,$error) )
+          if ( ! open(STDERR,">",$error) )
           {
-            mtr_child_error("can't redirect STDERR to \"$error\": $!");
+            mtr_error("can't redirect STDERR to \"$output\": $!");
           }
         }
       }
@@ -192,13 +165,13 @@ sub spawn_impl ($$$$$$$$) {
       {
         if ( ! open(STDIN,"<",$input) )
         {
-          mtr_child_error("can't redirect STDIN to \"$input\": $!");
+          mtr_error("can't redirect STDIN to \"$input\": $!");
         }
       }
 
       if ( ! exec($path,@$arg_list_t) )
       {
-        mtr_child_error("failed to execute \"$path\": $!");
+        mtr_error("failed to execute \"$path\": $!");
       }
     }
   }
@@ -212,6 +185,10 @@ sub spawn_parent_impl {
 
   if ( $mode eq 'run' or $mode eq 'test' )
   {
+    my $exit_value= -1;
+    my $signal_num=  0;
+    my $dumped_core= 0;
+
     if ( $mode eq 'run' )
     {
       # Simple run of command, we wait for it to return
@@ -222,7 +199,11 @@ sub spawn_parent_impl {
         mtr_error("$path ($pid) got lost somehow");
       }
 
-      return mtr_process_exit_status($?);
+      $exit_value=  $? >> 8;
+      $signal_num=  $? & 127;
+      $dumped_core= $? & 128;
+
+      return $exit_value;
     }
     else
     {
@@ -236,8 +217,6 @@ sub spawn_parent_impl {
       # FIXME is this as it should be? Can't mysqld terminate
       # normally from running a test case?
 
-      my $exit_value= -1;
-      my $saved_exit_value;
       my $ret_pid;                      # What waitpid() returns
 
       while ( ($ret_pid= waitpid(-1,0)) != -1 )
@@ -247,28 +226,12 @@ sub spawn_parent_impl {
         # but not $exit_value, this is flagged from
         # 
 
-        my $timer_name= mtr_timer_timeout($::glob_timers, $ret_pid);
-        if ( $timer_name )
-        {
-          if ( $timer_name eq "suite" )
-          {
-            # We give up here
-            # FIXME we should only give up the suite, not all of the run?
-            print STDERR "\n";
-            mtr_error("Test suite timeout");
-          }
-          elsif ( $timer_name eq "testcase" )
-          {
-            $saved_exit_value=  63;       # Mark as timeout
-            kill(9, $pid);                # Kill mysqltest
-            next;                         # Go on and catch the termination
-          }
-        }
-
         if ( $ret_pid == $pid )
         {
           # We got termination of mysqltest, we are done
-          $exit_value= mtr_process_exit_status($?);
+          $exit_value=  $? >> 8;
+          $signal_num=  $? & 127;
+          $dumped_core= $? & 128;
           last;
         }
 
@@ -316,7 +279,7 @@ sub spawn_parent_impl {
         }
       }
 
-      return $saved_exit_value || $exit_value;
+      return $exit_value;
     }
   }
   else
@@ -326,23 +289,6 @@ sub spawn_parent_impl {
   }
 }
 
-
-# ----------------------------------------------------------------------
-# We try to emulate how an Unix shell calculates the exit code
-# ----------------------------------------------------------------------
-
-sub mtr_process_exit_status {
-  my $raw_status= shift;
-
-  if ( $raw_status & 127 )
-  {
-    return ($raw_status & 127) + 128;  # Signal num + 128
-  }
-  else
-  {
-    return $raw_status >> 8;           # Exit code
-  }
-}
 
 
 ##############################################################################
@@ -383,7 +329,7 @@ sub mtr_kill_leftovers () {
                });
   }
 
-  mtr_mysqladmin_shutdown(\@args, 20);
+  mtr_mysqladmin_shutdown(\@args);
 
   # We now have tried to terminate nice. We have waited for the listen
   # port to be free, but can't really tell if the mysqld process died
@@ -454,7 +400,8 @@ sub mtr_kill_leftovers () {
 
         if ( kill(0, @pids) )           # Check if some left
         {
-          mtr_warning("can't kill process(es) " . join(" ", @pids));
+          # FIXME maybe just mtr_warning() ?
+          mtr_error("can't kill process(es) " . join(" ", @pids));
         }
       }
     }
@@ -467,7 +414,7 @@ sub mtr_kill_leftovers () {
   {
     if ( mtr_ping_mysqld_server($srv->{'port'}, $srv->{'sockfile'}) )
     {
-      mtr_warning("can't kill old mysqld holding port $srv->{'port'}");
+      mtr_error("can't kill old mysqld holding port $srv->{'port'}");
     }
   }
 }
@@ -492,8 +439,7 @@ sub mtr_stop_mysqld_servers ($) {
   # First try nice normal shutdown using 'mysqladmin'
   # ----------------------------------------------------------------------
 
-  # Shutdown time must be high as slave may be in reconnect
-  mtr_mysqladmin_shutdown($spec, 70);
+  mtr_mysqladmin_shutdown($spec);
 
   # ----------------------------------------------------------------------
   # We loop with waitpid() nonblocking to see how many of the ones we
@@ -527,7 +473,6 @@ sub mtr_stop_mysqld_servers ($) {
     }
     else
     {
-      # Server is dead, we remove the pidfile if any
       # Race, could have been removed between I tested with -f
       # and the unlink() below, so I better check again with -f
 
@@ -557,12 +502,17 @@ sub mtr_stop_mysqld_servers ($) {
   # that for true Win32 processes, kill(0,$pid) will not return 1.
   # ----------------------------------------------------------------------
 
-  start_reap_all();                     # Avoid zombies
-
-  my @mysqld_pids= keys %mysqld_pids;
-  mtr_kill_processes(\@mysqld_pids);
-
-  stop_reap_all();                      # Get into control again
+ SIGNAL:
+  foreach my $sig (15,9)
+  {
+    my $retries= 10;                    # 10 seconds
+    kill($sig, keys %mysqld_pids);
+    while ( $retries-- and  kill(0, keys %mysqld_pids) )
+    {
+      mtr_debug("Sleep 1 second waiting for processes to die");
+      sleep(1)                      # Wait one second
+    }
+  }
 
   # ----------------------------------------------------------------------
   # Now, we check if all we can find using kill(0,$pid) are dead,
@@ -634,9 +584,8 @@ sub mtr_stop_mysqld_servers ($) {
 #
 ##############################################################################
 
-sub mtr_mysqladmin_shutdown {
+sub mtr_mysqladmin_shutdown () {
   my $spec= shift;
-  my $adm_shutdown_tmo= shift;
 
   my %mysql_admin_pids;
   my @to_kill_specs;
@@ -675,17 +624,15 @@ sub mtr_mysqladmin_shutdown {
       mtr_add_arg($args, "--protocol=tcp"); # Needed if no --socket
     }
     mtr_add_arg($args, "--connect_timeout=5");
-    mtr_add_arg($args, "--shutdown_timeout=$adm_shutdown_tmo");
+    mtr_add_arg($args, "--shutdown_timeout=20");
     mtr_add_arg($args, "shutdown");
     # We don't wait for termination of mysqladmin
     my $pid= mtr_spawn($::exe_mysqladmin, $args,
-                       "", $::path_manager_log, $::path_manager_log, "",
-                       { append_log_file => 1 });
+                       "", $::path_manager_log, $::path_manager_log, "");
     $mysql_admin_pids{$pid}= 1;
   }
 
-  # As mysqladmin is such a simple program, we trust it to terminate.
-  # I.e. we wait blocking, and wait wait for them all before we go on.
+  # We wait blocking, we wait for the last one anyway
   while (keys %mysql_admin_pids)
   {
     foreach my $pid (keys %mysql_admin_pids)
@@ -704,8 +651,7 @@ sub mtr_mysqladmin_shutdown {
 
   my $timeout= 20;                      # 20 seconds max
   my $res= 1;                           # If we just fall through, we are done
-                                        # in the sense that the servers don't
-                                        # listen to their ports any longer
+ 
  TIME:
   while ( $timeout-- )
   {
@@ -722,8 +668,6 @@ sub mtr_mysqladmin_shutdown {
     }
     last;                               # If we got here, we are done
   }
-
-  $timeout or mtr_debug("At least one server is still listening to its port");
 
   sleep(5) if $::glob_win32;            # FIXME next startup fails if no sleep
 
@@ -769,15 +713,7 @@ sub mtr_record_dead_children () {
 }
 
 sub start_reap_all {
-  # This causes terminating processes to not become zombies, avoiding
-  # the need for (or possibility of) explicit waitpid().
-  $SIG{CHLD}= 'IGNORE';
-
-  # On some platforms (Linux, QNX, OSX, ...) there is potential race
-  # here. If a process terminated before setting $SIG{CHLD} (but after
-  # any attempt to waitpid() it), it will still be a zombie. So we
-  # have to handle any such process here.
-  while(waitpid(-1, &WNOHANG) > 0) { };
+  $SIG{CHLD}= 'IGNORE';                 # FIXME is this enough?
 }
 
 sub stop_reap_all {
@@ -816,7 +752,6 @@ sub mtr_ping_mysqld_server () {
 #
 ##############################################################################
 
-# FIXME check that the pidfile contains the expected pid!
 
 sub sleep_until_file_created ($$$) {
   my $pidfile= shift;
@@ -827,7 +762,7 @@ sub sleep_until_file_created ($$$) {
   {
     if ( -r $pidfile )
     {
-      return $pid;
+      return 1;
     }
 
     # Check if it died after the fork() was successful 
@@ -852,40 +787,16 @@ sub sleep_until_file_created ($$$) {
 }
 
 
-sub mtr_kill_processes ($) {
-  my $pids = shift;
-
-  foreach my $sig (15,9)
-  {
-    my $retries= 20;                    # FIXME 20 seconds, this is silly!
-    kill($sig, @{$pids});
-    while ( $retries-- and  kill(0, @{$pids}) )
-    {
-      mtr_debug("Sleep 1 second waiting for processes to die");
-      sleep(1)                      # Wait one second
-    }
-  }
-}
-
 ##############################################################################
 #
 #  When we exit, we kill off all children
 #
 ##############################################################################
 
-# FIXME something is wrong, we sometimes terminate with "Hangup" written
-# to tty, and no STDERR output telling us why.
-
-# FIXME for some readon, setting HUP to 'IGNORE' will cause exit() to
-# write out "Hangup", and maybe loose some output. We insert a sleep...
-
 sub mtr_exit ($) {
   my $code= shift;
-#  cluck("Called mtr_exit()");
-  mtr_timer_stop_all($::glob_timers);
   local $SIG{HUP} = 'IGNORE';
   kill('HUP', -$$);
-  sleep 2;
   exit($code);
 }
 

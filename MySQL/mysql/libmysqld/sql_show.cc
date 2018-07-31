@@ -462,7 +462,6 @@ int mysqld_extend_show_tables(THD *thd,const char *db,const char *wild)
   TABLE *table;
   Protocol *protocol= thd->protocol;
   TIME time;
-  int res= 0;
   DBUG_ENTER("mysqld_extend_show_tables");
 
   (void) sprintf(path,"%s/%s",mysql_data_home,db);
@@ -633,15 +632,10 @@ int mysqld_extend_show_tables(THD *thd,const char *db,const char *wild)
       close_thread_tables(thd,0);
     }
     if (protocol->write())
-    {
-      res= -1;
-      break;
-    }
+      DBUG_RETURN(-1);
   }
-  thd->insert_id(0);
-  if (!res)
-    send_eof(thd);
-  DBUG_RETURN(res);
+  send_eof(thd);
+  DBUG_RETURN(0);
 }
 
 
@@ -675,7 +669,7 @@ mysqld_show_fields(THD *thd, TABLE_LIST *table_list,const char *wild,
 #endif
   List<Item> field_list;
   field_list.push_back(new Item_empty_string("Field",NAME_LEN));
-  field_list.push_back(new Item_empty_string("Type", 40));
+  field_list.push_back(new Item_empty_string("Type",40));
   if (verbose)
     field_list.push_back(new Item_empty_string("Collation",40));
   field_list.push_back(new Item_empty_string("Null",1));
@@ -1305,8 +1299,7 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     field->sql_type(type);
     packet->append(type.ptr(), type.length(), system_charset_info);
 
-    if (field->has_charset() && 
-        !(thd->variables.sql_mode & (MODE_MYSQL323 | MODE_MYSQL40)))
+    if (field->has_charset() && !limited_mysql_mode && !foreign_db_mode)
     {
       if (field->charset() != table->table_charset)
       {
@@ -1344,8 +1337,8 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     
     has_default= (field->type() != FIELD_TYPE_BLOB &&
 		  field->unireg_check != Field::NEXT_NUMBER &&
-                  !((thd->variables.sql_mode & (MODE_MYSQL323 | MODE_MYSQL40))
-		    && has_now_default));
+                  !((foreign_db_mode || limited_mysql_mode) &&
+                    has_now_default));
 
     if (has_default)
     {
@@ -1374,12 +1367,12 @@ store_create_info(THD *thd, TABLE *table, String *packet)
         packet->append(tmp);
     }
 
-    if (!limited_mysql_mode && table->timestamp_field == field && 
+    if (!foreign_db_mode && !limited_mysql_mode &&
+        table->timestamp_field == field && 
         field->unireg_check != Field::TIMESTAMP_DN_FIELD)
       packet->append(" on update CURRENT_TIMESTAMP",28);
 
-    if (field->unireg_check == Field::NEXT_NUMBER && 
-        !(thd->variables.sql_mode & MODE_NO_FIELD_OPTIONS))
+    if (field->unireg_check == Field::NEXT_NUMBER && !foreign_db_mode)
       packet->append(" auto_increment", 15 );
 
     if (field->comment.length)
@@ -1478,24 +1471,6 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     else
       packet->append(" ENGINE=", 8);
     packet->append(file->table_type());
-    
-    /*
-      Add AUTO_INCREMENT=... if there is an AUTO_INCREMENT column,
-      and NEXT_ID > 1 (the default).  We must not print the clause
-      for engines that do not support this as it would break the
-      import of dumps, but as of this writing, the test for whether
-      AUTO_INCREMENT columns are allowed and wether AUTO_INCREMENT=...
-      is supported is identical, !(file->table_flags() & HA_NO_AUTO_INCREMENT))
-      Because of that, we do not explicitly test for the feature,
-      but may extrapolate its existence from that of an AUTO_INCREMENT column.
-    */
-
-    if(create_info.auto_increment_value > 1)
-    {
-      packet->append(" AUTO_INCREMENT=", 16);
-      end= longlong10_to_str(create_info.auto_increment_value, buff,10);
-      packet->append(buff, (uint) (end - buff));
-    }
     
     if (table->table_charset &&
 	!(thd->variables.sql_mode & MODE_MYSQL323) &&
@@ -1907,7 +1882,7 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
       case SHOW_SLAVE_RUNNING:
       {
 	pthread_mutex_lock(&LOCK_active_mi);
-	end= strmov(buff, (active_mi && active_mi->slave_running &&
+	end= strmov(buff, (active_mi->slave_running &&
 			   active_mi->rli.slave_running) ? "ON" : "OFF");
 	pthread_mutex_unlock(&LOCK_active_mi);
 	break;
@@ -1919,12 +1894,9 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
           SLAVE STATUS, and have the sum over all lines here.
         */
 	pthread_mutex_lock(&LOCK_active_mi);
-        if (active_mi)
-        {
-          pthread_mutex_lock(&active_mi->rli.data_lock);
-          end= int10_to_str(active_mi->rli.retried_trans, buff, 10);
-          pthread_mutex_unlock(&active_mi->rli.data_lock);
-        }
+        pthread_mutex_lock(&active_mi->rli.data_lock);
+	end= int10_to_str(active_mi->rli.retried_trans, buff, 10);
+        pthread_mutex_unlock(&active_mi->rli.data_lock);
 	pthread_mutex_unlock(&LOCK_active_mi);
 	break;
       }
@@ -2119,10 +2091,6 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
 	value= (value-(char*) &dflt_key_cache_var)+ (char*) dflt_key_cache;
 	end= int10_to_str(*(long*) value, buff, 10);
         break;
-      case SHOW_KEY_CACHE_LONGLONG:
-	value= (value-(char*) &dflt_key_cache_var)+ (char*) dflt_key_cache;
-	end= longlong10_to_str(*(longlong*) value, buff, 10);
-	break;
       case SHOW_UNDEF:				// Show never happen
       case SHOW_SYS:
 	break;					// Return empty string

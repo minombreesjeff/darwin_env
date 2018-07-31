@@ -98,15 +98,6 @@ ulint
 dict_col_get_clust_pos(
 /*===================*/
 	dict_col_t*	col);
-/********************************************************************
-If the given column name is reserved for InnoDB system columns, return
-TRUE. */
-
-ibool
-dict_col_name_is_reserved(
-/*======================*/
-				/* out: TRUE if name is reserved */
-	const char*	name);	/* in: column name */
 /************************************************************************
 Initializes the autoinc counter. It is not an error to initialize an already
 initialized counter. */
@@ -206,8 +197,7 @@ dict_foreign_add_to_cache(
 /*======================*/
 					/* out: DB_SUCCESS or error code */
 	dict_foreign_t*	foreign,	/* in, own: foreign key constraint */
-	ibool		check_charsets);/* in: TRUE=check charset
-					compatibility */
+	ibool		check_types);	/* in: TRUE=check type compatibility */
 /*************************************************************************
 Checks if a table is referenced by foreign keys. */
 

@@ -421,29 +421,3 @@ SELECT COUNT(*) FROM t1 WHERE MATCH(t) AGAINST ('"osnabrück"' IN BOOLEAN MODE);
 COUNT(*)
 1
 DROP TABLE t1;
-CREATE TABLE t1 (a VARCHAR(30), FULLTEXT(a));
-INSERT INTO t1 VALUES('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
-SET myisam_repair_threads=2;
-REPAIR TABLE t1;
-Table	Op	Msg_type	Msg_text
-test.t1	repair	status	OK
-SET myisam_repair_threads=@@global.myisam_repair_threads;
-INSERT INTO t1 VALUES('testword\'\'');
-SELECT a FROM t1 WHERE MATCH a AGAINST('testword' IN BOOLEAN MODE);
-a
-testword''
-SELECT a FROM t1 WHERE MATCH a AGAINST('testword\'\'' IN BOOLEAN MODE);
-a
-testword''
-DROP TABLE t1;
-CREATE TABLE t1 (a TEXT, FULLTEXT KEY(a));
-INSERT INTO t1 VALUES('test'),('test1'),('test');
-PREPARE stmt from "SELECT a, MATCH(a) AGAINST('test1 test') FROM t1 WHERE MATCH(a) AGAINST('test1 test')";
-EXECUTE stmt;
-a	MATCH(a) AGAINST('test1 test')
-test1	0.68526661396027
-EXECUTE stmt;
-a	MATCH(a) AGAINST('test1 test')
-test1	0.68526661396027
-DEALLOCATE PREPARE stmt;
-DROP TABLE t1;

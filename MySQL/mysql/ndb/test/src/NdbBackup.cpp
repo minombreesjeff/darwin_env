@@ -50,17 +50,14 @@ NdbBackup::start(unsigned int & _backup_id){
 			   2, // wait until completed
 			   &_backup_id,
 			   &reply) == -1) {
-    g_err << "Error: " << ndb_mgm_get_latest_error(handle) << endl;
-    g_err << "Error msg: " << ndb_mgm_get_latest_error_msg(handle) << endl;
-    g_err << "Error desc: " << ndb_mgm_get_latest_error_desc(handle) << endl;
+    g_err  << "Could not start backup " << endl;
+    g_err << "Error: " << reply.message << endl;
     return -1;
   }
 
   if(reply.return_code != 0){
     g_err  << "PLEASE CHECK CODE NdbBackup.cpp line=" << __LINE__ << endl;
-    g_err << "Error: " << ndb_mgm_get_latest_error(handle) << endl;
-    g_err << "Error msg: " << ndb_mgm_get_latest_error_msg(handle) << endl;
-    g_err << "Error desc: " << ndb_mgm_get_latest_error_desc(handle) << endl;
+    g_err << "Error: " << reply.message << endl;
     return reply.return_code;
   }
   return 0;
@@ -292,8 +289,8 @@ NdbBackup::NF(NdbRestarter& _restarter, int *NFDuringBackup_codes, const int sz,
 	   << masterNodeId << endl;
 
 
-    int val[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 };
-    CHECK(_restarter.dumpStateOneNode(nodeId, val, 2) == 0,
+    int val = DumpStateOrd::CmvmiSetRestartOnErrorInsert;
+    CHECK(_restarter.dumpStateOneNode(nodeId, &val, 1) == 0,
 	  "failed to set RestartOnErrorInsert");
     CHECK(_restarter.insertErrorInNode(nodeId, error) == 0,
 	  "failed to set error insert");
@@ -345,7 +342,7 @@ NdbBackup::NF(NdbRestarter& _restarter, int *NFDuringBackup_codes, const int sz,
   }
 
   return NDBT_OK;
-}
+};
 
 int
 FailS_codes[] = {

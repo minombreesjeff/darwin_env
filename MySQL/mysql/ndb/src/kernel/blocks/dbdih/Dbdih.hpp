@@ -81,6 +81,7 @@
 #define ZWRONG_FAILURE_NUMBER_ERROR 302
 #define ZWRONG_START_NODE_ERROR 303
 #define ZNO_REPLICA_FOUND_ERROR 304
+#define ZNODE_ALREADY_STARTING_ERROR 305
 #define ZNODE_START_DISALLOWED_ERROR 309
 
 // --------------------------------------
@@ -773,7 +774,7 @@ private:
 //------------------------------------
 // Methods for LCP functionality
 //------------------------------------
-  void checkKeepGci(TabRecordPtr, Uint32, Fragmentstore*, Uint32);
+  void checkKeepGci(Uint32 replicaStartIndex);
   void checkLcpStart(Signal *, Uint32 lineNo);
   void checkStartMoreLcp(Signal *, Uint32 nodeId);
   bool reportLcpCompletion(const class LcpFragRep *);
@@ -1037,15 +1038,12 @@ private:
   void prepareReplicas(FragmentstorePtr regFragptr);
   void removeNodeFromStored(Uint32 nodeId,
                             FragmentstorePtr regFragptr,
-                            ReplicaRecordPtr replicaPtr,
-			    bool temporary);
+                            ReplicaRecordPtr replicaPtr);
   void removeOldStoredReplica(FragmentstorePtr regFragptr,
                               ReplicaRecordPtr replicaPtr);
   void removeStoredReplica(FragmentstorePtr regFragptr,
                            ReplicaRecordPtr replicaPtr);
   void searchStoredReplicas(FragmentstorePtr regFragptr);
-  bool setup_create_replica(FragmentstorePtr, CreateReplicaRecord*,
-			    ConstPtr<ReplicaRecord>);
   void updateNodeInfo(FragmentstorePtr regFragptr);
 
 //------------------------------------
@@ -1294,7 +1292,7 @@ private:
     }
 
     Uint32 lcpStart;
-    Uint32 lcpStopGcp; 
+    Uint32 lcpStartGcp; 
     Uint32 keepGci;      /* USED TO CALCULATE THE GCI TO KEEP AFTER A LCP  */
     Uint32 oldestRestorableGci;
     
@@ -1363,8 +1361,7 @@ private:
   Uint32 cstarttype;
   Uint32 csystemnodes;
   Uint32 currentgcp;
-  Uint32 c_newest_restorable_gci;
-
+  
   enum GcpMasterTakeOverState {
     GMTOS_IDLE = 0,
     GMTOS_INITIAL = 1,

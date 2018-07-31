@@ -18,9 +18,8 @@
 #define NdbConnection_H
 
 #include <ndb_types.h>
-#include "NdbError.hpp"
-#include "NdbDictionary.hpp"
-#include "Ndb.hpp"
+#include <NdbError.hpp>
+#include <NdbDictionary.hpp>
 
 class NdbConnection;
 class NdbOperation;
@@ -163,8 +162,7 @@ class NdbConnection
   friend class NdbIndexOperation;
   friend class NdbIndexScanOperation;
   friend class NdbBlob;
-  friend class ha_ndbcluster;
-
+ 
 public:
 
   /**
@@ -467,10 +465,10 @@ private:
   /**************************************************************************
    *	These are the create and delete methods of this class.              *
    **************************************************************************/
+  
   NdbConnection(Ndb* aNdb); 
+  
   ~NdbConnection();
-  NdbConnection* next();			  // Returns the next pointer
-  void next(NdbConnection*);		  // Sets the next pointer
 
   void init();           // Initialize connection object for new transaction
 
@@ -489,6 +487,8 @@ private:
   int		getTC_ConnectPtr();		  // Gets TC Connect pointer
   void          setBuddyConPtr(Uint32);           // Sets Buddy Con Ptr
   Uint32        getBuddyConPtr();                 // Gets Buddy Con Ptr
+  NdbConnection* next();			  // Returns the next pointer
+  void		next(NdbConnection*);		  // Sets the next pointer
 
   enum ConStatusType { 
     NotConnected,
@@ -676,7 +676,6 @@ private:
   // optim: any blobs
   bool theBlobFlag;
   Uint8 thePendingBlobOps;
-  inline bool hasBlobOperation() { return theBlobFlag; }
 
   static void sendTC_COMMIT_ACK(NdbApiSignal *,
 				Uint32 transId1, Uint32 transId2, 
@@ -692,7 +691,6 @@ private:
   void define_scan_op(NdbIndexScanOperation*);
 
   friend class HugoOperations;
-  friend struct Ndb_free_list_t<NdbConnection>;
 };
 
 inline

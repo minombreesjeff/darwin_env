@@ -22,9 +22,6 @@
 uint dirname_length(const char *name)
 {
   register my_string pos,gpos;
-#ifdef BASKSLASH_MBTAIL
-  CHARSET_INFO *fs= fs_character_set();
-#endif
 #ifdef FN_DEVCHAR
   if ((pos=(char*)strrchr(name,FN_DEVCHAR)) == 0)
 #endif
@@ -32,22 +29,12 @@ uint dirname_length(const char *name)
 
   gpos= pos++;
   for ( ; *pos ; pos++)				/* Find last FN_LIBCHAR */
-  {
-#ifdef BASKSLASH_MBTAIL
-    uint l;
-    if (use_mb(fs) && (l= my_ismbchar(fs, pos, pos + 3)))
-    {
-      pos+= l - 1;
-      continue;
-    }
-#endif
     if (*pos == FN_LIBCHAR || *pos == '/'
 #ifdef FN_C_AFTER_DIR
 	|| *pos == FN_C_AFTER_DIR || *pos == FN_C_AFTER_DIR_2
 #endif
 	)
       gpos=pos;
-  }
   return ((uint) (uint) (gpos+1-(char*) name));
 }
 
@@ -98,9 +85,6 @@ uint dirname_part(my_string to, const char *name)
 char *convert_dirname(char *to, const char *from, const char *from_end)
 {
   char *to_org=to;
-#ifdef BACKSLASH_MBTAIL
-  CHARSET_INFO *fs= fs_character_set();
-#endif
 
   /* We use -2 here, becasue we need place for the last FN_LIBCHAR */
   if (!from_end || (from_end - from) > FN_REFLEN-2)
@@ -119,22 +103,7 @@ char *convert_dirname(char *to, const char *from, const char *from_end)
 	*to++= FN_C_AFTER_DIR;
 #endif
       else
-      {
-#ifdef BACKSLASH_MBTAIL
-        uint l;
-        if (use_mb(fs) && (l= my_ismbchar(fs, from, from + 3)))
-        {
-          memmove(to, from, l);
-          to+= l;
-          from+= l - 1;
-          to_org= to; /* Don't look inside mbchar */
-        }
-        else
-#endif
-        {
-          *to++= *from;
-        }
-      }
+	*to++= *from;
     }
     *to=0;
   }

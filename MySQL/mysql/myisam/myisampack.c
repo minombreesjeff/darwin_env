@@ -234,14 +234,10 @@ int main(int argc, char **argv)
 #endif
 }
 
-enum options_mp {OPT_CHARSETS_DIR_MP=256, OPT_AUTO_CLOSE};
+enum options_mp {OPT_CHARSETS_DIR_MP=256};
 
 static struct my_option my_long_options[] =
 {
-#ifdef __NETWARE__
-  {"autoclose", OPT_AUTO_CLOSE, "Auto close the screen on exit for Netware.",
-   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"backup", 'b', "Make a backup of the table as table_name.OLD.",
    (gptr*) &backup, (gptr*) &backup, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"character-sets-dir", OPT_CHARSETS_DIR_MP,
@@ -309,11 +305,6 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   uint length;
 
   switch(optid) {
-#ifdef __NETWARE__
-  case OPT_AUTO_CLOSE:
-    setscreenmode(SCR_AUTOCLOSE_ON_EXIT);
-    break;
-#endif
   case 'f':
     force_pack= 1;
     tmpfile_createflag= O_RDWR | O_TRUNC;
@@ -618,22 +609,14 @@ static int compress(PACK_MRG_INFO *mrg,char *result_table)
 	  else
 	    error=my_rename(new_name,org_name,MYF(MY_WME));
 	  if (!error)
-          {
 	    VOID(my_copystat(temp_name,org_name,MYF(MY_COPYTIME)));
-            if (tmp_dir[0])
-              VOID(my_delete(new_name,MYF(MY_WME)));
-          }
 	}
       }
       else
       {
 	if (tmp_dir[0])
-        {
 	  error=my_copy(new_name,org_name,
 			MYF(MY_WME | MY_HOLD_ORIGINAL_MODES | MY_COPYTIME));
-          if (!error)
-            VOID(my_delete(new_name,MYF(MY_WME)));
-        }
 	else
 	  error=my_redel(org_name,new_name,MYF(MY_WME | MY_COPYTIME));
       }
@@ -1675,7 +1658,6 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
   HUFF_COUNTS *count,*end_count;
   HUFF_TREE *tree;
   MI_INFO *isam_file=mrg->file[0];
-  uint pack_version= (uint) isam_file->s->pack.version;
   DBUG_ENTER("compress_isam_file");
 
   if (!(record=(byte*) my_alloca(isam_file->s->base.reclength)))
@@ -1703,10 +1685,23 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
 	  huff_counts[i].tree->height+huff_counts[i].length_bits;
   }
   max_calc_length/=8;
-  pack_ref_length= calc_pack_length(pack_version, max_calc_length);
+  if (max_calc_length < 254)
+    pack_ref_length=1;
+  else if (max_calc_length <= 65535)
+    pack_ref_length=3;
+  else
+    pack_ref_length=4;
   record_count=0;
-  pack_blob_length= isam_file->s->base.blobs ?
-                    calc_pack_length(pack_version, mrg->max_blob_length) : 0;
+  pack_blob_length=0;
+  if (isam_file->s->base.blobs)
+  {
+    if (mrg->max_blob_length < 254)
+      pack_blob_length=1;
+    else if (mrg->max_blob_length <= 65535)
+      pack_blob_length=3;
+    else
+      pack_blob_length=4;
+  }
   max_pack_length=pack_ref_length+pack_blob_length;
 
   mrg_reset(mrg);
@@ -1862,10 +1857,9 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
       }
       flush_bits();
       length=(ulong) (file_buffer.pos-record_pos)-max_pack_length;
-      pack_length= save_pack_length(pack_version, record_pos, length);
+      pack_length=save_pack_length(record_pos,length);
       if (pack_blob_length)
-	pack_length+= save_pack_length(pack_version, record_pos + pack_length,
-	                               tot_blob_length);
+	pack_length+=save_pack_length(record_pos+pack_length,tot_blob_length);
 
       /* Correct file buffer if the header was smaller */
       if (pack_length != max_pack_length)

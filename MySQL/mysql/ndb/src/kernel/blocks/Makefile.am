@@ -13,6 +13,7 @@ SUBDIRS = \
         backup          \
         dbutil          \
         suma            \
+        grep		\
 	dbtux
 
 windoze-dsp:

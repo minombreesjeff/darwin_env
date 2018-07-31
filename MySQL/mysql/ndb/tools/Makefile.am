@@ -1,7 +1,4 @@
 
-dist_bin_SCRIPTS =	ndb_size.pl
-dist_pkgdata_DATA =	ndb_size.tmpl
-
 ndbtools_PROGRAMS = \
   ndb_test_platform \
   ndb_waiter \
@@ -12,7 +9,7 @@ ndbtools_PROGRAMS = \
   ndb_show_tables \
   ndb_select_all \
   ndb_select_count \
-  ndb_restore ndb_config
+  ndb_restore
 
 tools_common_sources = ../test/src/NDBT_ReturnCodes.cpp \
                        ../test/src/NDBT_Table.cpp \
@@ -33,17 +30,7 @@ ndb_restore_SOURCES = restore/restore_main.cpp \
                       restore/consumer.cpp \
                       restore/consumer_restore.cpp \
                       restore/consumer_printer.cpp \
-                      restore/Restore.cpp $(tools_common_sources)
-
-ndb_config_SOURCES = ndb_config.cpp \
-	../src/mgmsrv/Config.cpp \
-	../src/mgmsrv/ConfigInfo.cpp \
-	../src/mgmsrv/InitConfigFileParser.cpp
-ndb_config_CXXFLAGS = -I$(top_srcdir)/ndb/src/mgmapi \
-                      -I$(top_srcdir)/ndb/src/mgmsrv \
-                      -I$(top_srcdir)/ndb/include/mgmcommon \
-                      -DMYSQLCLUSTERDIR="\"\""
-
+                      restore/Restore.cpp
 
 include $(top_srcdir)/ndb/config/common.mk.am
 include $(top_srcdir)/ndb/config/type_ndbapitools.mk.am
@@ -58,7 +45,6 @@ ndb_show_tables_LDFLAGS = @ndb_bin_am_ldflags@
 ndb_select_all_LDFLAGS = @ndb_bin_am_ldflags@
 ndb_select_count_LDFLAGS = @ndb_bin_am_ldflags@
 ndb_restore_LDFLAGS = @ndb_bin_am_ldflags@
-ndb_config_LDFLAGS = @ndb_bin_am_ldflags@
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

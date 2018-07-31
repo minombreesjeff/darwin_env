@@ -24,5 +24,3 @@ save_master_pos;
 connection slave;
 sync_with_master;
 stop slave;
-
-# End of 4.1 tests

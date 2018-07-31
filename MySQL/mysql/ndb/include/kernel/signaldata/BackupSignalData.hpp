@@ -36,14 +36,11 @@ class BackupReq {
 
   friend bool printBACKUP_REQ(FILE *, const Uint32 *, Uint32, Uint16);
 public:
-  STATIC_CONST( SignalLength = 3 );
+  STATIC_CONST( SignalLength = 2 );
 
 private:
   Uint32 senderData;
   Uint32 backupDataLen;
-  /* & 0x3 - waitCompleted
-   */
-  Uint32 flags;
 };
 
 class BackupData {

@@ -241,8 +241,7 @@ public:
     void runDROP_TRIG_REF(Signal* signal);
     void runDropTrig(Signal* signal, Uint32 triggerId, Uint32 tableId);
 
-    Uint32 ptrI;
-    union { Uint32 nextPool; Uint32 nextList; };
+    union { Uint32 nextPool; Uint32 nextList; Uint32 ptrI; };
   };
   friend struct SyncRecord;
   

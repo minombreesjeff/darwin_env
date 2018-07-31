@@ -68,12 +68,6 @@ public:
   NdbTableImpl* put(const char * name, NdbTableImpl *);
   void drop(NdbTableImpl *);
   void release(NdbTableImpl *);
-
-  void alter_table_rep(const char * name, 
-		       Uint32 tableId, Uint32 tableVersion, bool altered);
-
-  unsigned get_size();
-  void invalidate_all();
 public:
   enum Status {
     OK = 0,

@@ -24,7 +24,6 @@ testOIBasic \
 testOperations \
 testRestartGci \
 testScan \
-testInterpreter \
 testScanInterpreter \
 testScanPerf \
 testSystemRestart \
@@ -32,8 +31,7 @@ testTimeout \
 testTransactions \
 testDeadlock \
 test_event ndbapi_slow_select testReadPerf testLcp \
-DbCreate DbAsyncGenerator \
-testSRBank
+DbCreate DbAsyncGenerator
 
 #flexTimedAsynch
 #testBlobs
@@ -62,7 +60,6 @@ testOIBasic_SOURCES = testOIBasic.cpp
 testOperations_SOURCES = testOperations.cpp
 testRestartGci_SOURCES = testRestartGci.cpp
 testScan_SOURCES = testScan.cpp ScanFunctions.hpp
-testInterpreter_SOURCES = testInterpreter.cpp
 testScanInterpreter_SOURCES = testScanInterpreter.cpp ScanFilter.hpp ScanInterpretTest.hpp 
 testScanPerf_SOURCES = testScanPerf.cpp
 testSystemRestart_SOURCES = testSystemRestart.cpp
@@ -75,7 +72,6 @@ testReadPerf_SOURCES = testReadPerf.cpp
 testLcp_SOURCES = testLcp.cpp
 DbCreate_SOURCES= bench/mainPopulate.cpp bench/dbPopulate.cpp bench/userInterface.cpp bench/dbPopulate.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
 DbAsyncGenerator_SOURCES= bench/mainAsyncGenerator.cpp bench/asyncGenerator.cpp bench/ndb_async2.cpp bench/dbGenerator.h bench/macros.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
-testSRBank_SOURCES = testSRBank.cpp
 
 INCLUDES_LOC = -I$(top_srcdir)/ndb/include/kernel
 
@@ -87,7 +83,6 @@ include $(top_srcdir)/ndb/config/type_ndbapitest.mk.am
 ##testSystemRestart_INCLUDES = $(INCLUDES) -I$(top_srcdir)/ndb/include/kernel
 ##testTransactions_INCLUDES = $(INCLUDES) -I$(top_srcdir)/ndb/include/kernel
 testBackup_LDADD = $(LDADD) bank/libbank.a
-testSRBank_LDADD = bank/libbank.a $(LDADD) 
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%
@@ -154,4 +149,3 @@ testScan.dsp: Makefile \
 	@$(top_srcdir)/ndb/config/win-includes $@ $(INCLUDES)
 	@$(top_srcdir)/ndb/config/win-sources $@ $(testScan_SOURCES)
 	@$(top_srcdir)/ndb/config/win-libraries $@ LINK $(LDADD)
-

@@ -27,8 +27,26 @@
 
 /* TODO: Move month and days to language files */
 
-/* Day number for Dec 31st, 9999 */
 #define MAX_DAY_NUMBER 3652424L
+
+static const char *month_names[]=
+{
+  "January", "February", "March", "April", "May", "June", "July", "August",
+  "September", "October", "November", "December", NullS
+};
+
+TYPELIB month_names_typelib=
+{ array_elements(month_names)-1,"", month_names, NULL };
+
+static const char *day_names[]=
+{
+  "Monday", "Tuesday", "Wednesday",
+  "Thursday", "Friday", "Saturday" ,"Sunday", NullS
+};
+
+TYPELIB day_names_typelib=
+{ array_elements(day_names)-1,"", day_names, NULL};
+
 
 /*
   OPTIMIZATION TODO:
@@ -65,7 +83,7 @@ static bool make_datetime(date_time_format_types format, TIME *ltime,
 			       ltime->hour, ltime->minute, ltime->second);
     break;
   case TIME_MICROSECOND:
-    length= cs->cset->snprintf(cs, buff, length, "%s%02d:%02d:%02d.%06ld",
+    length= cs->cset->snprintf(cs, buff, length, "%s%02d:%02d:%02d.%06d",
 			       ltime->neg ? "-" : "",
 			       ltime->hour, ltime->minute, ltime->second,
 			       ltime->second_part);
@@ -82,7 +100,7 @@ static bool make_datetime(date_time_format_types format, TIME *ltime,
     break;
   case DATE_TIME_MICROSECOND:
     length= cs->cset->snprintf(cs, buff, length,
-			       "%04d-%02d-%02d %02d:%02d:%02d.%06ld",
+			       "%04d-%02d-%02d %02d:%02d:%02d.%06d",
 			       ltime->year, ltime->month, ltime->day,
 			       ltime->hour, ltime->minute, ltime->second,
 			       ltime->second_part);
@@ -203,12 +221,8 @@ static bool extract_date_time(DATE_TIME_FORMAT *format,
 	val= tmp;
 	break;
       case 'M':
-	if ((l_time->month= check_word(my_locale_en_US.month_names,
-				       val, val_end, &val)) <= 0)
-	  goto err;
-	break;
       case 'b':
-	if ((l_time->month= check_word(my_locale_en_US.ab_month_names,
+	if ((l_time->month= check_word(&month_names_typelib,
 				       val, val_end, &val)) <= 0)
 	  goto err;
 	break;
@@ -283,11 +297,8 @@ static bool extract_date_time(DATE_TIME_FORMAT *format,
 
 	/* Exotic things */
       case 'W':
-	if ((weekday= check_word(my_locale_en_US.day_names, val, val_end, &val)) <= 0)
-	  goto err;
-	break;
       case 'a':
-	if ((weekday= check_word(my_locale_en_US.ab_day_names, val, val_end, &val)) <= 0)
+	if ((weekday= check_word(&day_names_typelib, val, val_end, &val)) <= 0)
 	  goto err;
 	break;
       case 'w':
@@ -390,7 +401,7 @@ static bool extract_date_time(DATE_TIME_FORMAT *format,
   if (yearday > 0)
   {
     uint days= calc_daynr(l_time->year,1,1) +  yearday - 1;
-    if (days <= 0 || days > MAX_DAY_NUMBER)
+    if (days <= 0 || days >= MAX_DAY_NUMBER)
       goto err;
     get_date_from_daynr(days,&l_time->year,&l_time->month,&l_time->day);
   }
@@ -436,7 +447,7 @@ static bool extract_date_time(DATE_TIME_FORMAT *format,
              (weekday - 1);
     }
 
-    if (days <= 0 || days > MAX_DAY_NUMBER)
+    if (days <= 0 || days >= MAX_DAY_NUMBER)
       goto err;
     get_date_from_daynr(days,&l_time->year,&l_time->month,&l_time->day);
   }
@@ -477,16 +488,9 @@ bool make_date_time(DATE_TIME_FORMAT *format, TIME *l_time,
   uint weekday;
   ulong length;
   const char *ptr, *end;
-  MY_LOCALE *locale;
-  THD *thd= current_thd;
-  char buf[128];
-  String tmp(buf, sizeof(buf), thd->variables.character_set_results);
-  uint errors= 0;
 
-  tmp.length(0);
   str->length(0);
   str->set_charset(&my_charset_bin);
-  locale = thd->variables.lc_time_names;
 
   if (l_time->neg)
     str->append("-", 1);
@@ -502,38 +506,26 @@ bool make_date_time(DATE_TIME_FORMAT *format, TIME *l_time,
       case 'M':
 	if (!l_time->month)
 	  return 1;
-	tmp.copy(locale->month_names->type_names[l_time->month-1],
-		   strlen(locale->month_names->type_names[l_time->month-1]),
-		   system_charset_info, tmp.charset(), &errors);
-	str->append(tmp.ptr(), tmp.length());
+	str->append(month_names[l_time->month-1]);
 	break;
       case 'b':
 	if (!l_time->month)
 	  return 1;
-	tmp.copy(locale->ab_month_names->type_names[l_time->month-1],
-		 strlen(locale->ab_month_names->type_names[l_time->month-1]),
-		 system_charset_info, tmp.charset(), &errors);
-	str->append(tmp.ptr(), tmp.length());
+	str->append(month_names[l_time->month-1],3);
 	break;
       case 'W':
 	if (type == MYSQL_TIMESTAMP_TIME)
 	  return 1;
 	weekday= calc_weekday(calc_daynr(l_time->year,l_time->month,
 					 l_time->day),0);
-	tmp.copy(locale->day_names->type_names[weekday],
-		 strlen(locale->day_names->type_names[weekday]),
-		 system_charset_info, tmp.charset(), &errors);
-	str->append(tmp.ptr(), tmp.length());
+	str->append(day_names[weekday]);
 	break;
       case 'a':
 	if (type == MYSQL_TIMESTAMP_TIME)
 	  return 1;
 	weekday=calc_weekday(calc_daynr(l_time->year,l_time->month,
 					l_time->day),0);
-	tmp.copy(locale->ab_day_names->type_names[weekday],
-		 strlen(locale->ab_day_names->type_names[weekday]),
-		 system_charset_info, tmp.charset(), &errors);
-	str->append(tmp.ptr(), tmp.length());
+	str->append(day_names[weekday],3);
 	break;
       case 'D':
 	if (type == MYSQL_TIMESTAMP_TIME)
@@ -617,7 +609,7 @@ bool make_date_time(DATE_TIME_FORMAT *format, TIME *l_time,
 	break;
       case 'l':
 	days_i= l_time->hour/24;
-	hours_i= (l_time->hour%24 + 11)%12+1;
+	hours_i= (l_time->hour%24 + 11)%12+1 + 24*days_i;
 	length= int10_to_str(hours_i, intbuff, 10) - intbuff;
 	str->append_with_prefill(intbuff, length, 1, '0');
 	break;
@@ -628,8 +620,7 @@ bool make_date_time(DATE_TIME_FORMAT *format, TIME *l_time,
       case 'r':
 	length= my_sprintf(intbuff, 
 		   (intbuff, 
-		    ((l_time->hour % 24) < 12) ?
-                    "%02d:%02d:%02d AM" : "%02d:%02d:%02d PM",
+		    (l_time->hour < 12) ? "%02d:%02d:%02d AM" : "%02d:%02d:%02d PM",
 		    (l_time->hour+11)%12+1,
 		    l_time->minute,
 		    l_time->second));
@@ -914,16 +905,15 @@ String* Item_func_monthname::val_str(String* str)
 {
   DBUG_ASSERT(fixed == 1);
   const char *month_name;
-  uint   month= (uint) val_int();
-  THD *thd= current_thd;
+  uint   month=(uint) Item_func_month::val_int();
 
-  if (null_value || !month)
+  if (!month)					// This is also true for NULL
   {
     null_value=1;
     return (String*) 0;
   }
   null_value=0;
-  month_name= thd->variables.lc_time_names->month_names->type_names[month-1];
+  month_name= month_names[month-1];
   str->set(month_name, strlen(month_name), system_charset_info);
   return str;
 }
@@ -1047,12 +1037,11 @@ String* Item_func_dayname::val_str(String* str)
   DBUG_ASSERT(fixed == 1);
   uint weekday=(uint) val_int();		// Always Item_func_daynr()
   const char *name;
-  THD *thd= current_thd;
 
   if (null_value)
     return (String*) 0;
   
-  name= thd->variables.lc_time_names->day_names->type_names[weekday];
+  name= day_names[weekday];
   str->set(name, strlen(name), system_charset_info);
   return str;
 }
@@ -1383,7 +1372,7 @@ void Item_func_curtime::fix_length_and_dec()
 {
   TIME ltime;
 
-  decimals= DATETIME_DEC;
+  decimals=0;
   collation.set(&my_charset_bin);
   store_now_in_TIME(&ltime);
   value= TIME_to_ulonglong_time(&ltime);
@@ -1430,7 +1419,7 @@ String *Item_func_now::val_str(String *str)
 
 void Item_func_now::fix_length_and_dec()
 {
-  decimals= DATETIME_DEC;
+  decimals=0;
   collation.set(&my_charset_bin);
 
   store_now_in_TIME(&ltime);
@@ -1539,16 +1528,6 @@ void Item_func_date_format::fix_length_and_dec()
   if (args[1]->type() == STRING_ITEM)
   {						// Optimize the normal case
     fixed_length=1;
-
-    /*
-      Force case sensitive collation on format string.
-      This needed because format modifiers with different case,
-      for example %m and %M, have different meaning. Thus eq()
-      will distinguish them.
-    */
-    args[1]->collation.set(
-        get_charset_by_csname(args[1]->collation.collation->csname,
-                              MY_CS_BINSORT,MYF(0)), DERIVATION_COERCIBLE);
     /*
       The result is a binary string (no reason to use collation->mbmaxlen
       This is becasue make_date_time() only returns binary strings
@@ -1559,7 +1538,7 @@ void Item_func_date_format::fix_length_and_dec()
   {
     fixed_length=0;
     /* The result is a binary string (no reason to use collation->mbmaxlen */
-    max_length=min(args[1]->max_length,MAX_BLOB_WIDTH) * 10;
+    max_length=args[1]->max_length*10;
     set_if_smaller(max_length,MAX_BLOB_WIDTH);
   }
   maybe_null=1;					// If wrong date
@@ -1581,7 +1560,7 @@ uint Item_func_date_format::format_length(const String *format)
       switch(*++ptr) {
       case 'M': /* month, textual */
       case 'W': /* day (of the week), textual */
-	size += 64; /* large for UTF8 locale data */
+	size += 9;
 	break;
       case 'D': /* day (of the month), numeric plus english suffix */
       case 'Y': /* year, numeric, 4 digits */
@@ -1591,8 +1570,6 @@ uint Item_func_date_format::format_length(const String *format)
 	break;
       case 'a': /* locale's abbreviated weekday name (Sun..Sat) */
       case 'b': /* locale's abbreviated month name (Jan.Dec) */
-	size += 32; /* large for UTF8 locale data */
-	break;
       case 'j': /* day of year (001..366) */
 	size += 3;
 	break;
@@ -1600,12 +1577,14 @@ uint Item_func_date_format::format_length(const String *format)
       case 'u': /* week (00..52), where week starts with Monday */
       case 'V': /* week 1..53 used with 'x' */
       case 'v': /* week 1..53 used with 'x', where week starts with Monday */
+      case 'H': /* hour (00..23) */
       case 'y': /* year, numeric, 2 digits */
       case 'm': /* month, numeric */
       case 'd': /* day (of the month), numeric */
       case 'h': /* hour (01..12) */
       case 'I': /* --||-- */
       case 'i': /* minutes, numeric */
+      case 'k': /* hour ( 0..23) */
       case 'l': /* hour ( 1..12) */
       case 'p': /* locale's AM or PM */
       case 'S': /* second (00..61) */
@@ -1613,10 +1592,6 @@ uint Item_func_date_format::format_length(const String *format)
       case 'c': /* month (0..12) */
       case 'e': /* day (0..31) */
 	size += 2;
-	break;
-      case 'k': /* hour ( 0..23) */
-      case 'H': /* hour (00..23; value > 23 OK, padding always 2-digit) */
-	size += 7; /* docs allow > 23, range depends on sizeof(unsigned int) */
 	break;
       case 'r': /* time, 12-hour (hh:mm:ss [AP]M) */
 	size += 11;
@@ -1695,7 +1670,7 @@ void Item_func_from_unixtime::fix_length_and_dec()
 { 
   thd= current_thd;
   collation.set(&my_charset_bin);
-  decimals= DATETIME_DEC;
+  decimals=0;
   max_length=MAX_DATETIME_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
   maybe_null= 1;
   thd->time_zone_used= 1;
@@ -1945,7 +1920,7 @@ bool Item_date_add_interval::get_date(TIME *ltime, uint fuzzy_date)
     ltime->hour=   (uint) (sec/3600);
     daynr= calc_daynr(ltime->year,ltime->month,1) + days;
     /* Day number from year 0 to 9999-12-31 */
-    if ((ulonglong) daynr > MAX_DAY_NUMBER) 
+    if ((ulonglong) daynr >= MAX_DAY_NUMBER)
       goto null_date;
     get_date_from_daynr((long) daynr, &ltime->year, &ltime->month,
                         &ltime->day);
@@ -1955,7 +1930,7 @@ bool Item_date_add_interval::get_date(TIME *ltime, uint fuzzy_date)
     period= (calc_daynr(ltime->year,ltime->month,ltime->day) +
              sign * (long) interval.day);
     /* Daynumber from year 0 to 9999-12-31 */
-    if ((ulong) period > MAX_DAY_NUMBER)
+    if ((ulong) period >= MAX_DAY_NUMBER)
       goto null_date;
     get_date_from_daynr((long) period,&ltime->year,&ltime->month,&ltime->day);
     break;
@@ -2236,8 +2211,8 @@ String *Item_char_typecast::val_str(String *str)
     // Convert character set if differ
     uint dummy_errors;
     if (!(res= args[0]->val_str(&tmp_value)) ||
-        str->copy(res->ptr(), res->length(), from_cs,
-        cast_cs, &dummy_errors))
+	str->copy(res->ptr(), res->length(), res->charset(),
+                  cast_cs, &dummy_errors))
     {
       null_value= 1;
       return 0;
@@ -2276,32 +2251,14 @@ void Item_char_typecast::fix_length_and_dec()
      For single-byte character sets we allow just to copy
      from the argument. A single-byte character sets string
      is always well-formed. 
-     
-     There is a special trick to convert form a number to ucs2.
-     As numbers have my_charset_bin as their character set,
-     it wouldn't do conversion to ucs2 without an additional action.
-     To force conversion, we should pretend to be non-binary.
-     Let's choose from_cs this way:
-     - If the argument in a number and cast_cs is ucs2 (i.e. mbminlen > 1),
-       then from_cs is set to latin1, to perform latin1 -> ucs2 conversion.
-     - If the argument is a number and cast_cs is ASCII-compatible
-       (i.e. mbminlen == 1), then from_cs is set to cast_cs,
-       which allows just to take over the args[0]->val_str() result
-       and thus avoid unnecessary character set conversion.
-     - If the argument is not a number, then from_cs is set to
-       the argument's charset.
   */
-  from_cs= (args[0]->result_type() == INT_RESULT || 
-            args[0]->result_type() == REAL_RESULT) ?
-           (cast_cs->mbminlen == 1 ? cast_cs : &my_charset_latin1) :
-           args[0]->collation.collation;
   charset_conversion= (cast_cs->mbmaxlen > 1) ||
-                      !my_charset_same(from_cs, cast_cs) &&
-                      from_cs != &my_charset_bin &&
+                      !my_charset_same(args[0]->collation.collation, cast_cs) &&
+                      args[0]->collation.collation != &my_charset_bin &&
                       cast_cs != &my_charset_bin;
   collation.set(cast_cs, DERIVATION_IMPLICIT);
   char_length= (cast_length >= 0) ? cast_length : 
-	       args[0]->max_length/from_cs->mbmaxlen;
+	       args[0]->max_length/args[0]->collation.collation->mbmaxlen;
   max_length= char_length * cast_cs->mbmaxlen;
 }
 
@@ -2320,20 +2277,6 @@ String *Item_datetime_typecast::val_str(String *str)
 }
 
 
-longlong Item_datetime_typecast::val_int()
-{
-  DBUG_ASSERT(fixed == 1);
-  TIME ltime;
-  if (get_arg0_date(&ltime,1))
-  {
-    null_value= 1;
-    return 0;
-  }
-
-  return TIME_to_ulonglong_datetime(&ltime);
-}
-
-
 bool Item_time_typecast::get_time(TIME *ltime)
 {
   bool res= get_arg0_time(ltime);
@@ -2347,17 +2290,6 @@ bool Item_time_typecast::get_time(TIME *ltime)
   return res;
 }
 
-
-longlong Item_time_typecast::val_int()
-{
-  TIME ltime;
-  if (get_time(&ltime))
-  {
-    null_value= 1;
-    return 0;
-  }
-  return ltime.hour * 10000L + ltime.minute * 100 + ltime.second;
-}
 
 String *Item_time_typecast::val_str(String *str)
 {
@@ -2398,14 +2330,6 @@ String *Item_date_typecast::val_str(String *str)
   return 0;
 }
 
-longlong Item_date_typecast::val_int()
-{
-  DBUG_ASSERT(fixed == 1);
-  TIME ltime;
-  if (args[0]->get_date(&ltime, TIME_FUZZY_DATE))
-    return 0;
-  return (longlong) (ltime.year * 10000L + ltime.month * 100 + ltime.day);
-}
 
 /*
   MAKEDATE(a,b) is a date function that creates a date value 
@@ -2426,7 +2350,7 @@ String *Item_func_makedate::val_str(String *str)
 
   days= calc_daynr(yearnr,1,1) + daynr - 1;
   /* Day number from year 0 to 9999-12-31 */
-  if (days >= 0 && days <= MAX_DAY_NUMBER)
+  if (days >= 0 && days < MAX_DAY_NUMBER)
   {
     null_value=0;
     get_date_from_daynr(days,&l_time.year,&l_time.month,&l_time.day);
@@ -2442,39 +2366,11 @@ err:
 }
 
 
-longlong Item_func_makedate::val_int()
-{
-  DBUG_ASSERT(fixed == 1);
-  TIME l_time;
-  long daynr=  (long) args[1]->val_int();
-  long yearnr= (long) args[0]->val_int();
-  long days;
-
-  if (args[0]->null_value || args[1]->null_value ||
-      yearnr < 0 || daynr <= 0)
-    goto err;
-
-  days= calc_daynr(yearnr,1,1) + daynr - 1;
-  /* Day number from year 0 to 9999-12-31 */
-  if (days >= 0 && days < MAX_DAY_NUMBER)
-  {
-    null_value=0;
-    get_date_from_daynr(days,&l_time.year,&l_time.month,&l_time.day);
-    return (longlong) (l_time.year * 10000L + l_time.month * 100 + l_time.day);
-  }
-
-err:
-  null_value= 1;
-  return 0;
-}
-
-
 void Item_func_add_time::fix_length_and_dec()
 {
   enum_field_types arg0_field_type;
   decimals=0;
   max_length=MAX_DATETIME_FULL_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
-  maybe_null= 1;
 
   /*
     The field type for the result of an Item_func_add_time function is defined
@@ -2836,16 +2732,15 @@ Field *Item_func_str_to_date::tmp_table_field(TABLE *t_arg)
 void Item_func_str_to_date::fix_length_and_dec()
 {
   char format_buff[64];
-  String format_str(format_buff, sizeof(format_buff), &my_charset_bin);
-  String *format;
+  String format_str(format_buff, sizeof(format_buff), &my_charset_bin), *format;
   maybe_null= 1;
   decimals=0;
   cached_field_type= MYSQL_TYPE_STRING;
   max_length= MAX_DATETIME_FULL_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
   cached_timestamp_type= MYSQL_TIMESTAMP_NONE;
-  format= args[1]->val_str(&format_str);
-  if (!args[1]->null_value && (const_item= args[1]->const_item()))
+  if ((const_item= args[1]->const_item()))
   {
+    format= args[1]->val_str(&format_str);
     cached_format_type= get_date_time_result_type(format->ptr(),
                                                   format->length());
     switch (cached_format_type) {

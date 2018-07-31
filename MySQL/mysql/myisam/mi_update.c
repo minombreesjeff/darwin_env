@@ -108,10 +108,6 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
       {
 	uint new_length=_mi_make_key(info,i,new_key,newrec,pos);
 	uint old_length=_mi_make_key(info,i,old_key,oldrec,pos);
-
-        /* The above changed info->lastkey2. Inform mi_rnext_same(). */
-        info->update&= ~HA_STATE_RNEXT_SAME;
-
 	if (new_length != old_length ||
 	    memcmp((byte*) old_key,(byte*) new_key,new_length))
 	{
@@ -168,17 +164,7 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
   info->update= (HA_STATE_CHANGED | HA_STATE_ROW_CHANGED | HA_STATE_AKTIV |
 		 key_changed);
   myisam_log_record(MI_LOG_UPDATE,info,newrec,info->lastpos,0);
-  /*
-    Every myisam function that updates myisam table must end with
-    call to _mi_writeinfo(). If operation (second param of
-    _mi_writeinfo()) is not 0 it sets share->changed to 1, that is
-    flags that data has changed. If operation is 0, this function
-    equals to no-op in this case.
-
-    mi_update() must always pass !0 value as operation, since even if
-    there is no index change there could be data change.
-  */
-  VOID(_mi_writeinfo(info, WRITEINFO_UPDATE_KEYFILE));
+  VOID(_mi_writeinfo(info,key_changed ?  WRITEINFO_UPDATE_KEYFILE : 0));
   allow_break();				/* Allow SIGHUP & SIGINT */
   if (info->invalidator != 0)
   {

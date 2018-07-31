@@ -23,13 +23,13 @@ SELECT @@global.default.key_buffer_size;
 @@global.default.key_buffer_size
 16777216
 SELECT @@global.default.`key_buffer_size`;
-@@global.default.`key_buffer_size`
+@@global.default.key_buffer_size
 16777216
 SELECT @@global.`default`.`key_buffer_size`;
-@@global.`default`.`key_buffer_size`
+@@global.default.key_buffer_size
 16777216
 SELECT @@`default`.key_buffer_size;
-@@`default`.key_buffer_size
+@@default.key_buffer_size
 16777216
 SELECT @@small.key_buffer_size;
 @@small.key_buffer_size
@@ -191,7 +191,7 @@ cache index t1 in unknown_key_cache;
 ERROR HY000: Unknown key cache 'unknown_key_cache'
 cache index t1 key (unknown_key) in keycache1;
 Table	Op	Msg_type	Msg_text
-test.t1	assign_to_keycache	error	Key 'unknown_key' doesn't exist in table 't1'
+test.t1	assign_to_keycache	error	Key column 'unknown_key' doesn't exist in table
 test.t1	assign_to_keycache	status	Operation failed
 select @@keycache2.key_buffer_size;
 @@keycache2.key_buffer_size
@@ -287,45 +287,3 @@ check table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	check	status	OK
 drop table t1;
-CREATE TABLE t1(a int NOT NULL AUTO_INCREMENT PRIMARY KEY);
-SET GLOBAL key_cache_block_size=1536;
-INSERT INTO t1 VALUES (1);
-SELECT @@key_cache_block_size;
-@@key_cache_block_size
-1536
-CHECK TABLE t1;
-Table	Op	Msg_type	Msg_text
-test.t1	check	status	OK
-DROP TABLE t1;
-CREATE TABLE t1(a int NOT NULL AUTO_INCREMENT PRIMARY KEY, b int);
-CREATE TABLE t2(a int NOT NULL AUTO_INCREMENT PRIMARY KEY, b int);
-SET GLOBAL key_cache_block_size=1536;
-INSERT INTO t1 VALUES (1,0);
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-INSERT INTO t2(b) SELECT b FROM t1;
-INSERT INTO t1(b) SELECT b FROM t2;
-SELECT COUNT(*) FROM t1;
-COUNT(*)
-4181
-SELECT @@key_cache_block_size;
-@@key_cache_block_size
-1536
-CHECK TABLE t1;
-Table	Op	Msg_type	Msg_text
-test.t1	check	status	OK
-DROP TABLE t1,t2;

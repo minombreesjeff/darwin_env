@@ -2143,8 +2143,7 @@ SumaParticipant::execSUB_START_REQ(Signal* signal){
   case SubCreateReq::DatabaseSnapshot:
   case SubCreateReq::SelectiveTableSnapshot:
     jam();
-    ndbrequire(false);
-    //subbPtr.p->m_subscriberRef = GREP_REF;
+    subbPtr.p->m_subscriberRef = GREP_REF;
     subbPtr.p->m_subscriberData = subPtr.p->m_subscriberData;
     break;
   case SubCreateReq::SingleTableScan:
@@ -2973,6 +2972,16 @@ SumaParticipant::execSUB_GCP_COMPLETE_REP(Signal* signal){
   c_lastCompleteGCI = gci;
 
   /**
+   * always send SUB_GCP_COMPLETE_REP to Grep (so 
+   * Lars can do funky stuff calculating intervals,
+   * even before the subscription is started
+   */
+  rep->senderRef  = reference();
+  rep->senderData = 0; //ignored in grep
+  EXECUTE_DIRECT(refToBlock(GREP_REF), GSN_SUB_GCP_COMPLETE_REP, signal,
+		 SubGcpCompleteRep::SignalLength);  
+
+  /**
    * Signal to subscriber(s)
    */
 
@@ -2996,6 +3005,13 @@ SumaParticipant::execSUB_GCP_COMPLETE_REP(Signal* signal){
     ndbout_c("GSN_SUB_GCP_COMPLETE_REP to %s:",
 	     getBlockName(refToBlock(ref)));
 #else
+    /**
+     * Ignore sending to GREP (since we sent earlier)
+     */
+    if (ref == GREP_REF) {
+      jam();
+      continue;
+    }
 
     CRASH_INSERTION(13018);
 

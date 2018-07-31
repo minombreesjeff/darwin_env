@@ -51,8 +51,6 @@ static unsigned int iter_count= 0;
 
 static const char *opt_basedir= "./";
 
-static longlong opt_getopt_ll_test= 0;
-
 static int embedded_server_arg_count= 0;
 static char *embedded_server_args[MAX_SERVER_ARGS];
 
@@ -682,7 +680,7 @@ static void verify_prepare_field(MYSQL_RES *result,
     fprintf(stdout, "\n    org_table:`%s`\t(expected: `%s`)",
             field->org_table, org_table);
     fprintf(stdout, "\n    database :`%s`\t(expected: `%s`)", field->db, db);
-    fprintf(stdout, "\n    length   :`%lu`\t(expected: `%lu`)",
+    fprintf(stdout, "\n    length   :`%ld`\t(expected: `%ld`)",
             field->length, length * cs->mbmaxlen);
     fprintf(stdout, "\n    maxlength:`%ld`", field->max_length);
     fprintf(stdout, "\n    charsetnr:`%d`", field->charsetnr);
@@ -6807,7 +6805,6 @@ static void test_set_option()
   bug #89 (reported by mark@mysql.com)
 */
 
-#ifndef EMBEDDED_LIBRARY
 static void test_prepare_grant()
 {
   int rc;
@@ -6899,7 +6896,99 @@ static void test_prepare_grant()
 
   }
 }
-#endif /* EMBEDDED_LIBRARY */
+
+
+/*
+  Test a crash when invalid/corrupted .frm is used in the
+  SHOW TABLE STATUS
+  bug #93 (reported by serg@mysql.com).
+*/
+
+static void test_frm_bug()
+{
+  MYSQL_STMT *stmt;
+  MYSQL_BIND bind[2];
+  MYSQL_RES  *result;
+  MYSQL_ROW  row;
+  FILE       *test_file;
+  char       data_dir[FN_REFLEN];
+  char       test_frm[FN_REFLEN];
+  int        rc;
+
+  myheader("test_frm_bug");
+
+  mysql_autocommit(mysql, TRUE);
+
+  rc= mysql_query(mysql, "drop table if exists test_frm_bug");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "flush tables");
+  myquery(rc);
+
+  stmt= mysql_simple_prepare(mysql, "show variables like 'datadir'");
+  check_stmt(stmt);
+
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  bind[0].buffer_type= MYSQL_TYPE_STRING;
+  bind[0].buffer= data_dir;
+  bind[0].buffer_length= FN_REFLEN;
+  bind[0].is_null= 0;
+  bind[0].length= 0;
+  bind[1]= bind[0];
+
+  rc= mysql_stmt_bind_result(stmt, bind);
+  check_execute(stmt, rc);
+
+  rc= mysql_stmt_fetch(stmt);
+  check_execute(stmt, rc);
+
+  if (!opt_silent)
+    fprintf(stdout, "\n data directory: %s", data_dir);
+
+  rc= mysql_stmt_fetch(stmt);
+  DIE_UNLESS(rc == MYSQL_NO_DATA);
+
+  strxmov(test_frm, data_dir, "/", current_db, "/", "test_frm_bug.frm", NullS);
+
+  if (!opt_silent)
+    fprintf(stdout, "\n test_frm: %s", test_frm);
+
+  if (!(test_file= my_fopen(test_frm, (int) (O_RDWR | O_CREAT), MYF(MY_WME))))
+  {
+    fprintf(stdout, "\n ERROR: my_fopen failed for '%s'", test_frm);
+    fprintf(stdout, "\n test cancelled");
+    exit(1);
+  }
+  if (!opt_silent)
+    fprintf(test_file, "this is a junk file for test");
+
+  rc= mysql_query(mysql, "SHOW TABLE STATUS like 'test_frm_bug'");
+  myquery(rc);
+
+  result= mysql_store_result(mysql);
+  mytest(result);/* It can't be NULL */
+
+  rc= my_process_result_set(result);
+  DIE_UNLESS(rc == 1);
+
+  mysql_data_seek(result, 0);
+
+  row= mysql_fetch_row(result);
+  mytest(row);
+
+  if (!opt_silent)
+    fprintf(stdout, "\n Comment: %s", row[17]);
+  DIE_UNLESS(row[17] != 0);
+
+  mysql_free_result(result);
+  mysql_stmt_close(stmt);
+
+  my_fclose(test_file, MYF(0));
+  mysql_query(mysql, "drop table if exists test_frm_bug");
+}
+
 
 /* Test DECIMAL conversion */
 
@@ -9087,7 +9176,7 @@ static void test_create_drop()
     rc= mysql_stmt_execute(stmt_drop);
     check_execute(stmt_drop, rc);
     if (!opt_silent)
-      fprintf(stdout, "dropped %i\n", i);
+      fprintf(stdout, "droped %i\n", i);
 
     rc= mysql_stmt_execute(stmt_create_select);
     check_execute(stmt_create, rc);
@@ -9102,7 +9191,7 @@ static void test_create_drop()
     rc= mysql_stmt_execute(stmt_drop);
     check_execute(stmt_drop, rc);
     if (!opt_silent)
-      fprintf(stdout, "dropped %i\n", i);
+      fprintf(stdout, "droped %i\n", i);
   }
 
   mysql_stmt_close(stmt_create);
@@ -9952,9 +10041,8 @@ static void test_ps_i18n()
   const char *stmt_text;
   MYSQL_BIND bind_array[2];
 
-  /* Represented as numbers to keep UTF8 tools from clobbering them. */
-  const char *koi8= "\xee\xd5\x2c\x20\xda\xc1\x20\xd2\xd9\xc2\xc1\xcc\xcb\xd5";
-  const char *cp1251= "\xcd\xf3\x2c\x20\xe7\xe0\x20\xf0\xfb\xe1\xe0\xeb\xea\xf3";
+  const char *koi8= "Ó’, ⁄¡ “Ÿ¬¡ÃÀ’";
+  const char *cp1251= "ÕÛ, Á‡ ˚·‡ÎÍÛ";
   char buf1[16], buf2[16];
   ulong buf1_len, buf2_len;
 
@@ -11478,7 +11566,7 @@ static void test_bug8330()
   const char *stmt_text;
   MYSQL_STMT *stmt[2];
   int i, rc;
-  const char *query= "select a,b from t1 where a=?";
+  char *query= "select a,b from t1 where a=?";
   MYSQL_BIND bind[2];
   long lval[2];
 
@@ -11555,26 +11643,25 @@ static void test_bug7990()
 static void test_bug8378()
 {
 #if defined(HAVE_CHARSET_gbk) && !defined(EMBEDDED_LIBRARY)
-  MYSQL *old_mysql=mysql;
+  MYSQL *lmysql;
   char out[9]; /* strlen(TEST_BUG8378)*2+1 */
-  char buf[256];
-  int len, rc;
+  int len;
 
   myheader("test_bug8378");
 
   if (!opt_silent)
     fprintf(stdout, "\n Establishing a test connection ...");
-  if (!(mysql= mysql_init(NULL)))
+  if (!(lmysql= mysql_init(NULL)))
   {
     myerror("mysql_init() failed");
     exit(1);
   }
-  if (mysql_options(mysql, MYSQL_SET_CHARSET_NAME, "gbk"))
+  if (mysql_options(lmysql, MYSQL_SET_CHARSET_NAME, "gbk"))
   {
     myerror("mysql_options() failed");
     exit(1);
   }
-  if (!(mysql_real_connect(mysql, opt_host, opt_user,
+  if (!(mysql_real_connect(lmysql, opt_host, opt_user,
                            opt_password, current_db, opt_port,
                            opt_unix_socket, 0)))
   {
@@ -11584,366 +11671,14 @@ static void test_bug8378()
   if (!opt_silent)
     fprintf(stdout, " OK");
 
-  len= mysql_real_escape_string(mysql, out, TEST_BUG8378_IN, 4);
+  len= mysql_real_escape_string(lmysql, out, TEST_BUG8378_IN, 4);
 
   /* No escaping should have actually happened. */
   DIE_UNLESS(memcmp(out, TEST_BUG8378_OUT, len) == 0);
 
-  sprintf(buf, "SELECT '%s'", out);
-  rc=mysql_real_query(mysql, buf, strlen(buf));
-  myquery(rc);
-
-  mysql_close(mysql);
-
-  mysql=old_mysql;
+  mysql_close(lmysql);
 #endif
 }
-
-
-/* Test correct max length for MEDIUMTEXT and LONGTEXT columns */
-
-static void test_bug9735()
-{
-  MYSQL_RES *res;
-  int rc;
-
-  myheader("test_bug9735");
-
-  rc= mysql_query(mysql, "drop table if exists t1");
-  myquery(rc);
-  rc= mysql_query(mysql, "create table t1 (a mediumtext, b longtext) "
-                         "character set latin1");
-  myquery(rc);
-  rc= mysql_query(mysql, "select * from t1");
-  myquery(rc);
-  res= mysql_store_result(mysql);
-  verify_prepare_field(res, 0, "a", "a", MYSQL_TYPE_BLOB,
-                       "t1", "t1", current_db, (1U << 24)-1, 0);
-  verify_prepare_field(res, 1, "b", "b", MYSQL_TYPE_BLOB,
-                       "t1", "t1", current_db, ~0U, 0);
-  mysql_free_result(res);
-  rc= mysql_query(mysql, "drop table t1");
-  myquery(rc);
-}
-
-/* Bug#11183 "mysql_stmt_reset() doesn't reset information about error" */
-
-static void test_bug11183()
-{
-  int rc;
-  MYSQL_STMT *stmt;
-  char bug_statement[]= "insert into t1 values (1)";
-
-  myheader("test_bug11183");
-
-  mysql_query(mysql, "drop table t1 if exists");
-  mysql_query(mysql, "create table t1 (a int)");
-
-  stmt= mysql_stmt_init(mysql);
-  DIE_UNLESS(stmt != 0);
-
-  rc= mysql_stmt_prepare(stmt, bug_statement, strlen(bug_statement));
-  check_execute(stmt, rc);
-
-  rc= mysql_query(mysql, "drop table t1");
-  myquery(rc);
-
-  /* Trying to execute statement that should fail on execute stage */
-  rc= mysql_stmt_execute(stmt);
-  DIE_UNLESS(rc);
-
-  mysql_stmt_reset(stmt);
-  DIE_UNLESS(mysql_stmt_errno(stmt) == 0);
-
-  mysql_query(mysql, "create table t1 (a int)");
-
-  /* Trying to execute statement that should pass ok */
-  if (mysql_stmt_execute(stmt))
-  {
-    mysql_stmt_reset(stmt);
-    DIE_UNLESS(mysql_stmt_errno(stmt) == 0);
-  }
-
-  mysql_stmt_close(stmt);
-
-  rc= mysql_query(mysql, "drop table t1");
-  myquery(rc);
-}
-
-static void test_bug12001()
-{
-  MYSQL *mysql_local;
-  MYSQL_RES *result;
-  const char *query= "DROP TABLE IF EXISTS test_table;"
-                     "CREATE TABLE test_table(id INT);" 
-                     "INSERT INTO test_table VALUES(10);" 
-                     "UPDATE test_table SET id=20 WHERE id=10;" 
-                     "SELECT * FROM test_table;" 
-                     "INSERT INTO non_existent_table VALUES(11);";
-  int rc, res;
-
-  myheader("test_bug12001");
-
-  if (!(mysql_local= mysql_init(NULL)))
-  {
-    fprintf(stdout, "\n mysql_init() failed");
-    exit(1);
-  }
-
-  /* Create connection that supports multi statements */
-  if (!mysql_real_connect(mysql_local, opt_host, opt_user,
-                           opt_password, current_db, opt_port,
-                           opt_unix_socket, CLIENT_MULTI_STATEMENTS | CLIENT_MULTI_RESULTS)) {
-    fprintf(stdout, "\n mysql_real_connect() failed");
-    exit(1);
-  }
-
-  rc= mysql_query(mysql_local, query);
-  myquery(rc);
-
-  do {
-    if (mysql_field_count(mysql_local) && (result= mysql_use_result(mysql_local)))  {
-      mysql_free_result(result);	
-    }
-  } while (!(res= mysql_next_result(mysql_local))); 
-  
-  rc= mysql_query(mysql_local, "DROP TABLE IF EXISTS test_table");
-  myquery(rc);
-
-  mysql_close(mysql_local);
-  DIE_UNLESS(res==1);
-}
-
-static void test_bug12744()
-{
-  MYSQL_STMT *prep_stmt = NULL;
-  int rc;
-  myheader("test_bug12744");
-	
-  prep_stmt= mysql_stmt_init(mysql);
-  rc= mysql_stmt_prepare(prep_stmt, "SELECT 1", 8);
-  DIE_UNLESS(rc==0);
-  
-  rc= mysql_kill(mysql, mysql_thread_id(mysql));
-  DIE_UNLESS(rc==0);
-
-  if ((rc= mysql_stmt_execute(prep_stmt)))
-  {
-    if ((rc= mysql_stmt_reset(prep_stmt)))
-      printf("OK!\n");
-    else
-    {
-      printf("Error!\n");
-      DIE_UNLESS(1==0);      
-    }
-  }
-  else
-  {
-    fprintf(stderr, "expected error but no error occured\n");
-    DIE_UNLESS(1==0);
-  }
-  rc= mysql_stmt_close(prep_stmt);
-}
-
-/*
-  Bug#11718: query with function, join and order by returns wrong type
-*/
-
-static void test_bug11718()
-{
-  MYSQL_RES	*res;
-  int rc;
-  const char *query= "select str_to_date(concat(f3),'%Y%m%d') from t1,t2 "
-                     "where f1=f2 order by f1";
-
-  myheader("test_bug11718");
-
-  rc= mysql_query(mysql, "drop table if exists t1, t2");
-  myquery(rc);
-  rc= mysql_query(mysql, "create table t1 (f1 int)");
-  myquery(rc);
-  rc= mysql_query(mysql, "create table t2 (f2 int, f3 numeric(8))");
-  myquery(rc);
-  rc= mysql_query(mysql, "insert into t1 values (1), (2)");
-  myquery(rc);
-  rc= mysql_query(mysql, "insert into t2 values (1,20050101), (2,20050202)");
-  myquery(rc);
-  rc= mysql_query(mysql, query);
-  myquery(rc);
-  res = mysql_store_result(mysql);
-
-  if (!opt_silent)
-    printf("return type: %s", (res->fields[0].type == MYSQL_TYPE_DATE)?"DATE":
-           "not DATE");
-  DIE_UNLESS(res->fields[0].type == MYSQL_TYPE_DATE);
-  rc= mysql_query(mysql, "drop table t1, t2");
-  myquery(rc);
-}
-
-
-/*
-  Bug #12925: Bad handling of maximum values in getopt
-*/
-static void test_bug12925()
-{
-  myheader("test_bug12925");
-  if (opt_getopt_ll_test)
-    DIE_UNLESS(opt_getopt_ll_test == LL(25600*1024*1024));
-}
-
-
-/*
-  Bug #15613: "libmysqlclient API function mysql_stmt_prepare returns wrong
-  field length"
-*/
-
-static void test_bug15613()
-{
-  MYSQL_STMT *stmt;
-  const char *stmt_text;
-  MYSQL_RES *metadata;
-  MYSQL_FIELD *field;
-  int rc;
-  myheader("test_bug15613");
-
-  /* I. Prepare the table */
-  rc= mysql_query(mysql, "set names latin1");
-  myquery(rc);
-  mysql_query(mysql, "drop table if exists t1");
-  rc= mysql_query(mysql,
-                  "create table t1 (t text character set utf8, "
-                                   "tt tinytext character set utf8, "
-                                   "mt mediumtext character set utf8, "
-                                   "lt longtext character set utf8, "
-                                   "vl varchar(255) character set latin1,"
-                                   "vb varchar(255) character set binary,"
-                                   "vu varchar(255) character set utf8)");
-  myquery(rc);
-
-  stmt= mysql_stmt_init(mysql);
-
-  /* II. Check SELECT metadata */
-  stmt_text= ("select t, tt, mt, lt, vl, vb, vu from t1");
-  rc= mysql_stmt_prepare(stmt, stmt_text, strlen(stmt_text));
-  metadata= mysql_stmt_result_metadata(stmt);
-  field= mysql_fetch_fields(metadata);
-  if (!opt_silent)
-  {
-    printf("Field lengths (client character set is latin1):\n"
-           "text character set utf8:\t\t%lu\n"
-           "tinytext character set utf8:\t\t%lu\n"
-           "mediumtext character set utf8:\t\t%lu\n"
-           "longtext character set utf8:\t\t%lu\n"
-           "varchar(255) character set latin1:\t%lu\n"
-           "varchar(255) character set binary:\t%lu\n"
-           "varchar(255) character set utf8:\t%lu\n",
-           field[0].length, field[1].length, field[2].length, field[3].length,
-           field[4].length, field[5].length, field[6].length);
-  }
-  DIE_UNLESS(field[0].length == 65535);
-  DIE_UNLESS(field[1].length == 255);
-  DIE_UNLESS(field[2].length == 16777215);
-  DIE_UNLESS(field[3].length == 4294967295UL);
-  DIE_UNLESS(field[4].length == 255);
-  DIE_UNLESS(field[5].length == 255);
-  DIE_UNLESS(field[6].length == 255);
-
-  /* III. Cleanup */
-  rc= mysql_query(mysql, "drop table t1");
-  myquery(rc);
-  rc= mysql_query(mysql, "set names default");
-  myquery(rc);
-  mysql_stmt_close(stmt);
-}
-
-
-/*
- Bug#20152: mysql_stmt_execute() writes to MYSQL_TYPE_DATE buffer
- */
-static void test_bug20152()
-{
-  MYSQL_BIND bind[1];
-  MYSQL_STMT *stmt;
-  MYSQL_TIME tm;
-  int rc;
-  const char *query= "INSERT INTO t1 (f1) VALUES (?)";
-
-  myheader("test_bug20152");
-
-  memset(bind, 0, sizeof(bind));
-  bind[0].buffer_type= MYSQL_TYPE_DATE;
-  bind[0].buffer= (void*)&tm;
-
-  tm.year = 2006;
-  tm.month = 6;
-  tm.day = 18;
-  tm.hour = 14;
-  tm.minute = 9;
-  tm.second = 42;
-
-  rc= mysql_query(mysql, "DROP TABLE IF EXISTS t1");
-  myquery(rc);
-  rc= mysql_query(mysql, "CREATE TABLE t1 (f1 DATE)");
-  myquery(rc);
-
-  stmt= mysql_stmt_init(mysql);
-  rc= mysql_stmt_prepare(stmt, query, strlen(query));
-  check_execute(stmt, rc);
-  rc= mysql_stmt_bind_param(stmt, bind);
-  check_execute(stmt, rc);
-  rc= mysql_stmt_execute(stmt);
-  check_execute(stmt, rc);
-  rc= mysql_stmt_close(stmt);
-  check_execute(stmt, rc);
-  rc= mysql_query(mysql, "DROP TABLE t1");
-  myquery(rc);
-
-  if (tm.hour == 14 && tm.minute == 9 && tm.second == 42) {
-    if (!opt_silent)
-      printf("OK!");
-  } else {
-    printf("[14:09:42] != [%02d:%02d:%02d]\n", tm.hour, tm.minute, tm.second);
-    DIE_UNLESS(0==1);
-  }
-}
-
-
-/*
-  Bug#21726: Incorrect result with multiple invocations of
-  LAST_INSERT_ID
-
-  Test that client gets updated value of insert_id on UPDATE that uses
-  LAST_INSERT_ID(expr).
-*/
-static void test_bug21726()
-{
-  const char *update_query = "UPDATE t1 SET i= LAST_INSERT_ID(i + 1)";
-  int rc;
-  my_ulonglong insert_id;
-
-  DBUG_ENTER("test_bug21726");
-  myheader("test_bug21726");
-
-  rc= mysql_query(mysql, "DROP TABLE IF EXISTS t1");
-  myquery(rc);
-  rc= mysql_query(mysql, "CREATE TABLE t1 (i INT)");
-  myquery(rc);
-  rc= mysql_query(mysql, "INSERT INTO t1 VALUES (1)");
-  myquery(rc);
-
-  rc= mysql_query(mysql, update_query);
-  myquery(rc);
-  insert_id= mysql_insert_id(mysql);
-  DIE_UNLESS(insert_id == 2);
-
-  rc= mysql_query(mysql, update_query);
-  myquery(rc);
-  insert_id= mysql_insert_id(mysql);
-  DIE_UNLESS(insert_id == 3);
-
-  DBUG_VOID_RETURN;
-}
-
 
 /*
   Read and parse arguments and MySQL options from my.cnf
@@ -11987,9 +11722,6 @@ static struct my_option client_test_long_options[] =
   {"user", 'u', "User for login if not current user", (char **) &opt_user,
    (char **) &opt_user, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-  {"getopt-ll-test", 'g', "Option for testing bug in getopt library",
-   (char **) &opt_getopt_ll_test, (char **) &opt_getopt_ll_test, 0,
-   GET_LL, REQUIRED_ARG, 0, 0, LONGLONG_MAX, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -12094,6 +11826,7 @@ static struct my_tests_st my_tests[]= {
 #ifndef EMBEDDED_LIBRARY
   { "test_prepare_grant", test_prepare_grant },
 #endif
+  { "test_frm_bug", test_frm_bug },
   { "test_explain_bug", test_explain_bug },
   { "test_decimal_bug", test_decimal_bug },
   { "test_nstmts", test_nstmts },
@@ -12161,17 +11894,6 @@ static struct my_tests_st my_tests[]= {
   { "test_bug8330", test_bug8330 },
   { "test_bug7990", test_bug7990 },
   { "test_bug8378", test_bug8378 },
-  { "test_bug9735", test_bug9735 },
-  { "test_bug11183", test_bug11183 },
-#ifndef EMBEDDED_LIBRARY
-  { "test_bug12744", test_bug12744 },
-#endif
-  { "test_bug12001", test_bug12001 },
-  { "test_bug11718", test_bug11718 },
-  { "test_bug12925", test_bug12925 },
-  { "test_bug15613", test_bug15613 },
-  { "test_bug20152", test_bug20152 },
-  { "test_bug21726", test_bug21726 },
   { 0, 0 }
 };
 

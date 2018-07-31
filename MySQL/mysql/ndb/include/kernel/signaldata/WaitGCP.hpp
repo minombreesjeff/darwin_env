@@ -46,9 +46,7 @@ public:
     Complete = 1,           ///< Wait for a GCP to complete
     CompleteForceStart = 2, ///< Wait for a GCP to complete start one if needed
     CompleteIfRunning = 3,  ///< Wait for ongoing GCP
-    CurrentGCI        = 8,  ///< Immediately return current GCI
-    BlockStartGcp     = 9,
-    UnblockStartGcp   = 10
+    CurrentGCI        = 8   ///< Immediately return current GCI
   };
 
   Uint32 senderRef;
@@ -72,12 +70,11 @@ class WaitGCPConf {
   //friend class Grep::PSCoord;
 
 public:
-  STATIC_CONST( SignalLength = 3 );
+  STATIC_CONST( SignalLength = 2 );
   
 public:
   Uint32 senderData;
   Uint32 gcp;
-  Uint32 blockStatus;
 };
 
 class WaitGCPRef {

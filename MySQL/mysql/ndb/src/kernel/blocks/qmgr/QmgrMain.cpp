@@ -34,7 +34,6 @@
 #include <signaldata/BlockCommitOrd.hpp>
 #include <signaldata/FailRep.hpp>
 #include <signaldata/DisconnectRep.hpp>
-#include <signaldata/ApiBroadcast.hpp>
 
 #include <ndb_version.h>
 
@@ -55,33 +54,6 @@
 #define DEBUG_START2(gsn, rg, msg)
 #define DEBUG_START3(signal, msg)
 #endif
-
-/**
- * c_start.m_gsn = GSN_CM_REGREQ
- *   Possible for all nodes
- *   c_start.m_nodes contains all nodes in config
- *
- * c_start.m_gsn = GSN_CM_NODEINFOREQ;
- *   Set when receiving CM_REGCONF
- *   State possible for starting node only (not in cluster)
- *
- *   c_start.m_nodes contains all node in alive cluster that
- *                   that has not replied to GSN_CM_NODEINFOREQ
- *                   passed by president in GSN_CM_REGCONF
- *
- * c_start.m_gsn = GSN_CM_ADD
- *   Possible for president only
- *   Set when receiving and accepting CM_REGREQ (to include node)
- *
- *   c_start.m_nodes contains all nodes in alive cluster + starting node
- *                   that has not replied to GSN_CM_ADD
- *                   by sending GSN_CM_ACKADD
- *
- * c_start.m_gsn = GSN_CM_NODEINFOCONF
- *   Possible for non presidents only
- *     c_start.m_nodes contains a node that has been accepted by president
- *     but has not connected to us yet
- */
 
 // Signal entries and statement blocks
 /* 4  P R O G R A M        */
@@ -104,7 +76,7 @@ void Qmgr::execCM_HEARTBEAT(Signal* signal)
 void Qmgr::execCM_NODEINFOREF(Signal* signal) 
 {
   jamEntry();
-  systemErrorLab(signal, __LINE__);
+  systemErrorLab(signal);
   return;
 }//Qmgr::execCM_NODEINFOREF()
 
@@ -149,7 +121,7 @@ void Qmgr::execCONTINUEB(Signal* signal)
   default:
     jam();
     // ZCOULD_NOT_OCCUR_ERROR;
-    systemErrorLab(signal, __LINE__);
+    systemErrorLab(signal);
     return;
     break;
   }//switch
@@ -284,27 +256,16 @@ void Qmgr::setArbitTimeout(UintR aArbitTimeout)
 
 void Qmgr::execCONNECT_REP(Signal* signal)
 {
-  jamEntry();
   const Uint32 nodeId = signal->theData[0];
-
-  if (ERROR_INSERTED(931))
-  {
-    jam();
-    ndbout_c("Discarding CONNECT_REP(%d)", nodeId);
-    infoEvent("Discarding CONNECT_REP(%d)", nodeId);
-    return;
-  }
-  
   c_connectedNodes.set(nodeId);
   NodeRecPtr nodePtr;
   nodePtr.i = getOwnNodeId();
   ptrCheckGuard(nodePtr, MAX_NODES, nodeRec);
   switch(nodePtr.p->phase){
-  case ZRUNNING:
-    ndbrequire(!c_clusterNodes.get(nodeId));
   case ZSTARTING:
     jam();
     break;
+  case ZRUNNING:
   case ZPREPARE_FAIL:
   case ZFAIL_CLOSING:
     jam();
@@ -316,8 +277,7 @@ void Qmgr::execCONNECT_REP(Signal* signal)
     return;
   }
 
-  if (getNodeInfo(nodeId).getType() != NodeInfo::DB)
-  {
+  if(!c_start.m_nodes.isWaitingFor(nodeId)){
     jam();
     return;
   }
@@ -326,71 +286,17 @@ void Qmgr::execCONNECT_REP(Signal* signal)
   case GSN_CM_REGREQ:
     jam();
     sendCmRegReq(signal, nodeId);
-
-    /**
-     * We're waiting for CM_REGCONF c_start.m_nodes contains all configured
-     *   nodes
-     */
-    ndbrequire(nodePtr.p->phase == ZSTARTING);
-    ndbrequire(c_start.m_nodes.isWaitingFor(nodeId));
     return;
-  case GSN_CM_NODEINFOREQ:
+  case GSN_CM_NODEINFOREQ:{
     jam();
-
-    if (c_start.m_nodes.isWaitingFor(nodeId))
-    {
-      jam();
-      ndbrequire(getOwnNodeId() != cpresident);
-      ndbrequire(nodePtr.p->phase == ZSTARTING);
-      sendCmNodeInfoReq(signal, nodeId, nodePtr.p);
-      return;
-    }
+    sendCmNodeInfoReq(signal, nodeId, nodePtr.p);
     return;
-  case GSN_CM_NODEINFOCONF:{
-    jam();
-    
-    ndbrequire(getOwnNodeId() != cpresident);
-    ndbrequire(nodePtr.p->phase == ZRUNNING);
-    if (c_start.m_nodes.isWaitingFor(nodeId))
-    {
-      jam();
-      c_start.m_nodes.clearWaitingFor(nodeId);
-      c_start.m_gsn = RNIL;
-      
-      NodeRecPtr addNodePtr;
-      addNodePtr.i = nodeId;
-      ptrCheckGuard(addNodePtr, MAX_NDB_NODES, nodeRec);
-      cmAddPrepare(signal, addNodePtr, nodePtr.p);
-      return;
-    }
   }
   default:
-    (void)1;
+    return;
   }
-  
-  ndbrequire(!c_start.m_nodes.isWaitingFor(nodeId));
-  ndbrequire(!c_readnodes_nodes.get(nodeId));
-  c_readnodes_nodes.set(nodeId);
-  signal->theData[0] = reference();
-  sendSignal(calcQmgrBlockRef(nodeId), GSN_READ_NODESREQ, signal, 1, JBA);
   return;
 }//Qmgr::execCONNECT_REP()
-
-void
-Qmgr::execREAD_NODESCONF(Signal* signal)
-{
-  check_readnodes_reply(signal, 
-			refToNode(signal->getSendersBlockRef()),
-			GSN_READ_NODESCONF);
-}
-
-void
-Qmgr::execREAD_NODESREF(Signal* signal)
-{
-  check_readnodes_reply(signal, 
-			refToNode(signal->getSendersBlockRef()),
-			GSN_READ_NODESREF);
-}
 
 /*******************************/
 /* CM_INFOCONF                */
@@ -682,33 +588,22 @@ void Qmgr::execCM_REGCONF(Signal* signal)
   jamEntry();
 
   const CmRegConf * const cmRegConf = (CmRegConf *)&signal->theData[0];
-  Uint32 presidentNodeId = cmRegConf->presidentNodeId;
 
   if (!ndbCompatible_ndb_ndb(NDB_VERSION, cmRegConf->presidentVersion)) {
     jam();
     char buf[128];
-    BaseString::snprintf(buf,sizeof(buf), 
-			 "incompatible version own=0x%x other=0x%x, "
-			 " shutting down", 
-			 NDB_VERSION, cmRegConf->presidentVersion);
-    systemErrorLab(signal, __LINE__, buf);
+    BaseString::snprintf(buf,sizeof(buf),"incompatible version own=0x%x other=0x%x, shutting down", NDB_VERSION, cmRegConf->presidentVersion);
+    systemErrorLab(signal, buf);
     return;
   }
 
-  myNodePtr.i = getOwnNodeId();
-  ptrCheckGuard(myNodePtr, MAX_NDB_NODES, nodeRec);
-  
-  ndbrequire(c_start.m_gsn == GSN_CM_REGREQ);
-  ndbrequire(myNodePtr.p->phase = ZSTARTING);
-  
+
   cpdistref    = cmRegConf->presidentBlockRef;
   cpresident   = cmRegConf->presidentNodeId;
   UintR TdynamicId   = cmRegConf->dynamicId;
   c_maxDynamicId = TdynamicId;
   c_clusterNodes.assign(NdbNodeBitmask::Size, cmRegConf->allNdbNodes);
 
-  myNodePtr.p->ndynamicId = TdynamicId;
-  
 /*--------------------------------------------------------------*/
 // Send this as an EVENT REPORT to inform about hearing about
 // other NDB node proclaiming to be president.
@@ -718,6 +613,10 @@ void Qmgr::execCM_REGCONF(Signal* signal)
   signal->theData[2] = cpresident;
   signal->theData[3] = TdynamicId;
   sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 4, JBB);
+
+  myNodePtr.i = getOwnNodeId();
+  ptrCheckGuard(myNodePtr, MAX_NDB_NODES, nodeRec);
+  myNodePtr.p->ndynamicId = TdynamicId;
 
   for (nodePtr.i = 1; nodePtr.i < MAX_NDB_NODES; nodePtr.i++) {
     jam();
@@ -740,84 +639,6 @@ void Qmgr::execCM_REGCONF(Signal* signal)
 
   return;
 }//Qmgr::execCM_REGCONF()
-
-void
-Qmgr::check_readnodes_reply(Signal* signal, Uint32 nodeId, Uint32 gsn)
-{
-  NodeRecPtr myNodePtr;
-  myNodePtr.i = getOwnNodeId();
-  ptrCheckGuard(myNodePtr, MAX_NDB_NODES, nodeRec);
-  
-  NodeRecPtr nodePtr;
-  nodePtr.i = nodeId;
-  ptrCheckGuard(nodePtr, MAX_NDB_NODES, nodeRec);
-
-  ndbrequire(c_readnodes_nodes.get(nodeId));
-  ReadNodesConf* conf = (ReadNodesConf*)signal->getDataPtr();
-  if (gsn == GSN_READ_NODESREF)
-  {
-    jam();
-retry:
-    signal->theData[0] = reference();
-    sendSignal(calcQmgrBlockRef(nodeId), GSN_READ_NODESREQ, signal, 1, JBA);
-    return;
-  }
-  
-  if (conf->masterNodeId == ZNIL)
-  {
-    jam();
-    goto retry;
-  }
-  
-  Uint32 president = conf->masterNodeId;
-  if (president == cpresident)
-  {
-    jam();
-    c_readnodes_nodes.clear(nodeId);
-    return;
-  }
-
-  char buf[255];
-  BaseString::snprintf(buf, sizeof(buf),
-		       "Partitioned cluster! check StartPartialTimeout, "
-		       " node %d thinks %d is president, "
-		       " I think president is: %d",
-		       nodeId, president, cpresident);
-
-  ndbout_c(buf);
-  CRASH_INSERTION(933);
-
-  if (getNodeState().startLevel == NodeState::SL_STARTED)
-  {
-    jam();
-    NdbNodeBitmask part;
-    part.assign(NdbNodeBitmask::Size, conf->clusterNodes);
-    FailRep* rep = (FailRep*)signal->getDataPtrSend();
-    rep->failCause = FailRep::ZPARTITIONED_CLUSTER;
-    rep->president = cpresident;
-    c_clusterNodes.copyto(NdbNodeBitmask::Size, rep->partition);
-    Uint32 ref = calcQmgrBlockRef(nodeId);
-    Uint32 i = 0;
-    while((i = part.find(i + 1)) != NdbNodeBitmask::NotFound)
-    {
-      if (i == nodeId)
-	continue;
-      rep->failNodeId = i;
-      sendSignal(ref, GSN_FAIL_REP, signal, FailRep::SignalLength, JBA);
-    }
-    rep->failNodeId = nodeId;
-    sendSignal(ref, GSN_FAIL_REP, signal, FailRep::SignalLength, JBB);
-    return;
-  }
-  
-  CRASH_INSERTION(932);
-  
-  progError(__LINE__, 
-	    ERR_ARBIT_SHUTDOWN, 
-	    buf);
-  
-  ndbrequire(false);
-}
 
 void
 Qmgr::sendCmNodeInfoReq(Signal* signal, Uint32 nodeId, const NodeRec * self){
@@ -851,15 +672,13 @@ Qmgr::sendCmNodeInfoReq(Signal* signal, Uint32 nodeId, const NodeRec * self){
 void Qmgr::execCM_REGREF(Signal* signal) 
 {
   jamEntry();
+  c_regReqReqRecv++;
 
+  // Ignore block reference in data[0]
   UintR TaddNodeno = signal->theData[1];
   UintR TrefuseReason = signal->theData[2];
   Uint32 candidate = signal->theData[3];
   DEBUG_START3(signal, TrefuseReason);
-
-  c_regReqReqRecv++;
-
-  // Ignore block reference in data[0]
   
   if(candidate != cpresidentCandidate){
     jam();
@@ -869,7 +688,7 @@ void Qmgr::execCM_REGREF(Signal* signal)
   switch (TrefuseReason) {
   case CmRegRef::ZINCOMPATIBLE_VERSION:
     jam();
-    systemErrorLab(signal, __LINE__, "incompatible version, connection refused by running ndb node");
+    systemErrorLab(signal, "incompatible version, connection refused by running ndb node");
     break;
   case CmRegRef::ZBUSY:
   case CmRegRef::ZBUSY_TO_PRES:
@@ -947,7 +766,7 @@ void Qmgr::execCM_REGREF(Signal* signal)
   Uint64 now = NdbTick_CurrentMillisecond();
   if((c_regReqReqRecv == cnoOfNodes) || now > c_stopElectionTime){
     jam();
-    electionWon(signal);
+    electionWon();
     sendSttorryLab(signal);
     
     /**
@@ -961,7 +780,7 @@ void Qmgr::execCM_REGREF(Signal* signal)
 }//Qmgr::execCM_REGREF()
 
 void
-Qmgr::electionWon(Signal* signal){
+Qmgr::electionWon(){
   NodeRecPtr myNodePtr;
   cpresident = getOwnNodeId(); /* This node becomes president. */
   myNodePtr.i = getOwnNodeId();
@@ -980,12 +799,6 @@ Qmgr::electionWon(Signal* signal){
   cpresidentAlive = ZTRUE;
   c_stopElectionTime = ~0;
   c_start.reset();
-
-  signal->theData[0] = EventReport::CM_REGCONF;
-  signal->theData[1] = getOwnNodeId();
-  signal->theData[2] = cpresident;
-  signal->theData[3] = 1;
-  sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 4, JBB);
 }
 
 /*
@@ -1110,27 +923,15 @@ Qmgr::cmAddPrepare(Signal* signal, NodeRecPtr nodePtr, const NodeRec * self){
     return;
   case ZFAIL_CLOSING:
     jam();
-    
-#if 1
-    warningEvent("Recieved request to incorperate node %u, "
-		 "while error handling has not yet completed",
-		 nodePtr.i);
-    
-    ndbrequire(getOwnNodeId() != cpresident);
-    ndbrequire(signal->header.theVerId_signalNumber == GSN_CM_ADD);
-    c_start.m_nodes.clearWaitingFor();
-    c_start.m_nodes.setWaitingFor(nodePtr.i);
-    c_start.m_gsn = GSN_CM_NODEINFOCONF;
-#else
-    warningEvent("Enabling communication to CM_ADD node %u state=%d", 
-		 nodePtr.i,
-		 nodePtr.p->phase);
+#ifdef VM_TRACE
+    ndbout_c("Enabling communication to CM_ADD node state=%d", 
+	     nodePtr.p->phase);
+#endif
     nodePtr.p->phase = ZSTARTING;
     nodePtr.p->failState = NORMAL;
     signal->theData[0] = 0;
     signal->theData[1] = nodePtr.i;
     sendSignal(CMVMI_REF, GSN_OPEN_COMREQ, signal, 2, JBA);
-#endif
     return;
   case ZSTARTING:
     break;
@@ -1901,6 +1702,16 @@ void Qmgr::sendApiFailReq(Signal* signal, Uint16 failedNodeNo)
   sendSignal(DBDICT_REF, GSN_API_FAILREQ, signal, 2, JBA);
   sendSignal(SUMA_REF, GSN_API_FAILREQ, signal, 2, JBA);
 
+  /**
+   * GREP also need the information that an API node 
+   * (actually a REP node) has failed.
+   *
+   * GREP does however NOT send a CONF on this signal, i.e.
+   * the API_FAILREQ signal to GREP is like a REP signal 
+   * (i.e. without any confirmation).
+   */
+  sendSignal(GREP_REF, GSN_API_FAILREQ, signal, 2, JBA);
+  
   /**-------------------------------------------------------------------------
    * THE OTHER NODE WAS AN API NODE. THE COMMUNICATION LINK IS ALREADY 
    * BROKEN AND THUS NO ACTION IS NEEDED TO BREAK THE CONNECTION. 
@@ -1940,7 +1751,7 @@ void Qmgr::execAPI_FAILCONF(Signal* signal)
 
     if (failedNodePtr.p->rcv[0] == failedNodePtr.p->rcv[1]) {
       jam();
-      systemErrorLab(signal, __LINE__);
+      systemErrorLab(signal);
     } else {
       jam();
       failedNodePtr.p->rcv[0] = 0;
@@ -1952,7 +1763,7 @@ void Qmgr::execAPI_FAILCONF(Signal* signal)
     ndbout << "failedNodePtr.p->failState = "
 	   << (Uint32)(failedNodePtr.p->failState) << endl;
 #endif   
-    systemErrorLab(signal, __LINE__);
+    systemErrorLab(signal);
   }//if
   return;
 }//Qmgr::execAPI_FAILCONF()
@@ -1964,28 +1775,12 @@ void Qmgr::execNDB_FAILCONF(Signal* signal)
 
   jamEntry();
   failedNodePtr.i = signal->theData[0];  
-
-  if (ERROR_INSERTED(930))
-  {
-    CLEAR_ERROR_INSERT_VALUE;
-    infoEvent("Discarding NDB_FAILCONF for %u", failedNodePtr.i);
-    return;
-  }
-  
   ptrCheckGuard(failedNodePtr, MAX_NODES, nodeRec);
   if (failedNodePtr.p->failState == WAITING_FOR_NDB_FAILCONF){
     failedNodePtr.p->failState = NORMAL;
   } else {
     jam();
-
-    char buf[100];
-    BaseString::snprintf(buf, 100, 
-			 "Received NDB_FAILCONF for node %u with state: %d %d",
-			 failedNodePtr.i,
-			 failedNodePtr.p->phase,
-			 failedNodePtr.p->failState);
-    progError(__LINE__, 0, buf);
-    systemErrorLab(signal, __LINE__);
+    systemErrorLab(signal);
   }//if
   if (cpresident == getOwnNodeId()) {
     jam();
@@ -2021,8 +1816,7 @@ void Qmgr::execDISCONNECT_REP(Signal* signal)
   const DisconnectRep * const rep = (DisconnectRep *)&signal->theData[0];
   const Uint32 nodeId = rep->nodeId;
   c_connectedNodes.clear(nodeId);
-  c_readnodes_nodes.clear(nodeId);
-  
+
   NodeRecPtr nodePtr;
   nodePtr.i = getOwnNodeId();
   ptrCheckGuard(nodePtr, MAX_NODES, nodeRec);
@@ -2036,13 +1830,9 @@ void Qmgr::execDISCONNECT_REP(Signal* signal)
   case ZFAIL_CLOSING:
   case ZAPI_ACTIVE:
   case ZAPI_INACTIVE:
-  {
-    char buf[100];
-    BaseString::snprintf(buf, 100, "Node %u disconected", nodeId);    
-    progError(__LINE__, ERR_SR_OTHERNODEFAILED, buf);
     ndbrequire(false);
   }
-  }
+
   node_failed(signal, nodeId);
 }//DISCONNECT_REP
 
@@ -2141,13 +1931,20 @@ void Qmgr::execAPI_REGREQ(Signal* signal)
 #endif
 
   bool compatability_check;
-  NodeInfo::NodeType type= getNodeInfo(apiNodePtr.i).getType();
-  switch(type){
+  switch(getNodeInfo(apiNodePtr.i).getType()){
   case NodeInfo::API:
     compatability_check = ndbCompatible_ndb_api(NDB_VERSION, version);
+    if (!compatability_check)
+      infoEvent("Connection attempt from api or mysqld id=%d with %s "
+		"incompatible with %s", apiNodePtr.i,
+		getVersionString(version,""), NDB_VERSION_STRING);
     break;
   case NodeInfo::MGM:
     compatability_check = ndbCompatible_ndb_mgmt(NDB_VERSION, version);
+    if (!compatability_check)
+      infoEvent("Connection attempt from management server id=%d with %s "
+		"incompatible with %s", apiNodePtr.i,
+		getVersionString(version,""), NDB_VERSION_STRING);
     break;
   case NodeInfo::REP:
     //    compatability_check = ndbCompatible_ndb_api(NDB_VERSION, version);
@@ -2156,19 +1953,13 @@ void Qmgr::execAPI_REGREQ(Signal* signal)
   case NodeInfo::INVALID:
   default:
     sendApiRegRef(signal, ref, ApiRegRef::WrongType);
-    infoEvent("Invalid connection attempt with type %d", type);
+    infoEvent("Invalid connection attempt with type %d",
+	      getNodeInfo(apiNodePtr.i).getType());
     return;
   }
 
   if (!compatability_check) {
     jam();
-    char buf[NDB_VERSION_STRING_BUF_SZ];
-    infoEvent("Connection attempt from %s id=%d with %s "
-	      "incompatible with %s",
-	      type == NodeInfo::API ? "api or mysqld" : "management server",
-	      apiNodePtr.i,
-	      getVersionString(version,"",buf,sizeof(buf)),
-	      NDB_VERSION_STRING);
     apiNodePtr.p->phase = ZAPI_INACTIVE;
     sendApiRegRef(signal, ref, ApiRegRef::UnsupportedVersion);
     return;
@@ -2231,8 +2022,6 @@ Qmgr::execAPI_VERSION_REQ(Signal * signal) {
   else
     conf->version =  0;
   conf->nodeId = nodeId;
-  struct in_addr in= globalTransporterRegistry.get_connect_address(nodeId);
-  conf->inet_addr= in.s_addr;
 
   sendSignal(senderRef, 
 	     GSN_API_VERSION_CONF,
@@ -2294,88 +2083,17 @@ void Qmgr::failReportLab(Signal* signal, Uint16 aFailedNode,
 
   failedNodePtr.i = aFailedNode;
   ptrCheckGuard(failedNodePtr, MAX_NODES, nodeRec);
-  FailRep* rep = (FailRep*)signal->getDataPtr();
-
-  if (check_multi_node_shutdown(signal))
-  {
-    jam();
-    return;
-  }
-  
   if (failedNodePtr.i == getOwnNodeId()) {
     jam();
-
-    Uint32 code = 0;
-    const char * msg = 0;
-    char extra[100];
-    switch(aFailCause){
-    case FailRep::ZOWN_FAILURE: 
-      msg = "Own failure"; 
-      break;
-    case FailRep::ZOTHER_NODE_WHEN_WE_START: 
-    case FailRep::ZOTHERNODE_FAILED_DURING_START:
-      msg = "Other node died during start"; 
-      break;
-    case FailRep::ZIN_PREP_FAIL_REQ:
-      msg = "Prep fail";
-      break;
-    case FailRep::ZSTART_IN_REGREQ:
-      msg = "Start timeout";
-      break;
-    case FailRep::ZHEARTBEAT_FAILURE:
-      msg = "Hearbeat failure";
-      break;
-    case FailRep::ZLINK_FAILURE:
-      msg = "Connection failure";
-      break;
-    case FailRep::ZPARTITIONED_CLUSTER:
-    {
-      code = ERR_ARBIT_SHUTDOWN;
-      char buf1[100], buf2[100];
-      c_clusterNodes.getText(buf1);
-      if (signal->getLength()== FailRep::SignalLength + FailRep::ExtraLength &&
-	  signal->header.theVerId_signalNumber == GSN_FAIL_REP)
-      {
-	jam();
-	NdbNodeBitmask part;
-	part.assign(NdbNodeBitmask::Size, rep->partition);
-	part.getText(buf2);
-	BaseString::snprintf(extra, sizeof(extra),
-			     "Partitioned cluster!"
-			     " Our cluster: %s other cluster: %s",
-			     buf1, buf2);
-      }
-      else
-      {
-	jam();
-	BaseString::snprintf(extra, sizeof(extra),
-			     "Partitioned cluster!"
-			     " Our cluster: %s ", buf1);
-      }
-      msg = extra;
-      break;
-    }
-    }
-    
-    CRASH_INSERTION(932);
-
-    char buf[255];
-    BaseString::snprintf(buf, sizeof(buf), 
-			 "We(%u) have been declared dead by %u reason: %s(%u)",
-			 getOwnNodeId(),
-			 refToNode(signal->getSendersBlockRef()),
-			 msg ? msg : "<Unknown>",
-			 aFailCause);
-    
-    progError(__LINE__, code, buf);
+    systemErrorLab(signal);
     return;
   }//if
-  
+
   myNodePtr.i = getOwnNodeId();
   ptrCheckGuard(myNodePtr, MAX_NDB_NODES, nodeRec);
   if (myNodePtr.p->phase != ZRUNNING) {
     jam();
-    systemErrorLab(signal, __LINE__);
+    systemErrorLab(signal);
     return;
   }//if
   TnoFailedNodes = cnoFailedNodes;
@@ -2424,13 +2142,7 @@ void Qmgr::execPREP_FAILREQ(Signal* signal)
 {
   NodeRecPtr myNodePtr;
   jamEntry();
-  
-  if (check_multi_node_shutdown(signal))
-  {
-    jam();
-    return;
-  }
-  
+
   PrepFailReqRef * const prepFail = (PrepFailReqRef *)&signal->theData[0];
 
   BlockReference Tblockref  = prepFail->xxxBlockRef;
@@ -2460,7 +2172,7 @@ void Qmgr::execPREP_FAILREQ(Signal* signal)
   ptrCheckGuard(myNodePtr, MAX_NDB_NODES, nodeRec);
   if (myNodePtr.p->phase != ZRUNNING) {
     jam();
-    systemErrorLab(signal, __LINE__);
+    systemErrorLab(signal);
     return;
   }//if
 
@@ -2963,7 +2675,7 @@ void Qmgr::execREAD_NODESREQ(Signal* signal)
 	     ReadNodesConf::SignalLength, JBB);
 }//Qmgr::execREAD_NODESREQ()
 
-void Qmgr::systemErrorBecauseOtherNodeFailed(Signal* signal, Uint32 line,
+void Qmgr::systemErrorBecauseOtherNodeFailed(Signal* signal, 
 					     NodeId failedNodeId) {
   jam();
 
@@ -2975,11 +2687,11 @@ void Qmgr::systemErrorBecauseOtherNodeFailed(Signal* signal, Uint32 line,
 	   "Node was shutdown during startup because node %d failed",
 	   failedNodeId);
 
-  progError(line, ERR_SR_OTHERNODEFAILED, buf);  
+  progError(__LINE__, ERR_SR_OTHERNODEFAILED, buf);  
 }
 
 
-void Qmgr::systemErrorLab(Signal* signal, Uint32 line, const char * message) 
+void Qmgr::systemErrorLab(Signal* signal, const char * message) 
 {
   jam();
   // Broadcast that this node is failing to other nodes
@@ -2987,7 +2699,7 @@ void Qmgr::systemErrorLab(Signal* signal, Uint32 line, const char * message)
 
   // If it's known why shutdown occured
   // an error message has been passed to this function
-  progError(line, 0, message);  
+  progError(__LINE__, 0, message);  
 
   return;
 }//Qmgr::systemErrorLab()
@@ -3087,7 +2799,6 @@ void Qmgr::failReport(Signal* signal,
         cfailureNr = cprepareFailureNr;
         ctoFailureNr = 0;
         ctoStatus = Q_ACTIVE;
-	c_start.reset(); // Don't take over nodes being started
         if (cnoCommitFailedNodes > 0) {
           jam();
 	  /**-----------------------------------------------------------------
@@ -3156,7 +2867,7 @@ Uint16 Qmgr::translateDynamicIdToNodeId(Signal* signal, UintR TdynamicId)
   }//for
   if (TtdiNodeId == ZNIL) {
     jam();
-    systemErrorLab(signal, __LINE__);
+    systemErrorLab(signal);
   }//if
   return TtdiNodeId;
 }//Qmgr::translateDynamicIdToNodeId()
@@ -4082,8 +3793,6 @@ Qmgr::stateArbitCrash(Signal* signal)
   if (! (arbitRec.getTimediff() > getArbitTimeout()))
     return;
 #endif
-  CRASH_INSERTION(932);
-
   progError(__LINE__, ERR_ARBIT_SHUTDOWN, "Arbitrator decided to shutdown this node");
 }
 
@@ -4217,69 +3926,3 @@ void Qmgr::execSET_VAR_REQ(Signal* signal)
   }// switch
 #endif
 }//execSET_VAR_REQ()
-
-void
-Qmgr::execAPI_BROADCAST_REP(Signal* signal)
-{
-  jamEntry();
-  ApiBroadcastRep api= *(const ApiBroadcastRep*)signal->getDataPtr();
-
-  Uint32 len = signal->getLength() - ApiBroadcastRep::SignalLength;
-  memmove(signal->theData, signal->theData+ApiBroadcastRep::SignalLength, 
-	  4*len);
-  
-  NodeBitmask mask;
-  NodeRecPtr nodePtr;
-  for (nodePtr.i = 1; nodePtr.i < MAX_NODES; nodePtr.i++) 
-  {
-    jam();
-    ptrAss(nodePtr, nodeRec);
-    if (nodePtr.p->phase == ZAPI_ACTIVE && 
-	getNodeInfo(nodePtr.i).m_version >= api.minVersion)
-    {
-      mask.set(nodePtr.i);
-    }
-  }
-  
-  NodeReceiverGroup rg(API_CLUSTERMGR, mask);
-  sendSignal(rg, api.gsn, signal, len, JBB); // forward sections
-}
-
-void
-Qmgr::execSTOP_REQ(Signal* signal)
-{
-  jamEntry();
-  c_stopReq = * (StopReq*)signal->getDataPtr();
-
-  if (c_stopReq.senderRef)
-  {
-    ndbrequire(NdbNodeBitmask::get(c_stopReq.nodes, getOwnNodeId()));
-    
-    StopConf *conf = (StopConf*)signal->getDataPtrSend();
-    conf->senderData = c_stopReq.senderData;
-    conf->nodeState = getOwnNodeId();
-    sendSignal(c_stopReq.senderRef, 
-	       GSN_STOP_CONF, signal, StopConf::SignalLength, JBA);
-  }
-}
-
-bool
-Qmgr::check_multi_node_shutdown(Signal* signal)
-{
-  if (c_stopReq.senderRef && 
-      NdbNodeBitmask::get(c_stopReq.nodes, getOwnNodeId()))
-  {
-    jam();
-    if(StopReq::getPerformRestart(c_stopReq.requestInfo))
-    {
-      jam();
-      StartOrd * startOrd = (StartOrd *)&signal->theData[0];
-      startOrd->restartInfo = c_stopReq.requestInfo;
-      EXECUTE_DIRECT(CMVMI, GSN_START_ORD, signal, 2);
-    } else {
-      EXECUTE_DIRECT(CMVMI, GSN_STOP_ORD, signal, 1);
-    }
-    return true;
-  }
-  return false;
-}

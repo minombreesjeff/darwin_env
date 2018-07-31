@@ -94,21 +94,6 @@ dict_mem_table_create(
 	return(table);
 }
 
-/********************************************************************
-Free a table memory object. */
-
-void
-dict_mem_table_free(
-/*================*/
-	dict_table_t*	table)		/* in: table */
-{
-	ut_ad(table);
-	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
-
-	mutex_free(&(table->autoinc_mutex));
-	mem_heap_free(table->heap);
-}
-
 /**************************************************************************
 Creates a cluster memory object. */
 

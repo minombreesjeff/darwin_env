@@ -28,7 +28,7 @@
 int mi_rnext_same(MI_INFO *info, byte *buf)
 {
   int error;
-  uint inx,not_used[2];
+  uint inx,not_used;
   MI_KEYDEF *keyinfo;
   DBUG_ENTER("mi_rnext_same");
 
@@ -40,7 +40,7 @@ int mi_rnext_same(MI_INFO *info, byte *buf)
 
   if (info->s->concurrent_insert)
     rw_rdlock(&info->s->key_root_lock[inx]);
-
+    
   switch (keyinfo->key_alg)
   {
 #ifdef HAVE_RTREE_KEYS
@@ -69,7 +69,7 @@ int mi_rnext_same(MI_INFO *info, byte *buf)
 			       info->s->state.key_root[inx])))
           break;
         if (ha_key_cmp(keyinfo->seg, info->lastkey, info->lastkey2,
-                       info->last_rkey_length, SEARCH_FIND, not_used))
+                       info->last_rkey_length, SEARCH_FIND, &not_used))
         {
           error=1;
           my_errno=HA_ERR_END_OF_FILE;
@@ -102,4 +102,4 @@ int mi_rnext_same(MI_INFO *info, byte *buf)
     DBUG_RETURN(0);
   }
   DBUG_RETURN(my_errno);
-} /* mi_rnext_same */
+} /* mi_rnext */

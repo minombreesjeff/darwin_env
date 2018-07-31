@@ -31,10 +31,8 @@ static void require(bool v) { if(!v) abort();}
 //****************************************************************************
 //  Ctor / Dtor
 //****************************************************************************
-InitConfigFileParser::InitConfigFileParser(FILE * out)
-{
+InitConfigFileParser::InitConfigFileParser(){
   m_info = new ConfigInfo();
-  m_errstream = out ? out : stdout;
 }
 
 InitConfigFileParser::~InitConfigFileParser() {
@@ -44,12 +42,11 @@ InitConfigFileParser::~InitConfigFileParser() {
 //****************************************************************************
 //  Read Config File
 //****************************************************************************
-InitConfigFileParser::Context::Context(const ConfigInfo * info, FILE * out)
+InitConfigFileParser::Context::Context(const ConfigInfo * info)
   :  m_userProperties(true), m_configValues(1000, 20) {
 
   m_config = new Properties(true);
   m_defaults = new Properties(true);
-  m_errstream = out;
 }
 
 InitConfigFileParser::Context::~Context(){
@@ -64,10 +61,10 @@ Config *
 InitConfigFileParser::parseConfig(const char * filename) {
   FILE * file = fopen(filename, "r");
   if(file == 0){
-    fprintf(m_errstream, "Error opening file: %s\n", filename);
+    ndbout << "Error opening file: " << filename << endl;
     return 0;
   }
-  
+
   Config * ret = parseConfig(file);
   fclose(file);
   return ret;
@@ -78,7 +75,7 @@ InitConfigFileParser::parseConfig(FILE * file) {
 
   char line[MAX_LINE_LENGTH];
 
-  Context ctx(m_info, m_errstream); 
+  Context ctx(m_info); 
   ctx.m_lineno = 0;
   ctx.m_currentSection = 0;
 
@@ -558,12 +555,8 @@ InitConfigFileParser::storeSection(Context& ctx){
       }
     }
   }
-  if(ctx.type == InitConfigFileParser::DefaultSection &&
-     !ctx.m_defaults->put(ctx.pname, ctx.m_currentSection))
-  {
-    ctx.reportError("Duplicate default section not allowed");
-    return false;
-  }
+  if(ctx.type == InitConfigFileParser::DefaultSection)
+    require(ctx.m_defaults->put(ctx.pname, ctx.m_currentSection));
   if(ctx.type == InitConfigFileParser::Section)
     require(ctx.m_config->put(ctx.pname, ctx.m_currentSection));
   delete ctx.m_currentSection; ctx.m_currentSection = NULL;
@@ -578,9 +571,8 @@ InitConfigFileParser::Context::reportError(const char * fmt, ...){
   va_start(ap, fmt);
   if (fmt != 0)
     BaseString::vsnprintf(buf, sizeof(buf)-1, fmt, ap);
+  ndbout << "Error line " << m_lineno << ": " << buf << endl;
   va_end(ap);
-  fprintf(m_errstream, "Error line %d: %s\n",
-	  m_lineno, buf);
 
   //m_currentSection->print();
 }
@@ -593,7 +585,6 @@ InitConfigFileParser::Context::reportWarning(const char * fmt, ...){
   va_start(ap, fmt);
   if (fmt != 0)
     BaseString::vsnprintf(buf, sizeof(buf)-1, fmt, ap);
+  ndbout << "Warning line " << m_lineno << ": " << buf << endl;
   va_end(ap);
-  fprintf(m_errstream, "Warning line %d: %s\n",
-	  m_lineno, buf);
 }

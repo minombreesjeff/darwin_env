@@ -226,9 +226,7 @@ AsyncFile::run()
       abort();
       break;
     }//switch
-    
-    // No need to signal as ndbfs only uses tryRead
-    theReportTo->writeChannelNoSignal(request);
+    theReportTo->writeChannel(request);
   }//while
 }//AsyncFile::run()
 

@@ -22,22 +22,17 @@
 #include <NdbSleep.h>
 #include <NDBT.hpp>
 
-static int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
-                       bool fetch_across_commit, int parallelism=240);
+static int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab, int parallelism=240);
 
 NDB_STD_OPTS_VARS;
 
 static const char* _dbname = "TEST_DB";
-static my_bool _transactional = false;
 static struct my_option my_long_options[] =
 {
   NDB_STD_OPTS("ndb_desc"),
   { "database", 'd', "Name of database table is in",
     (gptr*) &_dbname, (gptr*) &_dbname, 0,
     GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
-  { "transactional", 't', "Single transaction (may run out of operations)",
-    (gptr*) &_transactional, (gptr*) &_transactional, 0,
-    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 },
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 static void usage()
@@ -86,11 +81,8 @@ int main(int argc, char** argv){
       ndbout << " Table " << argv[i] << " does not exist!" << endl;
       return NDBT_ProgramExit(NDBT_WRONGARGS);
     }
-    ndbout << "Deleting all from " << argv[i];
-    if (! _transactional)
-      ndbout << " (non-transactional)";
-    ndbout << " ...";
-    if(clear_table(&MyNdb, pTab, ! _transactional) == NDBT_FAILED){
+    ndbout << "Deleting all from " << argv[i] << "...";
+    if(clear_table(&MyNdb, pTab) == NDBT_FAILED){
       res = NDBT_FAILED;
       ndbout << "FAILED" << endl;
     }
@@ -99,8 +91,7 @@ int main(int argc, char** argv){
 }
 
 
-int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
-                bool fetch_across_commit, int parallelism)
+int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab, int parallelism)
 {
   // Scan all records exclusive and delete 
   // them one by one
@@ -131,7 +122,7 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
       }
       goto failed;
     }
-
+    
     pOp = pTrans->getNdbScanOperation(pTab->getName());	
     if (pOp == NULL) {
       goto failed;
@@ -162,12 +153,8 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
       } while((check = rs->nextResult(false)) == 0);
       
       if(check != -1){
-        if (fetch_across_commit) {
-          check = pTrans->execute(Commit);   
-          pTrans->restart(); // new tx id
-        } else {
-          check = pTrans->execute(NoCommit);
-        }
+	check = pTrans->execute(Commit);   
+	pTrans->restart();
       }
       
       err = pTrans->getNdbError();    
@@ -191,10 +178,6 @@ int clear_table(Ndb* pNdb, const NdbDictionary::Table* pTab,
 	par = 1;
 	goto restart;
       }
-      goto failed;
-    }
-    if (! fetch_across_commit && pTrans->execute(Commit) != 0) {
-      err = pTrans->getNdbError();
       goto failed;
     }
     pNdb->closeTransaction(pTrans);

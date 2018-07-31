@@ -194,7 +194,7 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list,
     runs without --log-update or --log-bin).
   */
   int log_on= DELAYED_LOG_UPDATE | DELAYED_LOG_BIN ;
-  bool transactional_table, log_delayed, joins_freed= FALSE;
+  bool transactional_table, log_delayed;
   uint value_count;
   ulong counter = 1;
   ulonglong id;
@@ -374,8 +374,10 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list,
     if (error)
       break;
     /*
-      If auto_increment values are used, save the first one for
-      LAST_INSERT_ID() and for the update log.
+      If auto_increment values are used, save the first one
+       for LAST_INSERT_ID() and for the update log.
+       We can't use insert_id() as we don't want to touch the
+       last_insert_id_used flag.
     */
     if (! id && thd->insert_id_used)
     {						// Get auto increment value
@@ -383,9 +385,6 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list,
     }
     thd->row_count++;
   }
-
-  free_underlaid_joins(thd, &thd->lex->select_lex);
-  joins_freed= TRUE;
 
   /*
     Now all rows are inserted.  Time to update logs and sends response to
@@ -481,6 +480,7 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list,
 	      (ulong) (info.deleted+info.updated), (ulong) thd->cuted_fields);
     ::send_ok(thd,info.copied+info.deleted+info.updated,(ulonglong)id,buff);
   }
+  free_underlaid_joins(thd, &thd->lex->select_lex);
   table->insert_values=0;
   DBUG_RETURN(0);
 
@@ -489,8 +489,7 @@ abort:
   if (lock_type == TL_WRITE_DELAYED)
     end_delayed_insert(thd);
 #endif
-  if (!joins_freed)
-    free_underlaid_joins(thd, &thd->lex->select_lex);
+  free_underlaid_joins(thd, &thd->lex->select_lex);
   table->insert_values=0;
   DBUG_RETURN(-1);
 }
@@ -544,22 +543,18 @@ int mysql_prepare_insert(THD *thd, TABLE_LIST *table_list,
     if (!table->insert_values)
       DBUG_RETURN(-1);
   }
-  if (setup_tables(insert_table_list))
+  if ((values && check_insert_fields(thd, table, fields, *values)) ||
+      setup_tables(insert_table_list) ||
+      (values && setup_fields(thd, 0, insert_table_list, *values, 0, 0, 0)) ||
+      (duplic == DUP_UPDATE &&
+       (check_update_fields(thd, table, insert_table_list, update_fields) ||
+        setup_fields(thd, 0, dup_table_list, update_values, 1, 0, 0))))
     DBUG_RETURN(-1);
-  if (values)
+  if (values && find_real_table_in_list(table_list->next, table_list->db,
+                                        table_list->real_name))
   {
-    if (check_insert_fields(thd, table, fields, *values) ||
-        setup_fields(thd, 0, insert_table_list, *values, 0, 0, 0) ||
-        (duplic == DUP_UPDATE &&
-         (check_update_fields(thd, table, insert_table_list, update_fields) ||
-          setup_fields(thd, 0, dup_table_list, update_values, 1, 0, 0))))
-      DBUG_RETURN(-1);
-    if (find_real_table_in_list(table_list->next, table_list->db,
-                                                  table_list->real_name))
-    {
-      my_error(ER_UPDATE_TABLE_USED, MYF(0), table_list->real_name);
-      DBUG_RETURN(-1);
-    }
+    my_error(ER_UPDATE_TABLE_USED, MYF(0), table_list->real_name);
+    DBUG_RETURN(-1);
   }
   if (duplic == DUP_UPDATE || duplic == DUP_REPLACE)
     table->file->extra(HA_EXTRA_RETRIEVE_PRIMARY_KEY);
@@ -1606,7 +1601,6 @@ select_insert::prepare(List<Item> &values, SELECT_LEX_UNIT *u)
   int res;
   LEX *lex= thd->lex;
   SELECT_LEX *lex_current_select_save= lex->current_select;
-  bool lex_select_no_error= lex->select_lex.no_error;
   DBUG_ENTER("select_insert::prepare");
 
   unit= u;
@@ -1614,19 +1608,10 @@ select_insert::prepare(List<Item> &values, SELECT_LEX_UNIT *u)
     Since table in which we are going to insert is added to the first
     select, LEX::current_select should point to the first select while
     we are fixing fields from insert list.
-    Since these checks may cause the query to fail, we don't want the
-    error messages to be converted into warnings, must force no_error=0
   */
   lex->current_select= &lex->select_lex;
-  lex->select_lex.no_error= 0;
-  res=
-    check_insert_fields(thd, table, *fields, values) ||
-    setup_fields(thd, 0, insert_table_list, values, 0, 0, 0) ||
-    (info.handle_duplicates == DUP_UPDATE &&
-     (check_update_fields(thd, table, insert_table_list, *info.update_fields) ||
-      setup_fields(thd, 0, dup_table_list, *info.update_values, 1, 0, 0)));
+  res= check_insert_fields(thd, table, *fields, values);
   lex->current_select= lex_current_select_save;
-  lex->select_lex.no_error= lex_select_no_error;
   if (res)
     DBUG_RETURN(1);
 
@@ -1685,7 +1670,7 @@ bool select_insert::send_data(List<Item> &values)
     {
       table->next_number_field->reset();
       if (! last_insert_id && thd->insert_id_used)
-        last_insert_id= thd->last_insert_id;
+        last_insert_id=thd->insert_id();
     }
   }
   DBUG_RETURN(error);

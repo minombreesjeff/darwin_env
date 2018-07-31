@@ -73,9 +73,9 @@ struct show_table_type_st sys_table_types[]=
    "Alias for MEMORY", DB_TYPE_HEAP},
   {"MEMORY",	&have_yes,
    "Hash based, stored in memory, useful for temporary tables", DB_TYPE_HEAP},
-  {"MERGE",	&have_merge_db,
+  {"MERGE",	&have_yes,
    "Collection of identical MyISAM tables", DB_TYPE_MRG_MYISAM},
-  {"MRG_MYISAM",&have_merge_db,
+  {"MRG_MYISAM",&have_yes,
    "Alias for MERGE", DB_TYPE_MRG_MYISAM},
   {"ISAM",	&have_isam,
    "Obsolete storage engine, now replaced by MyISAM", DB_TYPE_ISAM},
@@ -1102,22 +1102,12 @@ void handler::print_error(int error, myf errflag)
       /* Write the dupplicated key in the error message */
       char key[MAX_KEY_LENGTH];
       String str(key,sizeof(key),system_charset_info);
-
-      if (key_nr == MAX_KEY)
+      key_unpack(&str,table,(uint) key_nr);
+      uint max_length=MYSQL_ERRMSG_SIZE-(uint) strlen(ER(ER_DUP_ENTRY));
+      if (str.length() >= max_length)
       {
-	/* Key is unknown */
-	str.copy("", 0, system_charset_info);
-	key_nr= -1;
-      }
-      else
-      {
-	key_unpack(&str,table,(uint) key_nr);
-	uint max_length=MYSQL_ERRMSG_SIZE-(uint) strlen(ER(ER_DUP_ENTRY));
-	if (str.length() >= max_length)
-	{
-	    str.length(max_length-4);
-	    str.append("...");
-	}
+	str.length(max_length-4);
+	str.append("...");
       }
       my_error(ER_DUP_ENTRY,MYF(0),str.c_ptr(),key_nr+1);
       DBUG_VOID_RETURN;
@@ -1392,7 +1382,7 @@ int ha_create_table_from_engine(THD* thd,
     DBUG_RETURN(3);
 
   update_create_info_from_table(&create_info, &table);
-  create_info.table_options|= HA_OPTION_CREATE_FROM_ENGINE;
+  create_info.table_options|= HA_CREATE_FROM_ENGINE;
 
   if (lower_case_table_names == 2 &&
       !(table.file->table_flags() & HA_FILE_BASED))
@@ -1524,8 +1514,6 @@ int ha_discover(THD *thd, const char *db, const char *name,
   int error= -1; // Table does not exist in any handler
   DBUG_ENTER("ha_discover");
   DBUG_PRINT("enter", ("db: %s, name: %s", db, name));
-  if (is_prefix(name,tmp_file_prefix)) /* skip temporary tables */
-    DBUG_RETURN(error);
 #ifdef HAVE_NDBCLUSTER_DB
   if (have_ndbcluster == SHOW_OPTION_YES)
     error= ndbcluster_discover(thd, db, name, frmblob, frmlen);

@@ -67,7 +67,7 @@
 #pragma implementation        // gcc: Class implementation
 #endif
 
-#include "../mysql_priv.h"
+#include <mysql_priv.h>
 
 #ifdef HAVE_EXAMPLE_DB
 #include "ha_example.h"
@@ -486,10 +486,10 @@ int ha_example::rnd_pos(byte * buf, byte *pos)
     sql_update.cc
 
 */
-int ha_example::info(uint flag)
+void ha_example::info(uint flag)
 {
   DBUG_ENTER("ha_example::info");
-  DBUG_RETURN(0);
+  DBUG_VOID_RETURN;
 }
 
 

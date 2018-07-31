@@ -178,7 +178,7 @@ void ha_isam::position(const byte *record)
   ha_store_ptr(ref, ref_length, position);
 }
 
-int ha_isam::info(uint flag)
+void ha_isam::info(uint flag)
 {
   N_ISAMINFO info;
   (void) nisam_info(file,&info,flag);
@@ -224,7 +224,6 @@ int ha_isam::info(uint flag)
   }
   if (flag & HA_STATUS_TIME)
     update_time = info.update_time;
-  return 0;
 }
 
 

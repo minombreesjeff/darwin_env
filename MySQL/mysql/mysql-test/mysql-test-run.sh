@@ -171,8 +171,7 @@ BASEDIR=`pwd`
 cd $CWD
 MYSQL_TEST_DIR=$BASEDIR/mysql-test
 MYSQL_TEST_WINDIR=$MYSQL_TEST_DIR
-MYSQLTEST_VARDIR=$MYSQL_TEST_DIR/var
-export MYSQL_TEST_DIR MYSQL_TEST_WINDIR MYSQLTEST_VARDIR
+export MYSQL_TEST_DIR MYSQL_TEST_WINDIR
 STD_DATA=$MYSQL_TEST_DIR/std_data
 hostname=`hostname`		# Installed in the mysql privilege table
 
@@ -210,30 +209,6 @@ NDBCLUSTER_PORT=9350
 MYSQL_MANAGER_PW_FILE=$MYSQL_TEST_DIR/var/tmp/manager.pwd
 MYSQL_MANAGER_LOG=$MYSQL_TEST_DIR/var/log/manager.log
 MYSQL_MANAGER_USER=root
-
-#
-# To make it easier for different devs to work on the same host,
-# an environment variable can be used to control all ports. A small
-# number is to be used, 0 - 16 or similar.
-#
-# Note the MASTER_MYPORT has to be set the same in all 4.x and 5.x
-# versions of this script, else a 4.0 test run might conflict with a
-# 5.1 test run, even if different MTR_BUILD_THREAD is used. This means
-# all port numbers might not be used in this version of the script.
-#
-if [ -n "$MTR_BUILD_THREAD" ] ; then
-  MASTER_MYPORT=`expr $MTR_BUILD_THREAD '*' 10 + 10000`
-  MYSQL_MANAGER_PORT=`expr $MASTER_MYPORT + 2`
-  SLAVE_MYPORT=`expr $MASTER_MYPORT + 3`
-  NDBCLUSTER_PORT=`expr $MASTER_MYPORT + 6`
-
-  echo "Using MTR_BUILD_THREAD   = $MTR_BUILD_THREAD"
-  echo "Using MASTER_MYPORT      = $MASTER_MYPORT"
-  echo "Using MYSQL_MANAGER_PORT = $MYSQL_MANAGER_PORT"
-  echo "Using SLAVE_MYPORT       = $SLAVE_MYPORT"
-  echo "Using NDBCLUSTER_PORT    = $NDBCLUSTER_PORT"
-fi
-
 NO_SLAVE=0
 USER_TEST=
 FAILED_CASES=
@@ -244,7 +219,6 @@ EXTRA_MYSQLDUMP_OPT=""
 EXTRA_MYSQLBINLOG_OPT=""
 USE_RUNNING_SERVER=""
 USE_NDBCLUSTER=@USE_NDBCLUSTER@
-USE_NDBCLUSTER_ONLY=0
 USE_RUNNING_NDBCLUSTER=""
 USE_PURIFY=""
 PURIFY_LOGS=""
@@ -272,15 +246,12 @@ NDB_MGM_EXTRA_OPTS=
 NDB_MGMD_EXTRA_OPTS=
 NDBD_EXTRA_OPTS=
 
-$ECHO "Logging: $0 $*"   # To ensure we see all arguments in the output, for the test analysis tool
-
 while test $# -gt 0; do
   case "$1" in
     --embedded-server)
       USE_EMBEDDED_SERVER=1
       USE_MANAGER=0 NO_SLAVE=1
       USE_RUNNING_SERVER=""
-      USE_NDBCLUSTER=""
       TEST_MODE="$TEST_MODE embedded" ;;
     --purify)
       USE_PURIFY=1
@@ -300,10 +271,6 @@ while test $# -gt 0; do
     --extern)  USE_RUNNING_SERVER="1" ;;
     --with-ndbcluster)
       USE_NDBCLUSTER="--ndbcluster" ;;
-    --with-ndbcluster-only)
-      USE_NDBCLUSTER="--ndbcluster"
-      USE_NDBCLUSTER_SLAVE="--ndbcluster"
-      USE_NDBCLUSTER_ONLY=1 ;;
     --ndb-connectstring=*)
       USE_NDBCLUSTER="--ndbcluster" ;
       USE_RUNNING_NDBCLUSTER=`$ECHO "$1" | $SED -e "s;--ndb-connectstring=;;"` ;;
@@ -485,13 +452,6 @@ while test $# -gt 0; do
     --fast)
       FAST_START=1
       ;;
-    --comment=*)
-      TMP=`$ECHO "$1" | $SED -e "s;--comment=;;"`
-      echo
-      echo '############################################'
-      echo "# $TMP"
-      echo '############################################'
-      ;;
     -- )  shift; break ;;
     --* ) $ECHO "Unrecognized option: $1"; exit 1 ;;
     * ) break ;;
@@ -586,11 +546,6 @@ if [ x$SOURCE_DIST = x1 ] ; then
  else
    MYSQL_DUMP="$BASEDIR/client/mysqldump"
  fi
- if [ -f "$BASEDIR/client/.libs/mysqlimport" ] ; then
-   MYSQL_IMPORT="$BASEDIR/client/.libs/mysqlimport"
- else
-   MYSQL_IMPORT="$BASEDIR/client/mysqlimport"
- fi
  if [ -f "$BASEDIR/client/.libs/mysqlbinlog" ] ; then
    MYSQL_BINLOG="$BASEDIR/client/.libs/mysqlbinlog"
  else
@@ -603,7 +558,6 @@ if [ x$SOURCE_DIST = x1 ] ; then
  CLIENT_BINDIR="$BASEDIR/client"
  MYSQLADMIN="$CLIENT_BINDIR/mysqladmin"
  WAIT_PID="$BASEDIR/extra/mysql_waitpid"
- MYSQL_MY_PRINT_DEFAULTS="$BASEDIR/extra/my_print_defaults"
  MYSQL_MANAGER_CLIENT="$CLIENT_BINDIR/mysqlmanagerc"
  MYSQL_MANAGER="$BASEDIR/tools/mysqlmanager"
  MYSQL_MANAGER_PWGEN="$CLIENT_BINDIR/mysqlmanager-pwgen"
@@ -660,11 +614,9 @@ else
  fi
  MYSQL_TEST="$CLIENT_BINDIR/mysqltest"
  MYSQL_DUMP="$CLIENT_BINDIR/mysqldump"
- MYSQL_IMPORT="$CLIENT_BINDIR/mysqlimport"
  MYSQL_BINLOG="$CLIENT_BINDIR/mysqlbinlog"
  MYSQLADMIN="$CLIENT_BINDIR/mysqladmin"
  WAIT_PID="$CLIENT_BINDIR/mysql_waitpid"
- MYSQL_MY_PRINT_DEFAULTS="$CLIENT_BINDIR/my_print_defaults"
  MYSQL_MANAGER="$CLIENT_BINDIR/mysqlmanager"
  MYSQL_MANAGER_CLIENT="$CLIENT_BINDIR/mysqlmanagerc"
  MYSQL_MANAGER_PWGEN="$CLIENT_BINDIR/mysqlmanager-pwgen"
@@ -741,12 +693,11 @@ fi
 MYSQL_DUMP_DIR="$MYSQL_DUMP"
 export MYSQL_DUMP_DIR
 MYSQL_DUMP="$MYSQL_DUMP --no-defaults -uroot --socket=$MASTER_MYSOCK --password=$DBPASSWD $EXTRA_MYSQLDUMP_OPT"
-MYSQL_IMPORT="$MYSQL_IMPORT -uroot --socket=$MASTER_MYSOCK --password=$DBPASSWD $EXTRA_MYSQLDUMP_OPT"
 MYSQL_BINLOG="$MYSQL_BINLOG --no-defaults --local-load=$MYSQL_TMP_DIR $EXTRA_MYSQLBINLOG_OPT"
 MYSQL_FIX_SYSTEM_TABLES="$MYSQL_FIX_SYSTEM_TABLES --no-defaults --host=localhost --port=$MASTER_MYPORT --socket=$MASTER_MYSOCK --user=root --password=$DBPASSWD --basedir=$BASEDIR --bindir=$CLIENT_BINDIR --verbose"
 MYSQL="$MYSQL --no-defaults --host=localhost --port=$MASTER_MYPORT --socket=$MASTER_MYSOCK --user=root --password=$DBPASSWD"
-export MYSQL MYSQL_DUMP MYSQL_IMPORT MYSQL_BINLOG MYSQL_FIX_SYSTEM_TABLES
-export CLIENT_BINDIR MYSQL_CLIENT_TEST CHARSETSDIR MYSQL_MY_PRINT_DEFAULTS
+export MYSQL MYSQL_DUMP MYSQL_BINLOG MYSQL_FIX_SYSTEM_TABLES
+export CLIENT_BINDIR MYSQL_CLIENT_TEST CHARSETSDIR
 export NDB_TOOLS_DIR
 export NDB_MGM
 export NDB_BACKUP_DIR
@@ -763,7 +714,6 @@ if [ x$USE_TIMER = x1 ] ; then
 fi
 MYSQL_TEST_BIN=$MYSQL_TEST
 MYSQL_TEST="$MYSQL_TEST $MYSQL_TEST_ARGS"
-export MYSQL_TEST
 GDB_CLIENT_INIT=$MYSQL_TMP_DIR/gdbinit.client
 GDB_MASTER_INIT=$MYSQL_TMP_DIR/gdbinit.master
 GDB_SLAVE_INIT=$MYSQL_TMP_DIR/gdbinit.slave
@@ -807,7 +757,7 @@ show_failed_diff ()
     $DIFF -c $result_file $reject_file
     echo "-------------------------------------------------------"
     echo "Please follow the instructions outlined at"
-    echo "http://dev.mysql.com/doc/mysql/en/reporting-mysqltest-bugs.html"
+    echo "http://www.mysql.com/doc/en/Reporting_mysqltest_bugs.html"
     echo "to find the reason to this problem and how to report this."
     echo ""
   fi
@@ -902,7 +852,7 @@ report_stats () {
         $ECHO "The log files in $MY_LOG_DIR may give you some hint"
 	$ECHO "of what when wrong."
 	$ECHO "If you want to report this error, please read first the documentation at"
-        $ECHO "http://dev.mysql.com/doc/mysql/en/mysql-test-suite.html"
+        $ECHO "http://www.mysql.com/doc/en/MySQL_test_suite.html"
     fi
 
     if test -z "$USE_RUNNING_SERVER"
@@ -1252,16 +1202,16 @@ start_master()
 
   if [ x$DO_DDD = x1 ]
   then
-    $ECHO "set args $master_args" > $GDB_MASTER_INIT$1
+    $ECHO "set args $master_args" > $GDB_MASTER_INIT
     manager_launch master ddd -display $DISPLAY --debugger \
-    "gdb -x $GDB_MASTER_INIT$1" $MASTER_MYSQLD
+    "gdb -x $GDB_MASTER_INIT" $MASTER_MYSQLD
   elif [ x$DO_GDB = x1 ]
   then
     if [ x$MANUAL_GDB = x1 ]
     then
-      $ECHO "set args $master_args" > $GDB_MASTER_INIT$1
+      $ECHO "set args $master_args" > $GDB_MASTER_INIT
       $ECHO "To start gdb for the master , type in another window:"
-      $ECHO "cd $CWD ; gdb -x $GDB_MASTER_INIT$1 $MASTER_MYSQLD"
+      $ECHO "cd $CWD ; gdb -x $GDB_MASTER_INIT $MASTER_MYSQLD"
       wait_for_master=1500
     else
       ( $ECHO set args $master_args;
@@ -1273,9 +1223,9 @@ disa 1
 end
 r
 EOF
-      fi )  > $GDB_MASTER_INIT$1
+      fi )  > $GDB_MASTER_INIT
       manager_launch master $XTERM -display $DISPLAY \
-      -title "Master" -e gdb -x $GDB_MASTER_INIT$1 $MASTER_MYSQLD
+      -title "Master" -e gdb -x $GDB_MASTER_INIT $MASTER_MYSQLD
     fi
   else
     manager_launch master $MASTER_MYSQLD $master_args
@@ -1533,11 +1483,6 @@ run_testcase ()
  then
    comment=`$CAT $TESTDIR/$tname.disabled`;
    disable_test $tname "$comment"
-   return
- fi
- NDBCLUSTER_TEST=`$EXPR \( $tname : '.*ndb.*' \) != 0`
- if [ "x$USE_NDBCLUSTER_ONLY" = "x1" -a "x$NDBCLUSTER_TEST" != "x1" ] ; then
-   skip_test $tname
    return
  fi
  if [ "$USE_MANAGER" = 1 ] ; then
@@ -1810,7 +1755,13 @@ then
   mysql_install_db
 
   start_manager
-  mysql_start
+
+# Do not automagically start daemons if we are in gdb or running only one test
+# case
+  if [ -z "$DO_GDB" ] && [ -z "$DO_DDD" ]
+  then
+    mysql_start
+  fi
   $ECHO  "Loading Standard Test Databases"
   mysql_loadstd
 fi

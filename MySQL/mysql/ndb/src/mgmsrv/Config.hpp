@@ -60,6 +60,16 @@ public:
     printConfigFile(ndb);
   }
 
+  Uint32 getGenerationNumber() const;
+  int setGenerationNumber(Uint32);
+
+  /** Change configuration
+   */
+  bool change(const BaseString &section,
+	      const BaseString &param,
+	      const BaseString &value);
+
+
   /**
    * Info
    */

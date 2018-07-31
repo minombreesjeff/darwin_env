@@ -41,10 +41,7 @@ class Item_func_md5 :public Item_str_func
 {
   String tmp_value;
 public:
-  Item_func_md5(Item *a) :Item_str_func(a)
-  {
-    collation.set(&my_charset_bin);
-  }
+  Item_func_md5(Item *a) :Item_str_func(a) {}
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "md5"; }
@@ -54,10 +51,7 @@ public:
 class Item_func_sha :public Item_str_func
 {
 public:
-  Item_func_sha(Item *a) :Item_str_func(a)
-  {
-    collation.set(&my_charset_bin);
-  }
+  Item_func_sha(Item *a) :Item_str_func(a) {}  
   String *val_str(String *);    
   void fix_length_and_dec();      
   const char *func_name() const { return "sha"; }	
@@ -106,7 +100,6 @@ public:
 
 class Item_func_reverse :public Item_str_func
 {
-  String tmp_value;
 public:
   Item_func_reverse(Item *a) :Item_str_func(a) {}
   String *val_str(String *);
@@ -224,8 +217,6 @@ public:
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "trim"; }
-  void print(String *str);
-  virtual const char *mode_name() const { return "both"; }
 };
 
 
@@ -236,7 +227,6 @@ public:
   Item_func_ltrim(Item *a) :Item_func_trim(a) {}
   String *val_str(String *);
   const char *func_name() const { return "ltrim"; }
-  const char *mode_name() const { return "leading"; }
 };
 
 
@@ -247,7 +237,6 @@ public:
   Item_func_rtrim(Item *a) :Item_func_trim(a) {}
   String *val_str(String *);
   const char *func_name() const { return "rtrim"; }
-  const char *mode_name() const { return "trailing"; }
 };
 
 
@@ -316,21 +305,9 @@ public:
 class Item_func_encrypt :public Item_str_func
 {
   String tmp_value;
-
-  /* Encapsulate common constructor actions */
-  void constructor_helper()
-  {
-    collation.set(&my_charset_bin);
-  }
 public:
-  Item_func_encrypt(Item *a) :Item_str_func(a)
-  {
-    constructor_helper();
-  }
-  Item_func_encrypt(Item *a, Item *b): Item_str_func(a,b)
-  {
-    constructor_helper();
-  }
+  Item_func_encrypt(Item *a) :Item_str_func(a) {}
+  Item_func_encrypt(Item *a, Item *b): Item_str_func(a,b) {}
   String *val_str(String *);
   void fix_length_and_dec() { maybe_null=1; max_length = 13; }
   const char *func_name() const { return "ecrypt"; }
@@ -467,15 +444,12 @@ public:
 class Item_func_char :public Item_str_func
 {
 public:
-  Item_func_char(List<Item> &list) :Item_str_func(list)
-  { collation.set(default_charset()); }
-  Item_func_char(List<Item> &list, CHARSET_INFO *cs) :Item_str_func(list)
-  { collation.set(cs); }
+  Item_func_char(List<Item> &list) :Item_str_func(list) {}
   String *val_str(String *);
   void fix_length_and_dec() 
   { 
-    maybe_null=0;
-    max_length=arg_count * collation.collation->mbmaxlen;
+    collation.set(default_charset());
+    maybe_null=0; max_length=arg_count;
   }
   const char *func_name() const { return "char"; }
 };
@@ -637,40 +611,10 @@ public:
 
 class Item_func_conv_charset :public Item_str_func
 {
-  bool use_cached_value;
+  CHARSET_INFO *conv_charset;
 public:
-  bool safe;
-  CHARSET_INFO *conv_charset; // keep it public
-  Item_func_conv_charset(Item *a, CHARSET_INFO *cs) :Item_str_func(a) 
-  { conv_charset= cs; use_cached_value= 0; safe= 0; }
-  Item_func_conv_charset(Item *a, CHARSET_INFO *cs, bool cache_if_const) 
-    :Item_str_func(a) 
-  {
-    DBUG_ASSERT(args[0]->fixed);
-    conv_charset= cs;
-    if (cache_if_const && args[0]->const_item())
-    {
-      uint errors= 0;
-      String tmp, *str= args[0]->val_str(&tmp);
-      if (!str || str_value.copy(str->ptr(), str->length(),
-                                 str->charset(), conv_charset, &errors))
-        null_value= 1;
-      use_cached_value= 1;
-      safe= (errors == 0);
-    }
-    else
-    {
-      use_cached_value= 0;
-      /*
-        Conversion from and to "binary" is safe.
-        Conversion to Unicode is safe.
-        Other kind of conversions are potentially lossy.
-      */
-      safe= (args[0]->collation.collation == &my_charset_bin ||
-             cs == &my_charset_bin ||
-             (cs->state & MY_CS_UNICODE));
-    }
-  }
+  Item_func_conv_charset(Item *a, CHARSET_INFO *cs) :Item_str_func(a)
+  { conv_charset=cs; }
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "convert"; }
@@ -771,12 +715,7 @@ public:
   Item_func_uuid(): Item_str_func() {}
   void fix_length_and_dec() {
     collation.set(system_charset_info);
-    /*
-       NOTE! uuid() should be changed to use 'ascii'
-       charset when hex(), format(), md5(), etc, and implicit
-       number-to-string conversion will use 'ascii'
-    */
-    max_length= UUID_LENGTH * system_charset_info->mbmaxlen;
+    max_length= UUID_LENGTH;
   }
   const char *func_name() const{ return "uuid"; }
   String *val_str(String *);

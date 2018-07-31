@@ -747,7 +747,7 @@ my_real_read(NET *net, ulong *complen)
 #endif /* EXTRA_DEBUG */
 	  }
 #if defined(THREAD_SAFE_CLIENT) && !defined(MYSQL_SERVER)
-	  if (vio_errno(net->vio) == SOCKET_EINTR)
+	  if (vio_should_retry(net->vio))
 	  {
 	    DBUG_PRINT("warning",("Interrupted read. Retrying..."));
 	    continue;
@@ -759,7 +759,7 @@ my_real_read(NET *net, ulong *complen)
 	  net->error= 2;				/* Close socket */
 	  net->report_error= 1;
 #ifdef MYSQL_SERVER
-	  net->last_errno= (vio_was_interrupted(net->vio) ? ER_NET_READ_INTERRUPTED :
+	  net->last_errno= (interrupted ? ER_NET_READ_INTERRUPTED :
 			    ER_NET_READ_ERROR);
 #endif
 	  goto end;

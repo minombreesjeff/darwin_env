@@ -25,12 +25,10 @@
 #include <m_string.h>
 
 extern my_bool opt_ndb_shm;
-extern my_bool opt_core;
 
 #define MAX_LINE_LENGTH 255
 #define KEY_INTERNAL 0
 #define MAX_INT_RNIL 0xfffffeff
-#define MAX_PORT_NO 65535
 
 #define _STR_VALUE(x) #x
 #define STR_VALUE(x) _STR_VALUE(x)
@@ -64,6 +62,8 @@ ConfigInfo::m_sectionNames[]={
   DB_TOKEN,
   MGM_TOKEN,
   API_TOKEN,
+  "REP",
+  "EXTERNAL REP",
 
   "TCP",
   "SCI",
@@ -100,7 +100,6 @@ static bool saveInConfigValues(InitConfigFileParser::Context & ctx, const char *
 static bool fixFileSystemPath(InitConfigFileParser::Context & ctx, const char * data);
 static bool fixBackupDataDir(InitConfigFileParser::Context & ctx, const char * data);
 static bool fixShmUniqueId(InitConfigFileParser::Context & ctx, const char * data);
-static bool checkLocalhostHostnameMix(InitConfigFileParser::Context & ctx, const char * data);
 
 const ConfigInfo::SectionRule 
 ConfigInfo::m_SectionRules[] = {
@@ -111,6 +110,8 @@ ConfigInfo::m_SectionRules[] = {
   { DB_TOKEN,   transformNode, 0 },
   { API_TOKEN,  transformNode, 0 },
   { MGM_TOKEN,  transformNode, 0 },
+  { "REP",  transformNode, 0 },
+  { "EXTERNAL REP",  transformExtNode, 0 },
 
   { MGM_TOKEN,  fixShmUniqueId, 0 },
 
@@ -127,6 +128,8 @@ ConfigInfo::m_SectionRules[] = {
   { DB_TOKEN,   fixNodeHostname, 0 },
   { API_TOKEN,  fixNodeHostname, 0 },
   { MGM_TOKEN,  fixNodeHostname, 0 },
+  { "REP",  fixNodeHostname, 0 },
+  //{ "EXTERNAL REP",  fixNodeHostname, 0 },
 
   { "TCP",  fixNodeId, "NodeId1" },
   { "TCP",  fixNodeId, "NodeId2" },
@@ -165,10 +168,6 @@ ConfigInfo::m_SectionRules[] = {
   { "*",    fixDepricated, 0 },
   { "*",    applyDefaultValues, "system" },
 
-  { DB_TOKEN,   checkLocalhostHostnameMix, 0 },
-  { API_TOKEN,  checkLocalhostHostnameMix, 0 },
-  { MGM_TOKEN,  checkLocalhostHostnameMix, 0 },
-
   { DB_TOKEN,   fixFileSystemPath, 0 },
   { DB_TOKEN,   fixBackupDataDir, 0 },
 
@@ -194,6 +193,7 @@ ConfigInfo::m_SectionRules[] = {
   { DB_TOKEN,   saveInConfigValues, 0 },
   { API_TOKEN,  saveInConfigValues, 0 },
   { MGM_TOKEN,  saveInConfigValues, 0 },
+  { "REP",  saveInConfigValues, 0 },
 
   { "TCP",  saveInConfigValues, 0 },
   { "SHM",  saveInConfigValues, 0 },
@@ -345,6 +345,17 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     0, 0 },
   
   {
+    CFG_SYS_REPLICATION_ROLE,
+    "ReplicationRole",
+    "SYSTEM",
+    "Role in Global Replication (None, Primary, or Standby)",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_STRING,
+    UNDEFINED,
+    0, 0 },
+  
+  {
     CFG_SYS_PRIMARY_MGM_NODE,
     "PrimaryMGMNode",
     "SYSTEM",
@@ -391,7 +402,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INTERNAL,
     false,
     ConfigInfo::CI_STRING,
-    "localhost",
+    UNDEFINED,
     0, 0 },
 
   {
@@ -427,7 +438,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT,
     UNDEFINED,
     "1",
-    STR_VALUE(MAX_PORT_NO) },
+    STR_VALUE(MAX_INT_RNIL) },
 
   {
     CFG_DB_NO_REPLICAS,
@@ -858,7 +869,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     false,
     ConfigInfo::CI_INT,
     "8",
-    "3",
+    "1",
     STR_VALUE(MAX_INT_RNIL) },
 
   {
@@ -917,7 +928,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     STR_VALUE(MAX_INT_RNIL) },
 
   {
-    CFG_DB_LCP_DISC_PAGES_TUP_SR,
+    KEY_INTERNAL,
     "NoOfDiskPagesToDiskDuringRestartTUP",
     DB_TOKEN,
     "?",
@@ -929,7 +940,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     STR_VALUE(MAX_INT_RNIL) },
 
   {
-    CFG_DB_LCP_DISC_PAGES_TUP,
+    KEY_INTERNAL,
     "NoOfDiskPagesToDiskAfterRestartTUP",
     DB_TOKEN,
     "?",
@@ -941,7 +952,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     STR_VALUE(MAX_INT_RNIL) },
 
   {
-    CFG_DB_LCP_DISC_PAGES_ACC_SR,
+    KEY_INTERNAL,
     "NoOfDiskPagesToDiskDuringRestartACC",
     DB_TOKEN,
     "?",
@@ -953,7 +964,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     STR_VALUE(MAX_INT_RNIL) },
 
   {
-    CFG_DB_LCP_DISC_PAGES_ACC,
+    KEY_INTERNAL,
     "NoOfDiskPagesToDiskAfterRestartACC",
     DB_TOKEN,
     "?",
@@ -1192,19 +1203,79 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     false,
     ConfigInfo::CI_INT,
     "32K",
-    "2K",
+    "0",
     STR_VALUE(MAX_INT_RNIL) },
 
-  { 
-    CFG_DB_BACKUP_MAX_WRITE_SIZE,
-    "BackupMaxWriteSize",
-    DB_TOKEN,
-    "Max size of filesystem writes made by backup (in bytes)",
+  /***************************************************************************
+   * REP
+   ***************************************************************************/
+  {
+    CFG_SECTION_NODE,
+    "REP",
+    "REP",
+    "Node section",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_SECTION,
+    (const char *)NODE_TYPE_REP, 
+    0, 0
+  },
+
+  {
+    CFG_NODE_HOST,
+    "HostName",
+    "REP",
+    "Name of computer for this node",
+    ConfigInfo::CI_INTERNAL,
+    false,
+    ConfigInfo::CI_STRING,
+    UNDEFINED,
+    0, 0 },
+
+  {
+    CFG_NODE_SYSTEM,
+    "System",
+    "REP",
+    "Name of system for this node",
+    ConfigInfo::CI_INTERNAL,
+    false,
+    ConfigInfo::CI_STRING,
+    UNDEFINED,
+    0, 0 },
+
+  {
+    CFG_NODE_ID,
+    "Id",
+    "REP",
+    "Number identifying replication node (REP)",
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
-    "256K",
-    "2K",
+    MANDATORY,
+    "1",
+    STR_VALUE(MAX_NODES) },
+
+  {
+    KEY_INTERNAL,
+    "ExecuteOnComputer",
+    "REP",
+    "String referencing an earlier defined COMPUTER",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_STRING,
+    MANDATORY,
+    0, 0 },
+
+  {
+    CFG_REP_HEARTBEAT_INTERVAL,
+    "HeartbeatIntervalRepRep",
+    "REP",
+    "Time between REP-REP heartbeats. Connection closed after 3 missed HBs",
+    ConfigInfo::CI_USED,
+    true,
+    ConfigInfo::CI_INT,
+    "3000",
+    "100",
     STR_VALUE(MAX_INT_RNIL) },
 
   /***************************************************************************
@@ -1230,7 +1301,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INTERNAL,
     false,
     ConfigInfo::CI_STRING,
-    "",
+    UNDEFINED,
     0, 0 },
 
   {
@@ -1350,7 +1421,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INTERNAL,
     false,
     ConfigInfo::CI_STRING,
-    "",
+    UNDEFINED,
     0, 0 },
 
   {
@@ -1431,7 +1502,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT,
     NDB_PORT,
     "0",
-    STR_VALUE(MAX_PORT_NO) },
+    STR_VALUE(MAX_INT_RNIL) },
 
   {
     KEY_INTERNAL,
@@ -1443,7 +1514,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT,
     UNDEFINED,
     "0",
-    STR_VALUE(MAX_PORT_NO) },
+    STR_VALUE(MAX_INT_RNIL) },
 
   {
     CFG_NODE_ARBIT_RANK,
@@ -1574,7 +1645,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT,
     MANDATORY,
     "0",
-    STR_VALUE(MAX_PORT_NO) },
+    STR_VALUE(MAX_INT_RNIL) },
 
   {
     CFG_TCP_SEND_BUFFER_SIZE,
@@ -1680,7 +1751,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT,
     MANDATORY,
     "0", 
-    STR_VALUE(MAX_PORT_NO) },
+    STR_VALUE(MAX_INT_RNIL) },
 
   {
     CFG_SHM_SIGNUM,
@@ -1880,7 +1951,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT,
     MANDATORY,
     "0", 
-    STR_VALUE(MAX_PORT_NO) },
+    STR_VALUE(MAX_INT_RNIL) },
 
   {
     CFG_SCI_HOST1_ID_0,
@@ -2150,16 +2221,7 @@ const int ConfigInfo::m_NoOfParams = sizeof(m_ParamInfo) / sizeof(ParamInfo);
 /****************************************************************************
  * Ctor
  ****************************************************************************/
-static void require(bool v)
-{
-  if(!v)
-  {
-    if (opt_core)
-      abort();
-    else
-      exit(-1);
-  }
-}
+static void require(bool v) { if(!v) abort();}
 
 ConfigInfo::ConfigInfo()
   : m_info(true), m_systemDefaults(true)
@@ -2227,7 +2289,7 @@ ConfigInfo::ConfigInfo()
       ndbout << "Error: Parameter " << param._fname
 	     << " defined twice in section " << param._section
 	     << "." << endl;
-      require(false);
+      exit(-1);
     }
     
     // Add new pinfo to section
@@ -2277,7 +2339,7 @@ ConfigInfo::ConfigInfo()
       ndbout << "Check that each entry has a section failed." << endl;
       ndbout << "Parameter \"" << m_ParamInfo[i]._fname << endl; 
       ndbout << "Edit file " << __FILE__ << "." << endl;
-      require(false);
+      exit(-1);
     }
     
     if(m_ParamInfo[i]._type == ConfigInfo::CI_SECTION)
@@ -2290,7 +2352,7 @@ ConfigInfo::ConfigInfo()
 	     << "\" does not exist in section \"" 
 	     << m_ParamInfo[i]._section << "\"." << endl;
       ndbout << "Edit file " << __FILE__ << "." << endl;
-      require(false);
+      exit(-1);
     }
   }
 }
@@ -2300,7 +2362,7 @@ ConfigInfo::ConfigInfo()
  ****************************************************************************/
 inline void warning(const char * src, const char * arg){
   ndbout << "Illegal call to ConfigInfo::" << src << "() - " << arg << endl;
-  require(false);
+  abort();
 }
 
 const Properties * 
@@ -2390,15 +2452,7 @@ ConfigInfo::isSection(const char * section) const {
 }
 
 const char*
-ConfigInfo::nameToAlias(const char * name) {
-  for (int i = 0; m_sectionNameAliases[i].name != 0; i++)
-    if(!strcasecmp(name, m_sectionNameAliases[i].name))
-      return m_sectionNameAliases[i].alias;
-  return 0;
-}
-
-const char*
-ConfigInfo::getAlias(const char * section) {
+ConfigInfo::getAlias(const char * section) const {
   for (int i = 0; m_sectionNameAliases[i].name != 0; i++)
     if(!strcasecmp(section, m_sectionNameAliases[i].alias))
       return m_sectionNameAliases[i].name;
@@ -2557,7 +2611,7 @@ transformNode(InitConfigFileParser::Context & ctx, const char * data){
   return true;
 }
 
-static bool checkLocalhostHostnameMix(InitConfigFileParser::Context & ctx, const char * data)
+static bool checkLocalhostHostnameMix(InitConfigFileParser::Context & ctx)
 {
   DBUG_ENTER("checkLocalhostHostnameMix");
   const char * hostname= 0;
@@ -2577,7 +2631,7 @@ static bool checkLocalhostHostnameMix(InitConfigFileParser::Context & ctx, const
   }
 
   if (localhost_used) {
-    ctx.reportError("Mixing of localhost (default for [NDBD]HostName) with other hostname(%s) is illegal",
+    ctx.reportError("Mixing of localhost with other hostname(%s) is illegal",
 		    hostname);
     DBUG_RETURN(false);
   }
@@ -2586,17 +2640,21 @@ static bool checkLocalhostHostnameMix(InitConfigFileParser::Context & ctx, const
 }
 
 bool
-fixNodeHostname(InitConfigFileParser::Context & ctx, const char * data)
-{
+fixNodeHostname(InitConfigFileParser::Context & ctx, const char * data){
+  
   const char * hostname;
-  DBUG_ENTER("fixNodeHostname");
-
   if (ctx.m_currentSection->get("HostName", &hostname))
-    DBUG_RETURN(checkLocalhostHostnameMix(ctx,0));
+    return checkLocalhostHostnameMix(ctx);
 
   const char * compId;
-  if(!ctx.m_currentSection->get("ExecuteOnComputer", &compId))
-    DBUG_RETURN(true);
+  if(!ctx.m_currentSection->get("ExecuteOnComputer", &compId)){
+    const char * type;
+    if(ctx.m_currentSection->get("Type", &type) && strcmp(type,DB_TOKEN) == 0)
+      require(ctx.m_currentSection->put("HostName", "localhost"));
+    else
+      require(ctx.m_currentSection->put("HostName", ""));
+    return checkLocalhostHostnameMix(ctx);
+  }
   
   const Properties * computer;
   char tmp[255];
@@ -2605,18 +2663,18 @@ fixNodeHostname(InitConfigFileParser::Context & ctx, const char * data)
     ctx.reportError("Computer \"%s\" not declared"
 		    "- [%s] starting at line: %d",
 		    compId, ctx.fname, ctx.m_sectionLineno);
-    DBUG_RETURN(false);
+    return false;
   }
   
   if(!computer->get("HostName", &hostname)){
     ctx.reportError("HostName missing in [COMPUTER] (Id: %d) "
 		    " - [%s] starting at line: %d",
 		    compId, ctx.fname, ctx.m_sectionLineno);
-    DBUG_RETURN(false);
+    return false;
   }
   
   require(ctx.m_currentSection->put("HostName", hostname));
-  DBUG_RETURN(checkLocalhostHostnameMix(ctx,0));
+  return checkLocalhostHostnameMix(ctx);
 }
 
 bool
@@ -2800,7 +2858,7 @@ transformComputer(InitConfigFileParser::Context & ctx, const char * data){
     return true;
   }
   
-  return checkLocalhostHostnameMix(ctx,0);
+  return checkLocalhostHostnameMix(ctx);
 }
 
 /**
@@ -2808,9 +2866,7 @@ transformComputer(InitConfigFileParser::Context & ctx, const char * data){
  */
 void 
 applyDefaultValues(InitConfigFileParser::Context & ctx,
-		   const Properties * defaults)
-{
-  DBUG_ENTER("applyDefaultValues");
+		   const Properties * defaults){
   if(defaults != NULL){
     Properties::Iterator it(defaults);
 
@@ -2823,58 +2879,26 @@ applyDefaultValues(InitConfigFileParser::Context & ctx,
 	  Uint32 val = 0;
 	  ::require(defaults->get(name, &val));
 	  ctx.m_currentSection->put(name, val);
-          DBUG_PRINT("info",("%s=%d #default",name,val));
 	  break;
 	}
 	case ConfigInfo::CI_INT64:{
 	  Uint64 val = 0;
 	  ::require(defaults->get(name, &val));
 	  ctx.m_currentSection->put64(name, val);
-          DBUG_PRINT("info",("%s=%lld #default",name,val));
 	  break;
 	}
 	case ConfigInfo::CI_STRING:{
 	  const char * val;
 	  ::require(defaults->get(name, &val));
 	  ctx.m_currentSection->put(name, val);
-          DBUG_PRINT("info",("%s=%s #default",name,val));
 	  break;
 	}
 	case ConfigInfo::CI_SECTION:
 	  break;
 	}
       }
-#ifndef DBUG_OFF
-      else
-      {
-        switch (ctx.m_info->getType(ctx.m_currentInfo, name)){
-        case ConfigInfo::CI_INT:
-        case ConfigInfo::CI_BOOL:{
-          Uint32 val = 0;
-          ::require(ctx.m_currentSection->get(name, &val));
-          DBUG_PRINT("info",("%s=%d",name,val));
-          break;
-        }
-        case ConfigInfo::CI_INT64:{
-          Uint64 val = 0;
-          ::require(ctx.m_currentSection->get(name, &val));
-          DBUG_PRINT("info",("%s=%lld",name,val));
-          break;
-        }
-        case ConfigInfo::CI_STRING:{
-          const char * val;
-          ::require(ctx.m_currentSection->get(name, &val));
-          DBUG_PRINT("info",("%s=%s",name,val));
-          break;
-        }
-        case ConfigInfo::CI_SECTION:
-          break;
-        }
-      }
-#endif
     }
   }
-  DBUG_VOID_RETURN;
 }
 
 bool
@@ -3417,19 +3441,17 @@ fixDepricated(InitConfigFileParser::Context & ctx, const char * data){
     }
     case PropertiesType_Properties:
     default:
-      ::require(false);
+      abort();
     }
   }
   return true;
 }
 
-extern int g_print_full_config;
-
 static bool
 saveInConfigValues(InitConfigFileParser::Context & ctx, const char * data){
   const Properties * sec;
   if(!ctx.m_currentInfo->get(ctx.fname, &sec)){
-    require(false);
+    abort();
     return false;
   }
   
@@ -3446,12 +3468,6 @@ saveInConfigValues(InitConfigFileParser::Context & ctx, const char * data){
       break;
     }
     
-    if (g_print_full_config)
-    {
-      const char *alias= ConfigInfo::nameToAlias(ctx.fname);
-      printf("[%s]\n", alias ? alias : ctx.fname);
-    }
-
     Uint32 no = 0;
     ctx.m_userProperties.get("$Section", id, &no);
     ctx.m_userProperties.put("$Section", id, no+1, true);
@@ -3479,28 +3495,22 @@ saveInConfigValues(InitConfigFileParser::Context & ctx, const char * data){
 	Uint32 val;
 	require(ctx.m_currentSection->get(n, &val));
 	ok = ctx.m_configValues.put(id, val);
-	if (g_print_full_config)
-	  printf("%s=%u\n", n, val);
 	break;
       }
       case PropertiesType_Uint64:{
 	Uint64 val;
 	require(ctx.m_currentSection->get(n, &val));
 	ok = ctx.m_configValues.put64(id, val);
-	if (g_print_full_config)
-	  printf("%s=%llu\n", n, val);
 	break;
       }
       case PropertiesType_char:{
 	const char * val;
 	require(ctx.m_currentSection->get(n, &val));
 	ok = ctx.m_configValues.put(id, val);
-	if (g_print_full_config)
-	  printf("%s=%s\n", n, val);
 	break;
       }
       default:
-	require(false);
+	abort();
       }
       require(ok);
     }

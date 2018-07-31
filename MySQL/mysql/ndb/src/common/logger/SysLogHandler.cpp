@@ -154,6 +154,5 @@ SysLogHandler::setFacility(const BaseString &facility) {
       return true;
     }
   }
-  setErrorStr("Invalid syslog facility name");
   return false;
 }

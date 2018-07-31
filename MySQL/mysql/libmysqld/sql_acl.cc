@@ -62,21 +62,17 @@ static HASH acl_check_hosts, column_priv_hash;
 static DYNAMIC_ARRAY acl_wild_hosts;
 static hash_filo *acl_cache;
 static uint grant_version=0;
-static uint priv_version=0; /* Version of priv tables. incremented by acl_load */
+static uint priv_version=0; /* Version of priv tables. incremented by acl_init */
 static ulong get_access(TABLE *form,uint fieldnr, uint *next_field=0);
 static int acl_compare(ACL_ACCESS *a,ACL_ACCESS *b);
 static ulong get_sort(uint count,...);
 static void init_check_host(void);
-static ACL_USER *find_acl_user(const char *host, const char *user,
-                               my_bool exact);
-static bool update_user_table(THD *thd, TABLE *table,
-                              const char *host, const char *user,
+static ACL_USER *find_acl_user(const char *host, const char *user);
+static bool update_user_table(THD *thd, const char *host, const char *user,
 			      const char *new_password, uint new_password_len);
 static void update_hostname(acl_host_and_ip *host, const char *hostname);
 static bool compare_hostname(const acl_host_and_ip *host,const char *hostname,
 			     const char *ip);
-static my_bool acl_load(THD *thd, TABLE_LIST *tables);
-static my_bool grant_load(TABLE_LIST *tables);
 
 /*
   Convert scrambled password to binary form, according to scramble type, 
@@ -121,38 +117,42 @@ static void restrict_update_of_old_passwords_var(THD *thd,
 
 
 /*
-  Initialize structures responsible for user/db-level privilege checking and
-  load privilege information for them from tables in the 'mysql' database.
+  Read grant privileges from the privilege tables in the 'mysql' database.
 
   SYNOPSIS
     acl_init()
-      dont_read_acl_tables  TRUE if we want to skip loading data from
-                            privilege tables and disable privilege checking.
-
-  NOTES
-    This function is mostly responsible for preparatory steps, main work
-    on initialization and grants loading is done in acl_reload().
+    thd				Thread handler
+    dont_read_acl_tables	Set to 1 if run with --skip-grant
 
   RETURN VALUES
     0	ok
     1	Could not initialize grant's
 */
 
-my_bool acl_init(bool dont_read_acl_tables)
+
+my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
 {
   THD  *thd;
-  my_bool return_val;
+  TABLE_LIST tables[3];
+  TABLE *table;
+  READ_RECORD read_record_info;
+  MYSQL_LOCK *lock;
+  my_bool return_val=1;
+  bool check_no_resolve= specialflag & SPECIAL_NO_RESOLVE;
+  char tmp_name[NAME_LEN+1];
+
   DBUG_ENTER("acl_init");
 
-  acl_cache= new hash_filo(ACL_CACHE_SIZE, 0, 0,
-                           (hash_get_key) acl_entry_get_key,
-                           (hash_free_key) free,
-                           lower_case_file_system ?
-                           system_charset_info : &my_charset_bin);
+  if (!acl_cache)
+    acl_cache=new hash_filo(ACL_CACHE_SIZE,0,0,
+			    (hash_get_key) acl_entry_get_key,
+			    (hash_free_key) free, system_charset_info);
   if (dont_read_acl_tables)
   {
     DBUG_RETURN(0); /* purecov: tested */
   }
+
+  priv_version++; /* Privileges updated */
 
   /*
     To be able to run this from boot, we allocate a temporary THD
@@ -160,48 +160,36 @@ my_bool acl_init(bool dont_read_acl_tables)
   if (!(thd=new THD))
     DBUG_RETURN(1); /* purecov: inspected */
   thd->store_globals();
-  /*
-    It is safe to call acl_reload() since acl_* arrays and hashes which
-    will be freed there are global static objects and thus are initialized
-    by zeros at startup.
-  */
-  return_val= acl_reload(thd);
-  delete thd;
-  /* Remember that we don't have a THD */
-  my_pthread_setspecific_ptr(THR_THD,  0);
-  DBUG_RETURN(return_val);
-}
-
-
-/*
-  Initialize structures responsible for user/db-level privilege checking
-  and load information about grants from open privilege tables.
-
-  SYNOPSIS
-    acl_load()
-      thd     Current thread
-      tables  List containing open "mysql.host", "mysql.user" and
-              "mysql.db" tables.
-
-  RETURN VALUES
-    FALSE  Success
-    TRUE   Error
-*/
-
-static my_bool acl_load(THD *thd, TABLE_LIST *tables)
-{
-  TABLE *table;
-  READ_RECORD read_record_info;
-  my_bool return_val= 1;
-  bool check_no_resolve= specialflag & SPECIAL_NO_RESOLVE;
-  char tmp_name[NAME_LEN+1];
-  int password_length;
-  DBUG_ENTER("acl_load");
-
-  priv_version++; /* Privileges updated */
 
   acl_cache->clear(1);				// Clear locked hostname cache
+  thd->db= my_strdup("mysql",MYF(0));
+  thd->db_length=5;				// Safety
+  bzero((char*) &tables,sizeof(tables));
+  tables[0].alias=tables[0].real_name=(char*) "host";
+  tables[1].alias=tables[1].real_name=(char*) "user";
+  tables[2].alias=tables[2].real_name=(char*) "db";
+  tables[0].next=tables+1;
+  tables[1].next=tables+2;
+  tables[0].lock_type=tables[1].lock_type=tables[2].lock_type=TL_READ;
+  tables[0].db=tables[1].db=tables[2].db=thd->db;
 
+  uint counter;
+  if (open_tables(thd, tables, &counter))
+  {
+    sql_print_error("Fatal error: Can't open privilege tables: %s",
+		    thd->net.last_error);
+    goto end;
+  }
+  TABLE *ptr[3];				// Lock tables for quick update
+  ptr[0]= tables[0].table;
+  ptr[1]= tables[1].table;
+  ptr[2]= tables[2].table;
+  if (! (lock= mysql_lock_tables(thd, ptr, 3, 0)))
+  {
+    sql_print_error("Fatal error: Can't lock privilege tables: %s",
+		    thd->net.last_error);
+    goto end;
+  }
   init_sql_alloc(&mem, ACL_ALLOC_BLOCK_SIZE, 0);
   init_read_record(&read_record_info,thd,table= tables[0].table,NULL,1,0);
   VOID(my_init_dynamic_array(&acl_hosts,sizeof(ACL_HOST),20,50));
@@ -253,9 +241,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
 
   init_read_record(&read_record_info,thd,table=tables[1].table,NULL,1,0);
   VOID(my_init_dynamic_array(&acl_users,sizeof(ACL_USER),50,100));
-  password_length= table->field[2]->field_length /
-    table->field[2]->charset()->mbmaxlen;
-  if (password_length < SCRAMBLED_PASSWORD_CHAR_LENGTH_323)
+  if (table->field[2]->field_length < SCRAMBLED_PASSWORD_CHAR_LENGTH_323)
   {
     sql_print_error("Fatal error: mysql.user table is damaged or in "
                     "unsupported 3.20 format.");
@@ -263,10 +249,10 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   }
 
   DBUG_PRINT("info",("user table fields: %d, password length: %d",
-		     table->fields, password_length));
+		     table->fields, table->field[2]->field_length));
   
   pthread_mutex_lock(&LOCK_global_system_variables);
-  if (password_length < SCRAMBLED_PASSWORD_CHAR_LENGTH)
+  if (table->field[2]->field_length < SCRAMBLED_PASSWORD_CHAR_LENGTH)
   {
     if (opt_secure_auth)
     {
@@ -426,7 +412,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
                           "case that has been forced to lowercase because "
                           "lower_case_table_names is set. It will not be "
                           "possible to remove this privilege using REVOKE.",
-		          db.db, db.user, db.host.hostname);
+		          db.db, db.user, db.host.hostname, db.host.hostname);
       }
     }
     db.sort=get_sort(3,db.host.hostname,db.db,db.user);
@@ -445,10 +431,21 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   freeze_size(&acl_dbs);
   init_check_host();
 
+  mysql_unlock_tables(thd, lock);
   initialized=1;
+  thd->version--;				// Force close to free memory
   return_val=0;
 
 end:
+  close_thread_tables(thd);
+  delete thd;
+  if (org_thd)
+    org_thd->store_globals();			/* purecov: inspected */
+  else
+  {
+    /* Remember that we don't have a THD */
+    my_pthread_setspecific_ptr(THR_THD,  0);
+  }
   DBUG_RETURN(return_val);
 }
 
@@ -472,60 +469,26 @@ void acl_free(bool end)
 
 
 /*
-  Forget current user/db-level privileges and read new privileges
-  from the privilege tables.
+  Forget current privileges and read new privileges from the privilege tables
 
   SYNOPSIS
     acl_reload()
-      thd  Current thread
-
-  NOTE
-    All tables of calling thread which were open and locked by LOCK TABLES
-    statement will be unlocked and closed.
-    This function is also used for initialization of structures responsible
-    for user/db-level privilege checking.
-
-  RETURN VALUE
-    FALSE  Success
-    TRUE   Failure
+    thd			Thread handle (can be NULL)
 */
 
-my_bool acl_reload(THD *thd)
+void acl_reload(THD *thd)
 {
-  TABLE_LIST tables[3];
   DYNAMIC_ARRAY old_acl_hosts,old_acl_users,old_acl_dbs;
   MEM_ROOT old_mem;
   bool old_initialized;
-  my_bool return_val= 1;
   DBUG_ENTER("acl_reload");
 
-  if (thd->locked_tables)
+  if (thd && thd->locked_tables)
   {					// Can't have locked tables here
     thd->lock=thd->locked_tables;
     thd->locked_tables=0;
     close_thread_tables(thd);
   }
-
-  /*
-    To avoid deadlocks we should obtain table locks before
-    obtaining acl_cache->lock mutex.
-  */
-  bzero((char*) tables, sizeof(tables));
-  tables[0].alias=tables[0].real_name=(char*) "host";
-  tables[1].alias=tables[1].real_name=(char*) "user";
-  tables[2].alias=tables[2].real_name=(char*) "db";
-  tables[0].db=tables[1].db=tables[2].db= (char*) "mysql";
-  tables[0].next= tables+1;
-  tables[1].next= tables+2;
-  tables[0].lock_type=tables[1].lock_type=tables[2].lock_type=TL_READ;
-
-  if (simple_open_n_lock_tables(thd, tables))
-  {
-    sql_print_error("Fatal error: Can't open and lock privilege tables: %s",
-		    thd->net.last_error);
-    goto end;
-  }
-
   if ((old_initialized=initialized))
     VOID(pthread_mutex_lock(&acl_cache->lock));
 
@@ -536,7 +499,7 @@ my_bool acl_reload(THD *thd)
   delete_dynamic(&acl_wild_hosts);
   hash_free(&acl_check_hosts);
 
-  if ((return_val= acl_load(thd, tables)))
+  if (acl_init(thd, 0))
   {					// Error. Revert to old list
     DBUG_PRINT("error",("Reverting to old privileges"));
     acl_free();				/* purecov: inspected */
@@ -555,9 +518,7 @@ my_bool acl_reload(THD *thd)
   }
   if (old_initialized)
     VOID(pthread_mutex_unlock(&acl_cache->lock));
-end:
-  close_thread_tables(thd);
-  DBUG_RETURN(return_val);
+  DBUG_VOID_RETURN;
 }
 
 
@@ -896,8 +857,6 @@ static void acl_update_user(const char *user, const char *host,
 			    USER_RESOURCES  *mqh,
 			    ulong privileges)
 {
-  safe_mutex_assert_owner(&acl_cache->lock);
-
   for (uint i=0 ; i < acl_users.elements ; i++)
   {
     ACL_USER *acl_user=dynamic_element(&acl_users,i,ACL_USER*);
@@ -907,7 +866,7 @@ static void acl_update_user(const char *user, const char *host,
     {
       if (!acl_user->host.hostname && !host[0] ||
 	  acl_user->host.hostname &&
-	  !my_strcasecmp(system_charset_info, host, acl_user->host.hostname))
+	  !my_strcasecmp(&my_charset_latin1, host, acl_user->host.hostname))
       {
 	acl_user->access=privileges;
 	if (mqh->bits & 1)
@@ -946,9 +905,6 @@ static void acl_insert_user(const char *user, const char *host,
 			    ulong privileges)
 {
   ACL_USER acl_user;
-
-  safe_mutex_assert_owner(&acl_cache->lock);
-
   acl_user.user=*user ? strdup_root(&mem,user) : 0;
   update_hostname(&acl_user.host, *host ? strdup_root(&mem, host): 0);
   acl_user.access=privileges;
@@ -980,8 +936,6 @@ static void acl_insert_user(const char *user, const char *host,
 static void acl_update_db(const char *user, const char *host, const char *db,
 			  ulong privileges)
 {
-  safe_mutex_assert_owner(&acl_cache->lock);
-
   for (uint i=0 ; i < acl_dbs.elements ; i++)
   {
     ACL_DB *acl_db=dynamic_element(&acl_dbs,i,ACL_DB*);
@@ -991,7 +945,7 @@ static void acl_update_db(const char *user, const char *host, const char *db,
     {
       if (!acl_db->host.hostname && !host[0] ||
 	  acl_db->host.hostname &&
-	  !my_strcasecmp(system_charset_info, host, acl_db->host.hostname))
+	  !my_strcasecmp(&my_charset_latin1, host, acl_db->host.hostname))
       {
 	if (!acl_db->db && !db[0] ||
 	    acl_db->db && !strcmp(db,acl_db->db))
@@ -1137,7 +1091,7 @@ static void init_check_host(void)
   DBUG_ENTER("init_check_host");
   VOID(my_init_dynamic_array(&acl_wild_hosts,sizeof(struct acl_host_and_ip),
 			  acl_users.elements,1));
-  VOID(hash_init(&acl_check_hosts,system_charset_info,acl_users.elements,0,0,
+  VOID(hash_init(&acl_check_hosts,&my_charset_latin1,acl_users.elements,0,0,
 		 (hash_get_key) check_get_key,0,0));
   if (!allow_all_hosts)
   {
@@ -1153,14 +1107,14 @@ static void init_check_host(void)
 	{					// Check if host already exists
 	  acl_host_and_ip *acl=dynamic_element(&acl_wild_hosts,j,
 					       acl_host_and_ip *);
-	  if (!my_strcasecmp(system_charset_info,
+	  if (!my_strcasecmp(&my_charset_latin1,
                              acl_user->host.hostname, acl->hostname))
 	    break;				// already stored
 	}
 	if (j == acl_wild_hosts.elements)	// If new
 	  (void) push_dynamic(&acl_wild_hosts,(char*) &acl_user->host);
       }
-      else if (!hash_search(&acl_check_hosts,(byte*) acl_user->host.hostname,
+      else if (!hash_search(&acl_check_hosts,(byte*) &acl_user->host,
 			    (uint) strlen(acl_user->host.hostname)))
       {
 	if (my_hash_insert(&acl_check_hosts,(byte*) acl_user))
@@ -1234,7 +1188,7 @@ bool check_change_password(THD *thd, const char *host, const char *user,
   }
   if (!thd->slave_thread &&
       (strcmp(thd->user,user) ||
-       my_strcasecmp(system_charset_info, host, thd->priv_host)))
+       my_strcasecmp(&my_charset_latin1, host, thd->host_or_ip)))
   {
     if (check_access(thd, UPDATE_ACL, "mysql",0,1,0))
       return(1);
@@ -1275,13 +1229,7 @@ bool check_change_password(THD *thd, const char *host, const char *user,
 bool change_password(THD *thd, const char *host, const char *user,
 		     char *new_password)
 {
-  TABLE_LIST tables;
-  TABLE *table;
-  /* Buffer should be extended when password length is extended. */
-  char buff[512];
-  ulong query_length;
   uint new_password_len= strlen(new_password);
-  bool result= 1;
   DBUG_ENTER("change_password");
   DBUG_PRINT("enter",("host: '%s'  user: '%s'  new_password: '%s'",
 		      host,user,new_password));
@@ -1290,71 +1238,42 @@ bool change_password(THD *thd, const char *host, const char *user,
   if (check_change_password(thd, host, user, new_password, new_password_len))
     DBUG_RETURN(1);
 
-  bzero((char*) &tables, sizeof(tables));
-  tables.alias=tables.real_name= (char*) "user";
-  tables.db= (char*) "mysql";
-
-#ifdef HAVE_REPLICATION
-  /*
-    GRANT and REVOKE are applied the slave in/exclusion rules as they are
-    some kind of updates to the mysql.% tables.
-  */
-  if (thd->slave_thread && table_rules_on)
-  {
-    /*
-      The tables must be marked "updating" so that tables_ok() takes them into
-      account in tests.  It's ok to leave 'updating' set after tables_ok.
-    */
-    tables.updating= 1;
-    /* Thanks to bzero, tables.next==0 */
-    if (!tables_ok(0, &tables))
-      DBUG_RETURN(0);
-  }
-#endif
-
-  if (!(table= open_ltable(thd, &tables, TL_WRITE)))
-    DBUG_RETURN(1);
-
   VOID(pthread_mutex_lock(&acl_cache->lock));
   ACL_USER *acl_user;
-  if (!(acl_user= find_acl_user(host, user, TRUE)))
+  if (!(acl_user= find_acl_user(host, user)))
   {
     VOID(pthread_mutex_unlock(&acl_cache->lock));
     send_error(thd, ER_PASSWORD_NO_MATCH);
-    goto end;
+    DBUG_RETURN(1);
   }
   /* update loaded acl entry: */
   set_user_salt(acl_user, new_password, new_password_len);
 
-  if (update_user_table(thd, table,
+  if (update_user_table(thd,
 			acl_user->host.hostname ? acl_user->host.hostname : "",
 			acl_user->user ? acl_user->user : "",
 			new_password, new_password_len))
   {
     VOID(pthread_mutex_unlock(&acl_cache->lock)); /* purecov: deadcode */
     send_error(thd,0); /* purecov: deadcode */
-    goto end;
+    DBUG_RETURN(1); /* purecov: deadcode */
   }
 
   acl_cache->clear(1);				// Clear locked hostname cache
   VOID(pthread_mutex_unlock(&acl_cache->lock));
-  result= 0;
-  query_length=
+
+  char buff[512]; /* Extend with extended password length*/
+  ulong query_length=
     my_sprintf(buff,
 	       (buff,"SET PASSWORD FOR \"%-.120s\"@\"%-.120s\"=\"%-.120s\"",
 		acl_user->user ? acl_user->user : "",
 		acl_user->host.hostname ? acl_user->host.hostname : "",
 		new_password));
+  thd->clear_error();
   mysql_update_log.write(thd, buff, query_length);
-  if (mysql_bin_log.is_open())
-  {
-    thd->clear_error();
-    Query_log_event qinfo(thd, buff, query_length, 0, FALSE);
-    mysql_bin_log.write(&qinfo);
-  }
-end:
-  close_thread_tables(thd);
-  DBUG_RETURN(result);
+  Query_log_event qinfo(thd, buff, query_length, 0, FALSE);
+  mysql_bin_log.write(&qinfo);
+  DBUG_RETURN(0);
 }
 
 
@@ -1363,13 +1282,10 @@ end:
 */
 
 static ACL_USER *
-find_acl_user(const char *host, const char *user, my_bool exact)
+find_acl_user(const char *host, const char *user)
 {
   DBUG_ENTER("find_acl_user");
   DBUG_PRINT("enter",("host: '%s'  user: '%s'",host,user));
-
-  safe_mutex_assert_owner(&acl_cache->lock);
-
   for (uint i=0 ; i < acl_users.elements ; i++)
   {
     ACL_USER *acl_user=dynamic_element(&acl_users,i,ACL_USER*);
@@ -1382,10 +1298,7 @@ find_acl_user(const char *host, const char *user, my_bool exact)
     if (!acl_user->user && !user[0] ||
 	acl_user->user && !strcmp(user,acl_user->user))
     {
-      if (exact ? !my_strcasecmp(system_charset_info, host,
-                                 acl_user->host.hostname ?
-				 acl_user->host.hostname : "") :
-          compare_hostname(&acl_user->host,host,host))
+      if (compare_hostname(&acl_user->host,host,host))
       {
 	DBUG_RETURN(acl_user);
       }
@@ -1447,7 +1360,7 @@ static bool compare_hostname(const acl_host_and_ip *host, const char *hostname,
     return (tmp & host->ip_mask) == host->ip;
   }
   return (!host->hostname ||
-	  (hostname && !wild_case_compare(system_charset_info,
+	  (hostname && !wild_case_compare(&my_charset_latin1,
                                           hostname,host->hostname)) ||
 	  (ip && !wild_compare(ip,host->hostname,0)));
 }
@@ -1460,7 +1373,7 @@ bool hostname_requires_resolving(const char *hostname)
   int namelen= strlen(hostname);
   int lhlen= strlen(my_localhost);
   if ((namelen == lhlen) &&
-      !my_strnncoll(system_charset_info, (const uchar *)hostname,  namelen,
+      !my_strnncoll(&my_charset_latin1, (const uchar *)hostname,  namelen,
 		    (const uchar *)my_localhost, strlen(my_localhost)))
     return FALSE;
   for (; (cur=*hostname); hostname++)
@@ -1472,30 +1385,45 @@ bool hostname_requires_resolving(const char *hostname)
   return FALSE;
 }
 
-
 /*
-  Update record for user in mysql.user privilege table with new password.
-
-  SYNOPSIS
-    update_user_table()
-      thd               Thread handle
-      table             Pointer to TABLE object for open mysql.user table
-      host/user         Hostname/username pair identifying user for which
-                        new password should be set
-      new_password      New password
-      new_password_len  Length of new password
+  Update grants in the user and database privilege tables
 */
 
-static bool update_user_table(THD *thd, TABLE *table,
-                              const char *host, const char *user,
+static bool update_user_table(THD *thd, const char *host, const char *user,
 			      const char *new_password, uint new_password_len)
 {
-  int error;
+  TABLE_LIST tables;
+  TABLE *table;
+  bool error=1;
   DBUG_ENTER("update_user_table");
   DBUG_PRINT("enter",("user: %s  host: %s",user,host));
 
-  table->field[0]->store(host,(uint) strlen(host), system_charset_info);
-  table->field[1]->store(user,(uint) strlen(user), system_charset_info);
+  bzero((char*) &tables,sizeof(tables));
+  tables.alias=tables.real_name=(char*) "user";
+  tables.db=(char*) "mysql";
+
+#ifdef HAVE_REPLICATION
+  /*
+    GRANT and REVOKE are applied the slave in/exclusion rules as they are
+    some kind of updates to the mysql.% tables.
+  */
+  if (thd->slave_thread && table_rules_on)
+  {
+    /*
+      The tables must be marked "updating" so that tables_ok() takes them into
+      account in tests.  It's ok to leave 'updating' set after tables_ok.
+    */
+    tables.updating= 1;
+    /* Thanks to bzero, tables.next==0 */
+    if (!tables_ok(0, &tables))
+      DBUG_RETURN(0);
+  }
+#endif
+
+  if (!(table=open_ltable(thd,&tables,TL_WRITE)))
+    DBUG_RETURN(1); /* purecov: deadcode */
+  table->field[0]->store(host,(uint) strlen(host), &my_charset_latin1);
+  table->field[1]->store(user,(uint) strlen(user), &my_charset_latin1);
 
   table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
   if (table->file->index_read_idx(table->record[0],0,
@@ -1507,13 +1435,17 @@ static bool update_user_table(THD *thd, TABLE *table,
     DBUG_RETURN(1);				/* purecov: deadcode */
   }
   store_record(table,record[1]);
-  table->field[2]->store(new_password, new_password_len, system_charset_info);
+  table->field[2]->store(new_password, new_password_len, &my_charset_latin1);
   if ((error=table->file->update_row(table->record[1],table->record[0])))
   {
     table->file->print_error(error,MYF(0));	/* purecov: deadcode */
-    DBUG_RETURN(1);
+    goto end;					/* purecov: deadcode */
   }
-  DBUG_RETURN(0);
+  error=0;					// Record updated
+
+end:
+  close_thread_tables(thd);
+  DBUG_RETURN(error);
 }
 
 
@@ -1572,8 +1504,8 @@ static int replace_user_table(THD *thd, TABLE *table, const LEX_USER &combo,
     password=combo.password.str;
   }
 
-  table->field[0]->store(combo.host.str,combo.host.length, system_charset_info);
-  table->field[1]->store(combo.user.str,combo.user.length, system_charset_info);
+  table->field[0]->store(combo.host.str,combo.host.length, &my_charset_latin1);
+  table->field[1]->store(combo.user.str,combo.user.length, &my_charset_latin1);
   table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
   if (table->file->index_read_idx(table->record[0], 0,
 				  (byte*) table->field[0]->ptr,
@@ -1592,18 +1524,18 @@ static int replace_user_table(THD *thd, TABLE *table, const LEX_USER &combo,
     old_row_exists = 0;
     restore_record(table,default_values);       // cp empty row from default_values
     table->field[0]->store(combo.host.str,combo.host.length,
-                           system_charset_info);
+                           &my_charset_latin1);
     table->field[1]->store(combo.user.str,combo.user.length,
-                           system_charset_info);
+                           &my_charset_latin1);
     table->field[2]->store(password, password_len,
-                           system_charset_info);
+                           &my_charset_latin1);
   }
   else
   {
     old_row_exists = 1;
     store_record(table,record[1]);			// Save copy for update
     if (combo.password.str)			// If password given
-      table->field[2]->store(password, password_len, system_charset_info);
+      table->field[2]->store(password, password_len, &my_charset_latin1);
     else if (!rights && !revoke_grant && thd->lex->ssl_type == SSL_TYPE_NOT_SPECIFIED &&
 	     !thd->lex->mqh.bits)
     {
@@ -1650,15 +1582,15 @@ static int replace_user_table(THD *thd, TABLE *table, const LEX_USER &combo,
       if (thd->lex->ssl_cipher)
         table->field[next_field+1]->store(thd->lex->ssl_cipher,
                                           strlen(thd->lex->ssl_cipher),
-                                          system_charset_info);
+                                          &my_charset_latin1);
       if (thd->lex->x509_issuer)
         table->field[next_field+2]->store(thd->lex->x509_issuer,
                                           strlen(thd->lex->x509_issuer),
-                                          system_charset_info);
+                                          &my_charset_latin1);
       if (thd->lex->x509_subject)
         table->field[next_field+3]->store(thd->lex->x509_subject,
                                           strlen(thd->lex->x509_subject),
-                                          system_charset_info);
+                                          &my_charset_latin1);
       break;
     case SSL_TYPE_NOT_SPECIFIED:
       break;
@@ -1757,15 +1689,15 @@ static int replace_db_table(TABLE *table, const char *db,
   }
 
   /* Check if there is such a user in user table in memory? */
-  if (!find_acl_user(combo.host.str,combo.user.str, FALSE))
+  if (!find_acl_user(combo.host.str,combo.user.str))
   {
     my_error(ER_PASSWORD_NO_MATCH,MYF(0));
     DBUG_RETURN(-1);
   }
 
-  table->field[0]->store(combo.host.str,combo.host.length, system_charset_info);
-  table->field[1]->store(db,(uint) strlen(db), system_charset_info);
-  table->field[2]->store(combo.user.str,combo.user.length, system_charset_info);
+  table->field[0]->store(combo.host.str,combo.host.length, &my_charset_latin1);
+  table->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
+  table->field[2]->store(combo.user.str,combo.user.length, &my_charset_latin1);
   table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
   if (table->file->index_read_idx(table->record[0],0,
 				  (byte*) table->field[0]->ptr,
@@ -1779,9 +1711,9 @@ static int replace_db_table(TABLE *table, const char *db,
     }
     old_row_exists = 0;
     restore_record(table,default_values);			// cp empty row from default_values
-    table->field[0]->store(combo.host.str,combo.host.length, system_charset_info);
-    table->field[1]->store(db,(uint) strlen(db), system_charset_info);
-    table->field[2]->store(combo.user.str,combo.user.length, system_charset_info);
+    table->field[0]->store(combo.host.str,combo.host.length, &my_charset_latin1);
+    table->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
+    table->field[2]->store(combo.user.str,combo.user.length, &my_charset_latin1);
   }
   else
   {
@@ -1893,7 +1825,7 @@ GRANT_TABLE::GRANT_TABLE(const char *h, const char *d,const char *u,
   key_length =(uint) strlen(d)+(uint) strlen(u)+(uint) strlen(t)+3;
   hash_key = (char*) alloc_root(&memex,key_length);
   strmov(strmov(strmov(hash_key,user)+1,db)+1,tname);
-  (void) hash_init(&hash_columns,system_charset_info,
+  (void) hash_init(&hash_columns,&my_charset_latin1,
                    0,0,0, (hash_get_key) get_key_column,0,0);
 }
 
@@ -1929,17 +1861,17 @@ GRANT_TABLE::GRANT_TABLE(TABLE *form, TABLE *col_privs)
   privs = fix_rights_for_table(privs);
   cols =  fix_rights_for_column(cols);
 
-  (void) hash_init(&hash_columns,system_charset_info,
+  (void) hash_init(&hash_columns,&my_charset_latin1,
                    0,0,0, (hash_get_key) get_key_column,0,0);
   if (cols)
   {
     int key_len;
     col_privs->field[0]->store(host.hostname,
                                host.hostname ? (uint) strlen(host.hostname) : 0,
-                               system_charset_info);
-    col_privs->field[1]->store(db,(uint) strlen(db), system_charset_info);
-    col_privs->field[2]->store(user,(uint) strlen(user), system_charset_info);
-    col_privs->field[3]->store(tname,(uint) strlen(tname), system_charset_info);
+                               &my_charset_latin1);
+    col_privs->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
+    col_privs->field[2]->store(user,(uint) strlen(user), &my_charset_latin1);
+    col_privs->field[3]->store(tname,(uint) strlen(tname), &my_charset_latin1);
     key_len=(col_privs->field[0]->pack_length()+
              col_privs->field[1]->pack_length()+
              col_privs->field[2]->pack_length()+
@@ -2001,22 +1933,18 @@ static GRANT_TABLE *table_hash_search(const char *host,const char* ip,
   char helping [NAME_LEN*2+USERNAME_LENGTH+3];
   uint len;
   GRANT_TABLE *grant_table,*found=0;
-  HASH_SEARCH_STATE state;
 
   len  = (uint) (strmov(strmov(strmov(helping,user)+1,db)+1,tname)-helping)+ 1;
-  for (grant_table=(GRANT_TABLE*) hash_first(&column_priv_hash,
-                                             (byte*) helping,
-                                             len, &state) ;
+  for (grant_table=(GRANT_TABLE*) hash_search(&column_priv_hash,
+					      (byte*) helping,
+					      len) ;
        grant_table ;
        grant_table= (GRANT_TABLE*) hash_next(&column_priv_hash,(byte*) helping,
-                                             len, &state))
+					     len))
   {
     if (exact)
     {
-      if ((host &&
-	   !my_strcasecmp(system_charset_info, host,
-                          grant_table->host.hostname)) ||
-	  (ip && !strcmp(ip, grant_table->host.hostname)))
+      if (compare_hostname(&grant_table->host, host, ip))
 	return grant_table;
     }
     else
@@ -2049,10 +1977,10 @@ static int replace_column_table(GRANT_TABLE *g_t,
   byte key[MAX_KEY_LENGTH];
   DBUG_ENTER("replace_column_table");
 
-  table->field[0]->store(combo.host.str,combo.host.length, system_charset_info);
-  table->field[1]->store(db,(uint) strlen(db), system_charset_info);
-  table->field[2]->store(combo.user.str,combo.user.length, system_charset_info);
-  table->field[3]->store(table_name,(uint) strlen(table_name), system_charset_info);
+  table->field[0]->store(combo.host.str,combo.host.length, &my_charset_latin1);
+  table->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
+  table->field[2]->store(combo.user.str,combo.user.length, &my_charset_latin1);
+  table->field[3]->store(table_name,(uint) strlen(table_name), &my_charset_latin1);
   key_length=(table->field[0]->pack_length()+ table->field[1]->pack_length()+
 	      table->field[2]->pack_length()+ table->field[3]->pack_length());
   key_copy(key,table,0,key_length);
@@ -2070,7 +1998,7 @@ static int replace_column_table(GRANT_TABLE *g_t,
     bool old_row_exists=0;
     key_restore(table,key,0,key_length);
     table->field[4]->store(xx->column.ptr(),xx->column.length(),
-                           system_charset_info);
+                           &my_charset_latin1);
 
     table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
     if (table->file->index_read(table->record[0],(byte*) table->field[0]->ptr,
@@ -2088,7 +2016,7 @@ static int replace_column_table(GRANT_TABLE *g_t,
       restore_record(table,default_values);		// Get empty record
       key_restore(table,key,0,key_length);
       table->field[4]->store(xx->column.ptr(),xx->column.length(),
-                             system_charset_info);
+                             &my_charset_latin1);
     }
     else
     {
@@ -2160,8 +2088,7 @@ static int replace_column_table(GRANT_TABLE *g_t,
       {
 	GRANT_COLUMN *grant_column = NULL;
 	char  colum_name_buf[HOSTNAME_LENGTH+1];
-	String column_name(colum_name_buf,sizeof(colum_name_buf),
-                           system_charset_info);
+	String column_name(colum_name_buf,sizeof(colum_name_buf),&my_charset_latin1);
 
 	privileges&= ~rights;
 	table->field[6]->store((longlong)
@@ -2224,17 +2151,17 @@ static int replace_table_table(THD *thd, GRANT_TABLE *grant_table,
     The following should always succeed as new users are created before
     this function is called!
   */
-  if (!find_acl_user(combo.host.str,combo.user.str, FALSE))
+  if (!find_acl_user(combo.host.str,combo.user.str))
   {
     my_error(ER_PASSWORD_NO_MATCH,MYF(0));	/* purecov: deadcode */
     DBUG_RETURN(-1);				/* purecov: deadcode */
   }
 
   restore_record(table,default_values);			// Get empty record
-  table->field[0]->store(combo.host.str,combo.host.length, system_charset_info);
-  table->field[1]->store(db,(uint) strlen(db), system_charset_info);
-  table->field[2]->store(combo.user.str,combo.user.length, system_charset_info);
-  table->field[3]->store(table_name,(uint) strlen(table_name), system_charset_info);
+  table->field[0]->store(combo.host.str,combo.host.length, &my_charset_latin1);
+  table->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
+  table->field[2]->store(combo.user.str,combo.user.length, &my_charset_latin1);
+  table->field[3]->store(table_name,(uint) strlen(table_name), &my_charset_latin1);
   store_record(table,record[1]);			// store at pos 1
   table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
   if (table->file->index_read_idx(table->record[0],0,
@@ -2279,7 +2206,7 @@ static int replace_table_table(THD *thd, GRANT_TABLE *grant_table,
     }
   }
 
-  table->field[4]->store(grantor,(uint) strlen(grantor), system_charset_info);
+  table->field[4]->store(grantor,(uint) strlen(grantor), &my_charset_latin1);
   table->field[6]->store((longlong) store_table_rights);
   table->field[7]->store((longlong) store_col_rights);
   rights=fix_rights_for_table(store_table_rights);
@@ -2457,7 +2384,6 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
     create_new_users= test_if_create_new_users(thd);
   int result=0;
   rw_wrlock(&LOCK_grant);
-  pthread_mutex_lock(&acl_cache->lock);
   MEM_ROOT *old_root= thd->mem_root;
   thd->mem_root= &memex;
 
@@ -2473,8 +2399,10 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
       continue;
     }
     /* Create user if needed */
+    pthread_mutex_lock(&acl_cache->lock);
     error=replace_user_table(thd, tables[0].table, *Str,
 			     0, revoke_grant, create_new_users);
+    pthread_mutex_unlock(&acl_cache->lock);
     if (error)
     {
       result= -1;				// Remember error
@@ -2563,7 +2491,6 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
   }
   grant_option=TRUE;
   thd->mem_root= old_root;
-  pthread_mutex_unlock(&acl_cache->lock);
   rw_unlock(&LOCK_grant);
   if (!result)
     send_ok(thd);
@@ -2690,65 +2617,50 @@ void  grant_free(void)
 }
 
 
-/*
-  Initialize structures responsible for table/column-level privilege checking
-  and load information for them from tables in the 'mysql' database.
+/* Init grant array if possible */
 
-  SYNOPSIS
-    grant_init()
-
-  RETURN VALUES
-    0	ok
-    1	Could not initialize grant's
-*/
-
-my_bool grant_init()
+my_bool grant_init(THD *org_thd)
 {
   THD  *thd;
-  my_bool return_val;
-  DBUG_ENTER("grant_init");
-
-  if (!(thd= new THD))
-    DBUG_RETURN(1);				/* purecov: deadcode */
-  thd->store_globals();
-  return_val=  grant_reload(thd);
-  delete thd;
-  /* Remember that we don't have a THD */
-  my_pthread_setspecific_ptr(THR_THD,  0);
-  DBUG_RETURN(return_val);
-}
-
-
-/*
-  Initialize structures responsible for table/column-level privilege
-  checking and load information about grants from open privilege tables.
-
-  SYNOPSIS
-    grant_load()
-      thd     Current thread
-      tables  List containing open "mysql.tables_priv" and
-              "mysql.columns_priv" tables.
-
-  RETURN VALUES
-    FALSE - success
-    TRUE  - error
-*/
-
-static my_bool grant_load(TABLE_LIST *tables)
-{
+  TABLE_LIST tables[2];
+  MYSQL_LOCK *lock;
   MEM_ROOT *memex_ptr;
   my_bool return_val= 1;
   TABLE *t_table, *c_table;
   bool check_no_resolve= specialflag & SPECIAL_NO_RESOLVE;
-  MEM_ROOT **save_mem_root_ptr= my_pthread_getspecific_ptr(MEM_ROOT**,
-                                                           THR_MALLOC);
-  DBUG_ENTER("grant_load");
+  DBUG_ENTER("grant_init");
 
   grant_option = FALSE;
-  (void) hash_init(&column_priv_hash,system_charset_info,
+  (void) hash_init(&column_priv_hash,&my_charset_latin1,
 		   0,0,0, (hash_get_key) get_grant_table,
 		   (hash_free_key) free_grant_table,0);
   init_sql_alloc(&memex, ACL_ALLOC_BLOCK_SIZE, 0);
+
+  /* Don't do anything if running with --skip-grant */
+  if (!initialized)
+    DBUG_RETURN(0);				/* purecov: tested */
+
+  if (!(thd=new THD))
+    DBUG_RETURN(1);				/* purecov: deadcode */
+  thd->store_globals();
+  thd->db= my_strdup("mysql",MYF(0));
+  thd->db_length=5;				// Safety
+  bzero((char*) &tables, sizeof(tables));
+  tables[0].alias=tables[0].real_name= (char*) "tables_priv";
+  tables[1].alias=tables[1].real_name= (char*) "columns_priv";
+  tables[0].next=tables+1;
+  tables[0].lock_type=tables[1].lock_type=TL_READ;
+  tables[0].db=tables[1].db=thd->db;
+
+  uint counter;
+  if (open_tables(thd, tables, &counter))
+    goto end;
+
+  TABLE *ptr[2];				// Lock tables for quick update
+  ptr[0]= tables[0].table;
+  ptr[1]= tables[1].table;
+  if (! (lock= mysql_lock_tables(thd, ptr, 2, 0)))
+    goto end;
 
   t_table = tables[0].table; c_table = tables[1].table;
   t_table->file->ha_index_init(0);
@@ -2759,6 +2671,7 @@ static my_bool grant_load(TABLE_LIST *tables)
   }
   grant_option= TRUE;
 
+  /* Will be restored by org_thd->store_globals() */
   memex_ptr= &memex;
   my_pthread_setspecific_ptr(THR_MALLOC, &memex_ptr);
   do
@@ -2778,7 +2691,7 @@ static my_bool grant_load(TABLE_LIST *tables)
         sql_print_warning("'tables_priv' entry '%s %s@%s' "
                           "ignored in --skip-name-resolve mode.",
                           mem_check->tname, mem_check->user,
-                          mem_check->host.hostname);
+                          mem_check->host);
 	continue;
       }
     }
@@ -2795,55 +2708,40 @@ static my_bool grant_load(TABLE_LIST *tables)
 
 end_unlock:
   t_table->file->ha_index_end();
-  my_pthread_setspecific_ptr(THR_MALLOC, save_mem_root_ptr);
+  mysql_unlock_tables(thd, lock);
+  thd->version--;				// Force close to free memory
+
+end:
+  close_thread_tables(thd);
+  delete thd;
+  if (org_thd)
+    org_thd->store_globals();
+  else
+  {
+    /* Remember that we don't have a THD */
+    my_pthread_setspecific_ptr(THR_THD,  0);
+  }
   DBUG_RETURN(return_val);
 }
 
 
 /*
-  Reload information about table and column level privileges if possible.
+ Reload grant array (table and column privileges) if possible
 
   SYNOPSIS
     grant_reload()
-      thd  Current thread
+    thd			Thread handler (can be NULL)
 
   NOTES
-    Locked tables are checked by acl_reload() and doesn't have to be checked
-    in this call.
-    This function is also used for initialization of structures responsible
-    for table/column-level privilege checking.
-
-  RETURN VALUE
-    FALSE Success
-    TRUE  Error
+    Locked tables are checked by acl_init and doesn't have to be checked here
 */
 
-my_bool grant_reload(THD *thd)
+void grant_reload(THD *thd)
 {
-  TABLE_LIST tables[2];
   HASH old_column_priv_hash;
   bool old_grant_option;
   MEM_ROOT old_mem;
-  my_bool return_val= 1;
   DBUG_ENTER("grant_reload");
-
-  /* Don't do anything if running with --skip-grant-tables */
-  if (!initialized)
-    DBUG_RETURN(0);
-
-  bzero((char*) tables, sizeof(tables));
-  tables[0].alias=tables[0].real_name= (char*) "tables_priv";
-  tables[1].alias=tables[1].real_name= (char*) "columns_priv";
-  tables[0].db=tables[1].db= (char *) "mysql";
-  tables[0].next=tables+1;
-  tables[0].lock_type=tables[1].lock_type=TL_READ;
-
-  /*
-    To avoid deadlocks we should obtain table locks before
-    obtaining LOCK_grant rwlock.
-  */
-  if (simple_open_n_lock_tables(thd, tables))
-    goto end;
 
   rw_wrlock(&LOCK_grant);
   grant_version++;
@@ -2851,7 +2749,7 @@ my_bool grant_reload(THD *thd)
   old_grant_option= grant_option;
   old_mem= memex;
 
-  if ((return_val= grant_load(tables)))
+  if (grant_init(thd))
   {						// Error. Revert to old hash
     DBUG_PRINT("error",("Reverting to old privileges"));
     grant_free();				/* purecov: deadcode */
@@ -2865,9 +2763,7 @@ my_bool grant_reload(THD *thd)
     free_root(&old_mem,MYF(0));
   }
   rw_unlock(&LOCK_grant);
-end:
-  close_thread_tables(thd);
-  DBUG_RETURN(return_val);
+  DBUG_VOID_RETURN;
 }
 
 
@@ -3215,9 +3111,6 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
     DBUG_RETURN(-1);
   }
 
-  rw_rdlock(&LOCK_grant);
-  VOID(pthread_mutex_lock(&acl_cache->lock));
-
   for (counter=0 ; counter < acl_users.elements ; counter++)
   {
     const char *user,*host;
@@ -3227,14 +3120,11 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
     if (!(host=acl_user->host.hostname))
       host= "";
     if (!strcmp(lex_user->user.str,user) &&
-	!my_strcasecmp(system_charset_info, lex_user->host.str, host))
+	!my_strcasecmp(&my_charset_latin1, lex_user->host.str, host))
       break;
   }
   if (counter == acl_users.elements)
   {
-    VOID(pthread_mutex_unlock(&acl_cache->lock));
-    rw_unlock(&LOCK_grant);
-
     my_error(ER_NONEXISTING_GRANT, MYF(0),
              lex_user->user.str, lex_user->host.str);
     DBUG_RETURN(-1);
@@ -3248,12 +3138,10 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	  lex_user->host.str,NullS);
   field_list.push_back(field);
   if (protocol->send_fields(&field_list,1))
-  {
-    VOID(pthread_mutex_unlock(&acl_cache->lock));
-    rw_unlock(&LOCK_grant);
-
     DBUG_RETURN(-1);
-  }
+
+  rw_wrlock(&LOCK_grant);
+  VOID(pthread_mutex_lock(&acl_cache->lock));
 
   /* Add first global access grants */
   {
@@ -3366,7 +3254,7 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
       host= "";
 
     if (!strcmp(lex_user->user.str,user) &&
-	!my_strcasecmp(system_charset_info, lex_user->host.str, host))
+	!my_strcasecmp(&my_charset_latin1, lex_user->host.str, host))
     {
       want_access=acl_db->access;
       if (want_access)
@@ -3426,7 +3314,7 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
       user= "";
 
     if (!strcmp(lex_user->user.str,user) &&
-	!my_strcasecmp(system_charset_info, lex_user->host.str,
+	!my_strcasecmp(&my_charset_latin1, lex_user->host.str,
                        grant_table->host.hostname))
     {
       ulong table_access= grant_table->privs;
@@ -3560,15 +3448,10 @@ void get_privilege_desc(char *to, uint max_length, ulong access)
 void get_mqh(const char *user, const char *host, USER_CONN *uc)
 {
   ACL_USER *acl_user;
-
-  pthread_mutex_lock(&acl_cache->lock);
-
-  if (initialized && (acl_user= find_acl_user(host,user, FALSE)))
+  if (initialized && (acl_user= find_acl_user(host,user)))
     uc->user_resources= acl_user->user_resource;
   else
     bzero((char*) &uc->user_resources, sizeof(uc->user_resources));
-
-  pthread_mutex_unlock(&acl_cache->lock);
 }
 
 int open_grant_tables(THD *thd, TABLE_LIST *tables)
@@ -3627,8 +3510,6 @@ ACL_USER *check_acl_user(LEX_USER *user_name,
   ACL_USER *acl_user= 0;
   uint counter;
 
-  safe_mutex_assert_owner(&acl_cache->lock);
-
   for (counter= 0 ; counter < acl_users.elements ; counter++)
   {
     const char *user,*host;
@@ -3636,7 +3517,7 @@ ACL_USER *check_acl_user(LEX_USER *user_name,
     if (!(user=acl_user->user))
       user= "";
     if (!(host=acl_user->host.hostname))
-      host= "";
+      host= "%";
     if (!strcmp(user_name->user.str,user) &&
 	!my_strcasecmp(system_charset_info, user_name->host.str, host))
       break;
@@ -3671,11 +3552,17 @@ int mysql_drop_user(THD *thd, List <LEX_USER> &list)
   {
     if (!(acl_user= check_acl_user(user_name, &counter)))
     {
+      sql_print_error("DROP USER: Can't drop user: '%s'@'%s'; No such user",
+		      user_name->user.str,
+		      user_name->host.str);
       result= -1;
       continue;
     }
     if ((acl_user->access & ~0))
     {
+      sql_print_error("DROP USER: Can't drop user: '%s'@'%s'; Global privileges exists",
+		      user_name->user.str,
+		      user_name->host.str);
       result= -1;
       continue;
     }
@@ -3696,6 +3583,9 @@ int mysql_drop_user(THD *thd, List <LEX_USER> &list)
     }
     if (counter != acl_dbs.elements)
     {
+      sql_print_error("DROP USER: Can't drop user: '%s'@'%s'; Database privileges exists",
+		      user_name->user.str,
+		      user_name->host.str);
       result= -1;
       continue;
     }
@@ -3716,6 +3606,9 @@ int mysql_drop_user(THD *thd, List <LEX_USER> &list)
     }
     if (counter != column_priv_hash.records)
     {
+      sql_print_error("DROP USER: Can't drop user: '%s'@'%s';  Table privileges exists",
+		      user_name->user.str,
+		      user_name->host.str);
       result= -1;
       continue;
     }
@@ -3739,25 +3632,17 @@ int mysql_drop_user(THD *thd, List <LEX_USER> &list)
 						     record[0])))
       {
 	tables[0].table->file->print_error(error, MYF(0));
-	result= -1;
-	goto end;
+	DBUG_RETURN(-1);
       }
       delete_dynamic_element(&acl_users, acl_userd);
     }
   }
 
-  if (result)
-    my_error(ER_DROP_USER, MYF(0));
-
-end:
-  /* Reload acl_check_hosts as its memory is mapped to acl_user */
-  delete_dynamic(&acl_wild_hosts);
-  hash_free(&acl_check_hosts);
-  init_check_host();
-
   VOID(pthread_mutex_unlock(&acl_cache->lock));
   rw_unlock(&LOCK_grant);
   close_thread_tables(thd);
+  if (result)
+    my_error(ER_DROP_USER, MYF(0));
   DBUG_RETURN(result);
 }
 
@@ -3781,6 +3666,9 @@ int mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
   {
     if (!check_acl_user(lex_user, &counter))
     {
+      sql_print_error("REVOKE ALL PRIVILEGES, GRANT: User '%s'@'%s' not exists",
+		      lex_user->user.str,
+		      lex_user->host.str);
       result= -1;
       continue;
     }

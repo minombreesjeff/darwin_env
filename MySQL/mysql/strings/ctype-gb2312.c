@@ -5651,7 +5651,7 @@ my_wc_mb_gb2312(CHARSET_INFO *cs  __attribute__((unused)),
     return MY_CS_ILUNI;
   
   if (s+2>e)
-    return MY_CS_TOOSMALL2;
+    return MY_CS_TOOSMALL;
   
   code|=0x8080;
   s[0]=code>>8;
@@ -5668,7 +5668,7 @@ my_mb_wc_gb2312(CHARSET_INFO *cs  __attribute__((unused)),
   hi=(int) s[0];
   
   if (s >= e)
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOFEW(0);
   
   if (hi<0x80)
   {
@@ -5677,47 +5677,12 @@ my_mb_wc_gb2312(CHARSET_INFO *cs  __attribute__((unused)),
   }
   
   if (s+2>e)
-    return MY_CS_TOOSMALL2;
+    return MY_CS_TOOFEW(0);
   
   if (!(pwc[0]=func_gb2312_uni_onechar(((hi<<8)+s[1])&0x7F7F)))
-    return -2;
+    return MY_CS_ILSEQ;
   
   return 2;
-}
-
-
-/*
-  Returns well formed length of a EUC-KR string.
-*/
-static uint
-my_well_formed_len_gb2312(CHARSET_INFO *cs __attribute__((unused)),
-                          const char *b, const char *e,
-                          uint pos, int *error)
-{
-  const char *b0= b;
-  const char *emb= e - 1; /* Last possible end of an MB character */
-
-  *error= 0;
-  while (pos-- && b < e)
-  {
-    if ((uchar) b[0] < 128)
-    {
-      /* Single byte ascii character */
-      b++;
-    }
-    else  if (b < emb && isgb2312head(*b) && isgb2312tail(b[1]))
-    {
-      /* Double byte character */
-      b+= 2;
-    }
-    else
-    {
-      /* Wrong byte sequence */
-      *error= 1;
-      break;
-    }
-  }
-  return (uint) (b - b0);
 }
 
 
@@ -5741,7 +5706,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
   mbcharlen_gb2312,
   my_numchars_mb,
   my_charpos_mb,
-  my_well_formed_len_gb2312,
+  my_well_formed_len_mb,
   my_lengthsp_8bit,
   my_numcells_8bit,
   my_mb_wc_gb2312,	/* mb_wc      */
@@ -5787,7 +5752,6 @@ CHARSET_INFO my_charset_gb2312_chinese_ci=
     2,			/* mbmaxlen   */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -5815,7 +5779,6 @@ CHARSET_INFO my_charset_gb2312_bin=
     2,			/* mbmaxlen   */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler
 };

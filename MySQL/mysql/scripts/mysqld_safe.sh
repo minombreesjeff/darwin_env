@@ -11,7 +11,6 @@
 # executing mysqld_safe
 
 KILL_MYSQLD=1;
-MYSQLD=
 
 trap '' 1 2 3 15			# we shouldn't let anyone kill us
 
@@ -23,31 +22,6 @@ case "$1" in
       defaults="$1"; shift
       ;;
 esac
-
-usage () {
-        cat <<EOF
-Usage: $0 [OPTIONS]
-  --no-defaults              Don't read the system defaults file
-  --defaults-file=FILE       Use the specified defaults file
-  --defaults-extra-file=FILE Also use defaults from the specified file
-  --ledir=DIRECTORY          Look for mysqld in the specified directory
-  --err-log=FILE             Obsolete, use '--log-error'
-  --log-error=FILE           Log errors to the specified log file
-  --open-files=LIMIT         Obsolete, use '--open-files-limit'
-  --open-files-limit=LIMIT   Limit the number of open files
-  --core-file-size=LIMIT     Limit core files to the specified size
-  --timezone=TZ              Set the system timezone
-  --mysqld=FILE              Use the specified file as mysqld
-  --mysqld-version=VERSION   Use "mysqld-VERSION" as mysqld
-  --nice=NICE                Set the scheduling priority of mysqld
-  --skip-kill-mysqld         Don't try to kill stray mysqld processes
-
-All other options are passed to the mysqld program.
-
-EOF
-        exit 1
-}
-
 
 parse_arguments() {
   # We only need to pass arguments through to the server if we don't
@@ -97,9 +71,6 @@ parse_arguments() {
 	fi
 	;;
       --nice=*) niceness=`echo "$arg" | sed -e "s;--nice=;;"` ;;
-      --help)
-        usage
-        ;;
       *)
         if test -n "$pick_args"
         then
@@ -113,51 +84,41 @@ parse_arguments() {
 }
 
 
-#
-# First, try to find BASEDIR and ledir (where mysqld is)
-# 
-
 MY_PWD=`pwd`
-# Check for the directories we would expect from a binary release install
-if test -f ./share/mysql/english/errmsg.sys -a -x ./bin/mysqld
+# Check if we are starting this relative (for the binary release)
+if test -f ./share/mysql/english/errmsg.sys -a \
+ -x ./bin/mysqld
 then
   MY_BASEDIR_VERSION=$MY_PWD		# Where bin, share and data are
   ledir=$MY_BASEDIR_VERSION/bin		# Where mysqld is
-# Check for the directories we would expect from a source install
+  DATADIR=$MY_BASEDIR_VERSION/data
+  if test -z "$defaults"
+  then
+    defaults="--defaults-extra-file=$MY_BASEDIR_VERSION/data/my.cnf"
+  fi
+# Check if this is a 'moved install directory'
 elif test -f ./share/mysql/english/errmsg.sys -a \
  -x ./libexec/mysqld
 then
   MY_BASEDIR_VERSION=$MY_PWD		# Where libexec, share and var are
   ledir=$MY_BASEDIR_VERSION/libexec	# Where mysqld is
-# Since we didn't find anything, used the compiled-in defaults
+  DATADIR=$MY_BASEDIR_VERSION/var
 else
   MY_BASEDIR_VERSION=@prefix@
-  ledir=@libexecdir@
-fi
-
-#
-# Second, try to find the data directory
-#
-
-# Try where the binary installs put it
-if test -d $MY_BASEDIR_VERSION/data/mysql
-then
-  DATADIR=$MY_BASEDIR_VERSION/data
-  if test -z "$defaults"
-  then
-    defaults="--defaults-extra-file=$DATADIR/my.cnf"
-  fi
-# Next try where the source installs put it
-elif test -d $MY_BASEDIR_VERSION/var/mysql
-then
-  DATADIR=$MY_BASEDIR_VERSION/var
-# Or just give up and use our compiled-in default
-else
   DATADIR=@localstatedir@
+  ledir=@libexecdir@
 fi
 
 user=@MYSQLD_USER@
 niceness=0
+
+# Use the mysqld-max binary by default if the user doesn't specify a binary
+if test -x $ledir/mysqld-max
+then
+  MYSQLD=mysqld-max
+else
+  MYSQLD=mysqld
+fi
 
 # these rely on $DATADIR by default, so we'll set them later on
 pid_file=
@@ -197,16 +158,6 @@ then
   chown $user $mysql_unix_port_dir
 fi
 
-# Use the mysqld-max binary by default if the user doesn't specify a binary
-if test -z "$MYSQLD"
-then
-  if test -x $ledir/mysqld-max
-  then
-    MYSQLD=mysqld-max
-  else
-    MYSQLD=mysqld
-  fi
-fi
 
 if test ! -x $ledir/$MYSQLD
 then

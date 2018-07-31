@@ -109,7 +109,7 @@ int list_walk(LIST *list, list_walk_action action, gptr argument)
   {
     if ((error = (*action)(list->data,argument)))
       return error;
-    list=list_rest(list);
+    list=rest(list);
   }
   return 0;
 }

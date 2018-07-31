@@ -1,5 +1,4 @@
-noinst_LIBRARIES = libmygcc.a
-libmygcc_a_SOURCES = gcc.cpp
+noinst_HEADERS = gcc.cpp
 
 noinst_LTLIBRARIES = libportlib.la
 

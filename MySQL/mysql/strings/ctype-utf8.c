@@ -1557,7 +1557,7 @@ int my_wildcmp_unicode(CHARSET_INFO *cs,
       }
 
       wildstr+= scan;
-      if (w_wc ==  (my_wc_t)escape && wildstr < wildend)
+      if (w_wc ==  (my_wc_t)escape)
       {
         if ((scan= mb_wc(cs, &w_wc, (const uchar*)wildstr,
                          (const uchar*)wildend)) <= 0)
@@ -1629,17 +1629,13 @@ int my_wildcmp_unicode(CHARSET_INFO *cs,
       if ((scan= mb_wc(cs, &w_wc, (const uchar*)wildstr,
                        (const uchar*)wildend)) <=0)
         return 1;
-      wildstr+= scan;
       
       if (w_wc ==  (my_wc_t)escape)
       {
-        if (wildstr < wildend)
-        {
-          if ((scan= mb_wc(cs, &w_wc, (const uchar*)wildstr,
-                           (const uchar*)wildend)) <=0)
-            return 1;
-          wildstr+= scan;
-        }
+        wildstr+= scan;
+        if ((scan= mb_wc(cs, &w_wc, (const uchar*)wildstr,
+                         (const uchar*)wildend)) <=0)
+          return 1;
       }
       
       while (1)
@@ -1665,12 +1661,14 @@ int my_wildcmp_unicode(CHARSET_INFO *cs,
         if (str == str_end)
           return -1;
         
-        str+= scan;
         result= my_wildcmp_unicode(cs, str, str_end, wildstr, wildend,
                                    escape, w_one, w_many,
                                    weights);
+        
         if (result <= 0)
           return result;
+        
+        str+= scan;
       } 
     }
   }
@@ -1765,7 +1763,7 @@ static int my_utf8_uni(CHARSET_INFO *cs __attribute__((unused)),
   unsigned char c;
 
   if (s >= e)
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOFEW(0);
 
   c= s[0];
   if (c < 0x80)
@@ -1778,7 +1776,7 @@ static int my_utf8_uni(CHARSET_INFO *cs __attribute__((unused)),
   else if (c < 0xe0)
   {
     if (s+2 > e) /* We need 2 characters */
-      return MY_CS_TOOSMALL2;
+      return MY_CS_TOOFEW(0);
 
     if (!((s[1] ^ 0x80) < 0x40))
       return MY_CS_ILSEQ;
@@ -1789,7 +1787,7 @@ static int my_utf8_uni(CHARSET_INFO *cs __attribute__((unused)),
   else if (c < 0xf0)
   {
     if (s+3 > e) /* We need 3 characters */
-      return MY_CS_TOOSMALL3;
+      return MY_CS_TOOFEW(0);
 
     if (!((s[1] ^ 0x80) < 0x40 && (s[2] ^ 0x80) < 0x40 && (c >= 0xe1 || s[1] >= 0xa0)))
       return MY_CS_ILSEQ;
@@ -1804,7 +1802,7 @@ static int my_utf8_uni(CHARSET_INFO *cs __attribute__((unused)),
   else if (c < 0xf8 && sizeof(my_wc_t)*8 >= 32)
   {
     if (s+4 > e) /* We need 4 characters */
-      return MY_CS_TOOSMALL4;
+      return MY_CS_TOOFEW(0);
 
     if (!((s[1] ^ 0x80) < 0x40 &&
           (s[2] ^ 0x80) < 0x40 &&
@@ -1822,7 +1820,7 @@ static int my_utf8_uni(CHARSET_INFO *cs __attribute__((unused)),
    else if (c < 0xfc && sizeof(my_wc_t)*8 >= 32)
   {
     if (s+5 >e) /* We need 5 characters */
-      return MY_CS_TOOSMALL5;
+      return MY_CS_TOOFEW(0);
 
     if (!((s[1] ^ 0x80) < 0x40 &&
           (s[2] ^ 0x80) < 0x40 &&
@@ -1841,7 +1839,7 @@ static int my_utf8_uni(CHARSET_INFO *cs __attribute__((unused)),
   else if (c < 0xfe && sizeof(my_wc_t)*8 >= 32)
   {
     if ( s+6 >e ) /* We need 6 characters */
-      return MY_CS_TOOSMALL6;
+      return MY_CS_TOOFEW(0);
 
     if (!((s[1] ^ 0x80) < 0x40   &&
           (s[2] ^ 0x80) < 0x40   &&
@@ -1892,7 +1890,7 @@ static int my_uni_utf8 (CHARSET_INFO *cs __attribute__((unused)) ,
     Because of it (r+count > e), not (r+count-1 >e )
    */
   if ( r+count > e )
-    return MY_CS_TOOSMALLN(count);
+    return MY_CS_TOOSMALL;
 
   switch (count) {
     /* Fall through all cases!!! */
@@ -2008,7 +2006,7 @@ static int my_strnncoll_utf8(CHARSET_INFO *cs,
     s+=s_res;
     t+=t_res;
   }
-  return t_is_prefix ? (int) (t-te) : (int) ((se-s) - (te-t));
+  return t_is_prefix ? t-te : ((se-s) - (te-t));
 }
 
 
@@ -2345,7 +2343,6 @@ CHARSET_INFO my_charset_utf8_general_ci=
     3,                  /* mbmaxlen     */
     0,                  /* min_sort_char */
     0xFFFF,             /* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_ci_handler
 };
@@ -2373,8 +2370,7 @@ CHARSET_INFO my_charset_utf8_bin=
     1,                  /* mbminlen     */
     3,                  /* mbmaxlen     */
     0,                  /* min_sort_char */
-    0xFFFF,             /* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
+    255,                /* max_sort_char */
     &my_charset_utf8_handler,
     &my_collation_mb_bin_handler
 };
@@ -2540,7 +2536,6 @@ CHARSET_INFO my_charset_utf8_general_cs=
     3,			/* mbmaxlen     */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_utf8_handler,
     &my_collation_cs_handler
 };

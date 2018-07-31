@@ -713,7 +713,7 @@ public:
     if ((*null_value= is_null()))
       return 0;
 #ifdef WORDS_BIGENDIAN
-    if (table && table->db_low_byte_first)
+    if (table->db_low_byte_first)
       return sint4korr(ptr);
 #endif
     long tmp;
@@ -1180,20 +1180,10 @@ public:
   LEX_STRING comment;			// Comment for field
   Item	*def;				// Default value
   enum	enum_field_types sql_type;
-  /*
-    At various stages in execution this can be length of field in bytes or
-    max number of characters. 
-  */
   uint32 length;
-  /*
-    The value of 'length' before a call to create_length_to_internal_length
-  */
-  uint32 char_length;
   uint decimals,flags,pack_length;
   Field::utype unireg_check;
   TYPELIB *interval;			// Which interval to use
-  TYPELIB *save_interval;               // Temporary copy for the above
-                                        // Used only for UCS2 intervals
   List<String> interval_list;
   CHARSET_INFO *charset;
   Field::geometry_type geom_type;

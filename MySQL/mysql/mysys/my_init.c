@@ -127,23 +127,11 @@ my_bool my_init(void)
 
 void my_end(int infoflag)
 {
-  /*
-    this code is suboptimal to workaround a bug in
-    Sun CC: Sun C++ 5.6 2004/06/02 for x86, and should not be
-    optimized until this compiler is not in use anymore
-  */
-  FILE *info_file= DBUG_FILE;
-  my_bool print_info= (info_file != stderr);
-  DBUG_ENTER("my_end");
-  if (!info_file)
-  {
-    info_file= stderr;
-    print_info= 0;
-  }
-
-  DBUG_PRINT("info",("Shutting down: print_info: %d", print_info));
-  if ((infoflag & MY_CHECK_ERROR) || print_info)
-
+  FILE *info_file;
+  if (!(info_file=DBUG_FILE))
+    info_file=stderr;
+  DBUG_PRINT("info",("Shutting down"));
+  if (infoflag & MY_CHECK_ERROR || info_file != stderr)
   {					/* Test if some file is left open */
     if (my_file_opened | my_stream_opened)
     {
@@ -152,10 +140,8 @@ void my_end(int infoflag)
       DBUG_PRINT("error",("%s",errbuff[0]));
     }
   }
-  free_charsets();
   my_once_free();
-
-  if ((infoflag & MY_GIVE_INFO) || print_info)
+  if (infoflag & MY_GIVE_INFO || info_file != stderr)
   {
 #ifdef HAVE_GETRUSAGE
     struct rusage rus;

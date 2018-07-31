@@ -145,7 +145,7 @@ public:
 	    bool no_auto_events_arg, ulong max_size);
   void new_file(bool need_lock= 1);
   bool write(THD *thd, enum enum_server_command command,
-	     const char *format, ...) ATTRIBUTE_FORMAT(printf, 4, 5);
+	     const char *format,...);
   bool write(THD *thd, const char *query, uint query_length,
 	     time_t query_start=0);
   bool write(Log_event* event_info); // binary log write
@@ -177,7 +177,6 @@ public:
 		   bool need_mutex);
   int find_next_log(LOG_INFO* linfo, bool need_mutex);
   int get_current_log(LOG_INFO* linfo);
-  int raw_get_current_log(LOG_INFO* linfo);
   uint next_file_id();
   inline bool is_open() { return log_type != LOG_CLOSED; }
   inline char* get_index_fname() { return index_file_name;}
@@ -364,7 +363,6 @@ struct system_variables
   ulong max_insert_delayed_threads;
   ulong myisam_repair_threads;
   ulong myisam_sort_buff_size;
-  ulong myisam_stats_method;
   ulong net_buffer_length;
   ulong net_interactive_timeout;
   ulong net_read_timeout;
@@ -423,9 +421,6 @@ struct system_variables
   CHARSET_INFO	*collation_server;
   CHARSET_INFO	*collation_database;
   CHARSET_INFO  *collation_connection;
-
-  /* Locale Support */
-  MY_LOCALE *lc_time_names;
 
   Time_zone *time_zone;
 
@@ -624,7 +619,7 @@ class Statement_map
 public:
   Statement_map();
 
-  int insert(THD *thd, Statement *statement);
+  int insert(Statement *statement);
 
   Statement *find_by_name(LEX_STRING *name)
   {
@@ -646,10 +641,29 @@ public:
     }
     return last_found_statement;
   }
-  void erase(Statement *statement);
+  void erase(Statement *statement)
+  {
+    if (statement == last_found_statement)
+      last_found_statement= 0;
+    if (statement->name.str)
+    {
+      hash_delete(&names_hash, (byte *) statement);  
+    }
+    hash_delete(&st_hash, (byte *) statement);
+  }
   /* Erase all statements (calls Statement destructor) */
-  void reset();
-  ~Statement_map();
+  void reset()
+  {
+    my_hash_reset(&names_hash);
+    my_hash_reset(&st_hash);
+    last_found_statement= 0;
+  }
+
+  ~Statement_map()
+  {
+    hash_free(&names_hash);
+    hash_free(&st_hash);
+  }
 private:
   HASH st_hash;
   HASH names_hash;
@@ -835,29 +849,17 @@ public:
     generated auto_increment value in handler.cc
   */
   ulonglong  next_insert_id;
-
   /*
-    At the beginning of the statement last_insert_id holds the first
-    generated value of the previous statement.  During statement
-    execution it is updated to the value just generated, but then
-    restored to the value that was generated first, so for the next
-    statement it will again be "the first generated value of the
-    previous statement".
-
-    It may also be set with "LAST_INSERT_ID(expr)" or
-    "@@LAST_INSERT_ID= expr", but the effect of such setting will be
-    seen only in the next statement.
+    The insert_id used for the last statement or set by SET LAST_INSERT_ID=#
+    or SELECT LAST_INSERT_ID(#).  Used for binary log and returned by
+    LAST_INSERT_ID()
   */
   ulonglong  last_insert_id;
-
   /*
-    current_insert_id remembers the first generated value of the
-    previous statement, and does not change during statement
-    execution.  Its value returned from LAST_INSERT_ID() and
-    @@LAST_INSERT_ID.
+    Set to the first value that LAST_INSERT_ID() returned for the last
+    statement.  When this is set, last_insert_id_used is set to true.
   */
   ulonglong  current_insert_id;
-
   ulonglong  limit_found_rows;
   ha_rows    cuted_fields,
              sent_row_count, examined_row_count;
@@ -908,24 +910,7 @@ public:
   bool	     locked, some_tables_deleted;
   bool       last_cuted_field;
   bool	     no_errors, password, is_fatal_error;
-  bool	     query_start_used, rand_used;
-
-  /*
-    last_insert_id_used is set when current statement calls
-    LAST_INSERT_ID() or reads @@LAST_INSERT_ID, so that binary log
-    LAST_INSERT_ID_EVENT be generated.
-  */
-  bool	     last_insert_id_used;
-
-  /*
-    insert_id_used is set when current statement updates
-    THD::last_insert_id, so that binary log INSERT_ID_EVENT be
-    generated.
-  */
-  bool       insert_id_used;
-
-  /* for IS NULL => = last_insert_id() fix in remove_eq_conds() */
-  bool       substitute_null_with_insert_id;
+  bool	     query_start_used,last_insert_id_used,insert_id_used,rand_used;
   bool	     time_zone_used;
   bool	     in_lock_tables;
   bool       query_error, bootstrap, cleanup_done;
@@ -946,7 +931,6 @@ public:
   {
     my_bool my_bool_value;
     long    long_value;
-    ulong   ulong_value;
   } sys_var_tmp;
 
   THD();
@@ -1021,7 +1005,15 @@ public:
   {
     last_insert_id= id_arg;
     insert_id_used=1;
-    substitute_null_with_insert_id= TRUE;
+  }
+  inline ulonglong insert_id(void)
+  {
+    if (!last_insert_id_used)
+    {      
+      last_insert_id_used=1;
+      current_insert_id=last_insert_id;
+    }
+    return last_insert_id;
   }
   inline ulonglong found_rows(void)
   {
@@ -1244,27 +1236,19 @@ class select_insert :public select_result_interceptor {
   List<Item> *fields;
   ulonglong last_insert_id;
   COPY_INFO info;
-  TABLE_LIST *insert_table_list;
-  TABLE_LIST *dup_table_list;
 
   select_insert(TABLE *table_par, List<Item> *fields_par,
 		enum_duplicates duplic, bool ignore)
-    :table(table_par), fields(fields_par), last_insert_id(0),
-     insert_table_list(0), dup_table_list(0)
+    :table(table_par), fields(fields_par), last_insert_id(0)
   {
     bzero((char*) &info,sizeof(info));
     info.ignore= ignore;
     info.handle_duplicates=duplic;
   }
-  select_insert(TABLE *table_par,
-		TABLE_LIST *insert_table_list_par,
-		TABLE_LIST *dup_table_list_par,
-		List<Item> *fields_par,
+  select_insert(TABLE *table_par, List<Item> *fields_par,
 		List<Item> *update_fields, List<Item> *update_values,
 		enum_duplicates duplic, bool ignore)
-    :table(table_par), fields(fields_par), last_insert_id(0),
-     insert_table_list(insert_table_list_par),
-     dup_table_list(dup_table_list_par)
+    :table(table_par), fields(fields_par), last_insert_id(0)
   {
     bzero((char*) &info,sizeof(info));
     info.ignore= ignore;
@@ -1341,11 +1325,10 @@ public:
   bool  using_indirect_summary_function;
   /* If >0 convert all blob fields to varchar(convert_blob_length) */
   uint  convert_blob_length; 
-  bool force_copy_fields;
+
   TMP_TABLE_PARAM()
     :copy_field(0), group_parts(0),
-    group_length(0), group_null_parts(0), convert_blob_length(0),
-    force_copy_fields(0)
+    group_length(0), group_null_parts(0), convert_blob_length(0)
   {}
   ~TMP_TABLE_PARAM()
   {

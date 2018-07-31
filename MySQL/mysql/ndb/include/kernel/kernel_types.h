@@ -36,13 +36,6 @@ enum Operation_t {
 #endif
 };
 
-inline
-Uint32 
-table_version_major(Uint32 ver)
-{
-  return ver & 0x00FFFFFF;
-}
-
 #endif
 
 

@@ -216,7 +216,6 @@ enum mysql_rpl_type
 };
 
 struct st_mysql_methods;
-struct st_mysql_stmt;
 
 typedef struct st_mysql
 {
@@ -270,12 +269,6 @@ typedef struct st_mysql
     from mysql_stmt_close if close had to cancel result set of this object.
   */
   my_bool *unbuffered_fetch_owner;
-  /*
-    In embedded server it points to the statement that is processed
-    in the current query. We store some results directly in statement
-    fields then.
-  */
-  struct st_mysql_stmt *current_stmt;
 } MYSQL;
 
 typedef struct st_mysql_res {
@@ -388,7 +381,7 @@ unsigned int STDCALL mysql_warning_count(MYSQL *mysql);
 const char * STDCALL mysql_info(MYSQL *mysql);
 unsigned long STDCALL mysql_thread_id(MYSQL *mysql);
 const char * STDCALL mysql_character_set_name(MYSQL *mysql);
-int STDCALL mysql_set_character_set(MYSQL *mysql, const char *csname);
+int          STDCALL mysql_set_character_set(MYSQL *mysql, char *csname);
 
 MYSQL *		STDCALL mysql_init(MYSQL *mysql);
 my_bool		STDCALL mysql_ssl_set(MYSQL *mysql, const char *key,
@@ -643,8 +636,7 @@ typedef struct st_mysql_methods
 			      unsigned long header_length,
 			      const char *arg,
 			      unsigned long arg_length,
-			      my_bool skip_check,
-                              MYSQL_STMT *stmt);
+			      my_bool skip_check);
   MYSQL_DATA *(*read_rows)(MYSQL *mysql,MYSQL_FIELD *mysql_fields,
 			   unsigned int fields);
   MYSQL_RES * (*use_result)(MYSQL *mysql);
@@ -732,11 +724,8 @@ int		STDCALL mysql_drop_db(MYSQL *mysql, const char *DB);
 */
 
 #define simple_command(mysql, command, arg, length, skip_check) \
-  (*(mysql)->methods->advanced_command)(mysql, command, NullS,  \
-                                        0, arg, length, skip_check, NULL)
-#define stmt_command(mysql, command, arg, length, stmt) \
-  (*(mysql)->methods->advanced_command)(mysql, command, NullS,  \
-                                        0, arg, length, 1, stmt)
+  (*(mysql)->methods->advanced_command)(mysql, command,         \
+					NullS, 0, arg, length, skip_check)
 unsigned long net_safe_read(MYSQL* mysql);
 
 #ifdef __NETWARE__

@@ -26,12 +26,11 @@
 
  */
 
-#include <my_base.h>				/* Includes errno.h */
-#include <m_ctype.h>
+#include "my_base.h"				/* Includes errno.h */
+#include "m_ctype.h"
 
 #define MAX_DBL_EXP	308
-#define MAX_RESULT_FOR_MAX_EXP 1.7976931348623157
-#define MIN_RESULT_FOR_MIN_EXP 2.225073858507202
+#define MAX_RESULT_FOR_MAX_EXP 1.79769313486232
 static double scaler10[] = {
   1.0, 1e10, 1e20, 1e30, 1e40, 1e50, 1e60, 1e70, 1e80, 1e90
 };
@@ -58,11 +57,10 @@ double my_strtod(const char *str, char **end_ptr, int *error)
 {
   double result= 0.0;
   uint negative= 0, ndigits, dec_digits= 0, neg_exp= 0;
-  int exp= 0, digits_after_dec_point= 0, tmp_exp;
+  int exp= 0, digits_after_dec_point= 0;
   const char *old_str, *end= *end_ptr, *start_of_number;
   char next_char;
   my_bool overflow=0;
-  double scaler= 1.0;
 
   *error= 0;
   if (str >= end)
@@ -93,7 +91,6 @@ double my_strtod(const char *str, char **end_ptr, int *error)
   while ((next_char= *str) >= '0' && next_char <= '9')
   {
     result= result*10.0 + (next_char - '0');
-    scaler= scaler*10.0;
     if (++str == end)
     {
       next_char= 0;                             /* Found end of string */
@@ -117,7 +114,6 @@ double my_strtod(const char *str, char **end_ptr, int *error)
     {
       result= result*10.0 + (next_char - '0');
       digits_after_dec_point++;
-      scaler= scaler*10.0;
       if (++str == end)
       {
         next_char= 0;
@@ -148,54 +144,39 @@ double my_strtod(const char *str, char **end_ptr, int *error)
       } while (str < end && my_isdigit(&my_charset_latin1, *str));
     }
   }
-  tmp_exp= neg_exp ? exp + digits_after_dec_point : exp - digits_after_dec_point;
-  if (tmp_exp)
+  if ((exp= (neg_exp ? exp + digits_after_dec_point :
+             exp - digits_after_dec_point)))
   {
-    int order;
-    /*
-      Check for underflow/overflow.
-      order is such an integer number that f = C * 10 ^ order,
-      where f is the resulting floating point number and 1 <= C < 10.
-      Here we compute the modulus
-    */
-    order= exp + (neg_exp ? -1 : 1) * (ndigits - 1);
-    if (order < 0)
-      order= -order;
-    if (order >= MAX_DBL_EXP && result)
-    {
-      double c;
-      /* Compute modulus of C (see comment above) */
-      c= result / scaler * 10.0;
-      if (neg_exp)
-      {
-        if (order > MAX_DBL_EXP || c < MIN_RESULT_FOR_MIN_EXP)
-        {
-          result= 0.0;
-          goto done;
-        }
-      }
-      else
-      {
-        if (order > MAX_DBL_EXP || c > MAX_RESULT_FOR_MAX_EXP)
-        {
-          overflow= 1;
-          goto done;
-        }
-      }
-    }
-
-    exp= tmp_exp;
+    double scaler;
     if (exp < 0)
     {
       exp= -exp;
       neg_exp= 1;                               /* neg_exp was 0 before */
     }
+    if (exp + ndigits >= MAX_DBL_EXP + 1 && result)
+    {
+      /*
+        This is not 100 % as we actually will give an owerflow for
+        17E307 but not for 1.7E308 but lets cut some corners to make life
+        simpler
+      */
+      if (exp + ndigits > MAX_DBL_EXP + 1 ||
+          result >= MAX_RESULT_FOR_MAX_EXP)
+      {
+        if (neg_exp)
+          result= 0.0;
+        else
+          overflow= 1;
+        goto done;
+      }
+    }
+    scaler= 1.0;
     while (exp >= 100)
     {
-      result= neg_exp ? result/1.0e100 : result*1.0e100;
+      scaler*= 1.0e100;
       exp-= 100;
     }
-    scaler= scaler10[exp/10]*scaler1[exp%10];
+    scaler*= scaler10[exp/10]*scaler1[exp%10];
     if (neg_exp)
       result/= scaler;
     else

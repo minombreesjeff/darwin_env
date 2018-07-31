@@ -2,5 +2,3 @@ source include/master-slave.inc;
 
 set global slave_net_timeout=100;
 set global sql_slave_skip_counter=100;
-
-# End of 4.1 tests

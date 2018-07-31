@@ -30,7 +30,7 @@ class NdbObjectIdMap //: NdbLockable
 {
 public:
   STATIC_CONST( InvalidId = ~(Uint32)0 );
-  NdbObjectIdMap(NdbMutex*, Uint32 initalSize = 128, Uint32 expandSize = 10);
+  NdbObjectIdMap(Uint32 initalSize = 128, Uint32 expandSize = 10);
   ~NdbObjectIdMap();
 
   Uint32 map(void * object);
@@ -46,16 +46,14 @@ private:
      void * m_obj;
   } * m_map;
 
-  NdbMutex * m_mutex;
   void expand(Uint32 newSize);
 };
 
 inline
-NdbObjectIdMap::NdbObjectIdMap(NdbMutex* mutex, Uint32 sz, Uint32 eSz) {
+NdbObjectIdMap::NdbObjectIdMap(Uint32 sz, Uint32 eSz) {
   m_size = 0;
   m_firstFree = InvalidId;
   m_map = 0;
-  m_mutex = mutex;
   m_expandSize = eSz;
   expand(sz);
 #ifdef DEBUG_OBJECTMAP
@@ -133,26 +131,21 @@ NdbObjectIdMap::getObject(Uint32 id){
 
 inline void
 NdbObjectIdMap::expand(Uint32 incSize){
-  NdbMutex_Lock(m_mutex);
   Uint32 newSize = m_size + incSize;
-  MapEntry * tmp = (MapEntry*)realloc(m_map, newSize * sizeof(MapEntry));
+  MapEntry * tmp = (MapEntry*)malloc(newSize * sizeof(MapEntry));
 
-  if (likely(tmp != 0))
-  {
-    m_map = tmp;
-    
-    for(Uint32 i = m_size; i<newSize; i++){
-      m_map[i].m_next = i + 1;
-    }
-    m_firstFree = m_size;
-    m_map[newSize-1].m_next = InvalidId;
-    m_size = newSize;
+  if (m_map) {
+    memcpy(tmp, m_map, m_size * sizeof(MapEntry));
+    free((void*)m_map);
   }
-  else
-  {
-    ndbout_c("NdbObjectIdMap::expand unable to expand!!");
+  m_map = tmp;
+
+  for(Uint32 i = m_size; i<newSize; i++){
+    m_map[i].m_next = i + 1;
   }
-  NdbMutex_Unlock(m_mutex);
+  m_firstFree = m_size;
+  m_map[newSize-1].m_next = InvalidId;
+  m_size = newSize;
 }
 
 #endif

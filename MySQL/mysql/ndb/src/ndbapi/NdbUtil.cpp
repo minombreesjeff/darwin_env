@@ -30,7 +30,8 @@ Comment:
 
 #include "NdbUtil.hpp"
 
-NdbLabel::NdbLabel(Ndb*)
+NdbLabel::NdbLabel() :
+  theNext(NULL)
 {
 }
 
@@ -38,7 +39,8 @@ NdbLabel::~NdbLabel()
 {
 }
 
-NdbSubroutine::NdbSubroutine(Ndb*)
+NdbSubroutine::NdbSubroutine() :
+  theNext(NULL)
 {
 }
 
@@ -46,8 +48,9 @@ NdbSubroutine::~NdbSubroutine()
 {
 }
 
-NdbBranch::NdbBranch(Ndb*) :
-  theSignal(NULL)
+NdbBranch::NdbBranch() :
+  theSignal(NULL),
+  theNext(NULL)
 {
 }
 
@@ -55,8 +58,9 @@ NdbBranch::~NdbBranch()
 {
 }
 
-NdbCall::NdbCall(Ndb*) :
-  theSignal(NULL)
+NdbCall::NdbCall() :
+  theSignal(NULL),
+  theNext(NULL)
 {
 }
 

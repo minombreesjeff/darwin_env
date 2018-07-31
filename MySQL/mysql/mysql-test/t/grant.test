@@ -323,7 +323,7 @@ connection conn1;
 show grants for mysqltest_3@localhost;
 --error 1143
 update mysqltest_1.t1, mysqltest_1.t2 set q=10 where b=1;
---error 1142
+--error 1143
 update mysqltest_1.t1, mysqltest_2.t2 set d=20 where d=1;
 --error 1143
 update mysqltest_2.t1, mysqltest_1.t2 set c=20 where b=1;
@@ -343,8 +343,6 @@ revoke all on mysqltest_2.t2 from mysqltest_3@localhost;
 #test the db/table level privileges
 grant all on mysqltest_2.* to mysqltest_3@localhost;
 grant select on *.* to mysqltest_3@localhost;
-# Next grant is needed to trigger bug#7391. Do not optimize!
-grant select on mysqltest_2.t1 to mysqltest_3@localhost;
 flush privileges;
 disconnect conn1;
 connect (conn2,localhost,mysqltest_3,,);
@@ -356,11 +354,11 @@ update mysqltest_2.t1, mysqltest_2.t2 set c=500,d=600;
 update mysqltest_1.t1, mysqltest_1.t2 set a=100,b=200;
 use mysqltest_2;
 #the following used to succeed, it must fail now.
---error 1142
+--error 1044
 update mysqltest_1.t1, mysqltest_1.t2 set a=100,b=200;
---error 1142
+--error 1044
 update mysqltest_2.t1, mysqltest_1.t2 set c=100,b=200;
---error 1142
+--error 1044
 update mysqltest_1.t1, mysqltest_2.t2 set a=100,d=200;
 #lets see the result
 connection master;
@@ -403,52 +401,3 @@ insert into tables_priv values ('','test_db','mysqltest_1','test_table','test_gr
 flush privileges;
 delete from tables_priv where host = '' and user = 'mysqltest_1';
 flush privileges;
-
-#
-# Bug #10892 user variables not auto cast for comparisons
-# Check that we don't get illegal mix of collations
-#
-set @user123="non-existent";
-select * from mysql.db where user=@user123;
-
-set names koi8r;
-create database ÂÄ;
-grant select on ÂÄ.* to root@localhost;
-select hex(Db) from mysql.db where Db='ÂÄ';
-show grants for root@localhost;
-flush privileges;
-show grants for root@localhost;
-drop database ÂÄ;
-revoke all privileges on ÂÄ.* from root@localhost;
-show grants for root@localhost;
-set names latin1;
-
-#
-# Bug #15598 Server crashes in specific case during setting new password
-# - Caused by a user with host ''
-#
-insert into mysql.user (host, user) values ('', 'mysqltest_7');
-flush privileges;
-set password for mysqltest_7@ = password('systpass');
-show grants for mysqltest_7@;
-drop user mysqltest_7@;
---error 1141
-show grants for mysqltest_7@;
-
-#
-# Bug#14385: GRANT and mapping to correct user account problems
-#
-create database mysqltest;
-use mysqltest;
-create table t1(f1 int);
-GRANT DELETE ON mysqltest.t1 TO mysqltest1@'%';
-GRANT SELECT ON mysqltest.t1 TO mysqltest1@'192.%';
-show grants for mysqltest1@'192.%';
-show grants for mysqltest1@'%';
-delete from mysql.user where user='mysqltest1';
-delete from mysql.db where user='mysqltest1';
-delete from mysql.tables_priv where user='mysqltest1';
-flush privileges;
-drop database mysqltest;
-
-# End of 4.1 tests

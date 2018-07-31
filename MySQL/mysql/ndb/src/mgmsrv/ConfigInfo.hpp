@@ -105,8 +105,7 @@ public:
    *   @note Result is not defined if section/name are wrong!
    */
   bool verify(const Properties* secti, const char* fname, Uint64 value) const;
-  static const char* nameToAlias(const char*);
-  static const char* getAlias(const char*);
+  const char* getAlias(const char*) const;
   bool isSection(const char*) const;
 
   const char*  getDescription(const Properties * sec, const char* fname) const;
@@ -127,14 +126,14 @@ private:
   Properties               m_info;
   Properties               m_systemDefaults;
 
+  static const ParamInfo   m_ParamInfo[];
+  static const int         m_NoOfParams;
+  
   static const AliasPair   m_sectionNameAliases[];
   static const char*       m_sectionNames[];
   static const int         m_noOfSectionNames;
 
 public:
-  static const ParamInfo   m_ParamInfo[];
-  static const int         m_NoOfParams;
-  
   static const SectionRule m_SectionRules[];
   static const ConfigRule  m_ConfigRules[];
   static const int         m_NoOfRules;

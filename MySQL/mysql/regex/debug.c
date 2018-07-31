@@ -2,8 +2,7 @@
 #include <m_ctype.h>
 #include <m_string.h>
 #include <sys/types.h>
-
-#include "my_regex.h"
+#include <regex.h>
 #include "utils.h"
 #include "regex2.h"
 #include "debug.ih"
@@ -16,7 +15,7 @@
  */
 void
 regprint(r, d)
-my_regex_t *r;
+regex_t *r;
 FILE *d;
 {
 	register struct re_guts *g = r->re_g;

@@ -145,15 +145,6 @@ NDBT_Context::decProperty(const char * name){
   NdbCondition_Broadcast(propertyCondPtr);
   NdbMutex_Unlock(propertyMutexPtr);
 }
-void
-NDBT_Context::incProperty(const char * name){
-  NdbMutex_Lock(propertyMutexPtr);
-  Uint32 val = 0;
-  props.get(name, &val);
-  props.put(name, (val + 1), true);
-  NdbCondition_Broadcast(propertyCondPtr);
-  NdbMutex_Unlock(propertyMutexPtr);
-}
 
 void  NDBT_Context::setProperty(const char* _name, const char* _val){ 
   NdbMutex_Lock(propertyMutexPtr);
@@ -624,7 +615,7 @@ int NDBT_TestCase::execute(NDBT_Context* ctx){
 	   << endl;
   }
   return res;
-}
+};
 
 
 void NDBT_TestCase::startTimer(NDBT_Context* ctx){

@@ -269,7 +269,7 @@ then
   echo
   echo "The latest information about MySQL is available on the web at"
   echo "http://www.mysql.com"
-  echo "Support MySQL by buying support/licenses at http://shop.mysql.com"
+  echo "Support MySQL by buying support/licenses at https://order.mysql.com"
   fi
   exit 0
 else

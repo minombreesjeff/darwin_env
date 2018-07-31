@@ -7,20 +7,20 @@ period_add("9602",-12)	period_diff(199505,"9404")
 199502	13
 select now()-now(),weekday(curdate())-weekday(now()),unix_timestamp()-unix_timestamp(now());
 now()-now()	weekday(curdate())-weekday(now())	unix_timestamp()-unix_timestamp(now())
-0.000000	0	0
+0	0	0
 select from_unixtime(unix_timestamp("1994-03-02 10:11:12")),from_unixtime(unix_timestamp("1994-03-02 10:11:12"),"%Y-%m-%d %h:%i:%s"),from_unixtime(unix_timestamp("1994-03-02 10:11:12"))+0;
 from_unixtime(unix_timestamp("1994-03-02 10:11:12"))	from_unixtime(unix_timestamp("1994-03-02 10:11:12"),"%Y-%m-%d %h:%i:%s")	from_unixtime(unix_timestamp("1994-03-02 10:11:12"))+0
-1994-03-02 10:11:12	1994-03-02 10:11:12	19940302101112.000000
+1994-03-02 10:11:12	1994-03-02 10:11:12	19940302101112
 select sec_to_time(9001),sec_to_time(9001)+0,time_to_sec("15:12:22"),
 sec_to_time(time_to_sec("0:30:47")/6.21);
 sec_to_time(9001)	sec_to_time(9001)+0	time_to_sec("15:12:22")	sec_to_time(time_to_sec("0:30:47")/6.21)
-02:30:01	23001.000000	54742	00:04:57
+02:30:01	23001	54742	00:04:57
 select sec_to_time(time_to_sec('-838:59:59'));
 sec_to_time(time_to_sec('-838:59:59'))
 -838:59:59
 select now()-curdate()*1000000-curtime();
 now()-curdate()*1000000-curtime()
-0.000000
+0
 select strcmp(current_timestamp(),concat(current_date()," ",current_time()));
 strcmp(current_timestamp(),concat(current_date()," ",current_time()))
 0
@@ -352,12 +352,6 @@ extract(SECOND FROM "1999-01-02 10:11:12")
 select extract(MONTH FROM "2001-02-00");
 extract(MONTH FROM "2001-02-00")
 2
-SELECT DATE_SUB(str_to_date('9999-12-31 00:01:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);
-DATE_SUB(str_to_date('9999-12-31 00:01:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE)
-9999-12-31 00:00:00
-SELECT DATE_ADD(str_to_date('9999-12-30 23:59:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);
-DATE_ADD(str_to_date('9999-12-30 23:59:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE)
-9999-12-31 00:00:00
 SELECT "1900-01-01 00:00:00" + INTERVAL 2147483648 SECOND;
 "1900-01-01 00:00:00" + INTERVAL 2147483648 SECOND
 1968-01-20 03:14:08
@@ -632,98 +626,3 @@ last_day('2005-01-00')
 NULL
 Warnings:
 Warning	1292	Truncated incorrect datetime value: '2005-01-00'
-select monthname(str_to_date(null, '%m')), monthname(str_to_date(null, '%m')),
-monthname(str_to_date(1, '%m')), monthname(str_to_date(0, '%m'));
-monthname(str_to_date(null, '%m'))	monthname(str_to_date(null, '%m'))	monthname(str_to_date(1, '%m'))	monthname(str_to_date(0, '%m'))
-NULL	NULL	January	NULL
-set time_zone='-6:00';
-create table t1(a timestamp);
-insert into t1 values (19691231190001);
-select * from t1;
-a
-1969-12-31 19:00:01
-drop table t1;
-create table t1(f1 date, f2 time, f3 datetime);
-insert into t1 values ("2006-01-01", "12:01:01", "2006-01-01 12:01:01");
-insert into t1 values ("2006-01-02", "12:01:02", "2006-01-02 12:01:02");
-select f1 from t1 where f1 between CAST("2006-1-1" as date) and CAST(20060101 as date);
-f1
-2006-01-01
-select f1 from t1 where f1 between cast("2006-1-1" as date) and cast("2006.1.1" as date);
-f1
-2006-01-01
-select f1 from t1 where date(f1) between cast("2006-1-1" as date) and cast("2006.1.1" as date);
-f1
-2006-01-01
-select f2 from t1 where f2 between cast("12:1:2" as time) and cast("12:2:2" as time);
-f2
-12:01:02
-select f2 from t1 where time(f2) between cast("12:1:2" as time) and cast("12:2:2" as time);
-f2
-12:01:02
-select f3 from t1 where f3 between cast("2006-1-1 12:1:1" as datetime) and cast("2006-1-1 12:1:2" as datetime);
-f3
-2006-01-01 12:01:01
-select f3 from t1 where timestamp(f3) between cast("2006-1-1 12:1:1" as datetime) and cast("2006-1-1 12:1:2" as datetime);
-f3
-2006-01-01 12:01:01
-select f1 from t1 where cast("2006-1-1" as date) between f1 and f3;
-f1
-2006-01-01
-select f1 from t1 where cast("2006-1-1" as date) between date(f1) and date(f3);
-f1
-2006-01-01
-select f1 from t1 where cast("2006-1-1" as date) between f1 and 'zzz';
-f1
-2006-01-01
-select f1 from t1 where makedate(2006,1) between date(f1) and date(f3);
-f1
-2006-01-01
-select f1 from t1 where makedate(2006,2) between date(f1) and date(f3);
-f1
-2006-01-02
-drop table t1;
-create table t1 select now() - now(), curtime() - curtime(), 
-sec_to_time(1) + 0, from_unixtime(1) + 0;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `now() - now()` double(23,6) NOT NULL default '0.000000',
-  `curtime() - curtime()` double(23,6) NOT NULL default '0.000000',
-  `sec_to_time(1) + 0` double(23,6) default NULL,
-  `from_unixtime(1) + 0` double(23,6) default NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1;
-SET NAMES latin1;
-SET character_set_results = NULL;
-SHOW VARIABLES LIKE 'character_set_results';
-Variable_name	Value
-character_set_results	
-CREATE TABLE testBug8868 (field1 DATE, field2 VARCHAR(32) CHARACTER SET BINARY);
-INSERT INTO testBug8868 VALUES ('2006-09-04', 'abcd');
-SELECT DATE_FORMAT(field1,'%b-%e %l:%i%p') as fmtddate, field2 FROM testBug8868;
-fmtddate	field2
-Sep-4 12:00AM	abcd
-DROP TABLE testBug8868;
-SET NAMES DEFAULT;
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%H') As H)
-union
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%H') As H);
-H
-120
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%k') As H)
-union
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%k') As H);
-H
-120
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%H') As H)
-union
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%H') As H);
-H
-05
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%k') As H)
-union
-(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%k') As H);
-H
-5
-End of 4.1 tests

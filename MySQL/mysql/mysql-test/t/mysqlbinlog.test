@@ -43,21 +43,21 @@ select "--- Local --" as "";
 #
 
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.000001
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.000001 
 
 # this should not fail but shouldn't produce any working statements
 --disable_query_log
 select "--- Broken LOAD DATA --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.000002 2> /dev/null
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.000002
 
 # this should show almost nothing
 --disable_query_log
 select "--- --database --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --database=nottest $MYSQL_TEST_DIR/var/log/master-bin.000001 2> /dev/null
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --database=nottest $MYSQL_TEST_DIR/var/log/master-bin.000001
 
 # this test for position option
 --disable_query_log
@@ -82,14 +82,14 @@ select "--- Remote --" as "";
 select "--- Broken LOAD DATA --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.000002 2> /dev/null
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.000002
 
 # And this too ! (altough it is documented)
 --disable_query_log
 select "--- --database --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT --database=nottest master-bin.000001 2> /dev/null
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT --database=nottest master-bin.000001
 
 # Strangely but this works
 --disable_query_log
@@ -98,38 +98,5 @@ select "--- --position --" as "";
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
 --exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --position=27 --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.000002
 
-
-# Bug#16217 (mysql client did not know how not switch its internal charset)
-flush logs;
-create table t3 (f text character set utf8);
-create table t4 (f text character set cp932); 
---exec $MYSQL --default-character-set=utf8 test -e "insert into t3 values(_utf8'ã‚½')"
---exec $MYSQL --default-character-set=cp932 test -e "insert into t4 values(_cp932'ƒ\');"
-flush logs;
-rename table t3 to t03, t4 to t04;
---exec $MYSQL_BINLOG --short-form $MYSQL_TEST_DIR/var/log/master-bin.000004 > $MYSQL_TEST_DIR/var/tmp/bug16217.sql
---exec $MYSQL --default-character-set=utf8 < $MYSQL_TEST_DIR/var/tmp/bug16217.sql
-# original and recovered data must be equal
-select HEX(f) from t03;
-select HEX(f) from t3;
-select HEX(f) from t04;
-select HEX(f) from t4;
-
-#
-#BUG#14157: utf8 encoding in binlog without set character_set_client
-#
-flush logs;
---exec $MYSQL test -e 'create table if not exists t5 (a int); set names latin1; create temporary table `äöüÄÖÜ` (a int); insert into `äöüÄÖÜ` values (1); insert into t5 select * from `äöüÄÖÜ`'
-
-# resulted binlog, parly consisting of multi-byte utf8 chars, 
-# must be digestable for both client and server. In 4.1 the client 
-# should use default-character-set same as the server.
---exec $MYSQL_BINLOG --short-form $MYSQL_TEST_DIR/var/log/master-bin.000006 > $MYSQL_TEST_DIR/var/tmp/bug14157.sql
---exec $MYSQL < $MYSQL_TEST_DIR/var/tmp/bug14157.sql
-select * from t5  /* must be (1),(1) */;
-
 # clean up
-drop table t1, t2, t03, t04, t3, t4, t5; 
-
-# End of 4.1 tests
-
+drop table t1, t2;

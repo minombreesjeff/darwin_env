@@ -42,119 +42,18 @@ static int sel_cmp(Field *f,char *a,char *b,uint8 a_flag,uint8 b_flag);
 
 static char is_null_string[2]= {1,0};
 
-
-/*
-  A construction block of the SEL_ARG-graph.
-  
-  The following description only covers graphs of SEL_ARG objects with 
-  sel_arg->type==KEY_RANGE:
-
-  One SEL_ARG object represents an "elementary interval" in form
-  
-      min_value <=?  table.keypartX  <=? max_value
-  
-  The interval is a non-empty interval of any kind: with[out] minimum/maximum
-  bound, [half]open/closed, single-point interval, etc.
-
-  1. SEL_ARG GRAPH STRUCTURE
-  
-  SEL_ARG objects are linked together in a graph. The meaning of the graph
-  is better demostrated by an example:
-  
-     tree->keys[i]
-      | 
-      |             $              $
-      |    part=1   $     part=2   $    part=3
-      |             $              $
-      |  +-------+  $   +-------+  $   +--------+
-      |  | kp1<1 |--$-->| kp2=5 |--$-->| kp3=10 |
-      |  +-------+  $   +-------+  $   +--------+
-      |      |      $              $       |
-      |      |      $              $   +--------+
-      |      |      $              $   | kp3=12 | 
-      |      |      $              $   +--------+ 
-      |  +-------+  $              $   
-      \->| kp1=2 |--$--------------$-+ 
-         +-------+  $              $ |   +--------+
-             |      $              $  ==>| kp3=11 |
-         +-------+  $              $ |   +--------+
-         | kp1=3 |--$--------------$-+       |
-         +-------+  $              $     +--------+
-             |      $              $     | kp3=14 |
-            ...     $              $     +--------+
- 
-  The entire graph is partitioned into "interval lists".
-
-  An interval list is a sequence of ordered disjoint intervals over the same
-  key part. SEL_ARG are linked via "next" and "prev" pointers. Additionally,
-  all intervals in the list form an RB-tree, linked via left/right/parent 
-  pointers. The RB-tree root SEL_ARG object will be further called "root of the
-  interval list".
-  
-    In the example pic, there are 4 interval lists: 
-    "kp<1 OR kp1=2 OR kp1=3", "kp2=5", "kp3=10 OR kp3=12", "kp3=11 OR kp3=13".
-    The vertical lines represent SEL_ARG::next/prev pointers.
-    
-  In an interval list, each member X may have SEL_ARG::next_key_part pointer
-  pointing to the root of another interval list Y. The pointed interval list
-  must cover a key part with greater number (i.e. Y->part > X->part).
-    
-    In the example pic, the next_key_part pointers are represented by
-    horisontal lines.
-
-  2. SEL_ARG GRAPH SEMANTICS
-
-  It represents a condition in a special form (we don't have a name for it ATM)
-  The SEL_ARG::next/prev is "OR", and next_key_part is "AND".
-  
-  For example, the picture represents the condition in form:
-   (kp1 < 1 AND kp2=5 AND (kp3=10 OR kp3=12)) OR 
-   (kp1=2 AND (kp3=11 OR kp3=14)) OR 
-   (kp1=3 AND (kp3=11 OR kp3=14))
-
-
-  3. SEL_ARG GRAPH USE
-
-  Use get_mm_tree() to construct SEL_ARG graph from WHERE condition.
-  Then walk the SEL_ARG graph and get a list of dijsoint ordered key
-  intervals (i.e. intervals in form
-  
-   (constA1, .., const1_K) < (keypart1,.., keypartK) < (constB1, .., constB_K)
-
-  Those intervals can be used to access the index. The uses are in:
-   - check_quick_select() - Walk the SEL_ARG graph and find an estimate of
-                            how many table records are contained within all
-                            intervals.
-   - get_quick_select()   - Walk the SEL_ARG, materialize the key intervals,
-                            and create QUICK_RANGE_SELECT object that will
-                            read records within these intervals.
-*/
-
 class SEL_ARG :public Sql_alloc
 {
 public:
   uint8 min_flag,max_flag,maybe_flag;
   uint8 part;					// Which key part
   uint8 maybe_null;
-  /* 
-    Number of children of this element in the RB-tree, plus 1 for this
-    element itself.
-  */
-  uint16 elements;
-  /*
-    Valid only for elements which are RB-tree roots: Number of times this
-    RB-tree is referred to (it is referred by SEL_ARG::next_key_part or by
-    SEL_TREE::keys[i] or by a temporary SEL_ARG* variable)
-  */
-  ulong use_count;
-
+  uint16 elements;				// Elements in tree
+  ulong use_count;				// use of this sub_tree
   Field *field;
   char *min_value,*max_value;			// Pointer to range
 
-  SEL_ARG *left,*right;   /* R-B tree children */
-  SEL_ARG *next,*prev;    /* Links for bi-directional interval list */
-  SEL_ARG *parent;        /* R-B tree parent */
-  SEL_ARG *next_key_part; 
+  SEL_ARG *left,*right,*next,*prev,*parent,*next_key_part;
   enum leaf_color { BLACK,RED } color;
   enum Type { IMPOSSIBLE, MAYBE, MAYBE_KEY, KEY_RANGE } type;
 
@@ -164,8 +63,8 @@ public:
   SEL_ARG(Field *field, uint8 part, char *min_value, char *max_value,
 	  uint8 min_flag, uint8 max_flag, uint8 maybe_flag);
   SEL_ARG(enum Type type_arg)
-    :min_flag(0),elements(1),use_count(1),left(0),next_key_part(0),
-    color(BLACK), type(type_arg)
+    :elements(1),use_count(1),left(0),next_key_part(0),color(BLACK),
+     type(type_arg)
   {}
   inline bool is_same(SEL_ARG *arg)
   {
@@ -599,7 +498,6 @@ SEL_ARG *SEL_ARG::clone(SEL_ARG *new_parent,SEL_ARG **next_arg)
   }
   increment_use_count(1);
   tmp->color= color;
-  tmp->elements= this->elements;
   return tmp;
 }
 
@@ -683,96 +581,6 @@ SEL_ARG *SEL_ARG::clone_tree()
     root->use_count= 0;
   return root;
 }
-
-
-/*
-  Find the best index to retrieve first N records in given order
-
-  SYNOPSIS
-    get_index_for_order()
-      table  Table to be accessed
-      order  Required ordering
-      limit  Number of records that will be retrieved
-
-  DESCRIPTION
-    Find the best index that allows to retrieve first #limit records in the 
-    given order cheaper then one would retrieve them using full table scan.
-
-  IMPLEMENTATION
-    Run through all table indexes and find the shortest index that allows
-    records to be retrieved in given order. We look for the shortest index
-    as we will have fewer index pages to read with it.
-
-    This function is used only by UPDATE/DELETE, so we take into account how
-    the UPDATE/DELETE code will work:
-     * index can only be scanned in forward direction
-     * HA_EXTRA_KEYREAD will not be used
-    Perhaps these assumptions could be relaxed
-
-  RETURN
-    index number
-    MAX_KEY if no such index was found.
-*/
-
-uint get_index_for_order(TABLE *table, ORDER *order, ha_rows limit)
-{
-  uint idx;
-  uint match_key= MAX_KEY, match_key_len= MAX_KEY_LENGTH + 1;
-  ORDER *ord;
-  
-  for (ord= order; ord; ord= ord->next)
-    if (!ord->asc)
-      return MAX_KEY;
-
-  for (idx= 0; idx < table->keys; idx++)
-  {
-    if (!(table->keys_in_use_for_query.is_set(idx)))
-      continue;
-    KEY_PART_INFO *keyinfo= table->key_info[idx].key_part;
-    uint partno= 0;
-    
-    /* 
-      The below check is sufficient considering we now have either BTREE 
-      indexes (records are returned in order for any index prefix) or HASH 
-      indexes (records are not returned in order for any index prefix).
-    */
-    if (!(table->file->index_flags(idx, 0, 1) & HA_READ_ORDER))
-      continue;
-    for (ord= order; ord; ord= ord->next, partno++)
-    {
-      Item *item= order->item[0];
-      if (!(item->type() == Item::FIELD_ITEM &&
-           ((Item_field*)item)->field->eq(keyinfo[partno].field)))
-        break;
-    }
-    
-    if (!ord && table->key_info[idx].key_length < match_key_len)
-    {
-      /* 
-        Ok, the ordering is compatible and this key is shorter then
-        previous match (we want shorter keys as we'll have to read fewer
-        index pages for the same number of records)
-      */
-      match_key= idx;
-      match_key_len= table->key_info[idx].key_length;
-    }
-  }
-
-  if (match_key != MAX_KEY)
-  {
-    /* 
-      Found an index that allows records to be retrieved in the requested 
-      order. Now we'll check if using the index is cheaper then doing a table
-      scan.
-    */
-    double full_scan_time= table->file->scan_time();
-    double index_scan_time= table->file->read_time(match_key, 1, limit);
-    if (index_scan_time > full_scan_time)
-      match_key= MAX_KEY;
-  }
-  return match_key;
-}
-
 
 /*
   Test if a key can be used in different ranges
@@ -1041,8 +849,7 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
 
   if (cond_func->functype() == Item_func::BETWEEN)
   {
-    if (!((Item_func_between *)(cond_func))->negated &&
-        cond_func->arguments()[0]->type() == Item::FIELD_ITEM)
+    if (cond_func->arguments()[0]->type() == Item::FIELD_ITEM)
     {
       Field *field=((Item_field*) (cond_func->arguments()[0]))->field;
       Item_result cmp_type=field->cmp_type();
@@ -1059,7 +866,7 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
   if (cond_func->functype() == Item_func::IN_FUNC)
   {						// COND OR
     Item_func_in *func=(Item_func_in*) cond_func;
-    if (!func->negated && func->key_item()->type() == Item::FIELD_ITEM)
+    if (func->key_item()->type() == Item::FIELD_ITEM)
     {
       Field *field=((Item_field*) (func->key_item()))->field;
       Item_result cmp_type=field->cmp_type();
@@ -1627,21 +1434,8 @@ and_all_keys(SEL_ARG *key1,SEL_ARG *key2,uint clone_flag)
 
 
 
-/*
-  Produce a SEL_ARG graph that represents "key1 AND key2"
-
-  SYNOPSIS
-    key_and()
-      key1   First argument, root of its RB-tree
-      key2   Second argument, root of its RB-tree
-
-  RETURN
-    RB-tree root of the resulting SEL_ARG graph.
-    NULL if the result of AND operation is an empty interval {0}.
-*/
-
 static SEL_ARG *
-key_and(SEL_ARG *key1, SEL_ARG *key2, uint clone_flag)
+key_and(SEL_ARG *key1,SEL_ARG *key2,uint clone_flag)
 {
   if (!key1)
     return key2;
@@ -1704,7 +1498,6 @@ key_and(SEL_ARG *key1, SEL_ARG *key2, uint clone_flag)
 
   if ((key1->min_flag | key2->min_flag) & GEOM_FLAG)
   {
-    /* TODO: why not leave one of the trees? */
     key1->free_tree();
     key2->free_tree();
     return 0;					// Can't optimize this
@@ -2419,51 +2212,6 @@ int test_rb_tree(SEL_ARG *element,SEL_ARG *parent)
   return -1;					// Error, no more warnings
 }
 
-
-/*
-  Count how many times SEL_ARG graph "root" refers to its part "key"
-  
-  SYNOPSIS
-    count_key_part_usage()
-      root  An RB-Root node in a SEL_ARG graph.
-      key   Another RB-Root node in that SEL_ARG graph.
-
-  DESCRIPTION
-    The passed "root" node may refer to "key" node via root->next_key_part,
-    root->next->n
-
-    This function counts how many times the node "key" is referred (via
-    SEL_ARG::next_key_part) by 
-     - intervals of RB-tree pointed by "root", 
-     - intervals of RB-trees that are pointed by SEL_ARG::next_key_part from 
-       intervals of RB-tree pointed by "root",
-     - and so on.
-    
-    Here is an example (horizontal links represent next_key_part pointers, 
-    vertical links - next/prev prev pointers):  
-    
-         +----+               $
-         |root|-----------------+
-         +----+               $ |
-           |                  $ |
-           |                  $ |
-         +----+       +---+   $ |     +---+    Here the return value
-         |    |- ... -|   |---$-+--+->|key|    will be 4.
-         +----+       +---+   $ |  |  +---+
-           |                  $ |  |
-          ...                 $ |  |
-           |                  $ |  |
-         +----+   +---+       $ |  |
-         |    |---|   |---------+  |
-         +----+   +---+       $    |
-           |        |         $    |
-          ...     +---+       $    |
-                  |   |------------+
-                  +---+       $
-  RETURN 
-    Number of links to "key" from nodes reachable from "root".
-*/
-
 static ulong count_key_part_usage(SEL_ARG *root, SEL_ARG *key)
 {
   ulong count= 0;
@@ -2480,20 +2228,6 @@ static ulong count_key_part_usage(SEL_ARG *root, SEL_ARG *key)
   return count;
 }
 
-
-/*
-  Check if SEL_ARG::use_count value is correct
-
-  SYNOPSIS
-    SEL_ARG::test_use_count()
-      root  The root node of the SEL_ARG graph (an RB-tree root node that
-            has the least value of sel_arg->part in the entire graph, and
-            thus is the "origin" of the graph)
-
-  DESCRIPTION
-    Check if SEL_ARG::use_count value is correct. See the definition of
-    use_count for what is "correct".
-*/
 
 void SEL_ARG::test_use_count(SEL_ARG *root)
 {
@@ -2513,9 +2247,8 @@ void SEL_ARG::test_use_count(SEL_ARG *root)
       ulong count=count_key_part_usage(root,pos->next_key_part);
       if (count > pos->next_key_part->use_count)
       {
-        sql_print_information("Use_count: Wrong count for key at %lx, %lu "
-                              "should be %lu", (long unsigned int)pos,
-                              pos->next_key_part->use_count, count);
+	sql_print_information("Use_count: Wrong count for key at %lx, %lu should be %lu",
+			pos,pos->next_key_part->use_count,count);
 	return;
       }
       pos->next_key_part->test_use_count(root);
@@ -2523,7 +2256,7 @@ void SEL_ARG::test_use_count(SEL_ARG *root)
   }
   if (e_count != elements)
     sql_print_warning("Wrong use count: %u (should be %u) for tree at %lx",
-                      e_count, elements, (long unsigned int) this);
+		    e_count, elements, (gptr) this);
 }
 
 #endif
@@ -2981,14 +2714,6 @@ int QUICK_SELECT::get_next()
   }
 }
 
-void QUICK_SELECT::reset(void) 
-{
-  next= 0; 
-  it.rewind();
-  range= 0; 
-  if (file->inited == handler::NONE) 
-    file->ha_index_init(index);
-}
 
 /* Get next for geometrical indexes */
 
@@ -3210,11 +2935,7 @@ bool QUICK_SELECT_DESC::test_if_null_range(QUICK_RANGE *range_arg,
   return 0;
 }
 #endif
-void QUICK_SELECT_DESC::reset(void)
-{ 
-  rev_it.rewind();
-  QUICK_SELECT::reset();
-}
+
 
 /*****************************************************************************
 ** Print a quick range for debugging

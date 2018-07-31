@@ -27,8 +27,8 @@
 #include "ha_innodb.h"
 #include "sql_select.h"
 
-int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
-                 SQL_LIST *order, ha_rows limit, ulong options)
+int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds, SQL_LIST *order,
+                 ha_rows limit, ulong options)
 {
   int		error;
   TABLE		*table;
@@ -37,18 +37,12 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   bool 		using_limit=limit != HA_POS_ERROR;
   bool		transactional_table, log_delayed, safe_update, const_cond; 
   ha_rows	deleted;
-  uint usable_index= MAX_KEY;
   DBUG_ENTER("mysql_delete");
 
   if ((open_and_lock_tables(thd, table_list)))
     DBUG_RETURN(-1);
   table= table_list->table;
-  error= table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
-  if (error)
-  {
-    table->file->print_error(error, MYF(0));
-    DBUG_RETURN(error);
-  }
+  table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
   thd->proc_info="init";
   table->map=1;
 
@@ -125,47 +119,30 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
     tables.table = table;
     tables.alias = table_list->alias;
 
+    table->sort.io_cache = (IO_CACHE *) my_malloc(sizeof(IO_CACHE),
+                                             MYF(MY_FAE | MY_ZEROFILL));
       if (thd->lex->select_lex.setup_ref_array(thd, order->elements) ||
 	  setup_order(thd, thd->lex->select_lex.ref_pointer_array, &tables,
-                    fields, all_fields, (ORDER*) order->first))
+		      fields, all_fields, (ORDER*) order->first) ||
+	  !(sortorder=make_unireg_sortorder((ORDER*) order->first, &length)) ||
+	  (table->sort.found_records = filesort(thd, table, sortorder, length,
+					   select, HA_POS_ERROR,
+					   &examined_rows))
+	  == HA_POS_ERROR)
     {
       delete select;
       free_underlaid_joins(thd, &thd->lex->select_lex);
       DBUG_RETURN(-1);			// This will force out message
     }
-    
-    if (!select && limit != HA_POS_ERROR)
-      usable_index= get_index_for_order(table, (ORDER*)(order->first), limit);
-
-    if (usable_index == MAX_KEY)
-    {
-      table->sort.io_cache= (IO_CACHE *) my_malloc(sizeof(IO_CACHE),
-                                                   MYF(MY_FAE | MY_ZEROFILL));
-    
-      if ( !(sortorder=make_unireg_sortorder((ORDER*) order->first, &length)) ||
-	  (table->sort.found_records = filesort(thd, table, sortorder, length,
-					   select, HA_POS_ERROR,
-					   &examined_rows))
-	  == HA_POS_ERROR)
-      {
-        delete select;
-        free_underlaid_joins(thd, &thd->lex->select_lex);
-        DBUG_RETURN(-1);			// This will force out message
-      }
-      /*
-        Filesort has already found and selected the rows we want to delete,
-        so we don't need the where clause
-      */
-      delete select;
-      select= 0;
-    }
+    /*
+      Filesort has already found and selected the rows we want to delete,
+      so we don't need the where clause
+    */
+    delete select;
+    select= 0;
   }
 
-  if (usable_index==MAX_KEY)
-    init_read_record(&info,thd,table,select,1,1);
-  else
-    init_read_record_idx(&info, thd, table, 1, usable_index);
-
+  init_read_record(&info,thd,table,select,1,1);
   deleted=0L;
   init_ftfuncs(thd, &thd->lex->select_lex, 1);
   thd->proc_info="updating";
@@ -246,7 +223,6 @@ cleanup:
     if (!log_delayed)
       thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
   }
-  free_underlaid_joins(thd, &thd->lex->select_lex);
   if (transactional_table)
   {
     if (ha_autocommit_or_rollback(thd,error >= 0))
@@ -258,8 +234,8 @@ cleanup:
     mysql_unlock_tables(thd, thd->lock);
     thd->lock=0;
   }
-  if ((error >= 0 || thd->net.report_error) &&
-      (!thd->lex->ignore || thd->is_fatal_error))
+  free_underlaid_joins(thd, &thd->lex->select_lex);
+  if (error >= 0 || thd->net.report_error)
     send_error(thd,thd->killed ? ER_SERVER_SHUTDOWN: 0);
   else
   {
@@ -290,7 +266,6 @@ int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds)
 				  select_lex.table_list.first);
   DBUG_ENTER("mysql_prepare_delete");
 
-  thd->allow_sum_func= 0;
   if (setup_conds(thd, delete_table_list, conds) || 
       setup_ftfuncs(&thd->lex->select_lex))
     DBUG_RETURN(-1);
@@ -642,13 +617,9 @@ int mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
     TABLE *table= *table_ptr;
     table->file->info(HA_STATUS_AUTO | HA_STATUS_NO_LOCK);
     db_type table_type=table->db_type;
-    if (!ha_supports_generate(table_type))
-      goto trunc_by_del;
     strmov(path,table->path);
     *table_ptr= table->next;			// Unlink table from list
     close_temporary(table,0);
-    if (thd->slave_thread)
-      --slave_open_temp_tables;
     *fn_ext(path)=0;				// Remove the .frm extension
     ha_create_table(path, &create_info,1);
     // We don't need to call invalidate() because this table is not in cache
@@ -664,7 +635,7 @@ int mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
 
   (void) sprintf(path,"%s/%s/%s%s",mysql_data_home,table_list->db,
 		 table_list->real_name,reg_ext);
-  fn_format(path, path, "", "", MY_UNPACK_FILENAME);
+  fn_format(path,path,"","",4);
 
   if (!dont_send_ok)
   {
@@ -676,7 +647,18 @@ int mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
       DBUG_RETURN(-1);
     }
     if (!ha_supports_generate(table_type))
-      goto trunc_by_del;
+    {
+      /* Probably InnoDB table */
+      ulong save_options= thd->options;
+      table_list->lock_type= TL_WRITE;
+      thd->options&= ~(ulong) (OPTION_BEGIN | OPTION_NOT_AUTOCOMMIT);
+      ha_enable_transaction(thd, FALSE);
+      error= mysql_delete(thd, table_list, (COND*) 0, (SQL_LIST*) 0,
+			  HA_POS_ERROR, 0);
+      ha_enable_transaction(thd, TRUE);
+      thd->options= save_options;
+      DBUG_RETURN(error);
+    }
     if (lock_and_wait_for_table_name(thd, table_list))
       DBUG_RETURN(-1);
   }
@@ -711,16 +693,4 @@ end:
     VOID(pthread_mutex_unlock(&LOCK_open));
   }
   DBUG_RETURN(error ? -1 : 0);
-
- trunc_by_del:
-  /* Probably InnoDB table */
-  ulong save_options= thd->options;
-  table_list->lock_type= TL_WRITE;
-  thd->options&= ~(ulong) (OPTION_BEGIN | OPTION_NOT_AUTOCOMMIT);
-  ha_enable_transaction(thd, FALSE);
-  error= mysql_delete(thd, table_list, (COND*) 0, (SQL_LIST*) 0,
-                      HA_POS_ERROR, 0);
-  ha_enable_transaction(thd, TRUE);
-  thd->options= save_options;
-  DBUG_RETURN(error);
 }

@@ -49,7 +49,6 @@
  *  @{
  */
 
-#include <stdio.h>
 #include <ndb_types.h>
 #include "mgmapi_config_parameters.h"
 
@@ -351,12 +350,6 @@ extern "C" {
    */
   int ndb_mgm_get_latest_error_line(const NdbMgmHandle handle);
 #endif
-
-  /**
-   * Set error stream
-   */
-  void ndb_mgm_set_error_stream(NdbMgmHandle, FILE *);
-
 
   /** @} *********************************************************************/
   /** 

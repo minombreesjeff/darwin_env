@@ -542,14 +542,14 @@ Item_in_subselect::Item_in_subselect(Item * left_exp,
 }
 
 Item_allany_subselect::Item_allany_subselect(Item * left_exp,
-                                             chooser_compare_func_creator fc,
+					     Comp_creator *fn,
 					     st_select_lex *select_lex,
 					     bool all_arg)
-  :Item_in_subselect(), func_creator(fc), all(all_arg)
+  :Item_in_subselect(), all(all_arg)
 {
   DBUG_ENTER("Item_in_subselect::Item_in_subselect");
   left_expr= left_exp;
-  func= func_creator(all_arg);
+  func= fn;
   init(select_lex, new select_exists_subselect(this));
   max_columns= 1;
   abort_on_null= 0;
@@ -705,8 +705,7 @@ Item_in_subselect::single_value_transformer(JOIN *join,
     if (!select_lex->group_list.elements &&
         !select_lex->having &&
 	!select_lex->with_sum_func &&
-	!(select_lex->next_select()) &&
-        select_lex->table_list.elements)
+	!(select_lex->next_select()))
     {
       Item_sum_hybrid *item;
       if (func->l_op())
@@ -823,13 +822,13 @@ Item_in_subselect::single_value_transformer(JOIN *join,
   }
   else
   {
+    select_lex->item_list.empty();
+    select_lex->item_list.push_back(new Item_int("Not_used",
+						 (longlong) 1, 21));
+    select_lex->ref_pointer_array[0]= select_lex->item_list.head();
     if (select_lex->table_list.elements)
     {
       Item *having= item, *orig_item= item;
-      select_lex->item_list.empty();
-      select_lex->item_list.push_back(new Item_int("Not_used",
-                                                   (longlong) 1, 21));
-      select_lex->ref_pointer_array[0]= select_lex->item_list.head();
       item= func->create(expr, item);
       if (!abort_on_null && orig_item->maybe_null)
       {
@@ -860,7 +859,6 @@ Item_in_subselect::single_value_transformer(JOIN *join,
 	argument (reference) to fix_fields()
       */
       select_lex->where= join->conds= and_items(join->conds, item);
-      select_lex->where->top_level_item();
       if (join->conds->fix_fields(thd, join->tables_list, 0))
 	DBUG_RETURN(RES_ERROR);
     }
@@ -876,11 +874,9 @@ Item_in_subselect::single_value_transformer(JOIN *join,
 	select_lex->having=
 	  join->having=
 	  func->create(expr,
-                       new Item_ref_null_helper(this,
-                                            select_lex->ref_pointer_array,
-                                            (char *)"<no matter>",
-                                            (char *)"<result>"));
-
+		       new Item_null_helper(this, item,
+					    (char *)"<no matter>",
+					    (char *)"<result>"));
 	select_lex->having_fix_field= 1;
 	if (join->having->fix_fields(thd, join->tables_list,
 				     0))
@@ -916,13 +912,10 @@ Item_in_subselect::single_value_transformer(JOIN *join,
 Item_subselect::trans_res
 Item_in_subselect::row_value_transformer(JOIN *join)
 {
-  SELECT_LEX *select_lex= join->select_lex;
-  Item *having_item= 0;
-  uint cols_num= left_expr->cols();
-  bool is_having_used= (join->having || select_lex->with_sum_func ||
-                        select_lex->group_list.first ||
-                        !select_lex->table_list.elements);
   DBUG_ENTER("Item_in_subselect::row_value_transformer");
+
+  Item *item= 0;
+  SELECT_LEX *select_lex= join->select_lex;
 
   if (select_lex->item_list.elements != left_expr->cols())
   {
@@ -953,156 +946,56 @@ Item_in_subselect::row_value_transformer(JOIN *join)
   }
 
   select_lex->uncacheable|= UNCACHEABLE_DEPENDENT;
-  if (is_having_used)
   {
-    /*
-      (l1, l2, l3) IN (SELECT v1, v2, v3 ... HAVING having) =>
-      EXISTS (SELECT ... HAVING having and
-                                (l1 = v1 or is null v1) and
-                                (l2 = v2 or is null v2) and
-                                (l3 = v3 or is null v3) and
-                                is_not_null_test(v1) and
-                                is_not_null_test(v2) and
-                                is_not_null_test(v3))
-      where is_not_null_test used to register nulls in case if we have
-      not found matching to return correct NULL value
-    */
-    Item *item_having_part2= 0;
-    for (uint i= 0; i < cols_num; i++)
+    uint n= left_expr->cols();
+    List_iterator_fast<Item> li(select_lex->item_list);
+    for (uint i= 0; i < n; i++)
     {
       DBUG_ASSERT(left_expr->fixed && select_lex->ref_pointer_array[i]->fixed);
       if (select_lex->ref_pointer_array[i]->
           check_cols(left_expr->el(i)->cols()))
         DBUG_RETURN(RES_ERROR);
-      Item *item_eq=
-        new Item_func_eq(new
-                         Item_ref((*optimizer->get_cache())->
-                                         addr(i),
-                                         (char *)"<no matter>",
-                                         (char *)in_left_expr_name),
-                         new
-                         Item_ref(select_lex->ref_pointer_array + i,
-                                         (char *)"<no matter>",
-                                         (char *)"<list ref>")
-                        );
-      Item *item_isnull=
-        new Item_func_isnull(new
-                             Item_ref( select_lex->
-                                              ref_pointer_array+i,
-                                              (char *)"<no matter>",
-                                              (char *)"<list ref>")
-                            );
-      having_item=
-        and_items(having_item,
-                  new Item_cond_or(item_eq, item_isnull));
-      item_having_part2=
-        and_items(item_having_part2,
-                  new
-                  Item_is_not_null_test(this,
-                                        new
-                                        Item_ref(select_lex->
-                                                        ref_pointer_array + i,
-                                                        (char *)"<no matter>",
-                                                        (char *)"<list ref>")
-                                       )
-                 );
-      item_having_part2->top_level_item();
+      Item *func= new Item_ref_null_helper(this,
+					   select_lex->ref_pointer_array+i,
+					   (char *) "<no matter>",
+					   (char *) "<list ref>");
+      func=
+	eq_creator.create(new Item_direct_ref((*optimizer->get_cache())->
+					      addr(i),
+					      (char *)"<no matter>",
+					      (char *)in_left_expr_name),
+			  func);
+      item= and_items(item, func);
     }
-    having_item= and_items(having_item, item_having_part2);
-    having_item->top_level_item();
   }
-  else
+  if (join->having || select_lex->with_sum_func ||
+      select_lex->group_list.first ||
+      !select_lex->table_list.elements)
   {
-    /*
-      (l1, l2, l3) IN (SELECT v1, v2, v3 ... WHERE where) =>
-      EXISTS (SELECT ... WHERE where and
-                               (l1 = v1 or is null v1) and
-                               (l2 = v2 or is null v2) and
-                               (l3 = v3 or is null v3)
-                         HAVING is_not_null_test(v1) and
-                                is_not_null_test(v2) and
-                                is_not_null_test(v3))
-      where is_not_null_test register NULLs values but reject rows
-
-      in case when we do not need correct NULL, we have simplier construction:
-      EXISTS (SELECT ... WHERE where and
-                               (l1 = v1) and
-                               (l2 = v2) and
-                               (l3 = v3)
-    */
-    Item *where_item= 0;
-    for (uint i= 0; i < cols_num; i++)
-    {
-      Item *item, *item_isnull;
-      DBUG_ASSERT(left_expr->fixed && select_lex->ref_pointer_array[i]->fixed);
-      if (select_lex->ref_pointer_array[i]->
-          check_cols(left_expr->el(i)->cols()))
-        DBUG_RETURN(RES_ERROR);
-      item=
-        new Item_func_eq(new
-                         Item_direct_ref((*optimizer->get_cache())->
-                                         addr(i),
-                                         (char *)"<no matter>",
-                                         (char *)in_left_expr_name),
-                         new
-                         Item_direct_ref( select_lex->
-                                          ref_pointer_array+i,
-                                          (char *)"<no matter>",
-                                          (char *)"<list ref>")
-                        );
-      if (!abort_on_null)
-      {
-        having_item=
-          and_items(having_item,
-                    new
-                    Item_is_not_null_test(this,
-                                          new
-                                          Item_ref(select_lex->
-                                                          ref_pointer_array + i,
-                                                          (char *)"<no matter>",
-                                                          (char *)"<list ref>")
-                                         )
-                  );
-        item_isnull= new
-          Item_func_isnull(new
-                           Item_direct_ref( select_lex->
-                                            ref_pointer_array+i,
-                                            (char *)"<no matter>",
-                                            (char *)"<list ref>")
-                          );
-
-        item= new Item_cond_or(item, item_isnull);
-      }
-
-      where_item= and_items(where_item, item);
-    }
-    /*
-      AND can't be changed during fix_fields()
-      we can assign select_lex->where here, and pass 0 as last
-      argument (reference) to fix_fields()
-    */
-    select_lex->where= join->conds= and_items(join->conds, where_item);
-    select_lex->where->top_level_item();
-    if (join->conds->fix_fields(thd, join->tables_list, 0))
-      DBUG_RETURN(RES_ERROR);
-  }
-  if (having_item)
-  {
-    bool res;
-    select_lex->having= join->having= and_items(join->having, having_item);
-    select_lex->having->top_level_item();
     /*
       AND can't be changed during fix_fields()
       we can assign select_lex->having here, and pass 0 as last
       argument (reference) to fix_fields()
     */
+    select_lex->having= join->having= and_items(join->having, item);
     select_lex->having_fix_field= 1;
-    res= join->having->fix_fields(thd, join->tables_list, 0);
-    select_lex->having_fix_field= 0;
-    if (res)
+    if (join->having->fix_fields(thd, join->tables_list, 0))
     {
+      select_lex->having_fix_field= 0;
       DBUG_RETURN(RES_ERROR);
     }
+    select_lex->having_fix_field= 0;
+  }
+  else
+  {
+    /*
+      AND can't be changed during fix_fields()
+      we can assign select_lex->having here, and pass 0 as last
+      argument (reference) to fix_fields()
+    */
+    select_lex->where= join->conds= and_items(join->conds, item);
+    if (join->conds->fix_fields(thd, join->tables_list, 0))
+      DBUG_RETURN(RES_ERROR);
   }
   DBUG_RETURN(RES_OK);
 }

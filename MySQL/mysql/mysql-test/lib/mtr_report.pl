@@ -10,6 +10,7 @@ sub mtr_report_test_name($);
 sub mtr_report_test_passed($);
 sub mtr_report_test_failed($);
 sub mtr_report_test_skipped($);
+sub mtr_report_test_disabled($);
 
 sub mtr_show_failed_diff ($);
 sub mtr_report_stats ($);
@@ -19,7 +20,6 @@ sub mtr_print_header ();
 sub mtr_report (@);
 sub mtr_warning (@);
 sub mtr_error (@);
-sub mtr_child_error (@);
 sub mtr_debug (@);
 
 
@@ -75,7 +75,7 @@ sub mtr_show_failed_diff ($) {
 sub mtr_report_test_name ($) {
   my $tinfo= shift;
 
-  printf "%-30s ", $tinfo->{'name'};
+  printf "%-31s ", $tinfo->{'name'};
 }
 
 sub mtr_report_test_skipped ($) {
@@ -110,26 +110,19 @@ sub mtr_report_test_failed ($) {
   my $tinfo= shift;
 
   $tinfo->{'result'}= 'MTR_RES_FAILED';
-  if ( $tinfo->{'timeout'} )
-  {
-    print "[ fail ]  timeout\n";
-  }
-  else
-  {
-    print "[ fail ]\n";
-  }
+  print "[ fail ]\n";
 
   # FIXME Instead of this test, and meaningless error message in 'else'
   # we should write out into $::path_timefile when the error occurs.
   if ( -f $::path_timefile )
   {
-    print "\nErrors are (from $::path_timefile) :\n";
+    print "Errors are (from $::path_timefile) :\n";
     print mtr_fromfile($::path_timefile); # FIXME print_file() instead
     print "\n(the last lines may be the most important ones)\n";
   }
   else
   {
-    print "\nUnexpected termination, probably when starting mysqld\n";
+    print "Unexpected termination, probably when starting mysqld\n";
   }
 }
 
@@ -178,7 +171,7 @@ sub mtr_report_stats ($) {
       "%.2f\% were successful.\n\n", $ratio;
     print
       "The log files in var/log may give you some hint\n",
-      "of what went wrong.\n",
+      "of what when wrong.\n",
       "If you want to report this error, please read first ",
       "the documentation at\n",
       "http://www.mysql.com/doc/en/MySQL_test_suite.html\n";
@@ -224,8 +217,7 @@ sub mtr_report_stats ($) {
 
   if ( $tot_failed != 0 )
   {
-    my $test_mode= join(" ", @::glob_test_mode) || "default";
-    print "mysql-test-run in $test_mode mode: *** Failing the test(s):";
+    print "mysql-test-run: *** Failing the test(s):";
 
     foreach my $tinfo (@$tests)
     {
@@ -257,11 +249,11 @@ sub mtr_print_header () {
   print "\n";
   if ( $::opt_timer )
   {
-    print "TEST                           RESULT         TIME (ms)\n";
+    print "TEST                            RESULT        TIME (ms)\n";
   }
   else
   {
-    print "TEST                           RESULT\n";
+    print "TEST                            RESULT\n";
   }
   mtr_print_line();
   print "\n";
@@ -285,11 +277,6 @@ sub mtr_warning (@) {
 sub mtr_error (@) {
   print STDERR "mysql-test-run: *** ERROR: ",join(" ", @_),"\n";
   mtr_exit(1);
-}
-
-sub mtr_child_error (@) {
-  print STDERR "mysql-test-run: *** ERROR(child): ",join(" ", @_),"\n";
-  exit(1);
 }
 
 sub mtr_debug (@) {

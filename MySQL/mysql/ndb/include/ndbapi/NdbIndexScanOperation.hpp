@@ -45,15 +45,14 @@ public:
   NdbResultSet* readTuples(LockMode = LM_Read,
 			   Uint32 batch = 0, 
 			   Uint32 parallel = 0,
-			   bool order_by = false,
-			   bool keyinfo = false);
+			   bool order_by = false);
   
   inline NdbResultSet* readTuples(int parallell){
-    return readTuples(LM_Read, 0, parallell);
+    return readTuples(LM_Read, 0, parallell, false);
   }
   
   inline NdbResultSet* readTuplesExclusive(int parallell = 0){
-    return readTuples(LM_Exclusive, 0, parallell);
+    return readTuples(LM_Exclusive, 0, parallell, false);
   }
 
   /**
@@ -133,8 +132,6 @@ private:
   int compare(Uint32 key, Uint32 cols, const NdbReceiver*, const NdbReceiver*);
 
   Uint32 m_sort_columns;
-
-  friend struct Ndb_free_list_t<NdbIndexScanOperation>;
 };
 
 #endif

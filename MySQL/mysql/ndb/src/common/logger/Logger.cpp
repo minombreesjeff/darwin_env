@@ -167,7 +167,7 @@ Logger::addHandler(LogHandler* pHandler)
 }
 
 bool
-Logger::addHandler(const BaseString &logstring, int *err, int len, char* errStr) {
+Logger::addHandler(const BaseString &logstring) {
   size_t i;
   Vector<BaseString> logdest;
   Vector<LogHandler *>loghandlers;
@@ -200,18 +200,9 @@ Logger::addHandler(const BaseString &logstring, int *err, int len, char* errStr)
       handler = new ConsoleLogHandler();
     
     if(handler == NULL)
-    {
-      snprintf(errStr,len,"Could not create log destination: %s",
-               logdest[i].c_str());
       DBUG_RETURN(false);
-    }
     if(!handler->parseParams(params))
-    {
-      *err= handler->getErrorCode();
-      if(handler->getErrorStr())
-        strncpy(errStr, handler->getErrorStr(), len);
       DBUG_RETURN(false);
-    }
     loghandlers.push_back(handler);
   }
   

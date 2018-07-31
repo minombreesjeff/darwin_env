@@ -69,9 +69,6 @@ static const Uint32 BACKUP_SEQUENCE = 0x1F000000;
 
 static Uint32 g_TypeOfStart = NodeState::ST_ILLEGAL_TYPE;
 
-#define SEND_BACKUP_STARTED_FLAG(A) (((A) & 0x3) > 0)
-#define SEND_BACKUP_COMPLETED_FLAG(A) (((A) & 0x3) > 1)
-
 void
 Backup::execSTTOR(Signal* signal) 
 {
@@ -786,17 +783,13 @@ Backup::checkNodeFail(Signal* signal,
       pos= &ref->nodeId - signal->getDataPtr();
       break;
     }
-    case GSN_WAIT_GCP_REQ:
-    case GSN_DROP_TRIG_REQ:
     case GSN_CREATE_TRIG_REQ:
     case GSN_ALTER_TRIG_REQ:
-      ptr.p->setErrorCode(AbortBackupOrd::BackupFailureDueToNodeFail);
-      return;
+    case GSN_WAIT_GCP_REQ:
     case GSN_UTIL_SEQUENCE_REQ:
     case GSN_UTIL_LOCK_REQ:
+    case GSN_DROP_TRIG_REQ:
       return;
-    default:
-      ndbrequire(false);
     }
     
     for(Uint32 i = 0; (i = mask.find(i+1)) != NdbNodeBitmask::NotFound; )
@@ -859,24 +852,23 @@ Backup::execBACKUP_REQ(Signal* signal)
   const Uint32 senderData = req->senderData;
   const BlockReference senderRef = signal->senderBlockRef();
   const Uint32 dataLen32 = req->backupDataLen; // In 32 bit words
-  const Uint32 flags = signal->getLength() > 2 ? req->flags : 2;
-
+  
   if(getOwnNodeId() != getMasterNodeId()) {
     jam();
-    sendBackupRef(senderRef, flags, signal, senderData, BackupRef::IAmNotMaster);
+    sendBackupRef(senderRef, signal, senderData, BackupRef::IAmNotMaster);
     return;
   }//if
 
   if (m_diskless)
   {
-    sendBackupRef(senderRef, flags, signal, senderData, 
+    sendBackupRef(senderRef, signal, senderData, 
 		  BackupRef::CannotBackupDiskless);
     return;
   }
   
   if(dataLen32 != 0) {
     jam();
-    sendBackupRef(senderRef, flags, signal, senderData, 
+    sendBackupRef(senderRef, signal, senderData, 
 		  BackupRef::BackupDefinitionNotImplemented);
     return;
   }//if
@@ -891,7 +883,7 @@ Backup::execBACKUP_REQ(Signal* signal)
   c_backups.seize(ptr);
   if(ptr.i == RNIL) {
     jam();
-    sendBackupRef(senderRef, flags, signal, senderData, BackupRef::OutOfBackupRecord);
+    sendBackupRef(senderRef, signal, senderData, BackupRef::OutOfBackupRecord);
     return;
   }//if
 
@@ -902,7 +894,6 @@ Backup::execBACKUP_REQ(Signal* signal)
   ptr.p->errorCode = 0;
   ptr.p->clientRef = senderRef;
   ptr.p->clientData = senderData;
-  ptr.p->flags = flags;
   ptr.p->masterRef = reference();
   ptr.p->nodes = c_aliveNodes;
   ptr.p->backupId = 0;
@@ -930,6 +921,7 @@ Backup::execUTIL_SEQUENCE_REF(Signal* signal)
   jamEntry();
   UtilSequenceRef * utilRef = (UtilSequenceRef*)signal->getDataPtr();
   ptr.i = utilRef->senderData;
+  ndbrequire(ptr.i == RNIL);
   c_backupPool.getPtr(ptr);
   ndbrequire(ptr.p->masterData.gsn == GSN_UTIL_SEQUENCE_REQ);
   sendBackupRef(signal, ptr, BackupRef::SequenceFailure);
@@ -940,23 +932,20 @@ void
 Backup::sendBackupRef(Signal* signal, BackupRecordPtr ptr, Uint32 errorCode)
 {
   jam();
-  sendBackupRef(ptr.p->clientRef, ptr.p->flags, signal, ptr.p->clientData, errorCode);
+  sendBackupRef(ptr.p->clientRef, signal, ptr.p->clientData, errorCode);
   cleanup(signal, ptr);
 }
 
 void
-Backup::sendBackupRef(BlockReference senderRef, Uint32 flags, Signal *signal,
+Backup::sendBackupRef(BlockReference senderRef, Signal *signal,
 		      Uint32 senderData, Uint32 errorCode)
 {
   jam();
-  if (SEND_BACKUP_STARTED_FLAG(flags))
-  {
-    BackupRef* ref = (BackupRef*)signal->getDataPtrSend();
-    ref->senderData = senderData;
-    ref->errorCode = errorCode;
-    ref->masterRef = numberToRef(BACKUP, getMasterNodeId());
-    sendSignal(senderRef, GSN_BACKUP_REF, signal, BackupRef::SignalLength, JBB);
-  }
+  BackupRef* ref = (BackupRef*)signal->getDataPtrSend();
+  ref->senderData = senderData;
+  ref->errorCode = errorCode;
+  ref->masterRef = numberToRef(BACKUP, getMasterNodeId());
+  sendSignal(senderRef, GSN_BACKUP_REF, signal, BackupRef::SignalLength, JBB);
 
   if(errorCode != BackupRef::IAmNotMaster){
     signal->theData[0] = EventReport::BackupFailedToStart;
@@ -1110,7 +1099,6 @@ Backup::sendDefineBackupReq(Signal *signal, BackupRecordPtr ptr)
   req->backupKey[1] = ptr.p->backupKey[1];
   req->nodes = ptr.p->nodes;
   req->backupDataLen = ptr.p->backupDataLen;
-  req->flags = ptr.p->flags;
   
   ptr.p->masterData.gsn = GSN_DEFINE_BACKUP_REQ;
   ptr.p->masterData.sendCounter = ptr.p->nodes;
@@ -1206,18 +1194,13 @@ Backup::defineBackupReply(Signal* signal, BackupRecordPtr ptr, Uint32 nodeId)
   /**
    * Reply to client
    */
-  CRASH_INSERTION((10034));
-
-  if (SEND_BACKUP_STARTED_FLAG(ptr.p->flags))
-  {
-    BackupConf * conf = (BackupConf*)signal->getDataPtrSend();
-    conf->backupId = ptr.p->backupId;
-    conf->senderData = ptr.p->clientData;
-    conf->nodes = ptr.p->nodes;
-    sendSignal(ptr.p->clientRef, GSN_BACKUP_CONF, signal, 
-	       BackupConf::SignalLength, JBB);
-  }
-
+  BackupConf * conf = (BackupConf*)signal->getDataPtrSend();
+  conf->backupId = ptr.p->backupId;
+  conf->senderData = ptr.p->clientData;
+  conf->nodes = ptr.p->nodes;
+  sendSignal(ptr.p->clientRef, GSN_BACKUP_CONF, signal, 
+	     BackupConf::SignalLength, JBB);
+  
   signal->theData[0] = EventReport::BackupStarted;
   signal->theData[1] = ptr.p->clientRef;
   signal->theData[2] = ptr.p->backupId;
@@ -1807,7 +1790,7 @@ Backup::execBACKUP_FRAGMENT_CONF(Signal* signal)
   const Uint32 nodeId = refToNode(signal->senderBlockRef());
   const Uint32 noOfBytes = conf->noOfBytes;
   const Uint32 noOfRecords = conf->noOfRecords;
-
+  
   BackupRecordPtr ptr;
   c_backupPool.getPtr(ptr, ptrI);
 
@@ -1884,7 +1867,7 @@ Backup::execBACKUP_FRAGMENT_REF(Signal* signal)
       }
     }
   }
-  goto err;
+  ndbrequire(false);
 
 done:
   ptr.p->masterData.sendCounter--;
@@ -1896,8 +1879,7 @@ done:
     masterAbort(signal, ptr);
     return;
   }//if
-
-err:
+  
   AbortBackupOrd *ord = (AbortBackupOrd*)signal->getDataPtrSend();
   ord->backupId = ptr.p->backupId;
   ord->backupPtr = ptr.i;
@@ -2099,22 +2081,19 @@ Backup::stopBackupReply(Signal* signal, BackupRecordPtr ptr, Uint32 nodeId)
   
   if(!ptr.p->checkError())
   {
-    if (SEND_BACKUP_COMPLETED_FLAG(ptr.p->flags))
-    {
-      BackupCompleteRep * rep = (BackupCompleteRep*)signal->getDataPtrSend();
-      rep->backupId = ptr.p->backupId;
-      rep->senderData = ptr.p->clientData;
-      rep->startGCP = ptr.p->startGCP;
-      rep->stopGCP = ptr.p->stopGCP;
-      rep->noOfBytes = ptr.p->noOfBytes;
-      rep->noOfRecords = ptr.p->noOfRecords;
-      rep->noOfLogBytes = ptr.p->noOfLogBytes;
-      rep->noOfLogRecords = ptr.p->noOfLogRecords;
-      rep->nodes = ptr.p->nodes;
-      sendSignal(ptr.p->clientRef, GSN_BACKUP_COMPLETE_REP, signal,
-		 BackupCompleteRep::SignalLength, JBB);
-    }
-
+    BackupCompleteRep * rep = (BackupCompleteRep*)signal->getDataPtrSend();
+    rep->backupId = ptr.p->backupId;
+    rep->senderData = ptr.p->clientData;
+    rep->startGCP = ptr.p->startGCP;
+    rep->stopGCP = ptr.p->stopGCP;
+    rep->noOfBytes = ptr.p->noOfBytes;
+    rep->noOfRecords = ptr.p->noOfRecords;
+    rep->noOfLogBytes = ptr.p->noOfLogBytes;
+    rep->noOfLogRecords = ptr.p->noOfLogRecords;
+    rep->nodes = ptr.p->nodes;
+    sendSignal(ptr.p->clientRef, GSN_BACKUP_COMPLETE_REP, signal,
+	       BackupCompleteRep::SignalLength, JBB);
+    
     signal->theData[0] = EventReport::BackupCompleted;
     signal->theData[1] = ptr.p->clientRef;
     signal->theData[2] = ptr.p->backupId;
@@ -2151,15 +2130,13 @@ Backup::masterAbort(Signal* signal, BackupRecordPtr ptr)
     return;
   }
 
-  if (SEND_BACKUP_COMPLETED_FLAG(ptr.p->flags))
-  {
-    BackupAbortRep* rep = (BackupAbortRep*)signal->getDataPtrSend();
-    rep->backupId = ptr.p->backupId;
-    rep->senderData = ptr.p->clientData;
-    rep->reason = ptr.p->errorCode;
-    sendSignal(ptr.p->clientRef, GSN_BACKUP_ABORT_REP, signal, 
-	       BackupAbortRep::SignalLength, JBB);
-  }
+  BackupAbortRep* rep = (BackupAbortRep*)signal->getDataPtrSend();
+  rep->backupId = ptr.p->backupId;
+  rep->senderData = ptr.p->clientData;
+  rep->reason = ptr.p->errorCode;
+  sendSignal(ptr.p->clientRef, GSN_BACKUP_ABORT_REP, signal, 
+	     BackupAbortRep::SignalLength, JBB);
+  
   signal->theData[0] = EventReport::BackupAborted;
   signal->theData[1] = ptr.p->clientRef;
   signal->theData[2] = ptr.p->backupId;
@@ -2291,13 +2268,6 @@ Backup::execDEFINE_BACKUP_REQ(Signal* signal)
   ptr.p->errorCode = 0;
   ptr.p->clientRef = req->clientRef;
   ptr.p->clientData = req->clientData;
-  if(senderRef == reference())
-    ptr.p->flags = req->flags;
-  else
-    ptr.p->flags = req->flags & ~((Uint32)0x3); /* remove waitCompleted flags
-						 * as non master should never
-						 * reply
-						 */
   ptr.p->masterRef = senderRef;
   ptr.p->nodes = req->nodes;
   ptr.p->backupId = backupId;
@@ -2323,8 +2293,9 @@ Backup::execDEFINE_BACKUP_REQ(Signal* signal)
     0    // 3M
   };
   const Uint32 maxInsert[] = {
-    MAX_WORDS_META_FILE,
-    4096,    // 16k
+    2048,  // Temporarily to solve TR515
+    //25,      // 100 bytes
+    2048,    // 4k
     16*3000, // Max 16 tuples
   };
   Uint32 minWrite[] = {
@@ -2447,13 +2418,7 @@ Backup::execLIST_TABLES_CONF(Signal* signal)
     jam();
     Uint32 tableId = ListTablesConf::getTableId(conf->tableData[i]);
     Uint32 tableType = ListTablesConf::getTableType(conf->tableData[i]);
-    Uint32 state= ListTablesConf::getTableState(conf->tableData[i]);
     if (!DictTabInfo::isTable(tableType) && !DictTabInfo::isIndex(tableType)){
-      jam();
-      continue;
-    }//if
-    if (state != DictTabInfo::StateOnline)
-    {
       jam();
       continue;
     }//if
@@ -2826,19 +2791,10 @@ Backup::execGET_TABINFO_CONF(Signal* signal)
 
   TablePtr tmp = tabPtr;
   ptr.p->tables.next(tabPtr);
-  if(DictTabInfo::isIndex(tmp.p->tableType))
-  {
-    jam();
+  if(DictTabInfo::isIndex(tmp.p->tableType)){
     ptr.p->tables.release(tmp);
   }
-  else
-  {
-    jam();
-    signal->theData[0] = tmp.p->tableId;
-    signal->theData[1] = 1; // lock
-    EXECUTE_DIRECT(DBDICT, GSN_BACKUP_FRAGMENT_REQ, signal, 2);
-  }
-
+  
   if(tabPtr.i == RNIL) {
     jam();
     
@@ -3133,7 +3089,7 @@ Backup::execSTART_BACKUP_REQ(Signal* signal)
       trigPtr.p->tab_ptr_i = tabPtr.i;
       trigPtr.p->logEntry = 0;
       trigPtr.p->event = j;
-      trigPtr.p->maxRecordSize = 4096;
+      trigPtr.p->maxRecordSize = 2048;
       trigPtr.p->operation = 
 	&ptr.p->files.getPtr(ptr.p->logFilePtr)->operation;
       trigPtr.p->operation->noOfBytes = 0;
@@ -3269,7 +3225,6 @@ Backup::execBACKUP_FRAGMENT_REQ(Signal* signal)
     req->requestInfo = 0;
     req->savePointId = 0;
     req->tableId = table.tableId;
-    ScanFragReq::setReadCommittedFlag(req->requestInfo, 1);
     ScanFragReq::setLockMode(req->requestInfo, 0);
     ScanFragReq::setHoldLockFlag(req->requestInfo, 0);
     ScanFragReq::setKeyinfoFlag(req->requestInfo, 0);
@@ -3620,7 +3575,7 @@ Backup::backupFragmentRef(Signal * signal, BackupFilePtr filePtr)
   ref->backupId = ptr.p->backupId;
   ref->backupPtr = ptr.i;
   ref->nodeId = getOwnNodeId();
-  ref->errorCode = filePtr.p->errorCode;
+  ref->errorCode = ptr.p->errorCode;
   sendSignal(ptr.p->masterRef, GSN_BACKUP_FRAGMENT_REF, signal,
 	     BackupFragmentRef::SignalLength, JBB);
 }
@@ -3773,7 +3728,7 @@ Backup::checkFile(Signal* signal, BackupFilePtr filePtr)
     req->userReference = reference();
     req->varIndex      = 0;
     req->offset        = tmp - c_startOfPages;
-    req->size          = sz; // Round up
+    req->size          = sz; // Avrunda uppot
     
     sendSignal(NDBFS_REF, GSN_FSAPPENDREQ, signal, 
 	       FsAppendReq::SignalLength, JBA);
@@ -3881,8 +3836,6 @@ Backup::execTRIG_ATTRINFO(Signal* signal) {
        !buf.getWritePtr(&dst, trigPtr.p->maxRecordSize)) 
     {
       jam();
-      Uint32 save[TrigAttrInfo::StaticLength];
-      memcpy(save, signal->getDataPtr(), 4*TrigAttrInfo::StaticLength);
       BackupRecordPtr ptr;
       c_backupPool.getPtr(ptr, trigPtr.p->backupPtr);
       trigPtr.p->errorCode = AbortBackupOrd::LogBufferFull;
@@ -3893,8 +3846,6 @@ Backup::execTRIG_ATTRINFO(Signal* signal) {
       ord->senderData= ptr.i;
       sendSignal(ptr.p->masterRef, GSN_ABORT_BACKUP_ORD, signal, 
 		 AbortBackupOrd::SignalLength, JBB);
-
-      memcpy(signal->getDataPtrSend(), save, 4*TrigAttrInfo::StaticLength);
       return;
     }//if
         
@@ -4043,17 +3994,6 @@ Backup::execSTOP_BACKUP_REQ(Signal* signal)
     gcp->StartGCP      = htonl(startGCP);
     gcp->StopGCP       = htonl(stopGCP - 1);
     filePtr.p->operation.dataBuffer.updateWritePtr(gcpSz);
-  }
-
-  {
-    TablePtr tabPtr;
-    for(ptr.p->tables.first(tabPtr); tabPtr.i != RNIL;
-	ptr.p->tables.next(tabPtr))
-    {
-      signal->theData[0] = tabPtr.p->tableId;
-      signal->theData[1] = 0; // unlock
-      EXECUTE_DIRECT(DBDICT, GSN_BACKUP_FRAGMENT_REQ, signal, 2);
-    }
   }
   
   closeFiles(signal, ptr);
@@ -4398,11 +4338,6 @@ Backup::cleanup(Signal* signal, BackupRecordPtr ptr)
       }//if
       tabPtr.p->triggerIds[j] = ILLEGAL_TRIGGER_ID;
     }//for
-    {
-      signal->theData[0] = tabPtr.p->tableId;
-      signal->theData[1] = 0; // unlock
-      EXECUTE_DIRECT(DBDICT, GSN_BACKUP_FRAGMENT_REQ, signal, 2);
-    }
   }//for
 
   BackupFilePtr filePtr;
@@ -4417,6 +4352,9 @@ Backup::cleanup(Signal* signal, BackupRecordPtr ptr)
   }//for
 
   ptr.p->files.release();
+  ptr.p->tables.release();
+  ptr.p->triggers.release();
+
   ptr.p->tables.release();
   ptr.p->triggers.release();
   ptr.p->pages.release();

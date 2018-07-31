@@ -64,16 +64,14 @@ public:
    * Tuples are not stored in NdbResultSet until execute(NoCommit) 
    * has been executed and nextResult has been called.
    * 
-   * @param keyinfo   Return primary key, needed to be able to call lockTuple
    * @param parallel  Scan parallelism
    * @param batch No of rows to fetch from each fragment at a time
    * @param LockMode  Scan lock handling   
    * @returns NdbResultSet.
-   * @note specifying 0 for batch and parallell means max performance
+   * @note specifying 0 for batch and parallall means max performance
    */ 
   NdbResultSet* readTuples(LockMode = LM_Read, 
-			   Uint32 batch = 0, Uint32 parallel = 0, 
-			   bool keyinfo = false);
+			   Uint32 batch = 0, Uint32 parallel = 0);
   
   inline NdbResultSet* readTuples(int parallell){
     return readTuples(LM_Read, 0, parallell);

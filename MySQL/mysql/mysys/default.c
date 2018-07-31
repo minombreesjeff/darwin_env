@@ -579,9 +579,7 @@ static int search_default_file_with_ext(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
 	value_end=value;
 
       /* remove quotes around argument */
-      if ((*value == '\"' || *value == '\'') && /* First char is quote */
-          (value + 1 < value_end ) && /* String is longer than 1 */
-          *value == value_end[-1] ) /* First char is equal to last char */
+      if ((*value == '\"' || *value == '\'') && *value == value_end[-1])
       {
 	value++;
 	value_end--;

@@ -138,9 +138,6 @@ struct st_table {
   uint next_number_index;
   uint blob_ptr_size;			/* 4 or 8 */
   uint next_number_key_offset;
-  uint lock_position;                   /* Position in MYSQL_LOCK.table */
-  uint lock_data_start;                 /* Start pos. in MYSQL_LOCK.locks */
-  uint lock_count;                      /* Number of locks */
   int current_lock;			/* Type of lock on table */
   enum tmp_table_type tmp_table;
   my_bool copy_blobs;			/* copy_blobs when storing */
@@ -238,11 +235,6 @@ typedef struct st_table_list
   bool		cacheable_table;	/* stop PS caching */
   /* used in multi-upd privelege check */
   bool		table_in_update_from_clause;
-  /*
-    Cleanup for re-execution in a prepared statement or a stored
-    procedure.
-  */
-  void reinit_before_use(THD *thd);
 } TABLE_LIST;
 
 typedef struct st_changed_table_list

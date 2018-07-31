@@ -207,7 +207,7 @@ static inline int read_str(char * &buf, char *buf_end, char * &str,
 /*
   Transforms a string into "" or its expression in 0x... form.
 */
-char *str_to_hex(char *to, const char *from, uint len)
+static char *str_to_hex(char *to, char *from, uint len)
 {
   char *p= to;
   if (len)
@@ -949,7 +949,6 @@ Query_log_event::Query_log_event(const char* buf, int event_len,
 void Query_log_event::print(FILE* file, bool short_form, char* last_db)
 {
   char buff[40],*end;				// Enough for SET TIMESTAMP
-  const uint set_len= sizeof("SET ONE_SHOT CHARACTER_SET_CLIENT=") - 1;
   if (!short_form)
   {
     print_header(file);
@@ -979,17 +978,6 @@ void Query_log_event::print(FILE* file, bool short_form, char* last_db)
   my_fwrite(file, (byte*) buff, (uint) (end-buff),MYF(MY_NABP | MY_WME));
   if (flags & LOG_EVENT_THREAD_SPECIFIC_F)
     fprintf(file,"SET @@session.pseudo_thread_id=%lu;\n",(ulong)thread_id);
-  /* charset_name command for mysql client */
-  if (!strncmp(query, "SET ONE_SHOT CHARACTER_SET_CLIENT=", set_len))
-  {
-    char * endptr;
-    int cs_number= strtoul(query + set_len, &endptr, 10);
-    DBUG_ASSERT(*endptr == ',');
-    CHARSET_INFO *cs_info= get_charset(cs_number, MYF(MY_WME));
-    if (cs_info) {
-      fprintf(file, "/*!\\C %s */;\n", cs_info->csname);
-    }
-  }
   my_fwrite(file, (byte*) query, q_len, MYF(MY_NABP | MY_WME));
   fprintf(file, ";\n");
 }
@@ -1020,16 +1008,6 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli)
 #endif
   clear_all_errors(thd, rli);
 
-  /*
-    Note:   We do not need to execute reset_one_shot_variables() if this
-            db_ok() test fails.
-    Reason: The db stored in binlog events is the same for SET and for
-            its companion query.  If the SET is ignored because of
-            db_ok(), the companion query will also be ignored, and if
-            the companion query is ignored in the db_ok() test of
-            ::exec_event(), then the companion SET also have so we
-            don't need to reset_one_shot_variables().
-  */
   if (db_ok(thd->db, replicate_do_db, replicate_ignore_db))
   {
     thd->set_time((time_t)when);
@@ -1784,16 +1762,6 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
     Create_file_log_event::exec_event() and then discarding Append_block and
     al. Another way is do the filtering in the I/O thread (more efficient: no
     disk writes at all).
-
-
-    Note:   We do not need to execute reset_one_shot_variables() if this
-            db_ok() test fails.
-    Reason: The db stored in binlog events is the same for SET and for
-            its companion query.  If the SET is ignored because of
-            db_ok(), the companion query will also be ignored, and if
-            the companion query is ignored in the db_ok() test of
-            ::exec_event(), then the companion SET also have so we
-            don't need to reset_one_shot_variables().
   */
   if (db_ok(thd->db, replicate_do_db, replicate_ignore_db))
   {
@@ -1842,13 +1810,24 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
         thd->query= load_data_query;
       }
 
+      /*
+        We need to set thd->lex->sql_command and thd->lex->duplicates
+        since InnoDB tests these variables to decide if this is a LOAD
+        DATA ... REPLACE INTO ... statement even though mysql_parse()
+        is not called.  This is not needed in 5.0 since there the LOAD
+        DATA ... statement is replicated using mysql_parse(), which
+        sets the thd->lex fields correctly.
+      */
+      thd->lex->sql_command= SQLCOM_LOAD;
       if (sql_ex.opt_flags & REPLACE_FLAG)
       {
+        thd->lex->duplicates= DUP_REPLACE;
 	handle_dup= DUP_REPLACE;
       }
       else if (sql_ex.opt_flags & IGNORE_FLAG)
       {
         ignore= 1;
+        thd->lex->duplicates= DUP_ERROR;
         handle_dup= DUP_ERROR;
       }
       else
@@ -1866,18 +1845,9 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
           If reading from net (a 3.23 master), mysql_load() will change this
           to IGNORE.
         */
+        thd->lex->duplicates= DUP_ERROR;
         handle_dup= DUP_ERROR;
       }
-      /*
-        We need to set thd->lex->sql_command and thd->lex->duplicates
-        since InnoDB tests these variables to decide if this is a LOAD
-        DATA ... REPLACE INTO ... statement even though mysql_parse()
-        is not called.  This is not needed in 5.0 since there the LOAD
-        DATA ... statement is replicated using mysql_parse(), which
-        sets the thd->lex fields correctly.
-      */
-      thd->lex->sql_command= SQLCOM_LOAD;
-      thd->lex->duplicates= handle_dup;
 
       sql_exchange ex((char*)fname, sql_ex.opt_flags & DUMPFILE_FLAG);
       String field_term(sql_ex.field_term,sql_ex.field_term_len,log_cs);
@@ -2025,44 +1995,18 @@ void Rotate_log_event::print(FILE* file, bool short_form, char* last_db)
 #endif /* MYSQL_CLIENT */
 
 
-
 /*
-  Rotate_log_event::Rotate_log_event() (2 constructors)
+  Rotate_log_event::Rotate_log_event()
 */
-
-
-#ifndef MYSQL_CLIENT
-Rotate_log_event::Rotate_log_event(THD* thd_arg,
-                                   const char* new_log_ident_arg,
-                                   uint ident_len_arg, ulonglong pos_arg,
-                                   uint flags_arg)
-  :Log_event(), new_log_ident(new_log_ident_arg),
-   pos(pos_arg),ident_len(ident_len_arg ? ident_len_arg :
-                          (uint) strlen(new_log_ident_arg)), flags(flags_arg)
-{
-#ifndef DBUG_OFF
-  char buff[22];
-  DBUG_ENTER("Rotate_log_event::Rotate_log_event(THD*,...)");
-  DBUG_PRINT("enter",("new_log_ident %s pos %s flags %lu", new_log_ident_arg,
-                      llstr(pos_arg, buff), flags));
-#endif
-  if (flags & DUP_NAME)
-    new_log_ident= my_strdup_with_length((byte*) new_log_ident_arg,
-                                         ident_len,
-                                         MYF(MY_WME));
-  DBUG_VOID_RETURN;
-}
-#endif
-
 
 Rotate_log_event::Rotate_log_event(const char* buf, int event_len,
 				   bool old_format)
-  :Log_event(buf, old_format), new_log_ident(0), flags(DUP_NAME)
+  :Log_event(buf, old_format),new_log_ident(NULL),alloced(0)
 {
   // The caller will ensure that event_len is what we have at EVENT_LEN_OFFSET
   int header_size = (old_format) ? OLD_HEADER_LEN : LOG_EVENT_HEADER_LEN;
   uint ident_offset;
-  DBUG_ENTER("Rotate_log_event::Rotate_log_event(char*,...)");
+  DBUG_ENTER("Rotate_log_event");
 
   if (event_len < header_size)
     DBUG_VOID_RETURN;
@@ -2081,9 +2025,12 @@ Rotate_log_event::Rotate_log_event(const char* buf, int event_len,
     ident_offset = ROTATE_HEADER_LEN;
   }
   set_if_smaller(ident_len,FN_REFLEN-1);
-  new_log_ident= my_strdup_with_length((byte*) buf + ident_offset,
-                                       (uint) ident_len,
-                                       MYF(MY_WME));
+  if (!(new_log_ident= my_strdup_with_length((byte*) buf +
+					     ident_offset,
+					     (uint) ident_len,
+					     MYF(MY_WME))))
+    DBUG_VOID_RETURN;
+  alloced = 1;
   DBUG_VOID_RETURN;
 }
 
@@ -2095,7 +2042,6 @@ Rotate_log_event::Rotate_log_event(const char* buf, int event_len,
 int Rotate_log_event::write_data(IO_CACHE* file)
 {
   char buf[ROTATE_HEADER_LEN];
-  DBUG_ASSERT(!(flags & ZERO_LEN)); // such an event cannot be written
   int8store(buf + R_POS_OFFSET, pos);
   return (my_b_safe_write(file, (byte*)buf, ROTATE_HEADER_LEN) ||
 	  my_b_safe_write(file, (byte*)new_log_ident, (uint) ident_len));
@@ -2255,6 +2201,7 @@ int Intvar_log_event::exec_event(struct st_relay_log_info* rli)
 {
   switch (type) {
   case LAST_INSERT_ID_EVENT:
+    thd->last_insert_id_used = 1;
     thd->last_insert_id = val;
     break;
   case INSERT_ID_EVENT:

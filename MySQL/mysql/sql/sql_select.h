@@ -204,7 +204,6 @@ class JOIN :public Sql_alloc
   //Part, shared with list above, emulate following list
   List<Item> tmp_fields_list1, tmp_fields_list2, tmp_fields_list3;
   List<Item> &fields_list; // hold field list passed to mysql_select
-  List<Item> procedure_fields_list;
   int error;
 
   ORDER *order, *group_list, *proc_param; //hold parameters of mysql_select
@@ -227,14 +226,7 @@ class JOIN :public Sql_alloc
   {
     init(thd_arg, fields_arg, select_options_arg, result_arg);
   }
-
-  JOIN(JOIN &join)
-    :Sql_alloc(), fields_list(join.fields_list)
-  {
-    init(join.thd, join.fields_list, join.select_options,
-         join.result);
-  }
-
+  
   void init(THD *thd_arg, List<Item> &fields_arg, ulong select_options_arg,
        select_result *result_arg)
   {
@@ -279,7 +271,7 @@ class JOIN :public Sql_alloc
 
     fields_list= fields_arg;
     bzero((char*) &keyuse,sizeof(keyuse));
-    tmp_table_param.init();
+    tmp_table_param.copy_field=0;
     tmp_table_param.end_write_records= HA_POS_ERROR;
     rollup.state= ROLLUP::STATE_NONE;
   }
@@ -335,7 +327,7 @@ extern const char *join_type_str[];
 void TEST_join(JOIN *join);
 
 /* Extern functions in sql_select.cc */
-bool store_val_in_field(Field *field, Item *val, enum_check_fields check_flag);
+bool store_val_in_field(Field *field,Item *val);
 TABLE *create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
 			ORDER *group, bool distinct, bool save_sum_fields,
 			ulong select_options, ha_rows rows_limit,
@@ -464,4 +456,3 @@ bool cp_buffer_from_ref(THD *thd, TABLE_REF *ref);
 bool error_if_full_join(JOIN *join);
 int report_error(TABLE *table, int error);
 int safe_index_read(JOIN_TAB *tab);
-COND *remove_eq_conds(THD *thd, COND *cond, Item::cond_result *cond_value);

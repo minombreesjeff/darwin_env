@@ -49,11 +49,12 @@ class ApiVersionConf {
    */
   friend class MgmtSrv;  
 public:
-  STATIC_CONST( SignalLength = 4 );
+  STATIC_CONST( SignalLength = 3 );
   Uint32 senderRef; 
   Uint32 nodeId; //api node id
   Uint32 version; // Version of API node
-  Uint32 inet_addr;
+
+  
 };
 
 #endif

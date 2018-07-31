@@ -80,7 +80,17 @@ void init_thr_alarm(uint max_alarms)
   pthread_mutex_init(&LOCK_alarm,MY_MUTEX_INIT_FAST);
   pthread_cond_init(&COND_alarm,NULL);
 #if THR_CLIENT_ALARM != SIGALRM || defined(USE_ALARM_THREAD)
-  my_sigset(THR_CLIENT_ALARM,thread_alarm);
+#if defined(HAVE_mit_thread)
+  sigset(THR_CLIENT_ALARM,thread_alarm);	/* int. thread system calls */
+#else
+  {
+    struct sigaction sact;
+    sact.sa_flags = 0;
+    bzero((char*) &sact, sizeof(sact));
+    sact.sa_handler = thread_alarm;
+    sigaction(THR_CLIENT_ALARM, &sact, (struct sigaction*) 0);
+  }
+#endif
 #endif
   sigemptyset(&s);
   sigaddset(&s, THR_SERVER_ALARM);
@@ -100,12 +110,12 @@ void init_thr_alarm(uint max_alarms)
 #elif defined(USE_ONE_SIGNAL_HAND)
   pthread_sigmask(SIG_BLOCK, &s, NULL);		/* used with sigwait() */
 #if THR_SERVER_ALARM == THR_CLIENT_ALARM
-  my_sigset(THR_CLIENT_ALARM,process_alarm);	/* Linuxthreads */
+  sigset(THR_CLIENT_ALARM,process_alarm);	/* Linuxthreads */
   pthread_sigmask(SIG_UNBLOCK, &s, NULL);
 #endif
 #else
-  my_sigset(THR_SERVER_ALARM, process_alarm);
   pthread_sigmask(SIG_UNBLOCK, &s, NULL);
+  sigset(THR_SERVER_ALARM,process_alarm);
 #endif
   DBUG_VOID_RETURN;
 }
@@ -280,7 +290,7 @@ sig_handler process_alarm(int sig __attribute__((unused)))
     printf("thread_alarm\n"); fflush(stdout);
 #endif
 #ifdef DONT_REMEMBER_SIGNAL
-    my_sigset(THR_CLIENT_ALARM,process_alarm);	/* int. thread system calls */
+    sigset(THR_CLIENT_ALARM,process_alarm);	/* int. thread system calls */
 #endif
     return;
   }
@@ -300,7 +310,7 @@ sig_handler process_alarm(int sig __attribute__((unused)))
   process_alarm_part2(sig);
 #ifndef USE_ALARM_THREAD
 #if defined(DONT_REMEMBER_SIGNAL) && !defined(USE_ONE_SIGNAL_HAND)
-  my_sigset(THR_SERVER_ALARM,process_alarm);
+  sigset(THR_SERVER_ALARM,process_alarm);
 #endif
   pthread_mutex_unlock(&LOCK_alarm);
   pthread_sigmask(SIG_SETMASK,&old_mask,NULL);
@@ -502,7 +512,7 @@ static sig_handler thread_alarm(int sig)
   printf("thread_alarm\n"); fflush(stdout);
 #endif
 #ifdef DONT_REMEMBER_SIGNAL
-  my_sigset(sig,thread_alarm);		/* int. thread system calls */
+  sigset(sig,thread_alarm);		/* int. thread system calls */
 #endif
 }
 #endif
@@ -906,7 +916,7 @@ static sig_handler print_signal_warning(int sig)
   printf("Warning: Got signal %d from thread %s\n",sig,my_thread_name());
   fflush(stdout);
 #ifdef DONT_REMEMBER_SIGNAL
-  my_sigset(sig,print_signal_warning);		/* int. thread system calls */
+  sigset(sig,print_signal_warning);		/* int. thread system calls */
 #endif
 #ifndef OS2
   if (sig == SIGALRM)

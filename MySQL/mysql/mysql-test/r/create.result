@@ -1,4 +1,4 @@
-drop table if exists t1,t2,t3,t4,t5;
+drop table if exists t1,t2,t3;
 drop database if exists mysqltest;
 create table t1 (b char(0));
 insert into t1 values (""),(null);
@@ -9,8 +9,6 @@ NULL
 drop table if exists t1;
 create table t1 (b char(0) not null);
 create table if not exists t1 (b char(0) not null);
-Warnings:
-Note	1050	Table 't1' already exists
 insert into t1 values (""),(null);
 Warnings:
 Warning	1263	Data truncated; NULL supplied to NOT NULL column 'b' at row 2
@@ -39,7 +37,7 @@ Note	1051	Unknown table 't1'
 create table t1 (ordid int(8) not null auto_increment, ord  varchar(50) not null, primary key (ord,ordid)) engine=heap;
 ERROR 42000: Incorrect table definition; there can be only one auto column and it must be defined as a key
 create table not_existing_database.test (a int);
-ERROR 42000: Unknown database 'not_existing_database'
+Got one of the listed errors
 create table `a/a` (a int);
 ERROR 42000: Incorrect table name 'a/a'
 create table `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa int);
@@ -234,13 +232,20 @@ create table t1 select x'4132';
 drop table t1;
 create table t1 select 1,2,3;
 create table if not exists t1 select 1,2;
-Warnings:
-Note	1050	Table 't1' already exists
 create table if not exists t1 select 1,2,3,4;
 ERROR 21S01: Column count doesn't match value count at row 1
 create table if not exists t1 select 1;
-Warnings:
-Note	1050	Table 't1' already exists
+select * from t1;
+1	2	3
+1	2	3
+0	1	2
+0	0	1
+drop table t1;
+create table t1 select 1,2,3;
+create table if not exists t1 select 1,2;
+create table if not exists t1 select 1,2,3,4;
+ERROR 21S01: Column count doesn't match value count at row 1
+create table if not exists t1 select 1;
 select * from t1;
 1	2	3
 1	2	3
@@ -250,15 +255,11 @@ drop table t1;
 create table t1 (a int not null, b int, primary key (a));
 insert into t1 values (1,1);
 create table if not exists t1 select 2;
-Warnings:
-Note	1050	Table 't1' already exists
 select * from t1;
 a	b
 1	1
 0	2
 create table if not exists t1 select 3 as 'a',4 as 'b';
-Warnings:
-Note	1050	Table 't1' already exists
 create table if not exists t1 select 3 as 'a',3 as 'b';
 ERROR 23000: Duplicate entry '3' for key 1
 select * from t1;
@@ -341,7 +342,7 @@ create table t3 like t1;
 create table t3 like mysqltest.t3;
 ERROR 42S01: Table 't3' already exists
 create table non_existing_database.t1 like t1;
-ERROR 42000: Unknown database 'non_existing_database'
+Got one of the listed errors
 create table t3 like non_existing_table;
 ERROR 42S02: Unknown table 'non_existing_table'
 create temporary table t3 like t1;
@@ -579,125 +580,9 @@ ERROR 42000: Incorrect database name 'xyz'
 create table t1(t1.name int);
 create table t2(test.t2.name int);
 drop table t1,t2;
-CREATE TABLE t1 (f1 VARCHAR(255) CHARACTER SET utf8);
-CREATE TABLE t2 AS SELECT LEFT(f1,86) AS f2 FROM t1 UNION SELECT LEFT(f1,86)
-AS f2 FROM t1;
-DESC t2;
-Field	Type	Null	Key	Default	Extra
-f2	varchar(86)	YES		NULL	
-DROP TABLE t1,t2;
-CREATE TABLE t12913 (f1 ENUM ('a','b')) AS SELECT 'a' AS f1;
-SELECT * FROM t12913;
-f1
-a
-DROP TABLE t12913;
 create database mysqltest;
 use mysqltest;
 drop database mysqltest;
 create table test.t1 like x;
 ERROR 42000: Incorrect database name 'NULL'
 drop table if exists test.t1;
-create database mysqltest;
-create database if not exists mysqltest character set latin2;
-Warnings:
-Note	1007	Can't create database 'mysqltest'; database exists
-show create database mysqltest;
-Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET latin1 */
-drop database mysqltest;
-use test;
-create table t1 (a int);
-create table if not exists t1 (a int);
-Warnings:
-Note	1050	Table 't1' already exists
-drop table t1;
-create table t1 (
-a varchar(112) charset utf8 collate utf8_bin not null,
-primary key (a)
-) select 'test' as a ;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` varchar(112) character set utf8 collate utf8_bin NOT NULL default '',
-  PRIMARY KEY  (`a`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1;
-CREATE TABLE t2 (
-a int(11) default NULL
-);
-insert into t2 values(111);
-create table t1 ( 
-a varchar(12) charset utf8 collate utf8_bin not null, 
-b int not null, primary key (a)
-) select a, 1 as b from t2 ;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` varchar(12) character set utf8 collate utf8_bin NOT NULL default '',
-  `b` int(11) NOT NULL default '0',
-  PRIMARY KEY  (`a`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1;
-create table t1 ( 
-a varchar(12) charset utf8 collate utf8_bin not null,
-b int not null, primary key (a)
-) select 'a' as a , 1 as b from t2 ;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` varchar(12) character set utf8 collate utf8_bin NOT NULL default '',
-  `b` int(11) NOT NULL default '0',
-  PRIMARY KEY  (`a`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1;
-create table t1 ( 
-a varchar(12) charset utf8 collate utf8_bin,
-b int not null, primary key (a)
-) select 'a' as a , 1 as b from t2 ;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` varchar(12) character set utf8 collate utf8_bin NOT NULL default '',
-  `b` int(11) NOT NULL default '0',
-  PRIMARY KEY  (`a`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1, t2;
-create table t1 ( 
-a1 int not null,
-a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
-);
-insert into t1 values (1,1,1, 1,1,1, 1,1,1);
-create table t2 ( 
-a1 varchar(12) charset utf8 collate utf8_bin not null,
-a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int,
-primary key (a1)
-) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1 ;
-drop table t2;
-create table t2 ( 
-a1 varchar(12) charset utf8 collate utf8_bin,
-a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
-) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1;
-drop table t1, t2;
-create table t1 ( 
-a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
-);
-insert into t1 values (1,1,1, 1,1,1, 1,1,1);
-create table t2 ( 
-a1 varchar(12) charset utf8 collate utf8_bin not null,
-a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int,
-primary key (a1)
-) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1 ;
-drop table t2;
-create table t2 ( a int default 3, b int default 3)
-select a1,a2 from t1;
-show create table t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` int(11) default '3',
-  `b` int(11) default '3',
-  `a1` int(11) default NULL,
-  `a2` int(11) default NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1, t2;
-create table t1(a set("a,b","c,d") not null);
-ERROR HY000: Illegal set 'a,b' value found during parsing

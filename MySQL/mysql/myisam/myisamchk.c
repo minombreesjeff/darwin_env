@@ -67,7 +67,6 @@ static const char *field_pack[]=
  "no zeros", "blob", "constant", "table-lockup",
  "always zero","varchar","unique-hash","?","?"};
 
-static const char *myisam_stats_method_str="nulls_unequal";
 
 static void get_options(int *argc,char * * *argv);
 static void print_version(void);
@@ -156,7 +155,7 @@ enum options_mc {
   OPT_READ_BUFFER_SIZE, OPT_WRITE_BUFFER_SIZE, OPT_SORT_BUFFER_SIZE,
   OPT_SORT_KEY_BLOCKS, OPT_DECODE_BITS, OPT_FT_MIN_WORD_LEN,
   OPT_FT_MAX_WORD_LEN, OPT_FT_STOPWORD_FILE,
-  OPT_MAX_RECORD_LENGTH, OPT_AUTO_CLOSE, OPT_STATS_METHOD
+  OPT_MAX_RECORD_LENGTH
 };
 
 static struct my_option my_long_options[] =
@@ -164,10 +163,6 @@ static struct my_option my_long_options[] =
   {"analyze", 'a',
    "Analyze distribution of keys. Will make some joins in MySQL faster. You can check the calculated distribution.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef __NETWARE__
-  {"autoclose", OPT_AUTO_CLOSE, "Auto close the screen on exit for Netware.",
-   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"block-search", 'b',
    "No help available.",
    0, 0, 0, GET_ULONG, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -337,12 +332,6 @@ static struct my_option my_long_options[] =
     "Use stopwords from this file instead of built-in list.",
     (gptr*) &ft_stopword_file, (gptr*) &ft_stopword_file, 0, GET_STR,
     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"stats_method", OPT_STATS_METHOD,
-   "Specifies how index statistics collection code should threat NULLs. "
-   "Possible values of name are \"nulls_unequal\" (default behavior for 4.1/5.0), "
-   "\"nulls_equal\" (emulate 4.0 behavior), and \"nulls_ignored\".",
-   (gptr*) &myisam_stats_method_str, (gptr*) &myisam_stats_method_str, 0,
-    GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -452,10 +441,6 @@ static void usage(void)
   -a, --analyze	      Analyze distribution of keys. Will make some joins in\n\
 		      MySQL faster.  You can check the calculated distribution\n\
 		      by using '--description --verbose table_name'.\n\
-  --stats_method=name Specifies how index statistics collection code should\n\
-                      threat NULLs. Possible values of name are \"nulls_unequal\"\n\
-                      (default for 4.1/5.0), \"nulls_equal\" (emulate 4.0), and \n\
-                      \"nulls_ignored\".\n\
   -d, --description   Prints some information about table.\n\
   -A, --set-auto-increment[=value]\n\
 		      Force auto_increment to start at this or higher value\n\
@@ -476,12 +461,6 @@ static void usage(void)
 
 #include <help_end.h>
 
-const char *myisam_stats_method_names[] = {"nulls_unequal", "nulls_equal",
-                                           "nulls_ignored", NullS};
-TYPELIB myisam_stats_method_typelib= {
-  array_elements(myisam_stats_method_names) - 1, "",
-  myisam_stats_method_names, NULL};
-
 	 /* Read options */
 
 static my_bool
@@ -490,11 +469,6 @@ get_one_option(int optid,
 	       char *argument)
 {
   switch (optid) {
-#ifdef __NETWARE__
-  case OPT_AUTO_CLOSE:
-    setscreenmode(SCR_AUTOCLOSE_ON_EXIT);
-    break;
-#endif
   case 'a':
     if (argument == disabled_my_option)
       check_param.testflag&= ~T_STATISTICS;
@@ -701,30 +675,6 @@ get_one_option(int optid,
     else
       check_param.testflag|= T_CALC_CHECKSUM;
     break;
-  case OPT_STATS_METHOD:
-  {
-    int method;
-    enum_mi_stats_method method_conv;
-    myisam_stats_method_str= argument;
-    if ((method=find_type(argument, &myisam_stats_method_typelib, 2)) <= 0)
-    {
-      fprintf(stderr, "Invalid value of stats_method: %s.\n", argument);
-      exit(1);
-    }
-    switch (method-1) {
-    case 0: 
-      method_conv= MI_STATS_METHOD_NULLS_EQUAL;
-      break;
-    case 1:
-      method_conv= MI_STATS_METHOD_NULLS_NOT_EQUAL;
-      break;
-    case 2:
-      method_conv= MI_STATS_METHOD_IGNORE_NULLS;
-      break;
-    }
-    check_param.stats_method= method_conv;
-    break;
-  }
 #ifdef DEBUG					/* Only useful if debugging */
   case OPT_START_CHECK_POS:
     check_param.start_check_pos= strtoull(argument, NULL, 0);

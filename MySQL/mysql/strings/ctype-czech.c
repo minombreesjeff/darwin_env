@@ -583,7 +583,7 @@ static MY_COLLATION_HANDLER my_collation_latin2_czech_ci_handler =
   my_strnncollsp_czech,
   my_strnxfrm_czech,
   my_like_range_czech,
-  my_wildcmp_bin,
+  my_wildcmp_8bit,
   my_strcasecmp_8bit,
   my_instr_simple,
   my_hash_sort_simple,
@@ -612,7 +612,6 @@ CHARSET_INFO my_charset_latin2_czech_ci =
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
     0,			/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_8bit_handler,
     &my_collation_latin2_czech_ci_handler
 };

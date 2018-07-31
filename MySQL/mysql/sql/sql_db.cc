@@ -25,16 +25,14 @@
 #include <direct.h>
 #endif
 
-#define MAX_DROP_TABLE_Q_LEN      1024
-
 const char *del_exts[]= {".frm", ".BAK", ".TMD",".opt", NullS};
 static TYPELIB deletable_extentions=
 {array_elements(del_exts)-1,"del_exts", del_exts, NULL};
 
 static long mysql_rm_known_files(THD *thd, MY_DIR *dirp,
-				 const char *db, const char *path, uint level, 
-                                 TABLE_LIST **dropped_tables);
-         
+				 const char *db, const char *path,
+				 uint level);
+
 /* Database options hash */
 static HASH dboptions;
 static my_bool dboptions_init= 0;
@@ -52,28 +50,12 @@ typedef struct my_dbopt_st
 /*
   Function we use in the creation of our hash to get key.
 */
-
 static byte* dboptions_get_key(my_dbopt_t *opt, uint *length,
                                my_bool not_used __attribute__((unused)))
 {
   *length= opt->name_length;
   return (byte*) opt->name;
 }
-
-
-/*
-  Helper function to write a query to binlog used by mysql_rm_db()
-*/
-
-static inline void write_to_binlog(THD *thd, char *query, uint q_len,
-                                   char *db, uint db_len)
-{
-  Query_log_event qinfo(thd, query, q_len, 0, 0);
-  qinfo.error_code= 0;
-  qinfo.db= db;
-  qinfo.db_len= db_len;
-  mysql_bin_log.write(&qinfo);
-}  
 
 
 /*
@@ -388,12 +370,6 @@ bool load_db_opt(THD *thd, const char *path, HA_CREATE_INFO *create)
   silent	Used by replication when internally creating a database.
 		In this case the entry should not be logged.
 
-  SIDE-EFFECTS
-   1. Report back to client that command succeeded (send_ok)
-   2. Report errors to client
-   3. Log event to binary log
-   (The 'silent' flags turns off 1 and 3.)
-
   RETURN VALUES
   0	ok
   -1	Error
@@ -427,18 +403,13 @@ int mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create_info,
 
   if (my_stat(path,&stat_info,MYF(0)))
   {
-    if (!(create_options & HA_LEX_CREATE_IF_NOT_EXISTS))
+   if (!(create_options & HA_LEX_CREATE_IF_NOT_EXISTS))
     {
       my_error(ER_DB_CREATE_EXISTS,MYF(0),db);
       error= -1;
       goto exit;
     }
-    push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_NOTE,
-			ER_DB_CREATE_EXISTS, ER(ER_DB_CREATE_EXISTS), db);
-    if (!silent)
-      send_ok(thd);
-    error= 0;
-    goto exit;
+    result= 0;
   }
   else
   {
@@ -614,7 +585,6 @@ int mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
   char	path[FN_REFLEN+16], tmp_db[NAME_LEN+1];
   MY_DIR *dirp;
   uint length;
-  TABLE_LIST* dropped_tables= 0;
   DBUG_ENTER("mysql_rm_db");
 
   VOID(pthread_mutex_lock(&LOCK_mysql_create_db));
@@ -651,10 +621,8 @@ int mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
     remove_db_from_cache(db);
     pthread_mutex_unlock(&LOCK_open);
 
-    
     error= -1;
-    if ((deleted= mysql_rm_known_files(thd, dirp, db, path, 0,
-                                       &dropped_tables)) >= 0)
+    if ((deleted= mysql_rm_known_files(thd, dirp, db, path, 0)) >= 0)
     {
       ha_drop_database(path);
       query_cache_invalidate1(db);
@@ -704,41 +672,6 @@ int mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
     send_ok(thd, (ulong) deleted);
     thd->server_status&= ~SERVER_STATUS_DB_DROPPED;
   }
-  else if (mysql_bin_log.is_open())
-  {
-    char *query, *query_pos, *query_end, *query_data_start;
-    TABLE_LIST *tbl;
-    uint db_len;
-
-    if (!(query= thd->alloc(MAX_DROP_TABLE_Q_LEN)))
-      goto exit; /* not much else we can do */
-    query_pos= query_data_start= strmov(query,"drop table ");
-    query_end= query + MAX_DROP_TABLE_Q_LEN;
-    db_len= strlen(db);
-
-    for (tbl= dropped_tables; tbl; tbl= tbl->next)
-    {
-      uint tbl_name_len;
-
-      /* 3 for the quotes and the comma*/
-      tbl_name_len= strlen(tbl->real_name) + 3;
-      if (query_pos + tbl_name_len + 1 >= query_end)
-      {
-        write_to_binlog(thd, query, query_pos -1 - query, db, db_len);
-        query_pos= query_data_start;
-      }
-
-      *query_pos++ = '`';
-      query_pos= strmov(query_pos,tbl->real_name);
-      *query_pos++ = '`';
-      *query_pos++ = ',';
-    }
-
-    if (query_pos != query_data_start)
-    {
-      write_to_binlog(thd, query, query_pos -1 - query, db, db_len);
-    }
-  }
 
 exit:
   start_waiting_global_read_lock(thd);
@@ -783,8 +716,7 @@ exit2:
 */
 
 static long mysql_rm_known_files(THD *thd, MY_DIR *dirp, const char *db,
-				 const char *org_path, uint level,
-                                 TABLE_LIST **dropped_tables)
+				 const char *org_path, uint level)
 {
   long deleted=0;
   ulong found_other_files=0;
@@ -826,7 +758,7 @@ static long mysql_rm_known_files(THD *thd, MY_DIR *dirp, const char *db,
       if ((new_dirp = my_dir(newpath,MYF(MY_DONT_SORT))))
       {
 	DBUG_PRINT("my",("New subdir found: %s", newpath));
-	if ((mysql_rm_known_files(thd, new_dirp, NullS, newpath,1,0)) < 0)
+	if ((mysql_rm_known_files(thd, new_dirp, NullS, newpath,1)) < 0)
 	  goto err;
 	if (!(copy_of_path= thd->memdup(newpath, length+1)) ||
 	    !(dir= new (thd->mem_root) String(copy_of_path, length,
@@ -885,9 +817,6 @@ static long mysql_rm_known_files(THD *thd, MY_DIR *dirp, const char *db,
 	found_other_files++;
   }
   my_dirend(dirp);  
-  
-  if (dropped_tables)
-    *dropped_tables= tot_list;
   
   /*
     If the directory is a symbolic link, remove the link first, then

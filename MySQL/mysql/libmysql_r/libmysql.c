@@ -188,13 +188,6 @@ void STDCALL mysql_server_end()
     mysql_thread_end();
   free_charsets();
   mysql_client_init= org_my_init_done= 0;
-#ifdef EMBEDDED_SERVER
-  if (stderror_file)
-  {
-    fclose(stderror_file);
-    stderror_file= 0;
-  }
-#endif
 }
 
 static MYSQL_PARAMETERS mysql_internal_parameters=
@@ -1517,7 +1510,7 @@ const char * STDCALL mysql_character_set_name(MYSQL *mysql)
 }
 
 
-int STDCALL mysql_set_character_set(MYSQL *mysql, const char *cs_name)
+int STDCALL mysql_set_character_set(MYSQL *mysql, char *cs_name)
 {
   struct charset_info_st *cs;
   const char *save_csdir= charsets_dir;
@@ -1525,14 +1518,10 @@ int STDCALL mysql_set_character_set(MYSQL *mysql, const char *cs_name)
   if (mysql->options.charset_dir)
     charsets_dir= mysql->options.charset_dir;
 
-  if (strlen(cs_name) < MY_CS_NAME_SIZE && 
-      (cs= get_charset_by_csname(cs_name, MY_CS_PRIMARY, MYF(0))))
+  if ((cs= get_charset_by_csname(cs_name, MY_CS_PRIMARY, MYF(0))))
   {
     char buff[MY_CS_NAME_SIZE + 10];
     charsets_dir= save_csdir;
-    /* Skip execution of "SET NAMES" for pre-4.1 servers */
-    if (mysql_get_server_version(mysql) < 40100)
-      return 0;
     sprintf(buff, "SET NAMES %s", cs_name);
     if (!mysql_query(mysql, buff))
     {
@@ -1845,17 +1834,6 @@ static void net_clear_error(NET *net)
   }
 }
 
-
-static void stmt_clear_error(MYSQL_STMT *stmt)
-{
-  if (stmt->last_errno)
-  {
-    stmt->last_errno= 0;
-    stmt->last_error[0]= '\0';
-    strmov(stmt->sqlstate, not_error_sqlstate);
-  }
-}
-
 /*
   Set statement error code, sqlstate, and error message
   from given errcode and sqlstate.
@@ -2085,7 +2063,7 @@ mysql_stmt_prepare(MYSQL_STMT *stmt, const char *query, ulong length)
       mysql_use_result it won't be freed in mysql_stmt_free_result and
       we should get 'Commands out of sync' here.
     */
-    if (stmt_command(mysql, COM_CLOSE_STMT, buff, 4, stmt))
+    if (simple_command(mysql, COM_CLOSE_STMT, buff, 4, 1))
     {
       set_stmt_errmsg(stmt, mysql->net.last_error, mysql->net.last_errno,
                       mysql->net.sqlstate);
@@ -2094,7 +2072,7 @@ mysql_stmt_prepare(MYSQL_STMT *stmt, const char *query, ulong length)
     stmt->state= MYSQL_STMT_INIT_DONE;
   }
 
-  if (stmt_command(mysql, COM_PREPARE, query, length, stmt))
+  if (simple_command(mysql, COM_PREPARE, query, length, 1))
   {
     set_stmt_errmsg(stmt, mysql->net.last_error, mysql->net.last_errno,
                     mysql->net.sqlstate);
@@ -2409,9 +2387,10 @@ static void net_store_datetime(NET *net, MYSQL_TIME *tm)
 
 static void store_param_date(NET *net, MYSQL_BIND *param)
 {
-  MYSQL_TIME tm= *((MYSQL_TIME *) param->buffer);
-  tm.hour= tm.minute= tm.second= tm.second_part= 0;
-  net_store_datetime(net, &tm);
+  MYSQL_TIME *tm= (MYSQL_TIME *) param->buffer;
+  tm->hour= tm->minute= tm->second= 0;
+  tm->second_part= 0;
+  net_store_datetime(net, tm);
 }
 
 static void store_param_datetime(NET *net, MYSQL_BIND *param)
@@ -2504,7 +2483,7 @@ static my_bool execute(MYSQL_STMT *stmt, char *packet, ulong length)
   buff[4]= (char) 0;                            /* no flags */
   int4store(buff+5, 1);                         /* iteration count */
   if (cli_advanced_command(mysql, COM_EXECUTE, buff, sizeof(buff),
-                           packet, length, 1, NULL) ||
+                           packet, length, 1) ||
       (*mysql->methods->read_query_result)(mysql))
   {
     set_stmt_errmsg(stmt, net->last_error, net->last_errno, net->sqlstate);
@@ -3278,8 +3257,7 @@ mysql_stmt_send_long_data(MYSQL_STMT *stmt, uint param_number,
       This is intentional to save bandwidth.
     */
     if ((*mysql->methods->advanced_command)(mysql, COM_LONG_DATA, buff,
-					    sizeof(buff), data, length, 1,
-                                            NULL))
+					    sizeof(buff), data, length, 1))
     {
       set_stmt_errmsg(stmt, mysql->net.last_error,
 		      mysql->net.last_errno, mysql->net.sqlstate);
@@ -4603,7 +4581,7 @@ my_bool STDCALL mysql_stmt_close(MYSQL_STMT *stmt)
         mysql->status= MYSQL_STATUS_READY;
       }
       int4store(buff, stmt->stmt_id);
-      if ((rc= stmt_command(mysql, COM_CLOSE_STMT, buff, 4, stmt)))
+      if ((rc= simple_command(mysql, COM_CLOSE_STMT, buff, 4, 1)))
       {
         set_stmt_errmsg(stmt, mysql->net.last_error, mysql->net.last_errno,
                         mysql->net.sqlstate);
@@ -4631,17 +4609,11 @@ my_bool STDCALL mysql_stmt_reset(MYSQL_STMT *stmt)
   /* If statement hasnt been prepared there is nothing to reset */
   if ((int) stmt->state < (int) MYSQL_STMT_PREPARE_DONE)
     DBUG_RETURN(0);
-  if (!stmt->mysql)
-  {
-    /* mysql can be reset in mysql_close called from mysql_reconnect */
-    set_stmt_error(stmt, CR_SERVER_LOST, unknown_sqlstate);
-    DBUG_RETURN(1);  
-  }
 
   mysql= stmt->mysql->last_used_con;
   int4store(buff, stmt->stmt_id);		/* Send stmt id to server */
   if ((*mysql->methods->advanced_command)(mysql, COM_RESET_STMT, buff,
-                                          sizeof(buff), 0, 0, 0, 0))
+                                          sizeof(buff), 0, 0, 0))
   {
     set_stmt_errmsg(stmt, mysql->net.last_error, mysql->net.last_errno,
                     mysql->net.sqlstate);
@@ -4653,7 +4625,6 @@ my_bool STDCALL mysql_stmt_reset(MYSQL_STMT *stmt)
        param < param_end;
        param++)
     param->long_data_used= 0;
-  stmt_clear_error(stmt);
 
   DBUG_RETURN(0);
 }

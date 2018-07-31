@@ -1,21 +1,10 @@
---echo #
---echo # Setup
---echo #
+# See if queries that use both auto_increment and LAST_INSERT_ID()
+# are replicated well
+
+# We also check how the foreign_key_check variable is replicated
 
 source include/master-slave.inc;
-source include/have_innodb.inc;
-use test;
---disable_warnings
-drop table if exists t1, t2, t3;
---enable_warnings
-
---echo #
---echo # See if queries that use both auto_increment and LAST_INSERT_ID()
---echo # are replicated well
---echo #
---echo # We also check how the foreign_key_check variable is replicated
---echo #
-
+source include/have_innodb.inc
 connection master;
 create table t1(a int auto_increment, key(a));
 create table t2(b int auto_increment, c int, key(b));
@@ -50,9 +39,7 @@ select * from t1;
 select * from t2;
 connection master;
 
---echo #
---echo # check if INSERT SELECT in auto_increment is well replicated (bug #490)
---echo #
+# check if INSERT SELECT in auto_increment is well replicated (bug #490)
 
 drop table t2;
 drop table t1;
@@ -75,11 +62,10 @@ save_master_pos;
 connection slave;
 sync_with_master;
 
---echo #
---echo # Bug#8412: Error codes reported in binary log for CHARACTER SET,
---echo #           FOREIGN_KEY_CHECKS
---echo #
-
+#
+# Bug#8412: Error codes reported in binary log for CHARACTER SET,
+#           FOREIGN_KEY_CHECKS
+#
 connection master;
 SET TIMESTAMP=1000000000;
 CREATE TABLE t1 ( a INT UNIQUE );
@@ -87,59 +73,7 @@ SET FOREIGN_KEY_CHECKS=0;
 --error 1062
 INSERT INTO t1 VALUES (1),(1);
 sync_slave_with_master;
- 
---echo #
---echo # Bug#14553: NULL in WHERE resets LAST_INSERT_ID
---echo #
-
-connection master;
-drop table t1;
-create table t1(a int auto_increment, key(a));
-create table t2(a int);
-insert into t1 (a) values (null);
-insert into t2 (a) select a from t1 where a is null;
-insert into t2 (a) select a from t1 where a is null;
-select * from t2;
-sync_slave_with_master;
-connection slave;
-select * from t2;
-connection master;
-drop table t1;
-drop table t2;
-sync_slave_with_master;
 
 
-#
-# BUG#21726: Incorrect result with multiple invocations of
-# LAST_INSERT_ID
-#
-connection master;
-
---disable_warnings
-DROP TABLE IF EXISTS t1;
---enable_warnings
-
-CREATE TABLE t1 (
-    i INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    j INT DEFAULT 0
-);
-
-INSERT INTO t1 VALUES (NULL, -1);
-INSERT INTO t1 VALUES (NULL, LAST_INSERT_ID()), (NULL, LAST_INSERT_ID(5)),
-                      (NULL, @@LAST_INSERT_ID);
-# Test replication of substitution "IS NULL" -> "= LAST_INSERT_ID".
-INSERT INTO t1 VALUES (NULL, 0), (NULL, LAST_INSERT_ID());
-UPDATE t1 SET j= -1 WHERE i IS NULL;
-
-SELECT * FROM t1;
-
-sync_slave_with_master;
-SELECT * FROM t1;
-
-connection master;
-DROP TABLE t1;
 
 
---echo #
---echo # End of 4.1 tests
---echo #

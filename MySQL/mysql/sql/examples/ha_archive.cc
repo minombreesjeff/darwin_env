@@ -18,7 +18,7 @@
 #pragma implementation        // gcc: Class implementation
 #endif
 
-#include "../mysql_priv.h"
+#include <mysql_priv.h>
 
 #ifdef HAVE_ARCHIVE_DB
 #include "ha_archive.h"
@@ -225,7 +225,7 @@ int ha_archive::write_data_header(gzFile file_to_write)
   data_buffer[1]= (uchar)ARCHIVE_VERSION;
 
   if (gzwrite(file_to_write, &data_buffer, DATA_BUFFER_SIZE) != 
-      DATA_BUFFER_SIZE)
+      sizeof(DATA_BUFFER_SIZE))
     goto error;
   DBUG_PRINT("ha_archive::write_data_header", ("Check %u", (uint)data_buffer[0]));
   DBUG_PRINT("ha_archive::write_data_header", ("Version %u", (uint)data_buffer[1]));
@@ -520,7 +520,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
     error= my_errno;
     goto error;
   }
-  if ((archive= gzdopen(create_file, "wb")) == NULL)
+  if ((archive= gzdopen(create_file, "ab")) == NULL)
   {
     error= errno;
     goto error2;
@@ -972,7 +972,7 @@ int ha_archive::index_last(byte * buf)
 }
 
 
-int ha_archive::info(uint flag)
+void ha_archive::info(uint flag)
 {
   DBUG_ENTER("ha_archive::info");
 
@@ -980,7 +980,7 @@ int ha_archive::info(uint flag)
   records= share->rows_recorded;
   deleted= 0;
 
-  DBUG_RETURN(0);
+  DBUG_VOID_RETURN;
 }
 
 int ha_archive::extra(enum ha_extra_function operation)
@@ -1000,16 +1000,5 @@ ha_rows ha_archive::records_in_range(uint inx, key_range *min_key,
 {
   DBUG_ENTER("ha_archive::records_in_range ");
   DBUG_RETURN(records); // HA_ERR_WRONG_COMMAND 
-}
-
-/*
-  We cancel a truncate command. The only way to delete an archive table is to drop it.
-  This is done for security reasons. In a later version we will enable this by 
-  allowing the user to select a different row format.
-*/
-int ha_archive::delete_all_rows()
-{
-  DBUG_ENTER("ha_archive::delete_all_rows");
-  DBUG_RETURN(HA_ERR_WRONG_COMMAND);
 }
 #endif /* HAVE_ARCHIVE_DB */

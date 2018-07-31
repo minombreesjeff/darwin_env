@@ -114,10 +114,7 @@ IPCConfig::addRemoteNodeId(NodeId nodeId){
  * Returns no of transporters configured
  */
 int
-IPCConfig::configureTransporters(TransporterRegistry * theTransporterRegistry)
-{
-  DBUG_ENTER("IPCConfig::configureTransporters");
-
+IPCConfig::configureTransporters(TransporterRegistry * theTransporterRegistry){
   int noOfTransportersCreated = 0;
 
   Uint32 noOfConnections;
@@ -279,7 +276,7 @@ IPCConfig::configureTransporters(TransporterRegistry * theTransporterRegistry)
       continue;
     }
   }
-  DBUG_RETURN(noOfTransportersCreated);
+  return noOfTransportersCreated;
 }
 
 /**

@@ -236,12 +236,6 @@ Ndb_cluster_connection::wait_until_ready(int timeout,
   } while (1);
 }
 
-unsigned Ndb_cluster_connection::get_connect_count() const
-{
-  return m_impl.get_connect_count();
-}
-
-
 
 
 /*
@@ -313,19 +307,6 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl()
     delete m_config_retriever;
 
   //  fragmentToNodeMap.release();
-
-  if (ndb_global_event_buffer_mutex != NULL)
-  {
-    NdbMutex_Destroy(ndb_global_event_buffer_mutex);
-    ndb_global_event_buffer_mutex= NULL;
-  }
-#ifdef VM_TRACE
-  if (ndb_print_state_mutex != NULL)
-  {
-    NdbMutex_Destroy(ndb_print_state_mutex);
-    ndb_print_state_mutex= NULL;
-  }
-#endif
 
   DBUG_VOID_RETURN;
 }

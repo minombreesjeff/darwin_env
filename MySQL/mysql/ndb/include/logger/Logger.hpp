@@ -178,11 +178,8 @@ public:
    * Add a new handler
    *
    * @param logstring string describing the handler to add
-   * @param err OS errno in event of error
-   * @param len max length of errStr buffer
-   * @param errStr logger error string in event of error
    */
-  bool addHandler(const BaseString &logstring, int *err, int len, char* errStr);
+  bool addHandler(const BaseString &logstring);
 
   /**
    * Remove a log handler.

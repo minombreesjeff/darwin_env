@@ -498,7 +498,7 @@ static uint thai2sortable(uchar *tstr, uint len)
 	  l2bias use to control position weight of l2char
 	  example (*=l2char) XX*X must come before X*XX
 	*/
-	memmove((char*) p, (char*) (p+1), tlen-1);
+	memcpy_overlap((char*) p, (char*) (p+1), tlen-1);
 	tstr[len-1]= l2bias + t_ctype0[1]- L2_GARAN +1;
 	p--;
 	continue;
@@ -638,6 +638,71 @@ int my_strnxfrm_tis620(CHARSET_INFO *cs __attribute__((unused)),
   if (dstlen > len)
     bfill(dest + len, dstlen - len, ' ');
   return dstlen;
+}
+
+
+
+/*
+  Convert SQL LIKE string to C string
+
+  Arg: String, its length, escape character, resource length,
+       minimal string and maximum string
+  Ret: Always 0
+
+  IMPLEMENTATION
+    We just copy this function from opt_range.cc. No need to convert to
+    thai2sortable string. min_str and max_str will be use for comparison and
+    converted there.
+
+  RETURN VALUES
+    0
+*/
+
+#define max_sort_chr ((char) 255)
+
+static
+my_bool my_like_range_tis620(CHARSET_INFO *cs __attribute__((unused)),
+			     const char *ptr, uint ptr_length,
+			     pbool escape, pbool w_one, pbool w_many,
+			     uint res_length, char *min_str, char *max_str,
+			     uint *min_length, uint *max_length)
+{
+  const char *end=ptr+ptr_length;
+  char *min_org=min_str;
+  char *min_end=min_str+res_length;
+
+  for (; ptr != end && min_str != min_end ; ptr++)
+  {
+    if (*ptr == escape && ptr+1 != end)
+    {
+      ptr++;					/* Skip escape */
+      *min_str++ = *max_str++ = *ptr;
+      continue;
+    }
+    if (*ptr == w_one)				/* '_' in SQL */
+    {
+      *min_str++='\0';				/* This should be min char */
+      *max_str++=max_sort_chr;
+      continue;
+    }
+    if (*ptr == w_many)				/* '%' in SQL */
+    {
+      *min_length= (uint) (min_str - min_org);
+      *max_length=res_length;
+      do
+      {
+	*min_str++ = 0;
+	*max_str++ = max_sort_chr;
+      } while (min_str != min_end);
+      return 0;
+    }
+    *min_str++= *max_str++ = *ptr;
+  }
+  *min_length= *max_length = (uint) (min_str - min_org);
+
+  while (min_str != min_end)
+    *min_str++ = *max_str++ = ' ';	/* Because of key compression */
+  return 0;
 }
 
 
@@ -820,10 +885,10 @@ int my_mb_wc_tis620(CHARSET_INFO *cs  __attribute__((unused)),
 		  const unsigned char *end __attribute__((unused)))
 {
   if (str >= end)
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOFEW(0);
   
   *wc=cs_to_uni[*str];
-  return (!wc[0] && str[0]) ? -1 : 1;
+  return (!wc[0] && str[0]) ? MY_CS_ILSEQ : 1;
 }
 
 static
@@ -849,7 +914,7 @@ static MY_COLLATION_HANDLER my_collation_ci_handler =
     my_strnncoll_tis620,
     my_strnncollsp_tis620,
     my_strnxfrm_tis620,
-    my_like_range_simple,
+    my_like_range_tis620,
     my_wildcmp_8bit,	/* wildcmp   */
     my_strcasecmp_8bit,
     my_instr_simple,				/* QQ: To be fixed */
@@ -909,8 +974,7 @@ CHARSET_INFO my_charset_tis620_thai_ci=
     1,			/* mbminlen   */
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
-    255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
+    0,			/* max_sort_char */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -937,8 +1001,7 @@ CHARSET_INFO my_charset_tis620_bin=
     1,			/* mbminlen   */
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
-    255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
+    0,			/* max_sort_char */
     &my_charset_handler,
     &my_collation_8bit_bin_handler
 };

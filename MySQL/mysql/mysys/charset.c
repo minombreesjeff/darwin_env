@@ -38,22 +38,6 @@ my_bool my_charset_same(CHARSET_INFO *cs1, CHARSET_INFO *cs2)
 }
 
 
-static uint
-get_collation_number_internal(const char *name)
-{
-  CHARSET_INFO **cs;
-  for (cs= all_charsets;
-       cs < all_charsets+array_elements(all_charsets)-1 ;
-       cs++)
-  {
-    if ( cs[0] && cs[0]->name && 
-         !my_strcasecmp(&my_charset_latin1, cs[0]->name, name))
-      return cs[0]->number;
-  }  
-  return 0;
-}
-
-
 static my_bool init_state_maps(CHARSET_INFO *cs)
 {
   uint i;
@@ -205,8 +189,7 @@ static my_bool simple_cs_is_full(CHARSET_INFO *cs)
 
 static int add_collation(CHARSET_INFO *cs)
 {
-  if (cs->name && (cs->number ||
-                   (cs->number=get_collation_number_internal(cs->name))))
+  if (cs->name && (cs->number || (cs->number=get_collation_number(cs->name))))
   {
     if (!all_charsets[cs->number])
     {
@@ -400,28 +383,26 @@ static my_bool init_available_charsets(myf myflags)
       while we may changing the cs_info_table
     */
     pthread_mutex_lock(&THR_LOCK_charset);
-    if (!charset_initialized)
+
+    bzero(&all_charsets,sizeof(all_charsets));
+    init_compiled_charsets(myflags);
+    
+    /* Copy compiled charsets */
+    for (cs=all_charsets;
+	 cs < all_charsets+array_elements(all_charsets)-1 ;
+	 cs++)
     {
-      bzero(&all_charsets,sizeof(all_charsets));
-      init_compiled_charsets(myflags);
-      
-      /* Copy compiled charsets */
-      for (cs=all_charsets;
-           cs < all_charsets+array_elements(all_charsets)-1 ;
-           cs++)
+      if (*cs)
       {
-        if (*cs)
-        {
-          if (cs[0]->ctype)
-            if (init_state_maps(*cs))
-              *cs= NULL;
-        }
+        if (cs[0]->ctype)
+          if (init_state_maps(*cs))
+            *cs= NULL;
       }
-      
-      strmov(get_charsets_dir(fname), MY_CHARSET_INDEX);
-      error= my_read_charset_file(fname,myflags);
-      charset_initialized=1;
     }
+    
+    strmov(get_charsets_dir(fname), MY_CHARSET_INDEX);
+    error= my_read_charset_file(fname,myflags);
+    charset_initialized=1;
     pthread_mutex_unlock(&THR_LOCK_charset);
   }
   return error;
@@ -436,8 +417,18 @@ void free_charsets(void)
 
 uint get_collation_number(const char *name)
 {
+  CHARSET_INFO **cs;
   init_available_charsets(MYF(0));
-  return get_collation_number_internal(name);
+  
+  for (cs= all_charsets;
+       cs < all_charsets+array_elements(all_charsets)-1 ;
+       cs++)
+  {
+    if ( cs[0] && cs[0]->name && 
+         !my_strcasecmp(&my_charset_latin1, cs[0]->name, name))
+      return cs[0]->number;
+  }  
+  return 0;   /* this mimics find_type() */
 }
 
 
@@ -644,29 +635,3 @@ ulong escape_string_for_mysql(CHARSET_INFO *charset_info, char *to,
   *to= 0;
   return (ulong) (to - to_start);
 }
-
-
-#ifdef BACKSLASH_MBTAIL
-static CHARSET_INFO *fs_cset_cache= NULL;
-
-CHARSET_INFO *fs_character_set()
-{
-  if (!fs_cset_cache)
-  {
-    char buf[10]= "cp";
-    GetLocaleInfo(LOCALE_SYSTEM_DEFAULT, LOCALE_IDEFAULTANSICODEPAGE,
-                  buf+2, sizeof(buf)-3);
-    /*
-      We cannot call get_charset_by_name here
-      because fs_character_set() is executed before
-      LOCK_THD_charset mutex initialization, which
-      is used inside get_charset_by_name.
-      As we're now interested in cp932 only,
-      let's just detect it using strcmp().
-    */
-    fs_cset_cache= !strcmp(buf, "cp932") ?
-                   &my_charset_cp932_japanese_ci : &my_charset_bin;
-  }
-  return fs_cset_cache;
-}
-#endif

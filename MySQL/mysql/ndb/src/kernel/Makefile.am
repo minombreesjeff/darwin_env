@@ -23,6 +23,7 @@ INCLUDES += \
               -Iblocks/backup \
               -Iblocks/dbutil \
               -Iblocks/suma \
+              -Iblocks/grep \
               -Iblocks/dbtux
 
 LDADD +=  \
@@ -40,6 +41,7 @@ LDADD +=  \
               blocks/backup/libbackup.a \
               blocks/dbutil/libdbutil.a \
               blocks/suma/libsuma.a \
+              blocks/grep/libgrep.a \
               blocks/dbtux/libdbtux.a \
               vm/libkernel.a	\
               error/liberror.a \
@@ -53,8 +55,7 @@ LDADD +=  \
               $(top_builddir)/ndb/src/common/util/libgeneral.la  \
          $(top_builddir)/dbug/libdbug.a \
          $(top_builddir)/mysys/libmysys.a \
-         $(top_builddir)/strings/libmystrings.a @NDB_SCI_LIBS@ -lmygcc
-
+         $(top_builddir)/strings/libmystrings.a @NDB_SCI_LIBS@
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

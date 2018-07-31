@@ -54,7 +54,7 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
       TODO: nulls processing
     */
 #ifdef HAVE_SPATIAL
-    DBUG_RETURN(sp_make_key(info,keynr,key,record,filepos));
+    return sp_make_key(info,keynr,key,record,filepos);
 #else
     DBUG_ASSERT(0); /* mi_open should check that this never happens*/
 #endif
@@ -217,10 +217,7 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
       {
 	k_length-=length;
         if (keyseg->flag & (HA_VAR_LENGTH | HA_BLOB_PART))
-        {
-          old+= 2;
           k_length-=2;                                  /* Skip length */
-        }
 	continue;					/* Found NULL */
       }
     }
@@ -393,10 +390,6 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
 	     (char*) &blob_ptr,sizeof(char*));
       memcpy(blob_ptr,key,length);
       blob_ptr+=length;
-
-      /* The above changed info->lastkey2. Inform mi_rnext_same(). */
-      info->update&= ~HA_STATE_RNEXT_SAME;
-
       _my_store_blob_length(record+keyseg->start,
 			    (uint) keyseg->bit_start,length);
       key+=length;

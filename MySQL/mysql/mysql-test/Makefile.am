@@ -32,14 +32,12 @@ endif
 
 benchdir_root=		$(prefix)
 testdir =	        $(benchdir_root)/mysql-test
-EXTRA_SCRIPTS = 	mysql-test-run.sh install_test_db.sh $(PRESCRIPTS)
+EXTRA_SCRIPTS = 	mysql-test-run.sh mysql-test-run.pl install_test_db.sh
 EXTRA_DIST = 		$(EXTRA_SCRIPTS) 
-GENSCRIPTS =		mysql-test-run install_test_db mtr
-PRESCRIPTS =		mysql-test-run.pl
-test_SCRIPTS = 		$(GENSCRIPTS) $(PRESCRIPTS)
+test_SCRIPTS = 		mysql-test-run install_test_db 
 test_DATA = std_data/client-key.pem std_data/client-cert.pem std_data/cacert.pem \
 	std_data/server-cert.pem std_data/server-key.pem 
-CLEANFILES = 		$(GENSCRIPTS) $(test_DATA)
+CLEANFILES = 		$(test_SCRIPTS) $(test_DATA)
 
 INCLUDES =		-I$(top_builddir)/include -I$(top_srcdir)/include -I..
 EXTRA_PROGRAMS =	mysql_test_run_new
@@ -50,17 +48,13 @@ mysql_test_run_new_SOURCES=		mysql_test_run_new.c my_manage.c my_create_tables.c
 dist-hook:
 	mkdir -p $(distdir)/t $(distdir)/r $(distdir)/include \
 		$(distdir)/std_data $(distdir)/lib
-	-$(INSTALL_DATA) $(srcdir)/t/*.def $(distdir)/t
-	$(INSTALL_DATA) $(srcdir)/t/*.test $(distdir)/t
-	-$(INSTALL_DATA) $(srcdir)/t/*.disabled $(distdir)/t
-	$(INSTALL_DATA) $(srcdir)/t/*.opt $(srcdir)/t/*.sh $(srcdir)/t/*.slave-mi $(distdir)/t
+	$(INSTALL_DATA) $(srcdir)/t/*.test $(srcdir)/t/*.opt $(srcdir)/t/*.sh $(srcdir)/t/*.slave-mi $(distdir)/t
 	$(INSTALL_DATA) $(srcdir)/include/*.inc $(distdir)/include
 	$(INSTALL_DATA) $(srcdir)/r/*.result $(srcdir)/r/*.require $(distdir)/r
 	$(INSTALL_DATA) $(srcdir)/std_data/Moscow_leap $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.dat $(srcdir)/std_data/*.000001 $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/des_key_file $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.pem $(distdir)/std_data
-	$(INSTALL_DATA) $(srcdir)/std_data/*.cnf $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/lib/init_db.sql $(distdir)/lib
 	$(INSTALL_DATA) $(srcdir)/lib/*.pl $(distdir)/lib
 
@@ -73,9 +67,7 @@ install-data-local:
 		$(DESTDIR)$(testdir)/std_data \
 		$(DESTDIR)$(testdir)/lib
 	$(INSTALL_DATA) $(srcdir)/README $(DESTDIR)$(testdir)
-	-$(INSTALL_DATA) $(srcdir)/t/*.def $(DESTDIR)$(testdir)/t
 	$(INSTALL_DATA) $(srcdir)/t/*.test $(DESTDIR)$(testdir)/t
-	-$(INSTALL_DATA) $(srcdir)/t/*.disabled $(DESTDIR)$(testdir)/t
 	$(INSTALL_DATA) $(srcdir)/t/*.opt $(DESTDIR)$(testdir)/t
 	$(INSTALL_DATA) $(srcdir)/t/*.sh $(DESTDIR)$(testdir)/t
 	$(INSTALL_DATA) $(srcdir)/t/*.slave-mi $(DESTDIR)$(testdir)/t
@@ -84,15 +76,11 @@ install-data-local:
 	$(INSTALL_DATA) $(srcdir)/include/*.inc $(DESTDIR)$(testdir)/include
 	$(INSTALL_DATA) $(srcdir)/std_data/*.dat $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.*001 $(DESTDIR)$(testdir)/std_data
-	$(INSTALL_DATA) $(srcdir)/std_data/*.cnf $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/des_key_file $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/Moscow_leap $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.pem $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/lib/init_db.sql $(DESTDIR)$(testdir)/lib
 	$(INSTALL_DATA) $(srcdir)/lib/*.pl $(DESTDIR)$(testdir)/lib
-
-uninstall-local:
-	@RM@ -f -r $(DESTDIR)$(testdir)
 
 std_data/client-key.pem:
 	@CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
@@ -104,11 +92,6 @@ std_data/server-cert.pem:
 	@CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
 std_data/server-key.pem:
 	@CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
-
-# mtr - a shortcut for executing mysql-test-run.pl
-mtr:
-	$(RM) -f mtr
-	$(LN_S) mysql-test-run.pl mtr
 
 SUFFIXES = .sh
 

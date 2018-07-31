@@ -211,33 +211,13 @@ bool Item::eq(const Item *item, bool binary_cmp) const
 
 Item *Item::safe_charset_converter(CHARSET_INFO *tocs)
 {
-  Item_func_conv_charset *conv= new Item_func_conv_charset(this, tocs, 1);
-  return conv->safe ? conv : NULL;
-}
-
-
-/*
-  Created mostly for mysql_prepare_table(). Important
-  when a string ENUM/SET column is described with a numeric default value:
-
-  CREATE TABLE t1(a SET('a') DEFAULT 1);
-
-  We cannot use generic Item::safe_charset_converter(), because
-  the latter returns a non-fixed Item, so val_str() crashes afterwards.
-  Override Item_num method, to return a fixed item.
-*/
-Item *Item_num::safe_charset_converter(CHARSET_INFO *tocs)
-{
-  Item_string *conv;
-  char buf[64];
-  String *s, tmp(buf, sizeof(buf), &my_charset_bin);
-  s= val_str(&tmp);
-  if ((conv= new Item_string(s->ptr(), s->length(), s->charset())))
-  {
-    conv->str_value.copy();
-    conv->str_value.shrink_to_length();
-  }
-  return conv;
+  /*
+    Don't allow automatic conversion to non-Unicode charsets,
+    as it potentially loses data.
+  */
+  if (!(tocs->state & MY_CS_UNICODE))
+    return NULL; // safe conversion is not possible
+  return new Item_func_conv_charset(this, tocs);
 }
 
 
@@ -273,32 +253,6 @@ Item *Item_string::safe_charset_converter(CHARSET_INFO *tocs)
   */
   conv->str_value.shrink_to_length();
   return conv;
-}
-
-
-Item *Item_param::safe_charset_converter(CHARSET_INFO *tocs)
-{
-  if (const_item())
-  {
-    Item_string *conv;
-    uint conv_errors;
-    char buf[MAX_FIELD_WIDTH];
-    String tmp(buf, sizeof(buf), &my_charset_bin);
-    String cstr, *ostr= val_str(&tmp);
-    /*
-      As safe_charset_converter is not executed for
-      a parameter bound to NULL, ostr should never be 0.
-    */
-    cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-    if (conv_errors || !(conv= new Item_string(cstr.ptr(), cstr.length(),
-                                               cstr.charset(),
-                                               collation.derivation)))
-      return NULL;
-    conv->str_value.copy();
-    conv->str_value.shrink_to_length();
-    return conv;
-  }
-  return NULL;
 }
 
 
@@ -387,7 +341,6 @@ void Item::split_sum_func2(THD *thd, Item **ref_pointer_array,
   }
   else if ((type() == SUM_FUNC_ITEM ||
             (used_tables() & ~PARAM_TABLE_BIT)) &&
-           type() != SUBSELECT_ITEM &&
            type() != REF_ITEM)
   {
     /*
@@ -474,18 +427,14 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
        ; // Do nothing
     }
     else if ((flags & MY_COLL_ALLOW_SUPERSET_CONV) &&
-             collation->state & MY_CS_UNICODE &&
-             (derivation < dt.derivation ||
-             (derivation == dt.derivation &&
-             !(dt.collation->state & MY_CS_UNICODE))))
+             derivation < dt.derivation &&
+             collation->state & MY_CS_UNICODE)
     {
       // Do nothing
     }
     else if ((flags & MY_COLL_ALLOW_SUPERSET_CONV) &&
-             dt.collation->state & MY_CS_UNICODE &&
-             (dt.derivation < derivation ||
-              (dt.derivation == derivation &&
-             !(collation->state & MY_CS_UNICODE))))
+             dt.derivation < derivation &&
+             dt.collation->state & MY_CS_UNICODE)
     {
       set(dt);
     }
@@ -545,170 +494,6 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
   }
   return 0;
 }
-
-/******************************/
-static
-void my_coll_agg_error(DTCollation &c1, DTCollation &c2, const char *fname)
-{
-  my_error(ER_CANT_AGGREGATE_2COLLATIONS,MYF(0),
-           c1.collation->name,c1.derivation_name(),
-           c2.collation->name,c2.derivation_name(),
-           fname);
-}
-
-
-static
-void my_coll_agg_error(DTCollation &c1, DTCollation &c2, DTCollation &c3,
-                       const char *fname)
-{
-  my_error(ER_CANT_AGGREGATE_3COLLATIONS,MYF(0),
-  	   c1.collation->name,c1.derivation_name(),
-	   c2.collation->name,c2.derivation_name(),
-	   c3.collation->name,c3.derivation_name(),
-	   fname);
-}
-
-
-static
-void my_coll_agg_error(Item** args, uint count, const char *fname)
-{
-  if (count == 2)
-    my_coll_agg_error(args[0]->collation, args[1]->collation, fname);
-  else if (count == 3)
-    my_coll_agg_error(args[0]->collation, args[1]->collation,
-                      args[2]->collation, fname);
-  else
-    my_error(ER_CANT_AGGREGATE_NCOLLATIONS,MYF(0),fname);
-}
-
-
-bool agg_item_collations(DTCollation &c, const char *fname,
-                         Item **av, uint count, uint flags)
-{
-  uint i;
-  c.set(av[0]->collation);
-  for (i= 1; i < count; i++)
-  {
-    if (c.aggregate(av[i]->collation, flags))
-    {
-      my_coll_agg_error(av, count, fname);
-      return TRUE;
-    }
-  }
-  if ((flags & MY_COLL_DISALLOW_NONE) &&
-      c.derivation == DERIVATION_NONE)
-  {
-    my_coll_agg_error(av, count, fname);
-    return TRUE;
-  }
-  return FALSE;
-}
-
-
-bool agg_item_collations_for_comparison(DTCollation &c, const char *fname,
-                                        Item **av, uint count, uint flags)
-{
-  return (agg_item_collations(c, fname, av, count,
-                              flags | MY_COLL_DISALLOW_NONE));
-}
-
-
-/* 
-  Collect arguments' character sets together.
-  We allow to apply automatic character set conversion in some cases.
-  The conditions when conversion is possible are:
-  - arguments A and B have different charsets
-  - A wins according to coercibility rules
-    (i.e. a column is stronger than a string constant,
-     an explicit COLLATE clause is stronger than a column)
-  - character set of A is either superset for character set of B,
-    or B is a string constant which can be converted into the
-    character set of A without data loss.
-    
-  If all of the above is true, then it's possible to convert
-  B into the character set of A, and then compare according
-  to the collation of A.
-  
-  For functions with more than two arguments:
-
-    collect(A,B,C) ::= collect(collect(A,B),C)
-*/
-
-bool agg_item_charsets(DTCollation &coll, const char *fname,
-                       Item **args, uint nargs, uint flags)
-{
-  Item **arg, **last, *safe_args[2];
-  if (agg_item_collations(coll, fname, args, nargs, flags))
-    return TRUE;
-
-  /*
-    For better error reporting: save the first and the second argument.
-    We need this only if the the number of args is 3 or 2:
-    - for a longer argument list, "Illegal mix of collations"
-      doesn't display each argument's characteristics.
-    - if nargs is 1, then this error cannot happen.
-  */
-  if (nargs >=2 && nargs <= 3)
-  {
-    safe_args[0]= args[0];
-    safe_args[1]= args[1];
-  }
-
-  THD *thd= current_thd;
-  Item_arena *arena, backup;
-  bool res= FALSE;
-  /*
-    In case we're in statement prepare, create conversion item
-    in its memory: it will be reused on each execute.
-  */
-  arena= thd->change_arena_if_needed(&backup);
-
-  for (arg= args, last= args + nargs; arg < last; arg++)
-  {
-    Item* conv;
-    uint32 dummy_offset;
-    if (!String::needs_conversion(0, coll.collation,
-                                  (*arg)->collation.collation,
-                                  &dummy_offset))
-      continue;
-
-    if (!(conv= (*arg)->safe_charset_converter(coll.collation)))
-    {
-      if (nargs >=2 && nargs <= 3)
-      {
-        /* restore the original arguments for better error message */
-        args[0]= safe_args[0];
-        args[1]= safe_args[1];
-      }
-      my_coll_agg_error(args, nargs, fname);
-      res= TRUE;
-      break; // we cannot return here, we need to restore "arena".
-    }
-    conv->fix_fields(thd, 0, &conv);
-    /*
-      If in statement prepare, then we create a converter for two
-      constant items, do it once and then reuse it.
-      If we're in execution of a prepared statement, arena is NULL,
-      and the conv was created in runtime memory. This can be
-      the case only if the argument is a parameter marker ('?'),
-      because for all true constants the charset converter has already
-      been created in prepare. In this case register the change for
-      rollback.
-    */
-    if (arena)
-      *arg= conv;
-    else
-      thd->change_item_tree(arg, conv);
-  }
-  if (arena)
-    thd->restore_backup_item_arena(arena, &backup);
-  return res;
-}
-
-
-
-
-/**********************************************/
 
 Item_field::Item_field(Field *f)
   :Item_ident(NullS, f->table_name, f->field_name)
@@ -1104,7 +889,6 @@ void Item_param::set_null()
   max_length= 0;
   decimals= 0;
   state= NULL_VALUE;
-  item_type= Item::NULL_ITEM;
   DBUG_VOID_RETURN;
 }
 
@@ -1249,7 +1033,7 @@ bool Item_param::set_from_user_var(THD *thd, const user_var_entry *entry)
       CHARSET_INFO *tocs= thd->variables.collation_connection;
       uint32 dummy_offset;
 
-      value.cs_info.character_set_of_placeholder= fromcs;
+      value.cs_info.character_set_client= fromcs;
       /*
         Setup source and destination character sets so that they
         are different only if conversion is necessary: this will
@@ -1304,7 +1088,6 @@ void Item_param::reset()
     to the binary log.
   */
   str_value.set_charset(&my_charset_bin);
-  collation.set(&my_charset_bin, DERIVATION_COERCIBLE);
   state= NO_VALUE;
   maybe_null= 1;
   null_value= 0;
@@ -1501,17 +1284,10 @@ const String *Item_param::query_val_str(String* str) const
 
       buf= str->c_ptr_quick();
       ptr= buf;
-      if (value.cs_info.character_set_client->escape_with_backslash_is_dangerous)
-      {
-        ptr= str_to_hex(ptr, str_value.ptr(), str_value.length());
-      }
-      else
-      {
-        *ptr++= '\'';
-        ptr+= escape_string_for_mysql(str_value.charset(), ptr,
-                                      str_value.ptr(), str_value.length());
-        *ptr++='\'';
-      }
+      *ptr++= '\'';
+      ptr+= escape_string_for_mysql(str_value.charset(), ptr,
+                                    str_value.ptr(), str_value.length());
+      *ptr++= '\'';
       str->length(ptr - buf);
       break;
     }
@@ -1541,10 +1317,10 @@ bool Item_param::convert_str_value(THD *thd)
       here only if conversion is really necessary.
     */
     if (value.cs_info.final_character_set_of_str_value !=
-        value.cs_info.character_set_of_placeholder)
+        value.cs_info.character_set_client)
     {
       rc= thd->convert_string(&str_value,
-                              value.cs_info.character_set_of_placeholder,
+                              value.cs_info.character_set_client,
                               value.cs_info.final_character_set_of_str_value);
     }
     else
@@ -1559,10 +1335,36 @@ bool Item_param::convert_str_value(THD *thd)
     */
     str_value_ptr.set(str_value.ptr(), str_value.length(),
                       str_value.charset());
-    /* Synchronize item charset with value charset */
-    collation.set(str_value.charset(), DERIVATION_COERCIBLE);
   }
   return rc;
+}
+
+bool Item_param::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
+{
+  DBUG_ASSERT(fixed == 0);
+  SELECT_LEX *cursel= (SELECT_LEX *) thd->lex->current_select;
+
+  /*
+    Parameters in a subselect should mark the subselect as not constant
+    during prepare
+  */
+  if (state == NO_VALUE)
+  {
+    /*
+      SELECT_LEX_UNIT::item set only for subqueries, so test of it presence
+      can be barrier to stop before derived table SELECT or very outer SELECT
+    */
+    for(;
+        cursel->master_unit()->item;
+        cursel= cursel->outer_select())
+    {
+      Item_subselect *subselect_item= cursel->master_unit()->item;
+      subselect_item->used_tables_cache|= OUTER_REF_TABLE_BIT;
+      subselect_item->const_item_cache= 0;
+    }
+  }
+  fixed= 1;
+  return 0;
 }
 
 
@@ -1753,21 +1555,6 @@ bool Item_field::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
     if ((tmp= find_field_in_tables(thd, this, tables, &where, 0)) ==
 	not_found_field)
     {
-      /* Look up in current select's item_list to find aliased fields */
-      if (thd->lex->current_select->is_item_list_lookup)
-      {
-        uint counter;
-        bool not_used;
-        Item** res= find_item_in_list(this, thd->lex->current_select->item_list,
-                                      &counter, REPORT_EXCEPT_NOT_FOUND,
-                                      &not_used);
-        if (res != (Item **)not_found_item && (*res)->type() == Item::FIELD_ITEM)
-        {
-          set_field((*((Item_field**)res))->field);
-          return 0;
-        }
-      }
-
       /*
 	We can't find table field in table list of current select,
 	consequently we have to find it in outer subselect(s).
@@ -2048,14 +1835,12 @@ Field *Item::tmp_table_field_from_field_type(TABLE *table)
   case MYSQL_TYPE_ENUM:
   case MYSQL_TYPE_SET:
   case MYSQL_TYPE_VAR_STRING:
-    DBUG_ASSERT(collation.collation);
-    if (max_length/collation.collation->mbmaxlen > 255)
+    if (max_length > 255)
       break;					// If blob
     return new Field_varstring(max_length, maybe_null, name, table,
 			       collation.collation);
   case MYSQL_TYPE_STRING:
-    DBUG_ASSERT(collation.collation);
-    if (max_length/collation.collation->mbmaxlen > 255)		// If blob
+    if (max_length > 255)			// If blob
       break;
     return new Field_string(max_length, maybe_null, name, table,
 			    collation.collation);
@@ -2365,20 +2150,6 @@ bool Item_varbinary::eq(const Item *arg, bool binary_cmp) const
   }
   return FALSE;
 }
-
-
-Item *Item_varbinary::safe_charset_converter(CHARSET_INFO *tocs)
-{
-  Item_string *conv;
-  String tmp, *str= val_str(&tmp);
-
-  if (!(conv= new Item_string(str->ptr(), str->length(), tocs)))
-    return NULL;
-  conv->str_value.copy();
-  conv->str_value.shrink_to_length();
-  return conv;
-}
-
 
 /*
   Pack data in buffer for sending
@@ -2717,6 +2488,14 @@ void Item_ref_null_helper::print(String *str)
 }
 
 
+void Item_null_helper::print(String *str)
+{
+  str->append("<null_helper>(", 14);
+  store->print(str);
+  str->append(')');
+}
+
+
 bool Item_default_value::eq(const Item *item, bool binary_cmp) const
 {
   return item->type() == DEFAULT_VALUE_ITEM && 
@@ -2781,14 +2560,8 @@ bool Item_insert_value::fix_fields(THD *thd,
 				   Item **items)
 {
   DBUG_ASSERT(fixed == 0);
-  st_table_list *orig_next_table= table_list->next;
-  table_list->next= 0;
   if (!arg->fixed && arg->fix_fields(thd, table_list, &arg))
-  {
-    table_list->next= orig_next_table;
     return 1;
-  }
-  table_list->next= orig_next_table;
 
   if (arg->type() == REF_ITEM)
   {
@@ -2800,7 +2573,6 @@ bool Item_insert_value::fix_fields(THD *thd,
     arg= ref->ref[0];
   }
   Item_field *field_arg= (Item_field *)arg;
-
   if (field_arg->field->table->insert_values)
   {
     Field *def_field= (Field*) sql_alloc(field_arg->field->size_of());
@@ -2848,7 +2620,7 @@ Item_result item_cmp_type(Item_result a,Item_result b)
 void resolve_const_item(THD *thd, Item **ref, Item *comp_item)
 {
   Item *item= *ref;
-  Item *new_item= NULL;
+  Item *new_item;
   if (item->basic_const_item())
     return;                                     // Can't be better
   Item_result res_type=item_cmp_type(comp_item->result_type(),
@@ -2877,34 +2649,7 @@ void resolve_const_item(THD *thd, Item **ref, Item *comp_item)
     new_item= (null_value ? (Item*) new Item_null(name) :
                (Item*) new Item_int(name, result, length));
   }
-  else if (res_type == ROW_RESULT && item->type() == Item::ROW_ITEM &&
-           comp_item->type() == Item::ROW_ITEM)
-  {
-    /*
-      Substitute constants only in Item_rows. Don't affect other Items
-      with ROW_RESULT (eg Item_singlerow_subselect).
-
-      For such Items more optimal is to detect if it is constant and replace
-      it with Item_row. This would optimize queries like this:
-      SELECT * FROM t1 WHERE (a,b) = (SELECT a,b FROM t2 LIMIT 1);
-    */
-    Item_row *item_row= (Item_row*) item;
-    Item_row *comp_item_row= (Item_row*) comp_item;
-    uint col;
-    new_item= 0;
-    /*
-      If item and comp_item are both Item_rows and have same number of cols
-      then process items in Item_row one by one.
-      We can't ignore NULL values here as this item may be used with <=>, in
-      which case NULL's are significant.
-    */
-    DBUG_ASSERT(item->result_type() == comp_item->result_type());
-    DBUG_ASSERT(item_row->cols() == comp_item_row->cols());
-    col= item_row->cols();
-    while (col-- > 0)
-      resolve_const_item(thd, item_row->addr(col), comp_item_row->el(col));
-  }
-  else if (res_type == REAL_RESULT)
+  else
   {						// It must REAL_RESULT
     double result=item->val();
     uint length=item->max_length,decimals=item->decimals;
@@ -3239,19 +2984,14 @@ enum_field_types Item_type_holder::get_real_type(Item *item)
 
 bool Item_type_holder::join_types(THD *thd, Item *item)
 {
-  uint max_length_orig= max_length;
-  uint decimals_orig= decimals;
   max_length= max(max_length, display_length(item));
-  decimals= max(decimals, item->decimals);
   fld_type= Field::field_type_merge(fld_type, get_real_type(item));
-  switch (Field::result_merge_type(fld_type))
-  {
-  case STRING_RESULT:
+  if (Field::result_merge_type(fld_type) == STRING_RESULT)
   {
     const char *old_cs, *old_derivation;
     old_cs= collation.collation->name;
     old_derivation= collation.derivation_name();
-    if (collation.aggregate(item->collation, MY_COLL_ALLOW_CONV))
+    if (collation.aggregate(item->collation))
     {
       my_error(ER_CANT_AGGREGATE_2COLLATIONS, MYF(0),
 	       old_cs, old_derivation,
@@ -3260,26 +3000,8 @@ bool Item_type_holder::join_types(THD *thd, Item *item)
 	       "UNION");
       return TRUE;
     }
-    break;
   }
-  case REAL_RESULT:
-  {
-    if (decimals != NOT_FIXED_DEC)
-    {
-      int delta1= max_length_orig - decimals_orig;
-      int delta2= item->max_length - item->decimals;
-      if (fld_type == MYSQL_TYPE_DECIMAL)
-        max_length= max(delta1, delta2) + decimals;
-      else
-        max_length= min(max(delta1, delta2) + decimals,
-                        (fld_type == MYSQL_TYPE_FLOAT) ? FLT_DIG+6 : DBL_DIG+7);
-    }
-    else
-      max_length= (fld_type == MYSQL_TYPE_FLOAT) ? FLT_DIG+6 : DBL_DIG+7;
-    break;
-  }
-  default:;
-  };
+  decimals= max(decimals, item->decimals);
   maybe_null|= item->maybe_null;
   get_full_info(item);
   return FALSE;

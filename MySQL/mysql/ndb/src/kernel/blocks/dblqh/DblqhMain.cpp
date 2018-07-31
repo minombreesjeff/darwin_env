@@ -434,33 +434,6 @@ void Dblqh::execCONTINUEB(Signal* signal)
     checkDropTab(signal);
     return;
     break;
-  case ZENABLE_EXPAND_CHECK:
-  {
-    jam();
-    fragptr.i = signal->theData[1];
-    if (fragptr.i != RNIL)
-    {
-      jam();
-      ptrCheckGuard(fragptr, cfragrecFileSize, fragrecord);
-      signal->theData[0] = fragptr.p->tabRef;
-      signal->theData[1] = fragptr.p->fragId;
-      sendSignal(DBACC_REF, GSN_EXPANDCHECK2, signal, 2, JBB);
-      
-      signal->theData[0] = ZENABLE_EXPAND_CHECK;
-      signal->theData[1] = fragptr.p->nextFrag;
-      sendSignal(DBLQH_REF, GSN_CONTINUEB, signal, 2, JBB);	
-      return;
-    }
-    else
-    {
-      jam();
-      StartRecConf * conf = (StartRecConf*)signal->getDataPtrSend();
-      conf->startingNodeId = getOwnNodeId();
-      sendSignal(cmasterDihBlockref, GSN_START_RECCONF, signal, 
-		 StartRecConf::SignalLength, JBB);
-      return;
-    }
-  }
   default:
     ndbrequire(false);
     break;
@@ -3539,8 +3512,7 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
     LQHKEY_abort(signal, 4);
     return;
   }
-  if(table_version_major(tabptr.p->schemaVersion) != 
-     table_version_major(schemaVersion)){
+  if(tabptr.p->schemaVersion != schemaVersion){
     LQHKEY_abort(signal, 5);
     return;
   }
@@ -3559,7 +3531,6 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
     jam();
     regTcPtr->activeCreat = ZTRUE;
     CRASH_INSERTION(5002);
-    CRASH_INSERTION2(5042, tabptr.i == c_error_insert_table_id);
   } else {
     regTcPtr->activeCreat = ZFALSE;
   }//if
@@ -4480,7 +4451,7 @@ void Dblqh::packLqhkeyreqLab(Signal* signal)
   lqhKeyReq->requestInfo = Treqinfo;
   lqhKeyReq->tcBlockref = sig4;
 
-  sig0 = regTcPtr->tableref + ((regTcPtr->schemaVersion << 16) & 0xFFFF0000);
+  sig0 = regTcPtr->tableref + (regTcPtr->schemaVersion << 16);
   sig1 = regTcPtr->fragmentid + (regTcPtr->nodeAfterNext[0] << 16);
   sig2 = regTcPtr->transid[0];
   sig3 = regTcPtr->transid[1];
@@ -5897,21 +5868,12 @@ void Dblqh::execABORT(Signal* signal)
     warningReport(signal, 8);
     return;
   }//if
-  
-  TcConnectionrec * const regTcPtr = tcConnectptr.p;
-
-  if (ERROR_INSERTED(5100))
-  {
-    SET_ERROR_INSERT_VALUE(5101);
-    return;
-  }
-  CRASH_INSERTION2(5101, regTcPtr->nextReplica != ZNIL);
-  
 /* ------------------------------------------------------------------------- */
 /*A GUIDING DESIGN PRINCIPLE IN HANDLING THESE ERROR SITUATIONS HAVE BEEN    */
 /*KEEP IT SIMPLE. THUS WE RATHER INSERT A WAIT AND SET THE ABORT_STATE TO    */
 /*ACTIVE RATHER THAN WRITE NEW CODE TO HANDLE EVERY SPECIAL SITUATION.       */
 /* ------------------------------------------------------------------------- */
+  TcConnectionrec * const regTcPtr = tcConnectptr.p;
   if (regTcPtr->nextReplica != ZNIL) {
 /* ------------------------------------------------------------------------- */
 // We will immediately send the ABORT message also to the next LQH node in line.
@@ -6435,7 +6397,6 @@ void Dblqh::execACC_ABORTCONF(Signal* signal)
      * A NORMAL EVENT DURING CREATION OF A FRAGMENT. WE NOW NEED TO CONTINUE
      * WITH NORMAL COMMIT PROCESSING.
      * ---------------------------------------------------------------------- */
-    regTcPtr->totSendlenAi = regTcPtr->totReclenAi;
     if (regTcPtr->currTupAiLen == regTcPtr->totReclenAi) {
       jam();
       regTcPtr->abortState = TcConnectionrec::ABORT_IDLE;
@@ -9248,15 +9209,6 @@ void Dblqh::nextScanConfCopyLab(Signal* signal)
 // completion. Signal completion through scanCompletedStatus-flag.
 /*---------------------------------------------------------------------------*/
     scanptr.p->scanCompletedStatus = ZTRUE;
-    scanptr.p->scanState = ScanRecord::WAIT_LQHKEY_COPY;
-    if (ERROR_INSERTED(5043))
-    {
-      CLEAR_ERROR_INSERT_VALUE;
-      tcConnectptr.p->copyCountWords = ~0;
-      signal->theData[0] = 9999;
-      sendSignal(numberToRef(CMVMI, scanptr.p->scanNodeId),
-		 GSN_NDB_TAMPER, signal, 1, JBA);
-    }
     return;
   }//if
 
@@ -11765,6 +11717,14 @@ Dblqh::execFSSYNCCONF(Signal* signal)
   ccurrentGcprec = RNIL;
 }//Dblqh::execFSSYNCCONF()
 
+void
+Dblqh::execFSSYNCREF(Signal* signal)
+{
+  jamEntry();
+  systemErrorLab(signal);
+  return;
+}//Dblqh::execFSSYNCREF()
+
 
 /* ######################################################################### */
 /* #######                            FILE HANDLING MODULE           ####### */
@@ -11796,37 +11756,55 @@ void Dblqh::execFSCLOSECONF(Signal* signal)
     ptrCheckGuard(logFilePtr, clogFileFileSize, logFileRecord);
     exitFromInvalidate(signal);
     return;
+    break;
   case LogFileRecord::CLOSING_INIT:
     jam();
     closingInitLab(signal);
     return;
+    break;
   case LogFileRecord::CLOSING_SR:
     jam();
     closingSrLab(signal);
     return;
+    break;
   case LogFileRecord::CLOSING_EXEC_SR:
     jam();
     closeExecSrLab(signal);
     return;
+    break;
   case LogFileRecord::CLOSING_EXEC_SR_COMPLETED:
     jam();
     closeExecSrCompletedLab(signal);
     return;
+    break;
   case LogFileRecord::CLOSING_WRITE_LOG:
     jam();
     closeWriteLogLab(signal);
     return;
+    break;
   case LogFileRecord::CLOSING_EXEC_LOG:
     jam();
     closeExecLogLab(signal);
     return;
+    break;
   default:
     jam();
     systemErrorLab(signal);
     return;
+    break;
   }//switch
 }//Dblqh::execFSCLOSECONF()
 
+/* ************>> */
+/*  FSCLOSEREF  > */
+/* ************>> */
+void Dblqh::execFSCLOSEREF(Signal* signal) 
+{
+  jamEntry();
+  terrorCode = signal->theData[1];
+  systemErrorLab(signal);
+  return;
+}//Dblqh::execFSCLOSEREF()
 
 /* ************>> */
 /*  FSOPENCONF  > */
@@ -11841,67 +11819,90 @@ void Dblqh::execFSOPENCONF(Signal* signal)
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     readFileInInvalidate(signal);
     return;
+    break;
   case LogFileRecord::OPENING_INIT:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openFileInitLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_SR_FRONTPAGE:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openSrFrontpageLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_SR_LAST_FILE:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openSrLastFileLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_SR_NEXT_FILE:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openSrNextFileLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_EXEC_SR_START:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openExecSrStartLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_EXEC_SR_NEW_MBYTE:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openExecSrNewMbyteLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_SR_FOURTH_PHASE:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openSrFourthPhaseLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_SR_FOURTH_NEXT:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openSrFourthNextLab(signal);
     return;
+    break;
   case LogFileRecord::OPEN_SR_FOURTH_ZERO:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openSrFourthZeroLab(signal);
     return;
+    break;
   case LogFileRecord::OPENING_WRITE_LOG:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     return;
+    break;
   case LogFileRecord::OPEN_EXEC_LOG:
     jam();
     logFilePtr.p->logFileStatus = LogFileRecord::OPEN;
     openExecLogLab(signal);
     return;
+    break;
   default:
     jam();
     systemErrorLab(signal);
     return;
+    break;
   }//switch
 }//Dblqh::execFSOPENCONF()
 
+/* ************> */
+/*  FSOPENREF  > */
+/* ************> */
+void Dblqh::execFSOPENREF(Signal* signal) 
+{
+  jamEntry();
+  terrorCode = signal->theData[1];
+  systemErrorLab(signal);
+  return;
+}//Dblqh::execFSOPENREF()
 
 /* ************>> */
 /*  FSREADCONF  > */
@@ -11909,7 +11910,7 @@ void Dblqh::execFSOPENCONF(Signal* signal)
 void Dblqh::execFSREADCONF(Signal* signal) 
 {
   jamEntry();
-  initFsrwconf(signal, false);
+  initFsrwconf(signal);
 
   switch (lfoPtr.p->lfoState) {
   case LogFileOperationRecord::READ_SR_LAST_MBYTE:
@@ -11917,47 +11918,57 @@ void Dblqh::execFSREADCONF(Signal* signal)
     releaseLfo(signal);
     readSrLastMbyteLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_SR_FRONTPAGE:
     jam();
     releaseLfo(signal);
     readSrFrontpageLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_SR_LAST_FILE:
     jam();
     releaseLfo(signal);
     readSrLastFileLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_SR_NEXT_FILE:
     jam();
     releaseLfo(signal);
     readSrNextFileLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_EXEC_SR:
     jam();
     readExecSrLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_EXEC_LOG:
     jam();
     readExecLogLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_SR_INVALIDATE_PAGES:
     jam();
     invalidateLogAfterLastGCI(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_SR_FOURTH_PHASE:
     jam();
     releaseLfo(signal);
     readSrFourthPhaseLab(signal);
     return;
+    break;
   case LogFileOperationRecord::READ_SR_FOURTH_ZERO:
     jam();
     releaseLfo(signal);
     readSrFourthZeroLab(signal);
     return;
+    break;
   default:
     jam();
     systemErrorLab(signal);
     return;
+    break;
   }//switch
 }//Dblqh::execFSREADCONF()
 
@@ -11969,43 +11980,60 @@ void Dblqh::execFSREADREF(Signal* signal)
   jamEntry();
   lfoPtr.i = signal->theData[0];
   ptrCheckGuard(lfoPtr, clfoFileSize, logFileOperationRecord);
+  terrorCode = signal->theData[1];
   switch (lfoPtr.p->lfoState) {
   case LogFileOperationRecord::READ_SR_LAST_MBYTE:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_SR_FRONTPAGE:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_SR_LAST_FILE:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_SR_NEXT_FILE:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_EXEC_SR:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_EXEC_LOG:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_SR_FOURTH_PHASE:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_SR_FOURTH_ZERO:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   case LogFileOperationRecord::READ_SR_INVALIDATE_PAGES:
     jam()
+    systemErrorLab(signal);
+    return;
     break;
   default:
     jam();
+    systemErrorLab(signal);
+    return;
     break;
   }//switch
-  {
-    char msg[100];
-    sprintf(msg, "File system read failed during LogFileOperationRecord state %d", (Uint32)lfoPtr.p->lfoState);
-    fsRefError(signal,__LINE__,msg);
-  }
+  return;
 }//Dblqh::execFSREADREF()
 
 /* *************** */
@@ -12014,52 +12042,63 @@ void Dblqh::execFSREADREF(Signal* signal)
 void Dblqh::execFSWRITECONF(Signal* signal) 
 {
   jamEntry();
-  initFsrwconf(signal, true);
+  initFsrwconf(signal);
   switch (lfoPtr.p->lfoState) {
   case LogFileOperationRecord::WRITE_SR_INVALIDATE_PAGES:
     jam();
     invalidateLogAfterLastGCI(signal);
     return;
+    break;
   case LogFileOperationRecord::WRITE_PAGE_ZERO:
     jam();
     writePageZeroLab(signal);
     return;
+    break;
   case LogFileOperationRecord::LAST_WRITE_IN_FILE:
     jam();
     lastWriteInFileLab(signal);
     return;
+    break;
   case LogFileOperationRecord::INIT_WRITE_AT_END:
     jam();
     initWriteEndLab(signal);
     return;
+    break;
   case LogFileOperationRecord::INIT_FIRST_PAGE:
     jam();
     initFirstPageLab(signal);
     return;
+    break;
   case LogFileOperationRecord::WRITE_GCI_ZERO:
     jam();
     writeGciZeroLab(signal);
     return;
+    break;
   case LogFileOperationRecord::WRITE_DIRTY:
     jam();
     writeDirtyLab(signal);
     return;
+    break;
   case LogFileOperationRecord::WRITE_INIT_MBYTE:
     jam();
     writeInitMbyteLab(signal);
     return;
+    break;
   case LogFileOperationRecord::ACTIVE_WRITE_LOG:
     jam();
     writeLogfileLab(signal);
     return;
+    break;
   case LogFileOperationRecord::FIRST_PAGE_WRITE_IN_LOGFILE:
     jam();
     firstPageWriteLab(signal);
     return;
+    break;
   default:
     jam();
     systemErrorLab(signal);
     return;
+    break;
   }//switch
 }//Dblqh::execFSWRITECONF()
 
@@ -12075,43 +12114,49 @@ void Dblqh::execFSWRITEREF(Signal* signal)
   switch (lfoPtr.p->lfoState) {
   case LogFileOperationRecord::WRITE_PAGE_ZERO:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::LAST_WRITE_IN_FILE:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::INIT_WRITE_AT_END:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::INIT_FIRST_PAGE:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::WRITE_GCI_ZERO:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::WRITE_DIRTY:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::WRITE_INIT_MBYTE:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::ACTIVE_WRITE_LOG:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::FIRST_PAGE_WRITE_IN_LOGFILE:
     jam();
+    systemErrorLab(signal);
     break;
   case LogFileOperationRecord::WRITE_SR_INVALIDATE_PAGES:
     jam();
     systemErrorLab(signal);
+    break;
   default:
     jam();
+    systemErrorLab(signal);
     break;
   }//switch
-  {
-    char msg[100];
-    sprintf(msg, "File system write failed during LogFileOperationRecord state %d", (Uint32)lfoPtr.p->lfoState);
-    fsRefError(signal,__LINE__,msg);
-  }
 }//Dblqh::execFSWRITEREF()
 
 
@@ -12135,35 +12180,16 @@ void Dblqh::initFsopenconf(Signal* signal)
 /* =======       INITIATE WHEN RECEIVING FSREADCONF AND FSWRITECONF  ======= */
 /*                                                                           */
 /* ========================================================================= */
-void Dblqh::initFsrwconf(Signal* signal, bool write) 
+void Dblqh::initFsrwconf(Signal* signal) 
 {
-  LogPageRecordPtr logP;
-  Uint32 noPages, totPages;
   lfoPtr.i = signal->theData[0];
   ptrCheckGuard(lfoPtr, clfoFileSize, logFileOperationRecord);
-  totPages= lfoPtr.p->noPagesRw;
   logFilePtr.i = lfoPtr.p->logFileRec;
   ptrCheckGuard(logFilePtr, clogFileFileSize, logFileRecord);
   logPartPtr.i = logFilePtr.p->logPartRec;
   ptrCheckGuard(logPartPtr, clogPartFileSize, logPartRecord);
   logPagePtr.i = lfoPtr.p->firstLfoPage;
   ptrCheckGuard(logPagePtr, clogPageFileSize, logPageRecord);
-  logP= logPagePtr;
-  noPages= 1;
-  ndbassert(totPages > 0);
-  for (;;)
-  {
-    logP.p->logPageWord[ZPOS_IN_WRITING]= 0;
-    logP.p->logPageWord[ZPOS_IN_FREE_LIST]= 0;
-    if (noPages == totPages)
-      return;
-    if (write)
-      logP.i= logP.p->logPageWord[ZNEXT_PAGE];
-    else
-      logP.i= lfoPtr.p->logPageArray[noPages];
-    ptrCheckGuard(logP, clogPageFileSize, logPageRecord);
-    noPages++;
-  }
 }//Dblqh::initFsrwconf()
 
 /* ######################################################################### */
@@ -12251,7 +12277,7 @@ void Dblqh::timeSup(Signal* signal)
         ndbrequire(wordWritten < ZPAGE_SIZE);
         if (logFilePtr.p->noLogpagesInBuffer > 0) {
           jam();
-          completedLogPage(signal, ZENFORCE_WRITE, __LINE__);
+          completedLogPage(signal, ZENFORCE_WRITE);
 /*---------------------------------------------------------------------------*/
 /*SINCE WE ARE ONLY WRITING PART OF THE LAST PAGE WE HAVE TO UPDATE THE WORD */
 /*WRITTEN TO REFLECT THE REAL LAST WORD WRITTEN. WE ALSO HAVE TO MOVE THE    */
@@ -12273,8 +12299,7 @@ void Dblqh::timeSup(Signal* signal)
             releaseLogpage(signal);
           } else {
             jam();
-            writeSinglePage(signal, logFilePtr.p->currentFilepage,
-                            wordWritten, __LINE__);
+            writeSinglePage(signal, logFilePtr.p->currentFilepage, wordWritten);
             lfoPtr.p->lfoState = LogFileOperationRecord::ACTIVE_WRITE_LOG;
           }//if
         }//if
@@ -12410,7 +12435,7 @@ void Dblqh::firstPageWriteLab(Signal* signal)
       logPagePtr.i = logFilePtr.p->logPageZero;
       ptrCheckGuard(logPagePtr, clogPageFileSize, logPageRecord);
       logPagePtr.p->logPageWord[ZPAGE_HEADER_SIZE + ZPOS_FILE_NO] = fileNo;
-      writeSinglePage(signal, 0, ZPAGE_SIZE - 1, __LINE__);
+      writeSinglePage(signal, 0, ZPAGE_SIZE - 1);
       lfoPtr.p->logFileRec = currLogFile;
       lfoPtr.p->lfoState = LogFileOperationRecord::WRITE_PAGE_ZERO;
       return;
@@ -12499,7 +12524,7 @@ void Dblqh::lastWriteInFileLab(Signal* signal)
       logPagePtr.i = logFilePtr.p->logPageZero;
       ptrCheckGuard(logPagePtr, clogPageFileSize, logPageRecord);
       logPagePtr.p->logPageWord[ZPAGE_HEADER_SIZE + ZPOS_FILE_NO] = fileNo;
-      writeSinglePage(signal, 0, ZPAGE_SIZE - 1, __LINE__);
+      writeSinglePage(signal, 0, ZPAGE_SIZE - 1);
       lfoPtr.p->logFileRec = currLogFile;
       lfoPtr.p->lfoState = LogFileOperationRecord::WRITE_PAGE_ZERO;
       return;
@@ -12509,20 +12534,6 @@ void Dblqh::lastWriteInFileLab(Signal* signal)
 
 void Dblqh::writePageZeroLab(Signal* signal) 
 {
-  if (logPartPtr.p->logPartState == LogPartRecord::FILE_CHANGE_PROBLEM) 
-  {
-    if (logPartPtr.p->firstLogQueue == RNIL) 
-    {
-      jam();
-      logPartPtr.p->logPartState = LogPartRecord::IDLE;
-    } 
-    else 
-    {
-      jam();
-      logPartPtr.p->logPartState = LogPartRecord::ACTIVE;
-    }
-  }
-  
   logFilePtr.p->fileChangeState = LogFileRecord::NOT_ONGOING;
 /*---------------------------------------------------------------------------*/
 /* IT COULD HAVE ARRIVED PAGE WRITES TO THE CURRENT FILE WHILE WE WERE       */
@@ -12548,8 +12559,7 @@ void Dblqh::openFileInitLab(Signal* signal)
 {
   logFilePtr.p->logFileStatus = LogFileRecord::OPEN_INIT;
   seizeLogpage(signal);
-  writeSinglePage(signal, (ZNO_MBYTES_IN_FILE * ZPAGES_IN_MBYTE) - 1,
-                  ZPAGE_SIZE - 1, __LINE__);
+  writeSinglePage(signal, (ZNO_MBYTES_IN_FILE * ZPAGES_IN_MBYTE) - 1, ZPAGE_SIZE - 1);
   lfoPtr.p->lfoState = LogFileOperationRecord::INIT_WRITE_AT_END;
   return;
 }//Dblqh::openFileInitLab()
@@ -12590,7 +12600,7 @@ void Dblqh::initFirstPageLab(Signal* signal)
     logPagePtr.p->logPageWord[ZPOS_LOG_LAP] = 1;
     logPagePtr.p->logPageWord[ZPAGE_HEADER_SIZE] = ZCOMPLETED_GCI_TYPE;
     logPagePtr.p->logPageWord[ZPAGE_HEADER_SIZE + 1] = 1;
-    writeSinglePage(signal, 1, ZPAGE_SIZE - 1, __LINE__);
+    writeSinglePage(signal, 1, ZPAGE_SIZE - 1);
     lfoPtr.p->lfoState = LogFileOperationRecord::WRITE_GCI_ZERO;
     return;
   }//if
@@ -12892,13 +12902,17 @@ void Dblqh::releaseLogpage(Signal* signal)
 {
 #ifdef VM_TRACE
   // Check that log page isn't already in free list
-  ndbrequire(logPagePtr.p->logPageWord[ZPOS_IN_FREE_LIST] == 0);
+  LogPageRecordPtr TlogPagePtr;
+  TlogPagePtr.i = cfirstfreeLogPage;
+  while (TlogPagePtr.i != RNIL){
+    ptrCheckGuard(TlogPagePtr, clogPageFileSize, logPageRecord);
+    ndbrequire(TlogPagePtr.i != logPagePtr.i);
+    TlogPagePtr.i = TlogPagePtr.p->logPageWord[ZNEXT_PAGE];
+  }
 #endif
 
   cnoOfLogPages++;
   logPagePtr.p->logPageWord[ZNEXT_PAGE] = cfirstfreeLogPage;
-  logPagePtr.p->logPageWord[ZPOS_IN_WRITING]= 0;
-  logPagePtr.p->logPageWord[ZPOS_IN_FREE_LIST]= 1;
   cfirstfreeLogPage = logPagePtr.i;
 }//Dblqh::releaseLogpage()
 
@@ -12944,7 +12958,6 @@ void Dblqh::seizeLogpage(Signal* signal)
 /* ------------------------------------------------------------------------- */
   cfirstfreeLogPage = logPagePtr.p->logPageWord[ZNEXT_PAGE];
   logPagePtr.p->logPageWord[ZNEXT_PAGE] = RNIL;
-  logPagePtr.p->logPageWord[ZPOS_IN_FREE_LIST] = 0;
 }//Dblqh::seizeLogpage()
 
 /* ------------------------------------------------------------------------- */
@@ -13052,7 +13065,7 @@ WMO_LOOP:
 /*       LOG FILE. THIS HAS SPECIAL SIGNIFANCE TO FIND     */
 /*       THE END OF THE LOG AT SYSTEM RESTART.             */
 /* ------------------------------------------------------- */
-  writeSinglePage(signal, 0, ZPAGE_SIZE - 1, __LINE__);
+  writeSinglePage(signal, 0, ZPAGE_SIZE - 1);
   if (wmoType == ZINIT) {
     jam();
     lfoPtr.p->lfoState = LogFileOperationRecord::INIT_FIRST_PAGE;
@@ -13086,8 +13099,7 @@ WMO_LOOP:
 void Dblqh::writeInitMbyte(Signal* signal) 
 {
   initLogpage(signal);
-  writeSinglePage(signal, logFilePtr.p->currentMbyte * ZPAGES_IN_MBYTE,
-                  ZPAGE_SIZE - 1, __LINE__);
+  writeSinglePage(signal, logFilePtr.p->currentMbyte * ZPAGES_IN_MBYTE, ZPAGE_SIZE - 1);
   lfoPtr.p->lfoState = LogFileOperationRecord::WRITE_INIT_MBYTE;
 }//Dblqh::writeInitMbyte()
 
@@ -13097,15 +13109,13 @@ void Dblqh::writeInitMbyte(Signal* signal)
 /*       INPUT:          TWSP_PAGE_NO    THE PAGE NUMBER WRITTEN             */
 /*       SUBROUTINE SHORT NAME:  WSP                                         */
 /* ------------------------------------------------------------------------- */
-void Dblqh::writeSinglePage(Signal* signal, Uint32 pageNo,
-                            Uint32 wordWritten, Uint32 place) 
+void Dblqh::writeSinglePage(Signal* signal, Uint32 pageNo, Uint32 wordWritten) 
 {
   seizeLfo(signal);
   initLfo(signal);
   lfoPtr.p->firstLfoPage = logPagePtr.i;
   logPagePtr.p->logPageWord[ZNEXT_PAGE] = RNIL;
 
-  writeDbgInfoPageHeader(logPagePtr, place, pageNo, wordWritten);
   // Calculate checksum for page
   logPagePtr.p->logPageWord[ZPOS_CHECKSUM] = calcPageCheckSum(logPagePtr);
 
@@ -14574,7 +14584,7 @@ void Dblqh::execSr(Signal* signal)
 	 *  IN THIS WE HAVE COMPLETED EXECUTION OF THE CURRENT LOG PAGE
 	 *  AND CAN WRITE IT TO DISK SINCE IT IS DIRTY.
 	 * ----------------------------------------------------------------- */
-        writeDirty(signal, __LINE__);
+        writeDirty(signal);
         return;
         break;
       case LogPartRecord::LES_EXEC_LOG:
@@ -14585,7 +14595,7 @@ void Dblqh::execSr(Signal* signal)
        * ------------------------------------------------------------------- */
         if (logFilePtr.p->currentLogpage != logPartPtr.p->prevLogpage) {
           jam();
-          writeDirty(signal, __LINE__);
+          writeDirty(signal);
           return;
         }//if
         break;
@@ -14809,9 +14819,7 @@ void Dblqh::execSr(Signal* signal)
           signal->theData[4] = logFilePtr.p->currentFilepage;
           signal->theData[5] = logFilePtr.p->currentMbyte;
           signal->theData[6] = logPagePtr.p->logPageWord[ZCURR_PAGE_INDEX];
-	  signal->theData[7] = ~0;
-	  signal->theData[8] = __LINE__;
-          sendSignal(cownref, GSN_DEBUG_SIG, signal, 9, JBA);
+          sendSignal(cownref, GSN_DEBUG_SIG, signal, 7, JBA);
           return;
         }//if
       }//if
@@ -14877,8 +14885,7 @@ void Dblqh::execSr(Signal* signal)
       signal->theData[5] = logFilePtr.p->currentFilepage;
       signal->theData[6] = logPagePtr.p->logPageWord[ZCURR_PAGE_INDEX];
       signal->theData[7] = logWord;
-      signal->theData[8] = __LINE__;
-      sendSignal(cownref, GSN_DEBUG_SIG, signal, 9, JBA);
+      sendSignal(cownref, GSN_DEBUG_SIG, signal, 8, JBA);
       return;
       break;
     }//switch
@@ -14907,9 +14914,8 @@ void Dblqh::execDEBUG_SIG(Signal* signal)
 
   char buf[100];
   BaseString::snprintf(buf, 100, 
-	   "Error while reading REDO log. from %d\n"
+	   "Error while reading REDO log.\n"
 	   "D=%d, F=%d Mb=%d FP=%d W1=%d W2=%d",
-	   signal->theData[8],
 	   signal->theData[2], signal->theData[3], signal->theData[4],
 	   signal->theData[5], signal->theData[6], signal->theData[7]);
 
@@ -15033,8 +15039,7 @@ void Dblqh::invalidateLogAfterLastGCI(Signal* signal) {
       // This page must be invalidated.
       logPagePtr.p->logPageWord[ZPOS_LOG_LAP] = 0;
       // Contact NDBFS. Real time break.
-      writeSinglePage(signal, logPartPtr.p->invalidatePageNo,
-                      ZPAGE_SIZE - 1, __LINE__);
+      writeSinglePage(signal, logPartPtr.p->invalidatePageNo, ZPAGE_SIZE - 1);
       lfoPtr.p->lfoState = LogFileOperationRecord::WRITE_SR_INVALIDATE_PAGES;
     } else {
       // We are done with invalidating. Finish start phase 3.4. 
@@ -15485,10 +15490,6 @@ void Dblqh::readSrFourthZeroLab(Signal* signal)
   // to read a page from file. 
   lfoPtr.p->lfoState = LogFileOperationRecord::WRITE_SR_INVALIDATE_PAGES;
 
-  /**
-   * Make sure we dont release zero page
-   */
-  seizeLogpage(signal);
   invalidateLogAfterLastGCI(signal);
   return;
 }//Dblqh::readSrFourthZeroLab()
@@ -15545,21 +15546,20 @@ void Dblqh::srFourthComp(Signal* signal)
   } else if ((cstartType == NodeState::ST_NODE_RESTART) ||
              (cstartType == NodeState::ST_SYSTEM_RESTART)) {
     jam();
+    StartRecConf * conf = (StartRecConf*)signal->getDataPtrSend();
+    conf->startingNodeId = getOwnNodeId();
+    sendSignal(cmasterDihBlockref, GSN_START_RECCONF, signal, 
+	       StartRecConf::SignalLength, JBB);
 
-    if(cstartType == NodeState::ST_SYSTEM_RESTART)
-    {
-      jam();
-      signal->theData[0] = ZENABLE_EXPAND_CHECK;
-      signal->theData[1] = c_redo_log_complete_frags;
-      sendSignal(DBLQH_REF, GSN_CONTINUEB, signal, 2, JBB);
-    }
-    else
-    {
-      jam();
-      StartRecConf * conf = (StartRecConf*)signal->getDataPtrSend();
-      conf->startingNodeId = getOwnNodeId();
-      sendSignal(cmasterDihBlockref, GSN_START_RECCONF, signal, 
-		 StartRecConf::SignalLength, JBB);
+    if(cstartType == NodeState::ST_SYSTEM_RESTART){
+      fragptr.i = c_redo_log_complete_frags;
+      while(fragptr.i != RNIL){
+	ptrCheckGuard(fragptr, cfragrecFileSize, fragrecord);
+	signal->theData[0] = fragptr.p->tabRef;
+	signal->theData[1] = fragptr.p->fragId;
+	sendSignal(DBACC_REF, GSN_EXPANDCHECK2, signal, 2, JBB);
+	fragptr.i = fragptr.p->nextFrag;
+      }
     }
   } else {
     ndbrequire(false);
@@ -15840,7 +15840,7 @@ Uint32 Dblqh::checkIfExecLog(Signal* signal)
   tabptr.i = tcConnectptr.p->tableref;
   ptrCheckGuard(tabptr, ctabrecFileSize, tablerec);
   if (getFragmentrec(signal, tcConnectptr.p->fragmentid) &&
-      (table_version_major(tabptr.p->schemaVersion) == table_version_major(tcConnectptr.p->schemaVersion))) {
+      (tabptr.p->schemaVersion == tcConnectptr.p->schemaVersion)) {
     if (fragptr.p->execSrStatus != Fragrecord::IDLE) {
       if (fragptr.p->execSrNoReplicas > logPartPtr.p->execSrExecuteIndex) {
         ndbrequire((fragptr.p->execSrNoReplicas - 1) < 4);
@@ -15987,7 +15987,7 @@ void Dblqh::closeFile(Signal* signal, LogFileRecordPtr clfLogFilePtr)
 // logPartPtr
 // Defines lfoPtr
 /* ---------------------------------------------------------------- */
-void Dblqh::completedLogPage(Signal* signal, Uint32 clpType, Uint32 place) 
+void Dblqh::completedLogPage(Signal* signal, Uint32 clpType) 
 {
   LogPageRecordPtr clpLogPagePtr;
   LogPageRecordPtr wlpLogPagePtr;
@@ -16030,9 +16030,6 @@ void Dblqh::completedLogPage(Signal* signal, Uint32 clpType, Uint32 place)
     twlpNoPages++;
     ptrCheckGuard(wlpLogPagePtr, clogPageFileSize, logPageRecord);
 
-    writeDbgInfoPageHeader(wlpLogPagePtr, place,
-                           logFilePtr.p->filePosition + twlpNoPages - 1,
-                           ZPAGE_SIZE);
     // Calculate checksum for page
     wlpLogPagePtr.p->logPageWord[ZPOS_CHECKSUM] = calcPageCheckSum(wlpLogPagePtr);
     wlpLogPagePtr.i = wlpLogPagePtr.p->logPageWord[ZNEXT_PAGE];
@@ -16147,22 +16144,8 @@ void Dblqh::findLogfile(Signal* signal,
     }//if
     locLogFilePtr.i = locLogFilePtr.p->nextLogFile;
     loopCount++;
-    if (loopCount >= flfLogPartPtr.p->noLogFiles &&
-	getNodeState().startLevel != NodeState::SL_STARTED)
-    {
-      goto error;
-    }
     ndbrequire(loopCount < flfLogPartPtr.p->noLogFiles);
   }//while
-
-error:
-  char buf[255];
-  BaseString::snprintf(buf, sizeof(buf), 
-		       "Unable to restart, failed while reading redo."
-		       " Likely invalid change of configuration");
-  progError(__LINE__, 
-	    ERR_INVALID_CONFIG,
-	    buf);
 }//Dblqh::findLogfile()
 
 /* ------------------------------------------------------------------------- */
@@ -16449,8 +16432,6 @@ void Dblqh::initialiseLogPage(Signal* signal)
       refresh_watch_dog();
       ptrAss(logPagePtr, logPageRecord);
       logPagePtr.p->logPageWord[ZNEXT_PAGE] = logPagePtr.i + 1;
-      logPagePtr.p->logPageWord[ZPOS_IN_FREE_LIST]= 1;
-      logPagePtr.p->logPageWord[ZPOS_IN_WRITING]= 0;
     }//for
     logPagePtr.i = clogPageFileSize - 1;
     ptrAss(logPagePtr, logPageRecord);
@@ -18107,14 +18088,10 @@ void Dblqh::writeCompletedGciLog(Signal* signal)
  * 
  *     SUBROUTINE SHORT NAME: WD
  * ------------------------------------------------------------------------- */
-void Dblqh::writeDirty(Signal* signal, Uint32 place) 
+void Dblqh::writeDirty(Signal* signal) 
 {
   logPagePtr.p->logPageWord[ZPOS_DIRTY] = ZNOT_DIRTY;
 
-  ndbassert(logPartPtr.p->prevFilepage ==
-            logPagePtr.p->logPageWord[ZPOS_PAGE_NO]);
-  writeDbgInfoPageHeader(logPagePtr, place, logPartPtr.p->prevFilepage,
-                         ZPAGE_SIZE);
   // Calculate checksum for page
   logPagePtr.p->logPageWord[ZPOS_CHECKSUM] = calcPageCheckSum(logPagePtr);
 
@@ -18148,7 +18125,7 @@ void Dblqh::writeLogWord(Signal* signal, Uint32 data)
   logPagePtr.p->logPageWord[ZCURR_PAGE_INDEX] = logPos + 1;
   if ((logPos + 1) == ZPAGE_SIZE) {
     jam();
-    completedLogPage(signal, ZNORMAL, __LINE__);
+    completedLogPage(signal, ZNORMAL);
     seizeLogpage(signal);
     initLogpage(signal);
     logFilePtr.p->currentLogpage = logPagePtr.i;
@@ -18206,7 +18183,7 @@ void Dblqh::writeNextLog(Signal* signal)
 /* -------------------------------------------------- */
 /*       WE HAVE TO CHANGE LOG FILE                   */
 /* -------------------------------------------------- */
-    completedLogPage(signal, ZLAST_WRITE_IN_FILE, __LINE__);
+    completedLogPage(signal, ZLAST_WRITE_IN_FILE);
     if (wnlNextLogFilePtr.p->fileNo == 0) {
       jam();
 /* -------------------------------------------------- */
@@ -18225,7 +18202,7 @@ void Dblqh::writeNextLog(Signal* signal)
 /*       INCREMENT THE CURRENT MBYTE                  */
 /*       SET PAGE INDEX TO PAGE HEADER SIZE           */
 /* -------------------------------------------------- */
-    completedLogPage(signal, ZENFORCE_WRITE, __LINE__);
+    completedLogPage(signal, ZENFORCE_WRITE);
     twnlNewMbyte = logFilePtr.p->currentMbyte + 1;
   }//if
 /* -------------------------------------------------- */
@@ -18486,178 +18463,8 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
     return;
   }
 
-  if (dumpState->args[0] == DumpStateOrd::LqhErrorInsert5042 && signal->getLength() == 2)
-  {
-    c_error_insert_table_id = dumpState->args[1];
-    SET_ERROR_INSERT_VALUE(5042);
-  }
 
-  TcConnectionrec *regTcConnectionrec = tcConnectionrec;
-  Uint32 ttcConnectrecFileSize = ctcConnectrecFileSize;
-  Uint32 arg = dumpState->args[0];
-  if(arg == 2306)
-  {
-    for(Uint32 i = 0; i<1024; i++)
-    {
-      TcConnectionrecPtr tcRec;
-      tcRec.i = ctransidHash[i];
-      while(tcRec.i != RNIL)
-      {
-	ptrCheckGuard(tcRec, ttcConnectrecFileSize, regTcConnectionrec);
-	ndbout << "TcConnectionrec " << tcRec.i;
-	signal->theData[0] = 2307;
-	signal->theData[1] = tcRec.i;
-	execDUMP_STATE_ORD(signal);
-	tcRec.i = tcRec.p->nextHashRec;
-      }
-    }
-  }
 
-  if(arg == 2307 || arg == 2308)
-  {
-    TcConnectionrecPtr tcRec;
-    tcRec.i = signal->theData[1];
-    ptrCheckGuard(tcRec, ttcConnectrecFileSize, regTcConnectionrec);
-    
-    ndbout << " transactionState = " << tcRec.p->transactionState<<endl;
-    ndbout << " operation = " << tcRec.p->operation<<endl;
-    ndbout << " tcNodeFailrec = " << tcRec.p->tcNodeFailrec
-	   << " seqNoReplica = " << tcRec.p->seqNoReplica
-	   << " simpleRead = " << tcRec.p->simpleRead
-	   << endl;
-    ndbout << " replicaType = " << tcRec.p->replicaType
-	   << " reclenAiLqhkey = " << tcRec.p->reclenAiLqhkey
-	   << " opExec = " << tcRec.p->opExec
-	   << endl;
-    ndbout << " opSimple = " << tcRec.p->opSimple
-	   << " nextSeqNoReplica = " << tcRec.p->nextSeqNoReplica
-	   << " lockType = " << tcRec.p->lockType
-	   << endl;
-    ndbout << " lastReplicaNo = " << tcRec.p->lastReplicaNo
-	   << " indTakeOver = " << tcRec.p->indTakeOver
-	   << " dirtyOp = " << tcRec.p->dirtyOp
-	   << endl;
-    ndbout << " activeCreat = " << tcRec.p->activeCreat
-	   << " tcBlockref = " << hex << tcRec.p->tcBlockref
-	   << " reqBlockref = " << hex << tcRec.p->reqBlockref
-	   << " primKeyLen = " << tcRec.p->primKeyLen
-	   << endl;
-    ndbout << " nextReplica = " << tcRec.p->nextReplica
-	   << " tcBlockref = " << hex << tcRec.p->tcBlockref
-	   << " reqBlockref = " << hex << tcRec.p->reqBlockref
-	   << " primKeyLen = " << tcRec.p->primKeyLen
-	   << endl;
-    ndbout << " logStopPageNo = " << tcRec.p->logStopPageNo
-	   << " logStartPageNo = " << tcRec.p->logStartPageNo
-	   << " logStartPageIndex = " << tcRec.p->logStartPageIndex
-	   << endl;
-    ndbout << " errorCode = " << tcRec.p->errorCode
-	   << " clientBlockref = " << hex << tcRec.p->clientBlockref
-	   << " applRef = " << hex << tcRec.p->applRef
-	   << " totSendlenAi = " << tcRec.p->totSendlenAi
-	   << endl;
-    ndbout << " totReclenAi = " << tcRec.p->totReclenAi
-	   << " tcScanRec = " << tcRec.p->tcScanRec
-	   << " tcScanInfo = " << tcRec.p->tcScanInfo
-	   << " tcOprec = " << hex << tcRec.p->tcOprec
-	   << endl;
-    ndbout << " tableref = " << tcRec.p->tableref
-	   << " simpleTcConnect = " << tcRec.p->simpleTcConnect
-	   << " storedProcId = " << tcRec.p->storedProcId
-	   << " schemaVersion = " << tcRec.p->schemaVersion
-	   << endl;
-    ndbout << " reqinfo = " << tcRec.p->reqinfo
-	   << " reqRef = " << tcRec.p->reqRef
-	   << " readlenAi = " << tcRec.p->readlenAi
-	   << " prevTc = " << tcRec.p->prevTc
-	   << endl;
-    ndbout << " prevLogTcrec = " << tcRec.p->prevLogTcrec
-	   << " prevHashRec = " << tcRec.p->prevHashRec
-	   << " nodeAfterNext0 = " << tcRec.p->nodeAfterNext[0]
-	   << " nodeAfterNext1 = " << tcRec.p->nodeAfterNext[1]
-	   << endl;
-    ndbout << " nextTcConnectrec = " << tcRec.p->nextTcConnectrec
-	   << " nextTc = " << tcRec.p->nextTc
-	   << " nextTcLogQueue = " << tcRec.p->nextTcLogQueue
-	   << " nextLogTcrec = " << tcRec.p->nextLogTcrec
-	   << endl;
-    ndbout << " nextHashRec = " << tcRec.p->nextHashRec
-	   << " logWriteState = " << tcRec.p->logWriteState
-	   << " logStartFileNo = " << tcRec.p->logStartFileNo
-	   << " listState = " << tcRec.p->listState
-	   << endl;
-    ndbout << " lastAttrinbuf = " << tcRec.p->lastAttrinbuf
-	   << " lastTupkeybuf = " << tcRec.p->lastTupkeybuf
-	   << " hashValue = " << tcRec.p->hashValue
-	   << endl;
-    ndbout << " gci = " << tcRec.p->gci
-	   << " fragmentptr = " << tcRec.p->fragmentptr
-	   << " fragmentid = " << tcRec.p->fragmentid
-	   << " firstTupkeybuf = " << tcRec.p->firstTupkeybuf
-	   << endl;
-    ndbout << " firstAttrinbuf = " << tcRec.p->firstAttrinbuf
-	   << " currTupAiLen = " << tcRec.p->currTupAiLen
-	   << " currReclenAi = " << tcRec.p->currReclenAi
-	   << endl;
-    ndbout << " tcTimer = " << tcRec.p->tcTimer
-	   << " clientConnectrec = " << tcRec.p->clientConnectrec
-	   << " applOprec = " << hex << tcRec.p->applOprec
-	   << " abortState = " << tcRec.p->abortState
-	   << endl;
-    ndbout << " transid0 = " << hex << tcRec.p->transid[0]
-	   << " transid1 = " << hex << tcRec.p->transid[1]
-	   << " tupkeyData0 = " << tcRec.p->tupkeyData[0]
-	   << " tupkeyData1 = " << tcRec.p->tupkeyData[1]
-	   << endl;
-    ndbout << " tupkeyData2 = " << tcRec.p->tupkeyData[2]
-	   << " tupkeyData3 = " << tcRec.p->tupkeyData[3]
-	   << endl;
-    switch (tcRec.p->transactionState) {
-	
-    case TcConnectionrec::SCAN_STATE_USED:
-      if (tcRec.p->tcScanRec < cscanrecFileSize){
-	ScanRecordPtr TscanPtr;
-	c_scanRecordPool.getPtr(TscanPtr, tcRec.p->tcScanRec);
-	ndbout << " scanState = " << TscanPtr.p->scanState << endl;
-	//TscanPtr.p->scanLocalref[2];
-	ndbout << " copyPtr="<<TscanPtr.p->copyPtr
-	       << " scanAccPtr="<<TscanPtr.p->scanAccPtr
-	       << " scanAiLength="<<TscanPtr.p->scanAiLength
-	       << endl;
-	ndbout << " m_curr_batch_size_rows="<<
-	  TscanPtr.p->m_curr_batch_size_rows
-	       << " m_max_batch_size_rows="<<
-	  TscanPtr.p->m_max_batch_size_rows
-	       << " scanErrorCounter="<<TscanPtr.p->scanErrorCounter
-	       << endl;
-	ndbout << " scanSchemaVersion="<<TscanPtr.p->scanSchemaVersion
-	       << "  scanStoredProcId="<<TscanPtr.p->scanStoredProcId
-	       << "  scanTcrec="<<TscanPtr.p->scanTcrec
-	       << endl;
-	ndbout << "  scanType="<<TscanPtr.p->scanType
-	       << "  scanApiBlockref="<<TscanPtr.p->scanApiBlockref
-	       << "  scanNodeId="<<TscanPtr.p->scanNodeId
-	       << "  scanCompletedStatus="<<TscanPtr.p->scanCompletedStatus
-	       << endl;
-	ndbout << "  scanFlag="<<TscanPtr.p->scanFlag
-	       << "  scanLockHold="<<TscanPtr.p->scanLockHold
-	       << "  scanLockMode="<<TscanPtr.p->scanLockMode
-	       << "  scanNumber="<<TscanPtr.p->scanNumber
-	       << endl;
-	ndbout << "  scanReleaseCounter="<<TscanPtr.p->scanReleaseCounter
-	       << "  scanTcWaiting="<<TscanPtr.p->scanTcWaiting
-	       << "  scanKeyinfoFlag="<<TscanPtr.p->scanKeyinfoFlag
-	       << endl;
-      } else{
-	ndbout << "No connected scan record found" << endl;
-      }
-      break;
-    default:
-      break;
-    }
-    ndbrequire(arg != 2308);
-  }
-  
 }//Dblqh::execDUMP_STATE_ORD()
 
 void Dblqh::execSET_VAR_REQ(Signal* signal) 
@@ -18698,54 +18505,60 @@ void
 Dblqh::execCREATE_TRIG_REQ(Signal* signal)
 {
   jamEntry();
+  NodeId myNodeId = getOwnNodeId();
+  BlockReference tupref = calcTupBlockRef(myNodeId);
 
-  sendSignal(DBTUP_REF, GSN_CREATE_TRIG_REQ, signal,
-             CreateTrigReq::SignalLength, JBB);
+  sendSignal(tupref, GSN_CREATE_TRIG_REQ, signal, CreateTrigReq::SignalLength, JBB);
 }
 
 void
 Dblqh::execCREATE_TRIG_CONF(Signal* signal)
 {
   jamEntry();
+  NodeId myNodeId = getOwnNodeId();
+  BlockReference dictref = calcDictBlockRef(myNodeId);
 
-  sendSignal(DBDICT_REF, GSN_CREATE_TRIG_CONF, signal,
-             CreateTrigConf::SignalLength, JBB);
+  sendSignal(dictref, GSN_CREATE_TRIG_CONF, signal, CreateTrigConf::SignalLength, JBB);
 }
 
 void
 Dblqh::execCREATE_TRIG_REF(Signal* signal)
 {
   jamEntry();
+  NodeId myNodeId = getOwnNodeId();
+  BlockReference dictref = calcDictBlockRef(myNodeId);
 
-  sendSignal(DBDICT_REF, GSN_CREATE_TRIG_REF, signal,
-             CreateTrigRef::SignalLength, JBB);
+  sendSignal(dictref, GSN_CREATE_TRIG_REF, signal, CreateTrigRef::SignalLength, JBB);
 }
 
 void
 Dblqh::execDROP_TRIG_REQ(Signal* signal)
 {
   jamEntry();
+  NodeId myNodeId = getOwnNodeId();
+  BlockReference tupref = calcTupBlockRef(myNodeId);
 
-  sendSignal(DBTUP_REF, GSN_DROP_TRIG_REQ, signal,
-             DropTrigReq::SignalLength, JBB);
+  sendSignal(tupref, GSN_DROP_TRIG_REQ, signal, DropTrigReq::SignalLength, JBB);
 }
 
 void
 Dblqh::execDROP_TRIG_CONF(Signal* signal)
 {
   jamEntry();
+  NodeId myNodeId = getOwnNodeId();
+  BlockReference dictref = calcDictBlockRef(myNodeId);
 
-  sendSignal(DBDICT_REF, GSN_DROP_TRIG_CONF, signal,
-             DropTrigConf::SignalLength, JBB);
+  sendSignal(dictref, GSN_DROP_TRIG_CONF, signal, DropTrigConf::SignalLength, JBB);
 }
 
 void
 Dblqh::execDROP_TRIG_REF(Signal* signal)
 {
   jamEntry();
+  NodeId myNodeId = getOwnNodeId();
+  BlockReference dictref = calcDictBlockRef(myNodeId);
 
-  sendSignal(DBDICT_REF, GSN_DROP_TRIG_REF, signal,
-             DropTrigRef::SignalLength, JBB);
+  sendSignal(dictref, GSN_DROP_TRIG_REF, signal, DropTrigRef::SignalLength, JBB);
 }
 
 Uint32 Dblqh::calcPageCheckSum(LogPageRecordPtr logP){
@@ -18756,17 +18569,4 @@ Uint32 Dblqh::calcPageCheckSum(LogPageRecordPtr logP){
 #endif
     return checkSum;  
   }
-
-void Dblqh::writeDbgInfoPageHeader(LogPageRecordPtr logP, Uint32 place,
-                                   Uint32 pageNo, Uint32 wordWritten)
-{
-  logP.p->logPageWord[ZPOS_LOG_TIMER]= logPartPtr.p->logTimer;
-  logP.p->logPageWord[ZPOS_PREV_PAGE_NO]= logP.p->logPageWord[ZPOS_PAGE_NO];
-  logP.p->logPageWord[ZPOS_PAGE_I]= logP.i;
-  logP.p->logPageWord[ZPOS_PLACE_WRITTEN_FROM]= place;
-  logP.p->logPageWord[ZPOS_PAGE_NO]= pageNo;
-  logP.p->logPageWord[ZPOS_PAGE_FILE_NO]= logFilePtr.p->fileNo;
-  logP.p->logPageWord[ZPOS_WORD_WRITTEN]= wordWritten;
-  logP.p->logPageWord[ZPOS_IN_WRITING]= 1;
-}
 

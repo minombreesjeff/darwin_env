@@ -1111,16 +1111,14 @@ Dbtup::updateStartLab(Signal* signal,
                                 regOperPtr->pageOffset,
                                 &cinBuffer[0],
                                 regOperPtr->attrinbufLen);
+    if (retValue == -1) {
+      tupkeyErrorLab(signal);
+      return -1;
+    }//if
   } else {
     jam();
     retValue = interpreterStartLab(signal, pagePtr, regOperPtr->pageOffset);
   }//if
-
-  if (retValue == -1) {
-    tupkeyErrorLab(signal);
-    return -1;
-  }//if
-
   ndbrequire(regOperPtr->tupVersion != ZNIL);
   pagePtr->pageWord[regOperPtr->pageOffset + 1] = regOperPtr->tupVersion;
   if (regTabPtr->checksumIndicator) {
@@ -1496,7 +1494,6 @@ int Dbtup::interpreterNextLab(Signal* signal,
 	    // word read. Thus we set the register to be a 32 bit register.
 	    /* ------------------------------------------------------------- */
 	    TregMemBuffer[theRegister] = 0x50;
-            // arithmetic conversion if big-endian
             * (Int64*)(TregMemBuffer+theRegister+2) = TregMemBuffer[theRegister+1];
 	  } else if (TnoDataRW == 3) {
 	    /* ------------------------------------------------------------- */
@@ -1560,11 +1557,6 @@ int Dbtup::interpreterNextLab(Signal* signal,
 	  Tlen = TattrNoOfWords + 1;
 	  if (Toptype == ZUPDATE) {
 	    if (TattrNoOfWords <= 2) {
-              if (TattrNoOfWords == 1) {
-                // arithmetic conversion if big-endian
-                TdataForUpdate[1] = *(Int64*)&TregMemBuffer[theRegister + 2];
-                TdataForUpdate[2] = 0;
-              }
 	      if (TregType == 0) {
 		/* --------------------------------------------------------- */
 		// Write a NULL value into the attribute

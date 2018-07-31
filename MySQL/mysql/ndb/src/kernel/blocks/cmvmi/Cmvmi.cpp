@@ -133,9 +133,6 @@ Cmvmi::~Cmvmi()
 {
 }
 
-#ifdef ERROR_INSERT
-NodeBitmask c_error_9000_nodes_mask;
-#endif
 
 void Cmvmi::execNDB_TAMPER(Signal* signal) 
 {
@@ -226,7 +223,6 @@ void Cmvmi::execEVENT_REP(Signal* signal)
 void
 Cmvmi::execEVENT_SUBSCRIBE_REQ(Signal * signal){
   EventSubscribeReq * subReq = (EventSubscribeReq *)&signal->theData[0];
-  Uint32 senderRef = signal->getSendersBlockRef();
   SubscriberPtr ptr;
   jamEntry();
   DBUG_ENTER("Cmvmi::execEVENT_SUBSCRIBE_REQ");
@@ -244,7 +240,7 @@ Cmvmi::execEVENT_SUBSCRIBE_REQ(Signal * signal){
      * Create a new one
      */
     if(subscribers.seize(ptr) == false){
-      sendSignal(senderRef, GSN_EVENT_SUBSCRIBE_REF, signal, 1, JBB);
+      sendSignal(subReq->blockRef, GSN_EVENT_SUBSCRIBE_REF, signal, 1, JBB);
       return;
     }
     ptr.p->logLevel.clear();
@@ -271,7 +267,7 @@ Cmvmi::execEVENT_SUBSCRIBE_REQ(Signal * signal){
   }
   
   signal->theData[0] = ptr.i;
-  sendSignal(senderRef, GSN_EVENT_SUBSCRIBE_CONF, signal, 1, JBB);
+  sendSignal(ptr.p->blockRef, GSN_EVENT_SUBSCRIBE_CONF, signal, 1, JBB);
   DBUG_VOID_RETURN;
 }
 
@@ -394,33 +390,21 @@ void Cmvmi::execOPEN_COMREQ(Signal* signal)
 
   const Uint32 len = signal->getLength();
   if(len == 2){
+    globalTransporterRegistry.do_connect(tStartingNode);
+    globalTransporterRegistry.setIOState(tStartingNode, HaltIO);
 
-#ifdef ERROR_INSERT
-    if (! (ERROR_INSERTED(9000) && c_error_9000_nodes_mask.get(tStartingNode)))
-#endif
-    {
-      globalTransporterRegistry.do_connect(tStartingNode);
-      globalTransporterRegistry.setIOState(tStartingNode, HaltIO);
-      
-      //-----------------------------------------------------
-      // Report that the connection to the node is opened
-      //-----------------------------------------------------
-      signal->theData[0] = EventReport::CommunicationOpened;
-      signal->theData[1] = tStartingNode;
-      sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
-      //-----------------------------------------------------
-    }
+    //-----------------------------------------------------
+    // Report that the connection to the node is opened
+    //-----------------------------------------------------
+    signal->theData[0] = EventReport::CommunicationOpened;
+    signal->theData[1] = tStartingNode;
+    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
+    //-----------------------------------------------------
   } else {
     for(unsigned int i = 1; i < MAX_NODES; i++ ) {
       jam();
       if (i != getOwnNodeId() && getNodeInfo(i).m_type == tData2){
 	jam();
-
-#ifdef ERROR_INSERT
-	if (ERROR_INSERTED(9000) && c_error_9000_nodes_mask.get(i))
-	  continue;
-#endif
-	
 	globalTransporterRegistry.do_connect(i);
 	globalTransporterRegistry.setIOState(i, HaltIO);
 	
@@ -1003,6 +987,7 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
   sendSignal(BACKUP_REF, GSN_DUMP_STATE_ORD,  signal, signal->length(), JBB);
   sendSignal(DBUTIL_REF, GSN_DUMP_STATE_ORD,  signal, signal->length(), JBB);
   sendSignal(SUMA_REF, GSN_DUMP_STATE_ORD,    signal, signal->length(), JBB);
+  sendSignal(GREP_REF, GSN_DUMP_STATE_ORD,    signal, signal->length(), JBB);
   sendSignal(TRIX_REF, GSN_DUMP_STATE_ORD,    signal, signal->length(), JBB);
   sendSignal(DBTUX_REF, GSN_DUMP_STATE_ORD,   signal, signal->length(), JBB);
   
@@ -1026,8 +1011,7 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
   }
 
   DumpStateOrd * const & dumpState = (DumpStateOrd *)&signal->theData[0];
-  Uint32 arg = dumpState->args[0];
-  if (arg == DumpStateOrd::CmvmiDumpConnections){
+  if (dumpState->args[0] == DumpStateOrd::CmvmiDumpConnections){
     for(unsigned int i = 1; i < MAX_NODES; i++ ){
       const char* nodeTypeStr = "";
       switch(getNodeInfo(i).m_type){
@@ -1060,33 +1044,20 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
     }
   }
   
-  if (arg == DumpStateOrd::CmvmiDumpLongSignalMemory){
+  if (dumpState->args[0] == DumpStateOrd::CmvmiDumpLongSignalMemory){
     infoEvent("Cmvmi: g_sectionSegmentPool size: %d free: %d",
 	      g_sectionSegmentPool.getSize(),
 	      g_sectionSegmentPool.getNoOfFree());
   }
   
-  if (arg == DumpStateOrd::CmvmiSetRestartOnErrorInsert)
-  {
+  if (dumpState->args[0] == DumpStateOrd::CmvmiSetRestartOnErrorInsert){
     if(signal->getLength() == 1)
-    {
-      Uint32 val = (Uint32)NRT_NoStart_Restart;
-      const ndb_mgm_configuration_iterator * p = 
-	theConfig.getOwnConfigIterator();
-      ndbrequire(p != 0);
-      
-      if(!ndb_mgm_get_int_parameter(p, CFG_DB_STOP_ON_ERROR_INSERT, &val))
-      {
-	theConfig.setRestartOnErrorInsert(val);
-      }
-    }
+      theConfig.setRestartOnErrorInsert((int)NRT_NoStart_Restart);
     else
-    {
       theConfig.setRestartOnErrorInsert(signal->theData[1]);
-    }
   }
 
-  if (arg == DumpStateOrd::CmvmiTestLongSigWithDelay) {
+  if (dumpState->args[0] == DumpStateOrd::CmvmiTestLongSigWithDelay) {
     unsigned i;
     Uint32 loopCount = dumpState->args[1];
     const unsigned len0 = 11;
@@ -1113,30 +1084,6 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
     ptr[1].sz = len1;
     sendSignal(reference(), GSN_TESTSIG, signal, 8, JBB, ptr, 2);
   }
-
-#ifdef ERROR_INSERT
-  if (arg == 9000)
-  {
-    SET_ERROR_INSERT_VALUE(9000);
-    for (Uint32 i = 1; i<signal->getLength(); i++)
-      c_error_9000_nodes_mask.set(signal->theData[i]);
-  }
-  
-  if (arg == 9001)
-  {
-    CLEAR_ERROR_INSERT_VALUE;
-    for (Uint32 i = 0; i<MAX_NODES; i++)
-    {
-      if (c_error_9000_nodes_mask.get(i))
-      {
-	signal->theData[0] = 0;
-	signal->theData[1] = i;
-	EXECUTE_DIRECT(CMVMI, GSN_OPEN_COMREQ, signal, 2);
-      }
-    }
-    c_error_9000_nodes_mask.clear();
-  }
-#endif
 
 #ifdef VM_TRACE
 #if 0

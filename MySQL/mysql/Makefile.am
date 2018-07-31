@@ -19,8 +19,7 @@
 AUTOMAKE_OPTIONS =	foreign
 
 # These are built from source in the Docs directory
-EXTRA_DIST =		INSTALL-SOURCE INSTALL-WIN-SOURCE \
-			README COPYING EXCEPTIONS-CLIENT
+EXTRA_DIST =		INSTALL-SOURCE README COPYING EXCEPTIONS-CLIENT
 SUBDIRS =		. include @docs_dirs@ @zlib_dir@ \
 			@readline_topdir@ sql-common \
 			@thread_dirs@ pstack \
@@ -35,19 +34,16 @@ DIST_SUBDIRS =		. include @docs_dirs@ zlib \
 			BUILD netware os2 @libmysqld_dirs@ \
 			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
 
-# Run these targets before any others, also make part of clean target,
-# to make sure we create new links after a clean.
-BUILT_SOURCES = linked_client_sources linked_server_sources \
-		 @linked_client_targets@ \
-		 @linked_libmysqld_targets@ \
+# Relink after clean
+linked_sources = linked_client_sources linked_server_sources \
+		 linked_libmysql_sources linked_libmysql_r_sources \
+		 linked_libmysqld_sources  linked_libmysqldex_sources \
 		 linked_include_sources @linked_netware_sources@
 
-# The db.h file is a bit special, see note in "configure.in".
-# In the case we didn't compile with bdb, a dummy file is put
-# there, but will not be removed by the bdb make file becuase
-# it will never be called.
-CLEANFILES = $(BUILT_SOURCES) bdb/build_unix/db.h
-DISTCLEANFILES = ac_available_languages_fragment
+CLEANFILES = $(linked_sources)
+
+# This is just so that the linking is done early.
+all-local: $(linked_sources)
 
 linked_include_sources:
 	cd include; $(MAKE) link_sources
@@ -77,8 +73,13 @@ linked_netware_sources:
 	cd @netware_dir@; $(MAKE) link_sources
 	echo timestamp > linked_netware_sources
 
+#avoid recursive make calls in sql directory
 linked_server_sources:
-	cd sql; $(MAKE) link_sources
+	cd sql; rm -f mini_client_errors.c;\
+		@LN_CP_F@ ../libmysql/errmsg.c mini_client_errors.c;\
+		rm -f pack.c;@LN_CP_F@ ../sql-common/pack.c pack.c;\
+		rm -f client.c;@LN_CP_F@ ../sql-common/client.c client.c;\
+		rm -f my_time.c;@LN_CP_F@ ../sql-common/my_time.c my_time.c
 	echo timestamp > linked_server_sources
 
 # Create permission databases
@@ -90,37 +91,13 @@ bin-dist:		all
 
 # Remove BK's "SCCS" subdirectories from source distribution
 dist-hook:
-	rm -rf `find $(distdir) -type d -name SCCS -print`
+	rm -rf `find $(distdir) -type d -name SCCS`
 
 tags:
 	support-files/build-tags
 .PHONY:		init-db bin-dist
 
-# Target 'test' will run the regression test suite using the built server.
-#
-# If you are running in a shared environment, users can avoid clashing
-# port numbers by setting individual small numbers 1-100 to the
-# environment variable MTR_BUILD_THREAD. The script "mysql-test-run"
-# will then calculate the various port numbers it needs from this,
-# making sure each user use different ports.
+# Test installation
 
 test:
-	cd mysql-test ; \
-	./mysql-test-run && \
-	./mysql-test-run --ps-protocol
-
-test-force:
-	cd mysql-test; \
-	./mysql-test-run --force && \
-	./mysql-test-run --ps-protocol --force
-
-# We are testing a new Perl version of the test script
-test-pl:
-	cd mysql-test; \
-	./mysql-test-run.pl && \
-	./mysql-test-run.pl --ps-protocol
-
-test-force-pl:
-	cd mysql-test; \
-	./mysql-test-run.pl --force && \
-	./mysql-test-run.pl --ps-protocol --force
+	cd mysql-test; perl mysql-test-run.pl && perl mysql-test-run.pl --ps-protocol

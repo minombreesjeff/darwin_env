@@ -659,9 +659,6 @@ main(int argc, const char** argv){
 
   for(Uint32 i = 0; i < 12; i++)
   {
-    if(i == 6 || i == 8 || i == 10)
-      continue;
-
     BaseString name("bug_9749");
     name.appfmt("_%d", i);
     NDBT_TestCaseImpl1 *pt = new NDBT_TestCaseImpl1(&ts, 

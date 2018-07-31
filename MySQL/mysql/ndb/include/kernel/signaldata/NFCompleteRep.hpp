@@ -30,12 +30,28 @@
  * from the failed NDB node
  *
  */
-struct NFCompleteRep {
+class NFCompleteRep {
+  /**
+   * Sender(s)
+   */
+  friend class Dbdict;
+  friend class Dblqh;
+  friend class Dbtc;
+  friend class Qmgr;
+  
+  /**
+   * Sender/Reciver
+   */
+  friend class Dbdih;
+  friend class ClusterMgr;
 
   friend bool printNF_COMPLETE_REP(FILE *, const Uint32 *, Uint32, Uint16);
   
+public:
   STATIC_CONST( SignalLength = 5 );
 
+private:
+  
   /**
    * Which block has completed...
    *

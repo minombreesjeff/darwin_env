@@ -35,7 +35,6 @@
 #include <ndb_version.h>
 #include <SignalLoggerManager.hpp>
 #include <kernel/ndb_limits.h>
-#include <signaldata/AlterTable.hpp>
 
 //#define REPORT_TRANSPORTER
 //#define API_TRACE;
@@ -306,17 +305,6 @@ execute(void * callbackObj, SignalHeader * const header,
 	 theFacade->theArbitMgr->doStop(theData);
        break;
 
-     case GSN_ALTER_TABLE_REP:
-     {
-       const AlterTableRep* rep = (const AlterTableRep*)theData;
-       theFacade->m_globalDictCache.lock();
-       theFacade->m_globalDictCache.
-	 alter_table_rep((const char*)ptr[0].p, 
-			 rep->tableId,
-			 rep->tableVersion,
-			 rep->changeType == AlterTableRep::CT_ALTERED);
-       theFacade->m_globalDictCache.unlock();
-     }
      default:
        break;
        
@@ -407,10 +395,12 @@ TransporterFacade::doStop(){
   if (theReceiveThread) {
     NdbThread_WaitFor(theReceiveThread, &status);
     NdbThread_Destroy(&theReceiveThread);
+    theReceiveThread= 0;
   }
   if (theSendThread) {
     NdbThread_WaitFor(theSendThread, &status);
     NdbThread_Destroy(&theSendThread);
+    theSendThread= 0;
   }
   DBUG_VOID_RETURN;
 }
@@ -445,7 +435,7 @@ void TransporterFacade::threadMainSend(void)
   theTransporterRegistry->stopSending();
 
   m_socket_server.stopServer();
-  m_socket_server.stopSessions(true);
+  m_socket_server.stopSessions();
 
   theTransporterRegistry->stop_clients();
 }
@@ -487,8 +477,6 @@ TransporterFacade::TransporterFacade() :
   theReceiveThread(NULL),
   m_fragmented_signal_id(0)
 {
-  DBUG_ENTER("TransporterFacade::TransporterFacade");
-
   theOwnId = 0;
 
   theMutexPtr = NdbMutex_Create();
@@ -505,15 +493,11 @@ TransporterFacade::TransporterFacade() :
   m_max_trans_id = 0;
 
   theClusterMgr = new ClusterMgr(* this);
-
-  DBUG_VOID_RETURN;
 }
 
 bool
 TransporterFacade::init(Uint32 nodeId, const ndb_mgm_configuration* props)
 {
-  DBUG_ENTER("TransporterFacade::init");
-
   theOwnId = nodeId;
   theTransporterRegistry = new TransporterRegistry(this);
 
@@ -522,7 +506,7 @@ TransporterFacade::init(Uint32 nodeId, const ndb_mgm_configuration* props)
 						   * theTransporterRegistry);
   if(res <= 0){
     TRP_DEBUG( "configureTransporters returned 0 or less" );
-    DBUG_RETURN(false);
+    return false;
   }
   
   ndb_mgm_configuration_iterator iter(* props, CFG_SECTION_NODE);
@@ -540,7 +524,7 @@ TransporterFacade::init(Uint32 nodeId, const ndb_mgm_configuration* props)
     iter.first();
     if(iter.find(CFG_NODE_ID, nodeId)){
       TRP_DEBUG( "Node info missing from config." );
-      DBUG_RETURN(false);
+      return false;
     }
     
     Uint32 rank = 0;
@@ -567,22 +551,9 @@ TransporterFacade::init(Uint32 nodeId, const ndb_mgm_configuration* props)
   }
 #endif
   
-  Uint32 timeout = 120000;
-  iter.first();
-  for (iter.first(); iter.valid(); iter.next())
-  {
-    Uint32 tmp1 = 0, tmp2 = 0;
-    iter.get(CFG_DB_TRANSACTION_CHECK_INTERVAL, &tmp1);
-    iter.get(CFG_DB_TRANSACTION_DEADLOCK_TIMEOUT, &tmp2);
-    tmp1 += tmp2;
-    if (tmp1 > timeout)
-      timeout = tmp1;
-  }
-  m_waitfor_timeout = timeout;
-  
   if (!theTransporterRegistry->start_service(m_socket_server)){
     ndbout_c("Unable to start theTransporterRegistry->start_service");
-    DBUG_RETURN(false);
+    return false;
   }
 
   theReceiveThread = NdbThread_Create(runReceiveResponse_C,
@@ -602,7 +573,7 @@ TransporterFacade::init(Uint32 nodeId, const ndb_mgm_configuration* props)
   signalLogger.logOn(true, 0, SignalLoggerManager::LogInOut);
 #endif
   
-  DBUG_RETURN(true);
+  return true;
 }
 
 
@@ -723,10 +694,8 @@ TransporterFacade::open(void* objRef,
   DBUG_RETURN(r);
 }
 
-TransporterFacade::~TransporterFacade()
-{  
-  DBUG_ENTER("TransporterFacade::~TransporterFacade");
-
+TransporterFacade::~TransporterFacade(){
+  
   NdbMutex_Lock(theMutexPtr);
   delete theClusterMgr;  
   delete theArbitMgr;
@@ -736,7 +705,6 @@ TransporterFacade::~TransporterFacade()
 #ifdef API_TRACE
   signalLogger.setOutputStream(0);
 #endif
-  DBUG_VOID_RETURN;
 }
 
 void 
@@ -817,7 +785,7 @@ TransporterFacade::sendSignal(NdbApiSignal * aSignal, NodeId aNode){
       LinearSectionPtr ptr[3];
       signalLogger.sendSignal(* aSignal,
 			      1,
-			      tDataPtr,
+			      aSignal->getDataPtr(),
 			      aNode, ptr, 0);
       signalLogger.flushSignalLog();
       aSignal->theSendersBlockRef = tmp;
@@ -844,7 +812,6 @@ TransporterFacade::sendSignal(NdbApiSignal * aSignal, NodeId aNode){
 
 int
 TransporterFacade::sendSignalUnCond(NdbApiSignal * aSignal, NodeId aNode){
-  Uint32* tDataPtr = aSignal->getDataPtrSend();
 #ifdef API_TRACE
   if(setSignalLog() && TRACE_GSN(aSignal->theVerId_signalNumber)){
     Uint32 tmp = aSignal->theSendersBlockRef;
@@ -852,7 +819,7 @@ TransporterFacade::sendSignalUnCond(NdbApiSignal * aSignal, NodeId aNode){
     LinearSectionPtr ptr[3];
     signalLogger.sendSignal(* aSignal,
 			    0,
-			    tDataPtr,
+			    aSignal->getDataPtr(),
 			    aNode, ptr, 0);
     signalLogger.flushSignalLog();
     aSignal->theSendersBlockRef = tmp;
@@ -863,7 +830,7 @@ TransporterFacade::sendSignalUnCond(NdbApiSignal * aSignal, NodeId aNode){
          (aSignal->theReceiversBlockNumber != 0));
   SendStatus ss = theTransporterRegistry->prepareSend(aSignal, 
 						      0, 
-						      tDataPtr,
+						      aSignal->getDataPtr(), 
 						      aNode, 
 						      0);
   

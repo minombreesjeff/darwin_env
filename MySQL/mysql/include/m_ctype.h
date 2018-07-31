@@ -44,19 +44,10 @@ typedef struct unicase_info_st
   uint16 sort;
 } MY_UNICASE_INFO;
 
-
-/* wm_wc and wc_mb return codes */
-#define MY_CS_ILSEQ	0     /* Wrong by sequence: wb_wc                   */
-#define MY_CS_ILUNI	0     /* Cannot encode Unicode to charset: wc_mb    */
-#define MY_CS_TOOSMALL  -101  /* Need at least one byte:    wc_mb and mb_wc */
-#define MY_CS_TOOSMALL2 -102  /* Need at least two bytes:   wc_mb and mb_wc */
-#define MY_CS_TOOSMALL3 -103  /* Need at least three bytes: wc_mb and mb_wc */
-/* These following three are currently not really used */
-#define MY_CS_TOOSMALL4 -104  /* Need at least 4 bytes: wc_mb and mb_wc */
-#define MY_CS_TOOSMALL5 -105  /* Need at least 5 bytes: wc_mb and mb_wc */
-#define MY_CS_TOOSMALL6 -106  /* Need at least 6 bytes: wc_mb and mb_wc */
-/* A helper macros for "need at least n bytes" */
-#define MY_CS_TOOSMALLN(n)    (-100-(n))
+#define MY_CS_ILSEQ	0
+#define MY_CS_ILUNI	0
+#define MY_CS_TOOSMALL	-1
+#define MY_CS_TOOFEW(n)	(-1-(n))
 
 #define MY_SEQ_INTTAIL	1
 #define MY_SEQ_SPACES	2
@@ -108,8 +99,6 @@ enum my_lex_states
 
 struct charset_info_st;
 
-
-/* See strings/CHARSET_INFO.txt for information about this structure  */
 typedef struct my_collation_handler_st
 {
   my_bool (*init)(struct charset_info_st *, void *(*alloc)(uint));
@@ -149,7 +138,6 @@ extern MY_COLLATION_HANDLER my_collation_8bit_simple_ci_handler;
 extern MY_COLLATION_HANDLER my_collation_ucs2_uca_handler;
 
 
-/* See strings/CHARSET_INFO.txt about information on this structure  */
 typedef struct my_charset_handler_st
 {
   my_bool (*init)(struct charset_info_st *, void *(*alloc)(uint));
@@ -178,7 +166,7 @@ typedef struct my_charset_handler_st
   
   /* Charset dependant snprintf() */
   int  (*snprintf)(struct charset_info_st *, char *to, uint n, const char *fmt,
-		   ...) ATTRIBUTE_FORMAT_FPTR(printf, 4, 5);
+		   ...);
   int  (*long10_to_str)(struct charset_info_st *, char *to, uint n, int radix,
 			long int val);
   int (*longlong10_to_str)(struct charset_info_st *, char *to, uint n,
@@ -207,7 +195,6 @@ extern MY_CHARSET_HANDLER my_charset_8bit_handler;
 extern MY_CHARSET_HANDLER my_charset_ucs2_handler;
 
 
-/* See strings/CHARSET_INFO.txt about information on this structure  */
 typedef struct charset_info_st
 {
   uint      number;
@@ -233,7 +220,6 @@ typedef struct charset_info_st
   uint      mbmaxlen;
   uint16    min_sort_char;
   uint16    max_sort_char; /* For LIKE optimization */
-  my_bool   escape_with_backslash_is_dangerous;
   
   MY_CHARSET_HANDLER *cset;
   MY_COLLATION_HANDLER *coll;
@@ -304,8 +290,7 @@ int my_wc_mb_8bit(CHARSET_INFO *cs,my_wc_t wc, uchar *s, uchar *e);
 ulong my_scan_8bit(CHARSET_INFO *cs, const char *b, const char *e, int sq);
 
 int my_snprintf_8bit(struct charset_info_st *, char *to, uint n,
-		     const char *fmt, ...)
-  ATTRIBUTE_FORMAT(printf, 4, 5);
+		     const char *fmt, ...);
 
 long        my_strntol_8bit(CHARSET_INFO *, const char *s, uint l, int base,
 			    char **e, int *err);
@@ -355,11 +340,6 @@ int my_wildcmp_8bit(CHARSET_INFO *,
 		    const char *str,const char *str_end,
 		    const char *wildstr,const char *wildend,
 		    int escape, int w_one, int w_many);
-
-int my_wildcmp_bin(CHARSET_INFO *,
-		   const char *str,const char *str_end,
-		   const char *wildstr,const char *wildend,
-		   int escape, int w_one, int w_many);
 
 uint my_numchars_8bit(CHARSET_INFO *, const char *b, const char *e);
 uint my_numcells_8bit(CHARSET_INFO *, const char *b, const char *e);

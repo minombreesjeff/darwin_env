@@ -50,7 +50,6 @@ void vio_reset(Vio* vio, enum enum_vio_type type,
     vio->fastsend	=vio_fastsend;
     vio->viokeepalive	=vio_keepalive;
     vio->should_retry	=vio_should_retry;
-    vio->was_interrupted=vio_was_interrupted;
     vio->vioclose	=vio_close_pipe;
     vio->peer_addr	=vio_peer_addr;
     vio->in_addr	=vio_in_addr;
@@ -70,7 +69,6 @@ void vio_reset(Vio* vio, enum enum_vio_type type,
     vio->fastsend	=vio_fastsend;
     vio->viokeepalive	=vio_keepalive;
     vio->should_retry	=vio_should_retry;
-    vio->was_interrupted=vio_was_interrupted;
     vio->vioclose	=vio_close_shared_memory;
     vio->peer_addr	=vio_peer_addr;
     vio->in_addr	=vio_in_addr;
@@ -83,14 +81,13 @@ void vio_reset(Vio* vio, enum enum_vio_type type,
 #ifdef HAVE_OPENSSL 
   if (type == VIO_TYPE_SSL)
   {
-    vio->viodelete	=vio_delete;
+    vio->viodelete	=vio_ssl_delete;
     vio->vioerrno	=vio_ssl_errno;
     vio->read		=vio_ssl_read;
     vio->write		=vio_ssl_write;
     vio->fastsend	=vio_ssl_fastsend;
     vio->viokeepalive	=vio_ssl_keepalive;
     vio->should_retry	=vio_ssl_should_retry;
-    vio->was_interrupted=vio_ssl_was_interrupted;
     vio->vioclose	=vio_ssl_close;
     vio->peer_addr	=vio_ssl_peer_addr;
     vio->in_addr	=vio_ssl_in_addr;
@@ -108,7 +105,6 @@ void vio_reset(Vio* vio, enum enum_vio_type type,
     vio->fastsend	=vio_fastsend;
     vio->viokeepalive	=vio_keepalive;
     vio->should_retry	=vio_should_retry;
-    vio->was_interrupted=vio_was_interrupted;
     vio->vioclose	=vio_close;
     vio->peer_addr	=vio_peer_addr;
     vio->in_addr	=vio_in_addr;
@@ -136,18 +132,10 @@ Vio *vio_new(my_socket sd, enum enum_vio_type type, my_bool localhost)
 	    vio->sd);
 #if !defined(__WIN__) && !defined(__EMX__) && !defined(OS2)
 #if !defined(NO_FCNTL_NONBLOCK)
-    /*
-      We call fcntl() to set the flags and then immediately read them back
-      to make sure that we and the system are in agreement on the state of
-      things.
-
-      An example of why we need to do this is FreeBSD (and apparently some
-      other BSD-derived systems, like Mac OS X), where the system sometimes
-      reports that the socket is set for non-blocking when it really will
-      block.
-    */
-    fcntl(sd, F_SETFL, 0);
-    vio->fcntl_mode= fcntl(sd, F_GETFL);
+#if defined(__FreeBSD__)
+    fcntl(sd, F_SETFL, vio->fcntl_mode); /* Yahoo! FreeBSD patch */
+#endif
+    vio->fcntl_mode = fcntl(sd, F_GETFL);
 #elif defined(HAVE_SYS_IOCTL_H)			/* hpux */
     /* Non blocking sockets doesn't work good on HPUX 11.0 */
     (void) ioctl(sd,FIOSNBIO,0);

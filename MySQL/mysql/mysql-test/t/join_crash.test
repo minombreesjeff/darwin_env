@@ -124,5 +124,3 @@ from
         client_name asc,
         project_name asc;
 DROP TABLE t1,t2,t3,t4;
-
-# End of 4.1 tests

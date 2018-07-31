@@ -77,7 +77,6 @@ int openfrm(const char *name, const char *alias, uint db_stat, uint prgflag,
   my_string record;
   const char **int_array;
   bool	 use_hash, null_field_first;
-  bool   error_reported= FALSE;
   File	 file;
   Field  **field_ptr,*reg_field;
   KEY	 *keyinfo;
@@ -388,21 +387,7 @@ int openfrm(const char *name, const char *alias, uint db_stat, uint prgflag,
                                                         count)))
         goto err_not_open;
       for (count= 0; count < interval->count; count++)
-      {
-        char *val= (char*) interval->type_names[count];
-        interval->type_lengths[count]= strlen(val);
-        /*
-          Replace all ',' symbols with NAMES_SEP_CHAR.
-          See the comment in unireg.cc, pack_fields() function
-          for details.
-        */
-        for (uint cnt= 0 ; cnt < interval->type_lengths[count] ; cnt++)
-        {
-          char c= val[cnt];
-          if (c == ',')
-            val[cnt]= NAMES_SEP_CHAR;
-        }       
-      }
+        interval->type_lengths[count]= strlen(interval->type_names[count]);
       interval->type_lengths[count]= 0;
     }
   }
@@ -806,11 +791,6 @@ int openfrm(const char *name, const char *alias, uint db_stat, uint prgflag,
 	error= 1;
 	my_errno= ENOENT;
       }
-      else
-      {
-        outparam->file->print_error(err, MYF(0));
-        error_reported= TRUE;
-      }
       goto err_not_open; /* purecov: inspected */
     }
   }
@@ -832,8 +812,7 @@ int openfrm(const char *name, const char *alias, uint db_stat, uint prgflag,
  err_end:					/* Here when no file */
   delete crypted;
   *root_ptr= old_root;
-  if (!error_reported)
-    frm_error(error, outparam, name, ME_ERROR + ME_WAITTANG, errarg);
+  frm_error(error, outparam, name, ME_ERROR + ME_WAITTANG, errarg);
   delete outparam->file;
   outparam->file=0;				// For easyer errorchecking
   outparam->db_stat=0;
@@ -1120,15 +1099,15 @@ fix_type_pointers(const char ***array, TYPELIB *point_to_type, uint types,
 } /* fix_type_pointers */
 
 
-TYPELIB *typelib(MEM_ROOT *mem_root, List<String> &strings)
+TYPELIB *typelib(List<String> &strings)
 {
-  TYPELIB *result= (TYPELIB*) alloc_root(mem_root, sizeof(TYPELIB));
+  TYPELIB *result=(TYPELIB*) sql_alloc(sizeof(TYPELIB));
   if (!result)
     return 0;
   result->count=strings.elements;
   result->name="";
   uint nbytes= (sizeof(char*) + sizeof(uint)) * (result->count + 1);
-  if (!(result->type_names= (const char**) alloc_root(mem_root, nbytes)))
+  if (!(result->type_names= (const char**) sql_alloc(nbytes)))
     return 0;
   result->type_lengths= (uint*) (result->type_names + result->count + 1);
   List_iterator<String> it(strings);
@@ -1259,8 +1238,7 @@ void append_unescaped(String *res, const char *pos, uint length)
 
 	/* Create a .frm file */
 
-File create_frm(register my_string name,  const char *db, const char *table,
-                uint reclength, uchar *fileinfo,
+File create_frm(register my_string name, uint reclength, uchar *fileinfo,
 		HA_CREATE_INFO *create_info, uint keys)
 {
   register File file;
@@ -1285,7 +1263,7 @@ File create_frm(register my_string name,  const char *db, const char *table,
   */
   set_if_smaller(create_info->raid_chunks, 255);
 
-  if ((file= my_create(name, CREATE_MODE, create_flags, MYF(0))) >= 0)
+  if ((file= my_create(name, CREATE_MODE, create_flags, MYF(MY_WME))) >= 0)
   {
     bzero((char*) fileinfo,64);
     fileinfo[0]=(uchar) 254; fileinfo[1]= 1; fileinfo[2]= FRM_VER+3; // Header
@@ -1321,13 +1299,6 @@ File create_frm(register my_string name,  const char *db, const char *table,
 	return(-1);
       }
     }
-  }
-  else
-  {
-    if (my_errno == ENOENT)
-      my_error(ER_BAD_DB_ERROR,MYF(0),db);
-    else
-      my_error(ER_CANT_CREATE_TABLE,MYF(0),table,my_errno);
   }
   return (file);
 } /* create_frm */
@@ -1434,7 +1405,7 @@ char *get_field(MEM_ROOT *mem, Field *field)
 
 bool check_db_name(char *name)
 {
-  char *start= name;
+  char *start=name;
   /* Used to catch empty names and names with end space */
   bool last_char_is_space= TRUE;
 
@@ -1444,7 +1415,7 @@ bool check_db_name(char *name)
   while (*name)
   {
 #if defined(USE_MB) && defined(USE_MB_IDENT)
-    last_char_is_space= my_isspace(system_charset_info, *name);
+    last_char_is_space= my_isspace(default_charset_info, *name);
     if (use_mb(system_charset_info))
     {
       int len=my_ismbchar(system_charset_info, name, 
@@ -1490,7 +1461,7 @@ bool check_table_name(const char *name, uint length)
   while (name != end)
   {
 #if defined(USE_MB) && defined(USE_MB_IDENT)
-    last_char_is_space= my_isspace(system_charset_info, *name);
+    last_char_is_space= my_isspace(default_charset_info, *name);
     if (use_mb(system_charset_info))
     {
       int len=my_ismbchar(system_charset_info, name, end);
@@ -1521,7 +1492,7 @@ bool check_column_name(const char *name)
   while (*name)
   {
 #if defined(USE_MB) && defined(USE_MB_IDENT)
-    last_char_is_space= my_isspace(system_charset_info, *name);
+    last_char_is_space= my_isspace(default_charset_info, *name);
     if (use_mb(system_charset_info))
     {
       int len=my_ismbchar(system_charset_info, name, 
@@ -1563,23 +1534,6 @@ db_type get_table_type(const char *name)
       (head[2] != FRM_VER && head[2] != FRM_VER+1 && head[2] != FRM_VER+3))
     DBUG_RETURN(DB_TYPE_UNKNOWN);
   DBUG_RETURN(ha_checktype((enum db_type) (uint) *(head+3)));
-}
-
-/*
-  Cleanup this table for re-execution.
-
-  SYNOPSIS
-    st_table_list::reinit_before_use()
-*/
-
-void st_table_list::reinit_before_use(THD * /* thd */)
-{
-  /*
-    Reset old pointers to TABLEs: they are not valid since the tables
-    were closed in the end of previous prepare or execute call.
-  */
-  table= 0;
-  table_list= 0;
 }
 
 

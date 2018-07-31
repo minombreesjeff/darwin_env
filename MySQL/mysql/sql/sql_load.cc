@@ -114,10 +114,6 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 	       MYF(0));
     DBUG_RETURN(-1);
   }
-  /*
-    This needs to be done before external_lock
-  */
-  ha_enable_transaction(thd, FALSE); 
   if (!(table = open_ltable(thd,table_list,lock_type)))
     DBUG_RETURN(-1);
   transactional_table= table->file->has_transactions();
@@ -277,6 +273,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     if (ignore ||
 	handle_duplicates == DUP_REPLACE)
       table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+    ha_enable_transaction(thd, FALSE); 
     table->file->start_bulk_insert((ha_rows) 0);
     table->copy_blobs=1;
     if (!field_term->length() && !enclosed->length())
@@ -285,15 +282,12 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     else
       error=read_sep_field(thd,info,table,fields,read_info,*enclosed,
 			   skip_lines);
-    if (table->file->end_bulk_insert() && !error)
-    {
-      table->file->print_error(my_errno, MYF(0));
-      error= 1;
-    }
+    if (table->file->end_bulk_insert())
+      error=1;					/* purecov: inspected */
+    ha_enable_transaction(thd, TRUE);
     table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
     table->next_number_field=0;
   }
-  ha_enable_transaction(thd, TRUE);
   if (file >= 0)
     my_close(file,MYF(0));
   free_blobs(table);				/* if pack_blob was used */
@@ -444,13 +438,11 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
       {
 	uint length;
 	byte save_chr;
-        if (field == table->next_number_field)
-          table->auto_increment_field_not_null= TRUE;
 	if ((length=(uint) (read_info.row_end-pos)) >
 	    field->field_length)
 	  length=field->field_length;
 	save_chr=pos[length]; pos[length]='\0'; // Safeguard aganst malloc
-        field->store((char*) pos,length,read_info.read_charset);
+  field->store((char*) pos,length,read_info.read_charset);
 	pos[length]=save_chr;
 	if ((pos+=length) > read_info.row_end)
 	  pos= read_info.row_end;	/* Fills rest with space */
@@ -466,8 +458,10 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
     if (write_record(table,&info))
       DBUG_RETURN(1);
     /*
-      If auto_increment values are used, save the first one for
-      LAST_INSERT_ID() and for the binary/update log.
+      If auto_increment values are used, save the first one
+       for LAST_INSERT_ID() and for the binary/update log.
+       We can't use insert_id() as we don't want to touch the
+       last_insert_id_used flag.
     */
     if (!id && thd->insert_id_used)
       id= thd->last_insert_id;
@@ -539,8 +533,6 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
 	}
 	continue;
       }
-      if (field == table->next_number_field)
-        table->auto_increment_field_not_null= TRUE;
       field->set_notnull();
       read_info.row_end[0]=0;			// Safe to change end marker
       field->store((char*) read_info.row_start,length,read_info.read_charset);
@@ -570,8 +562,10 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
     if (write_record(table,&info))
       DBUG_RETURN(1);
     /*
-      If auto_increment values are used, save the first one for
-      LAST_INSERT_ID() and for the binary/update log.
+      If auto_increment values are used, save the first one
+       for LAST_INSERT_ID() and for the binary/update log.
+       We can't use insert_id() as we don't want to touch the
+       last_insert_id_used flag.
     */
     if (!id && thd->insert_id_used)
       id= thd->last_insert_id;
@@ -805,20 +799,8 @@ int READ_INFO::read_field()
 	  *to++= (byte) escape_char;
 	  goto found_eof;
 	}
-        /*
-          When escape_char == enclosed_char, we treat it like we do for
-          handling quotes in SQL parsing -- you can double-up the
-          escape_char to include it literally, but it doesn't do escapes
-          like \n. This allows: LOAD DATA ... ENCLOSED BY '"' ESCAPED BY '"'
-          with data like: "fie""ld1", "field2"
-         */
-        if (escape_char != enclosed_char || chr == escape_char)
-        {
-          *to++ = (byte) unescape((char) chr);
-          continue;
-        }
-        PUSH(chr);
-        chr= escape_char;
+	*to++ = (byte) unescape((char) chr);
+	continue;
       }
 #ifdef ALLOW_LINESEPARATOR_IN_STRINGS
       if (chr == line_term_char)

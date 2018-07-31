@@ -183,11 +183,9 @@ int rtree_find_first(MI_INFO *info, uint keynr, uchar *key, uint key_length,
     return -1;
   }
 
-  /*
-    Save searched key, include data pointer.
-    The data pointer is required if the search_flag contains MBR_DATA.
-  */
-  memcpy(info->first_mbr_key, key, keyinfo->keylength);
+  /* Save searched key */
+  memcpy(info->first_mbr_key, key, keyinfo->keylength -
+	 info->s->base.rec_reflength);
   info->last_rkey_length = key_length;
 
   info->rtree_recursion_depth = -1;

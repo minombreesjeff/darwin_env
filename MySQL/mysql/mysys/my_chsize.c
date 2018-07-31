@@ -44,9 +44,7 @@ int my_chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
   DBUG_PRINT("my",("fd: %d  length: %lu  MyFlags: %d",fd,(ulong) newlength,
 		   MyFlags));
 
-  if ((oldsize = my_seek(fd, 0L, MY_SEEK_END, MYF(MY_WME+MY_FAE))) == newlength)
-    DBUG_RETURN(0);
-
+  oldsize = my_seek(fd, 0L, MY_SEEK_END, MYF(MY_WME+MY_FAE));
   DBUG_PRINT("info",("old_size: %ld", (ulong) oldsize));
 
   if (oldsize > newlength)

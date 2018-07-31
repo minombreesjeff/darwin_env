@@ -12,6 +12,7 @@ path=`dirname $0`
 if test -e "Makefile"; then make -k clean; fi
 
 # remove files
+rm -f NEW-RPMS/*
 rm -f */.deps/*.P
 rm -rf Makefile.in.bk
 

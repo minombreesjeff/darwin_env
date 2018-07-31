@@ -50,11 +50,8 @@
 
 #define CFG_DB_FILESYSTEM_PATH        125
 #define CFG_DB_NO_REDOLOG_FILES       126
-
-#define CFG_DB_LCP_DISC_PAGES_TUP     127
-#define CFG_DB_LCP_DISC_PAGES_TUP_SR  128
-#define CFG_DB_LCP_DISC_PAGES_ACC     137
-#define CFG_DB_LCP_DISC_PAGES_ACC_SR  138
+#define CFG_DB_DISC_BANDWIDTH         127
+#define CFG_DB_SR_DISC_BANDWITH       128
 
 #define CFG_DB_TRANSACTION_CHECK_INTERVAL   129
 #define CFG_DB_TRANSACTION_INACTIVE_TIMEOUT 130
@@ -65,7 +62,6 @@
 #define CFG_DB_BACKUP_DATA_BUFFER_MEM     134
 #define CFG_DB_BACKUP_LOG_BUFFER_MEM      135
 #define CFG_DB_BACKUP_WRITE_SIZE          136
-#define CFG_DB_BACKUP_MAX_WRITE_SIZE      139
 
 #define CFG_LOG_DESTINATION           147
 
@@ -86,11 +82,6 @@
 #define CFG_DB_BACKUP_DATADIR         158
 
 #define CFG_DB_MAX_OPEN_FILES         159
-#define CFG_DB_DISK_PAGE_BUFFER_MEMORY 160 /* used from 5.1 */
-#define CFG_DB_STRING_MEMORY          161 /* used from 5.1 */
-#define CFG_DB_INITIAL_OPEN_FILES     162 /* used from 5.1 */
-
-#define CFG_DB_DATA_MEM_2             199 /* used in special build in 5.1 */
 
 #define CFG_NODE_ARBIT_RANK           200
 #define CFG_NODE_ARBIT_DELAY          201

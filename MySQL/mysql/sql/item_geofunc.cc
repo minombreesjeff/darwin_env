@@ -78,7 +78,8 @@ String *Item_func_geometry_from_wkb::val_str(String *str)
   str->q_append(srid);
   if ((null_value= 
        (args[0]->null_value ||
-        !Geometry::create_from_wkb(&buffer, wkb->ptr(), wkb->length(), str))))
+	!Geometry::create_from_wkb(&buffer, wkb->ptr(), wkb->length()) ||
+	str->append(*wkb))))
     return 0;
   return str;
 }
@@ -95,7 +96,8 @@ String *Item_func_as_wkt::val_str(String *str)
 
   if ((null_value=
        (args[0]->null_value ||
-	!(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length())))))
+	!(geom= Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					  swkb->length() - SRID_SIZE)))))
     return 0;
 
   str->length(0);
@@ -121,7 +123,8 @@ String *Item_func_as_wkb::val_str(String *str)
 
   if ((null_value=
        (args[0]->null_value ||
-	!(Geometry::construct(&buffer, swkb->ptr(), swkb->length())))))
+	!(Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+				    swkb->length() - SRID_SIZE)))))
     return 0;
 
   str->copy(swkb->ptr() + SRID_SIZE, swkb->length() - SRID_SIZE,
@@ -139,7 +142,8 @@ String *Item_func_geometry_type::val_str(String *str)
 
   if ((null_value=
        (args[0]->null_value ||
-	!(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length())))))
+	!(geom= Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					  swkb->length() - SRID_SIZE)))))
     return 0;
   /* String will not move */
   str->copy(geom->get_class_info()->m_name.str,
@@ -160,7 +164,8 @@ String *Item_func_envelope::val_str(String *str)
   
   if ((null_value=
        args[0]->null_value ||
-       !(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length()))))
+       !(geom= Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					 swkb->length() - SRID_SIZE))))
     return 0;
   
   srid= uint4korr(swkb->ptr());
@@ -183,7 +188,8 @@ String *Item_func_centroid::val_str(String *str)
   uint32 srid;
 
   if ((null_value= args[0]->null_value ||
-       !(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length()))))
+       !(geom= Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					 swkb->length() - SRID_SIZE))))
     return 0;
 
   str->set_charset(&my_charset_bin);
@@ -212,7 +218,8 @@ String *Item_func_spatial_decomp::val_str(String *str)
 
   if ((null_value=
        (args[0]->null_value ||
-	!(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length())))))
+	!(geom= Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					  swkb->length() - SRID_SIZE)))))
     return 0;
 
   srid= uint4korr(swkb->ptr());
@@ -260,7 +267,8 @@ String *Item_func_spatial_decomp_n::val_str(String *str)
 
   if ((null_value=
        (args[0]->null_value || args[1]->null_value ||
-	!(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length())))))
+	!(geom= Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					  swkb->length() - SRID_SIZE)))))
     return 0;
 
   str->set_charset(&my_charset_bin);
@@ -467,8 +475,10 @@ longlong Item_func_spatial_rel::val_int()
   if ((null_value=
        (args[0]->null_value ||
 	args[1]->null_value ||
-	!(g1= Geometry::construct(&buffer1, res1->ptr(), res1->length())) ||
-	!(g2= Geometry::construct(&buffer2, res2->ptr(), res2->length())) ||
+	!(g1= Geometry::create_from_wkb(&buffer1, res1->ptr() + SRID_SIZE,
+					res1->length() - SRID_SIZE)) || 
+	!(g2= Geometry::create_from_wkb(&buffer2, res2->ptr() + SRID_SIZE,
+					res2->length() - SRID_SIZE)) ||
 	g1->get_mbr(&mbr1, &dummy) ||
 	g2->get_mbr(&mbr2, &dummy))))
    return 0;
@@ -533,7 +543,8 @@ longlong Item_func_isclosed::val_int()
   null_value= (!swkb || 
 	       args[0]->null_value ||
 	       !(geom=
-		 Geometry::construct(&buffer, swkb->ptr(), swkb->length())) ||
+		 Geometry::create_from_wkb(&buffer, swkb->ptr() + SRID_SIZE,
+					   swkb->length() - SRID_SIZE)) ||
 	       geom->is_closed(&isclosed));
 
   return (longlong) isclosed;
@@ -555,7 +566,9 @@ longlong Item_func_dimension::val_int()
 
   null_value= (!swkb || 
 	       args[0]->null_value ||
-	       !(geom= Geometry::construct(&buffer, swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->dimension(&dim, &dummy));
   return (longlong) dim;
 }
@@ -570,8 +583,9 @@ longlong Item_func_numinteriorring::val_int()
   Geometry *geom;
 
   null_value= (!swkb || 
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->num_interior_ring(&num));
   return (longlong) num;
 }
@@ -586,8 +600,9 @@ longlong Item_func_numgeometries::val_int()
   Geometry *geom;
 
   null_value= (!swkb ||
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->num_geometries(&num));
   return (longlong) num;
 }
@@ -603,8 +618,9 @@ longlong Item_func_numpoints::val_int()
 
   null_value= (!swkb ||
 	       args[0]->null_value ||
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->num_points(&num));
   return (longlong) num;
 }
@@ -619,8 +635,9 @@ double Item_func_x::val()
   Geometry *geom;
 
   null_value= (!swkb ||
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->get_x(&res));
   return res;
 }
@@ -635,8 +652,9 @@ double Item_func_y::val()
   Geometry *geom;
 
   null_value= (!swkb ||
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->get_y(&res));
   return res;
 }
@@ -652,8 +670,9 @@ double Item_func_area::val()
   const char *dummy;
 
   null_value= (!swkb ||
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->area(&res, &dummy));
   return res;
 }
@@ -667,8 +686,9 @@ double Item_func_glength::val()
   Geometry *geom;
 
   null_value= (!swkb || 
-	       !(geom= Geometry::construct(&buffer,
-                                           swkb->ptr(), swkb->length())) ||
+	       !(geom= Geometry::create_from_wkb(&buffer,
+						 swkb->ptr() + SRID_SIZE,
+						 swkb->length() - SRID_SIZE)) ||
 	       geom->length(&res));
   return res;
 }
@@ -680,8 +700,9 @@ longlong Item_func_srid::val_int()
   Geometry_buffer buffer;
   
   null_value= (!swkb || 
-	       !Geometry::construct(&buffer,
-                                    swkb->ptr(), swkb->length()));
+	       !Geometry::create_from_wkb(&buffer,
+					  swkb->ptr() + SRID_SIZE,
+					  swkb->length() - SRID_SIZE));
   if (null_value)
     return 0;
 

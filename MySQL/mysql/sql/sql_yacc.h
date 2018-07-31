@@ -1,7 +1,7 @@
-/* A Bison parser, made by GNU Bison 2.0.  */
+/* A Bison parser, made by GNU Bison 1.875c.  */
 
 /* Skeleton parser for Yacc-like parsing with Bison,
-   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004 Free Software Foundation, Inc.
+   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -455,55 +455,54 @@
      NOW_SYM = 681,
      OLD_PASSWORD = 682,
      PASSWORD = 683,
-     PARAM_MARKER = 684,
-     POINTFROMTEXT = 685,
-     POINT_SYM = 686,
-     POLYFROMTEXT = 687,
-     POLYGON = 688,
-     POSITION_SYM = 689,
-     PROCEDURE = 690,
-     RAND = 691,
-     REPLACE = 692,
-     RIGHT = 693,
-     ROUND = 694,
-     SECOND_SYM = 695,
-     SECOND_MICROSECOND_SYM = 696,
-     SHARE_SYM = 697,
-     SUBDATE_SYM = 698,
-     SUBSTRING = 699,
-     SUBSTRING_INDEX = 700,
-     TRIM = 701,
-     UDA_CHAR_SUM = 702,
-     UDA_FLOAT_SUM = 703,
-     UDA_INT_SUM = 704,
-     UDF_CHAR_FUNC = 705,
-     UDF_FLOAT_FUNC = 706,
-     UDF_INT_FUNC = 707,
-     UNIQUE_USERS = 708,
-     UNIX_TIMESTAMP = 709,
-     USER = 710,
-     UTC_DATE_SYM = 711,
-     UTC_TIME_SYM = 712,
-     UTC_TIMESTAMP_SYM = 713,
-     WEEK_SYM = 714,
-     WHEN_SYM = 715,
-     WORK_SYM = 716,
-     YEAR_MONTH_SYM = 717,
-     YEAR_SYM = 718,
-     YEARWEEK = 719,
-     BENCHMARK_SYM = 720,
-     END = 721,
-     THEN_SYM = 722,
-     SQL_BIG_RESULT = 723,
-     SQL_CACHE_SYM = 724,
-     SQL_CALC_FOUND_ROWS = 725,
-     SQL_NO_CACHE_SYM = 726,
-     SQL_SMALL_RESULT = 727,
-     SQL_BUFFER_RESULT = 728,
-     ISSUER_SYM = 729,
-     CIPHER_SYM = 730,
-     BEFORE_SYM = 731,
-     NEG = 732
+     POINTFROMTEXT = 684,
+     POINT_SYM = 685,
+     POLYFROMTEXT = 686,
+     POLYGON = 687,
+     POSITION_SYM = 688,
+     PROCEDURE = 689,
+     RAND = 690,
+     REPLACE = 691,
+     RIGHT = 692,
+     ROUND = 693,
+     SECOND_SYM = 694,
+     SECOND_MICROSECOND_SYM = 695,
+     SHARE_SYM = 696,
+     SUBDATE_SYM = 697,
+     SUBSTRING = 698,
+     SUBSTRING_INDEX = 699,
+     TRIM = 700,
+     UDA_CHAR_SUM = 701,
+     UDA_FLOAT_SUM = 702,
+     UDA_INT_SUM = 703,
+     UDF_CHAR_FUNC = 704,
+     UDF_FLOAT_FUNC = 705,
+     UDF_INT_FUNC = 706,
+     UNIQUE_USERS = 707,
+     UNIX_TIMESTAMP = 708,
+     USER = 709,
+     UTC_DATE_SYM = 710,
+     UTC_TIME_SYM = 711,
+     UTC_TIMESTAMP_SYM = 712,
+     WEEK_SYM = 713,
+     WHEN_SYM = 714,
+     WORK_SYM = 715,
+     YEAR_MONTH_SYM = 716,
+     YEAR_SYM = 717,
+     YEARWEEK = 718,
+     BENCHMARK_SYM = 719,
+     END = 720,
+     THEN_SYM = 721,
+     SQL_BIG_RESULT = 722,
+     SQL_CACHE_SYM = 723,
+     SQL_CALC_FOUND_ROWS = 724,
+     SQL_NO_CACHE_SYM = 725,
+     SQL_SMALL_RESULT = 726,
+     SQL_BUFFER_RESULT = 727,
+     ISSUER_SYM = 728,
+     CIPHER_SYM = 729,
+     BEFORE_SYM = 730,
+     NEG = 731
    };
 #endif
 #define END_OF_INPUT 258
@@ -932,55 +931,54 @@
 #define NOW_SYM 681
 #define OLD_PASSWORD 682
 #define PASSWORD 683
-#define PARAM_MARKER 684
-#define POINTFROMTEXT 685
-#define POINT_SYM 686
-#define POLYFROMTEXT 687
-#define POLYGON 688
-#define POSITION_SYM 689
-#define PROCEDURE 690
-#define RAND 691
-#define REPLACE 692
-#define RIGHT 693
-#define ROUND 694
-#define SECOND_SYM 695
-#define SECOND_MICROSECOND_SYM 696
-#define SHARE_SYM 697
-#define SUBDATE_SYM 698
-#define SUBSTRING 699
-#define SUBSTRING_INDEX 700
-#define TRIM 701
-#define UDA_CHAR_SUM 702
-#define UDA_FLOAT_SUM 703
-#define UDA_INT_SUM 704
-#define UDF_CHAR_FUNC 705
-#define UDF_FLOAT_FUNC 706
-#define UDF_INT_FUNC 707
-#define UNIQUE_USERS 708
-#define UNIX_TIMESTAMP 709
-#define USER 710
-#define UTC_DATE_SYM 711
-#define UTC_TIME_SYM 712
-#define UTC_TIMESTAMP_SYM 713
-#define WEEK_SYM 714
-#define WHEN_SYM 715
-#define WORK_SYM 716
-#define YEAR_MONTH_SYM 717
-#define YEAR_SYM 718
-#define YEARWEEK 719
-#define BENCHMARK_SYM 720
-#define END 721
-#define THEN_SYM 722
-#define SQL_BIG_RESULT 723
-#define SQL_CACHE_SYM 724
-#define SQL_CALC_FOUND_ROWS 725
-#define SQL_NO_CACHE_SYM 726
-#define SQL_SMALL_RESULT 727
-#define SQL_BUFFER_RESULT 728
-#define ISSUER_SYM 729
-#define CIPHER_SYM 730
-#define BEFORE_SYM 731
-#define NEG 732
+#define POINTFROMTEXT 684
+#define POINT_SYM 685
+#define POLYFROMTEXT 686
+#define POLYGON 687
+#define POSITION_SYM 688
+#define PROCEDURE 689
+#define RAND 690
+#define REPLACE 691
+#define RIGHT 692
+#define ROUND 693
+#define SECOND_SYM 694
+#define SECOND_MICROSECOND_SYM 695
+#define SHARE_SYM 696
+#define SUBDATE_SYM 697
+#define SUBSTRING 698
+#define SUBSTRING_INDEX 699
+#define TRIM 700
+#define UDA_CHAR_SUM 701
+#define UDA_FLOAT_SUM 702
+#define UDA_INT_SUM 703
+#define UDF_CHAR_FUNC 704
+#define UDF_FLOAT_FUNC 705
+#define UDF_INT_FUNC 706
+#define UNIQUE_USERS 707
+#define UNIX_TIMESTAMP 708
+#define USER 709
+#define UTC_DATE_SYM 710
+#define UTC_TIME_SYM 711
+#define UTC_TIMESTAMP_SYM 712
+#define WEEK_SYM 713
+#define WHEN_SYM 714
+#define WORK_SYM 715
+#define YEAR_MONTH_SYM 716
+#define YEAR_SYM 717
+#define YEARWEEK 718
+#define BENCHMARK_SYM 719
+#define END 720
+#define THEN_SYM 721
+#define SQL_BIG_RESULT 722
+#define SQL_CACHE_SYM 723
+#define SQL_CALC_FOUND_ROWS 724
+#define SQL_NO_CACHE_SYM 725
+#define SQL_SMALL_RESULT 726
+#define SQL_BUFFER_RESULT 727
+#define ISSUER_SYM 728
+#define CIPHER_SYM 729
+#define BEFORE_SYM 730
+#define NEG 731
 
 
 
@@ -1021,8 +1019,8 @@ typedef union YYSTYPE {
   st_select_lex *select_lex;
   chooser_compare_func_creator boolfunc2creator;
 } YYSTYPE;
-/* Line 1318 of yacc.c.  */
-#line 1026 "sql_yacc.h"
+/* Line 1275 of yacc.c.  */
+#line 1024 "y.tab.h"
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
 # define YYSTYPE_IS_TRIVIAL 1

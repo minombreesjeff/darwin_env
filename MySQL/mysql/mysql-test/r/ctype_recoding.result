@@ -181,18 +181,11 @@ select * from t1 where a=_koi8r'вася';
 a
 вася
 select * from t1 where a=concat(_koi8r'вася');
-a
-вася
+ERROR HY000: Illegal mix of collations (cp1251_general_ci,IMPLICIT) and (koi8r_general_ci,COERCIBLE) for operation '='
 select * from t1 where a=_latin1'вася';
 ERROR HY000: Illegal mix of collations (cp1251_general_ci,IMPLICIT) and (latin1_swedish_ci,COERCIBLE) for operation '='
 drop table t1;
 set names latin1;
-create table t1 (a char(10) character set utf8 collate utf8_bin);
-insert into t1 values ('       xxx');
-select * from t1 where a=lpad('xxx',10,' ');
-a
-       xxx
-drop table t1;
 set names koi8r;
 create table t1 (c1 char(10) character set cp1251);
 insert into t1 values ('ъ');
@@ -247,14 +240,3 @@ lpad(c1,3,'Ж')	lpad('Ж',3,c1)
 select rpad(c1,3,'Ж'), rpad('Ж',3,c1) from t1;
 rpad(c1,3,'Ж')	rpad('Ж',3,c1)
 ъЖЖ	Жъъ
-drop table t1;
-set names koi8r;
-create table t1(a char character set cp1251 default _koi8r 0xFF);
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` char(1) character set cp1251 default 'Ъ'
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-drop table t1;
-create table t1(a char character set latin1 default _cp1251 0xFF);
-ERROR 42000: Invalid default value for 'a'

@@ -248,6 +248,15 @@ void Dbacc::execFSCLOSECONF(Signal* signal)
   return;
 }//Dbacc::execFSCLOSECONF()
 
+/* ******************--------------------------------------------------------------- */
+/* FSCLOSEREF                                          OPENFILE CONF                 */
+/* ******************------------------------------+                                 */
+/*   SENDER: FS,     LEVEL B       */
+void Dbacc::execFSCLOSEREF(Signal* signal) 
+{
+  jamEntry();
+  ndbrequire(false);
+}//Dbacc::execFSCLOSEREF()
 
 /* ******************--------------------------------------------------------------- */
 /* FSOPENCONF                                         OPENFILE CONF                  */
@@ -295,6 +304,15 @@ void Dbacc::execFSOPENCONF(Signal* signal)
   return;
 }//Dbacc::execFSOPENCONF()
 
+/* ******************--------------------------------------------------------------- */
+/* FSOPENREF                                         OPENFILE REF                    */
+/* ******************------------------------------+                                 */
+/*   SENDER: FS,     LEVEL B       */
+void Dbacc::execFSOPENREF(Signal* signal) 
+{
+  jamEntry();
+  ndbrequire(false);
+}//Dbacc::execFSOPENREF()
 
 /* ******************--------------------------------------------------------------- */
 /* FSREADCONF                                          OPENFILE CONF                 */
@@ -348,6 +366,16 @@ void Dbacc::execFSREADCONF(Signal* signal)
   return;
 }//Dbacc::execFSREADCONF()
 
+/* ******************--------------------------------------------------------------- */
+/* FSREADRREF                                          OPENFILE CONF                 */
+/* ******************------------------------------+                                 */
+/*   SENDER: FS,     LEVEL B       */
+void Dbacc::execFSREADREF(Signal* signal) 
+{
+  jamEntry();
+  progError(0, __LINE__, "Read of file refused");
+  return;
+}//Dbacc::execFSREADREF()
 
 /* ******************--------------------------------------------------------------- */
 /* FSWRITECONF                                         OPENFILE CONF                 */
@@ -451,6 +479,16 @@ void Dbacc::execFSWRITECONF(Signal* signal)
   return;
 }//Dbacc::execFSWRITECONF()
 
+/* ******************--------------------------------------------------------------- */
+/* FSWRITEREF                                          OPENFILE CONF                 */
+/* ******************------------------------------+                                 */
+/*   SENDER: FS,     LEVEL B       */
+void Dbacc::execFSWRITEREF(Signal* signal) 
+{
+  jamEntry();
+  progError(0, __LINE__, "Write to file refused");
+  return;
+}//Dbacc::execFSWRITEREF()
 
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
@@ -684,12 +722,10 @@ void Dbacc::execREAD_CONFIG_REQ(Signal* signal)
   ndbrestart1Lab(signal);
 
   clblPagesPerTick = 50;
-  ndb_mgm_get_int_parameter(p, CFG_DB_LCP_DISC_PAGES_ACC_SR, 
-			    &clblPagesPerTick);
+  //ndb_mgm_get_int_parameter(p, CFG_DB_, &clblPagesPerTick);
 
   clblPagesPerTickAfterSr = 50;
-  ndb_mgm_get_int_parameter(p, CFG_DB_LCP_DISC_PAGES_ACC, 
-			    &clblPagesPerTickAfterSr);
+  //ndb_mgm_get_int_parameter(p, CFG_DB_, &clblPagesPerTickAfterSr);
 
   tdata0 = 0;
   initialiseRecordsLab(signal, ref, senderData);
@@ -1387,6 +1423,10 @@ void Dbacc::execFSREMOVECONF(Signal* signal)
   tabPtr.p->tabUserRef = 0;
 }//Dbacc::execFSREMOVECONF()
 
+void Dbacc::execFSREMOVEREF(Signal* signal)
+{
+  ndbrequire(false);
+}//Dbacc::execFSREMOVEREF()
 
 /* -------------------------------------------------------------------------- */
 /* ADDFRAGTOTAB                                                               */
@@ -6158,24 +6198,7 @@ Uint32 Dbacc::executeNextOperation(Signal* signal)
       sendSignal(operationRecPtr.p->userblockref, GSN_ACCKEYREF, signal, 2, JBB);
       return operationRecPtr.p->elementIsDisappeared;
     }//if
-  } 
-  else if(operationRecPtr.p->operation == ZWRITE)
-  {
-    jam();
-    operationRecPtr.p->operation = ZINSERT;
-    if (operationRecPtr.p->prevParallelQue != RNIL) {
-      OperationrecPtr prevOpPtr;
-      jam();
-      prevOpPtr.i = operationRecPtr.p->prevParallelQue;
-      ptrCheckGuard(prevOpPtr, coprecsize, operationrec);
-      if (prevOpPtr.p->operation != ZDELETE) 
-      {
-        jam();
-        operationRecPtr.p->operation = ZUPDATE;
-      }
-    }
-  }
-
+  }//if
   if (operationRecPtr.p->operation == ZSCAN_OP &&
       ! operationRecPtr.p->isAccLockReq) {
     jam();

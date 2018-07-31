@@ -78,7 +78,6 @@ public:
   
   const Node &  getNodeInfo(NodeId) const;
   Uint32        getNoOfConnectedNodes() const;
-  Uint32        m_connect_count;
   
 private:
   Uint32        noOfAliveNodes;

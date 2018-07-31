@@ -25,8 +25,6 @@
 #include <m_ctype.h>
 #include "sql_select.h"
 
-static bool convert_constant_item(THD *thd, Field *field, Item **item);
-
 static Item_result item_store_type(Item_result a,Item_result b)
 {
   if (a == STRING_RESULT || b == STRING_RESULT)
@@ -39,54 +37,21 @@ static Item_result item_store_type(Item_result a,Item_result b)
 
 static void agg_result_type(Item_result *type, Item **items, uint nitems)
 {
-  Item **item, **item_end;
-
-  *type= STRING_RESULT;
-  /* Skip beginning NULL items */
-  for (item= items, item_end= item + nitems; item < item_end; item++)
-  {
-    if ((*item)->type() != Item::NULL_ITEM)
-    {
-      *type= (*item)->result_type();
-      item++;
-      break;
-    }
-  }
-  /* Combine result types. Note: NULL items don't affect the result */
-  for (; item < item_end; item++)
-  {
-    if ((*item)->type() != Item::NULL_ITEM)
-      *type= item_store_type(type[0], (*item)->result_type());
-  }
+  uint i;
+  type[0]= items[0]->result_type();
+  for (i=1 ; i < nitems ; i++)
+    type[0]= item_store_type(type[0], items[i]->result_type());
 }
 
-
-/*
-  Aggregates result types from the array of items.
-
-  SYNOPSIS:
-    agg_cmp_type()
-    thd          thread handle
-    type   [out] the aggregated type
-    items        array of items to aggregate the type from
-    nitems       number of items in the array
-
-  DESCRIPTION
-    This function aggregates result types from the array of items. Found type
-    supposed to be used later for comparison of values of these items.
-    Aggregation itself is performed by the item_cmp_type() function.
-*/
-
-static void agg_cmp_type(THD *thd, Item_result *type, Item **items, uint nitems)
+static void agg_cmp_type(Item_result *type, Item **items, uint nitems)
 {
   uint i;
   type[0]= items[0]->result_type();
-  for (i= 1 ; i < nitems ; i++)
+  for (i=1 ; i < nitems ; i++)
     type[0]= item_cmp_type(type[0], items[i]->result_type());
 }
 
-static void my_coll_agg_error(DTCollation &c1, DTCollation &c2,
-                              const char *fname)
+static void my_coll_agg_error(DTCollation &c1, DTCollation &c2, const char *fname)
 {
   my_error(ER_CANT_AGGREGATE_2COLLATIONS,MYF(0),
   	   c1.collation->name,c1.derivation_name(),
@@ -855,55 +820,6 @@ longlong Item_func_interval::val_int()
   return i-1;
 }
 
-
-/*
-  Perform context analysis of a BETWEEN item tree
-
-  SYNOPSIS:
-    fix_fields()
-    thd     reference to the global context of the query thread
-    tables  list of all open tables involved in the query
-    ref     pointer to Item* variable where pointer to resulting "fixed"
-            item is to be assigned
-
-  DESCRIPTION
-    This function performs context analysis (name resolution) and calculates
-    various attributes of the item tree with Item_func_between as its root.
-    The function saves in ref the pointer to the item or to a newly created
-    item that is considered as a replacement for the original one.
-
-  NOTES
-    Let T0(e)/T1(e) be the value of not_null_tables(e) when e is used on
-    a predicate/function level. Then it's easy to show that:
-      T0(e BETWEEN e1 AND e2)     = union(T1(e),T1(e1),T1(e2))
-      T1(e BETWEEN e1 AND e2)     = union(T1(e),intersection(T1(e1),T1(e2)))
-      T0(e NOT BETWEEN e1 AND e2) = union(T1(e),intersection(T1(e1),T1(e2)))
-      T1(e NOT BETWEEN e1 AND e2) = union(T1(e),intersection(T1(e1),T1(e2)))
-
-  RETURN
-    0   ok
-    1   got error
-*/
-
-bool Item_func_between::fix_fields(THD *thd, struct st_table_list *tables,
-                                   Item **ref)
-{
-  if (Item_func_opt_neg::fix_fields(thd, tables, ref))
-    return 1;
-
-  /* not_null_tables_cache == union(T1(e),T1(e1),T1(e2)) */
-  if (pred_level && !negated)
-    return 0;
-
-  /* not_null_tables_cache == union(T1(e), intersection(T1(e1),T1(e2))) */
-  not_null_tables_cache= (args[0]->not_null_tables() |
-                          (args[1]->not_null_tables() &
-                           args[2]->not_null_tables()));
-
-  return 0;
-}
-
-
 void Item_func_between::fix_length_and_dec()
 {
    max_length= 1;
@@ -915,10 +831,10 @@ void Item_func_between::fix_length_and_dec()
   */
   if (!args[0] || !args[1] || !args[2])
     return;
-  agg_cmp_type(thd, &cmp_type, args, 3);
+  agg_cmp_type(&cmp_type, args, 3);
   if (cmp_type == STRING_RESULT &&
       agg_arg_charsets(cmp_collation, args, 3, MY_COLL_CMP_CONV))
-   return;
+    return;
 
   /*
     Make a special case of compare with date/time and longlong fields.
@@ -955,9 +871,8 @@ longlong Item_func_between::val_int()
     a=args[1]->val_str(&value1);
     b=args[2]->val_str(&value2);
     if (!args[1]->null_value && !args[2]->null_value)
-      return (longlong) ((sortcmp(value,a,cmp_collation.collation) >= 0 &&
-                          sortcmp(value,b,cmp_collation.collation) <= 0) !=
-                         negated);
+      return (sortcmp(value,a,cmp_collation.collation) >= 0 && 
+	      sortcmp(value,b,cmp_collation.collation) <= 0) ? 1 : 0;
     if (args[1]->null_value && args[2]->null_value)
       null_value=1;
     else if (args[1]->null_value)
@@ -979,7 +894,7 @@ longlong Item_func_between::val_int()
     a=args[1]->val_int();
     b=args[2]->val_int();
     if (!args[1]->null_value && !args[2]->null_value)
-      return (longlong) ((value >= a && value <= b) != negated);
+      return (value >= a && value <= b) ? 1 : 0;
     if (args[1]->null_value && args[2]->null_value)
       null_value=1;
     else if (args[1]->null_value)
@@ -999,7 +914,7 @@ longlong Item_func_between::val_int()
     a=args[1]->val();
     b=args[2]->val();
     if (!args[1]->null_value && !args[2]->null_value)
-      return (longlong) ((value >= a && value <= b) != negated);
+      return (value >= a && value <= b) ? 1 : 0;
     if (args[1]->null_value && args[2]->null_value)
       null_value=1;
     else if (args[1]->null_value)
@@ -1011,7 +926,7 @@ longlong Item_func_between::val_int()
       null_value= value >= a;
     }
   }
-  return (longlong) (!null_value && negated);
+  return 0;
 }
 
 
@@ -1019,8 +934,6 @@ void Item_func_between::print(String *str)
 {
   str->append('(');
   args[0]->print(str);
-  if (negated)
-    str->append(" not", 4);
   str->append(" between ", 9);
   args[1]->print(str);
   str->append(" and ", 5);
@@ -1103,49 +1016,6 @@ Item_func_ifnull::val_str(String *str)
     return 0;
   res->set_charset(collation.collation);
   return res;
-}
-
-
-/*
-  Perform context analysis of an IF item tree
-
-  SYNOPSIS:
-    fix_fields()
-    thd     reference to the global context of the query thread
-    tables  list of all open tables involved in the query
-    ref     pointer to Item* variable where pointer to resulting "fixed"
-            item is to be assigned
-
-  DESCRIPTION
-    This function performs context analysis (name resolution) and calculates
-    various attributes of the item tree with Item_func_if as its root.
-    The function saves in ref the pointer to the item or to a newly created
-    item that is considered as a replacement for the original one.
-
-  NOTES
-    Let T0(e)/T1(e) be the value of not_null_tables(e) when e is used on
-    a predicate/function level. Then it's easy to show that:
-      T0(IF(e,e1,e2)  = T1(IF(e,e1,e2))
-      T1(IF(e,e1,e2)) = intersection(T1(e1),T1(e2))
-
-  RETURN
-    0   ok
-    1   got error
-*/
-
-bool
-Item_func_if::fix_fields(THD *thd, struct st_table_list *tlist, Item **ref)
-{
-  DBUG_ASSERT(fixed == 0);
-  args[0]->top_level_item();
-
-  if (Item_func::fix_fields(thd, tlist, ref))
-    return 1;
-
-  not_null_tables_cache= (args[1]->not_null_tables() &
-                          args[2]->not_null_tables());
-
-  return 0;
 }
 
 
@@ -1463,7 +1333,7 @@ void Item_func_case::fix_length_and_dec()
     for (nagg= 0; nagg < ncases/2 ; nagg++)
       agg[nagg+1]= args[nagg*2];
     nagg++;
-    agg_cmp_type(current_thd, &cmp_type, agg, nagg);
+    agg_cmp_type(&cmp_type, agg, nagg);
     if ((cmp_type == STRING_RESULT) &&
         agg_arg_charsets(cmp_collation, agg, nagg, MY_COLL_CMP_CONV))
     return;
@@ -1681,8 +1551,6 @@ in_row::~in_row()
 byte *in_row::get_value(Item *item)
 {
   tmp.store_value(item);
-  if (item->is_null())
-    return 0;
   return (byte *)&tmp;
 }
 
@@ -1880,56 +1748,6 @@ bool Item_func_in::nulls_in_row()
 }
 
 
-/*
-  Perform context analysis of an IN item tree
-
-  SYNOPSIS:
-    fix_fields()
-    thd     reference to the global context of the query thread
-    tables  list of all open tables involved in the query
-    ref     pointer to Item* variable where pointer to resulting "fixed"
-            item is to be assigned
-
-  DESCRIPTION
-    This function performs context analysis (name resolution) and calculates
-    various attributes of the item tree with Item_func_in as its root.
-    The function saves in ref the pointer to the item or to a newly created
-    item that is considered as a replacement for the original one.
-
-  NOTES
-    Let T0(e)/T1(e) be the value of not_null_tables(e) when e is used on
-    a predicate/function level. Then it's easy to show that:
-      T0(e IN(e1,...,en))     = union(T1(e),intersection(T1(ei)))
-      T1(e IN(e1,...,en))     = union(T1(e),intersection(T1(ei)))
-      T0(e NOT IN(e1,...,en)) = union(T1(e),union(T1(ei)))
-      T1(e NOT IN(e1,...,en)) = union(T1(e),intersection(T1(ei)))
-
-  RETURN
-    0   ok
-    1   got error
-*/
-
-bool
-Item_func_in::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
-{
-  Item **arg, **arg_end;
-
-  if (Item_func_opt_neg::fix_fields(thd, tables, ref))
-    return 1;
-
-  /* not_null_tables_cache == union(T1(e),union(T1(ei))) */
-  if (pred_level && negated)
-    return 0;
-
-  /* not_null_tables_cache = union(T1(e),intersection(T1(ei))) */
-  not_null_tables_cache= ~(table_map) 0;
-  for (arg= args + 1, arg_end= args + arg_count; arg != arg_end; arg++)
-    not_null_tables_cache&= (*arg)->not_null_tables();
-  not_null_tables_cache|= (*args)->not_null_tables();
-  return 0;
-}
-
-
 static int srtcmp_in(CHARSET_INFO *cs, const String *x,const String *y)
 {
   return cs->coll->strnncollsp(cs,
@@ -1944,7 +1762,7 @@ void Item_func_in::fix_length_and_dec()
   uint const_itm= 1;
   THD *thd= current_thd;
   
-  agg_cmp_type(thd, &cmp_type, args, arg_count);
+  agg_cmp_type(&cmp_type, args, arg_count);
 
   if (cmp_type == STRING_RESULT &&
       agg_arg_charsets(cmp_collation, args, arg_count, MY_COLL_CMP_CONV))
@@ -2007,8 +1825,6 @@ void Item_func_in::print(String *str)
 {
   str->append('(');
   args[0]->print(str);
-  if (negated)
-    str->append(" not", 4);
   str->append(" in (", 5);
   print_args(str, 1);
   str->append("))", 2);
@@ -2022,7 +1838,7 @@ longlong Item_func_in::val_int()
   {
     int tmp=array->find(args[0]);
     null_value=args[0]->null_value || (!tmp && have_null);
-    return (longlong) (!null_value && tmp != negated);
+    return tmp;
   }
   in_item->store_value(args[0]);
   if ((null_value=args[0]->null_value))
@@ -2031,11 +1847,11 @@ longlong Item_func_in::val_int()
   for (uint i=1 ; i < arg_count ; i++)
   {
     if (!in_item->cmp(args[i]) && !args[i]->null_value)
-      return (longlong) (!negated);
+      return 1;					// Would maybe be nice with i ?
     have_null|= args[i]->null_value;
   }
   null_value= have_null;
-  return (longlong) (!null_value && negated);
+  return 0;
 }
 
 
@@ -2475,43 +2291,7 @@ bool Item_func_like::fix_fields(THD *thd, TABLE_LIST *tlist, Item ** ref)
   {
     /* If we are on execution stage */
     String *escape_str= escape_item->val_str(&tmp_value1);
-    if (escape_str)
-    {
-      if (use_mb(cmp.cmp_collation.collation))
-      {
-        CHARSET_INFO *cs= escape_str->charset();
-        my_wc_t wc;
-        int rc= cs->cset->mb_wc(cs, &wc,
-                                (const uchar*) escape_str->ptr(),
-                                (const uchar*) escape_str->ptr() +
-                                               escape_str->length());
-        escape= (int) (rc > 0 ? wc : '\\');
-      }
-      else
-      {
-        /*
-          In the case of 8bit character set, we pass native
-          code instead of Unicode code as "escape" argument.
-          Convert to "cs" if charset of escape differs.
-        */
-        CHARSET_INFO *cs= cmp.cmp_collation.collation;
-        uint32 unused;
-        if (escape_str->needs_conversion(escape_str->length(),
-                                         escape_str->charset(), cs, &unused))
-        {
-          char ch;
-          uint errors;
-          uint32 cnvlen= copy_and_convert(&ch, 1, cs, escape_str->ptr(),
-                                          escape_str->length(),
-                                          escape_str->charset(), &errors);
-          escape= cnvlen ? ch : '\\';
-        }
-        else
-          escape= *(escape_str->ptr());
-      }
-    }
-    else
-      escape= '\\';
+    escape= escape_str ? *(escape_str->ptr()) : '\\';
  
     /*
       We could also do boyer-more for non-const items, but as we would have to
@@ -2558,12 +2338,6 @@ bool Item_func_like::fix_fields(THD *thd, TABLE_LIST *tlist, Item ** ref)
   return 0;
 }
 
-void Item_func_like::cleanup()
-{
-  canDoTurboBM= FALSE;
-  Item_bool_func2::cleanup();
-}
-
 #ifdef USE_REGEX
 
 bool
@@ -2597,14 +2371,14 @@ Item_func_regex::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
       return 0;
     }
     int error;
-    if ((error= my_regcomp(&preg,res->c_ptr(),
-                           ((cmp_collation.collation->state &
-                             (MY_CS_BINSORT | MY_CS_CSSORT)) ?
-                            REG_EXTENDED | REG_NOSUB :
-                            REG_EXTENDED | REG_NOSUB | REG_ICASE),
-                           cmp_collation.collation)))
+    if ((error= regcomp(&preg,res->c_ptr(),
+                        ((cmp_collation.collation->state &
+                          (MY_CS_BINSORT | MY_CS_CSSORT)) ?
+                         REG_EXTENDED | REG_NOSUB :
+                         REG_EXTENDED | REG_NOSUB | REG_ICASE),
+                        cmp_collation.collation)))
     {
-      (void) my_regerror(error,&preg,buff,sizeof(buff));
+      (void) regerror(error,&preg,buff,sizeof(buff));
       my_printf_error(ER_REGEXP_ERROR,ER(ER_REGEXP_ERROR),MYF(0),buff);
       return 1;
     }
@@ -2646,15 +2420,15 @@ longlong Item_func_regex::val_int()
       prev_regexp.copy(*res2);
       if (regex_compiled)
       {
-	my_regfree(&preg);
+	regfree(&preg);
 	regex_compiled=0;
       }
-      if (my_regcomp(&preg,res2->c_ptr(),
-                     ((cmp_collation.collation->state &
-                       (MY_CS_BINSORT | MY_CS_CSSORT)) ?
-                      REG_EXTENDED | REG_NOSUB :
-                      REG_EXTENDED | REG_NOSUB | REG_ICASE),
-                     cmp_collation.collation))
+      if (regcomp(&preg,res2->c_ptr(),
+                  ((cmp_collation.collation->state &
+                    (MY_CS_BINSORT | MY_CS_CSSORT)) ?
+                   REG_EXTENDED | REG_NOSUB :
+                   REG_EXTENDED | REG_NOSUB | REG_ICASE),
+                   cmp_collation.collation))
       {
 	null_value=1;
 	return 0;
@@ -2663,7 +2437,7 @@ longlong Item_func_regex::val_int()
     }
   }
   null_value=0;
-  return my_regexec(&preg,res->c_ptr(),0,(my_regmatch_t*) 0,0) ? 0 : 1;
+  return regexec(&preg,res->c_ptr(),0,(regmatch_t*) 0,0) ? 0 : 1;
 }
 
 
@@ -2673,7 +2447,7 @@ void Item_func_regex::cleanup()
   Item_bool_func::cleanup();
   if (regex_compiled)
   {
-    my_regfree(&preg);
+    regfree(&preg);
     regex_compiled=0;
   }
   DBUG_VOID_RETURN;
@@ -3015,28 +2789,6 @@ Item *Item_cond_or::neg_transformer(THD *thd)	/* NOT(a OR b OR ...)  -> */
   return item;
 }
 
-
-Item *Item_func_nop_all::neg_transformer(THD *thd)
-{
-  /* "NOT (e $cmp$ ANY (SELECT ...)) -> e $rev_cmp$" ALL (SELECT ...) */
-  Item_func_not_all *new_item= new Item_func_not_all(args[0]);
-  Item_allany_subselect *allany= (Item_allany_subselect*)args[0];
-  allany->func= allany->func_creator(FALSE);
-  allany->all= !allany->all;
-  allany->upper_item= new_item;
-  return new_item;
-}
-
-Item *Item_func_not_all::neg_transformer(THD *thd)
-{
-  /* "NOT (e $cmp$ ALL (SELECT ...)) -> e $rev_cmp$" ANY (SELECT ...) */
-  Item_func_nop_all *new_item= new Item_func_nop_all(args[0]);
-  Item_allany_subselect *allany= (Item_allany_subselect*)args[0];
-  allany->all= !allany->all;
-  allany->func= allany->func_creator(TRUE);
-  allany->upper_item= new_item;
-  return new_item;
-}
 
 Item *Item_func_eq::negated_item()		/* a = b  ->  a != b */
 {

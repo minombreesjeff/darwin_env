@@ -25,6 +25,7 @@
 #include <AttributeHeader.hpp>
 #include <Interpreter.hpp>
 #include <signaldata/FsConf.hpp>
+#include <signaldata/FsRef.hpp>
 #include <signaldata/FsRemoveReq.hpp>
 #include <signaldata/TupCommit.hpp>
 #include <signaldata/TupKey.hpp>
@@ -116,9 +117,13 @@ Dbtup::Dbtup(const class Configuration & conf)
   addRecSignal(GSN_TUP_SRREQ, &Dbtup::execTUP_SRREQ);
   addRecSignal(GSN_TUP_PREPLCPREQ, &Dbtup::execTUP_PREPLCPREQ);
   addRecSignal(GSN_FSOPENCONF, &Dbtup::execFSOPENCONF);
+  addRecSignal(GSN_FSOPENREF, &Dbtup::execFSOPENREF);
   addRecSignal(GSN_FSCLOSECONF, &Dbtup::execFSCLOSECONF);
+  addRecSignal(GSN_FSCLOSEREF, &Dbtup::execFSCLOSEREF);
   addRecSignal(GSN_FSWRITECONF, &Dbtup::execFSWRITECONF);
+  addRecSignal(GSN_FSWRITEREF, &Dbtup::execFSWRITEREF);
   addRecSignal(GSN_FSREADCONF, &Dbtup::execFSREADCONF);
+  addRecSignal(GSN_FSREADREF, &Dbtup::execFSREADREF);
   addRecSignal(GSN_NDB_STTOR, &Dbtup::execNDB_STTOR);
   addRecSignal(GSN_READ_CONFIG_REQ, &Dbtup::execREAD_CONFIG_REQ, true);
   addRecSignal(GSN_SET_VAR_REQ,  &Dbtup::execSET_VAR_REQ);
@@ -128,6 +133,7 @@ Dbtup::Dbtup(const class Configuration & conf)
   addRecSignal(GSN_DROP_TRIG_REQ,  &Dbtup::execDROP_TRIG_REQ);
 
   addRecSignal(GSN_DROP_TAB_REQ, &Dbtup::execDROP_TAB_REQ);
+  addRecSignal(GSN_FSREMOVEREF, &Dbtup::execFSREMOVEREF);
   addRecSignal(GSN_FSREMOVECONF, &Dbtup::execFSREMOVECONF);
 
   addRecSignal(GSN_TUP_ALLOCREQ, &Dbtup::execTUP_ALLOCREQ);
@@ -257,6 +263,12 @@ void Dbtup::execFSCLOSECONF(Signal* signal)
   releasePendingFileOpenInfoRecord(pfoPtr);
 }//Dbtup::execFSCLOSECONF()
 
+void Dbtup::execFSCLOSEREF(Signal* signal) 
+{
+  ljamEntry();
+  ndbrequire(false);
+}//Dbtup::execFSCLOSEREF()
+
 void Dbtup::execFSOPENCONF(Signal* signal) 
 {
   PendingFileOpenInfoPtr pfoPtr;
@@ -351,6 +363,12 @@ void Dbtup::execFSOPENCONF(Signal* signal)
   releasePendingFileOpenInfoRecord(pfoPtr);
 }//Dbtup::execFSOPENCONF()
 
+void Dbtup::execFSOPENREF(Signal* signal) 
+{
+  ljamEntry();
+  ndbrequire(false);
+}//Dbtup::execFSOPENREF()
+
 void Dbtup::execFSREADCONF(Signal* signal) 
 {
   DiskBufferSegmentInfoPtr dbsiPtr;
@@ -406,6 +424,12 @@ void Dbtup::execFSREADCONF(Signal* signal)
   }//switch
 }//Dbtup::execFSREADCONF()
 
+void Dbtup::execFSREADREF(Signal* signal) 
+{
+  ljamEntry();
+  ndbrequire(false);
+}//Dbtup::execFSREADREF()
+
 void Dbtup::execFSWRITECONF(Signal* signal) 
 {
   DiskBufferSegmentInfoPtr dbsiPtr;
@@ -453,6 +477,12 @@ void Dbtup::execFSWRITECONF(Signal* signal)
   }//switch
   return;
 }//Dbtup::execFSWRITECONF()
+
+void Dbtup::execFSWRITEREF(Signal* signal) 
+{
+  ljamEntry();
+  ndbrequire(false);
+}//Dbtup::execFSWRITEREF()
 
 void Dbtup::execCONTINUEB(Signal* signal) 
 {
@@ -633,12 +663,10 @@ void Dbtup::execREAD_CONFIG_REQ(Signal* signal)
   initialiseRecordsLab(signal, 0, ref, senderData);
 
   clblPagesPerTick = 50;
-  ndb_mgm_get_int_parameter(p, CFG_DB_LCP_DISC_PAGES_TUP_SR, 
-			    &clblPagesPerTick);
+  //ndb_mgm_get_int_parameter(p, CFG_DB_, &clblPagesPerTick);
 
   clblPagesPerTickAfterSr = 50;
-  ndb_mgm_get_int_parameter(p, CFG_DB_LCP_DISC_PAGES_TUP, 
-			    &clblPagesPerTickAfterSr);
+  //ndb_mgm_get_int_parameter(p, CFG_DB_, &clblPagesPerTickAfterSr);
 
 }//Dbtup::execSIZEALT_REP()
 

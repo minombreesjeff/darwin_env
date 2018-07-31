@@ -213,7 +213,7 @@ static int my_strnncoll_cp932_internal(CHARSET_INFO *cs,
       uint a_char= cp932code(*a, *(a+1));
       uint b_char= cp932code(*b, *(b+1));
       if (a_char != b_char)
-	return (int) a_char - (int) b_char;
+	return a_char - b_char;
       a += 2;
       b += 2;
     } else
@@ -244,7 +244,9 @@ static int my_strnncoll_cp932(CHARSET_INFO *cs __attribute__((unused)),
 
 static int my_strnncollsp_cp932(CHARSET_INFO *cs __attribute__((unused)),
                                 const uchar *a, uint a_length, 
-                                const uchar *b, uint b_length)
+                                const uchar *b, uint b_length,
+                                my_bool diff_if_only_endspace_difference
+                                __attribute__((unused)))
 {
   const uchar *a_end= a + a_length;
   const uchar *b_end= b + b_length;
@@ -322,13 +324,11 @@ static my_bool my_like_range_cp932(CHARSET_INFO *cs __attribute__((unused)),
 				  uint res_length, char *min_str,char *max_str,
 				  uint *min_length,uint *max_length)
 {
-  const char *end= ptr + ptr_length;
+  const char *end=ptr+ptr_length;
   char *min_org=min_str;
   char *min_end=min_str+res_length;
-  uint charlen= res_length / cs->mbmaxlen;
 
-  for ( ; ptr < end && min_str < min_end && charlen > 0 ; charlen--)
-  {
+  while (ptr < end && min_str < min_end) {
     if (ismbchar_cp932(cs, ptr, end)) {
       *min_str++ = *max_str++ = *ptr++;
       if (min_str < min_end)
@@ -5355,7 +5355,7 @@ my_mb_wc_cp932(CHARSET_INFO *cs  __attribute__((unused)),
   int hi=s[0];
   
   if (s >= e)
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOFEW(0);
   
   if (hi < 0x80)
   {
@@ -5370,10 +5370,10 @@ my_mb_wc_cp932(CHARSET_INFO *cs  __attribute__((unused)),
   }
   
   if (s+2>e)
-    return MY_CS_TOOSMALL2;
+    return MY_CS_TOOFEW(0);
   
   if (!(pwc[0]=func_cp932_uni_onechar((hi<<8)+s[1])))
-    return -2;
+    return MY_CS_ILSEQ;
   
   return 2;
 }
@@ -5446,7 +5446,7 @@ uint my_well_formed_len_cp932(CHARSET_INFO *cs __attribute__((unused)),
       break;
     }
   }
-  return (uint) (b - b0);
+  return b - b0;
 }
 
 
@@ -5517,7 +5517,6 @@ CHARSET_INFO my_charset_cp932_japanese_ci=
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -5545,7 +5544,6 @@ CHARSET_INFO my_charset_cp932_bin=
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler
 };

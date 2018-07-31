@@ -79,8 +79,7 @@ myisamchk$suffix -se test1
 
 # check of myisampack / myisamchk
 myisampack$suffix --force -s test1
-# Ignore error for index file
-myisamchk$suffix -es test1 2>&1 >& /dev/null
+myisamchk$suffix -es test1
 myisamchk$suffix -rqs test1
 myisamchk$suffix -es test1
 myisamchk$suffix -rs test1

@@ -23,7 +23,6 @@
 #include <NdbBlob.hpp>
 #include "NdbBlobImpl.hpp"
 #include <NdbScanOperation.hpp>
-#include <signaldata/TcKeyReq.hpp>
 
 #ifdef NDB_BLOB_DEBUG
 #define DBG(x) \
@@ -138,7 +137,7 @@ NdbBlob::getBlobTable(NdbTableImpl& bt, const NdbTableImpl* t, const NdbColumnIm
 
 // initialization
 
-NdbBlob::NdbBlob(Ndb*)
+NdbBlob::NdbBlob()
 {
   init();
 }
@@ -289,13 +288,6 @@ NdbBlob::isScanOp()
   return
     theNdbOp->theOperationType == NdbOperation::OpenScanRequest ||
     theNdbOp->theOperationType == NdbOperation::OpenRangeScanRequest;
-}
-
-inline bool
-NdbBlob::isTakeOverOp()
-{
-  return
-    TcKeyReq::getTakeOverScanFlag(theNdbOp->theScanInfo);
 }
 
 // computations (inline)
@@ -967,8 +959,6 @@ int
 NdbBlob::deletePartsUnknown(Uint32 part)
 {
   DBG("deletePartsUnknown [in] part=" << part << " count=all");
-  if (thePartSize == 0) // tinyblob
-    return 0;
   static const unsigned maxbat = 256;
   static const unsigned minbat = 1;
   unsigned bat = minbat;
@@ -1226,22 +1216,8 @@ NdbBlob::preExecute(ExecType anExecType, bool& batch)
     if (isUpdateOp() || isWriteOp() || isDeleteOp()) {
       // add operation before this one to read head+inline
       NdbOperation* tOp = theNdbCon->getNdbOperation(theTable, theNdbOp);
-      /*
-       * If main op is from take over scan lock, the added read is done
-       * as committed read:
-       *
-       * In normal transactional case, the row is locked by us and
-       * committed read returns same as normal read.
-       *
-       * In current TRUNCATE TABLE, the deleting trans is committed in
-       * batches and then restarted with new trans id.  A normal read
-       * would hang on the scan delete lock and then fail.
-       */
-      NdbOperation::LockMode lockMode =
-        ! isTakeOverOp() ?
-          NdbOperation::LM_Read : NdbOperation::LM_CommittedRead;
       if (tOp == NULL ||
-          tOp->readTuple(lockMode) == -1 ||
+          tOp->readTuple() == -1 ||
           setTableKeyValue(tOp) == -1 ||
           getHeadInlineValue(tOp) == -1) {
         setErrorCode(tOp);

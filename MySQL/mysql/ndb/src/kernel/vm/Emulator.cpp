@@ -30,16 +30,13 @@
 #include <NodeState.hpp>
 
 #include <NdbMem.h>
+#include <NdbOut.hpp>
 #include <NdbMutex.h>
 #include <NdbSleep.h>
-
-#include <EventLogger.hpp>
 
 extern "C" {
   extern void (* ndb_new_handler)();
 }
-extern EventLogger g_eventLogger;
-extern my_bool opt_core;
 
 /**
  * Declare the global variables 
@@ -144,50 +141,45 @@ NdbShutdown(NdbShutdownType type,
     
     switch(type){
     case NST_Normal:
-      g_eventLogger.info("Shutdown initiated");
+      ndbout << "Shutdown initiated" << endl;
       break;
     case NST_Watchdog:
-      g_eventLogger.info("Watchdog %s system", shutting);
+      ndbout << "Watchdog " << shutting << " system" << endl;
       break;
     case NST_ErrorHandler:
-      g_eventLogger.info("Error handler %s system", shutting);
+      ndbout << "Error handler " << shutting << " system" << endl;
       break;
     case NST_ErrorHandlerSignal:
-      g_eventLogger.info("Error handler signal %s system", shutting);
-      break;
-    case NST_ErrorHandlerStartup:
-      g_eventLogger.info("Error handler startup %s system", shutting);
+      ndbout << "Error handler signal " << shutting << " system" << endl;
       break;
     case NST_Restart:
-      g_eventLogger.info("Restarting system");
+      ndbout << "Restarting system" << endl;
       break;
     default:
-      g_eventLogger.info("Error handler %s system (unknown type: %u)",
-			 shutting, (unsigned)type);
+      ndbout << "Error handler " << shutting << " system"
+	     << " (unknown type: " << (unsigned)type << ")" << endl;
       type = NST_ErrorHandler;
       break;
     }
     
     const char * exitAbort = 0;
-    if (opt_core)
-      exitAbort = "aborting";
-    else
-      exitAbort = "exiting";
+#if defined VM_TRACE && ( ! ( defined NDB_OSE || defined NDB_SOFTOSE) )
+    exitAbort = "aborting";
+#else
+    exitAbort = "exiting";
+#endif
     
     if(type == NST_Watchdog){
       /**
        * Very serious, don't attempt to free, just die!!
        */
-      g_eventLogger.info("Watchdog shutdown completed - %s", exitAbort);
-      if (opt_core)
-      {
-	signal(6, SIG_DFL);
-	abort();
-      }
-      else
-      {
-	exit(-1);
-      }
+      ndbout << "Watchdog shutdown completed - " << exitAbort << endl;
+#if defined VM_TRACE && ( ! ( defined NDB_OSE || defined NDB_SOFTOSE) )
+      signal(6, SIG_DFL);
+      abort();
+#else
+      exit(-1);
+#endif
     }
 
 #ifndef NDB_WIN32
@@ -235,19 +227,13 @@ NdbShutdown(NdbShutdownType type,
     }
     
     if(type != NST_Normal && type != NST_Restart){
-      // Signal parent that error occured during startup
-      if (type == NST_ErrorHandlerStartup)
-	kill(getppid(), SIGUSR1);
-      g_eventLogger.info("Error handler shutdown completed - %s", exitAbort);
-      if (opt_core)
-      {
-	signal(6, SIG_DFL);
-	abort();
-      }
-      else
-      {
-	exit(-1);
-      }
+      ndbout << "Error handler shutdown completed - " << exitAbort << endl;
+#if ( defined VM_TRACE || defined ERROR_INSERT ) && ( ! ( defined NDB_OSE || defined NDB_SOFTOSE) )
+      signal(6, SIG_DFL);
+      abort();
+#else
+      exit(-1);
+#endif
     }
     
     /**
@@ -257,7 +243,7 @@ NdbShutdown(NdbShutdownType type,
       exit(restartType);
     }
     
-    g_eventLogger.info("Shutdown completed - exiting");
+    ndbout << "Shutdown completed - exiting" << endl;
   } else {
     /**
      * Shutdown is already in progress
@@ -267,7 +253,7 @@ NdbShutdown(NdbShutdownType type,
      * If this is the watchdog, kill system the hard way
      */
     if (type== NST_Watchdog){
-      g_eventLogger.info("Watchdog is killing system the hard way");
+      ndbout << "Watchdog is killing system the hard way" << endl;
 #if defined VM_TRACE && ( ! ( defined NDB_OSE || defined NDB_SOFTOSE) )
       signal(6, SIG_DFL);
       abort();

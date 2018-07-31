@@ -3,7 +3,7 @@
 #
 
 --disable_warnings
-drop table if exists t1,t2,t3,t4,t5;
+drop table if exists t1,t2,t3;
 drop database if exists mysqltest;
 --enable_warnings
 
@@ -39,7 +39,7 @@ drop table if exists t1;
 --error 1075
 create table t1 (ordid int(8) not null auto_increment, ord  varchar(50) not null, primary key (ord,ordid)) engine=heap;
 
--- error 1049
+-- error 1044,1
 create table not_existing_database.test (a int);
 --error 1103
 create table `a/a` (a int);
@@ -207,6 +207,13 @@ create table if not exists t1 select 1,2,3,4;
 create table if not exists t1 select 1;
 select * from t1;
 drop table t1;
+create table t1 select 1,2,3;
+create table if not exists t1 select 1,2;
+--error 1136
+create table if not exists t1 select 1,2,3,4;
+create table if not exists t1 select 1;
+select * from t1;
+drop table t1;
 
 #
 # Test create table if not exists with duplicate key error
@@ -231,7 +238,7 @@ drop table t1;
 create table `t1 `(a int);
 --error 1102
 create database `db1 `;
---error 1166
+--error 1166;
 create table t1(`a ` int);
 
 #
@@ -287,7 +294,7 @@ select * from t2;
 create table t3 like t1;
 --error 1050
 create table t3 like mysqltest.t3;
---error 1049
+--error 1044,1
 create table non_existing_database.t1 like t1;
 --error 1051
 create table t3 like non_existing_table;
@@ -486,22 +493,6 @@ create table t2(test.t2.name int);
 drop table t1,t2;
 
 #
-# Bug #12537: UNION produces longtext instead of varchar
-#
-CREATE TABLE t1 (f1 VARCHAR(255) CHARACTER SET utf8);
-CREATE TABLE t2 AS SELECT LEFT(f1,86) AS f2 FROM t1 UNION SELECT LEFT(f1,86)
-AS f2 FROM t1;
-DESC t2;
-DROP TABLE t1,t2;
-
-#
-# Bug#12913 Simple SQL can crash server or connection
-#
-CREATE TABLE t12913 (f1 ENUM ('a','b')) AS SELECT 'a' AS f1;
-SELECT * FROM t12913;
-DROP TABLE t12913;
-
-#
 # Bug#11028: Crash on create table like
 #
 create database mysqltest;
@@ -512,101 +503,3 @@ create table test.t1 like x;
 --disable_warnings
 drop table if exists test.t1;
 --enable_warnings
-
-#
-# Bug #6008 MySQL does not create warnings when
-# creating database and using IF NOT EXISTS
-#
-create database mysqltest;
-create database if not exists mysqltest character set latin2;
-show create database mysqltest;
-drop database mysqltest;
-use test;
-create table t1 (a int);
-create table if not exists t1 (a int);
-drop table t1;
-
-# BUG#14139
-create table t1 (
-  a varchar(112) charset utf8 collate utf8_bin not null,
-  primary key (a)
-) select 'test' as a ;
-show create table t1;
-drop table t1;
-
-#
-# BUG#14480: assert failure in CREATE ... SELECT because of wrong
-#            calculation of number of NULLs.
-#
-CREATE TABLE t2 (
-  a int(11) default NULL
-);
-insert into t2 values(111);
-
-create table t1 ( 
-  a varchar(12) charset utf8 collate utf8_bin not null, 
-  b int not null, primary key (a)
-) select a, 1 as b from t2 ;
-show create table t1;
-drop table t1;
-
-create table t1 ( 
-  a varchar(12) charset utf8 collate utf8_bin not null,
-  b int not null, primary key (a)
-) select 'a' as a , 1 as b from t2 ;
-show create table t1;
-drop table t1;
-
-create table t1 ( 
-  a varchar(12) charset utf8 collate utf8_bin,
-  b int not null, primary key (a)
-) select 'a' as a , 1 as b from t2 ;
-show create table t1;
-drop table t1, t2;
-
-create table t1 ( 
-  a1 int not null,
-  a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
-);
-insert into t1 values (1,1,1, 1,1,1, 1,1,1);
-
-create table t2 ( 
-  a1 varchar(12) charset utf8 collate utf8_bin not null,
-  a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int,
-  primary key (a1)
-) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1 ;
-drop table t2;
-
-create table t2 ( 
-  a1 varchar(12) charset utf8 collate utf8_bin,
-  a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
-) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1;
-
-drop table t1, t2;
-create table t1 ( 
-  a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int
-);
-insert into t1 values (1,1,1, 1,1,1, 1,1,1);
-
-create table t2 ( 
-  a1 varchar(12) charset utf8 collate utf8_bin not null,
-  a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int,
-  primary key (a1)
-) select a1,a2,a3,a4,a5,a6,a7,a8,a9 from t1 ;
-
-# Test the default value
-drop table t2;
-
-create table t2 ( a int default 3, b int default 3)
-  select a1,a2 from t1;
-show create table t2;
-
-drop table t1, t2;
-
-#
-# Bug #15316 SET value having comma not correctly handled
-#
---error 1105
-create table t1(a set("a,b","c,d") not null);
-
-# End of 4.1 tests

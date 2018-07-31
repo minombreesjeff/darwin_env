@@ -230,13 +230,10 @@ inline
 bool
 SafeCounter::init(NodeReceiverGroup rg, Uint16 GSN, Uint32 senderData){
   
-  if (init<Ref>(rg.m_block, GSN, senderData))
-  {
-    m_nodes = rg.m_nodes;
-    m_count = m_nodes.count();
-    return true;
-  }
-  return false;
+  bool b = init<Ref>(rg.m_block, GSN, senderData);
+  m_nodes = rg.m_nodes;
+  m_count = m_nodes.count();
+  return b;
 }
 
 template<typename Ref>
@@ -244,13 +241,10 @@ inline
 bool
 SafeCounter::init(NodeReceiverGroup rg, Uint32 senderData){
   
-  if (init<Ref>(rg.m_block, Ref::GSN, senderData))
-  {
-    m_nodes = rg.m_nodes;
-    m_count = m_nodes.count();
-    return true;
-  }
-  return false;
+  bool b = init<Ref>(rg.m_block, Ref::GSN, senderData);
+  m_nodes = rg.m_nodes;
+  m_count = m_nodes.count();
+  return b;
 }
 
 inline

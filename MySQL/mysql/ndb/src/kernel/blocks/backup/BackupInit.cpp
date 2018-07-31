@@ -40,12 +40,12 @@ Backup::Backup(const Configuration & conf) :
   const ndb_mgm_configuration_iterator * p = conf.getOwnConfigIterator();
   ndbrequire(p != 0);
 
-  Uint32 noBackups = 0, noTables = 0, noAttribs = 0, noFrags = 0;
+  Uint32 noBackups = 0, noTables = 0, noAttribs = 0;
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_DISCLESS, &m_diskless));
   ndb_mgm_get_int_parameter(p, CFG_DB_PARALLEL_BACKUPS, &noBackups);
+  //  ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_NO_TABLES, &noTables));
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DICT_TABLE, &noTables));
-  ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DICT_ATTRIBUTE, &noAttribs));
-  ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DIH_FRAG_CONNECT, &noFrags));
+  ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_NO_ATTRIBUTES, &noAttribs));
 
   noAttribs++; //RT 527 bug fix
 
@@ -55,7 +55,8 @@ Backup::Backup(const Configuration & conf) :
   c_attributePool.setSize(noBackups * noAttribs);
   c_triggerPool.setSize(noBackups * 3 * noTables);
 
-  c_fragmentPool.setSize(noBackups * noFrags);
+  // 2 = no of replicas
+  c_fragmentPool.setSize(noBackups * 2 * NO_OF_FRAG_PER_NODE * noTables);
   
   Uint32 szMem = 0;
   ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_MEM, &szMem);
@@ -66,16 +67,15 @@ Backup::Backup(const Configuration & conf) :
 
   Uint32 szDataBuf = (2 * 1024 * 1024);
   Uint32 szLogBuf = (2 * 1024 * 1024);
-  Uint32 szWrite = 32768, maxWriteSize = (256 * 1024);
+  Uint32 szWrite = 32768;
   ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_DATA_BUFFER_MEM, &szDataBuf);
   ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_LOG_BUFFER_MEM, &szLogBuf);
   ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_WRITE_SIZE, &szWrite);
-  ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_MAX_WRITE_SIZE, &maxWriteSize);
   
   c_defaults.m_logBufferSize = szLogBuf;
   c_defaults.m_dataBufferSize = szDataBuf;
   c_defaults.m_minWriteSize = szWrite;
-  c_defaults.m_maxWriteSize = maxWriteSize;
+  c_defaults.m_maxWriteSize = szWrite;
   
   { // Init all tables
     ArrayList<Table> tables(c_tablePool);
@@ -150,16 +150,16 @@ Backup::Backup(const Configuration & conf) :
   addRecSignal(GSN_DI_FCOUNTCONF, &Backup::execDI_FCOUNTCONF);
   addRecSignal(GSN_DIGETPRIMCONF, &Backup::execDIGETPRIMCONF);
 
-  addRecSignal(GSN_FSOPENREF, &Backup::execFSOPENREF, true);
+  addRecSignal(GSN_FSOPENREF, &Backup::execFSOPENREF);
   addRecSignal(GSN_FSOPENCONF, &Backup::execFSOPENCONF);
 
-  addRecSignal(GSN_FSCLOSEREF, &Backup::execFSCLOSEREF, true);
+  addRecSignal(GSN_FSCLOSEREF, &Backup::execFSCLOSEREF);
   addRecSignal(GSN_FSCLOSECONF, &Backup::execFSCLOSECONF);
 
-  addRecSignal(GSN_FSAPPENDREF, &Backup::execFSAPPENDREF, true);
+  addRecSignal(GSN_FSAPPENDREF, &Backup::execFSAPPENDREF);
   addRecSignal(GSN_FSAPPENDCONF, &Backup::execFSAPPENDCONF);
 
-  addRecSignal(GSN_FSREMOVEREF, &Backup::execFSREMOVEREF, true);
+  addRecSignal(GSN_FSREMOVEREF, &Backup::execFSREMOVEREF);
   addRecSignal(GSN_FSREMOVECONF, &Backup::execFSREMOVECONF);
 
   /*****/

@@ -233,9 +233,9 @@ mysql_cv_compress="yes"
 dnl Auxiliary macro to check for zlib at given path
 
 AC_DEFUN([MYSQL_CHECK_ZLIB_DIR], [
-save_CPPFLAGS="$CPPFLAGS"
+save_INCLUDES="$INCLUDES"
 save_LIBS="$LIBS"
-CPPFLAGS="$ZLIB_INCLUDES $CPPFLAGS"
+INCLUDES="$INCLUDES $ZLIB_INCLUDES"
 LIBS="$LIBS $ZLIB_LIBS"
 AC_CACHE_VAL([mysql_cv_compress],
   [AC_TRY_LINK([#include <zlib.h>],
@@ -244,7 +244,7 @@ AC_CACHE_VAL([mysql_cv_compress],
     AC_MSG_RESULT([ok])],
     [mysql_cv_compress="no"])
   ])
-CPPFLAGS="$save_CPPFLAGS"
+INCLUDES="$save_INCLUDES"
 LIBS="$save_LIBS"
 ])
 
@@ -310,12 +310,8 @@ case $SYSTEM_TYPE in
         fi
         ;;
       *)
-        # Test for libz using all known library file endings
-        if test \( -f "$mysql_zlib_dir/lib/libz.a"  -o \
-                   -f "$mysql_zlib_dir/lib/libz.so" -o \
-                   -f "$mysql_zlib_dir/lib/libz.sl" -o \
-                   -f "$mysql_zlib_dir/lib/libz.dylib" \) \
-                -a -f "$mysql_zlib_dir/include/zlib.h"; then
+        if test -f "$mysql_zlib_dir/lib/libz.a" -a \ 
+                -f "$mysql_zlib_dir/include/zlib.h"; then
           ZLIB_INCLUDES="-I$mysql_zlib_dir/include"
           ZLIB_LIBS="-L$mysql_zlib_dir/lib -lz"
           MYSQL_CHECK_ZLIB_DIR
@@ -567,8 +563,7 @@ AC_CACHE_VAL(mysql_cv_termcap_lib,
 [AC_CHECK_LIB(ncurses, tgetent, mysql_cv_termcap_lib=libncurses,
     [AC_CHECK_LIB(curses, tgetent, mysql_cv_termcap_lib=libcurses,
 	[AC_CHECK_LIB(termcap, tgetent, mysql_cv_termcap_lib=libtermcap,
-	    [AC_CHECK_LIB(tinfo, tgetent, mysql_cv_termcap_lib=libtinfo,
-	      mysql_cv_termcap_lib=NOT_FOUND)])])])])
+	    mysql_cv_termcap_lib=NOT_FOUND)])])])
 AC_MSG_CHECKING(for termcap functions library)
 if test "$mysql_cv_termcap_lib" = "NOT_FOUND"; then
 AC_MSG_ERROR([No curses/termcap library found])
@@ -576,8 +571,6 @@ elif test "$mysql_cv_termcap_lib" = "libtermcap"; then
 TERMCAP_LIB=-ltermcap
 elif test "$mysql_cv_termcap_lib" = "libncurses"; then
 TERMCAP_LIB=-lncurses
-elif test "$mysql_cv_termcap_lib" = "libtinfo"; then
-TERMCAP_LIB=-ltinfo
 else
 TERMCAP_LIB=-lcurses
 fi
@@ -982,9 +975,7 @@ AC_DEFUN([MYSQL_FIND_OPENSSL], [
       for d in /usr/ssl/lib /usr/local/ssl/lib /usr/lib/openssl \
 /usr/lib /usr/lib64 /opt/ssl/lib /opt/openssl/lib \
 /usr/freeware/lib32 /usr/local/lib/ ; do
-      # Test for libssl using all known library file endings
-      if test -f $d/libssl.a || test -f $d/libssl.so || \
-         test -f $d/libssl.sl || test -f $d/libssl.dylib ; then
+      if test -f $d/libssl.a || test -f $d/libssl.so || test -f $d/libssl.dylib ; then
         OPENSSL_LIB=$d
       fi
       done
@@ -996,9 +987,7 @@ AC_DEFUN([MYSQL_FIND_OPENSSL], [
       if test -f $incs/openssl/ssl.h  ; then
         OPENSSL_INCLUDE=-I$incs
       fi
-      # Test for libssl using all known library file endings
-      if test -f $libs/libssl.a || test -f $libs/libssl.so || \
-         test -f $libs/libssl.sl || test -f $d/libssl.dylib ; then
+      if test -f $libs/libssl.a || test -f $libs/libssl.so || test -f $libs/libssl.dylib ; then
         OPENSSL_LIB=$libs
       fi
       ;;
@@ -1734,19 +1723,10 @@ AC_DEFUN([MYSQL_CHECK_NDB_OPTIONS], [
               [ndb_debug="$withval"],
               [ndb_debug="default"])
   AC_ARG_WITH([ndb-ccflags],
-              AC_HELP_STRING([--with-ndb-ccflags=CFLAGS],
-			   [Extra CFLAGS for ndb compile]),
-              [ndb_ccflags=${withval}],
-              [ndb_ccflags=""])
-
-  case "$ndb_ccflags" in
-    "yes")
-	AC_MSG_RESULT([The --ndb-ccflags option requires a parameter (passed to CC for ndb compilation)])
-	;;
-    *)
-        ndb_cxxflags_fix="$ndb_cxxflags_fix $ndb_ccflags"
-    ;;
-  esac
+              [
+  --with-ndb-ccflags    Extra CC options for ndb compile],
+              [ndb_cxxflags_fix="$ndb_cxxflags_fix $withval"],
+              [ndb_cxxflags_fix=$ndb_cxxflags_fix])
 
   AC_MSG_CHECKING([for NDB Cluster options])
   AC_MSG_RESULT([])

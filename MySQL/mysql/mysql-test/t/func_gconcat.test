@@ -32,6 +32,7 @@ select grp,group_concat(d order by a desc) from t1 group by grp;
 select grp,group_concat(a order by a,d+c-ascii(c)-a) from t1 group by grp;
 select grp,group_concat(a order by d+c-ascii(c),a) from t1 group by grp;
 select grp,group_concat(c order by 1) from t1 group by grp;
+select grp,group_concat(c order by "c") from t1 group by grp;
 select grp,group_concat(distinct c order by c) from t1 group by grp;
 select grp,group_concat(distinct c order by c desc) from t1 group by grp;
 explain extended select grp,group_concat(distinct c order by c desc) from t1 group by grp;
@@ -98,7 +99,7 @@ select ifnull(group_concat(concat(t1.id, ':', t1.name)), 'shortname') as 'withou
 select distinct ifnull(group_concat(concat(t1.id, ':', t1.name)), 'shortname') as 'with distinct: cutoff at length of shortname' from t1;
 drop table t1;
 
-# check zero rows (bug#836)
+# check zero rows
 create table t1(id int);
 create table t2(id int);
 insert into t1 values(0),(1);
@@ -263,34 +264,6 @@ select group_concat(distinct b order by b) from t1 group by a;
 drop table t1;
 
 #
-# Bug#10201
-#
-create table t1 (a varchar(255) character set cp1250 collate cp1250_general_ci,
-                 b varchar(255) character set koi8r);
-insert into t1 values ('xxx','yyy');
-select collation(a) from t1;
-select collation(group_concat(a)) from t1;
-create table t2 select group_concat(a) as a from t1;
-show create table t2;
-select collation(group_concat(a,_koi8r'test')) from t1;
---error 1267
-select collation(group_concat(a,_koi8r 0xC1C2)) from t1;
---error 1267
-select collation(group_concat(a,b)) from t1;
-drop table t1;
-drop table t2;
-
-#
-# Bug #12829
-# Cannot convert the charset of a GROUP_CONCAT result
-#
-CREATE TABLE t1 (a CHAR(10) CHARACTER SET cp850);
-INSERT INTO t1 VALUES ('À');
-SELECT a FROM t1;
-SELECT GROUP_CONCAT(a) FROM t1;
-DROP TABLE t1;
-
-#
 # bug #7769: group_concat returning null is checked in having
 #
 CREATE TABLE t1 (id int);
@@ -318,86 +291,3 @@ select a, group_concat(distinct b) from t1 group by a with rollup;
 select a, group_concat(b order by b) from t1 group by a with rollup;
 select a, group_concat(distinct b order by b) from t1 group by a with rollup;
 drop table t1;
-
-#
-# Bug #12095: GROUP_CONCAT for one row table 
-#
-
-CREATE TABLE t1 (
-  aID smallint(5) unsigned NOT NULL auto_increment,
-  sometitle varchar(255) NOT NULL default '',
-  bID smallint(5) unsigned NOT NULL,
-  PRIMARY KEY  (aID),
-  UNIQUE KEY sometitle (sometitle)
-);
-INSERT INTO t1 SET sometitle = 'title1', bID = 1;
-INSERT INTO t1 SET sometitle = 'title2', bID = 1;
-
-CREATE TABLE t2 (
-  bID smallint(5) unsigned NOT NULL auto_increment,
-  somename varchar(255) NOT NULL default '',
-  PRIMARY KEY  (bID),
-  UNIQUE KEY somename (somename)
-);
-INSERT INTO t2 SET somename = 'test';
-
-SELECT COUNT(*), GROUP_CONCAT(DISTINCT t2.somename SEPARATOR ' |')
-  FROM t1 JOIN t2 ON t1.bID = t2.bID;
-INSERT INTO t2 SET somename = 'test2';
-SELECT COUNT(*), GROUP_CONCAT(DISTINCT t2.somename SEPARATOR ' |')
-  FROM t1 JOIN t2 ON t1.bID = t2.bID;
-DELETE FROM t2 WHERE somename = 'test2';
-SELECT COUNT(*), GROUP_CONCAT(DISTINCT t2.somename SEPARATOR ' |')
-  FROM t1 JOIN t2 ON t1.bID = t2.bID;
-
-DROP TABLE t1,t2;
-
-#
-# Bug #12861 hang with group_concat insubquery FROM DUAL
-#
-select * from (select group_concat('c') from DUAL) t;
-
-#
-# Bug #12859 group_concat in subquery cause incorrect not null
-#
-create table t1 ( a int not null default 0);
-select * from (select group_concat(a) from t1) t2;
-select group_concat('x') UNION ALL select 1;
-drop table t1;
-
-#
-# Bug #12863 : missing separators after first empty cancatanated elements
-#
-
-CREATE TABLE t1 (id int, a varchar(9));
-INSERT INTO t1 VALUES
-  (2, ''), (1, ''), (2, 'x'), (1, 'y'), (3, 'z'), (3, '');
-
-SELECT GROUP_CONCAT(a) FROM t1;
-SELECT GROUP_CONCAT(a ORDER BY a) FROM t1;
-
-SELECT GROUP_CONCAT(a) FROM t1 GROUP BY id;
-SELECT GROUP_CONCAT(a ORDER BY a) FROM t1 GROUP BY id;
-
-DROP TABLE t1;
-
-#
-# Bug #15560: GROUP_CONCAT wasn't ready for WITH ROLLUP queries
-#
-create table t1(f1 int);
-insert into t1 values(1),(2),(3);
-select f1, group_concat(f1+1) from t1 group by f1 with rollup;
-select count(distinct (f1+1)) from t1 group by f1 with rollup;
-drop table t1;
-
-#
-# Bug#14169 type of group_concat() result changed to blob if tmp_table was used
-#
-create table t1 (f1 int unsigned, f2 varchar(255));
-insert into t1 values (1,repeat('a',255)),(2,repeat('b',255));
---enable_metadata
-select f2,group_concat(f1) from t1 group by f2;
---disable_metadata
-drop table t1;
-
-# End of 4.1 tests

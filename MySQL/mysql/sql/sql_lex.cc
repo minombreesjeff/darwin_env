@@ -125,7 +125,6 @@ void lex_start(THD *thd, uchar *buf,uint length)
   lex->value_list.empty();
   lex->update_list.empty();
   lex->param_list.empty();
-  lex->auxilliary_table_list.empty();
   lex->unit.next= lex->unit.master=
     lex->unit.link_next= lex->unit.return_to= 0;
   lex->unit.prev= lex->unit.link_prev= 0;
@@ -296,7 +295,18 @@ static char *get_text(LEX *lex)
       found_escape=1;
       if (lex->ptr == lex->end_of_query)
 	return 0;
-      yySkip();
+#ifdef USE_MB
+      int l;
+      if (use_mb(cs) &&
+          (l = my_ismbchar(cs,
+                           (const char *)lex->ptr,
+                           (const char *)lex->end_of_query))) {
+          lex->ptr += l;
+          continue;
+      }
+      else
+#endif
+        yySkip();
     }
     else if (c == sep)
     {
@@ -325,6 +335,9 @@ static char *get_text(LEX *lex)
       {
 	uchar *to;
 
+        /* Re-use found_escape for tracking state of escapes */
+        found_escape= 0;
+
 	for (to=start ; str != end ; str++)
 	{
 #ifdef USE_MB
@@ -338,7 +351,7 @@ static char *get_text(LEX *lex)
 	      continue;
 	  }
 #endif
-	  if (*str == '\\' && str+1 != end)
+	  if (!found_escape && *str == '\\' && str+1 != end)
 	  {
 	    switch(*++str) {
 	    case 'n':
@@ -364,14 +377,20 @@ static char *get_text(LEX *lex)
 	      *to++= '\\';		// remember prefix for wildcard
 	      /* Fall through */
 	    default:
-              *to++= *str;
+              found_escape= 1;
+              str--;
 	      break;
 	    }
 	  }
-	  else if (*str == sep)
-	    *to++= *str++;		// Two ' or "
+	  else if (!found_escape && *str == sep)
+          {
+            found_escape= 1;
+          }
 	  else
+          {
 	    *to++ = *str;
+            found_escape= 0;
+          }
 	}
 	*to=0;
 	lex->yytoklen=(uint) (to-start);
@@ -535,15 +554,6 @@ int yylex(void *arg, void *yythd)
 	lex->next_state= MY_LEX_START;	// Allow signed numbers
       if (c == ',')
 	lex->tok_start=lex->ptr;	// Let tok_start point at next item
-      /*
-        Check for a placeholder: it should not precede a possible identifier
-        because of binlogging: when a placeholder is replaced with
-        its value in a query for the binlog, the query must stay
-        grammatically correct.
-      */
-      else if (c == '?' && ((THD*) yythd)->command == COM_PREPARE &&
-               !ident_map[yyPeek()])
-        return(PARAM_MARKER);
       return((int) c);
 
     case MY_LEX_IDENT_OR_NCHAR:
@@ -643,9 +653,8 @@ int yylex(void *arg, void *yythd)
       */
 
       if ((yylval->lex_str.str[0]=='_') && 
-          (lex->underscore_charset=
-             get_charset_by_csname(yylval->lex_str.str + 1,
-                                   MY_CS_PRIMARY,MYF(0))))
+          (lex->charset=get_charset_by_csname(yylval->lex_str.str+1,
+					      MY_CS_PRIMARY,MYF(0))))
         return(UNDERSCORE_CHARSET);
       return(result_state);			// IDENT or IDENT_QUOTED
 
@@ -1056,7 +1065,6 @@ void st_select_lex::init_query()
   item_list.empty();
   join= 0;
   where= 0;
-  having= 0;
   olap= UNSPECIFIED_OLAP_TYPE;
   having_fix_field= 0;
   resolve_mode= NOMATTER_MODE;
@@ -1064,10 +1072,8 @@ void st_select_lex::init_query()
   ref_pointer_array= 0;
   select_n_having_items= 0;
   prep_where= 0;
-  prep_having= 0;
   subquery_in_having= explicit_limit= 0;
   parsing_place= NO_MATTER;
-  is_item_list_lookup= 0;
 }
 
 void st_select_lex::init_select()
@@ -1094,7 +1100,6 @@ void st_select_lex::init_select()
   select_limit= HA_POS_ERROR;
   offset_limit= 0;
   with_sum_func= 0;
-
 }
 
 /*

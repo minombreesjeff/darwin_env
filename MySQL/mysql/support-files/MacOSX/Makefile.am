@@ -20,25 +20,25 @@
 EXTRA_DIST =	Info.plist.sh \
 		Description.plist.sh \
 		StartupParameters.plist.sh \
-		postflight.sh \
-		preflight.sh \
+		postinstall.sh \
+		preinstall.sh \
 		ReadMe.txt \
 		MySQLCOM \
 		StartupItem.Description.plist \
 		StartupItem.Info.plist \
 		StartupItem.postinstall
 
-noinst_DATA = Info.plist \
+pkgdata_DATA =	Info.plist \
 		Description.plist \
 		StartupParameters.plist \
-		postflight \
-		preflight
+		postinstall \
+		preinstall
 
 CLEANFILES =	Info.plist \
 		Description.plist \
 		StartupParameters.plist \
-		postflight \
-		preflight
+		postinstall \
+		preinstall
 
 SUFFIXES = .sh
 

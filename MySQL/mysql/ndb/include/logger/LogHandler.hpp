@@ -126,18 +126,6 @@ public:
   void setErrorCode(int code);
 
   /**
-   * Returns the error string.
-   */
-  char* getErrorStr();
-
-  /**
-   * Sets the error string.
-   *
-   * @param str the error string.
-   */
-  void setErrorStr(char* str);
-
-  /**
    * Parse logstring parameters
    *
    * @param params list of parameters, formatted as "param=value", 
@@ -207,7 +195,6 @@ private:
 
   const char* m_pDateTimeFormat;
   int m_errorCode;
-  char* m_errorStr;
 
   // for handling repeated messages
   unsigned m_count_repeated_messages;

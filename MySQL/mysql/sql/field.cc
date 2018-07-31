@@ -47,8 +47,6 @@ uchar Field_null::null[1]={1};
 const char field_separator=',';
 
 #define DOUBLE_TO_STRING_CONVERSION_BUFFER_SIZE 320
-#define BLOB_PACK_LENGTH_TO_MAX_LENGH(arg) \
-((ulong) ((LL(1) << min(arg, 4) * 8) - LL(1)))
 
 /*
   Rules for merging different types of fields in UNION
@@ -3385,11 +3383,6 @@ longlong Field_double::val_int(void)
   else
 #endif
     doubleget(j,ptr);
-  /* Check whether we fit into longlong range */
-  if (j <= (double) LONGLONG_MIN)
-    return (longlong) LONGLONG_MIN;
-  if (j >= (double) (ulonglong) LONGLONG_MAX)
-    return (longlong) LONGLONG_MAX;
   return ((longlong) j);
 }
 
@@ -3680,7 +3673,7 @@ int Field_timestamp::store(const char *from,uint len,CHARSET_INFO *cs)
     error= 2;
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int4store(ptr,tmp);
   }
@@ -3738,7 +3731,7 @@ int Field_timestamp::store(longlong nr)
                          nr, MYSQL_TIMESTAMP_DATETIME, 1);
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int4store(ptr,timestamp);
   }
@@ -3762,7 +3755,7 @@ longlong Field_timestamp::val_int(void)
   THD  *thd= table->in_use;
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     temp=uint4korr(ptr);
   else
 #endif
@@ -3792,7 +3785,7 @@ String *Field_timestamp::val_str(String *val_buffer, String *val_ptr)
   val_buffer->length(field_length);
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     temp=uint4korr(ptr);
   else
 #endif
@@ -3809,7 +3802,7 @@ String *Field_timestamp::val_str(String *val_buffer, String *val_ptr)
   thd->time_zone_used= 1;
 
   temp= time_tmp.year % 100;
-  if (temp < YY_PART_YEAR - 1)
+  if (temp < YY_PART_YEAR)
   {
     *to++= '2';
     *to++= '0';
@@ -3857,7 +3850,7 @@ bool Field_timestamp::get_date(TIME *ltime, uint fuzzydate)
   long temp;
   THD *thd= table->in_use;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     temp=uint4korr(ptr);
   else
 #endif
@@ -3894,7 +3887,7 @@ int Field_timestamp::cmp(const char *a_ptr, const char *b_ptr)
 {
   int32 a,b;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     a=sint4korr(a_ptr);
     b=sint4korr(b_ptr);
@@ -3912,7 +3905,7 @@ int Field_timestamp::cmp(const char *a_ptr, const char *b_ptr)
 void Field_timestamp::sort_string(char *to,uint length __attribute__((unused)))
 {
 #ifdef WORDS_BIGENDIAN
-  if (!table || !table->db_low_byte_first)
+  if (!table->db_low_byte_first)
   {
     to[0] = ptr[0];
     to[1] = ptr[1];
@@ -3941,7 +3934,7 @@ void Field_timestamp::set_time()
   long tmp= (long) table->in_use->query_start();
   set_notnull();
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int4store(ptr,tmp);
   }
@@ -4329,7 +4322,7 @@ int Field_date::store(const char *from, uint len,CHARSET_INFO *cs)
                          from, len, MYSQL_TIMESTAMP_DATE, 1);
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int4store(ptr,tmp);
   }
@@ -4357,7 +4350,7 @@ int Field_date::store(double nr)
   else
     tmp=(long) rint(nr);
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int4store(ptr,tmp);
   }
@@ -4385,7 +4378,7 @@ int Field_date::store(longlong nr)
   else
     tmp=(long) nr;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int4store(ptr,tmp);
   }
@@ -4411,7 +4404,7 @@ double Field_date::val_real(void)
 {
   int32 j;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     j=sint4korr(ptr);
   else
 #endif
@@ -4423,7 +4416,7 @@ longlong Field_date::val_int(void)
 {
   int32 j;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     j=sint4korr(ptr);
   else
 #endif
@@ -4438,7 +4431,7 @@ String *Field_date::val_str(String *val_buffer,
   val_buffer->alloc(field_length);
   int32 tmp;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     tmp=sint4korr(ptr);
   else
 #endif
@@ -4456,7 +4449,7 @@ int Field_date::cmp(const char *a_ptr, const char *b_ptr)
 {
   int32 a,b;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     a=sint4korr(a_ptr);
     b=sint4korr(b_ptr);
@@ -4474,7 +4467,7 @@ int Field_date::cmp(const char *a_ptr, const char *b_ptr)
 void Field_date::sort_string(char *to,uint length __attribute__((unused)))
 {
 #ifdef WORDS_BIGENDIAN
-  if (!table || !table->db_low_byte_first)
+  if (!table->db_low_byte_first)
   {
     to[0] = ptr[0];
     to[1] = ptr[1];
@@ -4698,7 +4691,7 @@ int Field_datetime::store(const char *from,uint len,CHARSET_INFO *cs)
                          from, len, MYSQL_TIMESTAMP_DATETIME, 1);
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int8store(ptr,tmp);
   }
@@ -4739,7 +4732,7 @@ int Field_datetime::store(longlong nr)
                          MYSQL_TIMESTAMP_DATETIME, 1);
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int8store(ptr,nr);
   }
@@ -4766,7 +4759,7 @@ void Field_datetime::store_time(TIME *ltime,timestamp_type type)
     set_warning(MYSQL_ERROR::WARN_LEVEL_WARN, ER_WARN_DATA_TRUNCATED, 1);
   }
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     int8store(ptr,tmp);
   }
@@ -4792,7 +4785,7 @@ longlong Field_datetime::val_int(void)
 {
   longlong j;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     j=sint8korr(ptr);
   else
 #endif
@@ -4812,7 +4805,7 @@ String *Field_datetime::val_str(String *val_buffer,
   int part3;
 
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
     tmp=sint8korr(ptr);
   else
 #endif
@@ -4877,7 +4870,7 @@ int Field_datetime::cmp(const char *a_ptr, const char *b_ptr)
 {
   longlong a,b;
 #ifdef WORDS_BIGENDIAN
-  if (table && table->db_low_byte_first)
+  if (table->db_low_byte_first)
   {
     a=sint8korr(a_ptr);
     b=sint8korr(b_ptr);
@@ -4895,7 +4888,7 @@ int Field_datetime::cmp(const char *a_ptr, const char *b_ptr)
 void Field_datetime::sort_string(char *to,uint length __attribute__((unused)))
 {
 #ifdef WORDS_BIGENDIAN
-  if (!table || !table->db_low_byte_first)
+  if (!table->db_low_byte_first)
   {
     to[0] = ptr[0];
     to[1] = ptr[1];
@@ -5008,7 +5001,7 @@ int Field_str::store(double nr)
   double anr= fabs(nr);
   int neg= (nr < 0.0) ? 1 : 0;
   if (char_length > 4 && char_length < 32 &&
-      (anr < 1.0 ? anr > 1/(log_10[max(0,(int) char_length-neg-2)]) /* -2 for "0." */
+      (anr < 1.0 ? anr > 1/(log_10[max(0,char_length-neg-2)]) /* -2 for "0." */
                  : anr < log_10[char_length-neg]-1))
     use_scientific_notation= FALSE;
 
@@ -5072,6 +5065,17 @@ int Field_string::cmp(const char *a_ptr, const char *b_ptr)
 {
   uint a_len, b_len;
 
+  if (field_charset->strxfrm_multiply > 1)
+  {
+    /*
+      We have to remove end space to be able to compare multi-byte-characters
+      like in latin_de 'ae' and 0xe4
+    */
+    return field_charset->coll->strnncollsp(field_charset,
+                                            (const uchar*) a_ptr, field_length,
+                                            (const uchar*) b_ptr,
+                                            field_length);
+  }
   if (field_charset->mbmaxlen != 1)
   {
     uint char_len= field_length/field_charset->mbmaxlen;
@@ -5080,13 +5084,8 @@ int Field_string::cmp(const char *a_ptr, const char *b_ptr)
   }
   else
     a_len= b_len= field_length;
-  /*
-    We have to remove end space to be able to compare multi-byte-characters
-    like in latin_de 'ae' and 0xe4
-  */
-  return field_charset->coll->strnncollsp(field_charset,
-                                          (const uchar*) a_ptr, a_len,
-                                          (const uchar*) b_ptr, b_len);
+  return my_strnncoll(field_charset,(const uchar*) a_ptr, a_len,
+                                    (const uchar*) b_ptr, b_len);
 }
 
 
@@ -5446,7 +5445,7 @@ Field_blob::Field_blob(char *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 		       enum utype unireg_check_arg, const char *field_name_arg,
 		       struct st_table *table_arg,uint blob_pack_length,
 		       CHARSET_INFO *cs)
-  :Field_str(ptr_arg, BLOB_PACK_LENGTH_TO_MAX_LENGH(blob_pack_length),
+  :Field_str(ptr_arg, (1L << min(blob_pack_length,3)*8)-1L,
 	     null_ptr_arg, null_bit_arg, unireg_check_arg, field_name_arg,
 	     table_arg, cs),
    packlength(blob_pack_length)
@@ -5744,7 +5743,8 @@ void Field_blob::get_key_image(char *buff,uint length,
       return;
     }
     get_ptr(&blob);
-    gobj= Geometry::construct(&buffer, blob, blob_length);
+    gobj= Geometry::create_from_wkb(&buffer,
+				    blob + SRID_SIZE, blob_length - SRID_SIZE);
     if (gobj->get_mbr(&mbr, &dummy))
       bzero(buff, SIZEOF_STORED_DOUBLE*4);
     else
@@ -6037,7 +6037,8 @@ void Field_geom::get_key_image(char *buff, uint length, CHARSET_INFO *cs,
     return;
   }
   get_ptr(&blob);
-  gobj= Geometry::construct(&buffer, blob, blob_length);
+  gobj= Geometry::create_from_wkb(&buffer,
+				  blob + SRID_SIZE, blob_length - SRID_SIZE);
   if (gobj->get_mbr(&mbr, &dummy))
     bzero(buff, SIZEOF_STORED_DOUBLE*4);
   else
@@ -6097,7 +6098,7 @@ int Field_geom::store(const char *from, uint length, CHARSET_INFO *cs)
     uint32 wkb_type;
     if (length < SRID_SIZE + WKB_HEADER_SIZE + SIZEOF_STORED_DOUBLE*2)
       goto err;
-    wkb_type= uint4korr(from + SRID_SIZE + 1);
+    wkb_type= uint4korr(from + WKB_HEADER_SIZE);
     if (wkb_type < (uint32) Geometry::wkb_point ||
 	wkb_type > (uint32) Geometry::wkb_end)
       return -1;
@@ -6508,16 +6509,6 @@ bool Field_num::eq_def(Field *field)
 ** Handling of field and create_field
 *****************************************************************************/
 
-/*
-  Convert create_field::length from number of characters to number of bytes
-
-  SYNOPSIS
-    create_field::create_length_to_internal_length()
-  
-  DESCRIPTION
-    Convert create_field::length from number of characters to number of bytes.
-*/
-
 void create_field::create_length_to_internal_length(void)
 {
   switch (sql_type) {
@@ -6772,7 +6763,6 @@ create_field::create_field(Field *old_field,Field *orig_field)
       break;
   }
 
-  char_length= length;
   decimals= old_field->decimals();
   if (sql_type == FIELD_TYPE_STRING)
   {
@@ -6835,11 +6825,7 @@ create_field::create_field(Field *old_field,Field *orig_field)
 bool 
 Field::set_warning(const uint level, const uint code, int cuted_increment)
 {
-  /*
-    If this field was created only for type conversion purposes it
-    will have table == NULL.
-  */
-  THD *thd= table ? table->in_use : current_thd;
+  THD *thd= table->in_use;
   if (thd->count_cuted_fields)
   {
     thd->cuted_fields+= cuted_increment;
@@ -6874,8 +6860,7 @@ Field::set_datetime_warning(const uint level, const uint code,
                             timestamp_type ts_type, int cuted_increment)
 {
   if (set_warning(level, code, cuted_increment))
-    make_truncated_value_warning(table ? table->in_use : current_thd,
-                                 str, str_length, ts_type);
+    make_truncated_value_warning(table->in_use, str, str_length, ts_type);
 }
 
 
@@ -6904,8 +6889,8 @@ Field::set_datetime_warning(const uint level, const uint code,
   {
     char str_nr[22];
     char *str_end= longlong10_to_str(nr, str_nr, -10);
-    make_truncated_value_warning(table ? table->in_use : current_thd,
-                                 str_nr, str_end - str_nr, ts_type);
+    make_truncated_value_warning(table->in_use, str_nr, str_end - str_nr, 
+                                 ts_type);
   }
 }
 
@@ -6934,8 +6919,7 @@ Field::set_datetime_warning(const uint level, const uint code,
     /* DBL_DIG is enough to print '-[digits].E+###' */
     char str_nr[DBL_DIG + 8];
     uint str_len= my_sprintf(str_nr, (str_nr, "%g", nr));
-    make_truncated_value_warning(table ? table->in_use : current_thd,
-                                 str_nr, str_len, ts_type);
+    make_truncated_value_warning(table->in_use, str_nr, str_len, ts_type);
   }
 }
 
@@ -6953,11 +6937,11 @@ uint32 Field_blob::max_length()
   switch (packlength)
   {
   case 1:
-    return 255 * field_charset->mbmaxlen;
+    return 255;
   case 2:
-    return 65535 * field_charset->mbmaxlen;
+    return 65535;
   case 3:
-    return 16777215 * field_charset->mbmaxlen;
+    return 16777215;
   case 4:
     return (uint32) 4294967295U;
   default:

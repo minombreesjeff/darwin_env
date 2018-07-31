@@ -27,7 +27,7 @@
 
 #define DEBUG(x) ndbout << x << endl;
 
-SocketServer::SocketServer(unsigned maxSessions) :
+SocketServer::SocketServer(int maxSessions) :
   m_sessions(10),
   m_services(5)
 {
@@ -64,8 +64,6 @@ SocketServer::tryBind(unsigned short port, const char * intface) {
     return false;
   }
   
-  DBUG_PRINT("info",("NDB_SOCKET: %d", sock));
-
   const int on = 1;
   if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, 
 		 (const char*)&on, sizeof(on)) == -1) {
@@ -106,8 +104,6 @@ SocketServer::setup(SocketServer::Service * service,
     DBUG_RETURN(false);
   }
   
-  DBUG_PRINT("info",("NDB_SOCKET: %d", sock));
- 
   const int on = 1;
   if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, 
 		 (const char*)&on, sizeof(on)) == -1) {
@@ -124,7 +120,7 @@ SocketServer::setup(SocketServer::Service * service,
     DBUG_RETURN(false);
   }
   
-  if (listen(sock, m_maxSessions > 32 ? 32 : m_maxSessions) == -1){
+  if (listen(sock, m_maxSessions) == -1){
     DBUG_PRINT("error",("listen() - %d - %s",
 			errno, strerror(errno)));
     NDB_CLOSE_SOCKET(sock);

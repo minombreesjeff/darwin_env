@@ -20,9 +20,9 @@ static int queue_key_cmp(void *keyseg, byte *a, byte *b)
 {
   MI_INFO *aa=((MYRG_TABLE *)a)->table;
   MI_INFO *bb=((MYRG_TABLE *)b)->table;
-  uint not_used[2];
+  uint not_used;
   int ret= ha_key_cmp((HA_KEYSEG *)keyseg, aa->lastkey, bb->lastkey,
-		       USE_WHOLE_KEY, SEARCH_FIND, not_used);
+		       USE_WHOLE_KEY, SEARCH_FIND, &not_used);
   return ret < 0 ? -1 : ret > 0 ? 1 : 0;
 } /* queue_key_cmp */
 
@@ -51,8 +51,6 @@ int _myrg_init_queue(MYRG_INFO *info,int inx,enum ha_rkey_function search_flag)
 	error=my_errno;
     }
   }
-  else
-    my_errno= error= HA_ERR_WRONG_INDEX;
   return error;
 }
 

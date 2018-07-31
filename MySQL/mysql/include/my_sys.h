@@ -165,7 +165,7 @@ extern char *my_strdup_with_length(const byte *from, uint length,
 #endif /* _AIX */
 #if defined(__MWERKS__)
 #undef alloca
-#define alloca _alloca
+#define alloca __alloca
 #endif /* __MWERKS__ */
 #if defined(__GNUC__) && !defined(HAVE_ALLOCA_H) && ! defined(alloca)
 #define alloca __builtin_alloca
@@ -216,6 +216,9 @@ extern CHARSET_INFO *all_charsets[256];
 extern CHARSET_INFO compiled_charsets[];
 
 /* statistics */
+extern ulong	my_cache_w_requests, my_cache_write, my_cache_r_requests,
+		my_cache_read;
+extern ulong	my_blocks_used, my_blocks_changed;
 extern ulong	my_file_opened,my_stream_opened, my_tmp_file_created;
 extern uint	mysys_usage_id;
 extern my_bool	my_init_done;
@@ -325,18 +328,12 @@ typedef int (*IO_CACHE_CALLBACK)(struct st_io_cache*);
 #ifdef THREAD
 typedef struct st_io_cache_share
 {
-  pthread_mutex_t       mutex;           /* To sync on reads into buffer. */
-  pthread_cond_t        cond;            /* To wait for signals. */
-  pthread_cond_t        cond_writer;     /* For a synchronized writer. */
-  /* Offset in file corresponding to the first byte of buffer. */
-  my_off_t              pos_in_file;
-  /* If a synchronized write cache is the source of the data. */
-  struct st_io_cache    *source_cache;
-  byte                  *buffer;         /* The read buffer. */
-  byte                  *read_end;       /* Behind last valid byte of buffer. */
-  int                   running_threads; /* threads not in lock. */
-  int                   total_threads;   /* threads sharing the cache. */
-  int                   error;           /* Last error. */
+  /* to sync on reads into buffer */
+  pthread_mutex_t mutex;
+  pthread_cond_t  cond;
+  int             count, total;
+  /* actual IO_CACHE that filled the buffer */
+  struct st_io_cache *active;
 #ifdef NOT_YET_IMPLEMENTED
   /* whether the structure should be free'd */
   my_bool alloced;
@@ -594,8 +591,8 @@ extern int my_chsize(File fd,my_off_t newlength, int filler, myf MyFlags);
 extern int my_sync(File fd, myf my_flags);
 extern int my_error _VARARGS((int nr,myf MyFlags, ...));
 extern int my_printf_error _VARARGS((uint my_err, const char *format,
-				     myf MyFlags, ...))
-                                    ATTRIBUTE_FORMAT(printf, 2, 4);
+				     myf MyFlags, ...)
+				    __attribute__ ((format (printf, 2, 4))));
 extern int my_message(uint my_err, const char *str,myf MyFlags);
 extern int my_message_no_curses(uint my_err, const char *str,myf MyFlags);
 extern int my_message_curses(uint my_err, const char *str,myf MyFlags);
@@ -678,8 +675,8 @@ extern void setup_io_cache(IO_CACHE* info);
 extern int _my_b_read(IO_CACHE *info,byte *Buffer,uint Count);
 #ifdef THREAD
 extern int _my_b_read_r(IO_CACHE *info,byte *Buffer,uint Count);
-extern void init_io_cache_share(IO_CACHE *read_cache, IO_CACHE_SHARE *cshare,
-                                IO_CACHE *write_cache, uint num_threads);
+extern void init_io_cache_share(IO_CACHE *info,
+				IO_CACHE_SHARE *s, uint num_threads);
 extern void remove_io_thread(IO_CACHE *info);
 #endif
 extern int _my_b_seq_read(IO_CACHE *info,byte *Buffer,uint Count);
@@ -791,11 +788,6 @@ extern my_bool init_compiled_charsets(myf flags);
 extern void add_compiled_collation(CHARSET_INFO *cs);
 extern ulong escape_string_for_mysql(CHARSET_INFO *charset_info, char *to,
                                      const char *from, ulong length);
-#ifdef __WIN__
-#define BACKSLASH_MBTAIL
-/* File system character set */
-extern CHARSET_INFO *fs_character_set(void);
-#endif
 
 #ifdef __WIN__
 extern my_bool have_tcpip;		/* Is set if tcpip is used */
@@ -806,9 +798,6 @@ int my_security_attr_create(SECURITY_ATTRIBUTES **psa, const char **perror,
                             DWORD owner_rights, DWORD everybody_rights);
 
 void my_security_attr_free(SECURITY_ATTRIBUTES *sa);
-
-/* implemented in my_conio.c */
-char* my_cgets(char *string, unsigned long clen, unsigned long* plen);
 
 #endif
 #ifdef __NETWARE__

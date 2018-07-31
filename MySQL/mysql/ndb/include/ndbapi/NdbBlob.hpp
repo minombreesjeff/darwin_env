@@ -262,7 +262,7 @@ private:
   // for keeping in lists
   NdbBlob* theNext;
   // initialization
-  NdbBlob(Ndb*);
+  NdbBlob();
   void init();
   void release();
   // classify operations
@@ -275,7 +275,6 @@ private:
   bool isWriteOp();
   bool isDeleteOp();
   bool isScanOp();
-  bool isTakeOverOp();
   // computations
   Uint32 getPartNumber(Uint64 pos);
   Uint32 getPartCount();
@@ -315,10 +314,6 @@ private:
   int getOperationType() const;
   friend class NdbOut& operator<<(NdbOut&, const NdbBlob&);
 #endif
-
-  void next(NdbBlob* obj) { theNext= obj;}
-  NdbBlob* next() { return theNext;}
-  friend struct Ndb_free_list_t<NdbBlob>;
 };
 
 #endif

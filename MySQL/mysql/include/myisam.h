@@ -311,22 +311,6 @@ typedef struct st_sort_key_blocks		/* Used when sorting */
 } SORT_KEY_BLOCKS;
 
 
-/* 
-  MyISAM supports several statistics collection methods. Currently statistics 
-  collection method is not stored in MyISAM file and has to be specified for 
-  each table analyze/repair operation in  MI_CHECK::stats_method.
-*/
-
-typedef enum 
-{
-  /* Treat NULLs as inequal when collecting statistics (default for 4.1/5.0) */
-  MI_STATS_METHOD_NULLS_NOT_EQUAL,
-  /* Treat NULLs as equal when collecting statistics (like 4.0 did) */
-  MI_STATS_METHOD_NULLS_EQUAL,
-  /* Ignore NULLs - count only tuples without NULLs in the index components */
-  MI_STATS_METHOD_IGNORE_NULLS
-} enum_mi_stats_method;
-
 typedef struct st_mi_check_param
 {
   ulonglong auto_increment_value;
@@ -345,26 +329,18 @@ typedef struct st_mi_check_param
   uint testflag, key_cache_block_size;
   uint8 language;
   my_bool using_global_keycache, opt_lock_memory, opt_follow_links;
-  my_bool retry_repair, force_sort;
+  my_bool retry_repair, force_sort, calc_checksum;
   char temp_filename[FN_REFLEN],*isam_file_name;
   MY_TMPDIR *tmpdir;
   int tmpfile_createflag;
   myf myf_rw;
   IO_CACHE read_cache;
-  
-  /* 
-    The next two are used to collect statistics, see update_key_parts for
-    description.
-  */
   ulonglong unique_count[MI_MAX_KEY_SEG+1];
-  ulonglong notnull_count[MI_MAX_KEY_SEG+1];
-  
   ha_checksum key_crc[MI_MAX_POSSIBLE_KEY];
   ulong rec_per_key_part[MI_MAX_KEY_SEG*MI_MAX_POSSIBLE_KEY];
   void *thd;
   char *db_name,*table_name;
   char *op_name;
-  enum_mi_stats_method stats_method;
 } MI_CHECK;
 
 typedef struct st_sort_ft_buf
@@ -418,8 +394,7 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
 			       my_bool repair);
 int update_state_info(MI_CHECK *param, MI_INFO *info,uint update);
 void update_key_parts(MI_KEYDEF *keyinfo, ulong *rec_per_key_part,
-                      ulonglong *unique, ulonglong *notnull, 
-                      ulonglong records);
+			     ulonglong *unique, ulonglong records);
 int filecopy(MI_CHECK *param, File to,File from,my_off_t start,
 	     my_off_t length, const char *type);
 int movepoint(MI_INFO *info,byte *record,my_off_t oldpos,

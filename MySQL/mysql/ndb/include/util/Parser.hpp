@@ -285,7 +285,7 @@ template<class T>
 inline
 void
 Parser<T>::setBreakOnInvalidArg(bool v){
-  impl->m_breakOnInvalidArg = v;
+  impl->m_breakOnInvalidArg;
 }
 
 #endif

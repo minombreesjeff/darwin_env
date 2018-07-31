@@ -1474,7 +1474,6 @@ row_create_table_for_mysql(
 	const char*	table_name;
 	ulint		table_name_len;
 	ulint		err;
-	ulint		i;
 
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
 #ifdef UNIV_SYNC_DEBUG
@@ -1509,19 +1508,6 @@ row_create_table_for_mysql(
 		trx_commit_for_mysql(trx);
 
 		return(DB_ERROR);
-	}
-
-	/* Check that no reserved column names are used. */
-	for (i = 0; i < dict_table_get_n_user_cols(table); i++) {
-		dict_col_t*	col = dict_table_get_nth_col(table, i);
-
-		if (dict_col_name_is_reserved(col->name)) {
-
-			dict_mem_table_free(table);
-			trx_commit_for_mysql(trx);
-
-			return(DB_ERROR);
-		}
 	}
 
 	trx_start_if_not_started(trx);
@@ -1818,7 +1804,7 @@ row_table_add_foreign_constraints(
 
 	if (err == DB_SUCCESS) {
 		/* Check that also referencing constraints are ok */
-		err = dict_load_foreigns(name, TRUE);
+		err = dict_load_foreigns(name, trx->check_foreigns);
 	}
 
 	if (err != DB_SUCCESS) {
@@ -2237,13 +2223,13 @@ do not allow the discard. We also reserve the data dictionary latch. */
 		}
 	}
 funct_exit:	
-  	trx_commit_for_mysql(trx);
-
 	row_mysql_unlock_data_dictionary(trx);
 
 	if (graph) {
 		que_graph_free(graph);
 	}
+
+  	trx_commit_for_mysql(trx);
 
 	trx->op_info = "";
 
@@ -2374,9 +2360,9 @@ row_import_tablespace_for_mysql(
 	}
 
 funct_exit:	
-  	trx_commit_for_mysql(trx);
-
 	row_mysql_unlock_data_dictionary(trx);
+
+  	trx_commit_for_mysql(trx);
 
 	trx->op_info = "";
 
@@ -2769,8 +2755,6 @@ fputs("	 InnoDB: You are trying to drop table ", stderr);
 	}
 funct_exit:
 
-  	trx_commit_for_mysql(trx);
-
 	if (locked_dictionary) {
 		row_mysql_unlock_data_dictionary(trx);	
 	}
@@ -2781,6 +2765,8 @@ funct_exit:
 
 	que_graph_free(graph);
 	
+  	trx_commit_for_mysql(trx);
+
 	trx->op_info = "";
 
 	srv_wake_master_thread();
@@ -2857,10 +2843,10 @@ loop:
 		}
 	}
 
-	trx_commit_for_mysql(trx);
-
 	row_mysql_unlock_data_dictionary(trx);
 	
+	trx_commit_for_mysql(trx);
+
 	trx->op_info = "";
 
 	return(err);
@@ -2977,8 +2963,7 @@ row_rename_table_for_mysql(
 	mem_heap_t*	heap			= NULL;
 	const char**	constraints_to_drop	= NULL;
 	ulint		n_constraints_to_drop	= 0;
-	ibool           recovering_temp_table   = FALSE;
-	ibool		old_is_tmp, new_is_tmp;
+        ibool           recovering_temp_table   = FALSE;
 	ulint		len;
 	ulint		i;
         ibool		success;
@@ -3018,9 +3003,6 @@ row_rename_table_for_mysql(
 	trx->op_info = "renaming table";
 	trx_start_if_not_started(trx);
 
-	old_is_tmp = row_is_mysql_tmp_table_name(old_name);
-	new_is_tmp = row_is_mysql_tmp_table_name(new_name);
-	
 	if (row_mysql_is_recovered_tmp_table(new_name)) {
 
                 recovering_temp_table = TRUE;
@@ -3065,7 +3047,7 @@ row_rename_table_for_mysql(
 	len = (sizeof str1) + (sizeof str2) + (sizeof str3) + (sizeof str5) - 4
 		+ ut_strlenq(new_name, '\'') + ut_strlenq(old_name, '\'');
 
-	if (new_is_tmp) {
+	if (row_is_mysql_tmp_table_name(new_name)) {
 		db_name_len = dict_get_db_name_len(old_name) + 1;
 
 		/* MySQL is doing an ALTER TABLE command and it renames the
@@ -3218,7 +3200,7 @@ row_rename_table_for_mysql(
 		the table is stored in a single-table tablespace */
 
 		success = dict_table_rename_in_cache(table, new_name,
-				!new_is_tmp);
+				!row_is_mysql_tmp_table_name(new_name));
 		if (!success) {
 			trx->error_state = DB_SUCCESS;
 			trx_general_rollback_for_mysql(trx, FALSE, NULL);
@@ -3235,16 +3217,19 @@ row_rename_table_for_mysql(
 			goto funct_exit;
 		}
 
-		/* We only want to switch off some of the type checking in
-		an ALTER, not in a RENAME. */
-		
-		err = dict_load_foreigns(new_name,
-			old_is_tmp ? trx->check_foreigns : TRUE);
+		err = dict_load_foreigns(new_name, trx->check_foreigns);
 
-		if (err != DB_SUCCESS) {
-			ut_print_timestamp(stderr);
+		if (row_is_mysql_tmp_table_name(old_name)) {
 
-			if (old_is_tmp) {
+			/* MySQL is doing an ALTER TABLE command and it
+			renames the created temporary table to the name
+			of the original table. In the ALTER TABLE we maybe
+			created some FOREIGN KEY constraints for the temporary
+			table. But we want to load also the foreign key
+			constraint definitions for the original table name. */
+
+			if (err != DB_SUCCESS) {
+	    			ut_print_timestamp(stderr);
 				fputs("  InnoDB: Error: in ALTER TABLE ",
 					stderr);
 				ut_print_name(stderr, trx, new_name);
@@ -3252,28 +3237,39 @@ row_rename_table_for_mysql(
 	"InnoDB: has or is referenced in foreign key constraints\n"
 	"InnoDB: which are not compatible with the new table definition.\n",
 					stderr);
-			} else {
+
+				ut_a(dict_table_rename_in_cache(table,
+					old_name, FALSE));
+				trx->error_state = DB_SUCCESS;
+				trx_general_rollback_for_mysql(trx, FALSE,
+									NULL);
+				trx->error_state = DB_SUCCESS;
+			}
+		} else {
+			if (err != DB_SUCCESS) {
+
+	    			ut_print_timestamp(stderr);
+
 				fputs(
 				"  InnoDB: Error: in RENAME TABLE table ",
 					stderr);
 				ut_print_name(stderr, trx, new_name);
 				fputs("\n"
-	"InnoDB: is referenced in foreign key constraints\n"
-	"InnoDB: which are not compatible with the new table definition.\n",
+     "InnoDB: is referenced in foreign key constraints\n"
+     "InnoDB: which are not compatible with the new table definition.\n",
 					stderr);
-			}
-
-			ut_a(dict_table_rename_in_cache(table,
+     
+				ut_a(dict_table_rename_in_cache(table,
 					old_name, FALSE));
-			trx->error_state = DB_SUCCESS;
-			trx_general_rollback_for_mysql(trx, FALSE,
-				NULL);
-			trx->error_state = DB_SUCCESS;
+						
+				trx->error_state = DB_SUCCESS;
+				trx_general_rollback_for_mysql(trx, FALSE,
+									NULL);
+				trx->error_state = DB_SUCCESS;
+			}
 		}
 	}
 funct_exit:	
-  	trx_commit_for_mysql(trx);
-
 	if (!recovering_temp_table) {
 		row_mysql_unlock_data_dictionary(trx);
 	}
@@ -3286,6 +3282,8 @@ funct_exit:
 		mem_heap_free(heap);
 	}
 	
+  	trx_commit_for_mysql(trx);
+
 	trx->op_info = "";
 
 	return((int) err);

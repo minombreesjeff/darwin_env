@@ -54,10 +54,6 @@ max-time: 600
 cmd: atrt-testBackup
 args: -n BackupOne T1 T6 T3 I3
 
-max-time: 600
-cmd: atrt-testBackup
-args: -n BackupDDL T1
-
 # BASIC FUNCTIONALITY
 max-time: 500
 cmd: testBasic
@@ -235,10 +231,6 @@ args: -n BuddyTransNoTimeout5 T1
 max-time: 500
 cmd: testTimeout
 args: -n TimeoutRandTransaction T1
-
-max-time: 600
-cmd: testTimeout
-args: -n Error4012 T1
 
 # SCAN TESTS
 #
@@ -438,46 +430,6 @@ max-time: 500
 cmd: testScan
 args: -l 100 -n Scan-bug8262 T7
 
-max-time: 500
-cmd: testNodeRestart
-args: -n Bug15587 T1
-
-max-time: 500
-cmd: testNodeRestart
-args: -n Bug15632 T1
-
-max-time: 500
-cmd: testNodeRestart
-args: -n Bug15685 T1
-
-max-time: 500
-cmd: testNodeRestart
-args: -n Bug16772 T1
-
-#max-time: 500
-#cmd: testSystemRestart
-#args: -n Bug18385 T1
-#
-max-time: 1000
-cmd: testNodeRestart
-args: -n Bug18414 T1
-
-max-time: 1000
-cmd: testNodeRestart
-args: -n Bug18612 T1
-
-max-time: 1000
-cmd: testNodeRestart
-args: -n Bug18612SR T1
-
-max-time: 1000
-cmd: testNodeRestart
-args: -n Bug20185 T1
-
-max-time: 1000
-cmd: testIndex
-args: -n Bug21384
-
 # OLD FLEX
 max-time: 500
 cmd: flexBench
@@ -492,10 +444,6 @@ args: -r 5 -t 32
 max-time: 1500
 cmd: testDict
 args: -n CreateAndDrop 
-
-max-time: 1500
-cmd: testDict
-args: -n CreateAndDropAtRandom -l 200 T1
 
 max-time: 1500
 cmd: testDict

@@ -128,9 +128,7 @@ public:
     RecordTooBig = 738,
     InvalidPrimaryKeySize  = 739,
     NullablePrimaryKey = 740,
-    UnsupportedChange = 741,
-    BackupInProgress = 762,
-    IncompatibleVersions = 763
+    UnsupportedChange = 741
   };
 
 private:
@@ -176,28 +174,6 @@ private:
   Uint32 senderRef;
   Uint32 tableId;
   Uint32 tableVersion;
-};
-
-/**
- * Inform API about change of table definition
- */
-struct AlterTableRep 
-{
-  friend bool printALTER_TABLE_REP(FILE*, const Uint32*, Uint32, Uint16);
-  
-  STATIC_CONST( SignalLength = 3 );
-  
-  enum Change_type 
-  {
-    CT_ALTERED = 0x1,
-    CT_DROPPED = 0x2
-  };
-  
-  Uint32 tableId;
-  Uint32 tableVersion;
-  Uint32 changeType;
-  
-  SECTION( TABLE_NAME = 0 );
 };
 
 #endif

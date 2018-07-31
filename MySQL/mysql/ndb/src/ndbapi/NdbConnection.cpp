@@ -280,7 +280,6 @@ NdbConnection::execute(ExecType aTypeOfExec,
 		       AbortOption abortOption,
 		       int forceSend)
 {
-  NdbError savedError= theError;
   DBUG_ENTER("NdbConnection::execute");
   DBUG_PRINT("enter", ("aTypeOfExec: %d, abortOption: %d", 
 		       aTypeOfExec, abortOption));
@@ -310,11 +309,7 @@ NdbConnection::execute(ExecType aTypeOfExec,
         NdbBlob* tBlob = tPrepOp->theBlobList;
         while (tBlob != NULL) {
           if (tBlob->preExecute(tExecType, batch) == -1)
-	  {
             ret = -1;
-	    if(savedError.code==0)
-	      savedError= theError;
-	  }
           tBlob = tBlob->theNext;
         }
         if (batch) {
@@ -343,11 +338,7 @@ NdbConnection::execute(ExecType aTypeOfExec,
           NdbBlob* tBlob = tOp->theBlobList;
           while (tBlob != NULL) {
             if (tBlob->preCommit() == -1)
-	    {
-	      ret = -1;
-	      if(savedError.code==0)
-		savedError= theError;
-	    }
+              ret = -1;
             tBlob = tBlob->theNext;
           }
         }
@@ -369,41 +360,7 @@ NdbConnection::execute(ExecType aTypeOfExec,
     }
 
     if (executeNoBlobs(tExecType, abortOption, forceSend) == -1)
-    {
-      ret = -1;
-      if(savedError.code==0)
-	savedError= theError;
-      
-      /**
-       * If AO_IgnoreError, error codes arent always set on individual
-       *   operations, making postExecute impossible
-       */
-      if (abortOption == AO_IgnoreError)
-      {
-         if (theCompletedFirstOp != NULL)
-	 {
-	   if (tCompletedFirstOp != NULL)
-	   {
-	     tCompletedLastOp->next(theCompletedFirstOp);
-	     theCompletedFirstOp = tCompletedFirstOp;
-	   } 
-	 }
-	 else
-	 {
-	   theCompletedFirstOp = tCompletedFirstOp;
-	   theCompletedLastOp = tCompletedLastOp;
-	 }
-         if (tPrepOp != NULL && tRestOp != NULL) {
-           if (theFirstOpInList == NULL)
-             theFirstOpInList = tRestOp;
-           else
-             theLastOpInList->next(tRestOp);
-           theLastOpInList = tLastOp;
-        }
-	DBUG_RETURN(-1);
-      }
-    }
-    
+        ret = -1;
 #ifdef ndb_api_crash_on_complex_blob_abort
     assert(theFirstOpInList == NULL && theLastOpInList == NULL);
 #else
@@ -418,11 +375,7 @@ NdbConnection::execute(ExecType aTypeOfExec,
           while (tBlob != NULL) {
             // may add new operations if batch
             if (tBlob->postExecute(tExecType) == -1)
-	    {
               ret = -1;
-	      if(savedError.code==0)
-		savedError= theError;
-	    }
             tBlob = tBlob->theNext;
           }
         }
@@ -453,10 +406,6 @@ NdbConnection::execute(ExecType aTypeOfExec,
     ndbout << "completed ops: " << n << endl;
   }
 #endif
-
-  if(savedError.code!=0 && theError.code==4350) // Trans already aborted
-      theError= savedError;
-
   DBUG_RETURN(ret);
 }
 
@@ -479,12 +428,12 @@ NdbConnection::executeNoBlobs(ExecType aTypeOfExec,
 //------------------------------------------------------------------------
   Ndb* tNdb = theNdb;
 
-  Uint32 timeout = TransporterFacade::instance()->m_waitfor_timeout;
   m_waitForReply = false;
   executeAsynchPrepare(aTypeOfExec, NULL, NULL, abortOption);
   if (m_waitForReply){
     while (1) {
-      int noOfComp = tNdb->sendPollNdb(3 * timeout, 1, forceSend);
+      int noOfComp = tNdb->sendPollNdb((3 * WAITFOR_RESPONSE_TIMEOUT),
+                                       1, forceSend);
       if (noOfComp == 0) {
         /** 
          * This timeout situation can occur if NDB crashes.

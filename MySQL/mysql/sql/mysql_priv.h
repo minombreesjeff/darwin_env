@@ -59,7 +59,6 @@ void kill_one_thread(THD *thd, ulong id);
 bool net_request_file(NET* net, const char* fname);
 char* query_table_status(THD *thd,const char *db,const char *table_name);
 
-
 #define x_free(A)	{ my_free((gptr) (A),MYF(MY_WME | MY_FAE | MY_ALLOW_ZERO_PTR)); }
 #define safeFree(x)	{ if(x) { my_free((gptr) x,MYF(0)); x = NULL; } }
 #define PREV_BITS(type,A)	((type) (((type) 1 << (A)) -1))
@@ -67,23 +66,6 @@ char* query_table_status(THD *thd,const char *db,const char *table_name);
 
 extern CHARSET_INFO *system_charset_info, *files_charset_info ;
 extern CHARSET_INFO *national_charset_info, *table_alias_charset;
-
-
-typedef struct my_locale_st
-{
-  const char *name;
-  const char *description;
-  const bool is_ascii;
-  TYPELIB *month_names;
-  TYPELIB *ab_month_names;
-  TYPELIB *day_names;
-  TYPELIB *ab_day_names;
-} MY_LOCALE;
-
-extern MY_LOCALE my_locale_en_US;
-extern MY_LOCALE *my_locales[];
-
-MY_LOCALE *my_locale_by_name(const char *name);
 
 /***************************************************************************
   Configuration parameters
@@ -95,8 +77,6 @@ MY_LOCALE *my_locale_by_name(const char *name);
 #define MAX_ACCEPT_RETRY	10	// Test accept this many times
 #define MAX_FIELDS_BEFORE_HASH	32
 #define USER_VARS_HASH_SIZE     16
-#define TABLE_OPEN_CACHE_MIN    64
-#define TABLE_OPEN_CACHE_DEFAULT 64
 #define STACK_MIN_SIZE		8192	// Abort if less stack during eval.
 #define STACK_BUFF_ALLOC	64	// For stack overrun checks
 #ifndef MYSQLD_NET_RETRY_COUNT
@@ -235,12 +215,6 @@ MY_LOCALE *my_locale_by_name(const char *name);
    in the user query has requested */
 #define SELECT_ALL			(1L << 29)
 
-/* 
-  Force the used temporary table to be a MyISAM table (because we will use
-  fulltext functions when reading from it.
-*/
-#define TMP_TABLE_FORCE_MYISAM          (1L << 30) 
-
 /* If set to 0, then the thread will ignore all warnings with level notes.
    Set by executing SET SQL_NOTES=1 */
 #define OPTION_SQL_NOTES                (1L << 31)
@@ -277,8 +251,6 @@ MY_LOCALE *my_locale_by_name(const char *name);
 #define UNCACHEABLE_SIDEEFFECT	4
 // forcing to save JOIN for explain
 #define UNCACHEABLE_EXPLAIN     8
-/* Don't evaluate subqueries in prepare even if they're not correlated */
-#define UNCACHEABLE_PREPARE    16
 
 #ifdef EXTRA_DEBUG
 /*
@@ -307,7 +279,6 @@ void debug_sync_point(const char* lock_name, uint lock_timeout);
 #define TL_OPTION_UPDATING	1
 #define TL_OPTION_FORCE_INDEX	2
 #define TL_OPTION_IGNORE_LEAVES 4
-#define TL_OPTION_ALIAS         8
 
 /* Some portable defines */
 
@@ -385,14 +356,8 @@ inline THD *_current_thd(void)
 #include "protocol.h"
 #include "sql_udf.h"
 class user_var_entry;
-enum enum_var_type
-{
-  OPT_DEFAULT, OPT_SESSION, OPT_GLOBAL
-};
-class sys_var;
-class Comp_creator;
-typedef Comp_creator* (*chooser_compare_func_creator)(bool invert);
 #include "item.h"
+typedef Comp_creator* (*chooser_compare_func_creator)(bool invert);
 /* sql_parse.cc */
 void free_items(Item *item);
 void cleanup_items(Item *item);
@@ -428,14 +393,12 @@ struct Query_cache_query_flags
   ulong sql_mode;
   ulong max_sort_length;
   ulong group_concat_max_len;
-  MY_LOCALE *lc_time_names;
 };
 #define QUERY_CACHE_FLAGS_SIZE sizeof(Query_cache_query_flags)
 #include "sql_cache.h"
 #define query_cache_store_query(A, B) query_cache.store_query(A, B)
 #define query_cache_destroy() query_cache.destroy()
 #define query_cache_result_size_limit(A) query_cache.result_size_limit(A)
-#define query_cache_init() query_cache.init()
 #define query_cache_resize(A) query_cache.resize(A)
 #define query_cache_set_min_res_unit(A) query_cache.set_min_res_unit(A)
 #define query_cache_invalidate3(A, B, C) query_cache.invalidate(A, B, C)
@@ -449,7 +412,6 @@ struct Query_cache_query_flags
 #define query_cache_store_query(A, B)
 #define query_cache_destroy()
 #define query_cache_result_size_limit(A)
-#define query_cache_init()
 #define query_cache_resize(A)
 #define query_cache_set_min_res_unit(A)
 #define query_cache_invalidate3(A, B, C)
@@ -487,7 +449,6 @@ void mysql_reset_thd_for_next_command(THD *thd);
 bool mysql_new_select(LEX *lex, bool move_down);
 void create_select_for_variable(const char *var_name);
 void mysql_init_multi_delete(LEX *lex);
-void fix_multi_delete_lex(LEX* lex);
 void init_max_user_conn(void);
 void init_update_queries(void);
 void free_max_user_conn(void);
@@ -559,9 +520,8 @@ int mysql_union(THD *thd, LEX *lex, select_result *result,
 		SELECT_LEX_UNIT *unit);
 int mysql_handle_derived(LEX *lex);
 Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
-                        Item ***copy_func, Field **from_field,
-                        bool group, bool modify_item, uint convert_blob_length,
-                        bool make_copy_field);
+			Item ***copy_func, Field **from_field,
+			bool group, bool modify_item, uint convert_blob_length);
 int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 		       List<create_field> &fields,
 		       List<Key> &keys, uint &db_options, 
@@ -664,7 +624,9 @@ extern char *des_key_file;
 extern struct st_des_keyschedule des_keyschedule[10];
 extern uint des_default_key;
 extern pthread_mutex_t LOCK_des_key_file;
+void init_des_key_file();
 bool load_des_key_file(const char *file_name);
+void free_des_key_file();
 #endif /* HAVE_OPENSSL */
 
 /* sql_do.cc */
@@ -715,8 +677,7 @@ void mysql_stmt_get_longdata(THD *thd, char *pos, ulong packet_length);
 MYSQL_ERROR *push_warning(THD *thd, MYSQL_ERROR::enum_warning_level level, uint code,
                           const char *msg);
 void push_warning_printf(THD *thd, MYSQL_ERROR::enum_warning_level level,
-                         uint code, const char *format, ...)
-  ATTRIBUTE_FORMAT(printf,4,5);
+			 uint code, const char *format, ...);
 void mysql_reset_errors(THD *thd);
 my_bool mysqld_show_warnings(THD *thd, ulong levels_to_show);
 
@@ -725,8 +686,7 @@ int mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen= 0);
 int mysql_ha_close(THD *thd, TABLE_LIST *tables);
 int mysql_ha_read(THD *, TABLE_LIST *,enum enum_ha_read_modes,char *,
                List<Item> *,enum ha_rkey_function,Item *,ha_rows,ha_rows);
-int mysql_ha_flush(THD *thd, TABLE_LIST *tables, uint mode_flags,
-                   bool is_locked);
+int mysql_ha_flush(THD *thd, TABLE_LIST *tables, uint mode_flags);
 /* mysql_ha_flush mode_flags bits */
 #define MYSQL_HA_CLOSE_FINAL        0x00
 #define MYSQL_HA_REOPEN_ON_USAGE    0x01
@@ -798,15 +758,8 @@ bool rename_temporary_table(THD* thd, TABLE *table, const char *new_db,
 			    const char *table_name);
 void remove_db_from_cache(const char *db);
 void flush_tables();
-
-/* bits for last argument to remove_table_from_cache() */
-#define RTFC_NO_FLAG                0x0000
-#define RTFC_OWNED_BY_THD_FLAG      0x0001
-#define RTFC_WAIT_OTHER_THREAD_FLAG 0x0002
-#define RTFC_CHECK_KILLED_FLAG      0x0004
 bool remove_table_from_cache(THD *thd, const char *db, const char *table,
-                             uint flags);
-
+			     bool return_if_owned_by_thd=0);
 bool close_cached_tables(THD *thd, bool wait_for_refresh, TABLE_LIST *tables);
 void copy_field_from_tmp_record(Field *field,int offset);
 int fill_record(List<Item> &fields,List<Item> &values, bool ignore_errors);
@@ -851,10 +804,10 @@ bool init_errmessage(void);
 void sql_perror(const char *message);
 
 void vprint_msg_to_log(enum loglevel level, const char *format, va_list args);
-void sql_print_error(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
-void sql_print_warning(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
-void sql_print_information(const char *format, ...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
+void sql_print_error(const char *format, ...);
+void sql_print_warning(const char *format, ...);
+void sql_print_information(const char *format, ...);
+
 
 
 bool fn_format_relative_to_data_home(my_string to, const char *name,
@@ -941,7 +894,6 @@ extern ulong ha_commit_count, ha_rollback_count,table_cache_size;
 extern ulong max_connections,max_connect_errors, connect_timeout;
 extern ulong slave_net_timeout, slave_trans_retries;
 extern ulong max_user_connections;
-extern ulong max_prepared_stmt_count, prepared_stmt_count;
 extern ulong long_query_count, what_to_log,flush_time;
 extern ulong query_buff_size, thread_stack,thread_stack_min;
 extern ulong binlog_cache_size, max_binlog_cache_size, open_files_limit;
@@ -961,7 +913,6 @@ extern bool opt_using_transactions, mysqld_embedded;
 extern bool using_update_log, opt_large_files, server_id_supplied;
 extern bool opt_log, opt_update_log, opt_bin_log, opt_slow_log, opt_error_log;
 extern bool opt_disable_networking, opt_skip_show_db;
-extern bool opt_character_set_client_handshake;
 extern bool volatile abort_loop, shutdown_in_progress, grant_option;
 extern uint volatile thread_count, thread_running, global_read_lock;
 extern my_bool opt_sql_bin_update, opt_safe_user_create, opt_no_mix_types;
@@ -978,18 +929,13 @@ extern char *default_tz_name;
 
 extern MYSQL_LOG mysql_log,mysql_update_log,mysql_slow_log,mysql_bin_log;
 extern FILE *bootstrap_file;
-extern FILE *stderror_file;
 extern pthread_key(MEM_ROOT**,THR_MALLOC);
 extern pthread_mutex_t LOCK_mysql_create_db,LOCK_Acl,LOCK_open,
        LOCK_thread_count,LOCK_mapped_file,LOCK_user_locks, LOCK_status,
        LOCK_error_log, LOCK_delayed_insert, LOCK_uuid_generator,
        LOCK_delayed_status, LOCK_delayed_create, LOCK_crypt, LOCK_timezone,
        LOCK_slave_list, LOCK_active_mi, LOCK_manager,
-       LOCK_global_system_variables, LOCK_user_conn,
-       LOCK_prepared_stmt_count;
-#ifdef HAVE_OPENSSL
-extern pthread_mutex_t LOCK_des_key_file;
-#endif
+       LOCK_global_system_variables, LOCK_user_conn;
 extern rw_lock_t LOCK_grant, LOCK_sys_init_connect, LOCK_sys_init_slave;
 extern pthread_cond_t COND_refresh, COND_thread_count, COND_manager;
 extern pthread_attr_t connection_attrib;
@@ -1026,7 +972,7 @@ extern SHOW_COMP_OPTION have_query_cache, have_berkeley_db, have_innodb;
 extern SHOW_COMP_OPTION have_geometry, have_rtree_keys;
 extern SHOW_COMP_OPTION have_crypt;
 extern SHOW_COMP_OPTION have_compress;
-extern SHOW_COMP_OPTION have_blackhole_db, have_merge_db;
+extern SHOW_COMP_OPTION have_blackhole_db;
 
 #ifndef __WIN__
 extern pthread_t signal_thread;
@@ -1046,9 +992,8 @@ void mysql_unlock_read_tables(THD *thd, MYSQL_LOCK *sql_lock);
 void mysql_unlock_some_tables(THD *thd, TABLE **table,uint count);
 void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table);
 void mysql_lock_abort(THD *thd, TABLE *table);
-bool mysql_lock_abort_for_thread(THD *thd, TABLE *table);
+void mysql_lock_abort_for_thread(THD *thd, TABLE *table);
 MYSQL_LOCK *mysql_lock_merge(MYSQL_LOCK *a,MYSQL_LOCK *b);
-int mysql_lock_have_duplicate(THD *thd, TABLE *table, TABLE_LIST *tables);
 bool lock_global_read_lock(THD *thd);
 void unlock_global_read_lock(THD *thd);
 bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh, bool is_not_commit);
@@ -1072,13 +1017,10 @@ void unlock_table_names(THD *thd, TABLE_LIST *table_list,
 void unireg_init(ulong options);
 void unireg_end(void);
 bool mysql_create_frm(THD *thd, my_string file_name,
-                      const char *db, const char *table,
 		      HA_CREATE_INFO *create_info,
 		      List<create_field> &create_field,
 		      uint key_count,KEY *key_info,handler *db_type);
-int rea_create_table(THD *thd, my_string file_name,
-                     const char *db, const char *table,
-                     HA_CREATE_INFO *create_info,
+int rea_create_table(THD *thd, my_string file_name,HA_CREATE_INFO *create_info,
 		     List<create_field> &create_field,
 		     uint key_count,KEY *key_info);
 int format_number(uint inputflag,uint max_length,my_string pos,uint length,
@@ -1133,8 +1075,6 @@ void change_byte(byte *,uint,char,char);
 void init_read_record(READ_RECORD *info, THD *thd, TABLE *reg_form,
 		      SQL_SELECT *select,
 		      int use_record_cache, bool print_errors);
-void init_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table, 
-                          bool print_error, uint idx);
 void end_read_record(READ_RECORD *info);
 ha_rows filesort(THD *thd, TABLE *form,struct st_sort_field *sortorder,
 		 uint s_length, SQL_SELECT *select,
@@ -1146,14 +1086,13 @@ int calc_weekday(long daynr,bool sunday_first_day_of_week);
 uint calc_week(TIME *l_time, uint week_behaviour, uint *year);
 void find_date(char *pos,uint *vek,uint flag);
 TYPELIB *convert_strings_to_array_type(my_string *typelibs, my_string *end);
-TYPELIB *typelib(MEM_ROOT *mem_root, List<String> &strings);
+TYPELIB *typelib(List<String> &strings);
 ulong get_form_pos(File file, uchar *head, TYPELIB *save_names);
 ulong make_new_entry(File file,uchar *fileinfo,TYPELIB *formnames,
 		     const char *newname);
 ulong next_io_size(ulong pos);
 void append_unescaped(String *res, const char *pos, uint length);
-int create_frm(char *name,  const char *db, const char *table,
-               uint reclength,uchar *fileinfo,
+int create_frm(char *name,uint reclength,uchar *fileinfo,
 	       HA_CREATE_INFO *create_info, uint keys);
 void update_create_info_from_table(HA_CREATE_INFO *info, TABLE *form);
 int rename_file_ext(const char * from,const char * to,const char * ext);
@@ -1178,9 +1117,12 @@ extern bool sql_cache_init();
 extern void sql_cache_free();
 extern int sql_cache_hit(THD *thd, char *inBuf, uint length);
 
-/* item_func.cc */
+/* item.cc */
 Item *get_system_var(THD *thd, enum_var_type var_type, LEX_STRING name,
 		     LEX_STRING component);
+Item *get_system_var(THD *thd, enum_var_type var_type, const char *var_name,
+		     uint length, const char *item_name);
+/* item_func.cc */
 int get_var_with_binlog(THD *thd, LEX_STRING &name,
                         user_var_entry **out_entry);
 /* log.cc */
@@ -1298,29 +1240,6 @@ inline int hexchar_to_int(char c)
   return -1;
 }
 
-/*
-  wrapper to use instead of mysql_bin_log.write when
-  query is generated by the server using system_charset encoding
-*/
-
-inline void write_binlog_with_system_charset(THD * thd, Query_log_event * qinfo)
-{
-  CHARSET_INFO * cs_save= thd->variables.character_set_client;
-  thd->variables.character_set_client= system_charset_info;
-  mysql_bin_log.write(qinfo);
-  thd->variables.character_set_client= cs_save;
-}
-
-/*
-  is_user_table()
-  return true if the table was created explicitly
-*/
-
-inline bool is_user_table(TABLE * table)
-{
-  const char *name= table->real_name;
-  return strncmp(name, tmp_file_prefix, tmp_file_prefix_length);
-}
 
 /*
   Some functions that are different in the embedded library and the normal

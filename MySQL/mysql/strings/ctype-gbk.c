@@ -2705,12 +2705,11 @@ static my_bool my_like_range_gbk(CHARSET_INFO *cs __attribute__((unused)),
                                  uint res_length, char *min_str,char *max_str,
                                  uint *min_length,uint *max_length)
 {
-  const char *end= ptr + ptr_length;
+  const char *end=ptr+ptr_length;
   char *min_org=min_str;
   char *min_end=min_str+res_length;
-  uint charlen= res_length / cs->mbmaxlen;
 
-  for (; ptr != end && min_str != min_end && charlen > 0; ptr++, charlen--)
+  for (; ptr != end && min_str != min_end ; ptr++)
   {
     if (ptr+1 != end && isgbkcode(ptr[0],ptr[1]))
     {
@@ -2721,10 +2720,7 @@ static my_bool my_like_range_gbk(CHARSET_INFO *cs __attribute__((unused)),
     if (*ptr == escape && ptr+1 != end)
     {
       ptr++;				/* Skip escape */
-      if (isgbkcode(ptr[0], ptr[1]))
-        *min_str++= *max_str++ = *ptr;
-      if (min_str < min_end)
-        *min_str++= *max_str++= *ptr;
+      *min_str++= *max_str++ = *ptr;
       continue;
     }
     if (*ptr == w_one)		/* '_' in SQL */
@@ -9889,7 +9885,7 @@ my_wc_mb_gbk(CHARSET_INFO *cs  __attribute__((unused)),
     return MY_CS_ILUNI;
   
   if (s+2>e)
-    return MY_CS_TOOSMALL2;
+    return MY_CS_TOOSMALL;
     
   s[0]=code>>8;
   s[1]=code&0xFF;
@@ -9903,7 +9899,7 @@ my_mb_wc_gbk(CHARSET_INFO *cs __attribute__((unused)),
   int hi;
   
   if (s >= e)
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOFEW(0);
   
   hi=s[0];
   
@@ -9914,52 +9910,15 @@ my_mb_wc_gbk(CHARSET_INFO *cs __attribute__((unused)),
   }
   
   if (s+2>e)
-    return MY_CS_TOOSMALL2;
+    return MY_CS_TOOFEW(0);
     
   if (!(pwc[0]=func_gbk_uni_onechar( (hi<<8) + s[1])))
-    return -2;
+    return MY_CS_ILSEQ;
   
   return 2;
   
 }
 
-
-/*
-  Returns well formed length of a GBK string.
-*/
-static
-uint my_well_formed_len_gbk(CHARSET_INFO *cs __attribute__((unused)),
-                            const char *b, const char *e,
-                            uint pos, int *error)
-{
-  const char *b0= b;
-  const char *emb= e - 1; /* Last possible end of an MB character */
-
-  *error= 0;
-  while (pos-- && b < e)
-  {
-    if ((uchar) b[0] < 128)
-    {
-      /* Single byte ascii character */
-      b++;
-    }
-    else  if ((b < emb) && isgbkcode((uchar)*b, (uchar)b[1]))
-    {
-      /* Double byte character */
-      b+= 2;
-    }
-    else
-    {
-      /* Wrong byte sequence */
-      *error= 1;
-      break;
-    }
-  }
-  return (uint) (b - b0);
-}
-
-
-                             
 
 static MY_COLLATION_HANDLER my_collation_ci_handler =
 {
@@ -9981,7 +9940,7 @@ static MY_CHARSET_HANDLER my_charset_handler=
   mbcharlen_gbk,
   my_numchars_mb,
   my_charpos_mb,
-  my_well_formed_len_gbk,
+  my_well_formed_len_mb,
   my_lengthsp_8bit,
   my_numcells_8bit,
   my_mb_wc_gbk,
@@ -10027,7 +9986,6 @@ CHARSET_INFO my_charset_gbk_chinese_ci=
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -10055,7 +10013,6 @@ CHARSET_INFO my_charset_gbk_bin=
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
-    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler
 };

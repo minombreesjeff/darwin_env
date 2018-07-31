@@ -64,8 +64,7 @@ public:
   const char* getPropertyWait(const char*, const char* );
 
   void decProperty(const char *);
-  void incProperty(const char *);
-
+  
   // Communicate with other tests
   void stopTest();
   bool isTestStopped();
@@ -426,7 +425,7 @@ C##suitname():NDBT_TestSuite(#suitname){ \
   pt->addTable(tableName, false);
 
 #define NDBT_TESTSUITE_END(suitname) \
- } } ; C##suitname suitname
+ } } ; C##suitname suitname;
 
 // Helper functions for retrieving variables from NDBT_Step
 #define GETNDB(ps) ((NDBT_NdbApiStep*)ps)->getNdb()

@@ -159,5 +159,3 @@ EXECUTE my_stmt;
 EXECUTE my_stmt;
 deallocate prepare my_stmt;
 drop table t1,t2;
-
-# End of 4.1 tests

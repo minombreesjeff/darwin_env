@@ -45,23 +45,10 @@ extern "C" {
 #undef HAVE_SCHED_H
 #undef HAVE_SYS_MMAN_H
 #undef HAVE_SYNCH_H
-#undef HAVE_RINT
 #define HAVE_PTHREAD_ATTR_SETSTACKSIZE 1
 #define HAVE_PTHREAD_SIGMASK 1
 #define HAVE_PTHREAD_YIELD_ZERO_ARG 1
 #define HAVE_BROKEN_REALPATH 1
-
-/* changes made to make use of LibC-June-2004 for building purpose */
-#undef HAVE_POSIX_SIGNALS
-#undef HAVE_PTHREAD_ATTR_SETSCOPE
-#undef HAVE_ALLOC_A
-#undef HAVE_FINITE
-#undef HAVE_GETPWNAM
-#undef HAVE_GETPWUID
-#undef HAVE_PTHREAD_SETSCHEDPARAM
-#undef HAVE_READLINK
-#undef HAVE_STPCPY
-/* changes  end  */
 
 /* no libc crypt() function */
 #ifdef HAVE_OPENSSL
@@ -92,9 +79,6 @@ extern "C" {
 /* On NetWare, stack grows towards lower address*/
 #define STACK_DIRECTION -1
 
-/* On NetWare, we need to set stack size for threads, otherwise default 16K is used */
-#define NW_THD_STACKSIZE 65536
-
 /* On NetWare, to fix the problem with the deletion of open files */
 #define CANT_DELETE_OPEN_FILES 1
 
@@ -119,12 +103,15 @@ extern "C" {
 /* do not use the extended time in LibC sys\stat.h */
 #define _POSIX_SOURCE
 
+/* Kernel call on NetWare that will only yield if our time slice is up */
+void kYieldIfTimeSliceUp(void);
+
 /* Some macros for portability */
 
 #define set_timespec(ABSTIME,SEC) { (ABSTIME).tv_sec=time(NULL)+(SEC); (ABSTIME).tv_nsec=0; }
 
 /* extra protection against CPU Hogs on NetWare */
-#define NETWARE_YIELD pthread_yield()
+#define NETWARE_YIELD kYieldIfTimeSliceUp()
 /* Screen mode for help texts */
 #define NETWARE_SET_SCREEN_MODE(A) setscreenmode(A)
 

@@ -434,7 +434,7 @@ public:
   }
   virtual int get_data_size() { return 0;}
   virtual int get_data_body_offset() { return 0; }
-  virtual int get_event_len()
+  int get_event_len()
   {
     return (cached_event_len ? cached_event_len :
 	    (cached_event_len = LOG_EVENT_HEADER_LEN + get_data_size()));
@@ -849,18 +849,18 @@ public:
 class Rotate_log_event: public Log_event
 {
 public:
-  enum {
-    ZERO_LEN= 1, // if event should report 0 as its length
-    DUP_NAME= 2 // if constructor should dup the string argument
-  };
   const char* new_log_ident;
   ulonglong pos;
   uint ident_len;
-  uint flags;
+  bool alloced;
 #ifndef MYSQL_CLIENT  
   Rotate_log_event(THD* thd_arg, const char* new_log_ident_arg,
-		   uint ident_len_arg,
-		   ulonglong pos_arg, uint flags);
+		   uint ident_len_arg = 0,
+		   ulonglong pos_arg = LOG_EVENT_OFFSET)
+    :Log_event(), new_log_ident(new_log_ident_arg),
+    pos(pos_arg),ident_len(ident_len_arg ? ident_len_arg :
+			   (uint) strlen(new_log_ident_arg)), alloced(0)
+  {}
 #ifdef HAVE_REPLICATION
   void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
@@ -872,18 +872,10 @@ public:
   Rotate_log_event(const char* buf, int event_len, bool old_format);
   ~Rotate_log_event()
   {
-    if (flags & DUP_NAME)
-      my_free((gptr) new_log_ident, MYF(MY_ALLOW_ZERO_PTR));
+    if (alloced)
+      my_free((gptr) new_log_ident, MYF(0));
   }
   Log_event_type get_type_code() { return ROTATE_EVENT;}
-  virtual int get_event_len()
-  {
-    if (flags & ZERO_LEN)
-      return 0;
-    if (cached_event_len == 0)
-      cached_event_len= LOG_EVENT_HEADER_LEN + get_data_size();
-    return cached_event_len;
-  }
   int get_data_size() { return  ident_len + ROTATE_HEADER_LEN;}
   bool is_valid() { return new_log_ident != 0; }
   int write_data(IO_CACHE* file);
@@ -1077,5 +1069,5 @@ public:
   bool is_valid() { return 1; }
 };
 #endif  
-char *str_to_hex(char *to, const char *from, uint len);
+
 #endif /* _log_event_h */

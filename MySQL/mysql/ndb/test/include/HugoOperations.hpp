@@ -38,11 +38,6 @@ public:
 		     int numRecords = 1,
 		     int updatesValue = 0);
   
-  int pkWriteRecord(Ndb*,
-		    int recordNo,
-		    int numRecords = 1,
-		    int updatesValue = 0);
-  
   int pkReadRecord(Ndb*,
 		   int recordNo,
 		   int numRecords = 1,
@@ -93,10 +88,6 @@ public:
 		      NdbScanOperation::LM_CommittedRead, 
 		      int numRecords = 1);
 
-
-  int execute_async(Ndb*, ExecType, AbortOption = AbortOnError);
-  int wait_async(Ndb*, int timeout = -1);
-
 protected:
   void allocRows(int rows);
   void deallocRows();
@@ -111,11 +102,6 @@ protected:
   Vector<RsPair> m_executed_result_sets;
 
   NdbConnection* pTrans;
-
-  int m_async_reply;
-  int m_async_return;
-  friend void HugoOperations_async_callback(int, NdbConnection*, void*);
-  void callback(int res, NdbConnection*);
 };
 
 #endif

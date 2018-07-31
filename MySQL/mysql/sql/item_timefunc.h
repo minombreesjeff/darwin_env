@@ -339,7 +339,6 @@ public:
   {
     return (new Field_date(maybe_null, name, t_arg, &my_charset_bin));
   }  
-  bool result_as_longlong() { return TRUE; }
 };
 
 
@@ -355,7 +354,6 @@ public:
   {
     return (new Field_datetime(maybe_null, name, t_arg, &my_charset_bin));
   }
-  bool result_as_longlong() { return TRUE; }
 };
 
 
@@ -385,7 +383,6 @@ public:
     TIME representation using UTC-SYSTEM or per-thread time zone.
   */
   virtual void store_now_in_TIME(TIME *now_time)=0;
-  bool result_as_longlong() { return TRUE; }
 };
 
 
@@ -583,7 +580,6 @@ public:
   { 
     collation.set(&my_charset_bin);
     maybe_null=1;
-    decimals= DATETIME_DEC;
     max_length=MAX_TIME_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
   }
   enum_field_types field_type() const { return MYSQL_TYPE_TIME; }
@@ -592,7 +588,6 @@ public:
   {
     return (new Field_time(maybe_null, name, t_arg, &my_charset_bin));
   }
-  bool result_as_longlong() { return TRUE; }
 };
 
 /*
@@ -612,12 +607,12 @@ enum interval_type
 
 class Item_date_add_interval :public Item_date_func
 {
+  const interval_type int_type;
   String value;
+  const bool date_sub_interval;
   enum_field_types cached_field_type;
 
 public:
-  const interval_type int_type; // keep it public
-  const bool date_sub_interval; // keep it public
   Item_date_add_interval(Item *a,Item *b,interval_type type_arg,bool neg_arg)
     :Item_date_func(a,b),int_type(type_arg), date_sub_interval(neg_arg) {}
   String *val_str(String *);
@@ -633,10 +628,10 @@ public:
 
 class Item_extract :public Item_int_func
 {
+  const interval_type int_type;
   String value;
   bool date_value;
  public:
-  const interval_type int_type; // keep it public
   Item_extract(interval_type type_arg, Item *a)
     :Item_int_func(a), int_type(type_arg) {}
   longlong val_int();
@@ -686,7 +681,7 @@ public:
 class Item_char_typecast :public Item_typecast
 {
   int cast_length;
-  CHARSET_INFO *cast_cs, *from_cs;
+  CHARSET_INFO *cast_cs;
   bool charset_conversion;
   String tmp_value;
 public:
@@ -714,14 +709,6 @@ public:
   {
     return (new Field_date(maybe_null, name, t_arg, &my_charset_bin));
   }  
-  void fix_length_and_dec()
-  {
-    collation.set(&my_charset_bin);
-    max_length= 10;
-    maybe_null= 1;
-  }
-  bool result_as_longlong() { return TRUE; }
-  longlong val_int();
 };
 
 
@@ -738,8 +725,6 @@ public:
   {
     return (new Field_time(maybe_null, name, t_arg, &my_charset_bin));
   }
-  bool result_as_longlong() { return TRUE; }
-  longlong val_int();
 };
 
 
@@ -755,8 +740,6 @@ public:
   {
     return (new Field_datetime(maybe_null, name, t_arg, &my_charset_bin));
   }
-  bool result_as_longlong() { return TRUE; }
-  longlong val_int();
 };
 
 class Item_func_makedate :public Item_str_func
@@ -775,8 +758,6 @@ public:
   {
     return (new Field_date(maybe_null, name, t_arg, &my_charset_bin));
   }
-  bool result_as_longlong() { return TRUE; }
-  longlong val_int();
 };
 
 
@@ -821,7 +802,6 @@ public:
   {
     decimals=0;
     max_length=MAX_TIME_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
-    maybe_null= 1;
   }
   Field *tmp_table_field(TABLE *t_arg)
   {
@@ -869,8 +849,8 @@ enum date_time_format
 
 class Item_func_get_format :public Item_str_func
 {
+  const timestamp_type type;
 public:
-  const timestamp_type type; // keep it public
   Item_func_get_format(timestamp_type type_arg, Item *a)
     :Item_str_func(a), type(type_arg)
   {}

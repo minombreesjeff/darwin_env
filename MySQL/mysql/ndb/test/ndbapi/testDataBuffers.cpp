@@ -254,6 +254,12 @@ testcase(int flag)
     ndbout << "tab=" << tab << " cols=" << attrcnt
 	<< " size max=" << smax << " tot=" << stot << endl;
 
+    ndb = new Ndb("TEST_DB");
+    if (ndb->init() != 0)
+	return ndberror("init");
+    if (ndb->waitUntilReady(30) < 0)
+	return ndberror("waitUntilReady");
+
     if ((tcon = NdbSchemaCon::startSchemaTrans(ndb)) == 0)
 	return ndberror("startSchemaTransaction");
     if ((top = tcon->getNdbSchemaOp()) == 0)
@@ -535,6 +541,7 @@ testcase(int flag)
 	    return ndberror("key %d not found", k);
     ndbout << "scanned " << key << endl;
 
+    ndb = 0;
     ndbout << "done" << endl;
     return 0;
 }
@@ -598,23 +605,7 @@ NDB_COMMAND(testDataBuffers, "testDataBuffers", "testDataBuffers", "testDataBuff
 	    return NDBT_ProgramExit(NDBT_WRONGARGS);
 	}
     }
-
     unsigned ok = true;
-
-    ndb = new Ndb("TEST_DB");
-    if (ndb->init() != 0)
-    {
-	ndberror("init");
-	ok = false;
-	goto out;
-    }
-    if (ndb->waitUntilReady(30) < 0)
-    {
-      ndberror("waitUntilReady");
-      ok = false;
-      goto out;
-    }
-    
     for (i = 1; 0 == loopcnt || i <= loopcnt; i++) {
 	ndbout << "=== loop " << i << " ===" << endl;
 	for (int flag = 0; flag < (1<<testbits); flag++) {
@@ -623,13 +614,9 @@ NDB_COMMAND(testDataBuffers, "testDataBuffers", "testDataBuffers", "testDataBuff
 		if (! kontinue)
 		    goto out;
 	    }
-	    NdbDictionary::Dictionary * dict = ndb->getDictionary();
-	    dict->dropTable(tab);
 	}
     }
-    
 out:
-    delete ndb;
     return NDBT_ProgramExit(ok ? NDBT_OK : NDBT_FAILED);
 }
 

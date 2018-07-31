@@ -21,7 +21,7 @@
 #include <version.h>
 
 /* NDB build version */
-#define NDB_VERSION_BUILD 22
+#define NDB_VERSION_BUILD 13
 
 /* NDB major version */
 #define NDB_VERSION_MAJOR 4
@@ -36,16 +36,8 @@
 #define MAKE_VERSION(A,B,C) (((A) << 16) | ((B) << 8)  | ((C) << 0))
 
 #define NDB_VERSION_D MAKE_VERSION(NDB_VERSION_MAJOR, NDB_VERSION_MINOR, NDB_VERSION_BUILD)
-#define NDB_VERSION_STRING_BUF_SZ 100
-#ifdef __cplusplus
-extern "C"
-#else
-extern
-#endif
-char ndb_version_string_buf[NDB_VERSION_STRING_BUF_SZ];
-#define NDB_VERSION_STRING (getVersionString(NDB_VERSION, NDB_VERSION_STATUS, \
-                                             ndb_version_string_buf, \
-                                             sizeof(ndb_version_string_buf)))
+
+#define NDB_VERSION_STRING (getVersionString(NDB_VERSION, NDB_VERSION_STATUS))
 
 #define NDB_VERSION ndbGetOwnVersion()
 
@@ -56,9 +48,6 @@ char ndb_version_string_buf[NDB_VERSION_STRING_BUF_SZ];
  *     managment server
  */
 /*#define NDB_VERSION_ID 0*/
-
-#define NDBD_INCL_NODECONF_VERSION_4 MAKE_VERSION(4,1,17)
-#define NDBD_INCL_NODECONF_VERSION_5 MAKE_VERSION(5,0,18)
 
 #endif
  

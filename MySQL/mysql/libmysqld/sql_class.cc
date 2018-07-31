@@ -186,7 +186,6 @@ THD::THD()
   variables.pseudo_thread_id= 0;
   one_shot_set= 0;
   file_id = 0;
-  query_id= 0;
   warn_id= 0;
   db_charset= global_system_variables.collation_database;
   mysys_var=0;
@@ -197,7 +196,6 @@ THD::THD()
   net.vio=0;
 #endif
   net.last_error[0]=0;				// If error on boot
-  client_capabilities= 0;                       // minimalistic client
   ull=0;
   system_thread=cleanup_done=0;
   peer_port= 0;					// For SHOW PROCESSLIST
@@ -265,7 +263,6 @@ THD::THD()
     ulong tmp=sql_rnd_with_mutex();
     randominit(&rand, tmp + (ulong) &rand, tmp + (ulong) ::query_id);
   }
-  substitute_null_with_insert_id = FALSE;
 }
 
 
@@ -298,7 +295,6 @@ void THD::init(void)
   bzero((char*) warn_count, sizeof(warn_count));
   total_warn_count= 0;
   update_charset();
-  variables.lc_time_names = &my_locale_en_US;
 }
 
 
@@ -355,14 +351,14 @@ void THD::cleanup(void)
     close_thread_tables(this);
   }
   mysql_ha_flush(this, (TABLE_LIST*) 0,
-                 MYSQL_HA_CLOSE_FINAL | MYSQL_HA_FLUSH_ALL, FALSE);
+                 MYSQL_HA_CLOSE_FINAL | MYSQL_HA_FLUSH_ALL);
   hash_free(&handler_tables_hash);
-  delete_dynamic(&user_var_events);
-  hash_free(&user_vars);
   close_temporary_tables(this);
   my_free((char*) variables.time_format, MYF(MY_ALLOW_ZERO_PTR));
   my_free((char*) variables.date_format, MYF(MY_ALLOW_ZERO_PTR));
   my_free((char*) variables.datetime_format, MYF(MY_ALLOW_ZERO_PTR));
+  delete_dynamic(&user_var_events);
+  hash_free(&user_vars);
   if (global_read_lock)
     unlock_global_read_lock(this);
   if (ull)
@@ -428,12 +424,11 @@ void THD::awake(bool prepare_to_die)
   THD_CHECK_SENTRY(this);
   safe_mutex_assert_owner(&LOCK_delete); 
 
-  thr_alarm_kill(real_id);
   if (prepare_to_die)
     killed = 1;
+  thr_alarm_kill(real_id);
 #ifdef SIGNAL_WITH_VIO_CLOSE
-  else
-    close_active_vio();
+  close_active_vio();
 #endif    
   if (mysys_var)
   {
@@ -823,7 +818,7 @@ bool select_send::send_data(List<Item> &items)
   Protocol *protocol= thd->protocol;
   char buff[MAX_FIELD_WIDTH];
   String buffer(buff, sizeof(buff), &my_charset_bin);
-  DBUG_ENTER("select_send::send_data");
+  DBUG_ENTER("send_data");
 
   protocol->prepare_for_resend();
   Item *item;
@@ -1034,7 +1029,7 @@ select_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
 bool select_export::send_data(List<Item> &items)
 {
 
-  DBUG_ENTER("select_export::send_data");
+  DBUG_ENTER("send_data");
   char buff[MAX_FIELD_WIDTH],null_buff[2],space[MAX_FIELD_WIDTH];
   bool space_inited=0;
   String tmp(buff,sizeof(buff),&my_charset_bin),*res;
@@ -1191,7 +1186,7 @@ bool select_dump::send_data(List<Item> &items)
   String tmp(buff,sizeof(buff),&my_charset_bin),*res;
   tmp.length(0);
   Item *item;
-  DBUG_ENTER("select_dump::send_data");
+  DBUG_ENTER("send_data");
 
   if (unit->offset_limit_cnt)
   {						// using limit offset,count
@@ -1619,127 +1614,26 @@ Statement_map::Statement_map() :
             NULL,MYF(0));
 }
 
-/*
-  Insert a new statement to the thread-local statement map.
-
-  DESCRIPTION
-    If there was an old statement with the same name, replace it with the
-    new one. Otherwise, check if max_prepared_stmt_count is not reached yet,
-    increase prepared_stmt_count, and insert the new statement. It's okay
-    to delete an old statement and fail to insert the new one.
-
-  POSTCONDITIONS
-    All named prepared statements are also present in names_hash.
-    Statement names in names_hash are unique.
-    The statement is added only if prepared_stmt_count < max_prepard_stmt_count
-    last_found_statement always points to a valid statement or is 0
-
-  RETURN VALUE
-    0  success
-    1  error: out of resources or max_prepared_stmt_count limit has been
-       reached. An error is sent to the client, the statement is deleted.
-*/
-
-int Statement_map::insert(THD *thd, Statement *statement)
+int Statement_map::insert(Statement *statement)
 {
-  if (my_hash_insert(&st_hash, (byte*) statement))
-  {
-    /*
-      Delete is needed only in case of an insert failure. In all other
-      cases hash_delete will also delete the statement.
-    */
-    delete statement;
-    my_error(ER_OUT_OF_RESOURCES, MYF(0));
-    goto err_st_hash;
-  }
+  int rc= my_hash_insert(&st_hash, (byte *) statement);
+  if (rc == 0)
+    last_found_statement= statement;
   if (statement->name.str)
   {
     /*
-      If there is a statement with the same name, remove it. It is ok to
+      If there is a statement with the same name, remove it. It is ok to 
       remove old and fail to insert new one at the same time.
     */
     Statement *old_stmt;
     if ((old_stmt= find_by_name(&statement->name)))
-      erase(old_stmt);
-    if (my_hash_insert(&names_hash, (byte*) statement))
-    {
-      my_error(ER_OUT_OF_RESOURCES, MYF(0));
-      goto err_names_hash;
-    }
+      erase(old_stmt); 
+    if ((rc= my_hash_insert(&names_hash, (byte*)statement)))
+      hash_delete(&st_hash, (byte*)statement);
   }
-  pthread_mutex_lock(&LOCK_prepared_stmt_count);
-  /*
-    We don't check that prepared_stmt_count is <= max_prepared_stmt_count
-    because we would like to allow to lower the total limit
-    of prepared statements below the current count. In that case
-    no new statements can be added until prepared_stmt_count drops below
-    the limit.
-  */
-  if (prepared_stmt_count >= max_prepared_stmt_count)
-  {
-    pthread_mutex_unlock(&LOCK_prepared_stmt_count);
-    my_error(ER_UNKNOWN_ERROR, MYF(0));
-    goto err_max;
-  }
-  prepared_stmt_count++;
-  pthread_mutex_unlock(&LOCK_prepared_stmt_count);
-
-  last_found_statement= statement;
-  return 0;
-
-err_max:
-  if (statement->name.str)
-    hash_delete(&names_hash, (byte*) statement);
-err_names_hash:
-  hash_delete(&st_hash, (byte*) statement);
-err_st_hash:
-  send_error(thd);
-  return 1;
+  return rc;
 }
 
-
-void Statement_map::erase(Statement *statement)
-{
-  if (statement == last_found_statement)
-    last_found_statement= 0;
-  if (statement->name.str)
-  {
-    hash_delete(&names_hash, (byte *) statement);
-  }
-  hash_delete(&st_hash, (byte *) statement);
-  pthread_mutex_lock(&LOCK_prepared_stmt_count);
-  DBUG_ASSERT(prepared_stmt_count > 0);
-  prepared_stmt_count--;
-  pthread_mutex_unlock(&LOCK_prepared_stmt_count);
-}
-
-
-void Statement_map::reset()
-{
-  /* Must be first, hash_free will reset st_hash.records */
-  pthread_mutex_lock(&LOCK_prepared_stmt_count);
-  DBUG_ASSERT(prepared_stmt_count >= st_hash.records);
-  prepared_stmt_count-= st_hash.records;
-  pthread_mutex_unlock(&LOCK_prepared_stmt_count);
-
-  my_hash_reset(&names_hash);
-  my_hash_reset(&st_hash);
-  last_found_statement= 0;
-}
-
-
-Statement_map::~Statement_map()
-{
-  /* Must go first, hash_free will reset st_hash.records */
-  pthread_mutex_lock(&LOCK_prepared_stmt_count);
-  DBUG_ASSERT(prepared_stmt_count >= st_hash.records);
-  prepared_stmt_count-= st_hash.records;
-  pthread_mutex_unlock(&LOCK_prepared_stmt_count);
-
-  hash_free(&names_hash);
-  hash_free(&st_hash);
-
-}
 
 bool select_dumpvar::send_data(List<Item> &items)
 {
@@ -1785,10 +1679,7 @@ bool select_dumpvar::send_eof()
 
 void TMP_TABLE_PARAM::init()
 {
-  DBUG_ENTER("TMP_TABLE_PARAM::init");
-  DBUG_PRINT("enter", ("this: 0x%lx", (ulong)this));
   field_count= sum_func_count= func_count= hidden_field_count= 0;
   group_parts= group_length= group_null_parts= 0;
   quick_group= 1;
-  DBUG_VOID_RETURN;
 }

@@ -284,8 +284,7 @@ bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
     bool found=0;
     for (TABLE_LIST *table=tables ; table ; table=table->next)
     {
-      if (remove_table_from_cache(thd, table->db, table->real_name,
-                                  RTFC_OWNED_BY_THD_FLAG))
+      if (remove_table_from_cache(thd, table->db, table->real_name, 1))
 	found=1;
     }
     if (!found)
@@ -306,8 +305,7 @@ bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
     thd->proc_info="Flushing tables";
 
     close_old_data_files(thd,thd->open_tables,1,1);
-    mysql_ha_flush(thd, tables, MYSQL_HA_REOPEN_ON_USAGE | MYSQL_HA_FLUSH_ALL,
-                   TRUE);
+    mysql_ha_flush(thd, tables, MYSQL_HA_REOPEN_ON_USAGE | MYSQL_HA_FLUSH_ALL);
     bool found=1;
     /* Wait until all threads has closed all the tables we had locked */
     DBUG_PRINT("info",
@@ -483,139 +481,66 @@ void close_temporary(TABLE *table,bool delete_table)
   DBUG_VOID_RETURN;
 }
 
-/* close_temporary_tables' internal, 4 is due to uint4korr definition */
-static inline uint  tmpkeyval(THD *thd, TABLE *table)
-{
-  return uint4korr(table->table_cache_key + table->key_length - 4);
-}
-
-/* Creates one DROP TEMPORARY TABLE binlog event for each pseudo-thread */
 
 void close_temporary_tables(THD *thd)
 {
-  TABLE *table;
+  TABLE *table,*next;
+  char *query, *end;
+  uint query_buf_size; 
+  bool found_user_tables = 0;
+
   if (!thd->temporary_tables)
     return;
-
-  if (!mysql_bin_log.is_open())
-  {
-    TABLE *next;
-    for (table= thd->temporary_tables; table; table= next)
-    {
-      next= table->next;
-      close_temporary(table, 1);
-    }
-    thd->temporary_tables= 0;
-    return;
-  }
-
-  TABLE *next,
-    *prev_table /* prev link is not maintained in TABLE's double-linked list */;
-  bool was_quote_show= true; /* to assume thd->options has OPTION_QUOTE_SHOW_CREATE */
-  // Better add "if exists", in case a RESET MASTER has been done
-  const char stub[]= "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS ";
-  uint stub_len= sizeof(stub) - 1;
-  char buf[256];
-  memcpy(buf, stub, stub_len);
-  String s_query= String(buf, sizeof(buf), system_charset_info);
-  bool found_user_tables= false;
-  LINT_INIT(next);
-
-  /* 
-     insertion sort of temp tables by pseudo_thread_id to build ordered list 
-     of sublists of equal pseudo_thread_id
-  */
   
-  for (prev_table= thd->temporary_tables, table= prev_table->next;
-       table;
-       prev_table= table, table= table->next)
-  {
-    TABLE *prev_sorted /* same as for prev_table */, *sorted;
-    if (is_user_table(table))
-    {
-      if (!found_user_tables)
-        found_user_tables= true;
-      for (prev_sorted= NULL, sorted= thd->temporary_tables; sorted != table; 
-           prev_sorted= sorted, sorted= sorted->next)
-      {
-        if (!is_user_table(sorted) ||
-            tmpkeyval(thd, sorted) > tmpkeyval(thd, table))
-        {
-          /* move into the sorted part of the list from the unsorted */
-          prev_table->next= table->next;
-          table->next= sorted;
-          if (prev_sorted) 
-          {
-            prev_sorted->next= table;
-          }
-          else
-          {
-            thd->temporary_tables= table;
-          }
-          table= prev_table;
-          break;
-        }
-      }
-    }
-  }
+  LINT_INIT(end);
+  query_buf_size= 50;   // Enough for DROP ... TABLE IF EXISTS
 
-  /* We always quote db,table names though it is slight overkill */
-  if (found_user_tables &&
-      !(was_quote_show= (thd->options & OPTION_QUOTE_SHOW_CREATE)))
+  for (table=thd->temporary_tables ; table ; table=table->next)
+    /*
+      We are going to add 4 ` around the db/table names, so 1 does not look
+      enough; indeed it is enough, because table->key_length is greater (by 8,
+      because of server_id and thread_id) than db||table.
+    */
+    query_buf_size+= table->key_length+1;
+
+  if ((query = alloc_root(thd->mem_root, query_buf_size)))
+    // Better add "if exists", in case a RESET MASTER has been done
+    end=strmov(query, "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS ");
+
+  for (table=thd->temporary_tables ; table ; table=next)
   {
-    thd->options |= OPTION_QUOTE_SHOW_CREATE;
-  }
-  
-  /* scan sorted tmps to generate sequence of DROP */
-  for (table= thd->temporary_tables; table; table= next)
-  {
-    if (is_user_table(table)) 
+    if (query) // we might be out of memory, but this is not fatal
     {
-      /* Set pseudo_thread_id to be that of the processed table */
-      thd->variables.pseudo_thread_id= tmpkeyval(thd, table);
-      /* Loop forward through all tables within the sublist of
-         common pseudo_thread_id to create single DROP query */
-      for (s_query.length(stub_len);
-           table && is_user_table(table) &&
-             tmpkeyval(thd, table) == thd->variables.pseudo_thread_id;
-           table= next)
-      {
-        /*
-          We are going to add 4 ` around the db/table names and possible more
-          due to special characters in the names
-        */
-        append_identifier(thd, &s_query, table->table_cache_key, strlen(table->table_cache_key));
-        s_query.q_append('.');
-        append_identifier(thd, &s_query, table->real_name,
-                          strlen(table->real_name));
-        s_query.q_append(',');
-        next= table->next;
-        close_temporary(table, 1);
-      }
-      thd->clear_error();
-      Query_log_event qinfo(thd, s_query.ptr(),
-                            s_query.length() - 1 /* to remove trailing ',' */,
-                            0, FALSE);
+      // skip temporary tables not created directly by the user
+      if (table->real_name[0] != '#')
+	found_user_tables = 1;
       /*
-        Imagine the thread had created a temp table, then was doing a SELECT, and
-        the SELECT was killed. Then it's not clever to mark the statement above as
-        "killed", because it's not really a statement updating data, and there
-        are 99.99% chances it will succeed on slave.
-        If a real update (one updating a persistent table) was killed on the
-        master, then this real update will be logged with error_code=killed,
-        rightfully causing the slave to stop.
+        Here we assume table_cache_key always starts
+        with \0 terminated db name
       */
-      qinfo.error_code= 0;
-      write_binlog_with_system_charset(thd, &qinfo);
+      end = strxmov(end,"`",table->table_cache_key,"`.`",
+                    table->real_name,"`,", NullS);
     }
-    else 
-    {
-      next= table->next;
-      close_temporary(table, 1);
-    }
+    next=table->next;
+    close_temporary(table);
   }
-  if (!was_quote_show)
-    thd->options &= ~OPTION_QUOTE_SHOW_CREATE; /* restore option */
+  if (query && found_user_tables && mysql_bin_log.is_open())
+  {
+    /* The -1 is to remove last ',' */
+    thd->clear_error();
+    Query_log_event qinfo(thd, query, (ulong)(end-query)-1, 0, FALSE);
+    /*
+      Imagine the thread had created a temp table, then was doing a SELECT, and
+      the SELECT was killed. Then it's not clever to mark the statement above as
+      "killed", because it's not really a statement updating data, and there
+      are 99.99% chances it will succeed on slave.
+      If a real update (one updating a persistent table) was killed on the
+      master, then this real update will be logged with error_code=killed,
+      rightfully causing the slave to stop.
+    */
+    qinfo.error_code= 0;
+    mysql_bin_log.write(&qinfo);
+  }
   thd->temporary_tables=0;
 }
 
@@ -821,7 +746,7 @@ TABLE *reopen_name_locked_table(THD* thd, TABLE_LIST* table_list)
   if (!(table = table_list->table))
     DBUG_RETURN(0);
 
-  char *db= table_list->db;
+  char* db = thd->db ? thd->db : table_list->db;
   char* table_name = table_list->real_name;
   char	key[MAX_DBKEY_LENGTH];
   uint	key_length;
@@ -872,7 +797,6 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
   reg1	TABLE *table;
   char	key[MAX_DBKEY_LENGTH];
   uint	key_length;
-  HASH_SEARCH_STATE state;
   DBUG_ENTER("open_table");
 
   /* find a unused table in the open table cache */
@@ -935,23 +859,14 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
   }
 
   /* close handler tables which are marked for flush */
-  mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE, TRUE);
+  mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE);
 
-  for (table= (TABLE*) hash_first(&open_cache, (byte*) key, key_length,
-                                  &state);
+  for (table=(TABLE*) hash_search(&open_cache,(byte*) key,key_length) ;
        table && table->in_use ;
-       table= (TABLE*) hash_next(&open_cache, (byte*) key, key_length,
-                                 &state))
+       table = (TABLE*) hash_next(&open_cache,(byte*) key,key_length))
   {
     if (table->version != refresh_version)
     {
-      if (! refresh)
-      {
-        /* Ignore flush for now, but force close after usage. */
-        thd->version= table->version;
-        continue;
-      }
-
       /*
       ** There is a refresh in progress for this table
       ** Wait until the table is freed or the thread is killed.
@@ -1061,8 +976,6 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
   table->status=STATUS_NO_RECORD;
   table->keys_in_use_for_query= table->keys_in_use;
   table->used_keys= table->keys_for_keyread;
-  table->file->ft_handler=0;
-  table->fulltext_searched=0;
   if (table->timestamp_field)
     table->timestamp_field_type= table->timestamp_field->get_auto_set_type();
   DBUG_ASSERT(table->key_read == 0);
@@ -1087,20 +1000,10 @@ TABLE *find_locked_table(THD *thd, const char *db,const char *table_name)
 
 
 /****************************************************************************
-  Reopen an table because the definition has changed. The date file for the
-  table is already closed.
-
-  SYNOPSIS
-    reopen_table()
-    table		Table to be opened
-    locked		1 if we have already a lock on LOCK_open
-
-  NOTES
-    table->query_id will be 0 if table was reopened
-
-  RETURN
-    0  ok
-    1  error ('table' is unchanged if table couldn't be reopened)
+** Reopen an table because the definition has changed. The date file for the
+** table is already closed.
+** Returns 0 if ok.
+** If table can't be reopened, the entry is unchanged.
 ****************************************************************************/
 
 bool reopen_table(TABLE *table,bool locked)
@@ -1170,10 +1073,8 @@ bool reopen_table(TABLE *table,bool locked)
     (*field)->table_name=table->table_name;
   }
   for (key=0 ; key < table->keys ; key++)
-  {
     for (part=0 ; part < table->key_info[key].usable_key_parts ; part++)
       table->key_info[key].key_part[part].field->table= table;
-  }
   VOID(pthread_cond_broadcast(&COND_refresh));
   error=0;
 
@@ -1326,14 +1227,12 @@ bool table_is_used(TABLE *table, bool wait_for_name_lock)
 {
   do
   {
-    HASH_SEARCH_STATE state;
     char *key= table->table_cache_key;
     uint key_length=table->key_length;
-    for (TABLE *search= (TABLE*) hash_first(&open_cache, (byte*) key,
-                                            key_length, &state);
+    for (TABLE *search=(TABLE*) hash_search(&open_cache,
+					    (byte*) key,key_length) ;
 	 search ;
-         search= (TABLE*) hash_next(&open_cache, (byte*) key,
-                                    key_length, &state))
+	 search = (TABLE*) hash_next(&open_cache,(byte*) key,key_length))
     {
       if (search->locked_by_flush ||
 	  search->locked_by_name && wait_for_name_lock ||
@@ -1358,7 +1257,7 @@ bool wait_for_tables(THD *thd)
   {
     thd->some_tables_deleted=0;
     close_old_data_files(thd,thd->open_tables,0,dropping_tables != 0);
-    mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE, TRUE);
+    mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE);
     if (!table_is_used(thd->open_tables,1))
       break;
     (void) pthread_cond_wait(&COND_refresh,&LOCK_open);
@@ -2284,19 +2183,11 @@ find_item_in_list(Item *find, List<Item> &items, uint *counter,
   const char *field_name=0;
   const char *table_name=0;
   bool found_unaliased_non_uniq= 0;
-  /*
-    true if the item that we search for is a valid name reference
-    (and not an item that happens to have a name).
-  */
-  bool is_ref_by_name= 0;
   uint unaliased_counter;
 
-  LINT_INIT(unaliased_counter);
   *unaliased= FALSE;
 
-  is_ref_by_name= (find->type() == Item::FIELD_ITEM  || 
-                   find->type() == Item::REF_ITEM);
-  if (is_ref_by_name)
+  if (find->type() == Item::FIELD_ITEM	|| find->type() == Item::REF_ITEM)
   {
     field_name= ((Item_ident*) find)->field_name;
     table_name= ((Item_ident*) find)->table_name;
@@ -2408,7 +2299,7 @@ find_item_in_list(Item *find, List<Item> &items, uint *counter,
       }
     }
     else if (!table_name && (item->eq(find,0) ||
-			     is_ref_by_name && find->name && item->name &&
+			     find->name && item->name &&
 			     !my_strcasecmp(system_charset_info, 
 					    item->name,find->name)))
     {
@@ -2642,7 +2533,7 @@ bool get_key_map_from_key_list(key_map *map, TABLE *table,
     if ((pos= find_type(&table->keynames, name->ptr(), name->length(), 1)) <=
 	0)
     {
-      my_error(ER_KEY_DOES_NOT_EXITS, MYF(0), name->c_ptr(),
+      my_error(ER_KEY_COLUMN_DOES_NOT_EXITS, MYF(0), name->c_ptr(),
 	       table->real_name);
       map->set_all();
       return 1;
@@ -3035,9 +2926,6 @@ void flush_tables()
   The table will be closed (not stored in cache) by the current thread when
   close_thread_tables() is called.
 
-  PREREQUISITES
-    Lock on LOCK_open()
-
   RETURN
     0  This thread now have exclusive access to this table and no other thread
        can access the table until close_thread_tables() is called.
@@ -3045,100 +2933,62 @@ void flush_tables()
 */
 
 bool remove_table_from_cache(THD *thd, const char *db, const char *table_name,
-                             uint flags)
+			     bool return_if_owned_by_thd)
 {
   char key[MAX_DBKEY_LENGTH];
   uint key_length;
   TABLE *table;
-  bool result=0, signalled= 0;
+  bool result=0;
   DBUG_ENTER("remove_table_from_cache");
 
-
   key_length=(uint) (strmov(strmov(key,db)+1,table_name)-key)+1;
-  for (;;)
+  for (table=(TABLE*) hash_search(&open_cache,(byte*) key,key_length) ;
+       table;
+       table = (TABLE*) hash_next(&open_cache,(byte*) key,key_length))
   {
-    HASH_SEARCH_STATE state;
-    result= signalled= 0;
-
-    for (table= (TABLE*) hash_first(&open_cache, (byte*) key, key_length,
-                                    &state);
-         table;
-         table= (TABLE*) hash_next(&open_cache, (byte*) key, key_length,
-                                   &state))
+    THD *in_use;
+    table->version=0L;			/* Free when thread is ready */
+    if (!(in_use=table->in_use))
     {
-      THD *in_use;
-      table->version=0L;		/* Free when thread is ready */
-      if (!(in_use=table->in_use))
-      {
-        DBUG_PRINT("info",("Table was not in use"));
-        relink_unused(table);
-      }
-      else if (in_use != thd)
-      {
-        in_use->some_tables_deleted=1;
-        if (table->db_stat)
-  	  result=1;
-        /* Kill delayed insert threads */
-        if ((in_use->system_thread & SYSTEM_THREAD_DELAYED_INSERT) &&
-            ! in_use->killed)
-        {
-  	  in_use->killed=1;
-	  pthread_mutex_lock(&in_use->mysys_var->mutex);
-	  if (in_use->mysys_var->current_cond)
-	  {
-	    pthread_mutex_lock(in_use->mysys_var->current_mutex);
-            signalled= 1;
-	    pthread_cond_broadcast(in_use->mysys_var->current_cond);
-	    pthread_mutex_unlock(in_use->mysys_var->current_mutex);
-	  }
-	  pthread_mutex_unlock(&in_use->mysys_var->mutex);
-        }
-        /*
-	  Now we must abort all tables locks used by this thread
-	  as the thread may be waiting to get a lock for another table
-        */
-        for (TABLE *thd_table= in_use->open_tables;
-	     thd_table ;
-	     thd_table= thd_table->next)
-        {
-	  if (thd_table->db_stat)		// If table is open
-	    signalled|= mysql_lock_abort_for_thread(thd, thd_table);
-        }
-      }
-      else
-        result= result || (flags & RTFC_OWNED_BY_THD_FLAG);
+      DBUG_PRINT("info",("Table was not in use"));
+      relink_unused(table);
     }
-    while (unused_tables && !unused_tables->version)
-      VOID(hash_delete(&open_cache,(byte*) unused_tables));
-    if (result && (flags & RTFC_WAIT_OTHER_THREAD_FLAG))
+    else if (in_use != thd)
     {
-      if (!(flags & RTFC_CHECK_KILLED_FLAG) || !thd->killed)
+      in_use->some_tables_deleted=1;
+      if (table->db_stat)
+	result=1;
+      /* Kill delayed insert threads */
+      if ((in_use->system_thread & SYSTEM_THREAD_DELAYED_INSERT) &&
+          ! in_use->killed)
       {
-        dropping_tables++;
-        if (likely(signalled))
-          (void) pthread_cond_wait(&COND_refresh, &LOCK_open);
-        else
-        {
-          struct timespec abstime;
-          /*
-            It can happen that another thread has opened the
-            table but has not yet locked any table at all. Since
-            it can be locked waiting for a table that our thread
-            has done LOCK TABLE x WRITE on previously, we need to
-            ensure that the thread actually hears our signal
-            before we go to sleep. Thus we wait for a short time
-            and then we retry another loop in the
-            remove_table_from_cache routine.
-          */
-          set_timespec(abstime, 10);
-          pthread_cond_timedwait(&COND_refresh, &LOCK_open, &abstime);
-        }
-        dropping_tables--;
-        continue;
+	in_use->killed=1;
+	pthread_mutex_lock(&in_use->mysys_var->mutex);
+	if (in_use->mysys_var->current_cond)
+	{
+	  pthread_mutex_lock(in_use->mysys_var->current_mutex);
+	  pthread_cond_broadcast(in_use->mysys_var->current_cond);
+	  pthread_mutex_unlock(in_use->mysys_var->current_mutex);
+	}
+	pthread_mutex_unlock(&in_use->mysys_var->mutex);
+      }
+      /*
+	Now we must abort all tables locks used by this thread
+	as the thread may be waiting to get a lock for another table
+      */
+      for (TABLE *thd_table= in_use->open_tables;
+	   thd_table ;
+	   thd_table= thd_table->next)
+      {
+	if (thd_table->db_stat)			// If table is open
+	  mysql_lock_abort_for_thread(thd, thd_table);
       }
     }
-    break;
+    else
+      result= result || return_if_owned_by_thd;
   }
+  while (unused_tables && !unused_tables->version)
+    VOID(hash_delete(&open_cache,(byte*) unused_tables));
   DBUG_RETURN(result);
 }
 

@@ -10,7 +10,6 @@
 %endif
 %define license GPL
 %define mysqld_user		mysql
-%define mysqld_group	mysql
 %define server_suffix -standard
 %define mysqldatadir /var/lib/mysql
 
@@ -28,8 +27,9 @@ Release:	%{release}
 License:	%{license}
 Source:		http://www.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/mysql-%{mysql_version}.tar.gz
 URL:		http://www.mysql.com/
-Packager:	MySQL Production Engineering Team <build@mysql.com>
+Packager:	Lenz Grimmer <build@mysql.com>
 Vendor:		MySQL AB
+Requires: fileutils sh-utils
 Provides:	msqlormysql MySQL-server mysql
 BuildRequires: ncurses-devel
 Obsoletes:	mysql
@@ -60,7 +60,7 @@ documentation and the manual for more information.
 %package server
 Summary:	MySQL: a very fast and reliable SQL database server
 Group:		Applications/Databases
-Requires: coreutils grep procps /usr/sbin/useradd /usr/sbin/groupadd /sbin/chkconfig
+Requires: fileutils sh-utils
 Provides:	msqlormysql mysql-server mysql MySQL
 Obsoletes:	MySQL mysql mysql-server
 
@@ -148,7 +148,6 @@ Summary: MySQL - Benchmarks and test system
 Group: Applications/Databases
 Provides: mysql-bench
 Obsoletes: mysql-bench
-AutoReqProv: no
 
 %description bench
 This package contains MySQL benchmark scripts and data.
@@ -232,15 +231,14 @@ sh -c  "PATH=\"${MYSQL_BUILD_PATH:-$PATH}\" \
 	CXXFLAGS=\"${MYSQL_BUILD_CXXFLAGS:-$RPM_OPT_FLAGS \
 	          -felide-constructors -fno-exceptions -fno-rtti \
 		  }\" \
-	LDFLAGS=\"$MYSQL_BUILD_LDFLAGS\" \
 	./configure \
  	    $* \
 	    --enable-assembler \
 	    --enable-local-infile \
             --with-mysqld-user=%{mysqld_user} \
             --with-unix-socket-path=/var/lib/mysql/mysql.sock \
-	    --with-pic \
             --prefix=/ \
+	    --with-extra-charsets=complex \
             --exec-prefix=%{_exec_prefix} \
             --libexecdir=%{_sbindir} \
             --libdir=%{_libdir} \
@@ -298,33 +296,24 @@ then
 fi
 
 BuildMySQL "--enable-shared \
-		--with-extra-charsets=all \
+		--without-openssl \
 		--with-berkeley-db \
 		--with-innodb \
 		--with-ndbcluster \
 		--with-raid \
-		--with-archive-storage-engine \
+		--with-archive \
 		--with-csv-storage-engine \
 		--with-example-storage-engine \
 		--with-blackhole-storage-engine \
 		--with-embedded-server \
-		--with-comment=\"MySQL Community Edition - Experimental (GPL)\" \
-		--with-server-suffix='-max'"
+		--with-comment=\"MySQL Community Edition - Max (GPL)\" \
+		--with-server-suffix='-Max'"
 
-# We might want to save the config log file
-if test -n "$MYSQL_MAXCONFLOG_DEST"
-then
-  cp -fp config.log "$MYSQL_MAXCONFLOG_DEST"
-fi
-
-make -i test-force || true
+make test
 
 # Save mysqld-max
-./libtool --mode=execute cp sql/mysqld sql/mysqld-max
-./libtool --mode=execute nm --numeric-sort sql/mysqld-max > sql/mysqld-max.sym
-
-# Save the perror binary so it supports the NDB error codes (BUG#13740)
-./libtool --mode=execute cp extra/perror extra/perror.ndb
+mv sql/mysqld sql/mysqld-max
+nm --numeric-sort sql/mysqld-max > sql/mysqld-max.sym
 
 # Install the ndb binaries
 (cd ndb; make install DESTDIR=$RBR)
@@ -333,7 +322,7 @@ make -i test-force || true
 install -m 644 libmysqld/libmysqld.a $RBR%{_libdir}/mysql/
 
 # Include libgcc.a in the devel subpackage (BUG 4921)
-if expr "$CC" : ".*gcc.*" > /dev/null ;
+if [ "$CC" = gcc ]
 then
   libgcc=`$CC --print-libgcc-file`
   if [ -f $libgcc ]
@@ -359,11 +348,9 @@ BuildMySQL "--disable-shared \
 %if %{STATIC_BUILD}
 		--with-mysqld-ldflags='-all-static' \
 		--with-client-ldflags='-all-static' \
-		$USE_OTHER_LIBC_DIR \
-%else
 		--with-zlib-dir=bundled \
+		$USE_OTHER_LIBC_DIR \
 %endif
-		--with-extra-charsets=complex \
 		--with-comment=\"MySQL Community Edition - Standard (GPL)\" \
 		--with-server-suffix='%{server_suffix}' \
 		--without-embedded-server \
@@ -371,16 +358,9 @@ BuildMySQL "--disable-shared \
 		--with-innodb \
 		--without-vio \
 		--without-openssl"
+nm --numeric-sort sql/mysqld > sql/mysqld.sym
 
-./libtool --mode=execute nm --numeric-sort sql/mysqld > sql/mysqld.sym
-
-# We might want to save the config log file
-if test -n "$MYSQL_CONFLOG_DEST"
-then
-  cp -fp config.log "$MYSQL_CONFLOG_DEST"
-fi
-
-make -i test-force || true
+make test
 
 %install
 RBR=$RPM_BUILD_ROOT
@@ -404,9 +384,6 @@ make install-strip DESTDIR=$RBR benchdir_root=%{_datadir}
 
 # install saved mysqld-max
 install -s -m755 $MBD/sql/mysqld-max $RBR%{_sbindir}/mysqld-max
-
-# install saved perror binary with NDB support (BUG#13740)
-install -s -m755 $MBD/extra/perror.ndb $RBR%{_bindir}/perror
 
 # install symbol files ( for stack trace resolution)
 install -m644 $MBD/sql/mysqld-max.sym $RBR%{_libdir}/mysql/mysqld-max.sym
@@ -463,20 +440,18 @@ fi
 
 # Create a MySQL user and group. Do not report any problems if it already
 # exists.
-groupadd -r %{mysqld_group} 2> /dev/null || true
-useradd -M -r -d $mysql_datadir -s /bin/bash -c "MySQL server" -g %{mysqld_group} %{mysqld_user} 2> /dev/null || true 
-# The user may already exist, make sure it has the proper group nevertheless (BUG#12823)
-usermod -g %{mysqld_group} %{mysqld_user} 2> /dev/null || true
+groupadd -r -c "MySQL server" %{mysqld_user} 2> /dev/null || true
+useradd -M -r -d $mysql_datadir -s /bin/bash -c "MySQL server" -g %{mysqld_user} %{mysqld_user} 2> /dev/null || true 
 
 # Change permissions so that the user that will run the MySQL daemon
 # owns all database files.
-chown -R %{mysqld_user}:%{mysqld_group} $mysql_datadir
+chown -R %{mysqld_user}:%{mysqld_user} $mysql_datadir
 
-# Initiate databases if needed
+# Initiate databases
 %{_bindir}/mysql_install_db --rpm --user=%{mysqld_user}
 
 # Change permissions again to fix any new files.
-chown -R %{mysqld_user}:%{mysqld_group} $mysql_datadir
+chown -R %{mysqld_user}:%{mysqld_user} $mysql_datadir
 
 # Fix permissions for the permission database so that only the user
 # can read them.
@@ -504,22 +479,22 @@ echo "Restarting mysqld."
 %preun server
 if test $1 = 0
 then
-  # Stop MySQL before uninstalling it
+	# Stop MySQL before uninstalling it
   if test -x %{_sysconfdir}/init.d/mysql
   then
     %{_sysconfdir}/init.d/mysql stop > /dev/null
-
-    # Remove autostart of mysql
-    # for older SuSE Linux versions
-    if test -x /sbin/insserv
-    then
-      /sbin/insserv -r %{_sysconfdir}/init.d/mysql
-    # use chkconfig on Red Hat and newer SuSE releases
-    elif test -x /sbin/chkconfig
-    then
-      /sbin/chkconfig --del mysql
-    fi
   fi
+
+  # Remove autostart of mysql
+	# for older SuSE Linux versions
+	if test -x /sbin/insserv
+	then
+		/sbin/insserv -r %{_sysconfdir}/init.d/mysql
+	# use chkconfig on Red Hat and newer SuSE releases
+	elif test -x /sbin/chkconfig
+	then
+		/sbin/chkconfig --del mysql
+	fi
 fi
 
 # We do not remove the mysql user since it may still own a lot of
@@ -527,7 +502,7 @@ fi
 
 # Clean up the BuildRoot
 %clean
-[ "$RPM_BUILD_ROOT" != "/" ] && [ -d $RPM_BUILD_ROOT ] && rm -rf $RPM_BUILD_ROOT;
+[ "$RBR" != "/" ] && [ -d $RBR ] && rm -rf $RBR;
 
 %files server
 %defattr(-,root,root,0755)
@@ -538,33 +513,23 @@ fi
 
 %doc %attr(644, root, root) %{_infodir}/mysql.info*
 
-%doc %attr(644, root, man) %{_mandir}/man1/mysqlman.1*
 %doc %attr(644, root, man) %{_mandir}/man1/isamchk.1*
 %doc %attr(644, root, man) %{_mandir}/man1/isamlog.1*
-%doc %attr(644, root, man) %{_mandir}/man1/myisam_ftdump.1*
-%doc %attr(644, root, man) %{_mandir}/man1/myisamchk.1*
-%doc %attr(644, root, man) %{_mandir}/man1/myisamlog.1*
-%doc %attr(644, root, man) %{_mandir}/man1/myisampack.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysql_explain_log.1*
-%doc %attr(644, root, man) %{_mandir}/man8/mysqld.8*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_zap.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysqld.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_fix_privilege_tables.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld_multi.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld_safe.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysql_fix_privilege_tables.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysqlhotcopy.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysql.server.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysql_zap.1*
-%doc %attr(644, root, man) %{_mandir}/man1/pack_isam.1*
 %doc %attr(644, root, man) %{_mandir}/man1/perror.1*
 %doc %attr(644, root, man) %{_mandir}/man1/replace.1*
-%doc %attr(644, root, man) %{_mandir}/man1/safe_mysqld.1*
 
 %ghost %config(noreplace,missingok) %{_sysconfdir}/my.cnf
 
 %attr(755, root, root) %{_bindir}/isamchk
 %attr(755, root, root) %{_bindir}/isamlog
 %attr(755, root, root) %{_bindir}/my_print_defaults
-%attr(755, root, root) %{_bindir}/myisam_ftdump
 %attr(755, root, root) %{_bindir}/myisamchk
+%attr(755, root, root) %{_bindir}/myisam_ftdump
 %attr(755, root, root) %{_bindir}/myisamlog
 %attr(755, root, root) %{_bindir}/myisampack
 %attr(755, root, root) %{_bindir}/mysql_convert_table_format
@@ -580,7 +545,6 @@ fi
 %attr(755, root, root) %{_bindir}/mysqlbug
 %attr(755, root, root) %{_bindir}/mysqld_multi
 %attr(755, root, root) %{_bindir}/mysqld_safe
-%attr(755, root, root) %{_bindir}/mysqldumpslow
 %attr(755, root, root) %{_bindir}/mysqlhotcopy
 %attr(755, root, root) %{_bindir}/mysqltest
 %attr(755, root, root) %{_bindir}/pack_isam
@@ -611,17 +575,14 @@ fi
 %attr(755, root, root) %{_bindir}/mysqlbinlog
 %attr(755, root, root) %{_bindir}/mysqlcheck
 %attr(755, root, root) %{_bindir}/mysqldump
+%attr(755, root, root) %{_bindir}/mysqldumpslow
 %attr(755, root, root) %{_bindir}/mysqlimport
 %attr(755, root, root) %{_bindir}/mysqlshow
 
-%doc %attr(644, root, man) %{_mandir}/man1/msql2mysql.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysql.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqlaccess.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqladmin.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysqlbinlog.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysqlcheck.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqldump.1*
-%doc %attr(644, root, man) %{_mandir}/man1/mysqlimport.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqlshow.1*
 
 %post shared
@@ -637,6 +598,7 @@ fi
 %files ndb-management
 %defattr(-,root,root,0755)
 %attr(755, root, root) %{_sbindir}/ndb_mgmd
+%attr(755, root, root) %{_bindir}/ndb_mgm
 
 %files ndb-tools
 %defattr(-,root,root,0755)
@@ -648,9 +610,6 @@ fi
 %attr(755, root, root) %{_bindir}/ndb_desc
 %attr(755, root, root) %{_bindir}/ndb_show_tables
 %attr(755, root, root) %{_bindir}/ndb_test_platform
-%attr(755, root, root) %{_bindir}/ndb_config
-%attr(755, root, root) %{_bindir}/ndb_size.pl
-%attr(-, root, root) %{_datadir}/mysql/ndb_size.tmpl
 
 %files ndb-extra
 %defattr(-,root,root,0755)
@@ -661,7 +620,6 @@ fi
 %files devel
 %defattr(-, root, root, 0755)
 %doc EXCEPTIONS-CLIENT
-%doc %attr(644, root, man) %{_mandir}/man1/mysql_config.1*
 %attr(755, root, root) %{_bindir}/comp_err
 %attr(755, root, root) %{_bindir}/mysql_config
 %dir %attr(755, root, root) %{_includedir}/mysql
@@ -683,11 +641,6 @@ fi
 %{_libdir}/mysql/libmysys.a
 %{_libdir}/mysql/libnisam.a
 %{_libdir}/mysql/libvio.a
-%if %{STATIC_BUILD}
-%else
-%{_libdir}/mysql/libz.a
-%{_libdir}/mysql/libz.la
-%endif
 
 %files shared
 %defattr(-, root, root, 0755)
@@ -716,88 +669,6 @@ fi
 # itself - note that they must be ordered by date (important when
 # merging BK trees)
 %changelog 
-* Tue Jun 27 2006 Joerg Bruehe <joerg@mysql.com>
-
-- move "mysqldumpslow" from the client RPM to the server RPM (bug#20216)
-
-* Sat May 20 2006 Kent Boortz <kent@mysql.com>
-
-- Always compile for PIC, position independent code.
-
-* Wed May 10 2006 Kent Boortz <kent@mysql.com>
-
-- Use character set "all" for the "max", to make Cluster nodes
-  independent on the character set directory, and the problem that
-  two RPM sub packages both wants to install this directory.
-
-* Mon May 01 2006 Kent Boortz <kent@mysql.com>
-
-- Use "./libtool --mode=execute" instead of searching for the
-  executable in current directory and ".libs".
-
-* Sat Apr 01 2006 Kent Boortz <kent@mysql.com>
-
-- Set $LDFLAGS from $MYSQL_BUILD_LDFLAGS
-
-* Fri Mar 03 2006 Kent Boortz <kent@mysql.com>
-
-- Can't use bundled zlib when doing static build. Might be a
-  automake/libtool problem, having two .la files, "libmysqlclient.la"
-  and "libz.la", on the same command line to link "thread_test"
-  expands to too many "-lc", "-lpthread" and other libs giving hard
-  to nail down duplicate symbol defintion problems.
-
-* Fri Jan 10 2006 Joerg Bruehe <joerg@mysql.com>
-
-- Use "-i" on "make test-force";
-  this is essential for later evaluation of this log file.
-
-* Fri Dec 12 2005 Rodrigo Novo <rodrigo@mysql.com>
-
-- Added zlib to the list of (static) libraries installed
-- Added check against libtool wierdness (WRT: sql/mysqld || sql/.libs/mysqld)
-- Compile MySQL with bundled zlib
-- Fixed %packager name to "MySQL Production Engineering Team"
-
-* Mon Dec 05 2005 Joerg Bruehe <joerg@mysql.com>
-
-- Avoid using the "bundled" zlib on "shared" builds: 
-  As it is not installed (on the build system), this gives dependency 
-  problems with "libtool" causing the build to fail.
-
-* Tue Nov 22 2005 Joerg Bruehe <joerg@mysql.com>
-
-- Extend the file existence check for "init.d/mysql" on un-install
-  to also guard the call to "insserv"/"chkconfig".
-
-* Thu Oct 27 2005 Lenz Grimmer <lenz@grimmer.com>
-
-- added more man pages
-
-* Thu Oct 13 2005 Lenz Grimmer <lenz@mysql.com>
-
-- added a usermod call to assign a potential existing mysql user to the
-  correct user group (BUG#12823)
-- Save the perror binary built during Max build so it supports the NDB
-  error codes (BUG#13740)
-- added a separate macro "mysqld_group" to be able to define the
-  user group of the mysql user seperately, if desired.
-
-* Thu Sep 29 2005 Lenz Grimmer <lenz@mysql.com>
-
-- fixed the removing of the RPM_BUILD_ROOT in the %clean section (the
-  $RBR variable did not get expanded, thus leaving old build roots behind)
-
-* Thu Aug 04 2005 Lenz Grimmer <lenz@mysql.com>
-
-- Fixed the creation of the mysql user group account in the postinstall
-  section (BUG 12348)
-- Fixed enabling the Archive storage engine in the Max binary
-
-* Tue Aug 02 2005 Lenz Grimmer <lenz@mysql.com>
-
-- Fixed the Requires: tag for the server RPM (BUG 12233)
-
 * Fri Jul 15 2005 Lenz Grimmer <lenz@mysql.com>
 
 - create a "mysql" user group and assign the mysql user account to that group

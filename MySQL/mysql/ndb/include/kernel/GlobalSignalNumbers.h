@@ -553,6 +553,7 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_STATISTICS_CONF             454
 
 #define GSN_START_ORD                   455
+/* 456 unused */
 /* 457 unused */
 
 #define GSN_EVENT_SUBSCRIBE_REQ         458
@@ -776,8 +777,8 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 /**
  * Grep signals
  */
-#define GSN_ALTER_TABLE_REP             606
-#define GSN_API_BROADCAST_REP           607
+#define GSN_GREP_SUB_CREATE_REQ         606
+#define GSN_GREP_SUB_CREATE_REF         607
 #define GSN_GREP_SUB_CREATE_CONF        608
 #define GSN_GREP_CREATE_REQ             609
 #define GSN_GREP_CREATE_REF             610
@@ -833,6 +834,14 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 
 /* Start Global Replication */
 #define GSN_GREP_REQ                    656
+
+/**
+ * Management server
+ */
+#define GSN_MGM_LOCK_CONFIG_REQ		657
+#define GSN_MGM_LOCK_CONFIG_REP		658
+#define GSN_MGM_UNLOCK_CONFIG_REQ	659
+#define GSN_MGM_UNLOCK_CONFIG_REP	660
 
 #define GSN_UTIL_CREATE_LOCK_REQ        132
 #define GSN_UTIL_CREATE_LOCK_REF        133
@@ -891,7 +900,6 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_RESUME_REQ                  682
 #define GSN_STOP_REQ                    443
 #define GSN_STOP_REF                    444
-#define GSN_STOP_CONF                   456
 #define GSN_API_VERSION_REQ             697
 #define GSN_API_VERSION_CONF            698
 

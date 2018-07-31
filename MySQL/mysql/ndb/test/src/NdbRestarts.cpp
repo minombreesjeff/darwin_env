@@ -213,7 +213,7 @@ NdbRestarts::NdbRestart::NdbRestart(const char* _name,
   m_restartFunc = _func;
   m_numRequiredNodes = _requiredNodes;
   //  m_arg1 = arg1;
-}
+};
 
 
 int NdbRestarts::getNumRestarts(){
@@ -367,7 +367,7 @@ int restartRandomNodeGraceful(NdbRestarter& _restarter,
 	"Could not restart node "<<nodeId);
 
   return NDBT_OK;
-}
+};
 
 int restartRandomNodeAbort(NdbRestarter& _restarter, 
 			      const NdbRestarts::NdbRestart* _restart){
@@ -382,7 +382,7 @@ int restartRandomNodeAbort(NdbRestarter& _restarter,
 	"Could not restart node "<<nodeId);
 
   return NDBT_OK;
-}
+};
 
 int restartRandomNodeError(NdbRestarter& _restarter, 
 			   const NdbRestarts::NdbRestart* _restart){
@@ -397,7 +397,7 @@ int restartRandomNodeError(NdbRestarter& _restarter,
 	"Could not restart node "<<nodeId);
 
   return NDBT_OK;
-}
+};
 
 int restartMasterNodeError(NdbRestarter& _restarter, 
 			   const NdbRestarts::NdbRestart* _restart){
@@ -410,7 +410,7 @@ int restartMasterNodeError(NdbRestarter& _restarter,
 	"Could not restart node "<<nodeId);
 
   return NDBT_OK;
-}
+};
 
 int restartRandomNodeInitial(NdbRestarter& _restarter, 
 			     const NdbRestarts::NdbRestart* _restart){
@@ -425,7 +425,7 @@ int restartRandomNodeInitial(NdbRestarter& _restarter,
 	"Could not restart node "<<nodeId);
 
   return NDBT_OK;
-}
+};
 
 int twoNodeFailure(NdbRestarter& _restarter, 
 		   const NdbRestarts::NdbRestart* _restart){
@@ -445,14 +445,15 @@ int twoNodeFailure(NdbRestarter& _restarter,
 	 << ") secs " << endl;
   NdbSleep_SecSleep(seconds);
 
-  nodeId = _restarter.getRandomNodeOtherNodeGroup(nodeId, rand());
+  randomId = (rand() % _restarter.getNumDbNodes());
+  nodeId = _restarter.getDbNodeId(randomId);  
   g_info << _restart->m_name << ": node = "<< nodeId << endl;
 
   CHECK(_restarter.insertErrorInNode(nodeId, 9999) == 0,
 	"Could not restart node "<< nodeId);
 
   return NDBT_OK;
-}
+};
 
 int twoMasterNodeFailure(NdbRestarter& _restarter, 
 			 const NdbRestarts::NdbRestart* _restart){
@@ -477,7 +478,7 @@ int twoMasterNodeFailure(NdbRestarter& _restarter,
 	"Could not restart node "<< nodeId);
 
   return NDBT_OK;
-}
+};
 
 int get50PercentOfNodes(NdbRestarter& restarter, 
 			int * _nodes){
@@ -518,7 +519,7 @@ int fiftyPercentFail(NdbRestarter& _restarter,
 	"Could not start all nodes");
 
   return NDBT_OK;
-}
+};
 
 
 int restartAllNodesGracfeul(NdbRestarter& _restarter, 
@@ -532,7 +533,7 @@ int restartAllNodesGracfeul(NdbRestarter& _restarter,
 
   return NDBT_OK;
 
-}
+};
 
 int restartAllNodesAbort(NdbRestarter& _restarter, 
 			 const NdbRestarts::NdbRestart* _restart){
@@ -544,7 +545,7 @@ int restartAllNodesAbort(NdbRestarter& _restarter,
 	"Could not restart all nodes");
 
   return NDBT_OK;
-}
+};
 
 int restartAllNodesError9999(NdbRestarter& _restarter, 
 			     const NdbRestarts::NdbRestart* _restart){
@@ -556,7 +557,7 @@ int restartAllNodesError9999(NdbRestarter& _restarter,
 	"Could not restart all nodes ");
 
   return NDBT_OK;
-}
+};
 
 int fiftyPercentStopAndWait(NdbRestarter& _restarter, 
 			    const NdbRestarts::NdbRestart* _restart){
@@ -589,7 +590,7 @@ int fiftyPercentStopAndWait(NdbRestarter& _restarter,
   g_info << _restart->m_name <<  endl;
 
   return NDBT_OK;
-}
+};
 
 int
 NFDuringNR_codes[] = {
@@ -640,8 +641,8 @@ int restartNFDuringNR(NdbRestarter& _restarter,
     CHECK(_restarter.waitNodesNoStart(&nodeId, 1) == 0,
 	  "waitNodesNoStart failed");
     
-    int val[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 } ;
-    CHECK(_restarter.dumpStateOneNode(nodeId, val, 2) == 0,
+    int val = DumpStateOrd::CmvmiSetRestartOnErrorInsert;
+    CHECK(_restarter.dumpStateOneNode(nodeId, &val, 1) == 0,
 	  "failed to set RestartOnErrorInsert");
     
     CHECK(_restarter.insertErrorInNode(nodeId, error) == 0,
@@ -697,8 +698,8 @@ int restartNFDuringNR(NdbRestarter& _restarter,
     CHECK(_restarter.waitNodesNoStart(&nodeId, 1) == 0,
 	  "waitNodesNoStart failed");
         
-    int val[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 };
-    CHECK(_restarter.dumpStateOneNode(crashNodeId, val, 2) == 0,
+    int val = DumpStateOrd::CmvmiSetRestartOnErrorInsert;
+    CHECK(_restarter.dumpStateOneNode(crashNodeId, &val, 2) == 0,
 	  "failed to set RestartOnErrorInsert");
     
     CHECK(_restarter.insertErrorInNode(crashNodeId, error) == 0,
@@ -712,7 +713,7 @@ int restartNFDuringNR(NdbRestarter& _restarter,
   }
 
   return NDBT_OK;
-}
+};
 
 int
 NRDuringLCP_Master_codes[] = {
@@ -770,8 +771,8 @@ int restartNodeDuringLCP(NdbRestarter& _restarter,
 	   << " error code = " << error << endl;
 
     {
-      int val[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 };
-      CHECK(_restarter.dumpStateAllNodes(val, 2) == 0,
+      int val = DumpStateOrd::CmvmiSetRestartOnErrorInsert;
+      CHECK(_restarter.dumpStateAllNodes(&val, 1) == 0,
 	    "failed to set RestartOnErrorInsert");
     }
 
@@ -811,8 +812,8 @@ int restartNodeDuringLCP(NdbRestarter& _restarter,
     ndbout << _restart->m_name << " restarting non-master node = " << nodeId
 	   << " error code = " << error << endl;
 
-    int val[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 };
-    CHECK(_restarter.dumpStateAllNodes(val, 2) == 0,
+    int val = DumpStateOrd::CmvmiSetRestartOnErrorInsert;
+    CHECK(_restarter.dumpStateAllNodes(&val, 1) == 0,
 	  "failed to set RestartOnErrorInsert");
     
     CHECK(_restarter.insertErrorInNode(nodeId, error) == 0,
@@ -863,7 +864,7 @@ int stopOnError(NdbRestarter& _restarter,
   } while (false);
   
   return NDBT_OK;
-}
+};
 
 int getRandomNodeId(NdbRestarter& _restarter) {
   myRandom48Init(NdbTick_CurrentMillisecond());

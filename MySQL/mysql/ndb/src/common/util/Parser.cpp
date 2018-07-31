@@ -141,10 +141,7 @@ split(char * buf, char ** name, char ** value){
 
 bool
 ParserImpl::run(Context * ctx, const class Properties ** pDst,
-		volatile bool * stop) const
-{
-  DBUG_ENTER("ParserImpl::run");
-
+		volatile bool * stop) const {
   * pDst = 0;
   bool ownStop = false;
   if(stop == 0)
@@ -156,24 +153,24 @@ ParserImpl::run(Context * ctx, const class Properties ** pDst,
   ctx->m_currentToken = input.gets(ctx->m_tokenBuffer, sz);
   if(Eof(ctx->m_currentToken)){
     ctx->m_status = Parser<Dummy>::Eof;
-    DBUG_RETURN(false);
+    return false;
   }
   
   if(ctx->m_currentToken[0] == 0){
     ctx->m_status = Parser<Dummy>::NoLine;
-    DBUG_RETURN(false);
+    return false;
   }
   
   if(Empty(ctx->m_currentToken)){
     ctx->m_status = Parser<Dummy>::EmptyLine;
-    DBUG_RETURN(false);
+    return false;
   }
 
   trim(ctx->m_currentToken);
   ctx->m_currentCmd = matchCommand(ctx, ctx->m_currentToken, m_rows);
   if(ctx->m_currentCmd == 0){
     ctx->m_status = Parser<Dummy>::UnknownCommand;
-    DBUG_RETURN(false);
+    return false;
   }
   
   Properties * p = new Properties();
@@ -203,19 +200,19 @@ ParserImpl::run(Context * ctx, const class Properties ** pDst,
 	tmp = input.gets(buf, sz);
       } while((! * stop) && !Eof(tmp) && !Empty(tmp));
     }
-    DBUG_RETURN(false);
+    return false;
   }
   
   if(* stop){
     delete p;
     ctx->m_status = Parser<Dummy>::ExternalStop;
-    DBUG_RETURN(false);
+    return false;
   }
   
   if(!checkMandatory(ctx, p)){
     ctx->m_status = Parser<Dummy>::MissingMandatoryArgument;
     delete p;
-    DBUG_RETURN(false);
+    return false;
   }
 
   /**
@@ -232,7 +229,7 @@ ParserImpl::run(Context * ctx, const class Properties ** pDst,
   
   ctx->m_status = Parser<Dummy>::Ok;
   * pDst = p;
-  DBUG_RETURN(true);
+  return true;
 }
 
 const ParserImpl::DummyRow* 

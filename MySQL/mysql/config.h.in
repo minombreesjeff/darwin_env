@@ -204,10 +204,6 @@
 /* Define to 1 if you have the `cuserid' function. */
 #undef HAVE_CUSERID
 
-/* Define to 1 if you have the declaration of `madvise', and to 0 if you
-   don't. */
-#undef HAVE_DECL_MADVISE
-
 /* Whether we are using DEC threads */
 #undef HAVE_DEC_THREADS
 
@@ -370,6 +366,9 @@
 
 /* Define to 1 if you have the `compat' library (-lcompat). */
 #undef HAVE_LIBCOMPAT
+
+/* Define to 1 if you have the `crypt' library (-lcrypt). */
+#undef HAVE_LIBCRYPT
 
 /* Define to 1 if you have the `c_r' library (-lc_r). */
 #undef HAVE_LIBC_R
@@ -848,7 +847,10 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
-/* Have UnixWare 7 (or similar) almost-POSIX threading library */
+/* new UNIXWARE7 threads that are not yet posix */
+#undef HAVE_UNIXWARE7_POSIX
+
+/* UNIXWARE7 threads are not posix */
 #undef HAVE_UNIXWARE7_THREADS
 
 /* sighold() is present and usable */

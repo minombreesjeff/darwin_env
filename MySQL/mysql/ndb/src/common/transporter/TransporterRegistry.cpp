@@ -76,9 +76,7 @@ SocketServer::Session * TransporterService::newSession(NDB_SOCKET_TYPE sockfd)
 
 TransporterRegistry::TransporterRegistry(void * callback,
 					 unsigned _maxTransporters,
-					 unsigned sizeOfLongSignalMemory)
-{
-  DBUG_ENTER("TransporterRegistry::TransporterRegistry");
+					 unsigned sizeOfLongSignalMemory) {
 
   nodeIdSpecified = false;
   maxTransporters = _maxTransporters;
@@ -115,13 +113,9 @@ TransporterRegistry::TransporterRegistry(void * callback,
   theOSEReceiver = 0;
   theOSEJunkSocketSend = 0;
   theOSEJunkSocketRecv = 0;
-
-  DBUG_VOID_RETURN;
 }
 
-TransporterRegistry::~TransporterRegistry()
-{
-  DBUG_ENTER("TransporterRegistry::~TransporterRegistry");
+TransporterRegistry::~TransporterRegistry() {
   
   removeAll();
   
@@ -141,8 +135,6 @@ TransporterRegistry::~TransporterRegistry()
     theOSEReceiver = 0;
   }
 #endif
-
-  DBUG_VOID_RETURN;
 }
 
 void

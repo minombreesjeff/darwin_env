@@ -1716,6 +1716,7 @@ int main(int argc, char **argv)
       int* handle;
       char test[FN_LEN];
       char mask[FN_REFLEN];
+      char *p;
       int position;
 
       /* single test */

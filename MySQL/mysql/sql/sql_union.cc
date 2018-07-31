@@ -132,6 +132,8 @@ st_select_lex_unit::init_prepare_fake_select_lex(THD *thd)
     options_tmp&= ~OPTION_FOUND_ROWS;
   else if (found_rows_for_union && !thd->lex->describe)
     options_tmp|= OPTION_FOUND_ROWS;
+  fake_select_lex->ftfunc_list_alloc.empty();
+  fake_select_lex->ftfunc_list= &fake_select_lex->ftfunc_list_alloc;
   fake_select_lex->table_list.link_in_list((byte *)&result_table_list,
 					   (byte **)
 					   &result_table_list.next);
@@ -184,7 +186,7 @@ int st_select_lex_unit::prepare(THD *thd_arg, select_result *sel_result,
   
   thd_arg->lex->current_select= sl= first_select= first_select_in_union();
   found_rows_for_union= first_select->options & OPTION_FOUND_ROWS;
-  is_union= test(first_select->next_select() || fake_select_lex);
+  is_union= test(first_select->next_select());
 
   /* Global option */
 
@@ -285,8 +287,6 @@ int st_select_lex_unit::prepare(THD *thd_arg, select_result *sel_result,
     List_iterator_fast<Item> tp(types);
     Item_arena *arena= thd->current_arena;
     Item *type;
-    ulong create_options;
-
     while ((type= tp++))
     {
       if (type->result_type() == STRING_RESULT &&
@@ -296,24 +296,15 @@ int st_select_lex_unit::prepare(THD *thd_arg, select_result *sel_result,
         goto err;
       }
     }
-    
-    create_options= (first_select_in_union()->options | thd_arg->options |
-                     TMP_TABLE_ALL_COLUMNS);
-    /*
-      Force the temporary table to be a MyISAM table if we're going to use
-      fullext functions (MATCH ... AGAINST .. IN BOOLEAN MODE) when reading
-      from it (this should be removed in 5.2 when fulltext search is moved 
-      out of MyISAM).
-    */
-    if (global_parameters->ftfunc_list->elements)
-      create_options= create_options | TMP_TABLE_FORCE_MYISAM;
 
     union_result->tmp_table_param.field_count= types.elements;
     if (!(table= create_tmp_table(thd_arg,
 				  &union_result->tmp_table_param, types,
 				  (ORDER*) 0, (bool) union_distinct, 1, 
-                                  create_options, HA_POS_ERROR, 
-                                  (char *) tmp_table_alias)))
+				  (first_select_in_union()->options |
+				   thd_arg->options |
+				   TMP_TABLE_ALL_COLUMNS),
+				  HA_POS_ERROR, (char *) tmp_table_alias)))
       goto err;
     table->file->extra(HA_EXTRA_WRITE_CACHE);
     table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
@@ -492,12 +483,7 @@ int st_select_lex_unit::exec()
 	DBUG_RETURN(res);
       }
       /* Needed for the following test and for records_at_start in next loop */
-      int error= table->file->info(HA_STATUS_VARIABLE);
-      if(error)
-      {
-        table->file->print_error(error, MYF(0));
-        DBUG_RETURN(1);
-      }
+      table->file->info(HA_STATUS_VARIABLE);
       if (found_rows_for_union && !sl->braces && 
           select_limit_cnt != HA_POS_ERROR)
       {
