@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2003 MySQL AB
+/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2835,6 +2835,14 @@ static int init_common_variables(const char *conf_file_name, int argc,
 
   max_system_variables.pseudo_thread_id= (ulong)~0;
   server_start_time= flush_status_time= time((time_t*) 0);
+  
+  /* TODO: remove this when my_time_t is 64 bit compatible */
+  if (server_start_time >= (time_t) MY_TIME_T_MAX)
+  {
+    sql_print_error("This MySQL server doesn't support dates later then 2038");
+    return 1;
+  }
+
   if (init_thread_environment())
     return 1;
   mysql_init_variables();

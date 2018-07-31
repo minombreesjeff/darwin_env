@@ -1,5 +1,5 @@
 # -*- cperl -*-
-# Copyright (C) 2005-2006 MySQL AB
+# Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -246,8 +246,10 @@ sub collect_test_cases ($) {
 	push(@criteria, "ndb=" . ($tinfo->{'ndb_test'} ? "1" : "0"));
 	# Group test with equal options together.
 	# Ending with "~" makes empty sort later than filled
-	push(@criteria, join("!", sort @{$tinfo->{'master_opt'}}) . "~");
-
+	if ( $tinfo->{'master_opt'}[0] )
+	{
+	  push(@criteria, join("!", sort @{$tinfo->{'master_opt'}}) . "~");
+	}
 	$sort_criteria{$test_name} = join(" ", @criteria);
       }
     }
@@ -579,7 +581,7 @@ sub collect_one_test_case($$$$$$$) {
       {
 	# Ndb is not supported, skip it
 	$tinfo->{'skip'}= 1;
-	$tinfo->{'comment'}= "No ndbcluster support";
+	$tinfo->{'comment'}= "No ndbcluster support or ndb tests disabled";
 	return;
       }
       elsif ( $::opt_skip_ndbcluster )

@@ -1,4 +1,4 @@
-# Copyright (C) 2000-2008 MySQL AB, 2008-2010 Sun Microsystems, Inc.
+# Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -837,7 +837,6 @@ fi
 
 %files devel
 %defattr(-, root, root, 0755)
-%doc EXCEPTIONS-CLIENT
 %doc %attr(644, root, man) %{_mandir}/man1/comp_err.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysql_config.1*
 %attr(755, root, root) %{_bindir}/comp_err
@@ -892,6 +891,10 @@ fi
 # itself - note that they must be ordered by date (important when
 # merging BK trees)
 %changelog
+* Wed Nov 24 2010 Alexander Nozdrin <alexander.nozdrin@oracle.com>
+
+- EXCEPTIONS-CLIENT has been deleted, remove it from here too.
+
 * Mon Feb 01 2010 Joerg Bruehe <joerg.bruehe@sun.com>
 
 - Formatting changes:

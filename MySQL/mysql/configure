@@ -865,6 +865,7 @@ HAVE_YASSL_TRUE
 yassl_dir
 yassl_libs
 yassl_h_ln_cmd
+yassl_thread_cxxflags
 yassl_taocrypt_extra_cxxflags
 openssl_includes
 openssl_libs
@@ -2885,7 +2886,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE=mysql
- VERSION=5.0.91
+ VERSION=5.0.92
 
 
 cat >>confdefs.h <<_ACEOF
@@ -3043,7 +3044,7 @@ NDB_SHARED_LIB_VERSION=$NDB_SHARED_LIB_MAJOR_VERSION:0:0
 # ndb version
 NDB_VERSION_MAJOR=5
 NDB_VERSION_MINOR=0
-NDB_VERSION_BUILD=91
+NDB_VERSION_BUILD=92
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
@@ -6908,13 +6909,13 @@ if test "${lt_cv_nm_interface+set}" = set; then
 else
   lt_cv_nm_interface="BSD nm"
   echo "int some_variable = 0;" > conftest.$ac_ext
-  (eval echo "\"\$as_me:6911: $ac_compile\"" >&5)
+  (eval echo "\"\$as_me:6912: $ac_compile\"" >&5)
   (eval "$ac_compile" 2>conftest.err)
   cat conftest.err >&5
-  (eval echo "\"\$as_me:6914: $NM \\\"conftest.$ac_objext\\\"\"" >&5)
+  (eval echo "\"\$as_me:6915: $NM \\\"conftest.$ac_objext\\\"\"" >&5)
   (eval "$NM \"conftest.$ac_objext\"" 2>conftest.err > conftest.out)
   cat conftest.err >&5
-  (eval echo "\"\$as_me:6917: output\"" >&5)
+  (eval echo "\"\$as_me:6918: output\"" >&5)
   cat conftest.out >&5
   if $GREP 'External.*some_variable' conftest.out > /dev/null; then
     lt_cv_nm_interface="MS dumpbin"
@@ -8120,7 +8121,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 8123 "configure"' > conftest.$ac_ext
+  echo '#line 8124 "configure"' > conftest.$ac_ext
   if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -10456,11 +10457,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10459: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10460: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10463: \$? = $ac_status" >&5
+   echo "$as_me:10464: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -10795,11 +10796,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10798: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10799: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10802: \$? = $ac_status" >&5
+   echo "$as_me:10803: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -10900,11 +10901,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10903: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10904: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10907: \$? = $ac_status" >&5
+   echo "$as_me:10908: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -10955,11 +10956,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10958: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10959: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10962: \$? = $ac_status" >&5
+   echo "$as_me:10963: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -13755,7 +13756,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 13758 "configure"
+#line 13759 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -13851,7 +13852,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 13854 "configure"
+#line 13855 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -15871,11 +15872,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:15874: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:15875: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:15878: \$? = $ac_status" >&5
+   echo "$as_me:15879: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -15970,11 +15971,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:15973: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:15974: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:15977: \$? = $ac_status" >&5
+   echo "$as_me:15978: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -16022,11 +16023,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:16025: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:16026: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:16029: \$? = $ac_status" >&5
+   echo "$as_me:16030: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -36934,6 +36935,12 @@ $as_echo "$as_me: disabling inlining for yassl/taocrypt/src/" >&6;}
         ;;
     esac
 
+    # Thread safe check
+    yassl_thread_cxxflags=""
+    if test "$with_server" != "no" -o "$THREAD_SAFE_CLIENT" != "no"; then
+      yassl_thread_cxxflags="-DYASSL_THREAD_SAFE"
+    fi
+
     # Link extra/yassl/include/openssl subdir to include/
     yassl_h_ln_cmd="\$(LN) -s \$(top_srcdir)/extra/yassl/include/openssl openssl"
 
@@ -39137,7 +39144,7 @@ fi
 
 
 # Output results
-ac_config_files="$ac_config_files Makefile extra/Makefile mysys/Makefile strings/Makefile regex/Makefile heap/Makefile myisam/Makefile myisammrg/Makefile os2/Makefile os2/include/Makefile os2/include/sys/Makefile man/Makefile BUILD/Makefile vio/Makefile libmysql/Makefile client/Makefile pstack/Makefile pstack/aout/Makefile sql/Makefile sql/share/Makefile sql-common/Makefile SSL/Makefile dbug/Makefile scripts/Makefile include/Makefile sql-bench/Makefile server-tools/Makefile server-tools/instance-manager/Makefile tests/Makefile Docs/Makefile support-files/Makefile support-files/MacOSX/Makefile support-files/RHEL4-SElinux/Makefile mysql-test/Makefile netware/Makefile include/mysql_version.h cmd-line-utils/Makefile cmd-line-utils/libedit/Makefile win/Makefile zlib/Makefile cmd-line-utils/readline/Makefile"
+ac_config_files="$ac_config_files Makefile extra/Makefile mysys/Makefile strings/Makefile regex/Makefile heap/Makefile myisam/Makefile myisammrg/Makefile man/Makefile BUILD/Makefile vio/Makefile libmysql/Makefile client/Makefile pstack/Makefile pstack/aout/Makefile sql/Makefile sql/share/Makefile sql-common/Makefile SSL/Makefile dbug/Makefile scripts/Makefile include/Makefile sql-bench/Makefile server-tools/Makefile server-tools/instance-manager/Makefile tests/Makefile Docs/Makefile support-files/Makefile support-files/MacOSX/Makefile support-files/RHEL4-SElinux/Makefile mysql-test/Makefile netware/Makefile include/mysql_version.h cmd-line-utils/Makefile cmd-line-utils/libedit/Makefile win/Makefile zlib/Makefile cmd-line-utils/readline/Makefile"
 
  ac_config_commands="$ac_config_commands default"
 
@@ -40284,9 +40291,6 @@ do
     "heap/Makefile") CONFIG_FILES="$CONFIG_FILES heap/Makefile" ;;
     "myisam/Makefile") CONFIG_FILES="$CONFIG_FILES myisam/Makefile" ;;
     "myisammrg/Makefile") CONFIG_FILES="$CONFIG_FILES myisammrg/Makefile" ;;
-    "os2/Makefile") CONFIG_FILES="$CONFIG_FILES os2/Makefile" ;;
-    "os2/include/Makefile") CONFIG_FILES="$CONFIG_FILES os2/include/Makefile" ;;
-    "os2/include/sys/Makefile") CONFIG_FILES="$CONFIG_FILES os2/include/sys/Makefile" ;;
     "man/Makefile") CONFIG_FILES="$CONFIG_FILES man/Makefile" ;;
     "BUILD/Makefile") CONFIG_FILES="$CONFIG_FILES BUILD/Makefile" ;;
     "vio/Makefile") CONFIG_FILES="$CONFIG_FILES vio/Makefile" ;;

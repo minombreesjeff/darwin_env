@@ -2,12 +2,12 @@
 .\"     Title: \fBndbd\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/05/2010
+.\"      Date: 01/24/2011
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBNDBD\FR" "8" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBNDBD\FR" "8" "01/24/2011" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -56,11 +56,11 @@ Section\ \&17.4.2, \(lqOptions Common to MySQL Cluster Programs\(rq\&.
 \fB\-\-bind\-address\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -106,14 +106,19 @@ This option was added in MySQL 5\&.0\&.29\&.
 \fB\-d\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBCommand\-Line Format\fR
 T}:T{
 \-\-daemon
+T}
+T{
+T}:T{
+\-d
 T}
 T{
 \ \&
@@ -151,10 +156,10 @@ can be used to prevent the process from running as a daemon\&.
 \fB\-\-initial\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBCommand\-Line Format\fR
 T}:T{
@@ -265,11 +270,11 @@ necessary to do so\&.
 \fB\-\-initial\-start\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -300,7 +305,7 @@ T}
 This option is used when performing a partial initial start of the cluster\&. Each node should be started with this option, as well as
 \fB\-\-nowait\-nodes\fR\&.
 .sp
-Suppose that you have a 4\-node cluster whose data nodes have the IDs 2, 3, 4, and 5, and you wish to perform a partial initial start using only nodes 2, 4, and 5 \(em that is, omitting node 3:
+Suppose that you have a 4\-node cluster whose data nodes have the IDs 2, 3, 4, and 5, and you wish to perform a partial initial start using only nodes 2, 4, and 5\(emthat is, omitting node 3:
 .sp
 .if n \{\
 .RS 4
@@ -329,11 +334,11 @@ This option was added in MySQL 5\&.0\&.21\&.
 \fB\-\-nowait\-nodes=\fR\fB\fInode_id_1\fR\fR\fB[, \fR\fB\fInode_id_2\fR\fR\fB[, \&.\&.\&.]]\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -372,8 +377,7 @@ StartPartitionedTimeout
 milliseconds for nodes 3 and 5 to connect as it would otherwise\&.
 .sp
 If you wanted to start up the same cluster as in the previous example without one
-\fBndbd\fR
-\(em say, for example, that the host machine for node 3 has suffered a hardware failure \(em then start nodes 2, 4, and 5 with
+\fBndbd\fR\(emsay, for example, that the host machine for node 3 has suffered a hardware failure\(emthen start nodes 2, 4, and 5 with
 \fB\-\-nowait\-nodes=3\fR\&. Then the cluster will start as soon as nodes 2, 4, and 5 connect and will not wait for node 3 to start\&.
 .sp
 When using this option, you must also specify the node ID for the data node being started with the
@@ -395,13 +399,13 @@ This option was added in MySQL 5\&.0\&.21\&.
 \fB\-\-nodaemon\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-^ l l
-^ l l
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+^ l l s
+^ l l s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBCommand\-Line Format\fR
 T}:T{
@@ -460,14 +464,19 @@ is being debugged and you want output to be redirected to the screen\&.
 \fB\-n\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBCommand\-Line Format\fR
 T}:T{
 \-\-nostart
+T}
+T{
+T}:T{
+\-n
 T}
 T{
 \ \&
@@ -678,7 +687,7 @@ starts, it actually initiates two processes\&. The first of these is called the
 \fBndbd\fR
 process if it is configured to do so\&. Thus, if you attempt to kill
 \fBndbd\fR
-via the Unix
+using the Unix
 \fBkill\fR
 command, it is necessary to kill both processes, beginning with the angel process\&. The preferred method of terminating an
 \fBndbd\fR
@@ -697,7 +706,7 @@ Section\ \&17.1.5, \(lqKnown Limitations of MySQL Cluster\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2011, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

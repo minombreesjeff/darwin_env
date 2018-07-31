@@ -1,5 +1,5 @@
 # -*- cperl -*-
-# Copyright (C) 2004-2006 MySQL AB
+# Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -264,8 +264,9 @@ sub spawn_parent_impl {
           if ( $timer_name eq "suite" )
           {
             # We give up here
-            # FIXME we should only give up the suite, not all of the run?
             print STDERR "\n";
+            kill(9, $pid);                # Kill mysqltest
+            mtr_kill_leftovers();         # Kill servers the hard way
             mtr_error("Test suite timeout");
           }
           elsif ( $timer_name eq "testcase" )

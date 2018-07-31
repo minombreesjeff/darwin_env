@@ -2321,7 +2321,7 @@ DB_VERSION_PATCH=24
 
 DB_VERSION_UNIQUE_NAME=_4001
 
-DB_VERSION_STRING="\"Sleepycat Software: Berkeley DB 4.1.24: (May  5, 2010)\""
+DB_VERSION_STRING="\"Sleepycat Software: Berkeley DB 4.1.24: (January 25, 2011)\""
 
 
 # Set the default installation location.

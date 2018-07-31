@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2003 MySQL AB
+/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -493,6 +493,7 @@ int check_user(THD *thd, enum enum_server_command command,
       }
       send_ok(thd);
       thd->password= test(passwd_len);          // remember for error messages 
+#ifndef EMBEDDED_LIBRARY
       /*
         Allow the network layer to skip big packets. Although a malicious
         authenticated session might use this to trick the server to read
@@ -500,6 +501,7 @@ int check_user(THD *thd, enum enum_server_command command,
         that needs to be preserved as to not break backwards compatibility.
       */
       thd->net.skip_big_packet= TRUE;
+#endif
       /* Ready to handle queries */
       DBUG_RETURN(0);
     }
@@ -1411,8 +1413,10 @@ end:
 }
 
 
-    /* This works because items are allocated with sql_alloc() */
-
+/**
+   This works because items are allocated with sql_alloc().
+   @note The function also handles null pointers (empty list).
+*/
 void cleanup_items(Item *item)
 {
   DBUG_ENTER("cleanup_items");  
@@ -1430,6 +1434,7 @@ void cleanup_items(Item *item)
       db            database name or an empty string. If empty,
                     the current database of the connection is used
       tbl_name      name of the table to dump
+      tbl_len       its length
 
   NOTES
     This function is written to handle one specific command only.
@@ -1440,7 +1445,7 @@ void cleanup_items(Item *item)
 */
 
 static
-int mysql_table_dump(THD* thd, char* db, char* tbl_name)
+int mysql_table_dump(THD* thd, char* db, char* tbl_name, uint tbl_len)
 {
   TABLE* table;
   TABLE_LIST* table_list;
@@ -1459,6 +1464,11 @@ int mysql_table_dump(THD* thd, char* db, char* tbl_name)
     my_error(ER_WRONG_DB_NAME ,MYF(0), db ? db : "NULL");
     goto err;
   }
+  if (!tbl_name || check_table_name(tbl_name, tbl_len))
+  {
+    my_error(ER_WRONG_TABLE_NAME , MYF(0), tbl_name ? tbl_name : "NULL");
+    goto err;
+  }
   if (lower_case_table_names)
     my_casedn_str(files_charset_info, tbl_name);
   remove_escape(table_list->table_name);
@@ -1469,7 +1479,7 @@ int mysql_table_dump(THD* thd, char* db, char* tbl_name)
   if (check_one_table_access(thd, SELECT_ACL, table_list))
     goto err;
   thd->free_list = 0;
-  thd->set_query(tbl_name, (uint) strlen(tbl_name));
+  thd->set_query(tbl_name, tbl_len);
   if ((error = mysqld_dump_create_info(thd, table_list, -1)))
   {
     my_error(ER_GET_ERRNO, MYF(0), my_errno);
@@ -1761,6 +1771,19 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   thd->enable_slow_log= TRUE;
   thd->lex->sql_command= SQLCOM_END; /* to avoid confusing VIEW detectors */
   thd->set_time();
+  if (!thd->is_valid_time())
+  {
+    /*
+     If the time has got past 2038 we need to shut this server down
+     We do this by making sure every command is a shutdown and we 
+     have enough privileges to shut the server down
+
+     TODO: remove this when we have full 64 bit my_time_t support
+    */
+    thd->security_ctx->master_access|= SHUTDOWN_ACL;
+    command= COM_SHUTDOWN;
+  }
+
   VOID(pthread_mutex_lock(&LOCK_thread_count));
   thd->query_id= global_query_id;
   
@@ -1836,7 +1859,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     }
     tbl_name= strmake(db, packet + 1, db_len)+1;
     strmake(tbl_name, packet + db_len + 2, tbl_len);
-    mysql_table_dump(thd, db, tbl_name);
+    mysql_table_dump(thd, db, tbl_name, tbl_len);
     break;
   }
   case COM_CHANGE_USER:
@@ -2220,8 +2243,12 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       SHUTDOWN_DEFAULT is 0. If client is >= 4.1.3, the shutdown level is in
       packet[0].
     */
-    enum mysql_enum_shutdown_level level=
-      (enum mysql_enum_shutdown_level) (uchar) packet[0];
+    enum mysql_enum_shutdown_level level;
+    if (!thd->is_valid_time())
+      level= SHUTDOWN_DEFAULT;
+    else
+      level= (enum mysql_enum_shutdown_level) (uchar) packet[0];
+
     DBUG_PRINT("quit",("Got shutdown command for level %u", level));
     if (level == SHUTDOWN_DEFAULT)
       level= SHUTDOWN_WAIT_ALL_BUFFERS; // soon default will be configurable

@@ -1,4 +1,4 @@
-# Copyright (C) 2000-2006 MySQL AB
+# Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@ AUTOMAKE_OPTIONS =	foreign
 
 # These are built from source in the Docs directory
 EXTRA_DIST =		INSTALL-SOURCE INSTALL-WIN-SOURCE \
-			README COPYING EXCEPTIONS-CLIENT CMakeLists.txt
+			README COPYING CMakeLists.txt
 
 SUBDIRS =		. include @docs_dirs@ @zlib_dir@ @yassl_dir@ \
 			@readline_topdir@ sql-common scripts \
@@ -32,7 +32,7 @@ DIST_SUBDIRS =		. include @docs_dirs@ zlib \
 			@readline_topdir@ sql-common \
 			@thread_dirs@ pstack \
 			@sql_union_dirs@ scripts @man_dirs@ tests SSL\
-			BUILD netware os2 @libmysqld_dirs@ \
+			BUILD netware @libmysqld_dirs@ \
 			@bench_dirs@ support-files @tools_dirs@ win
 
 # Run these targets before any others, also make part of clean target,

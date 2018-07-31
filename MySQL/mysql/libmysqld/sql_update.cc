@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2006 MySQL AB
+/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -908,8 +908,9 @@ reopen_tables:
       items from 'fields' list, so the cleanup above is necessary to.
     */
     cleanup_items(thd->free_list);
-
+    cleanup_items(thd->stmt_arena->free_list);
     close_tables_for_reopen(thd, &table_list);
+
     goto reopen_tables;
   }
 

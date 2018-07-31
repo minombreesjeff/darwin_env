@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqlcheck\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/05/2010
+.\"      Date: 01/24/2011
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLCHECK\FR" "1" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBMYSQLCHECK\FR" "1" "01/24/2011" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -101,7 +101,7 @@ note     : The storage engine for the table doesn\'t support check
 If
 \fBmysqlcheck\fR
 is unable to repair a table, see
-Section\ \&2.18.4, \(lqRebuilding or Repairing Tables or Indexes\(rq
+Section\ \&2.19.4, \(lqRebuilding or Repairing Tables or Indexes\(rq
 for manual table repair strategies\&. This will be the case, for example, for
 InnoDB
 tables, which can be checked with
@@ -157,11 +157,18 @@ named
 \fBmysqlrepair\fR\&. If you invoke
 \fBmysqlrepair\fR, it repairs tables\&.
 .PP
-The following names can be used to change
+The names shown in the following table can be used to change
 \fBmysqlcheck\fR
 default behavior\&.
 .TS
 allbox tab(:);
+lB lB.
+T{
+Command
+T}:T{
+Meaning
+T}
+.T&
 l l
 l l
 l l.
@@ -555,7 +562,7 @@ Section\ \&5.3.2.2, \(lqEnd-User Guidelines for Password Security\(rq\&. You can
 \fB\-\-pipe\fR,
 \fB\-W\fR
 .sp
-On Windows, connect to the server via a named pipe\&. This option applies only if the server supports named\-pipe connections\&.
+On Windows, connect to the server using a named pipe\&. This option applies only if the server supports named\-pipe connections\&.
 .RE
 .sp
 .RS 4
@@ -586,7 +593,7 @@ The TCP/IP port number to use for the connection\&.
 .\" protocol option: mysqlcheck
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use for connecting to the server\&. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want\&. For details on the allowable values, see
+The connection protocol to use for connecting to the server\&. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want\&. For details on the permissible values, see
 Section\ \&4.2.2, \(lqConnecting to the MySQL Server\(rq\&.
 .RE
 .sp
@@ -671,7 +678,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 .sp
 Options that begin with
 \fB\-\-ssl\fR
-specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates\&. See
+specify whether to connect to the server using SSL and indicate where to find SSL keys and certificates\&. See
 Section\ \&5.5.6.3, \(lqSSL Command Options\(rq\&.
 .RE
 .sp
@@ -765,7 +772,7 @@ Display version information and exit\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2011, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

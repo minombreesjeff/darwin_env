@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqld_multi\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/05/2010
+.\"      Date: 01/24/2011
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLD_MULTI\FR" "1" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBMYSQLD_MULTI\FR" "1" "01/24/2011" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -51,7 +51,7 @@ to specify which servers you want to start, stop, or obtain a status report for\
 [mysqld]
 group used for starting
 \fBmysqld\fR\&. (See, for example,
-Section\ \&2.17.2.2, \(lqStarting and Stopping MySQL Automatically\(rq\&.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number\&. For more information on which options must be unique per server in a multiple\-server environment, see
+Section\ \&2.18.1.2, \(lqStarting and Stopping MySQL Automatically\(rq\&.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number\&. For more information on which options must be unique per server in a multiple\-server environment, see
 Section\ \&5.6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq\&.
 .PP
 To invoke
@@ -425,7 +425,7 @@ Silent mode; disable warnings\&.
 .\" tcp-ip option: mysqld_multi
 \fB\-\-tcp\-ip\fR
 .sp
-Connect to each MySQL server via the TCP/IP port instead of the Unix socket file\&. (If a socket file is missing, the server might still be running, but accessible only via the TCP/IP port\&.) By default, connections are made using the Unix socket file\&. This option affects
+Connect to each MySQL server through the TCP/IP port instead of the Unix socket file\&. (If a socket file is missing, the server might still be running, but accessible only through the TCP/IP port\&.) By default, connections are made using the Unix socket file\&. This option affects
 stop
 and
 report
@@ -575,7 +575,7 @@ mysql> \fBGRANT SHUTDOWN ON *\&.*\fR
 See
 Section\ \&5.4, \(lqThe MySQL Access Privilege System\(rq\&. You have to do this for each
 \fBmysqld\fR
-server\&. Change the connection parameters appropriately when connecting to each one\&. Note that the host name part of the account name must allow you to connect as
+server\&. Change the connection parameters appropriately when connecting to each one\&. Note that the host name part of the account name must permit you to connect as
 multi_admin
 from the host where you want to run
 \fBmysqld_multi\fR\&.
@@ -661,9 +661,7 @@ You might want to use the
 option for
 \fBmysqld\fR, but to do this you need to run the
 \fBmysqld_multi\fR
-script as the Unix
-root
-user\&. Having the option in the option file doesn\'t matter; you just get a warning if you are not the superuser and the
+script as the Unix superuser (root)\&. Having the option in the option file doesn\'t matter; you just get a warning if you are not the superuser and the
 \fBmysqld\fR
 processes are started under your own Unix account\&.
 .RE
@@ -727,7 +725,7 @@ Section\ \&4.2.3.3, \(lqUsing Option Files\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2011, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2000-2007 MySQL AB
+   Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 namespace yaSSL {
 
 
-#ifdef MULTI_THREADED
+#ifdef YASSL_THREAD_SAFE
     #ifdef _WIN32
         
         Mutex::Mutex()
@@ -79,7 +79,7 @@ namespace yaSSL {
          
 
     #endif // _WIN32
-#endif // MULTI_THREADED
+#endif // YASSL_THREAD_SAFE
 
 
 

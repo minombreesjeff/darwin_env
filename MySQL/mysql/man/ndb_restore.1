@@ -2,12 +2,12 @@
 .\"     Title: \fBndb_restore\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/05/2010
+.\"      Date: 01/24/2011
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBNDB_RESTORE\FR" "1" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBNDB_RESTORE\FR" "1" "01/24/2011" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -125,7 +125,7 @@ is used to specify the node ID of the data node on which the backups were taken\
 .PP
 The first time you run the
 \fBndb_restore\fR
-restoration program, you also need to restore the metadata\&. In other words, you must re\-create the database tables \(em this can be done by running it with the
+restoration program, you also need to restore the metadata\&. In other words, you must re\-create the database tables\(emthis can be done by running it with the
 \fB\-m\fR
 option\&. Note that the cluster should have an empty database when starting to restore a backup\&. (In other words, you should start
 \fBndbd\fR
@@ -209,7 +209,7 @@ It is possible to restore a backup to a database with a different configuration 
 and
 3, is to be restored to a cluster with four nodes\&. Then
 \fBndb_restore\fR
-must be run twice \(em once for each database node in the cluster where the backup was taken\&. However,
+must be run twice\(emonce for each database node in the cluster where the backup was taken\&. However,
 \fBndb_restore\fR
 cannot always restore backups made from a cluster running one version of MySQL to a cluster running a different MySQL version\&. See
 Section\ \&17.2.6.2, \(lqMySQL Cluster 5.0 Upgrade and Downgrade Compatibility\(rq, for more information\&.
@@ -247,10 +247,22 @@ file available for each concurrent
 \fBndb_restore\fR
 process\&. However, the data files must always be applied before the logs\&.
 .PP
-This option causes
+.\" --print_data option (ndb_restore)
+.\" ndb_restore: --print_data option
+The
+\fB\-\-print_data\fR
+option causes
 \fBndb_restore\fR
-to print its output to
-stdout\&. Beginning with MySQL 5\&.0\&.40, several additional options are available for use with the
+to direct its output to
+stdout\&.
+.PP
+TEXT
+and
+BLOB
+column values are always truncated to the first 256 bytes in the output; this cannot currrently be overridden when using
+\fB\-\-print_data\fR\&.
+.PP
+Beginning with MySQL 5\&.0\&.40, several additional options are available for use with the
 \fB\-\-print_data\fR
 option in generating data dumps, either to
 stdout, or to a file\&. These are similar to some of the options used with
@@ -270,8 +282,9 @@ stdout, or to a file\&. These are similar to some of the options used with
 \fB\-T\fR
 .TS
 allbox tab(:);
-l l s
-l l s.
+l l s s
+l l s s
+l l s s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -281,6 +294,10 @@ T{
 \fBCommand\-Line Format\fR
 T}:T{
 \-\-tab=path
+T}
+T{
+T}:T{
+\-T
 T}
 .TE
 .sp 1
@@ -305,11 +322,11 @@ for the current directory\&.
 \fB\-\-fields\-enclosed\-by=\fR\fB\fIstring\fR\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -352,11 +369,11 @@ Each column values are enclosed by the string passed to this option (regardless 
 \fB\-\-fields\-optionally\-enclosed\-by=\fR\fB\fIstring\fR\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -404,11 +421,11 @@ ENUM)\&.
 \fB\-\-fields\-terminated\-by=\fR\fB\fIstring\fR\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -452,8 +469,8 @@ The string passed to this option is used to separate column values\&. The defaul
 \fB\-\-hex\fR
 .TS
 allbox tab(:);
-l l s
-l l s.
+l l s s
+l l s s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -482,11 +499,11 @@ If this option is used, all binary values are output in hexadecimal format\&.
 \fB\-\-fields\-terminated\-by=\fR\fB\fIstring\fR\fR
 .TS
 allbox tab(:);
-l l s
-l l s
-l l s
-^ l l
-^ l l.
+l l s s
+l l s s
+l l s s
+^ l l s
+^ l l s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -530,8 +547,8 @@ This option specifies the string used to end each line of output\&. The default 
 \fB\-\-append\fR
 .TS
 allbox tab(:);
-l l s
-l l s.
+l l s s
+l l s s.
 T{
 \fBVersion Introduced\fR
 T}:T{
@@ -580,7 +597,7 @@ ndb_restore \fIother_options\fR \fIdb_name\fR,[\fIdb_name\fR[,\&.\&.\&.] | \fItb
 .if n \{\
 .RE
 .\}
-.sp
+.PP
 In other words, you can specify either of the following to be restored:
 .sp
 .RS 4
@@ -604,11 +621,8 @@ All tables from one or more databases
 .\}
 One or more tables from a single database
 .RE
-.sp
-.RE
-.\" ndb_restore: errors
 .PP
-\fBError reporting\fR. 
+\fBError reporting\fR. .\" ndb_restore: errors
 \fBndb_restore\fR
 reports both temporary and permanent errors\&. In the case of temporary errors, it may able to recover from them\&. Beginning with MySQL 5\&.0\&.29, it reports
 Restore successful, but encountered temporary error, please look at configuration
@@ -616,7 +630,7 @@ in such cases\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2011, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

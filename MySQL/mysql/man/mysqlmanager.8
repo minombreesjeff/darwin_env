@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqlmanager\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/05/2010
+.\"      Date: 01/24/2011
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLMANAGER\FR" "8" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBMYSQLMANAGER\FR" "8" "01/24/2011" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -323,7 +323,7 @@ mysqlmanager > im\&.log
 .sp
 The interval in seconds for monitoring server instances\&. The default value is 20 seconds\&. Instance Manager tries to connect to each monitored (guarded) instance using the nonexisting
 MySQL_Instance_Manager
-user account to check whether it is alive/not hanging\&. If the result of the connection attempt indicates that the instance is unavailable, Instance Manager performs several attempts to restart the instance\&.
+user account to check whether it is available/not hanging\&. If the result of the connection attempt indicates that the instance is unavailable, Instance Manager performs several attempts to restart the instance\&.
 .sp
 Normally, the
 MySQL_Instance_Manager
@@ -789,7 +789,7 @@ program if it is not installed in the default location\&. (Section\ \&2.7, \(lqI
 .PP
 Instance Manager also stops all guarded server instances when it shuts down\&.
 .PP
-The allowable options for
+The permissible options for
 [mysqld\fIN\fR]
 server instance sections are described in
 the section called \(lqMYSQL INSTANCE MANAGER CONFIGURATION FILES\(rq\&. In these sections, you can use a special
@@ -1073,7 +1073,7 @@ MySQL Instance Manager is been deprecated in MySQL 5\&.1 and is removed in MySQL
 .sp .5v
 .RE
 .PP
-After you set up a password file for the MySQL Instance Manager and Instance Manager is running, you can connect to it\&. The MySQL client\-server protocol is used to communicate with the Instance Manager\&. For example, you can connect to it using the standard
+After you set up a password file for the MySQL Instance Manager and Instance Manager is running, you can connect to it\&. The MySQL client/server protocol is used to communicate with the Instance Manager\&. For example, you can connect to it using the standard
 \fBmysql\fR
 client program:
 .sp
@@ -1087,7 +1087,7 @@ shell> \fBmysql \-\-port=2273 \-\-host=im\&.example\&.org \-\-user=mysql \-\-pas
 .RE
 .\}
 .PP
-Instance Manager supports the version of the MySQL client\-server protocol used by the client tools and libraries distributed with MySQL 4\&.1 or later, so other programs that use the MySQL C API also can connect to it\&.
+Instance Manager supports the version of the MySQL client/server protocol used by the client tools and libraries distributed with MySQL 4\&.1 or later, so other programs that use the MySQL C API also can connect to it\&.
 .SH "MYSQL INSTANCE MANAGER COMMANDS"
 .if n \{\
 .sp
@@ -1465,7 +1465,7 @@ is deprecated and will be removed in MySQL 5\&.2\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2011, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

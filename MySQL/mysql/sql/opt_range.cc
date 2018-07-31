@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2006 MySQL AB
+/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -6065,6 +6065,9 @@ check_quick_keys(PARAM *param,uint idx,SEL_ARG *key_tree,
     tmp_min_flag=min_key_flag | key_tree->min_flag;
     tmp_max_flag=max_key_flag | key_tree->max_flag;
   }
+
+  if (unlikely(param->thd->killed != 0))
+    return HA_POS_ERROR;
 
   keynr=param->real_keynr[idx];
   param->range_count++;

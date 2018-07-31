@@ -1,4 +1,22 @@
 #!/bin/sh
+
+# Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Library General Public
+# License as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Library General Public License for more details.
+#
+# You should have received a copy of the GNU Library General Public
+# License along with this library; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
+# MA 02111-1307, USA
+
 # mysql-test-run - originally written by Matt Wagner <matt@mysql.com>
 # modified by Sasha Pachev <sasha@mysql.com>
 # Slightly updated by Monty
@@ -292,7 +310,8 @@ EXTRA_MYSQLDUMP_OPT=""
 EXTRA_MYSQLSHOW_OPT=""
 EXTRA_MYSQLBINLOG_OPT=""
 USE_RUNNING_SERVER=0
-USE_NDBCLUSTER=@USE_NDBCLUSTER@
+#USE_NDBCLUSTER=@USE_NDBCLUSTER@
+USE_NDBCLUSTER=0
 USE_NDBCLUSTER_ONLY=0
 USE_RUNNING_NDBCLUSTER=""
 USE_PURIFY=""

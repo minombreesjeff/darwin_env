@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-# Copyright (C) 2000-2006 MySQL AB
+# Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -368,12 +368,13 @@ yassl_dir = @yassl_dir@
 yassl_h_ln_cmd = @yassl_h_ln_cmd@
 yassl_libs = @yassl_libs@
 yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
+yassl_thread_cxxflags = @yassl_thread_cxxflags@
 zlib_dir = @zlib_dir@
 AUTOMAKE_OPTIONS = foreign
 
 # These are built from source in the Docs directory
 EXTRA_DIST = INSTALL-SOURCE INSTALL-WIN-SOURCE \
-			README COPYING EXCEPTIONS-CLIENT CMakeLists.txt
+			README COPYING CMakeLists.txt
 
 SUBDIRS = . include @docs_dirs@ @zlib_dir@ @yassl_dir@ \
 			@readline_topdir@ sql-common scripts \
@@ -386,7 +387,7 @@ DIST_SUBDIRS = . include @docs_dirs@ zlib \
 			@readline_topdir@ sql-common \
 			@thread_dirs@ pstack \
 			@sql_union_dirs@ scripts @man_dirs@ tests SSL\
-			BUILD netware os2 @libmysqld_dirs@ \
+			BUILD netware @libmysqld_dirs@ \
 			@bench_dirs@ support-files @tools_dirs@ win
 
 

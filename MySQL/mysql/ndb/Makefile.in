@@ -368,6 +368,7 @@ yassl_dir = @yassl_dir@
 yassl_h_ln_cmd = @yassl_h_ln_cmd@
 yassl_libs = @yassl_libs@
 yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
+yassl_thread_cxxflags = @yassl_thread_cxxflags@
 zlib_dir = @zlib_dir@
 SUBDIRS = src tools . include @ndb_opt_subdirs@
 DIST_SUBDIRS = src tools include test docs
@@ -700,7 +701,6 @@ uninstall-am:
 
 dist-hook:
 	-rm -rf `find $(distdir) -type d -name SCCS`
-	-rm -rf `find $(distdir) -type d -name old_files`
 	-rm -rf `find $(distdir)/ndbapi-examples -name '*.o'`
 	list='$(SUBDIRS)'; for subdir in $$list; do \
 	  if test "$$subdir" != "." -a "$$subdir" != "include"; then \
@@ -714,7 +714,7 @@ dist-hook:
 	done
 
 windoze:
-	for i in `find . -name 'old_dirs' -prune -o -name 'Makefile.am' -print`; \
+	for i in `find . -name 'Makefile.am' -print`; \
 	do make -C `dirname $$i` windoze-dsp; done
 
 windoze-dsp:
