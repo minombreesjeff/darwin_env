@@ -5,14 +5,14 @@ Systems
    This section covers the installation of MySQL binary distributions
    that are provided for various platforms in the form of compressed
    tar files (files with a .tar.gz extension). See Section 2.4.3.4,
-   "MySQL Binaries Compiled by Sun Microsystems, Inc.," for a
-   detailed list.
+   "MySQL Binaries Compiled by Oracle Corporation," for a detailed
+   list.
 
    To obtain MySQL, see Section 2.5, "How to Get MySQL."
 
    MySQL tar file binary distributions have names of the form
    mysql-VERSION-OS.tar.gz, where VERSION is a number (for example,
-   5.0.87), and OS indicates the type of operating system for which
+   5.0.92), and OS indicates the type of operating system for which
    the distribution is intended (for example, pc-linux-i686).
 
    In addition to these generic packages, we also offer binaries in
@@ -37,7 +37,7 @@ Systems
        first.
 
    If you run into problems and need to file a bug report, please use
-   the instructions in Section 1.6, "How to Report Bugs or Problems."
+   the instructions in Section 1.7, "How to Report Bugs or Problems."
 
    The basic commands that you must execute to install and use a
    MySQL binary distribution are:

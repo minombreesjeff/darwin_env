@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqlcheck\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 11/09/2009
+.\"      Date: 05/05/2010
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLCHECK\FR" "1" "11/09/2009" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBMYSQLCHECK\FR" "1" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -37,7 +37,7 @@ client performs table maintenance: It checks, repairs, optimizes, or analyzes ta
 Each table is locked and therefore unavailable to other sessions while it is being processed, although for check operations, the table is locked with a
 READ
 lock only (see
-Section\ \&12.4.5, \(lqLOCK TABLES and UNLOCK TABLES Syntax\(rq, for more information about
+Section\ \&12.3.5, \(lqLOCK TABLES and UNLOCK TABLES Syntax\(rq, for more information about
 READ
 and
 WRITE
@@ -72,7 +72,7 @@ REPAIR TABLE,
 ANALYZE TABLE, and
 OPTIMIZE TABLE
 in a convenient way for the user\&. It determines which statements to use for the operation you want to perform, and then sends the statements to the server to be executed\&. For details about which storage engines each statement works with, see the descriptions for those statements in
-Section\ \&12.5.2, \(lqTable Maintenance Statements\(rq\&.
+Section\ \&12.4.2, \(lqTable Maintenance Statements\(rq\&.
 .PP
 The
 MyISAM
@@ -131,8 +131,8 @@ There are three general ways to invoke
 .RS 4
 .\}
 .nf
-shell> \fBmysqlcheck [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIdb_name\fR\fR\fB [\fR\fB\fItables\fR\fR\fB]\fR
-shell> \fBmysqlcheck [\fR\fB\fIoptions\fR\fR\fB] \-\-databases \fR\fB\fIdb_name1\fR\fR\fB [\fR\fB\fIdb_name2\fR\fR\fB \fR\fB\fIdb_name3\fR\fR\fB\&.\&.\&.]\fR
+shell> \fBmysqlcheck [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIdb_name\fR\fR\fB [\fR\fB\fItbl_name\fR\fR\fB \&.\&.\&.]\fR
+shell> \fBmysqlcheck [\fR\fB\fIoptions\fR\fR\fB] \-\-databases \fR\fB\fIdb_name\fR\fR\fB \&.\&.\&.\fR
 shell> \fBmysqlcheck [\fR\fB\fIoptions\fR\fR\fB] \-\-all\-databases\fR
 .fi
 .if n \{\
@@ -184,7 +184,13 @@ T}
 .sp 1
 .PP
 \fBmysqlcheck\fR
-supports the options in the following list\&. It also reads option files and supports the options for processing them described at
+supports the following options, which can be specified on the command line or in the
+[mysqlcheck]
+and
+[client]
+option file groups\&.
+\fBmysqlcheck\fR
+also supports the options for processing option files described at
 Section\ \&4.2.3.3.1, \(lqCommand-Line Options that Affect Option-File Handling\(rq\&.
 .sp
 .RS 4
@@ -281,7 +287,7 @@ If a checked table is corrupted, automatically fix it\&. Any necessary repairs a
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed\&. See
-Section\ \&9.2, \(lqThe Character Set Used for Data and Sorting\(rq\&.
+Section\ \&9.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -404,7 +410,7 @@ string is
 Use
 \fIcharset_name\fR
 as the default character set\&. See
-Section\ \&9.2, \(lqThe Character Set Used for Data and Sorting\(rq\&.
+Section\ \&9.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -528,10 +534,12 @@ value following the
 \fB\-\-password\fR
 or
 \fB\-p\fR
-option on the command line, you are prompted for one\&.
+option on the command line,
+\fBmysqlcheck\fR
+prompts for one\&.
 .sp
 Specifying a password on the command line should be considered insecure\&. See
-Section\ \&5.5.6.2, \(lqEnd-User Guidelines for Password Security\(rq\&.
+Section\ \&5.3.2.2, \(lqEnd-User Guidelines for Password Security\(rq\&. You can use an option file to avoid giving the password on the command line\&.
 .RE
 .sp
 .RS 4
@@ -547,7 +555,7 @@ Section\ \&5.5.6.2, \(lqEnd-User Guidelines for Password Security\(rq\&.
 \fB\-\-pipe\fR,
 \fB\-W\fR
 .sp
-On Windows, connect to the server via a named pipe\&. This option applies only for connections to a local server, and only if the server supports named\-pipe connections\&.
+On Windows, connect to the server via a named pipe\&. This option applies only if the server supports named\-pipe connections\&.
 .RE
 .sp
 .RS 4
@@ -664,7 +672,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates\&. See
-Section\ \&5.5.7.3, \(lqSSL Command Options\(rq\&.
+Section\ \&5.5.6.3, \(lqSSL Command Options\(rq\&.
 .RE
 .sp
 .RS 4
@@ -757,7 +765,7 @@ Display version information and exit\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright 2007-2008 MySQL AB, 2009 Sun Microsystems, Inc.
+Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -770,4 +778,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-Sun Microsystems, Inc. (http://www.mysql.com/).
+Oracle Corporation (http://dev.mysql.com/).

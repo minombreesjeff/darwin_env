@@ -2,12 +2,12 @@
 .\"     Title: \fBndb_restore\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 11/09/2009
+.\"      Date: 05/05/2010
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBNDB_RESTORE\FR" "1" "11/09/2009" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBNDB_RESTORE\FR" "1" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -60,7 +60,7 @@ Section\ \&17.5.6, \(lqMySQL Cluster Single User Mode\(rq, for more information 
 .sp .5v
 .RE
 .PP
-The following table includes options that are specific to the MySQL Cluster backup restoration program
+The following table includes options that are specific to the MySQL Cluster native backup restoration program
 \fBndb_restore\fR\&. Additional descriptions follow the table\&. For options common to all MySQL Cluster programs, see
 Section\ \&17.4.2, \(lqOptions Common to MySQL Cluster Programs\(rq\&.
 .PP
@@ -70,8 +70,8 @@ Typical options for this utility are shown here:
 .RS 4
 .\}
 .nf
-ndb_restore [\-c \fIconnectstring\fR] \-n
-\fInode_id\fR [\-m] \-b \fIbackup_id\fR \-r \-\-backup_path=\fI/path/to/backup/files\fR
+ndb_restore [\-c \fIconnectstring\fR] \-n \fInode_id\fR [\-m] \-b \fIbackup_id\fR \e
+    \-r \-\-backup_path=\fI/path/to/backup/files\fR
 .fi
 .if n \{\
 .RE
@@ -247,334 +247,309 @@ file available for each concurrent
 \fBndb_restore\fR
 process\&. However, the data files must always be applied before the logs\&.
 .PP
-Most of the options available for this program are shown in the following table:
-.TS
-allbox tab(:);
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l.
-T{
-\fBLong Form\fR
-T}:T{
-\fBShort Form\fR
-T}:T{
-\fBDescription\fR
-T}:T{
-\fBDefault Value\fR
-T}
-T{
-\fB\-\-backup\-id\fR
-T}:T{
-\fB\-b\fR
-T}:T{
-Backup sequence ID
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-backup_path\fR (added in MySQL 5\&.0\&.38; previously this
-                  was \fBbackup_path\fR \(em see Note in
-                  text)
-T}:T{
-\fINone\fR
-T}:T{
-Path to backup files
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-character\-sets\-dir\fR
-T}:T{
-\fINone\fR
-T}:T{
-Specify the directory where character set information can be found
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-connect\fR, \fB\-\-connectstring\fR, or
-                  \fB\-\-ndb\-connectstring\fR
-T}:T{
-\fB\-c\fR or \fB\-C\fR
-T}:T{
-Set the connectstring in
-                  [nodeid=\fInode_id;][host=]\fR\fIhost\fR[:\fIport\fR]
-                  format
-T}:T{
-localhost:1186
-T}
-T{
-\fB\-\-core\-file\fR
-T}:T{
-\fINone\fR
-T}:T{
-Write a core file in the event of an error
-T}:T{
-TRUE
-T}
-T{
-\fB\-\-debug\fR
-T}:T{
-\fB\-#\fR
-T}:T{
-Output debug log
-T}:T{
-d:t:O,/tmp/ndb_restore\&.trace
-T}
-T{
-\fB\-\-help\fR or \fB\-\-usage\fR
-T}:T{
-\fB\-?\fR
-T}:T{
-Display help message with available options and current values, then
-                  exit
-T}:T{
-[N/A]
-T}
-T{
-\fB\-\-ndb\-mgmd\-host\fR
-T}:T{
-\fINone\fR
-T}:T{
-Set the host and port in
-                  \fIhost\fR[:\fIport\fR]
-                  format for the management server to connect to; this
-                  is the same as \fB\-\-connect\fR,
-                  \fB\-\-connectstring\fR, or
-                  \fB\-\-ndb\-connectstring\fR, but without a
-                  way to specify the nodeid
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-ndb\-nodeid\fR
-T}:T{
-\fINone\fR
-T}:T{
-Specify a node ID for the \fBndb_restore\fR process
-T}:T{
-0
-T}
-T{
-\fB\-\-ndb\-optimized\-node\-selection\fR
-T}:T{
-\fINone\fR
-T}:T{
-Optimize selection of nodes for transactions
-T}:T{
-TRUE
-T}
-T{
-\fB\-\-ndb\-shm\fR
-T}:T{
-\fINone\fR
-T}:T{
-Use shared memory connections when available
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-nodeid\fR
-T}:T{
-\fB\-n\fR
-T}:T{
-Use backup files from node with the specified ID
-T}:T{
-0
-T}
-T{
-\fB\-\-parallelism\fR
-T}:T{
-\fB\-p\fR
-T}:T{
-Set from 1 to 1024 parallel transactions to be used during the
-                  restoration process
-T}:T{
-128
-T}
-T{
-\fB\-\-print\fR
-T}:T{
-\fINone\fR
-T}:T{
-Print metadata, data, and log to stdout
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-print_data\fR
-T}:T{
-\fINone\fR
-T}:T{
-Print data to stdout
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-print_log\fR
-T}:T{
-\fINone\fR
-T}:T{
-Print log to stdout
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-print_meta\fR
-T}:T{
-\fINone\fR
-T}:T{
-Print metadata to stdout
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-restore_data\fR
-T}:T{
-\fB\-r\fR
-T}:T{
-Restore data and logs
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-restore_meta\fR
-T}:T{
-\fB\-m\fR
-T}:T{
-Restore table metadata
-T}:T{
-FALSE
-T}
-T{
-\fB\-\-version\fR
-T}:T{
-\fB\-V\fR
-T}:T{
-Output version information and exit
-T}:T{
-[N/A]
-T}
-.TE
-.sp 1
-.PP
-Beginning with MySQL 5\&.0\&.40, several additional options are available for use with the
+This option causes
+\fBndb_restore\fR
+to print its output to
+stdout\&. Beginning with MySQL 5\&.0\&.40, several additional options are available for use with the
 \fB\-\-print_data\fR
 option in generating data dumps, either to
 stdout, or to a file\&. These are similar to some of the options used with
-\fBmysqldump\fR, and are shown in the following table:
+\fBmysqldump\fR, and are shown in the following list:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --tab option
+.\" --tab option (ndb_restore)
+\fB\-\-tab\fR,
+\fB\-T\fR
 .TS
 allbox tab(:);
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l
-l l l l.
+l l s
+l l s.
 T{
-\fBLong Form\fR
+\fBVersion Introduced\fR
 T}:T{
-\fBShort Form\fR
-T}:T{
-\fBDescription\fR
-T}:T{
-\fBDefault Value\fR
+5\&.0\&.40
 T}
 T{
-\fB\-\-tab\fR
+\fBCommand\-Line Format\fR
 T}:T{
-\fB\-T\fR
-T}:T{
-Creates dumpfiles, one per table, each named
-                    \fItbl_name\fR\&.txt\&.
-                    Takes as its argument the path to the directory
-                    where the files should be saved (required; use
-                    \&. for the current directory)\&.
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-fields\-enclosed\-by\fR
-T}:T{
-\fINone\fR
-T}:T{
-String used to enclose all column values
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-fields\-optionally\-enclosed\-by\fR
-T}:T{
-\fINone\fR
-T}:T{
-String used to enclose column values containing character data (such as
-                    CHAR,
-                    VARCHAR,
-                    BINARY,
-                    TEXT, or
-                    ENUM)
-T}:T{
-\fINone\fR
-T}
-T{
-\fB\-\-fields\-terminated\-by\fR
-T}:T{
-\fINone\fR
-T}:T{
-String used to separate column values
-T}:T{
-\et (tab character)
-T}
-T{
-\fB\-\-hex\fR
-T}:T{
-\fINone\fR
-T}:T{
-Use hex format for binary values
-T}:T{
-[N/A]
-T}
-T{
-\fB\-\-lines\-terminated\-by\fR
-T}:T{
-\fINone\fR
-T}:T{
-String used to terminate each line
-T}:T{
-\en (linefeed character)
-T}
-T{
-\fB\-\-append\fR
-T}:T{
-\fINone\fR
-T}:T{
-When used with \fB\-\-tab\fR, causes the data
-                    to be appended to existing files of the same name
-T}:T{
-[N/A]
+\-\-tab=path
 T}
 .TE
 .sp 1
+This option causes
+\fB\-\-print_data\fR
+to create dump files, one per table, each named
+\fItbl_name\fR\&.txt\&. It requires as its argument the path to the directory where the files should be saved; use
+\&.
+for the current directory\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --fields-enclosed-by option
+.\" --fields-enclosed-by option (ndb_restore)
+\fB\-\-fields\-enclosed\-by=\fR\fB\fIstring\fR\fR
+.TS
+allbox tab(:);
+l l s
+l l s
+l l s
+^ l l
+^ l l.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5\&.0\&.40
+T}
+T{
+\fBCommand\-Line Format\fR
+T}:T{
+\-\-fields\-enclosed\-by=char
+T}
+T{
+\ \&
+T}:T{
+\fBPermitted Values \fR
+T}
+:T{
+\fBType\fR
+T}:T{
+string
+T}
+:T{
+\fBDefault\fR
+T}:T{
+T}
+.TE
+.sp 1
+Each column values are enclosed by the string passed to this option (regardless of data type; see next item)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --fields-optionally-enclosed-by option
+.\" --fields-optionally-enclosed-by option (ndb_restore)
+\fB\-\-fields\-optionally\-enclosed\-by=\fR\fB\fIstring\fR\fR
+.TS
+allbox tab(:);
+l l s
+l l s
+l l s
+^ l l
+^ l l.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5\&.0\&.40
+T}
+T{
+\fBCommand\-Line Format\fR
+T}:T{
+\-\-fields\-optionally\-enclosed\-by
+T}
+T{
+\ \&
+T}:T{
+\fBPermitted Values \fR
+T}
+:T{
+\fBType\fR
+T}:T{
+string
+T}
+:T{
+\fBDefault\fR
+T}:T{
+T}
+.TE
+.sp 1
+The string passed to this option is used to enclose column values containing character data (such as
+CHAR,
+VARCHAR,
+BINARY,
+TEXT, or
+ENUM)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --fields-terminated-by option
+.\" --fields-terminated-by option (ndb_restore)
+\fB\-\-fields\-terminated\-by=\fR\fB\fIstring\fR\fR
+.TS
+allbox tab(:);
+l l s
+l l s
+l l s
+^ l l
+^ l l.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5\&.0\&.40
+T}
+T{
+\fBCommand\-Line Format\fR
+T}:T{
+\-\-fields\-terminated\-by=char
+T}
+T{
+\ \&
+T}:T{
+\fBPermitted Values \fR
+T}
+:T{
+\fBType\fR
+T}:T{
+string
+T}
+:T{
+\fBDefault\fR
+T}:T{
+\et (tab)
+T}
+.TE
+.sp 1
+The string passed to this option is used to separate column values\&. The default value is a tab character (\et)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --hex option
+.\" --hex option (ndb_restore)
+\fB\-\-hex\fR
+.TS
+allbox tab(:);
+l l s
+l l s.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5\&.0\&.40
+T}
+T{
+\fBCommand\-Line Format\fR
+T}:T{
+\-\-hex
+T}
+.TE
+.sp 1
+If this option is used, all binary values are output in hexadecimal format\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --fields-terminated-by option
+.\" --fields-terminated-by option (ndb_restore)
+\fB\-\-fields\-terminated\-by=\fR\fB\fIstring\fR\fR
+.TS
+allbox tab(:);
+l l s
+l l s
+l l s
+^ l l
+^ l l.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5\&.0\&.40
+T}
+T{
+\fBCommand\-Line Format\fR
+T}:T{
+\-\-fields\-terminated\-by=char
+T}
+T{
+\ \&
+T}:T{
+\fBPermitted Values \fR
+T}
+:T{
+\fBType\fR
+T}:T{
+string
+T}
+:T{
+\fBDefault\fR
+T}:T{
+\et (tab)
+T}
+.TE
+.sp 1
+This option specifies the string used to end each line of output\&. The default is a linefeed character (\en)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" ndb_restore: --append option
+.\" --append option (ndb_restore)
+\fB\-\-append\fR
+.TS
+allbox tab(:);
+l l s
+l l s.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5\&.0\&.40
+T}
+T{
+\fBCommand\-Line Format\fR
+T}:T{
+\-\-append
+T}
+.TE
+.sp 1
+When used with the
+\fB\-\-tab\fR
+and
+\fB\-\-print_data\fR
+options, this causes the data to be appended to any existing files having the same names\&.
+.RE
 .if n \{\
 .sp
 .\}
@@ -589,8 +564,8 @@ T}
 .br
 .PP
 If a table has no explicit primary key, then the output generated when using the
-\fB\-\-print\fR
-includes the table\'s hidden primary key\&.
+\fB\-\-print_data\fR
+option includes the table\'s hidden primary key\&.
 .sp .5v
 .RE
 .PP
@@ -600,7 +575,7 @@ Beginning with MySQL 5\&.0\&.40, it is possible to restore selected databases, o
 .RS 4
 .\}
 .nf
-ndb_restore \fIother_options\fR \fIdb_name_1\fR [\fIdb_name_2\fR[, \fIdb_name_3\fR][, \&.\&.\&.] | \fItbl_name_1\fR[, \fItbl_name_2\fR][, \&.\&.\&.]]
+ndb_restore \fIother_options\fR \fIdb_name\fR,[\fIdb_name\fR[,\&.\&.\&.] | \fItbl_name\fR[,\fItbl_name\fR][,\&.\&.\&.]]
 .fi
 .if n \{\
 .RE
@@ -641,7 +616,7 @@ in such cases\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright 2007-2008 MySQL AB, 2009 Sun Microsystems, Inc.
+Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -654,4 +629,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-Sun Microsystems, Inc. (http://www.mysql.com/).
+Oracle Corporation (http://dev.mysql.com/).

@@ -2,12 +2,12 @@
 .\"     Title: \fBndbd\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 11/09/2009
+.\"      Date: 05/05/2010
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"  Language: English
 .\"
-.TH "\FBNDBD\FR" "8" "11/09/2009" "MySQL 5\&.0" "MySQL Database System"
+.TH "\FBNDBD\FR" "8" "05/05/2010" "MySQL 5\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -67,7 +67,7 @@ T}:T{
 5\&.0\&.29
 T}
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-bind\-address=name
 T}
@@ -111,7 +111,7 @@ l l s
 ^ l l
 ^ l l.
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-daemon
 T}
@@ -156,7 +156,7 @@ l l s
 ^ l l
 ^ l l.
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-initial
 T}
@@ -276,7 +276,7 @@ T}:T{
 5\&.0\&.21
 T}
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-initial\-start
 T}
@@ -300,15 +300,15 @@ T}
 This option is used when performing a partial initial start of the cluster\&. Each node should be started with this option, as well as
 \fB\-\-nowait\-nodes\fR\&.
 .sp
-For example, suppose you have a 4\-node cluster whose data nodes have the IDs 2, 3, 4, and 5, and you wish to perform a partial initial start using only nodes 2, 4, and 5 \(em that is, omitting node 3:
+Suppose that you have a 4\-node cluster whose data nodes have the IDs 2, 3, 4, and 5, and you wish to perform a partial initial start using only nodes 2, 4, and 5 \(em that is, omitting node 3:
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-ndbd \-\-ndbd\-nodeid=2 \-\-nowait\-nodes=3 \-\-initial\-start
-ndbd \-\-ndbd\-nodeid=4 \-\-nowait\-nodes=3 \-\-initial\-start
-ndbd \-\-ndbd\-nodeid=5 \-\-nowait\-nodes=3 \-\-initial\-start
+shell> \fBndbd \-\-ndb\-nodeid=2 \-\-nowait\-nodes=3 \-\-initial\-start\fR
+shell> \fBndbd \-\-ndb\-nodeid=4 \-\-nowait\-nodes=3 \-\-initial\-start\fR
+shell> \fBndbd \-\-ndb\-nodeid=5 \-\-nowait\-nodes=3 \-\-initial\-start\fR
 .fi
 .if n \{\
 .RE
@@ -340,7 +340,7 @@ T}:T{
 5\&.0\&.21
 T}
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-nowait\-nodes=list
 T}
@@ -376,6 +376,10 @@ If you wanted to start up the same cluster as in the previous example without on
 \(em say, for example, that the host machine for node 3 has suffered a hardware failure \(em then start nodes 2, 4, and 5 with
 \fB\-\-nowait\-nodes=3\fR\&. Then the cluster will start as soon as nodes 2, 4, and 5 connect and will not wait for node 3 to start\&.
 .sp
+When using this option, you must also specify the node ID for the data node being started with the
+\fB\-\-ndb\-nodeid\fR
+option\&.
+.sp
 This option was added in MySQL 5\&.0\&.21\&.
 .RE
 .sp
@@ -394,9 +398,12 @@ allbox tab(:);
 l l s
 l l s
 ^ l l
+^ l l
+l l s
+^ l l
 ^ l l.
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-nodaemon
 T}
@@ -414,6 +421,21 @@ T}
 \fBDefault\fR
 T}:T{
 FALSE
+T}
+T{
+\ \&
+T}:T{
+\fBPermitted Values \fR
+T}
+:T{
+\fBType\fR (windows)
+T}:T{
+boolean
+T}
+:T{
+\fBDefault\fR
+T}:T{
+TRUE
 T}
 .TE
 .sp 1
@@ -443,7 +465,7 @@ l l s
 ^ l l
 ^ l l.
 T{
-\fBCommand Line Format\fR
+\fBCommand\-Line Format\fR
 T}:T{
 \-\-nostart
 T}
@@ -675,7 +697,7 @@ Section\ \&17.1.5, \(lqKnown Limitations of MySQL Cluster\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright 2007-2008 MySQL AB, 2009 Sun Microsystems, Inc.
+Copyright \(co 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -694,4 +716,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-Sun Microsystems, Inc. (http://www.mysql.com/).
+Oracle Corporation (http://dev.mysql.com/).

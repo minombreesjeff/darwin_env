@@ -1011,6 +1011,7 @@ MYSQL_PREVIOUS_BASE_VERSION
 MYSQL_VERSION_ID
 MYSQL_BASE_VERSION
 MYSQL_NO_DASH_VERSION
+MYSQL_U_SCORE_VERSION
 am__untar
 am__tar
 AMTAR
@@ -2884,7 +2885,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE=mysql
- VERSION=5.0.88
+ VERSION=5.0.91
 
 
 cat >>confdefs.h <<_ACEOF
@@ -3042,19 +3043,21 @@ NDB_SHARED_LIB_VERSION=$NDB_SHARED_LIB_MAJOR_VERSION:0:0
 # ndb version
 NDB_VERSION_MAJOR=5
 NDB_VERSION_MINOR=0
-NDB_VERSION_BUILD=88
+NDB_VERSION_BUILD=91
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
 # Remember that regexps needs to quote [ and ] since this is run through m4
 # We take some made up examples
 #
-#  VERSION                  5.1.40sp1-alpha     5.0.34a
-#  MYSQL_NO_DASH_VERSION    5.1.40sp1           5.0.34a
-#  MYSQL_NUMERIC_VERSION    5.1.40              5.0.34
-#  MYSQL_BASE_VERSION       5.1                 5.0
-#  MYSQL_VERSION_ID         50140               50034
+#  VERSION                  5.1.40sp1-alpha     5.0.34a  5.5.1-m2
+#  MYSQL_U_SCORE_VERSION    5.1.40sp1_alpha     5.0.34a  5.5.1_m2
+#  MYSQL_NO_DASH_VERSION    5.1.40sp1           5.0.34a  5.5.1
+#  MYSQL_NUMERIC_VERSION    5.1.40              5.0.34   5.5.1
+#  MYSQL_BASE_VERSION       5.1                 5.0      5.5
+#  MYSQL_VERSION_ID         50140               50034    50501
 #
+MYSQL_U_SCORE_VERSION=`echo $VERSION | sed -e "s|-|_|"`
 MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|-.*$||"`
 MYSQL_NUMERIC_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|[a-z][a-z0-9]*$||"`
 MYSQL_BASE_VERSION=`echo $MYSQL_NUMERIC_VERSION | sed -e "s|\.[^.]*$||"`
@@ -3972,6 +3975,7 @@ romanian russian serbian slovak spanish swedish ukrainian"
 
 #####
 #####
+
 
 
 
@@ -6904,13 +6908,13 @@ if test "${lt_cv_nm_interface+set}" = set; then
 else
   lt_cv_nm_interface="BSD nm"
   echo "int some_variable = 0;" > conftest.$ac_ext
-  (eval echo "\"\$as_me:6907: $ac_compile\"" >&5)
+  (eval echo "\"\$as_me:6911: $ac_compile\"" >&5)
   (eval "$ac_compile" 2>conftest.err)
   cat conftest.err >&5
-  (eval echo "\"\$as_me:6910: $NM \\\"conftest.$ac_objext\\\"\"" >&5)
+  (eval echo "\"\$as_me:6914: $NM \\\"conftest.$ac_objext\\\"\"" >&5)
   (eval "$NM \"conftest.$ac_objext\"" 2>conftest.err > conftest.out)
   cat conftest.err >&5
-  (eval echo "\"\$as_me:6913: output\"" >&5)
+  (eval echo "\"\$as_me:6917: output\"" >&5)
   cat conftest.out >&5
   if $GREP 'External.*some_variable' conftest.out > /dev/null; then
     lt_cv_nm_interface="MS dumpbin"
@@ -8116,7 +8120,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 8119 "configure"' > conftest.$ac_ext
+  echo '#line 8123 "configure"' > conftest.$ac_ext
   if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -10452,11 +10456,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10455: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10459: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10459: \$? = $ac_status" >&5
+   echo "$as_me:10463: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -10791,11 +10795,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10794: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10798: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10798: \$? = $ac_status" >&5
+   echo "$as_me:10802: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -10896,11 +10900,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10899: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10903: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10903: \$? = $ac_status" >&5
+   echo "$as_me:10907: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -10951,11 +10955,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10954: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10958: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10958: \$? = $ac_status" >&5
+   echo "$as_me:10962: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -13751,7 +13755,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 13754 "configure"
+#line 13758 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -13847,7 +13851,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 13850 "configure"
+#line 13854 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -15867,11 +15871,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:15870: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:15874: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:15874: \$? = $ac_status" >&5
+   echo "$as_me:15878: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -15966,11 +15970,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:15969: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:15973: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:15973: \$? = $ac_status" >&5
+   echo "$as_me:15977: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -16018,11 +16022,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:16021: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:16025: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:16025: \$? = $ac_status" >&5
+   echo "$as_me:16029: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -25338,7 +25342,7 @@ fi
 
 { $as_echo "$as_me:$LINENO: checking needs mysys_new helpers" >&5
 $as_echo_n "checking needs mysys_new helpers... " >&6; }
-if test "${mysql_use_mysys_new+set}" = set; then
+if test "${mysql_cv_use_mysys_new+set}" = set; then
   $as_echo_n "(cached) " >&6
 else
 
@@ -25386,12 +25390,12 @@ $as_echo "$ac_try_echo") >&5
 	 test "$cross_compiling" = yes ||
 	 $as_test_x conftest$ac_exeext
        }; then
-  mysql_use_mysys_new=no
+  mysql_cv_use_mysys_new=no
 else
   $as_echo "$as_me: failed program was:" >&5
 sed 's/^/| /' conftest.$ac_ext >&5
 
-	mysql_use_mysys_new=yes
+	mysql_cv_use_mysys_new=yes
 fi
 
 rm -rf conftest.dSYM
@@ -25405,9 +25409,9 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 fi
-{ $as_echo "$as_me:$LINENO: result: $mysql_use_mysys_new" >&5
-$as_echo "$mysql_use_mysys_new" >&6; }
-if test "$mysql_use_mysys_new" = "yes"
+{ $as_echo "$as_me:$LINENO: result: $mysql_cv_use_mysys_new" >&5
+$as_echo "$mysql_cv_use_mysys_new" >&6; }
+if test "$mysql_cv_use_mysys_new" = "yes"
 then
 
 cat >>confdefs.h <<\_ACEOF
@@ -35227,6 +35231,7 @@ done
 
 
 
+
 for ac_func in alarm bcmp bfill bmove bzero chsize cuserid fchmod fcntl \
   fconvert fdatasync fesetround finite fpresetsticky fpsetmask fsync ftruncate \
   getcwd gethostbyaddr_r gethostbyname_r getpass getpassphrase getpwnam \
@@ -35241,7 +35246,7 @@ for ac_func in alarm bcmp bfill bmove bzero chsize cuserid fchmod fcntl \
   shmget shmat shmdt shmctl sigaction sigemptyset sigaddset \
   sighold sigset sigthreadmask \
   snprintf socket stpcpy strcasecmp strerror strsignal strnlen strpbrk strstr strtol \
-  strtoll strtoul strtoull tell tempnam thr_setconcurrency vidattr
+  strtoll strtoul strtoull tell tempnam thr_setconcurrency vidattr printstack
 do
 as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 { $as_echo "$as_me:$LINENO: checking for $ac_func" >&5
@@ -42131,17 +42136,12 @@ $as_echo "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
 
 
-echo
-echo "MySQL has a Web site at http://www.mysql.com/ which carries details on the"
-echo "latest release, upcoming features, and other information to make your"
-echo "work or play with MySQL more productive. There you can also find"
-echo "information about mailing lists for MySQL discussion."
-echo
-echo "Remember to check the platform specific part of the reference manual for"
-echo "hints about installing MySQL on your platform. Also have a look at the"
-echo "files in the Docs directory."
-echo
-# The following text is checked in ./Do-compile to verify that configure
+# The first line "Thank you ..." is checked in ./Do-compile to verify that configure
 # ended sucessfully - don't remove it.
+echo
 echo "Thank you for choosing MySQL!"
+echo
+echo "Remember to check the platform specific part of the reference manual"
+echo "for hints about installing MySQL on your platform."
+echo "Also have a look at the files in the Docs directory."
 echo

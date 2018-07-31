@@ -7,7 +7,7 @@ AC_INIT(sql/mysqld.cc)
 AC_CANONICAL_SYSTEM
 # The Docs Makefile.am parses this line!
 # remember to also change ndb version below and update version.c in ndb
-AM_INIT_AUTOMAKE(mysql, 5.0.88)
+AM_INIT_AUTOMAKE(mysql, 5.0.91)
 AM_CONFIG_HEADER([include/config.h:config.h.in])
 
 PROTOCOL_VERSION=10
@@ -23,19 +23,21 @@ NDB_SHARED_LIB_VERSION=$NDB_SHARED_LIB_MAJOR_VERSION:0:0
 # ndb version
 NDB_VERSION_MAJOR=5
 NDB_VERSION_MINOR=0
-NDB_VERSION_BUILD=88
+NDB_VERSION_BUILD=91
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
 # Remember that regexps needs to quote [ and ] since this is run through m4
 # We take some made up examples
 #
-#  VERSION                  5.1.40sp1-alpha     5.0.34a
-#  MYSQL_NO_DASH_VERSION    5.1.40sp1           5.0.34a
-#  MYSQL_NUMERIC_VERSION    5.1.40              5.0.34
-#  MYSQL_BASE_VERSION       5.1                 5.0
-#  MYSQL_VERSION_ID         50140               50034
+#  VERSION                  5.1.40sp1-alpha     5.0.34a  5.5.1-m2
+#  MYSQL_U_SCORE_VERSION    5.1.40sp1_alpha     5.0.34a  5.5.1_m2
+#  MYSQL_NO_DASH_VERSION    5.1.40sp1           5.0.34a  5.5.1
+#  MYSQL_NUMERIC_VERSION    5.1.40              5.0.34   5.5.1
+#  MYSQL_BASE_VERSION       5.1                 5.0      5.5
+#  MYSQL_VERSION_ID         50140               50034    50501
 #
+MYSQL_U_SCORE_VERSION=`echo $VERSION | sed -e "s|-|_|"`
 MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|-.*$||"`
 MYSQL_NUMERIC_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|[[a-z]][[a-z0-9]]*$||"`
 MYSQL_BASE_VERSION=`echo $MYSQL_NUMERIC_VERSION | sed -e "s|\.[[^.]]*$||"`
@@ -78,6 +80,7 @@ romanian russian serbian slovak spanish swedish ukrainian"
 #####
 #####
 
+AC_SUBST(MYSQL_U_SCORE_VERSION)
 AC_SUBST(MYSQL_NO_DASH_VERSION)
 AC_SUBST(MYSQL_BASE_VERSION)
 AC_SUBST(MYSQL_VERSION_ID)
@@ -2125,7 +2128,7 @@ AC_CHECK_FUNCS(alarm bcmp bfill bmove bzero chsize cuserid fchmod fcntl \
   shmget shmat shmdt shmctl sigaction sigemptyset sigaddset \
   sighold sigset sigthreadmask \
   snprintf socket stpcpy strcasecmp strerror strsignal strnlen strpbrk strstr strtol \
-  strtoll strtoul strtoull tell tempnam thr_setconcurrency vidattr)
+  strtoll strtoul strtoull tell tempnam thr_setconcurrency vidattr printstack)
 
 #
 #
@@ -3138,17 +3141,12 @@ AC_CONFIG_FILES(Makefile extra/Makefile mysys/Makefile dnl
  AC_CONFIG_COMMANDS([default], , test -z "$CONFIG_HEADERS" || echo timestamp > stamp-h)
  AC_OUTPUT
 
-echo
-echo "MySQL has a Web site at http://www.mysql.com/ which carries details on the"
-echo "latest release, upcoming features, and other information to make your"
-echo "work or play with MySQL more productive. There you can also find"
-echo "information about mailing lists for MySQL discussion."
-echo
-echo "Remember to check the platform specific part of the reference manual for"
-echo "hints about installing MySQL on your platform. Also have a look at the"
-echo "files in the Docs directory."
-echo
-# The following text is checked in ./Do-compile to verify that configure
+# The first line "Thank you ..." is checked in ./Do-compile to verify that configure
 # ended sucessfully - don't remove it.
+echo
 echo "Thank you for choosing MySQL!"
+echo
+echo "Remember to check the platform specific part of the reference manual"
+echo "for hints about installing MySQL on your platform."
+echo "Also have a look at the files in the Docs directory."
 echo

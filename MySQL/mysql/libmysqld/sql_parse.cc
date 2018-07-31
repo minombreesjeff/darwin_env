@@ -493,6 +493,13 @@ int check_user(THD *thd, enum enum_server_command command,
       }
       send_ok(thd);
       thd->password= test(passwd_len);          // remember for error messages 
+      /*
+        Allow the network layer to skip big packets. Although a malicious
+        authenticated session might use this to trick the server to read
+        big packets indefinitely, this is a previously established behavior
+        that needs to be preserved as to not break backwards compatibility.
+      */
+      thd->net.skip_big_packet= TRUE;
       /* Ready to handle queries */
       DBUG_RETURN(0);
     }
@@ -917,7 +924,7 @@ static int check_connection(THD *thd)
   vio_keepalive(net->vio, TRUE);
   {
     /* buff[] needs to big enough to hold the server_version variable */
-    char buff[SERVER_VERSION_LENGTH + SCRAMBLE_LENGTH + 64];
+    char buff[SERVER_VERSION_LENGTH + 1 + SCRAMBLE_LENGTH + 1 + 64];
     ulong client_flags = (CLIENT_LONG_FLAG | CLIENT_CONNECT_WITH_DB |
 			  CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
 
@@ -2025,8 +2032,23 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     if (thd->copy_db_to(&table_list.db, &table_list.db_length))
       break;
     pend= strend(packet);
+    uint arg_length= pend - packet;
+    
+    /* Check given table name length. */
+    if (arg_length >= packet_length || arg_length > NAME_LEN)
+    {
+      my_message(ER_UNKNOWN_COM_ERROR, ER(ER_UNKNOWN_COM_ERROR), MYF(0));
+      break;
+    }
     thd->convert_string(&conv_name, system_charset_info,
-			packet, (uint) (pend-packet), thd->charset());
+			packet, arg_length, thd->charset());
+    if (check_table_name (conv_name.str, conv_name.length))
+    {
+      /* this is OK due to convert_string() null-terminating the string */
+      my_error(ER_WRONG_TABLE_NAME, MYF(0), conv_name.str);
+      break;
+    }
+
     table_list.alias= table_list.table_name= conv_name.str;
     packet= pend+1;
 
@@ -4009,9 +4031,9 @@ end_with_restore_list:
 			select_lex->where,
 			0, (ORDER *)NULL, (ORDER *)NULL, (Item *)NULL,
 			(ORDER *)NULL,
-			select_lex->options | thd->options |
+			(select_lex->options | thd->options |
 			SELECT_NO_JOIN_CACHE | SELECT_NO_UNLOCK |
-                        OPTION_SETUP_TABLES_DONE,
+                        OPTION_SETUP_TABLES_DONE) & ~OPTION_BUFFER_RESULT,
 			del_result, unit, select_lex);
       res|= thd->net.report_error;
       if (unlikely(res))
@@ -4038,17 +4060,6 @@ end_with_restore_list:
     }
     else
     {
-      /*
-	If this is a slave thread, we may sometimes execute some 
-	DROP / * 40005 TEMPORARY * / TABLE
-	that come from parts of binlogs (likely if we use RESET SLAVE or CHANGE
-	MASTER TO), while the temporary table has already been dropped.
-	To not generate such irrelevant "table does not exist errors",
-	we silently add IF EXISTS if TEMPORARY was used.
-      */
-      if (thd->slave_thread)
-        lex->drop_if_exists= 1;
-
       /* So that DROP TEMPORARY TABLE gets to binlog at commit/rollback */
       thd->transaction.all.modified_non_trans_table= TRUE;
     }

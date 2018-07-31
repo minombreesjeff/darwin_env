@@ -521,13 +521,26 @@ JOIN::prepare(Item ***rref_pointer_array,
 
   if (order)
   {
+    bool real_order= FALSE;
     ORDER *ord;
     for (ord= order; ord; ord= ord->next)
     {
       Item *item= *ord->item;
+      /*
+        Disregard sort order if there's only "{VAR}CHAR(0) NOT NULL" fields
+        there. Such fields don't contain any data to sort.
+      */
+      if (!real_order &&
+          (item->type() != Item::FIELD_ITEM ||
+           ((Item_field *) item)->field->maybe_null() ||
+           ((Item_field *) item)->field->sort_length()))
+        real_order= TRUE;
+
       if (item->with_sum_func && item->type() != Item::SUM_FUNC_ITEM)
         item->split_sum_func(thd, ref_pointer_array, all_fields);
     }
+    if (!real_order)
+      order= NULL;
   }
 
   if (having && having->with_sum_func)
@@ -929,14 +942,20 @@ JOIN::optimize()
     DBUG_RETURN(1);
   }
 
-  if (select_lex->olap == ROLLUP_TYPE && rollup_process_const_fields())
+  if (rollup.state != ROLLUP::STATE_NONE)
   {
-    DBUG_PRINT("error", ("Error: rollup_process_fields() failed"));
-    DBUG_RETURN(1);
+    if (rollup_process_const_fields())
+    {
+      DBUG_PRINT("error", ("Error: rollup_process_fields() failed"));
+      DBUG_RETURN(1);
+    }
+  }
+  else
+  {
+    /* Remove distinct if only const tables */
+    select_distinct= select_distinct && (const_tables != tables);
   }
 
-  /* Remove distinct if only const tables */
-  select_distinct= select_distinct && (const_tables != tables);
   thd_proc_info(thd, "preparing");
   if (result->initialize_tables(this))
   {
@@ -1010,7 +1029,7 @@ JOIN::optimize()
     }
   }
 
-  if (conds &&!outer_join && const_table_map != found_const_table_map && 
+  if (conds && const_table_map != found_const_table_map &&
       (select_options & SELECT_DESCRIBE) &&
       select_lex->master_unit() == &thd->lex->unit) // upper level SELECT
   {
@@ -1216,11 +1235,14 @@ JOIN::optimize()
     - We are using an ORDER BY or GROUP BY on fields not in the first table
     - We are using different ORDER BY and GROUP BY orders
     - The user wants us to buffer the result.
+    When the WITH ROLLUP modifier is present, we cannot skip temporary table
+    creation for the DISTINCT clause just because there are only const tables.
   */
-  need_tmp= (const_tables != tables &&
+  need_tmp= ((const_tables != tables &&
 	     ((select_distinct || !simple_order || !simple_group) ||
 	      (group_list && order) ||
-	      test(select_options & OPTION_BUFFER_RESULT)));
+	      test(select_options & OPTION_BUFFER_RESULT))) ||
+             (rollup.state != ROLLUP::STATE_NONE && select_distinct));
 
   // No cache for MATCH
   make_join_readinfo(this,
@@ -1543,6 +1565,11 @@ JOIN::reinit()
 
   if (join_tab_save)
     memcpy(join_tab, join_tab_save, sizeof(JOIN_TAB) * tables);
+
+  /* need to reset ref access state (see join_read_key) */
+  if (join_tab)
+    for (uint i= 0; i < tables; i++)
+      join_tab[i].ref.key_err= TRUE;
 
   if (tmp_join)
     restore_tmp();
@@ -4792,6 +4819,11 @@ greedy_search(JOIN      *join,
     if (best_extension_by_limited_search(join, remaining_tables, idx, record_count,
                                          read_time, search_depth, prune_level))
       DBUG_RETURN(TRUE);
+    /*
+      'best_read < DBL_MAX' means that optimizer managed to find
+      some plan and updated 'best_positions' array accordingly.
+    */
+    DBUG_ASSERT(join->best_read < DBL_MAX); 
 
     if (size_remain <= search_depth)
     {
@@ -6193,6 +6225,56 @@ void rr_unlock_row(st_join_table *tab)
 
 
 
+/**
+  Pick the appropriate access method functions
+
+  Sets the functions for the selected table access method
+
+  @param      tab               Table reference to put access method
+*/
+
+static void
+pick_table_access_method(JOIN_TAB *tab)
+{
+  switch (tab->type) 
+  {
+  case JT_REF:
+    tab->read_first_record= join_read_always_key;
+    tab->read_record.read_record= join_read_next_same;
+    break;
+
+  case JT_REF_OR_NULL:
+    tab->read_first_record= join_read_always_key_or_null;
+    tab->read_record.read_record= join_read_next_same_or_null;
+    break;
+
+  case JT_CONST:
+    tab->read_first_record= join_read_const;
+    tab->read_record.read_record= join_no_more_records;
+    break;
+
+  case JT_EQ_REF:
+    tab->read_first_record= join_read_key;
+    tab->read_record.read_record= join_no_more_records;
+    break;
+
+  case JT_FT:
+    tab->read_first_record= join_ft_read_first;
+    tab->read_record.read_record= join_ft_read_next;
+    break;
+
+  case JT_SYSTEM:
+    tab->read_first_record= join_read_system;
+    tab->read_record.read_record= join_no_more_records;
+    break;
+
+  /* keep gcc happy */  
+  default:
+    break;  
+  }
+}
+
+
 static void
 make_join_readinfo(JOIN *join, ulonglong options)
 {
@@ -6225,45 +6307,15 @@ make_join_readinfo(JOIN *join, ulonglong options)
          (join->sort_by_table == (TABLE *) 1 && i != join->const_tables)))
       ordered_set= 1;
 
+    table->status=STATUS_NO_RECORD;
+    pick_table_access_method (tab);
+
     switch (tab->type) {
-    case JT_SYSTEM:				// Only happens with left join
-      table->status=STATUS_NO_RECORD;
-      tab->read_first_record= join_read_system;
-      tab->read_record.read_record= join_no_more_records;
-      break;
-    case JT_CONST:				// Only happens with left join
-      table->status=STATUS_NO_RECORD;
-      tab->read_first_record= join_read_const;
-      tab->read_record.read_record= join_no_more_records;
-      if (table->used_keys.is_set(tab->ref.key) &&
-          !table->no_keyread)
-      {
-        table->key_read=1;
-        table->file->extra(HA_EXTRA_KEYREAD);
-      }
-      break;
     case JT_EQ_REF:
-      table->status=STATUS_NO_RECORD;
-      if (tab->select)
-      {
-	delete tab->select->quick;
-	tab->select->quick=0;
-      }
-      delete tab->quick;
-      tab->quick=0;
-      tab->read_first_record= join_read_key;
       tab->read_record.unlock_row= join_read_key_unlock_row;
-      tab->read_record.read_record= join_no_more_records;
-      if (table->used_keys.is_set(tab->ref.key) &&
-	  !table->no_keyread)
-      {
-	table->key_read=1;
-	table->file->extra(HA_EXTRA_KEYREAD);
-      }
-      break;
+      /* fall through */
     case JT_REF_OR_NULL:
     case JT_REF:
-      table->status=STATUS_NO_RECORD;
       if (tab->select)
       {
 	delete tab->select->quick;
@@ -6271,34 +6323,20 @@ make_join_readinfo(JOIN *join, ulonglong options)
       }
       delete tab->quick;
       tab->quick=0;
+      /* fall through */
+    case JT_CONST:				// Only happens with left join
       if (table->used_keys.is_set(tab->ref.key) &&
 	  !table->no_keyread)
       {
 	table->key_read=1;
 	table->file->extra(HA_EXTRA_KEYREAD);
       }
-      if (tab->type == JT_REF)
-      {
-	tab->read_first_record= join_read_always_key;
-	tab->read_record.read_record= join_read_next_same;
-      }
-      else
-      {
-	tab->read_first_record= join_read_always_key_or_null;
-	tab->read_record.read_record= join_read_next_same_or_null;
-      }
-      break;
-    case JT_FT:
-      table->status=STATUS_NO_RECORD;
-      tab->read_first_record= join_ft_read_first;
-      tab->read_record.read_record= join_ft_read_next;
       break;
     case JT_ALL:
       /*
 	If previous table use cache
         If the incoming data set is already sorted don't use cache.
       */
-      table->status=STATUS_NO_RECORD;
       if (i != join->const_tables && !(options & SELECT_NO_JOIN_CACHE) &&
           tab->use_quick != 2 && !tab->first_inner && !ordered_set)
       {
@@ -6371,6 +6409,9 @@ make_join_readinfo(JOIN *join, ulonglong options)
 	  }
 	}
       }
+      break;
+    case JT_FT:
+    case JT_SYSTEM: 
       break;
     default:
       DBUG_PRINT("error",("Table type %d found",tab->type)); /* purecov: deadcode */
@@ -6679,9 +6720,11 @@ eq_ref_table(JOIN *join, ORDER *start_order, JOIN_TAB *tab)
       }
       if (order)
       {
-	found++;
-	DBUG_ASSERT(!(order->used & map));
-	order->used|=map;
+        if (!(order->used & map))
+        {
+          found++;
+          order->used|= map;
+        }
 	continue;				// Used in ORDER BY
       }
       if (!only_eq_ref_tables(join,start_order, (*ref_item)->used_tables()))
@@ -6754,6 +6797,7 @@ static void update_depend_map(JOIN *join, ORDER *order)
     table_map depend_map;
     order->item[0]->update_used_tables();
     order->depend_map=depend_map=order->item[0]->used_tables();
+    order->used= 0;
     // Not item_sum(), RAND() and no reference to table outside of sub select
     if (!(order->depend_map & (OUTER_REF_TABLE_BIT | RAND_TABLE_BIT))
         && !order->item[0]->with_sum_func)
@@ -7219,7 +7263,7 @@ static bool check_simple_equality(Item *left_item, Item *right_item,
           already contains a constant and its value is  not equal to
           the value of const_item.
         */
-        item_equal->add(const_item);
+        item_equal->add(const_item, field_item);
       }
       else
       {
@@ -7517,12 +7561,12 @@ static COND *build_equal_items_for_cond(THD *thd, COND *cond,
         {
           item_equal->fix_length_and_dec();
           item_equal->update_used_tables();
+          set_if_bigger(thd->lex->current_select->max_equal_elems,
+                        item_equal->members());  
+          return item_equal;
 	}
-        else
-          item_equal= (Item_equal *) eq_list.pop();
-        set_if_bigger(thd->lex->current_select->max_equal_elems,
-                      item_equal->members());  
-        return item_equal;
+
+        return eq_list.pop();
       }
       else
       {
@@ -8394,8 +8438,14 @@ simplify_joins(JOIN *join, List<TABLE_LIST> *join_list, COND *conds, bool top)
           we still make the inner tables dependent on the outer tables.
           It would be enough to set dependency only on one outer table
           for them. Yet this is really a rare case.
+          Note:
+          RAND_TABLE_BIT mask should not be counted as it
+          prevents update of inner table dependences.
+          For example it might happen if RAND() function
+          is used in JOIN ON clause.
 	*/  
-        if (!(prev_table->on_expr->used_tables() & ~prev_used_tables))
+        if (!((prev_table->on_expr->used_tables() & ~RAND_TABLE_BIT) &
+              ~prev_used_tables))
           prev_table->dep_tables|= used_tables;
       }
     }
@@ -12744,6 +12794,8 @@ test_if_skip_sort_order(JOIN_TAB *tab,ORDER *order,ha_rows select_limit,
           if (create_ref_for_key(tab->join, tab, keyuse, 
                                  tab->join->const_table_map))
             DBUG_RETURN(0);
+
+          pick_table_access_method(tab);
 	}
 	else
 	{
@@ -12804,7 +12856,7 @@ test_if_skip_sort_order(JOIN_TAB *tab,ORDER *order,ha_rows select_limit,
 	  }
 	  DBUG_RETURN(1);
 	}
-	if (tab->ref.key_parts <= used_key_parts)
+	if (tab->ref.key_parts <= used_key_parts && tab->type == JT_REF)
 	{
 	  /*
 	    SELECT * FROM t1 WHERE a=1 ORDER BY a DESC,b DESC

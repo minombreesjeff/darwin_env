@@ -560,6 +560,9 @@
 /* Define to 1 if you have the `pread' function. */
 #undef HAVE_PREAD
 
+/* Define to 1 if you have the `printstack' function. */
+#undef HAVE_PRINTSTACK
+
 /* Define to 1 if you have the `pthread_attr_create' function. */
 #undef HAVE_PTHREAD_ATTR_CREATE
 

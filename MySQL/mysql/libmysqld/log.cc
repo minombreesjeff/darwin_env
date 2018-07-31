@@ -501,7 +501,7 @@ const char *MYSQL_LOG::generate_name(const char *log_name,
   {
     char *p = fn_ext(log_name);
     uint length=(uint) (p-log_name);
-    strmake(buff,log_name,min(length,FN_REFLEN));
+    strmake(buff, log_name, min(length, FN_REFLEN-1));
     return (const char*)buff;
   }
   return log_name;
@@ -1503,7 +1503,7 @@ int MYSQL_LOG::purge_logs_before_date(time_t purge_time)
       if (stat_area.st_mtime < purge_time) 
         strmake(to_log, 
                 log_info.log_file_name, 
-                sizeof(log_info.log_file_name));
+                sizeof(log_info.log_file_name) - 1);
       else
         break;
     }
@@ -1635,7 +1635,7 @@ void MYSQL_LOG::new_file(bool need_lock)
   old_name=name;
   save_log_type=log_type;
   name=0;				// Don't free name
-  close(LOG_CLOSE_TO_BE_OPENED);
+  close(LOG_CLOSE_TO_BE_OPENED | LOG_CLOSE_INDEX);
 
   /*
      Note that at this point, log_type != LOG_CLOSED (important for is_open()).
@@ -1649,9 +1649,11 @@ void MYSQL_LOG::new_file(bool need_lock)
      Format_description_log_event written at server startup, which should
      trigger temp tables deletion on slaves.
   */
-
-  open(old_name, save_log_type, new_name_ptr,
-       io_cache_type, no_auto_events, max_size, 1);
+  
+  /* reopen index binlog file, BUG#34582 */
+  if (!open_index_file(index_file_name, 0))
+    open(old_name, save_log_type, new_name_ptr, 
+         io_cache_type, no_auto_events, max_size, 1);
   my_free(old_name,MYF(0));
 
 end:
@@ -2604,11 +2606,11 @@ bool flush_error_log()
   if (opt_error_log)
   {
     char err_renamed[FN_REFLEN], *end;
-    end= strmake(err_renamed,log_error_file,FN_REFLEN-4);
+    end= strmake(err_renamed,log_error_file,FN_REFLEN-5);
     strmov(end, "-old");
     VOID(pthread_mutex_lock(&LOCK_error_log));
 #ifdef __WIN__
-    char err_temp[FN_REFLEN+4];
+    char err_temp[FN_REFLEN+5];
     /*
      On Windows is necessary a temporary file for to rename
      the current error file.

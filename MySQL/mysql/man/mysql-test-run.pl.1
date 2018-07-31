@@ -2,12 +2,12 @@
 .\"     Title: \fBmysql-test-run.pl\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 11/06/2009
+.\"      Date: 04/29/2010
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL
 .\"  Language: English
 .\"
-.TH "\FBMYSQL\-TEST\-RUN\" "1" "11/06/2009" "MySQL" "MySQL Database System"
+.TH "\FBMYSQL\-TEST\-RUN\" "1" "04/29/2010" "MySQL" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -627,7 +627,7 @@ does not fail if Debug Sync is not compiled in\&.
 For information about using the Debug Sync facility for testing, see
 Section\ \&4.14, \(lqThread Synchronization in Test Cases\(rq\&.
 .sp
-This option was added in MySQL 5\&.4\&.4/6\&.0\&.6\&.
+This option was added in MySQL 5\&.1\&.41/5\&.5\&.0/6\&.0\&.6\&.
 .RE
 .sp
 .RS 4
@@ -966,7 +966,7 @@ MTR_MEM[=\fIdir_name\fR]\&. If
 \fIdir_name\fR
 is given, it is added to the beginning of the list of locations to search, so it takes precedence over any built\-in locations\&.
 .sp
-This option was added in MySQL 4\&.1\&.22, 5\&.0\&.30, and 5\&.1\&.13\&.
+This option was added in MySQL 4\&.1\&.22, 5\&.0\&.30, and 5\&.1\&.13\&. It is not supported on Windows\&.
 .RE
 .sp
 .RS 4
@@ -2109,8 +2109,8 @@ Unused?
 .\" warnings option: mysql-test-run.pl
 \fB\-\-warnings\fR
 .sp
-This option is a synonym for
-\fB\-\-log\-warnings\fR\&.
+Search the server log for errors or warning after each test and report any suspicious ones; if any are found, the test will be marked as failed\&. This is the default behavior, it may be turned off with
+\fB\-\-nowarnings\fR\&.
 .RE
 .sp
 .RS 4
@@ -2252,7 +2252,7 @@ supports the following options not supported by
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright 2007-2008 MySQL AB, 2009 Sun Microsystems, Inc.
+Copyright \(co 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -2271,4 +2271,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-Sun Microsystems, Inc. (http://www.mysql.com/).
+Oracle Corporation (http://dev.mysql.com/).
