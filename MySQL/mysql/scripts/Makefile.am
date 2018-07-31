@@ -33,8 +33,6 @@ bin_SCRIPTS =		@server_scripts@ \
 			mysql_explain_log \
 			mysql_tableinfo \
 			mysqld_multi \
-			make_win_src_distribution \
-			make_win_binary_distribution \
 			mysql_create_system_tables
 
 EXTRA_SCRIPTS =		make_binary_distribution.sh \
@@ -59,7 +57,6 @@ EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			mysqld_multi.sh \
 			mysql_tableinfo.sh \
 			mysqld_safe.sh \
-			fill_help_tables.sh \
 			mysql_create_system_tables.sh
 
 EXTRA_DIST =		$(EXTRA_SCRIPTS) \
@@ -87,7 +84,7 @@ CLEANFILES =		@server_scripts@ \
 			mysqldumpslow \
 			mysqld_multi \
 			make_win_src_distribution \
-			fill_help_tables \
+			make_win_binary_distribution \
 			mysql_create_system_tables
 
 SUPERCLEANFILES =	mysqlbug
@@ -137,7 +134,7 @@ SUFFIXES = .sh
 	  -e 's!@''MYSQLD_DEFAULT_SWITCHES''@!@MYSQLD_DEFAULT_SWITCHES@!' \
 	  -e 's!@''MYSQL_UNIX_ADDR''@!@MYSQL_UNIX_ADDR@!' \
 	  -e 's!@''MYSQL_TCP_PORT''@!@MYSQL_TCP_PORT@!' \
-	  -e 's!@''IS_LINUX''@!@IS_LINUX@!' \
+	  -e 's!@''TARGET_LINUX''@!@TARGET_LINUX@!' \
 	  -e "s!@""CONF_COMMAND""@!@CONF_COMMAND@!" \
 	  -e 's!@''MYSQLD_USER''@!@MYSQLD_USER@!' \
 	  -e 's!@''STATIC_NSS_FLAGS''@!@STATIC_NSS_FLAGS@!' \
@@ -151,7 +148,4 @@ SUFFIXES = .sh
 # Don't update the files from bitkeeper
 %::SCCS/s.%
 
-all: fill_help_tables.sql make_win_src_distribution make_binary_distribution make_sharedlib_distribution
-
-fill_help_tables.sql: fill_help_tables ../Docs/manual.texi
-		./fill_help_tables < ../Docs/manual.texi > fill_help_tables.sql
+all: make_win_src_distribution make_binary_distribution make_sharedlib_distribution

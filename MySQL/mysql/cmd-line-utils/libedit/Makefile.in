@@ -142,6 +142,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DUNDEF_THREADS_HACK -DHAVE_CONFIG_H -DNO_KILL_INTR 
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -167,7 +169,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -240,6 +241,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -345,7 +347,9 @@ vio_libs = @vio_libs@
 zlib_dir = @zlib_dir@
 ASRC = vi.c emacs.c common.c
 AHDR = vi.h emacs.h common.h
-INCLUDES = -I$(top_srcdir)/include -I$(srcdir)/../.. -I..
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include \
+			-I$(srcdir)/../.. -I..
+
 noinst_LIBRARIES = libedit.a
 libedit_a_SOURCES = chared.c el.c history.c map.c prompt.c readline.c \
 			search.c tokenizer.c vi.c common.c emacs.c \
@@ -358,9 +362,9 @@ EXTRA_libedit_a_SOURCES = np/unvis.c np/strlcpy.c np/vis.c np/strlcat.c \
 libedit_a_LIBADD = @LIBEDIT_LOBJECTS@
 libedit_a_DEPENDENCIES = @LIBEDIT_LOBJECTS@
 pkginclude_HEADERS = readline/readline.h
-noinst_HEADERS = chared.h el.h histedit.h key.h parse.h refresh.h sig.h \
+noinst_HEADERS = chared.h el.h el_term.h histedit.h key.h parse.h refresh.h sig.h \
 			sys.h tokenizer.h config.h hist.h map.h prompt.h read.h \
-			search.h tty.h libedit_term.h
+			search.h tty.h libedit_term.h vis.h
 
 EXTRA_DIST = makelist.sh np/unvis.c np/strlcpy.c np/vis.c np/vis.h np/strlcat.c np/fgetln.c
 CLEANFILES = makelist common.h emacs.h vi.h fcns.h help.h fcns.c help.c

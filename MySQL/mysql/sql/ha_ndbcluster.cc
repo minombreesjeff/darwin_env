@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2003 MySQL AB
+ /* Copyright (C) 2000-2003 MySQL AB
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@
   NDB Cluster
 */
 
-#ifdef __GNUC__
-#pragma implementation                          // gcc: Class implementation
+#ifdef USE_PRAGMA_IMPLEMENTATION
+#pragma implementation				// gcc: Class implementation
 #endif
 
 #include "mysql_priv.h"
@@ -47,6 +47,8 @@ static const char *ha_ndb_ext=".ndb";
 
 #define NDB_HIDDEN_PRIMARY_KEY_LENGTH 8
 
+#define NDB_FAILED_AUTO_INCREMENT ~(Uint64)0
+#define NDB_AUTO_INCREMENT_RETRIES 10
 
 #define ERR_PRINT(err) \
   DBUG_PRINT("error", ("%d  message: %s", err.code, err.message))
@@ -113,7 +115,6 @@ static const err_code_mapping err_map[]=
   { 4244, HA_ERR_TABLE_EXIST, 1 },
 
   { 709, HA_ERR_NO_SUCH_TABLE, 1 },
-  { 284, HA_ERR_NO_SUCH_TABLE, 1 },
 
   { 266, HA_ERR_LOCK_WAIT_TIMEOUT, 1 },
   { 274, HA_ERR_LOCK_WAIT_TIMEOUT, 1 },
@@ -225,7 +226,7 @@ Ndb *ha_ndbcluster::get_ndb()
  * manage uncommitted insert/deletes during transactio to get records correct
  */
 
-struct Ndb_table_local_info {
+struct Ndb_local_table_statistics {
   int no_uncommitted_rows_count;
   ulong last_count;
   ha_rows records;
@@ -246,7 +247,8 @@ void ha_ndbcluster::records_update()
   if (m_ha_not_exact_count)
     return;
   DBUG_ENTER("ha_ndbcluster::records_update");
-  struct Ndb_table_local_info *info= (struct Ndb_table_local_info *)m_table_info;
+  struct Ndb_local_table_statistics *info= 
+    (struct Ndb_local_table_statistics *)m_table_info;
   DBUG_PRINT("info", ("id=%d, no_uncommitted_rows_count=%d",
 		      ((const NDBTAB *)m_table)->getTableId(),
 		      info->no_uncommitted_rows_count));
@@ -282,7 +284,8 @@ void ha_ndbcluster::no_uncommitted_rows_init(THD *thd)
   if (m_ha_not_exact_count)
     return;
   DBUG_ENTER("ha_ndbcluster::no_uncommitted_rows_init");
-  struct Ndb_table_local_info *info= (struct Ndb_table_local_info *)m_table_info;
+  struct Ndb_local_table_statistics *info= 
+    (struct Ndb_local_table_statistics *)m_table_info;
   Thd_ndb *thd_ndb= (Thd_ndb *)thd->transaction.thd_ndb;
   if (info->last_count != thd_ndb->count)
   {
@@ -301,8 +304,8 @@ void ha_ndbcluster::no_uncommitted_rows_update(int c)
   if (m_ha_not_exact_count)
     return;
   DBUG_ENTER("ha_ndbcluster::no_uncommitted_rows_update");
-  struct Ndb_table_local_info *info=
-    (struct Ndb_table_local_info *)m_table_info;
+  struct Ndb_local_table_statistics *info=
+    (struct Ndb_local_table_statistics *)m_table_info;
   info->no_uncommitted_rows_count+= c;
   DBUG_PRINT("info", ("id=%d, no_uncommitted_rows_count=%d",
 		      ((const NDBTAB *)m_table)->getTableId(),
@@ -328,22 +331,101 @@ void ha_ndbcluster::no_uncommitted_rows_reset(THD *thd)
     #   The mapped error code
 */
 
+void ha_ndbcluster::invalidate_dictionary_cache(bool global)
+{
+  NDBDICT *dict= get_ndb()->getDictionary();
+  DBUG_ENTER("invalidate_dictionary_cache");
+  DBUG_PRINT("info", ("invalidating %s", m_tabname));
+
+  if (global)
+  {
+    const NDBTAB *tab= dict->getTable(m_tabname);
+    if (!tab)
+      DBUG_VOID_RETURN;
+    if (tab->getObjectStatus() == NdbDictionary::Object::Invalid)
+    {
+      // Global cache has already been invalidated
+      dict->removeCachedTable(m_tabname);
+      global= FALSE;
+    }
+    else
+      dict->invalidateTable(m_tabname);
+  }
+  else
+    dict->removeCachedTable(m_tabname);
+  table->version=0L;			/* Free when thread is ready */
+  /* Invalidate indexes */
+  for (uint i= 0; i < table->keys; i++)
+  {
+    NDBINDEX *index = (NDBINDEX *) m_index[i].index;
+    NDBINDEX *unique_index = (NDBINDEX *) m_index[i].unique_index;
+    NDB_INDEX_TYPE idx_type= m_index[i].type;
+
+    switch(idx_type) {
+    case(PRIMARY_KEY_ORDERED_INDEX):
+    case(ORDERED_INDEX):
+      if (global)
+        dict->invalidateIndex(index->getName(), m_tabname);
+      else
+        dict->removeCachedIndex(index->getName(), m_tabname);
+      break;      
+    case(UNIQUE_ORDERED_INDEX):
+      if (global)
+        dict->invalidateIndex(index->getName(), m_tabname);
+      else
+        dict->removeCachedIndex(index->getName(), m_tabname);
+    case(UNIQUE_INDEX):
+      if (global)
+        dict->invalidateIndex(unique_index->getName(), m_tabname);
+      else
+        dict->removeCachedIndex(unique_index->getName(), m_tabname);
+      break;
+    case(PRIMARY_KEY_INDEX):
+    case(UNDEFINED_INDEX):
+      break;
+    }
+  }
+  DBUG_VOID_RETURN;
+}
 
 int ha_ndbcluster::ndb_err(NdbConnection *trans)
 {
   int res;
-  const NdbError err= trans->getNdbError();
+  NdbError err= trans->getNdbError();
   DBUG_ENTER("ndb_err");
   
   ERR_PRINT(err);
   switch (err.classification) {
   case NdbError::SchemaError:
   {
-    Ndb *ndb= get_ndb();
-    NDBDICT *dict= ndb->getDictionary();
-    DBUG_PRINT("info", ("invalidateTable %s", m_tabname));
-    dict->invalidateTable(m_tabname);
-    table->version=0L;			/* Free when thread is ready */
+    invalidate_dictionary_cache(TRUE);
+
+    if (err.code==284)
+    {
+      /*
+         Check if the table is _really_ gone or if the table has
+         been alterend and thus changed table id
+       */
+      NDBDICT *dict= get_ndb()->getDictionary();
+      DBUG_PRINT("info", ("Check if table %s is really gone", m_tabname));
+      if (!(dict->getTable(m_tabname)))
+      {
+        err= dict->getNdbError();
+        DBUG_PRINT("info", ("Table not found, error: %d", err.code));
+        if (err.code != 709)
+          DBUG_RETURN(1);
+      }
+      else
+      {
+        DBUG_PRINT("info", ("Table exist but must have changed"));
+        /* In 5.0, this should be replaced with a mapping to a mysql error */
+        my_printf_error(ER_UNKNOWN_ERROR,
+                        "Table definition has changed, "\
+                        "please retry transaction",
+                        MYF(0));
+        DBUG_RETURN(1);
+      }
+    }
     break;
   }
   default:
@@ -353,8 +435,15 @@ int ha_ndbcluster::ndb_err(NdbConnection *trans)
   DBUG_PRINT("info", ("transformed ndbcluster error %d to mysql error %d", 
 		      err.code, res));
   if (res == HA_ERR_FOUND_DUPP_KEY)
-    m_dupkey= table->primary_key;
-  
+  {
+    if (m_rows_to_insert == 1)
+      m_dupkey= table->primary_key;
+    else
+    {
+      /* We are batching inserts, offending key is not available */
+      m_dupkey= (uint) -1;
+    }
+  }
   DBUG_RETURN(res);
 }
 
@@ -382,13 +471,12 @@ bool ha_ndbcluster::get_error_message(int error,
 }
 
 
+#ifndef DBUG_OFF
 /*
   Check if type is supported by NDB.
-  TODO Use this once in open(), not in every operation
-
 */
 
-static inline bool ndb_supported_type(enum_field_types type)
+static bool ndb_supported_type(enum_field_types type)
 {
   switch (type) {
   case MYSQL_TYPE_DECIMAL:    
@@ -420,6 +508,7 @@ static inline bool ndb_supported_type(enum_field_types type)
   }
   return FALSE;
 }
+#endif /* !DBUG_OFF */
 
 
 /*
@@ -449,15 +538,10 @@ int ha_ndbcluster::set_ndb_key(NdbOperation *ndb_op, Field *field,
                        pack_len));
   DBUG_DUMP("key", (char*)field_ptr, pack_len);
   
-  if (ndb_supported_type(field->type()))
-  {
-    if (! (field->flags & BLOB_FLAG))
-      // Common implementation for most field types
-      DBUG_RETURN(ndb_op->equal(fieldnr, (char*) field_ptr, pack_len) != 0);
-  }
-  // Unhandled field types
-  DBUG_PRINT("error", ("Field type %d not supported", field->type()));
-  DBUG_RETURN(2);
+  DBUG_ASSERT(ndb_supported_type(field->type()));
+  DBUG_ASSERT(! (field->flags & BLOB_FLAG));
+  // Common implementation for most field types
+  DBUG_RETURN(ndb_op->equal(fieldnr, (char*) field_ptr, pack_len) != 0);
 }
 
 
@@ -476,7 +560,7 @@ int ha_ndbcluster::set_ndb_value(NdbOperation *ndb_op, Field *field,
                        pack_len, field->is_null()?"Y":"N"));
   DBUG_DUMP("value", (char*) field_ptr, pack_len);
 
-  if (ndb_supported_type(field->type()))
+  DBUG_ASSERT(ndb_supported_type(field->type()));
   {
     // ndb currently does not support size 0
     const byte *empty_field= "";
@@ -525,9 +609,6 @@ int ha_ndbcluster::set_ndb_value(NdbOperation *ndb_op, Field *field,
     }
     DBUG_RETURN(1);
   }
-  // Unhandled field types
-  DBUG_PRINT("error", ("Field type %d not supported", field->type()));
-  DBUG_RETURN(2);
 }
 
 
@@ -622,9 +703,8 @@ int ha_ndbcluster::get_ndb_value(NdbOperation *ndb_op, Field *field,
 
   if (field != NULL)
   {
-    DBUG_ASSERT(buf);
-    if (ndb_supported_type(field->type()))
-    {
+      DBUG_ASSERT(buf);
+      DBUG_ASSERT(ndb_supported_type(field->type()));
       DBUG_ASSERT(field->ptr != NULL);
       if (! (field->flags & BLOB_FLAG))
       {	
@@ -648,10 +728,6 @@ int ha_ndbcluster::get_ndb_value(NdbOperation *ndb_op, Field *field,
         DBUG_RETURN(ndb_blob->setActiveHook(g_get_ndb_blobs_value, arg) != 0);
       }
       DBUG_RETURN(1);
-    }
-    // Unhandled field types
-    DBUG_PRINT("error", ("Field type %d not supported", field->type()));
-    DBUG_RETURN(2);
   }
 
   // Used for hidden key only
@@ -691,10 +767,8 @@ bool ha_ndbcluster::uses_blob_value(bool all_fields)
   Get metadata for this table from NDB 
 
   IMPLEMENTATION
-    - save the NdbDictionary::Table for easy access
     - check that frm-file on disk is equal to frm-file
       of table accessed in NDB
-    - build a list of the indexes for the table
 */
 
 int ha_ndbcluster::get_metadata(const char *path)
@@ -714,7 +788,14 @@ int ha_ndbcluster::get_metadata(const char *path)
 
     if (!(tab= dict->getTable(m_tabname)))
       ERR_RETURN(dict->getNdbError());
-    DBUG_PRINT("info", ("Table schema version: %d", tab->getObjectVersion()));
+    // Check if thread has stale local cache
+    if (tab->getObjectStatus() == NdbDictionary::Object::Invalid)
+    {
+      invalidate_dictionary_cache(FALSE);
+      if (!(tab= dict->getTable(m_tabname)))
+         ERR_RETURN(dict->getNdbError());
+      DBUG_PRINT("info", ("Table schema version: %d", tab->getObjectVersion()));
+    }
     /*
       Compare FrmData in NDB with frm file from disk.
     */
@@ -733,7 +814,7 @@ int ha_ndbcluster::get_metadata(const char *path)
       if (!invalidating_ndb_table)
       {
 	DBUG_PRINT("info", ("Invalidating table"));
-	dict->invalidateTable(m_tabname);
+        invalidate_dictionary_cache(TRUE);
 	invalidating_ndb_table= TRUE;
       }
       else
@@ -758,11 +839,12 @@ int ha_ndbcluster::get_metadata(const char *path)
 
   if (error)
     DBUG_RETURN(error);
-
-  m_table= NULL;
-  m_table_info= NULL;
   
-  DBUG_RETURN(build_index_list(table, ILBP_OPEN));  
+  m_table_version= tab->getObjectVersion();
+  m_table= (void *)tab; 
+  m_table_info= NULL; // Set in external lock
+  
+  DBUG_RETURN(build_index_list(ndb, table, ILBP_OPEN));
 }
 
 static int fix_unique_index_attr_order(NDB_INDEX_DATA &data,
@@ -790,7 +872,7 @@ static int fix_unique_index_attr_order(NDB_INDEX_DATA &data,
 #endif
     for (unsigned j= 0; j < sz; j++)
     {
-      const NdbDictionary::Column *c= index->getColumn(j);
+      const NDBCOL *c= index->getColumn(j);
       if (strncmp(field_name, c->getName(), name_sz) == 0)
       {
 	data.unique_index_attrid_map[i]= j;
@@ -802,7 +884,7 @@ static int fix_unique_index_attr_order(NDB_INDEX_DATA &data,
   DBUG_RETURN(0);
 }
 
-int ha_ndbcluster::build_index_list(TABLE *tab, enum ILBP phase)
+int ha_ndbcluster::build_index_list(Ndb *ndb, TABLE *tab, enum ILBP phase)
 {
   uint i;
   int error= 0;
@@ -811,8 +893,7 @@ int ha_ndbcluster::build_index_list(TABLE *tab, enum ILBP phase)
   static const char* unique_suffix= "$unique";
   KEY* key_info= tab->key_info;
   const char **key_name= tab->keynames.type_names;
-  Ndb *ndb= get_ndb();
-  NdbDictionary::Dictionary *dict= ndb->getDictionary();
+  NDBDICT *dict= ndb->getDictionary();
   DBUG_ENTER("build_index_list");
   
   // Save information about all known indexes
@@ -1032,41 +1113,22 @@ int ha_ndbcluster::set_primary_key(NdbOperation *op, const byte *key)
 }
 
 
-int ha_ndbcluster::set_primary_key_from_old_data(NdbOperation *op, const byte *old_data)
+int ha_ndbcluster::set_primary_key_from_record(NdbOperation *op, const byte *record)
 {
   KEY* key_info= table->key_info + table->primary_key;
   KEY_PART_INFO* key_part= key_info->key_part;
   KEY_PART_INFO* end= key_part+key_info->key_parts;
-  DBUG_ENTER("set_primary_key_from_old_data");
+  DBUG_ENTER("set_primary_key_from_record");
 
   for (; key_part != end; key_part++) 
   {
     Field* field= key_part->field;
     if (set_ndb_key(op, field, 
-		    key_part->fieldnr-1, old_data+key_part->offset))
+		    key_part->fieldnr-1, record+key_part->offset))
       ERR_RETURN(op->getNdbError());
   }
   DBUG_RETURN(0);
 }
-
-
-int ha_ndbcluster::set_primary_key(NdbOperation *op)
-{
-  DBUG_ENTER("set_primary_key");
-  KEY* key_info= table->key_info + table->primary_key;
-  KEY_PART_INFO* key_part= key_info->key_part;
-  KEY_PART_INFO* end= key_part+key_info->key_parts;
-
-  for (; key_part != end; key_part++) 
-  {
-    Field* field= key_part->field;
-    if (set_ndb_key(op, field, 
-                    key_part->fieldnr-1, field->ptr))
-      ERR_RETURN(op->getNdbError());
-  }
-  DBUG_RETURN(0);
-}
-
 
 /*
   Read one record from NDB using primary key
@@ -1160,9 +1222,9 @@ int ha_ndbcluster::complemented_pk_read(const byte *old_data, byte *new_data)
       op->readTuple(lm) != 0)
     ERR_RETURN(trans->getNdbError());
 
-    int res;
-    if ((res= set_primary_key_from_old_data(op, old_data)))
-      ERR_RETURN(trans->getNdbError());
+  int res;
+  if ((res= set_primary_key_from_record(op, old_data)))
+    ERR_RETURN(trans->getNdbError());
     
   // Read all unreferenced non-key field(s)
   for (i= 0; i < no_fields; i++) 
@@ -1192,7 +1254,7 @@ int ha_ndbcluster::complemented_pk_read(const byte *old_data, byte *new_data)
   Peek to check if a particular row already exists
 */
 
-int ha_ndbcluster::peek_row()
+int ha_ndbcluster::peek_row(const byte *record)
 {
   NdbConnection *trans= m_active_trans;
   NdbOperation *op;
@@ -1206,7 +1268,7 @@ int ha_ndbcluster::peek_row()
     ERR_RETURN(trans->getNdbError());
                                                                                 
   int res;
-  if ((res= set_primary_key(op)))
+  if ((res= set_primary_key_from_record(op, record)))
     ERR_RETURN(trans->getNdbError());
                                                                                 
   if (execute_no_commit_ie(this,trans) != 0)
@@ -1760,7 +1822,7 @@ int ha_ndbcluster::write_row(byte *record)
 
   if(m_ignore_dup_key && table->primary_key != MAX_KEY)
   {
-    int peek_res= peek_row();
+    int peek_res= peek_row(record);
     
     if (!peek_res) 
     {
@@ -1787,7 +1849,15 @@ int ha_ndbcluster::write_row(byte *record)
   {
     // Table has hidden primary key
     Ndb *ndb= get_ndb();
-    Uint64 auto_value= ndb->getAutoIncrementValue((const NDBTAB *) m_table);
+    Uint64 auto_value= NDB_FAILED_AUTO_INCREMENT;
+    uint retries= NDB_AUTO_INCREMENT_RETRIES;
+    do {
+      auto_value= ndb->getAutoIncrementValue((const NDBTAB *) m_table);
+    } while (auto_value == NDB_FAILED_AUTO_INCREMENT && 
+             --retries &&
+             ndb->getNdbError().status == NdbError::TemporaryError);
+    if (auto_value == NDB_FAILED_AUTO_INCREMENT)
+      ERR_RETURN(ndb->getNdbError());
     if (set_hidden_key(op, table->fields, (const byte*)&auto_value))
       ERR_RETURN(op->getNdbError());
   } 
@@ -1802,8 +1872,8 @@ int ha_ndbcluster::write_row(byte *record)
       m_skip_auto_increment= !auto_increment_column_changed;
     }
 
-    if ((res= set_primary_key(op)))
-      return res;
+    if ((res= set_primary_key_from_record(op, record)))
+      return res;  
   }
 
   // Set non-key attribute(s)
@@ -1829,8 +1899,9 @@ int ha_ndbcluster::write_row(byte *record)
   m_rows_inserted++;
   no_uncommitted_rows_update(1);
   m_bulk_insert_not_flushed= TRUE;
-  if ((m_rows_to_insert == 1) || 
+  if ((m_rows_to_insert == (ha_rows) 1) || 
       ((m_rows_inserted % m_bulk_insert_rows) == 0) ||
+      m_primary_key_update ||
       set_blob_value)
   {
     THD *thd= current_thd;
@@ -1928,15 +1999,19 @@ int ha_ndbcluster::update_row(const byte *old_data, byte *new_data)
   
   statistic_increment(ha_update_count,&LOCK_status);
   if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_UPDATE)
+  {
     table->timestamp_field->set_time();
+    // Set query_id so that field is really updated
+    table->timestamp_field->query_id= thd->query_id;
+  }
 
   /* Check for update of primary key for special handling */  
   if ((table->primary_key != MAX_KEY) &&
       (key_cmp(table->primary_key, old_data, new_data)))
   {
-    int read_res, insert_res, delete_res;
+    int read_res, insert_res, delete_res, undo_res;
 
-    DBUG_PRINT("info", ("primary key update, doing pk read+insert+delete"));
+    DBUG_PRINT("info", ("primary key update, doing pk read+delete+insert"));
     // Get all old fields, since we optimize away fields not in query
     read_res= complemented_pk_read(old_data, new_data);
     if (read_res)
@@ -1944,25 +2019,38 @@ int ha_ndbcluster::update_row(const byte *old_data, byte *new_data)
       DBUG_PRINT("info", ("pk read failed"));
       DBUG_RETURN(read_res);
     }
-    // Insert new row
-    insert_res= write_row(new_data);
-    if (insert_res)
-    {
-      DBUG_PRINT("info", ("insert failed"));
-      DBUG_RETURN(insert_res);
-    }
     // Delete old row
-    DBUG_PRINT("info", ("insert succeded"));
     m_primary_key_update= TRUE;
     delete_res= delete_row(old_data);
     m_primary_key_update= FALSE;
     if (delete_res)
     {
       DBUG_PRINT("info", ("delete failed"));
-      // Undo write_row(new_data)
-      DBUG_RETURN(delete_row(new_data));
+      DBUG_RETURN(delete_res);
     }     
-    DBUG_PRINT("info", ("insert+delete succeeded"));
+    // Insert new row
+    DBUG_PRINT("info", ("delete succeded"));
+    m_primary_key_update= TRUE;
+    insert_res= write_row(new_data);
+    m_primary_key_update= FALSE;
+    if (insert_res)
+    {
+      DBUG_PRINT("info", ("insert failed"));
+      if (trans->commitStatus() == NdbConnection::Started)
+      {
+        // Undo delete_row(old_data)
+        m_primary_key_update= TRUE;
+        undo_res= write_row((byte *)old_data);
+        if (undo_res)
+          push_warning(current_thd, 
+                       MYSQL_ERROR::WARN_LEVEL_WARN, 
+                       undo_res, 
+                       "NDB failed undoing delete at primary key update");
+        m_primary_key_update= FALSE;
+      }
+      DBUG_RETURN(insert_res);
+    }
+    DBUG_PRINT("info", ("delete+insert succeeded"));
     DBUG_RETURN(0);
   }
 
@@ -2006,7 +2094,7 @@ int ha_ndbcluster::update_row(const byte *old_data, byte *new_data)
     else 
     {
       int res;
-      if ((res= set_primary_key_from_old_data(op, old_data)))
+      if ((res= set_primary_key_from_record(op, old_data)))
 	DBUG_RETURN(res);
     }
   }
@@ -2060,8 +2148,9 @@ int ha_ndbcluster::delete_row(const byte *record)
 
     no_uncommitted_rows_update(-1);
 
-    // If deleting from cursor, NoCommit will be handled in next_result
-    DBUG_RETURN(0);
+    if (!m_primary_key_update)
+      // If deleting from cursor, NoCommit will be handled in next_result
+      DBUG_RETURN(0);
   }
   else
   {
@@ -2086,10 +2175,8 @@ int ha_ndbcluster::delete_row(const byte *record)
     else 
     {
       int res;
-      if ((res= (m_primary_key_update ?
-		 set_primary_key_from_old_data(op, record)
-		 : set_primary_key(op))))
-	  return res;  
+      if ((res= set_primary_key_from_record(op, record)))
+        return res;  
     }
   }
   
@@ -2276,10 +2363,14 @@ void ha_ndbcluster::print_results()
       fprintf(DBUG_FILE, "Double\t%f", value);
       break;
     }
-    case NdbDictionary::Column::Decimal: {
+    case NdbDictionary::Column::Olddecimal: {
       char *value= field->ptr;
-
-      fprintf(DBUG_FILE, "Decimal\t'%-*s'", field->pack_length(), value);
+      fprintf(DBUG_FILE, "Olddecimal\t'%-*s'", field->pack_length(), value);
+      break;
+    }
+    case NdbDictionary::Column::Olddecimalunsigned: {
+      char *value= field->ptr;
+      fprintf(DBUG_FILE, "Olddecimalunsigned\t'%-*s'", field->pack_length(), value);
       break;
     }
     case NdbDictionary::Column::Char:{
@@ -2886,8 +2977,14 @@ void ha_ndbcluster::start_bulk_insert(ha_rows rows)
   DBUG_ENTER("start_bulk_insert");
   DBUG_PRINT("enter", ("rows: %d", (int)rows));
   
-  m_rows_inserted= 0;
-  m_rows_to_insert= rows; 
+  m_rows_inserted= (ha_rows) 0;
+  if (rows == (ha_rows) 0)
+  {
+    /* We don't know how many will be inserted, guess */
+    m_rows_to_insert= m_autoincrement_prefetch;
+  }
+  else
+    m_rows_to_insert= rows; 
 
   /* 
     Calculate how many rows that should be inserted
@@ -2921,7 +3018,7 @@ int ha_ndbcluster::end_bulk_insert()
     // Send rows to NDB
     DBUG_PRINT("info", ("Sending inserts to NDB, "\
                         "rows_inserted:%d, bulk_insert_rows: %d", 
-                        m_rows_inserted, m_bulk_insert_rows)); 
+                        (int) m_rows_inserted, (int) m_bulk_insert_rows)); 
     m_bulk_insert_not_flushed= FALSE;
     if (execute_no_commit(this,trans) != 0) {
       no_uncommitted_rows_execute_failure();
@@ -2929,8 +3026,8 @@ int ha_ndbcluster::end_bulk_insert()
     }
   }
 
-  m_rows_inserted= 0;
-  m_rows_to_insert= 1;
+  m_rows_inserted= (ha_rows) 0;
+  m_rows_to_insert= (ha_rows) 1;
   DBUG_RETURN(error);
 }
 
@@ -2950,9 +3047,9 @@ int ha_ndbcluster::reset()
   DBUG_RETURN(1);
 }
 
-
+static const char *ha_ndb_bas_exts[]= { ha_ndb_ext, NullS };
 const char **ha_ndbcluster::bas_ext() const
-{ static const char *ext[]= { ha_ndb_ext, NullS }; return ext; }
+{ return ha_ndb_bas_exts; }
 
 
 /*
@@ -2970,6 +3067,13 @@ double ha_ndbcluster::scan_time()
   DBUG_RETURN(res);
 }
 
+/*
+  Convert MySQL table locks into locks supported by Ndb Cluster.
+  Note that MySQL Cluster does currently not support distributed
+  table locks, so to be safe one should set cluster in Single
+  User Mode, before relying on table locks when updating tables
+  from several MySQL servers
+*/
 
 THR_LOCK_DATA **ha_ndbcluster::store_lock(THD *thd,
                                           THR_LOCK_DATA **to,
@@ -2985,7 +3089,7 @@ THR_LOCK_DATA **ha_ndbcluster::store_lock(THD *thd,
     /* Since NDB does not currently have table locks
        this is treated as a ordinary lock */
 
-    if ((lock_type >= TL_WRITE_ALLOW_WRITE &&
+    if ((lock_type >= TL_WRITE_CONCURRENT_INSERT &&
          lock_type <= TL_WRITE) && !thd->in_lock_tables)      
       lock_type= TL_WRITE_ALLOW_WRITE;
     
@@ -3031,6 +3135,10 @@ THR_LOCK_DATA **ha_ndbcluster::store_lock(THD *thd,
  
   When a table lock is held one transaction will be started which holds
   the table lock and for each statement a hupp transaction will be started  
+  If we are locking the table then:
+  - save the NdbDictionary::Table for easy access
+  - save reference to table statistics
+  - refresh list of the indexes for the table if needed (if altered)
  */
 
 int ha_ndbcluster::external_lock(THD *thd, int lock_type)
@@ -3115,7 +3223,8 @@ int ha_ndbcluster::external_lock(THD *thd, int lock_type)
     // store thread specific data first to set the right context
     m_force_send=          thd->variables.ndb_force_send;
     m_ha_not_exact_count= !thd->variables.ndb_use_exact_count;
-    m_autoincrement_prefetch= thd->variables.ndb_autoincrement_prefetch_sz;
+    m_autoincrement_prefetch= 
+      (ha_rows) thd->variables.ndb_autoincrement_prefetch_sz;
     if (!thd->transaction.on)
       m_transaction_on= FALSE;
     else
@@ -3136,8 +3245,26 @@ int ha_ndbcluster::external_lock(THD *thd, int lock_type)
       void *tab_info;
       if (!(tab= dict->getTable(m_tabname, &tab_info)))
 	ERR_RETURN(dict->getNdbError());
-      DBUG_PRINT("info", ("Table schema version: %d", tab->getObjectVersion()));
-      m_table= (void *)tab;
+      DBUG_PRINT("info", ("Table schema version: %d", 
+                          tab->getObjectVersion()));
+      // Check if thread has stale local cache
+      if (tab->getObjectStatus() == NdbDictionary::Object::Invalid)
+      {
+        invalidate_dictionary_cache(FALSE);
+        if (!(tab= dict->getTable(m_tabname, &tab_info)))
+          ERR_RETURN(dict->getNdbError());
+        DBUG_PRINT("info", ("Table schema version: %d", 
+                            tab->getObjectVersion()));
+      }
+      if (m_table != (void *)tab || m_table_version < tab->getObjectVersion())
+      {
+        /*
+          The table has been altered, refresh the index list
+        */
+        build_index_list(ndb, table, ILBP_OPEN);  
+        m_table= (void *)tab;
+        m_table_version = tab->getObjectVersion();
+      }
       m_table_info= tab_info;
     }
     no_uncommitted_rows_init(thd);
@@ -3162,7 +3289,6 @@ int ha_ndbcluster::external_lock(THD *thd, int lock_type)
         thd->transaction.stmt.ndb_tid= 0;
       }
     }
-    m_table= NULL;
     m_table_info= NULL;
     /*
       This is the place to make sure this handler instance
@@ -3312,10 +3438,6 @@ static int create_ndb_column(NDBCOL &col,
   const enum enum_field_types mysql_type= field->real_type();
   switch (mysql_type) {
   // Numeric types
-  case MYSQL_TYPE_DECIMAL:    
-    col.setType(NDBCOL::Char);
-    col.setLength(field->pack_length());
-    break;
   case MYSQL_TYPE_TINY:        
     if (field->flags & UNSIGNED_FLAG)
       col.setType(NDBCOL::Tinyunsigned);
@@ -3358,6 +3480,26 @@ static int create_ndb_column(NDBCOL &col,
   case MYSQL_TYPE_DOUBLE:
     col.setType(NDBCOL::Double);
     col.setLength(1);
+    break;
+  case MYSQL_TYPE_DECIMAL:    
+    {
+      Field_decimal *f= (Field_decimal*)field;
+      uint precision= f->pack_length();
+      uint scale= f->decimals();
+      if (field->flags & UNSIGNED_FLAG)
+      {
+        col.setType(NDBCOL::Olddecimalunsigned);
+        precision-= (scale > 0);
+      }
+      else
+      {
+        col.setType(NDBCOL::Olddecimal);
+        precision-= 1 + (scale > 0);
+      }
+      col.setPrecision(precision);
+      col.setScale(scale);
+      col.setLength(1);
+    }
     break;
   // Date types
   case MYSQL_TYPE_DATETIME:    
@@ -3505,7 +3647,7 @@ static int create_ndb_column(NDBCOL &col,
 
 static void ndb_set_fragmentation(NDBTAB &tab, TABLE *form, uint pk_length)
 {
-  if (form->max_rows == 0) /* default setting, don't set fragmentation */
+  if (form->max_rows == (ha_rows) 0) /* default setting, don't set fragmentation */
     return;
   /**
    * get the number of fragments right
@@ -3671,7 +3813,7 @@ int ha_ndbcluster::create(const char *name,
                       m_dbname, m_tabname));
 
   // Create secondary indexes
-  my_errno= build_index_list(form, ILBP_CREATE);
+  my_errno= build_index_list(ndb, form, ILBP_CREATE);
 
   if (!my_errno)
     my_errno= write_ndb_file();
@@ -3768,7 +3910,13 @@ int ha_ndbcluster::rename_table(const char *from, const char *to)
   dict= ndb->getDictionary();
   if (!(orig_tab= dict->getTable(m_tabname)))
     ERR_RETURN(dict->getNdbError());
-
+  // Check if thread has stale local cache
+  if (orig_tab->getObjectStatus() == NdbDictionary::Object::Invalid)
+  {
+    dict->removeCachedTable(m_tabname);
+    if (!(orig_tab= dict->getTable(m_tabname)))
+      ERR_RETURN(dict->getNdbError());
+  }
   m_table= (void *)orig_tab;
   // Change current database to that of target table
   set_dbname(to);
@@ -3851,33 +3999,36 @@ int ha_ndbcluster::drop_table()
 }
 
 
-/*
-  Drop a database in NDB Cluster
- */
-
-int ndbcluster_drop_database(const char *path)
-{
-  DBUG_ENTER("ndbcluster_drop_database");
-  // TODO drop all tables for this database
-  DBUG_RETURN(1);
-}
-
-
 longlong ha_ndbcluster::get_auto_increment()
 {  
   DBUG_ENTER("get_auto_increment");
   DBUG_PRINT("enter", ("m_tabname: %s", m_tabname));
   Ndb *ndb= get_ndb();
+  
+  if (m_rows_inserted > m_rows_to_insert)
+  {
+    /* We guessed too low */
+    m_rows_to_insert+= m_autoincrement_prefetch;
+  }
   int cache_size= 
+    (int)
     (m_rows_to_insert - m_rows_inserted < m_autoincrement_prefetch) ?
     m_rows_to_insert - m_rows_inserted 
     : (m_rows_to_insert > m_autoincrement_prefetch) ? 
     m_rows_to_insert 
     : m_autoincrement_prefetch;
-  Uint64 auto_value= 
-    (m_skip_auto_increment) ? 
-    ndb->readAutoIncrementValue((const NDBTAB *) m_table)
-    : ndb->getAutoIncrementValue((const NDBTAB *) m_table, cache_size);
+  Uint64 auto_value= NDB_FAILED_AUTO_INCREMENT;
+  uint retries= NDB_AUTO_INCREMENT_RETRIES;
+  do {
+    auto_value=
+      (m_skip_auto_increment) ? 
+      ndb->readAutoIncrementValue((const NDBTAB *) m_table)
+      : ndb->getAutoIncrementValue((const NDBTAB *) m_table, cache_size);
+  } while (auto_value == NDB_FAILED_AUTO_INCREMENT && 
+           --retries &&
+           ndb->getNdbError().status == NdbError::TemporaryError);
+  if (auto_value == NDB_FAILED_AUTO_INCREMENT)
+    ERR_RETURN(ndb->getNdbError());
   DBUG_RETURN((longlong)auto_value);
 }
 
@@ -3891,6 +4042,7 @@ ha_ndbcluster::ha_ndbcluster(TABLE *table_arg):
   m_active_trans(NULL),
   m_active_cursor(NULL),
   m_table(NULL),
+  m_table_version(-1),
   m_table_info(NULL),
   m_table_flags(HA_REC_NOT_IN_SEQ |
 		HA_NULL_IN_KEY |
@@ -3902,9 +4054,9 @@ ha_ndbcluster::ha_ndbcluster(TABLE *table_arg):
   m_primary_key_update(FALSE),
   m_retrieve_all_fields(FALSE),
   m_retrieve_primary_key(FALSE),
-  m_rows_to_insert(1),
-  m_rows_inserted(0),
-  m_bulk_insert_rows(1024),
+  m_rows_to_insert((ha_rows) 1),
+  m_rows_inserted((ha_rows) 0),
+  m_bulk_insert_rows((ha_rows) 1024),
   m_bulk_insert_not_flushed(FALSE),
   m_ops_pending(0),
   m_skip_auto_increment(TRUE),
@@ -3914,7 +4066,7 @@ ha_ndbcluster::ha_ndbcluster(TABLE *table_arg):
   m_dupkey((uint) -1),
   m_ha_not_exact_count(FALSE),
   m_force_send(TRUE),
-  m_autoincrement_prefetch(32),
+  m_autoincrement_prefetch((ha_rows) 32),
   m_transaction_on(TRUE),
   m_use_local_query_cache(FALSE)
 { 
@@ -4030,7 +4182,9 @@ Thd_ndb* ha_ndbcluster::seize_thd_ndb()
   DBUG_ENTER("seize_thd_ndb");
 
   thd_ndb= new Thd_ndb();
-  thd_ndb->ndb->getDictionary()->set_local_table_data_size(sizeof(Ndb_table_local_info));
+  thd_ndb->ndb->getDictionary()->set_local_table_data_size(
+    sizeof(Ndb_local_table_statistics)
+    );
   if (thd_ndb->ndb->init(max_transactions) != 0)
   {
     ERR_PRINT(thd_ndb->ndb->getNdbError());
@@ -4123,28 +4277,29 @@ int ndbcluster_discover(THD* thd, const char *db, const char *name,
   ndb->setDatabaseName(db);
 
   NDBDICT* dict= ndb->getDictionary();
-  dict->set_local_table_data_size(sizeof(Ndb_table_local_info));
+  dict->set_local_table_data_size(sizeof(Ndb_local_table_statistics));
   dict->invalidateTable(name);
   if (!(tab= dict->getTable(name)))
   {    
     const NdbError err= dict->getNdbError();
     if (err.code == 709)
-      DBUG_RETURN(1);
+      DBUG_RETURN(-1);
     ERR_RETURN(err);
   }
-  
   DBUG_PRINT("info", ("Found table %s", tab->getName()));
   
   len= tab->getFrmLength();  
   if (len == 0 || tab->getFrmData() == NULL)
   {
-    DBUG_PRINT("No frm data found",
-               ("Table is probably created via NdbApi")); 
-    DBUG_RETURN(2);
+    DBUG_PRINT("error", ("No frm data found."));
+    DBUG_RETURN(1);
   }
   
   if (unpackfrm(&data, &len, tab->getFrmData()))
-    DBUG_RETURN(3);
+  {
+    DBUG_PRINT("error", ("Could not unpack table"));
+    DBUG_RETURN(1);
+  }
 
   *frmlen= len;
   *frmblob= data;
@@ -4157,13 +4312,13 @@ int ndbcluster_discover(THD* thd, const char *db, const char *name,
    
  */
 
-int ndbcluster_table_exists(THD* thd, const char *db, const char *name)
+int ndbcluster_table_exists_in_engine(THD* thd, const char *db, const char *name)
 {
   uint len;
   const void* data;
   const NDBTAB* tab;
   Ndb* ndb;
-  DBUG_ENTER("ndbcluster_table_exists");
+  DBUG_ENTER("ndbcluster_table_exists_in_engine");
   DBUG_PRINT("enter", ("db: %s, name: %s", db, name)); 
 
   if (!(ndb= check_ndb_in_thd(thd)))
@@ -4171,7 +4326,7 @@ int ndbcluster_table_exists(THD* thd, const char *db, const char *name)
   ndb->setDatabaseName(db);
 
   NDBDICT* dict= ndb->getDictionary();
-  dict->set_local_table_data_size(sizeof(Ndb_table_local_info));
+  dict->set_local_table_data_size(sizeof(Ndb_local_table_statistics));
   dict->invalidateTable(name);
   if (!(tab= dict->getTable(name)))
   {    
@@ -4192,6 +4347,62 @@ extern "C" byte* tables_get_key(const char *entry, uint *length,
 {
   *length= strlen(entry);
   return (byte*) entry;
+}
+
+
+/*
+  Drop a database in NDB Cluster
+ */
+
+int ndbcluster_drop_database(const char *path)
+{
+  DBUG_ENTER("ndbcluster_drop_database");
+  THD *thd= current_thd;
+  char dbname[FN_HEADLEN];
+  Ndb* ndb;
+  NdbDictionary::Dictionary::List list;
+  uint i;
+  char *tabname;
+  List<char> drop_list;
+  int ret= 0;
+  ha_ndbcluster::set_dbname(path, (char *)&dbname);
+  DBUG_PRINT("enter", ("db: %s", dbname));
+  
+  if (!(ndb= check_ndb_in_thd(thd)))
+    DBUG_RETURN(HA_ERR_NO_CONNECTION);
+  
+  // List tables in NDB
+  NDBDICT *dict= ndb->getDictionary();
+  if (dict->listObjects(list, 
+                        NdbDictionary::Object::UserTable) != 0)
+    ERR_RETURN(dict->getNdbError());
+  for (i= 0 ; i < list.count ; i++)
+  {
+    NdbDictionary::Dictionary::List::Element& t= list.elements[i];
+    DBUG_PRINT("info", ("Found %s/%s in NDB", t.database, t.name));     
+    
+    // Add only tables that belongs to db
+    if (my_strcasecmp(system_charset_info, t.database, dbname))
+      continue;
+    DBUG_PRINT("info", ("%s must be dropped", t.name));     
+    drop_list.push_back(thd->strdup(t.name));
+  }
+  // Drop any tables belonging to database
+  ndb->setDatabaseName(dbname);
+  List_iterator_fast<char> it(drop_list);
+  while ((tabname=it++))
+  {
+    if (dict->dropTable(tabname))
+    {
+      const NdbError err= dict->getNdbError();
+      if (err.code != 709)
+      {
+        ERR_PRINT(err);
+        ret= ndb_to_mysql_error(&err);
+      }
+    }
+  }
+  DBUG_RETURN(ret);      
 }
 
 
@@ -4286,7 +4497,7 @@ int ndbcluster_find_files(THD *thd,const char *db,const char *path,
     DBUG_PRINT("info", ("%s existed on disk", name));     
     // The .ndb file exists on disk, but it's not in list of tables in ndb
     // Verify that handler agrees table is gone.
-    if (ndbcluster_table_exists(thd, db, file_name) == 0)    
+    if (ndbcluster_table_exists_in_engine(thd, db, file_name) == 0)    
     {
       DBUG_PRINT("info", ("NDB says %s does not exists", file_name));     
       it.remove();
@@ -4337,7 +4548,7 @@ int ndbcluster_find_files(THD *thd,const char *db,const char *path,
   while ((file_name=it2++))
   {  
     DBUG_PRINT("info", ("Table %s need discovery", name));
-    if (ha_create_table_from_engine(thd, db, file_name, TRUE) == 0)
+    if (ha_create_table_from_engine(thd, db, file_name) == 0)
       files->push_back(thd->strdup(file_name)); 
   }
 
@@ -4375,7 +4586,7 @@ bool ndbcluster_init()
 
   // Create a Ndb object to open the connection  to NDB
   g_ndb= new Ndb(g_ndb_cluster_connection, "sys");
-  g_ndb->getDictionary()->set_local_table_data_size(sizeof(Ndb_table_local_info));
+  g_ndb->getDictionary()->set_local_table_data_size(sizeof(Ndb_local_table_statistics));
   if (g_ndb->init() != 0)
   {
     ERR_PRINT (g_ndb->getNdbError());
@@ -4387,7 +4598,7 @@ bool ndbcluster_init()
     DBUG_PRINT("info",("NDBCLUSTER storage engine at %s on port %d",
 		       g_ndb_cluster_connection->get_connected_host(),
 		       g_ndb_cluster_connection->get_connected_port()));
-    g_ndb_cluster_connection->wait_until_ready(10,0);
+    g_ndb_cluster_connection->wait_until_ready(10,3);
   } 
   else if(res == 1)
   {
@@ -4413,11 +4624,8 @@ bool ndbcluster_init()
   pthread_mutex_init(&ndbcluster_mutex,MY_MUTEX_INIT_FAST);
 
   ndbcluster_inited= 1;
-#ifdef USE_DISCOVER_ON_STARTUP
-  if (ndb_discover_tables() != 0)
-    goto ndbcluster_init_error;    
-#endif
   DBUG_RETURN(FALSE);
+
  ndbcluster_init_error:
   ndbcluster_end();
   DBUG_RETURN(TRUE);
@@ -4465,32 +4673,46 @@ void ndbcluster_print_error(int error, const NdbOperation *error_op)
   DBUG_VOID_RETURN;
 }
 
-/*
-  Set m_tabname from full pathname to table file 
+/**
+ * Set a given location from full pathname to database name
+ *
  */
-
-void ha_ndbcluster::set_tabname(const char *path_name)
+void ha_ndbcluster::set_dbname(const char *path_name, char *dbname)
 {
   char *end, *ptr;
   
   /* Scan name from the end */
-  end= strend(path_name)-1;
-  ptr= end;
+  ptr= strend(path_name)-1;
+  while (ptr >= path_name && *ptr != '\\' && *ptr != '/') {
+    ptr--;
+  }
+  ptr--;
+  end= ptr;
   while (ptr >= path_name && *ptr != '\\' && *ptr != '/') {
     ptr--;
   }
   uint name_len= end - ptr;
-  memcpy(m_tabname, ptr + 1, end - ptr);
-  m_tabname[name_len]= '\0';
+  memcpy(dbname, ptr + 1, name_len);
+  dbname[name_len]= '\0';
 #ifdef __WIN__
   /* Put to lower case */
-  ptr= m_tabname;
+  
+  ptr= dbname;
   
   while (*ptr != '\0') {
     *ptr= tolower(*ptr);
     ptr++;
   }
 #endif
+}
+
+/*
+  Set m_dbname from full pathname to table file
+ */
+
+void ha_ndbcluster::set_dbname(const char *path_name)
+{
+  set_dbname(path_name, m_dbname);
 }
 
 /**
@@ -4522,39 +4744,13 @@ ha_ndbcluster::set_tabname(const char *path_name, char * tabname)
 #endif
 }
 
-
 /*
-  Set m_dbname from full pathname to table file
- 
+  Set m_tabname from full pathname to table file 
  */
 
-void ha_ndbcluster::set_dbname(const char *path_name)
+void ha_ndbcluster::set_tabname(const char *path_name)
 {
-  char *end, *ptr;
-  
-  /* Scan name from the end */
-  ptr= strend(path_name)-1;
-  while (ptr >= path_name && *ptr != '\\' && *ptr != '/') {
-    ptr--;
-  }
-  ptr--;
-  end= ptr;
-  while (ptr >= path_name && *ptr != '\\' && *ptr != '/') {
-    ptr--;
-  }
-  uint name_len= end - ptr;
-  memcpy(m_dbname, ptr + 1, name_len);
-  m_dbname[name_len]= '\0';
-#ifdef __WIN__
-  /* Put to lower case */
-  
-  ptr= m_dbname;
-  
-  while (*ptr != '\0') {
-    *ptr= tolower(*ptr);
-    ptr++;
-  }
-#endif
+  set_tabname(path_name, m_tabname);
 }
 
 

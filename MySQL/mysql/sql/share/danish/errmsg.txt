@@ -262,7 +262,7 @@ character-set=latin1
 "Key reference and table reference don't match",
 "Operand should contain %d column(s)",
 "Subquery returns more than 1 row",
-"Unknown prepared statement handler (%ld) given to %s",
+"Unknown prepared statement handler (%.*s) given to %s",
 "Help database is corrupt or does not exist",
 "Cyclic reference on subqueries",
 "Converting column '%s' from %s to %s",
@@ -322,3 +322,4 @@ character-set=latin1
 "Invalid %s character string: '%.64s'",
 "Result of %s() was larger than max_allowed_packet (%ld) - truncated"
 "Conflicting declarations: '%s%s' and '%s%s'"
+

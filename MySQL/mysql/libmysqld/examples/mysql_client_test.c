@@ -30,6 +30,7 @@
 
 #define VER "2.1"
 #define MAX_TEST_QUERY_LENGTH 300 /* MAX QUERY BUFFER LENGTH */
+#define MAX_SERVER_ARGS 64
 
 /* set default options */
 static int   opt_testcase = 0;
@@ -47,6 +48,18 @@ static char current_db[]= "client_test_db";
 static unsigned int test_count= 0;
 static unsigned int opt_count= 0;
 static unsigned int iter_count= 0;
+
+static const char *opt_basedir= "./";
+
+static int embedded_server_arg_count= 0;
+static char *embedded_server_args[MAX_SERVER_ARGS];
+
+static const char *embedded_server_groups[]= {
+  "server",
+  "embedded",
+  "mysql_client_test_SERVER",
+  NullS
+};
 
 static time_t start_time, end_time;
 static double total_time;
@@ -93,6 +106,8 @@ static void client_disconnect();
 
 #define DIE_UNLESS(expr) \
         ((void) ((expr) ? 0 : (die(__FILE__, __LINE__, #expr), 0)))
+#define DIE(expr) \
+        die(__FILE__, __LINE__, #expr)
 
 void die(const char *file, int line, const char *expr)
 {
@@ -149,6 +164,14 @@ DIE_UNLESS(stmt == 0);\
 
 #define mytest(x) if (!x) {myerror(NULL);DIE_UNLESS(FALSE);}
 #define mytest_r(x) if (x) {myerror(NULL);DIE_UNLESS(FALSE);}
+
+
+/* A workaround for Sun Forte 5.6 on Solaris x86 */
+
+static int cmp_double(double *a, double *b)
+{
+  return *a == *b;
+}
 
 
 /* Print the error message */
@@ -1381,7 +1404,7 @@ static void test_prepare()
     DIE_UNLESS(real_data == o_real_data);
     DIE_UNLESS(length[5] == 4);
 
-    DIE_UNLESS(double_data == o_double_data);
+    DIE_UNLESS(cmp_double(&double_data, &o_double_data));
     DIE_UNLESS(length[6] == 8);
 
     DIE_UNLESS(strcmp(data, str_data) == 0);
@@ -9568,7 +9591,7 @@ static void test_bug3035()
   uint32 uint32_val;
   longlong int64_val;
   ulonglong uint64_val;
-  double double_val, udouble_val;
+  double double_val, udouble_val, double_tmp;
   char longlong_as_string[22], ulonglong_as_string[22];
 
   /* mins and maxes */
@@ -9712,7 +9735,8 @@ static void test_bug3035()
   DIE_UNLESS(int64_val == int64_min);
   DIE_UNLESS(uint64_val == uint64_min);
   DIE_UNLESS(double_val == (longlong) uint64_min);
-  DIE_UNLESS(udouble_val == ulonglong2double(uint64_val));
+  double_tmp= ulonglong2double(uint64_val);
+  DIE_UNLESS(cmp_double(&udouble_val, &double_tmp));
   DIE_UNLESS(!strcmp(longlong_as_string, "0"));
   DIE_UNLESS(!strcmp(ulonglong_as_string, "0"));
 
@@ -9728,7 +9752,8 @@ static void test_bug3035()
   DIE_UNLESS(int64_val == int64_max);
   DIE_UNLESS(uint64_val == uint64_max);
   DIE_UNLESS(double_val == (longlong) uint64_val);
-  DIE_UNLESS(udouble_val == ulonglong2double(uint64_val));
+  double_tmp= ulonglong2double(uint64_val);
+  DIE_UNLESS(cmp_double(&udouble_val, &double_tmp));
   DIE_UNLESS(!strcmp(longlong_as_string, "-1"));
   DIE_UNLESS(!strcmp(ulonglong_as_string, "18446744073709551615"));
 
@@ -11606,6 +11631,56 @@ static void test_bug7990()
 
 
 /*
+ Test mysql_real_escape_string() with gbk charset
+
+ The important part is that 0x27 (') is the second-byte in a invalid
+ two-byte GBK character here. But 0xbf5c is a valid GBK character, so
+ it needs to be escaped as 0x5cbf27
+*/
+#define TEST_BUG8378_IN  "\xef\xbb\xbf\x27\xbf\x10"
+#define TEST_BUG8378_OUT "\xef\xbb\x5c\xbf\x5c\x27\x5c\xbf\x10"
+
+static void test_bug8378()
+{
+#if defined(HAVE_CHARSET_gbk) && !defined(EMBEDDED_LIBRARY)
+  MYSQL *lmysql;
+  char out[9]; /* strlen(TEST_BUG8378)*2+1 */
+  int len;
+
+  myheader("test_bug8378");
+
+  if (!opt_silent)
+    fprintf(stdout, "\n Establishing a test connection ...");
+  if (!(lmysql= mysql_init(NULL)))
+  {
+    myerror("mysql_init() failed");
+    exit(1);
+  }
+  if (mysql_options(lmysql, MYSQL_SET_CHARSET_NAME, "gbk"))
+  {
+    myerror("mysql_options() failed");
+    exit(1);
+  }
+  if (!(mysql_real_connect(lmysql, opt_host, opt_user,
+                           opt_password, current_db, opt_port,
+                           opt_unix_socket, 0)))
+  {
+    myerror("connection failed");
+    exit(1);
+  }
+  if (!opt_silent)
+    fprintf(stdout, " OK");
+
+  len= mysql_real_escape_string(lmysql, out, TEST_BUG8378_IN, 4);
+
+  /* No escaping should have actually happened. */
+  DIE_UNLESS(memcmp(out, TEST_BUG8378_OUT, len) == 0);
+
+  mysql_close(lmysql);
+#endif
+}
+
+/*
   Read and parse arguments and MySQL options from my.cnf
 */
 
@@ -11614,6 +11689,8 @@ static char **defaults_argv;
 
 static struct my_option client_test_long_options[] =
 {
+  {"basedir", 'b', "Basedir for tests.", (gptr*) &opt_basedir,
+   (gptr*) &opt_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"count", 't', "Number of times test to be executed", (char **) &opt_count,
    (char **) &opt_count, 0, GET_UINT, REQUIRED_ARG, 1, 0, 0, 0, 0, 0},
   {"database", 'D', "Database to use", (char **) &opt_db, (char **) &opt_db,
@@ -11629,6 +11706,8 @@ static struct my_option client_test_long_options[] =
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"port", 'P', "Port number to use for connection", (char **) &opt_port,
    (char **) &opt_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"server-arg", 'A', "Send embedded server this as a parameter.",
+   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"show-tests", 'T', "Show all tests' names", 0, 0, 0, GET_NO_ARG, NO_ARG,
    0, 0, 0, 0, 0, 0},
   {"silent", 's', "Be more silent", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0,
@@ -11814,6 +11893,7 @@ static struct my_tests_st my_tests[]= {
   { "test_bug6761", test_bug6761 },
   { "test_bug8330", test_bug8330 },
   { "test_bug7990", test_bug7990 },
+  { "test_bug8378", test_bug8378 },
   { 0, 0 }
 };
 
@@ -11847,6 +11927,25 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       opt_silent= 0;
     else
       opt_silent++;
+    break;
+  case 'A':
+    /*
+      When the embedded server is being tested, the test suite needs to be
+      able to pass command-line arguments to the embedded server so it can
+      locate the language files and data directory. The test suite
+      (mysql-test-run) never uses config files, just command-line options.
+    */
+    if (!embedded_server_arg_count)
+    {
+      embedded_server_arg_count= 1;
+      embedded_server_args[0]= (char*) "";
+    }
+    if (embedded_server_arg_count == MAX_SERVER_ARGS-1 ||
+        !(embedded_server_args[embedded_server_arg_count++]=
+          my_strdup(argument, MYF(MY_FAE))))
+    {
+      DIE("Can't use server argument");
+    }
     break;
   case 'T':
     {
@@ -11911,10 +12010,15 @@ int main(int argc, char **argv)
 
   DEBUGGER_OFF;
   MY_INIT(argv[0]);
-  
+
   load_defaults("my", client_test_load_default_groups, &argc, &argv);
   defaults_argv= argv;
   get_options(&argc, &argv);
+
+  if (mysql_server_init(embedded_server_arg_count,
+                        embedded_server_args,
+                        (char**) embedded_server_groups))
+    DIE("Can't initialize MySQL server");
 
   client_connect();       /* connect to server */
 
@@ -11968,6 +12072,12 @@ int main(int argc, char **argv)
   client_disconnect();    /* disconnect from server */
   free_defaults(defaults_argv);
   print_test_output();
+
+  while (embedded_server_arg_count > 1)
+    my_free(embedded_server_args[--embedded_server_arg_count],MYF(0));
+
+  mysql_server_end();
+
   my_end(0);
 
   exit(0);

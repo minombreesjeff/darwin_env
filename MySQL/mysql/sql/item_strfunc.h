@@ -17,7 +17,7 @@
 
 /* This file defines all string functions */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -95,6 +95,7 @@ public:
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "concat_ws"; }
+  table_map not_null_tables() const { return 0; }
 };
 
 class Item_func_reverse :public Item_str_func
@@ -337,10 +338,18 @@ public:
 };
 
 
-class Item_func_database :public Item_str_func
+class Item_func_sysconst :public Item_str_func
 {
 public:
-  Item_func_database() { collation.set(system_charset_info,DERIVATION_IMPLICIT); }
+  Item_func_sysconst()
+  { collation.set(system_charset_info,DERIVATION_SYSCONST); }
+  Item *safe_charset_converter(CHARSET_INFO *tocs);
+};
+
+class Item_func_database :public Item_func_sysconst
+{
+public:
+  Item_func_database() :Item_func_sysconst() {}
   String *val_str(String *);
   void fix_length_and_dec()
   {
@@ -350,10 +359,10 @@ public:
   const char *func_name() const { return "database"; }
 };
 
-class Item_func_user :public Item_str_func
+class Item_func_user :public Item_func_sysconst
 {
 public:
-  Item_func_user() { collation.set(system_charset_info, DERIVATION_IMPLICIT); }
+  Item_func_user() :Item_func_sysconst() {}
   String *val_str(String *);
   void fix_length_and_dec() 
   { 
@@ -633,7 +642,9 @@ public:
   {
      collation.set(system_charset_info);
      max_length= 64 * collation.collation->mbmaxlen; // should be enough
+     maybe_null= 0;
   };
+  table_map not_null_tables() const { return 0; }
 };
 
 class Item_func_collation :public Item_str_func
@@ -646,7 +657,9 @@ public:
   {
      collation.set(system_charset_info);
      max_length= 64 * collation.collation->mbmaxlen; // should be enough
+     maybe_null= 0;
   };
+  table_map not_null_tables() const { return 0; }
 };
 
 class Item_func_crc32 :public Item_int_func

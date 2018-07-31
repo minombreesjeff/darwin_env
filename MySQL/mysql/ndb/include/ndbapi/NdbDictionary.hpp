@@ -75,8 +75,11 @@ public:
       Changed,                ///< The object has been modified in memory 
                               ///< and has to be commited in NDB Kernel for 
                               ///< changes to take effect
-      Retrieved               ///< The object exist and has been read 
+      Retrieved,              ///< The object exist and has been read 
                               ///< into main memory from NDB Kernel
+      Invalid                 ///< The object has been invalidated
+                              ///< and should not be used
+      
     };
 
     /**
@@ -179,7 +182,7 @@ public:
       Bigunsigned,   ///< 64 Bit. 8 byte signed integer, can be used in array
       Float,         ///< 32-bit float. 4 bytes float, can be used in array
       Double,        ///< 64-bit float. 8 byte float, can be used in array
-      Decimal,       ///< Precision, Scale are applicable
+      Olddecimal,    ///< MySQL < 5.0 signed decimal,  Precision, Scale
       Char,          ///< Len. A fixed array of 1-byte chars
       Varchar,       ///< Max len
       Binary,        ///< Len
@@ -190,7 +193,8 @@ public:
       Text,        ///< Text blob
       Time = 25,   ///< Time without date
       Year = 26,   ///< Year 1901-2155 (1 byte)
-      Timestamp = 27  ///< Unix time
+      Timestamp = 27, ///< Unix time
+      Olddecimalunsigned = 28
     };
 
     /** 
@@ -276,25 +280,25 @@ public:
 
     /**
      * Set precision of column.
-     * @note Only applicable for builtin type Decimal
+     * @note Only applicable for decimal types
      */
     void setPrecision(int);
 
     /**
      * Get precision of column.
-     * @note Only applicable for builtin type Decimal
+     * @note Only applicable for decimal types
      */
     int getPrecision() const;
 
     /**
      * Set scale of column.
-     * @note Only applicable for builtin type Decimal
+     * @note Only applicable for decimal types
      */
     void setScale(int);
 
     /**
      * Get scale of column.
-     * @note Only applicable for builtin type Decimal
+     * @note Only applicable for decimal types
      */
     int getScale() const;
 

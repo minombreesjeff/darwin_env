@@ -149,6 +149,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DUNDEF_THREADS_HACK -DHAVE_CONFIG_H -DNO_KILL_INTR
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -174,7 +176,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -247,6 +248,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -352,7 +354,9 @@ vio_libs = @vio_libs@
 zlib_dir = @zlib_dir@
 
 # Last  -I$(top_srcdir) needed for RedHat!
-INCLUDES = -I$(top_srcdir)/include -I$(top_srcdir)
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include \
+			-I$(top_srcdir)
+
 noinst_LIBRARIES = libreadline.a
 libreadline_a_SOURCES = readline.c funmap.c keymaps.c \
 			vi_mode.c parens.c rltty.c \
@@ -369,7 +373,7 @@ pkginclude_HEADERS = readline.h chardefs.h keymaps.h \
 			history.h tilde.h rlmbutil.h rltypedefs.h rlprivate.h \
 			rlshell.h xmalloc.h
 
-noinst_HEADERS = rldefs.h histlib.h rlwinsize.h \
+noinst_HEADERS = config_readline.h rldefs.h histlib.h rlwinsize.h \
 			posixstat.h posixdir.h posixjmp.h \
 			tilde.h rlconf.h rltty.h ansi_stdlib.h \
 			tcap.h rlstdc.h

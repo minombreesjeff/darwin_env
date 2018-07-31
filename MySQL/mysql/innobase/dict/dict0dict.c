@@ -197,7 +197,17 @@ FILE*	dict_foreign_err_file		= NULL;
 mutex_t	dict_foreign_err_mutex; 	/* mutex protecting the foreign
 					and unique error buffers */
 	
-	
+/**********************************************************************
+Makes all characters in a NUL-terminated UTF-8 string lower case. */
+
+void
+dict_casedn_str(
+/*============*/
+	char*	a)	/* in/out: string to put in lower case */
+{
+	innobase_casedn_str(a);
+}
+
 /************************************************************************
 Checks if the database name in two table names is the same. */
 
@@ -2167,7 +2177,8 @@ ulint
 dict_foreign_add_to_cache(
 /*======================*/
 					/* out: DB_SUCCESS or error code */
-	dict_foreign_t*	foreign)	/* in, own: foreign key constraint */
+	dict_foreign_t*	foreign,	/* in, own: foreign key constraint */
+	ibool		check_types)	/* in: TRUE=check type compatibility */
 {
 	dict_table_t*	for_table;
 	dict_table_t*	ref_table;
@@ -2203,10 +2214,16 @@ dict_foreign_add_to_cache(
 	}
 
 	if (for_in_cache->referenced_table == NULL && ref_table) {
+		dict_index_t*	types_idx;
+		if (check_types) {
+			types_idx = for_in_cache->foreign_index;
+		} else {
+			types_idx = NULL;
+		}
 		index = dict_foreign_find_index(ref_table,
 			(const char**) for_in_cache->referenced_col_names,
 			for_in_cache->n_fields,
-			for_in_cache->foreign_index);
+			types_idx);
 
 		if (index == NULL) {
 			dict_foreign_error_report(ef, for_in_cache,
@@ -2230,10 +2247,16 @@ dict_foreign_add_to_cache(
 	}
 
 	if (for_in_cache->foreign_table == NULL && for_table) {
+		dict_index_t*	types_idx;
+		if (check_types) {
+			types_idx = for_in_cache->referenced_index;
+		} else {
+			types_idx = NULL;
+		}
 		index = dict_foreign_find_index(for_table,
 			(const char**) for_in_cache->foreign_col_names,
 			for_in_cache->n_fields,
-			for_in_cache->referenced_index);
+			types_idx);
 
 		if (index == NULL) {
 			dict_foreign_error_report(ef, for_in_cache,
@@ -2292,8 +2315,9 @@ dict_scan_to(
 			/* Outside quotes: look for the keyword. */
 			ulint	i;
 			for (i = 0; string[i]; i++) {
-				if (toupper((ulint)(ptr[i]))
-					!= toupper((ulint)(string[i]))) {
+				if (toupper((int)(unsigned char)(ptr[i]))
+						!= toupper((int)(unsigned char)
+						(string[i]))) {
 					goto nomatch;
 				}
 			}
@@ -2671,7 +2695,8 @@ scan_more:
 			/* Starting quote: remember the quote character. */
 			quote = *sptr;
 		} else if (*sptr == '#'
-		    || (0 == memcmp("-- ", sptr, 3))) {
+                           || (sptr[0] == '-' && sptr[1] == '-' &&
+                               sptr[2] == ' ')) {
 			for (;;) {
 				/* In Unix a newline is 0x0A while in Windows
 				it is 0x0D followed by 0x0A */
@@ -3283,6 +3308,9 @@ try_find_index:
 "Cannot find an index in the referenced table where the\n"
 "referenced columns appear as the first columns, or column types\n"
 "in the table and the referenced table do not match for constraint.\n"
+"Note that the internal storage type of ENUM and SET changed in\n"
+"tables created with >= InnoDB-4.1.12, and such columns in old tables\n"
+"cannot be referenced by such columns in new tables.\n"
 "See http://dev.mysql.com/doc/mysql/en/InnoDB_foreign_key_constraints.html\n"
 "for correct foreign key definition.\n",
 				start_of_latest_foreign);

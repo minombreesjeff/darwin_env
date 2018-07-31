@@ -485,57 +485,61 @@ void close_temporary(TABLE *table,bool delete_table)
 void close_temporary_tables(THD *thd)
 {
   TABLE *table,*next;
-  char *query, *name_in_query, *end;
-  uint greatest_key_length= 0;
+  char *query, *end;
+  uint query_buf_size; 
+  bool found_user_tables = 0;
 
   if (!thd->temporary_tables)
     return;
   
-  /*
-    We write a DROP TEMPORARY TABLE for each temp table left, so that our
-    replication slave can clean them up. Not one multi-table DROP TABLE binlog
-    event: this would cause problems if slave uses --replicate-*-table.
-  */
   LINT_INIT(end);
+  query_buf_size= 50;   // Enough for DROP ... TABLE IF EXISTS
 
-  /* We'll re-use always same buffer so make it big enough for longest name */
   for (table=thd->temporary_tables ; table ; table=table->next)
-    greatest_key_length= max(greatest_key_length, table->key_length);
+    /*
+      We are going to add 4 ` around the db/table names, so 1 does not look
+      enough; indeed it is enough, because table->key_length is greater (by 8,
+      because of server_id and thread_id) than db||table.
+    */
+    query_buf_size+= table->key_length+1;
 
-  if ((query = alloc_root(thd->mem_root, greatest_key_length+50)))
+  if ((query = alloc_root(thd->mem_root, query_buf_size)))
     // Better add "if exists", in case a RESET MASTER has been done
-    name_in_query= strmov(query, "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS `");
+    end=strmov(query, "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS ");
 
   for (table=thd->temporary_tables ; table ; table=next)
   {
-    /*
-      In we are OOM for 'query' this is not fatal. We skip temporary tables
-      not created directly by the user.
-    */
-    if (query && mysql_bin_log.is_open() && (table->real_name[0] != '#'))
+    if (query) // we might be out of memory, but this is not fatal
     {
+      // skip temporary tables not created directly by the user
+      if (table->real_name[0] != '#')
+	found_user_tables = 1;
       /*
         Here we assume table_cache_key always starts
         with \0 terminated db name
       */
-      end = strxmov(name_in_query, table->table_cache_key, "`.`",
-                    table->real_name, "`", NullS);
-      Query_log_event qinfo(thd, query, (ulong)(end-query), 0, FALSE);
-      /*
-        Imagine the thread had created a temp table, then was doing a SELECT, and
-        the SELECT was killed. Then it's not clever to mark the statement above as
-        "killed", because it's not really a statement updating data, and there
-        are 99.99% chances it will succeed on slave. And, if thread is
-        killed now, it's not clever either.
-        If a real update (one updating a persistent table) was killed on the
-        master, then this real update will be logged with error_code=killed,
-        rightfully causing the slave to stop.
-      */
-      qinfo.error_code= 0;
-      mysql_bin_log.write(&qinfo);
+      end = strxmov(end,"`",table->table_cache_key,"`.`",
+                    table->real_name,"`,", NullS);
     }
     next=table->next;
     close_temporary(table);
+  }
+  if (query && found_user_tables && mysql_bin_log.is_open())
+  {
+    /* The -1 is to remove last ',' */
+    thd->clear_error();
+    Query_log_event qinfo(thd, query, (ulong)(end-query)-1, 0, FALSE);
+    /*
+      Imagine the thread had created a temp table, then was doing a SELECT, and
+      the SELECT was killed. Then it's not clever to mark the statement above as
+      "killed", because it's not really a statement updating data, and there
+      are 99.99% chances it will succeed on slave.
+      If a real update (one updating a persistent table) was killed on the
+      master, then this real update will be logged with error_code=killed,
+      rightfully causing the slave to stop.
+    */
+    qinfo.error_code= 0;
+    mysql_bin_log.write(&qinfo);
   }
   thd->temporary_tables=0;
 }
@@ -975,6 +979,7 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
   if (table->timestamp_field)
     table->timestamp_field_type= table->timestamp_field->get_auto_set_type();
   DBUG_ASSERT(table->key_read == 0);
+  DBUG_ASSERT(table->insert_values == 0);
   DBUG_RETURN(table);
 }
 
@@ -1159,7 +1164,7 @@ bool reopen_tables(THD *thd,bool get_locks,bool in_refresh)
     MYSQL_LOCK *lock;
     /* We should always get these locks */
     thd->some_tables_deleted=0;
-    if ((lock=mysql_lock_tables(thd,tables,(uint) (tables_ptr-tables))))
+    if ((lock= mysql_lock_tables(thd, tables, (uint) (tables_ptr-tables), 0)))
     {
       thd->locked_tables=mysql_lock_merge(thd->locked_tables,lock);
     }
@@ -1263,6 +1268,7 @@ bool wait_for_tables(THD *thd)
   {
     /* Now we can open all tables without any interference */
     thd->proc_info="Reopen tables";
+    thd->version= refresh_version;
     result=reopen_tables(thd,0,0);
   }
   pthread_mutex_unlock(&LOCK_open);
@@ -1370,9 +1376,19 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
        trying to discover the table at the same time.
       */
       if (discover_retry_count++ != 0)
-       goto err;
-      if (ha_create_table_from_engine(thd, db, name, TRUE) != 0)
-       goto err;
+        goto err;
+      if (ha_create_table_from_engine(thd, db, name) > 0)
+      {
+        /* Give right error message */
+        thd->clear_error();
+        DBUG_PRINT("error", ("Dicovery of %s/%s failed", db, name));
+        my_printf_error(ER_UNKNOWN_ERROR,
+                        "Failed to open '%-.64s', error while "
+                        "unpacking from engine",
+                        MYF(0), name);
+
+        goto err;
+      }
 
       thd->clear_error(); // Clear error message
       continue;
@@ -1639,7 +1655,7 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type lock_type)
     {
       DBUG_ASSERT(thd->lock == 0);	// You must lock everything at once
       if ((table->reginfo.lock_type= lock_type) != TL_UNLOCK)
-	if (!(thd->lock=mysql_lock_tables(thd,&table_list->table,1)))
+	if (! (thd->lock= mysql_lock_tables(thd, &table_list->table, 1, 0)))
 	  table= 0;
     }
   }
@@ -1709,7 +1725,7 @@ int open_and_lock_tables(THD *thd, TABLE_LIST *tables)
   SYNOPSIS
     open_normal_and_derived_tables
     thd		- thread handler
-    tables	- list of tables for open&locking
+    tables	- list of tables for open
 
   RETURN
     FALSE - ok
@@ -1789,7 +1805,7 @@ int lock_tables(THD *thd, TABLE_LIST *tables, uint count)
       if (!table->derived)
 	*(ptr++)= table->table;
     }
-    if (!(thd->lock=mysql_lock_tables(thd,start, (uint) (ptr - start))))
+    if (! (thd->lock= mysql_lock_tables(thd, start, (uint) (ptr - start), 0)))
       return -1;				/* purecov: inspected */
   }
   else
@@ -1988,7 +2004,7 @@ find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *tables,
   const char *name=item->field_name;
   uint length=(uint) strlen(name);
   char name_buff[NAME_LEN+1];
-
+  bool allow_rowid;
 
   if (item->cached_table)
   {
@@ -2080,7 +2096,7 @@ find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *tables,
 	return (Field*) not_found_field;
     return (Field*) 0;
   }
-  bool allow_rowid= tables && !tables->next;	// Only one table
+  allow_rowid= tables && !tables->next;         // Only one table
   for (; tables ; tables=tables->next)
   {
     if (!tables->table)
@@ -2109,7 +2125,7 @@ find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *tables,
 			name,thd->where);
 	return (Field*) 0;
       }
-      found=field;
+      found= field;
     }
   }
   if (found)
@@ -2864,8 +2880,18 @@ static void mysql_rm_tmp_tables(void)
 ** and afterwards delete those marked unused.
 */
 
-void remove_db_from_cache(const my_string db)
+void remove_db_from_cache(const char *db)
 {
+  char name_buff[NAME_LEN+1];
+  if (db && lower_case_table_names)
+  {
+    /*
+      convert database to lower case for comparision.
+    */
+    strmake(name_buff, db, sizeof(name_buff)-1);
+    my_casedn_str(files_charset_info, name_buff);
+    db= name_buff;
+  }
   for (uint idx=0 ; idx < open_cache.records ; idx++)
   {
     TABLE *table=(TABLE*) hash_element(&open_cache,idx);

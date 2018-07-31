@@ -691,8 +691,22 @@ static void usage(int version)
 #ifdef __NETWARE__
 #define printf	consoleprintf
 #endif
-  printf("%s  Ver %s Distrib %s, for %s (%s)\n",
-	 my_progname, VER, MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE);
+
+#if defined(USE_LIBEDIT_INTERFACE)
+  const char* readline= "";
+#else
+  const char* readline= "readline";
+#endif
+
+#ifdef HAVE_READLINE
+  printf("%s  Ver %s Distrib %s, for %s (%s) using %s %s\n",
+	 my_progname, VER, MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE,
+         readline, rl_library_version);
+#else
+  printf("%s  Ver %s Distrib %s, for %s (%s)", my_progname, VER,
+	MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE);
+#endif
+
   if (version)
     return;
   printf("\
@@ -727,7 +741,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       strmov(delimiter, DEFAULT_DELIMITER);
     else
       strmake(delimiter, argument, sizeof(delimiter) - 1);
-    delimiter_length= strlen(delimiter);
+    delimiter_length= (uint)strlen(delimiter);
     delimiter_str= delimiter;
     break;
   case OPT_LOCAL_INFILE:
@@ -917,6 +931,7 @@ static int read_lines(bool execute_commands)
 {
 #if defined( __WIN__) || defined(OS2) || defined(__NETWARE__)
   char linebuffer[254];
+  String buffer;
 #endif
   char	*line;
   char	in_string=0;
@@ -936,7 +951,8 @@ static int read_lines(bool execute_commands)
     }
     else
     {
-      char *prompt= (char*) (glob_buffer.is_empty() ? construct_prompt() :
+      char *prompt= (char*) (ml_comment ? "   /*> " :
+                             glob_buffer.is_empty() ?  construct_prompt() :
 			     !in_string ? "    -> " :
 			     in_string == '\'' ?
 			     "    '> " : (in_string == '`' ?
@@ -957,8 +973,25 @@ static int read_lines(bool execute_commands)
           *p = '\0';
       }
 #else
-      linebuffer[0]= (char) sizeof(linebuffer);
-      line= _cgets(linebuffer);
+      buffer.length(0);
+      /* _cgets() expects the buffer size - 3 as the first byte */
+      linebuffer[0]= (char) sizeof(linebuffer) - 3;
+      do
+      {
+        line= _cgets(linebuffer);
+        buffer.append(line, (unsigned char)linebuffer[1]);
+      /*
+        If _cgets() gets an input line that is linebuffer[0] bytes
+        long, the next call to _cgets() will return immediately with
+        linebuffer[1] == 0, and it does the same thing for input that
+        is linebuffer[0]-1 bytes long. So it appears that even though
+        _cgets() replaces the newline (which is two bytes on Window) with
+        a nil, it still needs the space in the linebuffer for it. This is,
+        naturally, undocumented.
+       */
+      } while ((unsigned char)linebuffer[0] <=
+               (unsigned char)linebuffer[1] + 1);
+      line= buffer.c_ptr();
 #endif /* __NETWARE__ */
 #else
       if (opt_outfile)
@@ -1015,6 +1048,9 @@ static int read_lines(bool execute_commands)
 	status.exit_status=0;
     }
   }
+#if defined( __WIN__) || defined(OS2) || defined(__NETWARE__)
+  buffer.free();
+#endif
   return status.exit_status;
 }
 
@@ -1306,7 +1342,7 @@ static void initialize_readline (char *name)
   setlocale(LC_ALL,""); /* so as libedit use isprint */
 #endif
   rl_attempted_completion_function= (CPPFunction*)&new_mysql_completion;
-  rl_completion_entry_function= (CPFunction*)&no_completion;
+  rl_completion_entry_function= (Function*)&no_completion;
 #else
   rl_attempted_completion_function= (CPPFunction*)&new_mysql_completion;
   rl_completion_entry_function= (Function*)&no_completion;
@@ -1581,6 +1617,22 @@ static int reconnect(void)
   return 0;
 }
 
+static void get_current_db()
+{
+  MYSQL_RES *res;
+
+  my_free(current_db, MYF(MY_ALLOW_ZERO_PTR));
+  current_db= NULL;
+  /* In case of error below current_db will be NULL */
+  if (!mysql_query(&mysql, "SELECT DATABASE()") &&
+      (res= mysql_use_result(&mysql)))
+  {
+    MYSQL_ROW row= mysql_fetch_row(res);
+    if (row[0])
+      current_db= my_strdup(row[0], MYF(MY_WME));
+    mysql_free_result(res);
+  }
+}
 
 /***************************************************************************
  The different commands
@@ -1647,7 +1699,7 @@ static int com_server_help(String *buffer __attribute__((unused)),
   if (!connected && reconnect())
     return 1;
 
-  if ((error= mysql_real_query_for_lazy(server_cmd,strlen(server_cmd))) ||
+  if ((error= mysql_real_query_for_lazy(server_cmd,(int)strlen(server_cmd))) ||
       (error= mysql_store_result_for_lazy(&result)))
     return error;
 
@@ -1733,7 +1785,7 @@ com_help(String *buffer __attribute__((unused)),
   for (i = 0; commands[i].name; i++)
   {
     end= strmov(buff, commands[i].name);
-    for (j= strlen(commands[i].name); j < 10; j++)
+    for (j= (int)strlen(commands[i].name); j < 10; j++)
       end= strmov(end, " ");
     if (commands[i].func)
       tee_fprintf(stdout, "%s(\\%c) %s\n", buff,
@@ -1905,6 +1957,10 @@ com_go(String *buffer,char *line __attribute__((unused)))
   if (err >= 1)
     error= put_error(&mysql);
 
+  if (!error && !status.batch && 
+      (mysql.server_status & SERVER_STATUS_DB_DROPPED))
+    get_current_db();
+
   return error;				/* New command follows */
 }
 
@@ -2016,7 +2072,8 @@ print_table_data(MYSQL_RES *result)
     separator.fill(separator.length()+length+2,'-');
     separator.append('+');
   }
-  tee_puts(separator.c_ptr_safe(), PAGER);
+  separator.append('\0');                       // End marker for \0
+  tee_puts((char*) separator.ptr(), PAGER);
   if (column_names)
   {
     mysql_field_seek(result,0);
@@ -2029,7 +2086,7 @@ print_table_data(MYSQL_RES *result)
       num_flag[off]= IS_NUM(field->type);
     }
     (void) tee_fputs("\n", PAGER);
-    tee_puts(separator.c_ptr(), PAGER);
+    tee_puts((char*) separator.ptr(), PAGER);
   }
 
   while ((cur= mysql_fetch_row(result)))
@@ -2058,7 +2115,7 @@ print_table_data(MYSQL_RES *result)
     }
     (void) tee_fputs("\n", PAGER);
   }
-  tee_puts(separator.c_ptr(), PAGER);
+  tee_puts((char*) separator.ptr(), PAGER);
   my_afree((gptr) num_flag);
 }
 
@@ -2106,7 +2163,7 @@ print_table_data_xml(MYSQL_RES *result)
   mysql_field_seek(result,0);
 
   tee_fputs("<?xml version=\"1.0\"?>\n\n<resultset statement=\"", PAGER);
-  xmlencode_print(glob_buffer.ptr(), strlen(glob_buffer.ptr()));
+  xmlencode_print(glob_buffer.ptr(), (int)strlen(glob_buffer.ptr()));
   tee_fputs("\">", PAGER);
 
   fields = mysql_fetch_fields(result);
@@ -2595,7 +2652,7 @@ com_delimiter(String *buffer __attribute__((unused)), char *line)
     return 0;
   }
   strmake(delimiter, tmp, sizeof(delimiter) - 1);
-  delimiter_length= strlen(delimiter);
+  delimiter_length= (int)strlen(delimiter);
   delimiter_str= delimiter;
   return 0;
 }
@@ -2605,8 +2662,6 @@ static int
 com_use(String *buffer __attribute__((unused)), char *line)
 {
   char *tmp, buff[FN_REFLEN + 1];
-  MYSQL_RES *res;
-  MYSQL_ROW row;
 
   bzero(buff, sizeof(buff));
   strmov(buff, line);
@@ -2621,24 +2676,7 @@ com_use(String *buffer __attribute__((unused)), char *line)
     under our feet, for example if DROP DATABASE or RENAME DATABASE
     (latter one not yet available by the time the comment was written)
   */
-  /*  Let's reset current_db, assume it's gone */
-  my_free(current_db, MYF(MY_ALLOW_ZERO_PTR));
-  current_db= 0;
-  /*
-    We don't care about in case of an error below because current_db
-    was just set to 0.
-  */
-  if (!mysql_query(&mysql, "SELECT DATABASE()") &&
-      (res= mysql_use_result(&mysql)))
-  {
-    row= mysql_fetch_row(res);
-    if (row[0])
-    {
-      current_db= my_strdup(row[0], MYF(MY_WME));
-    }
-    (void) mysql_fetch_row(res);               // Read eof
-    mysql_free_result(res);
-  }
+  get_current_db();
 
   if (!current_db || cmp_database(charset_info, current_db,tmp))
   {
@@ -2914,9 +2952,9 @@ com_status(String *buffer __attribute__((unused)),
     MYSQL_ROW cur=mysql_fetch_row(result);
     if (cur)
     {
-      tee_fprintf(stdout, "Server characterset:\t%s\n", cur[0] ? cur[0] : "");
+      tee_fprintf(stdout, "Server characterset:\t%s\n", cur[2] ? cur[2] : "");
       tee_fprintf(stdout, "Db     characterset:\t%s\n", cur[3] ? cur[3] : "");
-      tee_fprintf(stdout, "Client characterset:\t%s\n", cur[2] ? cur[2] : "");
+      tee_fprintf(stdout, "Client characterset:\t%s\n", cur[0] ? cur[0] : "");
       tee_fprintf(stdout, "Conn.  characterset:\t%s\n", cur[1] ? cur[1] : "");
     }
     mysql_free_result(result);
@@ -3072,9 +3110,14 @@ void tee_fprintf(FILE *file, const char *fmt, ...)
 #ifdef OS2
   fflush( file);
 #endif
-  if (opt_outfile)
-    (void) vfprintf(OUTFILE, fmt, args);
   va_end(args);
+
+  if (opt_outfile)
+  {
+    va_start(args, fmt);
+    (void) vfprintf(OUTFILE, fmt, args);
+    va_end(args);
+  }
 }
 
 

@@ -37,7 +37,7 @@ typedef ulong key_part_map;           /* Used for finding key parts */
 
 /* useful constants */
 extern const key_map key_map_empty;
-extern const key_map key_map_full;
+extern key_map key_map_full;          /* Should be threaded as const */
 extern const char *primary_key_name;
 
 #include "mysql_com.h"
@@ -211,6 +211,13 @@ extern CHARSET_INFO *national_charset_info, *table_alias_charset;
    key checks in some cases */
 #define OPTION_RELAXED_UNIQUE_CHECKS    (1L << 27)
 #define SELECT_NO_UNLOCK                (1L << 28)
+/* Thr following is used to detect a conflict with DISTINCT
+   in the user query has requested */
+#define SELECT_ALL			(1L << 29)
+
+/* If set to 0, then the thread will ignore all warnings with level notes.
+   Set by executing SET SQL_NOTES=1 */
+#define OPTION_SQL_NOTES                (1L << 31)
 
 /* Bits for different SQL modes modes (including ANSI mode) */
 #define MODE_REAL_AS_FLOAT      	1
@@ -417,8 +424,6 @@ struct Query_cache_query_flags
 #define query_cache_invalidate_by_MyISAM_filename_ref NULL
 #endif /*HAVE_QUERY_CACHE*/
 
-#define prepare_execute(A) ((A)->command == COM_EXECUTE)
-
 int mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create, bool silent);
 int mysql_alter_db(THD *thd, const char *db, HA_CREATE_INFO *create);
 int mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent);
@@ -455,6 +460,7 @@ void mysql_execute_command(THD *thd);
 bool do_command(THD *thd);
 bool dispatch_command(enum enum_server_command command, THD *thd,
 		      char* packet, uint packet_length);
+void log_slow_statement(THD *thd);
 bool check_dup(const char *db, const char *name, TABLE_LIST *tables);
 
 bool table_cache_init(void);
@@ -570,7 +576,8 @@ int mysql_multi_update_lock(THD *thd,
 			    List<Item> *fields,
 			    SELECT_LEX *select_lex);
 int mysql_prepare_insert(THD *thd, TABLE_LIST *table_list,
-			 TABLE_LIST *insert_table_list, TABLE *table,
+			 TABLE_LIST *insert_table_list,
+                         TABLE_LIST *dup_table_list, TABLE *table,
 			 List<Item> &fields, List_item *values,
 			 List<Item> &update_fields,
 			 List<Item> &update_values, enum_duplicates duplic);
@@ -617,6 +624,7 @@ extern char *des_key_file;
 extern struct st_des_keyschedule des_keyschedule[10];
 extern uint des_default_key;
 extern pthread_mutex_t LOCK_des_key_file;
+void init_des_key_file();
 bool load_des_key_file(const char *file_name);
 void free_des_key_file();
 #endif /* HAVE_OPENSSL */
@@ -664,8 +672,6 @@ void mysql_sql_stmt_execute(THD *thd, LEX_STRING *stmt_name);
 void mysql_stmt_free(THD *thd, char *packet);
 void mysql_stmt_reset(THD *thd, char *packet);
 void mysql_stmt_get_longdata(THD *thd, char *pos, ulong packet_length);
-int check_insert_fields(THD *thd,TABLE *table,List<Item> &fields,
-			List<Item> &values, ulong counter);
 
 /* sql_error.cc */
 MYSQL_ERROR *push_warning(THD *thd, MYSQL_ERROR::enum_warning_level level, uint code,
@@ -750,7 +756,7 @@ bool close_temporary_table(THD *thd, const char *db, const char *table_name);
 void close_temporary(TABLE *table, bool delete_table=1);
 bool rename_temporary_table(THD* thd, TABLE *table, const char *new_db,
 			    const char *table_name);
-void remove_db_from_cache(const my_string db);
+void remove_db_from_cache(const char *db);
 void flush_tables();
 bool remove_table_from_cache(THD *thd, const char *db, const char *table,
 			     bool return_if_owned_by_thd=0);
@@ -886,7 +892,7 @@ extern ulong ha_read_first_count, ha_read_last_count;
 extern ulong ha_read_rnd_count, ha_read_rnd_next_count, ha_discover_count;
 extern ulong ha_commit_count, ha_rollback_count,table_cache_size;
 extern ulong max_connections,max_connect_errors, connect_timeout;
-extern ulong slave_net_timeout;
+extern ulong slave_net_timeout, slave_trans_retries;
 extern ulong max_user_connections;
 extern ulong long_query_count, what_to_log,flush_time;
 extern ulong query_buff_size, thread_stack,thread_stack_min;
@@ -894,6 +900,8 @@ extern ulong binlog_cache_size, max_binlog_cache_size, open_files_limit;
 extern ulong max_binlog_size, max_relay_log_size;
 extern ulong rpl_recovery_rank, thread_cache_size;
 extern ulong com_stat[(uint) SQLCOM_END], com_other, back_log;
+extern ulong com_stmt_prepare, com_stmt_execute, com_stmt_send_long_data;
+extern ulong com_stmt_reset, com_stmt_close;
 extern ulong specialflag, current_pid;
 extern ulong expire_logs_days, sync_binlog_period, sync_binlog_counter;
 extern my_bool relay_log_purge, opt_innodb_safe_binlog;
@@ -913,6 +921,7 @@ extern my_bool opt_slave_compressed_protocol, use_temp_pool;
 extern my_bool opt_readonly, lower_case_file_system;
 extern my_bool opt_enable_named_pipe, opt_sync_frm, opt_allow_suspicious_udfs;
 extern my_bool opt_secure_auth;
+extern my_bool opt_log_slow_admin_statements;
 extern uint opt_crash_binlog_innodb;
 extern char *shared_memory_base_name, *mysqld_unix_port;
 extern bool opt_enable_shared_memory;
@@ -963,6 +972,7 @@ extern SHOW_COMP_OPTION have_query_cache, have_berkeley_db, have_innodb;
 extern SHOW_COMP_OPTION have_geometry, have_rtree_keys;
 extern SHOW_COMP_OPTION have_crypt;
 extern SHOW_COMP_OPTION have_compress;
+extern SHOW_COMP_OPTION have_blackhole_db;
 
 #ifndef __WIN__
 extern pthread_t signal_thread;
@@ -972,7 +982,11 @@ extern pthread_t signal_thread;
 extern struct st_VioSSLAcceptorFd * ssl_acceptor_fd;
 #endif /* HAVE_OPENSSL */
 
-MYSQL_LOCK *mysql_lock_tables(THD *thd,TABLE **table,uint count);
+MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **table, uint count, uint flags);
+/* mysql_lock_tables() flags bits */
+#define MYSQL_LOCK_IGNORE_GLOBAL_READ_LOCK      0x0001
+#define MYSQL_LOCK_IGNORE_FLUSH                 0x0002
+
 void mysql_unlock_tables(THD *thd, MYSQL_LOCK *sql_lock);
 void mysql_unlock_read_tables(THD *thd, MYSQL_LOCK *sql_lock);
 void mysql_unlock_some_tables(THD *thd, TABLE **table,uint count);
@@ -985,6 +999,8 @@ void unlock_global_read_lock(THD *thd);
 bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh, bool is_not_commit);
 void start_waiting_global_read_lock(THD *thd);
 void make_global_read_lock_block_commit(THD *thd);
+my_bool set_protect_against_global_read_lock(void);
+void unset_protect_against_global_read_lock(void);
 
 /* Lock based on name */
 int lock_and_wait_for_table_name(THD *thd, TABLE_LIST *table_list);

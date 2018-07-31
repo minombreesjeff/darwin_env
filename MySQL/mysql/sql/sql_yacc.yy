@@ -1111,7 +1111,7 @@ create_select:
           SELECT_SYM
           {
 	    LEX *lex=Lex;
-	    lex->lock_option= (using_update_log) ? TL_READ_NO_INSERT : TL_READ;
+	    lex->lock_option= using_update_log ? TL_READ_NO_INSERT : TL_READ;
 	    if (lex->sql_command == SQLCOM_INSERT)
 	      lex->sql_command= SQLCOM_INSERT_SELECT;
 	    else if (lex->sql_command == SQLCOM_REPLACE)
@@ -2389,7 +2389,10 @@ select:
 select_init:
 	SELECT_SYM select_init2
 	|
-	'(' SELECT_SYM select_part2 ')'
+	'(' select_paren ')' union_opt;
+
+select_paren:
+	SELECT_SYM select_part2
 	  {
 	    LEX *lex= Lex;
             SELECT_LEX * sel= lex->current_select;
@@ -2408,7 +2411,8 @@ select_init:
 	    if (sel->master_unit()->fake_select_lex)
               sel->master_unit()->global_parameters=
                  sel->master_unit()->fake_select_lex;
-          } union_opt;
+          }
+	| '(' select_paren ')';
 
 select_init2:
 	select_part2
@@ -2434,7 +2438,6 @@ select_part2:
 	{
 	  LEX *lex= Lex;
 	  SELECT_LEX *sel= lex->current_select;
-	  lex->lock_option= TL_READ;
 	  if (sel->linkage != UNION_TYPE)
 	    mysql_init_select(lex);
 	  lex->current_select->parsing_place= SELECT_LIST;
@@ -2446,7 +2449,7 @@ select_part2:
 	select_into select_lock_type;
 
 select_into:
-	opt_limit_clause {}
+	opt_order_clause opt_limit_clause {}
         | into
 	| select_from
 	| into select_from
@@ -2464,7 +2467,15 @@ select_from:
 
 select_options:
 	/* empty*/
-	| select_option_list;
+	| select_option_list
+	  {
+	    if (test_all_bits(Select->options, SELECT_ALL | SELECT_DISTINCT))
+	    {
+	      net_printf(Lex->thd, ER_WRONG_USAGE, "ALL", "DISTINCT");
+              YYABORT;
+	    }
+          }
+        ;
 
 select_option_list:
 	select_option_list select_option
@@ -2478,7 +2489,7 @@ select_option:
 	      YYABORT;
 	    Lex->lock_option= TL_READ_HIGH_PRIORITY;
 	  }
-	| DISTINCT	{ Select->options|= SELECT_DISTINCT; }
+	| DISTINCT         { Select->options|= SELECT_DISTINCT; }
 	| SQL_SMALL_RESULT { Select->options|= SELECT_SMALL_RESULT; }
 	| SQL_BIG_RESULT { Select->options|= SELECT_BIG_RESULT; }
 	| SQL_BUFFER_RESULT
@@ -2498,7 +2509,7 @@ select_option:
 	  {
 	    Lex->select_lex.options|= OPTION_TO_QUERY_CACHE;
 	  }
-	| ALL		{}
+	| ALL		    { Select->options|= SELECT_ALL; }
 	;
 
 select_lock_type:
@@ -2956,8 +2967,6 @@ simple_expr:
 		{ $$= new Item_func_export_set($3, $5, $7, $9); }
 	| EXPORT_SET '(' expr ',' expr ',' expr ',' expr ',' expr ')'
 		{ $$= new Item_func_export_set($3, $5, $7, $9, $11); }
-	| FALSE_SYM
-	  { $$= new Item_int((char*) "FALSE",0,1); }
 	| FORMAT_SYM '(' expr ',' NUM ')'
 	  { $$= new Item_func_format($3,atoi($5.str)); }
 	| FROM_UNIXTIME '(' expr ')'
@@ -3105,8 +3114,6 @@ simple_expr:
 	  { $$= new Item_func_trim($5,$3); }
 	| TRUNCATE_SYM '(' expr ',' expr ')'
 	  { $$= new Item_func_round($3,$5,1); }
-	| TRUE_SYM
-	  { $$= new Item_int((char*) "TRUE",1,1); }
 	| UDA_CHAR_SUM '(' udf_expr_list ')'
 	  {
 	    if ($3 != NULL)
@@ -3404,8 +3411,7 @@ when_list2:
 	  };
 
 join_table_list:
-	'(' join_table_list ')'	{ $$=$2; }
-	| join_table		{ $$=$1; }
+	join_table		{ $$=$1; }
 	| join_table_list ',' join_table_list { $$=$3; }
 	| join_table_list normal_join join_table_list { $$=$3; }
 	| join_table_list STRAIGHT_JOIN join_table_list
@@ -3482,7 +3488,7 @@ join_table:
 	}
 	| '{' ident join_table LEFT OUTER JOIN_SYM join_table ON expr '}'
 	  { add_join_on($7,$9); $7->outer_join|=JOIN_TYPE_LEFT; $$=$7; }
-        | '(' SELECT_SYM select_derived ')' opt_table_alias
+        | '(' select_derived union_opt ')' opt_table_alias
 	{
 	  LEX *lex=Lex;
 	  SELECT_LEX_UNIT *unit= lex->current_select->master_unit();
@@ -3493,9 +3499,27 @@ join_table:
 	                          (List<String> *)0)))
 
 	    YYABORT;
-	};
+	}
+	| '(' join_table_list ')'	{ $$=$2; };
 
 select_derived:
+	SELECT_SYM select_derived2
+	| '(' select_derived ')'
+	  {
+	    LEX *lex= Lex;
+            SELECT_LEX * sel= lex->current_select;
+	    if (sel->set_braces(1))
+	    {
+	      yyerror(ER(ER_SYNTAX_ERROR));
+	      YYABORT;
+	    }
+            /* select in braces, can't contain global parameters */
+	    if (sel->master_unit()->fake_select_lex)
+              sel->master_unit()->global_parameters=
+                 sel->master_unit()->fake_select_lex;
+	  };
+
+select_derived2:
         {
 	  LEX *lex= Lex;
 	  lex->derived_tables= 1;
@@ -3517,7 +3541,7 @@ select_derived:
 	{
 	  Select->parsing_place= NO_MATTER;
 	}
-	opt_select_from union_opt
+	opt_select_from
         ;
 
 opt_outer:
@@ -4039,7 +4063,6 @@ replace:
 	  Lex->current_select= &Lex->select_lex;
 	}
 	insert_field_spec
-	{}
 	{}
 	;
 
@@ -4872,6 +4895,8 @@ literal:
 	| NUM_literal	{ $$ = $1; }
 	| NULL_SYM	{ $$ =	new Item_null();
 			  Lex->next_state=MY_LEX_OPERATOR_OR_IDENT;}
+	| FALSE_SYM	{ $$= new Item_int((char*) "FALSE",0,1); }
+	| TRUE_SYM	{ $$= new Item_int((char*) "TRUE",1,1); }
 	| HEX_NUM	{ $$ =	new Item_varbinary($1.str,$1.length);}
 	| UNDERSCORE_CHARSET HEX_NUM
 	  {
@@ -4990,7 +5015,31 @@ simple_ident:
 
 field_ident:
 	ident			{ $$=$1;}
-	| ident '.' ident	{ $$=$3;}	/* Skip schema name in create*/
+	| ident '.' ident '.' ident
+          {
+            TABLE_LIST *table= (TABLE_LIST*) Select->table_list.first;
+            if (my_strcasecmp(table_alias_charset, $1.str, table->db))
+            {
+              net_printf(YYTHD, ER_WRONG_DB_NAME, $1.str);
+              YYABORT;
+            }
+            if (my_strcasecmp(table_alias_charset, $3.str, table->real_name))
+            {
+              net_printf(YYTHD, ER_WRONG_TABLE_NAME, $3.str);
+              YYABORT;
+            }
+            $$=$5;
+          }
+	| ident '.' ident
+          {
+            TABLE_LIST *table= (TABLE_LIST*) Select->table_list.first;
+            if (my_strcasecmp(table_alias_charset, $1.str, table->alias))
+            {
+              net_printf(YYTHD, ER_WRONG_TABLE_NAME, $1.str);
+              YYABORT;
+            }
+            $$=$3;
+          }
 	| '.' ident		{ $$=$2;}	/* For Delphi */;
 
 table_ident:
@@ -5011,9 +5060,10 @@ IDENT_sys:
 	    if (thd->charset_is_system_charset)
             {
               CHARSET_INFO *cs= system_charset_info;
+              int dummy_error;
               uint wlen= cs->cset->well_formed_len(cs, $1.str,
                                                    $1.str+$1.length,
-                                                   $1.length);
+                                                   $1.length, &dummy_error);
               if (wlen < $1.length)
               {
                 net_printf(YYTHD, ER_INVALID_CHARACTER_STRING, cs->csname,
@@ -5339,16 +5389,25 @@ opt_option:
 	| OPTION {};
 
 option_value_list:
-	option_type option_value
-	| option_value_list ',' option_type option_value;
+        option_value_ext
+        | option_value_list ',' option_value_ext;
 
-option_type:
-	/* empty */	{}
+option_value_ext:
+        option_type_ext sys_option_value {}
+        | option_type option_value {}
+        ;
+
+option_type_ext:
+        option_type     {}
 	| GLOBAL_SYM	{ Lex->option_type= OPT_GLOBAL; }
 	| LOCAL_SYM	{ Lex->option_type= OPT_SESSION; }
 	| SESSION_SYM	{ Lex->option_type= OPT_SESSION; }
-	| ONE_SHOT_SYM	{ Lex->option_type= OPT_SESSION; Lex->one_shot_set= 1; }
 	;
+
+option_type:
+        /* empty */	{}
+        | ONE_SHOT_SYM	{ Lex->option_type= OPT_SESSION; Lex->one_shot_set= 1; }
+        ;
 
 opt_var_type:
 	/* empty */	{ $$=OPT_SESSION; }
@@ -5364,34 +5423,37 @@ opt_var_ident_type:
 	| SESSION_SYM '.'	{ $$=OPT_SESSION; }
 	;
 
+sys_option_value:
+        internal_variable_name equal set_expr_or_default
+        {
+          LEX *lex=Lex;
+          lex->var_list.push_back(new set_var(lex->option_type, $1.var,
+                                  &$1.base_name, $3));
+        }
+        | TRANSACTION_SYM ISOLATION LEVEL_SYM isolation_types
+        {
+          LEX *lex=Lex;
+          LEX_STRING tmp;
+          tmp.str=0;
+          tmp.length=0;
+          lex->var_list.push_back(new set_var(lex->option_type,
+                                              find_sys_var("tx_isolation"),
+                                              &tmp,
+                                              new Item_int((int32) $4)));
+        }
+        ;
+
 option_value:
 	'@' ident_or_text equal expr
 	{
 	  Lex->var_list.push_back(new set_var_user(new Item_func_set_user_var($2,$4)));
 	}
-	| internal_variable_name equal set_expr_or_default
-	  {
-	    LEX *lex=Lex;
-	    lex->var_list.push_back(new set_var(lex->option_type, $1.var,
-						&$1.base_name, $3));
-	  }
 	| '@' '@' opt_var_ident_type internal_variable_name equal set_expr_or_default
-	  {
-	    LEX *lex=Lex;
-	    lex->var_list.push_back(new set_var((enum_var_type) $3, $4.var,
-						&$4.base_name, $6));
-	  }
-	| TRANSACTION_SYM ISOLATION LEVEL_SYM isolation_types
-	  {
-	    LEX *lex=Lex;
-	    LEX_STRING tmp;
-	    tmp.str=0;
-	    tmp.length=0;
-	    lex->var_list.push_back(new set_var(lex->option_type,
-						find_sys_var("tx_isolation"),
-						&tmp,
-						new Item_int((int32) $4)));
-	  }
+	{
+          LEX *lex=Lex;
+          lex->var_list.push_back(new set_var((enum_var_type) $3, $4.var,
+                                  &$4.base_name, $6));
+        }
 	| charset old_or_new_charset_name_or_default
 	{
 	  THD *thd= YYTHD;

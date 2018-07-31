@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-SOURCES = $(create_all_tabs_SOURCES) $(create_tab_SOURCES) $(drop_all_tabs_SOURCES) $(flexAsynch_SOURCES) $(flexBench_SOURCES) $(flexHammer_SOURCES) $(flexTT_SOURCES) $(ndbapi_slow_select_SOURCES) $(testBackup_SOURCES) $(testBasic_SOURCES) $(testBasicAsynch_SOURCES) $(testBlobs_SOURCES) $(testDataBuffers_SOURCES) $(testDeadlock_SOURCES) $(testDict_SOURCES) $(testIndex_SOURCES) $(testLcp_SOURCES) $(testMgm_SOURCES) $(testNdbApi_SOURCES) $(testNodeRestart_SOURCES) $(testOIBasic_SOURCES) $(testOperations_SOURCES) $(testReadPerf_SOURCES) $(testRestartGci_SOURCES) $(testScan_SOURCES) $(testScanInterpreter_SOURCES) $(testScanPerf_SOURCES) $(testSystemRestart_SOURCES) $(testTimeout_SOURCES) $(testTransactions_SOURCES) $(test_event_SOURCES)
+SOURCES = $(DbAsyncGenerator_SOURCES) $(DbCreate_SOURCES) $(create_all_tabs_SOURCES) $(create_tab_SOURCES) $(drop_all_tabs_SOURCES) $(flexAsynch_SOURCES) $(flexBench_SOURCES) $(flexHammer_SOURCES) $(flexTT_SOURCES) $(ndbapi_slow_select_SOURCES) $(testBackup_SOURCES) $(testBasic_SOURCES) $(testBasicAsynch_SOURCES) $(testBlobs_SOURCES) $(testDataBuffers_SOURCES) $(testDeadlock_SOURCES) $(testDict_SOURCES) $(testIndex_SOURCES) $(testLcp_SOURCES) $(testMgm_SOURCES) $(testNdbApi_SOURCES) $(testNodeRestart_SOURCES) $(testOIBasic_SOURCES) $(testOperations_SOURCES) $(testReadPerf_SOURCES) $(testRestartGci_SOURCES) $(testScan_SOURCES) $(testScanInterpreter_SOURCES) $(testScanPerf_SOURCES) $(testSystemRestart_SOURCES) $(testTimeout_SOURCES) $(testTransactions_SOURCES) $(test_event_SOURCES)
 
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
@@ -52,7 +52,8 @@ ndbtest_PROGRAMS = flexBench$(EXEEXT) drop_all_tabs$(EXEEXT) \
 	testSystemRestart$(EXEEXT) testTimeout$(EXEEXT) \
 	testTransactions$(EXEEXT) testDeadlock$(EXEEXT) \
 	test_event$(EXEEXT) ndbapi_slow_select$(EXEEXT) \
-	testReadPerf$(EXEEXT) testLcp$(EXEEXT)
+	testReadPerf$(EXEEXT) testLcp$(EXEEXT) DbCreate$(EXEEXT) \
+	DbAsyncGenerator$(EXEEXT)
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	$(top_srcdir)/ndb/config/common.mk.am \
 	$(top_srcdir)/ndb/config/type_ndbapitest.mk.am
@@ -68,6 +69,27 @@ CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(ndbtestdir)"
 ndbtestPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(ndbtest_PROGRAMS)
+am_DbAsyncGenerator_OBJECTS = mainAsyncGenerator.$(OBJEXT) \
+	asyncGenerator.$(OBJEXT) ndb_async2.$(OBJEXT)
+DbAsyncGenerator_OBJECTS = $(am_DbAsyncGenerator_OBJECTS)
+DbAsyncGenerator_LDADD = $(LDADD)
+DbAsyncGenerator_DEPENDENCIES =  \
+	$(top_srcdir)/ndb/src/common/portlib/gcc.cpp \
+	$(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
+am_DbCreate_OBJECTS = mainPopulate.$(OBJEXT) dbPopulate.$(OBJEXT) \
+	userInterface.$(OBJEXT)
+DbCreate_OBJECTS = $(am_DbCreate_OBJECTS)
+DbCreate_LDADD = $(LDADD)
+DbCreate_DEPENDENCIES = $(top_srcdir)/ndb/src/common/portlib/gcc.cpp \
+	$(top_builddir)/ndb/test/src/libNDBT.a \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
+	$(top_builddir)/mysys/libmysys.a \
+	$(top_builddir)/strings/libmystrings.a
 am_create_all_tabs_OBJECTS = create_all_tabs.$(OBJEXT)
 create_all_tabs_OBJECTS = $(am_create_all_tabs_OBJECTS)
 create_all_tabs_LDADD = $(LDADD)
@@ -371,11 +393,16 @@ test_event_DEPENDENCIES =  \
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
-@AMDEP_TRUE@DEP_FILES = ./$(DEPDIR)/create_all_tabs.Po \
+@AMDEP_TRUE@DEP_FILES = ./$(DEPDIR)/asyncGenerator.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/create_all_tabs.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/create_tab.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/dbPopulate.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/drop_all_tabs.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/flexAsynch.Po ./$(DEPDIR)/flexBench.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/flexHammer.Po ./$(DEPDIR)/flexTT.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/mainAsyncGenerator.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/mainPopulate.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/ndb_async2.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/slow_select.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/testBackup.Po ./$(DEPDIR)/testBasic.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/testBasicAsynch.Po \
@@ -396,7 +423,8 @@ am__depfiles_maybe = depfiles
 @AMDEP_TRUE@	./$(DEPDIR)/testSystemRestart.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/testTimeout.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/testTransactions.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/test_event.Po
+@AMDEP_TRUE@	./$(DEPDIR)/test_event.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/userInterface.Po
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
 LTCXXCOMPILE = $(LIBTOOL) --mode=compile $(CXX) $(DEFS) \
@@ -413,7 +441,8 @@ LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) \
 CCLD = $(CC)
 LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(create_all_tabs_SOURCES) $(create_tab_SOURCES) \
+SOURCES = $(DbAsyncGenerator_SOURCES) $(DbCreate_SOURCES) \
+	$(create_all_tabs_SOURCES) $(create_tab_SOURCES) \
 	$(drop_all_tabs_SOURCES) $(flexAsynch_SOURCES) \
 	$(flexBench_SOURCES) $(flexHammer_SOURCES) $(flexTT_SOURCES) \
 	$(ndbapi_slow_select_SOURCES) $(testBackup_SOURCES) \
@@ -428,7 +457,8 @@ SOURCES = $(create_all_tabs_SOURCES) $(create_tab_SOURCES) \
 	$(testScanPerf_SOURCES) $(testSystemRestart_SOURCES) \
 	$(testTimeout_SOURCES) $(testTransactions_SOURCES) \
 	$(test_event_SOURCES)
-DIST_SOURCES = $(create_all_tabs_SOURCES) $(create_tab_SOURCES) \
+DIST_SOURCES = $(DbAsyncGenerator_SOURCES) $(DbCreate_SOURCES) \
+	$(create_all_tabs_SOURCES) $(create_tab_SOURCES) \
 	$(drop_all_tabs_SOURCES) $(flexAsynch_SOURCES) \
 	$(flexBench_SOURCES) $(flexHammer_SOURCES) $(flexTT_SOURCES) \
 	$(ndbapi_slow_select_SOURCES) $(testBackup_SOURCES) \
@@ -499,6 +529,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = @DEFS@ @NDB_DEFS@ $(DEFS_LOC) $(NDB_EXTRA_FLAGS)
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -524,7 +556,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -597,6 +628,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -738,6 +770,8 @@ test_event_SOURCES = test_event.cpp
 ndbapi_slow_select_SOURCES = slow_select.cpp
 testReadPerf_SOURCES = testReadPerf.cpp
 testLcp_SOURCES = testLcp.cpp
+DbCreate_SOURCES = bench/mainPopulate.cpp bench/dbPopulate.cpp bench/userInterface.cpp bench/dbPopulate.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
+DbAsyncGenerator_SOURCES = bench/mainAsyncGenerator.cpp bench/asyncGenerator.cpp bench/ndb_async2.cpp bench/dbGenerator.h bench/macros.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
 INCLUDES_LOC = -I$(top_srcdir)/ndb/include/kernel
 ndbbindir = "$(libexecdir)"
 ndbtoolsdir = "$(bindir)"
@@ -823,6 +857,12 @@ clean-ndbtestPROGRAMS:
 	  echo " rm -f $$p $$f"; \
 	  rm -f $$p $$f ; \
 	done
+DbAsyncGenerator$(EXEEXT): $(DbAsyncGenerator_OBJECTS) $(DbAsyncGenerator_DEPENDENCIES) 
+	@rm -f DbAsyncGenerator$(EXEEXT)
+	$(CXXLINK) $(DbAsyncGenerator_LDFLAGS) $(DbAsyncGenerator_OBJECTS) $(DbAsyncGenerator_LDADD) $(LIBS)
+DbCreate$(EXEEXT): $(DbCreate_OBJECTS) $(DbCreate_DEPENDENCIES) 
+	@rm -f DbCreate$(EXEEXT)
+	$(CXXLINK) $(DbCreate_LDFLAGS) $(DbCreate_OBJECTS) $(DbCreate_LDADD) $(LIBS)
 create_all_tabs$(EXEEXT): $(create_all_tabs_OBJECTS) $(create_all_tabs_DEPENDENCIES) 
 	@rm -f create_all_tabs$(EXEEXT)
 	$(CXXLINK) $(create_all_tabs_LDFLAGS) $(create_all_tabs_OBJECTS) $(create_all_tabs_LDADD) $(LIBS)
@@ -923,13 +963,18 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/asyncGenerator.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_all_tabs.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_tab.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dbPopulate.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/drop_all_tabs.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/flexAsynch.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/flexBench.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/flexHammer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/flexTT.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mainAsyncGenerator.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mainPopulate.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ndb_async2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/slow_select.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBackup.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testBasic.Po@am__quote@
@@ -954,6 +999,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testTimeout.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testTransactions.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_event.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/userInterface.Po@am__quote@
 
 .cpp.o:
 @am__fastdepCXX_TRUE@	if $(CXXCOMPILE) -MT $@ -MD -MP -MF "$(DEPDIR)/$*.Tpo" -c -o $@ $<; \
@@ -978,6 +1024,150 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/$*.Plo' tmpdepfile='$(DEPDIR)/$*.TPlo' @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(LTCXXCOMPILE) -c -o $@ $<
+
+mainAsyncGenerator.o: bench/mainAsyncGenerator.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mainAsyncGenerator.o -MD -MP -MF "$(DEPDIR)/mainAsyncGenerator.Tpo" -c -o mainAsyncGenerator.o `test -f 'bench/mainAsyncGenerator.cpp' || echo '$(srcdir)/'`bench/mainAsyncGenerator.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/mainAsyncGenerator.Tpo" "$(DEPDIR)/mainAsyncGenerator.Po"; else rm -f "$(DEPDIR)/mainAsyncGenerator.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/mainAsyncGenerator.cpp' object='mainAsyncGenerator.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/mainAsyncGenerator.Po' tmpdepfile='$(DEPDIR)/mainAsyncGenerator.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mainAsyncGenerator.o `test -f 'bench/mainAsyncGenerator.cpp' || echo '$(srcdir)/'`bench/mainAsyncGenerator.cpp
+
+mainAsyncGenerator.obj: bench/mainAsyncGenerator.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mainAsyncGenerator.obj -MD -MP -MF "$(DEPDIR)/mainAsyncGenerator.Tpo" -c -o mainAsyncGenerator.obj `if test -f 'bench/mainAsyncGenerator.cpp'; then $(CYGPATH_W) 'bench/mainAsyncGenerator.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/mainAsyncGenerator.cpp'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/mainAsyncGenerator.Tpo" "$(DEPDIR)/mainAsyncGenerator.Po"; else rm -f "$(DEPDIR)/mainAsyncGenerator.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/mainAsyncGenerator.cpp' object='mainAsyncGenerator.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/mainAsyncGenerator.Po' tmpdepfile='$(DEPDIR)/mainAsyncGenerator.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mainAsyncGenerator.obj `if test -f 'bench/mainAsyncGenerator.cpp'; then $(CYGPATH_W) 'bench/mainAsyncGenerator.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/mainAsyncGenerator.cpp'; fi`
+
+mainAsyncGenerator.lo: bench/mainAsyncGenerator.cpp
+@am__fastdepCXX_TRUE@	if $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mainAsyncGenerator.lo -MD -MP -MF "$(DEPDIR)/mainAsyncGenerator.Tpo" -c -o mainAsyncGenerator.lo `test -f 'bench/mainAsyncGenerator.cpp' || echo '$(srcdir)/'`bench/mainAsyncGenerator.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/mainAsyncGenerator.Tpo" "$(DEPDIR)/mainAsyncGenerator.Plo"; else rm -f "$(DEPDIR)/mainAsyncGenerator.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/mainAsyncGenerator.cpp' object='mainAsyncGenerator.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/mainAsyncGenerator.Plo' tmpdepfile='$(DEPDIR)/mainAsyncGenerator.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mainAsyncGenerator.lo `test -f 'bench/mainAsyncGenerator.cpp' || echo '$(srcdir)/'`bench/mainAsyncGenerator.cpp
+
+asyncGenerator.o: bench/asyncGenerator.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asyncGenerator.o -MD -MP -MF "$(DEPDIR)/asyncGenerator.Tpo" -c -o asyncGenerator.o `test -f 'bench/asyncGenerator.cpp' || echo '$(srcdir)/'`bench/asyncGenerator.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/asyncGenerator.Tpo" "$(DEPDIR)/asyncGenerator.Po"; else rm -f "$(DEPDIR)/asyncGenerator.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/asyncGenerator.cpp' object='asyncGenerator.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/asyncGenerator.Po' tmpdepfile='$(DEPDIR)/asyncGenerator.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asyncGenerator.o `test -f 'bench/asyncGenerator.cpp' || echo '$(srcdir)/'`bench/asyncGenerator.cpp
+
+asyncGenerator.obj: bench/asyncGenerator.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asyncGenerator.obj -MD -MP -MF "$(DEPDIR)/asyncGenerator.Tpo" -c -o asyncGenerator.obj `if test -f 'bench/asyncGenerator.cpp'; then $(CYGPATH_W) 'bench/asyncGenerator.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/asyncGenerator.cpp'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/asyncGenerator.Tpo" "$(DEPDIR)/asyncGenerator.Po"; else rm -f "$(DEPDIR)/asyncGenerator.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/asyncGenerator.cpp' object='asyncGenerator.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/asyncGenerator.Po' tmpdepfile='$(DEPDIR)/asyncGenerator.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asyncGenerator.obj `if test -f 'bench/asyncGenerator.cpp'; then $(CYGPATH_W) 'bench/asyncGenerator.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/asyncGenerator.cpp'; fi`
+
+asyncGenerator.lo: bench/asyncGenerator.cpp
+@am__fastdepCXX_TRUE@	if $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asyncGenerator.lo -MD -MP -MF "$(DEPDIR)/asyncGenerator.Tpo" -c -o asyncGenerator.lo `test -f 'bench/asyncGenerator.cpp' || echo '$(srcdir)/'`bench/asyncGenerator.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/asyncGenerator.Tpo" "$(DEPDIR)/asyncGenerator.Plo"; else rm -f "$(DEPDIR)/asyncGenerator.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/asyncGenerator.cpp' object='asyncGenerator.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/asyncGenerator.Plo' tmpdepfile='$(DEPDIR)/asyncGenerator.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asyncGenerator.lo `test -f 'bench/asyncGenerator.cpp' || echo '$(srcdir)/'`bench/asyncGenerator.cpp
+
+ndb_async2.o: bench/ndb_async2.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ndb_async2.o -MD -MP -MF "$(DEPDIR)/ndb_async2.Tpo" -c -o ndb_async2.o `test -f 'bench/ndb_async2.cpp' || echo '$(srcdir)/'`bench/ndb_async2.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/ndb_async2.Tpo" "$(DEPDIR)/ndb_async2.Po"; else rm -f "$(DEPDIR)/ndb_async2.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/ndb_async2.cpp' object='ndb_async2.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/ndb_async2.Po' tmpdepfile='$(DEPDIR)/ndb_async2.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ndb_async2.o `test -f 'bench/ndb_async2.cpp' || echo '$(srcdir)/'`bench/ndb_async2.cpp
+
+ndb_async2.obj: bench/ndb_async2.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ndb_async2.obj -MD -MP -MF "$(DEPDIR)/ndb_async2.Tpo" -c -o ndb_async2.obj `if test -f 'bench/ndb_async2.cpp'; then $(CYGPATH_W) 'bench/ndb_async2.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/ndb_async2.cpp'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/ndb_async2.Tpo" "$(DEPDIR)/ndb_async2.Po"; else rm -f "$(DEPDIR)/ndb_async2.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/ndb_async2.cpp' object='ndb_async2.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/ndb_async2.Po' tmpdepfile='$(DEPDIR)/ndb_async2.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ndb_async2.obj `if test -f 'bench/ndb_async2.cpp'; then $(CYGPATH_W) 'bench/ndb_async2.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/ndb_async2.cpp'; fi`
+
+ndb_async2.lo: bench/ndb_async2.cpp
+@am__fastdepCXX_TRUE@	if $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ndb_async2.lo -MD -MP -MF "$(DEPDIR)/ndb_async2.Tpo" -c -o ndb_async2.lo `test -f 'bench/ndb_async2.cpp' || echo '$(srcdir)/'`bench/ndb_async2.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/ndb_async2.Tpo" "$(DEPDIR)/ndb_async2.Plo"; else rm -f "$(DEPDIR)/ndb_async2.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/ndb_async2.cpp' object='ndb_async2.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/ndb_async2.Plo' tmpdepfile='$(DEPDIR)/ndb_async2.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ndb_async2.lo `test -f 'bench/ndb_async2.cpp' || echo '$(srcdir)/'`bench/ndb_async2.cpp
+
+mainPopulate.o: bench/mainPopulate.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mainPopulate.o -MD -MP -MF "$(DEPDIR)/mainPopulate.Tpo" -c -o mainPopulate.o `test -f 'bench/mainPopulate.cpp' || echo '$(srcdir)/'`bench/mainPopulate.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/mainPopulate.Tpo" "$(DEPDIR)/mainPopulate.Po"; else rm -f "$(DEPDIR)/mainPopulate.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/mainPopulate.cpp' object='mainPopulate.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/mainPopulate.Po' tmpdepfile='$(DEPDIR)/mainPopulate.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mainPopulate.o `test -f 'bench/mainPopulate.cpp' || echo '$(srcdir)/'`bench/mainPopulate.cpp
+
+mainPopulate.obj: bench/mainPopulate.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mainPopulate.obj -MD -MP -MF "$(DEPDIR)/mainPopulate.Tpo" -c -o mainPopulate.obj `if test -f 'bench/mainPopulate.cpp'; then $(CYGPATH_W) 'bench/mainPopulate.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/mainPopulate.cpp'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/mainPopulate.Tpo" "$(DEPDIR)/mainPopulate.Po"; else rm -f "$(DEPDIR)/mainPopulate.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/mainPopulate.cpp' object='mainPopulate.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/mainPopulate.Po' tmpdepfile='$(DEPDIR)/mainPopulate.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mainPopulate.obj `if test -f 'bench/mainPopulate.cpp'; then $(CYGPATH_W) 'bench/mainPopulate.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/mainPopulate.cpp'; fi`
+
+mainPopulate.lo: bench/mainPopulate.cpp
+@am__fastdepCXX_TRUE@	if $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mainPopulate.lo -MD -MP -MF "$(DEPDIR)/mainPopulate.Tpo" -c -o mainPopulate.lo `test -f 'bench/mainPopulate.cpp' || echo '$(srcdir)/'`bench/mainPopulate.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/mainPopulate.Tpo" "$(DEPDIR)/mainPopulate.Plo"; else rm -f "$(DEPDIR)/mainPopulate.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/mainPopulate.cpp' object='mainPopulate.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/mainPopulate.Plo' tmpdepfile='$(DEPDIR)/mainPopulate.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mainPopulate.lo `test -f 'bench/mainPopulate.cpp' || echo '$(srcdir)/'`bench/mainPopulate.cpp
+
+dbPopulate.o: bench/dbPopulate.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT dbPopulate.o -MD -MP -MF "$(DEPDIR)/dbPopulate.Tpo" -c -o dbPopulate.o `test -f 'bench/dbPopulate.cpp' || echo '$(srcdir)/'`bench/dbPopulate.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/dbPopulate.Tpo" "$(DEPDIR)/dbPopulate.Po"; else rm -f "$(DEPDIR)/dbPopulate.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/dbPopulate.cpp' object='dbPopulate.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/dbPopulate.Po' tmpdepfile='$(DEPDIR)/dbPopulate.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o dbPopulate.o `test -f 'bench/dbPopulate.cpp' || echo '$(srcdir)/'`bench/dbPopulate.cpp
+
+dbPopulate.obj: bench/dbPopulate.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT dbPopulate.obj -MD -MP -MF "$(DEPDIR)/dbPopulate.Tpo" -c -o dbPopulate.obj `if test -f 'bench/dbPopulate.cpp'; then $(CYGPATH_W) 'bench/dbPopulate.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/dbPopulate.cpp'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/dbPopulate.Tpo" "$(DEPDIR)/dbPopulate.Po"; else rm -f "$(DEPDIR)/dbPopulate.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/dbPopulate.cpp' object='dbPopulate.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/dbPopulate.Po' tmpdepfile='$(DEPDIR)/dbPopulate.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o dbPopulate.obj `if test -f 'bench/dbPopulate.cpp'; then $(CYGPATH_W) 'bench/dbPopulate.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/dbPopulate.cpp'; fi`
+
+dbPopulate.lo: bench/dbPopulate.cpp
+@am__fastdepCXX_TRUE@	if $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT dbPopulate.lo -MD -MP -MF "$(DEPDIR)/dbPopulate.Tpo" -c -o dbPopulate.lo `test -f 'bench/dbPopulate.cpp' || echo '$(srcdir)/'`bench/dbPopulate.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/dbPopulate.Tpo" "$(DEPDIR)/dbPopulate.Plo"; else rm -f "$(DEPDIR)/dbPopulate.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/dbPopulate.cpp' object='dbPopulate.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/dbPopulate.Plo' tmpdepfile='$(DEPDIR)/dbPopulate.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o dbPopulate.lo `test -f 'bench/dbPopulate.cpp' || echo '$(srcdir)/'`bench/dbPopulate.cpp
+
+userInterface.o: bench/userInterface.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT userInterface.o -MD -MP -MF "$(DEPDIR)/userInterface.Tpo" -c -o userInterface.o `test -f 'bench/userInterface.cpp' || echo '$(srcdir)/'`bench/userInterface.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/userInterface.Tpo" "$(DEPDIR)/userInterface.Po"; else rm -f "$(DEPDIR)/userInterface.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/userInterface.cpp' object='userInterface.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/userInterface.Po' tmpdepfile='$(DEPDIR)/userInterface.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o userInterface.o `test -f 'bench/userInterface.cpp' || echo '$(srcdir)/'`bench/userInterface.cpp
+
+userInterface.obj: bench/userInterface.cpp
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT userInterface.obj -MD -MP -MF "$(DEPDIR)/userInterface.Tpo" -c -o userInterface.obj `if test -f 'bench/userInterface.cpp'; then $(CYGPATH_W) 'bench/userInterface.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/userInterface.cpp'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/userInterface.Tpo" "$(DEPDIR)/userInterface.Po"; else rm -f "$(DEPDIR)/userInterface.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/userInterface.cpp' object='userInterface.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/userInterface.Po' tmpdepfile='$(DEPDIR)/userInterface.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o userInterface.obj `if test -f 'bench/userInterface.cpp'; then $(CYGPATH_W) 'bench/userInterface.cpp'; else $(CYGPATH_W) '$(srcdir)/bench/userInterface.cpp'; fi`
+
+userInterface.lo: bench/userInterface.cpp
+@am__fastdepCXX_TRUE@	if $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT userInterface.lo -MD -MP -MF "$(DEPDIR)/userInterface.Tpo" -c -o userInterface.lo `test -f 'bench/userInterface.cpp' || echo '$(srcdir)/'`bench/userInterface.cpp; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/userInterface.Tpo" "$(DEPDIR)/userInterface.Plo"; else rm -f "$(DEPDIR)/userInterface.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='bench/userInterface.cpp' object='userInterface.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	depfile='$(DEPDIR)/userInterface.Plo' tmpdepfile='$(DEPDIR)/userInterface.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o userInterface.lo `test -f 'bench/userInterface.cpp' || echo '$(srcdir)/'`bench/userInterface.cpp
 
 mostlyclean-libtool:
 	-rm -f *.lo

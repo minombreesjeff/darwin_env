@@ -17,7 +17,7 @@
 
 /* Sum functions (COUNT, MIN...) */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -471,13 +471,14 @@ double Item_sum_hybrid::val()
 {
   DBUG_ASSERT(fixed == 1);
   int err;
+  char *end_not_used;
   if (null_value)
     return 0.0;
   switch (hybrid_type) {
   case STRING_RESULT:
     String *res;  res=val_str(&str_value);
     return (res ? my_strntod(res->charset(), (char*) res->ptr(),res->length(),
-			     (char**) 0, &err) : 0.0);
+			     &end_not_used, &err) : 0.0);
   case INT_RESULT:
     if (unsigned_flag)
       return ulonglong2double(sum_int);
@@ -1448,6 +1449,17 @@ bool Item_udf_sum::add()
   DBUG_RETURN(0);
 }
 
+void Item_udf_sum::cleanup()
+{
+  /*
+    udf_handler::cleanup() nicely handles case when we have not
+    original item but one created by copy_or_same() method.
+  */
+  udf.cleanup();
+  Item_sum::cleanup();
+}
+
+
 Item *Item_sum_udf_float::copy_or_same(THD* thd)
 {
   return new (thd->mem_root) Item_sum_udf_float(thd, this);
@@ -1554,7 +1566,6 @@ int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
 {
   Item_func_group_concat* grp_item= (Item_func_group_concat*)arg;
   Item **field_item, **end;
-  char *record= (char*) grp_item->table->record[0];
 
   for (field_item= grp_item->args, end= field_item + grp_item->arg_count_field;
        field_item < end;
@@ -1569,7 +1580,7 @@ int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
     if (field)
     {
       int res;
-      uint offset= (uint) (field->ptr - record);
+      uint offset= field->offset();
       if ((res= field->key_cmp(key1 + offset, key2 + offset)))
 	return res;
     }
@@ -1587,7 +1598,6 @@ int group_concat_key_cmp_with_order(void* arg, byte* key1, byte* key2)
 {
   Item_func_group_concat* grp_item= (Item_func_group_concat*) arg;
   ORDER **order_item, **end;
-  char *record= (char*) grp_item->table->record[0];
 
   for (order_item= grp_item->order, end=order_item+ grp_item->arg_count_order;
        order_item < end;
@@ -1603,7 +1613,7 @@ int group_concat_key_cmp_with_order(void* arg, byte* key1, byte* key2)
     if (field)
     {
       int res;
-      uint offset= (uint) (field->ptr - record);
+      uint offset= field->offset();
       if ((res= field->key_cmp(key1 + offset, key2 + offset)))
         return (*order_item)->asc ? res : -res;
     }
@@ -1645,7 +1655,6 @@ int dump_leaf_key(byte* key, uint32 count __attribute__((unused)),
 {
   char buff[MAX_FIELD_WIDTH];
   String tmp((char *)&buff,sizeof(buff),default_charset_info), tmp2;
-  char *record= (char*) item->table->record[0];
 
   if (item->result.length())
     item->result.append(*item->separator);
@@ -1665,9 +1674,8 @@ int dump_leaf_key(byte* key, uint32 count __attribute__((unused)),
       Field *field= show_item->get_tmp_table_field();
       String *res;
       char *save_ptr= field->ptr;
-      uint offset= (uint) (save_ptr - record);
-      DBUG_ASSERT(offset < item->table->reclength);
-      field->ptr= (char *) key + offset;
+      DBUG_ASSERT(field->offset() < item->table->reclength);
+      field->ptr= (char *) key + field->offset();
       res= field->val_str(&tmp,&tmp2);
       item->result.append(*res);
       field->ptr= save_ptr;
@@ -1786,8 +1794,19 @@ Item_func_group_concat::Item_func_group_concat(THD *thd,
 
 void Item_func_group_concat::cleanup()
 {
+  THD *thd= current_thd;
+
   DBUG_ENTER("Item_func_group_concat::cleanup");
   Item_sum::cleanup();
+
+  /* Adjust warning message to include total number of cut values */
+  if (warning)
+  {
+    char warn_buff[MYSQL_ERRMSG_SIZE];
+    sprintf(warn_buff, ER(ER_CUT_VALUE_GROUP_CONCAT), count_cut_values);
+    warning->set_msg(thd, warn_buff);
+    warning= 0;
+  }
 
   /*
     Free table and tree if they belong to this item (if item have not pointer
@@ -1795,7 +1814,6 @@ void Item_func_group_concat::cleanup()
   */
   if (!original)
   {
-    THD *thd= current_thd;
     if (table)
     {
       free_tmp_table(thd, table);
@@ -1807,13 +1825,6 @@ void Item_func_group_concat::cleanup()
     {
       tree_mode= 0;
       delete_tree(tree); 
-    }
-    if (warning)
-    {
-      char warn_buff[MYSQL_ERRMSG_SIZE];
-      sprintf(warn_buff, ER(ER_CUT_VALUE_GROUP_CONCAT), count_cut_values);
-      warning->set_msg(thd, warn_buff);
-      warning= 0;
     }
   }
   DBUG_VOID_RETURN;
@@ -1837,12 +1848,6 @@ void Item_func_group_concat::clear()
   result.copy();
   null_value= TRUE;
   warning_for_row= FALSE;
-  if (table)
-  {
-    table->file->extra(HA_EXTRA_NO_CACHE);
-    table->file->delete_all_rows();
-    table->file->extra(HA_EXTRA_WRITE_CACHE);
-  }
   if (tree_mode)
     reset_tree(tree);
 }
@@ -1855,19 +1860,13 @@ bool Item_func_group_concat::add()
   copy_fields(tmp_table_param);
   copy_funcs(tmp_table_param->items_to_copy);
 
-  for (uint i= 0; i < arg_count_field; i++)
+  for (Item **arg= args, **arg_end= args + arg_count_field;
+       arg < arg_end; arg++)
   {
-    Item *show_item= args[i];
-    if (!show_item->const_item())
-    {
-      /*
-	Here we use real_item as we want the original field data that should
-	be written to table->record[0]
-      */
-      Field *f= show_item->real_item()->get_tmp_table_field();
-      if (f->is_null())
+    if (!(*arg)->const_item() &&
+        (*arg)->get_tmp_table_field()->is_null_in_record(
+          (const uchar*) table->record[0]))
 	return 0;				// Skip row if it contains null
-    }
   }
 
   null_value= FALSE;
@@ -1930,10 +1929,6 @@ Item_func_group_concat::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
   null_value= 1;
   max_length= group_concat_max_len;
   thd->allow_sum_func= 1;			
-  if (!(tmp_table_param= new TMP_TABLE_PARAM))
-    return 1;
-  /* We'll convert all blobs to varchar fields in the temporary table */
-  tmp_table_param->convert_blob_length= group_concat_max_len;
   tables_list= tables;
   fixed= 1;
   return 0;
@@ -1951,6 +1946,11 @@ bool Item_func_group_concat::setup(THD *thd)
 
   if (select_lex->linkage == GLOBAL_OPTIONS_TYPE)
     DBUG_RETURN(1);
+
+  if (!(tmp_table_param= new TMP_TABLE_PARAM))
+    return 1;
+  /* We'll convert all blobs to varchar fields in the temporary table */
+  tmp_table_param->convert_blob_length= group_concat_max_len;
 
   /*
     push all not constant fields to list and create temp table
@@ -2075,6 +2075,10 @@ String* Item_func_group_concat::val_str(String* str)
   if (null_value)
     return 0;
   if (count_cut_values && !warning)
+    /*
+      ER_CUT_VALUE_GROUP_CONCAT needs an argument, but this gets set in
+      Item_func_group_concat::cleanup().
+    */
     warning= push_warning(item_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
                           ER_CUT_VALUE_GROUP_CONCAT,
                           ER(ER_CUT_VALUE_GROUP_CONCAT));

@@ -131,14 +131,14 @@ ConfigRetriever::getConfig() {
 }
 
 ndb_mgm_configuration *
-ConfigRetriever::getConfig(NdbMgmHandle m_handle){
-  
+ConfigRetriever::getConfig(NdbMgmHandle m_handle)
+{
   ndb_mgm_configuration * conf = ndb_mgm_get_configuration(m_handle,m_version);
-  if(conf == 0){
+  if(conf == 0)
+  {
     setError(CR_ERROR, ndb_mgm_get_latest_error_desc(m_handle));
     return 0;
   }
-  
   return conf;
 }
 
@@ -314,6 +314,12 @@ ConfigRetriever::verifyConfig(const struct ndb_mgm_configuration * conf, Uint32 
     }
   }
   return true;
+}
+
+int
+ConfigRetriever::setNodeId(Uint32 nodeid)
+{
+  return ndb_mgm_set_configuration_nodeid(m_handle, nodeid);
 }
 
 Uint32

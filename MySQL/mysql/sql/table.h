@@ -58,14 +58,22 @@ typedef struct st_filesort_info
 
 
 /*
-  Values in this enum are used to indicate during which operations value
-  of TIMESTAMP field should be set to current timestamp.
+  Values in this enum are used to indicate how a tables TIMESTAMP field
+  should be treated. It can be set to the current timestamp on insert or
+  update or both.
+  WARNING: The values are used for bit operations. If you change the
+  enum, you must keep the bitwise relation of the values. For example:
+  (int) TIMESTAMP_AUTO_SET_ON_BOTH must be equal to
+  (int) TIMESTAMP_AUTO_SET_ON_INSERT | (int) TIMESTAMP_AUTO_SET_ON_UPDATE.
+  We use an enum here so that the debugger can display the value names.
 */
 enum timestamp_auto_set_type
 {
   TIMESTAMP_NO_AUTO_SET= 0, TIMESTAMP_AUTO_SET_ON_INSERT= 1,
   TIMESTAMP_AUTO_SET_ON_UPDATE= 2, TIMESTAMP_AUTO_SET_ON_BOTH= 3
 };
+#define clear_timestamp_auto_bits(_target_, _bits_) \
+  (_target_)= (enum timestamp_auto_set_type)((int)(_target_) & ~(int)(_bits_))
 
 /* Table cache entry struct */
 
@@ -90,7 +98,9 @@ struct st_table {
   uint null_fields;			/* number of null fields */
   uint blob_fields;			/* number of blob fields */
   key_map keys_in_use, keys_for_keyread, read_only_keys;
-  key_map quick_keys, used_keys, keys_in_use_for_query;
+  key_map quick_keys;
+  key_map used_keys;  /* keys that cover all used table fields */
+  key_map keys_in_use_for_query;
   KEY  *key_info;			/* data of keys in database */
   TYPELIB keynames;			/* Pointers to keynames */
   ha_rows max_rows;			/* create information */

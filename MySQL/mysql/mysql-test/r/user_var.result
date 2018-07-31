@@ -123,7 +123,7 @@ drop table t1;
 set @a=_latin2'test';
 select charset(@a),collation(@a),coercibility(@a);
 charset(@a)	collation(@a)	coercibility(@a)
-latin2	latin2_general_ci	3
+latin2	latin2_general_ci	2
 select @a=_latin2'TEST';
 @a=_latin2'TEST'
 1
@@ -133,12 +133,13 @@ select @a=_latin2'TEST' collate latin2_bin;
 set @a=_latin2'test' collate latin2_general_ci;
 select charset(@a),collation(@a),coercibility(@a);
 charset(@a)	collation(@a)	coercibility(@a)
-latin2	latin2_general_ci	0
+latin2	latin2_general_ci	2
 select @a=_latin2'TEST';
 @a=_latin2'TEST'
 1
 select @a=_latin2'TEST' collate latin2_bin;
-ERROR HY000: Illegal mix of collations (latin2_general_ci,EXPLICIT) and (latin2_bin,EXPLICIT) for operation '='
+@a=_latin2'TEST' collate latin2_bin
+0
 select charset(@a:=_latin2'test');
 charset(@a:=_latin2'test')
 latin2
@@ -147,47 +148,34 @@ collation(@a:=_latin2'test')
 latin2_general_ci
 select coercibility(@a:=_latin2'test');
 coercibility(@a:=_latin2'test')
-3
+2
 select collation(@a:=_latin2'test' collate latin2_bin);
 collation(@a:=_latin2'test' collate latin2_bin)
 latin2_bin
 select coercibility(@a:=_latin2'test' collate latin2_bin);
 coercibility(@a:=_latin2'test' collate latin2_bin)
-0
+2
 select (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST';
 (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST'
 0
 select charset(@a),collation(@a),coercibility(@a);
 charset(@a)	collation(@a)	coercibility(@a)
-latin2	latin2_bin	0
+latin2	latin2_bin	2
 select (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST' collate latin2_general_ci;
-ERROR HY000: Illegal mix of collations (latin2_bin,EXPLICIT) and (latin2_general_ci,EXPLICIT) for operation '='
-create table t1 (a varchar(50));
-reset master;
-SET TIMESTAMP=10000;
-SET @`a b`='hello';
-INSERT INTO t1 VALUES(@`a b`);
-set @var1= "';aaa";
-SET @var2=char(ascii('a'));
-insert into t1 values (@var1),(@var2);
-show binlog events from 79;
-Log_name	Pos	Event_type	Server_id	Orig_log_pos	Info
-master-bin.000001	79	User var	1	79	@`a b`=_latin1 0x68656C6C6F COLLATE latin1_swedish_ci
-master-bin.000001	120	Query	1	120	use `test`; INSERT INTO t1 VALUES(@`a b`)
-master-bin.000001	184	User var	1	184	@`var1`=_latin1 0x273B616161 COLLATE latin1_swedish_ci
-master-bin.000001	226	User var	1	226	@`var2`=_latin1 0x61 COLLATE latin1_swedish_ci
-master-bin.000001	264	Query	1	264	use `test`; insert into t1 values (@var1),(@var2)
-/*!40019 SET @@session.max_insert_delayed_threads=0*/;
-SET @`a b`:=_latin1 0x68656C6C6F COLLATE `latin1_swedish_ci`;
-use test;
-SET TIMESTAMP=10000;
-INSERT INTO t1 VALUES(@`a b`);
-SET @`var1`:=_latin1 0x273B616161 COLLATE `latin1_swedish_ci`;
-SET @`var2`:=_latin1 0x61 COLLATE `latin1_swedish_ci`;
-SET TIMESTAMP=10000;
-insert into t1 values (@var1),(@var2);
-drop table t1;
+(@a:=_latin2'test' collate latin2_bin) = _latin2'TEST' collate latin2_general_ci
+1
 set @var= NULL ;
 select FIELD( @var,'1it','Hit') as my_column;
 my_column
 0
+select @v, coercibility(@v);
+@v	coercibility(@v)
+NULL	2
+set @v1=null, @v2=1, @v3=1.1, @v4=now();
+select coercibility(@v1),coercibility(@v2),coercibility(@v3),coercibility(@v4);
+coercibility(@v1)	coercibility(@v2)	coercibility(@v3)	coercibility(@v4)
+2	2	2	2
+set session @honk=99;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '@honk=99' at line 1
+set one_shot @honk=99;
+ERROR HY000: The SET ONE_SHOT syntax is reserved for purposes internal to the MySQL server

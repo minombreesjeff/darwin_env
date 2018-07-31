@@ -47,6 +47,7 @@
 extern "C" int gethostname(char *name, int namelen);
 #endif
 
+static void time_out_user_resource_limits(THD *thd, USER_CONN *uc);
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
 static int check_for_max_user_connections(THD *thd, USER_CONN *uc);
 #endif
@@ -442,11 +443,12 @@ static int check_for_max_user_connections(THD *thd, USER_CONN *uc)
     error=1;
     goto end;
   }
+  time_out_user_resource_limits(thd, uc);
   if (uc->user_resources.connections &&
       uc->user_resources.connections <= uc->conn_per_hour)
   {
     net_printf(thd, ER_USER_LIMIT_REACHED, uc->user,
-	       "max_connections",
+	       "max_connections_per_hour",
 	       (long) uc->user_resources.connections);
     error=1;
     goto end;
@@ -543,36 +545,54 @@ bool is_update_query(enum enum_sql_command command)
 }
 
 /*
-  Check if maximum queries per hour limit has been reached
-  returns 0 if OK.
+  Reset per-hour user resource limits when it has been more than
+  an hour since they were last checked
 
-  In theory we would need a mutex in the USER_CONN structure for this to
-  be 100 % safe, but as the worst scenario is that we would miss counting
-  a couple of queries, this isn't critical.
+  SYNOPSIS:
+    time_out_user_resource_limits()
+    thd			Thread handler
+    uc			User connection details
+
+  NOTE:
+    This assumes that the LOCK_user_conn mutex has been acquired, so it is
+    safe to test and modify members of the USER_CONN structure.
 */
 
-
-static bool check_mqh(THD *thd, uint check_command)
+static void time_out_user_resource_limits(THD *thd, USER_CONN *uc)
 {
-#ifdef NO_EMBEDDED_ACCESS_CHECKS
-  return(0);
-#else
-  bool error=0;
   time_t check_time = thd->start_time ?  thd->start_time : time(NULL);
-  USER_CONN *uc=thd->user_connect;
-  DBUG_ENTER("check_mqh");
-  DBUG_ASSERT(uc != 0);
+  DBUG_ENTER("time_out_user_resource_limits");
 
   /* If more than a hour since last check, reset resource checking */
   if (check_time  - uc->intime >= 3600)
   {
-    (void) pthread_mutex_lock(&LOCK_user_conn);
     uc->questions=1;
     uc->updates=0;
     uc->conn_per_hour=0;
     uc->intime=check_time;
-    (void) pthread_mutex_unlock(&LOCK_user_conn);
   }
+
+  DBUG_VOID_RETURN;
+}
+
+
+/*
+  Check if maximum queries per hour limit has been reached
+  returns 0 if OK.
+*/
+
+static bool check_mqh(THD *thd, uint check_command)
+{
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+  bool error= 0;
+  USER_CONN *uc=thd->user_connect;
+  DBUG_ENTER("check_mqh");
+  DBUG_ASSERT(uc != 0);
+
+  (void) pthread_mutex_lock(&LOCK_user_conn);
+
+  time_out_user_resource_limits(thd, uc);
+
   /* Check that we have not done too many questions / hour */
   if (uc->user_resources.questions &&
       uc->questions++ >= uc->user_resources.questions)
@@ -595,7 +615,10 @@ static bool check_mqh(THD *thd, uint check_command)
     }
   }
 end:
+  (void) pthread_mutex_unlock(&LOCK_user_conn);
   DBUG_RETURN(error);
+#else
+  return (0);
 #endif /* NO_EMBEDDED_ACCESS_CHECKS */
 }
 
@@ -656,11 +679,11 @@ static int check_connection(THD *thd)
 {
   uint connect_errors= 0;
   NET *net= &thd->net;
+  ulong pkt_len= 0;
+  char *end;
 
   DBUG_PRINT("info",
              ("New connection received on %s", vio_description(net->vio)));
-
-  vio_in_addr(net->vio,&thd->remote.sin_addr);
 
   if (!thd->host)                           // If TCP/IP connection
   {
@@ -671,6 +694,7 @@ static int check_connection(THD *thd)
     if (!(thd->ip= my_strdup(ip,MYF(0))))
       return (ER_OUT_OF_RESOURCES);
     thd->host_or_ip= thd->ip;
+    vio_in_addr(net->vio,&thd->remote.sin_addr);
 #if !defined(HAVE_SYS_UN_H) || defined(HAVE_mit_thread)
     /* Fast local hostname resolve for Win32 */
     if (!strcmp(thd->ip,"127.0.0.1"))
@@ -706,10 +730,10 @@ static int check_connection(THD *thd)
     DBUG_PRINT("info",("Host: %s",thd->host));
     thd->host_or_ip= thd->host;
     thd->ip= 0;
+    /* Reset sin_addr */
+    bzero((char*) &thd->remote, sizeof(thd->remote));
   }
   vio_keepalive(net->vio, TRUE);
-  ulong pkt_len= 0;
-  char *end;
   {
     /* buff[] needs to big enough to hold the server_version variable */
     char buff[SERVER_VERSION_LENGTH + SCRAMBLE_LENGTH + 64];
@@ -1317,10 +1341,10 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
   thd->command=command;
   /*
-    Commands which will always take a long time should be marked with
-    this so that they will not get logged to the slow query log
+    Commands which always take a long time are logged into
+    the slow log only if opt_log_slow_admin_statements is set.
   */
-  thd->slow_command=FALSE;
+  thd->enable_slow_log= TRUE;
   thd->set_time();
   VOID(pthread_mutex_lock(&LOCK_thread_count));
   thd->query_id=query_id;
@@ -1358,7 +1382,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     uint tbl_len= *(uchar*) (packet + db_len + 1);
 
     statistic_increment(com_other, &LOCK_status);
-    thd->slow_command= TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     db= thd->alloc(db_len + tbl_len + 2);
     tbl_name= strmake(db, packet + 1, db_len)+1;
     strmake(tbl_name, packet + db_len + 2, tbl_len);
@@ -1472,6 +1496,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   {
     if (alloc_query(thd, packet, packet_length))
       break;					// fatal error is set
+    char *packet_end= thd->query + thd->query_length;
     mysql_log.write(thd,command,"%s",thd->query);
     DBUG_PRINT("query",("%-.4096s",thd->query));
     mysql_parse(thd,thd->query, thd->query_length);
@@ -1487,7 +1512,9 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       if (thd->lock || thd->open_tables || thd->derived_tables)
         close_thread_tables(thd);
 #endif
-      ulong length= thd->query_length-(ulong)(packet-thd->query);
+      ulong length= (ulong)(packet_end-packet);
+
+      log_slow_statement(thd);
 
       /* Remove garbage at start of query */
       while (my_isspace(thd->charset(), *packet) && length > 0)
@@ -1499,6 +1526,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       thd->query_length= length;
       thd->query= packet;
       thd->query_id= query_id++;
+      thd->set_time(); /* Reset the query start time. */
       /* TODO: set thd->lex->sql_command to SQLCOM_END here */
       VOID(pthread_mutex_unlock(&LOCK_thread_count));
 #ifndef EMBEDDED_LIBRARY
@@ -1515,6 +1543,9 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       }
       else
 	thd->query_rest.copy(packet, length, thd->query_rest.charset());
+
+      thd->server_status&= ~ (SERVER_QUERY_NO_INDEX_USED |
+                              SERVER_QUERY_NO_GOOD_INDEX_USED);
       break;
 #endif /*EMBEDDED_LIBRARY*/
     }
@@ -1626,7 +1657,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       uint32 slave_server_id;
 
       statistic_increment(com_other,&LOCK_status);
-      thd->slow_command = TRUE;
+      thd->enable_slow_log= opt_log_slow_admin_statements;
       if (check_global_access(thd, REPL_SLAVE_ACL))
 	break;
 
@@ -1795,11 +1826,32 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   if (thd->is_fatal_error)
     send_error(thd,0);				// End of memory ?
 
+  log_slow_statement(thd);
+
+  thd->proc_info="cleaning up";
+  VOID(pthread_mutex_lock(&LOCK_thread_count)); // For process list
+  thd->proc_info=0;
+  thd->command=COM_SLEEP;
+  thd->query=0;
+  thd->query_length=0;
+  thread_running--;
+  VOID(pthread_mutex_unlock(&LOCK_thread_count));
+  thd->packet.shrink(thd->variables.net_buffer_length);	// Reclaim some memory
+  free_root(thd->mem_root,MYF(MY_KEEP_PREALLOC));
+  DBUG_RETURN(error);
+}
+
+
+void log_slow_statement(THD *thd)
+{
   time_t start_of_query=thd->start_time;
   thd->end_time();				// Set start time
 
-  /* If not reading from backup and if the query took too long */
-  if (!thd->slow_command && !thd->user_time) // do not log 'slow_command' queries
+  /*
+    Do not log administrative statements unless the appropriate option is
+    set; do not log into slow log if reading from backup.
+  */
+  if (thd->enable_slow_log && !thd->user_time)
   {
     thd->proc_info="logging slow query";
 
@@ -1813,17 +1865,6 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       mysql_slow_log.write(thd, thd->query, thd->query_length, start_of_query);
     }
   }
-  thd->proc_info="cleaning up";
-  VOID(pthread_mutex_lock(&LOCK_thread_count)); // For process list
-  thd->proc_info=0;
-  thd->command=COM_SLEEP;
-  thd->query=0;
-  thd->query_length=0;
-  thread_running--;
-  VOID(pthread_mutex_unlock(&LOCK_thread_count));
-  thd->packet.shrink(thd->variables.net_buffer_length);	// Reclaim some memory
-  free_root(thd->mem_root,MYF(MY_KEEP_PREALLOC));
-  DBUG_RETURN(error);
 }
 
 
@@ -1902,6 +1943,16 @@ mysql_execute_command(THD *thd)
   if (tables || &lex->select_lex != lex->all_selects_list)
     mysql_reset_errors(thd);
 
+  /*
+    When subselects or time_zone info is used in a query
+    we create a new TABLE_LIST containing all referenced tables
+    and set local variable 'tables' to point to this list.
+  */
+  if ((&lex->select_lex != lex->all_selects_list ||
+       lex->time_zone_tables_used) &&
+      lex->unit.create_total_list(thd, lex, &tables))
+    DBUG_VOID_RETURN;
+
 #ifdef HAVE_REPLICATION
   if (thd->slave_thread)
   {
@@ -1924,9 +1975,14 @@ mysql_execute_command(THD *thd)
     }
     /*
       Skip if we are in the slave thread, some table rules have been
-      given and the table list says the query should not be replicated
+      given and the table list says the query should not be replicated.
+      Exception is DROP TEMPORARY TABLE IF EXISTS: we always execute it
+      (otherwise we have stale files on slave caused by exclusion of one tmp
+      table).
     */
-    if (all_tables_not_ok(thd,tables))
+    if (!(lex->sql_command == SQLCOM_DROP_TABLE &&
+          lex->drop_temporary && lex->drop_if_exists) &&
+        all_tables_not_ok(thd,tables))
     {
       /* we warn the slave SQL thread */
       my_error(ER_SLAVE_IGNORED_TABLE, MYF(0));
@@ -1946,10 +2002,6 @@ mysql_execute_command(THD *thd)
 #endif
   }
 #endif /* !HAVE_REPLICATION */
-  if ((&lex->select_lex != lex->all_selects_list ||
-       lex->time_zone_tables_used) &&
-      lex->unit.create_total_list(thd, lex, &tables))
-    DBUG_VOID_RETURN;
 
   /*
     When option readonly is set deny operations which change tables.
@@ -2142,6 +2194,8 @@ mysql_execute_command(THD *thd)
     DBUG_PRINT("info", ("DEALLOCATE PREPARE: %.*s\n", 
                         lex->prepared_stmt_name.length,
                         lex->prepared_stmt_name.str));
+    /* We account deallocate in the same manner as mysql_stmt_close */
+    statistic_increment(com_stmt_close, &LOCK_status);
     if ((stmt= thd->stmt_map.find_by_name(&lex->prepared_stmt_name)))
     {
       thd->stmt_map.erase(stmt);
@@ -2244,7 +2298,7 @@ mysql_execute_command(THD *thd)
 	check_table_access(thd,SELECT_ACL, tables,0) ||
 	check_global_access(thd, FILE_ACL))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     res = mysql_backup_table(thd, tables);
 
     break;
@@ -2255,7 +2309,7 @@ mysql_execute_command(THD *thd)
 	check_table_access(thd, INSERT_ACL, tables,0) ||
 	check_global_access(thd, FILE_ACL))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     res = mysql_restore_table(thd, tables);
     break;
   }
@@ -2359,6 +2413,20 @@ mysql_execute_command(THD *thd)
 
   case SQLCOM_CREATE_TABLE:
   {
+    /* If CREATE TABLE of non-temporary table, do implicit commit */
+    if (!(lex->create_info.options & HA_LEX_CREATE_TMP_TABLE))
+    {
+      if (end_active_trans(thd))
+      {
+	res= -1;
+	break;
+      }
+    }
+    else 
+    {
+      /* So that CREATE TEMPORARY TABLE gets to binlog at commit/rollback */
+      thd->options|= OPTION_STATUS_NO_TRANS_UPDATE;
+    }
     /* Skip first table, which is the table we are creating */
     TABLE_LIST *create_table, *create_table_local;
     tables= lex->unlink_first_table(tables, &create_table,
@@ -2392,6 +2460,24 @@ mysql_execute_command(THD *thd)
       lex->create_info.used_fields|= HA_CREATE_USED_DEFAULT_CHARSET;
       lex->create_info.default_table_charset= lex->create_info.table_charset;
       lex->create_info.table_charset= 0;
+    }
+    /*
+      The create-select command will open and read-lock the select table
+      and then create, open and write-lock the new table. If a global
+      read lock steps in, we get a deadlock. The write lock waits for
+      the global read lock, while the global read lock waits for the
+      select table to be closed. So we wait until the global readlock is
+      gone before starting both steps. Note that
+      wait_if_global_read_lock() sets a protection against a new global
+      read lock when it succeeds. This needs to be released by
+      start_waiting_global_read_lock(). We protect the normal CREATE
+      TABLE in the same way. That way we avoid that a new table is
+      created during a gobal read lock.
+    */
+    if (wait_if_global_read_lock(thd, 0, 1))
+    {
+      res= -1;
+      goto unsent_create_error;
     }
     if (select_lex->item_list.elements)		// With select
     {
@@ -2443,13 +2529,12 @@ mysql_execute_command(THD *thd)
       if (!res)
 	send_ok(thd);
     }
+    /*
+      Release the protection against the global read lock and wake
+      everyone, who might want to set a global read lock.
+    */
+    start_waiting_global_read_lock(thd);
 
-    // put tables back for PS rexecuting
-    tables= lex->link_first_table_back(tables, create_table,
-				       create_table_local);
-    break;
-
-    res= 1; //error reported
 unsent_create_error:
     // put tables back for PS rexecuting
     tables= lex->link_first_table_back(tables, create_table,
@@ -2459,7 +2544,7 @@ unsent_create_error:
   case SQLCOM_CREATE_INDEX:
     if (check_one_table_access(thd, INDEX_ACL, tables))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     if (end_active_trans(thd))
       res= -1;
     else
@@ -2545,7 +2630,7 @@ unsent_create_error:
 	res= -1;
       else
       {
-        thd->slow_command=TRUE;
+        thd->enable_slow_log= opt_log_slow_admin_statements;
 	res= mysql_alter_table(thd, select_lex->db, lex->name,
 			       &lex->create_info,
 			       tables, lex->create_list,
@@ -2637,7 +2722,7 @@ unsent_create_error:
     if (check_db_used(thd,tables) ||
 	check_table_access(thd,SELECT_ACL | INSERT_ACL, tables,0))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     res = mysql_repair_table(thd, tables, &lex->check_opt);
     /* ! we write after unlocking the table */
     if (!res && !lex->no_write_to_binlog)
@@ -2657,7 +2742,7 @@ unsent_create_error:
     if (check_db_used(thd,tables) ||
 	check_table_access(thd, SELECT_ACL | EXTRA_ACL , tables,0))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     res = mysql_check_table(thd, tables, &lex->check_opt);
     break;
   }
@@ -2666,7 +2751,7 @@ unsent_create_error:
     if (check_db_used(thd,tables) ||
 	check_table_access(thd,SELECT_ACL | INSERT_ACL, tables,0))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     res = mysql_analyze_table(thd, tables, &lex->check_opt);
     /* ! we write after unlocking the table */
     if (!res && !lex->no_write_to_binlog)
@@ -2687,7 +2772,7 @@ unsent_create_error:
     if (check_db_used(thd,tables) ||
 	check_table_access(thd,SELECT_ACL | INSERT_ACL, tables,0))
       goto error; /* purecov: inspected */
-    thd->slow_command=TRUE;
+    thd->enable_slow_log= opt_log_slow_admin_statements;
     res= (specialflag & (SPECIAL_SAFE_MODE | SPECIAL_NO_NEW_FUNC)) ?
       mysql_recreate_table(thd, tables, 1) :
       mysql_optimize_table(thd, tables, &lex->check_opt);
@@ -2746,6 +2831,8 @@ unsent_create_error:
   case SQLCOM_INSERT_SELECT:
   {
     TABLE_LIST *first_local_table= (TABLE_LIST *) select_lex->table_list.first;
+    TABLE_LIST dup_tables;
+    TABLE *insert_table;
     if ((res= insert_precheck(thd, tables)))
       break;
 
@@ -2768,18 +2855,33 @@ unsent_create_error:
       select_lex->options |= OPTION_BUFFER_RESULT;
     }
 
-    if (!(res= open_and_lock_tables(thd, tables)) &&
-        !(res= mysql_prepare_insert(thd, tables, first_local_table, 
-				    tables->table, lex->field_list, 0,
+    if ((res= open_and_lock_tables(thd, tables)))
+      break;
+      
+    insert_table= tables->table;
+    /* Skip first table, which is the table we are inserting in */
+    select_lex->table_list.first= (byte*) first_local_table->next;
+    tables= (TABLE_LIST *) select_lex->table_list.first;
+    dup_tables= *first_local_table;
+    first_local_table->next= 0;
+    if (select_lex->group_list.elements != 0)
+    {
+      /*
+        When we are using GROUP BY we can't refere to other tables in the
+        ON DUPLICATE KEY part
+      */         
+      dup_tables.next= 0;
+    }
+
+    if (!(res= mysql_prepare_insert(thd, tables, first_local_table,
+				    &dup_tables, insert_table,
+                                    lex->field_list, 0,
 				    lex->update_list, lex->value_list,
 				    lex->duplicates)) &&
-        (result= new select_insert(tables->table, &lex->field_list,
+        (result= new select_insert(insert_table, &lex->field_list,
 				   &lex->update_list, &lex->value_list,
                                    lex->duplicates, lex->ignore)))
     {
-      TABLE *table= tables->table;
-      /* Skip first table, which is the table we are inserting in */
-      lex->select_lex.table_list.first= (byte*) first_local_table->next;
       /*
         insert/replace from SELECT give its SELECT_LEX for SELECT,
         and item_list belong to SELECT
@@ -2787,18 +2889,24 @@ unsent_create_error:
       lex->select_lex.resolve_mode= SELECT_LEX::SELECT_MODE;
       res= handle_select(thd, lex, result);
       /* revert changes for SP */
-      lex->select_lex.table_list.first= (byte*) first_local_table;
       lex->select_lex.resolve_mode= SELECT_LEX::INSERT_MODE;
       delete result;
-      table->insert_values= 0;
       if (thd->net.report_error)
         res= -1;
     }
     else
       res= -1;
+    insert_table->insert_values= 0;        // Set by mysql_prepare_insert()
+    first_local_table->next= tables;
+    lex->select_lex.table_list.first= (byte*) first_local_table;
     break;
   }
   case SQLCOM_TRUNCATE:
+    if (end_active_trans(thd))
+    {
+      res= -1;
+      break;
+    }
     if (check_one_table_access(thd, DELETE_ACL, tables))
       goto error;
     /*
@@ -2913,6 +3021,9 @@ unsent_create_error:
       */
       if (thd->slave_thread)
 	lex->drop_if_exists= 1;
+
+      /* So that DROP TEMPORARY TABLE gets to binlog at commit/rollback */
+      thd->options|= OPTION_STATUS_NO_TRANS_UPDATE;
     }
     res= mysql_rm_table(thd,tables,lex->drop_if_exists, lex->drop_temporary);
   }
@@ -3157,6 +3268,11 @@ purposes internal to the MySQL server", MYF(0));
     break;
   case SQLCOM_CREATE_DB:
   {
+    if (end_active_trans(thd))
+    {
+      res= -1;
+      break;
+    }
     char *alias;
     if (!(alias=thd->strdup(lex->name)) || check_db_name(lex->name))
     {
@@ -3187,6 +3303,11 @@ purposes internal to the MySQL server", MYF(0));
   }
   case SQLCOM_DROP_DB:
   {
+    if (end_active_trans(thd))
+    {
+      res= -1;
+      break;
+    }
     char *alias;
     if (!(alias=thd->strdup(lex->name)) || check_db_name(lex->name))
     {
@@ -3350,9 +3471,12 @@ purposes internal to the MySQL server", MYF(0));
 	     my_strcasecmp(&my_charset_latin1,
                            user->host.str, thd->host_or_ip)))
 	{
-	  if (check_access(thd, UPDATE_ACL, "mysql",0,1,0))
+	  if (check_access(thd, UPDATE_ACL, "mysql", 0, 1, 1))
+	  {
+	    send_error(thd, ER_PASSWORD_NOT_ALLOWED);
 	    goto error;
-	  break;			// We are allowed to do changes
+	  }
+	  break;		  // We are allowed to do global changes
 	}
       }
     }
@@ -3679,6 +3803,7 @@ check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
                       db ? db : "", want_access, thd->master_access));
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   ulong db_access;
+  bool  db_is_pattern= test(want_access & GRANT_ACL);
 #endif
   ulong dummy;
   if (save_priv)
@@ -3705,9 +3830,8 @@ check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
     */
     db_access= thd->db_access;
     if (!(thd->master_access & SELECT_ACL) &&
-	(db && (!thd->db || strcmp(db,thd->db))))
-      db_access=acl_get(thd->host, thd->ip,
-			thd->priv_user, db, test(want_access & GRANT_ACL));
+	(db && (!thd->db || db_is_pattern || strcmp(db,thd->db))))
+      db_access=acl_get(thd->host, thd->ip, thd->priv_user, db, db_is_pattern);
     *save_priv=thd->master_access | db_access;
     DBUG_RETURN(FALSE);
   }
@@ -3725,9 +3849,8 @@ check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
   if (db == any_db)
     DBUG_RETURN(FALSE);				// Allow select on anything
 
-  if (db && (!thd->db || strcmp(db,thd->db)))
-    db_access=acl_get(thd->host, thd->ip,
-		      thd->priv_user, db, test(want_access & GRANT_ACL));
+  if (db && (!thd->db || db_is_pattern || strcmp(db,thd->db)))
+    db_access=acl_get(thd->host, thd->ip, thd->priv_user, db, db_is_pattern);
   else
     db_access=thd->db_access;
   DBUG_PRINT("info",("db_access: %lu", db_access));
@@ -4087,6 +4210,7 @@ void mysql_init_multi_delete(LEX *lex)
   lex->select_lex.select_limit= lex->unit.select_limit_cnt=
     HA_POS_ERROR;
   lex->select_lex.table_list.save_and_clear(&lex->auxilliary_table_list);
+  lex->lock_option= using_update_log ? TL_READ_NO_INSERT : TL_READ;
 }
 
 
@@ -4118,6 +4242,20 @@ void mysql_parse(THD *thd, char *inBuf, uint length)
 	  send_error(thd, 0, NullS);
 	else
 	{
+          /*
+            Binlog logs a string starting from thd->query and having length
+            thd->query_length; so we set thd->query_length correctly (to not
+            log several statements in one event, when we executed only first).
+            We set it to not see the ';' (otherwise it would get into binlog
+            and Query_log_event::print() would give ';;' output).
+            This also helps display only the current query in SHOW
+            PROCESSLIST.
+            Note that we don't need LOCK_thread_count to modify query_length.
+          */
+          if (lex->found_colon &&
+              (thd->query_length= (ulong)(lex->found_colon - thd->query)))
+            thd->query_length--;
+          /* Actually execute the query */
 	  mysql_execute_command(thd);
 	  query_cache_end_of_result(thd);
 	}
@@ -4338,7 +4476,7 @@ bool add_field_to_list(THD *thd, char *field_name, enum_field_types type,
       /* The user has given a length to the blob column */
       if (new_field->length < 256)
 	type= FIELD_TYPE_TINY_BLOB;
-      if (new_field->length < 65536)
+      else if (new_field->length < 65536)
 	type= FIELD_TYPE_BLOB;
       else if (new_field->length < 256L*256L*256L)
 	type= FIELD_TYPE_MEDIUM_BLOB;
@@ -4473,9 +4611,7 @@ bool add_field_to_list(THD *thd, char *field_name, enum_field_types type,
         net_printf(thd,ER_TOO_BIG_SET,field_name); /* purecov: inspected */
         DBUG_RETURN(1);				/* purecov: inspected */
       }
-      new_field->pack_length= (interval_list->elements + 7) / 8;
-      if (new_field->pack_length > 4)
-        new_field->pack_length=8;
+      new_field->pack_length= get_set_pack_length(interval_list->elements);
 
       List_iterator<String> it(*interval_list);
       String *tmp;
@@ -4492,7 +4628,7 @@ bool add_field_to_list(THD *thd, char *field_name, enum_field_types type,
   case FIELD_TYPE_ENUM:
     {
       // Should be safe
-      new_field->pack_length= interval_list->elements < 256 ? 1 : 2; 
+      new_field->pack_length= get_enum_pack_length(interval_list->elements);
 
       List_iterator<String> it(*interval_list);
       String *tmp;
@@ -4829,10 +4965,11 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables,
       the slow query log, and the relay log (if it exists).
     */
 
-    /* 
-     Writing this command to the binlog may result in infinite loops when doing
-     mysqlbinlog|mysql, and anyway it does not really make sense to log it
-     automatically (would cause more trouble to users than it would help them)
+    /*
+      Writing this command to the binlog may result in infinite loops when
+      doing mysqlbinlog|mysql, and anyway it does not really make sense to
+      log it automatically (would cause more trouble to users than it would
+      help them)
     */
     tmp_write_to_binlog= 0;
     mysql_log.new_file(1);
@@ -5323,6 +5460,7 @@ int multi_update_precheck(THD *thd, TABLE_LIST *tables)
     1   error (message is sent to user)
     -1  error (message is not sent to user)
 */
+
 int multi_delete_precheck(THD *thd, TABLE_LIST *tables, uint *table_count)
 {
   DBUG_ENTER("multi_delete_precheck");
@@ -5371,6 +5509,14 @@ int multi_delete_precheck(THD *thd, TABLE_LIST *tables, uint *table_count)
     }
     walk->lock_type= target_tbl->lock_type;
     target_tbl->table_list= walk;	// Remember corresponding table
+    
+    /* in case of subselects, we need to set lock_type in
+     * corresponding table in list of all tables */
+    if (walk->table_list)
+    {
+      target_tbl->table_list= walk->table_list;
+      walk->table_list->lock_type= walk->lock_type;
+    }
   }
   DBUG_RETURN(0);
 }

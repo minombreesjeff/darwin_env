@@ -96,7 +96,7 @@ ulint	srv_last_file_size_max	= 0;		 /* if != 0, this tells
 						 the max size auto-extending
 						 may increase the last data
 						 file size */
-ulint	srv_auto_extend_increment = 8;		 /* If the last data file is
+ulong	srv_auto_extend_increment = 8;		 /* If the last data file is
 						 auto-extended, we add this
 						 many pages to it at a time */
 ulint*  srv_data_file_is_raw_partition = NULL;
@@ -184,7 +184,7 @@ in the buffer pool to all database pages in the buffer pool smaller than
 the following number. But it is not guaranteed that the value stays below
 that during a time of heavy update/insert activity. */
 
-ulint	srv_max_buf_pool_modified_pct	= 90;
+ulong	srv_max_buf_pool_modified_pct	= 90;
 
 /* If the following is != 0 we do not allow inserts etc. This protects
 the user from forgetting the innodb_force_recovery keyword to my.cnf */
@@ -265,9 +265,6 @@ int     srv_query_thread_priority = 0;
 disable adaptive hash indexes */
 ibool	srv_use_awe			= FALSE;
 ibool	srv_use_adaptive_hash_indexes 	= TRUE;
-
-/* Maximum allowable purge history length.  <=0 means 'infinite'. */
-ulint	srv_max_purge_lag		= 0;
 
 /*-------------------------------------------*/
 ulint	srv_n_spin_wait_rounds	= 20;
@@ -881,6 +878,8 @@ srv_general_init(void)
 
 /*======================= InnoDB Server FIFO queue =======================*/
 
+/* Maximum allowable purge history length.  <=0 means 'infinite'. */
+ulong	srv_max_purge_lag		= 0;
 
 /*************************************************************************
 Puts an OS thread to wait if there are too many concurrent threads
@@ -1471,7 +1470,11 @@ Outputs to a file the output of the InnoDB Monitor. */
 void
 srv_printf_innodb_monitor(
 /*======================*/
-	FILE*	file)	/* in: output stream */
+	FILE*	file,		/* in: output stream */
+	ulint*	trx_start,	/* out: file position of the start of
+				the list of active transactions */
+	ulint*	trx_end)	/* out: file position of the end of
+				the list of active transactions */
 {
 	double	time_elapsed;
 	time_t	current_time;
@@ -1520,7 +1523,24 @@ srv_printf_innodb_monitor(
 
 	mutex_exit(&dict_foreign_err_mutex);
 
-	lock_print_info(file);
+	lock_print_info_summary(file);
+	if (trx_start) {
+		long	t = ftell(file);
+		if (t < 0) {
+			*trx_start = ULINT_UNDEFINED;
+		} else {
+			*trx_start = (ulint) t;
+		}
+	}
+	lock_print_info_all_transactions(file);
+	if (trx_end) {
+		long	t = ftell(file);
+		if (t < 0) {
+			*trx_end = ULINT_UNDEFINED;
+		} else {
+			*trx_end = (ulint) t;
+		}
+	}
 	fputs("--------\n"
 		"FILE I/O\n"
 		"--------\n", file);
@@ -1673,13 +1693,13 @@ loop:
 	    last_monitor_time = time(NULL);
 
 	    if (srv_print_innodb_monitor) {
-		srv_printf_innodb_monitor(stderr);
+		srv_printf_innodb_monitor(stderr, NULL, NULL);
 	    }
 
 	    if (srv_innodb_status) {
 		mutex_enter(&srv_monitor_file_mutex);
 		rewind(srv_monitor_file);
-		srv_printf_innodb_monitor(srv_monitor_file);
+		srv_printf_innodb_monitor(srv_monitor_file, NULL, NULL);
 		os_file_set_eof(srv_monitor_file);
 		mutex_exit(&srv_monitor_file_mutex);
 	    }

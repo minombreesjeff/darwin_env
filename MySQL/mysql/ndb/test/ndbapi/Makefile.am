@@ -30,7 +30,8 @@ testSystemRestart \
 testTimeout \
 testTransactions \
 testDeadlock \
-test_event ndbapi_slow_select testReadPerf testLcp
+test_event ndbapi_slow_select testReadPerf testLcp \
+DbCreate DbAsyncGenerator
 
 #flexTimedAsynch
 #testBlobs
@@ -69,6 +70,8 @@ test_event_SOURCES = test_event.cpp
 ndbapi_slow_select_SOURCES = slow_select.cpp
 testReadPerf_SOURCES = testReadPerf.cpp
 testLcp_SOURCES = testLcp.cpp
+DbCreate_SOURCES= bench/mainPopulate.cpp bench/dbPopulate.cpp bench/userInterface.cpp bench/dbPopulate.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
+DbAsyncGenerator_SOURCES= bench/mainAsyncGenerator.cpp bench/asyncGenerator.cpp bench/ndb_async2.cpp bench/dbGenerator.h bench/macros.h bench/userInterface.h bench/testData.h bench/testDefinitions.h bench/ndb_schema.hpp bench/ndb_error.hpp
 
 INCLUDES_LOC = -I$(top_srcdir)/ndb/include/kernel
 

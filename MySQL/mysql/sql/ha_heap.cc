@@ -15,7 +15,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -60,7 +60,15 @@ int ha_heap::open(const char *name, int mode, uint test_if_locked)
   {
     /* Initialize variables for the opened table */
     set_keys_for_scanning();
-    update_key_stats();
+    /*
+      We cannot run update_key_stats() here because we do not have a
+      lock on the table. The 'records' count might just be changed
+      temporarily at this moment and we might get wrong statistics (Bug
+      #10178). Instead we request for update. This will be done in
+      ha_heap::info(), which is always called before key statistics are
+      used.
+    */
+    key_stats_ok= FALSE;
   }
   return (file ? 0 : 1);
 }
@@ -112,6 +120,8 @@ void ha_heap::update_key_stats()
     }
   }
   records_changed= 0;
+  /* At the end of update_key_stats() we can proudly claim they are OK. */
+  key_stats_ok= TRUE;
 }
 
 int ha_heap::write_row(byte * buf)
@@ -125,7 +135,7 @@ int ha_heap::write_row(byte * buf)
   res= heap_write(file,buf);
   if (!res && ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > 
               file->s->records)
-    update_key_stats();
+    key_stats_ok= FALSE;
   return res;
 }
 
@@ -138,7 +148,7 @@ int ha_heap::update_row(const byte * old_data, byte * new_data)
   res= heap_update(file,old_data,new_data);
   if (!res && ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > 
               file->s->records)
-    update_key_stats();
+    key_stats_ok= FALSE;
   return res;
 }
 
@@ -149,7 +159,7 @@ int ha_heap::delete_row(const byte * buf)
   res= heap_delete(file,buf);
   if (!res && table->tmp_table == NO_TMP_TABLE && 
       ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > file->s->records)
-    update_key_stats();
+    key_stats_ok= FALSE;
   return res;
 }
 
@@ -262,6 +272,13 @@ void ha_heap::info(uint flag)
   delete_length= info.deleted * info.reclength;
   if (flag & HA_STATUS_AUTO)
     auto_increment_value= info.auto_increment;
+  /*
+    If info() is called for the first time after open(), we will still
+    have to update the key statistics. Hoping that a table lock is now
+    in place.
+  */
+  if (! key_stats_ok)
+    update_key_stats();
 }
 
 int ha_heap::extra(enum ha_extra_function operation)
@@ -273,7 +290,7 @@ int ha_heap::delete_all_rows()
 {
   heap_clear(file);
   if (table->tmp_table == NO_TMP_TABLE)
-    update_key_stats();
+    key_stats_ok= FALSE;
   return 0;
 }
 
@@ -408,7 +425,8 @@ THR_LOCK_DATA **ha_heap::store_lock(THD *thd,
 int ha_heap::delete_table(const char *name)
 {
   char buff[FN_REFLEN];
-  int error= heap_delete_table(fn_format(buff,name,"","",4+2));
+  int error= heap_delete_table(fn_format(buff,name,"","",
+                                         MY_REPLACE_EXT|MY_UNPACK_FILENAME));
   return error == ENOENT ? 0 : error;
 }
 
@@ -432,7 +450,11 @@ ha_rows ha_heap::records_in_range(uint inx, key_range *min_key,
       max_key->flag != HA_READ_AFTER_KEY)
     return HA_POS_ERROR;			// Can only use exact keys
   else
+  {
+    /* Assert that info() did run. We need current statistics here. */
+    DBUG_ASSERT(key_stats_ok);
     return key->rec_per_key[key->key_parts-1];
+  }
 }
 
 
@@ -483,7 +505,6 @@ int ha_heap::create(const char *name, TABLE *table_arg,
 
     for (; key_part != key_part_end; key_part++, seg++)
     {
-      uint flag=    key_part->key_type;
       Field *field= key_part->field;
       if (pos->algorithm == HA_KEY_ALG_BTREE)
 	seg->type= field->key_type();
@@ -506,9 +527,15 @@ int ha_heap::create(const char *name, TABLE *table_arg,
 	seg->null_bit= 0;
 	seg->null_pos= 0;
       }
-      if (field->flags & AUTO_INCREMENT_FLAG)
+      if (field->flags & AUTO_INCREMENT_FLAG &&
+          table_arg->found_next_number_field &&
+          key == table_arg->next_number_index)
       {
-	auto_key= key + 1;
+        /*
+          Store key number and type for found auto_increment key
+          We have to store type as seg->type can differ from it
+        */
+        auto_key= key+ 1;
 	auto_key_type= field->key_type();
       }
     }
@@ -521,7 +548,8 @@ int ha_heap::create(const char *name, TABLE *table_arg,
 				  create_info->auto_increment_value - 1 : 0);
   hp_create_info.max_table_size=current_thd->variables.max_heap_table_size;
   max_rows = (ha_rows) (hp_create_info.max_table_size / mem_per_row);
-  error= heap_create(fn_format(buff,name,"","",4+2),
+  error= heap_create(fn_format(buff,name,"","",
+                               MY_REPLACE_EXT|MY_UNPACK_FILENAME),
 		     table_arg->keys,keydef, table_arg->reclength,
 		     (ulong) ((table_arg->max_rows < max_rows &&
 			       table_arg->max_rows) ?

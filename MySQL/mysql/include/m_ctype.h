@@ -147,7 +147,8 @@ typedef struct my_charset_handler_st
   uint    (*numchars)(struct charset_info_st *, const char *b, const char *e);
   uint    (*charpos)(struct charset_info_st *, const char *b, const char *e, uint pos);
   uint    (*well_formed_len)(struct charset_info_st *,
-  			   const char *b,const char *e, uint nchars);
+                             const char *b,const char *e,
+                             uint nchars, int *error);
   uint    (*lengthsp)(struct charset_info_st *, const char *ptr, uint length);
   uint    (*numcells)(struct charset_info_st *, const char *b, const char *e);
   
@@ -229,6 +230,8 @@ typedef struct charset_info_st
 extern CHARSET_INFO my_charset_bin;
 extern CHARSET_INFO my_charset_big5_chinese_ci;
 extern CHARSET_INFO my_charset_big5_bin;
+extern CHARSET_INFO my_charset_cp932_japanese_ci;
+extern CHARSET_INFO my_charset_cp932_bin;
 extern CHARSET_INFO my_charset_euckr_korean_ci;
 extern CHARSET_INFO my_charset_euckr_bin;
 extern CHARSET_INFO my_charset_gb2312_chinese_ci;
@@ -341,7 +344,8 @@ int my_wildcmp_8bit(CHARSET_INFO *,
 uint my_numchars_8bit(CHARSET_INFO *, const char *b, const char *e);
 uint my_numcells_8bit(CHARSET_INFO *, const char *b, const char *e);
 uint my_charpos_8bit(CHARSET_INFO *, const char *b, const char *e, uint pos);
-uint my_well_formed_len_8bit(CHARSET_INFO *, const char *b, const char *e, uint pos);
+uint my_well_formed_len_8bit(CHARSET_INFO *, const char *b, const char *e,
+                             uint pos, int *error);
 int my_mbcharlen_8bit(CHARSET_INFO *, uint c);
 
 
@@ -359,7 +363,8 @@ int my_wildcmp_mb(CHARSET_INFO *,
 uint my_numchars_mb(CHARSET_INFO *, const char *b, const char *e);
 uint my_numcells_mb(CHARSET_INFO *, const char *b, const char *e);
 uint my_charpos_mb(CHARSET_INFO *, const char *b, const char *e, uint pos);
-uint my_well_formed_len_mb(CHARSET_INFO *, const char *b, const char *e, uint pos);
+uint my_well_formed_len_mb(CHARSET_INFO *, const char *b, const char *e,
+                           uint pos, int *error);
 uint my_instr_mb(struct charset_info_st *,
                  const char *b, uint b_length,
                  const char *s, uint s_length,

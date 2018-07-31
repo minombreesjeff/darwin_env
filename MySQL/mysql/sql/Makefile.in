@@ -126,7 +126,8 @@ am_mysqld_OBJECTS = sql_lex.$(OBJEXT) sql_handler.$(OBJEXT) \
 	pack.$(OBJEXT) stacktrace.$(OBJEXT) repl_failsafe.$(OBJEXT) \
 	gstream.$(OBJEXT) spatial.$(OBJEXT) sql_help.$(OBJEXT) \
 	protocol_cursor.$(OBJEXT) tztime.$(OBJEXT) my_time.$(OBJEXT) \
-	ha_example.$(OBJEXT) ha_archive.$(OBJEXT) ha_tina.$(OBJEXT)
+	ha_example.$(OBJEXT) ha_archive.$(OBJEXT) ha_tina.$(OBJEXT) \
+	ha_blackhole.$(OBJEXT)
 mysqld_OBJECTS = $(am_mysqld_OBJECTS)
 mysqld_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2) \
 	$(am__DEPENDENCIES_2)
@@ -140,6 +141,7 @@ am__depfiles_maybe = depfiles
 @AMDEP_TRUE@	./$(DEPDIR)/gen_lex_hash.Po ./$(DEPDIR)/gstream.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/ha_archive.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/ha_berkeley.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/ha_blackhole.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/ha_example.Po ./$(DEPDIR)/ha_heap.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/ha_innodb.Po ./$(DEPDIR)/ha_isam.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/ha_isammrg.Po ./$(DEPDIR)/ha_myisam.Po \
@@ -275,6 +277,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DMYSQL_SERVER \
 			-DDEFAULT_MYSQL_HOME="\"$(MYSQLBASEdir)\"" \
 			-DDATADIR="\"$(MYSQLDATAdir)\"" \
@@ -305,7 +309,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -378,6 +381,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -486,8 +490,8 @@ MYSQLSHAREdir = $(pkgdatadir)
 MYSQLBASEdir = $(prefix)
 INCLUDES = @MT_INCLUDES@ @ZLIB_INCLUDES@ \
 			@bdb_includes@ @innodb_includes@ @ndbcluster_includes@ \
-			-I$(top_srcdir)/include -I$(top_srcdir)/regex \
-			-I$(srcdir) $(openssl_includes)
+			-I$(top_builddir)/include -I$(top_srcdir)/include \
+			-I$(top_srcdir)/regex -I$(srcdir) $(openssl_includes)
 
 SUBDIRS = share
 gen_lex_hash_LDFLAGS = @NOINST_LDFLAGS@
@@ -523,7 +527,7 @@ noinst_HEADERS = item.h item_func.h item_sum.h item_cmpfunc.h \
 			stacktrace.h sql_sort.h sql_cache.h set_var.h \
 			spatial.h gstream.h client_settings.h tzfile.h \
                         tztime.h examples/ha_example.h examples/ha_archive.h \
-			examples/ha_tina.h
+			examples/ha_tina.h ha_blackhole.h
 
 mysqld_SOURCES = sql_lex.cc sql_handler.cc \
 			item.cc item_sum.cc item_buff.cc item_func.cc \
@@ -556,14 +560,13 @@ mysqld_SOURCES = sql_lex.cc sql_handler.cc \
 			gstream.cc spatial.cc sql_help.cc protocol_cursor.cc \
 			tztime.cc my_time.c \
 			examples/ha_example.cc examples/ha_archive.cc \
-			examples/ha_tina.cc
+			examples/ha_tina.cc ha_blackhole.cc
 
 gen_lex_hash_SOURCES = gen_lex_hash.cc
 gen_lex_hash_LDADD = $(LDADD) $(CXXLDFLAGS)
 mysql_tzinfo_to_sql_SOURCES = mysql_tzinfo_to_sql.cc
 mysql_tzinfo_to_sql_LDADD = @MYSQLD_EXTRA_LDFLAGS@ $(LDADD) $(CXXLDFLAGS)
-# Don't put lex_hash.h in BUILT_SOURCES as this will give infinite recursion
-BUILT_SOURCES = sql_yacc.cc sql_yacc.h
+BUILT_SOURCES = sql_yacc.cc sql_yacc.h lex_hash.h
 EXTRA_DIST = udf_example.cc $(BUILT_SOURCES)
 AM_YFLAGS = -d
 all: $(BUILT_SOURCES)
@@ -690,6 +693,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gstream.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_archive.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_berkeley.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_blackhole.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_example.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_heap.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ha_innodb.Po@am__quote@
@@ -1208,9 +1212,6 @@ link_sources: mysql_tzinfo_to_sql.cc
 	rm -f my_time.c
 	@LN_CP_F@ ../sql-common/my_time.c my_time.c
 
-gen_lex_hash.o:		gen_lex_hash.cc lex.h
-			$(CXXCOMPILE) -c $(INCLUDES) $<
-
 mysql_tzinfo_to_sql.o:	$(mysql_tzinfo_to_sql_SOURCES)
 			$(CXXCOMPILE) -c $(INCLUDES) -DTZINFO2SQL $<
 
@@ -1225,12 +1226,8 @@ sql_yacc.o:	sql_yacc.cc sql_yacc.h $(HEADERS)
 		@echo "If it fails, re-run configure with --with-low-memory"
 		$(CXXCOMPILE) $(LM_CFLAGS) -c $<
 
-lex_hash.h:	lex.h gen_lex_hash.cc sql_yacc.h
-		$(MAKE) gen_lex_hash$(EXEEXT)
+lex_hash.h:	gen_lex_hash$(EXEEXT)
 		./gen_lex_hash$(EXEEXT) > $@
-
-# Hack to ensure that lex_hash.h is built early
-sql_lex.o:	lex_hash.h
 
 # For testing of udf_example.so;  Works on platforms with gcc
 # (This is not part of our build process but only provided as an example)

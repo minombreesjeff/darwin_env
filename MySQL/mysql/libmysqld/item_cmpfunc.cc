@@ -17,7 +17,7 @@
 
 /* This file defines all compare functions */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -265,7 +265,7 @@ int Arg_comparator::set_compare_func(Item_bool_func2 *item, Item_result type)
       comparators= 0;
       return 1;
     }
-    if (!(comparators= (Arg_comparator *) sql_alloc(sizeof(Arg_comparator)*n)))
+    if (!(comparators= new Arg_comparator[n]))
       return 1;
     for (uint i=0; i < n; i++)
     {
@@ -393,10 +393,16 @@ int Arg_comparator::compare_e_binary_string()
 
 int Arg_comparator::compare_real()
 {
-  double val1= (*a)->val();
+  /*
+    Fix yet another manifestation of Bug#2338. 'Volatile' will instruct
+    gcc to flush double values out of 80-bit Intel FPU registers before
+    performing the comparison.
+  */
+  volatile double val1, val2;
+  val1= (*a)->val();
   if (!(*a)->null_value)
   {
-    double val2= (*b)->val();
+    val2= (*b)->val();
     if (!(*b)->null_value)
     {
       owner->null_value= 0;
@@ -1155,9 +1161,7 @@ Item_func_nullif::val_str(String *str)
 bool
 Item_func_nullif::is_null()
 {
-  if (!cmp.compare())
-    return (null_value=1);
-  return 0;
+  return (null_value= (!cmp.compare() ? 1 : args[0]->null_value)); 
 }
 
 /*
@@ -1170,6 +1174,8 @@ Item *Item_func_case::find_item(String *str)
   String *first_expr_str,*tmp;
   longlong first_expr_int;
   double   first_expr_real;
+  char buff[MAX_FIELD_WIDTH];
+  String buff_str(buff,sizeof(buff),default_charset());
   
   /* These will be initialized later */
   LINT_INIT(first_expr_str);
@@ -1182,7 +1188,7 @@ Item *Item_func_case::find_item(String *str)
     {
       case STRING_RESULT:
       	// We can't use 'str' here as this may be overwritten
-	if (!(first_expr_str= args[first_expr_num]->val_str(&str_value)))
+	if (!(first_expr_str= args[first_expr_num]->val_str(&buff_str)))
 	  return else_expr_num != -1 ? args[else_expr_num] : 0;	// Impossible
         break;
       case INT_RESULT:
@@ -1528,6 +1534,12 @@ in_row::in_row(uint elements, Item * item)
   size= sizeof(cmp_item_row);
   compare= (qsort2_cmp) cmp_row;
   tmp.store_value(item);
+  /*
+    We need to reset these as otherwise we will call sort() with
+    uninitialized (even if not used) elements
+  */
+  used_count= elements;
+  collation= 0;
 }
 
 in_row::~in_row()

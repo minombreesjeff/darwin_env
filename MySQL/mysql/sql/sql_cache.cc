@@ -1421,7 +1421,7 @@ ulong Query_cache::init_cache()
     init();
   approx_additional_data_size = (sizeof(Query_cache) +
 				 sizeof(gptr)*(def_query_hash_size+
-					       def_query_hash_size));
+					       def_table_hash_size));
   if (query_cache_size < approx_additional_data_size)
     goto err;
 
@@ -1933,6 +1933,11 @@ my_bool Query_cache::write_result_data(Query_cache_block **result_block,
       type = Query_cache_block::RES_CONT;
     } while (block != *result_block);
 #else
+    /*
+      Set type of first block, emb_store_querycache_result() will handle
+      the others.
+    */
+    (*result_block)->type= type;
     Querycache_stream qs(*result_block, headers_len);
     emb_store_querycache_result(&qs, (THD*)data);
 #endif /*!EMBEDDED_LIBRARY*/
@@ -2109,6 +2114,13 @@ my_bool Query_cache::register_all_tables(Query_cache_block *block,
 
   for (n=0; tables_used; tables_used=tables_used->next, n++, block_table++)
   {
+    if (tables_used->derived)
+    {
+      DBUG_PRINT("qcache", ("derived table skipped"));
+      n--;
+      block_table--;
+      continue;
+    }
     DBUG_PRINT("qcache",
 	       ("table %s, db %s, openinfo at 0x%lx, keylen %u, key at 0x%lx",
 		tables_used->real_name, tables_used->db,
@@ -2666,7 +2678,8 @@ TABLE_COUNTER_TYPE Query_cache::is_cacheable(THD *thd, uint32 query_len,
 	table_alias_charset used here because it depends of
 	lower_case_table_names variable
       */
-      if (tables_used->table->tmp_table != NO_TMP_TABLE ||
+      if ((tables_used->table->tmp_table != NO_TMP_TABLE &&
+           !tables_used->derived) ||
 	  (*tables_type & HA_CACHE_TBL_NOCACHE) ||
 	  (tables_used->db_length == 5 &&
 	   my_strnncoll(table_alias_charset, (uchar*)tables_used->db, 6,
@@ -2677,7 +2690,12 @@ TABLE_COUNTER_TYPE Query_cache::is_cacheable(THD *thd, uint32 query_len,
 other non-cacheable table(s)"));
 	DBUG_RETURN(0);
       }
-      if (tables_used->table->db_type == DB_TYPE_MRG_MYISAM)
+      if (tables_used->derived)
+      {
+        table_count--;
+        DBUG_PRINT("qcache", ("derived table skipped"));
+      }
+      else if (tables_used->table->db_type == DB_TYPE_MRG_MYISAM)
       {
 	ha_myisammrg *handler = (ha_myisammrg *)tables_used->table->file;
 	MYRG_INFO *file = handler->myrg_info();

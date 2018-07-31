@@ -58,7 +58,9 @@ int main(int argc, char** argv)
   // Print to stdout/console
   g_eventLogger.createConsoleHandler();
   g_eventLogger.setCategory("NDB");
+  g_eventLogger.enable(Logger::LL_ON, Logger::LL_CRITICAL);
   g_eventLogger.enable(Logger::LL_ON, Logger::LL_ERROR);
+  g_eventLogger.enable(Logger::LL_ON, Logger::LL_WARNING);
 
   globalEmulatorData.create();
 
@@ -180,11 +182,9 @@ int main(int argc, char** argv)
     assert("Illegal state globalData.theRestartFlag" == 0);
   }
 
-  SocketServer socket_server;
-
   globalTransporterRegistry.startSending();
   globalTransporterRegistry.startReceiving();
-  if (!globalTransporterRegistry.start_service(socket_server)){
+  if (!globalTransporterRegistry.start_service(*globalEmulatorData.m_socket_server)){
     ndbout_c("globalTransporterRegistry.start_service() failed");
     exit(-1);
   }
@@ -196,18 +196,13 @@ int main(int argc, char** argv)
 
   globalEmulatorData.theWatchDog->doStart();
   
-  socket_server.startServer();
+  globalEmulatorData.m_socket_server->startServer();
 
   //  theConfig->closeConfiguration();
 
   globalEmulatorData.theThreadConfig->ipControlLoop();
   
   NdbShutdown(NST_Normal);
-
-  socket_server.stopServer();
-  socket_server.stopSessions();
-
-  globalTransporterRegistry.stop_clients();
 
   return NRT_Default;
 }

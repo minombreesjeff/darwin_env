@@ -253,9 +253,9 @@ insert into t2 values (3, 1, 'xxbuz');
 select * from t1 join t2 using(`t1_id`) where match (t1.name, t2.name) against('xxfoo' in boolean mode);
 
 #
-# bug with many short (< ft_min_word_len) words in boolean search
+# Bug #7858: bug with many short (< ft_min_word_len) words in boolean search
 #
-select * from t2 where match name against ('a* b* c* d* e* f*' in boolean mode);
+select * from t2 where match name against ('*a*b*c*d*e*f*' in boolean mode);
 drop table t1,t2;
 
 #
@@ -310,6 +310,14 @@ select count(*) from t1;
 drop table t1;
 
 #
+# testing out of bounds memory access in ft_nlq_find_relevance()
+# (bug#8522); visible in valgrind.
+#
+CREATE TABLE t1 ( a TEXT, FULLTEXT (a) );
+INSERT INTO t1 VALUES ('testing ft_nlq_find_relevance');
+SELECT MATCH(a) AGAINST ('nosuchword') FROM t1;
+DROP TABLE t1;
+#
 # bug#6784
 # mi_flush_bulk_insert (on dup key error in mi_write)
 # was mangling info->dupp_key_pos
@@ -322,3 +330,11 @@ insert t2 values (10, "aaaa"), (2, "cccc");
 replace t1 select * from t2;
 drop table t1, t2;
 
+#
+# bug#8351
+#
+CREATE TABLE t1 (t VARCHAR(200) CHARACTER SET utf8 COLLATE utf8_unicode_ci, FULLTEXT (t));
+SET NAMES latin1;
+INSERT INTO t1 VALUES('Mit freundlichem Grüß aus Osnabrück');
+SELECT COUNT(*) FROM t1 WHERE MATCH(t) AGAINST ('"osnabrück"' IN BOOLEAN MODE);
+DROP TABLE t1;

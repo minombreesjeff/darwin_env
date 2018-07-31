@@ -464,97 +464,97 @@ select _latin1'B' COLLATE latin1_general_ci in (_latin1'a',_latin1'b' COLLATE la
 ERROR HY000: Illegal mix of collations (latin1_general_ci,EXPLICIT), (latin1_swedish_ci,COERCIBLE), (latin1_bin,EXPLICIT) for operation ' IN '
 select collation(bin(130)), coercibility(bin(130));
 collation(bin(130))	coercibility(bin(130))
-latin1_swedish_ci	3
+latin1_swedish_ci	4
 select collation(oct(130)), coercibility(oct(130));
 collation(oct(130))	coercibility(oct(130))
-latin1_swedish_ci	3
+latin1_swedish_ci	4
 select collation(conv(130,16,10)), coercibility(conv(130,16,10));
 collation(conv(130,16,10))	coercibility(conv(130,16,10))
-latin1_swedish_ci	3
+latin1_swedish_ci	4
 select collation(hex(130)), coercibility(hex(130));
 collation(hex(130))	coercibility(hex(130))
-latin1_swedish_ci	3
+latin1_swedish_ci	4
 select collation(char(130)), coercibility(hex(130));
 collation(char(130))	coercibility(hex(130))
-latin1_swedish_ci	3
+latin1_swedish_ci	4
 select collation(format(130,10)), coercibility(format(130,10));
 collation(format(130,10))	coercibility(format(130,10))
-latin1_swedish_ci	3
+latin1_swedish_ci	4
 select collation(lcase(_latin2'a')), coercibility(lcase(_latin2'a'));
 collation(lcase(_latin2'a'))	coercibility(lcase(_latin2'a'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(ucase(_latin2'a')), coercibility(ucase(_latin2'a'));
 collation(ucase(_latin2'a'))	coercibility(ucase(_latin2'a'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(left(_latin2'a',1)), coercibility(left(_latin2'a',1));
 collation(left(_latin2'a',1))	coercibility(left(_latin2'a',1))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(right(_latin2'a',1)), coercibility(right(_latin2'a',1));
 collation(right(_latin2'a',1))	coercibility(right(_latin2'a',1))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(substring(_latin2'a',1,1)), coercibility(substring(_latin2'a',1,1));
 collation(substring(_latin2'a',1,1))	coercibility(substring(_latin2'a',1,1))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(concat(_latin2'a',_latin2'b')), coercibility(concat(_latin2'a',_latin2'b'));
 collation(concat(_latin2'a',_latin2'b'))	coercibility(concat(_latin2'a',_latin2'b'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(lpad(_latin2'a',4,_latin2'b')), coercibility(lpad(_latin2'a',4,_latin2'b'));
 collation(lpad(_latin2'a',4,_latin2'b'))	coercibility(lpad(_latin2'a',4,_latin2'b'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(rpad(_latin2'a',4,_latin2'b')), coercibility(rpad(_latin2'a',4,_latin2'b'));
 collation(rpad(_latin2'a',4,_latin2'b'))	coercibility(rpad(_latin2'a',4,_latin2'b'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(concat_ws(_latin2'a',_latin2'b')), coercibility(concat_ws(_latin2'a',_latin2'b'));
 collation(concat_ws(_latin2'a',_latin2'b'))	coercibility(concat_ws(_latin2'a',_latin2'b'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(make_set(255,_latin2'a',_latin2'b',_latin2'c')), coercibility(make_set(255,_latin2'a',_latin2'b',_latin2'c'));
 collation(make_set(255,_latin2'a',_latin2'b',_latin2'c'))	coercibility(make_set(255,_latin2'a',_latin2'b',_latin2'c'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(export_set(255,_latin2'y',_latin2'n',_latin2' ')), coercibility(export_set(255,_latin2'y',_latin2'n',_latin2' '));
 collation(export_set(255,_latin2'y',_latin2'n',_latin2' '))	coercibility(export_set(255,_latin2'y',_latin2'n',_latin2' '))
-binary	3
+latin2_general_ci	4
 select collation(trim(_latin2' a ')), coercibility(trim(_latin2' a '));
 collation(trim(_latin2' a '))	coercibility(trim(_latin2' a '))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(ltrim(_latin2' a ')), coercibility(ltrim(_latin2' a '));
 collation(ltrim(_latin2' a '))	coercibility(ltrim(_latin2' a '))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(rtrim(_latin2' a ')), coercibility(rtrim(_latin2' a '));
 collation(rtrim(_latin2' a '))	coercibility(rtrim(_latin2' a '))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(trim(LEADING _latin2' ' FROM _latin2'a')), coercibility(trim(LEADING _latin2'a' FROM _latin2'a'));
 collation(trim(LEADING _latin2' ' FROM _latin2'a'))	coercibility(trim(LEADING _latin2'a' FROM _latin2'a'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(trim(TRAILING _latin2' ' FROM _latin2'a')), coercibility(trim(TRAILING _latin2'a' FROM _latin2'a'));
 collation(trim(TRAILING _latin2' ' FROM _latin2'a'))	coercibility(trim(TRAILING _latin2'a' FROM _latin2'a'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(trim(BOTH _latin2' ' FROM _latin2'a')), coercibility(trim(BOTH _latin2'a' FROM _latin2'a'));
 collation(trim(BOTH _latin2' ' FROM _latin2'a'))	coercibility(trim(BOTH _latin2'a' FROM _latin2'a'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(repeat(_latin2'a',10)), coercibility(repeat(_latin2'a',10));
 collation(repeat(_latin2'a',10))	coercibility(repeat(_latin2'a',10))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(reverse(_latin2'ab')), coercibility(reverse(_latin2'ab'));
 collation(reverse(_latin2'ab'))	coercibility(reverse(_latin2'ab'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(quote(_latin2'ab')), coercibility(quote(_latin2'ab'));
 collation(quote(_latin2'ab'))	coercibility(quote(_latin2'ab'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(soundex(_latin2'ab')), coercibility(soundex(_latin2'ab'));
 collation(soundex(_latin2'ab'))	coercibility(soundex(_latin2'ab'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(substring(_latin2'ab',1)), coercibility(substring(_latin2'ab',1));
 collation(substring(_latin2'ab',1))	coercibility(substring(_latin2'ab',1))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(insert(_latin2'abcd',2,3,_latin2'ef')), coercibility(insert(_latin2'abcd',2,3,_latin2'ef'));
 collation(insert(_latin2'abcd',2,3,_latin2'ef'))	coercibility(insert(_latin2'abcd',2,3,_latin2'ef'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(replace(_latin2'abcd',_latin2'b',_latin2'B')), coercibility(replace(_latin2'abcd',_latin2'b',_latin2'B'));
 collation(replace(_latin2'abcd',_latin2'b',_latin2'B'))	coercibility(replace(_latin2'abcd',_latin2'b',_latin2'B'))
-latin2_general_ci	3
+latin2_general_ci	4
 select collation(encode('abcd','ab')), coercibility(encode('abcd','ab'));
 collation(encode('abcd','ab'))	coercibility(encode('abcd','ab'))
-binary	3
+binary	4
 create table t1 
 select
 bin(130),
@@ -627,6 +627,35 @@ t1	CREATE TABLE `t1` (
   `encode('abcd','ab')` binary(4) NOT NULL default ''
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
+create table t1 (a char character set latin2);
+insert into t1 values (null);
+select charset(a), collation(a), coercibility(a) from t1;
+charset(a)	collation(a)	coercibility(a)
+latin2	latin2_general_ci	2
+drop table t1;
+select charset(null), collation(null), coercibility(null);
+charset(null)	collation(null)	coercibility(null)
+binary	binary	5
+CREATE TABLE t1 (a int, b int);
+CREATE TABLE t2 (a int, b int);
+INSERT INTO t1 VALUES (1,1),(2,2);
+INSERT INTO t2 VALUES (2,2),(3,3);
+select t1.*,t2.* from t1 left join t2 on (t1.b=t2.b)
+where collation(t2.a) = _utf8'binary' order by t1.a,t2.a;
+a	b	a	b
+1	1	NULL	NULL
+2	2	2	2
+select t1.*,t2.* from t1 left join t2 on (t1.b=t2.b)
+where charset(t2.a) = _utf8'binary' order by t1.a,t2.a;
+a	b	a	b
+1	1	NULL	NULL
+2	2	2	2
+select t1.*,t2.* from t1 left join t2 on (t1.b=t2.b)
+where coercibility(t2.a) = 2 order by t1.a,t2.a;
+a	b	a	b
+1	1	NULL	NULL
+2	2	2	2
+DROP TABLE t1, t2;
 select SUBSTR('abcdefg',3,2);
 SUBSTR('abcdefg',3,2)
 cd
@@ -733,3 +762,109 @@ WHERE a = CONV('e251273eb74a8ee3', 16, 10);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	system	NULL	NULL	NULL	NULL	1	
 DROP TABLE t1;
+SELECT CHAR(NULL,121,83,81,'76') as my_column;
+my_column
+ySQL
+SELECT CHAR_LENGTH(CHAR(NULL,121,83,81,'76')) as my_column;
+my_column
+4
+CREATE TABLE t1 (id int PRIMARY KEY, str char(255) NOT NULL);
+CREATE TABLE t2 (id int NOT NULL UNIQUE);
+INSERT INTO t2 VALUES (1),(2);
+INSERT INTO t1 VALUES (1, aes_encrypt('foo', 'bar'));
+INSERT INTO t1 VALUES (2, 'not valid');
+SELECT t1.id, aes_decrypt(str, 'bar') FROM t1, t2 WHERE t1.id = t2.id;
+id	aes_decrypt(str, 'bar')
+1	foo
+2	NULL
+SELECT t1.id, aes_decrypt(str, 'bar') FROM t1, t2 WHERE t1.id = t2.id
+ORDER BY t1.id;
+id	aes_decrypt(str, 'bar')
+1	foo
+2	NULL
+DROP TABLE t1, t2;
+select field(0,NULL,1,0), field("",NULL,"bar",""), field(0.0,NULL,1.0,0.0);
+field(0,NULL,1,0)	field("",NULL,"bar","")	field(0.0,NULL,1.0,0.0)
+3	3	3
+select field(NULL,1,2,NULL), field(NULL,1,2,0);
+field(NULL,1,2,NULL)	field(NULL,1,2,0)
+0	0
+CREATE TABLE t1 (str varchar(20) PRIMARY KEY);
+CREATE TABLE t2 (num int primary key);
+INSERT INTO t1 VALUES ('notnumber');
+INSERT INTO t2 VALUES (0), (1);
+SELECT * FROM t1, t2 WHERE num=str;
+str	num
+notnumber	0
+SELECT * FROM t1, t2 WHERE num=substring(str from 1 for 6);
+str	num
+notnumber	0
+DROP TABLE t1,t2;
+CREATE TABLE t1(
+id int(11) NOT NULL auto_increment,
+pc int(11) NOT NULL default '0',
+title varchar(20) default NULL,
+PRIMARY KEY (id)
+);
+INSERT INTO t1 VALUES
+(1, 0, 'Main'),
+(2, 1, 'Toys'),
+(3, 1, 'Games');
+SELECT t1.id, CONCAT_WS('->', t3.title, t2.title, t1.title) as col1
+FROM t1 LEFT JOIN t1 AS t2 ON t1.pc=t2.id
+LEFT JOIN t1 AS t3 ON t2.pc=t3.id;
+id	col1
+1	Main
+2	Main->Toys
+3	Main->Games
+SELECT t1.id, CONCAT_WS('->', t3.title, t2.title, t1.title) as col1
+FROM t1 LEFT JOIN t1 AS t2 ON t1.pc=t2.id
+LEFT JOIN t1 AS t3 ON t2.pc=t3.id
+WHERE CONCAT_WS('->', t3.title, t2.title, t1.title) LIKE '%Toys%';
+id	col1
+2	Main->Toys
+DROP TABLE t1;
+CREATE TABLE t1(
+trackid     int(10) unsigned NOT NULL auto_increment,
+trackname   varchar(100) NOT NULL default '',
+PRIMARY KEY (trackid)
+);
+CREATE TABLE t2(
+artistid    int(10) unsigned NOT NULL auto_increment,
+artistname  varchar(100) NOT NULL default '',
+PRIMARY KEY (artistid)
+);
+CREATE TABLE t3(
+trackid     int(10) unsigned NOT NULL,
+artistid    int(10) unsigned NOT NULL,
+PRIMARY KEY (trackid,artistid)
+);
+INSERT INTO t1 VALUES (1, 'April In Paris'), (2, 'Autumn In New York');
+INSERT INTO t2 VALUES (1, 'Vernon Duke');
+INSERT INTO t3 VALUES (1,1);
+SELECT CONCAT_WS(' ', trackname, artistname) trackname, artistname
+FROM t1 LEFT JOIN t3 ON t1.trackid=t3.trackid
+LEFT JOIN t2 ON t2.artistid=t3.artistid
+WHERE CONCAT_WS(' ', trackname, artistname) LIKE '%In%';
+trackname	artistname
+April In Paris Vernon Duke	Vernon Duke
+Autumn In New York	NULL
+DROP TABLE t1,t2,t3;
+create table t1 (b varchar(5));
+insert t1 values ('ab'), ('abc'), ('abcd'), ('abcde');
+select *,substring(b,1),substring(b,-1),substring(b,-2),substring(b,-3),substring(b,-4),substring(b,-5) from t1;
+b	substring(b,1)	substring(b,-1)	substring(b,-2)	substring(b,-3)	substring(b,-4)	substring(b,-5)
+ab	ab	b	ab			
+abc	abc	c	bc	abc		
+abcd	abcd	d	cd	bcd	abcd	
+abcde	abcde	e	de	cde	bcde	abcde
+select * from (select *,substring(b,1),substring(b,-1),substring(b,-2),substring(b,-3),substring(b,-4),substring(b,-5) from t1) t;
+b	substring(b,1)	substring(b,-1)	substring(b,-2)	substring(b,-3)	substring(b,-4)	substring(b,-5)
+ab	ab	b	ab			
+abc	abc	c	bc	abc		
+abcd	abcd	d	cd	bcd	abcd	
+abcde	abcde	e	de	cde	bcde	abcde
+drop table t1;
+select hex(29223372036854775809), hex(-29223372036854775809);
+hex(29223372036854775809)	hex(-29223372036854775809)
+FFFFFFFFFFFFFFFF	FFFFFFFFFFFFFFFF

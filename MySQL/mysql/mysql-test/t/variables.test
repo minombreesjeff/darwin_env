@@ -115,6 +115,13 @@ set @@query_alloc_block_size=default, @@query_prealloc_size=default;
 set transaction_alloc_block_size=default, @@transaction_prealloc_size=default;
 show variables like '%alloc%';
 
+#
+# Bug #10904 Illegal mix of collations between
+# a system variable and a constant
+#
+SELECT @@version LIKE 'non-existent';
+SELECT @@version_compile_os LIKE 'non-existent';
+
 # The following should give errors
 
 --error 1231
@@ -218,7 +225,6 @@ set read_buffer_size=100;
 set read_rnd_buffer_size=100;
 set global rpl_recovery_rank=100;
 set global server_id=100;
-set global slave_net_timeout=100;
 set global slow_launch_time=100;
 set sort_buffer_size=100;
 set sql_auto_is_null=1;
@@ -237,7 +243,6 @@ select @@sql_max_join_size,@@max_join_size;
 set sql_quote_show_create=1;
 set sql_safe_updates=1;
 set sql_select_limit=1;
-set global sql_slave_skip_counter=100;
 set sql_warnings=1;
 set global table_cache=100;
 set storage_engine=myisam;
@@ -358,7 +363,19 @@ drop table t1;
 
 #
 # Bug #6993: myisam_data_pointer_size
+# Wrong bug report, data pointer size must be restricted to 7,
+# setting to 8 will not work on all computers, myisamchk and
+# the server may see a wrong value, such as 0 or negative number
+# if 8 bytes is set.
 #
 
-SET GLOBAL MYISAM_DATA_POINTER_SIZE= 8;
+SET GLOBAL MYISAM_DATA_POINTER_SIZE= 7;
 SHOW VARIABLES LIKE 'MYISAM_DATA_POINTER_SIZE';
+
+#
+# Bug #6958: negative arguments to integer options wrap around
+#
+
+SET GLOBAL table_cache=-1;
+SHOW VARIABLES LIKE 'table_cache';
+SET GLOBAL table_cache=DEFAULT;

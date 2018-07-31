@@ -791,7 +791,7 @@ MgmtSrvr::restartNode(int processId, bool nostart,
     result = sendSignal(processId, NO_WAIT, signal, true);
   }
   
-  if (result == -1) {
+  if (result == -1 && theWaitState != WAIT_NODEFAILURE) {
     m_stopRec.inUse = false;
     return SEND_OR_RECEIVE_FAILED;
   }
@@ -1920,6 +1920,7 @@ MgmtSrvr::handleReceivedSignal(NdbApiSignal* signal)
 #ifdef VM_TRACE
       ndbout_c("I'm not master resending to %d", aNodeId);
 #endif
+      theWaitNode= aNodeId;
       NdbApiSignal aSignal(_ownReference);
       BackupReq* req = CAST_PTR(BackupReq, aSignal.getDataPtrSend());
       aSignal.set(TestOrd::TraceAPI, BACKUP, GSN_BACKUP_REQ, 
@@ -1947,6 +1948,7 @@ MgmtSrvr::handleReceivedSignal(NdbApiSignal* signal)
     event.Event = BackupEvent::BackupAborted;
     event.Aborted.Reason = rep->reason;
     event.Aborted.BackupId = rep->backupId;
+    event.Aborted.ErrorCode = rep->reason;
     backupCallback(event);
   }
   break;
@@ -2061,7 +2063,7 @@ MgmtSrvr::handleStopReply(NodeId nodeId, Uint32 errCode)
 }
 
 void
-MgmtSrvr::handleStatus(NodeId nodeId, bool alive)
+MgmtSrvr::handleStatus(NodeId nodeId, bool alive, bool nfComplete)
 {
   DBUG_ENTER("MgmtSrvr::handleStatus");
   Uint32 theData[25];
@@ -2070,9 +2072,21 @@ MgmtSrvr::handleStatus(NodeId nodeId, bool alive)
     m_started_nodes.push_back(nodeId);
     theData[0] = EventReport::Connected;
   } else {
-    handleStopReply(nodeId, 0);
     theData[0] = EventReport::Disconnected;
+    if(nfComplete)
+    {
+      handleStopReply(nodeId, 0);
+      DBUG_VOID_RETURN;
+    }
+
+    if(theWaitNode == nodeId && 
+       theWaitState != NO_WAIT && theWaitState != WAIT_STOP)
+    {
+      theWaitState = WAIT_NODEFAILURE;
+      NdbCondition_Signal(theMgmtWaitForResponseCondPtr);
+    }
   }
+  
   eventReport(_ownNodeId, theData);
   DBUG_VOID_RETURN;
 }
@@ -2097,8 +2111,7 @@ MgmtSrvr::nodeStatusNotification(void* mgmSrv, Uint32 nodeId,
 {
   DBUG_ENTER("MgmtSrvr::nodeStatusNotification");
   DBUG_PRINT("enter",("nodeid= %d, alive= %d, nfComplete= %d", nodeId, alive, nfComplete));
-  if(!(!alive && nfComplete))
-    ((MgmtSrvr*)mgmSrv)->handleStatus(nodeId, alive);
+  ((MgmtSrvr*)mgmSrv)->handleStatus(nodeId, alive, nfComplete);
   DBUG_VOID_RETURN;
 }
 
@@ -2109,6 +2122,24 @@ MgmtSrvr::getNodeType(NodeId nodeId) const
     return (enum ndb_mgm_node_type)-1;
   
   return nodeTypes[nodeId];
+}
+
+const char *MgmtSrvr::get_connect_address(Uint32 node_id)
+{
+  if (m_connect_address[node_id].s_addr == 0 &&
+      theFacade && theFacade->theTransporterRegistry &&
+      theFacade->theClusterMgr &&
+      getNodeType(node_id) == NDB_MGM_NODE_TYPE_NDB) 
+  {
+    const ClusterMgr::Node &node=
+      theFacade->theClusterMgr->getNodeInfo(node_id);
+    if (node.connected)
+    {
+      m_connect_address[node_id]=
+	theFacade->theTransporterRegistry->get_connect_address(node_id);
+    }
+  }
+  return inet_ntoa(m_connect_address[node_id]);  
 }
 
 void
@@ -2229,9 +2260,6 @@ MgmtSrvr::alloc_node_id(NodeId * nodeId,
       id_found= tmp;
       break;
     }
-    assert(no_mgm > 1);
-    assert(*nodeId != 0);
-    assert(type != NDB_MGM_NODE_TYPE_MGM);
     if (id_found) { // mgmt server may only have one match
       error_string.appfmt("Ambiguous node id's %d and %d.\n"
 			  "Suggest specifying node id in connectstring,\n"
@@ -2426,7 +2454,7 @@ MgmtSrvr::startBackup(Uint32& backupId, int waitCompleted)
   int result;
   if (waitCompleted == 2) {
     result = sendRecSignal(nodeId, WAIT_BACKUP_COMPLETED,
-			   signal, true, 30*60*1000 /*30 secs*/);
+			   signal, true, 48*60*60*1000 /* 48 hours */);
   }
   else if (waitCompleted == 1) {
     result = sendRecSignal(nodeId, WAIT_BACKUP_STARTED,
@@ -2440,22 +2468,6 @@ MgmtSrvr::startBackup(Uint32& backupId, int waitCompleted)
   }
 
   if (waitCompleted){
-    switch(m_lastBackupEvent.Event){
-    case BackupEvent::BackupCompleted:
-      backupId = m_lastBackupEvent.Completed.BackupId;
-      break;
-    case BackupEvent::BackupStarted:
-      backupId = m_lastBackupEvent.Started.BackupId;
-      break;
-    case BackupEvent::BackupFailedToStart:
-      return m_lastBackupEvent.FailedToStart.ErrorCode;
-    case BackupEvent::BackupAborted:
-      return m_lastBackupEvent.Aborted.ErrorCode;
-    default:
-      return -1;
-      break;
-    }
-  } else {
     switch(m_lastBackupEvent.Event){
     case BackupEvent::BackupCompleted:
       backupId = m_lastBackupEvent.Completed.BackupId;

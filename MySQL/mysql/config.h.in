@@ -1,5 +1,8 @@
 /* config.h.in.  Generated from configure.in by autoheader.  */
 
+/* Support big tables */
+#undef BIG_TABLES
+
 /* Define to one of `_getb67', `GETB67', `getb67' for Cray-2 and Cray-YMP
    systems. This function is required for `alloca.c' support on those systems.
    */
@@ -57,6 +60,9 @@
 /* Define to 1 if you have the `bfill' function. */
 #undef HAVE_BFILL
 
+/* Builds Blackhole Storage Engine */
+#undef HAVE_BLACKHOLE_DB
+
 /* Define to 1 if you have the `bmove' function. */
 #undef HAVE_BMOVE
 
@@ -101,6 +107,9 @@
 
 /* Define to enable charset cp866 */
 #undef HAVE_CHARSET_cp866
+
+/* Define to enable charset cp932 */
+#undef HAVE_CHARSET_cp932
 
 /* Define to enable charset dec8 */
 #undef HAVE_CHARSET_dec8
@@ -194,9 +203,6 @@
 
 /* Define to 1 if you have the `cuserid' function. */
 #undef HAVE_CUSERID
-
-/* Whether we are using OSF1 DEC threads on 3.2 */
-#undef HAVE_DEC_3_2_THREADS
 
 /* Whether we are using DEC threads */
 #undef HAVE_DEC_THREADS
@@ -466,6 +472,12 @@
 /* sigwait with one argument */
 #undef HAVE_NONPOSIX_SIGWAIT
 
+/* NPTL threads implementation */
+#undef HAVE_NPTL
+
+/* Define to 1 if the system has the type `off_t'. */
+#undef HAVE_OFF_T
+
 /* OpenSSL */
 #undef HAVE_OPENSSL
 
@@ -626,11 +638,17 @@
 /* Define to 1 if you have the `sigset' function. */
 #undef HAVE_SIGSET
 
+/* Define to 1 if the system has the type `sigset_t'. */
+#undef HAVE_SIGSET_T
+
 /* Define to 1 if you have the `sigthreadmask' function. */
 #undef HAVE_SIGTHREADMASK
 
 /* POSIX sigwait */
 #undef HAVE_SIGWAIT
+
+/* Define to 1 if the system has the type `size_t'. */
+#undef HAVE_SIZE_T
 
 /* Define to 1 if you have the `snprintf' function. */
 #undef HAVE_SNPRINTF
@@ -814,6 +832,9 @@
 /* Have the tzname variable */
 #undef HAVE_TZNAME
 
+/* national Unicode collations */
+#undef HAVE_UCA_COLLATIONS
+
 /* system headers define uchar */
 #undef HAVE_UCHAR
 
@@ -835,11 +856,17 @@
 /* sighold() is present and usable */
 #undef HAVE_USG_SIGHOLD
 
+/* certain Japanese customer */
+#undef HAVE_UTF8_GENERAL_CS
+
 /* Define to 1 if you have the <utime.h> header file. */
 #undef HAVE_UTIME_H
 
 /* Define to 1 if `utime(file, NULL)' sets file's timestamp to the present. */
 #undef HAVE_UTIME_NULL
+
+/* Define to 1 if the system has the type `u_int32_t'. */
+#undef HAVE_U_INT32_T
 
 /* Define to 1 if you have the <varargs.h> header file. */
 #undef HAVE_VARARGS_H
@@ -850,7 +877,7 @@
 /* Virtual IO */
 #undef HAVE_VIO
 
-/* Define to 1 if you have the <vis.h> header file. */
+/* Found vis.h and the strvis() function */
 #undef HAVE_VIS_H
 
 /* Define to 1 if you have the `vprintf' function. */
@@ -972,8 +999,14 @@
 /* d_namlen member present in struct dirent */
 #undef STRUCT_DIRENT_HAS_D_NAMLEN
 
+/* The struct rlimit type to use with setrlimit */
+#undef STRUCT_RLIMIT
+
 /* Name of system, eg solaris */
 #undef SYSTEM_TYPE
+
+/* Whether we build for Linux */
+#undef TARGET_OS_LINUX
 
 /* Define if you want to have threaded code. This may be undef on client code
    */

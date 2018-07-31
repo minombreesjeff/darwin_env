@@ -668,7 +668,9 @@ int mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
       thd->clear_error();
       mysql_bin_log.write(&qinfo);
     }
+    thd->server_status|= SERVER_STATUS_DB_DROPPED;
     send_ok(thd, (ulong) deleted);
+    thd->server_status&= ~SERVER_STATUS_DB_DROPPED;
   }
 
 exit:
@@ -944,7 +946,7 @@ bool mysql_change_db(THD *thd, const char *name)
   length=unpack_dirname(path,path);		// Convert if not unix
   if (length && path[length-1] == FN_LIBCHAR)
     path[length-1]=0;				// remove ending '\'
-  if (access(path,F_OK))
+  if (my_access(path,F_OK))
   {
     net_printf(thd,ER_BAD_DB_ERROR,dbname);
     my_free(dbname,MYF(0));

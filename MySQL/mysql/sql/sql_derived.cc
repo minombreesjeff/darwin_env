@@ -123,7 +123,7 @@ static int mysql_derived(THD *thd, LEX *lex, SELECT_LEX_UNIT *unit,
     DBUG_RETURN(1); // out of memory
 
   // st_select_lex_unit::prepare correctly work for single select
-  if ((res= unit->prepare(thd, derived_result, 0)))
+  if ((res= unit->prepare(thd, derived_result, 0, org_table_list->alias)))
     goto exit;
 
 	
@@ -132,10 +132,16 @@ static int mysql_derived(THD *thd, LEX *lex, SELECT_LEX_UNIT *unit,
   /*
     Temp table is created so that it hounours if UNION without ALL is to be 
     processed
+
+    As 'distinct' parameter we always pass FALSE (0), because underlying
+    query will control distinct condition by itself. Correct test of
+    distinct underlying query will be is_union &&
+    !unit->union_distinct->next_select() (i.e. it is union and last distinct
+    SELECT is last SELECT of UNION).
   */
   if (!(table= create_tmp_table(thd, &derived_result->tmp_table_param,
-				unit->types, (ORDER*) 0, 
-				is_union && unit->union_distinct, 1,
+				unit->types, (ORDER*) 0,
+				FALSE, 1,
 				(first_select->options | thd->options |
 				 TMP_TABLE_ALL_COLUMNS),
 				HA_POS_ERROR,
@@ -155,7 +161,7 @@ static int mysql_derived(THD *thd, LEX *lex, SELECT_LEX_UNIT *unit,
     if (is_union)
     {
       // execute union without clean up
-      if (!(res= unit->prepare(thd, derived_result, SELECT_NO_UNLOCK)))
+      if (!(res= unit->prepare(thd, derived_result, SELECT_NO_UNLOCK, "")))
 	res= unit->exec();
     }
     else

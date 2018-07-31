@@ -408,6 +408,7 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
   char *suffix_pos;
   DWORD error_allow = 0;
   DWORD error_code = 0;
+  DWORD event_access_rights= SYNCHRONIZE | EVENT_MODIFY_STATE;
   char *shared_memory_base_name = mysql->options.shared_memory_base_name;
 
   /*
@@ -419,13 +420,13 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
   */
   suffix_pos = strxmov(tmp,shared_memory_base_name,"_",NullS);
   strmov(suffix_pos, "CONNECT_REQUEST");
-  if (!(event_connect_request= OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)))
+  if (!(event_connect_request= OpenEvent(event_access_rights, FALSE, tmp)))
   {
     error_allow = CR_SHARED_MEMORY_CONNECT_REQUEST_ERROR;
     goto err;
   }
   strmov(suffix_pos, "CONNECT_ANSWER");
-  if (!(event_connect_answer= OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)))
+  if (!(event_connect_answer= OpenEvent(event_access_rights,FALSE,tmp)))
   {
     error_allow = CR_SHARED_MEMORY_CONNECT_ANSWER_ERROR;
     goto err;
@@ -487,35 +488,35 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
   }
 
   strmov(suffix_pos, "SERVER_WROTE");
-  if ((event_server_wrote = OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)) == NULL)
+  if ((event_server_wrote = OpenEvent(event_access_rights,FALSE,tmp)) == NULL)
   {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   strmov(suffix_pos, "SERVER_READ");
-  if ((event_server_read = OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)) == NULL)
+  if ((event_server_read = OpenEvent(event_access_rights,FALSE,tmp)) == NULL)
   {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   strmov(suffix_pos, "CLIENT_WROTE");
-  if ((event_client_wrote = OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)) == NULL)
+  if ((event_client_wrote = OpenEvent(event_access_rights,FALSE,tmp)) == NULL)
   {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   strmov(suffix_pos, "CLIENT_READ");
-  if ((event_client_read = OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)) == NULL)
+  if ((event_client_read = OpenEvent(event_access_rights,FALSE,tmp)) == NULL)
   {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   strmov(suffix_pos, "CONNECTION_CLOSED");
-  if ((event_conn_closed = OpenEvent(EVENT_ALL_ACCESS,FALSE,tmp)) == NULL)
+  if ((event_conn_closed = OpenEvent(event_access_rights,FALSE,tmp)) == NULL)
   {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
@@ -2189,6 +2190,29 @@ my_bool mysql_reconnect(MYSQL *mysql)
     DBUG_RETURN(1);
   }
   tmp_mysql.free_me= mysql->free_me;
+
+  /*
+    For each stmt in mysql->stmts, move it to tmp_mysql if it is
+    in state MYSQL_STMT_INIT_DONE, otherwise close it.
+  */
+  {
+    LIST *element= mysql->stmts;
+    for (; element; element= element->next)
+    {
+      MYSQL_STMT *stmt= (MYSQL_STMT *) element->data;
+      if (stmt->state != MYSQL_STMT_INIT_DONE)
+      {
+        stmt->mysql= 0;
+      }
+      else
+      {
+        tmp_mysql.stmts= list_add(tmp_mysql.stmts, &stmt->list);
+      }
+      /* No need to call list_delete for statement here */
+    }
+    mysql->stmts= NULL;
+  }
+
   /* Don't free options as these are now used in tmp_mysql */
   bzero((char*) &mysql->options,sizeof(mysql->options));
   mysql->free_me=0;
@@ -2277,6 +2301,10 @@ static void mysql_close_free(MYSQL *mysql)
   SYNOPSYS
     mysql_detach_stmt_list()
       stmt_list  pointer to mysql->stmts
+
+  NOTE
+    There is similar code in mysql_reconnect(), so changes here
+    should also be reflected there.
 */
 
 void mysql_detach_stmt_list(LIST **stmt_list __attribute__((unused)))

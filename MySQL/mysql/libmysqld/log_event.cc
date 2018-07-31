@@ -16,9 +16,11 @@
 
 
 #ifndef MYSQL_CLIENT
-#ifdef __GNUC__
+
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
+
 #include  "mysql_priv.h"
 #include "slave.h"
 #include <my_dir.h>
@@ -1016,7 +1018,6 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli)
     VOID(pthread_mutex_unlock(&LOCK_thread_count));
     thd->variables.pseudo_thread_id= thread_id;		// for temp tables
 
-    mysql_log.write(thd,COM_QUERY,"%s",thd->query);
     DBUG_PRINT("query",("%s",thd->query));
     if (ignored_error_code((expected_error= error_code)) ||
 	!check_expected_error(thd,rli,expected_error))
@@ -1045,6 +1046,10 @@ START SLAVE; . Query: '%s'", expected_error, thd->query);
       }
       goto end;
     }
+
+    /* If the query was not ignored, it is printed to the general log */
+    if (thd->net.last_errno != ER_SLAVE_IGNORED_TABLE)
+      mysql_log.write(thd,COM_QUERY,"%s",thd->query);
 
     /*
       If we expected a non-zero error code, and we don't get the same error
@@ -1804,11 +1809,25 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
                                           "` <...>", NullS) - load_data_query);
         thd->query= load_data_query;
       }
+
+      /*
+        We need to set thd->lex->sql_command and thd->lex->duplicates
+        since InnoDB tests these variables to decide if this is a LOAD
+        DATA ... REPLACE INTO ... statement even though mysql_parse()
+        is not called.  This is not needed in 5.0 since there the LOAD
+        DATA ... statement is replicated using mysql_parse(), which
+        sets the thd->lex fields correctly.
+      */
+      thd->lex->sql_command= SQLCOM_LOAD;
       if (sql_ex.opt_flags & REPLACE_FLAG)
+      {
+        thd->lex->duplicates= DUP_REPLACE;
 	handle_dup= DUP_REPLACE;
+      }
       else if (sql_ex.opt_flags & IGNORE_FLAG)
       {
         ignore= 1;
+        thd->lex->duplicates= DUP_ERROR;
         handle_dup= DUP_ERROR;
       }
       else
@@ -1826,6 +1845,7 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
           If reading from net (a 3.23 master), mysql_load() will change this
           to IGNORE.
         */
+        thd->lex->duplicates= DUP_ERROR;
         handle_dup= DUP_ERROR;
       }
 
@@ -2528,7 +2548,12 @@ int User_var_log_event::exec_event(struct st_relay_log_info* rli)
     0 can be passed as last argument (reference on item)
   */
   e.fix_fields(thd, 0, 0);
-  e.update_hash(val, val_len, type, charset, DERIVATION_NONE);
+  /*
+    A variable can just be considered as a table with
+    a single record and with a single column. Thus, like
+    a column value, it could always have IMPLICIT derivation.
+   */
+  e.update_hash(val, val_len, type, charset, DERIVATION_IMPLICIT);
   free_root(thd->mem_root,0);
 
   rli->inc_event_relay_log_pos(get_event_len());
@@ -2923,8 +2948,10 @@ int Create_file_log_event::exec_event(struct st_relay_log_info* rli)
   strmov(p, ".info");			// strmov takes less code than memcpy
   strnmov(proc_info, "Making temp file ", 17); // no end 0
   thd->proc_info= proc_info;
-  if ((fd = my_open(fname_buf, O_WRONLY|O_CREAT|O_BINARY|O_TRUNC,
-		    MYF(MY_WME))) < 0 ||
+  my_delete(fname_buf, MYF(0)); // old copy may exist already
+  if ((fd= my_create(fname_buf, CREATE_MODE,
+		     O_WRONLY | O_BINARY | O_EXCL | O_NOFOLLOW,
+		     MYF(MY_WME))) < 0 ||
       init_io_cache(&file, fd, IO_SIZE, WRITE_CACHE, (my_off_t)0, 0,
 		    MYF(MY_WME|MY_NABP)))
   {
@@ -2948,8 +2975,10 @@ int Create_file_log_event::exec_event(struct st_relay_log_info* rli)
   my_close(fd, MYF(0));
   
   // fname_buf now already has .data, not .info, because we did our trick
-  if ((fd = my_open(fname_buf, O_WRONLY|O_CREAT|O_BINARY|O_TRUNC,
-		    MYF(MY_WME))) < 0)
+  my_delete(fname_buf, MYF(0)); // old copy may exist already
+  if ((fd= my_create(fname_buf, CREATE_MODE,
+		     O_WRONLY | O_BINARY | O_EXCL | O_NOFOLLOW,
+		     MYF(MY_WME))) < 0)
   {
     slave_print_error(rli,my_errno, "Error in Create_file event: could not open file '%s'", fname_buf);
     goto err;
@@ -3073,7 +3102,7 @@ int Append_block_log_event::exec_event(struct st_relay_log_info* rli)
   memcpy(p, ".data", 6);
   strnmov(proc_info, "Making temp file ", 17); // no end 0
   thd->proc_info= proc_info;
-  if ((fd = my_open(fname, O_WRONLY|O_APPEND|O_BINARY, MYF(MY_WME))) < 0)
+  if ((fd = my_open(fname, O_WRONLY|O_APPEND|O_BINARY|O_NOFOLLOW, MYF(MY_WME))) < 0)
   {
     slave_print_error(rli,my_errno, "Error in Append_block event: could not open file '%s'", fname);
     goto err;
@@ -3270,7 +3299,7 @@ int Execute_load_log_event::exec_event(struct st_relay_log_info* rli)
   Load_log_event* lev = 0;
 
   memcpy(p, ".info", 6);
-  if ((fd = my_open(fname, O_RDONLY|O_BINARY, MYF(MY_WME))) < 0 ||
+  if ((fd = my_open(fname, O_RDONLY|O_BINARY|O_NOFOLLOW, MYF(MY_WME))) < 0 ||
       init_io_cache(&file, fd, IO_SIZE, READ_CACHE, (my_off_t)0, 0,
 		    MYF(MY_WME|MY_NABP)))
   {

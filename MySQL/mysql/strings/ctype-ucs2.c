@@ -209,7 +209,7 @@ static int my_strnncoll_ucs2(CHARSET_INFO *cs,
     t_wc = uni_plane[plane] ? uni_plane[plane][t_wc & 0xFF].sort : t_wc;
     if ( s_wc != t_wc )
     {
-      return  ((int) s_wc) - ((int) t_wc);
+      return  s_wc > t_wc ? 1 : -1;
     }
     
     s+=s_res;
@@ -267,7 +267,7 @@ static int my_strnncollsp_ucs2(CHARSET_INFO *cs __attribute__((unused)),
     int t_wc = uni_plane[t[0]] ? (int) uni_plane[t[0]][t[1]].sort : 
                                  (((int) t[0]) << 8) + (int) t[1];
     if ( s_wc != t_wc )
-      return  s_wc - t_wc;
+      return  s_wc > t_wc ? 1 : -1;
 
     s+= 2;
     t+= 2;
@@ -946,13 +946,10 @@ double      my_strntod_ucs2(CHARSET_INFO *cs __attribute__((unused)),
       break;					/* Can't be part of double */
     *b++= (char) wc;
   }
-  *b= 0;
 
-  errno= 0;
-  res=my_strtod(buf, endptr);
-  *err= errno;
-  if (endptr)
-    *endptr=(char*) (*endptr-buf+nptr);
+  *endptr= b;
+  res= my_strtod(buf, endptr, err);
+  *endptr= nptr + (uint) (*endptr- buf);
   return res;
 }
 
@@ -1254,7 +1251,7 @@ static
 uint my_numchars_ucs2(CHARSET_INFO *cs __attribute__((unused)),
 		      const char *b, const char *e)
 {
-  return (e-b)/2;
+  return (uint) (e-b)/2;
 }
 
 
@@ -1264,17 +1261,19 @@ uint my_charpos_ucs2(CHARSET_INFO *cs __attribute__((unused)),
 		     const char *e  __attribute__((unused)),
 		     uint pos)
 {
-  return pos*2;
+  uint string_length= (uint) (e - b);
+  return pos > string_length ? string_length + 2 : pos * 2;
 }
 
 
 static
 uint my_well_formed_len_ucs2(CHARSET_INFO *cs __attribute__((unused)),
-			     const char *b,
-			     const char *e,
-			     uint nchars)
+                             const char *b, const char *e,
+                             uint nchars, int *error)
 {
-  uint nbytes= (e-b) & ~ (uint)1;
+  /* Ensure string length is dividable with 2 */
+  uint nbytes= ((uint) (e-b)) & ~(uint) 1;
+  *error= 0;
   nchars*= 2;
   return min(nbytes, nchars);
 }
@@ -1344,7 +1343,7 @@ int my_strnncoll_ucs2_bin(CHARSET_INFO *cs,
     }
     if ( s_wc != t_wc )
     {
-      return  ((int) s_wc) - ((int) t_wc);
+      return  s_wc > t_wc ? 1 : -1;
     }
     
     s+=s_res;

@@ -82,7 +82,7 @@ int vio_blocking(Vio * vio __attribute__((unused)), my_bool set_blocking_mode,
   DBUG_PRINT("enter", ("set_blocking_mode: %d  old_mode: %d",
 		       (int) set_blocking_mode, (int) *old_mode));
 
-#if !defined(___WIN__) && !defined(__EMX__)
+#if !defined(__WIN__) && !defined(__EMX__)
 #if !defined(NO_FCNTL_NONBLOCK)
   if (vio->sd >= 0)
   {
@@ -115,7 +115,7 @@ int vio_blocking(Vio * vio __attribute__((unused)), my_bool set_blocking_mode,
       vio->fcntl_mode |= O_NONBLOCK; /* set bit */
     }
     if (old_fcntl != vio->fcntl_mode)
-      r = ioctlsocket(vio->sd,FIONBIO,(void*) &arg, sizeof(arg));
+      r = ioctlsocket(vio->sd,FIONBIO,(void*) &arg);
   }
 #ifndef __EMX__
   else
@@ -272,6 +272,18 @@ my_bool vio_peer_addr(Vio * vio, char *buf, uint16 *port)
 }
 
 
+/*
+  Get in_addr for a TCP/IP connection
+
+  SYNOPSIS
+    vio_in_addr()
+    vio		vio handle
+    in		put in_addr here
+
+  NOTES
+    one must call vio_peer_addr() before calling this one
+*/
+
 void vio_in_addr(Vio *vio, struct in_addr *in)
 {
   DBUG_ENTER("vio_in_addr");
@@ -306,12 +318,14 @@ my_bool vio_poll_read(Vio *vio,uint timeout)
 
 
 void vio_timeout(Vio *vio __attribute__((unused)),
-		 uint timeout __attribute__((unused)))
+		 uint which __attribute__((unused)),
+                 uint timeout __attribute__((unused)))
 {
 #ifdef __WIN__
   ulong wait_timeout= (ulong) timeout * 1000;
-  (void) setsockopt(vio->sd, SOL_SOCKET, SO_RCVTIMEO, (char*) &wait_timeout,
-		    sizeof(wait_timeout));
+  (void) setsockopt(vio->sd, SOL_SOCKET, 
+	which ? SO_SNDTIMEO : SO_RCVTIMEO, (char*) &wait_timeout,
+        sizeof(wait_timeout));
 #endif /* __WIN__ */
 }
 
@@ -365,6 +379,7 @@ int vio_close_pipe(Vio * vio)
 
 
 void vio_ignore_timeout(Vio *vio __attribute__((unused)),
+			uint which __attribute__((unused)),
 			uint timeout __attribute__((unused)))
 {
 }

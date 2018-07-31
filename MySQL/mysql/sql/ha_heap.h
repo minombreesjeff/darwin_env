@@ -15,7 +15,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -29,8 +29,10 @@ class ha_heap: public handler
   key_map btree_keys;
   /* number of records changed since last statistics update */
   uint    records_changed;
+  bool    key_stats_ok;
 public:
-  ha_heap(TABLE *table): handler(table), file(0), records_changed(0) {}
+  ha_heap(TABLE *table): handler(table), file(0), records_changed(0),
+      key_stats_ok(0) {}
   ~ha_heap() {}
   const char *table_type() const { return "HEAP"; }
   const char *index_type(uint inx)
@@ -53,6 +55,7 @@ public:
   }
   const key_map *keys_to_use_for_scanning() { return &btree_keys; }
   uint max_supported_keys()          const { return MAX_KEY; }
+  uint max_supported_key_part_length() const { return MAX_KEY_LENGTH; }
   double scan_time() { return (double) (records+deleted) / 20.0+10; }
   double read_time(uint index, uint ranges, ha_rows rows)
   { return (double) rows /  20.0+1; }

@@ -125,3 +125,116 @@ SELECT
 
 DROP TABLE user_day;
 
+#
+# Tests for bugs #8616, #8615: distinct sum with rollup
+#
+
+CREATE TABLE t1 (a int, b int);
+
+INSERT INTO t1 VALUES
+  (1,4),
+  (2,2), (2,2),
+  (4,1), (4,1), (4,1), (4,1),
+  (2,1), (2,1);
+
+SELECT SUM(b) FROM t1 GROUP BY a WITH ROLLUP;
+SELECT DISTINCT SUM(b) FROM t1 GROUP BY a WITH ROLLUP;
+
+SELECT SUM(b), COUNT(DISTINCT b) FROM t1 GROUP BY a WITH ROLLUP;
+SELECT DISTINCT SUM(b), COUNT(DISTINCT b) FROM t1 GROUP BY a WITH ROLLUP;
+
+SELECT SUM(b), COUNT(*) FROM t1 GROUP BY a WITH ROLLUP;
+SELECT DISTINCT SUM(b), COUNT(*) FROM t1 GROUP BY a WITH ROLLUP;
+
+SELECT SUM(b), COUNT(DISTINCT b), COUNT(*) FROM t1 GROUP BY a WITH ROLLUP;
+SELECT DISTINCT SUM(b), COUNT(DISTINCT b), COUNT(*) FROM t1
+  GROUP BY a WITH ROLLUP;
+
+SELECT a, sum(b) FROM t1 GROUP BY a,b WITH ROLLUP;
+SELECT DISTINCT a, sum(b) FROM t1 GROUP BY a,b WITH ROLLUP;
+
+DROP TABLE t1;
+
+#
+# Tests for bugs #8617: SQL_CACL_FOUND_ROWS with rollup and limit 
+#
+
+CREATE TABLE t1 (a int, b int);
+
+INSERT INTO t1 VALUES
+  (1,4),
+  (2,2), (2,2),
+  (4,1), (4,1), (4,1), (4,1),
+  (2,1), (2,1);
+
+SELECT a, SUM(b) FROM t1 GROUP BY a WITH ROLLUP LIMIT 1;
+SELECT SQL_CALC_FOUND_ROWS a, SUM(b) FROM t1 GROUP BY a WITH ROLLUP LIMIT 1;
+
+DROP TABLE t1;
+
+#
+# Tests for bug #9681: ROLLUP in subquery for derived table wiht 
+#                      a group by field declared as NOT NULL
+#
+
+CREATE TABLE t1 (a int(11) NOT NULL);
+INSERT INTO t1 VALUES (1),(2);
+
+SELECT a, SUM(a) m FROM  t1 GROUP BY a WITH ROLLUP;
+SELECT * FROM ( SELECT a, SUM(a) m FROM  t1 GROUP BY a WITH ROLLUP ) t2;
+
+DROP TABLE t1;
+
+#
+# Tests for bug #7914: ROLLUP over expressions on temporary table
+#
+
+CREATE TABLE t1 (a int(11));
+INSERT INTO t1 VALUES (1),(2);
+
+SELECT a, SUM(a), SUM(a)+1 FROM (SELECT a FROM t1 UNION select 2) d 
+  GROUP BY a;
+SELECT a, SUM(a), SUM(a)+1 FROM (SELECT a FROM t1 UNION select 2) d 
+  GROUP BY a WITH ROLLUP;
+
+SELECT a, SUM(a), SUM(a)+1 FROM (SELECT 1 a UNION select 2) d 
+  GROUP BY a;
+SELECT a, SUM(a), SUM(a)+1 FROM (SELECT 1 a UNION select 2) d 
+  GROUP BY a WITH ROLLUP;
+
+SELECT a, SUM(a), SUM(a)+1, CONCAT(SUM(a),'x'), SUM(a)+SUM(a), SUM(a)
+  FROM (SELECT 1 a, 2 b UNION SELECT 2,3 UNION SELECT 5,6 ) d
+    GROUP BY a WITH ROLLUP;
+
+DROP TABLE t1;
+
+#
+# Tests for bug #7894: ROLLUP over expressions on group by attributes
+#
+
+CREATE TABLE t1 (a int(11));
+INSERT INTO t1 VALUES (1),(2);
+
+SELECT a, a+1, SUM(a) FROM t1 GROUP BY a WITH ROLLUP;
+SELECT a+1 FROM t1 GROUP BY a WITH ROLLUP;
+SELECT a+SUM(a) FROM t1 GROUP BY a WITH ROLLUP;
+SELECT a, a+1 as b FROM t1 GROUP BY a WITH ROLLUP HAVING b > 2;
+SELECT a, a+1 as b FROM t1 GROUP BY a WITH ROLLUP HAVING a IS NULL;
+SELECT a, a+1 as b FROM t1 GROUP BY a WITH ROLLUP HAVING b IS NULL;
+SELECT IFNULL(a, 'TEST') FROM t1 GROUP BY a WITH ROLLUP;
+
+CREATE TABLE t2 (a int, b int);
+INSERT INTO t2 VALUES
+  (1,4),
+  (2,2), (2,2),
+  (4,1), (4,1), (4,1), (4,1),
+  (2,1), (2,1);
+
+SELECT a,b,SUM(b) FROM t2 GROUP BY a,b WITH ROLLUP; 
+SELECT a,b,SUM(b), a+b as c FROM t2
+  GROUP BY a,b WITH ROLLUP HAVING c IS NULL;
+SELECT IFNULL(a, 'TEST'), COALESCE(b, 'TEST') FROM t2 
+  GROUP BY a, b WITH ROLLUP; 
+
+DROP TABLE t1,t2;
+

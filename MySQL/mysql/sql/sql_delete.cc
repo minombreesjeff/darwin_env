@@ -117,6 +117,7 @@ int mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds, SQL_LIST *order,
 
     bzero((char*) &tables,sizeof(tables));
     tables.table = table;
+    tables.alias = table_list->alias;
 
     table->sort.io_cache = (IO_CACHE *) my_malloc(sizeof(IO_CACHE),
                                              MYF(MY_FAE | MY_ZEROFILL));
@@ -648,11 +649,14 @@ int mysql_truncate(THD *thd, TABLE_LIST *table_list, bool dont_send_ok)
     if (!ha_supports_generate(table_type))
     {
       /* Probably InnoDB table */
+      ulong save_options= thd->options;
       table_list->lock_type= TL_WRITE;
+      thd->options&= ~(ulong) (OPTION_BEGIN | OPTION_NOT_AUTOCOMMIT);
       ha_enable_transaction(thd, FALSE);
       error= mysql_delete(thd, table_list, (COND*) 0, (SQL_LIST*) 0,
 			  HA_POS_ERROR, 0);
       ha_enable_transaction(thd, TRUE);
+      thd->options= save_options;
       DBUG_RETURN(error);
     }
     if (lock_and_wait_for_table_name(thd, table_list))

@@ -17,7 +17,7 @@
 
 /* This file defines all numerical functions */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -79,8 +79,6 @@ bool Item_func::agg_arg_collations(DTCollation &c, Item **av, uint count,
                                    uint flags)
 {
   uint i;
-  c.nagg= 0;
-  c.strong= 0;
   c.set(av[0]->collation);
   for (i= 1; i < count; i++)
   {
@@ -584,12 +582,85 @@ void Item_func_signed::print(String *str)
 }
 
 
+longlong Item_func_signed::val_int_from_str(int *error)
+{
+  char buff[MAX_FIELD_WIDTH], *end;
+  String tmp(buff,sizeof(buff), &my_charset_bin), *res;
+  longlong value;
+
+  /*
+    For a string result, we must first get the string and then convert it
+    to a longlong
+  */
+
+  if (!(res= args[0]->val_str(&tmp)))
+  {
+    null_value= 1;
+    *error= 0;
+    return 0;
+  }
+  null_value= 0;
+  end= (char*) res->ptr()+ res->length();
+  value= my_strtoll10(res->ptr(), &end, error);
+  if (*error > 0 || end != res->ptr()+ res->length())
+    push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                        ER_TRUNCATED_WRONG_VALUE,
+                        ER(ER_TRUNCATED_WRONG_VALUE), "INTEGER",
+                        res->c_ptr());
+  return value;
+}
+
+
+longlong Item_func_signed::val_int()
+{
+  longlong value;
+  int error;
+
+  if (args[0]->cast_to_int_type() != STRING_RESULT)
+  {
+    value= args[0]->val_int();
+    null_value= args[0]->null_value; 
+    return value;
+  }
+
+  value= val_int_from_str(&error);
+  if (value < 0 && error == 0)
+  {
+    push_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN, ER_UNKNOWN_ERROR,
+                 "Cast to signed converted positive out-of-range integer to "
+                 "it's negative complement");
+  }
+  return value;
+}
+
+
 void Item_func_unsigned::print(String *str)
 {
   str->append("cast(", 5);
   args[0]->print(str);
   str->append(" as unsigned)", 13);
 
+}
+
+
+longlong Item_func_unsigned::val_int()
+{
+  longlong value;
+  int error;
+
+  if (args[0]->cast_to_int_type() != STRING_RESULT)
+  {
+    value= args[0]->val_int();
+    null_value= args[0]->null_value; 
+    return value;
+  }
+
+  value= val_int_from_str(&error);
+  if (error < 0)
+    push_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN, ER_UNKNOWN_ERROR,
+                 "Cast to unsigned converted negative integer to it's "
+                 "positive complement");
+  return value;
 }
 
 
@@ -792,10 +863,12 @@ void Item_func_neg::fix_length_and_dec()
     maximum number of bytes real or integer may require. Note that all 
     constants are non negative so we don't need to account for removed '-'.
     B) argument returns a string.
+    Use val() to get value as arg_type doesn't mean that item is
+    Item_int or Item_real due to existence of Item_param.
   */
   if (arg_result == STRING_RESULT || 
-      (arg_type == REAL_ITEM && ((Item_real*)args[0])->value >= 0) ||
-      (arg_type == INT_ITEM && ((Item_int*)args[0])->value > 0))
+      (arg_type == REAL_ITEM && args[0]->val() >= 0) ||
+      (arg_type == INT_ITEM && args[0]->val_int() > 0))
     max_length++;
 
   if (args[0]->result_type() == INT_RESULT)
@@ -811,8 +884,7 @@ void Item_func_neg::fix_length_and_dec()
       signed integers)
     */
     if (args[0]->type() != INT_ITEM ||
-	((ulonglong) ((Item_uint*) args[0])->value <=
-	 (ulonglong) LONGLONG_MIN))
+	(((ulonglong) args[0]->val_int()) <= (ulonglong) LONGLONG_MIN))
       hybrid_type= INT_RESULT;
   }
 }
@@ -1074,6 +1146,8 @@ void Item_func_round::fix_length_and_dec()
       decimals=0;
     else
       decimals=min(tmp,NOT_FIXED_DEC);
+    if ((tmp= decimals - args[0]->decimals) > 0)
+      max_length+= tmp;
   }
 }
 
@@ -1348,11 +1422,6 @@ longlong Item_func_char_length::val_int()
 longlong Item_func_coercibility::val_int()
 {
   DBUG_ASSERT(fixed == 1);
-  if (args[0]->null_value)
-  {
-    null_value= 1;
-    return 0;
-  }
   null_value= 0;
   return (longlong) args[0]->collation.derivation;
 }
@@ -1419,6 +1488,7 @@ void Item_func_locate::print(String *str)
 longlong Item_func_field::val_int()
 {
   DBUG_ASSERT(fixed == 1);
+
   if (cmp_type == STRING_RESULT)
   {
     String *field;
@@ -1434,19 +1504,23 @@ longlong Item_func_field::val_int()
   else if (cmp_type == INT_RESULT)
   {
     longlong val= args[0]->val_int();
+    if (args[0]->null_value)
+      return 0;
     for (uint i=1; i < arg_count ; i++)
     {
-      if (val == args[i]->val_int())
- 	return (longlong) (i);
+      if (val == args[i]->val_int() && !args[i]->null_value)
+        return (longlong) (i);
     }
   }
   else
   {
     double val= args[0]->val();
+    if (args[0]->null_value)
+      return 0;
     for (uint i=1; i < arg_count ; i++)
     {
-      if (val == args[i]->val())
- 	return (longlong) (i);
+      if (val == args[i]->val() && !args[i]->null_value)
+        return (longlong) (i);
     }
   }
   return 0;
@@ -1623,6 +1697,13 @@ longlong Item_func_bit_count::val_int()
 
 udf_handler::~udf_handler()
 {
+  /* Everything should be properly cleaned up by this moment. */
+  DBUG_ASSERT(not_original || !(initialized || buffers));
+}
+
+
+void udf_handler::cleanup()
+{
   if (!not_original)
   {
     if (initialized)
@@ -1634,9 +1715,11 @@ udf_handler::~udf_handler()
         (*deinit)(&initid);
       }
       free_udf(u_d);
+      initialized= FALSE;
     }
     if (buffers)				// Because of bug in ecc
       delete [] buffers;
+    buffers= 0;
   }
 }
 
@@ -1875,6 +1958,12 @@ String *udf_handler::val_str(String *str,String *save_str)
   return save_str;
 }
 
+
+void Item_udf_func::cleanup()
+{
+  udf.cleanup();
+  Item_func::cleanup();
+}
 
 
 double Item_func_udf_float::val()
@@ -2361,7 +2450,7 @@ static user_var_entry *get_variable(HASH *hash, LEX_STRING &name,
     entry->value=0;
     entry->length=0;
     entry->update_query_id=0;
-    entry->collation.set(NULL, DERIVATION_NONE);
+    entry->collation.set(NULL, DERIVATION_IMPLICIT);
     /*
       If we are here, we were called from a SET or a query which sets a
       variable. Imagine it is this:
@@ -2419,8 +2508,8 @@ bool Item_func_set_user_var::fix_fields(THD *thd, TABLE_LIST *tables,
     and the variable has previously been initialized.
   */
   if (!entry->collation.collation || !args[0]->null_value)
-    entry->collation.set(args[0]->collation);
-  collation.set(entry->collation);
+    entry->collation.set(args[0]->collation.collation, DERIVATION_IMPLICIT);
+  collation.set(entry->collation.collation, DERIVATION_IMPLICIT);
   cached_result_type= args[0]->result_type();
   return 0;
 }
@@ -2432,7 +2521,7 @@ Item_func_set_user_var::fix_length_and_dec()
   maybe_null=args[0]->maybe_null;
   max_length=args[0]->max_length;
   decimals=args[0]->decimals;
-  collation.set(args[0]->collation);
+  collation.set(args[0]->collation.collation, DERIVATION_IMPLICIT);
 }
 
 
@@ -2641,25 +2730,25 @@ Item_func_set_user_var::update()
   case REAL_RESULT:
   {
     res= update_hash((void*) &save_result.vreal,sizeof(save_result.vreal),
-		     REAL_RESULT, &my_charset_bin, DERIVATION_NONE);
+		     REAL_RESULT, &my_charset_bin, DERIVATION_IMPLICIT);
     break;
   }
   case INT_RESULT:
   {
     res= update_hash((void*) &save_result.vint, sizeof(save_result.vint),
-		     INT_RESULT, &my_charset_bin, DERIVATION_NONE);
+		     INT_RESULT, &my_charset_bin, DERIVATION_IMPLICIT);
     break;
   }
   case STRING_RESULT:
   {
     if (!save_result.vstr)					// Null value
       res= update_hash((void*) 0, 0, STRING_RESULT, &my_charset_bin,
-		       DERIVATION_NONE);
+		       DERIVATION_IMPLICIT);
     else
       res= update_hash((void*) save_result.vstr->ptr(),
 		       save_result.vstr->length(), STRING_RESULT,
 		       save_result.vstr->charset(),
-		       args[0]->collation.derivation);
+		       DERIVATION_IMPLICIT);
     break;
   }
   case ROW_RESULT:
@@ -2877,7 +2966,10 @@ void Item_func_get_user_var::fix_length_and_dec()
     }
   }
   else
+  {
+    collation.set(&my_charset_bin, DERIVATION_IMPLICIT);
     null_value= 1;
+  }
 
   if (error)
     thd->fatal_error();
@@ -3087,6 +3179,11 @@ bool Item_func_match::fix_fields(THD *thd, TABLE_LIST *tlist, Item **ref)
     return 1;
   }
   table=((Item_field *)item)->field->table;
+  if (!(table->file->table_flags() & HA_CAN_FULLTEXT))
+  {
+    my_error(ER_TABLE_CANT_HANDLE_FT, MYF(0));
+    return 1;
+  }
   table->fulltext_searched=1;
   return agg_arg_collations_for_comparison(cmp_collation, args+1, arg_count-1);
 }
@@ -3099,6 +3196,9 @@ bool Item_func_match::fix_index()
 
   if (key == NO_SUCH_KEY)
     return 0;
+  
+  if (!table) 
+    goto err;
 
   for (keynr=0 ; keynr < table->keys ; keynr++)
   {
@@ -3271,7 +3371,7 @@ Item *get_system_var(THD *thd, enum_var_type var_type, LEX_STRING name,
       !my_strcasecmp(system_charset_info, name.str, "VERSION"))
     return new Item_string("@@VERSION", server_version,
 			   (uint) strlen(server_version),
-			   system_charset_info);
+			   system_charset_info, DERIVATION_SYSCONST);
 
   Item *item;
   sys_var *var;

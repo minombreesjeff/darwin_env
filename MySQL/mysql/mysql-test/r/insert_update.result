@@ -140,10 +140,10 @@ a	b	c
 5	6	130
 TRUNCATE TABLE t1;
 INSERT t1 VALUES (1,2,10), (3,4,20);
-CREATE TABLE t2 (x INT, y INT, z INT, d INT);
+CREATE TABLE t2 (a INT, b INT, c INT, d INT);
 INSERT t2 VALUES (5,6,30,1), (7,4,40,1), (8,9,60,1);
 INSERT t2 VALUES (2,1,11,2), (7,4,40,2);
-INSERT t1 SELECT x,y,z FROM t2 WHERE d=1 ON DUPLICATE KEY UPDATE c=c+100;
+INSERT t1 SELECT a,b,c FROM t2 WHERE d=1 ON DUPLICATE KEY UPDATE c=t1.c+100;
 SELECT * FROM t1;
 a	b	c
 1	2	10
@@ -157,7 +157,9 @@ a	b	c
 3	4	120
 5	0	30
 8	9	60
-INSERT t1 SELECT x,y,z FROM t2 WHERE d=2 ON DUPLICATE KEY UPDATE c=c+VALUES(a);
+INSERT t1 SELECT a,b,c FROM t2 WHERE d=2 ON DUPLICATE KEY UPDATE c=c+VALUES(a);
+ERROR 23000: Column 'c' in field list is ambiguous
+INSERT t1 SELECT a,b,c FROM t2 WHERE d=2 ON DUPLICATE KEY UPDATE c=t1.c+VALUES(t1.a);
 SELECT *, VALUES(a) FROM t1;
 a	b	c	VALUES(a)
 1	2	10	NULL
@@ -167,3 +169,25 @@ a	b	c	VALUES(a)
 2	1	11	NULL
 DROP TABLE t1;
 DROP TABLE t2;
+create table t1 (a int not null unique) engine=myisam;
+insert into t1 values (1),(2);
+insert ignore into t1 select 1 on duplicate key update a=2;
+select * from t1;
+a
+1
+2
+insert ignore into t1 select a from t1 as t2 on duplicate key update a=t1.a+1 ;
+select * from t1;
+a
+1
+3
+insert into t1 select 1 on duplicate key update a=2;
+select * from t1;
+a
+2
+3
+insert into t1 select a from t1 on duplicate key update a=a+1 ;
+ERROR 23000: Column 'a' in field list is ambiguous
+insert ignore into t1 select a from t1 on duplicate key update a=t1.a+1 ;
+ERROR 23000: Column 't1.a' in field list is ambiguous
+drop table t1;

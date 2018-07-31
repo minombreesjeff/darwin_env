@@ -67,7 +67,7 @@ character-set=latin1
 "Column '%-.64s' cannot be null",
 "Unknown database '%-.64s'",
 "Table '%-.64s' already exists",
-"Unknown table '%-.64s'",
+"Unknown table '%-.100s'",
 "Column '%-.64s' in %-.64s is ambiguous",
 "Server shutdown in progress",
 "Unknown column '%-.64s' in '%-.64s'",
@@ -90,7 +90,7 @@ character-set=latin1
 "Specified key was too long; max key length is %d bytes",
 "Key column '%-.64s' doesn't exist in table",
 "BLOB column '%-.64s' can't be used in key specification with the used table type",
-"Column length too big for column '%-.64s' (max = %d); use BLOB instead",
+"Column length too big for column '%-.64s' (max = %d); use BLOB or TEXT instead",
 "Incorrect table definition; there can be only one auto column and it must be defined as a key",
 "%s: ready for connections.\nVersion: '%s'  socket: '%s'  port: %d",
 "%s: Normal shutdown\n",
@@ -319,3 +319,4 @@ character-set=latin1
 "Invalid %s character string: '%.64s'",
 "Result of %s() was larger than max_allowed_packet (%ld) - truncated"
 "Conflicting declarations: '%s%s' and '%s%s'"
+

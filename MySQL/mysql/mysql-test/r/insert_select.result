@@ -1,4 +1,4 @@
-drop table if exists t1,t2;
+drop table if exists t1,t2,t3;
 create table t1 (bandID MEDIUMINT UNSIGNED NOT NULL PRIMARY KEY, payoutID SMALLINT UNSIGNED NOT NULL);
 insert into t1 (bandID,payoutID) VALUES (1,6),(2,6),(3,4),(4,9),(5,10),(6,1),(7,12),(8,12);
 create table t2 (payoutID SMALLINT UNSIGNED NOT NULL PRIMARY KEY);
@@ -65,31 +65,6 @@ INSERT INTO t1 (numeropost,icone,contenu,pseudo,date,signature,ip)
 SELECT 1718,icone,contenu,pseudo,date,signature,ip FROM t2
 WHERE numeropost=9 ORDER BY numreponse ASC;
 DROP TABLE t1,t2;
-create table t1(a int, unique(a));
-insert into t1 values(2);
-create table t2(a int);
-insert into t2 values(1),(2);
-reset master;
-insert into t1 select * from t2;
-ERROR 23000: Duplicate entry '2' for key 1
-show binlog events;
-Log_name	Pos	Event_type	Server_id	Orig_log_pos	Info
-master-bin.000001	4	Start	1	4	Server ver: VERSION, Binlog ver: 3
-master-bin.000001	79	Query	1	79	use `test`; insert into t1 select * from t2
-select * from t1;
-a
-1
-2
-drop table t1, t2;
-create table t1(a int);
-insert into t1 values(1),(1);
-reset master;
-create table t2(unique(a)) select a from t1;
-ERROR 23000: Duplicate entry '1' for key 1
-show binlog events;
-Log_name	Pos	Event_type	Server_id	Orig_log_pos	Info
-master-bin.000001	4	Start	1	4	Server ver: VERSION, Binlog ver: 3
-drop table t1;
 create table t1 (a int not null);
 create table t2 (a int not null);
 insert into t1 values (1);
@@ -650,3 +625,46 @@ select SQL_BUFFER_RESULT * from t1 WHERE (SEQ = 1);
 ID	NO	SEQ
 1	1	1
 drop table t1;
+create table t1 (f1 int);
+create table t2 (ff1 int unique, ff2 int default 1);
+insert into t1 values (1),(1),(2);
+insert into t2(ff1) select f1 from t1 on duplicate key update ff2=ff2+1;
+select * from t2;
+ff1	ff2
+1	2
+2	1
+drop table t1, t2;
+create table t1 (a int unique);
+create table t2 (a int, b int);
+create table t3 (c int, d int);
+insert into t1 values (1),(2);
+insert into t2 values (1,2);
+insert into t3 values (1,6),(3,7);
+select * from t1;
+a
+1
+2
+insert into t1 select a from t2 on duplicate key update a= t1.a + t2.b;
+select * from t1;
+a
+2
+3
+insert into t1 select a+1 from t2 on duplicate key update t1.a= t1.a + t2.b+1;
+select * from t1;
+a
+3
+5
+insert into t1 select t3.c from t3 on duplicate key update a= a + t3.d;
+select * from t1;
+a
+1
+5
+10
+insert into t1 select t2.a from t2 group by t2.a on duplicate key update a= a + 10;
+insert into t1 select t2.a from t2 on duplicate key update a= a + t2.b;
+ERROR 23000: Column 'a' in field list is ambiguous
+insert into t1 select t2.a from t2 on duplicate key update t2.a= a + t2.b;
+ERROR 42S02: Unknown table 't2' in field list
+insert into t1 select t2.a from t2 group by t2.a on duplicate key update a= t1.a + t2.b;
+ERROR 42S02: Unknown table 't2' in field list
+drop table t1,t2,t3;

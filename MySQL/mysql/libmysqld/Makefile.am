@@ -25,7 +25,8 @@ DEFS =			-DEMBEDDED_LIBRARY -DMYSQL_SERVER \
 			-DDEFAULT_MYSQL_HOME="\"$(MYSQLBASEdir)\"" \
 			-DDATADIR="\"$(MYSQLDATAdir)\"" \
 			-DSHAREDIR="\"$(MYSQLSHAREdir)\""
-INCLUDES=		@MT_INCLUDES@ @bdb_includes@ -I$(top_srcdir)/include \
+INCLUDES=		@MT_INCLUDES@ @bdb_includes@ \
+			-I$(top_builddir)/include -I$(top_srcdir)/include \
 			-I$(top_srcdir)/sql -I$(top_srcdir)/sql/examples -I$(top_srcdir)/regex \
 			$(openssl_includes) @ZLIB_INCLUDES@
 
@@ -58,7 +59,8 @@ sqlsources = derror.cc field.cc field_conv.cc strfunc.cc filesort.cc \
 	sql_string.cc sql_table.cc sql_test.cc sql_udf.cc \
 	sql_update.cc sql_yacc.cc table.cc thr_malloc.cc time.cc \
 	unireg.cc uniques.cc stacktrace.c sql_union.cc hash_filo.cc \
-	spatial.cc gstream.cc sql_help.cc tztime.cc
+	spatial.cc gstream.cc sql_help.cc tztime.cc \
+	ha_blackhole.cc
 
 libmysqld_int_a_SOURCES= $(libmysqld_sources) $(libmysqlsources) $(sqlsources) $(sqlexamplessources)
 libmysqld_a_SOURCES=
@@ -82,6 +84,9 @@ INC_LIB=	$(top_builddir)/regex/libregex.a \
 # generate a total libmysqld.a from all library files,
 
 libmysqld.a:	libmysqld_int.a $(INC_LIB)
+if DARWIN_MWCC
+	mwld -lib -o $@ libmysqld_int.a `ls -1 $(INC_LIB) | sort -u`
+else
 		if test "$(host_os)" = "netware" ; \
 		then \
 		  $(libmysqld_a_AR) libmysqld.a libmysqld_int.a $(INC_LIB) ; \
@@ -103,7 +108,7 @@ libmysqld.a:	libmysqld_int.a $(INC_LIB)
 		  rm -f tmp/* ; \
 		  $(RANLIB) libmysqld.a	; \
 		fi
-
+endif
 
 ## XXX: any time the client interface changes, we'll need to bump
 ## the version info for libmysqld; however, it's possible for the

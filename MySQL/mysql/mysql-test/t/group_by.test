@@ -1,3 +1,4 @@
+
 # Initialise
 --disable_warnings
 drop table if exists t1,t2,t3;
@@ -489,3 +490,105 @@ select a,sum(b) from t1 where a=1 group by c having a=1;
 select a as d,sum(b) from t1 where a=1 group by c having d=1;
 select sum(a)*sum(b) as d from t1 where a=1 group by c having d > 0;
 drop table t1;
+
+# Test for BUG#9213 GROUP BY query on utf-8 key returns wrong results
+create table t1(a int);
+insert into t1 values (0),(1),(2),(3),(4),(5),(6),(8),(9);
+create table t2 (
+  a int,
+  b varchar(200) NOT NULL,
+  c varchar(50) NOT NULL,
+  d varchar(100) NOT NULL,
+  primary key (a,b(132),c,d),
+  key a (a,b)
+) charset=utf8;
+
+insert into t2 select 
+   x3.a,  -- 3
+   concat('val-', x3.a + 3*x4.a), -- 12
+   concat('val-', @a:=x3.a + 3*x4.a + 12*C.a), -- 120
+   concat('val-', @a + 120*D.a)
+from t1 x3, t1 x4, t1 C, t1 D where x3.a < 3 and x4.a < 4 and D.a < 4;
+
+delete from t2  where a = 2 and b = 'val-2' order by a,b,c,d limit 30;
+
+explain select c from t2 where a = 2 and b = 'val-2' group by c;
+select c from t2 where a = 2 and b = 'val-2' group by c;
+drop table t1,t2;
+
+# Test for BUG#9298 "Wrong handling of int4 unsigned columns in GROUP functions"
+# (the actual problem was with protocol code, not GROUP BY)
+create table t1 (b int4 unsigned not null);
+insert into t1 values(3000000000);
+select * from t1;
+select min(b) from t1;
+drop table t1;
+
+#
+# Test for bug #11088: GROUP BY a BLOB column with COUNT(DISTINCT column1) 
+#
+
+CREATE TABLE t1 (id int PRIMARY KEY, user_id int, hostname longtext);
+
+INSERT INTO t1 VALUES
+  (1, 7, 'cache-dtc-af05.proxy.aol.com'),
+  (2, 3, 'what.ever.com'),
+  (3, 7, 'cache-dtc-af05.proxy.aol.com'),
+  (4, 7, 'cache-dtc-af05.proxy.aol.com');
+
+SELECT hostname, COUNT(DISTINCT user_id) as no FROM t1
+  WHERE hostname LIKE '%aol%'
+    GROUP BY hostname;
+
+DROP TABLE t1;
+
+#
+# Test for bug #8614: GROUP BY 'const' with DISTINCT  
+#
+
+CREATE TABLE t1 (a  int, b int);
+INSERT INTO t1 VALUES (1,2), (1,3);
+SELECT a, b FROM t1 GROUP BY 'const';
+SELECT DISTINCT a, b FROM t1 GROUP BY 'const';
+
+DROP TABLE t1;
+
+#
+# Test for bug #11385: GROUP BY for datetime converted to decimals  
+#
+
+CREATE TABLE t1 (id INT, dt DATETIME);
+INSERT INTO t1 VALUES ( 1, '2005-05-01 12:30:00' );
+INSERT INTO t1 VALUES ( 1, '2005-05-01 12:30:00' );
+INSERT INTO t1 VALUES ( 1, '2005-05-01 12:30:00' );
+INSERT INTO t1 VALUES ( 1, '2005-05-01 12:30:00' );
+SELECT dt DIV 1 AS f, id FROM t1 GROUP BY f;
+
+DROP TABLE t1;
+
+#
+# Test for bug #11295: GROUP BY a BLOB column with COUNT(DISTINCT column1) 
+#                      when the BLOB column takes NULL values
+# 
+
+CREATE TABLE t1 (id varchar(20) NOT NULL);
+INSERT INTO t1 VALUES ('trans1'), ('trans2');
+CREATE TABLE t2 (id varchar(20) NOT NULL, err_comment blob NOT NULL);
+INSERT INTO t2 VALUES ('trans1', 'a problem');
+
+SELECT COUNT(DISTINCT(t1.id)), LEFT(err_comment, 256) AS err_comment
+  FROM t1 LEFT JOIN t2 ON t1.id=t2.id GROUP BY err_comment;
+
+DROP TABLE t1, t2;
+
+#
+# Test for bug #11414: crash on Windows for a simple GROUP BY query 
+#  
+                    
+CREATE TABLE t1 (n int);
+INSERT INTO t1 VALUES (1);
+
+SELECT n+1 AS n FROM t1 GROUP BY n;
+
+DROP TABLE t1;
+

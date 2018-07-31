@@ -15,10 +15,9 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
-
 #include "mysql_priv.h"
 #include <m_ctype.h>
 #include "my_dir.h"
@@ -200,6 +199,11 @@ void Item::set_name(const char *str, uint length, CHARSET_INFO *cs)
 
 bool Item::eq(const Item *item, bool binary_cmp) const
 {
+  /*
+    Note, that this is never TRUE if item is a Item_param:
+    for all basic constants we have special checks, and Item_param's
+    type() can be only among basic constant types.
+  */
   return type() == item->type() && name && item->name &&
     !my_strcasecmp(system_charset_info,name,item->name);
 }
@@ -236,13 +240,25 @@ Item *Item_string::safe_charset_converter(CHARSET_INFO *tocs)
     return NULL;
   }
   conv->str_value.copy();
+  /* 
+    The above line executes str_value.realloc() internally,
+    which alligns Alloced_length using ALLIGN_SIZE.
+    In the case of Item_string::str_value we don't want
+    Alloced_length to be longer than str_length.
+    Otherwise, some functions like Item_func_concat::val_str()
+    try to reuse str_value as a buffer for concatenation result
+    for optimization purposes, so our string constant become
+    corrupted. See bug#8785 for more details.
+    Let's shrink Alloced_length to str_length to avoid this problem.
+  */
+  conv->str_value.shrink_to_length();
   return conv;
 }
 
 
 bool Item_string::eq(const Item *item, bool binary_cmp) const
 {
-  if (type() == item->type())
+  if (type() == item->type() && item->basic_const_item())
   {
     if (binary_cmp)
       return !stringcmp(&str_value, &item->str_value);
@@ -384,7 +400,6 @@ void Item::split_sum_func2(THD *thd, Item **ref_pointer_array,
 */
 bool DTCollation::aggregate(DTCollation &dt, uint flags)
 {
-  nagg++;
   if (!my_charset_same(collation, dt.collation))
   {
     /* 
@@ -400,7 +415,6 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
       else
       {
 	set(dt); 
-        strong= nagg;
       }
     }
     else if (dt.collation == &my_charset_bin)
@@ -408,7 +422,6 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
       if (dt.derivation <= derivation)
       {
         set(dt);
-        strong= nagg;
       }
       else
        ; // Do nothing
@@ -424,20 +437,18 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
              dt.collation->state & MY_CS_UNICODE)
     {
       set(dt);
-      strong= nagg;
     }
     else if ((flags & MY_COLL_ALLOW_COERCIBLE_CONV) &&
              derivation < dt.derivation &&
-             dt.derivation >= DERIVATION_COERCIBLE)
+             dt.derivation >= DERIVATION_SYSCONST)
     {
       // Do nothing;
     }
     else if ((flags & MY_COLL_ALLOW_COERCIBLE_CONV) &&
              dt.derivation < derivation &&
-             derivation >= DERIVATION_COERCIBLE)
+             derivation >= DERIVATION_SYSCONST)
     {
       set(dt);
-      strong= nagg;
     }
     else
     {
@@ -453,7 +464,6 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
   else if (dt.derivation < derivation)
   {
     set(dt);
-    strong= nagg;
   }
   else
   { 
@@ -468,8 +478,17 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags)
 	set(0, DERIVATION_NONE);
 	return 1;
       }
+      if (collation->state & MY_CS_BINSORT)
+      {
+        return 0;
+      }
+      else if (dt.collation->state & MY_CS_BINSORT)
+      {
+        set(dt);
+        return 0;
+      }
       CHARSET_INFO *bin= get_charset_by_csname(collation->csname, 
-					       MY_CS_BINSORT,MYF(0));
+                                               MY_CS_BINSORT,MYF(0));
       set(bin, DERIVATION_NONE);
     }
   }
@@ -534,7 +553,7 @@ void Item_field::set_field(Field *field_par)
 {
   field=result_field=field_par;			// for easy coding with fields
   maybe_null=field->maybe_null();
-  max_length=field_par->field_length;
+  max_length=field_par->max_length();
   decimals= field->decimals();
   table_name=field_par->table_name;
   field_name=field_par->field_name;
@@ -744,6 +763,13 @@ void Item_int::print(String *str)
 
 Item_uint::Item_uint(const char *str_arg, uint length):
   Item_int(str_arg, length)
+{
+  unsigned_flag= 1;
+}
+
+
+Item_uint::Item_uint(const char *str_arg, longlong i, uint length):
+  Item_int(str_arg, i, length)
 {
   unsigned_flag= 1;
 }
@@ -1140,8 +1166,9 @@ double Item_param::val()
   case LONG_DATA_VALUE:
     {
       int dummy_err;
+      char *end_not_used;
       return my_strntod(str_value.charset(), (char*) str_value.ptr(),
-                        str_value.length(), (char**) 0, &dummy_err);
+                        str_value.length(), &end_not_used, &dummy_err);
     }
   case TIME_VALUE:
     /*
@@ -1310,6 +1337,100 @@ bool Item_param::convert_str_value(THD *thd)
                       str_value.charset());
   }
   return rc;
+}
+
+bool Item_param::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
+{
+  DBUG_ASSERT(fixed == 0);
+  SELECT_LEX *cursel= (SELECT_LEX *) thd->lex->current_select;
+
+  /*
+    Parameters in a subselect should mark the subselect as not constant
+    during prepare
+  */
+  if (state == NO_VALUE)
+  {
+    /*
+      SELECT_LEX_UNIT::item set only for subqueries, so test of it presence
+      can be barrier to stop before derived table SELECT or very outer SELECT
+    */
+    for(;
+        cursel->master_unit()->item;
+        cursel= cursel->outer_select())
+    {
+      Item_subselect *subselect_item= cursel->master_unit()->item;
+      subselect_item->used_tables_cache|= OUTER_REF_TABLE_BIT;
+      subselect_item->const_item_cache= 0;
+    }
+  }
+  fixed= 1;
+  return 0;
+}
+
+
+bool Item_param::basic_const_item() const
+{
+  if (state == NO_VALUE || state == TIME_VALUE)
+    return FALSE;
+  return TRUE;
+}
+
+Item *
+Item_param::new_item()
+{
+  /* see comments in the header file */
+  switch (state) {
+  case NULL_VALUE:
+    return new Item_null(name);
+  case INT_VALUE:
+    return (unsigned_flag ?
+            new Item_uint(name, value.integer, max_length) :
+            new Item_int(name, value.integer, max_length));
+  case REAL_VALUE:
+    return new Item_real(name, value.real, decimals, max_length);
+  case STRING_VALUE:
+  case LONG_DATA_VALUE:
+    return new Item_string(name, str_value.c_ptr_quick(), str_value.length(),
+                           str_value.charset());
+  case TIME_VALUE:
+    break;
+  case NO_VALUE:
+  default:
+    DBUG_ASSERT(0);
+  };
+  return 0;
+}
+
+
+bool
+Item_param::eq(const Item *arg, bool binary_cmp) const
+{
+  Item *item;
+  if (!basic_const_item() || !arg->basic_const_item() || arg->type() != type())
+    return FALSE;
+  /*
+    We need to cast off const to call val_int(). This should be OK for
+    a basic constant.
+  */
+  item= (Item*) arg;
+
+  switch (state) {
+  case NULL_VALUE:
+    return TRUE;
+  case INT_VALUE:
+    return value.integer == item->val_int() &&
+           unsigned_flag == item->unsigned_flag;
+  case REAL_VALUE:
+    return value.real == item->val();
+  case STRING_VALUE:
+  case LONG_DATA_VALUE:
+    if (binary_cmp)
+      return !stringcmp(&str_value, &item->str_value);
+    return !sortcmp(&str_value, &item->str_value, collation.collation);
+  default:
+    break;
+  }
+  return FALSE;
 }
 
 /* End of Item_param related */
@@ -1693,10 +1814,10 @@ Field *Item::tmp_table_field_from_field_type(TABLE *table)
   case MYSQL_TYPE_NULL:
     return new Field_null((char*) 0, max_length, Field::NONE,
 			  name, table, &my_charset_bin);
-  case MYSQL_TYPE_NEWDATE:
   case MYSQL_TYPE_INT24:
     return new Field_medium((char*) 0, max_length, null_ptr, 0, Field::NONE,
 			    name, table, 0, unsigned_flag);
+  case MYSQL_TYPE_NEWDATE:
   case MYSQL_TYPE_DATE:
     return new Field_date(maybe_null, name, table, &my_charset_bin);
   case MYSQL_TYPE_TIME:
@@ -1893,6 +2014,36 @@ int Item_int::save_in_field(Field *field, bool no_conversions)
   return field->store(nr);
 }
 
+
+bool Item_int::eq(const Item *arg, bool binary_cmp) const
+{
+  /* No need to check for null value as basic constant can't be NULL */
+  if (arg->basic_const_item() && arg->type() == type())
+  {
+    /*
+      We need to cast off const to call val_int(). This should be OK for
+      a basic constant.
+    */
+    Item *item= (Item*) arg;
+    return item->val_int() == value && item->unsigned_flag == unsigned_flag;
+  }
+  return FALSE;
+}
+
+
+Item *Item_int_with_ref::new_item()
+{
+  DBUG_ASSERT(ref->const_item());
+  /*
+    We need to evaluate the constant to make sure it works with
+    parameter markers.
+  */
+  return (ref->unsigned_flag ?
+          new Item_uint(ref->name, ref->val_int(), ref->max_length) :
+          new Item_int(ref->name, ref->val_int(), ref->max_length));
+}
+
+
 Item_num *Item_uint::neg()
 {
   return new Item_real(name, - ((double) value), 0, max_length);
@@ -1905,6 +2056,21 @@ int Item_real::save_in_field(Field *field, bool no_conversions)
     return set_field_to_null(field);
   field->set_notnull();
   return field->store(nr);
+}
+
+
+bool Item_real::eq(const Item *arg, bool binary_cmp) const
+{
+  if (arg->basic_const_item() && arg->type() == type())
+  {
+    /*
+      We need to cast off const to call val_int(). This should be OK for
+      a basic constant.
+    */
+    Item *item= (Item*) arg;
+    return item->val() == value;
+  }
+  return FALSE;
 }
 
 /****************************************************************************
@@ -1940,6 +2106,7 @@ Item_varbinary::Item_varbinary(const char *str, uint str_length)
   *ptr=0;					// Keep purify happy
   collation.set(&my_charset_bin, DERIVATION_COERCIBLE);
   fixed= 1;
+  unsigned_flag= 1;
 }
 
 longlong Item_varbinary::val_int()
@@ -1972,6 +2139,17 @@ int Item_varbinary::save_in_field(Field *field, bool no_conversions)
   return error;
 }
 
+
+bool Item_varbinary::eq(const Item *arg, bool binary_cmp) const
+{
+  if (arg->basic_const_item() && arg->type() == type())
+  {
+    if (binary_cmp)
+      return !stringcmp(&str_value, &arg->str_value);
+    return !sortcmp(&str_value, &arg->str_value, collation.collation);
+  }
+  return FALSE;
+}
 
 /*
   Pack data in buffer for sending
@@ -2286,6 +2464,7 @@ void Item_ref::set_properties()
   decimals=   (*ref)->decimals;
   collation.set((*ref)->collation);
   with_sum_func= (*ref)->with_sum_func;
+  unsigned_flag= (*ref)->unsigned_flag;
   fixed= 1;
 }
 
@@ -2585,10 +2764,12 @@ double Item_cache_str::val()
   DBUG_ASSERT(fixed == 1);
   int err;
   if (value)
+  {
+    char *end_not_used;
     return my_strntod(value->charset(), (char*) value->ptr(),
-		      value->length(), (char**) 0, &err);
-  else
-    return (double)0;
+		      value->length(), &end_not_used, &err);
+  }
+  return (double)0;
 }
 
 
@@ -2691,203 +2872,277 @@ void Item_cache_row::bring_value()
 }
 
 
-/*
-  Returns field for temporary table dependind on item type
-
-  SYNOPSIS
-    get_holder_example_field()
-    thd            - thread handler
-    item           - pointer to item
-    table          - empty table object
-
-  NOTE
-    It is possible to return field for Item_func 
-    items only if field type of this item is 
-    date or time or datetime type.
-    also see function field_types_to_be_kept() from
-    field.cc
-
-  RETURN
-    # - field
-    0 - no field
-*/
-
-Field *get_holder_example_field(THD *thd, Item *item, TABLE *table)
-{
-  DBUG_ASSERT(table);
-
-  Item_func *tmp_item= 0;
-  if (item->type() == Item::FIELD_ITEM)
-    return (((Item_field*) item)->field);
-  if (item->type() == Item::FUNC_ITEM)
-    tmp_item= (Item_func *) item;
-  else if (item->type() == Item::SUM_FUNC_ITEM)
-  {
-    Item_sum *item_sum= (Item_sum *) item;
-    if (item_sum->keep_field_type())
-    {
-      if (item_sum->args[0]->type() == Item::FIELD_ITEM)
-        return (((Item_field*) item_sum->args[0])->field);
-      if (item_sum->args[0]->type() == Item::FUNC_ITEM)
-        tmp_item= (Item_func *) item_sum->args[0];
-    }
-  }
-  return (tmp_item && field_types_to_be_kept(tmp_item->field_type()) ?
-          tmp_item->tmp_table_field(table) : 0);
-}
-
-
-Item_type_holder::Item_type_holder(THD *thd, Item *item, TABLE *table)
-  :Item(thd, item), item_type(item->result_type()),
-   orig_type(item_type)
+Item_type_holder::Item_type_holder(THD *thd, Item *item)
+  :Item(thd, item), enum_set_typelib(0), fld_type(get_real_type(item))
 {
   DBUG_ASSERT(item->fixed);
 
-  /*
-    It is safe assign pointer on field, because it will be used just after
-    all JOIN::prepare calls and before any SELECT execution
-  */
-  field_example= get_holder_example_field(thd, item, table);
-  max_length= real_length(item);
+  max_length= display_length(item);
   maybe_null= item->maybe_null;
   collation.set(item->collation);
+  get_full_info(item);
 }
 
 
 /*
-  STRING_RESULT, REAL_RESULT, INT_RESULT, ROW_RESULT
-
-  ROW_RESULT should never appear in Item_type_holder::join_types,
-  but it is included in following table just to make table full
-  (there DBUG_ASSERT in function to catch ROW_RESULT)
-*/
-static Item_result type_convertor[4][4]=
-{{STRING_RESULT, STRING_RESULT, STRING_RESULT, ROW_RESULT},
- {STRING_RESULT, REAL_RESULT,   REAL_RESULT,   ROW_RESULT},
- {STRING_RESULT, REAL_RESULT,   INT_RESULT,    ROW_RESULT},
- {ROW_RESULT,    ROW_RESULT,    ROW_RESULT,    ROW_RESULT}};
-
-
-/*
-  Values of 'from' field can be stored in 'to' field.
+  Return expression type of Item_type_holder
 
   SYNOPSIS
-    is_attr_compatible()
-    from        Item which values should be saved
-    to          Item where values should be saved
+    Item_type_holder::result_type()
 
   RETURN
-    1   can be saved
-    0   can not be saved
+     Item_result (type of internal MySQL expression result)
 */
 
-inline bool is_attr_compatible(Item *from, Item *to)
+Item_result Item_type_holder::result_type() const
 {
-  return ((to->max_length >= from->max_length) &&
-          (to->maybe_null || !from->maybe_null) &&
-          (to->result_type() != STRING_RESULT ||
-           from->result_type() != STRING_RESULT ||
-          (from->collation.collation == to->collation.collation)));
+  return Field::result_merge_type(fld_type);
 }
 
 
-bool Item_type_holder::join_types(THD *thd, Item *item, TABLE *table)
+/*
+  Find real field type of item
+
+  SYNOPSIS
+    Item_type_holder::get_real_type()
+
+  RETURN
+    type of field which should be created to store item value
+*/
+
+enum_field_types Item_type_holder::get_real_type(Item *item)
 {
-  uint32 new_length= real_length(item);
-  bool use_new_field= 0, use_expression_type= 0;
-  Item_result new_result_type= type_convertor[item_type][item->result_type()];
-  Field *field= get_holder_example_field(thd, item, table);
-  bool item_is_a_field= (field != NULL);
-  /*
-    Check if both items point to fields: in this case we
-    can adjust column types of result table in the union smartly.
-  */
-  if (field_example && item_is_a_field)
+  switch(item->type())
   {
-    /* Can 'field_example' field store data of the column? */
-    if ((use_new_field=
-         (!field->field_cast_compatible(field_example->field_cast_type()) ||
-          !is_attr_compatible(item, this))))
-    {
-      /*
-        The old field can't store value of the new field.
-        Check if the new field can store value of the old one.
-      */
-      use_expression_type|=
-        (!field_example->field_cast_compatible(field->field_cast_type()) ||
-         !is_attr_compatible(this, item));
-    }
-  }
-  else if (field_example || item_is_a_field)
+  case FIELD_ITEM:
   {
     /*
-      Expression types can't be mixed with field types, we have to use
-      expression types.
+      Item_fields::field_type ask Field_type() but sometimes field return
+      a different type, like for enum/set, so we need to ask real type.
     */
-    use_new_field= 1;                           // make next if test easier
-    use_expression_type= 1;
+    Field *field= ((Item_field *) item)->field;
+    enum_field_types type= field->real_type();
+    /* work around about varchar type field detection */
+    if (type == MYSQL_TYPE_STRING && field->type() == MYSQL_TYPE_VAR_STRING)
+      return MYSQL_TYPE_VAR_STRING;
+    return type;
   }
-
-  /* Check whether size/type of the result item should be changed */
-  if (use_new_field ||
-      (new_result_type != item_type) || (new_length > max_length) ||
-      (!maybe_null && item->maybe_null) ||
-      (item_type == STRING_RESULT && 
-       collation.collation != item->collation.collation))
+  case SUM_FUNC_ITEM:
   {
-    const char *old_cs,*old_derivation;
-    if (use_expression_type || !item_is_a_field)
-      field_example= 0;
-    else
+    /*
+      Argument of aggregate function sometimes should be asked about field
+      type
+    */
+    Item_sum *item_sum= (Item_sum *) item;
+    if (item_sum->keep_field_type())
+      return get_real_type(item_sum->args[0]);
+    break;
+  }
+  case FUNC_ITEM:
+    if (((Item_func *) item)->functype() == Item_func::VAR_VALUE_FUNC)
     {
       /*
-        It is safe to assign a pointer to field here, because it will be used
-        before any table is closed.
+        There are work around of problem with changing variable type on the
+        fly and variable always report "string" as field type to get
+        acceptable information for client in send_field, so we make field
+        type from expression type.
       */
-      field_example= field;
+      switch (item->result_type())
+      {
+      case STRING_RESULT:
+        return MYSQL_TYPE_VAR_STRING;
+      case INT_RESULT:
+        return MYSQL_TYPE_LONGLONG;
+      case REAL_RESULT:
+        return MYSQL_TYPE_DOUBLE;
+      case ROW_RESULT:
+      default:
+        DBUG_ASSERT(0);
+        return MYSQL_TYPE_VAR_STRING;
+      }
     }
+    break;
+  default:
+    break;
+  }
+  return item->field_type();
+}
 
+/*
+  Find field type which can carry current Item_type_holder type and
+  type of given Item.
+
+  SYNOPSIS
+    Item_type_holder::join_types()
+    thd     thread handler
+    item    given item to join its parameters with this item ones
+
+  RETURN
+    TRUE   error - types are incompatible
+    FALSE  OK
+*/
+
+bool Item_type_holder::join_types(THD *thd, Item *item)
+{
+  max_length= max(max_length, display_length(item));
+  fld_type= Field::field_type_merge(fld_type, get_real_type(item));
+  if (Field::result_merge_type(fld_type) == STRING_RESULT)
+  {
+    const char *old_cs, *old_derivation;
     old_cs= collation.collation->name;
     old_derivation= collation.derivation_name();
-    if (item_type == STRING_RESULT && collation.aggregate(item->collation))
+    if (collation.aggregate(item->collation))
     {
       my_error(ER_CANT_AGGREGATE_2COLLATIONS, MYF(0),
 	       old_cs, old_derivation,
 	       item->collation.collation->name,
 	       item->collation.derivation_name(),
 	       "UNION");
-      return 1;
+      return TRUE;
     }
-
-    max_length= max(max_length, new_length);
-    decimals= max(decimals, item->decimals);
-    maybe_null|= item->maybe_null;
-    item_type= new_result_type;
   }
-  DBUG_ASSERT(item_type != ROW_RESULT);
-  return 0;
+  decimals= max(decimals, item->decimals);
+  maybe_null|= item->maybe_null;
+  get_full_info(item);
+  return FALSE;
 }
 
+/*
+  Calculate lenth for merging result for given Item type
 
-uint32 Item_type_holder::real_length(Item *item)
+  SYNOPSIS
+    Item_type_holder::real_length()
+    item  Item for lrngth detection
+
+  RETURN
+    length
+*/
+
+uint32 Item_type_holder::display_length(Item *item)
 {
   if (item->type() == Item::FIELD_ITEM)
     return ((Item_field *)item)->max_disp_length();
 
-  switch (item->result_type())
+  switch (item->field_type())
   {
-  case STRING_RESULT:
+  case MYSQL_TYPE_DECIMAL:
+  case MYSQL_TYPE_TIMESTAMP:
+  case MYSQL_TYPE_DATE:
+  case MYSQL_TYPE_TIME:
+  case MYSQL_TYPE_DATETIME:
+  case MYSQL_TYPE_YEAR:
+  case MYSQL_TYPE_NEWDATE:
+  case MYSQL_TYPE_ENUM:
+  case MYSQL_TYPE_SET:
+  case MYSQL_TYPE_TINY_BLOB:
+  case MYSQL_TYPE_MEDIUM_BLOB:
+  case MYSQL_TYPE_LONG_BLOB:
+  case MYSQL_TYPE_BLOB:
+  case MYSQL_TYPE_VAR_STRING:
+  case MYSQL_TYPE_STRING:
+  case MYSQL_TYPE_GEOMETRY:
     return item->max_length;
-  case REAL_RESULT:
+  case MYSQL_TYPE_TINY:
+    return 4;
+  case MYSQL_TYPE_SHORT:
+    return 6;
+  case MYSQL_TYPE_LONG:
+    return 11;
+  case MYSQL_TYPE_FLOAT:
+    return 25;
+  case MYSQL_TYPE_DOUBLE:
     return 53;
-  case INT_RESULT:
+  case MYSQL_TYPE_NULL:
+    return 4;
+  case MYSQL_TYPE_LONGLONG:
     return 20;
-  case ROW_RESULT:
+  case MYSQL_TYPE_INT24:
+    return 8;
   default:
     DBUG_ASSERT(0); // we should never go there
     return 0;
   }
 }
+
+
+/*
+  Make temporary table field according collected information about type
+  of UNION result
+
+  SYNOPSIS
+    Item_type_holder::make_field_by_type()
+    table  temporary table for which we create fields
+
+  RETURN
+    created field
+*/
+
+Field *Item_type_holder::make_field_by_type(TABLE *table)
+{
+  /*
+    The field functions defines a field to be not null if null_ptr is not 0
+  */
+  uchar *null_ptr= maybe_null ? (uchar*) "" : 0;
+  switch (fld_type)
+  {
+  case MYSQL_TYPE_ENUM:
+    DBUG_ASSERT(enum_set_typelib);
+    return new Field_enum((char *) 0, max_length, null_ptr, 0,
+                          Field::NONE, name,
+                          table, get_enum_pack_length(enum_set_typelib->count),
+                          enum_set_typelib, collation.collation);
+  case MYSQL_TYPE_SET:
+    DBUG_ASSERT(enum_set_typelib);
+    return new Field_set((char *) 0, max_length, null_ptr, 0,
+                         Field::NONE, name,
+                         table, get_set_pack_length(enum_set_typelib->count),
+                         enum_set_typelib, collation.collation);
+  case MYSQL_TYPE_VAR_STRING:
+    table->db_create_options|= HA_OPTION_PACK_RECORD;
+    fld_type= MYSQL_TYPE_STRING;
+    break;
+  default:
+    break;
+  }
+  return tmp_table_field_from_field_type(table);
+}
+
+
+/*
+  Get full information from Item about enum/set fields to be able to create
+  them later
+
+  SYNOPSIS
+    Item_type_holder::get_full_info
+    item    Item for information collection
+*/
+void Item_type_holder::get_full_info(Item *item)
+{
+  if (fld_type == MYSQL_TYPE_ENUM ||
+      fld_type == MYSQL_TYPE_SET)
+  {
+    if (item->type() == Item::SUM_FUNC_ITEM &&
+        (((Item_sum*)item)->sum_func() == Item_sum::MAX_FUNC ||
+         ((Item_sum*)item)->sum_func() == Item_sum::MIN_FUNC))
+      item = ((Item_sum*)item)->args[0];
+    /*
+      We can have enum/set type after merging only if we have one enum|set
+      field (or MIN|MAX(enum|set field)) and number of NULL fields
+    */
+    DBUG_ASSERT((enum_set_typelib &&
+                 get_real_type(item) == MYSQL_TYPE_NULL) ||
+                (!enum_set_typelib &&
+                 item->type() == Item::FIELD_ITEM &&
+                 (get_real_type(item) == MYSQL_TYPE_ENUM ||
+                  get_real_type(item) == MYSQL_TYPE_SET) &&
+                 ((Field_enum*)((Item_field *) item)->field)->typelib));
+    if (!enum_set_typelib)
+    {
+      enum_set_typelib= ((Field_enum*)((Item_field *) item)->field)->typelib;
+    }
+  }
+}
+
 
 double Item_type_holder::val()
 {

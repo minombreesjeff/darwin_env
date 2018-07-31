@@ -48,16 +48,19 @@ global_warnings="-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wch
 c_warnings="$global_warnings -Wunused"
 cxx_warnings="$global_warnings -Woverloaded-virtual -Wsign-promo -Wreorder -Wctor-dtor-privacy -Wnon-virtual-dtor"
 
-base_max_configs="--with-innodb --with-bdb --with-ndbcluster --with-archive-storage-engine --with-raid --with-openssl --with-raid --with-vio"
-max_leave_isam_configs="--with-innodb --with-bdb --with-ndbcluster --with-archive-storage-engine --with-raid --with-openssl --with-raid --with-vio --with-embedded-server"
+base_max_configs="--with-innodb --with-berkeley-db --with-ndbcluster --with-archive-storage-engine --with-raid --with-openssl --with-raid --with-vio"
+max_leave_isam_configs="--with-innodb --with-berkeley-db --with-ndbcluster --with-archive-storage-engine --with-raid --with-openssl --with-raid --with-vio --with-embedded-server"
 max_no_es_configs="$max_leave_isam_configs --without-isam"
 max_configs="$max_no_es_configs --with-embedded-server"
 
-alpha_cflags="-mcpu=ev6 -Wa,-mev6"	# Not used yet
-amd64_cflags="-DBIG_TABLES"
-pentium_cflags="-mcpu=pentiumpro"
-pentium64_cflags="-mcpu=nocona -m64"
-ppc_cflags="-mpowerpc -mcpu=powerpc"
+path=`dirname $0`
+. "$path/check-cpu"
+
+alpha_cflags="$check_cpu_cflags -Wa,-m$cpu_flag"
+amd64_cflags="$check_cpu_cflags -DBIG_TABLES"
+pentium_cflags="$check_cpu_cflags"
+pentium64_cflags="$check_cpu_cflags -m64"
+ppc_cflags="$check_cpu_cflags"
 sparc_cflags=""
 
 # be as fast as we can be without losing our ability to backtrace

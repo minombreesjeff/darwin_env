@@ -60,6 +60,12 @@
 #include <sys/stat.h>
 #include <violite.h>
 #include <regex.h>                        /* Our own version of lib */
+#ifdef HAVE_SYS_WAIT_H
+#include <sys/wait.h>
+#endif
+#ifndef WEXITSTATUS
+# define WEXITSTATUS(stat_val) ((unsigned)(stat_val) >> 8)
+#endif
 #define MAX_QUERY     131072
 #define MAX_VAR_NAME	256
 #define MAX_COLUMNS	256
@@ -153,10 +159,6 @@ static char TMPDIR[FN_REFLEN];
 static char delimiter[MAX_DELIMITER]= DEFAULT_DELIMITER;
 static uint delimiter_length= 1;
 
-static int *cur_block, *block_stack_end;
-static int block_stack[BLOCK_STACK_DEPTH];
-
-static int block_ok_stack[BLOCK_STACK_DEPTH];
 static CHARSET_INFO *charset_info= &my_charset_latin1; /* Default charset */
 static const char *charset_name= "latin1"; /* Default character set name */
 
@@ -210,8 +212,6 @@ MYSQL_RES *last_result=0;
 
 PARSER parser;
 MASTER_POS master_pos;
-int *block_ok; /* set to 0 if the current block should not be executed */
-int false_block_depth = 0;
 /* if set, all results are concated and compared against this file */
 const char *result_file = 0;
 
@@ -280,6 +280,8 @@ Q_DISPLAY_VERTICAL_RESULTS, Q_DISPLAY_HORIZONTAL_RESULTS,
 Q_QUERY_VERTICAL, Q_QUERY_HORIZONTAL,
 Q_START_TIMER, Q_END_TIMER,
 Q_CHARACTER_SET, Q_DISABLE_PS_PROTOCOL, Q_ENABLE_PS_PROTOCOL,
+Q_DISABLE_RECONNECT, Q_ENABLE_RECONNECT,
+Q_IF,
 
 Q_UNKNOWN,			       /* Unknown command.   */
 Q_COMMENT,			       /* Comments, ignored. */
@@ -365,8 +367,21 @@ const char *command_names[]=
   "character_set",
   "disable_ps_protocol",
   "enable_ps_protocol",
+  "disable_reconnect",
+  "enable_reconnect",
+  "if",
   0
 };
+
+/* Block stack */
+typedef struct
+{
+  int                 line; /* Start line of block */
+  my_bool             ok;   /* Should block be executed */
+  enum enum_commands  cmd;  /* Command owning the block */
+} BLOCK;
+static BLOCK block_stack[BLOCK_STACK_DEPTH];
+static BLOCK *cur_block, *block_stack_end;
 
 TYPELIB command_typelib= {array_elements(command_names),"",
 			  command_names, 0};
@@ -569,7 +584,7 @@ static void abort_not_supported_test()
     printf("skipped\n");
   free_used_memory();
   my_end(MY_CHECK_ERROR);
-  exit(2);
+  exit(62);
 }
 
 static void verbose_msg(const char* fmt, ...)
@@ -778,7 +793,7 @@ int var_set(const char *var_name, const char *var_name_end,
   }
   else
     v = var_reg + digit;
-  return eval_expr(v, var_val, (const char**)&var_val_end);
+  DBUG_RETURN(eval_expr(v, var_val, (const char**)&var_val_end));
 }
 
 
@@ -952,9 +967,37 @@ static void do_exec(struct st_query* q)
       replace_dynstr_append_mem(ds, buf, strlen(buf));
   }
   error= pclose(res_file);
-
   if (error != 0)
-    die("command \"%s\" failed", cmd);
+  {
+    uint status= WEXITSTATUS(error), i;
+    my_bool ok= 0;
+
+    if (q->abort_on_error)
+      die("At line %u: command \"%s\" failed", start_lineno, cmd);
+
+    DBUG_PRINT("info",
+               ("error: %d, status: %d", error, status));
+    for (i=0 ; (uint) i < q->expected_errors ; i++)
+    {
+      DBUG_PRINT("info", ("expected error: %d",
+                          q->expected_errno[i].code.errnum));
+      if ((q->expected_errno[i].type == ERR_ERRNO) &&
+          (q->expected_errno[i].code.errnum == status))
+        ok= 1;
+      verbose_msg("At line %u: command \"%s\" failed with expected error: %d",
+                  start_lineno, cmd, status);
+    }
+    if (!ok)
+      die("At line: %u: command \"%s\" failed with wrong error: %d",
+          start_lineno, cmd, status);
+  }
+  else if (q->expected_errno[0].type == ERR_ERRNO &&
+           q->expected_errno[0].code.errnum != 0)
+  {
+    /* Error code we wanted was != 0, i.e. not an expected success */
+    die("At line: %u: command \"%s\" succeeded - should have failed with errno %d...",
+        start_lineno, cmd, q->expected_errno[0].code.errnum);
+  }
 
   if (!disable_result_log)
   {
@@ -1720,36 +1763,54 @@ int do_connect(struct st_query* q)
 
 int do_done(struct st_query* q)
 {
+  /* Dummy statement to eliminate compiler warning */
   q->type = Q_END_BLOCK;
+
+  /* Check if empty block stack */
   if (cur_block == block_stack)
     die("Stray '}' - end of block before beginning");
-  if (*block_ok--)
+
+  /* Test if inner block has been executed */
+  if (cur_block->ok && cur_block->cmd == Q_WHILE)
   {
-    parser.current_line = *--cur_block;
+    /* Pop block from stack, re-execute outer block */
+    cur_block--;
+    parser.current_line = cur_block->line;
   }
   else
   {
-    ++parser.current_line;
-    --cur_block;
+    /* Pop block from stack, goto next line */
+    cur_block--;
+    parser.current_line++;
   }
   return 0;
 }
 
-int do_while(struct st_query* q)
+
+int do_block(enum enum_commands cmd, struct st_query* q)
 {
   char* p=q->first_argument;
   const char* expr_start, *expr_end;
   VAR v;
+
+  /* Check stack overflow */
   if (cur_block == block_stack_end)
     die("Nesting too deeply");
-  if (!*block_ok)
+
+  /* Set way to find outer block again, increase line counter */
+  cur_block->line= parser.current_line++;
+
+  /* If this block is ignored */
+  if (!cur_block->ok)
   {
-    ++false_block_depth;
-    *++block_ok = 0;
-    *cur_block++ = parser.current_line++;
+    /* Inner block should be ignored too */
+    cur_block++;
+    cur_block->cmd= cmd;
+    cur_block->ok= FALSE;
     return 0;
   }
 
+  /* Parse and evaluate test expression */
   expr_start = strchr(p, '(');
   if (!expr_start)
     die("missing '(' in while");
@@ -1758,14 +1819,12 @@ int do_while(struct st_query* q)
     die("missing ')' in while");
   var_init(&v,0,0,0,0);
   eval_expr(&v, ++expr_start, &expr_end);
-  *cur_block++ = parser.current_line++;
-  if (!v.int_val)
-  {
-    *++block_ok = 0;
-    false_block_depth++;
-  }
-  else
-    *++block_ok = 1;
+
+  /* Define inner block */
+  cur_block++;
+  cur_block->cmd= cmd;
+  cur_block->ok= (v.int_val ? TRUE : FALSE);
+
   var_free(&v);
   return 0;
 }
@@ -2594,6 +2653,8 @@ static int run_query_normal(MYSQL* mysql, struct st_query* q, int flags)
 
     if (!disable_result_log)
     {
+      ulong affected_rows;    /* Ok to be undef if 'disable_info' is set */
+
       if (res)
       {
 	MYSQL_FIELD *field= mysql_fetch_fields(res);
@@ -2615,6 +2676,13 @@ static int run_query_normal(MYSQL* mysql, struct st_query* q, int flags)
 	}
 	append_result(ds, res);
       }
+
+      /*
+        Need to call mysql_affected_rows() before the new
+        query to find the warnings
+      */
+      if (!disable_info)
+        affected_rows= (ulong)mysql_affected_rows(mysql);
 
       /* Add all warnings to the result */
       if (!disable_warnings && mysql_warning_count(mysql))
@@ -2638,7 +2706,7 @@ static int run_query_normal(MYSQL* mysql, struct st_query* q, int flags)
       if (!disable_info)
       {
 	char buf[40];
-	sprintf(buf,"affected rows: %lu\n",(ulong) mysql_affected_rows(mysql));
+	sprintf(buf,"affected rows: %lu\n", affected_rows);
 	dynstr_append(ds, buf);
 	if (mysql_info(mysql))
 	{
@@ -3046,7 +3114,7 @@ static void run_query_display_metadata(MYSQL_FIELD *field, uint num_fields,
 {
   MYSQL_FIELD *field_end;
   dynstr_append(ds,"Catalog\tDatabase\tTable\tTable_alias\tColumn\t"
-                "Column_alias\tName\tType\tLength\tMax length\tIs_null\t"
+                "Column_alias\tType\tLength\tMax length\tIs_null\t"
                 "Flags\tDecimals\tCharsetnr\n");
 
   for (field_end= field+num_fields ;
@@ -3392,12 +3460,13 @@ int main(int argc, char **argv)
   lineno   = lineno_stack;
   my_init_dynamic_array(&q_lines, sizeof(struct st_query*), INIT_Q_LINES,
 		     INIT_Q_LINES);
+
   memset(block_stack, 0, sizeof(block_stack));
-  block_stack_end = block_stack + BLOCK_STACK_DEPTH;
-  memset(block_ok_stack, 0, sizeof(block_stack));
-  cur_block = block_stack;
-  block_ok = block_ok_stack;
-  *block_ok = 1;
+  block_stack_end= block_stack + BLOCK_STACK_DEPTH;
+  cur_block= block_stack;
+  cur_block->ok= TRUE; /* Outer block should always be executed */
+  cur_block->cmd= Q_UNKNOWN;
+
   init_dynamic_string(&ds_res, "", 0, 65536);
   parse_args(argc, argv);
   if (mysql_server_init(embedded_server_arg_count,
@@ -3449,7 +3518,7 @@ int main(int argc, char **argv)
     int current_line_inc = 1, processed = 0;
     if (q->type == Q_UNKNOWN || q->type == Q_COMMENT_WITH_COMMAND)
       get_query_type(q);
-    if (*block_ok)
+    if (cur_block->ok)
     {
       processed = 1;
       switch (q->type) {
@@ -3519,6 +3588,12 @@ int main(int argc, char **argv)
 	if (q->query == q->query_buf)
 	  q->query += q->first_word_len + 1;
 	display_result_vertically= (q->type==Q_QUERY_VERTICAL);
+	if (save_file[0])
+	{
+	  strmov(q->record_file,save_file);
+	  q->require_file=require_file;
+	  save_file[0]=0;
+	}
 	error|= run_query(&cur_con->mysql, q, QUERY_REAP|QUERY_SEND);
 	display_result_vertically= old_display_result_vertically;
 	break;
@@ -3624,6 +3699,12 @@ int main(int argc, char **argv)
       case Q_ENABLE_PS_PROTOCOL:
         ps_protocol_enabled= ps_protocol;
         break;
+      case Q_DISABLE_RECONNECT:
+        cur_con->mysql.reconnect= 0;
+        break;
+      case Q_ENABLE_RECONNECT:
+        cur_con->mysql.reconnect= 1;
+        break;
 
       default: processed = 0; break;
       }
@@ -3633,7 +3714,8 @@ int main(int argc, char **argv)
     {
       current_line_inc = 0;
       switch (q->type) {
-      case Q_WHILE: do_while(q); break;
+      case Q_WHILE: do_block(Q_WHILE, q); break;
+      case Q_IF: do_block(Q_IF, q); break;
       case Q_END_BLOCK: do_done(q); break;
       default: current_line_inc = 1; break;
       }
@@ -3907,8 +3989,8 @@ static REP_SET *make_new_set(REP_SETS *sets);
 static void make_sets_invisible(REP_SETS *sets);
 static void free_last_set(REP_SETS *sets);
 static void free_sets(REP_SETS *sets);
-static void set_bit(REP_SET *set, uint bit);
-static void clear_bit(REP_SET *set, uint bit);
+static void internal_set_bit(REP_SET *set, uint bit);
+static void internal_clear_bit(REP_SET *set, uint bit);
 static void or_bits(REP_SET *to,REP_SET *from);
 static void copy_bits(REP_SET *to,REP_SET *from);
 static int cmp_bits(REP_SET *set1,REP_SET *set2);
@@ -3985,7 +4067,7 @@ REPLACE *init_replace(my_string *from, my_string *to,uint count,
   {
     if (from[i][0] == '\\' && from[i][1] == '^')
     {
-      set_bit(start_states,states+1);
+      internal_set_bit(start_states,states+1);
       if (!from[i][2])
       {
 	start_states->table_offset=i;
@@ -3994,8 +4076,8 @@ REPLACE *init_replace(my_string *from, my_string *to,uint count,
     }
     else if (from[i][0] == '\\' && from[i][1] == '$')
     {
-      set_bit(start_states,states);
-      set_bit(word_states,states);
+      internal_set_bit(start_states,states);
+      internal_set_bit(word_states,states);
       if (!from[i][2] && start_states->table_offset == (uint) ~0)
       {
 	start_states->table_offset=i;
@@ -4004,11 +4086,11 @@ REPLACE *init_replace(my_string *from, my_string *to,uint count,
     }
     else
     {
-      set_bit(word_states,states);
+      internal_set_bit(word_states,states);
       if (from[i][0] == '\\' && (from[i][1] == 'b' && from[i][2]))
-	set_bit(start_states,states+1);
+	internal_set_bit(start_states,states+1);
       else
-	set_bit(start_states,states);
+	internal_set_bit(start_states,states);
     }
     for (pos=from[i], len=0; *pos ; pos++)
     {
@@ -4114,9 +4196,9 @@ REPLACE *init_replace(my_string *from, my_string *to,uint count,
 		follow[i].len > found_end)
 	      found_end=follow[i].len;
 	    if (chr && follow[i].chr)
-	      set_bit(new_set,i+1);		/* To next set */
+	      internal_set_bit(new_set,i+1);		/* To next set */
 	    else
-	      set_bit(new_set,i);
+	      internal_set_bit(new_set,i);
 	  }
 	}
 	if (found_end)
@@ -4133,7 +4215,7 @@ REPLACE *init_replace(my_string *from, my_string *to,uint count,
 	    if (follow[bit_nr-1].len < found_end ||
 		(new_set->found_len &&
 		 (chr == 0 || !follow[bit_nr].chr)))
-	      clear_bit(new_set,i);
+	      internal_clear_bit(new_set,i);
 	    else
 	    {
 	      if (chr == 0 || !follow[bit_nr].chr)
@@ -4282,13 +4364,13 @@ static void free_sets(REP_SETS *sets)
   return;
 }
 
-static void set_bit(REP_SET *set, uint bit)
+static void internal_set_bit(REP_SET *set, uint bit)
 {
   set->bits[bit / WORD_BIT] |= 1 << (bit % WORD_BIT);
   return;
 }
 
-static void clear_bit(REP_SET *set, uint bit)
+static void internal_clear_bit(REP_SET *set, uint bit)
 {
   set->bits[bit / WORD_BIT] &= ~ (1 << (bit % WORD_BIT));
   return;

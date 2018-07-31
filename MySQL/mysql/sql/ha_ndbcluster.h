@@ -21,7 +21,7 @@
 
 /* The class defining a handle to an NDB Cluster table */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface                       /* gcc class implementation */
 #endif
 
@@ -147,7 +147,10 @@ class ha_ndbcluster: public handler
   static Thd_ndb* seize_thd_ndb();
   static void release_thd_ndb(Thd_ndb* thd_ndb);
   uint8 table_cache_type();
-    
+ 
+  static void set_dbname(const char *pathname, char *dbname);
+  static void set_tabname(const char *pathname, char *tabname);
+   
  private:
   int alter_table_name(const char *to);
   int drop_table();
@@ -156,7 +159,7 @@ class ha_ndbcluster: public handler
   int create_unique_index(const char *name, KEY *key_info);
   int initialize_autoincrement(const void *table);
   enum ILBP {ILBP_CREATE = 0, ILBP_OPEN = 1}; // Index List Build Phase
-  int build_index_list(TABLE *tab, enum ILBP phase);
+  int build_index_list(Ndb *ndb, TABLE *tab, enum ILBP phase);
   int get_metadata(const char* path);
   void release_metadata();
   NDB_INDEX_TYPE get_index_type(uint idx_no) const;
@@ -165,7 +168,7 @@ class ha_ndbcluster: public handler
 
   int pk_read(const byte *key, uint key_len, byte *buf);
   int complemented_pk_read(const byte *old_data, byte *new_data);
-  int peek_row();
+  int peek_row(const byte *record);
   int unique_index_read(const byte *key, uint key_len, 
 			byte *buf);
   int ordered_index_scan(const key_range *start_key,
@@ -183,7 +186,6 @@ class ha_ndbcluster: public handler
 
   void set_dbname(const char *pathname);
   void set_tabname(const char *pathname);
-  void set_tabname(const char *pathname, char *tabname);
 
   bool set_hidden_key(NdbOperation*,
 		      uint fieldnr, const byte* field_ptr);
@@ -194,13 +196,13 @@ class ha_ndbcluster: public handler
   friend int g_get_ndb_blobs_value(NdbBlob *ndb_blob, void *arg);
   int get_ndb_blobs_value(NdbBlob *last_ndb_blob);
   int set_primary_key(NdbOperation *op, const byte *key);
-  int set_primary_key(NdbOperation *op);
-  int set_primary_key_from_old_data(NdbOperation *op, const byte *old_data);
+  int set_primary_key_from_record(NdbOperation *op, const byte *record);
   int set_bounds(NdbIndexScanOperation *ndb_op, const key_range *keys[2]);
   int key_cmp(uint keynr, const byte * old_row, const byte * new_row);
   void print_results();
 
   longlong get_auto_increment();
+  void invalidate_dictionary_cache(bool global);
   int ndb_err(NdbConnection*);
   bool uses_blob_value(bool all_fields);
 
@@ -212,6 +214,7 @@ class ha_ndbcluster: public handler
   NdbConnection *m_active_trans;
   NdbResultSet *m_active_cursor;
   void *m_table;
+  int m_table_version;
   void *m_table_info;
   char m_dbname[FN_HEADLEN];
   //char m_schemaname[FN_HEADLEN];
@@ -271,7 +274,8 @@ int ndbcluster_discover(THD* thd, const char* dbname, const char* name,
 			const void** frmblob, uint* frmlen);
 int ndbcluster_find_files(THD *thd,const char *db,const char *path,
 			  const char *wild, bool dir, List<char> *files);
-int ndbcluster_table_exists(THD* thd, const char *db, const char *name);
+int ndbcluster_table_exists_in_engine(THD* thd,
+                                      const char *db, const char *name);
 int ndbcluster_drop_database(const char* path);
 
 void ndbcluster_print_error(int error, const NdbOperation *error_op);

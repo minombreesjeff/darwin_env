@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS t1,t2,T1,T2,t3,T3;
+DROP TABLE IF EXISTS t1,t2,t3,t2aA,t1Aa;
 DROP DATABASE IF EXISTS `TEST_$1`;
 DROP DATABASE IF EXISTS `test_$1`;
+DROP DATABASE IF EXISTS mysqltest_LC2;
 CREATE TABLE T1 (a int);
 INSERT INTO T1 VALUES (1);
 SHOW TABLES LIKE "T1";
@@ -72,7 +73,7 @@ T1	CREATE TABLE `T1` (
 RENAME TABLE T1 TO T2;
 SHOW TABLES LIKE "T2";
 Tables_in_test (T2)
-t2
+T2
 SELECT * FROM t2;
 a
 1
@@ -83,25 +84,25 @@ t3
 RENAME TABLE T3 TO T1;
 SHOW TABLES LIKE "T1";
 Tables_in_test (T1)
-t1
+T1
 ALTER TABLE T1 add b int;
 SHOW TABLES LIKE "T1";
 Tables_in_test (T1)
-t1
+T1
 ALTER TABLE T1 RENAME T2;
 SHOW TABLES LIKE "T2";
 Tables_in_test (T2)
-t2
+T2
 LOCK TABLE T2 WRITE;
 ALTER TABLE T2 drop b;
 SHOW TABLES LIKE "T2";
 Tables_in_test (T2)
-t2
+T2
 UNLOCK TABLES;
 RENAME TABLE T2 TO T1;
 SHOW TABLES LIKE "T1";
 Tables_in_test (T1)
-t1
+T1
 SELECT * from T1;
 a
 1
@@ -141,3 +142,26 @@ select * from T1;
 a	b
 1	abc
 drop table T1;
+create database mysqltest_LC2;
+use mysqltest_LC2;
+create table myUC (i int);
+insert into myUC values (1),(2),(3);
+select * from myUC;
+i
+1
+2
+3
+use test;
+drop database mysqltest_LC2;
+create database mysqltest_LC2;
+use mysqltest_LC2;
+create table myUC (i int);
+select * from myUC;
+i
+use test;
+drop database mysqltest_LC2;
+create table t2aA (col1 int);
+create table t1Aa (col1 int);
+select t1Aa.col1 from t1aA,t2Aa where t1Aa.col1 = t2aA.col1;
+col1
+drop table t2aA, t1Aa;

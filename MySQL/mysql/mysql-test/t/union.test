@@ -641,7 +641,7 @@ drop table t1;
 
 create table t2 (
 a char character set latin1 collate latin1_swedish_ci,
-b char character set latin1 collate latin1_bin);
+b char character set latin1 collate latin1_german1_ci);
 --error 1271
 create table t1 as
 (select a from t2) union
@@ -699,3 +699,67 @@ union
 order by sdate;
 show columns from t4;
 drop table t1, t2, t3, t4;
+
+#
+# Bug #2435 UNION with parentheses not supported
+#
+create table t1 (a int not null, b char (10) not null); 
+insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c'); 
+select * from ((select * from t1 limit 1)) a;
+select * from ((select * from t1 limit 1) union (select * from t1 limit 1)) a;
+select * from ((select * from t1 limit 1) union (select * from t1 limit 1) union (select * from t1 limit 1)) a;
+select * from ((((select * from t1))) union (select * from t1) union (select * from t1)) a;
+select * from ((select * from t1) union (((select * from t1))) union (select * from t1)) a;
+drop table t1;
+
+#
+# Bugs#6519 UNION with collation binary and latin1_swedish_ci fails
+#
+set @val:=6;
+select concat('value is: ', @val) union select 'some text';
+
+#
+# Enum merging test
+#
+CREATE TABLE t1 (
+  a ENUM('ä','ö','ü') character set utf8 not null default 'ü',
+  b ENUM("one", "two") character set utf8,
+  c ENUM("one", "two")
+);
+show create table t1;
+insert into t1 values ('ä', 'one', 'one'), ('ö', 'two', 'one'), ('ü', NULL, NULL);
+create table t2 select NULL union select a from t1;
+show columns from t2;
+drop table t2;
+create table t2 select a from t1 union select NULL;
+show columns from t2;
+drop table t2;
+create table t2 select a from t1 union select a from t1;
+show columns from t2;
+drop table t2;
+-- error 1267
+create table t2 select a from t1 union select c from t1;
+create table t2 select a from t1 union select b from t1;
+show columns from t2;
+drop table t2, t1;
+
+#
+# correct conversion long string to TEXT (BUG#10025)
+#
+CREATE TABLE t1 (a mediumtext);
+CREATE TABLE t2 (b varchar(20));
+INSERT INTO t1 VALUES ('a'),('b');
+SELECT left(a,100000000) FROM t1 UNION  SELECT b FROM t2;
+create table t3 SELECT left(a,100000000) FROM t1 UNION  SELECT b FROM t2;
+show create table t3;
+drop tables t1,t2,t3;
+
+#
+# Bug #10032 Bug in parsing UNION with ORDER BY when one node does not use FROM
+#
+
+create table t1 ( id int not null auto_increment, primary key (id), col1 int);
+insert into t1 (col1) values (2),(3),(4),(5),(6);
+select 99 union all select id from t1 order by 1;
+select id from t1 union all select 99 order by 1;
+drop table t1;

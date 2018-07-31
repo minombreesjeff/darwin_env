@@ -25,6 +25,7 @@ Created 10/25/1995 Heikki Tuuri
 #include "srv0start.h"
 #include "mtr0mtr.h"
 #include "mtr0log.h"
+#include "dict0dict.h"
 
 	 
 /*
@@ -1447,7 +1448,8 @@ fil_write_flushed_lsn_to_data_files(
 		cache. Note that all data files in the system tablespace 0 are
 		always open. */
 
-		if (space->purpose == FIL_TABLESPACE) {
+		if (space->purpose == FIL_TABLESPACE
+		    && space->id == 0) {
 			sum_of_sizes = 0;
 
 			node = UT_LIST_GET_FIRST(space->chain);
@@ -2731,7 +2733,15 @@ fil_load_single_table_tablespace(
 	sprintf(filepath, "%s/%s/%s", fil_path_to_mysql_datadir, dbname,
 								filename);
 	srv_normalize_path_for_win(filepath);
+#ifdef __WIN__
+	/* If lower_case_table_names is 0 or 2, then MySQL allows database
+	directory names with upper case letters. On Windows, all table and
+	database names in InnoDB are internally always in lower case. Put the
+	file path to lower case, so that we are consistent with InnoDB's
+	internal data dictionary. */
 
+	dict_casedn_str(filepath);
+#endif
 	file = os_file_create_simple_no_error_handling(filepath, OS_FILE_OPEN,
 						OS_FILE_READ_ONLY, &success);
 	if (!success) {
@@ -2923,6 +2933,44 @@ func_exit:
 	mem_free(filepath);
 }
 
+/***************************************************************************
+A fault-tolerant function that tries to read the next file name in the
+directory. We retry 100 times if os_file_readdir_next_file() returns -1. The
+idea is to read as much good data as we can and jump over bad data. */
+static
+int
+fil_file_readdir_next_file(
+/*=======================*/
+				/* out: 0 if ok, -1 if error even after the
+				retries, 1 if at the end of the directory */
+	ulint*		err,	/* out: this is set to DB_ERROR if an error
+				was encountered, otherwise not changed */
+	const char*	dirname,/* in: directory name or path */
+	os_file_dir_t	dir,	/* in: directory stream */
+	os_file_stat_t*	info)	/* in/out: buffer where the info is returned */
+{
+	ulint	i;
+	int	ret;
+
+	for (i = 0; i < 100; i++) {
+		ret = os_file_readdir_next_file(dirname, dir, info);
+
+		if (ret != -1) {
+
+			return(ret);
+		}
+		
+		fprintf(stderr,
+"InnoDB: Error: os_file_readdir_next_file() returned -1 in\n"
+"InnoDB: directory %s\n"
+"InnoDB: Crash recovery may have failed for some .ibd files!\n", dirname);
+
+		*err = DB_ERROR;
+	}
+
+	return(-1);
+}
+
 /************************************************************************
 At the server startup, if we need crash recovery, scans the database
 directories under the MySQL datadir, looking for .ibd files. Those files are
@@ -2943,6 +2991,7 @@ fil_load_single_table_tablespaces(void)
 	os_file_dir_t	dbdir;
 	os_file_stat_t	dbinfo;
 	os_file_stat_t	fileinfo;
+	ulint		err 		= DB_SUCCESS;
 
 	/* The datadir of MySQL is always the default directory of mysqld */
 
@@ -2958,7 +3007,7 @@ fil_load_single_table_tablespaces(void)
 	/* Scan all directories under the datadir. They are the database
 	directories of MySQL. */
 
-	ret = os_file_readdir_next_file(fil_path_to_mysql_datadir, dir,
+	ret = fil_file_readdir_next_file(&err, fil_path_to_mysql_datadir, dir,
 								&dbinfo);
 	while (ret == 0) {
 		ulint len;
@@ -2996,7 +3045,7 @@ fil_load_single_table_tablespaces(void)
 			/* We found a database directory; loop through it,
 			looking for possible .ibd files in it */
 
-			ret = os_file_readdir_next_file(dbpath, dbdir,
+			ret = fil_file_readdir_next_file(&err, dbpath, dbdir,
 								&fileinfo);
 			while (ret == 0) {
 				/* printf(
@@ -3018,35 +3067,28 @@ fil_load_single_table_tablespaces(void)
 						dbinfo.name, fileinfo.name);
 				}
 next_file_item:
-				ret = os_file_readdir_next_file(dbpath, dbdir,
+				ret = fil_file_readdir_next_file(&err,
+								dbpath, dbdir,
 								&fileinfo);
 			}
 
 			if (0 != os_file_closedir(dbdir)) {
-				 fputs(
+				fputs(
 "InnoDB: Warning: could not close database directory ", stderr);
-				 ut_print_filename(stderr, dbpath);
-				 putc('\n', stderr);
+				ut_print_filename(stderr, dbpath);
+				putc('\n', stderr);
+
+				err = DB_ERROR;
 			}
 		}
 		
 next_datadir_item:
-		ret = os_file_readdir_next_file(fil_path_to_mysql_datadir,
+		ret = fil_file_readdir_next_file(&err,
+						fil_path_to_mysql_datadir,
 								dir, &dbinfo);
 	}
 
 	mem_free(dbpath);
-
-	/* At the end of directory we should get 1 as the return value, -1
-	if there was an error */
-	if (ret != 1) {
-		fprintf(stderr,
-"InnoDB: Error: os_file_readdir_next_file returned %d in MySQL datadir\n",
-							       ret);
-		os_file_closedir(dir);
-
-		return(DB_ERROR);
-	}
 
 	if (0 != os_file_closedir(dir)) {
 		fprintf(stderr,
@@ -3055,7 +3097,7 @@ next_datadir_item:
 		return(DB_ERROR);
 	}
 
-	return(DB_SUCCESS);
+	return(err);
 }
 
 /************************************************************************
@@ -3358,9 +3400,9 @@ fil_extend_space_to_desired_size(
 	fil_space_t*	space;
 	byte*		buf2;
 	byte*		buf;
+	ulint		buf_size;
 	ulint		start_page_no;
 	ulint		file_start_page_no;
-	ulint		n_pages;
 	ulint		offset_high;
 	ulint		offset_low;
 	ibool		success		= TRUE;
@@ -3385,22 +3427,20 @@ fil_extend_space_to_desired_size(
 
 	fil_node_prepare_for_io(node, system, space);
 
-	/* Extend 1 MB at a time */
-
-	buf2 = mem_alloc(1024 * 1024 + UNIV_PAGE_SIZE);
-	buf = ut_align(buf2, UNIV_PAGE_SIZE);
-
-	memset(buf, '\0', 1024 * 1024);
-
 	start_page_no = space->size;
 	file_start_page_no = space->size - node->size;
 
-	while (start_page_no < size_after_extend) {	
-		n_pages = size_after_extend - start_page_no;
+	/* Extend at most 64 pages at a time */
+	buf_size = ut_min(64, size_after_extend - start_page_no)
+				* UNIV_PAGE_SIZE;
+	buf2 = mem_alloc(buf_size + UNIV_PAGE_SIZE);
+	buf = ut_align(buf2, UNIV_PAGE_SIZE);
 
-		if (n_pages > (1024 * 1024) / UNIV_PAGE_SIZE) {
-			n_pages = (1024 * 1024) / UNIV_PAGE_SIZE;
-		}
+	memset(buf, 0, buf_size);
+
+	while (start_page_no < size_after_extend) {
+		ulint	n_pages = ut_min(buf_size / UNIV_PAGE_SIZE,
+				size_after_extend - start_page_no);
 
 		offset_high = (start_page_no - file_start_page_no)
 				/ (4096 * ((1024 * 1024) / UNIV_PAGE_SIZE));
@@ -3800,13 +3840,6 @@ fil_io(
 	node = UT_LIST_GET_FIRST(space->chain);
 
 	for (;;) {
-		if (space->id != 0 && node->size == 0) {
-			/* We do not know the size of a single-table tablespace
-			before we open the file */
-
-			break;
-		}
-
 		if (node == NULL) {
 			fprintf(stderr,
 	"InnoDB: Error: trying to access page number %lu in space %lu,\n"
@@ -3818,6 +3851,13 @@ fil_io(
 			(ulong) type);
  			
 			ut_error;
+		}
+
+		if (space->id != 0 && node->size == 0) {
+			/* We do not know the size of a single-table tablespace
+			before we open the file */
+
+			break;
 		}
 
 		if (node->size > block_offset) {

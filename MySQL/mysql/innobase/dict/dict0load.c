@@ -729,7 +729,6 @@ dict_load_table(
 	ulint		space;
 	ulint		n_cols;
 	ulint		err;
-	ulint		mix_len;
 	mtr_t		mtr;
 	
 #ifdef UNIV_SYNC_DEBUG
@@ -768,45 +767,13 @@ dict_load_table(
 
 	/* Check if the table name in record is the searched one */
 	if (len != ut_strlen(name) || ut_memcmp(name, field, len) != 0) {
-
+	err_exit:
 		btr_pcur_close(&pcur);
 		mtr_commit(&mtr);
 		mem_heap_free(heap);
 		
 		return(NULL);
 	}
-
-	/* Track a corruption bug reported on the MySQL mailing list Jan 14,
-	2005: mix_len had a value different from 0 */
-
-	field = rec_get_nth_field(rec, 7, &len);
-	ut_a(len == 4);
-
-	mix_len = mach_read_from_4(field);
-
-	if (mix_len != 0 && mix_len != 0x80000000) {
-		ut_print_timestamp(stderr);
-		
-		fprintf(stderr,
-			"  InnoDB: table %s has a nonsensical mix len %lu\n",
-			name, (ulong)mix_len);
-	}
-
-#if MYSQL_VERSION_ID < 50300
-	/* Starting from MySQL 5.0.3, the high-order bit of MIX_LEN is the
-	"compact format" flag. */
-	field = rec_get_nth_field(rec, 7, &len);
-	if (mach_read_from_1(field) & 0x80) {
-		btr_pcur_close(&pcur);
-		mtr_commit(&mtr);
-		mem_heap_free(heap);
-		ut_print_timestamp(stderr);
-		fprintf(stderr,
-			"  InnoDB: table %s is in the new compact format\n"
-			"InnoDB: of MySQL 5.0.3 or later\n", name);
-		return(NULL);
-	}
-#endif /* MYSQL_VERSION_ID < 50300 */
 
 	ut_a(0 == ut_strcmp("SPACE",
 		dict_field_get_col(
@@ -850,6 +817,13 @@ dict_load_table(
 
 	field = rec_get_nth_field(rec, 4, &len);
 	n_cols = mach_read_from_4(field);
+	if (n_cols & 0x80000000UL) {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+			"  InnoDB: table %s is in the new compact format\n"
+			"InnoDB: of MySQL 5.0.3 or later\n", name);
+		goto err_exit;
+	}
 
 	table = dict_mem_table_create(name, space, n_cols);
 
@@ -899,7 +873,7 @@ dict_load_table(
 	
 	dict_load_indexes(table, heap);
 	
-	err = dict_load_foreigns(table->name);
+	err = dict_load_foreigns(table->name, TRUE);
 /*
 	if (err != DB_SUCCESS) {
 	
@@ -1118,8 +1092,9 @@ ulint
 dict_load_foreign(
 /*==============*/
 				/* out: DB_SUCCESS or error code */
-	const char*	id)	/* in: foreign constraint id as a
+	const char*	id,	/* in: foreign constraint id as a
 				null-terminated string */
+	ibool		check_types)/* in: TRUE=check type compatibility */
 {	
 	dict_foreign_t*	foreign;
 	dict_table_t*	sys_foreign;
@@ -1131,7 +1106,6 @@ dict_load_foreign(
 	rec_t*		rec;
 	byte*		field;
 	ulint		len;
-	ulint		err;
 	mtr_t		mtr;
 	
 #ifdef UNIV_SYNC_DEBUG
@@ -1231,9 +1205,7 @@ dict_load_foreign(
 	a new foreign key constraint but loading one from the data
 	dictionary. */
 
-	err = dict_foreign_add_to_cache(foreign);
-
-	return(err); 
+	return(dict_foreign_add_to_cache(foreign, check_types));
 }
 
 /***************************************************************************
@@ -1247,7 +1219,8 @@ ulint
 dict_load_foreigns(
 /*===============*/
 					/* out: DB_SUCCESS or error code */
-	const char*	table_name)	/* in: table name */
+	const char*	table_name,	/* in: table name */
+	ibool		check_types)	/* in: TRUE=check type compatibility */
 {
 	btr_pcur_t	pcur;
 	mem_heap_t* 	heap;
@@ -1346,7 +1319,7 @@ loop:
 
 	/* Load the foreign constraint definition to the dictionary cache */
 	
-	err = dict_load_foreign(id);
+	err = dict_load_foreign(id, check_types);
 
 	if (err != DB_SUCCESS) {
 		btr_pcur_close(&pcur);

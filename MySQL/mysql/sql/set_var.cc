@@ -48,7 +48,7 @@
       new attribute.
 */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -320,6 +320,8 @@ sys_var_bool_ptr	sys_slave_compressed_protocol("slave_compressed_protocol",
 #ifdef HAVE_REPLICATION
 sys_var_long_ptr	sys_slave_net_timeout("slave_net_timeout",
 					      &slave_net_timeout);
+sys_var_long_ptr	sys_slave_trans_retries("slave_transaction_retries",
+                                                &slave_trans_retries);
 #endif
 sys_var_long_ptr	sys_slow_launch_time("slow_launch_time",
 					     &slow_launch_time);
@@ -423,6 +425,9 @@ static sys_var_thd_bit	sys_log_binlog("sql_log_bin",
 static sys_var_thd_bit	sys_sql_warnings("sql_warnings", 0,
 					 set_option_bit,
 					 OPTION_WARNINGS);
+static sys_var_thd_bit	sys_sql_notes("sql_notes", 0,
+					 set_option_bit,
+					 OPTION_SQL_NOTES);
 static sys_var_thd_bit	sys_auto_is_null("sql_auto_is_null", 0,
 					 set_option_bit,
 					 OPTION_AUTO_IS_NULL);
@@ -601,6 +606,7 @@ sys_var *sys_variables[]=
 #ifdef HAVE_REPLICATION
   &sys_slave_compressed_protocol,
   &sys_slave_net_timeout,
+  &sys_slave_trans_retries,
   &sys_slave_skip_counter,
 #endif
   &sys_slow_launch_time,
@@ -610,6 +616,7 @@ sys_var *sys_variables[]=
   &sys_sql_max_join_size,
   &sys_sql_mode,
   &sys_sql_warnings,
+  &sys_sql_notes,
   &sys_storage_engine,
 #ifdef HAVE_REPLICATION
   &sys_sync_binlog_period,
@@ -696,6 +703,7 @@ struct show_var_st init_vars[]= {
   {sys_group_concat_max_len.name, (char*) &sys_group_concat_max_len,  SHOW_SYS},
   {"have_archive",	      (char*) &have_archive_db,	            SHOW_HAVE},
   {"have_bdb",		      (char*) &have_berkeley_db,	    SHOW_HAVE},
+  {"have_blackhole_engine",   (char*) &have_blackhole_db,	    SHOW_HAVE},
   {"have_compress",	      (char*) &have_compress,		    SHOW_HAVE},
   {"have_crypt",	      (char*) &have_crypt,		    SHOW_HAVE},
   {"have_csv",	              (char*) &have_csv_db,	            SHOW_HAVE},
@@ -838,6 +846,7 @@ struct show_var_st init_vars[]= {
   {sys_read_rnd_buff_size.name,(char*) &sys_read_rnd_buff_size,	    SHOW_SYS},
 #ifdef HAVE_REPLICATION
   {sys_relay_log_purge.name,  (char*) &sys_relay_log_purge,         SHOW_SYS},
+  {"relay_log_space_limit",  (char*) &relay_log_space_limit,        SHOW_LONGLONG},
 #endif
   {sys_rpl_recovery_rank.name,(char*) &sys_rpl_recovery_rank,       SHOW_SYS},
   {"secure_auth",             (char*) &sys_secure_auth,             SHOW_SYS},
@@ -851,6 +860,7 @@ struct show_var_st init_vars[]= {
   {"skip_show_database",      (char*) &opt_skip_show_db,            SHOW_BOOL},
 #ifdef HAVE_REPLICATION
   {sys_slave_net_timeout.name,(char*) &sys_slave_net_timeout,	    SHOW_SYS},
+  {sys_slave_trans_retries.name,(char*) &sys_slave_trans_retries,   SHOW_SYS},
 #endif
   {sys_slow_launch_time.name, (char*) &sys_slow_launch_time,        SHOW_SYS},
 #ifdef HAVE_SYS_UN_H
@@ -859,6 +869,8 @@ struct show_var_st init_vars[]= {
   {sys_sort_buffer.name,      (char*) &sys_sort_buffer, 	    SHOW_SYS},
   {sys_sql_mode.name,         (char*) &sys_sql_mode,                SHOW_SYS},
   {sys_storage_engine.name,   (char*) &sys_storage_engine,          SHOW_SYS},
+  {"sql_notes",               (char*) &sys_sql_notes,               SHOW_BOOL},
+  {"sql_warnings",            (char*) &sys_sql_warnings,            SHOW_BOOL},
 #ifdef HAVE_REPLICATION
   {sys_sync_binlog_period.name,(char*) &sys_sync_binlog_period,     SHOW_SYS},
   {sys_sync_replication.name, (char*) &sys_sync_replication,        SHOW_SYS},
@@ -1223,6 +1235,12 @@ static void fix_server_id(THD *thd, enum_var_type type)
   server_id_supplied = 1;
 }
 
+bool sys_var_long_ptr::check(THD *thd, set_var *var)
+{
+  longlong v= var->value->val_int();
+  var->save_result.ulonglong_value= v < 0 ? 0 : v;
+  return 0;
+}
 
 bool sys_var_long_ptr::update(THD *thd, set_var *var)
 {
@@ -1497,7 +1515,10 @@ bool sys_var::check_set(THD *thd, set_var *var, TYPELIB *enum_names)
   if (var->value->result_type() == STRING_RESULT)
   {
     if (!(res= var->value->val_str(&str)))
+    {
+      strmov(buff, "NULL");
       goto err;
+    }
     var->save_result.ulong_value= ((ulong)
 				   find_set(enum_names, res->c_ptr(),
 					    res->length(),
@@ -1586,7 +1607,8 @@ Item *sys_var::item(THD *thd, enum_var_type var_type, LEX_STRING *base)
     Item_string *tmp;
     pthread_mutex_lock(&LOCK_global_system_variables);
     char *str= (char*) value_ptr(thd, var_type, base);
-    tmp= new Item_string(str, strlen(str), system_charset_info);
+    tmp= new Item_string(str, strlen(str),
+                         system_charset_info, DERIVATION_SYSCONST);
     pthread_mutex_unlock(&LOCK_global_system_variables);
     return tmp;
   }
@@ -2967,8 +2989,8 @@ bool sys_var_thd_storage_engine::check(THD *thd, set_var *var)
     enum db_type db_type;
     if (!(res=var->value->val_str(&str)) ||
 	!(var->save_result.ulong_value=
-	 (ulong) (db_type= ha_resolve_by_name(res->ptr(), res->length()))) ||
-	ha_checktype(db_type) != db_type) 
+          (ulong) (db_type= ha_resolve_by_name(res->ptr(), res->length()))) ||
+        ha_checktype(db_type) != db_type)
     {
       value= res ? res->c_ptr() : "NULL";
       goto err;
@@ -3089,8 +3111,14 @@ ulong fix_sql_mode(ulong sql_mode)
   */
 
   if (sql_mode & MODE_ANSI)
+  {
     sql_mode|= (MODE_REAL_AS_FLOAT | MODE_PIPES_AS_CONCAT | MODE_ANSI_QUOTES |
-		MODE_IGNORE_SPACE | MODE_ONLY_FULL_GROUP_BY);
+		MODE_IGNORE_SPACE);
+    /* 
+      MODE_ONLY_FULL_GROUP_BY removed from ANSI mode because it is currently
+      overly restrictive (see BUG#8510).
+    */
+  }
   if (sql_mode & MODE_ORACLE)
     sql_mode|= (MODE_PIPES_AS_CONCAT | MODE_ANSI_QUOTES |
 		MODE_IGNORE_SPACE |

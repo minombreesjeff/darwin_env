@@ -27,12 +27,20 @@
 
 const char *config_file="my";			/* Default config file */
 uint verbose= 0, opt_defaults_file_used= 0;
+const char *default_dbug_option="d:t:o,/tmp/my_print_defaults.trace";
 
 static struct my_option my_long_options[] =
 {
   {"config-file", 'c', "The config file to be used.",
    (gptr*) &config_file, (gptr*) &config_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
+#ifdef DBUG_OFF
+  {"debug", '#', "This is a non-debug version. Catch this and exit",
+   0,0, 0, GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+#else
+  {"debug", '#', "Output debug log", (gptr*) &default_dbug_option,
+   (gptr*) &default_dbug_option, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"defaults-file", 'c', "Synonym for --config-file.",
    (gptr*) &config_file, (gptr*) &config_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
@@ -95,6 +103,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     case 'V':
     usage(1);
     exit(0);
+    case '#':
+      DBUG_PUSH(argument ? argument : default_dbug_option);
+      break;
   }
   return 0;
 }
@@ -118,27 +129,35 @@ static int get_options(int *argc,char ***argv)
 int main(int argc, char **argv)
 {
   int count, error;
-  char **load_default_groups, *tmp_arguments[2],
+  char **load_default_groups, *tmp_arguments[3],
        **argument, **arguments;
+  char *defaults, *extra_defaults;
   MY_INIT(argv[0]);
+
+  get_defaults_files(argc, argv, &defaults, &extra_defaults);
 
   /*
   ** Check out the args
   */
-  if (get_options(&argc,&argv))
-    exit(1);
   if (!(load_default_groups=(char**) my_malloc((argc+2)*sizeof(char*),
 					       MYF(MY_WME))))
+    exit(1);
+  if (get_options(&argc,&argv))
     exit(1);
 
   for (count=0; *argv ; argv++,count++)
     load_default_groups[count]= *argv;
   load_default_groups[count]=0;
 
-  count=1;
+  count=0;
   arguments=tmp_arguments;
-  arguments[0]=my_progname;
-  arguments[1]=0;
+  arguments[count++]=my_progname;
+  if (extra_defaults)
+    arguments[count++]= extra_defaults;
+  if (defaults)
+    arguments[count++]= defaults;
+  arguments[count]= 0;
+
   if ((error= load_defaults(config_file, (const char **) load_default_groups,
 			   &count, &arguments)))
   {

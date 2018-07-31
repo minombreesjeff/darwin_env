@@ -17,7 +17,7 @@
 
 /* Definitions for parameters to do with handler-routines */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -73,6 +73,7 @@
 #define HA_HAS_CHECKSUM        (1 << 24)
 /* Table data are stored in separate files (for lower_case_table_names) */
 #define HA_FILE_BASED	       (1 << 26)
+#define HA_ANY_INDEX_MAY_BE_UNIQUE (1 << 30)
 
 
 /* bits in index_flags(index_number) for what you can do with index */
@@ -150,7 +151,8 @@ enum db_type
   DB_TYPE_BERKELEY_DB, DB_TYPE_INNODB, 
   DB_TYPE_GEMINI, DB_TYPE_NDBCLUSTER,
   DB_TYPE_EXAMPLE_DB, DB_TYPE_ARCHIVE_DB, DB_TYPE_CSV_DB,
-	       
+  DB_TYPE_FEDERATED_DB,
+  DB_TYPE_BLACKHOLE_DB,
   DB_TYPE_DEFAULT // Must be last
 };
 
@@ -203,6 +205,7 @@ typedef struct st_ha_create_information
   SQL_LIST merge_list;
   enum db_type db_type;
   enum row_type row_type;
+  uint null_bits;                       /* NULL bits at start of record */
   uint options;				/* OR of HA_CREATE_ options */
   uint raid_type,raid_chunks;
   uint merge_insert_method;
@@ -449,6 +452,8 @@ public:
   virtual void append_create_info(String *packet) {}
   virtual char* get_foreign_key_create_info()
   { return(NULL);}  /* gets foreign key create string from InnoDB */
+  /* used in ALTER TABLE; 1 if changing storage engine is allowed */
+  virtual bool can_switch_engines() { return 1; }
   /* used in REPLACE; is > 0 if table is referred by a FOREIGN KEY */
   virtual uint referenced_by_foreign_key() { return 0;}
   virtual void init_table_handle_for_HANDLER()
@@ -539,10 +544,10 @@ int ha_init(void);
 int ha_panic(enum ha_panic_function flag);
 void ha_close_connection(THD* thd);
 enum db_type ha_checktype(enum db_type database_type);
+my_bool ha_storage_engine_is_enabled(enum db_type database_type);
 int ha_create_table(const char *name, HA_CREATE_INFO *create_info,
 		    bool update_create_info);
-int ha_create_table_from_engine(THD* thd, const char *db, const char *name,
-				bool create_if_found);
+int ha_create_table_from_engine(THD* thd, const char *db, const char *name);
 int ha_delete_table(enum db_type db_type, const char *path);
 void ha_drop_database(char* path);
 int ha_init_key_cache(const char *name, KEY_CACHE *key_cache);
@@ -568,6 +573,6 @@ int ha_discover(THD* thd, const char* dbname, const char* name,
 		const void** frmblob, uint* frmlen);
 int ha_find_files(THD *thd,const char *db,const char *path,
 		  const char *wild, bool dir,List<char>* files);
-int ha_table_exists(THD* thd, const char* db, const char* name);
+int ha_table_exists_in_engine(THD* thd, const char* db, const char* name);
 TYPELIB *ha_known_exts(void);
 int ha_start_consistent_snapshot(THD *thd);

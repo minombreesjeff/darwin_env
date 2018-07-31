@@ -194,11 +194,10 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
       test(test_all_bits(options, HA_OPTION_CHECKSUM | HA_PACK_RECORD));
   min_pack_length+=packed;
 
-  if (!ci->data_file_length)
+  if (!ci->data_file_length && ci->max_rows)
   {
-    if (ci->max_rows == 0 || pack_reclength == INT_MAX32)
-      ci->data_file_length= INT_MAX32-1;		/* Should be enough */
-    else if ((~(ulonglong) 0)/ci->max_rows < (ulonglong) pack_reclength)
+    if (pack_reclength == INT_MAX32 ||
+             (~(ulonglong) 0)/ci->max_rows < (ulonglong) pack_reclength)
       ci->data_file_length= ~(ulonglong) 0;
     else
       ci->data_file_length=(ulonglong) ci->max_rows*pack_reclength;
@@ -536,6 +535,21 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     create_flag=MY_DELETE_OLD;
   }
 
+  /*
+    If a MRG_MyISAM table is in use, the mapped MyISAM tables are open,
+    but no entry is made in the table cache for them.
+    A TRUNCATE command checks for the table in the cache only and could
+    be fooled to believe, the table is not open.
+    Pull the emergency brake in this situation. (Bug #8306)
+  */
+  if (test_if_reopen(filename))
+  {
+    my_printf_error(0, "MyISAM table '%s' is in use "
+                    "(most likely by a MERGE table). Try FLUSH TABLES.",
+                    MYF(0), name + dirname_length(name));
+    goto err;
+  }
+
   if ((file= my_create_with_symlink(linkname_ptr, filename, 0, create_mode,
 				    MYF(MY_WME | create_flag))) < 0)
     goto err;
@@ -709,10 +723,13 @@ err:
 
 uint mi_get_pointer_length(ulonglong file_length, uint def)
 {
+  DBUG_ASSERT(def >= 2 && def <= 7);
   if (file_length)				/* If not default */
   {
+#ifdef NOT_YET_READY_FOR_8_BYTE_POINTERS
     if (file_length >= (longlong) 1 << 56)
       def=8;
+#endif
     if (file_length >= (longlong) 1 << 48)
       def=7;
     if (file_length >= (longlong) 1 << 40)

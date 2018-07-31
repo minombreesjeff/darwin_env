@@ -448,6 +448,8 @@ public:
   NdbScanOperation* getNdbScanOperation(const NdbDictionary::Table * table);
   NdbIndexScanOperation* getNdbIndexScanOperation(const NdbDictionary::Index * index,
 						  const NdbDictionary::Table * table);
+
+  Uint32	getConnectedNodeId();	          // Get Connected node id
   
 private:						
   /**
@@ -480,7 +482,6 @@ private:
    */
   void setConnectedNodeId( Uint32 nodeId, Uint32 sequence); 
 
-  Uint32	getConnectedNodeId();	          // Get Connected node id
   void		setMyBlockReference( int );	  // Set my block refrerence
   void		setTC_ConnectPtr( Uint32 );	  // Sets TC Connect pointer
   int		getTC_ConnectPtr();		  // Gets TC Connect pointer
@@ -541,6 +542,7 @@ private:
   // Release all cursor operations in connection
   void releaseOps(NdbOperation*);	
   void releaseScanOperations(NdbIndexScanOperation*);	
+  void releaseExecutedScanOperation(NdbIndexScanOperation*);
 
   // Set the transaction identity of the transaction
   void		setTransactionId(Uint64 aTransactionId);

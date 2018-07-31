@@ -28,8 +28,8 @@
 ** dynamic functions, so this shouldn't be a real problem.
 */
 
-#ifdef __GNUC__
-#pragma implementation				// gcc: implement sql_udf.h
+#ifdef USE_PRAGMA_IMPLEMENTATION
+#pragma implementation				// gcc: Class implementation
 #endif
 
 #include "mysql_priv.h"
@@ -193,7 +193,9 @@ void udf_init()
       This is done to ensure that only approved dll from the system
       directories are used (to make this even remotely secure).
     */
-    if (strchr(dl_name, '/') || name.length > NAME_LEN)
+    if (strchr(dl_name, '/') ||
+        IF_WIN(strchr(dl_name, '\\'),0) ||
+        strlen(name.str) > NAME_LEN)
     {
       sql_print_error("Invalid row in mysql.func table for function '%.64s'",
                       name.str);
@@ -222,7 +224,7 @@ void udf_init()
     }
     tmp->dlhandle = dl;
     {
-      char buf[MAX_FIELD_NAME+16], *missing;
+      char buf[NAME_LEN+16], *missing;
       if ((missing= init_syms(tmp, buf)))
       {
         sql_print_error(ER(ER_CANT_FIND_DL_ENTRY), missing);
@@ -409,7 +411,7 @@ int mysql_create_function(THD *thd,udf_func *udf)
     This is done to ensure that only approved dll from the system
     directories are used (to make this even remotely secure).
   */
-  if (strchr(udf->dl, '/'))
+  if (strchr(udf->dl, '/') || IF_WIN(strchr(udf->dl, '\\'),0))
   {
     send_error(thd, ER_UDF_NO_PATHS,ER(ER_UDF_NO_PATHS));
     DBUG_RETURN(1);
@@ -439,7 +441,7 @@ int mysql_create_function(THD *thd,udf_func *udf)
   }
   udf->dlhandle=dl;
   {
-    char buf[MAX_FIELD_NAME+16], *missing;
+    char buf[NAME_LEN+16], *missing;
     if ((missing= init_syms(udf, buf)))
     {
       net_printf(thd, ER_CANT_FIND_DL_ENTRY, missing);
@@ -526,8 +528,11 @@ int mysql_drop_function(THD *thd,const LEX_STRING *udf_name)
   tables.real_name= tables.alias= (char*) "func";
   if (!(table = open_ltable(thd,&tables,TL_WRITE)))
     goto err;
-  if (!table->file->index_read_idx(table->record[0],0,(byte*) udf_name->str,
-				   (uint) udf_name->length,
+  table->field[0]->store(udf_name->str, udf_name->length, system_charset_info);
+  table->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
+  if (!table->file->index_read_idx(table->record[0], 0,
+				   (byte*) table->field[0]->ptr,
+				   table->key_info[0].key_length,
 				   HA_READ_KEY_EXACT))
   {
     int error;

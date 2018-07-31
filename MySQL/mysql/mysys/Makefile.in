@@ -107,7 +107,8 @@ am_libmysys_a_OBJECTS = my_init.$(OBJEXT) my_getwd.$(OBJEXT) \
 	my_sleep.$(OBJEXT) charset.$(OBJEXT) charset-def.$(OBJEXT) \
 	my_bitmap.$(OBJEXT) my_bit.$(OBJEXT) md5.$(OBJEXT) \
 	my_gethostbyname.$(OBJEXT) rijndael.$(OBJEXT) my_aes.$(OBJEXT) \
-	sha1.$(OBJEXT) my_handler.$(OBJEXT) my_netware.$(OBJEXT)
+	sha1.$(OBJEXT) my_handler.$(OBJEXT) my_netware.$(OBJEXT) \
+	my_windac.$(OBJEXT) my_access.$(OBJEXT)
 libmysys_a_OBJECTS = $(am_libmysys_a_OBJECTS)
 PROGRAMS = $(noinst_PROGRAMS)
 charset2html_SOURCES = charset2html.c
@@ -139,16 +140,16 @@ am__depfiles_maybe = depfiles
 @AMDEP_TRUE@	./$(DEPDIR)/mf_tempfile.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/mf_unixpath.Po ./$(DEPDIR)/mf_wcomp.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/mf_wfile.Po ./$(DEPDIR)/mulalloc.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_aes.Po ./$(DEPDIR)/my_alarm.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_alloc.Po ./$(DEPDIR)/my_append.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_bit.Po ./$(DEPDIR)/my_bitmap.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_chsize.Po ./$(DEPDIR)/my_clock.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_compress.Po ./$(DEPDIR)/my_copy.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_crc32.Po ./$(DEPDIR)/my_create.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_delete.Po ./$(DEPDIR)/my_div.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_dup.Po ./$(DEPDIR)/my_error.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_file.Po ./$(DEPDIR)/my_fopen.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_fstream.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_access.Po ./$(DEPDIR)/my_aes.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_alarm.Po ./$(DEPDIR)/my_alloc.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_append.Po ./$(DEPDIR)/my_bit.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_bitmap.Po ./$(DEPDIR)/my_chsize.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_clock.Po ./$(DEPDIR)/my_compress.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_copy.Po ./$(DEPDIR)/my_crc32.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_create.Po ./$(DEPDIR)/my_delete.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_div.Po ./$(DEPDIR)/my_dup.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_error.Po ./$(DEPDIR)/my_file.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_fopen.Po ./$(DEPDIR)/my_fstream.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/my_gethostbyname.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/my_gethwaddr.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/my_getopt.Po \
@@ -169,12 +170,12 @@ am__depfiles_maybe = depfiles
 @AMDEP_TRUE@	./$(DEPDIR)/my_sleep.Po ./$(DEPDIR)/my_static.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/my_symlink.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/my_symlink2.Po ./$(DEPDIR)/my_sync.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/my_tempnam.Po ./$(DEPDIR)/my_write.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/ptr_cmp.Po ./$(DEPDIR)/queues.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/raid.Po ./$(DEPDIR)/rijndael.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/safemalloc.Po ./$(DEPDIR)/sha1.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/string.Po ./$(DEPDIR)/tree.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/typelib.Po
+@AMDEP_TRUE@	./$(DEPDIR)/my_tempnam.Po ./$(DEPDIR)/my_windac.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/my_write.Po ./$(DEPDIR)/ptr_cmp.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/queues.Po ./$(DEPDIR)/raid.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/rijndael.Po ./$(DEPDIR)/safemalloc.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/sha1.Po ./$(DEPDIR)/string.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/tree.Po ./$(DEPDIR)/typelib.Po
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) \
@@ -243,6 +244,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DDEFAULT_BASEDIR=\"$(prefix)\" \
 			-DDATADIR="\"$(MYSQLDATAdir)\"" \
 			-DDEFAULT_CHARSET_HOME="\"$(MYSQLBASEdir)\"" \
@@ -273,7 +276,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -346,6 +348,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -453,7 +456,8 @@ MYSQLDATAdir = $(localstatedir)
 MYSQLSHAREdir = $(pkgdatadir)
 MYSQLBASEdir = $(prefix)
 INCLUDES = @MT_INCLUDES@ \
-                        @ZLIB_INCLUDES@ -I$(top_srcdir)/include -I$(srcdir)
+                        @ZLIB_INCLUDES@ -I$(top_builddir)/include \
+			-I$(top_srcdir)/include -I$(srcdir)
 
 pkglib_LIBRARIES = libmysys.a
 LDADD = libmysys.a ../dbug/libdbug.a \
@@ -491,7 +495,7 @@ libmysys_a_SOURCES = my_init.c my_getwd.c mf_getdate.c \
 			my_net.c my_semaphore.c my_port.c my_sleep.c \
 			charset.c charset-def.c my_bitmap.c my_bit.c md5.c \
 			my_gethostbyname.c rijndael.c my_aes.c sha1.c \
-			my_handler.c my_netware.c
+			my_handler.c my_netware.c my_windac.c my_access.c 
 
 EXTRA_DIST = thr_alarm.c thr_lock.c my_pthread.c my_thr_init.c \
 			thr_mutex.c thr_rwlock.c
@@ -616,6 +620,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_wcomp.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_wfile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mulalloc.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_access.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_aes.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_alarm.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_alloc.Po@am__quote@
@@ -670,6 +675,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_symlink2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_sync.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_tempnam.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_windac.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_write.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ptr_cmp.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/queues.Po@am__quote@

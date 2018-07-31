@@ -17,7 +17,7 @@
 
 /* compare and test functions */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -284,6 +284,7 @@ public:
   Item_func_equal(Item *a,Item *b) :Item_bool_rowready_func2(a,b) {};
   longlong val_int();
   void fix_length_and_dec();
+  table_map not_null_tables() const { return 0; }
   enum Functype functype() const { return EQUAL_FUNC; }
   enum Functype rev_functype() const { return EQUAL_FUNC; }
   cond_result eq_cmp_result() const { return COND_TRUE; }
@@ -768,6 +769,12 @@ class Item_func_in :public Item_int_func
   bool nulls_in_row();
   bool is_bool_func() { return 1; }
   CHARSET_INFO *compare_collation() { return cmp_collation.collation; }
+  /*
+    IN() protect from NULL only first argument, if construction like
+    "expression IN ()" will be allowed, we will need to check number of
+    argument here, because "NOT(NULL IN ())" is TRUE.
+  */
+  table_map not_null_tables() const { return args[0]->not_null_tables(); }
 };
 
 /* Functions used by where clause */
@@ -965,6 +972,8 @@ public:
   enum Functype functype() const { return COND_AND_FUNC; }
   longlong val_int();
   const char *func_name() const { return "and"; }
+  table_map not_null_tables() const
+  { return abort_on_null ? not_null_tables_cache: and_tables_cache; }
   Item* copy_andor_structure(THD *thd)
   {
     Item_cond_and *item;
@@ -1012,6 +1021,7 @@ public:
   enum Type type() const { return FUNC_ITEM; }
   longlong val_int();
   const char *func_name() const { return "xor"; }
+  void top_level_item() {}
 };
 
 

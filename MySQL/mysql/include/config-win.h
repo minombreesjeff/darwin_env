@@ -31,18 +31,25 @@ functions */
 
 #define HAVE_SMEM 1
 
-#if defined(__NT__)
-#define SYSTEM_TYPE	"NT"
-#elif defined(__WIN2000__)
-#define SYSTEM_TYPE	"WIN2000"
+#if defined(_WIN64) || defined(WIN64) 
+#define SYSTEM_TYPE	"Win64" 
+#elif defined(_WIN32) || defined(WIN32) 
+#define SYSTEM_TYPE	"Win32" 
 #else
-#define SYSTEM_TYPE	"Win95/Win98"
+#define SYSTEM_TYPE	"Windows"
 #endif
 
-#if defined(_WIN64) || defined(WIN64)
-#define MACHINE_TYPE	"ia64"		/* Define to machine type name */
+#if defined(_M_IA64) 
+#define MACHINE_TYPE	"ia64" 
+#elif defined(_M_IX86) 
+#define MACHINE_TYPE	"ia32" 
+#elif defined(_M_ALPHA) 
+#define MACHINE_TYPE	"axp" 
 #else
-#define MACHINE_TYPE	"i32"		/* Define to machine type name */
+#define MACHINE_TYPE	"unknown"	/* Define to machine type name */
+#endif 
+ 
+#if !(defined(_WIN64) || defined(WIN64)) 
 #ifndef _WIN32
 #define _WIN32				/* Compatible with old source */
 #endif
@@ -99,20 +106,33 @@ functions */
 
 /* Type information */
 
+#if defined(__EMX__) || !defined(HAVE_UINT)
+#undef HAVE_UINT
+#define HAVE_UINT
 typedef unsigned short	ushort;
 typedef unsigned int	uint;
+#endif /* defined(__EMX__) || !defined(HAVE_UINT) */
+
 typedef unsigned __int64 ulonglong;	/* Microsofts 64 bit types */
 typedef __int64 longlong;
+#ifndef HAVE_SIGSET_T
 typedef int sigset_t;
+#endif
 #define longlong_defined
-/* off_t should not be __int64 because of conflicts in header files;
-   Use my_off_t or os_off_t instead */
+/*
+  off_t should not be __int64 because of conflicts in header files;
+  Use my_off_t or os_off_t instead
+*/
+#ifndef HAVE_OFF_T
 typedef long off_t;
+#endif
 typedef __int64 os_off_t;
 #ifdef _WIN64
 typedef UINT_PTR rf_SetTimer;
 #else
+#ifndef HAVE_SIZE_T
 typedef unsigned int size_t;
+#endif
 typedef uint rf_SetTimer;
 #endif
 
@@ -373,6 +393,7 @@ inline double ulonglong2double(ulonglong value)
 /* #undef HAVE_CHARSET_cp850 */
 /* #undef HAVE_CHARSET_cp852 */
 /* #undef HAVE_CHARSET_cp866 */
+#define HAVE_CHARSET_cp932 1
 /* #undef HAVE_CHARSET_dec8 */
 #define HAVE_CHARSET_euckr 1
 #define HAVE_CHARSET_gb2312 1
@@ -395,4 +416,5 @@ inline double ulonglong2double(ulonglong value)
 #define HAVE_CHARSET_ucs2 1
 #define HAVE_CHARSET_ujis 1
 #define HAVE_CHARSET_utf8 1
+#define HAVE_UCA_COLLATIONS 1
 

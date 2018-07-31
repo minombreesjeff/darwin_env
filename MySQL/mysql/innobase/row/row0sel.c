@@ -2407,10 +2407,11 @@ row_sel_store_mysql_rec(
 			collations will be introduced in 4.1,
 			we hardcode the charset-collation codes here.
 			5.0 will use a different approach. */
-			if (templ->charset == 35
+			if (pad_char != '\0'
+					&& (templ->charset == 35
 					|| templ->charset == 90
 					|| (templ->charset >= 128
-					&& templ->charset <= 144)) {
+					&& templ->charset <= 144))) {
 				/* There are two bytes per char, so the length
 				has to be an even number. */
 				ut_a(!(templ->mysql_col_len & 1));
@@ -2505,6 +2506,8 @@ row_sel_get_clust_rec_for_mysql(
 			prebuilt->clust_pcur, 0, mtr);
 
 	clust_rec = btr_pcur_get_rec(prebuilt->clust_pcur);
+
+	prebuilt->clust_pcur->trx_if_known = trx;
 
 	/* Note: only if the search ends up on a non-infimum record is the
 	low_match value the real match to the search tuple */
@@ -2912,14 +2915,19 @@ row_search_for_mysql(
 		ut_error;
 	}
 
-	if (trx->n_mysql_tables_in_use == 0) {
+	if (trx->n_mysql_tables_in_use == 0
+            && prebuilt->select_lock_type == LOCK_NONE) {
+		/* Note that if MySQL uses an InnoDB temp table that it
+		created inside LOCK TABLES, then n_mysql_tables_in_use can
+		be zero; in that case select_lock_type is set to LOCK_X in
+		::start_stmt. */
+
 		fputs(
 "InnoDB: Error: MySQL is trying to perform a SELECT\n"
 "InnoDB: but it has not locked any tables in ::external_lock()!\n",
                       stderr);
 		trx_print(stderr, trx);
                 fputc('\n', stderr);
-		ut_a(0);
 	}
 
 /*	fprintf(stderr, "Match mode %lu\n search tuple ", (ulong) match_mode);
@@ -3216,6 +3224,8 @@ shortcut_fails_too_big_rec:
 		btr_pcur_open_with_no_init(index, search_tuple, mode,
 					BTR_SEARCH_LEAF,
 					pcur, 0, &mtr);
+
+		pcur->trx_if_known = trx;
 	} else {
 		if (mode == PAGE_CUR_G) {
 			btr_pcur_open_at_index_side(TRUE, index,
@@ -3295,12 +3305,12 @@ rec_loop:
 				err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_ORDINARY, thr);
+				if (err != DB_SUCCESS) {
+
+					goto lock_wait_or_error;
+				}
 			}
 
-			if (err != DB_SUCCESS) {
-
-				goto lock_wait_or_error;
-			}
 		}
 		/* A page supremum record cannot be in the result set: skip
 		it now that we have placed a possible lock on it */
@@ -3320,10 +3330,10 @@ rec_loop:
 			ut_print_timestamp(stderr);
 			buf_page_print(buf_frame_align(rec));
 			fprintf(stderr,
-"\nInnoDB: rec address %lx, first buffer frame %lx\n"
-"InnoDB: buffer pool high end %lx, buf block fix count %lu\n",
-				(ulong)rec, (ulong)buf_pool->frame_zero,
-				(ulong)buf_pool->high_end,
+"\nInnoDB: rec address %p, first buffer frame %p\n"
+"InnoDB: buffer pool high end %p, buf block fix count %lu\n",
+				rec, buf_pool->frame_zero,
+				buf_pool->high_end,
 				(ulong)buf_block_align(rec)->buf_fix_count);
 			fprintf(stderr,
 "InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
@@ -3403,12 +3413,12 @@ rec_loop:
 					err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_GAP, thr);
+					if (err != DB_SUCCESS) {
+
+						goto lock_wait_or_error;
+					}
 				}
 
-				if (err != DB_SUCCESS) {
-
-					goto lock_wait_or_error;
-				}
 			}
 
 			btr_pcur_store_position(pcur, &mtr);
@@ -3436,12 +3446,12 @@ rec_loop:
 					err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_GAP, thr);
+					if (err != DB_SUCCESS) {
+
+						goto lock_wait_or_error;
+					}
 				}
 
-				if (err != DB_SUCCESS) {
-
-					goto lock_wait_or_error;
-				}
 			}
 
 			btr_pcur_store_position(pcur, &mtr);

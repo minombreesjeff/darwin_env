@@ -16,7 +16,7 @@
 
 /* This file is originally from the mysql distribution. Coded by monty */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -73,7 +73,7 @@ public:
   { return (void*) alloc_root(mem_root, (uint) size); }
   static void operator delete(void *ptr_arg,size_t size)
     {}
-  static void operator delete(void *ptr_arg,size_t size, MEM_ROOT *mem_root)
+  static void operator delete(void *ptr_arg, MEM_ROOT *mem_root)
     {}
   ~String() { free(); }
 
@@ -176,6 +176,10 @@ public:
 	Alloced_length=arg_length;
       }
     }
+  }
+  inline void shrink_to_length()
+  {
+    Alloced_length= str_length;
   }
   bool is_alloced() { return alloced; }
   inline String& operator = (const String &s)

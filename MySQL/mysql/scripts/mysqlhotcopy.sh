@@ -272,10 +272,7 @@ foreach my $rdb ( @db_desc ) {
     my $negated;
     if ($rdb->{t_regex}) {
         $t_regex = $rdb->{t_regex};        ## assign temporary regex
-        $negated = $t_regex =~ tr/~//d;    ## remove and count
-                                           ## negation operator: we
-                                           ## don't allow ~ in table
-                                           ## names
+        $negated = $t_regex =~ s/^~//;     ## note and remove negation operator
 
         $t_regex = qr/$t_regex/;           ## make regex string from
                                            ## user regex
@@ -749,9 +746,15 @@ sub record_log_pos {
 	my ($file,$position) = get_row( $dbh, "show master status" );
 	die "master status is undefined" if !defined $file || !defined $position;
 	
-	my ($master_host, undef, undef, undef, $log_file, $log_pos ) 
-	    = get_row( $dbh, "show slave status" );
-	
+	my $row_hash = get_row_hash( $dbh, "show slave status" );
+	my ($master_host, $log_file, $log_pos ); 
+	if ( $dbh->{mysql_serverinfo} =~ /^3\.23/ ) {
+	    ($master_host, $log_file, $log_pos ) 
+	      = @{$row_hash}{ qw / Master_Host Log_File Pos / };
+	} else {
+	    ($master_host, $log_file, $log_pos ) 
+	      = @{$row_hash}{ qw / Master_Host Master_Log_File Read_Master_Log_Pos / };
+	}
 	my $hostname = hostname();
 	
 	$dbh->do( qq{ replace into $table_name 
@@ -774,6 +777,14 @@ sub get_row {
   my $sth = $dbh->prepare($sql);
   $sth->execute;
   return $sth->fetchrow_array();
+}
+
+sub get_row_hash {
+  my ( $dbh, $sql ) = @_;
+
+  my $sth = $dbh->prepare($sql);
+  $sth->execute;
+  return $sth->fetchrow_hashref();
 }
 
 sub scan_raid_dir {
@@ -820,6 +831,16 @@ sub get_list_of_tables {
     });
 
     my @dbh_tables = eval { $dbh->tables() };
+
+    ## Remove quotes around table names
+    my $quote = $dbh->get_info(29); # SQL_IDENTIFIER_QUOTE_CHAR
+    if ($quote) {
+      foreach (@dbh_tables) {
+        s/^$quote(.*)$quote$/$1/;
+        s/$quote$quote/$quote/g;
+      }
+    }
+
     $dbh->disconnect();
     return @dbh_tables;
 }

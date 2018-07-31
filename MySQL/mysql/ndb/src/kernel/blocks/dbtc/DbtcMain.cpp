@@ -722,11 +722,14 @@ Dbtc::set_timeout_value(Uint32 timeOut)
 void
 Dbtc::set_appl_timeout_value(Uint32 timeOut)
 {
-  timeOut /= 10;
-  if (timeOut < ctimeOutValue) {
-    jam();
-    c_appl_timeout_value = ctimeOutValue;
-  }//if
+  if (timeOut)
+  {
+    timeOut /= 10;
+    if (timeOut < ctimeOutValue) {
+      jam();
+      c_appl_timeout_value = ctimeOutValue;
+    }//if
+  }
   c_appl_timeout_value = timeOut;
 }
 
@@ -1838,7 +1841,6 @@ void Dbtc::execKEYINFO(Signal* signal)
   do {
     if (cfirstfreeDatabuf == RNIL) {
       jam();
-      abort();
       seizeDatabuferrorLab(signal);
       return;
     }//if
@@ -5193,7 +5195,8 @@ void Dbtc::execTC_COMMITREQ(Signal* signal)
     const Uint32 transId1      = regApiPtr->transid[0];
     const Uint32 transId2      = regApiPtr->transid[1];
     Uint32 errorCode           = 0;
-    
+
+    regApiPtr->m_exec_flag = 1;
     switch (regApiPtr->apiConnectstate) {
     case CS_STARTED:
       tcConnectptr.i = regApiPtr->firstTcConnect;
@@ -5922,11 +5925,17 @@ int Dbtc::releaseAndAbort(Signal* signal)
   UintR TnoLoops = tcConnectptr.p->noOfNodes;
   
   apiConnectptr.p->counter++;
+  bool prevAlive = false;
   for (Uint32 Ti = 0; Ti < TnoLoops ; Ti++) {
     localHostptr.i = tcConnectptr.p->tcNodedata[Ti];
     ptrCheckGuard(localHostptr, chostFilesize, hostRecord);
     if (localHostptr.p->hostStatus == HS_ALIVE) {
       jam();
+      if (prevAlive) {
+        // if previous is alive, its LQH forwards abort to this node
+        jam();
+        continue;
+      }
       /* ************< */
       /*    ABORT    < */
       /* ************< */
@@ -5936,15 +5945,16 @@ int Dbtc::releaseAndAbort(Signal* signal)
       signal->theData[2] = apiConnectptr.p->transid[0];
       signal->theData[3] = apiConnectptr.p->transid[1];
       sendSignal(tblockref, GSN_ABORT, signal, 4, JBB);
-      return 1;
+      prevAlive = true;
     } else {
       jam();
       signal->theData[0] = tcConnectptr.i;
       signal->theData[1] = apiConnectptr.p->transid[0];
       signal->theData[2] = apiConnectptr.p->transid[1];
-      signal->theData[3] = hostptr.i;
+      signal->theData[3] = localHostptr.i;
       signal->theData[4] = ZFALSE;
       sendSignal(cownref, GSN_ABORTED, signal, 5, JBB);
+      prevAlive = false;
     }//if
   }//for
   return 1;
@@ -6126,7 +6136,8 @@ void Dbtc::timeOutFoundLab(Signal* signal, Uint32 TapiConPtr)
       particular state we will use the application timeout parameter rather
       than the shorter Deadlock detection timeout.
       */
-      if ((ctcTimer - getApiConTimer(apiConnectptr.i)) <= c_appl_timeout_value) {
+      if (c_appl_timeout_value == 0 ||
+          (ctcTimer - getApiConTimer(apiConnectptr.i)) <= c_appl_timeout_value) {
         jam();
         return;
       }//if
@@ -11154,18 +11165,18 @@ void Dbtc::execTCINDXREQ(Signal* signal)
     jam();
     // This is a newly started transaction, clean-up
     releaseAllSeizedIndexOperations(regApiPtr);
+
+    regApiPtr->transid[0] = tcIndxReq->transId1;
+    regApiPtr->transid[1] = tcIndxReq->transId2;
   }//if
-  if (!seizeIndexOperation(regApiPtr, indexOpPtr)) {
+
+  if (ERROR_INSERTED(8036) || !seizeIndexOperation(regApiPtr, indexOpPtr)) {
     jam();
     // Failed to allocate index operation
-    TcIndxRef * const tcIndxRef = (TcIndxRef *)signal->getDataPtrSend();
-
-    tcIndxRef->connectPtr = tcIndxReq->senderData;
-    tcIndxRef->transId[0] = regApiPtr->transid[0];
-    tcIndxRef->transId[1] = regApiPtr->transid[1];
-    tcIndxRef->errorCode = 4000;
-    sendSignal(regApiPtr->ndbapiBlockref, GSN_TCINDXREF, signal, 
-	       TcIndxRef::SignalLength, JBB);
+    terrorCode = 288;
+    regApiPtr->m_exec_flag |= TcKeyReq::getExecuteFlag(tcIndxRequestInfo);
+    apiConnectptr = transPtr;
+    abortErrorLab(signal);
     return;
   }
   TcIndexOperation* indexOp = indexOpPtr.p;
@@ -11300,15 +11311,17 @@ void Dbtc::execINDXKEYINFO(Signal* signal)
   TcIndexOperationPtr indexOpPtr;
   TcIndexOperation* indexOp;
 
-  indexOpPtr.i = regApiPtr->accumulatingIndexOp;
-  indexOp = c_theIndexOperations.getPtr(indexOpPtr.i);
-  if (saveINDXKEYINFO(signal,
-                      indexOp, 
-                      src, 
-                      keyInfoLength)) {
-    jam();
-    // We have received all we need
-    readIndexTable(signal, regApiPtr, indexOp);
+  if((indexOpPtr.i = regApiPtr->accumulatingIndexOp) != RNIL)
+  {
+    indexOp = c_theIndexOperationPool.getPtr(indexOpPtr.i);
+    if (saveINDXKEYINFO(signal,
+			indexOp, 
+			src, 
+			keyInfoLength)) {
+      jam();
+      // We have received all we need
+      readIndexTable(signal, regApiPtr, indexOp);
+    }
   }
 }
 
@@ -11331,15 +11344,17 @@ void Dbtc::execINDXATTRINFO(Signal* signal)
   TcIndexOperationPtr indexOpPtr;
   TcIndexOperation* indexOp;
 
-  indexOpPtr.i = regApiPtr->accumulatingIndexOp;
-  indexOp = c_theIndexOperations.getPtr(indexOpPtr.i);
-  if (saveINDXATTRINFO(signal,
-                       indexOp, 
-                       src, 
-                       attrInfoLength)) {
-    jam();
-    // We have received all we need
-    readIndexTable(signal, regApiPtr, indexOp);
+  if((indexOpPtr.i = regApiPtr->accumulatingIndexOp) != RNIL)
+  {
+    indexOp = c_theIndexOperationPool.getPtr(indexOpPtr.i);
+    if (saveINDXATTRINFO(signal,
+			 indexOp, 
+			 src, 
+			 attrInfoLength)) {
+      jam();
+      // We have received all we need
+      readIndexTable(signal, regApiPtr, indexOp);
+    }
   }
 }
 
@@ -11364,7 +11379,7 @@ bool Dbtc::saveINDXKEYINFO(Signal* signal,
     releaseIndexOperation(apiConnectptr.p, indexOp);
     terrorCode = 4000;
     abortErrorLab(signal);
-    return true;
+    return false;
   }
   if (receivedAllINDXKEYINFO(indexOp) && receivedAllINDXATTRINFO(indexOp)) {
     jam();
@@ -11397,7 +11412,7 @@ bool Dbtc::saveINDXATTRINFO(Signal* signal,
     releaseIndexOperation(apiConnectptr.p, indexOp);
     terrorCode = 4000;
     abortErrorLab(signal);
-    return true;
+    return false;
   }
   if (receivedAllINDXKEYINFO(indexOp) && receivedAllINDXATTRINFO(indexOp)) {
     jam();
@@ -11457,7 +11472,7 @@ void Dbtc::execTCKEYCONF(Signal* signal)
 
   jamEntry();
   indexOpPtr.i = tcKeyConf->apiConnectPtr;
-  TcIndexOperation* indexOp = c_theIndexOperations.getPtr(indexOpPtr.i);
+  TcIndexOperation* indexOp = c_theIndexOperationPool.getPtr(indexOpPtr.i);
   Uint32 confInfo = tcKeyConf->confInfo;
 
   /**
@@ -11546,7 +11561,7 @@ void Dbtc::execTCKEYREF(Signal* signal)
 
   jamEntry();
   indexOpPtr.i = tcKeyRef->connectPtr;
-  TcIndexOperation* indexOp = c_theIndexOperations.getPtr(indexOpPtr.i);
+  TcIndexOperation* indexOp = c_theIndexOperationPool.getPtr(indexOpPtr.i);
   indexOpPtr.p = indexOp;
   if (!indexOp) {
     jam();    
@@ -11647,7 +11662,7 @@ void Dbtc::execTRANSID_AI(Signal* signal)
   jamEntry();
   TcIndexOperationPtr indexOpPtr;
   indexOpPtr.i = transIdAI->connectPtr;
-  TcIndexOperation* indexOp = c_theIndexOperations.getPtr(indexOpPtr.i);
+  TcIndexOperation* indexOp = c_theIndexOperationPool.getPtr(indexOpPtr.i);
   indexOpPtr.p = indexOp;
   if (!indexOp) {
     jam();
@@ -11755,7 +11770,7 @@ void Dbtc::execTCROLLBACKREP(Signal* signal)
   jamEntry();
   TcIndexOperationPtr indexOpPtr;
   indexOpPtr.i = tcRollbackRep->connectPtr;
-  TcIndexOperation* indexOp = c_theIndexOperations.getPtr(indexOpPtr.i);
+  TcIndexOperation* indexOp = c_theIndexOperationPool.getPtr(indexOpPtr.i);
   indexOpPtr.p = indexOp;
   tcRollbackRep =  (TcRollbackRep *)signal->getDataPtrSend();
   tcRollbackRep->connectPtr = indexOp->tcIndxReq.senderData;
@@ -12083,16 +12098,7 @@ void Dbtc::executeIndexOperation(Signal* signal,
 bool Dbtc::seizeIndexOperation(ApiConnectRecord* regApiPtr,
 			       TcIndexOperationPtr& indexOpPtr)
 {
-  bool seizeOk;
-
-  seizeOk = c_theIndexOperations.seize(indexOpPtr);
-  if (seizeOk) {
-    jam();
-    TcSeizedIndexOperationPtr seizedIndexOpPtr;
-    seizeOk &= regApiPtr->theSeizedIndexOperations.seizeId(seizedIndexOpPtr,
-							   indexOpPtr.i);
-  }
-  return seizeOk;
+  return regApiPtr->theSeizedIndexOperations.seize(indexOpPtr);
 }
 
 void Dbtc::releaseIndexOperation(ApiConnectRecord* regApiPtr,
@@ -12106,18 +12112,16 @@ void Dbtc::releaseIndexOperation(ApiConnectRecord* regApiPtr,
   indexOp->expectedTransIdAI = 0;
   indexOp->transIdAI.release();
   regApiPtr->theSeizedIndexOperations.release(indexOp->indexOpId);
-  c_theIndexOperations.release(indexOp->indexOpId);
 }
 
 void Dbtc::releaseAllSeizedIndexOperations(ApiConnectRecord* regApiPtr)
 {
-  TcSeizedIndexOperationPtr seizedIndexOpPtr;
+  TcIndexOperationPtr seizedIndexOpPtr;
 
   regApiPtr->theSeizedIndexOperations.first(seizedIndexOpPtr);
   while(seizedIndexOpPtr.i != RNIL) {
     jam();
-    TcIndexOperation* indexOp = 
-      c_theIndexOperations.getPtr(seizedIndexOpPtr.i);
+    TcIndexOperation* indexOp = seizedIndexOpPtr.p;
 
     indexOp->indexOpState = IOS_NOOP;
     indexOp->expectedKeyInfo = 0;
@@ -12126,7 +12130,6 @@ void Dbtc::releaseAllSeizedIndexOperations(ApiConnectRecord* regApiPtr)
     indexOp->attrInfo.release();
     indexOp->expectedTransIdAI = 0;
     indexOp->transIdAI.release();
-    c_theIndexOperations.release(seizedIndexOpPtr.i);  
     regApiPtr->theSeizedIndexOperations.next(seizedIndexOpPtr);    
   }
   regApiPtr->theSeizedIndexOperations.release();

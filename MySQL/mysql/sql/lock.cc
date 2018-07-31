@@ -82,7 +82,24 @@ static int unlock_external(THD *thd, TABLE **table,uint count);
 static void print_lock_error(int error);
 
 
-MYSQL_LOCK *mysql_lock_tables(THD *thd,TABLE **tables,uint count)
+/*
+  Lock tables.
+
+  SYNOPSIS
+    mysql_lock_tables()
+    thd                         The current thread.
+    tables                      An array of pointers to the tables to lock.
+    count                       The number of tables to lock.
+    flags                       Options:
+      MYSQL_LOCK_IGNORE_GLOBAL_READ_LOCK      Ignore a global read lock
+      MYSQL_LOCK_IGNORE_FLUSH                 Ignore a flush tables.
+
+  RETURN
+    A lock structure pointer on success.
+    NULL on error.
+*/
+
+MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count, uint flags)
 {
   MYSQL_LOCK *sql_lock;
   TABLE *write_lock_used;
@@ -93,7 +110,8 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd,TABLE **tables,uint count)
     if (!(sql_lock = get_lock_data(thd,tables,count, 0,&write_lock_used)))
       break;
 
-    if (global_read_lock && write_lock_used)
+    if (global_read_lock && write_lock_used &&
+        ! (flags & MYSQL_LOCK_IGNORE_GLOBAL_READ_LOCK))
     {
       /*
 	Someone has issued LOCK ALL TABLES FOR READ and we want a write lock
@@ -127,7 +145,7 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd,TABLE **tables,uint count)
       thd->some_tables_deleted=1;		// Try again
       sql_lock->lock_count=0;			// Locks are alread freed
     }
-    else if (!thd->some_tables_deleted)
+    else if (!thd->some_tables_deleted || (flags & MYSQL_LOCK_IGNORE_FLUSH))
     {
       thd->locked=0;
       break;
@@ -715,7 +733,7 @@ static void print_lock_error(int error)
     least the first step above)
   global_read_lock_blocks_commit
     count of threads which have the global read lock and block
-    commits (i.e. have completed the second step above)
+    commits (i.e. are in or have completed the second step above)
   waiting_for_read_lock
     count of threads which want to take a global read lock but cannot
   protect_against_global_read_lock
@@ -886,7 +904,8 @@ void start_waiting_global_read_lock(THD *thd)
   if (unlikely(thd->global_read_lock))
     DBUG_VOID_RETURN;
   (void) pthread_mutex_lock(&LOCK_open);
-  tmp= (!--protect_against_global_read_lock && waiting_for_read_lock);
+  tmp= (!--protect_against_global_read_lock &&
+        (waiting_for_read_lock || global_read_lock_blocks_commit));
   (void) pthread_mutex_unlock(&LOCK_open);
   if (tmp)
     pthread_cond_broadcast(&COND_refresh);
@@ -910,3 +929,5 @@ void make_global_read_lock_block_commit(THD *thd)
   pthread_mutex_unlock(&LOCK_open);
   thd->global_read_lock= MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT;
 }
+
+

@@ -128,26 +128,32 @@ int vio_ssl_write(Vio * vio, const gptr buf, int size)
 
 int vio_ssl_fastsend(Vio * vio __attribute__((unused)))
 {
-  int r= 0;
+  int r=0;
   DBUG_ENTER("vio_ssl_fastsend");
 
-#ifdef IPTOS_THROUGHPUT
+#if defined(IPTOS_THROUGHPUT) && !defined(__EMX__)
   {
-#ifndef __EMX__
-    int tos = IPTOS_THROUGHPUT;
-    if (!setsockopt(vio->sd, IPPROTO_IP, IP_TOS, (void *) &tos, sizeof(tos)))
-#endif				/* !__EMX__ */
-    {
-      int nodelay = 1;
-      if (setsockopt(vio->sd, IPPROTO_TCP, TCP_NODELAY, (void *) &nodelay,
-		     sizeof(nodelay))) {
-	DBUG_PRINT("warning",
-		   ("Couldn't set socket option for fast send"));
-	r= -1;
-      }
-    }
+    int tos= IPTOS_THROUGHPUT;
+    r= setsockopt(vio->sd, IPPROTO_IP, IP_TOS, (void *) &tos, sizeof(tos));
   }
-#endif	/* IPTOS_THROUGHPUT */
+#endif                                    /* IPTOS_THROUGHPUT && !__EMX__ */
+  if (!r)
+  {
+#ifdef __WIN__
+    BOOL nodelay= 1;
+    r= setsockopt(vio->sd, IPPROTO_TCP, TCP_NODELAY, (const char*) &nodelay,
+                  sizeof(nodelay));
+#else
+    int nodelay= 1;
+    r= setsockopt(vio->sd, IPPROTO_TCP, TCP_NODELAY, (void*) &nodelay,
+                  sizeof(nodelay));
+#endif                                          /* __WIN__ */
+  }
+  if (r)
+  {
+    DBUG_PRINT("warning", ("Couldn't set socket option for fast send"));
+    r= -1;
+  }
   DBUG_PRINT("exit", ("%d", r));
   DBUG_RETURN(r);
 }
@@ -309,7 +315,7 @@ int sslaccept(struct st_VioSSLAcceptorFd* ptr, Vio* vio, long timeout)
     vio_blocking(vio, net_blocking, &unused);
     DBUG_RETURN(1);
   }
-#ifndef DBUF_OFF
+#ifndef DBUG_OFF
   DBUG_PRINT("info",("SSL_get_cipher_name() = '%s'"
 		     ,SSL_get_cipher_name((SSL*) vio->ssl_arg)));
   client_cert = SSL_get_peer_certificate ((SSL*) vio->ssl_arg);
@@ -421,8 +427,14 @@ int vio_ssl_blocking(Vio * vio __attribute__((unused)),
 
 
 void vio_ssl_timeout(Vio *vio __attribute__((unused)),
-		     uint timeout __attribute__((unused)))
+		     uint which __attribute__((unused)),
+                     uint timeout __attribute__((unused)))
 {
-  /* Not yet implemented (non critical) */
+#ifdef __WIN__
+  ulong wait_timeout= (ulong) timeout * 1000;
+  (void) setsockopt(vio->sd, SOL_SOCKET,
+	which ? SO_SNDTIMEO : SO_RCVTIMEO, (char*) &wait_timeout,
+        sizeof(wait_timeout));
+#endif /* __WIN__ */
 }
 #endif /* HAVE_OPENSSL */

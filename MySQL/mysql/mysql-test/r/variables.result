@@ -210,6 +210,12 @@ query_prealloc_size	8192
 range_alloc_block_size	2048
 transaction_alloc_block_size	8192
 transaction_prealloc_size	4096
+SELECT @@version LIKE 'non-existent';
+@@version LIKE 'non-existent'
+0
+SELECT @@version_compile_os LIKE 'non-existent';
+@@version_compile_os LIKE 'non-existent'
+0
 set big_tables=OFFF;
 ERROR 42000: Variable 'big_tables' can't be set to the value of 'OFFF'
 set big_tables="OFFF";
@@ -324,7 +330,6 @@ set read_buffer_size=100;
 set read_rnd_buffer_size=100;
 set global rpl_recovery_rank=100;
 set global server_id=100;
-set global slave_net_timeout=100;
 set global slow_launch_time=100;
 set sort_buffer_size=100;
 set sql_auto_is_null=1;
@@ -349,7 +354,6 @@ select @@sql_max_join_size,@@max_join_size;
 set sql_quote_show_create=1;
 set sql_safe_updates=1;
 set sql_select_limit=1;
-set global sql_slave_skip_counter=100;
 set sql_warnings=1;
 set global table_cache=100;
 set storage_engine=myisam;
@@ -478,7 +482,12 @@ t1	CREATE TABLE `t1` (
   `c3` longtext
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
-SET GLOBAL MYISAM_DATA_POINTER_SIZE= 8;
+SET GLOBAL MYISAM_DATA_POINTER_SIZE= 7;
 SHOW VARIABLES LIKE 'MYISAM_DATA_POINTER_SIZE';
 Variable_name	Value
-myisam_data_pointer_size	8
+myisam_data_pointer_size	7
+SET GLOBAL table_cache=-1;
+SHOW VARIABLES LIKE 'table_cache';
+Variable_name	Value
+table_cache	1
+SET GLOBAL table_cache=DEFAULT;

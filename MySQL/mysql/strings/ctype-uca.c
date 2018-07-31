@@ -36,6 +36,7 @@
 #include "m_string.h"
 #include "m_ctype.h"
 
+#ifdef HAVE_UCA_COLLATIONS
 
 #define MY_UCA_NPAGES 256
 #define MY_UCA_NCHARS 256
@@ -6650,8 +6651,7 @@ static const char slovak[]=
 static const char spanish2[]=	/* Also good for Asturian and Galician */
     "&C <  ch <<< Ch <<< CH"
     "&L <  ll <<< Ll <<< LL"
-    "&N < \\u00F1 <<< \\u00D1"
-    "&R << rr <<< Rr <<< RR";
+    "&N < \\u00F1 <<< \\u00D1";
 
 static const char roman[]= /* i.e. Classical Latin */
     "& I << j <<< J "
@@ -8990,4 +8990,6 @@ CHARSET_INFO my_charset_utf8_persian_uca_ci=
     &my_collation_any_uca_handler
 };
 
-#endif
+#endif /* HAVE_CHARSET_utf8 */
+
+#endif /* HAVE_UCA_COLLATIONS */

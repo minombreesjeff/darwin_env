@@ -73,7 +73,7 @@ static int search_default_file(DYNAMIC_ARRAY *args,MEM_ROOT *alloc,
 static int search_default_file_with_ext(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
 					const char *dir, const char *ext,
 					const char *config_file,
-					TYPELIB *group);
+					TYPELIB *group, int recursion_level);
 
 static char *remove_end_comment(char *ptr);
 
@@ -144,7 +144,7 @@ int load_defaults(const char *conf_file, const char **groups,
                   int *argc, char ***argv)
 {
   DYNAMIC_ARRAY args;
-  const char **dirs, *forced_default_file;
+  const char **dirs, *forced_default_file, *forced_extra_defaults;
   TYPELIB group;
   my_bool found_print_defaults=0;
   uint args_used=0;
@@ -174,13 +174,14 @@ int load_defaults(const char *conf_file, const char **groups,
   }
 
   get_defaults_files(*argc, *argv,
-                      (char **)&forced_default_file, &defaults_extra_file);
+                      (char **)&forced_default_file,
+                      (char **)&forced_extra_defaults);
   if (forced_default_file)
     forced_default_file= strchr(forced_default_file,'=')+1;
-  if (defaults_extra_file)
-    defaults_extra_file= strchr(defaults_extra_file,'=')+1;
+  if (forced_extra_defaults)
+    defaults_extra_file= strchr(forced_extra_defaults,'=')+1;
 
-  args_used+= (forced_default_file ? 1 : 0) + (defaults_extra_file ? 1 : 0);
+  args_used+= (forced_default_file ? 1 : 0) + (forced_extra_defaults ? 1 : 0);
 
   group.count=0;
   group.name= "defaults";
@@ -193,8 +194,8 @@ int load_defaults(const char *conf_file, const char **groups,
   if (forced_default_file)
   {
     if ((error= search_default_file_with_ext(&args, &alloc, "", "",
-					     forced_default_file, 
-					     &group)) < 0)
+					     forced_default_file,
+					     &group, 0)) < 0)
       goto err;
     if (error > 0)
     {
@@ -311,7 +312,7 @@ static int search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
   {
     int error;
     if ((error= search_default_file_with_ext(args, alloc, dir, *ext,
-					     config_file, group)) < 0)
+					     config_file, group, 0)) < 0)
       return error;
   }
   return 0;
@@ -319,16 +320,68 @@ static int search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
 
 
 /*
+  Skip over keyword and get argument after keyword
+
+  SYNOPSIS
+   get_argument()
+   keyword		Include directive keyword
+   kwlen		Length of keyword
+   ptr			Pointer to the keword in the line under process
+   line			line number
+
+  RETURN
+   0	error
+   #	Returns pointer to the argument after the keyword.
+*/
+
+static char *get_argument(const char *keyword, uint kwlen,
+                          char *ptr, char *name, uint line)
+{
+  char *end;
+
+  /* Skip over "include / includedir keyword" and following whitespace */
+
+  for (ptr+= kwlen - 1;
+       my_isspace(&my_charset_latin1, ptr[0]);
+       ptr++)
+  {}
+
+  /*
+    Trim trailing whitespace from directory name
+    The -1 below is for the newline added by fgets()
+    Note that my_isspace() is true for \r and \n
+  */
+  for (end= ptr + strlen(ptr) - 1;
+       my_isspace(&my_charset_latin1, *(end - 1));
+       end--)
+  {}
+  end[0]= 0;                                    /* Cut off end space */
+
+  /* Print error msg if there is nothing after !include* directive */
+  if (end <= ptr)
+  {
+    fprintf(stderr,
+	    "error: Wrong '!%s' directive in config file: %s at line %d\n",
+	    keyword, name, line);
+    return 0;
+  }
+  return ptr;
+}
+
+
+/*
   Open a configuration file (if exists) and read given options from it
-  
+
   SYNOPSIS
     search_default_file_with_ext()
     args			Store pointer to found options here
     alloc			Allocate strings in this object
     dir				directory to read
-    config_file			Name of configuration file
     ext				Extension for configuration file
+    config_file                 Name of configuration file
     group			groups to read
+    recursion_level             the level of recursion, got while processing
+                                "!include" or "!includedir"
 
   RETURN
     0   Success
@@ -340,12 +393,18 @@ static int search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
 static int search_default_file_with_ext(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
 					const char *dir, const char *ext,
 					const char *config_file,
-					TYPELIB *group)
+					TYPELIB *group, int recursion_level)
 {
-  char name[FN_REFLEN+10],buff[4096],*ptr,*end,*value,*tmp;
+  char name[FN_REFLEN + 10], buff[4096], *ptr, *end, *value, *tmp, **tmp_ext;
+  static const char includedir_keyword[]= "includedir";
+  static const char include_keyword[]= "include";
+  const int max_recursion_level= 10;
   FILE *fp;
-  uint line=0;
-  my_bool read_values=0,found_group=0;
+  uint line= 0;
+  my_bool read_values= 0, found_group= 0;
+  uint i;
+  MY_DIR *search_dir;
+  FILEINFO *search_file;
 
   if ((dir ? strlen(dir) : 0 )+strlen(config_file) >= FN_REFLEN-3)
     return 0;					/* Ignore wrong paths */
@@ -374,22 +433,101 @@ static int search_default_file_with_ext(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
     if ((stat_info.st_mode & S_IWOTH) &&
 	(stat_info.st_mode & S_IFMT) == S_IFREG)
     {
-      fprintf(stderr, "warning: World-writeable config file %s is ignored\n",
+      fprintf(stderr, "warning: World-writable config file %s is ignored\n",
               name);
       return 0;
     }
   }
 #endif
-  if (!(fp = my_fopen(fn_format(name,name,"","",4),O_RDONLY,MYF(0))))
+  if (!(fp= my_fopen(fn_format(name, name, "", "", 4), O_RDONLY, MYF(0))))
     return 0;					/* Ignore wrong files */
 
-  while (fgets(buff,sizeof(buff)-1,fp))
+  while (fgets(buff, sizeof(buff) - 1, fp))
   {
     line++;
     /* Ignore comment and empty lines */
-    for (ptr=buff ; my_isspace(&my_charset_latin1,*ptr) ; ptr++ ) ;
+    for (ptr= buff; my_isspace(&my_charset_latin1, *ptr); ptr++)
+    {}
+
     if (*ptr == '#' || *ptr == ';' || !*ptr)
       continue;
+
+    /* Configuration File Directives */
+    if ((*ptr == '!'))
+    {
+      if (recursion_level >= max_recursion_level)
+      {
+        for (end= ptr + strlen(ptr) - 1; 
+             my_isspace(&my_charset_latin1, *(end - 1));
+             end--)
+        {}
+        end[0]= 0;
+        fprintf(stderr,
+                "Warning: skipping '%s' directive as maximum include"
+                "recursion level was reached in file %s at line %d\n",
+                ptr, name, line);
+        continue;
+      }
+
+      /* skip over `!' and following whitespace */
+      for (++ptr; my_isspace(&my_charset_latin1, ptr[0]); ptr++)
+      {}
+
+      if ((!strncmp(ptr, includedir_keyword,
+                    sizeof(includedir_keyword) - 1)) &&
+          my_isspace(&my_charset_latin1, ptr[sizeof(includedir_keyword) - 1]))
+      {
+	if (!(ptr= get_argument(includedir_keyword,
+                                sizeof(includedir_keyword),
+                                ptr, name, line)))
+	  goto err;
+
+        if (!(search_dir= my_dir(ptr, MYF(MY_WME))))
+          goto err;
+
+        for (i= 0; i < (uint) search_dir->number_off_files; i++)
+        {
+          search_file= search_dir->dir_entry + i;
+          ext= fn_ext(search_file->name);
+
+          /* check extension */
+          for (tmp_ext= (char**) f_extensions; *tmp_ext; *tmp_ext++)
+          {
+            if (!strcmp(ext, *tmp_ext))
+              break;
+          }
+
+          if (*tmp_ext)
+          {
+            if (!(tmp= alloc_root(alloc, 2 + strlen(search_file->name)
+                                          + strlen(ptr))))
+              goto err;
+
+            fn_format(tmp, search_file->name, ptr, "",
+                      MY_UNPACK_FILENAME | MY_SAFE_PATH);
+
+            search_default_file_with_ext(args, alloc, "", "", tmp, group,
+                                         recursion_level + 1);
+          }
+        }
+
+        my_dirend(search_dir);
+      }
+      else if ((!strncmp(ptr, include_keyword, sizeof(include_keyword) - 1)) &&
+               my_isspace(&my_charset_latin1, ptr[sizeof(include_keyword)-1]))
+      {
+	if (!(ptr= get_argument(include_keyword,
+                                sizeof(include_keyword), ptr,
+                                name, line)))
+	  goto err;
+
+        search_default_file_with_ext(args, alloc, "", "", ptr, group,
+                                     recursion_level + 1);
+      }
+
+      continue;
+    }
+
     if (*ptr == '[')				/* Group name */
     {
       found_group=1;

@@ -65,6 +65,8 @@ log. */
 #define OS_FILE_OVERWRITE		53
 #define OS_FILE_OPEN_RAW		54
 #define	OS_FILE_CREATE_PATH		55
+#define	OS_FILE_OPEN_RETRY		56	/* for os_file_create() on
+						the first ibdata file */
 
 #define OS_FILE_READ_ONLY 		333
 #define	OS_FILE_READ_WRITE		444
@@ -366,7 +368,7 @@ os_file_get_size_as_iblonglong(
 				/* out: size in bytes, -1 if error */
 	os_file_t	file);	/* in: handle to a file */
 /***************************************************************************
-Sets a file size. This function can be used to extend or truncate a file. */
+Write the specified number of zeros to a newly created file. */
 
 ibool
 os_file_set_size(

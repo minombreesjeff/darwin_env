@@ -121,10 +121,11 @@ am__DEPENDENCIES_4 = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
 	strcend.lo bcmp.lo ctype-latin1.lo bchange.lo bmove.lo \
 	bmove_upp.lo longlong2str.lo strtoull.lo strtoll.lo llstr.lo \
 	my_vsnprintf.lo ctype.lo ctype-simple.lo ctype-bin.lo \
-	ctype-mb.lo ctype-big5.lo ctype-czech.lo ctype-euc_kr.lo \
-	ctype-win1250ch.lo ctype-utf8.lo ctype-extra.lo ctype-ucs2.lo \
-	ctype-gb2312.lo ctype-gbk.lo ctype-sjis.lo ctype-tis620.lo \
-	ctype-ujis.lo ctype-uca.lo xml.lo my_strtoll10.lo
+	ctype-mb.lo ctype-big5.lo ctype-cp932.lo ctype-czech.lo \
+	ctype-euc_kr.lo ctype-win1250ch.lo ctype-utf8.lo \
+	ctype-extra.lo ctype-ucs2.lo ctype-gb2312.lo ctype-gbk.lo \
+	ctype-sjis.lo ctype-tis620.lo ctype-ujis.lo ctype-uca.lo \
+	xml.lo my_strtoll10.lo
 am__DEPENDENCIES_5 = dbug.lo
 am__DEPENDENCIES_6 = pack.lo client.lo my_time.lo
 am__DEPENDENCIES_7 = vio.lo viosocket.lo viossl.lo viosslfactories.lo
@@ -209,6 +210,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DDEFAULT_CHARSET_HOME="\"$(MYSQLBASEdir)\"" \
 			-DDATADIR="\"$(MYSQLDATAdir)\"" \
 			-DSHAREDIR="\"$(MYSQLSHAREdir)\"" $(target_defs)
@@ -237,7 +240,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -310,6 +312,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -414,7 +417,9 @@ vio_dir = @vio_dir@
 vio_libs = @vio_libs@
 zlib_dir = @zlib_dir@
 target_defs = -DUNDEF_THREADS_HACK -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@
-INCLUDES = -I$(top_srcdir)/include $(openssl_includes) @ZLIB_INCLUDES@
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include \
+		$(openssl_includes) @ZLIB_INCLUDES@
+
 MYSQLDATAdir = $(localstatedir)
 MYSQLSHAREdir = $(pkgdatadir)
 MYSQLBASEdir = $(prefix)
@@ -431,7 +436,7 @@ mystringsobjects = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
 			bchange.lo bmove.lo bmove_upp.lo longlong2str.lo \
 			strtoull.lo strtoll.lo llstr.lo my_vsnprintf.lo \
 			ctype.lo ctype-simple.lo ctype-bin.lo ctype-mb.lo \
-			ctype-big5.lo ctype-czech.lo ctype-euc_kr.lo \
+			ctype-big5.lo ctype-cp932.lo ctype-czech.lo ctype-euc_kr.lo \
 			ctype-win1250ch.lo ctype-utf8.lo ctype-extra.lo \
 			ctype-ucs2.lo ctype-gb2312.lo ctype-gbk.lo \
 			ctype-sjis.lo ctype-tis620.lo ctype-ujis.lo \
@@ -802,7 +807,8 @@ clean-local:
 	      `echo $(sql_cmn_objects) | sed "s;\.lo;.c;g"` \
 	       $(CHARSET_SRCS) $(CHARSET_OBJS) \
 	       $(mystringsextra) $(mysysheaders) $(vioheaders)\
-	       ../linked_client_sources net.c
+	       ../linked_libmysql_sources ../linked_libmysql_r_sources \
+               net.c
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

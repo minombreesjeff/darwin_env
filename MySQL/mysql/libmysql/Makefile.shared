@@ -42,7 +42,7 @@ mystringsobjects =	strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
 			bchange.lo bmove.lo bmove_upp.lo longlong2str.lo \
 			strtoull.lo strtoll.lo llstr.lo my_vsnprintf.lo \
 			ctype.lo ctype-simple.lo ctype-bin.lo ctype-mb.lo \
-			ctype-big5.lo ctype-czech.lo ctype-euc_kr.lo \
+			ctype-big5.lo ctype-cp932.lo ctype-czech.lo ctype-euc_kr.lo \
 			ctype-win1250ch.lo ctype-utf8.lo ctype-extra.lo \
 			ctype-ucs2.lo ctype-gb2312.lo ctype-gbk.lo \
 			ctype-sjis.lo ctype-tis620.lo ctype-ujis.lo \
@@ -94,7 +94,8 @@ clean-local:
 	      `echo $(sql_cmn_objects) | sed "s;\.lo;.c;g"` \
 	       $(CHARSET_SRCS) $(CHARSET_OBJS) \
 	       $(mystringsextra) $(mysysheaders) $(vioheaders)\
-	       ../linked_client_sources net.c
+	       ../linked_libmysql_sources ../linked_libmysql_r_sources \
+               net.c
 
 conf_to_src_SOURCES = conf_to_src.c
 conf_to_src_LDADD=

@@ -31,6 +31,7 @@
 #define __GNU_LIBRARY__			/* Skip warnings in getopt.h */
 #endif
 #include <my_getopt.h>
+#include <assert.h>
 
 #if INT_MAX > 32767
 #define BITS_SAVED 32
@@ -1709,7 +1710,7 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
     ulong tot_blob_length=0;
     if (! error)
     {
-      if (flush_buffer(max_calc_length+max_pack_length))
+      if (flush_buffer((ulong) max_calc_length + (ulong) max_pack_length))
 	break;
       record_pos=file_buffer.pos;
       file_buffer.pos+=max_pack_length;
@@ -1930,7 +1931,20 @@ static void init_file_buffer(File file, pbool read_buffer)
 static int flush_buffer(ulong neaded_length)
 {
   ulong length;
-  if ((ulong) (file_buffer.end - file_buffer.pos) > neaded_length)
+
+  /*
+    file_buffer.end is 8 bytes lower than the real end of the buffer.
+    This is done so that the end-of-buffer condition does not need to be
+    checked for every byte (see write_bits()). Consequently,
+    file_buffer.pos can become greater than file_buffer.end. The
+    algorithms in the other functions ensure that there will never be
+    more than 8 bytes written to the buffer without an end-of-buffer
+    check. So the buffer cannot be overrun. But we need to check for the
+    near-to-buffer-end condition to avoid a negative result, which is
+    casted to unsigned and thus becomes giant.
+  */
+  if ((file_buffer.pos < file_buffer.end) &&
+      ((ulong) (file_buffer.end - file_buffer.pos) > neaded_length))
     return 0;
   length=(ulong) (file_buffer.pos-file_buffer.buffer);
   file_buffer.pos=file_buffer.buffer;
@@ -1978,7 +1992,9 @@ static void write_bits (register ulong value, register uint bits)
   {
     reg3 uint byte_buff;
     bits= (uint) -file_buffer.bits;
-    byte_buff=file_buffer.current_byte | (uint) (value >> bits);
+    DBUG_ASSERT(bits <= 8 * sizeof(value));
+    byte_buff= (file_buffer.current_byte |
+               ((bits != 8 * sizeof(value)) ? (uint) (value >> bits) : 0));
 #if BITS_SAVED == 32
     *file_buffer.pos++= (byte) (byte_buff >> 24) ;
     *file_buffer.pos++= (byte) (byte_buff >> 16) ;
@@ -1986,7 +2002,9 @@ static void write_bits (register ulong value, register uint bits)
     *file_buffer.pos++= (byte) (byte_buff >> 8) ;
     *file_buffer.pos++= (byte) byte_buff;
 
-    value&=(1 << bits)-1;
+    DBUG_ASSERT(bits <= 8 * sizeof(ulong));
+    if (bits != 8 * sizeof(value))
+      value&= (((ulong) 1) << bits) - 1;
 #if BITS_SAVED == 16
     if (bits >= sizeof(uint))
     {
@@ -2002,7 +2020,7 @@ static void write_bits (register ulong value, register uint bits)
     }
 #endif
     if (file_buffer.pos >= file_buffer.end)
-      VOID(flush_buffer((uint) ~0));
+      VOID(flush_buffer(~ (ulong) 0));
     file_buffer.bits=(int) (BITS_SAVED - bits);
     file_buffer.current_byte=(uint) (value << (BITS_SAVED - bits));
   }

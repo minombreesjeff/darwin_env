@@ -416,7 +416,7 @@ static struct wordvalue doubles[] = {
 #define NEXT_CMP_VALUE(src, p, pass, value, len)			\
 	while (1) {							\
 		if (IS_END(p, src, len)) {				\
-			if (pass == 0) { p = src; pass++; }		\
+			if (pass == 0 && len > 0) { p= src; pass++; }	\
 			else { value = 0; break; }			\
 		}							\
 		value = ((pass == 0) ? _sort_order_win1250ch1[*p]	\
@@ -550,7 +550,7 @@ static uchar NEAR like_range_prefix_max_win1250ch[] = {
 240, 242, 242, 245, 245, 245, 245, 247, 248, 251, 251, 251, 251, 253, 254, 255,
 };
 
-#define min_sort_char '\x00'
+#define min_sort_char '\x20'
 #define max_sort_char '\xff'
 
 /*

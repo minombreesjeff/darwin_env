@@ -84,7 +84,6 @@ select @a=_latin2'TEST' collate latin2_bin;
 set @a=_latin2'test' collate latin2_general_ci;
 select charset(@a),collation(@a),coercibility(@a);
 select @a=_latin2'TEST';
---error 1267
 select @a=_latin2'TEST' collate latin2_bin;
 
 #
@@ -97,26 +96,7 @@ select collation(@a:=_latin2'test' collate latin2_bin);
 select coercibility(@a:=_latin2'test' collate latin2_bin);
 select (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST';
 select charset(@a),collation(@a),coercibility(@a);
---error 1267
 select (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST' collate latin2_general_ci;
-
-# Check that user variables are binlogged correctly (BUG#3875)
-create table t1 (a varchar(50));
-reset master;
-SET TIMESTAMP=10000;
-SET @`a b`='hello';
-INSERT INTO t1 VALUES(@`a b`);
-set @var1= "';aaa";
-SET @var2=char(ascii('a'));
-insert into t1 values (@var1),(@var2);
-show binlog events from 79;
-# more important than SHOW BINLOG EVENTS, mysqlbinlog (where we
-# absolutely need variables names to be quoted and strings to be
-# escaped).
---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form $MYSQL_TEST_DIR/var/log/master-bin.000001 
-drop table t1;
-
 
 #
 # Bug #6321 strange error:
@@ -124,3 +104,18 @@ drop table t1;
 #
 set @var= NULL ;
 select FIELD( @var,'1it','Hit') as my_column;
+
+#
+# Bug#9425 A user variable doesn't always have implicit coercibility
+#
+select @v, coercibility(@v);
+set @v1=null, @v2=1, @v3=1.1, @v4=now();
+select coercibility(@v1),coercibility(@v2),coercibility(@v3),coercibility(@v4);
+
+#
+# Bug #9286  SESSION/GLOBAL should be disallowed for user variables
+#
+--error 1064
+set session @honk=99;
+--error 1105
+set one_shot @honk=99;

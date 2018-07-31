@@ -14,16 +14,21 @@
 
 @SET_MAKE@
 
-# Normally you do not need to remake the files here. But if you want
-# to you will need the GNU TeX-info utilities. To make a Postscript
-# files you also need TeX and dvips. To make the PDF file you will
-# need pdftex. We use the teTeX distribution for all of these.
-
-# We avoid default automake rules because of problems with .dvi file
-# and BSD makes
-
-# If you know how to fix any of this more elegantly please mail
-# docs@mysql.com
+# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
@@ -61,26 +66,6 @@ CONFIG_CLEAN_FILES =
 SCRIPTS = $(noinst_SCRIPTS)
 SOURCES =
 DIST_SOURCES =
-INFO_DEPS = $(srcdir)/mysql.info
-am__TEXINFO_TEX_DIR = $(srcdir)/Support
-PDFS = manual.pdf
-PSS = manual.ps
-HTMLS = manual.html
-TEXINFOS = manual.texi
-TEXI2DVI = texi2dvi
-TEXI2PDF = $(TEXI2DVI) --pdf --batch
-MAKEINFOHTML = $(MAKEINFO) --html
-AM_MAKEINFOHTMLFLAGS = $(AM_MAKEINFOFLAGS)
-RECURSIVE_TARGETS = all-recursive check-recursive dvi-recursive \
-	html-recursive info-recursive install-data-recursive \
-	install-exec-recursive install-info-recursive \
-	install-recursive installcheck-recursive installdirs-recursive \
-	pdf-recursive ps-recursive uninstall-info-recursive \
-	uninstall-recursive
-am__installdirs = "$(DESTDIR)$(infodir)"
-ETAGS = etags
-CTAGS = ctags
-DIST_SUBDIRS = $(SUBDIRS)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
 ALLOCA = @ALLOCA@
@@ -128,6 +113,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -153,7 +140,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -226,6 +212,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -329,25 +316,12 @@ uname_prog = @uname_prog@
 vio_dir = @vio_dir@
 vio_libs = @vio_libs@
 zlib_dir = @zlib_dir@
-TEXI2HTML_FLAGS = -iso -number -acc
-DVIPS = dvips
-TEXINFO_TEX = Support/texinfo.tex
-noinst_SCRIPTS = Support/texi2html Support/generate-text-files.pl \
-			Support/generate-mirror-listing.pl
-
-info_TEXINFOS = manual.texi
-targets = manual.txt mysql.info manual.html
-BUILT_SOURCES = $(targets) manual_toc.html include.texi
-EXTRA_DIST = $(noinst_SCRIPTS) $(BUILT_SOURCES) mysqld_error.txt \
-			INSTALL-BINARY reservedwords.texi internals.texi
-
-SUBDIRS = Images
+noinst_SCRIPTS = Support/generate-text-files.pl
+EXTRA_DIST = $(noinst_SCRIPTS) mysql.info INSTALL-BINARY
 GT = $(srcdir)/Support/generate-text-files.pl
-all: $(BUILT_SOURCES)
-	$(MAKE) $(AM_MAKEFLAGS) all-recursive
+all: all-am
 
 .SUFFIXES:
-.SUFFIXES: .dvi .html .info .pdf .ps .texi
 $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -386,219 +360,13 @@ clean-libtool:
 
 distclean-libtool:
 	-rm -f libtool
-
-.texi.info:
-	restore=: && \
-	backupdir="$(am__leading_dot)am$$$$" && \
-	am__cwd=`pwd` && cd $(srcdir) && \
-	rm -rf $$backupdir && mkdir $$backupdir && \
-	for f in $@ $@-[0-9] $@-[0-9][0-9] $(@:.info=).i[0-9] $(@:.info=).i[0-9][0-9]; do \
-	  if test -f $$f; then \
-	    mv $$f $$backupdir; \
-	    restore=mv; \
-	  fi; \
-	done; \
-	cd "$$am__cwd"; \
-	if $(MAKEINFO) $(AM_MAKEINFOFLAGS) $(MAKEINFOFLAGS) -I $(srcdir) \
-	 -o $@ $<; \
-	then \
-	  rc=0; \
-	  cd $(srcdir); \
-	else \
-	  rc=$$?; \
-	  cd $(srcdir) && \
-	  $$restore $$backupdir/* `echo "./$@" | sed 's|[^/]*$$||'`; \
-	fi; \
-	rm -rf $$backupdir; \
-	exit $$rc
-
-.texi.dvi:
-	TEXINPUTS="$(am__TEXINFO_TEX_DIR)$(PATH_SEPARATOR)$$TEXINPUTS" \
-	MAKEINFO='$(MAKEINFO) $(AM_MAKEINFOFLAGS) $(MAKEINFOFLAGS) -I $(srcdir)' \
-	$(TEXI2DVI) $<
-
-.texi.pdf:
-	TEXINPUTS="$(am__TEXINFO_TEX_DIR)$(PATH_SEPARATOR)$$TEXINPUTS" \
-	MAKEINFO='$(MAKEINFO) $(AM_MAKEINFOFLAGS) $(MAKEINFOFLAGS) -I $(srcdir)' \
-	$(TEXI2PDF) $<
-
-.texi.html:
-	$(MAKEINFOHTML) $(AM_MAKEINFOHTMLFLAGS) $(MAKEINFOFLAGS) -I $(srcdir) \
-	 -o $@ $<
-	if test ! -d $@ && test -d $(@:.html=); then \
-	  mv $(@:.html=) $@; else :; fi
-$(srcdir)/mysql.info: manual.texi 
-mysql.dvi: manual.texi 
-mysql.pdf: manual.texi 
-mysql.html: manual.texi 
-.dvi.ps:
-	$(DVIPS) -o $@ $<
-
 uninstall-info-am:
-	$(PRE_UNINSTALL)
-	@if (install-info --version && \
-	     install-info --version 2>&1 | sed 1q | grep -i -v debian) >/dev/null 2>&1; then \
-	  list='$(INFO_DEPS)'; \
-	  for file in $$list; do \
-	    relfile=`echo "$$file" | sed 's|^.*/||'`; \
-	    echo " install-info --info-dir='$(DESTDIR)$(infodir)' --remove '$(DESTDIR)$(infodir)/$$relfile'"; \
-	    install-info --info-dir="$(DESTDIR)$(infodir)" --remove "$(DESTDIR)$(infodir)/$$relfile"; \
-	  done; \
-	else :; fi
-	@$(NORMAL_UNINSTALL)
-	@list='$(INFO_DEPS)'; \
-	for file in $$list; do \
-	  relfile=`echo "$$file" | sed 's|^.*/||'`; \
-	  relfile_i=`echo "$$relfile" | sed 's|\.info$$||;s|$$|.i|'`; \
-	  (if cd "$(DESTDIR)$(infodir)"; then \
-	     echo " rm -f $$relfile $$relfile-[0-9] $$relfile-[0-9][0-9] $$relfile_i[0-9] $$relfile_i[0-9][0-9])"; \
-	     rm -f $$relfile $$relfile-[0-9] $$relfile-[0-9][0-9] $$relfile_i[0-9] $$relfile_i[0-9][0-9]; \
-	   else :; fi); \
-	done
-
-dist-info: $(INFO_DEPS)
-	@srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`; \
-	list='$(INFO_DEPS)'; \
-	for base in $$list; do \
-	  case $$base in \
-	    $(srcdir)/*) base=`echo "$$base" | sed "s|^$$srcdirstrip/||"`;; \
-	  esac; \
-	  if test -f $$base; then d=.; else d=$(srcdir); fi; \
-	  for file in $$d/$$base*; do \
-	    relfile=`expr "$$file" : "$$d/\(.*\)"`; \
-	    test -f $(distdir)/$$relfile || \
-	      cp -p $$file $(distdir)/$$relfile; \
-	  done; \
-	done
-
-mostlyclean-aminfo:
-	-rm -rf manual.aux manual.cp manual.cps manual.fn manual.fns manual.ky \
-	  manual.kys manual.log manual.pg manual.pgs manual.tmp \
-	  manual.toc manual.tp manual.vr manual.vrs mysql.dvi \
-	  mysql.pdf mysql.ps mysql.html
-
-maintainer-clean-aminfo:
-	@list='$(INFO_DEPS)'; for i in $$list; do \
-	  i_i=`echo "$$i" | sed 's|\.info$$||;s|$$|.i|'`; \
-	  echo " rm -f $$i $$i-[0-9] $$i-[0-9][0-9] $$i_i[0-9] $$i_i[0-9][0-9]"; \
-	  rm -f $$i $$i-[0-9] $$i-[0-9][0-9] $$i_i[0-9] $$i_i[0-9][0-9]; \
-	done
-
-# This directory's subdirectories are mostly independent; you can cd
-# into them and run `make' without going through this Makefile.
-# To change the values of `make' variables: instead of editing Makefiles,
-# (1) if the variable is set in `config.status', edit `config.status'
-#     (which will cause the Makefiles to be regenerated when you run `make');
-# (2) otherwise, pass the desired values on the `make' command line.
-$(RECURSIVE_TARGETS):
-	@set fnord $$MAKEFLAGS; amf=$$2; \
-	dot_seen=no; \
-	target=`echo $@ | sed s/-recursive//`; \
-	list='$(SUBDIRS)'; for subdir in $$list; do \
-	  echo "Making $$target in $$subdir"; \
-	  if test "$$subdir" = "."; then \
-	    dot_seen=yes; \
-	    local_target="$$target-am"; \
-	  else \
-	    local_target="$$target"; \
-	  fi; \
-	  (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) $$local_target) \
-	   || case "$$amf" in *=*) exit 1;; *k*) fail=yes;; *) exit 1;; esac; \
-	done; \
-	if test "$$dot_seen" = "no"; then \
-	  $(MAKE) $(AM_MAKEFLAGS) "$$target-am" || exit 1; \
-	fi; test -z "$$fail"
-
-mostlyclean-recursive clean-recursive distclean-recursive \
-maintainer-clean-recursive:
-	@set fnord $$MAKEFLAGS; amf=$$2; \
-	dot_seen=no; \
-	case "$@" in \
-	  distclean-* | maintainer-clean-*) list='$(DIST_SUBDIRS)' ;; \
-	  *) list='$(SUBDIRS)' ;; \
-	esac; \
-	rev=''; for subdir in $$list; do \
-	  if test "$$subdir" = "."; then :; else \
-	    rev="$$subdir $$rev"; \
-	  fi; \
-	done; \
-	rev="$$rev ."; \
-	target=`echo $@ | sed s/-recursive//`; \
-	for subdir in $$rev; do \
-	  echo "Making $$target in $$subdir"; \
-	  if test "$$subdir" = "."; then \
-	    local_target="$$target-am"; \
-	  else \
-	    local_target="$$target"; \
-	  fi; \
-	  (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) $$local_target) \
-	   || case "$$amf" in *=*) exit 1;; *k*) fail=yes;; *) exit 1;; esac; \
-	done && test -z "$$fail"
-tags-recursive:
-	list='$(SUBDIRS)'; for subdir in $$list; do \
-	  test "$$subdir" = . || (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) tags); \
-	done
-ctags-recursive:
-	list='$(SUBDIRS)'; for subdir in $$list; do \
-	  test "$$subdir" = . || (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) ctags); \
-	done
-
-ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
-	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
-	unique=`for i in $$list; do \
-	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
-	  done | \
-	  $(AWK) '    { files[$$0] = 1; } \
-	       END { for (i in files) print i; }'`; \
-	mkid -fID $$unique
 tags: TAGS
+TAGS:
 
-TAGS: tags-recursive $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
-		$(TAGS_FILES) $(LISP)
-	tags=; \
-	here=`pwd`; \
-	if (etags --etags-include --version) >/dev/null 2>&1; then \
-	  include_option=--etags-include; \
-	else \
-	  include_option=--include; \
-	fi; \
-	list='$(SUBDIRS)'; for subdir in $$list; do \
-	  if test "$$subdir" = .; then :; else \
-	    test -f $$subdir/TAGS && \
-	      tags="$$tags $$include_option=$$here/$$subdir/TAGS"; \
-	  fi; \
-	done; \
-	list='$(SOURCES) $(HEADERS)  $(LISP) $(TAGS_FILES)'; \
-	unique=`for i in $$list; do \
-	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
-	  done | \
-	  $(AWK) '    { files[$$0] = 1; } \
-	       END { for (i in files) print i; }'`; \
-	test -z "$(ETAGS_ARGS)$$tags$$unique" \
-	  || $(ETAGS) $(ETAGSFLAGS) $(AM_ETAGSFLAGS) $(ETAGS_ARGS) \
-	     $$tags $$unique
 ctags: CTAGS
-CTAGS: ctags-recursive $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
-		$(TAGS_FILES) $(LISP)
-	tags=; \
-	here=`pwd`; \
-	list='$(SOURCES) $(HEADERS)  $(LISP) $(TAGS_FILES)'; \
-	unique=`for i in $$list; do \
-	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
-	  done | \
-	  $(AWK) '    { files[$$0] = 1; } \
-	       END { for (i in files) print i; }'`; \
-	test -z "$(CTAGS_ARGS)$$tags$$unique" \
-	  || $(CTAGS) $(CTAGSFLAGS) $(AM_CTAGSFLAGS) $(CTAGS_ARGS) \
-	     $$tags $$unique
+CTAGS:
 
-GTAGS:
-	here=`$(am__cd) $(top_builddir) && pwd` \
-	  && cd $(top_srcdir) \
-	  && gtags -i $(GTAGS_ARGS) $$here
-
-distclean-tags:
-	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
 
 distdir: $(DISTFILES)
 	$(mkdir_p) $(distdir)/Support
@@ -628,41 +396,19 @@ distdir: $(DISTFILES)
 	    || exit 1; \
 	  fi; \
 	done
-	list='$(SUBDIRS)'; for subdir in $$list; do \
-	  if test "$$subdir" = .; then :; else \
-	    test -d "$(distdir)/$$subdir" \
-	    || mkdir "$(distdir)/$$subdir" \
-	    || exit 1; \
-	    (cd $$subdir && \
-	      $(MAKE) $(AM_MAKEFLAGS) \
-	        top_distdir="../$(top_distdir)" \
-	        distdir="../$(distdir)/$$subdir" \
-	        distdir) \
-	      || exit 1; \
-	  fi; \
-	done
-	$(MAKE) $(AM_MAKEFLAGS) \
-	  top_distdir="$(top_distdir)" distdir="$(distdir)" \
-	  dist-info dist-hook
 check-am: all-am
-check: $(BUILT_SOURCES)
-	$(MAKE) $(AM_MAKEFLAGS) check-recursive
-all-am: Makefile $(INFO_DEPS) $(SCRIPTS)
-installdirs: installdirs-recursive
-installdirs-am:
-	for dir in "$(DESTDIR)$(infodir)"; do \
-	  test -z "$$dir" || $(mkdir_p) "$$dir"; \
-	done
-install: $(BUILT_SOURCES)
-	$(MAKE) $(AM_MAKEFLAGS) install-recursive
-install-exec: install-exec-recursive
-install-data: install-data-recursive
-uninstall: uninstall-recursive
+check: check-am
+all-am: Makefile $(SCRIPTS)
+installdirs:
+install: install-am
+install-exec: install-exec-am
+install-data: install-data-am
+uninstall: uninstall-am
 
 install-am: all-am
 	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
 
-installcheck: installcheck-recursive
+installcheck: installcheck-am
 install-strip:
 	$(MAKE) $(AM_MAKEFLAGS) INSTALL_PROGRAM="$(INSTALL_STRIP_PROGRAM)" \
 	  install_sh_PROGRAM="$(INSTALL_STRIP_PROGRAM)" INSTALL_STRIP_FLAG=-s \
@@ -678,285 +424,97 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
-	-test -z "$(BUILT_SOURCES)" || rm -f $(BUILT_SOURCES)
-clean: clean-recursive
+clean: clean-am
 
 clean-am: clean-generic clean-libtool mostlyclean-am
 
-distclean: distclean-recursive
+distclean: distclean-am
 	-rm -f Makefile
-distclean-am: clean-am distclean-generic distclean-libtool \
-	distclean-tags
+distclean-am: clean-am distclean-generic distclean-libtool
 
-dvi: dvi-recursive
+dvi: dvi-am
 
-dvi-am: $(DVIS)
+dvi-am:
 
-html: html-recursive
+html: html-am
 
-html-am: $(HTMLS)
+info: info-am
 
-info: info-recursive
+info-am:
 
-info-am: $(INFO_DEPS)
-
-install-data-am: install-info-am
+install-data-am:
+	@$(NORMAL_INSTALL)
+	$(MAKE) $(AM_MAKEFLAGS) install-data-hook
 
 install-exec-am:
 
-install-info: install-info-recursive
+install-info: install-info-am
 
-install-info-am: $(INFO_DEPS)
-	@$(NORMAL_INSTALL)
-	test -z "$(infodir)" || $(mkdir_p) "$(DESTDIR)$(infodir)"
-	@srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`; \
-	list='$(INFO_DEPS)'; \
-	for file in $$list; do \
-	  case $$file in \
-	    $(srcdir)/*) file=`echo "$$file" | sed "s|^$$srcdirstrip/||"`;; \
-	  esac; \
-	  if test -f $$file; then d=.; else d=$(srcdir); fi; \
-	  file_i=`echo "$$file" | sed 's|\.info$$||;s|$$|.i|'`; \
-	  for ifile in $$d/$$file $$d/$$file-[0-9] $$d/$$file-[0-9][0-9] \
-                       $$d/$$file_i[0-9] $$d/$$file_i[0-9][0-9] ; do \
-	    if test -f $$ifile; then \
-	      relfile=`echo "$$ifile" | sed 's|^.*/||'`; \
-	      echo " $(INSTALL_DATA) '$$ifile' '$(DESTDIR)$(infodir)/$$relfile'"; \
-	      $(INSTALL_DATA) "$$ifile" "$(DESTDIR)$(infodir)/$$relfile"; \
-	    else : ; fi; \
-	  done; \
-	done
-	@$(POST_INSTALL)
-	@if (install-info --version && \
-	     install-info --version 2>&1 | sed 1q | grep -i -v debian) >/dev/null 2>&1; then \
-	  list='$(INFO_DEPS)'; \
-	  for file in $$list; do \
-	    relfile=`echo "$$file" | sed 's|^.*/||'`; \
-	    echo " install-info --info-dir='$(DESTDIR)$(infodir)' '$(DESTDIR)$(infodir)/$$relfile'";\
-	    install-info --info-dir="$(DESTDIR)$(infodir)" "$(DESTDIR)$(infodir)/$$relfile" || :;\
-	  done; \
-	else : ; fi
 install-man:
 
 installcheck-am:
 
-maintainer-clean: maintainer-clean-recursive
+maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
-maintainer-clean-am: distclean-am maintainer-clean-aminfo \
-	maintainer-clean-generic
+maintainer-clean-am: distclean-am maintainer-clean-generic
 
-mostlyclean: mostlyclean-recursive
+mostlyclean: mostlyclean-am
 
-mostlyclean-am: mostlyclean-aminfo mostlyclean-generic \
-	mostlyclean-libtool
+mostlyclean-am: mostlyclean-generic mostlyclean-libtool
 
-pdf: pdf-recursive
+pdf: pdf-am
 
-pdf-am: $(PDFS)
+pdf-am:
 
-ps: ps-recursive
+ps: ps-am
 
-ps-am: $(PSS)
+ps-am:
 
 uninstall-am: uninstall-info-am
 
-uninstall-info: uninstall-info-recursive
-
-.PHONY: $(RECURSIVE_TARGETS) CTAGS GTAGS all all-am check check-am \
-	clean clean-generic clean-libtool clean-recursive ctags \
-	ctags-recursive dist-info distclean distclean-generic \
-	distclean-libtool distclean-recursive distclean-tags distdir \
-	dvi dvi-am html html-am info info-am install install-am \
+.PHONY: all all-am check check-am clean clean-generic clean-libtool \
+	distclean distclean-generic distclean-libtool distdir dvi \
+	dvi-am html html-am info info-am install install-am \
 	install-data install-data-am install-exec install-exec-am \
 	install-info install-info-am install-man install-strip \
-	installcheck installcheck-am installdirs installdirs-am \
-	maintainer-clean maintainer-clean-aminfo \
-	maintainer-clean-generic maintainer-clean-recursive \
-	mostlyclean mostlyclean-aminfo mostlyclean-generic \
-	mostlyclean-libtool mostlyclean-recursive pdf pdf-am ps ps-am \
-	tags tags-recursive uninstall uninstall-am uninstall-info-am
+	installcheck installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am uninstall uninstall-am \
+	uninstall-info-am
 
 
-all:			$(targets) txt_files
+all:			txt_files
 
-txt_files:		../INSTALL-SOURCE ../COPYING ../INSTALL-WIN-SOURCE ../EXCEPTIONS-CLIENT \
+txt_files:		../INSTALL-SOURCE ../INSTALL-WIN-SOURCE ../EXCEPTIONS-CLIENT \
 			INSTALL-BINARY ../support-files/MacOSX/ReadMe.txt
 
-CLEAN_FILES:		$(BUILD_SOURCES)
-	touch $(BUILD_SOURCES)
+# make sure that "make install" installs the info page, too
+# automake only seems to take care of this automatically,
+# if we're building the info page from texi directly.
+install-data-hook:	mysql.info
+	$(mkinstalldirs) $(DESTDIR)$(infodir)
+	$(INSTALL_DATA) $(srcdir)/mysql.info $(DESTDIR)$(infodir)
 
-# The PostScript and PDF version are so big that they are not included in the
-# standard distribution. It is available for download from the home page.  
-paper: manual_a4.ps manual_letter.ps  $(PDFMANUAL)
-
-#########################################################################
-
-# The Makefile contains the previous version so we can not use that
-include.texi:	../configure.in
-	echo "@c This file is autogenerated by the Makefile" > $@
-	echo -n "@set mysqlversion " >> $@
-	grep "AM_INIT_AUTOMAKE(mysql, " ../configure.in | \
-	 sed -e 's;AM_INIT_AUTOMAKE(mysql, ;;' -e 's;);;' >> $@
-	echo -n "@set defaultport " >> $@
-	grep "MYSQL_TCP_PORT_DEFAULT=" ../configure.in | \
-	 sed -e 's;MYSQL_TCP_PORT_DEFAULT=;;' >> $@
-
-#
-# English Manual
-#
-
-# GNU Info
-mysql.info:	manual.texi include.texi
-	cd $(srcdir) && $(MAKEINFO) --no-split -I $(srcdir) $<
-
-# Plain Text
-manual.txt:	manual.texi include.texi
-	cd $(srcdir) && \
-	$(MAKEINFO) -I $(srcdir) --no-headers --no-split --output $@ $<
-
-# HTML, all in one file
-manual.html:	manual.texi include.texi $(srcdir)/Support/texi2html
-	cd $(srcdir) && @PERL@ $(srcdir)/Support/texi2html $(TEXI2HTML_FLAGS) $<
-manual_toc.html: manual.html
-
-# PDF, Portable Document Format
-manual.pdf: manual.texi
-	sed -e 's|@image{[^}]*} *||g' <$< >manual-tmp.texi
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	mv manual-tmp.pdf $@
-	rm -f manual-tmp.*
-	touch $@
-
-# XML, DocBook 4.0
-mysql.xml: manual.texi include.texi
-	$(MAKEINFO) --force --no-ifinfo --docbook $<
-	mv $@ mysql-tmp.xml
-	Support/docbook-fixup.pl <mysql-tmp.xml >$@
-	rm -f mysql-tmp.xml
-
-# Postscript, A4 Paper
-manual_a4.ps:	manual.texi include.texi
-	TEXINPUTS=$(srcdir):$$TEXINPUTS \
-	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
-	    $(TEXI2DVI) --batch --texinfo --quiet '@afourpaper' $<
-	$(DVIPS) -t a4 manual.dvi -o $@
-	touch $@
-
-# Postscript, US Letter Paper
-manual_letter.ps:	manual.texi include.texi
-	TEXINPUTS=$(srcdir):$$TEXINPUTS \
-	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
-	    $(TEXI2DVI) --batch $<
-	$(DVIPS) -t letter manual.dvi -o $@
-	touch $@
-
-#
-# German Manual
-#
-
-# GNU Info
-mysql.de.info:	manual.de.texi include.texi
-	cd $(srcdir) && $(MAKEINFO) --no-split -I $(srcdir) $<
-
-# Plain Text
-manual.de.txt:	manual.de.texi include.texi
-	cd $(srcdir) && \
-	$(MAKEINFO) -I $(srcdir) --no-headers --no-split --output $@ $<
-
-# HTML, all in one file
-manual.de.html:	manual.de.texi include.texi $(srcdir)/Support/texi2html
-	cd $(srcdir) && @PERL@ $(srcdir)/Support/texi2html $(TEXI2HTML_FLAGS) $<
-manual_toc.de.html: manual.html
-
-# PDF, Portable Document Format
-manual.de.pdf: manual.de.texi
-	sed -e 's|@image{[^}]*} *||g' <$< >manual-tmp.texi
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	mv manual-tmp.pdf $@
-	rm -f manual-tmp.*
-	touch $@
-
-# XML, DocBook 4.0
-mysql.de.xml: manual.de.texi include.texi
-	$(MAKEINFO) --force --no-ifinfo --docbook $<
-	mv $@ mysql-tmp.xml
-	Support/docbook-fixup.pl <mysql-tmp.xml >$@
-	rm -f mysql-tmp.xml
-
-# Postscript, A4 Paper
-manual_a4.de.ps:	manual.de.texi include.texi
-	TEXINPUTS=$(srcdir):$$TEXINPUTS \
-	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
-	    $(TEXI2DVI) --batch --texinfo --quiet '@afourpaper' $<
-	$(DVIPS) -t a4 manual.de.dvi -o $@
-	touch $@
-
-# Postscript, US Letter Paper
-manual_letter.de.ps:	manual.de.texi include.texi
-	TEXINPUTS=$(srcdir):$$TEXINPUTS \
-	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
-	    $(TEXI2DVI) --batch $<
-	$(DVIPS) -t letter manual.de.dvi -o $@
-	touch $@
-
-#
-# Miscellaneous
-#
-
-# Target to produce NuSphere Manual
-nusphere.pdf: manual.texi
-	sed -e 's/@example/@smallexample/g' \
-	    -e 's/@end example/@end smallexample/g' \
-	    -e 's/@c ifnusphere //g' \
-	    -e 's|@image{[^}]*} *||g' \
-	<$< >manual-tmp.texi
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	mv manual-tmp.pdf $@
-	rm -f manual-tmp.*
-	touch $@
-
-# Include images for the manual in the distribution
-dist-hook:
-	BD=`cd $(top_srcdir); pwd`; \
-	echo "PostScript and PDF versions suitable for printing" \
-		> $(distdir)/manual.ps
-	echo "are available from http://dev.mysql.com/doc/" \
-		>> $(distdir)/manual.ps
-	echo "or any mirror site" \
-		>> $(distdir)/manual.ps
+CLEAN_FILES:		$(txt_files)
+	touch $(txt_files)
 
 ../INSTALL-SOURCE:	mysql.info $(GT)
-	perl -w $(GT) mysql.info "Installing" "Tutorial" > $@
+	perl -w $(GT) mysql.info "installing-source" "windows-source-build" > $@
 
 ../INSTALL-WIN-SOURCE:	mysql.info $(GT)
-	perl -w $(GT) mysql.info "Windows source build" "Post-installation" > $@
+	perl -w $(GT) mysql.info "windows-source-build" "post-installation" > $@
 
 # We put the description for the binary installation here so that
 # people who download source wont have to see it. It is moved up to
 # the toplevel by the script that makes the binary tar files.
 INSTALL-BINARY:	mysql.info $(GT)
-	perl -w $(GT) mysql.info "Installing binary" "Installing source" > $@
-
-../COPYING:		mysql.info $(GT)
-	perl -w $(GT) mysql.info "GPL license" "MySQL FLOSS License Exception" > $@
+	perl -w $(GT) mysql.info "installing-binary" "installing-source" > $@
 
 ../EXCEPTIONS-CLIENT: mysql.info $(GT)
-	perl -w $(GT) mysql.info "MySQL FLOSS License Exception" "Function Index" > $@
+	perl -w $(GT) mysql.info "mysql-floss-license-exception" "function-index" > $@
 
 ../support-files/MacOSX/ReadMe.txt:	mysql.info $(GT)
-	perl -w $(GT) mysql.info "Mac OS X installation" "NetWare installation" > $@
+	perl -w $(GT) mysql.info "mac-os-x-installation" "netware-installation" > $@
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

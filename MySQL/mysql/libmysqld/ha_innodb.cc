@@ -28,7 +28,7 @@ have disables the InnoDB inlining in this file. */
     in Windows?
 */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -472,7 +472,7 @@ innobase_mysql_tmpfile(void)
 {
 	char	filename[FN_REFLEN];
 	int	fd2 = -1;
-	File	fd = create_temp_file(filename, NullS, "ib",
+	File	fd = create_temp_file(filename, mysql_tmpdir, "ib",
 #ifdef __WIN__
 				O_BINARY | O_TRUNC | O_SEQUENTIAL |
 				O_TEMPORARY | O_SHORT_LIVED |
@@ -1216,7 +1216,7 @@ innobase_commit(
 			&innodb_dummy_stmt_trx_handle: the latter means
 			that the current SQL statement ended */
 {
-	trx_t*	trx;
+	trx_t*		trx;
 
   	DBUG_ENTER("innobase_commit");
   	DBUG_PRINT("trans", ("ending transaction"));
@@ -1923,8 +1923,11 @@ inline
 ulint
 get_innobase_type_from_mysql_type(
 /*==============================*/
-			/* out: DATA_BINARY, DATA_VARCHAR, ... */
-	Field*	field)	/* in: MySQL field */
+				/* out: DATA_BINARY, DATA_VARCHAR, ... */
+	ulint*	unsigned_flag,	/* out: DATA_UNSIGNED if an 'unsigned type';
+				at least ENUM and SET, and unsigned integer
+				types are 'unsigned types' */
+	Field*	field)		/* in: MySQL field */
 {
 	/* The following asserts try to check that the MySQL type code fits in
 	8 bits: this is used in ibuf and also when DATA_NOT_NULL is ORed to
@@ -1935,6 +1938,27 @@ get_innobase_type_from_mysql_type(
 	DBUG_ASSERT((ulint)FIELD_TYPE_DOUBLE < 256);
 	DBUG_ASSERT((ulint)FIELD_TYPE_FLOAT < 256);
 	DBUG_ASSERT((ulint)FIELD_TYPE_DECIMAL < 256);
+
+	if (field->flags & UNSIGNED_FLAG) {
+
+		*unsigned_flag = DATA_UNSIGNED;
+	} else {
+		*unsigned_flag = 0;
+	}
+
+	if (field->real_type() == FIELD_TYPE_ENUM
+	    || field->real_type() == FIELD_TYPE_SET) {
+
+		/* MySQL has field->type() a string type for these, but the
+		data is actually internally stored as an unsigned integer
+		code! */
+
+		*unsigned_flag = DATA_UNSIGNED; /* MySQL has its own unsigned
+						flag set to zero, even though
+						internally this is an unsigned
+						integer type */
+		return(DATA_INT);
+	}
 
 	switch (field->type()) {
 	        /* NOTE that we only allow string types in DATA_MYSQL
@@ -1968,8 +1992,6 @@ get_innobase_type_from_mysql_type(
 		case FIELD_TYPE_DATETIME:
 		case FIELD_TYPE_YEAR:
 		case FIELD_TYPE_NEWDATE:
-		case FIELD_TYPE_ENUM:
-		case FIELD_TYPE_SET:
 		case FIELD_TYPE_TIME:
 		case FIELD_TYPE_TIMESTAMP:
 					return(DATA_INT);
@@ -2247,10 +2269,11 @@ build_template(
 					get_field_offset(table, field);
 
 		templ->mysql_col_len = (ulint) field->pack_length();
-		templ->type = get_innobase_type_from_mysql_type(field);
+		templ->type = index->table->cols[i].type.mtype;
+		templ->is_unsigned = index->table->cols[i].type.prtype
+							& DATA_UNSIGNED;
 		templ->charset = dtype_get_charset_coll_noninline(
 				index->table->cols[i].type.prtype);
-		templ->is_unsigned = (ulint) (field->flags & UNSIGNED_FLAG);
 
 		if (templ->type == DATA_BLOB) {
 			prebuilt->templ_contains_blob = TRUE;
@@ -2316,7 +2339,10 @@ ha_innobase::write_row(
         if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_INSERT)
                 table->timestamp_field->set_time();
 
-	if (user_thd->lex->sql_command == SQLCOM_ALTER_TABLE
+	if ((user_thd->lex->sql_command == SQLCOM_ALTER_TABLE
+	    || user_thd->lex->sql_command == SQLCOM_OPTIMIZE
+	    || user_thd->lex->sql_command == SQLCOM_CREATE_INDEX
+	    || user_thd->lex->sql_command == SQLCOM_DROP_INDEX)
 	    && num_write_row >= 10000) {
 		/* ALTER TABLE is COMMITted at every 10000 copied rows.
 		The IX table lock for the original table has to be re-issued.
@@ -2673,9 +2699,9 @@ calc_row_difference(
 		o_len = field->pack_length();
 		n_len = field->pack_length();
 
-		col_type = get_innobase_type_from_mysql_type(field);
-		is_unsigned = (ulint) (field->flags & UNSIGNED_FLAG);
-
+		col_type = prebuilt->table->cols[i].type.mtype;
+		is_unsigned = prebuilt->table->cols[i].type.prtype &
+								DATA_UNSIGNED;
 		switch (col_type) {
 
 		case DATA_BLOB:
@@ -2717,8 +2743,7 @@ calc_row_difference(
 					  (mysql_byte*)n_ptr, n_len, col_type,
 						is_unsigned);
 			ufield->exp = NULL;
-			ufield->field_no =
-					(prebuilt->table->cols + i)->clust_pos;
+			ufield->field_no = prebuilt->table->cols[i].clust_pos;
 			n_changed++;
 		}
 	}
@@ -3543,17 +3568,12 @@ create_table_def(
 	for (i = 0; i < n_cols; i++) {
 		field = form->field[i];
 
-		col_type = get_innobase_type_from_mysql_type(field);
+		col_type = get_innobase_type_from_mysql_type(&unsigned_type,
+								field);
 		if (field->null_ptr) {
 			nulls_allowed = 0;
 		} else {
 			nulls_allowed = DATA_NOT_NULL;
-		}
-
-		if (field->flags & UNSIGNED_FLAG) {
-			unsigned_type = DATA_UNSIGNED;
-		} else {
-			unsigned_type = 0;
 		}
 
 		if (field->binary()) {
@@ -3609,6 +3629,7 @@ create_index(
 	ulint		ind_type;
 	ulint		col_type;
 	ulint		prefix_len;
+	ulint		is_unsigned;
   	ulint		i;
   	ulint		j;
 
@@ -3658,7 +3679,8 @@ create_index(
 
 		ut_a(j < form->fields);
 
-		col_type = get_innobase_type_from_mysql_type(key_part->field);
+		col_type = get_innobase_type_from_mysql_type(
+					&is_unsigned, key_part->field);
 
 		if (DATA_BLOB == col_type
 		    || key_part->length < field->pack_length()) {
@@ -3744,6 +3766,7 @@ ha_innobase::create(
 	char		name2[FN_REFLEN];
 	char		norm_name[FN_REFLEN];
 	THD		*thd= current_thd;
+	ib_longlong     auto_inc_value;
 
   	DBUG_ENTER("ha_innobase::create");
 
@@ -3916,6 +3939,20 @@ ha_innobase::create(
 	innobase_table = dict_table_get(norm_name, NULL);
 
 	DBUG_ASSERT(innobase_table != 0);
+
+	if ((create_info->used_fields & HA_CREATE_USED_AUTO) &&
+	   (create_info->auto_increment_value != 0)) {
+
+		/* Query was ALTER TABLE...AUTO_INCREMENT = x; or 
+		CREATE TABLE ...AUTO_INCREMENT = x; Find out a table
+		definition from the dictionary and get the current value
+		of the auto increment field. Set a new value to the
+		auto increment field if the value is greater than the
+		maximum value in the column. */
+
+		auto_inc_value = create_info->auto_increment_value;
+		dict_table_autoinc_initialize(innobase_table, auto_inc_value);
+	}
 
 	/* Tell the InnoDB server that there might be work for
 	utility threads: */
@@ -4160,6 +4197,10 @@ ha_innobase::rename_table(
 	trx = trx_allocate_for_mysql();
 	trx->mysql_thd = current_thd;
 	trx->mysql_query_str = &((*current_thd).query);
+
+	if (current_thd->options & OPTION_NO_FOREIGN_KEY_CHECKS) {
+		trx->check_foreigns = FALSE;
+	}
 
 	name_len1 = strlen(from);
 	name_len2 = strlen(to);
@@ -4767,6 +4808,32 @@ ha_innobase::get_foreign_key_create_info(void)
   	return(str);
 }
 
+/*********************************************************************
+Checks if ALTER TABLE may change the storage engine of the table.
+Changing storage engines is not allowed for tables for which there
+are foreign key constraints (parent or child tables). */
+
+bool
+ha_innobase::can_switch_engines(void)
+/*=================================*/
+{
+	row_prebuilt_t* prebuilt	= (row_prebuilt_t*) innobase_prebuilt;
+	bool	can_switch;
+
+ 	DBUG_ENTER("ha_innobase::can_switch_engines");
+	prebuilt->trx->op_info =
+			"determining if there are foreign key constraints";
+	row_mysql_lock_data_dictionary(prebuilt->trx);
+
+	can_switch = !UT_LIST_GET_FIRST(prebuilt->table->referenced_list)
+			&& !UT_LIST_GET_FIRST(prebuilt->table->foreign_list);
+
+	row_mysql_unlock_data_dictionary(prebuilt->trx);
+	prebuilt->trx->op_info = "";
+
+	DBUG_RETURN(can_switch);
+}
+
 /***********************************************************************
 Checks if a table is referenced by a foreign key. The MySQL manual states that
 a REPLACE is either equivalent to an INSERT, or DELETE(s) + INSERT. Only a
@@ -5116,8 +5183,12 @@ innodb_show_status(
 /*===============*/
 	THD*	thd)	/* in: the MySQL query thread of the caller */
 {
-        Protocol        *protocol= thd->protocol;
-	trx_t*		trx;
+	Protocol*		protocol = thd->protocol;
+	trx_t*			trx;
+	static const char	truncated_msg[] = "... truncated...\n";
+	const long		MAX_STATUS_SIZE = 64000;
+	ulint			trx_list_start = ULINT_UNDEFINED;
+	ulint			trx_list_end = ULINT_UNDEFINED;
 
         DBUG_ENTER("innodb_show_status");
 
@@ -5132,33 +5203,57 @@ innodb_show_status(
 
 	innobase_release_stat_resources(trx);
 
-	/* We let the InnoDB Monitor to output at most 64000 bytes of text. */
+	/* We let the InnoDB Monitor to output at most MAX_STATUS_SIZE
+	bytes of text. */
 
-	long	flen;
+	long	flen, usable_len;
 	char*	str;
 
 	mutex_enter_noninline(&srv_monitor_file_mutex);
 	rewind(srv_monitor_file);
-	srv_printf_innodb_monitor(srv_monitor_file);
+	srv_printf_innodb_monitor(srv_monitor_file,
+				&trx_list_start, &trx_list_end);
 	flen = ftell(srv_monitor_file);
 	os_file_set_eof(srv_monitor_file);
 	if (flen < 0) {
 		flen = 0;
-	} else if (flen > 64000 - 1) {
-		flen = 64000 - 1;
+	}
+
+	if (flen > MAX_STATUS_SIZE) {
+		usable_len = MAX_STATUS_SIZE;
+	} else {
+		usable_len = flen;
 	}
 
 	/* allocate buffer for the string, and
 	read the contents of the temporary file */
 
-	if (!(str = my_malloc(flen + 1, MYF(0))))
+	if (!(str = my_malloc(usable_len + 1, MYF(0))))
         {
           mutex_exit_noninline(&srv_monitor_file_mutex);
           DBUG_RETURN(-1);
         }
 
 	rewind(srv_monitor_file);
-	flen = fread(str, 1, flen, srv_monitor_file);
+	if (flen < MAX_STATUS_SIZE) {
+		/* Display the entire output. */
+		flen = fread(str, 1, flen, srv_monitor_file);
+	} else if (trx_list_end < (ulint) flen
+			&& trx_list_start < trx_list_end
+			&& trx_list_start + (flen - trx_list_end)
+			< MAX_STATUS_SIZE - sizeof truncated_msg - 1) {
+		/* Omit the beginning of the list of active transactions. */
+		long	len = fread(str, 1, trx_list_start, srv_monitor_file);
+		memcpy(str + len, truncated_msg, sizeof truncated_msg - 1);
+		len += sizeof truncated_msg - 1;
+		usable_len = (MAX_STATUS_SIZE - 1) - len;
+		fseek(srv_monitor_file, flen - usable_len, SEEK_SET);
+		len += fread(str + len, 1, usable_len, srv_monitor_file);
+		flen = len;
+	} else {
+		/* Omit the end of the output. */
+		flen = fread(str, 1, MAX_STATUS_SIZE - 1, srv_monitor_file);
+	}
 
 	mutex_exit_noninline(&srv_monitor_file_mutex);
 
@@ -5268,7 +5363,8 @@ ha_innobase::store_lock(
 	    (lock_type == TL_READ_HIGH_PRIORITY && thd->in_lock_tables) ||
 	    lock_type == TL_READ_WITH_SHARED_LOCKS ||
 	    lock_type == TL_READ_NO_INSERT ||
-	    thd->lex->sql_command != SQLCOM_SELECT) {
+	    (thd->lex->sql_command != SQLCOM_SELECT
+	     && lock_type != TL_IGNORE)) {
 
 		/* The OR cases above are in this order:
 		1) MySQL is doing LOCK TABLES ... READ LOCAL, or
@@ -5287,15 +5383,15 @@ ha_innobase::store_lock(
 		    (lock_type == TL_READ || lock_type == TL_READ_NO_INSERT) &&
 		    thd->lex->sql_command != SQLCOM_SELECT &&
 		    thd->lex->sql_command != SQLCOM_UPDATE_MULTI &&
-		    thd->lex->sql_command != SQLCOM_DELETE_MULTI ) {
+		    thd->lex->sql_command != SQLCOM_DELETE_MULTI &&
+		    thd->lex->sql_command != SQLCOM_LOCK_TABLES) {
 
 			/* In case we have innobase_locks_unsafe_for_binlog
 			option set and isolation level of the transaction
 			is not set to serializable and MySQL is doing
-			INSERT INTO...SELECT without FOR UPDATE or IN
-			SHARE MODE we use consistent read for select. 
-			Similarly, in case of DELETE...SELECT and
-			UPDATE...SELECT when these are not multi table.*/
+			INSERT INTO...SELECT or UPDATE ... = (SELECT ...)
+			without FOR UPDATE or IN SHARE MODE in select, then
+			we use consistent read for select. */
 
 			prebuilt->select_lock_type = LOCK_NONE;
 			prebuilt->stored_select_lock_type = LOCK_NONE;
@@ -5324,7 +5420,8 @@ ha_innobase::store_lock(
 
     		if ((lock_type >= TL_WRITE_CONCURRENT_INSERT &&
 	 	    lock_type <= TL_WRITE) && !thd->in_lock_tables
-		    && !thd->tablespace_op) {
+		    && !thd->tablespace_op
+                    && thd->lex->sql_command != SQLCOM_CREATE_TABLE) {
 
       			lock_type = TL_WRITE_ALLOW_WRITE;
       		}
@@ -5600,14 +5697,20 @@ innobase_get_at_most_n_mbchars(
 
 extern "C" {
 /**********************************************************************
-This function returns true if SQL-query in the current thread
+This function returns true if 
+
+1) SQL-query in the current thread
 is either REPLACE or LOAD DATA INFILE REPLACE. 
+
+2) SQL-query in the current thread
+is INSERT ON DUPLICATE KEY UPDATE.
+
 NOTE that /mysql/innobase/row/row0ins.c must contain the 
 prototype for this function ! */
 
 ibool
-innobase_query_is_replace(void)
-/*===========================*/
+innobase_query_is_update(void)
+/*==========================*/
 {
 	THD*	thd;
 	
@@ -5617,10 +5720,15 @@ innobase_query_is_replace(void)
 	     thd->lex->sql_command == SQLCOM_REPLACE_SELECT ||
 	     ( thd->lex->sql_command == SQLCOM_LOAD &&
 	       thd->lex->duplicates == DUP_REPLACE )) {
-		return true;
-	} else {
-		return false;
+		return(1);
 	}
+
+	if ( thd->lex->sql_command == SQLCOM_INSERT &&
+	     thd->lex->duplicates  == DUP_UPDATE ) {
+		return(1);
+	}
+
+	return(0);
 }
 }
 

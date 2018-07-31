@@ -1,5 +1,5 @@
 /* Automatically generated file, do not edit */
-#include "sys.h"
+#include "config.h"
 #include "el.h"
 private const struct el_bindings_t el_func_help[] = {
     { "vi-paste-next",               VI_PASTE_NEXT,                
@@ -108,7 +108,7 @@ private const struct el_bindings_t el_func_help[] = {
       "Cut area between mark and cursor and save in cut buffer" },
     { "em-copy-region",              EM_COPY_REGION,               
       "Copy area between mark and cursor to cut buffer" },
-    { "em-gosmacs-traspose",         EM_GOSMACS_TRASPOSE,          
+    { "em-gosmacs-transpose",        EM_GOSMACS_TRANSPOSE,         
       "Exchange the two characters before the cursor" },
     { "em-next-word",                EM_NEXT_WORD,                 
       "Move next to end of current word" },
@@ -134,6 +134,8 @@ private const struct el_bindings_t el_func_help[] = {
       "Emacs incremental next search" },
     { "em-inc-search-prev",          EM_INC_SEARCH_PREV,           
       "Emacs incremental reverse search" },
+    { "em-delete-prev-char",         EM_DELETE_PREV_CHAR,          
+      "Delete the character to the left of the cursor" },
     { "ed-end-of-file",              ED_END_OF_FILE,               
       "Indicate end of file" },
     { "ed-insert",                   ED_INSERT,                    

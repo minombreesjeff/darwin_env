@@ -60,6 +60,7 @@ public:
   }
   
   void add_listener(const Event_listener&);
+  void check_listeners();
   void update_max_log_level(const LogLevel&);
   void update_log_level(const LogLevel&);
   
@@ -508,7 +509,7 @@ public:
 
   int setDbParameter(int node, int parameter, const char * value, BaseString&);
   
-  const char *get_connect_address(Uint32 node_id) { return inet_ntoa(m_connect_address[node_id]); }
+  const char *get_connect_address(Uint32 node_id);
   void get_connected_nodes(NodeBitmask &connected_nodes) const;
   SocketServer *get_socket_server() { return m_socket_server; }
 
@@ -573,7 +574,7 @@ private:
   // Returns: -
   //**************************************************************************
 
-  void handleStatus(NodeId nodeId, bool alive);
+  void handleStatus(NodeId nodeId, bool alive, bool nfComplete);
   //**************************************************************************
   // Description: Handle the death of a process
   // Parameters:
@@ -611,7 +612,8 @@ private:
     WAIT_STOP,
     WAIT_BACKUP_STARTED,
     WAIT_BACKUP_COMPLETED,
-    WAIT_VERSION
+    WAIT_VERSION,
+    WAIT_NODEFAILURE
   };
 
   /**
@@ -695,6 +697,7 @@ private:
   NdbApiSignal* theSignalIdleList;
   // List of unused signals
   
+  Uint32 theWaitNode;
   WaitSignalType theWaitState;
   // State denoting a set of signals we accept to recieve.
 

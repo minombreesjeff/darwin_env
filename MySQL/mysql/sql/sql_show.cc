@@ -980,7 +980,7 @@ mysqld_show_keys(THD *thd, TABLE_LIST *table_list)
   field_list.push_back(item=new Item_int("Cardinality",0,21));
   item->maybe_null=1;
   field_list.push_back(item=new Item_return_int("Sub_part",3,
-						MYSQL_TYPE_TINY));
+						MYSQL_TYPE_SHORT));
   item->maybe_null=1;
   field_list.push_back(item=new Item_empty_string("Packed",10));
   item->maybe_null=1;
@@ -1025,7 +1025,7 @@ mysqld_show_keys(THD *thd, TABLE_LIST *table_list)
       /* Check if we have a key part that only uses part of the field */
       if (!(key_info->flags & HA_FULLTEXT) && (!key_part->field ||
           key_part->length != table->field[key_part->fieldnr-1]->key_length()))
-        protocol->store_tiny((longlong) key_part->length / 
+        protocol->store_short((longlong) key_part->length / 
                              key_part->field->charset()->mbmaxlen);
       else
         protocol->store_null();
@@ -1227,7 +1227,15 @@ static void append_directory(THD *thd, String *packet, const char *dir_type,
     packet->append(' ');
     packet->append(dir_type);
     packet->append(" DIRECTORY='", 12);
+#ifdef __WIN__
+    char *winfilename = thd->memdup(filename, length);
+    for (uint i=0; i < length; i++)
+	    if (winfilename[i] == '\\')
+		    winfilename[i] = '/';
+    packet->append(winfilename, length);
+#else
     packet->append(filename, length);
+#endif
     packet->append('\'');
   }
 }
@@ -1406,15 +1414,15 @@ store_create_info(THD *thd, TABLE *table, String *packet)
 	!limited_mysql_mode && !foreign_db_mode)
     {
       if (key_info->algorithm == HA_KEY_ALG_BTREE)
-	packet->append(" TYPE BTREE", 11);
+	packet->append(" USING BTREE", 12);
       
       if (key_info->algorithm == HA_KEY_ALG_HASH)
-	packet->append(" TYPE HASH", 10);
+	packet->append(" USING HASH", 11);
       
       // +BAR: send USING only in non-default case: non-spatial rtree
       if ((key_info->algorithm == HA_KEY_ALG_RTREE) &&
 	  !(key_info->flags & HA_SPATIAL))
-	packet->append(" TYPE RTREE", 11);
+	packet->append(" USING RTREE", 12);
 
       // No need to send TYPE FULLTEXT, it is sent as FULLTEXT KEY
     }
@@ -1876,6 +1884,19 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
 	pthread_mutex_lock(&LOCK_active_mi);
 	end= strmov(buff, (active_mi->slave_running &&
 			   active_mi->rli.slave_running) ? "ON" : "OFF");
+	pthread_mutex_unlock(&LOCK_active_mi);
+	break;
+      }
+      case SHOW_SLAVE_RETRIED_TRANS:
+      {
+        /*
+          TODO: in 5.1 with multimaster, have one such counter per line in SHOW
+          SLAVE STATUS, and have the sum over all lines here.
+        */
+	pthread_mutex_lock(&LOCK_active_mi);
+        pthread_mutex_lock(&active_mi->rli.data_lock);
+	end= int10_to_str(active_mi->rli.retried_trans, buff, 10);
+        pthread_mutex_unlock(&active_mi->rli.data_lock);
 	pthread_mutex_unlock(&LOCK_active_mi);
 	break;
       }

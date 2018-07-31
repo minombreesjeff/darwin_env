@@ -50,7 +50,7 @@ if (pos > end_pos)             \
 ** In MySQL the server will handle version issues.
 ******************************************************************************/
 
-static MI_INFO *test_if_reopen(char *filename)
+MI_INFO *test_if_reopen(char *filename)
 {
   LIST *pos;
 
@@ -78,7 +78,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
   int lock_error,kfile,open_mode,save_errno,have_rtree=0;
   uint i,j,len,errpos,head_length,base_pos,offset,info_length,keys,
     key_parts,unique_key_parts,fulltext_keys,uniques;
-  char name_buff[FN_REFLEN], org_name [FN_REFLEN], index_name[FN_REFLEN],
+  char name_buff[FN_REFLEN], org_name[FN_REFLEN], index_name[FN_REFLEN],
        data_name[FN_REFLEN];
   char *disk_cache, *disk_pos, *end_pos;
   MI_INFO info,*m_info,*old_info;
@@ -515,7 +515,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 				   share->base.max_key_length),
 		       &info.lastkey,share->base.max_key_length*3+1,
 		       &info.first_mbr_key, share->base.max_key_length,
-		       &info.filename,strlen(org_name)+1,
+		       &info.filename,strlen(name)+1,
 		       &info.rtree_recursion_state,have_rtree ? 1024 : 0,
 		       NullS))
     goto err;
@@ -524,7 +524,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
   if (!have_rtree)
     info.rtree_recursion_state= NULL;
 
-  strmov(info.filename,org_name);
+  strmov(info.filename,name);
   memcpy(info.blobs,share->blobs,sizeof(MI_BLOB)*share->base.blobs);
   info.lastkey2=info.lastkey+share->base.max_key_length;
 

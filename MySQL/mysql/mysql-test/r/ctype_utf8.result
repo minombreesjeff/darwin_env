@@ -412,7 +412,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 default NULL,
-  UNIQUE KEY `a` TYPE HASH (`c`(1))
+  UNIQUE KEY `a` USING HASH (`c`(1))
 ) ENGINE=HEAP DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
@@ -448,7 +448,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 default NULL,
-  UNIQUE KEY `a` TYPE BTREE (`c`(1))
+  UNIQUE KEY `a` USING BTREE (`c`(1))
 ) ENGINE=HEAP DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
@@ -570,7 +570,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 collate utf8_bin default NULL,
-  UNIQUE KEY `a` TYPE HASH (`c`(1))
+  UNIQUE KEY `a` USING HASH (`c`(1))
 ) ENGINE=HEAP DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
@@ -606,7 +606,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c` char(10) character set utf8 collate utf8_bin default NULL,
-  UNIQUE KEY `a` TYPE BTREE (`c`(1))
+  UNIQUE KEY `a` USING BTREE (`c`(1))
 ) ENGINE=HEAP DEFAULT CHARSET=latin1
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
@@ -817,6 +817,9 @@ drop table t1;
 select 'c' like '\_' as want0;
 want0
 0
+SELECT SUBSTR('вася',-2);
+SUBSTR('вася',-2)
+ся
 create table t1 (id integer, a varchar(100) character set utf8 collate utf8_unicode_ci);
 insert into t1 values (1, 'Test');
 select * from t1 where soundex(a) = soundex('Test');
@@ -861,3 +864,100 @@ user	c
 one	<one>
 two	<two>
 DROP TABLE t1;
+create table t1 (f1 varchar(1) not null) default charset utf8;
+insert into t1 values (''), ('');
+select concat(concat(_latin1'->',f1),_latin1'<-') from t1;
+concat(concat(_latin1'->',f1),_latin1'<-')
+-><-
+-><-
+drop table t1;
+select convert(_koi8r'�' using utf8) < convert(_koi8r'�' using utf8);
+convert(_koi8r'�' using utf8) < convert(_koi8r'�' using utf8)
+1
+set names latin1;
+create table t1 (a varchar(10)) character set utf8;
+insert into t1 values ('test');
+select ifnull(a,'') from t1;
+ifnull(a,'')
+test
+drop table t1;
+select repeat(_utf8'+',3) as h union select NULL;
+h
++++
+NULL
+select ifnull(NULL, _utf8'string');
+ifnull(NULL, _utf8'string')
+string
+create table t1 (a varchar(255)) default character set utf8;
+insert into t1 values (1.0);
+drop table t1;
+create table t1 (
+id int not null,
+city varchar(20) not null,
+key (city(7),id)
+) character set=utf8;
+insert into t1 values (1,'Durban North');
+insert into t1 values (2,'Durban');
+select * from t1 where city = 'Durban';
+id	city
+2	Durban
+select * from t1 where city = 'Durban ';
+id	city
+2	Durban
+drop table t1;
+SET NAMES UTF8;
+CREATE TABLE t1 (
+`id` int(20) NOT NULL auto_increment,
+`country` varchar(100) NOT NULL default '',
+`shortcode` varchar(100) NOT NULL default '',
+`operator` varchar(100) NOT NULL default '',
+`momid` varchar(30) NOT NULL default '',
+`keyword` varchar(160) NOT NULL default '',
+`content` varchar(160) NOT NULL default '',
+`second_token` varchar(160) default NULL,
+`gateway_id` int(11) NOT NULL default '0',
+`created` datetime NOT NULL default '0000-00-00 00:00:00',
+`msisdn` varchar(15) NOT NULL default '',
+PRIMARY KEY  (`id`),
+UNIQUE KEY `MSCCSPK_20030521130957121` (`momid`),
+KEY `IX_mobile_originated_message_keyword` (`keyword`),
+KEY `IX_mobile_originated_message_created` (`created`),
+KEY `IX_mobile_originated_message_support` (`msisdn`,`momid`,`keyword`,`gateway_id`,`created`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+INSERT INTO t1 VALUES 
+(1,'blah','464','aaa','fkc1c9ilc20x0hgae7lx6j09','ERR','ERR Имри.Афимим.Аеимимримдмримрмрирор имримримримр имридм ирбднримрфмририримрфмфмим.Ад.Д имдимримрад.Адимримримрмдиримримримр м.Дадимфшьмримд им.Адимимрн имадми','ИМРИ.АФИМИМ.АЕИМИМРИМДМРИМРМРИРОР',3,'2005-06-01 17:30:43','1234567890'),
+(2,'blah','464','aaa','haxpl2ilc20x00bj4tt2m5ti','11','11 g','G',3,'2005-06-02 22:43:10','1234567890');
+CREATE TABLE t2 (
+`msisdn` varchar(15) NOT NULL default '',
+`operator_id` int(11) NOT NULL default '0',
+`created` datetime NOT NULL default '0000-00-00 00:00:00',
+UNIQUE KEY `PK_user` (`msisdn`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+INSERT INTO t2 VALUES ('1234567890',2,'2005-05-24 13:53:25');
+SELECT content, t2.msisdn FROM t1, t2 WHERE t1.msisdn = '1234567890';
+content	msisdn
+ERR Имри.Афимим.Аеимимримдмримрмрирор имримримримр имридм ирбднримрфмририримрфмфмим.Ад.Д имдимримрад.Адимримримрмдиримримримр м.Дадимфшьмримд им.Адимимрн имадми	1234567890
+11 g	1234567890
+DROP TABLE t1,t2;
+create table t1 (a char(20) character set utf8);
+insert into t1 values ('123456'),('андрей');
+alter table t1 modify a char(2) character set utf8;
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+Warning	1265	Data truncated for column 'a' at row 2
+select char_length(a), length(a), a from t1 order by a;
+char_length(a)	length(a)	a
+2	2	12
+2	4	ан
+drop table t1;
+CREATE TABLE t1 (
+a varchar(255) NOT NULL default '',
+KEY a (a)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE utf8_general_ci;
+insert into t1 values (_utf8 0xe880bd);
+insert into t1 values (_utf8 0x5b);
+select hex(a) from t1;
+hex(a)
+5B
+E880BD
+drop table t1;

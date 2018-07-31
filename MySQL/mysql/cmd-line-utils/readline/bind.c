@@ -21,9 +21,7 @@
    59 Temple Place, Suite 330, Boston, MA 02111 USA. */
 #define READLINE_LIBRARY
 
-#if defined (HAVE_CONFIG_H)
-#  include <config.h>
-#endif
+#include "config_readline.h"
 
 #include <stdio.h>
 #include <sys/types.h>
@@ -311,7 +309,7 @@ rl_generic_bind (type, keyseq, data, map)
 	     mapped to something, `abc' to be mapped to something else,
 	     and the function bound  to `a' to be executed when the user
 	     types `abx', leaving `bx' in the input queue. */
-	  if (k.function /* && k.type == ISFUNC */)
+	  if (k.function && ((k.type == ISFUNC && k.function != rl_do_lowercase_version) || k.type == ISMACR))
 	    {
 	      map[ANYOTHERKEY] = k;
 	      k.function = 0;

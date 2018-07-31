@@ -17,7 +17,7 @@
 
 /* classes to use when handling where clause */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -31,6 +31,11 @@ typedef struct keyuse_t {
   uint	key, keypart, optimize;
   key_part_map keypart_map;
   ha_rows      ref_table_rows;
+  /* 
+    If true, the comparison this value was created from will not be
+    satisfied if val has NULL 'value'.
+  */
+  bool null_rejecting;
 } KEYUSE;
 
 class store_key;
@@ -45,6 +50,11 @@ typedef struct st_table_ref
   byte          *key_buff2;               // key_buff+key_length
   store_key     **key_copy;               //
   Item          **items;                  // val()'s for each keypart
+  /*
+    (null_rejecting & (1<<i)) means the condition is '=' and no matching
+    rows will be produced if items[i] IS NULL (see add_not_null_conds())
+  */
+  key_part_map  null_rejecting;
   table_map	depend_map;		  // Table depends on these tables.
   byte          *null_ref_key;		  // null byte position in the key_buf.
   					  // used for REF_OR_NULL optimization.
@@ -124,7 +134,7 @@ typedef struct st_rollup
 {
   enum State { STATE_NONE, STATE_INITED, STATE_READY };
   State state;
-  Item *item_null;
+  Item_null_result **null_items;
   Item ***ref_pointer_arrays;
   List<Item> *fields;
 } ROLLUP;
@@ -295,6 +305,7 @@ class JOIN :public Sql_alloc
   bool rollup_make_fields(List<Item> &all_fields, List<Item> &fields,
 			  Item_sum ***func);
   int rollup_send_data(uint idx);
+  int rollup_write_data(uint idx, TABLE *table);
   bool test_in_subselect(Item **where);
   void join_free(bool full);
   void clear();
@@ -345,6 +356,7 @@ class store_key :public Sql_alloc
   char *null_ptr;
   char err;
  public:
+  enum store_key_result { STORE_KEY_OK, STORE_KEY_FATAL, STORE_KEY_CONV };
   store_key(THD *thd, Field *field_arg, char *ptr, char *null, uint length)
     :null_ptr(null),err(0)
   {
@@ -360,7 +372,7 @@ class store_key :public Sql_alloc
     }
   }
   virtual ~store_key() {}			/* Not actually needed */
-  virtual bool copy()=0;
+  virtual enum store_key_result copy()=0;
   virtual const char *name() const=0;
 };
 
@@ -381,10 +393,10 @@ class store_key_field: public store_key
       copy_field.set(to_field,from_field,0);
     }
   }
-  bool copy()
+  enum store_key_result copy()
   {
     copy_field.do_copy(&copy_field);
-    return err != 0;
+    return err != 0 ? STORE_KEY_FATAL : STORE_KEY_OK;
   }
   const char *name() const { return field_name; }
 };
@@ -401,9 +413,11 @@ public:
 	       null_ptr_arg ? null_ptr_arg : item_arg->maybe_null ?
 	       &err : NullS, length), item(item_arg)
   {}
-  bool copy()
+  enum store_key_result copy()
   {
-    return item->save_in_field(to_field, 1) || err != 0;
+    int res= item->save_in_field(to_field, 1);
+    return (err != 0 || res > 2 ? STORE_KEY_FATAL : (store_key_result) res); 
+	                 
   }
   const char *name() const { return "func"; }
 };
@@ -421,20 +435,24 @@ public:
 		    &err : NullS, length, item_arg), inited(0)
   {
   }
-  bool copy()
+  enum store_key_result copy()
   {
+    int res;
     if (!inited)
     {
       inited=1;
-      if (item->save_in_field(to_field, 1))
-	err= 1;
+      if ((res= item->save_in_field(to_field, 1)))
+      {       
+        if (!err)
+          err= res;
+      }
     }
-    return err != 0;
+    return (err > 2 ?  STORE_KEY_FATAL : (store_key_result) err);
   }
   const char *name() const { return "const"; }
 };
 
-bool cp_buffer_from_ref(TABLE_REF *ref);
+bool cp_buffer_from_ref(THD *thd, TABLE_REF *ref);
 bool error_if_full_join(JOIN *join);
 int report_error(TABLE *table, int error);
 int safe_index_read(JOIN_TAB *tab);

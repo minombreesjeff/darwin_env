@@ -413,7 +413,7 @@ explain t2;
 Field	Type	Null	Key	Default	Extra
 a	int(11)	YES		NULL	
 b	bigint(11)			0	
-c	bigint(10)			0	
+c	bigint(11)			0	
 d	date	YES		NULL	
 e	char(1)				
 f	datetime	YES		NULL	
@@ -432,11 +432,11 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `ifnull(a,a)` tinyint(4) default NULL,
   `ifnull(b,b)` smallint(6) default NULL,
-  `ifnull(c,c)` mediumint(9) default NULL,
+  `ifnull(c,c)` mediumint(8) default NULL,
   `ifnull(d,d)` int(11) default NULL,
   `ifnull(e,e)` bigint(20) default NULL,
-  `ifnull(f,f)` float(3,2) default NULL,
-  `ifnull(g,g)` double(4,3) default NULL,
+  `ifnull(f,f)` float(24,2) default NULL,
+  `ifnull(g,g)` double(53,3) default NULL,
   `ifnull(h,h)` decimal(5,4) default NULL,
   `ifnull(i,i)` year(4) default NULL,
   `ifnull(j,j)` date default NULL,
@@ -497,9 +497,9 @@ drop database mysqltest;
 select database();
 database()
 NULL
-select database();
-database()
-NULL
+select database(), user();
+database()	user()
+NULL	mysqltest_1@localhost
 use test;
 create table t1 (a int, index `primary` (a));
 ERROR 42000: Incorrect index name 'primary'
@@ -552,3 +552,37 @@ NULL	1
 Test	0
 NULL	1
 drop table t1, t2, t3;
+create table t1 (b bool not null default false);
+create table t2 (b bool not null default true);
+insert into t1 values ();
+insert into t2 values ();
+select * from t1;
+b
+0
+select * from t2;
+b
+1
+drop table t1,t2;
+create table t1 (a int);
+create table t1 select * from t1;
+ERROR HY000: You can't specify target table 't1' for update in FROM clause
+create table t2 union = (t1) select * from t1;
+ERROR HY000: You can't specify target table 't1' for update in FROM clause
+flush tables with read lock;
+unlock tables;
+drop table t1;
+create table t1(column.name int);
+ERROR 42000: Incorrect table name 'column'
+create table t1(test.column.name int);
+ERROR 42000: Incorrect table name 'column'
+create table t1(xyz.t1.name int);
+ERROR 42000: Incorrect database name 'xyz'
+create table t1(t1.name int);
+create table t2(test.t2.name int);
+drop table t1,t2;
+create database mysqltest;
+use mysqltest;
+drop database mysqltest;
+create table test.t1 like x;
+ERROR 42000: Incorrect database name 'NULL'
+drop table if exists test.t1;

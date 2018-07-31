@@ -20,7 +20,7 @@
 ** (This shouldn't be needed)
 */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -63,10 +63,11 @@ double Item_str_func::val()
   DBUG_ASSERT(fixed == 1);
   int err;
   char buff[64];
+  char *end_not_used;
   String *res, tmp(buff,sizeof(buff), &my_charset_bin);
   res= val_str(&tmp);
   return res ? my_strntod(res->charset(), (char*) res->ptr(),res->length(),
-			  NULL, &err) : 0.0;
+			  &end_not_used, &err) : 0.0;
 }
 
 longlong Item_str_func::val_int()
@@ -234,6 +235,7 @@ String *Item_func_aes_decrypt::val_str(String *str)
 void Item_func_aes_decrypt::fix_length_and_dec()
 {
    max_length=args[0]->max_length;
+   maybe_null= 1;
 }
 
 
@@ -275,8 +277,7 @@ String *Item_func_concat::val_str(String *str)
 			    current_thd->variables.max_allowed_packet);
 	goto null;
       }
-      if (!args[0]->const_item() && 
-          res->alloced_length() >= res->length()+res2->length())
+      if (res->alloced_length() >= res->length()+res2->length())
       {						// Use old buffer
 	res->append(*res2);
       }
@@ -372,6 +373,7 @@ String *Item_func_des_encrypt::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
 #ifdef HAVE_OPENSSL
+  uint code= ER_WRONG_PARAMETERS_TO_PROCEDURE;
   DES_cblock ivec;
   struct st_des_keyblock keyblock;
   struct st_des_keyschedule keyschedule;
@@ -379,13 +381,16 @@ String *Item_func_des_encrypt::val_str(String *str)
   uint key_number, res_length, tail;
   String *res= args[0]->val_str(str);
 
-  if ((null_value=args[0]->null_value))
-    return 0;
+  if ((null_value= args[0]->null_value))
+    return 0;                                   // ENCRYPT(NULL) == NULL
   if ((res_length=res->length()) == 0)
     return &my_empty_string;
 
   if (arg_count == 1)
   {
+    /* Make sure LOCK_des_key_file was initialized. */
+    init_des_key_file();
+
     /* Protect against someone doing FLUSH DES_KEY_FILE */
     VOID(pthread_mutex_lock(&LOCK_des_key_file));
     keyschedule= des_keyschedule[key_number=des_default_key];
@@ -396,6 +401,10 @@ String *Item_func_des_encrypt::val_str(String *str)
     key_number= (uint) args[1]->val_int();
     if (key_number > 9)
       goto error;
+
+    /* Make sure LOCK_des_key_file was initialized. */
+    init_des_key_file();
+
     VOID(pthread_mutex_lock(&LOCK_des_key_file));
     keyschedule= des_keyschedule[key_number];
     VOID(pthread_mutex_unlock(&LOCK_des_key_file));
@@ -428,6 +437,7 @@ String *Item_func_des_encrypt::val_str(String *str)
 
   tail=  (8-(res_length) % 8);			// 1..8 marking extra length
   res_length+=tail;
+  code= ER_OUT_OF_RESOURCES;
   if (tail && res->append(append_str, tail) || tmp_value.alloc(res_length+1))
     goto error;
   (*res)[res_length-1]=tail;			// save extra length
@@ -445,6 +455,13 @@ String *Item_func_des_encrypt::val_str(String *str)
   return &tmp_value;
 
 error:
+  push_warning_printf(current_thd,MYSQL_ERROR::WARN_LEVEL_ERROR,
+                          code, ER(code),
+                          "des_encrypt");
+#else
+  push_warning_printf(current_thd,MYSQL_ERROR::WARN_LEVEL_ERROR,
+                      ER_FEATURE_DISABLED, ER(ER_FEATURE_DISABLED),
+                      "des_encrypt","--with-openssl");
 #endif	/* HAVE_OPENSSL */
   null_value=1;
   return 0;
@@ -455,6 +472,7 @@ String *Item_func_des_decrypt::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
 #ifdef HAVE_OPENSSL
+  uint code= ER_WRONG_PARAMETERS_TO_PROCEDURE;
   DES_key_schedule ks1, ks2, ks3;
   DES_cblock ivec;
   struct st_des_keyblock keyblock;
@@ -474,6 +492,10 @@ String *Item_func_des_decrypt::val_str(String *str)
     // Check if automatic key and that we have privilege to uncompress using it
     if (!(current_thd->master_access & SUPER_ACL) || key_number > 9)
       goto error;
+
+    /* Make sure LOCK_des_key_file was initialized. */
+    init_des_key_file();
+
     VOID(pthread_mutex_lock(&LOCK_des_key_file));
     keyschedule= des_keyschedule[key_number];
     VOID(pthread_mutex_unlock(&LOCK_des_key_file));
@@ -494,6 +516,7 @@ String *Item_func_des_decrypt::val_str(String *str)
     DES_set_key_unchecked(&keyblock.key2,&keyschedule.ks2);
     DES_set_key_unchecked(&keyblock.key3,&keyschedule.ks3);
   }
+  code= ER_OUT_OF_RESOURCES;
   if (tmp_value.alloc(length-1))
     goto error;
 
@@ -507,11 +530,19 @@ String *Item_func_des_decrypt::val_str(String *str)
 		       &ivec, FALSE);
   /* Restore old length of key */
   if ((tail=(uint) (uchar) tmp_value[length-2]) > 8)
-    goto error;					// Wrong key
+    goto wrong_key;				     // Wrong key
   tmp_value.length(length-1-tail);
   return &tmp_value;
 
 error:
+  push_warning_printf(current_thd,MYSQL_ERROR::WARN_LEVEL_ERROR,
+                          code, ER(code),
+                          "des_decrypt");
+wrong_key:
+#else
+  push_warning_printf(current_thd,MYSQL_ERROR::WARN_LEVEL_ERROR,
+                      ER_FEATURE_DISABLED, ER(ER_FEATURE_DISABLED),
+                      "des_decrypt","--with-openssl");
 #endif	/* HAVE_OPENSSL */
   null_value=1;
   return 0;
@@ -1022,7 +1053,7 @@ String *Item_func_substr::val_str(String *str)
   if ((null_value=(args[0]->null_value || args[1]->null_value ||
 		   (arg_count == 3 && args[2]->null_value))))
     return 0; /* purecov: inspected */
-  start= (int32)((start < 0) ? res->length() + start : start -1);
+  start= (int32)((start < 0) ? res->numchars() + start : start -1);
   start=res->charpos(start);
   length=res->charpos(length,start);
   if (start < 0 || (uint) start+1 > res->length() || length <= 0)
@@ -1045,7 +1076,8 @@ void Item_func_substr::fix_length_and_dec()
   collation.set(args[0]->collation);
   if (args[1]->const_item())
   {
-    int32 start=(int32) args[1]->val_int()-1;
+    int32 start= (int32) args[1]->val_int();
+    start= (int32)((start < 0) ? max_length + start : start - 1);
     if (start < 0 || start >= (int32) max_length)
       max_length=0; /* purecov: inspected */
     else
@@ -1508,6 +1540,23 @@ String *Item_func_decode::val_str(String *str)
 }
 
 
+Item *Item_func_sysconst::safe_charset_converter(CHARSET_INFO *tocs)
+{
+  Item_string *conv;
+  uint conv_errors;
+  String tmp, cstr, *ostr= val_str(&tmp);
+  cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
+  if (conv_errors || !(conv= new Item_string(cstr.ptr(), cstr.length(),
+                                             cstr.charset(),
+                                             collation.derivation)))
+  {
+    return NULL;
+  }
+  conv->str_value.copy();
+  return conv;
+}
+
+
 String *Item_func_database::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
@@ -1645,7 +1694,8 @@ String *Item_func_format::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
   double nr	=args[0]->val();
-  uint32 diff,length,str_length;
+  int diff;
+  uint32 length, str_length;
   uint dec;
   if ((null_value=args[0]->null_value))
     return 0; /* purecov: inspected */
@@ -1662,17 +1712,20 @@ String *Item_func_format::val_str(String *str)
   if (str_length >= dec+4)
   {
     char *tmp,*pos;
-    length= str->length()+(diff=(str_length- dec-1)/3);
+    length= str->length()+(diff= (int)(str_length- dec-1)/3);
     str= copy_if_not_alloced(&tmp_str,str,length);
     str->length(length);
     tmp= (char*) str->ptr()+length - dec-1;
     for (pos= (char*) str->ptr()+length-1; pos != tmp; pos--)
-      pos[0]= pos[-(int) diff];
+      pos[0]= pos[-diff];
     while (diff)
     {
-      pos[0]=pos[-(int) diff]; pos--;
-      pos[0]=pos[-(int) diff]; pos--;
-      pos[0]=pos[-(int) diff]; pos--;
+      *pos= *(pos - diff);
+      pos--;
+      *pos= *(pos - diff);
+      pos--;
+      *pos= *(pos - diff);
+      pos--;
       pos[0]=',';
       pos--;
       diff--;
@@ -1863,6 +1916,7 @@ String *Item_func_char::val_str(String *str)
   {
     int32 num=(int32) args[i]->val_int();
     if (!args[i]->null_value)
+    {
 #ifdef USE_MB
       if (use_mb(collation.collation))
       {
@@ -1878,6 +1932,7 @@ b1:        str->append((char)(num>>8));
       }
 #endif
       str->append((char)num);
+    }
   }
   str->set_charset(collation.collation);
   str->realloc(str->length());			// Add end 0 (for Purify)
@@ -2266,12 +2321,11 @@ bool Item_func_set_collation::eq(const Item *item, bool binary_cmp) const
 String *Item_func_charset::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
-  String *res = args[0]->val_str(str);
   uint dummy_errors;
 
-  if ((null_value=(args[0]->null_value || !res->charset())))
-    return 0;
-  str->copy(res->charset()->csname,strlen(res->charset()->csname),
+  CHARSET_INFO *cs= args[0]->collation.collation; 
+  null_value= 0;
+  str->copy(cs->csname, strlen(cs->csname),
 	    &my_charset_latin1, collation.collation, &dummy_errors);
   return str;
 }
@@ -2279,12 +2333,11 @@ String *Item_func_charset::val_str(String *str)
 String *Item_func_collation::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
-  String *res = args[0]->val_str(str);
   uint dummy_errors;
+  CHARSET_INFO *cs= args[0]->collation.collation; 
 
-  if ((null_value=(args[0]->null_value || !res->charset())))
-    return 0;
-  str->copy(res->charset()->name,strlen(res->charset()->name),
+  null_value= 0;
+  str->copy(cs->name, strlen(cs->name),
 	    &my_charset_latin1, collation.collation, &dummy_errors);
   return str;
 }
@@ -2295,9 +2348,21 @@ String *Item_func_hex::val_str(String *str)
   DBUG_ASSERT(fixed == 1);
   if (args[0]->result_type() != STRING_RESULT)
   {
-    /* Return hex of unsigned longlong value */
-    longlong dec= args[0]->val_int();
+    ulonglong dec;
     char ans[65],*ptr;
+    /* Return hex of unsigned longlong value */
+    if (args[0]->result_type() == REAL_RESULT)
+    {
+      double val= args[0]->val();
+      if ((val <= (double) LONGLONG_MIN) || 
+          (val >= (double) (ulonglong) ULONGLONG_MAX))
+        dec=  ~(longlong) 0;
+      else
+        dec= (ulonglong) (val + (val > 0 ? 0.5 : -0.5));
+    }
+    else
+      dec= (ulonglong) args[0]->val_int();
+
     if ((null_value= args[0]->null_value))
       return 0;
     ptr= longlong2str(dec,ans,16);
@@ -2448,6 +2513,7 @@ String* Item_func_export_set::val_str(String* str)
   uint num_set_values = 64;
   ulonglong mask = 0x1;
   str->length(0);
+  str->set_charset(collation.collation);
 
   /* Check if some argument is a NULL value */
   if (args[0]->null_value || args[1]->null_value || args[2]->null_value)

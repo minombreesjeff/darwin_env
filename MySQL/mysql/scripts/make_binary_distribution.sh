@@ -15,6 +15,7 @@ MV="mv"
 STRIP=1
 DEBUG=0
 SILENT=0
+MACHINE=
 TMP=/tmp
 SUFFIX=""
 NDBCLUSTER=
@@ -26,6 +27,7 @@ parse_arguments() {
       --tmp=*)    TMP=`echo "$arg" | sed -e "s;--tmp=;;"` ;;
       --suffix=*) SUFFIX=`echo "$arg" | sed -e "s;--suffix=;;"` ;;
       --no-strip) STRIP=0 ;;
+      --machine=*)  MACHINE=`echo "$arg" | sed -e "s;--machine=;;"` ;;
       --silent)   SILENT=1 ;;
       --with-ndbcluster) NDBCLUSTER=1 ;;
       *)
@@ -66,7 +68,7 @@ esac
 mkdir $BASE $BASE/bin $BASE/docs \
  $BASE/include $BASE/lib $BASE/support-files $BASE/share $BASE/scripts \
  $BASE/mysql-test $BASE/mysql-test/t  $BASE/mysql-test/r \
- $BASE/mysql-test/include $BASE/mysql-test/std_data
+ $BASE/mysql-test/include $BASE/mysql-test/std_data $BASE/mysql-test/lib
 
 if [ $BASE_SYSTEM != "netware" ] ; then
  mkdir $BASE/share/mysql $BASE/tests $BASE/sql-bench $BASE/man \
@@ -76,9 +78,6 @@ if [ $BASE_SYSTEM != "netware" ] ; then
 fi
 
 for i in ChangeLog \
-         Docs/manual.html \
-         Docs/manual.txt \
-         Docs/manual_toc.html \
 				 Docs/mysql.info
 do
   if [ -f $i ]
@@ -207,7 +206,7 @@ $CP -r sql/share/* $MYSQL_SHARE
 rm -f $MYSQL_SHARE/Makefile* $MYSQL_SHARE/*/*.OLD
 
 for i in mysql-test/mysql-test-run mysql-test/install_test_db \
-         mysql-test/README \
+         mysql-test/mysql-test-run.pl mysql-test/README \
          netware/mysql_test_run.nlm netware/install_test_db.ncf
 do
   if [ -f $i ]
@@ -216,11 +215,13 @@ do
    fi
 done
 
+$CP mysql-test/lib/*.pl  $BASE/mysql-test/lib
+$CP mysql-test/lib/*.sql $BASE/mysql-test/lib
 $CP mysql-test/include/*.inc $BASE/mysql-test/include
 $CP mysql-test/std_data/*.dat mysql-test/std_data/*.*001 $BASE/mysql-test/std_data
 $CP mysql-test/std_data/des_key_file $BASE/mysql-test/std_data
 $CP mysql-test/t/*test mysql-test/t/*.opt mysql-test/t/*.slave-mi mysql-test/t/*.sh $BASE/mysql-test/t
-$CP mysql-test/r/*result mysql-test/r/*result.es mysql-test/r/*.require $BASE/mysql-test/r
+$CP mysql-test/r/*result mysql-test/r/*.require $BASE/mysql-test/r
 
 if [ $BASE_SYSTEM != "netware" ] ; then
   chmod a+x $BASE/bin/*
@@ -242,7 +243,7 @@ rm -f $BASE/bin/Makefile* $BASE/bin/*.in $BASE/bin/*.sh $BASE/bin/mysql_install_
 # Copy system dependent files
 #
 if [ $BASE_SYSTEM = "netware" ] ; then
-echo "CREATE DATABASE mysql;" > $BASE/bin/init_db.sql
+  echo "CREATE DATABASE mysql;" > $BASE/bin/init_db.sql
   echo "CREATE DATABASE test;" >> $BASE/bin/init_db.sql
   sh ./scripts/mysql_create_system_tables.sh real "" "%" 0 >> $BASE/bin/init_db.sql
   sh ./scripts/mysql_create_system_tables.sh test "" "%" 0 > $BASE/bin/test_db.sql
@@ -282,13 +283,22 @@ if [ x$NDBCLUSTER = x1 ]; then
   $CP $BASE/ndb-stage@bindir@/* $BASE/bin/.
   $CP $BASE/ndb-stage@libexecdir@/* $BASE/bin/.
   $CP $BASE/ndb-stage@pkglibdir@/* $BASE/lib/.
-  $CP -r $BASE/ndb-stage@pkgincludedir@/ndb $BASE/lib/.
+  $CP -r $BASE/ndb-stage@pkgincludedir@/ndb $BASE/include
   $CP -r $BASE/ndb-stage@prefix@/mysql-test/ndb $BASE/mysql-test/. || exit 1
   rm -rf $BASE/ndb-stage
 fi
 
+# Use the override --machine if present
+if [ -n "$MACHINE" ] ; then
+  machine=$MACHINE
+fi
+
 # Change the distribution to a long descriptive name
 NEW_NAME=mysql@MYSQL_SERVER_SUFFIX@-$version-$system-$machine$SUFFIX
+
+# Print the platform name for build logs
+echo "PLATFORM NAME: $system-$machine"
+
 BASE2=$TMP/$NEW_NAME
 rm -r -f $BASE2
 mv $BASE $BASE2

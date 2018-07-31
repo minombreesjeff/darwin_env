@@ -15,7 +15,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -31,8 +31,9 @@ void item_init(void);			/* Init item functions */
 
 enum Derivation
 {
-  DERIVATION_IGNORABLE= 4,
-  DERIVATION_COERCIBLE= 3,
+  DERIVATION_IGNORABLE= 5,
+  DERIVATION_COERCIBLE= 4,
+  DERIVATION_SYSCONST= 3,
   DERIVATION_IMPLICIT= 2,
   DERIVATION_NONE= 1,
   DERIVATION_EXPLICIT= 0
@@ -61,22 +62,16 @@ class DTCollation {
 public:
   CHARSET_INFO     *collation;
   enum Derivation derivation;
-  uint nagg;    // Total number of aggregated collations.
-  uint strong;  // Number of the strongest collation.
   
   DTCollation()
   {
     collation= &my_charset_bin;
     derivation= DERIVATION_NONE;
-    nagg= 0;
-    strong= 0;
   }
   DTCollation(CHARSET_INFO *collation_arg, Derivation derivation_arg)
   {
     collation= collation_arg;
     derivation= derivation_arg;
-    nagg= 0;
-    strong= 0;
   }
   void set(DTCollation &dt)
   { 
@@ -102,6 +97,7 @@ public:
       case DERIVATION_IGNORABLE: return "IGNORABLE";
       case DERIVATION_COERCIBLE: return "COERCIBLE";
       case DERIVATION_IMPLICIT:  return "IMPLICIT";
+      case DERIVATION_SYSCONST:  return "SYSCONST";
       case DERIVATION_EXPLICIT:  return "EXPLICIT";
       case DERIVATION_NONE:      return "NONE";
       default: return "UNKNOWN";
@@ -119,7 +115,7 @@ public:
   static void *operator new(size_t size, MEM_ROOT *mem_root)
   { return (void*) alloc_root(mem_root, (uint) size); }
   static void operator delete(void *ptr,size_t size) {}
-  static void operator delete(void *ptr,size_t size, MEM_ROOT *mem_root) {}
+  static void operator delete(void *ptr, MEM_ROOT *mem_root) {}
 
   enum Type {FIELD_ITEM, FUNC_ITEM, SUM_FUNC_ITEM, STRING_ITEM,
 	     INT_ITEM, REAL_ITEM, NULL_ITEM, VARBIN_ITEM,
@@ -184,7 +180,8 @@ public:
   { return save_in_field(field, 1); }
   virtual bool send(Protocol *protocol, String *str);
   virtual bool eq(const Item *, bool binary_cmp) const;
-  virtual Item_result result_type () const { return REAL_RESULT; }
+  virtual Item_result result_type() const { return REAL_RESULT; }
+  virtual Item_result cast_to_int_type() const { return result_type(); }
   virtual enum_field_types field_type() const;
   virtual enum Type type() const =0;
   /* valXXX methods must return NULL or 0 or 0.0 if null_value is set. */
@@ -238,7 +235,7 @@ public:
   virtual table_map not_null_tables() const { return used_tables(); }
   /*
     Returns true if this is a simple constant item like an integer, not
-    a constant expression
+    a constant expression. Used in the optimizer to propagate basic constants.
   */
   virtual bool basic_const_item() const { return 0; }
   /* cloning of constant items (0 if it is not const) */
@@ -426,6 +423,10 @@ public:
   {
     return field->result_type();
   }
+  Item_result cast_to_int_type() const
+  {
+    return field->cast_to_int_type();
+  }
   enum_field_types field_type() const
   {
     return field->type();
@@ -474,6 +475,17 @@ public:
   Item *safe_charset_converter(CHARSET_INFO *tocs);
 };
 
+class Item_null_result :public Item_null
+{
+public:
+  Field *result_field;
+  Item_null_result() : Item_null(), result_field(0) {}
+  bool is_result_field() { return result_field != 0; }
+  void save_in_result_field(bool no_conversions)
+  {
+    save_in_field(result_field, no_conversions);
+  }
+};  
 
 /* Item represents one placeholder ('?') of prepared statement */
 
@@ -552,6 +564,7 @@ public:
   bool get_time(TIME *tm);
   bool get_date(TIME *tm, uint fuzzydate);
   int  save_in_field(Field *field, bool no_conversions);
+  bool fix_fields(THD *, struct st_table_list *, Item **);
 
   void set_null();
   void set_int(longlong i, uint32 max_length_arg);
@@ -573,7 +586,6 @@ public:
 
   bool convert_str_value(THD *thd);
 
-  Item *new_item() { return new Item_param(pos_in_query); }
   /*
     If value for parameter was not set we treat it as non-const
     so noone will use parameters value in fix_fields still
@@ -582,11 +594,28 @@ public:
   virtual table_map used_tables() const
   { return state != NO_VALUE ? (table_map)0 : PARAM_TABLE_BIT; }
   void print(String *str) { str->append('?'); }
-  /* parameter never equal to other parameter of other item */
-  bool eq(const Item *item, bool binary_cmp) const { return 0; }
   bool is_null()
   { DBUG_ASSERT(state != NO_VALUE); return state == NULL_VALUE; }
+  bool basic_const_item() const;
+  /*
+    This method is used to make a copy of a basic constant item when
+    propagating constants in the optimizer. The reason to create a new
+    item and not use the existing one is not precisely known (2005/04/16).
+    Probably we are trying to preserve tree structure of items, in other
+    words, avoid pointing at one item from two different nodes of the tree.
+    Return a new basic constant item if parameter value is a basic
+    constant, assert otherwise. This method is called only if
+    basic_const_item returned TRUE.
+  */
+  Item *new_item();
+  /*
+    Implement by-value equality evaluation if parameter value
+    is set and is a basic constant (integer, real or string).
+    Otherwise return FALSE.
+  */
+  bool eq(const Item *item, bool binary_cmp) const;
 };
+
 
 class Item_int :public Item_num
 {
@@ -614,6 +643,7 @@ public:
   void cleanup() {}
   void print(String *str);
   Item_num *neg() { value= -value; return this; }
+  bool eq(const Item *, bool binary_cmp) const;
 };
 
 
@@ -621,6 +651,7 @@ class Item_uint :public Item_int
 {
 public:
   Item_uint(const char *str_arg, uint length);
+  Item_uint(const char *str_arg, longlong i, uint length);
   Item_uint(uint32 i) :Item_int((longlong) i, 10) 
     { unsigned_flag= 1; }
   double val()
@@ -669,6 +700,7 @@ public:
   void cleanup() {}
   Item *new_item() { return new Item_real(name,value,decimals,max_length); }
   Item_num *neg() { value= -value; return this; }
+  bool eq(const Item *, bool binary_cmp) const;
 };
 
 
@@ -719,8 +751,9 @@ public:
   {
     DBUG_ASSERT(fixed == 1);
     int err;
+    char *end_not_used;
     return my_strntod(str_value.charset(), (char*) str_value.ptr(),
-		      str_value.length(), (char**) 0, &err);
+		      str_value.length(), &end_not_used, &err);
   }
   longlong val_int()
   {
@@ -742,7 +775,7 @@ public:
   Item *new_item() 
   {
     return new Item_string(name, str_value.ptr(), 
-    			   str_value.length(), &my_charset_bin);
+    			   str_value.length(), collation.collation);
   }
   Item *safe_charset_converter(CHARSET_INFO *tocs);
   String *const_string() { return &str_value; }
@@ -801,6 +834,7 @@ public:
   enum_field_types field_type() const { return MYSQL_TYPE_STRING; }
   // to prevent drop fixed flag (no need parent cleanup call)
   void cleanup() {}
+  bool eq(const Item *item, bool binary_cmp) const;
 };
 
 
@@ -905,6 +939,7 @@ public:
   void save_org_in_field(Field *field)	{ (*ref)->save_org_in_field(field); }
   enum Item_result result_type () const { return (*ref)->result_type(); }
   enum_field_types field_type() const   { return (*ref)->field_type(); }
+  Field *get_tmp_table_field() { return result_field; }
   table_map used_tables() const		
   { 
     return depended_from ? OUTER_REF_TABLE_BIT : (*ref)->used_tables(); 
@@ -992,10 +1027,14 @@ public:
   void print(String *str);
 };
 
+
 /*
   The following class is used to optimize comparing of date and bigint columns
-  We need to save the original item, to be able to set the field to the
-  original value in 'opt_range'.
+  We need to save the original item ('ref') to be able to call
+  ref->save_in_field(). This is used to create index search keys.
+  
+  An instance of Item_int_with_ref may have signed or unsigned integer value.
+  
 */
 
 class Item_int_with_ref :public Item_int
@@ -1010,6 +1049,7 @@ public:
   {
     return ref->save_in_field(field, no_conversions);
   }
+  Item *new_item();
 };
 
 
@@ -1044,9 +1084,10 @@ public:
   double val()
   {
     int err;
+    char *end_not_used;
     return (null_value ? 0.0 :
 	    my_strntod(str_value.charset(), (char*) str_value.ptr(),
-		       str_value.length(),NULL,&err));
+		       str_value.length(), &end_not_used, &err));
   }
   longlong val_int()
   { 
@@ -1077,7 +1118,7 @@ class Item_str_buff :public Item_buff
   Item *item;
   String value,tmp_value;
 public:
-  Item_str_buff(Item *arg) :item(arg),value(arg->max_length) {}
+  Item_str_buff(THD *thd, Item *arg);
   bool cmp(void);
   ~Item_str_buff();				// Deallocate String:s
 };
@@ -1315,36 +1356,36 @@ public:
 
 
 /*
-  Used to store type. name, length of Item for UNIONS & derived table
+  Item_type_holder used to store type. name, length of Item for UNIONS &
+  derived tables.
+
+  Item_type_holder do not need cleanup() because its time of live limited by
+  single SP/PS execution.
 */
 class Item_type_holder: public Item
 {
 protected:
-  Item_result item_type;
-  Item_result orig_type;
-  Field *field_example;
-public:
-  Item_type_holder(THD*, Item*, TABLE *);
+  TYPELIB *enum_set_typelib;
+  enum_field_types fld_type;
 
-  Item_result result_type () const { return item_type; }
+  void get_full_info(Item *item);
+public:
+  Item_type_holder(THD*, Item*);
+
+  Item_result result_type() const;
+  virtual enum_field_types field_type() const { return fld_type; };
   enum Type type() const { return TYPE_HOLDER; }
   double val();
   longlong val_int();
   String *val_str(String*);
-  bool join_types(THD *thd, Item *, TABLE *);
-  Field *example() { return field_example; }
-  static uint32 real_length(Item *item);
-  void cleanup()
-  {
-    DBUG_ENTER("Item_type_holder::cleanup");
-    Item::cleanup();
-    item_type= orig_type;
-    DBUG_VOID_RETURN;
-  }
+  bool join_types(THD *thd, Item *);
+  Field *make_field_by_type(TABLE *table);
+  static uint32 display_length(Item *item);
+  static enum_field_types get_real_type(Item *);
 };
 
 
-extern Item_buff *new_Item_buff(Item *item);
+extern Item_buff *new_Item_buff(THD *thd, Item *item);
 extern Item_result item_cmp_type(Item_result a,Item_result b);
 extern void resolve_const_item(THD *thd, Item **ref, Item *cmp_item);
 extern bool field_is_equal_to_item(Field *field,Item *item);

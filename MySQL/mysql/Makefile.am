@@ -23,7 +23,7 @@ EXTRA_DIST =		INSTALL-SOURCE README COPYING EXCEPTIONS-CLIENT
 SUBDIRS =		. include @docs_dirs@ @zlib_dir@ \
 			@readline_topdir@ sql-common \
 			@thread_dirs@ pstack \
-			@sql_union_dirs@ scripts man tests \
+			@sql_union_dirs@ scripts @man_dirs@ tests \
 			netware @libmysqld_dirs@ \
 			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
 
@@ -100,4 +100,4 @@ tags:
 # Test installation
 
 test:
-	cd mysql-test; ./mysql-test-run && ./mysql-test-run --ps-protocol
+	cd mysql-test; perl mysql-test-run.pl && perl mysql-test-run.pl --ps-protocol

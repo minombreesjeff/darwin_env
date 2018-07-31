@@ -23,7 +23,7 @@
 
 */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -960,7 +960,9 @@ get_mm_parts(PARAM *param, COND *cond_func, Field *field,
 	if (sel_arg->type == SEL_ARG::IMPOSSIBLE)
 	{
 	  tree->type=SEL_TREE::IMPOSSIBLE;
-	  DBUG_RETURN(tree);
+          /* If this is an NE_FUNC, we still need to check GT_FUNC. */
+          if (!ne_func)
+            DBUG_RETURN(tree);
 	}
       }
       else
@@ -979,8 +981,8 @@ get_mm_parts(PARAM *param, COND *cond_func, Field *field,
     SEL_TREE *tree2= get_mm_parts(param, cond_func,
 				  field, Item_func::GT_FUNC,
                                   value, cmp_type);
-    if (tree2)
-      tree= tree_or(param,tree,tree2);
+    /* tree_or() will return 0 if tree2 is 0 */
+    tree= tree_or(param,tree,tree2);
   }
   DBUG_RETURN(tree);
 }
@@ -1158,6 +1160,35 @@ get_mm_leaf(PARAM *param, COND *conf_func, Field *field, KEY_PART *key_part,
   }
   if (!(tree=new SEL_ARG(field,str,str2)))
     DBUG_RETURN(0);		// out of memory
+
+  /*
+    Check if we are comparing an UNSIGNED integer with a negative constant.
+    In this case we know that:
+    (a) (unsigned_int [< | <=] negative_constant) == FALSE
+    (b) (unsigned_int [> | >=] negative_constant) == TRUE
+    In case (a) the condition is false for all values, and in case (b) it
+    is true for all values, so we can avoid unnecessary retrieval and condition
+    testing, and we also get correct comparison of unsinged integers with
+    negative integers (which otherwise fails because at query execution time
+    negative integers are cast to unsigned if compared with unsigned).
+   */
+  Item_result field_result_type= field->result_type();
+  Item_result value_result_type= value->result_type();
+  if (field_result_type == INT_RESULT && value_result_type == INT_RESULT &&
+      ((Field_num*)field)->unsigned_flag && !((Item_int*)value)->unsigned_flag)
+  {
+    longlong item_val= value->val_int();
+    if (item_val < 0)
+    {
+      if (type == Item_func::LT_FUNC || type == Item_func::LE_FUNC)
+      {
+        tree->type= SEL_ARG::IMPOSSIBLE;
+        DBUG_RETURN(tree);
+      }
+      if (type == Item_func::GT_FUNC || type == Item_func::GE_FUNC)
+        DBUG_RETURN(0);
+    }
+  }
 
   switch (type) {
   case Item_func::LT_FUNC:
@@ -1683,6 +1714,7 @@ key_or(SEL_ARG *key1,SEL_ARG *key2)
 	  last=last->next;
 	  key1=key1->tree_delete(save);
 	}
+        last->copy_min(tmp);
 	if (last->copy_min(key2) || last->copy_max(key2))
 	{					// Full range
 	  key1->free_tree();
@@ -2573,7 +2605,7 @@ QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table, TABLE_REF *ref)
 
   if (!quick)
     return 0;			/* no ranges found */
-  if (cp_buffer_from_ref(ref))
+  if (cp_buffer_from_ref(thd, ref))
   {
     if (thd->is_fatal_error)
       goto err;					// out of memory

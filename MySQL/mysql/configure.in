@@ -5,7 +5,7 @@ AC_INIT(sql/mysqld.cc)
 AC_CANONICAL_SYSTEM
 # The Docs Makefile.am parses this line!
 # remember to also change ndb version below and update version.c in ndb
-AM_INIT_AUTOMAKE(mysql, 4.1.10a)
+AM_INIT_AUTOMAKE(mysql, 4.1.13a)
 AM_CONFIG_HEADER(config.h)
 
 PROTOCOL_VERSION=10
@@ -16,7 +16,7 @@ SHARED_LIB_VERSION=14:0:0
 # ndb version
 NDB_VERSION_MAJOR=4
 NDB_VERSION_MINOR=1
-NDB_VERSION_BUILD=10
+NDB_VERSION_BUILD=13
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
@@ -118,7 +118,7 @@ AC_SUBST(SAVE_LDFLAGS)
 AC_SUBST(SAVE_CXXLDFLAGS)
 AC_SUBST(CXXLDFLAGS)
 
-AC_PREREQ(2.12)dnl		Minimum Autoconf version required.
+AC_PREREQ(2.58)dnl		Minimum Autoconf version required.
 
 #AC_ARG_PROGRAM			# Automaticly invoked by AM_INIT_AUTOMAKE
 AM_SANITY_CHECK
@@ -127,8 +127,28 @@ AC_PROG_MAKE_SET
 # This generates rules for webpage generation for the MySQL homepage.
 AM_CONDITIONAL(LOCAL, test -d ../web/SitePages)
 
-# This is need before AC_PROG_CC
-#
+##############################################################################
+# The below section needs to be done before AC_PROG_CC
+##############################################################################
+
+# Hack for OS X/Darwin and Metrowerks CodeWarrior
+AC_ARG_WITH(darwin-mwcc,
+[  --with-darwin-mwcc      Use Metrowerks CodeWarrior wrappers on OS X/Darwin],[
+  builddir=`pwd`
+  ccwrapper="$builddir/support-files/MacOSX/mwcc-wrapper"
+  arwrapper="$builddir/support-files/MacOSX/mwar-wrapper"
+  CC="$ccwrapper"
+  CXX="$ccwrapper"
+  LD="$ccwrapper"
+  AR="$arwrapper"
+  RANLIB=:
+  export CC CXX LD AR RANLIB
+  AC_SUBST(AR)
+  AC_SUBST(RANLIB)
+  with_darwin_mwcc=yes
+])
+
+AM_CONDITIONAL(DARWIN_MWCC, test x$with_darwin_mwcc = xyes)
 
 if test "x${CFLAGS-}" = x ; then
   cflags_is_set=no
@@ -147,6 +167,8 @@ if test "x${LDFLAGS-}" = x ; then
 else
   ldflags_is_set=yes
 fi
+
+################ End of section to be done before AC_PROG_CC #################
 
 # The following hack should ensure that configure doesn't add optimizing
 # or debugging flags to CFLAGS or CXXFLAGS
@@ -397,9 +419,14 @@ then
 
   if echo $CXX | grep gcc > /dev/null 2>&1
   then
-    if $CXX -v 2>&1 | grep 'version 3' > /dev/null 2>&1
+    AC_MSG_CHECKING([if CXX is gcc 3 or 4])
+    if $CXX -v 2>&1 | grep 'version [[34]]' > /dev/null 2>&1
     then
+      AC_MSG_RESULT([yes])
+      AC_MSG_NOTICE([using MySQL tricks to avoid linking C++ code with C++ libraries])
       CXXFLAGS="$CXXFLAGS -DUSE_MYSYS_NEW -DDEFINE_CXA_PURE_VIRTUAL"
+    else
+      AC_MSG_RESULT([no])
     fi
   fi
 fi
@@ -410,15 +437,16 @@ AC_MSG_CHECKING("if we should use 'skip-locking' as default for $target_os")
 if expr "$target_os" : "[[Ll]]inux.*" > /dev/null
 then
   MYSQLD_DEFAULT_SWITCHES="--skip-locking"
-  IS_LINUX="true"
-  AC_MSG_RESULT("yes");
+  TARGET_LINUX="true"
+  AC_MSG_RESULT("yes")
+  AC_DEFINE([TARGET_OS_LINUX], [1], [Whether we build for Linux])
 else
   MYSQLD_DEFAULT_SWITCHES=""
-  IS_LINUX="false"
-  AC_MSG_RESULT("no");
+  TARGET_LINUX="false"
+  AC_MSG_RESULT("no")
 fi
 AC_SUBST(MYSQLD_DEFAULT_SWITCHES)
-AC_SUBST(IS_LINUX)
+AC_SUBST(TARGET_LINUX)
 
 dnl Find paths to some shell programs
 AC_PATH_PROG(LN, ln, ln)
@@ -478,33 +506,33 @@ PS=$ac_cv_path_PS
 # Linux style
 if $PS p $$ 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS p \$\$PID | grep mysqld > /dev/null"
+  FIND_PROC="$PS p \$\$PID | grep -v grep | grep mysqld > /dev/null"
 # Solaris
 elif $PS -fp $$ 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS -p \$\$PID | grep mysqld > /dev/null"
+  FIND_PROC="$PS -p \$\$PID | grep -v grep | grep mysqld > /dev/null"
 # BSD style
 elif $PS -uaxww 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS -uaxww | grep mysqld | grep \" \$\$PID \" > /dev/null"
+  FIND_PROC="$PS -uaxww | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
 # SysV style
 elif $PS -ef 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS -ef | grep mysqld | grep \" \$\$PID \" > /dev/null"
+  FIND_PROC="$PS -ef | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
 # Do anybody use this?
 elif $PS $$ 2> /dev/null | grep $0 > /dev/null
 then
-  FIND_PROC="$PS \$\$PID | grep mysqld > /dev/null"
+  FIND_PROC="$PS \$\$PID | grep -v grep | grep mysqld > /dev/null"
 else
   case $SYSTEM_TYPE in
     *freebsd*)
-      FIND_PROC="$PS p \$\$PID | grep mysqld > /dev/null"
+      FIND_PROC="$PS p \$\$PID | grep -v grep | grep mysqld > /dev/null"
       ;;
     *darwin*)
-      FIND_PROC="$PS -uaxww | grep mysqld | grep \" \$\$PID \" > /dev/null"
+      FIND_PROC="$PS -uaxww | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
       ;;
     *cygwin*)
-      FIND_PROC="$PS -e | grep mysqld | grep \" \$\$PID \" > /dev/null"
+      FIND_PROC="$PS -e | grep -v grep | grep mysqld | grep \" \$\$PID \" > /dev/null"
       ;;
     *netware* | *modesto*)
       FIND_PROC=
@@ -607,7 +635,7 @@ AC_SUBST(NOINST_LDFLAGS)
 # (this is true on the MySQL build machines to avoid NSS problems)
 #
 
-if test "$IS_LINUX" = "true" -a "$static_nss" = ""
+if test "$TARGET_LINUX" = "true" -a "$static_nss" = ""
 then
   tmp=`nm /usr/lib/libc.a  | grep _nss_files_getaliasent_r`
   if test -n "$tmp"
@@ -841,7 +869,7 @@ struct request_info *req;
 ])
 AC_SUBST(WRAPLIBS)
 
-if test "$IS_LINUX" = "true"; then
+if test "$TARGET_LINUX" = "true"; then
   AC_MSG_CHECKING([for atomic operations])
 
   atom_ops=
@@ -885,7 +913,7 @@ int main()
     [ USE_PSTACK=no ])
   pstack_libs=
   pstack_dirs=
-  if test "$USE_PSTACK" = yes -a "$IS_LINUX" = "true" -a "$BASE_MACHINE_TYPE" = "i386" -a "$with_mit_threads" = "no"
+  if test "$USE_PSTACK" = yes -a "$TARGET_LINUX" = "true" -a "$BASE_MACHINE_TYPE" = "i386" -a "$with_mit_threads" = "no"
   then
     have_libiberty= have_libbfd=
     my_save_LIBS="$LIBS"
@@ -1239,16 +1267,10 @@ EOF
     #
     echo -n "making sure specific build files are writable... "
     for file in \
-        Docs/include.texi \
         Docs/mysql.info \
-        Docs/manual.txt \
-        Docs/manual_toc.html \
-        Docs/manual.html \
         Docs/INSTALL-BINARY \
         INSTALL-SOURCE \
-        COPYING \
-        COPYING.LIB \
-        MIRRORS
+        COPYING
     do
       if test -e $file; then
         chmod +w $file
@@ -1266,61 +1288,93 @@ esac
 # We have to check libc last because else it fails on Solaris 2.6
 
 with_posix_threads="no"
-# Hack for DEC-UNIX (OSF1)
+# Search thread lib on Linux
 if test "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
 then
-  # Look for LinuxThreads.
-  AC_MSG_CHECKING("LinuxThreads")
-    res=`grep Linuxthreads /usr/include/pthread.h 2>/dev/null | wc -l`
-    if test "$res" -gt 0
+    AC_MSG_CHECKING("Linux threads")
+    if test "$TARGET_LINUX" = "true"
     then
-      AC_MSG_RESULT("Found")
-      AC_DEFINE([HAVE_LINUXTHREADS], [1],
-                [Whether we are using Xavier Leroy's LinuxThreads])
-      # Linux 2.0 sanity check
-      AC_TRY_COMPILE([#include <sched.h>], [int a = sched_get_priority_min(1);], ,
-      AC_MSG_ERROR([Syntax error in sched.h. Change _P to __P in the /usr/include/sched.h file. See the Installation chapter in the Reference Manual]))
-      # RedHat 5.0 does not work with dynamic linking of this. -static also
-      # gives a speed increase in linux so it does not hurt on other systems.
-      with_named_thread="-lpthread"
-    else
-      AC_MSG_RESULT("Not found")
-      # If this is a linux machine we should barf
-      if test "$IS_LINUX" = "true"
-      then
-	AC_MSG_ERROR([This is a linux system and Linuxthreads was not
-found. On linux Linuxthreads should be used.  Please install Linuxthreads
-(or a new glibc) and try again.  See the Installation chapter in the
-Reference Manual for more information.])
-      else
-	AC_MSG_CHECKING("DEC threads")
-        if test -f /usr/shlib/libpthread.so -a -f /usr/lib/libmach.a -a -f /usr/ccs/lib/cmplrs/cc/libexc.a
-	then
-	  with_named_thread="-lpthread -lmach -lexc"
-	  CFLAGS="$CFLAGS -D_REENTRANT"
-	  CXXFLAGS="$CXXFLAGS -D_REENTRANT"
-	  AC_DEFINE(HAVE_DEC_THREADS, [1],
-                    [Whether we are using DEC threads])
-	  AC_MSG_RESULT("yes")
-	else
-	  AC_MSG_RESULT("no")
-	  AC_MSG_CHECKING("DEC 3.2 threads")
-          if test -f /usr/shlib/libpthreads.so -a -f /usr/lib/libmach.a -a -f /usr/ccs/lib/cmplrs/cc/libexc.a
-	  then
-	    with_named_thread="-lpthreads -lmach -lc_r"
-	    AC_DEFINE(HAVE_DEC_THREADS, [1])
-            AC_DEFINE([HAVE_DEC_3_2_THREADS], [1],
-                      [Whether we are using OSF1 DEC threads on 3.2])
-            with_osf32_threads="yes"
-            MYSQLD_DEFAULT_SWITCHES="--skip-thread-priority"
-	    AC_MSG_RESULT("yes")
-	  else
-	    AC_MSG_RESULT("no")
+        AC_MSG_RESULT("starting")
+        # use getconf to check glibc contents
+        AC_MSG_CHECKING("getconf GNU_LIBPTHREAD_VERSION")
+        case `getconf GNU_LIBPTHREAD_VERSION | tr abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ` in
+        NPTL* )
+                AC_MSG_RESULT("NPTL")
+                AC_DEFINE([HAVE_NPTL], [1], [NPTL threads implementation])
+                with_named_thread="-lpthread"
+                ;;
+        LINUXTHREADS* )
+                AC_MSG_RESULT("Linuxthreads")
+                AC_DEFINE([HAVE_LINUXTHREADS], [1], 
+                      [Whether we are using Xavier Leroy's LinuxThreads])
+                with_named_thread="-lpthread"
+                ;;
+        * )
+                AC_MSG_RESULT("unknown")
+                ;;
+        esac
+        if test "$with_named_thread" = "no"
+        then
+          # old method, check headers
+          # Look for LinuxThreads.
+          AC_MSG_CHECKING("LinuxThreads in header file comment")
+          res=`grep Linuxthreads /usr/include/pthread.h 2>/dev/null | wc -l`
+          if test "$res" -gt 0
+          then
+            AC_MSG_RESULT("Found")
+            AC_DEFINE([HAVE_LINUXTHREADS], [1],
+                  [Whether we are using Xavier Leroy's LinuxThreads])
+            # Linux 2.0 sanity check
+            AC_TRY_COMPILE([#include <sched.h>], [int a = sched_get_priority_min(1);], ,
+                  AC_MSG_ERROR([Syntax error in sched.h. Change _P to __P in the /usr/include/sched.h file. See the Installation chapter in the Reference Manual]))
+            # RedHat 5.0 does not work with dynamic linking of this. -static also
+            # gives a speed increase in linux so it does not hurt on other systems.
+            with_named_thread="-lpthread"
+          else
+            AC_MSG_RESULT("Not found")
+            # If this is a linux machine we should barf
+            AC_MSG_ERROR([This is a Linux system without a working getconf, 
+and Linuxthreads was not found. Please install it (or a new glibc) and try again.  
+See the Installation chapter in the Reference Manual for more information.])
           fi
-	fi
-     fi
-   fi
-fi
+        else
+            AC_MSG_RESULT("no need to check headers")
+        fi
+        
+        AC_MSG_CHECKING("for pthread_create in -lpthread");
+        ac_save_LIBS="$LIBS"
+        LIBS="$LIBS -lpthread"
+        AC_TRY_LINK( [#include <pthread.h>],
+              [ (void) pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
+              AC_MSG_RESULT("yes"),
+              [ AC_MSG_RESULT("no")
+                AC_MSG_ERROR([
+This is a Linux system claiming to support threads, either Linuxthreads or NPTL, but linking a test program failed.  
+Please install one of these (or a new glibc) and try again.  
+See the Installation chapter in the Reference Manual for more information.]) ]
+              )
+        LIBS="$ac_save_LIBS"
+    else
+        AC_MSG_RESULT("no")
+    fi  # "$TARGET_LINUX" 
+fi  # "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
+
+
+# Hack for DEC-UNIX (OSF1 -> Tru64)
+if test "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
+then
+    AC_MSG_CHECKING("DEC threads post OSF/1 3.2")
+    if test -f /usr/shlib/libpthread.so -a -f /usr/lib/libmach.a -a -f /usr/ccs/lib/cmplrs/cc/libexc.a
+    then
+      with_named_thread="-lpthread -lmach -lexc"
+      CFLAGS="$CFLAGS -D_REENTRANT"
+      CXXFLAGS="$CXXFLAGS -D_REENTRANT"
+      AC_DEFINE(HAVE_DEC_THREADS, [1], [Whether we are using DEC threads])
+      AC_MSG_RESULT("yes")
+    else
+      AC_MSG_RESULT("no")
+    fi  # DEC threads
+fi  # "$with_named_thread" = "no" -a "$with_mit_threads" = "no"
 
 
 dnl This is needed because -lsocket has to come after the thread
@@ -1738,7 +1792,7 @@ fi
 AC_SUBST(COMPILATION_COMMENT)
 
 AC_MSG_CHECKING("need of special linking flags")
-if test "$IS_LINUX" = "true" -a "$ac_cv_prog_gcc" = "yes" -a "$all_is_static" != "yes"
+if test "$TARGET_LINUX" = "true" -a "$ac_cv_prog_gcc" = "yes" -a "$all_is_static" != "yes"
 then
   LDFLAGS="$LDFLAGS -rdynamic"
   AC_MSG_RESULT("-rdynamic")
@@ -1788,13 +1842,26 @@ if test "$ac_cv_sizeof_off_t" -eq 0
 then
   AC_MSG_ERROR("MySQL needs a off_t type.")
 fi
+
+# do we need #pragma interface/#pragma implementation ?
+# yes if it's gcc 2.x, and not icc pretending to be gcc, and not cygwin
+AC_MSG_CHECKING(the need for @%:@pragma interface/implementation)
+# instead of trying to match SYSTEM_TYPE and CC_VERSION (that doesn't
+# follow any standard), we'll use well-defined preprocessor macros:
+AC_TRY_CPP([
+#if !defined(__CYGWIN__) && !defined(__INTEL_COMPILER) && defined(__GNUC__) && (__GNUC__ < 3)
+#error USE_PRAGMA_IMPLEMENTATION
+#endif
+],AC_MSG_RESULT(no) ,AC_MSG_RESULT(yes) ; CXXFLAGS="$CXXFLAGS -DUSE_PRAGMA_IMPLEMENTATION")
+
 # This always gives a warning. Ignore it unless you are cross compiling
 AC_C_BIGENDIAN
 #---START: Used in for client configure
 # Check base type of last arg to accept
 MYSQL_TYPE_ACCEPT
-
 #---END:
+# Figure out what type of struct rlimit to use with setrlimit
+MYSQL_TYPE_STRUCT_RLIMIT
 # Find where the stack goes
 MYSQL_STACK_DIRECTION
 # We want to skip alloca on irix unconditionally. It may work on some version..
@@ -1825,6 +1892,10 @@ If you are using gcc 2.8.# you should upgrade to egcs 1.0.3 or newer and try
 again]);
 fi
 fi
+AC_CHECK_TYPES([sigset_t, off_t], [], [], [#include <sys/types.h>])
+AC_CHECK_TYPES([size_t], [], [], [#include <stdio.h>])
+AC_CHECK_TYPES([u_int32_t])
+
 MYSQL_PTHREAD_YIELD
 
 ######################################################################
@@ -1840,7 +1911,13 @@ AC_PROG_GCC_TRADITIONAL
 AC_TYPE_SIGNAL
 AC_CHECK_FUNCS(re_comp regcomp strdup)
 
-AC_CHECK_HEADERS(vis.h)
+dnl Sun compilers have their own vis.h that is about something
+dnl totally different. So, not to change the libedit source, we
+dnl do some additional checks before we define HAVE_VIS_H.
+AC_CHECK_HEADER(vis.h,
+  [AC_CHECK_FUNC(strvis,
+    [AC_DEFINE([HAVE_VIS_H], [1],[Found vis.h and the strvis() function])])])
+
 AC_CHECK_FUNCS(strlcat strlcpy)
 AC_CHECK_FUNCS(issetugid)
 AC_CHECK_FUNCS(fgetln)
@@ -1949,7 +2026,7 @@ CFLAGS="$ORG_CFLAGS"
 # Sanity check: We chould not have any fseeko symbol unless
 # large_file_support=yes
 AC_CHECK_FUNC(fseeko,
-[if test "$large_file_support" = no -a "$IS_LINUX" = "true";
+[if test "$large_file_support" = no -a "$TARGET_LINUX" = "true";
 then
   AC_MSG_ERROR("Found fseeko symbol but large_file_support is not enabled!");
 fi]
@@ -2399,17 +2476,24 @@ then
     compile_readline=yes
     AC_DEFINE_UNQUOTED(USE_NEW_READLINE_INTERFACE, 1)
 else
+    # Use system readline library
     AC_LANG_SAVE
     AC_LANG_CPLUSPLUS
     MYSQL_CHECK_LIBEDIT_INTERFACE
     MYSQL_CHECK_NEW_RL_INTERFACE
     MYSQL_CHECK_READLINE_DECLARES_HIST_ENTRY
     AC_LANG_RESTORE
-    if [test "$mysql_cv_new_rl_interface" = "yes"] || [test "$mysql_cv_libedit_interface" = "no"]
+    if [test "$mysql_cv_new_rl_interface" = "yes"]
     then
+        # Use the new readline interface
         readline_link="-lreadline"
-    else
+    elif [test "$mysql_cv_libedit_interface" = "yes"]; then
+        # Use libedit
         readline_link="-ledit"
+    else
+       AC_MSG_ERROR([Could not find system readline or libedit libraries
+          Use --with-readline or --with-libedit to use the bundled
+          versions of libedit or readline])
     fi
 fi
 fi
@@ -2430,14 +2514,14 @@ AC_DIVERT_PUSH(0)
 
 define(CHARSETS_AVAILABLE0,binary)
 define(CHARSETS_AVAILABLE1,armscii8 ascii big5 cp1250 cp1251 cp1256 cp1257)
-define(CHARSETS_AVAILABLE2,cp850 cp852 cp866 dec8 euckr gb2312 gbk geostd8)
+define(CHARSETS_AVAILABLE2,cp850 cp852 cp866 cp932 dec8 euckr gb2312 gbk geostd8)
 define(CHARSETS_AVAILABLE3,greek hebrew hp8 keybcs2 koi8r koi8u)
 define(CHARSETS_AVAILABLE4,latin1 latin2 latin5 latin7 macce macroman)
 define(CHARSETS_AVAILABLE5,sjis swe7 tis620 ucs2 ujis utf8)
 
 DEFAULT_CHARSET=latin1
 CHARSETS_AVAILABLE="CHARSETS_AVAILABLE0 CHARSETS_AVAILABLE1 CHARSETS_AVAILABLE2 CHARSETS_AVAILABLE3 CHARSETS_AVAILABLE4 CHARSETS_AVAILABLE5"
-CHARSETS_COMPLEX="big5 cp1250 euckr gb2312 gbk latin1 latin2 sjis tis620 ucs2 ujis utf8"
+CHARSETS_COMPLEX="big5 cp1250 cp932 euckr gb2312 gbk latin1 latin2 sjis tis620 ucs2 ujis utf8"
 
 AC_DIVERT_POP
 
@@ -2525,6 +2609,11 @@ do
       ;;
     cp866)
       AC_DEFINE(HAVE_CHARSET_cp866, 1, [Define to enable charset cp866])
+      ;;
+    cp932)
+      AC_DEFINE(HAVE_CHARSET_cp932, 1, [Define to enable charset cp932])
+      AC_DEFINE([USE_MB], 1, [Use multi-byte character routines])
+      AC_DEFINE(USE_MB_IDENT, 1)
       ;;
     dec8)
       AC_DEFINE(HAVE_CHARSET_dec8, 1, [Define to enable charset dec8])
@@ -2664,6 +2753,10 @@ case $default_charset in
       default_charset_default_collation="cp866_general_ci"
       default_charset_collations="cp866_general_ci cp866_bin"
       ;;
+    cp932)
+      default_charset_default_collation="cp932_japanese_ci"
+      default_charset_collations="cp932_japanese_ci cp932_bin"
+      ;;
     dec8)
       default_charset_default_collation="dec8_swedish_ci"
       default_charset_collations="dec8_swedish_ci dec8_bin"
@@ -2764,16 +2857,23 @@ case $default_charset in
       ;;
     utf8)
       default_charset_default_collation="utf8_general_ci"
-      define(UTFC1, utf8_general_ci utf8_bin)
-      define(UTFC2, utf8_czech_ci utf8_danish_ci)
-      define(UTFC3, utf8_estonian_ci utf8_icelandic_ci)
-      define(UTFC4, utf8_latvian_ci utf8_lithuanian_ci)
-      define(UTFC5, utf8_persian_ci utf8_polish_ci utf8_romanian_ci)
-      define(UTFC6, utf8_slovak_ci utf8_slovenian_ci)
-      define(UTFC7, utf8_spanish2_ci utf8_spanish_ci)
-      define(UTFC8, utf8_swedish_ci utf8_turkish_ci)
-      define(UTFC9, utf8_unicode_ci)
-      UTFC="UTFC1 UTFC2 UTFC3 UTFC4 UTFC5 UTFC6 UTFC7 UTFC8 UTFC9"
+      if test "$default_collation" = "utf8_general_cs"; then
+        # For those who explicitly desire "utf8_general_cs", support it,
+        # and then also set the CPP switch enabling that code.
+        UTFC="utf8_general_cs"
+        AC_DEFINE([HAVE_UTF8_GENERAL_CS], [1], [certain Japanese customer])
+      else
+        define(UTFC1, utf8_general_ci utf8_bin)
+        define(UTFC2, utf8_czech_ci utf8_danish_ci)
+        define(UTFC3, utf8_estonian_ci utf8_icelandic_ci)
+        define(UTFC4, utf8_latvian_ci utf8_lithuanian_ci)
+        define(UTFC5, utf8_persian_ci utf8_polish_ci utf8_romanian_ci)
+        define(UTFC6, utf8_slovak_ci utf8_slovenian_ci)
+        define(UTFC7, utf8_spanish2_ci utf8_spanish_ci)
+        define(UTFC8, utf8_swedish_ci utf8_turkish_ci)
+        define(UTFC9, utf8_unicode_ci)
+        UTFC="UTFC1 UTFC2 UTFC3 UTFC4 UTFC5 UTFC6 UTFC7 UTFC8 UTFC9"
+      fi
       default_charset_collations="$UTFC"
       ;;
     *)
@@ -2811,12 +2911,32 @@ AC_DEFINE_UNQUOTED([MYSQL_DEFAULT_CHARSET_NAME], ["$default_charset"],
 AC_DEFINE_UNQUOTED([MYSQL_DEFAULT_COLLATION_NAME], ["$default_collation"],
                    [Define the default charset name])
 
+
+# Shall we build the UCA-based Unicode collations
+AC_ARG_WITH(uca,
+    [  --without-uca           Skip building of the national Unicode collations.],
+    [with_uca=$withval],
+    [with_uca=yes]
+)
+
+AC_MSG_CHECKING([whether to compile national Unicode collations])
+
+if test "$with_uca" = "yes"
+then
+  AC_MSG_RESULT(yes)
+  AC_DEFINE([HAVE_UCA_COLLATIONS], [1], [national Unicode collations])
+else
+  AC_MSG_RESULT(no)
+fi
+
+MYSQL_CHECK_BIG_TABLES
 MYSQL_CHECK_ISAM
 MYSQL_CHECK_BDB
 MYSQL_CHECK_INNODB
 MYSQL_CHECK_EXAMPLEDB
 MYSQL_CHECK_ARCHIVEDB
 MYSQL_CHECK_CSVDB
+MYSQL_CHECK_BLACKHOLEDB
 MYSQL_CHECK_NDBCLUSTER
 
 # If we have threads generate some library functions and test programs
@@ -3194,7 +3314,7 @@ AC_CONFIG_FILES(Makefile extra/Makefile mysys/Makefile dnl
  sql-common/Makefile SSL/Makefile dnl
  dbug/Makefile scripts/Makefile dnl
  include/Makefile sql-bench/Makefile tools/Makefile dnl
- tests/Makefile Docs/Makefile Docs/Images/Makefile support-files/Makefile dnl
+ tests/Makefile Docs/Makefile support-files/Makefile dnl
  support-files/MacOSX/Makefile mysql-test/Makefile dnl
  netware/Makefile dnl
  include/mysql_version.h dnl
@@ -3205,7 +3325,6 @@ AC_CONFIG_FILES(Makefile extra/Makefile mysys/Makefile dnl
  AC_CONFIG_COMMANDS([default], , test -z "$CONFIG_HEADERS" || echo timestamp > stamp-h)
  AC_OUTPUT
 
-rm -f $AVAILABLE_LANGUAGES_ERRORS_RULES
 echo
 echo "MySQL has a Web site at http://www.mysql.com/ which carries details on the"
 echo "latest release, upcoming features, and other information to make your"

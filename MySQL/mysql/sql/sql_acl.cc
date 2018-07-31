@@ -139,6 +139,7 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
   MYSQL_LOCK *lock;
   my_bool return_val=1;
   bool check_no_resolve= specialflag & SPECIAL_NO_RESOLVE;
+  char tmp_name[NAME_LEN+1];
 
   DBUG_ENTER("acl_init");
 
@@ -183,7 +184,7 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
   ptr[0]= tables[0].table;
   ptr[1]= tables[1].table;
   ptr[2]= tables[2].table;
-  if (!(lock=mysql_lock_tables(thd,ptr,3)))
+  if (! (lock= mysql_lock_tables(thd, ptr, 3, 0)))
   {
     sql_print_error("Fatal error: Can't lock privilege tables: %s",
 		    thd->net.last_error);
@@ -197,6 +198,23 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
     ACL_HOST host;
     update_hostname(&host.host,get_field(&mem, table->field[0]));
     host.db=	 get_field(&mem, table->field[1]);
+    if (lower_case_table_names && host.db)
+    {
+      /*
+       We make a temporary copy of the database, force it to lower case,
+       and then check it against the original name.
+      */
+      (void)strnmov(tmp_name, host.db, sizeof(tmp_name));
+      my_casedn_str(files_charset_info, host.db);
+      if (strcmp(host.db, tmp_name) != 0)
+      {
+        sql_print_warning("'host' entry '%s|%s' had database in mixed "
+                          "case that has been forced to lowercase because "
+                          "lower_case_table_names is set. It will not be "
+                          "possible to remove this privilege using REVOKE.",
+                          host.host.hostname, host.db);
+      }
+    }
     host.access= get_access(table,2);
     host.access= fix_rights_for_db(host.access);
     host.sort=	 get_sort(2,host.host.hostname,host.db);
@@ -204,7 +222,7 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
     {
       sql_print_warning("'host' entry '%s|%s' "
 		      "ignored in --skip-name-resolve mode.",
-		      host.host.hostname, host.db, host.host.hostname);
+		      host.host.hostname, host.db?host.db:"");
       continue;
     }
 #ifndef TO_BE_REMOVED
@@ -272,7 +290,7 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
     {
       sql_print_warning("'user' entry '%s@%s' "
                         "ignored in --skip-name-resolve mode.",
-		      user.user, user.host.hostname, user.host.hostname);
+		      user.user, user.host.hostname);
       continue;
     }
 
@@ -375,11 +393,28 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
     {
       sql_print_warning("'db' entry '%s %s@%s' "
 		        "ignored in --skip-name-resolve mode.",
-		        db.db, db.user, db.host.hostname, db.host.hostname);
+		        db.db, db.user, db.host.hostname);
       continue;
     }
     db.access=get_access(table,3);
     db.access=fix_rights_for_db(db.access);
+    if (lower_case_table_names)
+    {
+      /*
+       We make a temporary copy of the database, force it to lower case,
+       and then check it against the original name.
+      */
+      (void)strnmov(tmp_name, db.db, sizeof(tmp_name));
+      my_casedn_str(files_charset_info, db.db);
+      if (strcmp(db.db, tmp_name) != 0)
+      {
+        sql_print_warning("'db' entry '%s %s@%s' had database in mixed "
+                          "case that has been forced to lowercase because "
+                          "lower_case_table_names is set. It will not be "
+                          "possible to remove this privilege using REVOKE.",
+		          db.db, db.user, db.host.hostname, db.host.hostname);
+      }
+    }
     db.sort=get_sort(3,db.host.hostname,db.db,db.user);
 #ifndef TO_BE_REMOVED
     if (table->fields <=  9)
@@ -959,12 +994,15 @@ static void acl_insert_db(const char *user, const char *host, const char *db,
 
 /*
   Get privilege for a host, user and db combination
+
+  as db_is_pattern changes the semantics of comparison,
+  acl_cache is not used if db_is_pattern is set.
 */
 
 ulong acl_get(const char *host, const char *ip,
               const char *user, const char *db, my_bool db_is_pattern)
 {
-  ulong host_access= ~0,db_access= 0;
+  ulong host_access= ~(ulong)0,db_access= 0;
   uint i,key_length;
   char key[ACL_KEY_LENGTH],*tmp_db,*end;
   acl_entry *entry;
@@ -978,7 +1016,7 @@ ulong acl_get(const char *host, const char *ip,
     db=tmp_db;
   }
   key_length=(uint) (end-key);
-  if ((entry=(acl_entry*) acl_cache->search(key,key_length)))
+  if (!db_is_pattern && (entry=(acl_entry*) acl_cache->search(key,key_length)))
   {
     db_access=entry->access;
     VOID(pthread_mutex_unlock(&acl_cache->lock));
@@ -1027,7 +1065,8 @@ ulong acl_get(const char *host, const char *ip,
   }
 exit:
   /* Save entry in cache for quick retrieval */
-  if ((entry= (acl_entry*) malloc(sizeof(acl_entry)+key_length)))
+  if (!db_is_pattern &&
+      (entry= (acl_entry*) malloc(sizeof(acl_entry)+key_length)))
   {
     entry->access=(db_access & host_access);
     entry->length=key_length;
@@ -1339,7 +1378,7 @@ bool hostname_requires_resolving(const char *hostname)
     return FALSE;
   for (; (cur=*hostname); hostname++)
   {
-    if ((cur != '%') && (cur != '_') && (cur != '.') &&
+    if ((cur != '%') && (cur != '_') && (cur != '.') && (cur != '/') &&
 	((cur < '0') || (cur > '9')))
       return TRUE;
   }
@@ -1753,7 +1792,8 @@ static byte* get_key_column(GRANT_COLUMN *buff,uint *length,
 class GRANT_TABLE :public Sql_alloc
 {
 public:
-  char *host,*db, *user, *tname, *hash_key, *orig_host;
+  acl_host_and_ip host;
+  char *db, *user, *tname, *hash_key;
   ulong privs, cols;
   ulong sort;
   uint key_length;
@@ -1772,12 +1812,10 @@ GRANT_TABLE::GRANT_TABLE(const char *h, const char *d,const char *u,
   :privs(p), cols(c)
 {
   /* Host given by user */
-  orig_host=  strdup_root(&memex,h);
-  /* Convert empty hostname to '%' for easy comparision */
-  host=  orig_host[0] ? orig_host : (char*) "%";
+  update_hostname(&host, strdup_root(&memex, h));
   db =   strdup_root(&memex,d);
   user = strdup_root(&memex,u);
-  sort=  get_sort(3,host,db,user);
+  sort=  get_sort(3,host.hostname,db,user);
   tname= strdup_root(&memex,t);
   if (lower_case_table_names)
   {
@@ -1796,17 +1834,12 @@ GRANT_TABLE::GRANT_TABLE(TABLE *form, TABLE *col_privs)
 {
   byte key[MAX_KEY_LENGTH];
 
-  orig_host= host= get_field(&memex, form->field[0]);
+  update_hostname(&host, get_field(&memex, form->field[0]));
   db=    get_field(&memex,form->field[1]);
   user=  get_field(&memex,form->field[2]);
   if (!user)
     user= (char*) "";
-  if (!orig_host)
-  {
-    orig_host= (char*) "";
-    host= (char*) "%";
-  }
-  sort=  get_sort(3, orig_host, db, user);
+  sort=  get_sort(3, host.hostname, db, user);
   tname= get_field(&memex,form->field[3]);
   if (!db || !tname)
   {
@@ -1833,7 +1866,8 @@ GRANT_TABLE::GRANT_TABLE(TABLE *form, TABLE *col_privs)
   if (cols)
   {
     int key_len;
-    col_privs->field[0]->store(orig_host,(uint) strlen(orig_host),
+    col_privs->field[0]->store(host.hostname,
+                               host.hostname ? (uint) strlen(host.hostname) : 0,
                                &my_charset_latin1);
     col_privs->field[1]->store(db,(uint) strlen(db), &my_charset_latin1);
     col_privs->field[2]->store(user,(uint) strlen(user), &my_charset_latin1);
@@ -1910,17 +1944,12 @@ static GRANT_TABLE *table_hash_search(const char *host,const char* ip,
   {
     if (exact)
     {
-      if ((host &&
-	   !my_strcasecmp(&my_charset_latin1, host, grant_table->host)) ||
-	  (ip && !strcmp(ip,grant_table->host)))
+      if (compare_hostname(&grant_table->host, host, ip))
 	return grant_table;
     }
     else
     {
-      if (((host && !wild_case_compare(&my_charset_latin1,
-				       host,grant_table->host)) ||
-	   (ip && !wild_case_compare(&my_charset_latin1,
-				     ip,grant_table->host))) &&
+      if (compare_hostname(&grant_table->host, host, ip) &&
           (!found || found->sort < grant_table->sort))
 	found=grant_table;					// Host ok
     }
@@ -2630,7 +2659,7 @@ my_bool grant_init(THD *org_thd)
   TABLE *ptr[2];				// Lock tables for quick update
   ptr[0]= tables[0].table;
   ptr[1]= tables[1].table;
-  if (!(lock=mysql_lock_tables(thd,ptr,2)))
+  if (! (lock= mysql_lock_tables(thd, ptr, 2, 0)))
     goto end;
 
   t_table = tables[0].table; c_table = tables[1].table;
@@ -2657,12 +2686,12 @@ my_bool grant_init(THD *org_thd)
 
     if (check_no_resolve)
     {
-      if (hostname_requires_resolving(mem_check->host))
+      if (hostname_requires_resolving(mem_check->host.hostname))
       {
         sql_print_warning("'tables_priv' entry '%s %s@%s' "
                           "ignored in --skip-name-resolve mode.",
                           mem_check->tname, mem_check->user,
-                          mem_check->host, mem_check->host);
+                          mem_check->host);
 	continue;
       }
     }
@@ -2946,10 +2975,7 @@ bool check_grant_db(THD *thd,const char *db)
 							  idx);
     if (len < grant_table->key_length &&
 	!memcmp(grant_table->hash_key,helping,len) &&
-	(thd->host && !wild_case_compare(&my_charset_latin1,
-                                         thd->host,grant_table->host) ||
-	 (thd->ip && !wild_case_compare(&my_charset_latin1,
-                                        thd->ip,grant_table->host))))
+        compare_hostname(&grant_table->host, thd->host, thd->ip))
     {
       error=0;					// Found match
       break;
@@ -3289,7 +3315,7 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
 
     if (!strcmp(lex_user->user.str,user) &&
 	!my_strcasecmp(&my_charset_latin1, lex_user->host.str,
-                       grant_table->orig_host))
+                       grant_table->host.hostname))
     {
       ulong table_access= grant_table->privs;
       if ((table_access | grant_table->cols) != 0)
@@ -3571,7 +3597,7 @@ int mysql_drop_user(THD *thd, List <LEX_USER> &list)
 							    counter);
       if (!(user=grant_table->user))
 	user= "";
-      if (!(host=grant_table->host))
+      if (!(host=grant_table->host.hostname))
 	host= "";
 
       if (!strcmp(user_name->user.str,user) &&
@@ -3648,7 +3674,7 @@ int mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
     }
 
     if (replace_user_table(thd, tables[0].table,
-			   *lex_user, ~0, 1, 0))
+			   *lex_user, ~(ulong)0, 1, 0))
     {
       result= -1;
       continue;
@@ -3675,7 +3701,7 @@ int mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 	if (!strcmp(lex_user->user.str,user) &&
 	    !my_strcasecmp(system_charset_info, lex_user->host.str, host))
 	{
-	  if (!replace_db_table(tables[1].table, acl_db->db, *lex_user, ~0, 1))
+	  if (!replace_db_table(tables[1].table, acl_db->db, *lex_user, ~(ulong)0, 1))
 	  {
 	    /*
 	      Don't increment counter as replace_db_table deleted the
@@ -3700,7 +3726,7 @@ int mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 							     counter);
 	if (!(user=grant_table->user))
 	  user= "";
-	if (!(host=grant_table->host))
+	if (!(host=grant_table->host.hostname))
 	  host= "";
 	
 	if (!strcmp(lex_user->user.str,user) &&
@@ -3709,7 +3735,7 @@ int mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 	  if (replace_table_table(thd,grant_table,tables[2].table,*lex_user,
 				  grant_table->db,
 				  grant_table->tname,
-				  ~0, 0, 1))
+				  ~(ulong)0, 0, 1))
 	  {
 	    result= -1;
 	  }
@@ -3725,7 +3751,7 @@ int mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 				      columns,
 				      grant_table->db,
 				      grant_table->tname,
-				      ~0, 1))
+				      ~(ulong)0, 1))
 	    {
 	      revoked= 1;
 	      continue;

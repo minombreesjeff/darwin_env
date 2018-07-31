@@ -417,7 +417,7 @@ row_create_prebuilt(
 	prebuilt->sel_graph = NULL;
 
 	prebuilt->search_tuple = dtuple_create(heap,
-						dict_table_get_n_cols(table));
+					2 * dict_table_get_n_cols(table));
 	
 	clust_index = dict_table_get_first_index(table);
 
@@ -745,7 +745,7 @@ run_again:
 
 		trx->op_info = "";
 
-		return(err);
+		return((int) err);
 	}
 
 	que_thr_stop_for_mysql_no_error(thr, trx);
@@ -839,7 +839,7 @@ run_again:
 
 		trx->op_info = "";
 
-		return(err);
+		return((int) err);
 	}
 
 	que_thr_stop_for_mysql_no_error(thr, trx);
@@ -954,7 +954,7 @@ run_again:
 
 		trx->op_info = "";
 
-		return(err);
+		return((int) err);
 	}
 
 	que_thr_stop_for_mysql_no_error(thr, trx);
@@ -1202,7 +1202,7 @@ run_again:
 
 		trx->op_info = "";
 
-		return(err);
+		return((int) err);
 	}
 
 	que_thr_stop_for_mysql_no_error(thr, trx);
@@ -1367,7 +1367,7 @@ row_mysql_recover_tmp_table(
 	}
 	else {
 		int	status;
-		int	namelen = strlen(table->name);
+		int	namelen = (int) strlen(table->name);
 		char*	old_name = mem_strdupl(table->name, namelen);
 		/* replace "rsql" with "#sql" */
 		old_name[ptr - table->name + 1] = '#';
@@ -1606,10 +1606,18 @@ row_create_table_for_mysql(
 		trx_general_rollback_for_mysql(trx, FALSE, NULL);
 
 		if (err == DB_OUT_OF_FILE_SPACE) {
-			fputs("InnoDB: Warning: cannot create table ", stderr);
+	    		ut_print_timestamp(stderr);
+
+			fputs("  InnoDB: Warning: cannot create table ", 
+								stderr);
 			ut_print_name(stderr, trx, table->name);
 			fputs(" because tablespace full\n", stderr);
-		     	row_drop_table_for_mysql(table->name, trx, FALSE);
+
+			if (dict_table_get_low(table->name)) {
+
+		     		row_drop_table_for_mysql(table->name, trx,
+								FALSE);
+			}
 
 		} else if (err == DB_DUPLICATE_KEY) {
 	    		ut_print_timestamp(stderr);
@@ -1796,7 +1804,7 @@ row_table_add_foreign_constraints(
 
 	if (err == DB_SUCCESS) {
 		/* Check that also referencing constraints are ok */
-		err = dict_load_foreigns(name);
+		err = dict_load_foreigns(name, trx->check_foreigns);
 	}
 
 	if (err != DB_SUCCESS) {
@@ -1857,7 +1865,7 @@ row_drop_table_for_mysql_in_background(
 
   	trx_free_for_background(trx);
 
-	return(error);
+	return((int) error);
 }
 
 /*************************************************************************
@@ -2567,6 +2575,7 @@ row_drop_table_for_mysql(
 	foreign = UT_LIST_GET_FIRST(table->referenced_list);
 	
 	while (foreign && foreign->foreign_table == table) {
+	check_next_foreign:
 		foreign = UT_LIST_GET_NEXT(referenced_list, foreign);
 	}
 
@@ -2593,6 +2602,10 @@ row_drop_table_for_mysql(
 		mutex_exit(&dict_foreign_err_mutex);
 
 		goto funct_exit;
+	}
+
+	if (foreign && trx->check_foreigns) {
+		goto check_next_foreign;
 	}
 
 	if (table->n_mysql_handles_opened > 0) {
@@ -3204,6 +3217,8 @@ row_rename_table_for_mysql(
 			goto funct_exit;
 		}
 
+		err = dict_load_foreigns(new_name, trx->check_foreigns);
+
 		if (row_is_mysql_tmp_table_name(old_name)) {
 
 			/* MySQL is doing an ALTER TABLE command and it
@@ -3212,8 +3227,6 @@ row_rename_table_for_mysql(
 			created some FOREIGN KEY constraints for the temporary
 			table. But we want to load also the foreign key
 			constraint definitions for the original table name. */
-
-			err = dict_load_foreigns(new_name);
 
 			if (err != DB_SUCCESS) {
 	    			ut_print_timestamp(stderr);
@@ -3233,8 +3246,6 @@ row_rename_table_for_mysql(
 				trx->error_state = DB_SUCCESS;
 			}
 		} else {
-			err = dict_load_foreigns(new_name);
-
 			if (err != DB_SUCCESS) {
 
 	    			ut_print_timestamp(stderr);

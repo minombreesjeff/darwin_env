@@ -163,6 +163,10 @@ extern char *my_strdup_with_length(const byte *from, uint length,
 #if defined(_AIX) && !defined(__GNUC__) && !defined(_AIX43)
 #pragma alloca
 #endif /* _AIX */
+#if defined(__MWERKS__)
+#undef alloca
+#define alloca __alloca
+#endif /* __MWERKS__ */
 #if defined(__GNUC__) && !defined(HAVE_ALLOCA_H) && ! defined(alloca)
 #define alloca __builtin_alloca
 #endif /* GNUC */
@@ -189,11 +193,13 @@ void   __CDECL hfree(void *ptr);
 #endif
 #endif /* MSDOS */
 
+#ifndef errno				/* did we already get it? */
 #ifdef HAVE_ERRNO_AS_DEFINE
 #include <errno.h>			/* errno is a define */
 #else
 extern int errno;			/* declare errno */
 #endif
+#endif					/* #ifndef errno */
 extern const char ** NEAR my_errmsg[];
 extern char NEAR errbuff[NRERRBUFFS][ERRMSGSIZE];
 extern char *home_dir;			/* Home directory for user */
@@ -567,6 +573,12 @@ extern char *_my_strdup_with_length(const byte *from, uint length,
 				    const char *sFile, uint uLine,
 				    myf MyFlag);
 
+#ifdef __WIN__
+extern int my_access(const char *path, int amode);
+#else
+#define my_access access
+#endif
+extern int check_if_legal_filename(const char *path);
 
 #ifndef TERMINATE
 extern void TERMINATE(FILE *file);
@@ -607,6 +619,7 @@ extern uint dirname_part(my_string to,const char *name);
 extern uint dirname_length(const char *name);
 #define base_name(A) (A+dirname_length(A))
 extern int test_if_hard_path(const char *dir_name);
+extern my_bool has_path(const char *name);
 extern char *convert_dirname(char *to, const char *from, const char *from_end);
 extern void to_unix_path(my_string name);
 extern my_string fn_ext(const char *name);
@@ -778,6 +791,14 @@ extern ulong escape_string_for_mysql(CHARSET_INFO *charset_info, char *to,
 
 #ifdef __WIN__
 extern my_bool have_tcpip;		/* Is set if tcpip is used */
+
+/* implemented in my_windac.c */
+
+int my_security_attr_create(SECURITY_ATTRIBUTES **psa, const char **perror,
+                            DWORD owner_rights, DWORD everybody_rights);
+
+void my_security_attr_free(SECURITY_ATTRIBUTES *sa);
+
 #endif
 #ifdef __NETWARE__
 void netware_reg_user(const char *ip, const char *user,

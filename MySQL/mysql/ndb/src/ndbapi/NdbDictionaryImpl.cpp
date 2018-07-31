@@ -114,7 +114,8 @@ NdbColumnImpl::init(Type t)
     m_length = 1;
     m_cs = NULL;
     break;
-  case Decimal:
+  case Olddecimal:
+  case Olddecimalunsigned:
     m_precision = 10;
     m_scale = 0;
     m_length = 1;
@@ -945,6 +946,12 @@ NdbDictInterface::dictSignal(NdbApiSignal* signal,
     if(m_waiter.m_state == WAIT_NODE_FAILURE)
       continue;
 
+    if(m_waiter.m_state == WST_WAIT_TIMEOUT)
+    {
+      m_error.code = 4008;
+      DBUG_RETURN(-1);
+    }
+    
     if ( (temporaryMask & m_error.code) != 0 ) {
       continue;
     }
@@ -997,6 +1004,11 @@ NdbDictInterface::getTable(const char * name, bool fullyQualifiedNames)
     return 0;
   }
 
+  // avoid alignment problem and memory overrun
+  Uint32 name_buf[(MAX_TAB_NAME_SIZE + 3) / 4];
+  strncpy((char*)name_buf, name, sizeof(name_buf)); // strncpy null-pads
+  name = (char*)name_buf;
+
   req->senderRef = m_reference;
   req->senderData = 0;
   req->requestType = 
@@ -1008,7 +1020,7 @@ NdbDictInterface::getTable(const char * name, bool fullyQualifiedNames)
   tSignal.theLength = GetTabInfoReq::SignalLength;
   LinearSectionPtr ptr[1];
   ptr[0].p  = (Uint32*)name;
-  ptr[0].sz = strLen;
+  ptr[0].sz = (strLen + 3) / 4;
   
   return getTable(&tSignal, ptr, 1, fullyQualifiedNames);
 }
@@ -1176,7 +1188,8 @@ columnTypeMapping[] = {
   { DictTabInfo::ExtBigunsigned,     NdbDictionary::Column::Bigunsigned },
   { DictTabInfo::ExtFloat,           NdbDictionary::Column::Float },
   { DictTabInfo::ExtDouble,          NdbDictionary::Column::Double },
-  { DictTabInfo::ExtDecimal,         NdbDictionary::Column::Decimal },
+  { DictTabInfo::ExtOlddecimal,      NdbDictionary::Column::Olddecimal },
+  { DictTabInfo::ExtOlddecimalunsigned, NdbDictionary::Column::Olddecimalunsigned },
   { DictTabInfo::ExtChar,            NdbDictionary::Column::Char },
   { DictTabInfo::ExtVarchar,         NdbDictionary::Column::Varchar },
   { DictTabInfo::ExtBinary,          NdbDictionary::Column::Binary },
@@ -1440,6 +1453,7 @@ int NdbDictionaryImpl::alterTable(NdbTableImpl &impl)
       // If in local cache it must be in global
       if (!cachedImpl)
 	abort();
+      cachedImpl->m_status = NdbDictionary::Object::Invalid;
       m_globalHash->drop(cachedImpl);
       m_globalHash->unlock();
     }
@@ -1493,7 +1507,7 @@ NdbDictInterface::createOrAlterTable(Ndb & ndb,
     if (col->m_autoIncrement) {
       if (haveAutoIncrement) {
         m_error.code = 4335;
-        return -1;
+        DBUG_RETURN(-1);
       }
       haveAutoIncrement = true;
       autoIncrementValue = col->m_autoIncrementInitialValue;
@@ -1614,7 +1628,7 @@ NdbDictInterface::createOrAlterTable(Ndb & ndb,
     ret= createTable(&tSignal, ptr);
 
     if (ret)
-      return ret;
+      DBUG_RETURN(ret);
 
     if (haveAutoIncrement) {
       if (!ndb.setAutoIncrementValue(impl.m_externalName.c_str(),
@@ -1739,8 +1753,8 @@ NdbDictionaryImpl::dropTable(const char * name)
 
     DBUG_PRINT("info",("INCOMPATIBLE_VERSION internal_name: %s", internalTableName));
     m_localHash.drop(internalTableName);
-    
     m_globalHash->lock();
+    tab->m_status = NdbDictionary::Object::Invalid;
     m_globalHash->drop(tab);
     m_globalHash->unlock();   
     DBUG_RETURN(dropTable(name));
@@ -1784,10 +1798,11 @@ NdbDictionaryImpl::dropTable(NdbTableImpl & impl)
   int ret = m_receiver.dropTable(impl);  
   if(ret == 0 || m_error.code == 709){
     const char * internalTableName = impl.m_internalName.c_str();
+
     
     m_localHash.drop(internalTableName);
-    
     m_globalHash->lock();
+    impl.m_status = NdbDictionary::Object::Invalid;
     m_globalHash->drop(&impl);
     m_globalHash->unlock();
 
@@ -1881,6 +1896,7 @@ NdbDictionaryImpl::invalidateObject(NdbTableImpl & impl)
 
   m_localHash.drop(internalTableName);  
   m_globalHash->lock();
+  impl.m_status = NdbDictionary::Object::Invalid;
   m_globalHash->drop(&impl);
   m_globalHash->unlock();
   return 0;
@@ -2091,8 +2107,8 @@ int
 NdbDictInterface::createIndex(NdbApiSignal* signal, 
 			      LinearSectionPtr ptr[3])
 {
-  const int noErrCodes = 1;
-  int errCodes[noErrCodes] = {CreateIndxRef::Busy};
+  const int noErrCodes = 2;
+  int errCodes[noErrCodes] = {CreateIndxRef::Busy, CreateIndxRef::NotMaster};
   return dictSignal(signal,ptr,2,
 		    1 /*use masternode id*/,
 		    100,
@@ -2116,6 +2132,8 @@ NdbDictInterface::execCREATE_INDX_REF(NdbApiSignal * signal,
 {
   const CreateIndxRef* const ref = CAST_CONSTPTR(CreateIndxRef, signal->getDataPtr());
   m_error.code = ref->getErrorCode();
+  if(m_error.code == ref->NotMaster)
+    m_masterNodeId= ref->masterNodeId;
   m_waiter.signal(NO_WAIT);  
 }
 
@@ -2142,8 +2160,8 @@ NdbDictionaryImpl::dropIndex(const char * indexName,
       m_ndb.internalizeTableName(indexName); // Index is also a table
     
     m_localHash.drop(internalIndexName);
-    
     m_globalHash->lock();
+    idx->m_table->m_status = NdbDictionary::Object::Invalid;
     m_globalHash->drop(idx->m_table);
     m_globalHash->unlock();   
     return dropIndex(indexName, tableName);
@@ -2177,8 +2195,8 @@ NdbDictionaryImpl::dropIndex(NdbIndexImpl & impl, const char * tableName)
     int ret = m_receiver.dropIndex(impl, *timpl);
     if(ret == 0){
       m_localHash.drop(internalIndexName);
-      
       m_globalHash->lock();
+      impl.m_table->m_status = NdbDictionary::Object::Invalid;
       m_globalHash->drop(impl.m_table);
       m_globalHash->unlock();
     }
@@ -2212,8 +2230,8 @@ NdbDictInterface::dropIndex(const NdbIndexImpl & impl,
 int
 NdbDictInterface::dropIndex(NdbApiSignal* signal, LinearSectionPtr ptr[3])
 {
-  const int noErrCodes = 1;
-  int errCodes[noErrCodes] = {DropIndxRef::Busy};
+  const int noErrCodes = 2;
+  int errCodes[noErrCodes] = {DropIndxRef::Busy, DropIndxRef::NotMaster};
   int r = dictSignal(signal,NULL,0,
 		     1/*Use masternode id*/,
 		     100,
@@ -2240,6 +2258,8 @@ NdbDictInterface::execDROP_INDX_REF(NdbApiSignal * signal,
 {
   const DropIndxRef* const ref = CAST_CONSTPTR(DropIndxRef, signal->getDataPtr());
   m_error.code = ref->getErrorCode();
+  if(m_error.code == ref->NotMaster)
+    m_masterNodeId= ref->masterNodeId;
   m_waiter.signal(NO_WAIT);  
 }
 

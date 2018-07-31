@@ -52,7 +52,7 @@ extern ulint*   srv_data_file_is_raw_partition;
 
 extern ibool	srv_auto_extend_last_data_file;
 extern ulint	srv_last_file_size_max;
-extern ulint	srv_auto_extend_increment;
+extern ulong	srv_auto_extend_increment;
 
 extern ibool	srv_created_new_raw;
 
@@ -111,11 +111,10 @@ extern ibool	srv_use_doublewrite_buf;
 extern ibool    srv_set_thread_priorities;
 extern int      srv_query_thread_priority;
 
-extern ulint	srv_max_purge_lag;
+extern ulong	srv_max_buf_pool_modified_pct;
+extern ulong	srv_max_purge_lag;
 extern ibool	srv_use_awe;
 extern ibool	srv_use_adaptive_hash_indexes;
-
-extern ulint	srv_max_purge_lag;
 /*-------------------------------------------*/
 
 extern ulint	srv_n_rows_inserted;
@@ -399,7 +398,11 @@ Outputs to a file the output of the InnoDB Monitor. */
 void
 srv_printf_innodb_monitor(
 /*======================*/
-	FILE*	file);	/* in: output stream */
+	FILE*	file,		/* in: output stream */
+	ulint*	trx_start,	/* out: file position of the start of
+				the list of active transactions */
+	ulint*	trx_end);	/* out: file position of the end of
+				the list of active transactions */
 
 
 /* Types for the threads existing in the system. Threads of types 4 - 9

@@ -518,7 +518,6 @@ longlong my_strntoll_8bit(CHARSET_INFO *cs __attribute__((unused)),
   register unsigned int cutlim;
   register ulonglong i;
   register const char *s, *e;
-  register unsigned char c;
   const char *save;
   int overflow;
 
@@ -581,8 +580,9 @@ longlong my_strntoll_8bit(CHARSET_INFO *cs __attribute__((unused)),
 
   overflow = 0;
   i = 0;
-  for (c = *s; s != e; c = *++s)
+  for ( ; s != e; s++)
   {
+    register unsigned char c= *s;
     if (c>='0' && c<='9')
       c -= '0';
     else if (c>='A' && c<='Z')
@@ -641,7 +641,6 @@ ulonglong my_strntoull_8bit(CHARSET_INFO *cs,
   register unsigned int cutlim;
   register ulonglong i;
   register const char *s, *e;
-  register unsigned char c;
   const char *save;
   int overflow;
 
@@ -704,8 +703,10 @@ ulonglong my_strntoull_8bit(CHARSET_INFO *cs,
 
   overflow = 0;
   i = 0;
-  for (c = *s; s != e; c = *++s)
+  for ( ; s != e; s++)
   {
+    register unsigned char c= *s;
+
     if (c>='0' && c<='9')
       c -= '0';
     else if (c>='A' && c<='Z')
@@ -773,31 +774,10 @@ double my_strntod_8bit(CHARSET_INFO *cs __attribute__((unused)),
 		       char *str, uint length,
 		       char **end, int *err)
 {
-  char end_char;
-  double result;
-
-  errno= 0;					/* Safety */
-
-  /*
-    The following define is to avoid warnings from valgrind as str[length]
-    may not be defined (which is not fatal in real life)
-  */
-
-#ifdef HAVE_purify
   if (length == INT_MAX32)
-#else
-  if (length == INT_MAX32 || str[length] == 0)
-#endif
-    result= my_strtod(str, end);
-  else
-  {
-    end_char= str[length];
-    str[length]= 0;
-    result= my_strtod(str, end);
-    str[length]= end_char;			/* Restore end char */
-  }
-  *err= errno;
-  return result;
+    length= 65535;                          /* Should be big enough */
+  *end= str + length;
+  return my_strtod(str, end, err);
 }
 
 
@@ -1113,11 +1093,11 @@ uint my_charpos_8bit(CHARSET_INFO *cs __attribute__((unused)),
 
 
 uint my_well_formed_len_8bit(CHARSET_INFO *cs __attribute__((unused)),
-			     const char *start,
-			     const char *end,
-			     uint nchars)
+                             const char *start, const char *end,
+                             uint nchars, int *error)
 {
   uint nbytes= (uint) (end-start);
+  *error= 0;
   return min(nbytes, nchars);
 }
 

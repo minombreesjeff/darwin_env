@@ -96,6 +96,7 @@ trx_create(
 	trx->check_unique_secondary = TRUE;
 
 	trx->flush_log_later = FALSE;
+	trx->must_flush_log_later = FALSE;
 
 	trx->dict_operation = FALSE;
 
@@ -256,6 +257,22 @@ trx_free(
 		putc('\n', stderr);
 	}
 
+	if (trx->n_mysql_tables_in_use != 0
+	    || trx->mysql_n_tables_locked != 0) {
+
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+"  InnoDB: Error: MySQL is freeing a thd\n"
+"InnoDB: though trx->n_mysql_tables_in_use is %lu\n"
+"InnoDB: and trx->mysql_n_tables_locked is %lu.\n",
+			(ulong)trx->n_mysql_tables_in_use,
+			(ulong)trx->mysql_n_tables_locked);
+
+		trx_print(stderr, trx);		
+
+		ut_print_buf(stderr, (byte*)trx, sizeof(trx_t));
+	}
+
 	ut_a(trx->magic_n == TRX_MAGIC_N);
 
 	trx->magic_n = 11112222;
@@ -266,9 +283,6 @@ trx_free(
 
 	ut_a(trx->insert_undo == NULL); 
 	ut_a(trx->update_undo == NULL); 
-
-	ut_a(trx->n_mysql_tables_in_use == 0);
-	ut_a(trx->mysql_n_tables_locked == 0);
 	
 	if (trx->undo_no_arr) {
 		trx_undo_arr_free(trx->undo_no_arr);
@@ -641,6 +655,8 @@ trx_commit_off_kernel(
 	ut_ad(mutex_own(&kernel_mutex));
 #endif /* UNIV_SYNC_DEBUG */
 
+	trx->must_flush_log_later = FALSE;
+
 	rseg = trx->rseg;
 	
 	if (trx->insert_undo != NULL || trx->update_undo != NULL) {
@@ -808,6 +824,7 @@ trx_commit_off_kernel(
 
                 if (trx->flush_log_later) {
                         /* Do nothing yet */
+			trx->must_flush_log_later = TRUE;
                 } else if (srv_flush_log_at_trx_commit == 0) {
                         /* Do nothing */
                 } else if (srv_flush_log_at_trx_commit == 1) {
@@ -1526,7 +1543,9 @@ trx_commit_complete_for_mysql(
 	
 	trx->op_info = "flushing log";
 
-        if (srv_flush_log_at_trx_commit == 0) {
+	if (!trx->must_flush_log_later) {
+                /* Do nothing */
+        } else if (srv_flush_log_at_trx_commit == 0) {
                 /* Do nothing */
         } else if (srv_flush_log_at_trx_commit == 1) {
                 if (srv_unix_file_flush_method == SRV_UNIX_NOSYNC) {
@@ -1547,6 +1566,8 @@ trx_commit_complete_for_mysql(
         } else {
                 ut_error;
         }
+	
+	trx->must_flush_log_later = FALSE;
 
 	trx->op_info = "";
 

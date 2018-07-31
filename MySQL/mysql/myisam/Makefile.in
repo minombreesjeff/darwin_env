@@ -233,6 +233,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DMAP_TO_USE_RAID
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -258,7 +260,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -331,6 +332,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -436,7 +438,9 @@ vio_libs = @vio_libs@
 zlib_dir = @zlib_dir@
 EXTRA_DIST = mi_test_all.sh mi_test_all.res
 pkgdata_DATA = mi_test_all mi_test_all.res
-INCLUDES = @MT_INCLUDES@ -I$(top_srcdir)/include
+INCLUDES = @MT_INCLUDES@ \
+			-I$(top_builddir)/include -I$(top_srcdir)/include
+
 LDADD = @CLIENT_EXTRA_LDFLAGS@ libmyisam.a \
 			$(top_builddir)/mysys/libmysys.a \
 			$(top_builddir)/dbug/libdbug.a \
@@ -925,7 +929,7 @@ prolint:;	plparse -b -u -hF1 "-width(0,0)" "-format=%f:%l:\s%t:%n\s%m" \
 	  -e 's!@''FIND_PROC''@!@FIND_PROC@!' \
 	  -e 's!@''MYSQLD_DEFAULT_SWITCHES''@!@MYSQLD_DEFAULT_SWITCHES@!' \
 	  -e 's!@''MYSQL_UNIX_ADDR''@!@MYSQL_UNIX_ADDR@!' \
-	  -e 's!@''IS_LINUX''@!@IS_LINUX@!' \
+	  -e 's!@''TARGET_LINUX''@!@TARGET_LINUX@!' \
 	  -e "s!@""CONF_COMMAND""@!@CONF_COMMAND@!" \
 	  -e 's!@''MYSQLD_USER''@!@MYSQLD_USER@!' \
 	  -e 's!@''sysconfdir''@!@sysconfdir@!' \

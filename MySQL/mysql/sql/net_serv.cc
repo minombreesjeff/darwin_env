@@ -132,7 +132,7 @@ my_bool my_net_init(NET *net, Vio* vio)
   if (vio != 0)					/* If real connection */
   {
     net->fd  = vio_fd(vio);			/* For perl DBI/DBD */
-#if defined(MYSQL_SERVER) && !defined(___WIN__) && !defined(__EMX__) && !defined(OS2)
+#if defined(MYSQL_SERVER) && !defined(__WIN__) && !defined(__EMX__) && !defined(OS2)
     if (!(test_flags & TEST_BLOCKING))
     {
       my_bool old_mode;
@@ -251,7 +251,7 @@ my_bool
 my_net_write(NET *net,const char *packet,ulong len)
 {
   uchar buff[NET_HEADER_SIZE];
-  if (unlikely(!net->vio))                      /* nowhere to write */
+  if (unlikely(!net->vio)) /* nowhere to write */
     return 0;
   /*
     Big packets are handled by splitting them in packets of MAX_PACKET_LENGTH
@@ -491,7 +491,7 @@ net_real_write(NET *net,const char *packet,ulong len)
     thr_alarm(&alarmed,(uint) net->write_timeout,&alarm_buff);
 #else
   alarmed=0;
-  vio_timeout(net->vio, net->write_timeout);
+  vio_timeout(net->vio, 1, net->write_timeout);
 #endif /* NO_ALARM */
 
   pos=(char*) packet; end=pos+len;
@@ -684,7 +684,7 @@ my_real_read(NET *net, ulong *complen)
   if (net_blocking)
     thr_alarm(&alarmed,net->read_timeout,&alarm_buff);
 #else
-  vio_timeout(net->vio, net->read_timeout);
+  vio_timeout(net->vio, 0, net->read_timeout);
 #endif /* NO_ALARM */
 
     pos = net->buff + net->where_b;		/* net->packet -4 */

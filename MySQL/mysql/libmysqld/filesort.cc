@@ -452,8 +452,11 @@ static ha_rows find_all_keys(SORTPARAM *param, SQL_SELECT *select,
     if (*killed)
     {
       DBUG_PRINT("info",("Sort killed by user"));
-      (void) file->extra(HA_EXTRA_NO_CACHE);
-      file->ha_rnd_end();
+      if (!indexfile && !quick_select)
+      {
+        (void) file->extra(HA_EXTRA_NO_CACHE);
+        file->ha_rnd_end();
+      }
       DBUG_RETURN(HA_POS_ERROR);		/* purecov: inspected */
     }
     if (error == 0)
@@ -656,12 +659,18 @@ static void make_sortkey(register SORTPARAM *param,
 	  to[3]= (uchar) (value >> 32);
 	  to[2]= (uchar) (value >> 40);
 	  to[1]= (uchar) (value >> 48);
-	  to[0]= (uchar) (value >> 56) ^ 128;	// Fix sign
+          if (item->unsigned_flag)                    /* Fix sign */
+            to[0]= (uchar) (value >> 56);
+          else
+            to[0]= (uchar) (value >> 56) ^ 128;	/* Reverse signbit */
 #else
 	  to[3]= (uchar) value;
 	  to[2]= (uchar) (value >> 8);
 	  to[1]= (uchar) (value >> 16);
-	  to[0]= (uchar) (value >> 24) ^ 128;	// Fix sign
+          if (item->unsigned_flag)                    /* Fix sign */
+            to[0]= (uchar) (value >> 24);
+          else
+            to[0]= (uchar) (value >> 24) ^ 128;	/* Reverse signbit */
 #endif
 	  break;
 	}
@@ -1127,7 +1136,7 @@ sortlength(SORT_FIELD *sortorder, uint s_length, bool *multi_byte_charset)
       else
       {
 	sortorder->length=sortorder->field->pack_length();
-	if (use_strnxfrm((cs=sortorder->field->charset())))
+	if (use_strnxfrm((cs=sortorder->field->sort_charset())))
 	{
 	  sortorder->need_strxnfrm= 1;
 	  *multi_byte_charset= 1;

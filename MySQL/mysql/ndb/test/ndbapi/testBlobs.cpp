@@ -365,7 +365,7 @@ calcBval(const Bcol& b, Bval& v, bool keepsize)
 {
   if (b.m_nullable && urandom(10) == 0) {
     v.m_len = 0;
-    delete v.m_val;
+    delete [] v.m_val;
     v.m_val = 0;
     v.m_buf = new char [1];
   } else {
@@ -375,7 +375,7 @@ calcBval(const Bcol& b, Bval& v, bool keepsize)
       v.m_len = urandom(b.m_inline);
     else
       v.m_len = urandom(b.m_inline + g_opt.m_parts * b.m_partsize + 1);
-    delete v.m_val;
+    delete [] v.m_val;
     v.m_val = new char [v.m_len + 1];
     for (unsigned i = 0; i < v.m_len; i++)
       v.m_val[i] = 'a' + urandom(25);
@@ -1449,6 +1449,7 @@ testperf()
   if (! testcase('p'))
     return 0;
   DBG("=== perf test ===");
+  g_bh1 = g_bh2 = 0;
   g_ndb = new Ndb(g_ncc, "TEST_DB");
   CHK(g_ndb->init() == 0);
   CHK(g_ndb->waitUntilReady() == 0);
@@ -1547,11 +1548,11 @@ testperf()
     }
     if (n != 0) {
       CHK(g_con->execute(Commit) == 0);
+      g_ndb->closeTransaction(g_con); g_con = 0;
       n = 0;
     }
     g_bh1 = 0;
     g_opr = 0;
-    g_con = 0;
   }
   // pk read char (one trans)
   {
@@ -1575,7 +1576,7 @@ testperf()
     t1.off(g_opt.m_rowsperf);
     DBG(t1.time());
     g_opr = 0;
-    g_con = 0;
+    g_ndb->closeTransaction(g_con); g_con = 0;
   }
   // pk read text (one trans)
   {
@@ -1600,7 +1601,7 @@ testperf()
     CHK(g_con->execute(Commit) == 0);
     t2.off(g_opt.m_rowsperf);
     DBG(t2.time());
-    g_opr = 0;
+    g_ndb->closeTransaction(g_con); g_opr = 0;
     g_con = 0;
   }
   // pk read overhead
@@ -1634,7 +1635,7 @@ testperf()
     CHK(n == g_opt.m_rowsperf);
     t1.off(g_opt.m_rowsperf);
     DBG(t1.time());
-    g_ops = 0;
+    g_ndb->closeTransaction(g_con); g_ops = 0;
     g_con = 0;
   }
   // scan read text
@@ -1668,7 +1669,7 @@ testperf()
     DBG(t2.time());
     g_bh1 = 0;
     g_ops = 0;
-    g_con = 0;
+    g_ndb->closeTransaction(g_con); g_con = 0;
   }
   // scan read overhead
   DBG("scan read overhead: " << t2.over(t1));

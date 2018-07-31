@@ -181,12 +181,14 @@ typedef struct st_heap_info
   LIST open_list;
 } HP_INFO;
 
+
 typedef struct st_heap_create_info
 {
-  uint auto_key;
+  uint auto_key;                        /* keynr [1 - maxkey] for auto key */
   uint auto_key_type;
   ulong max_table_size;
   ulonglong auto_increment;
+  my_bool with_auto_increment;
 } HP_CREATE_INFO;
 
 	/* Prototypes for heap-functions */

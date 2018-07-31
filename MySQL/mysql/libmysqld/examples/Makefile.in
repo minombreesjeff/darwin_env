@@ -14,6 +14,22 @@
 
 @SET_MAKE@
 
+# Copyright (C) 2000 MySQL AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
 SOURCES = $(mysql_SOURCES) $(mysql_client_test_embedded_SOURCES) $(mysqltest_embedded_SOURCES)
 
 srcdir = @srcdir@
@@ -147,6 +163,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = -DEMBEDDED_LIBRARY
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -172,7 +190,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -245,6 +262,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -350,7 +368,8 @@ vio_libs = @vio_libs@
 zlib_dir = @zlib_dir@
 client_sources = $(mysqltest_embedded_SOURCES) $(mysql_SOURCES)
 tests_sources = $(mysql_client_test_embedded_SOURCES)
-INCLUDES = @MT_INCLUDES@ -I$(top_srcdir)/include -I$(srcdir) \
+INCLUDES = @MT_INCLUDES@ \
+		-I$(top_builddir)/include -I$(top_srcdir)/include -I$(srcdir) \
 		-I$(top_srcdir) -I$(top_srcdir)/client -I$(top_srcdir)/regex \
 		$(openssl_includes)
 

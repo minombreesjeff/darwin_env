@@ -43,6 +43,11 @@
 #define HAVE_ERRNO_AS_DEFINE
 #endif /* __CYGWIN__ */
 
+/* to make command line shorter we'll define USE_PRAGMA_INTERFACE here */
+#ifdef USE_PRAGMA_IMPLEMENTATION
+#define USE_PRAGMA_INTERFACE
+#endif
+
 #if defined(i386) && !defined(__i386__)
 #define __i386__
 #endif
@@ -97,7 +102,7 @@
 
 
 /* Fix problem with S_ISLNK() on Linux */
-#if defined(HAVE_LINUXTHREADS)
+#if defined(TARGET_OS_LINUX)
 #undef  _GNU_SOURCE
 #define _GNU_SOURCE 1
 #endif
@@ -107,6 +112,7 @@
 #undef THREAD
 #undef HAVE_mit_thread
 #undef HAVE_LINUXTHREADS
+#undef HAVE_NPTL
 #undef HAVE_UNIXWARE7_THREADS
 #endif
 
@@ -213,18 +219,6 @@ C_MODE_START int __cxa_pure_virtual() {\
 #define BAD_MEMCPY
 #endif
 
-/* In Linux-alpha we have atomic.h if we are using gcc */
-#if defined(HAVE_LINUXTHREADS) && defined(__GNUC__) && defined(__alpha__) && (__GNUC__ > 2 || ( __GNUC__ == 2 &&  __GNUC_MINOR__ >= 95)) && !defined(HAVE_ATOMIC_ADD)
-#define HAVE_ATOMIC_ADD
-#define HAVE_ATOMIC_SUB
-#endif
-
-/* In Linux-ia64 including atomic.h will give us an error */
-#if (defined(HAVE_LINUXTHREADS) && defined(__GNUC__) && (defined(__ia64__)||defined(__powerpc64__))) || !defined(THREAD)
-#undef HAVE_ATOMIC_ADD
-#undef HAVE_ATOMIC_SUB
-#endif
-
 #if defined(_lint) && !defined(lint)
 #define lint
 #endif
@@ -270,13 +264,7 @@ C_MODE_START int __cxa_pure_virtual() {\
 # endif
 #endif /* TIME_WITH_SYS_TIME */
 #ifdef HAVE_UNISTD_H
-#if defined(HAVE_OPENSSL) && !defined(__FreeBSD__) && !defined(NeXT) && !defined(__OpenBSD__)
-#define crypt unistd_crypt
-#endif
 #include <unistd.h>
-#ifdef HAVE_OPENSSL
-#undef crypt
-#endif
 #endif
 #if defined(__cplusplus) && defined(NO_CPLUSPLUS_ALLOCA)
 #undef HAVE_ALLOCA
@@ -286,16 +274,15 @@ C_MODE_START int __cxa_pure_virtual() {\
 #include <alloca.h>
 #endif
 #ifdef HAVE_ATOMIC_ADD
-#define __SMP__
-#ifdef HAVE_LINUX_CONFIG_H
-#include <linux/config.h>	/* May define CONFIG_SMP */
-#endif
-#ifndef CONFIG_SMP
-#define CONFIG_SMP
-#endif
+#define new my_arg_new
+#define need_to_restore_new 1
 C_MODE_START
 #include <asm/atomic.h>
 C_MODE_END
+#ifdef need_to_restore_new /* probably safer than #ifdef new */
+#undef new
+#undef need_to_restore_new
+#endif
 #endif
 #include <errno.h>				/* Recommended by debian */
 /* We need the following to go around a problem with openssl on solaris */
@@ -331,6 +318,11 @@ C_MODE_END
 #undef  HAVE_FINITE
 #undef  LONGLONG_MIN            /* These get wrongly defined in QNX 6.2 */
 #undef  LONGLONG_MAX            /* standard system library 'limits.h' */
+#ifdef __cplusplus
+#define HAVE_RINT               /* rint() and isnan() functions are not */
+#define rint(a) std::rint(a)    /* visible in C++ scope due to an error */
+#define isnan(a) std::isnan(a)  /* in the usr/include/math.h on QNX     */
+#endif
 #endif
 
 /* We can not live without the following defines */
@@ -383,15 +375,14 @@ int	__void__;
 #endif
 
 /* Define some useful general macros */
-#if defined(__cplusplus) && defined(__GNUC__)
-#define max(a, b)	((a) >? (b))
-#define min(a, b)	((a) <? (b))
-#elif !defined(max)
+#if !defined(max)
 #define max(a, b)	((a) > (b) ? (a) : (b))
 #define min(a, b)	((a) < (b) ? (a) : (b))
 #endif
 
 #if defined(__EMX__) || !defined(HAVE_UINT)
+#undef HAVE_UINT
+#define HAVE_UINT
 typedef unsigned int uint;
 typedef unsigned short ushort;
 #endif
@@ -755,7 +746,7 @@ typedef unsigned long	uint32; /* Short for unsigned integer >= 32 bits */
 error "Neither int or long is of 4 bytes width"
 #endif
 
-#if !defined(HAVE_ULONG) && !defined(HAVE_LINUXTHREADS) && !defined(__USE_MISC)
+#if !defined(HAVE_ULONG) && !defined(TARGET_OS_LINUX) && !defined(__USE_MISC)
 typedef unsigned long	ulong;		  /* Short for unsigned long */
 #endif
 #ifndef longlong_defined
@@ -806,7 +797,7 @@ typedef off_t os_off_t;
 #define socket_errno	WSAGetLastError()
 #define SOCKET_EINTR	WSAEINTR
 #define SOCKET_EAGAIN	WSAEINPROGRESS
-#define SOCKET_EWOULDBLOCK WSAEINPROGRESS
+#define SOCKET_EWOULDBLOCK WSAEWOULDBLOCK
 #define SOCKET_ENFILE	ENFILE
 #define SOCKET_EMFILE	EMFILE
 #elif defined(OS2)

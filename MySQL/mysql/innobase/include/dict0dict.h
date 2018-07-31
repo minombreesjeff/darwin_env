@@ -26,6 +26,13 @@ Created 1/8/1996 Heikki Tuuri
 #include "ut0byte.h"
 #include "trx0types.h"
 
+/**********************************************************************
+Makes all characters in a NUL-terminated UTF-8 string lower case. */
+
+void
+dict_casedn_str(
+/*============*/
+	char*	a);	/* in/out: string to put in lower case */
 /************************************************************************
 Get the database name length in a table name. */
 
@@ -189,7 +196,8 @@ ulint
 dict_foreign_add_to_cache(
 /*======================*/
 					/* out: DB_SUCCESS or error code */
-	dict_foreign_t*	foreign);	/* in, own: foreign key constraint */
+	dict_foreign_t*	foreign,	/* in, own: foreign key constraint */
+	ibool		check_types);	/* in: TRUE=check type compatibility */
 /*************************************************************************
 Checks if a table is referenced by foreign keys. */
 

@@ -1,4 +1,5 @@
 -- source include/have_ndb.inc
+-- source include/not_embedded.inc
 
 --disable_warnings
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8,t9,t10;
@@ -451,6 +452,28 @@ drop table t2;
 drop database test2;
 show databases;
 use test;
+
+#####################################################
+# Test that it's not possible to create tables
+# with same name as NDB internal tables
+# This will also test that it's not possible to create
+# a table with tha same name as a table that can't be
+# discovered( for example a table created via NDBAPI)
+
+# Test disabled since it doesn't work on case insensitive systems
+#--error 1050
+#CREATE TABLE sys.SYSTAB_0 (a int);
+#--error 1105
+#select * from sys.SYSTAB_0;
+
+#CREATE TABLE IF NOT EXISTS sys.SYSTAB_0 (a int);
+#show warnings;
+#--error 1105
+#select * from sys.SYSTAB_0;
+
+#--error 1051
+#drop table sys.SYSTAB_0;
+#drop table IF EXISTS sys.SYSTAB_0;
 
 ######################################################
 # Note! This should always be the last step in this 

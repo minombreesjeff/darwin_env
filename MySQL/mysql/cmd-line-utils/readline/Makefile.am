@@ -3,7 +3,8 @@
 # Copyright (C) 1994,1996,1997 Free Software Foundation, Inc.
 
 # Last  -I$(top_srcdir) needed for RedHat!
-INCLUDES =		-I$(top_srcdir)/include -I$(top_srcdir)
+INCLUDES =		-I$(top_builddir)/include -I$(top_srcdir)/include \
+			-I$(top_srcdir)
 
 noinst_LIBRARIES =	libreadline.a
 
@@ -22,7 +23,7 @@ pkginclude_HEADERS =	readline.h chardefs.h keymaps.h \
 			history.h tilde.h rlmbutil.h rltypedefs.h rlprivate.h \
 			rlshell.h xmalloc.h
 
-noinst_HEADERS =	rldefs.h histlib.h rlwinsize.h \
+noinst_HEADERS =	config_readline.h rldefs.h histlib.h rlwinsize.h \
 			posixstat.h posixdir.h posixjmp.h \
 			tilde.h rlconf.h rltty.h ansi_stdlib.h \
 			tcap.h rlstdc.h

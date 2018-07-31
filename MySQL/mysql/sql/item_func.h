@@ -17,7 +17,7 @@
 
 /* Function items used by mysql */
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_INTERFACE
 #pragma interface			/* gcc class implementation */
 #endif
 
@@ -51,7 +51,7 @@ public:
 		  SP_CONTAINS_FUNC,SP_OVERLAPS_FUNC,
 		  SP_STARTPOINT,SP_ENDPOINT,SP_EXTERIORRING,
 		  SP_POINTN,SP_GEOMETRYN,SP_INTERIORRINGN,
-		  NOT_FUNC, NOT_ALL_FUNC, NOW_FUNC};
+		  NOT_FUNC, NOT_ALL_FUNC, NOW_FUNC, VAR_VALUE_FUNC};
   enum optimize_type { OPTIMIZE_NONE,OPTIMIZE_KEY,OPTIMIZE_OP, OPTIMIZE_NULL };
   enum Type type() const { return FUNC_ITEM; }
   virtual enum Functype functype() const   { return UNKNOWN_FUNC; }
@@ -226,12 +226,8 @@ public:
     null_value= args[0]->null_value;
     return tmp;
   }
-  longlong val_int()
-  {
-    longlong tmp= args[0]->val_int();
-    null_value= args[0]->null_value; 
-    return tmp;
-  }
+  longlong val_int();
+  longlong val_int_from_str(int *error);
   void fix_length_and_dec()
   { max_length=args[0]->max_length; unsigned_flag=0; }
   void print(String *str);
@@ -245,6 +241,7 @@ public:
   const char *func_name() const { return "cast_as_unsigned"; }
   void fix_length_and_dec()
   { max_length=args[0]->max_length; unsigned_flag=1; }
+  longlong val_int();
   void print(String *str);
 };
 
@@ -616,7 +613,8 @@ public:
   Item_func_coercibility(Item *a) :Item_int_func(a) {}
   longlong val_int();
   const char *func_name() const { return "coercibility"; }
-  void fix_length_and_dec() { max_length=10; }
+  void fix_length_and_dec() { max_length=10; maybe_null= 0; }
+  table_map not_null_tables() const { return 0; }
 };
 
 class Item_func_locate :public Item_int_func
@@ -785,6 +783,7 @@ public:
     fixed= 1;
     return res;
   }
+  void cleanup();
   Item_result result_type () const { return udf.result_type(); }
   table_map not_null_tables() const { return 0; }
 };
@@ -828,8 +827,11 @@ public:
   double val()
   {
     int err;
-    String *res;  res=val_str(&str_value);
-    return res ? my_strntod(res->charset(),(char*) res->ptr(),res->length(),0,&err) : 0.0;
+    String *res;
+    char *end_not_used;
+    res=val_str(&str_value);
+    return res ? my_strntod(res->charset(), (char*) res->ptr(), res->length(),
+                            &end_not_used, &err) : 0.0;
   }
   longlong val_int()
   {
@@ -977,6 +979,7 @@ public:
     select @t1:=1,@t1,@t:="hello",@t from foo where (@t1:= t2.b)
   */
   enum_field_types field_type() const  { return MYSQL_TYPE_STRING; }
+  enum Functype functype() const   { return VAR_VALUE_FUNC; }
   const char *func_name() const { return "get_user_var"; }
   bool const_item() const;
   table_map used_tables() const

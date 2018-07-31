@@ -329,23 +329,6 @@ prepare stmt1 from @str2;
 execute stmt1 using @ivar;
 
 #
-# Check correct binlogging of UCS2 user variables (BUG#3875)
-#
-SET TIMESTAMP=10000;
-create table t2 (c char(30)) charset=ucs2;
-set @v=convert('abc' using ucs2);
-reset master;
-insert into t2 values (@v);
-show binlog events from 79;
-# more important than SHOW BINLOG EVENTS, mysqlbinlog (where we
-# absolutely need variables names to be quoted and strings to be
-# escaped).
---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form $MYSQL_TEST_DIR/var/log/master-bin.000001 
-drop table t2;
-
-
-#
 # Check that ucs2 works with ENUM and SET type
 #
 set names latin1;
@@ -391,6 +374,16 @@ SET NAMES latin1;
 SET collation_connection='ucs2_bin';
 -- source include/ctype_filesort.inc
 
+#
+# Bug#10344 Some string functions fail for UCS2
+#
+select hex(substr(_ucs2 0x00e400e50068,1));
+select hex(substr(_ucs2 0x00e400e50068,2));
+select hex(substr(_ucs2 0x00e400e50068,3));
+select hex(substr(_ucs2 0x00e400e50068,-1));
+select hex(substr(_ucs2 0x00e400e50068,-2));
+select hex(substr(_ucs2 0x00e400e50068,-3));
+
 SET NAMES latin1;
 #
 # Bug#8235
@@ -411,3 +404,15 @@ CREATE TABLE t1 (Field1 int(10) unsigned default '0');
 INSERT INTO t1 VALUES ('-1');
 DROP TABLE t1;
 SET NAMES latin1;
+
+#
+# Bug#9557 MyISAM utf8 table crash
+#
+CREATE TABLE t1 (
+  a varchar(255) NOT NULL default '',
+  KEY a (a)
+) ENGINE=MyISAM DEFAULT CHARSET=ucs2 COLLATE ucs2_general_ci;
+insert into t1 values (0x803d);
+insert into t1 values (0x005b);
+select hex(a) from t1;
+drop table t1;

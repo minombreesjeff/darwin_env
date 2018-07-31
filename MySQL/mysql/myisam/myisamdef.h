@@ -582,7 +582,7 @@ extern byte *mi_alloc_rec_buff(MI_INFO *,ulong, byte**);
 extern ulong _mi_rec_unpack(MI_INFO *info,byte *to,byte *from,
 			    ulong reclength);
 extern my_bool _mi_rec_check(MI_INFO *info,const char *record, byte *packpos,
-                             ulong reclength);
+                             ulong packed_length, my_bool with_checkum);
 extern int _mi_write_part_record(MI_INFO *info,my_off_t filepos,ulong length,
 				 my_off_t next_filepos,byte **record,
 				 ulong *reclength,int *flag);
@@ -705,6 +705,7 @@ void mi_copy_status(void* to,void *from);
 my_bool mi_check_status(void* param);
 void mi_disable_non_unique_index(MI_INFO *info, ha_rows rows);
 
+extern MI_INFO *test_if_reopen(char *filename);
 my_bool check_table_is_closed(const char *name, const char *where);
 int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, File file_to_dup);
 int mi_open_keyfile(MYISAM_SHARE *share);

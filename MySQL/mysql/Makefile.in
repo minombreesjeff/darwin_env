@@ -137,6 +137,8 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
+DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
+DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
@@ -162,7 +164,6 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
-IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
@@ -235,6 +236,7 @@ STATIC_NSS_FLAGS = @STATIC_NSS_FLAGS@
 STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
+TARGET_LINUX = @TARGET_LINUX@
 TERMCAP_LIB = @TERMCAP_LIB@
 THREAD_LOBJECTS = @THREAD_LOBJECTS@
 THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
@@ -345,7 +347,7 @@ EXTRA_DIST = INSTALL-SOURCE README COPYING EXCEPTIONS-CLIENT
 SUBDIRS = . include @docs_dirs@ @zlib_dir@ \
 			@readline_topdir@ sql-common \
 			@thread_dirs@ pstack \
-			@sql_union_dirs@ scripts man tests \
+			@sql_union_dirs@ scripts @man_dirs@ tests \
 			netware @libmysqld_dirs@ \
 			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
 
@@ -845,7 +847,7 @@ tags:
 # Test installation
 
 test:
-	cd mysql-test; ./mysql-test-run && ./mysql-test-run --ps-protocol
+	cd mysql-test; perl mysql-test-run.pl && perl mysql-test-run.pl --ps-protocol
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

@@ -104,6 +104,12 @@ MYSQL_ERROR *push_warning(THD *thd, MYSQL_ERROR::enum_warning_level level,
 {
   MYSQL_ERROR *err= 0;
   DBUG_ENTER("push_warning");
+
+  if (level == MYSQL_ERROR::WARN_LEVEL_NOTE && !(thd->options & OPTION_SQL_NOTES))
+    return(0);
+
+  query_cache_abort(&thd->net);
+
   if (thd->query_id != thd->warn_id)
     mysql_reset_errors(thd);
 
@@ -199,6 +205,8 @@ my_bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
       offset--;
       continue;
     }
+    if (limit-- == 0)
+      break;
     protocol->prepare_for_resend();
     protocol->store(warning_level_names[err->level],
 		    warning_level_length[err->level], system_charset_info);
@@ -206,8 +214,6 @@ my_bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
     protocol->store(err->msg, strlen(err->msg), system_charset_info);
     if (protocol->write())
       DBUG_RETURN(1);
-    if (!--limit)
-      break;
   }
   send_eof(thd);  
   DBUG_RETURN(0);

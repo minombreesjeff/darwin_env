@@ -22,7 +22,7 @@
 **
 *****************************************************************************/
 
-#ifdef __GNUC__
+#ifdef USE_PRAGMA_IMPLEMENTATION
 #pragma implementation				// gcc: Class implementation
 #endif
 
@@ -176,6 +176,7 @@ THD::THD()
   lock=locked_tables=0;
   used_tables=0;
   cuted_fields= sent_row_count= 0L;
+  limit_found_rows= 0;
   statement_id_counter= 0UL;
   // Must be reset to handle error with THD's created for init of mysqld
   lex->current_select= 0;
@@ -666,8 +667,10 @@ int THD::send_explain_fields(select_result *result)
   CHARSET_INFO *cs= system_charset_info;
   field_list.push_back(new Item_return_int("id",3, MYSQL_TYPE_LONGLONG));
   field_list.push_back(new Item_empty_string("select_type", 19, cs));
-  field_list.push_back(new Item_empty_string("table", NAME_LEN, cs));
-  field_list.push_back(new Item_empty_string("type", 10, cs));
+  field_list.push_back(item= new Item_empty_string("table", NAME_LEN, cs));
+  item->maybe_null= 1;
+  field_list.push_back(item= new Item_empty_string("type", 10, cs));
+  item->maybe_null= 1;
   field_list.push_back(item=new Item_empty_string("possible_keys",
 						  NAME_LEN*MAX_KEY, cs));
   item->maybe_null=1;
@@ -679,7 +682,9 @@ int THD::send_explain_fields(select_result *result)
   field_list.push_back(item=new Item_empty_string("ref",
 						  NAME_LEN*MAX_REF_PARTS, cs));
   item->maybe_null=1;
-  field_list.push_back(new Item_return_int("rows", 10, MYSQL_TYPE_LONGLONG));
+  field_list.push_back(item= new Item_return_int("rows", 10,
+                                                 MYSQL_TYPE_LONGLONG));
+  item->maybe_null= 1;
   field_list.push_back(new Item_empty_string("Extra", 255, cs));
   return (result->send_fields(field_list,1));
 }
@@ -707,6 +712,8 @@ struct Item_change_record: public ilink
   Item *old_value;
   /* Placement new was hidden by `new' in ilink (TODO: check): */
   static void *operator new(size_t size, void *mem) { return mem; }
+  static void operator delete(void *ptr, size_t size) {}
+  static void operator delete(void *ptr, void *mem) { /* never called */ }
 };
 
 

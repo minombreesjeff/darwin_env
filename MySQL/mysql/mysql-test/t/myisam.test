@@ -524,3 +524,54 @@ explain select count(*) from t1 where a is null;
 select count(*) from t1 where a is null;
 drop table t1;
 
+#
+# Bug #8306: TRUNCATE leads to index corruption 
+#
+create table t1 (c1 int, index(c1));
+create table t2 (c1 int, index(c1)) engine=merge union=(t1);
+insert into t1 values (1);
+# Close all tables.
+flush tables;
+# Open t2 and (implicitly) t1.
+select * from t2;
+# Truncate after flush works (unless another threads reopens t2 in between).
+flush tables;
+truncate table t1;
+insert into t1 values (1);
+# Close all tables.
+flush tables;
+# Open t2 and (implicitly) t1.
+select * from t2;
+# Truncate t1, wich was not recognized as open without the bugfix.
+# Now, it should fail with a table-in-use error message.
+--error 1105
+truncate table t1;
+# The insert used to fail on the crashed table.
+insert into t1 values (1);
+drop table t1,t2;
+
+#
+# bug9188 - Corruption Can't open file: 'table.MYI' (errno: 145)
+#
+create table t1 (c1 int, c2 varchar(4) not null default '',
+                 key(c2(3))) default charset=utf8;
+insert into t1 values (1,'A'), (2, 'B'), (3, 'A');
+update t1 set c2='A  B' where c1=2;
+check table t1;
+drop table t1;
+
+
+# BUG#9622 - ANALYZE TABLE and ALTER TABLE .. ENABLE INDEX produce
+# different statistics on the same table with NULL values.
+create table t1 (a int, key(a));
+
+insert into t1 values (1),(2),(3),(4),(NULL),(NULL),(NULL),(NULL);
+analyze table t1;
+show keys from t1;
+
+alter table t1 disable keys;
+alter table t1 enable keys;
+show keys from t1;
+
+drop table t1;
+

@@ -1,6 +1,33 @@
 drop table if exists t1, t2;
 SET SQL_WARNINGS=1;
 create table t1 (a int);
+create table t1 (a int);
+ERROR 42S01: Table 't1' already exists
+show count(*) errors;
+@@session.error_count
+1
+show errors;
+Level	Code	Message
+Error	1050	Table 't1' already exists
+show warnings;
+Level	Code	Message
+Error	1050	Table 't1' already exists
+create table t2(a int) default charset qwerty;
+ERROR 42000: Unknown character set: 'qwerty'
+show count(*) errors;
+@@session.error_count
+1
+show errors;
+Level	Code	Message
+Error	1115	Unknown character set: 'qwerty'
+create table t (i);
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ')' at line 1
+show count(*) errors;
+@@session.error_count
+1
+show errors;
+Level	Code	Message
+Error	1064	You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ')' at line 1
 insert into t1 values (1);
 insert into t1 values ("hej");
 Warnings:
@@ -115,6 +142,25 @@ Warning	1265	Data truncated for column 'b' at row 10
 select @@warning_count;
 @@warning_count
 50
+set max_error_count=0;
+show variables like 'max_error_count';
+Variable_name	Value
+max_error_count	0
+update t1 set b='hi';
+Warnings:
+select @@warning_count;
+@@warning_count
+50
+show warnings;
+Level	Code	Message
+set max_error_count=65535;
+show variables like 'max_error_count';
+Variable_name	Value
+max_error_count	65535
+set max_error_count=10;
+show variables like 'max_error_count';
+Variable_name	Value
+max_error_count	10
 drop table t1;
 create table t1 (id int) engine=isam;
 Warnings:
@@ -133,3 +179,56 @@ drop table t1;
 set table_type=MYISAM;
 Warnings:
 Warning	1287	'table_type' is deprecated; use 'storage_engine' instead
+create table t1 (a int);
+insert into t1 (a) values (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+update t1 set a='abc';
+Warnings:
+Warning	1265	Data truncated for column 'a' at row 1
+Warning	1265	Data truncated for column 'a' at row 2
+Warning	1265	Data truncated for column 'a' at row 3
+Warning	1265	Data truncated for column 'a' at row 4
+Warning	1265	Data truncated for column 'a' at row 5
+Warning	1265	Data truncated for column 'a' at row 6
+Warning	1265	Data truncated for column 'a' at row 7
+Warning	1265	Data truncated for column 'a' at row 8
+Warning	1265	Data truncated for column 'a' at row 9
+Warning	1265	Data truncated for column 'a' at row 10
+show warnings limit 2, 1;
+Level	Code	Message
+Warning	1265	Data truncated for column 'a' at row 3
+show warnings limit 0, 10;
+Level	Code	Message
+Warning	1265	Data truncated for column 'a' at row 1
+Warning	1265	Data truncated for column 'a' at row 2
+Warning	1265	Data truncated for column 'a' at row 3
+Warning	1265	Data truncated for column 'a' at row 4
+Warning	1265	Data truncated for column 'a' at row 5
+Warning	1265	Data truncated for column 'a' at row 6
+Warning	1265	Data truncated for column 'a' at row 7
+Warning	1265	Data truncated for column 'a' at row 8
+Warning	1265	Data truncated for column 'a' at row 9
+Warning	1265	Data truncated for column 'a' at row 10
+show warnings limit 9, 1;
+Level	Code	Message
+Warning	1265	Data truncated for column 'a' at row 10
+show warnings limit 10, 1;
+Level	Code	Message
+show warnings limit 9, 2;
+Level	Code	Message
+Warning	1265	Data truncated for column 'a' at row 10
+show warnings limit 0, 0;
+Level	Code	Message
+show warnings limit 1;
+Level	Code	Message
+Warning	1265	Data truncated for column 'a' at row 1
+show warnings limit 0;
+Level	Code	Message
+show warnings limit 1, 0;
+Level	Code	Message
+select * from t1 limit 0;
+a
+select * from t1 limit 1, 0;
+a
+select * from t1 limit 0, 0;
+a
+drop table t1;

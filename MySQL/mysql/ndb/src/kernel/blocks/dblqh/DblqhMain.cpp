@@ -3897,20 +3897,21 @@ void Dblqh::execACCKEYCONF(Signal* signal)
    * EITHER TO THE TC BLOCK OR DIRECTLY TO THE APPLICATION. THE SCHEMA VERSION
    * IS NEEDED SINCE TWO SCHEMA VERSIONS CAN BE ACTIVE SIMULTANEOUSLY ON A 
    * TABLE.
-   * ------------------------------------------------------------------------ */
-  if (regTcPtr->operation == ZWRITE) {
-    if (signal->theData[1] > 0) {
-      /* --------------------------------------------------------------------
-       * ACC did perform an insert and thus we should indicate that the WRITE 
-       * is an INSERT otherwise it is an UPDATE.
-       * -------------------------------------------------------------------- */
-      jam();
-      regTcPtr->operation = ZINSERT;
-    } else {
-      jam();
-      tcConnectptr.p->operation = ZUPDATE;
-    }//if
+   * ----------------------------------------------------------------------- */
+  if (regTcPtr->operation == ZWRITE) 
+  {
+    Uint32 op= signal->theData[1];
+    if(likely(op == ZINSERT || op == ZUPDATE))
+    {
+      regTcPtr->operation = op;
+    }
+    else
+    {
+      warningEvent("Convering %d to ZUPDATE", op);
+      regTcPtr->operation = ZUPDATE;
+    }
   }//if
+  
   ndbrequire(localKeyFlag == 1);
   localKey2 = localKey1 & MAX_TUPLES_PER_PAGE;
   localKey1 = localKey1 >> MAX_TUPLES_BITS;
@@ -7554,13 +7555,13 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
 
   ndbrequire(max_rows > 0 && max_rows <= MAX_PARALLEL_OP_PER_SCAN);
   if (!getFragmentrec(signal, fragId)) {
-    errorCode = __LINE__;
+    errorCode = 1231;
     goto error_handler;
   }//if
 
   // Verify scan type vs table type (both sides are boolean)
   if (rangeScan != DictTabInfo::isOrderedIndex(fragptr.p->tableType)) {
-    errorCode = __LINE__;       // XXX fix
+    errorCode = 1232;
     goto error_handler;
   }//if
   
@@ -10351,8 +10352,8 @@ void Dblqh::execTUP_LCPSTARTED(Signal* signal)
 
 void Dblqh::lcpStartedLab(Signal* signal) 
 {
-  checkLcpStarted(signal);
-  if (lcpPtr.p->lcpState == LcpRecord::LCP_STARTED) {
+  if (checkLcpStarted(signal))
+  {
     jam();
     /* ----------------------------------------------------------------------
      *  THE LOCAL CHECKPOINT HAS BEEN STARTED. IT IS NOW TIME TO 
@@ -10432,26 +10433,7 @@ void Dblqh::execLQH_RESTART_OP(Signal* signal)
   lcpPtr.i = signal->theData[1];
   ptrCheckGuard(lcpPtr, clcpFileSize, lcpRecord);
   ndbrequire(fragptr.p->fragStatus == Fragrecord::BLOCKED);
-  if (lcpPtr.p->lcpState == LcpRecord::LCP_STARTED) {
-    jam();
-    /***********************************************************************/
-    /*  THIS SIGNAL CAN ONLY BE RECEIVED WHEN FRAGMENT IS BLOCKED AND 
-     *  THE LOCAL CHECKPOINT HAS BEEN STARTED. THE BLOCKING WILL BE 
-     *  REMOVED AS SOON AS ALL OPERATIONS HAVE BEEN STARTED.
-     ***********************************************************************/
-    restartOperationsLab(signal);
-  } else if (lcpPtr.p->lcpState == LcpRecord::LCP_BLOCKED_COMP) {
-    jam();
-    /*******************************************************************>
-     *   THE CHECKPOINT IS COMPLETED BUT HAS NOT YET STARTED UP 
-     *   ALL OPERATIONS AGAIN. 
-     *   WE PERFORM THIS START-UP BEFORE CONTINUING WITH THE NEXT 
-     *   FRAGMENT OF THE LOCAL CHECKPOINT TO AVOID ANY STRANGE ERRORS.  
-     *******************************************************************> */
-    restartOperationsLab(signal);
-  } else {
-    ndbrequire(false);
-  }
+  restartOperationsLab(signal);
 }//Dblqh::execLQH_RESTART_OP()
 
 void Dblqh::restartOperationsLab(Signal* signal) 
@@ -11000,7 +10982,8 @@ void Dblqh::checkLcpHoldop(Signal* signal)
  *
  *       SUBROUTINE SHORT NAME = CLS
  * ========================================================================== */
-void Dblqh::checkLcpStarted(Signal* signal) 
+bool
+Dblqh::checkLcpStarted(Signal* signal) 
 {
   LcpLocRecordPtr clsLcpLocptr;
 
@@ -11010,7 +10993,7 @@ void Dblqh::checkLcpStarted(Signal* signal)
   do {
     ptrCheckGuard(clsLcpLocptr, clcpLocrecFileSize, lcpLocRecord);
     if (clsLcpLocptr.p->lcpLocstate == LcpLocRecord::ACC_WAIT_STARTED){
-      return;
+      return false;
     }//if
     clsLcpLocptr.i = clsLcpLocptr.p->nextLcpLoc;
     i++;
@@ -11021,12 +11004,13 @@ void Dblqh::checkLcpStarted(Signal* signal)
   do {
     ptrCheckGuard(clsLcpLocptr, clcpLocrecFileSize, lcpLocRecord);
     if (clsLcpLocptr.p->lcpLocstate == LcpLocRecord::TUP_WAIT_STARTED){
-      return;
+      return false;
     }//if
     clsLcpLocptr.i = clsLcpLocptr.p->nextLcpLoc;
     i++;
   } while (clsLcpLocptr.i != RNIL);
-  lcpPtr.p->lcpState = LcpRecord::LCP_STARTED;
+  
+  return true;
 }//Dblqh::checkLcpStarted()
 
 /* ========================================================================== 
@@ -11187,20 +11171,12 @@ void Dblqh::sendAccContOp(Signal* signal)
   do {
     ptrCheckGuard(sacLcpLocptr, clcpLocrecFileSize, lcpLocRecord);
     sacLcpLocptr.p->accContCounter = 0;
-    if(sacLcpLocptr.p->lcpLocstate == LcpLocRecord::ACC_STARTED){
-      /* ------------------------------------------------------------------- */
-      /*SEND START OPERATIONS TO ACC AGAIN                                   */
-      /* ------------------------------------------------------------------- */
-      signal->theData[0] = lcpPtr.p->lcpAccptr;
-      signal->theData[1] = sacLcpLocptr.p->locFragid;
-      sendSignal(fragptr.p->accBlockref, GSN_ACC_CONTOPREQ, signal, 2, JBA);
-      count++;
-    } else if(sacLcpLocptr.p->lcpLocstate == LcpLocRecord::ACC_COMPLETED){
-      signal->theData[0] = sacLcpLocptr.i;
-      sendSignal(reference(), GSN_ACC_CONTOPCONF, signal, 1, JBB);
-    } else {
-      ndbrequire(false);
-    }
+    /* ------------------------------------------------------------------- */
+    /*SEND START OPERATIONS TO ACC AGAIN                                   */
+    /* ------------------------------------------------------------------- */
+    signal->theData[0] = lcpPtr.p->lcpAccptr;
+    signal->theData[1] = sacLcpLocptr.p->locFragid;
+    sendSignal(fragptr.p->accBlockref, GSN_ACC_CONTOPREQ, signal, 2, JBA);
     sacLcpLocptr.i = sacLcpLocptr.p->nextLcpLoc;
   } while (sacLcpLocptr.i != RNIL);
   
@@ -11236,9 +11212,18 @@ void Dblqh::sendStartLcp(Signal* signal)
     signal->theData[0] = stlLcpLocptr.i;
     signal->theData[1] = cownref;
     signal->theData[2] = stlLcpLocptr.p->tupRef;
-    sendSignal(fragptr.p->tupBlockref, GSN_TUP_LCPREQ, signal, 3, JBA);
+    if(ERROR_INSERTED(5077))
+      sendSignalWithDelay(fragptr.p->tupBlockref, GSN_TUP_LCPREQ, 
+			  signal, 5000, 3);
+    else
+      sendSignal(fragptr.p->tupBlockref, GSN_TUP_LCPREQ, signal, 3, JBA);
     stlLcpLocptr.i = stlLcpLocptr.p->nextLcpLoc;
   } while (stlLcpLocptr.i != RNIL);
+
+  if(ERROR_INSERTED(5077))
+  {
+    ndbout_c("Delayed TUP_LCPREQ with 5 sec");
+  }
 }//Dblqh::sendStartLcp()
 
 /* ------------------------------------------------------------------------- */
