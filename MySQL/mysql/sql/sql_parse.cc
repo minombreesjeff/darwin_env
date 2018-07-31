@@ -76,7 +76,6 @@ static void remove_escape(char *name);
 static bool append_file_to_dir(THD *thd, const char **filename_ptr,
 			       const char *table_name);
 static bool check_show_create_table_access(THD *thd, TABLE_LIST *table);
-static bool test_if_data_home_dir(const char *dir);
 
 const char *any_db="*any*";	// Special symbol for check_access
 
@@ -91,8 +90,56 @@ const char *command_name[]={
 };
 
 const char *xa_state_names[]={
-  "NON-EXISTING", "ACTIVE", "IDLE", "PREPARED"
+  "NON-EXISTING", "ACTIVE", "IDLE", "PREPARED", "ROLLBACK ONLY"
 };
+
+/**
+  Mark a XA transaction as rollback-only if the RM unilaterally
+  rolled back the transaction branch.
+
+  @note If a rollback was requested by the RM, this function sets
+        the appropriate rollback error code and transits the state
+        to XA_ROLLBACK_ONLY.
+
+  @return TRUE if transaction was rolled back or if the transaction
+          state is XA_ROLLBACK_ONLY. FALSE otherwise.
+*/
+static bool xa_trans_rolled_back(XID_STATE *xid_state)
+{
+  if (xid_state->rm_error)
+  {
+    switch (xid_state->rm_error) {
+    case ER_LOCK_WAIT_TIMEOUT:
+      my_error(ER_XA_RBTIMEOUT, MYF(0));
+      break;
+    case ER_LOCK_DEADLOCK:
+      my_error(ER_XA_RBDEADLOCK, MYF(0));
+      break;
+    default:
+      my_error(ER_XA_RBROLLBACK, MYF(0));
+    }
+    xid_state->xa_state= XA_ROLLBACK_ONLY;
+  }
+
+  return (xid_state->xa_state == XA_ROLLBACK_ONLY);
+}
+
+/**
+  Rollback work done on behalf of at ransaction branch.
+*/
+static bool xa_trans_rollback(THD *thd)
+{
+  bool status= test(ha_rollback(thd));
+
+  thd->options&= ~(ulong) OPTION_BEGIN;
+  thd->transaction.all.modified_non_trans_table= FALSE;
+  thd->server_status&= ~SERVER_STATUS_IN_TRANS;
+  xid_cache_delete(&thd->transaction.xid_state);
+  thd->transaction.xid_state.xa_state= XA_NOTR;
+  thd->transaction.xid_state.rm_error= 0;
+
+  return status;
+}
 
 #ifndef EMBEDDED_LIBRARY
 static bool do_command(THD *thd);
@@ -203,7 +250,7 @@ static int get_or_create_user_conn(THD *thd, const char *user,
 				   USER_RESOURCES *mqh)
 {
   int return_val= 0;
-  uint temp_len, user_len;
+  size_t temp_len, user_len;
   char temp_user[USER_HOST_BUFF_SIZE];
   struct  user_conn *uc;
 
@@ -214,7 +261,7 @@ static int get_or_create_user_conn(THD *thd, const char *user,
   temp_len= (strmov(strmov(temp_user, user)+1, host) - temp_user)+1;
   (void) pthread_mutex_lock(&LOCK_user_conn);
   if (!(uc = (struct  user_conn *) hash_search(&hash_user_connections,
-					       (byte*) temp_user, temp_len)))
+					       (byte*) temp_user, (uint) temp_len)))
   {
     /* First connection for user; Create a user connection object */
     if (!(uc= ((struct user_conn*)
@@ -228,7 +275,7 @@ static int get_or_create_user_conn(THD *thd, const char *user,
     uc->user=(char*) (uc+1);
     memcpy(uc->user,temp_user,temp_len+1);
     uc->host= uc->user + user_len +  1;
-    uc->len= temp_len;
+    uc->len= (uint) temp_len;
     uc->connections= uc->questions= uc->updates= uc->conn_per_hour= 0;
     uc->user_resources= *mqh;
     uc->intime= thd->thr_create_time;
@@ -281,7 +328,7 @@ int check_user(THD *thd, enum enum_server_command command,
 	       bool check_count)
 {
   DBUG_ENTER("check_user");
-  LEX_STRING db_str= { (char *) db, db ? strlen(db) : 0 };
+  LEX_STRING db_str= { (char *) db, db ? (uint) strlen(db) : 0 };
 
 #ifdef NO_EMBEDDED_ACCESS_CHECKS
   thd->main_security_ctx.master_access= GLOBAL_ACLS;       // Full rights
@@ -989,7 +1036,7 @@ static int check_connection(THD *thd)
 
   char *user= end;
   char *passwd= strend(user)+1;
-  uint user_len= passwd - user - 1;
+  size_t user_len= passwd - user - 1;
   char *db= passwd;
   char db_buff[NAME_LEN + 1];           // buffer to store db in utf8
   char user_buff[USERNAME_LENGTH + 1];	// buffer to store user in utf8
@@ -1004,10 +1051,10 @@ static int check_connection(THD *thd)
     *passwd > 127 and become 2**32-127 after casting to uint.
   */
   uint passwd_len= thd->client_capabilities & CLIENT_SECURE_CONNECTION ?
-    (uchar)(*passwd++) : strlen(passwd);
+    (uchar)(*passwd++) : (uint) strlen(passwd);
   db= thd->client_capabilities & CLIENT_CONNECT_WITH_DB ?
     db + passwd_len + 1 : 0;
-  uint db_len= db ? strlen(db) : 0;
+  size_t db_len= db ? strlen(db) : 0;
 
   if (passwd + passwd_len + db_len > (char *)net->read_pos + pkt_len)
   {
@@ -1020,13 +1067,13 @@ static int check_connection(THD *thd)
   {
     db_buff[copy_and_convert(db_buff, sizeof(db_buff)-1,
                              system_charset_info,
-                             db, db_len,
+                             db, (uint) db_len,
                              thd->charset(), &dummy_errors)]= 0;
     db= db_buff;
   }
 
   user_buff[user_len= copy_and_convert(user_buff, sizeof(user_buff)-1,
-                                       system_charset_info, user, user_len,
+                                       system_charset_info, user, (uint) user_len,
                                        thd->charset(), &dummy_errors)]= '\0';
   user= user_buff;
 
@@ -1308,7 +1355,7 @@ pthread_handler_t handle_bootstrap(void *arg)
 				  thd->db_length+1+QUERY_CACHE_FLAGS_SIZE);
     thd->query[length] = '\0';
     DBUG_PRINT("query",("%-.4096s",thd->query));
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
     thd->profiling.set_query_source(thd->query, length);
 #endif
 
@@ -1547,7 +1594,7 @@ static bool do_command(THD *thd)
   net_new_transaction(net);
 
   packet_length= my_net_read(net);
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   thd->profiling.start_new_query();
 #endif
   if (packet_length == packet_error)
@@ -1595,7 +1642,7 @@ static bool do_command(THD *thd)
   return_value= dispatch_command(command, thd, packet+1, (uint) (packet_length));
 
 out:
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   thd->profiling.finish_current_query();
 #endif
   DBUG_RETURN(return_value);
@@ -1711,8 +1758,24 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   thd->set_time();
   VOID(pthread_mutex_lock(&LOCK_thread_count));
   thd->query_id= global_query_id;
-  if (command != COM_STATISTICS && command != COM_PING)
+  
+  switch( command ) {
+  /* Ignore these statements. */
+  case COM_STATISTICS:
+  case COM_PING:
+    break;
+  /* Only increase id on these statements but don't count them. */
+  case COM_STMT_PREPARE: 
+  case COM_STMT_CLOSE:
+  case COM_STMT_RESET:
     next_query_id();
+    break;
+  /* Increase id and count all other statements. */
+  default:
+    statistic_increment(thd->status_var.questions, &LOCK_status);
+    next_query_id();
+  }
+  
   thread_running++;
   /* TODO: set thd->lex->sql_command to SQLCOM_END here */
   VOID(pthread_mutex_unlock(&LOCK_thread_count));
@@ -1726,7 +1789,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     statistic_increment(thd->status_var.com_stat[SQLCOM_CHANGE_DB],
 			&LOCK_status);
     thd->convert_string(&tmp, system_charset_info,
-			packet, strlen(packet), thd->charset());
+			packet, (uint) strlen(packet), thd->charset());
     if (!mysql_change_db(thd, &tmp, FALSE))
     {
       mysql_log.write(thd,command,"%s",thd->db);
@@ -1789,7 +1852,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     */
     char db_buff[NAME_LEN+1];               // buffer to store db in utf8
     char *db= passwd;
-    uint passwd_len= thd->client_capabilities & CLIENT_SECURE_CONNECTION ?
+    size_t passwd_len= thd->client_capabilities & CLIENT_SECURE_CONNECTION ?
       (uchar)(*passwd++) : strlen(passwd);
     db+= passwd_len + 1;
 #ifndef EMBEDDED_LIBRARY
@@ -1803,7 +1866,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     /* Convert database name to utf8 */
     uint dummy_errors;
     db_buff[copy_and_convert(db_buff, sizeof(db_buff)-1,
-                             system_charset_info, db, strlen(db),
+                             system_charset_info, db, (uint) strlen(db),
                              thd->charset(), &dummy_errors)]= 0;
     db= db_buff;
 
@@ -1822,7 +1885,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
     /* Clear variables that are allocated */
     thd->user_connect= 0;
-    int res= check_user(thd, COM_CHANGE_USER, passwd, passwd_len, db, FALSE);
+    int res= check_user(thd, COM_CHANGE_USER, passwd, (uint) passwd_len, db, FALSE);
 
     if (res)
     {
@@ -1888,7 +1951,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
     mysql_log.write(thd,command, format, thd->query_length, thd->query);
     DBUG_PRINT("query",("%-.4096s",thd->query));
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
     thd->profiling.set_query_source(thd->query, thd->query_length);
 #endif
 
@@ -1918,7 +1981,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
         length--;
       }
 
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
       thd->profiling.finish_current_query();
       thd->profiling.start_new_query("continuing");
       thd->profiling.set_query_source(next_packet, length);
@@ -1927,6 +1990,11 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       VOID(pthread_mutex_lock(&LOCK_thread_count));
       thd->query_length= length;
       thd->query= next_packet;
+      /*
+        Count each statement from the client.
+      */
+      statistic_increment(thd->status_var.questions, &LOCK_status);
+
       thd->query_id= next_query_id();
       thd->set_time(); /* Reset the query start time. */
       /* TODO: set thd->lex->sql_command to SQLCOM_END here */
@@ -1973,7 +2041,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
         table_list.schema_table= schema_table;
     }
 
-    thd->query_length= strlen(packet);       // for simplicity: don't optimize
+    thd->query_length= (uint) strlen(packet);       // for simplicity: don't optimize
     if (!(thd->query=fields=thd->memdup(packet,thd->query_length+1)))
       break;
     mysql_log.write(thd,command,"%s %s",table_list.table_name, fields);
@@ -2295,8 +2363,9 @@ void log_slow_statement(THD *thd)
   {
     thd_proc_info(thd, "logging slow query");
 
-    if ((ulong) (thd->start_time - thd->time_after_lock) >
-	thd->variables.long_query_time ||
+    if ((thd->start_time > thd->time_after_lock && 
+         (ulong) (thd->start_time - thd->time_after_lock) >
+	thd->variables.long_query_time) ||
         (thd->server_status &
 	  (SERVER_QUERY_NO_INDEX_USED | SERVER_QUERY_NO_GOOD_INDEX_USED)) &&
         opt_log_queries_not_using_indexes &&
@@ -2416,7 +2485,7 @@ int prepare_schema_table(THD *thd, LEX *lex, Table_ident *table_ident,
       Mark this current profiling record to be discarded.  We don't
       wish to have SHOW commands show up in profiling.
     */
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
     thd->profiling.discard_current_query();
 #endif
     break;
@@ -2555,6 +2624,10 @@ mysql_execute_command(THD *thd)
   TABLE_LIST *all_tables;
   /* most outer SELECT_LEX_UNIT of query */
   SELECT_LEX_UNIT *unit= &lex->unit;
+#ifdef HAVE_REPLICATION
+  /* have table map for update for multi-update statement (BUG#37051) */
+  bool have_table_map_for_update= FALSE;
+#endif
   /* Saved variable value */
   DBUG_ENTER("mysql_execute_command");
   thd->net.no_send_error= 0;
@@ -2633,6 +2706,48 @@ mysql_execute_command(THD *thd)
       
       // force searching in slave.cc:tables_ok() 
       all_tables->updating= 1;
+    }
+
+    /*
+      For fix of BUG#37051, the master stores the table map for update
+      in the Query_log_event, and the value is assigned to
+      thd->variables.table_map_for_update before executing the update
+      query.
+
+      If thd->variables.table_map_for_update is set, then we are
+      replicating from a new master, we can use this value to apply
+      filter rules without opening all the tables. However If
+      thd->variables.table_map_for_update is not set, then we are
+      replicating from an old master, so we just skip this and
+      continue with the old method. And of course, the bug would still
+      exist for old masters.
+    */
+    if (lex->sql_command == SQLCOM_UPDATE_MULTI &&
+        thd->table_map_for_update)
+    {
+      have_table_map_for_update= TRUE;
+      table_map table_map_for_update= thd->table_map_for_update;
+      uint nr= 0;
+      TABLE_LIST *table;
+      for (table=all_tables; table; table=table->next_global, nr++)
+      {
+        if (table_map_for_update & ((table_map)1 << nr))
+          table->updating= TRUE;
+        else
+          table->updating= FALSE;
+      }
+
+      if (all_tables_not_ok(thd, all_tables))
+      {
+        /* we warn the slave SQL thread */
+        my_message(ER_SLAVE_IGNORED_TABLE, ER(ER_SLAVE_IGNORED_TABLE), MYF(0));
+        if (thd->one_shot_set)
+          reset_one_shot_variables(thd);
+        DBUG_RETURN(0);
+      }
+      
+      for (table=all_tables; table; table=table->next_global)
+        table->updating= TRUE;
     }
     
     /*
@@ -2723,6 +2838,10 @@ mysql_execute_command(THD *thd)
 			lex->exchange ? SELECT_ACL | FILE_ACL : SELECT_ACL,
 			any_db, 0, 0, 0, 0);
     if (res)
+      goto error;
+
+    if (!thd->locked_tables && lex->protect_against_global_read_lock &&
+        !(need_start_waiting= !wait_if_global_read_lock(thd, 0, 1)))
       goto error;
 
     if (!(res= open_and_lock_tables(thd, all_tables)))
@@ -2846,7 +2965,7 @@ mysql_execute_command(THD *thd)
   }
   case SQLCOM_SHOW_PROFILES:
   {
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
     thd->profiling.discard_current_query();
     res= thd->profiling.show_profiles();
     if (res)
@@ -3097,13 +3216,13 @@ mysql_execute_command(THD *thd)
 
     if (test_if_data_home_dir(lex->create_info.data_file_name))
     {
-      my_error(ER_WRONG_ARGUMENTS,MYF(0),"DATA DIRECORY");
+      my_error(ER_WRONG_ARGUMENTS,MYF(0),"DATA DIRECTORY");
       res= -1;
       break;
     }
     if (test_if_data_home_dir(lex->create_info.index_file_name))
     {
-      my_error(ER_WRONG_ARGUMENTS,MYF(0),"INDEX DIRECORY");
+      my_error(ER_WRONG_ARGUMENTS,MYF(0),"INDEX DIRECTORY");
       res= -1;
       break;
     }
@@ -3149,6 +3268,42 @@ mysql_execute_command(THD *thd)
     }
     if (select_lex->item_list.elements)		// With select
     {
+      /*
+        If:
+        a) we inside an SP and there was NAME_CONST substitution,
+        b) binlogging is on,
+        c) we log the SP as separate statements
+        raise a warning, as it may cause problems
+        (see 'NAME_CONST issues' in 'Binary Logging of Stored Programs')
+       */
+      if (thd->query_name_consts && 
+          mysql_bin_log.is_open() &&
+          !mysql_bin_log.is_query_in_union(thd, thd->query_id))
+      {
+        List_iterator_fast<Item> it(select_lex->item_list);
+        Item *item;
+        uint splocal_refs= 0;
+        /* Count SP local vars in the top-level SELECT list */
+        while ((item= it++))
+        {
+          if (item->is_splocal())
+            splocal_refs++;
+        }
+        /*
+          If it differs from number of NAME_CONST substitution applied,
+          we may have a SOME_FUNC(NAME_CONST()) in the SELECT list,
+          that may cause a problem with binary log (see BUG#35383),
+          raise a warning. 
+        */
+        if (splocal_refs != thd->query_name_consts)
+          push_warning(thd, 
+                       MYSQL_ERROR::WARN_LEVEL_WARN,
+                       ER_UNKNOWN_ERROR,
+"Invoked routine ran a statement that may cause problems with "
+"binary log, see 'NAME_CONST issues' in 'Binary Logging of Stored Programs' "
+"section of the manual.");
+      }
+      
       select_result *sel_result;
 
       select_lex->options|= SELECT_NO_UNLOCK;
@@ -3489,7 +3644,8 @@ end_with_restore_list:
       if (mysql_bin_log.is_open())
       {
 	thd->clear_error(); // No binlog error generated
-        Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+        Query_log_event qinfo(thd, thd->query, thd->query_length,
+                              0, FALSE, THD::NOT_KILLED);
         mysql_bin_log.write(&qinfo);
       }
     }
@@ -3524,7 +3680,8 @@ end_with_restore_list:
       if (mysql_bin_log.is_open())
       {
 	thd->clear_error(); // No binlog error generated
-        Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+        Query_log_event qinfo(thd, thd->query, thd->query_length,
+                              0, FALSE, THD::NOT_KILLED);
         mysql_bin_log.write(&qinfo);
       }
     }
@@ -3550,7 +3707,8 @@ end_with_restore_list:
       if (mysql_bin_log.is_open())
       {
 	thd->clear_error(); // No binlog error generated
-        Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+        Query_log_event qinfo(thd, thd->query, thd->query_length,
+                              0, FALSE, THD::NOT_KILLED);
         mysql_bin_log.write(&qinfo);
       }
     }
@@ -3562,6 +3720,9 @@ end_with_restore_list:
     DBUG_ASSERT(first_table == all_tables && first_table != 0);
     if (update_precheck(thd, all_tables))
       break;
+    if (!thd->locked_tables &&
+        !(need_start_waiting= !wait_if_global_read_lock(thd, 0, 1)))
+      goto error;
     DBUG_ASSERT(select_lex->offset_limit == 0);
     unit->set_limit(select_lex);
     res= (up_result= mysql_update(thd, all_tables,
@@ -3588,11 +3749,20 @@ end_with_restore_list:
     else
       res= 0;
 
+    /*
+      Protection might have already been risen if its a fall through
+      from the SQLCOM_UPDATE case above.
+    */
+    if (!thd->locked_tables &&
+        lex->sql_command == SQLCOM_UPDATE_MULTI &&
+        !(need_start_waiting= !wait_if_global_read_lock(thd, 0, 1)))
+      goto error;
+
     res= mysql_multi_update_prepare(thd);
 
 #ifdef HAVE_REPLICATION
     /* Check slave filtering rules */
-    if (unlikely(thd->slave_thread))
+    if (unlikely(thd->slave_thread && !have_table_map_for_update))
     {
       if (all_tables_not_ok(thd, all_tables))
       {
@@ -3755,7 +3925,8 @@ end_with_restore_list:
                  ER(ER_LOCK_OR_ACTIVE_TRANSACTION), MYF(0));
       goto error;
     }
-
+    if (!(need_start_waiting= !wait_if_global_read_lock(thd, 0, 1)))
+      goto error;
     res= mysql_truncate(thd, first_table, 0);
     break;
   case SQLCOM_DELETE:
@@ -3901,7 +4072,7 @@ end_with_restore_list:
 #endif
   case SQLCOM_CHANGE_DB:
   {
-    LEX_STRING db_str= { (char *) select_lex->db, strlen(select_lex->db) };
+    LEX_STRING db_str= { (char *) select_lex->db, (uint) strlen(select_lex->db) };
 
     if (!mysql_change_db(thd, &db_str, FALSE))
       send_ok(thd);
@@ -3927,6 +4098,10 @@ end_with_restore_list:
     }
 
     if (check_one_table_access(thd, privilege, all_tables))
+      goto error;
+
+    if (!thd->locked_tables &&
+        !(need_start_waiting= !wait_if_global_read_lock(thd, 0, 1)))
       goto error;
 
     res= mysql_load(thd, lex->exchange, first_table, lex->field_list,
@@ -3983,6 +4158,9 @@ end_with_restore_list:
     if (check_db_used(thd, all_tables))
       goto error;
     if (check_table_access(thd, LOCK_TABLES_ACL | SELECT_ACL, all_tables, 0))
+      goto error;
+    if (lex->protect_against_global_read_lock &&
+        !(need_start_waiting= !wait_if_global_read_lock(thd, 0, 1)))
       goto error;
     thd->in_lock_tables=1;
     thd->options|= OPTION_TABLE_LOCK;
@@ -4332,7 +4510,8 @@ end_with_restore_list:
       {
         if (mysql_bin_log.is_open())
         {
-          Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+          Query_log_event qinfo(thd, thd->query, thd->query_length,
+                                0, FALSE, THD::NOT_KILLED);
           mysql_bin_log.write(&qinfo);
         }
       }
@@ -4941,6 +5120,14 @@ create_sp_error:
       case SP_KEY_NOT_FOUND:
 	if (lex->drop_if_exists)
 	{
+          if (mysql_bin_log.is_open())
+          {    
+            Query_log_event qinfo(thd, thd->query, thd->query_length, 
+                                  /* using_trans */ 0, 
+                                  /* suppress use */ FALSE,
+                                  THD::NOT_KILLED);
+            mysql_bin_log.write(&qinfo);
+          }    
 	  push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_NOTE,
 			      ER_SP_DOES_NOT_EXIST, ER(ER_SP_DOES_NOT_EXIST),
 			      SP_COM_STRING(lex), lex->spname->m_name.str);
@@ -5103,6 +5290,7 @@ create_sp_error:
     }
     DBUG_ASSERT(thd->transaction.xid_state.xid.is_null());
     thd->transaction.xid_state.xa_state=XA_ACTIVE;
+    thd->transaction.xid_state.rm_error= 0;
     thd->transaction.xid_state.xid.set(thd->lex->xid);
     xid_cache_insert(&thd->transaction.xid_state);
     thd->transaction.all.modified_non_trans_table= FALSE;
@@ -5128,6 +5316,8 @@ create_sp_error:
       my_error(ER_XAER_NOTA, MYF(0));
       break;
     }
+    if (xa_trans_rolled_back(&thd->transaction.xid_state))
+      break;
     thd->transaction.xid_state.xa_state=XA_IDLE;
     send_ok(thd);
     break;
@@ -5159,12 +5349,23 @@ create_sp_error:
       XID_STATE *xs=xid_cache_search(thd->lex->xid);
       if (!xs || xs->in_thd)
         my_error(ER_XAER_NOTA, MYF(0));
+      else if (xa_trans_rolled_back(xs))
+      {
+        ha_commit_or_rollback_by_xid(thd->lex->xid, 0);
+        xid_cache_delete(xs);
+        break;
+      }
       else
       {
         ha_commit_or_rollback_by_xid(thd->lex->xid, 1);
         xid_cache_delete(xs);
         send_ok(thd);
       }
+      break;
+    }
+    if (xa_trans_rolled_back(&thd->transaction.xid_state))
+    {
+      xa_trans_rollback(thd);
       break;
     }
     if (thd->transaction.xid_state.xa_state == XA_IDLE &&
@@ -5213,28 +5414,26 @@ create_sp_error:
         my_error(ER_XAER_NOTA, MYF(0));
       else
       {
+        bool ok= !xa_trans_rolled_back(xs);
         ha_commit_or_rollback_by_xid(thd->lex->xid, 0);
         xid_cache_delete(xs);
-        send_ok(thd);
+        if (ok)
+          send_ok(thd);
       }
       break;
     }
     if (thd->transaction.xid_state.xa_state != XA_IDLE &&
-        thd->transaction.xid_state.xa_state != XA_PREPARED)
+        thd->transaction.xid_state.xa_state != XA_PREPARED &&
+        thd->transaction.xid_state.xa_state != XA_ROLLBACK_ONLY)
     {
       my_error(ER_XAER_RMFAIL, MYF(0),
                xa_state_names[thd->transaction.xid_state.xa_state]);
       break;
     }
-    if (ha_rollback(thd))
+    if (xa_trans_rollback(thd))
       my_error(ER_XAER_RMERR, MYF(0));
     else
       send_ok(thd);
-    thd->options&= ~OPTION_BEGIN;
-    thd->transaction.all.modified_non_trans_table= FALSE;
-    thd->server_status&= ~SERVER_STATUS_IN_TRANS;
-    xid_cache_delete(&thd->transaction.xid_state);
-    thd->transaction.xid_state.xa_state=XA_NOTR;
     break;
   case SQLCOM_XA_RECOVER:
     res= mysql_xa_recover(thd);
@@ -5930,29 +6129,35 @@ bool check_stack_overrun(THD *thd, long margin,
 
 bool my_yyoverflow(short **yyss, YYSTYPE **yyvs, ulong *yystacksize)
 {
-  LEX	*lex= current_thd->lex;
+  Yacc_state *state= & current_thd->m_parser_state->m_yacc;
   ulong old_info=0;
+  DBUG_ASSERT(state);
   if ((uint) *yystacksize >= MY_YACC_MAX)
     return 1;
-  if (!lex->yacc_yyvs)
+  if (!state->yacc_yyvs)
     old_info= *yystacksize;
   *yystacksize= set_zone((*yystacksize)*2,MY_YACC_INIT,MY_YACC_MAX);
-  if (!(lex->yacc_yyvs= (char*)
-	my_realloc((gptr) lex->yacc_yyvs,
+  if (!(state->yacc_yyvs= (char*)
+        my_realloc(state->yacc_yyvs,
 		   *yystacksize*sizeof(**yyvs),
 		   MYF(MY_ALLOW_ZERO_PTR | MY_FREE_ON_ERROR))) ||
-      !(lex->yacc_yyss= (char*)
-	my_realloc((gptr) lex->yacc_yyss,
+      !(state->yacc_yyss= (char*)
+        my_realloc(state->yacc_yyss,
 		   *yystacksize*sizeof(**yyss),
 		   MYF(MY_ALLOW_ZERO_PTR | MY_FREE_ON_ERROR))))
     return 1;
   if (old_info)
-  {						// Copy old info from stack
-    memcpy(lex->yacc_yyss, (gptr) *yyss, old_info*sizeof(**yyss));
-    memcpy(lex->yacc_yyvs, (gptr) *yyvs, old_info*sizeof(**yyvs));
+  {
+    /*
+      Only copy the old stack on the first call to my_yyoverflow(),
+      when replacing a static stack (YYINITDEPTH) by a dynamic stack.
+      For subsequent calls, my_realloc already did preserve the old stack.
+    */
+    memcpy(state->yacc_yyss, *yyss, old_info*sizeof(**yyss));
+    memcpy(state->yacc_yyvs, *yyvs, old_info*sizeof(**yyvs));
   }
-  *yyss=(short*) lex->yacc_yyss;
-  *yyvs=(YYSTYPE*) lex->yacc_yyvs;
+  *yyss= (short*) state->yacc_yyss;
+  *yyvs= (YYSTYPE*) state->yacc_yyvs;
   return 0;
 }
 
@@ -6116,7 +6321,7 @@ void create_select_for_variable(const char *var_name)
   mysql_init_select(lex);
   lex->sql_command= SQLCOM_SELECT;
   tmp.str= (char*) var_name;
-  tmp.length=strlen(var_name);
+  tmp.length=(uint) strlen(var_name);
   bzero((char*) &null_lex_string.str, sizeof(null_lex_string));
   /*
     We set the name of Item to @@session.var_name because that then is used
@@ -6125,7 +6330,7 @@ void create_select_for_variable(const char *var_name)
   if ((var= get_system_var(thd, OPT_SESSION, tmp, null_lex_string)))
   {
     end= strxmov(buff, "@@session.", var_name, NullS);
-    var->set_name(buff, end-buff, system_charset_info);
+    var->set_name(buff, (uint) (end - buff), system_charset_info);
     add_item_to_list(thd, var);
   }
   DBUG_VOID_RETURN;
@@ -6191,11 +6396,12 @@ void mysql_parse(THD *thd, const char *inBuf, uint length,
     sp_cache_flush_obsolete(&thd->sp_proc_cache);
     sp_cache_flush_obsolete(&thd->sp_func_cache);
 
-    Lex_input_stream lip(thd, inBuf, length);
-    thd->m_lip= &lip;
+    Parser_state parser_state(thd, inBuf, length);
+    thd->m_parser_state= &parser_state;
 
     int err= MYSQLparse(thd);
-    *found_semicolon= lip.found_semicolon;
+    *found_semicolon= parser_state.m_lip.found_semicolon;
+    thd->m_parser_state= NULL;
 
     if (!err && ! thd->is_fatal_error)
     {
@@ -6220,8 +6426,9 @@ void mysql_parse(THD *thd, const char *inBuf, uint length,
             PROCESSLIST.
             Note that we don't need LOCK_thread_count to modify query_length.
           */
-          if (lip.found_semicolon &&
-              (thd->query_length= (ulong)(lip.found_semicolon - thd->query)))
+          if (parser_state.m_lip.found_semicolon &&
+              (thd->query_length= (ulong)(parser_state.m_lip.found_semicolon
+                                          - thd->query)))
             thd->query_length--;
           /* Actually execute the query */
           if (*found_semicolon)
@@ -6280,11 +6487,13 @@ bool mysql_test_parse_for_slave(THD *thd, char *inBuf, uint length)
   bool error= 0;
   DBUG_ENTER("mysql_test_parse_for_slave");
 
-  Lex_input_stream lip(thd, inBuf, length);
-  thd->m_lip= &lip;
+  Parser_state parser_state(thd, inBuf, length);
+  thd->m_parser_state= &parser_state;
+
   lex_start(thd);
   mysql_reset_thd_for_next_command(thd);
   int err= MYSQLparse((void*) thd);
+  thd->m_parser_state= NULL;
 
   if (!err && ! thd->is_fatal_error &&
       all_tables_not_ok(thd,(TABLE_LIST*) lex->select_lex.table_list.first))
@@ -7114,11 +7323,23 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables,
       thd->thread_stack= (char*) &tmp_thd;
       thd->store_globals();
     }
+    
     if (thd)
     {
-      (void)acl_reload(thd);
-      (void)grant_reload(thd);
+      bool reload_acl_failed= acl_reload(thd);
+      bool reload_grants_failed= grant_reload(thd);
+
+      if (reload_acl_failed || reload_grants_failed)
+      {
+        result= 1;
+        /*
+          When an error is returned, my_message may have not been called and
+          the client will hang waiting for a response.
+        */
+        my_error(ER_UNKNOWN_ERROR, MYF(0), "FLUSH PRIVILEGES failed");
+      }
     }
+
     if (tmp_thd)
     {
       delete tmp_thd;
@@ -7204,8 +7425,10 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables,
       tmp_write_to_binlog= 0;
       if (lock_global_read_lock(thd))
 	return 1;                               // Killed
-      result=close_cached_tables(thd,(options & REFRESH_FAST) ? 0 : 1,
-                                 tables);
+      if (close_cached_tables(thd,(options & REFRESH_FAST) ? 0 : 1,
+                                 tables))
+          result= 1;
+      
       if (make_global_read_lock_block_commit(thd)) // Killed
       {
         /* Don't leave things in a half-locked state */
@@ -7214,7 +7437,10 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables,
       }
     }
     else
-      result=close_cached_tables(thd,(options & REFRESH_FAST) ? 0 : 1, tables);
+    {
+      if (close_cached_tables(thd,(options & REFRESH_FAST) ? 0 : 1, tables))
+        result= 1;
+    }
     my_dbopt_cleanup();
   }
   if (options & REFRESH_HOSTS)
@@ -7238,8 +7464,8 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables,
 #ifdef OPENSSL
    if (options & REFRESH_DES_KEY_FILE)
    {
-     if (des_key_file)
-       result=load_des_key_file(des_key_file);
+     if (des_key_file && load_des_key_file(des_key_file))
+         result= 1;
    }
 #endif
 #ifdef HAVE_REPLICATION
@@ -7287,8 +7513,26 @@ void kill_one_thread(THD *thd, ulong id, bool only_kill_query)
   VOID(pthread_mutex_unlock(&LOCK_thread_count));
   if (tmp)
   {
+
+    /*
+      If we're SUPER, we can KILL anything, including system-threads.
+      No further checks.
+
+      KILLer: thd->security_ctx->user could in theory be NULL while
+      we're still in "unauthenticated" state. This is a theoretical
+      case (the code suggests this could happen, so we play it safe).
+
+      KILLee: tmp->security_ctx->user will be NULL for system threads.
+      We need to check so Jane Random User doesn't crash the server
+      when trying to kill a) system threads or b) unauthenticated users'
+      threads (Bug#43748).
+
+      If user of both killer and killee are non-NULL, proceed with
+      slayage if both are string-equal.
+    */
+
     if ((thd->security_ctx->master_access & SUPER_ACL) ||
-	!strcmp(thd->security_ctx->user, tmp->security_ctx->user))
+        thd->security_ctx->user_matches(tmp->security_ctx))
     {
       tmp->awake(only_kill_query ? THD::KILL_QUERY : THD::KILL_CONNECTION);
       error=0;
@@ -7350,7 +7594,7 @@ bool check_simple_select()
   if (lex->current_select != &lex->select_lex)
   {
     char command[80];
-    Lex_input_stream *lip= thd->m_lip;
+    Lex_input_stream *lip= & thd->m_parser_state->m_lip;
     strmake(command, lip->yylval->symbol.str,
 	    min(lip->yylval->symbol.length, sizeof(command)-1));
     my_error(ER_CANT_USE_OPTION_HERE, MYF(0), command);
@@ -7847,10 +8091,10 @@ void get_default_definer(THD *thd, LEX_USER *definer)
   const Security_context *sctx= thd->security_ctx;
 
   definer->user.str= (char *) sctx->priv_user;
-  definer->user.length= strlen(definer->user.str);
+  definer->user.length= (uint) strlen(definer->user.str);
 
   definer->host.str= (char *) sctx->priv_host;
-  definer->host.length= strlen(definer->host.str);
+  definer->host.length= (uint) strlen(definer->host.str);
 }
 
 
@@ -7974,10 +8218,12 @@ bool check_string_length(LEX_STRING *str, const char *err_msg,
     1	error  
 */
 
-static bool test_if_data_home_dir(const char *dir)
+C_MODE_START
+
+int test_if_data_home_dir(const char *dir)
 {
-  char path[FN_REFLEN], conv_path[FN_REFLEN];
-  uint dir_len, home_dir_len= strlen(mysql_unpacked_real_data_home);
+  char path[FN_REFLEN];
+  int dir_len;
   DBUG_ENTER("test_if_data_home_dir");
 
   if (!dir)
@@ -7985,21 +8231,59 @@ static bool test_if_data_home_dir(const char *dir)
 
   (void) fn_format(path, dir, "", "",
                    (MY_RETURN_REAL_PATH|MY_RESOLVE_SYMLINKS));
-  dir_len= unpack_dirname(conv_path, dir);
-
-  if (home_dir_len <= dir_len)
+  dir_len= strlen(path);
+  if (mysql_unpacked_real_data_home_len<= dir_len)
   {
+    if (dir_len > mysql_unpacked_real_data_home_len &&
+        path[mysql_unpacked_real_data_home_len] != FN_LIBCHAR)
+      DBUG_RETURN(0);
+
     if (lower_case_file_system)
     {
-      if (!my_strnncoll(default_charset_info, (const uchar*) conv_path,
-                        home_dir_len,
+      if (!my_strnncoll(default_charset_info, (const uchar*) path,
+                        mysql_unpacked_real_data_home_len,
                         (const uchar*) mysql_unpacked_real_data_home,
-                        home_dir_len))
+                        mysql_unpacked_real_data_home_len))
         DBUG_RETURN(1);
     }
-    else if (!memcmp(conv_path, mysql_unpacked_real_data_home, home_dir_len))
+    else if (!memcmp(path, mysql_unpacked_real_data_home,
+                     mysql_unpacked_real_data_home_len))
       DBUG_RETURN(1);
   }
   DBUG_RETURN(0);
 }
 
+C_MODE_END
+
+
+/**
+  Check that host name string is valid.
+
+  @param[in] str string to be checked
+
+  @return             Operation status
+    @retval  FALSE    host name is ok
+    @retval  TRUE     host name string is longer than max_length or
+                      has invalid symbols
+*/
+
+bool check_host_name(LEX_STRING *str)
+{
+  const char *name= str->str;
+  const char *end= str->str + str->length;
+  if (check_string_length(str, ER(ER_HOSTNAME), HOSTNAME_LENGTH))
+    return TRUE;
+
+  while (name != end)
+  {
+    if (*name == '@')
+    {
+      my_printf_error(ER_UNKNOWN_ERROR, 
+                      "Malformed hostname (illegal symbol: '%c')", MYF(0),
+                      *name);
+      return TRUE;
+    }
+    name++;
+  }
+  return FALSE;
+}

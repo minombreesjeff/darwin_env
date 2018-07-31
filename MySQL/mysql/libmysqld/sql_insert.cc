@@ -1609,10 +1609,13 @@ public:
   ulong auto_increment_increment;
   ulong auto_increment_offset;
   timestamp_auto_set_type timestamp_field_type;
+  Time_zone *time_zone;
   uint query_length;
 
   delayed_row(enum_duplicates dup_arg, bool ignore_arg, bool log_query_arg)
-    :record(0), query(0), dup(dup_arg), ignore(ignore_arg), log_query(log_query_arg) {}
+    :record(0), query(0), dup(dup_arg), ignore(ignore_arg), 
+    log_query(log_query_arg), time_zone(0) 
+    {}
   ~delayed_row()
   {
     x_free(record);
@@ -1823,7 +1826,7 @@ bool delayed_get_table(THD *thd, TABLE_LIST *table_list)
       pthread_mutex_lock(&LOCK_thread_count);
       thread_count++;
       pthread_mutex_unlock(&LOCK_thread_count);
-      di->thd.set_db(table_list->db, strlen(table_list->db));
+      di->thd.set_db(table_list->db, (uint) strlen(table_list->db));
       di->thd.query= my_strdup(table_list->table_name, MYF(MY_WME));
       if (di->thd.db == NULL || di->thd.query == NULL)
       {
@@ -2066,6 +2069,19 @@ int write_delayed(THD *thd,TABLE *table,enum_duplicates duplic, bool ignore,
   row->last_insert_id=		thd->last_insert_id;
   row->timestamp_field_type=    table->timestamp_field_type;
 
+  /* Add session variable timezone
+     Time_zone object will not be freed even the thread is ended.
+     So we can get time_zone object from thread which handling delayed statement.
+     See the comment of my_tz_find() for detail.
+  */
+  if (thd->time_zone_used)
+  {
+    row->time_zone = thd->variables.time_zone;
+  }
+  else
+  {
+    row->time_zone = NULL;
+  }
   /* The session variable settings can always be copied. */
   row->auto_increment_increment= thd->variables.auto_increment_increment;
   row->auto_increment_offset=    thd->variables.auto_increment_offset;
@@ -2519,8 +2535,20 @@ bool Delayed_insert::handle_inserts(void)
     }
     if (row->query && row->log_query && using_bin_log)
     {
-      Query_log_event qinfo(&thd, row->query, row->query_length, 0, FALSE);
+      bool backup_time_zone_used = thd.time_zone_used;
+      Time_zone *backup_time_zone = thd.variables.time_zone;
+      if (row->time_zone != NULL)
+      {
+        thd.time_zone_used = true;
+        thd.variables.time_zone = row->time_zone;
+      }
+
+      Query_log_event qinfo(&thd, row->query, row->query_length,
+                            0, FALSE, THD::KILLED_NO_VALUE);
       mysql_bin_log.write(&qinfo);
+
+      thd.time_zone_used = backup_time_zone_used;
+      thd.variables.time_zone = backup_time_zone;
     }
     if (table->s->blob_fields)
       free_delayed_insert_blobs(table);
@@ -2589,6 +2617,11 @@ bool Delayed_insert::handle_inserts(void)
   /* Remove all not used rows */
   while ((row=rows.get()))
   {
+    if (table->s->blob_fields)
+    {
+      memcpy(table->record[0],row->record,table->s->reclength);
+      free_delayed_insert_blobs(table);
+    }
     delete row;
     thread_safe_increment(delayed_insert_errors,&LOCK_delayed_status);
     stacked_inserts--;
@@ -2901,7 +2934,11 @@ bool select_insert::send_data(List<Item> &values)
       DBUG_RETURN(1);
     }
   }
-  if (!(error= write_record(thd, table, &info)))
+  
+  error= write_record(thd, table, &info);
+  table->auto_increment_field_not_null= FALSE;
+  
+  if (!error)
   {
     if (table->triggers || info.handle_duplicates == DUP_UPDATE)
     {
@@ -3069,7 +3106,7 @@ void select_insert::abort()
     if (mysql_bin_log.is_open())
     {
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-                            transactional_table, FALSE);
+                            transactional_table, FALSE, THD::KILLED_NO_VALUE);
       mysql_bin_log.write(&qinfo);
     }
     if (thd->transaction.stmt.modified_non_trans_table)

@@ -181,7 +181,7 @@ int search_topics(THD *thd, TABLE *topics, struct st_find_field *find_fields,
   int count= 0;
 
   READ_RECORD read_record_info;
-  init_read_record(&read_record_info, thd, topics, select,1,0);
+  init_read_record(&read_record_info, thd, topics, select, 1, 0, FALSE);
   while (!read_record_info.read_record(&read_record_info))
   {
     if (!select->cond->val_int())		// Doesn't match like
@@ -221,7 +221,7 @@ int search_keyword(THD *thd, TABLE *keywords, struct st_find_field *find_fields,
   int count= 0;
 
   READ_RECORD read_record_info;
-  init_read_record(&read_record_info, thd, keywords, select,1,0);
+  init_read_record(&read_record_info, thd, keywords, select, 1, 0, FALSE);
   while (!read_record_info.read_record(&read_record_info) && count<2)
   {
     if (!select->cond->val_int())		// Dosn't match like
@@ -346,7 +346,7 @@ int search_categories(THD *thd, TABLE *categories,
 
   DBUG_ENTER("search_categories");
 
-  init_read_record(&read_record_info, thd, categories, select,1,0);
+  init_read_record(&read_record_info, thd, categories, select,1,0,FALSE);
   while (!read_record_info.read_record(&read_record_info))
   {
     if (select && !select->cond->val_int())
@@ -380,7 +380,7 @@ void get_all_items_for_category(THD *thd, TABLE *items, Field *pfname,
   DBUG_ENTER("get_all_items_for_category");
 
   READ_RECORD read_record_info;
-  init_read_record(&read_record_info, thd, items, select,1,0);
+  init_read_record(&read_record_info, thd, items, select,1,0,FALSE);
   while (!read_record_info.read_record(&read_record_info))
   {
     if (!select->cond->val_int())
@@ -628,7 +628,7 @@ bool mysqld_help(THD *thd, const char *mask)
   List<String> topics_list, categories_list, subcategories_list;
   String name, description, example;
   int count_topics, count_categories, error;
-  uint mlen= strlen(mask);
+  size_t mlen= strlen(mask);
   size_t i;
   MEM_ROOT *mem_root= thd->mem_root;
   DBUG_ENTER("mysqld_help");
@@ -668,7 +668,7 @@ bool mysqld_help(THD *thd, const char *mask)
     tables[i].table->file->init_table_handle_for_HANDLER();
 
   if (!(select=
-	prepare_select_for_name(thd,mask,mlen,tables,tables[0].table,
+	prepare_select_for_name(thd,mask,(uint) mlen,tables,tables[0].table,
 				used_fields[help_topic_name].field,&error)))
     goto error;
 
@@ -681,7 +681,7 @@ bool mysqld_help(THD *thd, const char *mask)
   {
     int key_id;
     if (!(select=
-          prepare_select_for_name(thd,mask,mlen,tables,tables[3].table,
+          prepare_select_for_name(thd,mask,(uint) mlen,tables,tables[3].table,
                                   used_fields[help_keyword_name].field,&error)))
       goto error;
 
@@ -698,7 +698,7 @@ bool mysqld_help(THD *thd, const char *mask)
     int16 category_id;
     Field *cat_cat_id= used_fields[help_category_parent_category_id].field;
     if (!(select=
-          prepare_select_for_name(thd,mask,mlen,tables,tables[1].table,
+          prepare_select_for_name(thd,mask,(uint) mlen,tables,tables[1].table,
                                   used_fields[help_category_name].field,&error)))
       goto error;
 
@@ -759,7 +759,7 @@ bool mysqld_help(THD *thd, const char *mask)
 	send_variant_2_list(mem_root,protocol, &topics_list, "N", 0))
       goto error;
     if (!(select=
-          prepare_select_for_name(thd,mask,mlen,tables,tables[1].table,
+          prepare_select_for_name(thd,mask,(uint) mlen,tables,tables[1].table,
                                   used_fields[help_category_name].field,&error)))
       goto error;
     search_categories(thd, tables[1].table, used_fields,

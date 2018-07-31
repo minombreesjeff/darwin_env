@@ -123,6 +123,9 @@ sp_get_item_value(THD *thd, Item *item, String *str)
         if (cs->escape_with_backslash_is_dangerous)
           buf.append(' ');
         append_query_string(cs, result, &buf);
+        buf.append(" COLLATE '");
+        buf.append(item->collation.collation->name);
+        buf.append('\'');
         str->copy(buf);
 
         return str;
@@ -378,7 +381,7 @@ sp_name::sp_name(THD *thd, char *key, uint key_len)
   m_qname.length= key_len - 1;
   if ((m_name.str= strchr(m_qname.str, '.')))
   {
-    m_db.length= m_name.str - key;
+    m_db.length= (uint) (m_name.str - key);
     m_db.str= strmake_root(thd->mem_root, key, m_db.length);
     m_name.str++;
     m_name.length= m_qname.length - m_db.length - 1;
@@ -444,9 +447,9 @@ sp_head::operator new(size_t size) throw()
   sp_head *sp;
 
   init_sql_alloc(&own_root, MEM_ROOT_BLOCK_SIZE, MEM_ROOT_PREALLOC);
-  sp= (sp_head *) alloc_root(&own_root, size);
+  sp= (sp_head *) alloc_root(&own_root, (uint) size);
   if (sp == NULL)
-    return NULL;
+    DBUG_RETURN(NULL);
   sp->main_mem_root= own_root;
   DBUG_PRINT("info", ("mem_root 0x%lx", (ulong) &sp->mem_root));
   DBUG_RETURN(sp);
@@ -591,11 +594,11 @@ sp_head::init_strings(THD *thd, LEX *lex)
   const char *endp;                  /* Used to trim the end */
   /* During parsing, we must use thd->mem_root */
   MEM_ROOT *root= thd->mem_root;
-  Lex_input_stream *lip=thd->m_lip;
+  Lex_input_stream *lip= & thd->m_parser_state->m_lip;
 
   if (m_param_begin && m_param_end)
   {
-    m_params.length= m_param_end - m_param_begin;
+    m_params.length= (uint) (m_param_end - m_param_begin);
     m_params.str= strmake_root(root,
                                (char *)m_param_begin, m_params.length);
   }
@@ -608,9 +611,9 @@ sp_head::init_strings(THD *thd, LEX *lex)
   */
   endp= skip_rear_comments(thd->charset(), (char*) m_body_begin, (char*) endp);
 
-  m_body.length= endp - m_body_begin;
+  m_body.length= (uint) (endp - m_body_begin);
   m_body.str= strmake_root(root, m_body_begin, m_body.length);
-  m_defstr.length= endp - lip->buf;
+  m_defstr.length= (uint) (endp - lip->buf);
   m_defstr.str= strmake_root(root, lip->buf, m_defstr.length);
   DBUG_VOID_RETURN;
 }
@@ -891,6 +894,8 @@ subst_spvars(THD *thd, sp_instr *instr, LEX_STRING *query_str)
   qbuf.length(0);
   cur= query_str->str;
   prev_pos= res= 0;
+  thd->query_name_consts= 0;
+  
   for (Item_splocal **splocal= sp_vars_uses.front(); 
        splocal < sp_vars_uses.back(); splocal++)
   {
@@ -924,6 +929,8 @@ subst_spvars(THD *thd, sp_instr *instr, LEX_STRING *query_str)
     res|= qbuf.append(')');
     if (res)
       break;
+      
+    thd->query_name_consts++;
   }
   res|= qbuf.append(cur + prev_pos, query_str->length - prev_pos);
   if (res)
@@ -1096,7 +1103,7 @@ sp_head::execute(THD *thd)
   */
   thd->spcont->callers_arena= &backup_arena;
 
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   /* Discard the initial part of executing routines. */
   thd->profiling.discard_current_query();
 #endif
@@ -1105,7 +1112,7 @@ sp_head::execute(THD *thd)
     sp_instr *i;
     uint hip;			// Handler ip
 
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
     /* 
      Treat each "instr" of a routine as discrete unit that could be profiled.
      Profiling only records information for segments of code that set the
@@ -1118,7 +1125,7 @@ sp_head::execute(THD *thd)
     i = get_instr(ip);	// Returns NULL when we're done.
     if (i == NULL)
     {
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
       thd->profiling.discard_current_query();
 #endif
       break;
@@ -1202,7 +1209,7 @@ sp_head::execute(THD *thd)
     }
   } while (!err_status && !thd->killed);
 
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   thd->profiling.finish_current_query();
   thd->profiling.start_new_query("tail end of routine");
 #endif
@@ -1623,7 +1630,8 @@ sp_head::execute_function(THD *thd, Item **argp, uint argcount,
   if (need_binlog_call && thd->binlog_evt_union.unioned_events)
   {
     Query_log_event qinfo(thd, binlog_buf.ptr(), binlog_buf.length(),
-                          thd->binlog_evt_union.unioned_events_trans, FALSE);
+                          thd->binlog_evt_union.unioned_events_trans,
+                          FALSE, THD::KILLED_NO_VALUE);
     if (mysql_bin_log.write(&qinfo) &&
         thd->binlog_evt_union.unioned_events_trans)
     {
@@ -1787,7 +1795,11 @@ sp_head::execute_procedure(THD *thd, List<Item> *args)
       we'll leave it here.
     */
     if (!thd->in_sub_stmt)
-      close_thread_tables(thd, 0, 0);
+    {
+      thd->lex->unit.cleanup();
+      close_thread_tables(thd);            
+      thd->rollback_item_tree_changes();
+    }
 
     DBUG_PRINT("info",(" %.*s: eval args done", m_name.length, m_name.str));
   }
@@ -1942,17 +1954,16 @@ sp_head::restore_lex(THD *thd)
   DBUG_VOID_RETURN;
 }
 
-void
+int
 sp_head::push_backpatch(sp_instr *i, sp_label_t *lab)
 {
   bp_t *bp= (bp_t *)sql_alloc(sizeof(bp_t));
 
-  if (bp)
-  {
-    bp->lab= lab;
-    bp->instr= i;
-    (void)m_backpatch.push_front(bp);
-  }
+  if (!bp)
+    return 1;
+  bp->lab= lab;
+  bp->instr= i;
+  return m_backpatch.push_front(bp);
 }
 
 void
@@ -2027,7 +2038,7 @@ sp_head::fill_field_definition(THD *thd, LEX *lex,
 }
 
 
-void
+int
 sp_head::new_cont_backpatch(sp_instr_opt_meta *i)
 {
   m_cont_level+= 1;
@@ -2035,15 +2046,17 @@ sp_head::new_cont_backpatch(sp_instr_opt_meta *i)
   {
     /* Use the cont. destination slot to store the level */
     i->m_cont_dest= m_cont_level;
-    (void)m_cont_backpatch.push_front(i);
+    if (m_cont_backpatch.push_front(i))
+      return 1;
   }
+  return 0;
 }
 
-void
+int
 sp_head::add_cont_backpatch(sp_instr_opt_meta *i)
 {
   i->m_cont_dest= m_cont_level;
-  (void)m_cont_backpatch.push_front(i);
+  return m_cont_backpatch.push_front(i);
 }
 
 void
@@ -2225,7 +2238,7 @@ sp_head::show_create_procedure(THD *thd)
     instr   Instruction
 */
 
-void sp_head::add_instr(sp_instr *instr)
+int sp_head::add_instr(sp_instr *instr)
 {
   instr->free_list= m_thd->free_list;
   m_thd->free_list= 0;
@@ -2236,7 +2249,7 @@ void sp_head::add_instr(sp_instr *instr)
     entire stored procedure, as their life span is equal.
   */
   instr->mem_root= &main_mem_root;
-  insert_dynamic(&m_instr, (gptr)&instr);
+  return insert_dynamic(&m_instr, (gptr)&instr);
 }
 
 
@@ -2622,7 +2635,7 @@ sp_instr_stmt::execute(THD *thd, uint *nextp)
 
   query= thd->query;
   query_length= thd->query_length;
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   /* This s-p instr is profilable and will be captured. */
   thd->profiling.set_query_source(m_query.str, m_query.length);
 #endif
@@ -2643,6 +2656,7 @@ sp_instr_stmt::execute(THD *thd, uint *nextp)
       *nextp= m_ip+1;
     thd->query= query;
     thd->query_length= query_length;
+    thd->query_name_consts= 0;
   }
   DBUG_RETURN(res);
 }
@@ -3628,7 +3642,7 @@ sp_head::merge_table_list(THD *thd, TABLE_LIST *table, LEX *lex_for_tmp_check)
       memcpy(tname+tlen, table->table_name, table->table_name_length);
       tlen+= table->table_name_length;
       tname[tlen++]= '\0';
-      alen= strlen(table->alias);
+      alen= (uint) strlen(table->alias);
       memcpy(tname+tlen, table->alias, alen);
       tlen+= alen;
       tname[tlen]= '\0';
@@ -3793,9 +3807,9 @@ sp_add_to_query_tables(THD *thd, LEX *lex,
     thd->fatal_error();
     return NULL;
   }
-  table->db_length= strlen(db);
+  table->db_length= (uint) strlen(db);
   table->db= thd->strmake(db, table->db_length);
-  table->table_name_length= strlen(name);
+  table->table_name_length= (uint) strlen(name);
   table->table_name= thd->strmake(name, table->table_name_length);
   table->alias= thd->strdup(name);
   table->lock_type= locktype;

@@ -1170,7 +1170,7 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 415 "sql_yacc.yy"
+#line 416 "sql_yacc.yy"
 {
   int  num;
   ulong ulong_num;
@@ -1210,7 +1210,7 @@ typedef union YYSTYPE
   sp_name *spname;
   struct st_lex *lex;
 }
-/* Line 1529 of yacc.c.  */
+/* Line 1489 of yacc.c.  */
 #line 1215 "sql_yacc.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql_tzinfo_to_sql\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL_TZINFO_TO_S" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL_TZINFO_TO_S" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -27,7 +27,7 @@ database (the set of files describing time zones). Examples of such systems are 
 \fI/usr/share/zoneinfo\fR
 directory (\fI/usr/share/lib/zoneinfo\fR
 on Solaris). If your system does not have a zoneinfo database, you can use the downloadable package described in
-Section\ 7, \(lqMySQL Server Time Zone Support\(rq.
+Section\ 9.7, \(lqMySQL Server Time Zone Support\(rq.
 .PP
 \fBmysql_tzinfo_to_sql\fR
 can be invoked several ways:
@@ -40,7 +40,7 @@ shell> \fBmysql_tzinfo_to_sql \-\-leap \fR\fB\fItz_file\fR\fR
 .fi
 .RE
 .PP
-For the first invocation syntax, pass the zoneinfo directory pathname to
+For the first invocation syntax, pass the zoneinfo directory path name to
 \fBmysql_tzinfo_to_sql\fR
 and send the output into the
 \fBmysql\fR
@@ -86,9 +86,9 @@ After running
 \fBmysql_tzinfo_to_sql\fR, it is best to restart the server so that it does not continue to use any previously cached time zone data.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -98,4 +98,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

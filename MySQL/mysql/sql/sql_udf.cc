@@ -176,13 +176,13 @@ void udf_init()
   }
 
   table= tables.table;
-  init_read_record(&read_record_info, new_thd, table, NULL,1,0);
+  init_read_record(&read_record_info, new_thd, table, NULL,1,0,FALSE);
   while (!(error = read_record_info.read_record(&read_record_info)))
   {
     DBUG_PRINT("info",("init udf record"));
     LEX_STRING name;
     name.str=get_field(&mem, table->field[0]);
-    name.length = strlen(name.str);
+    name.length = (uint) strlen(name.str);
     char *dl_name= get_field(&mem, table->field[2]);
     bool new_dl=0;
     Item_udftype udftype=UDFTYPE_FUNCTION;

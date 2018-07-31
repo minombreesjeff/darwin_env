@@ -205,7 +205,8 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   acl_cache->clear(1);				// Clear locked hostname cache
 
   init_sql_alloc(&mem, ACL_ALLOC_BLOCK_SIZE, 0);
-  init_read_record(&read_record_info,thd,table= tables[0].table,NULL,1,0);
+  init_read_record(&read_record_info,thd,table= tables[0].table,NULL,1,0, 
+                   FALSE);
   VOID(my_init_dynamic_array(&acl_hosts,sizeof(ACL_HOST),20,50));
   while (!(read_record_info.read_record(&read_record_info)))
   {
@@ -253,7 +254,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   end_read_record(&read_record_info);
   freeze_size(&acl_hosts);
 
-  init_read_record(&read_record_info,thd,table=tables[1].table,NULL,1,0);
+  init_read_record(&read_record_info,thd,table=tables[1].table,NULL,1,0,FALSE);
   VOID(my_init_dynamic_array(&acl_users,sizeof(ACL_USER),50,100));
   password_length= table->field[2]->field_length /
     table->field[2]->charset()->mbmaxlen;
@@ -312,8 +313,8 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
     }
 
     const char *password= get_field(thd->mem_root, table->field[2]);
-    uint password_len= password ? strlen(password) : 0;
-    set_user_salt(&user, password, password_len);
+    size_t password_len= password ? strlen(password) : 0;
+    set_user_salt(&user, password, (uint) password_len);
     if (user.salt_len == 0 && password_len != 0)
     {
       switch (password_len) {
@@ -426,7 +427,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   end_read_record(&read_record_info);
   freeze_size(&acl_users);
 
-  init_read_record(&read_record_info,thd,table=tables[2].table,NULL,1,0);
+  init_read_record(&read_record_info,thd,table=tables[2].table,NULL,1,0,FALSE);
   VOID(my_init_dynamic_array(&acl_dbs,sizeof(ACL_DB),50,100));
   while (!(read_record_info.read_record(&read_record_info)))
   {
@@ -1404,7 +1405,7 @@ int check_change_password(THD *thd, const char *host, const char *user,
                MYF(0));
     return(1);
   }
-  uint len=strlen(new_password);
+  size_t len= strlen(new_password);
   if (len && len != SCRAMBLED_PASSWORD_CHAR_LENGTH &&
       len != SCRAMBLED_PASSWORD_CHAR_LENGTH_323)
   {
@@ -1438,14 +1439,14 @@ bool change_password(THD *thd, const char *host, const char *user,
   /* Buffer should be extended when password length is extended. */
   char buff[512];
   ulong query_length;
-  uint new_password_len= strlen(new_password);
+  size_t new_password_len= strlen(new_password);
   bool result= 1;
   DBUG_ENTER("change_password");
   DBUG_PRINT("enter",("host: '%s'  user: '%s'  new_password: '%s'",
 		      host,user,new_password));
   DBUG_ASSERT(host != 0);			// Ensured by parent
 
-  if (check_change_password(thd, host, user, new_password, new_password_len))
+  if (check_change_password(thd, host, user, new_password, (uint) new_password_len))
     DBUG_RETURN(1);
 
   bzero((char*) &tables, sizeof(tables));
@@ -1482,12 +1483,12 @@ bool change_password(THD *thd, const char *host, const char *user,
     goto end;
   }
   /* update loaded acl entry: */
-  set_user_salt(acl_user, new_password, new_password_len);
+  set_user_salt(acl_user, new_password, (uint) new_password_len);
 
   if (update_user_table(thd, table,
 			acl_user->host.hostname ? acl_user->host.hostname : "",
 			acl_user->user ? acl_user->user : "",
-			new_password, new_password_len))
+			new_password, (uint) new_password_len))
   {
     VOID(pthread_mutex_unlock(&acl_cache->lock)); /* purecov: deadcode */
     goto end;
@@ -1505,7 +1506,8 @@ bool change_password(THD *thd, const char *host, const char *user,
                   acl_user->host.hostname ? acl_user->host.hostname : "",
                   new_password));
     thd->clear_error();
-    Query_log_event qinfo(thd, buff, query_length, 0, FALSE);
+    Query_log_event qinfo(thd, buff, query_length,
+                          0, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
 end:
@@ -1640,11 +1642,11 @@ bool hostname_requires_resolving(const char *hostname)
   char cur;
   if (!hostname)
     return FALSE;
-  int namelen= strlen(hostname);
-  int lhlen= strlen(my_localhost);
+  size_t namelen= strlen(hostname);
+  size_t lhlen= strlen(my_localhost);
   if ((namelen == lhlen) &&
-      !my_strnncoll(system_charset_info, (const uchar *)hostname,  namelen,
-		    (const uchar *)my_localhost, strlen(my_localhost)))
+      !my_strnncoll(system_charset_info, (const uchar *)hostname, (uint) namelen,
+		    (const uchar *)my_localhost, (uint) strlen(my_localhost)))
     return FALSE;
   for (; (cur=*hostname); hostname++)
   {
@@ -1872,13 +1874,13 @@ static int replace_user_table(THD *thd, TABLE *table, const LEX_USER &combo,
       table->field[next_field+3]->store("", 0, &my_charset_latin1);
       if (lex->ssl_cipher)
         table->field[next_field+1]->store(lex->ssl_cipher,
-                                strlen(lex->ssl_cipher), system_charset_info);
+                                (uint) strlen(lex->ssl_cipher), system_charset_info);
       if (lex->x509_issuer)
         table->field[next_field+2]->store(lex->x509_issuer,
-                                strlen(lex->x509_issuer), system_charset_info);
+                                (uint) strlen(lex->x509_issuer), system_charset_info);
       if (lex->x509_subject)
         table->field[next_field+3]->store(lex->x509_subject,
-                                strlen(lex->x509_subject), system_charset_info);
+                                (uint) strlen(lex->x509_subject), system_charset_info);
       break;
     case SSL_TYPE_NOT_SPECIFIED:
       break;
@@ -3013,7 +3015,8 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
     if (mysql_bin_log.is_open())
     {
       thd->clear_error();
-      Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+      Query_log_event qinfo(thd, thd->query, thd->query_length,
+                            0, FALSE, THD::NOT_KILLED);
       mysql_bin_log.write(&qinfo);
     }
   }
@@ -3180,7 +3183,8 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
     if (mysql_bin_log.is_open())
     {
       thd->clear_error();
-      Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+      Query_log_event qinfo(thd, thd->query, thd->query_length,
+                            0, FALSE, THD::NOT_KILLED);
       mysql_bin_log.write(&qinfo);
     }
   }
@@ -3293,7 +3297,8 @@ bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &list,
     if (mysql_bin_log.is_open())
     {
       thd->clear_error();
-      Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+      Query_log_event qinfo(thd, thd->query, thd->query_length,
+                            0, FALSE, THD::NOT_KILLED);
       mysql_bin_log.write(&qinfo);
     }
   }
@@ -3865,6 +3870,11 @@ bool check_grant_all_columns(THD *thd, ulong want_access_arg,
   Security_context *sctx= thd->security_ctx;
   ulong want_access= want_access_arg;
   const char *table_name= NULL;
+  /*
+    Flag that gets set if privilege checking has to be performed on column
+    level.
+   */
+  bool using_column_privileges= FALSE;
 
   if (grant_option)
   {
@@ -3908,6 +3918,8 @@ bool check_grant_all_columns(THD *thd, ulong want_access_arg,
         GRANT_COLUMN *grant_column= 
           column_hash_search(grant_table, field_name,
                              (uint) strlen(field_name));
+        if (grant_column)
+          using_column_privileges= TRUE;
         if (!grant_column || (~grant_column->rights & want_access))
           goto err;
       }
@@ -3923,12 +3935,21 @@ err:
 
   char command[128];
   get_privilege_desc(command, sizeof(command), want_access);
-  my_error(ER_COLUMNACCESS_DENIED_ERROR, MYF(0),
-           command,
-           sctx->priv_user,
-           sctx->host_or_ip,
-           fields->name(),
-           table_name);
+  /*
+    Do not give an error message listing a column name unless the user has
+    privilege to see all columns.
+  */
+  if (using_column_privileges)
+    my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0),
+             command, sctx->priv_user,
+             sctx->host_or_ip, table_name); 
+  else
+    my_error(ER_COLUMNACCESS_DENIED_ERROR, MYF(0),
+             command,
+             sctx->priv_user,
+             sctx->host_or_ip,
+             fields->name(),
+             table_name);
   return 1;
 }
 
@@ -4185,10 +4206,10 @@ static void add_user_option(String *grant, ulong value, const char *name)
   {
     char buff[22], *p; // just as in int2str
     grant->append(' ');
-    grant->append(name, strlen(name));
+    grant->append(name, (uint) strlen(name));
     grant->append(' ');
     p=int10_to_str(value, buff, 10);
-    grant->append(buff,p-buff);
+    grant->append(buff,(uint) (p - buff));
   }
 }
 
@@ -4326,7 +4347,7 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
       {
 	ssl_options++;
 	global.append(STRING_WITH_LEN("ISSUER \'"));
-	global.append(acl_user->x509_issuer,strlen(acl_user->x509_issuer));
+	global.append(acl_user->x509_issuer,(uint) strlen(acl_user->x509_issuer));
 	global.append('\'');
       }
       if (acl_user->x509_subject)
@@ -4334,7 +4355,7 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	if (ssl_options++)
 	  global.append(' ');
 	global.append(STRING_WITH_LEN("SUBJECT \'"));
-	global.append(acl_user->x509_subject,strlen(acl_user->x509_subject),
+	global.append(acl_user->x509_subject,(uint) strlen(acl_user->x509_subject),
                       system_charset_info);
 	global.append('\'');
       }
@@ -4343,7 +4364,7 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	if (ssl_options++)
 	  global.append(' ');
 	global.append(STRING_WITH_LEN("CIPHER '"));
-	global.append(acl_user->ssl_cipher,strlen(acl_user->ssl_cipher),
+	global.append(acl_user->ssl_cipher,(uint) strlen(acl_user->ssl_cipher),
                       system_charset_info);
 	global.append('\'');
       }
@@ -4423,13 +4444,13 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	  }
 	}
 	db.append (STRING_WITH_LEN(" ON "));
-	append_identifier(thd, &db, acl_db->db, strlen(acl_db->db));
+	append_identifier(thd, &db, acl_db->db, (uint) strlen(acl_db->db));
 	db.append (STRING_WITH_LEN(".* TO '"));
 	db.append(lex_user->user.str, lex_user->user.length,
 		  system_charset_info);
 	db.append (STRING_WITH_LEN("'@'"));
 	// host and lex_user->host are equal except for case
-	db.append(host, strlen(host), system_charset_info);
+	db.append(host, (uint) strlen(host), system_charset_info);
 	db.append ('\'');
 	if (want_access & GRANT_ACL)
 	  db.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -4535,16 +4556,16 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	}
 	global.append(STRING_WITH_LEN(" ON "));
 	append_identifier(thd, &global, grant_table->db,
-			  strlen(grant_table->db));
+			  (uint) strlen(grant_table->db));
 	global.append('.');
 	append_identifier(thd, &global, grant_table->tname,
-			  strlen(grant_table->tname));
+			  (uint) strlen(grant_table->tname));
 	global.append(STRING_WITH_LEN(" TO '"));
 	global.append(lex_user->user.str, lex_user->user.length,
 		      system_charset_info);
 	global.append(STRING_WITH_LEN("'@'"));
 	// host and lex_user->host are equal except for case
-	global.append(host, strlen(host), system_charset_info);
+	global.append(host, (uint) strlen(host), system_charset_info);
 	global.append('\'');
 	if (table_access & GRANT_ACL)
 	  global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -4641,16 +4662,16 @@ static int show_routine_grants(THD* thd, LEX_USER *lex_user, HASH *hash,
         global.append(type,typelen);
         global.append(' ');
 	append_identifier(thd, &global, grant_proc->db,
-			  strlen(grant_proc->db));
+			  (uint) strlen(grant_proc->db));
 	global.append('.');
 	append_identifier(thd, &global, grant_proc->tname,
-			  strlen(grant_proc->tname));
+			  (uint) strlen(grant_proc->tname));
 	global.append(STRING_WITH_LEN(" TO '"));
 	global.append(lex_user->user.str, lex_user->user.length,
 		      system_charset_info);
 	global.append(STRING_WITH_LEN("'@'"));
 	// host and lex_user->host are equal except for case
-	global.append(host, strlen(host), system_charset_info);
+	global.append(host, (uint) strlen(host), system_charset_info);
 	global.append('\'');
 	if (proc_access & GRANT_ACL)
 	  global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -5387,7 +5408,8 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list)
 
   if (some_users_created && mysql_bin_log.is_open())
   {
-    Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length,
+                          0, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
 
@@ -5429,7 +5451,6 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list)
 
   while ((tmp_user_name= user_list++))
   {
-    user_name= get_current_user(thd, tmp_user_name);
     if (!(user_name= get_current_user(thd, tmp_user_name)))
     {
       result= TRUE;
@@ -5457,7 +5478,8 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list)
 
   if (some_users_deleted && mysql_bin_log.is_open())
   {
-    Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length, 
+                          0, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
 
@@ -5537,7 +5559,8 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list)
   
   if (some_users_renamed && mysql_bin_log.is_open())
   {
-    Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length, 
+                          0, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
 
@@ -5715,7 +5738,8 @@ bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 
   if (mysql_bin_log.is_open())
   {
-    Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length,
+                          0, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
 
@@ -5769,11 +5793,11 @@ bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
       {
         LEX_USER lex_user;
 	lex_user.user.str= grant_proc->user;
-	lex_user.user.length= strlen(grant_proc->user);
+	lex_user.user.length= (uint) strlen(grant_proc->user);
 	lex_user.host.str= grant_proc->host.hostname ?
 	  grant_proc->host.hostname : (char*)"";
 	lex_user.host.length= grant_proc->host.hostname ?
-	  strlen(grant_proc->host.hostname) : 0;
+	  (uint) strlen(grant_proc->host.hostname) : 0;
 	if (!replace_routine_table(thd,grant_proc,tables[4].table,lex_user,
 				   grant_proc->db, grant_proc->tname,
                                    is_proc, ~(ulong)0, 1))
@@ -5852,8 +5876,8 @@ int sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
   tables->db= (char*)sp_db;
   tables->table_name= tables->alias= (char*)sp_name;
 
-  combo->host.length= strlen(combo->host.str);
-  combo->user.length= strlen(combo->user.str);
+  combo->host.length= (uint) strlen(combo->host.str);
+  combo->user.length= (uint) strlen(combo->user.str);
   combo->host.str= thd->strmake(combo->host.str,combo->host.length);
   combo->user.str= thd->strmake(combo->user.str,combo->user.length);
 
@@ -5953,10 +5977,12 @@ int wild_case_compare(CHARSET_INFO *cs, const char *str,const char *wildstr)
 }
 
 
-void update_schema_privilege(TABLE *table, char *buff, const char* db,
-                             const char* t_name, const char* column,
-                             uint col_length, const char *priv, 
-                             uint priv_length, const char* is_grantable)
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+static bool update_schema_privilege(THD *thd, TABLE *table, char *buff,
+                                    const char* db, const char* t_name,
+                                    const char* column, uint col_length,
+                                    const char *priv, uint priv_length,
+                                    const char* is_grantable)
 {
   int i= 2;
   CHARSET_INFO *cs= system_charset_info;
@@ -5970,13 +5996,15 @@ void update_schema_privilege(TABLE *table, char *buff, const char* db,
     table->field[i++]->store(column, col_length, cs);
   table->field[i++]->store(priv, priv_length, cs);
   table->field[i]->store(is_grantable, strlen(is_grantable), cs);
-  table->file->write_row(table->record[0]);
+  return schema_table_store_record(thd, table);
 }
+#endif
 
 
 int fill_schema_user_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 {
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
+  int error= 0;
   uint counter;
   ACL_USER *acl_user;
   ulong want_access;
@@ -6010,8 +6038,14 @@ int fill_schema_user_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 
     strxmov(buff,"'",user,"'@'",host,"'",NullS);
     if (!(want_access & ~GRANT_ACL))
-      update_schema_privilege(table, buff, 0, 0, 0, 0,
-                              STRING_WITH_LEN("USAGE"), is_grantable);
+    {
+      if (update_schema_privilege(thd, table, buff, 0, 0, 0, 0,
+                                  STRING_WITH_LEN("USAGE"), is_grantable))
+      {
+        error= 1;
+        goto err;
+      }
+    }
     else
     {
       uint priv_id;
@@ -6019,16 +6053,22 @@ int fill_schema_user_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
       for (priv_id=0, j = SELECT_ACL;j <= GLOBAL_ACLS; priv_id++,j <<= 1)
       {
 	if (test_access & j)
-          update_schema_privilege(table, buff, 0, 0, 0, 0, 
-                                  command_array[priv_id],
-                                  command_lengths[priv_id], is_grantable);
+        {
+          if (update_schema_privilege(thd, table, buff, 0, 0, 0, 0, 
+                                      command_array[priv_id],
+                                      command_lengths[priv_id], is_grantable))
+          {
+            error= 1;
+            goto err;
+          }
+        }
       }
     }
   }
-
+err:
   pthread_mutex_unlock(&acl_cache->lock);
 
-  DBUG_RETURN(0);
+  DBUG_RETURN(error);
 #else
   return(0);
 #endif
@@ -6038,6 +6078,7 @@ int fill_schema_user_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 int fill_schema_schema_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 {
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
+  int error= 0;
   uint counter;
   ACL_DB *acl_db;
   ulong want_access;
@@ -6075,24 +6116,36 @@ int fill_schema_schema_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
       }
       strxmov(buff,"'",user,"'@'",host,"'",NullS);
       if (!(want_access & ~GRANT_ACL))
-        update_schema_privilege(table, buff, acl_db->db, 0, 0,
-                                0, STRING_WITH_LEN("USAGE"), is_grantable);
+      {
+        if (update_schema_privilege(thd, table, buff, acl_db->db, 0, 0,
+                                    0, STRING_WITH_LEN("USAGE"), is_grantable))
+        {
+          error= 1;
+          goto err;
+        }
+      }
       else
       {
         int cnt;
         ulong j,test_access= want_access & ~GRANT_ACL;
         for (cnt=0, j = SELECT_ACL; j <= DB_ACLS; cnt++,j <<= 1)
           if (test_access & j)
-            update_schema_privilege(table, buff, acl_db->db, 0, 0, 0,
-                                    command_array[cnt], command_lengths[cnt],
-                                    is_grantable);
+          {
+            if (update_schema_privilege(thd, table, buff, acl_db->db, 0, 0, 0,
+                                        command_array[cnt], command_lengths[cnt],
+                                        is_grantable))
+            {
+              error= 1;
+              goto err;
+            }
+          }
       }
     }
   }
-
+err:
   pthread_mutex_unlock(&acl_cache->lock);
 
-  DBUG_RETURN(0);
+  DBUG_RETURN(error);
 #else
   return (0);
 #endif
@@ -6102,6 +6155,7 @@ int fill_schema_schema_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 int fill_schema_table_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 {
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
+  int error= 0;
   uint index;
   char buff[100];
   TABLE *table= tables->table;
@@ -6141,8 +6195,15 @@ int fill_schema_table_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 
       strxmov(buff, "'", user, "'@'", host, "'", NullS);
       if (!test_access)
-        update_schema_privilege(table, buff, grant_table->db, grant_table->tname,
-                                0, 0, STRING_WITH_LEN("USAGE"), is_grantable);
+      {
+        if (update_schema_privilege(thd, table, buff, grant_table->db,
+                                    grant_table->tname, 0, 0,
+                                    STRING_WITH_LEN("USAGE"), is_grantable))
+        {
+          error= 1;
+          goto err;
+        }
+      }
       else
       {
         ulong j;
@@ -6150,17 +6211,24 @@ int fill_schema_table_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
         for (cnt= 0, j= SELECT_ACL; j <= TABLE_ACLS; cnt++, j<<= 1)
         {
           if (test_access & j)
-            update_schema_privilege(table, buff, grant_table->db, 
-                                    grant_table->tname, 0, 0, command_array[cnt],
-                                    command_lengths[cnt], is_grantable);
+          {
+            if (update_schema_privilege(thd, table, buff, grant_table->db,
+                                        grant_table->tname, 0, 0,
+                                        command_array[cnt],
+                                        command_lengths[cnt], is_grantable))
+            {
+              error= 1;
+              goto err;
+            }
+          }
         }
       }
-    }
+    }   
   }
-
+err:
   rw_unlock(&LOCK_grant);
 
-  DBUG_RETURN(0);
+  DBUG_RETURN(error);
 #else
   return (0);
 #endif
@@ -6170,6 +6238,7 @@ int fill_schema_table_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 int fill_schema_column_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
 {
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
+  int error= 0;
   uint index;
   char buff[100];
   TABLE *table= tables->table;
@@ -6219,22 +6288,28 @@ int fill_schema_column_privileges(THD *thd, TABLE_LIST *tables, COND *cond)
               GRANT_COLUMN *grant_column = (GRANT_COLUMN*)
                 hash_element(&grant_table->hash_columns,col_index);
               if ((grant_column->rights & j) && (table_access & j))
-                  update_schema_privilege(table, buff, grant_table->db,
-                                          grant_table->tname,
-                                          grant_column->column,
-                                          grant_column->key_length,
-                                          command_array[cnt],
-                                          command_lengths[cnt], is_grantable);
+              {
+                if (update_schema_privilege(thd, table, buff, grant_table->db,
+                                            grant_table->tname,
+                                            grant_column->column,
+                                            grant_column->key_length,
+                                            command_array[cnt],
+                                            command_lengths[cnt], is_grantable))
+                {
+                  error= 1;
+                  goto err;
+                }
+              }
             }
           }
         }
       }
     }
   }
-
+err:
   rw_unlock(&LOCK_grant);
 
-  DBUG_RETURN(0);
+  DBUG_RETURN(error);
 #else
   return (0);
 #endif

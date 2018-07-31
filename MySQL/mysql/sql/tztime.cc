@@ -1073,6 +1073,7 @@ Time_zone_system::gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const
   localtime_r(&tmp_t, &tmp_tm);
   localtime_to_TIME(tmp, &tmp_tm);
   tmp->time_type= MYSQL_TIMESTAMP_DATETIME;
+  adjust_leap_second(tmp);
 }
 
 
@@ -1157,6 +1158,7 @@ Time_zone_utc::gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const
   gmtime_r(&tmp_t, &tmp_tm);
   localtime_to_TIME(tmp, &tmp_tm);
   tmp->time_type= MYSQL_TIMESTAMP_DATETIME;
+  adjust_leap_second(tmp);
 }
 
 
@@ -1260,6 +1262,7 @@ void
 Time_zone_db::gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const
 {
   ::gmt_sec_to_TIME(tmp, t, tz_info);
+  adjust_leap_second(tmp);
 }
 
 
@@ -1868,6 +1871,12 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
 #ifdef ABBR_ARE_USED
   char chars[max(TZ_MAX_CHARS + 1, (2 * (MY_TZNAME_MAX + 1)))];
 #endif
+  /* 
+    Used as a temporary tz_info until we decide that we actually want to
+    allocate and keep the tz info and tz name in tz_storage.
+  */
+  TIME_ZONE_INFO tmp_tz_info;
+  memset(&tmp_tz_info, 0, sizeof(TIME_ZONE_INFO));
 
   DBUG_ENTER("tz_load_from_open_tables");
 
@@ -1911,7 +1920,8 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
       Most probably user has mistyped time zone name, so no need to bark here
       unless we need it for debugging.
     */
-    sql_print_error("Can't find description of time zone '%s'", tz_name_buff);
+     sql_print_error("Can't find description of time zone '%.*s'", 
+                     tz_name->length(), tz_name->ptr());
 #endif
     goto end;
   }
@@ -1940,8 +1950,8 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   /* If Uses_leap_seconds == 'Y' */
   if (table->field[1]->val_int() == 1)
   {
-    tz_info->leapcnt= tz_leapcnt;
-    tz_info->lsis= tz_lsis;
+    tmp_tz_info.leapcnt= tz_leapcnt;
+    tmp_tz_info.lsis= tz_lsis;
   }
 
   (void)table->file->ha_index_end();
@@ -1978,18 +1988,18 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
 #ifdef ABBR_ARE_USED
     // FIXME should we do something with duplicates here ?
     table->field[4]->val_str(&abbr, &abbr);
-    if (tz_info->charcnt + abbr.length() + 1 > sizeof(chars))
+    if (tmp_tz_info.charcnt + abbr.length() + 1 > sizeof(chars))
     {
       sql_print_error("Error while loading time zone description from "
                       "mysql.time_zone_transition_type table: not enough "
                       "room for abbreviations");
       goto end;
     }
-    ttis[ttid].tt_abbrind= tz_info->charcnt;
-    memcpy(chars + tz_info->charcnt, abbr.ptr(), abbr.length());
-    tz_info->charcnt+= abbr.length();
-    chars[tz_info->charcnt]= 0;
-    tz_info->charcnt++;
+    ttis[ttid].tt_abbrind= tmp_tz_info.charcnt;
+    memcpy(chars + tmp_tz_info.charcnt, abbr.ptr(), abbr.length());
+    tmp_tz_info.charcnt+= abbr.length();
+    chars[tmp_tz_info.charcnt]= 0;
+    tmp_tz_info.charcnt++;
 
     DBUG_PRINT("info",
       ("time_zone_transition_type table: tz_id=%u tt_id=%u tt_gmtoff=%ld "
@@ -2002,9 +2012,9 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
 #endif
 
     /* ttid is increasing because we are reading using index */
-    DBUG_ASSERT(ttid >= tz_info->typecnt);
+    DBUG_ASSERT(ttid >= tmp_tz_info.typecnt);
 
-    tz_info->typecnt= ttid + 1;
+    tmp_tz_info.typecnt= ttid + 1;
 
     res= table->file->index_next_same(table->record[0],
                                       (byte*)table->field[0]->ptr, 4);
@@ -2037,14 +2047,14 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
     ttime= (my_time_t)table->field[1]->val_int();
     ttid= (uint)table->field[2]->val_int();
 
-    if (tz_info->timecnt + 1 > TZ_MAX_TIMES)
+    if (tmp_tz_info.timecnt + 1 > TZ_MAX_TIMES)
     {
       sql_print_error("Error while loading time zone description from "
                       "mysql.time_zone_transition table: "
                       "too much transitions");
       goto end;
     }
-    if (ttid + 1 > tz_info->typecnt)
+    if (ttid + 1 > tmp_tz_info.typecnt)
     {
       sql_print_error("Error while loading time zone description from "
                       "mysql.time_zone_transition table: "
@@ -2052,9 +2062,9 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
       goto end;
     }
 
-    ats[tz_info->timecnt]= ttime;
-    types[tz_info->timecnt]= ttid;
-    tz_info->timecnt++;
+    ats[tmp_tz_info.timecnt]= ttime;
+    types[tmp_tz_info.timecnt]= ttid;
+    tmp_tz_info.timecnt++;
 
     DBUG_PRINT("info",
                ("time_zone_transition table: tz_id: %u  tt_time: %lu  tt_id: %u",
@@ -2077,6 +2087,34 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
 
   (void)table->file->ha_index_end();
   table= 0;
+
+  /*
+    Let us check how correct our time zone description is. We don't check for
+    tz->timecnt < 1 since it is ok for GMT.
+  */
+  if (tmp_tz_info.typecnt < 1)
+  {
+    sql_print_error("loading time zone without transition types");
+    goto end;
+  }
+
+  /* Allocate memory for the timezone info and timezone name in tz_storage. */
+  if (!(alloc_buff= (char*) alloc_root(&tz_storage, sizeof(TIME_ZONE_INFO) +
+                                       tz_name->length() + 1)))
+  {
+    sql_print_error("Out of memory while loading time zone description");
+    return 0;
+  }
+
+  /* Move the temporary tz_info into the allocated area */
+  tz_info= (TIME_ZONE_INFO *)alloc_buff;
+  memcpy(tz_info, &tmp_tz_info, sizeof(TIME_ZONE_INFO));
+  tz_name_buff= alloc_buff + sizeof(TIME_ZONE_INFO);
+  /*
+    By writing zero to the end we guarantee that we can call ptr()
+    instead of c_ptr() for time zone name.
+  */
+  strmake(tz_name_buff, tz_name->ptr(), tz_name->length());
 
   /*
     Now we will allocate memory and init TIME_ZONE_INFO structure.
@@ -2109,15 +2147,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   tz_info->ttis= (TRAN_TYPE_INFO *)alloc_buff;
   memcpy(tz_info->ttis, ttis, tz_info->typecnt * sizeof(TRAN_TYPE_INFO));
 
-  /*
-    Let us check how correct our time zone description and build
-    reversed map. We don't check for tz->timecnt < 1 since it ok for GMT.
-  */
-  if (tz_info->typecnt < 1)
-  {
-    sql_print_error("loading time zone without transition types");
-    goto end;
-  }
+  /* Build reversed map. */
   if (prepare_tz_info(tz_info, &tz_storage))
   {
     sql_print_error("Unable to build mktime map for time zone");
@@ -2371,6 +2401,25 @@ Time_zone *my_tz_find_with_opening_tz_tables(THD *thd, const String *name)
     close_thread_tables(thd);
   }
   DBUG_RETURN(tz);
+}
+
+
+/**
+  Convert leap seconds into non-leap
+
+  This function will convert the leap seconds added by the OS to 
+  non-leap seconds, e.g. 23:59:59, 23:59:60 -> 23:59:59, 00:00:01 ...
+  This check is not checking for years on purpose : although it's not a
+  complete check this way it doesn't require looking (and having installed)
+  the leap seconds table.
+
+  @param[in,out] broken down time structure as filled in by the OS
+*/
+
+void Time_zone::adjust_leap_second(MYSQL_TIME *t)
+{
+  if (t->second == 60 || t->second == 61)
+    t->second= 59;
 }
 
 #endif /* !defined(TESTTIME) && !defined(TZINFO2SQL) */

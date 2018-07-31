@@ -206,7 +206,6 @@ private const struct el_bindings_t el_func_help[] = {
       "Move down one line" },
     { "ed-command",                  ED_COMMAND,                   
       "Editline extended command" },
-    { NULL, 0, NULL }
 };
 
 protected const el_bindings_t* help__get(){ return el_func_help; }

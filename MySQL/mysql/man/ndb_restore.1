@@ -1,17 +1,17 @@
 .\"     Title: \fBndb_restore\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_RESTORE\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_RESTORE\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
-ndb_restore \- restore a Cluster backup
+ndb_restore \- restore a MySQL Cluster backup
 .SH "SYNOPSIS"
 .HP 20
 \fBndb_restore \fR\fB\fIoptions\fR\fR
@@ -26,7 +26,7 @@ directory. This program reads the files created as a result of the backup and in
 must be executed once for each of the backup files that were created by the
 START BACKUP
 command used to create the backup (see
-Section\ 9.2, \(lqUsing The Management Client to Create a Backup\(rq). This is equal to the number of data nodes in the cluster at the time that the backup was created.
+Section\ 17.7.3.2, \(lqUsing The MySQL Cluster Management Client to Create a Backup\(rq). This is equal to the number of data nodes in the cluster at the time that the backup was created.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -36,13 +36,14 @@ Section\ 9.2, \(lqUsing The Management Client to Create a Backup\(rq). This is e
 .PP
 Before using
 \fBndb_restore\fR, it is recommended that the cluster be running in single user mode, unless you are restoring multiple data nodes in parallel. See
-Section\ 7.5, \(lqSingle User Mode\(rq, for more information about single user mode.
+Section\ 17.7.6, \(lqMySQL Cluster Single User Mode\(rq, for more information about single user mode.
 .PP
 Typical options for this utility are shown here:
 .sp
 .RS 3n
 .nf
-ndb_restore [\-c \fIconnectstring\fR] \-n \fInode_id\fR [\-m] \-b \fIbackup_id\fR \-r [backup_path=]\fI/path/to/backup/files\fR
+ndb_restore [\-c \fIconnectstring\fR] \-n
+\fInode_id\fR [\-m] \-b \fIbackup_id\fR \-r \-\-backup_path=\fI/path/to/backup/files\fR
 .fi
 .RE
 .PP
@@ -51,7 +52,7 @@ The
 option is used to specify a connectstring which tells
 ndb_restore
 where to locate the cluster management server. (See
-Section\ 3.4.2, \(lqThe Cluster Connectstring\(rq, for information on connectstrings.) If this option is not used, then
+Section\ 17.3.4.2, \(lqThe MySQL Cluster Connectstring\(rq, for information on connectstrings.) If this option is not used, then
 \fBndb_restore\fR
 attempts to connect to a management server on
 localhost:1186. This utility acts as a cluster API node, and so requires a free connection
@@ -69,7 +70,7 @@ or
 section in
 \fIconfig.ini\fR
 that is not being used for a MySQL server or other application for this reason (see
-Section\ 3.4.6, \(lqDefining SQL and Other API Nodes\(rq).
+Section\ 17.3.4.6, \(lqDefining SQL and Other API Nodes in a MySQL Cluster\(rq).
 .PP
 You can verify that
 \fBndb_restore\fR
@@ -103,17 +104,7 @@ The
 option is used to specify the ID or sequence number of the backup, and is the same number shown by the management client in the
 Backup \fIbackup_id\fR completed
 message displayed upon completion of a backup. (See
-Section\ 9.2, \(lqUsing The Management Client to Create a Backup\(rq.)
-.PP
-The path to the backup directory is required, and must include the subdirectory corresponding to the ID backup of the backup to be restored. For example, if the data node's
-DataDir
-is
-\fI/var/lib/mysql\-cluster\fR, then the backup directory is
-\fI/var/lib/mysql\-cluster/BACKUP\fR, and the backup files for the backup with the ID 3 can be found in
-\fI/var/lib/mysql\-cluster/BACKUP/BACKUP\-3\fR. The path may be absolute or relative to the directory in which the
-\fBndb_restore\fR
-executable is located, and may be optionally prefixed with
-\fBbackup_path=\fR.
+Section\ 17.7.3.2, \(lqUsing The MySQL Cluster Management Client to Create a Backup\(rq.)
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -122,6 +113,51 @@ executable is located, and may be optionally prefixed with
 \fBImportant\fR
 .PP
 When restoring cluster backups, you must be sure to restore all data nodes from backups having the same backup ID. Using files from different backups will at best result in restoring the cluster to an inconsistent state, and may fail altogether.
+.PP
+The path to the backup directory is required; this is supplied to
+\fBndb_restore\fR
+using the
+\fB\-\-backup_path\fR
+option, and must include the subdirectory corresponding to the ID backup of the backup to be restored. For example, if the data node's
+DataDir
+is
+\fI/var/lib/mysql\-cluster\fR, then the backup directory is
+\fI/var/lib/mysql\-cluster/BACKUP\fR, and the backup files for the backup with the ID 3 can be found in
+\fI/var/lib/mysql\-cluster/BACKUP/BACKUP\-3\fR. The path may be absolute or relative to the directory in which the
+\fBndb_restore\fR
+executable is located.
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBNote\fR
+.PP
+Previous to MySQL 5.0.38, the path to the backup directory was specified as shown here, with
+\fBbackup_path=\fR
+being optional:
+.sp
+.RS 3n
+.nf
+[backup_path=]\fI/path/to/backup/files\fR
+.fi
+.RE
+.PP
+Beginning with MySQL 5.0.38, this syntax changed to
+\fB\-\-backup_path=\fR\fB\fI/path/to/backup/files\fR\fR, to conform more closely with options used by other MySQL programs;
+\fB\-\-backup_id\fR
+is required, and there is no short form for this option.
+.PP
+It is possible to restore a backup to a database with a different configuration than it was created from. For example, suppose that a backup with backup ID
+12, created in a cluster with two database nodes having the node IDs
+2
+and
+3, is to be restored to a cluster with four nodes. Then
+\fBndb_restore\fR
+must be run twice \(em once for each database node in the cluster where the backup was taken. However,
+\fBndb_restore\fR
+cannot always restore backups made from a cluster running one version of MySQL to a cluster running a different MySQL version. See
+Section\ 17.5.2, \(lqMySQL Cluster 5.0 Upgrade and Downgrade Compatibility\(rq, for more information.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -137,23 +173,6 @@ from the newer MySQL Cluster version to do so.
 For example, to restore a cluster backup taken from a cluster running MySQL 5.0.45 to a cluster running MySQL Cluster 5.0.41, you must use a copy of
 \fBndb_restore\fR
 from the 5.0.45 distribution.
-.PP
-It is possible to restore a backup to a database with a different configuration than it was created from. For example, suppose that a backup with backup ID
-12, created in a cluster with two database nodes having the node IDs
-2
-and
-3, is to be restored to a cluster with four nodes. Then
-\fBndb_restore\fR
-must be run twice \(em once for each database node in the cluster where the backup was taken. However,
-\fBndb_restore\fR
-cannot always restore backups made from a cluster running one version of MySQL to a cluster running a different MySQL version. See
-Section\ 5.2, \(lqMySQL Cluster 5.0 Upgrade and Downgrade Compatibility\(rq, for more information.
-.sp
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-\fBNote\fR
 .PP
 For more rapid restoration, the data may be restored in parallel, provided that there is a sufficient number of cluster connections available. That is, when restoring to multiple nodes in parallel, you must have an
 [api]
@@ -296,7 +315,7 @@ T}:T{
 T}:T{
 Backup sequence ID
 T}:T{
-0
+\fINone\fR
 T}
 T{
 \fB\-\-restore_meta\fR
@@ -317,13 +336,15 @@ T}:T{
 [N/A]
 T}
 T{
-\fB\-\-backup_path\fR
+\fB\-\-backup_path\fR (added in MySQL 5.0.38; previously this
+                  was \fBbackup_path\fR \(em see Note in
+                  text)
 T}:T{
 \fINone\fR
 T}:T{
 Path to backup files
 T}:T{
-\fI./\fR
+\fINone\fR
 T}
 T{
 \fB\-\-character\-sets\-dir\fR
@@ -426,22 +447,17 @@ All tables from one or more databases
 One or more tables from a single database
 .sp
 .RE
-.sp
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-\fBNote\fR
 .PP
+\fBError reporting\fR. 
 \fBndb_restore\fR
 reports both temporary and permanent errors. In the case of temporary errors, it may able to recover from them. Beginning with MySQL 5.0.29, it reports
 Restore successful, but encountered temporary error, please look at configuration
 in such cases.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -451,4 +467,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

@@ -74,7 +74,7 @@ MI_INFO *test_if_reopen(char *filename)
 
 MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 {
-  int lock_error,kfile,open_mode,save_errno,have_rtree=0;
+  int lock_error,kfile,open_mode,save_errno,have_rtree=0, realpath_err;
   uint i,j,len,errpos,head_length,base_pos,offset,info_length,keys,
     key_parts,unique_key_parts,fulltext_keys,uniques;
   char name_buff[FN_REFLEN], org_name[FN_REFLEN], index_name[FN_REFLEN],
@@ -94,7 +94,16 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
   head_length=sizeof(share_buff.state.header);
   bzero((byte*) &info,sizeof(info));
 
-  my_realpath(name_buff, fn_format(org_name,name,"",MI_NAME_IEXT,4),MYF(0));
+  realpath_err= my_realpath(name_buff,
+                  fn_format(org_name,name,"",MI_NAME_IEXT,4),MYF(0));
+  if (my_is_symlink(org_name) &&
+      (realpath_err || (*myisam_test_invalid_symlink)(name_buff)))
+  {
+    my_errno= HA_WRONG_CREATE_OPTION;
+    DBUG_RETURN (NULL);
+  }
+
+
   pthread_mutex_lock(&THR_LOCK_myisam);
   if (!(old_info=test_if_reopen(name_buff)))
   {
@@ -103,7 +112,8 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
     share_buff.state.rec_per_key_part=rec_per_key_part;
     share_buff.state.key_root=key_root;
     share_buff.state.key_del=key_del;
-    share_buff.key_cache= multi_key_cache_search(name_buff, strlen(name_buff));
+    share_buff.key_cache= multi_key_cache_search(name_buff, 
+                                                 (uint) strlen(name_buff));
 
     DBUG_EXECUTE_IF("myisam_pretend_crashed_table_on_open",
                     if (strstr(name, "/t1"))
@@ -305,7 +315,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	   (char*) key_del, (sizeof(my_off_t) *
 			     share->state.header.max_block_size));
     strmov(share->unique_file_name, name_buff);
-    share->unique_name_length= strlen(name_buff);
+    share->unique_name_length= (uint) strlen(name_buff);
     strmov(share->index_file_name,  index_name);
     strmov(share->data_file_name,   data_name);
 
@@ -463,7 +473,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       lock_error=1;			/* Database unlocked */
     }
 
-    if (mi_open_datafile(&info, share, -1))
+    if (mi_open_datafile(&info, share, name, -1))
       goto err;
     errpos=5;
 
@@ -534,7 +544,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       my_errno=EACCES;				/* Can't open in write mode */
       goto err;
     }
-    if (mi_open_datafile(&info, share, old_info->dfile))
+    if (mi_open_datafile(&info, share, name, old_info->dfile))
       goto err;
     errpos=5;
     have_rtree= old_info->rtree_recursion_state != NULL;
@@ -1191,12 +1201,30 @@ The argument file_to_dup is here for the future if there would on some OS
 exist a dup()-like call that would give us two different file descriptors.
 *************************************************************************/
 
-int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, File file_to_dup __attribute__((unused)))
+int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, const char *org_name,
+                     File file_to_dup __attribute__((unused)))
 {
+  char *data_name= share->data_file_name;
+  char real_data_name[FN_REFLEN];
+
+  if (org_name)
+  {
+    fn_format(real_data_name,org_name,"",MI_NAME_DEXT,4);
+    if (my_is_symlink(real_data_name))
+    {
+      if (my_realpath(real_data_name, real_data_name, MYF(0)) ||
+          (*myisam_test_invalid_symlink)(real_data_name))
+      {
+        my_errno= HA_WRONG_CREATE_OPTION;
+        return 1;
+      }
+      data_name= real_data_name;
+    }
+  }
 #ifdef USE_RAID
   if (share->base.raid_type)
   {
-    info->dfile=my_raid_open(share->data_file_name,
+    info->dfile=my_raid_open(data_name,
 			     share->mode | O_SHARE,
 			     share->base.raid_type,
 			     share->base.raid_chunks,
@@ -1205,8 +1233,7 @@ int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, File file_to_dup __attr
   }
   else
 #endif
-    info->dfile=my_open(share->data_file_name, share->mode | O_SHARE,
-			MYF(MY_WME));
+    info->dfile=my_open(data_name, share->mode | O_SHARE, MYF(MY_WME));
   return info->dfile >= 0 ? 0 : 1;
 }
 

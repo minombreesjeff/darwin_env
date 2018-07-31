@@ -6,19 +6,24 @@
  * It was generated using rpcgen.
  */
 
-#include <memory.h> /* for memset */
 #include "../rpc_server/db_server.h"
+#ifndef _KERNEL
+#include <stdio.h>
+#include <stdlib.h> /* getenv, exit */
+#endif /* !_KERNEL */
 
 /* Default timeout can be changed using clnt_control() */
 static struct timeval TIMEOUT = { 25, 0 };
 
 __env_cachesize_reply *
-__db_env_cachesize_4001(__env_cachesize_msg *argp, CLIENT *clnt)
+__db_env_cachesize_4001(argp, clnt)
+	__env_cachesize_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_cachesize_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_cachesize,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_cachesize,
 		(xdrproc_t) xdr___env_cachesize_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_cachesize_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -28,12 +33,14 @@ __db_env_cachesize_4001(__env_cachesize_msg *argp, CLIENT *clnt)
 }
 
 __env_close_reply *
-__db_env_close_4001(__env_close_msg *argp, CLIENT *clnt)
+__db_env_close_4001(argp, clnt)
+	__env_close_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_close_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_close,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_close,
 		(xdrproc_t) xdr___env_close_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_close_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -43,12 +50,14 @@ __db_env_close_4001(__env_close_msg *argp, CLIENT *clnt)
 }
 
 __env_create_reply *
-__db_env_create_4001(__env_create_msg *argp, CLIENT *clnt)
+__db_env_create_4001(argp, clnt)
+	__env_create_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_create_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_create,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_create,
 		(xdrproc_t) xdr___env_create_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_create_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -58,12 +67,14 @@ __db_env_create_4001(__env_create_msg *argp, CLIENT *clnt)
 }
 
 __env_dbremove_reply *
-__db_env_dbremove_4001(__env_dbremove_msg *argp, CLIENT *clnt)
+__db_env_dbremove_4001(argp, clnt)
+	__env_dbremove_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_dbremove_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_dbremove,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_dbremove,
 		(xdrproc_t) xdr___env_dbremove_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_dbremove_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -73,12 +84,14 @@ __db_env_dbremove_4001(__env_dbremove_msg *argp, CLIENT *clnt)
 }
 
 __env_dbrename_reply *
-__db_env_dbrename_4001(__env_dbrename_msg *argp, CLIENT *clnt)
+__db_env_dbrename_4001(argp, clnt)
+	__env_dbrename_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_dbrename_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_dbrename,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_dbrename,
 		(xdrproc_t) xdr___env_dbrename_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_dbrename_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -88,12 +101,14 @@ __db_env_dbrename_4001(__env_dbrename_msg *argp, CLIENT *clnt)
 }
 
 __env_encrypt_reply *
-__db_env_encrypt_4001(__env_encrypt_msg *argp, CLIENT *clnt)
+__db_env_encrypt_4001(argp, clnt)
+	__env_encrypt_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_encrypt_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_encrypt,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_encrypt,
 		(xdrproc_t) xdr___env_encrypt_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_encrypt_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -103,12 +118,14 @@ __db_env_encrypt_4001(__env_encrypt_msg *argp, CLIENT *clnt)
 }
 
 __env_flags_reply *
-__db_env_flags_4001(__env_flags_msg *argp, CLIENT *clnt)
+__db_env_flags_4001(argp, clnt)
+	__env_flags_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_flags_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_flags,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_flags,
 		(xdrproc_t) xdr___env_flags_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_flags_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -118,12 +135,14 @@ __db_env_flags_4001(__env_flags_msg *argp, CLIENT *clnt)
 }
 
 __env_open_reply *
-__db_env_open_4001(__env_open_msg *argp, CLIENT *clnt)
+__db_env_open_4001(argp, clnt)
+	__env_open_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_open_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_open,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_open,
 		(xdrproc_t) xdr___env_open_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_open_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -133,12 +152,14 @@ __db_env_open_4001(__env_open_msg *argp, CLIENT *clnt)
 }
 
 __env_remove_reply *
-__db_env_remove_4001(__env_remove_msg *argp, CLIENT *clnt)
+__db_env_remove_4001(argp, clnt)
+	__env_remove_msg *argp;
+	CLIENT *clnt;
 {
 	static __env_remove_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_env_remove,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_env_remove,
 		(xdrproc_t) xdr___env_remove_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___env_remove_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -148,12 +169,14 @@ __db_env_remove_4001(__env_remove_msg *argp, CLIENT *clnt)
 }
 
 __txn_abort_reply *
-__db_txn_abort_4001(__txn_abort_msg *argp, CLIENT *clnt)
+__db_txn_abort_4001(argp, clnt)
+	__txn_abort_msg *argp;
+	CLIENT *clnt;
 {
 	static __txn_abort_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_txn_abort,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_txn_abort,
 		(xdrproc_t) xdr___txn_abort_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___txn_abort_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -163,12 +186,14 @@ __db_txn_abort_4001(__txn_abort_msg *argp, CLIENT *clnt)
 }
 
 __txn_begin_reply *
-__db_txn_begin_4001(__txn_begin_msg *argp, CLIENT *clnt)
+__db_txn_begin_4001(argp, clnt)
+	__txn_begin_msg *argp;
+	CLIENT *clnt;
 {
 	static __txn_begin_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_txn_begin,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_txn_begin,
 		(xdrproc_t) xdr___txn_begin_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___txn_begin_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -178,12 +203,14 @@ __db_txn_begin_4001(__txn_begin_msg *argp, CLIENT *clnt)
 }
 
 __txn_commit_reply *
-__db_txn_commit_4001(__txn_commit_msg *argp, CLIENT *clnt)
+__db_txn_commit_4001(argp, clnt)
+	__txn_commit_msg *argp;
+	CLIENT *clnt;
 {
 	static __txn_commit_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_txn_commit,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_txn_commit,
 		(xdrproc_t) xdr___txn_commit_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___txn_commit_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -193,12 +220,14 @@ __db_txn_commit_4001(__txn_commit_msg *argp, CLIENT *clnt)
 }
 
 __txn_discard_reply *
-__db_txn_discard_4001(__txn_discard_msg *argp, CLIENT *clnt)
+__db_txn_discard_4001(argp, clnt)
+	__txn_discard_msg *argp;
+	CLIENT *clnt;
 {
 	static __txn_discard_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_txn_discard,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_txn_discard,
 		(xdrproc_t) xdr___txn_discard_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___txn_discard_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -208,12 +237,14 @@ __db_txn_discard_4001(__txn_discard_msg *argp, CLIENT *clnt)
 }
 
 __txn_prepare_reply *
-__db_txn_prepare_4001(__txn_prepare_msg *argp, CLIENT *clnt)
+__db_txn_prepare_4001(argp, clnt)
+	__txn_prepare_msg *argp;
+	CLIENT *clnt;
 {
 	static __txn_prepare_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_txn_prepare,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_txn_prepare,
 		(xdrproc_t) xdr___txn_prepare_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___txn_prepare_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -223,12 +254,14 @@ __db_txn_prepare_4001(__txn_prepare_msg *argp, CLIENT *clnt)
 }
 
 __txn_recover_reply *
-__db_txn_recover_4001(__txn_recover_msg *argp, CLIENT *clnt)
+__db_txn_recover_4001(argp, clnt)
+	__txn_recover_msg *argp;
+	CLIENT *clnt;
 {
 	static __txn_recover_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_txn_recover,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_txn_recover,
 		(xdrproc_t) xdr___txn_recover_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___txn_recover_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -238,12 +271,14 @@ __db_txn_recover_4001(__txn_recover_msg *argp, CLIENT *clnt)
 }
 
 __db_associate_reply *
-__db_db_associate_4001(__db_associate_msg *argp, CLIENT *clnt)
+__db_db_associate_4001(argp, clnt)
+	__db_associate_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_associate_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_associate,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_associate,
 		(xdrproc_t) xdr___db_associate_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_associate_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -253,12 +288,14 @@ __db_db_associate_4001(__db_associate_msg *argp, CLIENT *clnt)
 }
 
 __db_bt_maxkey_reply *
-__db_db_bt_maxkey_4001(__db_bt_maxkey_msg *argp, CLIENT *clnt)
+__db_db_bt_maxkey_4001(argp, clnt)
+	__db_bt_maxkey_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_bt_maxkey_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_bt_maxkey,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_bt_maxkey,
 		(xdrproc_t) xdr___db_bt_maxkey_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_bt_maxkey_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -268,12 +305,14 @@ __db_db_bt_maxkey_4001(__db_bt_maxkey_msg *argp, CLIENT *clnt)
 }
 
 __db_bt_minkey_reply *
-__db_db_bt_minkey_4001(__db_bt_minkey_msg *argp, CLIENT *clnt)
+__db_db_bt_minkey_4001(argp, clnt)
+	__db_bt_minkey_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_bt_minkey_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_bt_minkey,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_bt_minkey,
 		(xdrproc_t) xdr___db_bt_minkey_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_bt_minkey_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -283,12 +322,14 @@ __db_db_bt_minkey_4001(__db_bt_minkey_msg *argp, CLIENT *clnt)
 }
 
 __db_close_reply *
-__db_db_close_4001(__db_close_msg *argp, CLIENT *clnt)
+__db_db_close_4001(argp, clnt)
+	__db_close_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_close_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_close,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_close,
 		(xdrproc_t) xdr___db_close_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_close_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -298,12 +339,14 @@ __db_db_close_4001(__db_close_msg *argp, CLIENT *clnt)
 }
 
 __db_create_reply *
-__db_db_create_4001(__db_create_msg *argp, CLIENT *clnt)
+__db_db_create_4001(argp, clnt)
+	__db_create_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_create_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_create,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_create,
 		(xdrproc_t) xdr___db_create_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_create_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -313,12 +356,14 @@ __db_db_create_4001(__db_create_msg *argp, CLIENT *clnt)
 }
 
 __db_del_reply *
-__db_db_del_4001(__db_del_msg *argp, CLIENT *clnt)
+__db_db_del_4001(argp, clnt)
+	__db_del_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_del_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_del,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_del,
 		(xdrproc_t) xdr___db_del_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_del_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -328,12 +373,14 @@ __db_db_del_4001(__db_del_msg *argp, CLIENT *clnt)
 }
 
 __db_encrypt_reply *
-__db_db_encrypt_4001(__db_encrypt_msg *argp, CLIENT *clnt)
+__db_db_encrypt_4001(argp, clnt)
+	__db_encrypt_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_encrypt_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_encrypt,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_encrypt,
 		(xdrproc_t) xdr___db_encrypt_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_encrypt_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -343,12 +390,14 @@ __db_db_encrypt_4001(__db_encrypt_msg *argp, CLIENT *clnt)
 }
 
 __db_extentsize_reply *
-__db_db_extentsize_4001(__db_extentsize_msg *argp, CLIENT *clnt)
+__db_db_extentsize_4001(argp, clnt)
+	__db_extentsize_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_extentsize_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_extentsize,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_extentsize,
 		(xdrproc_t) xdr___db_extentsize_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_extentsize_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -358,12 +407,14 @@ __db_db_extentsize_4001(__db_extentsize_msg *argp, CLIENT *clnt)
 }
 
 __db_flags_reply *
-__db_db_flags_4001(__db_flags_msg *argp, CLIENT *clnt)
+__db_db_flags_4001(argp, clnt)
+	__db_flags_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_flags_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_flags,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_flags,
 		(xdrproc_t) xdr___db_flags_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_flags_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -373,12 +424,14 @@ __db_db_flags_4001(__db_flags_msg *argp, CLIENT *clnt)
 }
 
 __db_get_reply *
-__db_db_get_4001(__db_get_msg *argp, CLIENT *clnt)
+__db_db_get_4001(argp, clnt)
+	__db_get_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_get_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_get,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_get,
 		(xdrproc_t) xdr___db_get_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_get_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -388,12 +441,14 @@ __db_db_get_4001(__db_get_msg *argp, CLIENT *clnt)
 }
 
 __db_h_ffactor_reply *
-__db_db_h_ffactor_4001(__db_h_ffactor_msg *argp, CLIENT *clnt)
+__db_db_h_ffactor_4001(argp, clnt)
+	__db_h_ffactor_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_h_ffactor_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_h_ffactor,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_h_ffactor,
 		(xdrproc_t) xdr___db_h_ffactor_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_h_ffactor_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -403,12 +458,14 @@ __db_db_h_ffactor_4001(__db_h_ffactor_msg *argp, CLIENT *clnt)
 }
 
 __db_h_nelem_reply *
-__db_db_h_nelem_4001(__db_h_nelem_msg *argp, CLIENT *clnt)
+__db_db_h_nelem_4001(argp, clnt)
+	__db_h_nelem_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_h_nelem_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_h_nelem,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_h_nelem,
 		(xdrproc_t) xdr___db_h_nelem_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_h_nelem_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -418,12 +475,14 @@ __db_db_h_nelem_4001(__db_h_nelem_msg *argp, CLIENT *clnt)
 }
 
 __db_key_range_reply *
-__db_db_key_range_4001(__db_key_range_msg *argp, CLIENT *clnt)
+__db_db_key_range_4001(argp, clnt)
+	__db_key_range_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_key_range_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_key_range,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_key_range,
 		(xdrproc_t) xdr___db_key_range_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_key_range_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -433,12 +492,14 @@ __db_db_key_range_4001(__db_key_range_msg *argp, CLIENT *clnt)
 }
 
 __db_lorder_reply *
-__db_db_lorder_4001(__db_lorder_msg *argp, CLIENT *clnt)
+__db_db_lorder_4001(argp, clnt)
+	__db_lorder_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_lorder_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_lorder,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_lorder,
 		(xdrproc_t) xdr___db_lorder_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_lorder_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -448,12 +509,14 @@ __db_db_lorder_4001(__db_lorder_msg *argp, CLIENT *clnt)
 }
 
 __db_open_reply *
-__db_db_open_4001(__db_open_msg *argp, CLIENT *clnt)
+__db_db_open_4001(argp, clnt)
+	__db_open_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_open_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_open,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_open,
 		(xdrproc_t) xdr___db_open_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_open_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -463,12 +526,14 @@ __db_db_open_4001(__db_open_msg *argp, CLIENT *clnt)
 }
 
 __db_pagesize_reply *
-__db_db_pagesize_4001(__db_pagesize_msg *argp, CLIENT *clnt)
+__db_db_pagesize_4001(argp, clnt)
+	__db_pagesize_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_pagesize_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_pagesize,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_pagesize,
 		(xdrproc_t) xdr___db_pagesize_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_pagesize_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -478,12 +543,14 @@ __db_db_pagesize_4001(__db_pagesize_msg *argp, CLIENT *clnt)
 }
 
 __db_pget_reply *
-__db_db_pget_4001(__db_pget_msg *argp, CLIENT *clnt)
+__db_db_pget_4001(argp, clnt)
+	__db_pget_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_pget_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_pget,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_pget,
 		(xdrproc_t) xdr___db_pget_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_pget_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -493,12 +560,14 @@ __db_db_pget_4001(__db_pget_msg *argp, CLIENT *clnt)
 }
 
 __db_put_reply *
-__db_db_put_4001(__db_put_msg *argp, CLIENT *clnt)
+__db_db_put_4001(argp, clnt)
+	__db_put_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_put_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_put,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_put,
 		(xdrproc_t) xdr___db_put_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_put_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -508,12 +577,14 @@ __db_db_put_4001(__db_put_msg *argp, CLIENT *clnt)
 }
 
 __db_re_delim_reply *
-__db_db_re_delim_4001(__db_re_delim_msg *argp, CLIENT *clnt)
+__db_db_re_delim_4001(argp, clnt)
+	__db_re_delim_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_re_delim_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_re_delim,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_re_delim,
 		(xdrproc_t) xdr___db_re_delim_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_re_delim_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -523,12 +594,14 @@ __db_db_re_delim_4001(__db_re_delim_msg *argp, CLIENT *clnt)
 }
 
 __db_re_len_reply *
-__db_db_re_len_4001(__db_re_len_msg *argp, CLIENT *clnt)
+__db_db_re_len_4001(argp, clnt)
+	__db_re_len_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_re_len_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_re_len,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_re_len,
 		(xdrproc_t) xdr___db_re_len_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_re_len_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -538,12 +611,14 @@ __db_db_re_len_4001(__db_re_len_msg *argp, CLIENT *clnt)
 }
 
 __db_re_pad_reply *
-__db_db_re_pad_4001(__db_re_pad_msg *argp, CLIENT *clnt)
+__db_db_re_pad_4001(argp, clnt)
+	__db_re_pad_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_re_pad_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_re_pad,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_re_pad,
 		(xdrproc_t) xdr___db_re_pad_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_re_pad_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -553,12 +628,14 @@ __db_db_re_pad_4001(__db_re_pad_msg *argp, CLIENT *clnt)
 }
 
 __db_remove_reply *
-__db_db_remove_4001(__db_remove_msg *argp, CLIENT *clnt)
+__db_db_remove_4001(argp, clnt)
+	__db_remove_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_remove_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_remove,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_remove,
 		(xdrproc_t) xdr___db_remove_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_remove_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -568,12 +645,14 @@ __db_db_remove_4001(__db_remove_msg *argp, CLIENT *clnt)
 }
 
 __db_rename_reply *
-__db_db_rename_4001(__db_rename_msg *argp, CLIENT *clnt)
+__db_db_rename_4001(argp, clnt)
+	__db_rename_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_rename_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_rename,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_rename,
 		(xdrproc_t) xdr___db_rename_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_rename_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -583,12 +662,14 @@ __db_db_rename_4001(__db_rename_msg *argp, CLIENT *clnt)
 }
 
 __db_stat_reply *
-__db_db_stat_4001(__db_stat_msg *argp, CLIENT *clnt)
+__db_db_stat_4001(argp, clnt)
+	__db_stat_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_stat_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_stat,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_stat,
 		(xdrproc_t) xdr___db_stat_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_stat_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -598,12 +679,14 @@ __db_db_stat_4001(__db_stat_msg *argp, CLIENT *clnt)
 }
 
 __db_sync_reply *
-__db_db_sync_4001(__db_sync_msg *argp, CLIENT *clnt)
+__db_db_sync_4001(argp, clnt)
+	__db_sync_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_sync_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_sync,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_sync,
 		(xdrproc_t) xdr___db_sync_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_sync_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -613,12 +696,14 @@ __db_db_sync_4001(__db_sync_msg *argp, CLIENT *clnt)
 }
 
 __db_truncate_reply *
-__db_db_truncate_4001(__db_truncate_msg *argp, CLIENT *clnt)
+__db_db_truncate_4001(argp, clnt)
+	__db_truncate_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_truncate_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_truncate,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_truncate,
 		(xdrproc_t) xdr___db_truncate_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_truncate_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -628,12 +713,14 @@ __db_db_truncate_4001(__db_truncate_msg *argp, CLIENT *clnt)
 }
 
 __db_cursor_reply *
-__db_db_cursor_4001(__db_cursor_msg *argp, CLIENT *clnt)
+__db_db_cursor_4001(argp, clnt)
+	__db_cursor_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_cursor_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_cursor,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_cursor,
 		(xdrproc_t) xdr___db_cursor_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_cursor_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -643,12 +730,14 @@ __db_db_cursor_4001(__db_cursor_msg *argp, CLIENT *clnt)
 }
 
 __db_join_reply *
-__db_db_join_4001(__db_join_msg *argp, CLIENT *clnt)
+__db_db_join_4001(argp, clnt)
+	__db_join_msg *argp;
+	CLIENT *clnt;
 {
 	static __db_join_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_db_join,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_db_join,
 		(xdrproc_t) xdr___db_join_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___db_join_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -658,12 +747,14 @@ __db_db_join_4001(__db_join_msg *argp, CLIENT *clnt)
 }
 
 __dbc_close_reply *
-__db_dbc_close_4001(__dbc_close_msg *argp, CLIENT *clnt)
+__db_dbc_close_4001(argp, clnt)
+	__dbc_close_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_close_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_close,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_close,
 		(xdrproc_t) xdr___dbc_close_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_close_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -673,12 +764,14 @@ __db_dbc_close_4001(__dbc_close_msg *argp, CLIENT *clnt)
 }
 
 __dbc_count_reply *
-__db_dbc_count_4001(__dbc_count_msg *argp, CLIENT *clnt)
+__db_dbc_count_4001(argp, clnt)
+	__dbc_count_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_count_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_count,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_count,
 		(xdrproc_t) xdr___dbc_count_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_count_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -688,12 +781,14 @@ __db_dbc_count_4001(__dbc_count_msg *argp, CLIENT *clnt)
 }
 
 __dbc_del_reply *
-__db_dbc_del_4001(__dbc_del_msg *argp, CLIENT *clnt)
+__db_dbc_del_4001(argp, clnt)
+	__dbc_del_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_del_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_del,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_del,
 		(xdrproc_t) xdr___dbc_del_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_del_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -703,12 +798,14 @@ __db_dbc_del_4001(__dbc_del_msg *argp, CLIENT *clnt)
 }
 
 __dbc_dup_reply *
-__db_dbc_dup_4001(__dbc_dup_msg *argp, CLIENT *clnt)
+__db_dbc_dup_4001(argp, clnt)
+	__dbc_dup_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_dup_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_dup,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_dup,
 		(xdrproc_t) xdr___dbc_dup_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_dup_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -718,12 +815,14 @@ __db_dbc_dup_4001(__dbc_dup_msg *argp, CLIENT *clnt)
 }
 
 __dbc_get_reply *
-__db_dbc_get_4001(__dbc_get_msg *argp, CLIENT *clnt)
+__db_dbc_get_4001(argp, clnt)
+	__dbc_get_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_get_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_get,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_get,
 		(xdrproc_t) xdr___dbc_get_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_get_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -733,12 +832,14 @@ __db_dbc_get_4001(__dbc_get_msg *argp, CLIENT *clnt)
 }
 
 __dbc_pget_reply *
-__db_dbc_pget_4001(__dbc_pget_msg *argp, CLIENT *clnt)
+__db_dbc_pget_4001(argp, clnt)
+	__dbc_pget_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_pget_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_pget,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_pget,
 		(xdrproc_t) xdr___dbc_pget_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_pget_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
@@ -748,12 +849,14 @@ __db_dbc_pget_4001(__dbc_pget_msg *argp, CLIENT *clnt)
 }
 
 __dbc_put_reply *
-__db_dbc_put_4001(__dbc_put_msg *argp, CLIENT *clnt)
+__db_dbc_put_4001(argp, clnt)
+	__dbc_put_msg *argp;
+	CLIENT *clnt;
 {
 	static __dbc_put_reply clnt_res;
 
-	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, __DB_dbc_put,
+	memset((char *)&clnt_res, 0, sizeof (clnt_res));
+	if (clnt_call(clnt, __DB_dbc_put,
 		(xdrproc_t) xdr___dbc_put_msg, (caddr_t) argp,
 		(xdrproc_t) xdr___dbc_put_reply, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {

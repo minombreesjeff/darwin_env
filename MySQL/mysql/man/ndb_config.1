@@ -1,17 +1,17 @@
 .\"     Title: \fBndb_config\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_CONFIG\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_CONFIG\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
-ndb_config \- extract NDB configuration information
+ndb_config \- extract MySQL Cluster configuration information
 .SH "SYNOPSIS"
 .HP 19
 \fBndb_config \fR\fB\fIoptions\fR\fR
@@ -39,6 +39,15 @@ available for this utility differ somewhat from those used with the other utilit
 \fB\-\-usage\fR,
 \fB\-\-help\fR, or
 \fB\-?\fR
+.TS
+allbox tab(:);
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-help
+T}
+.TE
 .sp
 Causes
 \fBndb_config\fR
@@ -47,6 +56,15 @@ to print a list of available options, and then exit.
 \(bu
 \fB\-\-version\fR,
 \fB\-V\fR
+.TS
+allbox tab(:);
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-V
+T}
+.TE
 .sp
 Causes
 \fBndb_config\fR
@@ -54,16 +72,45 @@ to print a version information string, and then exit.
 .TP 3n
 \(bu
 \fB\-\-ndb\-connectstring=\fR\fB\fIconnect_string\fR\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-ndb\-connectstring=name
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+string
+T}
+T{
+\fBDefault\fR
+T}:T{
+localhost:1186
+T}
+.TE
 .sp
 Specifies the connectstring to use in connecting to the management server. The format for the connectstring is the same as described in
-Section\ 3.4.2, \(lqThe Cluster Connectstring\(rq, and defaults to
+Section\ 17.3.4.2, \(lqThe MySQL Cluster Connectstring\(rq, and defaults to
 localhost:1186.
 .sp
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-\fBNote\fR
 The use of
 \fB\-c\fR
 as a short version for this option is supported for
@@ -81,6 +128,39 @@ is invoked, then an absolute path must be used.
 \fB\-\-query=\fR\fB\fIquery\-options\fR\fR,
 \fB\-q\fR
 \fIquery\-options\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-query=string
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+string
+T}
+T{
+\fBDefault\fR
+T}:T{
+T}
+.TE
 .sp
 This is a comma\-delimited list of
 query options
@@ -107,17 +187,118 @@ If a given parameter is not applicable to a certain type of node, than an empty 
 .TP 3n
 \(bu
 \fB\-\-host=\fR\fB\fIhostname\fR\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-host=name
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
 .sp
-Specifies the hostname of the node for which configuration information is to be obtained.
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+string
+T}
+T{
+\fBDefault\fR
+T}:T{
+T}
+.TE
+.sp
+Specifies the host name of the node for which configuration information is to be obtained.
 .TP 3n
 \(bu
 \fB\-\-id=\fR\fB\fInode_id\fR\fR,
 \fB\-\-nodeid=\fR\fB\fInode_id\fR\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-ndb\-nodeid=#
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+numeric
+T}
+T{
+\fBDefault\fR
+T}:T{
+0
+T}
+.TE
 .sp
 Used to specify the node ID of the node for which configuration information is to be obtained.
 .TP 3n
 \(bu
 \fB\-\-nodes\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-nodes
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+boolean
+T}
+T{
+\fBDefault\fR
+T}:T{
+FALSE
+T}
+.TE
 .sp
 (Tells
 \fBndb_config\fR
@@ -129,6 +310,45 @@ and other sections of cluster configuration files.)
 .TP 3n
 \(bu
 \fB\-\-type=\fR\fB\fInode_type\fR\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-type=name
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+enumeration
+T}
+T{
+\fBDefault\fR
+T}:T{
+T}
+T{
+\fBValid Values\fR
+T}:T{
+ndbd, mysqld, ndb_mgmd
+T}
+.TE
 .sp
 Filters results so that only configuration values applying to nodes of the specified
 \fInode_type\fR
@@ -140,6 +360,39 @@ ndb_mgmd) are returned.
 \fB\-\-fields=\fR\fB\fIdelimiter\fR\fR,
 \fB\-f\fR
 \fIdelimiter\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-fields=string
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+string
+T}
+T{
+\fBDefault\fR
+T}:T{
+T}
+.TE
 .sp
 Specifies a
 \fIdelimiter\fR
@@ -162,6 +415,39 @@ for the linefeed character), then it must be quoted.
 \fB\-\-rows=\fR\fB\fIseparator\fR\fR,
 \fB\-r\fR
 \fIseparator\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-rows=string
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+string
+T}
+T{
+\fBDefault\fR
+T}:T{
+T}
+.TE
 .sp
 Specifies a
 \fIseparator\fR
@@ -220,7 +506,7 @@ This invocation of
 \fBndb_config\fR
 checks only data nodes (using the
 \fB\-\-type\fR
-option), and shows the values for each node's ID and hostname, and its
+option), and shows the values for each node's ID and host name, and its
 DataMemory,
 IndexMemory, and
 DataDir
@@ -264,9 +550,9 @@ or
 option.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -276,4 +562,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

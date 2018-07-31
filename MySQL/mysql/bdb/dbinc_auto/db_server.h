@@ -4,13 +4,7 @@
  */
 
 #ifndef _DB_SERVER_H_RPCGEN
-#define _DB_SERVER_H_RPCGEN
-
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#define	_DB_SERVER_H_RPCGEN
 
 
 struct __env_cachesize_msg {
@@ -805,524 +799,208 @@ struct __dbc_put_reply {
 };
 typedef struct __dbc_put_reply __dbc_put_reply;
 
-
-#if defined(__STDC__) || defined(__cplusplus)
-#define __DB_env_cachesize 1
-extern  __env_cachesize_reply * __db_env_cachesize_4001(__env_cachesize_msg *, CLIENT *);
-extern  __env_cachesize_reply * __db_env_cachesize_4001_svc(__env_cachesize_msg *, struct svc_req *);
-#define __DB_env_close 2
-extern  __env_close_reply * __db_env_close_4001(__env_close_msg *, CLIENT *);
-extern  __env_close_reply * __db_env_close_4001_svc(__env_close_msg *, struct svc_req *);
-#define __DB_env_create 3
-extern  __env_create_reply * __db_env_create_4001(__env_create_msg *, CLIENT *);
-extern  __env_create_reply * __db_env_create_4001_svc(__env_create_msg *, struct svc_req *);
-#define __DB_env_dbremove 4
-extern  __env_dbremove_reply * __db_env_dbremove_4001(__env_dbremove_msg *, CLIENT *);
-extern  __env_dbremove_reply * __db_env_dbremove_4001_svc(__env_dbremove_msg *, struct svc_req *);
-#define __DB_env_dbrename 5
-extern  __env_dbrename_reply * __db_env_dbrename_4001(__env_dbrename_msg *, CLIENT *);
-extern  __env_dbrename_reply * __db_env_dbrename_4001_svc(__env_dbrename_msg *, struct svc_req *);
-#define __DB_env_encrypt 6
-extern  __env_encrypt_reply * __db_env_encrypt_4001(__env_encrypt_msg *, CLIENT *);
-extern  __env_encrypt_reply * __db_env_encrypt_4001_svc(__env_encrypt_msg *, struct svc_req *);
-#define __DB_env_flags 7
-extern  __env_flags_reply * __db_env_flags_4001(__env_flags_msg *, CLIENT *);
-extern  __env_flags_reply * __db_env_flags_4001_svc(__env_flags_msg *, struct svc_req *);
-#define __DB_env_open 8
-extern  __env_open_reply * __db_env_open_4001(__env_open_msg *, CLIENT *);
-extern  __env_open_reply * __db_env_open_4001_svc(__env_open_msg *, struct svc_req *);
-#define __DB_env_remove 9
-extern  __env_remove_reply * __db_env_remove_4001(__env_remove_msg *, CLIENT *);
-extern  __env_remove_reply * __db_env_remove_4001_svc(__env_remove_msg *, struct svc_req *);
-#define __DB_txn_abort 10
-extern  __txn_abort_reply * __db_txn_abort_4001(__txn_abort_msg *, CLIENT *);
-extern  __txn_abort_reply * __db_txn_abort_4001_svc(__txn_abort_msg *, struct svc_req *);
-#define __DB_txn_begin 11
-extern  __txn_begin_reply * __db_txn_begin_4001(__txn_begin_msg *, CLIENT *);
-extern  __txn_begin_reply * __db_txn_begin_4001_svc(__txn_begin_msg *, struct svc_req *);
-#define __DB_txn_commit 12
-extern  __txn_commit_reply * __db_txn_commit_4001(__txn_commit_msg *, CLIENT *);
-extern  __txn_commit_reply * __db_txn_commit_4001_svc(__txn_commit_msg *, struct svc_req *);
-#define __DB_txn_discard 13
-extern  __txn_discard_reply * __db_txn_discard_4001(__txn_discard_msg *, CLIENT *);
-extern  __txn_discard_reply * __db_txn_discard_4001_svc(__txn_discard_msg *, struct svc_req *);
-#define __DB_txn_prepare 14
-extern  __txn_prepare_reply * __db_txn_prepare_4001(__txn_prepare_msg *, CLIENT *);
-extern  __txn_prepare_reply * __db_txn_prepare_4001_svc(__txn_prepare_msg *, struct svc_req *);
-#define __DB_txn_recover 15
-extern  __txn_recover_reply * __db_txn_recover_4001(__txn_recover_msg *, CLIENT *);
-extern  __txn_recover_reply * __db_txn_recover_4001_svc(__txn_recover_msg *, struct svc_req *);
-#define __DB_db_associate 16
-extern  __db_associate_reply * __db_db_associate_4001(__db_associate_msg *, CLIENT *);
-extern  __db_associate_reply * __db_db_associate_4001_svc(__db_associate_msg *, struct svc_req *);
-#define __DB_db_bt_maxkey 17
-extern  __db_bt_maxkey_reply * __db_db_bt_maxkey_4001(__db_bt_maxkey_msg *, CLIENT *);
-extern  __db_bt_maxkey_reply * __db_db_bt_maxkey_4001_svc(__db_bt_maxkey_msg *, struct svc_req *);
-#define __DB_db_bt_minkey 18
-extern  __db_bt_minkey_reply * __db_db_bt_minkey_4001(__db_bt_minkey_msg *, CLIENT *);
-extern  __db_bt_minkey_reply * __db_db_bt_minkey_4001_svc(__db_bt_minkey_msg *, struct svc_req *);
-#define __DB_db_close 19
-extern  __db_close_reply * __db_db_close_4001(__db_close_msg *, CLIENT *);
-extern  __db_close_reply * __db_db_close_4001_svc(__db_close_msg *, struct svc_req *);
-#define __DB_db_create 20
-extern  __db_create_reply * __db_db_create_4001(__db_create_msg *, CLIENT *);
-extern  __db_create_reply * __db_db_create_4001_svc(__db_create_msg *, struct svc_req *);
-#define __DB_db_del 21
-extern  __db_del_reply * __db_db_del_4001(__db_del_msg *, CLIENT *);
-extern  __db_del_reply * __db_db_del_4001_svc(__db_del_msg *, struct svc_req *);
-#define __DB_db_encrypt 22
-extern  __db_encrypt_reply * __db_db_encrypt_4001(__db_encrypt_msg *, CLIENT *);
-extern  __db_encrypt_reply * __db_db_encrypt_4001_svc(__db_encrypt_msg *, struct svc_req *);
-#define __DB_db_extentsize 23
-extern  __db_extentsize_reply * __db_db_extentsize_4001(__db_extentsize_msg *, CLIENT *);
-extern  __db_extentsize_reply * __db_db_extentsize_4001_svc(__db_extentsize_msg *, struct svc_req *);
-#define __DB_db_flags 24
-extern  __db_flags_reply * __db_db_flags_4001(__db_flags_msg *, CLIENT *);
-extern  __db_flags_reply * __db_db_flags_4001_svc(__db_flags_msg *, struct svc_req *);
-#define __DB_db_get 25
-extern  __db_get_reply * __db_db_get_4001(__db_get_msg *, CLIENT *);
-extern  __db_get_reply * __db_db_get_4001_svc(__db_get_msg *, struct svc_req *);
-#define __DB_db_h_ffactor 26
-extern  __db_h_ffactor_reply * __db_db_h_ffactor_4001(__db_h_ffactor_msg *, CLIENT *);
-extern  __db_h_ffactor_reply * __db_db_h_ffactor_4001_svc(__db_h_ffactor_msg *, struct svc_req *);
-#define __DB_db_h_nelem 27
-extern  __db_h_nelem_reply * __db_db_h_nelem_4001(__db_h_nelem_msg *, CLIENT *);
-extern  __db_h_nelem_reply * __db_db_h_nelem_4001_svc(__db_h_nelem_msg *, struct svc_req *);
-#define __DB_db_key_range 28
-extern  __db_key_range_reply * __db_db_key_range_4001(__db_key_range_msg *, CLIENT *);
-extern  __db_key_range_reply * __db_db_key_range_4001_svc(__db_key_range_msg *, struct svc_req *);
-#define __DB_db_lorder 29
-extern  __db_lorder_reply * __db_db_lorder_4001(__db_lorder_msg *, CLIENT *);
-extern  __db_lorder_reply * __db_db_lorder_4001_svc(__db_lorder_msg *, struct svc_req *);
-#define __DB_db_open 30
-extern  __db_open_reply * __db_db_open_4001(__db_open_msg *, CLIENT *);
-extern  __db_open_reply * __db_db_open_4001_svc(__db_open_msg *, struct svc_req *);
-#define __DB_db_pagesize 31
-extern  __db_pagesize_reply * __db_db_pagesize_4001(__db_pagesize_msg *, CLIENT *);
-extern  __db_pagesize_reply * __db_db_pagesize_4001_svc(__db_pagesize_msg *, struct svc_req *);
-#define __DB_db_pget 32
-extern  __db_pget_reply * __db_db_pget_4001(__db_pget_msg *, CLIENT *);
-extern  __db_pget_reply * __db_db_pget_4001_svc(__db_pget_msg *, struct svc_req *);
-#define __DB_db_put 33
-extern  __db_put_reply * __db_db_put_4001(__db_put_msg *, CLIENT *);
-extern  __db_put_reply * __db_db_put_4001_svc(__db_put_msg *, struct svc_req *);
-#define __DB_db_re_delim 34
-extern  __db_re_delim_reply * __db_db_re_delim_4001(__db_re_delim_msg *, CLIENT *);
-extern  __db_re_delim_reply * __db_db_re_delim_4001_svc(__db_re_delim_msg *, struct svc_req *);
-#define __DB_db_re_len 35
-extern  __db_re_len_reply * __db_db_re_len_4001(__db_re_len_msg *, CLIENT *);
-extern  __db_re_len_reply * __db_db_re_len_4001_svc(__db_re_len_msg *, struct svc_req *);
-#define __DB_db_re_pad 36
-extern  __db_re_pad_reply * __db_db_re_pad_4001(__db_re_pad_msg *, CLIENT *);
-extern  __db_re_pad_reply * __db_db_re_pad_4001_svc(__db_re_pad_msg *, struct svc_req *);
-#define __DB_db_remove 37
-extern  __db_remove_reply * __db_db_remove_4001(__db_remove_msg *, CLIENT *);
-extern  __db_remove_reply * __db_db_remove_4001_svc(__db_remove_msg *, struct svc_req *);
-#define __DB_db_rename 38
-extern  __db_rename_reply * __db_db_rename_4001(__db_rename_msg *, CLIENT *);
-extern  __db_rename_reply * __db_db_rename_4001_svc(__db_rename_msg *, struct svc_req *);
-#define __DB_db_stat 39
-extern  __db_stat_reply * __db_db_stat_4001(__db_stat_msg *, CLIENT *);
-extern  __db_stat_reply * __db_db_stat_4001_svc(__db_stat_msg *, struct svc_req *);
-#define __DB_db_sync 40
-extern  __db_sync_reply * __db_db_sync_4001(__db_sync_msg *, CLIENT *);
-extern  __db_sync_reply * __db_db_sync_4001_svc(__db_sync_msg *, struct svc_req *);
-#define __DB_db_truncate 41
-extern  __db_truncate_reply * __db_db_truncate_4001(__db_truncate_msg *, CLIENT *);
-extern  __db_truncate_reply * __db_db_truncate_4001_svc(__db_truncate_msg *, struct svc_req *);
-#define __DB_db_cursor 42
-extern  __db_cursor_reply * __db_db_cursor_4001(__db_cursor_msg *, CLIENT *);
-extern  __db_cursor_reply * __db_db_cursor_4001_svc(__db_cursor_msg *, struct svc_req *);
-#define __DB_db_join 43
-extern  __db_join_reply * __db_db_join_4001(__db_join_msg *, CLIENT *);
-extern  __db_join_reply * __db_db_join_4001_svc(__db_join_msg *, struct svc_req *);
-#define __DB_dbc_close 44
-extern  __dbc_close_reply * __db_dbc_close_4001(__dbc_close_msg *, CLIENT *);
-extern  __dbc_close_reply * __db_dbc_close_4001_svc(__dbc_close_msg *, struct svc_req *);
-#define __DB_dbc_count 45
-extern  __dbc_count_reply * __db_dbc_count_4001(__dbc_count_msg *, CLIENT *);
-extern  __dbc_count_reply * __db_dbc_count_4001_svc(__dbc_count_msg *, struct svc_req *);
-#define __DB_dbc_del 46
-extern  __dbc_del_reply * __db_dbc_del_4001(__dbc_del_msg *, CLIENT *);
-extern  __dbc_del_reply * __db_dbc_del_4001_svc(__dbc_del_msg *, struct svc_req *);
-#define __DB_dbc_dup 47
-extern  __dbc_dup_reply * __db_dbc_dup_4001(__dbc_dup_msg *, CLIENT *);
-extern  __dbc_dup_reply * __db_dbc_dup_4001_svc(__dbc_dup_msg *, struct svc_req *);
-#define __DB_dbc_get 48
-extern  __dbc_get_reply * __db_dbc_get_4001(__dbc_get_msg *, CLIENT *);
-extern  __dbc_get_reply * __db_dbc_get_4001_svc(__dbc_get_msg *, struct svc_req *);
-#define __DB_dbc_pget 49
-extern  __dbc_pget_reply * __db_dbc_pget_4001(__dbc_pget_msg *, CLIENT *);
-extern  __dbc_pget_reply * __db_dbc_pget_4001_svc(__dbc_pget_msg *, struct svc_req *);
-#define __DB_dbc_put 50
-extern  __dbc_put_reply * __db_dbc_put_4001(__dbc_put_msg *, CLIENT *);
-extern  __dbc_put_reply * __db_dbc_put_4001_svc(__dbc_put_msg *, struct svc_req *);
-extern int db_rpc_serverprog_4001_freeresult (SVCXPRT *, xdrproc_t, caddr_t);
-
-#else /* K&R C */
-#define __DB_env_cachesize 1
+#define	__DB_env_cachesize	1
 extern  __env_cachesize_reply * __db_env_cachesize_4001();
-extern  __env_cachesize_reply * __db_env_cachesize_4001_svc();
-#define __DB_env_close 2
+#define	__DB_env_close	2
 extern  __env_close_reply * __db_env_close_4001();
-extern  __env_close_reply * __db_env_close_4001_svc();
-#define __DB_env_create 3
+#define	__DB_env_create	3
 extern  __env_create_reply * __db_env_create_4001();
-extern  __env_create_reply * __db_env_create_4001_svc();
-#define __DB_env_dbremove 4
+#define	__DB_env_dbremove	4
 extern  __env_dbremove_reply * __db_env_dbremove_4001();
-extern  __env_dbremove_reply * __db_env_dbremove_4001_svc();
-#define __DB_env_dbrename 5
+#define	__DB_env_dbrename	5
 extern  __env_dbrename_reply * __db_env_dbrename_4001();
-extern  __env_dbrename_reply * __db_env_dbrename_4001_svc();
-#define __DB_env_encrypt 6
+#define	__DB_env_encrypt	6
 extern  __env_encrypt_reply * __db_env_encrypt_4001();
-extern  __env_encrypt_reply * __db_env_encrypt_4001_svc();
-#define __DB_env_flags 7
+#define	__DB_env_flags	7
 extern  __env_flags_reply * __db_env_flags_4001();
-extern  __env_flags_reply * __db_env_flags_4001_svc();
-#define __DB_env_open 8
+#define	__DB_env_open	8
 extern  __env_open_reply * __db_env_open_4001();
-extern  __env_open_reply * __db_env_open_4001_svc();
-#define __DB_env_remove 9
+#define	__DB_env_remove	9
 extern  __env_remove_reply * __db_env_remove_4001();
-extern  __env_remove_reply * __db_env_remove_4001_svc();
-#define __DB_txn_abort 10
+#define	__DB_txn_abort	10
 extern  __txn_abort_reply * __db_txn_abort_4001();
-extern  __txn_abort_reply * __db_txn_abort_4001_svc();
-#define __DB_txn_begin 11
+#define	__DB_txn_begin	11
 extern  __txn_begin_reply * __db_txn_begin_4001();
-extern  __txn_begin_reply * __db_txn_begin_4001_svc();
-#define __DB_txn_commit 12
+#define	__DB_txn_commit	12
 extern  __txn_commit_reply * __db_txn_commit_4001();
-extern  __txn_commit_reply * __db_txn_commit_4001_svc();
-#define __DB_txn_discard 13
+#define	__DB_txn_discard	13
 extern  __txn_discard_reply * __db_txn_discard_4001();
-extern  __txn_discard_reply * __db_txn_discard_4001_svc();
-#define __DB_txn_prepare 14
+#define	__DB_txn_prepare	14
 extern  __txn_prepare_reply * __db_txn_prepare_4001();
-extern  __txn_prepare_reply * __db_txn_prepare_4001_svc();
-#define __DB_txn_recover 15
+#define	__DB_txn_recover	15
 extern  __txn_recover_reply * __db_txn_recover_4001();
-extern  __txn_recover_reply * __db_txn_recover_4001_svc();
-#define __DB_db_associate 16
+#define	__DB_db_associate	16
 extern  __db_associate_reply * __db_db_associate_4001();
-extern  __db_associate_reply * __db_db_associate_4001_svc();
-#define __DB_db_bt_maxkey 17
+#define	__DB_db_bt_maxkey	17
 extern  __db_bt_maxkey_reply * __db_db_bt_maxkey_4001();
-extern  __db_bt_maxkey_reply * __db_db_bt_maxkey_4001_svc();
-#define __DB_db_bt_minkey 18
+#define	__DB_db_bt_minkey	18
 extern  __db_bt_minkey_reply * __db_db_bt_minkey_4001();
-extern  __db_bt_minkey_reply * __db_db_bt_minkey_4001_svc();
-#define __DB_db_close 19
+#define	__DB_db_close	19
 extern  __db_close_reply * __db_db_close_4001();
-extern  __db_close_reply * __db_db_close_4001_svc();
-#define __DB_db_create 20
+#define	__DB_db_create	20
 extern  __db_create_reply * __db_db_create_4001();
-extern  __db_create_reply * __db_db_create_4001_svc();
-#define __DB_db_del 21
+#define	__DB_db_del	21
 extern  __db_del_reply * __db_db_del_4001();
-extern  __db_del_reply * __db_db_del_4001_svc();
-#define __DB_db_encrypt 22
+#define	__DB_db_encrypt	22
 extern  __db_encrypt_reply * __db_db_encrypt_4001();
-extern  __db_encrypt_reply * __db_db_encrypt_4001_svc();
-#define __DB_db_extentsize 23
+#define	__DB_db_extentsize	23
 extern  __db_extentsize_reply * __db_db_extentsize_4001();
-extern  __db_extentsize_reply * __db_db_extentsize_4001_svc();
-#define __DB_db_flags 24
+#define	__DB_db_flags	24
 extern  __db_flags_reply * __db_db_flags_4001();
-extern  __db_flags_reply * __db_db_flags_4001_svc();
-#define __DB_db_get 25
+#define	__DB_db_get	25
 extern  __db_get_reply * __db_db_get_4001();
-extern  __db_get_reply * __db_db_get_4001_svc();
-#define __DB_db_h_ffactor 26
+#define	__DB_db_h_ffactor	26
 extern  __db_h_ffactor_reply * __db_db_h_ffactor_4001();
-extern  __db_h_ffactor_reply * __db_db_h_ffactor_4001_svc();
-#define __DB_db_h_nelem 27
+#define	__DB_db_h_nelem	27
 extern  __db_h_nelem_reply * __db_db_h_nelem_4001();
-extern  __db_h_nelem_reply * __db_db_h_nelem_4001_svc();
-#define __DB_db_key_range 28
+#define	__DB_db_key_range	28
 extern  __db_key_range_reply * __db_db_key_range_4001();
-extern  __db_key_range_reply * __db_db_key_range_4001_svc();
-#define __DB_db_lorder 29
+#define	__DB_db_lorder	29
 extern  __db_lorder_reply * __db_db_lorder_4001();
-extern  __db_lorder_reply * __db_db_lorder_4001_svc();
-#define __DB_db_open 30
+#define	__DB_db_open	30
 extern  __db_open_reply * __db_db_open_4001();
-extern  __db_open_reply * __db_db_open_4001_svc();
-#define __DB_db_pagesize 31
+#define	__DB_db_pagesize	31
 extern  __db_pagesize_reply * __db_db_pagesize_4001();
-extern  __db_pagesize_reply * __db_db_pagesize_4001_svc();
-#define __DB_db_pget 32
+#define	__DB_db_pget	32
 extern  __db_pget_reply * __db_db_pget_4001();
-extern  __db_pget_reply * __db_db_pget_4001_svc();
-#define __DB_db_put 33
+#define	__DB_db_put	33
 extern  __db_put_reply * __db_db_put_4001();
-extern  __db_put_reply * __db_db_put_4001_svc();
-#define __DB_db_re_delim 34
+#define	__DB_db_re_delim	34
 extern  __db_re_delim_reply * __db_db_re_delim_4001();
-extern  __db_re_delim_reply * __db_db_re_delim_4001_svc();
-#define __DB_db_re_len 35
+#define	__DB_db_re_len	35
 extern  __db_re_len_reply * __db_db_re_len_4001();
-extern  __db_re_len_reply * __db_db_re_len_4001_svc();
-#define __DB_db_re_pad 36
+#define	__DB_db_re_pad	36
 extern  __db_re_pad_reply * __db_db_re_pad_4001();
-extern  __db_re_pad_reply * __db_db_re_pad_4001_svc();
-#define __DB_db_remove 37
+#define	__DB_db_remove	37
 extern  __db_remove_reply * __db_db_remove_4001();
-extern  __db_remove_reply * __db_db_remove_4001_svc();
-#define __DB_db_rename 38
+#define	__DB_db_rename	38
 extern  __db_rename_reply * __db_db_rename_4001();
-extern  __db_rename_reply * __db_db_rename_4001_svc();
-#define __DB_db_stat 39
+#define	__DB_db_stat	39
 extern  __db_stat_reply * __db_db_stat_4001();
-extern  __db_stat_reply * __db_db_stat_4001_svc();
-#define __DB_db_sync 40
+#define	__DB_db_sync	40
 extern  __db_sync_reply * __db_db_sync_4001();
-extern  __db_sync_reply * __db_db_sync_4001_svc();
-#define __DB_db_truncate 41
+#define	__DB_db_truncate	41
 extern  __db_truncate_reply * __db_db_truncate_4001();
-extern  __db_truncate_reply * __db_db_truncate_4001_svc();
-#define __DB_db_cursor 42
+#define	__DB_db_cursor	42
 extern  __db_cursor_reply * __db_db_cursor_4001();
-extern  __db_cursor_reply * __db_db_cursor_4001_svc();
-#define __DB_db_join 43
+#define	__DB_db_join	43
 extern  __db_join_reply * __db_db_join_4001();
-extern  __db_join_reply * __db_db_join_4001_svc();
-#define __DB_dbc_close 44
+#define	__DB_dbc_close	44
 extern  __dbc_close_reply * __db_dbc_close_4001();
-extern  __dbc_close_reply * __db_dbc_close_4001_svc();
-#define __DB_dbc_count 45
+#define	__DB_dbc_count	45
 extern  __dbc_count_reply * __db_dbc_count_4001();
-extern  __dbc_count_reply * __db_dbc_count_4001_svc();
-#define __DB_dbc_del 46
+#define	__DB_dbc_del	46
 extern  __dbc_del_reply * __db_dbc_del_4001();
-extern  __dbc_del_reply * __db_dbc_del_4001_svc();
-#define __DB_dbc_dup 47
+#define	__DB_dbc_dup	47
 extern  __dbc_dup_reply * __db_dbc_dup_4001();
-extern  __dbc_dup_reply * __db_dbc_dup_4001_svc();
-#define __DB_dbc_get 48
+#define	__DB_dbc_get	48
 extern  __dbc_get_reply * __db_dbc_get_4001();
-extern  __dbc_get_reply * __db_dbc_get_4001_svc();
-#define __DB_dbc_pget 49
+#define	__DB_dbc_pget	49
 extern  __dbc_pget_reply * __db_dbc_pget_4001();
-extern  __dbc_pget_reply * __db_dbc_pget_4001_svc();
-#define __DB_dbc_put 50
+#define	__DB_dbc_put	50
 extern  __dbc_put_reply * __db_dbc_put_4001();
-extern  __dbc_put_reply * __db_dbc_put_4001_svc();
-extern int db_rpc_serverprog_4001_freeresult ();
-#endif /* K&R C */
+extern int db_rpc_serverprog_4001_freeresult();
 
 /* the xdr functions */
-
-#if defined(__STDC__) || defined(__cplusplus)
-extern  bool_t xdr___env_cachesize_msg (XDR *, __env_cachesize_msg*);
-extern  bool_t xdr___env_cachesize_reply (XDR *, __env_cachesize_reply*);
-extern  bool_t xdr___env_close_msg (XDR *, __env_close_msg*);
-extern  bool_t xdr___env_close_reply (XDR *, __env_close_reply*);
-extern  bool_t xdr___env_create_msg (XDR *, __env_create_msg*);
-extern  bool_t xdr___env_create_reply (XDR *, __env_create_reply*);
-extern  bool_t xdr___env_dbremove_msg (XDR *, __env_dbremove_msg*);
-extern  bool_t xdr___env_dbremove_reply (XDR *, __env_dbremove_reply*);
-extern  bool_t xdr___env_dbrename_msg (XDR *, __env_dbrename_msg*);
-extern  bool_t xdr___env_dbrename_reply (XDR *, __env_dbrename_reply*);
-extern  bool_t xdr___env_encrypt_msg (XDR *, __env_encrypt_msg*);
-extern  bool_t xdr___env_encrypt_reply (XDR *, __env_encrypt_reply*);
-extern  bool_t xdr___env_flags_msg (XDR *, __env_flags_msg*);
-extern  bool_t xdr___env_flags_reply (XDR *, __env_flags_reply*);
-extern  bool_t xdr___env_open_msg (XDR *, __env_open_msg*);
-extern  bool_t xdr___env_open_reply (XDR *, __env_open_reply*);
-extern  bool_t xdr___env_remove_msg (XDR *, __env_remove_msg*);
-extern  bool_t xdr___env_remove_reply (XDR *, __env_remove_reply*);
-extern  bool_t xdr___txn_abort_msg (XDR *, __txn_abort_msg*);
-extern  bool_t xdr___txn_abort_reply (XDR *, __txn_abort_reply*);
-extern  bool_t xdr___txn_begin_msg (XDR *, __txn_begin_msg*);
-extern  bool_t xdr___txn_begin_reply (XDR *, __txn_begin_reply*);
-extern  bool_t xdr___txn_commit_msg (XDR *, __txn_commit_msg*);
-extern  bool_t xdr___txn_commit_reply (XDR *, __txn_commit_reply*);
-extern  bool_t xdr___txn_discard_msg (XDR *, __txn_discard_msg*);
-extern  bool_t xdr___txn_discard_reply (XDR *, __txn_discard_reply*);
-extern  bool_t xdr___txn_prepare_msg (XDR *, __txn_prepare_msg*);
-extern  bool_t xdr___txn_prepare_reply (XDR *, __txn_prepare_reply*);
-extern  bool_t xdr___txn_recover_msg (XDR *, __txn_recover_msg*);
-extern  bool_t xdr___txn_recover_reply (XDR *, __txn_recover_reply*);
-extern  bool_t xdr___db_associate_msg (XDR *, __db_associate_msg*);
-extern  bool_t xdr___db_associate_reply (XDR *, __db_associate_reply*);
-extern  bool_t xdr___db_bt_maxkey_msg (XDR *, __db_bt_maxkey_msg*);
-extern  bool_t xdr___db_bt_maxkey_reply (XDR *, __db_bt_maxkey_reply*);
-extern  bool_t xdr___db_bt_minkey_msg (XDR *, __db_bt_minkey_msg*);
-extern  bool_t xdr___db_bt_minkey_reply (XDR *, __db_bt_minkey_reply*);
-extern  bool_t xdr___db_close_msg (XDR *, __db_close_msg*);
-extern  bool_t xdr___db_close_reply (XDR *, __db_close_reply*);
-extern  bool_t xdr___db_create_msg (XDR *, __db_create_msg*);
-extern  bool_t xdr___db_create_reply (XDR *, __db_create_reply*);
-extern  bool_t xdr___db_del_msg (XDR *, __db_del_msg*);
-extern  bool_t xdr___db_del_reply (XDR *, __db_del_reply*);
-extern  bool_t xdr___db_encrypt_msg (XDR *, __db_encrypt_msg*);
-extern  bool_t xdr___db_encrypt_reply (XDR *, __db_encrypt_reply*);
-extern  bool_t xdr___db_extentsize_msg (XDR *, __db_extentsize_msg*);
-extern  bool_t xdr___db_extentsize_reply (XDR *, __db_extentsize_reply*);
-extern  bool_t xdr___db_flags_msg (XDR *, __db_flags_msg*);
-extern  bool_t xdr___db_flags_reply (XDR *, __db_flags_reply*);
-extern  bool_t xdr___db_get_msg (XDR *, __db_get_msg*);
-extern  bool_t xdr___db_get_reply (XDR *, __db_get_reply*);
-extern  bool_t xdr___db_h_ffactor_msg (XDR *, __db_h_ffactor_msg*);
-extern  bool_t xdr___db_h_ffactor_reply (XDR *, __db_h_ffactor_reply*);
-extern  bool_t xdr___db_h_nelem_msg (XDR *, __db_h_nelem_msg*);
-extern  bool_t xdr___db_h_nelem_reply (XDR *, __db_h_nelem_reply*);
-extern  bool_t xdr___db_key_range_msg (XDR *, __db_key_range_msg*);
-extern  bool_t xdr___db_key_range_reply (XDR *, __db_key_range_reply*);
-extern  bool_t xdr___db_lorder_msg (XDR *, __db_lorder_msg*);
-extern  bool_t xdr___db_lorder_reply (XDR *, __db_lorder_reply*);
-extern  bool_t xdr___db_open_msg (XDR *, __db_open_msg*);
-extern  bool_t xdr___db_open_reply (XDR *, __db_open_reply*);
-extern  bool_t xdr___db_pagesize_msg (XDR *, __db_pagesize_msg*);
-extern  bool_t xdr___db_pagesize_reply (XDR *, __db_pagesize_reply*);
-extern  bool_t xdr___db_pget_msg (XDR *, __db_pget_msg*);
-extern  bool_t xdr___db_pget_reply (XDR *, __db_pget_reply*);
-extern  bool_t xdr___db_put_msg (XDR *, __db_put_msg*);
-extern  bool_t xdr___db_put_reply (XDR *, __db_put_reply*);
-extern  bool_t xdr___db_re_delim_msg (XDR *, __db_re_delim_msg*);
-extern  bool_t xdr___db_re_delim_reply (XDR *, __db_re_delim_reply*);
-extern  bool_t xdr___db_re_len_msg (XDR *, __db_re_len_msg*);
-extern  bool_t xdr___db_re_len_reply (XDR *, __db_re_len_reply*);
-extern  bool_t xdr___db_re_pad_msg (XDR *, __db_re_pad_msg*);
-extern  bool_t xdr___db_re_pad_reply (XDR *, __db_re_pad_reply*);
-extern  bool_t xdr___db_remove_msg (XDR *, __db_remove_msg*);
-extern  bool_t xdr___db_remove_reply (XDR *, __db_remove_reply*);
-extern  bool_t xdr___db_rename_msg (XDR *, __db_rename_msg*);
-extern  bool_t xdr___db_rename_reply (XDR *, __db_rename_reply*);
-extern  bool_t xdr___db_stat_msg (XDR *, __db_stat_msg*);
-extern  bool_t xdr___db_stat_reply (XDR *, __db_stat_reply*);
-extern  bool_t xdr___db_sync_msg (XDR *, __db_sync_msg*);
-extern  bool_t xdr___db_sync_reply (XDR *, __db_sync_reply*);
-extern  bool_t xdr___db_truncate_msg (XDR *, __db_truncate_msg*);
-extern  bool_t xdr___db_truncate_reply (XDR *, __db_truncate_reply*);
-extern  bool_t xdr___db_cursor_msg (XDR *, __db_cursor_msg*);
-extern  bool_t xdr___db_cursor_reply (XDR *, __db_cursor_reply*);
-extern  bool_t xdr___db_join_msg (XDR *, __db_join_msg*);
-extern  bool_t xdr___db_join_reply (XDR *, __db_join_reply*);
-extern  bool_t xdr___dbc_close_msg (XDR *, __dbc_close_msg*);
-extern  bool_t xdr___dbc_close_reply (XDR *, __dbc_close_reply*);
-extern  bool_t xdr___dbc_count_msg (XDR *, __dbc_count_msg*);
-extern  bool_t xdr___dbc_count_reply (XDR *, __dbc_count_reply*);
-extern  bool_t xdr___dbc_del_msg (XDR *, __dbc_del_msg*);
-extern  bool_t xdr___dbc_del_reply (XDR *, __dbc_del_reply*);
-extern  bool_t xdr___dbc_dup_msg (XDR *, __dbc_dup_msg*);
-extern  bool_t xdr___dbc_dup_reply (XDR *, __dbc_dup_reply*);
-extern  bool_t xdr___dbc_get_msg (XDR *, __dbc_get_msg*);
-extern  bool_t xdr___dbc_get_reply (XDR *, __dbc_get_reply*);
-extern  bool_t xdr___dbc_pget_msg (XDR *, __dbc_pget_msg*);
-extern  bool_t xdr___dbc_pget_reply (XDR *, __dbc_pget_reply*);
-extern  bool_t xdr___dbc_put_msg (XDR *, __dbc_put_msg*);
-extern  bool_t xdr___dbc_put_reply (XDR *, __dbc_put_reply*);
-
-#else /* K&R C */
-extern bool_t xdr___env_cachesize_msg ();
-extern bool_t xdr___env_cachesize_reply ();
-extern bool_t xdr___env_close_msg ();
-extern bool_t xdr___env_close_reply ();
-extern bool_t xdr___env_create_msg ();
-extern bool_t xdr___env_create_reply ();
-extern bool_t xdr___env_dbremove_msg ();
-extern bool_t xdr___env_dbremove_reply ();
-extern bool_t xdr___env_dbrename_msg ();
-extern bool_t xdr___env_dbrename_reply ();
-extern bool_t xdr___env_encrypt_msg ();
-extern bool_t xdr___env_encrypt_reply ();
-extern bool_t xdr___env_flags_msg ();
-extern bool_t xdr___env_flags_reply ();
-extern bool_t xdr___env_open_msg ();
-extern bool_t xdr___env_open_reply ();
-extern bool_t xdr___env_remove_msg ();
-extern bool_t xdr___env_remove_reply ();
-extern bool_t xdr___txn_abort_msg ();
-extern bool_t xdr___txn_abort_reply ();
-extern bool_t xdr___txn_begin_msg ();
-extern bool_t xdr___txn_begin_reply ();
-extern bool_t xdr___txn_commit_msg ();
-extern bool_t xdr___txn_commit_reply ();
-extern bool_t xdr___txn_discard_msg ();
-extern bool_t xdr___txn_discard_reply ();
-extern bool_t xdr___txn_prepare_msg ();
-extern bool_t xdr___txn_prepare_reply ();
-extern bool_t xdr___txn_recover_msg ();
-extern bool_t xdr___txn_recover_reply ();
-extern bool_t xdr___db_associate_msg ();
-extern bool_t xdr___db_associate_reply ();
-extern bool_t xdr___db_bt_maxkey_msg ();
-extern bool_t xdr___db_bt_maxkey_reply ();
-extern bool_t xdr___db_bt_minkey_msg ();
-extern bool_t xdr___db_bt_minkey_reply ();
-extern bool_t xdr___db_close_msg ();
-extern bool_t xdr___db_close_reply ();
-extern bool_t xdr___db_create_msg ();
-extern bool_t xdr___db_create_reply ();
-extern bool_t xdr___db_del_msg ();
-extern bool_t xdr___db_del_reply ();
-extern bool_t xdr___db_encrypt_msg ();
-extern bool_t xdr___db_encrypt_reply ();
-extern bool_t xdr___db_extentsize_msg ();
-extern bool_t xdr___db_extentsize_reply ();
-extern bool_t xdr___db_flags_msg ();
-extern bool_t xdr___db_flags_reply ();
-extern bool_t xdr___db_get_msg ();
-extern bool_t xdr___db_get_reply ();
-extern bool_t xdr___db_h_ffactor_msg ();
-extern bool_t xdr___db_h_ffactor_reply ();
-extern bool_t xdr___db_h_nelem_msg ();
-extern bool_t xdr___db_h_nelem_reply ();
-extern bool_t xdr___db_key_range_msg ();
-extern bool_t xdr___db_key_range_reply ();
-extern bool_t xdr___db_lorder_msg ();
-extern bool_t xdr___db_lorder_reply ();
-extern bool_t xdr___db_open_msg ();
-extern bool_t xdr___db_open_reply ();
-extern bool_t xdr___db_pagesize_msg ();
-extern bool_t xdr___db_pagesize_reply ();
-extern bool_t xdr___db_pget_msg ();
-extern bool_t xdr___db_pget_reply ();
-extern bool_t xdr___db_put_msg ();
-extern bool_t xdr___db_put_reply ();
-extern bool_t xdr___db_re_delim_msg ();
-extern bool_t xdr___db_re_delim_reply ();
-extern bool_t xdr___db_re_len_msg ();
-extern bool_t xdr___db_re_len_reply ();
-extern bool_t xdr___db_re_pad_msg ();
-extern bool_t xdr___db_re_pad_reply ();
-extern bool_t xdr___db_remove_msg ();
-extern bool_t xdr___db_remove_reply ();
-extern bool_t xdr___db_rename_msg ();
-extern bool_t xdr___db_rename_reply ();
-extern bool_t xdr___db_stat_msg ();
-extern bool_t xdr___db_stat_reply ();
-extern bool_t xdr___db_sync_msg ();
-extern bool_t xdr___db_sync_reply ();
-extern bool_t xdr___db_truncate_msg ();
-extern bool_t xdr___db_truncate_reply ();
-extern bool_t xdr___db_cursor_msg ();
-extern bool_t xdr___db_cursor_reply ();
-extern bool_t xdr___db_join_msg ();
-extern bool_t xdr___db_join_reply ();
-extern bool_t xdr___dbc_close_msg ();
-extern bool_t xdr___dbc_close_reply ();
-extern bool_t xdr___dbc_count_msg ();
-extern bool_t xdr___dbc_count_reply ();
-extern bool_t xdr___dbc_del_msg ();
-extern bool_t xdr___dbc_del_reply ();
-extern bool_t xdr___dbc_dup_msg ();
-extern bool_t xdr___dbc_dup_reply ();
-extern bool_t xdr___dbc_get_msg ();
-extern bool_t xdr___dbc_get_reply ();
-extern bool_t xdr___dbc_pget_msg ();
-extern bool_t xdr___dbc_pget_reply ();
-extern bool_t xdr___dbc_put_msg ();
-extern bool_t xdr___dbc_put_reply ();
-
-#endif /* K&R C */
-
-#ifdef __cplusplus
-}
-#endif
+extern bool_t xdr___env_cachesize_msg();
+extern bool_t xdr___env_cachesize_reply();
+extern bool_t xdr___env_close_msg();
+extern bool_t xdr___env_close_reply();
+extern bool_t xdr___env_create_msg();
+extern bool_t xdr___env_create_reply();
+extern bool_t xdr___env_dbremove_msg();
+extern bool_t xdr___env_dbremove_reply();
+extern bool_t xdr___env_dbrename_msg();
+extern bool_t xdr___env_dbrename_reply();
+extern bool_t xdr___env_encrypt_msg();
+extern bool_t xdr___env_encrypt_reply();
+extern bool_t xdr___env_flags_msg();
+extern bool_t xdr___env_flags_reply();
+extern bool_t xdr___env_open_msg();
+extern bool_t xdr___env_open_reply();
+extern bool_t xdr___env_remove_msg();
+extern bool_t xdr___env_remove_reply();
+extern bool_t xdr___txn_abort_msg();
+extern bool_t xdr___txn_abort_reply();
+extern bool_t xdr___txn_begin_msg();
+extern bool_t xdr___txn_begin_reply();
+extern bool_t xdr___txn_commit_msg();
+extern bool_t xdr___txn_commit_reply();
+extern bool_t xdr___txn_discard_msg();
+extern bool_t xdr___txn_discard_reply();
+extern bool_t xdr___txn_prepare_msg();
+extern bool_t xdr___txn_prepare_reply();
+extern bool_t xdr___txn_recover_msg();
+extern bool_t xdr___txn_recover_reply();
+extern bool_t xdr___db_associate_msg();
+extern bool_t xdr___db_associate_reply();
+extern bool_t xdr___db_bt_maxkey_msg();
+extern bool_t xdr___db_bt_maxkey_reply();
+extern bool_t xdr___db_bt_minkey_msg();
+extern bool_t xdr___db_bt_minkey_reply();
+extern bool_t xdr___db_close_msg();
+extern bool_t xdr___db_close_reply();
+extern bool_t xdr___db_create_msg();
+extern bool_t xdr___db_create_reply();
+extern bool_t xdr___db_del_msg();
+extern bool_t xdr___db_del_reply();
+extern bool_t xdr___db_encrypt_msg();
+extern bool_t xdr___db_encrypt_reply();
+extern bool_t xdr___db_extentsize_msg();
+extern bool_t xdr___db_extentsize_reply();
+extern bool_t xdr___db_flags_msg();
+extern bool_t xdr___db_flags_reply();
+extern bool_t xdr___db_get_msg();
+extern bool_t xdr___db_get_reply();
+extern bool_t xdr___db_h_ffactor_msg();
+extern bool_t xdr___db_h_ffactor_reply();
+extern bool_t xdr___db_h_nelem_msg();
+extern bool_t xdr___db_h_nelem_reply();
+extern bool_t xdr___db_key_range_msg();
+extern bool_t xdr___db_key_range_reply();
+extern bool_t xdr___db_lorder_msg();
+extern bool_t xdr___db_lorder_reply();
+extern bool_t xdr___db_open_msg();
+extern bool_t xdr___db_open_reply();
+extern bool_t xdr___db_pagesize_msg();
+extern bool_t xdr___db_pagesize_reply();
+extern bool_t xdr___db_pget_msg();
+extern bool_t xdr___db_pget_reply();
+extern bool_t xdr___db_put_msg();
+extern bool_t xdr___db_put_reply();
+extern bool_t xdr___db_re_delim_msg();
+extern bool_t xdr___db_re_delim_reply();
+extern bool_t xdr___db_re_len_msg();
+extern bool_t xdr___db_re_len_reply();
+extern bool_t xdr___db_re_pad_msg();
+extern bool_t xdr___db_re_pad_reply();
+extern bool_t xdr___db_remove_msg();
+extern bool_t xdr___db_remove_reply();
+extern bool_t xdr___db_rename_msg();
+extern bool_t xdr___db_rename_reply();
+extern bool_t xdr___db_stat_msg();
+extern bool_t xdr___db_stat_reply();
+extern bool_t xdr___db_sync_msg();
+extern bool_t xdr___db_sync_reply();
+extern bool_t xdr___db_truncate_msg();
+extern bool_t xdr___db_truncate_reply();
+extern bool_t xdr___db_cursor_msg();
+extern bool_t xdr___db_cursor_reply();
+extern bool_t xdr___db_join_msg();
+extern bool_t xdr___db_join_reply();
+extern bool_t xdr___dbc_close_msg();
+extern bool_t xdr___dbc_close_reply();
+extern bool_t xdr___dbc_count_msg();
+extern bool_t xdr___dbc_count_reply();
+extern bool_t xdr___dbc_del_msg();
+extern bool_t xdr___dbc_del_reply();
+extern bool_t xdr___dbc_dup_msg();
+extern bool_t xdr___dbc_dup_reply();
+extern bool_t xdr___dbc_get_msg();
+extern bool_t xdr___dbc_get_reply();
+extern bool_t xdr___dbc_pget_msg();
+extern bool_t xdr___dbc_pget_reply();
+extern bool_t xdr___dbc_put_msg();
+extern bool_t xdr___dbc_put_reply();
 
 #endif /* !_DB_SERVER_H_RPCGEN */

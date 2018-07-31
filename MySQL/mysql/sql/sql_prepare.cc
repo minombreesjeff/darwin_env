@@ -726,13 +726,13 @@ static bool insert_params_withlog(Prepared_statement *stmt, uchar *null_array,
     Item_param *param= *it;
     if (param->state != Item_param::LONG_DATA_VALUE)
     {
-      if (is_param_null(null_array, it - begin))
+      if (is_param_null(null_array, (uint) (it - begin)))
         param->set_null();
       else
       {
         if (read_pos >= data_end)
           DBUG_RETURN(1);
-        param->set_param_func(param, &read_pos, data_end - read_pos);
+        param->set_param_func(param, &read_pos, (uint) (data_end - read_pos));
         if (param->state == Item_param::NO_VALUE)
           DBUG_RETURN(1);
       }
@@ -764,13 +764,13 @@ static bool insert_params(Prepared_statement *stmt, uchar *null_array,
     Item_param *param= *it;
     if (param->state != Item_param::LONG_DATA_VALUE)
     {
-      if (is_param_null(null_array, it - begin))
+      if (is_param_null(null_array, (uint) (it - begin)))
         param->set_null();
       else
       {
         if (read_pos >= data_end)
           DBUG_RETURN(1);
-        param->set_param_func(param, &read_pos, data_end - read_pos);
+        param->set_param_func(param, &read_pos, (uint) (data_end - read_pos));
         if (param->state == Item_param::NO_VALUE)
           DBUG_RETURN(1);
       }
@@ -2283,7 +2283,7 @@ void mysql_stmt_execute(THD *thd, char *packet_arg, uint packet_length)
   if (!(stmt= find_prepared_statement(thd, stmt_id, "mysql_stmt_execute")))
     DBUG_VOID_RETURN;
 
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   thd->profiling.set_query_source(stmt->query, stmt->query_length);
 #endif
   DBUG_PRINT("exec_query", ("%s", stmt->query));
@@ -2852,12 +2852,13 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
   old_stmt_arena= thd->stmt_arena;
   thd->stmt_arena= this;
 
-  Lex_input_stream lip(thd, thd->query, thd->query_length);
-  lip.stmt_prepare_mode= TRUE;
-  thd->m_lip= &lip;
+  Parser_state parser_state(thd, thd->query, thd->query_length);
+  parser_state.m_lip.stmt_prepare_mode= TRUE;
+  thd->m_parser_state= &parser_state;
   lex_start(thd);
   lex->safe_to_cache_query= FALSE;
   int err= MYSQLparse((void *)thd);
+  thd->m_parser_state= NULL;
   lex->set_trg_event_type_for_tables();
 
   error= err || thd->is_fatal_error ||

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqladmin\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLADMIN\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLADMIN\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -98,7 +98,7 @@ old\-password \fInew\-password\fR
 This is like the
 password
 command but stores the password using the old (pre\-4.1) password\-hashing format. (See
-Section\ 4.8, \(lqPassword Hashing as of MySQL 4.1\(rq.)
+Section\ 5.5.6.3, \(lqPassword Hashing in MySQL\(rq.)
 .TP 3n
 \(bu
 password \fInew\-password\fR
@@ -120,6 +120,23 @@ value contains spaces or other characters that are special to your command inter
 shell> \fBmysqladmin password "my new password"\fR
 .fi
 .RE
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBCaution\fR
+Do not use this command used if the server was started with the
+\fB\-\-skip\-grant\-tables\fR
+option. No password change will be applied. This is true even if you precede the
+password
+command with
+flush\-privileges
+on the same command line to re\-enable the grant tables because the flush operation occurs after you connect. However, you can use
+\fBmysqladmin flush\-privileges\fR
+to re\-enable the grant table and then use a separate
+\fBmysqladmin password\fR
+command to change the password.
 .TP 3n
 \(bu
 ping
@@ -138,7 +155,7 @@ statement. If the
 \fB\-\-verbose\fR
 option is given, the output is like that of
 SHOW FULL PROCESSLIST. (See
-Section\ 5.5.24, \(lqSHOW PROCESSLIST Syntax\(rq.)
+Section\ 12.5.5.27, \(lqSHOW PROCESSLIST Syntax\(rq.)
 .TP 3n
 \(bu
 reload
@@ -223,7 +240,7 @@ Slow queries
 The number of queries that have taken more than
 long_query_time
 seconds. See
-Section\ 2.4, \(lqThe Slow Query Log\(rq.
+Section\ 5.2.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 Opens
@@ -267,7 +284,8 @@ when connecting to a local server using a Unix socket file,
 waits until the server's process ID file has been removed, to ensure that the server has stopped properly.
 .PP
 \fBmysqladmin\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -279,7 +297,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-compress\fR,
@@ -299,9 +317,9 @@ option is given.
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
+string is
 \'d:t:o,\fIfile_name\fR'. The default is
 \'d:t:o,/tmp/mysqladmin.trace'.
 .TP 3n
@@ -311,7 +329,7 @@ string often is
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -342,7 +360,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-pipe\fR,
@@ -360,7 +378,7 @@ The TCP/IP port number to use for the connection.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
-Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
+Section\ 4.2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-relative\fR,
@@ -405,13 +423,13 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 5.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-verbose\fR,
@@ -466,9 +484,9 @@ It is also possible to set variables by using
 format is deprecated.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -478,4 +496,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

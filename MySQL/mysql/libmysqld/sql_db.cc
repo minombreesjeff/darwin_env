@@ -35,7 +35,7 @@ static long mysql_rm_known_files(THD *thd, MY_DIR *dirp,
 				 const char *db, const char *path, uint level, 
                                  TABLE_LIST **dropped_tables);
          
-static long mysql_rm_arc_files(THD *thd, MY_DIR *dirp, const char *org_path);
+long mysql_rm_arc_files(THD *thd, MY_DIR *dirp, const char *org_path);
 static my_bool rm_dir_w_symlink(const char *org_path, my_bool send_error);
 /* Database options hash */
 static HASH dboptions;
@@ -70,7 +70,7 @@ static byte* dboptions_get_key(my_dbopt_t *opt, uint *length,
 static inline void write_to_binlog(THD *thd, char *query, uint q_len,
                                    char *db, uint db_len)
 {
-  Query_log_event qinfo(thd, query, q_len, 0, 0);
+  Query_log_event qinfo(thd, query, q_len, 0, 0, THD::NOT_KILLED);
   qinfo.error_code= 0;
   qinfo.db= db;
   qinfo.db_len= db_len;
@@ -239,7 +239,7 @@ void del_dbopt(const char *path)
   my_dbopt_t *opt;
   rw_wrlock(&LOCK_dboptions);
   if ((opt= (my_dbopt_t *)hash_search(&dboptions, (const byte*) path,
-                                      strlen(path))))
+                                      (uint) strlen(path))))
     hash_delete(&dboptions, (byte*) opt);
   rw_unlock(&LOCK_dboptions);
 }
@@ -562,7 +562,7 @@ int mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create_info,
     if (mysql_bin_log.is_open())
     {
       Query_log_event qinfo(thd, query, query_length, 0, 
-			    /* suppress_use */ TRUE);
+			    /* suppress_use */ TRUE, THD::NOT_KILLED);
 
       /*
 	Write should use the database being created as the "current
@@ -582,7 +582,7 @@ int mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create_info,
                                       # database does not exist.
       */
       qinfo.db     = db;
-      qinfo.db_len = strlen(db);
+      qinfo.db_len = (uint) strlen(db);
 
       /* These DDL methods and logging protected with LOCK_mysql_create_db */
       mysql_bin_log.write(&qinfo);
@@ -645,7 +645,7 @@ bool mysql_alter_db(THD *thd, const char *db, HA_CREATE_INFO *create_info)
   if (mysql_bin_log.is_open())
   {
     Query_log_event qinfo(thd, thd->query, thd->query_length, 0,
-			  /* suppress_use */ TRUE);
+			  /* suppress_use */ TRUE, THD::NOT_KILLED);
 
     /*
       Write should use the database being created as the "current
@@ -653,7 +653,7 @@ bool mysql_alter_db(THD *thd, const char *db, HA_CREATE_INFO *create_info)
       default.
     */
     qinfo.db     = db;
-    qinfo.db_len = strlen(db);
+    qinfo.db_len = (uint) strlen(db);
 
     thd->clear_error();
     /* These DDL methods and logging protected with LOCK_mysql_create_db */
@@ -770,14 +770,14 @@ bool mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
     if (mysql_bin_log.is_open())
     {
       Query_log_event qinfo(thd, query, query_length, 0, 
-			    /* suppress_use */ TRUE);
+			    /* suppress_use */ TRUE, THD::NOT_KILLED);
       /*
         Write should use the database being created as the "current
         database" and not the threads current database, which is the
         default.
       */
       qinfo.db     = db;
-      qinfo.db_len = strlen(db);
+      qinfo.db_len = (uint) strlen(db);
 
       thd->clear_error();
       /* These DDL methods and logging protected with LOCK_mysql_create_db */
@@ -797,18 +797,18 @@ bool mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
       goto exit; /* not much else we can do */
     query_pos= query_data_start= strmov(query,"drop table ");
     query_end= query + MAX_DROP_TABLE_Q_LEN;
-    db_len= strlen(db);
+    db_len= (uint) strlen(db);
 
     for (tbl= dropped_tables; tbl; tbl= tbl->next_local)
     {
       uint tbl_name_len;
 
       /* 3 for the quotes and the comma*/
-      tbl_name_len= strlen(tbl->table_name) + 3;
+      tbl_name_len= (uint) strlen(tbl->table_name) + 3;
       if (query_pos + tbl_name_len + 1 >= query_end)
       {
         /* These DDL methods and logging protected with LOCK_mysql_create_db */
-        write_to_binlog(thd, query, query_pos -1 - query, db, db_len);
+        write_to_binlog(thd, query, (uint) (query_pos - 1 - query), db, db_len);
         query_pos= query_data_start;
       }
 
@@ -821,7 +821,7 @@ bool mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent)
     if (query_pos != query_data_start)
     {
       /* These DDL methods and logging protected with LOCK_mysql_create_db */
-      write_to_binlog(thd, query, query_pos -1 - query, db, db_len);
+      write_to_binlog(thd, query, (uint) (query_pos - 1 - query), db, db_len);
     }
   }
 
@@ -906,7 +906,10 @@ static long mysql_rm_known_files(THD *thd, MY_DIR *dirp, const char *db,
     else if (file->name[0] == 'a' && file->name[1] == 'r' &&
              file->name[2] == 'c' && file->name[3] == '\0')
     {
-      /* .frm archive */
+      /* .frm archive:
+        Those archives are obsolete, but following code should
+        exist to remove existent "arc" directories.
+      */
       char newpath[FN_REFLEN];
       MY_DIR *new_dirp;
       strxmov(newpath, org_path, "/", "arc", NullS);
@@ -935,7 +938,7 @@ static long mysql_rm_known_files(THD *thd, MY_DIR *dirp, const char *db,
       /* Drop the table nicely */
       *extension= 0;			// Remove extension
       TABLE_LIST *table_list=(TABLE_LIST*)
-	thd->calloc(sizeof(*table_list)+ strlen(db)+strlen(file->name)+2);
+	thd->calloc((uint) (sizeof(*table_list)+ strlen(db)+strlen(file->name)+2));
       if (!table_list)
 	goto err;
       table_list->db= (char*) (table_list+1);
@@ -1061,9 +1064,12 @@ static my_bool rm_dir_w_symlink(const char *org_path, my_bool send_error)
   RETURN
     > 0 number of removed files
     -1  error
+
+  NOTE
+    A support of "arc" directories is obsolete, however this
+    function should exist to remove existent "arc" directories.
 */
-static long mysql_rm_arc_files(THD *thd, MY_DIR *dirp,
-				 const char *org_path)
+long mysql_rm_arc_files(THD *thd, MY_DIR *dirp, const char *org_path)
 {
   long deleted= 0;
   ulong found_other_files= 0;
@@ -1105,6 +1111,7 @@ static long mysql_rm_arc_files(THD *thd, MY_DIR *dirp,
     {
       goto err;
     }
+    deleted++;
   }
   if (thd->killed)
     goto err;

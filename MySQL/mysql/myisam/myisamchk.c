@@ -1039,7 +1039,7 @@ static int myisamchk(MI_CHECK *param, my_string filename)
 	  error|=change_to_newfile(filename,MI_NAME_DEXT,DATA_TMP_EXT,
 				   raid_chunks,
 				   MYF(0));
-	  if (mi_open_datafile(info,info->s, -1))
+	  if (mi_open_datafile(info,info->s, NULL, -1))
 	    error=1;
 	  param->out_flag&= ~O_NEW_DATA; /* We are using new datafile */
 	  param->read_cache.file=info->dfile;
@@ -1311,7 +1311,7 @@ static void descript(MI_CHECK *param, register MI_INFO *info, my_string name)
 	  share->base.max_key_file_length != HA_OFFSET_ERROR)
 	printf("Max datafile length: %13s  Max keyfile length: %13s\n",
 	       llstr(share->base.max_data_file_length-1,llbuff),
-	       llstr(share->base.max_key_file_length-1,llbuff2));
+               ullstr(share->base.max_key_file_length - 1, llbuff2));
     }
   }
 

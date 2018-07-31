@@ -780,10 +780,10 @@ void close_temporary_tables(THD *thd)
           We are going to add 4 ` around the db/table names and possible more
           due to special characters in the names
         */
-        append_identifier(thd, &s_query, table->s->db, strlen(table->s->db));
+        append_identifier(thd, &s_query, table->s->db, (uint) strlen(table->s->db));
         s_query.q_append('.');
         append_identifier(thd, &s_query, table->s->table_name,
-                          strlen(table->s->table_name));
+                          (uint) strlen(table->s->table_name));
         s_query.q_append(',');
         next= table->next;
         close_temporary(table, 1);
@@ -793,18 +793,9 @@ void close_temporary_tables(THD *thd)
       thd->variables.character_set_client= system_charset_info;
       Query_log_event qinfo(thd, s_query.ptr(),
                             s_query.length() - 1 /* to remove trailing ',' */,
-                            0, FALSE);
+                            0, FALSE, THD::NOT_KILLED);
       thd->variables.character_set_client= cs_save;
-      /*
-        Imagine the thread had created a temp table, then was doing a SELECT, and
-        the SELECT was killed. Then it's not clever to mark the statement above as
-        "killed", because it's not really a statement updating data, and there
-        are 99.99% chances it will succeed on slave.
-        If a real update (one updating a persistent table) was killed on the
-        master, then this real update will be logged with error_code=killed,
-        rightfully causing the slave to stop.
-      */
-      qinfo.error_code= 0;
+      DBUG_ASSERT(qinfo.error_code == 0);
       mysql_bin_log.write(&qinfo);
     }
     else
@@ -1596,27 +1587,11 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
   {						// Using table locks
     TABLE *best_table= 0;
     int best_distance= INT_MIN;
-    bool check_if_used= thd->prelocked_mode &&
-                        ((int) table_list->lock_type >=
-                         (int) TL_WRITE_ALLOW_WRITE);
     for (table=thd->open_tables; table ; table=table->next)
     {
       if (table->s->key_length == key_length &&
           !memcmp(table->s->table_cache_key, key, key_length))
       {
-        if (check_if_used && table->query_id &&
-            table->query_id != thd->query_id)
-        {
-          /*
-            If we are in stored function or trigger we should ensure that
-            we won't change table that is already used by calling statement.
-            So if we are opening table for writing, we should check that it
-            is not already open by some calling stamement.
-          */
-          my_error(ER_CANT_UPDATE_USED_TABLE_IN_SF_OR_TRG, MYF(0),
-                   table->s->table_name);
-          DBUG_RETURN(0);
-        }
         if (!my_strcasecmp(system_charset_info, table->alias, alias) &&
             table->query_id != thd->query_id && /* skip tables already used */
             !(thd->prelocked_mode && table->query_id))
@@ -1640,13 +1615,13 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
           {
             best_distance= distance;
             best_table= table;
-            if (best_distance == 0 && !check_if_used)
+            if (best_distance == 0)
             {
               /*
-                If we have found perfect match and we don't need to check that
-                table is not used by one of calling statements (assuming that
-                we are inside of function or trigger) we can finish iterating
-                through open tables list.
+                We have found a perfect match and can finish iterating
+                through open tables list. Check for table use conflict
+                between calling statement and SP/trigger is done in
+                lock_tables().
               */
               break;
             }
@@ -2102,7 +2077,10 @@ bool reopen_table(TABLE *table,bool locked)
   for (key=0 ; key < table->s->keys ; key++)
   {
     for (part=0 ; part < table->key_info[key].usable_key_parts ; part++)
+    {
       table->key_info[key].key_part[part].field->table= table;
+      table->key_info[key].key_part[part].field->orig_table= table;
+    }
   }
   if (table->triggers)
     table->triggers->set_table(table);
@@ -2575,7 +2553,8 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
       {
         end = strxmov(strmov(query, "DELETE FROM `"),
                       db,"`.`",name,"`", NullS);
-        Query_log_event qinfo(thd, query, (ulong)(end-query), 0, FALSE);
+        Query_log_event qinfo(thd, query, (ulong)(end-query),
+                              0, FALSE, THD::NOT_KILLED);
         mysql_bin_log.write(&qinfo);
         my_free(query, MYF(0));
       }
@@ -2941,9 +2920,9 @@ static bool check_lock_and_start_stmt(THD *thd, TABLE *table,
     lock_type		Lock to use for open
 
   NOTE
-    This function don't do anything like SP/SF/views/triggers analysis done
-    in open_tables(). It is intended for opening of only one concrete table.
-    And used only in special contexts.
+    This function doesn't do anything like SP/SF/views/triggers analysis done 
+    in open_tables()/lock_tables(). It is intended for opening of only one
+    concrete table. And used only in special contexts.
 
   RETURN VALUES
     table		Opened table
@@ -3259,8 +3238,36 @@ int lock_tables(THD *thd, TABLE_LIST *tables, uint count, bool *need_reopen)
     TABLE_LIST *first_not_own= thd->lex->first_not_own_table();
     for (table= tables; table != first_not_own; table= table->next_global)
     {
-      if (!table->placeholder() &&
-	  check_lock_and_start_stmt(thd, table->table, table->lock_type))
+      if (table->placeholder())
+        continue;
+
+      /*
+        In a stored function or trigger we should ensure that we won't change
+        a table that is already used by the calling statement.
+      */
+      if (thd->prelocked_mode &&
+          table->lock_type >= TL_WRITE_ALLOW_WRITE)
+      {
+        for (TABLE* opentab= thd->open_tables; opentab; opentab= opentab->next)
+        {
+          /* 
+            issue an error if the tables are the same (by key comparison),
+            but query_id isn't
+          */
+          if (opentab->query_id && 
+              table->table->query_id != opentab->query_id &&
+              table->table->s->key_length == opentab->s->key_length &&
+              !memcmp(table->table->s->table_cache_key,
+                      opentab->s->table_cache_key, opentab->s->key_length))
+          {
+            my_error(ER_CANT_UPDATE_USED_TABLE_IN_SF_OR_TRG, MYF(0),
+                     table->table->s->table_name);
+            DBUG_RETURN(-1);
+          }
+        }
+      }
+
+      if (check_lock_and_start_stmt(thd, table->table, table->lock_type))
       {
 	ha_rollback_stmt(thd);
 	DBUG_RETURN(-1);
@@ -3617,8 +3624,21 @@ find_field_in_natural_join(THD *thd, TABLE_LIST *table_ref, const char *name,
   {
     /* This is a base table. */
     DBUG_ASSERT(nj_col->view_field == NULL);
-    DBUG_ASSERT(nj_col->table_ref->table == nj_col->table_field->table);
-    found_field= nj_col->table_field;
+    /*
+      This fix_fields is not necessary (initially this item is fixed by
+      the Item_field constructor; after reopen_tables the Item_func_eq
+      calls fix_fields on that item), it's just a check during table
+      reopening for columns that was dropped by the concurrent connection.
+    */
+    if (!nj_col->table_field->fixed &&
+        nj_col->table_field->fix_fields(thd, (Item **)&nj_col->table_field))
+    {
+      DBUG_PRINT("info", ("column '%s' was dropped by the concurrent connection",
+                          nj_col->table_field->name));
+      DBUG_RETURN(NULL);
+    }
+    DBUG_ASSERT(nj_col->table_ref->table == nj_col->table_field->field->table);
+    found_field= nj_col->table_field->field;
     update_field_dependencies(thd, found_field, nj_col->table_ref->table);
   }
 
@@ -3674,7 +3694,7 @@ find_field_in_table(THD *thd, TABLE *table, const char *name, uint length,
 
   if (field_ptr && *field_ptr)
   {
-    *cached_field_index_ptr= field_ptr - table->field;
+    *cached_field_index_ptr= (uint) (field_ptr - table->field);
     field= *field_ptr;
   }
   else
@@ -4450,7 +4470,7 @@ mark_common_columns(THD *thd, TABLE_LIST *table_ref_1, TABLE_LIST *table_ref_2,
     const char *field_name_1;
     /* true if field_name_1 is a member of using_fields */
     bool is_using_column_1;
-    if (!(nj_col_1= it_1.get_or_create_column_ref(leaf_1)))
+    if (!(nj_col_1= it_1.get_or_create_column_ref(thd, leaf_1)))
       goto err;
     field_name_1= nj_col_1->name();
     is_using_column_1= using_fields && 
@@ -4471,7 +4491,7 @@ mark_common_columns(THD *thd, TABLE_LIST *table_ref_1, TABLE_LIST *table_ref_2,
     {
       Natural_join_column *cur_nj_col_2;
       const char *cur_field_name_2;
-      if (!(cur_nj_col_2= it_2.get_or_create_column_ref(leaf_2)))
+      if (!(cur_nj_col_2= it_2.get_or_create_column_ref(thd, leaf_2)))
         goto err;
       cur_field_name_2= cur_nj_col_2->name();
       DBUG_PRINT ("info", ("cur_field_name_2=%s.%s", 
@@ -4957,15 +4977,24 @@ static bool setup_natural_join_row_types(THD *thd,
   TABLE_LIST *left_neighbor;
   /* Table reference to the right of the current. */
   TABLE_LIST *right_neighbor= NULL;
+  bool save_first_natural_join_processing=
+    context->select_lex->first_natural_join_processing;
+
+  context->select_lex->first_natural_join_processing= FALSE;
 
   /* Note that tables in the list are in reversed order */
   for (left_neighbor= table_ref_it++; left_neighbor ; )
   {
     table_ref= left_neighbor;
     left_neighbor= table_ref_it++;
-    /* For stored procedures do not redo work if already done. */
-    if (context->select_lex->first_execution)
+    /* 
+      Do not redo work if already done:
+      1) for stored procedures,
+      2) for multitable update after lock failure and table reopening.
+    */
+    if (save_first_natural_join_processing)
     {
+      context->select_lex->first_natural_join_processing= FALSE;
       if (store_top_level_join_columns(thd, table_ref,
                                        left_neighbor, right_neighbor))
         return TRUE;
@@ -5454,7 +5483,7 @@ insert_fields(THD *thd, Name_resolution_context *context, const char *db_name,
 
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
     /* Ensure that we have access rights to all fields to be inserted. */
-    if (!((table && (table->grant.privilege & SELECT_ACL) ||
+    if (!((table && !tables->view && (table->grant.privilege & SELECT_ACL) ||
            tables->view && (tables->grant.privilege & SELECT_ACL))) &&
         !any_privileges)
     {
@@ -5486,6 +5515,10 @@ insert_fields(THD *thd, Name_resolution_context *context, const char *db_name,
 
       if (!(item= field_iterator.create_item(thd)))
         DBUG_RETURN(TRUE);
+      DBUG_ASSERT(item->fixed);
+      /* cache the table for the Item_fields inserted by expanding stars */
+      if (item->type() == Item::FIELD_ITEM && tables->cacheable_table)
+        ((Item_field *)item)->cached_table= tables;
 
       if (!found)
       {
@@ -5963,7 +5996,7 @@ my_bool mysql_rm_tmp_tables(void)
     if (!bcmp(file->name,tmp_file_prefix,tmp_file_prefix_length))
     {
       char *ext= fn_ext(file->name);
-      uint ext_len= strlen(ext);
+      size_t ext_len= strlen(ext);
       uint filePath_len= my_snprintf(filePath, sizeof(filePath),
                                      "%s%s", tmpdir, file->name);
       if (!bcmp(reg_ext, ext, ext_len))
@@ -6235,7 +6268,7 @@ open_new_frm(THD *thd, const char *path, const char *alias,
   DBUG_ENTER("open_new_frm");
 
   pathstr.str=    (char*) path;
-  pathstr.length= strlen(path);
+  pathstr.length= (uint) strlen(path);
 
   if ((parser= sql_parse_prepare(&pathstr, mem_root, 1)))
   {

@@ -439,9 +439,9 @@ class Item {
   Item(const Item &);			/* Prevent use of these */
   void operator=(Item &);
 public:
-  static void *operator new(size_t size)
+  static void *operator new(size_t size) throw ()
   { return (void*) sql_alloc((uint) size); }
-  static void *operator new(size_t size, MEM_ROOT *mem_root)
+  static void *operator new(size_t size, MEM_ROOT *mem_root) throw ()
   { return (void*) alloc_root(mem_root, (uint) size); }
   static void operator delete(void *ptr,size_t size) { TRASH(ptr, size); }
   static void operator delete(void *ptr, MEM_ROOT *mem_root) {}
@@ -652,6 +652,7 @@ public:
   virtual my_decimal *val_decimal_result(my_decimal *val)
   { return val_decimal(val); }
   virtual bool val_bool_result() { return val_bool(); }
+  virtual bool is_null_result() { return is_null(); }
 
   /* bit map of tables used by item */
   virtual table_map used_tables() const { return (table_map) 0L; }
@@ -1168,6 +1169,8 @@ bool agg_item_collations(DTCollation &c, const char *name,
                          Item **items, uint nitems, uint flags, int item_sep);
 bool agg_item_collations_for_comparison(DTCollation &c, const char *name,
                                         Item **items, uint nitems, uint flags);
+bool agg_item_set_converter(DTCollation &coll, const char *fname,
+                            Item **args, uint nargs, uint flags, int item_sep);
 bool agg_item_charsets(DTCollation &c, const char *name,
                        Item **items, uint nitems, uint flags, int item_sep);
 
@@ -1301,6 +1304,7 @@ public:
   String *str_result(String* tmp);
   my_decimal *val_decimal_result(my_decimal *);
   bool val_bool_result();
+  bool is_null_result();
   bool send(Protocol *protocol, String *str_arg);
   void reset_field(Field *f);
   bool fix_fields(THD *, Item **);
@@ -1817,7 +1821,7 @@ class Item_empty_string :public Item_string
 public:
   Item_empty_string(const char *header,uint length, CHARSET_INFO *cs= NULL) :
     Item_string("",0, cs ? cs : &my_charset_utf8_general_ci)
-    { name=(char*) header; max_length= cs ? length * cs->mbmaxlen : length; }
+    { name=(char*) header; max_length= length * collation.collation->mbmaxlen; }
   void make_field(Send_field *field);
 };
 
@@ -1895,7 +1899,7 @@ class Item_ref :public Item_ident
 protected:
   void set_properties();
 public:
-  enum Ref_Type { REF, DIRECT_REF, VIEW_REF, OUTER_REF };
+  enum Ref_Type { REF, DIRECT_REF, VIEW_REF, OUTER_REF, AGGREGATE_REF };
   Field *result_field;			 /* Save result here */
   Item **ref;
   Item_ref(Name_resolution_context *context_arg,
@@ -1942,6 +1946,7 @@ public:
   String *str_result(String* tmp);
   my_decimal *val_decimal_result(my_decimal *);
   bool val_bool_result();
+  bool is_null_result();
   bool send(Protocol *prot, String *tmp);
   void make_field(Send_field *field);
   bool fix_fields(THD *, Item **);

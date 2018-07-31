@@ -1271,7 +1271,7 @@ select *, f8() from v1|
 
 # Let us test what will happen if function is missing
 drop function f1|
---error 1356
+--error ER_VIEW_INVALID
 select * from v1|
 
 # And what will happen if we have recursion which involves
@@ -1310,9 +1310,9 @@ select f0()|
 select * from v0|
 select *, f0() from v0, (select 123) as d1|
 # But these should not !
---error 1100
+--error ER_TABLE_NOT_LOCKED
 select id, f3() from t1|
---error 1100
+--error ER_TABLE_NOT_LOCKED
 select f4()|
 unlock tables|
 
@@ -1322,9 +1322,9 @@ lock tables v2 read, mysql.proc read|
 select * from v2|
 select * from v1|
 # These should not work as we have too little instances of tables locked
---error 1100
+--error ER_TABLE_NOT_LOCKED
 select * from v1, t1|
---error 1100
+--error ER_TABLE_NOT_LOCKED
 select f4()|
 unlock tables|
 
@@ -4501,14 +4501,14 @@ begin
    select bug12379();
 end|
 
---error 1062
+--error ER_DUP_ENTRY
 select bug12379()|
 select 1|
 call bug12379_1()|
 select 2|
 call bug12379_2()|
 select 3|
---error 1062
+--error ER_DUP_ENTRY
 call bug12379_3()|
 select 4|
 
@@ -5235,18 +5235,29 @@ drop procedure bug5967|
 #
 # Bug#13012 "SP: REPAIR/BACKUP/RESTORE TABLE crashes the server"
 #
+--let $backupdir = $MYSQLTEST_VARDIR/tmp/
+--error 0,1
+--remove_file $backupdir/t1.frm
+--error 0,1
+--remove_file $backupdir/t1.MYD
+
 --disable_warnings
 drop procedure if exists bug13012|
+--replace_result $MYSQLTEST_VARDIR <MYSQLTEST_VARDIR>
 --enable_warnings
-create procedure bug13012()
-BEGIN
-  REPAIR TABLE t1;
-  BACKUP TABLE t1 to '../tmp';
-  DROP TABLE t1;
-  RESTORE TABLE t1 FROM '../tmp';
-END|
+eval create procedure bug13012()
+    BEGIN
+       REPAIR TABLE t1;
+       BACKUP TABLE t1 to '$backupdir';
+       DROP TABLE t1;
+       RESTORE TABLE t1 FROM '$backupdir';
+    END|
 call bug13012()|
+
+--remove_file $backupdir/t1.frm
+--remove_file $backupdir/t1.MYD
 drop procedure bug13012|
+
 create view v1 as select * from t1|
 create procedure bug13012()
 BEGIN
@@ -7793,6 +7804,85 @@ select (select func30787(f1)) as ttt from t1;
 drop function func30787;
 drop table t1;
 
+#
+# Bug #33811: Call to stored procedure with SELECT * / RIGHT JOIN fails
+# after the first time
+#
+CREATE TABLE t1 (id INT);
+INSERT INTO t1 VALUES (1),(2),(3),(4);
+
+CREATE PROCEDURE test_sp()
+  SELECT t1.* FROM t1 RIGHT JOIN t1 t2 ON t1.id=t2.id;
+
+CALL test_sp();
+CALL test_sp();
+
+DROP PROCEDURE test_sp;
+DROP TABLE t1;
+
+#
+# Bug#38291 memory corruption and server crash with view/sp/function
+#
+
+create table t1(c1 INT);
+create function f1(p1 int) returns varchar(32)
+  return 'aaa';
+create view v1 as select f1(c1) as parent_control_name from t1;
+
+delimiter //;
+create procedure p1()
+begin
+    select parent_control_name as c1 from v1;
+end //
+delimiter ;//
+
+call p1();
+call p1();
+
+drop procedure p1;
+drop function f1;
+drop view v1;
+drop table t1;
+
+#
+# Bug#38469 invalid memory read and/or crash with utf8 text field, stored procedure, uservar 
+#
+delimiter $;
+--disable_warnings
+drop procedure if exists `p2` $
+--enable_warnings
+create procedure `p2`(in `a` text charset utf8)
+begin
+        declare `pos` int default 1;
+        declare `str` text charset utf8;
+        set `str` := `a`;
+        select substr(`str`, `pos`+ 1 ) into `str`;
+end $
+delimiter ;$
+call `p2`('s s s s s s');
+drop procedure `p2`;
+
+#
+# Bug#38823: Invalid memory access when a SP statement does wildcard expansion
+#
+
+--disable_warnings
+drop table if exists t1;
+drop procedure if exists p1;
+--enable_warnings
+
+delimiter $;
+create procedure p1() begin select * from t1; end$
+--error ER_NO_SUCH_TABLE
+call p1$
+create table t1 (a integer)$
+call p1$
+alter table t1 add b integer;
+call p1$
+delimiter ;$
+
+drop table t1;
+drop procedure p1;
 
 --echo # ------------------------------------------------------------------
 --echo # -- End of 5.0 tests

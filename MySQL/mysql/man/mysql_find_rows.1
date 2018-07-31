@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql_find_rows\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL_FIND_ROWS\\F" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL_FIND_ROWS\\F" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -22,7 +22,7 @@ reads files containing SQL statements and extracts statements that match a given
 USE \fIdb_name\fR
 or
 SET
-statements. The utility was written for use with update log files, but it can be used with other files that contain SQL statements.
+statements. The utility was written for use with update log files (as used prior to MySQL 5.0) and as such expects statements to be terminated with semicolon (;) characters. It may be useful with other files that contain SQL statements as long as statements are terminated with semicolons.
 .PP
 Invoke
 \fBmysql_find_rows\fR
@@ -36,7 +36,7 @@ shell> \fBmysql_find_rows [\fR\fB\fIoptions\fR\fR\fB] [\fR\fB\fIfile_name\fR\fR\
 .PP
 Each
 \fIfile_name\fR
-argument should be the name of file containing SQL statements. If no filenames are given,
+argument should be the name of file containing SQL statements. If no file names are given,
 \fBmysql_find_rows\fR
 reads the standard input.
 .PP
@@ -83,9 +83,9 @@ statements in the output.
 Start output from this row.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -95,4 +95,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

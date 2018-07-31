@@ -3473,7 +3473,7 @@ int Field_longlong::store(double nr)
       error= 1;
     }
     else
-      res=(longlong) (ulonglong) nr;
+      res=(longlong) double2ulonglong(nr);
   }
   else
   {
@@ -5372,6 +5372,7 @@ int Field_newdate::store_time(MYSQL_TIME *ltime, timestamp_type time_type)
     {
       char buff[MAX_DATE_STRING_REP_LENGTH];
       String str(buff, sizeof(buff), &my_charset_latin1);
+      tmp= 0;
       make_date((DATE_TIME_FORMAT *) 0, ltime, &str);
       set_datetime_warning(MYSQL_ERROR::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED,
                            str.ptr(), str.length(), MYSQL_TIMESTAMP_DATE, 1);
@@ -5608,6 +5609,7 @@ int Field_datetime::store_time(MYSQL_TIME *ltime,timestamp_type time_type)
     {
       char buff[MAX_DATE_STRING_REP_LENGTH];
       String str(buff, sizeof(buff), &my_charset_latin1);
+      tmp= 0;
       make_datetime((DATE_TIME_FORMAT *) 0, ltime, &str);
       set_datetime_warning(MYSQL_ERROR::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED,
                            str.ptr(), str.length(), MYSQL_TIMESTAMP_DATETIME,1);
@@ -5985,13 +5987,13 @@ int Field_str::store(double nr)
     calculate the maximum number of significant digits if the 'f'-format
     would be used (+1 for decimal point if the number has a fractional part).
   */
-  digits= max(0, (int) max_length - fractional);
+  digits= max(1, (int) max_length - fractional);
   /*
     If the exponent is negative, decrease digits by the number of leading zeros
     after the decimal point that do not count as significant digits.
   */
   if (exp < 0)
-    digits= max(0, (int) digits + exp);
+    digits= max(1, (int) digits + exp);
   /*
     'e'-format is used only if the exponent is less than -4 or greater than or
     equal to the precision. In this case we need to adjust the number of
@@ -5999,7 +6001,7 @@ int Field_str::store(double nr)
     We also have to reserve one additional character if abs(exp) >= 100.
   */
   if (exp >= (int) digits || exp < -4)
-    digits= max(0, (int) (max_length - 5 - (exp >= 100 || exp <= -100)));
+    digits= max(1, (int) (max_length - 5 - (exp >= 100 || exp <= -100)));
 
   /* Limit precision to DBL_DIG to avoid garbage past significant digits */
   set_if_smaller(digits, DBL_DIG);
@@ -6992,8 +6994,18 @@ int Field_blob::store(const char *from,uint length,CHARSET_INFO *cs)
     return 0;
   }
 
-  if (from == value.ptr())
+  /*
+    If the 'from' address is in the range of the temporary 'value'-
+    object we need to copy the content to a different location or it will be
+    invalidated when the 'value'-object is reallocated to make room for
+    the new character set.
+  */
+  if (from >= value.ptr() && from <= value.ptr()+value.length())
   {
+    /*
+      If content of the 'from'-address is cached in the 'value'-object
+      it is possible that the content needs a character conversion.
+    */
     uint32 dummy_offset;
     if (!String::needs_conversion(length, cs, field_charset, &dummy_offset))
     {
@@ -8575,16 +8587,16 @@ bool create_field::init(THD *thd, char *fld_name, enum_field_types fld_type,
       else if (tmp_length > PRECISION_FOR_FLOAT)
       {
         sql_type= FIELD_TYPE_DOUBLE;
-        length= DBL_DIG+7; /* -[digits].E+### */
+        length= MAX_DOUBLE_STR_LENGTH; 
       }
       else
-        length= FLT_DIG+6; /* -[digits].E+## */
+        length= MAX_FLOAT_STR_LENGTH; 
       decimals= NOT_FIXED_DEC;
       break;
     }
     if (!fld_length && !fld_decimals)
     {
-      length=  FLT_DIG+6;
+      length=  MAX_FLOAT_STR_LENGTH;
       decimals= NOT_FIXED_DEC;
     }
     if (length < decimals &&

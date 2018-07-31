@@ -1,11 +1,11 @@
 .\"     Title: \fBndb_error_reporter\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_ERROR_REPORTE" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_ERROR_REPORTE" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -36,14 +36,49 @@ is a datetime string.
 .PP
 If the
 \fB\-\-fs\fR
-is used, then the data node filesystems are also copied to the management host and included in the archive that is produced by this script. As data node filesystems can be extremely large even after being compressed, we ask that you please do
+is used, then the data node file systems are also copied to the management host and included in the archive that is produced by this script. As data node file systems can be extremely large even after being compressed, we ask that you please do
 \fInot\fR
 send archives created using this option to MySQL AB unless you are specifically requested to do so.
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-fs
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+boolean
+T}
+T{
+\fBDefault\fR
+T}:T{
+FALSE
+T}
+.TE
+.sp
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -53,4 +88,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

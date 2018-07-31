@@ -684,4 +684,69 @@ SELECT 1 FROM t1 GROUP BY a;
 1
 1
 DROP TABLE t1;
+CREATE TABLE t1 (b BIT NOT NULL, i2 INTEGER NOT NULL, s VARCHAR(255) NOT NULL);
+INSERT INTO t1 VALUES(0x01,100,''), (0x00,300,''), (0x01,200,''), (0x00,100,'');
+SELECT HEX(b), i2 FROM t1 WHERE (i2>=100 AND i2<201) AND b=TRUE;
+HEX(b)	i2
+1	100
+1	200
+CREATE TABLE t2 (b1 BIT NOT NULL, b2 BIT NOT NULL, i2 INTEGER NOT NULL,
+s VARCHAR(255) NOT NULL);
+INSERT INTO t2 VALUES (0x01,0x00,100,''), (0x00,0x01,300,''),
+(0x01,0x00,200,''), (0x00,0x01,100,'');
+SELECT HEX(b1), i2 FROM t2 WHERE (i2>=100 AND i2<201) AND b1=TRUE;
+HEX(b1)	i2
+1	100
+1	200
+SELECT HEX(b2), i2 FROM t2 WHERE (i2>=100 AND i2<201) AND b2=FALSE;
+HEX(b2)	i2
+0	100
+0	200
+SELECT HEX(b1), HEX(b2), i2 FROM t2
+WHERE (i2>=100 AND i2<201) AND b1=TRUE AND b2=FALSE;
+HEX(b1)	HEX(b2)	i2
+1	0	100
+1	0	200
+DROP TABLE t1, t2;
+CREATE TABLE IF NOT EXISTS t1 (
+f1 bit(2) NOT NULL default b'10',
+f2 bit(14) NOT NULL default b'11110000111100'
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` bit(2) NOT NULL default b'10',
+  `f2` bit(14) NOT NULL default b'11110000111100'
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci
+DROP TABLE t1;
+CREATE TABLE IF NOT EXISTS t1 (
+f1 bit(2) NOT NULL default b''
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci;
+ERROR 42000: Invalid default value for 'f1'
+create table t1bit7 (a1 bit(7) not null) engine=MyISAM;
+create table t2bit7 (b1 bit(7)) engine=MyISAM;
+insert into t1bit7 values (b'1100000');
+insert into t1bit7 values (b'1100001');
+insert into t1bit7 values (b'1100010');
+insert into t2bit7 values (b'1100001');
+insert into t2bit7 values (b'1100010');
+insert into t2bit7 values (b'1100110');
+select bin(a1) from t1bit7, t2bit7 where t1bit7.a1=t2bit7.b1;
+bin(a1)
+1100001
+1100010
+drop table t1bit7, t2bit7;
+create table t1bit7 (a1 bit(15) not null) engine=MyISAM;
+create table t2bit7 (b1 bit(15)) engine=MyISAM;
+insert into t1bit7 values (b'110000011111111');
+insert into t1bit7 values (b'110000111111111');
+insert into t1bit7 values (b'110001011111111');
+insert into t2bit7 values (b'110000111111111');
+insert into t2bit7 values (b'110001011111111');
+insert into t2bit7 values (b'110011011111111');
+select bin(a1) from t1bit7, t2bit7 where t1bit7.a1=t2bit7.b1;
+bin(a1)
+110000111111111
+110001011111111
+drop table t1bit7, t2bit7;
 End of 5.0 tests

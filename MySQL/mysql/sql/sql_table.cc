@@ -66,8 +66,8 @@ static void set_tmp_file_path(char *buf, size_t bufsize, THD *thd);
 uint build_table_path(char *buff, size_t bufflen, const char *db,
                       const char *table, const char *ext)
 {
-  strxnmov(buff, bufflen-1, mysql_data_home, "/", db, "/", table, ext,
-           NullS);
+  strxnmov(buff, (uint) (bufflen - 1), mysql_data_home, "/", db, "/", table, 
+           ext, NullS);
   return unpack_filename(buff,buff);
 }
 
@@ -333,7 +333,8 @@ int mysql_rm_table_part2(THD *thd, TABLE_LIST *tables, bool if_exists,
     {
       if (!error)
         thd->clear_error();
-      Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+      Query_log_event qinfo(thd, thd->query, thd->query_length,
+                            FALSE, FALSE, THD::NOT_KILLED);
       mysql_bin_log.write(&qinfo);
     }
   }
@@ -1535,7 +1536,9 @@ static bool prepare_blob_field(THD *thd, create_field *sql_field)
     
   if ((sql_field->flags & BLOB_FLAG) && sql_field->length)
   {
-    if (sql_field->sql_type == FIELD_TYPE_BLOB)
+    if (sql_field->sql_type == FIELD_TYPE_BLOB ||
+        sql_field->sql_type == FIELD_TYPE_TINY_BLOB ||
+        sql_field->sql_type == FIELD_TYPE_MEDIUM_BLOB)
     {
       /* The user has given a length to the blob column */
       sql_field->sql_type= get_blob_type_from_length(sql_field->length);
@@ -1812,7 +1815,8 @@ bool mysql_create_table(THD *thd,const char *db, const char *table_name,
   if (!internal_tmp_table && mysql_bin_log.is_open())
   {
     thd->clear_error();
-    Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length,
+                          FALSE, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
   error= FALSE;
@@ -2312,13 +2316,24 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
           view_checksum(thd, table) == HA_ADMIN_WRONG_CHECKSUM)
         push_warning(thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
                      ER_VIEW_CHECKSUM, ER(ER_VIEW_CHECKSUM));
-      result_code= HA_ADMIN_CORRUPT;
+      if (thd->net.last_errno == ER_NO_SUCH_TABLE)
+        /* A missing table is just issued as a failed command */
+        result_code= HA_ADMIN_FAILED;
+      else
+        /* Default failure code is corrupt table */
+        result_code= HA_ADMIN_CORRUPT;
       goto send_result;
     }
 
     if (table->view)
     {
       result_code= (*view_operator_func)(thd, table);
+      goto send_result;
+    }
+
+    if (table->schema_table)
+    {
+      result_code= HA_ADMIN_NOT_IMPLEMENTED;
       goto send_result;
     }
 
@@ -2529,7 +2544,7 @@ send_result_message:
     case HA_ADMIN_WRONG_CHECKSUM:
     {
       protocol->store(STRING_WITH_LEN("note"), system_charset_info);
-      protocol->store(ER(ER_VIEW_CHECKSUM), strlen(ER(ER_VIEW_CHECKSUM)),
+      protocol->store(ER(ER_VIEW_CHECKSUM), (uint) strlen(ER(ER_VIEW_CHECKSUM)),
                       system_charset_info);
       break;
     }
@@ -2890,7 +2905,8 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST *src_table,
   if (mysql_bin_log.is_open())
   {
     thd->clear_error();
-    Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length,
+                          FALSE, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
   res= FALSE;
@@ -2999,7 +3015,8 @@ mysql_discard_or_import_tablespace(THD *thd,
     goto err;
   if (mysql_bin_log.is_open())
   {
-    Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length,
+                          FALSE, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
 err:
@@ -3155,7 +3172,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
       if (mysql_bin_log.is_open())
       {
         thd->clear_error();
-        Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
+        Query_log_event qinfo(thd, thd->query, thd->query_length,
+                              0, FALSE, THD::NOT_KILLED);
         mysql_bin_log.write(&qinfo);
       }
       send_ok(thd);
@@ -3347,7 +3365,8 @@ view_err:
       if (mysql_bin_log.is_open())
       {
 	thd->clear_error();
-	Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+	Query_log_event qinfo(thd, thd->query, thd->query_length,
+                              FALSE, FALSE, THD::NOT_KILLED);
 	mysql_bin_log.write(&qinfo);
       }
       send_ok(thd);
@@ -3859,7 +3878,8 @@ view_err:
     if (mysql_bin_log.is_open())
     {
       thd->clear_error();
-      Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+      Query_log_event qinfo(thd, thd->query, thd->query_length,
+                            FALSE, FALSE, THD::NOT_KILLED);
       mysql_bin_log.write(&qinfo);
     }
     goto end_temporary;
@@ -3994,7 +4014,8 @@ view_err:
   if (mysql_bin_log.is_open())
   {
     thd->clear_error();
-    Query_log_event qinfo(thd, thd->query, thd->query_length, FALSE, FALSE);
+    Query_log_event qinfo(thd, thd->query, thd->query_length,
+                          FALSE, FALSE, THD::NOT_KILLED);
     mysql_bin_log.write(&qinfo);
   }
   broadcast_refresh();
@@ -4177,7 +4198,7 @@ copy_data_between_tables(TABLE *from,TABLE *to,
     current query id
   */
   from->file->extra(HA_EXTRA_RETRIEVE_ALL_COLS);
-  init_read_record(&info, thd, from, (SQL_SELECT *) 0, 1,1);
+  init_read_record(&info, thd, from, (SQL_SELECT *) 0, 1, 1, FALSE);
   if (ignore)
     to->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
   thd->row_count= 0;
@@ -4355,6 +4376,16 @@ bool mysql_checksum_table(THD *thd, TABLE_LIST *tables, HA_CHECK_OPT *check_opt)
 	{
 	  for (;;)
 	  {
+            if (thd->killed)
+            {
+              /* 
+                 we've been killed; let handler clean up, and remove the 
+                 partial current row from the recordset (embedded lib) 
+              */
+              t->file->ha_rnd_end();
+              thd->protocol->remove_last_row();
+              goto err;
+            }
 	    ha_checksum row_crc= 0;
             int error= t->file->rnd_next(t->record[0]);
             if (unlikely(error))
@@ -4435,7 +4466,7 @@ static bool check_engine(THD *thd, const char *table_name,
 
 static void set_tmp_file_path(char *buf, size_t bufsize, THD *thd)
 {
-  char *p= strnmov(buf, mysql_tmpdir, bufsize);
+  char *p= strnmov(buf, mysql_tmpdir, (uint) bufsize);
   my_snprintf(p, bufsize - (p - buf), "%s%lx_%lx_%x%s",
               tmp_file_prefix, current_pid,
               thd->thread_id, thd->tmp_table++, reg_ext);

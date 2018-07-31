@@ -471,7 +471,7 @@ int openfrm(THD *thd, const char *name, const char *alias, uint db_stat,
       for (count= 0; count < interval->count; count++)
       {
         char *val= (char*) interval->type_names[count];
-        interval->type_lengths[count]= strlen(val);
+        interval->type_lengths[count]= (uint) strlen(val);
       }
       interval->type_lengths[count]= 0;
     }
@@ -916,7 +916,7 @@ int openfrm(THD *thd, const char *name, const char *alias, uint db_stat,
     the correct null_bytes can now be set, since bitfields have been taken
     into account
   */
-  share->null_bytes= (null_pos - (uchar*) outparam->null_flags +
+  share->null_bytes= (uint) (null_pos - (uchar*) outparam->null_flags +
                       (null_bit_pos + 7) / 8);
   share->last_null_bit_pos= null_bit_pos;
 
@@ -1792,11 +1792,8 @@ void st_table::reset_item_list(List<Item> *item_list) const
 
 void  TABLE_LIST::calc_md5(char *buffer)
 {
-  my_MD5_CTX context;
   uchar digest[16];
-  my_MD5Init(&context);
-  my_MD5Update(&context,(uchar *) query.str, query.length);
-  my_MD5Final(digest, &context);
+  MY_MD5_HASH(digest, (uchar *) query.str, query.length);
   sprintf((char *) buffer,
 	    "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
 	    digest[0], digest[1], digest[2], digest[3],
@@ -2191,7 +2188,7 @@ TABLE_LIST *TABLE_LIST::find_underlying_table(TABLE *table_to_find)
 }
 
 /*
-  cleunup items belonged to view fields translation table
+  cleanup items belonged to view fields translation table
 
   SYNOPSIS
     TABLE_LIST::cleanup_items()
@@ -2637,10 +2634,10 @@ Natural_join_column::Natural_join_column(Field_translator *field_param,
 }
 
 
-Natural_join_column::Natural_join_column(Field *field_param,
+Natural_join_column::Natural_join_column(Item_field *field_param,
                                          TABLE_LIST *tab)
 {
-  DBUG_ASSERT(tab->table == field_param->table);
+  DBUG_ASSERT(tab->table == field_param->field->table);
   table_field= field_param;
   view_field= NULL;
   table_ref= tab;
@@ -2668,7 +2665,7 @@ Item *Natural_join_column::create_item(THD *thd)
     return create_view_field(thd, table_ref, &view_field->item,
                              view_field->name);
   }
-  return new Item_field(thd, &thd->lex->current_select->context, table_field);
+  return table_field;
 }
 
 
@@ -2679,7 +2676,7 @@ Field *Natural_join_column::field()
     DBUG_ASSERT(table_field == NULL);
     return NULL;
   }
-  return table_field;
+  return table_field->field;
 }
 
 
@@ -2811,7 +2808,7 @@ void Field_iterator_natural_join::next()
   cur_column_ref= column_ref_it++;
   DBUG_ASSERT(!cur_column_ref || ! cur_column_ref->table_field ||
               cur_column_ref->table_ref->table ==
-              cur_column_ref->table_field->table);
+              cur_column_ref->table_field->field->table);
 }
 
 
@@ -2975,7 +2972,7 @@ GRANT_INFO *Field_iterator_table_ref::grant()
 */
 
 Natural_join_column *
-Field_iterator_table_ref::get_or_create_column_ref(TABLE_LIST *parent_table_ref)
+Field_iterator_table_ref::get_or_create_column_ref(THD *thd, TABLE_LIST *parent_table_ref)
 {
   Natural_join_column *nj_col;
   bool is_created= TRUE;
@@ -2988,7 +2985,11 @@ Field_iterator_table_ref::get_or_create_column_ref(TABLE_LIST *parent_table_ref)
   {
     /* The field belongs to a stored table. */
     Field *tmp_field= table_field_it.field();
-    nj_col= new Natural_join_column(tmp_field, table_ref);
+    Item_field *tmp_item=
+      new Item_field(thd, &thd->lex->current_select->context, tmp_field);
+    if (!tmp_item)
+      return NULL;
+    nj_col= new Natural_join_column(tmp_item, table_ref);
     field_count= table_ref->table->s->fields;
   }
   else if (field_it == &view_field_it)
@@ -2996,8 +2997,8 @@ Field_iterator_table_ref::get_or_create_column_ref(TABLE_LIST *parent_table_ref)
     /* The field belongs to a merge view or information schema table. */
     Field_translator *translated_field= view_field_it.field_translator();
     nj_col= new Natural_join_column(translated_field, table_ref);
-    field_count= table_ref->field_translation_end -
-                 table_ref->field_translation;
+    field_count= (uint) (table_ref->field_translation_end -
+                 table_ref->field_translation);
   }
   else
   {
@@ -3012,7 +3013,7 @@ Field_iterator_table_ref::get_or_create_column_ref(TABLE_LIST *parent_table_ref)
     DBUG_ASSERT(nj_col);
   }
   DBUG_ASSERT(!nj_col->table_field ||
-              nj_col->table_ref->table == nj_col->table_field->table);
+              nj_col->table_ref->table == nj_col->table_field->field->table);
 
   /*
     If the natural join column was just created add it to the list of
@@ -3077,7 +3078,7 @@ Field_iterator_table_ref::get_natural_column_ref()
   nj_col= natural_join_it.column_ref();
   DBUG_ASSERT(nj_col &&
               (!nj_col->table_field ||
-               nj_col->table_ref->table == nj_col->table_field->table));
+               nj_col->table_ref->table == nj_col->table_field->field->table));
   return nj_col;
 }
 

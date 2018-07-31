@@ -214,7 +214,7 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
     DBUG_RETURN(TRUE);
   }
   if (usable_index==MAX_KEY)
-    init_read_record(&info,thd,table,select,1,1);
+    init_read_record(&info, thd, table, select, 1, 1, FALSE);
   else
     init_read_record_idx(&info, thd, table, 1, usable_index);
 
@@ -730,7 +730,7 @@ void multi_delete::send_error(uint errcode,const char *err)
     if (mysql_bin_log.is_open())
     {
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-                            transactional_tables, FALSE);
+                            transactional_tables, FALSE, THD::KILLED_NO_VALUE);
       mysql_bin_log.write(&qinfo);
     }
     thd->transaction.all.modified_non_trans_table= true;
@@ -772,7 +772,7 @@ int multi_delete::do_deletes()
     }
 
     READ_RECORD	info;
-    init_read_record(&info,thd,table,NULL,0,1);
+    init_read_record(&info, thd, table, NULL, 0, 1, FALSE);
     /*
       Ignore any rows not found in reference tables as they may already have
       been deleted by foreign key handling
@@ -958,7 +958,7 @@ end:
       {
         thd->clear_error();
 	Query_log_event qinfo(thd, thd->query, thd->query_length,
-			      0, FALSE);
+			      0, FALSE, THD::NOT_KILLED);
 	mysql_bin_log.write(&qinfo);
       }
       send_ok(thd);		// This should return record count

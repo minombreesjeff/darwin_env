@@ -384,7 +384,7 @@ static bool extract_date_time(DATE_TIME_FORMAT *format,
 	if (tmp - val > 6)
 	  tmp= (char*) val + 6;
 	l_time->second_part= (int) my_strtoll10(val, &tmp, &error);
-	frac_part= 6 - (tmp - val);
+	frac_part= 6 - (uint) (tmp - val);
 	if (frac_part > 0)
 	  l_time->second_part*= (ulong) log_10_int[frac_part];
 	val= tmp;
@@ -635,14 +635,14 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
         if (!l_time->month)
           return 1;
         str->append(locale->month_names->type_names[l_time->month-1],
-                    strlen(locale->month_names->type_names[l_time->month-1]),
+                    (uint) strlen(locale->month_names->type_names[l_time->month-1]),
                     system_charset_info);
         break;
       case 'b':
         if (!l_time->month)
           return 1;
         str->append(locale->ab_month_names->type_names[l_time->month-1],
-                    strlen(locale->ab_month_names->type_names[l_time->month-1]),
+                    (uint) strlen(locale->ab_month_names->type_names[l_time->month-1]),
                     system_charset_info);
         break;
       case 'W':
@@ -651,7 +651,7 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
         weekday= calc_weekday(calc_daynr(l_time->year,l_time->month,
                               l_time->day),0);
         str->append(locale->day_names->type_names[weekday],
-                    strlen(locale->day_names->type_names[weekday]),
+                    (uint) strlen(locale->day_names->type_names[weekday]),
                     system_charset_info);
         break;
       case 'a':
@@ -660,13 +660,13 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
         weekday=calc_weekday(calc_daynr(l_time->year,l_time->month,
                              l_time->day),0);
         str->append(locale->ab_day_names->type_names[weekday],
-                    strlen(locale->ab_day_names->type_names[weekday]),
+                    (uint) strlen(locale->ab_day_names->type_names[weekday]),
                     system_charset_info);
         break;
       case 'D':
 	if (type == MYSQL_TIMESTAMP_TIME)
 	  return 1;
-	length= int10_to_str(l_time->day, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->day, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 1, '0');
 	if (l_time->day >= 10 &&  l_time->day <= 19)
 	  str->append(STRING_WITH_LEN("th"));
@@ -689,62 +689,62 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
 	}
 	break;
       case 'Y':
-	length= int10_to_str(l_time->year, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->year, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 4, '0');
 	break;
       case 'y':
-	length= int10_to_str(l_time->year%100, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->year%100, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'm':
-	length= int10_to_str(l_time->month, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->month, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'c':
-	length= int10_to_str(l_time->month, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->month, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 1, '0');
 	break;
       case 'd':
-	length= int10_to_str(l_time->day, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->day, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'e':
-	length= int10_to_str(l_time->day, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->day, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 1, '0');
 	break;
       case 'f':
-	length= int10_to_str(l_time->second_part, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->second_part, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 6, '0');
 	break;
       case 'H':
-	length= int10_to_str(l_time->hour, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->hour, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'h':
       case 'I':
 	hours_i= (l_time->hour%24 + 11)%12+1;
-	length= int10_to_str(hours_i, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(hours_i, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'i':					/* minutes */
-	length= int10_to_str(l_time->minute, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->minute, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'j':
 	if (type == MYSQL_TIMESTAMP_TIME)
 	  return 1;
-	length= int10_to_str(calc_daynr(l_time->year,l_time->month,
+	length= (uint) (int10_to_str(calc_daynr(l_time->year,l_time->month,
 					l_time->day) - 
-		     calc_daynr(l_time->year,1,1) + 1, intbuff, 10) - intbuff;
+		     calc_daynr(l_time->year,1,1) + 1, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 3, '0');
 	break;
       case 'k':
-	length= int10_to_str(l_time->hour, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->hour, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 1, '0');
 	break;
       case 'l':
 	hours_i= (l_time->hour%24 + 11)%12+1;
-	length= int10_to_str(hours_i, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(hours_i, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 1, '0');
 	break;
       case 'p':
@@ -763,7 +763,7 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
 	break;
       case 'S':
       case 's':
-	length= int10_to_str(l_time->second, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(l_time->second, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
 	break;
       case 'T':
@@ -781,11 +781,11 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
 	uint year;
 	if (type == MYSQL_TIMESTAMP_TIME)
 	  return 1;
-	length= int10_to_str(calc_week(l_time,
+	length= (uint) (int10_to_str(calc_week(l_time,
 				       (*ptr) == 'U' ?
 				       WEEK_FIRST_WEEKDAY : WEEK_MONDAY_FIRST,
 				       &year),
-			     intbuff, 10) - intbuff;
+			     intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
       }
       break;
@@ -795,12 +795,12 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
 	uint year;
 	if (type == MYSQL_TIMESTAMP_TIME)
 	  return 1;
-	length= int10_to_str(calc_week(l_time,
+	length= (uint) (int10_to_str(calc_week(l_time,
 				       ((*ptr) == 'V' ?
 					(WEEK_YEAR | WEEK_FIRST_WEEKDAY) :
 					(WEEK_YEAR | WEEK_MONDAY_FIRST)),
 				       &year),
-			     intbuff, 10) - intbuff;
+			     intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 2, '0');
       }
       break;
@@ -815,7 +815,7 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
 			  WEEK_YEAR | WEEK_FIRST_WEEKDAY :
 			  WEEK_YEAR | WEEK_MONDAY_FIRST),
 			 &year);
-	length= int10_to_str(year, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(year, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 4, '0');
       }
       break;
@@ -824,7 +824,7 @@ bool make_date_time(DATE_TIME_FORMAT *format, MYSQL_TIME *l_time,
 	  return 1;
 	weekday=calc_weekday(calc_daynr(l_time->year,l_time->month,
 					l_time->day),1);
-	length= int10_to_str(weekday, intbuff, 10) - intbuff;
+	length= (uint) (int10_to_str(weekday, intbuff, 10) - intbuff);
 	str->append_with_prefill(intbuff, length, 1, '0');
 	break;
 
@@ -875,7 +875,7 @@ static bool get_interval_info(const char *str,uint length,CHARSET_INFO *cs,
       value= value*LL(10) + (longlong) (*str - '0');
     if (transform_msec && i == count - 1) // microseconds always last
     {
-      long msec_length= 6 - (str - start);
+      long msec_length= 6 - (uint) (str - start);
       if (msec_length > 0)
 	value*= (long) log_10_int[msec_length];
     }
@@ -1036,12 +1036,25 @@ longlong Item_func_month::val_int()
 }
 
 
+void Item_func_monthname::fix_length_and_dec()
+{
+  THD* thd= current_thd;
+  CHARSET_INFO *cs= thd->variables.collation_connection;
+  uint32 repertoire= my_charset_repertoire(cs);
+  locale= thd->variables.lc_time_names;  
+  collation.set(cs, DERIVATION_COERCIBLE, repertoire);
+  decimals=0;
+  max_length= locale->max_month_name_length * collation.collation->mbmaxlen;
+  maybe_null=1; 
+}
+
+
 String* Item_func_monthname::val_str(String* str)
 {
   DBUG_ASSERT(fixed == 1);
   const char *month_name;
-  uint   month= (uint) val_int();
-  THD *thd= current_thd;
+  uint month= (uint) val_int();
+  uint err;
 
   if (null_value || !month)
   {
@@ -1049,8 +1062,9 @@ String* Item_func_monthname::val_str(String* str)
     return (String*) 0;
   }
   null_value=0;
-  month_name= thd->variables.lc_time_names->month_names->type_names[month-1];
-  str->set(month_name, strlen(month_name), system_charset_info);
+  month_name= locale->month_names->type_names[month-1];
+  str->copy(month_name, (uint) strlen(month_name), &my_charset_utf8_bin,
+	    collation.collation, &err);
   return str;
 }
 
@@ -1169,19 +1183,32 @@ longlong Item_func_weekday::val_int()
                                  odbc_type) + test(odbc_type);
 }
 
+void Item_func_dayname::fix_length_and_dec()
+{
+  THD* thd= current_thd;
+  CHARSET_INFO *cs= thd->variables.collation_connection;
+  uint32 repertoire= my_charset_repertoire(cs);
+  locale= thd->variables.lc_time_names;  
+  collation.set(cs, DERIVATION_COERCIBLE, repertoire);
+  decimals=0;
+  max_length= locale->max_day_name_length * collation.collation->mbmaxlen;
+  maybe_null=1; 
+}
+
 
 String* Item_func_dayname::val_str(String* str)
 {
   DBUG_ASSERT(fixed == 1);
   uint weekday=(uint) val_int();		// Always Item_func_daynr()
   const char *day_name;
-  THD *thd= current_thd;
+  uint err;
 
   if (null_value)
     return (String*) 0;
   
-  day_name= thd->variables.lc_time_names->day_names->type_names[weekday];
-  str->set(day_name, strlen(day_name), system_charset_info);
+  day_name= locale->day_names->type_names[weekday];
+  str->copy(day_name, (uint) strlen(day_name), &my_charset_utf8_bin,
+	    collation.collation, &err);
   return str;
 }
 
@@ -2550,6 +2577,8 @@ void Item_char_typecast::fix_length_and_dec()
        and thus avoid unnecessary character set conversion.
      - If the argument is not a number, then from_cs is set to
        the argument's charset.
+
+       Note (TODO): we could use repertoire technique here.
   */
   from_cs= (args[0]->result_type() == INT_RESULT || 
             args[0]->result_type() == DECIMAL_RESULT ||
@@ -2557,12 +2586,13 @@ void Item_char_typecast::fix_length_and_dec()
            (cast_cs->mbminlen == 1 ? cast_cs : &my_charset_latin1) :
            args[0]->collation.collation;
   charset_conversion= (cast_cs->mbmaxlen > 1) ||
-                      !my_charset_same(from_cs, cast_cs) &&
-                      from_cs != &my_charset_bin &&
-                      cast_cs != &my_charset_bin;
+                      (!my_charset_same(from_cs, cast_cs) &&
+                       from_cs != &my_charset_bin &&
+                       cast_cs != &my_charset_bin);
   collation.set(cast_cs, DERIVATION_IMPLICIT);
-  char_length= (cast_length >= 0) ? cast_length : 
-	       args[0]->max_length/from_cs->mbmaxlen;
+  char_length= (cast_length >= 0) ?
+                 cast_length :
+                 args[0]->max_length / args[0]->collation.collation->mbmaxlen;
   max_length= char_length * cast_cs->mbmaxlen;
 }
 
@@ -3192,14 +3222,14 @@ String *Item_func_get_format::val_str(String *str)
        format++)
   {
     uint format_name_len;
-    format_name_len= strlen(format_name);
+    format_name_len= (uint) strlen(format_name);
     if (val_len == format_name_len &&
 	!my_strnncoll(&my_charset_latin1, 
 		      (const uchar *) val->ptr(), val_len, 
 		      (const uchar *) format_name, val_len))
     {
       const char *format_str= get_date_time_format_str(format, type);
-      str->set(format_str, strlen(format_str), &my_charset_bin);
+      str->set(format_str, (uint) strlen(format_str), &my_charset_bin);
       return str;
     }
   }

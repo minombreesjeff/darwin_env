@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -73,7 +73,8 @@ shell> \fBmysql \fR\fB\fIdb_name\fR\fR\fB < \fR\fB\fIscript.sql\fR\fR\fB > \fR\f
 .SH "\fBMYSQL\fR OPTIONS"
 .PP
 \fBmysql\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -112,7 +113,7 @@ option.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-column\-names\fR
@@ -141,9 +142,9 @@ The database to use. This is useful primarily in an option file.
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
+string is
 \'d:t:o,\fIfile_name\fR'. The default is
 \'d:t:o,/tmp/mysql.trace'.
 .TP 3n
@@ -159,7 +160,7 @@ Print some debugging information when the program exits.
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-delimiter=\fR\fB\fIstr\fR\fR
@@ -184,7 +185,7 @@ the section called \(lq\fBMYSQL\fR COMMANDS\(rq.
 .sp
 Execute the statement and quit. The default output format is like that produced with
 \fB\-\-batch\fR. See
-Section\ 2.3.1, \(lqUsing Options on the Command Line\(rq, for some examples.
+Section\ 4.2.3.1, \(lqUsing Options on the Command Line\(rq, for some examples.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -211,7 +212,7 @@ Produce HTML output.
 Ignore spaces after function names. The effect of this is described in the discussion for the
 IGNORE_SPACE
 SQL mode (see
-Section\ 1.7, \(lqSQL Modes\(rq).
+Section\ 5.1.7, \(lqServer SQL Modes\(rq).
 .TP 3n
 \(bu
 \fB\-\-line\-numbers\fR
@@ -321,7 +322,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-pipe\fR,
@@ -346,7 +347,7 @@ the section called \(lq\fBMYSQL\fR COMMANDS\(rq.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
-Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
+Section\ 4.2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -362,7 +363,7 @@ does not use the history file.
 .sp
 For tabular output, the
 \(lqboxing\(rq
-around columns enables one column value to be distinquished from another. For non\-tabular output (such as is produced in batch mode or when the
+around columns enables one column value to be distinguished from another. For non\-tabular output (such as is produced in batch mode or when the
 \fB\-\-batch\fR
 or
 \fB\-\-silent\fR
@@ -473,7 +474,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 5.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-table\fR,
@@ -484,7 +485,7 @@ Display output in table format. This is the default for interactive use, but can
 \(bu
 \fB\-\-tee=\fR\fB\fIfile_name\fR\fR
 .sp
-Append a copy of output to the given file. This option does not work in batch mode. in
+Append a copy of output to the given file. This option does not work in batch mode.
 the section called \(lq\fBMYSQL\fR COMMANDS\(rq, discusses tee files further.
 .TP 3n
 \(bu
@@ -497,7 +498,7 @@ Flush the buffer after each query.
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-verbose\fR,
@@ -553,7 +554,7 @@ is used with
 \fBmysql\fR
 matches that of
 \fBmysqldump \fR\fB\fB\-\-xml\fR\fR. See
-the section of the Manual which discusses the \fB\-\-xml\fR option for \fBmysqldump\fR
+\fBmysqldump\fR(1)
 for details.
 .sp
 Beginning with MySQL 5.0.40, the XML output also uses an XML namespace, as shown here:
@@ -632,11 +633,16 @@ format is deprecated.
 .PP
 On Unix, the
 \fBmysql\fR
-client writes a record of executed statements to a history file. By default, the history file is named
+client writes a record of executed statements to a history file. By default, this file is named
 \fI.mysql_history\fR
 and is created in your home directory. To specify a different file, set the value of the
 MYSQL_HISTFILE
 environment variable.
+.PP
+The
+\fI.mysql_history\fR
+should be protected with a restrictive access mode because sensitive information might be written to it, such as the text of SQL statements that contain passwords. See
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .PP
 If you do not want to maintain a history file, first remove
 \fI.mysql_history\fR
@@ -681,8 +687,7 @@ Note that all text commands must be first on line and end with ';'
 ?         (\\?) Synonym for `help'.
 clear     (\\c) Clear command.
 connect   (\\r) Reconnect to the server. Optional arguments are db and host.
-delimiter (\\d) Set statement delimiter. NOTE: Takes the rest of the line as
-               new delimiter.
+delimiter (\\d) Set statement delimiter.
 edit      (\\e) Edit command with $EDITOR.
 ego       (\\G) Send command to mysql server, display result vertically.
 exit      (\\q) Exit mysql. Same as quit.
@@ -754,7 +759,7 @@ Clears the current input. Use this if you change your mind about executing the s
 \fBconnect [\fR\fB\fIdb_name\fR\fR\fB \fR\fB\fIhost_name\fR\fR\fB]]\fR,
 \fB\\r [\fR\fB\fIdb_name\fR\fR\fB \fR\fB\fIhost_name\fR\fR\fB]]\fR
 .sp
-Reconnects to the server. The optional database name and hostname arguments may be given to specify the default database or the host where the server is running. If omitted, the current values are used.
+Reconnects to the server. The optional database name and host name arguments may be given to specify the default database or the host where the server is running. If omitted, the current values are used.
 .TP 3n
 \(bu
 \fBdelimiter \fR\fB\fIstr\fR\fR,
@@ -764,7 +769,9 @@ The
 delimiter
 command changes the string that
 \fBmysql\fR
-interprets as the separator between SQL statements. The default is the semicolon character (\(lq;\(rq). You should avoid the use of the backslash (\(lq\\\(rq) character within the delimiter because that is the escape character for MySQL.
+interprets as the separator between SQL statements. The default is the semicolon character (\(lq;\(rq).
+.sp
+The delimiter can be specified as an unquoted or quoted argument. Quoting can be done with either single quote (') or douple quote (") characters. To include a quote within a quoted string, either quote the string with the other quote character or escape the quote with a backslash (\(lq\\\(rq) character. Backslash should be avoided outside of quoted strings because it is the escape character for MySQL. For an unquoted argument, the delmiter is read up to the first space or end of line. For a quoted argument, the delimiter is read up to the matching quote on the line.
 .sp
 When the delimiter recognized by
 \fBmysql\fR
@@ -772,8 +779,8 @@ is set to something other than the default of
 \(lq;\(rq, instances of that character are sent to the server without interpretation. However, the server itself still interprets
 \(lq;\(rq
 as a statement delimiter and processes statements accordingly. This behavior on the server side comes into play for multiple\-statement execution (see
-Section\ 2.9, \(lqC API Handling of Multiple Statement Execution\(rq), and for parsing the body of stored procedures and functions and triggers (see
-Section\ 2.2, \(lqCREATE PROCEDURE and CREATE FUNCTION Syntax\(rq).
+Section\ 20.9.12, \(lqC API Support for Multiple Statement Execution\(rq), and for parsing the body of stored procedures and functions and triggers (see
+Section\ 18.1, \(lqDefining Stored Programs\(rq).
 .TP 3n
 \(bu
 \fBedit\fR,
@@ -906,7 +913,7 @@ option.)
 \fBsource \fR\fB\fIfile_name\fR\fR,
 \fB\\. \fR\fB\fIfile_name\fR\fR
 .sp
-Reads the named file and executes the statements contained therein. On Windows, you can specify pathname separators as
+Reads the named file and executes the statements contained therein. On Windows, you can specify path name separators as
 /
 or
 \\\\.
@@ -1037,7 +1044,7 @@ mysql> \fBpager cat | tee /dr1/tmp/res.txt \\\fR
           \fB| tee /dr2/tmp/res2.txt | less \-n \-i \-S\fR
 .fi
 .RE
-In this example, the command would send query results to two files in two different directories on two different filesystems mounted on
+In this example, the command would send query results to two files in two different directories on two different file systems mounted on
 \fI/dr1\fR
 and
 \fI/dr2\fR, yet still display the results onscreen via
@@ -1083,7 +1090,7 @@ The
 \fBprompt\fR
 command reconfigures the default
 mysql>
-prompt. The string for defining the prompt can contain the following special sequences:
+prompt. The string for defining the prompt can contain the following special sequences.
 .TS
 allbox tab(:);
 l l
@@ -1170,7 +1177,7 @@ T}
 T{
 \\u
 T}:T{
-Your username
+Your user name
 T}
 T{
 \\c
@@ -1316,7 +1323,7 @@ prompt=(\\\\u@\\\\h) [\\\\d]>\\\\_
 In this example, note that the backslashes are doubled. If you set the prompt using the
 prompt
 option in an option file, it is advisable to double the backslashes when using the special prompt options. There is some overlap in the set of allowable prompt options and the set of special escape sequences that are recognized in option files. (These sequences are listed in
-Section\ 2.3.2, \(lqUsing Option Files\(rq.) The overlap may cause you problems if you use single backslashes. For example,
+Section\ 4.2.3.2, \(lqUsing Option Files\(rq.) The overlap may cause you problems if you use single backslashes. For example,
 \\s
 is interpreted as a space rather than as the current seconds value. The following example shows how to define a prompt within an option file to include the current time in
 HH:MM:SS>
@@ -1361,7 +1368,7 @@ command,
 uses it as a search string to access server\-side help from the contents of the MySQL Reference Manual. The proper operation of this command requires that the help tables in the
 mysql
 database be initialized with help topic information (see
-Section\ 1.8, \(lqServer\-Side Help\(rq).
+Section\ 5.1.8, \(lqServer\-Side Help\(rq).
 .PP
 If there is no match for the search string, the search fails:
 .sp
@@ -1428,7 +1435,7 @@ Syntax:
 SHOW BINARY LOGS
 SHOW MASTER LOGS
 Lists the binary log files on the server. This statement is used as
-part of the procedure described in [purge\-master\-logs], that shows how
+part of the procedure described in [purge\-binary\-logs], that shows how
 to determine which logs can be purged.
 mysql> SHOW BINARY LOGS;
 +\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-+
@@ -1510,7 +1517,7 @@ with an option such as
 \fB\-\-default\-character\-set=utf8\fR.
 .PP
 For more information about batch mode, see
-Section\ 5, \(lqUsing \fBmysql\fR in Batch Mode\(rq.
+Section\ 3.5, \(lqUsing \fBmysql\fR in Batch Mode\(rq.
 .SH "\fBMYSQL\fR TIPS"
 .PP
 This section describes some techniques that can help you use
@@ -1564,12 +1571,12 @@ issues the following statement when it connects to the MySQL server:
 .sp
 .RS 3n
 .nf
-SET SQL_SAFE_UPDATES=1,SQL_SELECT_LIMIT=1000, SQL_MAX_JOIN_SIZE=1000000;
+SET sql_safe_updates=1, sql_select_limit=1000, sql_max_join_size=1000000;
 .fi
 .RE
 .PP
 See
-Section\ 1.4, \(lqSession System Variables\(rq.
+Section\ 5.1.4, \(lqSession System Variables\(rq.
 .PP
 The
 SET
@@ -1658,13 +1665,13 @@ client with the
 option.
 .PP
 For more information about auto\-reconnect and its effect on state information when a reconnection occurs, see
-Section\ 2.13, \(lqControlling Automatic Reconnect Behavior\(rq.
+Section\ 20.9.11, \(lqControlling Automatic Reconnection Behavior\(rq.
 .\" end of SS subsection "Disabling mysql Auto\-Reconnect"
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -1678,4 +1685,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

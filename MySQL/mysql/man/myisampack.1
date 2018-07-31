@@ -1,11 +1,11 @@
 .\"     Title: \fBmyisampack\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAMPACK\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYISAMPACK\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -59,7 +59,7 @@ shell> \fBmyisampack [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIfile_name\fR\fR\fB ...
 .fi
 .RE
 .PP
-Each filename argument should be the name of an index (\fI.MYI\fR) file. If you are not in the database directory, you should specify the pathname to the file. It is permissible to omit the
+Each file name argument should be the name of an index (\fI.MYI\fR) file. If you are not in the database directory, you should specify the path name to the file. It is permissible to omit the
 \fI.MYI\fR
 extension.
 .PP
@@ -70,7 +70,8 @@ to rebuild its indexes.
 \fBmyisamchk\fR(1).
 .PP
 \fBmyisampack\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -89,16 +90,17 @@ Make a backup of each table's data file using the name
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
-\'d:t:o,\fIfile_name\fR'.
+string is
+\'d:t:o,\fIfile_name\fR'. The default is
+\'d:t:o'.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -508,9 +510,9 @@ option to
 \fBmyisamchk\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -520,4 +522,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

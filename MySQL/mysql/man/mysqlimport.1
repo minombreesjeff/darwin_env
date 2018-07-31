@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlimport\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLIMPORT\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLIMPORT\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -26,7 +26,7 @@ SQL statement. Most options to
 correspond directly to clauses of
 LOAD DATA INFILE
 syntax. See
-Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
+Section\ 12.2.6, \(lqLOAD DATA INFILE Syntax\(rq.
 .PP
 Invoke
 \fBmysqlimport\fR
@@ -40,7 +40,7 @@ shell> \fBmysqlimport [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIdb_name\fR\fR\fB \fR\
 .PP
 For each text file named on the command line,
 \fBmysqlimport\fR
-strips any extension from the filename and uses the result to determine the name of the table into which to import the file's contents. For example, files named
+strips any extension from the file name and uses the result to determine the name of the table into which to import the file's contents. For example, files named
 \fIpatient.txt\fR,
 \fIpatient.text\fR, and
 \fIpatient\fR
@@ -48,7 +48,8 @@ all would be imported into a table named
 patient.
 .PP
 \fBmysqlimport\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -60,7 +61,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-columns=\fR\fB\fIcolumn_list\fR\fR,
@@ -78,10 +79,11 @@ Compress all information sent between the client and the server if both support 
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
-\'d:t:o,\fIfile_name\fR'.
+string is
+\'d:t:o,\fIfile_name\fR'. The default is
+\'d:t:o'.
 .TP 3n
 \(bu
 \fB\-\-default\-character\-set=\fR\fB\fIcharset_name\fR\fR
@@ -89,7 +91,7 @@ string often is
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-delete\fR,
@@ -105,7 +107,7 @@ Empty the table before importing the text file.
 .sp
 These options have the same meaning as the corresponding clauses for
 LOAD DATA INFILE. See
-Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
+Section\ 12.2.6, \(lqLOAD DATA INFILE Syntax\(rq.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -144,7 +146,7 @@ lines of the data file.
 This option has the same meaning as the corresponding clause for
 LOAD DATA INFILE. For example, to import Windows files that have lines terminated with carriage return/linefeed pairs, use
 \fB\-\-lines\-terminated\-by="\\r\\n"\fR. (You might have to double the backslashes, depending on the escaping conventions of your command interpreter.) See
-Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
+Section\ 12.2.6, \(lqLOAD DATA INFILE Syntax\(rq.
 .TP 3n
 \(bu
 \fB\-\-local\fR,
@@ -184,7 +186,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-pipe\fR,
@@ -202,7 +204,7 @@ The TCP/IP port number to use for the connection.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
-Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
+Section\ 4.2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-replace\fR,
@@ -235,13 +237,13 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 5.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-verbose\fR,
@@ -288,9 +290,9 @@ shell> \fBmysql \-e 'SELECT * FROM imptest' test\fR
 .RE
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -300,4 +302,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

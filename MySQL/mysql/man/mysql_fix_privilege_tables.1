@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql_fix_privilege_tables\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL_FIX_PRIVILE" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL_FIX_PRIVILE" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -19,9 +19,12 @@ mysql_fix_privilege_tables \- upgrade MySQL system tables
 .PP
 Some releases of MySQL introduce changes to the structure of the system tables in the
 mysql
-database to add new privileges or support new features. When you update to a new version of MySQL, you should update your system tables as well to make sure that their structure is up to date. Otherwise, there might be capabilities that you cannot take advantage of. First, make a backup of your
+database to add new privileges or support new features. When you update to a new version of MySQL, you should update your system tables as well to make sure that their structure is up to date. Otherwise, there might be capabilities that you cannot take advantage of.
+.PP
+\fBmysql_fix_privilege_tables\fR
+is an older script that previously was used to uprade the system tables in the
 mysql
-database, and then use the following procedure.
+database after a MySQL upgrade.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -34,6 +37,11 @@ As of MySQL 5.0.19,
 is superseded by
 \fBmysql_upgrade\fR, which should be used instead. See
 \fBmysql_upgrade\fR(1).
+.PP
+Before running
+\fBmysql_fix_privilege_tables\fR, make a backup of your
+mysql
+database.
 .PP
 On Unix or Unix\-like systems, update the system tables by running the
 \fBmysql_fix_privilege_tables\fR
@@ -62,7 +70,7 @@ script performs any actions necessary to convert your system tables to the curre
 Duplicate column name
 warnings as it runs; you can ignore them.
 .PP
-After running the script, stop the server and restart it so that it uses any changes that were made to the system tables.
+After running the script, stop the server and restart it so that any changes made to the system tables take effect.
 .PP
 On Windows systems, MySQL distributions include a
 \fImysql_fix_privilege_tables.sql\fR
@@ -95,7 +103,7 @@ command will prompt you for the
 root
 password; enter it when prompted.
 .PP
-If your installation is located in some other directory, adjust the pathnames appropriately.
+If your installation is located in some other directory, adjust the path names appropriately.
 .PP
 As with the Unix procedure, you might see some
 Duplicate column name
@@ -108,9 +116,9 @@ script; you can ignore them.
 After running the script, stop the server and restart it.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -120,4 +128,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

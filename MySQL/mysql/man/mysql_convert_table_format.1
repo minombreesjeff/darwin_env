@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql_convert_table_format\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL_CONVERT_TAB" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL_CONVERT_TAB" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -26,7 +26,7 @@ DBI
 and
 DBD::mysql
 Perl modules be installed (see
-Section\ 4.21, \(lqPerl Installation Notes\(rq).
+Section\ 2.21, \(lqPerl Installation Notes\(rq).
 .PP
 Invoke
 \fBmysql_convert_table_format\fR
@@ -43,7 +43,7 @@ The
 argument indicates the database containing the tables to be converted.
 .PP
 \fBmysql_convert_table_format\fR
-understands the options described in the following list.
+supports the options described in the following list.
 .TP 3n
 \(bu
 \fB\-\-help\fR
@@ -66,7 +66,7 @@ Connect to the MySQL server on the given host.
 The password to use when connecting to the server. Note that the password value is not optional for this option, unlike for other MySQL programs. You can use an option file to avoid giving the password on the command line.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR
@@ -89,7 +89,7 @@ if this option is not given.
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-verbose\fR
@@ -102,9 +102,9 @@ Verbose mode. Print more information about what the program does.
 Display version information and exit.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -114,4 +114,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

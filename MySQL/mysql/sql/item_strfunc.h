@@ -306,13 +306,17 @@ public:
 
 class Item_func_des_encrypt :public Item_str_func
 {
-  String tmp_value;
+  String tmp_value,tmp_arg;
 public:
   Item_func_des_encrypt(Item *a) :Item_str_func(a) {}
   Item_func_des_encrypt(Item *a, Item *b): Item_str_func(a,b) {}
   String *val_str(String *);
   void fix_length_and_dec()
-  { maybe_null=1; max_length = args[0]->max_length+8; }
+  {
+    maybe_null=1;
+    /* 9 = MAX ((8- (arg_len % 8)) + 1) */
+    max_length = args[0]->max_length + 9;
+  }
   const char *func_name() const { return "des_encrypt"; }
 };
 
@@ -323,7 +327,12 @@ public:
   Item_func_des_decrypt(Item *a) :Item_str_func(a) {}
   Item_func_des_decrypt(Item *a, Item *b): Item_str_func(a,b) {}
   String *val_str(String *);
-  void fix_length_and_dec() { maybe_null=1; max_length = args[0]->max_length; }
+  void fix_length_and_dec()
+  {
+    maybe_null=1;
+    /* 9 = MAX ((8- (arg_len % 8)) + 1) */
+    max_length = args[0]->max_length - 9;
+  }
   const char *func_name() const { return "des_decrypt"; }
 };
 
@@ -362,7 +371,7 @@ public:
   Item_func_encode(Item *a, char *seed_arg):
     Item_str_func(a), sql_crypt(seed_arg)
     {
-      seed.copy(seed_arg, strlen(seed_arg), default_charset_info);
+      seed.copy(seed_arg, (uint) strlen(seed_arg), default_charset_info);
     }
   String *val_str(String *);
   void fix_length_and_dec();
@@ -516,8 +525,9 @@ public:
   {
     collation.set(default_charset());
     uint char_length= args[0]->max_length/args[0]->collation.collation->mbmaxlen;
-    max_length= ((char_length + (char_length-args[0]->decimals)/3) *
-                 collation.collation->mbmaxlen);
+    uint max_sep_count= char_length/3 + (decimals ? 1 : 0) + /*sign*/1;
+    max_length= (char_length + max_sep_count + decimals) *
+      collation.collation->mbmaxlen;
   }
   const char *func_name() const { return "format"; }
   void print(String *);

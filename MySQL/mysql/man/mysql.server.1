@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql.server\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL.SERVER\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL.SERVER\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -31,7 +31,7 @@ script will be installed in the
 \fI/etc/init.d\fR
 directory with the name
 \fImysql\fR. You need not install it manually. See
-Section\ 4.9, \(lqInstalling MySQL from RPM Packages on Linux\(rq, for more information on the Linux RPM packages.
+Section\ 2.10, \(lqInstalling MySQL from RPM Packages on Linux\(rq, for more information on the Linux RPM packages.
 .PP
 Some vendors provide RPM packages that install a startup script under a different name such as
 \fBmysqld\fR.
@@ -39,7 +39,7 @@ Some vendors provide RPM packages that install a startup script under a differen
 If you install MySQL from a source distribution or using a binary distribution format that does not install
 \fBmysql.server\fR
 automatically, you can install it manually. Instructions are provided in
-Section\ 4.16.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.
+Section\ 2.17.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.
 .PP
 \fBmysql.server\fR
 reads options from the
@@ -53,7 +53,7 @@ sections, although you should rename such sections to
 when using MySQL 5.0.
 .PP
 \fBmysql.server\fR
-understands the following options:
+supports the following options:
 .TP 3n
 \(bu
 \fB\-\-basedir=\fR\fB\fIpath\fR\fR
@@ -68,7 +68,7 @@ The path to the MySQL data directory.
 \(bu
 \fB\-\-pid\-file=\fR\fB\fIfile_name\fR\fR
 .sp
-The pathname of the file in which the server should write its process ID.
+The path name of the file in which the server should write its process ID.
 .TP 3n
 \(bu
 \fB\-\-service\-startup\-timeout=\fR\fB\fIfile_name\fR\fR
@@ -92,13 +92,13 @@ Use Instance Manager to start the server. This option was added in MySQL 5.0.4.
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR
 .sp
-The login username to use for running
+The login user name to use for running
 \fBmysqld\fR. This option was added in MySQL 5.0.4.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -108,4 +108,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

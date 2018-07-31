@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlshow\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLSHOW\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLSHOW\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -25,7 +25,7 @@ client can be used to quickly see which databases exist, their tables, or a tabl
 provides a command\-line interface to several SQL
 SHOW
 statements. See
-Section\ 5.5, \(lqSHOW Syntax\(rq. The same information can be obtained by using those statements directly. For example, you can issue them from the
+Section\ 12.5.5, \(lqSHOW Syntax\(rq. The same information can be obtained by using those statements directly. For example, you can issue them from the
 \fBmysql\fR
 client program.
 .PP
@@ -72,7 +72,8 @@ shows you only the table names that match the pattern. This is easily fixed by a
 last on the command line as a separate argument.
 .PP
 \fBmysqlshow\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -84,7 +85,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-compress\fR,
@@ -102,10 +103,11 @@ tables. This option was added in MySQL 5.0.6.
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
-\'d:t:o,\fIfile_name\fR'.
+string is
+\'d:t:o,\fIfile_name\fR'. The default is
+\'d:t:o'.
 .TP 3n
 \(bu
 \fB\-\-default\-character\-set=\fR\fB\fIcharset_name\fR\fR
@@ -113,7 +115,7 @@ string often is
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
@@ -142,10 +144,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
-.sp
-Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-pipe\fR,
@@ -163,7 +162,7 @@ The TCP/IP port number to use for the connection.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
-Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
+Section\ 4.2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-show\-table\-type\fR,
@@ -188,7 +187,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 5.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-status\fR,
@@ -200,7 +199,7 @@ Display extra information about each table.
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-verbose\fR,
@@ -215,9 +214,9 @@ Verbose mode. Print more information about what the program does. This option ca
 Display version information and exit.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -227,4 +226,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

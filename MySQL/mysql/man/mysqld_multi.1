@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqld_multi\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLD_MULTI\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLD_MULTI\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -39,8 +39,8 @@ to specify which servers you want to start, stop, or obtain a status report for.
 [mysqld]
 group used for starting
 \fBmysqld\fR. (See, for example,
-Section\ 4.16.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number. For more information on which options must be unique per server in a multiple\-server environment, see
-Section\ 6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
+Section\ 2.17.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number. For more information on which options must be unique per server in a multiple\-server environment, see
+Section\ 5.6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
 .PP
 To invoke
 \fBmysqld_multi\fR, use the following syntax:
@@ -205,7 +205,7 @@ options in the corresponding
 [mysqld\fIN\fR]
 option group. These options indicate the name of the server that
 \fBmysqld_safe\fR
-should start and the pathname of the directory where the server is located. (See the descriptions for these options in
+should start and the path name of the directory where the server is located. (See the descriptions for these options in
 \fBmysqld_safe\fR(1).) Example:
 .sp
 .RS 3n
@@ -246,7 +246,7 @@ operations.
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR
 .sp
-The username of the MySQL account to use when invoking
+The user name of the MySQL account to use when invoking
 \fBmysqladmin\fR.
 .TP 3n
 \(bu
@@ -280,7 +280,7 @@ servers with the same data directory. Use separate data directories, unless you
 what you are doing. Starting multiple servers with the same data directory does
 \fInot\fR
 give you extra performance in a threaded system. See
-Section\ 6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
+Section\ 5.6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
 .TP 3n
 \(bu
 .sp
@@ -298,16 +298,16 @@ use the Unix
 account for this, unless you
 \fIknow\fR
 what you are doing. See
-Section\ 3.5, \(lqHow to Run MySQL as a Normal User\(rq.
+Section\ 5.3.5, \(lqHow to Run MySQL as a Normal User\(rq.
 .TP 3n
 \(bu
 Make sure that the MySQL account used for stopping the
 \fBmysqld\fR
 servers (with the
 \fBmysqladmin\fR
-program) has the same username and password for each server. Also, make sure that the account has the
+program) has the same user name and password for each server. Also, make sure that the account has the
 SHUTDOWN
-privilege. If the servers that you want to manage have different usernames or passwords for the administrative accounts, you might want to create an account on each server that has the same username and password. For example, you might set up a common
+privilege. If the servers that you want to manage have different user names or passwords for the administrative accounts, you might want to create an account on each server that has the same user name and password. For example, you might set up a common
 multi_admin
 account by executing the following commands for each server:
 .sp
@@ -320,9 +320,9 @@ mysql> \fBGRANT SHUTDOWN ON *.*\fR
 .fi
 .RE
 See
-Section\ 4.2, \(lqHow the Privilege System Works\(rq. You have to do this for each
+Section\ 5.4, \(lqThe MySQL Access Privilege System\(rq. You have to do this for each
 \fBmysqld\fR
-server. Change the connection parameters appropriately when connecting to each one. Note that the hostname part of the account name must allow you to connect as
+server. Change the connection parameters appropriately when connecting to each one. Note that the host name part of the account name must allow you to connect as
 multi_admin
 from the host where you want to run
 \fBmysqld_multi\fR.
@@ -330,7 +330,7 @@ from the host where you want to run
 \(bu
 The Unix socket file and the TCP/IP port number must be different for every
 \fBmysqld\fR. (Alternatively, if the host has multiple network addresses, you can use
-\fB\-\-bind\-adress\fR
+\fB\-\-bind\-address\fR
 to cause different servers to listen to different interfaces.)
 .TP 3n
 \(bu
@@ -438,12 +438,12 @@ user       = jani
 .RE
 .PP
 See
-Section\ 2.3.2, \(lqUsing Option Files\(rq.
+Section\ 4.2.3.2, \(lqUsing Option Files\(rq.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -453,4 +453,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

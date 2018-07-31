@@ -1199,106 +1199,106 @@
 #define	__db_unmap_rmid __db_unmap_rmid@DB_VERSION_UNIQUE_NAME@
 #define	__db_map_xid __db_map_xid@DB_VERSION_UNIQUE_NAME@
 #define	__db_unmap_xid __db_unmap_xid@DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
-#define  @DB_VERSION_UNIQUE_NAME@
+#define xdr___env_cachesize_msg xdr___env_cachesize_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_cachesize_reply xdr___env_cachesize_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_close_msg xdr___env_close_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_close_reply xdr___env_close_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_create_msg xdr___env_create_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_create_reply xdr___env_create_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_dbremove_msg xdr___env_dbremove_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_dbremove_reply xdr___env_dbremove_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_dbrename_msg xdr___env_dbrename_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_dbrename_reply xdr___env_dbrename_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_encrypt_msg xdr___env_encrypt_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_encrypt_reply xdr___env_encrypt_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_flags_msg xdr___env_flags_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_flags_reply xdr___env_flags_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_open_msg xdr___env_open_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_open_reply xdr___env_open_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_remove_msg xdr___env_remove_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___env_remove_reply xdr___env_remove_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_abort_msg xdr___txn_abort_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_abort_reply xdr___txn_abort_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_begin_msg xdr___txn_begin_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_begin_reply xdr___txn_begin_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_commit_msg xdr___txn_commit_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_commit_reply xdr___txn_commit_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_discard_msg xdr___txn_discard_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_discard_reply xdr___txn_discard_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_prepare_msg xdr___txn_prepare_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_prepare_reply xdr___txn_prepare_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_recover_msg xdr___txn_recover_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___txn_recover_reply xdr___txn_recover_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_associate_msg xdr___db_associate_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_associate_reply xdr___db_associate_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_bt_maxkey_msg xdr___db_bt_maxkey_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_bt_maxkey_reply xdr___db_bt_maxkey_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_bt_minkey_msg xdr___db_bt_minkey_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_bt_minkey_reply xdr___db_bt_minkey_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_close_msg xdr___db_close_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_close_reply xdr___db_close_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_create_msg xdr___db_create_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_create_reply xdr___db_create_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_del_msg xdr___db_del_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_del_reply xdr___db_del_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_encrypt_msg xdr___db_encrypt_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_encrypt_reply xdr___db_encrypt_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_extentsize_msg xdr___db_extentsize_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_extentsize_reply xdr___db_extentsize_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_flags_msg xdr___db_flags_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_flags_reply xdr___db_flags_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_get_msg xdr___db_get_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_get_reply xdr___db_get_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_h_ffactor_msg xdr___db_h_ffactor_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_h_ffactor_reply xdr___db_h_ffactor_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_h_nelem_msg xdr___db_h_nelem_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_h_nelem_reply xdr___db_h_nelem_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_key_range_msg xdr___db_key_range_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_key_range_reply xdr___db_key_range_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_lorder_msg xdr___db_lorder_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_lorder_reply xdr___db_lorder_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_open_msg xdr___db_open_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_open_reply xdr___db_open_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_pagesize_msg xdr___db_pagesize_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_pagesize_reply xdr___db_pagesize_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_pget_msg xdr___db_pget_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_pget_reply xdr___db_pget_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_put_msg xdr___db_put_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_put_reply xdr___db_put_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_re_delim_msg xdr___db_re_delim_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_re_delim_reply xdr___db_re_delim_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_re_len_msg xdr___db_re_len_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_re_len_reply xdr___db_re_len_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_re_pad_msg xdr___db_re_pad_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_re_pad_reply xdr___db_re_pad_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_remove_msg xdr___db_remove_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_remove_reply xdr___db_remove_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_rename_msg xdr___db_rename_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_rename_reply xdr___db_rename_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_stat_msg xdr___db_stat_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_stat_reply xdr___db_stat_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_sync_msg xdr___db_sync_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_sync_reply xdr___db_sync_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_truncate_msg xdr___db_truncate_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_truncate_reply xdr___db_truncate_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_cursor_msg xdr___db_cursor_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_cursor_reply xdr___db_cursor_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_join_msg xdr___db_join_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___db_join_reply xdr___db_join_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_close_msg xdr___dbc_close_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_close_reply xdr___dbc_close_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_count_msg xdr___dbc_count_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_count_reply xdr___dbc_count_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_del_msg xdr___dbc_del_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_del_reply xdr___dbc_del_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_dup_msg xdr___dbc_dup_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_dup_reply xdr___dbc_dup_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_get_msg xdr___dbc_get_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_get_reply xdr___dbc_get_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_pget_msg xdr___dbc_pget_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_pget_reply xdr___dbc_pget_reply@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_put_msg xdr___dbc_put_msg@DB_VERSION_UNIQUE_NAME@
+#define xdr___dbc_put_reply xdr___dbc_put_reply@DB_VERSION_UNIQUE_NAME@
 #define __db_global_values __db_global_values@DB_VERSION_UNIQUE_NAME@
 #define __db_jump __db_jump@DB_VERSION_UNIQUE_NAME@
 

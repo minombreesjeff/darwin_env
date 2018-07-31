@@ -1,11 +1,11 @@
 .\"     Title: \fBmyisamchk\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAMCHK\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYISAMCHK\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -35,7 +35,7 @@ files for storing data and indexes).
 .br
 \fBCaution\fR
 .PP
-It is best to make a backup of a table before performing a table repair operation; under some circumstances the operation might cause data loss. Possible causes include but are not limited to filesystem errors.
+It is best to make a backup of a table before performing a table repair operation; under some circumstances the operation might cause data loss. Possible causes include but are not limited to file system errors.
 .PP
 Invoke
 \fBmyisamchk\fR
@@ -67,7 +67,7 @@ somewhere other than in the database directory, you must specify the path to the
 \fBmyisamchk\fR
 has no idea where the database is located. In fact,
 \fBmyisamchk\fR
-doesn't actually care whether the files you are working on are located in a database directory. You can copy the files that correspond to a database table into some other location and perform recovery operations on them there.
+does not actually care whether the files you are working on are located in a database directory. You can copy the files that correspond to a database table into some other location and perform recovery operations on them there.
 .PP
 You can name several tables on the
 \fBmyisamchk\fR
@@ -164,11 +164,11 @@ CHECK TABLE
 instead of
 \fBmyisamchk\fR
 to check tables. See
-Section\ 5.2.3, \(lqCHECK TABLE Syntax\(rq.
+Section\ 12.5.2.3, \(lqCHECK TABLE Syntax\(rq.
 .PP
-A complete listing of all the
 \fBmyisamchk\fR
-options follows.
+supports the options in the following table. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .SH "\fBMYISAMCHK\fR GENERAL OPTIONS"
 .PP
 The options described in this section can be used for any type of table maintenance operation performed by
@@ -178,15 +178,22 @@ The options described in this section can be used for any type of table maintena
 \fB\-\-help\fR,
 \fB\-?\fR
 .sp
-Display a help message and exit.
+Display a help message and exit. Options are grouped by type of operation.
+.TP 3n
+\(bu
+\fB\-\-HELP\fR,
+\fB\-H\fR
+.sp
+Display a help message and exit. Options are presented in a single list.
 .TP 3n
 \(bu
 \fB\-\-debug=\fR\fB\fIdebug_options\fR\fR\fB, \-# \fR\fB\fIdebug_options\fR\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
-\'d:t:o,\fIfile_name\fR'.
+string is
+\'d:t:o,\fIfile_name\fR'. The default is
+\'d:t:o,/tmp/myisamchk.trace'.
 .TP 3n
 \(bu
 \fB\-\-silent\fR,
@@ -366,8 +373,8 @@ myisam_stats_method
 system variable. For more information, see the description of
 myisam_stats_method
 in
-Section\ 1.3, \(lqSystem Variables\(rq, and
-Section\ 4.7, \(lqMyISAM Index Statistics Collection\(rq. For MySQL 5.0,
+Section\ 5.1.3, \(lqServer System Variables\(rq, and
+Section\ 7.4.6, \(lqMyISAM Index Statistics Collection\(rq. For MySQL 5.0,
 stats_method
 was added in MySQL 5.0.14. For older versions, the statistics collection method is equivalent to
 nulls_equal.
@@ -507,9 +514,9 @@ operation. This finds only 99.99% of all errors, which should be good enough in 
 \fB\-\-read\-only\fR,
 \fB\-T\fR
 .sp
-Don't mark the table as checked. This is useful if you use
+Do not mark the table as checked. This is useful if you use
 \fBmyisamchk\fR
-to check a table that is in use by some other application that doesn't use locking, such as
+to check a table that is in use by some other application that does not use locking, such as
 \fBmysqld\fR
 when run with external locking disabled.
 .TP 3n
@@ -542,7 +549,7 @@ file as
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-correct\-checksum\fR
@@ -559,7 +566,7 @@ Maximum length of the data file (when re\-creating data file when it is
 \fB\-\-extend\-check\fR,
 \fB\-e\fR
 .sp
-Do a repair that tries to recover every possible row from the data file. Normally, this also finds a lot of garbage rows. Don't use this option unless you are desperate.
+Do a repair that tries to recover every possible row from the data file. Normally, this also finds a lot of garbage rows. Do not use this option unless you are desperate.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -613,13 +620,13 @@ to modify the original data file in case of duplicate keys.
 \fB\-\-recover\fR,
 \fB\-r\fR
 .sp
-Do a repair that can fix almost any problem except unique keys that aren't unique (which is an extremely unlikely error with
+Do a repair that can fix almost any problem except unique keys that are not unique (which is an extremely unlikely error with
 MyISAM
 tables). If you want to recover a table, this is the option to try first. You should try
 \fB\-\-safe\-recover\fR
 only if
 \fBmyisamchk\fR
-reports that the table can't be recovered using
+reports that the table cannot be recovered using
 \fB\-\-recover\fR. (In the unlikely case that
 \fB\-\-recover\fR
 fails, the data file remains intact.)
@@ -635,7 +642,7 @@ Do a repair using an old recovery method that reads through all rows in order an
 \fB\-\-recover\fR, but can handle a couple of very unlikely cases that
 \fB\-\-recover\fR
 cannot. This recovery method also uses much less disk space than
-\fB\-\-recover\fR. Normally, you should repair first with
+\fB\-\-recover\fR. Normally, you should repair first using
 \fB\-\-recover\fR, and then with
 \fB\-\-safe\-recover\fR
 only if
@@ -775,11 +782,11 @@ Be aware that
 uses temporary files in
 TMPDIR. If
 TMPDIR
-points to a memory filesystem, you may easily get out of memory errors. If this happens, run
+points to a memory file system, you may easily get out of memory errors. If this happens, run
 \fBmyisamchk\fR
 with the
 \fB\-\-tmpdir=\fR\fB\fIpath\fR\fR
-option to specify some directory located on a filesystem that has more space.
+option to specify some directory located on a file system that has more space.
 .PP
 When repairing,
 \fBmyisamchk\fR
@@ -787,10 +794,11 @@ also needs a lot of disk space:
 .TP 3n
 \(bu
 Double the size of the data file (the original file and a copy). This space is not needed if you do a repair with
-\fB\-\-quick\fR; in this case, only the index file is re\-created. This space is needed on the same filesystem as the original data file! (The copy is created in the same directory as the original.)
+\fB\-\-quick\fR; in this case, only the index file is re\-created.
+\fIThis space must be available on the same file system as the original data file\fR, as the copy is created in the same directory as the original.
 .TP 3n
 \(bu
-Space for the new index file that replaces the old one. The old index file is truncated at the start of the repair operation, so you usually ignore this space. This space is needed on the same filesystem as the original index file!
+Space for the new index file that replaces the old one. The old index file is truncated at the start of the repair operation, so you usually ignore this space. This space must be available on the same file system as the original data file.
 .TP 3n
 \(bu
 When using
@@ -821,9 +829,9 @@ instead of
 \fB\-\-recover\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -833,4 +841,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

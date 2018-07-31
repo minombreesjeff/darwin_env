@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlmanager\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLMANAGER\fR" "8" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLMANAGER\fR" "8" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -16,6 +16,14 @@ mysqlmanager \- the MySQL Instance Manager
 .HP 23
 \fBmysqlmanager [\fR\fB\fIoptions\fR\fR\fB]\fR
 .SH "DESCRIPTION"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 \fBmysqlmanager\fR
 is the MySQL Instance Manager (IM). This program monitors and manages MySQL Database Server instances. MySQL Instance Manager is available for Unix\-like operating systems, and also on Windows as of MySQL 5.0.13. It runs as a daemon that listens on a TCP/IP port. On Unix, it also listens on a Unix socket file.
@@ -54,6 +62,14 @@ Instance Manager provides remote instance management. That is, it runs on the ho
 .PP
 The following sections describe MySQL Instance Manager operation in more detail.
 .SH "MYSQL INSTANCE MANAGER COMMAND OPTIONS"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 The MySQL Instance Manager supports a number of command options. For a brief listing, invoke
 \fBmysqlmanager\fR
@@ -67,7 +83,8 @@ in the directory where Instance Manager is installed. On Unix, the standard file
 option.
 .PP
 \fBmysqlmanager\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -82,7 +99,7 @@ The file in which the angel process records its process ID when
 \fBmysqlmanager\fR
 runs in daemon mode (that is, when the
 \fB\-\-run\-as\-service\fR
-option is given). The default filename is
+option is given). The default file name is
 \fImysqlmanager.angel.pid\fR.
 .sp
 If the
@@ -103,9 +120,9 @@ The IP address to bind to.
 \(bu
 \fB\-\-default\-mysqld\-path=\fR\fB\fIpath\fR\fR
 .sp
-The pathname of the MySQL Server binary. This pathname is used for all server instance sections in the configuration file for which no
+The path name of the MySQL Server binary. This path name is used for all server instance sections in the configuration file for which no
 \fBmysqld\-path\fR
-option is present. The default value of this option is the compiled\-in pathname, which depends on how the MySQL distribution was configured. Example:
+option is present. The default value of this option is the compiled\-in path name, which depends on how the MySQL distribution was configured. Example:
 \fB\-\-default\-mysqld\-path=/usr/sbin/mysqld\fR
 .TP 3n
 \(bu
@@ -129,7 +146,7 @@ MySQL Manager. This option was added in MySQL 5.0.11.
 .sp
 The path to the Instance Manager log file. This option has no effect unless the
 \fB\-\-run\-as\-service\fR
-option is also given. If the filename specified for the option is a relative name, the log file is created under the directory from which Instance Manager is started. To ensure that the file is created in a specific directory, specify it as a full pathname.
+option is also given. If the file name specified for the option is a relative name, the log file is created under the directory from which Instance Manager is started. To ensure that the file is created in a specific directory, specify it as a full path name.
 .sp
 If
 \fB\-\-run\-as\-service\fR
@@ -179,7 +196,8 @@ the section called \(lqMYSQL SERVER INSTANCE STATUS MONITORING\(rq, for more inf
 \fB\-\-passwd\fR,
 \fB\-P\fR
 .sp
-Prepare an entry for the password file, print it to the standard output, and exit. You can redirect the output from Instance Manager to a file to save the entry in the file.
+Prepare an entry for the password file, print it to the standard output, and exit. You can redirect the output from Instance Manager to a file to save the entry in the file. See also
+the section called \(lqINSTANCE MANAGER USER AND PASSWORD MANAGEMENT\(rq. This
 .TP 3n
 \(bu
 \fB\-\-password\-file=\fR\fB\fIfile_name\fR\fR
@@ -187,7 +205,8 @@ Prepare an entry for the password file, print it to the standard output, and exi
 The name of the file where the Instance Manager looks for users and passwords. On Windows, the default is
 \fImysqlmanager.passwd\fR
 in the directory where Instance Manager is installed. On Unix, the default file is
-\fI/etc/mysqlmanager.passwd\fR.
+\fI/etc/mysqlmanager.passwd\fR. See also
+the section called \(lqINSTANCE MANAGER USER AND PASSWORD MANAGEMENT\(rq.
 .TP 3n
 \(bu
 \fB\-\-pid\-file=\fR\fB\fIfile_name\fR\fR
@@ -234,7 +253,7 @@ This option is used on Windows to run Instance Manager in standalone mode. You s
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR
 .sp
-On Unix, the username of the system account to use for starting and running
+On Unix, the user name of the system account to use for starting and running
 \fBmysqlmanager\fR. This option generates a warning and has no effect unless you start
 \fBmysqlmanager\fR
 as
@@ -259,6 +278,14 @@ The number of seconds to wait for activity on an incoming connection before clos
 .sp
 This option was added in MySQL 5.0.19. Before that, the timeout is 30 seconds and cannot be changed.
 .SH "MYSQL INSTANCE MANAGER CONFIGURATION FILES"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 Instance Manager uses its standard configuration file unless it is started with a
 \fB\-\-defaults\-file\fR
@@ -301,7 +328,7 @@ Each
 or
 [mysqld\fIN\fR]
 instance section specifies options given by Instance Manager to a server instance at startup. These are mainly common MySQL Server options (see
-Section\ 1.2, \(lqCommand Options\(rq). In addition, a
+Section\ 5.1.2, \(lqServer Command Options\(rq). In addition, a
 [mysqld\fIN\fR]
 section can contain the options in the following list, which are specific to Instance Manager. These options are interpreted by Instance Manager itself; it does not pass them to the server when it attempts to start that server.
 .sp
@@ -318,7 +345,7 @@ section. If a server is started without using Instance Manager, it will not reco
 \(bu
 mysqld\-path = \fIpath\fR
 .sp
-The pathname of the
+The path name of the
 \fBmysqld\fR
 server binary to use for the server instance.
 .TP 3n
@@ -366,6 +393,14 @@ log=/tmp/fordel.log
 .fi
 .RE
 .SH "STARTING THE MYSQL SERVER WITH MYSQL INSTANCE MANAGER"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 This section discusses how Instance Manager starts server instances when it starts. However, before you start Instance Manager, you should set up a password file for it. Otherwise, you will not be able to connect to Instance Manager to control it after it starts. For details about creating Instance Manager accounts, see
 the section called \(lqINSTANCE MANAGER USER AND PASSWORD MANAGEMENT\(rq.
@@ -415,7 +450,7 @@ After preparing the list of instances, Instance Manager starts the guarded insta
 mysqld
 and attempts to start it with default (compiled\-in) configuration values. This means that the Instance Manager cannot find the
 \fBmysqld\fR
-program if it is not installed in the default location. (Section\ 4.6, \(lqInstallation Layouts\(rq, describes default locations for components of MySQL distributions.) If you have installed the MySQL server in a non\-standard location, you should create the Instance Manager configuration file.
+program if it is not installed in the default location. (Section\ 2.7, \(lqInstallation Layouts\(rq, describes default locations for components of MySQL distributions.) If you have installed the MySQL server in a non\-standard location, you should create the Instance Manager configuration file.
 .PP
 Instance Manager also stops all guarded server instances when it shuts down.
 .PP
@@ -427,10 +462,10 @@ the section called \(lqMYSQL INSTANCE MANAGER CONFIGURATION FILES\(rq. In these 
 option that is recognized only by Instance Manager. Use this option to let Instance Manager know where the
 \fBmysqld\fR
 binary resides. If there are multiple instances, it may also be necessary to set other options such as
-datadir
+\fBdatadir\fR
 and
-port, to ensure that each instance has a different data directory and TCP/IP port number.
-Section\ 6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq, discusses the configuration values that must differ for each instance when you run multiple instance on the same machine.
+\fBport\fR, to ensure that each instance has a different data directory and TCP/IP port number.
+Section\ 5.6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq, discusses the configuration values that must differ for each instance when you run multiple instance on the same machine.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -460,6 +495,14 @@ If Instance Manager is shut down (for example, with the
 \fB/etc/init.d/mysql stop\fR
 command), it shuts down all server instances.
 .SH "INSTANCE MANAGER USER AND PASSWORD MANAGEMENT"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 The Instance Manager stores its user information in a password file. On Windows, the default is
 \fImysqlmanager.passwd\fR
@@ -478,7 +521,7 @@ If the password file does not exist or contains no password entries, you cannot 
 .PP
 Any Instance Manager process that is running to monitor server instances does not notice changes to the password file. You must stop it and restart it after making password entry changes.
 .PP
-Entries in the password file have the following format, where the two fields are the account username and encrypted password, separated by a colon:
+Entries in the password file have the following format, where the two fields are the account user name and encrypted password, separated by a colon:
 .sp
 .RS 3n
 .nf
@@ -491,15 +534,15 @@ Instance Manager password encryption is the same as that used by MySQL Server. I
 Instance Manager accounts differ somewhat from MySQL Server accounts:
 .TP 3n
 \(bu
-MySQL Server accounts are associated with a hostname, username, and password (see
-Section\ 5.1, \(lqMySQL Usernames and Passwords\(rq).
+MySQL Server accounts are associated with a host name, user name, and password (see
+Section\ 5.5.1, \(lqUser Names and Passwords\(rq).
 .TP 3n
 \(bu
-Instance Manager accounts are associated with a username and password only.
+Instance Manager accounts are associated with a user name and password only.
 .sp
 .RE
 .PP
-This means that a client can connect to Instance Manager with a given username from any host. To limit connections so that clients can connect only from the local host, start Instance Manager with the
+This means that a client can connect to Instance Manager with a given user name from any host. To limit connections so that clients can connect only from the local host, start Instance Manager with the
 \fB\-\-bind\-address=127.0.0.1\fR
 option so that it listens only to the local network interface. Remote clients will not be able to connect. Local clients can connect like this:
 .sp
@@ -525,7 +568,7 @@ Re\-type password: \fBmikepass\fR
 .fi
 .RE
 .PP
-At the prompts, enter the username and password for the new Instance Manager user. You must enter the password twice. It does not echo to the screen, so double entry guards against entering a different password than you intend (if the two passwords do not match, no entry is generated).
+At the prompts, enter the user name and password for the new Instance Manager user. You must enter the password twice. It does not echo to the screen, so double entry guards against entering a different password than you intend (if the two passwords do not match, no entry is generated).
 .PP
 The preceding command causes the following line to be added to
 \fI/etc/mysqlmanager.passwd\fR:
@@ -535,7 +578,32 @@ The preceding command causes the following line to be added to
 mike:*BBF1F551DD9DD96A01E66EC7DDC073911BAD17BA
 .fi
 .RE
+.PP
+Use of the
+\fB\-\-password\fR
+option fails if
+\fBmysqlmanager\fR
+is invoked directly from an IBM 5250 terminal. To work around this, use a command like the following from the command line to generate the password entry:
+.sp
+.RS 3n
+.nf
+shell> \fBmysql \-B \-\-skip\-column\-name \\\fR
+         \fB\-e 'SELECT CONCAT("\fR\fB\fIuser_name\fR\fR\fB",":",PASSWORD("\fR\fB\fIpass_val\fR\fR\fB"));'\fR
+.fi
+.RE
+.PP
+The output from the command can be used an entry in the
+\fI/etc/mysqlmanager.passwd\fR
+file.
 .SH "MYSQL SERVER INSTANCE STATUS MONITORING"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 To monitor the status of each guarded server instance, the MySQL Instance Manager attempts to connect to the instance at regular intervals using the
 MySQL_Instance_Manager@localhost
@@ -545,7 +613,7 @@ check_connection.
 You are
 \fInot\fR
 required to create this account for MySQL Server; in fact, it is expected that it will not exist. Instance Manager can tell that a server is operational if the server accepts the connection attempt but refuses access for the account by returning a login error. However, these failed connection attempts are logged by the server to its general query log (see
-Section\ 2.2, \(lqThe General Query Log\(rq).
+Section\ 5.2.2, \(lqThe General Query Log\(rq).
 .PP
 Instance Manager also attempts a connection to nonguarded server instances when you use the
 SHOW INSTANCES
@@ -555,6 +623,14 @@ command. This is the only status monitoring done for nonguarded instances.
 .PP
 Instance Manager knows if a server instance fails at startup because it receives a status from the attempt. For an instance that starts but later crashes, Instance Manager receives a signal because it is the parent process of the instance.
 .SH "CONNECTING TO MYSQL INSTANCE MANAGER"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 After you set up a password file for the MySQL Instance Manager and Instance Manager is running, you can connect to it. The MySQL client\-server protocol is used to communicate with the Instance Manager. For example, you can connect to it using the standard
 \fBmysql\fR
@@ -568,6 +644,14 @@ shell> \fBmysql \-\-port=2273 \-\-host=im.example.org \-\-user=mysql \-\-passwor
 .PP
 Instance Manager supports the version of the MySQL client\-server protocol used by the client tools and libraries distributed with MySQL 4.1 or later, so other programs that use the MySQL C API also can connect to it.
 .SH "MYSQL INSTANCE MANAGER COMMANDS"
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+MySQL Instance Manager is been deprecated in MySQL 5.1 and is removed in MySQL 6.0.
 .PP
 After you connect to MySQL Instance Manager, you can issue commands. The following general principles apply to Instance Manager command execution:
 .TP 3n
@@ -698,7 +782,7 @@ mysql> \fBSHOW mysqld LOG FILES;\fR
 .fi
 .RE
 Log options are described in
-Section\ 1.2, \(lqCommand Options\(rq.
+Section\ 5.1.2, \(lqServer Command Options\(rq.
 .TP 3n
 \(bu
 SHOW \fIinstance_name\fR LOG {ERROR | SLOW | GENERAL} \fIsize\fR[,\fIoffset_from_end\fR]
@@ -765,9 +849,9 @@ FLUSH INSTANCES
 is deprecated and will be removed in MySQL 5.2.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -777,4 +861,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

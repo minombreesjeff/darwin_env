@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqldump\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLDUMP\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLDUMP\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -70,7 +70,14 @@ and
 fall into this category. For example, use of
 \fB\-\-opt\fR
 is the same as specifying
-\fB\-\-add\-drop\-table \-\-add\-locks \-\-create\-options \-\-disable\-keys \-\-extended\-insert \-\-lock\-tables \-\-quick \-\-set\-charset\fR. Note that all of the options that
+\fB\-\-add\-drop\-table\fR
+\fB\-\-add\-locks\fR
+\fB\-\-create\-options\fR
+\fB\-\-disable\-keys\fR
+\fB\-\-extended\-insert\fR
+\fB\-\-lock\-tables\fR
+\fB\-\-quick\fR
+\fB\-\-set\-charset\fR. Note that all of the options that
 \fB\-\-opt\fR
 stands for also are on by default because
 \fB\-\-opt\fR
@@ -88,8 +95,11 @@ To select the effect of
 except for some features, use the
 \fB\-\-skip\fR
 option for each feature. For example, to disable extended inserts and memory buffering, use
-\fB\-\-opt \-\-skip\-extended\-insert \-\-skip\-quick\fR. (As of MySQL 5.0,
-\fB\-\-skip\-extended\-insert \-\-skip\-quick\fR
+\fB\-\-opt\fR
+\fB\-\-skip\-extended\-insert\fR
+\fB\-\-skip\-quick\fR. (As of MySQL 5.0,
+\fB\-\-skip\-extended\-insert\fR
+\fB\-\-skip\-quick\fR
 is sufficient because
 \fB\-\-opt\fR
 is on by default.)
@@ -98,12 +108,16 @@ is on by default.)
 To reverse
 \fB\-\-opt\fR
 for all features except index disabling and table locking, use
-\fB\-\-skip\-opt \-\-disable\-keys \-\-lock\-tables\fR.
+\fB\-\-skip\-opt\fR
+\fB\-\-disable\-keys\fR
+\fB\-\-lock\-tables\fR.
 .sp
 .RE
 .PP
 When you selectively enable or disable the effect of a group option, order is important because options are processed first to last. For example,
-\fB\-\-disable\-keys \-\-lock\-tables \-\-skip\-opt\fR
+\fB\-\-disable\-keys\fR
+\fB\-\-lock\-tables\fR
+\fB\-\-skip\-opt\fR
 would not have the intended effect; it is the same as
 \fB\-\-skip\-opt\fR
 by itself.
@@ -175,7 +189,8 @@ in the table, so this
 behavior is only relevant when you deal with old servers.
 .PP
 \fBmysqldump\fR
-supports the following options:
+supports the options in the following list. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -209,7 +224,7 @@ LOCK TABLES
 and
 UNLOCK TABLES
 statements. This results in faster inserts when the dump file is reloaded. See
-Section\ 2.18, \(lqSpeed of INSERT Statements\(rq.
+Section\ 7.2.19, \(lqSpeed of INSERT Statements\(rq.
 .TP 3n
 \(bu
 \fB\-\-all\-databases\fR,
@@ -228,7 +243,7 @@ Allow creation of column names that are keywords. This works by prefixing each c
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-comments\fR,
@@ -276,7 +291,7 @@ maxdb,
 no_key_options,
 no_table_options, or
 no_field_options. To use several values, separate them by commas. These values have the same meaning as the corresponding options for setting the server SQL mode. See
-Section\ 1.7, \(lqSQL Modes\(rq.
+Section\ 5.1.7, \(lqServer SQL Modes\(rq.
 .sp
 This option does not guarantee compatibility with other servers. It only enables those SQL mode values that are currently available for making dump output more compatible. For example,
 \fB\-\-compatible=oracle\fR
@@ -321,9 +336,9 @@ statements are included in the output before each new database.
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string is often
+string is
 \'d:t:o,\fIfile_name\fR'. The default value is
 \'d:t:o,/tmp/mysqldump.trace'.
 .TP 3n
@@ -338,11 +353,15 @@ Print debugging information and memory and CPU usage statistics when the program
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq. If no character set is specified,
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq. If no character set is specified,
 \fBmysqldump\fR
 uses
 utf8, and earlier versions use
 latin1.
+.sp
+This option has no effect for output data files produced by using the
+\fB\-\-tab\fR
+option. See the description for that option.
 .TP 3n
 \(bu
 \fB\-\-delayed\-insert\fR
@@ -411,7 +430,7 @@ These options are used with the
 \fB\-T\fR
 option and have the same meaning as the corresponding clauses for
 LOAD DATA INFILE. See
-Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
+Section\ 12.2.6, \(lqLOAD DATA INFILE Syntax\(rq.
 .TP 3n
 \(bu
 \fB\-\-first\-slave\fR,
@@ -461,13 +480,13 @@ Continue even if an SQL error occurs during a table dump.
 .sp
 One use for this option is to cause
 \fBmysqldump\fR
-to continue executing even when it encounters a view that has become invalid because the defintion refers to a table that has been dropped. Without
+to continue executing even when it encounters a view that has become invalid because the definition refers to a table that has been dropped. Without
 \fB\-\-force\fR,
 \fBmysqldump\fR
 exits with an error message. With
 \fB\-\-force\fR,
 \fBmysqldump\fR
-prints the error message, but it also writes a SQL comment containing the view definition to the dump output and continues executing.
+prints the error message, but it also writes an SQL comment containing the view definition to the dump output and continues executing.
 .TP 3n
 \(bu
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
@@ -492,7 +511,7 @@ columns are affected as well.
 \(bu
 \fB\-\-ignore\-table=\fR\fB\fIdb_name.tbl_name\fR\fR
 .sp
-Do not dump the given table, which must be specified using both the database and table names. To ignore multiple tables, use this option multiple times.
+Do not dump the given table, which must be specified using both the database and table names. To ignore multiple tables, use this option multiple times. This option also can be used to ignore views.
 .TP 3n
 \(bu
 \fB\-\-insert\-ignore\fR
@@ -510,7 +529,7 @@ This option is used with the
 \fB\-T\fR
 option and has the same meaning as the corresponding clause for
 LOAD DATA INFILE. See
-Section\ 2.5, \(lqLOAD DATA INFILE Syntax\(rq.
+Section\ 12.2.6, \(lqLOAD DATA INFILE Syntax\(rq.
 .TP 3n
 \(bu
 \fB\-\-lock\-all\-tables\fR,
@@ -550,7 +569,7 @@ Append warnings and errors to the named file. This option was added in MySQL 5.0
 .sp
 Use this option to dump a master replication server to produce a dump file that can be used to set up another server as a slave of the master. It causes the dump output to include a
 CHANGE MASTER TO
-statement that indicates the binary log coordinates (filename and position) of the dumped server. These are the master server coordinates from which the slave should start replicating.
+statement that indicates the binary log coordinates (file name and position) of the dumped server. These are the master server coordinates from which the slave should start replicating.
 .sp
 If the option value is 2, the
 CHANGE MASTER TO
@@ -634,7 +653,7 @@ to point the slave to the correct master server host. Add any such parameters as
 Enclose the
 INSERT
 statements for each dumped table within
-SET AUTOCOMMIT=0
+SET autocommit = 0
 and
 COMMIT
 statements.
@@ -671,7 +690,14 @@ statement for the table.
 \fB\-\-opt\fR
 .sp
 This option is shorthand; it is the same as specifying
-\fB\-\-add\-drop\-table \-\-add\-locks \-\-create\-options \-\-disable\-keys \-\-extended\-insert \-\-lock\-tables \-\-quick \-\-set\-charset\fR. It should give you a fast dump operation and produce a dump file that can be reloaded into a MySQL server quickly.
+\fB\-\-add\-drop\-table\fR
+\fB\-\-add\-locks\fR
+\fB\-\-create\-options\fR
+\fB\-\-disable\-keys\fR
+\fB\-\-extended\-insert\fR
+\fB\-\-lock\-tables\fR
+\fB\-\-quick\fR
+\fB\-\-set\-charset\fR. It should give you a fast dump operation and produce a dump file that can be reloaded into a MySQL server quickly.
 .sp
 \fIThe \fR\fI\fB\-\-opt\fR\fR\fI option is enabled by default. Use \fR\fI\fB\-\-skip\-opt\fR\fR\fI to disable it.\fR
 See the discussion at the beginning of this section for information about selectively enabling or disabling certain of the options affected by
@@ -701,7 +727,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-pipe\fR,
@@ -719,7 +745,7 @@ The TCP/IP port number to use for the connection.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
-Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
+Section\ 4.2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -759,7 +785,7 @@ carriage return/newline sequences. The result file is created and its contents o
 \fB\-\-routines\fR,
 \fB\-R\fR
 .sp
-Dump stored routines (functions and procedures) from the dumped databases. Use of this option requires the
+Dump stored routines (procedures and functions) from the dumped databases. Use of this option requires the
 SELECT
 privilege for the
 mysql.proc
@@ -872,7 +898,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 5.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-tab=\fR\fB\fIpath\fR\fR,
@@ -895,6 +921,12 @@ data files are formatted using tab characters between column values and a newlin
 and
 \fB\-\-lines\-terminated\-by\fR
 options.
+.sp
+Column values are dumped using the
+binary
+character set and the
+\fB\-\-default\-character\-set\fR
+option is ignored. In effect, there is no character set conversion. If a table contains columns in several character sets, the output data file will as well and you may not be able to reload the file correctly.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -948,7 +980,7 @@ is enabled by default. To disable it, use
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-verbose\fR,
@@ -991,7 +1023,7 @@ Write dump output as well\-formed XML.
 NULL
 value, an empty string, and the string value
 \'NULL'
-are distinguished from one another in the output generated by this option as follows:
+are distinguished from one another in the output generated by this option as follows.
 .TS
 allbox tab(:);
 l l
@@ -1163,7 +1195,7 @@ shell> \fBmysqldump \-\-all\-databases > all_databases.sql\fR
 For
 InnoDB
 tables,
-mysqldump
+\fBmysqldump\fR
 provides a way of making an online backup:
 .sp
 .RS 3n
@@ -1172,15 +1204,15 @@ shell> \fBmysqldump \-\-all\-databases \-\-single\-transaction > all_databases.s
 .fi
 .RE
 .PP
-This backup just needs to acquire a global read lock on all tables (using
-FLUSH TABLES WITH READ LOCK) at the beginning of the dump. As soon as this lock has been acquired, the binary log coordinates are read and the lock is released. If and only if one long updating statement is running when the
+This backup acquires a global read lock on all tables (using
+FLUSH TABLES WITH READ LOCK) at the beginning of the dump. As soon as this lock has been acquired, the binary log coordinates are read and the lock is released. If long updating statements are running when the
 FLUSH
-statement is issued, the MySQL server may get stalled until that long statement finishes, and then the dump becomes lock\-free. If the update statements that the MySQL server receives are short (in terms of execution time), the initial lock period should not be noticeable, even with many updates.
+statement is issued, the MySQL server may get stalled until those statements finish. After that, the dump becomes lock\-free and does not disturb reads and writes on the tables. If the update statements that the MySQL server receives are short (in terms of execution time), the initial lock period should not be noticeable, even with many updates.
 .PP
 For point\-in\-time recovery (also known as
 \(lqroll\-forward,\(rq
 when you need to restore an old backup and replay the changes that happened since that backup), it is often useful to rotate the binary log (see
-Section\ 2.3, \(lqThe Binary Log\(rq) or at least know the binary log coordinates to which the dump corresponds:
+Section\ 5.2.3, \(lqThe Binary Log\(rq) or at least know the binary log coordinates to which the dump corresponds:
 .sp
 .RS 3n
 .nf
@@ -1206,16 +1238,16 @@ InnoDB
 storage engine.
 .PP
 For more information on making backups, see
-Section\ 1, \(lqDatabase Backups\(rq, and
-Section\ 2, \(lqExample Backup and Recovery Strategy\(rq.
+Section\ 6.1, \(lqDatabase Backups\(rq, and
+Section\ 6.2, \(lqExample Backup and Recovery Strategy\(rq.
 .PP
 If you encounter problems backing up views, please read the section that covers restrictions on views which describes a workaround for backing up views when this fails due to insufficient privileges. See
-Section\ 4, \(lqRestrictions on Views\(rq.
+Section\ F.4, \(lqRestrictions on Views\(rq.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -1225,4 +1257,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

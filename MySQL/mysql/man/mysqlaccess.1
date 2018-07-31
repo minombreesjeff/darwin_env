@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlaccess\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLACCESS\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLACCESS\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -18,7 +18,7 @@ mysqlaccess \- client for checking access privileges
 .SH "DESCRIPTION"
 .PP
 \fBmysqlaccess\fR
-is a diagnostic tool that Yves Carlier has provided for the MySQL distribution. It checks the access privileges for a hostname, username, and database combination. Note that
+is a diagnostic tool that Yves Carlier has provided for the MySQL distribution. It checks the access privileges for a host name, user name, and database combination. Note that
 \fBmysqlaccess\fR
 checks access using only the
 user,
@@ -41,7 +41,7 @@ shell> \fBmysqlaccess [\fR\fB\fIhost_name\fR\fR\fB [\fR\fB\fIuser_name\fR\fR\fB 
 .RE
 .PP
 \fBmysqlaccess\fR
-understands the following options:
+supports the following options:
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -84,7 +84,7 @@ can be an integer from 0 to 3.
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
 \fB\-h \fR\fB\fIhost_name\fR\fR
 .sp
-The hostname to use in the access privileges.
+The host name to use in the access privileges.
 .TP 3n
 \(bu
 \fB\-\-howto\fR
@@ -112,7 +112,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-plan\fR
@@ -153,13 +153,13 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-superuser=\fR\fB\fIuser_name\fR\fR,
 \fB\-U \fR\fB\fIuser_name\fR\fR
 .sp
-Specify the username for connecting as the superuser.
+Specify the user name for connecting as the superuser.
 .TP 3n
 \(bu
 \fB\-\-table\fR,
@@ -171,7 +171,7 @@ Generate reports in table format.
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The username to use in the access privileges.
+The user name to use in the access privileges.
 .TP 3n
 \(bu
 \fB\-\-version\fR,
@@ -203,9 +203,9 @@ error will occur when you run
 \fBmysqlaccess\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -215,4 +215,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

@@ -192,7 +192,6 @@ void lex_start(THD *thd)
   lex->select_lex.order_list.empty();
   lex->select_lex.udf_list.empty();
   lex->current_select= &lex->select_lex;
-  lex->yacc_yyss=lex->yacc_yyvs=0;
   lex->sql_command= lex->orig_sql_command= SQLCOM_END;
   lex->duplicates= DUP_ERROR;
   lex->ignore= 0;
@@ -205,16 +204,22 @@ void lex_start(THD *thd)
   lex->nest_level=0 ;
   lex->allow_sum_func= 0;
   lex->in_sum_func= NULL;
+  lex->protect_against_global_read_lock= FALSE;
   DBUG_VOID_RETURN;
 }
 
 void lex_end(LEX *lex)
 {
-  DBUG_ENTER("lex_end");
-  DBUG_PRINT("enter", ("lex: 0x%lx", (long) lex));
-  x_free(lex->yacc_yyss);
-  x_free(lex->yacc_yyvs);
-  DBUG_VOID_RETURN;
+  /* Empty in 5.0, non empty in 5.1 */
+}
+
+Yacc_state::~Yacc_state()
+{
+  if (yacc_yyss)
+  {
+    x_free(yacc_yyss);
+    x_free(yacc_yyvs);
+  }
 }
 
 
@@ -531,7 +536,7 @@ int MYSQLlex(void *arg, void *yythd)
   uint length;
   enum my_lex_states state;
   THD *thd= (THD *)yythd;
-  Lex_input_stream *lip= thd->m_lip;
+  Lex_input_stream *lip= & thd->m_parser_state->m_lip;
   LEX *lex= thd->lex;
   YYSTYPE *yylval=(YYSTYPE*) arg;
   CHARSET_INFO *cs= thd->charset();
@@ -854,7 +859,7 @@ int MYSQLlex(void *arg, void *yythd)
     case MY_LEX_HEX_NUMBER:		// Found x'hexstring'
       yyGet();				// Skip '
       while (my_isxdigit(cs,(c = yyGet()))) ;
-      length=(lip->ptr - lip->tok_start);	// Length of hexnum+3
+      length=(uint) (lip->ptr - lip->tok_start);	// Length of hexnum+3
       if (!(length & 1) || c != '\'')
       {
 	return(ABORT_SYM);		// Illegal hex constant
@@ -868,7 +873,7 @@ int MYSQLlex(void *arg, void *yythd)
     case MY_LEX_BIN_NUMBER:           // Found b'bin-string'
       yyGet();                                // Skip '
       while ((c= yyGet()) == '0' || c == '1');
-      length= (lip->ptr - lip->tok_start);    // Length of bin-num + 3
+      length= (uint) (lip->ptr - lip->tok_start);    // Length of bin-num + 3
       if (c != '\'')
       return(ABORT_SYM);              // Illegal hex constant
       yyGet();                        // get_token makes an unget
@@ -1201,6 +1206,7 @@ void st_select_lex::init_query()
   subquery_in_having= explicit_limit= 0;
   is_item_list_lookup= 0;
   first_execution= 1;
+  first_natural_join_processing= 1;
   first_cond_optimization= 1;
   parsing_place= NO_MATTER;
   exclude_from_table_unique_test= no_wrap_view_item= FALSE;
@@ -1781,7 +1787,7 @@ void Query_tables_list::destroy_query_tables_list()
 */
 
 st_lex::st_lex()
-  :result(0), yacc_yyss(0), yacc_yyvs(0),
+  :result(0),
    sql_command(SQLCOM_END)
 {
   reset_query_tables_list(TRUE);
@@ -2036,12 +2042,26 @@ st_lex::copy_db_to(char **p_db, uint *p_db_length) const
 void st_select_lex_unit::set_limit(SELECT_LEX *sl)
 {
   ha_rows select_limit_val;
+  ulonglong val;
 
   DBUG_ASSERT(! thd->stmt_arena->is_stmt_prepare());
-  select_limit_val= (ha_rows)(sl->select_limit ? sl->select_limit->val_uint() :
-                                                 HA_POS_ERROR);
-  offset_limit_cnt= (ha_rows)(sl->offset_limit ? sl->offset_limit->val_uint() :
-                                                 ULL(0));
+  val= sl->select_limit ? sl->select_limit->val_uint() : HA_POS_ERROR;
+  select_limit_val= (ha_rows)val;
+#ifndef BIG_TABLES
+  /*
+    Check for overflow : ha_rows can be smaller then ulonglong if
+    BIG_TABLES is off.
+    */
+  if (val != (ulonglong)select_limit_val)
+    select_limit_val= HA_POS_ERROR;
+#endif
+  val= sl->offset_limit ? sl->offset_limit->val_uint() : ULL(0);
+  offset_limit_cnt= (ha_rows)val;
+#ifndef BIG_TABLES
+  /* Check for truncation. */
+  if (val != (ulonglong)offset_limit_cnt)
+    offset_limit_cnt= HA_POS_ERROR;
+#endif
   select_limit_cnt= select_limit_val + offset_limit_cnt;
   if (select_limit_cnt < select_limit_val)
     select_limit_cnt= HA_POS_ERROR;		// no limit

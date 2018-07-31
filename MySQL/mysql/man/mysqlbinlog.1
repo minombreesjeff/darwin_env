@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlbinlog\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLBINLOG\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLBINLOG\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -17,15 +17,15 @@ mysqlbinlog \- utility for processing binary log files
 \fBmysqlbinlog [\fR\fBoptions\fR\fB] \fR\fB\fIlog_file\fR\fR\fB ...\fR
 .SH "DESCRIPTION"
 .PP
-The server's binary log consists of files that contain
+The server's binary log consists of files containing
 \(lqevents\(rq
-that describe modifications to database contents. The server writes binary log files in binary format. To display these files in text format, use the
+that describe modifications to database contents. The server writes these files in binary format. To display their contents in text format, use the
 \fBmysqlbinlog\fR
 utility. You can also use
 \fBmysqlbinlog\fR
-to display relay log files written by a slave server in a replication setup. Relay logs have the same format as binary log files. The binary log and relay log are discussed further in
-Section\ 2.3, \(lqThe Binary Log\(rq, and
-Section\ 4.2, \(lqReplication Relay and Status Files\(rq.
+to display the contents of relay log files written by a slave server in a replication setup because relay logs have the same format as binary logs. The binary log and relay log are discussed further in
+Section\ 5.2.3, \(lqThe Binary Log\(rq, and
+Section\ 16.4.2, \(lqReplication Relay and Status Files\(rq.
 .PP
 Invoke
 \fBmysqlbinlog\fR
@@ -46,8 +46,8 @@ shell> \fBmysqlbinlog binlog.0000003\fR
 .fi
 .RE
 .PP
-The output includes all events contained in
-\fIbinlog.000003\fR. Event information includes the statement executed, the time the statement took, the thread ID of the client that issued it, the timestamp when it was executed, and so forth.
+The output includes events contained in
+\fIbinlog.000003\fR. Event information includes the statement, the ID of the server on which it was executed, the timestamp when the statement was executed, how much time it took, and so forth.
 .PP
 The output from
 \fBmysqlbinlog\fR
@@ -69,7 +69,8 @@ option. When you read remote binary logs, the connection parameter options can b
 option.
 .PP
 \fBmysqlbinlog\fR
-supports the following options:
+supports the following options. It also reads option files and supports the options for processing them described at
+Section\ 4.2.3.2.1, \(lqCommand\-Line Options that Affect Option\-File Handling\(rq.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -81,7 +82,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 9.2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-database=\fR\fB\fIdb_name\fR\fR,
@@ -103,8 +104,9 @@ while having selected a different database or no database.
 .sp
 Write a debugging log. A typical
 \fIdebug_options\fR
-string is often
-\'d:t:o,\fIfile_name\fR'.
+string is
+\'d:t:o,\fIfile_name\fR'. The default is
+\'d:t:o,/tmp/mysqlbinlog.trace'.
 .TP 3n
 \(bu
 \fB\-\-disable\-log\-bin\fR,
@@ -119,7 +121,7 @@ SUPER
 privilege. It causes
 \fBmysqlbinlog\fR
 to include a
-SET SQL_LOG_BIN=0
+SET sql_log_bin = 0
 statement in its output to disable binary logging of the remaining output. The
 SET
 statement is ineffective unless you have the
@@ -179,7 +181,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.5.6.2, \(lqEnd\-User Guidelines for Password Security\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -199,7 +201,7 @@ instead.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
-Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
+Section\ 4.2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-read\-from\-remote\-server\fR,
@@ -261,12 +263,18 @@ shell> \fBmysqlbinlog \-\-start\-datetime="2005\-12\-25 11:25:56" binlog.000003\
 .fi
 .RE
 This option is useful for point\-in\-time recovery. See
-Section\ 2, \(lqExample Backup and Recovery Strategy\(rq.
+Section\ 6.2, \(lqExample Backup and Recovery Strategy\(rq.
+.TP 3n
+\(bu
+\fB\-\-start\-position=\fR\fB\fIN\fR\fR
+.sp
+Start reading the binary log at the first event having a position equal to or greater than
+\fIN\fR. This option applies to the first log file named on the command line.
 .TP 3n
 \(bu
 \fB\-\-stop\-datetime=\fR\fB\fIdatetime\fR\fR
 .sp
-Stop reading the binary log at the first event having a timestamp equal or posterior to the
+Stop reading the binary log at the first event having a timestamp equal to or later than the
 \fIdatetime\fR
 argument. This option is useful for point\-in\-time recovery. See the description of the
 \fB\-\-start\-datetime\fR
@@ -275,18 +283,10 @@ option for information about the
 value.
 .TP 3n
 \(bu
-\fB\-\-start\-position=\fR\fB\fIN\fR\fR
-.sp
-Start reading the binary log at the first event having a position equal to the
-\fIN\fR
-argument. This option applies to the first log file named on the command line.
-.TP 3n
-\(bu
 \fB\-\-stop\-position=\fR\fB\fIN\fR\fR
 .sp
-Stop reading the binary log at the first event having a position equal or greater than the
-\fIN\fR
-argument. This option applies to the last log file named on the command line.
+Stop reading the binary log at the first event having a position equal to or greater than
+\fIN\fR. This option applies to the last log file named on the command line.
 .TP 3n
 \(bu
 \fB\-\-to\-last\-log\fR,
@@ -299,7 +299,7 @@ Do not stop at the end of the requested binary log from a MySQL server, but rath
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to a remote server.
+The MySQL user name to use when connecting to a remote server.
 .TP 3n
 \(bu
 \fB\-\-version\fR,
@@ -332,7 +332,7 @@ You can pipe the output of
 into the
 \fBmysql\fR
 client to execute the statements contained in the binary log. This is used to recover from a crash when you have an old backup (see
-Section\ 1, \(lqDatabase Backups\(rq). For example:
+Section\ 6.1, \(lqDatabase Backups\(rq). For example:
 .sp
 .RS 3n
 .nf
@@ -422,7 +422,7 @@ statements (that is, it adds
 LOCAL), both the client and the server that you use to process the statements must be configured to allow
 LOCAL
 capability. See
-Section\ 3.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq.
+Section\ 5.3.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -439,8 +439,7 @@ automatically deleted because they are needed until you actually execute those s
 .PP
 The
 \fB\-\-hexdump\fR
-option produces a hex dump of the log contents in
-#\-format comments:
+option produces a hex dump of the log contents:
 .sp
 .RS 3n
 .nf
@@ -448,7 +447,8 @@ shell> \fBmysqlbinlog \-\-hexdump master\-bin.000001\fR
 .fi
 .RE
 .PP
-With the preceding command, the output might look like this:
+The hex output consists of comment lines beginning with
+#, so the output might look like this for the preceding command:
 .sp
 .RS 3n
 .nf
@@ -469,7 +469,7 @@ ROLLBACK;
 .fi
 .RE
 .PP
-Hex dump output currently contains the following elements. This format might change in the future.
+Hex dump output currently contains the following elements. This format is subject to change.
 .TP 3n
 \(bu
 Position: The byte position within the log file.
@@ -482,10 +482,10 @@ is the representation of
 in hexadecimal.
 .TP 3n
 \(bu
-Type: The type of the log event. In the example shown,
+Type: The event type code. In the example shown,
 \'0f'
-means that the example event is a
-FORMAT_DESCRIPTION_EVENT. The following table lists the possible types.
+indicates a
+FORMAT_DESCRIPTION_EVENT. The following table lists the possible type codes.
 .TS
 allbox tab(:);
 l l l
@@ -524,43 +524,47 @@ T{
 T}:T{
 CREATE_FILE_EVENT
 T}:T{
-Used for LOAD DATA INFILE statements. This indicates
-                    the start of execution of such a statement. A
-                    temporary file is created on the slave. Used in
-                    MySQL 4 only.
+Used for LOAD DATA
+                    INFILE statements. This indicates the
+                    start of execution of such a statement. A temporary
+                    file is created on the slave. Used in MySQL 4 only.
 T}
 T{
 09
 T}:T{
 APPEND_BLOCK_EVENT
 T}:T{
-Contains data for use in a LOAD DATA INFILE
-                    statement. The data is stored in the temporary file
-                    on the slave.
+Contains data for use in a
+                    LOAD DATA
+                    INFILE statement. The data is stored in
+                    the temporary file on the slave.
 T}
 T{
 0a
 T}:T{
 EXEC_LOAD_EVENT
 T}:T{
-Used for LOAD DATA INFILE statements. The contents of
-                    the temporary file is stored in the table on the
-                    slave. Used in MySQL 4 only.
+Used for LOAD DATA
+                    INFILE statements. The contents of the
+                    temporary file is stored in the table on the slave.
+                    Used in MySQL 4 only.
 T}
 T{
 0b
 T}:T{
 DELETE_FILE_EVENT
 T}:T{
-Rollback of a LOAD DATA INFILE statement. The
-                    temporary file should be deleted on slave.
+Rollback of a LOAD DATA
+                    INFILE statement. The temporary file
+                    should be deleted on the slave.
 T}
 T{
 0c
 T}:T{
 NEW_LOAD_EVENT
 T}:T{
-Used for LOAD DATA INFILE in MySQL 4 and earlier.
+Used for LOAD DATA
+                    INFILE in MySQL 4 and earlier.
 T}
 T{
 0d
@@ -597,8 +601,8 @@ T{
 T}:T{
 BEGIN_LOAD_QUERY_EVENT
 T}:T{
-Used for LOAD DATA INFILE statements in MySQL 5 and
-                    later.
+Used for LOAD DATA
+                    INFILE statements in MySQL 5 and later.
 T}
 T{
 00
@@ -612,8 +616,8 @@ T{
 T}:T{
 EXECUTE_LOAD_QUERY_EVENT
 T}:T{
-Used for LOAD DATA INFILE statements in MySQL 5 and
-                    later.
+Used for LOAD DATA
+                    INFILE statements in MySQL 5 and later.
 T}
 T{
 13
@@ -677,7 +681,7 @@ T{
 T}:T{
 INTVAR_EVENT
 T}:T{
-Used mainly for AUTO_INCREMENT values and when the
+Used for AUTO_INCREMENT values or when the
                     LAST_INSERT_ID()
                     function is used in the statement.
 T}
@@ -686,7 +690,8 @@ T{
 T}:T{
 LOAD_EVENT
 T}:T{
-Used for LOAD DATA INFILE in MySQL 3.23.
+Used for LOAD DATA
+                    INFILE in MySQL 3.23.
 T}
 T{
 07
@@ -699,13 +704,13 @@ T}
 .sp
 .TP 3n
 \(bu
-Master ID: The server id of the master that created the event.
+Master ID: The server ID of the master that created the event.
 .TP 3n
 \(bu
 Size: The size in bytes of the event.
 .TP 3n
 \(bu
-Master Pos: The position of the event in the original master log file.
+Master Pos: The position of the next event in the original master log file.
 .TP 3n
 \(bu
 Flags: 16 flags. Currently, the following flags are used. The others are reserved for future use.
@@ -765,9 +770,9 @@ T}
 .sp
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -777,4 +782,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

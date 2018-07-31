@@ -1,17 +1,17 @@
 .\"     Title: \fBndb_select_all\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_SELECT_ALL\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_SELECT_ALL\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
-ndb_select_all \- print rows from NDB table
+ndb_select_all \- print rows from an NDB table
 .SH "SYNOPSIS"
 .HP 67
 \fBndb_select_all \-c \fR\fB\fIconnect_string\fR\fR\fB \fR\fB\fItbl_name\fR\fR\fB \-d \fR\fB\fIdb_name\fR\fR\fB [> \fR\fB\fIfile_name\fR\fR\fB]\fR
@@ -101,8 +101,8 @@ column providing information about the fragments in which rows are stored.
 \fB\-\-gci\fR
 .sp
 Adds a column to the output showing the global checkpoint at which each row was last updated. See
-Section\ 14, \(lqMySQL Cluster Glossary\(rq, and
-Section\ 7.3.2, \(lqLog Events\(rq, for more information about checkpoints.
+Section\ 17.12, \(lqMySQL Cluster Glossary\(rq, and
+Section\ 17.7.4.2, \(lqMySQL Cluster Log Events\(rq, for more information about checkpoints.
 .TP 3n
 \(bu
 \fB\-\-tupscan\fR,
@@ -170,11 +170,11 @@ CREATE TABLE dogs (
     PRIMARY KEY pk (id),
     KEY ix (name)
 ) 
-ENGINE=NDB;
+ENGINE=NDBCLUSTER;
 INSERT INTO dogs VALUES 
     ('', 'Lassie', 'collie'),
     ('', 'Scooby\-Doo', 'Great Dane'),
-    ('', 'Rin\-Tin\-Tin', 'German Shepherd'),
+    ('', 'Rin\-Tin\-Tin', 'Alsatian'),
     ('', 'Rosscoe', 'Mutt');
 .fi
 .RE
@@ -189,7 +189,7 @@ shell> \fB./ndb_select_all \-d ctest1 dogs \-o ix \-z \-\-gci\fR
 GCI     id name           breed
 834461  2  [Scooby\-Doo]   [Great Dane]
 834878  4  [Rosscoe]      [Mutt]
-834463  3  [Rin\-Tin\-Tin]  [German Shepherd]
+834463  3  [Rin\-Tin\-Tin]  [Alsatian]
 835657  1  [Lassie]       [Collie]
 4 rows returned
 NDBT_ProgramExit: 0 \- OK
@@ -197,9 +197,9 @@ NDBT_ProgramExit: 0 \- OK
 .RE
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -209,4 +209,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

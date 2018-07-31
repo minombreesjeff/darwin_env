@@ -325,7 +325,9 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   bzero((char*) &info,sizeof(info));
   info.ignore= ignore;
   info.handle_duplicates=handle_duplicates;
-  info.escape_char=escaped->length() ? (*escaped)[0] : INT_MAX;
+  info.escape_char= (escaped->length() && (ex->escaped_given() ||
+                    !(thd->variables.sql_mode & MODE_NO_BACKSLASH_ESCAPES)))
+                    ? (*escaped)[0] : INT_MAX;
 
   READ_INFO read_info(file,tot_length,
                       ex->cs ? ex->cs : thd->variables.collation_database,
@@ -524,8 +526,8 @@ static bool write_execute_load_query_log_event(THD *thd,
 {
   Execute_load_query_log_event
     e(thd, thd->query, thd->query_length,
-      (char*)thd->lex->fname_start - (char*)thd->query,
-      (char*)thd->lex->fname_end - (char*)thd->query,
+      (uint) ((char*)thd->lex->fname_start - (char*)thd->query),
+      (uint) ((char*)thd->lex->fname_end - (char*)thd->query),
       (duplicates == DUP_REPLACE) ? LOAD_DUP_REPLACE :
       (ignore ? LOAD_DUP_IGNORE : LOAD_DUP_ERROR),
       transactional_table, FALSE, killed_err_arg);

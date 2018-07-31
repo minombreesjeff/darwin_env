@@ -1,17 +1,17 @@
 .\"     Title: \fBndb_mgmd\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_MGMD\fR" "8" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_MGMD\fR" "8" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
-ndb_mgmd \- the management server process
+ndb_mgmd \- the MySQL Cluster management server daemon
 .SH "SYNOPSIS"
 .HP 17
 \fBndb_mgmd \fR\fB\fIoptions\fR\fR
@@ -19,11 +19,199 @@ ndb_mgmd \- the management server process
 .PP
 The management server is the process that reads the cluster configuration file and distributes this information to all nodes in the cluster that request it. It also maintains a log of cluster activities. Management clients can connect to the management server and check the cluster's status.
 .PP
+The following list includes options that are specific to
+\fBndb_mgmd\fR. For options common to all NDB programs, see
+Section\ 17.6.2, \(lqOptions Common to MySQL Cluster Programs\(rq.
+.TP 3n
+\(bu
+\fB\-\-config\-file=\fR\fB\fIfilename\fR\fR,
+\fB\-f \fR\fB\fIfilename\fR\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-f
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+filename
+T}
+T{
+\fBDefault\fR
+T}:T{
+./config.ini
+T}
+.TE
+.sp
+Instructs the management server as to which file it should use for its configuration file. By default, the management server looks for a file named
+\fIconfig.ini\fR
+in the same directory as the
+\fBndb_mgmd\fR
+executable; otherwise the file name and location must be specified explicitly.
+.sp
+This option also can be given as
+\fB\-c \fR\fB\fIfile_name\fR\fR, but this shortcut is obsolete and should
+\fInot\fR
+be used in new installations.
+.TP 3n
+\(bu
+\fB\-\-daemon\fR,
+\fB\-d\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-daemon
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+boolean
+T}
+T{
+\fBDefault\fR
+T}:T{
+TRUE
+T}
+.TE
+.sp
+Instructs
+\fBndb_mgmd\fR
+to start as a daemon process. This is the default behavior.
+.TP 3n
+\(bu
+\fB\-\-nodaemon\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-nodaemon
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+boolean
+T}
+T{
+\fBDefault\fR
+T}:T{
+FALSE
+T}
+.TE
+.sp
+Instructs
+\fBndb_mgmd\fR
+not to start as a daemon process.
+.TP 3n
+\(bu
+\fB\-\-print\-full\-config\fR,
+\fB\-P\fR
+.TS
+allbox tab(:);
+l l
+l l
+l l.
+T{
+\fBVersion Introduced\fR
+T}:T{
+5.0.10
+T}
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-print\-full\-config
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+boolean
+T}
+T{
+\fBDefault\fR
+T}:T{
+FALSE
+T}
+.TE
+.sp
+Shows extended information regarding the configuration of the cluster. With this option on the command line the
+\fBndb_mgmd\fR
+process prints information about the cluster setup including an extensive list of the cluster configuration sections as well as parameters and their values. Normally used together with the
+\fB\-\-config\-file\fR
+(\fB\-f\fR) option.
+.sp
+.RE
+.PP
 It is not strictly necessary to specify a connectstring when starting the management server. However, if you are using more than one management server, a connectstring should be provided and each node in the cluster should specify its node ID explicitly.
 .PP
 See
-Section\ 3.4.2, \(lqThe Cluster Connectstring\(rq, for information about using connectstrings.
-Section\ 6.2, \(lqCommand Options for MySQL Cluster Processes\(rq, describes other options for
+Section\ 17.3.4.2, \(lqThe MySQL Cluster Connectstring\(rq, for information about using connectstrings.
+\fBndb_mgmd\fR(8), describes other options for
 \fBndb_mgmd\fR.
 .PP
 The following files are created or used by
@@ -39,12 +227,12 @@ is the unique node identifier.
 \(bu
 \fIconfig.ini\fR
 is the configuration file for the cluster as a whole. This file is created by the user and read by the management server.
-Section\ 3, \(lqMySQL Cluster Configuration\(rq, discusses how to set up this file.
+Section\ 17.3, \(lqMySQL Cluster Configuration\(rq, discusses how to set up this file.
 .TP 3n
 \(bu
 \fIndb_\fR\fI\fInode_id\fR\fR\fI_cluster.log\fR
 is the cluster events log file. Examples of such events include checkpoint startup and completion, node startup events, node failures, and levels of memory usage. A complete listing of cluster events with descriptions may be found in
-Section\ 7, \(lqManagement of MySQL Cluster\(rq.
+Section\ 17.7, \(lqManagement of MySQL Cluster\(rq.
 .sp
 When the size of the cluster log reaches one million bytes, the file is renamed to
 \fIndb_\fR\fI\fInode_id\fR\fR\fI_cluster.log.\fR\fI\fIseq_id\fR\fR, where
@@ -65,9 +253,9 @@ when running the management server as a daemon.
 is the process ID file used when running the management server as a daemon.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -77,4 +265,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

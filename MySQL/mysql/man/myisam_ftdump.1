@@ -1,11 +1,11 @@
 .\"     Title: \fBmyisam_ftdump\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAM_FTDUMP\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYISAM_FTDUMP\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -44,7 +44,7 @@ table. You can also specify a table by naming its index file (the file with the
 \fI.MYI\fR
 suffix). If you do not invoke
 \fBmyisam_ftdump\fR
-in the directory where the table files are located, the table or index file name must be preceded by the pathname to the table's database directory. Index numbers begin with 0.
+in the directory where the table files are located, the table or index file name must be preceded by the path name to the table's database directory. Index numbers begin with 0.
 .PP
 Example: Suppose that the
 test
@@ -82,10 +82,10 @@ shell> \fBmyisam_ftdump mytexttable 1\fR
 .fi
 .RE
 .PP
-If the pathname to the
+If the path name to the
 test
 database directory is
-\fI/usr/local/mysql/data/test\fR, you can also specify the table name argument using that pathname. This is useful if you do not invoke
+\fI/usr/local/mysql/data/test\fR, you can also specify the table name argument using that path name. This is useful if you do not invoke
 \fBmyisam_ftdump\fR
 in the database directory:
 .sp
@@ -96,7 +96,7 @@ shell> \fBmyisam_ftdump /usr/local/mysql/data/test/mytexttable 1\fR
 .RE
 .PP
 \fBmyisam_ftdump\fR
-understands the following options:
+supports the following options:
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -136,9 +136,9 @@ Report global index statistics. This is the default operation if no other operat
 Verbose mode. Print more output about what the program does.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -148,4 +148,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

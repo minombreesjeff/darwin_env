@@ -90,7 +90,7 @@ EXTRA_DIST=	$(BUILT_SOURCES) comp_err.def install_test_db.ncf \
 		BUILD/compile-netware-standard BUILD/create-patch \
 		BUILD/cron-build BUILD/crontab BUILD/knetware.imp \
 		BUILD/mwasmnlm BUILD/mwccnlm BUILD/mwenv BUILD/mwldnlm \
-		BUILD/nwbootstrap BUILD/openssl.imp BUILD/save-patch
+		BUILD/nwbuild BUILD/openssl.imp BUILD/save-patch
 
 endif
 
@@ -103,8 +103,7 @@ init_db.sql: $(top_srcdir)/scripts/mysql_system_tables.sql \
 	@echo "CREATE DATABASE mysql;" > $@;
 	@echo "CREATE DATABASE test;" >> $@;
 	@echo "use mysql;" >> $@;
-	@cat $(top_srcdir)/scripts/mysql_system_tables.sql \
-	     $(top_srcdir)/scripts/mysql_system_tables_fix.sql >> $@;
+	@cat $(top_srcdir)/scripts/mysql_system_tables.sql >> $@;
 
 # Build test_db.sql from init_db.sql plus
 # some test data

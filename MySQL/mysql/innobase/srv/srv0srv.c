@@ -239,6 +239,12 @@ ulint srv_read_ahead_seq = 0;
 /* variable to count the number of random read-aheads */
 ulint srv_read_ahead_rnd = 0;
 
+/* An option to enable the fix for "Bug#43660 SHOW INDEXES/ANALYZE does
+NOT update cardinality for indexes of InnoDB table". By default we are
+running with the fix disabled because MySQL 5.1 is frozen for such
+behavioral changes. */
+char srv_use_legacy_cardinality_algorithm = TRUE;
+
 /* structure to pass status variables to MySQL */
 export_struc export_vars;
 
@@ -1372,7 +1378,7 @@ srv_table_reserve_slot_for_mysql(void)
 
 /*******************************************************************
 Puts a MySQL OS thread to wait for a lock to be released. If an error
-occurs during the wait trx->error_state associated with thr is
+occurs during the wait, then trx->error_state associated with thr is
 != DB_SUCCESS when we return. DB_LOCK_WAIT_TIMEOUT and DB_DEADLOCK
 are possible errors. DB_DEADLOCK is returned if selective deadlock
 resolution chose this transaction as a victim. */
@@ -1442,8 +1448,11 @@ srv_suspend_mysql_thread(
 		srv_n_lock_wait_count++;
 		srv_n_lock_wait_current_count++;
 
-		ut_usectime(&sec, &ms);
-		start_time = (ib_longlong)sec * 1000000 + ms;
+		if (ut_usectime(&sec, &ms) == -1) {
+			start_time = -1;
+		} else {
+			start_time = (ib_longlong)sec * 1000000 + ms;
+		}
 	}
 	/* Wake the lock timeout monitor thread, if it is suspended */
 
@@ -1497,14 +1506,20 @@ srv_suspend_mysql_thread(
 	wait_time = ut_difftime(ut_time(), slot->suspend_time);
 
 	if (thr->lock_state == QUE_THR_LOCK_ROW) {
-		ut_usectime(&sec, &ms);
-		finish_time = (ib_longlong)sec * 1000000 + ms;
+		if (ut_usectime(&sec, &ms) == -1) {
+			finish_time = -1;
+		} else {
+			finish_time = (ib_longlong)sec * 1000000 + ms;
+		}
 
 		diff_time = (ulint) (finish_time - start_time);
   
 		srv_n_lock_wait_current_count--;
 		srv_n_lock_wait_time = srv_n_lock_wait_time + diff_time;
-		if (diff_time > srv_n_lock_max_wait_time) {
+		if (diff_time > srv_n_lock_max_wait_time &&
+		    /* only update the variable if we successfully
+		    retrieved the start and finish times. See Bug#36819. */
+		    start_time != -1 && finish_time != -1) {
 			srv_n_lock_max_wait_time = diff_time;
 		}
 	}
@@ -1803,7 +1818,9 @@ srv_export_innodb_status(void)
         export_vars.innodb_buffer_pool_pages_data= UT_LIST_GET_LEN(buf_pool->LRU);
         export_vars.innodb_buffer_pool_pages_dirty= UT_LIST_GET_LEN(buf_pool->flush_list);
         export_vars.innodb_buffer_pool_pages_free= UT_LIST_GET_LEN(buf_pool->free);
+#ifdef UNIV_DEBUG
         export_vars.innodb_buffer_pool_pages_latched= buf_get_latched_pages_number();
+#endif /* UNIV_DEBUG */
         export_vars.innodb_buffer_pool_pages_total= buf_pool->curr_size;
         export_vars.innodb_buffer_pool_pages_misc= buf_pool->max_size -
           UT_LIST_GET_LEN(buf_pool->LRU) - UT_LIST_GET_LEN(buf_pool->free);

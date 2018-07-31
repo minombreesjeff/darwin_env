@@ -1,5 +1,5 @@
 
-2.4.10. Installing MySQL on Mac OS X
+2.11. Installing MySQL on Mac OS X
 
    You can install MySQL on Mac OS X 10.3.x ("Panther") or newer
    using a Mac OS X binary package in PKG format instead of the
@@ -11,7 +11,7 @@
    first need to mount by double-clicking its icon in the Finder. It
    should then mount the image and display its contents.
 
-   To obtain MySQL, see Section 2.4.4, "How to Get MySQL."
+   To obtain MySQL, see Section 2.5, "How to Get MySQL."
 
 Note
 
@@ -20,7 +20,7 @@ Note
    Application (on Mac OS X Server) or via mysqladmin shutdown on the
    command line.
 
-   To  actually install the MySQL PKG file, double-click on the
+   To actually install the MySQL PKG file, double-click on the
    package icon. This launches the Mac OS X Package Installer, which
    guides you through the installation of MySQL.
 
@@ -34,18 +34,18 @@ You cannot install this software on this disk. (null)
    choose the destination disk correctly. We have reported this bug
    to Apple and it is investigating this problem.
 
-   The   Mac   OS   X   PKG   of  MySQL  installs  itself  into
-   /usr/local/mysql-VERSION  and also installs a symbolic link,
+   The Mac OS X PKG of MySQL installs itself into
+   /usr/local/mysql-VERSION and also installs a symbolic link,
    /usr/local/mysql, that points to the new location. If a directory
-   named    /usr/local/mysql   exists,   it   is   renamed   to
+   named /usr/local/mysql exists, it is renamed to
    /usr/local/mysql.bak first. Additionally, the installer creates
-   the   grant  tables  in  the  mysql  database  by  executing
+   the grant tables in the mysql database by executing
    mysql_install_db.
 
    The installation layout is similar to that of a tar file binary
    distribution; all MySQL binaries are located in the directory
-   /usr/local/mysql/bin.  The  MySQL  socket file is created as
-   /tmp/mysql.sock by default. See Section 2.4.6, "Installation
+   /usr/local/mysql/bin. The MySQL socket file is created as
+   /tmp/mysql.sock by default. See Section 2.7, "Installation
    Layouts."
 
    MySQL installation requires a Mac OS X user account named mysql. A
@@ -68,7 +68,7 @@ You cannot install this software on this disk. (null)
    "Mac OS X Server" help, do a search for "MySQL," and read the item
    entitled "Installing MySQL."
 
-   For  preinstalled versions of MySQL on Mac OS X Server, note
+   For preinstalled versions of MySQL on Mac OS X Server, note
    especially that you should start mysqld with safe_mysqld instead
    of mysqld_safe if MySQL is older than version 4.0.
 
@@ -91,24 +91,24 @@ You cannot install this software on this disk. (null)
    installed only once. There is no need to install it each time you
    upgrade the MySQL package later.
 
-   The    Startup    Item   for   MySQL   is   installed   into
+   The Startup Item for MySQL is installed into
    /Library/StartupItems/MySQLCOM. (Before MySQL 4.1.2, the location
    was /Library/StartupItems/MySQL, but that collided with the MySQL
-   Startup  Item  installed  by  Mac OS X Server.) Startup Item
-   installation  adds  a  variable MYSQLCOM=-YES- to the system
+   Startup Item installed by Mac OS X Server.) Startup Item
+   installation adds a variable MYSQLCOM=-YES- to the system
    configuration file /etc/hostconfig. If you want to disable the
-   automatic  startup  of MySQL, simply change this variable to
+   automatic startup of MySQL, simply change this variable to
    MYSQLCOM=-NO-.
 
-   On  Mac OS X Server, the default MySQL installation uses the
-   variable MYSQL in the /etc/hostconfig file. The MySQL AB Startup
-   Item installer disables this variable by setting it to MYSQL=-NO-.
-   This avoids boot time conflicts with the MYSQLCOM variable used by
-   the  MySQL AB Startup Item. However, it does not shut down a
-   running MySQL server. You should do that yourself.
+   On Mac OS X Server, the default MySQL installation uses the
+   variable MYSQL in the /etc/hostconfig file. The MySQL Startup Item
+   installer disables this variable by setting it to MYSQL=-NO-. This
+   avoids boot time conflicts with the MYSQLCOM variable used by the
+   MySQL Startup Item. However, it does not shut down a running MySQL
+   server. You should do that yourself.
 
    After the installation, you can start up MySQL by running the
-   following  commands  in  a  terminal  window.  You must have
+   following commands in a terminal window. You must have
    administrator privileges to perform this task.
 
    If you have installed the Startup Item, use this command:
@@ -132,7 +132,7 @@ Note
 
    The accounts that are listed in the MySQL grant tables initially
    have no passwords. After starting the server, you should set up
-   passwords for them using the instructions in Section 2.4.16,
+   passwords for them using the instructions in Section 2.17,
    "Post-Installation Setup and Testing."
 
    You might want to add aliases to your shell's resource file to
@@ -150,10 +150,10 @@ alias mysqladmin /usr/local/mysql/bin/mysqladmin
    file for your shell. For more information, see Section 4.2.1,
    "Invoking MySQL Programs."
 
-   If  you  are  upgrading  an existing installation, note that
+   If you are upgrading an existing installation, note that
    installing a new MySQL PKG does not remove the directory of an
    older installation. Unfortunately, the Mac OS X Installer does not
-   yet  offer  the  functionality  required to properly upgrade
+   yet offer the functionality required to properly upgrade
    previously installed packages.
 
    To use your existing databases with the new installation, you'll
@@ -163,5 +163,5 @@ alias mysqladmin /usr/local/mysql/bin/mysqladmin
    MySQL database files from the previous installation and have
    successfully started the new server, you should consider removing
    the old installation files to save disk space. Additionally, you
-   should  also  remove  older  versions of the Package Receipt
+   should also remove older versions of the Package Receipt
    directories located in /Library/Receipts/mysql-VERSION.pkg.

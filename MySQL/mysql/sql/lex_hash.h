@@ -6667,7 +6667,7 @@ static inline SYMBOL *get_hash_symbol(const char *s,
           res= symbols+ires;
         else
           res= sql_functions-ires-1;
-        register uint count= cur_str-s;
+		  register uint count= (uint) (cur_str - s);
         return lex_casecmp(cur_str,res->name+count,len-count) ? 0 : res;
       }
 
@@ -6693,7 +6693,7 @@ static inline SYMBOL *get_hash_symbol(const char *s,
         register int16 ires= (int16)(cur_struct>>16);
         if (ires==array_elements(symbols)) return 0;
         register SYMBOL *res= symbols+ires;
-        register uint count= cur_str-s;
+		register uint count= (uint) (cur_str - s);
         return lex_casecmp(cur_str,res->name+count,len-count)!=0 ? 0 : res;
       }
 

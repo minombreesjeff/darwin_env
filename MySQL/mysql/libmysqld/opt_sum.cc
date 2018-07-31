@@ -160,7 +160,7 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
           to the number of rows in the tables if this number is exact and
           there are no outer joins.
         */
-        if (!conds && !((Item_sum_count*) item)->args[0]->maybe_null &&
+        if (!conds && !((Item_sum_count*) item)->get_arg(0)->maybe_null &&
             !outer_tables && is_exact_count)
         {
           ((Item_sum_count*) item)->make_const(count);
@@ -176,7 +176,7 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
           parts of the key is found in the COND, then we can use
           indexes to find the key.
         */
-        Item *expr=item_sum->args[0];
+        Item *expr=item_sum->get_arg(0);
         if (expr->real_item()->type() == Item::FIELD_ITEM)
         {
           byte key_buff[MAX_KEY_LENGTH];
@@ -319,7 +319,7 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
           parts of the key is found in the COND, then we can use
           indexes to find the key.
         */
-        Item *expr=item_sum->args[0];
+        Item *expr=item_sum->get_arg(0);
         if (expr->real_item()->type() == Item::FIELD_ITEM)
         {
           byte key_buff[MAX_KEY_LENGTH];
@@ -636,12 +636,12 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
   key_part_map org_key_part_used= *key_part_used;
   if (eq_type || between || max_fl == less_fl)
   {
-    uint length= (key_ptr-ref->key_buff)+part->store_length;
+    size_t length= (key_ptr-ref->key_buff)+part->store_length;
     if (ref->key_length < length)
     /* Ultimately ref->key_length will contain the length of the search key */
-      ref->key_length= length;      
+      ref->key_length= (uint) length;      
     if (!*prefix_len && part+1 == field_part)       
-      *prefix_len= length;
+      *prefix_len= (uint) length;
     if (is_field_part && eq_type)
       *prefix_len= ref->key_length;
   

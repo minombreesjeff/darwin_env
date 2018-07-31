@@ -173,7 +173,7 @@ const char *set_thd_proc_info(THD *thd, const char *info,
 {
   const char *old_info= thd->proc_info;
   DBUG_PRINT("proc_info", ("%s:%d  %s", calling_file, calling_line, info));
-#if defined(ENABLED_PROFILING)
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   thd->profiling.status_change(info, calling_function, calling_file, calling_line);
 #endif 
   thd->proc_info= info;
@@ -186,12 +186,15 @@ THD::THD()
               /* statement id */ 0),
    Open_tables_state(refresh_version),
    lock_id(&main_lock_id),
-   user_time(0), in_sub_stmt(0), global_read_lock(0), is_fatal_error(0),
+   user_time(0), in_sub_stmt(0),
+   table_map_for_update(0),
+   global_read_lock(0), is_fatal_error(0),
    transaction_rollback_request(0), is_fatal_sub_stmt_error(0),
    rand_used(0), time_zone_used(0),
    last_insert_id_used(0), last_insert_id_used_bin_log(0), insert_id_used(0),
    clear_next_insert_id(0), in_lock_tables(0), bootstrap(0),
-   derived_tables_processing(FALSE), spcont(NULL), m_lip(NULL)
+   derived_tables_processing(FALSE), spcont(NULL),
+   m_parser_state(NULL)
 {
   ulong tmp;
 
@@ -230,6 +233,7 @@ THD::THD()
   one_shot_set= 0;
   file_id = 0;
   query_id= 0;
+  query_name_consts= 0;
   warn_id= 0;
   db_charset= global_system_variables.collation_database;
   bzero(ha_data, sizeof(ha_data));
@@ -268,7 +272,7 @@ THD::THD()
   init();
   /* Initialize sub structures */
   init_sql_alloc(&warn_root, WARN_ALLOC_BLOCK_SIZE, WARN_ALLOC_PREALLOC_SIZE);
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   profiling.set_thd(this);
 #endif
   user_connect=(USER_CONN *)0;
@@ -357,6 +361,12 @@ void THD::init(void)
   if (variables.sql_mode & MODE_NO_BACKSLASH_ESCAPES)
     server_status|= SERVER_STATUS_NO_BACKSLASH_ESCAPES;
   options= thd_startup_options;
+
+  if (variables.max_join_size == HA_POS_ERROR)
+    options |= OPTION_BIG_SELECTS;
+  else
+    options &= ~OPTION_BIG_SELECTS;
+
   transaction.all.modified_non_trans_table= transaction.stmt.modified_non_trans_table= FALSE;
   open_options=ha_open_options;
   update_lock_default= (variables.low_priority_updates ?
@@ -407,6 +417,10 @@ void THD::init_for_queries()
 
 void THD::change_user(void)
 {
+  pthread_mutex_lock(&LOCK_status);
+  add_to_status(&global_status_var, &status_var);
+  pthread_mutex_unlock(&LOCK_status);
+
   cleanup();
   cleanup_done= 0;
   init();
@@ -663,6 +677,8 @@ void THD::cleanup_after_query()
   free_items();
   /* Reset where. */
   where= THD::DEFAULT_WHERE;
+  /* reset table map for multi-table update */
+  table_map_for_update= 0;
 }
 
 
@@ -990,6 +1006,12 @@ sql_exchange::sql_exchange(char *name,bool flag)
   cs= NULL;
 }
 
+bool sql_exchange::escaped_given(void)
+{
+  return escaped != &default_escaped;
+}
+
+
 bool select_send::send_fields(List<Item> &list, uint flags)
 {
   bool res;
@@ -1053,6 +1075,11 @@ bool select_send::send_data(List<Item> &items)
       my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
       break;
     }
+    /*
+      Reset buffer to its original state, as it may have been altered in
+      Item::send().
+    */
+    buffer.set(buff, sizeof(buff), &my_charset_bin);
   }
   thd->sent_row_count++;
   if (!thd->vio_ok())
@@ -1250,8 +1277,11 @@ select_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
     exchange->line_term=exchange->field_term;	// Use this if it exists
   field_sep_char= (exchange->enclosed->length() ?
                   (int) (uchar) (*exchange->enclosed)[0] : field_term_char);
-  escape_char=	(exchange->escaped->length() ?
-                (int) (uchar) (*exchange->escaped)[0] : -1);
+  if (exchange->escaped->length() && (exchange->escaped_given() ||
+      !(thd->variables.sql_mode & MODE_NO_BACKSLASH_ESCAPES)))
+    escape_char= (int) (uchar) (*exchange->escaped)[0];
+  else
+    escape_char= -1;
   is_ambiguous_field_sep= test(strchr(ESCAPE_CHARS, field_sep_char));
   is_unsafe_field_sep= test(strchr(NUMERIC_CHARS, field_sep_char));
   line_sep_char= (exchange->line_term->length() ?
@@ -1746,7 +1776,7 @@ void Query_arena::set_query_arena(Query_arena *set)
 
 void Query_arena::cleanup_stmt()
 {
-  DBUG_ASSERT("Query_arena::cleanup_stmt()" == "not implemented");
+  DBUG_ASSERT(! "Query_arena::cleanup_stmt() not implemented");
 }
 
 /*
@@ -2129,6 +2159,13 @@ void Security_context::skip_grants()
   master_access= ~NO_ACCESS;
   priv_user= (char *)"";
   *priv_host= '\0';
+}
+
+
+bool Security_context::user_matches(Security_context *them)
+{
+  return ((user != NULL) && (them->user != NULL) &&
+          !strcmp(user, them->user));
 }
 
 

@@ -1,17 +1,17 @@
 .\"     Title: \fBndb_mgm\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_MGM\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_MGM\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
-ndb_mgm \- the management client process
+ndb_mgm \- the MySQL Cluster management client
 .SH "SYNOPSIS"
 .HP 16
 \fBndb_mgm \fR\fB\fIoptions\fR\fR
@@ -22,7 +22,7 @@ The
 management client process is actually not needed to run the cluster. Its value lies in providing a set of commands for checking the cluster's status, starting backups, and performing other administrative functions. The management client accesses the management server using a C API. Advanced users can also employ this API for programming dedicated management processes to perform tasks similar to those performed by
 \fBndb_mgm\fR.
 .PP
-To start the management client, it is necessary to supply the hostname and port number of the management server:
+To start the management client, it is necessary to supply the host name and port number of the management server:
 .sp
 .RS 3n
 .nf
@@ -38,27 +38,78 @@ shell> \fBndb_mgm ndb_mgmd.mysql.com 1186\fR
 .fi
 .RE
 .PP
-The default hostname and port number are
+The default host name and port number are
 localhost
 and 1186, respectively.
+.PP
+The following list includes options that are specific to
+\fBndb_mgm\fR. For options common to all NDB programs, see
+Section\ 17.6.2, \(lqOptions Common to MySQL Cluster Programs\(rq.
+.TP 3n
+\(bu
+\fB\-\-try\-reconnect=\fR\fB\fInumber\fR\fR
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBCommand Line Format\fR
+T}:T{
+\-\-try\-reconnect=#
+T}
+T{
+\fBValue Set \fR
+T}:T{
+[\fInested\ table\fR]*
+T}
+.TE
+.sp
+.PP
+.B *[nested\ table]
+.sp -1n
+.TS
+allbox tab(:);
+l l
+l l.
+T{
+\fBType\fR
+T}:T{
+boolean
+T}
+T{
+\fBDefault\fR
+T}:T{
+TRUE
+T}
+.TE
+.sp
+If the connection to the management server is broken, the node tries to reconnect to it every 5 seconds until it succeeds. By using this option, it is possible to limit the number of attempts to
+\fInumber\fR
+before giving up and reporting an error instead.
+.sp
+.RE
 .PP
 Additional information about using
 \fBndb_mgm\fR
 can be found in
-Section\ 6.2.3, \(lqCommand Options for \fBndb_mgm\fR\(rq, and
-Section\ 7.2, \(lqCommands in the MySQL Cluster Management Client\(rq.
+[1]\&\fIProgram Options for \fBndb_mgm\fR\fR, and
+Section\ 17.7.2, \(lqCommands in the MySQL Cluster Management Client\(rq.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
 You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
+.SH "REFERENCES"
+.TP 3
+1.\ Program Options for ndb_mgm
+\%http://dev.mysql.com/doc/refman/5.1/en/mysql\-cluster\-program\-options\-ndb\-mgm.html
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

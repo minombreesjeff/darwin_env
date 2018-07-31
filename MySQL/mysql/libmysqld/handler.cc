@@ -188,7 +188,8 @@ retest:
   {
     if (!my_strnncoll(&my_charset_latin1,
                       (const uchar *)name, namelen,
-                      (const uchar *)(*types)->name, strlen((*types)->name)))
+                      (const uchar *)(*types)->name, 
+                      (uint) strlen((*types)->name)))
       return (enum db_type) (*types)->db_type;
   }
 
@@ -200,10 +201,10 @@ retest:
     if (!my_strnncoll(&my_charset_latin1,
                       (const uchar *)name, namelen,
                       (const uchar *)table_alias->alias,
-                      strlen(table_alias->alias)))
+                      (uint) strlen(table_alias->alias)))
     {
       name= table_alias->type;
-      namelen= strlen(name);
+      namelen= (uint) strlen(name);
       goto retest;
     }
   }
@@ -729,6 +730,16 @@ end:
     if (is_real_trans)
       start_waiting_global_read_lock(thd);
   }
+  else if (all)
+  {
+    /*
+      A COMMIT of an empty transaction. There may be savepoints.
+      Destroy them. If the transaction is not empty
+      savepoints are cleared in ha_commit_one_phase()
+      or ha_rollback_trans().
+    */
+    thd->transaction.cleanup();
+  }
 #endif /* USING_TRANSACTIONS */
   DBUG_RETURN(error);
 }
@@ -817,13 +828,18 @@ int ha_rollback_trans(THD *thd, bool all)
     trans->nht=0;
     trans->no_2pc=0;
     if (is_real_trans)
-      thd->transaction.xid_state.xid.null();
-    if (all)
     {
-      thd->variables.tx_isolation=thd->session_tx_isolation;
-      thd->transaction.cleanup();
+      if (thd->transaction_rollback_request)
+        thd->transaction.xid_state.rm_error= thd->net.last_errno;
+      else
+        thd->transaction.xid_state.xid.null();
     }
+    if (all)
+      thd->variables.tx_isolation=thd->session_tx_isolation;
   }
+  /* Always cleanup. Even if there nht==0. There may be savepoints. */
+  if (all)
+    thd->transaction.cleanup();
 #endif /* USING_TRANSACTIONS */
   if (all)
     thd->transaction_rollback_request= FALSE;
@@ -1952,8 +1968,53 @@ bool handler::get_error_message(int error, String* buf)
 }
 
 
+/**
+  Check for incompatible collation changes.
+   
+  @retval
+    HA_ADMIN_NEEDS_UPGRADE   Table may have data requiring upgrade.
+  @retval
+    0                        No upgrade required.
+*/
+
+int handler::check_collation_compatibility()
+{
+  ulong mysql_version= table->s->mysql_version;
+
+  if (mysql_version < 50048)
+  {
+    KEY *key= table->key_info;
+    KEY *key_end= key + table->s->keys;
+    for (; key < key_end; key++)
+    {
+      KEY_PART_INFO *key_part= key->key_part;
+      KEY_PART_INFO *key_part_end= key_part + key->key_parts;
+      for (; key_part < key_part_end; key_part++)
+      {
+        if (!key_part->fieldnr)
+          continue;
+        Field *field= table->field[key_part->fieldnr - 1];
+        uint cs_number= field->charset()->number;
+        if (mysql_version < 50048 &&
+            (cs_number == 11 || /* ascii_general_ci - bug #29499, bug #27562 */
+             cs_number == 41 || /* latin7_general_ci - bug #29461 */
+             cs_number == 42 || /* latin7_general_cs - bug #29461 */
+             cs_number == 20 || /* latin7_estonian_cs - bug #29461 */
+             cs_number == 21 || /* latin2_hungarian_ci - bug #29461 */
+             cs_number == 22 || /* koi8u_general_ci - bug #29461 */
+             cs_number == 23 || /* cp1251_ukrainian_ci - bug #29461 */
+             cs_number == 26))  /* cp1250_general_ci - bug #29461 */
+          return HA_ADMIN_NEEDS_UPGRADE;
+      }  
+    }  
+  }  
+  return 0;
+}
+
+
 int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
 {
+  int error;
   KEY *keyinfo, *keyend;
   KEY_PART_INFO *keypart, *keypartend;
 
@@ -1982,6 +2043,10 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
   }
   if (table->s->frm_version != FRM_VER_TRUE_VARCHAR)
     return HA_ADMIN_NEEDS_ALTER;
+
+  if ((error= check_collation_compatibility()))
+      return error;
+
   return check_for_upgrade(check_opt);
 }
 

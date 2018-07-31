@@ -138,7 +138,7 @@ sys_var_thd_ulong	sys_auto_increment_offset("auto_increment_offset",
 sys_var_bool_ptr	sys_automatic_sp_privileges("automatic_sp_privileges",
 					      &sp_automatic_privileges);
 
-sys_var_const_str       sys_basedir("basedir", mysql_home);
+sys_var_const_os_str    sys_basedir("basedir", mysql_home);
 sys_var_long_ptr	sys_binlog_cache_size("binlog_cache_size",
 					      &binlog_cache_size);
 sys_var_thd_ulong	sys_bulk_insert_buff_size("bulk_insert_buffer_size",
@@ -151,6 +151,8 @@ sys_var_character_set_client  sys_character_set_client("character_set_client");
 sys_var_character_set_connection  sys_character_set_connection("character_set_connection");
 sys_var_character_set_results sys_character_set_results("character_set_results");
 sys_var_character_set_filesystem  sys_character_set_filesystem("character_set_filesystem");
+sys_var_const_os_str    sys_character_sets_dir("character_sets_dir", 
+                                               mysql_charsets_dir);
 sys_var_thd_ulong	sys_completion_type("completion_type",
 					 &SV::completion_type,
 					 check_completion_type,
@@ -162,7 +164,7 @@ sys_var_long_ptr	sys_concurrent_insert("concurrent_insert",
                                               &myisam_concurrent_insert);
 sys_var_long_ptr	sys_connect_timeout("connect_timeout",
 					    &connect_timeout);
-sys_var_const_str       sys_datadir("datadir", mysql_real_data_home);
+sys_var_const_os_str    sys_datadir("datadir", mysql_real_data_home);
 sys_var_enum		sys_delay_key_write("delay_key_write",
 					    &delay_key_write_options,
 					    &delay_key_write_typelib,
@@ -311,6 +313,7 @@ sys_var_thd_ulong       sys_optimizer_prune_level("optimizer_prune_level",
                                                   &SV::optimizer_prune_level);
 sys_var_thd_ulong       sys_optimizer_search_depth("optimizer_search_depth",
                                                    &SV::optimizer_search_depth);
+sys_var_const_os_str    sys_plugin_dir("plugin_dir", opt_plugin_dir);
 sys_var_thd_ulong       sys_preload_buff_size("preload_buffer_size",
                                               &SV::preload_buff_size);
 sys_var_thd_ulong	sys_read_buff_size("read_buffer_size",
@@ -338,7 +341,7 @@ sys_var_thd_ulong	sys_query_alloc_block_size("query_alloc_block_size",
 sys_var_thd_ulong	sys_query_prealloc_size("query_prealloc_size",
 						&SV::query_prealloc_size,
 						0, fix_thd_mem_root);
-sys_var_readonly        sys_tmpdir("tmpdir", OPT_GLOBAL, SHOW_CHAR, get_tmpdir);
+sys_var_readonly_os     sys_tmpdir("tmpdir", OPT_GLOBAL, SHOW_CHAR, get_tmpdir);
 sys_var_thd_ulong	sys_trans_alloc_block_size("transaction_alloc_block_size",
 						   &SV::trans_alloc_block_size,
 						   0, fix_trans_mem_root);
@@ -363,9 +366,11 @@ sys_var_bool_ptr	sys_secure_auth("secure_auth", &opt_secure_auth);
 sys_var_const_str_ptr   sys_secure_file_priv("secure_file_priv",
                                              &opt_secure_file_priv);
 sys_var_long_ptr	sys_server_id("server_id", &server_id, fix_server_id);
+#ifdef HAVE_REPLICATION
 sys_var_bool_ptr	sys_slave_compressed_protocol("slave_compressed_protocol",
 						      &opt_slave_compressed_protocol);
-#ifdef HAVE_REPLICATION
+sys_var_const_os_str_ptr sys_slave_load_tmpdir("slave_load_tmpdir", 
+                                               &slave_load_tmpdir);
 sys_var_long_ptr	sys_slave_net_timeout("slave_net_timeout",
 					      &slave_net_timeout);
 sys_var_long_ptr	sys_slave_trans_retries("slave_transaction_retries",
@@ -380,17 +385,17 @@ sys_var_thd_sql_mode    sys_sql_mode("sql_mode",
 #ifdef HAVE_OPENSSL
 extern char *opt_ssl_ca, *opt_ssl_capath, *opt_ssl_cert, *opt_ssl_cipher,
             *opt_ssl_key;
-sys_var_const_str_ptr	sys_ssl_ca("ssl_ca", &opt_ssl_ca);
-sys_var_const_str_ptr	sys_ssl_capath("ssl_capath", &opt_ssl_capath);
-sys_var_const_str_ptr	sys_ssl_cert("ssl_cert", &opt_ssl_cert);
-sys_var_const_str_ptr	sys_ssl_cipher("ssl_cipher", &opt_ssl_cipher);
-sys_var_const_str_ptr	sys_ssl_key("ssl_key", &opt_ssl_key);
+sys_var_const_os_str_ptr  sys_ssl_ca("ssl_ca", &opt_ssl_ca);
+sys_var_const_os_str_ptr  sys_ssl_capath("ssl_capath", &opt_ssl_capath);
+sys_var_const_os_str_ptr  sys_ssl_cert("ssl_cert", &opt_ssl_cert);
+sys_var_const_os_str_ptr  sys_ssl_cipher("ssl_cipher", &opt_ssl_cipher);
+sys_var_const_os_str_ptr  sys_ssl_key("ssl_key", &opt_ssl_key);
 #else
-sys_var_const_str	sys_ssl_ca("ssl_ca", NULL);
-sys_var_const_str	sys_ssl_capath("ssl_capath", NULL);
-sys_var_const_str	sys_ssl_cert("ssl_cert", NULL);
-sys_var_const_str	sys_ssl_cipher("ssl_cipher", NULL);
-sys_var_const_str	sys_ssl_key("ssl_key", NULL);
+sys_var_const_os_str	  sys_ssl_ca("ssl_ca", NULL);
+sys_var_const_os_str	  sys_ssl_capath("ssl_capath", NULL);
+sys_var_const_os_str	  sys_ssl_cert("ssl_cert", NULL);
+sys_var_const_os_str	  sys_ssl_cipher("ssl_cipher", NULL);
+sys_var_const_os_str	  sys_ssl_key("ssl_key", NULL);
 #endif
 sys_var_thd_enum
 sys_updatable_views_with_limit("updatable_views_with_limit",
@@ -445,6 +450,9 @@ sys_var_thd_bool	sys_innodb_table_locks("innodb_table_locks",
                                                &SV::innodb_table_locks);
 sys_var_thd_bool	sys_innodb_support_xa("innodb_support_xa",
                                                &SV::innodb_support_xa);
+sys_var_bool_ptr        sys_innodb_use_legacy_cardinality_algorithm(
+                          "innodb_use_legacy_cardinality_algorithm",
+                          &srv_use_legacy_cardinality_algorithm);
 sys_var_long_ptr	sys_innodb_autoextend_increment("innodb_autoextend_increment",
 							&srv_auto_extend_increment);
 sys_var_long_ptr	sys_innodb_sync_spin_loops("innodb_sync_spin_loops",
@@ -460,6 +468,14 @@ sys_var_long_ptr  sys_innodb_commit_concurrency("innodb_commit_concurrency",
 sys_var_long_ptr  sys_innodb_flush_log_at_trx_commit(
                                         "innodb_flush_log_at_trx_commit",
                                         &srv_flush_log_at_trx_commit);
+sys_var_const_os_str_ptr sys_innodb_data_file_path("innodb_data_file_path", 
+                                               &innobase_data_file_path);
+sys_var_const_os_str_ptr sys_innodb_data_home_dir("innodb_data_home_dir", 
+                                               &innobase_data_home_dir);
+sys_var_const_os_str_ptr sys_innodb_log_arch_dir("innodb_log_arch_dir", 
+                                               &innobase_log_arch_dir);
+sys_var_const_os_str_ptr sys_innodb_log_group_home_dir("innodb_log_group_home_dir", 
+                                                       &innobase_log_group_home_dir);
 #endif
 
 /* Condition pushdown to storage engine */
@@ -551,7 +567,7 @@ static sys_var_thd_bit	sys_unique_checks("unique_checks", 0,
 					  set_option_bit,
 					  OPTION_RELAXED_UNIQUE_CHECKS,
 					  1);
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
 static sys_var_thd_bit  sys_profiling("profiling", NULL, set_option_bit,
                                       ulonglong(OPTION_PROFILING));
 static sys_var_thd_ulong	sys_profiling_history_size("profiling_history_size",
@@ -801,6 +817,7 @@ sys_var *sys_variables[]=
   &sys_innodb_max_purge_lag,
   &sys_innodb_table_locks,
   &sys_innodb_support_xa,
+  &sys_innodb_use_legacy_cardinality_algorithm,
   &sys_innodb_autoextend_increment,
   &sys_innodb_sync_spin_loops,
   &sys_innodb_concurrency_tickets,
@@ -854,7 +871,7 @@ struct show_var_st init_vars[]= {
   {sys_character_set_results.name,(char*) &sys_character_set_results, SHOW_SYS},
   {sys_character_set_server.name, (char*) &sys_character_set_server,SHOW_SYS},
   {sys_charset_system.name,   (char*) &sys_charset_system,          SHOW_SYS},
-  {"character_sets_dir",      mysql_charsets_dir,                   SHOW_CHAR},
+  {sys_character_sets_dir.name, (char *) &sys_character_sets_dir,   SHOW_SYS},
   {sys_collation_connection.name,(char*) &sys_collation_connection, SHOW_SYS},
   {sys_collation_database.name,(char*) &sys_collation_database,     SHOW_SYS},
   {sys_collation_server.name,(char*) &sys_collation_server,         SHOW_SYS},
@@ -886,6 +903,8 @@ struct show_var_st init_vars[]= {
   {"have_bdb",		      (char*) &have_berkeley_db,	    SHOW_HAVE},
   {"have_blackhole_engine",   (char*) &have_blackhole_db,	    SHOW_HAVE},
   {"have_compress",	      (char*) &have_compress,		    SHOW_HAVE},
+  {"have_community_features", (char*) &have_community_features,	    SHOW_HAVE},
+  {"have_profiling",          (char*) &have_profiling,	            SHOW_HAVE},
   {"have_crypt",	      (char*) &have_crypt,		    SHOW_HAVE},
   {"have_csv",	              (char*) &have_csv_db,	            SHOW_HAVE},
   {"have_dynamic_loading",    (char*) &have_dlopen,	            SHOW_HAVE},
@@ -915,8 +934,8 @@ struct show_var_st init_vars[]= {
   {"innodb_checksums", (char*) &innobase_use_checksums, SHOW_MY_BOOL},
   {sys_innodb_commit_concurrency.name, (char*) &sys_innodb_commit_concurrency, SHOW_SYS},
   {sys_innodb_concurrency_tickets.name, (char*) &sys_innodb_concurrency_tickets, SHOW_SYS},
-  {"innodb_data_file_path", (char*) &innobase_data_file_path,	    SHOW_CHAR_PTR},
-  {"innodb_data_home_dir",  (char*) &innobase_data_home_dir,	    SHOW_CHAR_PTR},
+  {sys_innodb_data_file_path.name, (char*) &sys_innodb_data_file_path, SHOW_SYS},
+  {sys_innodb_data_home_dir.name, (char*) &sys_innodb_data_home_dir, SHOW_SYS},
   {"innodb_adaptive_hash_index", (char*) &innobase_adaptive_hash_index, SHOW_MY_BOOL},
   {"innodb_doublewrite", (char*) &innobase_use_doublewrite, SHOW_MY_BOOL},
   {sys_innodb_fast_shutdown.name,(char*) &sys_innodb_fast_shutdown, SHOW_SYS},
@@ -927,12 +946,12 @@ struct show_var_st init_vars[]= {
   {"innodb_force_recovery", (char*) &innobase_force_recovery, SHOW_LONG },
   {"innodb_lock_wait_timeout", (char*) &innobase_lock_wait_timeout, SHOW_LONG },
   {"innodb_locks_unsafe_for_binlog", (char*) &innobase_locks_unsafe_for_binlog, SHOW_MY_BOOL},
-  {"innodb_log_arch_dir",   (char*) &innobase_log_arch_dir, 	    SHOW_CHAR_PTR},
+  {sys_innodb_log_arch_dir.name, (char*) &sys_innodb_log_arch_dir,  SHOW_SYS},
   {"innodb_log_archive",    (char*) &innobase_log_archive, 	    SHOW_MY_BOOL},
   {"innodb_log_buffer_size", (char*) &innobase_log_buffer_size, SHOW_LONG },
   {"innodb_log_file_size", (char*) &innobase_log_file_size, SHOW_LONGLONG},
   {"innodb_log_files_in_group", (char*) &innobase_log_files_in_group,	SHOW_LONG},
-  {"innodb_log_group_home_dir", (char*) &innobase_log_group_home_dir, SHOW_CHAR_PTR},
+  {sys_innodb_log_group_home_dir.name, (char*) &sys_innodb_log_group_home_dir, SHOW_SYS},
   {sys_innodb_max_dirty_pages_pct.name, (char*) &sys_innodb_max_dirty_pages_pct, SHOW_SYS},
   {sys_innodb_max_purge_lag.name, (char*) &sys_innodb_max_purge_lag, SHOW_SYS},
   {"innodb_mirrored_log_groups", (char*) &innobase_mirrored_log_groups, SHOW_LONG},
@@ -943,6 +962,8 @@ struct show_var_st init_vars[]= {
   {sys_innodb_table_locks.name, (char*) &sys_innodb_table_locks, SHOW_SYS},
   {sys_innodb_thread_concurrency.name, (char*) &sys_innodb_thread_concurrency, SHOW_SYS},
   {sys_innodb_thread_sleep_delay.name, (char*) &sys_innodb_thread_sleep_delay, SHOW_SYS},
+  {sys_innodb_use_legacy_cardinality_algorithm.name,
+   (char*) &sys_innodb_use_legacy_cardinality_algorithm, SHOW_SYS},
 #endif
   {sys_interactive_timeout.name,(char*) &sys_interactive_timeout,   SHOW_SYS},
   {sys_join_buffer_size.name,   (char*) &sys_join_buffer_size,	    SHOW_SYS},
@@ -1036,7 +1057,7 @@ struct show_var_st init_vars[]= {
   {sys_optimizer_search_depth.name,(char*) &sys_optimizer_search_depth,
    SHOW_SYS},
   {"pid_file",                (char*) pidfile_name,                 SHOW_CHAR},
-  {"plugin_dir",              (char*) opt_plugin_dir,               SHOW_CHAR},
+  {sys_plugin_dir.name,       (char*) &sys_plugin_dir,              SHOW_SYS},
   {"port",                    (char*) &mysqld_port,                  SHOW_INT},
   {sys_preload_buff_size.name, (char*) &sys_preload_buff_size,      SHOW_SYS},
 #ifdef ENABLED_PROFILING
@@ -1082,7 +1103,7 @@ struct show_var_st init_vars[]= {
 #ifdef HAVE_REPLICATION
   {sys_slave_compressed_protocol.name,
     (char*) &sys_slave_compressed_protocol,           SHOW_SYS},
-  {"slave_load_tmpdir",       (char*) &slave_load_tmpdir,           SHOW_CHAR_PTR},
+  {sys_slave_load_tmpdir.name,(char*) &sys_slave_load_tmpdir,       SHOW_SYS},
   {sys_slave_net_timeout.name,(char*) &sys_slave_net_timeout,	    SHOW_SYS},
   {"slave_skip_errors",       (char*) &slave_error_mask,            SHOW_SLAVE_SKIP_ERRORS},
   {sys_slave_trans_retries.name,(char*) &sys_slave_trans_retries,   SHOW_SYS},
@@ -1189,6 +1210,7 @@ bool update_sys_var_str(sys_var_str *var_str, rw_lock_t *var_mutex,
   old_value= var_str->value;
   var_str->value= res;
   var_str->value_length= new_length;
+  var_str->is_os_charset= FALSE;
   rw_unlock(var_mutex);
   my_free(old_value, MYF(MY_ALLOW_ZERO_PTR));
   return 0;
@@ -1927,12 +1949,12 @@ Item *sys_var::item(THD *thd, enum_var_type var_type, LEX_STRING *base)
     pthread_mutex_lock(&LOCK_global_system_variables);
     char *str= (char*) value_ptr(thd, var_type, base);
     if (str)
-      tmp= new Item_string(str, strlen(str),
-                           system_charset_info, DERIVATION_SYSCONST);
+      tmp= new Item_string(str, (uint) strlen(str),
+                           charset(thd), DERIVATION_SYSCONST);
     else
     {
       tmp= new Item_null();
-      tmp->collation.set(system_charset_info, DERIVATION_SYSCONST);
+      tmp->collation.set(charset(thd), DERIVATION_SYSCONST);
     }
     pthread_mutex_unlock(&LOCK_global_system_variables);
     return tmp;
@@ -1941,6 +1963,13 @@ Item *sys_var::item(THD *thd, enum_var_type var_type, LEX_STRING *base)
     my_error(ER_VAR_CANT_BE_READ, MYF(0), name);
   }
   return 0;
+}
+
+
+CHARSET_INFO *sys_var::charset(THD *thd)
+{
+  return is_os_charset ? thd->variables.character_set_filesystem : 
+    system_charset_info;
 }
 
 
@@ -2072,7 +2101,7 @@ void sys_var_thd_date_time_format::set_default(THD *thd, enum_var_type type)
   {
     const char *format;
     if ((format= opt_date_time_formats[date_time_type]))
-      res= date_time_format_make(date_time_type, format, strlen(format));
+      res= date_time_format_make(date_time_type, format, (uint) strlen(format));
   }
   else
   {
@@ -3159,10 +3188,10 @@ static byte *get_tmpdir(THD *thd)
 
 static struct my_option *find_option(struct my_option *opt, const char *name)
 {
-  uint length=strlen(name);
+  size_t length=strlen(name);
   for (; opt->name; opt++)
   {
-    if (!getopt_compare_strings(opt->name, name, length) &&
+    if (!getopt_compare_strings(opt->name, name, (uint) length) &&
 	!opt->name[length])
     {
       /*
@@ -3203,7 +3232,7 @@ void set_var_init()
        var < end;
        var++)
   {
-    (*var)->name_length= strlen((*var)->name);
+    (*var)->name_length= (uint) strlen((*var)->name);
     (*var)->option_limits= find_option(my_long_options, (*var)->name);
     my_hash_insert(&system_variable_hash, (byte*) *var);
   }
@@ -3242,7 +3271,7 @@ sys_var *find_sys_var(const char *str, uint length)
   sys_var *var= (sys_var*) hash_search(&system_variable_hash,
 				       (byte*) str,
 				       length ? length :
-				       strlen(str));
+				       (uint) strlen(str));
   if (!var)
     my_error(ER_UNKNOWN_SYSTEM_VARIABLE, MYF(0), (char*) str);
   return var;
@@ -3468,10 +3497,11 @@ int set_var_password::check(THD *thd)
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   if (!user->host.str)
   {
+    DBUG_ASSERT(thd->security_ctx->priv_host);
     if (*thd->security_ctx->priv_host != 0)
     {
       user->host.str= (char *) thd->security_ctx->priv_host;
-      user->host.length= strlen(thd->security_ctx->priv_host);
+      user->host.length= (uint) strlen(thd->security_ctx->priv_host);
     }
     else
     {
@@ -3479,9 +3509,15 @@ int set_var_password::check(THD *thd)
       user->host.length= 1;
     }
   }
+  if (!user->user.str)
+  {
+    DBUG_ASSERT(thd->security_ctx->priv_user);
+    user->user.str= (char *) thd->security_ctx->priv_user;
+    user->user.length= strlen(thd->security_ctx->priv_user);
+  }
   /* Returns 1 as the function sends error to client */
   return check_change_password(thd, user->host.str, user->user.str,
-                               password, strlen(password)) ? 1 : 0;
+                               password, (uint) strlen(password)) ? 1 : 0;
 #else
   return 0;
 #endif

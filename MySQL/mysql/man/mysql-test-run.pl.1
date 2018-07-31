@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql\-test\-run.pl\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/06/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL
 .\"
-.TH "\fBMYSQL\-TEST\-RUN.PL" "1" "08/02/2008" "MySQL" "MySQL Database System"
+.TH "\fBMYSQL\-TEST\-RUN.PL" "1" "05/06/2009" "MySQL" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -57,7 +57,7 @@ subdirectory.
 .PP
 If no suffix is given for the test name, a suffix of
 \fI.test\fR
-is assumed. Any leading pathname is ignored. These commands are equivalent:
+is assumed. Any leading path name is ignored. These commands are equivalent:
 .sp
 .RS 3n
 .nf
@@ -148,7 +148,7 @@ option,
 \fB\-\-init\-file\fR
 will be disabled. To handle this, set the
 MYSQLD_BOOTSTRAP
-environment variable to the full pathname of a server that has all options enabled.
+environment variable to the full path name of a server that has all options enabled.
 \fBmysql\-test\-run.pl\fR
 will use that server to perform setup; it is not used to run the tests.
 .PP
@@ -222,18 +222,18 @@ T}
 T{
 MYSQL_TEST
 T}:T{
-Pathname to \fBmysqltest\fR binary
+Path name to \fBmysqltest\fR binary
 T}
 T{
 MYSQLTEST_VARDIR
 T}:T{
-Pathname to the \fIvar\fR directory that is used for
+Path name to the \fIvar\fR directory that is used for
                 logs, temporary files, and so forth
 T}
 T{
 MYSQLD_BOOTSTRAP
 T}:T{
-Full pathname to \fBmysqld\fR that has all options enabled
+Full path name to \fBmysqld\fR that has all options enabled
 T}
 T{
 MASTER_MYPORT
@@ -297,6 +297,11 @@ option to
 Check test cases for side effects.
 .TP 3n
 \(bu
+\fB\-\-client\-bindir\fR
+.sp
+The path to the directory where client binaries are located. This option was added in MySQL 5.0.66/5.1.27.
+.TP 3n
+\(bu
 \fB\-\-client\-ddd\fR
 .sp
 Start
@@ -320,6 +325,34 @@ Start
 in the
 \fBgdb\fR
 debugger.
+.TP 3n
+\(bu
+\fB\-\-client\-libdir\fR
+.sp
+The path to the directory where client libraries are located. This option was added in MySQL 5.0.66/5.1.27.
+.TP 3n
+\(bu
+\fB\-\-combination=\fR\fB\fIvalue\fR\fR
+.sp
+Extra options to pass to
+\fBmysqld\fR. The value should consist of one or more comma\-separated
+\fBmysqld\fR
+options. This option is similar to
+\fB\-\-mysqld\fR
+but should be given two or more times.
+\fBmysql\-test\-run.pl\fR
+executes multiple test runs, using the options for each instance of
+\fB\-\-combination\fR
+in successive runs. If
+\fB\-\-combination\fR
+is given only once, it has no effect. For test runs specific to a given test suite, an alternative to the use of
+\fB\-\-combination\fR
+is to create a
+\fIcombinations\fR
+file in the suite directory. The file should contain a section of options for each test run. See
+Section\ 4.9, \(lqPassing Options from \fBmysql\-test\-run.pl\fR to \fBmysqld\fR or \fBmysqltest\fR\(rq.
+.sp
+This option was added in MySQL 5.1.23/6.0.4.
 .TP 3n
 \(bu
 \fB\-\-comment=\fR\fB\fIstr\fR\fR
@@ -365,6 +398,26 @@ Start
 using the named debugger.
 .TP 3n
 \(bu
+\fB\-\-debug\-sync\-timeout=\fR\fB\fIN\fR\fR
+.sp
+Controls whether the Debug Sync facility for testing and debugging is enabled. The option value is a timeout in seconds. The default value is 300. A value of 0 disables Debug Sync. The value of this option also becomes the default timeout for individual synchronization points.
+.sp
+\fBmysql\-test\-run.pl\fR
+passes
+\fB\-\-loose\-debug\-sync\-timeout=\fR\fB\fIN\fR\fR
+to
+\fBmysqld\fR. The
+\fB\-\-loose\fR
+prefix is used so that
+\fBmysqld\fR
+does not fail if Debug Sync is not compiled in.
+.sp
+For information about using the Debug Sync facility for testing, see
+Section\ 4.14, \(lqThread Synchronization in Test Cases\(rq.
+.sp
+This option was added in MySQL 6.0.6.
+.TP 3n
+\(bu
 \fB\-\-do\-test=\fR\fB\fIprefix\fR\fR
 .sp
 Run all test cases having a name that begins with the given
@@ -396,6 +449,15 @@ xmainytestz.
 Use a version of
 \fBmysqltest\fR
 built with the embedded server.
+.TP 3n
+\(bu
+\fB\-\-experimental=\fR\fB\fIfile_name\fR\fR
+.sp
+Specify a file that contains a list of test cases that should be displayed with the
+[ exp\-fail ]
+code rather than
+[ fail ]
+if they fail. This option was added in MySQL 5.1.33/6.0.11.
 .TP 3n
 \(bu
 \fB\-\-extern\fR
@@ -512,10 +574,22 @@ is given, it is added to the beginning of the list of locations to search, so it
 This option was added in MySQL 4.1.22, 5.0.30, and 5.1.13.
 .TP 3n
 \(bu
-\fB\-\-mysqld=\fR\fB\fIstr\fR\fR
+\fB\-\-mysqld=\fR\fB\fIvalue\fR\fR
 .sp
 Extra options to pass to
-\fBmysqld\fR.
+\fBmysqld\fR. The value should consist of one or more comma\-separated
+\fBmysqld\fR
+options. See
+Section\ 4.9, \(lqPassing Options from \fBmysql\-test\-run.pl\fR to \fBmysqld\fR or \fBmysqltest\fR\(rq.
+.TP 3n
+\(bu
+\fB\-\-mysqltest=\fR\fB\fIvalue\fR\fR
+.sp
+Extra options to pass to
+\fBmysqltest\fR. The value should consist of one or more comma\-separated
+\fBmysqltest\fR
+options. See
+Section\ 4.9, \(lqPassing Options from \fBmysql\-test\-run.pl\fR to \fBmysqld\fR or \fBmysqltest\fR\(rq. This option was added in MySQL 6.0.6.
 .TP 3n
 \(bu
 \fB\-\-ndb\-connectstring=\fR\fB\fIstr\fR\fR
@@ -719,6 +793,19 @@ exits with an error message:
 Couldn't find support for SSL
 .TP 3n
 \(bu
+\fB\-\-start\fR
+.sp
+Initialize and start servers with the startup settings for the first specified test case. For example:
+.sp
+.RS 3n
+.nf
+shell> \fBcd mysql\-test\fR
+shell> \fB./mysql\-test\-run.pl \-\-start alias &\fR
+.fi
+.RE
+This option was added in MySQL 5.1.32/6.0.11.
+.TP 3n
+\(bu
 \fB\-\-start\-and\-exit\fR
 .sp
 Initialize and start servers with the startup settings for the specified test case or cases, if any, and then exit. You can use this option to start a server to which you can connect later. For example, after building a source distribution you can start a server and connect to it with the
@@ -870,7 +957,7 @@ Unused.
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR
 .sp
-The MySQL username to use when connecting to the server.
+The MySQL user name to use when connecting to the server.
 .TP 3n
 \(bu
 \fB\-\-valgrind\fR
@@ -921,7 +1008,7 @@ Extra options to pass to
 \(bu
 \fB\-\-valgrind\-path=\fR\fB\fIpath\fR\fR
 .sp
-Specify the pathname to the
+Specify the path name to the
 \fBvalgrind\fR
 executable.
 .TP 3n
@@ -1039,9 +1126,9 @@ supports the following options not supported by
 \fB\-\-view\-protocol\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -1055,4 +1142,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

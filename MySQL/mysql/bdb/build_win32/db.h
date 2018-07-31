@@ -57,7 +57,7 @@ extern "C" {
 #define	DB_VERSION_MAJOR	4
 #define	DB_VERSION_MINOR	1
 #define	DB_VERSION_PATCH	24
-#define	DB_VERSION_STRING	"Sleepycat Software: Berkeley DB 4.1.24: (August  4, 2008)"
+#define	DB_VERSION_STRING	"Sleepycat Software: Berkeley DB 4.1.24: (May  7, 2009)"
 
 /*
  * !!!
@@ -1890,8 +1890,8 @@ typedef struct entry {
 #endif /* !_DB_H_ */
 
 /* DO NOT EDIT: automatically built by dist/s_rpc. */
-#define DB_RPC_SERVERPROG 351457
-#define DB_RPC_SERVERVERS 4001
+#define	DB_RPC_SERVERPROG	351457
+#define	DB_RPC_SERVERVERS	4001
 
 /* DO NOT EDIT: automatically built by dist/s_include. */
 #ifndef	_DB_EXT_PROT_IN_

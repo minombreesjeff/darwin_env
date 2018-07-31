@@ -101,13 +101,10 @@ String *Item_func_md5::val_str(String *str)
   str->set_charset(&my_charset_bin);
   if (sptr)
   {
-    my_MD5_CTX context;
     unsigned char digest[16];
 
     null_value=0;
-    my_MD5Init (&context);
-    my_MD5Update (&context,(unsigned char *) sptr->ptr(), sptr->length());
-    my_MD5Final (digest, &context);
+    MY_MD5_HASH(digest,(unsigned char *) sptr->ptr(), sptr->length());
     if (str->alloc(32))				// Ensure that memory is free
     {
       null_value=1;
@@ -476,17 +473,21 @@ String *Item_func_des_encrypt::val_str(String *str)
      string marking change of string length.
   */
 
-  tail=  (8-(res_length) % 8);			// 1..8 marking extra length
+  tail= 8 - (res_length % 8);                   // 1..8 marking extra length
   res_length+=tail;
+  tmp_arg.realloc(res_length);
+  tmp_arg.length(0);
+  tmp_arg.append(res->ptr(), res->length());
   code= ER_OUT_OF_RESOURCES;
-  if (tail && res->append(append_str, tail) || tmp_value.alloc(res_length+1))
+  if (tmp_arg.append(append_str, tail) || tmp_value.alloc(res_length+1))
     goto error;
-  (*res)[res_length-1]=tail;			// save extra length
+  tmp_arg[res_length-1]=tail;                   // save extra length
+  tmp_value.realloc(res_length+1);
   tmp_value.length(res_length+1);
   tmp_value[0]=(char) (128 | key_number);
   // Real encryption
   bzero((char*) &ivec,sizeof(ivec));
-  DES_ede3_cbc_encrypt((const uchar*) (res->ptr()),
+  DES_ede3_cbc_encrypt((const uchar*) (tmp_arg.ptr()),
 		       (uchar*) (tmp_value.ptr()+1),
 		       res_length,
 		       &keyschedule.ks1,
@@ -1696,6 +1697,12 @@ Item *Item_func_sysconst::safe_charset_converter(CHARSET_INFO *tocs)
   Item_string *conv;
   uint conv_errors;
   String tmp, cstr, *ostr= val_str(&tmp);
+  if (null_value)
+  {
+    Item *null_item= new Item_null((char *) fully_qualified_func_name());
+    null_item->collation.set (tocs);
+    return null_item;
+  }
   cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
   if (conv_errors ||
       !(conv= new Item_static_string_func(fully_qualified_func_name(),
@@ -1737,17 +1744,17 @@ bool Item_func_user::init(const char *user, const char *host)
   if (user)
   {
     CHARSET_INFO *cs= str_value.charset();
-    uint res_length= (strlen(user)+strlen(host)+2) * cs->mbmaxlen;
+    size_t res_length= (strlen(user)+strlen(host)+2) * cs->mbmaxlen;
 
-    if (str_value.alloc(res_length))
+    if (str_value.alloc((uint) res_length))
     {
       null_value=1;
       return TRUE;
     }
 
-    res_length=cs->cset->snprintf(cs, (char*)str_value.ptr(), res_length,
+    res_length=cs->cset->snprintf(cs, (char*)str_value.ptr(), (uint) res_length,
                                   "%s@%s", user, host);
-    str_value.length(res_length);
+    str_value.length((uint) res_length);
     str_value.mark_as_const();
   }
   return FALSE;
@@ -2427,7 +2434,7 @@ String *Item_func_rpad::val_str(String *str)
     memcpy(to,ptr_pad,(size_t) pad_byte_length);
     to+= pad_byte_length;
   }
-  res->length(to- (char*) res->ptr());
+  res->length((uint) (to- (char*) res->ptr()));
   return (res);
 
  err:
@@ -2695,7 +2702,7 @@ String *Item_func_charset::val_str(String *str)
 
   CHARSET_INFO *cs= args[0]->collation.collation; 
   null_value= 0;
-  str->copy(cs->csname, strlen(cs->csname),
+  str->copy(cs->csname, (uint) strlen(cs->csname),
 	    &my_charset_latin1, collation.collation, &dummy_errors);
   return str;
 }
@@ -2707,7 +2714,7 @@ String *Item_func_collation::val_str(String *str)
   CHARSET_INFO *cs= args[0]->collation.collation; 
 
   null_value= 0;
-  str->copy(cs->name, strlen(cs->name),
+  str->copy(cs->name, (uint) strlen(cs->name),
 	    &my_charset_latin1, collation.collation, &dummy_errors);
   return str;
 }
@@ -3258,7 +3265,8 @@ static char clock_seq_and_node_str[]="-0000-000000000000";
 
 /* number of 100-nanosecond intervals between
    1582-10-15 00:00:00.00 and 1970-01-01 00:00:00.00 */
-#define UUID_TIME_OFFSET ((ulonglong) 141427 * 24 * 60 * 60 * 1000 * 10 )
+#define UUID_TIME_OFFSET ((ulonglong) 141427 * 24 * 60 * 60 * \
+                          1000 * 1000 * 10)
 
 #define UUID_VERSION      0x1000
 #define UUID_VARIANT      0x8000
@@ -3317,24 +3325,64 @@ String *Item_func_uuid::val_str(String *str)
     set_clock_seq_str();
   }
 
-  ulonglong tv=my_getsystime() + UUID_TIME_OFFSET + nanoseq;
-  if (unlikely(tv < uuid_time))
-    set_clock_seq_str();
-  else if (unlikely(tv == uuid_time))
+  ulonglong tv= my_getsystime() + UUID_TIME_OFFSET + nanoseq;
+
+  if (likely(tv > uuid_time))
   {
-    /* special protection from low-res system clocks */
-    nanoseq++;
-    tv++;
+    /*
+      Current time is ahead of last timestamp, as it should be.
+      If we "borrowed time", give it back, just as long as we
+      stay ahead of the previous timestamp.
+    */
+    if (nanoseq)
+    {
+      DBUG_ASSERT((tv > uuid_time) && (nanoseq > 0));
+      /*
+        -1 so we won't make tv= uuid_time for nanoseq >= (tv - uuid_time)
+      */
+      ulong delta= min(nanoseq, (ulong) (tv - uuid_time -1));
+      tv-= delta;
+      nanoseq-= delta;
+    }
   }
   else
   {
-    if (nanoseq)
+    if (unlikely(tv == uuid_time))
     {
-      tv-=nanoseq;
-      nanoseq=0;
+      /*
+        For low-res system clocks. If several requests for UUIDs
+        end up on the same tick, we add a nano-second to make them
+        different.
+        ( current_timestamp + nanoseq * calls_in_this_period )
+        may end up > next_timestamp; this is OK. Nonetheless, we'll
+        try to unwind nanoseq when we get a chance to.
+        If nanoseq overflows, we'll start over with a new numberspace
+        (so the if() below is needed so we can avoid the ++tv and thus
+        match the follow-up if() if nanoseq overflows!).
+      */
+      if (likely(++nanoseq))
+        ++tv;
     }
-    DBUG_ASSERT(tv > uuid_time);
+
+    if (unlikely(tv <= uuid_time))
+    {
+      /*
+        If the admin changes the system clock (or due to Daylight
+        Saving Time), the system clock may be turned *back* so we
+        go through a period once more for which we already gave out
+        UUIDs.  To avoid duplicate UUIDs despite potentially identical
+        times, we make a new random component.
+        We also come here if the nanoseq "borrowing" overflows.
+        In either case, we throw away any nanoseq borrowing since it's
+        irrelevant in the new numberspace.
+      */
+      set_clock_seq_str();
+      tv= my_getsystime() + UUID_TIME_OFFSET;
+      nanoseq= 0;
+      DBUG_PRINT("uuid",("making new numberspace"));
+    }
   }
+
   uuid_time=tv;
   pthread_mutex_unlock(&LOCK_uuid_generator);
 

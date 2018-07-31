@@ -186,39 +186,41 @@ int initgroups(const char *,unsigned int);
 #ifdef HAVE_FP_EXCEPT				// Fix type conflict
 typedef fp_except fp_except_t;
 #endif
+#endif /* __FreeBSD__ && HAVE_IEEEFP_H */
+#ifdef HAVE_SYS_FPU_H
+/* for IRIX to use set_fpc_csr() */
+#include <sys/fpu.h>
+#endif
 
+inline void setup_fpu()
+{
+#if defined(__FreeBSD__) && defined(HAVE_IEEEFP_H)
   /* We can't handle floating point exceptions with threads, so disable
      this on freebsd
+     Don't fall for overflow, underflow,divide-by-zero or loss of precision
   */
-
-inline void set_proper_floating_point_mode()
-{
-  /* Don't fall for overflow, underflow,divide-by-zero or loss of precision */
 #if defined(__i386__)
   fpsetmask(~(FP_X_INV | FP_X_DNML | FP_X_OFL | FP_X_UFL | FP_X_DZ |
 	      FP_X_IMP));
 #else
- fpsetmask(~(FP_X_INV |             FP_X_OFL | FP_X_UFL | FP_X_DZ |
-	     FP_X_IMP));
+  fpsetmask(~(FP_X_INV |             FP_X_OFL | FP_X_UFL | FP_X_DZ |
+              FP_X_IMP));
+#endif /* __i386__ */
+#endif /* __FreeBSD__ && HAVE_IEEEFP_H */
+
+#ifdef HAVE_FESETROUND
+    /* Set FPU rounding mode to "round-to-nearest" */
+  fesetround(FE_TONEAREST);
+#endif /* HAVE_FESETROUND */
+    
+#if defined(__sgi) && defined(HAVE_SYS_FPU_H)
+  /* Enable denormalized DOUBLE values support for IRIX */
+  union fpc_csr n;
+  n.fc_word = get_fpc_csr();
+  n.fc_struct.flush = 0;
+  set_fpc_csr(n.fc_word);
 #endif
 }
-#elif defined(__sgi)
-/* for IRIX to use set_fpc_csr() */
-#include <sys/fpu.h>
-
-inline void set_proper_floating_point_mode()
-{
-  /* Enable denormalized DOUBLE values support for IRIX */
-  {
-    union fpc_csr n;
-    n.fc_word = get_fpc_csr();
-    n.fc_struct.flush = 0;
-    set_fpc_csr(n.fc_word);
-  }
-}
-#else
-#define set_proper_floating_point_mode()
-#endif /* __FreeBSD__ && HAVE_IEEEFP_H */
 
 } /* cplusplus */
 
@@ -480,6 +482,7 @@ char mysql_real_data_home[FN_REFLEN],
      *opt_init_file, *opt_tc_log_file,
      mysql_unpacked_real_data_home[FN_REFLEN],
      def_ft_boolean_syntax[sizeof(ft_boolean_syntax)];
+int mysql_unpacked_real_data_home_len;
 char *mysql_data_home= mysql_real_data_home;
 const key_map key_map_empty(0);
 key_map key_map_full(0);                        // Will be initialized later
@@ -535,6 +538,8 @@ SHOW_COMP_OPTION have_isam;
 SHOW_COMP_OPTION have_raid, have_ssl, have_symlink, have_query_cache;
 SHOW_COMP_OPTION have_geometry, have_rtree_keys, have_dlopen;
 SHOW_COMP_OPTION have_crypt, have_compress;
+SHOW_COMP_OPTION have_community_features;
+SHOW_COMP_OPTION have_profiling;
 
 /* Thread specific variables */
 
@@ -2812,7 +2817,7 @@ static bool init_global_datetime_format(timestamp_type format_type,
     */
     opt_date_time_formats[format_type]= str;
   }
-  if (!(*var_ptr= date_time_format_make(format_type, str, strlen(str))))
+  if (!(*var_ptr= date_time_format_make(format_type, str, (uint) strlen(str))))
   {
     fprintf(stderr, "Wrong date/time format specifier: %s\n", str);
     return 1;
@@ -3034,12 +3039,14 @@ static int init_common_variables(const char *conf_file_name, int argc,
     sys_init_connect.value_length= strlen(opt_init_connect);
   else
     sys_init_connect.value=my_strdup("",MYF(0));
+  sys_init_connect.is_os_charset= TRUE;
 
   sys_init_slave.value_length= 0;
   if ((sys_init_slave.value= opt_init_slave))
-    sys_init_slave.value_length= strlen(opt_init_slave);
+    sys_init_slave.value_length= (uint) strlen(opt_init_slave);
   else
     sys_init_slave.value=my_strdup("",MYF(0));
+  sys_init_slave.is_os_charset= TRUE;
 
   if (use_temp_pool && bitmap_init(&temp_pool,0,1024,1))
     return 1;
@@ -3276,7 +3283,7 @@ static int init_server_components()
   query_cache_init();
   query_cache_resize(query_cache_size);
   randominit(&sql_rand,(ulong) server_start_time,(ulong) server_start_time/2);
-  set_proper_floating_point_mode();
+  setup_fpu();
   init_thr_lock();
 #ifdef HAVE_REPLICATION
   init_slave_list();
@@ -3614,6 +3621,44 @@ void decrement_handler_count()
 
 
 #ifndef EMBEDDED_LIBRARY
+#ifndef DBUG_OFF
+/*
+  Debugging helper function to keep the locale database
+  (see sql_locale.cc) and max_month_name_length and
+  max_day_name_length variable values in consistent state.
+*/
+static void test_lc_time_sz()
+{
+  DBUG_ENTER("test_lc_time_sz");
+  for (MY_LOCALE **loc= my_locales; *loc; loc++)
+  {
+    uint max_month_len= 0;
+    uint max_day_len = 0;
+    for (const char **month= (*loc)->month_names->type_names; *month; month++)
+    {
+      set_if_bigger(max_month_len,
+                    my_numchars_mb(&my_charset_utf8_general_ci,
+                                   *month, *month + strlen(*month)));
+    }
+    for (const char **day= (*loc)->day_names->type_names; *day; day++)
+    {
+      set_if_bigger(max_day_len,
+                    my_numchars_mb(&my_charset_utf8_general_ci,
+                                   *day, *day + strlen(*day)));
+    }
+    if ((*loc)->max_month_name_length != max_month_len ||
+        (*loc)->max_day_name_length != max_day_len)
+    {
+      DBUG_PRINT("Wrong max day name(or month name) length for locale:",
+                 ("%s", (*loc)->name));
+      DBUG_ASSERT(0);
+    }
+  }
+  DBUG_VOID_RETURN;
+}
+#endif//DBUG_OFF
+
+
 #ifdef __WIN__
 int win_main(int argc, char **argv)
 #else
@@ -3707,6 +3752,10 @@ int main(int argc, char **argv)
 #ifdef HAVE_LIBWRAP
   libwrapName= my_progname+dirname_length(my_progname);
   openlog(libwrapName, LOG_PID, LOG_AUTH);
+#endif
+
+#ifndef DBUG_OFF
+  test_lc_time_sz();
 #endif
 
   /*
@@ -3839,6 +3888,9 @@ we force server id to 2, but this MySQL server will not act as a slave.");
                                                        : mysqld_unix_port),
                          mysqld_port,
                          MYSQL_COMPILATION_COMMENT);
+#if defined(_WIN32) && !defined(EMBEDDED_LIBRARY)
+  Service.SetRunning();
+#endif
 
 #if defined(__NT__) || defined(HAVE_SMEM)
   handle_connections_methods();
@@ -4995,7 +5047,8 @@ enum options_mysqld
   OPT_SECURE_FILE_PRIV,
   OPT_KEEP_FILES_ON_CREATE,
   OPT_INNODB_ADAPTIVE_HASH_INDEX,
-  OPT_FEDERATED
+  OPT_FEDERATED,
+  OPT_INNODB_USE_LEGACY_CARDINALITY_ALGORITHM
 };
 
 
@@ -5302,6 +5355,14 @@ Disable with --skip-innodb-doublewrite.", (gptr*) &innobase_use_doublewrite,
    (gptr*) &global_system_variables.innodb_table_locks,
    (gptr*) &global_system_variables.innodb_table_locks,
    0, GET_BOOL, OPT_ARG, 1, 0, 0, 0, 0, 0},
+  {"innodb_use_legacy_cardinality_algorithm", 
+   OPT_INNODB_USE_LEGACY_CARDINALITY_ALGORITHM,
+   "Use legacy algorithm for picking random pages during index cardinality "
+   "estimation. Disable this to use a better algorithm, but note that your "
+   "query plans may change (enabled by default).",
+   (gptr*) &srv_use_legacy_cardinality_algorithm,
+   (gptr*) &srv_use_legacy_cardinality_algorithm,
+   0, GET_BOOL, OPT_ARG, 1, 0, 0, 0, 0, 0},
 #endif /* End HAVE_INNOBASE_DB */
   {"isam", OPT_ISAM, "Obsolete. ISAM storage engine is no longer supported.",
    (gptr*) &opt_isam, (gptr*) &opt_isam, 0, GET_BOOL, NO_ARG, 0, 0, 0,
@@ -5588,7 +5649,7 @@ Disable with --skip-ndbcluster (will save memory).",
    "Maximum time in seconds to wait for the port to become free. "
    "(Default: no wait)", (gptr*) &mysqld_port_timeout,
    (gptr*) &mysqld_port_timeout, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   {"profiling_history_size", OPT_PROFILING, "Limit of query profiling memory",
    (gptr*) &global_system_variables.profiling_history_size,
    (gptr*) &max_system_variables.profiling_history_size,
@@ -6579,7 +6640,10 @@ struct show_var_st status_vars[]= {
   {"Qcache_queries_in_cache",  (char*) &query_cache.queries_in_cache, SHOW_LONG_CONST},
   {"Qcache_total_blocks",      (char*) &query_cache.total_blocks, SHOW_LONG_CONST},
 #endif /*HAVE_QUERY_CACHE*/
-  {"Questions",                (char*) 0,                       SHOW_QUESTION},
+  {"Queries",                  (char*) 0,                       SHOW_QUERIES},
+  {"Questions",                (char*) offsetof(STATUS_VAR, questions),
+   SHOW_LONG_STATUS},
+
   {"Rpl_status",               (char*) 0,                 SHOW_RPL_STATUS},
   {"Select_full_join",         (char*) offsetof(STATUS_VAR, select_full_join_count), SHOW_LONG_STATUS},
   {"Select_full_range_join",   (char*) offsetof(STATUS_VAR, select_full_range_join_count), SHOW_LONG_STATUS},
@@ -6632,7 +6696,9 @@ struct show_var_st status_vars[]= {
   {"Threads_created",	       (char*) &thread_created,		SHOW_LONG_CONST},
   {"Threads_running",          (char*) &thread_running,         SHOW_INT_CONST},
   {"Uptime",                   (char*) 0,                       SHOW_STARTTIME},
+#ifdef COMMUNITY_SERVER
   {"Uptime_since_flush_status",(char*) 0,                       SHOW_FLUSHTIME},
+#endif
   {NullS, NullS, SHOW_LONG}
 };
 
@@ -6712,6 +6778,7 @@ static void mysql_init_variables(void)
   /* Things reset to zero */
   opt_skip_slave_start= opt_reckless_slave = 0;
   mysql_home[0]= pidfile_name[0]= log_error_file[0]= 0;
+  myisam_test_invalid_symlink= test_if_data_home_dir;
   opt_log= opt_slow_log= 0;
   opt_update_log= 0;
   opt_bin_log= 0;
@@ -6937,6 +7004,16 @@ static void mysql_init_variables(void)
 #endif
 #if !defined(my_pthread_setprio) && !defined(HAVE_PTHREAD_SETSCHEDPARAM)
   opt_specialflag |= SPECIAL_NO_PRIOR;
+#endif
+#ifdef ENABLED_PROFILING
+  have_profiling = SHOW_OPTION_YES;
+#else
+  have_profiling = SHOW_OPTION_NO;
+#endif
+#ifdef COMMUNITY_SERVER
+  have_community_features = SHOW_OPTION_YES;
+#else
+  have_community_features = SHOW_OPTION_NO;
 #endif
 
 #if defined(__WIN__) || defined(__NETWARE__)
@@ -7290,7 +7367,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   case OPT_STORAGE_ENGINE:
   {
     if ((enum db_type)((global_system_variables.table_type=
-                        ha_resolve_by_name(argument, strlen(argument)))) ==
+                        ha_resolve_by_name(argument, (uint) strlen(argument)))) ==
         DB_TYPE_UNKNOWN)
     {
       fprintf(stderr,"Unknown/unsupported table type: %s\n",argument);
@@ -7762,9 +7839,12 @@ static void fix_paths(void)
     pos[1]= 0;
   }
   convert_dirname(mysql_real_data_home,mysql_real_data_home,NullS);
-  (void) fn_format(buff, mysql_real_data_home, "", "",
-                   (MY_RETURN_REAL_PATH|MY_RESOLVE_SYMLINKS));
-  (void) unpack_dirname(mysql_unpacked_real_data_home, buff);
+  my_realpath(mysql_unpacked_real_data_home, mysql_real_data_home, MYF(0));
+  mysql_unpacked_real_data_home_len= strlen(mysql_unpacked_real_data_home);
+  if (mysql_unpacked_real_data_home[mysql_unpacked_real_data_home_len-1] == FN_LIBCHAR)
+    --mysql_unpacked_real_data_home_len;
+
+
   convert_dirname(language,language,NullS);
   (void) my_load_path(mysql_home,mysql_home,""); // Resolve current dir
   (void) my_load_path(mysql_real_data_home,mysql_real_data_home,mysql_home);
@@ -7959,7 +8039,9 @@ void refresh_status(THD *thd)
 
   /* Reset the counters of all key caches (default and named). */
   process_key_caches(reset_key_cache_counters);
+#ifdef COMMUNITY_SERVER
   flush_status_time= time((time_t*) 0);
+#endif
   pthread_mutex_unlock(&LOCK_status);
 
   /*

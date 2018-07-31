@@ -244,8 +244,10 @@ struct show_var_st innodb_status_variables[]= {
   (char*) &export_vars.innodb_buffer_pool_pages_flushed,  SHOW_LONG},
   {"buffer_pool_pages_free",
   (char*) &export_vars.innodb_buffer_pool_pages_free,     SHOW_LONG},
+#ifdef UNIV_DEBUG
   {"buffer_pool_pages_latched",
   (char*) &export_vars.innodb_buffer_pool_pages_latched,  SHOW_LONG},
+#endif /* UNIV_DEBUG */
   {"buffer_pool_pages_misc",
   (char*) &export_vars.innodb_buffer_pool_pages_misc,     SHOW_LONG},
   {"buffer_pool_pages_total",
@@ -522,6 +524,20 @@ convert_error_code_to_mysql(
                 mark_transaction_to_rollback(thd, TRUE);
 
     		return(HA_ERR_LOCK_TABLE_FULL);
+	} else if (error == DB_TOO_MANY_CONCURRENT_TRXS) {
+
+		/* Once MySQL add the appropriate code to errmsg.txt then
+		we can get rid of this #ifdef. NOTE: The code checked by
+		the #ifdef is the suggested name for the error condition
+		and the actual error code name could very well be different.
+		This will require some monitoring, ie. the status
+		of this request on our part.*/
+#ifdef ER_TOO_MANY_CONCURRENT_TRXS
+		return(ER_TOO_MANY_CONCURRENT_TRXS);
+#else
+		return(HA_ERR_RECORD_FILE_FULL);
+#endif
+
 	} else if (error == DB_UNSUPPORTED) {
 
 		return(HA_ERR_UNSUPPORTED);
@@ -2156,6 +2172,14 @@ ha_innobase::open(
 	UT_NOT_USED(test_if_locked);
 
 	thd = current_thd;
+
+	/* Under some cases MySQL seems to call this function while
+	holding btr_search_latch. This breaks the latching order as
+	we acquire dict_sys->mutex below and leads to a deadlock. */
+	if (thd != NULL) {
+		innobase_release_temporary_latches(thd);
+	}
+
 	normalize_table_name(norm_name, name);
 
 	user_thd = NULL;
@@ -3721,7 +3745,6 @@ convert_search_mode_to_innobase(
 		case HA_READ_MBR_WITHIN:
 		case HA_READ_MBR_DISJOINT:
 		case HA_READ_MBR_EQUAL:
-			my_error(ER_TABLE_CANT_HANDLE_SPKEYS, MYF(0));
 			return(PAGE_CUR_UNSUPP);
 		/* do not use "default:" in order to produce a gcc warning:
 		enumeration value '...' not handled in switch
@@ -4250,7 +4273,7 @@ ha_innobase::rnd_pos(
 	int		error;
 	uint		keynr	= active_index;
 	DBUG_ENTER("rnd_pos");
-	DBUG_DUMP("key", (uchar *)pos, ref_length);
+	DBUG_DUMP("key", (uchar*) pos, ref_length);
 
 	statistic_increment(current_thd->status_var.ha_read_rnd_count,
 			    &LOCK_status);
@@ -5202,7 +5225,7 @@ ha_innobase::records_in_range(
 						      mode2);
 	} else {
 
-		n_rows = 0;
+		n_rows = HA_POS_ERROR;
 	}
 
 	dtuple_free_for_mysql(heap1);
@@ -6882,6 +6905,12 @@ ha_innobase::innobase_read_and_init_auto_inc(
 	from a table when no table has been locked in ::external_lock(). */
 	prebuilt->trx->n_mysql_tables_in_use++;
 
+	/* Since we will perform a MySQL SELECT query to determine the
+	auto-inc value, set prebuilt->sql_stat_start = TRUE so that it
+	is performed like any normal SELECT, regardless of the context
+	we come here. */
+        prebuilt->sql_stat_start = TRUE;
+
 	error = index_last(table->record[1]);
 
 	prebuilt->trx->n_mysql_tables_in_use--;
@@ -6996,7 +7025,7 @@ ha_innobase::get_error_message(int error, String *buf)
 {
 	trx_t*	    trx = check_trx_exists(current_thd);
 
-	buf->copy(trx->detailed_error, strlen(trx->detailed_error),
+	buf->copy(trx->detailed_error, (uint) strlen(trx->detailed_error),
 		system_charset_info);
 
 	return FALSE;

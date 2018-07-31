@@ -1,11 +1,11 @@
 .\"     Title: \fBcomp_err\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 08/02/2008
+.\"      Date: 05/07/2009
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBCOMP_ERR\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
+.TH "\fBCOMP_ERR\fR" "1" "05/07/2009" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -50,7 +50,7 @@ shell> \fBcomp_err [\fR\fB\fIoptions\fR\fR\fB]\fR
 .RE
 .PP
 \fBcomp_err\fR
-understands the options described in the following list.
+supports the options described in the following list.
 .TP 3n
 \(bu
 \fB\-\-help\fR,
@@ -67,9 +67,9 @@ The character set directory. The default is
 \(bu
 \fB\-\-debug=\fR\fB\fIdebug_options\fR\fR\fB, \-# \fR\fB\fIdebug_options\fR\fR
 .sp
-Write a debugging log. The
+Write a debugging log. A typical
 \fIdebug_options\fR
-string often is
+string is
 \'d:t:O,\fIfile_name\fR'. The default is
 \'d:t:O,/tmp/comp_err.trace'.
 .TP 3n
@@ -122,9 +122,9 @@ The name for the SQLSTATE header file. The default is
 Display version information and exit.
 .SH "COPYRIGHT"
 .PP
-Copyright 2007\-2008 MySQL AB
+Copyright 2007\-2008 MySQL AB, 2009 Sun Microsystems, Inc.
 .PP
-This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
+This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
 This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 .PP
@@ -134,4 +134,4 @@ For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
-MySQL AB (http://www.mysql.com/).
+Sun Microsystems, Inc. (http://www.mysql.com/).

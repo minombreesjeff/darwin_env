@@ -132,15 +132,20 @@ typedef struct my_locale_st
   TYPELIB *ab_month_names;
   TYPELIB *day_names;
   TYPELIB *ab_day_names;
+  uint max_month_name_length;
+  uint max_day_name_length;
 #ifdef __cplusplus 
   my_locale_st(uint number_par,
                const char *name_par, const char *descr_par, bool is_ascii_par,
                TYPELIB *month_names_par, TYPELIB *ab_month_names_par,
-               TYPELIB *day_names_par, TYPELIB *ab_day_names_par) : 
+               TYPELIB *day_names_par, TYPELIB *ab_day_names_par,
+               uint max_month_name_length_par, uint max_day_name_length_par) : 
     number(number_par),
     name(name_par), description(descr_par), is_ascii(is_ascii_par),
     month_names(month_names_par), ab_month_names(ab_month_names_par),
-    day_names(day_names_par), ab_day_names(ab_day_names_par)
+    day_names(day_names_par), ab_day_names(ab_day_names_par),
+    max_month_name_length(max_month_name_length_par),
+    max_day_name_length(max_day_name_length_par)
   {}
 #endif
 } MY_LOCALE;
@@ -247,6 +252,11 @@ MY_LOCALE *my_locale_by_number(uint number);
 
 #define PRECISION_FOR_DOUBLE 53
 #define PRECISION_FOR_FLOAT  24
+
+/* -[digits].E+## */
+#define MAX_FLOAT_STR_LENGTH (FLT_DIG + 6)
+/* -[digits].E+### */
+#define MAX_DOUBLE_STR_LENGTH (DBL_DIG + 7)
 
 /*
   Default time to wait before aborting a new client connection
@@ -439,6 +449,7 @@ MY_LOCALE *my_locale_by_number(uint number);
 #define UNCACHEABLE_PREPARE    16
 /* For uncorrelated SELECT in an UNION with some correlated SELECTs */
 #define UNCACHEABLE_UNITED     32
+#define UNCACHEABLE_CHECKOPTION   64
 
 /* Used to check GROUP BY list in the MODE_ONLY_FULL_GROUP_BY mode */
 #define UNDEF_POS (-1)
@@ -449,6 +460,13 @@ MY_LOCALE *my_locale_by_number(uint number);
   The client tells the server to block with SELECT GET_LOCK()
   and unblocks it with SELECT RELEASE_LOCK(). Used for debugging difficult
   concurrency problems
+
+  NOTE: This will release the user lock that the thread currently
+  locked, which can cause problem if users want to use user locks for
+  other purposes. In order to overcome this problem, it's adviced to
+  wrap the call to DBUG_SYNC_POINT() within the DBUG_EXECUTE_IF(), so
+  that it will only be activated if the given keyword is included in
+  the 'debug' option, and will not fiddle user locks otherwise.
 */
 #define DBUG_SYNC_POINT(lock_name,lock_timeout) \
  debug_sync_point(lock_name,lock_timeout)
@@ -632,6 +650,7 @@ LEX_USER *create_definer(THD *thd, LEX_STRING *user_name, LEX_STRING *host_name)
 LEX_USER *get_current_user(THD *thd, LEX_USER *user);
 bool check_string_length(LEX_STRING *str,
                          const char *err_msg, uint max_length);
+bool check_host_name(LEX_STRING *str);
 
 enum enum_mysql_completiontype {
   ROLLBACK_RELEASE=-2, ROLLBACK=1,  ROLLBACK_AND_CHAIN=7,
@@ -662,6 +681,8 @@ struct Query_cache_query_flags
   unsigned int client_long_flag:1;
   unsigned int client_protocol_41:1;
   unsigned int more_results_exists:1;
+  unsigned int in_trans:1;
+  unsigned int autocommit:1;
   unsigned int pkt_nr;
   uint character_set_client_num;
   uint character_set_results_num;
@@ -994,6 +1015,7 @@ int fill_schema_column_privileges(THD *thd, TABLE_LIST *tables, COND *cond);
 bool get_schema_tables_result(JOIN *join,
                               enum enum_schema_table_state executed_place);
 enum enum_schema_tables get_schema_table_idx(ST_SCHEMA_TABLE *schema_table);
+bool schema_table_store_record(THD *thd, TABLE *table);
 
 bool schema_table_store_record(THD *thd, TABLE *table);
 
@@ -1284,6 +1306,7 @@ extern char *mysql_data_home,server_version[SERVER_VERSION_LENGTH],
 	    mysql_real_data_home[], *opt_mysql_tmpdir, mysql_charsets_dir[],
 	    mysql_unpacked_real_data_home[],
             def_ft_boolean_syntax[sizeof(ft_boolean_syntax)];
+extern int mysql_unpacked_real_data_home_len;
 #define mysql_tmpdir (my_tmpdir(&mysql_tmpdir_list))
 extern MY_TMPDIR mysql_tmpdir_list;
 extern const char *command_name[];
@@ -1468,6 +1491,8 @@ extern SHOW_COMP_OPTION have_query_cache;
 extern SHOW_COMP_OPTION have_geometry, have_rtree_keys;
 extern SHOW_COMP_OPTION have_crypt;
 extern SHOW_COMP_OPTION have_compress;
+extern SHOW_COMP_OPTION have_community_features;
+extern SHOW_COMP_OPTION have_profiling;
 
 #ifndef __WIN__
 extern pthread_t signal_thread;
@@ -1574,14 +1599,14 @@ void make_date(const DATE_TIME_FORMAT *format, const MYSQL_TIME *l_time,
                String *str);
 void make_time(const DATE_TIME_FORMAT *format, const MYSQL_TIME *l_time,
                String *str);
-ulonglong get_datetime_value(THD *thd, Item ***item_arg, Item **cache_arg,
-                             Item *warn_item, bool *is_null);
+longlong get_datetime_value(THD *thd, Item ***item_arg, Item **cache_arg,
+                            Item *warn_item, bool *is_null);
 
 int test_if_number(char *str,int *res,bool allow_wildcards);
 void change_byte(byte *,uint,char,char);
 void init_read_record(READ_RECORD *info, THD *thd, TABLE *reg_form,
-		      SQL_SELECT *select,
-		      int use_record_cache, bool print_errors);
+		      SQL_SELECT *select, int use_record_cache, 
+                      bool print_errors, bool disable_rr_cache);
 void init_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table, 
                           bool print_error, uint idx);
 void end_read_record(READ_RECORD *info);
@@ -1786,6 +1811,8 @@ bool check_stack_overrun(THD *thd, long margin, char *dummy);
 inline void kill_delayed_threads(void) {}
 #define check_stack_overrun(A, B, C) 0
 #endif
+
+extern "C" int test_if_data_home_dir(const char *dir);
 
 #endif /* MYSQL_CLIENT */
 
