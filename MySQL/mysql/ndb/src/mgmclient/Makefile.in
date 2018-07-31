@@ -111,12 +111,13 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libndbmgmclient_la_DEPENDENCIES = ../mgmapi/libmgmapi.la \
 	../common/logger/liblogger.la ../common/portlib/libportlib.la \
-	../common/util/libgeneral.la ../common/portlib/libportlib.la
+	../common/util/libgeneral.la ../common/portlib/libportlib.la \
+	../common/debugger/libtrace.la
 am_libndbmgmclient_la_OBJECTS = CommandInterpreter.lo
 libndbmgmclient_la_OBJECTS = $(am_libndbmgmclient_la_OBJECTS)
 am__installdirs = "$(DESTDIR)$(ndbtoolsdir)"
@@ -127,11 +128,13 @@ ndb_mgm_OBJECTS = $(am_ndb_mgm_OBJECTS)
 ndb_mgm_LDADD = $(LDADD)
 am__DEPENDENCIES_1 = libndbmgmclient.la
 am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) \
-	../common/portlib/libportlib.la $(top_builddir)/dbug/libdbug.a \
+	../common/portlib/libportlib.la \
+	$(top_builddir)/ndb/src/libndbclient.la \
+	$(top_builddir)/dbug/libdbug.a \
 	$(top_builddir)/mysys/libmysys.a \
 	$(top_builddir)/strings/libmystrings.a
 ndb_mgm_DEPENDENCIES = $(am__DEPENDENCIES_2)
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
@@ -155,6 +158,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -292,7 +296,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -343,6 +349,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -415,7 +422,8 @@ libndbmgmclient_la_LIBADD = ../mgmapi/libmgmapi.la \
 			    ../common/logger/liblogger.la \
 			    ../common/portlib/libportlib.la \
 			    ../common/util/libgeneral.la \
-			    ../common/portlib/libportlib.la
+			    ../common/portlib/libportlib.la \
+			    ../common/debugger/libtrace.la
 
 ndb_mgm_SOURCES = main.cpp
 ndbbindir = "$(libexecdir)"
@@ -444,6 +452,7 @@ NDB_CXXFLAGS = @ndb_cxxflags_fix@ $(NDB_CXXFLAGS_LOC)
 LDADD_LOC = $(noinst_LTLIBRARIES) \
 	    ../common/portlib/libportlib.la \
             @readline_link@ \
+            $(top_builddir)/ndb/src/libndbclient.la \
             $(top_builddir)/dbug/libdbug.a \
             $(top_builddir)/mysys/libmysys.a \
             $(top_builddir)/strings/libmystrings.a \

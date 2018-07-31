@@ -1,5 +1,7 @@
 drop table if exists t1;
 CREATE FUNCTION metaphon RETURNS STRING SONAME "UDF_EXAMPLE_LIB";
+Warnings:
+Warning	1105	plugin_dir was not specified
 CREATE FUNCTION myfunc_double RETURNS REAL SONAME "UDF_EXAMPLE_LIB";
 CREATE FUNCTION myfunc_nonexist RETURNS INTEGER SONAME "UDF_EXAMPLE_LIB";
 ERROR HY000: Can't find function 'myfunc_nonexist' in library
@@ -95,10 +97,10 @@ FR
 DROP TABLE bug19904;
 CREATE DEFINER=CURRENT_USER() FUNCTION should_not_parse
 RETURNS STRING SONAME "should_not_parse.so";
-ERROR HY000: Incorrect usage of SONAME and DEFINER
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'RETURNS STRING SONAME "should_not_parse.so"' at line 2
 CREATE DEFINER=someone@somewhere FUNCTION should_not_parse
 RETURNS STRING SONAME "should_not_parse.so";
-ERROR HY000: Incorrect usage of SONAME and DEFINER
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'RETURNS STRING SONAME "should_not_parse.so"' at line 2
 create table t1(f1 int);
 insert into t1 values(1),(2);
 explain select myfunc_int(f1) from t1 order by 1;
@@ -197,6 +199,8 @@ DROP FUNCTION avgcost;
 select * from mysql.func;
 name	ret	dl	type
 CREATE FUNCTION is_const RETURNS STRING SONAME "UDF_EXAMPLE_LIB";
+Warnings:
+Warning	1105	plugin_dir was not specified
 select IS_const(3);
 IS_const(3)
 const
@@ -206,6 +210,8 @@ name	ret	dl	type
 select is_const(3);
 ERROR 42000: FUNCTION test.is_const does not exist
 CREATE FUNCTION is_const RETURNS STRING SONAME "UDF_EXAMPLE_LIB";
+Warnings:
+Warning	1105	plugin_dir was not specified
 select
 is_const(3) as const,
 is_const(3.14) as const,
@@ -273,4 +279,85 @@ drop function f3;
 drop function metaphon;
 drop function myfunc_double;
 drop function myfunc_int;
+CREATE FUNCTION metaphon RETURNS STRING SONAME "UDF_EXAMPLE_LIB";
+create table t1 (a char);
+set GLOBAL query_cache_size=1355776;
+reset query cache;
+select metaphon('MySQL') from t1;
+metaphon('MySQL')
+show status like "Qcache_hits";
+Variable_name	Value
+Qcache_hits	0
+show status like "Qcache_queries_in_cache";
+Variable_name	Value
+Qcache_queries_in_cache	0
+select metaphon('MySQL') from t1;
+metaphon('MySQL')
+show status like "Qcache_hits";
+Variable_name	Value
+Qcache_hits	0
+show status like "Qcache_queries_in_cache";
+Variable_name	Value
+Qcache_queries_in_cache	0
+drop table t1;
+drop function metaphon;
+set GLOBAL query_cache_size=default;
+DROP DATABASE IF EXISTS mysqltest;
+CREATE DATABASE mysqltest;
+USE mysqltest;
+DROP DATABASE mysqltest;
+CREATE FUNCTION metaphon RETURNS STRING SONAME "UDF_EXAMPLE_LIB";
+DROP FUNCTION metaphon;
+USE test;
+CREATE TABLE const_len_bug (
+str_const varchar(4000),
+result1 varchar(4000),
+result2 varchar(4000)
+);
+CREATE TRIGGER check_const_len_trigger BEFORE INSERT ON const_len_bug FOR EACH ROW BEGIN
+set NEW.str_const = 'bar';
+set NEW.result2 = check_const_len(NEW.str_const);
+END |
+CREATE PROCEDURE check_const_len_sp (IN str_const VARCHAR(4000))
+BEGIN
+DECLARE result VARCHAR(4000);
+SET result = check_const_len(str_const);
+insert into const_len_bug values(str_const, result, "");
+END |
+CREATE FUNCTION check_const_len RETURNS string SONAME "UDF_EXAMPLE_LIB";
+CALL check_const_len_sp("foo");
+SELECT * from const_len_bug;
+str_const	result1	result2
+bar	Correct length	Correct length
+DROP FUNCTION check_const_len;
+DROP PROCEDURE check_const_len_sp;
+DROP TRIGGER check_const_len_trigger;
+DROP TABLE const_len_bug;
+CREATE FUNCTION sequence RETURNS INTEGER SONAME "UDF_EXAMPLE_LIB";
+CREATE TABLE t1 (a INT);
+CREATE TABLE t2 (a INT PRIMARY KEY);
+INSERT INTO t1 VALUES (4),(3),(2),(1);
+INSERT INTO t2 SELECT * FROM t1;
+SELECT sequence() AS seq, a FROM t1 ORDER BY seq ASC;
+seq	a
+1	4
+2	3
+3	2
+4	1
+SELECT sequence() AS seq, a FROM t1 ORDER BY seq DESC;
+seq	a
+4	1
+3	2
+2	3
+1	4
+SELECT * FROM t1 WHERE a = sequence();
+a
+SELECT * FROM t2 WHERE a = sequence();
+a
+1
+2
+3
+4
+DROP FUNCTION sequence;
+DROP TABLE t1,t2;
 End of 5.0 tests.

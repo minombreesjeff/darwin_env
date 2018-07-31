@@ -527,6 +527,11 @@ void ProcessOldClientHello(input_buffer& input, SSL& ssl)
     input.read(len, sizeof(len));
     uint16 randomLen;
     ato16(len, randomLen);
+    if (ch.suite_len_ > MAX_SUITE_SZ || sessionLen > ID_LEN ||
+        randomLen > RAN_LEN) {
+        ssl.SetError(bad_input);
+        return;
+    }
 
     int j = 0;
     for (uint16 i = 0; i < ch.suite_len_; i += 3) {    
@@ -719,6 +724,10 @@ int DoProcessReply(SSL& ssl)
 
     // add new data
     uint read  = ssl.useSocket().receive(buffer.get_buffer() + buffSz, ready);
+    if (read == static_cast<uint>(-1)) {
+        ssl.SetError(receive_error);
+        return 0;
+    }
     buffer.add_size(read);
     uint offset = 0;
     const MessageFactory& mf = ssl.getFactory().getMessage();

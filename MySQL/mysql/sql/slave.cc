@@ -26,6 +26,7 @@
 #include <my_dir.h>
 #include <sql_common.h>
 #include <errmsg.h>
+#include <mysys_err.h>
 
 #define MAX_SLAVE_RETRY_PAUSE 5
 bool use_slave_mask = 0;
@@ -698,7 +699,20 @@ int terminate_slave_thread(THD* thd, pthread_mutex_t* term_lock,
   while (*slave_running)			// Should always be true
   {
     DBUG_PRINT("loop", ("killing slave thread"));
-    KICK_SLAVE(thd);
+
+    pthread_mutex_lock(&thd->LOCK_delete);
+#ifndef DONT_USE_THR_ALARM
+    /*
+      Error codes from pthread_kill are:
+      EINVAL: invalid signal number (can't happen)
+      ESRCH: thread already killed (can happen, should be ignored)
+    */
+    IF_DBUG(int err= ) pthread_kill(thd->real_id, thr_client_alarm);
+    DBUG_ASSERT(err != EINVAL);
+#endif
+    thd->awake(THD::NOT_KILLED);
+    pthread_mutex_unlock(&thd->LOCK_delete);
+
     /*
       There is a small chance that slave thread might miss the first
       alarm. To protect againts it, resend the signal until it reacts
@@ -2446,14 +2460,15 @@ bool show_master_info(THD* thd, MASTER_INFO* mi)
     protocol->prepare_for_resend();
   
     /*
-      TODO: we read slave_running without run_lock, whereas these variables
-      are updated under run_lock and not data_lock. In 5.0 we should lock
-      run_lock on top of data_lock (with good order).
+      slave_running can be accessed without run_lock but not other
+      non-volotile members like mi->io_thd, which is guarded by the mutex.
     */
+    pthread_mutex_lock(&mi->run_lock);
+    protocol->store(mi->io_thd ? mi->io_thd->proc_info : "", &my_charset_bin);
+    pthread_mutex_unlock(&mi->run_lock);
+
     pthread_mutex_lock(&mi->data_lock);
     pthread_mutex_lock(&mi->rli.data_lock);
-
-    protocol->store(mi->io_thd ? mi->io_thd->proc_info : "", &my_charset_bin);
     protocol->store(mi->host, &my_charset_bin);
     protocol->store(mi->user, &my_charset_bin);
     protocol->store((uint32) mi->port);
@@ -2683,7 +2698,7 @@ int st_relay_log_info::wait_for_pos(THD* thd, String* log_name,
                                     longlong timeout)
 {
   if (!inited)
-    return -1;
+    return -2;
   int event_count = 0;
   ulong init_abort_pos_wait;
   int error=0;
@@ -2894,6 +2909,9 @@ void set_slave_thread_default_charset(THD* thd, RELAY_LOG_INFO *rli)
 static int init_slave_thread(THD* thd, SLAVE_THD_TYPE thd_type)
 {
   DBUG_ENTER("init_slave_thread");
+#if !defined(DBUG_OFF)
+  int simulate_error= 0;
+#endif
   thd->system_thread = (thd_type == SLAVE_THD_SQL) ?
     SYSTEM_THREAD_SLAVE_SQL : SYSTEM_THREAD_SLAVE_IO; 
   thd->security_ctx->skip_grants();
@@ -2913,10 +2931,17 @@ static int init_slave_thread(THD* thd, SLAVE_THD_TYPE thd_type)
   thd->thread_id = thread_id++;
   pthread_mutex_unlock(&LOCK_thread_count);
 
+  DBUG_EXECUTE_IF("simulate_io_slave_error_on_init",
+                  simulate_error|= (1 << SLAVE_THD_IO););
+  DBUG_EXECUTE_IF("simulate_sql_slave_error_on_init",
+                  simulate_error|= (1 << SLAVE_THD_SQL););
+#if !defined(DBUG_OFF)
+  if (init_thr_lock() || thd->store_globals() || simulate_error & (1<< thd_type))
+#else
   if (init_thr_lock() || thd->store_globals())
+#endif
   {
     thd->cleanup();
-    delete thd;
     DBUG_RETURN(-1);
   }
 
@@ -3113,6 +3138,11 @@ int check_expected_error(THD* thd, RELAY_LOG_INFO* rli, int expected_error)
      Check if condition stated in UNTIL clause of START SLAVE is reached.
    SYNOPSYS
      st_relay_log_info::is_until_satisfied()
+     master_beg_pos    position of the beginning of to be executed event
+                       (not log_pos member of the event that points to the
+                        beginning of the following event)
+
+
    DESCRIPTION
      Checks if UNTIL condition is reached. Uses caching result of last 
      comparison of current log file name and target log file name. So cached 
@@ -3137,7 +3167,7 @@ int check_expected_error(THD* thd, RELAY_LOG_INFO* rli, int expected_error)
      false - condition not met
 */
 
-bool st_relay_log_info::is_until_satisfied()
+bool st_relay_log_info::is_until_satisfied(my_off_t master_beg_pos)
 {
   const char *log_name;
   ulonglong log_pos;
@@ -3147,7 +3177,7 @@ bool st_relay_log_info::is_until_satisfied()
   if (until_condition == UNTIL_MASTER_POS)
   {
     log_name= group_master_log_name;
-    log_pos= group_master_log_pos;
+    log_pos= master_beg_pos;
   }
   else
   { /* until_condition == UNTIL_RELAY_POS */
@@ -3226,28 +3256,6 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
      wait for something for example inside of next_event().
    */
   pthread_mutex_lock(&rli->data_lock);
-  /*
-    This tests if the position of the end of the last previous executed event
-    hits the UNTIL barrier.
-    We would prefer to test if the position of the start (or possibly) end of
-    the to-be-read event hits the UNTIL barrier, this is different if there
-    was an event ignored by the I/O thread just before (BUG#13861 to be
-    fixed).
-  */
-  if (rli->until_condition!=RELAY_LOG_INFO::UNTIL_NONE &&
-      rli->is_until_satisfied())
-  {
-    char buf[22];
-    sql_print_information("Slave SQL thread stopped because it reached its"
-                    " UNTIL position %s", llstr(rli->until_pos(), buf));
-    /*
-      Setting abort_slave flag because we do not want additional message about
-      error in query execution to be printed.
-    */
-    rli->abort_slave= 1;
-    pthread_mutex_unlock(&rli->data_lock);
-    return 1;
-  }
 
   Log_event * ev = next_event(rli);
 
@@ -3265,6 +3273,27 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
     int exec_res;
 
     /*
+      This tests if the position of the beginning of the current event
+      hits the UNTIL barrier.
+    */
+    if (rli->until_condition != RELAY_LOG_INFO::UNTIL_NONE &&
+        rli->is_until_satisfied((thd->options & OPTION_BEGIN || !ev->log_pos) ?
+                                rli->group_master_log_pos :
+                                ev->log_pos - ev->data_written))
+    {
+      char buf[22];
+      sql_print_information("Slave SQL thread stopped because it reached its"
+                            " UNTIL position %s", llstr(rli->until_pos(), buf));
+      /*
+        Setting abort_slave flag because we do not want additional message about
+        error in query execution to be printed.
+      */
+      rli->abort_slave= 1;
+      pthread_mutex_unlock(&rli->data_lock);
+      delete ev;
+      return 1;
+    }
+    /*
       Queries originating from this server must be skipped.
       Low-level events (Format_desc, Rotate, Stop) from this server
       must also be skipped. But for those we don't want to modify
@@ -3278,7 +3307,43 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
       now the relay log starts with its Format_desc, has a Rotate etc).
     */
 
-    DBUG_PRINT("info",("type_code=%d, server_id=%d",type_code,ev->server_id));
+    DBUG_PRINT("info",("type_code: %d; server_id: %d; slave_skip_counter: %d",
+                       type_code, ev->server_id, rli->slave_skip_counter));
+
+    /*
+      If the slave skip counter is positive, we still need to set the
+      OPTION_BEGIN flag correctly and not skip the log events that
+      start or end a transaction. If we do this, the slave will not
+      notice that it is inside a transaction, and happily start
+      executing from inside the transaction.
+
+      Note that the code block below is strictly 5.0.
+     */
+#if MYSQL_VERSION_ID < 50100
+    if (unlikely(rli->slave_skip_counter > 0))
+    {
+      switch (type_code)
+      {
+      case QUERY_EVENT:
+      {
+        Query_log_event* const qev= (Query_log_event*) ev;
+        DBUG_PRINT("info", ("QUERY_EVENT { query: '%s', q_len: %u }",
+                            qev->query, qev->q_len));
+        if (memcmp("BEGIN", qev->query, qev->q_len+1) == 0)
+          thd->options|= OPTION_BEGIN;
+        else if (memcmp("COMMIT", qev->query, qev->q_len+1) == 0 ||
+                 memcmp("ROLLBACK", qev->query, qev->q_len+1) == 0)
+          thd->options&= ~OPTION_BEGIN;
+      }
+      break;
+
+      case XID_EVENT:
+        DBUG_PRINT("info", ("XID_EVENT"));
+        thd->options&= ~OPTION_BEGIN;
+        break;
+      }
+    }
+#endif
 
     if ((ev->server_id == (uint32) ::server_id &&
          !replicate_same_server_id &&
@@ -3300,6 +3365,9 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
         flush_relay_log_info(rli);
       }
 
+      DBUG_PRINT("info", ("thd->options: %s",
+                          (thd->options & OPTION_BEGIN) ? "OPTION_BEGIN" : ""));
+
       /*
         Protect against common user error of setting the counter to 1
         instead of 2 while recovering from an insert which used auto_increment,
@@ -3308,8 +3376,20 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
       if (rli->slave_skip_counter &&
           !((type_code == INTVAR_EVENT ||
              type_code == RAND_EVENT ||
-             type_code == USER_VAR_EVENT) &&
+             type_code == USER_VAR_EVENT ||
+             type_code == BEGIN_LOAD_QUERY_EVENT ||
+             type_code == APPEND_BLOCK_EVENT ||
+             type_code == CREATE_FILE_EVENT) &&
             rli->slave_skip_counter == 1) &&
+#if MYSQL_VERSION_ID < 50100
+          /*
+            Decrease the slave skip counter only if we are not inside
+            a transaction or the slave skip counter is more than
+            1. The slave skip counter will be decreased from 1 to 0
+            when reaching the final ROLLBACK, COMMIT, or XID_EVENT.
+           */
+          (!(thd->options & OPTION_BEGIN) || rli->slave_skip_counter > 1) &&
+#endif
           /*
             The events from ourselves which have something to do with the relay
             log itself must be skipped, true, but they mustn't decrement
@@ -3320,8 +3400,10 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
             would not be skipped.
           */
           !(ev->server_id == (uint32) ::server_id &&
-            (type_code == ROTATE_EVENT || type_code == STOP_EVENT ||
-             type_code == START_EVENT_V3 || type_code == FORMAT_DESCRIPTION_EVENT)))
+            (type_code == ROTATE_EVENT ||
+             type_code == STOP_EVENT ||
+             type_code == START_EVENT_V3 ||
+             type_code == FORMAT_DESCRIPTION_EVENT)))
         --rli->slave_skip_counter;
       pthread_mutex_unlock(&rli->data_lock);
       delete ev;
@@ -3461,6 +3543,7 @@ slave_begin:
 
   thd= new THD; // note that contructor of THD uses DBUG_ !
   THD_CHECK_SENTRY(thd);
+  mi->io_thd = thd;
 
   pthread_detach_this_thread();
   thd->thread_stack= (char*) &thd; // remember where our stack is
@@ -3471,7 +3554,6 @@ slave_begin:
     sql_print_error("Failed during slave I/O thread initialization");
     goto err;
   }
-  mi->io_thd = thd;
   pthread_mutex_lock(&LOCK_thread_count);
   threads.append(thd);
   pthread_mutex_unlock(&LOCK_thread_count);
@@ -3529,7 +3611,7 @@ connected:
       on with life.
     */
     thd_proc_info(thd, "Registering slave on master");
-    if (register_slave_on_master(mysql) ||  update_slave_list(mysql, mi))
+    if (register_slave_on_master(mysql))
       goto err;
   }
 
@@ -3611,22 +3693,25 @@ after reconnect");
 
       if (event_len == packet_error)
       {
-	uint mysql_error_number= mysql_errno(mysql);
-	if (mysql_error_number == CR_NET_PACKET_TOO_LARGE)
-	{
-	  sql_print_error("\
+        uint mysql_error_number= mysql_errno(mysql);
+        switch (mysql_error_number) {
+        case CR_NET_PACKET_TOO_LARGE:
+          sql_print_error("\
 Log entry on master is longer than max_allowed_packet (%ld) on \
 slave. If the entry is correct, restart the server with a higher value of \
 max_allowed_packet",
-			  thd->variables.max_allowed_packet);
-	  goto err;
-	}
-	if (mysql_error_number == ER_MASTER_FATAL_ERROR_READING_BINLOG)
-	{
-	  sql_print_error(ER(mysql_error_number), mysql_error_number,
-			  mysql_error(mysql));
-	  goto err;
-	}
+                          thd->variables.max_allowed_packet);
+          goto err;
+        case ER_MASTER_FATAL_ERROR_READING_BINLOG:
+          sql_print_error(ER(mysql_error_number), mysql_error_number,
+                          mysql_error(mysql));
+          goto err;
+        case EE_OUTOFMEMORY:
+        case ER_OUTOFMEMORY:
+          sql_print_error("\
+Stopping slave I/O thread due to out-of-memory error from master");
+          goto err;
+        }
         mi->slave_running= MYSQL_SLAVE_RUN_NOT_CONNECT;
 	thd_proc_info(thd, "Waiting to reconnect after a failed master event read");
 #ifdef SIGNAL_WITH_VIO_CLOSE
@@ -3808,9 +3893,11 @@ slave_begin:
 
   thd = new THD; // note that contructor of THD uses DBUG_ !
   thd->thread_stack = (char*)&thd; // remember where our stack is
+  rli->sql_thd= thd;
   
   /* Inform waiting threads that slave has started */
   rli->slave_run_id++;
+  rli->slave_running = 1;
 
   pthread_detach_this_thread();
   if (init_slave_thread(thd, SLAVE_THD_SQL))
@@ -3825,7 +3912,6 @@ slave_begin:
     goto err;
   }
   thd->init_for_queries();
-  rli->sql_thd= thd;
   thd->temporary_tables = rli->save_temporary_tables; // restore temp tables
   pthread_mutex_lock(&LOCK_thread_count);
   threads.append(thd);
@@ -3838,7 +3924,6 @@ slave_begin:
     start receiving data so we realize we are not caught up and
     Seconds_Behind_Master grows. No big deal.
   */
-  rli->slave_running = 1;
   rli->abort_slave = 0;
   pthread_mutex_unlock(&rli->run_lock);
   pthread_cond_broadcast(&rli->start_cond);
@@ -3918,6 +4003,22 @@ Slave SQL thread aborted. Can't execute init_slave query");
       goto err;
     }
   }
+
+  /*
+    First check until condition - probably there is nothing to execute. We
+    do not want to wait for next event in this case.
+  */
+  pthread_mutex_lock(&rli->data_lock);
+  if (rli->until_condition != RELAY_LOG_INFO::UNTIL_NONE &&
+      rli->is_until_satisfied(rli->group_master_log_pos))
+  {
+    char buf[22];
+    sql_print_information("Slave SQL thread stopped because it reached its"
+                          " UNTIL position %s", llstr(rli->until_pos(), buf));
+    pthread_mutex_unlock(&rli->data_lock);
+    goto err;
+  }
+  pthread_mutex_unlock(&rli->data_lock);
 
   /* Read queries from the IO/THREAD until this thread is killed */
 
@@ -4927,7 +5028,16 @@ Log_event* next_event(RELAY_LOG_INFO* rli)
           a new event and is queuing it; the false "0" will exist until SQL
           finishes executing the new event; it will be look abnormal only if
           the events have old timestamps (then you get "many", 0, "many").
-          Transient phases like this can't really be fixed.
+
+          Transient phases like this can be fixed with implemeting
+          Heartbeat event which provides the slave the status of the
+          master at time the master does not have any new update to send.
+          Seconds_Behind_Master would be zero only when master has no
+          more updates in binlog for slave. The heartbeat can be sent
+          in a (small) fraction of slave_net_timeout. Until it's done
+          rli->last_master_timestamp is temporarely (for time of
+          waiting for the following event) reset whenever EOF is
+          reached.
         */
         time_t save_timestamp= rli->last_master_timestamp;
         rli->last_master_timestamp= 0;

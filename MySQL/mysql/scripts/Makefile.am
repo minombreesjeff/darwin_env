@@ -41,18 +41,21 @@ bin_SCRIPTS =		@server_scripts@ \
 
 noinst_SCRIPTS =	make_binary_distribution \
 			make_sharedlib_distribution \
-			make_win_src_distribution
+			make_win_src_distribution_old
 
 EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			make_sharedlib_distribution.sh \
-			make_win_src_distribution.sh \
+			make_win_src_distribution_old.sh \
 			msql2mysql.sh \
 			mysql_config.sh \
+			mysql_config.pl.in \
 			mysql_fix_privilege_tables.sh \
 			mysql_fix_extensions.sh \
 			mysql_install_db.sh \
+			mysql_install_db.pl.in \
 			mysql_setpermission.sh \
 			mysql_secure_installation.sh \
+			mysql_secure_installation.pl.in \
 			mysql_zap.sh \
 			mysqlaccess.sh \
 			mysqlbug.sh \
@@ -99,7 +102,7 @@ CLEANFILES =		@server_scripts@ \
 			mysql_tableinfo \
 			mysql_upgrade_shell \
 			mysqld_multi \
-			make_win_src_distribution
+			make_win_src_distribution_old
 
 # mysqlbug should be distributed built so that people can report build
 # failures with it.
@@ -149,13 +152,19 @@ SUFFIXES = .sh
 	  -e 's!@''CC''@!@CC@!'\
 	  -e 's!@''CXX''@!@CXX@!'\
 	  -e 's!@''GXX''@!@GXX@!'\
+	  -e 's!@''SAVE_CC''@!@SAVE_CC@!'\
+	  -e 's!@''SAVE_CXX''@!@SAVE_CXX@!'\
 	  -e 's!@''CC_VERSION''@!@CC_VERSION@!'\
 	  -e 's!@''CXX_VERSION''@!@CXX_VERSION@!'\
 	  -e 's!@''PERL''@!@PERL@!' \
-	  -e 's!@''ASFLAGS''@!@SAVE_ASFLAGS@!'\
-	  -e 's!@''CFLAGS''@!@SAVE_CFLAGS@!'\
-	  -e 's!@''CXXFLAGS''@!@SAVE_CXXFLAGS@!'\
-	  -e 's!@''LDFLAGS''@!@SAVE_LDFLAGS@!'\
+	  -e 's!@''SAVE_ASFLAGS''@!@SAVE_ASFLAGS@!'\
+	  -e 's!@''SAVE_CFLAGS''@!@SAVE_CFLAGS@!'\
+	  -e 's!@''SAVE_CXXFLAGS''@!@SAVE_CXXFLAGS@!'\
+	  -e 's!@''SAVE_LDFLAGS''@!@SAVE_LDFLAGS@!'\
+	  -e 's!@''ASFLAGS''@!@ASFLAGS@!'\
+	  -e 's!@''CFLAGS''@!@CFLAGS@!'\
+	  -e 's!@''CXXFLAGS''@!@CXXFLAGS@!'\
+	  -e 's!@''LDFLAGS''@!@LDFLAGS@!'\
 	  -e 's!@''CLIENT_LIBS''@!@CLIENT_LIBS@!' \
 	  -e 's!@''ZLIB_LIBS''@!@ZLIB_LIBS@!' \
 	  -e 's!@''LIBS''@!@LIBS@!' \
@@ -174,6 +183,7 @@ SUFFIXES = .sh
 	  -e 's!@''MYSQLD_DEFAULT_SWITCHES''@!@MYSQLD_DEFAULT_SWITCHES@!' \
 	  -e 's!@''MYSQL_UNIX_ADDR''@!@MYSQL_UNIX_ADDR@!' \
 	  -e 's!@''MYSQL_TCP_PORT''@!@MYSQL_TCP_PORT@!' \
+	  -e 's!@''MYSQL_TCP_PORT_DEFAULT''@!@MYSQL_TCP_PORT_DEFAULT@!' \
 	  -e 's!@''TARGET_LINUX''@!@TARGET_LINUX@!' \
 	  -e "s!@""CONF_COMMAND""@!@CONF_COMMAND@!" \
 	  -e 's!@''MYSQLD_USER''@!@MYSQLD_USER@!' \

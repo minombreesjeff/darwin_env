@@ -54,7 +54,8 @@ public:
                   NOT_FUNC, NOT_ALL_FUNC,
                   NOW_FUNC, TRIG_COND_FUNC,
                   SUSERVAR_FUNC, GUSERVAR_FUNC, COLLATE_FUNC,
-                  EXTRACT_FUNC, CHAR_TYPECAST_FUNC, FUNC_SP, UDF_FUNC };
+                  EXTRACT_FUNC, CHAR_TYPECAST_FUNC, FUNC_SP, UDF_FUNC,
+                  NEG_FUNC };
   enum optimize_type { OPTIMIZE_NONE,OPTIMIZE_KEY,OPTIMIZE_OP, OPTIMIZE_NULL,
                        OPTIMIZE_EQUAL };
   enum Type type() const { return FUNC_ITEM; }
@@ -236,9 +237,40 @@ public:
   my_decimal *val_decimal(my_decimal *);
   String *val_str(String*str);
 
+  /**
+     @brief Performs the operation that this functions implements when the
+     result type is INT.
+
+     @return The result of the operation.
+  */
   virtual longlong int_op()= 0;
+
+  /**
+     @brief Performs the operation that this functions implements when the
+     result type is REAL.
+
+     @return The result of the operation.
+  */
   virtual double real_op()= 0;
+
+  /**
+     @brief Performs the operation that this functions implements when the
+     result type is DECIMAL.
+
+     @param A pointer where the DECIMAL value will be allocated.
+     @return 
+       - 0 If the result is NULL
+       - The same pointer it was given, with the area initialized to the
+         result of the operation.
+  */
   virtual my_decimal *decimal_op(my_decimal *)= 0;
+
+  /**
+     @brief Performs the operation that this functions implements when the
+     result type is a string type.
+
+     @return The result of the operation.
+  */
   virtual String *str_op(String *)= 0;
   bool is_null() { update_null_value(); return null_value; }
 };
@@ -435,6 +467,7 @@ public:
   longlong int_op();
   my_decimal *decimal_op(my_decimal *);
   const char *func_name() const { return "-"; }
+  enum Functype functype() const   { return NEG_FUNC; }
   void fix_length_and_dec();
   void fix_num_length_and_dec();
   uint decimal_precision() const { return args[0]->decimal_precision(); }
@@ -692,7 +725,8 @@ class Item_func_min_max :public Item_func
   /* An item used for issuing warnings while string to DATETIME conversion. */
   Item *datetime_item;
   THD *thd;
-
+protected:
+  enum_field_types cached_field_type;
 public:
   Item_func_min_max(List<Item> &list,int cmp_sign_arg) :Item_func(list),
     cmp_type(INT_RESULT), cmp_sign(cmp_sign_arg), compare_as_dates(FALSE),
@@ -705,6 +739,7 @@ public:
   enum Item_result result_type () const { return cmp_type; }
   bool result_as_longlong() { return compare_as_dates; };
   uint cmp_datetimes(ulonglong *value);
+  enum_field_types field_type() const { return cached_field_type; }
 };
 
 class Item_func_min :public Item_func_min_max
@@ -747,6 +782,8 @@ public:
     collation= args[0]->collation;
     max_length= args[0]->max_length;
     decimals=args[0]->decimals; 
+    /* The item could be a NULL constant. */
+    null_value= args[0]->is_null();
   }
 };
 
@@ -979,6 +1016,56 @@ public:
     const_item_cache= udf.const_item_cache;
     fixed= 1;
     return res;
+  }
+  void update_used_tables() 
+  {
+    /*
+      TODO: Make a member in UDF_INIT and return if a UDF is deterministic or
+      not.
+      Currently UDF_INIT has a member (const_item) that is an in/out 
+      parameter to the init() call.
+      The code in udf_handler::fix_fields also duplicates the arguments 
+      handling code in Item_func::fix_fields().
+      
+      The lack of information if a UDF is deterministic makes writing
+      a correct update_used_tables() for UDFs impossible.
+      One solution to this would be :
+       - Add a is_deterministic member of UDF_INIT
+       - (optionally) deprecate the const_item member of UDF_INIT
+       - Take away the duplicate code from udf_handler::fix_fields() and
+         make Item_udf_func call Item_func::fix_fields() to process its 
+         arguments as for any other function.
+       - Store the deterministic flag returned by <udf>_init into the 
+       udf_handler. 
+       - Don't implement Item_udf_func::fix_fields, implement
+       Item_udf_func::fix_length_and_dec() instead (similar to non-UDF
+       functions).
+       - Override Item_func::update_used_tables to call 
+       Item_func::update_used_tables() and add a RAND_TABLE_BIT to the 
+       result of Item_func::update_used_tables() if the UDF is 
+       non-deterministic.
+       - (optionally) rename RAND_TABLE_BIT to NONDETERMINISTIC_BIT to
+       better describe its usage.
+       
+      The above would require a change of the UDF API.
+      Until that change is done here's how the current code works:
+      We call Item_func::update_used_tables() only when we know that
+      the function depends on real non-const tables and is deterministic.
+      This can be done only because we know that the optimizer will
+      call update_used_tables() only when there's possibly a new const
+      table. So update_used_tables() can only make a Item_func more
+      constant than it is currently.
+      That's why we don't need to do anything if a function is guaranteed
+      to return non-constant (it's non-deterministic) or is already a
+      const.
+    */  
+    if ((used_tables_cache & ~PSEUDO_TABLE_BITS) && 
+        !(used_tables_cache & RAND_TABLE_BIT))
+    {
+      Item_func::update_used_tables();
+      if (!const_item_cache && !used_tables_cache)
+        used_tables_cache= RAND_TABLE_BIT;
+    }
   }
   void cleanup();
   Item_result result_type () const { return udf.result_type(); }
@@ -1467,7 +1554,7 @@ public:
   virtual ~Item_func_sp()
   {}
 
-  table_map used_tables() const { return RAND_TABLE_BIT; }
+  void update_used_tables();
 
   void cleanup();
 

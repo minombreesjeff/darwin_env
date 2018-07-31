@@ -19,7 +19,7 @@
 #endif
 
 class Protocol;
-struct st_table_list;
+struct TABLE_LIST;
 void item_init(void);			/* Init item functions */
 class Item_field;
 
@@ -49,29 +49,50 @@ class DTCollation {
 public:
   CHARSET_INFO     *collation;
   enum Derivation derivation;
+  uint repertoire;
   
+  void set_repertoire_from_charset(CHARSET_INFO *cs)
+  {
+    repertoire= cs->state & MY_CS_PUREASCII ?
+                MY_REPERTOIRE_ASCII : MY_REPERTOIRE_UNICODE30;
+  }
   DTCollation()
   {
     collation= &my_charset_bin;
     derivation= DERIVATION_NONE;
+    repertoire= MY_REPERTOIRE_UNICODE30;
   }
   DTCollation(CHARSET_INFO *collation_arg, Derivation derivation_arg)
   {
     collation= collation_arg;
     derivation= derivation_arg;
+    set_repertoire_from_charset(collation_arg);
   }
   void set(DTCollation &dt)
   { 
     collation= dt.collation;
     derivation= dt.derivation;
+    repertoire= dt.repertoire;
   }
   void set(CHARSET_INFO *collation_arg, Derivation derivation_arg)
   {
     collation= collation_arg;
     derivation= derivation_arg;
+    set_repertoire_from_charset(collation_arg);
+  }
+  void set(CHARSET_INFO *collation_arg,
+           Derivation derivation_arg,
+           uint repertoire_arg)
+  {
+    collation= collation_arg;
+    derivation= derivation_arg;
+    repertoire= repertoire_arg;
   }
   void set(CHARSET_INFO *collation_arg)
-  { collation= collation_arg; }
+  {
+    collation= collation_arg;
+    set_repertoire_from_charset(collation_arg);
+  }
   void set(Derivation derivation_arg)
   { derivation= derivation_arg; }
   bool aggregate(DTCollation &dt, uint flags= 0);
@@ -612,6 +633,7 @@ public:
 
   int save_time_in_field(Field *field);
   int save_date_in_field(Field *field);
+  int save_str_value_in_field(Field *field, String *result);
 
   virtual Field *get_tmp_table_field() { return 0; }
   /* This is also used to create fields in CREATE ... SELECT: */
@@ -848,10 +870,31 @@ public:
   */
   virtual bool result_as_longlong() { return FALSE; }
   bool is_datetime();
+  virtual Field::geometry_type get_geometry_type() const
+    { return Field::GEOM_GEOMETRY; };
+  String *check_well_formed_result(String *str, bool send_error= 0);
+  bool eq_by_collation(Item *item, bool binary_cmp, CHARSET_INFO *cs); 
 };
 
 
 class sp_head;
+
+
+class Item_basic_constant :public Item
+{
+public:
+  /* to prevent drop fixed flag (no need parent cleanup call) */
+  void cleanup()
+  {
+    /*
+      Restore the original field name as it might not have been allocated
+      in the statement memory. If the name is auto generated, it must be
+      done again between subsequent executions of a prepared statement.
+    */
+    if (orig_name)
+      name= orig_name;
+  }
+};
 
 
 /*****************************************************************************
@@ -959,9 +1002,18 @@ public:
     SP variable in query text.
   */
   uint pos_in_query;
+  /*
+    Byte length of SP variable name in the statement (see pos_in_query).
+    The value of this field may differ from the name_length value because
+    name_length contains byte length of UTF8-encoded item name, but
+    the query string (see sp_instr_stmt::m_query) is currently stored with
+    a charset from the SET NAMES statement.
+  */
+  uint len_in_query;
 
   Item_splocal(const LEX_STRING &sp_var_name, uint sp_var_idx,
-               enum_field_types sp_var_type, uint pos_in_q= 0);
+               enum_field_types sp_var_type,
+               uint pos_in_q= 0, uint len_in_q= 0);
 
   bool is_splocal() { return 1; } /* Needed for error checking */
 
@@ -1077,12 +1129,9 @@ class Item_name_const : public Item
 {
   Item *value_item;
   Item *name_item;
+  bool valid_args;
 public:
-  Item_name_const(Item *name_arg, Item *val):
-    value_item(val), name_item(name_arg)
-  {
-    Item::maybe_null= TRUE;
-  }
+  Item_name_const(Item *name_arg, Item *val);
 
   bool fix_fields(THD *, Item **);
 
@@ -1123,7 +1172,7 @@ bool agg_item_charsets(DTCollation &c, const char *name,
                        Item **items, uint nitems, uint flags, int item_sep);
 
 
-class Item_num: public Item
+class Item_num: public Item_basic_constant
 {
 public:
   Item_num() {}                               /* Remove gcc warning */
@@ -1304,7 +1353,7 @@ public:
   int fix_outer_field(THD *thd, Field **field, Item **reference);
   virtual Item *update_value_transformer(byte *select_arg);
   void print(String *str);
-  Field::geometry_type get_geometry_type()
+  Field::geometry_type get_geometry_type() const
   {
     DBUG_ASSERT(field_type() == MYSQL_TYPE_GEOMETRY);
     return field->get_geometry_type();
@@ -1314,7 +1363,7 @@ public:
   friend class st_select_lex_unit;
 };
 
-class Item_null :public Item
+class Item_null :public Item_basic_constant
 {
 public:
   Item_null(char *name_par=0)
@@ -1336,8 +1385,6 @@ public:
   bool send(Protocol *protocol, String *str);
   enum Item_result result_type () const { return STRING_RESULT; }
   enum_field_types field_type() const   { return MYSQL_TYPE_NULL; }
-  /* to prevent drop fixed flag (no need parent cleanup call) */
-  void cleanup() {}
   bool basic_const_item() const { return 1; }
   Item *clone_item() { return new Item_null(name); }
   bool is_null() { return 1; }
@@ -1364,8 +1411,6 @@ class Item_param :public Item
   char cnvbuf[MAX_FIELD_WIDTH];
   String cnvstr;
   Item *cnvitem;
-  bool strict_type;
-  enum Item_result required_result_type;
 
 public:
   enum enum_item_param_state
@@ -1495,11 +1540,8 @@ public:
     Otherwise return FALSE.
   */
   bool eq(const Item *item, bool binary_cmp) const;
-  void set_strict_type(enum Item_result result_type_arg)
-  {
-    strict_type= TRUE;
-    required_result_type= result_type_arg;
-  }
+  /** Item is a argument to a limit clause. */
+  bool limit_clause_param;
 };
 
 
@@ -1529,8 +1571,6 @@ public:
   int save_in_field(Field *field, bool no_conversions);
   bool basic_const_item() const { return 1; }
   Item *clone_item() { return new Item_int(name,value,max_length); }
-  // to prevent drop fixed flag (no need parent cleanup call)
-  void cleanup() {}
   void print(String *str);
   Item_num *neg() { value= -value; return this; }
   uint decimal_precision() const
@@ -1548,7 +1588,7 @@ public:
   double val_real()
     { DBUG_ASSERT(fixed == 1); return ulonglong2double((ulonglong)value); }
   String *val_str(String*);
-  Item *clone_item() { return new Item_uint(name,max_length); }
+  Item *clone_item() { return new Item_uint(name, value, max_length); }
   int save_in_field(Field *field, bool no_conversions);
   void print(String *str);
   Item_num *neg ();
@@ -1583,8 +1623,6 @@ public:
   {
     return new Item_decimal(name, &decimal_value, decimals, max_length);
   }
-  // to prevent drop fixed flag (no need parent cleanup call)
-  void cleanup() {}
   void print(String *str);
   Item_num *neg()
   {
@@ -1635,8 +1673,6 @@ public:
   String *val_str(String*);
   my_decimal *val_decimal(my_decimal *);
   bool basic_const_item() const { return 1; }
-  // to prevent drop fixed flag (no need parent cleanup call)
-  void cleanup() {}
   Item *clone_item()
   { return new Item_float(name, value, decimals, max_length); }
   Item_num *neg() { value= -value; return this; }
@@ -1658,14 +1694,15 @@ public:
 };
 
 
-class Item_string :public Item
+class Item_string :public Item_basic_constant
 {
 public:
   Item_string(const char *str,uint length,
-  	      CHARSET_INFO *cs, Derivation dv= DERIVATION_COERCIBLE)
+              CHARSET_INFO *cs, Derivation dv= DERIVATION_COERCIBLE,
+              uint repertoire= MY_REPERTOIRE_UNICODE30)
   {
-    collation.set(cs, dv);
-    str_value.set_or_copy_aligned(str,length,cs);
+    str_value.set_or_copy_aligned(str, length, cs);
+    collation.set(cs, dv, repertoire);
     /*
       We have to have a different max_length than 'length' here to
       ensure that we get the right length if we do use the item
@@ -1689,10 +1726,11 @@ public:
     fixed= 1;
   }
   Item_string(const char *name_par, const char *str, uint length,
-	      CHARSET_INFO *cs, Derivation dv= DERIVATION_COERCIBLE)
+              CHARSET_INFO *cs, Derivation dv= DERIVATION_COERCIBLE,
+              uint repertoire= MY_REPERTOIRE_UNICODE30)
   {
-    collation.set(cs, dv);
-    str_value.set_or_copy_aligned(str,length,cs);
+    str_value.set_or_copy_aligned(str, length, cs);
+    collation.set(cs, dv, repertoire);
     max_length= str_value.numchars()*cs->mbmaxlen;
     set_name(name_par, 0, cs);
     decimals=NOT_FIXED_DEC;
@@ -1707,6 +1745,12 @@ public:
   {
     str_value.copy(str_arg, length_arg, collation.collation);
     max_length= str_value.numchars() * collation.collation->mbmaxlen;
+  }
+  void set_repertoire_from_value()
+  {
+    collation.repertoire= my_string_repertoire(str_value.charset(),
+                                               str_value.ptr(),
+                                               str_value.length());
   }
   enum Type type() const { return STRING_ITEM; }
   double val_real();
@@ -1734,8 +1778,6 @@ public:
     max_length= str_value.numchars() * collation.collation->mbmaxlen;
   }
   void print(String *str);
-  // to prevent drop fixed flag (no need parent cleanup call)
-  void cleanup() {}
 };
 
 
@@ -1764,11 +1806,17 @@ public:
   enum_field_types field_type() const { return MYSQL_TYPE_DATETIME; }
 };
 
+/**
+  Item_empty_string -- is a utility class to put an item into List<Item>
+  which is then used in protocol.send_fields() when sending SHOW output to
+  the client.
+*/
+
 class Item_empty_string :public Item_string
 {
 public:
   Item_empty_string(const char *header,uint length, CHARSET_INFO *cs= NULL) :
-    Item_string("",0, cs ? cs : &my_charset_bin)
+    Item_string("",0, cs ? cs : &my_charset_utf8_general_ci)
     { name=(char*) header; max_length= cs ? length * cs->mbmaxlen : length; }
   void make_field(Send_field *field);
 };
@@ -1787,10 +1835,10 @@ public:
 };
 
 
-class Item_hex_string: public Item
+class Item_hex_string: public Item_basic_constant
 {
 public:
-  Item_hex_string(): Item() {}
+  Item_hex_string() {}
   Item_hex_string(const char *str,uint str_length);
   enum Type type() const { return VARBIN_ITEM; }
   double val_real()
@@ -1806,8 +1854,7 @@ public:
   enum Item_result result_type () const { return STRING_RESULT; }
   enum Item_result cast_to_int_type() const { return INT_RESULT; }
   enum_field_types field_type() const { return MYSQL_TYPE_VARCHAR; }
-  // to prevent drop fixed flag (no need parent cleanup call)
-  void cleanup() {}
+  void print(String *str);
   bool eq(const Item *item, bool binary_cmp) const;
   virtual Item *safe_charset_converter(CHARSET_INFO *tocs);
 };
@@ -1904,11 +1951,7 @@ public:
   enum_field_types field_type() const   { return (*ref)->field_type(); }
   Field *get_tmp_table_field()
   { return result_field ? result_field : (*ref)->get_tmp_table_field(); }
-  Item *get_tmp_table_item(THD *thd)
-  { 
-    return (result_field ? new Item_field(result_field) :
-                          (*ref)->get_tmp_table_item(thd));
-  }
+  Item *get_tmp_table_item(THD *thd);
   table_map used_tables() const		
   {
     return depended_from ? OUTER_REF_TABLE_BIT : (*ref)->used_tables(); 
@@ -1940,6 +1983,35 @@ public:
   Item_field *filed_for_view_update()
     { return (*ref)->filed_for_view_update(); }
   virtual Ref_Type ref_type() { return REF; }
+
+  // Row emulation: forwarding of ROW-related calls to ref
+  uint cols()
+  {
+    return ref && result_type() == ROW_RESULT ? (*ref)->cols() : 1;
+  }
+  Item* element_index(uint i)
+  {
+    return ref && result_type() == ROW_RESULT ? (*ref)->element_index(i) : this;
+  }
+  Item** addr(uint i)
+  {
+    return ref && result_type() == ROW_RESULT ? (*ref)->addr(i) : 0;
+  }
+  bool check_cols(uint c)
+  {
+    return ref && result_type() == ROW_RESULT ? (*ref)->check_cols(c) 
+                                              : Item::check_cols(c);
+  }
+  bool null_inside()
+  {
+    return ref && result_type() == ROW_RESULT ? (*ref)->null_inside() : 0;
+  }
+  void bring_value()
+  { 
+    if (ref && result_type() == ROW_RESULT)
+      (*ref)->bring_value();
+  }
+
 };
 
 
@@ -1987,6 +2059,12 @@ public:
 
   bool fix_fields(THD *, Item **);
   bool eq(const Item *item, bool binary_cmp) const;
+  Item *get_tmp_table_item(THD *thd)
+  {
+    Item *item= Item_ref::get_tmp_table_item(thd);
+    item->name= name;
+    return item;
+  }
   virtual Ref_Type ref_type() { return VIEW_REF; }
 };
 
@@ -2158,7 +2236,10 @@ public:
   my_decimal *val_decimal(my_decimal *);
   void make_field(Send_field *field) { item->make_field(field); }
   void copy();
-  int save_in_field(Field *field, bool no_conversions);
+  int save_in_field(Field *field, bool no_conversions)
+  {
+    return save_str_value_in_field(field, &str_value);
+  }
   table_map used_tables() const { return (table_map) 1L; }
   bool const_item() const { return 0; }
   bool is_null() { return null_value; }
@@ -2307,14 +2388,6 @@ enum trg_action_time_type
   TRG_ACTION_BEFORE= 0, TRG_ACTION_AFTER= 1, TRG_ACTION_MAX
 };
 
-/*
-  Event on which trigger is invoked.
-*/
-enum trg_event_type
-{
-  TRG_EVENT_INSERT= 0 , TRG_EVENT_UPDATE= 1, TRG_EVENT_DELETE= 2, TRG_EVENT_MAX
-};
-
 class Table_triggers_list;
 
 /*
@@ -2399,13 +2472,23 @@ private:
 };
 
 
-class Item_cache: public Item
+class Item_cache: public Item_basic_constant
 {
 protected:
   Item *example;
   table_map used_table_map;
+  /*
+    Field that this object will get value from. This is set/used by 
+    index-based subquery engines to detect and remove the equality injected 
+    by IN->EXISTS transformation.
+    For all other uses of Item_cache, cached_field doesn't matter.
+  */  
+  Field *cached_field;
 public:
-  Item_cache(): example(0), used_table_map(0) {fixed= 1; null_value= 1;}
+  Item_cache(): example(0), used_table_map(0), cached_field(0) 
+  {
+    fixed= 1; null_value= 1;
+  }
 
   void set_used_tables(table_map map) { used_table_map= map; }
 
@@ -2417,16 +2500,24 @@ public:
     decimals= item->decimals;
     collation.set(item->collation);
     unsigned_flag= item->unsigned_flag;
+    if (item->type() == FIELD_ITEM)
+      cached_field= ((Item_field *)item)->field;
     return 0;
   };
   virtual void store(Item *)= 0;
   enum Type type() const { return CACHE_ITEM; }
-  static Item_cache* get_cache(Item_result type);
+  static Item_cache* get_cache(const Item *item);
   table_map used_tables() const { return used_table_map; }
   virtual void keep_array() {}
-  // to prevent drop fixed flag (no need parent cleanup call)
-  void cleanup() {}
   void print(String *str);
+  bool eq_def(Field *field) 
+  { 
+    return cached_field ? cached_field->eq_def (field) : FALSE;
+  }
+  bool eq(const Item *item, bool binary_cmp) const
+  {
+    return this == item;
+  }
 };
 
 
@@ -2483,9 +2574,16 @@ class Item_cache_str: public Item_cache
 {
   char buffer[STRING_BUFFER_USUAL_SIZE];
   String *value, value_buff;
+  bool is_varbinary;
+  
 public:
-  Item_cache_str(): Item_cache(), value(0) { }
-
+  Item_cache_str(const Item *item) :
+    Item_cache(), value(0),
+    is_varbinary(item->type() == FIELD_ITEM &&
+                 ((const Item_field *) item)->field->type() ==
+                   MYSQL_TYPE_VARCHAR &&
+                 !((const Item_field *) item)->field->has_charset())
+  {}
   void store(Item *item);
   double val_real();
   longlong val_int();
@@ -2493,6 +2591,7 @@ public:
   my_decimal *val_decimal(my_decimal *);
   enum Item_result result_type() const { return STRING_RESULT; }
   CHARSET_INFO *charset() const { return value->charset(); };
+  int save_in_field(Field *field, bool no_conversions);
 };
 
 class Item_cache_row: public Item_cache
@@ -2595,7 +2694,7 @@ public:
   Field *make_field_by_type(TABLE *table);
   static uint32 display_length(Item *item);
   static enum_field_types get_real_type(Item *);
-  Field::geometry_type get_geometry_type() { return geometry_type; };
+  Field::geometry_type get_geometry_type() const { return geometry_type; };
 };
 
 

@@ -338,7 +338,7 @@ int
 NdbBlob::setTableKeyValue(NdbOperation* anOp)
 {
   DBUG_ENTER("NdbBlob::setTableKeyValue");
-  DBUG_DUMP("info", theKeyBuf.data, 4 * theTable->m_keyLenInWords);
+  DBUG_DUMP("info", (uchar*)theKeyBuf.data, 4 * theTable->m_keyLenInWords);
   const Uint32* data = (const Uint32*)theKeyBuf.data;
   const unsigned columns = theTable->m_columns.size();
   unsigned pos = 0;
@@ -362,7 +362,8 @@ int
 NdbBlob::setAccessKeyValue(NdbOperation* anOp)
 {
   DBUG_ENTER("NdbBlob::setAccessKeyValue");
-  DBUG_DUMP("info", theAccessKeyBuf.data, 4 * theAccessTable->m_keyLenInWords);
+  DBUG_DUMP("info", (uchar*)theAccessKeyBuf.data, 
+            4 * theAccessTable->m_keyLenInWords);
   const Uint32* data = (const Uint32*)theAccessKeyBuf.data;
   const unsigned columns = theAccessTable->m_columns.size();
   unsigned pos = 0;
@@ -387,7 +388,8 @@ NdbBlob::setPartKeyValue(NdbOperation* anOp, Uint32 part)
 {
   DBUG_ENTER("NdbBlob::setPartKeyValue");
   DBUG_PRINT("info", ("dist=%u part=%u key=", getDistKey(part), part));
-  DBUG_DUMP("info", theKeyBuf.data, 4 * theTable->m_keyLenInWords);
+  DBUG_DUMP("info", (uchar *)theKeyBuf.data, 
+            4 * theTable->m_keyLenInWords);
   // TODO use attr ids after compatibility with 4.1.7 not needed
   if (anOp->equal("PK", theKeyBuf.data) == -1 ||
       anOp->equal("DIST", getDistKey(part)) == -1 ||
@@ -892,7 +894,12 @@ NdbBlob::readParts(char* buf, Uint32 part, Uint32 count)
   while (n < count) {
     NdbOperation* tOp = theNdbCon->getNdbOperation(theBlobTable);
     if (tOp == NULL ||
-        tOp->committedRead() == -1 ||
+        /*
+         * This was committedRead() before.  However lock on main
+         * table tuple does not fully protect blob parts since DBTUP
+         * commits each tuple separately.
+         */
+        tOp->readTuple() == -1 ||
         setPartKeyValue(tOp, part + n) == -1 ||
         tOp->getValue((Uint32)3, buf) == NULL) {
       setErrorCode(tOp);

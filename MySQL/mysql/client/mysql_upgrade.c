@@ -40,6 +40,8 @@ static DYNAMIC_STRING ds_args;
 static char *opt_password= 0;
 static my_bool tty_password= 0;
 
+static char opt_tmpdir[FN_REFLEN];
+
 #ifndef DBUG_OFF
 static char *default_dbug_option= (char*) "d:t:O,/tmp/mysql_upgrade.trace";
 #endif
@@ -88,8 +90,13 @@ static struct my_option my_long_options[]=
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0,
    GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-  {"port", 'P', "Port number to use for connection.", 0,
-   0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"port", 'P', "Port number to use for connection or 0 for default to, in "
+   "order of preference, my.cnf, $MYSQL_TCP_PORT, "
+#if MYSQL_PORT_DEFAULT == 0
+   "/etc/services, "
+#endif
+   "built-in default (" STRINGIFY_ARG(MYSQL_PORT) ").",
+   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"protocol", OPT_MYSQL_PROTOCOL,
    "The protocol of connection (tcp,socket,pipe,memory).",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -99,6 +106,8 @@ static struct my_option my_long_options[]=
    0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
   {"socket", 'S', "Socket file to use for connection.",
+   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"tmpdir", 't', "Directory for temporary files",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"user", 'u', "User for login if not current user.", (gptr*) &opt_user,
    (gptr*) &opt_user, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -224,6 +233,11 @@ get_one_option(int optid, const struct my_option *opt,
     }
     break;
 
+  case 't':
+    strnmov(opt_tmpdir, argument, sizeof(opt_tmpdir));
+    add_option= FALSE;
+    break;
+
   case 'b': /* --basedir   */
   case 'v': /* --verbose   */
   case 'd': /* --datadir   */
@@ -342,12 +356,6 @@ static my_bool get_full_path_to_executable(char* path)
 
 /*
   Look for the tool in the same directory as mysql_upgrade.
-
-  When running in a not yet installed build the the program
-  will exist but it need to be invoked via it's libtool wrapper.
-  Check if the found tool can executed and if not look in the
-  directory one step higher up where the libtool wrapper normally
-  is found
 */
 
 static void find_tool(char *tool_path, const char *tool_name)
@@ -385,37 +393,52 @@ static void find_tool(char *tool_path, const char *tool_name)
       path[0]= 0;
     }
   }
-  do
+
+  DBUG_PRINT("info", ("path: '%s'", path));
+
+  /* Chop off binary name (i.e mysql-upgrade) from path */
+  dirname_part(path, path);
+
+  /*
+    When running in a not yet installed build and using libtool,
+    the program(mysql_upgrade) will be in .libs/ and executed
+    through a libtool wrapper in order to use the dynamic libraries
+    from this build. The same must be done for the tools(mysql and
+    mysqlcheck). Thus if path ends in .libs/, step up one directory
+    and execute the tools from there
+  */
+  path[max((strlen(path)-1), 0)]= 0;   /* Chop off last / */
+  if (strncmp(path + dirname_length(path), ".libs", 5) == 0)
   {
-    DBUG_PRINT("enter", ("path: %s", path));
+    DBUG_PRINT("info", ("Chopping off .libs from '%s'", path));
 
-    /* Chop off last char(since it might be a /) */
-    path[max((strlen(path)-1), 0)]= 0;
-
-    /* Chop off last dir part */
+    /* Chop off .libs */
     dirname_part(path, path);
-
-    /* Format name of the tool to search for */
-    fn_format(tool_path, tool_name,
-              path, "", MYF(MY_REPLACE_DIR));
-
-    verbose("Looking for '%s' in: %s", tool_name, tool_path);
-
-    /* Make sure the tool exists */
-    if (my_access(tool_path, F_OK) != 0)
-      die("Can't find '%s'", tool_path);
-
-    /*
-      Make sure it can be executed, otherwise try again
-      in higher level directory
-    */
   }
-  while(run_tool(tool_path,
-                 &ds_tmp, /* Get output from command, discard*/
-                 "--help",
-                 "2>&1",
-                 IF_WIN("> NUL", "> /dev/null"),
-                 NULL));
+
+
+  DBUG_PRINT("info", ("path: '%s'", path));
+
+  /* Format name of the tool to search for */
+  fn_format(tool_path, tool_name,
+            path, "", MYF(MY_REPLACE_DIR));
+
+  verbose("Looking for '%s' in: %s", tool_name, tool_path);
+
+  /* Make sure the tool exists */
+  if (my_access(tool_path, F_OK) != 0)
+    die("Can't find '%s'", tool_path);
+
+  /*
+    Make sure it can be executed
+  */
+  if (run_tool(tool_path,
+               &ds_tmp, /* Get output from command, discard*/
+               "--help",
+               "2>&1",
+               IF_WIN("> NUL", "> /dev/null"),
+               NULL))
+    die("Can't execute '%s'", tool_path);
 
   dynstr_free(&ds_tmp);
 
@@ -435,17 +458,22 @@ static int run_query(const char *query, DYNAMIC_STRING *ds_res,
   char query_file_path[FN_REFLEN];
   DBUG_ENTER("run_query");
   DBUG_PRINT("enter", ("query: %s", query));
-  if ((fd= create_temp_file(query_file_path, NULL,
+  if ((fd= create_temp_file(query_file_path, opt_tmpdir,
                             "sql", O_CREAT | O_SHARE | O_RDWR,
                             MYF(MY_WME))) < 0)
     die("Failed to create temporary file for defaults");
 
   if (my_write(fd, query, strlen(query),
                MYF(MY_FNABP | MY_WME)))
+  {
+    my_close(fd, MYF(0));
+    my_delete(query_file_path, MYF(0));
     die("Failed to write to '%s'", query_file_path);
+  }
 
   ret= run_tool(mysql_path,
                 ds_res,
+                "--no-defaults",
                 ds_args.str,
                 "--database=mysql",
                 "--batch", /* Turns off pager etc. */
@@ -457,6 +485,7 @@ static int run_query(const char *query, DYNAMIC_STRING *ds_res,
                 NULL);
 
   my_close(fd, MYF(0));
+  my_delete(query_file_path, MYF(0));
 
   DBUG_RETURN(ret);
 }
@@ -607,6 +636,7 @@ static int run_mysqlcheck_upgrade(void)
   verbose("Running 'mysqlcheck'...");
   return run_tool(mysqlcheck_path,
                   NULL, /* Send output from mysqlcheck directly to screen */
+                  "--no-defaults",
                   ds_args.str,
                   "--check-upgrade",
                   "--all-databases",

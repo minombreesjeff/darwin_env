@@ -307,6 +307,15 @@ static void do_field_string(Copy_field *copy)
 }
 
 
+static void do_field_enum(Copy_field *copy)
+{
+  if (copy->from_field->val_int() == 0)
+    ((Field_enum *) copy->to_field)->store_type((ulonglong) 0);
+  else
+    do_field_string(copy);
+}
+
+
 static void do_field_varbinary_pre50(Copy_field *copy)
 {
   char buff[MAX_FIELD_WIDTH];
@@ -662,7 +671,13 @@ void (*Copy_field::get_copy_func(Field *to,Field *from))(Copy_field*)
 	  to->real_type() == FIELD_TYPE_SET)
       {
 	if (!to->eq_def(from))
-	  return do_field_string;
+        {
+          if (from->real_type() == MYSQL_TYPE_ENUM &&
+              to->real_type() == MYSQL_TYPE_ENUM)
+            return do_field_enum;
+          else
+            return do_field_string;
+        }
       }
       else if (to->charset() != from->charset())
 	return do_field_string;
@@ -775,11 +790,18 @@ int field_conv(Field *to,Field *from)
       blob->value.copy();
     return blob->store(blob->value.ptr(),blob->value.length(),from->charset());
   }
-  if ((from->result_type() == STRING_RESULT &&
-       (to->result_type() == STRING_RESULT ||
-	(from->real_type() != FIELD_TYPE_ENUM &&
-	 from->real_type() != FIELD_TYPE_SET))) ||
-      to->type() == FIELD_TYPE_DECIMAL)
+  if (from->real_type() == FIELD_TYPE_ENUM &&
+      to->real_type() == FIELD_TYPE_ENUM &&
+      from->val_int() == 0)
+  {
+    ((Field_enum *)(to))->store_type(0);
+    return 0;
+  }
+  else if ((from->result_type() == STRING_RESULT &&
+            (to->result_type() == STRING_RESULT ||
+             (from->real_type() != FIELD_TYPE_ENUM &&
+              from->real_type() != FIELD_TYPE_SET))) ||
+           to->type() == FIELD_TYPE_DECIMAL)
   {
     char buff[MAX_FIELD_WIDTH];
     String result(buff,sizeof(buff),from->charset());

@@ -25,7 +25,8 @@
 static bool
 create_string(THD *thd, String *buf,
 	      int sp_type,
-	      sp_name *name,
+	      const char *db, ulong dblen,
+	      const char *name, ulong namelen,
 	      const char *params, ulong paramslen,
 	      const char *returns, ulong returnslen,
 	      const char *body, ulong bodylen,
@@ -261,6 +262,7 @@ db_find_routine(THD *thd, int type, sp_name *name, sp_head **sphp)
   char buff[65];
   String str(buff, sizeof(buff), &my_charset_bin);
   ulong sql_mode;
+  bool saved_time_zone_used= thd->time_zone_used;
   Open_tables_state open_tables_state_backup;
   DBUG_ENTER("db_find_routine");
   DBUG_PRINT("enter", ("type: %d name: %.*s",
@@ -273,7 +275,7 @@ db_find_routine(THD *thd, int type, sp_name *name, sp_head **sphp)
   if ((ret= db_find_routine_aux(thd, type, name, table)) != SP_OK)
     goto done;
 
-  if (table->s->fields != MYSQL_PROC_FIELD_COUNT)
+  if (table->s->fields < MYSQL_PROC_FIELD_COUNT)
   {
     ret= SP_GET_FIELD_FAILED;
     goto done;
@@ -370,6 +372,11 @@ db_find_routine(THD *thd, int type, sp_name *name, sp_head **sphp)
                        definer, created, modified);
                        
  done:
+  /* 
+    Restore the time zone flag as the timezone usage in proc table
+    does not affect replication.
+  */  
+  thd->time_zone_used= saved_time_zone_used;
   if (table)
     close_proc_table(thd, &open_tables_state_backup);
   DBUG_RETURN(ret);
@@ -420,12 +427,13 @@ db_load_routine(THD *thd, int type, sp_name *name, sp_head **sphp,
    */
 
   if (!create_string(thd, &defstr,
-		     type,
-		     name,
-		     params, strlen(params),
-		     returns, strlen(returns),
-		     body, strlen(body),
-		     &chistics, &definer_user_name, &definer_host_name))
+                     type,
+                     NULL, 0,
+                     name->m_name.str, name->m_name.length,
+                     params, strlen(params),
+                     returns, strlen(returns),
+                     body, strlen(body),
+                     &chistics, &definer_user_name, &definer_host_name))
   {
     ret= SP_INTERNAL_ERROR;
     goto end;
@@ -438,10 +446,23 @@ db_load_routine(THD *thd, int type, sp_name *name, sp_head **sphp,
     Lex_input_stream lip(thd, defstr.c_ptr(), defstr.length());
     thd->m_lip= &lip;
     lex_start(thd);
+    thd->spcont= NULL;
     ret= MYSQLparse(thd);
+
+    if (ret == 0)
+    {
+      /*
+        Not strictly necessary to invoke this method here, since we know
+        that we've parsed CREATE PROCEDURE/FUNCTION and not an
+        UPDATE/DELETE/INSERT/REPLACE/LOAD/CREATE TABLE, but we try to
+        maintain the invariant that this method is called for each
+        distinct statement, in case its logic is extended with other
+        types of analyses in future.
+      */
+      newlex.set_trg_event_type_for_tables();
+    }
   }
 
-  thd->spcont= 0;
   if (ret || thd->is_fatal_error || newlex.sphead == NULL)
   {
     sp_head *sp= newlex.sphead;
@@ -499,6 +520,7 @@ db_create_routine(THD *thd, int type, sp_head *sp)
   DBUG_ENTER("db_create_routine");
   DBUG_PRINT("enter", ("type: %d name: %.*s",type,sp->m_name.length,
                        sp->m_name.str));
+  String retstr(64);
 
   if (!(table= open_proc_table_for_update(thd)))
     ret= SP_OPEN_TABLE_FAILED;
@@ -510,7 +532,7 @@ db_create_routine(THD *thd, int type, sp_head *sp)
     strxmov(definer, thd->lex->definer->user.str, "@",
             thd->lex->definer->host.str, NullS);
 
-    if (table->s->fields != MYSQL_PROC_FIELD_COUNT)
+    if (table->s->fields < MYSQL_PROC_FIELD_COUNT)
     {
       ret= SP_GET_FIELD_FAILED;
       goto done;
@@ -549,7 +571,6 @@ db_create_routine(THD *thd, int type, sp_head *sp)
       store(sp->m_params.str, sp->m_params.length, system_charset_info);
     if (sp->m_type == TYPE_ENUM_FUNCTION)
     {
-      String retstr(64);
       sp_returns_type(thd, retstr, sp);
       table->field[MYSQL_PROC_FIELD_RETURNS]->
 	store(retstr.ptr(), retstr.length(), system_charset_info);
@@ -606,13 +627,21 @@ db_create_routine(THD *thd, int type, sp_head *sp)
 
       String log_query;
       log_query.set_charset(system_charset_info);
-      log_query.append(STRING_WITH_LEN("CREATE "));
-      append_definer(thd, &log_query, &thd->lex->definer->user,
-                     &thd->lex->definer->host);
-      log_query.append(thd->lex->stmt_definition_begin,
-                       (char *)sp->m_body_begin -
-                       thd->lex->stmt_definition_begin +
-                       sp->m_body.length);
+
+      if (!create_string(thd, &log_query,
+                         sp->m_type,
+                         (sp->m_explicit_name ? sp->m_db.str : NULL), 
+                         (sp->m_explicit_name ? sp->m_db.length : 0), 
+                         sp->m_name.str, sp->m_name.length,
+                         sp->m_params.str, sp->m_params.length,
+                         retstr.c_ptr(), retstr.length(),
+                         sp->m_body.str, sp->m_body.length,
+                         sp->m_chistics, &(thd->lex->definer->user),
+                         &(thd->lex->definer->host)))
+      {
+        ret= SP_INTERNAL_ERROR;
+        goto done;
+      }
 
       /* Such a statement can always go directly to binlog, no trans cache */
       Query_log_event qinfo(thd, log_query.c_ptr(), log_query.length(), 0,
@@ -1392,12 +1421,12 @@ static bool add_used_routine(LEX *lex, Query_arena *arena,
   {
     Sroutine_hash_entry *rn=
       (Sroutine_hash_entry *)arena->alloc(sizeof(Sroutine_hash_entry) +
-                                          key->length);
+                                          key->length + 1);
     if (!rn)              // OOM. Error will be reported using fatal_error().
       return FALSE;
     rn->key.length= key->length;
     rn->key.str= (char *)rn + sizeof(Sroutine_hash_entry);
-    memcpy(rn->key.str, key->str, key->length);
+    memcpy(rn->key.str, key->str, key->length + 1);
     my_hash_insert(&lex->sroutines, (byte *)rn);
     lex->sroutines_list.link_in_list((byte *)rn, (byte **)&rn->next);
     rn->belong_to_view= belong_to_view;
@@ -1582,7 +1611,7 @@ sp_cache_routines_and_add_tables_aux(THD *thd, LEX *lex,
 
   for (Sroutine_hash_entry *rt= start; rt; rt= rt->next)
   {
-    sp_name name(rt->key.str, rt->key.length);
+    sp_name name(thd, rt->key.str, rt->key.length);
     int type= rt->key.str[0];
     sp_head *sp;
 
@@ -1590,13 +1619,6 @@ sp_cache_routines_and_add_tables_aux(THD *thd, LEX *lex,
                               &thd->sp_func_cache : &thd->sp_proc_cache),
                               &name)))
     {
-      name.m_name.str= strchr(name.m_qname.str, '.');
-      name.m_db.length= name.m_name.str - name.m_qname.str;
-      name.m_db.str= strmake_root(thd->mem_root, name.m_qname.str,
-                                  name.m_db.length);
-      name.m_name.str+= 1;
-      name.m_name.length= name.m_qname.length - name.m_db.length - 1;
-
       switch ((ret= db_find_routine(thd, type, &name, &sp)))
       {
       case SP_OK:
@@ -1742,31 +1764,39 @@ sp_cache_routines_and_add_tables_for_triggers(THD *thd, LEX *lex,
                                               TABLE_LIST *table)
 {
   int ret= 0;
-  Table_triggers_list *triggers= table->table->triggers;
-  if (add_used_routine(lex, thd->stmt_arena, &triggers->sroutines_key,
-                       table->belong_to_view))
+
+  Sroutine_hash_entry **last_cached_routine_ptr=
+    (Sroutine_hash_entry **)lex->sroutines_list.next;
+
+  if (static_cast<int>(table->lock_type) >=
+      static_cast<int>(TL_WRITE_ALLOW_WRITE))
   {
-    Sroutine_hash_entry **last_cached_routine_ptr=
-                            (Sroutine_hash_entry **)lex->sroutines_list.next;
     for (int i= 0; i < (int)TRG_EVENT_MAX; i++)
     {
-      for (int j= 0; j < (int)TRG_ACTION_MAX; j++)
+      if (table->trg_event_map &
+          static_cast<uint8>(1 << static_cast<int>(i)))
       {
-        if (triggers->bodies[i][j])
+        for (int j= 0; j < (int)TRG_ACTION_MAX; j++)
         {
-          (void)triggers->bodies[i][j]->
-                add_used_tables_to_table_list(thd, &lex->query_tables_last,
-                                              table->belong_to_view);
-          sp_update_stmt_used_routines(thd, lex,
-                                       &triggers->bodies[i][j]->m_sroutines,
-                                       table->belong_to_view);
+          /* We can have only one trigger per action type currently */
+          sp_head *trigger= table->table->triggers->bodies[i][j];
+          if (trigger &&
+              add_used_routine(lex, thd->stmt_arena, &trigger->m_sroutines_key,
+                               table->belong_to_view))
+          {
+            trigger->add_used_tables_to_table_list(thd, &lex->query_tables_last,
+                                                   table->belong_to_view);
+            sp_update_stmt_used_routines(thd, lex,
+                                         &trigger->m_sroutines,
+                                         table->belong_to_view);
+          }
         }
       }
     }
-    ret= sp_cache_routines_and_add_tables_aux(thd, lex,
-                                              *last_cached_routine_ptr, 
-                                              FALSE, NULL);
   }
+  ret= sp_cache_routines_and_add_tables_aux(thd, lex,
+                                            *last_cached_routine_ptr,
+                                            FALSE, NULL);
   return ret;
 }
 
@@ -1777,17 +1807,18 @@ sp_cache_routines_and_add_tables_for_triggers(THD *thd, LEX *lex,
  */
 static bool
 create_string(THD *thd, String *buf,
-	      int type,
-	      sp_name *name,
-	      const char *params, ulong paramslen,
-	      const char *returns, ulong returnslen,
-	      const char *body, ulong bodylen,
-	      st_sp_chistics *chistics,
+              int type,
+              const char *db, ulong dblen,
+              const char *name, ulong namelen,
+              const char *params, ulong paramslen,
+              const char *returns, ulong returnslen,
+              const char *body, ulong bodylen,
+              st_sp_chistics *chistics,
               const LEX_STRING *definer_user,
               const LEX_STRING *definer_host)
 {
   /* Make some room to begin with */
-  if (buf->alloc(100 + name->m_qname.length + paramslen + returnslen + bodylen +
+  if (buf->alloc(100 + dblen + 1 + namelen + paramslen + returnslen + bodylen +
 		 chistics->comment.length + 10 /* length of " DEFINER= "*/ +
                  USER_HOST_BUFF_SIZE))
     return FALSE;
@@ -1798,7 +1829,12 @@ create_string(THD *thd, String *buf,
     buf->append(STRING_WITH_LEN("FUNCTION "));
   else
     buf->append(STRING_WITH_LEN("PROCEDURE "));
-  append_identifier(thd, buf, name->m_name.str, name->m_name.length);
+  if (dblen > 0)
+  {
+    append_identifier(thd, buf, db, dblen);
+    buf->append('.');
+  }
+  append_identifier(thd, buf, name, namelen);
   buf->append('(');
   buf->append(params, paramslen);
   buf->append(')');
@@ -1873,19 +1909,15 @@ sp_use_new_db(THD *thd, LEX_STRING new_db, LEX_STRING *old_db,
   DBUG_PRINT("enter", ("newdb: %s", new_db.str));
 
   /*
-    Set new_db to an empty string if it's NULL, because mysql_change_db
-    requires a non-NULL argument.
-    new_db.str can be NULL only if we're restoring the old database after
-    execution of a stored procedure and there were no current database
-    selected. The stored procedure itself must always have its database
-    initialized.
+    A stored routine always belongs to some database. The
+    old database (old_db) might be NULL, but to restore the
+    old database we will use mysql_change_db.
   */
-  if (new_db.str == NULL)
-    new_db.str= empty_c_string;
+  DBUG_ASSERT(new_db.str && new_db.length);
 
   if (thd->db)
   {
-    old_db->length= (strmake(old_db->str, thd->db, old_db->length) -
+    old_db->length= (strmake(old_db->str, thd->db, old_db->length - 1) -
                      old_db->str);
   }
   else

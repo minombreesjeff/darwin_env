@@ -52,20 +52,26 @@ SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=1, @@session.uniq
 SET @@session.sql_mode=0/*!*/;
 /*!\C latin1 *//*!*/;
 SET @@session.character_set_client=8,@@session.collation_connection=8,@@session.collation_server=8/*!*/;
-create table t1 (t timestamp)/*!*/;
+create table t1 (t timestamp)
+/*!*/;
 SET TIMESTAMP=100000000/*!*/;
-create table t2 (t char(32))/*!*/;
+create table t2 (t char(32))
+/*!*/;
 SET TIMESTAMP=100000000/*!*/;
 SET @@session.time_zone='Europe/Moscow'/*!*/;
-insert into t1 values ('20050101000000'), ('20050611093902')/*!*/;
+insert into t1 values ('20050101000000'), ('20050611093902')
+/*!*/;
 SET TIMESTAMP=100000000/*!*/;
 SET @@session.time_zone='UTC'/*!*/;
-insert into t1 values ('20040101000000'), ('20040611093902')/*!*/;
+insert into t1 values ('20040101000000'), ('20040611093902')
+/*!*/;
 SET TIMESTAMP=100000000/*!*/;
-delete from t1/*!*/;
+delete from t1
+/*!*/;
 SET TIMESTAMP=100000000/*!*/;
 SET @@session.time_zone='Europe/Moscow'/*!*/;
-insert into t1 values ('20040101000000'), ('20040611093902')/*!*/;
+insert into t1 values ('20040101000000'), ('20040611093902')
+/*!*/;
 DELIMITER ;
 # End of log file
 ROLLBACK /* added by mysqlbinlog */;
@@ -130,3 +136,21 @@ t
 2005-01-01 08:00:00
 drop table t1, t2;
 set global time_zone= @my_time_zone;
+End of 4.1 tests
+CREATE TABLE t1 (a INT, b TIMESTAMP);
+INSERT INTO t1 VALUES (1, NOW());
+SET @@session.time_zone='Japan';
+UPDATE t1 SET b= '1970-01-01 08:59:59' WHERE a= 1;
+Warnings:
+Warning	1264	Out of range value adjusted for column 'b' at row 1
+SELECT * FROM t1 ORDER BY a;
+a	b
+1	0000-00-00 00:00:00
+SET @@session.time_zone='Japan';
+SELECT * FROM t1 ORDER BY a;
+a	b
+1	0000-00-00 00:00:00
+SET @@session.time_zone = default;
+DROP TABLE t1;
+SET @@session.time_zone = default;
+End of 5.0 tests

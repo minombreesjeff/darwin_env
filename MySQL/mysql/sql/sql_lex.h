@@ -538,7 +538,8 @@ public:
   */
   uint select_n_having_items;
   uint cond_count;    /* number of arguments of and/or/xor in where/having/on */
-  uint between_count; /* number of between predicates in where/having/on      */   
+  uint between_count; /* number of between predicates in where/having/on      */
+  uint max_equal_elems; /* maximal number of elements in multiple equalities  */   
   /*
     Number of fields used in select list or where clause of current select
     and all inner subselects.
@@ -615,7 +616,16 @@ public:
     joins on the right.
   */
   List<String> *prev_join_using;
-
+  /*
+    Bitmap used in the ONLY_FULL_GROUP_BY_MODE to prevent mixture of aggregate
+    functions and non aggregated fields when GROUP BY list is absent.
+    Bits:
+      0 - non aggregated fields are used in this select,
+          defined as NON_AGG_FIELD_USED.
+      1 - aggregate functions are used in this select,
+          defined as SUM_FUNC_USED.
+  */
+  uint8 full_group_by_flag;
   void init_query();
   void init_select();
   st_select_lex_unit* master_unit();
@@ -962,6 +972,9 @@ public:
 
   /** Position of ';' in the stream, to delimit multiple queries. */
   const char* found_semicolon;
+  
+  /** Token character bitmaps, to detect 7bit strings. */
+  uchar tok_bitmap;
 
   /** SQL_MODE = IGNORE_SPACE. */
   bool ignore_space;
@@ -999,6 +1012,7 @@ typedef struct st_lex : public Query_tables_list
   gptr yacc_yyss,yacc_yyvs;
   THD *thd;
   CHARSET_INFO *charset, *underscore_charset;
+  bool text_string_is_7bit;
   /* store original leaf_tables for INSERT SELECT and PS/SP */
   TABLE_LIST *leaf_tables_insert;
   /* Position (first character index) of SELECT of CREATE VIEW statement */
@@ -1196,6 +1210,8 @@ typedef struct st_lex : public Query_tables_list
       un->uncacheable|= cause;
     }
   }
+  void set_trg_event_type_for_tables();
+
   TABLE_LIST *unlink_first_table(bool *link_to_local);
   void link_first_table_back(TABLE_LIST *first, bool link_to_local);
   void first_lists_tables_same();
@@ -1206,7 +1222,7 @@ typedef struct st_lex : public Query_tables_list
   bool can_not_use_merged();
   bool only_view_structure();
   bool need_correct_ident();
-  uint8 get_effective_with_check(st_table_list *view);
+  uint8 get_effective_with_check(TABLE_LIST *view);
   /*
     Is this update command where 'WHITH CHECK OPTION' clause is important
 
@@ -1245,6 +1261,8 @@ typedef struct st_lex : public Query_tables_list
     context_stack.pop();
   }
 
+  bool copy_db_to(char **p_db, uint *p_db_length) const;
+
   Name_resolution_context *current_context()
   {
     return context_stack.head();
@@ -1256,15 +1274,37 @@ typedef struct st_lex : public Query_tables_list
 
   void reset_n_backup_query_tables_list(Query_tables_list *backup);
   void restore_backup_query_tables_list(Query_tables_list *backup);
+
+  /**
+    @brief check if the statement is a single-level join
+    @return result of the check
+      @retval TRUE  The statement doesn't contain subqueries, unions and 
+                    stored procedure calls.
+      @retval FALSE There are subqueries, UNIONs or stored procedure calls.
+  */
+  bool is_single_level_stmt() 
+  { 
+    /* 
+      This check exploits the fact that the last added to all_select_list is
+      on its top. So select_lex (as the first added) will be at the tail 
+      of the list.
+    */ 
+    if (&select_lex == all_selects_list && !sroutines.records)
+    {
+      DBUG_ASSERT(!all_selects_list->next_select_in_list());
+      return TRUE;
+    }
+    return FALSE;
+  }
 } LEX;
 
 struct st_lex_local: public st_lex
 {
-  static void *operator new(size_t size)
+  static void *operator new(size_t size) throw()
   {
     return (void*) sql_alloc((uint) size);
   }
-  static void *operator new(size_t size, MEM_ROOT *mem_root)
+  static void *operator new(size_t size, MEM_ROOT *mem_root) throw()
   {
     return (void*) alloc_root(mem_root, (uint) size);
   }
@@ -1280,3 +1320,4 @@ extern void lex_start(THD *thd);
 extern void lex_end(LEX *lex);
 extern int MYSQLlex(void *arg, void *yythd);
 extern char *skip_rear_comments(CHARSET_INFO *cs, char *begin, char *end);
+

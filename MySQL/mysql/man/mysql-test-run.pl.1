@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql\-test\-run.pl\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 06/19/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL
 .\"
-.TH "\fBMYSQL\-TEST\-RUN.PL" "1" "06/19/2007" "MySQL" "MySQL Database System"
+.TH "\fBMYSQL\-TEST\-RUN.PL" "1" "08/02/2008" "MySQL" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -19,7 +19,7 @@ mysql\-test\-run.pl \- run MySQL test suite
 .PP
 The
 \fBmysql\-test\-run.pl\fR
-Perl script is the main application used to run the test suite. It invokes
+Perl script is the main application used to run the MySQL test suite. It invokes
 \fBmysqltest\fR
 to run individual test cases. (Prior to MySQL 4.1, a similar shell script,
 \fBmysql\-test\-run\fR, can be used instead.)
@@ -55,12 +55,81 @@ files in the
 \fIt\fR
 subdirectory.
 .PP
+If no suffix is given for the test name, a suffix of
+\fI.test\fR
+is assumed. Any leading pathname is ignored. These commands are equivalent:
+.sp
+.RS 3n
+.nf
+shell> \fBmysql\-test\-run.pl mytest\fR
+shell> \fBmysql\-test\-run.pl mytest.test\fR
+shell> \fBmysql\-test\-run.pl t/mytest.test\fR
+.fi
+.RE
+.PP
+As of MySQL 5.1.23, a suite name can be given as part of the test name. That is, the syntax for naming a test is:
+.sp
+.RS 3n
+.nf
+[\fIsuite_name\fR.]\fItest_name\fR[.\fIsuffix\fR]
+.fi
+.RE
+.PP
+If a suite name is given,
+\fBmysql\-test\-run.pl\fR
+looks in that suite for the test. With no suite name,
+\fBmysql\-test\-run.pl\fR
+looks in the default list of suites for a match and runs the test in any suites where it finds the test. Suppose that the default suite list is
+main,
+binlog,
+rpl, and that a test
+\fImytest.test\fR
+exists in the
+main
+and
+rpl
+suites. With an argument of
+mytest
+or
+mytest.test,
+\fBmysql\-test\-run.pl\fR
+will run
+\fImytest.test\fR
+from the
+main
+and
+rpl
+suites.
+.PP
 To run a family of test cases for which the names share a common prefix, use the
 \fB\-\-do\-test=\fR\fB\fIprefix\fR\fR
 option. For example,
 \fB\-\-do\-test=rpl\fR
 runs the replication tests (test cases that have names beginning with
 rpl).
+\fB\-\-skip\-test\fR
+has the opposite effect of skipping test cases for which the names share a common prefix.
+.PP
+As of MySQL 5.0.54/5.1.23/6.0.5, the argument for the
+\fB\-\-do\-test\fR
+and
+\fB\-\-skip\-test\fR
+options allows more flexible specification of which tests to perform or skip. If the argument contains a pattern metacharacter other than a lone period, it is interpreted as a Perl regular expression and applies to test names that match the pattern. If the argument contains a lone period or does not contain any pattern metacharacters, it is interpreted the same way as previously and matches test names that begin with the argument value. For example,
+\fB\-\-do\-test=testa\fR
+matches tests that begin with
+testa,
+\fB\-\-do\-test=main.testa\fR
+matches tests in the
+main
+test suite that begin with
+testa, and
+\fB\-\-do\-test=main.*testa\fR
+matches test names that contain
+main
+followed by
+testa
+with anything in between. In the latter case, the pattern match is not anchored to the beginning of the test name, so it also matches names such as
+xmainytestz.
 .PP
 To perform setup prior to running tests,
 \fBmysql\-test\-run.pl\fR
@@ -112,10 +181,10 @@ shell):
 .sp
 .RS 3n
 .nf
-shell> cd mysql\-test
-shell> export MTS_VS_CONFIG=debug
-shell> ./mysqltest\-run.pl \-\-force \-\-timer
-shell> ./mysqltest\-run.pl \-\-force \-\-timer \-\-ps\-protocol
+shell> \fBcd mysql\-test\fR
+shell> \fBexport MTS_VS_CONFIG=debug\fR
+shell> \fB./mysqltest\-run.pl \-\-force \-\-timer\fR
+shell> \fB./mysqltest\-run.pl \-\-force \-\-timer \-\-ps\-protocol\fR
 .fi
 .RE
 .PP
@@ -130,8 +199,8 @@ environment variable to an appropriate value, and the test suite will use a diff
 .sp
 .RS 3n
 .nf
-shell> export MTR_BUILD_THREAD=31
-shell> ./mysql\-test\-run.pl [\fIoptions\fR] [\fItest_name\fR]
+shell> \fBexport MTR_BUILD_THREAD=31\fR
+shell> \fB./mysql\-test\-run.pl [\fR\fB\fIoptions\fR\fR\fB] [\fR\fB\fItest_name\fR\fR\fB]\fR
 .fi
 .RE
 .PP
@@ -159,7 +228,7 @@ T{
 MYSQLTEST_VARDIR
 T}:T{
 Pathname to the \fIvar\fR directory that is used for
-                  logs, temporary files, and so forth
+                logs, temporary files, and so forth
 T}
 T{
 MYSQLD_BOOTSTRAP
@@ -301,6 +370,25 @@ using the named debugger.
 Run all test cases having a name that begins with the given
 \fIprefix\fR
 value. This option provides a convenient way to run a family of similarly named tests.
+.sp
+As of MySQL 5.0.54/5.1.23/6.0.5, the argument for the
+\fB\-\-do\-test\fR
+option allows more flexible specification of which tests to perform. If the argument contains a pattern metacharacter other than a lone period, it is interpreted as a Perl regular expression and applies to test names that match the pattern. If the argument contains a lone period or does not contain any pattern metacharacters, it is interpreted the same way as previously and matches test names that begin with the argument value. For example,
+\fB\-\-do\-test=testa\fR
+matches tests that begin with
+testa,
+\fB\-\-do\-test=main.testa\fR
+matches tests in the
+main
+test suite that begin with
+testa, and
+\fB\-\-do\-test=main.*testa\fR
+matches test names that contain
+main
+followed by
+testa
+with anything in between. In the latter case, the pattern match is not anchored to the beginning of the test name, so it also matches names such as
+xmainytestz.
 .TP 3n
 \(bu
 \fB\-\-embedded\-server\fR
@@ -558,6 +646,12 @@ with support for SSL connections.
 \fB\-\-skip\-test=\fR\fB\fIregex\fR\fR
 .sp
 Specify a regular expression to be applied to test case names. Cases with names that match the expression are skipped. tests to skip.
+.sp
+As of MySQL 5.0.54/5.1.23/6.0.5, the argument for the
+\fB\-\-skip\-test\fR
+option allows more flexible specification of which tests to skip. If the argument contains a pattern metacharacter other than a lone period, it is interpreted as a Perl regular expression and applies to test names that match the pattern. See the description of the
+\fB\-\-do\-test\fR
+option for details.
 .TP 3n
 \(bu
 \fB\-\-skip\-*\fR
@@ -627,7 +721,17 @@ Couldn't find support for SSL
 \(bu
 \fB\-\-start\-and\-exit\fR
 .sp
-Initialize and start servers with the startup settings for the specified test case or cases, if any, and then exit.
+Initialize and start servers with the startup settings for the specified test case or cases, if any, and then exit. You can use this option to start a server to which you can connect later. For example, after building a source distribution you can start a server and connect to it with the
+\fBmysql\fR
+client like this:
+.sp
+.RS 3n
+.nf
+shell> \fBcd mysql\-test\fR
+shell> \fB./mysql\-test\-run.pl \-\-start\-and\-exit\fR
+shell> \fB../mysql \-S ./var/tmp/master.sock \-h localhost \-u root\fR
+.fi
+.RE
 .TP 3n
 \(bu
 \fB\-\-start\-dirty\fR
@@ -935,13 +1039,13 @@ supports the following options not supported by
 \fB\-\-view\-protocol\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 2006\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information or if you are interested in doing a translation.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "REFERENCES"
 .TP 3
 1.\ Typical configure Options
@@ -952,4 +1056,3 @@ which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

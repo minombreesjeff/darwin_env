@@ -57,7 +57,7 @@ target_triplet = @target@
 subdir = include
 DIST_COMMON = $(noinst_HEADERS) $(pkginclude_HEADERS) \
 	$(srcdir)/Makefile.am $(srcdir)/Makefile.in \
-	$(srcdir)/mysql_version.h.in
+	$(srcdir)/mysql_version.h.in $(top_srcdir)/config.h.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 	$(top_srcdir)/config/ac-macros/check_cpu.m4 \
@@ -81,7 +81,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = config.h
 CONFIG_CLEAN_FILES = mysql_version.h
 SOURCES =
 DIST_SOURCES =
@@ -105,6 +105,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -242,7 +243,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -293,6 +296,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -378,7 +382,7 @@ noinst_HEADERS = config-win.h config-os2.h config-netware.h \
 			mysys_err.h my_base.h help_start.h help_end.h \
 			my_nosys.h my_alarm.h queues.h rijndael.h sha1.h \
 			my_aes.h my_tree.h hash.h thr_alarm.h \
-			thr_lock.h t_ctype.h violite.h md5.h base64.h \
+			thr_lock.h t_ctype.h violite.h my_md5.h base64.h \
 			mysql_version.h.in my_handler.h my_time.h \
 			my_user.h my_libwrap.h
 
@@ -389,7 +393,7 @@ EXTRA_DIST = mysql_h.ic
 
 # Some include files that may be moved and patched by configure
 DISTCLEANFILES = sched.h $(CLEANFILES)
-all: $(BUILT_SOURCES)
+all: $(BUILT_SOURCES) config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
 .SUFFIXES:
@@ -422,6 +426,23 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
+
+config.h: stamp-h1
+	@if test ! -f $@; then \
+	  rm -f stamp-h1; \
+	  $(MAKE) stamp-h1; \
+	else :; fi
+
+stamp-h1: $(top_srcdir)/config.h.in $(top_builddir)/config.status
+	@rm -f stamp-h1
+	cd $(top_builddir) && $(SHELL) ./config.status include/config.h
+$(top_srcdir)/config.h.in:  $(am__configure_deps) 
+	cd $(top_srcdir) && $(AUTOHEADER)
+	rm -f stamp-h1
+	touch $@
+
+distclean-hdr:
+	-rm -f config.h stamp-h1
 mysql_version.h: $(top_builddir)/config.status $(srcdir)/mysql_version.h.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 
@@ -501,6 +522,7 @@ distclean-tags:
 	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
 
 distdir: $(DISTFILES)
+	$(mkdir_p) $(distdir)/..
 	@srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`; \
 	topsrcdirstrip=`echo "$(top_srcdir)" | sed 's|.|.|g'`; \
 	list='$(DISTFILES)'; for file in $$list; do \
@@ -533,7 +555,7 @@ distdir: $(DISTFILES)
 check-am: all-am
 check: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) check-am
-all-am: Makefile $(HEADERS)
+all-am: Makefile $(HEADERS) config.h
 installdirs:
 	for dir in "$(DESTDIR)$(pkgincludedir)"; do \
 	  test -z "$$dir" || $(mkdir_p) "$$dir"; \
@@ -572,8 +594,8 @@ clean-am: clean-generic clean-libtool mostlyclean-am
 
 distclean: distclean-am
 	-rm -f Makefile
-distclean-am: clean-am distclean-generic distclean-libtool \
-	distclean-tags
+distclean-am: clean-am distclean-generic distclean-hdr \
+	distclean-libtool distclean-tags
 
 dvi: dvi-am
 
@@ -615,15 +637,15 @@ uninstall-am: uninstall-info-am uninstall-pkgincludeHEADERS
 
 .PHONY: CTAGS GTAGS all all-am check check-am clean clean-generic \
 	clean-libtool ctags dist-hook distclean distclean-generic \
-	distclean-libtool distclean-tags distdir dvi dvi-am html \
-	html-am info info-am install install-am install-data \
-	install-data-am install-exec install-exec-am install-info \
-	install-info-am install-man install-pkgincludeHEADERS \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	tags uninstall uninstall-am uninstall-info-am \
-	uninstall-pkgincludeHEADERS
+	distclean-hdr distclean-libtool distclean-tags distdir dvi \
+	dvi-am html html-am info info-am install install-am \
+	install-data install-data-am install-exec install-exec-am \
+	install-info install-info-am install-man \
+	install-pkgincludeHEADERS install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am tags uninstall \
+	uninstall-am uninstall-info-am uninstall-pkgincludeHEADERS
 
 
 link_sources:
@@ -631,8 +653,11 @@ link_sources:
 	@readline_h_ln_cmd@
 	@yassl_h_ln_cmd@
 
-my_config.h: ../config.h
-	$(CP) ../config.h my_config.h
+# We want both "my_config.h" and "config.h" that are identical, as
+# MySQL sources assumes the name "my_config.h", and 3rd party sources
+# assumes the name "config.h".
+my_config.h: config.h
+	$(CP) config.h my_config.h
 
 # These files should not be included in distributions since they are
 # generated by configure from the .h.in files

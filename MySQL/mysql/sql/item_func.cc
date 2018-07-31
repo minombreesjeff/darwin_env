@@ -649,16 +649,8 @@ bool Item_func_connection_id::fix_fields(THD *thd, Item **ref)
 {
   if (Item_int_func::fix_fields(thd, ref))
     return TRUE;
-
-  /*
-    To replicate CONNECTION_ID() properly we should use
-    pseudo_thread_id on slave, which contains the value of thread_id
-    on master.
-  */
-  value= ((thd->slave_thread) ?
-          thd->variables.pseudo_thread_id :
-          thd->thread_id);
-
+  thd->thread_specific_used= TRUE;
+  value= thd->variables.pseudo_thread_id;
   return FALSE;
 }
 
@@ -1388,7 +1380,11 @@ longlong Item_func_int_div::val_int()
 
 void Item_func_int_div::fix_length_and_dec()
 {
-  max_length=args[0]->max_length - args[0]->decimals;
+  Item_result argtype= args[0]->result_type();
+  /* use precision ony for the data type it is applicable for and valid */
+  max_length=args[0]->max_length -
+    (argtype == DECIMAL_RESULT || argtype == INT_RESULT ?
+     args[0]->decimals : 0);
   maybe_null=1;
   unsigned_flag=args[0]->unsigned_flag | args[1]->unsigned_flag;
 }
@@ -1523,16 +1519,20 @@ void Item_func_neg::fix_length_and_dec()
     Use val() to get value as arg_type doesn't mean that item is
     Item_int or Item_real due to existence of Item_param.
   */
-  if (hybrid_type == INT_RESULT &&
-      args[0]->type() == INT_ITEM &&
-      ((ulonglong) args[0]->val_int() >= (ulonglong) LONGLONG_MIN))
+  if (hybrid_type == INT_RESULT && args[0]->const_item())
   {
-    /*
-      Ensure that result is converted to DECIMAL, as longlong can't hold
-      the negated number
-    */
-    hybrid_type= DECIMAL_RESULT;
-    DBUG_PRINT("info", ("Type changed: DECIMAL_RESULT"));
+    longlong val= args[0]->val_int();
+    if ((ulonglong) val >= (ulonglong) LONGLONG_MIN &&
+        ((ulonglong) val != (ulonglong) LONGLONG_MIN ||
+          args[0]->type() != INT_ITEM))        
+    {
+      /*
+        Ensure that result is converted to DECIMAL, as longlong can't hold
+        the negated number
+      */
+      hybrid_type= DECIMAL_RESULT;
+      DBUG_PRINT("info", ("Type changed: DECIMAL_RESULT"));
+    }
   }
   unsigned_flag= 0;
   DBUG_VOID_RETURN;
@@ -2003,12 +2003,13 @@ void Item_func_round::fix_length_and_dec()
   case DECIMAL_RESULT:
   {
     hybrid_type= DECIMAL_RESULT;
+    decimals_to_set= min(DECIMAL_MAX_SCALE, decimals_to_set);
     int decimals_delta= args[0]->decimals - decimals_to_set;
     int precision= args[0]->decimal_precision();
     int length_increase= ((decimals_delta <= 0) || truncate) ? 0:1;
 
     precision-= decimals_delta - length_increase;
-    decimals= decimals_to_set;
+    decimals= min(decimals_to_set, DECIMAL_MAX_SCALE);
     max_length= my_decimal_precision_to_length(precision, decimals,
                                                unsigned_flag);
     break;
@@ -2107,18 +2108,18 @@ my_decimal *Item_func_round::decimal_op(my_decimal *decimal_value)
 {
   my_decimal val, *value= args[0]->val_decimal(&val);
   longlong dec= args[1]->val_int();
-  if (dec > 0 || (dec < 0 && args[1]->unsigned_flag))
-  {
-    dec= min((ulonglong) dec, DECIMAL_MAX_SCALE);
-    decimals= (uint8) dec; // to get correct output
-  }
+  if (dec >= 0 || args[1]->unsigned_flag)
+    dec= min((ulonglong) dec, decimals);
   else if (dec < INT_MIN)
     dec= INT_MIN;
     
   if (!(null_value= (args[0]->null_value || args[1]->null_value ||
                      my_decimal_round(E_DEC_FATAL_ERROR, value, (int) dec,
-                                      truncate, decimal_value) > 1)))
+                                      truncate, decimal_value) > 1))) 
+  {
+    decimal_value->frac= decimals;
     return decimal_value;
+  }
   return 0;
 }
 
@@ -2247,6 +2248,7 @@ void Item_func_min_max::fix_length_and_dec()
   else if ((cmp_type == DECIMAL_RESULT) || (cmp_type == INT_RESULT))
     max_length= my_decimal_precision_to_length(max_int_part+decimals, decimals,
                                             unsigned_flag);
+  cached_field_type= agg_field_type(args, arg_count);
 }
 
 
@@ -2507,7 +2509,6 @@ longlong Item_func_coercibility::val_int()
 
 void Item_func_locate::fix_length_and_dec()
 {
-  maybe_null= 0;
   max_length= MY_INT32_NUM_DECIMAL_DIGITS;
   agg_arg_charsets(cmp_collation, args, 2, MY_COLL_CMP_CONV, 1);
 }
@@ -2929,7 +2930,8 @@ udf_handler::fix_fields(THD *thd, Item_result_field *func,
           String *res= arguments[i]->val_str(&buffers[i]);
           if (arguments[i]->null_value)
             continue;
-          f_args.args[i]= (char*) res->ptr();
+          f_args.args[i]= (char*) res->c_ptr();
+          f_args.lengths[i]= res->length();
           break;
         }
         case INT_RESULT:
@@ -2966,6 +2968,12 @@ udf_handler::fix_fields(THD *thd, Item_result_field *func,
     func->max_length=min(initid.max_length,MAX_BLOB_WIDTH);
     func->maybe_null=initid.maybe_null;
     const_item_cache=initid.const_item;
+    /* 
+      Keep used_tables_cache in sync with const_item_cache.
+      See the comment in Item_udf_func::update_used tables.
+    */  
+    if (!const_item_cache && !used_tables_cache)
+      used_tables_cache= RAND_TABLE_BIT;
     func->decimals=min(initid.decimals,NOT_FIXED_DEC);
   }
   initialized=1;
@@ -3721,6 +3729,18 @@ longlong Item_func_sleep::val_int()
   DBUG_ASSERT(fixed == 1);
 
   double time= args[0]->val_real();
+  /*
+    On 64-bit OSX pthread_cond_timedwait() waits forever
+    if passed abstime time has already been exceeded by 
+    the system time.
+    When given a very short timeout (< 10 mcs) just return 
+    immediately.
+    We assume that the lines between this test and the call 
+    to pthread_cond_timedwait() will be executed in less than 0.00001 sec.
+  */
+  if (time < 0.00001)
+    return 0;
+    
   set_timespec_nsec(abstime, (ulonglong)(time * ULL(1000000000)));
 
   pthread_cond_init(&cond, NULL);
@@ -3737,13 +3757,12 @@ longlong Item_func_sleep::val_int()
       break;
     error= 0;
   }
-
+  pthread_mutex_unlock(&LOCK_user_locks);
   pthread_mutex_lock(&thd->mysys_var->mutex);
   thd->mysys_var->current_mutex= 0;
   thd->mysys_var->current_cond=  0;
   pthread_mutex_unlock(&thd->mysys_var->mutex);
 
-  pthread_mutex_unlock(&LOCK_user_locks);
   pthread_cond_destroy(&cond);
 
   return test(!error); 		// Return 1 killed
@@ -3772,7 +3791,7 @@ static user_var_entry *get_variable(HASH *hash, LEX_STRING &name,
     entry->value=0;
     entry->length=0;
     entry->update_query_id=0;
-    entry->collation.set(NULL, DERIVATION_IMPLICIT);
+    entry->collation.set(NULL, DERIVATION_IMPLICIT, 0);
     entry->unsigned_flag= 0;
     /*
       If we are here, we were called from a SET or a query which sets a
@@ -3978,7 +3997,7 @@ double user_var_entry::val_real(my_bool *null_value)
 
 /* Get the value of a variable as an integer */
 
-longlong user_var_entry::val_int(my_bool *null_value)
+longlong user_var_entry::val_int(my_bool *null_value) const
 {
   if ((*null_value= (value == 0)))
     return LL(0);
@@ -4595,6 +4614,8 @@ void Item_func_get_user_var::fix_length_and_dec()
 
   if (var_entry)
   {
+    unsigned_flag= var_entry->unsigned_flag;
+
     collation.set(var_entry->collation);
     switch (var_entry->type) {
     case REAL_RESULT:
@@ -4943,13 +4964,44 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref)
     my_error(ER_WRONG_ARGUMENTS,MYF(0),"MATCH");
     return TRUE;
   }
-  table=((Item_field *)item)->field->table;
+  /*
+    With prepared statements Item_func_match::fix_fields is called twice.
+    When it is called first time we have original item tree here and add
+    conversion layer for character sets that do not have ctype array a few
+    lines below. When it is called second time, we already have conversion
+    layer in item tree.
+  */
+  table= (item->type() == Item::FIELD_ITEM) ?
+         ((Item_field *)item)->field->table :
+         ((Item_field *)((Item_func_conv *)item)->key_item())->field->table;
   if (!(table->file->table_flags() & HA_CAN_FULLTEXT))
   {
     my_error(ER_TABLE_CANT_HANDLE_FT, MYF(0));
     return 1;
   }
   table->fulltext_searched=1;
+  /* A workaround for ucs2 character set */
+  if (!args[1]->collation.collation->ctype)
+  {
+    CHARSET_INFO *compatible_cs=
+      get_compatible_charset_with_ctype(args[1]->collation.collation);
+    bool rc= 1;
+    if (compatible_cs)
+    {
+      Item_string *conv_item= new Item_string("", 0, compatible_cs,
+                                              DERIVATION_EXPLICIT);
+      item= args[0];
+      args[0]= conv_item;
+      rc= agg_item_charsets(cmp_collation, func_name(), args, arg_count,
+                            MY_COLL_ALLOW_SUPERSET_CONV |
+                            MY_COLL_ALLOW_COERCIBLE_CONV |
+                            MY_COLL_DISALLOW_NONE, 1);
+      args[0]= item;
+    }
+    else
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), "MATCH");
+    return rc;
+  }
   return agg_arg_collations_for_comparison(cmp_collation,
                                            args+1, arg_count-1, 0);
 }
@@ -5063,7 +5115,7 @@ double Item_func_match::val_real()
     DBUG_RETURN(-1.0);
 
   if (key != NO_SUCH_KEY && table->null_row) /* NULL row from an outer join */
-    return 0.0;
+    DBUG_RETURN(0.0);
 
   if (join_key)
   {
@@ -5475,6 +5527,8 @@ Item_func_sp::make_field(Send_field *tmp_field)
   DBUG_ENTER("Item_func_sp::make_field");
   DBUG_ASSERT(sp_result_field);
   sp_result_field->make_field(tmp_field);
+  if (name)
+    tmp_field->col_name= name;
   DBUG_VOID_RETURN;
 }
 
@@ -5588,5 +5642,24 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
     
 #endif /* ! NO_EMBEDDED_ACCESS_CHECKS */
   }
+
+  if (!m_sp->m_chistics->detistic)
+  {
+    used_tables_cache |= RAND_TABLE_BIT;
+    const_item_cache= FALSE;
+  }
+
   DBUG_RETURN(res);
+}
+
+
+void Item_func_sp::update_used_tables()
+{
+  Item_func::update_used_tables();
+
+  if (!m_sp->m_chistics->detistic)
+  {
+    used_tables_cache |= RAND_TABLE_BIT;
+    const_item_cache= FALSE;
+  }
 }

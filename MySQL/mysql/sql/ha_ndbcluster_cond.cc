@@ -46,6 +46,14 @@ void ndb_serialize_cond(const Item *item, void *arg)
   // Check if we are skipping arguments to a function to be evaluated
   if (context->skip)
   {
+    if (!item)
+    {
+      DBUG_PRINT("info", ("Unexpected mismatch of found and expected number of function arguments %u", context->skip));
+      sql_print_error("ndb_serialize_cond: Unexpected mismatch of found and "
+                      "expected number of function arguments %u", context->skip);
+      context->skip= 0;
+      DBUG_VOID_RETURN;
+    }
     DBUG_PRINT("info", ("Skiping argument %d", context->skip));
     context->skip--;
     switch (item->type()) {
@@ -109,7 +117,8 @@ void ndb_serialize_cond(const Item *item, void *arg)
           if (item->type() == Item::FUNC_ITEM)
           {
             Item_func *func_item= (Item_func *) item;
-            if (func_item->functype() == Item_func::UNKNOWN_FUNC &&
+            if ((func_item->functype() == Item_func::UNKNOWN_FUNC ||
+                 func_item->functype() == Item_func::NEG_FUNC) &&
                 func_item->const_item())
             {
               // Skip any arguments since we will evaluate function instead
@@ -361,8 +370,9 @@ void ndb_serialize_cond(const Item *item, void *arg)
         {
           Item_func *func_item= (Item_func *) item;
           // Check that we expect a function or functional expression here
-          if (context->expecting(Item::FUNC_ITEM) || 
-              func_item->functype() == Item_func::UNKNOWN_FUNC)
+          if (context->expecting(Item::FUNC_ITEM) ||
+              func_item->functype() == Item_func::UNKNOWN_FUNC ||
+              func_item->functype() == Item_func::NEG_FUNC)
             context->expect_nothing();
           else
           {
@@ -576,6 +586,7 @@ void ndb_serialize_cond(const Item *item, void *arg)
             context->expect(Item::FUNC_ITEM);
             break;
           }
+          case Item_func::NEG_FUNC:
           case Item_func::UNKNOWN_FUNC:
           {
             DBUG_PRINT("info", ("UNKNOWN_FUNC %s", 
@@ -1330,9 +1341,23 @@ ha_ndbcluster_cond::generate_scan_filter(NdbScanOperation *op)
 
   if (m_cond_stack)
   {
-    NdbScanFilter filter(op);
+    NdbScanFilter filter(op, false); // don't abort on too large
     
-    DBUG_RETURN(generate_scan_filter_from_cond(filter));
+    int ret=generate_scan_filter_from_cond(filter);
+    if (ret != 0)
+    {
+      const NdbError& err=filter.getNdbError();
+      if (err.code == NdbScanFilter::FilterTooLarge)
+      {
+        // err.message has static storage
+        DBUG_PRINT("info", ("%s", err.message));
+        push_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                     err.code, err.message);
+        ret=0;
+      }
+    }
+    if (ret != 0)
+      DBUG_RETURN(ret);
   }
   else
   {  
@@ -1383,7 +1408,7 @@ int ha_ndbcluster_cond::generate_scan_filter_from_key(NdbScanOperation *op,
 {
   KEY_PART_INFO* key_part= key_info->key_part;
   KEY_PART_INFO* end= key_part+key_info->key_parts;
-  NdbScanFilter filter(op);
+  NdbScanFilter filter(op, true); // abort on too large
   int res;
   DBUG_ENTER("generate_scan_filter_from_key");
 
@@ -1394,7 +1419,7 @@ int ha_ndbcluster_cond::generate_scan_filter_from_key(NdbScanOperation *op,
     uint32 pack_len= field->pack_length();
     const byte* ptr= key;
     DBUG_PRINT("info", ("Filtering value for %s", field->field_name));
-    DBUG_DUMP("key", (char*)ptr, pack_len);
+    DBUG_DUMP("key", (uchar*)ptr, pack_len);
     if (key_part->null_bit)
     {
       DBUG_PRINT("info", ("Generating ISNULL filter"));

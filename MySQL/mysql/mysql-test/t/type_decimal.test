@@ -278,7 +278,7 @@ update t1 set b=a;
 select * from t1;                                                               
 drop table t1;                                                                  
 
-# End of 4.1 tests
+--echo End of 4.1 tests
 
 #
 # Test for BUG#8397: decimal type in subselects (Item_cache_decimal)
@@ -408,3 +408,125 @@ INSERT INTO t1 VALUES (1.1325,3);
 SELECT ROUND(qty,3), dps, ROUND(qty,dps) FROM t1;
 
 DROP TABLE t1;
+
+#
+# Bug#31019: MOD() function and operator crashes MySQL when
+#            divisor is very long and < 1
+#
+
+SELECT 1 % .123456789123456789123456789123456789123456789123456789123456789123456789123456789 AS '%';
+SELECT MOD(1, .123456789123456789123456789123456789123456789123456789123456789123456789123456789) AS 'MOD()';
+
+# Bug #31227: memory overrun with decimal (6,6) and zerofill and group_concat
+# valgrind will complain about this (the group_concat(f2)) on unpatched mysqld.
+#
+create table t1 (f1 decimal(6,6),f2 decimal(6,6) zerofill);
+insert into t1 values (-0.123456,0.123456);
+select group_concat(f1),group_concat(f2) from t1;
+drop table t1;
+
+#
+# BUG#31450 "Query causes error 1048"
+#
+create table t1 (
+  ua_id decimal(22,0) not null,
+  ua_invited_by_id decimal(22,0) default NULL,
+  primary key(ua_id)
+);
+insert into t1 values (123, NULL), (456, NULL);
+
+--echo this must not produce error 1048: 
+select * from t1 where ua_invited_by_id not in (select ua_id from t1);
+
+drop table t1;
+
+#
+# Bug #30889: filesort and order by with float/numeric crashes server
+#
+--disable_warnings
+DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS t4;
+--enable_warnings
+CREATE TABLE t1( a NUMERIC, b INT );
+INSERT INTO t1 VALUES (123456, 40), (123456, 40);
+SELECT TRUNCATE( a, b ) AS c FROM t1 ORDER BY c;
+SELECT ROUND( a, b ) AS c FROM t1 ORDER BY c;
+SELECT ROUND( a, 100 ) AS c FROM t1 ORDER BY c;
+
+CREATE TABLE t2( a NUMERIC, b INT );
+INSERT INTO t2 VALUES (123456, 100);
+SELECT TRUNCATE( a, b ) AS c FROM t2 ORDER BY c;
+SELECT ROUND( a, b ) AS c FROM t2 ORDER BY c;
+
+CREATE TABLE t3( a DECIMAL, b INT );
+INSERT INTO t3 VALUES (123456, 40), (123456, 40);
+SELECT TRUNCATE( a, b ) AS c FROM t3 ORDER BY c;
+SELECT ROUND( a, b ) AS c FROM t3 ORDER BY c;
+SELECT ROUND( a, 100 ) AS c FROM t3 ORDER BY c;
+
+CREATE TABLE t4( a DECIMAL, b INT );
+INSERT INTO t4 VALUES (123456, 40), (123456, 40);
+SELECT TRUNCATE( a, b ) AS c FROM t4 ORDER BY c;
+SELECT ROUND( a, b ) AS c FROM t4 ORDER BY c;
+SELECT ROUND( a, 100 ) AS c FROM t4 ORDER BY c;
+
+delete from t1;
+INSERT INTO t1 VALUES (1234567890, 20), (999.99, 5);
+show create table t1;
+
+select round(a,b) as c from t1 order by c;
+
+DROP TABLE t1, t2, t3, t4;
+
+#
+# Bug #33143: Incorrect ORDER BY for ROUND()/TRUNCATE() result
+#
+
+CREATE TABLE t1( a DECIMAL(4, 3), b INT );
+INSERT INTO t1 VALUES ( 1, 5 ), ( 2, 4 ), ( 3, 3 ), ( 4, 2 ), ( 5, 1 );
+SELECT a, b, ROUND( a, b ) AS c FROM t1 ORDER BY c;
+SELECT a, b, ROUND( a, b ) AS c FROM t1 ORDER BY c DESC;
+
+CREATE TABLE t2 ( a INT, b INT, c DECIMAL(5, 4) );
+
+INSERT INTO t2 VALUES ( 0, 1, 1.2345 ), ( 1, 2, 1.2345 ),
+                      ( 3, 3, 1.2345 ), ( 2, 4, 1.2345 );
+
+SELECT a, b, MAX(ROUND(c, a)) 
+FROM t2 
+GROUP BY a, b 
+ORDER BY b;
+
+SELECT a, b, ROUND(c, a) 
+FROM t2;
+
+CREATE TABLE t3( a INT, b DECIMAL(6, 3) );
+INSERT INTO t3 VALUES( 0, 1.5 );
+SELECT ROUND( b, a ) FROM t3;
+
+CREATE TABLE t4( a INT, b DECIMAL( 12, 0) );
+INSERT INTO t4 VALUES( -9, 1.5e9 );
+SELECT ROUND( b, a ) FROM t4;
+
+CREATE TABLE t5( a INT, b DECIMAL( 13, 12 ) );
+INSERT INTO t5 VALUES( 0, 1.5 );
+INSERT INTO t5 VALUES( 9, 1.5e-9 );
+SELECT ROUND( b, a ) FROM t5;
+
+CREATE TABLE t6( a INT );
+INSERT INTO t6 VALUES( 6 / 8 );
+SELECT * FROM t6;
+
+SELECT ROUND(20061108085411.000002);
+
+DROP TABLE t1, t2, t3, t4, t5, t6;
+
+#
+# Bug#36023: Incorrect handling of zero length caused an assertion to fail.
+#
+create table t1(`c` decimal(9,2));
+insert into t1 values (300),(201.11);
+select max(case 1 when 1 then c else null end) from t1 group by c;
+drop table t1;
+
+--echo End of 5.0 tests

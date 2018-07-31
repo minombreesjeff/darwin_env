@@ -28,6 +28,7 @@
 
 #include "my_config.h"
 #include "my_manage.h"
+#include "mysql_version.h"
 
 /******************************************************************************
 
@@ -189,7 +190,7 @@ void start_defaults(int argc, char *argv[])
   snprintf(address, PATH_MAX, "0.0.0.0");
 
   // port
-  snprintf(port, PATH_MAX, "3306");
+  snprintf(port, PATH_MAX, "%d", MYSQL_PORT);
 
   // default option
   default_option[0]= NULL;

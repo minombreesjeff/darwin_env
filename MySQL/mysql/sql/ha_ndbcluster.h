@@ -27,6 +27,8 @@
 #include <ndbapi_limits.h>
 
 #define NDB_HIDDEN_PRIMARY_KEY_LENGTH 8
+#define NDB_DEFAULT_AUTO_PREFETCH 32
+
 /* Forward declarations */
 class Ndb;             
 class NdbOperation;    
@@ -58,6 +60,12 @@ typedef struct ndb_index_data {
   unsigned char *unique_index_attrid_map;
   bool null_in_unique_index;
 } NDB_INDEX_DATA;
+
+typedef enum ndb_write_op {
+  NDB_INSERT = 0,
+  NDB_UPDATE = 1,
+  NDB_PK_UPDATE = 2
+} NDB_WRITE_OP;
 
 typedef struct st_ndbcluster_share {
   THR_LOCK lock;
@@ -251,7 +259,7 @@ private:
                                       const NdbOperation *first,
                                       const NdbOperation *last,
                                       uint errcode);
-  int peek_indexed_rows(const byte *record, bool check_pk);
+  int peek_indexed_rows(const byte *record, NDB_WRITE_OP write_op);
   int unique_index_read(const byte *key, uint key_len, 
                         byte *buf);
   int ordered_index_scan(const key_range *start_key,
@@ -265,6 +273,7 @@ private:
   int full_table_scan(byte * buf);
   int fetch_next(NdbScanOperation* op);
   int next_result(byte *buf); 
+  int set_auto_inc(Field *field);
   int define_read_attrs(byte* buf, NdbOperation* op);
   int filtered_scan(const byte *key, uint key_len, 
                     byte *buf,
@@ -286,6 +295,7 @@ private:
   int get_ndb_blobs_value(NdbBlob *last_ndb_blob, my_ptrdiff_t ptrdiff);
   int set_primary_key(NdbOperation *op, const byte *key);
   int set_primary_key_from_record(NdbOperation *op, const byte *record);
+  bool check_index_fields_in_write_set(uint keyno);
   int set_index_key_from_record(NdbOperation *op, const byte *record,
                                 uint keyno);
   int set_bounds(NdbIndexScanOperation*, const key_range *keys[2], uint= 0);

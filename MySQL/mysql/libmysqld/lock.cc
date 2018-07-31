@@ -151,7 +151,8 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count,
     }
 
     thd_proc_info(thd, "System lock");
-    if (lock_external(thd, tables, count))
+    if (sql_lock->table_count && lock_external(thd, sql_lock->table,
+                                               sql_lock->table_count))
     {
       /* Clear the lock type of all lock data to avoid reusage. */
       reset_lock_data(sql_lock);
@@ -171,6 +172,8 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count,
                                                      thd->lock_id)];
     if (rc > 1)                                 /* a timeout or a deadlock */
     {
+      if (sql_lock->table_count)
+        VOID(unlock_external(thd, sql_lock->table, sql_lock->table_count));
       my_error(rc, MYF(0));
       my_free((gptr) sql_lock,MYF(0));
       sql_lock= 0;
@@ -178,6 +181,13 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, uint count,
     }
     else if (rc == 1)                           /* aborted */
     {
+      /*
+        reset_lock_data is required here. If thr_multi_lock fails it
+        resets lock type for tables, which were locked before (and
+        including) one that caused error. Lock type for other tables
+        preserved.
+      */
+      reset_lock_data(sql_lock);
       thd->some_tables_deleted=1;		// Try again
       sql_lock->lock_count= 0;                  // Locks are already freed
     }
@@ -239,12 +249,12 @@ static int lock_external(THD *thd, TABLE **tables, uint count)
 	 (*tables)->reginfo.lock_type <= TL_READ_NO_INSERT))
       lock_type=F_RDLCK;
 
-    if ((error=(*tables)->file->external_lock(thd,lock_type)))
+    if ((error= (*tables)->file->ha_external_lock(thd,lock_type)))
     {
       print_lock_error(error, (*tables)->file->table_type());
       for (; i-- ; tables--)
       {
-	(*tables)->file->external_lock(thd, F_UNLCK);
+	(*tables)->file->ha_external_lock(thd, F_UNLCK);
 	(*tables)->current_lock=F_UNLCK;
       }
       DBUG_RETURN(error);
@@ -346,10 +356,28 @@ void mysql_unlock_read_tables(THD *thd, MYSQL_LOCK *sql_lock)
 }
 
 
+/**
+  Try to find the table in the list of locked tables.
+  In case of success, unlock the table and remove it from this list.
 
-void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table)
+  @note This function has a legacy side effect: the table is
+  unlocked even if it is not found in the locked list.
+  It's not clear if this side effect is intentional or still
+  desirable. It might lead to unmatched calls to
+  unlock_external(). Moreover, a discrepancy can be left
+  unnoticed by the storage engine, because in
+  unlock_external() we call handler::external_lock(F_UNLCK) only
+  if table->current_lock is not F_UNLCK.
+
+  @param  always_unlock   specify explicitly if the legacy side
+                          effect is desired.
+*/
+
+void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table,
+                       bool always_unlock)
 {
-  mysql_unlock_some_tables(thd, &table,1);
+  if (always_unlock == TRUE)
+    mysql_unlock_some_tables(thd, &table, /* table count */ 1);
   if (locked)
   {
     reg1 uint i;
@@ -362,6 +390,10 @@ void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table)
         uint lock_data_end;
 
         DBUG_ASSERT(table->lock_position == i);
+
+        /* Unlock if not yet unlocked */
+        if (always_unlock == FALSE)
+          mysql_unlock_some_tables(thd, &table, /* table count */ 1);
 
         /* Decrement table_count in advance, making below expressions easier */
         old_tables= --locked->table_count;
@@ -616,7 +648,7 @@ static int unlock_external(THD *thd, TABLE **table,uint count)
     if ((*table)->current_lock != F_UNLCK)
     {
       (*table)->current_lock = F_UNLCK;
-      if ((error=(*table)->file->external_lock(thd, F_UNLCK)))
+      if ((error= (*table)->file->ha_external_lock(thd, F_UNLCK)))
       {
 	error_code=error;
 	print_lock_error(error_code, (*table)->file->table_type());
@@ -671,7 +703,7 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count,
     {
       my_error(ER_WRONG_LOCK_OF_SYSTEM_TABLE, MYF(0), table_ptr[i]->s->db,
                table_ptr[i]->s->table_name);
-      return 0;
+      DBUG_RETURN(0);
     }
   }
 
@@ -700,6 +732,7 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count,
     if ((table=table_ptr[i])->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE)
       continue;
     lock_type= table->reginfo.lock_type;
+    DBUG_ASSERT (lock_type != TL_WRITE_DEFAULT);
     if (lock_type >= TL_WRITE_ALLOW_WRITE)
     {
       *write_lock_used=table;

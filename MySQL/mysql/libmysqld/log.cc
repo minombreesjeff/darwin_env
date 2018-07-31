@@ -85,7 +85,7 @@ bool binlog_init()
 static int binlog_close_connection(THD *thd)
 {
   IO_CACHE *trans_log= (IO_CACHE*)thd->ha_data[binlog_hton.slot];
-  DBUG_ASSERT(mysql_bin_log.is_open() && !my_b_tell(trans_log));
+  DBUG_ASSERT(!my_b_tell(trans_log));
   close_cached_file(trans_log);
   my_free((gptr)trans_log, MYF(0));
   return 0;
@@ -122,11 +122,25 @@ static int binlog_prepare(THD *thd, bool all)
   return 0;
 }
 
+/**
+  This function is called once after each statement.
+
+  It has the responsibility to flush the transaction cache to the
+  binlog file on commits.
+
+  @param thd   The client thread that executes the transaction.
+  @param all   true if this is the last statement before a COMMIT
+               statement; false if either this is a statement in a
+               transaction but not the last, or if this is a statement
+               not inside a BEGIN block and autocommit is on.
+
+  @see handlerton::commit
+*/
 static int binlog_commit(THD *thd, bool all)
 {
   IO_CACHE *trans_log= (IO_CACHE*)thd->ha_data[binlog_hton.slot];
   DBUG_ENTER("binlog_commit");
-  DBUG_ASSERT(mysql_bin_log.is_open() &&
+  DBUG_ASSERT(
      (all || !(thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))));
 
   if (my_b_tell(trans_log) == 0)
@@ -134,7 +148,15 @@ static int binlog_commit(THD *thd, bool all)
     // we're here because trans_log was flushed in MYSQL_LOG::log_xid()
     DBUG_RETURN(0);
   }
-  if (all) 
+  /*
+    Write commit event if at least one of the following holds:
+     - the user sends an explicit COMMIT; or
+     - the autocommit flag is on, and we are not inside a BEGIN.
+    However, if the user has not sent an explicit COMMIT, and we are
+    either inside a BEGIN or run with autocommit off, then this is not
+    the end of a transaction and we should not write a commit event.
+  */
+  if (all || !(thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN)))
   {
     Query_log_event qev(thd, STRING_WITH_LEN("COMMIT"), TRUE, FALSE);
     qev.error_code= 0; // see comment in MYSQL_LOG::write(THD, IO_CACHE)
@@ -144,6 +166,22 @@ static int binlog_commit(THD *thd, bool all)
     DBUG_RETURN(binlog_end_trans(thd, trans_log, &invisible_commit));
 }
 
+/**
+  This function is called when a transaction involving a transactional
+  table is rolled back.
+
+  It has the responsibility to flush the transaction cache to the
+  binlog file. However, if the transaction does not involve
+  non-transactional tables, nothing needs to be logged.
+
+  @param thd   The client thread that executes the transaction.
+  @param all   true if this is the last statement before a COMMIT
+               statement; false if either this is a statement in a
+               transaction but not the last, or if this is a statement
+               not inside a BEGIN block and autocommit is on.
+
+  @see handlerton::rollback
+*/
 static int binlog_rollback(THD *thd, bool all)
 {
   int error=0;
@@ -155,14 +193,14 @@ static int binlog_rollback(THD *thd, bool all)
     unnecessary, doing extra work. The cause should be found and eliminated
   */
   DBUG_ASSERT(all || !(thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN)));
-  DBUG_ASSERT(mysql_bin_log.is_open() && my_b_tell(trans_log));
+  DBUG_ASSERT(my_b_tell(trans_log));
   /*
     Update the binary log with a BEGIN/ROLLBACK block if we have
     cached some queries and we updated some non-transactional
     table. Such cases should be rare (updating a
     non-transactional table inside a transaction...)
   */
-  if (unlikely(thd->no_trans_update.all))
+  if (unlikely(thd->transaction.all.modified_non_trans_table))
   {
     Query_log_event qev(thd, STRING_WITH_LEN("ROLLBACK"), TRUE, FALSE);
     qev.error_code= 0; // see comment in MYSQL_LOG::write(THD, IO_CACHE)
@@ -198,7 +236,7 @@ static int binlog_savepoint_set(THD *thd, void *sv)
 {
   IO_CACHE *trans_log= (IO_CACHE*)thd->ha_data[binlog_hton.slot];
   DBUG_ENTER("binlog_savepoint_set");
-  DBUG_ASSERT(mysql_bin_log.is_open() && my_b_tell(trans_log));
+  DBUG_ASSERT(my_b_tell(trans_log));
 
   *(my_off_t *)sv= my_b_tell(trans_log);
   /* Write it to the binary log */
@@ -210,14 +248,14 @@ static int binlog_savepoint_rollback(THD *thd, void *sv)
 {
   IO_CACHE *trans_log= (IO_CACHE*)thd->ha_data[binlog_hton.slot];
   DBUG_ENTER("binlog_savepoint_rollback");
-  DBUG_ASSERT(mysql_bin_log.is_open() && my_b_tell(trans_log));
+  DBUG_ASSERT(my_b_tell(trans_log));
 
   /*
     Write ROLLBACK TO SAVEPOINT to the binlog cache if we have updated some
     non-transactional table. Otherwise, truncate the binlog cache starting
     from the SAVEPOINT command.
   */
-  if (unlikely(thd->no_trans_update.all))
+  if (unlikely(thd->transaction.all.modified_non_trans_table))
   {
     Query_log_event qinfo(thd, thd->query, thd->query_length, TRUE, FALSE);
     DBUG_RETURN(mysql_bin_log.write(&qinfo));
@@ -448,13 +486,10 @@ const char *MYSQL_LOG::generate_name(const char *log_name,
 {
   if (!log_name || !log_name[0])
   {
-    /*
-      TODO: The following should be using fn_format();  We just need to
-      first change fn_format() to cut the file name if it's too long.
-    */
-    strmake(buff, pidfile_name,FN_REFLEN-5);
-    strmov(fn_ext(buff),suffix);
-    return (const char *)buff;
+    strmake(buff, pidfile_name, FN_REFLEN - strlen(suffix) - 1);
+    return (const char *)
+      fn_format(buff, buff, "", suffix, MYF(MY_REPLACE_EXT|MY_REPLACE_DIR));
+
   }
   // get rid of extension if the log is binary to avoid problems
   if (strip_ext)
@@ -1145,6 +1180,8 @@ int MYSQL_LOG::update_log_index(LOG_INFO* log_info, bool need_update_threads)
   RETURN VALUES
     0				ok
     LOG_INFO_EOF		to_log not found
+    LOG_INFO_FATAL              if any other than ENOENT error from
+                                my_stat() or my_delete()
 */
 
 int MYSQL_LOG::purge_logs(const char *to_log, 
@@ -1173,33 +1210,75 @@ int MYSQL_LOG::purge_logs(const char *to_log,
   while ((strcmp(to_log,log_info.log_file_name) || (exit_loop=included)) &&
          !log_in_use(log_info.log_file_name))
   {
-    ulong file_size= 0;
-    if (decrease_log_space) //stat the file we want to delete
+    MY_STAT s;
+    if (!my_stat(log_info.log_file_name, &s, MYF(0)))
     {
-      MY_STAT s;
-
-      /* 
-         If we could not stat, we can't know the amount
-         of space that deletion will free. In most cases,
-         deletion won't work either, so it's not a problem.
-      */
-      if (my_stat(log_info.log_file_name,&s,MYF(0)))
-        file_size= s.st_size;
-      else
-	sql_print_information("Failed to execute my_stat on file '%s'",
+      if (my_errno == ENOENT) 
+      {
+        /*
+          It's not fatal if we can't stat a log file that does not exist;
+          If we could not stat, we won't delete.
+        */     
+        push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                            ER_LOG_PURGE_NO_FILE, ER(ER_LOG_PURGE_NO_FILE),
+                            log_info.log_file_name);
+        sql_print_information("Failed to execute my_stat on file '%s'",
 			      log_info.log_file_name);
+        my_errno= 0;
+      }
+      else
+      {
+        /*
+          Other than ENOENT are fatal
+        */
+        push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                            ER_BINLOG_PURGE_FATAL_ERR,
+                            "a problem with getting info on being purged %s; "
+                            "consider examining correspondence "
+                            "of your binlog index file "
+                            "to the actual binlog files",
+                            log_info.log_file_name);
+        error= LOG_INFO_FATAL;
+        goto err;
+      }
     }
-    /*
-      It's not fatal if we can't delete a log file ;
-      if we could delete it, take its size into account
-    */
-    DBUG_PRINT("info",("purging %s",log_info.log_file_name));
-    if (!my_delete(log_info.log_file_name, MYF(0)) && decrease_log_space)
-      *decrease_log_space-= file_size;
+    else
+    {
+      DBUG_PRINT("info",("purging %s",log_info.log_file_name));
+      if (!my_delete(log_info.log_file_name, MYF(0)))
+      {
+        if (decrease_log_space)
+          *decrease_log_space-= s.st_size;
+      }
+      else
+      {
+        if (my_errno == ENOENT) 
+        {
+          push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                              ER_LOG_PURGE_NO_FILE, ER(ER_LOG_PURGE_NO_FILE),
+                              log_info.log_file_name);
+          sql_print_information("Failed to delete file '%s'",
+                                log_info.log_file_name);
+          my_errno= 0;
+        }
+        else
+        {
+          push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                              ER_BINLOG_PURGE_FATAL_ERR,
+                              "a problem with deleting %s; "
+                              "consider examining correspondence "
+                              "of your binlog index file "
+                              "to the actual binlog files",
+                              log_info.log_file_name);
+          error= LOG_INFO_FATAL;
+          goto err;
+        }
+      }
+    }
     if (find_next_log(&log_info, 0) || exit_loop)
       break;
   }
-
+  
   /*
     If we get killed -9 here, the sysadmin would have to edit
     the log index file after restart - otherwise, this should be safe
@@ -1228,6 +1307,8 @@ err:
   RETURN VALUES
     0				ok
     LOG_INFO_PURGE_NO_ROTATE	Binary file that can't be rotated
+    LOG_INFO_FATAL              if any other than ENOENT error from
+                                my_stat() or my_delete()
 */
 
 int MYSQL_LOG::purge_logs_before_date(time_t purge_time)
@@ -1251,11 +1332,66 @@ int MYSQL_LOG::purge_logs_before_date(time_t purge_time)
   while (strcmp(log_file_name, log_info.log_file_name) &&
 	 !log_in_use(log_info.log_file_name))
   {
-    /* It's not fatal even if we can't delete a log file */
-    if (!my_stat(log_info.log_file_name, &stat_area, MYF(0)) ||
-	stat_area.st_mtime >= purge_time)
-      break;
-    my_delete(log_info.log_file_name, MYF(0));
+    if (!my_stat(log_info.log_file_name, &stat_area, MYF(0)))
+    {
+      if (my_errno == ENOENT) 
+      {
+        /*
+          It's not fatal if we can't stat a log file that does not exist.
+        */     
+        push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                            ER_LOG_PURGE_NO_FILE, ER(ER_LOG_PURGE_NO_FILE),
+                            log_info.log_file_name);
+	sql_print_information("Failed to execute my_stat on file '%s'",
+			      log_info.log_file_name);
+        my_errno= 0;
+      }
+      else
+      {
+        /*
+          Other than ENOENT are fatal
+        */
+        push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                            ER_BINLOG_PURGE_FATAL_ERR,
+                            "a problem with getting info on being purged %s; "
+                            "consider examining correspondence "
+                            "of your binlog index file "
+                            "to the actual binlog files",
+                            log_info.log_file_name);
+        error= LOG_INFO_FATAL;
+        goto err;
+      }
+    }
+    else
+    {
+      if (stat_area.st_mtime >= purge_time)
+        break;
+      if (my_delete(log_info.log_file_name, MYF(0)))
+      {
+        if (my_errno == ENOENT) 
+        {
+          /* It's not fatal even if we can't delete a log file */
+          push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                              ER_LOG_PURGE_NO_FILE, ER(ER_LOG_PURGE_NO_FILE),
+                              log_info.log_file_name);
+          sql_print_information("Failed to delete file '%s'",
+                                log_info.log_file_name);
+          my_errno= 0;
+        }
+        else
+        {
+          push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                              ER_BINLOG_PURGE_FATAL_ERR,
+                              "a problem with deleting %s; "
+                              "consider examining correspondence "
+                              "of your binlog index file "
+                              "to the actual binlog files",
+                              log_info.log_file_name);
+          error= LOG_INFO_FATAL;
+          goto err;
+        }
+      }
+    }
     if (find_next_log(&log_info, 0))
       break;
   }
@@ -1287,10 +1423,10 @@ err:
 void MYSQL_LOG::make_log_name(char* buf, const char* log_ident)
 {
   uint dir_len = dirname_length(log_file_name); 
-  if (dir_len > FN_REFLEN)
+  if (dir_len >= FN_REFLEN)
     dir_len=FN_REFLEN-1;
   strnmov(buf, log_file_name, dir_len);
-  strmake(buf+dir_len, log_ident, FN_REFLEN - dir_len);
+  strmake(buf+dir_len, log_ident, FN_REFLEN - dir_len -1);
 }
 
 
@@ -1820,9 +1956,11 @@ uint MYSQL_LOG::next_file_id()
   IMPLEMENTATION
     - To support transaction over replication, we wrap the transaction
       with BEGIN/COMMIT or BEGIN/ROLLBACK in the binary log.
-      We want to write a BEGIN/ROLLBACK block when a non-transactional table
-      was updated in a transaction which was rolled back. This is to ensure
-      that the same updates are run on the slave.
+      If a transaction that only involves transactional tables is
+      rolled back, we do not binlog it. However, we write a
+      BEGIN/ROLLBACK block when a non-transactional table was updated
+      in a transaction which was rolled back. This is to ensure that
+      the same updates are run on the slave.
 */
 
 bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, Log_event *commit_event)
@@ -1833,50 +1971,159 @@ bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, Log_event *commit_event)
   /* NULL would represent nothing to replicate after ROLLBACK */
   DBUG_ASSERT(commit_event != NULL);
 
+  DBUG_ASSERT(is_open());
   if (likely(is_open()))                       // Should always be true
   {
-    uint length;
+    uint length, group, carry, hdr_offs, val;
+    byte header[LOG_EVENT_HEADER_LEN];
 
     /*
-      Log "BEGIN" at the beginning of the transaction.
-      which may contain more than 1 SQL statement.
+      Log "BEGIN" at the beginning of every transaction.  Here, a
+      transaction is either a BEGIN..COMMIT block or a single
+      statement in autocommit mode.
     */
-    if (thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))
-    {
-      Query_log_event qinfo(thd, STRING_WITH_LEN("BEGIN"), TRUE, FALSE);
-      /*
-        Imagine this is rollback due to net timeout, after all statements of
-        the transaction succeeded. Then we want a zero-error code in BEGIN.
-        In other words, if there was a really serious error code it's already
-        in the statement's events, there is no need to put it also in this
-        internally generated event, and as this event is generated late it
-        would lead to false alarms.
-        This is safer than thd->clear_error() against kills at shutdown.
-      */
-      qinfo.error_code= 0;
-      /*
-        Now this Query_log_event has artificial log_pos 0. It must be adjusted
-        to reflect the real position in the log. Not doing it would confuse the
-	slave: it would prevent this one from knowing where he is in the
-	master's binlog, which would result in wrong positions being shown to
-	the user, MASTER_POS_WAIT undue waiting etc.
-      */
-      if (qinfo.write(&log_file))
-	goto err;
-    }
+    Query_log_event qinfo(thd, STRING_WITH_LEN("BEGIN"), TRUE, FALSE);
+    /*
+      Imagine this is rollback due to net timeout, after all
+      statements of the transaction succeeded. Then we want a
+      zero-error code in BEGIN.  In other words, if there was a
+      really serious error code it's already in the statement's
+      events, there is no need to put it also in this internally
+      generated event, and as this event is generated late it would
+      lead to false alarms.
+
+      This is safer than thd->clear_error() against kills at shutdown.
+    */
+    qinfo.error_code= 0;
+    /*
+      Now this Query_log_event has artificial log_pos 0. It must be
+      adjusted to reflect the real position in the log. Not doing it
+      would confuse the slave: it would prevent this one from
+      knowing where he is in the master's binlog, which would result
+      in wrong positions being shown to the user, MASTER_POS_WAIT
+      undue waiting etc.
+    */
+    if (qinfo.write(&log_file))
+      goto err;
+
     /* Read from the file used to cache the queries .*/
     if (reinit_io_cache(cache, READ_CACHE, 0, 0, 0))
       goto err;
-    length=my_b_bytes_in_cache(cache);
+
+    length= my_b_bytes_in_cache(cache);
     DBUG_EXECUTE_IF("half_binlogged_transaction", length-=100;);
+
+    /*
+      The events in the buffer have incorrect end_log_pos data
+      (relative to beginning of group rather than absolute),
+      so we'll recalculate them in situ so the binlog is always
+      correct, even in the middle of a group. This is possible
+      because we now know the start position of the group (the
+      offset of this cache in the log, if you will); all we need
+      to do is to find all event-headers, and add the position of
+      the group to the end_log_pos of each event.  This is pretty
+      straight forward, except that we read the cache in segments,
+      so an event-header might end up on the cache-border and get
+      split.
+     */
+
+    group= (uint)my_b_tell(&log_file);
+    hdr_offs= carry= 0;
+
     do
     {
+
+      /*
+        if we only got a partial header in the last iteration,
+        get the other half now and process a full header.
+      */
+      if (unlikely(carry > 0))
+      {
+        DBUG_ASSERT(carry < LOG_EVENT_HEADER_LEN);
+
+        /* assemble both halves */
+        memcpy(&header[carry], (char *)cache->read_pos, LOG_EVENT_HEADER_LEN - carry);
+
+        /* fix end_log_pos */
+        val= uint4korr(&header[LOG_POS_OFFSET]) + group;
+        int4store(&header[LOG_POS_OFFSET], val);
+
+        /* write the first half of the split header */
+        if (my_b_write(&log_file, header, carry))
+          goto err;
+
+        /*
+          copy fixed second half of header to cache so the correct
+          version will be written later.
+        */
+        memcpy((char *)cache->read_pos, &header[carry], LOG_EVENT_HEADER_LEN - carry);
+
+        /* next event header at ... */
+        hdr_offs = uint4korr(&header[EVENT_LEN_OFFSET]) - carry;
+
+        carry= 0;
+      }
+
+      /* if there is anything to write, process it. */
+
+      if (likely(length > 0))
+      {
+        /*
+          process all event-headers in this (partial) cache.
+          if next header is beyond current read-buffer,
+          we'll get it later (though not necessarily in the
+          very next iteration, just "eventually").
+        */
+
+        while (hdr_offs < length)
+        {
+          /*
+            partial header only? save what we can get, process once
+            we get the rest.
+          */
+
+          if (hdr_offs + LOG_EVENT_HEADER_LEN > length)
+          {
+            carry= length - hdr_offs;
+            memcpy(header, (char *)cache->read_pos + hdr_offs, carry);
+            length= hdr_offs;
+          }
+          else
+          {
+            /* we've got a full event-header, and it came in one piece */
+
+            uchar *log_pos= (uchar *)cache->read_pos + hdr_offs + LOG_POS_OFFSET;
+
+            /* fix end_log_pos */
+            val= uint4korr(log_pos) + group;
+            int4store(log_pos, val);
+
+            /* next event header at ... */
+            log_pos= (uchar *)cache->read_pos + hdr_offs + EVENT_LEN_OFFSET;
+            hdr_offs += uint4korr(log_pos);
+
+          }
+        }
+
+        /*
+          Adjust hdr_offs. Note that it may still point beyond the segment
+          read in the next iteration; if the current event is very long,
+          it may take a couple of read-iterations (and subsequent adjustments
+          of hdr_offs) for it to point into the then-current segment.
+          If we have a split header (!carry), hdr_offs will be set at the
+          beginning of the next iteration, overwriting the value we set here:
+        */
+        hdr_offs -= length;
+      }
+
       /* Write data to the binary log file */
       if (my_b_write(&log_file, cache->read_pos, length))
-	goto err;
+        goto err;
       cache->read_pos=cache->read_end;		// Mark buffer used up
       DBUG_EXECUTE_IF("half_binlogged_transaction", goto DBUG_skip_commit;);
     } while ((length=my_b_fill(cache)));
+
+    DBUG_ASSERT(carry == 0);
 
     if (commit_event->write(&log_file))
       goto err;
@@ -2350,12 +2597,7 @@ static void print_buffer_to_nt_eventlog(enum loglevel level, char *buff,
     void
 */
 
-#ifdef EMBEDDED_LIBRARY
-void vprint_msg_to_log(enum loglevel level __attribute__((unused)),
-                       const char *format __attribute__((unused)),
-                       va_list argsi __attribute__((unused)))
-{}
-#else /*!EMBEDDED_LIBRARY*/
+#ifndef EMBEDDED_LIBRARY
 static void print_buffer_to_file(enum loglevel level, const char *buffer)
 {
   time_t skr;

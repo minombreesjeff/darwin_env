@@ -1135,3 +1135,73 @@ item	started	price
 A1	2005-11-01 08:00:00	1000.000
 A1	2005-11-15 00:00:00	2000.000
 DROP TABLE t1;
+
+BUG#32198 "Comparison of DATE with DATETIME still not using indexes correctly"
+
+CREATE TABLE t1 (
+id int(11) NOT NULL auto_increment,
+dateval date default NULL,
+PRIMARY KEY  (id),
+KEY dateval (dateval)
+) AUTO_INCREMENT=173;
+INSERT INTO t1 VALUES
+(1,'2007-01-01'),(2,'2007-01-02'),(3,'2007-01-03'),(4,'2007-01-04'),
+(5,'2007-01-05'),(6,'2007-01-06'),(7,'2007-01-07'),(8,'2007-01-08'),
+(9,'2007-01-09'),(10,'2007-01-10'),(11,'2007-01-11');
+This must use range access:
+explain select * from t1 where dateval >= '2007-01-01 00:00:00' and dateval <= '2007-01-02 23:59:59';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	range	dateval	dateval	4	NULL	2	Using where
+drop table t1;
+CREATE TABLE t1 (
+a varchar(32), index (a)
+) DEFAULT CHARSET=latin1 COLLATE=latin1_bin;
+INSERT INTO t1 VALUES
+('B'), ('A'), ('A'), ('C'), ('B'), ('A'), ('A');
+SELECT a FROM t1 WHERE a='b' OR a='B';
+a
+B
+B
+EXPLAIN SELECT a FROM t1 WHERE a='b' OR a='B';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	range	a	a	35	NULL	3	Using where; Using index
+DROP TABLE t1;
+CREATE TABLE t1 (f1 TINYINT(11) UNSIGNED NOT NULL, PRIMARY KEY (f1));
+INSERT INTO t1 VALUES (127),(254),(0),(1),(255);
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 256;
+COUNT(*)
+5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 256.0;
+COUNT(*)
+5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 255;
+COUNT(*)
+4
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < -1;
+COUNT(*)
+0
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -1;
+COUNT(*)
+5
+DROP TABLE t1;
+CREATE TABLE t1 ( f1 TINYINT(11) NOT NULL, PRIMARY KEY (f1));
+INSERT INTO t1 VALUES (127),(126),(0),(-128),(-127);
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 128;
+COUNT(*)
+5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 128.0;
+COUNT(*)
+5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 127;
+COUNT(*)
+4
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -129;
+COUNT(*)
+5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -129.0;
+COUNT(*)
+5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -128;
+COUNT(*)
+4
+DROP TABLE t1;

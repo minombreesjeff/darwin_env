@@ -791,13 +791,70 @@ static void append_directory(THD *thd, String *packet, const char *dir_type,
 
 #define LIST_PROCESS_HOST_LEN 64
 
+
+static bool get_field_default_value(THD *thd, TABLE *table,
+                                    Field *field, String *def_value,
+                                    bool quoted)
+{
+  bool has_default;
+  bool has_now_default;
+
+  /* 
+     We are using CURRENT_TIMESTAMP instead of NOW because it is
+     more standard
+  */
+  has_now_default= table->timestamp_field == field && 
+    field->unireg_check != Field::TIMESTAMP_UN_FIELD;
+    
+  has_default= (field->type() != FIELD_TYPE_BLOB &&
+                !(field->flags & NO_DEFAULT_VALUE_FLAG) &&
+                field->unireg_check != Field::NEXT_NUMBER &&
+                !((thd->variables.sql_mode & (MODE_MYSQL323 | MODE_MYSQL40))
+                  && has_now_default));
+
+  def_value->length(0);
+  if (has_default)
+  {
+    if (has_now_default)
+      def_value->append(STRING_WITH_LEN("CURRENT_TIMESTAMP"));
+    else if (!field->is_null())
+    {                                             // Not null by default
+      char tmp[MAX_FIELD_WIDTH];
+      String type(tmp, sizeof(tmp), field->charset());
+      field->val_str(&type);
+      if (type.length())
+      {
+        String def_val;
+        uint dummy_errors;
+        /* convert to system_charset_info == utf8 */
+        def_val.copy(type.ptr(), type.length(), field->charset(),
+                     system_charset_info, &dummy_errors);
+        if (quoted)
+          append_unescaped(def_value, def_val.ptr(), def_val.length());
+        else
+          def_value->append(def_val.ptr(), def_val.length());
+      }
+      else if (quoted)
+        def_value->append(STRING_WITH_LEN("''"));
+    }
+    else if (field->maybe_null() && quoted)
+      def_value->append(STRING_WITH_LEN("NULL"));    // Null as default
+    else
+      return 0;
+
+  }
+  return has_default;
+}
+
+
 static int
 store_create_info(THD *thd, TABLE_LIST *table_list, String *packet)
 {
   List<Item> field_list;
-  char tmp[MAX_FIELD_WIDTH], *for_str, buff[128];
+  char tmp[MAX_FIELD_WIDTH], *for_str, buff[128], def_value_buf[MAX_FIELD_WIDTH];
   const char *alias;
   String type(tmp, sizeof(tmp), system_charset_info);
+  String def_value(def_value_buf, sizeof(def_value_buf), system_charset_info);
   Field **ptr,*field;
   uint primary_key;
   KEY *key_info;
@@ -833,8 +890,6 @@ store_create_info(THD *thd, TABLE_LIST *table_list, String *packet)
 
   for (ptr=table->field ; (field= *ptr); ptr++)
   {
-    bool has_default;
-    bool has_now_default;
     uint flags = field->flags;
 
     if (ptr != table->field)
@@ -882,44 +937,10 @@ store_create_info(THD *thd, TABLE_LIST *table_list, String *packet)
       packet->append(STRING_WITH_LEN(" NULL"));
     }
 
-    /* 
-      Again we are using CURRENT_TIMESTAMP instead of NOW because it is
-      more standard 
-    */
-    has_now_default= table->timestamp_field == field && 
-                     field->unireg_check != Field::TIMESTAMP_UN_FIELD;
-    
-    has_default= (field->type() != FIELD_TYPE_BLOB &&
-                  !(field->flags & NO_DEFAULT_VALUE_FLAG) &&
-		  field->unireg_check != Field::NEXT_NUMBER &&
-                  !((thd->variables.sql_mode & (MODE_MYSQL323 | MODE_MYSQL40))
-		    && has_now_default));
-
-    if (has_default)
+    if (get_field_default_value(thd, table, field, &def_value, 1))
     {
       packet->append(STRING_WITH_LEN(" default "));
-      if (has_now_default)
-        packet->append(STRING_WITH_LEN("CURRENT_TIMESTAMP"));
-      else if (!field->is_null())
-      {                                             // Not null by default
-        type.set(tmp, sizeof(tmp), field->charset());
-        field->val_str(&type);
-	if (type.length())
-	{
-	  String def_val;
-          uint dummy_errors;
-	  /* convert to system_charset_info == utf8 */
-	  def_val.copy(type.ptr(), type.length(), field->charset(),
-		       system_charset_info, &dummy_errors);
-          append_unescaped(packet, def_val.ptr(), def_val.length());
-	}
-        else
-	  packet->append(STRING_WITH_LEN("''"));
-      }
-      else if (field->maybe_null())
-        packet->append(STRING_WITH_LEN("NULL"));    // Null as default
-      else
-        packet->append(tmp);
+      packet->append(def_value.ptr(), def_value.length(), system_charset_info);
     }
 
     if (!limited_mysql_mode && table->timestamp_field == field && 
@@ -1743,12 +1764,13 @@ static bool show_status_array(THD *thd, const char *wild,
           if (thd->net.vio->ssl_arg)
           {
             char *to= buff;
-            for (int i=0 ; i++ ;)
+            char *buff_end= buff + sizeof(buff);
+            for (int i= 0; to < buff_end; i++)
             {
               const char *p= SSL_get_cipher_list((SSL*) thd->net.vio->ssl_arg,i);
               if (p == NULL)
                 break;
-              to= strmov(to, p);
+              to= strnmov(to, p, buff_end-to-1);
               *to++= ':';
             }
             if (to != buff)
@@ -1913,11 +1935,9 @@ bool uses_only_table_name_fields(Item *item, TABLE_LIST *table)
   if (item->type() == Item::FUNC_ITEM)
   {
     Item_func *item_func= (Item_func*)item;
-    Item **child;
-    Item **item_end= (item_func->arguments()) + item_func->argument_count();
-    for (child= item_func->arguments(); child != item_end; child++)
+    for (uint i=0; i<item_func->argument_count(); i++)
     {
-      if (!uses_only_table_name_fields(*child, table))
+      if (!uses_only_table_name_fields(item_func->arguments()[i], table))
         return 0;
     }
   }
@@ -2433,7 +2453,7 @@ int fill_schema_shemata(THD *thd, TABLE_LIST *tables, COND *cond)
 }
 
 
-static int get_schema_tables_record(THD *thd, struct st_table_list *tables,
+static int get_schema_tables_record(THD *thd, TABLE_LIST *tables,
 				    TABLE *table, bool res,
 				    const char *base_name,
 				    const char *file_name)
@@ -2623,7 +2643,7 @@ static int get_schema_tables_record(THD *thd, struct st_table_list *tables,
 }
 
 
-static int get_schema_column_record(THD *thd, struct st_table_list *tables,
+static int get_schema_column_record(THD *thd, TABLE_LIST *tables,
 				    TABLE *table, bool res,
 				    const char *base_name,
 				    const char *file_name)
@@ -2669,7 +2689,6 @@ static int get_schema_column_record(THD *thd, struct st_table_list *tables,
     bool is_blob;
     uint flags=field->flags;
     char tmp[MAX_FIELD_WIDTH];
-    char tmp1[MAX_FIELD_WIDTH];
     String type(tmp,sizeof(tmp), system_charset_info);
     char *end;
     int decimals, field_length;
@@ -2690,8 +2709,7 @@ static int get_schema_column_record(THD *thd, struct st_table_list *tables,
     col_access= get_column_grant(thd, &tables->grant, 
                                  base_name, file_name,
                                  field->field_name) & COL_ACLS;
-    if (lex->orig_sql_command != SQLCOM_SHOW_FIELDS  && 
-        !tables->schema_table && !col_access)
+    if (!tables->schema_table && !col_access)
       continue;
     end= tmp;
     for (uint bitnr=0; col_access ; col_access>>=1,bitnr++)
@@ -2716,33 +2734,13 @@ static int get_schema_column_record(THD *thd, struct st_table_list *tables,
     table->field[7]->store(type.ptr(),
                            (tmp_buff ? tmp_buff - type.ptr() :
                             type.length()), cs);
-    if (show_table->timestamp_field == field &&
-        field->unireg_check != Field::TIMESTAMP_UN_FIELD)
+
+    if (get_field_default_value(thd, show_table, field, &type, 0))
     {
-      table->field[5]->store(STRING_WITH_LEN("CURRENT_TIMESTAMP"), cs);
+      table->field[5]->store(type.ptr(), type.length(), cs);
       table->field[5]->set_notnull();
     }
-    else if (field->unireg_check != Field::NEXT_NUMBER &&
-             !field->is_null() &&
-             !(field->flags & NO_DEFAULT_VALUE_FLAG))
-    {
-      String def(tmp1,sizeof(tmp1), cs);
-      type.set(tmp, sizeof(tmp), field->charset());
-      field->val_str(&type);
-      uint dummy_errors;
-      def.copy(type.ptr(), type.length(), type.charset(), cs, &dummy_errors);
-      table->field[5]->store(def.ptr(), def.length(), def.charset());
-      table->field[5]->set_notnull();
-    }
-    else if (field->unireg_check == Field::NEXT_NUMBER ||
-             lex->orig_sql_command != SQLCOM_SHOW_FIELDS ||
-             field->maybe_null())
-      table->field[5]->set_null();                // Null as default
-    else
-    {
-      table->field[5]->store("",0, cs);
-      table->field[5]->set_notnull();
-    }
+
     pos=(byte*) ((flags & NOT_NULL_FLAG) ?  "NO" : "YES");
     table->field[6]->store((const char*) pos,
                            strlen((const char*) pos), cs);
@@ -3065,7 +3063,7 @@ err:
 }
 
 
-static int get_schema_stat_record(THD *thd, struct st_table_list *tables,
+static int get_schema_stat_record(THD *thd, TABLE_LIST *tables,
 				  TABLE *table, bool res,
 				  const char *base_name,
 				  const char *file_name)
@@ -3155,7 +3153,7 @@ static int get_schema_stat_record(THD *thd, struct st_table_list *tables,
 }
 
 
-static int get_schema_views_record(THD *thd, struct st_table_list *tables,
+static int get_schema_views_record(THD *thd, TABLE_LIST *tables,
 				   TABLE *table, bool res,
 				   const char *base_name,
 				   const char *file_name)
@@ -3217,7 +3215,7 @@ static int get_schema_views_record(THD *thd, struct st_table_list *tables,
       Item *item;
       Item_field *field;
       /*
-        chech that at least one coulmn in view is updatable
+        check that at least one column in view is updatable
       */
       while ((item= it++))
       {
@@ -3228,6 +3226,8 @@ static int get_schema_views_record(THD *thd, struct st_table_list *tables,
           break;
         }
       }
+      if (updatable_view && !tables->view->can_be_merged())
+        updatable_view= 0;
     }
     if (updatable_view)
       table->field[5]->store(STRING_WITH_LEN("YES"), cs);
@@ -3267,7 +3267,7 @@ bool store_constraints(THD *thd, TABLE *table, const char *db,
 }
 
 
-static int get_schema_constraints_record(THD *thd, struct st_table_list *tables,
+static int get_schema_constraints_record(THD *thd, TABLE_LIST *tables,
 					 TABLE *table, bool res,
 					 const char *base_name,
 					 const char *file_name)
@@ -3363,7 +3363,7 @@ static bool store_trigger(THD *thd, TABLE *table, const char *db,
 }
 
 
-static int get_schema_triggers_record(THD *thd, struct st_table_list *tables,
+static int get_schema_triggers_record(THD *thd, TABLE_LIST *tables,
 				      TABLE *table, bool res,
 				      const char *base_name,
 				      const char *file_name)
@@ -3385,6 +3385,12 @@ static int get_schema_triggers_record(THD *thd, struct st_table_list *tables,
   {
     Table_triggers_list *triggers= tables->table->triggers;
     int event, timing;
+
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+    if (!(thd->security_ctx->master_access & SUPER_ACL))
+      goto ret;
+#endif
+
     for (event= 0; event < (int)TRG_EVENT_MAX; event++)
     {
       for (timing= 0; timing < (int)TRG_ACTION_MAX; timing++)
@@ -3411,6 +3417,9 @@ static int get_schema_triggers_record(THD *thd, struct st_table_list *tables,
       }
     }
   }
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+ret:
+#endif
   DBUG_RETURN(0);
 }
 
@@ -3430,7 +3439,7 @@ void store_key_column_usage(TABLE *table, const char*db, const char *tname,
 
 
 static int get_schema_key_column_usage_record(THD *thd,
-					      struct st_table_list *tables,
+					      TABLE_LIST *tables,
 					      TABLE *table, bool res,
 					      const char *base_name,
 					      const char *file_name)
@@ -3613,6 +3622,14 @@ ST_SCHEMA_TABLE *get_schema_table(enum enum_schema_tables schema_table_idx)
 /*
   Create information_schema table using schema_table data
 
+  @note
+    For MYSQL_TYPE_DECIMAL fields only, the field_length member has encoded
+    into it two numbers, based on modulus of base-10 numbers.  In the ones
+    position is the number of decimals.  Tens position is unused.  In the
+    hundreds and thousands position is a two-digit decimal number representing
+    length.  Encode this value with  (decimals*100)+length  , where
+    0<decimals<10 and 0<=length<100 .
+
   SYNOPSIS
     create_schema_table()
     thd	       	          thread handler
@@ -3658,6 +3675,19 @@ TABLE *create_schema_table(THD *thd, TABLE_LIST *table_list)
         DBUG_RETURN(NULL);
       break;
     case MYSQL_TYPE_DECIMAL:
+      if (!(item= new Item_decimal((longlong) fields_info->value, false)))
+      {
+        DBUG_RETURN(0);
+      }
+      item->decimals= fields_info->field_length%10;
+      item->max_length= (fields_info->field_length/100)%100;
+      if (item->unsigned_flag == 0)
+        item->max_length+= 1;
+      if (item->decimals > 0)
+        item->max_length+= 1;
+      item->set_name(fields_info->field_name,
+                     strlen(fields_info->field_name), cs);
+      break;
     case MYSQL_TYPE_STRING:
     default:
       /* Don't let unimplemented types pass through. Could be a grave error. */
@@ -4075,9 +4105,11 @@ bool get_schema_tables_result(JOIN *join,
       {
         result= 1;
         join->error= 1;
+        tab->read_record.file= table_list->table->file;
         table_list->schema_table_state= executed_place;
         break;
       }
+      tab->read_record.file= table_list->table->file;
       table_list->schema_table_state= executed_place;
     }
   }

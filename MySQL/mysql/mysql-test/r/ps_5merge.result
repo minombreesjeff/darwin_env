@@ -826,20 +826,20 @@ a	b
 2	two
 3	three
 4	four
-prepare stmt1 from ' SELECT a as ccc from t1 where a+1=
-                           (SELECT 1+ccc from t1 where ccc+1=a+1 and a=1) ';
+prepare stmt1 from ' SELECT a as ccc from t1 outr where a+1=
+                           (SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1) ';
 execute stmt1 ;
 ccc
 1
 deallocate prepare stmt1 ;
-prepare stmt1 from ' SELECT a as ccc from t1 where a+1=
-                           (SELECT 1+ccc from t1 where ccc+1=a+1 and a=1) ';
+prepare stmt1 from ' SELECT a as ccc from t1 outr where a+1=
+                           (SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1) ';
 execute stmt1 ;
 ccc
 1
 deallocate prepare stmt1 ;
-prepare stmt1 from ' SELECT a as ccc from t1 where a+1=
-                           (SELECT 1+ccc from t1 where ccc+1=a+1 and a=1) ';
+prepare stmt1 from ' SELECT a as ccc from t1 outr where a+1=
+                           (SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1) ';
 execute stmt1 ;
 ccc
 1
@@ -1201,7 +1201,7 @@ def					table	253	64	2	Y	0	31	8
 def					type	253	10	3	Y	0	31	8
 def					possible_keys	253	4096	0	Y	0	31	8
 def					key	253	64	0	Y	0	31	8
-def					key_len	253	4096	0	Y	128	31	63
+def					key_len	253	1365	0	Y	0	31	8
 def					ref	253	1024	0	Y	0	31	8
 def					rows	8	10	1	Y	32928	0	63
 def					Extra	253	255	0	N	1	31	8
@@ -1853,7 +1853,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -1900,7 +1900,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -1950,7 +1950,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -1990,7 +1990,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -2038,7 +2038,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -2082,7 +2082,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -2128,7 +2128,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -2166,7 +2166,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -2893,11 +2893,13 @@ Warnings:
 Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
 Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
 Note	1265	Data truncated for column 'c13' at row 1
@@ -2931,7 +2933,6 @@ Warning	1265	Data truncated for column 'c15' at row 1
 Warning	1264	Out of range value adjusted for column 'c16' at row 1
 Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
-Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c15' at row 1
 Warning	1264	Out of range value adjusted for column 'c16' at row 1
 Warning	1264	Out of range value adjusted for column 'c17' at row 1
@@ -3847,20 +3848,20 @@ a	b
 2	two
 3	three
 4	four
-prepare stmt1 from ' SELECT a as ccc from t1 where a+1=
-                           (SELECT 1+ccc from t1 where ccc+1=a+1 and a=1) ';
+prepare stmt1 from ' SELECT a as ccc from t1 outr where a+1=
+                           (SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1) ';
 execute stmt1 ;
 ccc
 1
 deallocate prepare stmt1 ;
-prepare stmt1 from ' SELECT a as ccc from t1 where a+1=
-                           (SELECT 1+ccc from t1 where ccc+1=a+1 and a=1) ';
+prepare stmt1 from ' SELECT a as ccc from t1 outr where a+1=
+                           (SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1) ';
 execute stmt1 ;
 ccc
 1
 deallocate prepare stmt1 ;
-prepare stmt1 from ' SELECT a as ccc from t1 where a+1=
-                           (SELECT 1+ccc from t1 where ccc+1=a+1 and a=1) ';
+prepare stmt1 from ' SELECT a as ccc from t1 outr where a+1=
+                           (SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1) ';
 execute stmt1 ;
 ccc
 1
@@ -4222,7 +4223,7 @@ def					table	253	64	2	Y	0	31	8
 def					type	253	10	3	Y	0	31	8
 def					possible_keys	253	4096	0	Y	0	31	8
 def					key	253	64	0	Y	0	31	8
-def					key_len	253	4096	0	Y	128	31	63
+def					key_len	253	1365	0	Y	0	31	8
 def					ref	253	1024	0	Y	0	31	8
 def					rows	8	10	1	Y	32928	0	63
 def					Extra	253	255	0	N	1	31	8
@@ -4874,7 +4875,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -4921,7 +4922,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -4971,7 +4972,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -5011,7 +5012,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -5059,7 +5060,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -5103,7 +5104,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -5149,7 +5150,7 @@ def					@arg13	253	8192	10	Y	128	31	63
 def					@arg14	253	8192	19	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	8	Y	128	31	63
-def					@arg17	253	20	4	Y	128	0	63
+def					@arg17	253	20	4	Y	160	0	63
 def					@arg18	253	20	1	Y	128	0	63
 def					@arg19	253	20	1	Y	128	0	63
 def					@arg20	253	8192	1	Y	0	31	8
@@ -5187,7 +5188,7 @@ def					@arg13	253	8192	0	Y	128	31	63
 def					@arg14	253	8192	0	Y	128	31	63
 def					@arg15	253	8192	19	Y	128	31	63
 def					@arg16	253	8192	0	Y	128	31	63
-def					@arg17	253	20	0	Y	128	0	63
+def					@arg17	253	20	0	Y	160	0	63
 def					@arg18	253	20	0	Y	128	0	63
 def					@arg19	253	20	0	Y	128	0	63
 def					@arg20	253	8192	0	Y	0	31	8
@@ -5914,11 +5915,13 @@ Warnings:
 Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
 Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
+Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c17' at row 1
 Warnings:
 Note	1265	Data truncated for column 'c13' at row 1
@@ -5952,7 +5955,6 @@ Warning	1265	Data truncated for column 'c15' at row 1
 Warning	1264	Out of range value adjusted for column 'c16' at row 1
 Warning	1264	Out of range value adjusted for column 'c17' at row 1
 Warnings:
-Note	1265	Data truncated for column 'c13' at row 1
 Warning	1265	Data truncated for column 'c15' at row 1
 Warning	1264	Out of range value adjusted for column 'c16' at row 1
 Warning	1264	Out of range value adjusted for column 'c17' at row 1

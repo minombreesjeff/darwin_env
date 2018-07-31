@@ -93,7 +93,8 @@
 #define HA_CAN_BIT_FIELD       (1 << 28) /* supports bit fields */
 #define HA_NEED_READ_RANGE_BUFFER (1 << 29) /* for read_multi_range */
 #define HA_ANY_INDEX_MAY_BE_UNIQUE (1 << 30)
-
+/* The storage engine manages auto_increment itself */
+#define HA_EXTERNAL_AUTO_INCREMENT (1 << 31)
 
 /* bits in index_flags(index_number) for what you can do with index */
 #define HA_READ_NEXT            1       /* TODO really use this flag */
@@ -419,6 +420,35 @@ typedef struct st_thd_trans
   bool        no_2pc;
   /* storage engines that registered themselves for this transaction */
   handlerton *ht[MAX_HA];
+  /* 
+    The purpose of this flag is to keep track of non-transactional
+    tables that were modified in scope of:
+    - transaction, when the variable is a member of
+    THD::transaction.all
+    - top-level statement or sub-statement, when the variable is a
+    member of THD::transaction.stmt
+    This member has the following life cycle:
+    * stmt.modified_non_trans_table is used to keep track of
+    modified non-transactional tables of top-level statements. At
+    the end of the previous statement and at the beginning of the session,
+    it is reset to FALSE.  If such functions
+    as mysql_insert, mysql_update, mysql_delete etc modify a
+    non-transactional table, they set this flag to TRUE.  At the
+    end of the statement, the value of stmt.modified_non_trans_table 
+    is merged with all.modified_non_trans_table and gets reset.
+    * all.modified_non_trans_table is reset at the end of transaction
+    
+    * Since we do not have a dedicated context for execution of a
+    sub-statement, to keep track of non-transactional changes in a
+    sub-statement, we re-use stmt.modified_non_trans_table. 
+    At entrance into a sub-statement, a copy of the value of
+    stmt.modified_non_trans_table (containing the changes of the
+    outer statement) is saved on stack. Then 
+    stmt.modified_non_trans_table is reset to FALSE and the
+    substatement is executed. Then the new value is merged with the
+    saved value.
+  */
+  bool modified_non_trans_table;
 } THD_TRANS;
 
 enum enum_tx_isolation { ISO_READ_UNCOMMITTED, ISO_READ_COMMITTED,
@@ -507,6 +537,29 @@ class handler :public Sql_alloc
   */
   virtual int rnd_init(bool scan) =0;
   virtual int rnd_end() { return 0; }
+  /**
+    Is not invoked for non-transactional temporary tables.
+
+    Tells the storage engine that we intend to read or write data
+    from the table. This call is prefixed with a call to handler::store_lock()
+    and is invoked only for those handler instances that stored the lock.
+
+    Calls to rnd_init/index_init are prefixed with this call. When table
+    IO is complete, we call external_lock(F_UNLCK).
+    A storage engine writer should expect that each call to
+    ::external_lock(F_[RD|WR]LOCK is followed by a call to
+    ::external_lock(F_UNLCK). If it is not, it is a bug in MySQL.
+
+    The name and signature originate from the first implementation
+    in MyISAM, which would call fcntl to set/clear an advisory
+    lock on the data file in this method.
+
+    @param   lock_type    F_RDLCK, F_WRLCK, F_UNLCK
+
+    @return  non-0 in case of failure, 0 in case of success.
+    When lock_type is F_UNLCK, the return value is ignored.
+  */
+  virtual int external_lock(THD *thd, int lock_type) { return 0; }
 
 public:
   const handlerton *ht;                 /* storage engine of this handler */
@@ -547,6 +600,7 @@ public:
   uint raid_type,raid_chunks;
   FT_INFO *ft_handler;
   enum {NONE=0, INDEX, RND} inited;
+  bool locked;
   bool  auto_increment_column_changed;
   bool implicit_emptied;                /* Can be !=0 only if HEAP */
   const COND *pushed_cond;
@@ -559,10 +613,11 @@ public:
     create_time(0), check_time(0), update_time(0),
     key_used_on_scan(MAX_KEY), active_index(MAX_KEY),
     ref_length(sizeof(my_off_t)), block_size(0),
-    raid_type(0), ft_handler(0), inited(NONE), implicit_emptied(0),
+    raid_type(0), ft_handler(0), inited(NONE),
+    locked(FALSE), implicit_emptied(0),
     pushed_cond(NULL)
     {}
-  virtual ~handler(void) { /* TODO: DBUG_ASSERT(inited == NONE); */ }
+  virtual ~handler(void) { DBUG_ASSERT(locked == FALSE); /* TODO: DBUG_ASSERT(inited == NONE); */ }
   virtual handler *clone(MEM_ROOT *mem_root);
   int ha_open(const char *name, int mode, int test_if_locked);
   void adjust_next_insert_id_after_explicit_value(ulonglong nr);
@@ -596,6 +651,12 @@ public:
 
   virtual const char *index_type(uint key_number) { DBUG_ASSERT(0); return "";}
 
+  int ha_external_lock(THD *thd, int lock_type)
+  {
+    DBUG_ENTER("ha_external_lock");
+    locked= lock_type != F_UNLCK;
+    DBUG_RETURN(external_lock(thd, lock_type));
+  }
   int ha_index_init(uint idx)
   {
     DBUG_ENTER("ha_index_init");
@@ -688,7 +749,6 @@ public:
   virtual int extra_opt(enum ha_extra_function operation, ulong cache_size)
   { return extra(operation); }
   virtual int reset() { return extra(HA_EXTRA_RESET); }
-  virtual int external_lock(THD *thd, int lock_type) { return 0; }
   virtual void unlock_row() {}
   virtual int start_stmt(THD *thd, thr_lock_type lock_type) {return 0;}
   /*
@@ -755,7 +815,7 @@ public:
   { return HA_ADMIN_NOT_IMPLEMENTED; }
   /* end of the list of admin commands */
 
-  virtual bool check_and_repair(THD *thd) { return HA_ERR_WRONG_COMMAND; }
+  virtual bool check_and_repair(THD *thd) { return TRUE; }
   virtual int dump(THD* thd, int fd = -1) { return HA_ERR_WRONG_COMMAND; }
   virtual int disable_indexes(uint mode) { return HA_ERR_WRONG_COMMAND; }
   virtual int enable_indexes(uint mode) { return HA_ERR_WRONG_COMMAND; }
@@ -836,22 +896,58 @@ public:
 
   /* lock_count() can be more than one if the table is a MERGE */
   virtual uint lock_count(void) const { return 1; }
+  /**
+    Is not invoked for non-transactional temporary tables.
+  */
   virtual THR_LOCK_DATA **store_lock(THD *thd,
 				     THR_LOCK_DATA **to,
 				     enum thr_lock_type lock_type)=0;
 
   /* Type of table for caching query */
   virtual uint8 table_cache_type() { return HA_CACHE_TBL_NONTRANSACT; }
-  /* ask handler about permission to cache table when query is to be cached */
+
+
+  /**
+    @brief Register a named table with a call back function to the query cache.
+
+    @param thd The thread handle
+    @param table_key A pointer to the table name in the table cache
+    @param key_length The length of the table name
+    @param[out] engine_callback The pointer to the storage engine call back
+      function
+    @param[out] engine_data Storage engine specific data which could be
+      anything
+
+    This method offers the storage engine, the possibility to store a reference
+    to a table name which is going to be used with query cache. 
+    The method is called each time a statement is written to the cache and can
+    be used to verify if a specific statement is cachable. It also offers
+    the possibility to register a generic (but static) call back function which
+    is called each time a statement is matched against the query cache.
+
+    @note If engine_data supplied with this function is different from
+      engine_data supplied with the callback function, and the callback returns
+      FALSE, a table invalidation on the current table will occur.
+
+    @return Upon success the engine_callback will point to the storage engine
+      call back function, if any, and engine_data will point to any storage
+      engine data used in the specific implementation.
+      @retval TRUE Success
+      @retval FALSE The specified table or current statement should not be
+        cached
+  */
+
   virtual my_bool register_query_cache_table(THD *thd, char *table_key,
-					     uint key_length,
-					     qc_engine_callback
-					     *engine_callback,
-					     ulonglong *engine_data)
+                                             uint key_length,
+                                             qc_engine_callback
+                                             *engine_callback,
+                                             ulonglong *engine_data)
   {
     *engine_callback= 0;
-    return 1;
+    return TRUE;
   }
+
+
  /*
   RETURN
     true  Primary key (if there is one) is clustered key covering all fields

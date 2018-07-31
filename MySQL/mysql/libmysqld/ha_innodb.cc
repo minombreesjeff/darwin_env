@@ -15,7 +15,7 @@
 
 /* This file defines the InnoDB handler: the interface between MySQL and InnoDB
 NOTE: You can only use noninlined InnoDB functions in this file, because we
-have disables the InnoDB inlining in this file. */
+have disabled the InnoDB inlining in this file. */
 
 /* TODO list for the InnoDB handler in 5.0:
   - Remove the flag trx->active_trans and look at the InnoDB
@@ -174,6 +174,7 @@ my_bool	innobase_file_per_table			= FALSE;
 my_bool innobase_locks_unsafe_for_binlog        = FALSE;
 my_bool innobase_rollback_on_timeout		= FALSE;
 my_bool innobase_create_status_file		= FALSE;
+my_bool innobase_adaptive_hash_index		= TRUE;
 
 static char *internal_innobase_data_file_path	= NULL;
 
@@ -455,9 +456,7 @@ convert_error_code_to_mysql(
  		tell it also to MySQL so that MySQL knows to empty the
  		cached binlog for this transaction */
 
- 		if (thd) {
- 			ha_rollback(thd);
- 		}
+                mark_transaction_to_rollback(thd, TRUE);
 
     		return(HA_ERR_LOCK_DEADLOCK);
 
@@ -467,9 +466,8 @@ convert_error_code_to_mysql(
 		latest SQL statement in a lock wait timeout. Previously, we
 		rolled back the whole transaction. */
 
-		if (thd && row_rollback_on_timeout) {
-			ha_rollback(thd);
-		}
+                mark_transaction_to_rollback(thd,
+                                             (bool)row_rollback_on_timeout);
 
    		return(HA_ERR_LOCK_WAIT_TIMEOUT);
 
@@ -504,7 +502,7 @@ convert_error_code_to_mysql(
 
  	} else if (error == (int) DB_TABLE_NOT_FOUND) {
 
-    		return(HA_ERR_KEY_NOT_FOUND);
+    		return(HA_ERR_NO_SUCH_TABLE);
 
   	} else if (error == (int) DB_TOO_BIG_RECORD) {
 
@@ -521,11 +519,12 @@ convert_error_code_to_mysql(
  		tell it also to MySQL so that MySQL knows to empty the
  		cached binlog for this transaction */
 
- 		if (thd) {
- 			ha_rollback(thd);
- 		}
+                mark_transaction_to_rollback(thd, TRUE);
 
     		return(HA_ERR_LOCK_TABLE_FULL);
+	} else if (error == DB_UNSUPPORTED) {
+
+		return(HA_ERR_UNSUPPORTED);
     	} else {
     		return(-1);			// Unknown error
     	}
@@ -1380,6 +1379,8 @@ innobase_init(void)
 
 	srv_use_doublewrite_buf = (ibool) innobase_use_doublewrite;
 	srv_use_checksums = (ibool) innobase_use_checksums;
+
+	srv_use_adaptive_hash_indexes = (ibool) innobase_adaptive_hash_index;
 
 	os_use_large_pages = (ibool) innobase_use_large_pages;
 	os_large_page_size = (ulint) innobase_large_page_size;
@@ -2313,7 +2314,14 @@ ha_innobase::close(void)
 /*====================*/
 				/* out: 0 */
 {
+	THD*	thd;
+
   	DBUG_ENTER("ha_innobase::close");
+
+	thd = current_thd;  // avoid calling current_thd twice, it may be slow
+	if (thd != NULL) {
+		innobase_release_temporary_latches(thd);
+	}
 
 	row_prebuilt_free((row_prebuilt_t*) innobase_prebuilt);
 
@@ -3299,8 +3307,6 @@ no_commit:
         if (error == DB_DUPLICATE_KEY && auto_inc_used
             && (user_thd->lex->sql_command == SQLCOM_REPLACE
                 || user_thd->lex->sql_command == SQLCOM_REPLACE_SELECT
-                || (user_thd->lex->sql_command == SQLCOM_INSERT
-                    && user_thd->lex->duplicates == DUP_UPDATE)
                 || (user_thd->lex->sql_command == SQLCOM_LOAD
                     && user_thd->lex->duplicates == DUP_REPLACE))) {
 
@@ -3531,6 +3537,27 @@ ha_innobase::update_row(
 
 	error = row_update_for_mysql((byte*) old_row, prebuilt);
 
+	/* We need to do some special AUTOINC handling for the following case:
+
+	    INSERT INTO t (c1,c2) VALUES(x,y) ON DUPLICATE KEY UPDATE ...
+
+	We need to use the AUTOINC counter that was actually used by
+	MySQL in the UPDATE statement, which can be different from the
+	value used in the INSERT statement.*/
+	if (error == DB_SUCCESS
+	    && table->next_number_field && new_row == table->record[0]
+	    && user_thd->lex->sql_command == SQLCOM_INSERT
+	    && user_thd->lex->duplicates == DUP_UPDATE) {
+
+		longlong	auto_inc;
+
+		auto_inc = table->next_number_field->val_int();
+
+		if (auto_inc != 0) {
+			dict_table_autoinc_update(prebuilt->table, auto_inc);
+		}
+	}
+
 	innodb_srv_conc_exit_innodb(prebuilt->trx);
 
 	error = convert_error_code_to_mysql(error, user_thd);
@@ -3689,11 +3716,22 @@ convert_search_mode_to_innobase(
 		  and comparison of non-latin1 char type fields in
 		  innobase_mysql_cmp() to get PAGE_CUR_LE_OR_EXTENDS to
 		  work correctly. */
-
-		default:			assert(0);
+		case HA_READ_MBR_CONTAIN:
+		case HA_READ_MBR_INTERSECT:
+		case HA_READ_MBR_WITHIN:
+		case HA_READ_MBR_DISJOINT:
+		case HA_READ_MBR_EQUAL:
+			my_error(ER_TABLE_CANT_HANDLE_SPKEYS, MYF(0));
+			return(PAGE_CUR_UNSUPP);
+		/* do not use "default:" in order to produce a gcc warning:
+		enumeration value '...' not handled in switch
+		(if -Wswitch or -Wall is used)
+		*/
 	}
 
-	return(0);
+	my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "this functionality");
+
+	return(PAGE_CUR_UNSUPP);
 }
 
 /*
@@ -3831,11 +3869,18 @@ ha_innobase::index_read(
 
 	last_match_mode = (uint) match_mode;
 
-	innodb_srv_conc_enter_innodb(prebuilt->trx);
+	if (mode != PAGE_CUR_UNSUPP) {
 
-	ret = row_search_for_mysql((byte*) buf, mode, prebuilt, match_mode, 0);
+		innodb_srv_conc_enter_innodb(prebuilt->trx);
 
-	innodb_srv_conc_exit_innodb(prebuilt->trx);
+		ret = row_search_for_mysql((byte*) buf, mode, prebuilt,
+					   match_mode, 0);
+
+		innodb_srv_conc_exit_innodb(prebuilt->trx);
+	} else {
+
+		ret = DB_UNSUPPORTED;
+	}
 
 	if (ret == DB_SUCCESS) {
 		error = 0;
@@ -4205,7 +4250,7 @@ ha_innobase::rnd_pos(
 	int		error;
 	uint		keynr	= active_index;
 	DBUG_ENTER("rnd_pos");
-	DBUG_DUMP("key", (char*) pos, ref_length);
+	DBUG_DUMP("key", (uchar *)pos, ref_length);
 
 	statistic_increment(current_thd->status_var.ha_read_rnd_count,
 			    &LOCK_status);
@@ -5150,8 +5195,16 @@ ha_innobase::records_in_range(
 	mode2 = convert_search_mode_to_innobase(max_key ? max_key->flag :
                                                 HA_READ_KEY_EXACT);
 
-	n_rows = btr_estimate_n_rows_in_range(index, range_start,
-						mode1, range_end, mode2);
+	if (mode1 != PAGE_CUR_UNSUPP && mode2 != PAGE_CUR_UNSUPP) {
+
+		n_rows = btr_estimate_n_rows_in_range(index, range_start,
+						      mode1, range_end,
+						      mode2);
+	} else {
+
+		n_rows = 0;
+	}
+
 	dtuple_free_for_mysql(heap1);
 	dtuple_free_for_mysql(heap2);
 
@@ -5305,7 +5358,12 @@ ha_innobase::info(
 
         if (srv_force_recovery >= SRV_FORCE_NO_IBUF_MERGE) {
 
-                DBUG_RETURN(HA_ERR_CRASHED);
+		/* We return success (0) instead of HA_ERR_CRASHED,
+		because we want MySQL to process this query and not
+		stop, like it would do if it received the error code
+		HA_ERR_CRASHED. */
+
+		DBUG_RETURN(0);
         }
 
 	/* We do not know if MySQL can call this function before calling
@@ -5448,7 +5506,7 @@ ha_innobase::info(
 
  				table->key_info[i].rec_per_key[j]=
 				  rec_per_key >= ~(ulong) 0 ? ~(ulong) 0 :
-				  rec_per_key;
+				  (ulong) rec_per_key;
 			}
 
 			index = dict_table_get_next_index_noninline(index);
@@ -5602,9 +5660,9 @@ ha_innobase::update_table_comment(
 	mutex_enter_noninline(&srv_dict_tmpfile_mutex);
 	rewind(srv_dict_tmpfile);
 
-	fprintf(srv_dict_tmpfile, "InnoDB free: %lu kB",
-      		   (ulong) fsp_get_available_space_in_free_extents(
-      					prebuilt->table->space));
+ 	fprintf(srv_dict_tmpfile, "InnoDB free: %llu kB",
+ 		fsp_get_available_space_in_free_extents(
+ 			prebuilt->table->space));
 
 	dict_print_info_on_foreign_keys(FALSE, srv_dict_tmpfile,
 				prebuilt->trx, prebuilt->table);
@@ -6150,6 +6208,12 @@ ha_innobase::external_lock(
 	trx->n_mysql_tables_in_use--;
 	prebuilt->mysql_has_locked = FALSE;
 
+	/* Release a possible FIFO ticket and search latch. Since we
+	may reserve the kernel mutex, we have to release the search
+	system latch first to obey the latching order. */
+
+	innobase_release_stat_resources(trx);
+
 	/* If the MySQL lock count drops to zero we know that the current SQL
 	statement has ended */
 
@@ -6157,12 +6221,6 @@ ha_innobase::external_lock(
 
 	        trx->mysql_n_tables_locked = 0;
 		prebuilt->used_in_HANDLER = FALSE;
-
-		/* Release a possible FIFO ticket and search latch. Since we
-		may reserve the kernel mutex, we have to release the search
-		system latch first to obey the latching order. */
-
-		innobase_release_stat_resources(trx);
 
 		if (!(thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))) {
                         if (trx->active_trans != 0) {
@@ -6281,7 +6339,9 @@ void
 innodb_export_status(void)
 /*======================*/
 {
-  srv_export_innodb_status();
+	if (innodb_inited) {
+		srv_export_innodb_status();
+	}
 }
 
 /****************************************************************************
@@ -6593,8 +6653,15 @@ ha_innobase::store_lock(
 						TL_IGNORE */
 {
 	row_prebuilt_t* prebuilt	= (row_prebuilt_t*) innobase_prebuilt;
+	trx_t*		trx;
 
-	/* NOTE: MySQL  can call this function with lock 'type' TL_IGNORE!
+	/* Note that trx in this function is NOT necessarily prebuilt->trx
+	because we call update_thd() later, in ::external_lock()! Failure to
+	understand this caused a serious memory corruption bug in 5.1.11. */
+
+	trx = check_trx_exists(thd);
+
+	/* NOTE: MySQL can call this function with lock 'type' TL_IGNORE!
 	Be careful to ignore TL_IGNORE if we are going to do something with
 	only 'real' locks! */
 
@@ -6624,7 +6691,7 @@ ha_innobase::store_lock(
 		used. */
 
 		if (srv_locks_unsafe_for_binlog &&
-		    prebuilt->trx->isolation_level != TRX_ISO_SERIALIZABLE &&
+		    trx->isolation_level != TRX_ISO_SERIALIZABLE &&
 		    (lock_type == TL_READ || lock_type == TL_READ_NO_INSERT) &&
 		    (thd->lex->sql_command == SQLCOM_INSERT_SELECT ||
 		     thd->lex->sql_command == SQLCOM_UPDATE ||
@@ -6702,17 +6769,6 @@ ha_innobase::store_lock(
 		    && !thd->tablespace_op
 		    && thd->lex->sql_command != SQLCOM_TRUNCATE
 		    && thd->lex->sql_command != SQLCOM_OPTIMIZE
-
-#ifdef __WIN__
-                /* For alter table on win32 for succesful operation
-                completion it is used TL_WRITE(=10) lock instead of
-                TL_WRITE_ALLOW_READ(=6), however here in innodb handler
-                TL_WRITE is lifted to TL_WRITE_ALLOW_WRITE, which causes
-                race condition when several clients do alter table
-                simultaneously (bug #17264). This fix avoids the problem. */
-		    && thd->lex->sql_command != SQLCOM_ALTER_TABLE
-#endif
-
 		    && thd->lex->sql_command != SQLCOM_CREATE_TABLE) {
 
 			lock_type = TL_WRITE_ALLOW_WRITE;

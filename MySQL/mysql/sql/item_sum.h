@@ -239,6 +239,13 @@ public:
   int8 max_arg_level;     /* max level of unbound column references          */
   int8 max_sum_func_level;/* max level of aggregation for embedded functions */
   bool quick_group;			/* If incremental update of fields */
+  /*
+    This list is used by the check for mixing non aggregated fields and
+    sum functions in the ONLY_FULL_GROUP_BY_MODE. We save all outer fields
+    directly or indirectly used under this function it as it's unclear
+    at the moment of fixing outer field whether it's aggregated or not.
+  */
+  List<Item_field> outer_fields;
 
 protected:  
   table_map used_tables_cache;
@@ -966,8 +973,15 @@ public:
   bool fix_fields(THD *thd, Item **ref)
   {
     DBUG_ASSERT(fixed == 0);
+
+    if (init_sum_func_check(thd))
+      return TRUE;
+
     fixed= 1;
-    return udf.fix_fields(thd, this, this->arg_count, this->args);
+    if (udf.fix_fields(thd, this, this->arg_count, this->args))
+      return TRUE;
+
+    return check_sum_func(thd, ref);
   }
   enum Sumfunctype sum_func () const { return UDF_SUM_FUNC; }
   virtual bool have_field_update(void) const { return 0; }
@@ -1166,11 +1180,22 @@ class Item_func_group_concat : public Item_sum
   String *separator;
   TREE tree_base;
   TREE *tree;
+
+  /**
+     If DISTINCT is used with this GROUP_CONCAT, this member is used to filter
+     out duplicates. 
+     @see Item_func_group_concat::setup
+     @see Item_func_group_concat::add
+     @see Item_func_group_concat::clear
+   */
+  Unique *unique_filter;
   TABLE *table;
   ORDER **order;
   Name_resolution_context *context;
-  uint arg_count_order;               // total count of ORDER BY items
-  uint arg_count_field;               // count of arguments
+  /** The number of ORDER BY items. */
+  uint arg_count_order;
+  /** The number of selected items, aka the expr list. */
+  uint arg_count_field;
   uint count_cut_values;
   bool distinct;
   bool warning_for_row;
@@ -1183,13 +1208,10 @@ class Item_func_group_concat : public Item_sum
   */
   Item_func_group_concat *original;
 
-  friend int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
-					      byte* key2);
-  friend int group_concat_key_cmp_with_order(void* arg, byte* key1,
-					     byte* key2);
-  friend int group_concat_key_cmp_with_distinct_and_order(void* arg,
-							byte* key1,
-							byte* key2);
+  friend int group_concat_key_cmp_with_distinct(void* arg, const void* key1,
+                                                const void* key2);
+  friend int group_concat_key_cmp_with_order(void* arg, const void* key1,
+					     const void* key2);
   friend int dump_leaf_key(byte* key,
                            element_count count __attribute__((unused)),
 			   Item_func_group_concat *group_concat_item);
@@ -1200,7 +1222,7 @@ public:
                          SQL_LIST *is_order, String *is_separator);
 
   Item_func_group_concat(THD *thd, Item_func_group_concat *item);
-  ~Item_func_group_concat() {}
+  ~Item_func_group_concat();
   void cleanup();
 
   enum Sumfunctype sum_func () const {return GROUP_CONCAT_FUNC;}

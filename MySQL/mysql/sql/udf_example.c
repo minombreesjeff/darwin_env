@@ -648,13 +648,11 @@ my_bool sequence_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
     return 1;
   }
   bzero(initid->ptr,sizeof(longlong));
-  /*
-    Fool MySQL to think that this function is a constant
-    This will ensure that MySQL only evalutes the function
-    when the rows are sent to the client and not before any ORDER BY
-    clauses
+  /* 
+    sequence() is a non-deterministic function : it has different value 
+    even if called with the same arguments.
   */
-  initid->const_item=1;
+  initid->const_item=0;
   return 0;
 }
 
@@ -1102,6 +1100,41 @@ char * is_const(UDF_INIT *initid, UDF_ARGS *args __attribute__((unused)),
   }
   *is_null= 0;
   *length= strlen(result);
+  return result;
+}
+
+
+
+my_bool check_const_len_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
+{
+  if (args->arg_count != 1)
+  {
+    strmov(message, "CHECK_CONST_LEN accepts only one argument");
+    return 1;
+  }
+  if (args->args[0] == 0)
+  {
+    initid->ptr= (char*)"Not constant";
+  }
+  else if(strlen(args->args[0]) == args->lengths[0])
+  {
+    initid->ptr= (char*)"Correct length";
+  }
+  else
+  {
+    initid->ptr= (char*)"Wrong length";
+  }
+  initid->max_length = 100;
+  return 0;
+}
+
+char * check_const_len(UDF_INIT *initid, UDF_ARGS *args __attribute__((unused)),
+                char *result, unsigned long *length,
+                char *is_null, char *error __attribute__((unused)))
+{
+  strmov(result, initid->ptr);
+  *length= strlen(result);
+  *is_null= 0;
   return result;
 }
 

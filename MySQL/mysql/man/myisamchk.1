@@ -1,11 +1,11 @@
 .\"     Title: \fBmyisamchk\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAMCHK\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYISAMCHK\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -107,7 +107,6 @@ tables is:
 .RS 3n
 .nf
 shell> \fBmyisamchk \-\-silent \-\-fast \fR\fB\fI/path/to/datadir/*/*\fR\fR\fB.MYI\fR
-shell> \fBisamchk \-\-silent \fR\fB\fI/path/to/datadir/*/*\fR\fR\fB.ISM\fR
 .fi
 .RE
 .PP
@@ -121,18 +120,12 @@ shell> \fBmyisamchk \-\-silent \-\-force \-\-fast \-\-update\-state \\\fR
           \fB\-\-key_buffer_size=64M \-\-sort_buffer_size=64M \\\fR
           \fB\-\-read_buffer_size=1M \-\-write_buffer_size=1M \\\fR
           \fB\fI/path/to/datadir/*/*\fR\fR\fB.MYI\fR
-shell> \fBisamchk \-\-silent \-\-force \-\-key_buffer_size=64M \\\fR
-          \fB\-\-sort_buffer_size=64M \-\-read_buffer_size=1M \-\-write_buffer_size=1M \\\fR
-          \fB\fI/path/to/datadir/*/*\fR\fR\fB.ISM\fR
 .fi
 .RE
 .PP
 This command assumes that you have more than 64MB free. For more information about memory allocation with
 \fBmyisamchk\fR, see
 the section called \(lq\fBMYISAMCHK\fR MEMORY USAGE\(rq.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on checking and repairing tables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -172,6 +165,10 @@ instead of
 \fBmyisamchk\fR
 to check tables. See
 Section\ 5.2.3, \(lqCHECK TABLE Syntax\(rq.
+.PP
+A complete listing of all the
+\fBmyisamchk\fR
+options follows.
 .SH "\fBMYISAMCHK\fR GENERAL OPTIONS"
 .PP
 The options described in this section can be used for any type of table maintenance operation performed by
@@ -369,7 +366,7 @@ myisam_stats_method
 system variable. For more information, see the description of
 myisam_stats_method
 in
-the section called \(lqSYSTEM VARIABLES\(rq, and
+Section\ 1.3, \(lqSystem Variables\(rq, and
 Section\ 4.7, \(lqMyISAM Index Statistics Collection\(rq. For MySQL 5.0,
 stats_method
 was added in MySQL 5.0.14. For older versions, the statistics collection method is equivalent to
@@ -545,7 +542,7 @@ file as
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-correct\-checksum\fR
@@ -678,7 +675,7 @@ uses the value of the
 TMPDIR
 environment variable.
 tmpdir
-can be set to a list of directory paths that are used successively in round\-robin fashion for creating temporary files. The separator character between directory names is the colon (\(oq:\(cq) on Unix and the semicolon (\(oq;\(cq) on Windows, NetWare, and OS/2.
+can be set to a list of directory paths that are used successively in round\-robin fashion for creating temporary files. The separator character between directory names is the colon (\(lq:\(rq) on Unix and the semicolon (\(lq;\(rq) on Windows, NetWare, and OS/2.
 .TP 3n
 \(bu
 \fB\-\-unpack\fR,
@@ -700,9 +697,6 @@ Analyze the distribution of key values. This improves join performance by enabli
 command or the
 SHOW INDEX FROM \fItbl_name\fR
 statement.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on optimizing tables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-block\-search=\fR\fB\fIoffset\fR\fR,
@@ -827,17 +821,16 @@ instead of
 \fB\-\-recover\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

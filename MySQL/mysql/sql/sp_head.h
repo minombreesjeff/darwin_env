@@ -72,16 +72,7 @@ public:
     Creates temporary sp_name object from key, used mainly
     for SP-cache lookups.
   */
-  sp_name(char *key, uint key_len)
-  {
-    m_sroutines_key.str= key;
-    m_sroutines_key.length= key_len;
-    m_name.str= m_qname.str= key + 1;
-    m_name.length= m_qname.length= key_len - 1;
-    m_db.str= 0;
-    m_db.length= 0;
-    m_explicit_name= false;
-  }
+  sp_name(THD *thd, char *key, uint key_len);
 
   // Init. the qualified name from the db and name.
   void init_qname(THD *thd);	// thd for memroot allocation
@@ -126,10 +117,16 @@ public:
   create_field m_return_field_def; /* This is used for FUNCTIONs only. */
 
   const char *m_tmp_query;	// Temporary pointer to sub query string
-  uint m_old_cmq;		// Old CLIENT_MULTI_QUERIES value
   st_sp_chistics *m_chistics;
   ulong m_sql_mode;		// For SHOW CREATE and execution
   LEX_STRING m_qname;		// db.name
+  bool m_explicit_name;                /**< Prepend the db name? */
+  /**
+    Key representing routine in the set of stored routines used by statement.
+    [routine_type]db.name\0
+    @sa sp_name::m_sroutines_key
+  */
+  LEX_STRING m_sroutines_key;
   LEX_STRING m_db;
   LEX_STRING m_name;
   LEX_STRING m_params;
@@ -185,10 +182,10 @@ public:
   Security_context m_security_ctx;
 
   static void *
-  operator new(size_t size);
+  operator new(size_t size) throw ();
 
   static void
-  operator delete(void *ptr, size_t size);
+  operator delete(void *ptr, size_t size) throw ();
 
   sp_head();
 
@@ -248,7 +245,7 @@ public:
   }
 
   // Resets lex in 'thd' and keeps a copy of the old one.
-  void
+  bool
   reset_lex(THD *thd);
 
   // Restores lex in 'thd' from our copy, but keeps some status from the
@@ -782,8 +779,9 @@ public:
 
   virtual void backpatch(uint dest, sp_pcontext *dst_ctx)
   {
-    if (m_dest == 0)		// Don't reset
-      m_dest= dest;
+    /* Calling backpatch twice is a logic flaw in jump resolution. */
+    DBUG_ASSERT(m_dest == 0);
+    m_dest= dest;
   }
 
   /*

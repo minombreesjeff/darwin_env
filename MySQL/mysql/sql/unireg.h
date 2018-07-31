@@ -35,6 +35,9 @@
 #ifndef SHAREDIR
 #define SHAREDIR	"share/"
 #endif
+#ifndef PLUGINDIR
+#define PLUGINDIR	"lib/plugin"
+#endif
 
 #define ER(X) errmesg[(X) - ER_ERROR_FIRST]
 #define ER_SAFE(X) (((X) >= ER_ERROR_FIRST && (X) <= ER_ERROR_LAST) ? ER(X) : "Invalid error code")
@@ -60,6 +63,7 @@
 #define MAX_MBWIDTH		3		/* Max multibyte sequence */
 #define MAX_FIELD_CHARLENGTH	255
 #define MAX_FIELD_VARCHARLENGTH	65535
+#define MAX_FIELD_BLOBLENGTH UINT_MAX32     /* cf field_blob::get_length() */
 #define CONVERT_IF_BIGGER_TO_BLOB 512		/* Used for CREATE ... SELECT */
 
 /* Max column width +1 */
@@ -71,6 +75,7 @@
 #define MAX_TIME_WIDTH		23	/* -DDDDDD HH:MM:SS.###### */
 #define MAX_DATETIME_FULL_WIDTH 29	/* YYYY-MM-DD HH:MM:SS.###### AM */
 #define MAX_DATETIME_WIDTH	19	/* YYYY-MM-DD HH:MM:SS */
+#define MAX_DATETIME_COMPRESSED_WIDTH 14  /* YYYYMMDDHHMMSS */
 
 #define MAX_TABLES	(sizeof(table_map)*8-3)	/* Max tables in join */
 #define PARAM_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-3))
@@ -79,6 +84,8 @@
 #define PSEUDO_TABLE_BITS (PARAM_TABLE_BIT | OUTER_REF_TABLE_BIT | \
                            RAND_TABLE_BIT)
 #define MAX_FIELDS	4096			/* Limit in the .frm file */
+
+#define MAX_SELECT_NESTING (sizeof(nesting_map)*8-1)
 
 #define MAX_SORT_MEMORY (2048*1024-MALLOC_OVERHEAD)
 #define MIN_SORT_MEMORY (32*1024-MALLOC_OVERHEAD)
@@ -119,7 +126,7 @@
 #define SPECIAL_NO_HOST_CACHE	512		/* Don't cache hosts */
 #define SPECIAL_SHORT_LOG_FORMAT 1024
 #define SPECIAL_SAFE_MODE	2048
-#define SPECIAL_LOG_QUERIES_NOT_USING_INDEXES 4096 /* Log q not using indexes */
+#define SPECIAL_LOG_QUERIES_NOT_USING_INDEXES 4096 /* Obsolete */
 
 	/* Extern defines */
 #define store_record(A,B) bmove_align((A)->B,(A)->record[0],(size_t) (A)->s->reclength)

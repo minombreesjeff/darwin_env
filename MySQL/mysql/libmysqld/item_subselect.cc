@@ -942,7 +942,8 @@ Item_in_subselect::single_value_transformer(JOIN *join,
 	DBUG_RETURN(RES_ERROR);
       thd->lex->allow_sum_func= save_allow_sum_func; 
       /* we added aggregate function => we have to change statistic */
-      count_field_types(&join->tmp_table_param, join->all_fields, 0);
+      count_field_types(select_lex, &join->tmp_table_param, join->all_fields, 
+                        0);
 
       subs= new Item_singlerow_subselect(select_lex);
     }
@@ -1231,7 +1232,11 @@ Item_in_subselect::row_value_transformer(JOIN *join)
     Item *item_having_part2= 0;
     for (uint i= 0; i < cols_num; i++)
     {
-      DBUG_ASSERT(left_expr->fixed && select_lex->ref_pointer_array[i]->fixed);
+      DBUG_ASSERT(left_expr->fixed &&
+                  select_lex->ref_pointer_array[i]->fixed ||
+                  (select_lex->ref_pointer_array[i]->type() == REF_ITEM &&
+                   ((Item_ref*)(select_lex->ref_pointer_array[i]))->ref_type() ==
+                    Item_ref::OUTER_REF));
       if (select_lex->ref_pointer_array[i]->
           check_cols(left_expr->element_index(i)->cols()))
         DBUG_RETURN(RES_ERROR);
@@ -1305,7 +1310,11 @@ Item_in_subselect::row_value_transformer(JOIN *join)
     for (uint i= 0; i < cols_num; i++)
     {
       Item *item, *item_isnull;
-      DBUG_ASSERT(left_expr->fixed && select_lex->ref_pointer_array[i]->fixed);
+      DBUG_ASSERT(left_expr->fixed &&
+                  select_lex->ref_pointer_array[i]->fixed ||
+                  (select_lex->ref_pointer_array[i]->type() == REF_ITEM &&
+                   ((Item_ref*)(select_lex->ref_pointer_array[i]))->ref_type() ==
+                    Item_ref::OUTER_REF));
       if (select_lex->ref_pointer_array[i]->
           check_cols(left_expr->element_index(i)->cols()))
         DBUG_RETURN(RES_ERROR);
@@ -1433,6 +1442,19 @@ Item_in_subselect::select_in_like_transformer(JOIN *join, Comp_creator *func)
 
   DBUG_ENTER("Item_in_subselect::select_in_like_transformer");
 
+  {
+    /*
+      IN/SOME/ALL/ANY subqueries aren't support LIMIT clause. Without it
+      ORDER BY clause becomes meaningless thus we drop it here.
+    */
+    SELECT_LEX *sl= current->master_unit()->first_select();
+    for (; sl; sl= sl->next_select())
+    {
+      if (sl->join)
+        sl->join->order= 0;
+    }
+  }
+
   if (changed)
   {
     DBUG_RETURN(RES_OK);
@@ -1467,6 +1489,7 @@ Item_in_subselect::select_in_like_transformer(JOIN *join, Comp_creator *func)
 
   transformed= 1;
   arena= thd->activate_stmt_arena_if_needed(&backup);
+
   /*
     Both transformers call fix_fields() only for Items created inside them,
     and all that items do not make permanent changes in current item arena
@@ -1716,7 +1739,7 @@ void subselect_engine::set_row(List<Item> &item_list, Item_cache **row)
     item->decimals= sel_item->decimals;
     item->unsigned_flag= sel_item->unsigned_flag;
     maybe_null= sel_item->maybe_null;
-    if (!(row[i]= Item_cache::get_cache(res_type)))
+    if (!(row[i]= Item_cache::get_cache(sel_item)))
       return;
     row[i]->setup(sel_item);
   }
@@ -1799,7 +1822,9 @@ int subselect_single_select_engine::exec()
       DBUG_RETURN(1);
     }
   }
-  if (select_lex->uncacheable && executed)
+  if (select_lex->uncacheable &&
+      select_lex->uncacheable != UNCACHEABLE_EXPLAIN
+      && executed)
   {
     if (join->reinit())
     {
@@ -2177,6 +2202,7 @@ int subselect_indexsubquery_engine::exec()
   ((Item_in_subselect *) item)->value= 0;
   empty_result_set= TRUE;
   null_keypart= 0;
+  table->status= 0;
 
   if (check_null)
   {
@@ -2188,6 +2214,16 @@ int subselect_indexsubquery_engine::exec()
   /* Copy the ref key and check for nulls... */
   if (copy_ref_key())
     DBUG_RETURN(1);
+
+  if (table->status)
+  {
+    /* 
+      We know that there will be no rows even if we scan. 
+      Can be set in copy_ref_key.
+    */
+    ((Item_in_subselect *) item)->value= 0;
+    DBUG_RETURN(0);
+  }
 
   if (null_keypart)
     DBUG_RETURN(scan_table());

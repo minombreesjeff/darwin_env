@@ -697,7 +697,7 @@ drop table t1;
 #
 # Bug #9846 Inappropriate error displayed while dropping table from 'INFORMATION_SCHEMA'
 #
---error 1044
+--error ER_PARSE_ERROR
 alter database information_schema;
 --error 1044
 drop database information_schema;
@@ -1043,4 +1043,106 @@ delete from v1;
 drop view v1,v2;
 drop table t1,t2;
 
-# End of 5.0 tests.
+#
+# Bug#25859    ALTER DATABASE works w/o parameters
+#
+--error ER_PARSE_ERROR
+alter database;
+--error ER_PARSE_ERROR
+alter database test;
+
+#
+# Bug#27629 Possible security flaw in INFORMATION_SCHEMA and SHOW statements
+#
+
+create database mysqltest;
+create table mysqltest.t1(a int, b int, c int);
+create trigger mysqltest.t1_ai after insert on mysqltest.t1
+  for each row set @a = new.a + new.b + new.c;
+grant select(b) on mysqltest.t1 to mysqltest_1@localhost;
+
+select trigger_name from information_schema.triggers
+where event_object_table='t1';
+show triggers from mysqltest;
+
+connect (con27629,localhost,mysqltest_1,,mysqltest);
+show columns from t1;
+select column_name from information_schema.columns where table_name='t1';
+
+show triggers;
+select trigger_name from information_schema.triggers
+where event_object_table='t1';
+connection default;
+drop user mysqltest_1@localhost;
+drop database mysqltest;
+
+#
+# Bug#27747 database metadata doesn't return sufficient column default info
+#
+create table t1 (
+  f1 varchar(50),
+  f2 varchar(50) not null,
+  f3 varchar(50) default '',
+  f4 varchar(50) default NULL,
+  f5 bigint not null,
+  f6 bigint not null default 10,
+  f7 datetime not null,
+  f8 datetime default '2006-01-01'
+);
+select column_default from information_schema.columns where table_name= 't1';
+show columns from t1;
+drop table t1;
+
+#
+# Bug#31633 Information schema = NULL queries crash the server
+#
+select * from information_schema.columns where table_schema = NULL;
+select * from `information_schema`.`COLUMNS` where `TABLE_NAME` = NULL;
+select * from `information_schema`.`KEY_COLUMN_USAGE` where `TABLE_SCHEMA` = NULL;
+select * from `information_schema`.`KEY_COLUMN_USAGE` where `TABLE_NAME` = NULL;
+select * from information_schema.schemata where schema_name = NULL;
+select * from `information_schema`.`STATISTICS` where `TABLE_SCHEMA` = NULL;
+select * from `information_schema`.`STATISTICS` where `TABLE_NAME` = NULL;
+select * from information_schema.tables where table_schema = NULL;
+select * from information_schema.tables where table_catalog = NULL;
+select * from information_schema.tables where table_name = NULL;
+select * from `information_schema`.`TABLE_CONSTRAINTS` where `TABLE_SCHEMA` = NULL;
+select * from `information_schema`.`TABLE_CONSTRAINTS` where `TABLE_NAME` = NULL;
+select * from `information_schema`.`TRIGGERS` where `EVENT_OBJECT_SCHEMA` = NULL;
+select * from `information_schema`.`TRIGGERS` where `EVENT_OBJECT_TABLE` = NULL;
+select * from `information_schema`.`VIEWS` where `TABLE_SCHEMA` = NULL;
+select * from `information_schema`.`VIEWS` where `TABLE_NAME` = NULL;
+
+#
+# Bug#30079 A check for "hidden" I_S tables is flawed
+#
+--error 1109
+show fields from information_schema.table_names;
+--error 1109
+show keys from information_schema.table_names;
+
+#
+# Bug#34529: Crash on complex Falcon I_S select after ALTER .. PARTITION BY
+#
+USE information_schema;
+SET max_heap_table_size = 16384;
+
+CREATE TABLE test.t1( a INT );
+
+# What we need to create here is a bit of a corner case:
+# We need a star query with information_schema tables, where the first
+# branch of the star join produces zero rows, so that reading of the 
+# second branch never happens. At the same time we have to make sure
+# that data for at least the last table is swapped from MEMORY/HEAP to 
+# MyISAM. This and only this triggers the bug.
+SELECT *
+FROM tables ta
+JOIN collations co ON ( co.collation_name = ta.table_catalog )
+JOIN character_sets cs ON ( cs.character_set_name = ta.table_catalog );
+
+DROP TABLE test.t1;
+SET max_heap_table_size = DEFAULT;
+USE test;
+
+--echo End of 5.0 tests.
+

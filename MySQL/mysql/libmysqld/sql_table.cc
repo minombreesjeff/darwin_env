@@ -256,8 +256,8 @@ int mysql_rm_table_part2(THD *thd, TABLE_LIST *tables, bool if_exists,
       drop_locked_tables(thd, db, table->table_name);
       if (thd->killed)
       {
-        thd->no_warnings_for_error= 0;
-	DBUG_RETURN(-1);
+        error=-1;
+        goto err_with_placeholders;
       }
       alias= (lower_case_table_names == 2) ? table->alias : table->table_name;
       /* remove form file and isam files */
@@ -338,6 +338,7 @@ int mysql_rm_table_part2(THD *thd, TABLE_LIST *tables, bool if_exists,
     }
   }
 
+err_with_placeholders:
   if (!drop_temporary)
     unlock_table_names(thd, tables, (TABLE_LIST*) 0);
   thd->no_warnings_for_error= 0;
@@ -360,7 +361,8 @@ int quick_rm_table(enum db_type base,const char *db,
 /*
   Sort keys in the following order:
   - PRIMARY KEY
-  - UNIQUE keyws where all column are NOT NULL
+  - UNIQUE keys where all column are NOT NULL
+  - UNIQUE keys that don't contain partial segments
   - Other UNIQUE keys
   - Normal keys
   - Fulltext keys
@@ -371,26 +373,31 @@ int quick_rm_table(enum db_type base,const char *db,
 
 static int sort_keys(KEY *a, KEY *b)
 {
-  if (a->flags & HA_NOSAME)
+  ulong a_flags= a->flags, b_flags= b->flags;
+  
+  if (a_flags & HA_NOSAME)
   {
-    if (!(b->flags & HA_NOSAME))
+    if (!(b_flags & HA_NOSAME))
       return -1;
-    if ((a->flags ^ b->flags) & (HA_NULL_PART_KEY | HA_END_SPACE_KEY))
+    if ((a_flags ^ b_flags) & (HA_NULL_PART_KEY | HA_END_SPACE_KEY))
     {
       /* Sort NOT NULL keys before other keys */
-      return (a->flags & (HA_NULL_PART_KEY | HA_END_SPACE_KEY)) ? 1 : -1;
+      return (a_flags & (HA_NULL_PART_KEY | HA_END_SPACE_KEY)) ? 1 : -1;
     }
     if (a->name == primary_key_name)
       return -1;
     if (b->name == primary_key_name)
       return 1;
+    /* Sort keys don't containing partial segments before others */
+    if ((a_flags ^ b_flags) & HA_KEY_HAS_PART_KEY_SEG)
+      return (a_flags & HA_KEY_HAS_PART_KEY_SEG) ? 1 : -1;
   }
-  else if (b->flags & HA_NOSAME)
+  else if (b_flags & HA_NOSAME)
     return 1;					// Prefer b
 
-  if ((a->flags ^ b->flags) & HA_FULLTEXT)
+  if ((a_flags ^ b_flags) & HA_FULLTEXT)
   {
-    return (a->flags & HA_FULLTEXT) ? 1 : -1;
+    return (a_flags & HA_FULLTEXT) ? 1 : -1;
   }
   /*
     Prefer original key order.	usable_key_parts contains here
@@ -954,8 +961,8 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 	  sql_field->length=		dup_field->char_length;
           sql_field->pack_length=	dup_field->pack_length;
           sql_field->key_length=	dup_field->key_length;
-	  sql_field->create_length_to_internal_length();
 	  sql_field->decimals=		dup_field->decimals;
+	  sql_field->create_length_to_internal_length();
 	  sql_field->unireg_check=	dup_field->unireg_check;
           /* 
             We're making one field from two, the result field will have
@@ -1286,7 +1293,7 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 	  }
           if (f_is_geom(sql_field->pack_flag) && sql_field->geom_type ==
               Field::GEOM_POINT)
-            column->length= 21;
+            column->length= 25;
 	  if (!column->length)
 	  {
 	    my_error(ER_BLOB_KEY_WITHOUT_LENGTH, MYF(0), column->field_name);
@@ -1357,6 +1364,8 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 			  length);
 	      push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
 			   ER_TOO_LONG_KEY, warn_buff);
+              /* Align key length to multibyte char boundary */
+              length-= length % sql_field->charset->mbmaxlen;
 	    }
 	    else
 	    {
@@ -1387,8 +1396,6 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
       if (length > file->max_key_part_length() && key->type != Key::FULLTEXT)
       {
         length= file->max_key_part_length();
-        /* Align key length to multibyte char boundary */
-        length-= length % sql_field->charset->mbmaxlen;
 	if (key->type == Key::MULTIPLE)
 	{
 	  /* not a critical problem */
@@ -1397,6 +1404,8 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 		      length);
 	  push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
 		       ER_TOO_LONG_KEY, warn_buff);
+          /* Align key length to multibyte char boundary */
+          length-= length % sql_field->charset->mbmaxlen;
 	}
 	else
 	{
@@ -1418,6 +1427,10 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 	else
 	  key_info->flags|= HA_PACK_KEY;
       }
+      /* Check if the key segment is partial, set the key flag accordingly */
+      if (length != sql_field->key_length)
+        key_info->flags|= HA_KEY_HAS_PART_KEY_SEG;
+
       key_length+=length;
       key_part_info++;
 
@@ -1473,7 +1486,7 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
     DBUG_RETURN(-1);
   }
   /* Sort keys in optimized order */
-  qsort((gptr) *key_info_buffer, *key_count, sizeof(KEY),
+  my_qsort((gptr) *key_info_buffer, *key_count, sizeof(KEY),
 	(qsort_cmp) sort_keys);
   create_info->null_bits= null_fields;
 
@@ -2105,6 +2118,13 @@ static int prepare_for_repair(THD* thd, TABLE_LIST *table_list,
   const char **ext= table->file->bas_ext();
   MY_STAT stat_info;
 
+  if (table->s->frm_version != FRM_VER_TRUE_VARCHAR)
+  {
+    error= send_check_errmsg(thd, table_list, "repair",
+                             "Failed reparing incompatible .FRM file");
+    goto end;
+  }
+
   /*
     Check if this is a table type that stores index and data separately,
     like ISAM or MyISAM. We assume fixed order of engine file name
@@ -2284,33 +2304,16 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
     */
     if (!table->table)
     {
-      char buf[ERRMSGSIZE+ERRMSGSIZE+2];
-      const char *err_msg;
-      protocol->prepare_for_resend();
-      protocol->store(table_name, system_charset_info);
-      protocol->store(operator_name, system_charset_info);
-      protocol->store(STRING_WITH_LEN("error"), system_charset_info);
-      if (!(err_msg=thd->net.last_error))
-	err_msg=ER(ER_CHECK_NO_SUCH_TABLE);
+      if (!thd->warn_list.elements)
+        push_warning(thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                     ER_CHECK_NO_SUCH_TABLE, ER(ER_CHECK_NO_SUCH_TABLE));
       /* if it was a view will check md5 sum */
       if (table->view &&
           view_checksum(thd, table) == HA_ADMIN_WRONG_CHECKSUM)
-      {
-        strxmov(buf, err_msg, "; ", ER(ER_VIEW_CHECKSUM), NullS);
-        err_msg= (const char *)buf;
-      }
-      protocol->store(err_msg, system_charset_info);
-      lex->cleanup_after_one_table_open();
-      thd->clear_error();
-      /*
-        View opening can be interrupted in the middle of process so some
-        tables can be left opening
-      */
-      close_thread_tables(thd);
-      lex->reset_query_tables_list(FALSE);
-      if (protocol->write())
-	goto err;
-      continue;
+        push_warning(thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                     ER_VIEW_CHECKSUM, ER(ER_VIEW_CHECKSUM));
+      result_code= HA_ADMIN_CORRUPT;
+      goto send_result;
     }
 
     if (table->view)
@@ -2392,6 +2395,22 @@ send_result:
 
     lex->cleanup_after_one_table_open();
     thd->clear_error();  // these errors shouldn't get client
+    {
+      List_iterator_fast<MYSQL_ERROR> it(thd->warn_list);
+      MYSQL_ERROR *err;
+      while ((err= it++))
+      {
+        protocol->prepare_for_resend();
+        protocol->store(table_name, system_charset_info);
+        protocol->store((char*) operator_name, system_charset_info);
+        protocol->store(warning_level_names[err->level],
+                        warning_level_length[err->level], system_charset_info);
+        protocol->store(err->msg, system_charset_info);
+        if (protocol->write())
+          goto err;
+      }
+      mysql_reset_errors(thd, true);
+    }
     protocol->prepare_for_resend();
     protocol->store(table_name, system_charset_info);
     protocol->store(operator_name, system_charset_info);
@@ -2759,7 +2778,7 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST *src_table,
     operations on the target table.
   */
   if (lock_and_wait_for_table_name(thd, src_table))
-    goto err;
+    DBUG_RETURN(res);
 
   pthread_mutex_lock(&LOCK_open);
 
@@ -2768,8 +2787,11 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST *src_table,
     strxmov(src_path, (*tmp_table)->s->path, reg_ext, NullS);
   else
   {
-    strxmov(src_path, mysql_data_home, "/", src_table->db, "/",
-            src_table->table_name, reg_ext, NullS);
+    char *tablename_pos= strxmov(src_path, mysql_data_home, "/", NullS);
+    strxmov(tablename_pos, src_table->db, "/", src_table->table_name,
+            reg_ext, NullS);
+    if (lower_case_table_names)
+      my_casedn_str(files_charset_info, tablename_pos);
     /* Resolve symlinks (for windows) */
     fn_format(src_path, src_path, "", "", MYF(MY_UNPACK_FILENAME));
     if (access(src_path, F_OK))
@@ -2842,6 +2864,8 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST *src_table,
     and temporary tables).
   */
   *fn_ext(dst_path)= 0;
+  if (thd->variables.keep_files_on_create)
+    create_info->options|= HA_CREATE_KEEP_FILES;
   err= ha_create_table(dst_path, create_info, 1);
 
   if (create_info->options & HA_LEX_CREATE_TMP_TABLE)
@@ -2918,7 +2942,7 @@ bool mysql_check_table(THD* thd, TABLE_LIST* tables,HA_CHECK_OPT* check_opt)
   DBUG_ENTER("mysql_check_table");
   DBUG_RETURN(mysql_admin_table(thd, tables, check_opt,
 				"check", lock_type,
-				0, HA_OPEN_FOR_REPAIR, 0, 0,
+				0, 0, HA_OPEN_FOR_REPAIR, 0,
 				&handler::ha_check, &view_checksum));
 }
 
@@ -3790,11 +3814,9 @@ view_err:
   {
     VOID(pthread_mutex_lock(&LOCK_open));
     wait_while_table_is_used(thd, table, HA_EXTRA_FORCE_REOPEN);
-    table->file->external_lock(thd, F_WRLCK);
+    VOID(pthread_mutex_unlock(&LOCK_open));
     alter_table_manage_keys(table, table->file->indexes_are_disabled(),
                             alter_info->keys_onoff);
-    table->file->external_lock(thd, F_UNLCK);
-    VOID(pthread_mutex_unlock(&LOCK_open));
     error= ha_commit_stmt(thd);
     if (ha_commit(thd))
       error= 1;
@@ -3812,7 +3834,7 @@ view_err:
 	The following function call will free the new_table pointer,
 	in close_temporary_table(), so we can safely directly jump to err
       */
-      close_temporary_table(thd,new_db,tmp_name);
+      close_temporary_table(thd, new_db, tmp_name);
       goto err;
     }
     /* Close lock if this is a transactional table */
@@ -4085,14 +4107,13 @@ copy_data_between_tables(TABLE *from,TABLE *to,
   if (!(copy= new Copy_field[to->s->fields]))
     DBUG_RETURN(-1);				/* purecov: inspected */
 
-  if (to->file->external_lock(thd, F_WRLCK))
+  if (to->file->ha_external_lock(thd, F_WRLCK))
     DBUG_RETURN(-1);
 
   /* We need external lock before we can disable/enable keys */
   alter_table_manage_keys(to, from->file->indexes_are_disabled(), keys_onoff);
 
   /* We can abort alter table for any table type */
-  thd->no_trans_update.stmt= FALSE;
   thd->abort_on_warning= !ignore && test(thd->variables.sql_mode &
                                          (MODE_STRICT_TRANS_TABLES |
                                           MODE_STRICT_ALL_TABLES));
@@ -4237,7 +4258,7 @@ copy_data_between_tables(TABLE *from,TABLE *to,
   free_io_cache(from);
   *copied= found_count;
   *deleted=delete_count;
-  if (to->file->external_lock(thd,F_UNLCK))
+  if (to->file->ha_external_lock(thd,F_UNLCK))
     error=1;
   DBUG_RETURN(error > 0 ? -1 : 0);
 }

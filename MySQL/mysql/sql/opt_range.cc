@@ -250,6 +250,9 @@ public:
   Field *field;
   char *min_value,*max_value;			// Pointer to range
 
+  /*
+    eq_tree() requires that left == right == 0 if the type is MAYBE_KEY.
+   */
   SEL_ARG *left,*right;   /* R-B tree children */
   SEL_ARG *next,*prev;    /* Links for bi-directional interval list */
   SEL_ARG *parent;        /* R-B tree parent */
@@ -265,7 +268,7 @@ public:
   SEL_ARG(Field *field, uint8 part, char *min_value, char *max_value,
 	  uint8 min_flag, uint8 max_flag, uint8 maybe_flag);
   SEL_ARG(enum Type type_arg)
-    :min_flag(0),elements(1),use_count(1),left(0),next_key_part(0),
+    :min_flag(0),elements(1),use_count(1),left(0),right(0),next_key_part(0),
     color(BLACK), type(type_arg)
   {}
   inline bool is_same(SEL_ARG *arg)
@@ -972,7 +975,7 @@ QUICK_RANGE_SELECT::~QUICK_RANGE_SELECT()
         DBUG_PRINT("info", ("Freeing separate handler 0x%lx (free: %d)", (long) file,
                             free_file));
         file->reset();
-        file->external_lock(current_thd, F_UNLCK);
+        file->ha_external_lock(current_thd, F_UNLCK);
         file->close();
       }
     }
@@ -1131,10 +1134,18 @@ int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler)
   THD *thd= current_thd;
   if (!(file= head->file->clone(thd->mem_root)))
   {
+    /* 
+      Manually set the error flag. Note: there seems to be quite a few
+      places where a failure could cause the server to "hang" the client by
+      sending no response to a query. ATM those are not real errors because 
+      the storage engine calls in question happen to never fail with the 
+      existing storage engines. 
+    */
+    thd->net.report_error= 1; /* purecov: inspected */
     /* Caller will free the memory */
-    goto failure;
+    goto failure;  /* purecov: inspected */
   }
-  if (file->external_lock(thd, F_RDLCK))
+  if (file->ha_external_lock(thd, F_RDLCK))
     goto failure;
   if (!head->no_keyread)
   {
@@ -1144,7 +1155,7 @@ int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler)
   if (file->extra(HA_EXTRA_RETRIEVE_PRIMARY_KEY) ||
       init() || reset())
   {
-    file->external_lock(thd, F_UNLCK);
+    file->ha_external_lock(thd, F_UNLCK);
     file->close();
     goto failure;
   }
@@ -1589,10 +1600,10 @@ SEL_ARG *SEL_ARG::clone_tree(PARAM *param)
     the UPDATE/DELETE code will work:
      * index can only be scanned in forward direction
      * HA_EXTRA_KEYREAD will not be used
-    Perhaps these assumptions could be relaxed
+    Perhaps these assumptions could be relaxed.
 
   RETURN
-    index number
+    Number of the index that produces the required ordering in the cheapest way
     MAX_KEY if no such index was found.
 */
 
@@ -1611,6 +1622,7 @@ uint get_index_for_order(TABLE *table, ORDER *order, ha_rows limit)
     if (!(table->keys_in_use_for_query.is_set(idx)))
       continue;
     KEY_PART_INFO *keyinfo= table->key_info[idx].key_part;
+    uint n_parts=  table->key_info[idx].key_parts;
     uint partno= 0;
     
     /* 
@@ -1620,7 +1632,7 @@ uint get_index_for_order(TABLE *table, ORDER *order, ha_rows limit)
     */
     if (!(table->file->index_flags(idx, 0, 1) & HA_READ_ORDER))
       continue;
-    for (ord= order; ord; ord= ord->next, partno++)
+    for (ord= order; ord && partno < n_parts; ord= ord->next, partno++)
     {
       Item *item= order->item[0];
       if (!(item->type() == Item::FIELD_ITEM &&
@@ -1969,11 +1981,17 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
   keys_to_use.intersect(head->keys_in_use_for_query);
   if (!keys_to_use.is_clear_all())
   {
+#ifndef EMBEDDED_LIBRARY                      // Avoid compiler warning
+    char buff[STACK_BUFF_ALLOC];
+#endif
     MEM_ROOT alloc;
     SEL_TREE *tree= NULL;
     KEY_PART *key_parts;
     KEY *key_info;
     PARAM param;
+
+    if (check_stack_overrun(thd, 2*STACK_MIN_SIZE, buff))
+      DBUG_RETURN(0);                           // Fatal error flag is set
 
     /* set up parameter that is passed to all functions */
     param.thd= thd;
@@ -2197,7 +2215,7 @@ double get_sweep_read_cost(const PARAM *param, ha_rows records)
   if (param->table->file->primary_key_is_clustered())
   {
     result= param->table->file->read_time(param->table->s->primary_key,
-                                          records, records);
+                                          (uint)records, records);
   }
   else
   {
@@ -2405,7 +2423,7 @@ TABLE_READ_PLAN *get_best_disjunct_quick(PARAM *param, SEL_IMERGE *imerge,
 
   /* Add Unique operations cost */
   unique_calc_buff_size=
-    Unique::get_cost_calc_buff_size(non_cpk_scan_records,
+    Unique::get_cost_calc_buff_size((ulong)non_cpk_scan_records,
                                     param->table->file->ref_length,
                                     param->thd->variables.sortbuff_size);
   if (param->imerge_cost_buff_size < unique_calc_buff_size)
@@ -2417,7 +2435,7 @@ TABLE_READ_PLAN *get_best_disjunct_quick(PARAM *param, SEL_IMERGE *imerge,
   }
 
   imerge_cost +=
-    Unique::get_use_cost(param->imerge_cost_buff, non_cpk_scan_records,
+    Unique::get_use_cost(param->imerge_cost_buff, (uint)non_cpk_scan_records,
                          param->table->file->ref_length,
                          param->thd->variables.sortbuff_size);
   DBUG_PRINT("info",("index_merge total cost: %g (wanted: less then %g)",
@@ -2756,7 +2774,7 @@ ROR_INTERSECT_INFO* ror_intersect_init(const PARAM *param)
   info->is_covering= FALSE;
   info->index_scan_costs= 0.0;
   info->index_records= 0;
-  info->out_rows= param->table->file->records;
+  info->out_rows= (double) param->table->file->records;
   bitmap_clear_all(&info->covered_fields);
   return info;
 }
@@ -3150,8 +3168,8 @@ TRP_ROR_INTERSECT *get_best_ror_intersect(const PARAM *param, SEL_TREE *tree,
     ROR_SCAN_INFO's.
     Step 2: Get best ROR-intersection using an approximate algorithm.
   */
-  qsort(tree->ror_scans, tree->n_ror_scans, sizeof(ROR_SCAN_INFO*),
-        (qsort_cmp)cmp_ror_scan_info);
+  my_qsort(tree->ror_scans, tree->n_ror_scans, sizeof(ROR_SCAN_INFO*),
+           (qsort_cmp)cmp_ror_scan_info);
   DBUG_EXECUTE("info",print_ror_scans_arr(param->table, "ordered",
                                           tree->ror_scans,
                                           tree->ror_scans_end););
@@ -3340,8 +3358,8 @@ TRP_ROR_INTERSECT *get_best_covering_ror_intersect(PARAM *param,
         bitmap_get_first(&(*scan)->covered_fields);
     }
 
-    qsort(ror_scan_mark, ror_scans_end-ror_scan_mark, sizeof(ROR_SCAN_INFO*),
-          (qsort_cmp)cmp_ror_scan_info_covering);
+    my_qsort(ror_scan_mark, ror_scans_end-ror_scan_mark, sizeof(ROR_SCAN_INFO*),
+             (qsort_cmp)cmp_ror_scan_info_covering);
 
     DBUG_EXECUTE("info", print_ror_scans_arr(param->table,
                                              "remaining scans",
@@ -4387,27 +4405,70 @@ get_mm_leaf(PARAM *param, COND *conf_func, Field *field, KEY_PART *key_part,
        field->type() == FIELD_TYPE_DATETIME))
     field->table->in_use->variables.sql_mode|= MODE_INVALID_DATES;
   err= value->save_in_field_no_warnings(field, 1);
-  if (err > 0 && field->cmp_type() != value->result_type())
+  if (err > 0)
   {
-    if ((type == Item_func::EQ_FUNC || type == Item_func::EQUAL_FUNC) &&
-	value->result_type() == item_cmp_type(field->result_type(),
-                                              value->result_type()))
+    if (field->cmp_type() != value->result_type())
+    {
+      if ((type == Item_func::EQ_FUNC || type == Item_func::EQUAL_FUNC) &&
+          value->result_type() == item_cmp_type(field->result_type(),
+                                                value->result_type()))
+      {
+        tree= new (alloc) SEL_ARG(field, 0, 0);
+        tree->type= SEL_ARG::IMPOSSIBLE;
+        goto end;
+      }
+      else
+      {
+        /*
+          TODO: We should return trees of the type SEL_ARG::IMPOSSIBLE
+          for the cases like int_field > 999999999999999999999999 as well.
+        */
+        tree= 0;
+        if (err == 3 && field->type() == FIELD_TYPE_DATE &&
+            (type == Item_func::GT_FUNC || type == Item_func::GE_FUNC ||
+             type == Item_func::LT_FUNC || type == Item_func::LE_FUNC) )
+        {
+          /*
+            We were saving DATETIME into a DATE column, the conversion went ok
+            but a non-zero time part was cut off.
 
-    {
-      tree= new (alloc) SEL_ARG(field, 0, 0);
-      tree->type= SEL_ARG::IMPOSSIBLE;
+            In MySQL's SQL dialect, DATE and DATETIME are compared as datetime
+            values. Index over a DATE column uses DATE comparison. Changing 
+            from one comparison to the other is possible:
+
+            datetime(date_col)< '2007-12-10 12:34:55' -> date_col<='2007-12-10'
+            datetime(date_col)<='2007-12-10 12:34:55' -> date_col<='2007-12-10'
+
+            datetime(date_col)> '2007-12-10 12:34:55' -> date_col>='2007-12-10'
+            datetime(date_col)>='2007-12-10 12:34:55' -> date_col>='2007-12-10'
+
+            but we'll need to convert '>' to '>=' and '<' to '<='. This will
+            be done together with other types at the end of this function
+            (grep for field_is_equal_to_item)
+          */
+        }
+        else
+          goto end;
+      }
     }
-    else
+
+    /*
+      guaranteed at this point:  err > 0; field and const of same type
+      If an integer got bounded (e.g. to within 0..255 / -128..127)
+      for < or >, set flags as for <= or >= (no NEAR_MAX / NEAR_MIN)
+    */
+    else if (err == 1 && field->result_type() == INT_RESULT)
     {
-      /*
-        TODO: We should return trees of the type SEL_ARG::IMPOSSIBLE
-        for the cases like int_field > 999999999999999999999999 as well.
-      */
-      tree= 0;
+      if (type == Item_func::LT_FUNC && (value->val_int() > 0))
+        type = Item_func::LE_FUNC;
+      else if (type == Item_func::GT_FUNC &&
+               !((Field_num*)field)->unsigned_flag &&
+               !((Item_int*)value)->unsigned_flag &&
+               (value->val_int() < 0))
+        type = Item_func::GE_FUNC;
     }
-    goto end;
-  } 
-  if (err < 0)
+  }
+  else if (err < 0)
   {
     field->table->in_use->variables.sql_mode= orig_sql_mode;
     /* This happens when we try to insert a NULL field in a not null column */
@@ -5816,6 +5877,11 @@ check_quick_select(PARAM *param,uint idx,SEL_ARG *tree)
     param->is_ror_scan is cleared if the function detects that the key scan is
       not a Rowid-Ordered Retrieval scan ( see comments for is_key_scan_ror
       function for description of which key scans are ROR scans)
+
+  RETURN
+    #records      E(#records) for given subtree
+    HA_POS_ERROR  if subtree cannot be used for record retrieval
+
 */
 
 static ha_rows
@@ -6007,27 +6073,24 @@ check_quick_keys(PARAM *param,uint idx,SEL_ARG *key_tree,
     ROR (Rowid Ordered Retrieval) key scan is a key scan that produces
     ordered sequence of rowids (ha_xxx::cmp_ref is the comparison function)
 
-    An index scan is a ROR scan if it is done using a condition in form
+    This function is needed to handle a practically-important special case:
+    an index scan is a ROR scan if it is done using a condition in form
 
-        "key1_1=c_1 AND ... AND key1_n=c_n"  (1)
+        "key1_1=c_1 AND ... AND key1_n=c_n"
 
     where the index is defined on (key1_1, ..., key1_N [,a_1, ..., a_n])
 
-    and the table has a clustered Primary Key
+    and the table has a clustered Primary Key defined as 
 
-    PRIMARY KEY(a_1, ..., a_n, b1, ..., b_k) with first key parts being
-    identical to uncovered parts ot the key being scanned (2)
-
-    Scans on HASH indexes are not ROR scans,
-    any range scan on clustered primary key is ROR scan  (3)
-
-    Check (1) is made in check_quick_keys()
-    Check (3) is made check_quick_select()
-    Check (2) is made by this function.
+      PRIMARY KEY(a_1, ..., a_n, b1, ..., b_k) 
+    
+    i.e. the first key parts of it are identical to uncovered parts ot the 
+    key being scanned. This function assumes that the index flags do not
+    include HA_KEY_SCAN_NOT_ROR flag (that is checked elsewhere).
 
   RETURN
-    TRUE  If the scan is ROR-scan
-    FALSE otherwise
+    TRUE   The scan is ROR-scan
+    FALSE  Otherwise
 */
 
 static bool is_key_scan_ror(PARAM *param, uint keynr, uint8 nparts)
@@ -6359,8 +6422,7 @@ QUICK_RANGE_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table,
   range->min_key=range->max_key=(char*) ref->key_buff;
   range->min_length=range->max_length=ref->key_length;
   range->flag= ((ref->key_length == key_info->key_length &&
-		 (key_info->flags & (HA_NOSAME | HA_END_SPACE_KEY)) ==
-		 HA_NOSAME) ? EQ_RANGE : 0);
+		 (key_info->flags & HA_END_SPACE_KEY) == 0) ? EQ_RANGE : 0);
 
   if (!(quick->key_parts=key_part=(KEY_PART *)
 	alloc_root(&quick->alloc,sizeof(KEY_PART)*ref->key_parts)))
@@ -6747,7 +6809,7 @@ int QUICK_RANGE_SELECT::reset()
   if (file->table_flags() & HA_NEED_READ_RANGE_BUFFER)
   {
     mrange_bufsiz= min(multi_range_bufsiz,
-                       (QUICK_SELECT_I::records + 1)* head->s->reclength);
+                       ((uint)QUICK_SELECT_I::records + 1)* head->s->reclength);
 
     while (mrange_bufsiz &&
            ! my_multi_malloc(MYF(MY_WME),
@@ -8349,7 +8411,7 @@ void cost_group_min_max(TABLE* table, KEY *index_info, uint used_key_parts,
                         bool have_min, bool have_max,
                         double *read_cost, ha_rows *records)
 {
-  uint table_records;
+  ha_rows table_records;
   uint num_groups;
   uint num_blocks;
   uint keys_per_block;
@@ -8366,14 +8428,14 @@ void cost_group_min_max(TABLE* table, KEY *index_info, uint used_key_parts,
   keys_per_block= (table->file->block_size / 2 /
                    (index_info->key_length + table->file->ref_length)
                         + 1);
-  num_blocks= (table_records / keys_per_block) + 1;
+  num_blocks= (uint)(table_records / keys_per_block) + 1;
 
   /* Compute the number of keys in a group. */
   keys_per_group= index_info->rec_per_key[group_key_parts - 1];
   if (keys_per_group == 0) /* If there is no statistics try to guess */
     /* each group contains 10% of all records */
-    keys_per_group= (table_records / 10) + 1;
-  num_groups= (table_records / keys_per_group) + 1;
+    keys_per_group= (uint)(table_records / 10) + 1;
+  num_groups= (uint)(table_records / keys_per_group) + 1;
 
   /* Apply the selectivity of the quick select for group prefixes. */
   if (range_tree && (quick_prefix_records != HA_POS_ERROR))
@@ -8417,9 +8479,9 @@ void cost_group_min_max(TABLE* table, KEY *index_info, uint used_key_parts,
   *records= num_groups;
 
   DBUG_PRINT("info",
-             ("table rows: %u  keys/block: %u  keys/group: %u  result rows: %lu  blocks: %u",
-              table_records, keys_per_block, keys_per_group, (ulong) *records,
-              num_blocks));
+             ("table rows: %lu  keys/block: %u  keys/group: %u  result rows: %lu  blocks: %u",
+              (ulong)table_records, keys_per_block, keys_per_group,
+              (ulong) *records, num_blocks));
   DBUG_VOID_RETURN;
 }
 
@@ -9508,8 +9570,6 @@ static void print_sel_tree(PARAM *param, SEL_TREE *tree, key_map *tree_map,
   int idx;
   char buff[1024];
   DBUG_ENTER("print_sel_tree");
-  if (! _db_on_)
-    DBUG_VOID_RETURN;
 
   String tmp(buff,sizeof(buff),&my_charset_bin);
   tmp.length(0);
@@ -9539,8 +9599,6 @@ static void print_ror_scans_arr(TABLE *table, const char *msg,
                                 struct st_ror_scan_info **end)
 {
   DBUG_ENTER("print_ror_scans");
-  if (! _db_on_)
-    DBUG_VOID_RETURN;
 
   char buff[1024];
   String tmp(buff,sizeof(buff),&my_charset_bin);
@@ -9603,7 +9661,7 @@ static void print_quick(QUICK_SELECT_I *quick, const key_map *needed_reg)
 {
   char buf[MAX_KEY/8+1];
   DBUG_ENTER("print_quick");
-  if (! _db_on_ || !quick)
+  if (!quick)
     DBUG_VOID_RETURN;
   DBUG_LOCK_FILE;
 

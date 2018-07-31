@@ -1,0 +1,64 @@
+-- source include/have_innodb.inc
+-- source include/have_log_bin.inc
+
+
+#
+# Let us test binlog_cache_use and binlog_cache_disk_use status vars.
+# Actually this test has nothing to do with innodb per se, it just requires
+# transactional table. 
+#
+show status like "binlog_cache_use";
+show status like "binlog_cache_disk_use";
+
+create table t1 (a int) engine=innodb;
+
+# Now we are going to create transaction which is long enough so its 
+# transaction binlog will be flushed to disk...
+let $1=2000;
+disable_query_log;
+begin;
+while ($1)
+{
+ eval insert into t1 values( $1 );
+ dec $1;
+}
+commit;
+enable_query_log;
+show status like "binlog_cache_use";
+show status like "binlog_cache_disk_use";
+
+# Transaction which should not be flushed to disk and so should not
+# increase binlog_cache_disk_use.
+begin;
+delete from t1;
+commit;
+show status like "binlog_cache_use";
+show status like "binlog_cache_disk_use";
+drop table t1;
+
+
+#
+# Bug #30604: different flagging of time_zone_used in normal and ps-protocol
+#
+
+CREATE TABLE t1 (a INT NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=MyISAM;
+CREATE TABLE t2 (a INT NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=InnoDB;
+
+DELIMITER |;
+# the function does not deal with time objects
+CREATE FUNCTION bug23333() 
+RETURNS int(11)
+DETERMINISTIC
+BEGIN
+  INSERT INTO t1 VALUES (NULL);
+  SELECT COUNT(*) FROM t1 INTO @a;
+  RETURN @a;
+END|
+
+DELIMITER ;|
+
+INSERT INTO t2 VALUES (2),(10+bug23333());
+--replace_column 1 #
+SHOW MASTER STATUS;
+DROP FUNCTION bug23333;
+DROP TABLE t1, t2;

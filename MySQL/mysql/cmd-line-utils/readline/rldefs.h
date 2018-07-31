@@ -2,7 +2,7 @@
    for readline.  This should be included after any files that define
    system-specific constants like _POSIX_VERSION or USG. */
 
-/* Copyright (C) 1987,1989 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2005 Free Software Foundation, Inc.
 
    This file contains the Readline Library (the Library), a set of
    routines for providing Emacs style line input to programs that ask
@@ -27,7 +27,7 @@
 #define _RLDEFS_H_
 
 #if defined (HAVE_CONFIG_H)
-#  include "config.h"
+#  include "config_readline.h"
 #endif
 
 #include "rlstdc.h"
@@ -38,7 +38,11 @@
 #  if defined (HAVE_TERMIO_H)
 #    define TERMIO_TTY_DRIVER
 #  else
-#    define NEW_TTY_DRIVER
+#    if !defined (__MINGW32__)
+#      define NEW_TTY_DRIVER
+#    else
+#      define NO_TTY_DRIVER
+#    endif
 #  endif
 #endif
 

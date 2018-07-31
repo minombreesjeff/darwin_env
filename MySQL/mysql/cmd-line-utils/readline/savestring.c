@@ -22,7 +22,6 @@
 #define READLINE_LIBRARY
 
 #include "config_readline.h"
-
 #ifdef HAVE_STRING_H
 #  include <string.h>
 #endif

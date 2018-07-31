@@ -134,6 +134,7 @@ int mysql_update(THD *thd,
   SELECT_LEX    *select_lex= &thd->lex->select_lex;
   bool need_reopen;
   List<Item> all_fields;
+  THD::killed_state killed_status= THD::NOT_KILLED;
   DBUG_ENTER("mysql_update");
 
   LINT_INIT(timestamp_query_id);
@@ -362,7 +363,7 @@ int mysql_update(THD *thd,
         init_read_record_idx(&info, thd, table, 1, used_index);
 
       thd_proc_info(thd, "Searching rows for update");
-      uint tmp_limit= limit;
+      ha_rows tmp_limit= limit;
 
       while (!(error=info.read_record(&info)) && !thd->killed)
       {
@@ -430,7 +431,6 @@ int mysql_update(THD *thd,
   query_id=thd->query_id;
 
   transactional_table= table->file->has_transactions();
-  thd->no_trans_update.stmt= FALSE;
   thd->abort_on_warning= test(!ignore &&
                               (thd->variables.sql_mode &
                                (MODE_STRICT_TRANS_TABLES |
@@ -487,7 +487,6 @@ int mysql_update(THD *thd,
                                             (byte*) table->record[0])))
         {
           updated++;
-          thd->no_trans_update.stmt= !transactional_table;
           
           if (table->triggers &&
               table->triggers->process_triggers(thd, TRG_EVENT_UPDATE,
@@ -521,39 +520,26 @@ int mysql_update(THD *thd,
       table->file->unlock_row();
     thd->row_count++;
   }
-
   /*
-    todo bug#27571: to avoid asynchronization of `error' and
-    `error_code' of binlog event constructor
-
-    The concept, which is a bit different for insert(!), is to
-    replace `error' assignment with the following lines
-
-       killed_status= thd->killed; // get the status of the volatile 
-    
-    Notice: thd->killed is type of "state" whereas the lhs has
-    "status" the suffix which translates according to WordNet: a state
-    at a particular time - at the time of the end of per-row loop in
-    our case. Binlogging ops are conducted with the status.
-
-       error= (killed_status == THD::NOT_KILLED)?  error : 1;
-    
-    which applies to most mysql_$query functions.
-    Event's constructor will accept `killed_status' as an argument:
-    
-       Query_log_event qinfo(..., killed_status);
-    
-    thd->killed might be changed after killed_status had got cached and this
-    won't affect binlogging event but other effects remain.
-
-    Open issue: In a case the error happened not because of KILLED -
-    and then KILLED was caught later still within the loop - we shall
-    do something to avoid binlogging of incorrect ER_SERVER_SHUTDOWN
-    error_code.
+    Caching the killed status to pass as the arg to query event constuctor;
+    The cached value can not change whereas the killed status can
+    (externally) since this point and change of the latter won't affect
+    binlogging.
+    It's assumed that if an error was set in combination with an effective 
+    killed status then the error is due to killing.
   */
+  killed_status= thd->killed; // get the status of the volatile 
+  // simulated killing after the loop must be ineffective for binlogging
+  DBUG_EXECUTE_IF("simulate_kill_bug27571",
+                  {
+                    thd->killed= THD::KILL_QUERY;
+                  };);
+  error= (killed_status == THD::NOT_KILLED)?  error : 1;
+  
 
-  if (thd->killed && !error)
-    error= 1;					// Aborted
+  if (!transactional_table && updated > 0)
+    thd->transaction.stmt.modified_non_trans_table= TRUE;
+
   end_read_record(&info);
   free_io_cache(table);				// If ORDER BY
   delete select;
@@ -578,20 +564,21 @@ int mysql_update(THD *thd,
     Sometimes we want to binlog even if we updated no rows, in case user used
     it to be sure master and slave are in same state.
   */
-  if ((error < 0) || (updated && !transactional_table))
+  if ((error < 0) || thd->transaction.stmt.modified_non_trans_table)
   {
     if (mysql_bin_log.is_open())
     {
       if (error < 0)
         thd->clear_error();
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-			    transactional_table, FALSE);
+			    transactional_table, FALSE, killed_status);
       if (mysql_bin_log.write(&qinfo) && transactional_table)
 	error=1;				// Rollback update
     }
-    if (!transactional_table)
-      thd->no_trans_update.all= TRUE;
+    if (thd->transaction.stmt.modified_non_trans_table)
+      thd->transaction.all.modified_non_trans_table= TRUE;
   }
+  DBUG_ASSERT(transactional_table || !updated || thd->transaction.stmt.modified_non_trans_table);
   free_underlaid_joins(thd, select_lex);
   if (transactional_table)
   {
@@ -729,7 +716,7 @@ static table_map get_table_map(List<Item> *items)
     TRUE  Error
 */
 
-bool mysql_multi_update_prepare(THD *thd)
+int mysql_multi_update_prepare(THD *thd)
 {
   LEX *lex= thd->lex;
   TABLE_LIST *table_list= lex->query_tables;
@@ -946,6 +933,7 @@ bool mysql_multi_update(THD *thd,
                         SELECT_LEX_UNIT *unit, SELECT_LEX *select_lex)
 {
   multi_update *result;
+  bool res;
   DBUG_ENTER("mysql_multi_update");
 
   if (!(result= new multi_update(table_list,
@@ -954,13 +942,12 @@ bool mysql_multi_update(THD *thd,
 				 handle_duplicates, ignore)))
     DBUG_RETURN(TRUE);
 
-  thd->no_trans_update.stmt= FALSE;
   thd->abort_on_warning= test(thd->variables.sql_mode &
                               (MODE_STRICT_TRANS_TABLES |
                                MODE_STRICT_ALL_TABLES));
 
   List<Item> total_list;
-  (void) mysql_select(thd, &select_lex->ref_pointer_array,
+  res= mysql_select(thd, &select_lex->ref_pointer_array,
                       table_list, select_lex->with_wild,
                       total_list,
                       conds, 0, (ORDER *) NULL, (ORDER *)NULL, (Item *) NULL,
@@ -968,6 +955,15 @@ bool mysql_multi_update(THD *thd,
                       options | SELECT_NO_JOIN_CACHE | SELECT_NO_UNLOCK |
                       OPTION_SETUP_TABLES_DONE,
                       result, unit, select_lex);
+  DBUG_PRINT("info",("res: %d  report_error: %d", res,
+                     thd->net.report_error));
+  res|= thd->net.report_error;
+  if (unlikely(res))
+  {
+    /* If we had a another error reported earlier then this will be ignored */
+    result->send_error(ER_UNKNOWN_ERROR, ER(ER_UNKNOWN_ERROR));
+    result->abort();
+  }
   delete result;
   thd->abort_on_warning= 0;
   DBUG_RETURN(FALSE);
@@ -982,8 +978,8 @@ multi_update::multi_update(TABLE_LIST *table_list,
   :all_tables(table_list), leaves(leaves_list), update_tables(0),
    tmp_tables(0), updated(0), found(0), fields(field_list),
    values(value_list), table_count(0), copy_field(0),
-   handle_duplicates(handle_duplicates_arg), do_update(1), trans_safe(0),
-   transactional_tables(1), ignore(ignore_arg)
+   handle_duplicates(handle_duplicates_arg), do_update(1), trans_safe(1),
+   transactional_tables(0), ignore(ignore_arg), error_handled(0)
 {}
 
 
@@ -1190,7 +1186,6 @@ multi_update::initialize_tables(JOIN *join)
   if ((thd->options & OPTION_SAFE_UPDATES) && error_if_full_join(join))
     DBUG_RETURN(1);
   main_table=join->join_tab->table;
-  trans_safe= transactional_tables= main_table->file->has_transactions();
   table_to_update= 0;
 
   /* Any update has at least one pair (field, value) */
@@ -1321,8 +1316,8 @@ multi_update::~multi_update()
   if (copy_field)
     delete [] copy_field;
   thd->count_cuted_fields= CHECK_FIELD_IGNORE;		// Restore this setting
-  if (!trans_safe)
-    thd->no_trans_update.all= TRUE;
+  DBUG_ASSERT(trans_safe || !updated || 
+              thd->transaction.all.modified_non_trans_table);
 }
 
 
@@ -1408,8 +1403,15 @@ bool multi_update::send_data(List<Item> &not_used_values)
 	}
         else
         {
-          if (!table->file->has_transactions())
-            thd->no_trans_update.stmt= TRUE;
+          /* non-transactional or transactional table got modified   */
+          /* either multi_update class' flag is raised in its branch */
+          if (table->file->has_transactions())
+            transactional_tables= 1;
+          else
+          {
+            trans_safe= 0;
+            thd->transaction.stmt.modified_non_trans_table= TRUE;
+          }
           if (table->triggers &&
               table->triggers->process_triggers(thd, TRG_EVENT_UPDATE,
                                                 TRG_ACTION_AFTER, TRUE))
@@ -1438,6 +1440,12 @@ bool multi_update::send_data(List<Item> &not_used_values)
           tbl->file->position(tbl->record[0]);
         memcpy((char*) tmp_table->field[field_num]->ptr,
                (char*) tbl->file->ref, tbl->file->ref_length);
+        /*
+         For outer joins a rowid field may have no NOT_NULL_FLAG,
+         so we have to reset NULL bit for this field.
+         (set_notnull() resets NULL bit only if available).
+        */
+        tmp_table->field[field_num]->set_notnull();
         field_num++;
       } while ((tbl= tbl_it++));
 
@@ -1465,24 +1473,61 @@ void multi_update::send_error(uint errcode,const char *err)
   /* First send error what ever it is ... */
   my_error(errcode, MYF(0), err);
 
-  /* If nothing updated return */
-  if (!updated)
+  /* the error was handled or nothing deleted and no side effects return */
+  if (error_handled ||
+      !thd->transaction.stmt.modified_non_trans_table && !updated)
     return;
 
   /* Something already updated so we have to invalidate cache */
-  query_cache_invalidate3(thd, update_tables, 1);
-
+  if (updated)
+    query_cache_invalidate3(thd, update_tables, 1);
   /*
     If all tables that has been updated are trans safe then just do rollback.
     If not attempt to do remaining updates.
   */
 
   if (trans_safe)
-    ha_rollback_stmt(thd);
-  else if (do_update && table_count > 1)
   {
-    /* Add warning here */
-    VOID(do_updates(0));
+    DBUG_ASSERT(!updated || transactional_tables);
+    (void) ha_autocommit_or_rollback(thd, 1);
+  }
+  else
+  { 
+    DBUG_ASSERT(thd->transaction.stmt.modified_non_trans_table);
+    if (do_update && table_count > 1)
+    {
+      /* Add warning here */
+      /* 
+         todo/fixme: do_update() is never called with the arg 1.
+         should it change the signature to become argless?
+      */
+      VOID(do_updates(0));
+    }
+  }
+  if (thd->transaction.stmt.modified_non_trans_table)
+  {
+    /*
+      The query has to binlog because there's a modified non-transactional table
+      either from the query's list or via a stored routine: bug#13270,23333
+    */
+    if (mysql_bin_log.is_open())
+    {
+      /*
+        THD::killed status might not have been set ON at time of an error
+        got caught and if happens later the killed error is written
+        into repl event.
+      */
+      Query_log_event qinfo(thd, thd->query, thd->query_length,
+                            transactional_tables, FALSE);
+      mysql_bin_log.write(&qinfo);
+    }
+    thd->transaction.all.modified_non_trans_table= TRUE;
+  }
+  DBUG_ASSERT(trans_safe || !updated || thd->transaction.stmt.modified_non_trans_table);
+  
+  if (transactional_tables)
+  {
+    (void) ha_autocommit_or_rollback(thd, 1);
   }
 }
 
@@ -1610,9 +1655,12 @@ int multi_update::do_updates(bool from_send_error)
     if (updated != org_updated)
     {
       if (table->file->has_transactions())
-	transactional_tables= 1;
+        transactional_tables= 1;
       else
-	trans_safe= 0;				// Can't do safe rollback
+      {
+        trans_safe= 0;				// Can't do safe rollback
+        thd->transaction.stmt.modified_non_trans_table= TRUE;
+      }
     }
     (void) table->file->ha_rnd_end();
     (void) tmp_table->file->ha_rnd_end();
@@ -1642,7 +1690,10 @@ err2:
     if (table->file->has_transactions())
       transactional_tables= 1;
     else
+    {
       trans_safe= 0;
+      thd->transaction.stmt.modified_non_trans_table= TRUE;
+    }
   }
   DBUG_RETURN(1);
 }
@@ -1653,10 +1704,19 @@ err2:
 bool multi_update::send_eof()
 {
   char buff[STRING_BUFFER_USUAL_SIZE];
+  THD::killed_state killed_status= THD::NOT_KILLED;
   thd_proc_info(thd, "updating reference tables");
 
-  /* Does updates for the last n - 1 tables, returns 0 if ok */
+  /* 
+     Does updates for the last n - 1 tables, returns 0 if ok;
+     error takes into account killed status gained in do_updates()
+  */
   int local_error = (table_count) ? do_updates(0) : 0;
+  /*
+    if local_error is not set ON until after do_updates() then
+    later carried out killing should not affect binlogging.
+  */
+  killed_status= (local_error == 0)? THD::NOT_KILLED : thd->killed;
   thd_proc_info(thd, "end");
 
   /* We must invalidate the query cache before binlog writing and
@@ -1666,27 +1726,33 @@ bool multi_update::send_eof()
   {
     query_cache_invalidate3(thd, update_tables, 1);
   }
-
   /*
     Write the SQL statement to the binlog if we updated
     rows and we succeeded or if we updated some non
     transactional tables.
+    
+    The query has to binlog because there's a modified non-transactional table
+    either from the query's list or via a stored routine: bug#13270,23333
   */
 
-  if ((local_error == 0) || (updated && !trans_safe))
+  DBUG_ASSERT(trans_safe || !updated || 
+              thd->transaction.stmt.modified_non_trans_table);
+  if (local_error == 0 || thd->transaction.stmt.modified_non_trans_table)
   {
     if (mysql_bin_log.is_open())
     {
       if (local_error == 0)
         thd->clear_error();
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-			    transactional_tables, FALSE);
+			    transactional_tables, FALSE, killed_status);
       if (mysql_bin_log.write(&qinfo) && trans_safe)
         local_error= 1;				// Rollback update
     }
-    if (!transactional_tables)
-      thd->no_trans_update.all= TRUE;
+    if (thd->transaction.stmt.modified_non_trans_table)
+      thd->transaction.all.modified_non_trans_table= TRUE;
   }
+  if (local_error != 0)
+    error_handled= TRUE; // to force early leave from ::send_error()
 
   if (transactional_tables)
   {
@@ -1696,7 +1762,7 @@ bool multi_update::send_eof()
 
   if (local_error > 0) // if the above log write did not fail ...
   {
-    /* Safety: If we haven't got an error before (should not happen) */
+    /* Safety: If we haven't got an error before (can happen in do_updates) */
     my_message(ER_UNKNOWN_ERROR, "An error occured in multi-table update",
 	       MYF(0));
     return TRUE;

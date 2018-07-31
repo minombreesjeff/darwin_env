@@ -277,11 +277,27 @@ public:
   SELECT_LEX_UNIT *unit;
   // select that processed
   SELECT_LEX *select_lex;
+  /* 
+    TRUE <=> optimizer must not mark any table as a constant table.
+    This is needed for subqueries in form "a IN (SELECT .. UNION SELECT ..):
+    when we optimize the select that reads the results of the union from a
+    temporary table, we must not mark the temp. table as constant because
+    the number of rows in it may vary from one subquery execution to another.
+  */
+  bool no_const_tables; 
   
   JOIN *tmp_join; // copy of this JOIN to be used with temporary tables
   ROLLUP rollup;				// Used with rollup
 
   bool select_distinct;				// Set if SELECT DISTINCT
+  /*
+    If we have the GROUP BY statement in the query,
+    but the group_list was emptied by optimizer, this
+    flag is TRUE.
+    It happens when fields in the GROUP BY are from
+    constant table
+  */
+  bool group_optimized_away;
 
   /*
     simple_xxxxx is set if ORDER/GROUP BY doesn't include any references
@@ -390,6 +406,7 @@ public:
     zero_result_cause= 0;
     optimized= 0;
     cond_equal= 0;
+    group_optimized_away= 0;
 
     all_fields= fields_arg;
     fields_list= fields_arg;
@@ -397,6 +414,8 @@ public:
     tmp_table_param.init();
     tmp_table_param.end_write_records= HA_POS_ERROR;
     rollup.state= ROLLUP::STATE_NONE;
+
+    no_const_tables= FALSE;
   }
 
   int prepare(Item ***rref_pointer_array, TABLE_LIST *tables, uint wind_num,
@@ -470,8 +489,8 @@ TABLE *create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
 			ulonglong select_options, ha_rows rows_limit,
 			char* alias);
 void free_tmp_table(THD *thd, TABLE *entry);
-void count_field_types(TMP_TABLE_PARAM *param, List<Item> &fields,
-		       bool reset_with_sum_func);
+void count_field_types(SELECT_LEX *select_lex, TMP_TABLE_PARAM *param, 
+                       List<Item> &fields, bool reset_with_sum_func);
 bool setup_copy_fields(THD *thd, TMP_TABLE_PARAM *param,
 		       Item **ref_pointer_array,
 		       List<Item> &new_list1, List<Item> &new_list2,
@@ -502,9 +521,13 @@ public:
   store_key(THD *thd, Field *field_arg, char *ptr, char *null, uint length)
     :null_key(0), null_ptr(null), err(0)
   {
-    if (field_arg->type() == FIELD_TYPE_BLOB)
+    if (field_arg->type() == FIELD_TYPE_BLOB
+        || field_arg->type() == FIELD_TYPE_GEOMETRY)
     {
-      /* Key segments are always packed with a 2 byte length prefix */
+      /* 
+        Key segments are always packed with a 2 byte length prefix.
+        See mi_rkey for details.
+      */
       to_field=new Field_varstring(ptr, length, 2, (uchar*) null, 1, 
 				   Field::NONE, field_arg->field_name,
 				   field_arg->table, field_arg->charset());
@@ -525,14 +548,17 @@ public:
   enum store_key_result copy()
   {
     enum store_key_result result;
-    enum_check_fields saved_count_cuted_fields= 
-      to_field->table->in_use->count_cuted_fields;
+    THD *thd= to_field->table->in_use;
+    enum_check_fields saved_count_cuted_fields= thd->count_cuted_fields;
+    ulong sql_mode= thd->variables.sql_mode;
+    thd->variables.sql_mode&= ~(MODE_NO_ZERO_IN_DATE | MODE_NO_ZERO_DATE);
 
-    to_field->table->in_use->count_cuted_fields= CHECK_FIELD_IGNORE;
+    thd->count_cuted_fields= CHECK_FIELD_IGNORE;
 
     result= copy_inner();
 
-    to_field->table->in_use->count_cuted_fields= saved_count_cuted_fields;
+    thd->count_cuted_fields= saved_count_cuted_fields;
+    thd->variables.sql_mode= sql_mode;
 
     return result;
   }

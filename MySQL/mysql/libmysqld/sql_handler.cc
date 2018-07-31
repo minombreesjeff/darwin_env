@@ -65,11 +65,6 @@
 static enum enum_ha_read_modes rkey_to_rnext[]=
 { RNEXT_SAME, RNEXT, RPREV, RNEXT, RPREV, RNEXT, RPREV, RPREV };
 
-#define HANDLER_TABLES_HACK(thd) {      \
-  TABLE *tmp=thd->open_tables;          \
-  thd->open_tables=thd->handler_tables; \
-  thd->handler_tables=tmp; }
-
 static int mysql_ha_flush_table(THD *thd, TABLE **table_ptr, uint mode_flags);
 
 
@@ -119,6 +114,44 @@ static void mysql_ha_hash_free(TABLE_LIST *tables)
   my_free((char*) tables, MYF(0));
 }
 
+/**
+  Close a HANDLER table.
+
+  @param thd Thread identifier.
+  @param tables A list of tables with the first entry to close.
+
+  @note Though this function takes a list of tables, only the first list entry
+  will be closed.
+  @note Broadcasts refresh if it closed the table.
+*/
+
+static void mysql_ha_close_table(THD *thd, TABLE_LIST *tables)
+{
+  TABLE **table_ptr;
+
+  /*
+    Though we could take the table pointer from hash_tables->table,
+    we must follow the thd->handler_tables chain anyway, as we need the
+    address of the 'next' pointer referencing this table
+    for close_thread_table().
+  */
+  for (table_ptr= &(thd->handler_tables);
+       *table_ptr && (*table_ptr != tables->table);
+         table_ptr= &(*table_ptr)->next)
+    ;
+
+  if (*table_ptr)
+  {
+    (*table_ptr)->file->ha_index_or_rnd_end();
+    VOID(pthread_mutex_lock(&LOCK_open));
+    if (close_thread_table(thd, table_ptr))
+    {
+      /* Tell threads waiting for refresh that something has happened */
+      broadcast_refresh();
+    }
+    VOID(pthread_mutex_unlock(&LOCK_open));
+  }
+}
 
 /*
   Open a HANDLER table.
@@ -145,10 +178,11 @@ static void mysql_ha_hash_free(TABLE_LIST *tables)
 
 bool mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen)
 {
-  TABLE_LIST    *hash_tables;
+  TABLE_LIST    *hash_tables = NULL;
   char          *db, *name, *alias;
   uint          dblen, namelen, aliaslen, counter;
   int           error;
+  TABLE         *backup_open_tables;
   DBUG_ENTER("mysql_ha_open");
   DBUG_PRINT("enter",("'%s'.'%s' as '%s'  reopen: %d",
                       tables->db, tables->table_name, tables->alias,
@@ -178,17 +212,39 @@ bool mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen)
   }
 
   /*
+    Save and reset the open_tables list so that open_tables() won't
+    be able to access (or know about) the previous list. And on return
+    from open_tables(), thd->open_tables will contain only the opened
+    table.
+
+    The thd->handler_tables list is kept as-is to avoid deadlocks if
+    open_table(), called by open_tables(), needs to back-off because
+    of a pending name-lock on the table being opened.
+
+    See open_table() back-off comments for more details.
+  */
+  backup_open_tables= thd->open_tables;
+  thd->open_tables= NULL;
+
+  /*
     open_tables() will set 'tables->table' if successful.
     It must be NULL for a real open when calling open_tables().
   */
   DBUG_ASSERT(! tables->table);
-  HANDLER_TABLES_HACK(thd);
 
   /* for now HANDLER can be used only for real TABLES */
   tables->required_type= FRMTYPE_TABLE;
   error= open_tables(thd, &tables, &counter, 0);
 
-  HANDLER_TABLES_HACK(thd);
+  /* restore the state and merge the opened table into handler_tables list */
+  if (thd->open_tables)
+  {
+    thd->open_tables->next= thd->handler_tables;
+    thd->handler_tables= thd->open_tables;
+  }
+
+  thd->open_tables= backup_open_tables;
+
   if (error)
     goto err;
 
@@ -197,7 +253,6 @@ bool mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen)
   {
     if (! reopen)
       my_error(ER_ILLEGAL_HA, MYF(0), tables->alias);
-    mysql_ha_close(thd, tables);
     goto err;
   }
 
@@ -225,11 +280,7 @@ bool mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen)
 
     /* add to hash */
     if (my_hash_insert(&thd->handler_tables_hash, (byte*) hash_tables))
-    {
-      my_free((char*) hash_tables, MYF(0));
-      mysql_ha_close(thd, tables);
       goto err;
-    }
   }
 
   if (! reopen)
@@ -238,13 +289,17 @@ bool mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen)
   DBUG_RETURN(FALSE);
 
 err:
+  if (hash_tables)
+    my_free((char*) hash_tables, MYF(0));
+  if (tables->table)
+    mysql_ha_close_table(thd, tables);
   DBUG_PRINT("exit",("ERROR"));
   DBUG_RETURN(TRUE);
 }
 
 
 /*
-  Close a HANDLER table.
+  Close a HANDLER table by alias or table name
 
   SYNOPSIS
     mysql_ha_close()
@@ -252,9 +307,8 @@ err:
     tables                      A list of tables with the first entry to close.
 
   DESCRIPTION
-    Though this function takes a list of tables, only the first list entry
-    will be closed.
-    Broadcasts refresh if it closed the table.
+    Closes the table that is associated (on the handler tables hash) with the
+    name (table->alias) of the specified table.
 
   RETURN
     FALSE ok
@@ -264,7 +318,6 @@ err:
 bool mysql_ha_close(THD *thd, TABLE_LIST *tables)
 {
   TABLE_LIST    *hash_tables;
-  TABLE         **table_ptr;
   DBUG_ENTER("mysql_ha_close");
   DBUG_PRINT("enter",("'%s'.'%s' as '%s'",
                       tables->db, tables->table_name, tables->alias));
@@ -273,28 +326,7 @@ bool mysql_ha_close(THD *thd, TABLE_LIST *tables)
                                               (byte*) tables->alias,
                                               strlen(tables->alias) + 1)))
   {
-    /*
-      Though we could take the table pointer from hash_tables->table,
-      we must follow the thd->handler_tables chain anyway, as we need the
-      address of the 'next' pointer referencing this table
-      for close_thread_table().
-    */
-    for (table_ptr= &(thd->handler_tables);
-         *table_ptr && (*table_ptr != hash_tables->table);
-           table_ptr= &(*table_ptr)->next)
-      ;
-
-    if (*table_ptr)
-    {
-      (*table_ptr)->file->ha_index_or_rnd_end();
-      VOID(pthread_mutex_lock(&LOCK_open));
-      if (close_thread_table(thd, table_ptr))
-      {
-        /* Tell threads waiting for refresh that something has happened */
-        broadcast_refresh();
-      }
-      VOID(pthread_mutex_unlock(&LOCK_open));
-    }
+    mysql_ha_close_table(thd, hash_tables);
     hash_delete(&thd->handler_tables_hash, (byte*) hash_tables);
   }
   else
@@ -337,7 +369,7 @@ bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
                    ha_rows select_limit_cnt, ha_rows offset_limit_cnt)
 {
   TABLE_LIST    *hash_tables;
-  TABLE         *table;
+  TABLE         *table, *backup_open_tables;
   MYSQL_LOCK    *lock;
   List<Item>	list;
   Protocol	*protocol= thd->protocol;
@@ -347,7 +379,7 @@ bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
   uint          num_rows;
   byte		*key;
   uint		key_len;
-  bool          not_used;
+  bool          need_reopen;
   DBUG_ENTER("mysql_ha_read");
   DBUG_PRINT("enter",("'%s'.'%s' as '%s'",
                       tables->db, tables->table_name, tables->alias));
@@ -361,6 +393,7 @@ bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
   List_iterator<Item> it(list);
   it++;
 
+retry:
   if ((hash_tables= (TABLE_LIST*) hash_search(&thd->handler_tables_hash,
                                               (byte*) tables->alias,
                                               strlen(tables->alias) + 1)))
@@ -413,9 +446,34 @@ bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
   }
   tables->table=table;
 
-  HANDLER_TABLES_HACK(thd);
-  lock= mysql_lock_tables(thd, &tables->table, 1, 0, &not_used);
-  HANDLER_TABLES_HACK(thd);
+  /* save open_tables state */
+  backup_open_tables= thd->open_tables;
+  /*
+    mysql_lock_tables() needs thd->open_tables to be set correctly to
+    be able to handle aborts properly. When the abort happens, it's
+    safe to not protect thd->handler_tables because it won't close any
+    tables.
+  */
+  thd->open_tables= thd->handler_tables;
+
+  lock= mysql_lock_tables(thd, &tables->table, 1,
+                          MYSQL_LOCK_NOTIFY_IF_NEED_REOPEN, &need_reopen);
+
+  /* restore previous context */
+  thd->open_tables= backup_open_tables;
+
+  if (need_reopen)
+  {
+    mysql_ha_close_table(thd, tables);
+    hash_tables->table= NULL;
+    /*
+      The lock might have been aborted, we need to manually reset
+      thd->some_tables_deleted because handler's tables are closed
+      in a non-standard way. Otherwise we might loop indefinitely.
+    */
+    thd->some_tables_deleted= 0;
+    goto retry;
+  }
 
   if (!lock)
     goto err0; // mysql_lock_tables() printed error message already
@@ -426,7 +484,7 @@ bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
       cond->cleanup();                          // File was reopened
     if ((!cond->fixed &&
 	 cond->fix_fields(thd, &cond)) || cond->check_cols(1))
-      goto err0;
+      goto err;
   }
 
   if (keyname)
@@ -434,13 +492,13 @@ bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
     if ((keyno=find_type(keyname, &table->s->keynames, 1+2)-1)<0)
     {
       my_error(ER_KEY_DOES_NOT_EXITS, MYF(0), keyname, tables->alias);
-      goto err0;
+      goto err;
     }
   }
 
   if (insert_fields(thd, &thd->lex->select_lex.context,
                     tables->db, tables->alias, &it, 0))
-    goto err0;
+    goto err;
 
   protocol->send_fields(&list, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
 
@@ -745,49 +803,4 @@ static int mysql_ha_flush_table(THD *thd, TABLE **table_ptr, uint mode_flags)
   }
 
   DBUG_RETURN(0);
-}
-
-
-/*
-  Mark tables for reopen.
-
-  SYNOPSIS
-    mysql_ha_mark_tables_for_reopen()
-    thd                         Thread identifier.
-    table                       Table list to mark for reopen.
-
-  DESCRIPTION
-    For each table found in the handler hash mark it as closed
-    (ready for reopen) and end all index/table scans.
-
-  NOTE
-    The caller must lock LOCK_open.
-*/
-
-void mysql_ha_mark_tables_for_reopen(THD *thd, TABLE *table)
-{
-  DBUG_ENTER("mysql_ha_mark_tables_for_reopen");
-
-  safe_mutex_assert_owner(&LOCK_open);
-  for (; table; table= table->next)
-  {
-    /*
-      Some elements in open table list, for example placeholders used for
-      name-locking, can have alias set to 0.
-    */
-    if (table->alias)
-    {
-      TABLE_LIST *hash_tables;
-      if ((hash_tables= (TABLE_LIST*) hash_search(&thd->handler_tables_hash,
-                                                  (byte*) table->alias,
-                                                  strlen(table->alias) + 1)))
-      {
-        /* Mark table as ready for reopen. */
-        hash_tables->table= NULL;
-        /* End open index/table scans. */
-        table->file->ha_index_or_rnd_end();
-      }
-    }
-  }
-  DBUG_VOID_RETURN;
 }

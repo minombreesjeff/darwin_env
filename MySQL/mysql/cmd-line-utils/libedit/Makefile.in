@@ -67,7 +67,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 LIBRARIES = $(noinst_LIBRARIES)
 libedit_a_AR = $(AR) $(ARFLAGS)
@@ -78,7 +78,7 @@ am_libedit_a_OBJECTS = chared.$(OBJEXT) el.$(OBJEXT) history.$(OBJEXT) \
 	parse.$(OBJEXT) read.$(OBJEXT) refresh.$(OBJEXT) sig.$(OBJEXT) \
 	term.$(OBJEXT) tty.$(OBJEXT) help.$(OBJEXT) fcns.$(OBJEXT)
 libedit_a_OBJECTS = $(am_libedit_a_OBJECTS)
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -111,6 +111,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -151,7 +152,15 @@ CXX_VERSION = @CXX_VERSION@
 CYGPATH_W = @CYGPATH_W@
 DARWIN_MWCC_FALSE = @DARWIN_MWCC_FALSE@
 DARWIN_MWCC_TRUE = @DARWIN_MWCC_TRUE@
-DEFS = -DUNDEF_THREADS_HACK -DHAVE_CONFIG_H -DNO_KILL_INTR 
+
+# Make sure to include stuff from this directory first, to get right "config.h"
+# Automake puts into DEFAULT_INCLUDES this source and corresponding
+# build directory together with ../../include to let all make files
+# find the central "config.h". This variable is used before INCLUDES
+# above. But in automake 1.10 the order of these are changed. Put the
+# includes of this directory into DEFS to always be sure it is first
+# before DEFAULT_INCLUDES on the compile line.
+DEFS = -DUNDEF_THREADS_HACK -DHAVE_CONFIG_H -DNO_KILL_INTR -I. -I$(srcdir)
 DEPDIR = @DEPDIR@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
 DOXYGEN = @DOXYGEN@
@@ -248,7 +257,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -299,6 +310,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -367,9 +379,7 @@ yassl_taocrypt_extra_cxxflags = @yassl_taocrypt_extra_cxxflags@
 zlib_dir = @zlib_dir@
 ASRC = $(srcdir)/vi.c $(srcdir)/emacs.c $(srcdir)/common.c
 AHDR = vi.h emacs.h common.h
-INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include \
-			-I$(srcdir)/../.. -I..
-
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include
 noinst_LIBRARIES = libedit.a
 libedit_a_SOURCES = chared.c el.c history.c map.c prompt.c readline.c \
 			search.c tokenizer.c vi.c common.c emacs.c \

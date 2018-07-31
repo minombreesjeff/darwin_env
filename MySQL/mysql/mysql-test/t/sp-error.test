@@ -1087,12 +1087,12 @@ delimiter ;|
 #
 # BUG 12490 (Packets out of order if calling HELP CONTENTS from Stored Procedure)
 #
---error 1314
+--error ER_SP_BADSTATEMENT
 CREATE PROCEDURE BUG_12490() HELP CONTENTS;
---error 1314
+--error ER_SP_BADSTATEMENT
 CREATE FUNCTION BUG_12490() RETURNS INT HELP CONTENTS;
 CREATE TABLE t_bug_12490(a int);
---error 1314
+--error ER_SP_BADSTATEMENT
 CREATE TRIGGER BUG_12490 BEFORE UPDATE ON t_bug_12490 FOR EACH ROW HELP CONTENTS;
 DROP TABLE t_bug_12490;
 
@@ -1397,9 +1397,9 @@ CREATE TRIGGER tr1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN create view v1 as sele
 -- error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
 CREATE FUNCTION bug_13627_f() returns int BEGIN create view v1 as select 1; return 1; END |
 
--- error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+-- error ER_SP_BADSTATEMENT
 CREATE TRIGGER tr1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN alter view v1 as select 1; END |
--- error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+-- error ER_SP_BADSTATEMENT
 CREATE FUNCTION bug_13627_f() returns int BEGIN alter view v1 as select 1; return 1; END |
 
 -- error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
@@ -1744,7 +1744,7 @@ drop procedure bug15091;
 drop function if exists bug16896;
 --enable_warnings
 
---error ER_SP_NO_AGGREGATE
+--error ER_PARSE_ERROR
 create aggregate function bug16896() returns int return 1;
 
 
@@ -2088,6 +2088,92 @@ retry:
 end//
 
 delimiter ;//
+
+#
+# Bug#29816 Syntactically wrong query fails with misleading error message
+#
+
+--disable_warnings
+DROP DATABASE IF EXISTS mysqltest;
+--enable_warnings
+CREATE DATABASE mysqltest;
+USE mysqltest;
+DROP DATABASE mysqltest;
+# Both ER_SP_DOES_NOT_EXIST and ER_PARSE_ERROR are valid here,
+# the result is implementation dependent:
+# See Bug#29816 for details
+--error ER_SP_DOES_NOT_EXIST
+SELECT inexistent(), 1 + ,;
+--error ER_SP_DOES_NOT_EXIST
+SELECT inexistent();
+--error ER_PARSE_ERROR
+SELECT .inexistent();
+--error ER_PARSE_ERROR
+SELECT ..inexistent();
+USE test;
+
+#
+# Bug#33983 (Stored Procedures: wrong end <label> syntax is accepted)
+#
+
+--disable_warnings
+drop procedure if exists proc_33983_a;
+drop procedure if exists proc_33983_b;
+drop procedure if exists proc_33983_c;
+drop procedure if exists proc_33983_d;
+--enable_warnings
+
+delimiter |;
+
+--error ER_SP_LABEL_MISMATCH
+create procedure proc_33983_a()
+begin
+  label1:
+    begin
+      label2:
+      begin
+        select 1;
+      end label1;
+    end;
+end|
+
+--error ER_SP_LABEL_MISMATCH
+create procedure proc_33983_b()
+begin
+  label1:
+    repeat
+      label2:
+      repeat
+        select 1;
+      until FALSE end repeat label1;
+    until FALSE end repeat;
+end|
+
+--error ER_SP_LABEL_MISMATCH
+create procedure proc_33983_c()
+begin
+  label1:
+    while TRUE do
+      label2:
+      while TRUE do
+        select 1;
+      end while label1;
+    end while;
+end|
+
+--error ER_SP_LABEL_MISMATCH
+create procedure proc_33983_d()
+begin
+  label1:
+    loop
+      label2:
+      loop
+        select 1;
+      end loop label1;
+    end loop;
+end|
+
+delimiter ;|
 
 #
 # BUG#NNNN: New bug synopsis

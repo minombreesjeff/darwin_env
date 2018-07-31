@@ -348,6 +348,11 @@ pthread_mutex_t federated_mutex;                // This is the mutex we use to
                                                 // init the hash
 static int federated_init= FALSE;               // Variable for checking the
                                                 // init state of hash
+static char ident_quote_char= '`';              // Character for quoting
+                                                // identifiers
+static char value_quote_char= '\'';             // Character for quoting
+                                                // literals
+static const int bulk_padding= 64;              // bytes "overhead" in packet
 
 /* Federated storage engine handlerton */
 
@@ -440,110 +445,55 @@ bool federated_db_end()
   return FALSE;
 }
 
-/*
- Check (in create) whether the tables exists, and that it can be connected to
 
-  SYNOPSIS
-    check_foreign_data_source()
-      share               pointer to FEDERATED share
-      table_create_flag   tells us that ::create is the caller, 
-                          therefore, return CANT_CREATE_FEDERATED_TABLE
+/**
+  @brief Append identifiers to the string.
 
-  DESCRIPTION
-    This method first checks that the connection information that parse url
-    has populated into the share will be sufficient to connect to the foreign
-    table, and if so, does the foreign table exist.
+  @param[in,out] string	The target string.
+  @param[in] name 		Identifier name
+  @param[in] length 	Length of identifier name in bytes
+  @param[in] quote_char Quote char to use for quoting identifier.
+
+  @return Operation Status
+  @retval FALSE OK
+  @retval TRUE  There was an error appending to the string.
+
+  @note This function is based upon the append_identifier() function
+        in sql_show.cc except that quoting always occurs.
 */
 
-static int check_foreign_data_source(FEDERATED_SHARE *share,
-                                     bool table_create_flag)
+static bool append_ident(String *string, const char *name, uint length,
+                         const char quote_char)
 {
-  char escaped_table_name[NAME_LEN*2];
-  char query_buffer[FEDERATED_QUERY_BUFFER_SIZE];
-  char error_buffer[FEDERATED_QUERY_BUFFER_SIZE];
-  uint error_code;
-  String query(query_buffer, sizeof(query_buffer), &my_charset_bin);
-  MYSQL *mysql;
-  DBUG_ENTER("ha_federated::check_foreign_data_source");
+  bool result;
+  uint clen;
+  const char *name_end;
+  DBUG_ENTER("append_ident");
 
-  /* Zero the length, otherwise the string will have misc chars */
-  query.length(0);
-
-  /* error out if we can't alloc memory for mysql_init(NULL) (per Georg) */
-  if (!(mysql= mysql_init(NULL)))
-    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
-  /* check if we can connect */
-  if (!mysql_real_connect(mysql,
-                          share->hostname,
-                          share->username,
-                          share->password,
-                          share->database,
-                          share->port,
-                          share->socket, 0))
+  if (quote_char)
   {
-    /*
-      we want the correct error message, but it to return
-      ER_CANT_CREATE_FEDERATED_TABLE if called by ::create
-    */
-    error_code= (table_create_flag ?
-                 ER_CANT_CREATE_FEDERATED_TABLE :
-                 ER_CONNECT_TO_FOREIGN_DATA_SOURCE);
+    string->reserve(length * 2 + 2);
+    if ((result= string->append(&quote_char, 1, system_charset_info)))
+      goto err;
 
-    my_sprintf(error_buffer,
-               (error_buffer,
-                "database: '%s'  username: '%s'  hostname: '%s'",
-                share->database, share->username, share->hostname));
-
-    my_error(ER_CONNECT_TO_FOREIGN_DATA_SOURCE, MYF(0), error_buffer);
-    goto error;
+    for (name_end= name+length; name < name_end; name+= clen)
+    {
+      uchar c= *(uchar *) name;
+      if (!(clen= my_mbcharlen(system_charset_info, c)))
+        clen= 1;
+      if (clen == 1 && c == (uchar) quote_char &&
+          (result= string->append(&quote_char, 1, system_charset_info)))
+        goto err;
+      if ((result= string->append(name, clen, string->charset())))
+        goto err;
+    }
+    result= string->append(&quote_char, 1, system_charset_info);
   }
   else
-  {
-    int escaped_table_name_length= 0;
-    /*
-      Since we do not support transactions at this version, we can let the 
-      client API silently reconnect. For future versions, we will need more 
-      logic to deal with transactions
-    */
-    mysql->reconnect= 1;
-    /*
-      Note: I am not using INORMATION_SCHEMA because this needs to work with 
-      versions prior to 5.0
-      
-      if we can connect, then make sure the table exists 
+    result= string->append(name, length, system_charset_info);
 
-      the query will be: SELECT * FROM `tablename` WHERE 1=0
-    */
-    query.append(FEDERATED_SELECT);
-    query.append(FEDERATED_STAR);
-    query.append(FEDERATED_FROM);
-    query.append(FEDERATED_BTICK);
-    escaped_table_name_length=
-      escape_string_for_mysql(&my_charset_bin, (char*)escaped_table_name,
-                            sizeof(escaped_table_name),
-                            share->table_name,
-                            share->table_name_length);
-    query.append(escaped_table_name, escaped_table_name_length);
-    query.append(FEDERATED_BTICK);
-    query.append(FEDERATED_WHERE);
-    query.append(FEDERATED_FALSE);
-
-    if (mysql_real_query(mysql, query.ptr(), query.length()))
-    {
-      error_code= table_create_flag ?
-        ER_CANT_CREATE_FEDERATED_TABLE : ER_FOREIGN_DATA_SOURCE_DOESNT_EXIST;
-      my_sprintf(error_buffer, (error_buffer, "error: %d  '%s'",
-                                mysql_errno(mysql), mysql_error(mysql)));
-
-      my_error(error_code, MYF(0), error_buffer);
-      goto error;
-    }
-  }
-  error_code=0;
-
-error:
-    mysql_close(mysql);
-    DBUG_RETURN(error_code);
+err:
+  DBUG_RETURN(result);
 }
 
 
@@ -693,13 +643,20 @@ static int parse_url(FEDERATED_SHARE *share, TABLE *table,
   if ((strchr(share->table_name, '/')))
     goto error;
 
+  /*
+    If hostname is omitted, we set it to NULL. According to
+    mysql_real_connect() manual:
+    The value of host may be either a hostname or an IP address.
+    If host is NULL or the string "localhost", a connection to the
+    local host is assumed.
+  */
   if (share->hostname[0] == '\0')
     share->hostname= NULL;
 
   if (!share->port)
   {
-    if (strcmp(share->hostname, my_localhost) == 0)
-      share->socket= my_strdup(MYSQL_UNIX_ADDR, MYF(0));
+    if (!share->hostname || strcmp(share->hostname, my_localhost) == 0)
+      share->socket= (char*) MYSQL_UNIX_ADDR;
     else
       share->port= MYSQL_PORT;
   }
@@ -725,7 +682,9 @@ error:
 ha_federated::ha_federated(TABLE *table_arg)
   :handler(&federated_hton, table_arg),
   mysql(0), stored_result(0)
-{}
+{
+  bzero(&bulk_insert, sizeof(bulk_insert));
+}
 
 
 /*
@@ -784,9 +743,8 @@ uint ha_federated::convert_row_to_internal_format(byte *record,
 static bool emit_key_part_name(String *to, KEY_PART_INFO *part)
 {
   DBUG_ENTER("emit_key_part_name");
-  if (to->append(FEDERATED_BTICK) ||
-      to->append(part->field->field_name) ||
-      to->append(FEDERATED_BTICK))
+  if (append_ident(to, part->field->field_name, 
+                   strlen(part->field->field_name), ident_quote_char))
     DBUG_RETURN(1);                           // Out of memory
   DBUG_RETURN(0);
 }
@@ -1137,16 +1095,26 @@ bool ha_federated::create_where_from_key(String *to,
       uint store_length= key_part->store_length;
       uint part_length= min(store_length, length);
       needs_quotes= 1;
-      DBUG_DUMP("key, start of loop", (char *) ptr, length);
+      DBUG_DUMP("key, start of loop", (uchar *)ptr, length);
 
       if (key_part->null_bit)
       {
         if (*ptr++)
         {
+          /*
+            We got "IS [NOT] NULL" condition against nullable column. We
+            distinguish between "IS NOT NULL" and "IS NULL" by flag. For
+            "IS NULL", flag is set to HA_READ_KEY_EXACT.
+          */
           if (emit_key_part_name(&tmp, key_part) ||
-              tmp.append(FEDERATED_ISNULL))
+              tmp.append(ranges[i]->flag == HA_READ_KEY_EXACT ?
+                         FEDERATED_ISNULL : " IS NOT NULL "))
             DBUG_RETURN(1);
-          continue;
+          /*
+            We need to adjust pointer and length to be prepared for next
+            key part. As well as check if this was last key part.
+          */
+          goto prepare_for_next_key_part;
         }
       }
 
@@ -1248,12 +1216,18 @@ bool ha_federated::create_where_from_key(String *to,
       if (tmp.append(FEDERATED_CLOSEPAREN))
         DBUG_RETURN(1);
 
+prepare_for_next_key_part:
       if (store_length >= length)
         break;
       DBUG_PRINT("info", ("remainder %d", remainder));
       DBUG_ASSERT(remainder > 1);
       length-= store_length;
-      ptr+= store_length;
+      /*
+        For nullable columns, null-byte is already skipped before, that is
+        ptr was incremented by 1. Since store_length still counts null-byte,
+        we need to subtract 1 from store_length.
+      */
+      ptr+= store_length - test(key_part->null_bit);
       if (tmp.append(FEDERATED_AND))
         DBUG_RETURN(1);
 
@@ -1309,31 +1283,28 @@ static FEDERATED_SHARE *get_share(const char *table_name, TABLE *table)
     query.append(FEDERATED_SELECT);
     for (field= table->field; *field; field++)
     {
-      query.append(FEDERATED_BTICK);
-      query.append((*field)->field_name);
-      query.append(FEDERATED_BTICK);
+      append_ident(&query, (*field)->field_name, 
+                   strlen((*field)->field_name), ident_quote_char);
       query.append(FEDERATED_COMMA);
     }
     query.length(query.length()- strlen(FEDERATED_COMMA));
     query.append(FEDERATED_FROM);
-    query.append(FEDERATED_BTICK);
+
+    tmp_share.table_name_length= strlen(tmp_share.table_name);
+    append_ident(&query, tmp_share.table_name, 
+                 tmp_share.table_name_length, ident_quote_char);
 
     if (!(share= (FEDERATED_SHARE *)
           my_multi_malloc(MYF(MY_WME),
                           &share, sizeof(*share),
-                          &select_query,
-                          query.length()+table->s->connect_string.length+1,
+                          &select_query, query.length()+1,
                           NullS)))
       goto error;
 
     memcpy(share, &tmp_share, sizeof(tmp_share));
+    memcpy(select_query, query.ptr(), query.length()+1);
 
-    share->table_name_length= strlen(share->table_name);
-    /* TODO: share->table_name to LEX_STRING object */
-    query.append(share->table_name, share->table_name_length);
-    query.append(FEDERATED_BTICK);
     share->select_query= select_query;
-    strmov(share->select_query, query.ptr());
     share->use_count= 0;
     DBUG_PRINT("info",
                ("share->select_query %s", share->select_query));
@@ -1371,7 +1342,6 @@ static int free_share(FEDERATED_SHARE *share)
   {
     hash_delete(&federated_open_tables, (byte*) share);
     my_free((gptr) share->scheme, MYF(MY_ALLOW_ZERO_PTR));
-    my_free((gptr) share->socket, MYF(MY_ALLOW_ZERO_PTR));
     thr_lock_delete(&share->lock);
     VOID(pthread_mutex_destroy(&share->mutex));
     my_free((gptr) share, MYF(0));
@@ -1431,41 +1401,14 @@ int ha_federated::open(const char *name, int mode, uint test_if_locked)
     DBUG_RETURN(1);
   thr_lock_data_init(&share->lock, &lock, NULL);
 
-  /* Connect to foreign database mysql_real_connect() */
-  mysql= mysql_init(0);
-
-  /*
-    BUG# 17044 Federated Storage Engine is not UTF8 clean
-    Add set names to whatever charset the table is at open
-    of table
-  */
-  /* this sets the csname like 'set names utf8' */
-  mysql_options(mysql,MYSQL_SET_CHARSET_NAME,
-                this->table->s->table_charset->csname);
-
-  if (!mysql || !mysql_real_connect(mysql,
-                                   share->hostname,
-                                   share->username,
-                                   share->password,
-                                   share->database,
-                                   share->port,
-                                   share->socket, 0))
-  {
-    free_share(share);
-    DBUG_RETURN(stash_remote_error());
-  }
-  /*
-    Since we do not support transactions at this version, we can let the client
-    API silently reconnect. For future versions, we will need more logic to
-    deal with transactions
-  */
-
-  mysql->reconnect= 1;
+  DBUG_ASSERT(mysql == NULL);
 
   ref_length= (table->s->primary_key != MAX_KEY ?
                table->key_info[table->s->primary_key].key_length :
                table->s->reclength);
   DBUG_PRINT("info", ("ref_length: %u", ref_length));
+
+  reset();
 
   DBUG_RETURN(0);
 }
@@ -1494,8 +1437,8 @@ int ha_federated::close(void)
     stored_result= 0;
   }
   /* Disconnect from mysql */
-  if (mysql)                                    // QQ is this really needed
-    mysql_close(mysql);
+  mysql_close(mysql);
+  mysql= NULL;
   retval= free_share(share);
   DBUG_RETURN(retval);
 
@@ -1538,6 +1481,83 @@ inline uint field_in_record_is_null(TABLE *table,
   DBUG_RETURN(0);
 }
 
+
+/**
+  @brief Construct the INSERT statement.
+  
+  @details This method will construct the INSERT statement and appends it to
+  the supplied query string buffer.
+  
+  @return
+    @retval FALSE       No error
+    @retval TRUE        Failure
+*/
+
+bool ha_federated::append_stmt_insert(String *query)
+{
+  char insert_buffer[FEDERATED_QUERY_BUFFER_SIZE];
+  Field **field;
+  uint tmp_length;
+
+  /* The main insert query string */
+  String insert_string(insert_buffer, sizeof(insert_buffer), &my_charset_bin);
+  DBUG_ENTER("ha_federated::append_stmt_insert");
+
+  insert_string.length(0);
+
+  if (replace_duplicates)
+    insert_string.append(STRING_WITH_LEN("REPLACE INTO "));
+  else if (ignore_duplicates && !insert_dup_update)
+    insert_string.append(STRING_WITH_LEN("INSERT IGNORE INTO "));
+  else
+    insert_string.append(STRING_WITH_LEN("INSERT INTO "));
+  append_ident(&insert_string, share->table_name, share->table_name_length, 
+               ident_quote_char);
+  insert_string.append(FEDERATED_OPENPAREN);
+  tmp_length= insert_string.length() - strlen(FEDERATED_COMMA);
+
+  /*
+    loop through the field pointer array, add any fields to both the values
+    list and the fields list that match the current query id
+  */
+  for (field= table->field; *field; field++)
+  {
+    /* append the field name */
+    append_ident(&insert_string, (*field)->field_name, 
+                 strlen((*field)->field_name), ident_quote_char);
+
+    /* append commas between both fields and fieldnames */
+    /*
+      unfortunately, we can't use the logic
+      if *(fields + 1) to make the following
+      appends conditional because we may not append
+      if the next field doesn't match the condition:
+      (((*field)->query_id && (*field)->query_id == current_query_id)
+    */
+    insert_string.append(FEDERATED_COMMA);
+  }
+
+  /*
+    remove trailing comma
+  */
+  insert_string.length(insert_string.length() - strlen(FEDERATED_COMMA));
+
+  /*
+    if there were no fields, we don't want to add a closing paren
+    AND, we don't want to chop off the last char '('
+    insert will be "INSERT INTO t1 VALUES ();"
+  */
+  if (insert_string.length() > tmp_length)
+  {
+    insert_string.append(FEDERATED_CLOSEPAREN);
+  }
+
+  insert_string.append(FEDERATED_VALUES);
+
+  DBUG_RETURN(query->append(insert_string));
+}
+
+
 /*
   write_row() inserts a row. No extra() hint is given currently if a bulk load
   is happeneding. buf() is a byte array of data. You can use the field
@@ -1554,13 +1574,14 @@ inline uint field_in_record_is_null(TABLE *table,
 
 int ha_federated::write_row(byte *buf)
 {
-  char insert_buffer[FEDERATED_QUERY_BUFFER_SIZE];
   char values_buffer[FEDERATED_QUERY_BUFFER_SIZE];
   char insert_field_value_buffer[STRING_BUFFER_USUAL_SIZE];
   Field **field;
+  uint tmp_length;
+  int error= 0;
+  bool use_bulk_insert;
+  bool auto_increment_update_required= (table->next_number_field != NULL);
 
-  /* The main insert query string */
-  String insert_string(insert_buffer, sizeof(insert_buffer), &my_charset_bin);
   /* The string containing the values to be added to the insert */
   String values_string(values_buffer, sizeof(values_buffer), &my_charset_bin);
   /* The actual value of the field, to be added to the values_string */
@@ -1568,7 +1589,6 @@ int ha_federated::write_row(byte *buf)
                                    sizeof(insert_field_value_buffer),
                                    &my_charset_bin);
   values_string.length(0);
-  insert_string.length(0);
   insert_field_value_string.length(0);
   DBUG_ENTER("ha_federated::write_row");
 
@@ -1578,15 +1598,19 @@ int ha_federated::write_row(byte *buf)
 
   /*
     start both our field and field values strings
+    We must disable multi-row insert for "INSERT...ON DUPLICATE KEY UPDATE"
+    Ignore duplicates is always true when insert_dup_update is true.
+    When replace_duplicates == TRUE, we can safely enable multi-row insert.
+    When performing multi-row insert, we only collect the columns values for
+    the row. The start of the statement is only created when the first
+    row is copied in to the bulk_insert string.
   */
-  insert_string.append(FEDERATED_INSERT);
-  insert_string.append(FEDERATED_BTICK);
-  insert_string.append(share->table_name, share->table_name_length);
-  insert_string.append(FEDERATED_BTICK);
-  insert_string.append(FEDERATED_OPENPAREN);
+  if (!(use_bulk_insert= bulk_insert.str && 
+        (!insert_dup_update || replace_duplicates)))
+    append_stmt_insert(&values_string);
 
-  values_string.append(FEDERATED_VALUES);
   values_string.append(FEDERATED_OPENPAREN);
+  tmp_length= values_string.length();
 
   /*
     loop through the field pointer array, add any fields to both the values
@@ -1599,14 +1623,12 @@ int ha_federated::write_row(byte *buf)
     else
     {
       (*field)->val_str(&insert_field_value_string);
-      values_string.append('\'');
+      values_string.append(value_quote_char);
       insert_field_value_string.print(&values_string);
-      values_string.append('\'');
+      values_string.append(value_quote_char);
 
       insert_field_value_string.length(0);
     }
-    /* append the field name */
-    insert_string.append((*field)->field_name);
 
     /* append the value */
     values_string.append(insert_field_value_string);
@@ -1620,32 +1642,60 @@ int ha_federated::write_row(byte *buf)
       if the next field doesn't match the condition:
       (((*field)->query_id && (*field)->query_id == current_query_id)
     */
-    insert_string.append(FEDERATED_COMMA);
     values_string.append(FEDERATED_COMMA);
   }
 
-  /*
-    remove trailing comma
-  */
-  insert_string.length(insert_string.length() - strlen(FEDERATED_COMMA));
   /*
     if there were no fields, we don't want to add a closing paren
     AND, we don't want to chop off the last char '('
     insert will be "INSERT INTO t1 VALUES ();"
   */
-  if (table->s->fields)
+  if (values_string.length() > tmp_length)
   {
     /* chops off leading commas */
     values_string.length(values_string.length() - strlen(FEDERATED_COMMA));
-    insert_string.append(FEDERATED_CLOSEPAREN);
   }
   /* we always want to append this, even if there aren't any fields */
   values_string.append(FEDERATED_CLOSEPAREN);
 
-  /* add the values */
-  insert_string.append(values_string);
+  if (use_bulk_insert)
+  {
+    /*
+      Send the current bulk insert out if appending the current row would
+      cause the statement to overflow the packet size, otherwise set
+      auto_increment_update_required to FALSE as no query was executed.
+    */
+    if (bulk_insert.length + values_string.length() + bulk_padding >
+        mysql->net.max_packet_size && bulk_insert.length)
+    {
+      error= real_query(bulk_insert.str, bulk_insert.length);
+      bulk_insert.length= 0;
+    }
+    else
+      auto_increment_update_required= FALSE;
+      
+    if (bulk_insert.length == 0)
+    {
+      char insert_buffer[FEDERATED_QUERY_BUFFER_SIZE];
+      String insert_string(insert_buffer, sizeof(insert_buffer), 
+                           &my_charset_bin);
+      insert_string.length(0);
+      append_stmt_insert(&insert_string);
+      dynstr_append_mem(&bulk_insert, insert_string.ptr(), 
+                        insert_string.length());
+    }
+    else
+      dynstr_append_mem(&bulk_insert, ",", 1);
 
-  if (mysql_real_query(mysql, insert_string.ptr(), insert_string.length()))
+    dynstr_append_mem(&bulk_insert, values_string.ptr(), 
+                      values_string.length());
+  }  
+  else
+  {
+    error= real_query(values_string.ptr(), values_string.length());
+  }
+  
+  if (error)
   {
     DBUG_RETURN(stash_remote_error());
   }
@@ -1653,11 +1703,90 @@ int ha_federated::write_row(byte *buf)
     If the table we've just written a record to contains an auto_increment
     field, then store the last_insert_id() value from the foreign server
   */
-  if (table->next_number_field)
+  if (auto_increment_update_required)
+  {
     update_auto_increment();
+
+    /* mysql_insert() uses this for protocol return value */
+    table->next_number_field->store(auto_increment_value, 1);
+  }
 
   DBUG_RETURN(0);
 }
+
+
+/**
+  @brief Prepares the storage engine for bulk inserts.
+  
+  @param[in] rows       estimated number of rows in bulk insert 
+                        or 0 if unknown.
+  
+  @details Initializes memory structures required for bulk insert.
+*/
+
+void ha_federated::start_bulk_insert(ha_rows rows)
+{
+  uint page_size;
+  DBUG_ENTER("ha_federated::start_bulk_insert");
+
+  dynstr_free(&bulk_insert);
+  
+  /**
+    We don't bother with bulk-insert semantics when the estimated rows == 1
+    The rows value will be 0 if the server does not know how many rows
+    would be inserted. This can occur when performing INSERT...SELECT
+  */
+  
+  if (rows == 1)
+    DBUG_VOID_RETURN;
+
+  /*
+    Make sure we have an open connection so that we know the 
+    maximum packet size.
+  */
+  if (!mysql && real_connect())
+    DBUG_VOID_RETURN;
+
+  page_size= (uint) my_getpagesize();
+
+  if (init_dynamic_string(&bulk_insert, NULL, page_size, page_size))
+    DBUG_VOID_RETURN;
+  
+  bulk_insert.length= 0;
+  DBUG_VOID_RETURN;
+}
+
+
+/**
+  @brief End bulk insert.
+  
+  @details This method will send any remaining rows to the remote server.
+  Finally, it will deinitialize the bulk insert data structure.
+  
+  @return Operation status
+  @retval       0       No error
+  @retval       != 0    Error occured at remote server. Also sets my_errno.
+*/
+
+int ha_federated::end_bulk_insert()
+{
+  int error= 0;
+  DBUG_ENTER("ha_federated::end_bulk_insert");
+  
+  if (bulk_insert.str && bulk_insert.length)
+  {
+    if (real_query(bulk_insert.str, bulk_insert.length))
+      error= stash_remote_error();
+    else
+    if (table->next_number_field)
+      update_auto_increment();
+  }
+
+  dynstr_free(&bulk_insert);
+  
+  DBUG_RETURN(my_errno= error);
+}
+
 
 /*
   ha_federated::update_auto_increment
@@ -1672,7 +1801,8 @@ void ha_federated::update_auto_increment(void)
   THD *thd= current_thd;
   DBUG_ENTER("ha_federated::update_auto_increment");
 
-  thd->insert_id(mysql->last_used_con->insert_id);
+  ha_federated::info(HA_STATUS_AUTO);
+  thd->insert_id(auto_increment_value);
   DBUG_PRINT("info",("last_insert_id: %ld", (long) auto_increment_value));
 
   DBUG_VOID_RETURN;
@@ -1688,11 +1818,10 @@ int ha_federated::optimize(THD* thd, HA_CHECK_OPT* check_opt)
 
   query.set_charset(system_charset_info);
   query.append(FEDERATED_OPTIMIZE);
-  query.append(FEDERATED_BTICK);
-  query.append(share->table_name, share->table_name_length);
-  query.append(FEDERATED_BTICK);
+  append_ident(&query, share->table_name, share->table_name_length, 
+               ident_quote_char);
 
-  if (mysql_real_query(mysql, query.ptr(), query.length()))
+  if (real_query(query.ptr(), query.length()))
   {
     DBUG_RETURN(stash_remote_error());
   }
@@ -1711,9 +1840,8 @@ int ha_federated::repair(THD* thd, HA_CHECK_OPT* check_opt)
 
   query.set_charset(system_charset_info);
   query.append(FEDERATED_REPAIR);
-  query.append(FEDERATED_BTICK);
-  query.append(share->table_name, share->table_name_length);
-  query.append(FEDERATED_BTICK);
+  append_ident(&query, share->table_name, share->table_name_length, 
+               ident_quote_char);
   if (check_opt->flags & T_QUICK)
     query.append(FEDERATED_QUICK);
   if (check_opt->flags & T_EXTEND)
@@ -1721,7 +1849,7 @@ int ha_federated::repair(THD* thd, HA_CHECK_OPT* check_opt)
   if (check_opt->sql_flags & TT_USEFRM)
     query.append(FEDERATED_USE_FRM);
 
-  if (mysql_real_query(mysql, query.ptr(), query.length()))
+  if (real_query(query.ptr(), query.length()))
   {
     DBUG_RETURN(stash_remote_error());
   }
@@ -1788,10 +1916,12 @@ int ha_federated::update_row(const byte *old_data, byte *new_data)
   update_string.length(0);
   where_string.length(0);
 
-  update_string.append(FEDERATED_UPDATE);
-  update_string.append(FEDERATED_BTICK);
-  update_string.append(share->table_name);
-  update_string.append(FEDERATED_BTICK);
+  if (ignore_duplicates)
+    update_string.append(STRING_WITH_LEN("UPDATE IGNORE "));
+  else
+    update_string.append(STRING_WITH_LEN("UPDATE "));
+  append_ident(&update_string, share->table_name,
+               share->table_name_length, ident_quote_char);
   update_string.append(FEDERATED_SET);
 
 /*
@@ -1806,8 +1936,11 @@ int ha_federated::update_row(const byte *old_data, byte *new_data)
 
   for (Field **field= table->field; *field; field++)
   {
-    where_string.append((*field)->field_name);
-    update_string.append((*field)->field_name);
+    uint field_name_length= strlen((*field)->field_name);
+    append_ident(&where_string, (*field)->field_name, field_name_length,
+                 ident_quote_char);
+    append_ident(&update_string, (*field)->field_name, field_name_length,
+                 ident_quote_char);
     update_string.append(FEDERATED_EQ);
 
     if ((*field)->is_null())
@@ -1816,9 +1949,9 @@ int ha_federated::update_row(const byte *old_data, byte *new_data)
     {
       /* otherwise = */
       (*field)->val_str(&field_value);
-      update_string.append('\'');
+      update_string.append(value_quote_char);
       field_value.print(&update_string);
-      update_string.append('\'');
+      update_string.append(value_quote_char);
       field_value.length(0);
     }
 
@@ -1829,9 +1962,9 @@ int ha_federated::update_row(const byte *old_data, byte *new_data)
       where_string.append(FEDERATED_EQ);
       (*field)->val_str(&field_value,
                         (char*) (old_data + (*field)->offset()));
-      where_string.append('\'');
+      where_string.append(value_quote_char);
       field_value.print(&where_string);
-      where_string.append('\'');
+      where_string.append(value_quote_char);
       field_value.length(0);
     }
 
@@ -1854,7 +1987,7 @@ int ha_federated::update_row(const byte *old_data, byte *new_data)
   if (!has_a_primary_key)
     update_string.append(FEDERATED_LIMIT1);
 
-  if (mysql_real_query(mysql, update_string.ptr(), update_string.length()))
+  if (real_query(update_string.ptr(), update_string.length()))
   {
     DBUG_RETURN(stash_remote_error());
   }
@@ -1888,16 +2021,16 @@ int ha_federated::delete_row(const byte *buf)
   delete_string.length(0);
   delete_string.append(FEDERATED_DELETE);
   delete_string.append(FEDERATED_FROM);
-  delete_string.append(FEDERATED_BTICK);
-  delete_string.append(share->table_name);
-  delete_string.append(FEDERATED_BTICK);
+  append_ident(&delete_string, share->table_name,
+               share->table_name_length, ident_quote_char);
   delete_string.append(FEDERATED_WHERE);
 
   for (Field **field= table->field; *field; field++)
   {
     Field *cur_field= *field;
     data_string.length(0);
-    delete_string.append(cur_field->field_name);
+    append_ident(&delete_string, (*field)->field_name,
+                 strlen((*field)->field_name), ident_quote_char);
 
     if (cur_field->is_null())
     {
@@ -1907,9 +2040,9 @@ int ha_federated::delete_row(const byte *buf)
     {
       delete_string.append(FEDERATED_EQ);
       cur_field->val_str(&data_string);
-      delete_string.append('\'');
+      delete_string.append(value_quote_char);
       data_string.print(&delete_string);
-      delete_string.append('\'');
+      delete_string.append(value_quote_char);
     }
 
     delete_string.append(FEDERATED_AND);
@@ -1919,7 +2052,7 @@ int ha_federated::delete_row(const byte *buf)
   delete_string.append(FEDERATED_LIMIT1);
   DBUG_PRINT("info",
              ("Delete sql: %s", delete_string.c_ptr_quick()));
-  if (mysql_real_query(mysql, delete_string.ptr(), delete_string.length()))
+  if (real_query(delete_string.ptr(), delete_string.length()))
   {
     DBUG_RETURN(stash_remote_error());
   }
@@ -2028,7 +2161,7 @@ int ha_federated::index_read_idx_with_result_set(byte *buf, uint index,
                         NULL, 0);
   sql_query.append(index_string);
 
-  if (mysql_real_query(mysql, sql_query.ptr(), sql_query.length()))
+  if (real_query(sql_query.ptr(), sql_query.length()))
   {
     my_sprintf(error_buffer, (error_buffer, "error: %d '%s'",
                               mysql_errno(mysql), mysql_error(mysql)));
@@ -2052,6 +2185,24 @@ error:
   table->status= STATUS_NOT_FOUND;
   my_error(retval, MYF(0), error_buffer);
   DBUG_RETURN(retval);
+}
+
+
+/*
+  This method is used exlusevely by filesort() to check if we
+  can create sorting buffers of necessary size.
+  If the handler returns more records that it declares
+  here server can just crash on filesort().
+  We cannot guarantee that's not going to happen with
+  the FEDERATED engine, as we have records==0 always if the
+  client is a VIEW, and for the table the number of
+  records can inpredictably change during execution.
+  So we return maximum possible value here.
+*/
+
+ha_rows ha_federated::estimate_rows_upper_bound()
+{
+  return HA_POS_ERROR;
 }
 
 
@@ -2094,7 +2245,7 @@ int ha_federated::read_range_first(const key_range *start_key,
     mysql_free_result(stored_result);
     stored_result= 0;
   }
-  if (mysql_real_query(mysql, sql_query.ptr(), sql_query.length()))
+  if (real_query(sql_query.ptr(), sql_query.length()))
   {
     retval= ER_QUERY_ON_FOREIGN_DATA_SOURCE;
     goto error;
@@ -2194,9 +2345,7 @@ int ha_federated::rnd_init(bool scan)
       stored_result= 0;
     }
 
-    if (mysql_real_query(mysql,
-                         share->select_query,
-                         strlen(share->select_query)))
+    if (real_query(share->select_query, strlen(share->select_query)))
       goto error;
 
     stored_result= mysql_store_result(mysql);
@@ -2397,7 +2546,6 @@ int ha_federated::info(uint flag)
 {
   char error_buffer[FEDERATED_QUERY_BUFFER_SIZE];
   char status_buf[FEDERATED_QUERY_BUFFER_SIZE];
-  char escaped_table_name[FEDERATED_QUERY_BUFFER_SIZE];
   int error;
   uint error_code;
   MYSQL_RES *result= 0;
@@ -2411,23 +2559,21 @@ int ha_federated::info(uint flag)
   {
     status_query_string.length(0);
     status_query_string.append(FEDERATED_INFO);
-    status_query_string.append(FEDERATED_SQUOTE);
+    append_ident(&status_query_string, share->table_name,
+                 share->table_name_length, value_quote_char);
 
-    escape_string_for_mysql(&my_charset_bin, (char *)escaped_table_name,
-                            sizeof(escaped_table_name),
-                            share->table_name,
-                            share->table_name_length);
-    status_query_string.append(escaped_table_name);
-    status_query_string.append(FEDERATED_SQUOTE);
-
-    if (mysql_real_query(mysql, status_query_string.ptr(),
-                         status_query_string.length()))
+    if (real_query(status_query_string.ptr(), status_query_string.length()))
       goto error;
 
     status_query_string.length(0);
 
     result= mysql_store_result(mysql);
-    if (!result)
+
+    /*
+      We're going to use fields num. 4, 12 and 13 of the resultset,
+      so make sure we have these fields.
+    */
+    if (!result || (mysql_num_fields(result) < 14))
       goto error;
 
     if (!mysql_num_rows(result))
@@ -2456,9 +2602,9 @@ int ha_federated::info(uint flag)
       data_file_length= records * mean_rec_length;
 
       if (row[12] != NULL)
-        update_time= (ha_rows) my_strtoll10(row[12], (char**) 0, &error);
+        update_time= (time_t) my_strtoll10(row[12], (char**) 0, &error);
       if (row[13] != NULL)
-        check_time= (ha_rows) my_strtoll10(row[13], (char**) 0, &error);
+        check_time= (time_t) my_strtoll10(row[13], (char**) 0, &error);
     }
 
     /*
@@ -2468,19 +2614,73 @@ int ha_federated::info(uint flag)
     block_size= 4096;
   }
 
-  if (result)
-    mysql_free_result(result);
+  if (flag & HA_STATUS_AUTO)
+    auto_increment_value= mysql->last_used_con->insert_id;
+
+  mysql_free_result(result);
 
   DBUG_RETURN(0);
 
 error:
-  if (result)
-    mysql_free_result(result);
-
-  my_sprintf(error_buffer, (error_buffer, ": %d : %s",
-                            mysql_errno(mysql), mysql_error(mysql)));
-  my_error(error_code, MYF(0), error_buffer);
+  mysql_free_result(result);
+  if (mysql)
+  {
+    my_sprintf(error_buffer, (error_buffer, ": %d : %s",
+                              mysql_errno(mysql), mysql_error(mysql)));
+    my_error(error_code, MYF(0), error_buffer);
+  }
+  else
+  if (remote_error_number != -1 /* error already reported */)
+  {
+    error_code= remote_error_number;
+    my_error(error_code, MYF(0), ER(error_code));
+  }
   DBUG_RETURN(error_code);
+}
+
+
+/**
+  @brief Handles extra signals from MySQL server
+
+  @param[in] operation  Hint for storage engine
+
+  @return Operation Status
+  @retval 0     OK
+ */
+int ha_federated::extra(ha_extra_function operation)
+{
+  DBUG_ENTER("ha_federated::extra");
+  switch (operation) {
+  case HA_EXTRA_IGNORE_DUP_KEY:
+    ignore_duplicates= TRUE;
+    break;
+  case HA_EXTRA_NO_IGNORE_DUP_KEY:
+    insert_dup_update= FALSE;
+    ignore_duplicates= FALSE;
+    break;
+  case HA_EXTRA_WRITE_CAN_REPLACE:
+    replace_duplicates= TRUE;
+    break;
+  case HA_EXTRA_WRITE_CANNOT_REPLACE:
+    /*
+      We use this flag to ensure that we do not create an "INSERT IGNORE"
+      statement when inserting new rows into the remote table.
+    */
+    replace_duplicates= FALSE;
+    break;
+  case HA_EXTRA_INSERT_WITH_UPDATE:
+    insert_dup_update= TRUE;
+    break;
+  case HA_EXTRA_RESET:
+    insert_dup_update= FALSE;
+    ignore_duplicates= FALSE;
+    replace_duplicates= FALSE;
+    break;
+  default:
+    /* do nothing */
+    DBUG_PRINT("info",("unhandled operation: %d", (uint) operation));
+  }
+  DBUG_RETURN(0);
 }
 
 
@@ -2506,14 +2706,13 @@ int ha_federated::delete_all_rows()
 
   query.set_charset(system_charset_info);
   query.append(FEDERATED_TRUNCATE);
-  query.append(FEDERATED_BTICK);
-  query.append(share->table_name);
-  query.append(FEDERATED_BTICK);
+  append_ident(&query, share->table_name, share->table_name_length,
+               ident_quote_char);
 
   /*
     TRUNCATE won't return anything in mysql_affected_rows
   */
-  if (mysql_real_query(mysql, query.ptr(), query.length()))
+  if (real_query(query.ptr(), query.length()))
   {
     DBUG_RETURN(stash_remote_error());
   }
@@ -2602,8 +2801,7 @@ int ha_federated::create(const char *name, TABLE *table_arg,
   FEDERATED_SHARE tmp_share; // Only a temporary share, to test the url
   DBUG_ENTER("ha_federated::create");
 
-  if (!(retval= parse_url(&tmp_share, table_arg, 1)))
-    retval= check_foreign_data_source(&tmp_share, 1);
+  retval= parse_url(&tmp_share, table_arg, 1);
 
   my_free((gptr) tmp_share.scheme, MYF(MY_ALLOW_ZERO_PTR));
   DBUG_RETURN(retval);
@@ -2611,11 +2809,119 @@ int ha_federated::create(const char *name, TABLE *table_arg,
 }
 
 
+int ha_federated::real_connect()
+{
+  char buffer[FEDERATED_QUERY_BUFFER_SIZE];
+  String sql_query(buffer, sizeof(buffer), &my_charset_bin);
+  DBUG_ENTER("ha_federated::real_connect");
+
+  /* 
+    Bug#25679
+    Ensure that we do not hold the LOCK_open mutex while attempting
+    to establish Federated connection to guard against a trivial
+    Denial of Service scenerio.
+  */
+  safe_mutex_assert_not_owner(&LOCK_open);
+
+  DBUG_ASSERT(mysql == NULL);
+
+  if (!(mysql= mysql_init(NULL)))
+  {
+    remote_error_number= HA_ERR_OUT_OF_MEM;
+    DBUG_RETURN(-1);
+  }
+
+  /*
+    BUG# 17044 Federated Storage Engine is not UTF8 clean
+    Add set names to whatever charset the table is at open
+    of table
+  */
+  /* this sets the csname like 'set names utf8' */
+  mysql_options(mysql,MYSQL_SET_CHARSET_NAME,
+                this->table->s->table_charset->csname);
+
+  sql_query.length(0);
+
+  if (!mysql_real_connect(mysql,
+                          share->hostname,
+                          share->username,
+                          share->password,
+                          share->database,
+                          share->port,
+                          share->socket, 0))
+  {
+    stash_remote_error();
+    mysql_close(mysql);
+    mysql= NULL;
+    my_error(ER_CONNECT_TO_FOREIGN_DATA_SOURCE, MYF(0), remote_error_buf);
+    remote_error_number= -1;
+    DBUG_RETURN(-1);
+  }
+
+  /*
+    We have established a connection, lets try a simple dummy query just 
+    to check that the table and expected columns are present.
+  */
+  sql_query.append(share->select_query);
+  sql_query.append(FEDERATED_WHERE);
+  sql_query.append(FEDERATED_FALSE);
+  if (mysql_real_query(mysql, sql_query.ptr(), sql_query.length()))
+  {
+    sql_query.length(0);
+    sql_query.append("error: ");
+    sql_query.qs_append(mysql_errno(mysql));
+    sql_query.append("  '");
+    sql_query.append(mysql_error(mysql));
+    sql_query.append("'");
+    mysql_close(mysql);
+    mysql= NULL;
+    my_error(ER_FOREIGN_DATA_SOURCE_DOESNT_EXIST, MYF(0), sql_query.ptr());
+    remote_error_number= -1;
+    DBUG_RETURN(-1);
+  }
+
+  /* Just throw away the result, no rows anyways but need to keep in sync */
+  mysql_free_result(mysql_store_result(mysql));
+
+  /*
+    Since we do not support transactions at this version, we can let the client
+    API silently reconnect. For future versions, we will need more logic to
+    deal with transactions
+  */
+
+  mysql->reconnect= 1;
+  DBUG_RETURN(0);
+}
+
+
+int ha_federated::real_query(const char *query, uint length)
+{
+  int rc= 0;
+  DBUG_ENTER("ha_federated::real_query");
+
+  if (!mysql && (rc= real_connect()))
+    goto end;
+
+  if (!query || !length)
+    goto end;
+
+  rc= mysql_real_query(mysql, query, length);
+  
+end:
+  DBUG_RETURN(rc);
+}
+
+
 int ha_federated::stash_remote_error()
 {
   DBUG_ENTER("ha_federated::stash_remote_error()");
+  if (!mysql)
+    DBUG_RETURN(remote_error_number);
   remote_error_number= mysql_errno(mysql);
   strmake(remote_error_buf, mysql_error(mysql), sizeof(remote_error_buf)-1);
+  if (remote_error_number == ER_DUP_ENTRY ||
+      remote_error_number == ER_DUP_KEY)
+    DBUG_RETURN(HA_ERR_FOUND_DUPP_KEY);
   DBUG_RETURN(HA_FEDERATED_ERROR_WITH_REMOTE_SYSTEM);
 }
 

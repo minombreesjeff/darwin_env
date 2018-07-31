@@ -117,6 +117,7 @@ uint		mysql_port=0;
 char		*mysql_unix_port= 0;
 const char	*unknown_sqlstate= "HY000";
 const char	*not_error_sqlstate= "00000";
+const char	*cant_connect_sqlstate= "08001";
 #ifdef HAVE_SMEM
 char		 *shared_memory_base_name= 0;
 const char 	*def_shared_memory_base_name= default_shared_memory_base_name;
@@ -131,6 +132,9 @@ static int wait_for_data(my_socket fd, uint timeout);
 
 CHARSET_INFO *default_client_charset_info = &my_charset_latin1;
 
+/* Server error code and message */
+unsigned int mysql_server_last_errno;
+char mysql_server_last_error[MYSQL_ERRMSG_SIZE];
 
 /****************************************************************************
   A modified version of connect().  my_connect() allows you to specify
@@ -402,12 +406,18 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
   HANDLE handle_file_map = NULL;
   ulong connect_number;
   char connect_number_char[22], *p;
-  char tmp[64];
+  char *tmp= NULL;
   char *suffix_pos;
   DWORD error_allow = 0;
   DWORD error_code = 0;
   DWORD event_access_rights= SYNCHRONIZE | EVENT_MODIFY_STATE;
   char *shared_memory_base_name = mysql->options.shared_memory_base_name;
+
+  /*
+     get enough space base-name + '_' + longest suffix we might ever send
+   */
+  if (!(tmp= (char *)my_malloc(strlen(shared_memory_base_name) + 32L, MYF(MY_FAE))))
+    goto err;
 
   /*
     The name of event and file-mapping events create agree next rule:
@@ -551,6 +561,8 @@ err2:
       CloseHandle(handle_file_map);
   }
 err:
+  if (tmp)
+    my_free(tmp, MYF(0));
   if (error_allow)
     error_code = GetLastError();
   if (event_connect_request)
@@ -657,11 +669,12 @@ my_bool
 cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
 		     const char *header, ulong header_length,
 		     const char *arg, ulong arg_length, my_bool skip_check,
-                     MYSQL_STMT *stmt __attribute__((unused)))
+                     MYSQL_STMT *stmt)
 {
   NET *net= &mysql->net;
   my_bool result= 1;
   init_sigpipe_variables
+  my_bool stmt_skip= stmt ? stmt->state != MYSQL_STMT_INIT_DONE : FALSE;
   DBUG_ENTER("cli_advanced_command");
 
   /* Don't give sigpipe errors if the client doesn't want them */
@@ -669,7 +682,7 @@ cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
 
   if (mysql->net.vio == 0)
   {						/* Do reconnect if possible */
-    if (mysql_reconnect(mysql))
+    if (mysql_reconnect(mysql) || stmt_skip)
       DBUG_RETURN(1);
   }
   if (mysql->status != MYSQL_STATUS_READY ||
@@ -700,7 +713,7 @@ cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
       goto end;
     }
     end_server(mysql);
-    if (mysql_reconnect(mysql))
+    if (mysql_reconnect(mysql) || stmt_skip)
       goto end;
     if (net_write_command(net,(uchar) command, header, header_length,
 			  arg, arg_length))
@@ -744,10 +757,18 @@ void set_mysql_error(MYSQL *mysql, int errcode, const char *sqlstate)
   DBUG_PRINT("enter", ("error :%d '%s'", errcode, ER(errcode)));
   DBUG_ASSERT(mysql != 0);
 
-  net= &mysql->net;
-  net->last_errno= errcode;
-  strmov(net->last_error, ER(errcode));
-  strmov(net->sqlstate, sqlstate);
+  if (mysql)
+  {
+    net= &mysql->net;
+    net->last_errno= errcode;
+    strmov(net->last_error, ER(errcode));
+    strmov(net->sqlstate, sqlstate);
+  }
+  else
+  {
+    mysql_server_last_errno= errcode;
+    strmov(mysql_server_last_error, ER(errcode));
+  }
 
   DBUG_VOID_RETURN;
 }
@@ -1077,11 +1098,16 @@ void mysql_read_default_options(struct st_mysql_options *options,
 	  my_free(options->ssl_capath, MYF(MY_ALLOW_ZERO_PTR));
           options->ssl_capath = my_strdup(opt_arg, MYF(MY_WME));
           break;
+        case 26:			/* ssl_cipher */
+          my_free(options->ssl_cipher, MYF(MY_ALLOW_ZERO_PTR));
+          options->ssl_cipher= my_strdup(opt_arg, MYF(MY_WME));
+          break;
 #else
 	case 13:				/* Ignore SSL options */
 	case 14:
 	case 15:
 	case 16:
+        case 26:
 	  break;
 #endif /* HAVE_OPENSSL */
 	case 17:			/* charset-lib */
@@ -1218,12 +1244,12 @@ unpack_fields(MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
       /* fields count may be wrong */
       DBUG_ASSERT((uint) (field - result) < fields);
       cli_fetch_lengths(&lengths[0], row->data, default_value ? 8 : 7);
-      field->catalog  = strdup_root(alloc,(char*) row->data[0]);
-      field->db       = strdup_root(alloc,(char*) row->data[1]);
-      field->table    = strdup_root(alloc,(char*) row->data[2]);
-      field->org_table= strdup_root(alloc,(char*) row->data[3]);
-      field->name     = strdup_root(alloc,(char*) row->data[4]);
-      field->org_name = strdup_root(alloc,(char*) row->data[5]);
+      field->catalog=   strmake_root(alloc,(char*) row->data[0], lengths[0]);
+      field->db=        strmake_root(alloc,(char*) row->data[1], lengths[1]);
+      field->table=     strmake_root(alloc,(char*) row->data[2], lengths[2]);
+      field->org_table= strmake_root(alloc,(char*) row->data[3], lengths[3]);
+      field->name=      strmake_root(alloc,(char*) row->data[4], lengths[4]);
+      field->org_name=  strmake_root(alloc,(char*) row->data[5], lengths[5]);
 
       field->catalog_length=	lengths[0];
       field->db_length=		lengths[1];
@@ -1244,7 +1270,7 @@ unpack_fields(MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
         field->flags|= NUM_FLAG;
       if (default_value && row->data[7])
       {
-        field->def=strdup_root(alloc,(char*) row->data[7]);
+        field->def=strmake_root(alloc,(char*) row->data[7], lengths[7]);
 	field->def_length= lengths[7];
       }
       else
@@ -1464,7 +1490,10 @@ mysql_init(MYSQL *mysql)
   if (!mysql)
   {
     if (!(mysql=(MYSQL*) my_malloc(sizeof(*mysql),MYF(MY_WME | MY_ZEROFILL))))
+    {
+      set_mysql_error(NULL, CR_OUT_OF_MEMORY, unknown_sqlstate);
       return 0;
+    }
     mysql->free_me=1;
   }
   else
@@ -2084,7 +2113,7 @@ CLI_MYSQL_REAL_CONNECT(MYSQL *mysql,const char *host, const char *user,
   /* Check if version of protocol matches current one */
 
   mysql->protocol_version= net->read_pos[0];
-  DBUG_DUMP("packet",(char*) net->read_pos,10);
+  DBUG_DUMP("packet",(uchar*) net->read_pos,10);
   DBUG_PRINT("info",("mysql protocol version %d, server=%d",
 		     PROTOCOL_VERSION, mysql->protocol_version));
   if (mysql->protocol_version != PROTOCOL_VERSION)
@@ -2451,6 +2480,7 @@ my_bool mysql_reconnect(MYSQL *mysql)
   }
   mysql_init(&tmp_mysql);
   tmp_mysql.options= mysql->options;
+  tmp_mysql.options.my_cnf_file= tmp_mysql.options.my_cnf_group= 0;
   tmp_mysql.rpl_pivot= mysql->rpl_pivot;
   
   if (!mysql_real_connect(&tmp_mysql,mysql->host,mysql->user,mysql->passwd,
@@ -2489,6 +2519,9 @@ my_bool mysql_reconnect(MYSQL *mysql)
       if (stmt->state != MYSQL_STMT_INIT_DONE)
       {
         stmt->mysql= 0;
+        stmt->last_errno= CR_SERVER_LOST;
+        strmov(stmt->last_error, ER(CR_SERVER_LOST));
+        strmov(stmt->sqlstate, unknown_sqlstate);
       }
       else
       {
@@ -3050,13 +3083,13 @@ unsigned int STDCALL mysql_num_fields(MYSQL_RES *res)
 
 uint STDCALL mysql_errno(MYSQL *mysql)
 {
-  return mysql->net.last_errno;
+  return mysql ? mysql->net.last_errno : mysql_server_last_errno;
 }
 
 
 const char * STDCALL mysql_error(MYSQL *mysql)
 {
-  return mysql->net.last_error;
+  return mysql ? mysql->net.last_error : mysql_server_last_error;
 }
 
 

@@ -257,7 +257,7 @@ if [ $BASE_SYSTEM = "netware" ] ; then
     rm -f $BASE/lib/*.la
 fi
 
-copyfileto $BASE/include config.h include/*
+copyfileto $BASE/include include/*
 
 rm -f $BASE/include/Makefile* $BASE/include/*.in $BASE/include/config-win.h
 if [ $BASE_SYSTEM != "netware" ] ; then
@@ -284,7 +284,8 @@ rm -f $MYSQL_SHARE/Makefile* $MYSQL_SHARE/*/*.OLD
 copyfileto $BASE/mysql-test \
          mysql-test/mysql-test-run mysql-test/install_test_db \
          mysql-test/mysql-test-run.pl mysql-test/README \
-	 mysql-test/valgrind.supp \
+         mysql-test/mysql-stress-test.pl \
+         mysql-test/valgrind.supp \
          netware/mysql_test_run.nlm netware/install_test_db.ncf
 
 $CP mysql-test/lib/*.pl  $BASE/mysql-test/lib
@@ -292,20 +293,15 @@ $CP mysql-test/t/*.def $BASE/mysql-test/t
 $CP mysql-test/include/*.inc $BASE/mysql-test/include
 $CP mysql-test/include/*.test $BASE/mysql-test/include
 $CP mysql-test/t/*.def $BASE/mysql-test/t
-$CP mysql-test/std_data/*.dat mysql-test/std_data/*.frm \
-    mysql-test/std_data/*.MYD mysql-test/std_data/*.MYI \
-    mysql-test/std_data/*.pem mysql-test/std_data/Moscow_leap \
-    mysql-test/std_data/des_key_file mysql-test/std_data/*.*001 \
-    mysql-test/std_data/*.cnf mysql-test/std_data/*.MY* \
-    $BASE/mysql-test/std_data
 $CP mysql-test/t/*.test mysql-test/t/*.imtest \
     mysql-test/t/*.disabled mysql-test/t/*.opt \
     mysql-test/t/*.slave-mi mysql-test/t/*.sh mysql-test/t/*.sql $BASE/mysql-test/t
 $CP mysql-test/r/*.result mysql-test/r/*.require \
     $BASE/mysql-test/r
 
-# Copy the additional suites "as is", they are in flux
-$tar cf - mysql-test/suite | ( cd $BASE ; $tar xf - )
+# Copy the additional suites and data "as is", they are in flux
+$tar cf - mysql-test/suite    | ( cd $BASE ; $tar xf - )
+$tar cf - mysql-test/std_data | ( cd $BASE ; $tar xf - )
 # Clean up if we did this from a bk tree
 if [ -d mysql-test/SCCS ] ; then
   find $BASE/mysql-test -name SCCS -print | xargs rm -rf
@@ -316,7 +312,7 @@ if [ $BASE_SYSTEM != "netware" ] ; then
   copyfileto $BASE/bin scripts/*
   $BASE/bin/replace \@localstatedir\@ ./data \@bindir\@ ./bin \@scriptdir\@ \
       ./bin \@libexecdir\@ ./bin \@sbindir\@ ./bin \@prefix\@ . \@HOSTNAME\@ \
-      @HOSTNAME@ \@pkgdatadir\@ ./support-files \
+      @HOSTNAME@ \@pkgdatadir\@ ./share \
       < scripts/mysql_install_db.sh > $BASE/scripts/mysql_install_db
   $BASE/bin/replace \@prefix\@ /usr/local/mysql \@bindir\@ ./bin \
       \@sbindir\@ ./bin \@libexecdir\@ ./bin \
@@ -325,8 +321,8 @@ if [ $BASE_SYSTEM != "netware" ] ; then
       < support-files/mysql.server.sh > $BASE/support-files/mysql.server
   $BASE/bin/replace /my/gnu/bin/hostname /bin/hostname -- $BASE/bin/mysqld_safe
   mv $BASE/support-files/binary-configure $BASE/configure
-  chmod a+x $BASE/bin/* $BASE/scripts/* $BASE/support-files/mysql-* \
-      $BASE/support-files/mysql.server $BASE/configure
+  chmod a+x $BASE/bin/* $BASE/scripts/* $BASE/support-files/mysql-log-rotate \
+      $BASE/support-files/*.server $BASE/configure
   $CP -r sql-bench/* $BASE/sql-bench
   rm -f $BASE/sql-bench/*.sh $BASE/sql-bench/Makefile* $BASE/lib/*.la
   rm -f $BASE/bin/*.sql
@@ -398,11 +394,13 @@ BASE=$BASE2
 #
 
 if [ x"@GXX@" = x"yes" ] ; then
-  gcclib=`@CC@ @CFLAGS@ --print-libgcc-file`
-  if [ $? -ne 0 ] ; then
-    echo "Warning: Couldn't find libgcc.a!"
-  else
+  gcclib=`@CC@ @CFLAGS@ --print-libgcc-file 2>/dev/null` || true
+  if [ -z "$gcclib" ] ; then
+    echo "Warning: Compiler doesn't tell libgcc.a!"
+  elif [ -f "$gcclib" ] ; then
     $CP $gcclib $BASE/lib/libmygcc.a
+  else
+    echo "Warning: Compiler result '$gcclib' not found / no file!"
   fi
 fi
 

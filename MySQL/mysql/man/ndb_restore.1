@@ -1,11 +1,11 @@
 .\"     Title: \fBndb_restore\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_RESTORE\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_RESTORE\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -26,11 +26,17 @@ directory. This program reads the files created as a result of the backup and in
 must be executed once for each of the backup files that were created by the
 START BACKUP
 command used to create the backup (see
-Section\ 7.2, \(lqUsing The Management Client to Create a Backup\(rq). This is equal to the number of data nodes in the cluster at the time that the backup was created.
+Section\ 9.2, \(lqUsing The Management Client to Create a Backup\(rq). This is equal to the number of data nodes in the cluster at the time that the backup was created.
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBNote\fR
 .PP
-\fBNote\fR: Before using
+Before using
 \fBndb_restore\fR, it is recommended that the cluster be running in single user mode, unless you are restoring multiple data nodes in parallel. See
-Section\ 6.4, \(lqSingle User Mode\(rq, for more information about single user mode.
+Section\ 7.5, \(lqSingle User Mode\(rq, for more information about single user mode.
 .PP
 Typical options for this utility are shown here:
 .sp
@@ -51,15 +57,15 @@ attempts to connect to a management server on
 localhost:1186. This utility acts as a cluster API node, and so requires a free connection
 \(lqslot\(rq
 to connect to the cluster management server. This means that there must be at least one
-[API]
+[api]
 or
-[MYSQLD]
+[mysqld]
 section that can be used by it in the cluster
 \fIconfig.ini\fR
 file. It is a good idea to keep at least one empty
-[API]
+[api]
 or
-[MYSQLD]
+[mysqld]
 section in
 \fIconfig.ini\fR
 that is not being used for a MySQL server or other application for this reason (see
@@ -97,7 +103,7 @@ The
 option is used to specify the ID or sequence number of the backup, and is the same number shown by the management client in the
 Backup \fIbackup_id\fR completed
 message displayed upon completion of a backup. (See
-Section\ 7.2, \(lqUsing The Management Client to Create a Backup\(rq.)
+Section\ 9.2, \(lqUsing The Management Client to Create a Backup\(rq.)
 .PP
 The path to the backup directory is required, and must include the subdirectory corresponding to the ID backup of the backup to be restored. For example, if the data node's
 DataDir
@@ -116,6 +122,21 @@ executable is located, and may be optionally prefixed with
 \fBImportant\fR
 .PP
 When restoring cluster backups, you must be sure to restore all data nodes from backups having the same backup ID. Using files from different backups will at best result in restoring the cluster to an inconsistent state, and may fail altogether.
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+.PP
+It is not possible to restore a backup made from a newer version of MySQL Cluster using an older version of
+\fBndb_restore\fR. You can restore a backup made from a newer version of MySQL to an older cluster, but you must use a copy of
+\fBndb_restore\fR
+from the newer MySQL Cluster version to do so.
+.PP
+For example, to restore a cluster backup taken from a cluster running MySQL 5.0.45 to a cluster running MySQL Cluster 5.0.41, you must use a copy of
+\fBndb_restore\fR
+from the 5.0.45 distribution.
 .PP
 It is possible to restore a backup to a database with a different configuration than it was created from. For example, suppose that a backup with backup ID
 12, created in a cluster with two database nodes having the node IDs
@@ -126,7 +147,7 @@ and
 must be run twice \(em once for each database node in the cluster where the backup was taken. However,
 \fBndb_restore\fR
 cannot always restore backups made from a cluster running one version of MySQL to a cluster running a different MySQL version. See
-Section\ 4.2, \(lqCluster Upgrade and Downgrade Compatibility\(rq, for more information.
+Section\ 5.2, \(lqMySQL Cluster 5.0 Upgrade and Downgrade Compatibility\(rq, for more information.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -135,9 +156,9 @@ Section\ 4.2, \(lqCluster Upgrade and Downgrade Compatibility\(rq, for more info
 \fBNote\fR
 .PP
 For more rapid restoration, the data may be restored in parallel, provided that there is a sufficient number of cluster connections available. That is, when restoring to multiple nodes in parallel, you must have an
-[API]
+[api]
 or
-[MYSQLD]
+[mysqld]
 section in the cluster
 \fIconfig.ini\fR
 file available for each concurrent
@@ -219,7 +240,7 @@ T}:T{
 \fB\-p\fR
 T}:T{
 Set from 1 to 1024 parallel transactions to be used during the
-                    restoration process
+                  restoration process
 T}:T{
 128
 T}
@@ -228,7 +249,7 @@ T{
 T}:T{
 \fINone\fR
 T}:T{
-Print metadata and log to stdout
+Print metadata, data, and log to stdout
 T}:T{
 FALSE
 T}
@@ -315,13 +336,13 @@ T}:T{
 T}
 T{
 \fB\-\-connect\fR, \fB\-\-connectstring\fR, or
-                    \fB\-\-ndb\-connectstring\fR
+                  \fB\-\-ndb\-connectstring\fR
 T}:T{
 \fB\-c\fR or \fB\-C\fR
 T}:T{
 Set the connectstring in
-                    [nodeid=\fInode_id;][host=]\fR\fIhost\fR[:\fIport\fR]
-                    format
+                  [nodeid=\fInode_id;][host=]\fR\fIhost\fR[:\fIport\fR]
+                  format
 T}:T{
 localhost:1186
 T}
@@ -349,7 +370,7 @@ T}:T{
 \fB\-?\fR
 T}:T{
 Display help message with available options and current values, then
-                    exit
+                  exit
 T}:T{
 [N/A]
 T}
@@ -359,12 +380,12 @@ T}:T{
 \fINone\fR
 T}:T{
 Set the host and port in
-                    \fIhost\fR[:\fIport\fR]
-                    format for the management server to connect to; this
-                    is the same as \fB\-\-connect\fR,
-                    \fB\-\-connectstring\fR, or
-                    \fB\-\-ndb\-connectstring\fR, but without a
-                    way to specify the nodeid
+                  \fIhost\fR[:\fIport\fR]
+                  format for the management server to connect to; this
+                  is the same as \fB\-\-connect\fR,
+                  \fB\-\-connectstring\fR, or
+                  \fB\-\-ndb\-connectstring\fR, but without a
+                  way to specify the nodeid
 T}:T{
 \fINone\fR
 T}
@@ -376,7 +397,7 @@ Beginning with MySQL 5.0.40, several additional options are available for use wi
 option in generating data dumps, either to
 stdout, or to a file. These are similar to some of the options used with
 \fBmysqldump\fR, and are shown in the following table:
-.TS allbox tab(:); l l l l l l l l l l l l l l l l l l l l l l l l l l l l l l l l. T{ \fBLong Form\fR T}:T{ \fBShort Form\fR T}:T{ \fBDescription\fR T}:T{ \fBDefault Value\fR T} T{ \fB\-\-tab\fR T}:T{ \fB\-T\fR T}:T{ Creates dumpfiles, one per table, each named \fI\fItbl_name\fR\fR\fI.txt\fR. Takes as its argument the path to the directory where the files should be saved (required; use . for the current directory). T}:T{ \fINone\fR T} T{ \fB\-\-fields\-enclosed\-by\fR T}:T{ \fINone\fR T}:T{ String used to enclose all column values T}:T{ \fINone\fR T} T{ \fB\-\-fields\-optionally\-enclosed\-by\fR T}:T{ \fINone\fR T}:T{ String used to enclose column values containing character data (such as CHAR, VARCHAR, BINARY, TEXT, or ENUM) T}:T{ \fINone\fR T} T{ \fB\-\-fields\-terminated\-by\fR T}:T{ \fINone\fR T}:T{ String used to separate column values T}:T{ \\t (tab character) T} T{ \fB\-\-hex\fR T}:T{ \fINone\fR T}:T{ Use hex format for binary values T}:T{ [N/A] T} T{ \fB\-\-lines\-terminated\-by\fR T}:T{ \fINone\fR T}:T{ String used to terminate each line T}:T{ \\n (linefeed character) T} T{ \fB\-\-appends\fR T}:T{ \fINone\fR T}:T{ When used with \fB\-\-tab\fR, causes the data to be appended to existing files of the same name T}:T{ [N/A] T} .TE .sp
+.TS allbox tab(:); l l l l l l l l l l l l l l l l l l l l l l l l l l l l l l l l. T{ \fBLong Form\fR T}:T{ \fBShort Form\fR T}:T{ \fBDescription\fR T}:T{ \fBDefault Value\fR T} T{ \fB\-\-tab\fR T}:T{ \fB\-T\fR T}:T{ Creates dumpfiles, one per table, each named \fI\fItbl_name\fR\fR\fI.txt\fR. Takes as its argument the path to the directory where the files should be saved (required; use . for the current directory). T}:T{ \fINone\fR T} T{ \fB\-\-fields\-enclosed\-by\fR T}:T{ \fINone\fR T}:T{ String used to enclose all column values T}:T{ \fINone\fR T} T{ \fB\-\-fields\-optionally\-enclosed\-by\fR T}:T{ \fINone\fR T}:T{ String used to enclose column values containing character data (such as CHAR, VARCHAR, BINARY, TEXT, or ENUM) T}:T{ \fINone\fR T} T{ \fB\-\-fields\-terminated\-by\fR T}:T{ \fINone\fR T}:T{ String used to separate column values T}:T{ \\t (tab character) T} T{ \fB\-\-hex\fR T}:T{ \fINone\fR T}:T{ Use hex format for binary values T}:T{ [N/A] T} T{ \fB\-\-lines\-terminated\-by\fR T}:T{ \fINone\fR T}:T{ String used to terminate each line T}:T{ \\n (linefeed character) T} T{ \fB\-\-append\fR T}:T{ \fINone\fR T}:T{ When used with \fB\-\-tab\fR, causes the data to be appended to existing files of the same name T}:T{ [N/A] T} .TE .sp
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
@@ -418,17 +439,16 @@ Restore successful, but encountered temporary error, please look at configuratio
 in such cases.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

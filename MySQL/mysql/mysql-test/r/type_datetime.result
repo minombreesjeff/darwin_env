@@ -59,6 +59,8 @@ t
 drop table t1;
 CREATE TABLE t1 (a timestamp, b date, c time, d datetime);
 insert into t1 (b,c,d) values(now(),curtime(),now());
+Warnings:
+Note	1265	Data truncated for column 'b' at row 1
 select date_format(a,"%Y-%m-%d")=b,right(a+0,6)=c+0,a=d+0 from t1;
 date_format(a,"%Y-%m-%d")=b	right(a+0,6)=c+0	a=d+0
 1	1	1
@@ -427,3 +429,135 @@ f1
 Warnings:
 Warning	1292	Incorrect datetime value: '2007010100000' for column 'f1' at row 1
 drop table t1;
+#
+# Bug#27216: functions with parameters of different date types may
+#            return wrong type of the result.
+#
+create table t1 (f1 date, f2 datetime, f3 varchar(20));
+create table t2 as select coalesce(f1,f1) as f4 from t1;
+desc t2;
+Field	Type	Null	Key	Default	Extra
+f4	date	YES		NULL	
+create table t3 as select coalesce(f1,f2) as f4 from t1;
+desc t3;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t4 as select coalesce(f2,f2) as f4 from t1;
+desc t4;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t5 as select coalesce(f1,f3) as f4 from t1;
+desc t5;
+Field	Type	Null	Key	Default	Extra
+f4	varbinary(20)	YES		NULL	
+create table t6 as select coalesce(f2,f3) as f4 from t1;
+desc t6;
+Field	Type	Null	Key	Default	Extra
+f4	varbinary(20)	YES		NULL	
+create table t7 as select coalesce(makedate(1997,1),f2) as f4 from t1;
+desc t7;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t8 as select coalesce(cast('01-01-01' as datetime),f2) as f4
+from t1;
+desc t8;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t9 as select case when 1 then cast('01-01-01' as date)
+when 0 then cast('01-01-01' as date) end as f4 from t1;
+desc t9;
+Field	Type	Null	Key	Default	Extra
+f4	date	YES		NULL	
+create table t10 as select case when 1 then cast('01-01-01' as datetime)
+when 0 then cast('01-01-01' as datetime) end as f4 from t1;
+desc t10;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t11 as select if(1, cast('01-01-01' as datetime),
+cast('01-01-01' as date)) as f4 from t1;
+desc t11;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t12 as select least(cast('01-01-01' as datetime),
+cast('01-01-01' as date)) as f4 from t1;
+desc t12;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+create table t13 as select ifnull(cast('01-01-01' as datetime),
+cast('01-01-01' as date)) as f4 from t1;
+desc t13;
+Field	Type	Null	Key	Default	Extra
+f4	datetime	YES		NULL	
+drop tables t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13;
+###################################################################
+create table t1 (f1 time);
+insert into t1 set f1 = '45:44:44';
+insert into t1 set f1 = '15:44:44';
+select * from t1 where (convert(f1,datetime)) != 1;
+f1
+15:44:44
+Warnings:
+Warning	1292	Truncated incorrect datetime value: '0000-00-00 45:44:44'
+drop table t1;
+create table t1 (a tinyint);
+insert into t1 values (), (), ();
+select sum(a) from t1 group by convert(a, datetime);
+sum(a)
+NULL
+drop table t1;
+create table t1 (id int(10) not null, cur_date datetime not null);
+create table t2 (id int(10) not null, cur_date date not null);
+insert into t1 (id, cur_date) values (1, '2007-04-25 18:30:22');
+insert into t2 (id, cur_date) values (1, '2007-04-25');
+explain extended
+select * from t1
+where id in (select id from t1 as x1 where (t1.cur_date is null));
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible WHERE noticed after reading const tables
+2	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible WHERE
+Warnings:
+Note	1276	Field or reference 'test.t1.cur_date' of SELECT #2 was resolved in SELECT #1
+Note	1003	select '1' AS `id`,'2007-04-25 18:30:22' AS `cur_date` from `test`.`t1` where <in_optimizer>('1',<exists>(select 1 AS `Not_used` from `test`.`t1` `x1` where 0))
+select * from t1
+where id in (select id from t1 as x1 where (t1.cur_date is null));
+id	cur_date
+explain extended
+select * from t2
+where id in (select id from t2 as x1 where (t2.cur_date is null));
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible WHERE noticed after reading const tables
+2	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible WHERE
+Warnings:
+Note	1276	Field or reference 'test.t2.cur_date' of SELECT #2 was resolved in SELECT #1
+Note	1003	select '1' AS `id`,'2007-04-25' AS `cur_date` from `test`.`t2` where <in_optimizer>('1',<exists>(select 1 AS `Not_used` from `test`.`t2` `x1` where 0))
+select * from t2
+where id in (select id from t2 as x1 where (t2.cur_date is null));
+id	cur_date
+insert into t1 (id, cur_date) values (2, '2007-04-26 18:30:22');
+insert into t2 (id, cur_date) values (2, '2007-04-26');
+explain extended
+select * from t1
+where id in (select id from t1 as x1 where (t1.cur_date is null));
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+2	DEPENDENT SUBQUERY	x1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1276	Field or reference 'test.t1.cur_date' of SELECT #2 was resolved in SELECT #1
+Note	1003	select `test`.`t1`.`id` AS `id`,`test`.`t1`.`cur_date` AS `cur_date` from `test`.`t1` where <in_optimizer>(`test`.`t1`.`id`,<exists>(select 1 AS `Not_used` from `test`.`t1` `x1` where ((`test`.`t1`.`cur_date` = 0) and (<cache>(`test`.`t1`.`id`) = `test`.`x1`.`id`))))
+select * from t1
+where id in (select id from t1 as x1 where (t1.cur_date is null));
+id	cur_date
+explain extended
+select * from t2
+where id in (select id from t2 as x1 where (t2.cur_date is null));
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	PRIMARY	t2	ALL	NULL	NULL	NULL	NULL	2	Using where
+2	DEPENDENT SUBQUERY	x1	ALL	NULL	NULL	NULL	NULL	2	Using where
+Warnings:
+Note	1276	Field or reference 'test.t2.cur_date' of SELECT #2 was resolved in SELECT #1
+Note	1003	select `test`.`t2`.`id` AS `id`,`test`.`t2`.`cur_date` AS `cur_date` from `test`.`t2` where <in_optimizer>(`test`.`t2`.`id`,<exists>(select 1 AS `Not_used` from `test`.`t2` `x1` where ((`test`.`t2`.`cur_date` = 0) and (<cache>(`test`.`t2`.`id`) = `test`.`x1`.`id`))))
+select * from t2
+where id in (select id from t2 as x1 where (t2.cur_date is null));
+id	cur_date
+drop table t1,t2;
+End of 5.0 tests

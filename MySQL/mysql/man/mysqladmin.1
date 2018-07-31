@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqladmin\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLADMIN\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLADMIN\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -55,9 +55,6 @@ and all its tables.
 extended\-status
 .sp
 Display the server status variables and their values.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on using server status variables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 flush\-hosts
@@ -101,12 +98,7 @@ old\-password \fInew\-password\fR
 This is like the
 password
 command but stores the password using the old (pre\-4.1) password\-hashing format. (See
-Section\ 5.9, \(lqPassword Hashing as of MySQL 4.1\(rq.)
-.PP
-\fBMySQL Enterprise\fR. For expert advice on the security implications of using the
-old\-password
-command, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
+Section\ 4.8, \(lqPassword Hashing as of MySQL 4.1\(rq.)
 .TP 3n
 \(bu
 password \fInew\-password\fR
@@ -146,7 +138,7 @@ statement. If the
 \fB\-\-verbose\fR
 option is given, the output is like that of
 SHOW FULL PROCESSLIST. (See
-Section\ 5.4.21, \(lqSHOW PROCESSLIST Syntax\(rq.)
+Section\ 5.5.24, \(lqSHOW PROCESSLIST Syntax\(rq.)
 .TP 3n
 \(bu
 reload
@@ -182,9 +174,6 @@ Stop replication on a slave server.
 variables
 .sp
 Display the server system variables and their values.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on using server system variables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 version
@@ -234,7 +223,7 @@ Slow queries
 The number of queries that have taken more than
 long_query_time
 seconds. See
-Section\ 9.4, \(lqThe Slow Query Log\(rq.
+Section\ 2.4, \(lqThe Slow Query Log\(rq.
 .TP 3n
 \(bu
 Opens
@@ -290,7 +279,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-compress\fR,
@@ -302,9 +291,9 @@ Compress all information sent between the client and the server if both support 
 \fB\-\-count=\fR\fB\fIN\fR\fR,
 \fB\-c \fR\fB\fIN\fR\fR
 .sp
-The number of iterations to make for repeated command execution. This works only with the
+The number of iterations to make for repeated command execution if the
 \fB\-\-sleep\fR
-option.
+option is given.
 .TP 3n
 \(bu
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
@@ -322,7 +311,7 @@ string often is
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -353,7 +342,13 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+.TP 3n
+\(bu
+\fB\-\-pipe\fR,
+\fB\-W\fR
+.sp
+On Windows, connect to the server via a named pipe. This option applies only for connections to a local server, and only if the server supports named\-pipe connections.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -364,7 +359,8 @@ The TCP/IP port number to use for the connection.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use.
+The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
+Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-relative\fR,
@@ -390,7 +386,11 @@ Execute commands repeatedly, sleeping for
 \fIdelay\fR
 seconds in between. The
 \fB\-\-count\fR
-option determines the number of iterations.
+option determines the number of iterations. If
+\fB\-\-count\fR
+is not given,
+\fBmysqladmin\fR
+executes commands indefinitely until interrupted.
 .TP 3n
 \(bu
 \fB\-\-socket=\fR\fB\fIpath\fR\fR,
@@ -405,7 +405,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 6.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
@@ -444,7 +444,9 @@ value is given, it indicates the number of times to retry. The default is one ti
 .PP
 You can also set the following variables by using
 \fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-syntax:
+The
+\fB\-\-set\-variable\fR
+format is deprecated. syntax:
 .TP 3n
 \(bu
 connect_timeout
@@ -459,24 +461,21 @@ The maximum number of seconds to wait for server shutdown. The default value is 
 .RE
 .PP
 It is also possible to set variables by using
-\fB\-\-set\-variable=\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-or
-\fB\-O \fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-syntax.
-\fIThis syntax is deprecated\fR.
+\fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR. The
+\fB\-\-set\-variable\fR
+format is deprecated.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

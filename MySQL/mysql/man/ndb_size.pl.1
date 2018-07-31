@@ -1,24 +1,24 @@
 .\"     Title: \fBndb_size.pl\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBNDB_SIZE.PL\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBNDB_SIZE.PL\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
 .ad l
 .SH "NAME"
-ndb_size.pl \- NDBCluster Size Requirement Estimator
+ndb_size.pl \- NDBCLUSTER Size Requirement Estimator
 .SH "SYNOPSIS"
 .HP 22
 \fBndb_size.pl \fR\fB\fIarguments\fR\fR
 .SH "DESCRIPTION"
 .PP
 This is a Perl script that can be used to estimate the amount of space that would be required by a MySQL database if it were converted to use the
-NDBCluster
+NDBCLUSTER
 storage engine. Unlike the other utilities discussed in this section, it does not require access to a MySQL Cluster (in fact, there is no reason for it to do so). However, it does need to access the MySQL server on which the database to be tested resides.
 .PP
 \fBRequirements\fR:
@@ -34,7 +34,7 @@ The
 DBI
 and
 HTML::Template
-modules, both of which can be obtained from CPAN if they are not already part of your Perl installation. (Many Linux and other operating system distribution provide their own packages for one or both of these libraries.)
+modules, both of which can be obtained from CPAN if they are not already part of your Perl installation. (Many Linux and other operating system distributions provide their own packages for one or both of these libraries.)
 .TP 3n
 \(bu
 The
@@ -59,7 +59,7 @@ and
 \fIndb_size.tmpl\fR
 can also be found in the MySQL sources in
 \fIstorage/ndb/tools\fR. If these files are not present in your MySQL installation, you can obtain them from the
-[1]\&\fIMySQLForge project page\fR.
+[1]\&\fIMySQL Forge project page\fR.
 .PP
 \fBUsage\fR:
 .sp
@@ -74,7 +74,7 @@ The command shown connects to the MySQL server at
 using the account of the user
 \fIusername\fR
 having the password
-\fIpassword\fR, analyses all of the tables in database
+\fIpassword\fR, analyzes all of the tables in database
 \fIdb_name\fR, and generates a report in HTML format which is directed to the file
 \fI\fIfile_name\fR\fR\fI.html\fR. (Without the redirection, the output is sent to
 stdout.) This figure shows partial sample output as viewed in a Web browser:
@@ -90,7 +90,7 @@ MaxNoOfAttributes,
 MaxNoOfOrderedIndexes,
 MaxNoOfUniqueHashIndexes, and
 MaxNoOfTriggers
-configuration parameters required to accommodate the tables analysed.
+configuration parameters required to accommodate the tables analyzed.
 .TP 3n
 \(bu
 Memory requirements for all of the tables, attributes, ordered indexes, and unique hash indexes defined in the database.
@@ -103,21 +103,20 @@ DataMemory
 required per table and table row.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "REFERENCES"
 .TP 3
-1.\ MySQLForge project page
-\%http://forge.mysql.com/projects/view.php?id=88
+1.\ MySQL Forge project page
+\%http://forge.mysql.com/projects/project.php?id=88
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

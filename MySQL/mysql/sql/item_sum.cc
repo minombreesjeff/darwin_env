@@ -66,6 +66,7 @@ bool Item_sum::init_sum_func_check(THD *thd)
   aggr_sel= NULL;
   max_arg_level= -1;
   max_sum_func_level= -1;
+  outer_fields.empty();
   return FALSE;
 }
 
@@ -175,6 +176,7 @@ bool Item_sum::check_sum_func(THD *thd, Item **ref)
                MYF(0));
     return TRUE;
   }
+
   if (in_sum_func)
   {
     /*
@@ -195,6 +197,68 @@ bool Item_sum::check_sum_func(THD *thd, Item **ref)
       set_if_bigger(in_sum_func->max_sum_func_level, aggr_level);
     set_if_bigger(in_sum_func->max_sum_func_level, max_sum_func_level);
   }
+
+  /*
+    Check that non-aggregated fields and sum functions aren't mixed in the
+    same select in the ONLY_FULL_GROUP_BY mode.
+  */
+  if (outer_fields.elements)
+  {
+    Item_field *field;
+    /*
+      Here we compare the nesting level of the select to which an outer field
+      belongs to with the aggregation level of the sum function. All fields in
+      the outer_fields list are checked.
+
+      If the nesting level is equal to the aggregation level then the field is
+        aggregated by this sum function.
+      If the nesting level is less than the aggregation level then the field
+        belongs to an outer select. In this case if there is an embedding sum
+        function add current field to functions outer_fields list. If there is
+        no embedding function then the current field treated as non aggregated
+        and the select it belongs to is marked accordingly.
+      If the nesting level is greater than the aggregation level then it means
+        that this field was added by an inner sum function.
+        Consider an example:
+
+          select avg ( <-- we are here, checking outer.f1
+            select (
+              select sum(outer.f1 + inner.f1) from inner
+            ) from outer)
+          from most_outer;
+
+        In this case we check that no aggregate functions are used in the
+        select the field belongs to. If there are some then an error is
+        raised.
+    */
+    List_iterator<Item_field> of(outer_fields);
+    while ((field= of++))
+    {
+      SELECT_LEX *sel= field->cached_table->select_lex;
+      if (sel->nest_level < aggr_level)
+      {
+        if (in_sum_func)
+        {
+          /*
+            Let upper function decide whether this field is a non
+            aggregated one.
+          */
+          in_sum_func->outer_fields.push_back(field);
+        }
+        else
+          sel->full_group_by_flag|= NON_AGG_FIELD_USED;
+      }
+      if (sel->nest_level > aggr_level &&
+          (sel->full_group_by_flag & SUM_FUNC_USED) &&
+          !sel->group_list.elements)
+      {
+        my_message(ER_MIX_OF_GROUP_FUNC_AND_FIELDS,
+                   ER(ER_MIX_OF_GROUP_FUNC_AND_FIELDS), MYF(0));
+        return TRUE;
+      }
+    }
+  }
+  aggr_sel->full_group_by_flag|= SUM_FUNC_USED;
   update_used_tables();
   thd->lex->in_sum_func= in_sum_func;
   return FALSE;
@@ -597,6 +661,7 @@ Item_sum_hybrid::fix_fields(THD *thd, Item **ref)
   result_field=0;
   null_value=1;
   fix_length_and_dec();
+  item= item->real_item();
   if (item->type() == Item::FIELD_ITEM)
     hybrid_field_type= ((Item_field*) item)->field->type();
   else
@@ -628,7 +693,7 @@ Field *Item_sum_hybrid::create_tmp_field(bool group, TABLE *table,
   */
   switch (args[0]->field_type()) {
   case MYSQL_TYPE_DATE:
-    return new Field_date(maybe_null, name, table, collation.collation);
+    return new Field_newdate(maybe_null, name, table, collation.collation);
   case MYSQL_TYPE_TIME:
     return new Field_time(maybe_null, name, table, collation.collation);
   case MYSQL_TYPE_TIMESTAMP:
@@ -905,7 +970,9 @@ bool Item_sum_distinct::setup(THD *thd)
   List<create_field> field_list;
   create_field field_def;                              /* field definition */
   DBUG_ENTER("Item_sum_distinct::setup");
-  DBUG_ASSERT(tree == 0);
+  /* It's legal to call setup() more than once when in a subquery */
+  if (tree)
+    DBUG_RETURN(FALSE);
 
   /*
     Virtual table and the tree are created anew on each re-execution of
@@ -913,7 +980,7 @@ bool Item_sum_distinct::setup(THD *thd)
     mem_root.
   */
   if (field_list.push_back(&field_def))
-    return TRUE;
+    DBUG_RETURN(TRUE);
 
   null_value= maybe_null= 1;
   quick_group= 0;
@@ -925,7 +992,7 @@ bool Item_sum_distinct::setup(THD *thd)
                                args[0]->unsigned_flag);
 
   if (! (table= create_virtual_tmp_table(thd, field_list)))
-    return TRUE;
+    DBUG_RETURN(TRUE);
 
   /* XXX: check that the case of CHAR(0) works OK */
   tree_key_length= table->s->reclength - table->s->null_bytes;
@@ -1203,7 +1270,15 @@ my_decimal *Item_sum_avg::val_decimal(my_decimal *val)
     null_value=1;
     return NULL;
   }
-  sum_dec= Item_sum_sum::val_decimal(&sum_buff);
+
+  /*
+    For non-DECIMAL hybrid_type the division will be done in
+    Item_sum_avg::val_real().
+  */
+  if (hybrid_type != DECIMAL_RESULT)
+    return val_decimal_from_real(val);
+
+  sum_dec= dec_buffs + curr_dec_buff;
   int2my_decimal(E_DEC_FATAL_ERROR, count, 0, &cnt);
   my_decimal_div(E_DEC_FATAL_ERROR, val, sum_dec, &cnt, prec_increment);
   return val;
@@ -2443,6 +2518,7 @@ bool Item_sum_count_distinct::setup(THD *thd)
   /*
     Setup can be called twice for ROLLUP items. This is a bug.
     Please add DBUG_ASSERT(tree == 0) here when it's fixed.
+    It's legal to call setup() more than once when in a subquery
   */
   if (tree || table || tmp_table_param)
     return FALSE;
@@ -2461,9 +2537,26 @@ bool Item_sum_count_distinct::setup(THD *thd)
   }
   if (always_null)
     return FALSE;
-  count_field_types(tmp_table_param,list,0);
+  count_field_types(select_lex, tmp_table_param, list, 0);
   tmp_table_param->force_copy_fields= force_copy_fields;
   DBUG_ASSERT(table == 0);
+  /*
+    Make create_tmp_table() convert BIT columns to BIGINT.
+    This is needed because BIT fields store parts of their data in table's
+    null bits, and we don't have methods to compare two table records, which
+    is needed by Unique which is used when HEAP table is used.
+  */
+  {
+    List_iterator_fast<Item> li(list);
+    Item *item;
+    while ((item= li++))
+    {
+      if (item->type() == Item::FIELD_ITEM &&
+          ((Item_field*)item)->field->type() == FIELD_TYPE_BIT)
+        item->marker=4;
+    }
+  }
+
   if (!(table= create_tmp_table(thd, tmp_table_param, list, (ORDER*) 0, 1,
 				0,
 				(select_lex->options | thd->options),
@@ -2811,44 +2904,51 @@ String *Item_sum_udf_str::val_str(String *str)
  concat of values from "group by" operation
 
  BUGS
-   DISTINCT and ORDER BY only works if ORDER BY uses all fields and only fields
-   in expression list
    Blobs doesn't work with DISTINCT or ORDER BY
 *****************************************************************************/
 
-/*
-  function of sort for syntax:
-  GROUP_CONCAT(DISTINCT expr,...)
+
+
+/** 
+  Compares the values for fields in expr list of GROUP_CONCAT.
+  @note
+       
+     GROUP_CONCAT([DISTINCT] expr [,expr ...]
+              [ORDER BY {unsigned_integer | col_name | expr}
+                  [ASC | DESC] [,col_name ...]]
+              [SEPARATOR str_val])
+ 
+  @return
+  @retval -1 : key1 < key2 
+  @retval  0 : key1 = key2
+  @retval  1 : key1 > key2 
 */
 
-int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
-				       byte* key2)
+int group_concat_key_cmp_with_distinct(void* arg, const void* key1, 
+                                       const void* key2)
 {
-  Item_func_group_concat* grp_item= (Item_func_group_concat*)arg;
-  TABLE *table= grp_item->table;
-  Item **field_item, **end;
+  Item_func_group_concat *item_func= (Item_func_group_concat*)arg;
+  TABLE *table= item_func->table;
 
-  for (field_item= grp_item->args, end= field_item + grp_item->arg_count_field;
-       field_item < end;
-       field_item++)
+  for (uint i= 0; i < item_func->arg_count_field; i++)
   {
+    Item *item= item_func->args[i];
+    /* 
+      If field_item is a const item then either get_tp_table_field returns 0
+      or it is an item over a const table. 
+    */
+    if (item->const_item())
+      continue;
     /*
       We have to use get_tmp_table_field() instead of
       real_item()->get_tmp_table_field() because we want the field in
       the temporary table, not the original field
     */
-    Field *field= (*field_item)->get_tmp_table_field();
-    /* 
-      If field_item is a const item then either get_tp_table_field returns 0
-      or it is an item over a const table. 
-    */
-    if (field && !(*field_item)->const_item())
-    {
-      int res;
-      uint offset= field->offset() - table->s->null_bytes;
-      if ((res= field->cmp((char *) key1 + offset, (char *) key2 + offset)))
-	return res;
-    }
+    Field *field= item->get_tmp_table_field();
+    int res;
+    uint offset= field->offset()-table->s->null_bytes;
+    if((res= field->cmp((char*)key1 + offset, (char*)key2 + offset)))
+      return res;
   }
   return 0;
 }
@@ -2859,7 +2959,8 @@ int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
   GROUP_CONCAT(expr,... ORDER BY col,... )
 */
 
-int group_concat_key_cmp_with_order(void* arg, byte* key1, byte* key2)
+int group_concat_key_cmp_with_order(void* arg, const void* key1, 
+                                    const void* key2)
 {
   Item_func_group_concat* grp_item= (Item_func_group_concat*) arg;
   ORDER **order_item, **end;
@@ -2894,25 +2995,6 @@ int group_concat_key_cmp_with_order(void* arg, byte* key1, byte* key2)
     if the returned values are not the same we do the sort on.
   */
   return 1;
-}
-
-
-/*
-  function of sort for syntax:
-  GROUP_CONCAT(DISTINCT expr,... ORDER BY col,... )
-
-  BUG:
-    This doesn't work in the case when the order by contains data that
-    is not part of the field list because tree-insert will not notice
-    the duplicated values when inserting things sorted by ORDER BY
-*/
-
-int group_concat_key_cmp_with_distinct_and_order(void* arg,byte* key1,
-						 byte* key2)
-{
-  if (!group_concat_key_cmp_with_distinct(arg,key1,key2))
-    return 0;
-  return(group_concat_key_cmp_with_order(arg,key1,key2));
 }
 
 
@@ -3000,7 +3082,7 @@ Item_func_group_concat(Name_resolution_context *context_arg,
                        bool distinct_arg, List<Item> *select_list,
                        SQL_LIST *order_list, String *separator_arg)
   :tmp_table_param(0), warning(0),
-   separator(separator_arg), tree(0), table(0),
+   separator(separator_arg), tree(0), unique_filter(NULL), table(0),
    order(0), context(context_arg),
    arg_count_order(order_list ? order_list->elements : 0),
    arg_count_field(select_list->elements),
@@ -3055,6 +3137,7 @@ Item_func_group_concat::Item_func_group_concat(THD *thd,
   warning(item->warning),
   separator(item->separator),
   tree(item->tree),
+  unique_filter(item->unique_filter),
   table(item->table),
   order(item->order),
   context(item->context),
@@ -3068,6 +3151,7 @@ Item_func_group_concat::Item_func_group_concat(THD *thd,
   original(item)
 {
   quick_group= item->quick_group;
+  result.set_charset(collation.collation);
 }
 
 
@@ -3104,6 +3188,11 @@ void Item_func_group_concat::cleanup()
         delete_tree(tree);
         tree= 0;
       }
+      if (unique_filter)
+      {
+        delete unique_filter;
+        unique_filter= NULL;
+      }
       if (warning)
       {
         char warn_buff[MYSQL_ERRMSG_SIZE];
@@ -3133,6 +3222,8 @@ void Item_func_group_concat::clear()
   no_appended= TRUE;
   if (tree)
     reset_tree(tree);
+  if (unique_filter)
+    unique_filter->reset();
   /* No need to reset the table as we never call write_row */
 }
 
@@ -3156,9 +3247,19 @@ bool Item_func_group_concat::add()
   }
 
   null_value= FALSE;
+  bool row_eligible= TRUE;
+
+  if (distinct) 
+  {
+    /* Filter out duplicate rows. */
+    uint count= unique_filter->elements_in_tree();
+    unique_filter->unique_add(table->record[0] + table->s->null_bytes);
+    if (count == unique_filter->elements_in_tree())
+      row_eligible= FALSE;
+  }
 
   TREE_ELEMENT *el= 0;                          // Only for safety
-  if (tree)
+  if (row_eligible && tree)
     el= tree_insert(tree, table->record[0] + table->s->null_bytes, 0,
                     tree->custom_arg);
   /*
@@ -3166,7 +3267,7 @@ bool Item_func_group_concat::add()
     we can dump the row here in case of GROUP_CONCAT(DISTINCT...)
     instead of doing tree traverse later.
   */
-  if (!warning_for_row &&
+  if (row_eligible && !warning_for_row &&
       (!tree || (el->count == 1 && distinct && !arg_count_order)))
     dump_leaf_key(table->record[0] + table->s->null_bytes, 1, this);
 
@@ -3209,6 +3310,27 @@ Item_func_group_concat::fix_fields(THD *thd, Item **ref)
   null_value= 1;
   max_length= thd->variables.group_concat_max_len;
 
+  uint32 offset;
+  if (separator->needs_conversion(separator->length(), separator->charset(),
+                                  collation.collation, &offset))
+  {
+    uint32 buflen= collation.collation->mbmaxlen * separator->length();
+    uint errors, conv_length;
+    char *buf;
+    String *new_separator;
+
+    if (!(buf= thd->stmt_arena->alloc(buflen)) ||
+        !(new_separator= new(thd->stmt_arena->mem_root)
+                           String(buf, buflen, collation.collation)))
+      return TRUE;
+    
+    conv_length= copy_and_convert(buf, buflen, collation.collation,
+                                  separator->ptr(), separator->length(),
+                                  separator->charset(), &errors);
+    new_separator->length(conv_length);
+    separator= new_separator;
+  }
+
   if (check_sum_func(thd, ref))
     return TRUE;
 
@@ -3221,7 +3343,6 @@ bool Item_func_group_concat::setup(THD *thd)
 {
   List<Item> list;
   SELECT_LEX *select_lex= thd->lex->current_select;
-  qsort_cmp2 compare_key;
   DBUG_ENTER("Item_func_group_concat::setup");
 
   /*
@@ -3265,18 +3386,37 @@ bool Item_func_group_concat::setup(THD *thd)
       setup_order(thd, args, context->table_list, list, all_fields, *order))
     DBUG_RETURN(TRUE);
 
-  count_field_types(tmp_table_param,all_fields,0);
+  count_field_types(select_lex, tmp_table_param, all_fields, 0);
   tmp_table_param->force_copy_fields= force_copy_fields;
   DBUG_ASSERT(table == 0);
-  /*
-    Currently we have to force conversion of BLOB values to VARCHAR's
-    if we are to store them in TREE objects used for ORDER BY and
-    DISTINCT. This leads to truncation if the BLOB's size exceeds
-    Field_varstring::MAX_SIZE.
-  */
   if (arg_count_order > 0 || distinct)
+  {
+    /*
+      Currently we have to force conversion of BLOB values to VARCHAR's
+      if we are to store them in TREE objects used for ORDER BY and
+      DISTINCT. This leads to truncation if the BLOB's size exceeds
+      Field_varstring::MAX_SIZE.
+    */
     set_if_smaller(tmp_table_param->convert_blob_length, 
                    Field_varstring::MAX_SIZE);
+
+    /*
+      Force the create_tmp_table() to convert BIT columns to INT
+      as we cannot compare two table records containg BIT fields
+      stored in the the tree used for distinct/order by.
+      Moreover we don't even save in the tree record null bits 
+      where BIT fields store parts of their data.
+    */
+    List_iterator_fast<Item> li(all_fields);
+    Item *item;
+    while ((item= li++))
+    {
+      if (item->type() == Item::FIELD_ITEM && 
+          ((Item_field*) item)->field->type() == FIELD_TYPE_BIT)
+        item->marker= 4;
+    }
+  }
+
   /*
     We have to create a temporary table to get descriptions of fields
     (types, sizes and so on).
@@ -3292,38 +3432,33 @@ bool Item_func_group_concat::setup(THD *thd)
   table->file->extra(HA_EXTRA_NO_ROWS);
   table->no_rows= 1;
 
+  /*
+     Need sorting or uniqueness: init tree and choose a function to sort.
+     Don't reserve space for NULLs: if any of gconcat arguments is NULL,
+     the row is not added to the result.
+  */
+  uint tree_key_length= table->s->reclength - table->s->null_bytes;
 
-  if (distinct || arg_count_order)
+  if (arg_count_order)
   {
-    /*
-      Need sorting: init tree and choose a function to sort.
-      Don't reserve space for NULLs: if any of gconcat arguments is NULL,
-      the row is not added to the result.
-    */
-    uint tree_key_length= table->s->reclength - table->s->null_bytes;
-
     tree= &tree_base;
-    if (arg_count_order)
-    {
-      if (distinct)
-        compare_key= (qsort_cmp2) group_concat_key_cmp_with_distinct_and_order;
-      else
-        compare_key= (qsort_cmp2) group_concat_key_cmp_with_order;
-    }
-    else
-    {
-      compare_key= (qsort_cmp2) group_concat_key_cmp_with_distinct;
-    }
     /*
-      Create a tree for sorting. The tree is used to sort and to remove
-      duplicate values (according to the syntax of this function). If there
-      is no DISTINCT or ORDER BY clauses, we don't create this tree.
+      Create a tree for sorting. The tree is used to sort (according to the
+      syntax of this function). If there is no ORDER BY clause, we don't
+      create this tree.
     */
     init_tree(tree, (uint) min(thd->variables.max_heap_table_size,
                                thd->variables.sortbuff_size/16), 0,
-              tree_key_length, compare_key, 0, NULL, (void*) this);
+              tree_key_length, 
+              group_concat_key_cmp_with_order , 0, NULL, (void*) this);
   }
 
+  if (distinct)
+    unique_filter= new Unique(group_concat_key_cmp_with_distinct,
+                              (void*)this,
+                              tree_key_length,
+                              thd->variables.max_heap_table_size);
+  
   DBUG_RETURN(FALSE);
 }
 
@@ -3345,7 +3480,7 @@ String* Item_func_group_concat::val_str(String* str)
   DBUG_ASSERT(fixed == 1);
   if (null_value)
     return 0;
-  if (!result.length() && tree)
+  if (no_appended && tree)
     /* Tree is used for sorting as in ORDER BY */
     tree_walk(tree, (tree_walk_action)&dump_leaf_key, (void*)this,
               left_root_right);
@@ -3392,4 +3527,11 @@ void Item_func_group_concat::print(String *str)
   str->append(STRING_WITH_LEN(" separator \'"));
   str->append(*separator);
   str->append(STRING_WITH_LEN("\')"));
+}
+
+
+Item_func_group_concat::~Item_func_group_concat()
+{
+  if (!original && unique_filter)
+    delete unique_filter;    
 }

@@ -173,6 +173,8 @@ ErrorBundle ErrorCodes[] = {
   { 4022, TR, "Out of Send Buffer space in NDB API" },
   { 4032, TR, "Out of Send Buffer space in NDB API" },
   {  288, TR, "Out of index operations in transaction coordinator (increase MaxNoOfConcurrentIndexOperations)" },
+  {  289, TR, "Out of transaction buffer memory in TC (increase TransactionBufferMemory)" },
+
   /**
    * InsufficientSpace
    */
@@ -289,6 +291,7 @@ ErrorBundle ErrorCodes[] = {
   { 242,  AE, "Zero concurrency in scan"},
   { 244,  AE, "Too high concurrency in scan"},
   { 269,  AE, "No condition and attributes to read in scan"},
+  { 874,  AE, "Too much attrinfo (e.g. scan filter) for scan in tuple manager" },
   { 4600, AE, "Transaction is already started"},
   { 4601, AE, "Transaction is not started"},
   { 4602, AE, "You must call getNdbOperation before executeScan" },
@@ -525,7 +528,8 @@ ErrorBundle ErrorCodes[] = {
   { 4270, IE, "Unknown blob error" },
   { 4335, AE, "Only one autoincrement column allowed per table. Having a table without primary key uses an autoincremented hidden key, i.e. a table without a primary key can not have an autoincremented column" },
   { 4271, AE, "Invalid index object, not retrieved via getIndex()" },
-  { 4275, AE, "The blob method is incompatible with operation type or lock mode" }
+  { 4275, AE, "The blob method is incompatible with operation type or lock mode" },
+  { 4294, AE, "Scan filter is too large, discarded" }
 };
 
 static
@@ -637,8 +641,6 @@ ndberror_update(ndberror_struct * error){
   if(!found){
     error->status = ST_U;
   }
-
-  error->details = 0;
 }
 
 int

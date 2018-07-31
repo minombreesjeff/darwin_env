@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql_config\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL_CONFIG\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL_CONFIG\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -28,14 +28,14 @@ supports the following options:
 .sp
 Compiler flags to find include files and critical compiler flags and defines used when compiling the
 libmysqlclient
-library.
+library. The options returned are tied to the specific compiler that was used when the library was created and might clash with the settings for your own compiler. Use
+\fB\-\-include\fR
+for more portable options that contain only include paths.
 .TP 3n
 \(bu
 \fB\-\-include\fR
 .sp
-Compiler options to find MySQL include files. (Note that normally you would use
-\fB\-\-cflags\fR
-instead of this option.)
+Compiler options to find MySQL include files.
 .TP 3n
 \(bu
 \fB\-\-libmysqld\-libs\fR,
@@ -102,26 +102,25 @@ as follows:
 .RS 3n
 .nf
 shell> \fBCFG=/usr/local/mysql/bin/mysql_config\fR
-shell> \fBsh \-c "gcc \-o progname `$CFG \-\-cflags` progname.c `$CFG \-\-libs`"\fR
+shell> \fBsh \-c "gcc \-o progname `$CFG \-\-include` progname.c `$CFG \-\-libs`"\fR
 .fi
 .RE
 .PP
 When you use
 \fBmysql_config\fR
-this way, be sure to invoke it within backtick (\(oq`\(cq) characters. That tells the shell to execute it and substitute its output into the surrounding command.
+this way, be sure to invoke it within backtick (\(lq`\(rq) characters. That tells the shell to execute it and substitute its output into the surrounding command.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

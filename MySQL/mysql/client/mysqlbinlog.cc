@@ -465,6 +465,31 @@ Create_file event for file_id: %u\n",ae->file_id);
 Load_log_processor load_processor;
 
 
+/**
+  Replace windows-style backslashes by forward slashes so it can be
+  consumed by the mysql client, which requires Unix path.
+
+  @todo This is only useful under windows, so may be ifdef'ed out on
+  other systems.  /Sven
+
+  @todo If a Create_file_log_event contains a filename with a
+  backslash (valid under unix), then we have problems under windows.
+  /Sven
+
+  @param[in,out] fname Filename to modify. The filename is modified
+  in-place.
+*/
+static void convert_path_to_forward_slashes(char *fname)
+{
+  while (*fname)
+  {
+    if (*fname == '\\')
+      *fname= '/';
+    fname++;
+  }
+}
+
+
 static bool check_database(const char *log_dbname)
 {
   return one_database &&
@@ -582,6 +607,11 @@ int process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
       */
       if (ce)
       {
+        /*
+          We must not convert earlier, since the file is used by
+          my_open() in Load_log_processor::append().
+        */
+        convert_path_to_forward_slashes((char*) ce->fname);
 	ce->print(result_file, print_event_info, TRUE);
 	my_free((char*)ce->fname,MYF(MY_WME));
 	delete ce;
@@ -622,6 +652,7 @@ Create_file event for file_id: %u\n",exv->file_id);
 
       if (fname)
       {
+        convert_path_to_forward_slashes(fname);
 	exlq->print(result_file, print_event_info, fname);
 	my_free(fname, MYF(MY_WME));
       }
@@ -687,9 +718,14 @@ static struct my_option my_long_options[] =
    0, GET_ULL, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"password", 'p', "Password to connect to remote server.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-  {"port", 'P', "Use port to connect to the remote server.",
-   (gptr*) &port, (gptr*) &port, 0, GET_INT, REQUIRED_ARG, 0, 0, 0,
-   0, 0, 0},
+  {"port", 'P', "Port number to use for connection or 0 for default to, in "
+   "order of preference, my.cnf, $MYSQL_TCP_PORT, "
+#if MYSQL_PORT_DEFAULT == 0
+   "/etc/services, "
+#endif
+   "built-in default (" STRINGIFY_ARG(MYSQL_PORT) ").",
+   (gptr*) &port, (gptr*) &port, 0, GET_INT, REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
   {"position", 'j', "Deprecated. Use --start-position instead.",
    (gptr*) &start_position, (gptr*) &start_position, 0, GET_ULL,
    REQUIRED_ARG, BIN_LOG_HEADER_SIZE, BIN_LOG_HEADER_SIZE,
@@ -1438,7 +1474,7 @@ int main(int argc, char** argv)
   DBUG_ENTER("main");
   DBUG_PROCESS(argv[0]);
 
-  init_time(); // for time functions
+  my_init_time(); // for time functions
 
   parse_args(&argc, (char***)&argv);
   defaults_argv=argv;

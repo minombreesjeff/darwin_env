@@ -76,6 +76,7 @@ static void remove_escape(char *name);
 static bool append_file_to_dir(THD *thd, const char **filename_ptr,
 			       const char *table_name);
 static bool check_show_create_table_access(THD *thd, TABLE_LIST *table);
+static bool test_if_data_home_dir(const char *dir);
 
 const char *any_db="*any*";	// Special symbol for check_access
 
@@ -93,23 +94,12 @@ const char *xa_state_names[]={
   "NON-EXISTING", "ACTIVE", "IDLE", "PREPARED"
 };
 
+#ifndef EMBEDDED_LIBRARY
+static bool do_command(THD *thd);
+#endif // EMBEDDED_LIBRARY
+
 #ifdef __WIN__
-static void  test_signal(int sig_ptr)
-{
-#if !defined( DBUG_OFF)
-  MessageBox(NULL,"Test signal","DBUG",MB_OK);
-#endif
-#if defined(OS2)
-  fprintf(stderr, "Test signal %d\n", sig_ptr);
-  fflush(stderr);
-#endif
-}
-static void init_signals(void)
-{
-  int signals[7] = {SIGINT,SIGILL,SIGFPE,SIGSEGV,SIGTERM,SIGBREAK,SIGABRT } ;
-  for (int i=0 ; i < 7 ; i++)
-    signal( signals[i], test_signal) ;
-}
+extern void win_install_sigabrt_handler(void);
 #endif
 
 static void unlock_locked_tables(THD *thd)
@@ -149,7 +139,7 @@ static bool end_active_trans(THD *thd)
     if (ha_commit(thd))
       error=1;
     thd->options&= ~OPTION_BEGIN;
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
   }
   DBUG_RETURN(error);
 }
@@ -173,7 +163,7 @@ static bool begin_trans(THD *thd)
   else
   {
     LEX *lex= thd->lex;
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
     thd->options|= OPTION_BEGIN;
     thd->server_status|= SERVER_STATUS_IN_TRANS;
     if (lex->start_transaction_opt & MYSQL_START_TRANS_OPT_WITH_CONS_SNAPSHOT)
@@ -1120,7 +1110,7 @@ pthread_handler_t handle_one_connection(void *arg)
   /* now that we've called my_thread_init(), it is safe to call DBUG_* */
 
 #if defined(__WIN__)
-  init_signals();
+  win_install_sigabrt_handler();
 #elif !defined(OS2) && !defined(__NETWARE__)
   sigset_t set;
   VOID(sigemptyset(&set));			// Get mask in use
@@ -1199,23 +1189,28 @@ pthread_handler_t handle_one_connection(void *arg)
     }
     if (thd->user_connect)
       decrease_user_connections(thd->user_connect);
+
+    if (thd->killed ||
+        net->vio && net->error && net->report_error)
+    {
+      statistic_increment(aborted_threads, &LOCK_status);
+    }
+
     if (net->error && net->vio != 0 && net->report_error)
     {
       if (!thd->killed && thd->variables.log_warnings > 1)
-	sql_print_warning(ER(ER_NEW_ABORTING_CONNECTION),
+      {
+        sql_print_warning(ER(ER_NEW_ABORTING_CONNECTION),
                           thd->thread_id,(thd->db ? thd->db : "unconnected"),
                           sctx->user ? sctx->user : "unauthenticated",
                           sctx->host_or_ip,
                           (net->last_errno ? ER(net->last_errno) :
                            ER(ER_UNKNOWN_ERROR)));
+      }
+
       net_send_error(thd, net->last_errno, NullS);
-      statistic_increment(aborted_threads,&LOCK_status);
     }
-    else if (thd->killed)
-    {
-      statistic_increment(aborted_threads,&LOCK_status);
-    }
-    
+
 end_thread:
     close_connection(thd, 0, 1);
     end_thread(thd,1);
@@ -1313,6 +1308,10 @@ pthread_handler_t handle_bootstrap(void *arg)
 				  thd->db_length+1+QUERY_CACHE_FLAGS_SIZE);
     thd->query[length] = '\0';
     DBUG_PRINT("query",("%-.4096s",thd->query));
+#if defined(ENABLED_PROFILING)
+    thd->profiling.set_query_source(thd->query, length);
+#endif
+
     /*
       We don't need to obtain LOCK_thread_count here because in bootstrap
       mode we have only one thread.
@@ -1471,7 +1470,7 @@ int end_trans(THD *thd, enum enum_mysql_completiontype completion)
     thd->server_status&= ~SERVER_STATUS_IN_TRANS;
     res= ha_commit(thd);
     thd->options&= ~OPTION_BEGIN;
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
     break;
   case COMMIT_RELEASE:
     do_release= 1; /* fall through */
@@ -1489,7 +1488,7 @@ int end_trans(THD *thd, enum enum_mysql_completiontype completion)
     if (ha_rollback(thd))
       res= -1;
     thd->options&= ~OPTION_BEGIN;
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
     if (!res && (completion == ROLLBACK_AND_CHAIN))
       res= begin_trans(thd);
     break;
@@ -1520,8 +1519,9 @@ int end_trans(THD *thd, enum enum_mysql_completiontype completion)
     1  request of thread shutdown (see dispatch_command() description)
 */
 
-bool do_command(THD *thd)
+static bool do_command(THD *thd)
 {
+  bool return_value;
   char *packet= 0;
   ulong packet_length;
   NET *net= &thd->net;
@@ -1545,20 +1545,29 @@ bool do_command(THD *thd)
   thd->clear_error();				// Clear error message
 
   net_new_transaction(net);
-  if ((packet_length=my_net_read(net)) == packet_error)
+
+  packet_length= my_net_read(net);
+#if defined(ENABLED_PROFILING)
+  thd->profiling.start_new_query();
+#endif
+  if (packet_length == packet_error)
   {
     DBUG_PRINT("info",("Got error %d reading command from socket %s",
 		       net->error,
 		       vio_description(net->vio)));
+
     /* Check if we can continue without closing the connection */
+
     if (net->error != 3)
     {
-      statistic_increment(aborted_threads,&LOCK_status);
-      DBUG_RETURN(TRUE);			// We have to close it.
+      return_value= TRUE;			// We have to close it.
+      goto out;
     }
+
     net_send_error(thd, net->last_errno, NullS);
     net->error= 0;
-    DBUG_RETURN(FALSE);
+    return_value= FALSE;
+    goto out;
   }
   else
   {
@@ -1583,10 +1592,84 @@ bool do_command(THD *thd)
     command == packet[0] == COM_SLEEP).
     In dispatch_command packet[packet_length] points beyond the end of packet.
   */
-  DBUG_RETURN(dispatch_command(command,thd, packet+1, (uint) packet_length));
+  return_value= dispatch_command(command, thd, packet+1, (uint) (packet_length));
+
+out:
+#if defined(ENABLED_PROFILING)
+  thd->profiling.finish_current_query();
+#endif
+  DBUG_RETURN(return_value);
 }
 #endif  /* EMBEDDED_LIBRARY */
 
+
+/**
+  @brief Determine if an attempt to update a non-temporary table while the
+    read-only option was enabled has been made.
+
+  This is a helper function to mysql_execute_command.
+
+  @note SQLCOM_MULTI_UPDATE is an exception and delt with elsewhere.
+
+  @see mysql_execute_command
+  @returns Status code
+    @retval TRUE The statement should be denied.
+    @retval FALSE The statement isn't updating any relevant tables.
+*/
+
+static my_bool deny_updates_if_read_only_option(THD *thd,
+                                                TABLE_LIST *all_tables)
+{
+  DBUG_ENTER("deny_updates_if_read_only_option");
+
+  if (!opt_readonly)
+    DBUG_RETURN(FALSE);
+
+  LEX *lex= thd->lex;
+
+  const my_bool user_is_super=
+    ((ulong)(thd->security_ctx->master_access & SUPER_ACL) ==
+     (ulong)SUPER_ACL);
+
+  if (user_is_super)
+    DBUG_RETURN(FALSE);
+
+  if (!uc_update_queries[lex->sql_command])
+    DBUG_RETURN(FALSE);
+
+  /* Multi update is an exception and is dealt with later. */
+  if (lex->sql_command == SQLCOM_UPDATE_MULTI)
+    DBUG_RETURN(FALSE);
+
+  const my_bool create_temp_tables= 
+    (lex->sql_command == SQLCOM_CREATE_TABLE) &&
+    (lex->create_info.options & HA_LEX_CREATE_TMP_TABLE);
+
+  const my_bool drop_temp_tables= 
+    (lex->sql_command == SQLCOM_DROP_TABLE) &&
+    lex->drop_temporary;
+
+  const my_bool update_real_tables=
+    some_non_temp_table_to_be_updated(thd, all_tables) &&
+    !(create_temp_tables || drop_temp_tables);
+
+
+  const my_bool create_or_drop_databases=
+    (lex->sql_command == SQLCOM_CREATE_DB) ||
+    (lex->sql_command == SQLCOM_DROP_DB);
+
+  if (update_real_tables || create_or_drop_databases)
+  {
+      /*
+        An attempt was made to modify one or more non-temporary tables.
+      */
+      DBUG_RETURN(TRUE);
+  }
+
+
+  /* Assuming that only temporary tables are modified. */
+  DBUG_RETURN(FALSE);
+}
 
 /*
    Perform one connection-level (COM_XXXX) command.
@@ -1805,6 +1888,9 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
     mysql_log.write(thd,command, format, thd->query_length, thd->query);
     DBUG_PRINT("query",("%-.4096s",thd->query));
+#if defined(ENABLED_PROFILING)
+    thd->profiling.set_query_source(thd->query, thd->query_length);
+#endif
 
     if (!(specialflag & SPECIAL_NO_PRIOR))
       my_pthread_setprio(pthread_self(),QUERY_PRIOR);
@@ -1831,6 +1917,13 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
         next_packet++;
         length--;
       }
+
+#if defined(ENABLED_PROFILING)
+      thd->profiling.finish_current_query();
+      thd->profiling.start_new_query("continuing");
+      thd->profiling.set_query_source(next_packet, length);
+#endif
+
       VOID(pthread_mutex_lock(&LOCK_thread_count));
       thd->query_length= length;
       thd->query= next_packet;
@@ -1864,7 +1957,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     statistic_increment(thd->status_var.com_stat[SQLCOM_SHOW_FIELDS],
 			&LOCK_status);
     bzero((char*) &table_list,sizeof(table_list));
-    if (thd->copy_db_to(&table_list.db, 0))
+    if (thd->copy_db_to(&table_list.db, &table_list.db_length))
       break;
     pend= strend(packet);
     thd->convert_string(&conv_name, system_charset_info,
@@ -1990,7 +2083,6 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       unregister_slave(thd,1,1);
       /*  fake COM_QUIT -- if we get here, the thread needs to terminate */
       error = TRUE;
-      net->error = 0;
       break;
     }
 #endif
@@ -2207,7 +2299,7 @@ void log_slow_statement(THD *thd)
 	thd->variables.long_query_time ||
         (thd->server_status &
 	  (SERVER_QUERY_NO_INDEX_USED | SERVER_QUERY_NO_GOOD_INDEX_USED)) &&
-        (specialflag & SPECIAL_LOG_QUERIES_NOT_USING_INDEXES) &&
+        opt_log_queries_not_using_indexes &&
         /* == SQLCOM_END unless this is a SHOW command */
         thd->lex->orig_sql_command == SQLCOM_END)
     {
@@ -2273,7 +2365,7 @@ int prepare_schema_table(THD *thd, LEX *lex, Table_ident *table_ident,
     DBUG_RETURN(1);
 #else
     if (lex->select_lex.db == NULL &&
-        thd->copy_db_to(&lex->select_lex.db, NULL))
+        lex->copy_db_to(&lex->select_lex.db, NULL))
     {
       DBUG_RETURN(1);
     }
@@ -2325,7 +2417,7 @@ int prepare_schema_table(THD *thd, LEX *lex, Table_ident *table_ident,
       wish to have SHOW commands show up in profiling.
     */
 #ifdef ENABLED_PROFILING
-    thd->profiling.discard();
+    thd->profiling.discard_current_query();
 #endif
     break;
   case SCH_OPEN_TABLES:
@@ -2448,10 +2540,10 @@ static void reset_one_shot_variables(THD *thd)
     TRUE        Error
 */
 
-bool
+int
 mysql_execute_command(THD *thd)
 {
-  bool res= FALSE;
+  int res= FALSE;
   bool need_start_waiting= FALSE; // have protection against global read lock
   int  up_result= 0;
   LEX  *lex= thd->lex;
@@ -2591,14 +2683,7 @@ mysql_execute_command(THD *thd)
       When option readonly is set deny operations which change non-temporary
       tables. Except for the replication thread and the 'super' users.
     */
-    if (opt_readonly &&
-        !(thd->security_ctx->master_access & SUPER_ACL) &&
-        uc_update_queries[lex->sql_command] &&
-        !((lex->sql_command == SQLCOM_CREATE_TABLE) &&
-          (lex->create_info.options & HA_LEX_CREATE_TMP_TABLE)) &&
-        !((lex->sql_command == SQLCOM_DROP_TABLE) && lex->drop_temporary) &&
-        ((lex->sql_command != SQLCOM_UPDATE_MULTI) &&
-          some_non_temp_table_to_be_updated(thd, all_tables)))
+    if (deny_updates_if_read_only_option(thd, all_tables))
     {
       my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--read-only");
       DBUG_RETURN(-1);
@@ -2610,6 +2695,8 @@ mysql_execute_command(THD *thd)
     statistic_increment(thd->status_var.com_stat[lex->sql_command],
                         &LOCK_status);
 
+  DBUG_ASSERT(thd->transaction.stmt.modified_non_trans_table == FALSE);
+  
   switch (lex->sql_command) {
   case SQLCOM_SELECT:
   {
@@ -2760,8 +2847,7 @@ mysql_execute_command(THD *thd)
   case SQLCOM_SHOW_PROFILES:
   {
 #ifdef ENABLED_PROFILING
-    thd->profiling.store();
-    thd->profiling.discard();
+    thd->profiling.discard_current_query();
     res= thd->profiling.show_profiles();
     if (res)
       goto error;
@@ -2866,7 +2952,16 @@ mysql_execute_command(THD *thd)
     if (check_global_access(thd, SUPER_ACL | REPL_CLIENT_ACL))
       goto error;
     pthread_mutex_lock(&LOCK_active_mi);
-    res = show_master_info(thd,active_mi);
+    if (active_mi != NULL)
+    {
+      res = show_master_info(thd, active_mi);
+    }
+    else
+    {
+      push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 0,
+                   "the master info structure does not exist");
+      send_ok(thd);
+    }
     pthread_mutex_unlock(&LOCK_active_mi);
     break;
   }
@@ -2961,7 +3056,7 @@ mysql_execute_command(THD *thd)
     else 
     {
       /* So that CREATE TEMPORARY TABLE gets to binlog at commit/rollback */
-      thd->no_trans_update.all= TRUE;
+      thd->transaction.all.modified_non_trans_table= TRUE;
     }
     DBUG_ASSERT(first_table == all_tables && first_table != 0);
     bool link_to_local;
@@ -2999,6 +3094,20 @@ mysql_execute_command(THD *thd)
                    "INDEX DIRECTORY option ignored");
     create_info.data_file_name= create_info.index_file_name= NULL;
 #else
+
+    if (test_if_data_home_dir(lex->create_info.data_file_name))
+    {
+      my_error(ER_WRONG_ARGUMENTS,MYF(0),"DATA DIRECORY");
+      res= -1;
+      break;
+    }
+    if (test_if_data_home_dir(lex->create_info.index_file_name))
+    {
+      my_error(ER_WRONG_ARGUMENTS,MYF(0),"INDEX DIRECORY");
+      res= -1;
+      break;
+    }
+
     /* Fix names if symlinked tables */
     if (append_file_to_dir(thd, &create_info.data_file_name,
 			   create_table->table_name) ||
@@ -3714,6 +3823,13 @@ end_with_restore_list:
 			SELECT_NO_JOIN_CACHE | SELECT_NO_UNLOCK |
                         OPTION_SETUP_TABLES_DONE,
 			del_result, unit, select_lex);
+      res|= thd->net.report_error;
+      if (unlikely(res))
+      {
+        /* If we had a another error reported earlier then this will be ignored */
+        del_result->send_error(ER_UNKNOWN_ERROR, "Execution of the query failed");
+        del_result->abort();
+      }
       delete del_result;
     }
     else
@@ -3744,7 +3860,7 @@ end_with_restore_list:
         lex->drop_if_exists= 1;
 
       /* So that DROP TEMPORARY TABLE gets to binlog at commit/rollback */
-      thd->no_trans_update.all= TRUE;
+      thd->transaction.all.modified_non_trans_table= TRUE;
     }
     /* DDL and binlog write order protected by LOCK_open */
     res= mysql_rm_table(thd, first_table, lex->drop_if_exists,
@@ -3861,7 +3977,10 @@ end_with_restore_list:
     break;
   case SQLCOM_LOCK_TABLES:
     unlock_locked_tables(thd);
-    if (check_db_used(thd, all_tables) || end_active_trans(thd))
+    /* we must end the trasaction first, regardless of anything */
+    if (end_active_trans(thd))
+      goto error;
+    if (check_db_used(thd, all_tables))
       goto error;
     if (check_table_access(thd, LOCK_TABLES_ACL | SELECT_ACL, all_tables, 0))
       goto error;
@@ -3879,7 +3998,15 @@ end_with_restore_list:
       send_ok(thd);
     }
     else
+    {
+      /* 
+        Need to end the current transaction, so the storage engine (InnoDB)
+        can free its locks if LOCK TABLES locked some tables before finding
+        that it can't lock a table in its list
+      */
+      end_active_trans(thd);
       thd->options&= ~(OPTION_TABLE_LOCK);
+    }
     thd->in_lock_tables=0;
     break;
   case SQLCOM_CREATE_DB:
@@ -4001,6 +4128,8 @@ end_with_restore_list:
   }
   case SQLCOM_SHOW_CREATE_DB:
   {
+    DBUG_EXECUTE_IF("4x_server_emul",
+                    my_error(ER_UNKNOWN_ERROR, MYF(0)); goto error;);
     if (!strip_sp(lex->name) || check_db_name(lex->name))
     {
       my_error(ER_WRONG_DB_NAME, MYF(0), lex->name);
@@ -4016,12 +4145,6 @@ end_with_restore_list:
     if (check_access(thd,INSERT_ACL,"mysql",0,1,0,0))
       break;
 #ifdef HAVE_DLOPEN
-    if (sp_find_routine(thd, TYPE_ENUM_FUNCTION, lex->spname,
-                        &thd->sp_func_cache, FALSE))
-    {
-      my_error(ER_UDF_EXISTS, MYF(0), lex->spname->m_name.str);
-      goto error;
-    }
     if (!(res = mysql_create_function(thd, &lex->udf)))
       send_ok(thd);
 #else
@@ -4335,7 +4458,7 @@ end_with_restore_list:
         res= TRUE; // cannot happen
       else
       {
-        if (thd->no_trans_update.all &&
+        if (thd->transaction.all.modified_non_trans_table &&
             !thd->slave_thread)
           push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
                        ER_WARNING_NOT_COMPLETE_ROLLBACK,
@@ -4906,6 +5029,10 @@ create_sp_error:
 #endif // ifndef DBUG_OFF
   case SQLCOM_CREATE_VIEW:
     {
+      /*
+        Note: SQLCOM_CREATE_VIEW also handles 'ALTER VIEW' commands
+        as specified through the thd->lex->create_view_mode flag.
+      */
       if (end_active_trans(thd))
         goto error;
 
@@ -4978,7 +5105,7 @@ create_sp_error:
     thd->transaction.xid_state.xa_state=XA_ACTIVE;
     thd->transaction.xid_state.xid.set(thd->lex->xid);
     xid_cache_insert(&thd->transaction.xid_state);
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
     thd->options|= OPTION_BEGIN;
     thd->server_status|= SERVER_STATUS_IN_TRANS;
     send_ok(thd);
@@ -5073,7 +5200,7 @@ create_sp_error:
       break;
     }
     thd->options&= ~OPTION_BEGIN;
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
     thd->server_status&= ~SERVER_STATUS_IN_TRANS;
     xid_cache_delete(&thd->transaction.xid_state);
     thd->transaction.xid_state.xa_state=XA_NOTR;
@@ -5104,7 +5231,7 @@ create_sp_error:
     else
       send_ok(thd);
     thd->options&= ~OPTION_BEGIN;
-    thd->no_trans_update.all= FALSE;
+    thd->transaction.all.modified_non_trans_table= FALSE;
     thd->server_status&= ~SERVER_STATUS_IN_TRANS;
     xid_cache_delete(&thd->transaction.xid_state);
     thd->transaction.xid_state.xa_state=XA_NOTR;
@@ -5856,6 +5983,7 @@ void mysql_reset_thd_for_next_command(THD *thd)
                           SERVER_QUERY_NO_GOOD_INDEX_USED);
   DBUG_ASSERT(thd->security_ctx== &thd->main_security_ctx);
   thd->tmp_table_used= 0;
+  thd->thread_specific_used= FALSE;
   if (!thd->in_sub_stmt)
   {
     if (opt_bin_log)
@@ -5867,9 +5995,6 @@ void mysql_reset_thd_for_next_command(THD *thd)
     thd->total_warn_count=0;			// Warnings for this query
     thd->rand_used= 0;
     thd->sent_row_count= thd->examined_row_count= 0;
-#ifdef ENABLED_PROFILING
-    thd->profiling.reset();
-#endif
   }
   DBUG_VOID_RETURN;
 }
@@ -5903,6 +6028,11 @@ mysql_new_select(LEX *lex, bool move_down)
   select_lex->init_query();
   select_lex->init_select();
   lex->nest_level++;
+  if (lex->nest_level > (int) MAX_SELECT_NESTING)
+  {
+    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT,MYF(0),MAX_SELECT_NESTING);
+    DBUG_RETURN(1);
+  }
   select_lex->nest_level= lex->nest_level;
   /*
     Don't evaluate this subquery during statement prepare even if
@@ -6094,8 +6224,14 @@ void mysql_parse(THD *thd, const char *inBuf, uint length,
               (thd->query_length= (ulong)(lip.found_semicolon - thd->query)))
             thd->query_length--;
           /* Actually execute the query */
-	  mysql_execute_command(thd);
-	  query_cache_end_of_result(thd);
+          if (*found_semicolon)
+          {
+            lex->safe_to_cache_query= 0;
+            thd->server_status|= SERVER_MORE_RESULTS_EXISTS;
+          }
+          lex->set_trg_event_type_for_tables();
+          mysql_execute_command(thd);
+          query_cache_end_of_result(thd);
 	}
       }
     }
@@ -6411,7 +6547,7 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
     ptr->db= table->db.str;
     ptr->db_length= table->db.length;
   }
-  else if (thd->copy_db_to(&ptr->db, &ptr->db_length))
+  else if (lex->copy_db_to(&ptr->db, &ptr->db_length))
     DBUG_RETURN(0);
 
   ptr->alias= alias_str;
@@ -6430,7 +6566,12 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
     ST_SCHEMA_TABLE *schema_table= find_schema_table(thd, ptr->table_name);
     if (!schema_table ||
         (schema_table->hidden && 
-         lex->orig_sql_command == SQLCOM_END))  // not a 'show' command
+         (lex->orig_sql_command == SQLCOM_END ||         // not a 'show' command
+          /*
+            this check is used for show columns|keys from I_S hidden table
+          */
+          lex->orig_sql_command == SQLCOM_SHOW_FIELDS ||
+          lex->orig_sql_command == SQLCOM_SHOW_KEYS)))
     {
       my_error(ER_UNKNOWN_TABLE, MYF(0),
                ptr->table_name, INFORMATION_SCHEMA_NAME.str);
@@ -7049,7 +7190,7 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables,
 
         for (; lock_p < end_p; lock_p++)
         {
-          if ((*lock_p)->type == TL_WRITE)
+          if ((*lock_p)->type >= TL_WRITE_ALLOW_WRITE)
           {
             my_error(ER_LOCK_OR_ACTIVE_TRANSACTION, MYF(0));
             return 1;
@@ -7817,3 +7958,48 @@ bool check_string_length(LEX_STRING *str, const char *err_msg,
 
   return TRUE;
 }
+
+
+/*
+  Check if path does not contain mysql data home directory
+
+  SYNOPSIS
+    test_if_data_home_dir()
+    dir                     directory
+    conv_home_dir           converted data home directory
+    home_dir_len            converted data home directory length
+
+  RETURN VALUES
+    0	ok
+    1	error  
+*/
+
+static bool test_if_data_home_dir(const char *dir)
+{
+  char path[FN_REFLEN], conv_path[FN_REFLEN];
+  uint dir_len, home_dir_len= strlen(mysql_unpacked_real_data_home);
+  DBUG_ENTER("test_if_data_home_dir");
+
+  if (!dir)
+    DBUG_RETURN(0);
+
+  (void) fn_format(path, dir, "", "",
+                   (MY_RETURN_REAL_PATH|MY_RESOLVE_SYMLINKS));
+  dir_len= unpack_dirname(conv_path, dir);
+
+  if (home_dir_len <= dir_len)
+  {
+    if (lower_case_file_system)
+    {
+      if (!my_strnncoll(default_charset_info, (const uchar*) conv_path,
+                        home_dir_len,
+                        (const uchar*) mysql_unpacked_real_data_home,
+                        home_dir_len))
+        DBUG_RETURN(1);
+    }
+    else if (!memcmp(conv_path, mysql_unpacked_real_data_home, home_dir_len))
+      DBUG_RETURN(1);
+  }
+  DBUG_RETURN(0);
+}
+

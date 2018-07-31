@@ -113,6 +113,15 @@ t2.value64=t1.value64;
 
 drop table t1, t2;
 
+# Test for BUG#30069, can't handle bigint -9223372036854775808 on
+# x86_64, with some GCC versions and optimizations.
+
+create table t1 (sint64 bigint not null);
+insert into t1 values (-9223372036854775808);
+select * from t1;
+
+drop table t1;
+
 # End of 4.1 tests
 
 #
@@ -294,3 +303,19 @@ drop table t1;
 
 select cast(19999999999999999999 as signed);
 select cast(-19999999999999999999 as signed);
+
+#
+# Bug #28625: -9223372036854775808 doesn't fit in BIGINT.
+#
+
+# PS protocol gives different metadata for `Max length' column
+--disable_ps_protocol
+--enable_metadata
+select -9223372036854775808;
+select -(9223372036854775808);
+select -((9223372036854775808));
+select -(-(9223372036854775808));
+--disable_metadata
+--enable_ps_protocol
+select --9223372036854775808, ---9223372036854775808, ----9223372036854775808;
+select -(-9223372036854775808), -(-(-9223372036854775808));

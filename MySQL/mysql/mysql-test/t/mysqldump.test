@@ -1348,6 +1348,7 @@ grant RELOAD on *.* to mysqltest_1@localhost;
 grant REPLICATION CLIENT on *.* to mysqltest_1@localhost;
 
 # Execute mysqldump, should now succeed
+--replace_regex /MASTER_LOG_POS=[0-9]+/MASTER_LOG_POS=#/
 --exec $MYSQL_DUMP --compact --master-data -u mysqltest_1 test 2>&1
 
 # Clean up
@@ -1540,6 +1541,58 @@ CREATE TABLE t1 (c1 INT, c2 LONGBLOB);
 INSERT INTO t1 SET c1=11, c2=REPEAT('q',509);
 --exec $MYSQL_DUMP --skip-create --compact --hex-blob test t1
 DROP TABLE t1;
+
+--echo #
+--echo # Bug #28524: mysqldump --skip-add-drop-table is not
+--echo #             compatible with views
+--echo #
+
+CREATE VIEW v1 AS SELECT 1;
+--exec $MYSQL_DUMP --skip-add-drop-table test > $MYSQLTEST_VARDIR/tmp/bug28524.sql
+DROP VIEW v1;
+
+--exec $MYSQL test <  $MYSQLTEST_VARDIR/tmp/bug28524.sql
+SELECT * FROM v1;
+DROP VIEW v1;
+
+--echo #
+--echo # Bug #29788: mysqldump discards the NO_AUTO_VALUE_ON_ZERO value of
+--echo #             the SQL_MODE variable after the dumping of triggers.
+--echo #
+
+CREATE TABLE t1 (c1 INT);
+CREATE TRIGGER t1bd BEFORE DELETE ON t1 FOR EACH ROW BEGIN END;
+
+CREATE TABLE t2 (c1 INT NOT NULL AUTO_INCREMENT PRIMARY KEY);
+
+SET @TMP_SQL_MODE = @@SQL_MODE;
+SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
+INSERT INTO t2 VALUES (0), (1), (2);
+SET SQL_MODE = @TMP_SQL_MODE;
+SELECT * FROM t2;
+
+--exec $MYSQL_DUMP --routines test >$MYSQLTEST_VARDIR/tmp/bug29788.sql
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/bug29788.sql
+SELECT * FROM t2;
+
+DROP TABLE t1,t2;
+
+--echo #
+--echo # Bug#29815: new option for suppressing last line of mysqldump:
+--echo #            "Dump completed on"
+--echo #
+
+--echo # --skip-dump-date:
+--replace_regex /-- [^D][^u][^m][^p].*// /\/\*!.*//
+--exec $MYSQL_DUMP --skip-dump-date test
+
+--echo # --dump-date:
+--replace_regex /-- [^D][^u][^m][^p].*// /\/\*!.*// / on [0-9 :-]+/ on DATE/
+--exec $MYSQL_DUMP --dump-date test
+
+--echo # --dump-date (default):
+--replace_regex /-- [^D][^u][^m][^p].*// /\/\*!.*// / on [0-9 :-]+/ on DATE/
+--exec $MYSQL_DUMP test
 
 --echo #
 --echo # End of 5.0 tests

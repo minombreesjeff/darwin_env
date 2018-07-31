@@ -392,9 +392,8 @@ NdbOperation::getValue_impl(const NdbColumnImpl* tAttrInfo, char* aValue)
 	return NULL;
       }//if
     }//if
-    Uint32 ah;
-    AttributeHeader::init(&ah, tAttrInfo->m_attrId, 0);
-    if (insertATTRINFO(ah) != -1) {	
+    AttributeHeader ah(tAttrInfo->m_attrId, 0);
+    if (insertATTRINFO(ah.m_value) != -1) {	
       // Insert Attribute Id into ATTRINFO part. 
       
       /************************************************************************
@@ -441,7 +440,7 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
                        theOperationType,
                        (long) aValuePassed, len));
   if (aValuePassed != NULL)
-    DBUG_DUMP("value", (char*)aValuePassed, len);
+    DBUG_DUMP("value", (uchar*)aValuePassed, len);
 
   int tReturnCode;
   Uint32 tAttrId;
@@ -525,12 +524,11 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
   
   tAttrId = tAttrInfo->m_attrId;
   const char *aValue = aValuePassed; 
-  Uint32 ahValue;
   if (aValue == NULL) {
     if (tAttrInfo->m_nullable) {
-      AttributeHeader& ah = AttributeHeader::init(&ahValue, tAttrId, 0);
+      AttributeHeader ah(tAttrId, 0);
       ah.setNULL();
-      insertATTRINFO(ahValue);
+      insertATTRINFO(ah.m_value);
       // Insert Attribute Id with the value
       // NULL into ATTRINFO part. 
       DBUG_RETURN(0);
@@ -563,8 +561,8 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
   }//if
   const Uint32 totalSizeInWords = (sizeInBytes + 3)/4; // Including bits in last word
   const Uint32 sizeInWords = sizeInBytes / 4;          // Excluding bits in last word
-  (void) AttributeHeader::init(&ahValue, tAttrId, totalSizeInWords);
-  insertATTRINFO( ahValue );
+  AttributeHeader ah(tAttrId, totalSizeInWords);
+  insertATTRINFO( ah.m_value );
 
   /***********************************************************************
    * Check if the pointer of the value passed is aligned on a 4 byte boundary.
@@ -572,15 +570,34 @@ NdbOperation::setValue( const NdbColumnImpl* tAttrInfo,
    * If it is not aligned then we start by copying the value to tempData and 
    * use this as aValue instead.
    *************************************************************************/
-  const int attributeSize = sizeInBytes;
-  const int slack = sizeInBytes & 3;
+  int attributeSize = sizeInBytes;
+  int slack = (sizeInBytes & 3) ? 4 - (sizeInBytes & 3) : 0;
+  switch(tAttrInfo->m_type){
+  case NdbDictionary::Column::Varchar:
+  case NdbDictionary::Column::Varbinary:
+    attributeSize = 1 + *(Uint8*)aValue;
+    slack = 4 * totalSizeInWords - attributeSize;
+    break;
+  case NdbDictionary::Column::Longvarchar:
+  case NdbDictionary::Column::Longvarbinary:
+  {
+    const Uint8* ptr = (const Uint8*)aValue;
+    attributeSize = 2 + ptr[0] + 256 * ptr[1];
+    slack = 4 * totalSizeInWords - attributeSize;
+    break;
+  }
+  default:
+    break;
+  }
   
-  if (((UintPtr)aValue & 3) != 0 || (slack != 0)){
-    memcpy(&tempData[0], aValue, attributeSize);
-    aValue = (char*)&tempData[0];
-    if(slack != 0) {
-      char * tmp = (char*)&tempData[0];
-      memset(&tmp[attributeSize], 0, (4 - slack));
+  if (((UintPtr)aValue & 3) != 0 || (slack != 0))
+  {
+    char * tmp = (char*)tempData;
+    memcpy(tmp, aValue, attributeSize);
+    aValue = tmp;
+    if(slack != 0) 
+    {
+      bzero(tmp + attributeSize, slack);
     }//if
   }//if
   

@@ -510,7 +510,7 @@ drop table t1;
 #
 create table t1 (a int, b int);
 create view v1 as select a, sum(b) from t1 group by a;
--- error 1176
+--error ER_WRONG_USAGE
 select b from v1 use index (some_index) where b=1;
 drop view v1;
 drop table t1;
@@ -2548,19 +2548,20 @@ CREATE TABLE t1(
   fName varchar(25) NOT NULL,
   lName varchar(25) NOT NULL,
   DOB date NOT NULL,
+  test_date date NOT NULL,
   uID int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY);
  
-INSERT INTO t1(fName, lName, DOB) VALUES
-  ('Hank', 'Hill', '1964-09-29'),
-  ('Tom', 'Adams', '1908-02-14'),
-  ('Homer', 'Simpson', '1968-03-05');
+INSERT INTO t1(fName, lName, DOB, test_date) VALUES
+  ('Hank', 'Hill', '1964-09-29', '2007-01-01'),
+  ('Tom', 'Adams', '1908-02-14', '2007-01-01'),
+  ('Homer', 'Simpson', '1968-03-05', '2007-01-01');
 
 CREATE VIEW v1 AS
-  SELECT (year(now())-year(DOB)) AS Age
+  SELECT (year(test_date)-year(DOB)) AS Age
     FROM t1 HAVING Age < 75; 
 SHOW CREATE VIEW v1;           
 
-SELECT (year(now())-year(DOB)) AS Age FROM t1 HAVING Age < 75;
+SELECT (year(test_date)-year(DOB)) AS Age FROM t1 HAVING Age < 75;
 SELECT * FROM v1;
 
 DROP VIEW v1;
@@ -3324,4 +3325,241 @@ SELECT * FROM t1;
 DROP VIEW v1,v2;
 DROP TABLE t1,t2,t3,t4;
 
---echo End of 5.0 tests.
+#
+# Bug #29104: assertion abort for a query with a view column reference
+#             in the GROUP BY list and a condition requiring the value  
+#             of another view column to be equal to a constant
+#
+
+CREATE TABLE t1 (a int, b int);
+INSERT INTO t1 VALUES (1,2), (2,2), (1,3), (1,2);
+
+CREATE VIEW v1 AS SELECT a, b+1 as b FROM t1;
+
+
+SELECT b, SUM(a) FROM v1 WHERE b=3 GROUP BY b;
+EXPLAIN SELECT b, SUM(a) FROM v1 WHERE b=3 GROUP BY b;
+
+SELECT a, SUM(b) FROM v1 WHERE b=3 GROUP BY a;
+EXPLAIN SELECT a, SUM(b) FROM v1 WHERE b=3 GROUP BY a;
+
+SELECT a, SUM(b) FROM v1 WHERE a=1 GROUP BY a;
+EXPLAIN SELECT a, SUM(b) FROM v1 WHERE a=1 GROUP BY a;
+
+DROP VIEW v1;
+DROP TABLE t1;
+
+#
+# Bug #29392: SELECT over a multi-table view with ORDER BY  
+#             selecting the same view column with two different aliases  
+#
+
+CREATE TABLE t1 (
+  person_id int NOT NULL PRIMARY KEY,
+  username varchar(40) default NULL,
+  status_flg char(1) NOT NULL default 'A'
+);
+
+CREATE TABLE t2 (
+  person_role_id int NOT NULL auto_increment PRIMARY KEY,
+  role_id int NOT NULL,
+  person_id int NOT NULL,
+  INDEX idx_person_id (person_id),
+  INDEX idx_role_id (role_id)
+);
+
+CREATE TABLE t3 (
+  role_id int NOT NULL auto_increment PRIMARY KEY,
+  role_name varchar(100) default NULL,
+  app_name varchar(40) NOT NULL,
+  INDEX idx_app_name(app_name)
+);
+
+CREATE VIEW v1 AS 
+SELECT profile.person_id AS person_id
+  FROM t1 profile, t2 userrole, t3 role
+    WHERE userrole.person_id = profile.person_id AND
+          role.role_id = userrole.role_id AND
+          profile.status_flg = 'A'
+  ORDER BY profile.person_id,role.app_name,role.role_name;
+
+INSERT INTO  t1 VALUES
+ (6,'Sw','A'), (-1136332546,'ols','e'), (0,'    *\n','0'),
+ (-717462680,'ENTS Ta','0'), (-904346964,'ndard SQL\n','0');
+
+INSERT INTO t2 VALUES
+  (1,3,6),(2,4,7),(3,5,8),(4,6,9),(5,1,6),(6,1,7),(7,1,8),(8,1,9),(9,1,10);
+
+INSERT INTO t3 VALUES 
+  (1,'NUCANS_APP_USER','NUCANSAPP'),(2,'NUCANS_TRGAPP_USER','NUCANSAPP'),
+  (3,'IA_INTAKE_COORDINATOR','IACANS'),(4,'IA_SCREENER','IACANS'),
+  (5,'IA_SUPERVISOR','IACANS'),(6,'IA_READONLY','IACANS'),
+  (7,'SOC_USER','SOCCANS'),(8,'CAYIT_USER','CAYITCANS'),
+  (9,'RTOS_DCFSPOS_SUPERVISOR','RTOS');
+ 
+EXPLAIN SELECT t.person_id AS a, t.person_id AS b FROM v1 t WHERE t.person_id=6;
+SELECT t.person_id AS a, t.person_id AS b FROM v1 t WHERE t.person_id=6;
+
+DROP VIEW v1;
+DROP TABLE t1,t2,t3;
+
+#
+# Bug#30020: Insufficient check led to a wrong info provided by the
+#            information schema table.
+#
+create table t1 (i int);
+insert into t1 values (1), (2), (1), (3), (2), (4);
+create view v1 as select distinct i from t1;
+select * from v1;
+select table_name, is_updatable from information_schema.views 
+   where table_name = 'v1';
+drop view v1;
+drop table t1;
+
+#
+# Bug #28701: SELECTs from VIEWs completely ignore USE/FORCE KEY, allowing
+# invalid statements
+#
+
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2);
+CREATE VIEW v1 AS SELECT * FROM t1;
+--error ER_WRONG_USAGE
+SELECT * FROM v1 USE KEY(non_existant);
+--error ER_WRONG_USAGE
+SELECT * FROM v1 FORCE KEY(non_existant);
+--error ER_WRONG_USAGE
+SELECT * FROM v1 IGNORE KEY(non_existant);
+
+DROP VIEW v1;
+DROP TABLE t1;
+
+
+#
+# Bug #28702: VIEWs defined with USE/FORCE KEY ignore that request
+#
+CREATE TABLE t1 (a INT NOT NULL AUTO_INCREMENT, b INT NOT NULL DEFAULT 0,
+                 PRIMARY KEY(a), KEY (b));
+INSERT INTO t1 VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+CREATE VIEW v1 AS SELECT * FROM t1 FORCE KEY (PRIMARY,b) ORDER BY a;
+SHOW CREATE VIEW v1;
+EXPLAIN SELECT * FROM v1;
+CREATE VIEW v2 AS SELECT * FROM t1 USE KEY () ORDER BY a;
+SHOW CREATE VIEW v2;
+EXPLAIN SELECT * FROM v2;
+CREATE VIEW v3 AS SELECT * FROM t1 IGNORE KEY (b) ORDER BY a;
+SHOW CREATE VIEW v3;
+EXPLAIN SELECT * FROM v3;
+
+DROP VIEW v1;
+DROP VIEW v2;
+DROP VIEW v3;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#29477: Not all fields of the target table were checked to have
+--echo #            a default value when inserting into a view.
+--echo #
+create table t1(f1 int, f2 int not null);
+create view v1 as select f1 from t1;
+insert into v1 values(1);
+set @old_mode=@@sql_mode;
+set @@sql_mode=traditional;
+--error ER_NO_DEFAULT_FOR_VIEW_FIELD
+insert into v1 values(1);
+set @@sql_mode=@old_mode;
+drop view v1;
+drop table t1;
+
+#
+# Bug #33389: Selecting from a view into a table from within SP or trigger 
+#             crashes server
+#
+
+create table t1 (a int, key(a));
+create table t2 (c int);
+                   
+create view v1 as select a b from t1;
+create view v2 as select 1 a from t2, v1 where c in 
+                  (select 1 from t1 where b = a);
+                   
+insert into t1 values (1), (1);
+insert into t2 values (1), (1);
+                   
+prepare stmt from "select * from v2 where a = 1";
+execute stmt; 
+
+drop view v1, v2;
+drop table t1, t2;
+
+#
+# Bug #33049: Assert while running test-as3ap test(mysql-bench suite)
+#
+
+CREATE TABLE t1 (a INT);
+CREATE VIEW v1 AS SELECT p.a AS a FROM t1 p, t1 q;
+
+INSERT INTO t1 VALUES (1), (1);
+SELECT MAX(a), COUNT(DISTINCT a) FROM v1 GROUP BY a;
+
+DROP VIEW v1;
+DROP TABLE t1;
+
+###########################################################################
+
+--echo # -----------------------------------------------------------------
+--echo # -- Bug#34337: Server crash when Altering a view using a table name.
+--echo # -----------------------------------------------------------------
+--echo
+
+--disable_warnings
+DROP TABLE IF EXISTS t1;
+--enable_warnings
+
+--echo
+
+CREATE TABLE t1(c1 INT);
+
+--echo
+
+SELECT * FROM t1;
+
+--error ER_WRONG_OBJECT
+ALTER ALGORITHM=TEMPTABLE SQL SECURITY INVOKER VIEW t1 (c2) AS SELECT (1);
+
+--echo
+
+DROP TABLE t1;
+
+--echo
+--echo # -- End of test case for Bug#34337.
+--echo
+
+###########################################################################
+
+--echo # -----------------------------------------------------------------
+--echo # -- Bug#35193: VIEW query is rewritten without "FROM DUAL",
+--echo # --            causing syntax error
+--echo # -----------------------------------------------------------------
+--echo
+
+CREATE VIEW v1 AS SELECT 1 FROM DUAL WHERE 1;
+
+--echo
+
+SELECT * FROM v1;
+SHOW CREATE TABLE v1;
+
+--echo
+
+DROP VIEW v1;
+
+--echo
+--echo # -- End of test case for Bug#35193.
+--echo
+
+###########################################################################
+
+--echo # -----------------------------------------------------------------
+--echo # -- End of 5.0 tests.
+--echo # -----------------------------------------------------------------

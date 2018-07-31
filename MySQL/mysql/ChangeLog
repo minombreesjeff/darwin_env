@@ -1,1114 +1,143 @@
-ChangeSet@1.2492, 2007-07-03 12:20:19-04:00, cmiller@zippy.cornsilk.net +2 -0
-  In 5.0, Field_double::val_str uses "%g" to render floating point
-  numbers, which uses "X.YeZ" notation when the exponent Z would be
-  less than -4. That behavior at -4 is not exactly what we want, and
-  our Decimal type offers smarter number representation.  By changing
-  profiling to use Decimal types, we get more readable output.
-  TAG: clone-5.0.45-build
-
-  sql/sql_profile.cc@1.11, 2007-07-03 12:20:17-04:00, cmiller@zippy.cornsilk.net +25 -10
-    Change the DOUBLE I_S types to DECIMAL, so we get a smarter
-    floating-point number renderer.
-
-  sql/sql_show.cc@1.352, 2007-07-03 12:20:17-04:00, cmiller@zippy.cornsilk.net +9 -2
-    Add MYSQL_TYPE_DECIMAL as a string-ish type that INFORMATION_SCHEMA
-    tables may use.
-
-ChangeSet@1.2491, 2007-07-03 11:25:32-04:00, cmiller@zippy.cornsilk.net +1 -0
-  Avoid a warning on windows about a missing case enum.
-
-  sql/sql_parse.cc@1.602, 2007-07-03 11:25:30-04:00, cmiller@zippy.cornsilk.net +1 -0
-    Avoid a warning on windows.
-
-ChangeSet@1.2490, 2007-07-02 12:29:07-04:00, cmiller@zippy.cornsilk.net +3 -0
-  Merge fix-up.
-
-  BitKeeper/deleted/.del-create_manifest.js@1.2, 2007-07-02 10:23:39-04:00, cmiller@zippy.cornsilk.net +0 -0
-    Delete: win/create_manifest.js
-
-  BitKeeper/deleted/.del-mysql_manifest.cmake@1.2, 2007-07-02 10:28:17-04:00, cmiller@zippy.cornsilk.net +0 -0
-    Delete: win/mysql_manifest.cmake
-
-  mysql-test/r/information_schema.result@1.126, 2007-07-02 12:29:04-04:00, cmiller@zippy.cornsilk.net +7 -7
-    Move the test down.
-
-ChangeSet@1.2425.1.53, 2007-07-02 07:27:39-04:00, cmiller@zippy.cornsilk.net +8 -0
-  Unify profiling SHOW code and INFORMATION_SCHEMA code for
-  profiling.  Also,
+------------------------------------------------------------
+revno: 2588
+author: Jonathan Perkin <jperkin@sun.com>
+committer: mysqldev <mysqldev@production.mysql.com>
+branch nick: mysql-5.0.67-release
+timestamp: Mon 2008-08-04 13:45:50 +0200
+message:
+  Revert previous unintentional license change.
+------------------------------------------------------------
+revno: 2587
+author: Jonathan Perkin <jperkin@sun.com>
+committer: mysqldev <mysqldev@production.mysql.com>
+branch nick: mysql-5.0.67-release
+timestamp: Mon 2008-08-04 12:05:21 +0200
+message:
+  Change preprocessor tests to match what we will be using.
+------------------------------------------------------------
+revno: 2586
+author: Jonathan Perkin <jperkin@sun.com>
+committer: mysqldev <mysqldev@production.mysql.com>
+branch nick: mysql-5.0.67-release
+timestamp: Mon 2008-08-04 11:39:05 +0200
+message:
+  Use autoconf glue around new my_is_symlink to avoid stat(2) and friends
+  being used on systems which don't support that interface.
+------------------------------------------------------------
+revno: 2585
+committer: Alexey Botchkov <holyfoot@mysql.com>
+branch nick: 50xyz
+timestamp: Thu 2008-07-31 15:09:16 +0500
+message:
+  merging
+    ------------------------------------------------------------
+    revno: 2583.1.1
+    committer: Georgi Kodinov <kgeorge@mysql.com>
+    branch nick: mysql-5.0.67-release
+    timestamp: Thu 2008-07-31 12:41:30 +0300
+    message:
+      Bug#34159: mysql_install_db fails with sql_mode=TRADITIONAL
+            
+      Reset session sql_mode before creating system tables as it
+      is done in the mysql_fix_privilege_tables.sql script.
+------------------------------------------------------------
+revno: 2584
+committer: Alexey Botchkov <holyfoot@mysql.com>
+branch nick: 50xyz
+timestamp: Thu 2008-07-31 14:42:44 +0500
+message:
+  Buq#32167 another privilege bypass with DATA/INDEX DIRECTORY.
   
-  Bug#26938: profiling client hang if used before enabled
+      test_if_data_home_dir fixed to look into real path.
+      Checks added to mi_open for symlinks into data home directory.
   
-  In the SHOW command, not sending header data because we had no 
-  rows to send was a protocol violation.  Porting the SHOW PROFILE
-  command to use the Information Schema table avoids that problem.
-
-  mysql-test/r/profiling.result@1.6, 2007-07-02 07:27:23-04:00, cmiller@zippy.cornsilk.net +4 -0
-    Add headers of pre-profile SHOW test.
-
-  mysql-test/t/profiling.test@1.3, 2007-07-02 07:27:23-04:00, cmiller@zippy.cornsilk.net +5 -0
-    Verify that the protocol isn't violated if we ask for profiling 
-    info before profiling has recorded anything.
-
-  sql/sql_parse.cc@1.600, 2007-07-02 07:27:23-04:00, cmiller@zippy.cornsilk.net +9 -17
-    Remove SQLCOM_SHOW_PROFILE and add a I_S schema table entry.
-
-  sql/sql_profile.cc@1.10, 2007-07-02 07:27:23-04:00, cmiller@zippy.cornsilk.net +95 -253
-    Add SHOW column-names and a new function that takes profile options
-    set in the parser and packs a list of selected fields from the 
-    I_S table implementation.
-
-  sql/sql_profile.h@1.6, 2007-07-02 07:27:23-04:00, cmiller@zippy.cornsilk.net +1 -6
-    Remove unused functions and add a new function.
-
-  sql/sql_show.cc@1.345.2.2, 2007-07-02 07:27:24-04:00, cmiller@zippy.cornsilk.net +2 -1
-    Add a pointer to the function that selects fields from I_S table
-    for SHOW command.
-
-  sql/sql_yacc.yy@1.514.1.2, 2007-07-02 07:27:24-04:00, cmiller@zippy.cornsilk.net +7 -1
-    Prepare an I_S table for SHOW PROFILE.
-
-  sql/table.h@1.142, 2007-07-02 07:27:24-04:00, cmiller@zippy.cornsilk.net +1 -1
-    Rename to match the intention.
-
-ChangeSet@1.2425.1.52, 2007-05-07 19:48:11+02:00, df@pippilotta.erinye.com +1 -0
-  raise version number
-
-  configure.in@1.427, 2007-05-07 19:48:10+02:00, df@pippilotta.erinye.com +2 -2
-    raise version number
-
-ChangeSet@1.2425.1.51, 2007-05-07 08:25:47+02:00, df@pippilotta.erinye.com +1 -0
-  specfile fixes
-  TAG: mysql-5.0.41
-
-  support-files/mysql.spec.sh@1.174, 2007-05-07 08:25:45+02:00, df@pippilotta.erinye.com +19 -14
-    specfile fixes
-
-ChangeSet@1.2425.1.50, 2007-05-04 09:46:33+02:00, df@pippilotta.erinye.com +1 -0
-  backport a manifest fix
-
-  CMakeLists.txt@1.7.2.3, 2007-05-04 09:46:31+02:00, df@pippilotta.erinye.com +5 -0
-    backported fix
-
-ChangeSet@1.2425.1.48, 2007-04-30 14:22:38+02:00, dfischer@mysql.com +2 -0
-  create_manifest.js, mysql_manifest.cmake:
-    add files for patch
-
-  win/create_manifest.js@1.1, 2007-04-30 14:22:13+02:00, dfischer@mysql.com +85 -0
-    add files for patch
-
-  win/create_manifest.js@1.0, 2007-04-30 14:22:13+02:00, dfischer@mysql.com +0 -0
-
-  win/mysql_manifest.cmake@1.1, 2007-04-30 14:22:19+02:00, dfischer@mysql.com +20 -0
-    add files for patch
-
-  win/mysql_manifest.cmake@1.0, 2007-04-30 14:22:19+02:00, dfischer@mysql.com +0 -0
-
-ChangeSet@1.2425.1.47, 2007-04-30 13:30:58+02:00, dfischer@mysql.com +1 -0
-  Makefile.am:
-    fix typo
-
-  win/Makefile.am@1.3.1.2, 2007-04-30 13:30:46+02:00, dfischer@mysql.com +1 -1
-    fix typo
-
-ChangeSet@1.2425.1.46, 2007-04-30 11:41:19+02:00, dfischer@mysql.com +10 -0
-  backport vista manifest patch
-
-  CMakeLists.txt@1.7.2.1, 2007-04-30 11:41:04+02:00, dfischer@mysql.com +27 -0
-    backport vista manifest patch
-
-  client/CMakeLists.txt@1.5.1.1, 2007-04-30 11:41:04+02:00, dfischer@mysql.com +14 -0
-    backport vista manifest patch
-
-  extra/CMakeLists.txt@1.4.1.1, 2007-04-30 11:41:05+02:00, dfischer@mysql.com +7 -0
-    backport vista manifest patch
-
-  libmysql/CMakeLists.txt@1.2.1.1, 2007-04-30 11:41:05+02:00, dfischer@mysql.com +5 -0
-    backport vista manifest patch
-
-  myisam/CMakeLists.txt@1.2.1.1, 2007-04-30 11:41:05+02:00, dfischer@mysql.com +8 -0
-    backport vista manifest patch
-
-  server-tools/instance-manager/CMakeLists.txt@1.2.1.1, 2007-04-30 11:41:05+02:00, dfischer@mysql.com +5 -0
-    backport vista manifest patch
-
-  sql/CMakeLists.txt@1.7, 2007-04-30 11:41:08+02:00, dfischer@mysql.com +5 -0
-    backport vista manifest patch
-
-  win/Makefile.am@1.3.1.1, 2007-04-30 11:41:08+02:00, dfischer@mysql.com +2 -1
-    backport vista manifest patch
-
-  win/README@1.3.1.1, 2007-04-30 11:41:08+02:00, dfischer@mysql.com +2 -0
-    backport vista manifest patch
-
-  win/configure.js@1.4.1.1, 2007-04-30 11:41:08+02:00, dfischer@mysql.com +1 -0
-    backport vista manifest patch
-
-ChangeSet@1.2392.105.27, 2007-04-20 14:01:49+02:00, df@pippilotta.erinye.com +1 -0
-  win32 build fix
-
-  VC++Files/sql/mysqld.vcproj@1.13, 2007-04-20 14:01:48+02:00, df@pippilotta.erinye.com +3 -75
-    win32 build fix
-
-ChangeSet@1.2392.105.26, 2007-04-16 15:00:16-04:00, cmiller@zippy.cornsilk.net +2 -0
-  Bug#25347: mysqlcheck -A -r doesn't repair table marked as crashed
+   per-file messages:
+          include/my_sys.h
+            Bug#32167 another privilege bypass with DATA/INDEX DIRECTORY.
+            
+            my_is_symlink interface added
   
-  Additional changes to test:  "flush tables" so that Windows releases
-  the files.
-
-  mysql-test/r/mysqlcheck.result@1.5, 2007-04-16 15:00:13-04:00, cmiller@zippy.cornsilk.net +26 -1
-    Add "flush tables" to get windows to release the files, so that 
-    we can test truncation properly.
-
-  mysql-test/t/mysqlcheck.test@1.6, 2007-04-16 15:00:13-04:00, cmiller@zippy.cornsilk.net +8 -0
-    Add "flush tables" to get windows to release the files, so that 
-    we can test truncation properly.
-
-ChangeSet@1.2392.105.25, 2007-04-10 16:47:07-04:00, cmiller@zippy.cornsilk.net +1 -0
-  Use platform-independent mysqltest language.
-
-  mysql-test/t/mysqlcheck.test@1.5, 2007-04-10 16:47:06-04:00, cmiller@zippy.cornsilk.net +3 -2
-    Use platform-independent mysqltest language.
-
-ChangeSet@1.2392.105.24, 2007-04-06 09:15:18-04:00, cmiller@zippy.cornsilk.net +3 -0
-  Changing the state of whether we're recording profiling information
-  halfway through a query (as happens in "SET SESSION PROFILING = ...")
-  has a few side-effects, the worst of which is a memory leak for
-  prepared statements, which poke directly from the parser into the 
-  profiling code (we don't have the query text when we need it) and 
-  that overwrites a pointer to heap-allocated memory when the previous
-  statement turns on profiling.
+          mysql-test/r/udf.result
+            test result fixed (not related to #32167)
   
-  Instead, now set a flag when we begin a new statement that tracks 
-  whether profiling is on _at the start_ of the query.  Use that to
-  track whether we gather info.
+          mysys/my_symlink.c
+            my_is_symlink() implementsd
+            my_realpath() now returns the 'realpath' even if a file isn't a symlink
+------------------------------------------------------------
+revno: 2583
+committer: Alexey Botchkov <holyfoot@mysql.com>
+branch nick: mysql-5.0.67-release
+timestamp: Mon 2008-07-28 19:22:12 +0500
+message:
+  Bug#37428 Potential security issue with UDFs - linux shellcode execution.
+        
+        plugin_dir option backported from 5.1
   
-  Additionally, use that AND use the state of the profiling variable
-  after the end of a query to know whether to store information about 
-  the query that just finished.
-
-  mysql-test/r/profiling.result@1.5, 2007-04-06 09:15:16-04:00, cmiller@zippy.cornsilk.net +126 -127
-    Testing whether profiling is on at the beginning of a query and at
-    the end of a query makes "SET SESSION PROFILING = ..." statements
-    disappear from the profiling.  They were never reliable before.
-
-  sql/sql_profile.cc@1.9, 2007-04-06 09:15:16-04:00, cmiller@zippy.cornsilk.net +15 -3
-    Check to see if profiling was enabled at the beginning of this query
-    before trying to store query_source.  This avoids a memory leak for
-    prepared statements, which get here by direct means.
-    
-    If profiling was toggled in this query, then don't store this query
-    profile.
-
-  sql/sql_profile.h@1.5, 2007-04-06 09:15:16-04:00, cmiller@zippy.cornsilk.net +1 -0
-    Keep track of whether profiling is on.
-
-ChangeSet@1.2392.105.23, 2007-04-04 07:44:12-04:00, cmiller@zippy.cornsilk.net +1 -0
-  Backport:
+  per-file messages:
+    sql/mysql_priv.h
+      Bug#37428 Potential security issue with UDFs - linux shellcode execution.
+      
+      opt_plugin_dir and opt_plugin_dir_ptr declared.
+    sql/mysqld.cc
+      Bug#37428 Potential security issue with UDFs - linux shellcode execution.
+      
+      'plugin_dir' option added
+    sql/set_var.cc
+      Bug#37428 Potential security issue with UDFs - linux shellcode execution.
+      
+      'plugin_dir' option added.
+    sql/sql_udf.cc
+      Bug#37428 Potential security issue with UDFs - linux shellcode execution.
+      
+      opt_plugin_dir added to the udf->dl path. Warn if it's not specified.
+    sql/unireg.h
+      Bug#37428 Potential security issue with UDFs - linux shellcode execution.
+      
+      PLUGINDIR defined.
+------------------------------------------------------------
+revno: 2582
+author: Jonathan Perkin <jperkin@sun.com>
+committer: mysqldev <mysqldev@production.mysql.com>
+branch nick: mysql-5.0.67-release
+timestamp: Fri 2008-07-18 17:40:31 +0200
+message:
+  Merge fix for bug#38180 from mysql-5.0.66a-release
+    ------------------------------------------------------------
+    revno: 2559.103.3
+    committer: Timothy Smith <timothy.smith@sun.com>
+    branch nick: 5.0.66-bug38180
+    timestamp: Wed 2008-07-16 16:58:45 -0600
+    message:
+      Bug #38180  	options are read from ~/my.cnf instead of ~/.my.cnf
+      
+      Pull out some of unpack_dirname() into normalize_dirname(); this
+      new function does not expand "~" to the home directory.  Use this
+      function in unpack_dirname(), and use it during init_default_directories()
+      to remove duplicate entries without losing track of which directory
+      is a user's home dir.
+------------------------------------------------------------
+revno: 2581
+committer: Davi Arnaut <Davi.Arnaut@Sun.COM>
+branch nick: mysql-5.0.67-release
+timestamp: Thu 2008-07-17 20:19:13 -0300
+message:
+  Bug#33812: mysql client incorrectly parsing DELIMITER
   
-  B-g#27427: resolveip fails on hostnames with a leading digit
-  
-  We need inet_aton for the extra/resolveip tool.  Some OSes put this
-  in nonstandard libraries.
-
-  configure.in@1.425, 2007-04-04 07:44:10-04:00, cmiller@zippy.cornsilk.net +1 -0
-    We need inet_aton for the extra/resolveip tool.
-
-ChangeSet@1.2392.105.22, 2007-04-03 19:52:24-04:00, cmiller@zippy.cornsilk.net +2 -0
-  Unreported minor bug:  We start numbering query IDs at zero, which
-  is a special case in "SHOW PROFILE FOR QUERY n".  No one can get
-  the zero item (which is always the statement that turns on profiling),
-  because zero represents the final item, internally.
-  
-  Now, order the queries starting at one.
-
-  mysql-test/r/profiling.result@1.4, 2007-04-03 19:52:23-04:00, cmiller@zippy.cornsilk.net +127 -127
-    Renumber the query IDs.
-
-  sql/sql_profile.cc@1.8, 2007-04-03 19:52:23-04:00, cmiller@zippy.cornsilk.net +2 -2
-    Start the profile_id_counter at 1, to overstep the special-case 
-    value of zero.
-    
-    Unrelated, but looks similar: don't use -1 to initialize an unsigned 
-    integer field.  That causes warnings in some environments.
-
-ChangeSet@1.2392.105.21, 2007-04-03 19:50:55-04:00, cmiller@zippy.cornsilk.net +2 -0
-  Backport:
-  
-  B-g#27501: 5.0 significantly more sys ("kernel") time than 4.1 \
-        due to getrusage() calls
-  
-  Even if profiling is turned off, the parser makes calls to reset 
-  the state at the beginning of each query.  That would eventually 
-  instantiate a PROFILE_ENTRY, which does indeed capture resource 
-  usage.
-  
-  Instead, now check that profiling is active before progressing
-  far into the storage/expiration of old entries in the history.
-  This has the pleasant side-effect that queries to toggle profiling
-  are not recorded in the history.
-
-  mysql-test/r/profiling.result@1.3, 2007-04-03 19:50:53-04:00, cmiller@zippy.cornsilk.net +1 -1
-    Now after we turn off profiling, the beginning of the next query 
-    refuses to enter the profiling code and it discards the info.
-
-  sql/sql_profile.cc@1.7, 2007-04-03 19:50:53-04:00, cmiller@zippy.cornsilk.net +11 -0
-    Add the same condition twice:  Once to abort storing previous 
-    query information and the other to abort initialization for this 
-    query that is starting.
-    
-    We do this symmetrically, before and after expiring old history 
-    entries, so that the counts are correct.
-
-ChangeSet@1.2392.105.20, 2007-04-03 19:47:19-04:00, cmiller@zippy.cornsilk.net +1 -0
-  Backport:
-  
-  B-g#26600: table PROFILING in INFORMATION SCHEMA has wrong data type
-  
-  B-g#27047[partial]: INFORMATION_SCHEMA table cannot have BIGINT \
-        fields
-  
-  No Information_schema table has ever needed floating-point data 
-  before.  Transforming all floating point to a string and back to a
-  number causes a real data problem on Windows, where the libc may 
-  pad the exponent with more leading zeroes than we expect and the
-  significant digits are truncated away.
-  
-  This also makes interpreting an unimplemented type as a string into
-  a fatal error in debug builds.  Thus, we will catch problems when we
-  try to use those types in new I_S tables.
-
-  sql/sql_show.cc@1.341.2.2, 2007-04-03 19:47:17-04:00, cmiller@zippy.cornsilk.net +9 -0
-    Add floating-point types to Information_schema output.
-
-ChangeSet@1.2392.105.19, 2007-04-03 19:45:28-04:00, cmiller@zippy.cornsilk.net +1 -0
-  Backport:
-  
-  B-g#27060: SQL Profile utility may not be reporting right duration \
-        for each step
-  
-  Whenever the profiler is reset at the beginning of a query, there's
-  a "hidden" profiling entry that represents that point in time.  It 
-  has no status description, as those are set by state changes and no
-  such point has yet been encountered.  That profiling entry is not
-  in the list of entries generated when we change states.
-  
-  The profiling code had the problem that each step of printing 
-  profiling data subtracted the previous "step"'s data, but gave the
-  label to that data of the current step, which is wrong.  The label/
-  state refers to the period beginning with that profiling data, not
-  ending with it.
-  
-  Now, give a label to the first profiling pseudo-entry, so that we 
-  have a name to assign to the period that ends with the first state 
-  change.  Now also use the state name of the previous step in showing 
-  the delta values that end with this step.
-
-  sql/sql_profile.cc@1.6, 2007-04-03 19:45:26-04:00, cmiller@zippy.cornsilk.net +61 -46
-    Store a status of "initializing" whenever we construct the first
-    profile entry -- the one that gets reset whenever we're starting 
-    a new query, before the server sets a real status.
-    
-    Additionally, associate the previous status with the time period
-    that ends with the current profile entry's stats.
-    
-    Since we need yet another piece of info from the previous profiling
-    entry, take out the piecemeal ways we currently do it and make a
-    general pointer to the whole thing.
-
-ChangeSet@1.2392.105.18, 2007-04-03 18:12:31-04:00, cmiller@zippy.cornsilk.net +3 -0
-  Backport:
-  
-  Patch contributed by Jocelyn Fournier.  CLA received 2007-02-27.
-    
-  B-g#25347: mysqlcheck -A -r doesn't repair table marked as crashed
-    
-  mysqlcheck tests nullness of the engine type to know whether the
-  "table" is a view or not.  That also falsely catches tables that 
-  are severly damaged.
-    
-  Instead, use SHOW FULL TABLES to test whether a "table" is a view
-  or not.
-    
-  (Don't add new function.  Instead, get original data a smarter way.)
-  
-  Make it safe for use against databases before when views appeared.
-
-  client/mysqlcheck.c@1.59, 2007-04-03 18:12:29-04:00, cmiller@zippy.cornsilk.net +15 -12
-    Use SHOW FULL TABLES to test better whether a name in the table
-    list is one of a view.  Checking that the engine is NULL is 
-    insufficient.
-    
-    Implemented suggestion from jimw that involved removing most of 
-    original patch and getting data a better way
-
-  mysql-test/r/mysqlcheck.result@1.4, 2007-04-03 18:12:29-04:00, cmiller@zippy.cornsilk.net +10 -0
-    Verify that tables that have NULL/unreadable engine types are 
-    processed and not interpreted as views.
-
-  mysql-test/t/mysqlcheck.test@1.4, 2007-04-03 18:12:29-04:00, cmiller@zippy.cornsilk.net +16 -0
-    Verify that tables that have NULL/unreadable engine types are 
-    processed and not interpreted as views.
-
-ChangeSet@1.2392.105.17, 2007-04-03 17:59:52-04:00, cmiller@zippy.cornsilk.net +2 -0
-  Backport:
-  
-  B-g#24795: SHOW PROFILE implementation
-  
-  Don't use memory roots to store profiling information, because
-  memory roots make freeing the data a no-op, and thus long-running
-  processes with profiling turned on the whole time could eventually 
-  use all available memory.
-  
-  Instead, use regular heap allocation and deallocation calls to 
-  manage profiling data.  Replace the leaky List usage with a similar-
-  behaving structure named "Queue".
-
-  sql/sql_profile.cc@1.5, 2007-04-03 17:59:50-04:00, cmiller@zippy.cornsilk.net +39 -72
-    Don't use C++ iterators on our simple Queue implementation.  They're
-    not implemented and we don't really need them.
-    
-    Rip out idea of swapping out the thd's mem_root.
-
-  sql/sql_profile.h@1.4, 2007-04-03 17:59:50-04:00, cmiller@zippy.cornsilk.net +108 -3
-    Rip out idea of needing a mem_root.
-    
-    Implement a Queue that looks and behaves very similarly to memroot-
-    using List.
-
-ChangeSet@1.2392.105.16, 2007-04-03 14:08:09-04:00, cmiller@zippy.cornsilk.net +3 -0
-  Backport of Igor's patch for Bug#27362, March 22 2007.
-  
-  Fixed bug #27362: crash at evaluation of IN predicate when one
-  of its argument happened to be a decimal expression returning
-  the NULL value.
-  The crash was due to the fact the function in_decimal::set did
-  not take into account that val_decimal() could return 0 if 
-  the decimal expression had been evaluated to NULL.  
-
-  mysql-test/r/func_in.result@1.33.1.1, 2007-04-03 14:08:07-04:00, cmiller@zippy.cornsilk.net +5 -0
-    Added a test case for bug #27362.
-
-  mysql-test/t/func_in.test@1.27.1.1, 2007-04-03 14:08:07-04:00, cmiller@zippy.cornsilk.net +11 -0
-    Added a test case for bug #27362.
-
-  sql/item_cmpfunc.cc@1.240.1.2, 2007-04-03 14:08:07-04:00, cmiller@zippy.cornsilk.net +2 -1
-    Fixed bug #27362: crash at evaluation of IN predicate when one
-    of its argument happened to be a decimal expression returning
-    the NULL value.
-    The crash was due to the fact the function in_decimal::set did
-    not take into account that val_decimal() could return 0 if 
-    the decimal expression had been evaluated to NULL.  
-
-ChangeSet@1.2392.105.15, 2007-04-03 14:05:00-04:00, cmiller@zippy.cornsilk.net +2 -0
-  The test suite erroneously removes backslashes.
-
-  mysql-test/r/profiling.result@1.2, 2007-04-03 14:04:58-04:00, cmiller@zippy.cornsilk.net +1 -1
-    The test suite erroneously removes backslashes.
-
-  mysql-test/t/profiling.test@1.2, 2007-04-03 14:04:58-04:00, cmiller@zippy.cornsilk.net +1 -1
-    The test suite erroneously removes backslashes.
-
-ChangeSet@1.2392.105.14, 2007-04-03 13:26:19-04:00, cmiller@zippy.cornsilk.net +1 -0
-  Listing all columns of a particular type tells us nothing at all.  
-  The test fails, and it shouldn't.
-
-  mysql-test/r/information_schema.result@1.123, 2007-04-03 13:26:17-04:00, cmiller@zippy.cornsilk.net +1 -1
-    The query to generate this list is pretty bogus in any case.  Listing 
-    all columns of a particular type tells us nothing at all.
-
-ChangeSet@1.2392.72.1, 2007-03-07 20:25:57+01:00, df@pippilotta.erinye.com +1 -0
-  adjust version string in mysql-5.0-community commit trigger
-
-  BitKeeper/triggers/post-commit@1.42, 2007-03-07 20:25:55+01:00, df@pippilotta.erinye.com +1 -1
-    adjust version string in trigger
-
-ChangeSet@1.2392.40.7, 2007-03-05 16:10:42+01:00, df@pippilotta.erinye.com +1 -0
-  add ad
-  TAG: mysql-5.0.37
-
-  support-files/mysql.spec.sh@1.165.1.1, 2007-03-05 16:10:41+01:00, df@pippilotta.erinye.com +5 -0
-    add ad at %post
-
-ChangeSet@1.2392.60.1, 2007-03-02 09:14:33-05:00, cmiller@zippy.cornsilk.net +2 -0
-  Patch to release clone.  Fixes two post-pushbuild discovered failures.
-  
-  Expand float size to avoid assert()ion failures.
-  
-  "_db_func_" isn't a known linked object on some platforms, possibly 
-  because it is occasionaly shadowed by DBUG variables.  Avoid that
-  confusion.
-
-  sql/sql_profile.cc@1.4, 2007-03-02 09:14:31-05:00, cmiller@zippy.cornsilk.net +2 -2
-    Expand float size to avoid assert()ion failures.
-    
-    "_db_func_" isn't a known linked object on some platforms, possibly 
-    because it is occasionaly shadowed by DBUG variables.  Avoid that
-    confusion.
-
-  sql/sql_profile.h@1.3, 2007-03-02 09:14:31-05:00, cmiller@zippy.cornsilk.net +6 -6
-    "_db_func_" isn't a known linked object on some platforms, possibly 
-    because it is occasionaly shadowed by DBUG variables.  Avoid that
-    confusion.
-
-ChangeSet@1.2392.40.5, 2007-03-01 21:56:51+01:00, df@pippilotta.erinye.com +1 -0
-  add missing file to vs project
-
-  VC++Files/sql/mysqld.vcproj@1.11, 2007-03-01 21:56:50+01:00, df@pippilotta.erinye.com +75 -0
-    add sql_profile.cpp to mysqld project
-
-ChangeSet@1.2392.40.4, 2007-03-01 10:45:55+01:00, dfischer@mysql.com +1 -0
-  File.cpp:
-    fileno is a macro on some platforms
-
-  ndb/src/common/util/File.cpp@1.13.1.4, 2007-03-01 10:45:41+01:00, dfischer@mysql.com +1 -1
-    fileno is a macro on some platforms
-
-ChangeSet@1.2392.40.3, 2007-03-01 09:38:09+01:00, dfischer@mysql.com +1 -0
-  mysqld.cc:
-    fix profiling_history_size type
-
-  sql/mysqld.cc@1.582.20.2, 2007-03-01 09:37:10+01:00, dfischer@mysql.com +1 -1
-    fix profiling_history_size type
-
-ChangeSet@1.2392.40.2, 2007-02-27 20:04:58-05:00, cmiller@zippy.cornsilk.net +1 -0
-  Update to I_S result that now contains PROFILING entry.
-  TAG: clone-5.0.37-build
-
-  mysql-test/r/information_schema.result@1.122, 2007-02-27 20:04:57-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Update to I_S result that now contains PROFILING entry.
-
-ChangeSet@1.2341.59.11, 2007-02-27 11:30:03-05:00, cmiller@calliope.local.cmiller +1 -0
-  Updated column names of I_S table to conform to other I_S uppercase scheme.
-
-  mysql-test/r/information_schema.result@1.120, 2007-02-27 11:28:40-05:00, cmiller@calliope.local.cmiller +2 -2
-    Updated column names of I_S table to conform to other I_S uppercase scheme.
-
-ChangeSet@1.2341.59.10, 2007-02-26 13:11:36-05:00, cmiller@calliope.local.cmiller +7 -0
-  Some changes suggested Serg, from message <20070223210659.GA24202@janus.mylan>
-
-  configure.in@1.422, 2007-02-26 13:11:22-05:00, cmiller@calliope.local.cmiller +1 -1
-    Use smarter autoconf help macro.
-
-  sql/set_var.cc@1.173.2.4, 2007-02-26 13:11:23-05:00, cmiller@calliope.local.cmiller +1 -1
-    Make a local variable static.
-
-  sql/sql_lex.cc@1.206.1.6, 2007-02-26 13:11:23-05:00, cmiller@calliope.local.cmiller +0 -2
-    Don't include CPP condition where it saves little time and decreases legibility.
-
-  sql/sql_parse.cc@1.596, 2007-02-26 13:11:24-05:00, cmiller@calliope.local.cmiller +2 -2
-    Use the name of the query in the error, instead of describing the feature.
-
-  sql/sql_profile.cc@1.3, 2007-02-26 13:11:25-05:00, cmiller@calliope.local.cmiller +38 -52
-    Update copyright.
-    
-    Make I_S schema table columns uppercase.
-
-  sql/sql_profile.h@1.2, 2007-02-26 13:11:26-05:00, cmiller@calliope.local.cmiller +1 -2
-    Update copyright.
-
-  sql/sql_select.cc@1.478.2.3, 2007-02-26 13:11:26-05:00, cmiller@calliope.local.cmiller +2 -2
-    Chagne tab indentation to spaces.
-
-ChangeSet@1.2341.59.9, 2007-02-22 16:25:47-05:00, cmiller@zippy.cornsilk.net +1 -0
-  Disambiguate method call.  (Windows compiler error.)
-
-  sql/sql_profile.cc@1.2, 2007-02-22 16:25:45-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Disambiguate method call.  (Windows compiler error.)
-
-ChangeSet@1.2341.59.8, 2007-02-22 13:17:02-05:00, cmiller@zippy.cornsilk.net +1 -0
-  Use correct filename for profiling code.
-
-  sql/CMakeLists.txt@1.6, 2007-02-22 13:17:01-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Use correct filename for profiling code.
-
-ChangeSet@1.2341.59.7, 2007-02-22 12:27:15-05:00, cmiller@zippy.cornsilk.net +1 -0
-  Add profiling source file to cmake file.
-
-  sql/CMakeLists.txt@1.5, 2007-02-22 12:27:14-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Add profiling source file to cmake file.
-
-ChangeSet@1.2341.59.6, 2007-02-22 11:48:56-05:00, cmiller@zippy.cornsilk.net +3 -0
-  Enclose profiling in preprocessor conditions.
-
-  BitKeeper/etc/collapsed@1.18.1.4, 2007-02-22 11:44:51-05:00, cmiller@zippy.cornsilk.net +2 -0
-
-  include/config-win.h@1.81.1.2, 2007-02-22 11:48:55-05:00, cmiller@zippy.cornsilk.net +3 -0
-    Make profiling compiled-in by default on Windows too.
-
-  sql/sql_prepare.cc@1.187.5.2, 2007-02-22 11:48:55-05:00, cmiller@zippy.cornsilk.net +2 -0
-    Enclose profiling in preprocessor conditions.
-
-ChangeSet@1.2341.59.5, 2007-02-22 10:03:08-05:00, cmiller@zippy.cornsilk.net +51 -0
-  Prevent bugs by making DBUG_* expressions syntactically equivalent 
-  to a single statement.
-  ---
-  Bug#24795: SHOW PROFILE
-  
-  Profiling is only partially functional on some architectures.  Where 
-  there is no getrusage() system call, presently Null values are 
-  returned where it would be required.  Notably, Windows needs some love 
-  applied to make it as useful.
-  
-    Syntax this adds:
-    
-    SHOW PROFILES
-    
-    SHOW PROFILE [types] [FOR QUERY n] [OFFSET n] [LIMIT n]
-     where "n" is an integer
-     and "types" is zero or many (comma-separated) of
-        "CPU"
-        "MEMORY" (not presently supported)
-        "BLOCK IO"
-        "CONTEXT SWITCHES"
-        "PAGE FAULTS"
-        "IPC"
-        "SWAPS"
-        "SOURCE"
-        "ALL"
-  
-  It also adds a session variable (boolean) "profiling", set to "no"
-  by default, and (integer) profiling_history_size, set to 15 by 
-  default.
-  
-  This patch abstracts setting THDs' "proc_info" behind a macro that 
-  can be used as a hook into the profiling code when profiling 
-  support is compiled in.  All future code in this line should use
-  that mechanism for setting thd->proc_info.
-  
-  ---
-  
-  Tests are now set to omit the statistics.
-  
-  ---
-  
-  Adds an Information_schema table, "profiling" for access to 
-  "show profile" data.
-  ---
-  Merge zippy.cornsilk.net:/home/cmiller/work/mysql/mysql-5.0-community-3--bug24795
-  into  zippy.cornsilk.net:/home/cmiller/work/mysql/mysql-5.0-community
-  ---
-  Fix merge problems.
-  ---
-  Fixed one bug in the query_source being NULL.  
-  
-  Updated test results.
-  ---
-  Include more thorough profiling tests.
-  
-  Improve support for prepared statements.
-  
-  Use session-specific query IDs, starting at zero.
-  ---
-  Selecting from I_S.profiling is no longer quashed in profiling, as
-  requested by Giuseppe.
-  
-  Limit the size of captured query text.
-  
-  No longer log queries that are zero length.
-
-  BitKeeper/deleted/.del-profile.result@1.2, 2007-02-22 10:02:24-05:00, cmiller@zippy.cornsilk.net +0 -0
-    Rename: mysql-test/r/profile.result -> BitKeeper/deleted/.del-profile.result
-
-  BitKeeper/deleted/.del-profile.test@1.2, 2007-02-22 10:02:24-05:00, cmiller@zippy.cornsilk.net +0 -0
-    Rename: mysql-test/t/profile.test -> BitKeeper/deleted/.del-profile.test
-
-  BitKeeper/deleted/.del-profiling-master.opt@1.1, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +1 -0
-    New BitKeeper file ``mysql-test/t/profiling-master.opt''
-
-  BitKeeper/deleted/.del-profiling-master.opt@1.0, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  BitKeeper/deleted/.del-sql_profile.cc@1.2, 2007-02-22 10:02:25-05:00, cmiller@zippy.cornsilk.net +0 -0
-    Rename: sql/sql_profile.cc -> BitKeeper/deleted/.del-sql_profile.cc
-
-  BitKeeper/deleted/.del-sql_profile.h@1.2, 2007-02-22 10:02:26-05:00, cmiller@zippy.cornsilk.net +0 -0
-    Rename: sql/sql_profile.h -> BitKeeper/deleted/.del-sql_profile.h
-
-  BitKeeper/etc/collapsed@1.18.1.3, 2007-02-22 10:02:26-05:00, cmiller@zippy.cornsilk.net +9 -0
-
-  configure.in@1.421, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +14 -0
-    Add a configure-time option to enable/disable query profiling.  The
-    default is enabled.
-
-  include/my_dbug.h@1.22, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +6 -6
-    
-    
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-
-  myisam/mi_open.c@1.100.2.2, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +1 -1
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-
-  mysql-test/r/information_schema.result@1.119, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +7 -4
-    Updated (re-recorded) tests that I missed somehow.  I verified these
-    for correctness.
-
-  mysql-test/r/information_schema_db.result@1.10, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Updated test results I missed.
-
-  mysql-test/r/mysqlshow.result@1.5, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +2 -0
-    Fix merge problems.
-
-  mysql-test/r/profiling.result@1.1, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +365 -0
-    New BitKeeper file ``mysql-test/r/profiling.result''
-    ---
-    Include more verbose that describes the queries so far.
-    
-    Include Giuseppe's tests.
-    ---
-    Selecting from I_S.profiling is no longer quashed in profiling, as
-    requested by Giuseppe.
-
-  mysql-test/r/profiling.result@1.0, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  mysql-test/t/profiling.test@1.1, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +195 -0
-    New BitKeeper file ``mysql-test/t/profiling.test''
-    ---
-    Include more verbose that describes the queries so far.
-    
-    Include Giuseppe's tests.
-    ---
-    Selecting from I_S.profiling is no longer quashed in profiling, as
-    requested by Giuseppe.
-
-  mysql-test/t/profiling.test@1.0, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  ndb/src/ndbapi/DictCache.cpp@1.21, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +1 -1
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-
-  sql/ha_archive.cc@1.78.1.3, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +2 -2
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/ha_berkeley.cc@1.165.1.1, 2007-02-22 10:03:02-05:00, cmiller@zippy.cornsilk.net +2 -2
-    Include patch backported to 5.0-global.
-    
-    THD::options is a ulonglong, not ulong.
-
-  sql/ha_myisam.cc@1.170.1.4, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +12 -12
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/ha_myisammrg.cc@1.85.2.1, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +1 -1
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-
-  sql/ha_ndbcluster.cc@1.291.7.1, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +2 -2
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-
-  sql/item_cmpfunc.cc@1.228.6.1, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +1 -1
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-
-  sql/item_func.cc@1.317.1.7, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +4 -4
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/lock.cc@1.90.1.4, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +4 -4
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/log_event.cc@1.214.3.3, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +4 -4
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/mysql_priv.h@1.425.2.5, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +40 -33
-    Use 64-bit constants for the 64-bit bit field.
-    
-    Add a new option bit for whether profiling is active or not.
-
-  sql/mysqld.cc@1.582.9.2, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +8 -1
-    Add semicolon to DBUG statement.
-    
-    Add a new system variable and set it.
-    ---
-    Set the minimum, which is zero and not 50.
-
-  sql/repl_failsafe.cc@1.61.1.4, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +5 -5
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/set_var.cc@1.173.2.3, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +16 -2
-    Make a new system global variable and session variable, to determine
-    behavior of profiling.	
-    ---
-    Include patch backported to 5.0-global.
-    
-    THD::options is a ulonglong, not ulong.
-
-  sql/set_var.h@1.78.3.1, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +2 -2
-    The THD::options bit field is ulonglong, not ulong.
-
-  sql/slave.cc@1.286.1.3, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +20 -20
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Include patch backported to 5.0-global.
-    
-    THD::options is a ulonglong, not ulong.
-
-  sql/sp_head.cc@1.225.3.4, 2007-02-22 10:03:03-05:00, cmiller@zippy.cornsilk.net +2 -2
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_base.cc@1.363, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +15 -15
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Include patch backported to 5.0-global.
-    
-    THD::options is a ulonglong, not ulong.
-
-  sql/sql_cache.cc@1.99, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +11 -11
-    DBUG_* statements should be syntactically equivalent to a single 
-    statement.
-    ---
-    Fix merge problems.
-
-  sql/sql_class.cc@1.258, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +2 -1
-    Insert a pointer to the current thread in the profiling code.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Fix merge problems.
-
-  sql/sql_class.h@1.316, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +6 -1
-    Create a new system variable, profiling_history_size, and add a 
-    member to THD to hold profiling information about this thread's 
-    execution.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_delete.cc@1.190, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +7 -7
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Include patch backported to 5.0-global.
-    
-    THD::options is a ulonglong, not ulong.
-
-  sql/sql_insert.cc@1.213, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +19 -19
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Fix merge problems.
-
-  sql/sql_lex.cc@1.206.1.5, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +2 -1
-    Initialize profiling options to empty.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_lex.h@1.233.1.5, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +7 -2
-    Add info to the lexer object so that we can hold data that comes from
-    parsing statements.
-    
-    Reuse memory addresses of uints that can't occur in the same state-
-    ment.
-    
-    This is dangerous because it involves knowledge of what symbols are 
-    never used together, which is information stored obliquely in another
-    file.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_parse.cc@1.595, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +47 -24
-    Add hooks to the parser to jump to profiling code.
-    
-    If profiling is not present, then return an error message upon being
-    used.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Fix merge problems.
-    ---
-    Include patch backported to 5.0-global.
-    
-    THD::options is a ulonglong, not ulong.
-
-  sql/sql_prepare.cc@1.187.5.1, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +1 -0
-    From prepared statement execution, set the query source in the 
-    profiler, as we can't get it from  thd .
-    ---
-    Make it less expensive to limit the size of the queries.
-
-  sql/sql_profile.cc@1.1, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +813 -0
-    New BitKeeper file ``sql/sql_profile.cc''
-    ---
-    If query_source is NULL, as can sometimes happen, then don't try
-    to copy that memory.
-    ---
-    Make each new session use its own numbering of query_ids, and not
-    show the global-pool numbers to the user.
-    
-    Provide a way for prepared statements to set the query_source.
-    ---
-    Selecting from I_S.profiling is no longer quashed in profiling, as
-    requested by Giuseppe.
-    
-    Limit the size of captured query text.
-    
-    No longer log queries that are zero length.
-
-  sql/sql_profile.cc@1.0, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  sql/sql_profile.h@1.1, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +241 -0
-    New BitKeeper file ``sql/sql_profile.h''
-    ---
-    Make each new session use its own numbering of query_ids, and not
-    show the global-pool numbers to the user.
-    
-    Provide a way for prepared statements to set the query_source.
-    ---
-    Make it less expensive to limit the size of the queries.
-
-  sql/sql_profile.h@1.0, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  sql/sql_repl.cc@1.157, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +9 -9
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_select.cc@1.478.2.2, 2007-02-22 10:03:04-05:00, cmiller@zippy.cornsilk.net +23 -24
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Fix merge problems.
-
-  sql/sql_show.cc@1.333.2.4, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +5 -3
-    Abstract setting thread-info into a function or macro.
-    
-    Also, remove "static" qualification on schema_table_store_record()
-    so that external functions may use it.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_table.cc@1.328.1.3, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +10 -10
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_update.cc@1.205.2.4, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +7 -7
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_view.cc@1.100.1.3, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Abstract setting thread-info into a function or macro.
-    ---
-    Manual merge, undoing first patch.
-
-  sql/sql_yacc.yy@1.498.1.4, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +48 -32
-    Add new lexer symbols and insert new grammatical rules necessary to 
-    retreive profiling information.
-    ---
-    Manual merge, undoing first patch.
-    ---
-    Fix merge problems.
-
-  sql/table.h@1.137.1.1, 2007-02-22 10:03:05-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Add enum item for query profiling.
-
-ChangeSet@1.2341.74.1, 2007-01-18 09:50:16-05:00, cmiller@zippy.cornsilk.net +7 -0
-  Bug#24822: Patch: uptime_since_flush_status
-  
-  Provide the number of seconds since flush as a new status variable
-  named "Uptime_since_flush_status".
-  ---
-  Override the post-flush value, as a second could pass between the two
-  statements.
-
-  BitKeeper/etc/collapsed@1.18.1.2, 2007-01-18 09:49:43-05:00, cmiller@zippy.cornsilk.net +2 -0
-
-  mysql-test/r/information_schema.result@1.118, 2007-01-18 09:50:14-05:00, cmiller@zippy.cornsilk.net +7 -0
-    Test new status variable.
-    ---
-    Override the post-flush value, as a second could pass between the two
-    statements.
-
-  mysql-test/t/information_schema.test@1.89, 2007-01-18 09:50:14-05:00, cmiller@zippy.cornsilk.net +10 -3
-    Test new status variable.
-    ---
-    Override the post-flush value, as a second could pass between the two
-    statements.
-
-  sql/mysql_priv.h@1.425.6.1, 2007-01-18 09:50:14-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Add variable to hold previous flush time.
-
-  sql/mysqld.cc@1.582.8.1, 2007-01-18 09:50:14-05:00, cmiller@zippy.cornsilk.net +4 -2
-    Add variable to hold previous flush time.  Insert name for 
-    referring to it, and initialize the value.
-
-  sql/sql_show.cc@1.333.2.3, 2007-01-18 09:50:14-05:00, cmiller@zippy.cornsilk.net +4 -0
-    Yield value of elapsed time since flush when asked.
-
-  sql/structs.h@1.58, 2007-01-18 09:50:14-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Add new show-flush-time to SHOW types enumeration.
-
-ChangeSet@1.2341.39.7, 2007-01-09 14:42:56+01:00, df@kahlann.erinye.com +1 -0
-  raise version number after cloning 5.0.33
-
-  configure.in@1.419, 2007-01-09 14:42:54+01:00, df@kahlann.erinye.com +2 -2
-    raise version number after cloning 5.0.33
-
-ChangeSet@1.2341.17.11, 2007-01-09 13:02:15+01:00, dfischer@mysql.com +1 -0
-  configure.in:
-    raise version to 5.0.33
-  TAG: mysql-5.0.33
-
-  configure.in@1.407.3.1, 2007-01-09 12:59:56+01:00, dfischer@mysql.com +2 -2
-    raise version to 5.0.33
-
-ChangeSet@1.2341.34.3, 2007-01-08 15:57:03-05:00, cmiller@zippy.cornsilk.net +1 -0
-  Community version numbering.
-
-  configure.in@1.413.1.1, 2007-01-08 15:57:01-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Community version numbering.
-
-ChangeSet@1.2294.58.1, 2007-01-03 17:15:10-05:00, cmiller@zippy.cornsilk.net +33 -0
-  Bug#24795: Add SHOW PROFILE
-  
-  Patch contributed by Jeremy Cole.  CLA received Oct 2006 by Kaj Arnö
-  
-  Add rudimentary query profiling support.
-
-  mysql-test/r/profile.result@1.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +30 -0
-    Test profiling code.
-    ---
-    A not-very-useful result.
-
-  mysql-test/r/profile.result@1.0, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  mysql-test/t/profile.test@1.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +39 -0
-    Test profiling code.
-    ---
-    Test syntax, but not values of profiles code.
-
-  mysql-test/t/profile.test@1.0, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  sql/sql_profile.cc@1.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +441 -0
-    Add profiling code.
-    ---
-    Add wishlist comment.
-
-  sql/sql_profile.cc@1.0, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  sql/sql_profile.h@1.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +187 -0
-    Add profiling code.
-    ---
-    Changed the value of the macro so that it's syntactically equivalent to a
-    single statement.
-
-  sql/sql_profile.h@1.0, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +0 -0
-
-  BitKeeper/etc/collapsed@1.13.1.2, 2007-01-03 17:13:00-05:00, cmiller@zippy.cornsilk.net +3 -0
-
-  libmysqld/Makefile.am@1.70.1.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Add profile file to source list.
-
-  sql/Makefile.am@1.128.1.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +2 -0
-    Add profiling files to source and header lists.
-
-  sql/ha_archive.cc@1.78.2.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +2 -2
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/ha_myisam.cc@1.170.2.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +12 -12
-    Macroize setting thread-state info
-
-  sql/item_func.cc@1.316.2.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +4 -4
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/lex.h@1.144.1.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +13 -0
-    Add lexer info for profiling.
-
-  sql/lock.cc@1.90.2.1, 2007-01-03 17:15:06-05:00, cmiller@zippy.cornsilk.net +4 -4
-    Macroize setting thread-state info
-
-  sql/log_event.cc@1.214.4.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +4 -4
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/mysql_priv.h@1.423.4.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +4 -0
-    Set constants for profiling.
-
-  sql/repl_failsafe.cc@1.61.2.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +3 -3
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/slave.cc@1.286.2.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +3 -3
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sp_head.cc@1.225.4.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +2 -2
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sql_base.cc@1.356.1.3, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +12 -12
-    Macroize setting thread-state info
-    ---
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sql_cache.cc@1.96.1.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +12 -0
-    Macroize setting thread-state info
-
-  sql/sql_class.cc@1.254.5.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +2 -0
-    Integrate profiling.
-
-  sql/sql_class.h@1.310.9.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +3 -0
-    Instantiate profiling object.
-
-  sql/sql_delete.cc@1.187.1.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +6 -6
-    Macroize setting thread-state info
-
-  sql/sql_insert.cc@1.206.4.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +19 -19
-    Macroize setting thread-state info
-    ---
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sql_lex.cc@1.206.6.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +1 -0
-    Initialize profiling.
-
-  sql/sql_lex.h@1.233.2.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +3 -0
-    Define lex tokens and allocate space for profiling options.
-
-  sql/sql_parse.cc@1.590.10.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +28 -12
-    Integrate profiling.
-    ---
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sql_repl.cc@1.153.1.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sql_select.cc@1.475.4.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +43 -30
-    Macroize setting thread-state info.
-    
-    Clean up some lines.
-
-  sql/sql_show.cc@1.333.3.1, 2007-01-03 17:15:07-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Macro-ized other discovered instances of setting proc_info.
-    ---
-    Revert bad use of macro.
-
-  sql/sql_table.cc@1.325.3.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +10 -10
-    Macroize setting thread-state info
-
-  sql/sql_update.cc@1.205.3.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +7 -7
-    Macroize setting thread-state info
-
-  sql/sql_view.cc@1.100.2.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +1 -1
-    Macro-ized other discovered instances of setting proc_info.
-
-  sql/sql_yacc.yy@1.498.2.1, 2007-01-03 17:15:08-05:00, cmiller@zippy.cornsilk.net +73 -1
-    Add parser info for profiling.
-    ---
-    Fix new YACC shift/reduce conflict.  (Now at 249.)
-
+  Revert fix for this bug as it introduced a regression
+  reported in Bug#38158.
+------------------------------------------------------------
+revno: 2580
+author: Jonathan Perkin <jperkin@sun.com>
+committer: mysqldev <mysqldev@production.mysql.com>
+branch nick: mysql-5.0.67-release
+timestamp: Thu 2008-07-17 17:39:33 +0200
+message:
+  Merge from mysql-5.0.66-release
+    ------------------------------------------------------------
+    revno: 2559.103.2
+    tags: mysql-5.0.66
+    committer: Georgi Kodinov <kgeorge@mysql.com>
+    branch nick: merge-5.0.66-release
+    timestamp: Wed 2008-07-09 13:03:48 +0300
+    message:
+      fixed a compilation warning on windows 64.

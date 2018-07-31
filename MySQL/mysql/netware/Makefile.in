@@ -81,7 +81,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
@@ -115,7 +115,7 @@ mysqld_safe_OBJECTS = $(am_mysqld_safe_OBJECTS)
 mysqld_safe_LDADD = $(LDADD)
 @HAVE_NETWARE_TRUE@mysqld_safe_DEPENDENCIES = ../mysys/libmysys.a \
 @HAVE_NETWARE_TRUE@	../dbug/libdbug.a ../strings/libmystrings.a
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -143,6 +143,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -280,7 +281,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -331,6 +334,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -423,8 +427,10 @@ zlib_dir = @zlib_dir@
 @HAVE_NETWARE_TRUE@                                extra/resolve_stack_dump.def myisam/myisam_ftdump.def
 
 @HAVE_NETWARE_FALSE@BUILT_SOURCES = libmysql.imp init_db.sql test_db.sql
-@HAVE_NETWARE_FALSE@DISTCLEANFILES = libmysql.imp
+@HAVE_NETWARE_TRUE@BUILT_SOURCES = link_sources init_db.sql test_db.sql
 @HAVE_NETWARE_FALSE@CLEANFILES = init_db.sql test_db.sql
+@HAVE_NETWARE_TRUE@CLEANFILES = $(BUILT_SOURCES)
+@HAVE_NETWARE_FALSE@DISTCLEANFILES = libmysql.imp
 @HAVE_NETWARE_FALSE@EXTRA_DIST = $(BUILT_SOURCES) comp_err.def install_test_db.ncf \
 @HAVE_NETWARE_FALSE@		libmysql.def \
 @HAVE_NETWARE_FALSE@		libmysqlmain.c my_manage.c my_manage.h \
@@ -439,7 +445,7 @@ zlib_dir = @zlib_dir@
 @HAVE_NETWARE_FALSE@		mysqlshow.def mysqltest.def mysql_upgrade.def perror.def \
 @HAVE_NETWARE_FALSE@		mysql_client_test.def \
 @HAVE_NETWARE_FALSE@		replace.def resolve_stack_dump.def resolveip.def \
-@HAVE_NETWARE_FALSE@		static_init_db.sql \
+@HAVE_NETWARE_FALSE@		static_init_db.sql init_db.sql test_db.sql \
 @HAVE_NETWARE_FALSE@		BUILD/apply-patch BUILD/compile-AUTOTOOLS \
 @HAVE_NETWARE_FALSE@		BUILD/compile-linux-tools BUILD/compile-netware-END \
 @HAVE_NETWARE_FALSE@		BUILD/compile-netware-START BUILD/compile-netware-all\
@@ -743,11 +749,13 @@ uninstall-am: uninstall-binPROGRAMS uninstall-info-am
 	uninstall-binPROGRAMS uninstall-info-am
 
 
+@HAVE_NETWARE_TRUE@all: $(BUILT_SOURCES)
+
 @HAVE_NETWARE_TRUE@link_sources:
 @HAVE_NETWARE_TRUE@	set -x; \
 @HAVE_NETWARE_TRUE@	for f in $(netware_build_files); do \
 @HAVE_NETWARE_TRUE@	  rm -f ../$$f; \
-@HAVE_NETWARE_TRUE@	  org=`echo $$f | sed -e 's/.*\/\(.*\)/\1/g'`; \
+@HAVE_NETWARE_TRUE@	  org=`basename $$f`; \
 @HAVE_NETWARE_TRUE@	  @LN_CP_F@ $(srcdir)/$$org ../$$f; \
 @HAVE_NETWARE_TRUE@	done
 
@@ -761,21 +769,21 @@ uninstall-am: uninstall-binPROGRAMS uninstall-info-am
 
 # Build init_db.sql from the files that contain
 # the system tables for this version of MySQL plus any commands
-@HAVE_NETWARE_FALSE@init_db.sql: $(top_srcdir)/scripts/mysql_system_tables.sql \
-@HAVE_NETWARE_FALSE@	     $(top_srcdir)/scripts/mysql_system_tables_data.sql
-@HAVE_NETWARE_FALSE@	@echo "Building $@";
-@HAVE_NETWARE_FALSE@	@echo "CREATE DATABASE mysql;" > $@;
-@HAVE_NETWARE_FALSE@	@echo "CREATE DATABASE test;" >> $@;
-@HAVE_NETWARE_FALSE@	@echo "use mysql;" >> $@;
-@HAVE_NETWARE_FALSE@	@cat $(top_srcdir)/scripts/mysql_system_tables.sql \
-@HAVE_NETWARE_FALSE@	     $(top_srcdir)/scripts/mysql_system_tables_fix.sql >> $@;
+init_db.sql: $(top_srcdir)/scripts/mysql_system_tables.sql \
+	     $(top_srcdir)/scripts/mysql_system_tables_data.sql
+	@echo "Building $@";
+	@echo "CREATE DATABASE mysql;" > $@;
+	@echo "CREATE DATABASE test;" >> $@;
+	@echo "use mysql;" >> $@;
+	@cat $(top_srcdir)/scripts/mysql_system_tables.sql \
+	     $(top_srcdir)/scripts/mysql_system_tables_fix.sql >> $@;
 
 # Build test_db.sql from init_db.sql plus
 # some test data
-@HAVE_NETWARE_FALSE@test_db.sql: init_db.sql $(top_srcdir)/scripts/mysql_test_data_timezone.sql
-@HAVE_NETWARE_FALSE@	@echo "Building $@";
-@HAVE_NETWARE_FALSE@	@cat init_db.sql \
-@HAVE_NETWARE_FALSE@	     $(top_srcdir)/scripts/mysql_test_data_timezone.sql >> $@;
+test_db.sql: init_db.sql $(top_srcdir)/scripts/mysql_test_data_timezone.sql
+	@echo "Building $@";
+	@cat init_db.sql \
+	     $(top_srcdir)/scripts/mysql_test_data_timezone.sql  > $@;
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

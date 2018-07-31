@@ -14,6 +14,18 @@ int __crdel_init_print __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_re
 int __crdel_init_getpgnos __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __crdel_init_recover __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __crdel_metasub_recover __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
+int __db_master_open __P((DB *, DB_TXN *, const char *, u_int32_t, int, DB **));
+int __db_master_update __P((DB *, DB *, DB_TXN *, const char *, DBTYPE, mu_action, const char *, u_int32_t));
+int __db_dbenv_setup __P((DB *, DB_TXN *, const char *, u_int32_t, u_int32_t));
+int __db_close __P((DB *, u_int32_t));
+int __db_close_i __P((DB *, DB_TXN *, u_int32_t));
+int __db_refresh __P((DB *, DB_TXN *, u_int32_t));
+int __db_log_page __P((DB *, DB_TXN *, DB_LSN *, db_pgno_t, PAGE *));
+int __db_backup_name __P((DB_ENV *, const char *, DB_TXN *, char **));
+DB *__dblist_get __P((DB_ENV *, u_int32_t));
+#if CONFIG_TEST
+int __db_testcopy __P((DB_ENV *, DB *, const char *));
+#endif
 int __db_cursor __P((DB *, DB_TXN *, DBC **, u_int32_t));
 int __db_icursor __P((DB *, DB_TXN *, DBTYPE, db_pgno_t, int, u_int32_t, DBC **));
 int __db_cprint __P((DB *));
@@ -63,18 +75,6 @@ int __db_cksum_read __P((DB_ENV *, void *, __db_cksum_args **));
 int __db_init_print __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __db_init_getpgnos __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __db_init_recover __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
-int __db_master_open __P((DB *, DB_TXN *, const char *, u_int32_t, int, DB **));
-int __db_master_update __P((DB *, DB *, DB_TXN *, const char *, DBTYPE, mu_action, const char *, u_int32_t));
-int __db_dbenv_setup __P((DB *, DB_TXN *, const char *, u_int32_t, u_int32_t));
-int __db_close __P((DB *, u_int32_t));
-int __db_close_i __P((DB *, DB_TXN *, u_int32_t));
-int __db_refresh __P((DB *, DB_TXN *, u_int32_t));
-int __db_log_page __P((DB *, DB_TXN *, DB_LSN *, db_pgno_t, PAGE *));
-int __db_backup_name __P((DB_ENV *, const char *, DB_TXN *, char **));
-DB *__dblist_get __P((DB_ENV *, u_int32_t));
-#if CONFIG_TEST
-int __db_testcopy __P((DB_ENV *, DB *, const char *));
-#endif
 int __db_c_close __P((DBC *));
 int __db_c_destroy __P((DBC *));
 int __db_c_count __P((DBC *, db_recno_t *, u_int32_t));

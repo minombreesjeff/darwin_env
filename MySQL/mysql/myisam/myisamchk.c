@@ -337,7 +337,7 @@ static struct my_option my_long_options[] =
     (gptr*) &ft_stopword_file, (gptr*) &ft_stopword_file, 0, GET_STR,
     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"stats_method", OPT_STATS_METHOD,
-   "Specifies how index statistics collection code should threat NULLs. "
+   "Specifies how index statistics collection code should treat NULLs. "
    "Possible values of name are \"nulls_unequal\" (default behavior for 4.1/5.0), "
    "\"nulls_equal\" (emulate 4.0 behavior), and \"nulls_ignored\".",
    (gptr*) &myisam_stats_method_str, (gptr*) &myisam_stats_method_str, 0,
@@ -452,7 +452,7 @@ static void usage(void)
 		      MySQL faster.  You can check the calculated distribution\n\
 		      by using '--description --verbose table_name'.\n\
   --stats_method=name Specifies how index statistics collection code should\n\
-                      threat NULLs. Possible values of name are \"nulls_unequal\"\n\
+                      treat NULLs. Possible values of name are \"nulls_unequal\"\n\
                       (default for 4.1/5.0), \"nulls_equal\" (emulate 4.0), and \n\
                       \"nulls_ignored\".\n\
   -d, --description   Prints some information about table.\n\
@@ -1543,8 +1543,8 @@ static int mi_sort_records(MI_CHECK *param,
     mi_check_print_error(param,"Not enough memory for key block");
     goto err;
   }
-  if (!(sort_param.record=(byte*) my_malloc((uint) share->base.pack_reclength,
-					   MYF(0))))
+
+  if (!mi_alloc_rec_buff(info, -1, &sort_param.record))
   {
     mi_check_print_error(param,"Not enough memory for record");
     goto err;
@@ -1639,7 +1639,8 @@ err:
   {
     my_afree((gptr) temp_buff);
   }
-  my_free(sort_param.record,MYF(MY_ALLOW_ZERO_PTR));
+  my_free(mi_get_rec_buff_ptr(info, sort_param.record),
+          MYF(MY_ALLOW_ZERO_PTR));
   info->opt_flag&= ~(READ_CACHE_USED | WRITE_CACHE_USED);
   VOID(end_io_cache(&info->rec_cache));
   my_free(sort_info.buff,MYF(MY_ALLOW_ZERO_PTR));

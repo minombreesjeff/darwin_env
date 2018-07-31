@@ -1403,7 +1403,7 @@ error:
 */
 
 static bool select_like_stmt_test(Prepared_statement *stmt,
-                                  bool (*specific_prepare)(THD *thd),
+                                  int (*specific_prepare)(THD *thd),
                                   ulong setup_tables_done_option)
 {
   DBUG_ENTER("select_like_stmt_test");
@@ -1441,7 +1441,7 @@ static bool select_like_stmt_test(Prepared_statement *stmt,
 static bool
 select_like_stmt_test_with_open_n_lock(Prepared_statement *stmt,
                                        TABLE_LIST *tables,
-                                       bool (*specific_prepare)(THD *thd),
+                                       int (*specific_prepare)(THD *thd),
                                        ulong setup_tables_done_option)
 {
   DBUG_ENTER("select_like_stmt_test_with_open_n_lock");
@@ -1508,6 +1508,44 @@ static bool mysql_test_create_table(Prepared_statement *stmt)
 
   /* put tables back for PS rexecuting */
   lex->link_first_table_back(create_table, link_to_local);
+  DBUG_RETURN(res);
+}
+
+
+/**
+  @brief Validate and prepare for execution CREATE VIEW statement
+
+  @param stmt prepared statement
+
+  @note This function handles create view commands.
+
+  @retval FALSE Operation was a success.
+  @retval TRUE An error occured.
+*/
+
+static bool mysql_test_create_view(Prepared_statement *stmt)
+{
+  DBUG_ENTER("mysql_test_create_view");
+  THD *thd= stmt->thd;
+  LEX *lex= stmt->lex;
+  bool res= TRUE;
+  /* Skip first table, which is the view we are creating */
+  bool link_to_local;
+  TABLE_LIST *view= lex->unlink_first_table(&link_to_local);
+  TABLE_LIST *tables= lex->query_tables;
+
+  if (create_view_precheck(thd, tables, view, lex->create_view_mode))
+    goto err;
+
+  if (open_normal_and_derived_tables(thd, tables, 0))
+    goto err;
+
+  lex->view_prepare_mode= 1;
+  res= select_like_stmt_test(stmt, 0, 0);
+
+err:
+  /* put view back for PS rexecuting */
+  lex->link_first_table_back(view, link_to_local);
   DBUG_RETURN(res);
 }
 
@@ -1592,7 +1630,7 @@ error:
     because mysql_handle_derived uses local tables lists.
 */
 
-static bool mysql_insert_select_prepare_tester(THD *thd)
+static int mysql_insert_select_prepare_tester(THD *thd)
 {
   SELECT_LEX *first_select= &thd->lex->select_lex;
   TABLE_LIST *second_table= ((TABLE_LIST*)first_select->table_list.first)->
@@ -1724,6 +1762,14 @@ static bool check_prepared_statement(Prepared_statement *stmt,
     res= mysql_test_create_table(stmt);
     break;
 
+  case SQLCOM_CREATE_VIEW:
+    if (lex->create_view_mode == VIEW_ALTER)
+    {
+      my_message(ER_UNSUPPORTED_PS, ER(ER_UNSUPPORTED_PS), MYF(0));
+      goto error;
+    }
+    res= mysql_test_create_view(stmt);
+    break;
   case SQLCOM_DO:
     res= mysql_test_do_fields(stmt, tables, lex->insert_list);
     break;
@@ -1766,7 +1812,6 @@ static bool check_prepared_statement(Prepared_statement *stmt,
   case SQLCOM_ROLLBACK:
   case SQLCOM_TRUNCATE:
   case SQLCOM_CALL:
-  case SQLCOM_CREATE_VIEW:
   case SQLCOM_DROP_VIEW:
   case SQLCOM_REPAIR:
   case SQLCOM_ANALYZE:
@@ -1893,13 +1938,6 @@ void mysql_stmt_prepare(THD *thd, const char *packet, uint packet_length)
   {
     /* Statement map deletes statement on erase */
     thd->stmt_map.erase(stmt);
-  }
-  else
-  {
-    const char *format= "[%lu] %.*b";
-    mysql_log.write(thd, COM_STMT_PREPARE, format, stmt->id,
-                    stmt->query_length, stmt->query);
-
   }
   /* check_prepared_statemnt sends the metadata packet in case of success */
   DBUG_VOID_RETURN;
@@ -2286,13 +2324,6 @@ void mysql_stmt_execute(THD *thd, char *packet_arg, uint packet_length)
                        test(flags & (ulong) CURSOR_TYPE_READ_ONLY));
   if (!(specialflag & SPECIAL_NO_PRIOR))
     my_pthread_setprio(pthread_self(), WAIT_PRIOR);
-  if (error == 0)
-  {
-    const char *format= "[%lu] %.*b";
-    mysql_log.write(thd, COM_STMT_EXECUTE, format, stmt->id,
-                    thd->query_length, thd->query);
-  }
-
   DBUG_VOID_RETURN;
 
 set_params_data_err:
@@ -2488,7 +2519,7 @@ void mysql_stmt_close(THD *thd, char *packet)
   DBUG_ENTER("mysql_stmt_close");
 
   if (!(stmt= find_prepared_statement(thd, stmt_id, "mysql_stmt_close")))
-    DBUG_VOID_RETURN;
+    goto out;
 
   /*
     The only way currently a statement can be deallocated when it's
@@ -2497,6 +2528,9 @@ void mysql_stmt_close(THD *thd, char *packet)
   DBUG_ASSERT(! (stmt->flags & (uint) Prepared_statement::IS_IN_USE));
   (void) stmt->deallocate();
 
+out:
+  /* clear errors, response packet is not expected */
+  thd->clear_error();
   DBUG_VOID_RETURN;
 }
 
@@ -2563,10 +2597,7 @@ void mysql_stmt_get_longdata(THD *thd, char *packet, ulong packet_length)
 #ifndef EMBEDDED_LIBRARY
   /* Minimal size of long data packet is 6 bytes */
   if (packet_length <= MYSQL_LONG_DATA_HEADER)
-  {
-    my_error(ER_WRONG_ARGUMENTS, MYF(0), "mysql_stmt_send_long_data");
-    DBUG_VOID_RETURN;
-  }
+    goto out;
 #endif
 
   stmt_id= uint4korr(packet);
@@ -2574,7 +2605,7 @@ void mysql_stmt_get_longdata(THD *thd, char *packet, ulong packet_length)
 
   if (!(stmt=find_prepared_statement(thd, stmt_id,
                                      "mysql_stmt_send_long_data")))
-    DBUG_VOID_RETURN;
+    goto out;
 
   param_number= uint2korr(packet);
   packet+= 2;
@@ -2586,7 +2617,7 @@ void mysql_stmt_get_longdata(THD *thd, char *packet, ulong packet_length)
     stmt->last_errno= ER_WRONG_ARGUMENTS;
     sprintf(stmt->last_error, ER(ER_WRONG_ARGUMENTS),
             "mysql_stmt_send_long_data");
-    DBUG_VOID_RETURN;
+    goto out;
   }
 #endif
 
@@ -2602,6 +2633,10 @@ void mysql_stmt_get_longdata(THD *thd, char *packet, ulong packet_length)
     stmt->last_errno= ER_OUTOFMEMORY;
     sprintf(stmt->last_error, ER(ER_OUTOFMEMORY), 0);
   }
+
+out:
+  /* clear errors, response packet is not expected */
+  thd->clear_error();
   DBUG_VOID_RETURN;
 }
 
@@ -2670,7 +2705,7 @@ Prepared_statement::Prepared_statement(THD *thd_arg, Protocol *protocol_arg)
   last_errno(0),
   flags((uint) IS_IN_USE)
 {
-  init_alloc_root(&main_mem_root, thd_arg->variables.query_alloc_block_size,
+  init_sql_alloc(&main_mem_root, thd_arg->variables.query_alloc_block_size,
                   thd_arg->variables.query_prealloc_size);
   *last_error= '\0';
 }
@@ -2823,6 +2858,7 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
   lex_start(thd);
   lex->safe_to_cache_query= FALSE;
   int err= MYSQLparse((void *)thd);
+  lex->set_trg_event_type_for_tables();
 
   error= err || thd->is_fatal_error ||
       thd->net.report_error || init_param_array(this);
@@ -2875,6 +2911,29 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
     init_stmt_after_parse(lex);
     state= Query_arena::PREPARED;
     flags&= ~ (uint) IS_IN_USE;
+
+    /* 
+      Log COM_EXECUTE to the general log. Note, that in case of SQL
+      prepared statements this causes two records to be output:
+
+      Query       PREPARE stmt from @user_variable
+      Prepare     <statement SQL text>
+
+      This is considered user-friendly, since in the
+      second log entry we output the actual statement text.
+
+      Do not print anything if this is an SQL prepared statement and
+      we're inside a stored procedure (also called Dynamic SQL) --
+      sub-statements inside stored procedures are not logged into
+      the general log.
+    */
+    if (thd->spcont == NULL)
+    {
+      const char *format= "[%lu] %.*b";
+      mysql_log.write(thd, COM_STMT_PREPARE, format, id,
+                      query_length, query);
+
+    }
   }
   DBUG_RETURN(error);
 }
@@ -3011,6 +3070,28 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
 
   if (state == Query_arena::PREPARED)
     state= Query_arena::EXECUTED;
+
+  /*
+    Log COM_EXECUTE to the general log. Note, that in case of SQL
+    prepared statements this causes two records to be output:
+
+    Query       EXECUTE <statement name>
+    Execute     <statement SQL text>
+
+    This is considered user-friendly, since in the
+    second log entry we output values of parameter markers.
+
+    Do not print anything if this is an SQL prepared statement and
+    we're inside a stored procedure (also called Dynamic SQL) --
+    sub-statements inside stored procedures are not logged into
+    the general log.
+  */
+  if (error == 0 && thd->spcont == NULL)
+  {
+    const char *format= "[%lu] %.*b";
+    mysql_log.write(thd, COM_STMT_EXECUTE, format, id,
+                    thd->query_length, thd->query);
+  }
 
 error:
   flags&= ~ (uint) IS_IN_USE;

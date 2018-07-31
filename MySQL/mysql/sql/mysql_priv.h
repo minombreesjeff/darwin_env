@@ -73,6 +73,7 @@ extern const char *primary_key_name;
 #include "mysql_com.h"
 #include <violite.h>
 #include "unireg.h"
+#define IS_NUM(t)	((t) <= FIELD_TYPE_INT24 || (t) == FIELD_TYPE_YEAR || (t) == FIELD_TYPE_NEWDECIMAL)
 
 void init_sql_alloc(MEM_ROOT *root, uint block_size, uint pre_alloc_size);
 gptr sql_alloc(unsigned size);
@@ -186,7 +187,7 @@ MY_LOCALE *my_locale_by_number(uint number);
 #define QUERY_ALLOC_PREALLOC_SIZE   	8192
 #define TRANS_ALLOC_BLOCK_SIZE		4096
 #define TRANS_ALLOC_PREALLOC_SIZE	4096
-#define RANGE_ALLOC_BLOCK_SIZE		2048
+#define RANGE_ALLOC_BLOCK_SIZE		4096
 #define ACL_ALLOC_BLOCK_SIZE		1024
 #define UDF_ALLOC_BLOCK_SIZE		1024
 #define TABLE_ALLOC_BLOCK_SIZE		1024
@@ -247,8 +248,13 @@ MY_LOCALE *my_locale_by_number(uint number);
 #define PRECISION_FOR_DOUBLE 53
 #define PRECISION_FOR_FLOAT  24
 
+/*
+  Default time to wait before aborting a new client connection
+  that does not respond to "initial server greeting" timely
+*/
+#define CONNECT_TIMEOUT		10
+
 /* The following can also be changed from the command line */
-#define CONNECT_TIMEOUT		5		// Do not wait long for connect
 #define DEFAULT_CONCURRENCY	10
 #define DELAYED_LIMIT		100		/* pause after xxx inserts */
 #define DELAYED_QUEUE_SIZE	1000
@@ -459,9 +465,9 @@ void debug_sync_point(const char* lock_name, uint lock_timeout);
 #define SHOW_LOG_STATUS_FREE "FREE"
 #define SHOW_LOG_STATUS_INUSE "IN USE"
 
-struct st_table_list;
+struct TABLE_LIST;
 class String;
-void view_store_options(THD *thd, st_table_list *table, String *buff);
+void view_store_options(THD *thd, TABLE_LIST *table, String *buff);
 
 /* Options to add_table_to_list() */
 #define TL_OPTION_UPDATING	1
@@ -494,6 +500,8 @@ enum enum_parsing_place
 
 struct st_table;
 class THD;
+
+#define thd_proc_info(thd, msg)  set_thd_proc_info(thd, msg, __func__, __FILE__, __LINE__)
 
 /* Struct to handle simple linked lists */
 
@@ -580,6 +588,16 @@ typedef Comp_creator* (*chooser_compare_func_creator)(bool invert);
 #include "item.h"
 extern my_decimal decimal_zero;
 
+/**    
+  The meat of thd_proc_info(THD*, char*), a macro that packs the last
+  three calling-info parameters. 
+*/
+extern "C"
+const char *set_thd_proc_info(THD *thd, const char *info, 
+                              const char *calling_func,
+                              const char *calling_file,
+                              const unsigned int calling_line);
+
 /* sql_parse.cc */
 void free_items(Item *item);
 void cleanup_items(Item *item);
@@ -597,8 +615,8 @@ bool check_merge_table_access(THD *thd, char *db,
 bool check_some_routine_access(THD *thd, const char *db, const char *name, bool is_proc);
 bool multi_update_precheck(THD *thd, TABLE_LIST *tables);
 bool multi_delete_precheck(THD *thd, TABLE_LIST *tables);
-bool mysql_multi_update_prepare(THD *thd);
-bool mysql_multi_delete_prepare(THD *thd);
+int mysql_multi_update_prepare(THD *thd);
+int mysql_multi_delete_prepare(THD *thd);
 bool mysql_insert_select_prepare(THD *thd);
 bool update_precheck(THD *thd, TABLE_LIST *tables);
 bool delete_precheck(THD *thd, TABLE_LIST *tables);
@@ -623,6 +641,16 @@ enum enum_mysql_completiontype {
 int end_trans(THD *thd, enum enum_mysql_completiontype completion);
 
 Item *negate_expression(THD *thd, Item *expr);
+
+/* log.cc */
+void sql_perror(const char *message);
+
+void vprint_msg_to_log(enum loglevel level, const char *format, va_list args);
+void sql_print_error(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
+void sql_print_warning(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
+void sql_print_information(const char *format, ...)
+  ATTRIBUTE_FORMAT(printf, 1, 2);
+
 #include "sql_class.h"
 #include "sql_acl.h"
 #include "tztime.h"
@@ -681,7 +709,7 @@ struct Query_cache_query_flags
 
 uint build_table_path(char *buff, size_t bufflen, const char *db,
                       const char *table, const char *ext);
-bool mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create, bool silent);
+int mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create, bool silent);
 bool mysql_alter_db(THD *thd, const char *db, HA_CREATE_INFO *create);
 bool mysql_rm_db(THD *thd,char *db,bool if_exists, bool silent);
 void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos, ushort flags);
@@ -721,8 +749,7 @@ pthread_handler_t handle_one_connection(void *arg);
 pthread_handler_t handle_bootstrap(void *arg);
 void end_thread(THD *thd,bool put_in_cache);
 void flush_thread_cache();
-bool mysql_execute_command(THD *thd);
-bool do_command(THD *thd);
+int mysql_execute_command(THD *thd);
 bool dispatch_command(enum enum_server_command command, THD *thd,
 		      char* packet, uint packet_length);
 void log_slow_statement(THD *thd);
@@ -853,7 +880,7 @@ void prepare_triggers_for_insert_stmt(THD *thd, TABLE *table,
                                       enum_duplicates duplic);
 void mark_fields_used_by_triggers_for_insert_stmt(THD *thd, TABLE *table,
                                                   enum_duplicates duplic);
-bool mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds);
+int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds);
 bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
                   SQL_LIST *order, ha_rows rows, ulonglong options,
                   bool reset_auto_increment);
@@ -968,6 +995,8 @@ bool get_schema_tables_result(JOIN *join,
                               enum enum_schema_table_state executed_place);
 enum enum_schema_tables get_schema_table_idx(ST_SCHEMA_TABLE *schema_table);
 
+bool schema_table_store_record(THD *thd, TABLE *table);
+
 #define is_schema_db(X) \
   !my_strcasecmp(system_charset_info, INFORMATION_SCHEMA_NAME.str, (X))
 
@@ -991,7 +1020,6 @@ bool mysql_ha_read(THD *, TABLE_LIST *,enum enum_ha_read_modes,char *,
                    List<Item> *,enum ha_rkey_function,Item *,ha_rows,ha_rows);
 int mysql_ha_flush(THD *thd, TABLE_LIST *tables, uint mode_flags,
                    bool is_locked);
-void mysql_ha_mark_tables_for_reopen(THD *thd, TABLE *table);
 /* mysql_ha_flush mode_flags bits */
 #define MYSQL_HA_CLOSE_FINAL        0x00
 #define MYSQL_HA_REOPEN_ON_USAGE    0x01
@@ -1035,6 +1063,13 @@ SQL_SELECT *make_select(TABLE *head, table_map const_tables,
 			table_map read_tables, COND *conds,
                         bool allow_null_cond,  int *error);
 extern Item **not_found_item;
+
+/*
+  A set of constants used for checking non aggregated fields and sum
+  functions mixture in the ONLY_FULL_GROUP_BY_MODE.
+*/
+#define NON_AGG_FIELD_USED  1
+#define SUM_FUNC_USED       2
 
 /*
   This enumeration type is used only by the function find_item_in_list
@@ -1098,7 +1133,7 @@ int init_ftfuncs(THD *thd, SELECT_LEX* select, bool no_order);
 void wait_for_refresh(THD *thd);
 int open_tables(THD *thd, TABLE_LIST **tables, uint *counter, uint flags);
 int simple_open_n_lock_tables(THD *thd,TABLE_LIST *tables);
-bool open_and_lock_tables(THD *thd,TABLE_LIST *tables);
+int open_and_lock_tables(THD *thd,TABLE_LIST *tables);
 bool open_normal_and_derived_tables(THD *thd, TABLE_LIST *tables, uint flags);
 int lock_tables(THD *thd, TABLE_LIST *tables, uint counter, bool *need_reopen);
 TABLE *open_temporary_table(THD *thd, const char *path, const char *db,
@@ -1110,7 +1145,7 @@ bool close_thread_table(THD *thd, TABLE **table_ptr);
 void close_temporary_tables(THD *thd);
 void close_tables_for_reopen(THD *thd, TABLE_LIST **tables);
 TABLE_LIST *find_table_in_list(TABLE_LIST *table,
-                               st_table_list *TABLE_LIST::*link,
+                               TABLE_LIST *TABLE_LIST::*link,
                                const char *db_name,
                                const char *table_name);
 TABLE_LIST *unique_table(THD *thd, TABLE_LIST *table, TABLE_LIST *table_list,
@@ -1169,7 +1204,7 @@ inline TABLE_LIST *find_table_in_local_list(TABLE_LIST *table,
 bool eval_const_cond(COND *cond);
 
 /* sql_load.cc */
-bool mysql_load(THD *thd, sql_exchange *ex, TABLE_LIST *table_list,
+int mysql_load(THD *thd, sql_exchange *ex, TABLE_LIST *table_list,
 	        List<Item> &fields_vars, List<Item> &set_fields,
                 List<Item> &set_values_list,
                 enum enum_duplicates handle_duplicates, bool ignore,
@@ -1204,14 +1239,6 @@ bool is_key_used(TABLE *table, uint idx, List<Item> &fields);
 int key_cmp(KEY_PART_INFO *key_part, const byte *key, uint key_length);
 
 bool init_errmessage(void);
-void sql_perror(const char *message);
-
-void vprint_msg_to_log(enum loglevel level, const char *format, va_list args);
-void sql_print_error(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
-void sql_print_warning(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
-void sql_print_information(const char *format, ...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
-
 
 bool fn_format_relative_to_data_home(my_string to, const char *name,
 				     const char *dir, const char *extension);
@@ -1225,6 +1252,7 @@ my_bool mysql_rm_tmp_tables(void);
 
 /* item_func.cc */
 extern bool check_reserved_words(LEX_STRING *name);
+extern enum_field_types agg_field_type(Item **items, uint nitems);
 
 /* strfunc.cc */
 ulonglong find_set(TYPELIB *lib, const char *x, uint length, CHARSET_INFO *cs,
@@ -1254,6 +1282,7 @@ void my_dbopt_free(void);
 extern time_t server_start_time, flush_status_time;
 extern char *mysql_data_home,server_version[SERVER_VERSION_LENGTH],
 	    mysql_real_data_home[], *opt_mysql_tmpdir, mysql_charsets_dir[],
+	    mysql_unpacked_real_data_home[],
             def_ft_boolean_syntax[sizeof(ft_boolean_syntax)];
 #define mysql_tmpdir (my_tmpdir(&mysql_tmpdir_list))
 extern MY_TMPDIR mysql_tmpdir_list;
@@ -1310,8 +1339,8 @@ extern bool opt_endinfo, using_udf_functions;
 extern my_bool locked_in_memory;
 extern bool opt_using_transactions, mysqld_embedded;
 extern bool using_update_log, opt_large_files, server_id_supplied;
-extern bool opt_log, opt_update_log, opt_bin_log, opt_slow_log, opt_error_log;
-extern my_bool opt_log_queries_not_using_indexes;
+extern bool opt_update_log, opt_bin_log, opt_error_log;
+extern my_bool opt_log, opt_slow_log, opt_log_queries_not_using_indexes;
 extern bool opt_disable_networking, opt_skip_show_db;
 extern my_bool opt_character_set_client_handshake;
 extern bool volatile abort_loop, shutdown_in_progress, grant_option;
@@ -1332,6 +1361,9 @@ extern my_bool opt_enable_shared_memory;
 extern char *default_tz_name;
 extern my_bool opt_large_pages;
 extern uint opt_large_page_size;
+
+extern char *opt_plugin_dir_ptr;
+extern char opt_plugin_dir[FN_REFLEN];
 
 extern MYSQL_LOG mysql_log,mysql_slow_log,mysql_bin_log;
 extern FILE *bootstrap_file;
@@ -1456,7 +1488,8 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **table, uint count,
 void mysql_unlock_tables(THD *thd, MYSQL_LOCK *sql_lock);
 void mysql_unlock_read_tables(THD *thd, MYSQL_LOCK *sql_lock);
 void mysql_unlock_some_tables(THD *thd, TABLE **table,uint count);
-void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table);
+void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table,
+                       bool always_unlock);
 void mysql_lock_abort(THD *thd, TABLE *table);
 bool mysql_lock_abort_for_thread(THD *thd, TABLE *table);
 MYSQL_LOCK *mysql_lock_merge(MYSQL_LOCK *a,MYSQL_LOCK *b);

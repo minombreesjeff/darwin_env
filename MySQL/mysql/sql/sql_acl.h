@@ -183,13 +183,13 @@ int acl_getroot(THD *thd, USER_RESOURCES *mqh, const char *passwd,
 bool acl_getroot_no_password(Security_context *sctx, char *user, char *host,
                              char *ip, char *db);
 bool acl_check_host(const char *host, const char *ip);
-bool check_change_password(THD *thd, const char *host, const char *user,
+int check_change_password(THD *thd, const char *host, const char *user,
                            char *password, uint password_len);
 bool change_password(THD *thd, const char *host, const char *user,
 		     char *password);
 bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &user_list,
                  ulong rights, bool revoke);
-bool mysql_table_grant(THD *thd, TABLE_LIST *table, List <LEX_USER> &user_list,
+int mysql_table_grant(THD *thd, TABLE_LIST *table, List <LEX_USER> &user_list,
                        List <LEX_COLUMN> &column_list, ulong rights,
                        bool revoke);
 bool mysql_routine_grant(THD *thd, TABLE_LIST *table, bool is_proc,
@@ -205,9 +205,8 @@ bool check_grant_column (THD *thd, GRANT_INFO *grant,
 			 const char *name, uint length, Security_context *sctx);
 bool check_column_grant_in_table_ref(THD *thd, TABLE_LIST * table_ref,
                                      const char *name, uint length);
-bool check_grant_all_columns(THD *thd, ulong want_access, GRANT_INFO *grant,
-                             const char* db_name, const char *table_name,
-                             Field_iterator *fields);
+bool check_grant_all_columns(THD *thd, ulong want_access, 
+                             Field_iterator_table_ref *fields);
 bool check_grant_routine(THD *thd, ulong want_access,
 			 TABLE_LIST *procs, bool is_proc, bool no_error);
 bool check_grant_db(THD *thd,const char *db);
@@ -226,7 +225,7 @@ void fill_effective_table_privileges(THD *thd, GRANT_INFO *grant,
                                      const char *db, const char *table);
 bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
                           bool is_proc);
-bool sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
+int sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
                          bool is_proc);
 bool check_routine_level_acl(THD *thd, const char *db, const char *name,
                              bool is_proc);

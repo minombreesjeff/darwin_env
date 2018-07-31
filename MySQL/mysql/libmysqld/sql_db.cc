@@ -449,7 +449,7 @@ bool load_db_opt_by_name(THD *thd, const char *db_name,
 
 */
 
-bool mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create_info,
+int mysql_create_db(THD *thd, char *db, HA_CREATE_INFO *create_info,
                      bool silent)
 {
   char	 path[FN_REFLEN+16];
@@ -1240,10 +1240,10 @@ bool mysql_change_db(THD *thd, const LEX_STRING *new_db_name, bool force_switch)
   {
     if (force_switch)
     {
-      push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_NOTE,
-                          ER_NO_DB_ERROR, ER(ER_NO_DB_ERROR));
-
-      /* Change db to NULL. */
+      /*
+        This can only happen when we restore the old db in THD after
+        execution of a routine is complete. Change db to NULL.
+      */
 
       mysql_change_db_impl(thd, NULL, 0, thd->variables.collation_server);
 

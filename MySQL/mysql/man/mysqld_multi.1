@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqld_multi\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLD_MULTI\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLD_MULTI\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -39,8 +39,8 @@ to specify which servers you want to start, stop, or obtain a status report for.
 [mysqld]
 group used for starting
 \fBmysqld\fR. (See, for example,
-Section\ 4.15.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number. For more information on which options must be unique per server in a multiple\-server environment, see
-Section\ 10, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
+Section\ 4.16.2.2, \(lqStarting and Stopping MySQL Automatically\(rq.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number. For more information on which options must be unique per server in a multiple\-server environment, see
+Section\ 6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
 .PP
 To invoke
 \fBmysqld_multi\fR, use the following syntax:
@@ -108,6 +108,41 @@ shell> \fBmysqld_multi \-\-example\fR
 .fi
 .RE
 .PP
+As of MySQL 5.0.42,
+\fBmysqld_multi\fR
+searches for option files as follows:
+.TP 3n
+\(bu
+With
+\fB\-\-no\-defaults\fR, no option files are read.
+.TP 3n
+\(bu
+With
+\fB\-\-defaults\-file=\fR\fB\fIfile_name\fR\fR, only the named file is read.
+.TP 3n
+\(bu
+Otherwise, option files in the standard list of locations are read, including any file named by the
+\fB\-\-defaults\-extra\-file=\fR\fB\fIfile_name\fR\fR
+option, if one is given. (If the option is given multiple times, the last value is used.)
+.sp
+.RE
+.PP
+Option files read are searched for
+[mysqld_multi]
+and
+[mysqld\fIN\fR]
+option groups.
+.PP
+Before MySQL 5.0.42, the preceding options are not recognized. Files in the standard locations are read, and any file named by the
+\fB\-\-config\-file=\fR\fB\fIfile_name\fR\fR
+option, if one is given. A file named by
+\fB\-\-config\-file\fR
+is read only for
+[mysqld\fIN\fR]
+option groups, not the
+[mysqld_multi]
+group.
+.PP
 \fBmysqld_multi\fR
 supports the following options:
 .TP 3n
@@ -119,7 +154,10 @@ Display a help message and exit.
 \(bu
 \fB\-\-config\-file=\fR\fB\fIfile_name\fR\fR
 .sp
-Specify the name of an alternative option file. This affects where
+As of MySQL 5.0.42, this option is deprecated. If given, it is treated the same way as
+\fB\-\-defaults\-extra\-file\fR, described earlier.
+.sp
+Before MySQL 5.0.42, this option specifies the name of an extra option file. It affects where
 \fBmysqld_multi\fR
 looks for
 [mysqld\fIN\fR]
@@ -242,10 +280,16 @@ servers with the same data directory. Use separate data directories, unless you
 what you are doing. Starting multiple servers with the same data directory does
 \fInot\fR
 give you extra performance in a threaded system. See
-Section\ 10, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
+Section\ 6, \(lqRunning Multiple MySQL Servers on the Same Machine\(rq.
 .TP 3n
 \(bu
-\fBImportant\fR: Make sure that the data directory for each server is fully accessible to the Unix account that the specific
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBImportant\fR
+Make sure that the data directory for each server is fully accessible to the Unix account that the specific
 \fBmysqld\fR
 process is started as.
 \fIDo not\fR
@@ -254,7 +298,7 @@ use the Unix
 account for this, unless you
 \fIknow\fR
 what you are doing. See
-Section\ 4.5, \(lqHow to Run MySQL as a Normal User\(rq.
+Section\ 3.5, \(lqHow to Run MySQL as a Normal User\(rq.
 .TP 3n
 \(bu
 Make sure that the MySQL account used for stopping the
@@ -276,7 +320,7 @@ mysql> \fBGRANT SHUTDOWN ON *.*\fR
 .fi
 .RE
 See
-Section\ 5.2, \(lqHow the Privilege System Works\(rq. You have to do this for each
+Section\ 4.2, \(lqHow the Privilege System Works\(rq. You have to do this for each
 \fBmysqld\fR
 server. Change the connection parameters appropriately when connecting to each one. Note that the hostname part of the account name must allow you to connect as
 multi_admin
@@ -285,7 +329,9 @@ from the host where you want to run
 .TP 3n
 \(bu
 The Unix socket file and the TCP/IP port number must be different for every
-\fBmysqld\fR.
+\fBmysqld\fR. (Alternatively, if the host has multiple network addresses, you can use
+\fB\-\-bind\-adress\fR
+to cause different servers to listen to different interfaces.)
 .TP 3n
 \(bu
 The
@@ -392,20 +438,19 @@ user       = jani
 .RE
 .PP
 See
-Section\ 3.2, \(lqUsing Option Files\(rq.
+Section\ 2.3.2, \(lqUsing Option Files\(rq.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

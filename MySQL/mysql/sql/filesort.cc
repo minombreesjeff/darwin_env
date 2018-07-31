@@ -37,7 +37,8 @@ if (my_b_write((file),(byte*) (from),param->ref_length)) \
 
 static char **make_char_array(char **old_pos, register uint fields,
                               uint length, myf my_flag);
-static BUFFPEK *read_buffpek_from_file(IO_CACHE *buffer_file, uint count);
+static byte *read_buffpek_from_file(IO_CACHE *buffer_file, uint count,
+                                    byte *buf);
 static ha_rows find_all_keys(SORTPARAM *param,SQL_SELECT *select,
 			     uchar * *sort_keys, IO_CACHE *buffer_file,
 			     IO_CACHE *tempfile,IO_CACHE *indexfile);
@@ -111,6 +112,13 @@ ha_rows filesort(THD *thd, TABLE *table, SORT_FIELD *sortorder, uint s_length,
   FILESORT_INFO table_sort;
   TABLE_LIST *tab= table->pos_in_table_list;
   Item_subselect *subselect= tab ? tab->containing_subselect() : 0;
+
+  /*
+   Release InnoDB's adaptive hash index latch (if holding) before
+   running a sort.
+  */
+  ha_release_temporary_latches(thd);
+
   /* 
     Don't use table->sort in filesort as it is also used by 
     QUICK_INDEX_MERGE_SELECT. Work with a copy and put it back at the end 
@@ -214,8 +222,7 @@ ha_rows filesort(THD *thd, TABLE *table, SORT_FIELD *sortorder, uint s_length,
   sort_keys= table_sort.sort_keys;
   if (memavl < min_sort_memory)
   {
-    my_error(ER_OUTOFMEMORY,MYF(ME_ERROR+ME_WAITTANG),
-	     thd->variables.sortbuff_size);
+    my_error(ER_OUT_OF_SORTMEMORY,MYF(ME_ERROR+ME_WAITTANG));
     goto err;
   }
   if (open_cached_file(&buffpek_pointers,mysql_tmpdir,TEMP_PREFIX,
@@ -238,9 +245,14 @@ ha_rows filesort(THD *thd, TABLE *table, SORT_FIELD *sortorder, uint s_length,
   }
   else
   {
-    if (!table_sort.buffpek && table_sort.buffpek_len < maxbuffer &&
-        !(table_sort.buffpek=
-          (byte *) read_buffpek_from_file(&buffpek_pointers, maxbuffer)))
+    if (table_sort.buffpek && table_sort.buffpek_len < maxbuffer)
+    {
+      x_free(table_sort.buffpek);
+      table_sort.buffpek= 0;
+    }
+    if (!(table_sort.buffpek=
+          read_buffpek_from_file(&buffpek_pointers, maxbuffer,
+                                 table_sort.buffpek)))
       goto err;
     buffpek= (BUFFPEK *) table_sort.buffpek;
     table_sort.buffpek_len= maxbuffer;
@@ -368,18 +380,20 @@ static char **make_char_array(char **old_pos, register uint fields,
 
 /* Read 'count' number of buffer pointers into memory */
 
-static BUFFPEK *read_buffpek_from_file(IO_CACHE *buffpek_pointers, uint count)
+static byte *read_buffpek_from_file(IO_CACHE *buffpek_pointers, uint count,
+                                    byte *buf)
 {
-  ulong length;
-  BUFFPEK *tmp;
+  ulong length= sizeof(BUFFPEK)*count;
+  byte *tmp= buf;
   DBUG_ENTER("read_buffpek_from_file");
   if (count > UINT_MAX/sizeof(BUFFPEK))
     return 0; /* sizeof(BUFFPEK)*count will overflow */
-  tmp=(BUFFPEK*) my_malloc(length=sizeof(BUFFPEK)*count, MYF(MY_WME));
+  if (!tmp)
+    tmp= (byte *)my_malloc(length, MYF(MY_WME));
   if (tmp)
   {
     if (reinit_io_cache(buffpek_pointers,READ_CACHE,0L,0,0) ||
-	my_b_read(buffpek_pointers, (byte*) tmp, length))
+	my_b_read(buffpek_pointers, tmp, length))
     {
       my_free((char*) tmp, MYF(0));
       tmp=0;
@@ -534,7 +548,7 @@ static ha_rows find_all_keys(SORTPARAM *param, SQL_SELECT *select,
       file->unlock_row();
     /* It does not make sense to read more keys in case of a fatal error */
     if (thd->net.report_error)
-      DBUG_RETURN(HA_POS_ERROR);
+      break;
   }
   if (quick_select)
   {
@@ -551,6 +565,9 @@ static ha_rows find_all_keys(SORTPARAM *param, SQL_SELECT *select,
       file->ha_rnd_end();
   }
 
+  if (thd->net.report_error)
+    DBUG_RETURN(HA_POS_ERROR);
+  
   DBUG_PRINT("test",("error: %d  indexpos: %d",error,indexpos));
   if (error != HA_ERR_END_OF_FILE)
   {
@@ -1052,6 +1069,7 @@ int merge_buffers(SORTPARAM *param, IO_CACHE *from_file,
   BUFFPEK *buffpek;
   QUEUE queue;
   qsort2_cmp cmp;
+  void *first_cmp_arg;
   volatile THD::killed_state *killed= &current_thd->killed;
   THD::killed_state not_killable;
   DBUG_ENTER("merge_buffers");
@@ -1077,9 +1095,18 @@ int merge_buffers(SORTPARAM *param, IO_CACHE *from_file,
   /* The following will fire if there is not enough space in sort_buffer */
   DBUG_ASSERT(maxcount!=0);
   
+  if (param->unique_buff)
+  {
+    cmp= param->compare;
+    first_cmp_arg= (void *) &param->cmp_context;
+  }
+  else
+  {
+    cmp= get_ptr_compare(sort_length);
+    first_cmp_arg= (void*) &sort_length;
+  }
   if (init_queue(&queue, (uint) (Tb-Fb)+1, offsetof(BUFFPEK,key), 0,
-                 (queue_compare) (cmp= get_ptr_compare(sort_length)),
-                 (void*) &sort_length))
+                 (queue_compare) cmp, first_cmp_arg))
     DBUG_RETURN(1);                                /* purecov: inspected */
   for (buffpek= Fb ; buffpek <= Tb ; buffpek++)
   {
@@ -1132,7 +1159,7 @@ int merge_buffers(SORTPARAM *param, IO_CACHE *from_file,
       buffpek= (BUFFPEK*) queue_top(&queue);
       if (cmp)                                        // Remove duplicates
       {
-        if (!(*cmp)(&sort_length, &(param->unique_buff),
+        if (!(*cmp)(first_cmp_arg, &(param->unique_buff),
                     (uchar**) &buffpek->key))
               goto skip_duplicate;
             memcpy(param->unique_buff, (uchar*) buffpek->key, rec_length);
@@ -1184,7 +1211,7 @@ int merge_buffers(SORTPARAM *param, IO_CACHE *from_file,
   */
   if (cmp)
   {
-    if (!(*cmp)(&sort_length, &(param->unique_buff), (uchar**) &buffpek->key))
+    if (!(*cmp)(first_cmp_arg, &(param->unique_buff), (uchar**) &buffpek->key))
     {
       buffpek->key+= rec_length;         // Remove duplicate
       --buffpek->mem_count;
@@ -1420,7 +1447,8 @@ get_addon_fields(THD *thd, Field **ptabfield, uint sortlength, uint *plength)
     doesn't work for alter table
   */
   if (thd->lex->sql_command != SQLCOM_SELECT &&
-      thd->lex->sql_command != SQLCOM_INSERT_SELECT)
+      thd->lex->sql_command != SQLCOM_INSERT_SELECT &&
+      thd->lex->sql_command != SQLCOM_CREATE_TABLE)
     return 0;
   for (pfield= ptabfield; (field= *pfield) ; pfield++)
   {

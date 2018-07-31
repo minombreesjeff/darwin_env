@@ -80,7 +80,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -109,17 +109,18 @@ am_libmysys_a_OBJECTS = my_init.$(OBJEXT) my_getwd.$(OBJEXT) \
 	my_messnc.$(OBJEXT) mf_format.$(OBJEXT) mf_same.$(OBJEXT) \
 	mf_dirname.$(OBJEXT) mf_fn_ext.$(OBJEXT) my_symlink.$(OBJEXT) \
 	my_symlink2.$(OBJEXT) mf_pack.$(OBJEXT) mf_unixpath.$(OBJEXT) \
-	mf_strip.$(OBJEXT) mf_wcomp.$(OBJEXT) mf_wfile.$(OBJEXT) \
-	my_gethwaddr.$(OBJEXT) mf_qsort.$(OBJEXT) mf_qsort2.$(OBJEXT) \
-	mf_sort.$(OBJEXT) ptr_cmp.$(OBJEXT) mf_radix.$(OBJEXT) \
-	queues.$(OBJEXT) tree.$(OBJEXT) list.$(OBJEXT) hash.$(OBJEXT) \
-	array.$(OBJEXT) string.$(OBJEXT) typelib.$(OBJEXT) \
-	my_copy.$(OBJEXT) my_append.$(OBJEXT) my_lib.$(OBJEXT) \
-	my_delete.$(OBJEXT) my_rename.$(OBJEXT) my_redel.$(OBJEXT) \
-	my_chsize.$(OBJEXT) my_lread.$(OBJEXT) my_lwrite.$(OBJEXT) \
-	my_clock.$(OBJEXT) my_quick.$(OBJEXT) my_lockmem.$(OBJEXT) \
-	my_static.$(OBJEXT) my_sync.$(OBJEXT) my_getopt.$(OBJEXT) \
-	my_mkdir.$(OBJEXT) default_modify.$(OBJEXT) default.$(OBJEXT) \
+	mf_strip.$(OBJEXT) mf_arr_appstr.$(OBJEXT) mf_wcomp.$(OBJEXT) \
+	mf_wfile.$(OBJEXT) my_gethwaddr.$(OBJEXT) mf_qsort.$(OBJEXT) \
+	mf_qsort2.$(OBJEXT) mf_sort.$(OBJEXT) ptr_cmp.$(OBJEXT) \
+	mf_radix.$(OBJEXT) queues.$(OBJEXT) tree.$(OBJEXT) \
+	list.$(OBJEXT) hash.$(OBJEXT) array.$(OBJEXT) string.$(OBJEXT) \
+	typelib.$(OBJEXT) my_copy.$(OBJEXT) my_append.$(OBJEXT) \
+	my_lib.$(OBJEXT) my_delete.$(OBJEXT) my_rename.$(OBJEXT) \
+	my_redel.$(OBJEXT) my_chsize.$(OBJEXT) my_lread.$(OBJEXT) \
+	my_lwrite.$(OBJEXT) my_clock.$(OBJEXT) my_quick.$(OBJEXT) \
+	my_lockmem.$(OBJEXT) my_static.$(OBJEXT) my_sync.$(OBJEXT) \
+	my_getopt.$(OBJEXT) my_mkdir.$(OBJEXT) \
+	default_modify.$(OBJEXT) default.$(OBJEXT) \
 	my_compress.$(OBJEXT) checksum.$(OBJEXT) raid.$(OBJEXT) \
 	my_net.$(OBJEXT) my_port.$(OBJEXT) my_sleep.$(OBJEXT) \
 	charset.$(OBJEXT) charset-def.$(OBJEXT) my_bitmap.$(OBJEXT) \
@@ -129,7 +130,7 @@ am_libmysys_a_OBJECTS = my_init.$(OBJEXT) my_getwd.$(OBJEXT) \
 	my_largepage.$(OBJEXT) my_memmem.$(OBJEXT) my_windac.$(OBJEXT) \
 	my_access.$(OBJEXT) base64.$(OBJEXT) my_libwrap.$(OBJEXT)
 libmysys_a_OBJECTS = $(am_libmysys_a_OBJECTS)
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -162,6 +163,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -307,7 +309,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -358,6 +362,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -452,7 +457,7 @@ libmysys_a_SOURCES = my_init.c my_getwd.c mf_getdate.c my_mmap.c \
 			my_error.c errors.c my_div.c my_messnc.c \
 			mf_format.c mf_same.c mf_dirname.c mf_fn_ext.c \
 			my_symlink.c my_symlink2.c \
-			mf_pack.c mf_unixpath.c mf_strip.c \
+			mf_pack.c mf_unixpath.c mf_strip.c mf_arr_appstr.c \
 			mf_wcomp.c mf_wfile.c my_gethwaddr.c \
 			mf_qsort.c mf_qsort2.c mf_sort.c \
 			ptr_cmp.c mf_radix.c queues.c \
@@ -564,6 +569,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hash.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/list.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/md5.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_arr_appstr.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_brkhant.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_cache.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mf_dirname.Po@am__quote@

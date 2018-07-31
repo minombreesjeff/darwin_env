@@ -46,11 +46,12 @@ IF(DISABLE_GRANT_OPTIONS)
   ADD_DEFINITIONS(-DDISABLE_GRANT_OPTIONS)
 ENDIF(DISABLE_GRANT_OPTIONS)
 
-ADD_EXECUTABLE(mysqld ../sql-common/client.c derror.cc des_key_file.cc
-               discover.cc ../libmysql/errmsg.c field.cc field_conv.cc 
+ADD_EXECUTABLE(mysqld${MYSQLD_EXE_SUFFIX}
+	       ../sql-common/client.c derror.cc des_key_file.cc
+               discover.cc ../libmysql/errmsg.c field.cc  stacktrace.c stacktrace.h field_conv.cc 
                filesort.cc gstream.cc ha_blackhole.cc 
                ha_archive.cc ha_heap.cc ha_myisam.cc ha_myisammrg.cc
-               ha_innodb.cc ha_federated.cc ha_berkeley.cc ha_blackhole.cc
+               ha_innodb.cc ha_federated.cc ha_berkeley.cc
                handler.cc hash_filo.cc hash_filo.h 
                hostname.cc init.cc item.cc item_buff.cc item_cmpfunc.cc 
                item_create.cc item_func.cc item_geofunc.cc item_row.cc 
@@ -83,7 +84,8 @@ ADD_EXECUTABLE(mysqld ../sql-common/client.c derror.cc des_key_file.cc
 			   ${PROJECT_SOURCE_DIR}/include/mysql_version.h 
 			   ${PROJECT_SOURCE_DIR}/sql/lex_hash.h)
 
-TARGET_LINK_LIBRARIES(mysqld heap myisam myisammrg mysys yassl zlib dbug yassl 
+TARGET_LINK_LIBRARIES(mysqld${MYSQLD_EXE_SUFFIX}
+		      heap myisam myisammrg mysys yassl zlib debug dbug yassl 
                       taocrypt strings vio regex wsock32)
 
 IF(EMBED_MANIFESTS)
@@ -91,19 +93,19 @@ IF(EMBED_MANIFESTS)
 ENDIF(EMBED_MANIFESTS)
 
 IF(WITH_EXAMPLE_STORAGE_ENGINE)
-  TARGET_LINK_LIBRARIES(mysqld example)
+  TARGET_LINK_LIBRARIES(mysqld${MYSQLD_EXE_SUFFIX} example)
 ENDIF(WITH_EXAMPLE_STORAGE_ENGINE)
 
 IF(WITH_INNOBASE_STORAGE_ENGINE)
-  TARGET_LINK_LIBRARIES(mysqld innobase)
+  TARGET_LINK_LIBRARIES(mysqld${MYSQLD_EXE_SUFFIX} innobase)
 ENDIF(WITH_INNOBASE_STORAGE_ENGINE)
 
 IF(WITH_BERKELEY_STORAGE_ENGINE)
-  TARGET_LINK_LIBRARIES(mysqld bdb)
+  TARGET_LINK_LIBRARIES(mysqld${MYSQLD_EXE_SUFFIX} bdb)
 ENDIF(WITH_BERKELEY_STORAGE_ENGINE)
 
 
-ADD_DEPENDENCIES(mysqld GenError)
+ADD_DEPENDENCIES(mysqld${MYSQLD_EXE_SUFFIX} GenError)
 
 # Sql Parser custom command
 ADD_CUSTOM_COMMAND(
@@ -127,16 +129,21 @@ ADD_CUSTOM_COMMAND(
 	DEPENDS ${PROJECT_SOURCE_DIR}/sql/message.mc)
 
 # Gen_lex_hash
+# About "mysqlclient_notls", see note in "client/CMakeLists.txt"
 ADD_EXECUTABLE(gen_lex_hash gen_lex_hash.cc)
-TARGET_LINK_LIBRARIES(gen_lex_hash dbug mysqlclient wsock32)
+TARGET_LINK_LIBRARIES(gen_lex_hash mysqlclient_notls wsock32)
 GET_TARGET_PROPERTY(GEN_LEX_HASH_EXE gen_lex_hash LOCATION)
 ADD_CUSTOM_COMMAND(
 	OUTPUT ${PROJECT_SOURCE_DIR}/sql/lex_hash.h
 	COMMAND ${GEN_LEX_HASH_EXE} ARGS > lex_hash.h
 	DEPENDS ${GEN_LEX_HASH_EXE}
 )
-ADD_DEPENDENCIES(mysqld gen_lex_hash)
+ADD_DEPENDENCIES(mysqld${MYSQLD_EXE_SUFFIX} gen_lex_hash)
+
+# Remove the auto-generated files as part of 'Clean Solution'
+SET_DIRECTORY_PROPERTIES(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES 
+                         "lex_hash.h;message.rc;message.h;sql_yacc.h;sql_yacc.cc")
 
 ADD_LIBRARY(udf_example MODULE udf_example.c udf_example.def)
 ADD_DEPENDENCIES(udf_example strings)
-TARGET_LINK_LIBRARIES(udf_example wsock32)
+TARGET_LINK_LIBRARIES(udf_example strings wsock32)

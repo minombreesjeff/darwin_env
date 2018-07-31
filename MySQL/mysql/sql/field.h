@@ -25,6 +25,7 @@
 
 #define NOT_FIXED_DEC			31
 #define DATETIME_DEC                     6
+const uint32 max_field_size= (uint32) 4294967295U;
 
 class Send_field;
 class Protocol;
@@ -88,6 +89,16 @@ public:
   uint          field_index;            // field number in fields array
   uint16	flags;
   uchar		null_bit;		// Bit used to test null bit
+  /**
+     If true, this field was created in create_tmp_field_from_item from a NULL
+     value. This means that the type of the field is just a guess, and the type
+     may be freely coerced to another type.
+
+     @see create_tmp_field_from_item
+     @see Item_type_holder::get_real_type
+
+   */
+  bool is_created_from_null_item;
 
   Field(char *ptr_arg,uint32 length_arg,uchar *null_ptr_arg,uchar null_bit_arg,
 	utype unireg_check_arg, const char *field_name_arg,
@@ -231,9 +242,9 @@ public:
     if (null_ptr)
       null_ptr=ADD_TO_PTR(null_ptr,ptr_diff,uchar*);
   }
-  inline void get_image(char *buff,uint length, CHARSET_INFO *cs)
+  virtual void get_image(char *buff, uint length, CHARSET_INFO *cs)
     { memcpy(buff,ptr,length); }
-  inline void set_image(char *buff,uint length, CHARSET_INFO *cs)
+  virtual void set_image(char *buff,uint length, CHARSET_INFO *cs)
     { memcpy(ptr,buff,length); }
 
 
@@ -443,6 +454,9 @@ public:
 
 class Field_longstr :public Field_str
 {
+protected:
+  int report_if_important_data(const char *ptr, const char *end,
+                               bool count_spaces);
 public:
   Field_longstr(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
                 uchar null_bit_arg, utype unireg_check_arg,
@@ -933,6 +947,7 @@ public:
   double val_real(void);
   longlong val_int(void);
   String *val_str(String*,String *);
+  bool get_time(MYSQL_TIME *ltime);
   bool send_binary(Protocol *protocol);
   int cmp(const char *,const char*);
   void sort_string(char *buff,uint length);
@@ -950,6 +965,10 @@ public:
     :Field_str(ptr_arg, 10, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg, cs)
     {}
+  Field_newdate(bool maybe_null_arg, const char *field_name_arg,
+                struct st_table *table_arg, CHARSET_INFO *cs)
+    :Field_str((char*) 0,10, maybe_null_arg ? (uchar*) "": 0,0,
+               NONE, field_name_arg, table_arg, cs) {}
   enum_field_types type() const { return FIELD_TYPE_DATE;}
   enum_field_types real_type() const { return FIELD_TYPE_NEWDATE; }
   enum ha_base_keytype key_type() const { return HA_KEYTYPE_UINT24; }
@@ -1326,7 +1345,6 @@ public:
   int  store(double nr);
   int  store(longlong nr, bool unsigned_val);
   int  store_decimal(const my_decimal *);
-  uint get_key_image(char *buff,uint length,imagetype type);
   uint size_of() const { return sizeof(*this); }
   int  reset(void) { return !maybe_null() || Field_blob::reset(); }
   geometry_type get_geometry_type() { return geom_type; };
@@ -1430,13 +1448,20 @@ public:
   String *val_str(String*, String *);
   my_decimal *val_decimal(my_decimal *);
   int cmp(const char *a, const char *b)
-  { return cmp_binary(a, b); }
+  { 
+    DBUG_ASSERT(ptr == a);
+    return Field_bit::key_cmp((const byte *) b, bytes_in_rec+test(bit_len));
+  }
   int key_cmp(const byte *a, const byte *b)
   { return cmp_binary((char *) a, (char *) b); }
   int key_cmp(const byte *str, uint length);
   int cmp_offset(uint row_offset);
   int cmp_binary_offset(uint row_offset)
   { return cmp_offset(row_offset); }
+  void get_image(char *buff, uint length, CHARSET_INFO *cs)
+  { get_key_image(buff, length, itRAW); }   
+  void set_image(char *buff,uint length, CHARSET_INFO *cs)
+  { Field_bit::store(buff, length, cs); }
   uint get_key_image(char *buff, uint length, imagetype type);
   void set_key_image(char *buff, uint length)
   { Field_bit::store(buff, length, &my_charset_bin); }

@@ -99,41 +99,99 @@ t1	CREATE TABLE `t1` (
   `length(uuid())` int(10) NOT NULL default '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
-create table t1 (a timestamp default '2005-05-05 01:01:01',
-b timestamp default '2005-05-05 01:01:01');
-insert into t1 set a = now();
-select sleep(3);
-sleep(3)
-0
-update t1 set b = now();
-select timediff(b, a) >= '00:00:03' from t1;
-timediff(b, a) >= '00:00:03'
+#------------------------------------------------------------------------
+# Tests for Bug#6760 and Bug#12689
+SET @row_count = 4;
+SET @sleep_time_per_result_row = 1;
+SET @max_acceptable_delay = 2;
+SET @@global.query_cache_size = 1024 * 64;
+DROP TEMPORARY TABLE IF EXISTS t_history;
+DROP TABLE IF EXISTS t1;
+CREATE TEMPORARY TABLE t_history (attempt SMALLINT,
+start_ts DATETIME, end_ts DATETIME,
+start_cached INTEGER, end_cached INTEGER);
+CREATE TABLE t1 (f1 BIGINT);
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (1);
+INSERT INTO t_history
+SET attempt = 4 - 4 + 1, start_ts = NOW(),
+start_cached = 0;
+SELECT *, SLEEP(@sleep_time_per_result_row) FROM t1;
+f1	SLEEP(@sleep_time_per_result_row)
+1	0
+1	0
+1	0
+1	0
+UPDATE t_history SET end_ts = NOW()
+WHERE attempt = 4 - 4 + 1;
+UPDATE t_history SET end_cached = 0
+WHERE attempt = 4 - 4 + 1;
+INSERT INTO t_history
+SET attempt = 4 - 3 + 1, start_ts = NOW(),
+start_cached = 0;
+SELECT *, SLEEP(@sleep_time_per_result_row) FROM t1;
+f1	SLEEP(@sleep_time_per_result_row)
+1	0
+1	0
+1	0
+1	0
+UPDATE t_history SET end_ts = NOW()
+WHERE attempt = 4 - 3 + 1;
+UPDATE t_history SET end_cached = 0
+WHERE attempt = 4 - 3 + 1;
+INSERT INTO t_history
+SET attempt = 4 - 2 + 1, start_ts = NOW(),
+start_cached = 0;
+SELECT *, SLEEP(@sleep_time_per_result_row) FROM t1;
+f1	SLEEP(@sleep_time_per_result_row)
+1	0
+1	0
+1	0
+1	0
+UPDATE t_history SET end_ts = NOW()
+WHERE attempt = 4 - 2 + 1;
+UPDATE t_history SET end_cached = 0
+WHERE attempt = 4 - 2 + 1;
+INSERT INTO t_history
+SET attempt = 4 - 1 + 1, start_ts = NOW(),
+start_cached = 0;
+SELECT *, SLEEP(@sleep_time_per_result_row) FROM t1;
+f1	SLEEP(@sleep_time_per_result_row)
+1	0
+1	0
+1	0
+1	0
+UPDATE t_history SET end_ts = NOW()
+WHERE attempt = 4 - 1 + 1;
+UPDATE t_history SET end_cached = 0
+WHERE attempt = 4 - 1 + 1;
+# Test 1: Does the query with SLEEP need a reasonable time?
+SELECT COUNT(*) >= 4 - 1 INTO @aux1 FROM t_history
+WHERE TIMEDIFF(end_ts,start_ts) - @sleep_time_per_result_row * @row_count
+BETWEEN 0 AND @max_acceptable_delay;
+SELECT @aux1 AS "Expect 1";
+Expect 1
 1
-drop table t1;
-set global query_cache_size=1355776;
-create table t1 (a int);
-insert into t1 values (1),(1),(1);
-create table t2 (a datetime default null, b datetime default null);
-insert into t2 set a = now();
-select a from t1 where sleep(1);
-a
-update t2 set b = now() where b is null;
-insert into t2 set a = now();
-select a from t1 where sleep(a);
-a
-update t2 set b = now() where b is null;
-insert into t2 set a = now();
-select a from t1 where sleep(1);
-a
-update t2 set b = now() where b is null;
-select timediff(b, a) >= '00:00:03' from t2;
-timediff(b, a) >= '00:00:03'
+# Test 2: Does the query with SLEEP need a reasonable time even in case
+#         of the non first execution?
+SELECT COUNT(*) >= 4 - 1 - 1 INTO @aux2 FROM t_history
+WHERE TIMEDIFF(end_ts,start_ts) - @sleep_time_per_result_row * @row_count
+BETWEEN 0 AND @max_acceptable_delay
+AND attempt > 1;
+SELECT @aux2 AS "Expect 1";
+Expect 1
 1
+# Test 3: The query with SLEEP must be not cached.
+SELECT COUNT(*) = 4 INTO @aux3 FROM t_history
+WHERE end_cached = start_cached;
+SELECT @aux3 AS "Expect 1";
+Expect 1
 1
-1
-drop table t2;
-drop table t1;
-set global query_cache_size=default;
+DROP TABLE t1;
+DROP TEMPORARY TABLE t_history;
+SET @@global.query_cache_size = default;
 create table t1 select INET_ATON('255.255.0.1') as `a`;
 show create table t1;
 Table	Create Table
@@ -185,4 +243,66 @@ ERROR 21000: Operand should contain 1 column(s)
 drop table table_26093;
 drop function func_26093_a;
 drop function func_26093_b;
+SELECT NAME_CONST('test', NOW());
+ERROR HY000: Incorrect arguments to NAME_CONST
+SELECT NAME_CONST('test', UPPER('test'));
+ERROR HY000: Incorrect arguments to NAME_CONST
+SELECT NAME_CONST('test', NULL);
+test
+NULL
+SELECT NAME_CONST('test', 1);
+test
+1
+SELECT NAME_CONST('test', -1);
+test
+-1
+SELECT NAME_CONST('test', 1.0);
+test
+1.0
+SELECT NAME_CONST('test', -1.0);
+test
+-1.0
+SELECT NAME_CONST('test', 'test');
+test
+test
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2),(3);
+SELECT NAME_CONST('flag',1)    * MAX(a) FROM t1;
+NAME_CONST('flag',1)    * MAX(a)
+3
+SELECT NAME_CONST('flag',1.5)  * MAX(a) FROM t1;
+NAME_CONST('flag',1.5)  * MAX(a)
+4.5
+SELECT NAME_CONST('flag',-1)   * MAX(a) FROM t1;
+NAME_CONST('flag',-1)   * MAX(a)
+-3
+SELECT NAME_CONST('flag',-1.5) * MAX(a) FROM t1;
+NAME_CONST('flag',-1.5) * MAX(a)
+-4.5
+SELECT NAME_CONST('flag', SQRT(4)) * MAX(a) FROM t1;
+ERROR HY000: Incorrect arguments to NAME_CONST
+SELECT NAME_CONST('flag',-SQRT(4)) * MAX(a) FROM t1;
+ERROR HY000: Incorrect arguments to NAME_CONST
+DROP TABLE t1;
+CREATE TABLE t1 (a int);
+INSERT INTO t1 VALUES (5), (2);
+SELECT NAME_CONST(x,2) FROM (SELECT a x FROM t1) t;
+ERROR HY000: Incorrect arguments to NAME_CONST
+DROP TABLE t1;
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (), (), ();
+SELECT NAME_CONST(a, '1') FROM t1;
+ERROR HY000: Incorrect arguments to NAME_CONST
+SET INSERT_ID= NAME_CONST(a, a);
+ERROR HY000: Incorrect arguments to NAME_CONST
+DROP TABLE t1;
+create table t1 (a int not null);
+insert into t1 values (-1), (-2);
+select min(a) from t1 group by inet_ntoa(a);
+min(a)
+-2
+drop table t1;
+SELECT NAME_CONST('var', 'value') COLLATE latin1_general_cs;
+NAME_CONST('var', 'value') COLLATE latin1_general_cs
+value
 End of 5.0 tests

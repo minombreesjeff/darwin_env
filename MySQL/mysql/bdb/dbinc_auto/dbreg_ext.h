@@ -6,6 +6,12 @@
 extern "C" {
 #endif
 
+int __dbreg_setup __P((DB *, const char *, u_int32_t));
+int __dbreg_teardown __P((DB *));
+int __dbreg_new_id __P((DB *, DB_TXN *));
+int __dbreg_assign_id __P((DB *, int32_t));
+int __dbreg_revoke_id __P((DB *, int));
+int __dbreg_close_id __P((DB *, DB_TXN *));
 int __dbreg_register_log __P((DB_ENV *, DB_TXN *, DB_LSN *, u_int32_t, u_int32_t, const DBT *, const DBT *, int32_t, DBTYPE, db_pgno_t, u_int32_t));
 int __dbreg_register_getpgnos __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
 int __dbreg_register_print __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
@@ -13,12 +19,6 @@ int __dbreg_register_read __P((DB_ENV *, void *, __dbreg_register_args **));
 int __dbreg_init_print __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __dbreg_init_getpgnos __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __dbreg_init_recover __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
-int __dbreg_setup __P((DB *, const char *, u_int32_t));
-int __dbreg_teardown __P((DB *));
-int __dbreg_new_id __P((DB *, DB_TXN *));
-int __dbreg_assign_id __P((DB *, int32_t));
-int __dbreg_revoke_id __P((DB *, int));
-int __dbreg_close_id __P((DB *, DB_TXN *));
 int __dbreg_register_recover __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
 int __dbreg_add_dbentry __P((DB_ENV *, DB_LOG *, DB *, int32_t));
 void __dbreg_rem_dbentry __P((DB_LOG *, int32_t));

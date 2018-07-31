@@ -1,11 +1,11 @@
 .\"     Title: \fBmysql\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQL\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQL\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -49,7 +49,8 @@ shell> \fBmysql \-\-user=\fR\fB\fIuser_name\fR\fR\fB \-\-password=\fR\fB\fIyour_
 .fi
 .RE
 .PP
-Then type an SQL statement, end it with \(oq;\(cq,
+Then type an SQL statement, end it with
+\(lq;\(rq,
 \\g, or
 \\G
 and press Enter.
@@ -83,13 +84,17 @@ Display a help message and exit.
 \(bu
 \fB\-\-auto\-rehash\fR
 .sp
-Enable automatic rehashing. This option is on by default, which enables table and column name completion. Use
-\fB\-\-skip\-auto\-rehash\fR
+Enable automatic rehashing. This option is on by default, which enables database, table, and column name completion. Use
+\fB\-\-disable\-auto\-rehash\fR
 to disable rehashing. That causes
 \fBmysql\fR
 to start faster, but you must issue the
 rehash
-command if you want to use table and column name completion.
+command if you want to use name completion.
+.sp
+To complete a name, enter the first part and press Tab. If the name is unambiguous,
+\fBmysql\fR
+completes it. Otherwise, you can press Tab again to see the possible names that begin with what you have typed so far. Completion does not occur if there is no default database.
 .TP 3n
 \(bu
 \fB\-\-batch\fR,
@@ -98,17 +103,27 @@ command if you want to use table and column name completion.
 Print results using tab as the column separator, with each row on a new line. With this option,
 \fBmysql\fR
 does not use the history file.
+.sp
+Batch mode results in non\-tabular output format and escaping of special characters. Escaping may be disabled by using raw mode; see the description for the
+\fB\-\-raw\fR
+option.
 .TP 3n
 \(bu
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-column\-names\fR
 .sp
 Write column names in results.
+.TP 3n
+\(bu
+\fB\-\-comments\fR,
+\fB\-c\fR
+.sp
+Whether to preserve comments in statements sent to the server. The default is \-\-skip\-comments (discard comments), enable with \-\-comments (preserve comments). This option was added in MySQL 5.0.52.
 .TP 3n
 \(bu
 \fB\-\-compress\fR,
@@ -144,12 +159,24 @@ Print some debugging information when the program exits.
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-delimiter=\fR\fB\fIstr\fR\fR
 .sp
-Set the statement delimiter. The default is the semicolon character (\(oq;\(cq).
+Set the statement delimiter. The default is the semicolon character (\(lq;\(rq).
+.TP 3n
+\(bu
+\fB\-\-disable\-named\-commands\fR
+.sp
+Disable named commands. Use the
+\\*
+form only, or use named commands only at the beginning of a line ending with a semicolon (\(lq;\(rq).
+\fBmysql\fR
+starts with this option
+\fIenabled\fR
+by default. However, even with this option, long\-format commands still work from the first line. See
+the section called \(lq\fBMYSQL\fR COMMANDS\(rq.
 .TP 3n
 \(bu
 \fB\-\-execute=\fR\fB\fIstatement\fR\fR,
@@ -157,7 +184,7 @@ Set the statement delimiter. The default is the semicolon character (\(oq;\(cq).
 .sp
 Execute the statement and quit. The default output format is like that produced with
 \fB\-\-batch\fR. See
-Section\ 3.1, \(lqUsing Options on the Command Line\(rq, for some examples.
+Section\ 2.3.1, \(lqUsing Options on the Command Line\(rq, for some examples.
 .TP 3n
 \(bu
 \fB\-\-force\fR,
@@ -184,7 +211,7 @@ Produce HTML output.
 Ignore spaces after function names. The effect of this is described in the discussion for the
 IGNORE_SPACE
 SQL mode (see
-the section called \(lqSQL MODES\(rq).
+Section\ 1.7, \(lqSQL Modes\(rq).
 .TP 3n
 \(bu
 \fB\-\-line\-numbers\fR
@@ -207,10 +234,6 @@ to explicitly disable or enable
 LOCAL. Enabling
 LOCAL
 has no effect if the server does not also support it.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on the security implications of enabling
-LOCAL, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-named\-commands\fR,
@@ -232,7 +255,9 @@ the section called \(lq\fBMYSQL\fR COMMANDS\(rq.
 \fB\-A\fR
 .sp
 Deprecated form of
-\fB\-skip\-auto\-rehash\fR. See the description for
+\fB\-skip\-auto\-rehash\fR. Use
+\fB\-\-disable\-auto\-rehash\fR
+instead. See the description for
 \fB\-\-auto\-rehash\fR.
 .TP 3n
 \(bu
@@ -245,14 +270,9 @@ Do not beep when errors occur.
 \fB\-\-no\-named\-commands\fR,
 \fB\-g\fR
 .sp
-Disable named commands. Use the
-\\*
-form only, or use named commands only at the beginning of a line ending with a semicolon (\(oq;\(cq).
-\fBmysql\fR
-starts with this option
-\fIenabled\fR
-by default. However, even with this option, long\-format commands still work from the first line. See
-the section called \(lq\fBMYSQL\fR COMMANDS\(rq.
+Deprecated, use
+\fB\-\-disable\-named\-commands\fR
+instead.
 .TP 3n
 \(bu
 \fB\-\-no\-pager\fR
@@ -301,7 +321,13 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+.TP 3n
+\(bu
+\fB\-\-pipe\fR,
+\fB\-W\fR
+.sp
+On Windows, connect to the server via a named pipe. This option applies only for connections to a local server, and only if the server supports named\-pipe connections.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -319,7 +345,8 @@ the section called \(lq\fBMYSQL\fR COMMANDS\(rq.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use.
+The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
+Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -333,9 +360,42 @@ does not use the history file.
 \fB\-\-raw\fR,
 \fB\-r\fR
 .sp
-Write column values without escape conversion. Often used with the
+For tabular output, the
+\(lqboxing\(rq
+around columns enables one column value to be distinquished from another. For non\-tabular output (such as is produced in batch mode or when the
 \fB\-\-batch\fR
-option.
+or
+\fB\-\-silent\fR
+option is given), special characters are escaped in the output so they can be identified easily. Newline, tab,
+NUL, and backslash are written as
+\\n,
+\\t,
+\\0, and
+\\\\. The
+\fB\-\-raw\fR
+option disables this character escaping.
+.sp
+The following example demonstrates tabular versus non\-tabular output and the use of raw mode to disable escaping:
+.sp
+.RS 3n
+.nf
+% \fBmysql\fR
+mysql> SELECT CHAR(92);
++\-\-\-\-\-\-\-\-\-\-+
+| CHAR(92) |
++\-\-\-\-\-\-\-\-\-\-+
+| \\        | 
++\-\-\-\-\-\-\-\-\-\-+
+% \fBmysql \-s\fR
+mysql> SELECT CHAR(92);
+CHAR(92)
+\\\\
+% \fBmysql \-s \-r\fR
+mysql> SELECT CHAR(92);
+CHAR(92)
+\\
+.fi
+.RE
 .TP 3n
 \(bu
 \fB\-\-reconnect\fR
@@ -361,9 +421,6 @@ the section called \(lq\fBMYSQL\fR TIPS\(rq, for more information about this opt
 \fB\-\-secure\-auth\fR
 .sp
 Do not send passwords to the server in old (pre\-4.1.1) format. This prevents connections except for servers that use the newer password format.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on database security, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-show\-warnings\fR
@@ -382,18 +439,26 @@ signals (typically the result of typing Control\-C).
 \fB\-s\fR
 .sp
 Silent mode. Produce less output. This option can be given multiple times to produce less and less output.
+.sp
+This option results in non\-tabular output format and escaping of special characters. Escaping may be disabled by using raw mode; see the description for the
+\fB\-\-raw\fR
+option.
 .TP 3n
 \(bu
 \fB\-\-skip\-column\-names\fR,
 \fB\-N\fR
 .sp
-Do not write column names in results.
+Do not write column names in results. The short format,
+\fB\-N\fR
+is deprecated, use the long format instead.
 .TP 3n
 \(bu
 \fB\-\-skip\-line\-numbers\fR,
 \fB\-L\fR
 .sp
-Do not write line numbers for errors. Useful when you want to compare result files that include error messages.
+Do not write line numbers for errors. Useful when you want to compare result files that include error messages. The short format,
+\fB\-L\fR
+is deprecated, use the long format instead.
 .TP 3n
 \(bu
 \fB\-\-socket=\fR\fB\fIpath\fR\fR,
@@ -408,7 +473,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 6.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-table\fR,
@@ -467,7 +532,12 @@ If the connection cannot be established, wait and retry instead of aborting.
 .sp
 Produce XML output.
 .sp
-\fBNote\fR: Prior to MySQL 5.0.26, there was no differentiation in the output when using this option between columns containing the
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBNote\fR
+Prior to MySQL 5.0.26, there was no differentiation in the output when using this option between columns containing the
 NULL
 value and columns containing the string literal
 \'NULL'; both were represented as
@@ -519,8 +589,9 @@ shell> \fBmysql \-\-xml \-uroot \-e "SHOW VARIABLES LIKE 'version%'"\fR
 .RE
 .PP
 You can also set the following variables by using
-\fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-syntax:
+\fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR. The
+\fB\-\-set\-variable\fR
+format is deprecated.
 .TP 3n
 \(bu
 connect_timeout
@@ -555,11 +626,9 @@ statements when using
 .RE
 .PP
 It is also possible to set variables by using
-\fB\-\-set\-variable=\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-or
-\fB\-O \fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
-syntax.
-\fIThis syntax is deprecated\fR.
+\fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR. The
+\fB\-\-set\-variable\fR
+format is deprecated.
 .PP
 On Unix, the
 \fBmysql\fR
@@ -610,8 +679,6 @@ mysql> \fBhelp\fR
 List of all MySQL commands:
 Note that all text commands must be first on line and end with ';'
 ?         (\\?) Synonym for `help'.
-charset   (\\C) Switch to another charset. Might be needed for processing
-               binlog with multi\-byte charsets.
 clear     (\\c) Clear command.
 connect   (\\r) Reconnect to the server. Optional arguments are db and host.
 delimiter (\\d) Set statement delimiter. NOTE: Takes the rest of the line as
@@ -634,6 +701,8 @@ system    (\\!) Execute a system shell command.
 tee       (\\T) Set outfile [to_outfile]. Append everything into given
                outfile.
 use       (\\u) Use another database. Takes database name as argument.
+charset   (\\C) Switch to another charset. Might be needed for processing
+               binlog with multi\-byte charsets.
 warnings  (\\W) Show warnings after every statement.
 nowarning (\\w) Don't show warnings after every statement.
 For server side help, type 'help contents'
@@ -642,32 +711,210 @@ For server side help, type 'help contents'
 .PP
 Each command has both a long and short form. The long form is not case sensitive; the short form is. The long form can be followed by an optional semicolon terminator, but the short form should not.
 .PP
+The use of short\-form commands within multi\-line
+/* ... */
+comments is not supported.
+.TP 3n
+\(bu
+\fBhelp [\fR\fB\fIarg\fR\fR\fB]\fR,
+\fB\\h [\fR\fB\fIarg\fR\fR\fB]\fR,
+\fB\\? [\fR\fB\fIarg\fR\fR\fB]\fR,
+\fB? [\fR\fB\fIarg\fR\fR\fB]\fR
+.sp
+Displays a help message listing the available
+\fBmysql\fR
+commands.
+.sp
 If you provide an argument to the
 help
 command,
 \fBmysql\fR
 uses it as a search string to access server\-side help from the contents of the MySQL Reference Manual. For more information, see
 the section called \(lq\fBMYSQL\fR SERVER\-SIDE HELP\(rq.
-.PP
+.TP 3n
+\(bu
+\fBcharset \fR\fB\fIcharset_name\fR\fR,
+\fB\\C \fR\fB\fIcharset_name\fR\fR
+.sp
 The
 charset
 command changes the default character set and issues a
 SET NAMES
 statement. This enables the character set to remain synchronized on the client and server if
 \fBmysql\fR
-is run with auto\-reconnect enabled (which is not recommended), because the changed character set is used for reconnects. This command was added in MySQL 5.0.25.
-.PP
-In the
-delimiter
-command, you should avoid the use of the backslash (\(oq\\\(cq) character because that is the escape character for MySQL.
-.PP
+is run with auto\-reconnect enabled (which is not recommended), because the specified character set is used for reconnects. This command was added in MySQL 5.0.19.
+.TP 3n
+\(bu
+\fBclear\fR,
+\fB\\c\fR
+.sp
+Clears the current input. Use this if you change your mind about executing the statement that you are entering.
+.TP 3n
+\(bu
+\fBconnect [\fR\fB\fIdb_name\fR\fR\fB \fR\fB\fIhost_name\fR\fR\fB]]\fR,
+\fB\\r [\fR\fB\fIdb_name\fR\fR\fB \fR\fB\fIhost_name\fR\fR\fB]]\fR
+.sp
+Reconnects to the server. The optional database name and hostname arguments may be given to specify the default database or the host where the server is running. If omitted, the current values are used.
+.TP 3n
+\(bu
+\fBdelimiter \fR\fB\fIstr\fR\fR,
+\fB\\d \fR\fB\fIstr\fR\fR
+.sp
 The
+delimiter
+command changes the string that
+\fBmysql\fR
+interprets as the separator between SQL statements. The default is the semicolon character (\(lq;\(rq). You should avoid the use of the backslash (\(lq\\\(rq) character within the delimiter because that is the escape character for MySQL.
+.sp
+When the delimiter recognized by
+\fBmysql\fR
+is set to something other than the default of
+\(lq;\(rq, instances of that character are sent to the server without interpretation. However, the server itself still interprets
+\(lq;\(rq
+as a statement delimiter and processes statements accordingly. This behavior on the server side comes into play for multiple\-statement execution (see
+Section\ 2.9, \(lqC API Handling of Multiple Statement Execution\(rq), and for parsing the body of stored procedures and functions and triggers (see
+Section\ 2.2, \(lqCREATE PROCEDURE and CREATE FUNCTION Syntax\(rq).
+.TP 3n
+\(bu
 \fBedit\fR,
+\fB\\e\fR
+.sp
+Edits the current input statement.
+\fBmysql\fR
+checks the values of the
+EDITOR
+and
+VISUAL
+environment variables to determine which editor to use. The default editor is
+\fBvi\fR
+if neither variable is set.
+.sp
+The
+\fBedit\fR
+command works only in Unix.
+.TP 3n
+\(bu
+\fBego\fR,
+\fB\\G\fR
+.sp
+Sends the current statement to the server to be executed and displays the result using vertical format.
+.TP 3n
+\(bu
+\fBexit\fR,
+\fB\\q\fR
+.sp
+Exits
+\fBmysql\fR.
+.TP 3n
+\(bu
+\fBgo\fR,
+\fB\\g\fR
+.sp
+Sends the current statement to the server to be executed.
+.TP 3n
+\(bu
 \fBnopager\fR,
-\fBpager\fR, and
-\fBsystem\fR
-commands work only in Unix.
-.PP
+\fB\\n\fR
+.sp
+Disables output paging. See the description for
+\fBpager\fR.
+.sp
+The
+\fBnopager\fR
+command works only in Unix.
+.TP 3n
+\(bu
+\fBnotee\fR,
+\fB\\t\fR
+.sp
+Disables output copying to the tee file. See the description for
+\fBtee\fR.
+.TP 3n
+\(bu
+\fBnowarning\fR,
+\fB\\w\fR
+.sp
+Enables display of warnings after each statement. This command was added in MySQL 5.0.6.
+.TP 3n
+\(bu
+\fBpager [\fR\fB\fIcommand\fR\fR\fB]\fR,
+\fB\\P [\fR\fB\fIcommand\fR\fR\fB]\fR
+.sp
+By using the
+\fB\-\-pager\fR
+option when you invoke
+\fBmysql\fR, it is possible to browse or search query results in interactive mode with Unix programs such as
+\fBless\fR,
+\fBmore\fR, or any other similar program. If you specify no value for the option,
+\fBmysql\fR
+checks the value of the
+PAGER
+environment variable and sets the pager to that.
+.sp
+Output paging can be enabled interactively with the
+\fBpager\fR
+command and disabled with
+\fBnopager\fR. The command takes an optional argument; if given, the paging program is set to that. With no argument, the pager is set to the pager that was set on the command line, or
+stdout
+if no pager was specified.
+.sp
+Output paging works only in Unix because it uses the
+popen()
+function, which does not exist on Windows. For Windows, the
+\fBtee\fR
+option can be used instead to save query output, although it is not as convenient as
+\fBpager\fR
+for browsing output in some situations.
+.TP 3n
+\(bu
+\fBprint\fR,
+\fB\\p\fR
+.sp
+Prints the current input statement without executing it.
+.TP 3n
+\(bu
+\fBprompt [\fR\fB\fIstr\fR\fR\fB]\fR,
+\fB\\R [\fR\fB\fIstr\fR\fR\fB]\fR
+.sp
+Reconfigures the
+\fBmysql\fR
+prompt to the given string. The special character sequences that can be used in the prompt are described later in this section.
+.sp
+If you specify the
+prompt
+command with no argument,
+\fBmysql\fR
+resets the prompt to the default of
+mysql>.
+.TP 3n
+\(bu
+\fBquit\fR,
+\fB\\q\fR
+.sp
+Exits
+\fBmysql\fR.
+.TP 3n
+\(bu
+\fBrehash\fR,
+\fB\\#\fR
+.sp
+Rebuilds the completion hash that enables database, table, and column name completion while you are entering statements. (See the description for the
+\fB\-\-auto\-rehash\fR
+option.)
+.TP 3n
+\(bu
+\fBsource \fR\fB\fIfile_name\fR\fR,
+\fB\\. \fR\fB\fIfile_name\fR\fR
+.sp
+Reads the named file and executes the statements contained therein. On Windows, you can specify pathname separators as
+/
+or
+\\\\.
+.TP 3n
+\(bu
+\fBstatus\fR,
+\fB\\s\fR
+.sp
 The
 status
 command provides some information about the connection and the server you are using. If you are running in
@@ -677,47 +924,53 @@ status
 also prints the values for the
 \fBmysql\fR
 variables that affect your queries.
-.PP
-To log queries and their output, use the
-\fBtee\fR
-command. All the data displayed on the screen is appended into a given file. This can be very useful for debugging purposes also. You can enable this feature on the command line with the
+.TP 3n
+\(bu
+\fBsystem \fR\fB\fIcommand\fR\fR,
+\fB\\! \fR\fB\fIcommand\fR\fR
+.sp
+Executes the given command using your default command interpreter.
+.sp
+The
+\fBsystem\fR
+command works only in Unix.
+.TP 3n
+\(bu
+\fBtee [\fR\fB\fIfile_name\fR\fR\fB]\fR,
+\fB\\T [\fR\fB\fIfile_name\fR\fR\fB]\fR
+.sp
+By using the
 \fB\-\-tee\fR
-option, or interactively with the
+option when you invoke
+\fBmysql\fR, you can log statements and their output. All the data displayed on the screen is appended into a given file. This can be very useful for debugging purposes also.
+\fBmysql\fR
+flushes results to the file after each statement, just before it prints its next prompt.
+.sp
+You can enable this feature interactively with the
 \fBtee\fR
-command. The
+command. Without a parameter, the previous file is used. The
 \fBtee\fR
-file can be disabled interactively with the
+file can be disabled with the
 \fBnotee\fR
 command. Executing
 \fBtee\fR
-again re\-enables logging. Without a parameter, the previous file is used. Note that
-\fBtee\fR
-flushes query results to the file after each statement, just before
-\fBmysql\fR
-prints its next prompt.
-.PP
-By using the
-\fB\-\-pager\fR
-option, it is possible to browse or search query results in interactive mode with Unix programs such as
-\fBless\fR,
-\fBmore\fR, or any other similar program. If you specify no value for the option,
-\fBmysql\fR
-checks the value of the
-PAGER
-environment variable and sets the pager to that. Output paging can be enabled interactively with the
-\fBpager\fR
-command and disabled with
-\fBnopager\fR. The command takes an optional argument; if given, the paging program is set to that. With no argument, the pager is set to the pager that was set on the command line, or
-stdout
-if no pager was specified.
-.PP
-Output paging works only in Unix because it uses the
-popen()
-function, which does not exist on Windows. For Windows, the
-\fBtee\fR
-option can be used instead to save query output, although this is not as convenient as
-\fBpager\fR
-for browsing output in some situations.
+again re\-enables logging.
+.TP 3n
+\(bu
+\fBuse \fR\fB\fIdb_name\fR\fR,
+\fB\\u \fR\fB\fIdb_name\fR\fR
+.sp
+Uses
+\fIdb_name\fR
+as the default database.
+.TP 3n
+\(bu
+\fBwarnings\fR,
+\fB\\W\fR
+.sp
+Enables display of warnings after each statement (if there are any). This command was added in MySQL 5.0.6.
+.sp
+.RE
 .PP
 Here are a few tips about the
 \fBpager\fR
@@ -757,6 +1010,21 @@ manual page:
 .RS 3n
 .nf
 shell> \fBman less\fR
+.fi
+.RE
+.TP 3n
+\(bu
+The
+\fB\-F\fR
+and
+\fB\-X\fR
+options may be used with
+\fBless\fR
+to cause it to exit if output fits on one screen, which is convenient when no scrolling is necessary:
+.sp
+.RS 3n
+.nf
+mysql> \fBpager less \-n \-i \-S \-F \-X\fR
 .fi
 .RE
 .TP 3n
@@ -811,11 +1079,14 @@ does not log quite that much. Additionally,
 file logging can be turned on and off interactively from within
 \fBmysql\fR. This is useful when you want to log some queries to a file, but not others.
 .PP
-The default
+The
+\fBprompt\fR
+command reconfigures the default
 mysql>
-prompt can be reconfigured. The string for defining the prompt can contain the following special sequences:
+prompt. The string for defining the prompt can contain the following special sequences:
 .TS
 allbox tab(:);
+l l
 l l
 l l
 l l
@@ -850,19 +1121,19 @@ T}:T{
 \fBDescription\fR
 T}
 T{
-\\t
+\\o
 T}:T{
-A tab character
+The current month in numeric format
 T}
 T{
-\\\ 
+\\P
 T}:T{
-A space (a space follows the backslash)
+am/pm
 T}
 T{
-\\_
+\\p
 T}:T{
-A space
+The current TCP/IP port or socket file
 T}
 T{
 \\R
@@ -875,29 +1146,36 @@ T}:T{
 The current time, standard 12\-hour time (1\-12)
 T}
 T{
-\\m
+\\S
 T}:T{
-Minutes of the current time
-T}
-T{
-\\y
-T}:T{
-The current year, two digits
-T}
-T{
-\\Y
-T}:T{
-The current year, four digits
-T}
-T{
-\\D
-T}:T{
-The full current date
+Semicolon
 T}
 T{
 \\s
 T}:T{
 Seconds of the current time
+T}
+T{
+\\t
+T}:T{
+A tab character
+T}
+T{
+\\U
+T}:T{
+Your full
+                \fIuser_name\fR@\fIhost_name\fR
+                account name
+T}
+T{
+\\u
+T}:T{
+Your username
+T}
+T{
+\\c
+T}:T{
+A counter that increments for each statement you issue
 T}
 T{
 \\v
@@ -910,34 +1188,24 @@ T}:T{
 The current day of the week in three\-letter format (Mon, Tue, \&...)
 T}
 T{
-\\P
+\\Y
 T}:T{
-am/pm
+The current year, four digits
 T}
 T{
-\\o
+\\y
 T}:T{
-The current month in numeric format
+The current year, two digits
 T}
 T{
-\\O
+\\_
 T}:T{
-The current month in three\-letter format (Jan, Feb, \&...)
+A space
 T}
 T{
-\\c
+\\\ 
 T}:T{
-A counter that increments for each statement you issue
-T}
-T{
-\\l
-T}:T{
-The current delimiter. (New in 5.0.25)
-T}
-T{
-\\S
-T}:T{
-Semicolon
+A space (a space follows the backslash)
 T}
 T{
 \\'
@@ -950,6 +1218,23 @@ T}:T{
 Double quote
 T}
 T{
+\\\\
+T}:T{
+A literal \(lq\\\(rq backslash character
+T}
+T{
+\\\fIx\fR
+T}:T{
+\fIx\fR, for any
+                \(lq\fIx\fR\(rq not listed
+                above
+T}
+T{
+\\D
+T}:T{
+The full current date
+T}
+T{
 \\d
 T}:T{
 The default database
@@ -960,43 +1245,27 @@ T}:T{
 The server host
 T}
 T{
-\\p
+\\l
 T}:T{
-The current TCP/IP port or socket file
+The current delimiter (new in 5.0.25)
 T}
 T{
-\\u
+\\m
 T}:T{
-Your username
-T}
-T{
-\\U
-T}:T{
-Your full
-                  \fIuser_name\fR@\fIhost_name\fR
-                  account name
-T}
-T{
-\\\\
-T}:T{
-A literal \(oq\\\(cq backslash character
+Minutes of the current time
 T}
 T{
 \\n
 T}:T{
 A newline character
 T}
+T{
+\\O
+T}:T{
+The current month in three\-letter format (Jan, Feb, \&...)
+T}
 .TE
 .sp
-.PP
-\(oq\\\(cq followed by any other letter just becomes that letter.
-.PP
-If you specify the
-prompt
-command with no argument,
-\fBmysql\fR
-resets the prompt to the default of
-mysql>.
 .PP
 You can set the prompt in several ways:
 .TP 3n
@@ -1047,7 +1316,7 @@ prompt=(\\\\u@\\\\h) [\\\\d]>\\\\_
 In this example, note that the backslashes are doubled. If you set the prompt using the
 prompt
 option in an option file, it is advisable to double the backslashes when using the special prompt options. There is some overlap in the set of allowable prompt options and the set of special escape sequences that are recognized in option files. (These sequences are listed in
-Section\ 3.2, \(lqUsing Option Files\(rq.) The overlap may cause you problems if you use single backslashes. For example,
+Section\ 2.3.2, \(lqUsing Option Files\(rq.) The overlap may cause you problems if you use single backslashes. For example,
 \\s
 is interpreted as a space rather than as the current seconds value. The following example shows how to define a prompt within an option file to include the current time in
 HH:MM:SS>
@@ -1092,7 +1361,7 @@ command,
 uses it as a search string to access server\-side help from the contents of the MySQL Reference Manual. The proper operation of this command requires that the help tables in the
 mysql
 database be initialized with help topic information (see
-the section called \(lqSERVER\-SIDE HELP\(rq).
+Section\ 1.8, \(lqServer\-Side Help\(rq).
 .PP
 If there is no match for the search string, the search fails:
 .sp
@@ -1231,6 +1500,15 @@ SELECT '<info_to_display>' AS ' ';
 The statement shown outputs
 <info_to_display>.
 .PP
+As of MySQL 5.0.54,
+\fBmysql\fR
+ignores Unicode byte order mark (BOM) characters at the beginning of input files. Previously, it read them and sent them to the server, resulting in a syntax error. Presence of a BOM does not cause
+\fBmysql\fR
+to change its default character set. To do that, invoke
+\fBmysql\fR
+with an option such as
+\fB\-\-default\-character\-set=utf8\fR.
+.PP
 For more information about batch mode, see
 Section\ 5, \(lqUsing \fBmysql\fR in Batch Mode\(rq.
 .SH "\fBMYSQL\fR TIPS"
@@ -1291,7 +1569,7 @@ SET SQL_SAFE_UPDATES=1,SQL_SELECT_LIMIT=1000, SQL_MAX_JOIN_SIZE=1000000;
 .RE
 .PP
 See
-Section\ 5.3, \(lqSET Syntax\(rq.
+Section\ 1.4, \(lqSession System Variables\(rq.
 .PP
 The
 SET
@@ -1384,13 +1662,13 @@ Section\ 2.13, \(lqControlling Automatic Reconnect Behavior\(rq.
 .\" end of SS subsection "Disabling mysql Auto\-Reconnect"
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "REFERENCES"
 .TP 3
 1.\ Bug#25946
@@ -1401,4 +1679,3 @@ which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

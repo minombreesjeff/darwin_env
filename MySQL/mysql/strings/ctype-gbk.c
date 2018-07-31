@@ -2668,15 +2668,17 @@ static int my_strnxfrm_gbk(CHARSET_INFO *cs __attribute__((unused)),
 {
   uint16 e;
   uint dstlen= len;
+  uchar *dest_end= dest + dstlen;
 
   len = srclen;
-  while (len--)
+  while (len-- && dest < dest_end)
   {
     if ((len > 0) && isgbkcode(*src, *(src+1)))
     {
       e = gbksortorder((uint16) gbkcode(*src, *(src+1)));
       *dest++ = gbkhead(e);
-      *dest++ = gbktail(e);
+      if (dest < dest_end)
+        *dest++ = gbktail(e);
       src+=2;
       len--;
     } else 
@@ -10046,7 +10048,7 @@ CHARSET_INFO my_charset_gbk_chinese_ci=
     0,			/* min_sort_char */
     255,		/* max_sort_char */
     ' ',                /* pad char      */
-    0,                  /* escape_with_backslash_is_dangerous */
+    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -10078,7 +10080,7 @@ CHARSET_INFO my_charset_gbk_bin=
     0,			/* min_sort_char */
     255,		/* max_sort_char */
     ' ',                /* pad char      */
-    0,                  /* escape_with_backslash_is_dangerous */
+    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler
 };

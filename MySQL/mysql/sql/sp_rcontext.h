@@ -107,25 +107,13 @@ class sp_rcontext : public Sql_alloc
     return m_return_value_set;
   }
 
-  inline void
-  push_handler(struct sp_cond_type *cond, uint h, int type, uint f)
-  {
-    m_handler[m_hcount].cond= cond;
-    m_handler[m_hcount].handler= h;
-    m_handler[m_hcount].type= type;
-    m_handler[m_hcount].foffset= f;
-    m_hcount+= 1;
-  }
+  void push_handler(struct sp_cond_type *cond, uint h, int type, uint f);
 
-  inline void
-  pop_handlers(uint count)
-  {
-    m_hcount-= count;
-  }
+  void pop_handlers(uint count);
 
   // Returns 1 if a handler was found, 0 otherwise.
   bool
-  find_handler(uint sql_errno,MYSQL_ERROR::enum_warning_level level);
+  find_handler(THD *thd, uint sql_errno,MYSQL_ERROR::enum_warning_level level);
 
   // If there is an error handler for this error, handle it and return TRUE.
   bool
@@ -158,29 +146,13 @@ class sp_rcontext : public Sql_alloc
     m_hfound= -1;
   }
 
-  inline void
-  push_hstack(uint h)
-  {
-    m_hstack[m_hsp++]= h;
-  }
+  void push_hstack(uint h);
 
-  inline uint
-  pop_hstack()
-  {
-    return m_hstack[--m_hsp];
-  }
+  uint pop_hstack();
 
-  inline void
-  enter_handler(int hid)
-  {
-    m_in_handler[m_ihsp++]= hid;
-  }
+  void enter_handler(int hid);
 
-  inline void
-  exit_handler()
-  {
-    m_ihsp-= 1;
-  }
+  void exit_handler();
 
   void
   push_cursor(sp_lex_keeper *lex_keeper, sp_instr_cpush *i);
@@ -236,6 +208,10 @@ private:
     during execution.
   */
   bool m_return_value_set;
+  /**
+    TRUE if the context is created for a sub-statement.
+  */
+  bool in_sub_stmt;
 
   sp_handler_t *m_handler;      // Visible handlers
   uint m_hcount;                // Stack pointer for m_handler
@@ -257,7 +233,7 @@ private:
   bool init_var_table(THD *thd);
   bool init_var_items();
 
-  Item_cache *create_case_expr_holder(THD *thd, Item_result result_type);
+  Item_cache *create_case_expr_holder(THD *thd, const Item *item);
 
   int set_variable(THD *thd, Field *field, Item **value);
 }; // class sp_rcontext : public Sql_alloc

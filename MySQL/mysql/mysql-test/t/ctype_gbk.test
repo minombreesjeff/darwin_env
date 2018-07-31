@@ -16,10 +16,12 @@ SET collation_connection='gbk_chinese_ci';
 -- source include/ctype_filesort.inc
 -- source include/ctype_innodb_like.inc
 -- source include/ctype_like_escape.inc
+-- source include/ctype_like_range_f1f2.inc
 SET collation_connection='gbk_bin';
 -- source include/ctype_filesort.inc
 -- source include/ctype_innodb_like.inc
 -- source include/ctype_like_escape.inc
+-- source include/ctype_like_range_f1f2.inc
 
 #
 # Bug#11987 mysql will truncate the text when
@@ -50,5 +52,19 @@ create table t1 (c1 text not null, c2 text not null) character set gbk;
 alter table t1 change c1 c1 mediumtext  character set gbk not null;
 show create table t1;
 drop table t1;
+
+#
+# Bug#35993: severe memory corruption and crash with multibyte conversion
+#
+
+CREATE TABLE t1(a MEDIUMTEXT CHARACTER SET gbk,
+                b MEDIUMTEXT CHARACTER SET big5);
+INSERT INTO t1 VALUES
+  (REPEAT(0x1125,200000), REPEAT(0x1125,200000)), ('', ''), ('', '');
+
+SELECT a FROM t1 GROUP BY 1 LIMIT 1 INTO @nullll;
+SELECT b FROM t1 GROUP BY 1 LIMIT 1 INTO @nullll;
+
+DROP TABLES t1;
 
 --echo End of 5.0 tests

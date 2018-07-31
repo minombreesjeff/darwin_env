@@ -11,6 +11,12 @@
 /* Define to 1 if using `alloca.c'. */
 #undef C_ALLOCA
 
+/* Don't use libdbug */
+#undef DBUG_OFF
+
+/* Use libdbug */
+#undef DBUG_ON
+
 /* all charsets are available */
 #undef DEFINE_ALL_CHARACTER_SETS
 

@@ -80,7 +80,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 comp_sql_SOURCES = comp_sql.c
 comp_sql_OBJECTS = comp_sql.$(OBJEXT)
@@ -88,7 +88,7 @@ comp_sql_LDADD = $(LDADD)
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(pkgdatadir)"
 binSCRIPT_INSTALL = $(INSTALL_SCRIPT)
 SCRIPTS = $(bin_SCRIPTS) $(noinst_SCRIPTS)
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -120,6 +120,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -257,7 +258,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -308,6 +311,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -398,18 +402,21 @@ bin_SCRIPTS = @server_scripts@ \
 
 noinst_SCRIPTS = make_binary_distribution \
 			make_sharedlib_distribution \
-			make_win_src_distribution
+			make_win_src_distribution_old
 
 EXTRA_SCRIPTS = make_binary_distribution.sh \
 			make_sharedlib_distribution.sh \
-			make_win_src_distribution.sh \
+			make_win_src_distribution_old.sh \
 			msql2mysql.sh \
 			mysql_config.sh \
+			mysql_config.pl.in \
 			mysql_fix_privilege_tables.sh \
 			mysql_fix_extensions.sh \
 			mysql_install_db.sh \
+			mysql_install_db.pl.in \
 			mysql_setpermission.sh \
 			mysql_secure_installation.sh \
+			mysql_secure_installation.pl.in \
 			mysql_zap.sh \
 			mysqlaccess.sh \
 			mysqlbug.sh \
@@ -456,7 +463,7 @@ CLEANFILES = @server_scripts@ \
 			mysql_tableinfo \
 			mysql_upgrade_shell \
 			mysqld_multi \
-			make_win_src_distribution
+			make_win_src_distribution_old
 
 
 # mysqlbug should be distributed built so that people can report build
@@ -793,13 +800,19 @@ mysql_fix_privilege_tables_sql.c: comp_sql.c mysql_fix_privilege_tables.sql
 	  -e 's!@''CC''@!@CC@!'\
 	  -e 's!@''CXX''@!@CXX@!'\
 	  -e 's!@''GXX''@!@GXX@!'\
+	  -e 's!@''SAVE_CC''@!@SAVE_CC@!'\
+	  -e 's!@''SAVE_CXX''@!@SAVE_CXX@!'\
 	  -e 's!@''CC_VERSION''@!@CC_VERSION@!'\
 	  -e 's!@''CXX_VERSION''@!@CXX_VERSION@!'\
 	  -e 's!@''PERL''@!@PERL@!' \
-	  -e 's!@''ASFLAGS''@!@SAVE_ASFLAGS@!'\
-	  -e 's!@''CFLAGS''@!@SAVE_CFLAGS@!'\
-	  -e 's!@''CXXFLAGS''@!@SAVE_CXXFLAGS@!'\
-	  -e 's!@''LDFLAGS''@!@SAVE_LDFLAGS@!'\
+	  -e 's!@''SAVE_ASFLAGS''@!@SAVE_ASFLAGS@!'\
+	  -e 's!@''SAVE_CFLAGS''@!@SAVE_CFLAGS@!'\
+	  -e 's!@''SAVE_CXXFLAGS''@!@SAVE_CXXFLAGS@!'\
+	  -e 's!@''SAVE_LDFLAGS''@!@SAVE_LDFLAGS@!'\
+	  -e 's!@''ASFLAGS''@!@ASFLAGS@!'\
+	  -e 's!@''CFLAGS''@!@CFLAGS@!'\
+	  -e 's!@''CXXFLAGS''@!@CXXFLAGS@!'\
+	  -e 's!@''LDFLAGS''@!@LDFLAGS@!'\
 	  -e 's!@''CLIENT_LIBS''@!@CLIENT_LIBS@!' \
 	  -e 's!@''ZLIB_LIBS''@!@ZLIB_LIBS@!' \
 	  -e 's!@''LIBS''@!@LIBS@!' \
@@ -818,6 +831,7 @@ mysql_fix_privilege_tables_sql.c: comp_sql.c mysql_fix_privilege_tables.sql
 	  -e 's!@''MYSQLD_DEFAULT_SWITCHES''@!@MYSQLD_DEFAULT_SWITCHES@!' \
 	  -e 's!@''MYSQL_UNIX_ADDR''@!@MYSQL_UNIX_ADDR@!' \
 	  -e 's!@''MYSQL_TCP_PORT''@!@MYSQL_TCP_PORT@!' \
+	  -e 's!@''MYSQL_TCP_PORT_DEFAULT''@!@MYSQL_TCP_PORT_DEFAULT@!' \
 	  -e 's!@''TARGET_LINUX''@!@TARGET_LINUX@!' \
 	  -e "s!@""CONF_COMMAND""@!@CONF_COMMAND@!" \
 	  -e 's!@''MYSQLD_USER''@!@MYSQLD_USER@!' \

@@ -248,8 +248,8 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
 #endif
     VOID(push_dynamic(&acl_hosts,(gptr) &host));
   }
-  qsort((gptr) dynamic_element(&acl_hosts,0,ACL_HOST*),acl_hosts.elements,
-	sizeof(ACL_HOST),(qsort_cmp) acl_compare);
+  my_qsort((gptr) dynamic_element(&acl_hosts,0,ACL_HOST*),acl_hosts.elements,
+           sizeof(ACL_HOST),(qsort_cmp) acl_compare);
   end_read_record(&read_record_info);
   freeze_size(&acl_hosts);
 
@@ -311,7 +311,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
       continue;
     }
 
-    const char *password= get_field(&mem, table->field[2]);
+    const char *password= get_field(thd->mem_root, table->field[2]);
     uint password_len= password ? strlen(password) : 0;
     set_user_salt(&user, password, password_len);
     if (user.salt_len == 0 && password_len != 0)
@@ -364,7 +364,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
       /* Starting from 4.0.2 we have more fields */
       if (table->s->fields >= 31)
       {
-        char *ssl_type=get_field(&mem, table->field[next_field++]);
+        char *ssl_type=get_field(thd->mem_root, table->field[next_field++]);
         if (!ssl_type)
           user.ssl_type=SSL_TYPE_NONE;
         else if (!strcmp(ssl_type, "ANY"))
@@ -378,11 +378,11 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
         user.x509_issuer=  get_field(&mem, table->field[next_field++]);
         user.x509_subject= get_field(&mem, table->field[next_field++]);
 
-        char *ptr = get_field(&mem, table->field[next_field++]);
+        char *ptr = get_field(thd->mem_root, table->field[next_field++]);
         user.user_resource.questions=ptr ? atoi(ptr) : 0;
-        ptr = get_field(&mem, table->field[next_field++]);
+        ptr = get_field(thd->mem_root, table->field[next_field++]);
         user.user_resource.updates=ptr ? atoi(ptr) : 0;
-        ptr = get_field(&mem, table->field[next_field++]);
+        ptr = get_field(thd->mem_root, table->field[next_field++]);
         user.user_resource.conn_per_hour= ptr ? atoi(ptr) : 0;
         if (user.user_resource.questions || user.user_resource.updates ||
             user.user_resource.conn_per_hour)
@@ -391,7 +391,7 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
         if (table->s->fields >= 36)
         {
           /* Starting from 5.0.3 we have max_user_connections field */
-          ptr= get_field(&mem, table->field[next_field++]);
+          ptr= get_field(thd->mem_root, table->field[next_field++]);
           user.user_resource.user_conn= ptr ? atoi(ptr) : 0;
         }
         else
@@ -421,8 +421,8 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
         allow_all_hosts=1;			// Anyone can connect
     }
   }
-  qsort((gptr) dynamic_element(&acl_users,0,ACL_USER*),acl_users.elements,
-	sizeof(ACL_USER),(qsort_cmp) acl_compare);
+  my_qsort((gptr) dynamic_element(&acl_users,0,ACL_USER*),acl_users.elements,
+           sizeof(ACL_USER),(qsort_cmp) acl_compare);
   end_read_record(&read_record_info);
   freeze_size(&acl_users);
 
@@ -479,8 +479,8 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
 #endif
     VOID(push_dynamic(&acl_dbs,(gptr) &db));
   }
-  qsort((gptr) dynamic_element(&acl_dbs,0,ACL_DB*),acl_dbs.elements,
-	sizeof(ACL_DB),(qsort_cmp) acl_compare);
+  my_qsort((gptr) dynamic_element(&acl_dbs,0,ACL_DB*),acl_dbs.elements,
+           sizeof(ACL_DB),(qsort_cmp) acl_compare);
   end_read_record(&read_record_info);
   freeze_size(&acl_dbs);
   init_check_host();
@@ -668,7 +668,9 @@ static ulong get_sort(uint count,...)
     {
       for (; *str ; str++)
       {
-	if (*str == wild_many || *str == wild_one || *str == wild_prefix)
+        if (*str == wild_prefix && str[1])
+          str++;
+        else if (*str == wild_many || *str == wild_one)
         {
           wild_pos= (uint) (str - start) + 1;
           break;
@@ -1110,8 +1112,8 @@ static void acl_insert_user(const char *user, const char *host,
   if (!acl_user.host.hostname ||
       (acl_user.host.hostname[0] == wild_many && !acl_user.host.hostname[1]))
     allow_all_hosts=1;		// Anyone can connect /* purecov: tested */
-  qsort((gptr) dynamic_element(&acl_users,0,ACL_USER*),acl_users.elements,
-	sizeof(ACL_USER),(qsort_cmp) acl_compare);
+  my_qsort((gptr) dynamic_element(&acl_users,0,ACL_USER*),acl_users.elements,
+           sizeof(ACL_USER),(qsort_cmp) acl_compare);
 
   /* Rebuild 'acl_check_hosts' since 'acl_users' has been modified */
   rebuild_check_host();
@@ -1132,7 +1134,7 @@ static void acl_update_db(const char *user, const char *host, const char *db,
     {
       if (!acl_db->host.hostname && !host[0] ||
 	  acl_db->host.hostname &&
-	  !my_strcasecmp(system_charset_info, host, acl_db->host.hostname))
+          !strcmp(host, acl_db->host.hostname))
       {
 	if (!acl_db->db && !db[0] ||
 	    acl_db->db && !strcmp(db,acl_db->db))
@@ -1173,8 +1175,8 @@ static void acl_insert_db(const char *user, const char *host, const char *db,
   acl_db.access=privileges;
   acl_db.sort=get_sort(3,acl_db.host.hostname,acl_db.db,acl_db.user);
   VOID(push_dynamic(&acl_dbs,(gptr) &acl_db));
-  qsort((gptr) dynamic_element(&acl_dbs,0,ACL_DB*),acl_dbs.elements,
-	sizeof(ACL_DB),(qsort_cmp) acl_compare);
+  my_qsort((gptr) dynamic_element(&acl_dbs,0,ACL_DB*),acl_dbs.elements,
+           sizeof(ACL_DB),(qsort_cmp) acl_compare);
 }
 
 
@@ -1380,7 +1382,7 @@ bool acl_check_host(const char *host, const char *ip)
       1		ERROR  ; In this case the error is sent to the client.
 */
 
-bool check_change_password(THD *thd, const char *host, const char *user,
+int check_change_password(THD *thd, const char *host, const char *user,
                            char *new_password, uint new_password_len)
 {
   if (!initialized)
@@ -2761,7 +2763,7 @@ table_error:
     TRUE  error
 */
 
-bool mysql_table_grant(THD *thd, TABLE_LIST *table_list,
+int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
 		      List <LEX_USER> &user_list,
 		      List <LEX_COLUMN> &columns, ulong rights,
 		      bool revoke_grant)
@@ -2878,6 +2880,12 @@ bool mysql_table_grant(THD *thd, TABLE_LIST *table_list,
   }
 #endif
 
+  /* 
+    The lock api is depending on the thd->lex variable which needs to be
+    re-initialized.
+  */
+  Query_tables_list backup;
+  thd->lex->reset_n_backup_query_tables_list(&backup);
   if (simple_open_n_lock_tables(thd,tables))
   {						// Should never happen
     close_thread_tables(thd);			/* purecov: deadcode */
@@ -3016,6 +3024,7 @@ bool mysql_table_grant(THD *thd, TABLE_LIST *table_list,
     send_ok(thd);
 
   /* Tables are automatically closed */
+  thd->lex->restore_backup_query_tables_list(&backup);
   DBUG_RETURN(result);
 }
 
@@ -3835,50 +3844,83 @@ bool check_column_grant_in_table_ref(THD *thd, TABLE_LIST * table_ref,
 }
 
 
-bool check_grant_all_columns(THD *thd, ulong want_access, GRANT_INFO *grant,
-                             const char* db_name, const char *table_name,
-                             Field_iterator *fields)
+/** 
+  @brief check if a query can access a set of columns
+
+  @param  thd  the current thread
+  @param  want_access_arg  the privileges requested
+  @param  fields an iterator over the fields of a table reference.
+  @return Operation status
+    @retval 0 Success
+    @retval 1 Falure
+  @details This function walks over the columns of a table reference 
+   The columns may originate from different tables, depending on the kind of
+   table reference, e.g. join.
+   For each table it will retrieve the grant information and will use it
+   to check the required access privileges for the fields requested from it.
+*/    
+bool check_grant_all_columns(THD *thd, ulong want_access_arg, 
+                             Field_iterator_table_ref *fields)
 {
   Security_context *sctx= thd->security_ctx;
-  GRANT_TABLE *grant_table;
-  GRANT_COLUMN *grant_column;
+  ulong want_access= want_access_arg;
+  const char *table_name= NULL;
 
-  want_access &= ~grant->privilege;
-  if (!want_access)
-    return 0;				// Already checked
-  if (!grant_option)
-    goto err2;
-
-  rw_rdlock(&LOCK_grant);
-
-  /* reload table if someone has modified any grants */
-
-  if (grant->version != grant_version)
+  if (grant_option)
   {
-    grant->grant_table=
-      table_hash_search(sctx->host, sctx->ip, db_name,
-			sctx->priv_user,
-			table_name, 0);	/* purecov: inspected */
-    grant->version= grant_version;		/* purecov: inspected */
-  }
-  /* The following should always be true */
-  if (!(grant_table= grant->grant_table))
-    goto err;					/* purecov: inspected */
+    const char* db_name; 
+    GRANT_INFO *grant;
+    /* Initialized only to make gcc happy */
+    GRANT_TABLE *grant_table= NULL;
 
-  for (; !fields->end_of_fields(); fields->next())
-  {
-    const char *field_name= fields->name();
-    grant_column= column_hash_search(grant_table, field_name,
-				    (uint) strlen(field_name));
-    if (!grant_column || (~grant_column->rights & want_access))
-      goto err;
-  }
-  rw_unlock(&LOCK_grant);
-  return 0;
+    rw_rdlock(&LOCK_grant);
+
+    for (; !fields->end_of_fields(); fields->next())
+    {
+      const char *field_name= fields->name();
+
+      if (table_name != fields->table_name())
+      {
+        table_name= fields->table_name();
+        db_name= fields->db_name();
+        grant= fields->grant();
+        /* get a fresh one for each table */
+        want_access= want_access_arg & ~grant->privilege;
+        if (want_access)
+        {
+          /* reload table if someone has modified any grants */
+          if (grant->version != grant_version)
+          {
+            grant->grant_table=
+              table_hash_search(sctx->host, sctx->ip, db_name,
+                                sctx->priv_user,
+                                table_name, 0);	/* purecov: inspected */
+            grant->version= grant_version;	/* purecov: inspected */
+          }
+
+          grant_table= grant->grant_table;
+          DBUG_ASSERT (grant_table);
+        }
+      }
+
+      if (want_access)
+      {
+        GRANT_COLUMN *grant_column= 
+          column_hash_search(grant_table, field_name,
+                             (uint) strlen(field_name));
+        if (!grant_column || (~grant_column->rights & want_access))
+          goto err;
+      }
+    }
+    rw_unlock(&LOCK_grant);
+    return 0;
 
 err:
-  rw_unlock(&LOCK_grant);
-err2:
+    rw_unlock(&LOCK_grant);
+  }
+  else
+    table_name= fields->table_name();
+
   char command[128];
   get_privilege_desc(command, sizeof(command), want_access);
   my_error(ER_COLUMNACCESS_DENIED_ERROR, MYF(0),
@@ -4344,6 +4386,13 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
     if (!(host=acl_db->host.hostname))
       host= "";
 
+    /*
+      We do not make SHOW GRANTS case-sensitive here (like REVOKE),
+      but make it case-insensitive because that's the way they are
+      actually applied, and showing fewer privileges than are applied
+      would be wrong from a security point of view.
+    */
+
     if (!strcmp(lex_user->user.str,user) &&
 	!my_strcasecmp(system_charset_info, lex_user->host.str, host))
     {
@@ -4379,8 +4428,8 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	db.append(lex_user->user.str, lex_user->user.length,
 		  system_charset_info);
 	db.append (STRING_WITH_LEN("'@'"));
-	db.append(lex_user->host.str, lex_user->host.length,
-                  system_charset_info);
+	// host and lex_user->host are equal except for case
+	db.append(host, strlen(host), system_charset_info);
 	db.append ('\'');
 	if (want_access & GRANT_ACL)
 	  db.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -4406,6 +4455,13 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
       user= "";
     if (!(host= grant_table->host.hostname))
       host= "";
+
+    /*
+      We do not make SHOW GRANTS case-sensitive here (like REVOKE),
+      but make it case-insensitive because that's the way they are
+      actually applied, and showing fewer privileges than are applied
+      would be wrong from a security point of view.
+    */
 
     if (!strcmp(lex_user->user.str,user) &&
 	!my_strcasecmp(system_charset_info, lex_user->host.str, host))
@@ -4487,8 +4543,8 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
 	global.append(lex_user->user.str, lex_user->user.length,
 		      system_charset_info);
 	global.append(STRING_WITH_LEN("'@'"));
-	global.append(lex_user->host.str,lex_user->host.length,
-		      system_charset_info);
+	// host and lex_user->host are equal except for case
+	global.append(host, strlen(host), system_charset_info);
 	global.append('\'');
 	if (table_access & GRANT_ACL)
 	  global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -4543,6 +4599,13 @@ static int show_routine_grants(THD* thd, LEX_USER *lex_user, HASH *hash,
     if (!(host= grant_proc->host.hostname))
       host= "";
 
+    /*
+      We do not make SHOW GRANTS case-sensitive here (like REVOKE),
+      but make it case-insensitive because that's the way they are
+      actually applied, and showing fewer privileges than are applied
+      would be wrong from a security point of view.
+    */
+
     if (!strcmp(lex_user->user.str,user) &&
 	!my_strcasecmp(system_charset_info, lex_user->host.str, host))
     {
@@ -4586,8 +4649,8 @@ static int show_routine_grants(THD* thd, LEX_USER *lex_user, HASH *hash,
 	global.append(lex_user->user.str, lex_user->user.length,
 		      system_charset_info);
 	global.append(STRING_WITH_LEN("'@'"));
-	global.append(lex_user->host.str,lex_user->host.length,
-		      system_charset_info);
+	// host and lex_user->host are equal except for case
+	global.append(host, strlen(host), system_charset_info);
 	global.append('\'');
 	if (proc_access & GRANT_ACL)
 	  global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -4844,6 +4907,7 @@ static int handle_grant_table(TABLE_LIST *tables, uint table_no, bool drop,
   byte user_key[MAX_KEY_LENGTH];
   uint key_prefix_length;
   DBUG_ENTER("handle_grant_table");
+  THD *thd= current_thd;
 
   if (! table_no) // mysql.user table
   {
@@ -4911,17 +4975,18 @@ static int handle_grant_table(TABLE_LIST *tables, uint table_no, bool drop,
           DBUG_PRINT("info",("scan error: %d", error));
           continue;
         }
-        if (! (host= get_field(&mem, host_field)))
+        if (! (host= get_field(thd->mem_root, host_field)))
           host= "";
-        if (! (user= get_field(&mem, user_field)))
+        if (! (user= get_field(thd->mem_root, user_field)))
           user= "";
 
 #ifdef EXTRA_DEBUG
         DBUG_PRINT("loop",("scan fields: '%s'@'%s' '%s' '%s' '%s'",
                            user, host,
-                           get_field(&mem, table->field[1]) /*db*/,
-                           get_field(&mem, table->field[3]) /*table*/,
-                           get_field(&mem, table->field[4]) /*column*/));
+                           get_field(thd->mem_root, table->field[1]) /*db*/,
+                           get_field(thd->mem_root, table->field[3]) /*table*/,
+                           get_field(thd->mem_root,
+                                     table->field[4]) /*column*/));
 #endif
         if (strcmp(user_str, user) ||
             my_strcasecmp(system_charset_info, host_str, host))
@@ -5277,6 +5342,7 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list)
   LEX_USER *user_name, *tmp_user_name;
   List_iterator <LEX_USER> user_list(list);
   TABLE_LIST tables[GRANT_TABLES];
+  bool some_users_created= FALSE;
   DBUG_ENTER("mysql_create_user");
 
   /* CREATE USER may be skipped on replication client. */
@@ -5305,6 +5371,7 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list)
       continue;
     }
 
+    some_users_created= TRUE;
     sql_mode= thd->variables.sql_mode;
     if (replace_user_table(thd, tables[0].table, *user_name, 0, 0, 1, 0))
     {
@@ -5315,7 +5382,10 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list)
 
   VOID(pthread_mutex_unlock(&acl_cache->lock));
 
-  if (mysql_bin_log.is_open())
+  if (result)
+    my_error(ER_CANNOT_USER, MYF(0), "CREATE USER", wrong_users.c_ptr_safe());
+
+  if (some_users_created && mysql_bin_log.is_open())
   {
     Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
     mysql_bin_log.write(&qinfo);
@@ -5323,8 +5393,6 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list)
 
   rw_unlock(&LOCK_grant);
   close_thread_tables(thd);
-  if (result)
-    my_error(ER_CANNOT_USER, MYF(0), "CREATE USER", wrong_users.c_ptr_safe());
   DBUG_RETURN(result);
 }
 
@@ -5349,6 +5417,7 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list)
   LEX_USER *user_name, *tmp_user_name;
   List_iterator <LEX_USER> user_list(list);
   TABLE_LIST tables[GRANT_TABLES];
+  bool some_users_deleted= FALSE;
   DBUG_ENTER("mysql_drop_user");
 
   /* DROP USER may be skipped on replication client. */
@@ -5370,7 +5439,9 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list)
     {
       append_user(&wrong_users, user_name);
       result= TRUE;
+      continue;
     }
+    some_users_deleted= TRUE;
   }
 
   /* Rebuild 'acl_check_hosts' since 'acl_users' has been modified */
@@ -5378,7 +5449,13 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list)
 
   VOID(pthread_mutex_unlock(&acl_cache->lock));
 
-  if (mysql_bin_log.is_open())
+  if (result)
+    my_error(ER_CANNOT_USER, MYF(0), "DROP USER", wrong_users.c_ptr_safe());
+
+  DBUG_PRINT("info", ("thd->net.last_errno: %d", thd->net.last_errno));
+  DBUG_PRINT("info", ("thd->net.last_error: %s", thd->net.last_error));
+
+  if (some_users_deleted && mysql_bin_log.is_open())
   {
     Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
     mysql_bin_log.write(&qinfo);
@@ -5386,8 +5463,6 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list)
 
   rw_unlock(&LOCK_grant);
   close_thread_tables(thd);
-  if (result)
-    my_error(ER_CANNOT_USER, MYF(0), "DROP USER", wrong_users.c_ptr_safe());
   DBUG_RETURN(result);
 }
 
@@ -5413,6 +5488,7 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list)
   LEX_USER *user_to, *tmp_user_to;
   List_iterator <LEX_USER> user_list(list);
   TABLE_LIST tables[GRANT_TABLES];
+  bool some_users_renamed= FALSE;
   DBUG_ENTER("mysql_rename_user");
 
   /* RENAME USER may be skipped on replication client. */
@@ -5446,7 +5522,9 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list)
     {
       append_user(&wrong_users, user_from);
       result= TRUE;
+      continue;
     }
+    some_users_renamed= TRUE;
   }
   
   /* Rebuild 'acl_check_hosts' since 'acl_users' has been modified */
@@ -5454,7 +5532,10 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list)
 
   VOID(pthread_mutex_unlock(&acl_cache->lock));
 
-  if (mysql_bin_log.is_open())
+  if (result)
+    my_error(ER_CANNOT_USER, MYF(0), "RENAME USER", wrong_users.c_ptr_safe());
+  
+  if (some_users_renamed && mysql_bin_log.is_open())
   {
     Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
     mysql_bin_log.write(&qinfo);
@@ -5462,8 +5543,6 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list)
 
   rw_unlock(&LOCK_grant);
   close_thread_tables(thd);
-  if (result)
-    my_error(ER_CANNOT_USER, MYF(0), "RENAME USER", wrong_users.c_ptr_safe());
   DBUG_RETURN(result);
 }
 
@@ -5537,7 +5616,7 @@ bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 	  host= "";
 
 	if (!strcmp(lex_user->user.str,user) &&
-	    !my_strcasecmp(system_charset_info, lex_user->host.str, host))
+            !strcmp(lex_user->host.str, host))
 	{
 	  if (!replace_db_table(tables[1].table, acl_db->db, *lex_user, ~(ulong)0, 1))
 	  {
@@ -5568,7 +5647,7 @@ bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 	  host= "";
 
 	if (!strcmp(lex_user->user.str,user) &&
-	    !my_strcasecmp(system_charset_info, lex_user->host.str, host))
+            !strcmp(lex_user->host.str, host))
 	{
 	  if (replace_table_table(thd,grant_table,tables[2].table,*lex_user,
 				  grant_table->db,
@@ -5614,7 +5693,7 @@ bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 	  host= "";
 
 	if (!strcmp(lex_user->user.str,user) &&
-	    !my_strcasecmp(system_charset_info, lex_user->host.str, host))
+            !strcmp(lex_user->host.str, host))
 	{
 	  if (!replace_routine_table(thd,grant_proc,tables[4].table,*lex_user,
 				  grant_proc->db,
@@ -5733,7 +5812,7 @@ bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
     < 0         Error. Error message not yet sent.
 */
 
-bool sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
+int sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
                          bool is_proc)
 {
   Security_context *sctx= thd->security_ctx;

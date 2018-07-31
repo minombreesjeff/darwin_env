@@ -35,7 +35,6 @@ public:
   my_decimal *val_decimal(my_decimal *);
   enum Item_result result_type () const { return STRING_RESULT; }
   void left_right_max_length();
-  String *check_well_formed_result(String *str);
   bool fix_fields(THD *thd, Item **ref);
 };
 
@@ -434,6 +433,10 @@ public:
   }
   const char *func_name() const { return "user"; }
   const char *fully_qualified_func_name() const { return "user()"; }
+  int save_in_field(Field *field, bool no_conversions)
+  {
+    return save_str_value_in_field(field, &str_value);
+  }
 };
 
 
@@ -531,7 +534,7 @@ public:
   String *val_str(String *);
   void fix_length_and_dec() 
   {
-    max_length= arg_count * collation.collation->mbmaxlen;
+    max_length= arg_count * 4;
   }
   const char *func_name() const { return "char"; }
 };
@@ -581,7 +584,8 @@ public:
   void fix_length_and_dec()
   {
     collation.set(default_charset());
-    max_length= 64;
+    max_length=64;
+    maybe_null= 1;
   }
 };
 
@@ -679,7 +683,12 @@ public:
     }
   String* val_str(String* str);
   const char *func_name() const { return "inet_ntoa"; }
-  void fix_length_and_dec() { decimals = 0; max_length=3*8+7; }
+  void fix_length_and_dec() 
+  { 
+    decimals= 0; 
+    max_length= 3 * 8 + 7; 
+    maybe_null= 1;
+  }
 };
 
 class Item_func_quote :public Item_str_func

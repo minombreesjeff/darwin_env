@@ -35,6 +35,7 @@
 #include "NdbBlobImpl.hpp"
 #include <AttributeHeader.hpp>
 #include <my_sys.h>
+#include <NdbSleep.h>
 
 #define DEBUG_PRINT 0
 #define INCOMPATIBLE_VERSION -2
@@ -886,7 +887,23 @@ NdbDictInterface::dictSignal(NdbApiSignal* signal,
 {
   DBUG_ENTER("NdbDictInterface::dictSignal");
   DBUG_PRINT("enter", ("useMasterNodeId: %d", useMasterNodeId));
-  for(Uint32 i = 0; i<RETRIES; i++){
+
+  int sleep = 50;
+  int mod = 5;
+
+  for(Uint32 i = 0; i<RETRIES; i++)
+  {
+    if (i > 0)
+      NdbSleep_MilliSleep(sleep + 10 * (rand() % mod));
+    if (i == RETRIES / 2)
+    {
+      mod = 10;
+    }
+    if (i == 3*RETRIES/4)
+    {
+      sleep = 100;
+    }
+
     //if (useMasterNodeId == 0)
     m_buffer.clear();
 
@@ -1220,7 +1237,8 @@ indexTypeMapping[] = {
 int
 NdbDictInterface::parseTableInfo(NdbTableImpl ** ret,
 				 const Uint32 * data, Uint32 len,
-				 bool fullyQualifiedNames)
+				 bool fullyQualifiedNames,
+				 bool hostByteOrder)
 {
   DBUG_ENTER("NdbDictInterface::parseTableInfo");
 
@@ -1379,13 +1397,19 @@ NdbDictInterface::parseTableInfo(NdbTableImpl ** ret,
 
   if(tableDesc.FragmentDataLen > 0)
   {
-    Uint32 replicaCount = tableDesc.FragmentData[0];
-    Uint32 fragCount = tableDesc.FragmentData[1];
+    Uint16 replicaCount = tableDesc.FragmentData[0];
+    Uint16 fragCount = tableDesc.FragmentData[1];
+
+    if(hostByteOrder == false)
+    {
+      replicaCount = ((replicaCount & 0xFF00) >> 8) |((replicaCount & 0x00FF) << 8);
+      fragCount = ((fragCount & 0xFF00) >> 8) |((fragCount & 0x00FF) << 8);
+    }
 
     impl->m_replicaCount = replicaCount;
     impl->m_fragmentCount = fragCount;
 
-    for(i = 0; i<(fragCount*replicaCount); i++)
+    for(i = 0; i<(Uint32) (fragCount*replicaCount); i++)
     {
       if (impl->m_fragments.push_back(tableDesc.FragmentData[i+2]))
       {

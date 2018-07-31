@@ -479,6 +479,10 @@ args: -n Bug24717 T1
 
 max-time: 1000
 cmd: testNodeRestart
+args: -n Bug29364 T1
+
+max-time: 1000
+cmd: testNodeRestart
 args: -n Bug25364 T1
 
 max-time: 1000
@@ -492,6 +496,10 @@ args: -n Bug26457 T1
 max-time: 1000
 cmd: testNodeRestart
 args: -n Bug26481 T1
+
+max-time: 300
+cmd: testNodeRestart
+args: -n Bug32160 T1
 
 # OLD FLEX
 max-time: 500
@@ -637,10 +645,14 @@ max-time: 1000
 cmd: testNdbApi
 args: -n BugBug28443
 
-#max-time: 500
-#cmd: testInterpreter
-#args: T1 
-#
+max-time: 1000
+cmd: testNdbApi
+args: -n Bug28443
+
+max-time: 500
+cmd: testInterpreter
+args: T1 
+
 max-time: 150000
 cmd: testOperations
 args:
@@ -770,4 +782,12 @@ max-time: 180
 cmd: DbAsyncGenerator
 args: -time 60 -p 1 -proc 25
 type: bench
+
+max-time: 180
+cmd: testIndex
+args: -n Bug28804 T1 T3
+
+max-time: 180
+cmd: testIndex
+args: -n Bug28804_ATTRINFO T1 T3
 

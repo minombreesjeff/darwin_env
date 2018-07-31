@@ -133,10 +133,23 @@ int STDCALL mysql_server_init(int argc __attribute__((unused)),
       {
 	struct servent *serv_ptr;
 	char	*env;
-	if ((serv_ptr = getservbyname("mysql", "tcp")))
-	  mysql_port = (uint) ntohs((ushort) serv_ptr->s_port);
-	if ((env = getenv("MYSQL_TCP_PORT")))
-	  mysql_port =(uint) atoi(env);
+
+        /*
+          if builder specifically requested a default port, use that
+          (even if it coincides with our factory default).
+          only if they didn't do we check /etc/services (and, failing
+          on that, fall back to the factory default of 3306).
+          either default can be overridden by the environment variable
+          MYSQL_TCP_PORT, which in turn can be overridden with command
+          line options.
+        */
+
+#if MYSQL_PORT_DEFAULT == 0
+        if ((serv_ptr = getservbyname("mysql", "tcp")))
+          mysql_port = (uint) ntohs((ushort) serv_ptr->s_port);
+#endif
+        if ((env = getenv("MYSQL_TCP_PORT")))
+          mysql_port =(uint) atoi(env);
       }
 #endif
     }
@@ -285,16 +298,12 @@ mysql_debug(const char *debug __attribute__((unused)))
 {
 #ifndef DBUG_OFF
   char	*env;
-  if (_db_on_)
-    return;					/* Already using debugging */
   if (debug)
   {
-    DEBUGGER_ON;
     DBUG_PUSH(debug);
   }
   else if ((env = getenv("MYSQL_DEBUG")))
   {
-    DEBUGGER_ON;
     DBUG_PUSH(env);
 #if !defined(_WINVER) && !defined(WINVER)
     puts("\n-------------------------------------------------------");
@@ -693,7 +702,8 @@ int cli_read_change_user_result(MYSQL *mysql, char *buff, const char *passwd)
 my_bool	STDCALL mysql_change_user(MYSQL *mysql, const char *user,
 				  const char *passwd, const char *db)
 {
-  char buff[512],*end=buff;
+  char buff[USERNAME_LENGTH+SCRAMBLED_PASSWORD_CHAR_LENGTH+NAME_LEN+2];
+  char *end= buff;
   int rc;
   DBUG_ENTER("mysql_change_user");
 
@@ -703,7 +713,7 @@ my_bool	STDCALL mysql_change_user(MYSQL *mysql, const char *user,
     passwd="";
 
   /* Store user into the buffer */
-  end=strmov(end,user)+1;
+  end= strmake(end, user, USERNAME_LENGTH) + 1;
 
   /* write scrambled password according to server capabilities */
   if (passwd[0])
@@ -723,7 +733,7 @@ my_bool	STDCALL mysql_change_user(MYSQL *mysql, const char *user,
   else
     *end++= '\0';                               /* empty password */
   /* Add database if needed */
-  end= strmov(end, db ? db : "") + 1;
+  end= strmake(end, db ? db : "", NAME_LEN) + 1;
 
   /* Write authentication package */
   simple_command(mysql,COM_CHANGE_USER, buff,(ulong) (end-buff),1);
@@ -1472,7 +1482,7 @@ my_ulonglong STDCALL mysql_insert_id(MYSQL *mysql)
 
 const char *STDCALL mysql_sqlstate(MYSQL *mysql)
 {
-  return mysql->net.sqlstate;
+  return mysql ? mysql->net.sqlstate : cant_connect_sqlstate;
 }
 
 uint STDCALL mysql_warning_count(MYSQL *mysql)
@@ -1601,78 +1611,6 @@ mysql_real_escape_string(MYSQL *mysql, char *to,const char *from,
   if (mysql->server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES)
     return escape_quotes_for_mysql(mysql->charset, to, 0, from, length);
   return escape_string_for_mysql(mysql->charset, to, 0, from, length);
-}
-
-
-char * STDCALL
-mysql_odbc_escape_string(MYSQL *mysql,
-			 char *to, ulong to_length,
-			 const char *from, ulong from_length,
-			 void *param,
-			 char * (*extend_buffer)
-			 (void *, char *, ulong *))
-{
-  char *to_end=to+to_length-5;
-  const char *end;
-#ifdef USE_MB
-  my_bool use_mb_flag=use_mb(mysql->charset);
-#endif
-
-  for (end=from+from_length; from != end ; from++)
-  {
-    if (to >= to_end)
-    {
-      to_length = (ulong) (end-from)+512;	/* We want this much more */
-      if (!(to=(*extend_buffer)(param, to, &to_length)))
-	return to;
-      to_end=to+to_length-5;
-    }
-#ifdef USE_MB
-    {
-      int l;
-      if (use_mb_flag && (l = my_ismbchar(mysql->charset, from, end)))
-      {
-	while (l--)
-	  *to++ = *from++;
-	from--;
-	continue;
-      }
-    }
-#endif
-    switch (*from) {
-    case 0:				/* Must be escaped for 'mysql' */
-      *to++= '\\';
-      *to++= '0';
-      break;
-    case '\n':				/* Must be escaped for logs */
-      *to++= '\\';
-      *to++= 'n';
-      break;
-    case '\r':
-      *to++= '\\';
-      *to++= 'r';
-      break;
-    case '\\':
-      *to++= '\\';
-      *to++= '\\';
-      break;
-    case '\'':
-      *to++= '\\';
-      *to++= '\'';
-      break;
-    case '"':				/* Better safe than sorry */
-      *to++= '\\';
-      *to++= '"';
-      break;
-    case '\032':			/* This gives problems on Win32 */
-      *to++= '\\';
-      *to++= 'Z';
-      break;
-    default:
-      *to++= *from;
-    }
-  }
-  return to;
 }
 
 void STDCALL
@@ -2506,7 +2444,7 @@ static my_bool execute(MYSQL_STMT *stmt, char *packet, ulong length)
   my_bool res;
 
   DBUG_ENTER("execute");
-  DBUG_DUMP("packet", packet, length);
+  DBUG_DUMP("packet", (uchar*)packet, length);
 
   mysql->last_used_con= mysql;
   int4store(buff, stmt->stmt_id);		/* Send stmt id to server */
@@ -2514,7 +2452,7 @@ static my_bool execute(MYSQL_STMT *stmt, char *packet, ulong length)
   int4store(buff+5, 1);                         /* iteration count */
 
   res= test(cli_advanced_command(mysql, COM_STMT_EXECUTE, buff, sizeof(buff),
-                                 packet, length, 1, NULL) ||
+                                 packet, length, 1, stmt) ||
             (*mysql->methods->read_query_result)(mysql));
   stmt->affected_rows= mysql->affected_rows;
   stmt->server_status= mysql->server_status;
@@ -2731,7 +2669,7 @@ stmt_read_row_from_cursor(MYSQL_STMT *stmt, unsigned char **row)
     int4store(buff + 4, stmt->prefetch_rows); /* number of rows to fetch */
     if ((*mysql->methods->advanced_command)(mysql, COM_STMT_FETCH,
                                             buff, sizeof(buff), NullS, 0,
-                                            1, NULL))
+                                            1, stmt))
     {
       set_stmt_errmsg(stmt, net->last_error, net->last_errno, net->sqlstate);
       return 1;
@@ -3398,7 +3336,7 @@ mysql_stmt_send_long_data(MYSQL_STMT *stmt, uint param_number,
     */
     if ((*mysql->methods->advanced_command)(mysql, COM_STMT_SEND_LONG_DATA,
                                             buff, sizeof(buff), data,
-                                            length, 1, NULL))
+                                            length, 1, stmt))
     {
       set_stmt_errmsg(stmt, mysql->net.last_error,
 		      mysql->net.last_errno, mysql->net.sqlstate);
@@ -3678,33 +3616,38 @@ static void fetch_long_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
   case MYSQL_TYPE_FLOAT:
   {
     /*
-      We need to store data in the buffer before the truncation check to
+      We need to mark the local variable volatile to
       workaround Intel FPU executive precision feature.
       (See http://gcc.gnu.org/bugzilla/show_bug.cgi?id=323 for details)
-      AFAIU it does not guarantee to work.
     */
-    float data;
+    volatile float data;
     if (is_unsigned)
+    {
       data= (float) ulonglong2double(value);
+      *param->error= ((ulonglong) value) != ((ulonglong) data);
+    }
     else
-      data= (float) value;
+    {
+      data= (float)value;
+      *param->error= value != ((longlong) data);
+    }
     floatstore(buffer, data);
-    *param->error= is_unsigned ?
-                   ((ulonglong) value) != ((ulonglong) (*(float*) buffer)) :
-                   ((longlong) value) != ((longlong) (*(float*) buffer));
     break;
   }
   case MYSQL_TYPE_DOUBLE:
   {
-    double data;
+    volatile double data;
     if (is_unsigned)
+    {
       data= ulonglong2double(value);
+      *param->error= ((ulonglong) value) != ((ulonglong) data);
+    }
     else
+    {
       data= (double)value;
+      *param->error= value != ((longlong) data);
+    }
     doublestore(buffer, data);
-    *param->error= is_unsigned ?
-                   ((ulonglong) value) != ((ulonglong) (*(double*) buffer)) :
-                   ((longlong) value) != ((longlong) (*(double*) buffer));
     break;
   }
   case MYSQL_TYPE_TIME:
@@ -3858,7 +3801,19 @@ static void fetch_float_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
       sprintf(buff, "%.*f", (int) field->decimals, value);
       end= strend(buff);
     }
-    fetch_string_with_conversion(param, buff, (uint) (end - buff));
+
+    {
+      size_t length= end - buff;
+      if (field->flags & ZEROFILL_FLAG && length < field->length &&
+          field->length < MAX_DOUBLE_STRING_REP_LENGTH - 1)
+      {
+        bmove_upp((char*) buff + field->length, buff + length, length);
+        bfill((char*) buff, field->length - length, '0');
+        length= field->length;
+      }
+      fetch_string_with_conversion(param, buff, length);
+    }
+
     break;
   }
   }
@@ -4350,6 +4305,7 @@ static my_bool setup_one_fetch_function(MYSQL_BIND *param, MYSQL_FIELD *field)
   case MYSQL_TYPE_STRING:
   case MYSQL_TYPE_DECIMAL:
   case MYSQL_TYPE_NEWDECIMAL:
+  case MYSQL_TYPE_NEWDATE:
     DBUG_ASSERT(param->buffer_length != 0);
     param->fetch_result= fetch_result_str;
     break;
@@ -4422,6 +4378,7 @@ static my_bool setup_one_fetch_function(MYSQL_BIND *param, MYSQL_FIELD *field)
   case MYSQL_TYPE_VAR_STRING:
   case MYSQL_TYPE_STRING:
   case MYSQL_TYPE_BIT:
+  case MYSQL_TYPE_NEWDATE:
     param->skip_result= skip_result_string;
     break;
   default:
@@ -4674,9 +4631,17 @@ int cli_read_binary_rows(MYSQL_STMT *stmt)
   MYSQL      *mysql= stmt->mysql;
   MYSQL_DATA *result= &stmt->result;
   MYSQL_ROWS *cur, **prev_ptr= &result->data;
-  NET        *net = &mysql->net;
+  NET        *net;
+
   DBUG_ENTER("cli_read_binary_rows");
 
+  if (!mysql)
+  {
+    set_stmt_error(stmt, CR_SERVER_LOST, unknown_sqlstate);
+    DBUG_RETURN(1);
+  }
+
+  net = &mysql->net;
   mysql= mysql->last_used_con;
 
   while ((pkt_len= cli_safe_read(mysql)) != packet_error)
@@ -4768,6 +4733,13 @@ int STDCALL mysql_stmt_store_result(MYSQL_STMT *stmt)
   MYSQL_DATA *result= &stmt->result;
   DBUG_ENTER("mysql_stmt_store_result");
 
+  if (!mysql)
+  {
+    /* mysql can be reset in mysql_close called from mysql_reconnect */
+    set_stmt_error(stmt, CR_SERVER_LOST, unknown_sqlstate);
+    DBUG_RETURN(1);
+  }
+
   mysql= mysql->last_used_con;
 
   if (!stmt->field_count)
@@ -4793,7 +4765,7 @@ int STDCALL mysql_stmt_store_result(MYSQL_STMT *stmt)
     int4store(buff, stmt->stmt_id);
     int4store(buff + 4, (int)~0); /* number of rows to fetch */
     if (cli_advanced_command(mysql, COM_STMT_FETCH, buff, sizeof(buff),
-                             NullS, 0, 1, NULL))
+                             NullS, 0, 1, stmt))
     {
       set_stmt_errmsg(stmt, net->last_error, net->last_errno, net->sqlstate);
       DBUG_RETURN(1);
@@ -4940,7 +4912,7 @@ static my_bool reset_stmt_handle(MYSQL_STMT *stmt, uint flags)
       Reset stored result set if so was requested or it's a part
       of cursor fetch.
     */
-    if (result->data && (flags & RESET_STORE_RESULT))
+    if (flags & RESET_STORE_RESULT)
     {
       /* Result buffered */
       free_root(&result->alloc, MYF(MY_KEEP_PREALLOC));
@@ -4980,7 +4952,7 @@ static my_bool reset_stmt_handle(MYSQL_STMT *stmt, uint flags)
         char buff[MYSQL_STMT_HEADER]; /* packet header: 4 bytes for stmt id */
         int4store(buff, stmt->stmt_id);
         if ((*mysql->methods->advanced_command)(mysql, COM_STMT_RESET, buff,
-                                                sizeof(buff), 0, 0, 0, NULL))
+                                                sizeof(buff), 0, 0, 0, stmt))
         {
           set_stmt_errmsg(stmt, mysql->net.last_error, mysql->net.last_errno,
                           mysql->net.sqlstate);

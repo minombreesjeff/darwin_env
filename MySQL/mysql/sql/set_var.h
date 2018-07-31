@@ -160,6 +160,28 @@ public:
 };
 
 
+class sys_var_bool_const_ptr : public sys_var
+{
+public:
+  my_bool *value;
+  sys_var_bool_const_ptr(const char *name_arg, my_bool *value_arg)
+    :sys_var(name_arg),value(value_arg)
+  {}
+  bool check(THD *thd, set_var *var)
+  {
+    return 1;
+  }
+  bool update(THD *thd, set_var *var)
+  {
+    return 1;
+  }
+  SHOW_TYPE show_type() { return SHOW_MY_BOOL; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  { return (byte*) value; }
+  bool check_update_type(Item_result type) { return 0; }
+  bool is_readonly() const { return 1; }
+};
+
 class sys_var_str :public sys_var
 {
 public:
@@ -343,6 +365,7 @@ public:
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE show_type() { return SHOW_LONGLONG; }
   byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+  bool check(THD *thd, set_var *var);
   bool check_default(enum_var_type type)
   {
     return type == OPT_GLOBAL && !option_limits;
@@ -613,6 +636,7 @@ public:
     sys_var_character_set(name_arg) {}
   void set_default(THD *thd, enum_var_type type);
   CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type);
+  bool check(THD *thd, set_var *var);
 };
 
 class sys_var_character_set_results :public sys_var_character_set

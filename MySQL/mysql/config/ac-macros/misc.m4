@@ -756,14 +756,13 @@ case $SYSTEM_TYPE in
 esac
 if test "$CXX_VERSION"
 then
-  AC_MSG_CHECKING("C++ compiler version");
+  AC_MSG_CHECKING("C++ compiler version")
   AC_MSG_RESULT("$CXX $CXX_VERSION")
 fi
 AC_SUBST(CXX_VERSION)
 ])
 
 AC_DEFUN([MYSQL_PROG_AR], [
-AC_REQUIRE([MYSQL_CHECK_CXX_VERSION])
 case $CXX_VERSION in
   MIPSpro*)
     AR=$CXX
@@ -774,11 +773,8 @@ case $CXX_VERSION in
     ARFLAGS="-xar -o"
   ;;
   *)
-    if test -z "$AR"
-    then
-      AC_CHECK_PROG([AR], [ar], [ar])
-    fi
-    if test -z "$AR"
+    AC_CHECK_PROG([AR], [ar], [ar])
+    if test -z "$AR" || test "$AR" = "false"
     then
       AC_MSG_ERROR([You need ar to build the library])
     fi

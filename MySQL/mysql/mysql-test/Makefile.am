@@ -35,20 +35,18 @@ testdir =	        $(benchdir_root)/mysql-test
 EXTRA_SCRIPTS = 	mysql-test-run-shell.sh install_test_db.sh valgrind.supp $(PRESCRIPTS)
 EXTRA_DIST = 		$(EXTRA_SCRIPTS) suite
 GENSCRIPTS =		mysql-test-run-shell mysql-test-run install_test_db mtr
-PRESCRIPTS =		mysql-test-run.pl
+PRESCRIPTS =		mysql-test-run.pl mysql-stress-test.pl
 test_SCRIPTS = 		$(GENSCRIPTS) $(PRESCRIPTS)
-test_DATA = 		std_data/client-key.pem \
-			std_data/client-cert.pem \
-			std_data/cacert.pem \
-			std_data/server-cert.pem \
-			std_data/server-key.pem
-CLEANFILES = 		$(GENSCRIPTS) $(test_DATA)
+CLEANFILES = 		$(GENSCRIPTS)
 
 INCLUDES =		-I$(top_builddir)/include -I$(top_srcdir)/include -I..
 
 dist-hook:
 	mkdir -p $(distdir)/t $(distdir)/r $(distdir)/include \
-		$(distdir)/std_data $(distdir)/lib
+		$(distdir)/std_data \
+		$(distdir)/std_data/ndb_backup50_data_be $(distdir)/std_data/ndb_backup50_data_le \
+		$(distdir)/lib \
+		$(distdir)/std_data/funcs_1
 	-$(INSTALL_DATA) $(srcdir)/t/*.def $(distdir)/t
 	$(INSTALL_DATA) $(srcdir)/t/*.test $(distdir)/t
 	-$(INSTALL_DATA) $(srcdir)/t/*.imtest $(distdir)/t
@@ -60,12 +58,16 @@ dist-hook:
 	$(INSTALL_DATA) $(srcdir)/include/*.test $(distdir)/include
 	$(INSTALL_DATA) $(srcdir)/r/*.result $(srcdir)/r/*.require $(distdir)/r
 	$(INSTALL_DATA) $(srcdir)/std_data/Moscow_leap $(distdir)/std_data
+	$(INSTALL_DATA) $(srcdir)/std_data/Index.xml $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.dat $(srcdir)/std_data/*.000001 $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/des_key_file $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.pem $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.frm $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.MY* $(distdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.cnf $(distdir)/std_data
+	$(INSTALL_DATA) $(srcdir)/std_data/ndb_backup50_data_be/BACKUP* $(distdir)/std_data/ndb_backup50_data_be
+	$(INSTALL_DATA) $(srcdir)/std_data/ndb_backup50_data_le/BACKUP* $(distdir)/std_data/ndb_backup50_data_le
+	$(INSTALL_DATA) $(srcdir)/std_data/funcs_1/*.txt $(distdir)/std_data/funcs_1
 	$(INSTALL_DATA) $(srcdir)/lib/*.pl $(distdir)/lib
 	-rm -rf `find $(distdir)/suite -type d -name SCCS`
 
@@ -75,7 +77,10 @@ install-data-local:
 		$(DESTDIR)$(testdir)/r \
 		$(DESTDIR)$(testdir)/include \
 		$(DESTDIR)$(testdir)/std_data \
-		$(DESTDIR)$(testdir)/lib
+		$(DESTDIR)$(testdir)/std_data/ndb_backup50_data_be \
+		$(DESTDIR)$(testdir)/std_data/ndb_backup50_data_le \
+		$(DESTDIR)$(testdir)/lib \
+		$(DESTDIR)$(testdir)/std_data/funcs_1
 	$(INSTALL_DATA) $(srcdir)/README $(DESTDIR)$(testdir)
 	-$(INSTALL_DATA) $(srcdir)/t/*.def $(DESTDIR)$(testdir)/t
 	$(INSTALL_DATA) $(srcdir)/t/*.test $(DESTDIR)$(testdir)/t
@@ -94,10 +99,14 @@ install-data-local:
 	$(INSTALL_DATA) $(srcdir)/std_data/*.cnf $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/des_key_file $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/Moscow_leap $(DESTDIR)$(testdir)/std_data
+	$(INSTALL_DATA) $(srcdir)/std_data/Index.xml $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.pem $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.frm $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.MY* $(DESTDIR)$(testdir)/std_data
 	$(INSTALL_DATA) $(srcdir)/std_data/*.cnf $(DESTDIR)$(testdir)/std_data
+	$(INSTALL_DATA) $(srcdir)/std_data/ndb_backup50_data_be/BACKUP* $(DESTDIR)$(testdir)/std_data/ndb_backup50_data_be
+	$(INSTALL_DATA) $(srcdir)/std_data/ndb_backup50_data_le/BACKUP* $(DESTDIR)$(testdir)/std_data/ndb_backup50_data_le
+	$(INSTALL_DATA) $(srcdir)/std_data/funcs_1/*.txt $(DESTDIR)$(testdir)/std_data/funcs_1
 	$(INSTALL_DATA) $(srcdir)/lib/*.pl $(DESTDIR)$(testdir)/lib
 	for f in `(cd $(srcdir); find suite -type f | grep -v SCCS)`; \
 	do \
@@ -108,17 +117,6 @@ install-data-local:
 
 uninstall-local:
 	@RM@ -f -r $(DESTDIR)$(testdir)
-
-std_data/client-key.pem: $(top_srcdir)/SSL/$(@F)
-	@RM@ -f $@; @CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
-std_data/client-cert.pem: $(top_srcdir)/SSL/$(@F)
-	@RM@ -f $@; @CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
-std_data/cacert.pem: $(top_srcdir)/SSL/$(@F)
-	@RM@ -f $@; @CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
-std_data/server-cert.pem: $(top_srcdir)/SSL/$(@F)
-	@RM@ -f $@; @CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
-std_data/server-key.pem: $(top_srcdir)/SSL/$(@F)
-	@RM@ -f $@; @CP@ $(top_srcdir)/SSL/$(@F) $(srcdir)/std_data
 
 # mtr - a shortcut for executing mysql-test-run.pl
 mtr:
@@ -145,6 +143,7 @@ SUFFIXES = .sh
 	  -e 's!@''PERL''@!@PERL@!' \
 	  -e 's!@''VERSION''@!@VERSION@!' \
 	  -e 's!@''MYSQL_TCP_PORT''@!@MYSQL_TCP_PORT@!' \
+	  -e 's!@''MYSQL_TCP_PORT_DEFAULT''@!@MYSQL_TCP_PORT_DEFAULT@!' \
 	  -e 's!@''MYSQL_BASE_VERSION''@!@MYSQL_BASE_VERSION@!' \
 	  -e 's!@''MYSQL_UNIX_ADDR''@!@MYSQL_UNIX_ADDR@!' \
 	  -e 's!@''MYSQL_TCP_PORT''@!@MYSQL_TCP_PORT@!' \

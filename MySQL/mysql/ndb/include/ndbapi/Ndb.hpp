@@ -17,7 +17,7 @@
    @mainpage                            NDB API Programmers' Guide
 
    This guide assumes a basic familiarity with MySQL Cluster concepts found
-   on http://dev.mysql.com/doc/mysql/en/NDBCluster.html .
+   on http://dev.mysql.com/doc/mysql/en/mysql-cluster.html.
    Some of the fundamental ones are also described in section @ref secConcepts.
 
    The NDB API is a MySQL Cluster application interface 
@@ -1052,6 +1052,7 @@ class Ndb
   friend class NdbDictInterface;
   friend class NdbBlob;
   friend class NdbImpl;
+  friend class NdbScanFilterImpl;
 #endif
 
 public:
@@ -1385,27 +1386,32 @@ public:
    *
    * @param cacheSize number of values to cache in this Ndb object
    *
-   * @return 0 or -1 on error, and tupleId in out parameter
+   * @return 0 or -1 on error, and autoValue in out parameter
    */
   int getAutoIncrementValue(const char* aTableName, 
-                            Uint64 & tupleId, Uint32 cacheSize);
+                            Uint64 & autoValue, Uint32 cacheSize, 
+			    Uint64 step = 1, Uint64 start = 1);
   int getAutoIncrementValue(const NdbDictionary::Table * aTable, 
-                            Uint64 & tupleId, Uint32 cacheSize);
+                            Uint64 & autoValue, Uint32 cacheSize, 
+			    Uint64 step = 1, Uint64 start = 1);
   int readAutoIncrementValue(const char* aTableName,
-                             Uint64 & tupleId);
+                             Uint64 & autoValue);
   int readAutoIncrementValue(const NdbDictionary::Table * aTable,
-                             Uint64 & tupleId);
+                             Uint64 & autoValue);
   int setAutoIncrementValue(const char* aTableName,
-                            Uint64 tupleId, bool increase);
+                            Uint64 autoValue, bool modify);
   int setAutoIncrementValue(const NdbDictionary::Table * aTable,
-                            Uint64 tupleId, bool increase);
+                            Uint64 autoValue, bool modify);
 private:
   int getTupleIdFromNdb(Ndb_local_table_info* info,
-                        Uint64 & tupleId, Uint32 cacheSize);
+                        Uint64 & tupleId, Uint32 cacheSize,
+			Uint64 step = 1, Uint64 start = 1 );
   int readTupleIdFromNdb(Ndb_local_table_info* info,
                          Uint64 & tupleId);
   int setTupleIdInNdb(Ndb_local_table_info* info,
-                      Uint64 tupleId, bool increase);
+                      Uint64 tupleId, bool modify);
+  int checkTupleIdInNdb(Ndb_local_table_info* info,
+                         Uint64 tupleId);
   int opTupleIdOnNdb(Ndb_local_table_info* info, Uint64 & opValue, Uint32 op);
 public:
 

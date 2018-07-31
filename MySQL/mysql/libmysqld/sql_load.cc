@@ -85,7 +85,8 @@ static int read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
 #ifndef EMBEDDED_LIBRARY
 static bool write_execute_load_query_log_event(THD *thd,
 					       bool duplicates, bool ignore,
-					       bool transactional_table);
+					       bool transactional_table,
+                                               THD::killed_state killed_status);
 #endif /* EMBEDDED_LIBRARY */
 
 /*
@@ -109,7 +110,7 @@ static bool write_execute_load_query_log_event(THD *thd,
     TRUE - error / FALSE - success
 */
 
-bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
+int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 	        List<Item> &fields_vars, List<Item> &set_fields,
                 List<Item> &set_values,
                 enum enum_duplicates handle_duplicates, bool ignore,
@@ -135,6 +136,7 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   char *tdb= thd->db ? thd->db : db;		// Result is never null
   ulong skip_lines= ex->skip_lines;
   bool transactional_table;
+  THD::killed_state killed_status= THD::NOT_KILLED;
   DBUG_ENTER("mysql_load");
 
 #ifdef EMBEDDED_LIBRARY
@@ -231,9 +233,11 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   while ((item= it++))
   {
-    if (item->type() == Item::FIELD_ITEM)
+    Item *real_item= item->real_item();
+
+    if (real_item->type() == Item::FIELD_ITEM)
     {
-      Field *field= ((Item_field*)item)->field;
+      Field *field= ((Item_field*)real_item)->field;
       if (field->flags & BLOB_FLAG)
       {
         use_blobs= 1;
@@ -242,7 +246,7 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       else
         tot_length+= field->field_length;
     }
-    else
+    else if (item->type() == Item::STRING_ITEM)
       use_vars= 1;
   }
   if (use_blobs && !ex->line_term->length() && !field_term->length())
@@ -377,7 +381,6 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       table->file->start_bulk_insert((ha_rows) 0);
     table->copy_blobs=1;
 
-    thd->no_trans_update.stmt= FALSE;
     thd->abort_on_warning= (!ignore &&
                             (thd->variables.sql_mode &
                              (MODE_STRICT_TRANS_TABLES |
@@ -405,13 +408,21 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   free_blobs(table);				/* if pack_blob was used */
   table->copy_blobs=0;
   thd->count_cuted_fields= CHECK_FIELD_IGNORE;
-
+  /* 
+     simulated killing in the middle of per-row loop
+     must be effective for binlogging
+  */
+  DBUG_EXECUTE_IF("simulate_kill_bug27571",
+                  {
+                    error=1;
+                    thd->killed= THD::KILL_QUERY;
+                  };);
+  killed_status= (error == 0)? THD::NOT_KILLED : thd->killed;
   /*
     We must invalidate the table in query cache before binlog writing and
     ha_autocommit_...
   */
   query_cache_invalidate3(thd, table_list, 0);
-
   if (error)
   {
     if (read_file_from_client)
@@ -446,9 +457,10 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       /* If the file was not empty, wrote_create_file is true */
       if (lf_info.wrote_create_file)
       {
-	if ((info.copied || info.deleted) && !transactional_table)
+	if (thd->transaction.stmt.modified_non_trans_table)
 	  write_execute_load_query_log_event(thd, handle_duplicates,
-					     ignore, transactional_table);
+					     ignore, transactional_table,
+                                             killed_status);
 	else
 	{
 	  Delete_file_log_event d(thd, db, transactional_table);
@@ -466,8 +478,8 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   sprintf(name, ER(ER_LOAD_INFO), (ulong) info.records, (ulong) info.deleted,
 	  (ulong) (info.records - info.copied), (ulong) thd->cuted_fields);
 
-  if (!transactional_table)
-    thd->no_trans_update.all= TRUE;
+  if (thd->transaction.stmt.modified_non_trans_table)
+    thd->transaction.all.modified_non_trans_table= TRUE;
 #ifndef EMBEDDED_LIBRARY
   if (mysql_bin_log.is_open())
   {
@@ -479,7 +491,8 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     read_info.end_io_cache();
     if (lf_info.wrote_create_file)
       write_execute_load_query_log_event(thd, handle_duplicates,
-					 ignore, transactional_table);
+					 ignore, transactional_table,
+                                         killed_status);
   }
 #endif /*!EMBEDDED_LIBRARY*/
   if (transactional_table)
@@ -488,6 +501,8 @@ bool mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   /* ok to client sent only after binlog write and engine commit */
   send_ok(thd, info.copied + info.deleted, 0L, name);
 err:
+  DBUG_ASSERT(transactional_table || !(info.copied || info.deleted) ||
+              thd->transaction.stmt.modified_non_trans_table);
   if (thd->lock)
   {
     mysql_unlock_tables(thd, thd->lock);
@@ -504,7 +519,8 @@ err:
 /* Not a very useful function; just to avoid duplication of code */
 static bool write_execute_load_query_log_event(THD *thd,
 					       bool duplicates, bool ignore,
-					       bool transactional_table)
+					       bool transactional_table,
+                                               THD::killed_state killed_err_arg)
 {
   Execute_load_query_log_event
     e(thd, thd->query, thd->query_length,
@@ -512,7 +528,7 @@ static bool write_execute_load_query_log_event(THD *thd,
       (char*)thd->lex->fname_end - (char*)thd->query,
       (duplicates == DUP_REPLACE) ? LOAD_DUP_REPLACE :
       (ignore ? LOAD_DUP_IGNORE : LOAD_DUP_ERROR),
-      transactional_table, FALSE);
+      transactional_table, FALSE, killed_err_arg);
   return mysql_bin_log.write(&e);
 }
 
@@ -532,7 +548,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
   Item_field *sql_field;
   TABLE *table= table_list->table;
   ulonglong id;
-  bool no_trans_update_stmt, err;
+  bool err;
   DBUG_ENTER("read_fixed_length");
 
   id= 0;
@@ -560,7 +576,6 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
 #ifdef HAVE_purify
     read_info.row_end[0]=0;
 #endif
-    no_trans_update_stmt= !table->file->has_transactions();
 
     restore_record(table, s->default_values);
     /*
@@ -630,7 +645,6 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
     table->auto_increment_field_not_null= FALSE;
     if (err)
       DBUG_RETURN(1);
-    thd->no_trans_update.stmt= no_trans_update_stmt;
    
     /*
       If auto_increment values are used, save the first one for
@@ -673,12 +687,11 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
   TABLE *table= table_list->table;
   uint enclosed_length;
   ulonglong id;
-  bool no_trans_update_stmt, err;
+  bool err;
   DBUG_ENTER("read_sep_field");
 
   enclosed_length=enclosed.length();
   id= 0;
-  no_trans_update_stmt= !table->file->has_transactions();
 
   for (;;it.rewind())
   {
@@ -694,6 +707,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
     {
       uint length;
       byte *pos;
+      Item *real_item;
 
       if (read_info.read_field())
 	break;
@@ -705,14 +719,17 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       pos=read_info.row_start;
       length=(uint) (read_info.row_end-pos);
 
+      real_item= item->real_item();
+
       if (!read_info.enclosed &&
 	  (enclosed_length && length == 4 &&
            !memcmp(pos, STRING_WITH_LEN("NULL"))) ||
 	  (length == 1 && read_info.found_null))
       {
-        if (item->type() == Item::FIELD_ITEM)
+
+        if (real_item->type() == Item::FIELD_ITEM)
         {
-          Field *field= ((Item_field *)item)->field;
+          Field *field= ((Item_field *)real_item)->field;
           if (field->reset())
           {
             my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0), field->field_name,
@@ -729,25 +746,39 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
                                  ER_WARN_NULL_TO_NOTNULL, 1);
           }
 	}
-        else
+        else if (item->type() == Item::STRING_ITEM)
+        {
           ((Item_user_var_as_out_param *)item)->set_null_value(
                                                   read_info.read_charset);
+        }
+        else
+        {
+          my_error(ER_LOAD_DATA_INVALID_COLUMN, MYF(0), item->full_name());
+          DBUG_RETURN(1);
+        }
+
 	continue;
       }
 
-      if (item->type() == Item::FIELD_ITEM)
+      if (real_item->type() == Item::FIELD_ITEM)
       {
-
-        Field *field= ((Item_field *)item)->field;
+        Field *field= ((Item_field *)real_item)->field;
         field->set_notnull();
         read_info.row_end[0]=0;			// Safe to change end marker
         if (field == table->next_number_field)
           table->auto_increment_field_not_null= TRUE;
         field->store((char*) pos, length, read_info.read_charset);
       }
-      else
+      else if (item->type() == Item::STRING_ITEM)
+      {
         ((Item_user_var_as_out_param *)item)->set_value((char*) pos, length,
-                                                read_info.read_charset);
+                                                        read_info.read_charset);
+      }
+      else
+      {
+        my_error(ER_LOAD_DATA_INVALID_COLUMN, MYF(0), item->full_name());
+        DBUG_RETURN(1);
+      }
     }
     if (read_info.error)
       break;
@@ -763,9 +794,10 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
 	break;
       for (; item ; item= it++)
       {
-        if (item->type() == Item::FIELD_ITEM)
+        Item *real_item= item->real_item();
+        if (real_item->type() == Item::FIELD_ITEM)
         {
-          Field *field= ((Item_field *)item)->field;
+          Field *field= ((Item_field *)real_item)->field;
           if (field->reset())
           {
             my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0),field->field_name,
@@ -785,9 +817,16 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
                               ER_WARN_TOO_FEW_RECORDS,
                               ER(ER_WARN_TOO_FEW_RECORDS), thd->row_count);
         }
-        else
+        else if (item->type() == Item::STRING_ITEM)
+        {
           ((Item_user_var_as_out_param *)item)->set_null_value(
                                                   read_info.read_charset);
+        }
+        else
+        {
+          my_error(ER_LOAD_DATA_INVALID_COLUMN, MYF(0), item->full_name());
+          DBUG_RETURN(1);
+        }
       }
     }
 
@@ -821,7 +860,6 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       We don't need to reset auto-increment field since we are restoring
       its default value at the beginning of each loop iteration.
     */
-    thd->no_trans_update.stmt= no_trans_update_stmt;
     if (read_info.next_line())			// Skip to next line
       break;
     if (read_info.line_cuted)
@@ -847,6 +885,7 @@ continue_loop:;
 char
 READ_INFO::unescape(char chr)
 {
+  /* keep this switch synchornous with the ESCAPE_CHARS macro */
   switch(chr) {
   case 'n': return '\n';
   case 't': return '\t';

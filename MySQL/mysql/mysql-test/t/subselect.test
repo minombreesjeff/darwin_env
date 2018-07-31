@@ -9,30 +9,32 @@ SELECT (SELECT 1) UNION SELECT (SELECT 2);
 explain extended SELECT (SELECT 1) UNION SELECT (SELECT 2);
 SELECT (SELECT (SELECT 0 UNION SELECT 0));
 explain extended SELECT (SELECT (SELECT 0 UNION SELECT 0));
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 SELECT (SELECT 1 FROM (SELECT 1) as b HAVING a=1) as a;
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 SELECT (SELECT 1 FROM (SELECT 1) as b HAVING b=1) as a,(SELECT 1 FROM (SELECT 1) as c HAVING a=1) as b;
 SELECT (SELECT 1),MAX(1) FROM (SELECT 1) as a;
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 SELECT (SELECT a) as a;
 EXPLAIN EXTENDED SELECT 1 FROM (SELECT 1 as a) as b  HAVING (SELECT a)=1;
 SELECT 1 FROM (SELECT 1 as a) as b HAVING (SELECT a)=1;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 SELECT (SELECT 1), a;
 SELECT 1 as a FROM (SELECT 1) as b HAVING (SELECT a)=1;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 SELECT 1 FROM (SELECT (SELECT a) b) c;
 SELECT * FROM (SELECT 1 as id) b WHERE id IN (SELECT * FROM (SELECT 1 as id) c ORDER BY id);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT * FROM (SELECT 1) a  WHERE 1 IN (SELECT 1,1);
 SELECT 1 IN (SELECT 1);
 SELECT 1 FROM (SELECT 1 as a) b WHERE 1 IN (SELECT (SELECT a));
--- error 1221
+-- error ER_WRONG_USAGE
 select (SELECT 1 FROM (SELECT 1) a PROCEDURE ANALYSE(1));
--- error 1108
+-- error ER_WRONG_PARAMETERS_TO_PROCEDURE
 SELECT 1 FROM (SELECT 1) a PROCEDURE ANALYSE((SELECT 1));
+-- error ER_BAD_FIELD_ERROR
 SELECT (SELECT 1) as a FROM (SELECT 1) b WHERE (SELECT a) IS NULL;
+-- error ER_BAD_FIELD_ERROR
 SELECT (SELECT 1) as a FROM (SELECT 1) b WHERE (SELECT a) IS NOT NULL;
 SELECT (SELECT 1,2,3) = ROW(1,2,3);
 SELECT (SELECT 1,2,3) = ROW(1,2,1);
@@ -51,7 +53,7 @@ SELECT (SELECT 'b',2,'a') = ROW(1.5,2,'a');
 SELECT (SELECT 1.5,2,'a') = ROW(1.5,'2','a');
 SELECT (SELECT 1.5,'c','a') = ROW(1.5,2,'a');
 
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT (SELECT * FROM (SELECT 'test' a,'test' b) a);
 
 SELECT 1 as a,(SELECT a+a) b,(SELECT b);
@@ -63,7 +65,7 @@ create table t4 (a int not null, b int not null);
 insert into t1 values (2);
 insert into t2 values (1,7),(2,7);
 insert into t4 values (4,8),(3,8),(5,9);
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 select (select a from t1 where t1.a = a1) as a2, (select b from t2 where t2.b=a2) as a1;
 select (select a from t1 where t1.a=t2.a), a from t2;
 select (select a from t1 where t1.a=t2.b), a from t2;
@@ -103,9 +105,9 @@ select * from t3 where a >= any (select b from t2);
 explain extended select * from t3 where a >= any (select b from t2);
 select * from t3 where a >= all (select b from t2);
 delete from t2 where a=100;
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select * from t3 where a in (select a,b from t2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select * from t3 where a in (select * from t2);
 insert into t4 values (12,7),(1,7),(10,9),(9,6),(7,6),(3,9),(1,10);
 # empty set
@@ -121,7 +123,7 @@ select (select a from t1 where t1.a=t2.a union select a from t5 where t5.a=t2.a)
 insert into t5 values (2);
 select (select a from t1 where t1.a=t2.a union select a from t5 where t5.a=t2.a), a from t2;
 explain extended select (select a from t1 where t1.a=t2.a union select a from t5 where t5.a=t2.a), a from t2;
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 select (select a from t1 where t1.a=t2.a union all select a from t5 where t5.a=t2.a), a from t2;
 create table t6 (patient_uq int, clinic_uq int, index i1 (clinic_uq));
 create table t7( uq int primary key, name char(25));
@@ -131,7 +133,7 @@ select * from t6 where exists (select * from t7 where uq = clinic_uq);
 explain extended select * from t6 where exists (select * from t7 where uq = clinic_uq);
 
 # not unique fields
--- error 1052
+-- error ER_NON_UNIQ_ERROR
 select * from t1 where a= (select a from t2,t4 where t2.b=t4.b);
 
 # different tipes & group functions
@@ -158,14 +160,14 @@ INSERT INTO t8 (pseudo,email) VALUES ('joce','test');
 INSERT INTO t8 (pseudo,email) VALUES ('joce1','test1');
 INSERT INTO t8 (pseudo,email) VALUES ('2joce1','2test1');
 EXPLAIN EXTENDED SELECT pseudo,(SELECT email FROM t8 WHERE pseudo=(SELECT pseudo FROM t8 WHERE pseudo='joce')) FROM t8 WHERE pseudo=(SELECT pseudo FROM t8 WHERE pseudo='joce');
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT pseudo FROM t8 WHERE pseudo=(SELECT pseudo,email FROM
 t8 WHERE pseudo='joce');
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT pseudo FROM t8 WHERE pseudo=(SELECT * FROM t8 WHERE
 pseudo='joce');
 SELECT pseudo FROM t8 WHERE pseudo=(SELECT pseudo FROM t8 WHERE pseudo='joce');
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 SELECT pseudo FROM t8 WHERE pseudo=(SELECT pseudo FROM t8 WHERE pseudo LIKE '%joce%');
 
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8;
@@ -185,7 +187,7 @@ EXPLAIN EXTENDED SELECT (SELECT DISTINCT date FROM t1 WHERE date='2002-08-03');
 SELECT DISTINCT date FROM t1 WHERE date='2002-08-03';
 SELECT (SELECT DISTINCT date FROM t1 WHERE date='2002-08-03');
 SELECT 1 FROM t1 WHERE 1=(SELECT 1 UNION SELECT 1) UNION ALL SELECT 1;
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 SELECT 1 FROM t1 WHERE 1=(SELECT 1 UNION ALL SELECT 1) UNION SELECT 1;
 EXPLAIN EXTENDED SELECT 1 FROM t1 WHERE 1=(SELECT 1 UNION SELECT 1);
 drop table t1;
@@ -211,9 +213,9 @@ CREATE TABLE `t2` (
 INSERT INTO t2 (mot,topic,date,pseudo) VALUES ('joce','40143','2002-10-22','joce'), ('joce','43506','2002-10-22','joce');
 select numeropost as a FROM t1 GROUP BY (SELECT 1 FROM t1 HAVING a=1);
 SELECT numeropost,maxnumrep FROM t1 WHERE exists (SELECT 1 FROM t2 WHERE (mot='joce') AND date >= '2002-10-21' AND t1.numeropost = t2.topic) ORDER BY maxnumrep DESC LIMIT 0, 20;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 SELECT (SELECT 1) as a FROM (SELECT 1 FROM t1 HAVING a=1) b;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 SELECT 1 IN (SELECT 1 FROM t2 HAVING a);
 
 SELECT * from t2 where topic IN (SELECT topic FROM t2 GROUP BY topic);
@@ -242,9 +244,9 @@ CREATE TABLE `t1` (
 ) ENGINE=MyISAM ROW_FORMAT=FIXED;
 
 INSERT INTO t1 (numeropost,maxnumrep) VALUES (1,0),(2,1);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 select numeropost as a FROM t1 GROUP BY (SELECT 1 FROM t1 HAVING a=1);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 select numeropost as a FROM t1 ORDER BY (SELECT 1 FROM t1 HAVING a=1);
 drop table t1;
 
@@ -256,7 +258,7 @@ drop table t1;
 #iftest
 CREATE TABLE t1 (field char(1) NOT NULL DEFAULT 'b');
 INSERT INTO t1 VALUES ();
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 SELECT field FROM t1 WHERE 1=(SELECT 1 UNION ALL SELECT 1 FROM (SELECT 1) a HAVING field='b');
 drop table t1;
 
@@ -269,13 +271,13 @@ CREATE TABLE `t1` (
   UNIQUE KEY `numreponse` (`numreponse`),
   KEY `pseudo` (`pseudo`,`numeropost`)
 ) ENGINE=MyISAM;
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 SELECT (SELECT numeropost FROM t1 HAVING numreponse=a),numreponse FROM (SELECT * FROM t1) as a;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 SELECT numreponse, (SELECT numeropost FROM t1 HAVING numreponse=a) FROM (SELECT * FROM t1) as a;
 SELECT numreponse, (SELECT numeropost FROM t1 HAVING numreponse=1) FROM (SELECT * FROM t1) as a;
 INSERT INTO t1 (numeropost,numreponse,pseudo) VALUES (1,1,'joce'),(1,2,'joce'),(1,3,'test');
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 EXPLAIN EXTENDED SELECT numreponse FROM t1 WHERE numeropost='1' AND numreponse=(SELECT 1 FROM t1 WHERE numeropost='1');
 EXPLAIN EXTENDED SELECT MAX(numreponse) FROM t1 WHERE numeropost='1';
 EXPLAIN EXTENDED SELECT numreponse FROM t1 WHERE numeropost='1' AND numreponse=(SELECT MAX(numreponse) FROM t1 WHERE numeropost='1');
@@ -292,9 +294,9 @@ create table t2 (a int NOT NULL, b int, primary key (a));
 insert into t1 values (0, 10),(1, 11),(2, 12);
 insert into t2 values (1, 21),(2, 22),(3, 23);
 select * from t1;
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 update t1 set b= (select b from t1);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 update t1 set b= (select b from t2);
 update t1 set b= (select b from t2 where t1.a = t2.a);
 select * from t1;
@@ -307,9 +309,9 @@ insert into t1 values (0, 10),(1, 11),(2, 12);
 insert into t2 values (1, 21),(2, 12),(3, 23);
 select * from t1;
 select * from t1 where b = (select b from t2 where t1.a = t2.a);
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 delete from t1 where b = (select b from t1);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 delete from t1 where b = (select b from t2);
 delete from t1 where b = (select b from t2 where t1.a = t2.a);
 select * from t1;
@@ -325,9 +327,9 @@ insert into t12 values (33, 10),(22, 11),(2, 12);
 insert into t2 values (1, 21),(2, 12),(3, 23);
 select * from t11;
 select * from t12;
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 delete t11.*, t12.* from t11,t12 where t11.a = t12.a and t11.b = (select b from t12 where t11.a = t12.a);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 delete t11.*, t12.* from t11,t12 where t11.a = t12.a and t11.b = (select b from t2);
 delete t11.*, t12.* from t11,t12 where t11.a = t12.a and t11.b = (select b from t2 where t11.a = t2.a);
 select * from t11;
@@ -340,25 +342,29 @@ create table t2 (a int);
 create table t3 (b int);
 insert into t2 values (1);
 insert into t3 values (1),(2);
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 INSERT INTO t1 (x) VALUES ((SELECT x FROM t1));
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 INSERT INTO t1 (x) VALUES ((SELECT b FROM t3));
 INSERT INTO t1 (x) VALUES ((SELECT a FROM t2));
 select * from t1;
 insert into t2 values (1);
+let $row_count_before= `SELECT COUNT(*) FROM t1`;
 INSERT DELAYED INTO t1 (x) VALUES ((SELECT SUM(a) FROM t2));
--- sleep 1
+let $wait_condition= SELECT COUNT(*) <> $row_count_before FROM t1;
+--source include/wait_condition.inc
 select * from t1;
 INSERT INTO t1 (x) select (SELECT SUM(a)+1 FROM t2) FROM t2;
 select * from t1;
 # After this, only data based on old t1 records should have been added.
 INSERT INTO t1 (x) select (SELECT SUM(x)+2 FROM t1) FROM t2;
 select * from t1;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 INSERT DELAYED INTO t1 (x) VALUES ((SELECT SUM(x) FROM t2));
+let $row_count_before= `SELECT COUNT(*) FROM t1`;
 INSERT DELAYED INTO t1 (x) VALUES ((SELECT SUM(a) FROM t2));
--- sleep 1
+let $wait_condition= SELECT COUNT(*) <> $row_count_before FROM t1;
+--source include/wait_condition.inc
 select * from t1;
 #
 #TODO: should be uncommented after bug 380 fix pushed
@@ -373,25 +379,30 @@ create table t3 (a int);
 insert into t2 values (1);
 insert into t3 values (1),(2);
 select * from t1;
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 replace into t1 (x, y) VALUES ((SELECT x FROM t1), (SELECT a+1 FROM t2));
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 replace into t1 (x, y) VALUES ((SELECT a FROM t3), (SELECT a+1 FROM t2));
 replace into t1 (x, y) VALUES ((SELECT a FROM t2), (SELECT a+1 FROM t2));
 select * from t1;
 replace into t1 (x, y) VALUES ((SELECT a FROM t2), (SELECT a+2 FROM t2));
 select * from t1;
+let $row_count_before= `SELECT COUNT(*) FROM t1`;
 replace DELAYED into t1 (x, y) VALUES ((SELECT a+3 FROM t2), (SELECT a FROM t2));
--- sleep 1
+# We get one additional row
+let $wait_condition= SELECT COUNT(*) <> $row_count_before FROM t1;
+--source include/wait_condition.inc
 select * from t1;
+let $row_count_before= `SELECT COUNT(*) FROM t1 WHERE y = 2`;
 replace DELAYED into t1 (x, y) VALUES ((SELECT a+3 FROM t2), (SELECT a+1 FROM t2));
--- sleep 1
+let $wait_condition= SELECT COUNT(*) <> $row_count_before FROM t1 WHERE y = 2;
+--source include/wait_condition.inc
 select * from t1;
 replace LOW_PRIORITY into t1 (x, y) VALUES ((SELECT a+1 FROM t2), (SELECT a FROM t2));
 select * from t1;
 drop table t1, t2, t3;
 
--- error 1096
+-- error ER_NO_TABLES_USED
 SELECT * FROM (SELECT 1) b WHERE 1 IN (SELECT *);
 
 CREATE TABLE t2 (id int(11) default NULL, KEY id (id)) ENGINE=MyISAM CHARSET=latin1;
@@ -404,14 +415,14 @@ EXPLAIN EXTENDED SELECT * FROM t2 WHERE id IN (SELECT 1+(select 1));
 EXPLAIN EXTENDED SELECT * FROM t2 WHERE id IN (SELECT 1 UNION SELECT 3);
 SELECT * FROM t2 WHERE id IN (SELECT 5 UNION SELECT 3);
 SELECT * FROM t2 WHERE id IN (SELECT 5 UNION SELECT 2);
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 INSERT INTO t2 VALUES ((SELECT * FROM t2));
--- error 1093
+-- error ER_UPDATE_TABLE_USED
 INSERT INTO t2 VALUES ((SELECT id FROM t2));
 SELECT * FROM t2;
 CREATE TABLE t1 (id int(11) default NULL, KEY id (id)) ENGINE=MyISAM CHARSET=latin1;
 INSERT INTO t1 values (1),(1);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 UPDATE t2 SET id=(SELECT * FROM t1);
 drop table t2, t1;
 
@@ -479,9 +490,9 @@ drop table t1,t2,t3;
 
 #LIMIT is not supported now
 create table t1 (a float);
--- error 1235
+-- error ER_NOT_SUPPORTED_YET
 select 10.5 IN (SELECT * from t1 LIMIT 1);
--- error 1235
+-- error ER_NOT_SUPPORTED_YET
 select 10.5 IN (SELECT * from t1 LIMIT 1 UNION SELECT 1.5);
 drop table t1;
 
@@ -505,7 +516,7 @@ select ROW(1, 1, 'a') IN (select b,a,c from t1 where a is not null);
 select ROW(1, 1, 'a') IN (select a,b,c from t1 where c='b' or c='a');
 select ROW(1, 2, 'a') IN (select a,b,c from t1 where c='b' or c='a');
 select ROW(1, 1, 'a') IN (select b,a,c from t1 where c='b' or c='a');
--- error 1235
+-- error ER_NOT_SUPPORTED_YET
 select ROW(1, 1, 'a') IN (select b,a,c from t1 limit 2);
 drop table t1;
 
@@ -520,14 +531,14 @@ set @a:=2;
 set @a:=(SELECT a from t1);
 select @a;
 drop table t1;
--- error 1146
+-- error ER_NO_SUCH_TABLE
 do (SELECT a from t1);
--- error 1146
+-- error ER_NO_SUCH_TABLE
 set @a:=(SELECT a from t1);
 
 CREATE TABLE t1 (a int, KEY(a)); 
 HANDLER t1 OPEN;
--- error 1064
+-- error ER_PARSE_ERROR
 HANDLER t1 READ a=((SELECT 1));
 HANDLER t1 CLOSE;
 drop table t1;
@@ -625,7 +636,7 @@ drop table t1;
 #
 # error in IN
 #
--- error 1146
+-- error ER_NO_SUCH_TABLE
 select t1.Continent, t2.Name, t2.Population from t1 LEFT JOIN t2 ON t1.Code = t2.Country  where t2.Population IN (select max(t2.Population) AS Population from t2, t1 where t2.Country = t1.Code group by Continent);
 
 #
@@ -696,7 +707,7 @@ CREATE TABLE `t1` (
 INSERT INTO t1 VALUES (1);
 UPDATE t1 SET i=i+(SELECT MAX(i) FROM (SELECT 1) t) WHERE i=(SELECT MAX(i));
 UPDATE t1 SET i=i+1 WHERE i=(SELECT MAX(i));
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 UPDATE t1 SET t.i=i+(SELECT MAX(i) FROM (SELECT 1) t);
 select * from t1;
 drop table t1;
@@ -853,7 +864,7 @@ create table t1 (s1 int);
 create table t2 (s1 int);
 insert into t1 values (1);
 insert into t2 values (1);
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 update t1 set  s1 = s1 + 1 where 1 = (select x.s1 as A from t2 WHERE t2.s1 > t1.s1 order by A);
 DROP TABLE t1, t2;
 
@@ -863,9 +874,9 @@ DROP TABLE t1, t2;
 CREATE TABLE t1 (s1 CHAR(5) COLLATE latin1_german1_ci,
                  s2 CHAR(5) COLLATE latin1_swedish_ci);
 INSERT INTO t1 VALUES ('z','?');
--- error 1267
+-- error ER_CANT_AGGREGATE_2COLLATIONS
 select * from t1 where s1 > (select max(s2) from t1);
--- error 1267
+-- error ER_CANT_AGGREGATE_2COLLATIONS
 select * from t1 where s1 > any (select max(s2) from t1);
 drop table t1;
 
@@ -883,7 +894,7 @@ drop table t1, t2;
 # row union
 #
 create table t1 (s1 char(5));
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (select 'a','b' from t1 union select 'a','b' from t1) from t1;
 insert into t1 values ('tttt');
 select * from t1 where ('a','b')=(select 'a','b' from t1 union select 'a','b' from t1);
@@ -961,7 +972,7 @@ CREATE TABLE t1 (id int(11) default NULL) ENGINE=MyISAM CHARSET=latin1;
 INSERT INTO t1 VALUES (1),(5);
 CREATE TABLE t2 (id int(11) default NULL) ENGINE=MyISAM CHARSET=latin1;
 INSERT INTO t2 VALUES (2),(6);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select * from t1 where (1,2,6) in (select * from t2);
 DROP TABLE t1,t2;
 
@@ -971,7 +982,7 @@ DROP TABLE t1,t2;
 create table t1 (s1 int);
 insert into t1 values (1);
 insert into t1 values (2);
--- error 1242
+-- error ER_SUBQUERY_NO_1_ROW
 set sort_buffer_size = (select s1 from t1);
 do (select * from t1);
 drop table t1;
@@ -1001,11 +1012,11 @@ drop table t1, t2;
 #
 create table t1 (s1 int); 
 create table t2 (s1 int);
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 select * from t1 where (select count(*) from t2 where t1.s2) = 1;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 select * from t1 where (select count(*) from t2 group by t1.s2) = 1;
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 select count(*) from t2 group by t1.s2;
 drop table t1, t2;
 
@@ -1030,9 +1041,13 @@ DROP TABLE t1;
 
 create table t1 (a int, b decimal(13, 3)); 
 insert into t1 values (1, 0.123);
+let $outfile = $MYSQLTEST_VARDIR/master-data/test/subselect.out.file.1;
+--error 0,1
+--remove_file $outfile
 select a, (select max(b) from t1) into outfile "subselect.out.file.1" from t1;
 delete from t1;
 load data infile "subselect.out.file.1" into table t1;
+--remove_file $outfile
 select * from t1;
 drop table t1;
 
@@ -1121,7 +1136,7 @@ drop table t1;
 create table t1(id int);
 create table t2(id int);
 create table t3(flag int);
--- error 1064
+-- error ER_PARSE_ERROR
 select (select * from t3 where id not null) from t1, t2;
 drop table t1,t2,t3;
 
@@ -1210,31 +1225,31 @@ SELECT a FROM t1 WHERE a <= ALL (SELECT a FROM t1 HAVING a = 2 UNION SELECT a FR
 SELECT a FROM t1 WHERE a <> ALL (SELECT a FROM t1 HAVING a = 2 UNION SELECT a FROM t1 HAVING a = 2);
 # row tests
 # < > >= <= and = ALL/ <> ANY do not support row operation
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) > ANY (SELECT a FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE a > ANY (SELECT a,2 FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) > ANY (SELECT a,2 FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) > ALL (SELECT a FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE a > ALL (SELECT a,2 FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) > ALL (SELECT a,2 FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) = ALL (SELECT a,2 FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) <> ANY (SELECT a,2 FROM t1 WHERE b = 2);
 # following should be converted to IN
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) = ANY (SELECT a FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE a = ANY (SELECT a,2 FROM t1 WHERE b = 2);
 SELECT a FROM t1 WHERE (1,2) = ANY (SELECT a,2 FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE (1,2) <> ALL (SELECT a FROM t1 WHERE b = 2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 SELECT a FROM t1 WHERE a <> ALL (SELECT a,2 FROM t1 WHERE b = 2);
 SELECT a FROM t1 WHERE (1,2) <> ALL (SELECT a,2 FROM t1 WHERE b = 2);
 SELECT a FROM t1 WHERE (a,1) = ANY (SELECT a,1 FROM t1 WHERE b = 2);
@@ -1346,17 +1361,20 @@ drop table t1,t2;
 CREATE TABLE t1 ( a int, b int );
 CREATE TABLE t2 ( c int, d int );
 INSERT INTO t1 VALUES (1,2), (2,3), (3,4);
-SELECT a AS abc, b FROM t1 WHERE b = (SELECT MIN(b) FROM t1 WHERE a=abc);
-INSERT INTO t2 SELECT a AS abc, b FROM t1 WHERE b = (SELECT MIN(b) FROM t1 WHERE a=abc);
+SELECT a AS abc, b FROM t1 outr WHERE b = 
+  (SELECT MIN(b) FROM t1 WHERE a=outr.a);
+INSERT INTO t2 SELECT a AS abc, b FROM t1 outr WHERE b = 
+  (SELECT MIN(b) FROM t1 WHERE a=outr.a);
 select * from t2;
-CREATE TABLE t3 SELECT a AS abc, b FROM t1 WHERE b = (SELECT MIN(b) FROM t1 WHERE a=abc);
+CREATE TABLE t3 SELECT a AS abc, b FROM t1 outr WHERE b = 
+  (SELECT MIN(b) FROM t1 WHERE a=outr.a);
 select * from t3;
-prepare stmt1 from "INSERT INTO t2 SELECT a AS abc, b FROM t1 WHERE b = (SELECT MIN(b) FROM t1 WHERE a=abc);";
+prepare stmt1 from "INSERT INTO t2 SELECT a AS abc, b FROM t1 outr WHERE b = (SELECT MIN(b) FROM t1 WHERE a=outr.a);";
 execute stmt1;
 deallocate prepare stmt1;
 select * from t2;
 drop table t3;
-prepare stmt1 from "CREATE TABLE t3 SELECT a AS abc, b FROM t1 WHERE b = (SELECT MIN(b) FROM t1 WHERE a=abc);";
+prepare stmt1 from "CREATE TABLE t3 SELECT a AS abc, b FROM t1 outr WHERE b = (SELECT MIN(b) FROM t1 WHERE a=outr.a);";
 execute stmt1;
 select * from t3;
 deallocate prepare stmt1;
@@ -1436,7 +1454,7 @@ CREATE TABLE `t1` ( `master` int(10) unsigned NOT NULL default '0', `map` smalli
 INSERT INTO `t1` VALUES (1,0,0,700),(1,1,1,400),(1,5,5,400),(1,12,12,400),(1,12,32,400),(4,12,32,400);
 CREATE TABLE `t2` ( `id` int(10) unsigned NOT NULL default '0', `pid` int(10) unsigned NOT NULL default '0', `map` smallint(6) unsigned NOT NULL default '0', `level` tinyint(4) unsigned NOT NULL default '0', `title` varchar(255) default NULL, PRIMARY KEY  (`id`,`pid`,`map`), KEY `level` (`level`), KEY `id` (`id`,`map`)) ;
 INSERT INTO `t2` VALUES (6,5,12,7,'a'),(12,0,0,7,'a'),(12,1,0,7,'a'),(12,5,5,7,'a'),(12,5,12,7,'a');
--- error 1054
+-- error ER_BAD_FIELD_ERROR
 SELECT b.sc FROM (SELECT (SELECT a.access FROM t1 a WHERE a.map = op.map AND a.slave = op.pid AND a.master = 1) ac FROM t2 op WHERE op.id = 12 AND op.map = 0) b;
 SELECT b.ac FROM (SELECT (SELECT a.access FROM t1 a WHERE a.map = op.map AND a.slave = op.pid AND a.master = 1) ac FROM t2 op WHERE op.id = 12 AND op.map = 0) b;
 drop tables t1,t2;
@@ -1529,7 +1547,9 @@ INSERT INTO t1 VALUES ('ASM','American Samoa','Oceania','Polynesia',199.00,0,680
 INSERT INTO t1 VALUES ('ATF','French Southern territories','Antarctica','Antarctica',7780.00,0,0,NULL,0.00,NULL,'Terres australes françaises','Nonmetropolitan Territory of France','Jacques Chirac',NULL,'TF');
 INSERT INTO t1 VALUES ('UMI','United States Minor Outlying Islands','Oceania','Micronesia/Caribbean',16.00,0,0,NULL,0.00,NULL,'United States Minor Outlying Islands','Dependent Territory of the US','George W. Bush',NULL,'UM');
 /*!40000 ALTER TABLE t1 ENABLE KEYS */;
-SELECT DISTINCT Continent AS c FROM t1 WHERE Code <> SOME ( SELECT Code FROM t1 WHERE Continent = c AND Population < 200);
+SELECT DISTINCT Continent AS c FROM t1 outr WHERE 
+  Code <> SOME ( SELECT Code FROM t1 WHERE Continent = outr.Continent AND 
+  Population < 200);
 drop table t1;
 
 #
@@ -1538,7 +1558,7 @@ drop table t1;
 #
 create table t1 (a1 int);
 create table t2 (b1 int);
---error 1054
+--error ER_BAD_FIELD_ERROR
 select * from t1 where a2 > any(select b1 from t2);
 select * from t1 where a1 > any(select b1 from t2);
 drop table t1,t2;
@@ -1559,11 +1579,11 @@ drop table t1;
 # Comparison subquery and row with nested rows
 #
 create table t1 (a integer, b integer);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select row(1,(2,2)) in (select * from t1 );
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select row(1,(2,2)) = (select * from t1 );
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (select * from t1) = row(1,(2,2));
 drop table t1;
 
@@ -1572,14 +1592,14 @@ drop table t1;
 #
 create  table t1 (a integer);
 insert into t1 values (1);
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 select 1 = ALL (select 1 from t1 where 1 = xx ), 1 as xx ;
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 select 1 = ALL (select 1 from t1 where 1 = xx ), 1 as xx;
 select 1 as xx, 1 = ALL (  select 1 from t1 where 1 = xx );
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 select 1 = ALL (select 1 from t1 where 1 = xx ), 1 as xx;
--- error 1247
+-- error ER_ILLEGAL_REFERENCE
 select 1 = ALL (select 1 from t1 where 1 = xx ), 1 as xx from DUAL;
 drop table t1;
 
@@ -1716,17 +1736,17 @@ drop table t1, t2;
 #
 create table t1 (a int, b int);
 insert into t1 values (1,2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select 1 = (select * from t1);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (select * from t1) = 1;
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (1,2) = (select a from t1);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (select a from t1) = (1,2);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (1,2,3) = (select * from t1);
--- error 1241
+-- error ER_OPERAND_COLUMNS
 select (select * from t1) = (1,2,3);
 drop table t1;
 
@@ -2007,21 +2027,21 @@ INSERT INTO t2 VALUES
   (2,1), (1,3), (2,1), (4,4), (2,2), (1,4);
 
 SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 2 );
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 1);
 SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 2), a;
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT a FROM t1 ORDER BY (SELECT c FROM t2 WHERE b > 1), a;
 
 SELECT b, MAX(c) FROM t2 GROUP BY b, (SELECT c FROM t2 WHERE b > 2);
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT b, MAX(c) FROM t2 GROUP BY b, (SELECT c FROM t2 WHERE b > 1);
 
 
 SELECT a FROM t1 GROUP BY a
   HAVING IFNULL((SELECT b FROM t2 WHERE b > 2),
                 (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b)) > 3;
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT a FROM t1 GROUP BY a
   HAVING IFNULL((SELECT b FROM t2 WHERE b > 1),
                 (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b)) > 3;
@@ -2029,7 +2049,7 @@ SELECT a FROM t1 GROUP BY a
 SELECT a FROM t1 GROUP BY a
   HAVING IFNULL((SELECT b FROM t2 WHERE b > 4),
                 (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b)) > 3;
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT a FROM t1 GROUP BY a
   HAVING IFNULL((SELECT b FROM t2 WHERE b > 4),
                 (SELECT c FROM t2 WHERE c=a AND b > 1 ORDER BY b)) > 3;
@@ -2037,7 +2057,7 @@ SELECT a FROM t1 GROUP BY a
 SELECT a FROM t1
   ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 2),
                   (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b));
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT a FROM t1
   ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 1),
                   (SELECT c FROM t2 WHERE c=a AND b > 1 ORDER BY b));
@@ -2045,7 +2065,7 @@ SELECT a FROM t1
 SELECT a FROM t1
   ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 4),
                   (SELECT c FROM t2 WHERE c=a AND b > 2 ORDER BY b));
---error 1242
+--error ER_SUBQUERY_NO_1_ROW
 SELECT a FROM t1
   ORDER BY IFNULL((SELECT b FROM t2 WHERE b > 4),
                   (SELECT c FROM t2 WHERE c=a AND b > 1 ORDER BY b));
@@ -2256,12 +2276,12 @@ SELECT t1.a FROM t1 GROUP BY t1.a
        HAVING t1.a > ALL(SELECT t2.c FROM t2
                            WHERE EXISTS(SELECT t3.e FROM t3 GROUP BY t3.e
                                           HAVING SUM(t1.a+t2.c) < t3.e/4));
--- error 1111
+-- error ER_INVALID_GROUP_FUNC_USE
 SELECT t1.a FROM t1 GROUP BY t1.a
        HAVING t1.a > ALL(SELECT t2.c FROM t2
                            WHERE EXISTS(SELECT t3.e FROM t3 
                                           WHERE SUM(t1.a+t2.c) < t3.e/4));
--- error 1111 
+-- error ER_INVALID_GROUP_FUNC_USE 
 SELECT t1.a from t1 GROUP BY t1.a HAVING AVG(SUM(t1.b)) > 20;
 
 SELECT t1.a FROM t1 GROUP BY t1.a
@@ -2323,11 +2343,11 @@ drop table t1, t2;
 
 CREATE TABLE t1 (a INT);
 
---error 1054
+--error ER_BAD_FIELD_ERROR
 CREATE VIEW v1 AS SELECT * FROM t1 WHERE no_such_column = ANY (SELECT 1);
---error 1054
+--error ER_BAD_FIELD_ERROR
 CREATE VIEW v2 AS SELECT * FROM t1 WHERE no_such_column = (SELECT 1);
---error 1054
+--error ER_BAD_FIELD_ERROR
 SELECT * FROM t1 WHERE no_such_column = ANY (SELECT 1);
 
 DROP TABLE t1;
@@ -2448,20 +2468,26 @@ DROP TABLE t1, t2;
 CREATE TABLE t1 (i INT);
 
 (SELECT i FROM t1) UNION (SELECT i FROM t1);
+#TODO:not supported
+--error ER_PARSE_ERROR
 SELECT sql_no_cache * FROM t1 WHERE NOT EXISTS 
   (
    (SELECT i FROM t1) UNION 
    (SELECT i FROM t1)
   );
 
+#TODO:not supported
+--error ER_PARSE_ERROR
 SELECT * FROM t1 
 WHERE NOT EXISTS (((SELECT i FROM t1) UNION (SELECT i FROM t1)));
 
 #TODO:not supported
---error 1064
+--error ER_PARSE_ERROR
 explain select ((select t11.i from t1 t11) union (select t12.i from t1 t12))
   from t1;
-#supported
+
+#TODO:not supported
+--error ER_PARSE_ERROR
 explain select * from t1 where not exists 
   ((select t11.i from t1 t11) union (select t12.i from t1 t12));
 
@@ -2826,12 +2852,12 @@ SELECT a FROM t1 t0
   WHERE (SELECT COUNT(t0.b) FROM t1 t WHERE t.b>20) GROUP BY a;
 
 SET @@sql_mode='ansi';
---error 1111
+--error ER_INVALID_GROUP_FUNC_USE
 SELECT a FROM t1 WHERE (SELECT COUNT(b) FROM DUAL) > 0 GROUP BY a;
---error 1111
+--error ER_INVALID_GROUP_FUNC_USE
 SELECT a FROM t1 WHERE (SELECT COUNT(b) FROM DUAL) > 1 GROUP BY a;
 
---error 1111
+--error ER_INVALID_GROUP_FUNC_USE
 SELECT a FROM t1 t0
   WHERE (SELECT COUNT(t0.b) FROM t1 t WHERE t.b>20) GROUP BY a;
 
@@ -2945,4 +2971,329 @@ SELECT (SELECT 1 FROM  t1 WHERE t1.a=t2.a ORDER BY t1.b LIMIT 1) AS d1 FROM t2;
 
 DROP TABLE t1,t2;
 
+
+#
+# Bug #27333: subquery grouped for aggregate of outer query / no aggregate
+# of subquery
+#
+CREATE TABLE t1 (a INTEGER, b INTEGER);
+CREATE TABLE t2 (x INTEGER);
+INSERT INTO t1 VALUES (1,11), (2,22), (2,22);
+INSERT INTO t2 VALUES (1), (2);
+
+# wasn't failing, but should
+--error ER_SUBQUERY_NO_1_ROW
+SELECT a, COUNT(b), (SELECT COUNT(b) FROM t2) FROM t1 GROUP BY a;
+
+# fails as it should
+--error ER_SUBQUERY_NO_1_ROW
+SELECT a, COUNT(b), (SELECT COUNT(b)+0 FROM t2) FROM t1 GROUP BY a;
+
+SELECT (SELECT SUM(t1.a)/AVG(t2.x) FROM t2) FROM t1;
+DROP TABLE t1,t2;
+
+# second test case from 27333
+CREATE TABLE t1 (a INT, b INT);
+INSERT INTO t1 VALUES (1, 2), (1,3), (1,4), (2,1), (2,2);
+
+# returns no rows, when it should
+SELECT a1.a, COUNT(*) FROM t1 a1 WHERE a1.a = 1
+AND EXISTS( SELECT a2.a FROM t1 a2 WHERE a2.a = a1.a)
+GROUP BY a1.a;
+DROP TABLE t1;
+
+#test cases from 29297
+CREATE TABLE t1 (a INT);
+CREATE TABLE t2 (a INT);
+INSERT INTO t1 VALUES (1),(2);
+INSERT INTO t2 VALUES (1),(2);
+SELECT (SELECT SUM(t1.a) FROM t2 WHERE a=0) FROM t1;
+--error ER_SUBQUERY_NO_1_ROW
+SELECT (SELECT SUM(t1.a) FROM t2 WHERE a!=0) FROM t1;
+SELECT (SELECT SUM(t1.a) FROM t2 WHERE a=1) FROM t1;
+DROP TABLE t1,t2;
+
+#
+# Bug31048: Many nested subqueries may cause server crash.
+#
+create table t1(a int,b int,key(a),key(b));
+insert into t1(a,b) values (1,2),(2,1),(2,3),(3,4),(5,4),(5,5),
+  (6,7),(7,4),(5,3);
+
+let $nesting= 26;
+let $should_work_nesting= 5;
+let $start= select sum(a),a from t1 where a> ( select sum(a) from t1 ;
+let $end= )group by a ;
+let $start_app= where a> ( select sum(a) from t1 ;
+let $end_pre= )group by b limit 1 ;
+
+--disable_result_log
+--disable_query_log
+# At least 4 level nesting should work without errors
+while ($should_work_nesting)
+{
+--echo $should_work_nesting
+  eval $start $end;
+  eval explain $start $end;
+  let $start= $start
+  $start_app;
+  let $end= $end_pre
+  $end;
+  dec $should_work_nesting;
+}
+# Other may fail with the 'stack overrun error'
+while ($nesting)
+{
+--echo $nesting
+--error 0,ER_STACK_OVERRUN_NEED_MORE
+  eval $start $end;
+--error 0,ER_STACK_OVERRUN_NEED_MORE
+  eval explain $start $end;
+  let $start= $start
+  $start_app;
+  let $end= $end_pre
+  $end;
+  dec $nesting;
+}
+--enable_result_log
+--enable_query_log
+drop table t1;
+
+#
+# Bug #31884: Assertion + crash in subquery in the SELECT clause.
+#
+
+CREATE TABLE t1 (a1 INT, a2 INT);
+CREATE TABLE t2 (b1 INT, b2 INT);
+
+INSERT INTO t1 VALUES (100, 200);
+INSERT INTO t1 VALUES (101, 201);
+INSERT INTO t2 VALUES (101, 201);
+INSERT INTO t2 VALUES (103, 203);
+
+SELECT ((a1,a2) IN (SELECT * FROM t2 WHERE b2 > 0)) IS NULL FROM t1;
+DROP TABLE t1, t2;
+
+#
+# Bug #28076: inconsistent binary/varbinary comparison
+#
+
+CREATE TABLE t1 (s1 BINARY(5), s2 VARBINARY(5));
+INSERT INTO t1 VALUES (0x41,0x41), (0x42,0x42), (0x43,0x43);
+
+SELECT s1, s2 FROM t1 WHERE s2 IN (SELECT s1 FROM t1);
+SELECT s1, s2 FROM t1 WHERE (s2, 10) IN (SELECT s1, 10 FROM t1);
+
+CREATE INDEX I1 ON t1 (s1);
+CREATE INDEX I2 ON t1 (s2);
+
+SELECT s1, s2 FROM t1 WHERE s2 IN (SELECT s1 FROM t1);
+SELECT s1, s2 FROM t1 WHERE (s2, 10) IN (SELECT s1, 10 FROM t1);
+
+TRUNCATE t1;
+INSERT INTO t1 VALUES (0x41,0x41);
+SELECT * FROM t1 WHERE s1 = (SELECT s2 FROM t1);
+
+DROP TABLE t1;
+
+CREATE TABLE t1 (a1 VARBINARY(2) NOT NULL DEFAULT '0', PRIMARY KEY (a1));
+CREATE TABLE t2 (a2 BINARY(2) default '0', INDEX (a2));
+CREATE TABLE t3 (a3 BINARY(2) default '0');
+INSERT INTO t1 VALUES (1),(2),(3),(4);
+INSERT INTO t2 VALUES (1),(2),(3);
+INSERT INTO t3 VALUES (1),(2),(3);
+SELECT LEFT(t2.a2, 1) FROM t2,t3 WHERE t3.a3=t2.a2;
+SELECT t1.a1, t1.a1 in (SELECT t2.a2 FROM t2,t3 WHERE t3.a3=t2.a2) FROM t1;
+DROP TABLE t1,t2,t3;
+
+CREATE TABLE t1 (a1 BINARY(3) PRIMARY KEY, b1 VARBINARY(3));
+CREATE TABLE t2 (a2 VARBINARY(3) PRIMARY KEY);
+CREATE TABLE t3 (a3 VARBINARY(3) PRIMARY KEY);
+INSERT INTO t1 VALUES (1,10), (2,20), (3,30), (4,40);
+INSERT INTO t2 VALUES (2), (3), (4), (5);
+INSERT INTO t3 VALUES (10), (20), (30);
+SELECT LEFT(t1.a1,1) FROM t1,t3 WHERE t1.b1=t3.a3;
+SELECT a2 FROM t2 WHERE t2.a2 IN (SELECT t1.a1 FROM t1,t3 WHERE t1.b1=t3.a3);
+DROP TABLE t1, t2, t3;
+
+#
+# Bug #30788: Inconsistent retrieval of char/varchar
+#
+
+CREATE TABLE t1 (a CHAR(1), b VARCHAR(10));
+INSERT INTO t1 VALUES ('a', 'aa');
+INSERT INTO t1 VALUES ('a', 'aaa');
+SELECT a,b FROM t1 WHERE b IN (SELECT a FROM t1);
+CREATE INDEX I1 ON t1 (a);
+CREATE INDEX I2 ON t1 (b);
+EXPLAIN SELECT a,b FROM t1 WHERE b IN (SELECT a FROM t1);
+SELECT a,b FROM t1 WHERE b IN (SELECT a FROM t1);
+
+CREATE TABLE t2 (a VARCHAR(1), b VARCHAR(10));
+INSERT INTO t2 SELECT * FROM t1;
+CREATE INDEX I1 ON t2 (a);
+CREATE INDEX I2 ON t2 (b);
+EXPLAIN SELECT a,b FROM t2 WHERE b IN (SELECT a FROM t2);
+SELECT a,b FROM t2 WHERE b IN (SELECT a FROM t2);
+EXPLAIN
+SELECT a,b FROM t1 WHERE b IN (SELECT a FROM t1 WHERE LENGTH(a)<500);
+SELECT a,b FROM t1 WHERE b IN (SELECT a FROM t1 WHERE LENGTH(a)<500);
+
+DROP TABLE t1,t2;
+
+#
+# Bug #32400: Complex SELECT query returns correct result only on some
+# occasions
+#
+
+CREATE TABLE t1(a INT, b INT);
+INSERT INTO t1 VALUES (1,1), (1,2), (2,3), (2,4);
+
+--error ER_BAD_FIELD_ERROR
+EXPLAIN 
+SELECT a AS out_a, MIN(b) FROM t1
+WHERE b > (SELECT MIN(b) FROM t1 WHERE a = out_a)
+GROUP BY a;
+
+--error ER_BAD_FIELD_ERROR
+SELECT a AS out_a, MIN(b) FROM t1
+WHERE b > (SELECT MIN(b) FROM t1 WHERE a = out_a)
+GROUP BY a;
+
+EXPLAIN 
+SELECT a AS out_a, MIN(b) FROM t1 t1_outer
+WHERE b > (SELECT MIN(b) FROM t1 WHERE a = t1_outer.a)
+GROUP BY a;
+
+SELECT a AS out_a, MIN(b) FROM t1 t1_outer
+WHERE b > (SELECT MIN(b) FROM t1 WHERE a = t1_outer.a)
+GROUP BY a;
+
+DROP TABLE t1;
+
+#
+# Bug #32036: EXISTS within a WHERE clause with a UNION crashes MySQL 5.122
+#
+
+CREATE TABLE t1 (a INT);
+CREATE TABLE t2 (a INT);
+
+INSERT INTO t1 VALUES (1),(2);
+INSERT INTO t2 VALUES (1),(2);
+
+SELECT 2 FROM t1 WHERE EXISTS ((SELECT 1 FROM t2 WHERE t1.a=t2.a));
+EXPLAIN EXTENDED
+SELECT 2 FROM t1 WHERE EXISTS ((SELECT 1 FROM t2 WHERE t1.a=t2.a));
+
+
+#TODO:not supported
+--error ER_PARSE_ERROR
+EXPLAIN EXTENDED
+SELECT 2 FROM t1 WHERE EXISTS ((SELECT 1 FROM t2 WHERE t1.a=t2.a) UNION 
+                               (SELECT 1 FROM t2 WHERE t1.a = t2.a));
+
+DROP TABLE t1,t2;
+
+
+#
+# Bug#33675: Usage of an uninitialized memory by filesort in a subquery
+#            caused server crash.
+#
+create table t1(f11 int, f12 int);
+create table t2(f21 int unsigned not null, f22 int, f23 varchar(10));
+insert into t1 values(1,1),(2,2), (3, 3);
+let $i=10000;
+--disable_query_log
+--disable_warnings
+while ($i)
+{
+  eval insert into t2 values (-1 , $i/5000 + 1, '$i');
+  dec $i;
+}
+--enable_warnings
+--enable_query_log
+set session sort_buffer_size= 33*1024;
+select count(*) from t1 where f12 = 
+(select f22 from t2 where f22 = f12 order by f21 desc, f22, f23 limit 1);
+
+drop table t1,t2;
+
+#
+# BUG#33794 "MySQL crashes executing specific query on specific dump"
+#
+CREATE TABLE t4 (
+  f7 varchar(32) collate utf8_bin NOT NULL default '',
+  f10 varchar(32) collate utf8_bin default NULL,
+  PRIMARY KEY  (f7)
+);
+INSERT INTO t4 VALUES(1,1), (2,null);
+
+CREATE TABLE t2 (
+  f4 varchar(32) collate utf8_bin NOT NULL default '',
+  f2 varchar(50) collate utf8_bin default NULL,
+  f3 varchar(10) collate utf8_bin default NULL,
+  PRIMARY KEY  (f4),
+  UNIQUE KEY uk1 (f2)
+);
+INSERT INTO t2 VALUES(1,1,null), (2,2,null);
+
+CREATE TABLE t1 (
+  f8 varchar(32) collate utf8_bin NOT NULL default '',
+  f1 varchar(10) collate utf8_bin default NULL,
+  f9 varchar(32) collate utf8_bin default NULL,
+  PRIMARY KEY  (f8)
+);
+INSERT INTO t1 VALUES (1,'P',1), (2,'P',1), (3,'R',2);
+
+CREATE TABLE t3 (
+  f6 varchar(32) collate utf8_bin NOT NULL default '',
+  f5 varchar(50) collate utf8_bin default NULL,
+  PRIMARY KEY (f6)
+);
+INSERT INTO t3 VALUES (1,null), (2,null);
+
+SELECT
+  IF(t1.f1 = 'R', a1.f2, t2.f2) AS a4,
+  IF(t1.f1 = 'R', a1.f3, t2.f3) AS f3,
+  SUM(
+    IF(
+      (SELECT VPC.f2
+       FROM t2 VPC, t4 a2, t2 a3
+       WHERE
+         VPC.f4 = a2.f10 AND a3.f2 = a4
+       LIMIT 1) IS NULL, 
+       0, 
+       t3.f5
+    )
+  ) AS a6
+FROM 
+  t2, t3, t1 JOIN t2 a1 ON t1.f9 = a1.f4
+GROUP BY a4;
+
+DROP TABLE t1, t2, t3, t4;
+
+#
+# BUG#36139 "float, zerofill, crash with subquery"
+#
+create table t1 (a float(5,4) zerofill);
+create table t2 (a float(5,4),b float(2,0));
+
+select t1.a from t1 where   
+  t1.a= (select b from t2 limit 1) and not
+  t1.a= (select a from t2 limit 1) ;
+
+drop table t1, t2;
+
+#
+# Bug #36011: Server crash with explain extended on query with dependent
+# subqueries
+#
+
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2);
+EXPLAIN EXTENDED SELECT 1 FROM t1 WHERE 1 IN (SELECT 1 FROM t1 GROUP BY a);
+EXPLAIN EXTENDED SELECT 1 FROM t1 WHERE 1 IN (SELECT 1 FROM t1 WHERE a > 3 GROUP BY a);
+DROP TABLE t1;
+
 --echo End of 5.0 tests.
+

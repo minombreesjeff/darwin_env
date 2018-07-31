@@ -1037,7 +1037,7 @@ retry:
 	if (!has_slept && !trx->has_search_latch
 	    && NULL == UT_LIST_GET_FIRST(trx->trx_locks)) {
 
-	        has_slept = TRUE; /* We let is sleep only once to avoid
+		has_slept = TRUE; /* We let it sleep only once to avoid
 				  starvation */
 
 		srv_conc_n_waiting_threads++;
@@ -1151,7 +1151,7 @@ srv_conc_force_enter_innodb(
 
 	srv_conc_n_threads++;
 	trx->declared_to_be_inside_innodb = TRUE;
-	trx->n_tickets_to_enter_innodb = 0;
+	trx->n_tickets_to_enter_innodb = 1;
 
 	os_fast_mutex_unlock(&srv_conc_mutex);
 }
@@ -1858,6 +1858,7 @@ srv_lock_timeout_and_monitor_thread(
 	double		time_elapsed;
 	time_t          current_time;
 	time_t		last_table_monitor_time;
+	time_t		last_tablespace_monitor_time;
 	time_t		last_monitor_time;
 	ibool		some_waits;
 	double		wait_time;
@@ -1870,6 +1871,7 @@ srv_lock_timeout_and_monitor_thread(
 	UT_NOT_USED(arg);
 	srv_last_monitor_time = time(NULL);
 	last_table_monitor_time = time(NULL);
+	last_tablespace_monitor_time = time(NULL);
 	last_monitor_time = time(NULL);
 loop:
 	srv_lock_timeout_and_monitor_active = TRUE;
@@ -1878,12 +1880,6 @@ loop:
 	and check if a timeout has passed for a lock wait */
 
 	os_thread_sleep(1000000);
-
-	/* In case mutex_exit is not a memory barrier, it is
-	theoretically possible some threads are left waiting though
-	the semaphore is already released. Wake up those threads: */
-	
-	sync_arr_wake_threads_if_sema_free();
 
 	current_time = time(NULL);
 
@@ -1905,9 +1901,9 @@ loop:
 	    }
 
 	    if (srv_print_innodb_tablespace_monitor
-		&& difftime(current_time, last_table_monitor_time) > 60) {
+		&& difftime(current_time, last_tablespace_monitor_time) > 60) {
 
-		last_table_monitor_time = time(NULL);	
+		last_tablespace_monitor_time = time(NULL);	
 
 		fputs("================================================\n",
 			stderr);
@@ -2081,9 +2077,15 @@ loop:
 		srv_refresh_innodb_monitor_stats();
 	}
 
+	/* In case mutex_exit is not a memory barrier, it is
+	theoretically possible some threads are left waiting though
+	the semaphore is already released. Wake up those threads: */
+	
+	sync_arr_wake_threads_if_sema_free();
+
 	if (sync_array_print_long_waits()) {
 		fatal_cnt++;
-		if (fatal_cnt > 5) {
+		if (fatal_cnt > 10) {
 
 			fprintf(stderr,
 "InnoDB: Error: semaphore wait has lasted > %lu seconds\n"
@@ -2101,9 +2103,9 @@ loop:
 
 	fflush(stderr);
 
-	os_thread_sleep(2000000);
+	os_thread_sleep(1000000);
 
-	if (srv_shutdown_state < SRV_SHUTDOWN_LAST_PHASE) {
+	if (srv_shutdown_state < SRV_SHUTDOWN_CLEANUP) {
 
 		goto loop;
 	}

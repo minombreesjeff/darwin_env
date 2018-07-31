@@ -738,6 +738,19 @@ explain extended select encode(f1,'zxcv') as 'enc' from t1;
 explain extended select decode(f1,'zxcv') as 'enc' from t1;
 drop table t1;
 
+#
+# Bug #31758 inet_ntoa, oct, crashes server with null + filesort 
+#
+create table t1 (a bigint not null)engine=myisam;
+insert into t1 set a = 1024*1024*1024*4;
+delete from t1 order by (inet_ntoa(a)) desc limit 10;
+drop table t1;
+create table t1 (a char(36) not null)engine=myisam;
+insert ignore into t1 set a = ' ';
+insert ignore into t1 set a = ' ';
+select * from t1 order by (oct(a));
+drop table t1;
+
 --echo End of 4.1 tests
 
 #
@@ -1074,6 +1087,66 @@ SELECT * FROM v1;
 SELECT * FROM (SELECT * FROM v1) x;
 
 DROP TABLE t1, t2;
+DROP VIEW v1;
+
+#
+# Bug #27932: LOCATE with argument evaluated to NULL
+#
+
+SELECT LOCATE('foo', NULL) FROM DUAL;
+SELECT LOCATE(NULL, 'o') FROM DUAL;
+SELECT LOCATE(NULL, NULL) FROM DUAL;
+SELECT LOCATE('foo', NULL) IS NULL FROM DUAL;
+SELECT LOCATE(NULL, 'o') IS NULL FROM DUAL;
+SELECT LOCATE(NULL, NULL) IS NULL FROM DUAL;
+SELECT ISNULL(LOCATE('foo', NULL)) FROM DUAL;
+SELECT ISNULL(LOCATE(NULL, 'o')) FROM DUAL;
+SELECT ISNULL(LOCATE(NULL, NULL)) FROM DUAL;
+SELECT LOCATE('foo', NULL) <=> NULL FROM DUAL;
+SELECT LOCATE(NULL, 'o') <=> NULL FROM DUAL;
+SELECT LOCATE(NULL, NULL) <=> NULL FROM DUAL;
+
+CREATE TABLE t1 (id int NOT NULL PRIMARY KEY, a varchar(10), p varchar(10));
+
+INSERT INTO t1 VALUES (1, 'foo', 'o');
+INSERT INTO t1 VALUES (2, 'foo', NULL);
+INSERT INTO t1 VALUES (3, NULL, 'o');
+INSERT INTO t1 VALUES (4, NULL, NULL);
+
+SELECT id, LOCATE(a,p) FROM t1;
+SELECT id, LOCATE(a,p) IS NULL FROM t1;
+SELECT id, ISNULL(LOCATE(a,p)) FROM t1;
+SELECT id, LOCATE(a,p) <=> NULL FROM t1;
+SELECT id FROM t1 WHERE LOCATE(a,p) IS NULL;
+SELECT id FROM t1 WHERE LOCATE(a,p) <=> NULL; 
+
+DROP TABLE t1;
+
+#
+# Bug #27130: SUBSTR with UNSIGNED 0 as the last argument
+#
+
+SELECT SUBSTR('foo',1,0) FROM DUAL;
+SELECT SUBSTR('foo',1,CAST(0 AS SIGNED)) FROM DUAL;
+SELECT SUBSTR('foo',1,CAST(0 AS UNSIGNED)) FROM DUAL;
+
+CREATE TABLE t1 (a varchar(10), len int unsigned);
+INSERT INTO t1 VALUES ('bar', 2), ('foo', 0);
+
+SELECT SUBSTR(a,1,len) FROM t1;
+
+DROP TABLE t1; 
+
+#
+# Bug #28850: Potential bugs related to the return type of the CHAR function
+#
+
+CREATE TABLE t1 AS SELECT CHAR(0x414243) as c1;
+SELECT HEX(c1) from t1;
+DROP TABLE t1;
+
+CREATE VIEW v1 AS SELECT CHAR(0x414243) as c1;
+SELECT HEX(c1) from v1;
 DROP VIEW v1;
 
 --echo End of 5.0 tests

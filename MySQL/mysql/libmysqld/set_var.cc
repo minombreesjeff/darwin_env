@@ -113,6 +113,9 @@ static int check_max_delayed_threads(THD *thd, set_var *var);
 static void fix_thd_mem_root(THD *thd, enum_var_type type);
 static void fix_trans_mem_root(THD *thd, enum_var_type type);
 static void fix_server_id(THD *thd, enum_var_type type);
+static ulonglong fix_unsigned(THD *, ulonglong, const struct my_option *);
+static bool get_unsigned(THD *thd, set_var *var);
+static void throw_bounds_warning(THD *thd, const char *name, ulonglong num);
 static KEY_CACHE *create_key_cache(const char *name, uint length);
 void fix_sql_mode_var(THD *thd, enum_var_type type);
 static byte *get_error_count(THD *thd);
@@ -201,6 +204,7 @@ sys_var_key_cache_long  sys_key_cache_age_threshold("key_cache_age_threshold",
 							      param_age_threshold));
 sys_var_bool_ptr	sys_local_infile("local_infile",
 					 &opt_local_infile);
+sys_var_bool_const_ptr sys_log("log", &opt_log);
 sys_var_trust_routine_creators
 sys_trust_routine_creators("log_bin_trust_routine_creators",
                            &trust_function_creators);
@@ -213,6 +217,7 @@ sys_var_bool_ptr
 sys_var_thd_ulong	sys_log_warnings("log_warnings", &SV::log_warnings);
 sys_var_thd_ulong	sys_long_query_time("long_query_time",
 					     &SV::long_query_time);
+sys_var_bool_const_ptr sys_log_slow("log_slow_queries", &opt_slow_log);
 sys_var_thd_bool	sys_low_priority_updates("low_priority_updates",
 						 &SV::low_priority_updates,
 						 fix_low_priority_updates);
@@ -598,6 +603,10 @@ sys_var_const_str		sys_license("license", STRINGIFY_ARG(LICENSE));
 /* Global read-only variable containing hostname */
 sys_var_const_str		sys_hostname("hostname", glob_hostname);
 
+sys_var_thd_bool  sys_keep_files_on_create("keep_files_on_create", 
+                                           &SV::keep_files_on_create);
+							    
+
 
 
 /*
@@ -643,6 +652,7 @@ sys_var *sys_variables[]=
   &sys_delayed_insert_limit,
   &sys_delayed_insert_timeout,
   &sys_delayed_queue_size,
+  &sys_keep_files_on_create,
   &sys_error_count,
   &sys_expire_logs_days,
   &sys_flush,
@@ -666,9 +676,11 @@ sys_var *sys_variables[]=
   &sys_lc_time_names,
   &sys_license,
   &sys_local_infile,
+  &sys_log,
   &sys_log_binlog,
   &sys_log_off,
   &sys_log_queries_not_using_indexes,
+  &sys_log_slow,
   &sys_log_update,
   &sys_log_warnings,
   &sys_long_query_time,
@@ -789,7 +801,6 @@ sys_var *sys_variables[]=
   &sys_innodb_max_purge_lag,
   &sys_innodb_table_locks,
   &sys_innodb_support_xa,
-  &sys_innodb_max_purge_lag,
   &sys_innodb_autoextend_increment,
   &sys_innodb_sync_spin_loops,
   &sys_innodb_concurrency_tickets,
@@ -859,6 +870,7 @@ struct show_var_st init_vars[]= {
   {sys_delayed_insert_timeout.name, (char*) &sys_delayed_insert_timeout, SHOW_SYS},
   {sys_delayed_queue_size.name,(char*) &sys_delayed_queue_size,     SHOW_SYS},
   {sys_div_precincrement.name,(char*) &sys_div_precincrement,SHOW_SYS},
+  {sys_keep_files_on_create.name,(char*) &sys_keep_files_on_create, SHOW_SYS},
   {sys_engine_condition_pushdown.name,
    (char*) &sys_engine_condition_pushdown,                          SHOW_SYS},
   {sys_expire_logs_days.name, (char*) &sys_expire_logs_days,        SHOW_SYS},
@@ -905,6 +917,7 @@ struct show_var_st init_vars[]= {
   {sys_innodb_concurrency_tickets.name, (char*) &sys_innodb_concurrency_tickets, SHOW_SYS},
   {"innodb_data_file_path", (char*) &innobase_data_file_path,	    SHOW_CHAR_PTR},
   {"innodb_data_home_dir",  (char*) &innobase_data_home_dir,	    SHOW_CHAR_PTR},
+  {"innodb_adaptive_hash_index", (char*) &innobase_adaptive_hash_index, SHOW_MY_BOOL},
   {"innodb_doublewrite", (char*) &innobase_use_doublewrite, SHOW_MY_BOOL},
   {sys_innodb_fast_shutdown.name,(char*) &sys_innodb_fast_shutdown, SHOW_SYS},
   {"innodb_file_io_threads", (char*) &innobase_file_io_threads, SHOW_LONG },
@@ -950,7 +963,7 @@ struct show_var_st init_vars[]= {
 #ifdef HAVE_MLOCKALL
   {"locked_in_memory",	      (char*) &locked_in_memory,	    SHOW_BOOL},
 #endif
-  {"log",                     (char*) &opt_log,                     SHOW_BOOL},
+  {sys_log.name,              (char*) &sys_log,                     SHOW_SYS},
   {"log_bin",                 (char*) &opt_bin_log,                 SHOW_BOOL},
   {sys_trust_function_creators.name,(char*) &sys_trust_function_creators, SHOW_SYS},
   {"log_error",               (char*) log_error_file,               SHOW_CHAR},
@@ -959,7 +972,7 @@ struct show_var_st init_vars[]= {
 #ifdef HAVE_REPLICATION
   {"log_slave_updates",       (char*) &opt_log_slave_updates,       SHOW_MY_BOOL},
 #endif
-  {"log_slow_queries",        (char*) &opt_slow_log,                SHOW_BOOL},
+  {sys_log_slow.name,         (char*) &sys_log_slow,                SHOW_SYS},
   {sys_log_warnings.name,     (char*) &sys_log_warnings,	    SHOW_SYS},
   {sys_long_query_time.name,  (char*) &sys_long_query_time, 	    SHOW_SYS},
   {sys_low_priority_updates.name, (char*) &sys_low_priority_updates, SHOW_SYS},
@@ -1023,6 +1036,7 @@ struct show_var_st init_vars[]= {
   {sys_optimizer_search_depth.name,(char*) &sys_optimizer_search_depth,
    SHOW_SYS},
   {"pid_file",                (char*) pidfile_name,                 SHOW_CHAR},
+  {"plugin_dir",              (char*) opt_plugin_dir,               SHOW_CHAR},
   {"port",                    (char*) &mysqld_port,                  SHOW_INT},
   {sys_preload_buff_size.name, (char*) &sys_preload_buff_size,      SHOW_SYS},
 #ifdef ENABLED_PROFILING
@@ -1048,6 +1062,9 @@ struct show_var_st init_vars[]= {
   {sys_readonly.name,         (char*) &sys_readonly,                SHOW_SYS},
   {sys_read_rnd_buff_size.name,(char*) &sys_read_rnd_buff_size,	    SHOW_SYS},
 #ifdef HAVE_REPLICATION
+  {"relay_log" , (char*) &opt_relay_logname, SHOW_CHAR_PTR},
+  {"relay_log_index", (char*) &opt_relaylog_index_name, SHOW_CHAR_PTR},
+  {"relay_log_info_file", (char*) &relay_log_info_file, SHOW_CHAR_PTR},
   {sys_relay_log_purge.name,  (char*) &sys_relay_log_purge,         SHOW_SYS},
   {"relay_log_space_limit",  (char*) &relay_log_space_limit,        SHOW_LONGLONG},
 #endif
@@ -1446,6 +1463,40 @@ static void fix_trans_mem_root(THD *thd, enum_var_type type)
 static void fix_server_id(THD *thd, enum_var_type type)
 {
   server_id_supplied = 1;
+  thd->server_id= server_id;
+}
+
+
+static void throw_bounds_warning(THD *thd, const char *name, ulonglong num)
+{
+  char buf[22];
+  push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                      ER_TRUNCATED_WRONG_VALUE,
+                      ER(ER_TRUNCATED_WRONG_VALUE), name,
+                      ullstr(num, buf));
+}
+
+static ulonglong fix_unsigned(THD *thd, ulonglong num,
+                              const struct my_option *option_limits)
+{
+  bool fixed= FALSE;
+  ulonglong out= getopt_ull_limit_value(num, option_limits, &fixed);
+
+  if (fixed)
+    throw_bounds_warning(thd, option_limits->name, num);
+  return out;
+}
+
+static bool get_unsigned(THD *thd, set_var *var)
+{
+  if (var->value->unsigned_flag)
+    var->save_result.ulonglong_value= (ulonglong) var->value->val_int();
+  else
+  {
+    longlong v= var->value->val_int();
+    var->save_result.ulonglong_value= (ulonglong) ((v < 0) ? 0 : v);
+  }
+  return 0;
 }
 
 
@@ -1459,9 +1510,7 @@ sys_var_long_ptr(const char *name_arg, ulong *value_ptr_arg,
 
 bool sys_var_long_ptr_global::check(THD *thd, set_var *var)
 {
-  longlong v= var->value->val_int();
-  var->save_result.ulonglong_value= v < 0 ? 0 : v;
-  return 0;
+  return get_unsigned(thd, var);
 }
 
 bool sys_var_long_ptr_global::update(THD *thd, set_var *var)
@@ -1469,9 +1518,20 @@ bool sys_var_long_ptr_global::update(THD *thd, set_var *var)
   ulonglong tmp= var->save_result.ulonglong_value;
   pthread_mutex_lock(guard);
   if (option_limits)
-    *value= (ulong) getopt_ull_limit_value(tmp, option_limits);
+    *value= (ulong) fix_unsigned(thd, tmp, option_limits);
   else
+  {
+#if SIZEOF_LONG < SIZEOF_LONG_LONG
+    /* Avoid overflows on 32 bit systems */
+    if (tmp > ULONG_MAX)
+    {
+      tmp= ULONG_MAX;
+      throw_bounds_warning(thd, name, var->save_result.ulonglong_value);
+    }
+#endif
     *value= (ulong) tmp;
+  }
+
   pthread_mutex_unlock(guard);
   return 0;
 }
@@ -1479,8 +1539,10 @@ bool sys_var_long_ptr_global::update(THD *thd, set_var *var)
 
 void sys_var_long_ptr_global::set_default(THD *thd, enum_var_type type)
 {
+  bool not_used;
   pthread_mutex_lock(guard);
-  *value= (ulong) option_limits->def_value;
+  *value= (ulong) getopt_ull_limit_value((ulong) option_limits->def_value,
+                                         option_limits, &not_used);
   pthread_mutex_unlock(guard);
 }
 
@@ -1490,7 +1552,7 @@ bool sys_var_ulonglong_ptr::update(THD *thd, set_var *var)
   ulonglong tmp= var->save_result.ulonglong_value;
   pthread_mutex_lock(&LOCK_global_system_variables);
   if (option_limits)
-    *value= (ulonglong) getopt_ull_limit_value(tmp, option_limits);
+    *value= (ulonglong) fix_unsigned(thd, tmp, option_limits);
   else
     *value= (ulonglong) tmp;
   pthread_mutex_unlock(&LOCK_global_system_variables);
@@ -1500,8 +1562,10 @@ bool sys_var_ulonglong_ptr::update(THD *thd, set_var *var)
 
 void sys_var_ulonglong_ptr::set_default(THD *thd, enum_var_type type)
 {
+  bool not_used;
   pthread_mutex_lock(&LOCK_global_system_variables);
-  *value= (ulonglong) option_limits->def_value;
+  *value= getopt_ull_limit_value((ulonglong) option_limits->def_value,
+                                 option_limits, &not_used);
   pthread_mutex_unlock(&LOCK_global_system_variables);
 }
 
@@ -1533,7 +1597,7 @@ byte *sys_var_enum::value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
 
 bool sys_var_thd_ulong::check(THD *thd, set_var *var)
 {
-  return (sys_var_thd::check(thd, var) ||
+  return (get_unsigned(thd, var) ||
           (check_func && (*check_func)(thd, var)));
 }
 
@@ -1543,20 +1607,26 @@ bool sys_var_thd_ulong::update(THD *thd, set_var *var)
 
   /* Don't use bigger value than given with --maximum-variable-name=.. */
   if ((ulong) tmp > max_system_variables.*offset)
+  {
+    throw_bounds_warning(thd, name, tmp);
     tmp= max_system_variables.*offset;
-
-#if SIZEOF_LONG == 4
-  /* Avoid overflows on 32 bit systems */
-  if (tmp > (ulonglong) ~(ulong) 0)
-    tmp= ((ulonglong) ~(ulong) 0);
-#endif
+  }
 
   if (option_limits)
-    tmp= (ulong) getopt_ull_limit_value(tmp, option_limits);
+    tmp= (ulong) fix_unsigned(thd, tmp, option_limits);
+#if SIZEOF_LONG < SIZEOF_LONG_LONG
+  else if (tmp > ULONG_MAX)
+  {
+    tmp= ULONG_MAX;
+    throw_bounds_warning(thd, name, var->save_result.ulonglong_value);
+  }
+#endif
+
   if (var->type == OPT_GLOBAL)
     global_system_variables.*offset= (ulong) tmp;
   else
     thd->variables.*offset= (ulong) tmp;
+
   return 0;
 }
 
@@ -1565,8 +1635,11 @@ void sys_var_thd_ulong::set_default(THD *thd, enum_var_type type)
 {
   if (type == OPT_GLOBAL)
   {
+    bool not_used;
     /* We will not come here if option_limits is not set */
-    global_system_variables.*offset= (ulong) option_limits->def_value;
+    global_system_variables.*offset=
+      (ulong) getopt_ull_limit_value((ulong) option_limits->def_value,
+                                     option_limits, &not_used);
   }
   else
     thd->variables.*offset= global_system_variables.*offset;
@@ -1591,7 +1664,7 @@ bool sys_var_thd_ha_rows::update(THD *thd, set_var *var)
     tmp= max_system_variables.*offset;
 
   if (option_limits)
-    tmp= (ha_rows) getopt_ull_limit_value(tmp, option_limits);
+    tmp= (ha_rows) fix_unsigned(thd, tmp, option_limits);
   if (var->type == OPT_GLOBAL)
   {
     /* Lock is needed to make things safe on 32 bit systems */
@@ -1609,9 +1682,12 @@ void sys_var_thd_ha_rows::set_default(THD *thd, enum_var_type type)
 {
   if (type == OPT_GLOBAL)
   {
+    bool not_used;
     /* We will not come here if option_limits is not set */
     pthread_mutex_lock(&LOCK_global_system_variables);
-    global_system_variables.*offset= (ha_rows) option_limits->def_value;
+    global_system_variables.*offset=
+      (ha_rows) getopt_ull_limit_value((ha_rows) option_limits->def_value,
+                                       option_limits, &not_used);
     pthread_mutex_unlock(&LOCK_global_system_variables);
   }
   else
@@ -1627,6 +1703,11 @@ byte *sys_var_thd_ha_rows::value_ptr(THD *thd, enum_var_type type,
   return (byte*) &(thd->variables.*offset);
 }
 
+bool sys_var_thd_ulonglong::check(THD *thd, set_var *var)
+{
+  return get_unsigned(thd, var);
+}
+
 bool sys_var_thd_ulonglong::update(THD *thd,  set_var *var)
 {
   ulonglong tmp= var->save_result.ulonglong_value;
@@ -1635,7 +1716,7 @@ bool sys_var_thd_ulonglong::update(THD *thd,  set_var *var)
     tmp= max_system_variables.*offset;
 
   if (option_limits)
-    tmp= getopt_ull_limit_value(tmp, option_limits);
+    tmp= fix_unsigned(thd, tmp, option_limits);
   if (var->type == OPT_GLOBAL)
   {
     /* Lock is needed to make things safe on 32 bit systems */
@@ -1653,8 +1734,11 @@ void sys_var_thd_ulonglong::set_default(THD *thd, enum_var_type type)
 {
   if (type == OPT_GLOBAL)
   {
+    bool not_used;
     pthread_mutex_lock(&LOCK_global_system_variables);
-    global_system_variables.*offset= (ulonglong) option_limits->def_value;
+    global_system_variables.*offset=
+      getopt_ull_limit_value((ulonglong) option_limits->def_value,
+                             option_limits, &not_used);
     pthread_mutex_unlock(&LOCK_global_system_variables);
   }
   else
@@ -1757,7 +1841,7 @@ bool sys_var::check_set(THD *thd, set_var *var, TYPELIB *enum_names)
 					    &not_used));
     if (error_len)
     {
-      strmake(buff, error, min(sizeof(buff), error_len));
+      strmake(buff, error, min(sizeof(buff) - 1, error_len));
       goto err;
     }
   }
@@ -1921,7 +2005,7 @@ void sys_var_thd_date_time_format::update2(THD *thd, enum_var_type type,
 {
   DATE_TIME_FORMAT *old;
   DBUG_ENTER("sys_var_date_time_format::update2");
-  DBUG_DUMP("positions",(char*) new_value->positions,
+  DBUG_DUMP("positions", new_value->positions,
 	    sizeof(new_value->positions));
 
   if (type == OPT_GLOBAL)
@@ -2215,6 +2299,21 @@ sys_var_character_set_filesystem::set_default(THD *thd, enum_var_type type)
 }
 
 
+bool sys_var_character_set_client::check(THD *thd, set_var *var)
+{
+  if (sys_var_character_set::check(thd, var))
+    return 1;
+  /* Currently, UCS-2 cannot be used as a client character set */
+  if (var->save_result.charset->mbminlen > 1)
+  {
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), name, 
+             var->save_result.charset->csname); 
+    return 1;
+  }
+  return 0;
+}
+
+
 CHARSET_INFO **
 sys_var_character_set_results::ci_ptr(THD *thd, enum_var_type type)
 {
@@ -2479,7 +2578,7 @@ bool sys_var_key_buffer_size::update(THD *thd, set_var *var)
   }
 
   key_cache->param_buff_size=
-    (ulonglong) getopt_ull_limit_value(tmp, option_limits);
+    (ulonglong) fix_unsigned(thd, tmp, option_limits);
 
   /* If key cache didn't existed initialize it, else resize it */
   key_cache->in_init= 1;
@@ -2527,7 +2626,7 @@ bool sys_var_key_cache_long::update(THD *thd, set_var *var)
     goto end;
 
   *((ulong*) (((char*) key_cache) + offset))=
-    (ulong) getopt_ull_limit_value(tmp, option_limits);
+    (ulong) fix_unsigned(thd, tmp, option_limits);
 
   /*
     Don't create a new key cache if it didn't exist
@@ -2554,6 +2653,13 @@ end:
 
 int set_var_collation_client::check(THD *thd)
 {
+  /* Currently, UCS-2 cannot be used as a client character set */
+  if (character_set_client->mbminlen > 1)
+  {
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), "character_set_client",
+             character_set_client->csname);
+    return 1;
+  }
   return 0;
 }
 
@@ -2909,14 +3015,14 @@ static bool set_option_autocommit(THD *thd, set_var *var)
     {
       /* We changed to auto_commit mode */
       thd->options&= ~OPTION_BEGIN;
-      thd->no_trans_update.all= FALSE;
+      thd->transaction.all.modified_non_trans_table= FALSE;
       thd->server_status|= SERVER_STATUS_AUTOCOMMIT;
       if (ha_commit(thd))
 	return 1;
     }
     else
     {
-      thd->no_trans_update.all= FALSE;
+      thd->transaction.all.modified_non_trans_table= FALSE;
       thd->server_status&= ~SERVER_STATUS_AUTOCOMMIT;
     }
   }

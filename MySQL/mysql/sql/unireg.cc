@@ -165,6 +165,14 @@ bool mysql_create_frm(THD *thd, my_string file_name,
   strmake((char*) forminfo+47, create_info->comment.str ?
           create_info->comment.str : "", create_info->comment.length);
   forminfo[46]=(uchar) create_info->comment.length;
+#ifdef EXTRA_DEBUG
+  /*
+    EXTRA_DEBUG causes strmake() to initialize its buffer behind the
+    payload with a magic value to detect wrong buffer-sizes. We
+    explicitly zero that segment again.
+  */
+  memset((char*) forminfo+47 + forminfo[46], 0, 61 - forminfo[46]);
+#endif
   if (my_pwrite(file,(byte*) fileinfo,64,0L,MYF_RW) ||
       my_pwrite(file,(byte*) keybuff,key_info_length,
 		(ulong) uint2korr(fileinfo+6),MYF_RW))
@@ -285,6 +293,8 @@ int rea_create_table(THD *thd, my_string file_name,
   if (mysql_create_frm(thd, file_name, db, table, create_info,
                        create_fields, keys, key_info, NULL))
     DBUG_RETURN(1);
+  if (thd->variables.keep_files_on_create)
+    create_info->options|= HA_CREATE_KEEP_FILES;
   if (!create_info->frm_only && ha_create_table(file_name,create_info,0))
   {
     my_delete(file_name,MYF(0));
@@ -392,7 +402,7 @@ static uint pack_keys(uchar *keybuff, uint key_count, KEY *keyinfo,
     pos[6]=pos[7]=0;				// For the future
     pos+=8;
     key_parts+=key->key_parts;
-    DBUG_PRINT("loop", ("flags: %d  key_parts: %d at 0x%lx",
+    DBUG_PRINT("loop", ("flags: %lu  key_parts: %d at 0x%lx",
                         key->flags, key->key_parts,
                         (long) key->key_part));
     for (key_part=key->key_part,key_part_end=key_part+key->key_parts ;

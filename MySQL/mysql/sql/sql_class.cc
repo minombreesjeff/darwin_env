@@ -165,6 +165,20 @@ Open_tables_state::Open_tables_state(ulong version_arg)
   reset_open_tables_state();
 }
 
+extern "C"
+const char *set_thd_proc_info(THD *thd, const char *info, 
+                              const char *calling_function,  
+                              const char *calling_file,
+                              const unsigned int calling_line)
+{
+  const char *old_info= thd->proc_info;
+  DBUG_PRINT("proc_info", ("%s:%d  %s", calling_file, calling_line, info));
+#if defined(ENABLED_PROFILING)
+  thd->profiling.status_change(info, calling_function, calling_file, calling_line);
+#endif 
+  thd->proc_info= info;
+  return old_info;
+}
 
 
 THD::THD()
@@ -173,6 +187,7 @@ THD::THD()
    Open_tables_state(refresh_version),
    lock_id(&main_lock_id),
    user_time(0), in_sub_stmt(0), global_read_lock(0), is_fatal_error(0),
+   transaction_rollback_request(0), is_fatal_sub_stmt_error(0),
    rand_used(0), time_zone_used(0),
    last_insert_id_used(0), last_insert_id_used_bin_log(0), insert_id_used(0),
    clear_next_insert_id(0), in_lock_tables(0), bootstrap(0),
@@ -197,7 +212,7 @@ THD::THD()
   count_cuted_fields= CHECK_FIELD_IGNORE;
   killed= NOT_KILLED;
   db_length= col_access=0;
-  query_error= tmp_table_used= 0;
+  query_error= tmp_table_used= thread_specific_used= 0;
   next_insert_id=last_insert_id=0;
   hash_clear(&handler_tables_hash);
   tmp_table=0;
@@ -211,7 +226,7 @@ THD::THD()
   time_after_lock=(time_t) 0;
   current_linfo =  0;
   slave_thread = 0;
-  variables.pseudo_thread_id= 0;
+  thread_id= 0;
   one_shot_set= 0;
   file_id = 0;
   query_id= 0;
@@ -331,12 +346,18 @@ void THD::init(void)
 					       variables.date_format);
   variables.datetime_format= date_time_format_copy((THD*) 0,
 						   variables.datetime_format);
+  /*
+    variables= global_system_variables above has reset
+    variables.pseudo_thread_id to 0. We need to correct it here to
+    avoid temporary tables replication failure.
+  */
+  variables.pseudo_thread_id= thread_id;
   pthread_mutex_unlock(&LOCK_global_system_variables);
   server_status= SERVER_STATUS_AUTOCOMMIT;
   if (variables.sql_mode & MODE_NO_BACKSLASH_ESCAPES)
     server_status|= SERVER_STATUS_NO_BACKSLASH_ESCAPES;
   options= thd_startup_options;
-  no_trans_update.stmt= no_trans_update.all= FALSE;
+  transaction.all.modified_non_trans_table= transaction.stmt.modified_non_trans_table= FALSE;
   open_options=ha_open_options;
   update_lock_default= (variables.low_priority_updates ?
 			TL_WRITE_LOW_PRIORITY :
@@ -582,6 +603,9 @@ bool THD::store_globals()
     By default 'slave_proxy_id' is 'thread_id'. They may later become different
     if this is the slave SQL thread.
   */
+  /** @todo we already do it in init(), see if we still need to do it here.
+      add DBUG_ASSERT(variables.pseudo_thread_id == thread_id)
+  */
   variables.pseudo_thread_id= thread_id;
   /*
     We have to call thr_lock_info_init() again here as THD may have been
@@ -615,6 +639,13 @@ void THD::cleanup_after_query()
   {
     clear_next_insert_id= 0;
     next_insert_id= 0;
+
+    /*
+      BUG#33029, if one statement in a SP set this member to 1, all
+      statment after this statement in the SP would be considered used
+      INSERT_ID value, reset this member after each query to fix this.
+    */
+    insert_id_used= 0;
   }
   /*
     Reset rand_used so that detection of calls to rand() will save random 
@@ -924,6 +955,7 @@ void THD::rollback_item_tree_changes()
 select_result::select_result()
 {
   thd=current_thd;
+  nest_level= -1;
 }
 
 void select_result::send_error(uint errcode,const char *err)
@@ -970,7 +1002,7 @@ void select_send::abort()
 {
   DBUG_ENTER("select_send::abort");
   if (status && thd->spcont &&
-      thd->spcont->find_handler(thd->net.last_errno,
+      thd->spcont->find_handler(thd, thd->net.last_errno,
                                 MYSQL_ERROR::WARN_LEVEL_ERROR))
   {
     /*
@@ -1187,6 +1219,7 @@ int
 select_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
 {
   bool blob_flag=0;
+  bool string_results= FALSE, non_string_results= FALSE;
   unit= u;
   if ((uint) strlen(exchange->file_name) + NAME_LEN >= FN_REFLEN)
     strmake(path,exchange->file_name,FN_REFLEN-1);
@@ -1204,25 +1237,52 @@ select_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
 	blob_flag=1;
 	break;
       }
+      if (item->result_type() == STRING_RESULT)
+        string_results= TRUE;
+      else
+        non_string_results= TRUE;
     }
   }
   field_term_length=exchange->field_term->length();
+  field_term_char= field_term_length ?
+                   (int) (uchar) (*exchange->field_term)[0] : INT_MAX;
   if (!exchange->line_term->length())
     exchange->line_term=exchange->field_term;	// Use this if it exists
-  field_sep_char= (exchange->enclosed->length() ? (*exchange->enclosed)[0] :
-		   field_term_length ? (*exchange->field_term)[0] : INT_MAX);
-  escape_char=	(exchange->escaped->length() ? (*exchange->escaped)[0] : -1);
+  field_sep_char= (exchange->enclosed->length() ?
+                  (int) (uchar) (*exchange->enclosed)[0] : field_term_char);
+  escape_char=	(exchange->escaped->length() ?
+                (int) (uchar) (*exchange->escaped)[0] : -1);
+  is_ambiguous_field_sep= test(strchr(ESCAPE_CHARS, field_sep_char));
+  is_unsafe_field_sep= test(strchr(NUMERIC_CHARS, field_sep_char));
   line_sep_char= (exchange->line_term->length() ?
-		  (*exchange->line_term)[0] : INT_MAX);
+                 (int) (uchar) (*exchange->line_term)[0] : INT_MAX);
   if (!field_term_length)
     exchange->opt_enclosed=0;
   if (!exchange->enclosed->length())
     exchange->opt_enclosed=1;			// A little quicker loop
   fixed_row_size= (!field_term_length && !exchange->enclosed->length() &&
 		   !blob_flag);
+  if ((is_ambiguous_field_sep && exchange->enclosed->is_empty() &&
+       (string_results || is_unsafe_field_sep)) ||
+      (exchange->opt_enclosed && non_string_results &&
+       field_term_length && strchr(NUMERIC_CHARS, field_term_char)))
+  {
+    push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                 ER_AMBIGUOUS_FIELD_TERM, ER(ER_AMBIGUOUS_FIELD_TERM));
+    is_ambiguous_field_term= TRUE;
+  }
+  else
+    is_ambiguous_field_term= FALSE;
+
   return 0;
 }
 
+
+#define NEED_ESCAPING(x) ((int) (uchar) (x) == escape_char    || \
+                          (enclosed ? (int) (uchar) (x) == field_sep_char      \
+                                    : (int) (uchar) (x) == field_term_char) || \
+                          (int) (uchar) (x) == line_sep_char  || \
+                          !(x))
 
 bool select_export::send_data(List<Item> &items)
 {
@@ -1249,8 +1309,10 @@ bool select_export::send_data(List<Item> &items)
   while ((item=li++))
   {
     Item_result result_type=item->result_type();
+    bool enclosed = (exchange->enclosed->length() &&
+                     (!exchange->opt_enclosed || result_type == STRING_RESULT));
     res=item->str_result(&tmp);
-    if (res && (!exchange->opt_enclosed || result_type == STRING_RESULT))
+    if (res && enclosed)
     {
       if (my_b_write(&cache,(byte*) exchange->enclosed->ptr(),
 		     exchange->enclosed->length()))
@@ -1281,16 +1343,23 @@ bool select_export::send_data(List<Item> &items)
 	used_length=min(res->length(),item->max_length);
       else
 	used_length=res->length();
-      if (result_type == STRING_RESULT && escape_char != -1)
+      if ((result_type == STRING_RESULT || is_unsafe_field_sep) &&
+           escape_char != -1)
       {
-	char *pos,*start,*end;
-
+        char *pos, *start, *end;
+        CHARSET_INFO *res_charset= res->charset();
+        CHARSET_INFO *character_set_client= thd->variables.
+                                            character_set_client;
+        bool check_second_byte= (res_charset == &my_charset_bin) &&
+                                 character_set_client->
+                                 escape_with_backslash_is_dangerous;
+        DBUG_ASSERT(character_set_client->mbmaxlen == 2 ||
+                    !character_set_client->escape_with_backslash_is_dangerous);
 	for (start=pos=(char*) res->ptr(),end=pos+used_length ;
 	     pos != end ;
 	     pos++)
 	{
 #ifdef USE_MB
-          CHARSET_INFO *res_charset=res->charset();
 	  if (use_mb(res_charset))
 	  {
 	    int l;
@@ -1301,11 +1370,55 @@ bool select_export::send_data(List<Item> &items)
 	    }
 	  }
 #endif
-	  if ((int) *pos == escape_char || (int) *pos == field_sep_char ||
-	      (int) *pos == line_sep_char || !*pos)
-	  {
+
+          /*
+            Special case when dumping BINARY/VARBINARY/BLOB values
+            for the clients with character sets big5, cp932, gbk and sjis,
+            which can have the escape character (0x5C "\" by default)
+            as the second byte of a multi-byte sequence.
+            
+            If
+            - pos[0] is a valid multi-byte head (e.g 0xEE) and
+            - pos[1] is 0x00, which will be escaped as "\0",
+            
+            then we'll get "0xEE + 0x5C + 0x30" in the output file.
+            
+            If this file is later loaded using this sequence of commands:
+            
+            mysql> create table t1 (a varchar(128)) character set big5;
+            mysql> LOAD DATA INFILE 'dump.txt' INTO TABLE t1;
+            
+            then 0x5C will be misinterpreted as the second byte
+            of a multi-byte character "0xEE + 0x5C", instead of
+            escape character for 0x00.
+            
+            To avoid this confusion, we'll escape the multi-byte
+            head character too, so the sequence "0xEE + 0x00" will be
+            dumped as "0x5C + 0xEE + 0x5C + 0x30".
+            
+            Note, in the condition below we only check if
+            mbcharlen is equal to 2, because there are no
+            character sets with mbmaxlen longer than 2
+            and with escape_with_backslash_is_dangerous set.
+            DBUG_ASSERT before the loop makes that sure.
+          */
+
+          if ((NEED_ESCAPING(*pos) ||
+               (check_second_byte &&
+                my_mbcharlen(character_set_client, (uchar) *pos) == 2 &&
+                pos + 1 < end &&
+                NEED_ESCAPING(pos[1]))) &&
+              /*
+               Don't escape field_term_char by doubling - doubling is only
+               valid for ENCLOSED BY characters:
+              */
+              (enclosed || !is_ambiguous_field_term ||
+               (int) (uchar) *pos != field_term_char))
+          {
 	    char tmp_buff[2];
-	    tmp_buff[0]= escape_char;
+            tmp_buff[0]= ((int) (uchar) *pos == field_sep_char &&
+                          is_ambiguous_field_sep) ?
+                          field_sep_char : escape_char;
 	    tmp_buff[1]= *pos ? *pos : '0';
 	    if (my_b_write(&cache,(byte*) start,(uint) (pos-start)) ||
 		my_b_write(&cache,(byte*) tmp_buff,2))
@@ -1339,7 +1452,7 @@ bool select_export::send_data(List<Item> &items)
 	  goto err;
       }
     }
-    if (res && (!exchange->opt_enclosed || result_type == STRING_RESULT))
+    if (res && enclosed)
     {
       if (my_b_write(&cache, (byte*) exchange->enclosed->ptr(),
                      exchange->enclosed->length()))
@@ -1468,7 +1581,7 @@ bool select_max_min_finder_subselect::send_data(List<Item> &items)
   {
     if (!cache)
     {
-      cache= Item_cache::get_cache(val_item->result_type());
+      cache= Item_cache::get_cache(val_item);
       switch (val_item->result_type())
       {
       case REAL_RESULT:
@@ -2153,6 +2266,13 @@ void THD::restore_sub_statement_state(Sub_statement_state *backup)
   limit_found_rows= backup->limit_found_rows;
   sent_row_count=   backup->sent_row_count;
   client_capabilities= backup->client_capabilities;
+  /*
+    If we've left sub-statement mode, reset the fatal error flag.
+    Otherwise keep the current value, to propagate it up the sub-statement
+    stack.
+  */
+  if (!in_sub_stmt)
+    is_fatal_sub_stmt_error= FALSE;
 
   if ((options & OPTION_BIN_LOG) && is_update_query(lex->sql_command))
     mysql_bin_log.stop_union_events(this);
@@ -2166,6 +2286,21 @@ void THD::restore_sub_statement_state(Sub_statement_state *backup)
 }
 
 
+/**
+  Mark transaction to rollback and mark error as fatal to a sub-statement.
+
+  @param  thd   Thread handle
+  @param  all   TRUE <=> rollback main transaction.
+*/
+
+void mark_transaction_to_rollback(THD *thd, bool all)
+{
+  if (thd)
+  {
+    thd->is_fatal_sub_stmt_error= TRUE;
+    thd->transaction_rollback_request= all;
+  }
+}
 /***************************************************************************
   Handling of XA id cacheing
 ***************************************************************************/

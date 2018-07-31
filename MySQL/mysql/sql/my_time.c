@@ -54,24 +54,24 @@ uint calc_days_in_year(uint year)
           366 : 365);
 }
 
-/*
-  Check datetime value for validity according to flags.
+/**
+  @brief Check datetime value for validity according to flags.
 
-  SYNOPSIS
-    check_date()
-      ltime          Date to check.
-      not_zero_date  ltime is not the zero date
-      flags          flags to check
-      was_cut        set to 2 if value was truncated.
-		     NOTE: This is not touched if value was not truncated
-  NOTES
-    Here we assume that year and month is ok !
+  @param[in]  ltime          Date to check.
+  @param[in]  not_zero_date  ltime is not the zero date
+  @param[in]  flags          flags to check
+                             (see str_to_datetime() flags in my_time.h)
+  @param[out] was_cut        set to 2 if value was invalid according to flags.
+                             (Feb 29 in non-leap etc.)  This remains unchanged
+                             if value is not invalid.
+
+  @details Here we assume that year and month is ok!
     If month is 0 we allow any date. (This only happens if we allow zero
     date parts in str_to_datetime())
     Disallow dates with zero year and non-zero month and/or day.
 
-  RETURN
-    0  ok
+  @return
+    0  OK
     1  error
 */
 
@@ -117,9 +117,9 @@ my_bool check_date(const MYSQL_TIME *ltime, my_bool not_zero_date,
                         TIME_NO_ZERO_IN_DATE	Don't allow partial dates
                         TIME_NO_ZERO_DATE	Don't allow 0000-00-00 date
                         TIME_INVALID_DATES	Allow 2000-02-31
-    was_cut             0	Value ok
+    was_cut             0	Value OK
 			1       If value was cut during conversion
-			2	Date part was within ranges but date was wrong
+			2	check_date(date,flags) considers date invalid
 
   DESCRIPTION
     At least the following formats are recogniced (based on number of digits)
@@ -704,9 +704,9 @@ int check_time_range(struct st_mysql_time *my_time, int *warning)
   Prepare offset of system time zone from UTC for my_system_gmt_sec() func.
 
   SYNOPSIS
-    init_time()
+    my_init_time()
 */
-void init_time(void)
+void my_init_time(void)
 {
   time_t seconds;
   struct tm *l_time,tm_tmp;
@@ -769,11 +769,6 @@ long calc_daynr(uint year,uint month,uint day)
 
   if (year == 0 && month == 0 && day == 0)
     DBUG_RETURN(0);				/* Skip errors */
-  if (year < 200)
-  {
-    if ((year=year+1900) < 1900+YY_PART_YEAR)
-      year+=100;
-  }
   delsum= (long) (365L * year+ 31*(month-1) +day);
   if (month <= 2)
       year--;
@@ -800,7 +795,7 @@ long calc_daynr(uint year,uint month,uint day)
   NOTES
     The idea is to cache the time zone offset from UTC (including daylight 
     saving time) for the next call to make things faster. But currently we 
-    just calculate this offset during startup (by calling init_time() 
+    just calculate this offset during startup (by calling my_init_time() 
     function) and use it all the time.
     Time value provided should be legal time value (e.g. '2003-01-01 25:00:00'
     is not allowed).
@@ -1092,7 +1087,7 @@ int my_TIME_to_str(const MYSQL_TIME *l_time, char *to)
       flags      - flags to use in validating date, as in str_to_datetime()
       was_cut    0      Value ok
                  1      If value was cut during conversion
-                 2      Date part was within ranges but date was wrong
+                 2      check_date(date,flags) considers date invalid
 
   DESCRIPTION
     Convert a datetime value of formats YYMMDD, YYYYMMDD, YYMMDDHHMSS,
@@ -1113,9 +1108,14 @@ longlong number_to_datetime(longlong nr, MYSQL_TIME *time_res,
   long part1,part2;
 
   *was_cut= 0;
+  bzero((char*) time_res, sizeof(*time_res));
+  time_res->time_type=MYSQL_TIMESTAMP_DATE;
 
   if (nr == LL(0) || nr >= LL(10000101000000))
+  {
+    time_res->time_type=MYSQL_TIMESTAMP_DATETIME;
     goto ok;
+  }
   if (nr < 101)
     goto err;
   if (nr <= (YY_PART_YEAR-1)*10000L+1231L)
@@ -1139,6 +1139,9 @@ longlong number_to_datetime(longlong nr, MYSQL_TIME *time_res,
   }
   if (nr < 101000000L)
     goto err;
+
+  time_res->time_type=MYSQL_TIMESTAMP_DATETIME;
+
   if (nr <= (YY_PART_YEAR-1)*LL(10000000000)+LL(1231235959))
   {
     nr= nr+LL(20000000000000);                   /* YYMMDDHHMMSS, 2000-2069 */
@@ -1152,7 +1155,6 @@ longlong number_to_datetime(longlong nr, MYSQL_TIME *time_res,
  ok:
   part1=(long) (nr/LL(1000000));
   part2=(long) (nr - (longlong) part1*LL(1000000));
-  bzero((char*) time_res, sizeof(*time_res));
   time_res->year=  (int) (part1/10000L);  part1%=10000L;
   time_res->month= (int) part1 / 100;
   time_res->day=   (int) part1 % 100;

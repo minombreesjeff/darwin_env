@@ -62,11 +62,11 @@ Prelock_error_handler::handle_error(uint sql_errno,
   if (sql_errno == ER_NO_SUCH_TABLE)
   {
     m_handled_errors++;
-    return TRUE;                                // 'TRUE', as per coding style
+    return TRUE;
   }
 
   m_unhandled_errors++;
-  return FALSE;                                 // 'FALSE', as per coding style
+  return FALSE;
 }
 
 
@@ -79,7 +79,6 @@ bool Prelock_error_handler::safely_trapped_errors()
   */
   return ((m_handled_errors > 0) && (m_unhandled_errors == 0));
 }
-
 
 TABLE *unused_tables;				/* Used by mysql_test */
 HASH open_cache;				/* Used by mysql_test */
@@ -585,14 +584,6 @@ void close_thread_tables(THD *thd, bool lock_in_use, bool skip_derived)
 
   DBUG_PRINT("info", ("thd->open_tables: %p", thd->open_tables));
 
-  
-  /* 
-    End open index scans and table scans and remove references to the tables 
-    from the handler tables hash. After this preparation it is safe to close 
-    the tables.
-  */
-  mysql_ha_mark_tables_for_reopen(thd, thd->open_tables);
-
   found_old_table= 0;
   while (thd->open_tables)
     found_old_table|=close_thread_table(thd, &thd->open_tables);
@@ -848,7 +839,7 @@ void close_temporary_tables(THD *thd)
 */
 
 TABLE_LIST *find_table_in_list(TABLE_LIST *table,
-                               st_table_list *TABLE_LIST::*link,
+                               TABLE_LIST *TABLE_LIST::*link,
                                const char *db_name,
                                const char *table_name)
 {
@@ -1037,6 +1028,31 @@ TABLE **find_temporary_table(THD *thd, const char *db, const char *table_name)
   return 0;					// Not a temporary table
 }
 
+
+/**
+  Drop a temporary table.
+
+  Try to locate the table in the list of thd->temporary_tables.
+  If the table is found:
+   - if the table is in thd->locked_tables, unlock it and
+     remove it from the list of locked tables. Currently only transactional
+     temporary tables are present in the locked_tables list.
+   - Close the temporary table, remove its .FRM
+   - remove the table from the list of temporary tables
+
+  This function is used to drop user temporary tables, as well as
+  internal tables created in CREATE TEMPORARY TABLE ... SELECT
+  or ALTER TABLE. Even though part of the work done by this function
+  is redundant when the table is internal, as long as we
+  link both internal and user temporary tables into the same
+  thd->temporary_tables list, it's impossible to tell here whether
+  we're dealing with an internal or a user temporary table.
+
+  @retval TRUE   the table was not found in the list of temporary tables
+                 of this thread
+  @retval FALSE  the table was found and dropped successfully.
+*/
+
 bool close_temporary_table(THD *thd, const char *db, const char *table_name)
 {
   TABLE *table,**prev;
@@ -1045,6 +1061,11 @@ bool close_temporary_table(THD *thd, const char *db, const char *table_name)
     return 1;
   table= *prev;
   *prev= table->next;
+  /*
+    If LOCK TABLES list is not empty and contains this table,
+    unlock the table and remove the table from this list.
+  */
+  mysql_lock_remove(thd, thd->locked_tables, table, FALSE);
   close_temporary(table, 1);
   if (thd->slave_thread)
     --slave_open_temp_tables;
@@ -1120,7 +1141,7 @@ TABLE *unlink_open_table(THD *thd, TABLE *list, TABLE *find)
 	!memcmp(list->s->table_cache_key, key, key_length))
     {
       if (thd->locked_tables)
-	mysql_lock_remove(thd, thd->locked_tables,list);
+        mysql_lock_remove(thd, thd->locked_tables, list, TRUE);
       VOID(hash_delete(&open_cache,(byte*) list)); // Close table
     }
     else
@@ -1151,6 +1172,8 @@ TABLE *unlink_open_table(THD *thd, TABLE *list, TABLE *find)
           dropped is already unlocked. In the former case it will
           also remove lock on the table. But one should not rely on
           this behaviour as it may change in future.
+          Currently, however, this function is never called for a
+          table that was locked with LOCK TABLES.
 */
 
 void drop_open_table(THD *thd, TABLE *table, const char *db_name,
@@ -1505,7 +1528,6 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
   HASH_SEARCH_STATE state;
   DBUG_ENTER("open_table");
 
-  DBUG_ASSERT (table_list->lock_type != TL_WRITE_DEFAULT);
   /* find a unused table in the open table cache */
   if (refresh)
     *refresh=0;
@@ -1722,7 +1744,13 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
     DBUG_RETURN(0);
   }
 
-  /* close handler tables which are marked for flush */
+  /*
+    In order for the back off and re-start process to work properly,
+    handler tables having old versions (due to FLUSH TABLES or pending
+    name-lock) MUST be closed. This is specially important if a name-lock
+    is pending for any table of the handler_tables list, otherwise a
+    deadlock may occur.
+  */
   if (thd->handler_tables)
     mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE, TRUE);
 
@@ -1787,6 +1815,10 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
         table->db_stat == 0 signals wait_for_locked_table_names
         that the tables in question are not used any more. See
         table_is_used call for details.
+
+        Notice that HANDLER tables were already taken care of by
+        the earlier call to mysql_ha_flush() in this same critical
+        section.
       */
       close_old_data_files(thd,thd->open_tables,0,0);
       /*
@@ -2099,7 +2131,7 @@ bool close_data_tables(THD *thd,const char *db, const char *table_name)
     if (!strcmp(table->s->table_name, table_name) &&
 	!strcmp(table->s->db, db))
     {
-      mysql_lock_remove(thd, thd->locked_tables,table);
+      mysql_lock_remove(thd, thd->locked_tables, table, TRUE);
       table->file->close();
       table->db_stat=0;
     }
@@ -2239,7 +2271,7 @@ void close_old_data_files(THD *thd, TABLE *table, bool morph_locks,
             instances of this table.
           */
           mysql_lock_abort(thd, table);
-          mysql_lock_remove(thd, thd->locked_tables, table);
+          mysql_lock_remove(thd, thd->locked_tables, table, TRUE);
           /*
             We want to protect the table from concurrent DDL operations
             (like RENAME TABLE) until we will re-open and re-lock it.
@@ -2343,7 +2375,7 @@ bool drop_locked_tables(THD *thd,const char *db, const char *table_name)
     if (!strcmp(table->s->table_name, table_name) &&
 	!strcmp(table->s->db, db))
     {
-      mysql_lock_remove(thd, thd->locked_tables,table);
+      mysql_lock_remove(thd, thd->locked_tables, table, TRUE);
       VOID(hash_delete(&open_cache,(byte*) table));
       found=1;
     }
@@ -2620,7 +2652,7 @@ int open_tables(THD *thd, TABLE_LIST **start, uint *counter, uint flags)
     temporary mem_root for new .frm parsing.
     TODO: variables for size
   */
-  init_alloc_root(&new_frm_mem, 8024, 8024);
+  init_sql_alloc(&new_frm_mem, 8024, 8024);
 
   thd->current_tablenr= 0;
  restart:
@@ -2674,13 +2706,8 @@ int open_tables(THD *thd, TABLE_LIST **start, uint *counter, uint flags)
   */
   for (tables= *start; tables ;tables= tables->next_global)
   {
-    safe_to_ignore_table= FALSE;                // 'FALSE', as per coding style
+    safe_to_ignore_table= FALSE;
 
-    if (tables->lock_type == TL_WRITE_DEFAULT)
-    {
-      tables->lock_type= thd->update_lock_default;
-      DBUG_ASSERT (tables->lock_type >= TL_WRITE_ALLOW_WRITE);
-    }
     /*
       Ignore placeholders for derived tables. After derived tables
       processing, link to created temporary table will be put here.
@@ -2825,7 +2852,12 @@ int open_tables(THD *thd, TABLE_LIST **start, uint *counter, uint flags)
     }
 
     if (tables->lock_type != TL_UNLOCK && ! thd->locked_tables)
-      tables->table->reginfo.lock_type=tables->lock_type;
+    {
+      if (tables->lock_type == TL_WRITE_DEFAULT)
+        tables->table->reginfo.lock_type= thd->update_lock_default;
+      else if (tables->table->s->tmp_table == NO_TMP_TABLE)
+        tables->table->reginfo.lock_type= tables->lock_type;
+    }
     tables->table->grant= tables->grant;
 
 process_view_routines:
@@ -2938,13 +2970,6 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type lock_type)
 
   if (table)
   {
-#if defined( __WIN__) || defined(OS2)
-    /* Win32 can't drop a file that is open */
-    if (lock_type == TL_WRITE_ALLOW_READ)
-    {
-      lock_type= TL_WRITE;
-    }
-#endif /* __WIN__ || OS2 */
     table_list->lock_type= lock_type;
     table_list->table=	   table;
     table->grant= table_list->grant;
@@ -3021,7 +3046,7 @@ int simple_open_n_lock_tables(THD *thd, TABLE_LIST *tables)
     The lock will automaticaly be freed by close_thread_tables()
 */
 
-bool open_and_lock_tables(THD *thd, TABLE_LIST *tables)
+int open_and_lock_tables(THD *thd, TABLE_LIST *tables)
 {
   uint counter;
   bool need_reopen;
@@ -3435,7 +3460,7 @@ find_field_in_view(THD *thd, TABLE_LIST *table_list,
               table_list->alias, name, item_name, (ulong) ref));
   Field_iterator_view field_it;
   field_it.set(table_list);
-  Query_arena *arena, backup;  
+  Query_arena *arena= 0, backup;  
   
   DBUG_ASSERT(table_list->schema_table_reformed ||
               (ref != 0 && table_list->view != 0));
@@ -3444,14 +3469,14 @@ find_field_in_view(THD *thd, TABLE_LIST *table_list,
     if (!my_strcasecmp(system_charset_info, field_it.name(), name))
     {
       // in PS use own arena or data will be freed after prepare
-      if (register_tree_change)
+      if (register_tree_change && thd->stmt_arena->is_stmt_prepare_or_first_sp_execute())
         arena= thd->activate_stmt_arena_if_needed(&backup);
       /*
         create_item() may, or may not create a new Item, depending on
         the column reference. See create_view_field() for details.
       */
       Item *item= field_it.create_item(thd);
-      if (register_tree_change && arena)
+      if (arena)
         thd->restore_active_arena(arena, &backup);
       
       if (!item)
@@ -3946,7 +3971,9 @@ find_field_in_tables(THD *thd, Item_ident *item,
   {
     Field *cur_field= find_field_in_table_ref(thd, cur_table, name, length,
                                               item->name, db, table_name, ref,
-                                              check_privileges,
+                                              (thd->lex->sql_command ==
+                                               SQLCOM_SHOW_FIELDS)
+                                              ? false : check_privileges,
                                               allow_rowid,
                                               &(item->cached_field_index),
                                               register_tree_change,
@@ -4140,7 +4167,8 @@ find_item_in_list(Item *find, List<Item> &items, uint *counter,
         if (item_field->field_name && item_field->table_name &&
 	    !my_strcasecmp(system_charset_info, item_field->field_name,
                            field_name) &&
-            !strcmp(item_field->table_name, table_name) &&
+            !my_strcasecmp(table_alias_charset, item_field->table_name, 
+                           table_name) &&
             (!db_name || (item_field->db_name &&
                           !strcmp(item_field->db_name, db_name))))
         {
@@ -4230,7 +4258,36 @@ find_item_in_list(Item *find, List<Item> &items, uint *counter,
         *resolution= RESOLVED_IGNORING_ALIAS;
         break;
       }
-    } 
+    }
+    else if (table_name && item->type() == Item::REF_ITEM &&
+             ((Item_ref *)item)->ref_type() == Item_ref::VIEW_REF)
+    {
+      /*
+        TODO:Here we process prefixed view references only. What we should 
+        really do is process all types of Item_refs. But this will currently 
+        lead to a clash with the way references to outer SELECTs (from the 
+        HAVING clause) are handled in e.g. :
+        SELECT 1 FROM t1 AS t1_o GROUP BY a
+          HAVING (SELECT t1_o.a FROM t1 AS t1_i GROUP BY t1_i.a LIMIT 1).
+        Processing all Item_refs here will cause t1_o.a to resolve to itself.
+        We still need to process the special case of Item_direct_view_ref 
+        because in the context of views they have the same meaning as 
+        Item_field for tables.
+      */
+      Item_ident *item_ref= (Item_ident *) item;
+      if (item_ref->name && item_ref->table_name &&
+          !my_strcasecmp(system_charset_info, item_ref->name, field_name) &&
+          !my_strcasecmp(table_alias_charset, item_ref->table_name,
+                         table_name) &&
+          (!db_name || (item_ref->db_name && 
+                        !strcmp (item_ref->db_name, db_name))))
+      {
+        found= li.ref();
+        *counter= i;
+        *resolution= RESOLVED_IGNORING_ALIAS;
+        break;
+      }
+    }
   }
   if (!found)
   {
@@ -5402,10 +5459,7 @@ insert_fields(THD *thd, Name_resolution_context *context, const char *db_name,
         !any_privileges)
     {
       field_iterator.set(tables);
-      if (check_grant_all_columns(thd, SELECT_ACL, field_iterator.grant(),
-                                  field_iterator.db_name(),
-                                  field_iterator.table_name(),
-                                  &field_iterator))
+      if (check_grant_all_columns(thd, SELECT_ACL, &field_iterator))
         DBUG_RETURN(TRUE);
     }
 #endif
@@ -5586,6 +5640,7 @@ int setup_conds(THD *thd, TABLE_LIST *tables, TABLE_LIST *leaves,
   thd->set_query_id=1;
   select_lex->cond_count= 0;
   select_lex->between_count= 0;
+  select_lex->max_equal_elems= 0;
 
   for (table= tables; table; table= table->next_local)
   {

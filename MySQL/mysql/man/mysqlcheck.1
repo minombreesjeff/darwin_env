@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlcheck\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLCHECK\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLCHECK\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -40,7 +40,7 @@ REPAIR TABLE,
 ANALYZE TABLE, and
 OPTIMIZE TABLE
 in a convenient way for the user. It determines which statements to use for the operation you want to perform, and then sends the statements to the server to be executed. For details about which storage engines each statement works with, see the descriptions for those statements in
-Chapter\ 13, SQL Statement Syntax.
+Chapter\ 12, SQL Statement Syntax.
 .PP
 The
 MyISAM
@@ -153,9 +153,6 @@ Instead of issuing a statement for each table, execute a single statement for ea
 \fB\-a\fR
 .sp
 Analyze the tables.
-.PP
-\fBMySQL Enterprise\fR. For expert advice on optimizing tables, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
 .TP 3n
 \(bu
 \fB\-\-auto\-repair\fR
@@ -166,7 +163,7 @@ If a checked table is corrupted, automatically fix it. Any necessary repairs are
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-check\fR,
@@ -218,7 +215,7 @@ string is often
 Use
 \fIcharset_name\fR
 as the default character set. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-extended\fR,
@@ -275,7 +272,13 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
+.TP 3n
+\(bu
+\fB\-\-pipe\fR,
+\fB\-W\fR
+.sp
+On Windows, connect to the server via a named pipe. This option applies only for connections to a local server, and only if the server supports named\-pipe connections.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -286,7 +289,8 @@ The TCP/IP port number to use for the connection.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use.
+The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
+Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-quick\fR,
@@ -321,7 +325,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server via SSL and indicate where to find SSL keys and certificates. See
-Section\ 6.7.3, \(lqSSL Command Options\(rq.
+Section\ 5.7.3, \(lqSSL Command Options\(rq.
 .TP 3n
 \(bu
 \fB\-\-tables\fR
@@ -362,17 +366,16 @@ Verbose mode. Print information about the various stages of program operation.
 Display version information and exit.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

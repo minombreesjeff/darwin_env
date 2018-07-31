@@ -56,7 +56,7 @@ host_triplet = @host@
 target_triplet = @target@
 bin_PROGRAMS = mysql_client_test$(EXEEXT)
 noinst_PROGRAMS = insert_test$(EXEEXT) select_test$(EXEEXT) \
-	thread_test$(EXEEXT)
+	thread_test$(EXEEXT) bug25714$(EXEEXT)
 subdir = tests
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -82,11 +82,14 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS)
+am_bug25714_OBJECTS = bug25714.$(OBJEXT)
+bug25714_OBJECTS = $(am_bug25714_OBJECTS)
+bug25714_LDADD = $(LDADD)
 am_insert_test_OBJECTS = insert_test.$(OBJEXT)
 insert_test_OBJECTS = $(am_insert_test_OBJECTS)
 insert_test_LDADD = $(LDADD)
@@ -104,7 +107,7 @@ thread_test_SOURCES = thread_test.c
 thread_test_OBJECTS = thread_test.$(OBJEXT)
 thread_test_LDADD = $(LDADD)
 thread_test_DEPENDENCIES = $(top_builddir)/libmysql/libmysqlclient.la
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -115,10 +118,12 @@ LTCOMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
 CCLD = $(CC)
 LINK = $(LIBTOOL) --tag=CC --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(insert_test_SOURCES) $(mysql_client_test_SOURCES) \
-	$(select_test_SOURCES) thread_test.c
-DIST_SOURCES = $(insert_test_SOURCES) $(mysql_client_test_SOURCES) \
-	$(select_test_SOURCES) thread_test.c
+SOURCES = $(bug25714_SOURCES) $(insert_test_SOURCES) \
+	$(mysql_client_test_SOURCES) $(select_test_SOURCES) \
+	thread_test.c
+DIST_SOURCES = $(bug25714_SOURCES) $(insert_test_SOURCES) \
+	$(mysql_client_test_SOURCES) $(select_test_SOURCES) \
+	thread_test.c
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -130,6 +135,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -269,7 +275,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -320,6 +328,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -410,6 +419,8 @@ insert_test_SOURCES = insert_test.c
 select_test_SOURCES = select_test.c
 insert_test_DEPENDENCIES = $(LIBRARIES) $(pkglib_LTLIBRARIES)
 select_test_DEPENDENCIES = $(LIBRARIES) $(pkglib_LTLIBRARIES)
+bug25714_SOURCES = bug25714.c
+bug25714_DEPENDENCIES = $(LIBRARIES) $(pkglib_LTLIBRARIES)
 all: all-am
 
 .SUFFIXES:
@@ -478,6 +489,9 @@ clean-noinstPROGRAMS:
 	  echo " rm -f $$p $$f"; \
 	  rm -f $$p $$f ; \
 	done
+bug25714$(EXEEXT): $(bug25714_OBJECTS) $(bug25714_DEPENDENCIES) 
+	@rm -f bug25714$(EXEEXT)
+	$(LINK) $(bug25714_LDFLAGS) $(bug25714_OBJECTS) $(bug25714_LDADD) $(LIBS)
 insert_test$(EXEEXT): $(insert_test_OBJECTS) $(insert_test_DEPENDENCIES) 
 	@rm -f insert_test$(EXEEXT)
 	$(LINK) $(insert_test_LDFLAGS) $(insert_test_OBJECTS) $(insert_test_LDADD) $(LIBS)
@@ -497,6 +511,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bug25714.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/insert_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_memmem.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mysql_client_test.Po@am__quote@

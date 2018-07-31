@@ -1,5 +1,0 @@
-#### suite/funcs_1/t/datadict_myisam.test
-#
-let $engine_type= myisam;
-
---source suite/funcs_1/datadict/datadict_master.inc

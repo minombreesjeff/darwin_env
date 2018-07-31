@@ -42,6 +42,8 @@ class Arg_comparator: public Sql_alloc
   bool is_nulls_eq;                // TRUE <=> compare for the EQUAL_FUNC
   enum enum_date_cmp_type { CMP_DATE_DFLT= 0, CMP_DATE_WITH_DATE,
                             CMP_DATE_WITH_STR, CMP_STR_WITH_DATE };
+  ulonglong (*get_value_func)(THD *thd, Item ***item_arg, Item **cache_arg,
+                              Item *warn_item, bool *is_null);
 public:
   DTCollation cmp_collation;
 
@@ -638,6 +640,7 @@ public:
 class Item_func_coalesce :public Item_func_numhybrid
 {
 protected:
+  enum_field_types cached_field_type;
   Item_func_coalesce(Item *a, Item *b) :Item_func_numhybrid(a, b) {}
 public:
   Item_func_coalesce(List<Item> &list) :Item_func_numhybrid(list) {}
@@ -650,13 +653,13 @@ public:
   enum Item_result result_type () const { return hybrid_type; }
   const char *func_name() const { return "coalesce"; }
   table_map not_null_tables() const { return 0; }
+  enum_field_types field_type() const { return cached_field_type; }
 };
 
 
 class Item_func_ifnull :public Item_func_coalesce
 {
 protected:
-  enum_field_types cached_field_type;
   bool field_type_defined;
 public:
   Item_func_ifnull(Item *a, Item *b) :Item_func_coalesce(a,b) {}
@@ -675,6 +678,7 @@ public:
 class Item_func_if :public Item_func
 {
   enum Item_result cached_result_type;
+  enum_field_types cached_field_type;
 public:
   Item_func_if(Item *a,Item *b,Item *c)
     :Item_func(a,b,c), cached_result_type(INT_RESULT)
@@ -684,6 +688,7 @@ public:
   String *val_str(String *str);
   my_decimal *val_decimal(my_decimal *);
   enum Item_result result_type () const { return cached_result_type; }
+  enum_field_types field_type() const { return cached_field_type; }
   bool fix_fields(THD *, Item **);
   void fix_length_and_dec();
   uint decimal_precision() const;
@@ -720,6 +725,7 @@ class Item_func_case :public Item_func
   uint ncases;
   Item_result cmp_type;
   DTCollation cmp_collation;
+  enum_field_types cached_field_type;
 public:
   Item_func_case(List<Item> &list, Item *first_expr_arg, Item *else_expr_arg)
     :Item_func(), first_expr_num(-1), else_expr_num(-1),
@@ -747,10 +753,13 @@ public:
   uint decimal_precision() const;
   table_map not_null_tables() const { return 0; }
   enum Item_result result_type () const { return cached_result_type; }
+  enum_field_types field_type() const { return cached_field_type; }
   const char *func_name() const { return "case"; }
   void print(String *str);
   Item *find_item(String *str);
   CHARSET_INFO *compare_collation() { return cmp_collation.collation; }
+  void agg_str_lengths(Item *arg);
+  void agg_num_lengths(Item *arg);
 };
 
 
@@ -779,7 +788,7 @@ public:
   virtual byte *get_value(Item *item)=0;
   void sort()
   {
-    qsort2(base,used_count,size,compare,collation);
+    my_qsort2(base,used_count,size,compare,collation);
   }
   int find(Item *item);
   
@@ -1311,6 +1320,10 @@ class Item_func_regex :public Item_bool_func
   bool regex_is_const;
   String prev_regexp;
   DTCollation cmp_collation;
+  CHARSET_INFO *regex_lib_charset;
+  int regex_lib_flags;
+  String conv;
+  bool regcomp(bool send_error);
 public:
   Item_func_regex(Item *a,Item *b) :Item_bool_func(a,b),
     regex_compiled(0),regex_is_const(0) {}
@@ -1359,6 +1372,7 @@ public:
   Item_cond(List<Item> &nlist)
     :Item_bool_func(), list(nlist), abort_on_null(0) {}
   bool add(Item *item) { return list.push_back(item); }
+  bool add_at_head(Item *item) { return list.push_front(item); }
   void add_at_head(List<Item> *nlist) { list.prepand(nlist); }
   bool fix_fields(THD *, Item **ref);
 
@@ -1379,6 +1393,7 @@ public:
   bool subst_argument_checker(byte **arg) { return TRUE; }
   Item *compile(Item_analyzer analyzer, byte **arg_p,
                 Item_transformer transformer, byte *arg_t);
+  enum_field_types field_type() const { return MYSQL_TYPE_LONGLONG; }
 };
 
 
@@ -1504,7 +1519,6 @@ public:
                                      the current and level           */
   COND_EQUAL()
   { 
-    max_members= 0;
     upper_levels= 0;
   }
 };
@@ -1552,6 +1566,15 @@ public:
   Item *neg_transformer(THD *thd);
 };
 
+inline bool is_cond_and(Item *item)
+{
+  if (item->type() != Item::COND_ITEM)
+    return FALSE;
+
+  Item_cond *cond_item= (Item_cond*) item;
+  return (cond_item->functype() == Item_func::COND_AND_FUNC);
+}
+
 class Item_cond_or :public Item_cond
 {
 public:
@@ -1573,6 +1596,14 @@ public:
   Item *neg_transformer(THD *thd);
 };
 
+inline bool is_cond_or(Item *item)
+{
+  if (item->type() != Item::COND_ITEM)
+    return FALSE;
+
+  Item_cond *cond_item= (Item_cond*) item;
+  return (cond_item->functype() == Item_func::COND_OR_FUNC);
+}
 
 /*
   XOR is Item_cond, not an Item_int_func because we could like to

@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqlbinlog\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYSQLBINLOG\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYSQLBINLOG\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -17,11 +17,15 @@ mysqlbinlog \- utility for processing binary log files
 \fBmysqlbinlog [\fR\fBoptions\fR\fB] \fR\fB\fIlog_file\fR\fR\fB ...\fR
 .SH "DESCRIPTION"
 .PP
-The binary log files that the server generates are written in binary format. To examine these files in text format, use the
+The server's binary log consists of files that contain
+\(lqevents\(rq
+that describe modifications to database contents. The server writes binary log files in binary format. To display these files in text format, use the
 \fBmysqlbinlog\fR
 utility. You can also use
 \fBmysqlbinlog\fR
-to read relay log files written by a slave server in a replication setup. Relay logs have the same format as binary log files.
+to display relay log files written by a slave server in a replication setup. Relay logs have the same format as binary log files. The binary log and relay log are discussed further in
+Section\ 2.3, \(lqThe Binary Log\(rq, and
+Section\ 4.2, \(lqReplication Relay and Status Files\(rq.
 .PP
 Invoke
 \fBmysqlbinlog\fR
@@ -64,10 +68,6 @@ option. When you read remote binary logs, the connection parameter options can b
 \fB\-\-read\-from\-remote\-server\fR
 option.
 .PP
-Binary logs and relay logs are discussed further in
-Section\ 9.3, \(lqThe Binary Log\(rq, and
-Section\ 3.5, \(lqReplication Relay and Status Files\(rq.
-.PP
 \fBmysqlbinlog\fR
 supports the following options:
 .TP 3n
@@ -81,7 +81,7 @@ Display a help message and exit.
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-database=\fR\fB\fIdb_name\fR\fR,
@@ -179,7 +179,7 @@ or
 option on the command line, you are prompted for one.
 .sp
 Specifying a password on the command line should be considered insecure. See
-Section\ 6.6, \(lqKeeping Your Password Secure\(rq.
+Section\ 5.6, \(lqKeeping Your Password Secure\(rq.
 .TP 3n
 \(bu
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
@@ -198,7 +198,8 @@ instead.
 \(bu
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
-The connection protocol to use.
+The connection protocol to use for connecting to the server. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want. For details on the allowable values, see
+Section\ 2.2, \(lqConnecting to the MySQL Server\(rq.
 .TP 3n
 \(bu
 \fB\-\-read\-from\-remote\-server\fR,
@@ -211,6 +212,8 @@ Read the binary log from a MySQL server rather than reading a local log file. An
 \fB\-\-protocol\fR,
 \fB\-\-socket\fR, and
 \fB\-\-user\fR.
+.sp
+This option requires that the remote server be running. It works only for binary log files on the remote server, not relay log files.
 .TP 3n
 \(bu
 \fB\-\-result\-file=\fR\fB\fIname\fR\fR,
@@ -258,7 +261,7 @@ shell> \fBmysqlbinlog \-\-start\-datetime="2005\-12\-25 11:25:56" binlog.000003\
 .fi
 .RE
 This option is useful for point\-in\-time recovery. See
-Section\ 7.2, \(lqExample Backup and Recovery Strategy\(rq.
+Section\ 2, \(lqExample Backup and Recovery Strategy\(rq.
 .TP 3n
 \(bu
 \fB\-\-stop\-datetime=\fR\fB\fIdatetime\fR\fR
@@ -329,7 +332,7 @@ You can pipe the output of
 into the
 \fBmysql\fR
 client to execute the statements contained in the binary log. This is used to recover from a crash when you have an old backup (see
-Section\ 7.1, \(lqDatabase Backups\(rq). For example:
+Section\ 1, \(lqDatabase Backups\(rq). For example:
 .sp
 .RS 3n
 .nf
@@ -419,13 +422,14 @@ statements (that is, it adds
 LOCAL), both the client and the server that you use to process the statements must be configured to allow
 LOCAL
 capability. See
-Section\ 4.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq.
+Section\ 3.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq.
+.sp
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+\fBWarning\fR
 .PP
-\fBMySQL Enterprise\fR. For expert advice on the security implications of enabling
-LOCAL, subscribe to the MySQL Network Monitoring and Advisory Service. For more information see
-\fI\%http://www.mysql.com/products/enterprise/advisors.html\fR.
-.PP
-\fBWarning:\fR
 The temporary files created for
 LOAD DATA LOCAL
 statements are
@@ -435,7 +439,8 @@ automatically deleted because they are needed until you actually execute those s
 .PP
 The
 \fB\-\-hexdump\fR
-option produces a hex dump of the log contents in comments:
+option produces a hex dump of the log contents in
+#\-format comments:
 .sp
 .RS 3n
 .nf
@@ -520,9 +525,9 @@ T}:T{
 CREATE_FILE_EVENT
 T}:T{
 Used for LOAD DATA INFILE statements. This indicates
-                      the start of execution of such a statement. A
-                      temporary file is created on the slave. Used in
-                      MySQL 4 only.
+                    the start of execution of such a statement. A
+                    temporary file is created on the slave. Used in
+                    MySQL 4 only.
 T}
 T{
 09
@@ -530,8 +535,8 @@ T}:T{
 APPEND_BLOCK_EVENT
 T}:T{
 Contains data for use in a LOAD DATA INFILE
-                      statement. The data is stored in the temporary
-                      file on the slave.
+                    statement. The data is stored in the temporary file
+                    on the slave.
 T}
 T{
 0a
@@ -539,8 +544,8 @@ T}:T{
 EXEC_LOAD_EVENT
 T}:T{
 Used for LOAD DATA INFILE statements. The contents of
-                      the temporary file is stored in the table on the
-                      slave. Used in MySQL 4 only.
+                    the temporary file is stored in the table on the
+                    slave. Used in MySQL 4 only.
 T}
 T{
 0b
@@ -548,7 +553,7 @@ T}:T{
 DELETE_FILE_EVENT
 T}:T{
 Rollback of a LOAD DATA INFILE statement. The
-                      temporary file should be deleted on slave.
+                    temporary file should be deleted on slave.
 T}
 T{
 0c
@@ -563,8 +568,8 @@ T}:T{
 RAND_EVENT
 T}:T{
 Used to send information about random values if the
-                      RAND() function is used in the
-                      statement.
+                    RAND() function is
+                    used in the statement.
 T}
 T{
 0e
@@ -593,7 +598,7 @@ T}:T{
 BEGIN_LOAD_QUERY_EVENT
 T}:T{
 Used for LOAD DATA INFILE statements in MySQL 5 and
-                      later.
+                    later.
 T}
 T{
 00
@@ -608,7 +613,7 @@ T}:T{
 EXECUTE_LOAD_QUERY_EVENT
 T}:T{
 Used for LOAD DATA INFILE statements in MySQL 5 and
-                      later.
+                    later.
 T}
 T{
 13
@@ -651,7 +656,7 @@ T}:T{
 QUERY_EVENT
 T}:T{
 The most common type of events. These contain statements executed on the
-                      master.
+                    master.
 T}
 T{
 03
@@ -673,8 +678,8 @@ T}:T{
 INTVAR_EVENT
 T}:T{
 Used mainly for AUTO_INCREMENT values and when the
-                      LAST_INSERT_ID() function is
-                      used in the statement.
+                    LAST_INSERT_ID()
+                    function is used in the statement.
 T}
 T{
 06
@@ -703,7 +708,7 @@ Size: The size in bytes of the event.
 Master Pos: The position of the event in the original master log file.
 .TP 3n
 \(bu
-Flags: 16 flags. Currently, the following flags are used. The others are reserved for the future.
+Flags: 16 flags. Currently, the following flags are used. The others are reserved for future use.
 .TS
 allbox tab(:);
 l l l
@@ -724,13 +729,13 @@ T}:T{
 LOG_EVENT_BINLOG_IN_USE_F
 T}:T{
 Log file correctly closed. (Used only in
-                      FORMAT_DESCRIPTION_EVENT.) If
-                      this flag is set (if the flags are, for example,
-                      '01 00') in a
-                      FORMAT_DESCRIPTION_EVENT, the
-                      log file has not been properly closed. Most
-                      probably this is because of a master crash (for
-                      example, due to power failure).
+                    FORMAT_DESCRIPTION_EVENT.) If
+                    this flag is set (if the flags are, for example,
+                    '01 00') in a
+                    FORMAT_DESCRIPTION_EVENT, the log
+                    file has not been properly closed. Most probably
+                    this is because of a master crash (for example, due
+                    to power failure).
 T}
 T{
 02
@@ -745,8 +750,8 @@ T}:T{
 LOG_EVENT_THREAD_SPECIFIC_F
 T}:T{
 Set if the event is dependent on the connection it was executed in (for
-                      example, '04 00'), for example,
-                      if the event uses temporary tables.
+                    example, '04 00'), for example,
+                    if the event uses temporary tables.
 T}
 T{
 08
@@ -754,24 +759,22 @@ T}:T{
 LOG_EVENT_SUPPRESS_USE_F
 T}:T{
 Set in some circumstances when the event is not dependent on the default
-                      database.
+                    database.
 T}
 .TE
 .sp
-The other flags are reserved for future use.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

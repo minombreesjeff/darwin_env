@@ -49,7 +49,15 @@ const char COL_LEN = 7;
 * there are six columns, 'i', 'j', 'k', 'l', 'm', 'n', and each on is equal to 1 or 1,
 * Since each tuple should be unique in this case, then TUPLE_NUM = 2 power 6 = 64 
 */
-const int TUPLE_NUM = (int)pow(2, COL_LEN-1);    
+#ifdef _AIX
+/*
+  IBM xlC_r breaks on the initialization with pow():
+  "The expression must be an integral constant expression."
+*/
+const int TUPLE_NUM = 64;
+#else
+const int TUPLE_NUM = (int)pow(2, COL_LEN-1);
+#endif
 
 /*
 * the recursive level of random scan filter, can 
@@ -479,7 +487,7 @@ int get_column_id(char ch)
 */
 bool check_col_equal_one(int tuple_no, int col_id)
 {
-  int i = (int)pow(2, 6 - col_id);
+  int i = (int)pow((double)2, (double)(6 - col_id));
   int j = tuple_no / i;
   if(j % 2)
     return true;
@@ -764,18 +772,20 @@ void ndbapi_tuples(Ndb *ndb, char *str, bool *res)
 * str: a random string of scan opearation and condition
 * return: true stands for ndbapi ok, false stands for ndbapi failed
 */
+template class Vector<bool>;
 bool compare_cal_ndb(char *str, Ndb *ndb)
 {
-  bool res_cal[TUPLE_NUM], res_ndb[TUPLE_NUM];
+  Vector<bool> res_cal;
+  Vector<bool> res_ndb;
 
   for(int i = 0; i < TUPLE_NUM; i++)
   {
-    res_cal[i] = false;
-    res_ndb[i] = false;
+    res_cal.push_back(false);
+    res_ndb.push_back(false);
   }
 
-  check_all_tuples(str, res_cal);
-  ndbapi_tuples(ndb, str, res_ndb);
+  check_all_tuples(str, res_cal.getBase());
+  ndbapi_tuples(ndb, str, res_ndb.getBase());
 
   for(int i = 0; i < TUPLE_NUM; i++)
   {

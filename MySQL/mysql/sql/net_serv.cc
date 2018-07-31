@@ -120,13 +120,13 @@ static my_bool net_write_buff(NET *net,const char *packet,ulong len);
 my_bool my_net_init(NET *net, Vio* vio)
 {
   DBUG_ENTER("my_net_init");
+  net->vio = vio;
   my_net_local_init(net);			/* Set some limits */
   if (!(net->buff=(uchar*) my_malloc((uint32) net->max_packet+
 				     NET_HEADER_SIZE + COMP_HEADER_SIZE,
 				     MYF(MY_WME))))
     DBUG_RETURN(1);
   net->buff_end=net->buff+net->max_packet;
-  net->vio = vio;
   net->no_send_ok= net->no_send_eof= net->no_send_error= 0;
   net->error=0; net->return_errno=0; net->return_status=0;
   net->pkt_nr=net->compress_pkt_nr=0;
@@ -394,7 +394,7 @@ my_net_write(NET *net,const char *packet,ulong len)
   if (net_write_buff(net,(char*) buff,NET_HEADER_SIZE))
     return 1;
 #ifndef DEBUG_DATA_PACKETS
-  DBUG_DUMP("packet_header",(char*) buff,NET_HEADER_SIZE);
+  DBUG_DUMP("packet_header", buff, NET_HEADER_SIZE);
 #endif
   return test(net_write_buff(net,packet,len));
 }
@@ -892,7 +892,7 @@ my_real_read(NET *net, ulong *complen)
       if (i == 0)
       {					/* First parts is packet length */
 	ulong helping;
-        DBUG_DUMP("packet_header",(char*) net->buff+net->where_b,
+        DBUG_DUMP("packet_header", net->buff+net->where_b,
                   NET_HEADER_SIZE);
 	if (net->buff[net->where_b + 3] != (uchar) net->pkt_nr)
 	{

@@ -51,7 +51,7 @@ static bool make_datetime(date_time_format_types format, MYSQL_TIME *ltime,
 {
   char *buff;
   CHARSET_INFO *cs= &my_charset_bin;
-  uint length= 30;
+  uint length= MAX_DATE_STRING_REP_LENGTH;
 
   if (str->alloc(length))
     return 1;
@@ -1400,7 +1400,7 @@ String *Item_date::val_str(String *str)
   MYSQL_TIME ltime;
   if (get_date(&ltime, TIME_FUZZY_DATE))
     return (String *) 0;
-  if (str->alloc(11))
+  if (str->alloc(MAX_DATE_STRING_REP_LENGTH))
   {
     null_value= 1;
     return (String *) 0;
@@ -1449,7 +1449,7 @@ void Item_func_curdate::fix_length_and_dec()
 String *Item_func_curdate::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
-  if (str->alloc(11))
+  if (str->alloc(MAX_DATE_STRING_REP_LENGTH))
   {
     null_value= 1;
     return (String *) 0;
@@ -1603,8 +1603,7 @@ bool Item_func_now::get_date(MYSQL_TIME *res,
 int Item_func_now::save_in_field(Field *to, bool no_conversions)
 {
   to->set_notnull();
-  to->store_time(&ltime, MYSQL_TIMESTAMP_DATETIME);
-  return 0;
+  return to->store_time(&ltime, MYSQL_TIMESTAMP_DATETIME);
 }
 
 
@@ -1678,7 +1677,8 @@ String *Item_func_sec_to_time::val_str(String *str)
   MYSQL_TIME ltime;
   longlong arg_val= args[0]->val_int(); 
 
-  if ((null_value=args[0]->null_value) || str->alloc(19))
+  if ((null_value=args[0]->null_value) ||
+      str->alloc(MAX_DATE_STRING_REP_LENGTH))
   {
     null_value= 1;
     return (String*) 0;
@@ -1717,7 +1717,11 @@ void Item_func_date_format::fix_length_and_dec()
   Item *arg1= args[1]->this_item();
 
   decimals=0;
-  collation.set(thd->variables.collation_connection);
+  CHARSET_INFO *cs= thd->variables.collation_connection;
+  uint32 repertoire= arg1->collation.repertoire;
+  if (!thd->variables.lc_time_names->is_ascii)
+    repertoire|= MY_REPERTOIRE_EXTENDED;
+  collation.set(cs, arg1->collation.derivation, repertoire);
   if (arg1->type() == STRING_ITEM)
   {						// Optimize the normal case
     fixed_length=1;
@@ -1863,6 +1867,10 @@ String *Item_func_date_format::val_str(String *str)
     size=max_length;
   else
     size=format_length(format);
+
+  if (size < MAX_DATE_STRING_REP_LENGTH)
+    size= MAX_DATE_STRING_REP_LENGTH;
+
   if (format == str)
     str= &value;				// Save result here
   if (str->alloc(size))
@@ -1906,13 +1914,14 @@ String *Item_func_from_unixtime::val_str(String *str)
   if (get_date(&time_tmp, 0))
     return 0;
 
-  if (str->alloc(20*MY_CHARSET_BIN_MB_MAXLEN))
+  if (str->alloc(MAX_DATE_STRING_REP_LENGTH))
   {
     null_value= 1;
     return 0;
   }
 
   make_datetime((DATE_TIME_FORMAT *) 0, &time_tmp, str);
+
   return str;
 }
 
@@ -1974,14 +1983,15 @@ String *Item_func_convert_tz::val_str(String *str)
 
   if (get_date(&time_tmp, 0))
     return 0;
-  
-  if (str->alloc(20*MY_CHARSET_BIN_MB_MAXLEN))
+
+  if (str->alloc(MAX_DATE_STRING_REP_LENGTH))
   {
     null_value= 1;
     return 0;
   }
-  
+
   make_datetime((DATE_TIME_FORMAT *) 0, &time_tmp, str);
+
   return str;
 }
 
@@ -2561,6 +2571,7 @@ String *Item_datetime_typecast::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
   MYSQL_TIME ltime;
+
   if (!get_arg0_date(&ltime, TIME_FUZZY_DATE) &&
       !make_datetime(ltime.second_part ? DATE_TIME_MICROSECOND : DATE_TIME, 
 		     &ltime, str))
@@ -2634,12 +2645,20 @@ bool Item_date_typecast::get_date(MYSQL_TIME *ltime, uint fuzzy_date)
 }
 
 
+bool Item_date_typecast::get_time(MYSQL_TIME *ltime)
+{
+  bzero((char *)ltime, sizeof(MYSQL_TIME));
+  return args[0]->null_value;
+}
+
+
 String *Item_date_typecast::val_str(String *str)
 {
   DBUG_ASSERT(fixed == 1);
   MYSQL_TIME ltime;
 
-  if (!get_arg0_date(&ltime, TIME_FUZZY_DATE) && !str->alloc(11))
+  if (!get_arg0_date(&ltime, TIME_FUZZY_DATE) &&
+      !str->alloc(MAX_DATE_STRING_REP_LENGTH))
   {
     make_date((DATE_TIME_FORMAT *) 0, &ltime, str);
     return str;
@@ -2653,11 +2672,8 @@ longlong Item_date_typecast::val_int()
 {
   DBUG_ASSERT(fixed == 1);
   MYSQL_TIME ltime;
-  if (args[0]->get_date(&ltime, TIME_FUZZY_DATE))
-  {
-    null_value= 1;
+  if ((null_value= args[0]->get_date(&ltime, TIME_FUZZY_DATE)))
     return 0;
-  }
   return (longlong) (ltime.year * 10000L + ltime.month * 100 + ltime.day);
 }
 
@@ -2692,7 +2708,7 @@ String *Item_func_makedate::val_str(String *str)
   {
     null_value=0;
     get_date_from_daynr(days,&l_time.year,&l_time.month,&l_time.day);
-    if (str->alloc(11))
+    if (str->alloc(MAX_DATE_STRING_REP_LENGTH))
       goto err;
     make_date((DATE_TIME_FORMAT *) 0, &l_time, str);
     return str;
@@ -2828,6 +2844,7 @@ String *Item_func_add_time::val_str(String *str)
   days= (long)(seconds/86400L);
 
   calc_time_from_sec(&l_time3, (long)(seconds%86400L), microseconds);
+
   if (!is_time)
   {
     get_date_from_daynr(days,&l_time3.year,&l_time3.month,&l_time3.day);
@@ -2943,7 +2960,7 @@ String *Item_func_maketime::val_str(String *str)
                    args[2]->null_value ||
                    minute < 0 || minute > 59 ||
                    second < 0 || second > 59 ||
-                   str->alloc(19))))
+                   str->alloc(MAX_DATE_STRING_REP_LENGTH))))
     return 0;
 
   bzero((char *)&ltime, sizeof(ltime));
@@ -3286,7 +3303,7 @@ Field *Item_func_str_to_date::tmp_table_field(TABLE *t_arg)
   if (cached_field_type == MYSQL_TYPE_TIME)
     return (new Field_time(maybe_null, name, t_arg, &my_charset_bin));
   if (cached_field_type == MYSQL_TYPE_DATE)
-    return (new Field_date(maybe_null, name, t_arg, &my_charset_bin));
+    return (new Field_newdate(maybe_null, name, t_arg, &my_charset_bin));
   if (cached_field_type == MYSQL_TYPE_DATETIME)
     return (new Field_datetime(maybe_null, name, t_arg, &my_charset_bin));
   return (new Field_string(max_length, maybe_null, name, t_arg, &my_charset_bin));
@@ -3295,37 +3312,41 @@ Field *Item_func_str_to_date::tmp_table_field(TABLE *t_arg)
 
 void Item_func_str_to_date::fix_length_and_dec()
 {
-  char format_buff[64];
-  String format_str(format_buff, sizeof(format_buff), &my_charset_bin), *format;
   maybe_null= 1;
   decimals=0;
-  cached_field_type= MYSQL_TYPE_STRING;
+  cached_field_type= MYSQL_TYPE_DATETIME;
   max_length= MAX_DATETIME_FULL_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
   cached_timestamp_type= MYSQL_TIMESTAMP_NONE;
-  format= args[1]->val_str(&format_str);
-  if (!args[1]->null_value && (const_item= args[1]->const_item()))
+  if ((const_item= args[1]->const_item()))
   {
-    cached_format_type= get_date_time_result_type(format->ptr(),
-                                                  format->length());
-    switch (cached_format_type) {
-    case DATE_ONLY:
-      cached_timestamp_type= MYSQL_TIMESTAMP_DATE;
-      cached_field_type= MYSQL_TYPE_DATE; 
-      max_length= MAX_DATE_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
-      break;
-    case TIME_ONLY:
-    case TIME_MICROSECOND:
-      cached_timestamp_type= MYSQL_TIMESTAMP_TIME;
-      cached_field_type= MYSQL_TYPE_TIME; 
-      max_length= MAX_TIME_WIDTH*MY_CHARSET_BIN_MB_MAXLEN;
-      break;
-    default:
-      cached_timestamp_type= MYSQL_TIMESTAMP_DATETIME;
-      cached_field_type= MYSQL_TYPE_DATETIME; 
-      break;
+    char format_buff[64];
+    String format_str(format_buff, sizeof(format_buff), &my_charset_bin);
+    String *format= args[1]->val_str(&format_str);
+    if (!args[1]->null_value)
+    {
+      cached_format_type= get_date_time_result_type(format->ptr(),
+                                                    format->length());
+      switch (cached_format_type) {
+      case DATE_ONLY:
+        cached_timestamp_type= MYSQL_TIMESTAMP_DATE;
+        cached_field_type= MYSQL_TYPE_DATE; 
+        max_length= MAX_DATE_WIDTH * MY_CHARSET_BIN_MB_MAXLEN;
+        break;
+      case TIME_ONLY:
+      case TIME_MICROSECOND:
+        cached_timestamp_type= MYSQL_TIMESTAMP_TIME;
+        cached_field_type= MYSQL_TYPE_TIME; 
+        max_length= MAX_TIME_WIDTH * MY_CHARSET_BIN_MB_MAXLEN;
+        break;
+      default:
+        cached_timestamp_type= MYSQL_TIMESTAMP_DATETIME;
+        cached_field_type= MYSQL_TYPE_DATETIME; 
+        break;
+      }
     }
   }
 }
+
 
 bool Item_func_str_to_date::get_date(MYSQL_TIME *ltime, uint fuzzy_date)
 {
@@ -3394,6 +3415,8 @@ bool Item_func_last_day::get_date(MYSQL_TIME *ltime, uint fuzzy_date)
   ltime->day= days_in_month[month_idx];
   if ( month_idx == 1 && calc_days_in_year(ltime->year) == 366)
     ltime->day= 29;
+  ltime->hour= ltime->minute= ltime->second= 0;
+  ltime->second_part= 0;
   ltime->time_type= MYSQL_TIMESTAMP_DATE;
   return 0;
 }

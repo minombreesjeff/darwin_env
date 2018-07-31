@@ -189,7 +189,7 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
   }
   _mi_dpointer(info,key,filepos);
   DBUG_PRINT("exit",("keynr: %d",keynr));
-  DBUG_DUMP("key",(byte*) start,(uint) (key-start)+keyseg->length);
+  DBUG_DUMP("key",(uchar*) start,(uint) (key-start)+keyseg->length);
   DBUG_EXECUTE("key",
 	       _mi_print_key(DBUG_FILE,info->s->keyinfo[keynr].seg,start,
 			     (uint) (key-start)););
@@ -252,15 +252,15 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
     if (keyseg->flag & HA_SPACE_PACK)
     {
       uchar *end=pos+length;
-      if (type != HA_KEYTYPE_NUM)
-      {
-	while (end > pos && end[-1] == ' ')
-	  end--;
-      }
-      else
+      if (type == HA_KEYTYPE_NUM)
       {
 	while (pos < end && pos[0] == ' ')
 	  pos++;
+      }
+      else if (type != HA_KEYTYPE_BINARY)
+      {
+	while (end > pos && end[-1] == ' ')
+	  end--;
       }
       k_length-=length;
       length=(uint) (end-pos);

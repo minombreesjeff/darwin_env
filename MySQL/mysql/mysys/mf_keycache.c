@@ -173,7 +173,7 @@ static void test_key_cache(KEY_CACHE *keycache,
 #endif
 
 #define KEYCACHE_HASH(f, pos)                                                 \
-(((ulong) ((pos) >> keycache->key_cache_shift)+                               \
+(((ulong) ((pos) / keycache->key_cache_block_size) +                          \
                                      (ulong) (f)) & (keycache->hash_entries-1))
 #define FILE_HASH(f)                 ((uint) (f) & (CHANGED_BLOCKS_HASH-1))
 
@@ -301,10 +301,11 @@ static uint next_power(uint value)
 */
 
 int init_key_cache(KEY_CACHE *keycache, uint key_cache_block_size,
-		   ulong use_mem, uint division_limit,
-		   uint age_threshold)
+                   size_t use_mem, uint division_limit,
+                   uint age_threshold)
 {
-  uint blocks, hash_links, length;
+  ulong blocks, hash_links;
+  size_t length;
   int error;
   DBUG_ENTER("init_key_cache");
   DBUG_ASSERT(key_cache_block_size >= 512);
@@ -329,12 +330,11 @@ int init_key_cache(KEY_CACHE *keycache, uint key_cache_block_size,
 
   keycache->key_cache_mem_size= use_mem;
   keycache->key_cache_block_size= key_cache_block_size;
-  keycache->key_cache_shift= my_bit_log2(key_cache_block_size);
   DBUG_PRINT("info", ("key_cache_block_size: %u",
 		      key_cache_block_size));
 
-  blocks= (uint) (use_mem / (sizeof(BLOCK_LINK) + 2 * sizeof(HASH_LINK) +
-			     sizeof(HASH_LINK*) * 5/4 + key_cache_block_size));
+  blocks= (ulong) (use_mem / (sizeof(BLOCK_LINK) + 2 * sizeof(HASH_LINK) +
+                              sizeof(HASH_LINK*) * 5/4 + key_cache_block_size));
   /* It doesn't make sense to have too few blocks (less than 8) */
   if (blocks >= 8 && keycache->disk_blocks < 0)
   {
@@ -352,18 +352,18 @@ int init_key_cache(KEY_CACHE *keycache, uint key_cache_block_size,
 		       ALIGN_SIZE(hash_links * sizeof(HASH_LINK)) +
 		       ALIGN_SIZE(sizeof(HASH_LINK*) *
                                   keycache->hash_entries))) +
-	     ((ulong) blocks << keycache->key_cache_shift) > use_mem)
+	     ((size_t) blocks * keycache->key_cache_block_size) > use_mem)
         blocks--;
       /* Allocate memory for cache page buffers */
       if ((keycache->block_mem=
-	   my_large_malloc((ulong) blocks * keycache->key_cache_block_size,
-			  MYF(MY_WME))))
+           my_large_malloc((size_t) blocks * keycache->key_cache_block_size,
+                           MYF(MY_WME))))
       {
         /*
 	  Allocate memory for blocks, hash_links and hash entries;
 	  For each block 2 hash links are allocated
         */
-        if ((keycache->block_root= (BLOCK_LINK*) my_malloc((uint) length,
+        if ((keycache->block_root= (BLOCK_LINK*) my_malloc(length,
                                                            MYF(0))))
           break;
         my_large_free(keycache->block_mem, MYF(0));
@@ -376,7 +376,7 @@ int init_key_cache(KEY_CACHE *keycache, uint key_cache_block_size,
       }
       blocks= blocks / 4*3;
     }
-    keycache->blocks_unused= (ulong) blocks;
+    keycache->blocks_unused= blocks;
     keycache->disk_blocks= (int) blocks;
     keycache->hash_links= hash_links;
     keycache->hash_root= (HASH_LINK**) ((char*) keycache->block_root +
@@ -481,8 +481,8 @@ err:
 */
 
 int resize_key_cache(KEY_CACHE *keycache, uint key_cache_block_size,
-		     ulong use_mem, uint division_limit,
-		     uint age_threshold)
+                     size_t use_mem, uint division_limit,
+                     uint age_threshold)
 {
   int blocks;
   struct st_my_thread_var *thread;
@@ -551,7 +551,7 @@ finish:
   }
 #endif
   keycache_pthread_mutex_unlock(&keycache->cache_lock);
-  return blocks;
+  DBUG_RETURN(blocks);
 }
 
 
@@ -1807,7 +1807,7 @@ byte *key_cache_read(KEY_CACHE *keycache,
     uint status;
     int page_st;
 
-    offset= (uint) (filepos & (keycache->key_cache_block_size-1));
+    offset= (uint) (filepos % keycache->key_cache_block_size);
     /* Read data in key_cache_block_size increments */
     do
     {
@@ -1946,7 +1946,7 @@ int key_cache_insert(KEY_CACHE *keycache,
     int error;
     uint offset;
 
-    offset= (uint) (filepos & (keycache->key_cache_block_size-1));
+    offset= (uint) (filepos % keycache->key_cache_block_size);
     do
     {
       keycache_pthread_mutex_lock(&keycache->cache_lock);
@@ -2081,7 +2081,7 @@ int key_cache_write(KEY_CACHE *keycache,
     int page_st;
     uint offset;
 
-    offset= (uint) (filepos & (keycache->key_cache_block_size-1));
+    offset= (uint) (filepos % keycache->key_cache_block_size);
     do
     {
       keycache_pthread_mutex_lock(&keycache->cache_lock);
@@ -2268,7 +2268,7 @@ static int flush_cached_blocks(KEY_CACHE *keycache,
      As all blocks referred in 'cache' are marked by BLOCK_IN_FLUSH
      we are guarunteed no thread will change them
   */
-  qsort((byte*) cache, count, sizeof(*cache), (qsort_cmp) cmp_sec_link);
+  my_qsort((byte*) cache, count, sizeof(*cache), (qsort_cmp) cmp_sec_link);
 
   keycache_pthread_mutex_lock(&keycache->cache_lock);
   for ( ; cache != end ; cache++)

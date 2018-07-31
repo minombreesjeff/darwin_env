@@ -1,11 +1,11 @@
 .\"     Title: \fBmysqltest\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 06/19/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL
 .\"
-.TH "\fBMYSQLTEST\fR" "1" "06/19/2007" "MySQL" "MySQL Database System"
+.TH "\fBMYSQLTEST\fR" "1" "08/02/2008" "MySQL" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -99,12 +99,12 @@ Define the
 \fBmysqltest\fR
 variable
 $BIG_TEST
-as 1.
+as 1. This option was removed in MySQL 4.1.23, 5.0.30, and 5.1.13.
 .TP 3n
 \(bu
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
-The directory where character sets are installed. This option was added in MySQL 4.1.23, 5.0.32, and 5.1.14.
+The directory where character sets are installed. This option was added in MySQL 4.1.23, 5.0.32, and 5.1.13.
 .TP 3n
 \(bu
 \fB\-\-compress\fR,
@@ -134,9 +134,14 @@ value is
 \'d:t:S:i:O,/tmp/mysqltest.trace'.
 .TP 3n
 \(bu
+\fB\-\-debug\-check\fR
+.sp
+Print some debugging information when the program exits. This option was added in MySQL 5.1.21.
+.TP 3n
+\(bu
 \fB\-\-debug\-info\fR
 .sp
-Print some debugging information when the program exits. This option was added in MySQL 5.1.14.
+Print debugging information and memory and CPU usage statistics when the program exits. This option was added in MySQL 5.1.14.
 .TP 3n
 \(bu
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
@@ -152,7 +157,7 @@ Include the contents of the given file before processing the contents of the tes
 \fBmysqltest\fR
 test files. This option has the same effect as putting a
 \-\-source \fIfile_name\fR
-command as the first line of the test file. This option was added in MySQL 5.1.7.
+command as the first line of the test file. This option was added in MySQL 4.1.23, 5.0.30, and 5.1.7.
 .TP 3n
 \(bu
 \fB\-\-logdir=\fR\fB\fIdir_name\fR\fR
@@ -163,7 +168,7 @@ The directory to use for log files. This option was added in MySQL 5.1.14.
 \fB\-\-mark\-progress\fR
 .sp
 Write the line number and elapsed time to
-\fI\fItest_file\fR\fR\fI.progress\fR. This option was added in MySQL 4.1.23, 5.0.32, and 5.1.12.
+\fI\fItest_file\fR\fR\fI.progress\fR. This option was added in MySQL 4.1.23, 5.0.30, and 5.1.12.
 .TP 3n
 \(bu
 \fB\-\-max\-connect\-retries=\fR\fB\fInum\fR\fR
@@ -359,17 +364,16 @@ SELECT
 statement is wrapped inside a view. This option was added in MySQL 5.0.19.
 .SH "COPYRIGHT"
 .PP
-Copyright 2006\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information or if you are interested in doing a translation.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

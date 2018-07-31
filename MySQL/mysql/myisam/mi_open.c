@@ -130,7 +130,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	       (byte*) myisam_file_magic, 4))
     {
       DBUG_PRINT("error",("Wrong header in %s",name_buff));
-      DBUG_DUMP("error_dump",(char*) share->state.header.file_version,
+      DBUG_DUMP("error_dump",(uchar*) share->state.header.file_version,
 		head_length);
       my_errno=HA_ERR_NOT_A_TABLE;
       goto err;
@@ -225,7 +225,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 
     key_parts+=fulltext_keys*FT_SEGS;
     if (share->base.max_key_length > MI_MAX_KEY_BUFF || keys > MI_MAX_KEY ||
-	key_parts >= MI_MAX_KEY * MI_MAX_KEY_SEG)
+	key_parts > MI_MAX_KEY * MI_MAX_KEY_SEG)
     {
       DBUG_PRINT("error",("Wrong key info:  Max_key_length: %d  keys: %d  key_parts: %d", share->base.max_key_length, keys, key_parts));
       my_errno=HA_ERR_UNSUPPORTED;
@@ -269,6 +269,9 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 
     if (share->options & HA_OPTION_COMPRESS_RECORD)
       share->base.max_key_length+=2;	/* For safety */
+
+    /* Add space for node pointer */
+    share->base.max_key_length+= share->base.key_reflength;
 
     if (!my_multi_malloc(MY_WME,
 			 &share,sizeof(*share),
@@ -675,8 +678,11 @@ byte *mi_alloc_rec_buff(MI_INFO *info, ulong length, byte **buf)
     /* to simplify initial init of info->rec_buf in mi_open and mi_extra */
     if (length == (ulong) -1)
     {
-      length= max(info->s->base.pack_reclength,
-                  info->s->base.max_key_length);
+      if (info->s->options & HA_OPTION_COMPRESS_RECORD)
+        length= max(info->s->base.pack_reclength, info->s->max_pack_length);
+      else
+        length= info->s->base.pack_reclength;
+      length= max(length, info->s->base.max_key_length);
       /* Avoid unnecessary realloc */
       if (newptr && length == old_length)
 	return newptr;
@@ -788,8 +794,17 @@ static void setup_key_functions(register MI_KEYDEF *keyinfo)
     keyinfo->get_key= _mi_get_pack_key;
     if (keyinfo->seg[0].flag & HA_PACK_KEY)
     {						/* Prefix compression */
+      /*
+        _mi_prefix_search() compares end-space against ASCII blank (' ').
+        It cannot be used for character sets, that do not encode the
+        blank character like ASCII does. UCS2 is an example. All
+        character sets with a fixed width > 1 or a mimimum width > 1
+        cannot represent blank like ASCII does. In these cases we have
+        to use _mi_seq_search() for the search.
+      */
       if (!keyinfo->seg->charset || use_strnxfrm(keyinfo->seg->charset) ||
-          (keyinfo->seg->flag & HA_NULL_PART))
+          (keyinfo->seg->flag & HA_NULL_PART) ||
+          (keyinfo->seg->charset->mbminlen > 1))
         keyinfo->bin_search=_mi_seq_search;
       else
         keyinfo->bin_search=_mi_prefix_search;

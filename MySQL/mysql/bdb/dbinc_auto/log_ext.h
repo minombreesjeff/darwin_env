@@ -6,7 +6,6 @@
 extern "C" {
 #endif
 
-int __log_archive __P((DB_ENV *, char **[], u_int32_t));
 int __log_open __P((DB_ENV *));
 int __log_find __P((DB_LOG *, int, u_int32_t *, logfile_validity *));
 int __log_valid __P((DB_LOG *, u_int32_t, int, logfile_validity *));
@@ -16,6 +15,7 @@ void __log_get_cached_ckp_lsn __P((DB_ENV *, DB_LSN *));
 void __log_region_destroy __P((DB_ENV *, REGINFO *));
 int __log_vtruncate __P((DB_ENV *, DB_LSN *, DB_LSN *));
 int __log_is_outdated __P((DB_ENV *dbenv, u_int32_t fnum, int *outdatedp));
+int __log_archive __P((DB_ENV *, char **[], u_int32_t));
 int __log_cursor __P((DB_ENV *, DB_LOGC **, u_int32_t));
 void __log_dbenv_create __P((DB_ENV *));
 int __log_put __P((DB_ENV *, DB_LSN *, const DBT *, u_int32_t));

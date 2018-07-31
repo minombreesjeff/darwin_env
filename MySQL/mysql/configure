@@ -477,7 +477,7 @@ ac_includes_default="\
 #endif"
 
 ac_subdirs_all="$ac_subdirs_all innobase"
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os target target_cpu target_vendor target_os INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA CYGPATH_W PACKAGE VERSION ACLOCAL AUTOCONF AUTOMAKE AUTOHEADER MAKEINFO install_sh STRIP ac_ct_STRIP INSTALL_STRIP_PROGRAM mkdir_p AWK SET_MAKE am__leading_dot AMTAR am__tar am__untar MYSQL_NO_DASH_VERSION MYSQL_BASE_VERSION MYSQL_VERSION_ID MYSQL_PREVIOUS_BASE_VERSION PROTOCOL_VERSION DOT_FRM_VERSION SHARED_LIB_MAJOR_VERSION SHARED_LIB_VERSION NDB_SHARED_LIB_MAJOR_VERSION NDB_SHARED_LIB_VERSION AVAILABLE_LANGUAGES NDB_VERSION_MAJOR NDB_VERSION_MINOR NDB_VERSION_BUILD NDB_VERSION_STATUS SYSTEM_TYPE MACHINE_TYPE CONF_COMMAND SAVE_ASFLAGS SAVE_CFLAGS SAVE_CXXFLAGS SAVE_LDFLAGS SAVE_CXXLDFLAGS CXXLDFLAGS AR RANLIB DARWIN_MWCC_TRUE DARWIN_MWCC_FALSE CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT DEPDIR am__include am__quote AMDEP_TRUE AMDEP_FALSE AMDEPBACKSLASH CCDEPMODE am__fastdepCC_TRUE am__fastdepCC_FALSE CXX CXXFLAGS ac_ct_CXX CXXDEPMODE am__fastdepCXX_TRUE am__fastdepCXX_FALSE CPP CC_VERSION CXX_VERSION AS ac_ct_RANLIB EGREP LN_S ECHO ac_ct_AR CXXCPP F77 FFLAGS ac_ct_F77 LIBTOOL NM YACC PDFMANUAL DVIS uname_prog LD ARFLAGS LD_VERSION_SCRIPT MYSQLD_DEFAULT_SWITCHES TARGET_LINUX LN LN_CP_F MV RM CP SED CMP CHMOD HOSTNAME TAR PERL PERL5 DOXYGEN PDFLATEX MAKEINDEX ICHECK PS FIND_PROC KILL CHECK_PID CCAS CCASFLAGS NOINST_LDFLAGS MYSQL_SERVER_SUFFIX ASSEMBLER_x86_TRUE ASSEMBLER_x86_FALSE ASSEMBLER_sparc32_TRUE ASSEMBLER_sparc32_FALSE ASSEMBLER_sparc64_TRUE ASSEMBLER_sparc64_FALSE ASSEMBLER_TRUE ASSEMBLER_FALSE MYSQL_UNIX_ADDR MYSQL_TCP_PORT MYSQL_TCP_PORT_DEFAULT MYSQLD_USER GETCONF ac_ct_GETCONF zlib_dir ZLIB_LIBS ZLIB_DEPS ZLIB_INCLUDES WRAPLIBS pstack_dirs pstack_libs COMPILE_PSTACK_TRUE COMPILE_PSTACK_FALSE LIBDL MYSQLD_EXTRA_LDFLAGS CLIENT_EXTRA_LDFLAGS MYSQLD_EXTRA_LIBS LIB_EXTRA_CCFLAGS LM_CFLAGS COMPILATION_COMMENT ALLOCA MAKE_SHELL TERMCAP_LIB LIBEDIT_LOBJECTS tools_dirs openssl_libs openssl_includes yassl_taocrypt_extra_cxxflags yassl_h_ln_cmd yassl_libs yassl_dir HAVE_YASSL_TRUE HAVE_YASSL_FALSE libmysqld_dirs linked_libmysqld_targets docs_dirs bench_dirs readline_dir readline_topdir readline_basedir readline_link readline_h_ln_cmd bdb_includes bdb_libs bdb_libs_with_path innodb_includes innodb_libs innodb_system_libs NDB_SCI_INCLUDES NDB_SCI_LIBS NDB_LD_VERSION_SCRIPT HAVE_NDBCLUSTER_DB_TRUE HAVE_NDBCLUSTER_DB_FALSE ndbcluster_includes ndbcluster_libs ndbcluster_system_libs ndb_mgmclient_libs man_dirs man1_files man8_files CLIENT_LIBS NON_THREADED_LIBS STATIC_NSS_FLAGS sql_client_dirs linked_client_targets netware_dir linked_netware_sources HAVE_NETWARE_TRUE HAVE_NETWARE_FALSE THREAD_LOBJECTS subdirs sql_server_dirs thread_dirs server_scripts sql_union_dirs GXX NDB_DEFS ndb_cxxflags_fix ndb_port ndb_transporter_opt_objs ndb_bin_am_ldflags ndb_opt_subdirs NDB_SIZEOF_CHARP NDB_SIZEOF_CHAR NDB_SIZEOF_SHORT NDB_SIZEOF_INT NDB_SIZEOF_LONG NDB_SIZEOF_LONG_LONG MAKE_BINARY_DISTRIBUTION_OPTIONS LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os target target_cpu target_vendor target_os INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA CYGPATH_W PACKAGE VERSION ACLOCAL AUTOCONF AUTOMAKE AUTOHEADER MAKEINFO install_sh STRIP ac_ct_STRIP INSTALL_STRIP_PROGRAM mkdir_p AWK SET_MAKE am__leading_dot AMTAR am__tar am__untar MYSQL_NO_DASH_VERSION MYSQL_BASE_VERSION MYSQL_VERSION_ID MYSQL_PREVIOUS_BASE_VERSION PROTOCOL_VERSION DOT_FRM_VERSION SHARED_LIB_MAJOR_VERSION SHARED_LIB_VERSION NDB_SHARED_LIB_MAJOR_VERSION NDB_SHARED_LIB_VERSION AVAILABLE_LANGUAGES NDB_VERSION_MAJOR NDB_VERSION_MINOR NDB_VERSION_BUILD NDB_VERSION_STATUS SYSTEM_TYPE MACHINE_TYPE CONF_COMMAND SAVE_CC SAVE_CXX SAVE_ASFLAGS SAVE_CFLAGS SAVE_CXXFLAGS SAVE_LDFLAGS SAVE_CXXLDFLAGS CXXLDFLAGS AR RANLIB DARWIN_MWCC_TRUE DARWIN_MWCC_FALSE CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT DEPDIR am__include am__quote AMDEP_TRUE AMDEP_FALSE AMDEPBACKSLASH CCDEPMODE am__fastdepCC_TRUE am__fastdepCC_FALSE CXX CXXFLAGS ac_ct_CXX CXXDEPMODE am__fastdepCXX_TRUE am__fastdepCXX_FALSE CPP CC_VERSION CXX_VERSION AS ac_ct_RANLIB EGREP LN_S ECHO ac_ct_AR CXXCPP F77 FFLAGS ac_ct_F77 LIBTOOL NM YACC PDFMANUAL DVIS uname_prog ASFLAGS LD ARFLAGS LD_VERSION_SCRIPT MYSQLD_DEFAULT_SWITCHES TARGET_LINUX LN LN_CP_F MV RM CP SED CMP CHMOD HOSTNAME TAR PERL PERL5 DOXYGEN PDFLATEX MAKEINDEX ICHECK PS FIND_PROC KILL CHECK_PID CCAS CCASFLAGS NOINST_LDFLAGS MYSQL_SERVER_SUFFIX ASSEMBLER_x86_TRUE ASSEMBLER_x86_FALSE ASSEMBLER_sparc32_TRUE ASSEMBLER_sparc32_FALSE ASSEMBLER_sparc64_TRUE ASSEMBLER_sparc64_FALSE ASSEMBLER_TRUE ASSEMBLER_FALSE MYSQL_UNIX_ADDR MYSQL_TCP_PORT MYSQL_TCP_PORT_DEFAULT MYSQLD_USER GETCONF ac_ct_GETCONF zlib_dir ZLIB_LIBS ZLIB_DEPS ZLIB_INCLUDES WRAPLIBS pstack_dirs pstack_libs COMPILE_PSTACK_TRUE COMPILE_PSTACK_FALSE LIBDL MYSQLD_EXTRA_LDFLAGS CLIENT_EXTRA_LDFLAGS MYSQLD_EXTRA_LIBS LIB_EXTRA_CCFLAGS LM_CFLAGS COMPILATION_COMMENT ALLOCA MAKE_SHELL TERMCAP_LIB LIBEDIT_LOBJECTS tools_dirs openssl_libs openssl_includes yassl_taocrypt_extra_cxxflags yassl_h_ln_cmd yassl_libs yassl_dir HAVE_YASSL_TRUE HAVE_YASSL_FALSE libmysqld_dirs linked_libmysqld_targets docs_dirs extra_docs bench_dirs readline_dir readline_topdir readline_basedir readline_link readline_h_ln_cmd bdb_includes bdb_libs bdb_libs_with_path innodb_includes innodb_libs innodb_system_libs NDB_SCI_INCLUDES NDB_SCI_LIBS NDB_LD_VERSION_SCRIPT HAVE_NDBCLUSTER_DB_TRUE HAVE_NDBCLUSTER_DB_FALSE ndbcluster_includes ndbcluster_libs ndbcluster_system_libs ndb_mgmclient_libs man_dirs man1_files man8_files CLIENT_LIBS NON_THREADED_LIBS STATIC_NSS_FLAGS sql_client_dirs linked_client_targets netware_dir linked_netware_sources HAVE_NETWARE_TRUE HAVE_NETWARE_FALSE THREAD_LOBJECTS subdirs sql_server_dirs thread_dirs server_scripts sql_union_dirs GXX NDB_DEFS ndb_cxxflags_fix ndb_port ndb_transporter_opt_objs ndb_bin_am_ldflags ndb_opt_subdirs NDB_SIZEOF_CHARP NDB_SIZEOF_CHAR NDB_SIZEOF_SHORT NDB_SIZEOF_INT NDB_SIZEOF_LONG NDB_SIZEOF_LONG_LONG MAKE_BINARY_DISTRIBUTION_OPTIONS LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -2039,7 +2039,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE=mysql
- VERSION=5.0.45
+ VERSION=5.0.67
 
 
 cat >>confdefs.h <<_ACEOF
@@ -2169,7 +2169,7 @@ am__tar='${AMTAR} chof - "$$tardir"'; am__untar='${AMTAR} xf -'
 
 
 
-          ac_config_headers="$ac_config_headers config.h"
+          ac_config_headers="$ac_config_headers include/config.h:config.h.in"
 
 
 PROTOCOL_VERSION=10
@@ -2185,14 +2185,24 @@ NDB_SHARED_LIB_VERSION=$NDB_SHARED_LIB_MAJOR_VERSION:0:0
 # ndb version
 NDB_VERSION_MAJOR=5
 NDB_VERSION_MINOR=0
-NDB_VERSION_BUILD=45
+NDB_VERSION_BUILD=67
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
 # Remember that regexps needs to quote [ and ] since this is run through m4
-MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|[a-z]*-.*$||"`
-MYSQL_BASE_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|\.[^.]*$||"`
-MYSQL_VERSION_ID=`echo $MYSQL_NO_DASH_VERSION | sed -e 's|[^0-9.].*$||;s|$|.|' | sed -e 's/[^0-9.]//g; s/\./  /g; s/ \([0-9]\) / 0\\1 /g; s/ //g'`
+# We take some made up examples
+#
+#  VERSION                  5.1.40sp1-alpha     5.0.34a
+#  MYSQL_NO_DASH_VERSION    5.1.40sp1           5.0.34a
+#  MYSQL_NUMERIC_VERSION    5.1.40              5.0.34
+#  MYSQL_BASE_VERSION       5.1                 5.0
+#  MYSQL_VERSION_ID         50140               50034
+#
+MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|-.*$||"`
+MYSQL_NUMERIC_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|[a-z][a-z0-9]*$||"`
+MYSQL_BASE_VERSION=`echo $MYSQL_NUMERIC_VERSION | sed -e "s|\.[^.]*$||"`
+MYSQL_VERSION_ID=`echo $MYSQL_NUMERIC_VERSION | \
+    awk -F. '{printf "%d%0.2d%0.2d", $1, $2, $3}'`
 
 # Add previous major version for debian package upgrade path
 MYSQL_PREVIOUS_BASE_VERSION=4.1
@@ -2612,7 +2622,7 @@ _ACEOF
       See the Installation chapter in the Reference Manual." >&5
 echo "$as_me: error: Charset '$cs' not available. (Available are: $CHARSETS_AVAILABLE).
       See the Installation chapter in the Reference Manual." >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
   esac
 done
 
@@ -2800,7 +2810,7 @@ _ACEOF
       See the Installation chapter in the Reference Manual." >&5
 echo "$as_me: error: Charset $cs not available. (Available are: $CHARSETS_AVAILABLE).
       See the Installation chapter in the Reference Manual." >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
 esac
 
 if test "$default_collation" = default; then
@@ -2832,7 +2842,7 @@ echo "$as_me: error:
       Valid collations are: $default_charset_collations.
       See the Installation chapter in the Reference Manual.
   " >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
 fi
 
 
@@ -3194,12 +3204,16 @@ case $MACHINE_TYPE in
 esac
 
 # Save some variables and the command line options for mysqlbug
+SAVE_CC="$CC"
+SAVE_CXX="$CXX"
 SAVE_ASFLAGS="$ASFLAGS"
 SAVE_CFLAGS="$CFLAGS"
 SAVE_CXXFLAGS="$CXXFLAGS"
 SAVE_LDFLAGS="$LDFLAGS"
 SAVE_CXXLDFLAGS="$CXXLDFLAGS"
 CONF_COMMAND="$0 $ac_configure_args"
+
+
 
 
 
@@ -5207,7 +5221,7 @@ esac
 if test $? -eq "0"
 then
   echo "$as_me:$LINENO: checking \"C Compiler version\"" >&5
-echo $ECHO_N "checking \"C Compiler version\"... $ECHO_C" >&6;
+echo $ECHO_N "checking \"C Compiler version\"... $ECHO_C" >&6
   echo "$as_me:$LINENO: result: \"$CC $CC_VERSION\"" >&5
 echo "${ECHO_T}\"$CC $CC_VERSION\"" >&6
 else
@@ -5237,7 +5251,7 @@ esac
 if test "$CXX_VERSION"
 then
   echo "$as_me:$LINENO: checking \"C++ compiler version\"" >&5
-echo $ECHO_N "checking \"C++ compiler version\"... $ECHO_C" >&6;
+echo $ECHO_N "checking \"C++ compiler version\"... $ECHO_C" >&6
   echo "$as_me:$LINENO: result: \"$CXX $CXX_VERSION\"" >&5
 echo "${ECHO_T}\"$CXX $CXX_VERSION\"" >&6
 fi
@@ -5950,7 +5964,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 5953 "configure"' > conftest.$ac_ext
+  echo '#line 5967 "configure"' > conftest.$ac_ext
   if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -6851,7 +6865,7 @@ fi
 
 
 # Provide some information about the compiler.
-echo "$as_me:6854:" \
+echo "$as_me:6868:" \
      "checking for Fortran 77 compiler version" >&5
 ac_compiler=`set X $ac_compile; echo $2`
 { (eval echo "$as_me:$LINENO: \"$ac_compiler --version </dev/null >&5\"") >&5
@@ -7914,11 +7928,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:7917: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:7931: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:7921: \$? = $ac_status" >&5
+   echo "$as_me:7935: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -8182,11 +8196,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:8185: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:8199: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:8189: \$? = $ac_status" >&5
+   echo "$as_me:8203: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -8286,11 +8300,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:8289: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:8303: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:8293: \$? = $ac_status" >&5
+   echo "$as_me:8307: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -9755,7 +9769,7 @@ linux*)
   libsuff=
   case "$host_cpu" in
   x86_64*|s390x*|powerpc64*)
-    echo '#line 9758 "configure"' > conftest.$ac_ext
+    echo '#line 9772 "configure"' > conftest.$ac_ext
     if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -10652,7 +10666,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 10655 "configure"
+#line 10669 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -10752,7 +10766,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 10755 "configure"
+#line 10769 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -13092,11 +13106,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:13095: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:13109: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:13099: \$? = $ac_status" >&5
+   echo "$as_me:13113: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -13196,11 +13210,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:13199: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:13213: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:13203: \$? = $ac_status" >&5
+   echo "$as_me:13217: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -13732,7 +13746,7 @@ linux*)
   libsuff=
   case "$host_cpu" in
   x86_64*|s390x*|powerpc64*)
-    echo '#line 13735 "configure"' > conftest.$ac_ext
+    echo '#line 13749 "configure"' > conftest.$ac_ext
     if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -14787,11 +14801,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14790: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14804: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:14794: \$? = $ac_status" >&5
+   echo "$as_me:14808: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -14891,11 +14905,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14894: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14908: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:14898: \$? = $ac_status" >&5
+   echo "$as_me:14912: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -16340,7 +16354,7 @@ linux*)
   libsuff=
   case "$host_cpu" in
   x86_64*|s390x*|powerpc64*)
-    echo '#line 16343 "configure"' > conftest.$ac_ext
+    echo '#line 16357 "configure"' > conftest.$ac_ext
     if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -17115,11 +17129,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:17118: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:17132: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:17122: \$? = $ac_status" >&5
+   echo "$as_me:17136: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -17383,11 +17397,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:17386: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:17400: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:17390: \$? = $ac_status" >&5
+   echo "$as_me:17404: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -17487,11 +17501,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:17490: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:17504: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:17494: \$? = $ac_status" >&5
+   echo "$as_me:17508: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -18956,7 +18970,7 @@ linux*)
   libsuff=
   case "$host_cpu" in
   x86_64*|s390x*|powerpc64*)
-    echo '#line 18959 "configure"' > conftest.$ac_ext
+    echo '#line 18973 "configure"' > conftest.$ac_ext
     if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -20745,6 +20759,7 @@ esac
 
 
 
+
 export CC CXX CFLAGS LD LDFLAGS AR ARFLAGS
 
 if test "$GCC" = "yes"
@@ -20764,7 +20779,6 @@ _ACEOF
 fi
 
 
-
 case $CXX_VERSION in
   MIPSpro*)
     AR=$CXX
@@ -20775,9 +20789,7 @@ case $CXX_VERSION in
     ARFLAGS="-xar -o"
   ;;
   *)
-    if test -z "$AR"
-    then
-      # Extract the first word of "ar", so it can be a program name with args.
+    # Extract the first word of "ar", so it can be a program name with args.
 set dummy ar; ac_word=$2
 echo "$as_me:$LINENO: checking for $ac_word" >&5
 echo $ECHO_N "checking for $ac_word... $ECHO_C" >&6
@@ -20812,8 +20824,7 @@ else
 echo "${ECHO_T}no" >&6
 fi
 
-    fi
-    if test -z "$AR"
+    if test -z "$AR" || test "$AR" = "false"
     then
       { { echo "$as_me:$LINENO: error: You need ar to build the library" >&5
 echo "$as_me: error: You need ar to build the library" >&2;}
@@ -21910,7 +21921,7 @@ fi;
 
 if test "$TARGET_LINUX" = "true" -a "$static_nss" = ""
 then
-  tmp=`nm /usr/lib/libc.a  | grep _nss_files_getaliasent_r`
+  tmp=`nm /usr/lib*/libc.a  | grep _nss_files_getaliasent_r`
   if test -n "$tmp"
   then
      STATIC_NSS_FLAGS="-lc -lnss_files -lnss_dns -lresolv"
@@ -22079,6 +22090,33 @@ if test "${with_tcp_port+set}" = set; then
    MYSQL_TCP_PORT=$withval
 else
    MYSQL_TCP_PORT=$MYSQL_TCP_PORT_DEFAULT
+      # if we actually defaulted (as opposed to the pathological case of
+      # --with-tcp-port=<MYSQL_TCP_PORT_DEFAULT> which might in theory
+      # happen if whole batch of servers was built from a script), set
+      # the default to zero to indicate that; we don't lose information
+      # that way, because 0 obviously indicates that we can get the
+      # default value from MYSQL_TCP_PORT. this seems really evil, but
+      # testing for MYSQL_TCP_PORT==MYSQL_TCP_PORT_DEFAULT would make a
+      # a port of MYSQL_TCP_PORT_DEFAULT magic even if the builder did not
+      # intend it to mean "use the default, in fact, look up a good default
+      # from /etc/services if you can", but really, really meant 3306 when
+      # they passed in 3306. When they pass in a specific value, let them
+      # have it; don't second guess user and think we know better, this will
+      # just make people cross.  this makes the the logic work like this
+      # (which is complicated enough):
+      #
+      # - if a port was set during build, use that as a default.
+      #
+      # - otherwise, try to look up a port in /etc/services; if that fails,
+      #   use MYSQL_TCP_PORT_DEFAULT (at the time of this writing 3306)
+      #
+      # - allow the MYSQL_TCP_PORT environment variable to override that.
+      #
+      # - allow command-line parameters to override all of the above.
+      #
+      # the top-most MYSQL_TCP_PORT_DEFAULT is read from win/configure.js,
+      # so don't mess with that.
+      MYSQL_TCP_PORT_DEFAULT=0
 
 fi;
 
@@ -22458,6 +22496,7 @@ cat >>confdefs.h <<_ACEOF
 _ACEOF
 
    fi
+
      echo "$as_me:$LINENO: checking for _LARGE_FILES" >&5
 echo $ECHO_N "checking for _LARGE_FILES... $ECHO_C" >&6
 if test "${ac_cv_sys_large_files+set}" = set; then
@@ -22473,10 +22512,11 @@ else
 	esac
       done
       case "$host_os" in
-	# AIX 4.2 and later
-	aix4.[2-9]* | aix4.1[0-9]* | aix[5-9].* | aix[1-9][0-9]*)
-	  ac_cv_sys_large_files=1 ;;
-	esac
+       # Large file support on AIX is available starting from version 4.2
+       # Tested only on 5.2 and up
+       aix4.[2-9]* | aix4.1[0-9]* | aix[5-9].* | aix[1-9][0-9]*)
+         ac_cv_sys_large_files=1 ;;
+       esac
 
 fi
 echo "$as_me:$LINENO: result: $ac_cv_sys_large_files" >&5
@@ -24532,6 +24572,7 @@ _ACEOF
 
 fi
 
+# See if we need a library for address lookup.
 echo "$as_me:$LINENO: checking for library containing inet_aton" >&5
 echo $ECHO_N "checking for library containing inet_aton... $ECHO_C" >&6
 if test "${ac_cv_search_inet_aton+set}" = set; then
@@ -26398,7 +26439,7 @@ echo "${ECHO_T}\"no need to check headers\"" >&6
         fi
 
         echo "$as_me:$LINENO: checking \"for pthread_create in -lpthread\"" >&5
-echo $ECHO_N "checking \"for pthread_create in -lpthread\"... $ECHO_C" >&6;
+echo $ECHO_N "checking \"for pthread_create in -lpthread\"... $ECHO_C" >&6
         ac_save_LIBS="$LIBS"
         LIBS="$LIBS -lpthread"
         cat >conftest.$ac_ext <<_ACEOF
@@ -26517,7 +26558,7 @@ echo "${ECHO_T}\"yes\"" >&6
       else
 	{ { echo "$as_me:$LINENO: error: On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual." >&5
 echo "$as_me: error: On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual." >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
       fi
       echo "$as_me:$LINENO: result: \"yes\"" >&5
 echo "${ECHO_T}\"yes\"" >&6
@@ -26540,7 +26581,7 @@ echo "${ECHO_T}\"yes\"" >&6
       else
 	{ { echo "$as_me:$LINENO: error: On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual." >&5
 echo "$as_me: error: On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual." >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
       fi
       echo "$as_me:$LINENO: result: \"yes\"" >&5
 echo "${ECHO_T}\"yes\"" >&6
@@ -26765,7 +26806,7 @@ echo "${ECHO_T}\"$with_posix_threads\"" >&6
   if test "$with_posix_threads" = "no"
   then
     echo "$as_me:$LINENO: checking \"for pthread_create in -lpthread\"" >&5
-echo $ECHO_N "checking \"for pthread_create in -lpthread\"... $ECHO_C" >&6;
+echo $ECHO_N "checking \"for pthread_create in -lpthread\"... $ECHO_C" >&6
     ac_save_LIBS="$LIBS"
     LIBS="$LIBS -lpthread"
     cat >conftest.$ac_ext <<_ACEOF
@@ -26820,7 +26861,7 @@ echo "${ECHO_T}\"$with_posix_threads\"" >&6
     then
       LIBS=" $ac_save_LIBS -lpthreads"
       echo "$as_me:$LINENO: checking \"for pthread_create in -lpthreads\"" >&5
-echo $ECHO_N "checking \"for pthread_create in -lpthreads\"... $ECHO_C" >&6;
+echo $ECHO_N "checking \"for pthread_create in -lpthreads\"... $ECHO_C" >&6
       cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
 _ACEOF
@@ -26874,7 +26915,7 @@ echo "${ECHO_T}\"$with_posix_threads\"" >&6
         # This is for FreeBSD
         LIBS="$ac_save_LIBS -pthread"
         echo "$as_me:$LINENO: checking \"for pthread_create in -pthread\"" >&5
-echo $ECHO_N "checking \"for pthread_create in -pthread\"... $ECHO_C" >&6;
+echo $ECHO_N "checking \"for pthread_create in -pthread\"... $ECHO_C" >&6
         cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
 _ACEOF
@@ -27812,15 +27853,30 @@ fi;
 if test "$with_debug" = "yes"
 then
   # Medium debug.
+
+cat >>confdefs.h <<\_ACEOF
+#define DBUG_ON 1
+_ACEOF
+
   CFLAGS="$DEBUG_CFLAGS $DEBUG_OPTIMIZE_CC -DDBUG_ON -DSAFE_MUTEX $CFLAGS"
   CXXFLAGS="$DEBUG_CXXFLAGS $DEBUG_OPTIMIZE_CXX -DDBUG_ON -DSAFE_MUTEX $CXXFLAGS"
 elif test "$with_debug" = "full"
 then
   # Full debug. Very slow in some cases
+
+cat >>confdefs.h <<\_ACEOF
+#define DBUG_ON 1
+_ACEOF
+
   CFLAGS="$DEBUG_CFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC $CFLAGS"
   CXXFLAGS="$DEBUG_CXXFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC $CXXFLAGS"
 else
   # Optimized version. No debug
+
+cat >>confdefs.h <<\_ACEOF
+#define DBUG_OFF 1
+_ACEOF
+
   CFLAGS="$OPTIMIZE_CFLAGS -DDBUG_OFF $CFLAGS"
   CXXFLAGS="$OPTIMIZE_CXXFLAGS -DDBUG_OFF $CXXFLAGS"
 fi
@@ -32600,7 +32656,7 @@ again" >&5
 echo "$as_me: error: Your compiler cannot convert a longlong value to a float!
 If you are using gcc 2.8.# you should upgrade to egcs 1.0.3 or newer and try
 again" >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
 fi
 fi
 echo "$as_me:$LINENO: checking for sigset_t" >&5
@@ -38498,7 +38554,7 @@ if test $ac_cv_func_fseeko = yes; then
 then
   { { echo "$as_me:$LINENO: error: \"Found fseeko symbol but large_file_support is not enabled!\"" >&5
 echo "$as_me: error: \"Found fseeko symbol but large_file_support is not enabled!\"" >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
 fi
 
 fi
@@ -39647,13 +39703,13 @@ echo "${ECHO_T}no" >&6
 	then
 		{ { echo "$as_me:$LINENO: error: Can't have --with-openssl-includes without --with-openssl" >&5
 echo "$as_me: error: Can't have --with-openssl-includes without --with-openssl" >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
 	fi
 	if test ! -z "$openssl_libs"
 	then
 		{ { echo "$as_me:$LINENO: error: Can't have --with-openssl-libs without --with-openssl" >&5
 echo "$as_me: error: Can't have --with-openssl-libs without --with-openssl" >&2;}
-   { (exit 1); exit 1; }; };
+   { (exit 1); exit 1; }; }
 	fi
   fi
 
@@ -39757,9 +39813,14 @@ fi;
 if test "$with_docs" = "yes"
 then
   docs_dirs="Docs"
+  if test -f "$srcdir/Docs/manual.chm" ; then
+    extra_docs="manual.chm"
+  fi
 else
   docs_dirs=""
+  extra_docs=""
 fi
+
 
 
 # Shall we build the man pages?
@@ -41557,12 +41618,14 @@ sql_server_dirs=
 server_scripts=
 thread_dirs=
 
-sql_client_dirs="strings regex mysys libmysql client"
+sql_client_dirs=
 linked_client_targets="linked_libmysql_sources"
 
-if test "$THREAD_SAFE_CLIENT" != "no"
+if test "$THREAD_SAFE_CLIENT" = "no"
 then
-  sql_client_dirs="libmysql_r $sql_client_dirs"
+  sql_client_dirs="strings regex mysys dbug extra libmysql client"
+else
+  sql_client_dirs="strings regex mysys dbug extra libmysql libmysql_r client"
   linked_client_targets="$linked_client_targets linked_libmysql_r_sources"
             ac_config_files="$ac_config_files libmysql_r/Makefile"
 
@@ -41605,7 +41668,7 @@ fi
 export CC CXX CFLAGS CXXFLAGS LD LDFLAGS AR
 ac_configure_args="$ac_configure_args CFLAGS='$CFLAGS' CXXFLAGS='$CXXFLAGS'"
 
-if test "$with_server" = "yes" -o "$THREAD_SAFE_CLIENT" != "no"
+if test "$with_server" != "no" -o "$THREAD_SAFE_CLIENT" != "no"
 then
 
 cat >>confdefs.h <<\_ACEOF
@@ -41615,6 +41678,10 @@ _ACEOF
   # Avoid _PROGRAMS names
   THREAD_LOBJECTS="thr_alarm.o thr_lock.o thr_mutex.o thr_rwlock.o my_pthread.o my_thr_init.o mf_keycache.o"
 
+fi
+
+if test "$with_server" != "no"
+then
   server_scripts="mysqld_safe mysql_install_db"
   sql_server_dirs="strings mysys dbug extra regex"
 
@@ -41853,6 +41920,12 @@ then
   ndb_opt_subdirs="$ndb_opt_subdirs docs"
   ndb_bin_am_ldflags=""
 fi
+# building dynamic breaks on AIX. (If you want to try it and get unresolved
+# __vec__delete2 and some such, try linking against libhC.)
+case "$host_os" in
+  aix3.* | aix4.0.* | aix4.1.*) ;;
+  *) ndb_bin_am_ldflags="-static";;
+esac
 
 
 
@@ -41876,7 +41949,7 @@ fi
 
 
 # Output results
-                                                                                                                                                                                                                                                                                                                                                                                                                                                        ac_config_files="$ac_config_files Makefile extra/Makefile mysys/Makefile strings/Makefile regex/Makefile heap/Makefile myisam/Makefile myisammrg/Makefile os2/Makefile os2/include/Makefile os2/include/sys/Makefile man/Makefile BUILD/Makefile vio/Makefile libmysql/Makefile client/Makefile pstack/Makefile pstack/aout/Makefile sql/Makefile sql/share/Makefile sql-common/Makefile SSL/Makefile dbug/Makefile scripts/Makefile include/Makefile sql-bench/Makefile server-tools/Makefile server-tools/instance-manager/Makefile tests/Makefile Docs/Makefile support-files/Makefile support-files/MacOSX/Makefile support-files/RHEL4-SElinux/Makefile mysql-test/Makefile netware/Makefile include/mysql_version.h cmd-line-utils/Makefile cmd-line-utils/libedit/Makefile win/Makefile zlib/Makefile debian/Makefile debian/defs.mk debian/control cmd-line-utils/readline/Makefile"
+                                                                                                                                                                                                                                                                                                                                                                                                                          ac_config_files="$ac_config_files Makefile extra/Makefile mysys/Makefile strings/Makefile regex/Makefile heap/Makefile myisam/Makefile myisammrg/Makefile os2/Makefile os2/include/Makefile os2/include/sys/Makefile man/Makefile BUILD/Makefile vio/Makefile libmysql/Makefile client/Makefile pstack/Makefile pstack/aout/Makefile sql/Makefile sql/share/Makefile sql-common/Makefile SSL/Makefile dbug/Makefile scripts/Makefile include/Makefile sql-bench/Makefile server-tools/Makefile server-tools/instance-manager/Makefile tests/Makefile Docs/Makefile support-files/Makefile support-files/MacOSX/Makefile support-files/RHEL4-SElinux/Makefile mysql-test/Makefile netware/Makefile include/mysql_version.h cmd-line-utils/Makefile cmd-line-utils/libedit/Makefile win/Makefile zlib/Makefile cmd-line-utils/readline/Makefile"
 
            ac_config_commands="$ac_config_commands default"
 
@@ -42602,13 +42675,10 @@ do
   "cmd-line-utils/libedit/Makefile" ) CONFIG_FILES="$CONFIG_FILES cmd-line-utils/libedit/Makefile" ;;
   "win/Makefile" ) CONFIG_FILES="$CONFIG_FILES win/Makefile" ;;
   "zlib/Makefile" ) CONFIG_FILES="$CONFIG_FILES zlib/Makefile" ;;
-  "debian/Makefile" ) CONFIG_FILES="$CONFIG_FILES debian/Makefile" ;;
-  "debian/defs.mk" ) CONFIG_FILES="$CONFIG_FILES debian/defs.mk" ;;
-  "debian/control" ) CONFIG_FILES="$CONFIG_FILES debian/control" ;;
   "cmd-line-utils/readline/Makefile" ) CONFIG_FILES="$CONFIG_FILES cmd-line-utils/readline/Makefile" ;;
   "depfiles" ) CONFIG_COMMANDS="$CONFIG_COMMANDS depfiles" ;;
   "default" ) CONFIG_COMMANDS="$CONFIG_COMMANDS default" ;;
-  "config.h" ) CONFIG_HEADERS="$CONFIG_HEADERS config.h" ;;
+  "include/config.h" ) CONFIG_HEADERS="$CONFIG_HEADERS include/config.h:config.h.in" ;;
   *) { { echo "$as_me:$LINENO: error: invalid argument: $ac_config_target" >&5
 echo "$as_me: error: invalid argument: $ac_config_target" >&2;}
    { (exit 1); exit 1; }; };;
@@ -42746,6 +42816,8 @@ s,@NDB_VERSION_STATUS@,$NDB_VERSION_STATUS,;t t
 s,@SYSTEM_TYPE@,$SYSTEM_TYPE,;t t
 s,@MACHINE_TYPE@,$MACHINE_TYPE,;t t
 s,@CONF_COMMAND@,$CONF_COMMAND,;t t
+s,@SAVE_CC@,$SAVE_CC,;t t
+s,@SAVE_CXX@,$SAVE_CXX,;t t
 s,@SAVE_ASFLAGS@,$SAVE_ASFLAGS,;t t
 s,@SAVE_CFLAGS@,$SAVE_CFLAGS,;t t
 s,@SAVE_CXXFLAGS@,$SAVE_CXXFLAGS,;t t
@@ -42797,6 +42869,7 @@ s,@YACC@,$YACC,;t t
 s,@PDFMANUAL@,$PDFMANUAL,;t t
 s,@DVIS@,$DVIS,;t t
 s,@uname_prog@,$uname_prog,;t t
+s,@ASFLAGS@,$ASFLAGS,;t t
 s,@LD@,$LD,;t t
 s,@ARFLAGS@,$ARFLAGS,;t t
 s,@LD_VERSION_SCRIPT@,$LD_VERSION_SCRIPT,;t t
@@ -42872,6 +42945,7 @@ s,@HAVE_YASSL_FALSE@,$HAVE_YASSL_FALSE,;t t
 s,@libmysqld_dirs@,$libmysqld_dirs,;t t
 s,@linked_libmysqld_targets@,$linked_libmysqld_targets,;t t
 s,@docs_dirs@,$docs_dirs,;t t
+s,@extra_docs@,$extra_docs,;t t
 s,@bench_dirs@,$bench_dirs,;t t
 s,@readline_dir@,$readline_dir,;t t
 s,@readline_topdir@,$readline_topdir,;t t

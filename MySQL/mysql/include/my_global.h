@@ -100,40 +100,40 @@
 #define NETWARE_SET_SCREEN_MODE(A)
 #endif
 
+/* Workaround for _LARGE_FILES and _LARGE_FILE_API incompatibility on AIX */
+#if defined(_AIX) && defined(_LARGE_FILE_API)
+#undef _LARGE_FILE_API
+#endif
+
 /*
   The macros below are used to allow build of Universal/fat binaries of
   MySQL and MySQL applications under darwin. 
 */
-#ifdef TARGET_FAT_BINARY
-# undef SIZEOF_CHARP 
-# undef SIZEOF_INT 
-# undef SIZEOF_LONG 
-# undef SIZEOF_LONG_LONG 
-# undef SIZEOF_OFF_T 
-# undef SIZEOF_SHORT 
-
-#if defined(__i386__)
-# undef WORDS_BIGENDIAN
-# define SIZEOF_CHARP 4
-# define SIZEOF_INT 4
-# define SIZEOF_LONG 4
-# define SIZEOF_LONG_LONG 8
-# define SIZEOF_OFF_T 8
-# define SIZEOF_SHORT 2
-
-#elif defined(__ppc__)
-# define WORDS_BIGENDIAN
-# define SIZEOF_CHARP 4
-# define SIZEOF_INT 4
-# define SIZEOF_LONG 4
-# define SIZEOF_LONG_LONG 8
-# define SIZEOF_OFF_T 8
-# define SIZEOF_SHORT 2
-
-#else
-# error Building FAT binary for an unknown architecture.
-#endif
-#endif /* TARGET_FAT_BINARY */
+#if defined(__APPLE__) && defined(__MACH__)
+#  undef SIZEOF_CHARP 
+#  undef SIZEOF_SHORT 
+#  undef SIZEOF_INT 
+#  undef SIZEOF_LONG 
+#  undef SIZEOF_LONG_LONG 
+#  undef SIZEOF_OFF_T 
+#  undef WORDS_BIGENDIAN
+#  define SIZEOF_SHORT 2
+#  define SIZEOF_INT 4
+#  define SIZEOF_LONG_LONG 8
+#  define SIZEOF_OFF_T 8
+#  if defined(__i386__) || defined(__ppc__)
+#    define SIZEOF_CHARP 4
+#    define SIZEOF_LONG 4
+#  elif defined(__x86_64__) || defined(__ppc64__)
+#    define SIZEOF_CHARP 8
+#    define SIZEOF_LONG 8
+#  else
+#    error Building FAT binary for an unknown architecture.
+#  endif
+#  if defined(__ppc__) || defined(__ppc64__)
+#    define WORDS_BIGENDIAN
+#  endif
+#endif /* defined(__APPLE__) && defined(__MACH__) */
 
 
 /*
@@ -533,8 +533,12 @@ C_MODE_END
 #undef DBUG_OFF
 #endif
 
-#if defined(_lint) && !defined(DBUG_OFF)
-#define DBUG_OFF
+/* We might be forced to turn debug off, if not turned off already */
+#if (defined(FORCE_DBUG_OFF) || defined(_lint)) && !defined(DBUG_OFF)
+#  define DBUG_OFF
+#  ifdef DBUG_ON
+#    undef DBUG_ON
+#  endif
 #endif
 
 #include <my_dbug.h>
@@ -780,9 +784,6 @@ typedef SOCKET_SIZE_TYPE size_socket;
 #define DBL_MAX		1.79769313486231470e+308
 #define FLT_MAX		((float)3.40282346638528860e+38)
 #endif
-#ifndef SSIZE_MAX
-#define SSIZE_MAX ((~((size_t) 0)) / 2)
-#endif
 
 #ifndef HAVE_FINITE
 #define finite(x) (1.0 / fabs(x) > 0.0)
@@ -895,7 +896,12 @@ typedef unsigned long	uint32; /* Short for unsigned integer >= 32 bits */
 typedef unsigned long	ulong;		  /* Short for unsigned long */
 #endif
 #ifndef longlong_defined
-#if defined(HAVE_LONG_LONG) && SIZEOF_LONG != 8
+/* 
+  Using [unsigned] long long is preferable as [u]longlong because we use 
+  [unsigned] long long unconditionally in many places, 
+  for example in constants with [U]LL suffix.
+*/
+#if defined(HAVE_LONG_LONG) && SIZEOF_LONG_LONG == 8
 typedef unsigned long long int ulonglong; /* ulong or unsigned long long */
 typedef long long int	longlong;
 #else
@@ -978,7 +984,7 @@ typedef int		myf;	/* Type of MyFlags in my_funcs */
 typedef char		byte;	/* Smallest addressable unit */
 #endif
 typedef char		my_bool; /* Small bool */
-#if !defined(bool) && !defined(bool_defined) && (!defined(HAVE_BOOL) || !defined(__cplusplus))
+#if !defined(bool) && (!defined(HAVE_BOOL) || !defined(__cplusplus))
 typedef char		bool;	/* Ordinary boolean values 0 1 */
 #endif
 	/* Macros for converting *constants* to the right type */
@@ -1051,7 +1057,7 @@ typedef char		bool;	/* Ordinary boolean values 0 1 */
 */
 
 /* Optimized store functions for Intel x86 */
-#if defined(__i386__) && !defined(_WIN64)
+#if defined(__i386__) || defined(_WIN32)
 #define sint2korr(A)	(*((int16 *) (A)))
 #define sint3korr(A)	((int32) ((((uchar) (A)[2]) & 128) ? \
 				  (((uint32) 255L << 24) | \
@@ -1063,7 +1069,7 @@ typedef char		bool;	/* Ordinary boolean values 0 1 */
 				  ((uint32) (uchar) (A)[0])))
 #define sint4korr(A)	(*((long *) (A)))
 #define uint2korr(A)	(*((uint16 *) (A)))
-#ifdef HAVE_purify
+#if defined(HAVE_purify) && !defined(_WIN32)
 #define uint3korr(A)	(uint32) (((uint32) ((uchar) (A)[0])) +\
 				  (((uint32) ((uchar) (A)[1])) << 8) +\
 				  (((uint32) ((uchar) (A)[2])) << 16))
@@ -1075,7 +1081,7 @@ typedef char		bool;	/* Ordinary boolean values 0 1 */
     It means, that you have to provide enough allocated space !
 */
 #define uint3korr(A)	(long) (*((unsigned int *) (A)) & 0xFFFFFF)
-#endif
+#endif /* HAVE_purify && !_WIN32 */
 #define uint4korr(A)	(*((uint32 *) (A)))
 #define uint5korr(A)	((ulonglong)(((uint32) ((uchar) (A)[0])) +\
 				    (((uint32) ((uchar) (A)[1])) << 8) +\
@@ -1114,9 +1120,8 @@ do { doubleget_union _tmp; \
 #define floatstore(T,V)  memcpy((byte*)(T), (byte*)(&V),sizeof(float))
 #define floatget(V,M)    memcpy((byte*) &V,(byte*) (M),sizeof(float))
 #define float8store(V,M) doublestore((V),(M))
-#endif /* __i386__ */
+#else
 
-#ifndef sint2korr
 /*
   We're here if it's not a IA-32 architecture (Win32 and UNIX IA-32 defines
   were done before)
@@ -1241,7 +1246,7 @@ do { doubleget_union _tmp; \
 #define float8store(V,M) doublestore((V),(M))
 #endif /* WORDS_BIGENDIAN */
 
-#endif /* sint2korr */
+#endif /* __i386__ OR _WIN32 */
 
 /*
   Macro for reading 32-bit integer from network byte order (big-endian)

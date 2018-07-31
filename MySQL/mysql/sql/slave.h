@@ -65,8 +65,8 @@
   mi->rli does not either.
 
   In MASTER_INFO: run_lock, data_lock
-  run_lock protects all information about the run state: slave_running, and the
-  existence of the I/O thread (to stop/start it, you need this mutex).
+  run_lock protects all information about the run state: slave_running, thd
+  and the existence of the I/O thread to stop/start it, you need this mutex).
   data_lock protects some moving members of the struct: counters (log name,
   position) and relay log (MYSQL_LOG object).
 
@@ -348,7 +348,7 @@ typedef struct st_relay_log_info
   void close_temporary_tables();
 
   /* Check if UNTIL condition is satisfied. See slave.cc for more. */
-  bool is_until_satisfied();
+  bool is_until_satisfied(my_off_t master_beg_pos);
   inline ulonglong until_pos()
   {
     return ((until_condition == UNTIL_MASTER_POS) ? group_master_log_pos :

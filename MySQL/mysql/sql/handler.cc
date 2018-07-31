@@ -515,6 +515,10 @@ int ha_panic(enum ha_panic_function flag)
   if (have_berkeley_db == SHOW_OPTION_YES)
     error|=berkeley_end();
 #endif
+#ifdef HAVE_BLACKHOLE_DB
+  if (have_blackhole_db == SHOW_OPTION_YES)
+    error|= blackhole_db_end();
+#endif
 #ifdef HAVE_INNOBASE_DB
   if (have_innodb == SHOW_OPTION_YES)
     error|=innobase_end();
@@ -821,6 +825,9 @@ int ha_rollback_trans(THD *thd, bool all)
     }
   }
 #endif /* USING_TRANSACTIONS */
+  if (all)
+    thd->transaction_rollback_request= FALSE;
+
   /*
     If a non-transactional table was updated, warn; don't warn if this is a
     slave thread (because when a slave thread executes a ROLLBACK, it has
@@ -830,7 +837,7 @@ int ha_rollback_trans(THD *thd, bool all)
     the error log; but we don't want users to wonder why they have this
     message in the error log, so we don't send it.
   */
-  if (is_real_trans && thd->no_trans_update.all &&
+  if (is_real_trans && thd->transaction.all.modified_non_trans_table &&
       !thd->slave_thread)
     push_warning(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
                  ER_WARNING_NOT_COMPLETE_ROLLBACK,
@@ -858,6 +865,8 @@ int ha_autocommit_or_rollback(THD *thd, int error)
       if (ha_commit_stmt(thd))
 	error=1;
     }
+    else if (thd->transaction_rollback_request && !thd->in_sub_stmt)
+      (void) ha_rollback(thd);
     else
       (void) ha_rollback_stmt(thd);
 
@@ -1343,7 +1352,7 @@ int ha_delete_table(THD *thd, enum db_type table_type, const char *path,
 
     strmake(buff, thd->net.last_error, sizeof(buff)-1);
     thd->query_error= 0;
-    thd->spcont= 0;
+    thd->spcont= NULL;
     thd->lex->current_select= 0;
     thd->net.last_error[0]= 0;
 
@@ -1372,6 +1381,13 @@ int ha_delete_table(THD *thd, enum db_type table_type, const char *path,
 handler *handler::clone(MEM_ROOT *mem_root)
 {
   handler *new_handler= get_new_handler(table, mem_root, table->s->db_type);
+  /*
+    Allocate handler->ref here because otherwise ha_open will allocate it
+    on this->table->mem_root and we will not be able to reclaim that memory 
+    when the clone handler object is destroyed.
+  */
+  if (!(new_handler->ref= (byte*) alloc_root(mem_root, ALIGN_SIZE(ref_length)*2)))
+    return NULL;
   if (new_handler && !new_handler->ha_open(table->s->path, table->db_stat,
                                            HA_OPEN_IGNORE_IF_LOCKED))
     return new_handler;
@@ -1411,8 +1427,9 @@ int handler::ha_open(const char *name, int mode, int test_if_locked)
     (void) extra(HA_EXTRA_NO_READCHECK);	// Not needed in SQL
 
     DBUG_ASSERT(alloc_root_inited(&table->mem_root));
-
-    if (!(ref= (byte*) alloc_root(&table->mem_root, ALIGN_SIZE(ref_length)*2)))
+    /* ref is already allocated for us if we're called from handler::clone() */
+    if (!ref && !(ref= (byte*) alloc_root(&table->mem_root, 
+                                          ALIGN_SIZE(ref_length)*2)))
     {
       close();
       error=HA_ERR_OUT_OF_MEM;
@@ -1598,6 +1615,8 @@ int handler::update_auto_increment()
   ulonglong nr;
   THD *thd= table->in_use;
   struct system_variables *variables= &thd->variables;
+  bool external_auto_increment= 
+       table->file->table_flags() & HA_EXTERNAL_AUTO_INCREMENT;
   DBUG_ENTER("handler::update_auto_increment");
 
   /*
@@ -1615,12 +1634,12 @@ int handler::update_auto_increment()
     adjust_next_insert_id_after_explicit_value(nr);
     DBUG_RETURN(0);
   }
-  if (!(nr= thd->next_insert_id))
+  if (external_auto_increment || !(nr= thd->next_insert_id))
   {
     if ((nr= get_auto_increment()) == ~(ulonglong) 0)
       DBUG_RETURN(HA_ERR_AUTOINC_READ_FAILED);  // Mark failure
 
-    if (variables->auto_increment_increment != 1)
+    if (!external_auto_increment && variables->auto_increment_increment != 1)
       nr= next_insert_id(nr-1, variables);
     /*
       Update next row based on the found value. This way we don't have to
@@ -1961,6 +1980,8 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
       }
     }
   }
+  if (table->s->frm_version != FRM_VER_TRUE_VARCHAR)
+    return HA_ADMIN_NEEDS_ALTER;
   return check_for_upgrade(check_opt);
 }
 
@@ -1995,7 +2016,13 @@ static bool update_frm_version(TABLE *table, bool needs_lock)
   int result= 1;
   DBUG_ENTER("update_frm_version");
 
-  if (table->s->mysql_version != MYSQL_VERSION_ID)
+  /*
+    No need to update frm version in case table was created or checked
+    by server with the same version. This also ensures that we do not
+    update frm version for temporary tables as this code doesn't support
+    temporary tables.
+  */
+  if (table->s->mysql_version == MYSQL_VERSION_ID)
     DBUG_RETURN(0);
 
   strxnmov(path, sizeof(path)-1, mysql_data_home, "/", table->s->db, "/",
@@ -2323,8 +2350,8 @@ int ha_init_key_cache(const char *name, KEY_CACHE *key_cache)
   if (!key_cache->key_cache_inited)
   {
     pthread_mutex_lock(&LOCK_global_system_variables);
-    long tmp_buff_size= (long) key_cache->param_buff_size;
-    long tmp_block_size= (long) key_cache->param_block_size;
+    ulong tmp_buff_size= (ulong) key_cache->param_buff_size;
+    uint tmp_block_size= (uint) key_cache->param_block_size;
     uint division_limit= key_cache->param_division_limit;
     uint age_threshold=  key_cache->param_age_threshold;
     pthread_mutex_unlock(&LOCK_global_system_variables);
@@ -2597,7 +2624,8 @@ int handler::read_multi_range_next(KEY_MULTI_RANGE **found_range_p)
     read_range_first()
     start_key		Start key. Is 0 if no min range
     end_key		End key.  Is 0 if no max range
-    eq_range_arg	Set to 1 if start_key == end_key
+    eq_range_arg	Set to 1 if start_key == end_key and the range endpoints
+                        will not change during query execution.
     sorted		Set to 1 if result should be sorted per key
 
   NOTES

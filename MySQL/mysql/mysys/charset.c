@@ -202,6 +202,19 @@ static my_bool simple_cs_is_full(CHARSET_INFO *cs)
 }
 
 
+static void
+copy_uca_collation(CHARSET_INFO *to, CHARSET_INFO *from)
+{
+  to->cset= from->cset;
+  to->coll= from->coll;
+  to->strxfrm_multiply= from->strxfrm_multiply;
+  to->min_sort_char= from->min_sort_char;
+  to->max_sort_char= from->max_sort_char;
+  to->mbminlen= from->mbminlen;
+  to->mbmaxlen= from->mbmaxlen;
+}
+
+
 static int add_collation(CHARSET_INFO *cs)
 {
   if (cs->name && (cs->number ||
@@ -225,29 +238,30 @@ static int add_collation(CHARSET_INFO *cs)
     
     if (!(all_charsets[cs->number]->state & MY_CS_COMPILED))
     {
-      CHARSET_INFO *new= all_charsets[cs->number];
+      CHARSET_INFO *newcs= all_charsets[cs->number];
       if (cs_copy_data(all_charsets[cs->number],cs))
         return MY_XML_ERROR;
 
       if (!strcmp(cs->csname,"ucs2") )
       {
 #if defined(HAVE_CHARSET_ucs2) && defined(HAVE_UCA_COLLATIONS)
-        new->cset= my_charset_ucs2_general_uca.cset;
-        new->coll= my_charset_ucs2_general_uca.coll;
-        new->strxfrm_multiply= my_charset_ucs2_general_uca.strxfrm_multiply;
-        new->min_sort_char= my_charset_ucs2_general_uca.min_sort_char;
-        new->max_sort_char= my_charset_ucs2_general_uca.max_sort_char;
-        new->mbminlen= 2;
-        new->mbmaxlen= 2;
-        new->state |= MY_CS_AVAILABLE | MY_CS_LOADED;
+        copy_uca_collation(newcs, &my_charset_ucs2_unicode_ci);
+        newcs->state|= MY_CS_AVAILABLE | MY_CS_LOADED;
 #endif        
+      }
+      else if (!strcmp(cs->csname, "utf8"))
+      {
+#if defined (HAVE_CHARSET_utf8) && defined(HAVE_UCA_COLLATIONS)
+        copy_uca_collation(newcs, &my_charset_utf8_unicode_ci);
+        newcs->state|= MY_CS_AVAILABLE | MY_CS_LOADED;
+#endif
       }
       else
       {
         uchar *sort_order= all_charsets[cs->number]->sort_order;
         simple_cs_init_functions(all_charsets[cs->number]);
-        new->mbminlen= 1;
-        new->mbmaxlen= 1;
+        newcs->mbminlen= 1;
+        newcs->mbmaxlen= 1;
         if (simple_cs_is_full(all_charsets[cs->number]))
         {
           all_charsets[cs->number]->state |= MY_CS_LOADED;
@@ -263,6 +277,9 @@ static int add_collation(CHARSET_INFO *cs)
         if (sort_order && sort_order['A'] < sort_order['a'] &&
                           sort_order['a'] < sort_order['B'])
           all_charsets[cs->number]->state|= MY_CS_CSSORT; 
+
+        if (my_charset_is_8bit_pure_ascii(all_charsets[cs->number]))
+          all_charsets[cs->number]->state|= MY_CS_PUREASCII;
       }
     }
     else
@@ -792,4 +809,44 @@ ulong escape_quotes_for_mysql(CHARSET_INFO *charset_info,
   }
   *to= 0;
   return overflow ? (ulong)~0 : (ulong) (to - to_start);
+}
+
+
+/**
+  @brief Find compatible character set with ctype.
+
+  @param[in] original_cs Original character set
+
+  @note
+    128 my_charset_ucs2_general_uca      ->192 my_charset_utf8_general_uca_ci
+    129 my_charset_ucs2_icelandic_uca_ci ->193 my_charset_utf8_icelandic_uca_ci
+    130 my_charset_ucs2_latvian_uca_ci   ->194 my_charset_utf8_latvian_uca_ci
+    131 my_charset_ucs2_romanian_uca_ci  ->195 my_charset_utf8_romanian_uca_ci
+    132 my_charset_ucs2_slovenian_uca_ci ->196 my_charset_utf8_slovenian_uca_ci
+    133 my_charset_ucs2_polish_uca_ci    ->197 my_charset_utf8_polish_uca_ci
+    134 my_charset_ucs2_estonian_uca_ci  ->198 my_charset_utf8_estonian_uca_ci
+    135 my_charset_ucs2_spanish_uca_ci   ->199 my_charset_utf8_spanish_uca_ci
+    136 my_charset_ucs2_swedish_uca_ci   ->200 my_charset_utf8_swedish_uca_ci
+    137 my_charset_ucs2_turkish_uca_ci   ->201 my_charset_utf8_turkish_uca_ci
+    138 my_charset_ucs2_czech_uca_ci     ->202 my_charset_utf8_czech_uca_ci
+    139 my_charset_ucs2_danish_uca_ci    ->203 my_charset_utf8_danish_uca_ci
+    140 my_charset_ucs2_lithuanian_uca_ci->204 my_charset_utf8_lithuanian_uca_ci
+    141 my_charset_ucs2_slovak_uca_ci    ->205 my_charset_utf8_slovak_uca_ci
+    142 my_charset_ucs2_spanish2_uca_ci  ->206 my_charset_utf8_spanish2_uca_ci
+    143 my_charset_ucs2_roman_uca_ci     ->207 my_charset_utf8_roman_uca_ci
+    144 my_charset_ucs2_persian_uca_ci   ->208 my_charset_utf8_persian_uca_ci
+
+  @return Compatible character set or NULL.
+*/
+
+CHARSET_INFO *get_compatible_charset_with_ctype(CHARSET_INFO *original_cs)
+{
+  CHARSET_INFO *compatible_cs= 0;
+  DBUG_ENTER("get_compatible_charset_with_ctype");
+  if (!strcmp(original_cs->csname, "ucs2") &&
+      (compatible_cs= get_charset(original_cs->number + 64, MYF(0))) &&
+      (!compatible_cs->ctype ||
+       strcmp(original_cs->name + 4, compatible_cs->name + 4)))
+    compatible_cs= 0;
+  DBUG_RETURN(compatible_cs);
 }

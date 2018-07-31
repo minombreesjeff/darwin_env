@@ -301,7 +301,7 @@ ha_tina::ha_tina(TABLE *table_arg)
   chain_size(DEFAULT_CHAIN_LENGTH), records_is_known(0)
 {
   /* Set our original buffers from pre-allocated memory */
-  buffer.set(byte_buffer, IO_SIZE, system_charset_info);
+  buffer.set(byte_buffer, IO_SIZE, &my_charset_bin);
   chain= chain_buffer;
 }
 
@@ -447,7 +447,7 @@ int ha_tina::find_current_row(byte *buf)
       else
         buffer.append(*mapped_ptr);
     }
-    (*field)->store(buffer.ptr(), buffer.length(), system_charset_info);
+    (*field)->store(buffer.ptr(), buffer.length(), buffer.charset());
   }
   next_position= (end_ptr - share->mapped_file)+1;
   /* Maybe use \N for null? */
@@ -852,7 +852,7 @@ int ha_tina::rnd_end()
       It also sorts so that we move the final blocks to the
       beginning so that we move the smallest amount of data possible.
     */
-    qsort(chain, (size_t)(chain_ptr - chain), sizeof(tina_set), (qsort_cmp)sort_set);
+    my_qsort(chain, (size_t)(chain_ptr - chain), sizeof(tina_set), (qsort_cmp)sort_set);
     for (ptr= chain; ptr < chain_ptr; ptr++)
     {
       memmove(share->mapped_file + ptr->begin, share->mapped_file + ptr->end,
@@ -883,7 +883,7 @@ int ha_tina::delete_all_rows()
   DBUG_ENTER("ha_tina::delete_all_rows");
 
   if (!records_is_known)
-    return (my_errno=HA_ERR_WRONG_COMMAND);
+    DBUG_RETURN(my_errno=HA_ERR_WRONG_COMMAND);
 
   /* Invalidate all cached mmap pages */
   if (free_mmap(share)) 

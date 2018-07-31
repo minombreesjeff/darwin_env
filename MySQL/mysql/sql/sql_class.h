@@ -159,7 +159,13 @@ typedef struct st_log_info
   my_off_t pos;
   bool fatal; // if the purge happens to give us a negative offset
   pthread_mutex_t lock;
-  st_log_info():fatal(0) { pthread_mutex_init(&lock, MY_MUTEX_INIT_FAST);}
+  st_log_info()
+    : index_file_offset(0), index_file_start_offset(0),
+      pos(0), fatal(0)
+  {
+    log_file_name[0] = '\0';
+    pthread_mutex_init(&lock, MY_MUTEX_INIT_FAST);
+  }
   ~st_log_info() { pthread_mutex_destroy(&lock);}
 } LOG_INFO;
 
@@ -450,7 +456,7 @@ public:
 	      Table_ident *table,   List<key_part_spec> &ref_cols,
 	      uint delete_opt_arg, uint update_opt_arg, uint match_opt_arg)
     :Key(FOREIGN_KEY, name_arg, HA_KEY_ALG_UNDEF, 0, cols),
-    ref_table(table), ref_columns(cols),
+    ref_table(table), ref_columns(ref_cols),
     delete_opt(delete_opt_arg), update_opt(update_opt_arg),
     match_opt(match_opt_arg)
   {}
@@ -567,6 +573,7 @@ struct system_variables
   my_bool new_mode;
   my_bool query_cache_wlock_invalidate;
   my_bool engine_condition_pushdown;
+  my_bool keep_files_on_create;
 
 #ifdef HAVE_INNOBASE_DB
   my_bool innodb_table_locks;
@@ -698,6 +705,13 @@ public:
 #ifndef DBUG_OFF
   bool is_backup_arena; /* True if this arena is used for backup. */
 #endif
+  /*
+    The states relfects three diffrent life cycles for three
+    different types of statements:
+    Prepared statement: INITIALIZED -> PREPARED -> EXECUTED.
+    Stored procedure:   INITIALIZED_FOR_SP -> EXECUTED.
+    Other statements:   CONVENTIONAL_EXECUTION never changes.
+  */
   enum enum_state
   {
     INITIALIZED= 0, INITIALIZED_FOR_SP= 1, PREPARED= 2,
@@ -988,13 +1002,25 @@ enum prelocked_mode_type {NON_PRELOCKED= 0, PRELOCKED= 1,
 class Open_tables_state
 {
 public:
-  /*
-    open_tables - list of regular tables in use by this thread
-    temporary_tables - list of temp tables in use by this thread
-    handler_tables - list of tables that were opened with HANDLER OPEN
-     and are still in use by this thread
+  /**
+    List of regular tables in use by this thread. Contains temporary and
+    base tables that were opened with @see open_tables().
   */
-  TABLE *open_tables, *temporary_tables, *handler_tables, *derived_tables;
+  TABLE *open_tables;
+  /**
+    List of temporary tables used by this thread. Contains user-level
+    temporary tables, created with CREATE TEMPORARY TABLE, and
+    internal temporary tables, created, e.g., to resolve a SELECT,
+    or for an intermediate table used in ALTER.
+    XXX Why are internal temporary tables added to this list?
+  */
+  TABLE *temporary_tables;
+  /**
+    List of tables that were opened with HANDLER OPEN and are
+    still in use by this thread.
+  */
+  TABLE *handler_tables;
+  TABLE *derived_tables;
   /*
     During a MySQL session, one can lock tables in two modes: automatic
     or manual. In automatic mode all necessary tables are locked just before
@@ -1352,9 +1378,20 @@ public:
 
   ulonglong  limit_found_rows;
   ulonglong  options;           /* Bitmap of states */
-  longlong   row_count_func;	/* For the ROW_COUNT() function */
-  ha_rows    cuted_fields,
-             sent_row_count, examined_row_count;
+  longlong   row_count_func;    /* For the ROW_COUNT() function */
+  ha_rows    cuted_fields;
+
+  /*
+    number of rows we actually sent to the client, including "synthetic"
+    rows in ROLLUP etc.
+  */
+  ha_rows    sent_row_count;
+
+  /*
+    number of rows we read, sent or not, including in create_sort_index()
+  */
+  ha_rows    examined_row_count;
+
   /*
     The set of those tables whose fields are referenced in all subqueries
     of the query.
@@ -1391,7 +1428,11 @@ public:
   /* Statement id is thread-wide. This counter is used to generate ids */
   ulong      statement_id_counter;
   ulong	     rand_saved_seed1, rand_saved_seed2;
-  ulong      row_count;  // Row counter, mainly for errors and warnings
+  /*
+    Row counter, mainly for errors and warnings. Not increased in
+    create_sort_index(); may differ from examined_row_count.
+  */
+  ulong      row_count;
   long	     dbug_thread_id;
   pthread_t  real_id;
   uint	     tmp_table, global_read_lock;
@@ -1421,7 +1462,33 @@ public:
   bool       slave_thread, one_shot_set;
   bool	     locked, some_tables_deleted;
   bool       last_cuted_field;
-  bool	     no_errors, password, is_fatal_error;
+  bool	     no_errors, password;
+  /**
+    Set to TRUE if execution of the current compound statement
+    can not continue. In particular, disables activation of
+    CONTINUE or EXIT handlers of stored routines.
+    Reset in the end of processing of the current user request, in
+    @see mysql_reset_thd_for_next_command().
+  */
+  bool is_fatal_error;
+  /**
+    Set by a storage engine to request the entire
+    transaction (that possibly spans multiple engines) to
+    rollback. Reset in ha_rollback.
+  */
+  bool       transaction_rollback_request;
+  /**
+    TRUE if we are in a sub-statement and the current error can
+    not be safely recovered until we left the sub-statement mode.
+    In particular, disables activation of CONTINUE and EXIT
+    handlers inside sub-statements. E.g. if it is a deadlock
+    error and requires a transaction-wide rollback, this flag is
+    raised (traditionally, MySQL first has to close all the reads
+    via @see handler::ha_index_or_rnd_end() and only then perform
+    the rollback).
+    Reset to FALSE when we leave the sub-statement mode.
+  */
+  bool       is_fatal_sub_stmt_error;
   bool	     query_start_used, rand_used, time_zone_used;
 
   /*
@@ -1457,13 +1524,12 @@ public:
   bool	     in_lock_tables;
   bool       query_error, bootstrap, cleanup_done;
   bool	     tmp_table_used;
+  
+  /**  is set if some thread specific value(s) used in a statement. */
+  bool       thread_specific_used;
   bool	     charset_is_system_charset, charset_is_collation_connection;
   bool       charset_is_character_set_filesystem;
   bool       enable_slow_log;   /* enable slow log for current statement */
-  struct {
-    bool all:1;
-    bool stmt:1;
-  } no_trans_update;
   bool	     abort_on_warning;
   bool 	     got_warning;       /* Set on call to push_warning() */
   bool	     no_warnings_for_error; /* no warnings on call to my_error() */
@@ -1589,11 +1655,27 @@ public:
     proc_info = old_msg;
     pthread_mutex_unlock(&mysys_var->mutex);
   }
+
+  static inline void safe_time(time_t *t)
+  {
+    /**
+       Wrapper around time() which retries on error (-1)
+
+       @details
+       This is needed because, despite the documentation, time() may fail
+       in some circumstances.  Here we retry time() until it succeeds, and
+       log the failure so that performance problems related to this can be
+       identified.
+    */
+    while(unlikely(time(t) == ((time_t) -1)))
+      sql_print_information("time() failed with %d", errno);
+  }
+
   inline time_t query_start() { query_start_used=1; return start_time; }
-  inline void	set_time()    { if (user_time) start_time=time_after_lock=user_time; else time_after_lock=time(&start_time); }
-  inline void	end_time()    { time(&start_time); }
+  inline void	set_time()    { if (user_time) start_time=time_after_lock=user_time; else { safe_time(&start_time); time_after_lock= start_time; }}
+  inline void	end_time()    { safe_time(&start_time); }
   inline void	set_time(time_t t) { time_after_lock=start_time=user_time=t; }
-  inline void	lock_time()   { time(&time_after_lock); }
+  inline void	lock_time()   { safe_time(&time_after_lock); }
   inline void	insert_id(ulonglong id_arg)
   {
     last_insert_id= id_arg;
@@ -1698,7 +1780,7 @@ public:
   inline bool really_abort_on_warning()
   {
     return (abort_on_warning &&
-            (!no_trans_update.stmt ||
+            (!transaction.stmt.modified_non_trans_table ||
              (variables.sql_mode & MODE_STRICT_ALL_TABLES)));
   }
   void set_status_var_init();
@@ -1838,6 +1920,7 @@ class select_result :public Sql_alloc {
 protected:
   THD *thd;
   SELECT_LEX_UNIT *unit;
+  uint nest_level;
 public:
   select_result();
   virtual ~select_result() {};
@@ -1874,6 +1957,12 @@ public:
   */
   virtual void cleanup();
   void set_thd(THD *thd_arg) { thd= thd_arg; }
+  /**
+     The nest level, if supported. 
+     @return
+     -1 if nest level is undefined, otherwise a positive integer.
+   */
+  int get_nest_level() { return nest_level; }
 #ifdef EMBEDDED_LIBRARY
   virtual void begin_dataset() {}
 #else
@@ -1927,12 +2016,47 @@ public:
 };
 
 
+#define ESCAPE_CHARS "ntrb0ZN" // keep synchronous with READ_INFO::unescape
+
+
+/*
+ List of all possible characters of a numeric value text representation.
+*/
+#define NUMERIC_CHARS ".0123456789e+-"
+
+
 class select_export :public select_to_file {
   uint field_term_length;
   int field_sep_char,escape_char,line_sep_char;
+  int field_term_char; // first char of FIELDS TERMINATED BY or MAX_INT
+  /*
+    The is_ambiguous_field_sep field is true if a value of the field_sep_char
+    field is one of the 'n', 't', 'r' etc characters
+    (see the READ_INFO::unescape method and the ESCAPE_CHARS constant value).
+  */
+  bool is_ambiguous_field_sep;
+  /*
+     The is_ambiguous_field_term is true if field_sep_char contains the first
+     char of the FIELDS TERMINATED BY (ENCLOSED BY is empty), and items can
+     contain this character.
+  */
+  bool is_ambiguous_field_term;
+  /*
+    The is_unsafe_field_sep field is true if a value of the field_sep_char
+    field is one of the '0'..'9', '+', '-', '.' and 'e' characters
+    (see the NUMERIC_CHARS constant value).
+  */
+  bool is_unsafe_field_sep;
   bool fixed_row_size;
 public:
-  select_export(sql_exchange *ex) :select_to_file(ex) {}
+  /**
+     Creates a select_export to represent INTO OUTFILE <filename> with a
+     defined level of subquery nesting.
+   */
+  select_export(sql_exchange *ex, uint nest_level_arg) :select_to_file(ex) 
+  {
+    nest_level= nest_level_arg;
+  }
   ~select_export();
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
   bool send_data(List<Item> &items);
@@ -1941,7 +2065,15 @@ public:
 
 class select_dump :public select_to_file {
 public:
-  select_dump(sql_exchange *ex) :select_to_file(ex) {}
+  /**
+     Creates a select_export to represent INTO DUMPFILE <filename> with a
+     defined level of subquery nesting.
+   */  
+  select_dump(sql_exchange *ex, uint nest_level_arg) : 
+    select_to_file(ex) 
+  {
+    nest_level= nest_level_arg;
+  }
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
   bool send_data(List<Item> &items);
 };
@@ -1952,21 +2084,22 @@ class select_insert :public select_result_interceptor {
   TABLE_LIST *table_list;
   TABLE *table;
   List<Item> *fields;
-  ulonglong last_insert_id;
+  ulonglong autoinc_value_of_last_inserted_row; // not autogenerated
+  ulonglong autoinc_value_of_first_inserted_row; // autogenerated
   COPY_INFO info;
   bool insert_into_view;
-
   select_insert(TABLE_LIST *table_list_par,
 		TABLE *table_par, List<Item> *fields_par,
 		List<Item> *update_fields, List<Item> *update_values,
 		enum_duplicates duplic, bool ignore);
   ~select_insert();
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
-  int prepare2(void);
+  virtual int prepare2(void);
   bool send_data(List<Item> &items);
   virtual void store_values(List<Item> &values);
   void send_error(uint errcode,const char *err);
   bool send_eof();
+  void abort();
   /* not implemented: select_insert is never re-used in prepared statements */
   void cleanup();
 };
@@ -1996,6 +2129,7 @@ public:
   void send_error(uint errcode,const char *err);
   bool send_eof();
   void abort();
+  int prepare2(void) { return 0; }
 };
 
 #include <myisam.h>
@@ -2203,7 +2337,7 @@ class user_var_entry
   bool unsigned_flag;
 
   double val_real(my_bool *null_value);
-  longlong val_int(my_bool *null_value);
+  longlong val_int(my_bool *null_value) const;
   String *val_str(my_bool *null_value, String *str, uint decimals);
   my_decimal *val_decimal(my_bool *null_value, my_decimal *result);
   DTCollation collation;
@@ -2275,6 +2409,11 @@ class multi_delete :public select_result_interceptor
   /* True if at least one table we delete from is not transactional */
   bool normal_tables;
   bool delete_while_scanning;
+  /*
+     error handling (rollback and binlogging) can happen in send_eof()
+     so that afterward send_error() needs to find out that.
+  */
+  bool error_handled;
 
 public:
   multi_delete(TABLE_LIST *dt, uint num_of_tables);
@@ -2310,6 +2449,11 @@ class multi_update :public select_result_interceptor
   /* True if the update operation has made a change in a transactional table */
   bool transactional_tables;
   bool ignore;
+  /* 
+     error handling (rollback and binlogging) can happen in send_eof()
+     so that afterward send_error() needs to find out that.
+  */
+  bool error_handled;
 
 public:
   multi_update(TABLE_LIST *ut, TABLE_LIST *leaves_list,
@@ -2347,7 +2491,16 @@ class select_dumpvar :public select_result_interceptor {
   ha_rows row_count;
 public:
   List<my_var> var_list;
-  select_dumpvar()  { var_list.empty(); row_count= 0;}
+  /**
+     Creates a select_dumpvar to represent INTO <variable> with a defined 
+     level of subquery nesting.
+   */
+  select_dumpvar(uint nest_level_arg)
+  {
+    var_list.empty();
+    row_count= 0;
+    nest_level= nest_level_arg;
+  }
   ~select_dumpvar() {}
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
   bool send_data(List<Item> &items);
@@ -2359,3 +2512,5 @@ public:
 /* Functions in sql_class.cc */
 
 void add_to_status(STATUS_VAR *to_var, STATUS_VAR *from_var);
+void mark_transaction_to_rollback(THD *thd, bool all);
+

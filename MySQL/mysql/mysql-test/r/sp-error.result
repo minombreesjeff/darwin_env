@@ -982,9 +982,9 @@ ERROR HY000: Explicit or implicit commit is not allowed in stored function or tr
 CREATE FUNCTION bug_13627_f() returns int BEGIN create view v1 as select 1; return 1; END |
 ERROR HY000: Explicit or implicit commit is not allowed in stored function or trigger.
 CREATE TRIGGER tr1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN alter view v1 as select 1; END |
-ERROR HY000: Explicit or implicit commit is not allowed in stored function or trigger.
+ERROR 0A000: ALTER VIEW is not allowed in stored procedures
 CREATE FUNCTION bug_13627_f() returns int BEGIN alter view v1 as select 1; return 1; END |
-ERROR HY000: Explicit or implicit commit is not allowed in stored function or trigger.
+ERROR 0A000: ALTER VIEW is not allowed in stored procedures
 CREATE TRIGGER tr1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN drop view v1; END |
 ERROR HY000: Explicit or implicit commit is not allowed in stored function or trigger.
 CREATE FUNCTION bug_13627_f() returns int BEGIN drop view v1; return 1; END |
@@ -1211,7 +1211,7 @@ ERROR 42S02: Unknown table 'c' in field list
 drop procedure bug15091;
 drop function if exists bug16896;
 create aggregate function bug16896() returns int return 1;
-ERROR 42000: AGGREGATE is not supported for stored functions
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '() returns int return 1' at line 1
 DROP PROCEDURE IF EXISTS bug14702;
 CREATE IF NOT EXISTS PROCEDURE bug14702()
 BEGIN
@@ -1452,3 +1452,64 @@ end
 until true end repeat retry;
 end//
 ERROR 42000: LEAVE with no matching label: retry
+DROP DATABASE IF EXISTS mysqltest;
+CREATE DATABASE mysqltest;
+USE mysqltest;
+DROP DATABASE mysqltest;
+SELECT inexistent(), 1 + ,;
+ERROR 42000: FUNCTION inexistent does not exist
+SELECT inexistent();
+ERROR 42000: FUNCTION inexistent does not exist
+SELECT .inexistent();
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '()' at line 1
+SELECT ..inexistent();
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '.inexistent()' at line 1
+USE test;
+drop procedure if exists proc_33983_a;
+drop procedure if exists proc_33983_b;
+drop procedure if exists proc_33983_c;
+drop procedure if exists proc_33983_d;
+create procedure proc_33983_a()
+begin
+label1:
+begin
+label2:
+begin
+select 1;
+end label1;
+end;
+end|
+ERROR 42000: End-label label1 without match
+create procedure proc_33983_b()
+begin
+label1:
+repeat
+label2:
+repeat
+select 1;
+until FALSE end repeat label1;
+until FALSE end repeat;
+end|
+ERROR 42000: End-label label1 without match
+create procedure proc_33983_c()
+begin
+label1:
+while TRUE do
+label2:
+while TRUE do
+select 1;
+end while label1;
+end while;
+end|
+ERROR 42000: End-label label1 without match
+create procedure proc_33983_d()
+begin
+label1:
+loop
+label2:
+loop
+select 1;
+end loop label1;
+end loop;
+end|
+ERROR 42000: End-label label1 without match

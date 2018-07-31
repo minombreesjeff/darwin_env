@@ -109,6 +109,14 @@ static void mi_check_print_msg(MI_CHECK *param,	const char* msg_type,
   }
   length=(uint) (strxmov(name, param->db_name,".",param->table_name,NullS) -
 		 name);
+  /*
+    TODO: switch from protocol to push_warning here. The main reason we didn't
+    it yet is parallel repair. Due to following trace:
+    mi_check_print_msg/push_warning/sql_alloc/my_pthread_getspecific_ptr.
+
+    Also we likely need to lock mutex here (in both cases with protocol and
+    push_warning).
+  */
   protocol->prepare_for_resend();
   protocol->store(name, length, system_charset_info);
   protocol->store(param->op_name, system_charset_info);
@@ -165,7 +173,7 @@ int table2myisam(TABLE *table_arg, MI_KEYDEF **keydef_out,
   pos= table_arg->key_info;
   for (i= 0; i < share->keys; i++, pos++)
   {
-    keydef[i].flag= (pos->flags & (HA_NOSAME | HA_FULLTEXT | HA_SPATIAL));
+    keydef[i].flag= ((uint16) pos->flags & (HA_NOSAME | HA_FULLTEXT | HA_SPATIAL));
     keydef[i].key_alg= pos->algorithm == HA_KEY_ALG_UNDEF ?
       (pos->flags & HA_SPATIAL ? HA_KEY_ALG_RTREE : HA_KEY_ALG_BTREE) :
       pos->algorithm;
@@ -1138,11 +1146,7 @@ int ha_myisam::assign_to_keycache(THD* thd, HA_CHECK_OPT *check_opt)
     /* We only come here when the user did specify an index map */
     key_map kmap;
     if (get_key_map_from_key_list(&kmap, table, table_list->use_index))
-    {
-      errmsg= thd->net.last_error;
-      error= HA_ADMIN_FAILED;
-      goto err;
-    }
+      DBUG_RETURN(HA_ADMIN_FAILED);
     map= kmap.to_ulonglong();
   }
 
@@ -1155,7 +1159,6 @@ int ha_myisam::assign_to_keycache(THD* thd, HA_CHECK_OPT *check_opt)
     error= HA_ADMIN_CORRUPT;
   }
 
- err:
   if (error != HA_ADMIN_OK)
   {
     /* Send error to user */
@@ -1192,11 +1195,7 @@ int ha_myisam::preload_keys(THD* thd, HA_CHECK_OPT *check_opt)
     key_map kmap;
     get_key_map_from_key_list(&kmap, table, table_list->use_index);
     if (kmap.is_set_all())
-    {
-      errmsg= thd->net.last_error;
-      error= HA_ADMIN_FAILED;
-      goto err;
-    }
+      DBUG_RETURN(HA_ADMIN_FAILED);
     if (!kmap.is_clear_all())
       map= kmap.to_ulonglong();
   }
@@ -1413,7 +1412,7 @@ void ha_myisam::start_bulk_insert(ha_rows rows)
   DBUG_ENTER("ha_myisam::start_bulk_insert");
   THD *thd= current_thd;
   ulong size= min(thd->variables.read_buff_size,
-                  table->s->avg_row_length*rows);
+                  (ulong) (table->s->avg_row_length*rows));
   DBUG_PRINT("info",("start_bulk_insert: rows %lu size %lu",
                      (ulong) rows, size));
 
@@ -1603,10 +1602,14 @@ int ha_myisam::index_next_same(byte * buf,
 			       const byte *key __attribute__((unused)),
 			       uint length __attribute__((unused)))
 {
+  int error;
   DBUG_ASSERT(inited==INDEX);
   statistic_increment(table->in_use->status_var.ha_read_next_count,
-		      &LOCK_status);
-  int error=mi_rnext_same(file,buf);
+                      &LOCK_status);
+  do
+  {
+    error= mi_rnext_same(file,buf);
+  } while (error == HA_ERR_RECORD_DELETED);
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
 }
@@ -1810,6 +1813,8 @@ int ha_myisam::create(const char *name, register TABLE *table_arg,
 
   if (ha_create_info->options & HA_LEX_CREATE_TMP_TABLE)
     create_flags|= HA_CREATE_TMP_TABLE;
+  if (ha_create_info->options & HA_CREATE_KEEP_FILES)
+    create_flags|= HA_CREATE_KEEP_FILES;
   if (options & HA_OPTION_PACK_RECORD)
     create_flags|= HA_PACK_RECORD;
   if (options & HA_OPTION_CHECKSUM)
@@ -1922,3 +1927,87 @@ uint ha_myisam::checksum() const
   return (uint)file->state->checksum;
 }
 
+#ifdef HAVE_QUERY_CACHE
+/**
+  @brief Register a named table with a call back function to the query cache.
+
+  @param thd The thread handle
+  @param table_key A pointer to the table name in the table cache
+  @param key_length The length of the table name
+  @param[out] engine_callback The pointer to the storage engine call back
+    function, currently 0
+  @param[out] engine_data Engine data will be set to 0.
+
+  @note Despite the name of this function, it is used to check each statement
+    before it is cached and not to register a table or callback function.
+
+  @see handler::register_query_cache_table
+
+  @return The error code. The engine_data and engine_callback will be set to 0.
+    @retval TRUE Success
+    @retval FALSE An error occured
+*/
+
+my_bool ha_myisam::register_query_cache_table(THD *thd, char *table_name,
+                                              uint table_name_len,
+                                              qc_engine_callback
+                                              *engine_callback,
+                                              ulonglong *engine_data)
+{
+  DBUG_ENTER("ha_myisam::register_query_cache_table");
+  /*
+    No call back function is needed to determine if a cached statement
+    is valid or not.
+  */
+  *engine_callback= 0;
+
+  /*
+    No engine data is needed.
+  */
+  *engine_data= 0;
+
+  if (file->s->concurrent_insert)
+  {
+    /*
+      If a concurrent INSERT has happened just before the currently
+      processed SELECT statement, the total size of the table is
+      unknown.
+
+      To determine if the table size is known, the current thread's snap
+      shot of the table size with the actual table size are compared.
+
+      If the table size is unknown the SELECT statement can't be cached.
+
+      When concurrent inserts are disabled at table open, mi_open()
+      does not assign a get_status() function. In this case the local
+      ("current") status is never updated. We would wrongly think that
+      we cannot cache the statement.
+    */
+    ulonglong actual_data_file_length;
+    ulonglong current_data_file_length;
+
+    /*
+      POSIX visibility rules specify that "2. Whatever memory values a
+      thread can see when it unlocks a mutex <...> can also be seen by any
+      thread that later locks the same mutex". In this particular case,
+      concurrent insert thread had modified the data_file_length in
+      MYISAM_SHARE before it has unlocked (or even locked)
+      structure_guard_mutex. So, here we're guaranteed to see at least that
+      value after we've locked the same mutex. We can see a later value
+      (modified by some other thread) though, but it's ok, as we only want
+      to know if the variable was changed, the actual new value doesn't matter
+    */
+    actual_data_file_length= file->s->state.state.data_file_length;
+    current_data_file_length= file->save_state.data_file_length;
+
+    if (current_data_file_length != actual_data_file_length)
+    {
+      /* Don't cache current statement. */
+      DBUG_RETURN(FALSE);
+    }
+  }
+
+  /* It is ok to try to cache current statement. */
+  DBUG_RETURN(TRUE);
+}
+#endif

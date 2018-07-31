@@ -123,7 +123,7 @@ static void die(const char *file, int line, const char *expr)
   fflush(stdout);
   fprintf(stderr, "%s:%d: check failed: '%s'\n", file, line, expr);
   fflush(stderr);
-  abort();
+  exit(1);
 }
 
 
@@ -5643,6 +5643,20 @@ DROP TABLE IF EXISTS test_multi_tab";
   (void) my_process_result_set(result);
   mysql_free_result(result);
 
+  /*
+    Check if errors in one of the queries handled properly.
+  */
+  rc= mysql_query(mysql_local, "select 1; select * from not_existing_table");
+  myquery(rc);
+  result= mysql_store_result(mysql_local);
+  mysql_free_result(result);
+
+  rc= mysql_next_result(mysql_local);
+  DIE_UNLESS(rc > 0);
+
+  rc= mysql_next_result(mysql_local);
+  DIE_UNLESS(rc < 0);
+
   mysql_close(mysql_local);
 }
 
@@ -7564,7 +7578,9 @@ static void test_explain_bug()
   else
   {
     verify_prepare_field(result, 6, "key_len", "", MYSQL_TYPE_VAR_STRING, "", 
-                         "", "", NAME_LEN*MAX_KEY, 0);
+                         "", "",
+                         NAME_LEN*MAX_KEY / my_charset_utf8_general_ci.mbmaxlen,
+                         0);
   }
 
   verify_prepare_field(result, 7, "ref", "", MYSQL_TYPE_VAR_STRING,
@@ -8686,8 +8702,8 @@ static void test_sqlmode()
   strmov(c1, "My"); strmov(c2, "SQL");
   rc= mysql_stmt_execute(stmt);
   check_execute(stmt, rc);
-
   mysql_stmt_close(stmt);
+
   verify_col_data("test_piping", "name", "MySQL");
 
   rc= mysql_query(mysql, "DELETE FROM test_piping");
@@ -9281,7 +9297,7 @@ static void test_subqueries_ref()
 {
   MYSQL_STMT *stmt;
   int rc, i;
-  const char *query= "SELECT a as ccc from t1 where a+1=(SELECT 1+ccc from t1 where ccc+1=a+1 and a=1)";
+  const char *query= "SELECT a as ccc from t1 outr where a+1=(SELECT 1+outr.a from t1 where outr.a+1=a+1 and a=1)";
 
   myheader("test_subqueries_ref");
 
@@ -11659,7 +11675,7 @@ static void test_bug5194()
                         MAX_PARAM_COUNT * CHARS_PER_PARAM + 1);
   param_str= (char*) malloc(COLUMN_COUNT * CHARS_PER_PARAM);
 
-  if (bind == 0 || query == 0 || param_str == 0)
+  if (my_bind == 0 || query == 0 || param_str == 0)
   {
     fprintf(stderr, "Can't allocate enough memory for query structs\n");
     if (my_bind)
@@ -11730,6 +11746,7 @@ static void test_bug5194()
 
     rc= mysql_stmt_execute(stmt);
     check_execute(stmt, rc);
+    mysql_stmt_reset(stmt);
   }
 
   mysql_stmt_close(stmt);
@@ -12977,7 +12994,7 @@ from t2);");
 static void test_bug8378()
 {
 #if defined(HAVE_CHARSET_gbk) && !defined(EMBEDDED_LIBRARY)
-  MYSQL *old_mysql=mysql;
+  MYSQL *lmysql;
   char out[9]; /* strlen(TEST_BUG8378)*2+1 */
   char buf[256];
   int len, rc;
@@ -12986,17 +13003,17 @@ static void test_bug8378()
 
   if (!opt_silent)
     fprintf(stdout, "\n Establishing a test connection ...");
-  if (!(mysql= mysql_init(NULL)))
+  if (!(lmysql= mysql_init(NULL)))
   {
     myerror("mysql_init() failed");
     exit(1);
   }
-  if (mysql_options(mysql, MYSQL_SET_CHARSET_NAME, "gbk"))
+  if (mysql_options(lmysql, MYSQL_SET_CHARSET_NAME, "gbk"))
   {
     myerror("mysql_options() failed");
     exit(1);
   }
-  if (!(mysql_real_connect(mysql, opt_host, opt_user,
+  if (!(mysql_real_connect(lmysql, opt_host, opt_user,
                            opt_password, current_db, opt_port,
                            opt_unix_socket, 0)))
   {
@@ -13006,19 +13023,17 @@ static void test_bug8378()
   if (!opt_silent)
     fprintf(stdout, " OK");
 
-  len= mysql_real_escape_string(mysql, out, TEST_BUG8378_IN, 4);
+  len= mysql_real_escape_string(lmysql, out, TEST_BUG8378_IN, 4);
 
   /* No escaping should have actually happened. */
   DIE_UNLESS(memcmp(out, TEST_BUG8378_OUT, len) == 0);
 
   sprintf(buf, "SELECT '%s'", out);
   
-  rc=mysql_real_query(mysql, buf, strlen(buf));
+  rc=mysql_real_query(lmysql, buf, strlen(buf));
   myquery(rc);
 
-  mysql_close(mysql);
-
-  mysql=old_mysql;
+  mysql_close(lmysql);
 #endif
 }
 
@@ -14853,7 +14868,7 @@ static void test_opt_reconnect()
   if (mysql_options(lmysql, MYSQL_OPT_RECONNECT, &my_true))
   {
     myerror("mysql_options failed: unknown option MYSQL_OPT_RECONNECT\n");
-    exit(1);
+    DIE_UNLESS(0);
   }
 
   /* reconnect should be 1 */
@@ -14866,7 +14881,7 @@ static void test_opt_reconnect()
                            opt_unix_socket, 0)))
   {
     myerror("connection failed");
-    exit(1);
+    DIE_UNLESS(0);
   }
 
   /* reconnect should still be 1 */
@@ -14880,7 +14895,7 @@ static void test_opt_reconnect()
   if (!(lmysql= mysql_init(NULL)))
   {
     myerror("mysql_init() failed");
-    exit(1);
+    DIE_UNLESS(0);
   }
 
   if (!opt_silent)
@@ -14892,7 +14907,7 @@ static void test_opt_reconnect()
                            opt_unix_socket, 0)))
   {
     myerror("connection failed");
-    exit(1);
+    DIE_UNLESS(0);
   }
 
   /* reconnect should still be 0 */
@@ -14910,32 +14925,32 @@ static void test_opt_reconnect()
 static void test_bug12744()
 {
   MYSQL_STMT *prep_stmt = NULL;
+  MYSQL *lmysql;
   int rc;
   myheader("test_bug12744");
 
-  prep_stmt= mysql_stmt_init(mysql);
+  lmysql= mysql_init(NULL);
+  DIE_UNLESS(lmysql);
+
+  if (!mysql_real_connect(lmysql, opt_host, opt_user, opt_password,
+                          current_db, opt_port, opt_unix_socket, 0))
+  {
+    fprintf(stderr, "Failed to connect to the database\n");
+    DIE_UNLESS(0);
+  }
+
+  prep_stmt= mysql_stmt_init(lmysql);
   rc= mysql_stmt_prepare(prep_stmt, "SELECT 1", 8);
-  DIE_UNLESS(rc==0);
+  DIE_UNLESS(rc == 0);
 
-  mysql_close(mysql);
+  mysql_close(lmysql);
 
-  if ((rc= mysql_stmt_execute(prep_stmt)))
-  {
-    if ((rc= mysql_stmt_reset(prep_stmt)))
-      printf("OK!\n");
-    else
-    {
-      printf("Error!");
-      DIE_UNLESS(1==0);
-    }
-  }
-  else
-  {
-    fprintf(stderr, "expected error but no error occured\n");
-    DIE_UNLESS(1==0);
-  }
+  rc= mysql_stmt_execute(prep_stmt);
+  DIE_UNLESS(rc);
+  rc= mysql_stmt_reset(prep_stmt);
+  DIE_UNLESS(rc);
   rc= mysql_stmt_close(prep_stmt);
-  client_connect(0);
+  DIE_UNLESS(rc == 0);
 }
 
 #endif /* EMBEDDED_LIBRARY */
@@ -15193,6 +15208,202 @@ static void test_bug14169()
   mysql_stmt_close(stmt);
 
   rc= mysql_query(mysql, "drop table t1");
+  myquery(rc);
+}
+
+
+/*
+   Test that mysql_insert_id() behaves as documented in our manual
+*/
+static void test_mysql_insert_id()
+{
+  my_ulonglong res;
+  int rc;
+
+  myheader("test_mysql_insert_id");
+
+  rc= mysql_query(mysql, "drop table if exists t1");
+  myquery(rc);
+  /* table without auto_increment column */
+  rc= mysql_query(mysql, "create table t1 (f1 int, f2 varchar(255), key(f1))");
+  myquery(rc);
+  rc= mysql_query(mysql, "insert into t1 values (1,'a')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "insert into t1 values (null,'b')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "insert into t1 select 5,'c'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+
+  /*
+    Test for bug #34889: mysql_client_test::test_mysql_insert_id test fails
+    sporadically
+  */
+  rc= mysql_query(mysql, "create table t2 (f1 int not null primary key auto_increment, f2 varchar(255))");
+  myquery(rc);
+  rc= mysql_query(mysql, "insert into t2 values (null,'b')");
+  myquery(rc);
+  rc= mysql_query(mysql, "insert into t1 select 5,'c'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "drop table t2");
+  myquery(rc);
+  
+  rc= mysql_query(mysql, "insert into t1 select null,'d'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "insert into t1 values (null,last_insert_id(300))");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 300);
+  rc= mysql_query(mysql, "insert into t1 select null,last_insert_id(400)");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  /*
+    Behaviour change: old code used to return 0; but 400 is consistent
+    with INSERT VALUES, and the manual's section of mysql_insert_id() does not
+    say INSERT SELECT should be different.
+  */
+  DIE_UNLESS(res == 400);
+
+  /* table with auto_increment column */
+  rc= mysql_query(mysql, "create table t2 (f1 int not null primary key auto_increment, f2 varchar(255))");
+  myquery(rc);
+  rc= mysql_query(mysql, "insert into t2 values (1,'a')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 1);
+  /* this should not influence next INSERT if it doesn't have auto_inc */
+  rc= mysql_query(mysql, "insert into t1 values (10,'e')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+
+  rc= mysql_query(mysql, "insert into t2 values (null,'b')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 2);
+  rc= mysql_query(mysql, "insert into t2 select 5,'c'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  /*
+    Manual says that for multirow insert this should have been 5, but does not
+    say for INSERT SELECT. This is a behaviour change: old code used to return
+    0. We try to be consistent with INSERT VALUES.
+  */
+  DIE_UNLESS(res == 5);
+  rc= mysql_query(mysql, "insert into t2 select null,'d'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 6);
+  /* with more than one row */
+  rc= mysql_query(mysql, "insert into t2 values (10,'a'),(11,'b')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 11);
+  rc= mysql_query(mysql, "insert into t2 select 12,'a' union select 13,'b'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  /*
+    Manual says that for multirow insert this should have been 13, but does
+    not say for INSERT SELECT. This is a behaviour change: old code used to
+    return 0. We try to be consistent with INSERT VALUES.
+  */
+  DIE_UNLESS(res == 13);
+  rc= mysql_query(mysql, "insert into t2 values (null,'a'),(null,'b')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 14);
+  rc= mysql_query(mysql, "insert into t2 select null,'a' union select null,'b'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 16);
+  rc= mysql_query(mysql, "insert into t2 select 12,'a' union select 13,'b'");
+  myquery_r(rc);
+  rc= mysql_query(mysql, "insert ignore into t2 select 12,'a' union select 13,'b'");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "insert into t2 values (12,'a'),(13,'b')");
+  myquery_r(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "insert ignore into t2 values (12,'a'),(13,'b')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  /* mixing autogenerated and explicit values */
+  rc= mysql_query(mysql, "insert into t2 values (null,'e'),(12,'a'),(13,'b')");
+  myquery_r(rc);
+  rc= mysql_query(mysql, "insert into t2 values (null,'e'),(12,'a'),(13,'b'),(25,'g')");
+  myquery_r(rc);
+  rc= mysql_query(mysql, "insert into t2 values (null,last_insert_id(300))");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  /*
+    according to the manual, this might be 20 or 300, but it looks like
+    auto_increment column takes priority over last_insert_id().
+  */
+  DIE_UNLESS(res == 20);
+  /* If first autogenerated number fails and 2nd works: */
+  rc= mysql_query(mysql, "drop table t2");
+  myquery(rc);
+  rc= mysql_query(mysql, "create table t2 (f1 int not null primary key "
+                  "auto_increment, f2 varchar(255), unique (f2))");
+  myquery(rc);
+  rc= mysql_query(mysql, "insert into t2 values (null,'e')");
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 1);
+  rc= mysql_query(mysql, "insert ignore into t2 values (null,'e'),(null,'a'),(null,'e')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 2);
+  /* If autogenerated fails and explicit works: */
+  rc= mysql_query(mysql, "insert ignore into t2 values (null,'e'),(12,'c'),(null,'d')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 3);
+  /* UPDATE may update mysql_insert_id() if it uses LAST_INSERT_ID(#) */
+  rc= mysql_query(mysql, "update t2 set f1=14 where f1=12");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "update t2 set f1=NULL where f1=14");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  rc= mysql_query(mysql, "update t2 set f2=last_insert_id(372) where f1=0");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 372);
+  /* check that LAST_INSERT_ID() does not update mysql_insert_id(): */
+  rc= mysql_query(mysql, "insert into t2 values (null,'g')");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 15);
+  rc= mysql_query(mysql, "update t2 set f2=(@li:=last_insert_id()) where f1=15");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 0);
+  /*
+    Behaviour change: now if ON DUPLICATE KEY UPDATE updates a row,
+    mysql_insert_id() returns the id of the row, instead of not being
+    affected.
+  */
+  rc= mysql_query(mysql, "insert into t2 values (null,@li) on duplicate key "
+                  "update f2=concat('we updated ',f2)");
+  myquery(rc);
+  res= mysql_insert_id(mysql);
+  DIE_UNLESS(res == 15);
+
+  rc= mysql_query(mysql, "drop table t1,t2");
   myquery(rc);
 }
 
@@ -15488,7 +15699,7 @@ static void test_bug21635()
   char *query_end;
   MYSQL_RES *result;
   MYSQL_FIELD *field;
-  unsigned int field_count, i;
+  unsigned int field_count, i, j;
   int rc;
 
   DBUG_ENTER("test_bug21635");
@@ -15504,28 +15715,35 @@ static void test_bug21635()
   myquery(rc);
   rc= mysql_query(mysql, "CREATE TABLE t1 (i INT)");
   myquery(rc);
-  rc= mysql_query(mysql, "INSERT INTO t1 VALUES (1)");
-  myquery(rc);
-
-  rc= mysql_real_query(mysql, query, query_end - query);
-  myquery(rc);
-
-  result= mysql_use_result(mysql);
-  DIE_UNLESS(result);
-
-  field_count= mysql_field_count(mysql);
-  for (i= 0; i < field_count; ++i)
+  /*
+    We need this loop to ensure correct behavior with both constant and
+    non-constant tables.
+  */
+  for (j= 0; j < 2 ; j++)
   {
-    field= mysql_fetch_field_direct(result, i);
-    printf("%s -> %s ... ", expr[i * 2], field->name);
-    fflush(stdout);
-    DIE_UNLESS(field->db[0] == 0 && field->org_table[0] == 0 &&
-               field->table[0] == 0 && field->org_name[0] == 0);
-    DIE_UNLESS(strcmp(field->name, expr[i * 2 + 1]) == 0);
-    puts("OK");
-  }
+    rc= mysql_query(mysql, "INSERT INTO t1 VALUES (1)");
+    myquery(rc);
 
-  mysql_free_result(result);
+    rc= mysql_real_query(mysql, query, query_end - query);
+    myquery(rc);
+
+    result= mysql_use_result(mysql);
+    DIE_UNLESS(result);
+
+    field_count= mysql_field_count(mysql);
+    for (i= 0; i < field_count; ++i)
+    {
+      field= mysql_fetch_field_direct(result, i);
+      printf("%s -> %s ... ", expr[i * 2], field->name);
+      fflush(stdout);
+      DIE_UNLESS(field->db[0] == 0 && field->org_table[0] == 0 &&
+                 field->table[0] == 0 && field->org_name[0] == 0);
+      DIE_UNLESS(strcmp(field->name, expr[i * 2 + 1]) == 0);
+      puts("OK");
+    }
+
+    mysql_free_result(result);
+  }
   rc= mysql_query(mysql, "DROP TABLE t1");
   myquery(rc);
 
@@ -15555,6 +15773,7 @@ static void test_bug24179()
            mysql_stmt_error(stmt));
   }
   DIE_UNLESS(mysql_stmt_errno(stmt) == 1323);
+  mysql_stmt_close(stmt);
 
   DBUG_VOID_RETURN;
 }
@@ -15568,7 +15787,7 @@ static void test_bug27876()
   int rc;
   MYSQL_RES *result;
 
-  char utf8_func[] =
+  unsigned char utf8_func[] =
   {
     0xd1, 0x84, 0xd1, 0x83, 0xd0, 0xbd, 0xd0, 0xba,
     0xd1, 0x86, 0xd0, 0xb8, 0xd0, 0xb9, 0xd0, 0xba,
@@ -15576,7 +15795,7 @@ static void test_bug27876()
     0x00
   };
 
-  char utf8_param[] =
+  unsigned char utf8_param[] =
   {
     0xd0, 0xbf, 0xd0, 0xb0, 0xd1, 0x80, 0xd0, 0xb0,
     0xd0, 0xbc, 0xd0, 0xb5, 0xd1, 0x82, 0xd1, 0x8a,
@@ -15597,6 +15816,7 @@ static void test_bug27876()
   myquery(rc);
   result= mysql_store_result(mysql);
   mytest(result);
+  mysql_free_result(result);
 
   sprintf(query, "DROP FUNCTION IF EXISTS %s", utf8_func);
   rc= mysql_query(mysql, query);
@@ -15613,6 +15833,7 @@ static void test_bug27876()
   myquery(rc);
   result= mysql_store_result(mysql);
   mytest(result);
+  mysql_free_result(result);
 
   sprintf(query, "DROP FUNCTION %s", utf8_func);
   rc= mysql_query(mysql, query);
@@ -15681,6 +15902,294 @@ static void test_bug28934()
 
 
 /*
+  Bug#27592 (stack overrun when storing datetime value using prepared statements)
+*/
+
+static void test_bug27592()
+{
+  const int NUM_ITERATIONS= 40;
+  int i;
+  int rc;
+  MYSQL_STMT *stmt= NULL;
+  MYSQL_BIND bind[1];
+  MYSQL_TIME time_val;
+
+  DBUG_ENTER("test_bug27592");
+  myheader("test_bug27592");
+
+  mysql_query(mysql, "DROP TABLE IF EXISTS t1");
+  mysql_query(mysql, "CREATE TABLE t1(c2 DATETIME)");
+
+  stmt= mysql_simple_prepare(mysql, "INSERT INTO t1 VALUES (?)");
+  DIE_UNLESS(stmt);
+
+  memset(bind, 0, sizeof(bind));
+
+  bind[0].buffer_type= MYSQL_TYPE_DATETIME;
+  bind[0].buffer= (char *) &time_val;
+  bind[0].length= NULL;
+
+  for (i= 0; i < NUM_ITERATIONS; i++)
+  {
+    time_val.year= 2007;
+    time_val.month= 6;
+    time_val.day= 7;
+    time_val.hour= 18;
+    time_val.minute= 41;
+    time_val.second= 3;
+
+    time_val.second_part=0;
+    time_val.neg=0;
+
+    rc= mysql_stmt_bind_param(stmt, bind);
+    check_execute(stmt, rc);
+
+    rc= mysql_stmt_execute(stmt);
+    check_execute(stmt, rc);
+  }
+
+  mysql_stmt_close(stmt);
+
+  DBUG_VOID_RETURN;
+}
+
+
+/**
+  Bug#29306 Truncated data in MS Access with decimal (3,1) columns in a VIEW
+*/
+
+static void test_bug29306()
+{
+  MYSQL_FIELD *field;
+  int rc;
+  MYSQL_RES *res;
+
+  DBUG_ENTER("test_bug29306");
+  myheader("test_bug29306");
+
+  rc= mysql_query(mysql, "DROP TABLE IF EXISTS tab17557");
+  myquery(rc);
+  rc= mysql_query(mysql, "DROP VIEW IF EXISTS view17557");
+  myquery(rc);
+  rc= mysql_query(mysql, "CREATE TABLE tab17557 (dd decimal (3,1))");
+  myquery(rc);
+  rc= mysql_query(mysql, "CREATE VIEW view17557 as SELECT dd FROM tab17557");
+  myquery(rc);
+  rc= mysql_query(mysql, "INSERT INTO tab17557 VALUES (7.6)");
+  myquery(rc);
+
+  /* Checking the view */
+  res= mysql_list_fields(mysql, "view17557", NULL);
+  while ((field= mysql_fetch_field(res)))
+  {
+    if (! opt_silent)
+    {
+      printf("field name %s\n", field->name);
+      printf("field table %s\n", field->table);
+      printf("field decimals %d\n", field->decimals);
+      if (field->decimals < 1)
+        printf("Error! No decimals! \n");
+      printf("\n\n");
+    }
+    DIE_UNLESS(field->decimals == 1);
+  }
+  mysql_free_result(res);
+
+  rc= mysql_query(mysql, "DROP TABLE tab17557");
+  myquery(rc);
+  rc= mysql_query(mysql, "DROP VIEW view17557");
+  myquery(rc);
+
+  DBUG_VOID_RETURN;
+}
+
+
+/**
+  Bug#31669 Buffer overflow in mysql_change_user()
+*/
+
+#define LARGE_BUFFER_SIZE 2048
+
+static void test_bug31669()
+{
+  int rc;
+  static char buff[LARGE_BUFFER_SIZE+1];
+#ifndef EMBEDDED_LIBRARY
+  static char user[USERNAME_LENGTH+1];
+  static char db[NAME_LEN+1];
+  static char query[LARGE_BUFFER_SIZE*2];
+#endif
+
+  DBUG_ENTER("test_bug31669");
+  myheader("test_bug31669");
+
+  rc= mysql_change_user(mysql, NULL, NULL, NULL);
+  DIE_UNLESS(rc);
+
+  rc= mysql_change_user(mysql, "", "", "");
+  DIE_UNLESS(rc);
+
+  memset(buff, 'a', sizeof(buff));
+
+  rc= mysql_change_user(mysql, buff, buff, buff);
+  DIE_UNLESS(rc);
+
+  rc = mysql_change_user(mysql, opt_user, opt_password, current_db);
+  DIE_UNLESS(!rc);
+
+#ifndef EMBEDDED_LIBRARY
+  memset(db, 'a', sizeof(db));
+  db[NAME_LEN]= 0;
+  strxmov(query, "CREATE DATABASE IF NOT EXISTS ", db, NullS);
+  rc= mysql_query(mysql, query);
+  myquery(rc);
+
+  memset(user, 'b', sizeof(user));
+  user[USERNAME_LENGTH]= 0;
+  memset(buff, 'c', sizeof(buff));
+  buff[LARGE_BUFFER_SIZE]= 0;
+  strxmov(query, "GRANT ALL PRIVILEGES ON *.* TO '", user, "'@'%' IDENTIFIED BY "
+                 "'", buff, "' WITH GRANT OPTION", NullS);
+  rc= mysql_query(mysql, query);
+  myquery(rc);
+
+  rc= mysql_query(mysql, "FLUSH PRIVILEGES");
+  myquery(rc);
+
+  rc= mysql_change_user(mysql, user, buff, db);
+  DIE_UNLESS(!rc);
+
+  user[USERNAME_LENGTH-1]= 'a';
+  rc= mysql_change_user(mysql, user, buff, db);
+  DIE_UNLESS(rc);
+
+  user[USERNAME_LENGTH-1]= 'b';
+  buff[LARGE_BUFFER_SIZE-1]= 'd';
+  rc= mysql_change_user(mysql, user, buff, db);
+  DIE_UNLESS(rc);
+
+  buff[LARGE_BUFFER_SIZE-1]= 'c';
+  db[NAME_LEN-1]= 'e';
+  rc= mysql_change_user(mysql, user, buff, db);
+  DIE_UNLESS(rc);
+
+  db[NAME_LEN-1]= 'a';
+  rc= mysql_change_user(mysql, user, buff, db);
+  DIE_UNLESS(!rc);
+
+  rc= mysql_change_user(mysql, user + 1, buff + 1, db + 1);
+  DIE_UNLESS(rc);
+
+  rc = mysql_change_user(mysql, opt_user, opt_password, current_db);
+  DIE_UNLESS(!rc);
+
+  strxmov(query, "DROP DATABASE ", db, NullS);
+  rc= mysql_query(mysql, query);
+  myquery(rc);
+
+  strxmov(query, "DELETE FROM mysql.user WHERE User='", user, "'", NullS);
+  rc= mysql_query(mysql, query);
+  myquery(rc);
+  DIE_UNLESS(mysql_affected_rows(mysql) == 1);
+#endif
+
+  DBUG_VOID_RETURN;
+}
+
+
+/**
+  Bug#32265 Server returns different metadata if prepared statement is used
+*/
+
+static void test_bug32265()
+{
+  int rc;
+  MYSQL_STMT *stmt;
+  MYSQL_FIELD *field;
+  MYSQL_RES *metadata;
+
+  DBUG_ENTER("test_bug32265");
+  myheader("test_bug32265");
+
+  rc= mysql_query(mysql, "DROP TABLE IF EXISTS t1");
+  myquery(rc);
+  rc= mysql_query(mysql, "CREATE  TABLE t1 (a INTEGER)");
+  myquery(rc);
+  rc= mysql_query(mysql, "INSERT INTO t1 VALUES (1)");
+  myquery(rc);
+  rc= mysql_query(mysql, "CREATE VIEW v1 AS SELECT * FROM t1");
+  myquery(rc);
+
+  stmt= open_cursor("SELECT * FROM t1");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata= mysql_stmt_result_metadata(stmt);
+  field= mysql_fetch_field(metadata);
+  DIE_UNLESS(field);
+  DIE_UNLESS(strcmp(field->table, "t1") == 0);
+  DIE_UNLESS(strcmp(field->org_table, "t1") == 0);
+  DIE_UNLESS(strcmp(field->db, "client_test_db") == 0);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  stmt= open_cursor("SELECT a '' FROM t1 ``");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata= mysql_stmt_result_metadata(stmt);
+  field= mysql_fetch_field(metadata);
+  DIE_UNLESS(strcmp(field->table, "") == 0);
+  DIE_UNLESS(strcmp(field->org_table, "t1") == 0);
+  DIE_UNLESS(strcmp(field->db, "client_test_db") == 0);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  stmt= open_cursor("SELECT a '' FROM t1 ``");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata= mysql_stmt_result_metadata(stmt);
+  field= mysql_fetch_field(metadata);
+  DIE_UNLESS(strcmp(field->table, "") == 0);
+  DIE_UNLESS(strcmp(field->org_table, "t1") == 0);
+  DIE_UNLESS(strcmp(field->db, "client_test_db") == 0);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  stmt= open_cursor("SELECT * FROM v1");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata= mysql_stmt_result_metadata(stmt);
+  field= mysql_fetch_field(metadata);
+  DIE_UNLESS(strcmp(field->table, "v1") == 0);
+  DIE_UNLESS(strcmp(field->org_table, "t1") == 0);
+  DIE_UNLESS(strcmp(field->db, "client_test_db") == 0);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  stmt= open_cursor("SELECT * FROM v1 /* SIC */ GROUP BY 1");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata= mysql_stmt_result_metadata(stmt);
+  field= mysql_fetch_field(metadata);
+  DIE_UNLESS(strcmp(field->table, "v1") == 0);
+  DIE_UNLESS(strcmp(field->org_table, "t1") == 0);
+  DIE_UNLESS(strcmp(field->db, "client_test_db") == 0);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  rc= mysql_query(mysql, "DROP VIEW v1");
+  myquery(rc);
+  rc= mysql_query(mysql, "DROP TABLE t1");
+  myquery(rc);
+
+  DBUG_VOID_RETURN;
+}
+
+/*
   Read and parse arguments and MySQL options from my.cnf
 */
 
@@ -15704,7 +16213,13 @@ static struct my_option client_test_long_options[] =
   {"password", 'p',
    "Password to use when connecting to server. If password is not given it's asked from the tty.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-  {"port", 'P', "Port number to use for connection", (char **) &opt_port,
+  {"port", 'P', "Port number to use for connection or 0 for default to, in "
+   "order of preference, my.cnf, $MYSQL_TCP_PORT, "
+#if MYSQL_PORT_DEFAULT == 0
+   "/etc/services, "
+#endif
+   "built-in default (" STRINGIFY_ARG(MYSQL_PORT) ").",
+   (char **) &opt_port,
    (char **) &opt_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"server-arg", 'A', "Send embedded server this as a parameter.",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -15954,6 +16469,7 @@ static struct my_tests_st my_tests[]= {
   { "test_bug17667", test_bug17667 },
   { "test_bug19671", test_bug19671 },
   { "test_bug15752", test_bug15752 },
+  { "test_mysql_insert_id", test_mysql_insert_id },
   { "test_bug21206", test_bug21206 },
   { "test_bug21726", test_bug21726 },
   { "test_bug15518", test_bug15518 },
@@ -15963,6 +16479,10 @@ static struct my_tests_st my_tests[]= {
   { "test_bug27876", test_bug27876 },
   { "test_bug28505", test_bug28505 },
   { "test_bug28934", test_bug28934 },
+  { "test_bug27592", test_bug27592 },
+  { "test_bug29306", test_bug29306 },
+  { "test_bug31669", test_bug31669 },
+  { "test_bug32265", test_bug32265 },
   { 0, 0 }
 };
 
@@ -16076,7 +16596,6 @@ int main(int argc, char **argv)
 {
   struct my_tests_st *fptr;
 
-  DEBUGGER_OFF;
   MY_INIT(argv[0]);
 
   load_defaults("my", client_test_load_default_groups, &argc, &argv);

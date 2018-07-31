@@ -6,6 +6,14 @@
 extern "C" {
 #endif
 
+int __ham_quick_delete __P((DBC *));
+int __ham_c_init __P((DBC *));
+int __ham_c_count __P((DBC *, db_recno_t *));
+int __ham_c_dup __P((DBC *, DBC *));
+u_int32_t __ham_call_hash __P((DBC *, u_int8_t *, int32_t));
+int __ham_init_dbt __P((DB_ENV *, DBT *, u_int32_t, void **, u_int32_t *));
+int __ham_c_update __P((DBC *, u_int32_t, int, int));
+int __ham_get_clist __P((DB *, db_pgno_t, u_int32_t, DBC ***));
 int __ham_insdel_log __P((DB *, DB_TXN *, DB_LSN *, u_int32_t, u_int32_t, db_pgno_t, u_int32_t, DB_LSN *, const DBT *, const DBT *));
 int __ham_insdel_getpgnos __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
 int __ham_insdel_print __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
@@ -45,14 +53,6 @@ int __ham_chgpg_read __P((DB_ENV *, void *, __ham_chgpg_args **));
 int __ham_init_print __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __ham_init_getpgnos __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __ham_init_recover __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
-int __ham_quick_delete __P((DBC *));
-int __ham_c_init __P((DBC *));
-int __ham_c_count __P((DBC *, db_recno_t *));
-int __ham_c_dup __P((DBC *, DBC *));
-u_int32_t __ham_call_hash __P((DBC *, u_int8_t *, int32_t));
-int __ham_init_dbt __P((DB_ENV *, DBT *, u_int32_t, void **, u_int32_t *));
-int __ham_c_update __P((DBC *, u_int32_t, int, int));
-int __ham_get_clist __P((DB *, db_pgno_t, u_int32_t, DBC ***));
 int __ham_pgin __P((DB_ENV *, DB *, db_pgno_t, void *, DBT *));
 int __ham_pgout __P((DB_ENV *, DB *, db_pgno_t, void *, DBT *));
 int __ham_mswap __P((void *));

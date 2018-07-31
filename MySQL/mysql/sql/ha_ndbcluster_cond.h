@@ -228,6 +228,7 @@ public:
     case (Item_func::ISNOTNULL_FUNC): { return NDB_ISNOTNULL_FUNC; }
     case (Item_func::LIKE_FUNC): { return NDB_LIKE_FUNC; }
     case (Item_func::NOT_FUNC): { return NDB_NOT_FUNC; }
+    case (Item_func::NEG_FUNC): { return NDB_UNKNOWN_FUNC; }
     case (Item_func::UNKNOWN_FUNC): { return NDB_UNKNOWN_FUNC; }
     case (Item_func::COND_AND_FUNC): { return NDB_COND_AND_FUNC; }
     case (Item_func::COND_OR_FUNC): { return NDB_COND_OR_FUNC; }
@@ -259,8 +260,20 @@ class Ndb_cond : public Sql_alloc
   ~Ndb_cond() 
   { 
     if (ndb_item) delete ndb_item; 
-    ndb_item= NULL; 
-    if (next) delete next;
+    ndb_item= NULL;
+    /*
+      First item in the linked list deletes all in a loop
+      Note - doing it recursively causes stack issues for
+      big IN clauses
+    */
+    Ndb_cond *n= next;
+    while (n)
+    {
+      Ndb_cond *tmp= n;
+      n= n->next;
+      tmp->next= NULL;
+      delete tmp;
+    }
     next= prev= NULL; 
   };
   Ndb_item *ndb_item;

@@ -214,7 +214,17 @@ void udf_init()
     void *dl = find_udf_dl(tmp->dl);
     if (dl == NULL)
     {
-      if (!(dl = dlopen(tmp->dl, RTLD_NOW)))
+      char dlpath[FN_REFLEN];
+      if (*opt_plugin_dir)
+        strxnmov(dlpath, sizeof(dlpath) - 1, opt_plugin_dir, "/", tmp->dl,
+                 NullS);
+      else
+      {
+        strxnmov(dlpath, sizeof(dlpath)-1, tmp->dl, NullS);
+        push_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN, ER_UNKNOWN_ERROR,
+                     "plugin_dir was not specified");
+      }
+      if (!(dl = dlopen(dlpath, RTLD_NOW)))
       {
 	/* Print warning to log */
 	sql_print_error(ER(ER_CANT_OPEN_LIBRARY), tmp->dl,errno,dlerror());
@@ -410,7 +420,12 @@ int mysql_create_function(THD *thd,udf_func *udf)
 
   if (!initialized)
   {
-    my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
+    if (opt_noacl)
+      my_error(ER_CANT_INITIALIZE_UDF, MYF(0),
+               udf->name.str,
+               "UDFs are unavailable with the --skip-grant-tables option");
+    else
+      my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
     DBUG_RETURN(1);
   }
 
@@ -426,20 +441,30 @@ int mysql_create_function(THD *thd,udf_func *udf)
   }
   if (udf->name.length > NAME_LEN)
   {
-    my_error(ER_TOO_LONG_IDENT, MYF(0), udf->name);
+    my_error(ER_TOO_LONG_IDENT, MYF(0), udf->name.str);
     DBUG_RETURN(1);
   }
 
   rw_wrlock(&THR_LOCK_udf);
   if ((hash_search(&udf_hash,(byte*) udf->name.str, udf->name.length)))
   {
-    my_error(ER_UDF_EXISTS, MYF(0), udf->name);
+    my_error(ER_UDF_EXISTS, MYF(0), udf->name.str);
     goto err;
   }
   if (!(dl = find_udf_dl(udf->dl)))
   {
-    DBUG_PRINT("info", ("Calling dlopen, udf->dl: %s", udf->dl));
-    if (!(dl = dlopen(udf->dl, RTLD_NOW)))
+    char dlpath[FN_REFLEN];
+    if (*opt_plugin_dir)
+      strxnmov(dlpath, sizeof(dlpath) - 1, opt_plugin_dir, "/", udf->dl,
+               NullS);
+    else
+    {
+      strxnmov(dlpath, sizeof(dlpath)-1, udf->dl, NullS);
+      push_warning(current_thd, MYSQL_ERROR::WARN_LEVEL_WARN, ER_UNKNOWN_ERROR,
+                   "plugin_dir was not specified");
+    }
+    DBUG_PRINT("info", ("Calling dlopen, udf->dl: %s", dlpath));
+    if (!(dl = dlopen(dlpath, RTLD_NOW)))
     {
       DBUG_PRINT("error",("dlopen of %s failed, error: %d (%s)",
 			  udf->dl,errno,dlerror()));
@@ -514,7 +539,10 @@ int mysql_drop_function(THD *thd,const LEX_STRING *udf_name)
   DBUG_ENTER("mysql_drop_function");
   if (!initialized)
   {
-    my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
+    if (opt_noacl)
+      my_error(ER_FUNCTION_NOT_DEFINED, MYF(0), udf_name->str);
+    else
+      my_message(ER_OUT_OF_RESOURCES, ER(ER_OUT_OF_RESOURCES), MYF(0));
     DBUG_RETURN(1);
   }
   rw_wrlock(&THR_LOCK_udf);  

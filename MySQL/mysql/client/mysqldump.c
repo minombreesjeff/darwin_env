@@ -89,7 +89,7 @@ static my_bool  verbose= 0, opt_no_create_info= 0, opt_no_data= 0,
                 opt_drop=1,opt_keywords=0,opt_lock=1,opt_compress=0,
                 opt_delayed=0,create_options=1,opt_quoted=0,opt_databases=0,
                 opt_alldbs=0,opt_create_db=0,opt_lock_all_tables=0,
-                opt_set_charset=0,
+                opt_set_charset=0, opt_dump_date=1,
                 opt_autocommit=0,opt_disable_keys=1,opt_xml=0,
                 opt_delete_master_logs=0, tty_password=0,
                 opt_single_transaction=0, opt_comments= 0, opt_compact= 0,
@@ -109,6 +109,8 @@ static char  *opt_password=0,*current_user=0,
              *log_error_file= NULL;
 static char **defaults_argv= 0;
 static char compatible_mode_normal_str[255];
+/* Server supports character_set_results session variable? */
+static my_bool server_supports_switching_charsets= TRUE;
 static ulong opt_compatible_mode= 0;
 #define MYSQL_OPT_MASTER_DATA_EFFECTIVE_SQL 1
 #define MYSQL_OPT_MASTER_DATA_COMMENTED_SQL 2
@@ -361,7 +363,13 @@ static struct my_option my_long_options[] =
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-  {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
+  {"port", 'P', "Port number to use for connection or 0 for default to, in "
+   "order of preference, my.cnf, $MYSQL_TCP_PORT, "
+#if MYSQL_PORT_DEFAULT == 0
+   "/etc/services, "
+#endif
+   "built-in default (" STRINGIFY_ARG(MYSQL_PORT) ").",
+   (gptr*) &opt_mysql_port,
    (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0,
    0},
   {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
@@ -398,10 +406,17 @@ static struct my_option my_long_options[] =
    "Creates a consistent snapshot by dumping all tables in a single "
    "transaction. Works ONLY for tables stored in storage engines which "
    "support multiversioning (currently only InnoDB does); the dump is NOT "
-   "guaranteed to be consistent for other storage engines. Option "
-   "automatically turns off --lock-tables.",
+   "guaranteed to be consistent for other storage engines. "
+   "While a --single-transaction dump is in process, to ensure a valid "
+   "dump file (correct table contents and binary log position), no other "
+   "connection should use the following statements: ALTER TABLE, DROP "
+   "TABLE, RENAME TABLE, TRUNCATE TABLE, as consistent snapshot is not "
+   "isolated from them. Option automatically turns off --lock-tables.",
    (gptr*) &opt_single_transaction, (gptr*) &opt_single_transaction, 0,
    GET_BOOL, NO_ARG,  0, 0, 0, 0, 0, 0},
+  {"dump-date", OPT_DUMP_DATE, "Put a dump date to the end of the output.",
+   (gptr*) &opt_dump_date, (gptr*) &opt_dump_date, 0,
+   GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
   {"skip-opt", OPT_SKIP_OPTIMIZATION,
    "Disable --opt. Disables --add-drop-table, --add-locks, --create-options, --quick, --extended-insert, --lock-tables, --set-charset, and --disable-keys.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -623,10 +638,15 @@ static void write_footer(FILE *sql_file)
     fputs("\n", sql_file);
     if (opt_comments)
     {
-      char time_str[20];
-      get_date(time_str, GETDATE_DATE_TIME, 0);
-      fprintf(sql_file, "-- Dump completed on %s\n",
-              time_str);
+      if (opt_dump_date)
+      {
+        char time_str[20];
+        get_date(time_str, GETDATE_DATE_TIME, 0);
+        fprintf(sql_file, "-- Dump completed on %s\n",
+                time_str);
+      }
+      else
+        fprintf(sql_file, "-- Dump completed\n");
     }
     check_io(sql_file);
   }
@@ -686,6 +706,18 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case 'T':
     opt_disable_keys=0;
+
+    if (strlen(argument) >= FN_REFLEN)
+    {
+      /*
+        This check is made because the some the file functions below
+        have FN_REFLEN sized stack allocated buffers and will cause
+        a crash even if the input destination buffer is large enough
+        to hold the output.
+      */
+      die(EX_USAGE, "Input filename too long: %s", argument);
+    }
+
     break;
   case '#':
     DBUG_PUSH(argument ? argument : default_dbug_option);
@@ -980,6 +1012,37 @@ static int mysql_query_with_error_report(MYSQL *mysql_con, MYSQL_RES **res,
   return 0;
 }
 
+
+/**
+  Switch charset for results to some specified charset.  If the server does not
+  support character_set_results variable, nothing can be done here.  As for
+  whether something should be done here, future new callers of this function
+  should be aware that the server lacking the facility of switching charsets is
+  treated as success.
+
+  @note  If the server lacks support, then nothing is changed and no error
+         condition is returned.
+
+  @returns  whether there was an error or not
+*/
+static int switch_character_set_results(MYSQL *mysql, const char *cs_name)
+{
+  char query_buffer[QUERY_LENGTH];
+  size_t query_length;
+
+  /* Server lacks facility.  This is not an error, by arbitrary decision . */
+  if (!server_supports_switching_charsets)
+    return FALSE;
+
+  query_length= my_snprintf(query_buffer,
+                            sizeof (query_buffer),
+                            "SET SESSION character_set_results = '%s'",
+                            (const char *) cs_name);
+
+  return mysql_real_query(mysql, query_buffer, query_length);
+}
+
+
 /*
   Open a new .sql file to dump the table or view into
 
@@ -1066,11 +1129,14 @@ static int connect_to_db(char *host, char *user,char *passwd)
     DB_error(&mysql_connection, "when trying to connect");
     DBUG_RETURN(1);
   }
-  /*
-    Don't dump SET NAMES with a pre-4.1 server (bug#7997).
-  */
   if (mysql_get_server_version(&mysql_connection) < 40100)
+  {
+    /* Don't dump SET NAMES with a pre-4.1 server (bug#7997).  */
     opt_set_charset= 0;
+
+    /* Don't switch charsets for 4.1 and earlier.  (bug#34192). */
+    server_supports_switching_charsets= FALSE;
+  } 
   /*
     As we're going to set SQL_MODE, it would be lost on reconnect, so we
     cannot reconnect.
@@ -1659,7 +1725,10 @@ static uint get_table_structure(char *table, char *db, char *table_type,
       MYSQL_FIELD *field;
 
       my_snprintf(buff, sizeof(buff), "show create table %s", result_table);
-      if (mysql_query_with_error_report(mysql, 0, buff))
+
+      if (switch_character_set_results(mysql, "binary") ||
+          mysql_query_with_error_report(mysql, &result, buff) ||
+          switch_character_set_results(mysql, default_charset))
         DBUG_RETURN(0);
 
       if (path)
@@ -1690,7 +1759,6 @@ static uint get_table_structure(char *table, char *db, char *table_type,
         check_io(sql_file);
       }
 
-      result= mysql_store_result(mysql);
       field= mysql_fetch_field_direct(result, 0);
       if (strcmp(field->name, "View") == 0)
       {
@@ -1782,7 +1850,14 @@ static uint get_table_structure(char *table, char *db, char *table_type,
       }
 
       row= mysql_fetch_row(result);
-      fprintf(sql_file, "%s;\n", row[1]);
+
+      fprintf(sql_file,
+              "SET @saved_cs_client     = @@character_set_client;\n"
+              "SET character_set_client = utf8;\n"
+              "%s;\n"
+              "SET character_set_client = @saved_cs_client;\n",
+              row[1]);
+
       check_io(sql_file);
       mysql_free_result(result);
     }
@@ -2110,8 +2185,7 @@ static void dump_triggers_for_table(char *table,
   }
   if (mysql_num_rows(result))
   {
-    if (opt_compact)
-      fprintf(sql_file, "\n/*!50003 SET @OLD_SQL_MODE=@@SQL_MODE*/;\n");
+    fprintf(sql_file, "\n/*!50003 SET @SAVE_SQL_MODE=@@SQL_MODE*/;\n");
     fprintf(sql_file, "\nDELIMITER ;;\n");
   }
   while ((row= mysql_fetch_row(result)))
@@ -2155,9 +2229,11 @@ static void dump_triggers_for_table(char *table,
             row[3] /* Statement */);
   }
   if (mysql_num_rows(result))
+  {
     fprintf(sql_file,
             "DELIMITER ;\n"
-            "/*!50003 SET SESSION SQL_MODE=@OLD_SQL_MODE */;\n");
+            "/*!50003 SET SESSION SQL_MODE=@SAVE_SQL_MODE*/;\n");
+  }
   mysql_free_result(result);
   /*
     make sure to set back opt_compatible mode to
@@ -2323,17 +2399,6 @@ static void dump_table(char *table, char *db)
   if (path)
   {
     char filename[FN_REFLEN], tmp_path[FN_REFLEN];
-
-    if (strlen(path) >= FN_REFLEN)
-    {
-      /*
-        This check is made because the some the file functions below
-        have FN_REFLEN sized stack allocated buffers and will cause
-        a crash even if the input destination buffer is large enough
-        to hold the output.
-      */
-      die(EX_USAGE, "Input filename or options too long: %s", path);
-    }
 
     /*
       Convert the path to native os format
@@ -2872,7 +2937,7 @@ int init_dumping_tables(char *qdatabase)
       /* Old server version, dump generic CREATE DATABASE */
       if (opt_drop_database)
         fprintf(md_result_file,
-                "\n/*!40000 DROP DATABASE IF EXISTS %s;*/\n",
+                "\n/*!40000 DROP DATABASE IF EXISTS %s*/;\n",
                 qdatabase);
       fprintf(md_result_file,
               "\nCREATE DATABASE /*!32312 IF NOT EXISTS*/ %s;\n",
@@ -3241,6 +3306,7 @@ static int do_show_master_status(MYSQL *mysql_con)
       my_printf_error(0, "Error: Binlogging on server not active",
                       MYF(0));
       mysql_free_result(master);
+      maybe_exit(EX_MYSQLERR);
       return 1;
     }
     mysql_free_result(master);
@@ -3320,6 +3386,18 @@ static int start_transaction(MYSQL *mysql_con)
     need the REPEATABLE READ level (not anything lower, for example READ
     COMMITTED would give one new consistent read per dumped table).
   */
+  if ((mysql_get_server_version(mysql_con) < 40100) && opt_master_data)
+  {
+    fprintf(stderr, "-- %s: the combination of --single-transaction and "
+            "--master-data requires a MySQL server version of at least 4.1 "
+            "(current server's version is %s). %s\n",
+            ignore_errors ? "Warning" : "Error",
+            mysql_con->server_version ? mysql_con->server_version : "unknown",
+            ignore_errors ? "Continuing due to --force, backup may not be consistent across all tables!" : "Aborting.");
+    if (!ignore_errors)
+      exit(EX_MYSQLERR);
+  }
+
   return (mysql_query_with_error_report(mysql_con, 0,
                                         "SET SESSION TRANSACTION ISOLATION "
                                         "LEVEL REPEATABLE READ") ||
@@ -3672,10 +3750,9 @@ static my_bool get_view_structure(char *table, char* db)
             result_table);
     check_io(sql_file);
   }
+  fprintf(sql_file, "/*!50001 DROP TABLE %s*/;\n", opt_quoted_table);
   if (opt_drop)
   {
-    fprintf(sql_file, "/*!50001 DROP TABLE IF EXISTS %s*/;\n",
-            opt_quoted_table);
     fprintf(sql_file, "/*!50001 DROP VIEW IF EXISTS %s*/;\n",
             opt_quoted_table);
     check_io(sql_file);

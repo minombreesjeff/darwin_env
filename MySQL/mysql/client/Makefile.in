@@ -85,7 +85,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
@@ -128,7 +128,7 @@ mysqlshow_OBJECTS = $(am_mysqlshow_OBJECTS)
 mysqlshow_LDADD = $(LDADD)
 mysqlshow_DEPENDENCIES = $(top_builddir)/libmysql/libmysqlclient.la
 am_mysqltest_OBJECTS = mysqltest.$(OBJEXT) my_getsystime.$(OBJEXT) \
-	my_copy.$(OBJEXT)
+	my_copy.$(OBJEXT) my_mkdir.$(OBJEXT)
 mysqltest_OBJECTS = $(am_mysqltest_OBJECTS)
 mysqltest_DEPENDENCIES = $(top_builddir)/regex/libregex.a \
 	$(am__DEPENDENCIES_1)
@@ -142,7 +142,7 @@ mysqltestmanagerc_OBJECTS = $(am_mysqltestmanagerc_OBJECTS)
 mysqltestmanagerc_LDADD = $(LDADD)
 mysqltestmanagerc_DEPENDENCIES =  \
 	$(top_builddir)/libmysql/libmysqlclient.la
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -185,6 +185,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -327,7 +328,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -378,6 +381,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -462,7 +466,8 @@ mysqladmin_SOURCES = mysqladmin.cc
 mysql_LDADD = @readline_link@ @TERMCAP_LIB@ $(LDADD) $(CXXLDFLAGS)
 mysqltest_SOURCES = mysqltest.c \
 				$(top_srcdir)/mysys/my_getsystime.c \
-				$(top_srcdir)/mysys/my_copy.c
+				$(top_srcdir)/mysys/my_copy.c \
+				$(top_srcdir)/mysys/my_mkdir.c
 
 mysqltest_LDADD = $(top_builddir)/regex/libregex.a $(LDADD)
 mysqlbinlog_SOURCES = mysqlbinlog.cc \
@@ -591,6 +596,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_copy.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_getpagesize.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_getsystime.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_mkdir.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_new.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/my_user.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mysql.Po@am__quote@
@@ -697,6 +703,20 @@ my_copy.obj: $(top_srcdir)/mysys/my_copy.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/mysys/my_copy.c' object='my_copy.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o my_copy.obj `if test -f '$(top_srcdir)/mysys/my_copy.c'; then $(CYGPATH_W) '$(top_srcdir)/mysys/my_copy.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/mysys/my_copy.c'; fi`
+
+my_mkdir.o: $(top_srcdir)/mysys/my_mkdir.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT my_mkdir.o -MD -MP -MF "$(DEPDIR)/my_mkdir.Tpo" -c -o my_mkdir.o `test -f '$(top_srcdir)/mysys/my_mkdir.c' || echo '$(srcdir)/'`$(top_srcdir)/mysys/my_mkdir.c; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/my_mkdir.Tpo" "$(DEPDIR)/my_mkdir.Po"; else rm -f "$(DEPDIR)/my_mkdir.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/mysys/my_mkdir.c' object='my_mkdir.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o my_mkdir.o `test -f '$(top_srcdir)/mysys/my_mkdir.c' || echo '$(srcdir)/'`$(top_srcdir)/mysys/my_mkdir.c
+
+my_mkdir.obj: $(top_srcdir)/mysys/my_mkdir.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT my_mkdir.obj -MD -MP -MF "$(DEPDIR)/my_mkdir.Tpo" -c -o my_mkdir.obj `if test -f '$(top_srcdir)/mysys/my_mkdir.c'; then $(CYGPATH_W) '$(top_srcdir)/mysys/my_mkdir.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/mysys/my_mkdir.c'; fi`; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/my_mkdir.Tpo" "$(DEPDIR)/my_mkdir.Po"; else rm -f "$(DEPDIR)/my_mkdir.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/mysys/my_mkdir.c' object='my_mkdir.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o my_mkdir.obj `if test -f '$(top_srcdir)/mysys/my_mkdir.c'; then $(CYGPATH_W) '$(top_srcdir)/mysys/my_mkdir.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/mysys/my_mkdir.c'; fi`
 
 .cc.o:
 @am__fastdepCXX_TRUE@	if $(CXXCOMPILE) -MT $@ -MD -MP -MF "$(DEPDIR)/$*.Tpo" -c -o $@ $<; \

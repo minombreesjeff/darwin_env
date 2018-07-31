@@ -4526,12 +4526,12 @@ mb:
 static int 
 my_mb_wc_sjis(CHARSET_INFO *cs  __attribute__((unused)),
 	      my_wc_t *pwc, const uchar *s, const uchar *e){
-  int hi=s[0];
+  int hi;
   
   if (s >= e)
     return MY_CS_TOOSMALL;
   
-  if (hi < 0x80)
+  if ((hi= s[0]) < 0x80)
   {
     pwc[0]=hi;
     return 1;
@@ -4694,7 +4694,7 @@ CHARSET_INFO my_charset_sjis_japanese_ci=
     0,			/* min_sort_char */
     255,		/* max_sort_char */
     ' ',                /* pad char      */
-    0,                  /* escape_with_backslash_is_dangerous */
+    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -4726,7 +4726,7 @@ CHARSET_INFO my_charset_sjis_bin=
     0,			/* min_sort_char */
     255,		/* max_sort_char */
     ' ',                /* pad char      */
-    0,                  /* escape_with_backslash_is_dangerous */
+    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler
 };

@@ -935,4 +935,87 @@ SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-02 00:00:00';
 
 DROP TABLE t1;
 
+--echo
+--echo BUG#32198 "Comparison of DATE with DATETIME still not using indexes correctly"
+--echo
+CREATE TABLE t1 (
+  id int(11) NOT NULL auto_increment,
+  dateval date default NULL,
+  PRIMARY KEY  (id),
+  KEY dateval (dateval)
+) AUTO_INCREMENT=173;
+
+INSERT INTO t1 VALUES
+(1,'2007-01-01'),(2,'2007-01-02'),(3,'2007-01-03'),(4,'2007-01-04'),
+(5,'2007-01-05'),(6,'2007-01-06'),(7,'2007-01-07'),(8,'2007-01-08'),
+(9,'2007-01-09'),(10,'2007-01-10'),(11,'2007-01-11');
+
+--echo This must use range access:
+explain select * from t1 where dateval >= '2007-01-01 00:00:00' and dateval <= '2007-01-02 23:59:59';
+
+drop table t1;
+
+#
+# Bug #33833: different or-ed predicates were erroneously merged into one that
+# resulted in ref access instead of range access and  a wrong result set
+#
+
+CREATE TABLE t1 (
+  a varchar(32), index (a)
+) DEFAULT CHARSET=latin1 COLLATE=latin1_bin;
+
+INSERT INTO t1 VALUES
+  ('B'), ('A'), ('A'), ('C'), ('B'), ('A'), ('A');
+
+SELECT a FROM t1 WHERE a='b' OR a='B';
+EXPLAIN SELECT a FROM t1 WHERE a='b' OR a='B';
+
+DROP TABLE t1;
+
+#
+# Bug #34731: highest possible value for INT erroneously filtered by WHERE
+#
+
+# test UNSIGNED. only occurs when indexed.
+CREATE TABLE t1 (f1 TINYINT(11) UNSIGNED NOT NULL, PRIMARY KEY (f1));
+
+INSERT INTO t1 VALUES (127),(254),(0),(1),(255);
+
+# test upper bound
+# count 5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 256;
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 256.0;
+# count 4
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 255;
+
+# show we don't fiddle with lower bound on UNSIGNED
+# count 0
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < -1;
+# count 5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -1;
+
+DROP TABLE t1;
+
+
+# test signed. only occurs when index.
+CREATE TABLE t1 ( f1 TINYINT(11) NOT NULL, PRIMARY KEY (f1));
+
+INSERT INTO t1 VALUES (127),(126),(0),(-128),(-127);
+
+# test upper bound
+# count 5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 128;
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 128.0;
+# count 4
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 < 127;
+
+# test lower bound
+# count 5
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -129;
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -129.0;
+# count 4
+SELECT SQL_NO_CACHE COUNT(*) FROM t1 WHERE f1 > -128;
+
+DROP TABLE t1;
+
 # End of 5.0 tests

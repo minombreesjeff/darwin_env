@@ -307,15 +307,17 @@ static int my_strnxfrm_big5(CHARSET_INFO *cs __attribute__((unused)),
 {
   uint16 e;
   uint dstlen= len;
+  uchar *dest_end= dest + dstlen;
 
   len = srclen;
-  while (len--)
+  while (len-- && dest < dest_end)
   {
     if ((len > 0) && isbig5code(*src, *(src+1)))
     {
       e = big5strokexfrm((uint16) big5code(*src, *(src+1)));
       *dest++ = big5head(e);
-      *dest++ = big5tail(e);
+      if (dest < dest_end)
+        *dest++ = big5tail(e);
       src +=2;
       len--;
     } else
@@ -6271,12 +6273,12 @@ my_mb_wc_big5(CHARSET_INFO *cs __attribute__((unused)),
 	      my_wc_t *pwc,const uchar *s,const uchar *e)
 {
 
-  int hi=s[0];
+  int hi;
   
   if (s >= e)
     return MY_CS_TOOSMALL;
   
-  if (hi<0x80)
+  if ((hi= s[0]) < 0x80)
   {
     pwc[0]=hi;
     return 1;
@@ -6400,7 +6402,7 @@ CHARSET_INFO my_charset_big5_chinese_ci=
     0,			/* min_sort_char */
     255,		/* max_sort_char */
     ' ',                /* pad char      */
-    0,                  /* escape_with_backslash_is_dangerous */
+    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_big5_handler,
     &my_collation_big5_chinese_ci_handler
 };
@@ -6433,7 +6435,7 @@ CHARSET_INFO my_charset_big5_bin=
     0,			/* min_sort_char */
     255,		/* max_sort_char */
     ' ',                /* pad char      */
-    0,                  /* escape_with_backslash_is_dangerous */
+    1,                  /* escape_with_backslash_is_dangerous */
     &my_charset_big5_handler,
     &my_collation_mb_bin_handler
 };

@@ -111,7 +111,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES = libmysql.ver
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -129,14 +129,14 @@ am__DEPENDENCIES_1 = my_init.lo my_static.lo my_malloc.lo \
 	mf_dirname.lo mf_fn_ext.lo mf_wcomp.lo typelib.lo \
 	safemalloc.lo my_alloc.lo mf_format.lo mf_path.lo \
 	mf_unixpath.lo my_fopen.lo my_symlink.lo my_fstream.lo \
-	mf_loadpath.lo my_pthread.lo my_thr_init.lo thr_mutex.lo \
-	mulalloc.lo string.lo default.lo default_modify.lo \
-	my_compress.lo array.lo my_once.lo list.lo my_net.lo \
-	charset.lo charset-def.lo hash.lo mf_iocache.lo mf_iocache2.lo \
-	my_seek.lo my_sleep.lo my_pread.lo mf_cache.lo md5.lo sha1.lo \
-	my_getopt.lo my_gethostbyname.lo my_port.lo my_rename.lo \
-	my_chsize.lo
-am__DEPENDENCIES_2 = my_lib.lo
+	mf_arr_appstr.lo mf_loadpath.lo my_pthread.lo my_thr_init.lo \
+	thr_mutex.lo mulalloc.lo string.lo default.lo \
+	default_modify.lo my_compress.lo array.lo my_once.lo list.lo \
+	my_net.lo charset.lo charset-def.lo hash.lo mf_iocache.lo \
+	mf_iocache2.lo my_seek.lo my_sleep.lo my_pread.lo mf_cache.lo \
+	md5.lo sha1.lo my_getopt.lo my_gethostbyname.lo my_port.lo \
+	my_rename.lo my_chsize.lo
+am__DEPENDENCIES_2 = my_lib.lo mf_qsort.lo
 am__DEPENDENCIES_3 = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2)
 am__DEPENDENCIES_4 = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
 	strmake.lo strend.lo strtod.lo strnlen.lo strfill.lo \
@@ -169,7 +169,7 @@ PROGRAMS = $(noinst_PROGRAMS)
 am_conf_to_src_OBJECTS = conf_to_src.$(OBJEXT)
 conf_to_src_OBJECTS = $(am_conf_to_src_OBJECTS)
 conf_to_src_DEPENDENCIES =
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -194,6 +194,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -337,7 +338,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -388,6 +391,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -491,7 +495,7 @@ mysysobjects1 = my_init.lo my_static.lo my_malloc.lo my_realloc.lo \
 			mf_pack.lo my_messnc.lo mf_dirname.lo mf_fn_ext.lo\
 			mf_wcomp.lo typelib.lo safemalloc.lo my_alloc.lo \
 			mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo \
-			my_symlink.lo my_fstream.lo \
+			my_symlink.lo my_fstream.lo mf_arr_appstr.lo \
 			mf_loadpath.lo my_pthread.lo my_thr_init.lo \
 			thr_mutex.lo mulalloc.lo string.lo \
                         default.lo default_modify.lo \
@@ -506,7 +510,7 @@ sqlobjects = net.lo
 sql_cmn_objects = pack.lo client.lo my_time.lo
 
 # Not needed in the minimum library
-mysysobjects2 = my_lib.lo
+mysysobjects2 = my_lib.lo mf_qsort.lo
 mysysobjects = $(mysysobjects1) $(mysysobjects2)
 target_libadd = $(mysysobjects) $(mystringsobjects) $(dbugobjects) \
  $(sql_cmn_objects) $(vio_objects) $(sqlobjects)
@@ -527,7 +531,7 @@ conf_to_src_LDFLAGS = @NOINST_LDFLAGS@
 libmysqlclient_la_SOURCES = $(target_sources)
 libmysqlclient_la_LIBADD = $(target_libadd) $(yassl_las)
 libmysqlclient_la_LDFLAGS = $(target_ldflags)
-EXTRA_DIST = Makefile.shared libmysql.def dll.c mytest.c CMakeLists.txt
+EXTRA_DIST = Makefile.shared libmysql.def dll.c CMakeLists.txt
 noinst_HEADERS = client_settings.h
 
 # This part requires GNUmake

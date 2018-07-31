@@ -54,10 +54,9 @@ build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
-	$(srcdir)/Makefile.in $(srcdir)/config.h.in \
-	$(top_srcdir)/bdb/Makefile.in $(top_srcdir)/configure COPYING \
-	ChangeLog config.guess config.sub depcomp install-sh ltmain.sh \
-	missing
+	$(srcdir)/Makefile.in $(top_srcdir)/bdb/Makefile.in \
+	$(top_srcdir)/configure COPYING ChangeLog config.guess \
+	config.sub depcomp install-sh ltmain.sh missing
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
@@ -84,7 +83,7 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno configure.status.lineno
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES = bdb/Makefile
 SOURCES =
 DIST_SOURCES =
@@ -114,6 +113,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -251,7 +251,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -302,6 +304,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -386,8 +389,7 @@ DIST_SUBDIRS = . include @docs_dirs@ zlib \
 			@thread_dirs@ pstack \
 			@sql_union_dirs@ scripts @man_dirs@ tests SSL\
 			BUILD netware os2 @libmysqld_dirs@ \
-			@bench_dirs@ support-files @tools_dirs@ win \
-			debian
+			@bench_dirs@ support-files @tools_dirs@ win
 
 
 # Run these targets before any others, also make part of clean target,
@@ -411,7 +413,7 @@ DISTCLEANFILES = ac_available_languages_fragment
 # and one in the build tree. This breaks "distcleancheck", until this
 # is sorted out we redefine the find that scans for files not removed
 distcleancheck_listfiles = find . -name sql_yacc.cc -o -type f -print
-all: $(BUILT_SOURCES) config.h
+all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-recursive
 
 .SUFFIXES:
@@ -448,23 +450,6 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(srcdir) && $(AUTOCONF)
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(srcdir) && $(ACLOCAL) $(ACLOCAL_AMFLAGS)
-
-config.h: stamp-h1
-	@if test ! -f $@; then \
-	  rm -f stamp-h1; \
-	  $(MAKE) stamp-h1; \
-	else :; fi
-
-stamp-h1: $(srcdir)/config.h.in $(top_builddir)/config.status
-	@rm -f stamp-h1
-	cd $(top_builddir) && $(SHELL) ./config.status config.h
-$(srcdir)/config.h.in:  $(am__configure_deps) 
-	cd $(top_srcdir) && $(AUTOHEADER)
-	rm -f stamp-h1
-	touch $@
-
-distclean-hdr:
-	-rm -f config.h stamp-h1
 bdb/Makefile: $(top_builddir)/config.status $(top_srcdir)/bdb/Makefile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
 
@@ -612,7 +597,7 @@ distclean-tags:
 distdir: $(DISTFILES)
 	$(am__remove_distdir)
 	mkdir $(distdir)
-	$(mkdir_p) $(distdir)/bdb $(distdir)/config/ac-macros $(distdir)/debian $(distdir)/include $(distdir)/libmysql $(distdir)/ndb/include $(distdir)/ndb/src
+	$(mkdir_p) $(distdir)/bdb $(distdir)/config/ac-macros $(distdir)/include $(distdir)/libmysql $(distdir)/ndb/include $(distdir)/ndb/src
 	@srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`; \
 	topsrcdirstrip=`echo "$(top_srcdir)" | sed 's|.|.|g'`; \
 	list='$(DISTFILES)'; for file in $$list; do \
@@ -757,7 +742,7 @@ distcleancheck: distclean
 check-am: all-am
 check: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) check-recursive
-all-am: Makefile config.h
+all-am: Makefile
 installdirs: installdirs-recursive
 installdirs-am:
 install: $(BUILT_SOURCES)
@@ -795,8 +780,8 @@ clean-am: clean-generic clean-libtool mostlyclean-am
 distclean: distclean-recursive
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -f Makefile
-distclean-am: clean-am distclean-generic distclean-hdr \
-	distclean-libtool distclean-tags
+distclean-am: clean-am distclean-generic distclean-libtool \
+	distclean-tags
 
 dvi: dvi-recursive
 
@@ -844,13 +829,13 @@ uninstall-info: uninstall-info-recursive
 	check-am clean clean-generic clean-libtool clean-recursive \
 	ctags ctags-recursive dist dist-all dist-bzip2 dist-gzip \
 	dist-hook dist-shar dist-tarZ dist-zip distcheck distclean \
-	distclean-generic distclean-hdr distclean-libtool \
-	distclean-recursive distclean-tags distcleancheck distdir \
-	distuninstallcheck dvi dvi-am html html-am info info-am \
-	install install-am install-data install-data-am install-exec \
-	install-exec-am install-info install-info-am install-man \
-	install-strip installcheck installcheck-am installdirs \
-	installdirs-am maintainer-clean maintainer-clean-generic \
+	distclean-generic distclean-libtool distclean-recursive \
+	distclean-tags distcleancheck distdir distuninstallcheck dvi \
+	dvi-am html html-am info info-am install install-am \
+	install-data install-data-am install-exec install-exec-am \
+	install-info install-info-am install-man install-strip \
+	installcheck installcheck-am installdirs installdirs-am \
+	maintainer-clean maintainer-clean-generic \
 	maintainer-clean-recursive mostlyclean mostlyclean-generic \
 	mostlyclean-libtool mostlyclean-recursive pdf pdf-am ps ps-am \
 	tags tags-recursive uninstall uninstall-am uninstall-info-am
@@ -901,7 +886,7 @@ dist-hook:
 	rm -rf `find $(distdir) -type d -name SCCS -print`
 	rm -f  `find $(distdir) -type l -print`
 	mkdir -p $(distdir)/win
-	scripts/mysql_install_db --no-defaults --windows \
+	scripts/mysql_install_db --no-defaults --cross-bootstrap \
 		--basedir=$(top_builddir) \
 		--datadir=$(distdir)/win/data \
 		--srcdir=$(top_srcdir)
@@ -926,11 +911,11 @@ tags:
 
 test-ps:
 	cd mysql-test ; \
-	@PERL@ ./mysql-test-run.pl $(force) $(mem) --ps-protocol
+	    @PERL@ ./mysql-test-run.pl $(force) $(mem) --ps-protocol
 
 test-ns:
 	cd mysql-test ; \
-	@PERL@ ./mysql-test-run.pl $(force) $(mem)
+	    @PERL@ ./mysql-test-run.pl $(force) $(mem)
 
 test:	test-ns test-ps
 
@@ -949,19 +934,25 @@ test-force-mem:
 
 test-bt:
 	-cd mysql-test ; MTR_BUILD_THREAD=auto \
-	@PERL@ ./mysql-test-run.pl --force --comment=normal --report-features
+	    @PERL@ ./mysql-test-run.pl --force --comment=normal --report-features
 	-cd mysql-test ; MTR_BUILD_THREAD=auto \
-	@PERL@ ./mysql-test-run.pl --force --comment=ps --ps-protocol
+	    @PERL@ ./mysql-test-run.pl --force --comment=ps --ps-protocol
 	-cd mysql-test ; MTR_BUILD_THREAD=auto \
-	@PERL@ ./mysql-test-run.pl --force --comment=funcs1_ps --ps-protocol --suite=funcs_1
+	    @PERL@ ./mysql-test-run.pl --force --comment=funcs1_ps --ps-protocol --reorder --suite=funcs_1
 	-cd mysql-test ; MTR_BUILD_THREAD=auto \
-	@PERL@ ./mysql-test-run.pl --force --comment=funcs2 --suite=funcs_2
-	-cd mysql-test ; MTR_BUILD_THREAD=auto \
-	@PERL@ ./mysql-test-run.pl --force --comment=rowlock --suite=row_lock
+	    @PERL@ ./mysql-test-run.pl --force --comment=funcs2 --suite=funcs_2
+	-if [ -d mysql-test/suite/nist ] ; then \
+	      cd mysql-test ; MTR_BUILD_THREAD=auto \
+	      @PERL@ ./mysql-test-run.pl --comment=NIST+normal --force --suite=nist ; \
+	fi
+	-if [ -d mysql-test/suite/nist ] ; then \
+	      cd mysql-test ; MTR_BUILD_THREAD=auto \
+	      @PERL@ ./mysql-test-run.pl --comment=NIST+ps --force --suite=nist --ps-protocol ; \
+	fi
 
 test-bt-debug:
 	-cd mysql-test ; MTR_BUILD_THREAD=auto \
-	@PERL@ ./mysql-test-run.pl --force --comment=debug --report-features
+	    @PERL@ ./mysql-test-run.pl --force --comment=debug --report-features
 
 # Keep these for a while
 test-pl:	test
@@ -972,15 +963,15 @@ test-force-full-pl: test-force-full
 
 test-ext-funcs:
 	cd mysql-test ; \
-	@PERL@ ./mysql-test-run.pl --force --suite=funcs_1 ; \
-	@PERL@ ./mysql-test-run.pl --force --suite=funcs_2
+	    @PERL@ ./mysql-test-run.pl --force --reorder --suite=funcs_1 ; \
+	    @PERL@ ./mysql-test-run.pl --force --suite=funcs_2
 
 test-ext:	test-ext-funcs
 
 test-fast:
 	cd mysql-test ; \
-	@PERL@ ./mysql-test-run.pl $(subset) --force --skip-ndb --skip-innodb --skip-im --skip-rpl ; \
-	@PERL@ ./mysql-test-run.pl $(subset) --force --suite=funcs_1 --do-test=myisam
+	    @PERL@ ./mysql-test-run.pl $(subset) --force --skip-ndb --skip-innodb --skip-im --skip-rpl ; \
+	    @PERL@ ./mysql-test-run.pl $(subset) --force --suite=funcs_1 --do-test=myisam
 
 test-fast-view:
 	$(MAKE) subset=--view-protocol test-fast
@@ -993,8 +984,8 @@ test-fast-prepare:
 
 test-full-qa:
 	$(MAKE) force=--force test-pl \
-	test-ext test-fast-view \
-	test-fast-cursor
+	    test-ext test-fast-view \
+	    test-fast-cursor
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

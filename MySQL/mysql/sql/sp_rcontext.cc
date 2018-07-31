@@ -37,6 +37,7 @@ sp_rcontext::sp_rcontext(sp_pcontext *root_parsing_ctx,
    m_var_items(0),
    m_return_value_fld(return_value_fld),
    m_return_value_set(FALSE),
+   in_sub_stmt(FALSE),
    m_hcount(0),
    m_hsp(0),
    m_ihsp(0),
@@ -67,6 +68,8 @@ sp_rcontext::~sp_rcontext()
 
 bool sp_rcontext::init(THD *thd)
 {
+  in_sub_stmt= thd->in_sub_stmt;
+
   if (init_var_table(thd) || init_var_items())
     return TRUE;
 
@@ -191,7 +194,7 @@ sp_rcontext::set_return_value(THD *thd, Item **return_value_item)
 */
 
 bool
-sp_rcontext::find_handler(uint sql_errno,
+sp_rcontext::find_handler(THD *thd, uint sql_errno,
                           MYSQL_ERROR::enum_warning_level level)
 {
   if (m_hfound >= 0)
@@ -199,6 +202,15 @@ sp_rcontext::find_handler(uint sql_errno,
 
   const char *sqlstate= mysql_errno_to_sqlstate(sql_errno);
   int i= m_hcount, found= -1;
+
+  /*
+    If this is a fatal sub-statement error, and this runtime
+    context corresponds to a sub-statement, no CONTINUE/EXIT
+    handlers from this context are applicable: try to locate one
+    in the outer scope.
+  */
+  if (thd->is_fatal_sub_stmt_error && in_sub_stmt)
+    i= 0;
 
   /* Search handlers from the latest (innermost) to the oldest (outermost) */
   while (i--)
@@ -252,7 +264,7 @@ sp_rcontext::find_handler(uint sql_errno,
     */
     if (m_prev_runtime_ctx && IS_EXCEPTION_CONDITION(sqlstate) &&
         level == MYSQL_ERROR::WARN_LEVEL_ERROR)
-      return m_prev_runtime_ctx->find_handler(sql_errno, level);
+      return m_prev_runtime_ctx->find_handler(thd, sql_errno, level);
     return FALSE;
   }
   m_hfound= found;
@@ -298,7 +310,7 @@ sp_rcontext::handle_error(uint sql_errno,
     elevated_level= MYSQL_ERROR::WARN_LEVEL_ERROR;
   }
 
-  if (find_handler(sql_errno, elevated_level))
+  if (find_handler(thd, sql_errno, elevated_level))
   {
     if (elevated_level == MYSQL_ERROR::WARN_LEVEL_ERROR)
     {
@@ -322,17 +334,91 @@ sp_rcontext::handle_error(uint sql_errno,
 void
 sp_rcontext::push_cursor(sp_lex_keeper *lex_keeper, sp_instr_cpush *i)
 {
+  DBUG_ENTER("sp_rcontext::push_cursor");
+  DBUG_ASSERT(m_ccount < m_root_parsing_ctx->max_cursor_index());
   m_cstack[m_ccount++]= new sp_cursor(lex_keeper, i);
+  DBUG_PRINT("info", ("m_ccount: %d", m_ccount));
+  DBUG_VOID_RETURN;
 }
-
 
 void
 sp_rcontext::pop_cursors(uint count)
 {
+  DBUG_ENTER("sp_rcontext::pop_cursors");
+  DBUG_ASSERT(m_ccount >= count);
   while (count--)
   {
     delete m_cstack[--m_ccount];
   }
+  DBUG_PRINT("info", ("m_ccount: %d", m_ccount));
+  DBUG_VOID_RETURN;
+}
+
+void
+sp_rcontext::push_handler(struct sp_cond_type *cond, uint h, int type, uint f)
+{
+  DBUG_ENTER("sp_rcontext::push_handler");
+  DBUG_ASSERT(m_hcount < m_root_parsing_ctx->max_handler_index());
+
+  m_handler[m_hcount].cond= cond;
+  m_handler[m_hcount].handler= h;
+  m_handler[m_hcount].type= type;
+  m_handler[m_hcount].foffset= f;
+  m_hcount+= 1;
+
+  DBUG_PRINT("info", ("m_hcount: %d", m_hcount));
+  DBUG_VOID_RETURN;
+}
+
+void
+sp_rcontext::pop_handlers(uint count)
+{
+  DBUG_ENTER("sp_rcontext::pop_handlers");
+  DBUG_ASSERT(m_hcount >= count);
+  m_hcount-= count;
+  DBUG_PRINT("info", ("m_hcount: %d", m_hcount));
+  DBUG_VOID_RETURN;
+}
+
+void
+sp_rcontext::push_hstack(uint h)
+{
+  DBUG_ENTER("sp_rcontext::push_hstack");
+  DBUG_ASSERT(m_hsp < m_root_parsing_ctx->max_handler_index());
+  m_hstack[m_hsp++]= h;
+  DBUG_PRINT("info", ("m_hsp: %d", m_hsp));
+  DBUG_VOID_RETURN;
+}
+
+uint
+sp_rcontext::pop_hstack()
+{
+  uint handler;
+  DBUG_ENTER("sp_rcontext::pop_hstack");
+  DBUG_ASSERT(m_hsp);
+  handler= m_hstack[--m_hsp];
+  DBUG_PRINT("info", ("m_hsp: %d", m_hsp));
+  DBUG_RETURN(handler);
+}
+
+void
+sp_rcontext::enter_handler(int hid)
+{
+  DBUG_ENTER("sp_rcontext::enter_handler");
+  DBUG_ASSERT(m_ihsp < m_root_parsing_ctx->max_handler_index());
+  m_in_handler[m_ihsp++]= hid;
+  DBUG_PRINT("info", ("m_ihsp: %d", m_ihsp));
+  DBUG_VOID_RETURN;
+}
+
+void
+sp_rcontext::exit_handler()
+{
+  DBUG_ENTER("sp_rcontext::exit_handler");
+  DBUG_ASSERT(m_ihsp);
+  m_ihsp-= 1;
+  DBUG_PRINT("info", ("m_ihsp: %d", m_ihsp));
+  DBUG_VOID_RETURN;
 }
 
 
@@ -491,14 +577,14 @@ sp_cursor::fetch(THD *thd, List<struct sp_variable> *vars)
 */
 
 Item_cache *
-sp_rcontext::create_case_expr_holder(THD *thd, Item_result result_type)
+sp_rcontext::create_case_expr_holder(THD *thd, const Item *item)
 {
   Item_cache *holder;
   Query_arena current_arena;
 
   thd->set_n_backup_active_arena(thd->spcont->callers_arena, &current_arena);
 
-  holder= Item_cache::get_cache(result_type);
+  holder= Item_cache::get_cache(item);
 
   thd->restore_active_arena(thd->spcont->callers_arena, &current_arena);
 
@@ -547,7 +633,7 @@ sp_rcontext::set_case_expr(THD *thd, int case_expr_id, Item **case_expr_item_ptr
         case_expr_item->result_type())
   {
     m_case_expr_holders[case_expr_id]=
-      create_case_expr_holder(thd, case_expr_item->result_type());
+      create_case_expr_holder(thd, case_expr_item);
   }
 
   m_case_expr_holders[case_expr_id]->store(case_expr_item);

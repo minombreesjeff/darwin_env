@@ -47,6 +47,8 @@ C_MODE_START
 #include <sql_common.h>
 #include "embedded_priv.h"
 
+extern unsigned int mysql_server_last_errno;
+extern char mysql_server_last_error[MYSQL_ERRMSG_SIZE];
 static my_bool emb_read_query_result(MYSQL *mysql);
 
 
@@ -73,6 +75,7 @@ void embedded_get_error(MYSQL *mysql, MYSQL_DATA *data)
   net->last_errno= ei->last_errno;
   strmake(net->last_error, ei->info, sizeof(net->last_error));
   memcpy(net->sqlstate, ei->sqlstate, sizeof(net->sqlstate));
+  mysql->server_status= ei->server_status;
   my_free((gptr) data, MYF(0));
 }
 
@@ -1027,6 +1030,7 @@ void net_send_error_packet(THD *thd, uint sql_errno, const char *err)
   ei->last_errno= sql_errno;
   strmake(ei->info, err, sizeof(ei->info)-1);
   strmov(ei->sqlstate, mysql_errno_to_sqlstate(sql_errno));
+  ei->server_status= thd->server_status;
   thd->cur_data= 0;
 }
 
@@ -1082,3 +1086,11 @@ bool Protocol::net_store_data(const char *from, uint length)
   return false;
 }
 
+
+void vprint_msg_to_log(enum loglevel level __attribute__((unused)),
+                       const char *format, va_list argsi)
+{
+  vsnprintf(mysql_server_last_error, sizeof(mysql_server_last_error),
+           format, argsi);
+  mysql_server_last_errno= CR_UNKNOWN_ERROR;
+}

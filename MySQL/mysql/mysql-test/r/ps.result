@@ -85,9 +85,9 @@ NULL
 NULL
 NULL
 prepare stmt6 from 'select 1; select2';
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '; select2' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'select2' at line 1
 prepare stmt6 from 'insert into t1 values (5,"five"); select2';
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '; select2' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'select2' at line 1
 explain prepare stmt6 from 'insert into t1 values (5,"five"); select2';
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'from 'insert into t1 values (5,"five"); select2'' at line 1
 create table t2
@@ -806,6 +806,8 @@ select @@max_prepared_stmt_count;
 @@max_prepared_stmt_count
 0
 set global max_prepared_stmt_count=10000000000000000;
+Warnings:
+Warning	1292	Truncated incorrect max_prepared_stmt_count value: '10000000000000000'
 select @@max_prepared_stmt_count;
 @@max_prepared_stmt_count
 1048576
@@ -1136,6 +1138,11 @@ a
 13
 DEALLOCATE PREPARE st1;
 DROP TABLE t1;
+create table t1 (a int, b tinyint);
+prepare st1 from 'update t1 set b= (str_to_date(a, a))';
+execute st1;
+deallocate prepare st1;
+drop table t1;
 End of 4.1 tests.
 create table t1 (a varchar(20));
 insert into t1 values ('foo');
@@ -1378,45 +1385,39 @@ prepare stmt from "repair table t1, t4, t3";
 execute stmt;
 Table	Op	Msg_type	Msg_text
 test.t1	repair	status	OK
-test.t4	repair	error	Table 'test.t4' doesn't exist
+test.t4	repair	Error	Table 'test.t4' doesn't exist
+test.t4	repair	error	Corrupt
 test.t3	repair	status	OK
-Warnings:
-Error	1146	Table 'test.t4' doesn't exist
 execute stmt;
 Table	Op	Msg_type	Msg_text
 test.t1	repair	status	OK
-test.t4	repair	error	Table 'test.t4' doesn't exist
+test.t4	repair	Error	Table 'test.t4' doesn't exist
+test.t4	repair	error	Corrupt
 test.t3	repair	status	OK
-Warnings:
-Error	1146	Table 'test.t4' doesn't exist
 prepare stmt from "optimize table t1, t3, t4";
 execute stmt;
 Table	Op	Msg_type	Msg_text
 test.t1	optimize	status	OK
 test.t3	optimize	status	OK
-test.t4	optimize	error	Table 'test.t4' doesn't exist
-Warnings:
-Error	1146	Table 'test.t4' doesn't exist
+test.t4	optimize	Error	Table 'test.t4' doesn't exist
+test.t4	optimize	error	Corrupt
 execute stmt;
 Table	Op	Msg_type	Msg_text
 test.t1	optimize	status	Table is already up to date
 test.t3	optimize	status	Table is already up to date
-test.t4	optimize	error	Table 'test.t4' doesn't exist
-Warnings:
-Error	1146	Table 'test.t4' doesn't exist
+test.t4	optimize	Error	Table 'test.t4' doesn't exist
+test.t4	optimize	error	Corrupt
 prepare stmt from "analyze table t4, t1";
 execute stmt;
 Table	Op	Msg_type	Msg_text
-test.t4	analyze	error	Table 'test.t4' doesn't exist
+test.t4	analyze	Error	Table 'test.t4' doesn't exist
+test.t4	analyze	error	Corrupt
 test.t1	analyze	status	Table is already up to date
-Warnings:
-Error	1146	Table 'test.t4' doesn't exist
 execute stmt;
 Table	Op	Msg_type	Msg_text
-test.t4	analyze	error	Table 'test.t4' doesn't exist
+test.t4	analyze	Error	Table 'test.t4' doesn't exist
+test.t4	analyze	error	Corrupt
 test.t1	analyze	status	Table is already up to date
-Warnings:
-Error	1146	Table 'test.t4' doesn't exist
 deallocate prepare stmt;
 drop table t1, t2, t3;
 create database mysqltest_long_database_name_to_thrash_heap;
@@ -1692,4 +1693,202 @@ t1	CREATE TABLE `t1` (
   `?` decimal(2,1) default NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
+drop table if exists t1;
+create table t1 (a bigint unsigned, b bigint(20) unsigned);
+prepare stmt from "insert into t1 values (?,?)";
+set @a= 9999999999999999;
+set @b= 14632475938453979136;
+insert into t1 values (@a, @b);
+select * from t1 where a = @a and b = @b;
+a	b
+9999999999999999	14632475938453979136
+execute stmt using @a, @b;
+select * from t1 where a = @a and b = @b;
+a	b
+9999999999999999	14632475938453979136
+9999999999999999	14632475938453979136
+deallocate prepare stmt;
+drop table t1;
+drop view if exists v1;
+drop table if exists t1;
+create table t1 (a int, b int);
+insert into t1 values (1,1), (2,2), (3,3);
+insert into t1 values (3,1), (1,2), (2,3);
+prepare stmt from "create view v1 as select * from t1";
+execute stmt;
+drop table t1;
+create table t1 (a int, b int);
+drop view v1;
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,`t1`.`b` AS `b` from `t1`
+drop view v1;
+prepare stmt from "create view v1 (c,d) as select a,b from t1";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `c`,`t1`.`b` AS `d` from `t1`
+select * from v1;
+c	d
+drop view v1;
+execute stmt;
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `c`,`t1`.`b` AS `d` from `t1`
+select * from v1;
+c	d
+drop view v1;
+prepare stmt from "create view v1 (c) as select b+1 from t1";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select (`t1`.`b` + 1) AS `c` from `t1`
+select * from v1;
+c
+drop view v1;
+execute stmt;
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select (`t1`.`b` + 1) AS `c` from `t1`
+select * from v1;
+c
+drop view v1;
+prepare stmt from "create view v1 (c,d,e,f) as select a,b,a in (select a+2 from t1), a = all (select a from t1) from t1";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `c`,`t1`.`b` AS `d`,`t1`.`a` in (select (`t1`.`a` + 2) AS `a+2` from `t1`) AS `e`,`t1`.`a` = all (select `t1`.`a` AS `a` from `t1`) AS `f` from `t1`
+select * from v1;
+c	d	e	f
+drop view v1;
+execute stmt;
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `c`,`t1`.`b` AS `d`,`t1`.`a` in (select (`t1`.`a` + 2) AS `a+2` from `t1`) AS `e`,`t1`.`a` = all (select `t1`.`a` AS `a` from `t1`) AS `f` from `t1`
+select * from v1;
+c	d	e	f
+drop view v1;
+prepare stmt from "create or replace view v1 as select 1";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select 1 AS `1`
+select * from v1;
+1
+1
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select 1 AS `1`
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select 1 AS `1`
+select * from v1;
+1
+1
+drop view v1;
+prepare stmt from "create view v1 as select 1, 1";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select 1 AS `1`,1 AS `My_exp_1`
+select * from v1;
+1	My_exp_1
+1	1
+drop view v1;
+execute stmt;
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select 1 AS `1`,1 AS `My_exp_1`
+select * from v1;
+1	My_exp_1
+1	1
+drop view v1;
+prepare stmt from "create view v1 (x) as select a from t1 where a > 1";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `x` from `t1` where (`t1`.`a` > 1)
+select * from v1;
+x
+drop view v1;
+execute stmt;
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `x` from `t1` where (`t1`.`a` > 1)
+select * from v1;
+x
+drop view v1;
+prepare stmt from "create view v1 as select * from `t1` `b`";
+execute stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `b`.`a` AS `a`,`b`.`b` AS `b` from `t1` `b`
+select * from v1;
+a	b
+drop view v1;
+execute stmt;
+deallocate prepare stmt;
+show create view v1;
+View	Create View
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `b`.`a` AS `a`,`b`.`b` AS `b` from `t1` `b`
+select * from v1;
+a	b
+drop view v1;
+prepare stmt from "create view v1 (a,b,c) as select * from t1";
+execute stmt;
+ERROR HY000: View's SELECT and view's field list have different column counts
+execute stmt;
+ERROR HY000: View's SELECT and view's field list have different column counts
+deallocate prepare stmt;
+drop table t1;
+create temporary table t1 (a int, b int);
+prepare stmt from "create view v1 as select * from t1";
+execute stmt;
+ERROR HY000: View's SELECT refers to a temporary table 't1'
+execute stmt;
+ERROR HY000: View's SELECT refers to a temporary table 't1'
+deallocate prepare stmt;
+drop table t1;
+prepare stmt from "create view v1 as select * from t1";
+ERROR 42S02: Table 'test.t1' doesn't exist
+prepare stmt from "create view v1 as select * from `t1` `b`";
+ERROR 42S02: Table 'test.t1' doesn't exist
+prepare stmt from "select ?";
+set @arg= 123456789.987654321;
+select @arg;
+@arg
+123456789.987654321
+execute stmt using @arg;
+?
+123456789.987654321
+set @arg= "string";
+select @arg;
+@arg
+string
+execute stmt using @arg;
+?
+string
+set @arg= 123456;
+select @arg;
+@arg
+123456
+execute stmt using @arg;
+?
+123456
+set @arg= cast(-12345.54321 as decimal(20, 10));
+select @arg;
+@arg
+-12345.5432100000
+execute stmt using @arg;
+?
+-12345.5432100000
+deallocate prepare stmt;
 End of 5.0 tests.

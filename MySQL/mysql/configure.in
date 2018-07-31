@@ -7,8 +7,8 @@ AC_INIT(sql/mysqld.cc)
 AC_CANONICAL_SYSTEM
 # The Docs Makefile.am parses this line!
 # remember to also change ndb version below and update version.c in ndb
-AM_INIT_AUTOMAKE(mysql, 5.0.45)
-AM_CONFIG_HEADER(config.h)
+AM_INIT_AUTOMAKE(mysql, 5.0.67)
+AM_CONFIG_HEADER([include/config.h:config.h.in])
 
 PROTOCOL_VERSION=10
 DOT_FRM_VERSION=6
@@ -23,14 +23,24 @@ NDB_SHARED_LIB_VERSION=$NDB_SHARED_LIB_MAJOR_VERSION:0:0
 # ndb version
 NDB_VERSION_MAJOR=5
 NDB_VERSION_MINOR=0
-NDB_VERSION_BUILD=45
+NDB_VERSION_BUILD=67
 NDB_VERSION_STATUS=""
 
 # Set all version vars based on $VERSION. How do we do this more elegant ?
 # Remember that regexps needs to quote [ and ] since this is run through m4
-MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|[[a-z]]*-.*$||"`
-MYSQL_BASE_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|\.[[^.]]*$||"`
-MYSQL_VERSION_ID=`echo $MYSQL_NO_DASH_VERSION | sed -e 's|[[^0-9.]].*$||;s|$|.|' | sed -e 's/[[^0-9.]]//g; s/\./  /g; s/ \([[0-9]]\) / 0\\1 /g; s/ //g'`
+# We take some made up examples
+#
+#  VERSION                  5.1.40sp1-alpha     5.0.34a
+#  MYSQL_NO_DASH_VERSION    5.1.40sp1           5.0.34a
+#  MYSQL_NUMERIC_VERSION    5.1.40              5.0.34
+#  MYSQL_BASE_VERSION       5.1                 5.0
+#  MYSQL_VERSION_ID         50140               50034
+#
+MYSQL_NO_DASH_VERSION=`echo $VERSION | sed -e "s|-.*$||"`
+MYSQL_NUMERIC_VERSION=`echo $MYSQL_NO_DASH_VERSION | sed -e "s|[[a-z]][[a-z0-9]]*$||"`
+MYSQL_BASE_VERSION=`echo $MYSQL_NUMERIC_VERSION | sed -e "s|\.[[^.]]*$||"`
+MYSQL_VERSION_ID=`echo $MYSQL_NUMERIC_VERSION | \
+    awk -F. '{printf "%d%0.2d%0.2d", $1, $2, $3}'`
 
 # Add previous major version for debian package upgrade path
 MYSQL_PREVIOUS_BASE_VERSION=4.1
@@ -124,6 +134,8 @@ case $MACHINE_TYPE in
 esac
 
 # Save some variables and the command line options for mysqlbug
+SAVE_CC="$CC"
+SAVE_CXX="$CXX"
 SAVE_ASFLAGS="$ASFLAGS"
 SAVE_CFLAGS="$CFLAGS"
 SAVE_CXXFLAGS="$CXXFLAGS"
@@ -131,6 +143,8 @@ SAVE_LDFLAGS="$LDFLAGS"
 SAVE_CXXLDFLAGS="$CXXLDFLAGS"
 CONF_COMMAND="$0 $ac_configure_args"
 AC_SUBST(CONF_COMMAND)
+AC_SUBST(SAVE_CC)
+AC_SUBST(SAVE_CXX)
 AC_SUBST(SAVE_ASFLAGS)
 AC_SUBST(SAVE_CFLAGS)
 AC_SUBST(SAVE_CXXFLAGS)
@@ -212,7 +226,7 @@ CC_VERSION=`$CC --version | sed 1q`
 esac
 if test $? -eq "0"
 then
-  AC_MSG_CHECKING("C Compiler version");
+  AC_MSG_CHECKING("C Compiler version")
   AC_MSG_RESULT("$CC $CC_VERSION")
 else
 CC_VERSION=""
@@ -373,6 +387,7 @@ AC_SUBST(CC)
 AC_SUBST(CFLAGS)
 AC_SUBST(CXX)
 AC_SUBST(CXXFLAGS)
+AC_SUBST(ASFLAGS)
 AC_SUBST(LD)
 AC_SUBST(INSTALL_SCRIPT)
 
@@ -631,7 +646,7 @@ AC_SUBST(NOINST_LDFLAGS)
 
 if test "$TARGET_LINUX" = "true" -a "$static_nss" = ""
 then
-  tmp=`nm /usr/lib/libc.a  | grep _nss_files_getaliasent_r`
+  tmp=`nm /usr/lib*/libc.a  | grep _nss_files_getaliasent_r`
   if test -n "$tmp"
   then
      STATIC_NSS_FLAGS="-lc -lnss_files -lnss_dns -lresolv"
@@ -732,7 +747,34 @@ AC_ARG_WITH(tcp-port,
     [  --with-tcp-port=port-number
                           Which port to use for MySQL services (default 3306)],
     [ MYSQL_TCP_PORT=$withval ],
-    [ MYSQL_TCP_PORT=$MYSQL_TCP_PORT_DEFAULT ]
+    [ MYSQL_TCP_PORT=$MYSQL_TCP_PORT_DEFAULT
+      # if we actually defaulted (as opposed to the pathological case of
+      # --with-tcp-port=<MYSQL_TCP_PORT_DEFAULT> which might in theory
+      # happen if whole batch of servers was built from a script), set
+      # the default to zero to indicate that; we don't lose information
+      # that way, because 0 obviously indicates that we can get the
+      # default value from MYSQL_TCP_PORT. this seems really evil, but
+      # testing for MYSQL_TCP_PORT==MYSQL_TCP_PORT_DEFAULT would make a
+      # a port of MYSQL_TCP_PORT_DEFAULT magic even if the builder did not
+      # intend it to mean "use the default, in fact, look up a good default
+      # from /etc/services if you can", but really, really meant 3306 when
+      # they passed in 3306. When they pass in a specific value, let them
+      # have it; don't second guess user and think we know better, this will
+      # just make people cross.  this makes the the logic work like this
+      # (which is complicated enough):
+      #
+      # - if a port was set during build, use that as a default.
+      #
+      # - otherwise, try to look up a port in /etc/services; if that fails,
+      #   use MYSQL_TCP_PORT_DEFAULT (at the time of this writing 3306)
+      #
+      # - allow the MYSQL_TCP_PORT environment variable to override that.
+      #
+      # - allow command-line parameters to override all of the above.
+      #
+      # the top-most MYSQL_TCP_PORT_DEFAULT is read from win/configure.js,
+      # so don't mess with that.
+      MYSQL_TCP_PORT_DEFAULT=0 ]
     )
 AC_SUBST(MYSQL_TCP_PORT)
 # We might want to document the assigned port in the manual.
@@ -820,6 +862,7 @@ AC_CHECK_FUNC(p2open, , AC_CHECK_LIB(gen, p2open))
 AC_CHECK_FUNC(bind, , AC_CHECK_LIB(bind, bind))
 # Check if crypt() exists in libc or libcrypt, sets LIBS if needed
 AC_SEARCH_LIBS(crypt, crypt, AC_DEFINE(HAVE_CRYPT, 1, [crypt]))
+# See if we need a library for address lookup.
 AC_SEARCH_LIBS(inet_aton, [socket nsl resolv])
 
 # For the sched_yield() function on Solaris
@@ -1368,7 +1411,7 @@ See the Installation chapter in the Reference Manual for more information.])
             AC_MSG_RESULT("no need to check headers")
         fi
         
-        AC_MSG_CHECKING("for pthread_create in -lpthread");
+        AC_MSG_CHECKING("for pthread_create in -lpthread")
         ac_save_LIBS="$LIBS"
         LIBS="$LIBS -lpthread"
         AC_TRY_LINK( [#include <pthread.h>],
@@ -1428,7 +1471,7 @@ then
       then
 	AC_MSG_RESULT("yes")
       else
-	AC_MSG_ERROR([On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual.]);
+	AC_MSG_ERROR([On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual.])
       fi
       AC_MSG_RESULT("yes")
     elif test -f /usr/local/lib/libpthread.a -o -f /usr/local/lib/libpthread.so
@@ -1444,7 +1487,7 @@ then
       then
 	AC_MSG_RESULT("yes")
       else
-	AC_MSG_ERROR([On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual.]);
+	AC_MSG_ERROR([On SCO UNIX MySQL must be compiled with gcc. See the Installation chapter in the Reference Manual.])
       fi
       AC_MSG_RESULT("yes")
     # Hack for SCO UnixWare 7.1.x
@@ -1588,7 +1631,7 @@ else
   AC_MSG_RESULT("$with_posix_threads")
   if test "$with_posix_threads" = "no"
   then
-    AC_MSG_CHECKING("for pthread_create in -lpthread");
+    AC_MSG_CHECKING("for pthread_create in -lpthread")
     ac_save_LIBS="$LIBS"
     LIBS="$LIBS -lpthread"
     AC_TRY_LINK(
@@ -1599,7 +1642,7 @@ else
     if test "$with_posix_threads" = "no"
     then
       LIBS=" $ac_save_LIBS -lpthreads"
-      AC_MSG_CHECKING("for pthread_create in -lpthreads");
+      AC_MSG_CHECKING("for pthread_create in -lpthreads")
       AC_TRY_LINK(
       [#include <pthread.h>],
       [ pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
@@ -1609,7 +1652,7 @@ else
       then
         # This is for FreeBSD
         LIBS="$ac_save_LIBS -pthread"
-        AC_MSG_CHECKING("for pthread_create in -pthread");
+        AC_MSG_CHECKING("for pthread_create in -pthread")
         AC_TRY_LINK(
         [#include <pthread.h>],
         [ pthread_create((pthread_t*) 0,(pthread_attr_t*) 0, 0, 0); ],
@@ -1733,15 +1776,18 @@ AC_ARG_WITH(debug,
 if test "$with_debug" = "yes"
 then
   # Medium debug.
+  AC_DEFINE([DBUG_ON], [1], [Use libdbug])
   CFLAGS="$DEBUG_CFLAGS $DEBUG_OPTIMIZE_CC -DDBUG_ON -DSAFE_MUTEX $CFLAGS"
   CXXFLAGS="$DEBUG_CXXFLAGS $DEBUG_OPTIMIZE_CXX -DDBUG_ON -DSAFE_MUTEX $CXXFLAGS"
 elif test "$with_debug" = "full"
 then
   # Full debug. Very slow in some cases
+  AC_DEFINE([DBUG_ON], [1], [Use libdbug])
   CFLAGS="$DEBUG_CFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC $CFLAGS"
   CXXFLAGS="$DEBUG_CXXFLAGS -DDBUG_ON -DSAFE_MUTEX -DSAFEMALLOC $CXXFLAGS"
 else
   # Optimized version. No debug
+  AC_DEFINE([DBUG_OFF], [1], [Don't use libdbug])
   CFLAGS="$OPTIMIZE_CFLAGS -DDBUG_OFF $CFLAGS"
   CXXFLAGS="$OPTIMIZE_CXXFLAGS -DDBUG_OFF $CXXFLAGS"
 fi
@@ -1909,7 +1955,7 @@ if test "$ac_cv_conv_longlong_to_float" != "yes"
 then
   AC_MSG_ERROR([Your compiler cannot convert a longlong value to a float!
 If you are using gcc 2.8.# you should upgrade to egcs 1.0.3 or newer and try
-again]);
+again])
 fi
 fi
 AC_CHECK_TYPES([sigset_t, off_t], [], [], [#include <sys/types.h>])
@@ -2070,7 +2116,7 @@ CFLAGS="$ORG_CFLAGS"
 AC_CHECK_FUNC(fseeko,
 [if test "$large_file_support" = no -a "$TARGET_LINUX" = "true";
 then
-  AC_MSG_ERROR("Found fseeko symbol but large_file_support is not enabled!");
+  AC_MSG_ERROR("Found fseeko symbol but large_file_support is not enabled!")
 fi]
 )
 
@@ -2434,10 +2480,15 @@ AC_ARG_WITH(docs,
 if test "$with_docs" = "yes"
 then
   docs_dirs="Docs"
+  if test -f "$srcdir/Docs/manual.chm" ; then
+    extra_docs="manual.chm"
+  fi
 else
   docs_dirs=""
+  extra_docs=""
 fi
 AC_SUBST(docs_dirs)
+AC_SUBST(extra_docs)
 
 # Shall we build the man pages?
 AC_ARG_WITH(man,
@@ -2641,12 +2692,14 @@ thread_dirs=
 
 dnl This probably should be cleaned up more - for now the threaded
 dnl client is just using plain-old libs.
-sql_client_dirs="strings regex mysys libmysql client"
+sql_client_dirs=
 linked_client_targets="linked_libmysql_sources"
 
-if test "$THREAD_SAFE_CLIENT" != "no"
+if test "$THREAD_SAFE_CLIENT" = "no"
 then
-  sql_client_dirs="libmysql_r $sql_client_dirs"
+  sql_client_dirs="strings regex mysys dbug extra libmysql client"
+else
+  sql_client_dirs="strings regex mysys dbug extra libmysql libmysql_r client"
   linked_client_targets="$linked_client_targets linked_libmysql_r_sources"
   AC_CONFIG_FILES(libmysql_r/Makefile)
   AC_DEFINE([THREAD_SAFE_CLIENT], [1], [Should be client be thread safe])
@@ -2675,13 +2728,17 @@ AM_CONDITIONAL(HAVE_NETWARE, test "$netware_dir" = "netware")
 export CC CXX CFLAGS CXXFLAGS LD LDFLAGS AR
 ac_configure_args="$ac_configure_args CFLAGS='$CFLAGS' CXXFLAGS='$CXXFLAGS'"
 
-if test "$with_server" = "yes" -o "$THREAD_SAFE_CLIENT" != "no"
+if test "$with_server" != "no" -o "$THREAD_SAFE_CLIENT" != "no"
 then
   AC_DEFINE([THREAD], [1],
             [Define if you want to have threaded code. This may be undef on client code])
   # Avoid _PROGRAMS names
   THREAD_LOBJECTS="thr_alarm.o thr_lock.o thr_mutex.o thr_rwlock.o my_pthread.o my_thr_init.o mf_keycache.o"
   AC_SUBST(THREAD_LOBJECTS)
+fi
+
+if test "$with_server" != "no"
+then
   server_scripts="mysqld_safe mysql_install_db"
   sql_server_dirs="strings mysys dbug extra regex"
 
@@ -2906,6 +2963,12 @@ then
   ndb_opt_subdirs="$ndb_opt_subdirs docs"
   ndb_bin_am_ldflags=""
 fi
+# building dynamic breaks on AIX. (If you want to try it and get unresolved
+# __vec__delete2 and some such, try linking against libhC.)
+case "$host_os" in
+  aix3.* | aix4.0.* | aix4.1.*) ;;
+  *) ndb_bin_am_ldflags="-static";;
+esac
 AC_SUBST([ndb_bin_am_ldflags])
 AC_SUBST([ndb_opt_subdirs])
 
@@ -2992,7 +3055,6 @@ AC_CONFIG_FILES(Makefile extra/Makefile mysys/Makefile dnl
  cmd-line-utils/libedit/Makefile dnl
  win/Makefile dnl
  zlib/Makefile dnl
- debian/Makefile debian/defs.mk debian/control dnl
  cmd-line-utils/readline/Makefile)
  AC_CONFIG_COMMANDS([default], , test -z "$CONFIG_HEADERS" || echo timestamp > stamp-h)
  AC_OUTPUT

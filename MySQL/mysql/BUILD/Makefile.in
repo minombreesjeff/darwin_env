@@ -78,7 +78,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 SOURCES =
 DIST_SOURCES =
@@ -91,6 +91,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -228,7 +229,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -279,6 +282,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -355,6 +359,8 @@ EXTRA_DIST = FINISH.sh \
 			compile-alpha-cxx \
 			compile-alpha-debug \
 			compile-amd64-debug-max \
+			compile-amd64-gcov \
+			compile-amd64-gprof \
 			compile-amd64-max \
 			compile-amd64-max-sci \
 			compile-darwin-mwcc \
@@ -382,6 +388,8 @@ EXTRA_DIST = FINISH.sh \
 			compile-pentium-valgrind-max \
 			compile-pentium64-debug \
 			compile-pentium64-debug-max \
+			compile-pentium64-gcov \
+			compile-pentium64-gprof \
 			compile-pentium64-max-sci \
 			compile-pentium64-valgrind-max \
 			compile-ppc \
@@ -389,6 +397,10 @@ EXTRA_DIST = FINISH.sh \
 			compile-ppc-debug-max \
 			compile-ppc-debug-max-no-ndb \
 			compile-ppc-max \
+			compile-solaris-amd64 \
+			compile-solaris-amd64-debug \
+			compile-solaris-amd64-forte \
+			compile-solaris-amd64-forte-debug \
 			compile-solaris-sparc \
 			compile-solaris-sparc-debug \
 			compile-solaris-sparc-forte \

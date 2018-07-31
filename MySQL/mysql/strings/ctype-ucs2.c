@@ -1018,6 +1018,7 @@ int my_l10tostr_ucs2(CHARSET_INFO *cs,
   register char *p, *db, *de;
   long int new_val;
   int  sl=0;
+  unsigned long int uval = (unsigned long int) val;
   
   p = &buffer[sizeof(buffer)-1];
   *p='\0';
@@ -1027,12 +1028,13 @@ int my_l10tostr_ucs2(CHARSET_INFO *cs,
     if (val < 0)
     {
       sl   = 1;
-      val  = -val;
+      /* Avoid integer overflow in (-val) for LONGLONG_MIN (BUG#31799). */
+      uval  = (unsigned long int)0 - uval;
     }
   }
   
-  new_val = (long) ((unsigned long int) val / 10);
-  *--p    = '0'+ (char) ((unsigned long int) val - (unsigned long) new_val * 10);
+  new_val = (long) (uval / 10);
+  *--p    = '0'+ (char) (uval - (unsigned long) new_val * 10);
   val     = new_val;
   
   while (val != 0)
@@ -1065,34 +1067,36 @@ int my_ll10tostr_ucs2(CHARSET_INFO *cs __attribute__((unused)),
   register char *p, *db, *de;
   long long_val;
   int  sl=0;
+  ulonglong uval= (ulonglong) val;
   
   if (radix < 0)
   {
     if (val < 0)
     {
       sl=1;
-      val = -val;
+      /* Avoid integer overflow in (-val) for LONGLONG_MIN (BUG#31799). */
+      uval = (ulonglong)0 - uval;
     }
   }
   
   p = &buffer[sizeof(buffer)-1];
   *p='\0';
   
-  if (val == 0)
+  if (uval == 0)
   {
     *--p='0';
     goto cnv;
   }
   
-  while ((ulonglong) val > (ulonglong) LONG_MAX)
+  while (uval > (ulonglong) LONG_MAX)
   {
-    ulonglong quo=(ulonglong) val/(uint) 10;
-    uint rem= (uint) (val- quo* (uint) 10);
+    ulonglong quo= uval/(uint) 10;
+    uint rem= (uint) (uval- quo* (uint) 10);
     *--p = '0' + rem;
-    val= quo;
+    uval= quo;
   }
   
-  long_val= (long) val;
+  long_val= (long) uval;
   while (long_val != 0)
   {
     long quo= long_val/10;
@@ -1524,6 +1528,8 @@ my_bool my_like_range_ucs2(CHARSET_INFO *cs,
   char *min_org=min_str;
   char *min_end=min_str+res_length;
   uint charlen= res_length / cs->mbmaxlen;
+  const char *contraction_flags= cs->contractions ?
+             ((const char*) cs->contractions) + 0x40*0x40 : NULL;
   
   for ( ; ptr + 1 < end && min_str + 1 < min_end && charlen > 0
         ; ptr+=2, charlen--)
@@ -1545,6 +1551,7 @@ my_bool my_like_range_ucs2(CHARSET_INFO *cs,
     }
     if (ptr[0] == '\0' && ptr[1] == w_many)	/* '%' in SQL */
     {
+fill_max_and_min:
       /*
         Calculate length of keys:
         'a\0\0... is the smallest possible string when we have space expand
@@ -1561,6 +1568,38 @@ my_bool my_like_range_ucs2(CHARSET_INFO *cs,
       } while (min_str + 1 < min_end);
       return 0;
     }
+
+    if (contraction_flags && ptr + 3 < end &&
+        ptr[0] == '\0' && contraction_flags[(uchar) ptr[1]])
+    {
+      /* Contraction head found */
+      if (ptr[2] == '\0' && (ptr[3] == w_one || ptr[3] == w_many))
+      {
+        /* Contraction head followed by a wildcard, quit */
+        goto fill_max_and_min;
+      }
+      
+      /*
+        Check if the second letter can be contraction part,
+        and if two letters really produce a contraction.
+      */
+      if (ptr[2] == '\0' && contraction_flags[(uchar) ptr[3]] &&
+          cs->contractions[(ptr[1]-0x40)*0x40 + ptr[3] - 0x40])
+      {
+        /* Contraction found */
+        if (charlen == 1 || min_str + 2 >= min_end)
+        {
+          /* Full contraction doesn't fit, quit */
+          goto fill_max_and_min;
+        }
+        
+        /* Put contraction head */
+        *min_str++= *max_str++= *ptr++;
+        *min_str++= *max_str++= *ptr++;
+        charlen--;
+      }
+    }
+    /* Put contraction tail, or a single character */
     *min_str++= *max_str++ = ptr[0];
     *min_str++= *max_str++ = ptr[1];
   }
@@ -1631,7 +1670,7 @@ static MY_COLLATION_HANDLER my_collation_ucs2_bin_handler =
     my_strnncollsp_ucs2_bin,
     my_strnxfrm_ucs2_bin,
     my_strnxfrmlen_simple,
-    my_like_range_simple,
+    my_like_range_ucs2,
     my_wildcmp_ucs2_bin,
     my_strcasecmp_ucs2_bin,
     my_instr_mb,

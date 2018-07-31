@@ -70,3 +70,4 @@ count(*)
 select count(*) from information_schema.USER_PRIVILEGES;
 count(*)
 0
+End of 5.0 tests

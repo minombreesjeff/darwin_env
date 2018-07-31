@@ -943,12 +943,62 @@ int runBug24717(NDBT_Context* ctx, NDBT_Step* step){
     
     restarter.startNodes(&nodeId, 1);
     
-    for (Uint32 i = 0; i < 100; i++)
-    {
-      hugoTrans.pkReadRecords(pNdb, 100, 1, NdbOperation::LM_CommittedRead);
-    }
-    
+    do {
+      for (Uint32 i = 0; i < 100; i++)
+      {
+        hugoTrans.pkReadRecords(pNdb, 100, 1, NdbOperation::LM_CommittedRead);
+      }
+    } while (restarter.waitClusterStarted(5) != 0);
+  }
+  
+  return NDBT_OK;
+}
+
+int 
+runBug29364(NDBT_Context* ctx, NDBT_Step* step){
+  int result = NDBT_OK;
+  int loops = ctx->getNumLoops();
+  int records = ctx->getNumRecords();
+  NdbRestarter restarter;
+  Ndb* pNdb = GETNDB(step);
+  
+  HugoTransactions hugoTrans(*ctx->getTab());
+
+  if (restarter.getNumDbNodes() < 4)
+    return NDBT_OK;
+
+  int dump0[] = { 9000, 0 } ;
+  int dump1[] = { 9001, 0 } ;
+  Uint32 ownNode = refToNode(pNdb->getReference());
+  dump0[1] = ownNode;
+
+  for (; loops; loops --)
+  {
+    int node0 = restarter.getDbNodeId(rand() % restarter.getNumDbNodes());
+    int node1 = restarter.getRandomNodeOtherNodeGroup(node0, rand());
+
+    restarter.restartOneDbNode(node0, false, true, true);
+    restarter.waitNodesNoStart(&node0, 1);
+    restarter.startNodes(&node0, 1);
     restarter.waitClusterStarted();
+
+    restarter.restartOneDbNode(node1, false, true, true);    
+    restarter.waitNodesNoStart(&node1, 1);
+    if (restarter.dumpStateOneNode(node1, dump0, 2))
+      return NDBT_FAILED;
+
+    restarter.startNodes(&node1, 1);    
+    
+    do {
+      
+      for (Uint32 i = 0; i < 100; i++)
+      {
+        hugoTrans.pkReadRecords(pNdb, 100, 1, NdbOperation::LM_CommittedRead);
+      }
+    } while (restarter.waitClusterStarted(5) != 0);
+    
+    if (restarter.dumpStateOneNode(node1, dump1, 1))
+      return NDBT_FAILED;
   }
   
   return NDBT_OK;
@@ -1297,6 +1347,51 @@ runBug28717(NDBT_Context* ctx, NDBT_Step* step)
   return NDBT_OK;
 }
 
+int
+runBug32160(NDBT_Context* ctx, NDBT_Step* step)
+{
+  int result = NDBT_OK;
+  int loops = ctx->getNumLoops();
+  int records = ctx->getNumRecords();
+  Ndb* pNdb = GETNDB(step);
+  NdbRestarter res;
+
+  if (res.getNumDbNodes() < 2)
+  {
+    return NDBT_OK;
+  }
+
+  int master = res.getMasterNodeId();
+  int next = res.getNextMasterNodeId(master);
+
+  if (res.insertErrorInNode(next, 7194))
+  {
+    return NDBT_FAILED;
+  }
+
+  int val2[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 };    
+  if (res.dumpStateOneNode(master, val2, 2))
+    return NDBT_FAILED;
+
+  if (res.insertErrorInNode(master, 7193))
+    return NDBT_FAILED;
+
+  int val3[] = { 7099 };
+  if (res.dumpStateOneNode(master, val3, 1))
+    return NDBT_FAILED;
+
+  if (res.waitNodesNoStart(&master, 1))
+    return NDBT_FAILED;
+
+  if (res.startNodes(&master, 1))
+    return NDBT_FAILED;
+
+  if (res.waitClusterStarted())
+    return NDBT_FAILED;
+  
+  return NDBT_OK;
+}
+
 NDBT_TESTSUITE(testNodeRestart);
 TESTCASE("NoLoad", 
 	 "Test that one node at a time can be stopped and then restarted "\
@@ -1632,6 +1727,12 @@ TESTCASE("Bug27283", ""){
 }
 TESTCASE("Bug28717", ""){
   INITIALIZER(runBug28717);
+}
+TESTCASE("Bug29364", ""){
+  INITIALIZER(runBug29364);
+}
+TESTCASE("Bug32160", ""){
+  INITIALIZER(runBug32160);
 }
 NDBT_TESTSUITE_END(testNodeRestart);
 

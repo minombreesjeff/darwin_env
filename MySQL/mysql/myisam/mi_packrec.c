@@ -165,7 +165,6 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
   share->pack.header_length=	uint4korr(header+4);
   share->min_pack_length=(uint) uint4korr(header+8);
   share->max_pack_length=(uint) uint4korr(header+12);
-  set_if_bigger(share->base.pack_reclength,share->max_pack_length);
   elements=uint4korr(header+16);
   intervall_length=uint4korr(header+20);
   trees=uint2korr(header+24);
@@ -564,7 +563,7 @@ static void fill_quick_table(uint16 *table, uint bits, uint max_bits,
   */
   value|= (max_bits - bits) << 8 | IS_CHAR;
 
-  for (end= table + ((uint) 1 << bits); table < end; table++)
+  for (end= table + ((my_ptrdiff_t) 1 << bits); table < end; table++)
   {
     *table= (uint16) value;
   }
@@ -1369,7 +1368,7 @@ uint _mi_pack_get_block_info(MI_INFO *myisam, MI_BIT_BUFF *bit_buff,
     VOID(my_seek(file,filepos,MY_SEEK_SET,MYF(0)));
     if (my_read(file,(char*) header,ref_length,MYF(MY_NABP)))
       return BLOCK_FATAL_ERROR;
-    DBUG_DUMP("header",(byte*) header,ref_length);
+    DBUG_DUMP("header",(uchar*) header,ref_length);
   }
   head_length= read_pack_length((uint) myisam->s->pack.version, header,
                                 &info->rec_len);

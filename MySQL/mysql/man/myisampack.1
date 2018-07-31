@@ -1,11 +1,11 @@
 .\"     Title: \fBmyisampack\fR
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
-.\"      Date: 07/04/2007
+.\"      Date: 08/02/2008
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.0
 .\"
-.TH "\fBMYISAMPACK\fR" "1" "07/04/2007" "MySQL 5.0" "MySQL Database System"
+.TH "\fBMYISAMPACK\fR" "1" "08/02/2008" "MySQL 5.0" "MySQL Database System"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -35,23 +35,6 @@ when possible to perform memory mapping on compressed tables. If
 mmap()
 does not work, MySQL falls back to normal read/write file operations.
 .PP
-A similar utility,
-\fBpack_isam\fR, compresses
-ISAM
-tables. Because
-ISAM
-tables are deprecated, this section discusses only
-\fBmyisampack\fR, but the general procedures for using
-\fBmyisampack\fR
-are also true for
-\fBpack_isam\fR
-unless otherwise specified. References to
-\fBmyisamchk\fR
-should be read as references to
-\fBisamchk\fR
-if you are using
-\fBpack_isam\fR.
-.PP
 Please note the following:
 .TP 3n
 \(bu
@@ -62,19 +45,7 @@ server was invoked with external locking disabled, it is not a good idea to invo
 if the table might be updated by the server during the packing process. It is safest to compress tables with the server stopped.
 .TP 3n
 \(bu
-After packing a table, it becomes read\-only. This is generally intended (such as when accessing packed tables on a CD). Allowing writes to a packed table is on our TODO list, but with low priority.
-.TP 3n
-\(bu
-\fBmyisampack\fR
-can pack
-BLOB
-or
-TEXT
-columns. (The older
-\fBpack_isam\fR
-program for
-ISAM
-tables did not have this capability.)
+After packing a table, it becomes read only. This is generally intended (such as when accessing packed tables on a CD). Allowing writes to a packed table is on our TODO list, but with low priority.
 .sp
 .RE
 .PP
@@ -118,7 +89,7 @@ Make a backup of each table's data file using the name
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed. See
-Section\ 8.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+Section\ 2, \(lqThe Character Set Used for Data and Sorting\(rq.
 .TP 3n
 \(bu
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
@@ -154,10 +125,21 @@ packs the table anyway.
 \fB\-\-join=\fR\fB\fIbig_tbl_name\fR\fR,
 \fB\-j \fR\fB\fIbig_tbl_name\fR\fR
 .sp
-Join all tables named on the command line into a single table
+Join all tables named on the command line into a single packed table
 \fIbig_tbl_name\fR. All tables that are to be combined
 \fImust\fR
 have identical structure (same column names and types, same indexes, and so forth).
+.sp
+\fIbig_tbl_name\fR
+must not exist prior to the join operation. All source tables named on the command line to be merged into
+\fIbig_tbl_name\fR
+must exist. The source tables are read for the join operation but not modified. The join operation does not create a
+\fI.frm\fR
+file for
+\fIbig_tbl_name\fR, so after the join operation finishes, copy the
+\fI.frm\fR
+file from one of the source tables and name it
+\fI\fIbig_tbl_name\fR\fR\fI.frm\fR.
 .TP 3n
 \(bu
 \fB\-\-silent\fR,
@@ -514,19 +496,6 @@ shell> \fBmyisamchk \-rq \-\-sort\-index \-\-analyze \fR\fB\fItbl_name\fR\fR\fB.
 .fi
 .RE
 .PP
-A similar procedure applies for
-ISAM
-tables. After using
-\fBpack_isam\fR, use
-\fBisamchk\fR
-to re\-create the indexes:
-.sp
-.RS 3n
-.nf
-shell> \fBisamchk \-rq \-\-sort\-index \-\-analyze \fR\fB\fItbl_name\fR\fR\fB.ISM\fR
-.fi
-.RE
-.PP
 After you have installed the packed table into the MySQL database directory, you should execute
 \fBmysqladmin flush\-tables\fR
 to force
@@ -536,22 +505,19 @@ to start using the new table.
 To unpack a packed table, use the
 \fB\-\-unpack\fR
 option to
-\fBmyisamchk\fR
-or
-\fBisamchk\fR.
+\fBmyisamchk\fR.
 .SH "COPYRIGHT"
 .PP
-Copyright 1997\-2007 MySQL AB
+Copyright 2007\-2008 MySQL AB
 .PP
-This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+This documentation is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
-Please email
-<docs@mysql.com>
-for more information.
+This documentation is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110\-1301 USA or see http://www.gnu.org/licenses/.
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available
 online at http://dev.mysql.com/doc/.
 .SH AUTHOR
 MySQL AB (http://www.mysql.com/).
-This software comes with no warranty.

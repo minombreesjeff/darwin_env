@@ -110,7 +110,7 @@ am__aclocal_m4_deps = $(top_srcdir)/config/ac-macros/alloca.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
-CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libgeneral_la_LIBADD =
@@ -119,13 +119,13 @@ am_libgeneral_la_OBJECTS = File.lo md5_hash.lo Properties.lo \
 	SocketServer.lo SocketClient.lo SocketAuthenticator.lo \
 	OutputStream.lo NdbOut.lo BaseString.lo NdbSqlUtil.lo new.lo \
 	uucode.lo random.lo version.lo strdup.lo ConfigValues.lo \
-	ndb_init.lo basestring_vsnprintf.lo Bitmask.lo
+	ndb_init.lo basestring_vsnprintf.lo Bitmask.lo ndb_rand.lo
 libgeneral_la_OBJECTS = $(am_libgeneral_la_OBJECTS)
 am_testBitmask_OBJECTS = testBitmask.$(OBJEXT)
 testBitmask_OBJECTS = $(am_testBitmask_OBJECTS)
 testBitmask_LDADD = $(LDADD)
 testBitmask_DEPENDENCIES =
-DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -157,6 +157,7 @@ AMTAR = @AMTAR@
 AR = @AR@
 ARFLAGS = @ARFLAGS@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 ASSEMBLER_FALSE = @ASSEMBLER_FALSE@
 ASSEMBLER_TRUE = @ASSEMBLER_TRUE@
 ASSEMBLER_sparc32_FALSE = @ASSEMBLER_sparc32_FALSE@
@@ -294,7 +295,9 @@ PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
 SAVE_ASFLAGS = @SAVE_ASFLAGS@
+SAVE_CC = @SAVE_CC@
 SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXX = @SAVE_CXX@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
@@ -345,6 +348,7 @@ build_vendor = @build_vendor@
 datadir = @datadir@
 docs_dirs = @docs_dirs@
 exec_prefix = @exec_prefix@
+extra_docs = @extra_docs@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -421,7 +425,8 @@ libgeneral_la_SOURCES = \
             uucode.c random.c version.c \
             strdup.c \
             ConfigValues.cpp ndb_init.c basestring_vsnprintf.c \
-            Bitmask.cpp
+            Bitmask.cpp \
+	    ndb_rand.c
 
 testBitmask_SOURCES = testBitmask.cpp
 testBitmask_LDFLAGS = @ndb_bin_am_ldflags@ \
@@ -516,6 +521,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/basestring_vsnprintf.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/md5_hash.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ndb_init.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ndb_rand.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/new.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/random.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/socket_io.Plo@am__quote@

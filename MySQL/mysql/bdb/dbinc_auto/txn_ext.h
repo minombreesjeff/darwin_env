@@ -6,6 +6,21 @@
 extern "C" {
 #endif
 
+int __txn_begin __P((DB_ENV *, DB_TXN *, DB_TXN **, u_int32_t));
+int __txn_xa_begin __P((DB_ENV *, DB_TXN *));
+int __txn_compensate_begin __P((DB_ENV *, DB_TXN **txnp));
+int __txn_commit __P((DB_TXN *, u_int32_t));
+int __txn_abort __P((DB_TXN *));
+int __txn_discard __P((DB_TXN *, u_int32_t flags));
+int __txn_prepare __P((DB_TXN *, u_int8_t *));
+u_int32_t __txn_id __P((DB_TXN *));
+int __txn_checkpoint __P((DB_ENV *, u_int32_t, u_int32_t, u_int32_t));
+int __txn_getckp __P((DB_ENV *, DB_LSN *));
+int __txn_activekids __P((DB_ENV *, u_int32_t, DB_TXN *));
+int __txn_force_abort __P((DB_ENV *, u_int8_t *));
+int __txn_preclose __P((DB_ENV *));
+int __txn_reset __P((DB_ENV *));
+void __txn_updateckp __P((DB_ENV *, DB_LSN *));
 int __txn_regop_log __P((DB_ENV *, DB_TXN *, DB_LSN *, u_int32_t, u_int32_t, int32_t));
 int __txn_regop_getpgnos __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
 int __txn_regop_print __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
@@ -29,21 +44,6 @@ int __txn_recycle_read __P((DB_ENV *, void *, __txn_recycle_args **));
 int __txn_init_print __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __txn_init_getpgnos __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
 int __txn_init_recover __P((DB_ENV *, int (***)(DB_ENV *, DBT *, DB_LSN *, db_recops, void *), size_t *));
-int __txn_begin __P((DB_ENV *, DB_TXN *, DB_TXN **, u_int32_t));
-int __txn_xa_begin __P((DB_ENV *, DB_TXN *));
-int __txn_compensate_begin __P((DB_ENV *, DB_TXN **txnp));
-int __txn_commit __P((DB_TXN *, u_int32_t));
-int __txn_abort __P((DB_TXN *));
-int __txn_discard __P((DB_TXN *, u_int32_t flags));
-int __txn_prepare __P((DB_TXN *, u_int8_t *));
-u_int32_t __txn_id __P((DB_TXN *));
-int __txn_checkpoint __P((DB_ENV *, u_int32_t, u_int32_t, u_int32_t));
-int __txn_getckp __P((DB_ENV *, DB_LSN *));
-int __txn_activekids __P((DB_ENV *, u_int32_t, DB_TXN *));
-int __txn_force_abort __P((DB_ENV *, u_int8_t *));
-int __txn_preclose __P((DB_ENV *));
-int __txn_reset __P((DB_ENV *));
-void __txn_updateckp __P((DB_ENV *, DB_LSN *));
 void __txn_dbenv_create __P((DB_ENV *));
 int __txn_regop_recover __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
 int __txn_xa_regop_recover __P((DB_ENV *, DBT *, DB_LSN *, db_recops, void *));
