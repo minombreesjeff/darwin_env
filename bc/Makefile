@@ -9,6 +9,7 @@ UserType    = Administration
 ToolType    = Commands
 Extra_Configure_Flags = --with-libedit
 Extra_CC_Flags = -I/System/Library/Frameworks/System.framework/PrivateHeaders
+Extra_Environment = YACC="/usr/local/bin/bison-1.28 -y"
 GnuAfterInstall = remove-dir install-plist
 
 # It's a GNU Source project
@@ -35,6 +36,7 @@ AEP_Filename   = $(AEP_ProjVers).tar.gz
 AEP_ExtractDir = $(AEP_ProjVers)
 AEP_Patches    = patch-Makefile.in \
                  patch-bc__bc.y \
+                 patch-bc__main.c \
                  patch-bc__util.c \
 		 patch-bc__load.c
 
