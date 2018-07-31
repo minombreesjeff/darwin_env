@@ -55,8 +55,9 @@ static double _nwghts[11]=
 static double *nwghts=_nwghts+5; /* nwghts[i] = -0.5*1.5**i */
 
 #define FTB_FLAG_TRUNC 1                  /* MUST be 1                  */
-#define FTB_FLAG_YES   2                  /* These two - YES and NO     */
-#define FTB_FLAG_NO    4                  /*  should NEVER be set both  */
+#define FTB_FLAG_YES   2                  /*  no two from these three   */
+#define FTB_FLAG_NO    4                  /*   YES, NO, WONLY           */
+#define FTB_FLAG_WONLY 8                  /*  should be ever set both   */
 
 typedef struct st_ftb_expr FTB_EXPR;
 struct st_ftb_expr
@@ -261,8 +262,14 @@ static void _ftb_init_index_search(FT_INFO *ftb)
       else
         reset_tree(& ftb->no_dupes);
     }
-    r=_mi_search(info, keyinfo, (uchar*) ftbw->word, ftbw->len,
-                              SEARCH_FIND | SEARCH_BIGGER, keyroot);
+    for (
+         r=_mi_search(info, keyinfo, (uchar*) ftbw->word, ftbw->len,
+                      SEARCH_FIND | SEARCH_BIGGER, keyroot) ;
+         !r && info->lastpos >= info->state->data_file_length;
+         r=_mi_search_next(info, keyinfo, info->lastkey, info->lastkey_length,
+                           SEARCH_BIGGER, keyroot)
+        );
+
     if (!r)
     {
       r=_mi_compare_text(ftb->charset,
@@ -353,25 +360,34 @@ err:
 }
 
 
-/* returns 1 if str0 contain str1 */
+/* returns 1 if str0 ~= /\<str1\>/ */
 static int _ftb_strstr(const byte *s0, const byte *e0,
                 const byte *s1, const byte *e1,
                 CHARSET_INFO *cs)
 {
-  const byte *p;
+  const byte *p0, *p1;
+  my_bool s_after, e_before;
 
-  while (s0 < e0)
+  s_after=true_word_char(s1[0]);
+  e_before=true_word_char(e1[-1]);
+  p0=s0;
+
+  while (p0 < e0)
   {
-    while (s0 < e0 && cs->to_upper[(uint) (uchar) *s0++] !=
+    while (p0 < e0 && cs->to_upper[(uint) (uchar) *p0++] !=
 	   cs->to_upper[(uint) (uchar) *s1])
       /* no-op */;
-    if (s0 >= e0)
+    if (p0 >= e0)
       return 0;
-    p=s1+1;
-    while (s0 < e0 && p < e1 && cs->to_upper[(uint) (uchar) *s0] ==
-	   cs->to_upper[(uint) (uchar) *p])
-      s0++, p++;
-    if (p >= e1)
+
+    if (s_after && p0-1 > s0 && true_word_char(p0[-2]))
+      continue;
+
+    p1=s1+1;
+    while (p0 < e0 && p1 < e1 && cs->to_upper[(uint) (uchar) *p0] ==
+	   cs->to_upper[(uint) (uchar) *p1])
+      p0++, p1++;
+    if (p1 == e1 && (!e_before || p0 == e0 || !true_word_char(p0[0])))
       return 1;
   }
   return 0;
@@ -444,7 +460,8 @@ static void _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw, FT_SEG_ITERATOR *ftsi_
       ftbe->cur_weight +=  weight;
       if (ftbe->yesses < ythresh)
         break;
-      yn= (ftbe->yesses++ == ythresh) ? ftbe->flags : 0 ;
+      if (!(yn & FTB_FLAG_WONLY))
+        yn= (ftbe->yesses++ == ythresh) ? ftbe->flags : FTB_FLAG_WONLY ;
       weight*= ftbe->weight;
     }
   }
@@ -486,8 +503,13 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
       _ftb_climb_the_tree(ftb, ftbw, 0);
 
       /* update queue */
-      r=_mi_search(info, keyinfo, (uchar*) ftbw->word, USE_WHOLE_KEY,
-                   SEARCH_BIGGER , keyroot);
+      for (
+          r=_mi_search(info, keyinfo, (uchar*) ftbw->word, USE_WHOLE_KEY,
+                       SEARCH_BIGGER, keyroot) ;
+           !r && info->lastpos >= info->state->data_file_length ;
+           r=_mi_search_next(info, keyinfo, info->lastkey, info->lastkey_length,
+                             SEARCH_BIGGER, keyroot)
+          );
       if (!r)
       {
         r=_mi_compare_text(ftb->charset,

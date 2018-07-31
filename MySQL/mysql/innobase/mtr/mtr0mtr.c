@@ -171,7 +171,7 @@ mtr_log_parse_full_page(
 /****************************************************************
 Writes to the database log the full contents of the pages that this mtr has
 modified. */
-
+static
 void
 mtr_log_write_backup_full_pages(
 /*============================*/
@@ -262,7 +262,8 @@ mtr_first_to_modify_page_after_backup(
 								block->frame),
 							backup_lsn) <= 0) {
 
-				printf("Page %lu newest %lu backup %lu\n",
+				fprintf(stderr,
+					"Page %lu newest %lu backup %lu\n",
 					block->offset,
 					ut_dulint_get_low(
 					buf_frame_get_newest_modification(
@@ -495,13 +496,11 @@ mtr_read_dulint(
 /*===========*/
 				/* out: value read */
 	byte*		ptr,	/* in: pointer from where to read */
-	ulint		type __attribute__((unused)), /* in: MLOG_8BYTES */
 	mtr_t*		mtr __attribute__((unused)))
                                 /* in: mini-transaction handle */
 {
 	ut_ad(mtr->state == MTR_ACTIVE);
 	ut_ad(ptr && mtr);
-	ut_ad(type == MLOG_8BYTES);
 	ut_ad(mtr_memo_contains(mtr, buf_block_align(ptr), 
 						MTR_MEMO_PAGE_S_FIX) ||
 	      mtr_memo_contains(mtr, buf_block_align(ptr), 
@@ -509,6 +508,7 @@ mtr_read_dulint(
 	return(mach_read_from_8(ptr));
 }
 
+#ifdef UNIV_DEBUG
 /*************************************************************
 Prints info of an mtr handle. */
 
@@ -517,8 +517,9 @@ mtr_print(
 /*======*/
 	mtr_t*	mtr)	/* in: mtr */
 {
-	printf(
+	fprintf(stderr,
 	"Mini-transaction handle: memo size %lu bytes log size %lu bytes\n",
 		dyn_array_get_data_size(&(mtr->memo)),
 		dyn_array_get_data_size(&(mtr->log)));
 }
+#endif /* UNIV_DEBUG */

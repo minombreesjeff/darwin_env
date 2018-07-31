@@ -58,7 +58,7 @@ cmp_debug_dtuple_rec_with_match(
 This function is used to compare two data fields for which the data type
 is such that we must use MySQL code to compare them. The prototype here
 must be a copy of the the one in ha_innobase.cc! */
-
+extern
 int
 innobase_mysql_cmp(
 /*===============*/	
@@ -273,7 +273,7 @@ cmp_whole_field(
 	default:
 	        fprintf(stderr,
 			"InnoDB: unknown type number %lu\n", data_type);
-	        ut_a(0);
+	        ut_error;
 	}
 
 	return(0);

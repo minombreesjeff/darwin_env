@@ -53,9 +53,11 @@ Created 11/5/1995 Heikki Tuuri
 #define BUF_KEEP_OLD	52
 
 extern buf_pool_t* 	buf_pool; 	/* The buffer pool of the database */
+#ifdef UNIV_DEBUG
 extern ibool		buf_debug_prints;/* If this is set TRUE, the program
 					prints info whenever read or flush
 					occurs */
+#endif /* UNIV_DEBUG */
 
 /************************************************************************
 Initializes the buffer pool of the database. */
@@ -452,12 +454,14 @@ buf_pool_is_block(
 /*==============*/
 			/* out: TRUE if pointer to block */
 	void*	ptr);	/* in: pointer to memory */
+#ifdef UNIV_DEBUG
 /*************************************************************************
 Validates the buffer pool data structure. */
 
 ibool
 buf_validate(void);
 /*==============*/
+#endif /* UNIV_DEBUG */
 /************************************************************************
 Prints a page to stderr. */
 
@@ -483,8 +487,7 @@ Prints info of the buffer i/o. */
 void
 buf_print_io(
 /*=========*/
-	char*	buf,	/* in/out: buffer where to print */
-	char*	buf_end);/* in: buffer end */
+	FILE*	file);	/* in: file where to print */
 /*************************************************************************
 Returns the ratio in percents of modified pages in the buffer pool /
 database pages in the buffer pool. */
@@ -525,11 +528,11 @@ buf_pool_invalidate(void);
 --------------------------- LOWER LEVEL ROUTINES -------------------------
 =========================================================================*/
 
+#ifdef UNIV_SYNC_DEBUG
 /*************************************************************************
 Adds latch level info for the rw-lock protecting the buffer frame. This
 should be called in the debug version after a successful latching of a
-page if we know the latching order level of the acquired latch. If
-UNIV_SYNC_DEBUG is not defined, compiles to an empty function. */
+page if we know the latching order level of the acquired latch. */
 UNIV_INLINE
 void
 buf_page_dbg_add_level(
@@ -537,6 +540,7 @@ buf_page_dbg_add_level(
 	buf_frame_t*	frame,	/* in: buffer page where we have acquired
 				a latch */
 	ulint		level);	/* in: latching order level */
+#endif /* UNIV_SYNC_DEBUG */
 /*************************************************************************
 Gets a pointer to the memory frame of a block. */
 UNIV_INLINE
@@ -778,11 +782,12 @@ struct buf_block_struct{
 					BTR_SEARCH_RIGHT_SIDE in hash
 					indexing */
 	/* 6. Debug fields */
-
+#ifdef UNIV_SYNC_DEBUG
 	rw_lock_t	debug_latch;	/* in the debug version, each thread
 					which bufferfixes the block acquires
 					an s-latch here; so we can use the
 					debug utilities in sync0rw */
+#endif
         ibool           file_page_was_freed;
                                         /* this is set to TRUE when fsp
                                         frees a page in buffer pool */
@@ -815,22 +820,22 @@ struct buf_pool_struct{
 
 	ulint		n_pend_reads;	/* number of pending read operations */
 
-	time_t		last_printout_time; /* when buf_print was last time
+	time_t		last_printout_time; /* when buf_print_io was last time
 					called */
 	ulint		n_pages_read;	/* number read operations */
 	ulint		n_pages_written;/* number write operations */
 	ulint		n_pages_created;/* number of pages created in the pool
 					with no read */
 	ulint		n_page_gets;	/* number of page gets performed;
-					also successful seraches through
+					also successful searches through
 					the adaptive hash index are
 					counted as page gets; this field
 					is NOT protected by the buffer
 					pool mutex */
-	ulint		n_page_gets_old;/* n_page_gets when buf_print was
+	ulint		n_page_gets_old;/* n_page_gets when buf_print_io was
 					last time called: used to calculate
 					hit rate */
-	ulint		n_pages_read_old;/* n_pages_read when buf_print was
+	ulint		n_pages_read_old;/* n_pages_read when buf_print_io was
 					last time called */
 	ulint		n_pages_written_old;/* number write operations */
 	ulint		n_pages_created_old;/* number of pages created in

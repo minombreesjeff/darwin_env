@@ -353,6 +353,7 @@ int quick_rm_table(enum db_type base,const char *db,
 bool mysql_rename_tables(THD *thd, TABLE_LIST *table_list);
 bool mysql_change_db(THD *thd,const char *name);
 void mysql_parse(THD *thd,char *inBuf,uint length);
+bool mysql_test_parse_for_slave(THD *thd,char *inBuf,uint length);
 void mysql_init_select(LEX *lex);
 bool mysql_new_select(LEX *lex);
 void mysql_init_multi_delete(LEX *lex);
@@ -375,7 +376,7 @@ bool check_stack_overrun(THD *thd,char *dummy);
 #endif
 
 bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables);
-void table_cache_init(void);
+bool table_cache_init(void);
 void table_cache_free(void);
 uint cached_tables(void);
 void kill_mysql(void);
@@ -688,7 +689,7 @@ extern ulong ha_read_first_count, ha_read_last_count;
 extern ulong ha_read_rnd_count, ha_read_rnd_next_count;
 extern ulong ha_commit_count, ha_rollback_count,table_cache_size;
 extern ulong max_connections,max_connect_errors, connect_timeout;
-extern ulong max_insert_delayed_threads, max_user_connections;
+extern ulong max_user_connections;
 extern ulong long_query_count, what_to_log,flush_time,opt_sql_mode;
 extern ulong query_buff_size, thread_stack,thread_stack_min;
 extern ulong binlog_cache_size, max_binlog_cache_size, open_files_limit;
@@ -710,7 +711,7 @@ extern uint volatile thread_count, thread_running, global_read_lock;
 extern my_bool opt_sql_bin_update, opt_safe_user_create, opt_no_mix_types;
 extern my_bool opt_safe_show_db, opt_local_infile;
 extern my_bool opt_slave_compressed_protocol, use_temp_pool;
-extern my_bool opt_readonly;
+extern my_bool opt_readonly, lower_case_file_system;
 extern my_bool opt_enable_named_pipe, opt_sync_frm;
 
 extern MYSQL_LOG mysql_log,mysql_update_log,mysql_slow_log,mysql_bin_log;
@@ -846,8 +847,7 @@ void reset_host_errors(struct in_addr *in);
 bool hostname_cache_init();
 void hostname_cache_free();
 void hostname_cache_refresh(void);
-bool get_interval_info(const char *str,uint length,uint count,
-		       long *values);
+
 /* sql_cache.cc */
 extern bool sql_cache_init();
 extern void sql_cache_free();

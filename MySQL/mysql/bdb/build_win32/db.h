@@ -73,7 +73,7 @@ typedef int ssize_t;
 #define	DB_VERSION_MAJOR	3
 #define	DB_VERSION_MINOR	2
 #define	DB_VERSION_PATCH	9
-#define	DB_VERSION_STRING	"Sleepycat Software: Berkeley DB 3.2.9a: (February 10, 2004)"
+#define	DB_VERSION_STRING	"Sleepycat Software: Berkeley DB 3.2.9a: (May 14, 2004)"
 
 typedef	u_int32_t	db_pgno_t;	/* Page number type. */
 typedef	u_int16_t	db_indx_t;	/* Page offset type. */

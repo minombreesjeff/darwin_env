@@ -77,6 +77,11 @@ out of the LRU-list and keep a count of pending operations. When an operation
 completes, we decrement the count and return the file node to the LRU-list if
 the count drops to zero. */
 
+/* When mysqld is run, the default directory "." is the mysqld datadir,
+but in the MySQL Embedded Server Library and ibbackup it is not the default
+directory, and we must set the base file path explicitly */
+const char*	fil_path_to_mysql_datadir	= ".";
+
 ulint	fil_n_pending_log_flushes		= 0;
 ulint	fil_n_pending_tablespace_flushes	= 0;
 
@@ -288,7 +293,6 @@ fil_node_create(
 {
 	fil_node_t*	node;
 	fil_space_t*	space;
-	char*		name2;
 	fil_system_t*	system		= fil_system;
 
 	ut_a(system);
@@ -299,11 +303,7 @@ fil_node_create(
 
 	node = mem_alloc(sizeof(fil_node_t));
 
-	name2 = mem_alloc(ut_strlen(name) + 1);
-
-	ut_strcpy(name2, name);
-
-	node->name = name2;
+	node->name = mem_strdup(name);
 	node->open = FALSE;
 	node->size = size;
 	node->magic_n = FIL_NODE_MAGIC_N;
@@ -332,7 +332,9 @@ fil_node_close(
 	ibool	ret;
 
 	ut_ad(node && system);
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(system->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 	ut_a(node->open);
 	ut_a(node->n_pending == 0);
 
@@ -356,7 +358,9 @@ fil_node_free(
 	fil_space_t*	space)	/* in: space where the file node is chained */
 {
 	ut_ad(node && system && space);
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(system->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 	ut_a(node->magic_n == FIL_NODE_MAGIC_N);
 
 	if (node->open) {
@@ -622,7 +626,6 @@ fil_space_create(
 	ulint	purpose)/* in: FIL_TABLESPACE, or FIL_LOG if log */
 {
 	fil_space_t*	space;	
-	char*		name2;
 	fil_system_t*	system = fil_system;
 	
 	ut_a(system);
@@ -632,17 +635,13 @@ fil_space_create(
 	/* Spaces with an odd id number are reserved to replicate spaces
 	used in log debugging */
 	
-	ut_anp((purpose == FIL_LOG) || (id % 2 == 0));
+	ut_a((purpose == FIL_LOG) || (id % 2 == 0));
 #endif
 	mutex_enter(&(system->mutex));
 
 	space = mem_alloc(sizeof(fil_space_t));
 
-	name2 = mem_alloc(ut_strlen(name) + 1);
-
-	ut_strcpy(name2, name);
-
-	space->name = name2;
+	space->name = mem_strdup(name);
 	space->id = id;
 	space->purpose = purpose;
 	space->size = 0;
@@ -875,7 +874,9 @@ fil_node_prepare_for_io(
 	fil_node_t*	last_node;
 
 	ut_ad(node && system && space);
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(system->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 	
 	if (node->open == FALSE) {
 		/* File is closed */
@@ -896,7 +897,7 @@ fil_node_prepare_for_io(
 	"InnoDB: Pending i/o's on %lu files exist\n",
 					system->n_open_pending);
 
-				ut_a(0);
+				ut_error;
 			}
 
 			fil_node_close(last_node, system);
@@ -952,7 +953,9 @@ fil_node_complete_io(
 {
 	ut_ad(node);
 	ut_ad(system);
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(system->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 	ut_a(node->n_pending > 0);
 	
 	node->n_pending--;
@@ -1201,7 +1204,7 @@ loop:
 	"InnoDB: Byte offset %lu, len %lu, i/o type %lu\n", 
  			block_offset, space_id, byte_offset, len, type);
  			
-			ut_a(0);
+			ut_error;
 		}
 
 		if (node->size > block_offset) {
@@ -1230,8 +1233,8 @@ loop:
 
 	/* Do aio */
 
-	ut_anp(byte_offset % OS_FILE_LOG_BLOCK_SIZE == 0);
-	ut_anp((len % OS_FILE_LOG_BLOCK_SIZE) == 0);
+	ut_a(byte_offset % OS_FILE_LOG_BLOCK_SIZE == 0);
+	ut_a((len % OS_FILE_LOG_BLOCK_SIZE) == 0);
 
 	/* Queue the aio request */
 	ret = os_aio(type, mode | wake_later, node->name, node->handle, buf,
@@ -1323,7 +1326,7 @@ fil_aio_wait(
 	ut_ad(fil_validate());
 
 	if (os_aio_use_native_aio) {
-		srv_io_thread_op_info[segment] = (char *) "native aio handle";
+		srv_set_io_thread_op_info(segment, "native aio handle");
 #ifdef WIN_ASYNC_IO
 		ret = os_aio_windows_handle(segment, 0, &fil_node, &message,
 								&type);
@@ -1331,10 +1334,10 @@ fil_aio_wait(
 		ret = os_aio_posix_handle(segment, &fil_node, &message);
 #else
 		ret = 0; /* Eliminate compiler warning */
-		ut_a(0);
+		ut_error;
 #endif
 	} else {
-		srv_io_thread_op_info[segment] =(char *)"simulated aio handle";
+		srv_set_io_thread_op_info(segment, "simulated aio handle");
 
 		ret = os_aio_simulated_handle(segment, (void**) &fil_node,
 	                                               &message, &type);
@@ -1342,7 +1345,7 @@ fil_aio_wait(
 	
 	ut_a(ret);
 
-	srv_io_thread_op_info[segment] = (char *) "complete io for fil node";
+	srv_set_io_thread_op_info(segment, "complete io for fil node");
 
 	mutex_enter(&(system->mutex));
 
@@ -1355,11 +1358,10 @@ fil_aio_wait(
 	/* Do the i/o handling */
 
 	if (buf_pool_is_block(message)) {
-		srv_io_thread_op_info[segment] =
-		  (char *) "complete io for buf page";
+		srv_set_io_thread_op_info(segment, "complete io for buf page");
 		buf_page_io_complete(message);
 	} else {
-		srv_io_thread_op_info[segment] =(char *) "complete io for log";
+		srv_set_io_thread_op_info(segment, "complete io for log");
 		log_io_complete(message);
 	}
 }
@@ -1406,8 +1408,9 @@ fil_flush(
 			will not crash or trap even if we pass a handle
 			to a closed file below in os_file_flush! */
 
-			/* printf("Flushing to file %s\n", node->name); */
-			
+			/* fprintf(stderr, "Flushing to file %s\n",
+				node->name); */
+
 			os_file_flush(file);
 			
 			mutex_enter(&(system->mutex));

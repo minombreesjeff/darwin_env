@@ -4,7 +4,7 @@ dnl Process this file with autoconf to produce a configure script.
 AC_INIT(sql/mysqld.cc)
 AC_CANONICAL_SYSTEM
 # The Docs Makefile.am parses this line!
-AM_INIT_AUTOMAKE(mysql, 4.0.18)
+AM_INIT_AUTOMAKE(mysql, 4.0.20)
 AM_CONFIG_HEADER(config.h)
 
 PROTOCOL_VERSION=10
@@ -193,6 +193,11 @@ AC_PROG_RANLIB
 # We use libtool
 #AC_LIBTOOL_WIN32_DLL
 AC_PROG_LIBTOOL
+
+# Ensure that we have --preserve-dup-deps defines, otherwise we get link
+# problems of 'mysql' with CXX=g++
+LIBTOOL="$LIBTOOL --preserve-dup-deps"
+AC_SUBST(LIBTOOL)dnl
 
 #AC_LIBTOOL_DLOPEN AC_LIBTOOL_WIN32_DLL AC_DISABLE_FAST_INSTALL AC_DISABLE_SHARED AC_DISABLE_STATIC
 
@@ -1007,7 +1012,7 @@ case $SYSTEM_TYPE in
   *darwin5*)
     if test "$ac_cv_prog_gcc" = "yes"
     then
-      FLAGS="-traditional-cpp -DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DFN_NO_CASE_SENCE"
+      FLAGS="-traditional-cpp -DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -1017,7 +1022,16 @@ case $SYSTEM_TYPE in
   *darwin6*)
     if test "$ac_cv_prog_gcc" = "yes"
     then
-      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DFN_NO_CASE_SENCE"
+      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
+      CFLAGS="$CFLAGS $FLAGS"
+      CXXFLAGS="$CXXFLAGS $FLAGS"
+      MAX_C_OPTIMIZE="-O"
+    fi
+    ;;
+  *darwin7*)
+    if test "$ac_cv_prog_gcc" = "yes"
+    then
+      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"

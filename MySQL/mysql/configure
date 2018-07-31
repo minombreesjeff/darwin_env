@@ -1877,7 +1877,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE=mysql
- VERSION=4.0.18
+ VERSION=4.0.20
 
 
 cat >>confdefs.h <<_ACEOF
@@ -18816,6 +18816,10 @@ LIBTOOL='$(SHELL) $(top_builddir)/libtool'
 
 
 
+# Ensure that we have --preserve-dup-deps defines, otherwise we get link
+# problems of 'mysql' with CXX=g++
+LIBTOOL="$LIBTOOL --preserve-dup-deps"
+
 #AC_LIBTOOL_DLOPEN AC_LIBTOOL_WIN32_DLL AC_DISABLE_FAST_INSTALL AC_DISABLE_SHARED AC_DISABLE_STATIC
 
 # AC_PROG_INSTALL
@@ -23687,7 +23691,7 @@ case $SYSTEM_TYPE in
   *darwin5*)
     if test "$ac_cv_c_compiler_gnu" = "yes"
     then
-      FLAGS="-traditional-cpp -DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DFN_NO_CASE_SENCE"
+      FLAGS="-traditional-cpp -DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -23697,7 +23701,16 @@ case $SYSTEM_TYPE in
   *darwin6*)
     if test "$ac_cv_c_compiler_gnu" = "yes"
     then
-      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DFN_NO_CASE_SENCE"
+      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH"
+      CFLAGS="$CFLAGS $FLAGS"
+      CXXFLAGS="$CXXFLAGS $FLAGS"
+      MAX_C_OPTIMIZE="-O"
+    fi
+    ;;
+  *darwin7*)
+    if test "$ac_cv_c_compiler_gnu" = "yes"
+    then
+      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -33343,7 +33356,6 @@ _ACEOF
       innodb_system_libs=""
       innodb_libs="\
  \$(top_builddir)/innobase/usr/libusr.a\
- \$(top_builddir)/innobase/odbc/libodbc.a\
  \$(top_builddir)/innobase/srv/libsrv.a\
  \$(top_builddir)/innobase/dict/libdict.a\
  \$(top_builddir)/innobase/que/libque.a\
@@ -33367,7 +33379,6 @@ _ACEOF
  \$(top_builddir)/innobase/page/libpage.a\
  \$(top_builddir)/innobase/rem/librem.a\
  \$(top_builddir)/innobase/thr/libthr.a\
- \$(top_builddir)/innobase/com/libcom.a\
  \$(top_builddir)/innobase/sync/libsync.a\
  \$(top_builddir)/innobase/data/libdata.a\
  \$(top_builddir)/innobase/mach/libmach.a\

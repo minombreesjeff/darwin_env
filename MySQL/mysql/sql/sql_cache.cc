@@ -589,7 +589,6 @@ void query_cache_insert(NET *net, const char *packet, ulong length)
     if (!query_cache.append_result_data(&result, length, (gptr) packet,
 					query_block))
     {
-      query_cache.refused++;
       DBUG_PRINT("warning", ("Can't append data"));
       header->result(result);
       DBUG_PRINT("qcache", ("free query 0x%lx", (ulong) query_block));
@@ -845,7 +844,8 @@ void Query_cache::store_query(THD *thd, TABLE_LIST *tables_used)
     }
   }
   else
-    statistic_increment(refused, &structure_guard_mutex);
+    if (thd->lex.sql_command == SQLCOM_SELECT)
+      statistic_increment(refused, &structure_guard_mutex);
 
 end:
   DBUG_VOID_RETURN;
@@ -981,7 +981,6 @@ Query_cache::send_result_to_client(THD *thd, char *sql, uint query_length)
       DBUG_PRINT("qcache",
 		 ("probably no SELECT access to %s.%s =>  return to normal processing",
 		  table_list.db, table_list.alias));
-      refused++;				// This is actually a hit
       STRUCT_UNLOCK(&structure_guard_mutex);
       thd->safe_to_cache_query=0;		// Don't try to cache this
       BLOCK_UNLOCK_RD(query_block);
@@ -1083,6 +1082,37 @@ void Query_cache::invalidate(CHANGED_TABLE_LIST *tables_used)
 	DBUG_PRINT("qcache", (" db %s, table %s", tables_used->key,
 			      tables_used->key+
 			      strlen(tables_used->key)+1));
+      }
+    }
+    STRUCT_UNLOCK(&structure_guard_mutex);
+  }
+  DBUG_VOID_RETURN;
+}
+
+
+/*
+  Invalidate locked for write
+
+  SYNOPSIS
+    Query_cache::invalidate_locked_for_write()
+    tables_used - table list
+
+  NOTE
+    can be used only for opened tables
+*/
+void Query_cache::invalidate_locked_for_write(TABLE_LIST *tables_used)
+{
+  DBUG_ENTER("Query_cache::invalidate (changed table list)");
+  if (query_cache_size > 0 && tables_used)
+  {
+    STRUCT_LOCK(&structure_guard_mutex);
+    if (query_cache_size > 0)
+    {
+      DUMP(this);
+      for (; tables_used; tables_used= tables_used->next)
+      {
+	if (tables_used->lock_type & (TL_WRITE_LOW_PRIORITY | TL_WRITE))
+	  invalidate_table(tables_used->table);
       }
     }
     STRUCT_UNLOCK(&structure_guard_mutex);
@@ -1579,6 +1609,12 @@ void Query_cache::free_query(Query_cache_block *query_block)
   */
   if (result_block != 0)
   {
+    if (result_block->type != Query_cache_block::RESULT)
+    {
+      // removing unfinished query
+      refused++;
+      inserts--;
+    }
     Query_cache_block *block = result_block;
     do
     {
@@ -1586,6 +1622,12 @@ void Query_cache::free_query(Query_cache_block *query_block)
       block = block->next;
       free_memory_block(current);
     } while (block != result_block);
+  }
+  else
+  {
+    // removing unfinished query
+    refused++;
+    inserts--;
   }
 
   query->unlock_n_destroy();

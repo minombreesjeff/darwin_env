@@ -861,44 +861,56 @@ int do_exec(struct st_query* q)
   char buf[1024];
   FILE *res_file;
   char *cmd= q->first_argument;
+  DBUG_ENTER("do_exec");
 
   while (*cmd && my_isspace(charset_info, *cmd))
     cmd++;
   if (!*cmd)
     die("Missing argument in exec\n");
 
-  if (q->record_file[0])
-  {
-    init_dynamic_string(&ds_tmp, "", 16384, 65536);
-    ds= &ds_tmp;
-  }
-  else
-    ds= &ds_res;
+  DBUG_PRINT("info", ("Executing '%s'", cmd));
 
   if (!(res_file= popen(cmd, "r")) && q->abort_on_error)
     die("popen() failed\n");
-  while (fgets(buf, sizeof(buf), res_file))
-    replace_dynstr_append_mem(ds, buf, strlen(buf));
+
+  if (disable_result_log)
+  {
+    while (fgets(buf, sizeof(buf), res_file))
+    {}
+  }
+  else
+  {
+    if (q->record_file[0])
+    {
+      init_dynamic_string(&ds_tmp, "", 16384, 65536);
+      ds= &ds_tmp;
+    }
+    else
+      ds= &ds_res;
+
+    while (fgets(buf, sizeof(buf), res_file))
+      replace_dynstr_append_mem(ds, buf, strlen(buf));
+  
+    if (glob_replace)
+      free_replace();
+
+    if (record)
+    {
+      if (!q->record_file[0] && !result_file)
+        die("At line %u: Missing result file", start_lineno);
+      if (!result_file)
+        str_to_file(q->record_file, ds->str, ds->length);
+    }
+    else if (q->record_file[0])
+    {
+      error= check_result(ds, q->record_file, q->require_file);
+    }
+    if (ds == &ds_tmp)
+      dynstr_free(&ds_tmp);
+  }
   pclose(res_file);
   
-  if (glob_replace)
-    free_replace();
-
-  if (record)
-  {
-    if (!q->record_file[0] && !result_file)
-      die("At line %u: Missing result file", start_lineno);
-    if (!result_file)
-      str_to_file(q->record_file, ds->str, ds->length);
-  }
-  else if (q->record_file[0])
-  {
-    error= check_result(ds, q->record_file, q->require_file);
-  }
-  if (ds == &ds_tmp)
-    dynstr_free(&ds_tmp);
-  
-  return error;
+  DBUG_RETURN(error);
 }
 
 int var_query_set(VAR* v, const char* p, const char** p_end)
@@ -1033,7 +1045,7 @@ int do_system(struct st_query* q)
   eval_expr(&v, p, 0); /* NULL terminated */
   if (v.str_val_len)
   {
-    char expr_buf[512];
+    char expr_buf[1024];
     if ((uint)v.str_val_len > sizeof(expr_buf) - 1)
       v.str_val_len = sizeof(expr_buf) - 1;
     memcpy(expr_buf, v.str_val, v.str_val_len);
@@ -1764,11 +1776,12 @@ int read_query(struct st_query** q_ptr)
   char *p = read_query_buf, * p1 ;
   int expected_errno;
   struct st_query* q;
+  DBUG_ENTER("read_query_buf");
 
   if (parser.current_line < parser.read_lines)
   {
     get_dynamic(&q_lines, (gptr) q_ptr, parser.current_line) ;
-    return 0;
+    DBUG_RETURN(0);
   }
   if (!(*q_ptr=q=(struct st_query*) my_malloc(sizeof(*q), MYF(MY_WME))) ||
       insert_dynamic(&q_lines, (gptr) &q))
@@ -1787,7 +1800,7 @@ int read_query(struct st_query** q_ptr)
   q->type = Q_UNKNOWN;
   q->query_buf=q->query=0;
   if (read_line(read_query_buf, sizeof(read_query_buf)))
-    return 1;
+    DBUG_RETURN(1);
 
   if (*p == '#')
   {
@@ -1841,7 +1854,7 @@ int read_query(struct st_query** q_ptr)
   q->first_argument=p;
   q->end = strend(q->query);
   parser.read_lines++;
-  return 0;
+  DBUG_RETURN(0);
 }
 
 
@@ -1879,7 +1892,7 @@ static struct my_option my_long_options[] =
   {"password", 'p', "Password to use when connecting to server.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"port", 'P', "Port number to use for connection.", (gptr*) &port,
-   (gptr*) &port, 0, GET_INT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   (gptr*) &port, 0, GET_INT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0, 0},
   {"quiet", 's', "Suppress all normal output.", (gptr*) &silent,
    (gptr*) &silent, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"record", 'r', "Record output of test_file into result file.",
@@ -2251,7 +2264,7 @@ int run_query(MYSQL* mysql, struct st_query* q, int flags)
       {
 	if (i)
 	  dynstr_append_mem(ds, "\t", 1);
-	dynstr_append(ds, fields[i].name);
+	replace_dynstr_append_mem(ds, fields[i].name, strlen(fields[i].name));
       }
       dynstr_append_mem(ds, "\n", 1);
       append_result(ds, res);
@@ -2296,10 +2309,12 @@ void get_query_type(struct st_query* q)
 {
   char save;
   uint type;
+  DBUG_ENTER("get_query_type");
+
   if (*q->query == '}')
   {
     q->type = Q_END_BLOCK;
-    return;
+    DBUG_VOID_RETURN;
   }
   if (q->type != Q_COMMENT_WITH_COMMAND)
     q->type = Q_QUERY;
@@ -2310,7 +2325,9 @@ void get_query_type(struct st_query* q)
   q->query[q->first_word_len]=save;
   if (type > 0)
     q->type=(enum enum_commands) type;		/* Found command */
+  DBUG_VOID_RETURN;
 }
+
 
 static byte *get_var_key(const byte* var, uint* len,
 			 my_bool __attribute__((unused)) t)

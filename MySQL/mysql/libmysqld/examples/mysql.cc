@@ -1010,7 +1010,7 @@ static bool add_line(String &buffer,char *line,char *in_string)
     {						// Add found char to buffer
       if (inchar == *in_string)
 	*in_string=0;
-      else if (!*in_string && (inchar == '\'' || inchar == '"' || inchar == '`'))
+      else if (!in_comment && !*in_string && (inchar == '\'' || inchar == '"' || inchar == '`'))
 	*in_string=(char) inchar;
       *out++ = (char) inchar;
       if (inchar == '*' && !*in_string)
@@ -2042,6 +2042,10 @@ static int
 com_shell(String *buffer, char *line __attribute__((unused)))
 {
   char *shell_cmd;
+
+  /* Skip space from line begin */
+  while (isspace(*line))
+    line++;
   if (!(shell_cmd = strchr(line, ' ')))
   {
     put_info("Usage: \\! shell-command", INFO_ERROR);
@@ -2676,6 +2680,8 @@ static const char* construct_prompt()
 	processed_prompt.append(' ');
 	break;
       case 'R':
+	if (t->tm_hour < 10)
+	  processed_prompt.append('0');
 	add_int_to_prompt(t->tm_hour);
 	break;
       case 'r':
@@ -2683,6 +2689,8 @@ static const char* construct_prompt()
 	getHour = t->tm_hour % 12;
 	if (getHour == 0)
 	  getHour=12;
+	if (getHour < 10)
+	  processed_prompt.append('0');
 	add_int_to_prompt(getHour);
 	break;
       case 'm':
@@ -2708,6 +2716,8 @@ static const char* construct_prompt()
 	processed_prompt.append(strtok(dateTime,"\n"));
 	break;
       case 's':
+	if (t->tm_sec < 10)
+	  processed_prompt.append('0');
 	add_int_to_prompt(t->tm_sec);
 	break;
       case 'w':

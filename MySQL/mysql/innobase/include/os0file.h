@@ -18,6 +18,9 @@ extern ibool	os_do_not_call_flush_at_each_write;
 extern ibool	os_has_said_disk_full;
 extern ibool	os_aio_print_debug;
 
+extern ulint	os_file_n_pending_preads;
+extern ulint	os_file_n_pending_pwrites;
+
 #ifdef __WIN__
 
 /* We define always WIN_ASYNC_IO, and check at run-time whether
@@ -223,6 +226,14 @@ os_file_set_size(
 	ulint		size,	/* in: least significant 32 bits of file
 				size */
 	ulint		size_high);/* in: most significant 32 bits of size */
+/***************************************************************************
+Truncates a file at its current position. */
+
+ibool
+os_file_set_eof(
+/*============*/
+				/* out: TRUE if success */
+	FILE*		file);	/* in: file to be truncated */
 /***************************************************************************
 Flushes the write buffers of a given file to the disk. */
 
@@ -440,8 +451,7 @@ Prints info of the aio arrays. */
 void
 os_aio_print(
 /*=========*/
-	char*	buf,	/* in/out: buffer where to print */
-	char*	buf_end);/* in: buffer end */
+	FILE*	file);	/* in: file where to print */
 /**************************************************************************
 Refreshes the statistics used to print per-second averages. */
 

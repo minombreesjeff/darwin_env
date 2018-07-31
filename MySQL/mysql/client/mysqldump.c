@@ -36,7 +36,7 @@
 ** Added --single-transaction option 06/06/2002 by Peter Zaitsev
 */
 
-#define DUMP_VERSION "9.10"
+#define DUMP_VERSION "9.11"
 
 #include <my_global.h>
 #include <my_sys.h>
@@ -72,13 +72,13 @@ static char *add_load_option(char *ptr, const char *object,
 
 static char *field_escape(char *to,const char *from,uint length);
 static my_bool  verbose=0,tFlag=0,cFlag=0,dFlag=0,quick=0, extended_insert = 0,
-		lock_tables=0,ignore_errors=0,flush_logs=0,replace=0,
-		ignore=0,opt_drop=0,opt_keywords=0,opt_lock=0,opt_compress=0,
-                opt_delayed=0,create_options=0,opt_quoted=0,opt_databases=0,
-	        opt_alldbs=0,opt_create_db=0,opt_first_slave=0,
-                opt_autocommit=0,opt_master_data,opt_disable_keys=0,opt_xml=0,
-	        opt_delete_master_logs=0, tty_password=0,
-		opt_single_transaction=0, opt_comments= 0;
+  lock_tables=0,ignore_errors=0,flush_logs=0,replace=0,
+  ignore=0,opt_drop=0,opt_keywords=0,opt_lock=0,opt_compress=0,
+  opt_delayed=0,create_options=0,opt_quoted=0,opt_databases=0,
+  opt_alldbs=0,opt_create_db=0,opt_first_slave=0,
+  opt_autocommit=0,opt_master_data,opt_disable_keys=0,opt_xml=0,
+  opt_delete_master_logs=0, tty_password=0,
+  opt_single_transaction=0, opt_comments= 0;
 static MYSQL  mysql_connection,*sock=0;
 static char  insert_pat[12 * 1024],*opt_password=0,*current_user=0,
              *current_host=0,*path=0,*fields_terminated=0,
@@ -131,7 +131,7 @@ static struct my_option my_long_options[] =
    (gptr*) &opt_delayed, (gptr*) &opt_delayed, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
   {"delete-master-logs", OPT_DELETE_MASTER_LOGS,
-   "Delete logs on master after backup. This will automagically enable --first-slave.",
+   "Delete logs on master after backup. This automatically enables --first-slave.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"disable-keys", 'K',
    "'/*!40000 ALTER TABLE tb_name DISABLE KEYS */; and '/*!40000 ALTER TABLE tb_name ENABLE KEYS */; will be put in the output.", (gptr*) &opt_disable_keys,
@@ -173,7 +173,7 @@ static struct my_option my_long_options[] =
   {"lock-tables", 'l', "Lock all tables for read.", (gptr*) &lock_tables,
    (gptr*) &lock_tables, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"master-data", OPT_MASTER_DATA,
-   "This will cause the master position and filename to be appended to your output. This will automagically enable --first-slave.",
+   "This causes the master position and filename to be appended to your output. This automatically enables --first-slave.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"no-autocommit", OPT_AUTOCOMMIT,
    "Wrap tables with autocommit/commit statements.",
@@ -938,18 +938,32 @@ static char *field_escape(char *to,const char *from,uint length)
 } /* field_escape */
 
 
+static char *alloc_query_str(ulong size)
+{
+  char *query;
+
+  if (!(query= (char*) my_malloc(size, MYF(MY_WME))))
+  {
+    ignore_errors= 0;   			/* Fatal error */
+    safe_exit(EX_MYSQLERR);			/* Force exit */
+  }
+  return query;
+}
+
 /*
 ** dumpTable saves database contents as a series of INSERT statements.
 */
 static void dumpTable(uint numFields, char *table)
 {
-  char query[QUERY_LENGTH], *end, buff[256],table_buff[NAME_LEN+3];
+  char query_buf[QUERY_LENGTH], *end, buff[256],table_buff[NAME_LEN+3];
   char *result_table, table_buff2[NAME_LEN*2+3], *opt_quoted_table;
+  char *query= query_buf;
   MYSQL_RES	*res;
   MYSQL_FIELD	*field;
   MYSQL_ROW	row;
   ulong		rownr, row_break, total_length, init_length;
   const char    *table_type;
+  int error= 0;
 
   result_table= quote_name(table,table_buff, 1);
   opt_quoted_table= quote_name(table, table_buff2, 0);
@@ -995,8 +1009,11 @@ static void dumpTable(uint numFields, char *table)
     sprintf(buff," FROM %s", result_table);
     end= strmov(end,buff);
     if (where)
-      end= strxmov(end, " WHERE ",where,NullS);
-    if (mysql_query(sock, query))
+    {
+      query= alloc_query_str((ulong) (strlen(where) + (end - query) + 10));
+      end= strxmov(query, query_buf, " WHERE ", where, NullS);
+    }
+    if (mysql_real_query(sock, query, (uint) (end - query)))
     {
       DBerror(sock, "when executing 'SELECT INTO OUTFILE'");
       return;
@@ -1013,14 +1030,16 @@ static void dumpTable(uint numFields, char *table)
     {
       if (!opt_xml && opt_comments)
 	fprintf(md_result_file,"-- WHERE:  %s\n",where);
-      strxmov(strend(query), " WHERE ",where,NullS);
+      query= alloc_query_str((ulong) (strlen(where) + strlen(query) + 10));
+      strxmov(query, query_buf, " WHERE ", where, NullS);
     }
     if (!opt_xml)
       fputs("\n", md_result_file);
     if (mysql_query(sock, query))
     {
       DBerror(sock, "when retrieving data from server");
-      return;
+      error= EX_CONSCHECK;
+      goto err;
     }
     if (quick)
       res=mysql_use_result(sock);
@@ -1029,7 +1048,8 @@ static void dumpTable(uint numFields, char *table)
     if (!res)
     {
       DBerror(sock, "when retrieving data from server");
-      return;
+      error= EX_CONSCHECK;
+      goto err;
     }
     if (verbose)
       fprintf(stderr, "-- Retrieving rows...\n");
@@ -1037,8 +1057,8 @@ static void dumpTable(uint numFields, char *table)
     {
       fprintf(stderr,"%s: Error in field count for table: %s !  Aborting.\n",
 	      my_progname, result_table);
-      safe_exit(EX_CONSCHECK);
-      return;
+      error= EX_CONSCHECK;
+      goto err;
     }
 
     if (opt_disable_keys)
@@ -1076,8 +1096,8 @@ static void dumpTable(uint numFields, char *table)
 	  sprintf(query,"%s: Not enough fields from table %s! Aborting.\n",
 		  my_progname, result_table);
 	  fputs(query,stderr);
-	  safe_exit(EX_CONSCHECK);
-	  return;
+	  error= EX_CONSCHECK;
+	  goto err;
 	}
 	if (extended_insert)
 	{
@@ -1096,7 +1116,8 @@ static void dumpTable(uint numFields, char *table)
 		if (dynstr_realloc(&extended_row,length * 2+2))
 		{
 		  fputs("Aborting dump (out of memory)",stderr);
-		  safe_exit(EX_EOM);
+		  error= EX_EOM;
+		  goto err;
 		}
 		dynstr_append(&extended_row,"\'");
 		extended_row.length +=
@@ -1116,9 +1137,9 @@ static void dumpTable(uint numFields, char *table)
 		  if (field->type == FIELD_TYPE_DECIMAL)
 		  {
 		    /* add " signs around */
-		    dynstr_append(&extended_row, "\"");
+		    dynstr_append(&extended_row, "\'");
 		    dynstr_append(&extended_row, ptr);
-		    dynstr_append(&extended_row, "\"");
+		    dynstr_append(&extended_row, "\'");
 		  }
 		  else
 		    dynstr_append(&extended_row, ptr);
@@ -1131,7 +1152,8 @@ static void dumpTable(uint numFields, char *table)
 	  else if (dynstr_append(&extended_row,"NULL"))
 	  {
 	    fputs("Aborting dump (out of memory)",stderr);
-	    safe_exit(EX_EOM);
+	    error= EX_EOM;
+	    goto err;
 	  }
 	}
 	else
@@ -1162,9 +1184,9 @@ static void dumpTable(uint numFields, char *table)
 		if (field->type == FIELD_TYPE_DECIMAL)
 		{
 		  /* add " signs around */
-		  fputs("\"", md_result_file);
+		  fputs("\'", md_result_file);
 		  fputs(ptr, md_result_file);
-		  fputs("\"", md_result_file);
+		  fputs("\'", md_result_file);
 		}
 		else
 		  fputs(ptr, md_result_file);
@@ -1229,8 +1251,8 @@ static void dumpTable(uint numFields, char *table)
 	      result_table,
 	      rownr);
       fputs(query,stderr);
-      safe_exit(EX_CONSCHECK);
-      return;
+      error= EX_CONSCHECK;
+      goto err;
     }
     if (opt_lock)
       fputs("UNLOCK TABLES;\n", md_result_file);
@@ -1240,7 +1262,16 @@ static void dumpTable(uint numFields, char *table)
     if (opt_autocommit)
       fprintf(md_result_file, "commit;\n");
     mysql_free_result(res);
-  }
+    if (query != query_buf)
+      my_free(query, MYF(MY_ALLOW_ZERO_PTR));
+  } 
+  return;
+
+err:
+  if (query != query_buf)
+    my_free(query, MYF(MY_ALLOW_ZERO_PTR));
+  safe_exit(error);
+  return;
 } /* dumpTable */
 
 

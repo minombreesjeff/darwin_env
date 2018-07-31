@@ -316,7 +316,7 @@ HANDLE create_named_pipe(NET *net, uint connect_timeout, char **arg_host,
 			 char **arg_unix_socket)
 {
   HANDLE hPipe=INVALID_HANDLE_VALUE;
-  char szPipeName [ 257 ];
+  char pipe_name[1024];
   DWORD dwMode;
   int i;
   my_bool testing_named_pipes=0;
@@ -327,13 +327,15 @@ HANDLE create_named_pipe(NET *net, uint connect_timeout, char **arg_host,
   if (!host || !strcmp(host,LOCAL_HOST))
     host=LOCAL_HOST_NAMEDPIPE;
 
-  sprintf( szPipeName, "\\\\%s\\pipe\\%s", host, unix_socket);
-  DBUG_PRINT("info",("Server name: '%s'.  Named Pipe: %s",
-		     host, unix_socket));
+  
+  pipe_name[sizeof(pipe_name)-1]= 0;		/* Safety if too long string */
+  strxnmov(pipe_name, sizeof(pipe_name)-1, "\\\\", host, "\\pipe\\",
+	   unix_socket, NullS);
+  DBUG_PRINT("info",("Server name: '%s'.  Named Pipe: %s", host, unix_socket));
 
   for (i=0 ; i < 100 ; i++)			/* Don't retry forever */
   {
-    if ((hPipe = CreateFile(szPipeName,
+    if ((hPipe = CreateFile(pipe_name,
 			    GENERIC_READ | GENERIC_WRITE,
 			    0,
 			    NULL,
@@ -349,7 +351,7 @@ HANDLE create_named_pipe(NET *net, uint connect_timeout, char **arg_host,
       return INVALID_HANDLE_VALUE;
     }
     /* wait for for an other instance */
-    if (! WaitNamedPipe(szPipeName, connect_timeout*1000) )
+    if (! WaitNamedPipe(pipe_name, connect_timeout*1000) )
     {
       net->last_errno=CR_NAMEDPIPEWAIT_ERROR;
       sprintf(net->last_error,ER(net->last_errno),host, unix_socket,
@@ -585,7 +587,7 @@ char* getlogin(void);
 
 
 #if defined(__NETWARE__)
-/* default to "root" on NetWare */
+/* Default to value of USER on NetWare, if unset use "UNKNOWN_USER" */
 static void read_user_name(char *name)
 {
   char *str=getenv("USER");
@@ -694,7 +696,8 @@ mysql_debug(const char *debug __attribute__((unused)))
 #else
     {
       char buff[80];
-      strmov(strmov(buff,"libmysql: "),env);
+      buff[sizeof(buff)-1]= 0;
+      strxnmov(buff,sizeof(buff)-1,"libmysql: ", env, NullS);
       MessageBox((HWND) 0,"Debugging variable MYSQL_DEBUG used",buff,MB_OK);
     }
 #endif
@@ -1609,6 +1612,56 @@ mysql_connect(MYSQL *mysql,const char *host,
 #endif
 
 
+#ifdef CHECK_LICENSE
+/*
+  Check server side variable 'license'.
+  If the variable does not exist or does not contain 'Commercial', 
+  we're talking to non-commercial server from commercial client.
+  SYNOPSIS
+    check_license()
+  RETURN VALUE
+    0  success
+   !0  network error or the server is not commercial.
+       Error code is saved in mysql->net.last_errno.
+*/
+
+static int check_license(MYSQL *mysql)
+{
+  MYSQL_ROW row;
+  MYSQL_RES *res;
+  NET *net= &mysql->net;
+  static const char query[]= "SELECT @@license";
+  static const char required_license[]= LICENSE;
+
+  if (mysql_real_query(mysql, query, sizeof(query)-1))
+  {
+    if (net->last_errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+    {
+      net->last_errno= CR_WRONG_LICENSE;
+      sprintf(net->last_error, ER(net->last_errno), required_license);
+    }
+    return 1;
+  }
+  if (!(res= mysql_use_result(mysql)))
+    return 1;
+  row= mysql_fetch_row(res);
+  /* 
+    If no rows in result set, or column value is NULL (none of these
+    two is ever true for server variables now), or column value
+    mismatch, set wrong license error.
+  */
+  if (!net->last_errno &&
+      (!row || !row[0] ||
+       strncmp(row[0], required_license, sizeof(required_license))))
+  {
+    net->last_errno= CR_WRONG_LICENSE;
+    sprintf(net->last_error, ER(net->last_errno), required_license);
+  }
+  mysql_free_result(res);
+  return net->last_errno;
+}
+#endif /* CHECK_LICENSE */
+
 /*
   The following union is used to force a struct to be double allgined.
   This is to avoid warings with gethostname_r() on Linux itanium systems
@@ -1746,7 +1799,7 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
 	    (unix_socket && !strcmp(unix_socket,MYSQL_NAMEDPIPE)))
 	{
 	  net->last_errno= CR_SERVER_LOST;
-	  strmov(net->last_error,ER(net->last_errno));    
+	  strmov(net->last_error,ER(net->last_errno));
 	  goto error;		/* User only requested named pipes */
 	}
 	/* Try also with TCP/IP */
@@ -1832,7 +1885,7 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
       vio_poll_read(net->vio, mysql->options.connect_timeout))
   {
     net->last_errno= CR_SERVER_LOST;
-    strmov(net->last_error,ER(net->last_errno));    
+    strmov(net->last_error,ER(net->last_errno));
     goto error;
   }
   if ((pkt_length=net_safe_read(mysql)) == packet_error)
@@ -1984,7 +2037,7 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
     if (my_net_write(net,buff,(uint) (2)) || net_flush(net))
     {
       net->last_errno= CR_SERVER_LOST;
-      strmov(net->last_error,ER(net->last_errno));    
+      strmov(net->last_error,ER(net->last_errno));
       goto error;
     }
     /* Do the SSL layering. */
@@ -1996,7 +2049,7 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
 				       options->ssl_cipher)))
     {
       net->last_errno= CR_SSL_CONNECTION_ERROR;
-      strmov(net->last_error,ER(net->last_errno));    
+      strmov(net->last_error,ER(net->last_errno));
       goto error;
     }
     DBUG_PRINT("info", ("IO layer change in progress..."));
@@ -2036,7 +2089,7 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
   if (my_net_write(net,buff,(ulong) (end-buff)) || net_flush(net))
   {
     net->last_errno= CR_SERVER_LOST;
-    strmov(net->last_error,ER(net->last_errno));    
+    strmov(net->last_error,ER(net->last_errno));
     goto error;
   }
   if (net_safe_read(mysql) == packet_error)
@@ -2045,6 +2098,10 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
     net->compress=1;
   if (mysql->options.max_allowed_packet)
     net->max_packet_size= mysql->options.max_allowed_packet;
+#ifdef CHECK_LICENSE 
+  if (check_license(mysql))
+    goto error;
+#endif
   if (db && mysql_select_db(mysql,db))
     goto error;
   if (mysql->options.init_command)
@@ -2109,8 +2166,8 @@ static my_bool mysql_reconnect(MYSQL *mysql)
   {
    /* Allow reconnect next time */
     mysql->server_status&= ~SERVER_STATUS_IN_TRANS;
-    mysql->net.last_errno=CR_SERVER_GONE_ERROR;
-    strmov(mysql->net.last_error,ER(mysql->net.last_errno));
+    mysql->net.last_errno= CR_SERVER_GONE_ERROR;
+    strmov(mysql->net.last_error, ER(mysql->net.last_errno));
     DBUG_RETURN(1);
   }
   mysql_init(&tmp_mysql);

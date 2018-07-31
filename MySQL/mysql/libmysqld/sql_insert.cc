@@ -139,7 +139,7 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
    */
   if ((lock_type == TL_WRITE_DELAYED &&
        ((specialflag & (SPECIAL_NO_NEW_FUNC | SPECIAL_SAFE_MODE)) ||
-	thd->slave_thread || !max_insert_delayed_threads)) ||
+	thd->slave_thread || !thd->variables.max_insert_delayed_threads)) ||
       (lock_type == TL_WRITE_CONCURRENT_INSERT && duplic == DUP_REPLACE))
     lock_type=TL_WRITE;
 
@@ -391,6 +391,7 @@ int write_record(TABLE *table,COPY_INFO *info)
 {
   int error;
   char *key=0;
+  DBUG_ENTER("write_record");
 
   info->records++;
   if (info->handle_duplicates == DUP_REPLACE)
@@ -474,14 +475,14 @@ int write_record(TABLE *table,COPY_INFO *info)
     info->copied++;
   if (key)
     my_safe_afree(key,table->max_unique_length,MAX_KEY_LENGTH);
-  return 0;
+  DBUG_RETURN(0);
 
 err:
   if (key)
     my_afree(key);
   info->last_errno= error;
   table->file->print_error(error,MYF(0));
-  return 1;
+  DBUG_RETURN(1);
 }
 
 
@@ -655,7 +656,7 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
   if (!(tmp=find_handler(thd,table_list)))
   {
     /* Don't create more than max_insert_delayed_threads */
-    if (delayed_insert_threads >= max_insert_delayed_threads)
+    if (delayed_insert_threads >= thd->variables.max_insert_delayed_threads)
       DBUG_RETURN(0);
     thd->proc_info="Creating delayed handler";
     pthread_mutex_lock(&LOCK_delayed_create);
@@ -1236,8 +1237,15 @@ bool delayed_insert::handle_inserts(void)
     pthread_mutex_lock(&mutex);
 
     delete row;
-    /* Let READ clients do something once in a while */
-    if (group_count++ == max_rows)
+    /*
+      Let READ clients do something once in a while
+      We should however not break in the middle of a multi-line insert
+      if we have binary logging enabled as we don't want other commands
+      on this table until all entries has been processed
+    */
+    if (group_count++ >= max_rows && (row= rows.head()) &&
+	(!(row->log_query & DELAYED_LOG_BIN && using_bin_log) ||
+	 row->query))
     {
       group_count=0;
       if (stacked_inserts || tables_in_use)	// Let these wait a while
@@ -1335,24 +1343,25 @@ select_insert::~select_insert()
 
 bool select_insert::send_data(List<Item> &values)
 {
+  DBUG_ENTER("select_insert::send_data");
   if (thd->offset_limit)
   {						// using limit offset,count
     thd->offset_limit--;
-    return 0;
+    DBUG_RETURN(0);
   }
   if (fields->elements)
     fill_record(*fields, values, 1);
   else
     fill_record(table->field, values, 1);
   if (write_record(table,&info))
-    return 1;
+    DBUG_RETURN(1);
   if (table->next_number_field)		// Clear for next record
   {
     table->next_number_field->reset();
     if (! last_insert_id && thd->insert_id_used)
       last_insert_id=thd->insert_id();
   }
-  return 0;
+  DBUG_RETURN(0);
 }
 
 

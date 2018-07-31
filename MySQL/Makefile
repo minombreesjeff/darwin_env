@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2001-2003 Apple Computer, Inc.
+# Copyright (c) 2001-2004 Apple Computer, Inc.
 #
 # Starting with MySQL 3.23.54, the source patch to handle installation
 # directories with tildes no longer works. Going forward, this Makefile
@@ -7,7 +7,7 @@
 # and then dittoing that into DSTROOT.
 #
 # This Makefile applies patches in configure.patch and configure.in.patch 
-# that are only valid for MySQL 4.0.18.
+# starting with 4.0.18
 # The patch for config.h.in is needed regardless of MySQL version; it
 # makes MySQL generate correct code for PPC when building fat.
 #
@@ -18,7 +18,7 @@ include $(MAKEFILEPATH)/pb_makefiles/platform.make
 include $(MAKEFILEPATH)/pb_makefiles/commands-$(OS).make
 
 PROJECT_NAME	= MySQL
-MYSQL_VERSION	= mysql-4.0.18
+MYSQL_VERSION	= mysql-4.0.20
 BUILD_DIR	= /usr
 STAGING_DIR 	:= $(shell mktemp -d /tmp/mysql-tmp-XXXXXX)
 SHARE_DIR	= /usr/share

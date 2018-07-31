@@ -32,7 +32,7 @@ static longlong getopt_ll(char *arg, const struct my_option *optp, int *err);
 static ulonglong getopt_ull(char *arg, const struct my_option *optp,
 			    int *err);
 static void init_variables(const struct my_option *options);
-static int setval(const struct my_option *opts, char *argument,
+static int setval(const struct my_option *opts,char *argument,
 		  my_bool set_maximum_value);
 
 /*
@@ -315,8 +315,8 @@ int handle_options(int *argc, char ***argv,
 	  {
 	    if (!optend) /* No argument -> enable option */
 	      *((my_bool*) optp->value)= (my_bool) 1;
-	    else /* If argument differs from 0, enable option, else disable */
-	      *((my_bool*) optp->value)= (my_bool) atoi(optend) != 0;
+            else
+              argument= optend;
 	  }
 	}
 	else if (optp->arg_type == REQUIRED_ARG && !optend)
@@ -362,18 +362,25 @@ int handle_options(int *argc, char ***argv,
 		  /* This is in effect a jump out of the outer loop */
 		  optend= (char*) " ";
 		}
-		else if (optp->arg_type == REQUIRED_ARG)
+		else
 		{
+                  if (optp->arg_type == OPT_ARG)
+                  {
+                    if (optp->var_type == GET_BOOL)
+                      *((my_bool*) optp->value)= (my_bool) 1;
+                    get_one_option(optp->id, optp, argument);
+                    continue;
+                  }
 		  /* Check if there are more arguments after this one */
-		  if (!*++pos)
+		  if (!pos[1])
 		  {
-		    if (my_getopt_print_errors)
-		      fprintf(stderr,
-			      "%s: option '-%c' requires an argument\n",
-			      progname, optp->id);
-		    return EXIT_ARGUMENT_REQUIRED;
+                    if (my_getopt_print_errors)
+                      fprintf(stderr,
+                              "%s: option '-%c' requires an argument\n",
+                              progname, optp->id);
+                    return EXIT_ARGUMENT_REQUIRED;
 		  }
-		  argument= *pos;
+		  argument= *++pos;
 		  (*argc)--;
 		  /* the other loop will break, because *optend + 1 == 0 */
 		}
@@ -445,6 +452,9 @@ static int setval(const struct my_option *opts, char *argument,
       return EXIT_NO_PTR_TO_VARIABLE;
 
     switch (opts->var_type) {
+    case GET_BOOL: /* If argument differs from 0, enable option, else disable */
+      *((my_bool*) result_pos)= (my_bool) atoi(argument) != 0;
+      break;
     case GET_INT:
     case GET_UINT:           /* fall through */
       *((int*) result_pos)= (int) getopt_ll(argument, opts, &err);
@@ -576,18 +586,15 @@ static longlong eval_num_suffix (char *argument, int *error, char *option_name)
 static longlong getopt_ll(char *arg, const struct my_option *optp, int *err)
 {
   longlong num;
+  ulonglong block_size= (optp->block_size ? (ulonglong) optp->block_size : 1L);
   
   num= eval_num_suffix(arg, err, (char*) optp->name);
-  if (num < (longlong) optp->min_value)
-    num= (longlong) optp->min_value;
-  else if (num > 0 && (ulonglong) num > (ulonglong) (ulong) optp->max_value
-	   && optp->max_value) /* if max value is not set -> no upper limit */
+  if (num > 0 && (ulonglong) num > (ulonglong) (ulong) optp->max_value &&
+      optp->max_value) /* if max value is not set -> no upper limit */
     num= (longlong) (ulong) optp->max_value;
-  num= ((num - (longlong) optp->sub_size) / (optp->block_size ?
-					     (ulonglong) optp->block_size :
-					     1L));
-  return (longlong) (num * (optp->block_size ? (ulonglong) optp->block_size :
-			    1L));
+  num= ((num - (longlong) optp->sub_size) / block_size);
+  num= (longlong) (num * block_size);
+  return max(num, optp->min_value);
 }
 
 /*

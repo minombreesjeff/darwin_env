@@ -201,12 +201,14 @@ the read requests for the whole area. */
 
 buf_pool_t*	buf_pool = NULL; /* The buffer buf_pool of the database */
 
-ulint		buf_dbg_counter	= 0; /* This is used to insert validation
+#ifdef UNIV_DEBUG
+static ulint	buf_dbg_counter	= 0; /* This is used to insert validation
 					operations in excution in the
 					debug version */
 ibool		buf_debug_prints = FALSE; /* If this is set TRUE,
 					the program prints info whenever
 					read-ahead or flush occurs */
+#endif /* UNIV_DEBUG */
 
 /************************************************************************
 Calculates a page checksum which is stored to the page when it is written
@@ -348,19 +350,12 @@ buf_page_print(
 	dict_index_t*	index;
 	ulint		checksum;
 	ulint		old_checksum;
-	char*		buf;
-	
-	buf = mem_alloc(4 * UNIV_PAGE_SIZE);
-
-	ut_sprintf_buf(buf, read_buf, UNIV_PAGE_SIZE);
 
 	ut_print_timestamp(stderr);
-	fprintf(stderr,
-	"  InnoDB: Page dump in ascii and hex (%lu bytes):\n%s",
-					(ulint)UNIV_PAGE_SIZE, buf);
-	fprintf(stderr, "InnoDB: End of page dump\n");
-
-	mem_free(buf);
+	fprintf(stderr, "  InnoDB: Page dump in ascii and hex (%lu bytes):\n",
+		(ulint)UNIV_PAGE_SIZE);
+	ut_print_buf(stderr, read_buf, UNIV_PAGE_SIZE);
+	fputs("InnoDB: End of page dump\n", stderr);
 
 	checksum = buf_calc_page_new_checksum(read_buf);
 	old_checksum = buf_calc_page_old_checksum(read_buf);
@@ -407,18 +402,17 @@ buf_page_print(
 		        index = dict_index_find_on_id_low(
 					btr_page_get_index_id(read_buf));
 		        if (index) {
-			        fprintf(stderr,
-					"InnoDB: and table %s index %s\n",
-						index->table_name,
-						index->name);
+				fputs("InnoDB: (", stderr);
+				dict_index_name_print(stderr, index);
+				fputs(")\n", stderr);
 			}
 		}
 	  
 	} else if (fil_page_get_type(read_buf) == FIL_PAGE_INODE) {
-		fprintf(stderr, "InnoDB: Page may be an 'inode' page\n");
+		fputs("InnoDB: Page may be an 'inode' page\n", stderr);
 	} else if (fil_page_get_type(read_buf) == FIL_PAGE_IBUF_FREE_LIST) {
-		fprintf(stderr,
-		"InnoDB: Page may be an insert buffer free list page\n");
+		fputs("InnoDB: Page may be an insert buffer free list page\n",
+			stderr);
 	}
 }
 
@@ -446,9 +440,10 @@ buf_block_init(
 
 	rw_lock_create(&(block->read_lock));
 	rw_lock_set_level(&(block->read_lock), SYNC_NO_ORDER_CHECK);
-	
+#ifdef UNIV_SYNC_DEBUG
 	rw_lock_create(&(block->debug_latch));
 	rw_lock_set_level(&(block->debug_latch), SYNC_NO_ORDER_CHECK);
+#endif /* UNIV_SYNC_DEBUG */
 }
 
 /************************************************************************
@@ -901,13 +896,13 @@ loop:
 
 		buf_read_page(space, offset);
 
-		#ifdef UNIV_DEBUG
+#ifdef UNIV_DEBUG
 		buf_dbg_counter++;
 
 		if (buf_dbg_counter % 37 == 0) {
 			ut_ad(buf_validate());
 		}
-		#endif
+#endif
 		goto loop;
 	}
 
@@ -1088,9 +1083,9 @@ buf_page_optimistic_get_func(
 	}
 
 	if (!UT_DULINT_EQ(modify_clock, block->modify_clock)) {
-
+#ifdef UNIV_SYNC_DEBUG
 		buf_page_dbg_add_level(block->frame, SYNC_NO_ORDER_CHECK);
-	
+#endif /* UNIV_SYNC_DEBUG */
 		if (rw_latch == RW_S_LATCH) {
 			rw_lock_s_unlock(&(block->lock));
 		} else {
@@ -1285,7 +1280,9 @@ buf_page_init(
 				in units of a page */
 	buf_block_t*	block)	/* in: block to init */
 {
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 	ut_ad(block->state == BUF_BLOCK_READY_FOR_USE);
 
 	/* Set the state of the block */
@@ -1460,10 +1457,12 @@ buf_page_create(
 
 	/* If we get here, the page was not in buf_pool: init it there */
 
+#ifdef UNIV_DEBUG
 	if (buf_debug_prints) {
-		printf("Creating space %lu page %lu to buffer\n", space,
-								offset);
+		fprintf(stderr, "Creating space %lu page %lu to buffer\n",
+			space, offset);
 	}
+#endif /* UNIV_DEBUG */
 
 	block = free_block;
 	
@@ -1516,8 +1515,6 @@ buf_page_io_complete(
 /*=================*/
 	buf_block_t*	block)	/* in: pointer to the block in question */
 {
-	dict_index_t*	index;
-	dulint		id;
 	ulint		io_type;
 	ulint		read_page_no;
 	
@@ -1540,21 +1537,6 @@ buf_page_io_complete(
 "InnoDB: Error: page n:o stored in the page read in is %lu, should be %lu!\n",
 				read_page_no, block->offset);
 		}
-#ifdef notdefined
-		if (block->offset != 0 && read_page_no == 0) {
-			/* Check that the page is really uninited */
-
-			for (i = 0; i < UNIV_PAGE_SIZE; i++) {
-
-				if (*((block->frame) + i) != '\0') {
-					fprintf(stderr,
-"InnoDB: Error: page n:o in the page read in is 0, but page %lu is inited!\n",
-						block->offset);
-					break;
-				}
-			}
-		}
-#endif
 		/* From version 3.23.38 up we store the page checksum
 		   to the 4 first bytes of the page end lsn field */
 
@@ -1563,17 +1545,17 @@ buf_page_io_complete(
 		"InnoDB: Database page corruption on disk or a failed\n"
 		"InnoDB: file read of page %lu.\n", block->offset);
 			  
-		  	fprintf(stderr,
-		"InnoDB: You may have to recover from a backup.\n");
+			fputs(
+		"InnoDB: You may have to recover from a backup.\n", stderr);
 
 			buf_page_print(block->frame);
 
 		  	fprintf(stderr,
 		"InnoDB: Database page corruption on disk or a failed\n"
 		"InnoDB: file read of page %lu.\n", block->offset);
-		  	fprintf(stderr,
-		"InnoDB: You may have to recover from a backup.\n");
-			fprintf(stderr,
+			fputs(
+		"InnoDB: You may have to recover from a backup.\n", stderr);
+			fputs(
 		"InnoDB: It is also possible that your operating\n"
 		"InnoDB: system has corrupted its own file cache\n"
 		"InnoDB: and rebooting your computer removes the\n"
@@ -1584,12 +1566,13 @@ buf_page_io_complete(
 		"InnoDB: the corrupt table. You can use CHECK\n"
 		"InnoDB: TABLE to scan your table for corruption.\n"
 		"InnoDB: Look also at section 6.1 of\n"
-		"InnoDB: http://www.innodb.com/ibman.html about\n"
-		"InnoDB: forcing recovery.\n");
+		"InnoDB: http://www.innodb.com/ibman.php about\n"
+		"InnoDB: forcing recovery.\n", stderr);
 			  
 			if (srv_force_recovery < SRV_FORCE_IGNORE_CORRUPT) {
-				fprintf(stderr,
-	"InnoDB: Ending processing because of a corrupt database page.\n");
+				fputs(
+	"InnoDB: Ending processing because of a corrupt database page.\n",
+					stderr);
 		  		exit(1);
 		  	}
 		}
@@ -1630,9 +1613,11 @@ buf_page_io_complete(
 		rw_lock_x_unlock_gen(&(block->lock), BUF_IO_READ);
 		rw_lock_x_unlock_gen(&(block->read_lock), BUF_IO_READ);
 
+#ifdef UNIV_DEBUG
 		if (buf_debug_prints) {
-			printf("Has read ");
+			fputs("Has read ", stderr);
 		}
+#endif /* UNIV_DEBUG */
 	} else {
 		ut_ad(io_type == BUF_IO_WRITE);
 
@@ -1645,31 +1630,21 @@ buf_page_io_complete(
 
 		buf_pool->n_pages_written++;
 
+#ifdef UNIV_DEBUG
 		if (buf_debug_prints) {
-			printf("Has written ");
+			fputs("Has written ", stderr);
 		}
+#endif /* UNIV_DEBUG */
 	}
 	
 	mutex_exit(&(buf_pool->mutex));
 
+#ifdef UNIV_DEBUG
 	if (buf_debug_prints) {
-		printf("page space %lu page no %lu", block->space,
-								block->offset);
-		id = btr_page_get_index_id(block->frame);
-
-		index = NULL;
-		/* The following can cause deadlocks if used: */
-		/*
-		index = dict_index_get_if_in_cache(id);
-
-  		if (index) {
-			printf(" index name %s table %s", index->name,
-							index->table->name);
-		}
-		*/
-
-		printf("\n");
+		fprintf(stderr, "page space %lu page no %lu\n",
+			block->space, block->offset);
 	}
+#endif /* UNIV_DEBUG */
 }
 
 /*************************************************************************
@@ -1698,6 +1673,7 @@ buf_pool_invalidate(void)
 	mutex_exit(&(buf_pool->mutex));
 }
 
+#ifdef UNIV_DEBUG
 /*************************************************************************
 Validates the buffer buf_pool data structure. */
 
@@ -1769,14 +1745,14 @@ buf_validate(void)
  	}
 
 	if (n_lru + n_free > buf_pool->curr_size) {
-		printf("n LRU %lu, n free %lu\n", n_lru, n_free);
+		fprintf(stderr, "n LRU %lu, n free %lu\n", n_lru, n_free);
 		ut_error;
 	}
 
 	ut_a(UT_LIST_GET_LEN(buf_pool->LRU) == n_lru);
 	if (UT_LIST_GET_LEN(buf_pool->free) != n_free) {
-		printf("Free list len %lu, free blocks %lu\n",
-		    UT_LIST_GET_LEN(buf_pool->free), n_free);
+		fprintf(stderr, "Free list len %lu, free blocks %lu\n",
+			UT_LIST_GET_LEN(buf_pool->free), n_free);
 		ut_error;
 	}
 	ut_a(UT_LIST_GET_LEN(buf_pool->flush_list) == n_flush);
@@ -1819,22 +1795,24 @@ buf_print(void)
 
 	mutex_enter(&(buf_pool->mutex));
 	
-	printf("buf_pool size %lu \n", size);
-	printf("database pages %lu \n", UT_LIST_GET_LEN(buf_pool->LRU));
-	printf("free pages %lu \n", UT_LIST_GET_LEN(buf_pool->free));
-	printf("modified database pages %lu \n",
-				UT_LIST_GET_LEN(buf_pool->flush_list));
-
-	printf("n pending reads %lu \n", buf_pool->n_pend_reads);
-
-	printf("n pending flush LRU %lu list %lu single page %lu\n",
+	fprintf(stderr,
+		"buf_pool size %lu \n"
+		"database pages %lu \n"
+		"free pages %lu \n"
+		"modified database pages %lu \n"
+		"n pending reads %lu \n"
+		"n pending flush LRU %lu list %lu single page %lu\n"
+		"pages read %lu, created %lu, written %lu\n",
+		size,
+		UT_LIST_GET_LEN(buf_pool->LRU),
+		UT_LIST_GET_LEN(buf_pool->free),
+		UT_LIST_GET_LEN(buf_pool->flush_list),
+		buf_pool->n_pend_reads,
 		buf_pool->n_flush[BUF_FLUSH_LRU],
 		buf_pool->n_flush[BUF_FLUSH_LIST],
-		buf_pool->n_flush[BUF_FLUSH_SINGLE_PAGE]);
-
-	printf("pages read %lu, created %lu, written %lu\n",
-			buf_pool->n_pages_read, buf_pool->n_pages_created,
-						buf_pool->n_pages_written);
+		buf_pool->n_flush[BUF_FLUSH_SINGLE_PAGE],
+		buf_pool->n_pages_read, buf_pool->n_pages_created,
+		buf_pool->n_pages_written);
 
 	/* Count the number of blocks belonging to each index in the buffer */
 	
@@ -1877,15 +1855,16 @@ buf_print(void)
 	for (i = 0; i < n_found; i++) {
 		index = dict_index_get_if_in_cache(index_ids[i]);
 
-		printf("Block count for index %lu in buffer is about %lu",
+		fprintf(stderr,
+			"Block count for index %lu in buffer is about %lu",
 			ut_dulint_get_low(index_ids[i]), counts[i]);
 
 		if (index) {
-			printf(" index name %s table %s", index->name,
-				index->table->name);
+			putc(' ', stderr);
+			dict_index_name_print(stderr, index);
 		}
 
-		printf("\n");
+		putc('\n', stderr);
 	}
 	
 	mem_free(index_ids);
@@ -1893,6 +1872,7 @@ buf_print(void)
 
 	ut_a(buf_validate());
 }	
+#endif /* UNIV_DEBUG */
 
 /*************************************************************************
 Returns the number of pending buf pool ios. */
@@ -1936,44 +1916,29 @@ Prints info of the buffer i/o. */
 void
 buf_print_io(
 /*=========*/
-	char*	buf,	/* in/out: buffer where to print */
-	char*	buf_end)/* in: buffer end */
+	FILE*	file)	/* in/out: buffer where to print */
 {
 	time_t	current_time;
 	double	time_elapsed;
 	ulint	size;
 	
 	ut_ad(buf_pool);
-
-	if (buf_end - buf < 400) {
-
-		return;
-	}
-
 	size = buf_pool_get_curr_size() / UNIV_PAGE_SIZE;
 
 	mutex_enter(&(buf_pool->mutex));
 	
-	buf += sprintf(buf,
-		"Buffer pool size   %lu\n", size);
-	buf += sprintf(buf,
-		"Free buffers       %lu\n", UT_LIST_GET_LEN(buf_pool->free));
-	buf += sprintf(buf,
-		"Database pages     %lu\n", UT_LIST_GET_LEN(buf_pool->LRU));
-/*
-	buf += sprintf(buf,
-		"Lock heap buffers  %lu\n", buf_pool->n_lock_heap_pages);
-	buf += sprintf(buf,
-		"Hash index buffers %lu\n", buf_pool->n_adaptive_hash_pages);
-*/
-	buf += sprintf(buf,
-		"Modified db pages  %lu\n",
-				UT_LIST_GET_LEN(buf_pool->flush_list));
-
-	buf += sprintf(buf, "Pending reads %lu \n", buf_pool->n_pend_reads);
-
-	buf += sprintf(buf,
+	fprintf(file,
+		"Buffer pool size   %lu\n"
+		"Free buffers       %lu\n"
+		"Database pages     %lu\n"
+		"Modified db pages  %lu\n"
+		"Pending reads %lu \n"
 		"Pending writes: LRU %lu, flush list %lu, single page %lu\n",
+		size,
+		UT_LIST_GET_LEN(buf_pool->free),
+		UT_LIST_GET_LEN(buf_pool->LRU),
+		UT_LIST_GET_LEN(buf_pool->flush_list),
+		buf_pool->n_pend_reads,
 		buf_pool->n_flush[BUF_FLUSH_LRU]
 				+ buf_pool->init_flush[BUF_FLUSH_LRU],
 		buf_pool->n_flush[BUF_FLUSH_LIST]
@@ -1985,10 +1950,11 @@ buf_print_io(
 						buf_pool->last_printout_time);
 	buf_pool->last_printout_time = current_time;
 
-	buf += sprintf(buf, "Pages read %lu, created %lu, written %lu\n",
-			buf_pool->n_pages_read, buf_pool->n_pages_created,
-						buf_pool->n_pages_written);
-	buf += sprintf(buf, "%.2f reads/s, %.2f creates/s, %.2f writes/s\n",
+	fprintf(file,
+		"Pages read %lu, created %lu, written %lu\n"
+		"%.2f reads/s, %.2f creates/s, %.2f writes/s\n",
+		buf_pool->n_pages_read, buf_pool->n_pages_created,
+		buf_pool->n_pages_written,
 		(buf_pool->n_pages_read - buf_pool->n_pages_read_old)
 		/ time_elapsed,
 		(buf_pool->n_pages_created - buf_pool->n_pages_created_old)
@@ -1997,14 +1963,14 @@ buf_print_io(
 		/ time_elapsed);
 
 	if (buf_pool->n_page_gets > buf_pool->n_page_gets_old) {
-		buf += sprintf(buf, "Buffer pool hit rate %lu / 1000\n",
+		fprintf(file, "Buffer pool hit rate %lu / 1000\n",
 		1000
 		- ((1000 *
 		    (buf_pool->n_pages_read - buf_pool->n_pages_read_old))
 		/ (buf_pool->n_page_gets - buf_pool->n_page_gets_old)));
 	} else {
-		buf += sprintf(buf,
-			"No buffer pool page gets since the last printout\n");
+		fputs("No buffer pool page gets since the last printout\n",
+			file);
 	}
 
 	buf_pool->n_page_gets_old = buf_pool->n_page_gets;
@@ -2051,8 +2017,9 @@ buf_all_freed(void)
 
 			if (!buf_flush_ready_for_replace(block)) {
 
-			    	/* printf("Page %lu %lu still fixed or dirty\n",
-			    		block->space, block->offset); */
+				fprintf(stderr,
+					"Page %lu %lu still fixed or dirty\n",
+					block->space, block->offset);
 			    	ut_error;
 			}
 		}

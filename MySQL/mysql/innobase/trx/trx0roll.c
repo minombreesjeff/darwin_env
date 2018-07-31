@@ -73,8 +73,7 @@ trx_general_rollback_for_mysql(
 
 	thr = pars_complete_graph_for_exec(roll_node, trx, heap);
 	
-	ut_a(thr == que_fork_start_command(que_node_get_parent(thr),
-						SESS_COMM_EXECUTE, 0));
+	ut_a(thr == que_fork_start_command(que_node_get_parent(thr)));
 	que_run_threads(thr);
 
 	mutex_enter(&kernel_mutex);
@@ -229,9 +228,9 @@ trx_rollback_to_savepoint_for_mysql(
 
 	if (trx->conc_state == TRX_NOT_STARTED) {
 		ut_print_timestamp(stderr);
-		fprintf(stderr,
-"  InnoDB: Error: transaction has a savepoint %s though it is not started\n",
-							      savep->name);
+		fputs("  InnoDB: Error: transaction has a savepoint ", stderr);
+		ut_print_name(stderr, savep->name);
+		fputs(" though it is not started\n", stderr);
 	        return(DB_ERROR);
 	}
 
@@ -302,8 +301,7 @@ trx_savepoint_for_mysql(
 
 	savep = mem_alloc(sizeof(trx_named_savept_t));
 
-	savep->name = mem_alloc(1 + ut_strlen(savepoint_name));
-	ut_memcpy(savep->name, savepoint_name, 1 + ut_strlen(savepoint_name));
+	savep->name = mem_strdup(savepoint_name);
 
 	savep->savept = trx_savept_take(trx);
 
@@ -354,8 +352,7 @@ trx_rollback_or_clean_all_without_sess(void)
 	/* Open a dummy session */
 
 	if (!trx_dummy_sess) {
-		trx_dummy_sess = sess_open(NULL, (byte*)"Dummy sess",
-					ut_strlen((char *) "Dummy sess"));
+		trx_dummy_sess = sess_open();
 	}
 	
 	mutex_exit(&kernel_mutex);
@@ -418,7 +415,7 @@ loop:
 
 	trx->graph = fork;
 
-	ut_a(thr == que_fork_start_command(fork, SESS_COMM_EXECUTE, 0));
+	ut_a(thr == que_fork_start_command(fork));
 	
 	trx_roll_max_undo_no = ut_conv_dulint_to_longlong(trx->undo_no);
 	trx_roll_progress_printed_pct = 0;
@@ -469,10 +466,11 @@ loop:
 		table = dict_table_get_on_id_low(trx->table_id, trx);
 
 		if (table) {		
-			fprintf(stderr,
-"InnoDB: Table found: dropping table %s in recovery\n", table->name);
+			fputs("InnoDB: Table found: dropping table ", stderr);
+			ut_print_name(stderr, table->name);
+			fputs(" in recovery\n", stderr);
 
-			err = row_drop_table_for_mysql(table->name, trx);
+			err = row_drop_table_for_mysql(table->name, trx, TRUE);
 
 			ut_a(err == (int) DB_SUCCESS);
 		}
@@ -678,8 +676,10 @@ trx_roll_try_truncate(
 	dulint		limit;
 	dulint		biggest;
 	
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(trx->undo_mutex)));
 	ut_ad(mutex_own(&((trx->rseg)->mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 
 	trx->pages_undone = 0;
 	
@@ -722,13 +722,15 @@ trx_roll_pop_top_rec(
 	trx_undo_rec_t*	prev_rec;
 	page_t*		prev_rec_page;
 
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(trx->undo_mutex)));
+#endif /* UNIV_SYNC_DEBUG */
 
 	undo_page = trx_undo_page_get_s_latched(undo->space,
 						undo->top_page_no, mtr);
 	offset = undo->top_offset;
 
-/*	printf("Thread %lu undoing trx %lu undo record %lu\n",
+/*	fprintf(stderr, "Thread %lu undoing trx %lu undo record %lu\n",
 		os_thread_get_curr_id(), ut_dulint_get_low(trx->id),
 		ut_dulint_get_low(undo->top_undo_no)); */
 
@@ -946,7 +948,9 @@ trx_rollback(
 	que_thr_t*	thr;
 /*	que_thr_t*	thr2; */
 
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&kernel_mutex));
+#endif /* UNIV_SYNC_DEBUG */
 	ut_ad((trx->undo_no_arr == NULL) || ((trx->undo_no_arr)->n_used == 0));
 	
 	/* Initialize the rollback field in the transaction */
@@ -981,11 +985,11 @@ trx_rollback(
 	trx->graph = roll_graph;
 	trx->que_state = TRX_QUE_ROLLING_BACK;
 
-	thr = que_fork_start_command(roll_graph, SESS_COMM_EXECUTE, 0);
+	thr = que_fork_start_command(roll_graph);
 
 	ut_ad(thr);
 
-/*	thr2 = que_fork_start_command(roll_graph, SESS_COMM_EXECUTE, 0);
+/*	thr2 = que_fork_start_command(roll_graph);
 
 	ut_ad(thr2); */
 	
@@ -1015,7 +1019,9 @@ trx_roll_graph_build(
 	que_thr_t*	thr;
 /*	que_thr_t*	thr2; */
 
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&kernel_mutex));
+#endif /* UNIV_SYNC_DEBUG */
 
 	heap = mem_heap_create(512);
 	fork = que_fork_create(NULL, NULL, QUE_FORK_ROLLBACK, heap);
@@ -1042,7 +1048,9 @@ trx_finish_error_processing(
 	trx_sig_t*	sig;
 	trx_sig_t*	next_sig;
 
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&kernel_mutex));
+#endif /* UNIV_SYNC_DEBUG */
 
 	sig = UT_LIST_GET_FIRST(trx->signals);
 
@@ -1075,14 +1083,16 @@ trx_finish_partial_rollback_off_kernel(
 {
 	trx_sig_t*	sig;
 
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&kernel_mutex));
+#endif /* UNIV_SYNC_DEBUG */
 
 	sig = UT_LIST_GET_FIRST(trx->signals);
 
 	/* Remove the signal from the signal queue and send reply message
 	to it */
 
-	trx_sig_reply(trx, sig, next_thr);
+	trx_sig_reply(sig, next_thr);
 	trx_sig_remove(trx, sig);
 
 	trx->que_state = TRX_QUE_RUNNING;
@@ -1106,7 +1116,9 @@ trx_finish_rollback_off_kernel(
 	trx_sig_t*	sig;
 	trx_sig_t*	next_sig;
 	
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&kernel_mutex));
+#endif /* UNIV_SYNC_DEBUG */
 
 	ut_a(trx->undo_no_arr == NULL || trx->undo_no_arr->n_used == 0);
 
@@ -1128,10 +1140,12 @@ trx_finish_rollback_off_kernel(
 		return;
 	}
 
+#ifdef UNIV_DEBUG
 	if (lock_print_waits) {			
-		printf("Trx %lu rollback finished\n",
+		fprintf(stderr, "Trx %lu rollback finished\n",
 						ut_dulint_get_low(trx->id));
 	}
+#endif /* UNIV_DEBUG */
 
 	trx_commit_off_kernel(trx);
 
@@ -1145,7 +1159,7 @@ trx_finish_rollback_off_kernel(
 
 		if (sig->type == TRX_SIG_TOTAL_ROLLBACK) {
 
-			trx_sig_reply(trx, sig, next_thr);
+			trx_sig_reply(sig, next_thr);
 
 			trx_sig_remove(trx, sig);
 		}
@@ -1213,7 +1227,7 @@ trx_rollback_step(
 
 		success = trx_sig_send(thr_get_trx(thr),
 					sig_no, TRX_SIG_SELF,
-					TRUE, thr, savept, NULL);
+					thr, savept, NULL);
 
 		thr->state = QUE_THR_SIG_REPLY_WAIT;
 		

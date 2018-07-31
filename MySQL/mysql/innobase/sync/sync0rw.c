@@ -31,6 +31,7 @@ ulint	rw_x_exit_count		= 0;
 rw_lock_list_t	rw_lock_list;
 mutex_t		rw_lock_list_mutex;
 
+#ifdef UNIV_SYNC_DEBUG
 /* The global mutex which protects debug info lists of all rw-locks.
 To modify the debug info list of an rw-lock, this mutex has to be
 acquired in addition to the mutex protecting the lock. */
@@ -76,6 +77,7 @@ rw_lock_debug_free(
 {
 	mem_free(info);
 }
+#endif /* UNIV_SYNC_DEBUG */
 
 /**********************************************************************
 Creates, or rather, initializes an rw-lock object in a specified memory
@@ -107,10 +109,12 @@ rw_lock_create_func(
 
 	lock->writer_is_wait_ex = FALSE;
 
+#ifdef UNIV_SYNC_DEBUG
 	UT_LIST_INIT(lock->debug_list);
 
-	lock->magic_n = RW_LOCK_MAGIC_N;
 	lock->level = SYNC_LEVEL_NONE;
+#endif /* UNIV_SYNC_DEBUG */
+	lock->magic_n = RW_LOCK_MAGIC_N;
 	
 	lock->cfile_name = cfile_name;
 	lock->cline = cline;
@@ -153,6 +157,7 @@ rw_lock_free(
 	mutex_exit(&rw_lock_list_mutex);
 }
 
+#ifdef UNIV_DEBUG
 /**********************************************************************
 Checks that the rw-lock has been initialized and that there are no
 simultaneous shared and exclusive locks. */
@@ -180,6 +185,7 @@ rw_lock_validate(
 
 	return(TRUE);
 }
+#endif /* UNIV_DEBUG */
 
 /**********************************************************************
 Lock an rw-lock in shared mode for the current thread. If the rw-lock is
@@ -221,9 +227,9 @@ lock_loop:
 	}
 
 	if (srv_print_latch_waits) {
-		printf(
-	"Thread %lu spin wait rw-s-lock at %lx cfile %s cline %lu rnds %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), (ulint)lock,
+		fprintf(stderr,
+	"Thread %lu spin wait rw-s-lock at %p cfile %s cline %lu rnds %lu\n",
+			os_thread_pf(os_thread_get_curr_id()), lock,
 				lock->cfile_name, lock->cline, i);
 	}
 
@@ -251,9 +257,9 @@ lock_loop:
 		mutex_exit(rw_lock_get_mutex(lock));
 
 		if (srv_print_latch_waits) {
-			printf(
-		"Thread %lu OS wait rw-s-lock at %lx cfile %s cline %lu\n",
-			os_thread_pf(os_thread_get_curr_id()), (ulint)lock,
+			fprintf(stderr,
+		"Thread %lu OS wait rw-s-lock at %p cfile %s cline %lu\n",
+				os_thread_pf(os_thread_get_curr_id()), lock,
 				lock->cfile_name, lock->cline);
 		}
 
@@ -307,8 +313,9 @@ rw_lock_x_lock_low(
 	char*		file_name,/* in: file name where lock requested */
 	ulint		line)	/* in: line where requested */
 {
+#ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(rw_lock_get_mutex(lock)));
-
+#endif /* UNIV_SYNC_DEBUG */
 	if (rw_lock_get_writer(lock) == RW_LOCK_NOT_LOCKED) {
 
 		if (rw_lock_get_reader_count(lock) == 0) {
@@ -318,10 +325,10 @@ rw_lock_x_lock_low(
 			lock->writer_count++;
 			lock->pass = pass;
 			
-			#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 			rw_lock_add_debug_info(lock, pass, RW_LOCK_EX,
 							file_name, line);
-			#endif
+#endif
 			lock->last_x_file_name = file_name;
 			lock->last_x_line = line;
 		
@@ -334,10 +341,10 @@ rw_lock_x_lock_low(
 			lock->pass = pass;
 			lock->writer_is_wait_ex = TRUE;
 
-			#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 			rw_lock_add_debug_info(lock, pass, RW_LOCK_WAIT_EX,
 							file_name, line);
-			#endif
+#endif
 
 			return(RW_LOCK_WAIT_EX);
 		}
@@ -353,11 +360,11 @@ rw_lock_x_lock_low(
 			lock->pass = pass;
 			lock->writer_is_wait_ex = FALSE;
 
-			#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 			rw_lock_remove_debug_info(lock, pass, RW_LOCK_WAIT_EX);
 			rw_lock_add_debug_info(lock, pass, RW_LOCK_EX,
 							file_name, line);
-			#endif
+#endif
 		
 			lock->last_x_file_name = file_name;
 			lock->last_x_line = line;
@@ -376,10 +383,10 @@ rw_lock_x_lock_low(
 
 		lock->writer_count++;
 
-		#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 		rw_lock_add_debug_info(lock, pass, RW_LOCK_EX, file_name,
 									line);
-		#endif
+#endif
 		
 		lock->last_x_file_name = file_name;
 		lock->last_x_line = line;
@@ -469,9 +476,9 @@ lock_loop:
 	}	
 
 	if (srv_print_latch_waits) {
-		printf(
-	"Thread %lu spin wait rw-x-lock at %lx cfile %s cline %lu rnds %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), (ulint)lock,
+		fprintf(stderr,
+	"Thread %lu spin wait rw-x-lock at %p cfile %s cline %lu rnds %lu\n",
+			os_thread_pf(os_thread_get_curr_id()), lock,
 					lock->cfile_name, lock->cline, i);
 	}
 
@@ -502,9 +509,9 @@ lock_loop:
 	mutex_exit(rw_lock_get_mutex(lock));
 
 	if (srv_print_latch_waits) {
-		printf(
-		"Thread %lu OS wait for rw-x-lock at %lx cfile %s cline %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), (ulint)lock,
+		fprintf(stderr,
+		"Thread %lu OS wait for rw-x-lock at %p cfile %s cline %lu\n",
+			os_thread_pf(os_thread_get_curr_id()), lock,
 				lock->cfile_name, lock->cline);
 	}
 
@@ -516,6 +523,7 @@ lock_loop:
         goto lock_loop;
 }
 
+#ifdef UNIV_SYNC_DEBUG
 /**********************************************************************
 Acquires the debug mutex. We cannot use the mutex defined in sync0sync,
 because the debug mutex is also acquired in sync0arr while holding the OS
@@ -641,6 +649,7 @@ rw_lock_remove_debug_info(
 
 	ut_error;
 }
+#endif /* UNIV_SYNC_DEBUG */
 
 /**********************************************************************
 Sets the rw-lock latching level field. */
@@ -654,6 +663,7 @@ rw_lock_set_level(
 	lock->level = level;
 }
 
+#ifdef UNIV_SYNC_DEBUG
 /**********************************************************************
 Checks if the thread has locked the rw-lock in the specified mode, with
 the pass value == 0. */
@@ -671,9 +681,6 @@ rw_lock_own(
 	ut_ad(lock);
 	ut_ad(rw_lock_validate(lock));
 
-#ifndef UNIV_SYNC_DEBUG
-	ut_error;
-#endif	
 	mutex_enter(&(lock->mutex));
 
 	info = UT_LIST_GET_FIRST(lock->debug_list);
@@ -696,6 +703,7 @@ rw_lock_own(
 
 	return(FALSE);
 }
+#endif /* UNIV_SYNC_DEBUG */
 
 /**********************************************************************
 Checks if somebody has locked the rw-lock in the specified mode. */
@@ -732,6 +740,7 @@ rw_lock_is_locked(
 	return(ret);
 }
 
+#ifdef UNIV_SYNC_DEBUG
 /*******************************************************************
 Prints debug info of currently locked rw-locks. */
 
@@ -739,17 +748,15 @@ void
 rw_lock_list_print_info(void)
 /*=========================*/
 {
-#ifndef UNIV_SYNC_DEBUG
-#else
 	rw_lock_t*	lock;
 	ulint		count		= 0;
 	rw_lock_debug_t* info;
 	
 	mutex_enter(&rw_lock_list_mutex);
 
-	printf("-------------\n");
-	printf("RW-LATCH INFO\n");
-	printf("-------------\n");
+	fputs("-------------\n"
+		"RW-LATCH INFO\n"
+		"-------------\n", stderr);
 
 	lock = UT_LIST_GET_FIRST(rw_lock_list);
 
@@ -763,12 +770,12 @@ rw_lock_list_print_info(void)
 		    || (rw_lock_get_reader_count(lock) != 0)
 		    || (rw_lock_get_waiters(lock) != 0)) {
 
-			printf("RW-LOCK: %lx ", (ulint)lock);
+			fprintf(stderr, "RW-LOCK: %p ", lock);
 
 			if (rw_lock_get_waiters(lock)) {
-				printf(" Waiters for the lock exist\n");
+				fputs(" Waiters for the lock exist\n", stderr);
 			} else {
-				printf("\n");
+				putc('\n', stderr);
 			}
 		    
 			info = UT_LIST_GET_FIRST(lock->debug_list);
@@ -782,9 +789,8 @@ rw_lock_list_print_info(void)
 		lock = UT_LIST_GET_NEXT(list, lock);
 	}
 
-	printf("Total number of rw-locks %ld\n", count);
+	fprintf(stderr, "Total number of rw-locks %ld\n", count);
 	mutex_exit(&rw_lock_list_mutex);
-#endif
 }
 
 /*******************************************************************
@@ -793,27 +799,23 @@ Prints debug info of an rw-lock. */
 void
 rw_lock_print(
 /*==========*/
-	rw_lock_t*	lock __attribute__((unused)))	/* in: rw-lock */
+	rw_lock_t*	lock)	/* in: rw-lock */
 {
-#ifndef UNIV_SYNC_DEBUG
-	printf(
-	   "Sorry, cannot give rw-lock info in non-debug version!\n");
-#else
-	ulint		count		= 0;
 	rw_lock_debug_t* info;
 	
-	printf("-------------\n");
-	printf("RW-LATCH INFO\n");
-	printf("RW-LATCH: %lx ", (ulint)lock);
+	fprintf(stderr,
+		"-------------\n"
+		"RW-LATCH INFO\n"
+		"RW-LATCH: %p ", lock);
 
 	if ((rw_lock_get_writer(lock) != RW_LOCK_NOT_LOCKED)
 	    || (rw_lock_get_reader_count(lock) != 0)
 	    || (rw_lock_get_waiters(lock) != 0)) {
 
 		if (rw_lock_get_waiters(lock)) {
-			printf(" Waiters for the lock exist\n");
+			fputs(" Waiters for the lock exist\n", stderr);
 		} else {
-			printf("\n");
+			putc('\n', stderr);
 		}
 		    
 		info = UT_LIST_GET_FIRST(lock->debug_list);
@@ -822,7 +824,6 @@ rw_lock_print(
 			info = UT_LIST_GET_NEXT(list, info);
 		}
 	}
-#endif
 }
 
 /*************************************************************************
@@ -837,21 +838,21 @@ rw_lock_debug_print(
 
 	rwt 	  = info->lock_type;	
 			
-	printf("Locked: thread %ld file %s line %ld  ",
+	fprintf(stderr, "Locked: thread %ld file %s line %ld  ",
 		os_thread_pf(info->thread_id), info->file_name, info->line);
 	if (rwt == RW_LOCK_SHARED) {
-		printf("S-LOCK");
+		fputs("S-LOCK", stderr);
 	} else if (rwt == RW_LOCK_EX) {
-		printf("X-LOCK");
+		fputs("X-LOCK", stderr);
 	} else if (rwt == RW_LOCK_WAIT_EX) {
-		printf("WAIT X-LOCK");
+		fputs("WAIT X-LOCK", stderr);
 	} else {
 		ut_error;
 	}
 	if (info->pass != 0) {
-		printf(" pass value %lu", info->pass);
+		fprintf(stderr, " pass value %lu", info->pass);
 	}
-	printf("\n");
+	putc('\n', stderr);
 }
 
 /*******************************************************************
@@ -862,12 +863,6 @@ ulint
 rw_lock_n_locked(void)
 /*==================*/
 {
-#ifndef UNIV_SYNC_DEBUG
-	printf(
-	   "Sorry, cannot give rw-lock info in non-debug version!\n");
-	ut_error;
-	return(0);
-#else
 	rw_lock_t*	lock;
 	ulint		count		= 0;
 	
@@ -890,5 +885,5 @@ rw_lock_n_locked(void)
 	mutex_exit(&rw_lock_list_mutex);
 
 	return(count);
-#endif
 }
+#endif /* UNIV_SYNC_DEBUG */

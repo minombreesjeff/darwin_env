@@ -39,7 +39,6 @@ Created 2/16/1996 Heikki Tuuri
 #include "rem0rec.h"
 #include "srv0srv.h"
 #include "que0que.h"
-#include "com0com.h"
 #include "usr0sess.h"
 #include "lock0lock.h"
 #include "trx0roll.h"
@@ -56,13 +55,13 @@ Created 2/16/1996 Heikki Tuuri
 #include "srv0start.h"
 #include "que0que.h"
 
-ibool           srv_start_has_been_called  = FALSE;
+static ibool	srv_start_has_been_called  = FALSE;
 
 ulint           srv_sizeof_trx_t_in_ha_innodb_cc;
 
 ibool           srv_startup_is_before_trx_rollback_phase = FALSE;
 ibool           srv_is_being_started = FALSE;
-ibool           srv_was_started      = FALSE;
+static ibool	srv_was_started      = FALSE;
 
 /* At a shutdown the value first climbs to SRV_SHUTDOWN_CLEANUP
 and then to SRV_SHUTDOWN_LAST_PHASE */
@@ -70,19 +69,20 @@ ulint		srv_shutdown_state = 0;
 
 ibool		measure_cont	= FALSE;
 
-os_file_t	files[1000];
+static os_file_t	files[1000];
 
-mutex_t		ios_mutex;
-ulint		ios;
+static mutex_t		ios_mutex;
+static ulint		ios;
 
-ulint		n[SRV_MAX_N_IO_THREADS + 5];
-os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 5];
+static ulint		n[SRV_MAX_N_IO_THREADS + 5];
+static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 5];
 
 /* We use this mutex to test the return value of pthread_mutex_trylock
    on successful locking. HP-UX does NOT return 0, though Linux et al do. */
-os_fast_mutex_t srv_os_test_mutex;
+static os_fast_mutex_t	srv_os_test_mutex;
 
-ibool srv_os_test_mutex_is_locked = FALSE;
+/* Name of srv_monitor_file */
+static char*	srv_monitor_file_name;
 
 #define SRV_N_PENDING_IOS_PER_THREAD 	OS_AIO_N_PENDING_IOS_PER_THREAD
 #define SRV_MAX_N_PENDING_SYNC_IOS	100
@@ -160,17 +160,13 @@ srv_parse_data_file_paths_and_sizes(
 		        str++;
 		}
 
-	        if (strlen(str) >= ut_strlen(":autoextend")
-	            && 0 == ut_memcmp(str, (char*)":autoextend",
-						ut_strlen(":autoextend"))) {
+	        if (0 == memcmp(str, ":autoextend", (sizeof ":autoextend") - 1)) {
 
-			str += ut_strlen(":autoextend");
+			str += (sizeof ":autoextend") - 1;
 
-	        	if (strlen(str) >= ut_strlen(":max:")
-	            		&& 0 == ut_memcmp(str, (char*)":max:",
-						ut_strlen(":max:"))) {
+	        	if (0 == memcmp(str, ":max:", (sizeof ":max:") - 1)) {
 
-				str += ut_strlen(":max:");
+				str += (sizeof ":max:") - 1;
 
 				size = strtoul(str, &endp, 10);
 
@@ -199,10 +195,7 @@ srv_parse_data_file_paths_and_sizes(
 		  	str += 3;
 		}
 
-	        if (strlen(str) >= 3
-			   && *str == 'r'
-			   && *(str + 1) == 'a' 
-		           && *(str + 2) == 'w') {
+	        if (*str == 'r' && *(str + 1) == 'a' && *(str + 2) == 'w') {
 		  	str += 3;
 		}
 
@@ -264,19 +257,15 @@ srv_parse_data_file_paths_and_sizes(
 		(*data_file_names)[i] = path;
 		(*data_file_sizes)[i] = size;
 
-	        if (strlen(str) >= ut_strlen(":autoextend")
-	            && 0 == ut_memcmp(str, (char*)":autoextend",
-						ut_strlen(":autoextend"))) {
+	        if (0 == memcmp(str, ":autoextend", (sizeof ":autoextend") - 1)) {
 
 			*is_auto_extending = TRUE;
 
-			str += ut_strlen(":autoextend");
+			str += (sizeof ":autoextend") - 1;
 
-	        	if (strlen(str) >= ut_strlen(":max:")
-	            		&& 0 == ut_memcmp(str, (char*)":max:",
-						ut_strlen(":max:"))) {
+	        	if (0 == memcmp(str, ":max:", (sizeof ":max:") - 1)) {
 
-				str += ut_strlen(":max:");
+				str += (sizeof ":max:") - 1;
 
 				size = strtoul(str, &endp, 10);
 
@@ -310,10 +299,7 @@ srv_parse_data_file_paths_and_sizes(
 		  	(*data_file_is_raw_partition)[i] = SRV_NEW_RAW;
 		}
 
-	        if (strlen(str) >= 3
-			   && *str == 'r'
-			   && *(str + 1) == 'a' 
-		           && *(str + 2) == 'w') {
+		if (*str == 'r' && *(str + 1) == 'a' && *(str + 2) == 'w') {
 		 	str += 3;
 		  
 		  	if ((*data_file_is_raw_partition)[i] == 0) {
@@ -415,8 +401,8 @@ io_handler_thread(
 	segment = *((ulint*)arg);
 
 #ifdef UNIV_DEBUG_THREAD_CREATION
-	printf("Io handler thread %lu starts, id %lu\n", segment,
-			  os_thread_pf(os_thread_get_curr_id()));
+	fprintf(stderr, "Io handler thread %lu starts, id %lu\n", segment,
+			os_thread_pf(os_thread_get_curr_id()));
 #endif
 	for (i = 0;; i++) {
 		fil_aio_wait(segment);
@@ -441,9 +427,9 @@ io_handler_thread(
 }
 
 #ifdef __WIN__
-#define SRV_PATH_SEPARATOR	"\\"
+#define SRV_PATH_SEPARATOR	'\\'
 #else
-#define SRV_PATH_SEPARATOR	"/"
+#define SRV_PATH_SEPARATOR	'/'
 #endif
 
 /*************************************************************************
@@ -455,12 +441,10 @@ srv_normalize_path_for_win(
 	char*	str __attribute__((unused)))	/* in/out: null-terminated character string */
 {
 #ifdef __WIN__
-	ulint	i;
+	for (; *str; str++) {
 
-	for (i = 0; i < ut_strlen(str); i++) {
-
-		if (str[i] == '/') {
-			str[i] = '\\';
+		if (*str == '/') {
+			*str = '\\';
 		}
 	}
 #endif
@@ -470,31 +454,26 @@ srv_normalize_path_for_win(
 Adds a slash or a backslash to the end of a string if it is missing
 and the string is not empty. */
 
+static
 char*
 srv_add_path_separator_if_needed(
 /*=============================*/
-			/* out, own: string which has the separator if the
+			/* out: string which has the separator if the
 			string is not empty */
 	char*	str)	/* in: null-terminated character string */
 {
 	char*	out_str;
+	ulint	len	= ut_strlen(str);
 
-	if (ut_strlen(str) == 0) {
+	if (len == 0 || str[len - 1] == SRV_PATH_SEPARATOR) {
 
 		return(str);
 	}
 
-	if (str[ut_strlen(str) - 1] == SRV_PATH_SEPARATOR[0]) {
-		out_str = ut_malloc(ut_strlen(str) + 1);
-		
-		sprintf(out_str, "%s", str);
-
-		return(out_str);
-	}
-		
-	out_str = ut_malloc(ut_strlen(str) + 2);
-		
-	sprintf(out_str, "%s%s", str, SRV_PATH_SEPARATOR);
+	out_str = ut_malloc(len + 2);
+	memcpy(out_str, str, len);
+	out_str[len] = SRV_PATH_SEPARATOR;
+	out_str[len + 1] = 0;
 
 	return(out_str);
 }
@@ -534,8 +513,6 @@ ulint
 open_or_create_log_file(
 /*====================*/
 					/* out: DB_SUCCESS or error code */
-	ibool	create_new_db,		/* in: TRUE if we should create a
-					new database */
 	ibool*	log_file_created,	/* out: TRUE if new log file
 					created */
 	ibool	log_file_has_been_opened,/* in: TRUE if a log file has been
@@ -550,14 +527,14 @@ open_or_create_log_file(
 	ulint	size_high;
 	char	name[10000];
 
-	UT_NOT_USED(create_new_db);
-
 	*log_file_created = FALSE;
 
 	srv_normalize_path_for_win(srv_log_group_home_dirs[k]);
 	srv_log_group_home_dirs[k] = srv_add_path_separator_if_needed(
 						srv_log_group_home_dirs[k]);
 
+	ut_a(strlen(srv_log_group_home_dirs[k]) <
+		(sizeof name) - 10 - sizeof "ib_logfile");
 	sprintf(name, "%s%s%lu", srv_log_group_home_dirs[k], "ib_logfile", i);
 
 	files[i] = os_file_create(name, OS_FILE_CREATE, OS_FILE_NORMAL,
@@ -706,6 +683,8 @@ open_or_create_data_files(
 	for (i = 0; i < srv_n_data_files; i++) {
 		srv_normalize_path_for_win(srv_data_file_names[i]);
 
+		ut_a(strlen(srv_data_home) + strlen(srv_data_file_names[i])
+			< (sizeof name) - 1);
 		sprintf(name, "%s%s", srv_data_home, srv_data_file_names[i]);
 	
 		files[i] = os_file_create(name, OS_FILE_CREATE,
@@ -872,80 +851,6 @@ open_or_create_data_files(
 
 	return(DB_SUCCESS);
 }
-
-#ifdef notdefined
-/*********************************************************************
-This thread is used to measure contention of latches. */
-static
-ulint
-test_measure_cont(
-/*==============*/
-	void*	arg)
-{
-	ulint	i, j;
-	ulint	pcount, kcount, s_scount, s_xcount, s_mcount, lcount;
-
-	UT_NOT_USED(arg);
-
-	fprintf(stderr, "Starting contention measurement\n");
-	
-	for (i = 0; i < 1000; i++) {
-
-		pcount = 0;
-		kcount = 0;
-		s_scount = 0;
-		s_xcount = 0;
-		s_mcount = 0;
-		lcount = 0;
-
-		for (j = 0; j < 100; j++) {
-
-		    if (srv_measure_by_spin) {
-		    	ut_delay(ut_rnd_interval(0, 20000));
-		    } else {
-		    	os_thread_sleep(20000);
-		    }
-
-		    if (kernel_mutex.lock_word) {
-			kcount++;
-		    }
-
-		    if (buf_pool->mutex.lock_word) {
-		    	pcount++;
-		    }
-
-		    if (log_sys->mutex.lock_word) {
-		    	lcount++;
-		    }
-
-		    if (btr_search_latch.reader_count) {
-		    	s_scount++;
-		    }
-
-		    if (btr_search_latch.writer != RW_LOCK_NOT_LOCKED) {
-		    	s_xcount++;
-		    }
-
-		    if (btr_search_latch.mutex.lock_word) {
-		    	s_mcount++;
-		    }
-		}
-
-		fprintf(stderr, 
-	"Mutex res. l %lu, p %lu, k %lu s x %lu s s %lu s mut %lu of %lu\n",
-		lcount, pcount, kcount, s_xcount, s_scount, s_mcount, j);
-
-/*		sync_print_wait_info(); */
-
-		fprintf(stderr, 
-    "log i/o %lu n non sea %lu n succ %lu n h fail %lu\n",
-			log_sys->n_log_ios, btr_cur_n_non_sea,
-			btr_search_n_succ, btr_search_n_hash_fail);
-	}
-
-	return(0);
-}
-#endif
 
 /********************************************************************
 Starts InnoDB and creates a new database if database files
@@ -1116,6 +1021,20 @@ NetWare. */
 		return((int) err);
 	}
 
+	mutex_create(&srv_monitor_file_mutex);
+	mutex_set_level(&srv_monitor_file_mutex, SYNC_NO_ORDER_CHECK);
+	srv_monitor_file_name = mem_alloc(
+			strlen(fil_path_to_mysql_datadir) +
+			20 + sizeof "/innodb_status.");
+	sprintf(srv_monitor_file_name, "%s/innodb.status.%lu",
+		fil_path_to_mysql_datadir, os_proc_get_number());
+	srv_monitor_file = fopen(srv_monitor_file_name, "w+");
+	if (!srv_monitor_file) {
+		fprintf(stderr, "InnoDB: unable to create %s: %s\n",
+			srv_monitor_file_name, strerror(errno));
+		return(DB_ERROR);
+	}
+
 	/* Restrict the maximum number of file i/o threads */
 	if (srv_n_file_io_threads > SRV_MAX_N_IO_THREADS) {
 
@@ -1229,8 +1148,7 @@ NetWare. */
 
 		for (i = 0; i < srv_n_log_files; i++) {
 
-			err = open_or_create_log_file(create_new_db,
-						&log_file_created,
+			err = open_or_create_log_file(&log_file_created,
 						log_opened, k, i);
 			if (err != DB_SUCCESS) {
 
@@ -1289,8 +1207,6 @@ NetWare. */
 		
 		mutex_exit(&(log_sys->mutex));
 	}
-
-	sess_sys_init_at_db_start();
 
 	if (create_new_db) {
 		mtr_start(&mtr);
@@ -1433,7 +1349,9 @@ NetWare. */
 
 	os_thread_create(&srv_master_thread, NULL, thread_ids + 1 +
 							SRV_MAX_N_IO_THREADS);
+#ifdef UNIV_DEBUG
 	/* buf_debug_prints = TRUE; */
+#endif /* UNIV_DEBUG */
 
 	sum_of_data_file_sizes = 0;
 	
@@ -1608,6 +1526,15 @@ innobase_shutdown_for_mysql(void)
 		      os_thread_count);
 	}
 
+	if (srv_monitor_file) {
+		fclose(srv_monitor_file);
+		srv_monitor_file = 0;
+		unlink(srv_monitor_file_name);
+		mem_free(srv_monitor_file_name);
+	}
+
+	mutex_free(&srv_monitor_file_mutex);
+
 	/* 3. Free all InnoDB's own mutexes and the os_fast_mutexes inside
 	them */
 
@@ -1632,6 +1559,13 @@ innobase_shutdown_for_mysql(void)
 "InnoDB: threads %lu, events %lu, os_mutexes %lu, os_fast_mutexes %lu\n",
 		      os_thread_count, os_event_count, os_mutex_count,
 		      os_fast_mutex_count);
+	}
+
+	if (dict_foreign_err_file) {
+		fclose(dict_foreign_err_file);
+	}
+	if (lock_latest_err_file) {
+		fclose(lock_latest_err_file);
 	}
 
 	if (srv_print_verbose_log) {

@@ -490,6 +490,7 @@ flst_validate(
 	return(TRUE);
 }
 
+#ifdef UNIV_DEBUG
 /************************************************************************
 Prints info of a file-based list. */
 
@@ -509,8 +510,10 @@ flst_print(
 
 	len = flst_get_len(base, mtr);
 
-	printf("FILE-BASED LIST:\n");
-	printf("Base node in space %lu page %lu byte offset %lu; len %lu\n",
+	fprintf(stderr,
+		"FILE-BASED LIST:\n"
+		"Base node in space %lu page %lu byte offset %lu; len %lu\n",
 		buf_frame_get_space_id(frame), buf_frame_get_page_no(frame),
 		(ulint) (base - frame), len);
 }
+#endif /* UNIV_DEBUG */

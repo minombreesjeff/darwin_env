@@ -1526,7 +1526,7 @@ DB_VERSION_MINOR=2
 
 DB_VERSION_PATCH=9
 
-DB_VERSION_STRING="\"Sleepycat Software: Berkeley DB 3.2.9a: (February 10, 2004)\""
+DB_VERSION_STRING="\"Sleepycat Software: Berkeley DB 3.2.9a: (May 14, 2004)\""
 
 
 

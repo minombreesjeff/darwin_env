@@ -167,45 +167,29 @@ struct sync_level_struct{
 	ulint	level;	/* level of the latch in the latching order */
 };
 
-
-#if defined(notdefined) && defined(__GNUC__) && defined(UNIV_INTEL_X86)
-
-ulint
-sync_gnuc_intelx86_test_and_set(
-		   /* out: old value of the lock word */
-        ulint* lw) /* in: pointer to the lock word */
-{
-        ulint res;
-
-	/* In assembly we use the so-called AT & T syntax where
-	the order of operands is inverted compared to the ordinary Intel
-	syntax. The 'l' after the mnemonics denotes a 32-bit operation.
-	The line after the code tells which values come out of the asm
-	code, and the second line tells the input to the asm code. */
-
-	asm volatile("movl $1, %%eax; xchgl (%%ecx), %%eax" :
-	              "=eax" (res), "=m" (*lw) :
-	              "ecx" (lw));
-	return(res);
-}
+/**********************************************************************
+A noninlined function that reserves a mutex. In ha_innodb.cc we have disabled
+inlining of InnoDB functions, and no inlined functions should be called from
+there. That is why we need to duplicate the inlined function here. */
 
 void
-sync_gnuc_intelx86_reset(
-        ulint* lw) /* in: pointer to the lock word */
+mutex_enter_noninline(
+/*==================*/
+	mutex_t*	mutex)	/* in: mutex */
 {
-	/* In assembly we use the so-called AT & T syntax where
-	the order of operands is inverted compared to the ordinary Intel
-	syntax. The 'l' after the mnemonics denotes a 32-bit operation. */
-
-	asm volatile("movl $0, %%eax; xchgl (%%ecx), %%eax" :
-	              "=m" (*lw) :
-	              "ecx" (lw) :
-		      "eax");	/* gcc does not seem to understand
-				that our asm code resets eax: tell it
-				explicitly that after the third ':' */
+	mutex_enter(mutex);
 }
 
-#endif
+/**********************************************************************
+Releases a mutex. */
+
+void
+mutex_exit_noninline(
+/*=================*/
+	mutex_t*	mutex)	/* in: mutex */
+{
+	mutex_exit(mutex);
+}
 
 /**********************************************************************
 Creates, or rather, initializes a mutex object in a specified memory
@@ -220,7 +204,7 @@ mutex_create_func(
 	char*		cfile_name,	/* in: file name where created */
 	ulint		cline)		/* in: file line where created */
 {
-#if defined(_WIN32) && defined(UNIV_CAN_USE_X86_ASSEMBLER) && !defined(__NETWARE)
+#if defined(_WIN32) && defined(UNIV_CAN_USE_X86_ASSEMBLER)
 	mutex_reset_lock_word(mutex);
 #else	
 	os_fast_mutex_init(&(mutex->os_fast_mutex));
@@ -228,8 +212,10 @@ mutex_create_func(
 #endif
 	mutex_set_waiters(mutex, 0);
 	mutex->magic_n = MUTEX_MAGIC_N;
+#ifdef UNIV_SYNC_DEBUG
 	mutex->line = 0;
 	mutex->file_name = (char *) "not yet reserved";
+#endif /* UNIV_SYNC_DEBUG */
 	mutex->level = SYNC_LEVEL_NONE;
 	mutex->cfile_name = cfile_name;
 	mutex->cline = cline;
@@ -293,20 +279,19 @@ mutex_enter_nowait(
 /*===============*/
 					/* out: 0 if succeed, 1 if not */
 	mutex_t*	mutex,		/* in: pointer to mutex */
-	char*	   	file_name, 	/* in: file name where mutex
+	char*	   	file_name __attribute__((unused)),
+					/* in: file name where mutex
 					requested */
-	ulint	   	line)		/* in: line where requested */
+	ulint	   	line __attribute__((unused)))
+					/* in: line where requested */
 {
 	ut_ad(mutex_validate(mutex));
 
 	if (!mutex_test_and_set(mutex)) {
 
-		#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 		mutex_set_debug_info(mutex, file_name, line);
-		#endif
-		
-		mutex->file_name = file_name;
-		mutex->line = line;
+#endif
 
 		return(0);	/* Succeeded! */
 	}
@@ -314,6 +299,7 @@ mutex_enter_nowait(
 	return(1);
 }
 
+#ifdef UNIV_DEBUG
 /**********************************************************************
 Checks that the mutex has been initialized. */
 
@@ -327,6 +313,7 @@ mutex_validate(
 
 	return(TRUE);
 }
+#endif /* UNIV_DEBUG */
 
 /**********************************************************************
 Sets the waiters field in a mutex. */
@@ -391,9 +378,9 @@ spin_loop:
 	}
 
 	if (srv_print_latch_waits) {
-		printf(
-	"Thread %lu spin wait mutex at %lx cfile %s cline %lu rnds %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), (ulint)mutex,
+		fprintf(stderr,
+	"Thread %lu spin wait mutex at %p cfile %s cline %lu rnds %lu\n",
+		os_thread_pf(os_thread_get_curr_id()), mutex,
 				mutex->cfile_name, mutex->cline, i);
 	}
 
@@ -402,12 +389,9 @@ spin_loop:
         if (mutex_test_and_set(mutex) == 0) {
 		/* Succeeded! */
 
-		#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 		mutex_set_debug_info(mutex, file_name, line);
-		#endif
-
-		mutex->file_name = file_name;
-		mutex->line = line;
+#endif
 
                 return;
    	}
@@ -449,17 +433,15 @@ spin_loop:
 
                 sync_array_free_cell(sync_primary_wait_array, index);
                 
-		#ifdef UNIV_SYNC_DEBUG
+#ifdef UNIV_SYNC_DEBUG
 		mutex_set_debug_info(mutex, file_name, line);
-		#endif
-
-		mutex->file_name = file_name;
-		mutex->line = line;
+#endif
 
 		if (srv_print_latch_waits) {
-			printf(
-			"Thread %lu spin wait succeeds at 2: mutex at %lx\n",
-			os_thread_pf(os_thread_get_curr_id()), (ulint)mutex);
+			fprintf(stderr,
+				"Thread %lu spin wait succeeds at 2:"
+				" mutex at %p\n",
+				os_thread_pf(os_thread_get_curr_id()), mutex);
 		}
 		
                 return;
@@ -475,9 +457,9 @@ spin_loop:
 	Now there is no risk of infinite wait on the event. */
 
 	if (srv_print_latch_waits) {
-		printf(
-	"Thread %lu OS wait mutex at %lx cfile %s cline %lu rnds %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), (ulint)mutex,
+		fprintf(stderr,
+	"Thread %lu OS wait mutex at %p cfile %s cline %lu rnds %lu\n",
+		os_thread_pf(os_thread_get_curr_id()), mutex,
 			mutex->cfile_name, mutex->cline, i);
 	}
 	
@@ -505,6 +487,7 @@ mutex_signal_object(
 	sync_array_signal_object(sync_primary_wait_array, mutex);
 }
 
+#ifdef UNIV_SYNC_DEBUG
 /**********************************************************************
 Sets the debug information for a reserved mutex. */
 
@@ -532,7 +515,7 @@ void
 mutex_get_debug_info(
 /*=================*/
 	mutex_t*	mutex,		/* in: mutex */
-	char**		file_name,	/* out: file where requested */
+	const char**	file_name,	/* out: file where requested */
 	ulint*		line,		/* out: line where requested */
 	os_thread_id_t* thread_id)	/* out: id of the thread which owns
 					the mutex */
@@ -542,7 +525,8 @@ mutex_get_debug_info(
 	*file_name = mutex->file_name;
 	*line	   = mutex->line;
 	*thread_id = mutex->thread_id;
-}	
+}
+#endif /* UNIV_SYNC_DEBUG */
 
 /**********************************************************************
 Sets the mutex latching level field. */
@@ -556,6 +540,7 @@ mutex_set_level(
 	mutex->level = level;
 }
 
+#ifdef UNIV_SYNC_DEBUG
 /**********************************************************************
 Checks that the current thread owns the mutex. Works only in the debug
 version. */
@@ -588,17 +573,15 @@ void
 mutex_list_print_info(void)
 /*=======================*/
 {
-#ifndef UNIV_SYNC_DEBUG
-#else
 	mutex_t*	mutex;
-	char*		file_name;
+	const char*	file_name;
 	ulint		line;
 	os_thread_id_t	thread_id;
 	ulint		count		= 0;
 
-	printf("----------\n");
-	printf("MUTEX INFO\n");
-	printf("----------\n");
+	fputs("----------\n"
+		"MUTEX INFO\n"
+		"----------\n", stderr);
 
 	mutex_enter(&mutex_list_mutex);
 
@@ -610,19 +593,18 @@ mutex_list_print_info(void)
 		if (mutex_get_lock_word(mutex) != 0) {
 		    	mutex_get_debug_info(mutex, &file_name, &line,
 								&thread_id);
-		 	printf(
-			"Locked mutex: addr %lx thread %ld file %s line %ld\n",
-		    		(ulint)mutex, os_thread_pf(thread_id),
+			fprintf(stderr,
+			"Locked mutex: addr %p thread %ld file %s line %ld\n",
+				mutex, os_thread_pf(thread_id),
 				file_name, line);
 		}
 
 		mutex = UT_LIST_GET_NEXT(list, mutex);
 	}
 
-	printf("Total number of mutexes %ld\n", count);
+	fprintf(stderr, "Total number of mutexes %ld\n", count);
 	
 	mutex_exit(&mutex_list_mutex);
-#endif
 }
 
 /**********************************************************************
@@ -632,12 +614,6 @@ ulint
 mutex_n_reserved(void)
 /*==================*/
 {
-#ifndef UNIV_SYNC_DEBUG
-	printf("Sorry, cannot give mutex info in non-debug version!\n");
-	ut_error;
-
-	return(0);
-#else
 	mutex_t*	mutex;
 	ulint		count		= 0;
 
@@ -660,7 +636,6 @@ mutex_n_reserved(void)
 
 	return(count - 1); /* Subtract one, because this function itself
 			   was holding one mutex (mutex_list_mutex) */
-#endif
 }
 
 /**********************************************************************
@@ -671,19 +646,9 @@ ibool
 sync_all_freed(void)
 /*================*/
 {
-	#ifdef UNIV_SYNC_DEBUG
-	if (mutex_n_reserved() + rw_lock_n_locked() == 0) {
-
-		return(TRUE);
-	} else {
-		return(FALSE);
-	}	
-	#else
-	ut_error;
-
-	return(FALSE);
-	#endif
+	return(mutex_n_reserved() + rw_lock_n_locked() == 0);
 }
+#endif /* UNIV_SYNC_DEBUG */
 
 /**********************************************************************
 Gets the value in the nth slot in the thread level arrays. */
@@ -780,9 +745,6 @@ sync_thread_levels_g(
 				thread */
 	ulint		limit)	/* in: level limit */
 {
-	char*		file_name;
-	ulint		line;
-	os_thread_id_t	thread_id;
 	sync_level_t*	slot;
 	rw_lock_t*	lock;
 	mutex_t*	mutex;
@@ -798,27 +760,39 @@ sync_thread_levels_g(
 				lock = slot->latch;
 				mutex = slot->latch;
 
-				printf(
+				fprintf(stderr,
 	"InnoDB error: sync levels should be > %lu but a level is %lu\n",
 				limit, slot->level);
 
 				if (mutex->magic_n == MUTEX_MAGIC_N) {
-	printf("Mutex created at %s %lu\n", mutex->cfile_name,
+					fprintf(stderr,
+						"Mutex created at %s %lu\n",
+						mutex->cfile_name,
 						mutex->cline);
 
 					if (mutex_get_lock_word(mutex) != 0) {
+#ifdef UNIV_SYNC_DEBUG
+						const char*	file_name;
+						ulint		line;
+						os_thread_id_t	thread_id;
 
 		    				mutex_get_debug_info(mutex,
 						&file_name, &line, &thread_id);
 
-	printf("InnoDB: Locked mutex: addr %lx thread %ld file %s line %ld\n",
-		    	(ulint)mutex, os_thread_pf(thread_id),
-						file_name, line);
+						fprintf(stderr,
+		"InnoDB: Locked mutex: addr %p thread %ld file %s line %ld\n",
+		mutex, os_thread_pf(thread_id), file_name, line);
+#else /* UNIV_SYNC_DEBUG */
+						fprintf(stderr,
+		"InnoDB: Locked mutex: addr %p\n", mutex);
+#endif /* UNIV_SYNC_DEBUG */
 					} else {
-						printf("Not locked\n");
+						fputs("Not locked\n", stderr);
 					}	
 				} else {
+#ifdef UNIV_SYNC_DEBUG
 					rw_lock_print(lock);
+#endif /* UNIV_SYNC_DEBUG */
 				}
 								
 				return(FALSE);
@@ -874,9 +848,6 @@ sync_thread_levels_empty_gen(
 	sync_level_t*	arr;
 	sync_thread_t*	thread_slot;
 	sync_level_t*	slot;
-	rw_lock_t*	lock;
-	mutex_t*	mutex;
-	char*		buf;
 	ulint		i;
 
 	if (!sync_order_checks_on) {
@@ -905,13 +876,7 @@ sync_thread_levels_empty_gen(
 				(slot->level != SYNC_DICT
 				&& slot->level != SYNC_DICT_OPERATION))) {
 
-			lock = slot->latch;
-			mutex = slot->latch;
 			mutex_exit(&sync_thread_mutex);
-
-			buf = mem_alloc(20000);
-			
-			sync_print(buf, buf + 18000);
 			ut_error;
 
 			return(FALSE);
@@ -958,7 +923,9 @@ sync_thread_add_level(
 
 	if ((latch == (void*)&sync_thread_mutex)
 	    || (latch == (void*)&mutex_list_mutex)
+#ifdef UNIV_SYNC_DEBUG
 	    || (latch == (void*)&rw_lock_debug_mutex)
+#endif /* UNIV_SYNC_DEBUG */
 	    || (latch == (void*)&rw_lock_list_mutex)) {
 
 		return;
@@ -1093,8 +1060,12 @@ sync_thread_add_level(
 	} else if (level == SYNC_DICT_HEADER) {
 		ut_a(sync_thread_levels_g(array, SYNC_DICT_HEADER));
 	} else if (level == SYNC_DICT) {
-		ut_a(buf_debug_prints
-		     || sync_thread_levels_g(array, SYNC_DICT));
+#ifdef UNIV_DEBUG
+		ut_a(buf_debug_prints ||
+			sync_thread_levels_g(array, SYNC_DICT));
+#else /* UNIV_DEBUG */
+		ut_a(sync_thread_levels_g(array, SYNC_DICT));
+#endif /* UNIV_DEBUG */
 	} else {
 		ut_error;
 	}
@@ -1138,7 +1109,9 @@ sync_thread_reset_level(
 
 	if ((latch == (void*)&sync_thread_mutex)
 	    || (latch == (void*)&mutex_list_mutex)
+#ifdef UNIV_SYNC_DEBUG
 	    || (latch == (void*)&rw_lock_debug_mutex)
+#endif /* UNIV_SYNC_DEBUG */
 	    || (latch == (void*)&rw_lock_list_mutex)) {
 
 		return(FALSE);
@@ -1224,11 +1197,13 @@ sync_init(void)
         mutex_create(&rw_lock_list_mutex);
         mutex_set_level(&rw_lock_list_mutex, SYNC_NO_ORDER_CHECK);
 
+#ifdef UNIV_SYNC_DEBUG
         mutex_create(&rw_lock_debug_mutex);
         mutex_set_level(&rw_lock_debug_mutex, SYNC_NO_ORDER_CHECK);
 
 	rw_lock_debug_event = os_event_create(NULL);
 	rw_lock_debug_waiters = FALSE;
+#endif /* UNIV_SYNC_DEBUG */
 }
 
 /**********************************************************************
@@ -1260,19 +1235,14 @@ Prints wait info of the sync system. */
 void
 sync_print_wait_info(
 /*=================*/
-	char*	buf,		/* in/out: buffer where to print */
-	char*	buf_end)	/* in: buffer end */
+	FILE*	file)		/* in: file where to print */
 {
 #ifdef UNIV_SYNC_DEBUG
-	printf("Mutex exits %lu, rws exits %lu, rwx exits %lu\n",
+	fprintf(stderr, "Mutex exits %lu, rws exits %lu, rwx exits %lu\n",
 		mutex_exit_count, rw_s_exit_count, rw_x_exit_count);
 #endif
-	if (buf_end - buf < 500) {
 
-		return;
-	}
-
-	sprintf(buf,
+	fprintf(file,
 "Mutex spin waits %lu, rounds %lu, OS waits %lu\n"
 "RW-shared spins %lu, OS waits %lu; RW-excl spins %lu, OS waits %lu\n",
 			mutex_spin_wait_count, mutex_spin_round_count,
@@ -1287,16 +1257,15 @@ Prints info of the sync system. */
 void
 sync_print(
 /*=======*/
-	char*	buf,		/* in/out: buffer where to print */
-	char*	buf_end)	/* in: buffer end */
+	FILE*	file)		/* in: file where to print */
 {
+#ifdef UNIV_SYNC_DEBUG
 	mutex_list_print_info();
 
 	rw_lock_list_print_info();
+#endif /* UNIV_SYNC_DEBUG */
 
-	sync_array_print_info(buf, buf_end, sync_primary_wait_array);
+	sync_array_print_info(file, sync_primary_wait_array);
 
-	buf = buf + strlen(buf);
-
-	sync_print_wait_info(buf, buf_end);
+	sync_print_wait_info(file);
 }

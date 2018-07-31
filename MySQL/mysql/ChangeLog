@@ -1,2692 +1,415 @@
 ChangeSet
-  1.1733 04/02/12 17:12:08 lenz@mysql.com +1 -0
-   - Replaced obsolete "Copyright" field with "License" in the RPM spec file
-
-  support-files/mysql.spec.sh
-    1.80 04/02/12 17:12:05 lenz@mysql.com +2 -1
-     - Replaced obsolete "Copyright" field with "License"
-
-ChangeSet
-  1.1732 04/02/12 16:51:52 lenz@mysql.com +1 -0
-   - fixed broken shellcode
-
-  support-files/mysql.spec.sh
-    1.79 04/02/12 16:51:50 lenz@mysql.com +1 -1
-     - fixed broken shellcode
-
-ChangeSet
-  1.1731 04/02/12 15:53:47 lenz@mysql.com +1 -0
-   - always use CXX=gcc (not only when using gcc 3) to avoid a dependency
-     on libstdc++ and exceptions
-
-  support-files/mysql.spec.sh
-    1.78 04/02/12 15:53:21 lenz@mysql.com +8 -3
-     - always use CXX=gcc (not only when using gcc 3) to avoid a dependency
-       on libstdc++ and exceptions
-
-ChangeSet
-  1.1728.1.1 04/02/10 12:27:14 monty@mysql.com +1 -0
-  Export CXX and AR to make it easier to invoke other configure scripts with same options.
-
-  configure.in
-    1.295 04/02/10 12:27:13 monty@mysql.com +1 -1
-    Export CXX and AR to make it easier to invoke other configure scripts with same options.
-
-ChangeSet
-  1.1729 04/02/10 14:17:55 konstantin@mysql.com +1 -0
-  compile-irix-mips64-mipspro addded to the source distribution
-
-  BUILD/Makefile.am
-    1.4 04/02/10 14:17:54 konstantin@mysql.com +1 -0
-    compile-irix-mips64-mipspro addded to the source distribution
-
-ChangeSet
-  1.1728 04/02/10 12:03:08 monty@mysql.com +3 -0
-  Code cleanups
-
-  sql/sql_insert.cc
-    1.111 04/02/10 12:03:07 monty@mysql.com +4 -3
-    Indentation cleanup
-
-  sql/handler.h
-    1.92 04/02/10 12:03:07 monty@mysql.com +3 -2
-    Indentation cleanup
-
-  client/mysqlbinlog.cc
-    1.93 04/02/10 12:03:07 monty@mysql.com +155 -81
-    Ensure that errors are returned to upper levels instead of just doing 'exit/die' in sub function.
-    
-
-ChangeSet
-  1.1727 04/02/09 23:57:29 heikki@hundin.mysql.fi +7 -0
-  row0mysql.c:
-    Allow always DROPping of a table which is only referenced by FOREIGN KEY constraints from the same table
-  Many files:
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
-
-  innobase/row/row0mysql.c
-    1.54 04/02/09 23:53:46 heikki@hundin.mysql.fi +7 -0
-    Allow always DROPping of a table which is only referenced by FOREIGN KEY constraints from the same table
-
-  innobase/include/dict0dict.h
-    1.19 04/02/09 23:51:32 heikki@hundin.mysql.fi +9 -0
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
-
-  innobase/dict/dict0dict.c
-    1.40 04/02/09 23:51:25 heikki@hundin.mysql.fi +18 -0
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
-
-  sql/handler.h
-    1.91 04/02/09 23:51:05 heikki@hundin.mysql.fi +2 -0
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
-
-  sql/ha_innodb.h
-    1.62 04/02/09 23:51:05 heikki@hundin.mysql.fi +1 -0
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
-
-  sql/sql_insert.cc
-    1.110 04/02/09 23:50:48 heikki@hundin.mysql.fi +9 -1
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
+  1.1827 04/05/13 22:07:51 heikki@hundin.mysql.fi +4 -0
+  ha_innodb.cc, trx0trx.h, lock0lock.c, trx0trx.c:
+  Reserve the MySQL LOCK_thread_count mutex when printing thd->query of
+  an arbitrary transaction; if we are printing thd->query of a transaction that
+  we know is currently executing inside InnoDB, then we know that MySQL cannot
+  meanwhile change thd->query, and no need to reserve the MySQL mutex; note
+  that this patch still leaves open the possibility of races in MySQL's
+  thd->query_len
 
   sql/ha_innodb.cc
-    1.191 04/02/09 23:50:47 heikki@hundin.mysql.fi +22 -1
-    Do not let REPLACE to perform internally an UPDATE if the table is referenced by a FOREIGN KEY: the manual says that REPLACE must resolve a duplicate key error semantically with DELETE(s) + INSERT, and not by an UPDATE; the internal update caused foreign key checks and cascaded operations to behave in a semantically wrong way
+    1.207 04/05/13 22:01:11 heikki@hundin.mysql.fi +34 -14
+    Reserve the MySQL LOCK_thread_count mutex when printing thd->query of an arbitrary transaction; if we are printing thd->query of the a transaction that we know is currently executing inside InnoDB, then we know that MySQL cannot meanwhile change thd->query, and no need to reserve the MySQL mutex; note that thsi patch still leaves aopen the possibility of races in MySQL's thd->query_len
+
+  innobase/include/trx0trx.h
+    1.30 04/05/13 22:00:54 heikki@hundin.mysql.fi +4 -2
+    Reserve the MySQL LOCK_thread_count mutex when printing thd->query of an arbitrary transaction; if we are printing thd->query of the a transaction that we know is currently executing inside InnoDB, then we know that MySQL cannot meanwhile change thd->query, and no need to reserve the MySQL mutex; note that thsi patch still leaves aopen the possibility of races in MySQL's thd->query_len
+
+  innobase/lock/lock0lock.c
+    1.35 04/05/13 22:00:46 heikki@hundin.mysql.fi +34 -0
+    Reserve the MySQL LOCK_thread_count mutex when printing thd->query of an arbitrary transaction; if we are printing thd->query of the a transaction that we know is currently executing inside InnoDB, then we know that MySQL cannot meanwhile change thd->query, and no need to reserve the MySQL mutex; note that thsi patch still leaves aopen the possibility of races in MySQL's thd->query_len
+
+  innobase/trx/trx0trx.c
+    1.38 04/05/13 22:00:36 heikki@hundin.mysql.fi +3 -1
+    Reserve the MySQL LOCK_thread_count mutex when printing thd->query of an arbitrary transaction; if we are printing thd->query of the a transaction that we know is currently executing inside InnoDB, then we know that MySQL cannot meanwhile change thd->query, and no need to reserve the MySQL mutex; note that thsi patch still leaves aopen the possibility of races in MySQL's thd->query_len
 
 ChangeSet
-  1.1726 04/02/09 18:56:39 heikki@hundin.mysql.fi +1 -0
-  row0mysql.c:
-    Fix crash in InnoDB RENAME TABLE if 'databasename/tablename' is shorter than 5 characters (Bug #2689); reported by Sergey Petrunia
-
-  innobase/row/row0mysql.c
-    1.53 04/02/09 18:56:28 heikki@hundin.mysql.fi +1 -1
-    Fix crash in InnoDB RENAME TABLE if 'databasename/tablename' is shorter than 5 characters (Bug #2689); reported by Sergey Petrunia
-
-ChangeSet
-  1.1725 04/02/09 14:29:31 konstantin@mysql.com +1 -0
-  follow-up to bug #2628: attempt to make
-  alter table rename a bit more efficient in case of
-  lower_case_table_names.
-
-  sql/sql_table.cc
-    1.175 04/02/09 14:29:30 konstantin@mysql.com +6 -2
-    follow-up to bug #2628: attempt to make
-    alter table rename a bit more efficient in case of
-    lower_case_table_names.
-
-ChangeSet
-  1.1724 04/02/09 01:32:00 heikki@hundin.mysql.fi +8 -0
-  Many files:
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-  sync0sync.c:
-    UNIV_SYNC_DEBUG caused assertion in the creation of the doublewrite buffer, if we do not allow thousands of latches per thread
-
-  innobase/ut/ut0mem.c
-    1.13 04/02/09 01:30:24 heikki@hundin.mysql.fi +24 -0
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/sync/sync0sync.c
-    1.17 04/02/09 01:30:01 heikki@hundin.mysql.fi +1 -1
-    UNIV_SYNC_DEBUG caused assertion in the creation of the doublewrite buffer, if we do not allow thousands of latches per thread
-
-  innobase/row/row0mysql.c
-    1.52 04/02/09 01:29:09 heikki@hundin.mysql.fi +78 -6
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/include/ut0mem.h
-    1.7 04/02/09 01:27:53 heikki@hundin.mysql.fi +8 -1
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/include/dict0dict.h
-    1.18 04/02/09 01:27:51 heikki@hundin.mysql.fi +8 -0
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/include/dict0crea.h
-    1.3 04/02/09 01:27:51 heikki@hundin.mysql.fi +14 -1
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/dict/dict0dict.c
-    1.39 04/02/09 01:26:33 heikki@hundin.mysql.fi +11 -2
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/dict/dict0dict.c
-    1.38 04/02/09 01:06:11 heikki@hundin.mysql.fi +251 -24
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-  innobase/dict/dict0crea.c
-    1.13 04/02/09 01:06:11 heikki@hundin.mysql.fi +46 -33
-    Fix bug #2167: generate foreign key id's locally for each table, in the form databasename/tablename_ibfk_number; if the user gives the constraint name explicitly remember it; these changes should ensure that foreign key id's in a slave are the same as in the master, and DROP FOREIGN KEY does not break replication
-
-ChangeSet
-  1.1723 04/02/08 12:53:31 heikki@hundin.mysql.fi +1 -0
+  1.1824.1.1 04/05/13 20:02:05 heikki@hundin.mysql.fi +1 -0
   ha_innodb.cc:
-    If AUTOCOMMIT=1, then we do not need to make a plain SELECT set shared locks even on the SERIALIZABLE isolation level, because we know the transaction is read-only: a read-only transaction can always be performed on the REPEATABLE READ level, and that does not endanger the serializability
+    A flawed fix of the thd->query race in SHOW INNODB STATUS; see the comments in code about how to fix this properly; we cannot use LOCK_thread_count to protect thd->query, because that will cause a deadlock of threads
 
   sql/ha_innodb.cc
-    1.190 04/02/08 12:53:10 heikki@hundin.mysql.fi +10 -4
-    If AUTOCOMMIT=1, then we do not need to make a plain SELECT set shared locks even on the SERIALIZABLE isolation level, because we know the transaction is read-only: a read-only transaction can always be performed on the REPEATABLE READ level, and that does not endanger the serializability
+    1.206 04/05/13 20:01:06 heikki@hundin.mysql.fi +26 -4
+    A flawed fix of the thd->query race in SHOW INNODB STATUS; see the comments in code about how to fix this properly; we cannot use LOCK_thread_count to protect thd->query, because that will cause a deadlock of threads
 
 ChangeSet
-  1.1722 04/02/06 17:23:02 konstantin@mysql.com +1 -0
-  Delete: COPYING.LIB
-
-ChangeSet
-  1.1718.1.1 04/02/06 20:57:11 vva@eagle.mysql.r18.ru +5 -0
-  fixed bug #1378 "mysqlbinlog for remote host is broken"
-
-  sql/log_event.h
-    1.86 04/02/06 20:56:53 vva@eagle.mysql.r18.ru +3 -1
-    added special local_fname flag to Load_log_event for 
-    using in Load_log_event::check_fname_outside_temp_buf 
-    instead of ugly condition
-
-  sql/log_event.cc
-    1.143 04/02/06 20:56:53 vva@eagle.mysql.r18.ru +2 -2
-    added special local_fname flag to Load_log_event for 
-    using in Load_log_event::check_fname_outside_temp_buf 
-    instead of ugly condition
-
-  mysql-test/t/mysqlbinlog.test
-    1.6 04/02/06 20:56:53 vva@eagle.mysql.r18.ru +0 -4
-    discarded note 'V. Vagin should ...' 
-    because V.Vagin done
-
-  mysql-test/r/mysqlbinlog.result
-    1.3 04/02/06 20:56:53 vva@eagle.mysql.r18.ru +6 -11
-    fixed results for remote variant 
-    (they are the same as for local now)
-
-  client/mysqlbinlog.cc
-    1.92 04/02/06 20:56:53 vva@eagle.mysql.r18.ru +251 -166
-    fixed bug #1378 "mysqlbinlog for remote host is broken"
-    by using shared part of code for local and remote variant 
-    (function process_event)
-
-  BitKeeper/deleted/.del-COPYING.LIB~5359b3e19fe7fa42
-    1.5 04/02/06 17:21:56 konstantin@mysql.com +0 -0
-    Delete: COPYING.LIB
-
-ChangeSet
-  1.1720 04/02/06 16:40:44 konstantin@mysql.com +5 -0
-  3.23 -> 4.0 merge: after merge fixes
-
-  sql/sql_table.cc
-    1.174 04/02/06 16:40:43 konstantin@mysql.com +1 -0
-    3.23 -> 4.0 merge: after merge fixes
-
-  mysql-test/t/insert_select.test
-    1.12 04/02/06 16:40:43 konstantin@mysql.com +2 -0
-    3.23 -> 4.0 merge: after merge fixes
-
-  mysql-test/r/insert_select.result
-    1.15 04/02/06 16:40:43 konstantin@mysql.com +19 -0
-    3.23 -> 4.0 merge: after merge fixes
-
-  mysql-test/r/func_math.result
-    1.13 04/02/06 16:40:43 konstantin@mysql.com +6 -0
-    3.23 -> 4.0 merge: after merge fixes
-
-  mysql-test/r/alter_table.result
-    1.16 04/02/06 16:40:43 konstantin@mysql.com +13 -0
-    3.23 -> 4.0 merge: after merge fixes
-
-ChangeSet
-  1.676.1.755 04/02/06 14:28:57 konstantin@mysql.com +4 -0
-  Fix for bug #2628 "ALTER TABLE destroys table and reports success"
-
-  sql/sql_table.cc
-    1.83.1.31 04/02/06 14:28:57 konstantin@mysql.com +12 -6
-    Fix for bug #2628:
-    We need to take into account database name when checking if source and 
-    destination table names are equal.
-    Note, that after merge to 4.0 we also need to check for 
-    lower_case_table_names.
-
-  mysql-test/t/alter_table.test
-    1.5.1.2 04/02/06 14:28:57 konstantin@mysql.com +17 -0
-    Fix for bug #2628: test case added
-
-  mysql-test/r/alter_table.result
-    1.4.1.1 04/02/06 14:28:57 konstantin@mysql.com +8 -0
-    Fix for bug #2628: test result fixed
-
-  BitKeeper/etc/logging_ok
-    1.153.1.99 04/02/06 14:28:57 konstantin@mysql.com +1 -0
-    Logging to logging@openlogging.org accepted
-
-ChangeSet
-  1.1718 04/02/06 00:58:15 lenz@mysql.com +3 -0
-   - updated config.guess, config.sub and ltmain.sh with versions from libtool
-     1.5 to fix BUG#202 (update config.guess & co for MIPS architecture)
-
-  ltmain.sh
-    1.11 04/02/06 00:57:45 lenz@mysql.com +2010 -718
-     - upplied diffs from libtool 1.5
-
-  config.sub
-    1.11 04/02/06 00:57:45 lenz@mysql.com +196 -105
-     - upplied diffs from libtool 1.5
-
-  config.guess
-    1.10 04/02/06 00:57:45 lenz@mysql.com +322 -232
-     - upplied diffs from libtool 1.5
-
-ChangeSet
-  1.1715.1.1 04/02/05 23:36:54 lenz@mysql.com +3 -0
-   - renamed mysql-test/t/init_file.sql to mysql-test/std_data/init_file.dat
-     so it gets picked up by "make dist" and updated init_file test accordingly.
-
-  mysql-test/t/init_file.test
-    1.3 04/02/05 23:36:51 lenz@mysql.com +5 -2
-     - updated info
-
-  mysql-test/t/init_file-master.opt
-    1.2 04/02/05 23:36:51 lenz@mysql.com +1 -1
-     - moved init file to std_data
-
-ChangeSet
-  1.1716 04/02/05 23:13:04 serg@serg.mylan +1 -0
-  include atomic.h in extern "C" mode
-
-  include/my_global.h
-    1.61 04/02/05 23:13:02 serg@serg.mylan +2 -0
-    include atomic.h in extern "C" mode
-
-  mysql-test/std_data/init_file.dat
-    1.2 04/02/05 18:00:00 lenz@mysql.com +0 -0
-    Rename: mysql-test/t/init_file.sql -> mysql-test/std_data/init_file.dat
-
-ChangeSet
-  1.1683.7.2 04/02/05 17:52:41 vva@eagle.mysql.r18.ru +2 -0
-  code cleanup
-
-  sql/sql_class.cc
-    1.107.1.2 04/02/05 17:52:40 vva@eagle.mysql.r18.ru +1 -1
-    code cleanup
-
-  mysql-test/t/init_file.test
-    1.2 04/02/05 17:52:40 vva@eagle.mysql.r18.ru +2 -10
-    code cleanup
-
-ChangeSet
-  1.1714 04/02/05 09:12:23 monty@mysql.com +9 -0
-  Added testing of pthread_key_delete (to fix compile problem on SCO) (Bug #2461)
-  DROP DATABASE now assumes RAID directories are in hex. (Bug #2627)
-  Don't increment 'select_full_range' and similar statistics for EXPLAIN queries. (Bug #2506)
-  Test in configure if pthread_key_delete() exists (to fix compile problem on SCO) (Bug #2461)
-
-  sql/sql_udf.cc
-    1.27 04/02/05 09:12:22 monty@mysql.com +6 -5
-    mysqld crashed if mysql.func table didn't exists (Bug #2577)
-
-  sql/sql_select.cc
-    1.273 04/02/05 09:12:22 monty@mysql.com +12 -5
-    Don't increment 'select_full_range' and similar statistics for EXPLAIN queries. (Bug #2506)
-
-  sql/sql_db.cc
-    1.65 04/02/05 09:12:22 monty@mysql.com +5 -2
-    DROP DATABASE could not drop databases with RAID tables that had
-    more than 9 RAID_CHUNKS because DROP DATABASE assumed raid tables where in decimal while the RAID CREATE code assumed directories was in hex.(Bug #2627)
-
-  mysql-test/t/raid.test
-    1.6 04/02/05 09:12:22 monty@mysql.com +1 -0
-    Test of DROP DATABASE with RAID directories in hex
-
-  mysql-test/r/raid.result
-    1.6 04/02/05 09:12:22 monty@mysql.com +1 -0
-    Test of DROP DATABASE with RAID directories in hex
-
-  innobase/include/data0data.ic
-    1.6 04/02/05 09:12:22 monty@mysql.com +1 -1
-    Added missing newline
-
-  include/my_pthread.h
-    1.65 04/02/05 09:12:22 monty@mysql.com +5 -0
-    Added testing of pthread_key_delete (to fix compile problem on SCO)  (Bug #2461)
-
-  configure.in
-    1.294 04/02/05 09:12:22 monty@mysql.com +1 -1
-    Added testing of pthread_key_delete (to fix compile problem on SCO)  (Bug #2461)
-
-  BUILD/compile-pentium-max
-    1.7 04/02/05 09:12:22 monty@mysql.com +1 -1
-    Added --with-raid
-
-ChangeSet
-  1.1713 04/02/04 21:26:52 lenz@mysql.com +1 -0
-   - don't add merge ChangeSets to the Changelog in Bootstrap
-     (reduce the noise)
-
-  Build-tools/Bootstrap
-    1.19 04/02/04 21:26:17 lenz@mysql.com +1 -1
-     - don't add merge ChangeSets to the Changelog (reduce the noise)
-
-ChangeSet
-  1.1710.1.5 04/02/04 19:55:28 konstantin@mysql.com +2 -0
-  Fix for bug #2214: 
-  "CC: ERROR File = item.h, Line = 401 The identifier strtoll is undefined"
-  (compilation failure on SGI IRIX + MIPSPro 7.41)
-  Compilation script implemented.
-  Tested in 32 and 64 bit mode
-
-ChangeSet
-  1.1695.1.1 04/02/04 13:39:01 miguel@hegel.local +1 -0
-  For to export the right functions with changes done from 4.0.16
-
-  libmysql/libmysql.def
-    1.10 04/02/04 13:38:22 miguel@hegel.local +2 -2
-    For to export the right functions with changes done from 4.0.16
-
-ChangeSet
-  1.1683.7.1 04/02/04 21:35:20 vva@eagle.mysql.r18.ru +4 -0
-  added checking for bootstrap in select_send::send_data
-  (fixed bug #2526 "--init-file crashes MySQL if contains large select")
-  Such checking usually works in send_ok, send_eof, but in this case large 
-  result causes interim flushing.
-
-  mysql-test/t/init_file.test
-    1.1 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +12 -0
-
-  mysql-test/t/init_file.sql
-    1.1 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +1 -0
-
-  mysql-test/t/init_file-master.opt
-    1.1 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +1 -0
-
-  sql/sql_class.cc
-    1.107.1.1 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +2 -0
-    added checking for bootstrap in select_send::send_data
-
-  mysql-test/t/init_file.test
-    1.0 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +0 -0
-    BitKeeper file /home/vva/work/BUG_2526/mysql-4.0/mysql-test/t/init_file.test
-
-  mysql-test/t/init_file.sql
-    1.0 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +0 -0
-    BitKeeper file /home/vva/work/BUG_2526/mysql-4.0/mysql-test/t/init_file.sql
-
-  mysql-test/t/init_file-master.opt
-    1.0 04/02/04 21:35:02 vva@eagle.mysql.r18.ru +0 -0
-    BitKeeper file /home/vva/work/BUG_2526/mysql-4.0/mysql-test/t/init_file-master.opt
-
-  BUILD/compile-irix-mips64-mipspro
-    1.1 04/02/04 19:55:26 konstantin@mysql.com +84 -0
-
-  configure.in
-    1.293 04/02/04 19:55:26 konstantin@mysql.com +1 -1
-    Fix for bug #2214: we should not reset CXXFLAGS on IRIX for build 
-    script to work
-
-  BUILD/compile-irix-mips64-mipspro
-    1.0 04/02/04 19:55:26 konstantin@mysql.com +0 -0
-    BitKeeper file /home/kostja/mysql/mysql-4.0-2214/BUILD/compile-irix-mips64-mipspro
-
-ChangeSet
-  1.1710.1.3 04/02/04 17:42:18 serg@serg.mylan +3 -0
-  beautify SHOW INDEX 
-
-  sql/sql_show.cc
-    1.120 04/02/04 17:42:15 serg@serg.mylan +2 -3
-    beautify SHOW INDEX 
-
-  mysql-test/t/fulltext.test
-    1.42 04/02/04 17:42:15 serg@serg.mylan +1 -0
-    beautify SHOW INDEX 
-
-  mysql-test/r/fulltext.result
-    1.43 04/02/04 17:42:15 serg@serg.mylan +5 -1
-    beautify SHOW INDEX 
-
-ChangeSet
-  1.1710.1.2 04/02/04 16:50:33 serg@serg.mylan +1 -0
-  clarify -F help text a bit
-
-  client/mysqldump.c
-    1.104 04/02/04 16:50:30 serg@serg.mylan +4 -1
-    clarify -F help text a bit
-
-ChangeSet
-  1.1711 04/02/04 14:16:36 lenz@mysql.com +1 -0
-  Some small enhancements for Do-compile:
-  
-   - more flexible removal of old cruft before creating the new binary
-     distribution
-   - more flexible globbing for the binary tarball (required for QNX, where
-     the file name ends on *.tgz instead of .tar.gz due to file name lenght
-     restrictions
-
-  Build-tools/Do-compile
-    1.80 04/02/04 14:16:34 lenz@mysql.com +5 -8
-    Some small enhancements:
-    
-     - more flexible removal of old cruft before creating the new binary
-       distribution
-     - more flexible globbing for the binary tarball (required for QNX, where
-       the file name ends on *.tgz instead of .tar.gz due to file name lenght
-       restrictions
-
-ChangeSet
-  1.1706.2.1 04/02/04 09:59:18 serg@serg.mylan +2 -0
-  disabled atof() test as non-portable
-
-  mysql-test/t/bigint.test
-    1.20 04/02/04 09:59:14 serg@serg.mylan +2 -1
-    disabled atof() test as non-portable
-
-  mysql-test/r/bigint.result
-    1.21 04/02/04 09:59:14 serg@serg.mylan +0 -3
-    disabled atof() test as non-portable
-
-ChangeSet
-  1.1708 04/02/04 09:51:13 monty@mysql.com +7 -0
-  Fixed problem with range optimization over overlapping ranges (#2448)
-
-  strings/ctype-tis620.c
-    1.25 04/02/04 09:51:12 monty@mysql.com +136 -201
-    est problem with range optimization over overlapping ranges (#2448)
-
-  sql/opt_range.cc
-    1.95 04/02/04 09:51:12 monty@mysql.com +12 -7
-    Fixed problem with range optimization over overlapping ranges (#2448)
-
-  sql/mysqld.cc
-    1.481 04/02/04 09:51:12 monty@mysql.com +0 -1
-    Remove debug statement
-
-  mysql-test/t/range.test
-    1.14 04/02/04 09:51:12 monty@mysql.com +15 -1
-    Test problem with range optimization over overlapping ranges (#2448)
-
-  mysql-test/t/ctype_tis620.test
-    1.2 04/02/04 09:51:12 monty@mysql.com +11 -6
-    Cleanup test
-
-  mysql-test/r/range.result
-    1.17 04/02/04 09:51:12 monty@mysql.com +13 -0
-    Test problem with range optimization over overlapping ranges (#2448)
-
-  mysql-test/r/ctype_tis620.result
-    1.2 04/02/04 09:51:12 monty@mysql.com +7 -6
-    Cleanup test
-
-ChangeSet
-  1.1706.1.1 04/02/04 10:48:42 jani@rhols221.adsl.netsonic.fi +1 -0
-  Fixed a bug in slave-compressed-protocol. Using this option
-  from command line did not work.
-
-  sql/mysqld.cc
-    1.479.1.1 04/02/04 10:48:37 jani@rhols221.adsl.netsonic.fi +1 -1
-    Fixed a bug in slave-compressed-protocol. Using this option
-    from command line did not work.
-
-ChangeSet
-  1.1693.1.3 04/02/04 00:28:58 monty@mysql.com +1 -0
-  Ensure that wait_timeout doesn't overflow on windows. (Bug #2400)
-
-  sql/mysqld.cc
-    1.476.1.1 04/02/04 00:28:57 monty@mysql.com +2 -1
-    Ensure that wait_timeout doesn't overflow on windows. (Bug #2400)
-
-ChangeSet
-  1.1703.2.1 04/02/03 22:25:02 lenz@mysql.com +5 -0
-   - renamed myisam/ft_dump to myisam/mysam_ftdump and added it to the
-     binary distribution and Server RPM
-
-  support-files/mysql.spec.sh
-    1.77 04/02/03 22:24:37 lenz@mysql.com +5 -0
-     - added myisam_ftdump to the Server package
+  1.1821.1.1 04/05/13 18:50:09 lenz@mysql.com +1 -0
+   - make sure the binaries are executable before calling them during
+     make_binary_distribution (bug#2857)
 
   scripts/make_binary_distribution.sh
-    1.55 04/02/03 22:24:37 lenz@mysql.com +1 -0
-     - added myisam_ftdump to the binary distribution
-
-  myisam/Makefile.am
-    1.22 04/02/03 22:24:37 lenz@mysql.com +3 -3
-     - renamed ft_dump to myisam_ftdump and added it to bin_PROGRAMS
-
-  BitKeeper/etc/ignore
-    1.154 04/02/03 22:24:37 lenz@mysql.com +1 -0
-    Added myisam/myisam_ftdump to the ignore list
-
-  myisam/myisam_ftdump.c
-    1.18 04/02/03 22:22:36 lenz@mysql.com +0 -0
-    Rename: myisam/ft_dump.c -> myisam/myisam_ftdump.c
+    1.56 04/05/13 18:50:07 lenz@mysql.com +1 -0
+     - make sure the binaries are executable before calling them (bug#2857)
 
 ChangeSet
-  1.1706 04/02/03 21:15:20 serg@serg.mylan +1 -0
-  extra newline removed
-
-  support-files/mysql.server.sh
-    1.36 04/02/03 21:15:17 serg@serg.mylan +5 -5
-    extra newline removed
-
-ChangeSet
-  1.1693.1.2 04/02/03 19:17:23 monty@mysql.com +6 -0
-  Ensure that privileges are tested properly for multi-table-updates.
-  Now one need only SELECT privilege for tables that are only read in
-  UPDATE statements with many tables. (Bug #2377).
-
-  tests/grant.res
-    1.13 04/02/03 19:17:22 monty@mysql.com +152 -90
-    updated results
-
-  tests/grant.pl
-    1.15 04/02/03 19:17:22 monty@mysql.com +58 -4
-    Added more tests
-
-  sql/sql_update.cc
-    1.98 04/02/03 19:17:22 monty@mysql.com +18 -4
-    Ensure that privileges are tested properly for multi-table-updates
-
-  sql/sql_show.cc
-    1.117.1.1 04/02/03 19:17:22 monty@mysql.com +0 -5
-    Remove disabled code
-
-  sql/sql_parse.cc
-    1.358.1.1 04/02/03 19:17:22 monty@mysql.com +49 -67
-    Merged duplicate code.
-    Removed some outdated 'tables->db' tests.
-    Check privileges for multi-updates properly (Bug #2377)
-
-  sql/sql_acl.cc
-    1.122 04/02/03 19:17:22 monty@mysql.com +1 -1
-    Comment cleanup
-
-ChangeSet
-  1.1703.1.3 04/02/03 18:10:45 jani@ua141d10.elisa.omakaista.fi +5 -0
-  Added new option --sync-frm / --skip-sync-frm
-  Marked --bdb-no-sync as deprecated
-  Added --sync-bdb-logs / --disable-sync-bdb-logs as a synonym / alternative.
-
-  BitKeeper/etc/logging_ok
-    1.300 04/02/03 18:10:44 jani@ua141d10.elisa.omakaista.fi +1 -0
-    Logging to logging@openlogging.org accepted
-
-  sql/unireg.cc
-    1.18 04/02/03 18:10:22 jani@ua141d10.elisa.omakaista.fi +1 -1
-    One can disable my_sync() by using --disable-sync-frm
-
-  sql/mysqld.cc
-    1.477.1.1 04/02/03 18:10:22 jani@ua141d10.elisa.omakaista.fi +24 -6
-    Added sync-frm / disable-sync-frm to mysqld, to be able to disable
-    use of my_sync() (fsync()). This defaults to behavior in 4.0.16
-    and before, where creating of new tables is quicker than currently.
-    This option is enabled by default.
-    
-    Marked --bdb-no-sync as deprecated option and added another one,
-    --sync-bdb-logs besides. --bdb-no-sync and --disabled-sync-bdb-logs
-    are now synonyms.
-
-  sql/mysql_priv.h
-    1.213 04/02/03 18:10:22 jani@ua141d10.elisa.omakaista.fi +1 -1
-    Added opt_sync_frm
-
-  mysys/my_getopt.c
-    1.38 04/02/03 18:10:21 jani@ua141d10.elisa.omakaista.fi +5 -3
-    Changed my_getopt so that disabled_my_option can be used for
-    GET_BOOL type options too.
-
-ChangeSet
-  1.676.1.754 04/02/03 18:21:48 vva@eagle.mysql.r18.ru +1 -0
-  clean up comments
-
-  sql/item_func.cc
-    1.36.1.20 04/02/03 18:21:47 vva@eagle.mysql.r18.ru +2 -2
-    clean up comments
-
-ChangeSet
-  1.1696.1.2 04/02/03 16:45:29 ram@gw.mysql.r18.ru +1 -0
-  another variant (bug #2185: mysql.server script echo bug)
-
-  support-files/mysql.server.sh
-    1.35 04/02/03 16:45:27 ram@gw.mysql.r18.ru +4 -6
-    another variant (bug #2185: mysql.server script echo bug)
-
-ChangeSet
-  1.1703.1.2 04/02/03 14:03:01 bar@bar.intranet.mysql.r18.ru +4 -0
-  Thai tis620 crash problem in text comparison routines was fixed.
-
-  mysql-test/t/ctype_tis620.test
-    1.1 04/02/03 14:02:37 bar@bar.intranet.mysql.r18.ru +18 -0
-
-  mysql-test/t/ctype_tis620.test
-    1.0 04/02/03 14:02:37 bar@bar.intranet.mysql.r18.ru +0 -0
-    BitKeeper file /usr/home/bar/mysql-4.0/mysql-test/t/ctype_tis620.test
-
-  mysql-test/t/ctype_tis620-master.opt
-    1.1 04/02/03 14:02:36 bar@bar.intranet.mysql.r18.ru +1 -0
-
-  mysql-test/r/ctype_tis620.result
-    1.1 04/02/03 14:02:36 bar@bar.intranet.mysql.r18.ru +17 -0
-
-  strings/ctype-tis620.c
-    1.24 04/02/03 14:02:36 bar@bar.intranet.mysql.r18.ru +122 -55
-    Thai tis620 crash problem in text comparison routines was fixed.
-
-  mysql-test/t/ctype_tis620-master.opt
-    1.0 04/02/03 14:02:36 bar@bar.intranet.mysql.r18.ru +0 -0
-    BitKeeper file /usr/home/bar/mysql-4.0/mysql-test/t/ctype_tis620-master.opt
-
-  mysql-test/r/ctype_tis620.result
-    1.0 04/02/03 14:02:36 bar@bar.intranet.mysql.r18.ru +0 -0
-    BitKeeper file /usr/home/bar/mysql-4.0/mysql-test/r/ctype_tis620.result
-
-ChangeSet
-  1.1693.1.1 04/02/03 09:46:48 monty@mysql.com +4 -0
-  Give error if locked table is used twice in query. This fixes strange error message when doing LOCK TABLES t1 WRITE; INSERT TABLE t1 SELECT * from t1 (Bug #2296)
-
-  sql/sql_base.cc
-    1.172 04/02/03 09:46:48 monty@mysql.com +5 -1
-    Give error if locked table is used twice in query. This fixes strange error message when doing LOCK TABLES t1 WRITE; INSERT TABLE t1 SELECT * from t1 (Bug #2296)
-
-  mysql-test/t/lock.test
-    1.8 04/02/03 09:46:48 monty@mysql.com +4 -0
-    Test for LOCK TABLES ; INSERT ... SELECT
-
-  mysql-test/r/lock.result
-    1.10 04/02/03 09:46:48 monty@mysql.com +4 -0
-    Test for LOCK TABLES ; INSERT ... SELECT
-
-  client/mysqldump.c
-    1.103 04/02/03 09:46:47 monty@mysql.com +1 -1
-    Better help for flush-logs
-
-ChangeSet
-  1.1703.1.1 04/02/02 23:01:58 konstantin@mysql.com +3 -0
-  Proposed (version #2) fix for bug #1948:
-  "system variable query_prealloc_size can be only global"
-
-  sql/set_var.cc
-    1.45 04/02/02 23:01:57 konstantin@mysql.com +28 -4
-    Fix for bug #1948:
-    - fix_thd_mem_root and fix_trans_mem_root after update triggers
-      implemented for variables query_prealloc_size, query_alloc_block_size,
-      trans_prealloc_size, trans_alloc_block_size
-
-  mysys/my_alloc.c
-    1.19 04/02/02 23:01:57 konstantin@mysql.com +66 -0
-    Fix for bug #1948:
-    - implementation and description of reset_root_defaults
-
-  include/my_sys.h
-    1.105 04/02/02 23:01:57 konstantin@mysql.com +2 -0
-    Fix for bug #1948:
-    - added reset_root_defaults function declaration 
-
-ChangeSet
-  1.1704 04/02/02 19:32:05 serg@serg.mylan +1 -0
-  increase the size of a signal thread's stack (the old one was too small for the thread to be created on some systems)
-  bug#2599
-
-  sql/mysqld.cc
-    1.478 04/02/02 19:32:03 serg@serg.mylan +1 -1
-    increase the size of a signal thread's stack (the old one was too small for the thread to be created on some systems)
-    bug#2599
-
-ChangeSet
-  1.1703 04/02/02 15:57:57 serg@serg.mylan +2 -0
-  test added
-
-  mysql-test/t/bigint.test
-    1.19 04/02/02 15:57:55 serg@serg.mylan +2 -0
-    test added
-
-  mysql-test/r/bigint.result
-    1.20 04/02/02 15:57:54 serg@serg.mylan +3 -0
-    test added
-
-ChangeSet
-  1.1696.1.1 04/02/02 15:25:20 ram@gw.mysql.r18.ru +1 -0
-  a fix (#2185: mysql.server script echo bug)
-  thnx Paul.                                             
-                
-  <monty> can you get the above into configure and make Makefile.am patch         
-  mysql.server.sh with the right values for mysql.server ?                        
-  <monty> or do you think we should just put the above in mysql.server.sh directly
-  <ramil> as you want                                                             
-  <monty> the last is kind of hard to do with variables, so lets put the          
-  above in mysql.server.sh directly                                               
-                                                                    
-
-  support-files/mysql.server.sh
-    1.34 04/02/02 15:25:05 ram@gw.mysql.r18.ru +9 -1
-    #2185: mysql.server script echo bug
-
-ChangeSet
-  1.1702 04/02/02 12:09:47 salle@vafla.home +2 -0
-  Typo fixing
-  s/expection/exception
-
-  BitKeeper/etc/logging_ok
-    1.299 04/02/02 12:09:46 salle@vafla.home +1 -0
-    Logging to logging@openlogging.org accepted
-
-  sql/mysqld.cc
-    1.477 04/02/02 12:09:42 salle@vafla.home +2 -2
-    Typo fixing
-    s/expection/exception
-
-ChangeSet
-  1.1701 04/02/02 01:41:35 heikki@hundin.mysql.fi +2 -0
-  rpl_insert_id.test, rpl_insert_id.result:
-    Change tests so that tables are dropped in an order respecting the FOREIGN KEY constraints
-
-  mysql-test/t/rpl_insert_id.test
-    1.6 04/02/02 01:41:05 heikki@hundin.mysql.fi +1 -1
-    Change tests so that tables are dropped in an order respecting the FOREIGN KEY constraints
-
-  mysql-test/r/rpl_insert_id.result
-    1.6 04/02/02 01:40:37 heikki@hundin.mysql.fi +1 -1
-    Change tests so that tables are dropped in an order respecting the FOREIGN KEY constraints
-
-ChangeSet
-  1.1700 04/02/02 01:30:59 heikki@hundin.mysql.fi +2 -0
-  innodb.result, innodb.test:
-    Change tests so that tables are dropped in an order respecting the FOREIGN KEY constraints
-
-  mysql-test/r/innodb.result
-    1.75 04/02/02 01:30:22 heikki@hundin.mysql.fi +2 -2
-    Change tests so that tables are dropped in an order respecting the FOREIGN KEY constraints
-
-  mysql-test/t/innodb.test
-    1.52 04/02/02 01:30:14 heikki@hundin.mysql.fi +2 -2
-    Change tests so that tables are dropped in an order respecting the FOREIGN KEY constraints
-
-ChangeSet
-  1.1699 04/02/02 01:05:53 heikki@hundin.mysql.fi +1 -0
-  dict0dict.c:
-    Change print format of FOREIGN KEY constraints spanning multiple databases to <backquote>databasename<backquote>.<backquote>tablename<backquote>; but when parsing them we must also accept <backquote>databasename.tablename<backquote>, because that was the output format in < 4.0.18
-
-  innobase/dict/dict0dict.c
-    1.37 04/02/02 01:05:37 heikki@hundin.mysql.fi +1 -1
-    Change print format of FOREIGN KEY constraints spanning multiple databases to <backquote>databasename<backquote>.<backquote>tablename<backquote>; but when parsing them we must also accept <backquote>databasename.tablename<backquote>, because that was the output format in < 4.0.18
-
-ChangeSet
-  1.1698 04/02/02 01:03:05 heikki@hundin.mysql.fi +1 -0
-  dict0dict.c:
-    Change print format of FOREIGN KEY constraints spanning multiple databases to: .; but we when parsing them we must also accept , because that was the output format in < 4.0.18
-
-  innobase/dict/dict0dict.c
-    1.36 04/02/02 01:02:53 heikki@hundin.mysql.fi +37 -11
-    Change print format of FOREIGN KEY constraints spanning multiple databases to: .; but we when parsing them we must also accept , because that was the output format in < 4.0.18
-
-ChangeSet
-  1.1697 04/02/02 00:10:45 heikki@hundin.mysql.fi +4 -0
-  dict0dict.c:
-    Remove redundant code; parse both the database name and the table name in a FOREIGN KEY constraint with quotes in mind
-  row0mysql.c, ha_innodb.cc, sql_table.cc:
-    Return error message Cannot delete or update a parent row... if we try to drop a table which is referenced by a FOREIGN KEY constraint, and the user has not set foreign_key_checks=0
-
-  innobase/dict/dict0dict.c
-    1.35 04/02/02 00:08:56 heikki@hundin.mysql.fi +125 -165
-    Remove redundant code; parse both the database name and the table name in a FOREIGN KEY constraint with quotes in mind
-
-  innobase/row/row0mysql.c
-    1.51 04/02/02 00:07:53 heikki@hundin.mysql.fi +26 -0
-    Return error message Cannot delete or update a parent row... if we try to drop a table which is referenced by a FOREIGN KEY constraint, and the user has not set foreign_key_checks=0
+  1.1824 04/05/13 16:18:39 marko@hundin.mysql.fi +1 -0
+  ha_innodb.cc:
+    innobase_mysql_print_thd(): protect thd with LOCK_thread_count (Bug #3596)
 
   sql/ha_innodb.cc
-    1.189 04/02/02 00:07:06 heikki@hundin.mysql.fi +10 -1
-    Return error message Cannot delete or update a parent row... if we try to drop a table which is referenced by a FOREIGN KEY constraint, and the user has not set foreign_key_checks=0
-
-  sql/sql_table.cc
-    1.172 04/02/02 00:06:59 heikki@hundin.mysql.fi +8 -2
-    Return error message Cannot delete or update a parent row... if we try to drop a table which is referenced by a FOREIGN KEY constraint, and the user has not set foreign_key_checks=0
+    1.205 04/05/13 16:15:21 marko@hundin.mysql.fi +9 -2
+    innobase_mysql_print_thd(): protect thd with LOCK_thread_count
 
 ChangeSet
-  1.1696 04/02/01 19:20:16 heikki@hundin.mysql.fi +1 -0
-  dict0dict.c:
-    Cleanup
+  1.1823 04/05/13 15:51:02 marko@hundin.mysql.fi +1 -0
+  InnoDB: fixed bug in dict0dict.c: dict_index_name_print()
 
   innobase/dict/dict0dict.c
-    1.34 04/02/01 19:20:08 heikki@hundin.mysql.fi +65 -46
-    Cleanup
+    1.51 04/05/13 15:49:07 marko@hundin.mysql.fi +1 -1
+    dict_index_name_print(): output table name to file, not stderr
 
 ChangeSet
-  1.1695 04/01/30 19:15:11 dlenev@mysql.com +5 -0
-  Fix for bug #2523 '"func_time" test fails on QNX'.
-  Moved all range checks for TIMESTAMP value to my_gmt_sec().
-  Also fixed check of upper boundary of TIMESTAMP range (which 
-  also now will catch datetime values which are too small for
-  TIMESTAMP in case if time_t is unsigned).  
+  1.1822 04/05/13 15:28:56 marko@hundin.mysql.fi +1 -0
+  InnoDB: Remove os_file_lock() from the 4.0 tree (unfix Bug #3608)
 
-  sql/time.cc
-    1.28 04/01/30 19:15:09 dlenev@mysql.com +11 -8
-    Check if datetime value is in TIMESTAMP range has moved to 
-    my_gmt_sec() function. Fixed check of its return value
-    to catch overflows in both directions and also overflows in 
-    case of unsigned time_t.
-
-  sql/mysql_priv.h
-    1.212 04/01/30 19:15:09 dlenev@mysql.com +3 -0
-    Added more constants for checking if datetime is in allowed
-    range for TIMESTAMP.
-
-  sql/field.cc
-    1.85 04/01/30 19:15:09 dlenev@mysql.com +5 -9
-    Check if datetime value is in TIMESTAMP range has moved to 
-    my_gmt_sec() function.
-
-  mysql-test/t/timezone.test
-    1.4 04/01/30 19:15:09 dlenev@mysql.com +7 -0
-    Added test which checks if TIMESTAMP range is checked 
-    correctly (current time zone is honoured and both upper 
-    and lower bounds of TIMESTAMP range are checked).
-
-  mysql-test/r/timezone.result
-    1.4 04/01/30 19:15:09 dlenev@mysql.com +6 -0
-    Added test which checks if TIMESTAMP range is checked 
-    correctly (current time zone is honoured and both upper 
-    and lower bounds of TIMESTAMP range are checked).
+  innobase/os/os0file.c
+    1.68 04/05/13 15:28:53 marko@hundin.mysql.fi +0 -41
+    Remove os_file_lock()
 
 ChangeSet
-  1.1683.6.1 04/01/30 15:13:19 dlenev@mysql.com +6 -0
-  Fix for bugs #1885, #2464, #2539. Proper handling of default
-  values for TIMESTAMP columns. The solution is not perfect since
-  we just silently ignoring default value for first TIMESTAMP 
-  column and properly reflecting this fact in SHOW CREATE TABLE.
-  We can't give a warning or simply support standard syntax 
-  (niladic functions as legal value for default) for first field 
-  since it is 4.0 tree.
+  1.1821 04/05/12 16:44:53 marko@hundin.mysql.fi +1 -0
+  InnoDB: avoid some data races in innobase_mysql_print_thd() (Bug #3596)
 
-  sql/sql_show.cc
-    1.118 04/01/30 15:13:16 dlenev@mysql.com +12 -2
-    Enabled printing of default values in SHOW CREATE TABLE and 
-    SHOW COLUMNS for all TIMESTAMP columns except first one.
-
-  sql/sql_parse.cc
-    1.357.1.1 04/01/30 15:13:16 dlenev@mysql.com +6 -6
-    Allowed default values for TIMESTAMP column.
-
-  sql/field.h
-    1.54 04/01/30 15:13:16 dlenev@mysql.com +4 -1
-    Set proper DEFAULT value for non-first TIMESTAMP column.
-
-  sql/field.cc
-    1.84 04/01/30 15:13:16 dlenev@mysql.com +1 -2
-    Enabled copying of defaults for TIMESTAMP fields when we are 
-    creating table with CREATE TABLE x (SELECT ...)
-
-  mysql-test/t/type_timestamp.test
-    1.10 04/01/30 15:13:16 dlenev@mysql.com +30 -3
-    Added test for bugs #1885, #2464, #2539
-    (proper support of default values for TIMESTAMP columns)
-
-  mysql-test/r/type_timestamp.result
-    1.12 04/01/30 15:13:16 dlenev@mysql.com +45 -2
-    Added test for bugs #1885, #2464, #2539
-    (proper support of default values for TIMESTAMP columns)
+  sql/ha_innodb.cc
+    1.204 04/05/12 16:42:40 marko@hundin.mysql.fi +7 -6
+    innobase_mysql_print_thd(): initial fix to Bug #3596
 
 ChangeSet
-  1.1690.1.1 04/01/30 10:46:30 monty@mysql.com +6 -0
-  Fixed parsing of column names and foreign key constraints in Innobase to handle quoted identifiers and identifiers with space. (Bug #1725)
-  Fix optimizer tuning bug when first used key part was a constant. (Bug #1679)
+  1.1820 04/05/12 10:40:04 marko@hundin.mysql.fi +1 -0
+  eval0eval.c:
+    Backport suppression of MSVC++ warning from 4.1
 
-  sql/sql_select.cc
-    1.272 04/01/30 10:46:29 monty@mysql.com +12 -3
-    Fix optimizer tuning bug when first used key part was a constant.
-    Previously all keys that had this key part first was regarded as equal, even if the query used more key parts for some of the keys.
-    Now we use the range optimizer results to just limit the number of estimated rows if not all key parts where constants.
-    (Bug #1679)
-
-  sql/sql_class.h
-    1.173 04/01/30 10:46:29 monty@mysql.com +3 -1
-    Add path to dumpfile so that we can delete the generated file if something goes wrong.
-
-  sql/sql_class.cc
-    1.108 04/01/30 10:46:29 monty@mysql.com +14 -8
-    Safety fix for select into outfile and select into dumpfile. Before calling send_error() could cause end_io_cache() to be called several times.
-
-  mysql-test/t/innodb.test
-    1.51 04/01/30 10:46:29 monty@mysql.com +9 -0
-    Test of innodb internal parsing
-
-  mysql-test/r/innodb.result
-    1.74 04/01/30 10:46:29 monty@mysql.com +3 -0
-    Test of innodb internal parsing
-
-  innobase/dict/dict0dict.c
-    1.33 04/01/30 10:46:29 monty@mysql.com +46 -29
-    Fixed parsing of column names and foreign key constraints to handle quoted identifiers and identifiers with space. (Bug #1725)
+  innobase/eval/eval0eval.c
+    1.5 04/05/12 10:12:02 marko@hundin.mysql.fi +1 -1
+    Backport suppression of MSVC++ warning from 4.1
 
 ChangeSet
-  1.1692 04/01/30 00:05:34 guilhem@mysql.com +8 -0
-  Fix for BUG#2477 "Slave stop with error after master reboot if use HEAP tables":
-  when we open the HEAP table for the first time since server restart,
-  in hp_open(), we set a flag to propagate this info to the handler level
-  which then writes a DELETE FROM this_heap_table to the binlog.
-  It is not a perfect solution for the bug, because between the server start and 
-  the first open of the table, the slave still had old data in his table so
-  a SELECT on the slave may show wrong content. But if there is a --init-file
-  to populate the HEAP table on master as startup, then this is a safe fix
-  (I'll put a note about init-file in the HEAP section of the manual).
+  1.1819 04/05/12 01:23:27 lenz@mysql.com +1 -0
+   - Bumped up version number from 4.0.19 -> 4.0.20
+   - Tagged ChangeSet@1.1800.1.1 as "mysql-4.0.19"
 
-  mysql-test/t/rpl_heap.test
-    1.1 04/01/30 00:05:31 guilhem@mysql.com +47 -0
-
-  mysql-test/r/rpl_heap.result
-    1.1 04/01/30 00:05:31 guilhem@mysql.com +29 -0
-
-  sql/sql_base.cc
-    1.171 04/01/30 00:05:31 guilhem@mysql.com +44 -10
-    When a HEAP table is opened for the first time, write a DELETE FROM to the binlog,
-    for replication and mysqlbinlog|mysql.
-    Monty: I added the
-    entry->file->implicit_emptied= 0;
-
-  sql/handler.h
-    1.90 04/01/30 00:05:31 guilhem@mysql.com +2 -1
-    new info 'implicit_emptied' in the handler level; only HEAP uses it.
-
-  sql/ha_heap.cc
-    1.22 04/01/30 00:05:31 guilhem@mysql.com +1 -0
-    report info to upper level
-
-  mysql-test/t/rpl_heap.test
-    1.0 04/01/30 00:05:31 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/t/rpl_heap.test
-
-  mysql-test/r/rpl_heap.result
-    1.0 04/01/30 00:05:31 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/r/rpl_heap.result
-
-  include/heap.h
-    1.9 04/01/30 00:05:31 guilhem@mysql.com +2 -0
-    new variables implicit_emptied
-    (we need one in HEAPINFO for the hp_info() call).
-
-  heap/hp_open.c
-    1.12 04/01/30 00:05:31 guilhem@mysql.com +3 -0
-    If this is the first open of the HEAP table, it means it is empty,
-    so we mark it.
-
-  heap/hp_info.c
-    1.6 04/01/30 00:05:30 guilhem@mysql.com +8 -7
-    new info variable implicit_emptied
+  configure.in
+    1.300 04/05/12 01:22:58 lenz@mysql.com +1 -1
+     - Bumped up version number from 4.0.19 -> 4.0.20
 
 ChangeSet
-  1.1691 04/01/29 19:22:29 guilhem@mysql.com +4 -0
-  Fix for BUG#2527 "Multi-Table Delete - Not Replication use replicate-wild-do-table"
-  (as long as replicate-*-table rules were defined, multi-table DELETE was never
-  replicated by the slave).
+  1.1813.1.2 04/05/11 12:19:37 serg@serg.mylan +3 -0
+  bug#3612 - Item_func_div set decimals incorrectly
 
-  mysql-test/t/rpl_multi_delete.test
-    1.1 04/01/29 19:22:25 guilhem@mysql.com +23 -0
+  sql/item_func.cc
+    1.109 04/05/11 12:19:35 serg@serg.mylan +1 -0
+    bug#3612 - Item_func_div set decimals incorrectly
 
-  mysql-test/t/rpl_multi_delete-slave.opt
-    1.1 04/01/29 19:22:25 guilhem@mysql.com +1 -0
+  mysql-test/t/type_float.test
+    1.6 04/05/11 12:19:35 serg@serg.mylan +8 -0
+    bug#3612 - Item_func_div set decimals incorrectly
 
-  mysql-test/r/rpl_multi_delete.result
-    1.1 04/01/29 19:22:25 guilhem@mysql.com +22 -0
-
-  sql/sql_parse.cc
-    1.358 04/01/29 19:22:25 guilhem@mysql.com +3 -1
-    For a multi-table DELETE, there are two lists of tables:
-    - 'tables' contains the tables in the FROM. They have 'updating==0'.
-    - 'thd->lex.auxilliary_table_list.first' contains the tables between the DELETE and the FROM. They have 'updating==1'.
-    So the bug was that the slave only tests 'tables' and as all its elements have updating==0,
-    tables_ok() always returns 0.
-    So for a multi DELETE the slave now tests the 2nd list too.
-    I started with the other tip of the sausage: I thought of changing multi DELETE to use
-    only one list (given that 'updating' can be used to separate it in two when needed)
-    (with one list we wouldn't need to change the slave code), but finally hit the unicity
-    check in add_table_to_list() which started to return ER_NONUNIQ_TABLE (logical).
-
-  mysql-test/t/rpl_multi_delete.test
-    1.0 04/01/29 19:22:25 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/t/rpl_multi_delete.test
-
-  mysql-test/t/rpl_multi_delete-slave.opt
-    1.0 04/01/29 19:22:25 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/t/rpl_multi_delete-slave.opt
-
-  mysql-test/r/rpl_multi_delete.result
-    1.0 04/01/29 19:22:25 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/r/rpl_multi_delete.result
+  mysql-test/r/type_float.result
+    1.9 04/05/11 12:19:35 serg@serg.mylan +15 -0
+    bug#3612 - Item_func_div set decimals incorrectly
 
 ChangeSet
-  1.1686.2.1 04/01/29 15:16:48 monty@mysql.com +8 -0
-  Mark that strings may change on index only reads (for BDB tables).
-  This fixed problem with index reads on character fields with BDB tables. (Bug #2509)
+  1.1817 04/05/11 11:05:02 marko@hundin.mysql.fi +10 -0
+  InnoDB: Changed bug reporting address to http://bugs.mysql.com
 
-  sql/table.cc
-    1.69 04/01/29 15:16:47 monty@mysql.com +2 -1
-    Allow index only reads on binary strings
+  innobase/ut/ut0dbg.c
+    1.4 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -1
+    Changed bug reporting address to http://bugs.mysql.com
 
-  sql/item_strfunc.cc
-    1.76 04/01/29 15:16:47 monty@mysql.com +4 -7
-    Cleanup
+  innobase/trx/trx0rec.c
+    1.11 04/05/11 11:04:58 marko@hundin.mysql.fi +9 -13
+    Changed bug reporting address to http://bugs.mysql.com
 
-  sql/ha_berkeley.h
-    1.54 04/01/29 15:16:47 monty@mysql.com +1 -1
-    Mark that strings may change on index only reads
+  innobase/row/row0upd.c
+    1.24 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -2
+    Changed bug reporting address to http://bugs.mysql.com
 
-  mysql-test/t/myisam.test
-    1.24 04/01/29 15:16:47 monty@mysql.com +17 -1
-    More test to verify pushed bug fix
-
-  mysql-test/t/bdb.test
-    1.30 04/01/29 15:16:47 monty@mysql.com +14 -0
-    Test for idnex only read
-
-  mysql-test/r/myisam.result
-    1.28 04/01/29 15:16:47 monty@mysql.com +29 -1
-    More tests
-
-  mysql-test/r/bdb.result
-    1.29 04/01/29 15:16:47 monty@mysql.com +25 -0
-    New test
-
-  BitKeeper/etc/ignore
-    1.153 04/01/29 15:15:04 monty@mysql.com +1 -0
-    added man/*.1
-
-ChangeSet
-  1.1689 04/01/29 14:41:49 heikki@hundin.mysql.fi +1 -0
-  btr0cur.c:
-    Fix bug: InnoDB row count and index cardinality estimates wrapped over at 512 million in 32-bit computers
-
-  innobase/btr/btr0cur.c
-    1.30 04/01/29 14:40:23 heikki@hundin.mysql.fi +3 -2
-    Fix bug: InnoDB row count and index cardinality estimates wrapped over at 512 million in 32-bit computers
-
-ChangeSet
-  1.1686.1.1 04/01/28 15:26:01 guilhem@mysql.com +1 -0
-  Fix for BUG#2542 "If slave ignores a query it may make the next LOAD DATA INFILE fail":
-  reset errors (in thd) before executing the event. Otherwise if an event is ignored
-  because of replicate-*-table rules (error ER_SLAVE_IGNORED_TABLE) this error code
-  may remain in thd->net and the next event may pick it. 
-
-  sql/log_event.cc
-    1.142 04/01/28 15:25:59 guilhem@mysql.com +4 -3
-    Reset errors (in thd) before executing the event. Otherwise if an event is ignored
-    because of replicate-*-table rules (error ER_SLAVE_IGNORED_TABLE) this error code
-    may remain in thd->net and the next event may pick it. 
-
-ChangeSet
-  1.1687 04/01/27 20:10:04 heikki@hundin.mysql.fi +3 -0
-  data0data.ic, data0data.h, row0sel.c:
-    Fix bug #2483 with InnoDB, UNIQUE secondary index, and NULL values in that unique index; with the IS NULL predicate, InnoDB returned only the first matching row, though there can be many
-
-  innobase/include/data0data.ic
-    1.5 04/01/27 20:09:49 heikki@hundin.mysql.fi +25 -0
-    Fix bug #2483 with InnoDB, UNIQUE secondary index, and NULL values in that unique index; with the IS NULL predicate, InnoDB returned only the first matching row, though there can be many
-
-  innobase/include/data0data.h
-    1.7 04/01/27 20:09:45 heikki@hundin.mysql.fi +8 -0
-    Fix bug #2483 with InnoDB, UNIQUE secondary index, and NULL values in that unique index; with the IS NULL predicate, InnoDB returned only the first matching row, though there can be many
+  innobase/row/row0umod.c
+    1.15 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -2
+    Changed bug reporting address to http://bugs.mysql.com
 
   innobase/row/row0sel.c
-    1.44 04/01/27 20:09:38 heikki@hundin.mysql.fi +10 -1
-    Fix bug #2483 with InnoDB, UNIQUE secondary index, and NULL values in that unique index; with the IS NULL predicate, InnoDB returned only the first matching row, though there can be many
-
-ChangeSet
-  1.1681.5.2 04/01/22 20:20:43 vva@eagle.mysql.r18.ru +2 -0
-  some ammendments (comments and code style)
-
-  sql/item_strfunc.cc
-    1.75 04/01/22 20:20:41 vva@eagle.mysql.r18.ru +8 -1
-    rewrote some comments for Item_func_elt
-
-  mysql-test/t/func_str.test
-    1.23 04/01/22 20:20:41 vva@eagle.mysql.r18.ru +1 -1
-    add skipped new line
-
-ChangeSet
-  1.1685 04/01/22 18:05:47 ram@gw.mysql.r18.ru +5 -0
-  a proper fix for the bug #2298 Trailing whitespace inconsistently handled in WHERE clause.
-  
-  <monty> ramil, in MySQL/MyISAM we should only strip end space, not 'space-like' characters.
-  <monty> This is according to SQL;  When doing a comparision end space and only end space are ignored.
-  
-
-  sql/sql_string.cc
-    1.26 04/01/22 18:05:45 ram@gw.mysql.r18.ru +4 -4
-    a proper fix for the bug #2298 Trailing whitespace inconsistently handled in WHERE clause.
-    
-
-  mysql-test/t/select.test
-    1.22 04/01/22 18:05:45 ram@gw.mysql.r18.ru +16 -0
-    test case for the bug #2298 Trailing whitespace inconsistently handled in WHERE clause.
-    
-
-  mysql-test/r/select.result
-    1.31 04/01/22 18:05:45 ram@gw.mysql.r18.ru +20 -0
-    test case for the bug #2298 Trailing whitespace inconsistently handled in WHERE clause.
-    
-
-  myisam/mi_search.c
-    1.39 04/01/22 18:05:45 ram@gw.mysql.r18.ru +4 -4
-    a proper fix for the bug #2298 Trailing whitespace inconsistently handled in WHERE clause.
-    
-
-  myisam/mi_key.c
-    1.20 04/01/22 18:05:45 ram@gw.mysql.r18.ru +2 -2
-    a proper fix for the bug #2298 Trailing whitespace inconsistently handled in WHERE clause.
-    
-
-ChangeSet
-  1.1683.1.11 04/01/21 23:39:35 serg@serg.mylan +4 -0
-  test moved to an appropriate file
-
-  mysql-test/t/range.test
-    1.13 04/01/21 23:39:33 serg@serg.mylan +0 -11
-    test moved to an appropriate file
-
-  mysql-test/t/myisam.test
-    1.23 04/01/21 23:39:33 serg@serg.mylan +11 -0
-    test moved to an appropriate file
-
-  mysql-test/r/range.result
-    1.16 04/01/21 23:39:33 serg@serg.mylan +0 -8
-    test moved to an appropriate file
-
-  mysql-test/r/myisam.result
-    1.27 04/01/21 23:39:33 serg@serg.mylan +8 -0
-    test moved to an appropriate file
-
-ChangeSet
-  1.1683.1.10 04/01/21 23:29:17 serg@serg.mylan +3 -0
-  two more bugfixes for "space stripping in MyISAM indexes"
-
-  mysql-test/t/myisam.test
-    1.22 04/01/21 23:29:14 serg@serg.mylan +2 -1
-    two more bugfixes for "space stripping in MyISAM indexes"
-
-  mysql-test/r/myisam.result
-    1.26 04/01/21 23:29:14 serg@serg.mylan +4 -0
-    two more bugfixes for "space stripping in MyISAM indexes"
-
-  myisam/mi_search.c
-    1.37.1.1 04/01/21 23:29:14 serg@serg.mylan +1 -1
-    two more bugfixes for "space stripping in MyISAM indexes"
-
-ChangeSet
-  1.1683.1.9 04/01/21 21:43:41 serg@serg.mylan +2 -0
-  test case for MyISAM sort-repair bug
-
-  mysql-test/t/myisam.test
-    1.21 04/01/21 21:43:38 serg@serg.mylan +9 -0
-    test case for MyISAM sort-repair bug
-
-  mysql-test/r/myisam.result
-    1.25 04/01/21 21:43:38 serg@serg.mylan +6 -0
-    test case for MyISAM sort-repair bug
-
-ChangeSet
-  1.1683.4.2 04/01/21 17:42:41 lenz@mysql.com +1 -0
-   - remove unnecessary code from Do-rpm to delete the source tarball and
-     spec file after the build as RPM has its own option for this
-
-  Build-tools/Do-rpm
-    1.29 04/01/21 17:42:38 lenz@mysql.com +3 -14
-     - remove unnecessary code to delete the source tarball and spec file
-       after the build as RPM has its own option for this
-
-ChangeSet
-  1.1681.5.1 04/01/21 02:18:51 vva@eagle.mysql.r18.ru +3 -0
-  added test for bug #2290 "output truncated with ELT when using DISTINCT"
-
-  sql/item_strfunc.cc
-    1.74 04/01/21 02:18:45 vva@eagle.mysql.r18.ru +1 -1
-    fixed bug #2290 "output truncated with ELT when using DISTINCT"
-
-  mysql-test/t/func_str.test
-    1.22 04/01/21 02:18:45 vva@eagle.mysql.r18.ru +9 -0
-    added test for bug #2290 "output truncated with ELT when using DISTINCT"
-
-  mysql-test/r/func_str.result
-    1.24 04/01/21 02:18:44 vva@eagle.mysql.r18.ru +7 -0
-    added test for bug #2290 "output truncated with ELT when using DISTINCT"
-
-ChangeSet
-  1.1683.3.1 04/01/20 15:41:22 guilhem@mysql.com +1 -0
-  Fix for BUG#2452 "Empty LOAD DATA INFILE failes with the master in 3.23.x":
-  do not write the Execute_load_log_event if there was no Create_file_log_event
-  (empty file).
-
-  sql/slave.cc
-    1.263 04/01/20 15:41:20 guilhem@mysql.com +8 -0
-    Fix for BUG#2452 "Empty LOAD DATA INFILE failes with the master in 3.23.x":
-    do not write the Execute_load_log_event if there was no Create_file_log_event
-    (empty file).
-
-ChangeSet
-  1.1683.2.1 04/01/20 17:14:02 lenz@mysql.com +15 -0
-  What started as an attempt to fix BUG#2270 (Substitute paths in mysql
-  manpage) turned out as a major overhaul of all man pages:
-  
-   - renamed all *.1 files to *.1.in to act as templates which are being
-     processed at build time
-   - replaced some hard-coded values with place holder that are being
-     replaced with the proper values at build time
-   - Updated list of available man pages in the SEE ALSO section and added a
-     hint to the manual for more details
-   - Added a BUGS section to all pages, referring to the bugs DB
-   - Updated some obsolete URLs and mail addresses
-  
-  The actual content of these man pages should probably be cross-checked for
-  correctness, though...
-
-  man/mysql.1.in
-    1.9 04/01/20 17:13:59 lenz@mysql.com +34 -24
-     - replaced some hard-coded values (e.g. Version numbers, path names) with
-       variables which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/replace.1.in
-    1.6 04/01/20 17:03:35 lenz@mysql.com +23 -18
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/perror.1.in
-    1.8 04/01/20 17:03:34 lenz@mysql.com +23 -18
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqlshow.1.in
-    1.7 04/01/20 17:03:34 lenz@mysql.com +23 -18
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqldump.1.in
-    1.8 04/01/20 17:03:34 lenz@mysql.com +23 -18
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqld_safe.1.in
-    1.8 04/01/20 17:03:34 lenz@mysql.com +21 -16
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqld_multi.1.in
-    1.6 04/01/20 17:03:34 lenz@mysql.com +23 -19
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqld.1.in
-    1.7 04/01/20 17:03:34 lenz@mysql.com +24 -20
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqladmin.1.in
-    1.7 04/01/20 17:03:34 lenz@mysql.com +23 -22
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysqlaccess.1.in
-    1.8 04/01/20 17:03:34 lenz@mysql.com +23 -18
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysql_zap.1.in
-    1.6 04/01/20 17:03:34 lenz@mysql.com +22 -4
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/mysql_fix_privilege_tables.1.in
-    1.4 04/01/20 17:03:34 lenz@mysql.com +20 -2
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/isamlog.1.in
-    1.6 04/01/20 17:03:34 lenz@mysql.com +23 -19
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/isamchk.1.in
-    1.7 04/01/20 17:03:34 lenz@mysql.com +23 -18
-     - replaced some hard-coded values (e.g. Version numbers) with variables
-       which are replaced with the proper values at build time
-     - Updated list of other man pages listed in SEE ALSO
-     - Added BUGS section, referring to the bugs database
-     - Updated URL and Mail address
-
-  man/Makefile.am
-    1.8 04/01/20 17:03:34 lenz@mysql.com +20 -1
-     - Replace some hard-coded values in the man pages with the proper values
-       at build time instead. Instead of the *.1 files, we now add the *.1.in
-       files (the templates) to the source distribution and generate the *.1
-       files during make.
-
-  man/mysql.1.in
-    1.8 04/01/20 16:54:14 lenz@mysql.com +0 -0
-    Rename: man/mysql.1 -> man/mysql.1.in
-
-  man/replace.1.in
-    1.5 04/01/20 14:27:00 lenz@mysql.com +0 -0
-    Rename: man/replace.1 -> man/replace.1.in
-
-  man/perror.1.in
-    1.7 04/01/20 14:26:56 lenz@mysql.com +0 -0
-    Rename: man/perror.1 -> man/perror.1.in
-
-  man/mysql_zap.1.in
-    1.5 04/01/20 14:26:52 lenz@mysql.com +0 -0
-    Rename: man/mysql_zap.1 -> man/mysql_zap.1.in
-
-  man/mysqlshow.1.in
-    1.6 04/01/20 14:26:43 lenz@mysql.com +0 -0
-    Rename: man/mysqlshow.1 -> man/mysqlshow.1.in
-
-  man/mysql_fix_privilege_tables.1.in
-    1.3 04/01/20 14:26:35 lenz@mysql.com +0 -0
-    Rename: man/mysql_fix_privilege_tables.1 -> man/mysql_fix_privilege_tables.1.in
-
-  man/mysqldump.1.in
-    1.7 04/01/20 14:26:19 lenz@mysql.com +0 -0
-    Rename: man/mysqldump.1 -> man/mysqldump.1.in
-
-  man/mysqld_safe.1.in
-    1.7 04/01/20 14:26:09 lenz@mysql.com +0 -0
-    Rename: man/mysqld_safe.1 -> man/mysqld_safe.1.in
-
-  man/mysqld_multi.1.in
-    1.5 04/01/20 14:25:58 lenz@mysql.com +0 -0
-    Rename: man/mysqld_multi.1 -> man/mysqld_multi.1.in
-
-  man/mysqld.1.in
-    1.6 04/01/20 14:25:48 lenz@mysql.com +0 -0
-    Rename: man/mysqld.1 -> man/mysqld.1.in
-
-  man/mysqlaccess.1.in
-    1.7 04/01/20 14:25:39 lenz@mysql.com +0 -0
-    Rename: man/mysqlaccess.1 -> man/mysqlaccess.1.in
-
-  man/mysqladmin.1.in
-    1.6 04/01/20 14:25:15 lenz@mysql.com +0 -0
-    Rename: man/mysqladmin.1 -> man/mysqladmin.1.in
-
-  man/isamlog.1.in
-    1.5 04/01/20 14:25:05 lenz@mysql.com +0 -0
-    Rename: man/isamlog.1 -> man/isamlog.1.in
-
-  man/isamchk.1.in
-    1.6 04/01/20 14:10:13 lenz@mysql.com +0 -0
-    Rename: man/isamchk.1 -> man/isamchk.1.in
-
-ChangeSet
-  1.1681.3.3 04/01/20 09:05:37 serg@serg.mylan +3 -0
-  two bugs in parallel repair fixed
-
-  myisam/myisamdef.h
-    1.62 04/01/20 09:05:35 serg@serg.mylan +4 -1
-    two bugs in parallel repair fixed
-
-  myisam/mi_dynrec.c
-    1.31.1.1 04/01/20 09:05:35 serg@serg.mylan +8 -8
-    two bugs in parallel repair fixed
-
-  myisam/mi_check.c
-    1.130 04/01/20 09:05:35 serg@serg.mylan +8 -2
-    two bugs in parallel repair fixed
-
-ChangeSet
-  1.1683.1.4 04/01/19 23:44:39 monty@mysql.com +2 -0
-  Proper fix for bug with BLOB in MIN/MAX
-
-  sql/opt_sum.cc
-    1.30 04/01/19 23:44:37 monty@mysql.com +7 -5
-    Proper fix for bug with BLOB in MIN/MAX
-
-  sql/key.cc
-    1.18 04/01/19 23:44:37 monty@mysql.com +2 -2
-    Change constant to define
-
-ChangeSet
-  1.1680.1.2 04/01/19 23:10:01 monty@mysql.com +1 -0
-  Fixed bug in IN() optimization
-
-  sql/sql_select.cc
-    1.271 04/01/19 23:10:00 monty@mysql.com +2 -2
-    Fixed bug in IN() optimization
-
-ChangeSet
-  1.1683.1.2 04/01/18 17:51:20 guilhem@mysql.com +3 -0
-  BUG#2428 "--old-rpl-compat is broken":
-  I remove the --old-rpl-compat which produces broken binlogs readable
-  neither by 4.0 nor by 3.23.
-  This option is a leftover of the early replication of 4.0.0, when
-  it was still partly compatible with 3.23.
-  I explained this to the user in the bug report. 
-
-  sql/sql_repl.h
-    1.28 04/01/18 17:51:17 guilhem@mysql.com +1 -1
-    removing --old-rpl-compat
-
-  sql/sql_load.cc
-    1.55 04/01/18 17:51:17 guilhem@mysql.com +12 -24
-    removing --old-rpl-compat
-
-  sql/mysqld.cc
-    1.476 04/01/18 17:51:17 guilhem@mysql.com +1 -6
-    removing --old-rpl-compat
-
-ChangeSet
-  1.1674.3.1 04/01/16 21:01:58 konstantin@mysql.com +1 -0
-  typo fixed PPTHREAD -> PTHREAD
-
-  mysys/my_thr_init.c
-    1.25 04/01/16 21:01:56 konstantin@mysql.com +1 -1
-    typo fixed PPTHREAD -> PTHREAD
-
-ChangeSet
-  1.1684 04/01/16 19:18:57 ram@gw.mysql.r18.ru +2 -0
-  a fix (Bug #2298: Trailing whitespace inconsistently handled in WHERE clause)
-
-  myisam/mi_search.c
-    1.38 04/01/16 19:18:34 ram@gw.mysql.r18.ru +4 -4
-    a fix (Bug #2298: Trailing whitespace inconsistently handled in WHERE clause)
-
-  myisam/mi_key.c
-    1.19 04/01/16 19:18:34 ram@gw.mysql.r18.ru +2 -2
-    a fix (Bug #2298: Trailing whitespace inconsistently handled in WHERE clause)
-
-ChangeSet
-  1.1680.1.1 04/01/15 21:39:56 monty@mysql.com +4 -0
-  Fixed table crash bug when updating row > 16M (Bug #2159)
-
-  mysql-test/t/myisam-blob.test
-    1.1 04/01/15 21:39:53 monty@mysql.com +30 -0
-
-  mysql-test/t/myisam-blob-master.opt
-    1.1 04/01/15 21:39:53 monty@mysql.com +1 -0
-
-  mysql-test/r/myisam-blob.result
-    1.1 04/01/15 21:39:53 monty@mysql.com +27 -0
-
-  mysql-test/t/myisam-blob.test
-    1.0 04/01/15 21:39:53 monty@mysql.com +0 -0
-    BitKeeper file /home/my/mysql-4.0/mysql-test/t/myisam-blob.test
-
-  mysql-test/t/myisam-blob-master.opt
-    1.0 04/01/15 21:39:53 monty@mysql.com +0 -0
-    BitKeeper file /home/my/mysql-4.0/mysql-test/t/myisam-blob-master.opt
-
-  mysql-test/r/myisam-blob.result
-    1.0 04/01/15 21:39:53 monty@mysql.com +0 -0
-    BitKeeper file /home/my/mysql-4.0/mysql-test/r/myisam-blob.result
-
-  myisam/mi_dynrec.c
-    1.32 04/01/15 21:39:53 monty@mysql.com +95 -33
-    Fixed table crash bug when updating row > 16M
-
-ChangeSet
-  1.1681.1.8 04/01/15 16:08:32 greg@mysql.com +1 -0
-  Wrote small Windows build automation script in preparation 
-  for re-working project files and enabling remote builds.
-
-  Build-tools/Do-win-build
-    1.1 04/01/15 16:08:10 greg@mysql.com +82 -0
-
-  Build-tools/Do-win-build
-    1.0 04/01/15 16:08:10 greg@mysql.com +0 -0
-    BitKeeper file /bk/mysql-4.0/Build-tools/Do-win-build
-
-ChangeSet
-  1.1681.4.1 04/01/15 16:31:27 serg@serg.mylan +3 -0
-  an obvious bug in _mi_key_cmp fixed (BUG#2295 - range on blobs)
-
-  mysql-test/t/range.test
-    1.12 04/01/15 16:31:24 serg@serg.mylan +12 -0
-    an obvious bug in _mi_key_cmp fixed (BUG#2295 - range on blobs)
-
-  mysql-test/r/range.result
-    1.15 04/01/15 16:31:24 serg@serg.mylan +8 -0
-    an obvious bug in _mi_key_cmp fixed (BUG#2295 - range on blobs)
-
-  myisam/mi_search.c
-    1.37 04/01/15 16:31:24 serg@serg.mylan +6 -4
-    an obvious bug in _mi_key_cmp fixed (BUG#2295 - range on blobs)
-
-ChangeSet
-  1.1681.1.6 04/01/15 16:14:30 lenz@mysql.com +1 -0
-   - fixed early removing of socket file when multiple instances of mysqld are
-     started via mysqld_safe (BUG#2114) Thanks to Rodrigo Marchant for the
-     suggestion
-
-  scripts/mysqld_safe.sh
-    1.67 04/01/15 16:14:22 lenz@mysql.com +1 -1
-     - fixed early removing of socket file when multiple instances of mysqld are
-       started via the script (BUG#2114) Thanks to Rodrigo Marchant for the
-       suggestion
-
-ChangeSet
-  1.1681.3.1 04/01/14 16:21:54 heikki@hundin.mysql.fi +1 -0
-  row0ins.c:
-    Fix bug: FOREIGN KEY ... ON UPDATE/DELETE NO ACTION must check the foreign key constraint, not ignore it. Peter Gulutzan said that NO ACTION should check the constraint as deferred, at the end of the SQL statement, while RESTRICT should check it immediately. Since we do not have defered constraints in InnoDB, this bug fix makes InnoDB to check NO ACTION constraints immediately, like it checks RESTRICT constraints.
+    1.48 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -2
+    Changed bug reporting address to http://bugs.mysql.com
 
   innobase/row/row0ins.c
-    1.28 04/01/14 16:21:45 heikki@hundin.mysql.fi +0 -16
-    Fix bug: FOREIGN KEY ... ON UPDATE/DELETE NO ACTION must check the foreign key constraint, not ignore it. Peter Gulutzan said that NO ACTION should check the constraint as deferred, at the end of the SQL statement, while RESTRICT should check it immediately. Since we do not have defered constraints in InnoDB, this bug fix makes InnoDB to check NO ACTION constraints immediately, like it checks RESTRICT constraints.
-
-ChangeSet
-  1.1681.2.2 04/01/13 19:44:33 lenz@mysql.com +1 -0
-   - be able to build MySQL-shared-compat RPMs for other archs than i386
-
-  support-files/MySQL-shared-compat.spec.sh
-    1.3 04/01/13 19:44:30 lenz@mysql.com +2 -2
-     - be able to build MySQL-shared-compat RPMs for other archs than i386
-
-ChangeSet
-  1.1681.2.1 04/01/13 19:33:01 lenz@mysql.com +1 -0
-   - improved wording in mysql_install_db on what to do to set the password 
-     for the MySQL root user (BUG#2375)
-
-  scripts/mysql_install_db.sh
-    1.44 04/01/13 19:32:57 lenz@mysql.com +1 -1
-     - improved wording on what to do to set the password for the MySQL root
-       user (BUG#2375)
-
-ChangeSet
-  1.1679.1.1 04/01/13 12:31:25 serg@serg.mylan +4 -0
-  BUG#2304 - HANDLER and tables in non-current db
-
-  sql/sql_yacc.yy
-    1.222 04/01/13 12:31:23 serg@serg.mylan +10 -5
-    BUG#2304 - HANDLER and tables in non-current db
-
-  sql/sql_handler.cc
-    1.38 04/01/13 12:31:22 serg@serg.mylan +3 -4
-    BUG#2304 - HANDLER and tables in non-current db
-
-  mysql-test/t/handler.test
-    1.14 04/01/13 12:31:22 serg@serg.mylan +16 -0
-    BUG#2304 - HANDLER and tables in non-current db
-
-  mysql-test/r/handler.result
-    1.14 04/01/13 12:31:22 serg@serg.mylan +18 -0
-    BUG#2304 - HANDLER and tables in non-current db
-
-ChangeSet
-  1.676.1.753 04/01/12 22:47:26 vva@eagle.mysql.r18.ru +3 -0
-  Fixed Bug #2338 Trigonometric arithmetic problem
-  by fixing optimizer bug with help of 'volatile' keyword
-
-  sql/item_func.cc
-    1.36.1.19 04/01/12 22:47:15 vva@eagle.mysql.r18.ru +4 -2
-    added keyword volatile in Item_func_acos::val and Item_func_asin::val
-    to calm optimizer down and to avoid it's bug
-
-  mysql-test/t/func_math.test
-    1.3.1.2 04/01/12 22:47:15 vva@eagle.mysql.r18.ru +11 -0
-    added tests for BUG #2338 Trigonometric arithmetic problems
-
-  mysql-test/r/func_math.result
-    1.3.1.2 04/01/12 22:47:15 vva@eagle.mysql.r18.ru +12 -0
-    added tests for BUG #2338 Trigonometric arithmetic problems
-
-ChangeSet
-  1.1681.1.1 04/01/12 21:15:49 greg@mysql.com +18 -0
-  Checked and applied Novell-supplied patches inside the netware directory only.
-
-  netware/mysqlimport.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/mysqldump.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/mysqld_safe.c
-    1.5 04/01/12 21:15:24 greg@mysql.com +2 -2
-    Make error message more accurate/descriptive.
-
-  netware/mysqlcheck.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/mysqlbinlog.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/mysql_test_run.c
-    1.4 04/01/12 21:15:24 greg@mysql.com +137 -54
-    Multiple changes to help test suite.
-
-  netware/myisampack.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/myisamlog.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/myisamchk.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/my_manage.c
-    1.3 04/01/12 21:15:24 greg@mysql.com +6 -2
-    Take out unused args to mysqladmin.
-
-  netware/isamchk.def
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add SCREENNAME to allow interaction.
-
-  netware/Makefile.am
-    1.7 04/01/12 21:15:24 greg@mysql.com +4 -4
-    Cosmetic change, add @openssl_libs@ in case of OpenSSL feature usage.
-
-  netware/BUILD/nwbootstrap
-    1.5 04/01/12 21:15:24 greg@mysql.com +14 -1
-    Additional status messages, update versions in .def files.
-
-  netware/BUILD/mwenv
-    1.4 04/01/12 21:15:24 greg@mysql.com +6 -6
-    Add additional include, library paths, -dialect and -map flags for CW.
-
-  netware/BUILD/compile-netware-standard
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -1
-    Need backslash to avoid error.
-
-  netware/BUILD/compile-netware-all
-    1.4 04/01/12 21:15:24 greg@mysql.com +1 -0
-    Add compile-netware-src.
-
-  netware/BUILD/compile-netware-END
-    1.4 04/01/12 21:15:24 greg@mysql.com +2 -2
-    Use .zip package.
-
-  netware/BUILD/compile-linux-tools
-    1.4 04/01/12 21:15:24 greg@mysql.com +4 -1
-    Need to run make on sql_yacc.cc.
-
-ChangeSet
-  1.1674.2.2 04/01/12 16:25:13 Sinisa@sinisa.nasamreza.org +3 -0
-  opt_sum.cc:
-    A fix for a bug #3189, pertaining to crashing MySQL server when a query with MIN / MAX on the BLOB column is to be optimised
-
-  mysql-test/r/type_blob.result
-    1.12 04/01/12 16:24:48 Sinisa@sinisa.nasamreza.org +6 -0
-
-  mysql-test/t/type_blob.test
-    1.12 04/01/12 16:24:42 Sinisa@sinisa.nasamreza.org +6 -0
-
-  sql/opt_sum.cc
-    1.29 04/01/12 16:18:05 Sinisa@sinisa.nasamreza.org +3 -1
-    A fix for a bug #3189, pertaining to crashing MySQL server when a query with MIN / MAX on the BLOB column is to be optimised
-
-ChangeSet
-  1.1681 04/01/11 14:12:46 ram@gw.mysql.r18.ru +3 -0
-  A fix (bug #2335: Inconsistancy with handling of Years and NOW() function).
-  The test might fail if one runs it at 23:59:59 Dec 31
-
-  sql/field.h
-    1.53 04/01/11 14:12:29 ram@gw.mysql.r18.ru +1 -0
-    a fix (bug #2335: Inconsistancy with handling of Years and NOW() function)
-
-  mysql-test/t/type_year.test
-    1.5 04/01/11 14:12:29 ram@gw.mysql.r18.ru +9 -0
-    a fix (bug #2335: Inconsistancy with handling of Years and NOW() function)
-
-  mysql-test/r/type_year.result
-    1.6 04/01/11 14:12:29 ram@gw.mysql.r18.ru +6 -0
-    a fix (bug #2335: Inconsistancy with handling of Years and NOW() function)
-
-ChangeSet
-  1.1670.1.9 04/01/08 12:24:36 ram@gw.mysql.r18.ru +3 -0
-  An improvement of the fix for the bug #2231: string column,                     
-  INDEX+LIKE, don't take the ESCAPE character. (ver. 2)
-
-  sql/opt_range.cc
-    1.94 04/01/08 12:24:35 ram@gw.mysql.r18.ru +17 -15
-    An improvement of the fix for the bug #2231: string column,                     
-    INDEX+LIKE, don't take the ESCAPE character. (ver. 2)
-
-  mysql-test/t/func_like.test
-    1.9 04/01/08 12:24:35 ram@gw.mysql.r18.ru +1 -0
-    An improvement of the fix for the bug #2231: string column,                     
-    INDEX+LIKE, don't take the ESCAPE character. (ver. 2)
-
-  mysql-test/r/func_like.result
-    1.9 04/01/08 12:24:34 ram@gw.mysql.r18.ru +3 -0
-    An improvement of the fix for the bug #2231: string column,                     
-    INDEX+LIKE, don't take the ESCAPE character. (ver. 2)
-
-ChangeSet
-  1.1679 04/01/07 18:15:17 heikki@hundin.mysql.fi +1 -0
-  buf0lru.c:
-    Start InnoDB Monitor if 80 % of the buffer pool occupied by adaptive has or lock heaps; do not print the same warning more than 1 time
-
-  innobase/buf/buf0lru.c
-    1.13 04/01/07 18:14:55 heikki@hundin.mysql.fi +11 -10
-    Start InnoDB Monitor if 80 % of the buffer pool occupied by adaptive has or lock heaps; do not print the same warning more than 1 time
-
-  innobase/buf/buf0lru.c
-    1.12 04/01/07 18:04:36 heikki@hundin.mysql.fi +5 -2
-    Start InnoDB Monitor if 80 % of the buffer pool occupied by adaptive has or lock heaps; do not print the same warning more than 1 time
-
-ChangeSet
-  1.1678 04/01/06 20:06:07 heikki@hundin.mysql.fi +1 -0
-  trx0sys.c:
-    DO NOT MERGE TO 4.1: forgot to change this in the previous push
-
-  innobase/trx/trx0sys.c
-    1.19 04/01/06 20:05:57 heikki@hundin.mysql.fi +1 -1
-    DO NOT MERGE TO 4.1: forgot to change this in the previous push
-
-ChangeSet
-  1.1675.1.1 04/01/06 19:50:50 heikki@hundin.mysql.fi +1 -0
-  trx0sys.c:
-    DO NOT MERGE TO 4.1: charset changes can cause problems in a downgrade 4.1.1 -> 4.0.18
-
-  innobase/trx/trx0sys.c
-    1.18 04/01/06 19:50:40 heikki@hundin.mysql.fi +1 -1
-    DO NOT MERGE TO 4.1: charset changes can cause problems in a downgrade 4.1.1 -> 4.0.18
-
-ChangeSet
-  1.1674.2.1 04/01/06 19:23:30 Sinisa@sinisa.nasamreza.org +1 -0
-  mysqldump.c:
-    Fix for UNLOCK TABLES bug #2242
-
-ChangeSet
-  1.1674.1.1 04/01/06 14:01:49 guilhem@mysql.com +9 -0
-  Completion of fix for BUG#2121 "Inadequate message "check permissions on master.info"":
-  I had not corrected these languages.
-  As it has been discussed with the docs team, the new messages will be merged
-  to 4.1, and then will be translated in 4.1 (they will remain in English
-  in 4.0).
-
-  sql/share/ukrainian/errmsg.txt
-    1.23 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/swedish/errmsg.txt
-    1.59 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/spanish/errmsg.txt
-    1.61 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/russian/errmsg.txt
-    1.58 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/portuguese/errmsg.txt
-    1.61 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/italian/errmsg.txt
-    1.65 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/german/errmsg.txt
-    1.59 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/dutch/errmsg.txt
-    1.64 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  sql/share/danish/errmsg.txt
-    1.57 04/01/06 14:01:45 guilhem@mysql.com +1 -1
-    better error message
-
-  client/mysqldump.c
-    1.102 04/01/06 14:24:24 Sinisa@sinisa.nasamreza.org +2 -2
-    Fix for UNLOCK TABLES bug #2242
-
-ChangeSet
-  1.1675 04/01/06 13:40:14 heikki@hundin.mysql.fi +5 -0
-  trx0sys.c, srv0start.c, ibuf0ibuf.c, trx0sys.h, srv0srv.h:
-    DO NOT MERGE TO 4.1: add code for automatic downgrade 4.1.1 -> 4.0 if the user has not created multiple tablespaces yet
-
-  innobase/trx/trx0sys.c
-    1.17 04/01/06 13:39:45 heikki@hundin.mysql.fi +87 -1
-    DO NOT MERGE TO 4.1: add code for automatic downgrade 4.1.1 -> 4.0 if the user has not created multiple tablespaces yet
-
-  innobase/srv/srv0start.c
-    1.50 04/01/06 13:39:38 heikki@hundin.mysql.fi +25 -0
-    DO NOT MERGE TO 4.1: add code for automatic downgrade 4.1.1 -> 4.0 if the user has not created multiple tablespaces yet
+    1.35 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -2
+    Changed bug reporting address to http://bugs.mysql.com
+
+  innobase/lock/lock0lock.c
+    1.34 04/05/11 11:04:58 marko@hundin.mysql.fi +4 -2
+    Changed bug reporting address to http://bugs.mysql.com
 
   innobase/ibuf/ibuf0ibuf.c
-    1.19 04/01/06 13:39:17 heikki@hundin.mysql.fi +8 -0
-    DO NOT MERGE TO 4.1: add code for automatic downgrade 4.1.1 -> 4.0 if the user has not created multiple tablespaces yet
+    1.25 04/05/11 11:04:58 marko@hundin.mysql.fi +3 -4
+    Changed bug reporting address to http://bugs.mysql.com
 
-  innobase/include/trx0sys.h
-    1.9 04/01/06 13:38:30 heikki@hundin.mysql.fi +18 -0
-    DO NOT MERGE TO 4.1: add code for automatic downgrade 4.1.1 -> 4.0 if the user has not created multiple tablespaces yet
+  innobase/dict/dict0load.c
+    1.14 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -1
+    Changed bug reporting address to http://bugs.mysql.com
 
-  innobase/include/srv0srv.h
-    1.27 04/01/06 13:38:29 heikki@hundin.mysql.fi +2 -0
-    DO NOT MERGE TO 4.1: add code for automatic downgrade 4.1.1 -> 4.0 if the user has not created multiple tablespaces yet
-
-ChangeSet
-  1.1670.1.8 03/12/30 19:23:38 ram@gw.mysql.r18.ru +4 -0
-  Fix for the bug #2231: string column, INDEX+LIKE, don't take the ESCAPE character.
-  (acctually i don't like the fix, any suggestions?)
-
-  sql/opt_range.cc
-    1.93 03/12/30 19:23:26 ram@gw.mysql.r18.ru +7 -4
-    Fix for the bug #2231: string column, INDEX+LIKE, don't take the ESCAPE character.
-    (acctually i don't like the fix, any suggestions?)
-
-  sql/item_cmpfunc.h
-    1.30 03/12/30 19:23:26 ram@gw.mysql.r18.ru +4 -5
-    Fix for the bug #2231: string column, INDEX+LIKE, don't take the ESCAPE character.
-    (acctually i don't like the fix, any suggestions?)
-
-  mysql-test/t/func_like.test
-    1.8 03/12/30 19:23:26 ram@gw.mysql.r18.ru +9 -0
-    Fix for the bug #2231: string column, INDEX+LIKE, don't take the ESCAPE character.
-    (acctually i don't like the fix, any suggestions?)
-
-  mysql-test/r/func_like.result
-    1.8 03/12/30 19:23:25 ram@gw.mysql.r18.ru +6 -0
-    Fix for the bug #2231: string column, INDEX+LIKE, don't take the ESCAPE character.
-    (acctually i don't like the fix, any suggestions?)
+  innobase/btr/btr0btr.c
+    1.28 04/05/11 11:04:58 marko@hundin.mysql.fi +1 -1
+    Changed bug reporting address to http://bugs.mysql.com
 
 ChangeSet
-  1.1673 03/12/30 13:14:21 monty@mysql.com +30 -0
-  Some small portability fixes.
-  Added support for lower_case_table_names=2, which is to be used on case insensitive file systems.
-  This tells MySQL to preserve the used case of filenames and database names to make it esier to move files between cases sensitive can case insensitive file systems (like Windows and Linux)
+  1.1813.2.1 04/05/10 17:15:29 marko@hundin.mysql.fi +1 -0
+  InnoDB: Fix assertion failure for orphaned tables in DROP DATABASE
 
-  mysql-test/t/lowercase_table2.test
-    1.1 03/12/30 13:14:19 monty@mysql.com +80 -0
-
-  mysql-test/t/lowercase_table2-master.opt
-    1.1 03/12/30 13:14:19 monty@mysql.com +1 -0
-
-  mysql-test/r/lowercase_table2.result
-    1.1 03/12/30 13:14:19 monty@mysql.com +108 -0
-
-  mysql-test/t/lowercase_table2.test
-    1.0 03/12/30 13:14:19 monty@mysql.com +0 -0
-    BitKeeper file /my/mysql-4.0/mysql-test/t/lowercase_table2.test
-
-  mysql-test/t/lowercase_table2-master.opt
-    1.0 03/12/30 13:14:19 monty@mysql.com +0 -0
-    BitKeeper file /my/mysql-4.0/mysql-test/t/lowercase_table2-master.opt
-
-  mysql-test/r/lowercase_table2.result
-    1.0 03/12/30 13:14:19 monty@mysql.com +0 -0
-    BitKeeper file /my/mysql-4.0/mysql-test/r/lowercase_table2.result
-
-  mysql-test/r/lowercase2.require
-    1.1 03/12/30 13:14:18 monty@mysql.com +2 -0
-
-  sql/sql_table.cc
-    1.171 03/12/30 13:14:18 monty@mysql.com +53 -32
-    Support for lower_case_table_names=2 for DROP TABLE, RENAME TABLE, ALTER TABLE and CREATE TABLE
-
-  sql/sql_show.cc
-    1.117 03/12/30 13:14:18 monty@mysql.com +3 -1
-    If lower_case_table_name=2 is given, show original case in SHOW CREATE TABLE
-
-  sql/sql_rename.cc
-    1.21 03/12/30 13:14:18 monty@mysql.com +19 -7
-    Support for lower_case_table_names=2
-    Added missing 'unpack_filename' to RENAME which may fix a bug in RENAME TABLE on windows
-
-  sql/sql_parse.cc
-    1.357 03/12/30 13:14:18 monty@mysql.com +27 -15
-    Support for lower_case_table_names=2
-
-  sql/sql_insert.cc
-    1.109 03/12/30 13:14:18 monty@mysql.com +2 -2
-    Indentation change
-
-  sql/sql_db.cc
-    1.64 03/12/30 13:14:18 monty@mysql.com +22 -5
-    Support for lower_case_table_names=2
-
-  sql/sql_class.h
-    1.172 03/12/30 13:14:18 monty@mysql.com +5 -5
-    Indentation change
-
-  sql/set_var.cc
-    1.42.1.1 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Support for lower_case_table_names=2
-
-  sql/mysqld.cc
-    1.474 03/12/30 13:14:18 monty@mysql.com +20 -16
-    Support for lower_case_table_names=2
-    Moved test of case insenstive file system after all mutex are created
-
-  sql/mysql_priv.h
-    1.211 03/12/30 13:14:18 monty@mysql.com +7 -2
-    Support for lower_case_table_names=2
-
-  sql/handler.h
-    1.89 03/12/30 13:14:18 monty@mysql.com +6 -3
-    Added HA_FILE_BASED
-    Made some struct entries 'const'
-    Added 'alias' for create to be able to create tables in mixed case on case insensitive file systems
-
-  sql/handler.cc
-    1.108 03/12/30 13:14:18 monty@mysql.com +20 -10
-    Ensure that table engines gets table names in lower case even if we are using lower_case_table_names
-    Removed test for DB_TYPE_INNODB by ensuring that create method returns error number.
-
-  sql/ha_myisammrg.h
-    1.27 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Added HA_FILE_BASED
-
-  sql/ha_myisammrg.cc
-    1.44 03/12/30 13:14:18 monty@mysql.com +2 -2
-    Changed create to return error number
-
-  sql/ha_myisam.h
-    1.45 03/12/30 13:14:18 monty@mysql.com +2 -1
-    Added HA_FILE_BASED
-
-  sql/ha_myisam.cc
-    1.129 03/12/30 13:14:18 monty@mysql.com +3 -2
-    Changed create to return error number
-
-  sql/ha_isammrg.h
-    1.17 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Added HA_FILE_BASED
-
-  sql/ha_isam.h
-    1.21 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Added HA_FILE_BASED
-
-  sql/ha_isam.cc
-    1.22 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Changed create to return error number
-
-  sql/ha_innodb.cc
-    1.188 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Added missing DBUG_RETURN
-
-  sql/ha_berkeley.h
-    1.53 03/12/30 13:14:18 monty@mysql.com +5 -4
-    Added HA_FILE_BASED
-
-  sql/ha_berkeley.cc
-    1.112 03/12/30 13:14:18 monty@mysql.com +19 -15
-    More debugging
-    Changed 'create' to return error number
-
-  sql/filesort.cc
-    1.57 03/12/30 13:14:18 monty@mysql.com +1 -0
-    Safety fix (not needed for current code but needed for 5.0)
-    
-
-  mysql-test/r/lowercase2.require
-    1.0 03/12/30 13:14:18 monty@mysql.com +0 -0
-    BitKeeper file /my/mysql-4.0/mysql-test/r/lowercase2.require
-
-  mysql-test/mysql-test-run.sh
-    1.186 03/12/30 13:14:18 monty@mysql.com +2 -1
-    Portability fix for OSX
-
-  include/myisam.h
-    1.54 03/12/30 13:14:18 monty@mysql.com +1 -1
-    Made some pointers 'const'
-
-  client/mysqltest.c
-    1.111 03/12/30 13:14:18 monty@mysql.com +4 -4
-    Indentation cleanup
+  innobase/row/row0mysql.c
+    1.65 04/05/10 17:15:26 marko@hundin.mysql.fi +3 -2
+    Compare database part of table name with memcmp(), not strcmp()
 
 ChangeSet
-  1.1665.2.1 03/12/24 17:01:48 bar@bar.intranet.mysql.r18.ru +2 -0
-  ctype-big5.c:
-    Like did not work in some cases
-    ,
+  1.1809.2.1 04/05/10 12:39:01 serg@serg.mylan +5 -0
+  backport from 4.1:
+  "phrase search" should not match partial words (it should not match 'paraphrase searches')
+
+  mysql-test/t/fulltext.test
+    1.44 04/05/10 12:38:58 serg@serg.mylan +1 -0
+    backport from 4.1:
+    "phrase search" should not match partial words (it should not match 'paraphrase searches')
+
+  mysql-test/r/fulltext.result
+    1.45 04/05/10 12:38:58 serg@serg.mylan +2 -1
+    backport from 4.1:
+    "phrase search" should not match partial words (it should not match 'paraphrase searches')
+
+  myisam/ftdefs.h
+    1.19 04/05/10 12:38:58 serg@serg.mylan +3 -2
+    backport from 4.1:
+    "phrase search" should not match partial words (it should not match 'paraphrase searches')
+
+  myisam/ft_parser.c
+    1.30 04/05/10 12:38:58 serg@serg.mylan +0 -9
+    backport from 4.1:
+    "phrase search" should not match partial words (it should not match 'paraphrase searches')
+
+  myisam/ft_boolean_search.c
+    1.62 04/05/10 12:38:58 serg@serg.mylan +19 -10
+    backport from 4.1:
+    "phrase search" should not match partial words (it should not match 'paraphrase searches')
+
+ChangeSet
+  1.1812.1.1 04/05/10 12:15:40 ingo@mysql.com +6 -0
+  Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+
+  mysql-test/t/rpl_rotate_logs.test
+    1.40 04/05/10 12:15:38 ingo@mysql.com +5 -5
+    Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+
+  mysql-test/t/rpl_max_relay_size.test
+    1.5 04/05/10 12:15:38 ingo@mysql.com +6 -6
+    Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+
+  mysql-test/t/rpl_log_pos.test
+    1.23 04/05/10 12:15:38 ingo@mysql.com +4 -4
+    Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+
+  mysql-test/t/rpl_log.test
+    1.15 04/05/10 12:15:38 ingo@mysql.com +3 -3
+    Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+
+  mysql-test/t/rpl_error_ignored_table.test
+    1.6 04/05/10 12:15:38 ingo@mysql.com +1 -1
+    Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+
+  mysql-test/t/rpl000015.test
+    1.22 04/05/10 12:15:38 ingo@mysql.com +1 -1
+    Fix replace_result of $MASTER_MYPORT instead of literal numbers.
+    The test case rpl000015 needs one exlpicit literal number.
+    It changes partial master settings, which seems to reset other settings
+    to their defaults. To test this is obviously the intent of this case.
+
+ChangeSet
+  1.1811.1.1 04/05/07 12:13:45 marko@hundin.mysql.fi +2 -0
+  Fix auto_inc locking bug introduced in ChangeSet@1.1794.1.1
+
+  mysql-test/r/innodb.result
+    1.78 04/05/07 12:13:42 marko@hundin.mysql.fi +1 -1
+    Revert ChangeSet@1.1794.1.1
+
+  innobase/row/row0mysql.c
+    1.64 04/05/07 12:13:42 marko@hundin.mysql.fi +1 -1
+    Revert accidental modification to row_lock_table_autoinc_for_mysql()
+    made in ChangeSet@1.1794.1.1 
+
+ChangeSet
+  1.1809.1.1 04/05/07 01:02:57 jani@a80-186-24-72.elisa-laajakaista.fi +2 -0
+  Fixed a problem with option --where, which earlier was not dynamic. One was not able
+  to use long query strings with it.
+  Bug#3633
 
   BitKeeper/etc/logging_ok
-    1.298 03/12/24 17:01:48 bar@bar.intranet.mysql.r18.ru +1 -0
+    1.311.1.1 04/05/07 01:02:57 jani@a80-186-24-72.elisa-laajakaista.fi +1 -0
     Logging to logging@openlogging.org accepted
 
-  strings/ctype-big5.c
-    1.12 03/12/24 17:00:40 bar@bar.intranet.mysql.r18.ru +1 -1
-    Like did not work in some cases
-    ,
+  client/mysqldump.c
+    1.109 04/05/07 01:02:50 jani@a80-186-24-72.elisa-laajakaista.fi +47 -16
+    Fixed a problem with option --where, which earlier was not dynamic. One was not able
+    to use long query strings with it.
+    Bug#3633
 
 ChangeSet
-  1.1670.1.6 03/12/23 22:55:38 heikki@hundin.mysql.fi +1 -0
-  log0log.c:
-    Do not assert in log0log.c, line 856 if ib_logfiles are too small for innodb_thread_concurrency. Instead, print instructions how to adjust my.cnf and call exit(1).
+  1.1807.1.1 04/05/06 22:55:30 guilhem@mysql.com +1 -0
+  A DBUG_RETURN to match a DBUG_ENTER
 
-  innobase/log/log0log.c
-    1.28 03/12/23 22:55:28 heikki@hundin.mysql.fi +12 -1
-    Do not assert in log0log.c, line 856 if ib_logfiles are too small for innodb_thread_concurrency. Instead, print instructions how to adjust my.cnf and call exit(1).
-
-ChangeSet
-  1.1670.1.5 03/12/23 16:51:14 lenz@mysql.com +1 -0
-   - Fixed another missing space
-
-  Build-tools/Do-rpm
-    1.28 03/12/23 16:51:12 lenz@mysql.com +1 -1
-     - Fixed another missing space
+  myisam/mi_dynrec.c
+    1.34 04/05/06 22:55:28 guilhem@mysql.com +1 -1
+    need DBUG_RETURN as we DBUG_ENTER
 
 ChangeSet
-  1.1670.1.4 03/12/22 14:56:06 lenz@mysql.com +1 -0
-   - marked /etc/logrotate.d/mysql as a config file in the RPM spec file
-     (BUG#2156)
+  1.1795.1.2 04/05/06 16:15:46 ingo@mysql.com +2 -0
+  Fix a forgotten skip of space at line begin for the 'system' command.
 
-  support-files/mysql.spec.sh
-    1.76 03/12/22 14:56:04 lenz@mysql.com +5 -1
-     - marked /etc/logrotate.d/mysql as a config file (BUG#2156)
-
-ChangeSet
-  1.1670.1.3 03/12/22 13:03:23 serg@serg.mylan +1 -0
-  typos fixed
-
-  sql/mysqld.cc
-    1.472.1.1 03/12/22 13:03:19 serg@serg.mylan +3 -2
-    typos fixed
-
-ChangeSet
-  1.1672 03/12/21 16:32:32 monty@mysql.com +1 -0
-  Removed some test that was not relevant for MySQL (and which caused problems in MySQL 4.1)
-
-  sql/filesort.cc
-    1.56 03/12/21 16:32:29 monty@mysql.com +32 -23
-    Removed some test that was not relevant for MySQL (and which caused problems in MySQL 4.1)
-
-ChangeSet
-  1.1666.1.1 03/12/19 23:08:20 serg@serg.mylan +1 -0
-  do not put --user into command line if the value comes from [mysqld] or [server] sections
-  Bug #2163
-
-  scripts/mysqld_safe.sh
-    1.66 03/12/19 23:08:16 serg@serg.mylan +9 -3
-    do not put --user into command line if the value comes from [mysqld] or [server] sections
-    Bug #2163
-
-ChangeSet
-  1.1671 03/12/18 16:50:01 monty@mysql.com +1 -0
-  Fixed that lower_case_table_names is set to 1 for case insensitive file systems.
-
-  sql/mysqld.cc
-    1.473 03/12/18 16:49:59 monty@mysql.com +2 -1
-    Fixed that lower_case_table_names is set to 1 for case insensitive file systems.
-
-ChangeSet
-  1.1670 03/12/18 15:24:21 monty@mysql.com +2 -0
-  Removed compiler warning
-  Fixed not updated test from last changeset
-
-  sql/mysqld.cc
-    1.472 03/12/18 15:24:18 monty@mysql.com +4 -3
-    Cleaned up pid file handling (to remove compiler warning)
-
-  mysql-test/r/auto_increment.result
-    1.10 03/12/18 15:24:18 monty@mysql.com +1 -1
-    Updated results
-
-ChangeSet
-  1.1669 03/12/18 14:40:19 monty@mysql.com +3 -0
-  Simple cleanups
-
-  sql/sql_select.cc
-    1.270 03/12/18 14:40:16 monty@mysql.com +24 -28
-    Removed indentation level (This will also make merges into 4.1 easier)
-
-  sql/opt_range.cc
-    1.92 03/12/18 14:40:16 monty@mysql.com +0 -1
-    Removed not used variable
-
-  mysql-test/t/auto_increment.test
-    1.8 03/12/18 14:40:16 monty@mysql.com +1 -1
-    Fixed wrong comment
-
-ChangeSet
-  1.1668 03/12/18 01:13:52 monty@mysql.com +2 -0
-  Code cleanup
-
-  sql/field.cc
-    1.83 03/12/18 01:13:50 monty@mysql.com +1 -1
-    code cleanup
+  BitKeeper/etc/logging_ok
+    1.312 04/05/06 16:15:46 ingo@mysql.com +1 -0
+    Logging to logging@openlogging.org accepted
 
   client/mysql.cc
-    1.147 03/12/18 01:13:50 monty@mysql.com +5 -2
-    Don't call mysql_close() on not initialized object
+    1.150 04/05/06 16:15:17 ingo@mysql.com +4 -0
+    Fix a forgotten skip of space at line begin for the 'system' command.
 
 ChangeSet
-  1.1664.1.1 03/12/17 23:29:11 guilhem@mysql.com +1 -0
-  Fix for BUG#2145 "mysqld becomes unreliable if unable to create a relay log when replic starts":
-  release the mutex before exiting the function, or it will be kept forever
-  (=> START SLAVE, STOP SLAVE, etc will hang).
+  1.1808 04/05/06 11:42:23 monty@mysql.com +1 -0
+  Remove not used variable
+
+  sql/sql_acl.cc
+    1.124 04/05/06 11:42:22 monty@mysql.com +2 -2
+    Remove not used variable
+
+ChangeSet
+  1.1800.2.1 04/05/05 21:50:51 guilhem@mysql.com +3 -0
+  very minor changes: a STOP SLAVE in a replication test to get rid of a non critical message in slave.err,
+  and a comment update
 
   sql/slave.cc
-    1.262 03/12/17 23:29:08 guilhem@mysql.com +1 -0
-    release the mutex before exiting the function, or it will be kept forever
-    (=> START SLAVE, STOP SLAVE, etc will hang).
+    1.276 04/05/05 21:50:48 guilhem@mysql.com +3 -3
+    update comment about 4.1 now that 4.1 is fixed (in a few minutes, exactly)
 
-ChangeSet
-  1.1640.5.1 03/12/17 16:37:47 vva@eagle.mysql.r18.ru +26 -0
-  added error message for receiving variable with wrong GLOBAL|LOCAL type
-  (bug #2086)
+  mysql-test/t/rpl_server_id2.test
+    1.3 04/05/05 21:50:48 guilhem@mysql.com +4 -0
+    We stop the slave before cleaning up otherwise we'll get
+    'drop table t1' executed twice, so an error in the slave.err
+    (not critical).
 
-  sql/share/ukrainian/errmsg.txt
-    1.22 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/swedish/errmsg.txt
-    1.58 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/spanish/errmsg.txt
-    1.60 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/slovak/errmsg.txt
-    1.56.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/russian/errmsg.txt
-    1.57 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/romanian/errmsg.txt
-    1.54.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/portuguese/errmsg.txt
-    1.60 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/polish/errmsg.txt
-    1.55.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/norwegian/errmsg.txt
-    1.55.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/norwegian-ny/errmsg.txt
-    1.55.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/korean/errmsg.txt
-    1.55.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/japanese/errmsg.txt
-    1.55.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/italian/errmsg.txt
-    1.64 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/hungarian/errmsg.txt
-    1.57.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/greek/errmsg.txt
-    1.56.1.1 03/12/17 16:37:41 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/german/errmsg.txt
-    1.58 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/french/errmsg.txt
-    1.56.1.1 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/estonian/errmsg.txt
-    1.57.1.1 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/english/errmsg.txt
-    1.67.1.1 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/dutch/errmsg.txt
-    1.63 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/danish/errmsg.txt
-    1.56 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/share/czech/errmsg.txt
-    1.56.1.1 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +1 -0
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  sql/set_var.cc
-    1.43 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +2 -3
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  mysql-test/t/variables.test
-    1.18 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +5 -2
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  mysql-test/r/variables.result
-    1.22 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +4 -2
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-  include/mysqld_error.h
-    1.53 03/12/17 16:37:40 vva@eagle.mysql.r18.ru +2 -1
-    added error message for receiving variable with wrong GLOBAL|LOCAL type
-
-ChangeSet
-  1.1650.2.1 03/12/17 13:15:01 vva@eagle.mysql.r18.ru +1 -0
-  fixed small error in types in sql/field.cc 
-  (char * -> const char*)
-
-  sql/field.cc
-    1.77.1.6 03/12/17 13:15:00 vva@eagle.mysql.r18.ru +1 -1
-    fixed small error in types (char * -> const char*)
-
-ChangeSet
-  1.1660.1.1 03/12/17 18:12:59 monty@mysql.com +1 -0
-  Fixed typo.  Affected INSERT DELAYED ... SELECT commands
-
-  sql/sql_parse.cc
-    1.356 03/12/17 18:12:55 monty@mysql.com +1 -1
-    Fixed typo.  Affected INSERT DELAYED ... SELECT commands
-
-ChangeSet
-  1.676.316.1 03/12/16 17:55:34 vva@eagle.mysql.r18.ru +3 -0
-  fixed restoring of thd->count_cuted_fields in store_val_in_field
-  (fixed #bug 2012)
-
-  sql/sql_select.cc
-    1.91.1.45 03/12/16 17:55:20 vva@eagle.mysql.r18.ru +7 -1
-    fixed restoring of thd->count_cuted_fields in store_val_in_field
-    (fixed #bug 2012)
-
-  mysql-test/t/insert_select.test
-    1.2.1.1 03/12/16 17:55:20 vva@eagle.mysql.r18.ru +31 -0
-    added test case for bug #2012
-
-  mysql-test/r/insert_select.result
-    1.2.1.1 03/12/16 17:55:20 vva@eagle.mysql.r18.ru +12 -0
-    added test case for bug #2012
-
-ChangeSet
-  1.1658.1.1 03/12/16 21:52:11 guilhem@mysql.com +14 -0
-  Fix for BUG#2121 "Inadequate message "check permissions on master.info"":
-  more general message when slave can't start because of incorrect
-  replication information, the previous one was sometimes a misleading
-  indication (i.e. sometimes the problem had nothing to do with
-  system permissions).
-  The perfect fix would be to report the exact error to the client
-  (instead of pointing the client to the error log); this is a bit
-  of work so it's more a development task:
-  WL#1088 "Move all hardcoded messages of replication to share/errmsg.txt".
-  I was not able to modify the errmsg.txt in these sql/ subdirectories:
-  
-  danish
-  dutch
-  german
-  italian
-  portuguese
-  russian
-  spanish
-  swedish
-  ukrainian
-
-  sql/share/slovak/errmsg.txt
-    1.57 03/12/16 21:52:02 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/romanian/errmsg.txt
-    1.55 03/12/16 21:52:01 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/polish/errmsg.txt
-    1.56 03/12/16 21:52:01 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/norwegian/errmsg.txt
-    1.56 03/12/16 21:52:01 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/norwegian-ny/errmsg.txt
-    1.56 03/12/16 21:52:01 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/korean/errmsg.txt
-    1.56 03/12/16 21:52:00 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/japanese/errmsg.txt
-    1.56 03/12/16 21:52:00 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/hungarian/errmsg.txt
-    1.58 03/12/16 21:52:00 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/greek/errmsg.txt
-    1.57 03/12/16 21:51:59 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/french/errmsg.txt
-    1.57 03/12/16 21:51:59 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/estonian/errmsg.txt
-    1.58 03/12/16 21:51:59 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/english/errmsg.txt
-    1.68 03/12/16 21:51:58 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  sql/share/czech/errmsg.txt
-    1.57 03/12/16 21:51:58 guilhem@mysql.com +1 -1
-    More general message when slave can't start because of incorrect
-    replication information, the previous one was sometimes a misleading
-    indication (i.e. sometimes the problem had nothing to do with
-    system permissions).
-
-  mysql-test/r/rpl_rotate_logs.result
-    1.35.1.1 03/12/16 21:51:57 guilhem@mysql.com +3 -3
+  mysql-test/r/rpl_server_id2.result
+    1.3 04/05/05 21:50:48 guilhem@mysql.com +1 -0
     result update
 
 ChangeSet
-  1.1663 03/12/16 17:44:51 lenz@mysql.com +1 -0
-   - bumped up version number to 4.0.18, now that 4.0.17 has been 
-     tagged/released
-   - tagged ChangeSet@1.1655.1.3 as mysql-4.0.17
+  1.1806 04/05/05 15:54:28 marko@hundin.mysql.fi +4 -0
+  InnoDB portability fix: new function os_file_set_eof()
 
-  configure.in
-    1.292 03/12/16 17:44:49 lenz@mysql.com +1 -1
-     - bumped up version number to 4.0.18, now that 4.0.17 has been 
-       tagged/released
+  sql/ha_innodb.cc
+    1.203 04/05/05 15:54:25 marko@hundin.mysql.fi +1 -1
+    Replace my_chsize() with os_file_set_eof()
 
-ChangeSet
-  1.1662 03/12/16 14:43:34 lenz@mysql.com +3 -0
-   - Bugfix for Do-rpm (moving of the resulting packages did not work due to
-     a missing space)
-   - Define the subject of the failure mail reports within the calling script
-     instead of logger.pm
+  innobase/srv/srv0srv.c
+    1.69 04/05/05 15:54:25 marko@hundin.mysql.fi +1 -5
+    Replace chsize() or ftruncate() with os_file_set_eof()
 
-  Build-tools/logger.pm
-    1.3 03/12/16 14:43:31 lenz@mysql.com +0 -1
-     - Define the subject for the failure mail within the calling script instead
-       of here
+  innobase/os/os0file.c
+    1.67 04/05/05 15:54:25 marko@hundin.mysql.fi +17 -0
+    Add os_file_set_eof()
 
-  Build-tools/Do-rpm
-    1.27 03/12/16 14:43:31 lenz@mysql.com +3 -1
-     - Define the subject of the failure email within the build script
-     - Added missing space to make moving of the resulting packages working
-
-  Build-tools/Bootstrap
-    1.18 03/12/16 14:43:31 lenz@mysql.com +2 -0
-     - Define the subject for the failure mail within the Build script
+  innobase/include/os0file.h
+    1.22 04/05/05 15:54:24 marko@hundin.mysql.fi +8 -0
+    Add os_file_set_eof()
 
 ChangeSet
-  1.1657.1.1 03/12/16 14:43:34 Sinisa@sinisa.nasamreza.org +2 -0
-  A new better test case for bug #2128 involving overflow
-  in decimal type with prepended zero's.
+  1.1805 04/05/05 14:40:44 monty@mysql.com +1 -0
+  Portability fix
 
-  mysql-test/t/type_decimal.test
-    1.12 03/12/16 14:43:30 Sinisa@sinisa.nasamreza.org +13 -2
-    A new better test case for bug #2128 involving overflow
-    in decimal type with prepended zero's.
-
-  mysql-test/r/type_decimal.result
-    1.14 03/12/16 14:43:30 Sinisa@sinisa.nasamreza.org +192 -3
-    A new better test case for bug #2128 involving overflow
-    in decimal type with prepended zero's.
+  sql/ha_innodb.cc
+    1.202 04/05/05 14:40:43 monty@mysql.com +1 -5
+    Portability fix
 
 ChangeSet
-  1.1660 03/12/16 14:40:57 monty@mysql.com +2 -0
-  Fixes for last pull
+  1.1804 04/05/05 11:50:58 marko@hundin.mysql.fi +2 -0
+  InnoDB: Truncate "<datadir>/innodb.status.<pid>" to its actual size
+  (Bug #3596)
 
-  sql/field.cc
-    1.81 03/12/16 14:40:55 monty@mysql.com +1 -1
-    Safer timestamp year checking (as 1969 can be in timestamp)
+  sql/ha_innodb.cc
+    1.201 04/05/05 11:50:55 marko@hundin.mysql.fi +5 -0
+    Truncate "<datadir>/innodb.status.<pid>" to its actual size (Bug #3596)
 
-  libmysqld/lib_sql.cc
-    1.46 03/12/16 14:40:55 monty@mysql.com +6 -0
-    Fixed compilation error in embedded library (from last pull)
+  innobase/srv/srv0srv.c
+    1.68 04/05/05 11:50:54 marko@hundin.mysql.fi +5 -0
+    Truncate "<datadir>/innodb.status.<pid>" to its actual size (Bug #3596)
 
 ChangeSet
-  1.1655.1.4 03/12/16 13:20:17 monty@mysql.com +18 -0
-  Portability fixes (mostly test suite)
-  Make ENGINE= an alias for TYPE= (Compabiltiy with 4.1)
-  Fix when using symlinked data files and realpath() is not working
+  1.1803 04/05/05 11:40:17 marko@hundin.mysql.fi +1 -0
+  InnoDB: os0file.c: Lock files exclusively (Bug #3608)
 
-  strings/strtoull.c
-    1.7 03/12/16 13:20:16 monty@mysql.com +0 -1
-    Remove not needed include file
+  innobase/os/os0file.c
+    1.66 04/05/05 11:40:14 marko@hundin.mysql.fi +48 -7
+    Lock files unless #defined __WIN__ or UNIV_HOTBACKUP (Bug #3608)
 
-  strings/strtoll.c
-    1.7 03/12/16 13:20:16 monty@mysql.com +2 -1
-    Fix for True64
+ChangeSet
+  1.1800.1.5 04/05/04 21:47:39 greg@mysql.com +2 -0
+  Fixes to Windows project files for 4.0.19
 
-  strings/strto.c
-    1.11 03/12/16 13:20:16 monty@mysql.com +0 -2
-    Fix for True64
+  VC++Files/mysql.dsw
+    1.10 04/05/04 21:47:38 greg@mysql.com +3 -0
+    Add dependency to prevent compile error
+
+  VC++Files/client/mysqlclient.dsp
+    1.9 04/05/04 21:47:38 greg@mysql.com +15 -11
+    Add strxnmov to project files
+
+ChangeSet
+  1.1800.1.4 04/05/04 16:35:31 guilhem@mysql.com +2 -0
+  useless fixes for --report-password and --show-slave-auth-info (almost undocumented options),
+  just for beauty of truth.
+
+  sql/slave.cc
+    1.275 04/05/04 16:35:29 guilhem@mysql.com +1 -1
+    report password when you must report password.
 
   sql/mysqld.cc
-    1.471 03/12/16 13:20:16 monty@mysql.com +2 -2
-    Code cleanup
-
-  sql/lex.h
-    1.93 03/12/16 13:20:16 monty@mysql.com +1 -0
-    Make ENGINE= an alias for TYPE=
-
-  mysys/my_symlink.c
-    1.6 03/12/16 13:20:16 monty@mysql.com +1 -0
-    More debugging
-
-  mysql-test/t/rpl_trunc_binlog.test
-    1.6 03/12/16 13:20:16 monty@mysql.com +1 -0
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/t/rpl_rotate_logs.test
-    1.39 03/12/16 13:20:15 monty@mysql.com +5 -4
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/t/rpl_max_relay_size.test
-    1.4 03/12/16 13:20:15 monty@mysql.com +1 -0
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/t/rpl_log_pos.test
-    1.22 03/12/16 13:20:15 monty@mysql.com +1 -1
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/t/handler.test
-    1.13 03/12/16 13:20:15 monty@mysql.com +1 -1
-    test engine=
-
-  mysql-test/r/rpl_trunc_binlog.result
-    1.5 03/12/16 13:20:15 monty@mysql.com +1 -1
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/r/rpl_rotate_logs.result
-    1.36 03/12/16 13:20:15 monty@mysql.com +6 -5
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/r/rpl_max_relay_size.result
-    1.4 03/12/16 13:20:15 monty@mysql.com +1 -1
-    Use replace_columns to replace some 'not constant' columns
-
-  mysql-test/r/handler.result
-    1.13 03/12/16 13:20:15 monty@mysql.com +1 -1
-    test engine=
-
-  myisam/mi_check.c
-    1.129 03/12/16 13:20:15 monty@mysql.com +4 -8
-    Fix when using symlinked data files and realpath() is not working
-
-  include/my_sys.h
-    1.104 03/12/16 13:20:15 monty@mysql.com +1 -1
-    Stop compiler warnings about alloca on freebsd
-
-  client/mysqltest.c
-    1.110 03/12/16 13:20:15 monty@mysql.com +255 -150
-    Copied mysqltest from 4.1 and modified this to compile in 4.0
-    This was needed to get replace_columns to work.
+    1.493 04/05/04 16:35:28 guilhem@mysql.com +1 -1
+    correcting sentence (even if option is not really usable,
+    as it depends on report-user and report-password which are undocumented
+    (and will stay like this)).
 
 ChangeSet
-  1.1622.2.1 03/12/16 11:10:50 guilhem@mysql.com +13 -0
-  Fix for BUG#2083
-  "EE_ error codes (EE_DELETE, EE_WRITE) end up in the binlog, making slave stop".
-  The problem was that during execution of the command on the master, an error
-  can occur (for example, not space left on device, then mysqld waits and when
-  there is space it completes successfully: so finally it worked but the error
-  EE_WRITE remains in thd->net.last_errno and thd->net.last_error).
-  To know if finally the command succeeded, we test the 'error' variable in
-  every place, and if it shows no failure we reset thd->net.last_err* using
-  the function THD::clear_error() which is backported from 4.1.
-  A new test to see if now only real errors get to the binlog (note: the test
-  uses "rm").
-  
-  Also a bit of memory free/alloc saving in log_event.cc (do not free the whole
-  mem_root after every query in the slave SQL thread: we can keep the initial
-  block of it; which will be freed when the thread terminates).
-
-  mysql-test/t/rpl_EE_error.test
-    1.1 03/12/16 11:10:37 guilhem@mysql.com +30 -0
-
-  mysql-test/t/rpl_EE_error.test
-    1.0 03/12/16 11:10:37 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/t/rpl_EE_error.test
-
-  mysql-test/r/rpl_EE_error.result
-    1.1 03/12/16 11:10:36 guilhem@mysql.com +16 -0
-
-  sql/sql_update.cc
-    1.92.2.1 03/12/16 11:10:36 guilhem@mysql.com +4 -0
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_table.cc
-    1.168.1.1 03/12/16 11:10:36 guilhem@mysql.com +5 -0
-    clear the error in thd->net.last_errno as there was no error
-
-  mysql-test/r/rpl_EE_error.result
-    1.0 03/12/16 11:10:36 guilhem@mysql.com +0 -0
-    BitKeeper file /home/mysql_src/mysql-4.0/mysql-test/r/rpl_EE_error.result
-
-  sql/sql_rename.cc
-    1.20 03/12/16 11:10:30 guilhem@mysql.com +1 -0
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_parse.cc
-    1.350.1.1 03/12/16 11:10:30 guilhem@mysql.com +2 -0
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_insert.cc
-    1.106.1.1 03/12/16 11:10:29 guilhem@mysql.com +5 -1
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_delete.cc
-    1.99.1.1 03/12/16 11:10:29 guilhem@mysql.com +5 -0
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_db.cc
-    1.63 03/12/16 11:10:29 guilhem@mysql.com +2 -0
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_class.h
-    1.167.1.1 03/12/16 11:10:29 guilhem@mysql.com +9 -0
-    Backport of THD::clear_error() from 4.1:
-    clears the error in thd->net.last_errno
-
-  sql/sql_base.cc
-    1.167.1.1 03/12/16 11:10:28 guilhem@mysql.com +1 -1
-    clear the error in thd->net.last_errno as there was no error
-
-  sql/sql_acl.cc
-    1.119.1.1 03/12/16 11:10:28 guilhem@mysql.com +1 -0
-    clear the error in thd->net.last_errno as there was no error
+  1.1793.1.1 04/05/04 15:48:40 guilhem@mysql.com +1 -0
+  Fix for Bug#3357 "If the statement is long, the error message is trunc and important info is lost";
+  in hard-coded replication messages, always put small-length info (error codes, explanation of the error) at the beginning,
+  so that it is not cut by truncation if the query is very long (which happens if the query goes first).
 
   sql/log_event.cc
-    1.141 03/12/16 11:10:28 guilhem@mysql.com +3 -3
-    In the slave SQL thread, it's a waste to free the initial block of the mem_root
-    after every query. We can instead keep it. It will be freed when the thread
-    terminates (in THD::~THD()).
+    1.154 04/05/04 15:48:35 guilhem@mysql.com +7 -10
+    in hard-coded replication messages, always put small-length info (error codes, explanation of the error) at the beginning,
+    so that it is not cut by truncation if the query is very long (which happens if the query goes first).
 
 ChangeSet
-  1.1655.1.3 03/12/14 21:31:02 monty@mysql.com +5 -0
-  Portablity fix
+  1.1800.1.2 04/05/04 14:36:23 serg@serg.mylan +2 -0
+  don't rely on readdir() returning . and .. first
 
-  mysql-test/t/timezone.test
-    1.3 03/12/14 21:31:01 monty@mysql.com +12 -6
-    Portability fix (For AIX 4.3 and other machines that doesn't support MET timezone)
+  sql/sql_db.cc
+    1.70 04/05/04 14:36:20 serg@serg.mylan +6 -1
+    don't rely on readdir() returning . and .. first
 
-  mysql-test/t/mysqldump.test
-    1.5 03/12/14 21:31:01 monty@mysql.com +3 -0
-    Portablity fix (Some machines like OSF doesn't read a big double as 'inf'
+  sql/sql_base.cc
+    1.178 04/05/04 14:36:20 serg@serg.mylan +7 -1
+    don't rely on readdir() returning . and .. first
 
-  mysql-test/r/timezone.result
-    1.3 03/12/14 21:31:01 monty@mysql.com +9 -6
-    Portability fix (For AIX 4.3 and other machines that doesn't support MET timezone)
+ChangeSet
+  1.676.1.762 04/05/04 13:07:36 bell@sanja.is.com.ua +1 -0
+  fixed db name and layout (can cause very rare race condition bug)
 
-  mysql-test/r/mysqldump.result
-    1.5 03/12/14 21:31:01 monty@mysql.com +1 -1
-    Portablity fix
+  sql/sql_acl.cc
+    1.27.1.18 04/05/04 13:07:34 bell@sanja.is.com.ua +2 -2
+    fixed db name and layout (can cause very rare race condition bug)
 
-  mysql-test/r/have_met_timezone.require
-    1.5 03/12/14 21:31:01 monty@mysql.com +2 -2
-    Portability fix (For AIX 4.3 and other machines that doesn't support MET timezone)
+ChangeSet
+  1.1800.1.1 04/05/03 18:26:50 serg@serg.mylan +1 -0
+  compatibility fix. warning removed
+
+  sql/item_timefunc.cc
+    1.26 04/05/03 18:26:47 serg@serg.mylan +4 -4
+    compatibility fix. warning removed
 

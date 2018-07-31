@@ -91,8 +91,12 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   bool is_fifo=0;
   LOAD_FILE_INFO lf_info;
   char *db = table_list->db;			// This is never null
-  /* If no current database, use database where table is located */
-  char *tdb= thd->db ? thd->db : db;
+  /*
+    If path for file is not defined, we will use the current database.
+    If this is not set, we will use the directory where the table to be
+    loaded is located
+  */
+  char *tdb= thd->db ? thd->db : db;		// Result is never null
   bool transactional_table, log_delayed;
   ulong skip_lines= ex->skip_lines;
   DBUG_ENTER("mysql_load");

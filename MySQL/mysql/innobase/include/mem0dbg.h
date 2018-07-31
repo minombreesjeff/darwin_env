@@ -31,6 +31,7 @@ check fields at the both ends of the field. */
 #define MEM_SPACE_NEEDED(N) ut_calc_align((N), UNIV_MEM_ALIGNMENT)
 #endif
 
+#ifdef UNIV_DEBUG
 /*******************************************************************
 Checks a memory heap for consistency and prints the contents if requested.
 Outputs the sum of sizes of buffers given to the user (only in
@@ -60,6 +61,8 @@ mem_heap_validate_or_print(
 	ulint*          n_blocks); /* out: number of blocks in the heap,
 				if a NULL pointer is passed as this
 				argument, it is ignored */
+#endif /* UNIV_DEBUG */
+#ifdef UNIV_MEM_DEBUG
 /******************************************************************
 Prints the contents of a memory heap. */
 
@@ -67,6 +70,8 @@ void
 mem_heap_print(
 /*===========*/
 	mem_heap_t*   heap);	/* in: memory heap */
+#endif /* UNIV_MEM_DEBUG */
+#ifdef UNIV_DEBUG
 /******************************************************************
 Checks that an object is a memory heap (or a block of it) */
 
@@ -83,20 +88,8 @@ mem_heap_validate(
 /*==============*/
 				/* out: TRUE if ok */
 	mem_heap_t*   heap);	/* in: memory heap */
-/*********************************************************************
-Prints information of dynamic memory usage and currently live
-memory heaps or buffers. Can only be used in the debug version. */
-
-void
-mem_print_info(void);
-/*=================*/
-/*********************************************************************
-Prints information of dynamic memory usage and currently allocated memory
-heaps or buffers since the last ..._print_info or..._print_new_info. */
-
-void
-mem_print_new_info(void);
-/*====================*/
+#endif /* UNIV_DEBUG */
+#ifdef UNIV_MEM_DEBUG
 /*********************************************************************
 TRUE if no memory is currently allocated. */
 
@@ -118,6 +111,7 @@ ibool
 mem_validate(void);
 /*===============*/
 			/* out: TRUE if ok */
+#endif /* UNIV_MEM_DEBUG */
 /****************************************************************
 Tries to find neigboring memory allocation blocks and dumps to stderr
 the neighborhood of a given pointer. */

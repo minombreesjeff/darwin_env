@@ -4,6 +4,9 @@
 /* Define to 1 if you have the <aio.h> header file. */
 #define HAVE_AIO_H 1
 
+/* Define to 1 if you have the <dlfcn.h> header file. */
+#define HAVE_DLFCN_H 1
+
 /* Define to 1 if you have the `fdatasync' function. */
 #define HAVE_FDATASYNC 1
 

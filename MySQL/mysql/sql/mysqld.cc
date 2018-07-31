@@ -189,7 +189,7 @@ static const char* default_dbug_option=IF_WIN("d:t:i:O,\\mysqld.trace",
 #endif
 
 #ifdef __NT__
-static char szPipeName [ 257 ];
+static char pipe_name[512];
 static SECURITY_ATTRIBUTES saPipeSecurity;
 static SECURITY_DESCRIPTOR sdPipeDescriptor;
 static HANDLE hPipe = INVALID_HANDLE_VALUE;
@@ -287,8 +287,10 @@ char log_error_file[FN_REFLEN];
 bool opt_log, opt_update_log, opt_bin_log, opt_slow_log;
 bool opt_error_log= IF_WIN(1,0);
 bool opt_disable_networking=0, opt_skip_show_db=0;
+bool lower_case_table_names_used= 0;
 my_bool opt_enable_named_pipe= 0, opt_debugging= 0;
 my_bool opt_local_infile, opt_external_locking, opt_slave_compressed_protocol;
+my_bool lower_case_file_system= 0;
 uint delay_key_write_options= (uint) DELAY_KEY_WRITE_ON;
 uint lower_case_table_names;
 
@@ -399,7 +401,7 @@ ulong select_range_check_count, select_range_count, select_scan_count;
 ulong select_full_range_join_count,select_full_join_count;
 ulong specialflag=0,opened_tables=0,created_tmp_tables=0,
       created_tmp_disk_tables=0;
-ulong max_connections,max_insert_delayed_threads,max_used_connections,
+ulong max_connections, max_used_connections,
       max_connect_errors, max_user_connections = 0;
 ulong thread_id=1L,current_pid;
 ulong slow_launch_threads = 0;
@@ -580,7 +582,7 @@ static void close_connections(void)
     DBUG_PRINT( "quit", ("Closing named pipes") );
      
     /* Create connection to the handle named pipe handler to break the loop */
-    if ((temp = CreateFile(szPipeName,
+    if ((temp = CreateFile(pipe_name,
 			   GENERIC_READ | GENERIC_WRITE,
 			   0,
 			   NULL,
@@ -588,7 +590,7 @@ static void close_connections(void)
 			   0,
 			   NULL )) != INVALID_HANDLE_VALUE)
     {
-      WaitNamedPipe(szPipeName, 1000);
+      WaitNamedPipe(pipe_name, 1000);
       DWORD dwMode = PIPE_READMODE_BYTE | PIPE_WAIT;
       SetNamedPipeHandleState(temp, &dwMode, NULL, NULL);
       CancelIo(temp);
@@ -1038,8 +1040,8 @@ static void set_user(const char *user)
     {
       /* Don't give a warning, if real user is same as given with --user */
       struct passwd *user_info= getpwnam(user);
-
-      if (!user_info || user_id != user_info->pw_uid)
+      if ((!user_info || user_id != user_info->pw_uid) &&
+	  global_system_variables.log_warnings)
 	fprintf(stderr,
 		"Warning: One can only use the --user switch if running as root\n");
     }
@@ -1173,11 +1175,14 @@ static void server_init(void)
   if (Service.IsNT() && mysql_unix_port[0] && !opt_bootstrap &&
       opt_enable_named_pipe)
   {
-    sprintf( szPipeName, "\\\\.\\pipe\\%s", mysql_unix_port );
-    ZeroMemory( &saPipeSecurity, sizeof(saPipeSecurity) );
-    ZeroMemory( &sdPipeDescriptor, sizeof(sdPipeDescriptor) );
-    if ( !InitializeSecurityDescriptor(&sdPipeDescriptor,
-				       SECURITY_DESCRIPTOR_REVISION) )
+    
+    pipe_name[sizeof(pipe_name)-1]= 0;		/* Safety if too long string */
+    strxnmov(pipe_name, sizeof(pipe_name)-1, "\\\\.\\pipe\\",
+	     mysql_unix_port, NullS);
+    bzero((char*) &saPipeSecurity, sizeof(saPipeSecurity) );
+    bzero((char*) &sdPipeDescriptor, sizeof(sdPipeDescriptor) );
+    if (!InitializeSecurityDescriptor(&sdPipeDescriptor,
+				      SECURITY_DESCRIPTOR_REVISION) )
     {
       sql_perror("Can't start server : Initialize security descriptor");
       unireg_abort(1);
@@ -1190,16 +1195,16 @@ static void server_init(void)
     saPipeSecurity.nLength = sizeof( SECURITY_ATTRIBUTES );
     saPipeSecurity.lpSecurityDescriptor = &sdPipeDescriptor;
     saPipeSecurity.bInheritHandle = FALSE;
-    if ((hPipe = CreateNamedPipe(szPipeName,
-				 PIPE_ACCESS_DUPLEX,
-				 PIPE_TYPE_BYTE |
-				 PIPE_READMODE_BYTE |
-				 PIPE_WAIT,
-				 PIPE_UNLIMITED_INSTANCES,
-				 (int) global_system_variables.net_buffer_length,
-				 (int) global_system_variables.net_buffer_length,
-				 NMPWAIT_USE_DEFAULT_WAIT,
-				 &saPipeSecurity )) == INVALID_HANDLE_VALUE)
+    if ((hPipe= CreateNamedPipe(pipe_name,
+				PIPE_ACCESS_DUPLEX,
+				PIPE_TYPE_BYTE |
+				PIPE_READMODE_BYTE |
+				PIPE_WAIT,
+				PIPE_UNLIMITED_INSTANCES,
+				(int) global_system_variables.net_buffer_length,
+				(int) global_system_variables.net_buffer_length,
+				NMPWAIT_USE_DEFAULT_WAIT,
+				&saPipeSecurity)) == INVALID_HANDLE_VALUE)
       {
 	LPVOID lpMsgBuf;
 	int error=GetLastError();
@@ -1723,7 +1728,8 @@ extern "C" void *signal_hand(void *arg __attribute__((unused)))
     This should actually be '+ max_number_of_slaves' instead of +10,
     but the +10 should be quite safe.
   */
-  init_thr_alarm(max_connections+max_insert_delayed_threads+10);
+  init_thr_alarm(max_connections +
+		 global_system_variables.max_insert_delayed_threads + 10);
 #if SIGINT != THR_KILL_SIGNAL
   if (test_flags & TEST_SIGINT)
   {
@@ -2102,11 +2108,27 @@ int main(int argc, char **argv)
     insensitive names.  If this is not done the users MyISAM tables will
     get corrupted if accesses with names of different case.
   */
+  DBUG_PRINT("info", ("lower_case_table_names: %d", lower_case_table_names));
   if (!lower_case_table_names &&
-      test_if_case_insensitive(mysql_real_data_home) == 1)
+      (lower_case_file_system=
+       (test_if_case_insensitive(mysql_real_data_home) == 1)))
   {
-    sql_print_error("Warning: Setting lower_case_table_names=2 because file system for %s is case insensitive", mysql_real_data_home);
-    lower_case_table_names= 2;
+    if (lower_case_table_names_used)
+    {
+      if (global_system_variables.log_warnings)
+	sql_print_error("\
+Warning: You have forced lower_case_table_names to 0 through a command-line \
+option, even though your file system '%s' is case insensitive.  This means \
+that you can corrupt a MyISAM table by accessing it with different cases. \
+You should consider changing lower_case_table_names to 1 or 2",
+			mysql_real_data_home);
+    }
+    else
+    {
+      if (global_system_variables.log_warnings)
+	sql_print_error("Warning: Setting lower_case_table_names=2 because file system for %s is case insensitive", mysql_real_data_home);
+      lower_case_table_names= 2;
+    }
   }
 
 #ifdef HAVE_OPENSSL
@@ -2168,7 +2190,8 @@ int main(int argc, char **argv)
       DBUG_PRINT("warning",
 		 ("Changed limits: max_connections: %ld  table_cache: %ld",
 		  max_connections,table_cache_size));
-      sql_print_error("Warning: Changed limits: max_connections: %ld  table_cache: %ld",max_connections,table_cache_size);
+      if (global_system_variables.log_warnings)
+	sql_print_error("Warning: Changed limits: max_connections: %ld  table_cache: %ld",max_connections,table_cache_size);
     }
     open_files_limit= files;
   }
@@ -2202,8 +2225,10 @@ int main(int argc, char **argv)
   mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
   mysql_data_home[1]=0;
   server_init();
-  table_cache_init();
-  hostname_cache_init();
+  if (table_cache_init() || hostname_cache_init())
+  {
+    unireg_abort(1);
+  }
   query_cache_result_size_limit(query_cache_limit);
   query_cache_resize(query_cache_size);
   randominit(&sql_rand,(ulong) start_time,(ulong) start_time/2);
@@ -2258,7 +2283,8 @@ int main(int argc, char **argv)
   {
     if (mlockall(MCL_CURRENT))
     {
-      sql_print_error("Warning: Failed to lock memory. Errno: %d\n",errno);
+      if (global_system_variables.log_warnings)
+	sql_print_error("Warning: Failed to lock memory. Errno: %d\n",errno);
     }
     else
       locked_in_memory=1;
@@ -2353,6 +2379,15 @@ Warning: you need to use --log-bin to make --log-slave-updates work. \
 Now disabling --log-slave-updates.");
   }
 
+  if (opt_log_slave_updates && replicate_same_server_id)
+  {
+      sql_print_error("\
+Error: using --replicate-same-server-id in conjunction with \
+--log-slave-updates is impossible, it would lead to infinite loops in this \
+server.");
+      unireg_abort(1);
+  }
+
   if (opt_bootstrap)
   {
     int error=bootstrap(stdin);
@@ -2409,7 +2444,7 @@ Now disabling --log-slave-updates.");
       (!have_tcpip || opt_disable_networking))
   {
     sql_print_error("TCP/IP or --enable-named-pipe should be configured on NT OS");
-	unireg_abort(1);
+    unireg_abort(1);
   }
   else
   {
@@ -3074,7 +3109,7 @@ extern "C" pthread_handler_decl(handle_connections_namedpipes,arg)
     if (!fConnected)
     {
       CloseHandle( hPipe );
-      if ((hPipe = CreateNamedPipe(szPipeName,
+      if ((hPipe = CreateNamedPipe(pipe_name,
 				   PIPE_ACCESS_DUPLEX,
 				   PIPE_TYPE_BYTE |
 				   PIPE_READMODE_BYTE |
@@ -3092,7 +3127,7 @@ extern "C" pthread_handler_decl(handle_connections_namedpipes,arg)
     }
     hConnectedPipe = hPipe;
     /* create new pipe for new connection */
-    if ((hPipe = CreateNamedPipe(szPipeName,
+    if ((hPipe = CreateNamedPipe(pipe_name,
 				 PIPE_ACCESS_DUPLEX,
 				 PIPE_TYPE_BYTE |
 				 PIPE_READMODE_BYTE |
@@ -3177,7 +3212,7 @@ enum options_mysqld {
   OPT_SKIP_SLAVE_START,        OPT_SKIP_INNOBASE,
   OPT_SAFEMALLOC_MEM_LIMIT,    OPT_REPLICATE_DO_TABLE, 
   OPT_REPLICATE_IGNORE_TABLE,  OPT_REPLICATE_WILD_DO_TABLE, 
-  OPT_REPLICATE_WILD_IGNORE_TABLE, 
+  OPT_REPLICATE_WILD_IGNORE_TABLE, OPT_REPLICATE_SAME_SERVER_ID,
   OPT_DISCONNECT_SLAVE_EVENT_COUNT, 
   OPT_ABORT_SLAVE_EVENT_COUNT,
   OPT_INNODB_DATA_HOME_DIR,
@@ -3225,7 +3260,7 @@ enum options_mysqld {
   OPT_NET_READ_TIMEOUT, OPT_NET_WRITE_TIMEOUT,
   OPT_OPEN_FILES_LIMIT, 
   OPT_QUERY_CACHE_LIMIT, OPT_QUERY_CACHE_SIZE,
-  OPT_QUERY_CACHE_TYPE, OPT_RECORD_BUFFER,
+  OPT_QUERY_CACHE_TYPE, OPT_QUERY_CACHE_WLOCK_INVALIDATE, OPT_RECORD_BUFFER,
   OPT_RECORD_RND_BUFFER, OPT_RELAY_LOG_SPACE_LIMIT,
   OPT_SLAVE_NET_TIMEOUT, OPT_SLAVE_COMPRESSED_PROTOCOL, OPT_SLOW_LAUNCH_TIME,
   OPT_READONLY, OPT_DEBUGGING,
@@ -3587,6 +3622,13 @@ Does nothing yet.",
   {"replicate-rewrite-db", OPT_REPLICATE_REWRITE_DB,
    "Updates to a database with a different name than the original. Example: replicate-rewrite-db=master_db_name->slave_db_name",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"replicate-same-server-id", OPT_REPLICATE_SAME_SERVER_ID,
+   "In replication, if set to 1, do not skip events having our server id. \
+Default value is 0 (to break infinite loops in circular replication). \
+Can't be set to 1 if --log-slave-updates is used.",
+   (gptr*) &replicate_same_server_id,
+   (gptr*) &replicate_same_server_id,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   // In replication, we may need to tell the other servers how to connect
   {"report-host", OPT_REPORT_HOST,
    "Hostname or IP of the slave to be reported to to the master during slave registration. Will appear in the output of SHOW SLAVE HOSTS. Leave unset if you do not want the slave to register itself with the master. Note that it is not sufficient for the master to simply read the IP of the slave off the socket once the slave connects. Due to NAT and other routing issues, that IP may not be valid for connecting to the slave from the master or other hosts.",
@@ -3632,7 +3674,7 @@ relay logs",
    "Change the value of a variable. Please note that this option is deprecated;you can set variables directly with --variable-name=value.",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"show-slave-auth-info", OPT_SHOW_SLAVE_AUTH_INFO,
-   "Show user and password in SHOW SLAVE STATUS",
+   "Show user and password in SHOW SLAVE HOSTS on this master",
    (gptr*) &opt_show_slave_auth_info, (gptr*) &opt_show_slave_auth_info, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"concurrent-insert", OPT_CONCURRENT_INSERT,
@@ -3725,11 +3767,11 @@ replicating a LOAD DATA INFILE command",
    0, 0, 0, 0},
   {"log-warnings", 'W', "Log some not critical warnings to the log file",
    (gptr*) &global_system_variables.log_warnings,
-   (gptr*) &max_system_variables.log_warnings, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+   (gptr*) &max_system_variables.log_warnings, 0, GET_BOOL, NO_ARG, 1, 0, 0,
    0, 0, 0},
   {"warnings", 'W', "Deprecated ; Use --log-warnings instead",
    (gptr*) &global_system_variables.log_warnings,
-   (gptr*) &max_system_variables.log_warnings, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+   (gptr*) &max_system_variables.log_warnings, 0, GET_BOOL, NO_ARG, 1, 0, 0,
    0, 0, 0},
   { "back_log", OPT_BACK_LOG,
     "The number of outstanding connection requests MySQL can have. This comes into play when the main MySQL thread gets very many connection requests in a very short time.",
@@ -3893,7 +3935,8 @@ The minimum value for this variable is 4096.",
     REQUIRED_ARG, MAX_CONNECT_ERRORS, 1, ~0L, 0, 1, 0},
   {"max_delayed_threads", OPT_MAX_DELAYED_THREADS,
    "Don't start more than this number of threads to handle INSERT DELAYED statements. If set to zero, which means INSERT DELAYED is not used.",
-   (gptr*) &max_insert_delayed_threads, (gptr*) &max_insert_delayed_threads,
+   (gptr*) &global_system_variables.max_insert_delayed_threads,
+   (gptr*) &max_system_variables.max_insert_delayed_threads,
    0, GET_ULONG, REQUIRED_ARG, 20, 0, 16384, 0, 1, 0},
   {"max_heap_table_size", OPT_MAX_HEP_TABLE_SIZE,
    "Don't allow creation of heap tables bigger than this.",
@@ -4012,12 +4055,17 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    (gptr*) &global_system_variables.query_cache_type,
    (gptr*) &max_system_variables.query_cache_type,
    0, GET_ULONG, REQUIRED_ARG, 1, 0, 2, 0, 1, 0},
+  {"query_cache_wlock_invalidate", OPT_QUERY_CACHE_WLOCK_INVALIDATE,
+   "Invalidate queries in query cache on LOCK for write",
+   (gptr*) &global_system_variables.query_cache_wlock_invalidate,
+   (gptr*) &max_system_variables.query_cache_wlock_invalidate,
+   0, GET_BOOL, NO_ARG, 0, 0, 1, 0, 1, 0},
+#endif /*HAVE_QUERY_CACHE*/
   {"query_prealloc_size", OPT_QUERY_PREALLOC_SIZE,
    "Persistent buffer for query parsing and execution",
    (gptr*) &global_system_variables.query_prealloc_size,
    (gptr*) &max_system_variables.query_prealloc_size, 0, GET_ULONG,
    REQUIRED_ARG, QUERY_ALLOC_PREALLOC_SIZE, 1024, ~0L, 0, 1024, 0},
-#endif /*HAVE_QUERY_CACHE*/
   {"read_buffer_size", OPT_RECORD_BUFFER,
    "Each thread that does a sequential scan allocates a buffer of this size for each table it scans. If you do many sequential scans, you may want to increase this value.",
    (gptr*) &global_system_variables.read_buff_size,
@@ -4070,8 +4118,8 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    1, 0},
   {"table_cache", OPT_TABLE_CACHE,
    "The number of open tables for all threads.", (gptr*) &table_cache_size,
-   (gptr*) &table_cache_size, 0, GET_ULONG, REQUIRED_ARG, 64, 1, ~0L, 0, 1,
-   0},
+   (gptr*) &table_cache_size, 0, GET_ULONG, REQUIRED_ARG, 64, 1, 512*1024L,
+   0, 1, 0},
   {"thread_concurrency", OPT_THREAD_CONCURRENCY,
    "Permits the application to give the threads system a hint for the desired number of threads that should be run at the same time.",
    (gptr*) &concurrency, (gptr*) &concurrency, 0, GET_ULONG, REQUIRED_ARG,
@@ -4842,6 +4890,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case OPT_LOWER_CASE_TABLE_NAMES:
     lower_case_table_names= argument ? atoi(argument) : 1;
+    lower_case_table_names_used= 1;
     break;
   }
   return 0;
@@ -5006,14 +5055,16 @@ static uint set_maximum_open_files(uint max_file_limit)
     rlimit.rlim_cur=rlimit.rlim_max=max_file_limit;
     if (setrlimit(RLIMIT_NOFILE,&rlimit))
     {
-      sql_print_error("Warning: setrlimit couldn't increase number of open files to more than %lu (request: %u)",
-		      old_cur, max_file_limit);	/* purecov: inspected */
+      if (global_system_variables.log_warnings)
+	sql_print_error("Warning: setrlimit couldn't increase number of open files to more than %lu (request: %u)",
+			old_cur, max_file_limit);	/* purecov: inspected */
       max_file_limit=old_cur;
     }
     else
     {
       (void) getrlimit(RLIMIT_NOFILE,&rlimit);
-      if ((uint) rlimit.rlim_cur != max_file_limit)
+      if ((uint) rlimit.rlim_cur != max_file_limit &&
+	  global_system_variables.log_warnings)
 	sql_print_error("Warning: setrlimit returned ok, but didn't change limits. Max open files is %ld (request: %u)",
 			(ulong) rlimit.rlim_cur,
 			max_file_limit); /* purecov: inspected */
@@ -5038,10 +5089,12 @@ static uint set_maximum_open_files(uint max_file_limit)
    // set new limit
    cbReqCount = max_file_limit - cbCurMaxFH0;
    ulrc = DosSetRelMaxFH( &cbReqCount, &cbCurMaxFH);
-   if (ulrc) {
-      sql_print_error("Warning: DosSetRelMaxFH couldn't increase number of open files to more than %d",
-         cbCurMaxFH0);
-      cbCurMaxFH = cbCurMaxFH0;
+   if (ulrc)
+   {
+     if (global_system_variables.log_warnings)
+       sql_print_error("Warning: DosSetRelMaxFH couldn't increase number of open files to more than %d",
+		       cbCurMaxFH0);
+     cbCurMaxFH = cbCurMaxFH0;
    }
 
    return cbCurMaxFH;
@@ -5127,6 +5180,7 @@ static int test_if_case_insensitive(const char *dir_name)
   File file;
   char buff[FN_REFLEN], buff2[FN_REFLEN];
   MY_STAT stat_info;
+  DBUG_ENTER("test_if_case_insensitive");
 
   fn_format(buff, glob_hostname, dir_name, ".lower-test",
 	    MY_UNPACK_FILENAME | MY_REPLACE_EXT | MY_REPLACE_DIR);
@@ -5136,13 +5190,14 @@ static int test_if_case_insensitive(const char *dir_name)
   if ((file= my_create(buff, 0666, O_RDWR, MYF(0))) < 0)
   {
     sql_print_error("Warning: Can't create test file %s", buff);
-    return -1;
+    DBUG_RETURN(-1);
   }
   my_close(file, MYF(0));
   if (my_stat(buff2, &stat_info, MYF(0)))
     result= 1;					// Can access file
   (void) my_delete(buff, MYF(MY_WME));
-  return result;
+  DBUG_PRINT("exit", ("result: %d", result));
+  DBUG_RETURN(result);
 }
 
 

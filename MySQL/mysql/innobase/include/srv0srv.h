@@ -13,7 +13,6 @@ Created 10/10/1995 Heikki Tuuri
 #include "univ.i"
 #include "sync0sync.h"
 #include "os0sync.h"
-#include "com0com.h"
 #include "que0types.h"
 #include "trx0types.h"
 
@@ -32,6 +31,11 @@ at a time */
 
 /* This is set to TRUE if the MySQL user has set it in MySQL */
 extern ibool	srv_lower_case_table_names;
+
+/* Mutex for locking srv_monitor_file */
+extern mutex_t	srv_monitor_file_mutex;
+/* Temporary file for innodb monitor output */
+extern FILE*	srv_monitor_file;
 
 /* Server parameters which are read from the initfile */
 
@@ -156,8 +160,8 @@ extern mutex_t*	kernel_mutex_temp;/* mutex protecting the server, trx structs,
 				
 /* Array of English strings describing the current state of an
 i/o handler thread */
-extern char* srv_io_thread_op_info[];
-extern char* srv_io_thread_function[];
+extern const char* srv_io_thread_op_info[];
+extern const char* srv_io_thread_function[];
 
 typedef struct srv_sys_struct	srv_sys_t;
 
@@ -209,13 +213,7 @@ srv_boot(void);
 /*==========*/
 			/* out: DB_SUCCESS or error code */
 /*************************************************************************
-Initializes the server. */
-
-void
-srv_init(void);
-/*==========*/
-/*************************************************************************
-Frees the OS fast mutex created in srv_init(). */
+Frees the OS fast mutex created in srv_boot(). */
 
 void
 srv_free(void);
@@ -241,6 +239,15 @@ srv_get_thread_type(void);
 /*=====================*/
 			/* out: SRV_COM, ... */
 /*************************************************************************
+Sets the info describing an i/o thread current state. */
+
+void
+srv_set_io_thread_op_info(
+/*======================*/
+	ulint		i,	/* in: the 'segment' of the i/o thread */
+	const char*	str);	/* in: constant char string describing the
+				state */
+/*************************************************************************
 Releases threads of the type given from suspension in the thread table.
 NOTE! The server mutex has to be reserved by the caller! */
 
@@ -265,23 +272,6 @@ srv_master_thread(
 			/* out: a dummy parameter */
 	void*	arg);	/* in: a dummy parameter required by
 			os_thread_create */
-/*************************************************************************
-Reads a keyword and a value from a file. */
-
-ulint
-srv_read_init_val(
-/*==============*/
-				/* out: DB_SUCCESS or error code */
-	FILE*	initfile,	/* in: file pointer */
-	char*	keyword,	/* in: keyword before value(s), or NULL if
-				no keyword read */
-	char*	str_buf,	/* in/out: buffer for a string value to read,
-				buffer size must be 10000 bytes, if NULL
-				then not read */
-	ulint*	num_val,	/* out:	numerical value to read, if NULL
-				then not read */
-	ibool	print_not_err);	/* in: if TRUE, then we will not print
-				error messages to console */
 /***********************************************************************
 Tells the Innobase server that there has been activity in the database
 and wakes up the master thread if it is suspended (not sleeping). Used
@@ -383,13 +373,12 @@ srv_error_monitor_thread(
 	void*	arg);	/* in: a dummy parameter required by
 			os_thread_create */
 /**********************************************************************
-Sprintfs to a buffer the output of the InnoDB Monitor. */
+Outputs to a file the output of the InnoDB Monitor. */
 
 void
-srv_sprintf_innodb_monitor(
-/*=======================*/
-	char*	buf,	/* in/out: buffer which must be at least 4 kB */
-	ulint	len);	/* in: length of the buffer */
+srv_printf_innodb_monitor(
+/*======================*/
+	FILE*	file);	/* in: output stream */
 
 
 /* Types for the threads existing in the system. Threads of types 4 - 9
@@ -421,9 +410,6 @@ struct srv_sys_struct{
 	os_event_t	operational;	/* created threads must wait for the
 					server to become operational by
 					waiting for this event */
-	com_endpoint_t*	endpoint;	/* the communication endpoint of the
-					server */
-
 	srv_table_t*	threads;	/* server thread table */
 	UT_LIST_BASE_NODE_T(que_thr_t)
 			tasks;		/* task queue */

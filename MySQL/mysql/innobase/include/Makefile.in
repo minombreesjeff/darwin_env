@@ -59,6 +59,7 @@ ACLOCAL = @ACLOCAL@
 AMDEP_FALSE = @AMDEP_FALSE@
 AMDEP_TRUE = @AMDEP_TRUE@
 AMTAR = @AMTAR@
+AR = @AR@
 AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
@@ -68,14 +69,21 @@ CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CXX = @CXX@
+CXXCPP = @CXXCPP@
+CXXDEPMODE = @CXXDEPMODE@
+CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
+ECHO = @ECHO@
 ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
+F77 = @F77@
+FFLAGS = @FFLAGS@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -83,6 +91,8 @@ INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 LDFLAGS = @LDFLAGS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
+LIBTOOL = @LIBTOOL@
+LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
 MAINTAINER_MODE_FALSE = @MAINTAINER_MODE_FALSE@
@@ -101,11 +111,16 @@ SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
 VERSION = @VERSION@
+ac_ct_AR = @ac_ct_AR@
 ac_ct_CC = @ac_ct_CC@
+ac_ct_CXX = @ac_ct_CXX@
+ac_ct_F77 = @ac_ct_F77@
 ac_ct_RANLIB = @ac_ct_RANLIB@
 ac_ct_STRIP = @ac_ct_STRIP@
 am__fastdepCC_FALSE = @am__fastdepCC_FALSE@
 am__fastdepCC_TRUE = @am__fastdepCC_TRUE@
+am__fastdepCXX_FALSE = @am__fastdepCXX_FALSE@
+am__fastdepCXX_TRUE = @am__fastdepCXX_TRUE@
 am__include = @am__include@
 am__leading_dot = @am__leading_dot@
 am__quote = @am__quote@
@@ -144,21 +159,20 @@ target_vendor = @target_vendor@
 noinst_HEADERS = btr0btr.h btr0btr.ic btr0cur.h btr0cur.ic \
         btr0pcur.h btr0pcur.ic btr0sea.h btr0sea.ic btr0types.h \
         buf0buf.h buf0buf.ic buf0flu.h buf0flu.ic buf0lru.h \
-        buf0lru.ic buf0rea.h buf0types.h com0com.h com0com.ic \
-        com0shm.h com0shm.ic data0data.h data0data.ic data0type.h \
+        buf0lru.ic buf0rea.h buf0types.h data0data.h data0data.ic data0type.h \
         data0type.ic data0types.h db0err.h dict0boot.h \
         dict0boot.ic dict0crea.h dict0crea.ic dict0dict.h \
         dict0dict.ic dict0load.h dict0load.ic dict0mem.h \
         dict0mem.ic dict0types.h dyn0dyn.h dyn0dyn.ic eval0eval.h \
         eval0eval.ic eval0proc.h eval0proc.ic fil0fil.h fsp0fsp.h \
         fsp0fsp.ic fut0fut.h fut0fut.ic fut0lst.h fut0lst.ic \
-        ha0ha.h ha0ha.ic hash0hash.h hash0hash.ic ib_odbc.h \
+        ha0ha.h ha0ha.ic hash0hash.h hash0hash.ic \
         ibuf0ibuf.h ibuf0ibuf.ic ibuf0types.h lock0lock.h \
         lock0lock.ic lock0types.h log0log.h log0log.ic log0recv.h \
         log0recv.ic mach0data.h mach0data.ic makefilewin.i \
         mem0dbg.h mem0dbg.ic mem0mem.h mem0mem.ic mem0pool.h \
         mem0pool.ic mtr0log.h mtr0log.ic mtr0mtr.h mtr0mtr.ic \
-        mtr0types.h odbc0odbc.h os0file.h os0proc.h os0proc.ic \
+        mtr0types.h os0file.h os0proc.h os0proc.ic \
         os0shm.h os0shm.ic os0sync.h os0sync.ic os0thread.h \
         os0thread.ic page0cur.h page0cur.ic page0page.h \
         page0page.ic page0types.h pars0grm.h pars0opt.h \
@@ -176,7 +190,7 @@ noinst_HEADERS = btr0btr.h btr0btr.ic btr0cur.h btr0cur.ic \
         thr0loc.h thr0loc.ic trx0purge.h trx0purge.ic trx0rec.h \
         trx0rec.ic trx0roll.h trx0roll.ic trx0rseg.h trx0rseg.ic \
         trx0sys.h trx0sys.ic trx0trx.h trx0trx.ic trx0types.h \
-        trx0undo.h trx0undo.ic univ.i univold.i univoldmysql.i \
+        trx0undo.h trx0undo.ic univ.i \
         usr0sess.h usr0sess.ic usr0types.h ut0byte.h ut0byte.ic \
         ut0dbg.h ut0lst.h ut0mem.h ut0mem.ic ut0rnd.h ut0rnd.ic \
         ut0sort.h ut0ut.h ut0ut.ic
@@ -200,6 +214,15 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am  $(top_srcdir)/configu
 	  $(AUTOMAKE) --gnu  include/Makefile
 Makefile: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.in  $(top_builddir)/config.status
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@ $(am__depfiles_maybe)
+
+mostlyclean-libtool:
+	-rm -f *.lo
+
+clean-libtool:
+	-rm -rf .libs _libs
+
+distclean-libtool:
+	-rm -f libtool
 uninstall-info-am:
 
 ETAGS = etags
@@ -318,11 +341,12 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-generic mostlyclean-am
+clean-am: clean-generic clean-libtool mostlyclean-am
 
 distclean: distclean-am
 
-distclean-am: clean-am distclean-generic distclean-tags
+distclean-am: clean-am distclean-generic distclean-libtool \
+	distclean-tags
 
 dvi: dvi-am
 
@@ -348,7 +372,7 @@ maintainer-clean-am: distclean-am maintainer-clean-generic
 
 mostlyclean: mostlyclean-am
 
-mostlyclean-am: mostlyclean-generic
+mostlyclean-am: mostlyclean-generic mostlyclean-libtool
 
 pdf: pdf-am
 
@@ -360,14 +384,15 @@ ps-am:
 
 uninstall-am: uninstall-info-am
 
-.PHONY: CTAGS GTAGS all all-am check check-am clean clean-generic ctags \
-	distclean distclean-generic distclean-tags distdir dvi dvi-am \
-	info info-am install install-am install-data install-data-am \
+.PHONY: CTAGS GTAGS all all-am check check-am clean clean-generic \
+	clean-libtool ctags distclean distclean-generic \
+	distclean-libtool distclean-tags distdir dvi dvi-am info \
+	info-am install install-am install-data install-data-am \
 	install-exec install-exec-am install-info install-info-am \
 	install-man install-strip installcheck installcheck-am \
 	installdirs maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-generic pdf pdf-am ps ps-am tags \
-	uninstall uninstall-am uninstall-info-am
+	mostlyclean mostlyclean-generic mostlyclean-libtool pdf pdf-am \
+	ps ps-am tags uninstall uninstall-am uninstall-info-am
 
 
 # Don't update the files from bitkeeper

@@ -18,7 +18,9 @@ typedef struct log_struct	log_t;
 typedef struct log_group_struct	log_group_t;
 
 extern	ibool	log_do_write;
+#ifdef UNIV_LOG_DEBUG
 extern 	ibool	log_debug_writes;
+#endif /* UNIV_LOG_DEBUG */
 
 /* Wait modes for log_write_up_to */
 #define LOG_NO_WAIT		91
@@ -364,7 +366,6 @@ Writes a buffer to a log file group. */
 void
 log_group_write_buf(
 /*================*/
-	ulint		type,		/* in: LOG_FLUSH or LOG_RECOVER */
 	log_group_t*	group,		/* in: log group */
 	byte*		buf,		/* in: buffer */
 	ulint		len,		/* in: buffer len; must be divisible
@@ -511,8 +512,7 @@ Prints info of the log. */
 void
 log_print(
 /*======*/
-	char*	buf,	/* in/out: buffer where to print */
-	char*	buf_end);/* in: buffer end */
+	FILE*	file);	/* in: file where to print */
 /**********************************************************
 Peeks the current lsn. */
 
@@ -549,7 +549,7 @@ extern log_t*	log_sys;
 					highest bit is set to 1 if this is the
 					first log block in a log flush write
 					segment */
-#define LOG_BLOCK_FLUSH_BIT_MASK 0x80000000
+#define LOG_BLOCK_FLUSH_BIT_MASK 0x80000000UL
 					/* mask used to get the highest bit in
 					the preceding field */
 #define	LOG_BLOCK_HDR_DATA_LEN	4	/* number of bytes of log written to
@@ -713,11 +713,13 @@ struct log_struct{
 	ulint		max_buf_free;	/* recommended maximum value of
 					buf_free, after which the buffer is
 					flushed */
+#ifdef UNIV_LOG_DEBUG
 	ulint		old_buf_free;	/* value of buf free when log was
 					last time opened; only in the debug
 					version */
 	dulint		old_lsn;	/* value of lsn when log was last time
 					opened; only in the debug version */
+#endif /* UNIV_LOG_DEBUG */
 	ibool		check_flush_or_checkpoint;
 					/* this is set to TRUE when there may
 					be need to flush the log buffer, or

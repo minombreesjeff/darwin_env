@@ -10,14 +10,21 @@
 # Access Definitions
 #--
 DB=test
-DBPASSWD=
+DBPASSWD=""
 VERBOSE=""
 USE_MANAGER=0
 MY_TZ=GMT-3
 TZ=$MY_TZ; export TZ # for UNIX_TIMESTAMP tests to work
 
 # For query_cache test
-ulimit -n 1024
+case `uname` in
+    SCO_SV | UnixWare | OpenUNIX )
+        # do nothing (Causes strange behavior)
+        ;;
+    * )
+        ulimit -n 1024
+        ;;
+esac
 
 #++
 # Program Definitions
@@ -308,6 +315,8 @@ while test $# -gt 0; do
 	$ECHO "Note: you will get more meaningful output on a source distribution compiled with debugging option when running tests with --gdb option"
       fi
       DO_GDB=1
+      EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --gdb"
+      EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --gdb"
       # This needs to be checked properly
       # USE_MANAGER=1
       USE_RUNNING_SERVER=""
@@ -452,15 +461,17 @@ if [ x$SOURCE_DIST = x1 ] ; then
   MYSQL_TEST="strace -o $MYSQL_TEST_DIR/var/log/mysqltest.strace $MYSQL_TEST"
  fi
 
- MYSQLADMIN="$BASEDIR/client/mysqladmin"
+ CLIENT_BINDIR="$BASEDIR/client"
+ MYSQLADMIN="$CLIENT_BINDIR/mysqladmin"
  WAIT_PID="$BASEDIR/extra/mysql_waitpid"
- MYSQL_MANAGER_CLIENT="$BASEDIR/client/mysqlmanagerc"
+ MYSQL_MANAGER_CLIENT="$CLIENT_BINDIR/mysqlmanagerc"
  MYSQL_MANAGER="$BASEDIR/tools/mysqlmanager"
- MYSQL_MANAGER_PWGEN="$BASEDIR/client/mysqlmanager-pwgen"
- MYSQL="$BASEDIR/client/mysql"
+ MYSQL_MANAGER_PWGEN="$CLIENT_BINDIR/mysqlmanager-pwgen"
+ MYSQL="$CLIENT_BINDIR/mysql"
  LANGUAGE="$BASEDIR/sql/share/english/"
  CHARSETSDIR="$BASEDIR/sql/share/charsets"
  INSTALL_DB="./install_test_db"
+ MYSQL_FIX_SYSTEM_TABLES="$BASEDIR/scripts/mysql_fix_privilege_tables"
 else
  if test -x "$BASEDIR/libexec/mysqld"
  then
@@ -468,16 +479,18 @@ else
  else
    MYSQLD="$VALGRIND $BASEDIR/bin/mysqld"
  fi
- MYSQL_TEST="$BASEDIR/bin/mysqltest"
- MYSQL_DUMP="$BASEDIR/bin/mysqldump"
- MYSQL_BINLOG="$BASEDIR/bin/mysqlbinlog"
- MYSQLADMIN="$BASEDIR/bin/mysqladmin"
- WAIT_PID="$BASEDIR/bin/mysql_waitpid"
- MYSQL_MANAGER="$BASEDIR/bin/mysqlmanager"
- MYSQL_MANAGER_CLIENT="$BASEDIR/bin/mysqlmanagerc"
- MYSQL_MANAGER_PWGEN="$BASEDIR/bin/mysqlmanager-pwgen"
- MYSQL="$BASEDIR/bin/mysql"
- INSTALL_DB="./install_test_db -bin"
+ CLIENT_BINDIR="$BASEDIR/bin"
+ MYSQL_TEST="$CLIENT_BINDIR/mysqltest"
+ MYSQL_DUMP="$CLIENT_BINDIR/mysqldump"
+ MYSQL_BINLOG="$CLIENT_BINDIR/mysqlbinlog"
+ MYSQLADMIN="$CLIENT_BINDIR/mysqladmin"
+ WAIT_PID="$CLIENT_BINDIR/mysql_waitpid"
+ MYSQL_MANAGER="$CLIENT_BINDIR/mysqlmanager"
+ MYSQL_MANAGER_CLIENT="$CLIENT_BINDIR/mysqlmanagerc"
+ MYSQL_MANAGER_PWGEN="$CLIENT_BINDIR/mysqlmanager-pwgen"
+ MYSQL="$CLIENT_BINDIR/mysql"
+ INSTALL_DB="./install_test_db --bin"
+ MYSQL_FIX_SYSTEM_TABLES="$CLIENT_BINDIR/mysql_fix_privilege_tables"
  if test -d "$BASEDIR/share/mysql/english"
  then
    LANGUAGE="$BASEDIR/share/mysql/english/"
@@ -488,10 +501,11 @@ else
   fi
 fi
 
-MYSQL_DUMP="$MYSQL_DUMP --no-defaults -uroot --socket=$MASTER_MYSOCK"
+MYSQL_DUMP="$MYSQL_DUMP --no-defaults -uroot --socket=$MASTER_MYSOCK --password=$DBPASSWD"
 MYSQL_BINLOG="$MYSQL_BINLOG --no-defaults --local-load=$MYSQL_TMP_DIR"
-export MYSQL_DUMP
-export MYSQL_BINLOG
+MYSQL_FIX_SYSTEM_TABLES="$MYSQL_FIX_SYSTEM_TABLES --host=localhost --port=$MASTER_MYPORT --socket=$MASTER_MYSOCK --user=root --password=$DBPASSWD --bindir=$CLIENT_BINDIR"
+MYSQL="$MYSQL --host=localhost --port=$MASTER_MYPORT --socket=$MASTER_MYSOCK --user=root --password=$DBPASSWD"
+export MYSQL MYSQL_DUMP MYSQL_BINLOG MYSQL_FIX_SYSTEM_TABLES CLIENT_BINDIR
 
 if [ -z "$MASTER_MYSQLD" ]
 then
@@ -519,9 +533,9 @@ fi
 
 if [ -w / ]
 then
-    # We are running as root;  We need to add the --root argument
-    EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --user=root"
-    EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --user=root"
+  # We are running as root;  We need to add the --root argument
+  EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --user=root"
+  EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --user=root"
 fi
 
 
@@ -573,7 +587,7 @@ show_failed_diff ()
     $DIFF -c $result_file $reject_file
     echo "-------------------------------------------------------"
     echo "Please follow the instructions outlined at"
-    echo "http://www.mysql.com/doc/R/e/Reporting_mysqltest_bugs.html"
+    echo "http://www.mysql.com/doc/en/Reporting_mysqltest_bugs.html"
     echo "to find the reason to this problem and how to report this."
   fi
 }
@@ -1018,7 +1032,7 @@ start_slave()
 
   if [ x$DO_DDD = x1 ]
   then
-    $ECHO "set args $master_args" > $GDB_SLAVE_INIT
+    $ECHO "set args $slave_args" > $GDB_SLAVE_INIT
     manager_launch $slave_ident ddd -display $DISPLAY --debugger \
      "gdb -x $GDB_SLAVE_INIT" $SLAVE_MYSQLD
   elif [ x$DO_GDB = x1 ]
@@ -1168,6 +1182,7 @@ run_testcase ()
  master_init_script=$TESTDIR/$tname-master.sh
  slave_init_script=$TESTDIR/$tname-slave.sh
  slave_master_info_file=$TESTDIR/$tname.slave-mi
+ result_file=$tname
  echo $tname > $CURRENT_TEST
  SKIP_SLAVE=`$EXPR \( $tname : rpl \) = 0`
  if [ $USE_MANAGER = 1 ] ; then
@@ -1217,6 +1232,11 @@ run_testcase ()
 	 # Note that this must be set to space, not "" for test-reset to work
 	 EXTRA_MASTER_OPT=" "
 	 ;;
+       --result-file=*)
+         result_file=`$ECHO "$EXTRA_MASTER_OPT" | $SED -e "s;--result-file=;;"`
+	 # Note that this must be set to space, not "" for test-reset to work
+	 EXTRA_MASTER_OPT=" "
+         ;;
      esac
      stop_master
      echo "CURRENT_TEST: $tname" >> $MASTER_MYERR
@@ -1274,7 +1294,7 @@ run_testcase ()
 
  if [ -f $tf ] ; then
     $RM -f r/$tname.*reject
-    mysql_test_args="-R r/$tname.result $EXTRA_MYSQL_TEST_OPT"
+    mysql_test_args="-R r/$result_file.result $EXTRA_MYSQL_TEST_OPT"
     if [ -z "$DO_CLIENT_GDB" ] ; then
       `$MYSQL_TEST  $mysql_test_args < $tf 2> $TIMEFILE`;
     else
@@ -1306,7 +1326,7 @@ run_testcase ()
 	$ECHO "$RES$RES_SPACE [ fail ]"
         $ECHO
 	error_is
-	show_failed_diff $tname
+	show_failed_diff $result_file
 	$ECHO
 	if [ x$FORCE != x1 ] ; then
 	 $ECHO "Aborting. To continue, re-run with '--force'."
@@ -1427,7 +1447,7 @@ then
  if [ x$RECORD = x1 ]; then
   $ECHO "Will not run in record mode without a specific test case."
  else
-  for tf in `ls -1 $TESTDIR/*.$TESTSUFFIX | $SORT`
+  for tf in $TESTDIR/*.$TESTSUFFIX
   do
     run_testcase $tf
   done

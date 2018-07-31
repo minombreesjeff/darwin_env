@@ -118,7 +118,7 @@ then
   if [ $? -ne 0 ]
   then
     resolved=`$bindir/resolveip localhost 2>&1`
-    if [ $? -eq 0 ]
+    if [ $? -ne 0 ]
     then
       echo "Neither host '$hostname' and 'localhost' could not be looked up with"
       echo "$bindir/resolveip"
@@ -284,7 +284,7 @@ then
   c_t="$c_t   Host char(60) binary DEFAULT '' NOT NULL,"
   c_t="$c_t   Db char(64) binary DEFAULT '' NOT NULL,"
   c_t="$c_t   User char(16) binary DEFAULT '' NOT NULL,"
-  c_t="$c_t   Table_name char(60) binary DEFAULT '' NOT NULL,"
+  c_t="$c_t   Table_name char(64) binary DEFAULT '' NOT NULL,"
   c_t="$c_t   Grantor char(77) DEFAULT '' NOT NULL,"
   c_t="$c_t   Timestamp timestamp(14),"
   c_t="$c_t   Table_priv set('Select','Insert','Update','Delete','Create','Drop','Grant','References','Index','Alter') DEFAULT '' NOT NULL,"

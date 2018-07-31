@@ -103,17 +103,18 @@ class Load_log_processor
     }
 
 public:
-  Load_log_processor()
-    {
-      init_dynamic_array(&file_names,sizeof(Create_file_log_event*),
-			 100,100 CALLER_INFO);
-    }
-
+  Load_log_processor() {}
   ~Load_log_processor()
-    {
-      destroy();
-      delete_dynamic(&file_names);
-    }
+  {
+    destroy();
+    delete_dynamic(&file_names);
+  }
+
+  int init()
+  {
+    return init_dynamic_array(&file_names,sizeof(Create_file_log_event*),
+			      100,100 CALLER_INFO);
+  }
 
   void init_by_dir_name(const char *dir)
     {
@@ -305,6 +306,7 @@ int process_event(ulonglong *rec_count, char *last_db, Log_event *ev,
 		  my_off_t pos, int old_format)
 {
   char ll_buff[21];
+
   if ((*rec_count) >= offset)
   {
     if (!short_form)
@@ -350,7 +352,7 @@ int process_event(ulonglong *rec_count, char *last_db, Log_event *ev,
 	filename and use LOCAL), prepared in the 'case EXEC_LOAD_EVENT' 
 	below.
       */
-      ce->print(result_file, short_form, last_db, true);
+      ce->print(result_file, short_form, last_db, TRUE);
       if (!old_format)
       {
 	if (load_processor.process(ce))
@@ -376,7 +378,7 @@ int process_event(ulonglong *rec_count, char *last_db, Log_event *ev,
       */
       if (ce)
       {
-	ce->print(result_file, short_form, last_db,true);
+	ce->print(result_file, short_form, last_db, TRUE);
 	my_free((char*)ce->fname,MYF(MY_WME));
 	delete ce;
       }
@@ -436,9 +438,9 @@ static struct my_option my_long_options[] =
   {"user", 'u', "Connect to the remote server as username.",
    (gptr*) &user, (gptr*) &user, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
-  {"local-load", 'l', "Prepare files for local load in directory.",
+  {"local-load", 'l', "Prepare local temporary files for LOAD DATA INFILE in the specified directory.",
    (gptr*) &dirname_for_local_load, (gptr*) &dirname_for_local_load, 0,
-   GET_STR_ALLOC, OPT_ARG, 0, 0, 0, 0, 0, 0},
+   GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"version", 'V', "Print version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
    0, 0, 0, 0, 0},
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
@@ -458,6 +460,10 @@ void sql_print_error(const char *format,...)
 static void cleanup()
 {
   my_free(pass,MYF(MY_ALLOW_ZERO_PTR));
+  my_free((char*) database, MYF(MY_ALLOW_ZERO_PTR));
+  my_free((char*) host, MYF(MY_ALLOW_ZERO_PTR));
+  my_free((char*) user, MYF(MY_ALLOW_ZERO_PTR));
+  my_free((char*) dirname_for_local_load, MYF(MY_ALLOW_ZERO_PTR));
 }
 
 static void die(const char* fmt, ...)
@@ -469,12 +475,13 @@ static void die(const char* fmt, ...)
   fprintf(stderr, "\n");
   va_end(args);
   cleanup();
+  my_end(0);
   exit(1);
 }
 
 static void print_version()
 {
-  printf("%s Ver 2.4 for %s at %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
+  printf("%s Ver 2.6 for %s at %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
 }
 
 
@@ -556,9 +563,10 @@ static int parse_args(int *argc, char*** argv)
 static MYSQL* safe_connect()
 {
   MYSQL *local_mysql = mysql_init(NULL);
+
   if(!local_mysql)
     die("Failed on mysql_init");
-
+  
   if (!mysql_real_connect(local_mysql, host, user, pass, 0, port, sock, 0))
     die("failed on connect: %s", mysql_error(local_mysql));
 
@@ -932,15 +940,19 @@ int main(int argc, char** argv)
   {
     if (init_tmpdir(&tmpdir, 0))
       exit(1);
-    dirname_for_local_load= my_tmpdir(&tmpdir);
+    dirname_for_local_load= my_strdup(my_tmpdir(&tmpdir),MY_WME);
   }
 
+  if (load_processor.init())
+    exit(1);
   if (dirname_for_local_load)
     load_processor.init_by_dir_name(dirname_for_local_load);
-  else
+  else /* my_malloc() failed in my_strdup() */
     load_processor.init_by_cur_dir();
 
   exit_value= 0;
+  fprintf(result_file,
+	  "/*!40019 SET @@session.max_insert_delayed_threads=0*/;\n");
   while (--argc >= 0)
   {
     if (dump_log_entries(*(argv++)))

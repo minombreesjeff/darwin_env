@@ -15,6 +15,7 @@ Created 1/16/1996 Heikki Tuuri
 dtype_t		dtype_binary_val = {DATA_BINARY, 0, 0, 0};
 dtype_t* 	dtype_binary 	= &dtype_binary_val;
 
+#ifdef UNIV_DEBUG
 /*************************************************************************
 Validates a data type structure. */
 
@@ -33,6 +34,7 @@ dtype_validate(
 
 	return(TRUE);
 }
+#endif /* UNIV_DEBUG */
 
 /*************************************************************************
 Prints a data type structure. */
@@ -51,19 +53,19 @@ dtype_print(
 	mtype = type->mtype;
 	prtype = type->prtype;
 	if (mtype == DATA_VARCHAR) {
-		printf("DATA_VARCHAR");
+		fputs("DATA_VARCHAR", stderr);
 	} else if (mtype == DATA_CHAR) {
-		printf("DATA_CHAR");
+		fputs("DATA_CHAR", stderr);
 	} else if (mtype == DATA_BINARY) {
-		printf("DATA_BINARY");
+		fputs("DATA_BINARY", stderr);
 	} else if (mtype == DATA_INT) {
-		printf("DATA_INT");
+		fputs("DATA_INT", stderr);
 	} else if (mtype == DATA_MYSQL) {
-		printf("DATA_MYSQL");
+		fputs("DATA_MYSQL", stderr);
 	} else if (mtype == DATA_SYS) {
-		printf("DATA_SYS");
+		fputs("DATA_SYS", stderr);
 	} else {
-		printf("type %lu", mtype);
+		fprintf(stderr, "type %lu", mtype);
 	}
 
 	len = type->len;
@@ -71,24 +73,24 @@ dtype_print(
 	if ((type->mtype == DATA_SYS)
 	   || (type->mtype == DATA_VARCHAR)
 	   || (type->mtype == DATA_CHAR)) {
-		printf(" ");
+		putc(' ', stderr);
 		if (prtype == DATA_ROW_ID) {
-			printf("DATA_ROW_ID");
+			fputs("DATA_ROW_ID", stderr);
 			len = DATA_ROW_ID_LEN;
 		} else if (prtype == DATA_ROLL_PTR) {
-			printf("DATA_ROLL_PTR");
+			fputs("DATA_ROLL_PTR", stderr);
 			len = DATA_ROLL_PTR_LEN;
 		} else if (prtype == DATA_TRX_ID) {
-			printf("DATA_TRX_ID");
+			fputs("DATA_TRX_ID", stderr);
 			len = DATA_TRX_ID_LEN;
 		} else if (prtype == DATA_MIX_ID) {
-			printf("DATA_MIX_ID");
+			fputs("DATA_MIX_ID", stderr);
 		} else if (prtype == DATA_ENGLISH) {
-			printf("DATA_ENGLISH");
+			fputs("DATA_ENGLISH", stderr);
 		} else {
-			printf("prtype %lu", mtype);
+			fprintf(stderr, "prtype %lu", mtype);
 		}
 	}
 
-	printf(" len %lu prec %lu", len, type->prec);
+	fprintf(stderr, " len %lu prec %lu", len, type->prec);
 }

@@ -1374,7 +1374,7 @@ make_join_statistics(JOIN *join,TABLE_LIST *tables,COND *conds,
 	   sizeof(POSITION)*join->const_tables);
     join->best_read=1.0;
   }
-  DBUG_RETURN(get_best_combination(join));
+  DBUG_RETURN(join->thd->killed || get_best_combination(join));
 }
 
 
@@ -1904,6 +1904,8 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
   ha_rows rec;
   double tmp;
   THD *thd= join->thd;
+  if (thd->killed)				// Abort
+    return;
 
   if (!rest_tables)
   {
@@ -4461,13 +4463,22 @@ free_tmp_table(THD *thd, TABLE *entry)
   save_proc_info=thd->proc_info;
   thd->proc_info="removing tmp table";
   free_blobs(entry);
-  if (entry->db_stat && entry->file)
+  if (entry->file)
   {
-    (void) entry->file->close();
+    if (entry->db_stat)
+    {
+      (void) entry->file->close();
+    }
+    /*
+      We can't call ha_delete_table here as the table may created in mixed case
+      here and we have to ensure that delete_table gets the table name in
+      the original case.
+    */
+    if (!(test_flags & TEST_KEEP_TMP_TABLES) || entry->db_type == DB_TYPE_HEAP)
+      entry->file->delete_table(entry->real_name);
     delete entry->file;
   }
-  if (!(test_flags & TEST_KEEP_TMP_TABLES) || entry->db_type == DB_TYPE_HEAP)
-    (void) ha_delete_table(entry->db_type,entry->real_name);
+
   /* free blobs */
   for (Field **ptr=entry->field ; *ptr ; ptr++)
     delete *ptr;
@@ -4886,8 +4897,8 @@ join_read_const_table(JOIN_TAB *tab, POSITION *pos)
   if (tab->on_expr && !table->null_row)
   {
     if ((table->null_row= test(tab->on_expr->val_int() == 0)))
-      empty_record(table);
-    }
+      mark_as_null_row(table);  
+  }
   if (!table->null_row)
     table->maybe_null=0;
   DBUG_RETURN(0);
@@ -4984,7 +4995,8 @@ join_read_key(JOIN_TAB *tab)
 				  tab->ref.key_length,HA_READ_KEY_EXACT);
     if (error && error != HA_ERR_KEY_NOT_FOUND)
     {
-      sql_print_error("read_key: Got error %d when reading table '%s'",error,
+      if (error != HA_ERR_LOCK_DEADLOCK && error != HA_ERR_LOCK_WAIT_TIMEOUT)
+        sql_print_error("read_key: Got error %d when reading table '%s'",error,
 		      table->path);
       table->file->print_error(error,MYF(0));
       return 1;
@@ -6010,7 +6022,7 @@ test_if_skip_sort_order(JOIN_TAB *tab,ORDER *order,ha_rows select_limit,
     /* check if we can use a key to resolve the group */
     /* Tables using JT_NEXT are handled here */
     uint nr;
-    key_map keys=usable_keys;
+    key_map keys_to_use=~0,keys=usable_keys;
 
     /*
       If not used with LIMIT, only use keys if the whole query can be
@@ -6018,7 +6030,17 @@ test_if_skip_sort_order(JOIN_TAB *tab,ORDER *order,ha_rows select_limit,
       retrieving all rows through an index.
     */
     if (select_limit >= table->file->records)
-      keys&= (table->used_keys | table->file->keys_to_use_for_scanning());
+      keys_to_use= (table->used_keys |table->file->keys_to_use_for_scanning());
+
+    /*
+      We are adding here also the index speified in FORCE INDEX clause, 
+      if any.
+      This is to allow users to use index in ORDER BY.
+    */
+ 
+    if (table->force_index) 
+      keys_to_use|= table->keys_in_use_for_query;
+    keys&= keys_to_use;
 
     for (nr=0; keys ; keys>>=1, nr++)
     {

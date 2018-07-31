@@ -402,6 +402,7 @@ longlong Item_func_div::val_int()
 void Item_func_div::fix_length_and_dec()
 {
   decimals=max(args[0]->decimals,args[1]->decimals)+2;
+  set_if_smaller(decimals, NOT_FIXED_DEC);
   max_length=args[0]->max_length - args[0]->decimals + decimals;
   uint tmp=float_length(decimals);
   set_if_smaller(max_length,tmp);
@@ -667,7 +668,8 @@ longlong Item_func_ceiling::val_int()
 
 longlong Item_func_floor::val_int()
 {
-  double value=args[0]->val();
+  // the volatile's for BUG #3051 to calm optimizer down (because of gcc's bug)
+  volatile double value=args[0]->val();
   null_value=args[0]->null_value;
   return (longlong) floor(value);
 }
@@ -1543,13 +1545,11 @@ longlong Item_master_pos_wait::val_int()
   }
   longlong pos = args[1]->val_int();
   longlong timeout = (arg_count==3) ? args[2]->val_int() : 0 ;
-  LOCK_ACTIVE_MI;
   if ((event_count = active_mi->rli.wait_for_pos(thd, log_name, pos, timeout)) == -2)
   {
     null_value = 1;
     event_count=0;
   }
-  UNLOCK_ACTIVE_MI;
   return event_count;
 }
 

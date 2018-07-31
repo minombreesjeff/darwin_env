@@ -112,7 +112,9 @@ int chk_status(MI_CHECK *param, register MI_INFO *info)
     /* Don't count this as a real warning, as check can correct this ! */
     uint save=param->warning_printed;
     mi_check_print_warning(param,
-			   "%d clients is using or hasn't closed the table properly",
+			   share->state.open_count==1 ? 
+			   "%d client is using or hasn't closed the table properly" : 
+			   "%d clients are using or haven't closed the table properly",
 			   share->state.open_count);
     /* If this will be fixed by the check, forget the warning */
     if (param->testflag & T_UPDATE_STATE)
@@ -1245,8 +1247,9 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
     That is what the next line is for... (serg)
   */
 
-  share->state.key_map= ((((ulonglong) 1L << share->base.keys)-1) &
-			 param->keys_in_use);
+  if (param->testflag & T_CREATE_MISSING_KEYS)
+    share->state.key_map= ((((ulonglong) 1L << share->base.keys)-1) &
+			   param->keys_in_use);
 
   info->state->key_file_length=share->base.keystart;
 

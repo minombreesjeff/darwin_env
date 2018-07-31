@@ -53,6 +53,14 @@ static void pretty_print_str(FILE* file, char* str, int len)
 
 #ifndef MYSQL_CLIENT
 
+static void clear_all_errors(THD *thd, struct st_relay_log_info *rli)
+{
+  thd->query_error = 0;
+  thd->clear_error();
+  *rli->last_slave_error = 0;
+  rli->last_slave_errno = 0;
+}
+
 inline int ignored_error_code(int err_code)
 {
   return ((err_code == ER_SLAVE_IGNORED_TABLE) ||
@@ -293,40 +301,21 @@ void Load_log_event::pack_info(String* packet)
   else if (sql_ex.opt_flags & IGNORE_FLAG)
     tmp.append(" IGNORE ");
   
-  tmp.append("INTO TABLE ");
+  tmp.append("INTO TABLE `");
   tmp.append(table_name);
-  if (sql_ex.field_term_len)
-  {
-    tmp.append(" FIELDS TERMINATED BY ");
-    pretty_print_str(&tmp, sql_ex.field_term, sql_ex.field_term_len);
-  }
-
-  if (sql_ex.enclosed_len)
-  {
-    if (sql_ex.opt_flags & OPT_ENCLOSED_FLAG )
-      tmp.append(" OPTIONALLY ");
-    tmp.append( " ENCLOSED BY ");
-    pretty_print_str(&tmp, sql_ex.enclosed, sql_ex.enclosed_len);
-  }
+  tmp.append("` FIELDS TERMINATED BY ");
+  pretty_print_str(&tmp, sql_ex.field_term, sql_ex.field_term_len);
+  if (sql_ex.opt_flags & OPT_ENCLOSED_FLAG )
+    tmp.append(" OPTIONALLY ");
+  tmp.append( " ENCLOSED BY ");
+  pretty_print_str(&tmp, sql_ex.enclosed, sql_ex.enclosed_len);
+  tmp.append( " ESCAPED BY ");
+  pretty_print_str(&tmp, sql_ex.escaped, sql_ex.escaped_len);
      
-  if (sql_ex.escaped_len)
-  {
-    tmp.append( " ESCAPED BY ");
-    pretty_print_str(&tmp, sql_ex.escaped, sql_ex.escaped_len);
-  }
-     
-  bool line_lexem_added= false;
-  if (sql_ex.line_term_len)
-  {
-    tmp.append(" LINES TERMINATED BY ");
-    pretty_print_str(&tmp, sql_ex.line_term, sql_ex.line_term_len);
-    line_lexem_added= true;
-  }
-
+  tmp.append(" LINES TERMINATED BY ");
+  pretty_print_str(&tmp, sql_ex.line_term, sql_ex.line_term_len);
   if (sql_ex.line_start_len)
   {
-    if (!line_lexem_added)
-      tmp.append(" LINES");
     tmp.append(" STARTING BY ");
     pretty_print_str(&tmp, sql_ex.line_start, sql_ex.line_start_len);
   }
@@ -839,7 +828,9 @@ Query_log_event::Query_log_event(THD* thd_arg, const char* query_arg,
 				 ulong query_length, bool using_trans)
   :Log_event(thd_arg, 0, using_trans), data_buf(0), query(query_arg),
    db(thd_arg->db), q_len((uint32) query_length),
-   error_code(thd_arg->killed ? ER_SERVER_SHUTDOWN: thd_arg->net.last_errno),
+   error_code(thd_arg->killed ?
+              ((thd_arg->system_thread & SYSTEM_THREAD_DELAYED_INSERT) ?
+               0 : ER_SERVER_SHUTDOWN) : thd_arg->net.last_errno),
    thread_id(thd_arg->thread_id),
    /* save the original thread id; we already know the server id */
    slave_proxy_id(thd_arg->slave_proxy_id)
@@ -900,15 +891,15 @@ void Query_log_event::print(FILE* file, bool short_form, char* last_db)
 	    (ulong) thread_id, (ulong) exec_time, error_code);
   }
 
-  bool same_db = 0;
+  bool different_db= 1;
 
   if (db && last_db)
   {
-    if (!(same_db = !memcmp(last_db, db, db_len + 1)))
+    if (different_db= memcmp(last_db, db, db_len + 1))
       memcpy(last_db, db, db_len + 1);
   }
   
-  if (db && db[0] && !same_db)
+  if (db && db[0] && different_db)
     fprintf(file, "use %s;\n", db);
   end=int10_to_str((long) when, strmov(buff,"SET TIMESTAMP="),10);
   *end++=';';
@@ -1323,7 +1314,8 @@ void Load_log_event::print(FILE* file, bool short_form, char* last_db)
   print(file, short_form, last_db, 0);
 }
 
-void Load_log_event::print(FILE* file, bool short_form, char* last_db, bool commented)
+void Load_log_event::print(FILE* file, bool short_form, char* last_db,
+			   bool commented)
 {
   if (!short_form)
   {
@@ -1332,14 +1324,21 @@ void Load_log_event::print(FILE* file, bool short_form, char* last_db, bool comm
 	    thread_id, exec_time);
   }
 
-  bool same_db = 0;
+  bool different_db= 1;
   if (db && last_db)
   {
-    if (!(same_db = !memcmp(last_db, db, db_len + 1)))
+    /*
+      If the database is different from the one of the previous statement, we
+      need to print the "use" command, and we update the last_db.
+      But if commented, the "use" is going to be commented so we should not
+      update the last_db.
+    */
+    if ((different_db= memcmp(last_db, db, db_len + 1)) &&
+        !commented)
       memcpy(last_db, db, db_len + 1);
   }
   
-  if (db && db[0] && !same_db)
+  if (db && db[0] && different_db)
     fprintf(file, "%suse %s;\n", 
             commented ? "# " : "",
             db);
@@ -1354,40 +1353,22 @@ void Load_log_event::print(FILE* file, bool short_form, char* last_db, bool comm
     fprintf(file," REPLACE ");
   else if (sql_ex.opt_flags & IGNORE_FLAG )
     fprintf(file," IGNORE ");
-  
-  fprintf(file, "INTO TABLE %s ", table_name);
-  if (sql_ex.field_term)
-  {
-    fprintf(file, " FIELDS TERMINATED BY ");
-    pretty_print_str(file, sql_ex.field_term, sql_ex.field_term_len);
-  }
 
-  if (sql_ex.enclosed)
-  {
-    if (sql_ex.opt_flags & OPT_ENCLOSED_FLAG )
-      fprintf(file," OPTIONALLY ");
-    fprintf(file, " ENCLOSED BY ");
-    pretty_print_str(file, sql_ex.enclosed, sql_ex.enclosed_len);
-  }
-     
-  if (sql_ex.escaped)
-  {
-    fprintf(file, " ESCAPED BY ");
-    pretty_print_str(file, sql_ex.escaped, sql_ex.escaped_len);
-  }
-     
-  bool line_lexem_added= false;
-  if (sql_ex.line_term)
-  {
-    fprintf(file," LINES TERMINATED BY ");
-    pretty_print_str(file, sql_ex.line_term, sql_ex.line_term_len);
-    line_lexem_added= true;
-  }
+  fprintf(file, "INTO TABLE `%s`", table_name);
+  fprintf(file, " FIELDS TERMINATED BY ");
+  pretty_print_str(file, sql_ex.field_term, sql_ex.field_term_len);
+
+  if (sql_ex.opt_flags & OPT_ENCLOSED_FLAG )
+    fprintf(file," OPTIONALLY ");
+  fprintf(file, " ENCLOSED BY ");
+  pretty_print_str(file, sql_ex.enclosed, sql_ex.enclosed_len);
+  fprintf(file, " ESCAPED BY ");
+  pretty_print_str(file, sql_ex.escaped, sql_ex.escaped_len);
+  fprintf(file," LINES TERMINATED BY ");
+  pretty_print_str(file, sql_ex.line_term, sql_ex.line_term_len);
 
   if (sql_ex.line_start)
   {
-    if (!line_lexem_added)
-      fprintf(file," LINES");
     fprintf(file," STARTING BY ");
     pretty_print_str(file, sql_ex.line_start, sql_ex.line_start_len);
   }
@@ -1546,7 +1527,7 @@ Create_file_log_event(THD* thd_arg, sql_exchange* ex,
 		      char* block_arg, uint block_len_arg, bool using_trans)
   :Load_log_event(thd_arg,ex,db_arg,table_name_arg,fields_arg,handle_dup,
 		  using_trans),
-   fake_base(0),block(block_arg),block_len(block_len_arg),
+   fake_base(0),block(block_arg), event_buf(0), block_len(block_len_arg),
    file_id(thd_arg->file_id = mysql_bin_log.next_file_id())
 {
   sql_ex.force_new_format();
@@ -1586,8 +1567,16 @@ Create_file_log_event::Create_file_log_event(const char* buf, int len,
   :Load_log_event(buf,0,old_format),fake_base(0),block(0),inited_from_old(0)
 {
   int block_offset;
-  if (copy_log_event(buf,len,old_format))
-    return;
+  DBUG_ENTER("Create_file_log_event");
+
+  /*
+    We must make copy of 'buf' as this event may have to live over a
+    rotate log entry when used in mysqlbinlog
+  */
+  if (!(event_buf= my_memdup((byte*) buf, len, MYF(MY_WME))) ||
+      (copy_log_event(event_buf, len, old_format)))
+    DBUG_VOID_RETURN;
+
   if (!old_format)
   {
     file_id = uint4korr(buf + LOG_EVENT_HEADER_LEN +
@@ -1605,6 +1594,7 @@ Create_file_log_event::Create_file_log_event(const char* buf, int len,
     sql_ex.force_new_format();
     inited_from_old = 1;
   }
+  DBUG_VOID_RETURN;
 }
 
 
@@ -1819,12 +1809,27 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli)
 
   /*
     InnoDB internally stores the master log position it has processed so far;
-    position to store is really pos + pending + event_len
-    since we must store the pos of the END of the current log event
+    position to store is of the END of the current log event.
   */
-  rli->event_len= get_event_len();
-  thd->query_error= 0;			// clear error
-  thd->clear_error();
+#if MYSQL_VERSION_ID < 40100
+  /*
+    If the event was converted from a 3.23 format, get_event_len() has grown by
+    6 bytes (at least for most events, except LOAD DATA INFILE which is already
+    a big problem for 3.23->4.0 replication); 6 bytes is the difference between
+    the header's size in 4.0 (LOG_EVENT_HEADER_LEN) and the header's size in
+    3.23 (OLD_HEADER_LEN). Note that using mi->old_format will not help if the
+    I/O thread has not started yet.
+  */
+  rli->future_master_log_pos= log_pos + get_event_len() -
+    (rli->mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0); 
+#elif MYSQL_VERSION_ID < 50000
+  rli->future_group_master_log_pos= log_pos + get_event_len() -
+    (rli->mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0);
+#else
+  /* In 5.0 we store the end_log_pos in the relay log so no problem */
+  rli->future_group_master_log_pos= log_pos;
+#endif
+  clear_all_errors(thd, rli);
 
   if (db_ok(thd->db, replicate_do_db, replicate_ignore_db))
   {
@@ -1837,84 +1842,90 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli)
     VOID(pthread_mutex_unlock(&LOCK_thread_count));
     thd->slave_proxy_id = thread_id;		// for temp tables
 	
-    /*
-      Sanity check to make sure the master did not get a really bad
-      error on the query.
-    */
-    if (ignored_error_code((expected_error = error_code)) ||
-	!check_expected_error(thd,rli,expected_error))
-    {
-      mysql_log.write(thd,COM_QUERY,"%s",thd->query);
-      DBUG_PRINT("query",("%s",thd->query));
+    mysql_log.write(thd,COM_QUERY,"%s",thd->query);
+    DBUG_PRINT("query",("%s",thd->query));
+    if (ignored_error_code(expected_error = error_code) ||
+        !check_expected_error(thd,rli,expected_error))
       mysql_parse(thd, thd->query, q_len);
-
+    else
+    {
       /*
-	Set a flag if we are inside an transaction so that we can restart
-	the transaction from the start if we are killed
-
-	This will only be done if we are supporting transactional tables
-	in the slave.
+        The query got a really bad error on the master (thread killed etc),
+        which could be inconsistent. Parse it to test the table names: if the
+        replicate-*-do|ignore-table rules say "this query must be ignored" then
+        we exit gracefully; otherwise we warn about the bad error and tell DBA
+        to check/fix it.
       */
-      if (!strcmp(thd->query,"BEGIN"))
-	rli->inside_transaction= opt_using_transactions;
-      else if (!(strcmp(thd->query,"COMMIT") && strcmp(thd->query,"ROLLBACK")))
-	rli->inside_transaction=0;
-
-      /*
-        If we expected a non-zero error code, and we don't get the same error
-        code, and none of them should be ignored.
-      */
-      if ((expected_error != (actual_error = thd->net.last_errno)) &&
-	  expected_error &&
-	  !ignored_error_code(actual_error) &&
-	  !ignored_error_code(expected_error))
+      if (mysql_test_parse_for_slave(thd, thd->query, q_len))
+        /* Can ignore query */
+        clear_all_errors(thd, rli);
+      else
       {
-	slave_print_error(rli, 0,
-                          "\
-Query '%s' caused different errors on master and slave. \
-Error on master: '%s' (%d), Error on slave: '%s' (%d). \
-Default database: '%s'",
-                          query,
-                          ER_SAFE(expected_error),
-                          expected_error,
-                          actual_error ? thd->net.last_error: "no error",
-                          actual_error,
-                          print_slave_db_safe(db));
-	thd->query_error= 1;
-      }
-      /*
-        If we get the same error code as expected, or they should be ignored. 
-      */
-      else if (expected_error == actual_error ||
-	       ignored_error_code(actual_error))
-      {
-	thd->query_error = 0;
-        thd->clear_error();
-	*rli->last_slave_error = 0;
-	rli->last_slave_errno = 0;
-      }
-      /*
-        Other cases: mostly we expected no error and get one.
-      */
-      else if (thd->query_error || thd->fatal_error)
-      {
-        slave_print_error(rli,actual_error,
-			  "Error '%s' on query '%s'. Default database: '%s'",
-                          (actual_error ? thd->net.last_error :
-			   "unexpected success or fatal error"),
-			  query,
-                          print_slave_db_safe(db));
+        slave_print_error(rli,expected_error, 
+                          "query partially completed on the master \
+(error on master: %d) \
+and was aborted. There is a chance that your master is inconsistent at this \
+point. If you are sure that your master is ok, run this query manually on the\
+ slave and then restart the slave with SET GLOBAL SQL_SLAVE_SKIP_COUNTER=1;\
+ START SLAVE; . Query: '%s'", expected_error, thd->query);
         thd->query_error= 1;
       }
-    } 
-    /* 
-       End of sanity check. If the test was wrong, the query got a really bad
-       error on the master, which could be inconsistent, abort and tell DBA to
-       check/fix it. check_expected_error() already printed the message to
-       stderr and rli, and set thd->query_error to 1.
+      goto end;
+    }
+
+    /*
+      Set a flag if we are inside an transaction so that we can restart
+      the transaction from the start if we are killed
+      
+      This will only be done if we are supporting transactional tables
+      in the slave.
     */
+    if (!strcmp(thd->query,"BEGIN"))
+      rli->inside_transaction= opt_using_transactions;
+    else if (!(strcmp(thd->query,"COMMIT") && strcmp(thd->query,"ROLLBACK")))
+      rli->inside_transaction=0;
+    
+    /*
+      If we expected a non-zero error code, and we don't get the same error
+      code, and none of them should be ignored.
+    */
+    if ((expected_error != (actual_error = thd->net.last_errno)) &&
+        expected_error &&
+        !ignored_error_code(actual_error) &&
+        !ignored_error_code(expected_error))
+    {
+      slave_print_error(rli, 0,
+                        "\
+Query caused different errors on master and slave. \
+Error on master: '%s' (%d), Error on slave: '%s' (%d). \
+Default database: '%s'. Query: '%s'",
+                        ER_SAFE(expected_error),
+                        expected_error,
+                        actual_error ? thd->net.last_error: "no error",
+                        actual_error, print_slave_db_safe(db), query);
+      thd->query_error= 1;
+    }
+    /*
+      If we get the same error code as expected, or they should be ignored. 
+    */
+    else if (expected_error == actual_error ||
+             ignored_error_code(actual_error))
+      clear_all_errors(thd, rli);
+    /*
+      Other cases: mostly we expected no error and get one.
+    */
+    else if (thd->query_error || thd->fatal_error)
+    {
+      slave_print_error(rli,actual_error,
+                        "Error '%s' on query. Default database: '%s'. Query: '%s'",
+                        (actual_error ? thd->net.last_error :
+                         "unexpected success or fatal error"),
+                        print_slave_db_safe(db), query);
+      thd->query_error= 1;
+    }
   } /* End of if (db_ok(... */
 
+end:
   VOID(pthread_mutex_lock(&LOCK_thread_count));
   thd->db= 0;	                        // prevent db from being freed
   thd->query= 0;			// just to be sure
@@ -1959,8 +1970,20 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
   thd->db= (char*) rewrite_db(db);
   DBUG_ASSERT(thd->query == 0);
   thd->query = 0;				// Should not be needed
-  thd->query_error = 0;
-  thd->clear_error();
+  clear_all_errors(thd, rli);
+
+  if (!use_rli_only_for_errors)
+  {
+#if MYSQL_VERSION_ID < 40100
+    rli->future_master_log_pos= log_pos + get_event_len() -
+      (rli->mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0);
+#elif MYSQL_VERSION_ID < 50000
+    rli->future_group_master_log_pos= log_pos + get_event_len() -
+      (rli->mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0);
+#else
+    rli->future_group_master_log_pos= log_pos;
+#endif
+  }
 
   /*
     We test replicate_*_db rules. Note that we have already prepared the file to
@@ -2127,6 +2150,11 @@ Fatal error running LOAD DATA INFILE on table '%s'. Default database: '%s'",
 int Start_log_event::exec_event(struct st_relay_log_info* rli)
 {
 
+  /*
+    If the I/O thread has not started, mi->old_format is BINLOG_FORMAT_CURRENT
+    (that's what the MASTER_INFO constructor does), so the test below is not
+    perfect at all.
+  */
   switch (rli->mi->old_format) {
   case BINLOG_FORMAT_CURRENT : 
     /* 
@@ -2148,7 +2176,7 @@ int Start_log_event::exec_event(struct st_relay_log_info* rli)
       slave_print_error(rli, 0,
                         "\
 Rolling back unfinished transaction (no COMMIT or ROLLBACK) from relay log. \
-Probably cause is that the master died while writing the transaction to it's \
+A probable cause is that the master died while writing the transaction to its \
 binary log.");
       return(1);
     }
@@ -2248,13 +2276,15 @@ int Rotate_log_event::exec_event(struct st_relay_log_info* rli)
     In that case, we don't want to touch the coordinates which correspond to the
     beginning of the transaction.
   */
-  if (!rli->inside_transaction)
+  if (rli->inside_transaction)
+    rli->inc_pending(get_event_len());
+  else
   {
     memcpy(rli->master_log_name, new_log_ident, ident_len+1);
     rli->master_log_pos= pos;
+    rli->relay_log_pos += get_event_len();
     DBUG_PRINT("info", ("master_log_pos: %lu", (ulong) rli->master_log_pos));
   }
-  rli->relay_log_pos += get_event_len();
   pthread_mutex_unlock(&rli->data_lock);
   pthread_cond_broadcast(&rli->data_cond);
   flush_relay_log_info(rli);
@@ -2417,6 +2447,16 @@ int Execute_load_log_event::exec_event(struct st_relay_log_info* rli)
     lev->exec_event is the place where the table is loaded (it calls
     mysql_load()).
   */
+
+#if MYSQL_VERSION_ID < 40100
+    rli->future_master_log_pos= log_pos + get_event_len() -
+      (rli->mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0);
+#elif MYSQL_VERSION_ID < 50000
+    rli->future_group_master_log_pos= log_pos + get_event_len() -
+      (rli->mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0);
+#else
+    rli->future_group_master_log_pos= log_pos;
+#endif
   if (lev->exec_event(0,rli,1)) 
   {
     /*

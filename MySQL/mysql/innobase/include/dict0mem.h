@@ -132,18 +132,6 @@ dict_foreign_t*
 dict_mem_foreign_create(void);
 /*=========================*/
 				/* out, own: foreign constraint struct */
-/**************************************************************************
-Creates a procedure memory object. */
-
-dict_proc_t*
-dict_mem_procedure_create(
-/*======================*/
-					/* out, own: procedure object */
-	char*		name,		/* in: procedure name */
-	char*		sql_string,	/* in: procedure definition as an SQL
-					string */
-	que_fork_t*	graph);		/* in: parsed procedure graph */
-					
 
 /* Data structure for a column in a table */
 struct dict_col_struct{
@@ -198,10 +186,11 @@ struct dict_tree_struct{
 				the list; if the tree is of the mixed
 				type, the first index in the list is the
 				index of the cluster which owns the tree */
+#ifdef UNIV_DEBUG
 	ulint		magic_n;/* magic number */
-};
-
 #define	DICT_TREE_MAGIC_N	7545676
+#endif /* UNIV_DEBUG */
+};
 
 /* Data structure for an index */
 struct dict_index_struct{
@@ -247,7 +236,10 @@ struct dict_index_struct{
 	ulint		stat_n_leaf_pages;
 				/* approximate number of leaf pages in the
 				index tree */
+#ifdef UNIV_DEBUG
 	ulint		magic_n;/* magic number */
+#define	DICT_INDEX_MAGIC_N	76789786
+#endif /* UNIV_DEBUG */
 };
 
 /* Data structure for a foreign key constraint; an example:
@@ -297,9 +289,6 @@ a foreign key constraint is enforced, therefore RESTRICT just means no flag */
 #define DICT_FOREIGN_ON_UPDATE_SET_NULL	8
 #define DICT_FOREIGN_ON_DELETE_NO_ACTION 16
 #define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32
-
-
-#define	DICT_INDEX_MAGIC_N	76789786
 
 /* Data structure for a database table */
 struct dict_table_struct{
@@ -412,29 +401,13 @@ struct dict_table_struct{
 				inited; MySQL gets the init value by executing
 				SELECT MAX(auto inc column) */
 	ib_longlong	autoinc;/* autoinc counter value to give to the
-				next inserted row */	
+				next inserted row */
+#ifdef UNIV_DEBUG
 	ulint		magic_n;/* magic number */
-};
 #define	DICT_TABLE_MAGIC_N	76333786
-					
-/* Data structure for a stored procedure */
-struct dict_proc_struct{
-	mem_heap_t*	heap;	/* memory heap */
-	char*		name;	/* procedure name */
-	char*		sql_string;
-				/* procedure definition as an SQL string:
-				we can produce more parsed instances of the
-				procedure by parsing this string */
-	hash_node_t	name_hash;
-				/* hash chain node */
-	UT_LIST_BASE_NODE_T(que_fork_t) graphs;
-				/* list of parsed instances of the procedure:
-				there may be many of them, and they are
-				recycled */
-	ulint		mem_fix;/* count of how many times this struct 
-				has been fixed in memory */
+#endif /* UNIV_DEBUG */
 };
-
+					
 #ifndef UNIV_NONINL
 #include "dict0mem.ic"
 #endif

@@ -34,12 +34,11 @@ typedef bool (*CHECK_KILLED_FUNC)(THD*,void*);
 volatile bool slave_sql_running = 0, slave_io_running = 0;
 char* slave_load_tmpdir = 0;
 MASTER_INFO *active_mi;
-volatile int active_mi_in_use = 0;
 HASH replicate_do_table, replicate_ignore_table;
 DYNAMIC_ARRAY replicate_wild_do_table, replicate_wild_ignore_table;
 bool do_table_inited = 0, ignore_table_inited = 0;
 bool wild_do_table_inited = 0, wild_ignore_table_inited = 0;
-bool table_rules_on = 0;
+bool table_rules_on= 0, replicate_same_server_id;
 ulonglong relay_log_space_limit = 0;
 
 /*
@@ -114,8 +113,12 @@ int init_slave()
 {
   DBUG_ENTER("init_slave");
 
-  /* This is called when mysqld starts */
-
+  /*
+    This is called when mysqld starts. Before client connections are
+    accepted. However bootstrap may conflict with us if it does START SLAVE.
+    So it's safer to take the lock.
+  */
+  pthread_mutex_lock(&LOCK_active_mi);
   /*
     TODO: re-write this to interate through the list of files
     for multi-master
@@ -160,9 +163,11 @@ int init_slave()
       goto err;
     }
   }
+  pthread_mutex_unlock(&LOCK_active_mi);
   DBUG_RETURN(0);
 
 err:
+  pthread_mutex_unlock(&LOCK_active_mi);
   DBUG_RETURN(1);
 }
 
@@ -322,6 +327,52 @@ void init_slave_skip_errors(const char* arg)
     while (!isdigit(*p) && *p)
       p++;
   }
+}
+
+void st_relay_log_info::inc_pending(ulonglong val)
+{
+  pending += val;
+}
+
+/* TODO: this probably needs to be fixed */
+void st_relay_log_info::inc_pos(ulonglong val, ulonglong log_pos, bool skip_lock)
+{
+  if (!skip_lock)
+    pthread_mutex_lock(&data_lock);
+  relay_log_pos += val+pending;
+  pending = 0;
+  if (log_pos)
+#if MYSQL_VERSION_ID < 50000
+    /*
+      If the event was converted from a 3.23 format, get_event_len() has
+      grown by 6 bytes (at least for most events, except LOAD DATA INFILE
+      which is already a big problem for 3.23->4.0 replication); 6 bytes is
+      the difference between the header's size in 4.0 (LOG_EVENT_HEADER_LEN)
+      and the header's size in 3.23 (OLD_HEADER_LEN). Note that using
+      mi->old_format will not help if the I/O thread has not started yet.
+      Yes this is a hack but it's just to make 3.23->4.x replication work;
+      3.23->5.0 replication is working much better.
+      
+      The line "mi->old_format ? : " below should NOT BE MERGED to 5.0 which
+      already works. But it SHOULD be merged to 4.1.
+    */
+    master_log_pos= log_pos + val -
+      (mi->old_format ? (LOG_EVENT_HEADER_LEN - OLD_HEADER_LEN) : 0);
+#endif
+  pthread_cond_broadcast(&data_cond);
+  if (!skip_lock)
+    pthread_mutex_unlock(&data_lock);
+}
+
+/*
+  thread safe read of position - not needed if we are in the slave thread,
+  but required otherwise as var is a longlong
+*/
+void st_relay_log_info::read_pos(ulonglong& var)
+{
+  pthread_mutex_lock(&data_lock);
+  var = relay_log_pos;
+  pthread_mutex_unlock(&data_lock);
 }
 
 void st_relay_log_info::close_temporary_tables()
@@ -648,7 +699,16 @@ static TABLE_RULE_ENT* find_wild(DYNAMIC_ARRAY *a, const char* key, int len)
     Note that changing the order of the tables in the list can lead to
     different results. Note also the order of precedence of the do/ignore 
     rules (see code below). For that reason, users should not set conflicting 
-    rules because they may get unpredicted results.
+    rules because they may get unpredicted results (precedence order is
+    explained in the manual).
+    If no table of the list is marked "updating" (so far this can only happen
+    if the statement is a multi-delete (SQLCOM_DELETE_MULTI) and the "tables"
+    is the tables in the FROM): then we always return 0, because there is no
+    reason we play this statement on this slave if it updates nothing. In the
+    case of SQLCOM_DELETE_MULTI, there will be a second call to tables_ok(),
+    with tables having "updating==TRUE" (those after the DELETE), so this
+    second call will make the decision (because
+    all_tables_not_ok() = !tables_ok(1st_list) && !tables_ok(2nd_list)).
 
   RETURN VALUES
     0           should not be logged/replicated
@@ -657,6 +717,7 @@ static TABLE_RULE_ENT* find_wild(DYNAMIC_ARRAY *a, const char* key, int len)
 
 int tables_ok(THD* thd, TABLE_LIST* tables)
 {
+  bool some_tables_updating= 0;
   DBUG_ENTER("tables_ok");
 
   for (; tables; tables = tables->next)
@@ -667,6 +728,7 @@ int tables_ok(THD* thd, TABLE_LIST* tables)
 
     if (!tables->updating) 
       continue;
+    some_tables_updating= 1;
     end= strmov(hash_key, tables->db ? tables->db : thd->db);
     *end++= '.';
     len= (uint) (strmov(end, tables->real_name) - hash_key);
@@ -689,10 +751,13 @@ int tables_ok(THD* thd, TABLE_LIST* tables)
   }
 
   /*
+    If no table was to be updated, ignore statement (no reason we play it on
+    slave, slave is supposed to replicate _changes_ only).
     If no explicit rule found and there was a do list, do not replicate.
     If there was no do list, go ahead
   */
-  DBUG_RETURN(!do_table_inited && !wild_do_table_inited);
+  DBUG_RETURN(some_tables_updating &&
+              !do_table_inited && !wild_do_table_inited);
 }
 
 
@@ -806,7 +871,14 @@ static int end_slave_on_walk(MASTER_INFO* mi, gptr /*unused*/)
 
 void end_slave()
 {
-  /* This is called when the server terminates, in close_connections(). */
+  /*
+    This is called when the server terminates, in close_connections().
+    It terminates slave threads. However, some CHANGE MASTER etc may still be
+    running presently. If a START SLAVE was in progress, the mutex lock below
+    will make us wait until slave threads have started, and START SLAVE
+    returns, then we terminate them here.
+  */
+  pthread_mutex_lock(&LOCK_active_mi);
   if (active_mi)
   {
     /*
@@ -827,6 +899,7 @@ void end_slave()
     delete active_mi;
     active_mi= 0;
   }
+  pthread_mutex_unlock(&LOCK_active_mi);
 }
 
 
@@ -1550,7 +1623,18 @@ int init_master_info(MASTER_INFO* mi, const char* master_info_fname,
   DBUG_ENTER("init_master_info");
 
   if (mi->inited)
+  {
+    /*
+      We have to reset read position of relay-log-bin as we may have
+      already been reading from 'hotlog' when the slave was stopped
+      last time. If this case pos_in_file would be set and we would
+      get a crash when trying to read the signature for the binary
+      relay log.
+    */
+    my_b_seek(mi->rli.cur_log, (my_off_t) 0);
     DBUG_RETURN(0);
+  }
+
   mi->mysql=0;
   mi->file_id=1;
   mi->ignore_stop_event=0;
@@ -1650,14 +1734,14 @@ file '%s')", fname);
 			    mi->master_log_name,
 			    (ulong) mi->master_log_pos));
 
+  mi->rli.mi = mi;
   if (init_relay_log_info(&mi->rli, slave_info_fname))
     goto err;
-  mi->rli.mi = mi;
 
   mi->inited = 1;
   // now change cache READ -> WRITE - must do this before flush_master_info
   reinit_io_cache(&mi->file, WRITE_CACHE,0L,0,1);
-  if ((error=test(flush_master_info(mi))))
+  if ((error= test(flush_master_info(mi, 1))))
     sql_print_error("Failed to flush master info file");
   pthread_mutex_unlock(&mi->data_lock);
   DBUG_RETURN(error);
@@ -1692,7 +1776,7 @@ int register_slave_on_master(MYSQL* mysql)
     packet.append((char)0);
   
   if (report_password)
-    net_store_data(&packet, report_user);
+    net_store_data(&packet, report_password);
   else
     packet.append((char)0);
 
@@ -1784,13 +1868,15 @@ int show_master_info(THD* thd, MASTER_INFO* mi)
 }
 
 
-bool flush_master_info(MASTER_INFO* mi)
+bool flush_master_info(MASTER_INFO* mi, bool flush_relay_log_cache)
 {
   IO_CACHE* file = &mi->file;
   char lbuf[22];
   DBUG_ENTER("flush_master_info");
   DBUG_PRINT("enter",("master_pos: %ld", (long) mi->master_log_pos));
 
+  if (flush_relay_log_cache)   /* Comments for this are in MySQL 4.1 */
+    flush_io_cache(mi->rli.relay_log.get_log_file());
   my_b_seek(file, 0L);
   my_b_printf(file, "%s\n%s\n%s\n%s\n%s\n%d\n%d\n",
 	      mi->master_log_name, llstr(mi->master_log_pos, lbuf),
@@ -1913,6 +1999,8 @@ int st_relay_log_info::wait_for_pos(THD* thd, String* log_name,
     error= -2; //means improper arguments
     goto err;
   }
+  // Convert 0-3 to 4
+  log_pos= max(log_pos, BIN_LOG_HEADER_SIZE);
   /* p points to '.' */
   log_name_extension= strtoul(++p, &p_end, 10);
   /*
@@ -1933,7 +2021,18 @@ int st_relay_log_info::wait_for_pos(THD* thd, String* log_name,
   {
     bool pos_reached;
     int cmp_result= 0;
-    DBUG_ASSERT(*master_log_name || master_log_pos == 0);
+    /*
+      master_log_name can be "", if we are just after a fresh replication start
+      or after a CHANGE MASTER TO MASTER_HOST/PORT (before we have executed one
+      Rotate event from the master) or (rare) if the user is doing a weird
+      slave setup (see next paragraph).
+      If master_log_name is "", we assume we don't have enough info to do the
+      comparison yet, so we just wait until more data. In this case
+      master_log_pos is always 0 except if somebody (wrongly) sets this slave
+      to be a slave of itself without using --replicate-same-server-id (an
+      unsupported configuration which does nothing), then master_log_pos will
+      grow and master_log_name will stay "".
+    */
     if (*master_log_name)
     {
       char *basename= master_log_name + dirname_length(master_log_name);
@@ -1953,14 +2052,15 @@ int st_relay_log_info::wait_for_pos(THD* thd, String* log_name,
       char *q_end;
       ulong master_log_name_extension= strtoul(q, &q_end, 10);
       if (master_log_name_extension < log_name_extension)
-        cmp_result = -1 ;
+        cmp_result= -1 ;
       else
         cmp_result= (master_log_name_extension > log_name_extension) ? 1 : 0 ;
+
+      pos_reached= ((!cmp_result && master_log_pos >= (ulonglong)log_pos) ||
+                    cmp_result > 0);
+      if (pos_reached || thd->killed)
+        break;
     }
-    pos_reached = ((!cmp_result && master_log_pos >= (ulonglong)log_pos) ||
-                   cmp_result > 0);
-    if (pos_reached || thd->killed)
-      break;
 
     //wait for master update, with optional timeout.
     
@@ -2235,13 +2335,6 @@ int check_expected_error(THD* thd, RELAY_LOG_INFO* rli, int expected_error)
   case ER_NET_ERROR_ON_WRITE:  
   case ER_SERVER_SHUTDOWN:  
   case ER_NEW_ABORTING_CONNECTION:
-    slave_print_error(rli,expected_error, 
-                      "query '%s' partially completed on the master \
-and was aborted. There is a chance that your master is inconsistent at this \
-point. If you are sure that your master is ok, run this query manually on the\
- slave and then restart the slave with SET GLOBAL SQL_SLAVE_SKIP_COUNTER=1;\
- SLAVE START; .", thd->query);
-    thd->query_error= 1;
     return 1;
   default:
     return 0;
@@ -2272,7 +2365,12 @@ static int exec_relay_log_event(THD* thd, RELAY_LOG_INFO* rli)
       log files themselves.
     */
 
-    if (ev->server_id == (uint32) ::server_id ||
+    /*
+      In 4.1, we updated queue_event() to add a similar test for
+      replicate_same_server_id, because in 4.1 the I/O thread is also filtering
+      events based on the server id.
+    */
+    if ((ev->server_id == (uint32) ::server_id && !replicate_same_server_id) ||
 	(rli->slave_skip_counter && type_code != ROTATE_EVENT))
     {
       /* TODO: I/O thread should not even log events with the same server id */
@@ -2542,7 +2640,7 @@ reconnect done to recover from failed read");
 	sql_print_error("Slave I/O thread could not queue event from master");
 	goto err;
       }
-      flush_master_info(mi);
+      flush_master_info(mi, 1);
       /*
         See if the relay logs take too much space.
         We don't lock mi->rli.log_space_lock here; this dirty read saves time
@@ -2965,7 +3063,15 @@ static int queue_old_event(MASTER_INFO *mi, const char *buf,
       DBUG_RETURN(1);
     }
     memcpy(tmp_buf,buf,event_len);
-    tmp_buf[event_len]=0; // Create_file constructor wants null-term buffer
+    /*
+      Create_file constructor wants a 0 as last char of buffer, this 0 will
+      serve as the string-termination char for the file's name (which is at the
+      end of the buffer)
+      We must increment event_len, otherwise the event constructor will not see
+      this end 0, which leads to segfault.
+    */
+    tmp_buf[event_len++]=0;
+    int4store(tmp_buf+EVENT_LEN_OFFSET, event_len);
     buf = (const char*)tmp_buf;
   }
   /*
@@ -3014,7 +3120,11 @@ static int queue_old_event(MASTER_INFO *mi, const char *buf,
     DBUG_ASSERT(tmp_buf);
     int error = process_io_create_file(mi,(Create_file_log_event*)ev);
     delete ev;
-    mi->master_log_pos += event_len;
+    /*
+      We had incremented event_len, but now when it is used to calculate the
+      position in the master's log, we must use the original value.
+    */
+    mi->master_log_pos += --event_len;
     DBUG_PRINT("info", ("master_log_pos: %d", (ulong) mi->master_log_pos));
     pthread_mutex_unlock(&mi->data_lock);
     my_free((char*)tmp_buf, MYF(0));
@@ -3284,8 +3394,7 @@ bool flush_relay_log_info(RELAY_LOG_INFO* rli)
     error=1;
   if (flush_io_cache(file))
     error=1;
-  if (flush_io_cache(rli->cur_log))		// QQ Why this call ?
-    error=1;
+  /* Flushing the relay log is done by the slave I/O thread */
   return error;
 }
 

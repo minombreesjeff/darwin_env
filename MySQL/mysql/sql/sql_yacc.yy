@@ -478,7 +478,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b,int *yystacksize);
 %token  CIPHER_SYM
 
 %left   SET_VAR
-%left	OR_OR_CONCAT OR
+%left	OR_OR_CONCAT OR XOR
 %left	AND
 %left	BETWEEN_SYM CASE_SYM WHEN_SYM THEN_SYM ELSE
 %left	EQ EQUAL_SYM GE GT_SYM LE LT NE IS LIKE REGEXP IN_SYM
@@ -488,7 +488,6 @@ bool my_yyoverflow(short **a, YYSTYPE **b,int *yystacksize);
 %left	'-' '+'
 %left	'*' '/' '%'
 %left	NEG '~'
-%left   XOR
 %left   '^'
 %right	NOT
 %right	BINARY
@@ -946,7 +945,7 @@ field_list_item:
          ;
 
 column_def:
-	  field_spec check_constraint
+	  field_spec opt_check_constraint
 	| field_spec references
 	  {
 	    Lex->col_list.empty();		/* Alloced by sql_alloc */
@@ -964,20 +963,31 @@ key_def:
 	  {
 	    Lex->col_list.empty();		/* Alloced by sql_alloc */
 	  }
+	| constraint opt_check_constraint
+	  {
+	    Lex->col_list.empty();		/* Alloced by sql_alloc */
+	  }
 	| opt_constraint check_constraint
 	  {
 	    Lex->col_list.empty();		/* Alloced by sql_alloc */
 	  }
 	;
 
-check_constraint:
+opt_check_constraint:
 	/* empty */
-	| CHECK_SYM expr
+	| check_constraint
+	;
+
+check_constraint:
+	CHECK_SYM expr
 	;
 
 opt_constraint:
 	/* empty */
-	| CONSTRAINT opt_ident;
+	| constraint;
+	
+constraint:
+	CONSTRAINT opt_ident;
 
 field_spec:
 	field_ident
@@ -3247,7 +3257,7 @@ table_ident:
         ;
 
 table_ident_ref:
-	ident			{ LEX_STRING db={"",0}; $$=new Table_ident(db,$1,0); }
+	ident			{ LEX_STRING db={(char*) "",0}; $$=new Table_ident(db,$1,0); }
 	| ident '.' ident	{ $$=new Table_ident($1,$3,0);}
         ;
 
@@ -3363,6 +3373,7 @@ keyword:
 	| MASTER_LOG_POS_SYM	{}
 	| MASTER_USER_SYM	{}
 	| MASTER_PASSWORD_SYM	{}
+	| MASTER_SERVER_ID_SYM  {}
 	| MASTER_CONNECT_RETRY_SYM	{}
 	| MAX_CONNECTIONS_PER_HOUR       {}
 	| MAX_QUERIES_PER_HOUR  {}

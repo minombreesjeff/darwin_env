@@ -126,16 +126,6 @@ void
 mtr_commit(
 /*=======*/
 	mtr_t*	mtr);	/* in: mini-transaction */
-/****************************************************************
-Writes to the database log the full contents of the pages that this mtr is
-the first to modify in the buffer pool. This function is called when the
-database is in the online backup state. */
-
-void
-mtr_log_write_backup_entries(
-/*=========================*/
-	mtr_t*	mtr,		/* in: mini-transaction */
-	dulint	backup_lsn);	/* in: online backup lsn */
 /**************************************************************
 Sets and returns a savepoint in mtr. */
 UNIV_INLINE
@@ -199,7 +189,6 @@ mtr_read_dulint(
 /*===========*/
 			/* out: value read */
 	byte*	ptr,	/* in: pointer from where to read */
-	ulint	type,	/* in: MLOG_8BYTES */
 	mtr_t*	mtr);	/* in: mini-transaction handle */
 /*************************************************************************
 This macro locks an rw-lock in s-mode. */
@@ -261,6 +250,7 @@ mtr_memo_contains(
 	mtr_t*	mtr,	/* in: mtr */
 	void*	object,	/* in: object to search */
 	ulint	type);	/* in: type of object */
+#ifdef UNIV_DEBUG
 /*************************************************************
 Prints info of an mtr handle. */
 
@@ -268,6 +258,7 @@ void
 mtr_print(
 /*======*/
 	mtr_t*	mtr);	/* in: mtr */
+#endif /* UNIV_DEBUG */
 /*######################################################################*/
 
 #define	MTR_BUF_MEMO_SIZE	200	/* number of slots in memo */
@@ -300,7 +291,12 @@ struct mtr_memo_slot_struct{
 
 /* Mini-transaction handle and buffer */
 struct mtr_struct{
+#ifdef UNIV_DEBUG
 	ulint		state;	/* MTR_ACTIVE, MTR_COMMITTING, MTR_COMMITTED */
+#define MTR_ACTIVE		12231
+#define MTR_COMMITTING		56456
+#define MTR_COMMITTED		34676
+#endif /* UNIV_DEBUG */
 	dyn_array_t	memo;	/* memo stack for locks etc. */
 	dyn_array_t	log;	/* mini-transaction log */
 	ibool		modifications;
@@ -315,15 +311,12 @@ struct mtr_struct{
 				this mtr */
 	dulint		end_lsn;/* end lsn of the possible log entry for
 				this mtr */
+#ifdef UNIV_DEBUG
 	ulint		magic_n;
+#define	MTR_MAGIC_N		54551
+#endif /* UNIV_DEBUG */
 };
 
-#define	MTR_MAGIC_N		54551
-
-#define MTR_ACTIVE		12231
-#define MTR_COMMITTING		56456
-#define MTR_COMMITTED		34676
-	
 #ifndef UNIV_NONINL
 #include "mtr0mtr.ic"
 #endif
