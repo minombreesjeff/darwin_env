@@ -1,13 +1,13 @@
   <HTML>
   <HEAD>
   <!-- This HTML file has been created by texi2html 1.52 (hacked by david@detron.se)
-     from manual.texi on 3 June 2002 -->
+     from manual.texi on 10 October 2002 -->
 
-  <TITLE>MySQL Reference Manual for version 3.23.51.</TITLE>
+  <TITLE>MySQL Reference Manual for version 3.23.53.</TITLE>
    <style> code {color:purple} tt {color:green} samp {color:navy} pre {color:maroon} </style>
   </HEAD>
   <BODY BGCOLOR=silver TEXT=#000000 LINK=#101090 VLINK=#7030B0>
-<H1>MySQL Reference Manual for version 3.23.51.</H1>
+<H1>MySQL Reference Manual for version 3.23.53.</H1>
 <P>
 <P><HR><P>
 
@@ -23,7 +23,7 @@
 </P>
 <P>
 This is the MySQL reference manual; it documents MySQL
-Version 3.23.51.  As MySQL is work in progress,
+Version 3.23.53.  As MySQL is work in progress,
 the manual gets updated frequently.  There is a very good chance that
 this version is out of date, unless you are looking at it online.  The
 most recent version of this manual is available at
@@ -8675,7 +8675,7 @@ release or the last stable release:
 Normally, if you are beginning to use MySQL for the first time
 or trying to port it to some system for which there is no binary
 distribution, we recommend going with the stable release (currently
-Version 3.23.51.  Note that all MySQL releases are
+Version 3.23.53.  Note that all MySQL releases are
 checked with the MySQL benchmarks and an extensive test suite
 before each release.
 
@@ -9319,7 +9319,7 @@ proceeding.  See section <A HREF="manual.html#BDB">7.5  BDB or Berkeley_DB Table
 
 MySQL source distributions are provided as compressed <CODE>tar</CODE>
 archives and have names like <TT>`mysql-VERSION.tar.gz'</TT>, where
-<CODE>VERSION</CODE> is a number like 3.23.51.
+<CODE>VERSION</CODE> is a number like 3.23.53.
 
 <LI>
 
@@ -13949,7 +13949,7 @@ MySQL (This example uses the IBM compiler):
 export CC="xlc_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192 "
 export CXX="xlC_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192"
 export CFLAGS="-I /usr/local/include"
-export LDLFAGS="-L /usr/local/lib"
+export LDFLAGS="-L /usr/local/lib"
 export CPPFLAGS=$CFLAGS
 export CXXFLAGS=$CFLAGS
 
@@ -38792,7 +38792,7 @@ mysql&#62; select TRUNCATE(1.999,1);
         -&#62; 1.9
 mysql&#62; select TRUNCATE(1.999,0);
         -&#62; 1
-mysql&#62; select TRUNCATE(-1,999,1);
+mysql&#62; select TRUNCATE(-1.999,1);
         -&#62; -1.9
 </PRE>
 
@@ -58990,7 +58990,150 @@ not yet 100% confident in this code.
 
 
 
-<H3><A NAME="News-3.23.51" HREF="manual_toc.html#News-3.23.51">F.2.1  Changes in release 3.23.51</A></H3>
+<H3><A NAME="News-3.23.54" HREF="manual_toc.html#News-3.23.54">F.2.1  Changes in release 3.23.54</A></H3>
+
+
+
+<H3><A NAME="News-3.23.53" HREF="manual_toc.html#News-3.23.53">F.2.2  Changes in release 3.23.53</A></H3>
+
+<UL>
+<LI>
+
+Fixed crash when <CODE>SHOW INNODB STATUS</CODE> was used and <CODE>skip-innodb</CODE>
+was defined.
+<LI>
+
+Fixed possible memory corruption bug in binary log file handling when
+slave rotated the logs (only affected 3.23, not 4.0).
+<LI>
+
+Fixed problem in <CODE>LOCK TABLES</CODE> on windows when one connects to a
+database that contains upper case letters.
+<LI>
+
+Fixed that <CODE>--skip-show-databases</CODE> doesn't reset the <CODE>--port</CODE> option.
+<LI>
+
+Small fix in <CODE>safe_mysqld</CODE> for some shells.
+<LI>
+
+Fixed that <CODE>FLUSH STATUS</CODE> doesn't reset <CODE>Delayed_insert_threads</CODE>.
+<LI>
+
+Fixed core dump bug when using the <CODE>BINARY</CODE> cast on a <CODE>NULL</CODE> value.
+<LI>
+
+Fixed race condition when someone did a <CODE>GRANT</CODE> at the same time a new
+user logged in or did a <CODE>USE DATABASE</CODE>.
+<LI>
+
+Fixed bug in <CODE>ALTER TABLE</CODE> and <CODE>RENAME TABLE</CODE> when running with
+<CODE>-O lower_case_table_names=1</CODE> (typically on windows) when giving the
+table name in uppercase.
+<LI>
+
+Fixed that <CODE>-O lower_case_table_names=1</CODE> also converts database
+names to lower case.
+<LI>
+
+Fixed unlikely core dump with <CODE>SELECT ... ORDER BY ... LIMIT</CODE>.
+<LI>
+
+Changed <CODE>AND/OR</CODE> to report that they can return NULL. This fixes a
+bug in <CODE>GROUP BY</CODE> on <CODE>AND/OR</CODE> expressions that return
+<CODE>NULL</CODE>.
+<LI>
+
+Fixed a bug that <CODE>OPTIMIZE</CODE> of locked and modified MyISAM table,
+reported table corruption.
+<LI>
+
+Fixed a <CODE>BDB</CODE>-related <CODE>ALTER TABLE</CODE> bug with dropping a column
+and shutting down immediately thereafter.
+<LI>
+
+Fixed problem with <CODE>configure ... --localstatedir=...</CODE>.
+<LI>
+
+Fixed problem with <CODE>UNSIGNED BIGINT</CODE> on AIX (again).
+<LI>
+
+Fixed bug in pthread_mutex_trylock() on HPUX 11.0.
+<LI>
+
+Multithreaded stress tests for InnoDB.
+</UL>
+
+
+
+<H3><A NAME="News-3.23.52" HREF="manual_toc.html#News-3.23.52">F.2.3  Changes in release 3.23.52</A></H3>
+
+<UL>
+<LI>
+
+Fixed security bug when having an empty databasename in the <CODE>user.db</CODE>
+table.
+<LI>
+
+Changed initialisation of <CODE>RND()</CODE> to make it less predicatable.
+<LI>
+
+Fixed problem with <CODE>GROUP BY</CODE> on result with expression that created a
+<CODE>BLOB</CODE> field.
+<LI>
+
+Fixed problem with privilege tables when downgrading from 4.0.2 to 3.23.
+<LI>
+
+Fixed thread bug in <CODE>SLAVE START</CODE>, <CODE>SLAVE STOP</CODE> and automatic repair
+of MyISAM tables that could cause table cache to be corrupted.
+<LI>
+
+Fixed possible thread related key-cache-corruption problem with
+<CODE>OPTIMIZE TABLE</CODE> and <CODE>REPAIR TABLE</CODE>.
+<LI>
+
+Added name of 'administrator command' logs.
+<LI>
+
+Fixed bug with creating an auto-increment value on second part of a
+<CODE>UNIQUE()</CODE> key where first part could contain NULL values.
+<LI>
+
+Don't write slave-timeout reconnects to the error log.
+<LI>
+
+Fixed bug with slave net read timeouting
+<LI>
+
+Fixed a core-dump bug with <CODE>MERGE</CODE> tables and <CODE>MAX()</CODE> function.
+<LI>
+
+Fixed bug in <CODE>ALTER TABLE</CODE> with BDB tables.
+<LI>
+
+Fixed bug when logging <CODE>LOAD DATA INFILE</CODE> to binary log with no 
+active database.
+<LI>
+
+Fixed a bug in range optimiser (causing crashes).
+<LI>
+
+Fixed possible problem in replication when doing <CODE>DROP DATABASE</CODE> on a
+database with InnoDB tables.
+<LI>
+
+Fixed that <CODE>mysql_info()</CODE> returns 0 for 'Duplicates' when using
+<CODE>INSERT DELAYED IGNORE</CODE>.
+<LI>
+
+Added <CODE>-DHAVE_BROKEN_REALPATH</CODE> to the Mac OS X (darwin) compile
+options in <TT>`configure.in'</TT> to fix a failure under high load.
+</UL>
+
+
+
+<H3><A NAME="News-3.23.51" HREF="manual_toc.html#News-3.23.51">F.2.4  Changes in release 3.23.51</A></H3>
 
 <UL>
 <LI>
@@ -59028,7 +59171,8 @@ Fixed optimization problem with <CODE>DATETIME</CODE> and value outside
 <CODE>DATETIME</CODE> range.
 <LI>
 
-Removed BDB documentation.
+Removed Sleepycat's BDB doc files from the source tree, as they're not
+needed (MySQL covers BDB in its own documentation).
 <LI>
 
 Fixed mit-pthreads to compile with glibc 2.2 (needed for <CODE>make dist</CODE>).
@@ -59062,9 +59206,13 @@ Linux-x86 binaries.
 
 
 
-<H3><A NAME="News-3.23.50" HREF="manual_toc.html#News-3.23.50">F.2.2  Changes in release 3.23.50</A></H3>
+<H3><A NAME="News-3.23.50" HREF="manual_toc.html#News-3.23.50">F.2.5  Changes in release 3.23.50</A></H3>
 
 <UL>
+<LI>
+
+Fixed buffer overflow problem if someone specified a too long datadir
+parameter to mysqld.
 <LI>
 
 Fixed problem with <CODE>crash-me</CODE> and gcc 3.0.4.
@@ -59155,7 +59303,7 @@ with <CODE>GROUP BY</CODE>.
 
 
 
-<H3><A NAME="News-3.23.49" HREF="manual_toc.html#News-3.23.49">F.2.3  Changes in release 3.23.49</A></H3>
+<H3><A NAME="News-3.23.49" HREF="manual_toc.html#News-3.23.49">F.2.6  Changes in release 3.23.49</A></H3>
 
 <UL>
 <LI>
@@ -59181,7 +59329,7 @@ Fixed shutdown problem on NT.
 
 
 
-<H3><A NAME="News-3.23.48" HREF="manual_toc.html#News-3.23.48">F.2.4  Changes in release 3.23.48</A></H3>
+<H3><A NAME="News-3.23.48" HREF="manual_toc.html#News-3.23.48">F.2.7  Changes in release 3.23.48</A></H3>
 
 <UL>
 <LI>
@@ -59251,7 +59399,7 @@ this situation.
 
 
 
-<H3><A NAME="News-3.23.47" HREF="manual_toc.html#News-3.23.47">F.2.5  Changes in release 3.23.47</A></H3>
+<H3><A NAME="News-3.23.47" HREF="manual_toc.html#News-3.23.47">F.2.8  Changes in release 3.23.47</A></H3>
 
 <UL>
 <LI>
@@ -59296,7 +59444,7 @@ Fixed bug when using <CODE>t1 LEFT JOIN t2 ON t2.key=constant</CODE>.
 
 
 
-<H3><A NAME="News-3.23.46" HREF="manual_toc.html#News-3.23.46">F.2.6  Changes in release 3.23.46</A></H3>
+<H3><A NAME="News-3.23.46" HREF="manual_toc.html#News-3.23.46">F.2.9  Changes in release 3.23.46</A></H3>
 
 <UL>
 <LI>
@@ -59335,7 +59483,7 @@ Fixed bug in replication on Mac OS X.
 
 
 
-<H3><A NAME="News-3.23.45" HREF="manual_toc.html#News-3.23.45">F.2.7  Changes in release 3.23.45</A></H3>
+<H3><A NAME="News-3.23.45" HREF="manual_toc.html#News-3.23.45">F.2.10  Changes in release 3.23.45</A></H3>
 
 <UL>
 <LI>
@@ -59384,7 +59532,7 @@ Fixed bug in <CODE>TIME_TO_SEC()</CODE> when using negative values.
 
 
 
-<H3><A NAME="News-3.23.44" HREF="manual_toc.html#News-3.23.44">F.2.8  Changes in release 3.23.44</A></H3>
+<H3><A NAME="News-3.23.44" HREF="manual_toc.html#News-3.23.44">F.2.11  Changes in release 3.23.44</A></H3>
 
 <UL>
 <LI>
@@ -59507,7 +59655,7 @@ Fixed a bug in purge which could cause crashes.
 
 
 
-<H3><A NAME="News-3.23.43" HREF="manual_toc.html#News-3.23.43">F.2.9  Changes in release 3.23.43</A></H3>
+<H3><A NAME="News-3.23.43" HREF="manual_toc.html#News-3.23.43">F.2.12  Changes in release 3.23.43</A></H3>
 
 <UL>
 <LI>
@@ -59547,7 +59695,7 @@ Fixed bug in <CODE>--safe-user-create</CODE>
 
 
 
-<H3><A NAME="News-3.23.42" HREF="manual_toc.html#News-3.23.42">F.2.10  Changes in release 3.23.42</A></H3>
+<H3><A NAME="News-3.23.42" HREF="manual_toc.html#News-3.23.42">F.2.13  Changes in release 3.23.42</A></H3>
 
 <UL>
 <LI>
@@ -59626,7 +59774,7 @@ other threads.
 
 
 
-<H3><A NAME="News-3.23.41" HREF="manual_toc.html#News-3.23.41">F.2.11  Changes in release 3.23.41</A></H3>
+<H3><A NAME="News-3.23.41" HREF="manual_toc.html#News-3.23.41">F.2.14  Changes in release 3.23.41</A></H3>
 
 
 <UL>
@@ -59682,7 +59830,7 @@ Fixed bug in <CODE>SELECT DISTINCT ... HAVING</CODE> that casued error message
 
 
 
-<H3><A NAME="News-3.23.40" HREF="manual_toc.html#News-3.23.40">F.2.12  Changes in release 3.23.40</A></H3>
+<H3><A NAME="News-3.23.40" HREF="manual_toc.html#News-3.23.40">F.2.15  Changes in release 3.23.40</A></H3>
 
 
 <UL>
@@ -59757,7 +59905,7 @@ type. <CODE>GEMINI</CODE> is not released under an Open Source license.
 
 
 
-<H3><A NAME="News-3.23.39" HREF="manual_toc.html#News-3.23.39">F.2.13  Changes in release 3.23.39</A></H3>
+<H3><A NAME="News-3.23.39" HREF="manual_toc.html#News-3.23.39">F.2.16  Changes in release 3.23.39</A></H3>
 
 
 <UL>
@@ -59815,7 +59963,7 @@ Fixed problem with <CODE>MERGE</CODE> tables and big tables (&#62; 4G) when usin
 
 
 
-<H3><A NAME="News-3.23.38" HREF="manual_toc.html#News-3.23.38">F.2.14  Changes in release 3.23.38</A></H3>
+<H3><A NAME="News-3.23.38" HREF="manual_toc.html#News-3.23.38">F.2.17  Changes in release 3.23.38</A></H3>
 
 
 <UL>
@@ -59886,7 +60034,7 @@ Fixed bug with <CODE>LOCK TABLE</CODE> and BDB tables.
 
 
 
-<H3><A NAME="News-3.23.37" HREF="manual_toc.html#News-3.23.37">F.2.15  Changes in release 3.23.37</A></H3>
+<H3><A NAME="News-3.23.37" HREF="manual_toc.html#News-3.23.37">F.2.18  Changes in release 3.23.37</A></H3>
 
 
 <UL>
@@ -59973,7 +60121,7 @@ Added <CODE>--skip-safemalloc</CODE> option to <CODE>mysqld</CODE>.
 
 
 
-<H3><A NAME="News-3.23.36" HREF="manual_toc.html#News-3.23.36">F.2.16  Changes in release 3.23.36</A></H3>
+<H3><A NAME="News-3.23.36" HREF="manual_toc.html#News-3.23.36">F.2.19  Changes in release 3.23.36</A></H3>
 
 
 <UL>
@@ -60027,7 +60175,7 @@ Changed some macros to be able to use fast mutex with glibc 2.2.
 
 
 
-<H3><A NAME="News-3.23.35" HREF="manual_toc.html#News-3.23.35">F.2.17  Changes in release 3.23.35</A></H3>
+<H3><A NAME="News-3.23.35" HREF="manual_toc.html#News-3.23.35">F.2.20  Changes in release 3.23.35</A></H3>
 
 
 <UL>
@@ -60053,7 +60201,7 @@ Fixed handling of arguments in the benchmark script <TT>`run-all-tests'</TT>.
 
 
 
-<H3><A NAME="News-3.23.34a" HREF="manual_toc.html#News-3.23.34a">F.2.18  Changes in release 3.23.34a</A></H3>
+<H3><A NAME="News-3.23.34a" HREF="manual_toc.html#News-3.23.34a">F.2.21  Changes in release 3.23.34a</A></H3>
 
 
 <UL>
@@ -60065,7 +60213,7 @@ to be compiled.
 
 
 
-<H3><A NAME="News-3.23.34" HREF="manual_toc.html#News-3.23.34">F.2.19  Changes in release 3.23.34</A></H3>
+<H3><A NAME="News-3.23.34" HREF="manual_toc.html#News-3.23.34">F.2.22  Changes in release 3.23.34</A></H3>
 
 
 <UL>
@@ -60167,7 +60315,7 @@ where <CODE>bar</CODE> is a column reference, an error was not properly generate
 
 
 
-<H3><A NAME="News-3.23.33" HREF="manual_toc.html#News-3.23.33">F.2.20  Changes in release 3.23.33</A></H3>
+<H3><A NAME="News-3.23.33" HREF="manual_toc.html#News-3.23.33">F.2.23  Changes in release 3.23.33</A></H3>
 
 
 <UL>
@@ -60289,7 +60437,7 @@ the disk cache.
 
 
 
-<H3><A NAME="News-3.23.32" HREF="manual_toc.html#News-3.23.32">F.2.21  Changes in release 3.23.32</A></H3>
+<H3><A NAME="News-3.23.32" HREF="manual_toc.html#News-3.23.32">F.2.24  Changes in release 3.23.32</A></H3>
 
 
 <UL>
@@ -60346,7 +60494,7 @@ Added <CODE>MASTER_POS_WAIT()</CODE>.
 
 
 
-<H3><A NAME="News-3.23.31" HREF="manual_toc.html#News-3.23.31">F.2.22  Changes in release 3.23.31</A></H3>
+<H3><A NAME="News-3.23.31" HREF="manual_toc.html#News-3.23.31">F.2.25  Changes in release 3.23.31</A></H3>
 
 
 <UL>
@@ -60423,7 +60571,7 @@ Added <CODE>Threads_created</CODE> status variable to <CODE>mysqld</CODE>.
 
 
 
-<H3><A NAME="News-3.23.30" HREF="manual_toc.html#News-3.23.30">F.2.23  Changes in release 3.23.30</A></H3>
+<H3><A NAME="News-3.23.30" HREF="manual_toc.html#News-3.23.30">F.2.26  Changes in release 3.23.30</A></H3>
 
 
 <UL>
@@ -60509,7 +60657,7 @@ Fixed bug when running two simultaneous <CODE>SHOW LOGS</CODE> queries.
 
 
 
-<H3><A NAME="News-3.23.29" HREF="manual_toc.html#News-3.23.29">F.2.24  Changes in release 3.23.29</A></H3>
+<H3><A NAME="News-3.23.29" HREF="manual_toc.html#News-3.23.29">F.2.27  Changes in release 3.23.29</A></H3>
 
 
 <UL>
@@ -60683,7 +60831,7 @@ read by <CODE>mysql_options()</CODE>.
 
 
 
-<H3><A NAME="News-3.23.28" HREF="manual_toc.html#News-3.23.28">F.2.25  Changes in release 3.23.28</A></H3>
+<H3><A NAME="News-3.23.28" HREF="manual_toc.html#News-3.23.28">F.2.28  Changes in release 3.23.28</A></H3>
 
 
 <UL>
@@ -60846,7 +60994,7 @@ new table with the rows in a specific order.
 
 
 
-<H3><A NAME="News-3.23.27" HREF="manual_toc.html#News-3.23.27">F.2.26  Changes in release 3.23.27</A></H3>
+<H3><A NAME="News-3.23.27" HREF="manual_toc.html#News-3.23.27">F.2.29  Changes in release 3.23.27</A></H3>
 
 
 <UL>
@@ -60873,7 +61021,7 @@ Small portability fixes.
 
 
 
-<H3><A NAME="News-3.23.26" HREF="manual_toc.html#News-3.23.26">F.2.27  Changes in release 3.23.26</A></H3>
+<H3><A NAME="News-3.23.26" HREF="manual_toc.html#News-3.23.26">F.2.30  Changes in release 3.23.26</A></H3>
 
 
 <UL>
@@ -60975,7 +61123,7 @@ on a patch from John Jones.
 
 
 
-<H3><A NAME="News-3.23.25" HREF="manual_toc.html#News-3.23.25">F.2.28  Changes in release 3.23.25</A></H3>
+<H3><A NAME="News-3.23.25" HREF="manual_toc.html#News-3.23.25">F.2.31  Changes in release 3.23.25</A></H3>
 
 
 <UL>
@@ -61099,7 +61247,7 @@ Added file mutexes to make <CODE>pwrite()</CODE> safe on Windows.
 
 
 
-<H3><A NAME="News-3.23.24" HREF="manual_toc.html#News-3.23.24">F.2.29  Changes in release 3.23.24</A></H3>
+<H3><A NAME="News-3.23.24" HREF="manual_toc.html#News-3.23.24">F.2.32  Changes in release 3.23.24</A></H3>
 
 
 <UL>
@@ -61131,7 +61279,7 @@ Restored the win1251 character set (it's now only marked deprecated).
 
 
 
-<H3><A NAME="News-3.23.23" HREF="manual_toc.html#News-3.23.23">F.2.30  Changes in release 3.23.23</A></H3>
+<H3><A NAME="News-3.23.23" HREF="manual_toc.html#News-3.23.23">F.2.33  Changes in release 3.23.23</A></H3>
 
 
 <UL>
@@ -61276,7 +61424,7 @@ Full text search via the <CODE>MATCH</CODE> function and <CODE>FULLTEXT</CODE> i
 
 
 
-<H3><A NAME="News-3.23.22" HREF="manual_toc.html#News-3.23.22">F.2.31  Changes in release 3.23.22</A></H3>
+<H3><A NAME="News-3.23.22" HREF="manual_toc.html#News-3.23.22">F.2.34  Changes in release 3.23.22</A></H3>
 
 
 <UL>
@@ -61336,7 +61484,7 @@ Added <CODE>SHOW MASTER STATUS</CODE> and <CODE>SHOW SLAVE STATUS</CODE>.
 
 
 
-<H3><A NAME="News-3.23.21" HREF="manual_toc.html#News-3.23.21">F.2.32  Changes in release 3.23.21</A></H3>
+<H3><A NAME="News-3.23.21" HREF="manual_toc.html#News-3.23.21">F.2.35  Changes in release 3.23.21</A></H3>
 
 
 <UL>
@@ -61396,7 +61544,7 @@ a feature.
 
 
 
-<H3><A NAME="News-3.23.20" HREF="manual_toc.html#News-3.23.20">F.2.33  Changes in release 3.23.20</A></H3>
+<H3><A NAME="News-3.23.20" HREF="manual_toc.html#News-3.23.20">F.2.36  Changes in release 3.23.20</A></H3>
 
 
 <UL>
@@ -61410,7 +61558,7 @@ Added <CODE>SHOW CREATE TABLE</CODE>.
 
 
 
-<H3><A NAME="News-3.23.19" HREF="manual_toc.html#News-3.23.19">F.2.34  Changes in release 3.23.19</A></H3>
+<H3><A NAME="News-3.23.19" HREF="manual_toc.html#News-3.23.19">F.2.37  Changes in release 3.23.19</A></H3>
 
 
 <UL>
@@ -61466,7 +61614,7 @@ Fixed core dump bug when using <CODE>ORDER BY</CODE> on a <CODE>CONV()</CODE> ex
 
 
 
-<H3><A NAME="News-3.23.18" HREF="manual_toc.html#News-3.23.18">F.2.35  Changes in release 3.23.18</A></H3>
+<H3><A NAME="News-3.23.18" HREF="manual_toc.html#News-3.23.18">F.2.38  Changes in release 3.23.18</A></H3>
 
 
 <UL>
@@ -61495,7 +61643,7 @@ Fixed problem with myisamchk and <CODE>RAID</CODE> tables.
 
 
 
-<H3><A NAME="News-3.23.17" HREF="manual_toc.html#News-3.23.17">F.2.36  Changes in release 3.23.17</A></H3>
+<H3><A NAME="News-3.23.17" HREF="manual_toc.html#News-3.23.17">F.2.39  Changes in release 3.23.17</A></H3>
 
 
 <UL>
@@ -61576,7 +61724,7 @@ Added deadlock detection sanity checks to <CODE>INSERT DELAYED</CODE>
 
 
 
-<H3><A NAME="News-3.23.16" HREF="manual_toc.html#News-3.23.16">F.2.37  Changes in release 3.23.16</A></H3>
+<H3><A NAME="News-3.23.16" HREF="manual_toc.html#News-3.23.16">F.2.40  Changes in release 3.23.16</A></H3>
 
 
 <UL>
@@ -61618,7 +61766,7 @@ Added <CODE>SQL_LOG_BIN</CODE> option
 
 
 
-<H3><A NAME="News-3.23.15" HREF="manual_toc.html#News-3.23.15">F.2.38  Changes in release 3.23.15</A></H3>
+<H3><A NAME="News-3.23.15" HREF="manual_toc.html#News-3.23.15">F.2.41  Changes in release 3.23.15</A></H3>
 
 
 <UL>
@@ -61715,7 +61863,7 @@ Fixed coredump in LOAD_FILE(NULL).
 
 
 
-<H3><A NAME="News-3.23.14" HREF="manual_toc.html#News-3.23.14">F.2.39  Changes in release 3.23.14</A></H3>
+<H3><A NAME="News-3.23.14" HREF="manual_toc.html#News-3.23.14">F.2.42  Changes in release 3.23.14</A></H3>
 
 
 <UL>
@@ -61778,7 +61926,7 @@ the <CODE>GROUP BY</CODE> part.
 
 
 
-<H3><A NAME="News-3.23.13" HREF="manual_toc.html#News-3.23.13">F.2.40  Changes in release 3.23.13</A></H3>
+<H3><A NAME="News-3.23.13" HREF="manual_toc.html#News-3.23.13">F.2.43  Changes in release 3.23.13</A></H3>
 
 
 <UL>
@@ -61814,7 +61962,7 @@ from the client <TT>`.rpm'</TT> file.
 
 
 
-<H3><A NAME="News-3.23.12" HREF="manual_toc.html#News-3.23.12">F.2.41  Changes in release 3.23.12</A></H3>
+<H3><A NAME="News-3.23.12" HREF="manual_toc.html#News-3.23.12">F.2.44  Changes in release 3.23.12</A></H3>
 
 
 <UL>
@@ -61880,7 +62028,7 @@ join parameters in <CODE>SELECT</CODE>.
 
 
 
-<H3><A NAME="News-3.23.11" HREF="manual_toc.html#News-3.23.11">F.2.42  Changes in release 3.23.11</A></H3>
+<H3><A NAME="News-3.23.11" HREF="manual_toc.html#News-3.23.11">F.2.45  Changes in release 3.23.11</A></H3>
 
 
 <UL>
@@ -61948,7 +62096,7 @@ to make things safe for old clients.
 
 
 
-<H3><A NAME="News-3.23.10" HREF="manual_toc.html#News-3.23.10">F.2.43  Changes in release 3.23.10</A></H3>
+<H3><A NAME="News-3.23.10" HREF="manual_toc.html#News-3.23.10">F.2.46  Changes in release 3.23.10</A></H3>
 
 
 <UL>
@@ -61960,7 +62108,7 @@ Fixed bug in 3.23.9 where memory wasn't properly freed when doing
 
 
 
-<H3><A NAME="News-3.23.9" HREF="manual_toc.html#News-3.23.9">F.2.44  Changes in release 3.23.9</A></H3>
+<H3><A NAME="News-3.23.9" HREF="manual_toc.html#News-3.23.9">F.2.47  Changes in release 3.23.9</A></H3>
 
 
 <UL>
@@ -62044,7 +62192,7 @@ Fixed problem with 8-bit characters as separators in <CODE>LOAD DATA INFILE</COD
 
 
 
-<H3><A NAME="News-3.23.8" HREF="manual_toc.html#News-3.23.8">F.2.45  Changes in release 3.23.8</A></H3>
+<H3><A NAME="News-3.23.8" HREF="manual_toc.html#News-3.23.8">F.2.48  Changes in release 3.23.8</A></H3>
 
 
 <UL>
@@ -62100,7 +62248,7 @@ was too big.
 
 
 
-<H3><A NAME="News-3.23.7" HREF="manual_toc.html#News-3.23.7">F.2.46  Changes in release 3.23.7</A></H3>
+<H3><A NAME="News-3.23.7" HREF="manual_toc.html#News-3.23.7">F.2.49  Changes in release 3.23.7</A></H3>
 
 
 <UL>
@@ -62175,7 +62323,7 @@ Changed the argument to <CODE>mysql_data_seek()</CODE> from <CODE>ulong</CODE> t
 
 
 
-<H3><A NAME="News-3.23.6" HREF="manual_toc.html#News-3.23.6">F.2.47  Changes in release 3.23.6</A></H3>
+<H3><A NAME="News-3.23.6" HREF="manual_toc.html#News-3.23.6">F.2.50  Changes in release 3.23.6</A></H3>
 
 
 <UL>
@@ -62252,7 +62400,7 @@ Added function <CODE>ORD(string)</CODE>.
 
 
 
-<H3><A NAME="News-3.23.5" HREF="manual_toc.html#News-3.23.5">F.2.48  Changes in release 3.23.5</A></H3>
+<H3><A NAME="News-3.23.5" HREF="manual_toc.html#News-3.23.5">F.2.51  Changes in release 3.23.5</A></H3>
 
 
 <UL>
@@ -62335,7 +62483,7 @@ Fixed problem with <CODE>UDF</CODE> functions.
 
 
 
-<H3><A NAME="News-3.23.4" HREF="manual_toc.html#News-3.23.4">F.2.49  Changes in release 3.23.4</A></H3>
+<H3><A NAME="News-3.23.4" HREF="manual_toc.html#News-3.23.4">F.2.52  Changes in release 3.23.4</A></H3>
 
 
 <UL>
@@ -62386,7 +62534,7 @@ Some configure issues to fix problems with big file system detection.
 
 
 
-<H3><A NAME="News-3.23.3" HREF="manual_toc.html#News-3.23.3">F.2.50  Changes in release 3.23.3</A></H3>
+<H3><A NAME="News-3.23.3" HREF="manual_toc.html#News-3.23.3">F.2.53  Changes in release 3.23.3</A></H3>
 
 
 <UL>
@@ -62445,7 +62593,7 @@ New function <CODE>COALESCE()</CODE>.
 
 
 
-<H3><A NAME="News-3.23.2" HREF="manual_toc.html#News-3.23.2">F.2.51  Changes in release 3.23.2</A></H3>
+<H3><A NAME="News-3.23.2" HREF="manual_toc.html#News-3.23.2">F.2.54  Changes in release 3.23.2</A></H3>
 
 
 <UL>
@@ -62537,7 +62685,7 @@ Support for the GB2312 Chinese character set.
 
 
 
-<H3><A NAME="News-3.23.1" HREF="manual_toc.html#News-3.23.1">F.2.52  Changes in release 3.23.1</A></H3>
+<H3><A NAME="News-3.23.1" HREF="manual_toc.html#News-3.23.1">F.2.55  Changes in release 3.23.1</A></H3>
 
 
 <UL>
@@ -62548,7 +62696,7 @@ Fixed some compilation problems.
 
 
 
-<H3><A NAME="News-3.23.0" HREF="manual_toc.html#News-3.23.0">F.2.53  Changes in release 3.23.0</A></H3>
+<H3><A NAME="News-3.23.0" HREF="manual_toc.html#News-3.23.0">F.2.56  Changes in release 3.23.0</A></H3>
 
 
 <UL>
@@ -62715,7 +62863,7 @@ reliable. Because of this, you can no longer call <CODE>mysql_num_fields()</CODE
 a <CODE>MYSQL</CODE> object, you must use <CODE>mysql_field_count()</CODE> instead.
 <LI>
 
-Added use of <CODE>LIBEWRAP</CODE>;  Patch by Henning P . Schmiedehausen.
+Added use of <CODE>LIBWRAP</CODE>;  Patch by Henning P . Schmiedehausen.
 <LI>
 
 Don't allow <CODE>AUTO_INCREMENT</CODE> for other than numerical columns.
@@ -68194,7 +68342,7 @@ of this license document, but changing it is not allowed.
 
 
 
-<H2><A NAME="SEC789" HREF="manual_toc.html#SEC789">K.1  Preamble</A></H2>
+<H2><A NAME="SEC792" HREF="manual_toc.html#SEC792">K.1  Preamble</A></H2>
 
 <P>
   The licenses for most software are designed to take away your
@@ -68262,7 +68410,7 @@ modification follow.
 </P>
 
 
-<H2><A NAME="SEC790" HREF="manual_toc.html#SEC790">K.2  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION</A></H2>
+<H2><A NAME="SEC793" HREF="manual_toc.html#SEC793">K.2  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION</A></H2>
 
 
 <OL>
@@ -68536,7 +68684,7 @@ POSSIBILITY OF SUCH DAMAGES.
 
 
 
-<H2><A NAME="SEC791" HREF="manual_toc.html#SEC791">K.3  How to Apply These Terms to Your New Programs</A></H2>
+<H2><A NAME="SEC794" HREF="manual_toc.html#SEC794">K.3  How to Apply These Terms to Your New Programs</A></H2>
 
 <P>
   If you develop a new program, and you want it to be of the greatest
@@ -68648,7 +68796,7 @@ version number 2.1.]
 
 
 
-<H2><A NAME="SEC793" HREF="manual_toc.html#SEC793">L.1  Preamble</A></H2>
+<H2><A NAME="SEC796" HREF="manual_toc.html#SEC796">L.1  Preamble</A></H2>
 
 <P>
   The licenses for most software are designed to take away your
@@ -68782,7 +68930,7 @@ be combined with the library in order to run.
 </P>
 
 
-<H2><A NAME="SEC794" HREF="manual_toc.html#SEC794">L.2  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION</A></H2>
+<H2><A NAME="SEC797" HREF="manual_toc.html#SEC797">L.2  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION</A></H2>
 
 
 <OL>
@@ -69199,7 +69347,7 @@ DAMAGES.
 
 
 
-<H2><A NAME="SEC795" HREF="manual_toc.html#SEC795">L.3  How to Apply These Terms to Your New Libraries</A></H2>
+<H2><A NAME="SEC798" HREF="manual_toc.html#SEC798">L.3  How to Apply These Terms to Your New Libraries</A></H2>
 
 <P>
   If you develop a new library, and you want it to be of the greatest
@@ -71948,7 +72096,7 @@ mysql&#62; SELECT id,FLOOR(value/100) FROM tbl_name ORDER BY RAND();
 </P>
 
 <P><HR><P>
-This document was generated on 3 June 2002 using the
+This document was generated on 10 October 2002 using the
 <A HREF="http://www.mathematik.uni-kl.de/~obachman/Texi2html/">texi2html</A>
 translator version 1.52 (extended by davida@detron.se).</P>
  </BODY>

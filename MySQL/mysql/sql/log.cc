@@ -442,8 +442,8 @@ int MYSQL_LOG::purge_logs(THD* thd, const char* to_log)
 #ifdef HAVE_FTRUNCATE
   if (ftruncate(index_file,0))
   {
-    sql_print_error("Could not truncate the binlog index file \
-during log purge for write");
+    sql_print_error(
+"Could not truncate the binlog index file during log purge for write");
     error = LOG_INFO_FATAL;
     goto err;
   }
@@ -455,8 +455,8 @@ during log purge for write");
 			    O_CREAT | O_BINARY | O_RDWR | O_APPEND,
 			    MYF(MY_WME))))
   {
-    sql_print_error("Could not re-open the binlog index file \
-during log purge for write");
+    sql_print_error(
+"Could not re-open the binlog index file during log purge for write");
     error = LOG_INFO_FATAL;
     goto err;
   }
@@ -513,46 +513,48 @@ bool MYSQL_LOG::is_active(const char* log_file_name)
 
 void MYSQL_LOG::new_file(bool inside_mutex)
 {
-  if (is_open())
-  {
-    char new_name[FN_REFLEN], *old_name=name;
-    if (!inside_mutex)
-      VOID(pthread_mutex_lock(&LOCK_log));
+  if (!is_open())
+    return;
 
-    if (!no_rotate)
+  if (!inside_mutex)
+    VOID(pthread_mutex_lock(&LOCK_log));
+
+  char new_name[FN_REFLEN], *old_name = name;
+ 
+  if (!no_rotate)
+  {
+    /*
+      only rotate open logs that are marked non-rotatable
+      (binlog with constant name are non-rotatable)
+    */
+    if (generate_new_name(new_name, name))
+    {
+      if (!inside_mutex)
+	VOID(pthread_mutex_unlock(&LOCK_log));
+      return;					// Something went wrong
+    }
+    if (log_type == LOG_BIN)
     {
       /*
-	only rotate open logs that are marked non-rotatable
-	(binlog with constant name are non-rotatable)
+	We log the whole file name for log file as the user may decide
+	to change base names at some point.
       */
-      if (generate_new_name(new_name, name))
-      {
-	if (!inside_mutex)
-	  VOID(pthread_mutex_unlock(&LOCK_log));
-	return;					// Something went wrong
-      }
-      if (log_type == LOG_BIN)
-      {
-	/*
-	  We log the whole file name for log file as the user may decide
-	  to change base names at some point.
-	*/
-	Rotate_log_event r(new_name+dirname_length(new_name));
-	r.write(&log_file);
-	VOID(pthread_cond_broadcast(&COND_binlog_update));
-      }
+      Rotate_log_event r(new_name+dirname_length(new_name));
+      r.write(&log_file);
+      VOID(pthread_cond_broadcast(&COND_binlog_update));
     }
-    else
-      strmov(new_name, old_name);		// Reopen old file name
-    name=0;
-    close();
-    open(old_name, log_type, new_name);
-    my_free(old_name,MYF(0));
-    last_time=query_start=0;
-    write_error=0;
-    if (!inside_mutex)
-      VOID(pthread_mutex_unlock(&LOCK_log));
   }
+  else
+    strmov(new_name, old_name);		// Reopen old file name
+  name=0;
+  close();
+  open(old_name, log_type, new_name);
+  my_free(old_name,MYF(0));
+  last_time=query_start=0;
+  write_error=0;
+
+  if (!inside_mutex)
+    VOID(pthread_mutex_unlock(&LOCK_log));
 }
 
 
@@ -564,8 +566,8 @@ bool MYSQL_LOG::write(THD *thd,enum enum_server_command command,
     int error=0;
     VOID(pthread_mutex_lock(&LOCK_log));
 
-    /* Test if someone closed after the is_open test */
-    if (log_type != LOG_CLOSED)
+    /* Test if someone closed between the is_open test and lock */
+    if (is_open())
     {
       time_t skr;
       ulong id;
@@ -661,6 +663,38 @@ bool MYSQL_LOG::write(Query_log_event* event_info)
 
     error=1;
 
+    if (file == &thd->transaction.trans_log
+        && !my_b_tell(&thd->transaction.trans_log)) {
+
+      /* Add the "BEGIN" and "COMMIT" in the binlog around transactions
+      which may contain more than 1 SQL statement. If we run with
+      AUTOCOMMIT=1, then MySQL immediately writes each SQL statement to
+      the binlog when the statement has been completed. No need to add
+      "BEGIN" ... "COMMIT" around such statements. Otherwise, MySQL uses
+      thd->transaction.trans_log to cache the SQL statements until the
+      explicit commit, and at the commit writes the contents in .trans_log
+      to the binlog.
+
+      We write the "BEGIN" mark first in the buffer (.trans_log) where we
+      store the SQL statements for a transaction. At the transaction commit
+      we will add the "COMMIT mark and write the buffer to the binlog.
+      The function my_b_tell above returns != 0 if there already is data
+      in the buffer. */
+
+      int save_query_length = thd->query_length;
+
+      thd->query_length = 5; /* length of string BEGIN */
+
+      Query_log_event qinfo(thd, "BEGIN", TRUE);
+      
+      error = ((&qinfo)->write(file));
+
+      thd->query_length = save_query_length;
+      
+      if (error)
+        goto err;
+    }
+    
     if (thd->last_insert_id_used)
     {
       Intvar_log_event e((uchar)LAST_INSERT_ID_EVENT, thd->last_insert_id);
@@ -916,16 +950,16 @@ bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
       if (end != buff)
       {
 	*end++=';';
-	*end++='\n';
-	*end=0;
+	*end='\n';
 	if (my_b_write(&log_file, (byte*) "SET ",4) ||
-	    my_b_write(&log_file, (byte*) buff+1,(uint) (end-buff)-1))
+	    my_b_write(&log_file, (byte*) buff+1,(uint) (end-buff)))
 	  tmp_errno=errno;
       }
       if (!query)
       {
-	query="#adminstrator command";
-	query_length=21;
+	end=strxmov(buff, "# administrator command: ",
+		    command_name[thd->command], NullS);
+	query_length=(ulong) (end-buff);
       }
       if (my_b_write(&log_file, (byte*) query,query_length) ||
 	  my_b_write(&log_file, (byte*) ";\n",2) ||

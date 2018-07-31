@@ -204,16 +204,6 @@ btr_page_reorganize(
 	page_t*	page,	/* in: page to be reorganized */
 	mtr_t*	mtr);	/* in: mtr */
 /*****************************************************************
-Reorganizes an index page. */
-
-void
-btr_page_reorganize_low(
-/*====================*/
-	ibool	low,	/* in: TRUE if locks should not be updated, i.e.,
-			there cannot exist locks on the page */
-	page_t*	page,	/* in: page to be reorganized */
-	mtr_t*	mtr);	/* in: mtr */
-/*****************************************************************
 Decides if the page should be split at the convergence point of
 inserts converging to left. */
 
@@ -323,14 +313,6 @@ btr_discard_page(
 	btr_cur_t*	cursor,	/* in: cursor on the page to discard: not on
 				the root page */
 	mtr_t*		mtr);	/* in: mtr */
-/************************************************************************
-Declares the latching order level for the page latch in the debug version. */
-UNIV_INLINE
-void
-btr_declare_page_latch(
-/*===================*/
-	page_t*	page,	/* in: page */
-	ibool	leaf);	/* in: TRUE if a leaf */
 /********************************************************************
 Parses the redo log record for setting an index record as the predefined
 minimum record. */

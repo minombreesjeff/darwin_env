@@ -9,40 +9,26 @@ Created 1/20/1994 Heikki Tuuri
 #ifndef univ_i
 #define univ_i
 
-#if (defined(_WIN32) || defined(_WIN64)) && !defined(MYSQL_SERVER)
+#if (defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)) && !defined(MYSQL_SERVER)
 #define __WIN__
 
 #include <windows.h>
 
-/* When compiling for Itanium IA64, undefine the flag below to prevent use
-of 32-bit assembler */
-
-#ifndef WIN64
+#if !defined(WIN64) && !defined(_WIN64)
 #define UNIV_CAN_USE_X86_ASSEMBLER
 #endif
-
-/* If you want to check for errors with compiler level -W4,
-comment out the above include of windows.h and let the following defines
-be defined:
-#define HANDLE void*
-#define CRITICAL_SECTION	ulint
-*/
 
 #ifdef _NT_
 #define __NT__
 #endif
 
 #else
-/* The Unix version */
-
-/* Most C compilers other than gcc do not know 'extern inline' */ 
-#if !defined(__GNUC__) && !defined(__WIN__)
-#define UNIV_MUST_NOT_INLINE
-#endif
+/* The defines used with MySQL */
 
 /* Include two header files from MySQL to make the Unix flavor used
-in compiling more Posix-compatible. We assume that 'innobase' is a
-subdirectory of 'mysql'. */
+in compiling more Posix-compatible. These headers also define __WIN__
+if we are compiling on Windows. */
+
 #include <global.h>
 #include <my_pthread.h>
 
@@ -59,9 +45,29 @@ subdirectory of 'mysql'. */
 #include <sched.h>
 #endif
 
+/* When compiling for Itanium IA64, undefine the flag below to prevent use
+of the 32-bit x86 assembler in mutex operations. */
+
+#if defined(__WIN__) && !defined(WIN64) && !defined(_WIN64)
+#define UNIV_CAN_USE_X86_ASSEMBLER
+#endif
+
+/* We only try to do explicit inlining of functions with gcc and
+Microsoft Visual C++ */
+
+#if !defined(__GNUC__) && !defined(__WIN__)
+#define UNIV_MUST_NOT_INLINE
+#endif
+
 #ifdef HAVE_PREAD
 #define HAVE_PWRITE
 #endif
+
+/* Apparently in some old SCO Unixes the return type of sprintf is not
+an integer as it should be according to the modern Posix standard. Because
+of that we define sprintf inside InnoDB code as our own function ut_sprintf */
+#undef  sprintf
+#define sprintf    ut_sprintf
 
 #endif
 
@@ -80,8 +86,8 @@ memory is read outside the allocated blocks. */
 
 /*
 #define UNIV_DEBUG
-#define UNIV_MEM_DEBUG
 #define UNIV_SYNC_DEBUG
+#define UNIV_MEM_DEBUG
 
 #define UNIV_IBUF_DEBUG
 #define UNIV_SEARCH_DEBUG
@@ -116,7 +122,7 @@ memory is read outside the allocated blocks. */
 #define UNIV_INLINE  extern inline
 #else
 /* extern inline doesn't work with gcc 3.0.2 */
-#define UNIV_INLINE  static inline
+#define UNIV_INLINE static inline
 #endif
 #endif
 
@@ -204,8 +210,12 @@ headers may define 'bool' differently. Do not assume that 'bool' is a ulint! */
 #endif
 
 /* The following number as the length of a logical field means that the field
-has the SQL NULL as its value. */
-#define UNIV_SQL_NULL 	ULINT_UNDEFINED
+has the SQL NULL as its value. NOTE that because we assume that the length
+of a field is a 32-bit integer when we store it, for example, to an undo log
+on disk, we must have also this number fit in 32 bits, also in 64-bit
+computers! */
+
+#define UNIV_SQL_NULL 	ULINT32_UNDEFINED
 
 /* Lengths which are not UNIV_SQL_NULL, but bigger than the following
 number indicate that a field contains a reference to an externally

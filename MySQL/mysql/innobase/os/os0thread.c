@@ -18,8 +18,54 @@ Created 9/8/1995 Heikki Tuuri
 
 #include "srv0srv.h"
 
+/*******************************************************************
+Compares two thread ids for equality. */
+
+ibool
+os_thread_eq(
+/*=========*/
+				/* out: TRUE if equal */
+	os_thread_id_t	a,	/* in: OS thread or thread id */
+	os_thread_id_t	b)	/* in: OS thread or thread id */
+{
+#ifdef __WIN__
+	if (a == b) {
+		return(TRUE);
+	}
+
+	return(FALSE);
+#else
+	if (pthread_equal(a, b)) {
+		return(TRUE);
+	}
+
+	return(FALSE);
+#endif
+}
+
+/********************************************************************
+Converts an OS thread id to a ulint. It is NOT guaranteed that the ulint is
+unique for the thread though! */
+
+ulint
+os_thread_pf(
+/*=========*/
+	os_thread_id_t	a)
+{
+#ifdef UNIV_HPUX
+        /* In HP-UX a pthread_t is a struct of 3 fields: field1, field2,
+        field3. We do not know if field1 determines the thread uniquely. */
+
+	return((ulint)(a.field1));
+#else
+	return((ulint)a);
+#endif
+}
+
 /*********************************************************************
-Returns the thread identifier of current thread. */
+Returns the thread identifier of current thread. Currently the thread
+identifier in Unix is the thread handle itself. Note that in HP-UX
+pthread_t is a struct of 3 fields. */
 
 os_thread_id_t
 os_thread_get_curr_id(void)
@@ -28,16 +74,7 @@ os_thread_get_curr_id(void)
 #ifdef __WIN__
 	return(GetCurrentThreadId());
 #else
-	pthread_t    pthr;
-
-	pthr = pthread_self();
-
-	/* TODO: in the future we have to change os_thread_id
-	   to pthread_t; the following cast may work in a wrong way on some
-	   systems if pthread_t is a struct; this is just a quick fix
-	   for HP-UX to eliminate a compiler warning */
-
-	return(*(os_thread_id_t*)((void*) (&pthr)));
+	return(pthread_self());
 #endif
 }
 
@@ -58,19 +95,19 @@ os_thread_create(
 #endif
 	void*			arg,		/* in: argument to start
 						function */
-	os_thread_id_t*		thread_id)	/* out: id of created
-						thread */	
+	os_thread_id_t*		thread_id)	/* out: id of the created
+						thread */
 {
 #ifdef __WIN__
 	os_thread_t	thread;
+	ulint           win_thread_id;
 
 	thread = CreateThread(NULL,	/* no security attributes */
 				0,	/* default size stack */
 				(LPTHREAD_START_ROUTINE)start_f,
 				arg,
 				0,	/* thread runs immediately */
-				thread_id);
-	ut_a(thread);
+				&win_thread_id);
 
 	if (srv_set_thread_priorities) {
 
@@ -81,6 +118,8 @@ os_thread_create(
 	        ut_a(SetThreadPriority(thread, srv_query_thread_priority));
 	}
 
+	*thread_id = win_thread_id;
+
 	return(thread);
 #else
 	int		ret;
@@ -89,7 +128,27 @@ os_thread_create(
 
         pthread_attr_init(&attr);
 
+#ifdef UNIV_AIX
+	/* We must make sure a thread stack is at least 32 kB, otherwise
+	InnoDB might crash; we do not know if the default stack size on
+	AIX is always big enough. An empirical test on AIX-4.3 suggested
+	the size was 96 kB, though. */
+
+	ret = pthread_attr_setstacksize(&attr,
+			      (size_t)(PTHREAD_STACK_MIN + 32 * 1024));
+        if (ret) {
+	         fprintf(stderr,
+          "InnoDB: Error: pthread_attr_setstacksize returned %d\n", ret);
+		 exit(1);
+	}
+#endif
 	ret = pthread_create(&pthread, &attr, start_f, arg);
+
+        if (ret) {
+	         fprintf(stderr,
+          "InnoDB: Error: pthread_create returned %d\n", ret);
+		 exit(1);
+	}
 
 	pthread_attr_destroy(&attr);
 
@@ -97,6 +156,8 @@ os_thread_create(
 	
 	        my_pthread_setprio(pthread, srv_query_thread_priority);
 	}
+
+	*thread_id = pthread;
 
 	return(pthread);
 #endif
@@ -107,25 +168,13 @@ Returns handle to the current thread. */
 
 os_thread_t
 os_thread_get_curr(void)
-/*=======================*/
+/*====================*/
 {
 #ifdef __WIN__
 	return(GetCurrentThread());
 #else
 	return(pthread_self());
 #endif
-}
-
-/*********************************************************************
-Converts a thread id to a ulint. */
-
-ulint
-os_thread_conv_id_to_ulint(
-/*=======================*/
-				/* out: converted to ulint */
-	os_thread_id_t	id)	/* in: thread id */
-{
-	return((ulint)id);
 }
 	
 /*********************************************************************

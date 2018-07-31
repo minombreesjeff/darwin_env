@@ -7,7 +7,7 @@ END-INFO-DIR-ENTRY
 
 File: mysql.info,  Node: Top,  Next: Introduction,  Prev: (dir),  Up: (dir)
 
-This is a manual for MySQL. This version is about the 3.23.51 version
+This is a manual for MySQL. This version is about the 3.23.53 version
 of MySQL.  You can find a manual about any older version of MySQL in
 the binary or source distribution for that version.
 
@@ -45,7 +45,7 @@ General Information About MySQL
 *******************************
 
 This is the MySQL reference manual; it documents MySQL Version
-3.23.51.  As MySQL is work in progress, the manual gets updated
+3.23.53.  As MySQL is work in progress, the manual gets updated
 frequently.  There is a very good chance that this version is out of
 date, unless you are looking at it online.  The most recent version of
 this manual is available at `http://www.mysql.com/documentation/' in
@@ -5934,7 +5934,7 @@ development release or the last stable release:
    * Normally, if you are beginning to use MySQL for the first time or
      trying to port it to some system for which there is no binary
      distribution, we recommend going with the stable release (currently
-     Version 3.23.51.  Note that all MySQL releases are checked with
+     Version 3.23.53.  Note that all MySQL releases are checked with
      the MySQL benchmarks and an extensive test suite before each
      release.
 
@@ -6381,7 +6381,7 @@ testing:
 
      MySQL source distributions are provided as compressed `tar'
      archives and have names like `mysql-VERSION.tar.gz', where
-     `VERSION' is a number like 3.23.51.
+     `VERSION' is a number like 3.23.53.
 
   4. Add a user and group for `mysqld' to run as:
 
@@ -9538,7 +9538,7 @@ example uses the IBM compiler):
      export CC="xlc_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192 "
      export CXX="xlC_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192"
      export CFLAGS="-I /usr/local/include"
-     export LDLFAGS="-L /usr/local/lib"
+     export LDFLAGS="-L /usr/local/lib"
      export CPPFLAGS=$CFLAGS
      export CXXFLAGS=$CFLAGS
      
@@ -26918,7 +26918,7 @@ All mathematical functions return `NULL' in case of an error.
                   -> 1.9
           mysql> select TRUNCATE(1.999,0);
                   -> 1
-          mysql> select TRUNCATE(-1,999,1);
+          mysql> select TRUNCATE(-1.999,1);
                   -> -1.9
 
      Starting from MySQL 3.23.51 all numbers are rounded towards zero.
@@ -41628,6 +41628,9 @@ not yet 100% confident in this code.
 
 * Menu:
 
+* News-3.23.54::                Changes in release 3.23.54
+* News-3.23.53::                Changes in release 3.23.53
+* News-3.23.52::                Changes in release 3.23.52
 * News-3.23.51::                Changes in release 3.23.51
 * News-3.23.50::                Changes in release 3.23.50
 * News-3.23.49::                Changes in release 3.23.49
@@ -41683,7 +41686,117 @@ not yet 100% confident in this code.
 * News-3.23.0::                 Changes in release 3.23.0
 
 
-File: mysql.info,  Node: News-3.23.51,  Next: News-3.23.50,  Prev: News-3.23.x,  Up: News-3.23.x
+File: mysql.info,  Node: News-3.23.54,  Next: News-3.23.53,  Prev: News-3.23.x,  Up: News-3.23.x
+
+Changes in release 3.23.54
+--------------------------
+
+
+File: mysql.info,  Node: News-3.23.53,  Next: News-3.23.52,  Prev: News-3.23.54,  Up: News-3.23.x
+
+Changes in release 3.23.53
+--------------------------
+
+   * Fixed crash when `SHOW INNODB STATUS' was used and `skip-innodb'
+     was defined.
+
+   * Fixed possible memory corruption bug in binary log file handling
+     when slave rotated the logs (only affected 3.23, not 4.0).
+
+   * Fixed problem in `LOCK TABLES' on windows when one connects to a
+     database that contains upper case letters.
+
+   * Fixed that `--skip-show-databases' doesn't reset the `--port'
+     option.
+
+   * Small fix in `safe_mysqld' for some shells.
+
+   * Fixed that `FLUSH STATUS' doesn't reset `Delayed_insert_threads'.
+
+   * Fixed core dump bug when using the `BINARY' cast on a `NULL' value.
+
+   * Fixed race condition when someone did a `GRANT' at the same time a
+     new user logged in or did a `USE DATABASE'.
+
+   * Fixed bug in `ALTER TABLE' and `RENAME TABLE' when running with
+     `-O lower_case_table_names=1' (typically on windows) when giving
+     the table name in uppercase.
+
+   * Fixed that `-O lower_case_table_names=1' also converts database
+     names to lower case.
+
+   * Fixed unlikely core dump with `SELECT ... ORDER BY ... LIMIT'.
+
+   * Changed `AND/OR' to report that they can return NULL. This fixes a
+     bug in `GROUP BY' on `AND/OR' expressions that return `NULL'.
+
+   * Fixed a bug that `OPTIMIZE' of locked and modified MyISAM table,
+     reported table corruption.
+
+   * Fixed a `BDB'-related `ALTER TABLE' bug with dropping a column and
+     shutting down immediately thereafter.
+
+   * Fixed problem with `configure ... --localstatedir=...'.
+
+   * Fixed problem with `UNSIGNED BIGINT' on AIX (again).
+
+   * Fixed bug in pthread_mutex_trylock() on HPUX 11.0.
+
+   * Multithreaded stress tests for InnoDB.
+
+
+File: mysql.info,  Node: News-3.23.52,  Next: News-3.23.51,  Prev: News-3.23.53,  Up: News-3.23.x
+
+Changes in release 3.23.52
+--------------------------
+
+   * Fixed security bug when having an empty databasename in the
+     `user.db' table.
+
+   * Changed initialisation of `RND()' to make it less predicatable.
+
+   * Fixed problem with `GROUP BY' on result with expression that
+     created a `BLOB' field.
+
+   * Fixed problem with privilege tables when downgrading from 4.0.2 to
+     3.23.
+
+   * Fixed thread bug in `SLAVE START', `SLAVE STOP' and automatic
+     repair of MyISAM tables that could cause table cache to be
+     corrupted.
+
+   * Fixed possible thread related key-cache-corruption problem with
+     `OPTIMIZE TABLE' and `REPAIR TABLE'.
+
+   * Added name of 'administrator command' logs.
+
+   * Fixed bug with creating an auto-increment value on second part of a
+     `UNIQUE()' key where first part could contain NULL values.
+
+   * Don't write slave-timeout reconnects to the error log.
+
+   * Fixed bug with slave net read timeouting
+
+   * Fixed a core-dump bug with `MERGE' tables and `MAX()' function.
+
+   * Fixed bug in `ALTER TABLE' with BDB tables.
+
+   * Fixed bug when logging `LOAD DATA INFILE' to binary log with no
+     active database.
+
+   * Fixed a bug in range optimiser (causing crashes).
+
+   * Fixed possible problem in replication when doing `DROP DATABASE'
+     on a database with InnoDB tables.
+
+   * Fixed that `mysql_info()' returns 0 for 'Duplicates' when using
+     `INSERT DELAYED IGNORE'.
+
+   * Added `-DHAVE_BROKEN_REALPATH' to the Mac OS X (darwin) compile
+     options in `configure.in' to fix a failure under high load.
+
+
+File: mysql.info,  Node: News-3.23.51,  Next: News-3.23.50,  Prev: News-3.23.52,  Up: News-3.23.x
 
 Changes in release 3.23.51
 --------------------------
@@ -41714,7 +41827,8 @@ Changes in release 3.23.51
    * Fixed optimization problem with `DATETIME' and value outside
      `DATETIME' range.
 
-   * Removed BDB documentation.
+   * Removed Sleepycat's BDB doc files from the source tree, as they're
+     not needed (MySQL covers BDB in its own documentation).
 
    * Fixed mit-pthreads to compile with glibc 2.2 (needed for `make
      dist').
@@ -41744,6 +41858,9 @@ File: mysql.info,  Node: News-3.23.50,  Next: News-3.23.49,  Prev: News-3.23.51,
 
 Changes in release 3.23.50
 --------------------------
+
+   * Fixed buffer overflow problem if someone specified a too long
+     datadir parameter to mysqld.
 
    * Fixed problem with `crash-me' and gcc 3.0.4.
 
@@ -44470,7 +44587,7 @@ Changes in release 3.23.0
      `mysql_num_fields()' on a `MYSQL' object, you must use
      `mysql_field_count()' instead.
 
-   * Added use of `LIBEWRAP';  Patch by Henning P . Schmiedehausen.
+   * Added use of `LIBWRAP';  Patch by Henning P . Schmiedehausen.
 
    * Don't allow `AUTO_INCREMENT' for other than numerical columns.
 
@@ -52389,178 +52506,181 @@ Node: News1687264
 Node: News-4.0.x1688133
 Node: News-4.0.01688595
 Node: News-3.23.x1690024
-Node: News-3.23.511694722
-Node: News-3.23.501696530
-Node: News-3.23.491698825
-Node: News-3.23.481699547
-Node: News-3.23.471701810
-Node: News-3.23.461702720
-Node: News-3.23.451703658
-Node: News-3.23.441704762
-Node: News-3.23.431707905
-Node: News-3.23.421708828
-Node: News-3.23.411710859
-Node: News-3.23.401712330
-Node: News-3.23.391714270
-Node: News-3.23.381715683
-Node: News-3.23.371717304
-Node: News-3.23.361719919
-Node: News-3.23.351721434
-Node: News-3.23.34a1721951
-Node: News-3.23.341722203
-Node: News-3.23.331724774
-Node: News-3.23.321727958
-Node: News-3.23.311729287
-Node: News-3.23.301731124
-Node: News-3.23.291733030
-Node: News-3.23.281737492
-Node: News-3.23.271742156
-Node: News-3.23.261742715
-Node: News-3.23.251745421
-Node: News-3.23.241748290
-Node: News-3.23.231749172
-Node: News-3.23.221753404
-Node: News-3.23.211754796
-Node: News-3.23.201756219
-Node: News-3.23.191756482
-Node: News-3.23.181757890
-Node: News-3.23.171758570
-Node: News-3.23.161760544
-Node: News-3.23.151761524
-Node: News-3.23.141764159
-Node: News-3.23.131765888
-Node: News-3.23.121766822
-Node: News-3.23.111768562
-Node: News-3.23.101770109
-Node: News-3.23.91770356
-Node: News-3.23.81772846
-Node: News-3.23.71774113
-Node: News-3.23.61776195
-Node: News-3.23.51777978
-Node: News-3.23.41779912
-Node: News-3.23.31781072
-Node: News-3.23.21782174
-Node: News-3.23.11784516
-Node: News-3.23.01784706
-Node: News-3.22.x1789744
-Node: News-3.22.351792354
-Node: News-3.22.341792753
-Node: News-3.22.331793153
-Node: News-3.22.321793428
-Node: News-3.22.311794128
-Node: News-3.22.301794333
-Node: News-3.22.291794895
-Node: News-3.22.281795829
-Node: News-3.22.271796249
-Node: News-3.22.261796653
-Node: News-3.22.251797546
-Node: News-3.22.241797757
-Node: News-3.22.231798278
-Node: News-3.22.221799100
-Node: News-3.22.211799819
-Node: News-3.22.201800561
-Node: News-3.22.191800912
-Node: News-3.22.181801254
-Node: News-3.22.171801810
-Node: News-3.22.161802230
-Node: News-3.22.151802938
-Node: News-3.22.141804278
-Node: News-3.22.131805181
-Node: News-3.22.121805719
-Node: News-3.22.111807050
-Node: News-3.22.101808465
-Node: News-3.22.91810723
-Node: News-3.22.81811832
-Node: News-3.22.71813319
-Node: News-3.22.61815106
-Node: News-3.22.51815732
-Node: News-3.22.41820232
-Node: News-3.22.31821893
-Node: News-3.22.21822312
-Node: News-3.22.11823755
-Node: News-3.22.01825186
-Node: News-3.21.x1829831
-Node: News-3.21.331832172
-Node: News-3.21.321832778
-Node: News-3.21.311834027
-Node: News-3.21.301834660
-Node: News-3.21.291836245
-Node: News-3.21.281836988
-Node: News-3.21.271837359
-Node: News-3.21.261838593
-Node: News-3.21.251839520
-Node: News-3.21.241840100
-Node: News-3.21.231841003
-Node: News-3.21.221842448
-Node: News-3.21.21a1844145
-Node: News-3.21.211844356
-Node: News-3.21.201844731
-Node: News-3.21.191845395
-Node: News-3.21.181845831
-Node: News-3.21.171846625
-Node: News-3.21.161847819
-Node: News-3.21.151848523
-Node: News-3.21.14b1851009
-Node: News-3.21.14a1851239
-Node: News-3.21.131852849
-Node: News-3.21.121853777
-Node: News-3.21.111855967
-Node: News-3.21.101857025
-Node: News-3.21.91858052
-Node: News-3.21.81858570
-Node: News-3.21.71859972
-Node: News-3.21.61860710
-Node: News-3.21.51861031
-Node: News-3.21.41861670
-Node: News-3.21.31862134
-Node: News-3.21.21864289
-Node: News-3.21.01866411
-Node: News-3.20.x1869056
-Node: News-3.20.181870334
-Node: News-3.20.171871924
-Node: News-3.20.161873999
-Node: News-3.20.151874928
-Node: News-3.20.141875679
-Node: News-3.20.131876978
-Node: News-3.20.111878308
-Node: News-3.20.101879238
-Node: News-3.20.91879935
-Node: News-3.20.81880359
-Node: News-3.20.71880566
-Node: News-3.20.61881674
-Node: News-3.20.31884614
-Node: News-3.20.01887047
-Node: News-3.19.x1888677
-Node: News-3.19.51889113
-Node: News-3.19.41889817
-Node: News-3.19.31890582
-Node: Porting1891230
-Node: Debugging server1894037
-Node: Compiling for debugging1896138
-Node: Making trace files1898713
-Node: Using gdb on mysqld1900398
-Node: Using stack trace1902846
-Node: Using log files1905085
-Node: Reproduceable test case1907714
-Node: Debugging client1909582
-Node: The DBUG package1910758
-Node: Locking methods1914798
-Node: RTS-threads1918749
-Node: Thread packages1921754
-Node: Environment variables1924225
-Node: Regexp1926349
-Node: Unireg1933389
-Node: GPL license1935606
-Node: LGPL license1954798
-Node: Placeholder1982900
-Node: Installing binary1983273
-Node: Perl support1990164
-Node: Perl installation1990628
-Node: ActiveState Perl1993233
-Node: Windows Perl1994410
-Node: Perl support problems1995097
-Node: Group by functions1999133
-Node: Function Index2003282
-Node: Concept Index2044048
+Node: News-3.23.541694899
+Node: News-3.23.531695054
+Node: News-3.23.521696873
+Node: News-3.23.511698536
+Node: News-3.23.501700446
+Node: News-3.23.491702843
+Node: News-3.23.481703565
+Node: News-3.23.471705828
+Node: News-3.23.461706738
+Node: News-3.23.451707676
+Node: News-3.23.441708780
+Node: News-3.23.431711923
+Node: News-3.23.421712846
+Node: News-3.23.411714877
+Node: News-3.23.401716348
+Node: News-3.23.391718288
+Node: News-3.23.381719701
+Node: News-3.23.371721322
+Node: News-3.23.361723937
+Node: News-3.23.351725452
+Node: News-3.23.34a1725969
+Node: News-3.23.341726221
+Node: News-3.23.331728792
+Node: News-3.23.321731976
+Node: News-3.23.311733305
+Node: News-3.23.301735142
+Node: News-3.23.291737048
+Node: News-3.23.281741510
+Node: News-3.23.271746174
+Node: News-3.23.261746733
+Node: News-3.23.251749439
+Node: News-3.23.241752308
+Node: News-3.23.231753190
+Node: News-3.23.221757422
+Node: News-3.23.211758814
+Node: News-3.23.201760237
+Node: News-3.23.191760500
+Node: News-3.23.181761908
+Node: News-3.23.171762588
+Node: News-3.23.161764562
+Node: News-3.23.151765542
+Node: News-3.23.141768177
+Node: News-3.23.131769906
+Node: News-3.23.121770840
+Node: News-3.23.111772580
+Node: News-3.23.101774127
+Node: News-3.23.91774374
+Node: News-3.23.81776864
+Node: News-3.23.71778131
+Node: News-3.23.61780213
+Node: News-3.23.51781996
+Node: News-3.23.41783930
+Node: News-3.23.31785090
+Node: News-3.23.21786192
+Node: News-3.23.11788534
+Node: News-3.23.01788724
+Node: News-3.22.x1793761
+Node: News-3.22.351796371
+Node: News-3.22.341796770
+Node: News-3.22.331797170
+Node: News-3.22.321797445
+Node: News-3.22.311798145
+Node: News-3.22.301798350
+Node: News-3.22.291798912
+Node: News-3.22.281799846
+Node: News-3.22.271800266
+Node: News-3.22.261800670
+Node: News-3.22.251801563
+Node: News-3.22.241801774
+Node: News-3.22.231802295
+Node: News-3.22.221803117
+Node: News-3.22.211803836
+Node: News-3.22.201804578
+Node: News-3.22.191804929
+Node: News-3.22.181805271
+Node: News-3.22.171805827
+Node: News-3.22.161806247
+Node: News-3.22.151806955
+Node: News-3.22.141808295
+Node: News-3.22.131809198
+Node: News-3.22.121809736
+Node: News-3.22.111811067
+Node: News-3.22.101812482
+Node: News-3.22.91814740
+Node: News-3.22.81815849
+Node: News-3.22.71817336
+Node: News-3.22.61819123
+Node: News-3.22.51819749
+Node: News-3.22.41824249
+Node: News-3.22.31825910
+Node: News-3.22.21826329
+Node: News-3.22.11827772
+Node: News-3.22.01829203
+Node: News-3.21.x1833848
+Node: News-3.21.331836189
+Node: News-3.21.321836795
+Node: News-3.21.311838044
+Node: News-3.21.301838677
+Node: News-3.21.291840262
+Node: News-3.21.281841005
+Node: News-3.21.271841376
+Node: News-3.21.261842610
+Node: News-3.21.251843537
+Node: News-3.21.241844117
+Node: News-3.21.231845020
+Node: News-3.21.221846465
+Node: News-3.21.21a1848162
+Node: News-3.21.211848373
+Node: News-3.21.201848748
+Node: News-3.21.191849412
+Node: News-3.21.181849848
+Node: News-3.21.171850642
+Node: News-3.21.161851836
+Node: News-3.21.151852540
+Node: News-3.21.14b1855026
+Node: News-3.21.14a1855256
+Node: News-3.21.131856866
+Node: News-3.21.121857794
+Node: News-3.21.111859984
+Node: News-3.21.101861042
+Node: News-3.21.91862069
+Node: News-3.21.81862587
+Node: News-3.21.71863989
+Node: News-3.21.61864727
+Node: News-3.21.51865048
+Node: News-3.21.41865687
+Node: News-3.21.31866151
+Node: News-3.21.21868306
+Node: News-3.21.01870428
+Node: News-3.20.x1873073
+Node: News-3.20.181874351
+Node: News-3.20.171875941
+Node: News-3.20.161878016
+Node: News-3.20.151878945
+Node: News-3.20.141879696
+Node: News-3.20.131880995
+Node: News-3.20.111882325
+Node: News-3.20.101883255
+Node: News-3.20.91883952
+Node: News-3.20.81884376
+Node: News-3.20.71884583
+Node: News-3.20.61885691
+Node: News-3.20.31888631
+Node: News-3.20.01891064
+Node: News-3.19.x1892694
+Node: News-3.19.51893130
+Node: News-3.19.41893834
+Node: News-3.19.31894599
+Node: Porting1895247
+Node: Debugging server1898054
+Node: Compiling for debugging1900155
+Node: Making trace files1902730
+Node: Using gdb on mysqld1904415
+Node: Using stack trace1906863
+Node: Using log files1909102
+Node: Reproduceable test case1911731
+Node: Debugging client1913599
+Node: The DBUG package1914775
+Node: Locking methods1918815
+Node: RTS-threads1922766
+Node: Thread packages1925771
+Node: Environment variables1928242
+Node: Regexp1930366
+Node: Unireg1937406
+Node: GPL license1939623
+Node: LGPL license1958815
+Node: Placeholder1986917
+Node: Installing binary1987290
+Node: Perl support1994181
+Node: Perl installation1994645
+Node: ActiveState Perl1997250
+Node: Windows Perl1998427
+Node: Perl support problems1999114
+Node: Group by functions2003150
+Node: Function Index2007299
+Node: Concept Index2048065
 
 End Tag Table

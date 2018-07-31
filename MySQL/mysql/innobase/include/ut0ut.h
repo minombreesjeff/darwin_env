@@ -17,6 +17,18 @@ Created 1/20/1994 Heikki Tuuri
 
 typedef time_t	ib_time_t;
 
+
+/************************************************************
+Uses vsprintf to emulate sprintf so that the function always returns
+the printed length. Apparently in some old SCO Unixes sprintf did not
+return the printed length but a pointer to the end of the printed string. */
+
+ulint
+ut_sprintf(
+/*=======*/
+        char*       buf,     /* in/out: buffer where to print */
+        const char* format,  /* in: format of prints */
+        ...);                /* in: arguments to be printed */
 /************************************************************
 Gets the high 32 bits in a ulint. That is makes a shift >> 32,
 but since there seem to be compiler bugs in both gcc and Visual C++,
@@ -114,7 +126,7 @@ ut_2_exp(
 	ulint	n);	/* in: number */
 /*****************************************************************
 Calculates fast the number rounded up to the nearest power of 2. */
-UNIV_INLINE
+
 ulint
 ut_2_power_up(
 /*==========*/
@@ -154,6 +166,13 @@ void
 ut_print_timestamp(
 /*===============*/
 	FILE*  file); /* in: file where to print */
+/**************************************************************
+Sprintfs a timestamp to a buffer. */
+
+void
+ut_sprintf_timestamp(
+/*=================*/
+	char*	buf); /* in: buffer where to sprintf */
 /**************************************************************
 Returns current year, month, day. */
 

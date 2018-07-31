@@ -646,6 +646,9 @@ MySQL change history
   Changes in release 4.0.x (Development; Alpha)
     Changes in release 4.0.0
   Changes in release 3.23.x  (Stable)
+    Changes in release 3.23.54
+    Changes in release 3.23.53
+    Changes in release 3.23.52
     Changes in release 3.23.51
     Changes in release 3.23.50
     Changes in release 3.23.49
@@ -834,7 +837,7 @@ SQL command, type and function index
 Concept Index
 
 
-This is a manual for MySQL. This version is about the 3.23.51 version
+This is a manual for MySQL. This version is about the 3.23.53 version
 of MySQL.  You can find a manual about any older version of MySQL in
 the binary or source distribution for that version.
 
@@ -842,7 +845,7 @@ General Information About MySQL
 *******************************
 
 This is the MySQL reference manual; it documents MySQL Version
-3.23.51.  As MySQL is work in progress, the manual gets updated
+3.23.53.  As MySQL is work in progress, the manual gets updated
 frequently.  There is a very good chance that this version is out of
 date, unless you are looking at it online.  The most recent version of
 this manual is available at `http://www.mysql.com/documentation/' in
@@ -6359,7 +6362,7 @@ development release or the last stable release:
    * Normally, if you are beginning to use MySQL for the first time or
      trying to port it to some system for which there is no binary
      distribution, we recommend going with the stable release (currently
-     Version 3.23.51.  Note that all MySQL releases are checked with
+     Version 3.23.53.  Note that all MySQL releases are checked with
      the MySQL benchmarks and an extensive test suite before each
      release.
 
@@ -6782,7 +6785,7 @@ testing:
 
      MySQL source distributions are provided as compressed `tar'
      archives and have names like `mysql-VERSION.tar.gz', where
-     `VERSION' is a number like 3.23.51.
+     `VERSION' is a number like 3.23.53.
 
   4. Add a user and group for `mysqld' to run as:
 
@@ -9692,7 +9695,7 @@ example uses the IBM compiler):
      export CC="xlc_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192 "
      export CXX="xlC_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192"
      export CFLAGS="-I /usr/local/include"
-     export LDLFAGS="-L /usr/local/lib"
+     export LDFLAGS="-L /usr/local/lib"
      export CPPFLAGS=$CFLAGS
      export CXXFLAGS=$CFLAGS
      
@@ -26042,7 +26045,7 @@ All mathematical functions return `NULL' in case of an error.
                   -> 1.9
           mysql> select TRUNCATE(1.999,0);
                   -> 1
-          mysql> select TRUNCATE(-1,999,1);
+          mysql> select TRUNCATE(-1.999,1);
                   -> -1.9
 
      Starting from MySQL 3.23.51 all numbers are rounded towards zero.
@@ -39627,6 +39630,107 @@ and BDB without finding any problems.  It only means that not as many
 users use this code as the rest of the code and because of this we are
 not yet 100% confident in this code.
 
+Changes in release 3.23.54
+--------------------------
+
+Changes in release 3.23.53
+--------------------------
+
+   * Fixed crash when `SHOW INNODB STATUS' was used and `skip-innodb'
+     was defined.
+
+   * Fixed possible memory corruption bug in binary log file handling
+     when slave rotated the logs (only affected 3.23, not 4.0).
+
+   * Fixed problem in `LOCK TABLES' on windows when one connects to a
+     database that contains upper case letters.
+
+   * Fixed that `--skip-show-databases' doesn't reset the `--port'
+     option.
+
+   * Small fix in `safe_mysqld' for some shells.
+
+   * Fixed that `FLUSH STATUS' doesn't reset `Delayed_insert_threads'.
+
+   * Fixed core dump bug when using the `BINARY' cast on a `NULL' value.
+
+   * Fixed race condition when someone did a `GRANT' at the same time a
+     new user logged in or did a `USE DATABASE'.
+
+   * Fixed bug in `ALTER TABLE' and `RENAME TABLE' when running with
+     `-O lower_case_table_names=1' (typically on windows) when giving
+     the table name in uppercase.
+
+   * Fixed that `-O lower_case_table_names=1' also converts database
+     names to lower case.
+
+   * Fixed unlikely core dump with `SELECT ... ORDER BY ... LIMIT'.
+
+   * Changed `AND/OR' to report that they can return NULL. This fixes a
+     bug in `GROUP BY' on `AND/OR' expressions that return `NULL'.
+
+   * Fixed a bug that `OPTIMIZE' of locked and modified MyISAM table,
+     reported table corruption.
+
+   * Fixed a `BDB'-related `ALTER TABLE' bug with dropping a column and
+     shutting down immediately thereafter.
+
+   * Fixed problem with `configure ... --localstatedir=...'.
+
+   * Fixed problem with `UNSIGNED BIGINT' on AIX (again).
+
+   * Fixed bug in pthread_mutex_trylock() on HPUX 11.0.
+
+   * Multithreaded stress tests for InnoDB.
+
+Changes in release 3.23.52
+--------------------------
+
+   * Fixed security bug when having an empty databasename in the
+     `user.db' table.
+
+   * Changed initialisation of `RND()' to make it less predicatable.
+
+   * Fixed problem with `GROUP BY' on result with expression that
+     created a `BLOB' field.
+
+   * Fixed problem with privilege tables when downgrading from 4.0.2 to
+     3.23.
+
+   * Fixed thread bug in `SLAVE START', `SLAVE STOP' and automatic
+     repair of MyISAM tables that could cause table cache to be
+     corrupted.
+
+   * Fixed possible thread related key-cache-corruption problem with
+     `OPTIMIZE TABLE' and `REPAIR TABLE'.
+
+   * Added name of 'administrator command' logs.
+
+   * Fixed bug with creating an auto-increment value on second part of a
+     `UNIQUE()' key where first part could contain NULL values.
+
+   * Don't write slave-timeout reconnects to the error log.
+
+   * Fixed bug with slave net read timeouting
+
+   * Fixed a core-dump bug with `MERGE' tables and `MAX()' function.
+
+   * Fixed bug in `ALTER TABLE' with BDB tables.
+
+   * Fixed bug when logging `LOAD DATA INFILE' to binary log with no
+     active database.
+
+   * Fixed a bug in range optimiser (causing crashes).
+
+   * Fixed possible problem in replication when doing `DROP DATABASE'
+     on a database with InnoDB tables.
+
+   * Fixed that `mysql_info()' returns 0 for 'Duplicates' when using
+     `INSERT DELAYED IGNORE'.
+
+   * Added `-DHAVE_BROKEN_REALPATH' to the Mac OS X (darwin) compile
+     options in `configure.in' to fix a failure under high load.
+
 Changes in release 3.23.51
 --------------------------
 
@@ -39656,7 +39760,8 @@ Changes in release 3.23.51
    * Fixed optimization problem with `DATETIME' and value outside
      `DATETIME' range.
 
-   * Removed BDB documentation.
+   * Removed Sleepycat's BDB doc files from the source tree, as they're
+     not needed (MySQL covers BDB in its own documentation).
 
    * Fixed mit-pthreads to compile with glibc 2.2 (needed for `make
      dist').
@@ -39683,6 +39788,9 @@ Changes in release 3.23.51
 
 Changes in release 3.23.50
 --------------------------
+
+   * Fixed buffer overflow problem if someone specified a too long
+     datadir parameter to mysqld.
 
    * Fixed problem with `crash-me' and gcc 3.0.4.
 
@@ -42256,7 +42364,7 @@ Changes in release 3.23.0
      `mysql_num_fields()' on a `MYSQL' object, you must use
      `mysql_field_count()' instead.
 
-   * Added use of `LIBEWRAP';  Patch by Henning P . Schmiedehausen.
+   * Added use of `LIBWRAP';  Patch by Henning P . Schmiedehausen.
 
    * Don't allow `AUTO_INCREMENT' for other than numerical columns.
 

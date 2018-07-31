@@ -26,9 +26,11 @@ Created 3/26/1996 Heikki Tuuri
 
 
 /* Copy of the prototype for innobase_mysql_print_thd: this
-copy must be equal to the one in mysql/sql/ha_innobase.cc ! */
+copy MUST be equal to the one in mysql/sql/ha_innobase.cc ! */
 
-void innobase_mysql_print_thd(void* thd);
+void innobase_mysql_print_thd(
+	char* buf,
+	void* thd);
 
 /* Dummy session used currently in MySQL interface */
 sess_t*		trx_dummy_sess = NULL;
@@ -36,6 +38,17 @@ sess_t*		trx_dummy_sess = NULL;
 /* Number of transactions currently allocated for MySQL: protected by
 the kernel mutex */
 ulint	trx_n_mysql_transactions = 0;
+
+/*****************************************************************
+Starts the transaction if it is not yet started. */
+
+void
+trx_start_if_not_started_noninline(
+/*===============================*/
+	trx_t*  trx) /* in: transaction */
+{
+        trx_start_if_not_started(trx);
+}
 
 /********************************************************************
 Retrieves the error_info field from a trx. */
@@ -70,6 +83,7 @@ trx_create(
 	
 	trx->type = TRX_USER;
 	trx->conc_state = TRX_NOT_STARTED;
+	trx->start_time = time(NULL);
 
 	trx->check_foreigns = TRUE;
 	trx->check_unique_secondary = TRUE;
@@ -83,6 +97,8 @@ trx_create(
 
 	trx->mysql_log_file_name = NULL;
 	trx->mysql_log_offset = 0;
+	trx->mysql_master_log_file_name = "";
+	trx->mysql_master_log_pos = 0;
 	
 	trx->ignore_duplicates_in_insert = FALSE;
 
@@ -363,16 +379,31 @@ trx_lists_init_at_db_start(void)
 
 			trx = trx_create(NULL); 
 
+			trx->id = undo->trx_id;
+
+			trx->insert_undo = undo;
+			trx->rseg = rseg;
+
 			if (undo->state != TRX_UNDO_ACTIVE) {
 
 				trx->conc_state = TRX_COMMITTED_IN_MEMORY;
+
+				/* We give a dummy value for the trx no;
+				this should have no relevance since purge
+				is not interested in committed transaction
+				numbers, unless they are in the history
+				list, in which case it looks the number
+				from the disk based undo log structure */
+
+				trx->no = trx->id;
 			} else {
 				trx->conc_state = TRX_ACTIVE;
-			}
 
-			trx->id = undo->trx_id;
-			trx->insert_undo = undo;
-			trx->rseg = rseg;
+				/* A running transaction always has the number
+				field inited to ut_dulint_max */
+
+				trx->no = ut_dulint_max;
+			}
 
 			if (undo->dict_operation) {
 				trx->dict_operation = undo->dict_operation;
@@ -397,14 +428,25 @@ trx_lists_init_at_db_start(void)
 			if (NULL == trx) {
 				trx = trx_create(NULL); 
 
+				trx->id = undo->trx_id;
+
 				if (undo->state != TRX_UNDO_ACTIVE) {
 					trx->conc_state =
 						TRX_COMMITTED_IN_MEMORY;
+					/* We give a dummy value for the trx
+					number */
+
+					trx->no = trx->id;
 				} else {
 					trx->conc_state = TRX_ACTIVE;
+
+					/* A running transaction always has
+					the number field inited to
+					ut_dulint_max */
+
+					trx->no = ut_dulint_max;
 				}
 
-				trx->id = undo->trx_id;
 				trx->rseg = rseg;
 				trx_list_insert_ordered(trx);
 
@@ -486,6 +528,7 @@ trx_start_low(
 	if (trx->type == TRX_PURGE) {
 		trx->id = ut_dulint_zero;
 		trx->conc_state = TRX_ACTIVE;
+		trx->start_time = time(NULL);
 
 		return(TRUE);
 	}
@@ -509,6 +552,7 @@ trx_start_low(
 	trx->rseg = rseg;
 
 	trx->conc_state = TRX_ACTIVE;
+	trx->start_time = time(NULL);
 
 	UT_LIST_ADD_FIRST(trx_list, trx_sys->trx_list, trx);
 
@@ -583,7 +627,7 @@ trx_commit_off_kernel(
 		if (undo) {
 			mutex_enter(&kernel_mutex);
 #ifdef notdefined
-			/* ########## There is a bug here: purge and rollback
+			/* !!!!!!!!! There is a bug here: purge and rollback
 			need the whole stack of old record versions even if no
 			consistent read would need them!! This is because they
 			decide on the basis of the old versions when we can
@@ -627,12 +671,25 @@ trx_commit_off_kernel(
 		mutex_exit(&(rseg->mutex));
 
 		/* Update the latest MySQL binlog name and offset info
-		in trx sys header if MySQL binlogging is on */
+		in trx sys header if MySQL binlogging is on or the database
+		server is a MySQL replication slave */
 
 		if (trx->mysql_log_file_name) {
-			trx_sys_update_mysql_binlog_offset(trx, &mtr);
+			trx_sys_update_mysql_binlog_offset(
+					trx->mysql_log_file_name,
+					trx->mysql_log_offset,
+					TRX_SYS_MYSQL_LOG_INFO, &mtr);
+			trx->mysql_log_file_name = NULL;
 		}
-		
+
+		if (trx->mysql_master_log_file_name[0] != '\0') {
+			/* This database server is a MySQL replication slave */ 
+			trx_sys_update_mysql_binlog_offset(
+				trx->mysql_master_log_file_name,
+				trx->mysql_master_log_pos,
+				TRX_SYS_MYSQL_MASTER_LOG_INFO, &mtr);
+		}
+				
 		/* If we did not take the shortcut, the following call
 		commits the mini-transaction, making the whole transaction
 		committed in the file-based world at this log sequence number;
@@ -707,12 +764,12 @@ trx_commit_off_kernel(
 
 		/*-------------------------------------*/
 
-		/* Most MySQL users run with srv_flush.. set to FALSE: */
+		/* Most MySQL users run with srv_flush_.. set to FALSE: */
 
 		if (srv_flush_log_at_trx_commit) {
 		
  			log_flush_up_to(lsn, LOG_WAIT_ONE_GROUP);
- 		}
+		}
 
 		/*-------------------------------------*/
 	
@@ -726,6 +783,29 @@ trx_commit_off_kernel(
 
 	ut_ad(UT_LIST_GET_LEN(trx->wait_thrs) == 0);
 	ut_ad(UT_LIST_GET_LEN(trx->trx_locks) == 0);
+
+	UT_LIST_REMOVE(trx_list, trx_sys->trx_list, trx);
+}
+
+/********************************************************************
+Cleans up a transaction at database startup. The cleanup is needed if
+the transaction already got to the middle of a commit when the database
+crashed, andf we cannot roll it back. */
+
+void
+trx_cleanup_at_db_startup(
+/*======================*/
+	trx_t*	trx)	/* in: transaction */
+{
+	if (trx->insert_undo != NULL) {
+
+		trx_undo_insert_cleanup(trx);
+	}
+
+	trx->conc_state = TRX_NOT_STARTED;
+	trx->rseg = NULL;
+	trx->undo_no = ut_dulint_zero;
+	trx->last_sql_stat_start.least_undo_no = ut_dulint_zero;
 
 	UT_LIST_REMOVE(trx_list, trx_sys->trx_list, trx);
 }
@@ -1395,54 +1475,78 @@ own the kernel mutex. */
 void
 trx_print(
 /*======*/
+	char*	buf,	/* in/out: buffer where to print, must be at least
+			800 bytes */
 	trx_t*	trx)	/* in: transaction */
 {
-  	printf("TRANSACTION %lu %lu, OS thread id %lu",
+        char*   start_of_line;
+
+        buf += sprintf(buf, "TRANSACTION %lu %lu",
 		ut_dulint_get_high(trx->id),
-	 	ut_dulint_get_low(trx->id),
-	 	(ulint)trx->mysql_thread_id);
+		 ut_dulint_get_low(trx->id));
+
+  	switch (trx->conc_state) {
+  		case TRX_NOT_STARTED:         buf += sprintf(buf,
+						", not started"); break;
+  		case TRX_ACTIVE:              buf += sprintf(buf,
+						", ACTIVE %lu sec",
+			 (ulint)difftime(time(NULL), trx->start_time)); break;
+  		case TRX_COMMITTED_IN_MEMORY: buf += sprintf(buf,
+						", COMMITTED IN MEMORY");
+									break;
+  		default: buf += sprintf(buf, " state %lu", trx->conc_state);
+  	}
+
+        buf += sprintf(buf, ", OS thread id %lu",
+		       os_thread_pf(trx->mysql_thread_id));
 
 	if (ut_strlen(trx->op_info) > 0) {
-		printf(" %s", trx->op_info);
+		buf += sprintf(buf, " %s", trx->op_info);
 	}
 	
   	if (trx->type != TRX_USER) {
-    		printf(" purge trx");
+    		buf += sprintf(buf, " purge trx");
   	}
+
+	buf += sprintf(buf, "\n");
   	
-  	switch (trx->conc_state) {
-  		case TRX_NOT_STARTED:         printf(", not started"); break;
-  		case TRX_ACTIVE:              printf(", active"); break;
-  		case TRX_COMMITTED_IN_MEMORY: printf(", committed in memory");
-									break;
-  		default: printf(" state %lu", trx->conc_state);
-  	}
+	start_of_line = buf;
 
   	switch (trx->que_state) {
-  		case TRX_QUE_RUNNING:         printf(", runs or sleeps"); break;
-  		case TRX_QUE_LOCK_WAIT:       printf(", lock wait"); break;
-  		case TRX_QUE_ROLLING_BACK:    printf(", rolling back"); break;
-  		case TRX_QUE_COMMITTING:      printf(", committing"); break;
-  		default: printf(" que state %lu", trx->que_state);
+  		case TRX_QUE_RUNNING:         break;
+  		case TRX_QUE_LOCK_WAIT:       buf += sprintf(buf,
+						"LOCK WAIT "); break;
+  		case TRX_QUE_ROLLING_BACK:    buf += sprintf(buf,
+						"ROLLING BACK "); break;
+  		case TRX_QUE_COMMITTING:      buf += sprintf(buf,
+						"COMMITTING "); break;
+  		default: buf += sprintf(buf, "que state %lu", trx->que_state);
   	}
 
-  	if (0 < UT_LIST_GET_LEN(trx->trx_locks)) {
-  		printf(", has %lu lock struct(s)",
-				UT_LIST_GET_LEN(trx->trx_locks));
+  	if (0 < UT_LIST_GET_LEN(trx->trx_locks) ||
+	    mem_heap_get_size(trx->lock_heap) > 400) {
+
+  		buf += sprintf(buf,
+"%lu lock struct(s), heap size %lu",
+			       UT_LIST_GET_LEN(trx->trx_locks),
+			       mem_heap_get_size(trx->lock_heap));
 	}
 
   	if (trx->has_search_latch) {
-  		printf(", holds adaptive hash latch");
+  		buf += sprintf(buf, ", holds adaptive hash latch");
   	}
 
 	if (ut_dulint_cmp(trx->undo_no, ut_dulint_zero) != 0) {
-		printf(", undo log entries %lu",
+		buf += sprintf(buf, ", undo log entries %lu",
 			ut_dulint_get_low(trx->undo_no));
 	}
 	
-  	printf("\n");
+	if (buf != start_of_line) {
+
+	        buf += sprintf(buf, "\n");
+	}
 
   	if (trx->mysql_thd != NULL) {
-    		innobase_mysql_print_thd(trx->mysql_thd);
+    		innobase_mysql_print_thd(buf, trx->mysql_thd);
   	}  
 }

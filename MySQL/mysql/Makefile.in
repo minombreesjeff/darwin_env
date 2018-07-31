@@ -105,6 +105,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -194,10 +195,10 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 CONFIG_HEADER = config.h
 CONFIG_CLEAN_FILES = 
-DIST_COMMON =  README ./stamp-h.in COPYING COPYING.LIB Makefile.am \
-Makefile.in acconfig.h acinclude.m4 aclocal.m4 config.guess config.h.in \
-config.sub configure configure.in install-sh ltconfig ltmain.sh missing \
-mkinstalldirs
+DIST_COMMON =  README ./stamp-h.in COPYING COPYING.LIB ChangeLog \
+Makefile.am Makefile.in acconfig.h acinclude.m4 aclocal.m4 config.guess \
+config.h.in config.sub configure configure.in install-sh ltconfig \
+ltmain.sh missing mkinstalldirs
 
 
 DISTFILES = $(DIST_COMMON) $(SOURCES) $(HEADERS) $(TEXINFOS) $(EXTRA_DIST)

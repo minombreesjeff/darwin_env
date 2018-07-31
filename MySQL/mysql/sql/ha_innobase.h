@@ -51,8 +51,6 @@ class ha_innobase: public handler
   	byte*		key_val_buff;	/* buffer used in converting
   					search key values from MySQL format
   					to Innobase format */
-	uint		ref_stored_len;	/* length of the key value stored to
-					'ref' buffer of the handle, if any */
   	ulong 		int_option_flag;
   	uint 		primary_key;
 	uint		last_dup_key;
@@ -70,6 +68,7 @@ class ha_innobase: public handler
 	int update_thd(THD* thd);
 	int change_active_index(uint keynr);
 	int general_fetch(byte* buf, uint direction, uint match_mode);
+	int innobase_read_and_init_auto_inc(longlong* ret);
 
 	/* Init values for the class: */
  public:
@@ -140,6 +139,8 @@ class ha_innobase: public handler
   	int extra(enum ha_extra_function operation);
   	int reset(void);
   	int external_lock(THD *thd, int lock_type);
+	int start_stmt(THD *thd);
+
   	void position(byte *record);
   	ha_rows records_in_range(int inx,
 			   const byte *start_key,uint start_key_len,
@@ -158,6 +159,8 @@ class ha_innobase: public handler
 	void free_foreign_key_create_info(char* str);	
   	THR_LOCK_DATA **store_lock(THD *thd, THR_LOCK_DATA **to,
 			     		enum thr_lock_type lock_type);
+	/* void init_table_handle_for_HANDLER(); Not tested or used yet, code
+	included for documentational purposes only */
 	longlong get_auto_increment();
 };
 
@@ -175,8 +178,9 @@ extern long innobase_force_recovery, innobase_thread_concurrency;
 extern char *innobase_data_home_dir, *innobase_data_file_path;
 extern char *innobase_log_group_home_dir, *innobase_log_arch_dir;
 extern char *innobase_unix_file_flush_method;
+extern long innobase_flush_log_at_trx_commit;
 /* The following variables have to be my_bool for SHOW VARIABLES to work */
-extern my_bool innobase_flush_log_at_trx_commit, innobase_log_archive,
+extern my_bool innobase_log_archive,
                innobase_use_native_aio, innobase_fast_shutdown;
 
 extern TYPELIB innobase_lock_typelib;
@@ -195,4 +199,5 @@ int innobase_report_binlog_offset_and_commit(
 int innobase_rollback(THD *thd, void* trx_handle);
 int innobase_close_connection(THD *thd);
 int innobase_drop_database(char *path);
+int innodb_show_status(THD* thd);
 

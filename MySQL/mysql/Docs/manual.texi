@@ -11528,7 +11528,7 @@ MySQL (This example uses the IBM compiler):
 export CC="xlc_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192 "
 export CXX="xlC_r -ma -O3 -qstrict -qoptimize=3 -qmaxmem=8192"
 export CFLAGS="-I /usr/local/include"
-export LDLFAGS="-L /usr/local/lib"
+export LDFLAGS="-L /usr/local/lib"
 export CPPFLAGS=$CFLAGS
 export CXXFLAGS=$CFLAGS
 
@@ -31150,7 +31150,7 @@ mysql> select TRUNCATE(1.999,1);
         -> 1.9
 mysql> select TRUNCATE(1.999,0);
         -> 1
-mysql> select TRUNCATE(-1,999,1);
+mysql> select TRUNCATE(-1.999,1);
         -> -1.9
 @end example
 
@@ -46868,6 +46868,9 @@ users use this code as the rest of the code and because of this we are
 not yet 100% confident in this code.
 
 @menu
+* News-3.23.54::                Changes in release 3.23.54
+* News-3.23.53::                Changes in release 3.23.53
+* News-3.23.52::                Changes in release 3.23.52
 * News-3.23.51::                Changes in release 3.23.51
 * News-3.23.50::                Changes in release 3.23.50
 * News-3.23.49::                Changes in release 3.23.49
@@ -46923,7 +46926,110 @@ not yet 100% confident in this code.
 * News-3.23.0::                 Changes in release 3.23.0
 @end menu
 
-@node News-3.23.51, News-3.23.50, News-3.23.x, News-3.23.x
+@node News-3.23.54, News-3.23.53, News-3.23.x, News-3.23.x
+@appendixsubsec Changes in release 3.23.54
+
+@node News-3.23.53, News-3.23.52, News-3.23.54, News-3.23.x
+@appendixsubsec Changes in release 3.23.53
+@itemize @bullet
+@item
+Fixed crash when @code{SHOW INNODB STATUS} was used and @code{skip-innodb}
+was defined.
+@item
+Fixed possible memory corruption bug in binary log file handling when
+slave rotated the logs (only affected 3.23, not 4.0).
+@item
+Fixed problem in @code{LOCK TABLES} on windows when one connects to a
+database that contains upper case letters.
+@item
+Fixed that @code{--skip-show-databases} doesn't reset the @code{--port} option.
+@item
+Small fix in @code{safe_mysqld} for some shells.
+@item
+Fixed that @code{FLUSH STATUS} doesn't reset @code{Delayed_insert_threads}.
+@item
+Fixed core dump bug when using the @code{BINARY} cast on a @code{NULL} value.
+@item
+Fixed race condition when someone did a @code{GRANT} at the same time a new
+user logged in or did a @code{USE DATABASE}.
+@item
+Fixed bug in @code{ALTER TABLE} and @code{RENAME TABLE} when running with
+@code{-O lower_case_table_names=1} (typically on windows) when giving the
+table name in uppercase.
+@item
+Fixed that @code{-O lower_case_table_names=1} also converts database
+names to lower case.
+@item
+Fixed unlikely core dump with @code{SELECT ... ORDER BY ... LIMIT}.
+@item
+Changed @code{AND/OR} to report that they can return NULL. This fixes a
+bug in @code{GROUP BY} on @code{AND/OR} expressions that return
+@code{NULL}.
+@item
+Fixed a bug that @code{OPTIMIZE} of locked and modified MyISAM table,
+reported table corruption.
+@item
+Fixed a @code{BDB}-related @code{ALTER TABLE} bug with dropping a column
+and shutting down immediately thereafter.
+@item
+Fixed problem with @code{configure ... --localstatedir=...}.
+@item
+Fixed problem with @code{UNSIGNED BIGINT} on AIX (again).
+@item
+Fixed bug in pthread_mutex_trylock() on HPUX 11.0.
+@item
+Multithreaded stress tests for InnoDB.
+@end itemize
+
+@node News-3.23.52, News-3.23.51, News-3.23.53, News-3.23.x
+@appendixsubsec Changes in release 3.23.52
+@itemize @bullet
+@item
+Fixed security bug when having an empty databasename in the @code{user.db}
+table.
+@item
+Changed initialisation of @code{RND()} to make it less predicatable.
+@item
+Fixed problem with @code{GROUP BY} on result with expression that created a
+@code{BLOB} field.
+@item
+Fixed problem with privilege tables when downgrading from 4.0.2 to 3.23.
+@item
+Fixed thread bug in @code{SLAVE START}, @code{SLAVE STOP} and automatic repair
+of MyISAM tables that could cause table cache to be corrupted.
+@item
+Fixed possible thread related key-cache-corruption problem with
+@code{OPTIMIZE TABLE} and @code{REPAIR TABLE}.
+@item
+Added name of 'administrator command' logs.
+@item
+Fixed bug with creating an auto-increment value on second part of a
+@code{UNIQUE()} key where first part could contain NULL values.
+@item
+Don't write slave-timeout reconnects to the error log.
+@item
+Fixed bug with slave net read timeouting
+@item
+Fixed a core-dump bug with @code{MERGE} tables and @code{MAX()} function.
+@item
+Fixed bug in @code{ALTER TABLE} with BDB tables.
+@item
+Fixed bug when logging @code{LOAD DATA INFILE} to binary log with no 
+active database.
+@item
+Fixed a bug in range optimiser (causing crashes).
+@item
+Fixed possible problem in replication when doing @code{DROP DATABASE} on a
+database with InnoDB tables.
+@item
+Fixed that @code{mysql_info()} returns 0 for 'Duplicates' when using
+@code{INSERT DELAYED IGNORE}.
+@item
+Added @code{-DHAVE_BROKEN_REALPATH} to the Mac OS X (darwin) compile
+options in @file{configure.in} to fix a failure under high load.
+@end itemize
+
+@node News-3.23.51, News-3.23.50, News-3.23.52, News-3.23.x
 @appendixsubsec Changes in release 3.23.51
 @itemize @bullet
 @item
@@ -46951,7 +47057,8 @@ Fixed bug in @code{DROP DATABASE} with symlinked directory.
 Fixed optimization problem with @code{DATETIME} and value outside
 @code{DATETIME} range.
 @item
-Removed BDB documentation.
+Removed Sleepycat's BDB doc files from the source tree, as they're not
+needed (MySQL covers BDB in its own documentation).
 @item
 Fixed mit-pthreads to compile with glibc 2.2 (needed for @code{make dist}).
 @item
@@ -46978,6 +47085,9 @@ Linux-x86 binaries.
 @node News-3.23.50, News-3.23.49, News-3.23.51, News-3.23.x
 @appendixsubsec Changes in release 3.23.50
 @itemize @bullet
+@item
+Fixed buffer overflow problem if someone specified a too long datadir
+parameter to mysqld.
 @item
 Fixed problem with @code{crash-me} and gcc 3.0.4.
 @item
@@ -49671,7 +49781,7 @@ All C client API macros are now functions to make shared libraries more
 reliable. Because of this, you can no longer call @code{mysql_num_fields()} on
 a @code{MYSQL} object, you must use @code{mysql_field_count()} instead.
 @item
-Added use of @code{LIBEWRAP};  Patch by Henning P . Schmiedehausen.
+Added use of @code{LIBWRAP};  Patch by Henning P . Schmiedehausen.
 @item
 Don't allow @code{AUTO_INCREMENT} for other than numerical columns.
 @item

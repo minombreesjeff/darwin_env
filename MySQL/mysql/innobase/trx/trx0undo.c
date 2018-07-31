@@ -401,6 +401,10 @@ trx_undo_seg_create(
 	slot_no = trx_rsegf_undo_find_free(rseg_hdr, mtr);
 
 	if (slot_no == ULINT_UNDEFINED) {
+	        ut_print_timestamp(stderr);
+	        fprintf(stderr,
+"InnoDB: Warning: cannot find a free slot for an undo log. Do you have too\n"
+"InnoDB: many active transactions running concurrently?");
 
 		return(NULL);
 	}
@@ -1147,7 +1151,7 @@ trx_undo_mem_create_at_db_start(
 	/* If the log segment is being freed, the page list is inconsistent! */
 	if (state == TRX_UNDO_TO_FREE) {
 
-		return(undo);
+		goto add_to_list;
 	}
 
 	last_addr = flst_get_last(seg_header + TRX_UNDO_PAGE_LIST, mtr);
@@ -1166,7 +1170,7 @@ trx_undo_mem_create_at_db_start(
 		undo->top_offset = rec - last_page;
 		undo->top_undo_no = trx_undo_rec_get_undo_no(rec);
 	}
-	
+add_to_list:	
 	if (type == TRX_UNDO_INSERT) {
 		if (state != TRX_UNDO_CACHED) {
 			UT_LIST_ADD_LAST(undo_list, rseg->insert_undo_list,
@@ -1531,9 +1535,6 @@ trx_undo_assign_undo(
 
 			mutex_exit(&(rseg->mutex));
 			mtr_commit(&mtr);
-
-			fprintf(stderr,	"InnoDB: no undo log slots free\n");
-			ut_a(0);
 
 			return(NULL);
 		}

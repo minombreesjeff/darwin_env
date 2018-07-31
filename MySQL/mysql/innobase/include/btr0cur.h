@@ -417,7 +417,7 @@ btr_cur_parse_del_mark_set_sec_rec(
 /***********************************************************************
 Estimates the number of rows in a given index range. */
 
-ulint
+ib_longlong
 btr_estimate_n_rows_in_range(
 /*=========================*/
 				/* out: estimated number of rows */
@@ -709,6 +709,9 @@ allowed to free an inherited external field. */
 #define BTR_EXTERN_INHERITED_FLAG	64
 
 extern ulint	btr_cur_n_non_sea;
+extern ulint	btr_cur_n_sea;
+extern ulint	btr_cur_n_non_sea_old;
+extern ulint	btr_cur_n_sea_old;
 
 #ifndef UNIV_NONINL
 #include "btr0cur.ic"

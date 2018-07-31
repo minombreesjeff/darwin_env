@@ -103,6 +103,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -388,64 +389,30 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 comp_err.o: comp_err.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_ctype.h ../include/my_sys.h \
-	../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/pthread/util.h \
-	../mit-pthreads/include/sched.h ../include/raid.h \
+	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
+	../include/my_sys.h ../include/my_pthread.h ../include/raid.h \
 	../include/m_string.h
 my_print_defaults.o: my_print_defaults.c ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/pthread/util.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/getopt.h
+	../include/m_ctype.h ../include/raid.h
 perror.o: perror.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/pthread/util.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/getopt.h
+	../include/getopt.h ../include/dbug.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h
 replace.o: replace.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_ctype.h ../include/my_sys.h \
-	../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/pthread/util.h \
-	../mit-pthreads/include/sched.h ../include/raid.h \
+	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
+	../include/my_sys.h ../include/my_pthread.h ../include/raid.h \
 	../include/m_string.h
 resolve_stack_dump.o: resolve_stack_dump.c ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/m_ctype.h ../include/my_sys.h \
-	../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/pthread/util.h \
-	../mit-pthreads/include/sched.h ../include/raid.h \
-	../include/m_string.h ../include/mysql_version.h \
-	../include/getopt.h
+	../include/my_pthread.h ../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h
 resolveip.o: resolveip.c ../include/my_global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_ctype.h ../include/my_sys.h \
-	../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/pthread/util.h \
-	../mit-pthreads/include/sched.h ../include/raid.h \
-	../include/m_string.h ../include/my_net.h ../include/getopt.h
+	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
+	../include/my_sys.h ../include/my_pthread.h ../include/raid.h \
+	../include/m_string.h ../include/my_net.h
 
 info-am:
 info: info-am

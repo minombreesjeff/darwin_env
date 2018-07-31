@@ -85,8 +85,12 @@ else
 fi
 
 case "$target_os" in
+       hpux10*)
+	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE -DUNIV_HPUX -DUNIV_HPUX10";;
        hp*)
-	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
+	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE -DUNIV_HPUX";;
+       aix*)
+         CFLAGS="$CFLAGS -DUNIV_AIX";;
        irix*)
 	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
        osf*)
@@ -94,6 +98,8 @@ case "$target_os" in
        sysv5uw7*)
 	 # Problem when linking on SCO
 	 CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
+        openbsd*)
+         CFLAGS="$CFLAGS -DUNIV_MUST_NOT_INLINE";;
 esac
 
 case "$target" in

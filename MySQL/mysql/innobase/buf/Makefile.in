@@ -391,7 +391,9 @@ buf0lru.o: buf0lru.c ../include/buf0lru.h ../include/univ.i \
 	../include/page0cur.ic ../include/btr0btr.ic \
 	../include/btr0sea.h ../include/ha0ha.h ../include/ha0ha.ic \
 	../include/btr0sea.ic ../include/btr0cur.h \
-	../include/row0types.h ../include/btr0cur.ic
+	../include/row0types.h ../include/btr0cur.ic \
+	../include/log0recv.h ../include/log0log.h \
+	../include/log0log.ic ../include/log0recv.ic
 buf0rea.o: buf0rea.c ../include/buf0rea.h ../include/univ.i \
 	../../include/global.h ../../include/my_config.h \
 	../../include/getopt.h ../../include/dbug.h \

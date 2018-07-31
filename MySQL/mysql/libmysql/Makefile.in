@@ -106,6 +106,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -204,10 +205,11 @@ target_sources = libmysql.c net.c violite.c password.c 			    get_password.c err
 
 mystringsobjects = strmov.lo strxmov.lo strnmov.lo strmake.lo strend.lo 			strnlen.lo strfill.lo is_prefix.lo 			int2str.lo str2int.lo strinstr.lo strcont.lo 			strcend.lo 			bchange.lo bmove.lo bmove_upp.lo longlong2str.lo 			strtoull.lo strtoll.lo llstr.lo 			ctype.lo $(LTCHARSET_OBJS)
 
-mystringsextra = strto.c ctype_autoconf.c
+mystringsextra = strto.c
+mystringsgen = ctype_autoconf.c
 dbugobjects = dbug.lo # IT IS IN SAFEMALLOC.C sanity.lo
 mysysheaders = mysys_priv.h my_static.h
-mysysobjects1 = my_init.lo my_static.lo my_malloc.lo my_realloc.lo 			my_create.lo my_delete.lo mf_tempfile.lo my_open.lo 			mf_casecnv.lo my_read.lo my_write.lo errors.lo 			my_error.lo my_getwd.lo my_div.lo 			mf_pack.lo my_messnc.lo mf_dirname.lo mf_fn_ext.lo 			mf_wcomp.lo typelib.lo safemalloc.lo my_alloc.lo 			mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo 			my_symlink.lo my_fstream.lo 			mf_loadpath.lo my_pthread.lo my_thr_init.lo 			thr_mutex.lo mulalloc.lo string.lo default.lo 			my_compress.lo array.lo my_once.lo list.lo my_net.lo                         charset.lo hash.lo mf_iocache.lo my_seek.lo 			my_pread.lo mf_cache.lo my_gethostbyname.lo
+mysysobjects1 = my_init.lo my_static.lo my_malloc.lo my_realloc.lo 			my_create.lo my_delete.lo mf_tempfile.lo my_open.lo 			mf_casecnv.lo my_read.lo my_write.lo errors.lo 			my_error.lo my_getwd.lo my_div.lo 			mf_pack.lo my_messnc.lo mf_dirname.lo mf_fn_ext.lo 			mf_wcomp.lo typelib.lo safemalloc.lo my_alloc.lo 			mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo 			my_symlink.lo my_fstream.lo 			mf_loadpath.lo my_pthread.lo my_thr_init.lo 			thr_mutex.lo mulalloc.lo string.lo default.lo 			my_compress.lo array.lo my_once.lo list.lo my_net.lo                         charset.lo hash.lo mf_iocache.lo my_seek.lo 			my_pread.lo mf_cache.lo my_gethostbyname.lo my_port.lo
 
 # Not needed in the minimum library
 mysysobjects2 = getopt.lo getopt1.lo getvar.lo my_lib.lo
@@ -258,11 +260,11 @@ mf_path.lo mf_unixpath.lo my_fopen.lo my_symlink.lo my_fstream.lo \
 mf_loadpath.lo my_pthread.lo my_thr_init.lo thr_mutex.lo mulalloc.lo \
 string.lo default.lo my_compress.lo array.lo my_once.lo list.lo \
 my_net.lo charset.lo hash.lo mf_iocache.lo my_seek.lo my_pread.lo \
-mf_cache.lo my_gethostbyname.lo getopt.lo getopt1.lo getvar.lo \
-my_lib.lo strmov.lo strxmov.lo strnmov.lo strmake.lo strend.lo \
-strnlen.lo strfill.lo is_prefix.lo int2str.lo str2int.lo strinstr.lo \
-strcont.lo strcend.lo bchange.lo bmove.lo bmove_upp.lo longlong2str.lo \
-strtoull.lo strtoll.lo llstr.lo ctype.lo dbug.lo
+mf_cache.lo my_gethostbyname.lo my_port.lo getopt.lo getopt1.lo \
+getvar.lo my_lib.lo strmov.lo strxmov.lo strnmov.lo strmake.lo \
+strend.lo strnlen.lo strfill.lo is_prefix.lo int2str.lo str2int.lo \
+strinstr.lo strcont.lo strcend.lo bchange.lo bmove.lo bmove_upp.lo \
+longlong2str.lo strtoull.lo strtoll.lo llstr.lo ctype.lo dbug.lo
 libmysqlclient_la_OBJECTS =  libmysql.lo net.lo violite.lo password.lo \
 get_password.lo errmsg.lo
 PROGRAMS =  $(noinst_PROGRAMS)
@@ -419,7 +421,7 @@ distdir: $(DISTFILES)
 array.lo array.o : array.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 bchange.lo bchange.o : bchange.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/m_string.h
@@ -431,9 +433,34 @@ bmove_upp.lo bmove_upp.o : bmove_upp.c ../include/global.h \
 charset.lo charset.o : charset.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h ../include/m_string.h \
-	../include/my_dir.h
+	../include/my_no_pthread.h ../include/mysys_err.h \
+	../include/m_string.h ../include/my_dir.h
 conf_to_src.o: conf_to_src.c ../include/getopt.h
+ctype-big5.lo ctype-big5.o : ctype-big5.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h ../include/m_ctype.h
+ctype-czech.lo ctype-czech.o : ctype-czech.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h
+ctype-euc_kr.lo ctype-euc_kr.o : ctype-euc_kr.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h
+ctype-gb2312.lo ctype-gb2312.o : ctype-gb2312.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h
+ctype-gbk.lo ctype-gbk.o : ctype-gbk.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h ../include/m_ctype.h
+ctype-sjis.lo ctype-sjis.o : ctype-sjis.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h ../include/m_ctype.h
+ctype-tis620.lo ctype-tis620.o : ctype-tis620.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/t_ctype.h
+ctype-ujis.lo ctype-ujis.o : ctype-ujis.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h
 ctype.lo ctype.o : ctype.c ../include/global.h ../include/my_config.h \
 	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
 	../include/m_string.h ctype_extra_sources.c ctype_autoconf.c
@@ -442,14 +469,14 @@ dbug.lo dbug.o : dbug.c ../include/global.h ../include/my_config.h \
 default.lo default.o : default.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 errmsg.lo errmsg.o : errmsg.c ../include/global.h ../include/my_config.h \
 	../include/getopt.h ../include/dbug.h ../include/my_sys.h \
 	../include/m_ctype.h ../include/raid.h ../include/errmsg.h
 errors.lo errors.o : errors.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h
+	../include/my_no_pthread.h ../include/mysys_err.h
 get_password.lo get_password.o : get_password.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
@@ -462,11 +489,12 @@ getopt1.lo getopt1.o : getopt1.c ../include/global.h \
 getvar.lo getvar.o : getvar.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 hash.lo hash.o : hash.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/hash.h
+	../include/my_no_pthread.h ../include/m_string.h \
+	../include/hash.h
 int2str.lo int2str.o : int2str.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/m_string.h
@@ -483,7 +511,7 @@ libmysql.lo libmysql.o : libmysql.c ../include/global.h \
 list.lo list.o : list.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/my_list.h
+	../include/my_no_pthread.h ../include/my_list.h
 llstr.lo llstr.o : llstr.c ../include/global.h ../include/my_config.h \
 	../include/getopt.h ../include/dbug.h ../include/m_string.h
 longlong2str.lo longlong2str.o : longlong2str.c ../include/global.h \
@@ -492,54 +520,62 @@ longlong2str.lo longlong2str.o : longlong2str.c ../include/global.h \
 mf_cache.lo mf_cache.o : mf_cache.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h my_static.h ../include/mysys_err.h
+	../include/my_no_pthread.h ../include/m_string.h my_static.h \
+	../include/mysys_err.h
 mf_casecnv.lo mf_casecnv.o : mf_casecnv.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h
 mf_dirname.lo mf_dirname.o : mf_dirname.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h
 mf_fn_ext.lo mf_fn_ext.o : mf_fn_ext.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 mf_format.lo mf_format.o : mf_format.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 mf_iocache.lo mf_iocache.o : mf_iocache.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h
 mf_loadpath.lo mf_loadpath.o : mf_loadpath.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h
 mf_pack.lo mf_pack.o : mf_pack.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 mf_path.lo mf_path.o : mf_path.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 mf_tempfile.lo mf_tempfile.o : mf_tempfile.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h my_static.h \
-	../include/mysys_err.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h my_static.h ../include/mysys_err.h
 mf_unixpath.lo mf_unixpath.o : mf_unixpath.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h
 mf_wcomp.lo mf_wcomp.o : mf_wcomp.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/m_ctype.h ../include/raid.h
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/my_no_pthread.h
 mulalloc.lo mulalloc.o : mulalloc.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/m_ctype.h ../include/raid.h
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/my_no_pthread.h
 my_alloc.lo my_alloc.o : my_alloc.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
@@ -551,97 +587,115 @@ my_compress.lo my_compress.o : my_compress.c ../include/global.h \
 my_create.lo my_create.o : my_create.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/my_dir.h ../include/mysys_err.h
+	../include/my_no_pthread.h ../include/my_dir.h \
+	../include/mysys_err.h
 my_delete.lo my_delete.o : my_delete.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h
+	../include/my_no_pthread.h ../include/mysys_err.h
 my_div.lo my_div.o : my_div.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/m_ctype.h ../include/raid.h
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/my_no_pthread.h
 my_error.lo my_error.o : my_error.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h ../include/m_string.h
+	../include/my_no_pthread.h ../include/mysys_err.h \
+	../include/m_string.h
 my_fopen.lo my_fopen.o : my_fopen.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	my_static.h ../include/mysys_err.h
+	../include/my_no_pthread.h my_static.h ../include/mysys_err.h
 my_fstream.lo my_fstream.o : my_fstream.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/mysys_err.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/mysys_err.h
 my_gethostbyname.lo my_gethostbyname.o : my_gethostbyname.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/my_pthread.h ../include/my_net.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/my_net.h
 my_getwd.lo my_getwd.o : my_getwd.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/mysys_err.h
+	../include/my_no_pthread.h ../include/m_string.h \
+	../include/mysys_err.h
 my_init.lo my_init.o : my_init.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	my_static.h ../include/mysys_err.h ../include/m_string.h
+	../include/my_no_pthread.h my_static.h ../include/mysys_err.h \
+	../include/m_string.h
 my_lib.lo my_lib.o : my_lib.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/my_dir.h \
-	../include/mysys_err.h
+	../include/my_no_pthread.h ../include/m_string.h \
+	../include/my_dir.h ../include/mysys_err.h
 my_malloc.lo my_malloc.o : my_malloc.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h ../include/m_string.h
+	../include/my_no_pthread.h ../include/mysys_err.h \
+	../include/m_string.h
 my_messnc.lo my_messnc.o : my_messnc.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/m_ctype.h ../include/raid.h
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/my_no_pthread.h
 my_net.lo my_net.o : my_net.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 my_once.lo my_once.o : my_once.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	my_static.h ../include/mysys_err.h
+	../include/my_no_pthread.h my_static.h ../include/mysys_err.h
 my_open.lo my_open.o : my_open.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h ../include/my_dir.h
+	../include/my_no_pthread.h ../include/mysys_err.h \
+	../include/my_dir.h
+my_port.lo my_port.o : my_port.c mysys_priv.h ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/my_no_pthread.h
 my_pread.lo my_pread.o : my_pread.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h
+	../include/my_no_pthread.h ../include/mysys_err.h
 my_pthread.lo my_pthread.o : my_pthread.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h
+	../include/raid.h ../include/my_no_pthread.h
 my_read.lo my_read.o : my_read.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h
+	../include/my_no_pthread.h ../include/mysys_err.h
 my_realloc.lo my_realloc.o : my_realloc.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/mysys_err.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/mysys_err.h
 my_seek.lo my_seek.o : my_seek.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/m_ctype.h ../include/raid.h
+	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
+	../include/my_no_pthread.h
 my_static.lo my_static.o : my_static.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	my_static.h ../include/my_alarm.h
+	../include/my_no_pthread.h my_static.h ../include/my_alarm.h
 my_symlink.lo my_symlink.o : my_symlink.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/mysys_err.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/mysys_err.h ../include/m_string.h
 my_thr_init.lo my_thr_init.o : my_thr_init.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h
 my_write.lo my_write.o : my_write.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/mysys_err.h
+	../include/my_no_pthread.h ../include/mysys_err.h
 net.lo net.o : net.c ../include/global.h ../include/my_config.h \
 	../include/getopt.h ../include/dbug.h ../include/violite.h \
 	../include/my_net.h ../include/my_sys.h ../include/m_ctype.h \
@@ -656,8 +710,8 @@ password.lo password.o : password.c ../include/global.h \
 safemalloc.lo safemalloc.o : safemalloc.c mysys_priv.h \
 	../include/global.h ../include/my_config.h ../include/getopt.h \
 	../include/dbug.h ../include/my_sys.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h my_static.h \
-	../include/mysys_err.h
+	../include/raid.h ../include/my_no_pthread.h \
+	../include/m_string.h my_static.h ../include/mysys_err.h
 str2int.lo str2int.o : str2int.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/m_string.h ../include/m_ctype.h ../include/my_sys.h \
@@ -676,7 +730,7 @@ strfill.lo strfill.o : strfill.c ../include/global.h \
 string.lo string.o : string.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 strinstr.lo strinstr.o : strinstr.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/m_string.h
@@ -706,7 +760,7 @@ thr_mutex.lo thr_mutex.o : thr_mutex.c ../include/global.h \
 typelib.lo typelib.o : typelib.c mysys_priv.h ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_sys.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
+	../include/my_no_pthread.h ../include/m_string.h
 violite.lo violite.o : violite.c ../include/global.h \
 	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/violite.h ../include/my_net.h ../include/my_sys.h \
@@ -801,8 +855,8 @@ clean-local:
 	rm -f `echo $(mystringsobjects) | sed "s;\.lo;.c;g"` \
 	      `echo $(dbugobjects) | sed "s;\.lo;.c;g"` \
 	      `echo $(mysysobjects) | sed "s;\.lo;.c;g"` \
-	       $(mystringsextra) $(mysysheaders) ctype_extra_sources.c \
-	       ../linked_client_sources
+	       $(mystringsextra) $(mystringsgen) $(mysysheaders) \
+	       ctype_extra_sources.c ../linked_client_sources
 
 ctype_extra_sources.c: conf_to_src
 	./conf_to_src $(top_srcdir) @CHARSETS_NEED_SOURCE@ > \
@@ -824,6 +878,10 @@ link_sources:
 	  for f in $(mystringsextra); do \
 	    rm -f $(srcdir)/$$f; \
 	    @LN_CP_F@ $(srcdir)/../strings/$$f $(srcdir)/$$f; \
+	  done; \
+	  for f in $(mystringsgen); do \
+	    rm -f $(srcdir)/$$f; \
+	    @LN_CP_F@ ../strings/$$f $(srcdir)/$$f; \
 	  done; \
 	  for f in $$ds; do \
 	    rm -f $(srcdir)/$$f; \

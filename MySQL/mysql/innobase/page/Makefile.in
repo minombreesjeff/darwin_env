@@ -282,7 +282,9 @@ page0cur.o: page0cur.c ../include/page0cur.h ../include/univ.i \
 	../include/trx0undo.ic ../include/rem0rec.h \
 	../include/rem0rec.ic ../include/page0page.ic \
 	../include/rem0cmp.h ../include/rem0cmp.ic \
-	../include/page0cur.ic
+	../include/page0cur.ic ../include/log0recv.h \
+	../include/log0log.h ../include/log0log.ic \
+	../include/log0recv.ic
 page0page.o: page0page.c ../include/page0page.h ../include/univ.i \
 	../../include/global.h ../../include/my_config.h \
 	../../include/getopt.h ../../include/dbug.h \

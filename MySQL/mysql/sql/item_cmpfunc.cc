@@ -494,6 +494,7 @@ Item_func_if::fix_length_and_dec()
   decimals=max(args[1]->decimals,args[2]->decimals);
   enum Item_result arg1_type=args[1]->result_type();
   enum Item_result arg2_type=args[2]->result_type();
+
   binary=1;
   if (arg1_type == STRING_RESULT || arg2_type == STRING_RESULT)
   {
@@ -1096,6 +1097,8 @@ Item_cond::fix_fields(THD *thd,TABLE_LIST *tables)
     used_tables_cache|=item->used_tables();
     with_sum_func= with_sum_func || item->with_sum_func;
     const_item_cache&=item->const_item();
+    if (item->maybe_null)
+      maybe_null=1;
   }
   if (thd)
     thd->cond_count+=list.elements;

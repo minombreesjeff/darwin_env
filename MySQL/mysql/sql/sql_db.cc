@@ -166,6 +166,16 @@ void mysql_rm_db(THD *thd,char *db,bool if_exists)
 
   if ((deleted=mysql_rm_known_files(thd, dirp, path,0)) >= 0)
   {
+    /*
+      If there are running queries on the tables, MySQL needs to get
+      access to LOCK_open to end them. InnoDB on the other hand waits
+      for the queries to end before dropping the database. That is why we
+      must do the dropping with LOCK_open released.
+    */
+    VOID(pthread_mutex_unlock(&LOCK_open));
+    ha_drop_database(path);
+    VOID(pthread_mutex_lock(&LOCK_open));
+
     if (!thd->query)
     {
       thd->query = path;
@@ -189,13 +199,6 @@ void mysql_rm_db(THD *thd,char *db,bool if_exists)
 exit:
   VOID(pthread_mutex_unlock(&LOCK_open));
   VOID(pthread_mutex_unlock(&LOCK_mysql_create_db));
-
-  /* It seems MySQL may call this function when there still are queries
-     running on tables of the database. Since InnoDB waits until the
-     queries have ended, we have to call ha_drop_database outside
-     the above two mutexes to avoid deadlocks. */
-
-  ha_drop_database(path);
 
   DBUG_VOID_RETURN;
 }
@@ -365,6 +368,8 @@ bool mysql_change_db(THD *thd,const char *name)
   }
   send_ok(&thd->net);
   x_free(thd->db);
+  if (lower_case_table_names)
+    casedn_str(dbname);
   thd->db=dbname;
   thd->db_access=db_access;
   DBUG_RETURN(0);

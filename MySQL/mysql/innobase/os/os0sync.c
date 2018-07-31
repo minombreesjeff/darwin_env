@@ -49,6 +49,12 @@ os_event_create(
 			TRUE,		/* Manual reset */
 			FALSE,		/* Initial state nonsignaled */
 			name);
+	if (!event) {
+	        fprintf(stderr,
+"InnoDB: Could not create a Windows event semaphore; Windows error %lu\n",
+		  (ulint)GetLastError());
+	}
+
 	ut_a(event);
 
 	return(event);
@@ -435,7 +441,7 @@ os_fast_mutex_init(
 	
 	InitializeCriticalSection((LPCRITICAL_SECTION) fast_mutex);
 #else
-	pthread_mutex_init(fast_mutex, NULL);
+	pthread_mutex_init(fast_mutex, MY_MUTEX_INIT_FAST);
 #endif
 }
 

@@ -74,6 +74,12 @@ ulint		ios;
 ulint		n[SRV_MAX_N_IO_THREADS + 5];
 os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 5];
 
+/* We use this mutex to test the return value of pthread_mutex_trylock
+   on successful locking. HP-UX does NOT return 0, though Linux et al do. */
+os_fast_mutex_t srv_os_test_mutex;
+
+ibool srv_os_test_mutex_is_locked = FALSE;
+
 #define SRV_N_PENDING_IOS_PER_THREAD 	OS_AIO_N_PENDING_IOS_PER_THREAD
 #define SRV_MAX_N_PENDING_SYNC_IOS	100
 
@@ -896,7 +902,7 @@ test_measure_cont(
 	"Mutex res. l %lu, p %lu, k %lu s x %lu s s %lu s mut %lu of %lu\n",
 		lcount, pcount, kcount, s_xcount, s_scount, s_mcount, j);
 
-		sync_print_wait_info();
+/*		sync_print_wait_info(); */
 
 		fprintf(stderr, 
     "log i/o %lu n non sea %lu n succ %lu n h fail %lu\n",
@@ -927,10 +933,32 @@ innobase_start_or_create_for_mysql(void)
 	ulint	max_arch_log_no;
 	ibool	start_archive;
 	ulint   sum_of_new_sizes;
+	ulint	sum_of_data_file_sizes;
+	ulint	tablespace_size_in_header;
 	ulint	err;
 	ulint	i;
 	ulint	k;
 	mtr_t   mtr;
+
+#ifdef UNIV_DEBUG
+	fprintf(stderr,
+"InnoDB: !!!!!!!!!!!!!! UNIV_DEBUG switched on !!!!!!!!!!!!!!!\n"); 
+#endif
+
+#ifdef UNIV_SYNC_DEBUG
+	fprintf(stderr,
+"InnoDB: !!!!!!!!!!!!!! UNIV_SYNC_DEBUG switched on !!!!!!!!!!!!!!!\n"); 
+#endif
+
+#ifdef UNIV_SEARCH_DEBUG
+	fprintf(stderr,
+"InnoDB: !!!!!!!!!!!!!! UNIV_SEARCH_DEBUG switched on !!!!!!!!!!!!!!!\n"); 
+#endif
+
+#ifdef UNIV_MEM_DEBUG
+	fprintf(stderr,
+"InnoDB: !!!!!!!!!!!!!! UNIV_MEM_DEBUG switched on !!!!!!!!!!!!!!!\n"); 
+#endif
 
 	log_do_write = TRUE;
 /*	yydebug = TRUE; */
@@ -999,7 +1027,7 @@ innobase_start_or_create_for_mysql(void)
 	os_aio_use_native_aio = FALSE;
 	
 	if (!os_aio_use_native_aio) {
-		os_aio_init(4 * SRV_N_PENDING_IOS_PER_THREAD
+		os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD
 						* srv_n_file_io_threads,
 					srv_n_file_io_threads,
 					SRV_MAX_N_PENDING_SYNC_IOS);
@@ -1304,7 +1332,49 @@ innobase_start_or_create_for_mysql(void)
 	os_thread_create(&srv_master_thread, NULL, thread_ids + 1 +
 							SRV_MAX_N_IO_THREADS);
 	/* buf_debug_prints = TRUE; */
+
+	sum_of_data_file_sizes = 0;
 	
+	for (i = 0; i < srv_n_data_files; i++) {
+		sum_of_data_file_sizes += srv_data_file_sizes[i];
+	}
+
+	tablespace_size_in_header = fsp_header_get_tablespace_size(0);
+
+	if (!srv_auto_extend_last_data_file
+		&& sum_of_data_file_sizes != tablespace_size_in_header) {
+
+		fprintf(stderr,
+"InnoDB: Error: tablespace size stored in header is %lu pages, but\n"
+"InnoDB: the sum of data file sizes is %lu pages\n",
+ 			tablespace_size_in_header, sum_of_data_file_sizes);
+	}
+
+	if (srv_auto_extend_last_data_file
+		&& sum_of_data_file_sizes < tablespace_size_in_header) {
+
+		fprintf(stderr,
+"InnoDB: Error: tablespace size stored in header is %lu pages, but\n"
+"InnoDB: the sum of data file sizes is only %lu pages\n",
+ 			tablespace_size_in_header, sum_of_data_file_sizes);
+	}
+
+	/* Check that os_fast_mutexes work as exptected */
+	os_fast_mutex_init(&srv_os_test_mutex);
+
+	if (0 != os_fast_mutex_trylock(&srv_os_test_mutex)) {
+	        fprintf(stderr,
+"InnoDB: Error: pthread_mutex_trylock returns an unexpected value on\n"
+		  "InnoDB: success! Cannot continue.\n");
+	        exit(1);
+	}
+
+	os_fast_mutex_unlock(&srv_os_test_mutex);
+
+        os_fast_mutex_lock(&srv_os_test_mutex);
+
+	os_fast_mutex_unlock(&srv_os_test_mutex);
+
 	ut_print_timestamp(stderr);
 	fprintf(stderr, "  InnoDB: Started\n");
 
@@ -1342,8 +1412,15 @@ innobase_shutdown_for_mysql(void)
 		"InnoDB: inside InnoDB at shutdown\n",
 		srv_conc_n_threads);
 	}
-	
-	ut_free_all_mem();
-	
+
+	/*
+	TODO: We should exit the i/o-handler and other utility threads
+	before freeing all memory. Now this can potentially cause a seg
+	fault!
+	*/
+#ifdef NOT_WORKING_YET
+        ut_free_all_mem();
+#endif 
+
 	return((int) DB_SUCCESS);
 }

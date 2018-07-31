@@ -58,12 +58,16 @@ yet: the variable name is misleading */
 
 ibool	recv_no_ibuf_operations = FALSE;
 
-/* the following counter is used to decide when to print info on
+/* The following counter is used to decide when to print info on
 log scan */
 ulint	recv_scan_print_counter	= 0;
 
 ibool	recv_is_from_backup	= FALSE;
+ibool	recv_is_making_a_backup = FALSE;
 
+ulint	recv_previous_parsed_rec_type	= 999999;
+ulint	recv_previous_parsed_rec_offset	= 0;
+ulint	recv_previous_parsed_rec_is_multi = 0;
 
 /************************************************************
 Creates the recovery system. */
@@ -124,6 +128,8 @@ recv_sys_init(
 
 	recv_sys->last_block = ut_align(recv_sys->last_block_buf_start,
 						OS_FILE_LOG_BLOCK_SIZE);
+	recv_sys->found_corrupt_log = FALSE;
+
 	mutex_exit(&(recv_sys->mutex));
 }
 
@@ -568,6 +574,38 @@ recv_read_cp_info_for_backup(
 	return(TRUE);
 }
 
+/**********************************************************
+Checks the 4-byte checksum to the trailer checksum field of a log block.
+We also accept a log block in the old format < InnoDB-3.23.52 where the
+checksum field contains the log block number. */
+static
+ibool
+log_block_checksum_is_ok_or_old_format(
+/*===================================*/
+			/* out: TRUE if ok, or if the log block may be in the
+			format of InnoDB version < 3.23.52 */
+	byte*	block)	/* in: pointer to a log block */
+{
+	if (log_block_calc_checksum(block) == log_block_get_checksum(block)) {
+
+		return(TRUE);
+	}
+
+	if (log_block_get_hdr_no(block) == log_block_get_checksum(block)) {
+
+		/* We assume the log block is in the format of
+		InnoDB version < 3.23.52 and the block is ok */
+/*
+		fprintf(stderr,
+"InnoDB: Scanned old format < InnoDB-3.23.52 log block number %lu\n",
+			log_block_get_hdr_no(block));
+*/
+		return(TRUE);
+	}
+
+	return(FALSE);
+}
+
 /***********************************************************************
 Scans the log segment and n_bytes_scanned is set to the length of valid
 log scanned. */
@@ -598,24 +636,22 @@ recv_scan_log_seg_for_backup(
 	
 		no = log_block_get_hdr_no(log_block);
 
-		/* fprintf(stderr, "Log block header no %lu\n", no); */
+/*		fprintf(stderr, "Log block header no %lu\n", no); */
 
-		if (no != log_block_get_trl_no(log_block)
-		    || no != log_block_convert_lsn_to_no(*scanned_lsn)) {
-
-/*			printf(
-"Log block n:o %lu, trailer n:o %lu, scanned lsn n:o %lu\n",
-			no, log_block_get_trl_no(log_block),
-			log_block_convert_lsn_to_no(*scanned_lsn));
+		if (no != log_block_convert_lsn_to_no(*scanned_lsn)
+		    || !log_block_checksum_is_ok_or_old_format(log_block)) {
+/*
+			printf(
+"Log block n:o %lu, scanned lsn n:o %lu\n",
+			no, log_block_convert_lsn_to_no(*scanned_lsn));
 */
 			/* Garbage or an incompletely written log block */
 
 			log_block += OS_FILE_LOG_BLOCK_SIZE;
-
-/*			printf(
-"Next log block n:o %lu, trailer n:o %lu\n",
-			log_block_get_hdr_no(log_block),
-			log_block_get_trl_no(log_block));
+/*
+			printf(
+"Next log block n:o %lu\n",
+			log_block_get_hdr_no(log_block));
 */			
 			break;
 		}
@@ -629,11 +665,11 @@ recv_scan_log_seg_for_backup(
 
 			/* Garbage from a log buffer flush which was made
 			before the most recent database recovery */
-
+/*
 			printf("Scanned cp n:o %lu, block cp n:o %lu\n",
 				*scanned_checkpoint_no,
 				log_block_get_checkpoint_no(log_block));
-
+*/
 			break;
 		}
 
@@ -738,14 +774,8 @@ recv_parse_or_apply_log_rec_body(
 		new_ptr = mlog_parse_string(ptr, end_ptr, page);
 	} else {
 		new_ptr = NULL;
-
-	        fprintf(stderr,
-		 "InnoDB: WARNING: the log file may have been corrupt and it\n"
-		 "InnoDB: is possible that the log scan did not proceed\n"
-		 "InnoDB: far enough in recovery. Please run CHECK TABLE\n"
-		 "InnoDB: on your InnoDB tables to check that they are ok!\n"
-		 "InnoDB: Corrupt log record type %lu\n",
-			                                  (ulint)type);
+		 
+		recv_sys->found_corrupt_log = TRUE;
 	}
 
 	ut_ad(!page || new_ptr);
@@ -1011,7 +1041,7 @@ recv_recover_page(
 			page_lsn = page_newest_lsn;
 		}
 	} else {
-		/* In recovery from a backup we do not use the buffer
+		/* In recovery from a backup we do not really use the buffer
 		pool */
 
 		page_newest_lsn = ut_dulint_zero;
@@ -1349,17 +1379,37 @@ recv_apply_log_recs_for_backup(
 							OS_FILE_OPEN,
 							OS_FILE_READ_WRITE,
 							&success);
-			ut_a(success);
+			if (!success) {
+				printf(
+"InnoDB: Error: cannot open %lu'th data file %s\n", nth_file);
+
+				exit(1);
+			}
 		}
 		
 		recv_addr = recv_get_fil_addr_struct(0, i);
 
 		if (recv_addr != NULL) {
-			os_file_read(data_file, page,
+			success = os_file_read(data_file, page,
 			  (nth_page_in_file << UNIV_PAGE_SIZE_SHIFT)
 				& 0xFFFFFFFF,
 			  nth_page_in_file >> (32 - UNIV_PAGE_SIZE_SHIFT), 
 				UNIV_PAGE_SIZE);
+			if (!success) {
+				printf(
+"InnoDB: Error: cannot read page no %lu from %lu'th data file %s\n",
+				nth_page_in_file, nth_file);
+
+				exit(1);
+			}
+				
+			/* We simulate a page read made by the buffer pool,
+			to make sure recovery works ok. We must init the
+			block corresponding to buf_pool->frame_zero
+			(== page) */
+
+			buf_page_init_for_backup_restore(0, i,
+						buf_block_align(page));
 
 			recv_recover_page(TRUE, FALSE, page, 0, i);
 
@@ -1367,12 +1417,19 @@ recv_apply_log_recs_for_backup(
 				mach_read_from_8(page + FIL_PAGE_LSN),
 				0, i);
 
-			os_file_write(data_files[nth_file],
+			success = os_file_write(data_files[nth_file],
 			  data_file, page,
 			  (nth_page_in_file << UNIV_PAGE_SIZE_SHIFT)
 				& 0xFFFFFFFF,
 			  nth_page_in_file >> (32 - UNIV_PAGE_SIZE_SHIFT), 
 				UNIV_PAGE_SIZE);
+			if (!success) {
+				printf(
+"InnoDB: Error: cannot write page no %lu to %lu'th data file %s\n",
+				nth_page_in_file, nth_file);
+
+				exit(1);
+			}
 		}
 
 		if ((100 * i) / n_pages_total
@@ -1621,29 +1678,16 @@ recv_parse_log_rec(
 
 	new_ptr = mlog_parse_initial_log_record(ptr, end_ptr, type, space,
 								page_no);
-
-	/* If the operating system writes to the log complete 512-byte
-	blocks, we should not get the warnings below in recovery.
-        A warning means that the header and the trailer appeared ok
-	in a 512-byte block, but in the middle there was something wrong.
-	TODO: (1) add similar warnings in the case there is an incompletely
-	written log record which does not extend to the boundary of a
-	512-byte block. (2) Add a checksum to a log block. */
-
 	if (!new_ptr) {
+
 	        return(0);
 	}
 
 	/* Check that space id and page_no are sensible */
 
 	if (*space != 0 || *page_no > 0x8FFFFFFF) {
-	        fprintf(stderr,
-		 "InnoDB: WARNING: the log file may have been corrupt and it\n"
-		 "InnoDB: is possible that the log scan did not proceed\n"
-		 "InnoDB: far enough in recovery. Please run CHECK TABLE\n"
-		 "InnoDB: on your InnoDB tables to check that they are ok!\n"
-	   "InnoDB: Corrupt log record type %lu, space id %lu, page no %lu\n",
-			(ulint)(*type), *space, *page_no);
+
+		recv_sys->found_corrupt_log = TRUE;
 
 		return(0);
 	}
@@ -1708,14 +1752,70 @@ recv_check_incomplete_log_recs(
 }		
 
 /***********************************************************
+Prints diagnostic info of corrupt log. */
+static
+void
+recv_report_corrupt_log(
+/*====================*/
+	byte*	ptr,	/* in: pointer to corrupt log record */
+	byte	type,	/* in: type of the record */
+	ulint	space,	/* in: space id, this may also be garbage */
+	ulint	page_no)/* in: page number, this may also be garbage */
+{
+	char*	err_buf;
+
+	fprintf(stderr,
+"InnoDB: ############### CORRUPT LOG RECORD FOUND\n"
+"InnoDB: Log record type %lu, space id %lu, page number %lu\n"
+"InnoDB: Log parsing proceeded successfully up to %lu %lu\n",
+	(ulint)type, space, page_no,
+	ut_dulint_get_high(recv_sys->recovered_lsn),
+	ut_dulint_get_low(recv_sys->recovered_lsn));
+
+	err_buf = ut_malloc(1000000);
+
+	fprintf(stderr,
+"InnoDB: Previous log record type %lu, is multi %lu\n"
+"InnoDB: Recv offset %lu, prev %lu\n",
+		recv_previous_parsed_rec_type,
+		recv_previous_parsed_rec_is_multi,
+		ptr - recv_sys->buf,
+		recv_previous_parsed_rec_offset);
+
+	if ((ulint)(ptr - recv_sys->buf + 100)
+					> recv_previous_parsed_rec_offset
+	    && (ulint)(ptr - recv_sys->buf + 100
+					- recv_previous_parsed_rec_offset)
+	       < 200000) {
+ 
+		ut_sprintf_buf(err_buf,
+		     recv_sys->buf + recv_previous_parsed_rec_offset - 100,
+		     ptr - recv_sys->buf + 200 -
+					recv_previous_parsed_rec_offset);
+		fprintf(stderr,
+"InnoDB: Hex dump of corrupt log starting 100 bytes before the start\n"
+"InnoDB: of the previous log rec,\n"
+"InnoDB: and ending 100 bytes after the start of the corrupt rec:\n%s\n",
+			err_buf);
+	}
+
+	ut_free(err_buf);
+
+	fprintf(stderr,
+	"InnoDB: WARNING: the log file may have been corrupt and it\n"
+	"InnoDB: is possible that the log scan did not proceed\n"
+	"InnoDB: far enough in recovery! Please run CHECK TABLE\n"
+	"InnoDB: on your InnoDB tables to check that they are ok!\n");
+}
+
+/***********************************************************
 Parses log records from a buffer and stores them to a hash table to wait
 merging to file pages. */
 static
 ibool
 recv_parse_log_recs(
 /*================*/
-				/* out: TRUE if the hash table of parsed log
-				records became full */
+				/* out: currently always returns FALSE */
 	ibool	store_to_hash)	/* in: TRUE if the records should be stored
 				to the hash table; this is set to FALSE if just
 				debug checking is needed */
@@ -1754,8 +1854,13 @@ loop:
 
 		len = recv_parse_log_rec(ptr, end_ptr, &type, &space,
 							&page_no, &body);
-		if (len == 0) {
+		if (len == 0 || recv_sys->found_corrupt_log) {
+			if (recv_sys->found_corrupt_log) {
 
+				recv_report_corrupt_log(ptr,
+						type, space, page_no);
+			}
+		
 			return(FALSE);
 		}
 
@@ -1770,6 +1875,10 @@ loop:
 			return(FALSE);
 		}
 		
+		recv_previous_parsed_rec_type = (ulint)type;
+		recv_previous_parsed_rec_offset = recv_sys->recovered_offset;
+		recv_previous_parsed_rec_is_multi = 0;
+
 		recv_sys->recovered_offset += len;
 		recv_sys->recovered_lsn = new_recovered_lsn;
 
@@ -1793,9 +1902,10 @@ loop:
 #ifdef UNIV_LOG_DEBUG
 			recv_check_incomplete_log_recs(ptr, len);
 #endif	
-			recv_update_replicate(type, space, page_no, body,
+/*			recv_update_replicate(type, space, page_no, body,
 								ptr + len);
 			recv_compare_replicate(space, page_no);
+*/
 		}
 	} else {
 		/* Check that all the records associated with the single mtr
@@ -1807,10 +1917,21 @@ loop:
 		for (;;) {
 			len = recv_parse_log_rec(ptr, end_ptr, &type, &space,
 							&page_no, &body);
-			if (len == 0) {
+			if (len == 0 || recv_sys->found_corrupt_log) {
 
-				return(FALSE);
+			    	if (recv_sys->found_corrupt_log) {
+
+					recv_report_corrupt_log(ptr,
+						type, space, page_no);
+			    	}
+
+			    	return(FALSE);
 			}
+
+			recv_previous_parsed_rec_type = (ulint)type;
+			recv_previous_parsed_rec_offset
+				= recv_sys->recovered_offset + total_len;
+			recv_previous_parsed_rec_is_multi = 1;
 
 			if ((!store_to_hash) && (type != MLOG_MULTI_REC_END)) {
 				/* In debug checking, update a replicate page
@@ -1818,8 +1939,10 @@ loop:
 #ifdef UNIV_LOG_DEBUG
 				recv_check_incomplete_log_recs(ptr, len);
 #endif	
+/*
 				recv_update_replicate(type, space, page_no,
 							body, ptr + len);
+*/
 			}
 			
 			if (log_debug_writes) {
@@ -1861,6 +1984,12 @@ loop:
 			old_lsn = recv_sys->recovered_lsn;
 			len = recv_parse_log_rec(ptr, end_ptr, &type, &space,
 							&page_no, &body);
+			if (recv_sys->found_corrupt_log) {
+
+				recv_report_corrupt_log(ptr,
+							type, space, page_no);
+			}
+
 			ut_a(len != 0);
 			ut_a(0 == ((ulint)*ptr & MLOG_SINGLE_REC_FLAG));
 
@@ -1883,7 +2012,7 @@ loop:
 				page has become identical with the original
 				page */
 
-				recv_compare_replicate(space, page_no);
+/*				recv_compare_replicate(space, page_no); */
 			}
 			
 			ptr += len;
@@ -2037,8 +2166,20 @@ recv_scan_log_recs(
 
 		/* fprintf(stderr, "Log block header no %lu\n", no); */
 
-		if (no != log_block_get_trl_no(log_block)
-		    || no != log_block_convert_lsn_to_no(scanned_lsn)) {
+		if (no != log_block_convert_lsn_to_no(scanned_lsn)
+		    || !log_block_checksum_is_ok_or_old_format(log_block)) {
+
+			if (no == log_block_convert_lsn_to_no(scanned_lsn)
+			    && !log_block_checksum_is_ok_or_old_format(
+								log_block)) {
+				fprintf(stderr,
+"InnoDB: Log block no %lu at lsn %lu %lu has\n"
+"InnoDB: ok header, but checksum field contains %lu, should be %lu\n",
+				no, ut_dulint_get_high(scanned_lsn),
+				ut_dulint_get_low(scanned_lsn),
+				log_block_get_checksum(log_block),
+				log_block_calc_checksum(log_block));
+			}
 
 			/* Garbage or an incompletely written log block */
 
@@ -2109,11 +2250,14 @@ recv_scan_log_recs(
 						>= RECV_PARSING_BUF_SIZE) {
 				fprintf(stderr,
 "InnoDB: Error: log parsing buffer overflow. Recovery may have failed!\n");
-				finished = TRUE;
+
+				recv_sys->found_corrupt_log = TRUE;
+
+			} else if (!recv_sys->found_corrupt_log) {
+				more_data = recv_sys_add_to_parsing_buf(
+						log_block, scanned_lsn);
 			}
 
-			more_data = recv_sys_add_to_parsing_buf(log_block,
-								scanned_lsn);
 			recv_sys->scanned_lsn = scanned_lsn;
 			recv_sys->scanned_checkpoint_no =
 					log_block_get_checkpoint_no(log_block);
@@ -2130,7 +2274,8 @@ recv_scan_log_recs(
 
 	*group_scanned_lsn = scanned_lsn;
 
-	if (recv_needed_recovery || recv_is_from_backup) {
+	if (recv_needed_recovery
+	    || (recv_is_from_backup && !recv_is_making_a_backup)) {
 		recv_scan_print_counter++;
 
 		if (finished || (recv_scan_print_counter % 80 == 0)) {
@@ -2142,7 +2287,7 @@ recv_scan_log_recs(
 		}
 	}
 
-	if (more_data) {
+	if (more_data && !recv_sys->found_corrupt_log) {
 		/* Try to parse more log records */
 
 		recv_parse_log_recs(store_to_hash);
@@ -2241,6 +2386,7 @@ recv_recovery_from_checkpoint_start(
 	dulint		archived_lsn;
 	ulint		capacity;
 	byte*		buf;
+	byte		log_hdr_buf[LOG_FILE_HDR_SIZE];
 	ulint		err;
 
 	ut_ad((type != LOG_CHECKPOINT)
@@ -2288,6 +2434,33 @@ recv_recovery_from_checkpoint_start(
 	checkpoint_no = mach_read_from_8(buf + LOG_CHECKPOINT_NO);
 	archived_lsn = mach_read_from_8(buf + LOG_CHECKPOINT_ARCHIVED_LSN);
 
+	/* Read the first log file header to print a note if this is
+	a recovery from a restored InnoDB Hot Backup */
+	
+	fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE, max_cp_group->space_id,
+				0, 0, LOG_FILE_HDR_SIZE,
+				log_hdr_buf, max_cp_group);
+
+	if (0 == ut_memcmp(log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+				"ibbackup", ut_strlen("ibbackup"))) {
+		/* This log file was created by ibbackup --restore: print
+		a note to the user about it */
+
+		fprintf(stderr,
+	"InnoDB: The log file was created by ibbackup --restore at\n"
+	"InnoDB: %s\n", log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP);
+		
+		/* Wipe over the label now */
+
+		ut_memcpy(log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+								"    ", 4);
+		/* Write to the log file to wipe over the label */
+		fil_io(OS_FILE_WRITE | OS_FILE_LOG, TRUE,
+				max_cp_group->space_id,
+				0, 0, OS_FILE_LOG_BLOCK_SIZE,
+				log_hdr_buf, max_cp_group);
+	}
+				
 	group = UT_LIST_GET_FIRST(log_sys->log_groups);
 
 	while (group) {
@@ -2471,7 +2644,7 @@ recv_recovery_from_checkpoint_finish(void)
 	/* Rollback the uncommitted transactions which have no user session */
 
 	if (srv_force_recovery < SRV_FORCE_NO_TRX_UNDO) {
-		trx_rollback_all_without_sess();
+		trx_rollback_or_clean_all_without_sess();
 	}
 
 	/* Apply the hashed log records to the respective file pages */
@@ -2487,7 +2660,19 @@ recv_recovery_from_checkpoint_finish(void)
 	}
 
 	if (recv_needed_recovery) {
+		trx_sys_print_mysql_master_log_pos();
 		trx_sys_print_mysql_binlog_offset();
+	}
+
+	if (recv_sys->found_corrupt_log) {
+
+		fprintf(stderr,
+	"InnoDB: WARNING: the log file may have been corrupt and it\n"
+	"InnoDB: is possible that the log scan or parsing did not proceed\n"
+	"InnoDB: far enough in recovery. Please run CHECK TABLE\n"
+	"InnoDB: on your InnoDB tables to check that they are ok!\n"
+	"InnoDB: It may be safest to recover your InnoDB database from\n"
+	"InnoDB: a backup!\n");
 	}
 
 	/* Free the resources of the recovery system */
@@ -2614,10 +2799,9 @@ recv_reset_log_files_for_backup(
 
 	/* We pretend there is a checkpoint at lsn + LOG_BLOCK_HDR_SIZE */
 	
-	log_reset_first_header_and_checkpoint(buf,
-				ut_dulint_add(lsn, LOG_BLOCK_HDR_SIZE));
+	log_reset_first_header_and_checkpoint(buf, lsn);
 	
-	log_block_init(buf + LOG_FILE_HDR_SIZE, lsn);
+	log_block_init_in_old_format(buf + LOG_FILE_HDR_SIZE, lsn);
 	log_block_set_first_rec_group(buf + LOG_FILE_HDR_SIZE,
 							LOG_BLOCK_HDR_SIZE);
 	sprintf(name, "%sib_logfile%lu", log_dir, 0);
@@ -2754,7 +2938,7 @@ ask_again:
 		if (ut_dulint_cmp(recv_sys->parse_start_lsn, start_lsn) < 0) {
 			fprintf(stderr, 
 	"InnoDB: Archive log file %s starts from too big a lsn\n",
-									name);	    
+								name);	    
 			return(TRUE);
 		}
 	
@@ -2765,7 +2949,7 @@ ask_again:
 
 		fprintf(stderr,
 	"InnoDB: Archive log file %s starts from a wrong lsn\n",
-									name);
+								name);
 		return(TRUE);
 	}
 

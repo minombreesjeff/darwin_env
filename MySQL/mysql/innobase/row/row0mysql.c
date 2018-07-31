@@ -595,6 +595,11 @@ row_lock_table_autoinc_for_mysql(
 	ut_ad(trx);
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
 	
+	if (trx->auto_inc_lock) {
+
+		return(DB_SUCCESS);
+	}
+
 	trx->op_info = "setting auto-inc lock";
 
 	if (node == NULL) {
@@ -934,6 +939,7 @@ row_update_for_mysql(
 	ut_ad(!prebuilt->sql_stat_start);
 
 	que_thr_move_to_run_state_for_mysql(thr, trx);
+
 run_again:
 	thr->run_node = node;
 	thr->prev_node = node;
@@ -998,7 +1004,6 @@ row_update_cascade_for_mysql(
 	trx_t*		trx;
 
 	trx = thr_get_trx(thr);
-
 run_again:
 	thr->run_node = node;
 	thr->prev_node = node;
@@ -1131,6 +1136,35 @@ row_mysql_recover_tmp_table(
 }
 
 /*************************************************************************
+Locks the data dictionary exclusively for performing a table create
+operation. */
+
+void
+row_mysql_lock_data_dictionary(void)
+/*================================*/
+{
+	/* Serialize data dictionary operations with dictionary mutex:
+	no deadlocks or lock waits can occur then in these operations */
+
+	rw_lock_x_lock(&(dict_foreign_key_check_lock));
+	mutex_enter(&(dict_sys->mutex));
+}
+
+/*************************************************************************
+Unlocks the data dictionary exclusively lock. */
+
+void
+row_mysql_unlock_data_dictionary(void)
+/*==================================*/
+{
+	/* Serialize data dictionary operations with dictionary mutex:
+	no deadlocks can occur then in these operations */
+
+	mutex_exit(&(dict_sys->mutex));
+	rw_lock_x_unlock(&(dict_foreign_key_check_lock));
+}
+
+/*************************************************************************
 Does a table creation operation for MySQL. If the name of the created
 table ends to characters INNODB_MONITOR, then this also starts
 printing of monitor output by the master thread. */
@@ -1150,8 +1184,14 @@ row_create_table_for_mysql(
 	ulint		err;
 
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
+	ut_ad(mutex_own(&(dict_sys->mutex)));
 	
-	if (srv_created_new_raw || srv_force_recovery) {
+	/* We allow a create table also if innodb_force_recovery is used. This
+        enables the user to stop a runaway rollback or a crash caused by
+	a temporary table #sql... He can use the trick explained in the
+	manual to rename the temporary table to rsql..., and then drop it. */
+
+	if (srv_created_new_raw) {
 		fprintf(stderr,
 		"InnoDB: A new raw disk partition was initialized or\n"
 		"InnoDB: innodb_force_recovery is on: we do not allow\n"
@@ -1263,18 +1303,12 @@ row_create_table_for_mysql(
 		 "to use this feature you must compile InnoDB with\n"
 		 "UNIV_MEM_DEBUG defined in univ.i and the server must be\n"
 		 "quiet because allocation from a mem heap is not protected\n"
-		       "by any semaphore.\n");
+		 "by any semaphore.\n");
 
 		ut_a(mem_validate());
 		      
 		printf("Memory validated\n");
 	}
-
-	/* Serialize data dictionary operations with dictionary mutex:
-	no deadlocks can occur then in these operations */
-
-	rw_lock_x_lock(&(dict_foreign_key_check_lock));
-	mutex_enter(&(dict_sys->mutex));
 
 	heap = mem_heap_create(512);
 
@@ -1319,14 +1353,13 @@ row_create_table_for_mysql(
      "InnoDB: creating an InnoDB table with the same name in another\n"
      "InnoDB: database and moving the .frm file to the current database.\n"
      "InnoDB: Then MySQL thinks the table exists, and DROP TABLE will\n"
-     "InnoDB: succeed.\n");
+     "InnoDB: succeed.\n"
+     "InnoDB: You can look further help from section 15.1 of\n"
+     "InnoDB: http://www.innodb.com/ibman.html\n");
 		}
 
 		trx->error_state = DB_SUCCESS;
 	}
-
-	mutex_exit(&(dict_sys->mutex));
-	rw_lock_x_unlock(&(dict_foreign_key_check_lock));
 
 	que_graph_free((que_t*) que_node_get_parent(thr));
 
@@ -1354,6 +1387,7 @@ row_create_index_for_mysql(
 	ulint		keywordlen;
 	ulint		err;
 	
+	ut_ad(mutex_own(&(dict_sys->mutex)));
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
 	
 	trx->op_info = "creating index";
@@ -1371,12 +1405,6 @@ row_create_index_for_mysql(
 
 		return(DB_SUCCESS);
 	}
-
-	/* Serialize data dictionary operations with dictionary mutex:
-	no deadlocks can occur then in these operations */
-
-	rw_lock_x_lock(&(dict_foreign_key_check_lock));
-	mutex_enter(&(dict_sys->mutex));
 
 	heap = mem_heap_create(512);
 
@@ -1404,9 +1432,6 @@ row_create_index_for_mysql(
 
 		trx->error_state = DB_SUCCESS;
 	}
-
-	mutex_exit(&(dict_sys->mutex));
-	rw_lock_x_unlock(&(dict_foreign_key_check_lock));
 
 	que_graph_free((que_t*) que_node_get_parent(thr));
 	
@@ -1441,6 +1466,7 @@ row_table_add_foreign_constraints(
 	ulint	keywordlen;
 	ulint	err;
 
+	ut_ad(mutex_own(&(dict_sys->mutex)));
 	ut_a(sql_string);
 	
 	trx->op_info = "adding foreign keys";
@@ -1458,12 +1484,6 @@ row_table_add_foreign_constraints(
 
 		return(DB_SUCCESS);
 	}
-
-	/* Serialize data dictionary operations with dictionary mutex:
-	no deadlocks can occur then in these operations */
-
-	rw_lock_x_lock(&(dict_foreign_key_check_lock));
-	mutex_enter(&(dict_sys->mutex));
 
 	trx->dict_operation = TRUE;
 
@@ -1485,9 +1505,6 @@ row_table_add_foreign_constraints(
 
 		trx->error_state = DB_SUCCESS;
 	}
-
-	mutex_exit(&(dict_sys->mutex));
-	rw_lock_x_unlock(&(dict_foreign_key_check_lock));
 
 	return((int) err);
 }
@@ -1693,7 +1710,13 @@ row_drop_table_for_mysql(
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
 	ut_a(name != NULL);
 
-	if (srv_created_new_raw || srv_force_recovery) {
+	/* Note that we allow dropping of a table even if innodb_force_recovery
+        is used. If a rollback or purge would crash because of a corrupt
+        table, the user can try dropping it to avoid the crash. This is also
+        a nice way to stop a runaway rollback caused by a failing big
+        table import in a single transaction. */
+
+	if (srv_created_new_raw) {
 		fprintf(stderr,
 		"InnoDB: A new raw disk partition was initialized or\n"
 		"InnoDB: innodb_force_recovery is on: we do not allow\n"
@@ -1857,7 +1880,9 @@ row_drop_table_for_mysql(
      	"  InnoDB: Error: table %s does not exist in the InnoDB internal\n"
      	"InnoDB: data dictionary though MySQL is trying to drop it.\n"
      	"InnoDB: Have you copied the .frm file of the table to the\n"
-	"InnoDB: MySQL database directory from another database?\n",
+	"InnoDB: MySQL database directory from another database?\n"
+	"InnoDB: You can look further help from section 15.1 of\n"
+        "InnoDB: http://www.innodb.com/ibman.html\n",
 				 name);
 		goto funct_exit;
 	}
@@ -1917,6 +1942,13 @@ row_drop_table_for_mysql(
 		ut_a(0);
 	} else {
 		dict_table_remove_from_cache(table);
+
+		if (dict_load_table(name) != NULL) {
+			ut_print_timestamp(stderr);
+			fprintf(stderr,
+"  InnoDB: Error: dropping of table %s failed!\n", name);
+
+		}
 	}
 funct_exit:	
 	rw_lock_s_unlock(&(purge_sys->purge_is_running));
@@ -1974,6 +2006,7 @@ loop:
 
 		if (table->n_mysql_handles_opened > 0) {
 		        mutex_exit(&(dict_sys->mutex));
+			rw_lock_x_unlock(&(dict_foreign_key_check_lock));
 
 			ut_print_timestamp(stderr);
 			fprintf(stderr,
@@ -2171,7 +2204,9 @@ row_rename_table_for_mysql(
 			fprintf(stderr,
      "  InnoDB: Error: table %s exists in the InnoDB internal data\n"
      "InnoDB: dictionary though MySQL is trying rename table %s to it.\n"
-     "InnoDB: Have you deleted the .frm file and not used DROP TABLE?\n",
+     "InnoDB: Have you deleted the .frm file and not used DROP TABLE?\n"
+     "InnoDB: You can look further help from section 15.1 of\n"
+     "InnoDB: http://www.innodb.com/ibman.html\n",
 			new_name, old_name);
 
 			fprintf(stderr,
@@ -2402,6 +2437,14 @@ row_check_table_for_mysql(
 		}
 
 		index = dict_table_get_next_index(index);
+	}
+
+	/* We validate also the whole adaptive hash index for all tables
+	at every CHECK TABLE */
+
+	if (!btr_search_validate()) {
+
+		ret = DB_ERROR;
 	}
 
 	prebuilt->trx->op_info = "";

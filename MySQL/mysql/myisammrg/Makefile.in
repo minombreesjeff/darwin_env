@@ -103,6 +103,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -348,202 +349,148 @@ distdir: $(DISTFILES)
 	done
 myrg_close.o: myrg_close.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_create.o: myrg_create.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_delete.o: myrg_delete.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_extra.o: myrg_extra.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_info.o: myrg_info.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_locking.o: myrg_locking.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_open.o: myrg_open.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_panic.o: myrg_panic.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_queue.o: myrg_queue.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rfirst.o: myrg_rfirst.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rkey.o: myrg_rkey.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rlast.o: myrg_rlast.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rnext.o: myrg_rnext.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rprev.o: myrg_rprev.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rrnd.o: myrg_rrnd.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_rsame.o: myrg_rsame.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_static.o: myrg_static.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 myrg_update.o: myrg_update.c mymrgdef.h ../myisam/myisamdef.h \
 	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/myisammrg.h ../include/queues.h
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/myisampack.h \
+	../include/thr_lock.h ../include/myisammrg.h \
+	../include/queues.h
 
 info-am:
 info: info-am

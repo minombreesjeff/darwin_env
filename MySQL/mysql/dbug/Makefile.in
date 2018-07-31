@@ -104,6 +104,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -348,16 +349,10 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 dbug.o: dbug.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/my_pthread.h
 sanity.o: sanity.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h
+	../include/getopt.h ../include/dbug.h
 
 info-am:
 info: info-am

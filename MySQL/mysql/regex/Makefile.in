@@ -104,6 +104,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -346,44 +347,27 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 debug.o: debug.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_ctype.h ../include/m_string.h regex.h utils.h \
-	regex2.h debug.ih
+	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
+	../include/m_string.h regex.h utils.h regex2.h debug.ih
 main.o: main.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h regex.h main.ih
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	regex.h main.ih
 regcomp.o: regcomp.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h regex.h utils.h \
-	regex2.h cclass.h cname.h regcomp.ih
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h regex.h utils.h regex2.h cclass.h cname.h \
+	regcomp.ih
 regerror.o: regerror.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h regex.h utils.h \
-	regerror.ih
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h regex.h utils.h regerror.ih
 regexec.o: regexec.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h regex.h utils.h \
-	regex2.h engine.c engine.ih
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h regex.h utils.h regex2.h engine.c \
+	engine.ih
 regfree.o: regfree.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h regex.h \
-	utils.h regex2.h
+	../include/getopt.h ../include/dbug.h regex.h utils.h regex2.h
 reginit.o: reginit.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_ctype.h ../include/m_string.h cclass.h
+	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
+	../include/m_string.h cclass.h
 split.o: split.c
 
 info-am:

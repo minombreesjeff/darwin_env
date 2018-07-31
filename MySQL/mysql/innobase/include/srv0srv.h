@@ -53,7 +53,7 @@ extern ulint	srv_n_log_files;
 extern ulint	srv_log_file_size;
 extern ibool	srv_log_archive_on;
 extern ulint	srv_log_buffer_size;
-extern ibool	srv_flush_log_at_trx_commit;
+extern ulint	srv_flush_log_at_trx_commit;
 
 extern byte	srv_latin1_ordering[256];/* The sort order table of the latin1
 					character set */
@@ -356,6 +356,14 @@ srv_error_monitor_thread(
 			/* out: a dummy parameter */
 	void*	arg);	/* in: a dummy parameter required by
 			os_thread_create */
+/**********************************************************************
+Sprintfs to a buffer the output of the InnoDB Monitor. */
+
+void
+srv_sprintf_innodb_monitor(
+/*=======================*/
+	char*	buf,	/* in/out: buffer which must be at least 4 kB */
+	ulint	len);	/* in: length of the buffer */
 
 
 /* Types for the threads existing in the system. Threads of types 4 - 9

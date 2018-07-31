@@ -1,0 +1,1660 @@
+ChangeSet
+  1.1224 02/10/09 22:16:40 lenz@mysql.com +1 -0
+   - added missing changelog entry to manual.texi
+
+  Docs/manual.texi
+    1.840 02/10/09 22:16:37 lenz@mysql.com +4 -1
+     - added missing changelog entry
+     - fixed typo
+
+ChangeSet
+  1.1223 02/10/09 19:52:34 heikki@hundin.mysql.fi +1 -0
+  ha_innobase.cc:
+    Fix bug: if skip-innodb was defined SHOW INNODB STATUS crashed
+
+  sql/ha_innobase.cc
+    1.108 02/10/09 19:52:27 heikki@hundin.mysql.fi +8 -0
+    Fix bug: if skip-innodb was defined SHOW INNODB STATUS crashed
+
+ChangeSet
+  1.1222 02/10/09 13:50:48 lenz@mysql.com +1 -0
+   - Fixed typo in 3.23.53 changelog entry in manual.texi
+
+  Docs/manual.texi
+    1.839 02/10/09 13:50:44 lenz@mysql.com +1 -1
+     - fixed typo in changelog entry (thanks to Jocelyn Fournier for spotting
+       this)
+
+ChangeSet
+  1.1221 02/10/09 13:04:03 monty@hundin.mysql.fi +1 -0
+  Fix for build problem on AIX
+
+  include/global.h
+    1.50 02/10/09 13:04:02 monty@hundin.mysql.fi +1 -0
+    Fix for build problem on AIX
+
+ChangeSet
+  1.1218.1.1 02/10/09 12:05:22 monty@hundin.mysql.fi +2 -0
+  Fixed bug in LOCK TABLES on windows.
+
+  sql/sql_db.cc
+    1.34 02/10/09 12:05:20 monty@hundin.mysql.fi +2 -0
+    Fixed bug in LOCK TABLES on windows.
+
+  Docs/manual.texi
+    1.838 02/10/09 12:05:20 monty@hundin.mysql.fi +11 -1
+    Changelog
+
+ChangeSet
+  1.1200.2.1 02/10/08 17:58:43 monty@mashka.mysql.fi +4 -0
+  Fixed missing table_list->name  ->  table_list->alias convert
+
+  tests/grant.res
+    1.4 02/10/08 17:58:42 monty@mashka.mysql.fi +1 -1
+    Update of test results
+
+  scripts/mysqlhotcopy.sh
+    1.25 02/10/08 17:58:42 monty@mashka.mysql.fi +5 -1
+    Remove end / from directory names (portability fix)
+
+  mysql-test/Makefile.am
+    1.17 02/10/08 17:58:42 monty@mashka.mysql.fi +1 -0
+    Added  missing .require test files
+
+  myisam/mi_open.c
+    1.34 02/10/08 17:58:42 monty@mashka.mysql.fi +1 -1
+    Fixed problem with wrongly calculated max_data_file_length
+
+ChangeSet
+  1.1216.1.1 02/10/08 16:40:50 monty@hundin.mysql.fi +2 -0
+  Remove wrong clear of mysql_port when using --skip-show-databases
+
+  sql/mysqld.cc
+    1.250 02/10/08 16:40:48 monty@hundin.mysql.fi +0 -1
+    Remove wrong clear of mysql_port when using --skip-show-databases
+
+  Docs/manual.texi
+    1.837 02/10/08 16:40:47 monty@hundin.mysql.fi +2 -0
+    ChangeLog
+
+ChangeSet
+  1.1217 02/10/08 15:17:41 heikki@hundin.mysql.fi +1 -0
+  ha_innobase.cc:
+    test
+
+  sql/ha_innobase.cc
+    1.107 02/10/08 15:17:34 heikki@hundin.mysql.fi +1 -1
+    test
+
+ChangeSet
+  1.1216 02/10/08 15:11:51 arjen@fred.bitbike.com +1 -0
+  Fixup.
+
+  Docs/manual.texi
+    1.836 02/10/08 15:11:48 arjen@fred.bitbike.com +1 -1
+    Fixup.
+
+ChangeSet
+  1.1215 02/10/08 12:54:18 arjen@fred.bitbike.com +1 -0
+  3.23 Changelog cleanup (sync with 4.0/4.1)
+
+  Docs/manual.texi
+    1.835 02/10/08 12:54:15 arjen@fred.bitbike.com +1 -1
+    3.23 Changelog cleanup (sync with 4.0/4.1)
+
+ChangeSet
+  1.1214 02/10/07 16:39:52 nick@mysql.com +1 -0
+  touchup to last fix
+
+  sql/log.cc
+    1.66 02/10/07 16:39:52 nick@mysql.com +34 -32
+    moved mutex back to after is_open() test,
+    but still protecting name dereference (the real problem)
+
+ChangeSet
+  1.1200.1.1 02/10/07 15:42:10 nick@mysql.com +3 -0
+  fixed race that caused sig11s on simultaneous FLUSH LOGS
+  (possibly also fixes binlog filename corruption problems--hasn't
+  been reproduced since)
+
+  BitKeeper/etc/logging_ok
+    1.234 02/10/07 15:42:06 nick@mysql.com +1 -0
+    Logging to logging@openlogging.org accepted
+
+  sql/sql_parse.cc
+    1.149 02/10/07 15:42:05 nick@mysql.com +4 -4
+    added missing args to calls to MYSQL_LOG::new_file(bool)
+    
+
+  sql/log.cc
+    1.65 02/10/07 15:42:04 nick@mysql.com +5 -5
+    Fixed race caused by calling MYSQL_LOG::is_open() outside of critical section.
+
+ChangeSet
+  1.1212 02/10/07 15:07:45 Sinisa@sinisa.nasamreza.org +1 -0
+  fix for a small typo in the last push
+
+  scripts/safe_mysqld.sh
+    1.45 02/10/07 15:07:44 Sinisa@sinisa.nasamreza.org +1 -1
+    fix for a small type
+
+ChangeSet
+  1.1211 02/10/06 14:53:49 heikki@hundin.mysql.fi +1 -0
+  os0file.c:
+    SHOW INNODB STATUS always showed average bytes read as 0 in Unix
+
+  innobase/os/os0file.c
+    1.46 02/10/06 14:53:27 heikki@hundin.mysql.fi +2 -0
+    SHOW INNODB STATUS always showed average bytes read as 0 in Unix
+
+ChangeSet
+  1.1210 02/10/05 22:23:51 heikki@hundin.mysql.fi +3 -0
+  btr0cur.c:
+    Do not let range estimator to return over 1 / 2 of total rows in table; use longlong in range estimation
+  btr0cur.h, ha_innobase.cc:
+    Use longlong in range estimation, in case there are > 4 billion rows
+
+  innobase/btr/btr0cur.c
+    1.19 02/10/05 22:23:26 heikki@hundin.mysql.fi +18 -2
+    Do not let range estimator to return over 1 / 2 of total rows in table; use longlong in range estimation
+
+  innobase/include/btr0cur.h
+    1.8 02/10/05 22:22:21 heikki@hundin.mysql.fi +1 -1
+    Use longlong in range estimation, in case there are > 4 billion rows
+
+  sql/ha_innobase.cc
+    1.106 02/10/05 22:22:01 heikki@hundin.mysql.fi +1 -1
+    Use longlong in range estimation, in case there are > 4 billion rows
+
+ChangeSet
+  1.1203.2.1 02/10/05 15:57:18 Sinisa@sinisa.nasamreza.org +2 -0
+  Small fix in mysqld_safe for some shells
+
+  scripts/safe_mysqld.sh
+    1.44 02/10/05 15:57:18 Sinisa@sinisa.nasamreza.org +2 -2
+    Small fix in mysqld_safe for some shells
+
+  Docs/manual.texi
+    1.834 02/10/05 15:57:17 Sinisa@sinisa.nasamreza.org +2 -0
+    Small fix in mysqld_safe for some shells
+
+ChangeSet
+  1.1208 02/10/03 23:07:32 heikki@hundin.mysql.fi +1 -0
+  lock0lock.c:
+    Fix bug: if SHOW INNODB STATUS or innodb_monitor printed several hundred transactions, the output was truncated and we forgot to release the kernel mutex
+
+  innobase/lock/lock0lock.c
+    1.17 02/10/03 23:07:18 heikki@hundin.mysql.fi +20 -0
+    Fix bug: if SHOW INNODB STATUS or innodb_monitor printed several hundred transactions, the output was truncated and we forgot to release the kernel mutex
+
+ChangeSet
+  1.1207 02/10/03 19:22:13 heikki@hundin.mysql.fi +1 -0
+  ha_innobase.cc:
+    Remove unintentionally pushed assert
+
+ChangeSet
+  1.1203.1.1 02/10/03 18:30:49 lenz@mysql.com +1 -0
+   - rearranged test order in Do-compile (BDB tends to fail more often than
+     InnoDB, so test it after InnoDB)
+
+  Build-tools/Do-compile
+    1.46 02/10/03 18:30:48 lenz@mysql.com +4 -4
+     - Test BDB after InnoDB (BDB tends to fail more often than InnoDB)
+
+  sql/ha_innobase.cc
+    1.105 02/10/03 19:22:02 heikki@hundin.mysql.fi +1 -1
+    Remove unintentionally pushed assert
+
+ChangeSet
+  1.1205 02/10/03 19:10:49 heikki@hundin.mysql.fi +2 -0
+  ha_innobase.cc, ha_innobase.h:
+    Backport from 4.0.4 the bug fix of the crash when a temporary table was created inside LOCK TABLES and used
+
+  sql/ha_innobase.cc
+    1.104 02/10/03 19:09:09 heikki@hundin.mysql.fi +43 -1
+    Backport from 4.0.4 the bug fix of the crash when a temporary table was created inside LOCK TABLES and used
+
+  sql/ha_innobase.h
+    1.33 02/10/03 19:09:05 heikki@hundin.mysql.fi +2 -0
+    Backport from 4.0.4 the bug fix of the crash when a temporary table was created inside LOCK TABLES and used
+
+ChangeSet
+  1.1204 02/10/03 18:10:34 heikki@hundin.mysql.fi +1 -0
+  os0thread.h:
+    Fix the probable reason why InnoDB versions after July 2, 2002 did not start properly in some Win 95/98/ME computers
+
+  innobase/include/os0thread.h
+    1.7 02/10/03 18:10:26 heikki@hundin.mysql.fi +9 -0
+    Fix the probable reason why InnoDB versions after July 2, 2002 did not start properly in some Win 95/98/ME computers
+
+ChangeSet
+  1.1203 02/10/02 13:20:17 lenz@mysql.com +1 -0
+   - applied fix from 4.0 configure.in required to build shared libraries
+     with static glibc installed
+
+  configure.in
+    1.197 02/10/02 13:20:16 lenz@mysql.com +4 -11
+     - Better fix for building shared libraries with a patched glibc
+       (from 4.0 tree)
+     - removed obsolete comment
+
+ChangeSet
+  1.1198.1.1 02/10/02 13:06:04 lenz@mysql.com +2 -0
+   - Small fix for support-files/mysql.spec.sh
+   - Updated scripts/make_binary_distribution.sh to include the correct
+     ChangeLog and the LICENSE file for non-GPL builds
+
+  support-files/mysql.spec.sh
+    1.45 02/10/02 13:06:03 lenz@mysql.com +6 -0
+     - MySQL-Max now requires MySQL to be the same version (to
+       avoid version mismatches e.g. mixing 3.23.xx and 4.0 packages)
+
+  scripts/make_binary_distribution.sh
+    1.33 02/10/02 13:06:03 lenz@mysql.com +6 -3
+     - Add BK ChangeLog (if existing) instead of sql/ChangeLog, which is
+       not updated anymore since we switched to BK
+     - Add LICENSE, if exists (required for non-GPL binary builds)
+
+ChangeSet
+  1.1201 02/10/01 13:47:58 heikki@hundin.mysql.fi +1 -0
+  lock0lock.c:
+    Fix bug: the AUTO-INC lock was held to the end of trx if it was granted after a lock wait
+
+  innobase/lock/lock0lock.c
+    1.16 02/10/01 13:47:39 heikki@hundin.mysql.fi +13 -0
+    Fix bug: the AUTO-INC lock was held to the end of trx if it was granted after a lock wait
+
+ChangeSet
+  1.1200 02/09/27 13:53:14 lenz@mysql.com +1 -0
+   - merge 4.0 modifications to Build-tools/Do-compile
+
+  Build-tools/Do-compile
+    1.45 02/09/27 13:53:13 lenz@mysql.com +6 -3
+     - Merged 4.0 modifications (--innodb, more verbose failure reports)
+
+ChangeSet
+  1.1199 02/09/27 12:01:26 monty@hundin.mysql.fi +2 -0
+  Don't reset Delayed_insert_threads on FLUSH STATUS
+
+  sql/mysqld.cc
+    1.249 02/09/27 12:01:24 monty@hundin.mysql.fi +1 -1
+    Don't reset Delayed_insert_threads on FLUSH STATUS
+
+  Docs/manual.texi
+    1.833 02/09/27 12:01:24 monty@hundin.mysql.fi +2 -0
+    changelog
+
+ChangeSet
+  1.1198 02/09/24 22:24:30 lenz@mysql.com +4 -0
+   - backported gcc 3.0 linking fix from 4.0
+   - some cosmetical fixups (typos, comments)
+
+  sql/mysqld.cc
+    1.248 02/09/24 22:24:26 lenz@mysql.com +2 -0
+     - fix for gcc 3.0
+
+  include/global.h
+    1.49 02/09/24 22:24:26 lenz@mysql.com +40 -19
+     - fix for gcc 3.0
+     - some cosmetical fixes (typos, comments)
+
+  configure.in
+    1.196 02/09/24 22:24:26 lenz@mysql.com +10 -9
+     - fix for gcc 3.0
+     - some cosmetic modifications (typos, comments)
+
+  client/mysqlbinlog.cc
+    1.50 02/09/24 22:24:26 lenz@mysql.com +2 -0
+     - fix for gcc 3.0
+
+ChangeSet
+  1.1197 02/09/23 15:43:32 serg@build.mysql2.com +2 -0
+  configure.in:
+    static nss linkingg issue
+
+ChangeSet
+  1.1194.1.1 02/09/23 14:38:35 serg@serg.mysql.com +1 -0
+  followup: s/st_table_list->name/st_table_list->alias/
+
+  sql/sql_yacc.yy
+    1.96 02/09/23 14:38:34 serg@serg.mysql.com +6 -6
+    followup: s/st_table_list->name/st_table_list->alias/
+
+  BitKeeper/etc/logging_ok
+    1.233 02/09/23 15:43:32 serg@build.mysql2.com +1 -0
+    Logging to logging@openlogging.org accepted
+
+  configure.in
+    1.195 02/09/23 15:42:09 serg@build.mysql2.com +4 -4
+    static nss linkingg issue
+
+ChangeSet
+  1.1195 02/09/23 14:06:48 lenz@mysql.com +1 -0
+   - added missing line from the 4.0 configure.in patch
+
+  configure.in
+    1.194 02/09/23 14:06:36 lenz@mysql.com +1 -1
+     - Added missing line from 4.0 patch for static glibc linking
+
+ChangeSet
+  1.1194 02/09/22 18:43:33 lenz@mysql.com +1 -0
+   - Bugfix for static glibc linking in configure.in (taken from 4.0)
+
+  configure.in
+    1.193 02/09/22 18:43:30 lenz@mysql.com +3 -0
+     - Fixed bug in previous patch for linking against libc (taken from 4.0)
+
+ChangeSet
+  1.1191.1.1 02/09/21 21:36:23 monty@mashka.mysql.fi +12 -0
+  Change name -> alias in TABLE_LIST.
+  Added missing mutex-lock around critical section in GRANT handling.
+
+  tests/grant.pl
+    1.5 02/09/21 21:36:19 monty@mashka.mysql.fi +1 -1
+    Fixed grant test
+
+  sql/table.h
+    1.23 02/09/21 21:36:19 monty@mashka.mysql.fi +1 -1
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_udf.cc
+    1.14 02/09/21 21:36:19 monty@mashka.mysql.fi +3 -3
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_table.cc
+    1.107 02/09/21 21:36:19 monty@mashka.mysql.fi +4 -4
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_show.cc
+    1.60 02/09/21 21:36:19 monty@mashka.mysql.fi +2 -2
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_parse.cc
+    1.148 02/09/21 21:36:19 monty@mashka.mysql.fi +22 -10
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_insert.cc
+    1.50 02/09/21 21:36:19 monty@mashka.mysql.fi +2 -2
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_base.cc
+    1.98 02/09/21 21:36:19 monty@mashka.mysql.fi +8 -8
+    Change name -> alias in TABLE_LIST.
+
+  sql/sql_acl.cc
+    1.40 02/09/21 21:36:19 monty@mashka.mysql.fi +37 -27
+    Added missing mutex-lock around critical section in GRANT handling.
+    Changed name -> alias
+
+  sql/slave.cc
+    1.132 02/09/21 21:36:19 monty@mashka.mysql.fi +2 -2
+    Change name -> alias in TABLE_LIST.
+
+  sql/lock.cc
+    1.29 02/09/21 21:36:19 monty@mashka.mysql.fi +2 -2
+    Change name -> alias in TABLE_LIST.
+
+  Docs/manual.texi
+    1.832 02/09/21 21:36:18 monty@mashka.mysql.fi +6 -0
+    ChangeLog
+
+ChangeSet
+  1.1192 02/09/20 14:45:28 lenz@mysql.com +1 -0
+   - merge some of the 4.0 configure.in modifications (mainly because
+     of the static_nss stuff required for linking against the patched
+     glibc)
+
+  configure.in
+    1.192 02/09/20 14:45:25 lenz@mysql.com +45 -13
+     - Applied some modifications from the 4.0 configure.in to fix some
+       typos and platform-specific issues (Solaris 2.6, Mac OS 10.2)
+
+ChangeSet
+  1.1191 02/09/18 02:00:56 monty@mashka.mysql.fi +4 -0
+  Fixed bug with BINARY NULL
+
+  sql/item_strfunc.h
+    1.8 02/09/18 02:00:54 monty@mashka.mysql.fi +6 -1
+    Fixed bug with BINARY NULL
+
+  mysql-test/t/binary.test
+    1.3 02/09/18 02:00:54 monty@mashka.mysql.fi +10 -0
+    Test of binary NULL
+
+  mysql-test/r/binary.result
+    1.3 02/09/18 02:00:54 monty@mashka.mysql.fi +4 -0
+    Test of binary NULL
+
+  Docs/manual.texi
+    1.831 02/09/18 02:00:54 monty@mashka.mysql.fi +2 -0
+    ChangeLog
+
+ChangeSet
+  1.1190 02/09/16 15:24:54 monty@mashka.mysql.fi +2 -0
+  Fixed bug in ALTER TABLE and RENAME TABLE when running with lower-case-table-names.
+
+  sql/sql_table.cc
+    1.106 02/09/16 15:24:53 monty@mashka.mysql.fi +2 -2
+    Fixed bug in ALTER TABLE and RENAME TABLE when running with lower-case-table-names.
+
+  Docs/manual.texi
+    1.830 02/09/16 15:24:53 monty@mashka.mysql.fi +5 -1
+    changelog
+
+ChangeSet
+  1.1185.1.1 02/09/15 01:23:01 monty@mashka.mysql.fi +2 -0
+  Fixed core dump bug in ORDER BY ... LIMIT
+
+  sql/filesort.cc
+    1.32 02/09/15 01:22:59 monty@mashka.mysql.fi +7 -2
+    Fixed core dump bug in ORDER BY ... LIMIT
+
+  Docs/manual.texi
+    1.829 02/09/15 01:22:59 monty@mashka.mysql.fi +2 -0
+    Changelog
+
+ChangeSet
+  1.1188 02/09/13 14:23:09 heikki@hundin.mysql.fi +1 -0
+  row0mysql.c:
+    Fix typos in previous push
+
+  innobase/row/row0mysql.c
+    1.35 02/09/13 14:23:01 heikki@hundin.mysql.fi +2 -2
+    Fix typos in previous push
+
+ChangeSet
+  1.1187 02/09/13 13:55:25 heikki@hundin.mysql.fi +1 -0
+  row0mysql.c:
+    Allow CREATE TABLE and DROP TABLE even if innodb_force_recovery is used, the user can drop a problematic table
+
+  innobase/row/row0mysql.c
+    1.34 02/09/13 13:55:05 heikki@hundin.mysql.fi +13 -2
+    Allow CREATE TABLE and DROP TABLE even if innodb_force_recovery is used, the user can drop a problematic table
+
+ChangeSet
+  1.1186 02/09/11 16:07:52 heikki@hundin.mysql.fi +3 -0
+  srv0srv.c, srv0srv.h:
+    Change srv_flush_log_at_trx_commit to ulint, note that ibool is defined as ulint, so this is purely formal change
+  os0file.c:
+    Start using unbuffered i/o again in Windows because sequential read using normal i/o was 4 times slower in XP
+
+  innobase/srv/srv0srv.c
+    1.34 02/09/11 16:07:28 heikki@hundin.mysql.fi +1 -1
+    Change srv_flush_log_at_trx_commit to ulint, note that ibool is defined as ulint, so this is purely formal change
+
+  innobase/include/srv0srv.h
+    1.16 02/09/11 16:07:12 heikki@hundin.mysql.fi +1 -1
+    Change srv_flush_log_at_trx_commit to ulint, note that ibool is defined as ulint, so this is purely formal change
+
+  innobase/os/os0file.c
+    1.45 02/09/11 15:59:36 heikki@hundin.mysql.fi +15 -6
+    Start using unbuffered i/o again in Windows because sequential read using normal i/o was 4 times slower in XP
+
+ChangeSet
+  1.1185 02/09/10 20:56:38 monty@mashka.mysql.fi +1 -0
+  Fixed changelog
+
+  Docs/manual.texi
+    1.828 02/09/10 20:56:37 monty@mashka.mysql.fi +4 -1
+    Fixed changelog
+
+ChangeSet
+  1.1184 02/09/10 14:31:46 heikki@hundin.mysql.fi +1 -0
+  ha_innobase.cc:
+    Cleanup after last push
+
+  sql/ha_innobase.cc
+    1.103 02/09/10 14:31:28 heikki@hundin.mysql.fi +0 -2
+    Cleanup after last push
+
+ChangeSet
+  1.1183 02/09/10 14:23:46 heikki@hundin.mysql.fi +3 -0
+  mysqld.cc:
+    update help innobase_flush_log_at_trx_commitcan have vals 0, 1, 2 
+  ha_innobase.h, ha_innobase.cc:
+    make innobase_flush_log_at_trx_commit a long, like other params
+
+  sql/mysqld.cc
+    1.247 02/09/10 14:23:23 heikki@hundin.mysql.fi +3 -1
+    update help innobase_flush_log_at_trx_commitcan have vals 0, 1, 2 
+
+  sql/ha_innobase.h
+    1.32 02/09/10 14:22:42 heikki@hundin.mysql.fi +1 -1
+    make innobase_flush_log_at_trx_commit a long, like other params
+
+  sql/ha_innobase.cc
+    1.102 02/09/10 14:22:37 heikki@hundin.mysql.fi +3 -1
+    make innobase_flush_log_at_trx_commit a long, like other params
+
+ChangeSet
+  1.1182 02/09/10 13:06:14 heikki@hundin.mysql.fi +1 -0
+  os0file.c:
+    Fix a typo: should be buf_page_print
+
+  innobase/os/os0file.c
+    1.44 02/09/10 13:05:58 heikki@hundin.mysql.fi +1 -1
+    Fix a typo: should be buf_page_print
+
+ChangeSet
+  1.1181 02/09/10 00:52:26 heikki@hundin.mysql.fi +2 -0
+  ha_innobase.cc, ha_innobase.h:
+    innodb_flush_log_at_trx_commit can have values 0, 1, 2 starting from 3.23.52
+
+  sql/ha_innobase.cc
+    1.101 02/09/10 00:49:41 heikki@hundin.mysql.fi +8 -1
+    innodb_flush_log_at_trx_commit can have values 0, 1, 2 starting from 3.23.52
+
+  sql/ha_innobase.h
+    1.31 02/09/10 00:49:36 heikki@hundin.mysql.fi +2 -1
+    innodb_flush_log_at_trx_commit can have values 0, 1, 2 starting from 3.23.52
+
+ChangeSet
+  1.1180 02/09/09 02:12:57 heikki@hundin.mysql.fi +1 -0
+  trx0undo.c:
+    Remove an assertion in trx0undo.c which could erroneously fail when we ran out of tablespace
+
+  innobase/trx/trx0undo.c
+    1.7 02/09/09 02:12:29 heikki@hundin.mysql.fi +4 -3
+    Remove an assertion in trx0undo.c which could erroneously fail when we ran out of tablespace
+
+ChangeSet
+  1.1179 02/09/08 03:04:39 heikki@hundin.mysql.fi +1 -0
+  sync0arr.c:
+    Increase max latch wait time to 600 seconds before we assert
+
+  innobase/sync/sync0arr.c
+    1.10 02/09/08 03:04:25 heikki@hundin.mysql.fi +1 -1
+    Increase max latch wait time to 600 seconds before we assert
+
+ChangeSet
+  1.1178 02/09/08 03:01:53 heikki@hundin.mysql.fi +1 -0
+  btr0cur.c:
+    Remove long latch hold which happened if we scanned long an index without finding any record visible to the current consistent read
+
+  innobase/btr/btr0cur.c
+    1.18 02/09/08 03:01:30 heikki@hundin.mysql.fi +25 -0
+    Remove long latch hold which happened if we scanned long an index without finding any record visible to the current consistent read
+
+ChangeSet
+  1.1177 02/09/08 00:21:13 heikki@hundin.mysql.fi +1 -0
+  os0sync.c:
+    Add diagnostics to track why a semaphore creation failed on Windows ME
+
+  innobase/os/os0sync.c
+    1.9 02/09/08 00:18:08 heikki@hundin.mysql.fi +6 -0
+    Add diagnostics to track why a semaphore creation failed on Windows ME
+
+ChangeSet
+  1.1176 02/09/07 23:37:27 heikki@hundin.mysql.fi +1 -0
+  srv0srv.c:
+    The option (= default) innodb_fast_shutdown did not always make the shutdown quickly, fix that
+
+  innobase/srv/srv0srv.c
+    1.33 02/09/07 23:37:13 heikki@hundin.mysql.fi +11 -2
+    The option (= default) innodb_fast_shutdown did not always make the shutdown quickly, fix that
+
+ChangeSet
+  1.1175 02/09/04 14:05:24 lenz@mysql.com +1 -0
+   - Reworked/Cleaned up Build-tools/Do-compile to be more flexible and
+     better documented
+
+  Build-tools/Do-compile
+    1.44 02/09/04 14:05:17 lenz@mysql.com +181 -88
+     - Removed some obsolete pieces of code (get rid of using rsh and rcp)
+     - Added some code comments
+     - Reworked help text to match the options available
+     - Heavily reworked GetOptions, removed some obsolete ones and joined others
+     - make_options and config_options can now be given multiple times
+     - simplified code that added configure options dependent on given options
+
+ChangeSet
+  1.1174 02/09/03 16:48:37 monty@mashka.mysql.fi +1 -0
+  Merge
+
+  Docs/manual.texi
+    1.827 02/09/03 16:48:36 monty@mashka.mysql.fi +0 -0
+    SCCS merged
+
+ChangeSet
+  1.1172.1.2 02/09/03 16:28:01 monty@mashka.mysql.fi +3 -0
+  Fixed bug introduces by last changeset
+  (Fixing of problem with ALTER TABLE on BDB tables)
+
+  sql/sql_base.cc
+    1.97 02/09/03 16:28:00 monty@mashka.mysql.fi +45 -35
+    Split close_thread_tables() into two functions.
+    (Needed for bug fix from 4.0)
+
+  sql/mysql_priv.h
+    1.107 02/09/03 16:28:00 monty@mashka.mysql.fi +1 -0
+    Split close_thread_tables() into two functions.
+    (Needed for bug fix from 4.0)
+
+  mysql-test/r/distinct.result
+    1.6 02/09/03 16:28:00 monty@mashka.mysql.fi +2 -1
+    Fixed results after bug fix
+
+ChangeSet
+  1.1172.1.1 02/09/03 15:53:07 monty@mashka.mysql.fi +3 -0
+  Check if AND/OR expression can be NULL
+  Better fix for ALTER TABLE on BDB tables
+  (Both of the above fixes are already in 4.0)
+
+  sql/sql_table.cc
+    1.105 02/09/03 15:53:05 monty@mashka.mysql.fi +13 -3
+    Better fix for ALTER TABLE on BDB tables
+
+  sql/item_cmpfunc.cc
+    1.21 02/09/03 15:53:05 monty@mashka.mysql.fi +2 -0
+    Check if AND/OR expression can be NULL
+
+  Docs/manual.texi
+    1.825.1.1 02/09/03 15:53:05 monty@mashka.mysql.fi +4 -0
+    Changelog
+
+ChangeSet
+  1.1173 02/08/31 23:18:08 serg@serg.mysql.com +4 -0
+  LOCK+modify+OPTIMIZE bugfix
+
+  sql/ha_myisam.cc
+    1.80 02/08/31 23:18:07 serg@serg.mysql.com +1 -0
+    LOCK+modify+OPTIMIZE bugfix
+
+  mysql-test/t/myisam.test
+    1.5 02/08/31 23:18:07 serg@serg.mysql.com +11 -0
+    LOCK+modify+OPTIMIZE bugfix
+
+  mysql-test/r/myisam.result
+    1.5 02/08/31 23:18:07 serg@serg.mysql.com +2 -0
+    LOCK+modify+OPTIMIZE bugfix
+
+  Docs/manual.texi
+    1.826 02/08/31 23:18:07 serg@serg.mysql.com +3 -0
+    LOCK+modify+OPTIMIZE bugfix
+
+ChangeSet
+  1.1172 02/08/31 14:41:56 monty@mashka.mysql.fi +1 -0
+  Merge
+
+  Docs/manual.texi
+    1.825 02/08/31 14:41:55 monty@mashka.mysql.fi +0 -0
+    SCCS merged
+
+ChangeSet
+  1.1169.1.6 02/08/29 14:17:52 lenz@mysql.com +1 -0
+   - Applied many modifications to Build-tools/Do-compile made in the 4.0 tree 
+
+  Build-tools/Do-compile
+    1.43 02/08/29 14:17:48 lenz@mysql.com +49 -20
+     - applied some modifications made in the 4.0 tree
+     - added option --make-options to pass options to "make" after configure
+     - added option --raid to enable RAID
+     - added option --libwrap to enable TCP wrapper support
+     - make sure to remove log files as early as possible
+     - fixed option --with-other-libc to actually work
+     - fixed some oddly-placed quotes in the configure call
+
+ChangeSet
+  1.1169.1.5 02/08/28 10:00:48 paul@teton.kitebird.com +2 -0
+  manual.texi	minor fix to 3.23.53 change note
+
+  BitKeeper/etc/logging_ok
+    1.232 02/08/28 10:00:48 paul@teton.kitebird.com +1 -0
+    Logging to logging@openlogging.org accepted
+
+  Docs/manual.texi
+    1.823.1.2 02/08/28 09:56:47 paul@teton.kitebird.com +3 -3
+    minor fix to 3.23.53 change note
+
+ChangeSet
+  1.1169.2.1 02/08/28 16:41:23 Sinisa@sinisa.nasamreza.org +6 -0
+  Little but nasty bug with BDB and alter table
+
+  mysql-test/t/bdb-alter-table-2.test
+    1.1 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +3 -0
+
+  mysql-test/t/bdb-alter-table-1.test
+    1.1 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +12 -0
+
+  mysql-test/r/bdb-alter-table-2.result
+    1.1 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +4 -0
+
+  mysql-test/r/bdb-alter-table-1.result
+    1.1 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +4 -0
+
+  sql/sql_table.cc
+    1.104 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +8 -5
+    Little but nasty bug with BDB and alter table
+
+  mysql-test/t/bdb-alter-table-2.test
+    1.0 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +0 -0
+    BitKeeper file /mnt/work/mysql/mysql-test/t/bdb-alter-table-2.test
+
+  mysql-test/t/bdb-alter-table-1.test
+    1.0 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +0 -0
+    BitKeeper file /mnt/work/mysql/mysql-test/t/bdb-alter-table-1.test
+
+  mysql-test/r/bdb-alter-table-2.result
+    1.0 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +0 -0
+    BitKeeper file /mnt/work/mysql/mysql-test/r/bdb-alter-table-2.result
+
+  mysql-test/r/bdb-alter-table-1.result
+    1.0 02/08/28 16:41:22 Sinisa@sinisa.nasamreza.org +0 -0
+    BitKeeper file /mnt/work/mysql/mysql-test/r/bdb-alter-table-1.result
+
+  Docs/manual.texi
+    1.823.1.1 02/08/28 16:41:21 Sinisa@sinisa.nasamreza.org +3 -0
+    Little but nasty bug with BDB and alter table
+
+ChangeSet
+  1.1169.1.3 02/08/25 10:26:40 heikki@hundin.mysql.fi +3 -0
+  os0file.c:
+    Put 'last millisecond' test to make sure page checksum errors do not result from memory corruption in InnoDB
+  os0thread.c, configure.in:
+    Make sure stack size in InnoDB threads in AIX is at least 32 kB
+
+  innobase/os/os0file.c
+    1.43 02/08/25 10:25:57 heikki@hundin.mysql.fi +25 -0
+    Put 'last millisecond' test to make sure page checksum errors do not result from memory corruption in InnoDB
+
+  innobase/os/os0thread.c
+    1.16 02/08/25 10:20:08 heikki@hundin.mysql.fi +20 -0
+    Make sure stack size in InnoDB threads in AIX is at least 32 kB
+
+  innobase/configure.in
+    1.18 02/08/25 10:19:54 heikki@hundin.mysql.fi +2 -0
+    Make sure stack size in InnoDB threads in AIX is at least 32 kB
+
+ChangeSet
+  1.1169.1.2 02/08/24 01:07:50 heikki@hundin.mysql.fi +4 -0
+  lexyy.c, pars0grm.c, pars0lex.l, pars0grm.y:
+    Remove potential memory leak caused by redefined alloca, remove include of unistd.h to allow compilation on Windows
+
+  innobase/pars/lexyy.c
+    1.6 02/08/24 01:05:58 heikki@hundin.mysql.fi +139 -114
+    Remove potential memory leak caused by redefined alloca, remove include of unistd.h to allow compilation on Windows
+
+  innobase/pars/pars0grm.c
+    1.6 02/08/24 01:05:44 heikki@hundin.mysql.fi +145 -145
+    Remove potential memory leak caused by redefined alloca, remove include of unistd.h to allow compilation on Windows
+
+  innobase/pars/pars0lex.l
+    1.3 02/08/24 01:05:32 heikki@hundin.mysql.fi +2 -0
+    Remove potential memory leak caused by redefined alloca, remove include of unistd.h to allow compilation on Windows
+
+  innobase/pars/pars0grm.y
+    1.5 02/08/24 01:05:27 heikki@hundin.mysql.fi +2 -2
+    Remove potential memory leak caused by redefined alloca, remove include of unistd.h to allow compilation on Windows
+
+ChangeSet
+  1.1171 02/08/23 21:41:27 monty@mashka.mysql.fi +7 -0
+  Added testing of temporary tables with replication
+
+  mysql-test/t/rpl_rotate_logs.test
+    1.21 02/08/23 21:41:26 monty@mashka.mysql.fi +44 -7
+    Added testing of temporary tables
+
+  mysql-test/t/rpl000018.test
+    1.2 02/08/23 21:41:26 monty@mashka.mysql.fi +5 -0
+    Commented test
+
+  mysql-test/r/rpl_rotate_logs.result
+    1.13 02/08/23 21:41:26 monty@mashka.mysql.fi +8 -4
+    Added testing of temporary tables
+
+  BitKeeper/etc/ignore
+    1.79 02/08/23 21:41:26 monty@mashka.mysql.fi +13 -0
+    Added mit-pthreads/include/bits mit-pthreads/include/pthread/machdep.h mit-pthreads/include/pthread/posix.h mit-pthreads/include/sys mit-pthreads/machdep.c mit-pthreads/pg++ mit-pthreads/pgcc sql-bench/innotest1 sql-bench/innotest1a sql-bench/innotest1b sql-bench/innotest2 sql-bench/innotest2a sql-bench/innotest2b to the ignore list
+
+  mysql-test/r/rpl_rotate_logs.result
+    1.12 02/08/23 21:26:36 monty@mashka.mysql.fi +0 -0
+    Rename: mysql-test/r/rpl000016.result -> mysql-test/r/rpl_rotate_logs.result
+
+  mysql-test/t/rpl_rotate_logs-slave-master-info.opt
+    1.2 02/08/23 21:26:09 monty@mashka.mysql.fi +0 -0
+    Rename: mysql-test/t/rpl000016-slave-master-info.opt -> mysql-test/t/rpl_rotate_logs-slave-master-info.opt
+
+  mysql-test/t/rpl_rotate_logs-slave.sh
+    1.3 02/08/23 21:25:44 monty@mashka.mysql.fi +0 -0
+    Rename: mysql-test/t/rpl000016-slave.sh -> mysql-test/t/rpl_rotate_logs-slave.sh
+
+  mysql-test/t/rpl_rotate_logs-master.opt
+    1.2 02/08/23 21:25:27 monty@mashka.mysql.fi +0 -0
+    Rename: mysql-test/t/rpl000016-master.opt -> mysql-test/t/rpl_rotate_logs-master.opt
+
+  mysql-test/t/rpl_rotate_logs.test
+    1.20 02/08/23 21:25:10 monty@mashka.mysql.fi +0 -0
+    Rename: mysql-test/t/rpl000016.test -> mysql-test/t/rpl_rotate_logs.test
+
+ChangeSet
+  1.1169.1.1 02/08/23 10:52:24 heikki@hundin.mysql.fi +2 -0
+  row0mysql.c, ha_innobase.cc:
+    Improved error message for out-of-sync frm files
+
+  innobase/row/row0mysql.c
+    1.33 02/08/23 10:51:56 heikki@hundin.mysql.fi +9 -3
+    Improved error message for out-of-sync frm files
+
+  sql/ha_innobase.cc
+    1.100 02/08/23 10:51:34 heikki@hundin.mysql.fi +3 -1
+    Improved error message for out-of-sync frm files
+
+ChangeSet
+  1.1168.1.1 02/08/23 10:33:18 monty@hundin.mysql.fi +2 -0
+  Fixed bug in mysqld when using configure --localstatedir
+
+  sql/mysqld.cc
+    1.246 02/08/23 10:33:16 monty@hundin.mysql.fi +1 -1
+    Fixed bug in mysqld when using configure --localstatedir
+
+  Docs/manual.texi
+    1.824 02/08/23 10:33:15 monty@hundin.mysql.fi +2 -0
+    Changelog
+
+ChangeSet
+  1.1169 02/08/22 13:33:45 heikki@hundin.mysql.fi +6 -0
+  pars0grm.h, pars0grm.c, lexyy.c:
+    The lexer of InnoDB to 8-bit, it was 7-bit which made it crash on table names containing char codes > 127
+  pars0lex.l, pars0grm.y:
+    Add InnoDB internal SQL interpreter grammar and lexer sources
+
+  innobase/include/pars0grm.h
+    1.2 02/08/22 13:32:27 heikki@hundin.mysql.fi +84 -84
+    The lexer of InnoDB to 8-bit, it was 7-bit which made it crash on table names containing char codes > 127
+
+  innobase/pars/pars0grm.h
+    1.2 02/08/22 13:31:35 heikki@hundin.mysql.fi +84 -84
+    The lexer of InnoDB to 8-bit, it was 7-bit which made it crash on table names containing char codes > 127
+
+  innobase/pars/pars0grm.c
+    1.5 02/08/22 13:31:29 heikki@hundin.mysql.fi +370 -290
+    The lexer of InnoDB to 8-bit, it was 7-bit which made it crash on table names containing char codes > 127
+
+  innobase/pars/lexyy.c
+    1.5 02/08/22 13:31:01 heikki@hundin.mysql.fi +889 -5777
+    The lexer of InnoDB to 8-bit, it was 7-bit which made it crash on table names containing char codes > 127
+
+  innobase/pars/pars0lex.l
+    1.2 02/08/22 13:28:59 heikki@hundin.mysql.fi +26 -3
+    Add InnoDB internal SQL interpreter grammar and lexer sources
+
+  innobase/pars/pars0grm.y
+    1.4 02/08/22 13:28:50 heikki@hundin.mysql.fi +7 -3
+    Add InnoDB internal SQL interpreter grammar and lexer sources
+
+ChangeSet
+  1.1168 02/08/18 16:07:19 monty@hundin.mysql.fi +3 -0
+  Portability fixes for HPUX and Openbsd
+
+  mysys/my_pthread.c
+    1.23 02/08/18 16:07:18 monty@hundin.mysql.fi +2 -2
+    Fix for hpux
+
+  innobase/configure.in
+    1.17 02/08/18 16:07:18 monty@hundin.mysql.fi +2 -0
+    Fixed type for openbsd
+
+  configure.in
+    1.191 02/08/18 16:07:18 monty@hundin.mysql.fi +1 -1
+    Fixed type for HPUX10.20
+
+ChangeSet
+  1.1167 02/08/16 16:50:57 monty@hundin.mysql.fi +4 -0
+  Fix for HPUX 11 and pthread_mutex_lock
+
+  mysys/my_pthread.c
+    1.22 02/08/16 16:50:55 monty@hundin.mysql.fi +51 -28
+    Fix for HPUX 11 and pthread_mutex_lock (merge from 4.0)
+
+  include/my_pthread.h
+    1.46 02/08/16 16:50:55 monty@hundin.mysql.fi +27 -11
+    Fix for HPUX 11 and pthread_mutex_lock (merge from 4.0)
+
+  configure.in
+    1.190 02/08/16 16:50:55 monty@hundin.mysql.fi +2 -2
+    Fix for HPUX 11 and pthread_mutex_lock
+
+  Docs/manual.texi
+    1.823 02/08/16 16:50:54 monty@hundin.mysql.fi +2 -0
+    Fix for HPUX 11 and pthread_mutex_lock
+
+ChangeSet
+  1.1166 02/08/16 13:36:13 monty@hundin.mysql.fi +1 -0
+  Fix after merge
+
+  Docs/manual.texi
+    1.822 02/08/16 13:36:11 monty@hundin.mysql.fi +1 -0
+    Fix after merge
+
+ChangeSet
+  1.1165 02/08/16 12:58:02 monty@hundin.mysql.fi +1 -0
+  merged changelog
+
+  Docs/manual.texi
+    1.821 02/08/16 12:57:59 monty@hundin.mysql.fi +1 -10
+    merged changelog
+
+ChangeSet
+  1.1161.1.1 02/08/16 12:50:21 monty@hundin.mysql.fi +3 -0
+  Fixed typo so that ulonglong are properly converted to double on AIX with gcc 3.1
+
+  mysys/my_port.c
+    1.2 02/08/16 12:50:19 monty@hundin.mysql.fi +1 -1
+    Fixed typo so that ulonglong are properly converted to double on AIX with gcc 3.1
+
+  include/global.h
+    1.48 02/08/16 12:50:19 monty@hundin.mysql.fi +8 -2
+    Fixed typo so that ulonglong are properly converted to double on AIX with gcc 3.1
+
+  Docs/manual.texi
+    1.819.1.1 02/08/16 12:50:18 monty@hundin.mysql.fi +9 -3
+    Changelog
+
+ChangeSet
+  1.1164 02/08/16 11:04:50 lenz@mysql.com +2 -0
+   - Tagged 3.23.52 release
+   - Added 3.23.53 News section to the manual
+   - Updated version number in configure.in to 3.23.53
+
+  configure.in
+    1.189 02/08/16 11:04:47 lenz@mysql.com +1 -1
+    Bumped up version number to 3.23.53 now that 3.23.52 is released
+
+  Docs/manual.texi
+    1.820 02/08/16 11:04:47 lenz@mysql.com +9 -1
+    Added News section for 3.23.53
+
+ChangeSet
+  1.1163 02/08/15 18:42:17 miguel@hegel.local +89 -0
+  Added the last VC++ workspace and project files
+
+  VC++Files/zlib/zlib.dsp
+    1.1 02/08/15 18:41:31 miguel@hegel.local +185 -0
+
+  VC++Files/thr_test/thr_test.dsp
+    1.1 02/08/15 18:41:31 miguel@hegel.local +103 -0
+
+  VC++Files/thr_insert_test/thr_insert_test.dsp
+    1.1 02/08/15 18:41:31 miguel@hegel.local +109 -0
+
+  VC++Files/test1/test1.dsp
+    1.1 02/08/15 18:41:31 miguel@hegel.local +102 -0
+
+  VC++Files/strings/strings.dsw
+    1.1 02/08/15 18:41:31 miguel@hegel.local +29 -0
+
+  VC++Files/zlib/zlib.dsp
+    1.0 02/08/15 18:41:31 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/zlib/zlib.dsp
+
+  VC++Files/thr_test/thr_test.dsp
+    1.0 02/08/15 18:41:31 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/thr_test/thr_test.dsp
+
+  VC++Files/thr_insert_test/thr_insert_test.dsp
+    1.0 02/08/15 18:41:31 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/thr_insert_test/thr_insert_test.dsp
+
+  VC++Files/test1/test1.dsp
+    1.0 02/08/15 18:41:31 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/test1/test1.dsp
+
+  VC++Files/strings/strings.dsw
+    1.0 02/08/15 18:41:31 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/strings/strings.dsw
+
+  VC++Files/strings/noMASM/strings.dsw
+    1.1 02/08/15 18:41:30 miguel@hegel.local +29 -0
+
+  VC++Files/strings/noMASM/strings.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +242 -0
+
+  VC++Files/strings/MASM6x/strings.dsw
+    1.1 02/08/15 18:41:30 miguel@hegel.local +29 -0
+
+  VC++Files/strings/MASM6x/strings.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +244 -0
+
+  VC++Files/sql/mysqldmax.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +1003 -0
+
+  VC++Files/sql/mysqld.dsw
+    1.1 02/08/15 18:41:30 miguel@hegel.local +29 -0
+
+  VC++Files/sql/mysqld.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +1272 -0
+
+  VC++Files/replace/replace.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +92 -0
+
+  VC++Files/regex/regex.dsw
+    1.1 02/08/15 18:41:30 miguel@hegel.local +29 -0
+
+  VC++Files/regex/regex.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +114 -0
+
+  VC++Files/perror/perror.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +109 -0
+
+  VC++Files/pack_isam/pack_isam.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +102 -0
+
+  VC++Files/mysys/mysys.dsw
+    1.1 02/08/15 18:41:30 miguel@hegel.local +29 -0
+
+  VC++Files/mysys/mysys.dsp
+    1.1 02/08/15 18:41:30 miguel@hegel.local +502 -0
+
+  VC++Files/strings/noMASM/strings.dsw
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/strings/noMASM/strings.dsw
+
+  VC++Files/strings/noMASM/strings.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/strings/noMASM/strings.dsp
+
+  VC++Files/strings/MASM6x/strings.dsw
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/strings/MASM6x/strings.dsw
+
+  VC++Files/strings/MASM6x/strings.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/strings/MASM6x/strings.dsp
+
+  VC++Files/sql/mysqldmax.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/sql/mysqldmax.dsp
+
+  VC++Files/sql/mysqld.dsw
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/sql/mysqld.dsw
+
+  VC++Files/sql/mysqld.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/sql/mysqld.dsp
+
+  VC++Files/replace/replace.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/replace/replace.dsp
+
+  VC++Files/regex/regex.dsw
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/regex/regex.dsw
+
+  VC++Files/regex/regex.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/regex/regex.dsp
+
+  VC++Files/perror/perror.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/perror/perror.dsp
+
+  VC++Files/pack_isam/pack_isam.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/pack_isam/pack_isam.dsp
+
+  VC++Files/mysys/mysys.dsw
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysys/mysys.dsw
+
+  VC++Files/mysys/mysys.dsp
+    1.0 02/08/15 18:41:30 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysys/mysys.dsp
+
+  VC++Files/mysqlwatch/mysqlwatch.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +70 -0
+
+  VC++Files/mysqlshutdown/mysqlshutdown.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +119 -0
+
+  VC++Files/mysqlshutdown/myshutdown.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +101 -0
+
+  VC++Files/mysqlmanager/mysqlmanager.dsw
+    1.1 02/08/15 18:41:29 miguel@hegel.local +29 -0
+
+  VC++Files/mysqlmanager/MySqlManager.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +252 -0
+
+  VC++Files/mysqlbinlog/mysqlbinlog.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +107 -0
+
+  VC++Files/mysql.dsw
+    1.1 02/08/15 18:41:29 miguel@hegel.local +644 -0
+
+  VC++Files/mysql.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +80 -0
+
+  VC++Files/myisampack/myisampack.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +107 -0
+
+  VC++Files/myisammrg/myisammrg.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +169 -0
+
+  VC++Files/myisamlog/myisamlog.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +105 -0
+
+  VC++Files/myisamchk/myisamchk.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +104 -0
+
+  VC++Files/myisam/myisam.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +280 -0
+
+  VC++Files/my_print_defaults/my_print_defaults.dsp
+    1.1 02/08/15 18:41:29 miguel@hegel.local +101 -0
+
+  VC++Files/merge/merge.dsw
+    1.1 02/08/15 18:41:29 miguel@hegel.local +29 -0
+
+  VC++Files/mysqlwatch/mysqlwatch.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysqlwatch/mysqlwatch.dsp
+
+  VC++Files/mysqlshutdown/mysqlshutdown.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysqlshutdown/mysqlshutdown.dsp
+
+  VC++Files/mysqlshutdown/myshutdown.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysqlshutdown/myshutdown.dsp
+
+  VC++Files/mysqlmanager/mysqlmanager.dsw
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysqlmanager/mysqlmanager.dsw
+
+  VC++Files/mysqlmanager/MySqlManager.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysqlmanager/MySqlManager.dsp
+
+  VC++Files/mysqlbinlog/mysqlbinlog.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysqlbinlog/mysqlbinlog.dsp
+
+  VC++Files/mysql.dsw
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysql.dsw
+
+  VC++Files/mysql.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/mysql.dsp
+
+  VC++Files/myisampack/myisampack.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/myisampack/myisampack.dsp
+
+  VC++Files/myisammrg/myisammrg.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/myisammrg/myisammrg.dsp
+
+  VC++Files/myisamlog/myisamlog.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/myisamlog/myisamlog.dsp
+
+  VC++Files/myisamchk/myisamchk.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/myisamchk/myisamchk.dsp
+
+  VC++Files/myisam/myisam.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/myisam/myisam.dsp
+
+  VC++Files/my_print_defaults/my_print_defaults.dsp
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/my_print_defaults/my_print_defaults.dsp
+
+  VC++Files/merge/merge.dsw
+    1.0 02/08/15 18:41:29 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/merge/merge.dsw
+
+  VC++Files/merge/merge.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +138 -0
+
+  VC++Files/libmysqltest/mytest.dsw
+    1.1 02/08/15 18:41:28 miguel@hegel.local +29 -0
+
+  VC++Files/libmysqltest/myTest.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +91 -0
+
+  VC++Files/libmysql/libmysql.dsw
+    1.1 02/08/15 18:41:28 miguel@hegel.local +29 -0
+
+  VC++Files/libmysql/libmySQL.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +440 -0
+
+  VC++Files/isamchk/isamchk.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +97 -0
+
+  VC++Files/isam/isam.dsw
+    1.1 02/08/15 18:41:28 miguel@hegel.local +29 -0
+
+  VC++Files/isam/isam.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +206 -0
+
+  VC++Files/innobase/innobase.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +441 -0
+
+  VC++Files/heap/heap.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +195 -0
+
+  VC++Files/dbug/dbug.dsw
+    1.1 02/08/15 18:41:28 miguel@hegel.local +29 -0
+
+  VC++Files/dbug/dbug.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +98 -0
+
+  VC++Files/contrib/minizip/zlibvc.dsw
+    1.1 02/08/15 18:41:28 miguel@hegel.local +41 -0
+
+  VC++Files/contrib/minizip/zlibvc.dsp
+    1.1 02/08/15 18:41:28 miguel@hegel.local +651 -0
+
+  VC++Files/contrib/asm386/zlibvc.dsw
+    1.1 02/08/15 18:41:28 miguel@hegel.local +41 -0
+
+  VC++Files/merge/merge.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/merge/merge.dsp
+
+  VC++Files/libmysqltest/mytest.dsw
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/libmysqltest/mytest.dsw
+
+  VC++Files/libmysqltest/myTest.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/libmysqltest/myTest.dsp
+
+  VC++Files/libmysql/libmysql.dsw
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/libmysql/libmysql.dsw
+
+  VC++Files/libmysql/libmySQL.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/libmysql/libmySQL.dsp
+
+  VC++Files/isamchk/isamchk.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/isamchk/isamchk.dsp
+
+  VC++Files/isam/isam.dsw
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/isam/isam.dsw
+
+  VC++Files/isam/isam.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/isam/isam.dsp
+
+  VC++Files/innobase/innobase.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/innobase/innobase.dsp
+
+  VC++Files/heap/heap.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/heap/heap.dsp
+
+  VC++Files/dbug/dbug.dsw
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/dbug/dbug.dsw
+
+  VC++Files/dbug/dbug.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/dbug/dbug.dsp
+
+  VC++Files/contrib/minizip/zlibvc.dsw
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/contrib/minizip/zlibvc.dsw
+
+  VC++Files/contrib/minizip/zlibvc.dsp
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/contrib/minizip/zlibvc.dsp
+
+  VC++Files/contrib/asm386/zlibvc.dsw
+    1.0 02/08/15 18:41:28 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/contrib/asm386/zlibvc.dsw
+
+  VC++Files/contrib/asm386/zlibvc.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +651 -0
+
+  VC++Files/comp_err/comp_err.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +58 -0
+
+  VC++Files/client/mysqlshow.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +91 -0
+
+  VC++Files/client/mysqlimport.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +92 -0
+
+  VC++Files/client/mysqldump.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +101 -0
+
+  VC++Files/client/mysqlclient.dsw
+    1.1 02/08/15 18:41:27 miguel@hegel.local +29 -0
+
+  VC++Files/client/mysqlclient.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +469 -0
+
+  VC++Files/client/mysqlcheck.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +71 -0
+
+  VC++Files/client/mysqladmin.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +91 -0
+
+  VC++Files/client/mysql.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +101 -0
+
+  VC++Files/bdb/build_win32/excxx_tpcb.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/excxx_mpool.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/excxx_lock.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/excxx_env.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/excxx_btrec.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/excxx_access.dsp
+    1.1 02/08/15 18:41:27 miguel@hegel.local +151 -0
+
+  VC++Files/contrib/asm386/zlibvc.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/contrib/asm386/zlibvc.dsp
+
+  VC++Files/comp_err/comp_err.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/comp_err/comp_err.dsp
+
+  VC++Files/client/mysqlshow.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqlshow.dsp
+
+  VC++Files/client/mysqlimport.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqlimport.dsp
+
+  VC++Files/client/mysqldump.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqldump.dsp
+
+  VC++Files/client/mysqlclient.dsw
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqlclient.dsw
+
+  VC++Files/client/mysqlclient.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqlclient.dsp
+
+  VC++Files/client/mysqlcheck.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqlcheck.dsp
+
+  VC++Files/client/mysqladmin.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysqladmin.dsp
+
+  VC++Files/client/mysql.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/client/mysql.dsp
+
+  VC++Files/bdb/build_win32/excxx_tpcb.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/excxx_tpcb.dsp
+
+  VC++Files/bdb/build_win32/excxx_mpool.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/excxx_mpool.dsp
+
+  VC++Files/bdb/build_win32/excxx_lock.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/excxx_lock.dsp
+
+  VC++Files/bdb/build_win32/excxx_env.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/excxx_env.dsp
+
+  VC++Files/bdb/build_win32/excxx_btrec.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/excxx_btrec.dsp
+
+  VC++Files/bdb/build_win32/excxx_access.dsp
+    1.0 02/08/15 18:41:27 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/excxx_access.dsp
+
+  VC++Files/bdb/build_win32/ex_tpcb.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/ex_mpool.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/ex_lock.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/ex_env.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/ex_btrec.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/ex_access.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_verify.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_upgrade.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_test.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +99 -0
+
+  VC++Files/bdb/build_win32/db_tcl.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +135 -0
+
+  VC++Files/bdb/build_win32/db_static.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +714 -0
+
+  VC++Files/bdb/build_win32/db_stat.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_recover.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_printlog.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_load.dsp
+    1.1 02/08/15 18:41:26 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/ex_tpcb.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/ex_tpcb.dsp
+
+  VC++Files/bdb/build_win32/ex_mpool.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/ex_mpool.dsp
+
+  VC++Files/bdb/build_win32/ex_lock.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/ex_lock.dsp
+
+  VC++Files/bdb/build_win32/ex_env.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/ex_env.dsp
+
+  VC++Files/bdb/build_win32/ex_btrec.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/ex_btrec.dsp
+
+  VC++Files/bdb/build_win32/ex_access.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/ex_access.dsp
+
+  VC++Files/bdb/build_win32/db_verify.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_verify.dsp
+
+  VC++Files/bdb/build_win32/db_upgrade.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_upgrade.dsp
+
+  VC++Files/bdb/build_win32/db_test.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_test.dsp
+
+  VC++Files/bdb/build_win32/db_tcl.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_tcl.dsp
+
+  VC++Files/bdb/build_win32/db_static.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_static.dsp
+
+  VC++Files/bdb/build_win32/db_stat.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_stat.dsp
+
+  VC++Files/bdb/build_win32/db_recover.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_recover.dsp
+
+  VC++Files/bdb/build_win32/db_printlog.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_printlog.dsp
+
+  VC++Files/bdb/build_win32/db_load.dsp
+    1.0 02/08/15 18:41:26 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_load.dsp
+
+  VC++Files/bdb/build_win32/db_java.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +174 -0
+
+  VC++Files/bdb/build_win32/db_dump.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_dll.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +753 -0
+
+  VC++Files/bdb/build_win32/db_deadlock.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_checkpoint.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/db_buildall.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +128 -0
+
+  VC++Files/bdb/build_win32/db_archive.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +151 -0
+
+  VC++Files/bdb/build_win32/Berkeley_DB.dsw
+    1.1 02/08/15 18:41:25 miguel@hegel.local +569 -0
+
+  VC++Files/bdb/bdb.dsp
+    1.1 02/08/15 18:41:25 miguel@hegel.local +682 -0
+
+  VC++Files/bdb/build_win32/db_java.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_java.dsp
+
+  VC++Files/bdb/build_win32/db_dump.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_dump.dsp
+
+  VC++Files/bdb/build_win32/db_dll.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_dll.dsp
+
+  VC++Files/bdb/build_win32/db_deadlock.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_deadlock.dsp
+
+  VC++Files/bdb/build_win32/db_checkpoint.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_checkpoint.dsp
+
+  VC++Files/bdb/build_win32/db_buildall.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_buildall.dsp
+
+  VC++Files/bdb/build_win32/db_archive.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/db_archive.dsp
+
+  VC++Files/bdb/build_win32/Berkeley_DB.dsw
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/build_win32/Berkeley_DB.dsw
+
+  VC++Files/bdb/bdb.dsp
+    1.0 02/08/15 18:41:25 miguel@hegel.local +0 -0
+    BitKeeper file /home/miguel/mysql-dev/mysql/VC++Files/bdb/bdb.dsp
+
+ChangeSet
+  1.1162 02/08/15 22:22:56 heikki@hundin.mysql.fi +7 -0
+  Many files:
+    Add multithreaded stress tests for InnoDB
+    new file
+
+  sql-bench/Makefile.am
+    1.17 02/08/15 22:22:39 heikki@hundin.mysql.fi +4 -2
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest2b.sh
+    1.1 02/08/15 22:22:20 heikki@hundin.mysql.fi +103 -0
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest2b.sh
+    1.0 02/08/15 22:22:20 heikki@hundin.mysql.fi +0 -0
+    BitKeeper file /home/heikki/mysql/sql-bench/innotest2b.sh
+
+  sql-bench/innotest2a.sh
+    1.1 02/08/15 22:22:15 heikki@hundin.mysql.fi +93 -0
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest2a.sh
+    1.0 02/08/15 22:22:15 heikki@hundin.mysql.fi +0 -0
+    BitKeeper file /home/heikki/mysql/sql-bench/innotest2a.sh
+
+  sql-bench/innotest2.sh
+    1.1 02/08/15 22:22:13 heikki@hundin.mysql.fi +149 -0
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest2.sh
+    1.0 02/08/15 22:22:13 heikki@hundin.mysql.fi +0 -0
+    BitKeeper file /home/heikki/mysql/sql-bench/innotest2.sh
+
+  sql-bench/innotest1b.sh
+    1.1 02/08/15 22:22:08 heikki@hundin.mysql.fi +100 -0
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest1b.sh
+    1.0 02/08/15 22:22:08 heikki@hundin.mysql.fi +0 -0
+    BitKeeper file /home/heikki/mysql/sql-bench/innotest1b.sh
+
+  sql-bench/innotest1a.sh
+    1.1 02/08/15 22:22:05 heikki@hundin.mysql.fi +107 -0
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest1a.sh
+    1.0 02/08/15 22:22:05 heikki@hundin.mysql.fi +0 -0
+    BitKeeper file /home/heikki/mysql/sql-bench/innotest1a.sh
+
+  sql-bench/innotest1.sh
+    1.1 02/08/15 22:22:01 heikki@hundin.mysql.fi +141 -0
+    Add multithreaded stress tests for InnoDB
+
+  sql-bench/innotest1.sh
+    1.0 02/08/15 22:22:01 heikki@hundin.mysql.fi +0 -0
+    BitKeeper file /home/heikki/mysql/sql-bench/innotest1.sh
+
+ChangeSet
+  1.1161 02/08/14 00:32:30 heikki@hundin.mysql.fi +1 -0
+  my_pthread.c:
+    In HP-UX-10.20 my_pthread_mutex_trylock erroneously returned 0 also in the case where the mutex was not acquired
+
+  mysys/my_pthread.c
+    1.21 02/08/14 00:32:16 heikki@hundin.mysql.fi +31 -6
+    In HP-UX-10.20 my_pthread_mutex_trylock erroneously returned 0 also in the case where the mutex was not acquired
+

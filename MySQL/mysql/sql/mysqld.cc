@@ -43,6 +43,8 @@
 #if defined(HAVE_DEC_3_2_THREADS) || defined(SIGNALS_DONT_BREAK_READ)
 #define HAVE_CLOSE_SERVER_SOCK 1
 void close_server_sock();
+#else
+#define close_server_sock()
 #endif
 
 extern "C" {					// Because of SCO 3.2V4.2
@@ -90,14 +92,14 @@ extern "C" {					// Because of SCO 3.2V4.2
 int allow_severity = LOG_INFO;
 int deny_severity = LOG_WARNING;
 
-#ifdef __linux__
-#define my_fromhost(A)	   fromhost()
-#define my_hosts_access(A) hosts_access()
-#define my_eval_client(A)  eval_client()
-#else
+#ifdef __STDC__
 #define my_fromhost(A)	   fromhost(A)
 #define my_hosts_access(A) hosts_access(A)
 #define my_eval_client(A)  eval_client(A)
+#else
+#define my_fromhost(A)	   fromhost()
+#define my_hosts_access(A) hosts_access()
+#define my_eval_client(A)  eval_client()
 #endif
 #endif /* HAVE_LIBWRAP */
 
@@ -465,9 +467,7 @@ static void close_connections(void)
     if (error != 0 && !count++)
       sql_print_error("Got error %d from pthread_cond_timedwait",error);
 #endif
-#if defined(HAVE_DEC_3_2_THREADS) || defined(SIGNALS_DONT_BREAK_READ)
     close_server_sock();
-#endif
   }
   (void) pthread_mutex_unlock(&LOCK_thread_count);
 #endif /* __WIN__ */
@@ -598,18 +598,25 @@ if (hPipe != INVALID_HANDLE_VALUE && opt_enable_named_pipe)
 void close_server_sock()
 {
   DBUG_ENTER("close_server_sock");
+
   if (ip_sock != INVALID_SOCKET)
   {
-    DBUG_PRINT("info",("closing TCP/IP socket"));
+    DBUG_PRINT("info",("calling shutdown on TCP/IP socket"));
     VOID(shutdown(ip_sock,2));
+#ifdef NOT_USED
+    /*
+      The following code is disabled as it cases MySQL to hang on
+      AIX 4.3 during shutdown
+    */
+    DBUG_PRINT("info",("calling closesocket on TCP/IP socket"));    
     VOID(closesocket(ip_sock));
+#endif
     ip_sock=INVALID_SOCKET;
   }
   if (unix_sock != INVALID_SOCKET)
   {
-    DBUG_PRINT("info",("closing Unix socket"));
+    DBUG_PRINT("info",("calling shutdown on unix socket"));
     VOID(shutdown(unix_sock,2));
-    VOID(closesocket(unix_sock));
     VOID(unlink(mysql_unix_port));
     unix_sock=INVALID_SOCKET;
   }
@@ -621,7 +628,8 @@ void kill_mysql(void)
 {
   DBUG_ENTER("kill_mysql");
 #ifdef SIGNALS_DONT_BREAK_READ
-  close_server_sock(); /* force accept to wake up */
+  abort_loop=1;					// Break connection loops
+  close_server_sock();				// Force accept to wake up
 #endif 
 #if defined(__WIN__)
   {
@@ -647,10 +655,9 @@ void kill_mysql(void)
   DBUG_PRINT("quit",("After pthread_kill"));
   shutdown_in_progress=1;			// Safety if kill didn't work
 #ifdef SIGNALS_DONT_BREAK_READ    
-  if (!abort_loop)
+  if (!kill_in_progress)
   {
     pthread_t tmp;
-    abort_loop=1;
     if (pthread_create(&tmp,&connection_attrib, kill_server_thread,
 			   (void*) 0))
       sql_print_error("Error: Can't create thread to kill server");
@@ -1121,7 +1128,8 @@ void end_thread(THD *thd, bool put_in_cache)
 inline void kill_broken_server()
 {
   /* hack to get around signals ignored in syscalls for problem OS's */
-  if (unix_sock == INVALID_SOCKET || (!opt_disable_networking && ip_sock ==INVALID_SOCKET))
+  if (unix_sock == INVALID_SOCKET ||
+      (!opt_disable_networking && ip_sock == INVALID_SOCKET))
   {
     select_thread_in_use = 0;
     kill_server((void*)MYSQL_KILL_SIGNAL); /* never returns */
@@ -1219,7 +1227,7 @@ static void sig_reload(int signo)
 
 static void sig_kill(int signo)
 {
-  if (!abort_loop)
+  if (!kill_in_progress)
   {
     abort_loop=1;				// mark abort for threads
     kill_server((void*) signo);
@@ -1592,8 +1600,8 @@ pthread_handler_decl(handle_shutdown,arg)
   abort_loop = 1;
 
   // unblock select()
-  so_cancel( ip_sock);
-  so_cancel( unix_sock);
+  so_cancel(ip_sock);
+  so_cancel(unix_sock);
 
   return 0;
 }
@@ -1689,7 +1697,7 @@ int main(int argc, char **argv)
     exit( 1 );
   }
 #endif
-  load_defaults("my",load_default_groups,&argc,&argv);
+  load_defaults(MYSQL_CONFIG_NAME,load_default_groups,&argc,&argv);
   defaults_argv=argv;
   mysql_tmpdir=getenv("TMPDIR");	/* Use this if possible */
 #if defined( __WIN__) || defined(OS2)
@@ -2249,7 +2257,15 @@ static void create_new_thread(THD *thd)
   for (uint i=0; i < 8 ; i++)			// Generate password teststring
     thd->scramble[i]= (char) (rnd(&sql_rand)*94+33);
   thd->scramble[8]=0;
-  thd->rand=sql_rand;
+  /* 
+     We need good random number initialization for new thread
+     Just coping global one will not work 
+  */
+  {
+    ulong tmp=(ulong) (rnd(&sql_rand) * 3000000);
+    randominit(&(thd->rand), tmp + (ulong) start_time,
+	       tmp + (ulong) thread_id);
+  }
   thd->real_id=pthread_self();			// Keep purify happy
 
   /* Start a new thread to handle connection */
@@ -3012,7 +3028,7 @@ struct show_var_st init_vars[]= {
   {"innodb_file_io_threads", (char*) &innobase_file_io_threads, SHOW_LONG },
   {"innodb_force_recovery", (char*) &innobase_force_recovery, SHOW_LONG },
   {"innodb_thread_concurrency", (char*) &innobase_thread_concurrency, SHOW_LONG },
-  {"innodb_flush_log_at_trx_commit", (char*) &innobase_flush_log_at_trx_commit, SHOW_MY_BOOL},
+  {"innodb_flush_log_at_trx_commit", (char*) &innobase_flush_log_at_trx_commit, SHOW_LONG},
   {"innodb_fast_shutdown", (char*) &innobase_fast_shutdown, SHOW_MY_BOOL},
   {"innodb_flush_method",    (char*) &innobase_unix_file_flush_method, SHOW_CHAR_PTR},
   {"innodb_lock_wait_timeout", (char*) &innobase_lock_wait_timeout, SHOW_LONG },
@@ -3154,6 +3170,7 @@ struct show_var_st status_vars[]= {
   {"Com_show_processlist",     (char*) (com_stat+(uint) SQLCOM_SHOW_PROCESSLIST),SHOW_LONG},
   {"Com_show_slave_status",    (char*) (com_stat+(uint) SQLCOM_SHOW_SLAVE_STAT),SHOW_LONG},
   {"Com_show_status",	       (char*) (com_stat+(uint) SQLCOM_SHOW_STATUS),SHOW_LONG},
+  {"Com_show_innodb_status",   (char*) (com_stat+(uint) SQLCOM_SHOW_INNODB_STATUS),SHOW_LONG},
   {"Com_show_tables",	       (char*) (com_stat+(uint) SQLCOM_SHOW_TABLES),SHOW_LONG},
   {"Com_show_variables",       (char*) (com_stat+(uint) SQLCOM_SHOW_VARIABLES),SHOW_LONG},
   {"Com_slave_start",	       (char*) (com_stat+(uint) SQLCOM_SLAVE_START),SHOW_LONG},
@@ -3165,7 +3182,7 @@ struct show_var_st status_vars[]= {
   {"Created_tmp_disk_tables",  (char*) &created_tmp_disk_tables,SHOW_LONG},
   {"Created_tmp_tables",       (char*) &created_tmp_tables,     SHOW_LONG},
   {"Created_tmp_files",	       (char*) &my_tmp_file_created,	SHOW_LONG},
-  {"Delayed_insert_threads",   (char*) &delayed_insert_threads, SHOW_LONG},
+  {"Delayed_insert_threads",   (char*) &delayed_insert_threads, SHOW_LONG_CONST},
   {"Delayed_writes",           (char*) &delayed_insert_writes,  SHOW_LONG},
   {"Delayed_errors",           (char*) &delayed_insert_errors,  SHOW_LONG},
   {"Flush_commands",           (char*) &refresh_version,        SHOW_LONG_CONST},
@@ -3377,14 +3394,16 @@ Starts the MySQL server\n");
   --innodb_data_file_path=dir  Path to individual files and their sizes\n\
   --innodb_flush_method=#  With which method to flush data\n\
   --innodb_flush_log_at_trx_commit[=#]\n\
-			       Set to 0 if you don't want to flush logs\n\
+			  Value 0: write and flush once per second\n\
+                          Value 1: write and flush at each commit\n\
+                          Value 2: write at commit, flush once per second\n\
   --innodb_log_arch_dir=dir    Where full logs should be archived\n\
   --innodb_log_archive[=#]     Set to 1 if you want to have logs archived\n\
   --innodb_log_group_home_dir=dir  Path to innodb log files.\n\
   --skip-innodb		       Don't use Innodb (will save memory)\n\
 ");
 #endif /* HAVE_INNOBASE_DB */
-  print_defaults("my",load_default_groups);
+  print_defaults(MYSQL_CONFIG_NAME,load_default_groups);
   puts("");
 
 #include "sslopt-usage.h"
@@ -3441,7 +3460,7 @@ static void set_options(void)
   (void) strmake(default_charset, MYSQL_CHARSET, sizeof(default_charset)-1);
   (void) strmake(language, LANGUAGE, sizeof(language)-1);
   (void) strmake(mysql_real_data_home, get_relative_path(DATADIR),
-		 sizeof(mysql_real_data_home-1));
+		 sizeof(mysql_real_data_home)-1);
 #ifdef __WIN__
   /* Allow Win32 users to move MySQL anywhere */
   {
@@ -3788,7 +3807,6 @@ static void get_options(int argc,char **argv)
     case (int) OPT_SKIP_SHOW_DB:
       opt_skip_show_db=1;
       opt_specialflag|=SPECIAL_SKIP_SHOW_DB;
-      mysql_port=0;
       break;
     case (int) OPT_MEMLOCK:
       locked_in_memory=1;
@@ -3994,7 +4012,7 @@ static void get_options(int argc,char **argv)
       innobase_log_archive= optarg ? test(atoi(optarg)) : 1;
       break;
     case OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT:
-      innobase_flush_log_at_trx_commit= optarg ? test(atoi(optarg)) : 1;
+      innobase_flush_log_at_trx_commit= optarg ? atoi(optarg) : 1;
       break;
     case OPT_INNODB_FAST_SHUTDOWN:
       innobase_fast_shutdown= optarg ? test(atoi(optarg)) : 1;
@@ -4270,4 +4288,6 @@ template class I_List<THD>;
 template class I_List_iterator<THD>;
 template class I_List<i_string>;
 template class I_List<i_string_pair>;
+
+FIX_GCC_LINKING_PROBLEM
 #endif

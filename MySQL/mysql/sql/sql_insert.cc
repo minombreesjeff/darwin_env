@@ -73,7 +73,7 @@ check_insert_fields(THD *thd,TABLE *table,List<Item> &fields,
     }
     TABLE_LIST table_list;
     bzero((char*) &table_list,sizeof(table_list));
-    table_list.name=table->table_name;
+    table_list.alias= table_list.real_name= table->table_name;
     table_list.table=table;
     table_list.grant=table->grant;
 
@@ -299,12 +299,14 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
   {
     char buff[160];
     if (duplic == DUP_IGNORE)
-      sprintf(buff,ER(ER_INSERT_INFO),info.records,info.records-info.copied,
+      sprintf(buff,ER(ER_INSERT_INFO),info.records,
+	      (lock_type == TL_WRITE_DELAYED) ? 0 : 
+	      info.records-info.copied,
 	      thd->cuted_fields);
     else
       sprintf(buff,ER(ER_INSERT_INFO),info.records,info.deleted,
 	      thd->cuted_fields);
-    ::send_ok(&thd->net,info.copied+info.deleted,0L,buff);
+    ::send_ok(&thd->net,info.copied+info.deleted,(ulonglong)id,buff);
   }
   DBUG_RETURN(0);
 
@@ -613,7 +615,7 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
       }
       tmp->table_list= *table_list;			// Needed to open table
       tmp->table_list.db= tmp->thd.db;
-      tmp->table_list.name= tmp->table_list.real_name=tmp->thd.query;
+      tmp->table_list.alias= tmp->table_list.real_name= tmp->thd.query;
       tmp->lock();
       pthread_mutex_lock(&tmp->mutex);
       if ((error=pthread_create(&tmp->thd.real_id,&connection_attrib,
@@ -1417,6 +1419,11 @@ bool select_create::send_eof()
     table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
     VOID(pthread_mutex_lock(&LOCK_open));
     mysql_unlock_tables(thd, lock);
+    /*
+      TODO:
+      Check if we can remove the following two rows.
+      We should be able to just keep the table in the table cache.
+    */
     if (!table->tmp_table)
       hash_delete(&open_cache,(byte*) table);
     lock=0; table=0;

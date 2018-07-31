@@ -12,8 +12,19 @@ Created 9/8/1995 Heikki Tuuri
 
 #include "univ.i"
 
-/* Maximum number of threads which can be created in the program */
+/* Maximum number of threads which can be created in the program;
+this is also the size of the wait slot array for MySQL threads which
+can wait inside InnoDB */
+#ifdef __WIN__
+/* Windows 95/98/ME seemed to have difficulties creating the all
+the event semaphores for the wait array slots. If the computer had
+<= 64 MB memory, InnoDB startup could take minutes or even crash.
+That is why we set this to only 1000 in Windows. */
+
 #define	OS_THREAD_MAX_N		1000
+#else
+#define	OS_THREAD_MAX_N		10000
+#endif
 
 /* Possible fixed priorities for threads */
 #define OS_THREAD_PRIORITY_NONE		100
@@ -23,15 +34,37 @@ Created 9/8/1995 Heikki Tuuri
 
 #ifdef __WIN__
 typedef void*			os_thread_t;
+typedef ulint			os_thread_id_t;	/* In Windows the thread id
+						is an unsigned long int */
 #else
 typedef pthread_t               os_thread_t;
+typedef os_thread_t          	os_thread_id_t;	/* In Unix we use the thread
+						handle itself as the id of
+						the thread */
 #endif
-typedef	unsigned long int	os_thread_id_t;
+
 
 /* Define a function pointer type to use in a typecast */
 typedef void* (*os_posix_f_t) (void*);
 
+/*******************************************************************
+Compares two thread ids for equality. */
 
+ibool
+os_thread_eq(
+/*=========*/
+				/* out: TRUE if equal */
+	os_thread_id_t	a,	/* in: OS thread or thread id */
+	os_thread_id_t	b);	/* in: OS thread or thread id */
+/********************************************************************
+Converts an OS thread id to a ulint. It is NOT guaranteed that the ulint is
+unique for the thread though! */
+
+ulint
+os_thread_pf(
+/*=========*/
+				/* out: unsigned long int */
+	os_thread_id_t	a);	/* in: thread or thread id */
 /********************************************************************
 Creates a new thread of execution. The execution starts from
 the function given. The start function takes a void* parameter
@@ -49,8 +82,8 @@ os_thread_create(
 #endif
 	void*			arg,		/* in: argument to start
 						function */
-	os_thread_id_t*		thread_id);	/* out: id of created
-						thread */	
+	os_thread_id_t*		thread_id);	/* out: id of the created
+						thread */
 /*********************************************************************
 A thread calling this function ends its execution. */
 
@@ -70,14 +103,6 @@ Returns handle to the current thread. */
 os_thread_t
 os_thread_get_curr(void);
 /*====================*/
-/*********************************************************************
-Converts a thread id to a ulint. */
-
-ulint
-os_thread_conv_id_to_ulint(
-/*=======================*/
-				/* out: converted to ulint */
-	os_thread_id_t	id);	/* in: thread id */
 /*********************************************************************
 Waits for a thread to terminate. */
 

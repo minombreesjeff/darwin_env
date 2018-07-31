@@ -260,7 +260,14 @@ os0file.o: os0file.c ../include/os0file.h ../include/univ.i \
 	../include/dict0types.h ../include/data0data.ic \
 	../include/trx0types.h ../include/lock0types.h \
 	../include/fil0fil.h ../include/sync0rw.h ../include/sync0rw.ic \
-	../include/ibuf0types.h
+	../include/ibuf0types.h ../include/buf0buf.h \
+	../include/mtr0types.h ../include/buf0types.h \
+	../include/hash0hash.h ../include/hash0hash.ic \
+	../include/buf0buf.ic ../include/buf0flu.h \
+	../include/buf0flu.ic ../include/mtr0mtr.h ../include/dyn0dyn.h \
+	../include/dyn0dyn.ic ../include/page0types.h \
+	../include/mtr0mtr.ic ../include/buf0lru.h \
+	../include/buf0lru.ic ../include/buf0rea.h
 os0proc.o: os0proc.c ../include/os0proc.h ../include/univ.i \
 	../../include/global.h ../../include/my_config.h \
 	../../include/getopt.h ../../include/dbug.h \

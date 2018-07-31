@@ -458,7 +458,8 @@ btr0sea.o: btr0sea.c ../include/btr0sea.h ../include/univ.i \
 	../include/page0page.ic ../include/rem0cmp.h \
 	../include/rem0cmp.ic ../include/page0cur.ic \
 	../include/row0types.h ../include/btr0cur.ic \
-	../include/btr0btr.h ../include/btr0btr.ic
+	../include/btr0btr.h ../include/btr0btr.ic \
+	../include/btr0pcur.h ../include/btr0pcur.ic
 
 info-am:
 info: info-am

@@ -179,9 +179,9 @@ DB_END_SINGLE_THREAD	../include/mutex.h	281;"	d
 DB_ENTRY	../include/log.h	/^} DB_ENTRY;$/;"	t
 DB_ENV_JAVAINFO	../libdb_java/java_info.h	/^DB_ENV_JAVAINFO;  \/* used with all 'dbjie' functions *\/$/;"	t
 DB_ERROR	../include/cxx_int.h	69;"	d
-DB_FCNTL_OFF_GEN	../include/mutex.h	742;"	d
-DB_FCNTL_OFF_LOCK	../include/mutex.h	743;"	d
-DB_FCNTL_OFF_MPOOL	../include/mutex.h	744;"	d
+DB_FCNTL_OFF_GEN	../include/mutex.h	764;"	d
+DB_FCNTL_OFF_LOCK	../include/mutex.h	765;"	d
+DB_FCNTL_OFF_MPOOL	../include/mutex.h	766;"	d
 DB_FH_NOSYNC	../include/os.h	24;"	d
 DB_FH_VALID	../include/os.h	25;"	d
 DB_FILE_SETUP_CREATE	../db/db.c	71;"	d	file:
@@ -703,15 +703,15 @@ MUTEX_ALIGN	../include/mutex.h	309;"	d
 MUTEX_ALIGN	../include/mutex.h	349;"	d
 MUTEX_ALIGN	../include/mutex.h	401;"	d
 MUTEX_ALIGN	../include/mutex.h	581;"	d
-MUTEX_ALIGN	../include/mutex.h	624;"	d
+MUTEX_ALIGN	../include/mutex.h	646;"	d
 MUTEX_ALIGN	../include/mutex.h	87;"	d
 MUTEX_DESTROY	../include/mutex.h	172;"	d
 MUTEX_DESTROY	../include/mutex.h	253;"	d
-MUTEX_DESTROY	../include/mutex.h	632;"	d
+MUTEX_DESTROY	../include/mutex.h	654;"	d
 MUTEX_FIELDS	../include/mutex.h	33;"	d
 MUTEX_FIELDS	../include/mutex.h	64;"	d
 MUTEX_FIELDS	../include/mutex.h	76;"	d
-MUTEX_IGNORE	../include/mutex.h	636;"	d
+MUTEX_IGNORE	../include/mutex.h	658;"	d
 MUTEX_INIT	../include/mutex.h	126;"	d
 MUTEX_INIT	../include/mutex.h	140;"	d
 MUTEX_INIT	../include/mutex.h	153;"	d
@@ -731,13 +731,14 @@ MUTEX_INIT	../include/mutex.h	535;"	d
 MUTEX_INIT	../include/mutex.h	571;"	d
 MUTEX_INIT	../include/mutex.h	583;"	d
 MUTEX_INIT	../include/mutex.h	610;"	d
+MUTEX_INIT	../include/mutex.h	632;"	d
 MUTEX_INIT	../include/mutex.h	90;"	d
-MUTEX_INITED	../include/mutex.h	637;"	d
-MUTEX_LOCK	../include/mutex.h	712;"	d
-MUTEX_LOCK	../include/mutex.h	718;"	d
+MUTEX_INITED	../include/mutex.h	659;"	d
+MUTEX_LOCK	../include/mutex.h	734;"	d
+MUTEX_LOCK	../include/mutex.h	740;"	d
 MUTEX_NO_MALLOC_LOCKS	../include/mutex.h	111;"	d
 MUTEX_NO_SHMGET_LOCKS	../include/mutex.h	112;"	d
-MUTEX_SELF_BLOCK	../include/mutex.h	638;"	d
+MUTEX_SELF_BLOCK	../include/mutex.h	660;"	d
 MUTEX_SET	../include/mutex.h	/^MUTEX_SET(tsl_t *tsl) {$/;"	f
 MUTEX_SET	../include/mutex.h	127;"	d
 MUTEX_SET	../include/mutex.h	141;"	d
@@ -759,13 +760,14 @@ MUTEX_SET	../include/mutex.h	533;"	d
 MUTEX_SET	../include/mutex.h	561;"	d
 MUTEX_SET	../include/mutex.h	584;"	d
 MUTEX_SET	../include/mutex.h	599;"	d
+MUTEX_SET	../include/mutex.h	621;"	d
 MUTEX_SET	../include/mutex.h	91;"	d
 MUTEX_SYSTEM_RESOURCES	../include/mutex.h	242;"	d
 MUTEX_SYSTEM_RESOURCES	../include/mutex.h	24;"	d
-MUTEX_THREAD	../include/mutex.h	639;"	d
-MUTEX_THREAD_LOCK	../include/mutex.h	725;"	d
-MUTEX_THREAD_UNLOCK	../include/mutex.h	728;"	d
-MUTEX_UNLOCK	../include/mutex.h	722;"	d
+MUTEX_THREAD	../include/mutex.h	661;"	d
+MUTEX_THREAD_LOCK	../include/mutex.h	747;"	d
+MUTEX_THREAD_UNLOCK	../include/mutex.h	750;"	d
+MUTEX_UNLOCK	../include/mutex.h	744;"	d
 MUTEX_UNSET	../include/mutex.h	/^MUTEX_UNSET(tsl_t *tsl) {$/;"	f
 MUTEX_UNSET	../include/mutex.h	128;"	d
 MUTEX_UNSET	../include/mutex.h	142;"	d
@@ -786,6 +788,7 @@ MUTEX_UNSET	../include/mutex.h	534;"	d
 MUTEX_UNSET	../include/mutex.h	570;"	d
 MUTEX_UNSET	../include/mutex.h	585;"	d
 MUTEX_UNSET	../include/mutex.h	609;"	d
+MUTEX_UNSET	../include/mutex.h	631;"	d
 MUTEX_UNSET	../include/mutex.h	92;"	d
 MU_OPEN	../db/db.c	/^typedef enum { MU_REMOVE, MU_RENAME, MU_OPEN } mu_action;$/;"	e	file:
 MU_REMOVE	../db/db.c	/^typedef enum { MU_REMOVE, MU_RENAME, MU_OPEN } mu_action;$/;"	e	file:
@@ -1856,8 +1859,8 @@ __db_lorder_msg	../include/db_server.h	/^typedef struct __db_lorder_msg __db_lor
 __db_lorder_reply	../include/db_server.h	/^struct __db_lorder_reply {$/;"	s
 __db_lorder_reply	../include/db_server.h	/^typedef struct __db_lorder_reply __db_lorder_reply;$/;"	t
 __db_lprint	../db/db_meta.c	/^__db_lprint(dbc)$/;"	f
-__db_maintinit	../include/mutex.h	686;"	d
-__db_maintinit	../include/mutex.h	692;"	d
+__db_maintinit	../include/mutex.h	708;"	d
+__db_maintinit	../include/mutex.h	714;"	d
 __db_makecopy	../db/db.c	/^__db_makecopy(src, dest)$/;"	f	file:
 __db_map_rmid	../xa/xa_map.c	/^__db_map_rmid(rmid, env)$/;"	f
 __db_map_xid	../xa/xa_map.c	/^__db_map_xid(env, xid, off)$/;"	f
@@ -1876,19 +1879,19 @@ __db_mpool	../include/mp.h	/^struct __db_mpool {$/;"	s
 __db_mpoolfile	../include/mp.h	/^struct __db_mpoolfile {$/;"	s
 __db_mpreg	../include/mp.h	/^struct __db_mpreg {$/;"	s
 __db_mutex_alloc	../mutex/mutex.c	/^__db_mutex_alloc(dbenv, infop, storep)$/;"	f
-__db_mutex_destroy	../include/mutex.h	670;"	d
-__db_mutex_destroy	../include/mutex.h	675;"	d
-__db_mutex_destroy	../include/mutex.h	681;"	d
+__db_mutex_destroy	../include/mutex.h	692;"	d
+__db_mutex_destroy	../include/mutex.h	697;"	d
+__db_mutex_destroy	../include/mutex.h	703;"	d
 __db_mutex_free	../mutex/mutex.c	/^__db_mutex_free(dbenv, infop, mutexp)$/;"	f
-__db_mutex_init	../include/mutex.h	667;"	d
-__db_mutex_init	../include/mutex.h	672;"	d
-__db_mutex_init	../include/mutex.h	678;"	d
-__db_mutex_lock	../include/mutex.h	668;"	d
-__db_mutex_lock	../include/mutex.h	673;"	d
-__db_mutex_lock	../include/mutex.h	679;"	d
-__db_mutex_unlock	../include/mutex.h	669;"	d
-__db_mutex_unlock	../include/mutex.h	674;"	d
-__db_mutex_unlock	../include/mutex.h	680;"	d
+__db_mutex_init	../include/mutex.h	689;"	d
+__db_mutex_init	../include/mutex.h	694;"	d
+__db_mutex_init	../include/mutex.h	700;"	d
+__db_mutex_lock	../include/mutex.h	690;"	d
+__db_mutex_lock	../include/mutex.h	695;"	d
+__db_mutex_lock	../include/mutex.h	701;"	d
+__db_mutex_unlock	../include/mutex.h	691;"	d
+__db_mutex_unlock	../include/mutex.h	696;"	d
+__db_mutex_unlock	../include/mutex.h	702;"	d
 __db_ndbm_clearerr	../dbm/dbm.c	/^__db_ndbm_clearerr(dbm)$/;"	f
 __db_ndbm_close	../dbm/dbm.c	/^__db_ndbm_close(dbm)$/;"	f
 __db_ndbm_delete	../dbm/dbm.c	/^__db_ndbm_delete(dbm, key)$/;"	f
@@ -2051,12 +2054,12 @@ __db_shalloc_dump	../env/db_salloc.c	/^__db_shalloc_dump(addr, fp)$/;"	f
 __db_shalloc_free	../env/db_salloc.c	/^__db_shalloc_free(regionp, ptr)$/;"	f
 __db_shalloc_init	../env/db_salloc.c	/^__db_shalloc_init(area, size)$/;"	f
 __db_shalloc_size	../env/db_salloc.c	/^__db_shalloc_size(len, align)$/;"	f
-__db_shlocks_clear	../include/mutex.h	687;"	d
-__db_shlocks_clear	../include/mutex.h	693;"	d
-__db_shlocks_destroy	../include/mutex.h	688;"	d
-__db_shlocks_destroy	../include/mutex.h	694;"	d
-__db_shmutex_init	../include/mutex.h	689;"	d
-__db_shmutex_init	../include/mutex.h	695;"	d
+__db_shlocks_clear	../include/mutex.h	709;"	d
+__db_shlocks_clear	../include/mutex.h	715;"	d
+__db_shlocks_destroy	../include/mutex.h	710;"	d
+__db_shlocks_destroy	../include/mutex.h	716;"	d
+__db_shmutex_init	../include/mutex.h	711;"	d
+__db_shmutex_init	../include/mutex.h	717;"	d
 __db_shreg_locks_clear	../mutex/mutex.c	/^__db_shreg_locks_clear(mutexp, infop, rp)$/;"	f
 __db_shreg_locks_destroy	../mutex/mutex.c	/^__db_shreg_locks_destroy(infop, rp)$/;"	f
 __db_shreg_locks_record	../mutex/mutex.c	/^__db_shreg_locks_record(dbenv, mutexp, infop, rp)$/;"	f

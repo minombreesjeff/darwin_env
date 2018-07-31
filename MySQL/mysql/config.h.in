@@ -429,6 +429,9 @@
 /* Define if you have the `nsl_r' library (-lnsl_r). */
 #undef HAVE_LIBNSL_R
 
+/* Define if you have the `posix4' library (-lposix4). */
+#undef HAVE_LIBPOSIX4
+
 /* Define if you have the `pthread' library (-lpthread). */
 #undef HAVE_LIBPTHREAD
 

@@ -103,6 +103,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -444,374 +445,226 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 _cache.o: _cache.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _dbug.o: _dbug.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _dynrec.o: _dynrec.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _key.o: _key.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _locking.o: _locking.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _packrec.o: _packrec.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _page.o: _page.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _search.o: _search.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 _statrec.o: _statrec.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 changed.o: changed.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 close.o: close.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 create.o: create.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 delete.o: delete.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 extra.o: extra.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 info.o: info.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 isamchk.o: isamchk.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/thr_lock.h ../include/getopt.h
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
+	../include/thr_lock.h
 isamlog.o: isamlog.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h ../include/my_tree.h
 log.o: log.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 open.o: open.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 pack_isam.o: pack_isam.c isamdef.h ../include/nisam.h \
 	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
-	../include/thr_lock.h ../include/queues.h ../include/my_tree.h \
-	../include/mysys_err.h ../include/getopt.h
+	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	../include/my_list.h ../include/thr_lock.h ../include/queues.h \
+	../include/my_tree.h ../include/mysys_err.h
 panic.o: panic.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 range.o: range.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rfirst.o: rfirst.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rkey.o: rkey.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rlast.o: rlast.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rnext.o: rnext.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rprev.o: rprev.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rrnd.o: rrnd.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rsame.o: rsame.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 rsamepos.o: rsamepos.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 sort.o: sort.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h ../include/queues.h
 static.o: static.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 test1.o: test1.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 test2.o: test2.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 test3.o: test3.c ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h
 update.o: update.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 write.o: write.c isamdef.h ../include/nisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/m_ctype.h \
-	../include/raid.h ../include/m_string.h ../include/my_list.h \
+	../include/global.h ../include/my_config.h ../include/getopt.h \
+	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
+	../include/m_string.h ../include/my_list.h \
 	../include/thr_lock.h
 
 info-am:

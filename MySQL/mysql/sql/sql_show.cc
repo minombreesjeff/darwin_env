@@ -124,12 +124,14 @@ int mysqld_show_open_tables(THD *thd,const char *db,const char *wild)
     net_store_data(&thd->packet,table_name);
     net_store_data(&thd->packet,query_table_status(thd,db,table_name));
     if (my_net_write(&thd->net,(char*) thd->packet.ptr(),thd->packet.length()))
+    {
       DBUG_RETURN(-1);
+    }
   }
-
   send_eof(&thd->net);
   DBUG_RETURN(0);
 }
+
 
 /***************************************************************************
 ** List all tables in a database (fast version)
@@ -304,7 +306,7 @@ int mysqld_extend_show_tables(THD *thd,const char *db,const char *wild)
     packet->length(0);
     net_store_data(packet,file_name);
     table_list.db=(char*) db;
-    table_list.real_name=table_list.name=file_name;
+    table_list.real_name= table_list.alias= file_name;
     if (!(table = open_ltable(thd, &table_list, TL_READ)))
     {
       for (uint i=0 ; i < field_list.elements ; i++)
@@ -421,7 +423,7 @@ int mysqld_extend_show_tables(THD *thd,const char *db,const char *wild)
 
 
 /***************************************************************************
-** List all columns in a table
+** List all columns in a table_list->real_name
 ***************************************************************************/
 
 int

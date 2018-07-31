@@ -281,7 +281,9 @@ mtr0log.o: mtr0log.c ../include/mtr0log.h ../include/univ.i \
 	../include/trx0trx.h ../include/usr0types.h \
 	../include/trx0trx.ic ../include/trx0undo.ic \
 	../include/rem0rec.h ../include/rem0rec.ic \
-	../include/dict0boot.ic
+	../include/dict0boot.ic ../include/log0recv.h \
+	../include/log0log.h ../include/log0log.ic \
+	../include/log0recv.ic
 mtr0mtr.o: mtr0mtr.c ../include/mtr0mtr.h ../include/univ.i \
 	../../include/global.h ../../include/my_config.h \
 	../../include/getopt.h ../../include/dbug.h \

@@ -26,7 +26,8 @@
 #include "mysql_version.h"
 #include "lex.h"
 
-bool opt_search=0,opt_verbose=0;
+bool opt_search=0;
+uint opt_verbose=0;
 ulong opt_count=100000;
 
 #define max_allowed_array  8000	// Don't generate bigger arrays than this
@@ -216,7 +217,7 @@ you have to change 'main' to print out the new function\n");
     return(1);
   }
 
-  if (opt_verbose)
+  if (opt_verbose > 1)
     fprintf (stderr,"Info: Possible add values: %d\n",found-type_count);
 
   for (prime=primes; (function_mod=*prime) ; prime++)
@@ -385,7 +386,7 @@ static int get_options(int argc, char **argv)
       opt_search=1;
       break;
     case 'v':
-      opt_verbose=1;
+      opt_verbose++;
       break;
     case 'V': usage(1); exit(0);
     case 'I':
@@ -481,7 +482,7 @@ int main(int argc,char **argv)
   int error;
 
   MY_INIT(argv[0]);
-  start_value=6130115L; best_t1=3632784L;  best_t2=86437L;  best_type=3; /* mode=4229  add=2  type: 0 */
+  start_value=2744811L; best_t1=5135075L;  best_t2=1719450L;  best_type=0; /* mode=4999  add=1  type: 0 */
   if (get_options(argc,(char **) argv))
     exit(1);
 
@@ -502,6 +503,7 @@ int main(int argc,char **argv)
 	   start_value, best_t1,best_t2,best_type,best_mod,best_add,
 	   best_functype);
 
+    best_start_value=start_value;
     for (uint i=1 ; i <= opt_count ; i++)
     {
       if (i % 10 == 0)
@@ -524,6 +526,10 @@ int main(int argc,char **argv)
 	       best_start_value,best_t1,best_t2,best_type,best_mod,best_add,
 	       best_functype);
       }
+      if (opt_verbose && (i % 20000) == 0)
+	printf("\nstart_value=%ldL; best_t1=%ldL;  best_t2=%ldL;  best_type=%d; /* mode=%d  add=%d  type: %d */\n",
+	       best_start_value,best_t1,best_t2,best_type,best_mod,best_add,
+	       best_functype);
     }
   }
 

@@ -19,6 +19,9 @@
 
 #include "mysql_priv.h"
 #include <hash.h>
+#ifdef HAVE_BERKELEY_DB
+#include <ha_berkeley.h>
+#endif
 #include <myisam.h>
 
 #ifdef __WIN__
@@ -147,8 +150,8 @@ int mysql_rm_table(THD *thd,TABLE_LIST *tables, my_bool if_exists)
   
   error = 0;
  err:  
-  VOID(pthread_cond_broadcast(&COND_refresh)); // Signal to refresh
   pthread_mutex_unlock(&LOCK_open);
+  VOID(pthread_cond_broadcast(&COND_refresh)); // Signal to refresh
 
   pthread_mutex_lock(&thd->mysys_var->mutex);
   thd->mysys_var->current_mutex= 0;
@@ -160,7 +163,7 @@ int mysql_rm_table(THD *thd,TABLE_LIST *tables, my_bool if_exists)
     my_error(ER_BAD_TABLE_ERROR,MYF(0),wrong_tables.c_ptr());
     error=1;
   }
-  if(error)
+  if (error)
     DBUG_RETURN(-1);
   send_ok(&thd->net);
   DBUG_RETURN(0);
@@ -711,7 +714,9 @@ TABLE *create_table_from_items(THD *thd, HA_CREATE_INFO *create_info,
   table->reginfo.lock_type=TL_WRITE;
   if (!((*lock)=mysql_lock_tables(thd,&table,1)))
   {
+    VOID(pthread_mutex_lock(&LOCK_open));
     hash_delete(&open_cache,(byte*) table);
+    VOID(pthread_mutex_unlock(&LOCK_open));
     quick_rm_table(create_info->db_type,db,name);
     DBUG_RETURN(0);
   }
@@ -774,7 +779,7 @@ bool close_cached_table(THD *thd,TABLE *table)
 #if defined(USING_TRANSACTIONS) || defined( __WIN__) || defined( __EMX__) || !defined(OS2)
     /* Wait until all there are no other threads that has this table open */
     while (remove_table_from_cache(thd,table->table_cache_key,
-				   table->table_name))
+				   table->real_name))
     {
       dropping_tables++;
       (void) pthread_cond_wait(&COND_refresh,&LOCK_open);
@@ -782,7 +787,7 @@ bool close_cached_table(THD *thd,TABLE *table)
     }
 #else
     (void) remove_table_from_cache(thd,table->table_cache_key,
-				   table->table_name);
+				   table->real_name);
 #endif
     /* When lock on LOCK_open is freed other threads can continue */
     pthread_cond_broadcast(&COND_refresh);
@@ -805,7 +810,7 @@ static int send_check_errmsg(THD* thd, TABLE_LIST* table,
 
   String* packet = &thd->packet;
   packet->length(0);
-  net_store_data(packet, table->name);
+  net_store_data(packet, table->alias);
   net_store_data(packet, (char*)operator_name);
   net_store_data(packet, "error");
   net_store_data(packet, errmsg);
@@ -830,7 +835,7 @@ static int prepare_for_restore(THD* thd, TABLE_LIST* table)
   {
     char* backup_dir = thd->lex.backup_dir;
     char src_path[FN_REFLEN], dst_path[FN_REFLEN];
-    char* table_name = table->name;
+    char* table_name = table->real_name;
     char* db = thd->db ? thd->db : table->db;
 
     if (!fn_format(src_path, table_name, backup_dir, reg_ext, 4 + 64))
@@ -859,7 +864,9 @@ static int prepare_for_restore(THD* thd, TABLE_LIST* table)
 			 reg_ext, 4),
 	       MYF(MY_WME)))
     {
+      pthread_mutex_lock(&LOCK_open);
       unlock_table_name(thd, table);
+      pthread_mutex_unlock(&LOCK_open);
       DBUG_RETURN(send_check_errmsg(thd, table, "restore",
 				    "Failed copying .frm file"));
     }
@@ -870,7 +877,9 @@ static int prepare_for_restore(THD* thd, TABLE_LIST* table)
 
     if (generate_table(thd, table, 0))
     {
+      pthread_mutex_lock(&LOCK_open);
       unlock_table_name(thd, table);
+      pthread_mutex_unlock(&LOCK_open);
       thd->net.no_send_ok = save_no_send_ok;
       DBUG_RETURN(send_check_errmsg(thd, table, "restore",
 				    "Failed generating table from .frm file"));
@@ -913,7 +922,7 @@ static int mysql_admin_table(THD* thd, TABLE_LIST* tables,
     char table_name[NAME_LEN*2+2];
     char* db = (table->db) ? table->db : thd->db;
     bool fatal_error=0;
-    strxmov(table_name,db ? db : "",".",table->name,NullS);
+    strxmov(table_name,db ? db : "",".",table->real_name,NullS);
 
     thd->open_options|= extra_open_options;
     table->table = open_ltable(thd, table, lock_type);
@@ -930,9 +939,12 @@ static int mysql_admin_table(THD* thd, TABLE_LIST* tables,
       // now we should be able to open the partially restored table
       // to finish the restore in the handler later on
       if (!(table->table = reopen_name_locked_table(thd, table)))
+      {
+	pthread_mutex_lock(&LOCK_open);
         unlock_table_name(thd, table);
+	pthread_mutex_unlock(&LOCK_open);
+      }
     }
-
     if (!table->table)
     {
       const char *err_msg;
@@ -1031,8 +1043,12 @@ static int mysql_admin_table(THD* thd, TABLE_LIST* tables,
     if (fatal_error)
       table->table->version=0;			// Force close of table
     else if (open_for_modify)
+    {
+      pthread_mutex_lock(&LOCK_open);
       remove_table_from_cache(thd, table->table->table_cache_key,
 			      table->table->real_name);
+      pthread_mutex_unlock(&LOCK_open);
+    }
     close_thread_tables(thd);
     if (my_net_write(&thd->net, (char*) packet->ptr(),
 		     packet->length()))
@@ -1648,11 +1664,10 @@ int mysql_alter_table(THD *thd,char *new_db, char *new_name,
     error=1;
   if (error)
   {
-    VOID(pthread_cond_broadcast(&COND_refresh));
     VOID(pthread_mutex_unlock(&LOCK_open));
+    VOID(pthread_cond_broadcast(&COND_refresh));
     goto err;
   }
-
   thd->proc_info="end";
   mysql_update_log.write(thd, thd->query,thd->query_length);
   if (mysql_bin_log.is_open())
@@ -1662,6 +1677,21 @@ int mysql_alter_table(THD *thd,char *new_db, char *new_name,
   }
   VOID(pthread_cond_broadcast(&COND_refresh));
   VOID(pthread_mutex_unlock(&LOCK_open));
+#ifdef HAVE_BERKELEY_DB
+  if (old_db_type == DB_TYPE_BERKELEY_DB)
+  {
+    (void) berkeley_flush_logs();
+    /*
+      For the alter table to be properly flushed to the logs, we
+      have to open the new table.  If not, we get a problem on server
+      shutdown.
+    */
+    if (!open_tables(thd, table_list))		// Should always succeed
+    {
+      close_thread_table(thd, &table_list->table);
+    }
+  }
+#endif
 
 end_temporary:
   sprintf(tmp_name,ER(ER_INSERT_INFO),(ulong) (copied+deleted),
@@ -1724,7 +1754,7 @@ copy_data_between_tables(TABLE *from,TABLE *to,
                                          MYF(MY_FAE | MY_ZEROFILL));
     bzero((char*) &tables,sizeof(tables));
     tables.table = from;
-    tables.name  = tables.real_name= from->real_name;
+    tables.alias = tables.real_name= from->real_name;
     tables.db	 = from->table_cache_key;
     error=1;
 

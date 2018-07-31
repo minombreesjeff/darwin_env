@@ -224,6 +224,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b,int *yystacksize);
 %token	NATURAL
 %token	NCHAR_SYM
 %token	NOT
+%token  FOREIGN_KEY_CHECKS
 %token	NO_SYM
 %token	NULL_SYM
 %token	NUM
@@ -287,6 +288,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b,int *yystacksize);
 %token  UNCOMMITTED_SYM
 %token	UNION_SYM
 %token	UNIQUE_SYM
+%token  UNIQUE_CHECKS
 %token	USAGE
 %token	USE_SYM
 %token	USING
@@ -1758,15 +1760,15 @@ join_table_list:
 	| join_table_list INNER_SYM JOIN_SYM join_table ON expr
 	  { add_join_on($4,$6); $$=$4; }
 	| join_table_list INNER_SYM JOIN_SYM join_table
-	  { Lex->db1=$1->db; Lex->table1=$1->name;
-	    Lex->db2=$4->db; Lex->table2=$4->name; }
+	  { Lex->db1=$1->db; Lex->table1=$1->alias;
+	    Lex->db2=$4->db; Lex->table2=$4->alias; }
 	  USING '(' using_list ')'
 	  { add_join_on($4,$8); $$=$4; }
 	| join_table_list LEFT opt_outer JOIN_SYM join_table ON expr
 	  { add_join_on($5,$7); $5->outer_join|=JOIN_TYPE_LEFT; $$=$5; }
 	| join_table_list LEFT opt_outer JOIN_SYM join_table
-	  { Lex->db1=$1->db; Lex->table1=$1->name;
-	    Lex->db2=$5->db; Lex->table2=$5->name; }
+	  { Lex->db1=$1->db; Lex->table1=$1->alias;
+	    Lex->db2=$5->db; Lex->table2=$5->alias; }
 	  USING '(' using_list ')'
 	  { add_join_on($5,$9); $5->outer_join|=JOIN_TYPE_LEFT; $$=$5; }
 	| join_table_list NATURAL LEFT opt_outer JOIN_SYM join_table
@@ -1774,8 +1776,8 @@ join_table_list:
 	| join_table_list RIGHT opt_outer JOIN_SYM join_table ON expr
 	  { add_join_on($1,$7); $1->outer_join|=JOIN_TYPE_RIGHT; $$=$1; }
 	| join_table_list RIGHT opt_outer JOIN_SYM join_table
-	  { Lex->db1=$1->db; Lex->table1=$1->name;
-	    Lex->db2=$5->db; Lex->table2=$5->name; }
+	  { Lex->db1=$1->db; Lex->table1=$1->alias;
+	    Lex->db2=$5->db; Lex->table2=$5->alias; }
 	  USING '(' using_list ')'
 	  { add_join_on($1,$9); $1->outer_join|=JOIN_TYPE_RIGHT; $$=$1; }
 	| join_table_list NATURAL RIGHT opt_outer JOIN_SYM join_table
@@ -2240,6 +2242,8 @@ show_param:
 	  }
 	| STATUS_SYM wild
 	  { Lex->sql_command= SQLCOM_SHOW_STATUS; }
+        | INNOBASE_SYM STATUS_SYM
+          { Lex->sql_command = SQLCOM_SHOW_INNODB_STATUS;}
 	| opt_full PROCESSLIST_SYM
 	  { Lex->sql_command= SQLCOM_SHOW_PROCESSLIST;}
 	| VARIABLES wild
@@ -2602,6 +2606,7 @@ keyword:
 	| MYISAM_SYM		{}
 	| NATIONAL_SYM		{}
 	| NCHAR_SYM		{}
+	| FOREIGN_KEY_CHECKS	{}
 	| NO_SYM		{}
 	| OPEN_SYM		{}
 	| PACK_KEYS_SYM		{}
@@ -2614,6 +2619,7 @@ keyword:
 	| RAID_CHUNKSIZE	{}
 	| RAID_STRIPED_SYM      {}
 	| RAID_TYPE		{}
+	| UNIQUE_CHECKS		{}
 	| RELOAD		{}
 	| REPAIR		{}
 	| REPEATABLE_SYM	{}
@@ -2771,6 +2777,20 @@ option_value:
 	      slave_skip_counter = $3;
 	    pthread_mutex_unlock(&LOCK_slave);
           }
+	 | FOREIGN_KEY_CHECKS equal NUM
+	  {
+	    if (atoi($3.str) == 0)
+	      Lex->options|= OPTION_NO_FOREIGN_KEY_CHECKS;
+	    else
+	      Lex->options&= ~(OPTION_NO_FOREIGN_KEY_CHECKS);
+	  }
+	 | UNIQUE_CHECKS equal NUM
+	  {
+	    if (atoi($3.str) == 0)
+	      Lex->options|= OPTION_RELAXED_UNIQUE_CHECKS;
+	    else
+	      Lex->options&= ~(OPTION_RELAXED_UNIQUE_CHECKS);
+	  }
 
 text_or_password:
 	TEXT_STRING { $$=$1.str;}

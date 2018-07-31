@@ -98,6 +98,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -194,7 +195,6 @@ SCRIPTS =  $(noinst_SCRIPTS)
 
 TEXI2DVI = texi2dvi
 INFO_DEPS = mysql.info
-DVIS = manual.dvi
 TEXINFOS = manual.texi
 DIST_COMMON =  Makefile.am Makefile.in
 

@@ -105,6 +105,7 @@ CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
+DVIS = @DVIS@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
@@ -195,7 +196,7 @@ pkglib_LIBRARIES = libmystrings.a
 libmystrings_a_SOURCES = @CHARSET_SRCS@ $(ASRCS) $(CSRCS)
 noinst_PROGRAMS = conf_to_src
 # Default charset definitions
-EXTRA_DIST = ctype-big5.c ctype-czech.c ctype-euc_kr.c                         ctype-gb2312.c ctype-gbk.c ctype-sjis.c                         ctype-tis620.c ctype-ujis.c                         ctype_autoconf.c                         strto.c strings-x86.s 			longlong2str.c longlong2str-x86.s 			strxmov.c bmove_upp.c strappend.c strcont.c strend.c 			strfill.c strcend.c is_prefix.c strstr.c strinstr.c 			strmake.c strnmov.c strmov.c strnlen.c 			bmove_upp-sparc.s strappend-sparc.s strend-sparc.s 			strinstr-sparc.s strmake-sparc.s strmov-sparc.s 			strnmov-sparc.s strstr-sparc.s strxmov-sparc.s                         t_ctype.h
+EXTRA_DIST = ctype-big5.c ctype-czech.c ctype-euc_kr.c                         ctype-gb2312.c ctype-gbk.c ctype-sjis.c                         ctype-tis620.c ctype-ujis.c                         strto.c strings-x86.s 			longlong2str.c longlong2str-x86.s 			strxmov.c bmove_upp.c strappend.c strcont.c strend.c 			strfill.c strcend.c is_prefix.c strstr.c strinstr.c 			strmake.c strnmov.c strmov.c strnlen.c 			bmove_upp-sparc.s strappend-sparc.s strend-sparc.s 			strinstr-sparc.s strmake-sparc.s strmov-sparc.s 			strnmov-sparc.s strstr-sparc.s strxmov-sparc.s                         t_ctype.h
 
 
 OMIT_DEPENDENCIES = pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h 			__math.h time.h __time.h unistd.h __unistd.h types.h 			xtypes.h ac-types.h posix.h string.h __string.h 			errno.h socket.h inet.h dirent.h netdb.h 			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h 			prio_queue.h pthread_attr.h pthread_once.h queue.h 			sleep.h specific.h version.h pwd.h timers.h uio.h 			cdefs.h machdep.h signal.h __signal.h util.h
@@ -444,163 +445,93 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 atof.o: atof.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h
+	../include/getopt.h ../include/dbug.h
 bchange.o: bchange.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 bcmp.o: bcmp.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 bfill.o: bfill.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 bmove.o: bmove.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 bmove512.o: bmove512.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 bmove_upp.o: bmove_upp.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
+conf_to_src.o: conf_to_src.c ../include/getopt.h
+ctype-big5.o: ctype-big5.c ../include/global.h ../include/my_config.h \
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h
+ctype-czech.o: ctype-czech.c ../include/global.h ../include/my_config.h \
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
+ctype-euc_kr.o: ctype-euc_kr.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
 	../include/m_string.h
-conf_to_src.o: conf_to_src.c ../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h
+ctype-gb2312.o: ctype-gb2312.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/m_string.h
+ctype-gbk.o: ctype-gbk.c ../include/global.h ../include/my_config.h \
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h
+ctype-sjis.o: ctype-sjis.c ../include/global.h ../include/my_config.h \
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h
+ctype-tis620.o: ctype-tis620.c ../include/global.h \
+	../include/my_config.h ../include/getopt.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
+	t_ctype.h
+ctype-ujis.o: ctype-ujis.c ../include/global.h ../include/my_config.h \
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 ctype.o: ctype.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_ctype.h ../include/m_string.h \
-	ctype_extra_sources.c ctype_autoconf.c
+	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
+	../include/m_string.h ctype_extra_sources.c ctype_autoconf.c
 int2str.o: int2str.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 is_prefix.o: is_prefix.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 llstr.o: llstr.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
-longlong2str.o: longlong2str.c ../include/global.h \
-	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 r_strinstr.o: r_strinstr.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 str2int.o: str2int.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h ../include/my_sys.h \
-	../include/my_pthread.h \
-	../mit-pthreads/include/pthread/config.h \
-	../mit-pthreads/include/sched.h ../include/raid.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h \
+	../include/m_ctype.h ../include/my_sys.h \
+	../include/my_pthread.h ../include/raid.h
 strappend.o: strappend.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strcend.o: strcend.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strcont.o: strcont.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strend.o: strend.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strfill.o: strfill.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strinstr.o: strinstr.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strmake.o: strmake.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strmov.o: strmov.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strnlen.o: strnlen.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strnmov.o: strnmov.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strstr.o: strstr.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strtol.o: strtol.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h
+	../include/getopt.h ../include/dbug.h
 strtoll.o: strtoll.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strtoul.o: strtoul.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h
+	../include/getopt.h ../include/dbug.h
 strtoull.o: strtoull.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strxmov.o: strxmov.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 strxnmov.o: strxnmov.c ../include/global.h ../include/my_config.h \
-	../mit-pthreads/include/bits/local_lim.h \
-	../mit-pthreads/include/bits/pthreadtypes.h \
-	../mit-pthreads/include/endian.h ../include/dbug.h \
-	../include/m_string.h
+	../include/getopt.h ../include/dbug.h ../include/m_string.h
 
 info-am:
 info: info-am
