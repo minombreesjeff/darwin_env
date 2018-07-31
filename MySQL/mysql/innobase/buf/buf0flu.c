@@ -15,6 +15,7 @@ Created 11/11/1995 Heikki Tuuri
 
 #include "ut0byte.h"
 #include "ut0lst.h"
+#include "page0page.h"
 #include "fil0fil.h"
 #include "buf0buf.h"
 #include "buf0lru.h"
@@ -105,7 +106,7 @@ buf_flush_ready_for_replace(
 				BUF_BLOCK_FILE_PAGE and in the LRU list*/
 {
 	ut_ad(mutex_own(&(buf_pool->mutex)));
-	ut_ad(block->state == BUF_BLOCK_FILE_PAGE);
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 
 	if ((ut_dulint_cmp(block->oldest_modification, ut_dulint_zero) > 0)
 	    || (block->buf_fix_count != 0)
@@ -225,6 +226,28 @@ buf_flush_buffered_writes(void)
 		return;
 	}
 
+	for (i = 0; i < trx_doublewrite->first_free; i++) {
+
+		block = trx_doublewrite->buf_block_arr[i];
+	        ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+
+		if (block->check_index_page_at_flush
+				&& !page_simple_validate(block->frame)) {
+
+			buf_page_print(block->frame);
+
+			ut_print_timestamp(stderr);
+			fprintf(stderr,
+	"  InnoDB: Apparent corruption of an index page n:o %lu in space %lu\n"
+	"InnoDB: to be written to data file. We intentionally crash server\n"
+	"InnoDB: to prevent corrupt data from ending up in data\n"
+	"InnoDB: files.\n",
+			block->offset, block->space);
+
+			ut_a(0);
+		}
+	}
+
 	if (trx_doublewrite->first_free > TRX_SYS_DOUBLEWRITE_BLOCK_SIZE) {
 		len = TRX_SYS_DOUBLEWRITE_BLOCK_SIZE * UNIV_PAGE_SIZE;
 	} else {
@@ -338,21 +361,29 @@ buf_flush_init_for_writing(
 	ulint	space,		/* in: space id */
 	ulint	page_no)	/* in: page number */
 {	
-	/* Write the newest modification lsn to the page */
+	UT_NOT_USED(space);
+
+	/* Write the newest modification lsn to the page header and trailer */
 	mach_write_to_8(page + FIL_PAGE_LSN, newest_lsn);
 
-	mach_write_to_8(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN, newest_lsn);
+	mach_write_to_8(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM,
+								newest_lsn);
+	/* Write the page number */
 
-	/* Write to the page the space id and page number */
-
-	mach_write_to_4(page + FIL_PAGE_SPACE, space);
 	mach_write_to_4(page + FIL_PAGE_OFFSET, page_no);
 
-	/* We overwrite the first 4 bytes of the end lsn field to store
-	a page checksum */
+	/* Store the new formula checksum */
 
-	mach_write_to_4(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN,
-					buf_calc_page_checksum(page));
+	mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM,
+					buf_calc_page_new_checksum(page));
+
+	/* We overwrite the first 4 bytes of the end lsn field to store
+	the old formula checksum. Since it depends also on the field
+	FIL_PAGE_SPACE_OR_CHKSUM, it has to be calculated after storing the
+	new formula checksum. */
+
+	mach_write_to_4(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM,
+					buf_calc_page_old_checksum(page));
 }
 
 /************************************************************************
@@ -375,7 +406,7 @@ buf_flush_write_block_low(
 	"Warning: cannot force log to disk in the log debug version!\n");
 #else
 	/* Force the log to the disk before writing the modified block */
-	log_flush_up_to(block->newest_modification, LOG_WAIT_ALL_GROUPS);
+	log_write_up_to(block->newest_modification, LOG_WAIT_ALL_GROUPS, TRUE);
 #endif	
 	buf_flush_init_for_writing(block->frame, block->newest_modification,
 						block->space, block->offset);
@@ -412,6 +443,8 @@ buf_flush_try_page(
 	mutex_enter(&(buf_pool->mutex));
 
 	block = buf_page_hash_get(space, offset);
+
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 
 	if (flush_type == BUF_FLUSH_LIST
 	    && block && buf_flush_ready_for_flush(block, flush_type)) {
@@ -506,7 +539,8 @@ buf_flush_try_page(
 		rw_lock_s_lock_gen(&(block->lock), BUF_IO_WRITE);
 
 		if (buf_debug_prints) {
-			printf("Flushing single page space %lu, page no %lu \n",
+			printf(
+			"Flushing single page space %lu, page no %lu \n",
 						block->space, block->offset);
 		}
 
@@ -547,15 +581,7 @@ buf_flush_try_neighbors(
 	
 		low = offset;
 		high = offset + 1;
-	} else if (flush_type == BUF_FLUSH_LIST) {
-		/* Since semaphore waits require us to flush the
-		doublewrite buffer to disk, it is best that the
-		search area is just the page itself, to minimize
-		chances for semaphore waits */
-
-		low = offset;
-		high = offset + 1;
-	}		
+	}
 
 	/* printf("Flush area: low %lu high %lu\n", low, high); */
 	
@@ -572,13 +598,20 @@ buf_flush_try_neighbors(
 		if (block && flush_type == BUF_FLUSH_LRU && i != offset
 		    && !block->old) {
 
-		  /* We avoid flushing 'non-old' blocks in an LRU flush,
-		     because the flushed blocks are soon freed */
+		        /* We avoid flushing 'non-old' blocks in an LRU flush,
+		        because the flushed blocks are soon freed */
 
-		  continue;
+		        continue;
 		}
 
-		if (block && buf_flush_ready_for_flush(block, flush_type)) {
+		if (block && buf_flush_ready_for_flush(block, flush_type)
+		   && (i == offset || block->buf_fix_count == 0)) {
+			/* We only try to flush those neighbors != offset
+			where the buf fix count is zero, as we then know that
+			we probably can latch the page without a semaphore
+			wait. Semaphore waits are expensive because we must
+			flush the doublewrite buffer before we start
+			waiting. */
 
 			mutex_exit(&(buf_pool->mutex));
 
@@ -697,7 +730,6 @@ buf_flush_batch(
 				page_count +=
 					buf_flush_try_neighbors(space, offset,
 								flush_type);
-
 				/* printf(
 				"Flush type %lu, page no %lu, neighb %lu\n",
 				flush_type, offset,
@@ -823,11 +855,19 @@ buf_flush_free_margin(void)
 /*=======================*/
 {
 	ulint	n_to_flush;
+	ulint	n_flushed;
 
 	n_to_flush = buf_flush_LRU_recommendation();
 	
 	if (n_to_flush > 0) {
-		buf_flush_batch(BUF_FLUSH_LRU, n_to_flush, ut_dulint_zero);
+		n_flushed = buf_flush_batch(BUF_FLUSH_LRU, n_to_flush,
+							ut_dulint_zero);
+		if (n_flushed == ULINT_UNDEFINED) {
+			/* There was an LRU type flush batch already running;
+			let us wait for it to end */
+		   
+		        buf_flush_wait_batch_end(BUF_FLUSH_LRU);
+		}
 	}
 }
 

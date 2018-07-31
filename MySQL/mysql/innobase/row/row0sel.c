@@ -30,6 +30,7 @@ Created 12/19/1997 Heikki Tuuri
 #include "pars0sym.h"
 #include "pars0pars.h"
 #include "row0mysql.h"
+#include "read0read.h"
 
 /* Maximum number of rows to prefetch; MySQL interface has another parameter */
 #define SEL_MAX_N_PREFETCH	16
@@ -66,38 +67,48 @@ row_sel_sec_rec_is_for_clust_rec(
 	rec_t*		clust_rec,	/* in: clustered index record */
 	dict_index_t*	clust_index)	/* in: clustered index */
 {
-	dict_col_t*	col;
-	byte*		sec_field;
-	ulint		sec_len;
-	byte*		clust_field;
-	ulint		clust_len;
-	ulint		n;
-	ulint		i;
+	dict_field_t*	ifield;
+        dict_col_t*     col;
+        byte*           sec_field;
+        ulint           sec_len;
+        byte*           clust_field;
+        ulint           clust_len;
+        ulint           n;
+        ulint           i;
 
-	n = dict_index_get_n_ordering_defined_by_user(sec_index);
+	UT_NOT_USED(clust_index);
 
-	for (i = 0; i < n; i++) {
-		col = dict_field_get_col(
-				dict_index_get_nth_field(sec_index, i));
+        n = dict_index_get_n_ordering_defined_by_user(sec_index);
 
-		clust_field = rec_get_nth_field(clust_rec,
-						dict_col_get_clust_pos(col),
-						&clust_len);
-		sec_field = rec_get_nth_field(sec_rec, i, &sec_len);
+        for (i = 0; i < n; i++) {
+		ifield = dict_index_get_nth_field(sec_index, i);
+                col = dict_field_get_col(ifield);
+                
+                clust_field = rec_get_nth_field(clust_rec,
+                                                dict_col_get_clust_pos(col),
+                                                &clust_len);
+                sec_field = rec_get_nth_field(sec_rec, i, &sec_len);
 
-		if (sec_len != clust_len) {
+		if (ifield->prefix_len > 0
+		    && clust_len != UNIV_SQL_NULL
+		    && clust_len > ifield->prefix_len) {
 
-			return(FALSE);
+		       clust_len = ifield->prefix_len;
 		}
 
-		if (0 != cmp_data_data(dict_col_get_type(col),
-					clust_field, clust_len,
-					sec_field, sec_len)) {
-			return(FALSE);
-		}
-	}
+                if (sec_len != clust_len) {
 
-	return(TRUE);
+                        return(FALSE);
+                }
+
+                if (0 != cmp_data_data(dict_col_get_type(col),
+                                        clust_field, clust_len,
+                                        sec_field, sec_len)) {
+                        return(FALSE);
+                }
+        }
+
+        return(TRUE);
 }
 
 /*************************************************************************
@@ -598,13 +609,35 @@ row_sel_get_clust_rec(
 
 	clust_rec = btr_pcur_get_rec(&(plan->clust_pcur));
 
-	ut_ad(page_rec_is_user_rec(clust_rec));
+	/* Note: only if the search ends up on a non-infimum record is the
+	low_match value the real match to the search tuple */
+
+	if (!page_rec_is_user_rec(clust_rec)
+            || btr_pcur_get_low_match(&(plan->clust_pcur))
+	       < dict_index_get_n_unique(index)) {
+	
+		ut_a(rec_get_deleted_flag(rec));
+		ut_a(node->read_view);
+
+		/* In a rare case it is possible that no clust rec is found
+		for a delete-marked secondary index record: if in row0umod.c
+		in row_undo_mod_remove_clust_low() we have already removed
+		the clust rec, while purge is still cleaning and removing
+		secondary index records associated with earlier versions of
+		the clustered index record. In that case we know that the
+		clustered index record did not exist in the read view of
+		trx. */
+
+		clust_rec = NULL;
+
+		goto func_exit;
+	}
 
 	if (!node->read_view) {
 		/* Try to place a lock on the index record */
 		
 		err = lock_clust_rec_read_check_and_lock(0, clust_rec, index,
-						node->row_lock_mode, thr);
+				node->row_lock_mode, LOCK_ORDINARY, thr);
 		if (err != DB_SUCCESS) {
 
 			return(err);
@@ -619,7 +652,7 @@ row_sel_get_clust_rec(
 							node->read_view)) {
 
 			err = row_sel_build_prev_vers(node->read_view, plan,
-						clust_rec, &old_vers, mtr);
+					clust_rec, &old_vers, mtr);
 			if (err != DB_SUCCESS) {
 
 				return(err);
@@ -654,13 +687,14 @@ row_sel_get_clust_rec(
 			*out_rec = clust_rec;
 
 			return(DB_SUCCESS);
-		}								
+		}
 	}
 
 	/* Fetch the columns needed in test conditions */
 	
 	row_sel_fetch_columns(index, clust_rec,
 					UT_LIST_GET_FIRST(plan->columns));
+func_exit:
 	*out_rec = clust_rec;
 
 	return(DB_SUCCESS);
@@ -676,16 +710,17 @@ sel_set_rec_lock(
 	rec_t*		rec,	/* in: record */
 	dict_index_t*	index,	/* in: index */
 	ulint		mode,	/* in: lock mode */
+	ulint		type, 	/* in: LOCK_ORDINARY, LOCK_GAP, or LOC_REC_NOT_GAP */
 	que_thr_t*	thr)	/* in: query thread */	
 {
 	ulint	err;
 
 	if (index->type & DICT_CLUSTERED) {
 		err = lock_clust_rec_read_check_and_lock(0, rec, index, mode,
-									thr);
+							type, thr);
 	} else {
 		err = lock_sec_rec_read_check_and_lock(0, rec, index, mode,
-									thr);
+							type, thr);
 	}
 
 	return(err);
@@ -1152,7 +1187,7 @@ rec_loop:
 		
 		if (!consistent_read) {
 			err = sel_set_rec_lock(page_rec_get_next(rec), index,
-						node->row_lock_mode, thr);
+				node->row_lock_mode, LOCK_ORDINARY, thr);
 			if (err != DB_SUCCESS) {
 				/* Note that in this case we will store in pcur
 				the PREDECESSOR of the record we are waiting
@@ -1178,8 +1213,8 @@ rec_loop:
 	if (!consistent_read) {
 		/* Try to place a lock on the index record */	
 
-		err = sel_set_rec_lock(rec, index, node->row_lock_mode, thr);
-
+		err = sel_set_rec_lock(rec, index, node->row_lock_mode,
+						LOCK_ORDINARY, thr);
 		if (err != DB_SUCCESS) {
 
 			goto lock_wait_or_error;
@@ -1240,6 +1275,8 @@ rec_loop:
 	set: the cursor is now placed on a user record */
 
 	/* PHASE 3: Get previous version in a consistent read */
+
+	cons_read_requires_clust_rec = FALSE;
 
 	if (consistent_read) {
 		/* This is a non-locking consistent read: if necessary, fetch
@@ -1847,9 +1884,11 @@ row_printf_step(
 } 
 
 /********************************************************************
-Converts a key value stored in MySQL format to an Innobase dtuple.
-The last field of the key value may be just a prefix of a fixed length
-field: hence the parameter key_len. */
+Converts a key value stored in MySQL format to an Innobase dtuple. The last
+field of the key value may be just a prefix of a fixed length field: hence
+the parameter key_len. But currently we do not allow search keys where the
+last field is only a prefix of the full key field len and print a warning if
+such appears. */
 
 void
 row_sel_convert_mysql_key_to_innobase(
@@ -1860,17 +1899,24 @@ row_sel_convert_mysql_key_to_innobase(
 					to index! */
 	byte*		buf,		/* in: buffer to use in field
 					conversions */
+	ulint		buf_len,	/* in: buffer length */
 	dict_index_t*	index,		/* in: index of the key value */
 	byte*		key_ptr,	/* in: MySQL key value */
 	ulint		key_len)	/* in: MySQL key value length */
 {
+	byte*		original_buf	= buf;
+	dict_field_t*	field;
 	dfield_t*	dfield;
-	ulint		offset;
-	ulint		len;
+	ulint		data_offset;
+	ulint		data_len;
+	ulint		data_field_len;
+	ibool		is_null;
 	byte*		key_end;
 	ulint		n_fields = 0;
+	ulint		type;
 	
-	UT_NOT_USED(index);
+	/* For documentation of the key value storage format in MySQL, see
+	ha_innobase::store_key_val_for_row() in ha_innodb.cc. */
 
 	key_end = key_ptr + key_len;
 
@@ -1879,11 +1925,14 @@ row_sel_convert_mysql_key_to_innobase(
 	dtuple_set_n_fields(tuple, ULINT_MAX);
 
 	dfield = dtuple_get_nth_field(tuple, 0);
+	field = dict_index_get_nth_field(index, 0);
 
 	if (dfield_get_type(dfield)->mtype == DATA_SYS) {
-		/* A special case: we are looking for a position in a
-		generated clustered index: the first and the only
-		ordering column is ROW_ID */
+		/* A special case: we are looking for a position in the
+		generated clustered index which InnoDB automatically added
+		to a table with no primary key: the first and the only
+		ordering column is ROW_ID which InnoDB stored to the key_ptr
+		buffer. */
 
 		ut_a(key_len == DATA_ROW_ID_LEN);
 
@@ -1894,58 +1943,114 @@ row_sel_convert_mysql_key_to_innobase(
 		return;
 	}
 
-  	while (key_ptr < key_end) {
-		offset = 0;
-		len = dfield_get_type(dfield)->len;
+	while (key_ptr < key_end) {
 
-		n_fields++;    		
+		ut_a(dict_col_get_type(field->col)->mtype
+		     == dfield_get_type(dfield)->mtype);
+
+		data_offset = 0;
+		is_null = FALSE;
 
     		if (!(dfield_get_type(dfield)->prtype & DATA_NOT_NULL)) {
     			/* The first byte in the field tells if this is
     			an SQL NULL value */
     			
-    			offset = 1;
+			data_offset = 1;
 
-			if (*key_ptr != 0) {
+ 			if (*key_ptr != 0) {
       				dfield_set_data(dfield, NULL, UNIV_SQL_NULL);
 
-      				goto next_part;
+				is_null = TRUE;
       			}
       		}
 
-		row_mysql_store_col_in_innobase_format(
-				dfield, buf, key_ptr + offset, len,
-					dfield_get_type(dfield)->mtype,
-					dfield_get_type(dfield)->prtype
-							& DATA_UNSIGNED);
-	next_part:
-    		key_ptr += (offset + len);
+		type = dfield_get_type(dfield)->mtype;
 
-		if (key_ptr > key_end) {
-			/* The last field in key was not a complete
-			field but a prefix of it */
+		/* Calculate data length and data field total length */
 
-			ut_ad(dfield_get_len(dfield) != UNIV_SQL_NULL);
+		if (type == DATA_BLOB) {
+			/* The key field is a column prefix of a BLOB or
+			TEXT type column */
+
+			ut_a(field->prefix_len > 0);
+
+			/* MySQL stores the actual data length to the first 2
+			bytes after the optional SQL NULL marker byte. The
+			storage format is little-endian. */
+
+			/* There are no key fields > 255 bytes currently in
+			MySQL */
+			if (key_ptr[data_offset + 1] != 0) {
+				ut_print_timestamp(stderr);
+			        fprintf(stderr,
+"  InnoDB: Error: BLOB or TEXT prefix > 255 bytes in query to table %s\n",
+				 index->table_name);
+			}
+
+			data_len = key_ptr[data_offset];
+			data_field_len = data_offset + 2 + field->prefix_len;
+			data_offset += 2;
 			
-			dfield_set_data(dfield, buf,
-					len - (ulint)(key_ptr - key_end));
+			type = DATA_CHAR; /* now that we know the length, we
+					  store the column value like it would
+					  be a fixed char field */
+		} else if (field->prefix_len > 0) {
+		        data_len = field->prefix_len;
+			data_field_len = data_offset + data_len;
+		} else {
+			data_len = dfield_get_type(dfield)->len;
+			data_field_len = data_offset + data_len;
 		}
 
-		buf += len;
-    		
+		/* Storing may use at most data_len bytes of buf */
+		
+		if (!is_null) {
+		        row_mysql_store_col_in_innobase_format(
+					dfield, buf, key_ptr + data_offset,
+					data_len, type,
+					dfield_get_type(dfield)->prtype
+							& DATA_UNSIGNED);
+			buf += data_len;
+		}
+
+    		key_ptr += data_field_len;
+
+		if (key_ptr > key_end) {
+			/* The last field in key was not a complete key field
+			but a prefix of it.
+
+		        Print a warning about this! HA_READ_PREFIX_LAST does
+			not currently work in InnoDB with partial-field key
+			value prefixes. Since MySQL currently uses a padding
+			trick to calculate LIKE 'abc%' type queries there
+			should never be partial-field prefixes in searches. */
+
+		        ut_print_timestamp(stderr);
+			
+			fprintf(stderr,
+  "  InnoDB: Warning: using a partial-field key prefix in search\n");
+
+			if (!is_null) {
+			        dfield->len -= (ulint)(key_ptr - key_end);
+			}
+		}
+
+		n_fields++;    		
+    		field++;
 		dfield++;
   	}
 
- 	/* We set the length of tuple to n_fields: we assume that
-	the memory area allocated for it is big enough (usually
-	bigger than n_fields). */
+	ut_a(buf <= original_buf + buf_len);
+
+ 	/* We set the length of tuple to n_fields: we assume that the memory
+	area allocated for it is big enough (usually bigger than n_fields). */
  	
  	dtuple_set_n_fields(tuple, n_fields);
 }
 
 /******************************************************************
 Stores the row id to the prebuilt struct. */
-UNIV_INLINE
+static
 void
 row_sel_store_row_id_to_prebuilt(
 /*=============================*/
@@ -1955,11 +2060,22 @@ row_sel_store_row_id_to_prebuilt(
 {
 	byte*	data;
 	ulint	len;
+	char	err_buf[1000];
 
 	data = rec_get_nth_field(index_rec,
 			dict_index_get_sys_col_pos(index, DATA_ROW_ID), &len);
 
-	ut_a(len == DATA_ROW_ID_LEN);
+	if (len != DATA_ROW_ID_LEN) {
+		rec_sprintf(err_buf, 900, index_rec);
+
+	        fprintf(stderr,
+"InnoDB: Error: Row id field is wrong length %lu in table %s index %s\n"
+"InnoDB: Field number %lu, record:\n%s\n",
+		      len, index->table_name, index->name,
+		      dict_index_get_sys_col_pos(index, DATA_ROW_ID),
+		      err_buf);
+		ut_a(0);
+	}
 
 	ut_memcpy(prebuilt->row_id, data, len);
 }
@@ -2115,19 +2231,14 @@ row_sel_store_mysql_rec(
 				extern_field_heap = NULL;
  			}
 		} else {
-			/* MySQL sometimes seems to copy the 'data'
-			pointed to by a BLOB field even if the field
-			has been marked to contain the SQL NULL value.
-			This caused seg faults reported by two users.
-			Set the BLOB length to 0 and the data pointer
-			to NULL to avoid a seg fault. */
+		        /* MySQL seems to assume the field for an SQL NULL
+		        value is set to zero. Not taking this into account
+		        caused seg faults with NULL BLOB fields, and
+		        bug number 154 in the MySQL bug database: GROUP BY
+		        and DISTINCT could treat NULL values inequal. */
 
-			if (templ->type == DATA_BLOB) {
-				row_sel_field_store_in_mysql_format(
-				mysql_rec + templ->mysql_col_offset,
-				templ->mysql_col_len, NULL,
-				0, templ->type, templ->is_unsigned);
-			}
+		        memset(mysql_rec + templ->mysql_col_offset, '\0',
+			       templ->mysql_col_len);
 
 			if (!templ->mysql_null_bit_mask) {
 				fprintf(stderr,
@@ -2183,7 +2294,10 @@ row_sel_get_clust_rec_for_mysql(
 				/* out: DB_SUCCESS or error code */
 	row_prebuilt_t*	prebuilt,/* in: prebuilt struct in the handle */
 	dict_index_t*	sec_index,/* in: secondary index where rec resides */
-	rec_t*		rec,	/* in: record in a non-clustered index */
+	rec_t*		rec,	/* in: record in a non-clustered index; if
+				this is a locking read, then rec is not
+				allowed to be delete-marked, and that would
+				not make sense either */
 	que_thr_t*	thr,	/* in: query thread */
 	rec_t**		out_rec,/* out: clustered record or an old version of
 				it, NULL if the old version did not exist
@@ -2198,7 +2312,8 @@ row_sel_get_clust_rec_for_mysql(
 	rec_t*		old_vers;
 	ulint		err;
 	trx_t*		trx;
-
+	char		err_buf[1000];
+	
 	*out_rec = NULL;
 	
 	row_build_row_ref_in_tuple(prebuilt->clust_ref, sec_index, rec);
@@ -2211,14 +2326,62 @@ row_sel_get_clust_rec_for_mysql(
 
 	clust_rec = btr_pcur_get_rec(prebuilt->clust_pcur);
 
-	ut_ad(page_rec_is_user_rec(clust_rec));
+	/* Note: only if the search ends up on a non-infimum record is the
+	low_match value the real match to the search tuple */
+
+	if (!page_rec_is_user_rec(clust_rec)
+	    || btr_pcur_get_low_match(prebuilt->clust_pcur)
+	       < dict_index_get_n_unique(clust_index)) {
+	
+		/* In a rare case it is possible that no clust rec is found
+		for a delete-marked secondary index record: if in row0umod.c
+		in row_undo_mod_remove_clust_low() we have already removed
+		the clust rec, while purge is still cleaning and removing
+		secondary index records associated with earlier versions of
+		the clustered index record. In that case we know that the
+		clustered index record did not exist in the read view of
+		trx. */
+
+		if (!rec_get_deleted_flag(rec)
+		    || prebuilt->select_lock_type != LOCK_NONE) {
+
+		        ut_print_timestamp(stderr);
+			fprintf(stderr,
+                "  InnoDB: error clustered record for sec rec not found\n"
+                "InnoDB: index %s table %s\n", sec_index->name,
+					       sec_index->table->name);
+
+			rec_sprintf(err_buf, 900, rec);
+			fprintf(stderr,
+		"InnoDB: sec index record %s\n", err_buf);
+
+			rec_sprintf(err_buf, 900, clust_rec);
+			fprintf(stderr,
+			 "InnoDB: clust index record %s\n", err_buf);
+
+			trx = thr_get_trx(thr);
+			trx_print(err_buf, trx);
+
+			fprintf(stderr,
+                "%s\nInnoDB: Make a detailed bug report and send it\n",
+                                                        err_buf);
+			fprintf(stderr, "InnoDB: to mysql@lists.mysql.com\n");
+		}
+
+		clust_rec = NULL;
+
+		goto func_exit;
+	}
 
 	if (prebuilt->select_lock_type != LOCK_NONE) {
-		/* Try to place a lock on the index record */
+		/* Try to place a lock on the index record; we are searching
+		the clust rec with a unique condition, hence
+		we set a LOCK_REC_NOT_GAP type lock */
 		
 		err = lock_clust_rec_read_check_and_lock(0, clust_rec,
 					clust_index,
-					prebuilt->select_lock_type, thr);
+					prebuilt->select_lock_type,
+					LOCK_REC_NOT_GAP, thr);
 		if (err != DB_SUCCESS) {
 
 			return(err);
@@ -2230,8 +2393,12 @@ row_sel_get_clust_rec_for_mysql(
 		trx = thr_get_trx(thr);
 
 		old_vers = NULL;
-		
-		if (!lock_clust_rec_cons_read_sees(clust_rec, clust_index,
+
+		/* If the isolation level allows reading of uncommitted data,
+		then we never look for an earlier version */
+
+		if (trx->isolation_level > TRX_ISO_READ_UNCOMMITTED
+		    && !lock_clust_rec_cons_read_sees(clust_rec, clust_index,
 							trx->read_view)) {
 
 			err = row_sel_build_prev_vers_for_mysql(
@@ -2273,6 +2440,7 @@ row_sel_get_clust_rec_for_mysql(
 		}
 	}
 
+func_exit:
 	*out_rec = clust_rec;
 
 	if (prebuilt->select_lock_type == LOCK_X) {
@@ -2379,6 +2547,7 @@ row_sel_push_cache_row_for_mysql(
 	row_prebuilt_t*	prebuilt,	/* in: prebuilt struct */
 	rec_t*		rec)		/* in: record to push */
 {
+	byte*	buf;
 	ulint	i;
 
 	ut_ad(prebuilt->n_fetch_cached < MYSQL_FETCH_CACHE_SIZE);
@@ -2388,8 +2557,18 @@ row_sel_push_cache_row_for_mysql(
 		/* Allocate memory for the fetch cache */
 
 		for (i = 0; i < MYSQL_FETCH_CACHE_SIZE; i++) {
-			prebuilt->fetch_cache[i] = mem_alloc(
-						prebuilt->mysql_row_len);
+
+			/* A user has reported memory corruption in these
+			buffers in Linux. Put magic numbers there to help
+			to track a possible bug. */
+			
+			buf = mem_alloc(prebuilt->mysql_row_len + 8);
+
+			prebuilt->fetch_cache[i] = buf + 4;
+				
+			mach_write_to_4(buf, ROW_PREBUILT_FETCH_MAGIC_N);
+			mach_write_to_4(buf + 4 + prebuilt->mysql_row_len,
+					ROW_PREBUILT_FETCH_MAGIC_N);
 		}
 	}
 
@@ -2401,11 +2580,11 @@ row_sel_push_cache_row_for_mysql(
 
 	prebuilt->n_fetch_cached++;
 }
-	
+
 /*************************************************************************
 Tries to do a shortcut to fetch a clustered index record with a unique key,
 using the hash index if possible (not always). We assume that the search
-mode is PAGE_CUR_GE, it is a consistent read, trx has already a read view,
+mode is PAGE_CUR_GE, it is a consistent read, there is a read view in trx,
 btr search latch has been locked in S-mode. */
 static
 ulint
@@ -2424,7 +2603,7 @@ row_sel_try_search_shortcut_for_mysql(
 	
 	ut_ad(index->type & DICT_CLUSTERED);
 	ut_ad(!prebuilt->templ_contains_blob);
-
+	
 	btr_pcur_open_with_no_init(index, search_tuple, PAGE_CUR_GE,
 					BTR_SEARCH_LEAF, pcur,
 #ifndef UNIV_SEARCH_DEBUG
@@ -2514,17 +2693,23 @@ row_search_for_mysql(
 	ibool		was_lock_wait;
 	ulint		ret;
 	ulint		shortcut;
+	ibool		unique_search			= FALSE;
 	ibool		unique_search_from_clust_index	= FALSE;
 	ibool		mtr_has_extra_clust_latch 	= FALSE;
 	ibool		moves_up 			= FALSE;
+	ibool		set_also_gap_locks		= TRUE;
+					/* if the query is a plain
+					locking SELECT, and the isolation
+					level is <= TRX_ISO_READ_COMMITTED,
+					then this is set to FALSE */
+	ibool		success;
 	ulint		cnt				= 0;
+	ulint		next_offs;
 	mtr_t		mtr;
 	
 	ut_ad(index && pcur && search_tuple);
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
-	
-	ut_ad(sync_thread_levels_empty_gen(FALSE));
-	
+		
 	if (prebuilt->magic_n != ROW_PREBUILT_ALLOCATED) {
 		fprintf(stderr,
 		"InnoDB: Error: trying to free a corrupt\n"
@@ -2541,8 +2726,29 @@ row_search_for_mysql(
 	
 	printf("N tables locked %lu\n", trx->mysql_n_tables_locked);
 */
+	/*-------------------------------------------------------------*/
+	/* PHASE 0: Release a possible s-latch we are holding on the
+	adaptive hash index latch if there is someone waiting behind */
+
+	if (trx->has_search_latch
+	    && btr_search_latch.writer != RW_LOCK_NOT_LOCKED) {
+
+		/* There is an x-latch request on the adaptive hash index:
+		release the s-latch to reduce starvation and wait for
+		BTR_SEA_TIMEOUT rounds before trying to keep it again over
+		calls from MySQL */
+
+		rw_lock_s_unlock(&btr_search_latch);
+		trx->has_search_latch = FALSE;
+
+		trx->search_latch_timeout = BTR_SEA_TIMEOUT;
+	}
+	
+	/*-------------------------------------------------------------*/
+	/* PHASE 1: Try to pop the row from the prefetch cache */
+
 	if (direction == 0) {
-		trx->op_info = "starting index read";
+		trx->op_info = (char *) "starting index read";
 	
 		prebuilt->n_rows_fetched = 0;
 		prebuilt->n_fetch_cached = 0;
@@ -2553,7 +2759,7 @@ row_search_for_mysql(
 			row_prebuild_sel_graph(prebuilt);
 		}
 	} else {
-		trx->op_info = "fetching rows";
+		trx->op_info = (char *) "fetching rows";
 
 		if (prebuilt->n_rows_fetched == 0) {
 			prebuilt->fetch_direction = direction;
@@ -2578,7 +2784,7 @@ row_search_for_mysql(
 			prebuilt->n_rows_fetched++;
 
 			srv_n_rows_read++;
-			trx->op_info = "";
+			trx->op_info = (char *) "";
 
 			return(DB_SUCCESS);
 		}
@@ -2590,7 +2796,7 @@ row_search_for_mysql(
 		    	cache, but the cache was not full at the time of the
 		    	popping: no more rows can exist in the result set */
 		    
-			trx->op_info = "";
+			trx->op_info = (char *) "";
 		    	return(DB_RECORD_NOT_FOUND);
 		}
 		
@@ -2604,66 +2810,75 @@ row_search_for_mysql(
 		mode = pcur->search_mode;
 	}
 
+	if ((direction == ROW_SEL_NEXT || direction == ROW_SEL_PREV)
+	    && pcur->old_stored != BTR_PCUR_OLD_STORED) {
+
+		/* MySQL sometimes seems to do fetch next or fetch prev even
+		if the search condition is unique; this can, for example,
+		happen with the HANDLER commands; we do not always store the
+		pcur position in this case, so we cannot restore cursor
+		position, and must return immediately */
+
+		/* printf("%s record not found 1\n", index->name); */
+	
+		trx->op_info = (char *) "";
+		return(DB_RECORD_NOT_FOUND);
+	}
+
 	mtr_start(&mtr);
 
-	/* Since we must release the search system latch when we retrieve an
-	externally stored field, we cannot use the adaptive hash index in a
-	search in the case the row may be long and there may be externally
-	stored fields */
+	/* In a search where at most one record in the index may match, we
+	can use a LOCK_REC_NOT_GAP type record lock when locking a non-delete-
+	marked matching record.
+
+	Note that in a unique secondary index there may be different delete-
+	marked versions of a record where only the primary key values differ:
+	thus in a secondary index we must use next-key locks when locking
+	delete-marked records. */
 	
 	if (match_mode == ROW_SEL_EXACT
-		&& index->type & DICT_UNIQUE
-		&& index->type & DICT_CLUSTERED
-		&& !prebuilt->templ_contains_blob
-		&& (prebuilt->mysql_row_len < UNIV_PAGE_SIZE / 8)
-		&& dtuple_get_n_fields(search_tuple)
+	    && index->type & DICT_UNIQUE
+	    && dtuple_get_n_fields(search_tuple)
 				== dict_index_get_n_unique(index)) {
+		unique_search = TRUE;
+	}
 
-		if (direction == ROW_SEL_NEXT) {
-			/* MySQL sometimes seems to do fetch next even
-			if the search condition is unique; we do not store
-			pcur position in this case, so we cannot
-			restore cursor position, and must return
- 			immediately */
+	/*-------------------------------------------------------------*/
+	/* PHASE 2: Try fast adaptive hash index search if possible */
 
- 			mtr_commit(&mtr);
+	/* Next test if this is the special case where we can use the fast
+	adaptive hash index to try the search. Since we must release the
+	search system latch when we retrieve an externally stored field, we
+	cannot use the adaptive hash index in a search in the case the row
+	may be long and there may be externally stored fields */
 
-			/* printf("%s record not found 1\n", index->name); */
-	
-			trx->op_info = "";
-			return(DB_RECORD_NOT_FOUND);
-		}
+	if (unique_search	
+	    && index->type & DICT_CLUSTERED
+	    && !prebuilt->templ_contains_blob
+	    && !prebuilt->used_in_HANDLER
+	    && (prebuilt->mysql_row_len < UNIV_PAGE_SIZE / 8)) {
 
-		ut_a(direction == 0);	/* We cannot do fetch prev, as we have
-					not stored the cursor position */
 		mode = PAGE_CUR_GE;
 
 		unique_search_from_clust_index = TRUE;
 
 		if (trx->mysql_n_tables_locked == 0
-					&& !prebuilt->sql_stat_start) {
+		    && prebuilt->select_lock_type == LOCK_NONE
+		    && trx->isolation_level > TRX_ISO_READ_UNCOMMITTED
+		    && trx->read_view) {
 
 			/* This is a SELECT query done as a consistent read,
 			and the read view has already been allocated:
 			let us try a search shortcut through the hash
-			index */
-			
-			if (btr_search_latch.writer != RW_LOCK_NOT_LOCKED) {
-			        /* There is an x-latch request: release
-				a possible s-latch to reduce starvation
-				and wait for BTR_SEA_TIMEOUT rounds before
-				trying to keep it again over calls from
-				MySQL */
+			index.
+			NOTE that we must also test that
+			mysql_n_tables_locked == 0, because this might
+			also be INSERT INTO ... SELECT ... or
+			CREATE TABLE ... SELECT ... . Our algorithm is
+			NOT prepared to inserts interleaved with the SELECT,
+			and if we try that, we can deadlock on the adaptive
+			hash index semaphore! */
 
-				if (trx->has_search_latch) {
-			        	rw_lock_s_unlock(&btr_search_latch);
-					trx->has_search_latch = FALSE;
-				}
-
-				trx->search_latch_timeout = BTR_SEA_TIMEOUT;
-				
-				goto no_shortcut;
-			}
 #ifndef UNIV_SEARCH_DEBUG			
 			if (!trx->has_search_latch) {
 				rw_lock_s_lock(&btr_search_latch);
@@ -2693,7 +2908,11 @@ row_search_for_mysql(
 					trx->has_search_latch = FALSE;
 				}    	
 				
-				trx->op_info = "";
+				trx->op_info = (char *) "";
+				
+				/* NOTE that we do NOT store the cursor
+				position */
+
 				return(DB_SUCCESS);
 			
 			} else if (shortcut == SEL_EXHAUSTED) {
@@ -2712,7 +2931,11 @@ row_search_for_mysql(
 					trx->has_search_latch = FALSE;
 				}
 
-				trx->op_info = "";
+				trx->op_info = (char *) "";
+
+				/* NOTE that we do NOT store the cursor
+				position */
+
 				return(DB_RECORD_NOT_FOUND);
 			}
 
@@ -2720,13 +2943,33 @@ row_search_for_mysql(
 			mtr_start(&mtr);
 		}
 	}
-no_shortcut:	
+
+	/*-------------------------------------------------------------*/
+	/* PHASE 3: Open or restore index cursor position */
+
 	if (trx->has_search_latch) {
 		rw_lock_s_unlock(&btr_search_latch);
 		trx->has_search_latch = FALSE;
 	}			
 
 	trx_start_if_not_started(trx);
+
+	if (trx->isolation_level <= TRX_ISO_READ_COMMITTED
+	    && prebuilt->select_lock_type != LOCK_NONE
+	    && trx->mysql_query_str) {
+
+		/* Scan the MySQL query string; check if SELECT is the first
+	        word there */
+
+		dict_accept(*trx->mysql_query_str, "SELECT", &success);
+
+		if (success) {
+			/* It is a plain locking SELECT and the isolation
+			level is low: do not lock gaps */
+
+			set_also_gap_locks = FALSE;
+		}
+	}
 	
 	/* Note that if the search mode was GE or G, then the cursor
 	naturally moves upward (in fetch next) in alphabetical order,
@@ -2791,10 +3034,10 @@ no_shortcut:
 		prebuilt->sql_stat_start = FALSE;
 	}
 
-	/*-------------------------------------------------------------*/
 rec_loop:
-	cons_read_requires_clust_rec = FALSE;
-
+	/*-------------------------------------------------------------*/
+	/* PHASE 4: Look for matching records in a loop */
+	
 	rec = btr_pcur_get_rec(pcur);
 /*
 	printf("Using index %s cnt %lu ", index->name, cnt);
@@ -2810,43 +3053,107 @@ rec_loop:
 
 		goto next_rec;
 	}
-				
-	if (prebuilt->select_lock_type != LOCK_NONE) {
-		/* Try to place a lock on the index record */	
-
-		err = sel_set_rec_lock(rec, index, prebuilt->select_lock_type,
-									thr);
-		if (err != DB_SUCCESS) {
-
-			goto lock_wait_or_error;
-		}
-	}
 
 	if (rec == page_get_supremum_rec(buf_frame_align(rec))) {
 
+		if (prebuilt->select_lock_type != LOCK_NONE
+		    && set_also_gap_locks) {
+
+			/* Try to place a lock on the index record */	
+
+			err = sel_set_rec_lock(rec, index,
+						prebuilt->select_lock_type,
+						LOCK_ORDINARY, thr);
+			if (err != DB_SUCCESS) {
+
+				goto lock_wait_or_error;
+			}
+		}
 		/* A page supremum record cannot be in the result set: skip
-		it now when we have placed a possible lock on it */		
+		it now that we have placed a possible lock on it */
 		
 		goto next_rec;
 	}
 
-	ut_ad(page_rec_is_user_rec(rec));
+	/*-------------------------------------------------------------*/
+	/* Do sanity checks in case our cursor has bumped into page
+	corruption */
+	
+	next_offs = rec_get_next_offs(rec);
 
-	if (unique_search_from_clust_index && btr_pcur_get_up_match(pcur)
-					== dtuple_get_n_fields(search_tuple)) {
-		/* The record matches enough */
+	if (next_offs >= UNIV_PAGE_SIZE || next_offs < PAGE_SUPREMUM) {
 
-		ut_ad(mode == PAGE_CUR_GE);
-#ifdef UNIV_SEARCH_DEBUG
-		ut_a(0 == cmp_dtuple_rec(search_tuple, rec));
-#endif	
-	} else if (match_mode == ROW_SEL_EXACT) {
+		if (srv_force_recovery == 0 || moves_up == FALSE) {
+			ut_print_timestamp(stderr);
+			fprintf(stderr,
+"  InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
+"InnoDB: index %s, table %s. Run CHECK TABLE to table. You may need to\n"
+"InnoDB: restore from a backup, or dump + drop + reimport the table.\n",
+			   (ulint)(rec - buf_frame_align(rec)), next_offs,
+			   buf_frame_get_page_no(rec), index->name,
+			   index->table_name);
+		
+			err = DB_CORRUPTION;
+
+			goto lock_wait_or_error;
+		} else {
+			/* The user may be dumping a corrupt table. Jump
+			over the corruption to recover as much as possible. */
+
+			fprintf(stderr,
+"InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
+"InnoDB: index %s, table %s. We try to skip the rest of the page.\n",
+			   (ulint)(rec - buf_frame_align(rec)), next_offs,
+			   buf_frame_get_page_no(rec), index->name,
+			   index->table_name);
+
+			btr_pcur_move_to_last_on_page(pcur, &mtr);
+
+			goto next_rec;
+		}
+	}
+
+	if (srv_force_recovery > 0) {
+		if (!rec_validate(rec) || !btr_index_rec_validate(rec, index,
+								FALSE)) {
+			fprintf(stderr,
+"InnoDB: Index record corruption: rec offs %lu next offs %lu, page no %lu,\n"
+"InnoDB: index %s, table %s. We try to skip the record.\n",
+			   (ulint)(rec - buf_frame_align(rec)), next_offs,
+			   buf_frame_get_page_no(rec), index->name,
+			   index->table_name);
+
+			goto next_rec;
+		}
+	}
+
+	/*-------------------------------------------------------------*/
+
+	/* Note that we cannot trust the up_match value in the cursor at this
+	place because we can arrive here after moving the cursor! Thus
+	we have to recompare rec and search_tuple to determine if they
+	match enough. */
+
+	if (match_mode == ROW_SEL_EXACT) {
 		/* Test if the index record matches completely to search_tuple
 		in prebuilt: if not, then we return with DB_RECORD_NOT_FOUND */
 
 		/* printf("Comparing rec and search tuple\n"); */
 		
 		if (0 != cmp_dtuple_rec(search_tuple, rec)) {
+
+			if (prebuilt->select_lock_type != LOCK_NONE
+		    	    && set_also_gap_locks) {
+				/* Try to place a lock on the index record */
+
+				err = sel_set_rec_lock(rec, index,
+						prebuilt->select_lock_type,
+						LOCK_GAP, thr);
+				if (err != DB_SUCCESS) {
+
+					goto lock_wait_or_error;
+				}
+			}
 
 			btr_pcur_store_position(pcur, &mtr);
 
@@ -2860,6 +3167,19 @@ rec_loop:
 
 		if (!cmp_dtuple_is_prefix_of_rec(search_tuple, rec)) {
 			
+			if (prebuilt->select_lock_type != LOCK_NONE
+			    && set_also_gap_locks) {
+				/* Try to place a lock on the index record */	
+
+				err = sel_set_rec_lock(rec, index,
+						prebuilt->select_lock_type,
+						LOCK_GAP, thr);
+				if (err != DB_SUCCESS) {
+
+					goto lock_wait_or_error;
+				}
+			}
+
 			btr_pcur_store_position(pcur, &mtr);
 
 			ret = DB_RECORD_NOT_FOUND;
@@ -2872,16 +3192,39 @@ rec_loop:
 	/* We are ready to look at a possible new index entry in the result
 	set: the cursor is now placed on a user record */
 
-	/* Get the right version of the row in a consistent read */
+	cons_read_requires_clust_rec = FALSE;
 
-	if (prebuilt->select_lock_type == LOCK_NONE) {
+	if (prebuilt->select_lock_type != LOCK_NONE) {
+		/* Try to place a lock on the index record; note that delete
+		marked records are a special case in a unique search. If there
+		is a non-delete marked record, then it is enough to lock its
+		existence with LOCK_REC_NOT_GAP. */
 
+		if (!set_also_gap_locks
+		    || (unique_search && !rec_get_deleted_flag(rec))) {
+			err = sel_set_rec_lock(rec, index,
+						prebuilt->select_lock_type,
+						LOCK_REC_NOT_GAP, thr);
+		} else {
+			err = sel_set_rec_lock(rec, index,
+						prebuilt->select_lock_type,
+						LOCK_ORDINARY, thr);
+		}
+		
+		if (err != DB_SUCCESS) {
+
+			goto lock_wait_or_error;
+		}
+	} else {
 		/* This is a non-locking consistent read: if necessary, fetch
 		a previous version of the record */
 
-		cons_read_requires_clust_rec = FALSE;
+		if (trx->isolation_level == TRX_ISO_READ_UNCOMMITTED) {
 
-		if (index == clust_index) {
+			/* Do nothing: we let a non-locking SELECT read the
+			latest version of the record */
+		
+		} else if (index == clust_index) {
 			
 			if (!lock_clust_rec_cons_read_sees(rec, index,
 							trx->read_view)) {
@@ -2919,7 +3262,7 @@ rec_loop:
 
 	if (rec_get_deleted_flag(rec) && !cons_read_requires_clust_rec) {
 
-		/* The record is delete marked: we can skip it if this is
+		/* The record is delete-marked: we can skip it if this is
 		not a consistent read which might see an earlier version
 		of a non-clustered index record */
 		
@@ -2971,6 +3314,7 @@ rec_loop:
 			&& prebuilt->select_lock_type == LOCK_NONE
 			&& !prebuilt->templ_contains_blob
 			&& !prebuilt->clust_index_was_generated
+			&& !prebuilt->used_in_HANDLER
 	                && prebuilt->template_type
 	                                 != ROW_MYSQL_DUMMY_TEMPLATE) {
 
@@ -2979,7 +3323,9 @@ rec_loop:
 		update, that is why we require ...lock_type == LOCK_NONE.
 		Since we keep space in prebuilt only for the BLOBs of
 		a single row, we cannot cache rows in the case there
-		are BLOBs in the fields to be fetched. */
+		are BLOBs in the fields to be fetched. In HANDLER we do
+		not cache rows because there the cursor is a scrollable
+		cursor. */
 
 		row_sel_push_cache_row_for_mysql(prebuilt, rec);
 
@@ -3004,11 +3350,16 @@ rec_loop:
 		}
 	}
 got_row:
-	/* TODO: should we in every case store the cursor position, even
-	if this is just a join, for example? */
+	/* We have an optimization to save CPU time: if this is a consistent
+	read on a unique condition on the clustered index, then we do not
+	store the pcur position, because any fetch next or prev will anyway
+	return 'end of file'. An exception is the MySQL HANDLER command
+	where the user can move the cursor with PREV or NEXT even after
+	a unique search. */
 
 	if (!unique_search_from_clust_index
-				|| prebuilt->select_lock_type == LOCK_X) {
+	    || prebuilt->select_lock_type == LOCK_X
+	    || prebuilt->used_in_HANDLER) {
 
 		/* Inside an update always store the cursor position */
 
@@ -3018,8 +3369,11 @@ got_row:
 	ret = DB_SUCCESS;
 
 	goto normal_return;
-	/*-------------------------------------------------------------*/	
+
 next_rec:
+	/*-------------------------------------------------------------*/
+	/* PHASE 5: Move the cursor to the next index record */
+	
 	if (mtr_has_extra_clust_latch) {
 		/* We must commit mtr if we are moving to the next
 		non-clustered index record, because we could break the
@@ -3062,8 +3416,10 @@ next_rec:
 	cnt++;
 
 	goto rec_loop;
-	/*-------------------------------------------------------------*/
+
 lock_wait_or_error:
+	/*-------------------------------------------------------------*/
+
 	btr_pcur_store_position(pcur, &mtr);
 
 	mtr_commit(&mtr);
@@ -3089,11 +3445,12 @@ lock_wait_or_error:
 
 	/* printf("Using index %s cnt %lu ret value %lu err\n", index->name,
 							cnt, err); */
-	trx->op_info = "";
+	trx->op_info = (char *) "";
 
 	return(err);
 
 normal_return:
+	/*-------------------------------------------------------------*/
 	que_thr_stop_for_mysql_no_error(thr, trx);
 
 	mtr_commit(&mtr);
@@ -3110,7 +3467,62 @@ normal_return:
 		srv_n_rows_read++;
 	}
 
-	trx->op_info = "";
+	trx->op_info = (char *) "";
+
+	return(ret);
+}
+
+/***********************************************************************
+Checks if MySQL at the moment is allowed for this table to retrieve a
+consistent read result, or store it to the query cache. */
+
+ibool
+row_search_check_if_query_cache_permitted(
+/*======================================*/
+				/* out: TRUE if storing or retrieving from
+				the query cache is permitted */
+	trx_t*	trx,		/* in: transaction object */
+	char*	norm_name)	/* in: concatenation of database name, '/'
+				char, table name */
+{
+	dict_table_t*	table;
+	ibool		ret 	= FALSE;
+
+	table = dict_table_get(norm_name, trx);
+
+	if (table == NULL) {
+
+		return(FALSE);
+	}
+
+	mutex_enter(&kernel_mutex);
+
+	/* Start the transaction if it is not started yet */
+
+	trx_start_if_not_started_low(trx);
+
+	/* If there are locks on the table or some trx has invalidated the
+	cache up to our trx id, then ret = FALSE.
+	We do not check what type locks there are on the table, though only
+	IX type locks actually would require ret = FALSE. */
+
+	if (UT_LIST_GET_LEN(table->locks) == 0
+	    && ut_dulint_cmp(trx->id, table->query_cache_inv_trx_id) >= 0) {
+
+		ret = TRUE;
+		
+		/* If the isolation level is high, assign a read view for the
+		transaction if it does not yet have one */
+
+		if (trx->isolation_level >= TRX_ISO_REPEATABLE_READ
+		    && !trx->read_view) {
+
+			trx->read_view = read_view_open_now(trx,
+						trx->read_view_heap);
+		}
+	}
+	
+	mutex_exit(&kernel_mutex);
 
 	return(ret);
 }

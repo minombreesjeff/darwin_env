@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -46,11 +46,11 @@ int _nisam_read_cache(IO_CACHE *info, byte *buff, ulong pos, uint length,
     buff+=read_length;
   }
   if ((offset=pos - (ulong) info->pos_in_file) <
-      (ulong) (info->rc_end - info->rc_request_pos))
+      (ulong) (info->read_end - info->request_pos))
   {
-    in_buff_pos=info->rc_request_pos+(uint) offset;
-    in_buff_length= min(length,(uint) (info->rc_end-in_buff_pos));
-    memcpy(buff,info->rc_request_pos+(uint) offset,(size_t) in_buff_length);
+    in_buff_pos=info->request_pos+(uint) offset;
+    in_buff_length= min(length,(uint) (info->read_end-in_buff_pos));
+    memcpy(buff,info->request_pos+(uint) offset,(size_t) in_buff_length);
     if (!(length-=in_buff_length))
       return 0;
     pos+=in_buff_length;
@@ -61,14 +61,14 @@ int _nisam_read_cache(IO_CACHE *info, byte *buff, ulong pos, uint length,
   if (flag & READING_NEXT)
   {
     if (pos != ((info)->pos_in_file +
-		(uint) ((info)->rc_end - (info)->rc_request_pos)))
+		(uint) ((info)->read_end - (info)->request_pos)))
     {
       info->pos_in_file=pos;				/* Force start here */
-      info->rc_pos=info->rc_end=info->rc_request_pos;	/* Everything used */
+      info->read_pos=info->read_end=info->request_pos;	/* Everything used */
       info->seek_not_done=1;
     }
     else
-      info->rc_pos=info->rc_end;			/* All block used */
+      info->read_pos=info->read_end;			/* All block used */
     if (!(*info->read_function)(info,buff,length))
       return 0;
     if (!(flag & READING_HEADER) || info->error == -1 ||

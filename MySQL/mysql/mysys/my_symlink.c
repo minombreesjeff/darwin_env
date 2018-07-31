@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include "mysys_err.h"
@@ -116,11 +115,15 @@ int my_realpath(char *to, const char *filename, myf MyFlags)
       (!lstat(filename,&stat_buff) && S_ISLNK(stat_buff.st_mode)))
   {
     char *ptr;
+    DBUG_PRINT("info",("executing realpath"));
     if ((ptr=realpath(filename,buff)))
+    {
       strmake(to,ptr,FN_REFLEN-1);
+    }
     else
     {
       /* Realpath didn't work;  Use original name */
+      DBUG_PRINT("error",("realpath failed with errno: %d", errno));
       my_errno=errno;
       if (MyFlags & MY_WME)
 	my_error(EE_REALPATH, MYF(0), filename, my_errno);

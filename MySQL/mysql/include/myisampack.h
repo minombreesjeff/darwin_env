@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Storing of values in high byte first order.
@@ -213,9 +212,9 @@
 
 /* Fix to avoid warnings when sizeof(ha_rows) == sizeof(long) */
 
-#ifdef BIG_TABLE
+#ifdef BIG_TABLES
 #define mi_rowstore(T,A)    mi_int8store(T,A)
-#define mi_rowkorr(T,A)     mi_uint8korr(T)
+#define mi_rowkorr(T)     mi_uint8korr(T)
 #else
 #define mi_rowstore(T,A)    { mi_int4store(T,0); mi_int4store(((T)+4),A); }
 #define mi_rowkorr(T)	    mi_uint4korr((T)+4)

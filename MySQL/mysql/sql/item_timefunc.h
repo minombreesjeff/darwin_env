@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -72,6 +72,7 @@ public:
   enum Item_result result_type () const { return INT_RESULT; }
   void fix_length_and_dec() { decimals=0; max_length=2; maybe_null=1; }
 };
+
 
 class Item_func_monthname :public Item_func_month
 {
@@ -175,6 +176,7 @@ public:
   const char *func_name() const { return "weekday"; }
   enum Item_result result_type () const { return INT_RESULT; }
   void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=1; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_func_dayname :public Item_func_weekday
@@ -200,6 +202,7 @@ public:
   {
     decimals=0; max_length=10;
   }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -228,7 +231,35 @@ public:
   double val() { return (double) val_int(); }
   const char *func_name() const { return "date"; }
   void fix_length_and_dec() { decimals=0; max_length=10; }
-  bool save_in_field(Field *to);
+  bool save_in_field(Field *to, bool no_conversions);
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_DATE);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return (!t_arg) ? result_field : new Field_date(maybe_null, name, t_arg);
+  }  
+  unsigned int size_of() { return sizeof(*this);}  
+};
+
+
+class Item_date_func :public Item_str_func
+{
+public:
+  Item_date_func() :Item_str_func() {}
+  Item_date_func(Item *a) :Item_str_func(a) {}
+  Item_date_func(Item *a,Item *b) :Item_str_func(a,b) {}
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_DATETIME);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return  (!t_arg) ? result_field : new Field_datetime(maybe_null, name,
+							 t_arg);
+  }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -247,6 +278,15 @@ public:
   { str_value.set(buff,buff_length); return &str_value; }
   const char *func_name() const { return "curtime"; }
   void fix_length_and_dec();
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_TIME);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return (!t_arg) ? result_field : new Field_time(maybe_null, name, t_arg);
+  }  
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -260,27 +300,29 @@ public:
   const char *func_name() const { return "curdate"; }
   void fix_length_and_dec();			/* Retrieves curtime */
   bool get_date(TIME *res,bool fuzzy_date);
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
-class Item_func_now :public Item_func
+class Item_func_now :public Item_date_func
 {
   longlong value;
   char buff[20];
   uint buff_length;
   TIME ltime;
 public:
-  Item_func_now() :Item_func() {}
-  Item_func_now(Item *a) :Item_func(a) {}
+  Item_func_now() :Item_date_func() {}
+  Item_func_now(Item *a) :Item_date_func(a) {}
   enum Item_result result_type () const { return STRING_RESULT; }
   double val()	     { return (double) value; }
   longlong val_int() { return value; }
-  bool save_in_field(Field *to);
+  bool save_in_field(Field *to, bool no_conversions);
   String *val_str(String *str)
   { str_value.set(buff,buff_length); return &str_value; }
   const char *func_name() const { return "now"; }
   void fix_length_and_dec();
   bool get_date(TIME *res,bool fuzzy_date);
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -305,19 +347,20 @@ public:
   const char *func_name() const { return "date_format"; }
   void fix_length_and_dec();
   uint format_length(const String *format);
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
-class Item_func_from_unixtime :public Item_func
+class Item_func_from_unixtime :public Item_date_func
 {
  public:
-  Item_func_from_unixtime(Item *a) :Item_func(a) {}
+  Item_func_from_unixtime(Item *a) :Item_date_func(a) {}
   double val() { return (double) Item_func_from_unixtime::val_int(); }
   longlong val_int();
   String *val_str(String *str);
   const char *func_name() const { return "from_unixtime"; }
   void fix_length_and_dec() { decimals=0; max_length=19; }
-  enum Item_result result_type () const { return STRING_RESULT; }
+//  enum Item_result result_type () const { return STRING_RESULT; }
   bool get_date(TIME *res,bool fuzzy_date);
 };
 
@@ -331,7 +374,16 @@ public:
   String *val_str(String *);
   void fix_length_and_dec() { maybe_null=1; max_length=13; }
   const char *func_name() const { return "sec_to_time"; }
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_TIME);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return (!t_arg) ? result_field : new Field_time(maybe_null, name, t_arg);
+  }
 };
+
 
 enum interval_type { INTERVAL_YEAR, INTERVAL_MONTH, INTERVAL_DAY,
 		     INTERVAL_HOUR, INTERVAL_MINUTE, INTERVAL_SECOND,
@@ -340,7 +392,7 @@ enum interval_type { INTERVAL_YEAR, INTERVAL_MONTH, INTERVAL_DAY,
 		     INTERVAL_HOUR_MINUTE, INTERVAL_HOUR_SECOND,
 		     INTERVAL_MINUTE_SECOND};
 
-class Item_date_add_interval :public Item_str_func
+class Item_date_add_interval :public Item_date_func
 {
   const interval_type int_type;
   String value;
@@ -348,14 +400,16 @@ class Item_date_add_interval :public Item_str_func
 
 public:
   Item_date_add_interval(Item *a,Item *b,interval_type type_arg,bool neg_arg)
-    :Item_str_func(a,b),int_type(type_arg), date_sub_interval(neg_arg) {}
+    :Item_date_func(a,b),int_type(type_arg), date_sub_interval(neg_arg) {}
   String *val_str(String *);
   const char *func_name() const { return "date_add_interval"; }
   void fix_length_and_dec() { maybe_null=1; max_length=19; value.alloc(32);}
   double val() { return (double) val_int(); }
   longlong val_int();
   bool get_date(TIME *res,bool fuzzy_date);
+  unsigned int size_of() { return sizeof(*this);}  
 };
+
 
 class Item_extract :public Item_int_func
 {
@@ -368,4 +422,75 @@ class Item_extract :public Item_int_func
   longlong val_int();
   const char *func_name() const { return "extract"; }
   void fix_length_and_dec();
+  bool eq(const Item *item, bool binary_cmp) const;
+  unsigned int size_of() { return sizeof(*this);}  
+};
+
+
+class Item_typecast :public Item_str_func
+{
+public:
+  Item_typecast(Item *a) :Item_str_func(a) {}
+  const char *func_name() const { return "char"; }
+  String *val_str(String *a)
+  { a=args[0]->val_str(a); null_value=args[0]->null_value; return a; }
+  void fix_length_and_dec() { max_length=args[0]->max_length; }
+  void print(String *str);
+};
+
+
+class Item_char_typecast :public Item_typecast
+{
+public:
+  Item_char_typecast(Item *a) :Item_typecast(a) {}
+  void fix_length_and_dec() { binary=0; max_length=args[0]->max_length; }
+};
+
+
+class Item_date_typecast :public Item_typecast
+{
+public:
+  Item_date_typecast(Item *a) :Item_typecast(a) {}
+  const char *func_name() const { return "date"; }
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_DATE);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return (!t_arg) ? result_field : new Field_date(maybe_null, name, t_arg);
+  }  
+};
+
+
+class Item_time_typecast :public Item_typecast
+{
+public:
+  Item_time_typecast(Item *a) :Item_typecast(a) {}
+  const char *func_name() const { return "time"; }
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_TIME);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return (!t_arg) ? result_field : new Field_time(maybe_null, name, t_arg);
+  }
+};
+
+
+class Item_datetime_typecast :public Item_typecast
+{
+public:
+  Item_datetime_typecast(Item *a) :Item_typecast(a) {}
+  const char *func_name() const { return "datetime"; }
+  void make_field(Send_field *tmp_field)
+  {
+    init_make_field(tmp_field,FIELD_TYPE_DATETIME);
+  }
+  Field *tmp_table_field(TABLE *t_arg)
+  {
+    return (!t_arg) ? result_field : new Field_datetime(maybe_null, name,
+							t_arg);
+  }
 };

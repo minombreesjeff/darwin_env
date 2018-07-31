@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -48,9 +48,14 @@ int heap_delete(HP_INFO *info, const byte *record)
   pos[share->reclength]=0;		/* Record deleted */
   share->deleted++;
   info->current_hash_ptr=0;
+#if !defined(DBUG_OFF) && defined(EXTRA_HEAP_DEBUG)
+  DBUG_EXECUTE("check_heap",heap_check_heap(info, 0););
+#endif
+
   DBUG_RETURN(0);
  err:
-  if( ++(share->records) == share->blength) share->blength+= share->blength;
+  if (++(share->records) == share->blength)
+    share->blength+= share->blength;
   DBUG_RETURN(my_errno);
 }
 
@@ -66,7 +71,8 @@ int _hp_delete_key(HP_INFO *info, register HP_KEYDEF *keyinfo,
   DBUG_ENTER("_hp_delete_key");
 
   blength=share->blength;
-  if (share->records+1 == blength) blength+= blength;
+  if (share->records+1 == blength)
+    blength+= blength;
   lastpos=hp_find_hash(&keyinfo->block,share->records);
   last_ptr=0;
 

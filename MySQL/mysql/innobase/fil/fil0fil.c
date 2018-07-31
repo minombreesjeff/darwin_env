@@ -632,7 +632,7 @@ fil_space_create(
 	/* Spaces with an odd id number are reserved to replicate spaces
 	used in log debugging */
 	
-	ut_a((purpose == FIL_LOG) || (id % 2 == 0));
+	ut_anp((purpose == FIL_LOG) || (id % 2 == 0));
 #endif
 	mutex_enter(&(system->mutex));
 
@@ -967,6 +967,7 @@ fil_extend_last_data_file(
 	fil_node_t*	node;
 	fil_space_t*	space;
 	fil_system_t*	system		= fil_system;
+	byte*		buf2;
 	byte*		buf;
 	ibool		success;
 	ulint		i;
@@ -981,19 +982,23 @@ fil_extend_last_data_file(
 
 	fil_node_prepare_for_io(node, system, space);
 
-	buf = mem_alloc(1024 * 1024);
+	buf2 = mem_alloc(1024 * 1024 + UNIV_PAGE_SIZE);
+	buf = ut_align(buf2, UNIV_PAGE_SIZE);
 
 	memset(buf, '\0', 1024 * 1024);
 
 	for (i = 0; i < size_increase / ((1024 * 1024) / UNIV_PAGE_SIZE); i++) {
 
-		success = os_file_write(node->name, node->handle, buf,
+		/* If we use native Windows aio, then also this write is
+		done using it */
+
+		success = os_aio(OS_FILE_WRITE, OS_AIO_SYNC,
+			node->name, node->handle, buf,
 			(node->size << UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFF,
 			node->size >> (32 - UNIV_PAGE_SIZE_SHIFT),
-			1024 * 1024);
+			1024 * 1024, NULL, NULL);
 
 		if (!success) {
-
 			break;
 		}
 
@@ -1003,7 +1008,7 @@ fil_extend_last_data_file(
 		os_has_said_disk_full = FALSE;
 	}
 
-	mem_free(buf);
+	mem_free(buf2);
 
 	fil_node_complete_io(node, system, OS_FILE_WRITE);
 
@@ -1197,8 +1202,8 @@ loop:
 
 	/* Do aio */
 
-	ut_a(byte_offset % OS_FILE_LOG_BLOCK_SIZE == 0);
-	ut_a((len % OS_FILE_LOG_BLOCK_SIZE) == 0);
+	ut_anp(byte_offset % OS_FILE_LOG_BLOCK_SIZE == 0);
+	ut_anp((len % OS_FILE_LOG_BLOCK_SIZE) == 0);
 
 	/* Queue the aio request */
 	ret = os_aio(type, mode | wake_later, node->name, node->handle, buf,
@@ -1290,7 +1295,7 @@ fil_aio_wait(
 	ut_ad(fil_validate());
 
 	if (os_aio_use_native_aio) {
-		srv_io_thread_op_info[segment] = "native aio handle";
+		srv_io_thread_op_info[segment] = (char *) "native aio handle";
 #ifdef WIN_ASYNC_IO
 		ret = os_aio_windows_handle(segment, 0, &fil_node, &message,
 								&type);
@@ -1301,7 +1306,7 @@ fil_aio_wait(
 		ut_a(0);
 #endif
 	} else {
-		srv_io_thread_op_info[segment] = "simulated aio handle";
+		srv_io_thread_op_info[segment] =(char *)"simulated aio handle";
 
 		ret = os_aio_simulated_handle(segment, (void**) &fil_node,
 	                                               &message, &type);
@@ -1309,7 +1314,7 @@ fil_aio_wait(
 	
 	ut_a(ret);
 
-	srv_io_thread_op_info[segment] = "complete io for fil node";
+	srv_io_thread_op_info[segment] = (char *) "complete io for fil node";
 
 	mutex_enter(&(system->mutex));
 
@@ -1322,10 +1327,11 @@ fil_aio_wait(
 	/* Do the i/o handling */
 
 	if (buf_pool_is_block(message)) {
-		srv_io_thread_op_info[segment] = "complete io for buf page";
+		srv_io_thread_op_info[segment] =
+		  (char *) "complete io for buf page";
 		buf_page_io_complete(message);
 	} else {
-		srv_io_thread_op_info[segment] = "complete io for log";
+		srv_io_thread_op_info[segment] =(char *) "complete io for log";
 		log_io_complete(message);
 	}
 }
@@ -1527,7 +1533,6 @@ fil_page_set_type(
 	ulint	type)	/* in: type */
 {
 	ut_ad(page);
-	ut_ad((type == FIL_PAGE_INDEX) || (type == FIL_PAGE_UNDO_LOG));
 
 	mach_write_to_2(page + FIL_PAGE_TYPE, type);
 }	

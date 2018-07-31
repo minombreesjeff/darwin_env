@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Not MT-SAFE */
 
@@ -25,8 +24,17 @@
 #include "my_static.h"
 #include "mysys_err.h"
 
-	/* alloc for things we don't nead to free */
-	/* No DBUG_ENTER... here to get smaller dbug-startup */
+/*
+  Alloc for things we don't nead to free
+
+  SYNOPSIS
+    my_once_alloc()
+      Size
+      MyFlags
+
+  NOTES
+    No DBUG_ENTER... here to get smaller dbug-startup 
+*/
 
 gptr my_once_alloc(unsigned int Size, myf MyFlags)
 {
@@ -70,7 +78,12 @@ gptr my_once_alloc(unsigned int Size, myf MyFlags)
 } /* my_once_alloc */
 
 
-	/* deallocate everything used by my_once_alloc */
+/*
+  Deallocate everything used by my_once_alloc
+
+  SYNOPSIS
+    my_once_free()
+*/
 
 void my_once_free(void)
 {

@@ -15,6 +15,7 @@ Created 5/12/1997 Heikki Tuuri
 #include "ut0mem.h"
 #include "ut0lst.h"
 #include "ut0byte.h"
+#include "mem0mem.h"
 
 /* We would like to use also the buffer frames to allocate memory. This
 would be desirable, because then the memory consumption of the database
@@ -97,6 +98,12 @@ struct mem_pool_struct{
 mem_pool_t*	mem_comm_pool	= NULL;
 
 ulint		mem_out_of_mem_err_msg_count	= 0;
+
+/* We use this counter to check that the mem pool mutex does not leak;
+this is to track a strange assertion failure reported at
+mysql@lists.mysql.com */
+
+ulint		mem_n_threads_inside		= 0;
 
 /************************************************************************
 Reserves the mem pool mutex. */
@@ -251,26 +258,12 @@ mem_pool_fill_free_list(
 	mem_area_t*	area;
 	mem_area_t*	area2;
 	ibool		ret;
-	char            err_buf[500];
 
 	ut_ad(mutex_own(&(pool->mutex)));
 
 	if (i >= 63) {
 		/* We come here when we have run out of space in the
 		memory pool: */
-
-		if (mem_out_of_mem_err_msg_count % 1000000000 == 0) {
-			/* We do not print the message every time: */
-
-	    		ut_print_timestamp(stderr);
-			
-			fprintf(stderr,
-	"  InnoDB: Out of memory in additional memory pool.\n"
-	"InnoDB: InnoDB will start allocating memory from the OS.\n"
-	"InnoDB: You may get better performance if you configure a bigger\n"
-        "InnoDB: value in the MySQL my.cnf file for\n"
-	"InnoDB: innodb_additional_mem_pool_size.\n");
-     		}
 
 		mem_out_of_mem_err_msg_count++;
      
@@ -300,11 +293,8 @@ mem_pool_fill_free_list(
 	}
 
 	if (UT_LIST_GET_LEN(pool->free_list[i + 1]) == 0) {
-		ut_sprintf_buf(err_buf, ((byte*)area) - 50, 100);
-	        fprintf(stderr,
-"InnoDB: Error: Removing element from mem pool free list %lu\n"
-"InnoDB: though the list length is 0! Dump of 100 bytes around element:\n%s\n",
-			i + 1, err_buf);
+	        mem_analyze_corruption((byte*)area);
+
 		ut_a(0);
 	}
 
@@ -340,11 +330,13 @@ mem_area_alloc(
 	mem_area_t*	area;
 	ulint		n;
 	ibool		ret;
-	char            err_buf[500];
 
 	n = ut_2_log(ut_max(size + MEM_AREA_EXTRA_SIZE, MEM_AREA_MIN_SIZE));
 
 	mutex_enter(&(pool->mutex));
+	mem_n_threads_inside++;
+
+	ut_a(mem_n_threads_inside == 1);
 
 	area = UT_LIST_GET_FIRST(pool->free_list[n]);
 
@@ -355,6 +347,7 @@ mem_area_alloc(
 			/* Out of memory in memory pool: we try to allocate
 			from the operating system with the regular malloc: */
 
+			mem_n_threads_inside--;
 			mutex_exit(&(pool->mutex));
 
 			return(ut_malloc(size));
@@ -364,20 +357,32 @@ mem_area_alloc(
 	}
 
 	if (!mem_area_get_free(area)) {
-		ut_sprintf_buf(err_buf, ((byte*)area) - 50, 100);
 	        fprintf(stderr,
 "InnoDB: Error: Removing element from mem pool free list %lu though the\n"
-"InnoDB: element is not marked free! Dump of 100 bytes around element:\n%s\n",
-			n, err_buf);
+"InnoDB: element is not marked free!\n",
+			n);
+
+		mem_analyze_corruption((byte*)area);
+
+		/* Try to analyze a strange assertion failure reported at
+		mysql@lists.mysql.com where the free bit IS 1 in the
+		hex dump above */
+
+		if (mem_area_get_free(area)) {
+		        fprintf(stderr,
+"InnoDB: Probably a race condition because now the area is marked free!\n");
+		}
+
 		ut_a(0);
 	}
 
 	if (UT_LIST_GET_LEN(pool->free_list[n]) == 0) {
-		ut_sprintf_buf(err_buf, ((byte*)area) - 50, 100);
 	        fprintf(stderr,
 "InnoDB: Error: Removing element from mem pool free list %lu\n"
-"InnoDB: though the list length is 0! Dump of 100 bytes around element:\n%s\n",
-			n, err_buf);
+"InnoDB: though the list length is 0!\n",
+			n);
+		mem_analyze_corruption((byte*)area);
+
 		ut_a(0);
 	}
 
@@ -389,6 +394,7 @@ mem_area_alloc(
 
 	pool->reserved += mem_area_get_size(area);
 	
+	mem_n_threads_inside--;
 	mutex_exit(&(pool->mutex));
 
 	ut_ad(mem_pool_validate(pool));
@@ -451,7 +457,6 @@ mem_area_free(
 	void*		new_ptr;
 	ulint		size;
 	ulint		n;
-	char            err_buf[500];
 	
 	if (mem_out_of_mem_err_msg_count > 0) {
 		/* It may be that the area was really allocated from the
@@ -468,18 +473,25 @@ mem_area_free(
 
 	area = (mem_area_t*) (((byte*)ptr) - MEM_AREA_EXTRA_SIZE);
 
-	if (mem_area_get_free(area)) {
-		ut_sprintf_buf(err_buf, ((byte*)area) - 50, 100);
+        if (mem_area_get_free(area)) {
 	        fprintf(stderr,
 "InnoDB: Error: Freeing element to mem pool free list though the\n"
-"InnoDB: element is marked free! Dump of 100 bytes around element:\n%s\n",
-			err_buf);
+"InnoDB: element is marked free!\n");
+
+		mem_analyze_corruption((byte*)area);
 		ut_a(0);
 	}
 
 	size = mem_area_get_size(area);
 	
-	ut_ad(size != 0);
+        if (size == 0) {
+	        fprintf(stderr,
+"InnoDB: Error: Mem area size is 0. Possibly a memory overrun of the\n"
+"InnoDB: previous allocated area!\n");
+
+		mem_analyze_corruption((byte*)area);
+		ut_a(0);
+	}
 
 #ifdef UNIV_LIGHT_MEM_DEBUG	
 	if (((byte*)area) + size < pool->buf + pool->size) {
@@ -488,7 +500,15 @@ mem_area_free(
 
 		next_size = mem_area_get_size(
 					(mem_area_t*)(((byte*)area) + size));
-		ut_a(ut_2_power_up(next_size) == next_size);
+		if (ut_2_power_up(next_size) != next_size) {
+		        fprintf(stderr,
+"InnoDB: Error: Memory area size %lu, next area size %lu not a power of 2!\n"
+"InnoDB: Possibly a memory overrun of the buffer being freed here.\n",
+			  size, next_size);
+			mem_analyze_corruption((byte*)area);
+
+			ut_a(0);
+		}
 	}
 #endif
 	buddy = mem_area_get_buddy(area, size, pool);
@@ -496,6 +516,9 @@ mem_area_free(
 	n = ut_2_log(size);
 	
 	mutex_enter(&(pool->mutex));
+	mem_n_threads_inside++;
+
+	ut_a(mem_n_threads_inside == 1);
 
 	if (buddy && mem_area_get_free(buddy)
 				&& (size == mem_area_get_size(buddy))) {
@@ -519,6 +542,7 @@ mem_area_free(
 
 		pool->reserved += ut_2_exp(n);
 
+		mem_n_threads_inside--;
 		mutex_exit(&(pool->mutex));
 
 		mem_area_free(new_ptr, pool);
@@ -534,6 +558,7 @@ mem_area_free(
 		pool->reserved -= size;
 	}
 	
+	mem_n_threads_inside--;
 	mutex_exit(&(pool->mutex));
 
 	ut_ad(mem_pool_validate(pool));
@@ -578,7 +603,7 @@ mem_pool_validate(
 		}
 	}
 
-	ut_a(free + pool->reserved == pool->size
+	ut_anp(free + pool->reserved == pool->size
 					- (pool->size % MEM_AREA_MIN_SIZE));
 	mutex_exit(&(pool->mutex));
 

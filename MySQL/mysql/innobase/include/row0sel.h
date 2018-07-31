@@ -87,9 +87,11 @@ row_printf_step(
 				/* out: query thread to run next or NULL */
 	que_thr_t*	thr);	/* in: query thread */
 /********************************************************************
-Converts a key value stored in MySQL format to an Innobase dtuple.
-The last field of the key value may be just a prefix of a fixed length
-field: hence the parameter key_len. */
+Converts a key value stored in MySQL format to an Innobase dtuple. The last
+field of the key value may be just a prefix of a fixed length field: hence
+the parameter key_len. But currently we do not allow search keys where the
+last field is only a prefix of the full key field len and print a warning if
+such appears. */
 
 void
 row_sel_convert_mysql_key_to_innobase(
@@ -100,6 +102,7 @@ row_sel_convert_mysql_key_to_innobase(
 					to index! */
 	byte*		buf,		/* in: buffer to use in field
 					conversions */
+	ulint		buf_len,	/* in: buffer length */
 	dict_index_t*	index,		/* in: index of the key value */
 	byte*		key_ptr,	/* in: MySQL key value */
 	ulint		key_len);	/* in: MySQL key value length */
@@ -133,6 +136,18 @@ row_search_for_mysql(
 					then prebuilt must have a pcur
 					with stored position! In opening of a
 					cursor 'direction' should be 0. */
+/***********************************************************************
+Checks if MySQL at the moment is allowed for this table to retrieve a
+consistent read result, or store it to the query cache. */
+
+ibool
+row_search_check_if_query_cache_permitted(
+/*======================================*/
+				/* out: TRUE if storing or retrieving from
+				the query cache is permitted */
+	trx_t*	trx,		/* in: transaction object */
+	char*	norm_name);	/* in: concatenation of database name, '/'
+				char, table name */
 
 
 /* A structure for caching column values for prefetched rows */

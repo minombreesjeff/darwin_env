@@ -26,6 +26,18 @@ Created 1/8/1996 Heikki Tuuri
 #include "ut0byte.h"
 #include "trx0types.h"
 
+/*************************************************************************
+Accepts a specified string. Comparisons are case-insensitive. */
+
+char*
+dict_accept(
+/*========*/
+			/* out: if string was accepted, the pointer
+			is moved after that, else ptr is returned */
+	char*	ptr,	/* in: scan from this */
+	const char* string,/* in: accept only this string as the next
+			non-whitespace string */
+	ibool*	success);/* out: TRUE if accepted */
 /************************************************************************
 Decrements the count of open MySQL handles to a table. */
 
@@ -114,13 +126,20 @@ dict_table_autoinc_get(
 				/* out: value for a new row, or 0 */
 	dict_table_t*	table);	/* in: table */
 /************************************************************************
-Reads the autoinc counter value, 0 if not yet initialized. Does not
-increment the counter. */
+Decrements the autoinc counter value by 1. */
+
+void
+dict_table_autoinc_decrement(
+/*=========================*/
+	dict_table_t*	table);	/* in: table */
+/************************************************************************
+Reads the next autoinc value (== autoinc counter value), 0 if not yet
+initialized. */
 
 ib_longlong
 dict_table_autoinc_read(
 /*====================*/
-				/* out: value of the counter */
+				/* out: value for a new row, or 0 */
 	dict_table_t*	table);	/* in: table */
 /************************************************************************
 Peeks the autoinc counter value, 0 if not yet initialized. Does not
@@ -199,6 +218,24 @@ dict_create_foreign_constraints(
 				database id the database of parameter name */
 	char*	name);		/* in: table full name in the normalized form
 				database_name/table_name */
+/**************************************************************************
+Parses the CONSTRAINT id's to be dropped in an ALTER TABLE statement. */
+
+ulint
+dict_foreign_parse_drop_constraints(
+/*================================*/
+						/* out: DB_SUCCESS or
+						DB_CANNOT_DROP_CONSTRAINT if
+						syntax error or the constraint
+						id does not match */
+	mem_heap_t*	heap,			/* in: heap from which we can
+						allocate memory */
+	trx_t*		trx,			/* in: transaction */
+	dict_table_t*	table,			/* in: table */
+	ulint*		n,			/* out: number of constraints
+						to drop */
+	char***		constraints_to_drop);	/* out: id's of the
+						constraints to drop */
 /**************************************************************************
 Returns a table object and memoryfixes it. NOTE! This is a high-level
 function to be used mainly from outside the 'dict' directory. Inside this
@@ -314,6 +351,16 @@ dict_print_info_on_foreign_keys(
 	char*		str,	/* in/out: pointer to a string */
 	ulint		len,	/* in: space in str available for info */
 	dict_table_t*	table);	/* in: table */
+/**************************************************************************
+Sprintfs to a string info on a foreign key of a table in a format suitable
+for CREATE TABLE. */
+
+char*
+dict_print_info_on_foreign_key_in_create_format(
+/*============================================*/
+                                /* out: how far in buf we printed */
+	dict_foreign_t*	foreign,/* in: foreign key constraint */
+	char*		buf);	/* in: buffer of at least 5000 bytes */
 /************************************************************************
 Gets the first index on the table (the clustered index). */
 UNIV_INLINE
@@ -521,6 +568,29 @@ dict_index_get_nth_col_pos(
 				ULINT_UNDEFINED */
 	dict_index_t*	index,	/* in: index */
 	ulint		n);	/* in: column number */
+/************************************************************************
+Returns TRUE if the index contains a column or a prefix of that column. */
+
+ibool
+dict_index_contains_col_or_prefix(
+/*==============================*/
+				/* out: TRUE if contains the column or its
+				prefix */
+	dict_index_t*	index,	/* in: index */
+	ulint		n);	/* in: column number */
+/************************************************************************
+Looks for a matching field in an index. The column and the prefix len has
+to be the same. */
+
+ulint
+dict_index_get_nth_field_pos(
+/*=========================*/
+				/* out: position in internal representation
+				of the index; if not contained, returns
+				ULINT_UNDEFINED */
+	dict_index_t*	index,	/* in: index from which to search */
+	dict_index_t*	index2,	/* in: index */
+	ulint		n);	/* in: field number in index2 */
 /************************************************************************
 Looks for column n position in the clustered index. */
 
@@ -789,9 +859,17 @@ void
 dict_mutex_exit_for_mysql(void);
 /*===========================*/
 
+/* The following len must be at least 10000 bytes! */
+#define DICT_FOREIGN_ERR_BUF_LEN	10000
+
+/* Buffers for storing detailed information about the latest foreign key
+and unique key errors */
+extern char*	dict_foreign_err_buf;
+extern char*	dict_unique_err_buf;
+extern mutex_t	dict_foreign_err_mutex; /* mutex protecting the buffers */
 
 extern dict_sys_t*	dict_sys;	/* the dictionary system */
-extern rw_lock_t	dict_foreign_key_check_lock;
+extern rw_lock_t	dict_operation_lock;
 
 /* Dictionary system struct */
 struct dict_sys_struct{

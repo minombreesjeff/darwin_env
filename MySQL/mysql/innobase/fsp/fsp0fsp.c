@@ -769,6 +769,8 @@ fsp_init_file_page_low(
 #endif
 	page = buf_frame_align(ptr);
 
+	buf_block_align(page)->check_index_page_at_flush = FALSE;	
+	
 #ifdef UNIV_BASIC_LOG_DEBUG	
 /*	printf("In log debug version: Erase the contents of the file page\n");
 */
@@ -776,7 +778,7 @@ fsp_init_file_page_low(
 		page[i] = 0xFF;
 	}
 #endif
-	mach_write_to_8(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN,
+	mach_write_to_8(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM,
 							ut_dulint_zero);
 	mach_write_to_8(page + FIL_PAGE_LSN, ut_dulint_zero);
 }
@@ -803,7 +805,7 @@ fsp_parse_init_file_page(
 /*=====================*/
 			/* out: end of log record or NULL */
 	byte*	ptr,	/* in: buffer */
-	byte*	end_ptr,/* in: buffer end */
+	byte*	end_ptr __attribute__((unused)), /* in: buffer end */
 	page_t*	page)	/* in: page or NULL */
 {
 	ut_ad(ptr && end_ptr);
@@ -1097,7 +1099,7 @@ fsp_fill_free_list(
 
 			/* Initialize the ibuf page in a separate
 			mini-transaction because it is low in the latching
-			order, and we must be able to release the its latch
+			order, and we must be able to release its latch
 			before returning from the fsp routine */
 			
 			mtr_start(&ibuf_mtr);
@@ -1264,7 +1266,12 @@ fsp_alloc_free_page(
 
 	free = xdes_find_bit(descr, XDES_FREE_BIT, TRUE,
 						hint % FSP_EXTENT_SIZE, mtr);
-	ut_a(free != ULINT_UNDEFINED);
+	if (free == ULINT_UNDEFINED) {
+
+		ut_print_buf(((byte*)descr) - 500, 1000);
+
+		ut_a(0);
+	}
 
 	xdes_set_bit(descr, XDES_FREE_BIT, free, FALSE, mtr);
 
@@ -1412,7 +1419,12 @@ fsp_free_extent(
 
 	descr = xdes_get_descriptor_with_space_hdr(header, space, page, mtr);
 
-	ut_a(xdes_get_state(descr, mtr) != XDES_FREE);
+	if (xdes_get_state(descr, mtr) == XDES_FREE) {
+
+		ut_print_buf(((byte*)descr) - 500, 1000);
+
+		ut_a(0);
+	}
 
 	xdes_init(descr, mtr);
 
@@ -1428,7 +1440,7 @@ fsp_seg_inode_page_get_nth_inode(
 			/* out: segment inode */
 	page_t*	page,	/* in: segment inode page */
 	ulint	i,	/* in: inode index on page */
-	mtr_t*	mtr)	/* in: mini-transaction handle */
+	mtr_t*	mtr __attribute__((unused))) /* in: mini-transaction handle */
 {
 	ut_ad(i < FSP_SEG_INODES_PER_PAGE);
 	ut_ad(mtr_memo_contains(mtr, buf_block_align(page),
@@ -1523,6 +1535,10 @@ fsp_alloc_seg_inode_page(
 
 	page = buf_page_get(space, page_no, RW_X_LATCH, mtr);	
 
+	buf_block_align(page)->check_index_page_at_flush = FALSE;
+
+	fil_page_set_type(page, FIL_PAGE_INODE);
+	
 	buf_page_dbg_add_level(page, SYNC_FSP_PAGE);
 
 	for (i = 0; i < FSP_SEG_INODES_PER_PAGE; i++) {
@@ -1670,7 +1686,7 @@ fseg_get_nth_frag_page_no(
 				/* out: page number, FIL_NULL if not in use */
 	fseg_inode_t* 	inode,	/* in: segment inode */
 	ulint		n,	/* in: slot index */
-	mtr_t*		mtr)	/* in: mtr handle */
+	mtr_t*		mtr __attribute__((unused))) /* in: mtr handle */
 {
 	ut_ad(inode && mtr);
 	ut_ad(n < FSEG_FRAG_ARR_N_SLOTS);
@@ -1808,7 +1824,7 @@ fseg_create_general(
 	fsp_header_t*	space_header;
 	fseg_inode_t*	inode;
 	dulint		seg_id;
-	fseg_header_t*	header;
+	fseg_header_t*	header = 0; /* remove warning */
 	rw_lock_t*	latch;
 	ibool		success;
 	page_t*		ret		= NULL;
@@ -2298,6 +2314,8 @@ fseg_alloc_free_page_low(
 		fseg_mark_page_used(seg_inode, space, ret_page, mtr);
 	}
 
+	buf_reset_check_index_page_at_flush(space, ret_page);
+	
 	return(ret_page);	
 }
 
@@ -2461,20 +2479,20 @@ try_again:
 	n_free = n_free_list_ext + n_free_up;
 
 	if (alloc_type == FSP_NORMAL) {
-		/* We reserve 1 extent + 4 % of the space size to undo logs
-		and 1 extent + 1 % to cleaning operations; NOTE: this source
+		/* We reserve 1 extent + 0.5 % of the space size to undo logs
+		and 1 extent + 0.5 % to cleaning operations; NOTE: this source
 		code is duplicated in the function below! */
 
-		reserve = 2 + ((size / FSP_EXTENT_SIZE) * 5) / 100;
+		reserve = 2 + ((size / FSP_EXTENT_SIZE) * 2) / 200;
 
 		if (n_free <= reserve + n_ext) {
 
 			goto try_to_extend;
 		}
 	} else if (alloc_type == FSP_UNDO) {
-		/* We reserve 1 % of the space size to cleaning operations */
+		/* We reserve 0.5 % of the space size to cleaning operations */
 
-		reserve = 1 + ((size / FSP_EXTENT_SIZE) * 1) / 100;
+		reserve = 1 + ((size / FSP_EXTENT_SIZE) * 1) / 200;
 
 		if (n_free <= reserve + n_ext) {
 
@@ -2554,11 +2572,11 @@ fsp_get_available_space_in_free_extents(
 	
 	n_free = n_free_list_ext + n_free_up;
 
-	/* We reserve 1 extent + 4 % of the space size to undo logs
-	and 1 extent + 1 % to cleaning operations; NOTE: this source
+	/* We reserve 1 extent + 0.5 % of the space size to undo logs
+	and 1 extent + 0.5 % to cleaning operations; NOTE: this source
 	code is duplicated in the function above! */
 
-	reserve = 2 + ((size / FSP_EXTENT_SIZE) * 5) / 100;
+	reserve = 2 + ((size / FSP_EXTENT_SIZE) * 2) / 200;
 
 	if (reserve > n_free) {
 		return(0);
@@ -2857,7 +2875,7 @@ fseg_free_step(
 	freed yet */
 
 	ut_a(descr);
-	ut_a(xdes_get_bit(descr, XDES_FREE_BIT, buf_frame_get_page_no(header)
+	ut_anp(xdes_get_bit(descr, XDES_FREE_BIT, buf_frame_get_page_no(header)
 					% FSP_EXTENT_SIZE, mtr) == FALSE);
 	inode = fseg_inode_get(header, mtr);
 

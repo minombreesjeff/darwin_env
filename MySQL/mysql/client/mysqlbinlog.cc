@@ -1,39 +1,35 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+/* Copyright (C) 2001 MySQL AB
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
-
 
 #define MYSQL_CLIENT
 #undef MYSQL_SERVER
 #include "client_priv.h"
 #include <time.h>
+#include <assert.h>
 #include "log_event.h"
+#include "include/my_sys.h"
+
+#define BIN_LOG_HEADER_SIZE	4
+#define PROBE_HEADER_LEN	(EVENT_LEN_OFFSET+4)
+
 
 #define CLIENT_CAPABILITIES	(CLIENT_LONG_PASSWORD | CLIENT_LONG_FLAG | CLIENT_LOCAL_FILES)
 
-#ifndef OS2
-extern "C"
-{
- int simple_command(MYSQL *mysql,enum enum_server_command command,
-		    const char *arg, uint length, my_bool skipp_check);
-  uint net_safe_read(MYSQL* mysql);
-}
-#endif
-
 char server_version[SERVER_VERSION_LENGTH];
-uint32 server_id = 0;
+ulong server_id = 0;
 
 // needed by net_serv.c
 ulong bytes_sent = 0L, bytes_received = 0L;
@@ -46,45 +42,200 @@ static FILE *result_file;
 static const char* default_dbug_option = "d:t:o,/tmp/mysqlbinlog.trace";
 #endif
 
-static struct option long_options[] =
-{
-#ifndef DBUG_OFF
-  {"debug", 	  optional_argument, 	0, '#'},
-#endif
-  {"help", 	  no_argument, 		0, '?'},
-  {"host", 	  required_argument,	0, 'h'},
-  {"offset", 	  required_argument,	0, 'o'},
-  {"password",	  required_argument,	0, 'p'},
-  {"port", 	  required_argument,	0, 'P'},
-  {"position",	  required_argument,	0, 'j'},
-  {"result-file", required_argument,    0, 'r'},
-  {"short-form",  no_argument,		0, 's'},
-  {"table", 	  required_argument, 	0, 't'},
-  {"user",	  required_argument,	0, 'u'},
-  {"version",	  no_argument, 		0, 'V'},
-};
+void sql_print_error(const char *format, ...);
 
-void sql_print_error(const char *format,...);
-
+static bool one_database = 0;
+static bool force_opt= 0;
+static const char* database;
 static bool short_form = 0;
 static ulonglong offset = 0;
 static const char* host = "localhost";
 static int port = MYSQL_PORT;
+static const char* sock= MYSQL_UNIX_ADDR;
 static const char* user = "test";
 static const char* pass = "";
 static ulonglong position = 0;
 static bool use_remote = 0;
 static short binlog_flags = 0; 
 static MYSQL* mysql = NULL;
-static const char* table = 0;
+
+static const char* dirname_for_local_load= 0;
 
 static void dump_local_log_entries(const char* logname);
 static void dump_remote_log_entries(const char* logname);
 static void dump_log_entries(const char* logname);
 static void dump_remote_file(NET* net, const char* fname);
-static void dump_remote_table(NET* net, const char* db, const char* table);
 static void die(const char* fmt, ...);
 static MYSQL* safe_connect();
+
+class Load_log_processor
+{
+  char target_dir_name[MY_NFILE];
+  int target_dir_name_len;
+  DYNAMIC_ARRAY file_names;
+
+  const char* create_file(Create_file_log_event *ce)
+    {
+      const char *bname= ce->fname + ce->fname_len -1;
+      while (bname>ce->fname && bname[-1]!=FN_LIBCHAR)
+	bname--;
+
+      uint blen= ce->fname_len - (bname-ce->fname);
+      uint full_len= target_dir_name_len + blen;
+      char *tmp;
+      if (!(tmp= my_malloc(full_len + 9 + 1,MYF(MY_WME))) ||
+	  set_dynamic(&file_names,(gptr)&ce,ce->file_id))
+      {
+	die("Could not construct local filename %s%s",target_dir_name,bname);
+	return 0;
+      }
+
+      char *ptr= tmp;
+      memcpy(ptr,target_dir_name,target_dir_name_len);
+      ptr+= target_dir_name_len;
+      memcpy(ptr,bname,blen);
+      ptr+= blen;
+      sprintf(ptr,"-%08x",ce->file_id);
+
+      ce->set_fname_outside_temp_buf(tmp,full_len);
+
+      return tmp;
+    }
+
+  void append_to_file(const char* fname, int flags, 
+		      gptr data, uint size)
+    {
+      File file;
+      if (((file= my_open(fname,flags,MYF(MY_WME))) < 0) ||
+	  my_write(file,(byte*) data,size,MYF(MY_WME|MY_NABP)) ||
+	  my_close(file,MYF(MY_WME)))
+	exit(1);
+    }
+
+public:
+
+  Load_log_processor()
+    {
+      init_dynamic_array(&file_names,sizeof(Create_file_log_event*),
+			 100,100 CALLER_INFO);
+    }
+
+  ~Load_log_processor()
+    {
+      destroy();
+      delete_dynamic(&file_names);
+    }
+
+  void init_by_dir_name(const char *atarget_dir_name)
+    {
+      char *end= strmov(target_dir_name,atarget_dir_name);
+      if (end[-1]!=FN_LIBCHAR)
+	*end++= FN_LIBCHAR;
+      target_dir_name_len= end-target_dir_name;
+    }
+  void init_by_file_name(const char *file_name)
+    {
+      int len= strlen(file_name);
+      const char *end= file_name + len - 1;
+      while (end>file_name && *end!=FN_LIBCHAR)
+	end--;
+      if (*end!=FN_LIBCHAR)
+	target_dir_name_len= 0;
+      else
+      {
+	target_dir_name_len= end - file_name + 1;
+	memmove(target_dir_name,file_name,target_dir_name_len);
+      }
+    }
+  void init_by_cur_dir()
+    {
+      if (my_getwd(target_dir_name,sizeof(target_dir_name),MYF(MY_WME)))
+	exit(1);
+      target_dir_name_len= strlen(target_dir_name);
+    }
+  void destroy()
+    {
+      Create_file_log_event **ptr= (Create_file_log_event**)file_names.buffer;
+      Create_file_log_event **end= ptr + file_names.elements;
+      for (; ptr<end; ptr++)
+      {
+	if (*ptr)
+	{
+	  my_free((char*)(*ptr)->fname,MYF(MY_WME));
+	  delete *ptr;
+	  *ptr= 0;
+	}
+      }
+    }
+  Create_file_log_event *grab_event(uint file_id)
+    {
+      Create_file_log_event **ptr= 
+	(Create_file_log_event**)file_names.buffer + file_id;
+      Create_file_log_event *res= *ptr;
+      *ptr= 0;
+      return res;
+    }
+  void process(Create_file_log_event *ce)
+    {
+      const char *fname= create_file(ce);
+      append_to_file(fname,O_CREAT|O_EXCL|O_BINARY|O_WRONLY,ce->block,ce->block_len);
+    }
+  void process(Append_block_log_event *ae)
+    {
+      if (ae->file_id >= file_names.elements)
+	die("Skiped CreateFile event for file_id: %u",ae->file_id);
+      Create_file_log_event* ce= 
+	*((Create_file_log_event**)file_names.buffer + ae->file_id);
+      append_to_file(ce->fname,O_APPEND|O_BINARY|O_WRONLY,ae->block,ae->block_len);
+    }
+};
+
+Load_log_processor load_processor;
+
+static struct my_option my_long_options[] =
+{
+#ifndef DBUG_OFF
+  {"debug", '#', "Output debug log.", (gptr*) &default_dbug_option,
+   (gptr*) &default_dbug_option, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+#endif
+  {"database", 'd', "List entries for just this database (local log only).",
+   (gptr*) &database, (gptr*) &database, 0, GET_STR_ALLOC, REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
+  {"force-read", 'f', "Force reading unknown binlog events.",
+   (gptr*) &force_opt, (gptr*) &force_opt, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"help", '?', "Display this help and exit.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"host", 'h', "Get the binlog from server.", (gptr*) &host, (gptr*) &host,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"offset", 'o', "Skip the first N entries.", (gptr*) &offset, (gptr*) &offset,
+   0, GET_ULL, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"password", 'p', "Password to connect to remote server.",
+   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"port", 'P', "Use port to connect to the remote server.",
+   (gptr*) &port, (gptr*) &port, 0, GET_INT, REQUIRED_ARG, MYSQL_PORT, 0, 0,
+   0, 0, 0},
+  {"position", 'j', "Start reading the binlog at position N.",
+   (gptr*) &position, (gptr*) &position, 0, GET_ULL, REQUIRED_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"result-file", 'r', "Direct output to a given file.", 0, 0, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"short-form", 's', "Just show the queries, no extra info.",
+   (gptr*) &short_form, (gptr*) &short_form, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"socket", 'S', "Socket file to use for connection.",
+   (gptr*) &sock, (gptr*) &sock, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 
+   0, 0},
+  {"user", 'u', "Connect to the remote server as username.",
+   (gptr*) &user, (gptr*) &user, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"local-load", 'l', "Prepare files for local load in directory.",
+   (gptr*) &dirname_for_local_load, (gptr*) &dirname_for_local_load, 0,
+   GET_STR_ALLOC, OPT_ARG, 0, 0, 0, 0, 0, 0},
+  {"version", 'V', "Print version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
+   0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
+};
 
 
 void sql_print_error(const char *format,...)
@@ -110,38 +261,23 @@ static void die(const char* fmt, ...)
 
 static void print_version()
 {
-  printf("%s  Ver 1.6 for %s at %s\n",my_progname,SYSTEM_TYPE, MACHINE_TYPE);
+  printf("%s Ver 2.3 for %s at %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
 }
 
 
 static void usage()
 {
   print_version();
-  puts("By Sasha, for your professional use\n\
-This software comes with NO WARRANTY: see the file PUBLIC for details\n");
+  puts("By Monty and Sasha, for your professional use\n\
+This software comes with NO WARRANTY:  This is free software,\n\
+and you are welcome to modify and redistribute it under the GPL license\n");
 
   printf("\
-Dumps a MySQL binary log in a format usable for viewing or for pipeing to\n\
+Dumps a MySQL binary log in a format usable for viewing or for piping to\n\
 the mysql command line client\n\n");
-  printf("Usage: %s [options] log-files\n",my_progname);
-  puts("Options:");
-#ifndef DBUG_OFF
-  printf("-#, --debug[=...]       Output debug log.  (%s)\n",
-	 default_dbug_option);
-#endif
-  printf("\
--?, --help		Display this help and exit\n\
--s, --short-form	Just show the queries, no extra info\n\
--o, --offset=N		Skip the first N entries\n\
--h, --host=server	Get the binlog from server\n\
--P, --port=port         Use port to connect to the remote server\n\
--u, --user=username     Connect to the remote server as username\n\
--p, --password=password Password to connect to remote server\n\
--r, --result-file=file  Direct output to a given file\n\
--j, --position=N	Start reading the binlog at position N\n\
--t, --table=name        Get raw table dump using COM_TABLE_DUMB\n\
--V, --version		Print version and exit.\n\
-");
+  printf("Usage: %s [options] log-files\n", my_progname);
+  my_print_help(my_long_options);
+  my_print_variables(my_long_options);
 }
 
 static void dump_remote_file(NET* net, const char* fname)
@@ -174,76 +310,55 @@ static void dump_remote_file(NET* net, const char* fname)
   fflush(result_file);
 }
 
+
+extern "C" my_bool
+get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
+	       char *argument)
+{
+  switch (optid) {
+#ifndef DBUG_OFF
+  case '#':
+    DBUG_PUSH(argument ? argument : default_dbug_option);
+    break;
+#endif
+  case 'd':
+    one_database = 1;
+    break;
+  case 'h':
+    use_remote = 1;
+    break;
+  case 'P':
+    use_remote = 1;
+    break;
+  case 'p':
+    use_remote = 1;
+    pass = my_strdup(argument, MYF(0));
+    break;
+  case 'r':
+    if (!(result_file = my_fopen(argument, O_WRONLY | O_BINARY, MYF(MY_WME))))
+      exit(1);
+    break;
+  case 'u':
+    use_remote = 1;
+    break;
+  case 'V':
+    print_version();
+    exit(0);
+  case '?':
+    usage();
+    exit(0);
+  }
+  return 0;
+}
+
+
 static int parse_args(int *argc, char*** argv)
 {
-  int c, opt_index = 0;
+  int ho_error;
 
   result_file = stdout;
-  while((c = getopt_long(*argc, *argv, "so:#::h:j:u:p:P:r:t:?V", long_options,
-			 &opt_index)) != EOF)
-  {
-    switch(c)
-    {
-#ifndef DBUG_OFF
-    case '#':
-      DBUG_PUSH(optarg ? optarg : default_dbug_option);
-      break;
-#endif
-    case 's':
-      short_form = 1;
-      break;
-
-    case 'o':
-      offset = strtoull(optarg,(char**) 0, 10);
-      break;
-
-    case 'j':
-      position = strtoull(optarg,(char**) 0, 10);
-      break;
-
-    case 'h':
-      use_remote = 1;
-      host = my_strdup(optarg, MYF(0));
-      break;
-      
-    case 'P':
-      use_remote = 1;
-      port = atoi(optarg);
-      break;
-      
-    case 'p':
-      use_remote = 1;
-      pass = my_strdup(optarg, MYF(0));
-      break;
-
-    case 'r':
-      if (!(result_file = my_fopen(optarg, O_WRONLY | O_BINARY, MYF(MY_WME))))
-	exit(1);
-      break;
-
-    case 'u':
-      use_remote = 1;
-      user = my_strdup(optarg, MYF(0));
-      break;
-
-    case 't':
-      table = my_strdup(optarg, MYF(0));
-      break;
-
-    case 'V':
-      print_version();
-      exit(0);
-
-    case '?':
-    default:
-      usage();
-      exit(0);
-
-    }
-  }
-
-  (*argc)-=optind;
-  (*argv)+=optind;
+  if ((ho_error=handle_options(argc, argv, my_long_options, get_one_option)))
+    exit(ho_error);
 
   return 0;
 }
@@ -254,7 +369,7 @@ static MYSQL* safe_connect()
   if(!local_mysql)
     die("Failed on mysql_init");
 
-  if(!mysql_real_connect(local_mysql, host, user, pass, 0, port, 0, 0))
+  if (!mysql_real_connect(local_mysql, host, user, pass, 0, port, sock, 0))
     die("failed on connect: %s", mysql_error(local_mysql));
 
   return local_mysql;
@@ -262,39 +377,57 @@ static MYSQL* safe_connect()
 
 static void dump_log_entries(const char* logname)
 {
-  if(use_remote)
+  if (use_remote)
     dump_remote_log_entries(logname);
   else
     dump_local_log_entries(logname);  
 }
 
-static void dump_remote_table(NET* net, const char* db, const char* table)
+static int check_master_version(MYSQL* mysql)
 {
-  char buf[1024];
-  char * p = buf;
-  uint table_len = (uint) strlen(table);
-  uint db_len = (uint) strlen(db);
-  if(table_len + db_len > sizeof(buf) - 2)
-    die("Buffer overrun");
-  
-  *p++ = db_len;
-  memcpy(p, db, db_len);
-  p += db_len;
-  *p++ = table_len;
-  memcpy(p, table, table_len);
-  
-  if(simple_command(mysql, COM_TABLE_DUMP, buf, p - buf + table_len, 1))
-    die("Error sending the table dump command");
+  MYSQL_RES* res = 0;
+  MYSQL_ROW row;
+  const char* version;
+  int old_format = 0;
 
-  for(;;)
+  if (mysql_query(mysql, "SELECT VERSION()") ||
+      !(res = mysql_store_result(mysql)))
   {
-    uint packet_len = my_net_read(net);
-    if(packet_len == 0) break; // end of file
-    if(packet_len == packet_error)
-      die("Error reading packet in table dump");
-    my_fwrite(result_file, (byte*)net->read_pos, packet_len, MYF(MY_WME));
-    fflush(result_file);
+    mysql_close(mysql);
+    die("Error checking master version: %s",
+		    mysql_error(mysql));
   }
+  if (!(row = mysql_fetch_row(res)))
+  {
+    mysql_free_result(res);
+    mysql_close(mysql);
+    die("Master returned no rows for SELECT VERSION()");
+    return 1;
+  }
+  if (!(version = row[0]))
+  {
+    mysql_free_result(res);
+    mysql_close(mysql);
+    die("Master reported NULL for the version");
+  }
+
+  switch (*version) {
+  case '3':
+    old_format = 1;
+    break;
+  case '4':
+  case '5':
+    old_format = 0;
+    break;
+  default:
+    sql_print_error("Master reported unrecognized MySQL version '%s'",
+		    version);
+    mysql_free_result(res);
+    mysql_close(mysql);
+    return 1;
+  }
+  mysql_free_result(res);
+  return old_format;
 }
 
 
@@ -304,37 +437,41 @@ static void dump_remote_log_entries(const char* logname)
   char last_db[FN_REFLEN+1] = "";
   uint len;
   NET* net = &mysql->net;
-  if(!position) position = 4; // protect the innocent from spam
-  if (position < 4)
+  int old_format;
+  old_format = check_master_version(mysql);
+
+  if (!position)
+    position = BIN_LOG_HEADER_SIZE; // protect the innocent from spam
+  if (position < BIN_LOG_HEADER_SIZE)
   {
-    position = 4;
+    position = BIN_LOG_HEADER_SIZE;
     // warn the guity
-    sql_print_error("Warning: The position in the binary log can't be less than 4.\nStarting from position 4\n");
+    sql_print_error("Warning: The position in the binary log can't be less than %d.\nStarting from position %d\n", BIN_LOG_HEADER_SIZE, BIN_LOG_HEADER_SIZE);
   }
   int4store(buf, position);
-  int2store(buf + 4, binlog_flags);
+  int2store(buf + BIN_LOG_HEADER_SIZE, binlog_flags);
   len = (uint) strlen(logname);
   int4store(buf + 6, 0);
   memcpy(buf + 10, logname,len);
-  if(simple_command(mysql, COM_BINLOG_DUMP, buf, len + 10, 1))
+  if (simple_command(mysql, COM_BINLOG_DUMP, buf, len + 10, 1))
     die("Error sending the log dump command");
-  
-  for(;;)
+
+  for (;;)
   {
+    const char *error;
     len = net_safe_read(mysql);
     if (len == packet_error)
       die("Error reading packet from server: %s", mysql_error(mysql));
-    if(len == 1 && net->read_pos[0] == 254)
+    if (len < 8 && net->read_pos[0] == 254)
       break; // end of data
     DBUG_PRINT("info",( "len= %u, net->read_pos[5] = %d\n",
 			len, net->read_pos[5]));
-    Log_event * ev = Log_event::read_log_event(
-					  (const char*) net->read_pos + 1 ,
-					  len - 1);
-    if(ev)
+    Log_event *ev = Log_event::read_log_event((const char*) net->read_pos + 1 ,
+					      len - 1, &error, old_format);
+    if (ev)
     {
       ev->print(result_file, short_form, last_db);
-      if(ev->get_type_code() == LOAD_EVENT)
+      if (ev->get_type_code() == LOAD_EVENT)
 	dump_remote_file(net, ((Load_log_event*)ev)->fname);
       delete ev;
     }
@@ -343,12 +480,43 @@ static void dump_remote_log_entries(const char* logname)
   }
 }
 
+
+static int check_header(IO_CACHE* file)
+{
+  byte header[BIN_LOG_HEADER_SIZE];
+  byte buf[PROBE_HEADER_LEN];
+  int old_format=0;
+
+  my_off_t pos = my_b_tell(file);
+  my_b_seek(file, (my_off_t)0);
+  if (my_b_read(file, header, sizeof(header)))
+    die("Failed reading header;  Probably an empty file");
+  if (memcmp(header, BINLOG_MAGIC, sizeof(header)))
+    die("File is not a binary log file");
+  if (!my_b_read(file, buf, sizeof(buf)))
+  {
+    if (buf[4] == START_EVENT)
+    {
+      uint event_len;
+      event_len = uint4korr(buf + EVENT_LEN_OFFSET);
+      old_format = (event_len < (LOG_EVENT_HEADER_LEN + START_HEADER_LEN));
+    }
+  }
+  my_b_seek(file, pos);
+  return old_format;
+}
+
+
 static void dump_local_log_entries(const char* logname)
 {
   File fd = -1;
   IO_CACHE cache,*file= &cache;
   ulonglong rec_count = 0;
-  char last_db[FN_REFLEN+1] = "";
+  char last_db[FN_REFLEN+1];
+  byte tmp_buff[BIN_LOG_HEADER_SIZE];
+  bool old_format = 0;
+
+  last_db[0]=0;
 
   if (logname && logname[0] != '-')
   {
@@ -357,12 +525,14 @@ static void dump_local_log_entries(const char* logname)
     if (init_io_cache(file, fd, 0, READ_CACHE, (my_off_t) position, 0,
 		      MYF(MY_WME | MY_NABP)))
       exit(1);
+    old_format = check_header(file);
   }
   else
   {
     if (init_io_cache(file, fileno(result_file), 0, READ_CACHE, (my_off_t) 0,
 		      0, MYF(MY_WME | MY_NABP | MY_DONT_CHECK_FILESIZE)))
       exit(1);
+    old_format = check_header(file);
     if (position)
     {
       /* skip 'position' characters from stdout */
@@ -371,7 +541,7 @@ static void dump_local_log_entries(const char* logname)
       for (length= (my_off_t) position ; length > 0 ; length-=tmp)
       {
 	tmp=min(length,sizeof(buff));
-	if (my_b_read(file,buff, (uint) tmp))
+	if (my_b_read(file, buff, (uint) tmp))
 	  exit(1);
       }
     }
@@ -380,20 +550,13 @@ static void dump_local_log_entries(const char* logname)
   }
 
   if (!position)
-  {
-    char magic[4];
-    if (my_b_read(file, (byte*) magic, sizeof(magic)))
-      die("I/O error reading binlog magic number");
-    if(memcmp(magic, BINLOG_MAGIC, 4))
-      die("Bad magic number;  The file is probably not a MySQL binary log");
-  }
- 
+    my_b_read(file, tmp_buff, BIN_LOG_HEADER_SIZE); // Skip header
   for (;;)
   {
     char llbuff[21];
     my_off_t old_off = my_b_tell(file);
 
-    Log_event* ev = Log_event::read_log_event(file);
+    Log_event* ev = Log_event::read_log_event(file, old_format);
     if (!ev)
     {
       if (file->error)
@@ -405,54 +568,179 @@ Could not read entry at offset %s : Error in log format or read error",
     }
     if (rec_count >= offset)
     {
+      // see if we should skip this event (only care about queries for now)
+      if (one_database)
+      {
+        if (ev->get_type_code() == QUERY_EVENT)
+        {
+          //const char * log_dbname = ev->get_db();
+          const char * log_dbname = ((Query_log_event*)ev)->db;
+          //printf("entry: %llu, database: %s\n", rec_count, log_dbname);
+
+          if ((log_dbname != NULL) && (strcmp(log_dbname, database)))
+          {
+            //printf("skipping, %s is not %s\n", log_dbname, database);
+            rec_count++;
+            delete ev;
+            continue; // next
+          }
+#ifndef DBUG_OFF
+          else
+          {
+            printf("no skip\n");
+          }
+#endif
+        }
+#ifndef DBUG_OFF
+        else
+        {
+          const char * query_type = ev->get_type_str();
+          printf("not query -- %s\n", query_type);
+        }
+#endif
+      }
       if (!short_form)
         fprintf(result_file, "# at %s\n",llstr(old_off,llbuff));
-
-      ev->print(result_file, short_form, last_db);
+      
+      switch (ev->get_type_code()) {
+      case CREATE_FILE_EVENT:
+      {
+	Create_file_log_event* ce= (Create_file_log_event*)ev;
+	ce->print(result_file, short_form, last_db,true);
+	load_processor.process(ce);
+	ev= 0;
+	break;
+      }
+      case APPEND_BLOCK_EVENT:
+	ev->print(result_file, short_form, last_db);
+	load_processor.process((Append_block_log_event*)ev);
+	break;
+      case EXEC_LOAD_EVENT:
+      {
+	ev->print(result_file, short_form, last_db);
+	Execute_load_log_event *exv= (Execute_load_log_event*)ev;
+	Create_file_log_event *ce= load_processor.grab_event(exv->file_id);
+	ce->print(result_file, short_form, last_db,true);
+	my_free((char*)ce->fname,MYF(MY_WME));
+	delete ce;
+	break;
+      }
+      default:
+	ev->print(result_file, short_form, last_db);
+      }
     }
     rec_count++;
-    delete ev;
+    if (ev)
+      delete ev;
   }
-  if(fd >= 0)
+  if (fd >= 0)
    my_close(fd, MYF(MY_WME));
   end_io_cache(file);
 }
 
+#if MYSQL_VERSION_ID < 40101
+
+typedef struct st_my_tmpdir
+{
+  char **list;
+  uint cur, max;
+} MY_TMPDIR;
+
+#if defined( __WIN__) || defined(OS2)
+#define DELIM ';'
+#else
+#define DELIM ':'
+#endif
+
+my_bool init_tmpdir(MY_TMPDIR *tmpdir, const char *pathlist)
+{
+  char *end, *copy;
+  char buff[FN_REFLEN];
+  DYNAMIC_ARRAY t_arr;
+  if (my_init_dynamic_array(&t_arr, sizeof(char*), 1, 5))
+    return TRUE;
+  if (!pathlist || !pathlist[0])
+  {
+    /* Get default temporary directory */
+    pathlist=getenv("TMPDIR");	/* Use this if possible */
+#if defined( __WIN__) || defined(OS2)
+    if (!pathlist)
+      pathlist=getenv("TEMP");
+    if (!pathlist)
+      pathlist=getenv("TMP");
+#endif
+    if (!pathlist || !pathlist[0])
+      pathlist=(char*) P_tmpdir;
+  }
+  do
+  {
+    end=strcend(pathlist, DELIM);
+    convert_dirname(buff, pathlist, end);
+    if (!(copy=my_strdup(buff, MYF(MY_WME))))
+      return TRUE;
+    if (insert_dynamic(&t_arr, (gptr)&copy))
+      return TRUE;
+    pathlist=end+1;
+  }
+  while (*end);
+  freeze_size(&t_arr);
+  tmpdir->list=(char **)t_arr.buffer;
+  tmpdir->max=t_arr.elements-1;
+  tmpdir->cur=0;
+  return FALSE;
+}
+
+char *my_tmpdir(MY_TMPDIR *tmpdir)
+{
+  char *dir;
+  dir=tmpdir->list[tmpdir->cur];
+  tmpdir->cur= (tmpdir->cur == tmpdir->max) ? 0 : tmpdir->cur+1;
+  return dir;
+}
+
+void free_tmpdir(MY_TMPDIR *tmpdir)
+{
+  uint i;
+  for (i=0; i<=tmpdir->max; i++)
+    my_free(tmpdir->list[i], MYF(0));
+  my_free((gptr)tmpdir->list, MYF(0));
+}
+
+#endif
 
 int main(int argc, char** argv)
 {
   MY_INIT(argv[0]);
   parse_args(&argc, (char***)&argv);
 
-  if(!argc && !table)
+  if (!argc)
   {
     usage();
     return -1;
   }
 
-  if(use_remote)
-  {
+  if (use_remote)
     mysql = safe_connect();
+
+  MY_TMPDIR tmpdir;
+  tmpdir.list= 0;
+  if (!dirname_for_local_load)
+  {
+    if (init_tmpdir(&tmpdir, 0))
+      exit(1);
+    dirname_for_local_load= my_tmpdir(&tmpdir);
   }
 
-  if (table)
-  {
-    if(!use_remote)
-      die("You must specify connection parameter to get table dump");
-    char* db = (char*)table;
-    char* tbl = (char*) strchr(table, '.');
-    if(!tbl)
-      die("You must use database.table syntax to specify the table");
-    *tbl++ = 0;
-    dump_remote_table(&mysql->net, db, tbl);
-  }
+  if (dirname_for_local_load)
+    load_processor.init_by_dir_name(dirname_for_local_load);
   else
-  {
-    while(--argc >= 0)
-    {
-      dump_log_entries(*(argv++));
-    }
-  }
+    load_processor.init_by_cur_dir();
+
+  while (--argc >= 0)
+    dump_log_entries(*(argv++));
+
+  if (tmpdir.list)
+    free_tmpdir(&tmpdir);
   if (result_file != stdout)
     my_fclose(result_file, MYF(0));
   if (use_remote)

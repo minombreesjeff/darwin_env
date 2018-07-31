@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Code for generell handling of priority Queues.
@@ -124,7 +123,6 @@ byte *queue_remove(register QUEUE *queue, uint idx)
   }
 }
 
-
 	/* Fix when element on top has been replaced */
 
 #ifndef queue_replaced
@@ -165,4 +163,23 @@ void _downheap(register QUEUE *queue, uint idx)
     idx=next_index;
   }
   queue->root[idx]=element;
+}
+
+
+static int queue_fix_cmp(QUEUE *queue, void **a, void **b)
+{
+  return queue->compare(queue->first_cmp_arg,
+			(char*) (*a)+queue->offset_to_key,
+			(char*) (*b)+queue->offset_to_key);
+}
+
+/*
+  Fix heap when every element was changed,
+  actually, it can be done better, in linear time, not in n*log(n)
+*/
+
+void queue_fix(QUEUE *queue)
+{
+  qsort2(queue->root+1,queue->elements, sizeof(void *),
+	 (qsort2_cmp)queue_fix_cmp, queue);
 }

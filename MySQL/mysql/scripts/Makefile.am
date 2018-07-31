@@ -20,7 +20,9 @@ bin_SCRIPTS =		@server_scripts@ \
 			msql2mysql \
 			mysql_config \
 			mysql_fix_privilege_tables \
+                        mysql_fix_extensions \
 			mysql_setpermission \
+			mysql_secure_installation \
 			mysql_zap \
 			mysqlaccess \
 			mysqlbug \
@@ -28,14 +30,18 @@ bin_SCRIPTS =		@server_scripts@ \
 			mysql_find_rows \
 			mysqlhotcopy \
 			mysqldumpslow \
+			mysql_explain_log \
+			mysql_tableinfo \
 			mysqld_multi
 
 EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			msql2mysql.sh \
 			mysql_config.sh \
 			mysql_fix_privilege_tables.sh \
+                        mysql_fix_extensions.sh \
 			mysql_install_db.sh \
 			mysql_setpermission.sh \
+			mysql_secure_installation.sh \
 			mysql_zap.sh \
 			mysqlaccess.sh \
 			mysqlbug.sh \
@@ -43,8 +49,10 @@ EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			mysql_find_rows.sh \
 			mysqlhotcopy.sh \
 		        mysqldumpslow.sh \
+			mysql_explain_log.sh \
 			mysqld_multi.sh \
-			safe_mysqld.sh
+			mysql_tableinfo.sh \
+			mysqld_safe.sh
 
 EXTRA_DIST =		$(EXTRA_SCRIPTS) \
 			mysqlaccess.conf \
@@ -59,7 +67,9 @@ CLEANFILES =		@server_scripts@ \
 			msql2mysql \
 			mysql_config \
 			mysql_fix_privilege_tables \
+                        mysql_fix_extensions \
 			mysql_setpermission \
+			mysql_secure_installation \
 			mysql_zap \
 			mysqlaccess \
 			mysql_convert_table_format \
@@ -90,11 +100,16 @@ SUFFIXES = .sh
 	  -e 's!@''CC''@!@CC@!'\
 	  -e 's!@''CXX''@!@CXX@!'\
 	  -e 's!@''GXX''@!@GXX@!'\
+	  -e 's!@''CC_VERSION''@!@CC_VERSION@!'\
+	  -e 's!@''CXX_VERSION''@!@CXX_VERSION@!'\
 	  -e 's!@''PERL''@!@PERL@!' \
+	  -e 's!@''ASFLAGS''@!@SAVE_ASFLAGS@!'\
 	  -e 's!@''CFLAGS''@!@SAVE_CFLAGS@!'\
 	  -e 's!@''CXXFLAGS''@!@SAVE_CXXFLAGS@!'\
 	  -e 's!@''LDFLAGS''@!@SAVE_LDFLAGS@!'\
 	  -e 's!@''CLIENT_LIBS''@!@CLIENT_LIBS@!' \
+	  -e 's!@''LIBS''@!@LIBS@!' \
+	  -e 's!@''innodb_system_libs''@!@innodb_system_libs@!' \
 	  -e 's!@''VERSION''@!@VERSION@!' \
 	  -e 's!@''MYSQL_SERVER_SUFFIX''@!@MYSQL_SERVER_SUFFIX@!' \
 	  -e 's!@''COMPILATION_COMMENT''@!@COMPILATION_COMMENT@!' \

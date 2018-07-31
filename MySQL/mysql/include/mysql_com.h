@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
 ** Common definition between mysql server & client
@@ -21,7 +20,6 @@
 
 #ifndef _mysql_com_h
 #define _mysql_com_h
-
 
 #define NAME_LEN	64		/* Field/table name length */
 #define HOSTNAME_LENGTH 60
@@ -36,13 +34,14 @@
 #define MYSQL_SERVICENAME "MySql"
 #endif /* __WIN__ */
 
-enum enum_server_command {COM_SLEEP,COM_QUIT,COM_INIT_DB,COM_QUERY,
-			  COM_FIELD_LIST,COM_CREATE_DB,COM_DROP_DB,COM_REFRESH,
-			  COM_SHUTDOWN,COM_STATISTICS,
-			  COM_PROCESS_INFO,COM_CONNECT,COM_PROCESS_KILL,
-			  COM_DEBUG,COM_PING,COM_TIME,COM_DELAYED_INSERT,
-			  COM_CHANGE_USER, COM_BINLOG_DUMP,
-                          COM_TABLE_DUMP, COM_CONNECT_OUT};
+enum enum_server_command {
+  COM_SLEEP, COM_QUIT, COM_INIT_DB, COM_QUERY, COM_FIELD_LIST,
+  COM_CREATE_DB, COM_DROP_DB, COM_REFRESH, COM_SHUTDOWN,  COM_STATISTICS,
+  COM_PROCESS_INFO, COM_CONNECT, COM_PROCESS_KILL, COM_DEBUG, COM_PING,
+  COM_TIME, COM_DELAYED_INSERT, COM_CHANGE_USER, COM_BINLOG_DUMP,
+  COM_TABLE_DUMP,  COM_CONNECT_OUT, COM_REGISTER_SLAVE,
+  COM_END					/* Must be last! */
+};
 
 #define NOT_NULL_FLAG	1		/* Field can't be NULL */
 #define PRI_KEY_FLAG	2		/* Field is part of a primary key */
@@ -77,6 +76,12 @@ enum enum_server_command {COM_SLEEP,COM_QUIT,COM_INIT_DB,COM_QUERY,
 #define REFRESH_READ_LOCK	16384	/* Lock tables for read */
 #define REFRESH_FAST		32768	/* Intern flag */
 
+/* RESET (remove all queries) from query cache */
+#define REFRESH_QUERY_CACHE	65536
+#define REFRESH_QUERY_CACHE_FREE 0x20000L /* pack query cache */
+#define REFRESH_DES_KEY_FILE	0x40000L
+#define REFRESH_USER_RESOURCES	0x80000L
+
 #define CLIENT_LONG_PASSWORD	1	/* new more secure passwords */
 #define CLIENT_FOUND_ROWS	2	/* Found instead of affected rows */
 #define CLIENT_LONG_FLAG	4	/* Get all column flags */
@@ -86,7 +91,6 @@ enum enum_server_command {COM_SLEEP,COM_QUIT,COM_INIT_DB,COM_QUERY,
 #define CLIENT_ODBC		64	/* Odbc client */
 #define CLIENT_LOCAL_FILES	128	/* Can use LOAD DATA LOCAL */
 #define CLIENT_IGNORE_SPACE	256	/* Ignore spaces before '(' */
-#define CLIENT_CHANGE_USER	512	/* Support the mysql_change_user() */
 #define CLIENT_INTERACTIVE	1024	/* This is an interactive client */
 #define CLIENT_SSL              2048     /* Switch to SSL after handshake */
 #define CLIENT_IGNORE_SIGPIPE   4096     /* IGNORE sigpipes */
@@ -100,39 +104,37 @@ enum enum_server_command {COM_SLEEP,COM_QUIT,COM_INIT_DB,COM_QUERY,
 #define NET_WRITE_TIMEOUT	60		/* Timeout on write */
 #define NET_WAIT_TIMEOUT	8*60*60		/* Wait for new query */
 
-#ifndef Vio_defined
-#define Vio_defined
-#ifdef HAVE_VIO
-class Vio;					/* Fill Vio class in C++ */
-#else
 struct st_vio;					/* Only C */
 typedef struct st_vio Vio;
-#endif
-#endif
 
 #define MAX_CHAR_WIDTH		255	/* Max length for a CHAR colum */
 #define MAX_BLOB_WIDTH		8192	/* Default width for blob */
 
 typedef struct st_net {
   Vio* vio;
-  my_socket fd;					/* For Perl DBI/dbd */
-  int fcntl;
   unsigned char *buff,*buff_end,*write_pos,*read_pos;
+  my_socket fd;					/* For Perl DBI/dbd */
+  unsigned long max_packet,max_packet_size;
+  unsigned int last_errno,pkt_nr,compress_pkt_nr;
+  unsigned int write_timeout, read_timeout, retry_count;
+  int fcntl;
   char last_error[MYSQL_ERRMSG_SIZE];
-  unsigned int last_errno,max_packet,timeout,pkt_nr;
   unsigned char error;
   my_bool return_errno,compress;
-  my_bool no_send_ok; /* needed if we are doing several
-   queries in one command ( as in LOAD TABLE ... FROM MASTER ),
-   and do not want to confuse the client with OK at the wrong time
-		      */
+  /*
+    The following variable is set if we are doing several queries in one
+    command ( as in LOAD TABLE ... FROM MASTER ),
+    and do not want to confuse the client with OK at the wrong time
+  */
   unsigned long remain_in_buf,length, buf_length, where_b;
   unsigned int *return_status;
   unsigned char reading_or_writing;
   char save_char;
+  my_bool no_send_ok;
+  gptr query_cache_query;
 } NET;
 
-#define packet_error ((unsigned int) -1)
+#define packet_error (~(unsigned long) 0)
 
 enum enum_field_types { FIELD_TYPE_DECIMAL, FIELD_TYPE_TINY,
 			FIELD_TYPE_SHORT,  FIELD_TYPE_LONG,
@@ -149,18 +151,21 @@ enum enum_field_types { FIELD_TYPE_DECIMAL, FIELD_TYPE_TINY,
 			FIELD_TYPE_LONG_BLOB=251,
 			FIELD_TYPE_BLOB=252,
 			FIELD_TYPE_VAR_STRING=253,
-			FIELD_TYPE_STRING=254
+			FIELD_TYPE_STRING=254,
+			FIELD_TYPE_GEOMETRY=255
 };
 
 #define FIELD_TYPE_CHAR FIELD_TYPE_TINY		/* For compability */
 #define FIELD_TYPE_INTERVAL FIELD_TYPE_ENUM	/* For compability */
 
-extern unsigned long max_allowed_packet;
-extern unsigned long net_buffer_length;
-
 #define net_new_transaction(net) ((net)->pkt_nr=0)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int	my_net_init(NET *net, Vio* vio);
+void	my_net_local_init(NET *net);
 void	net_end(NET *net);
 void	net_clear(NET *net);
 int	net_flush(NET *net);
@@ -168,12 +173,21 @@ int	my_net_write(NET *net,const char *packet,unsigned long len);
 int	net_write_command(NET *net,unsigned char command,const char *packet,
 			  unsigned long len);
 int	net_real_write(NET *net,const char *packet,unsigned long len);
-unsigned int	my_net_read(NET *net);
+unsigned long my_net_read(NET *net);
+
+/* The following function is not meant for normal usage */
+struct sockaddr;
+int my_connect(my_socket s, const struct sockaddr *name, unsigned int namelen,
+	       unsigned int timeout);
 
 struct rand_struct {
   unsigned long seed1,seed2,max_value;
   double max_value_dbl;
 };
+
+#ifdef __cplusplus
+}
+#endif
 
   /* The following is for user defined functions */
 
@@ -194,7 +208,7 @@ typedef struct st_udf_init
 {
   my_bool maybe_null;			/* 1 if function can return NULL */
   unsigned int decimals;		/* for real functions */
-  unsigned int max_length;		/* For string functions */
+  unsigned long max_length;		/* For string functions */
   char	  *ptr;				/* free pointer for function data */
   my_bool const_item;			/* 0 if result is independent of arguments */
 } UDF_INIT;
@@ -208,10 +222,13 @@ typedef struct st_udf_init
 #ifdef __cplusplus
 extern "C" {
 #endif
-  
+
+extern unsigned long max_allowed_packet;
+extern unsigned long net_buffer_length;
+
 void randominit(struct rand_struct *,unsigned long seed1,
 		unsigned long seed2);
-double rnd(struct rand_struct *);
+double my_rnd(struct rand_struct *);
 void make_scrambled_password(char *to,const char *password);
 void get_salt_from_password(unsigned long *res,const char *password);
 void make_password_from_salt(char *to, unsigned long *hash_res);

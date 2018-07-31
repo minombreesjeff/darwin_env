@@ -1,29 +1,30 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Synchronization - readers / writer thread locks */
 
 #include "mysys_priv.h"
 #if defined(THREAD) && !defined(HAVE_PTHREAD_RWLOCK_RDLOCK) && !defined(HAVE_RWLOCK_INIT)
+#include <errno.h>
 
 /*
- * Source base from Sun Microsystems SPILT, simplified
- * for MySQL use -- Joshua Chamas
- */
+  Source base from Sun Microsystems SPILT, simplified for MySQL use
+  -- Joshua Chamas
+  Some cleanup and additional code by Monty
+*/
 
 /*
 *  Multithreaded Demo Source
@@ -58,7 +59,7 @@
 *  Mountain View, California  94043
 */
 
-int my_rwlock_init( rw_lock_t *rwp, void *arg __attribute__((unused)))
+int my_rwlock_init(rw_lock_t *rwp, void *arg __attribute__((unused)))
 {
   pthread_condattr_t	cond_attr;
 
@@ -71,64 +72,101 @@ int my_rwlock_init( rw_lock_t *rwp, void *arg __attribute__((unused)))
   rwp->state	= 0;
   rwp->waiters	= 0;
 
-  return( 0 );
+  return(0);
 }
 
-int my_rwlock_destroy( rw_lock_t *rwp ) {
+
+int my_rwlock_destroy(rw_lock_t *rwp)
+{
   pthread_mutex_destroy( &rwp->lock );
   pthread_cond_destroy( &rwp->readers );
   pthread_cond_destroy( &rwp->writers );
-
-  return( 0 );
+  return(0);
 }
 
-int my_rw_rdlock( rw_lock_t *rwp ) {
+
+int my_rw_rdlock(rw_lock_t *rwp)
+{
   pthread_mutex_lock(&rwp->lock);
 
-  /* active or queued writers		*/
-  while ( ( rwp->state < 0 ) || rwp->waiters )
+  /* active or queued writers */
+  while (( rwp->state < 0 ) || rwp->waiters)
     pthread_cond_wait( &rwp->readers, &rwp->lock);
 
   rwp->state++;
   pthread_mutex_unlock(&rwp->lock);
-
-  return( 0 );
+  return(0);
 }
 
-int my_rw_wrlock( rw_lock_t *rwp ) {
-
+int my_rw_tryrdlock(rw_lock_t *rwp)
+{
+  int res;
   pthread_mutex_lock(&rwp->lock);
-  rwp->waiters++; /* another writer queued		*/
-
-  while ( rwp->state )
-    pthread_cond_wait( &rwp->writers, &rwp->lock);
-  rwp->state	= -1;
-  --rwp->waiters;
-  pthread_mutex_unlock( &rwp->lock );
-
-  return( 0 );
+  if ((rwp->state < 0 ) || rwp->waiters)
+    res= EBUSY;					/* Can't get lock */
+  else
+  {
+    res=0;
+    rwp->state++;
+  }
+  pthread_mutex_unlock(&rwp->lock);
+  return(res);
 }
 
-int my_rw_unlock( rw_lock_t *rwp ) {
+
+int my_rw_wrlock(rw_lock_t *rwp)
+{
+  pthread_mutex_lock(&rwp->lock);
+  rwp->waiters++;				/* another writer queued */
+
+  while (rwp->state)
+    pthread_cond_wait(&rwp->writers, &rwp->lock);
+  rwp->state	= -1;
+  rwp->waiters--;
+  pthread_mutex_unlock(&rwp->lock);
+  return(0);
+}
+
+
+int my_rw_trywrlock(rw_lock_t *rwp)
+{
+  int res;
+  pthread_mutex_lock(&rwp->lock);
+  if (rwp->state)
+    res= EBUSY;					/* Can't get lock */    
+  else
+  {
+    res=0;
+    rwp->state	= -1;
+  }
+  pthread_mutex_unlock(&rwp->lock);
+  return(res);
+}
+
+
+int my_rw_unlock(rw_lock_t *rwp)
+{
   DBUG_PRINT("rw_unlock",
 	     ("state: %d waiters: %d", rwp->state, rwp->waiters));
   pthread_mutex_lock(&rwp->lock);
 
-  if ( rwp->state == -1 ) {	/* writer releasing	*/
-    rwp->state	= 0;		/* mark as available	*/
+  if (rwp->state == -1)		/* writer releasing */
+  {
+    rwp->state= 0;		/* mark as available */
 
-    if ( rwp->waiters )		/* writers queued	*/
+    if ( rwp->waiters )		/* writers queued */
       pthread_cond_signal( &rwp->writers );
     else
       pthread_cond_broadcast( &rwp->readers );
-  } else {
-    if ( --rwp->state == 0 )	/* no more readers	*/
+  }
+  else
+  {
+    if ( --rwp->state == 0 )	/* no more readers */
       pthread_cond_signal( &rwp->writers );
   }
 
   pthread_mutex_unlock( &rwp->lock );
-
-  return( 0 );
+  return(0);
 }
 
 #endif

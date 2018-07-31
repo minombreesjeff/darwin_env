@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -96,8 +96,8 @@ int nisam_create(const char *name,uint keys,N_KEYDEF *keyinfo,
 	    pack_reclength+=sizeof(char*)+(1 << (rec->base.length*8));
 	}
       }
-      else if (type == FIELD_SKIPP_PRESPACE ||
-	       type == FIELD_SKIPP_ENDSPACE)
+      else if (type == FIELD_SKIP_PRESPACE ||
+	       type == FIELD_SKIP_ENDSPACE)
       {
 	if (pack_reclength != NI_POS_ERROR)
 	  pack_reclength+= rec->base.length > 255 ? 2 : 1;
@@ -105,7 +105,7 @@ int nisam_create(const char *name,uint keys,N_KEYDEF *keyinfo,
       }
       else if (type == FIELD_ZERO)
 	packed--;
-      else if (type != FIELD_SKIPP_ZERO)
+      else if (type != FIELD_SKIP_ZERO)
       {
 	min_pack_length+=rec->base.length;
 	packed--;				/* Not a pack record type */
@@ -119,7 +119,7 @@ int nisam_create(const char *name,uint keys,N_KEYDEF *keyinfo,
     while (rec != recinfo)
     {
       rec--;
-      if (rec->base.type == (int) FIELD_SKIPP_ZERO && rec->base.length == 1)
+      if (rec->base.type == (int) FIELD_SKIP_ZERO && rec->base.length == 1)
       {
 	rec->base.type=(int) FIELD_NORMAL;
 	packed--;
@@ -294,13 +294,13 @@ int nisam_create(const char *name,uint keys,N_KEYDEF *keyinfo,
       goto err;
 
 	/* Enlarge files */
-  if (my_chsize(file,(ulong) share.base.keystart,MYF(0)))
+  if (my_chsize(file, (ulong) share.base.keystart, 0, MYF(0)))
     goto err;
 
   if (! (flags & HA_DONT_TOUCH_DATA))
   {
 #ifdef USE_RELOC
-    if (my_chsize(dfile,share.base.min_pack_length*reloc,MYF(0)))
+    if (my_chsize(dfile, share.base.min_pack_length*reloc, 0, MYF(0)))
       goto err;
 #endif
     errpos=1;

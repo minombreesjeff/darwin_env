@@ -29,7 +29,17 @@ Created 1/8/1996 Heikki Tuuri
 
 dict_sys_t*	dict_sys	= NULL;	/* the dictionary system */
 
-rw_lock_t	dict_foreign_key_check_lock;
+rw_lock_t	dict_operation_lock;	/* table create, drop, etc. reserve
+					this in X-mode; implicit or backround
+					operations purge, rollback, foreign
+					key checks reserve this in S-mode; we
+					cannot trust that MySQL protects
+					implicit or background operations
+					a table drop since MySQL does not
+					know of them; therefore we need this;
+					NOTE: a transaction which reserves
+					this must keep book on the mode in
+					trx->dict_operation_lock_mode */
 
 #define	DICT_HEAP_SIZE		100	/* initial memory heap size when
 					creating a table or index object */
@@ -77,15 +87,6 @@ dict_index_remove_from_cache(
 /*=========================*/
 	dict_table_t*	table,	/* in: table */
 	dict_index_t*	index);	/* in, own: index */
-/***********************************************************************
-Adds a column to index. */
-UNIV_INLINE
-void
-dict_index_add_col(
-/*===============*/
-	dict_index_t*	index,	/* in: index */
-	dict_col_t*	col,	/* in: column */
-	ulint		order);	/* in: order criterion */
 /***********************************************************************
 Copies fields contained in index2 to index1. */
 static
@@ -175,6 +176,66 @@ dict_foreign_free(
 /*==============*/
 	dict_foreign_t*	foreign);	/* in, own: foreign key struct */
 
+/* Buffers for storing detailed information about the latest foreign key
+and unique key errors */
+char*	dict_foreign_err_buf		= NULL;
+char*	dict_unique_err_buf		= NULL;
+mutex_t	dict_foreign_err_mutex; 	/* mutex protecting the foreign
+					and unique error buffers */
+	
+	
+/************************************************************************
+Checks if the database name in two table names is the same. */
+static
+ibool
+dict_tables_have_same_db(
+/*=====================*/
+			/* out: TRUE if same db name */
+	char*	name1,	/* in: table name in the form dbname '/' tablename */
+	char*	name2)	/* in: table name in the form dbname '/' tablename */
+{
+	ulint	i;
+
+	for (i = 0; i < 100000; i++) {
+		if (name1[i] == '/' && name2[i] == '/') {
+
+			return(TRUE);
+		}
+
+		if (name1[i] != name2[i]) {
+
+			return(FALSE);
+		}
+	}
+
+	ut_a(0);
+
+	return(FALSE);
+}
+
+/************************************************************************
+Return the end of table name where we have removed dbname and '/'. */
+static
+char*
+dict_remove_db_name(
+/*================*/
+			/* out: table name */
+	char*	name)	/* in: table name in the form dbname '/' tablename */
+{
+	ulint	i;
+
+	for (i = 0; i < 100000 ; i++) {
+		if (name[i] == '/') {
+
+			return(name + i + 1);
+		}
+	}
+
+	ut_a(0);
+
+	return(NULL);
+}
+	
 /************************************************************************
 Reserves the dictionary system mutex for MySQL. */
 
@@ -308,13 +369,28 @@ dict_table_autoinc_get(
 }
 
 /************************************************************************
-Reads the autoinc counter value, 0 if not yet initialized. Does not
-increment the counter. */
+Decrements the autoinc counter value by 1. */
+
+void
+dict_table_autoinc_decrement(
+/*=========================*/
+	dict_table_t*	table)	/* in: table */
+{
+	mutex_enter(&(table->autoinc_mutex));
+
+	table->autoinc = table->autoinc - 1;
+	
+	mutex_exit(&(table->autoinc_mutex));
+}
+
+/************************************************************************
+Reads the next autoinc value (== autoinc counter value), 0 if not yet
+initialized. */
 
 ib_longlong
 dict_table_autoinc_read(
 /*====================*/
-				/* out: value of the counter */
+				/* out: value for a new row, or 0 */
 	dict_table_t*	table)	/* in: table */
 {
 	ib_longlong	value;
@@ -397,8 +473,9 @@ dict_index_get_nth_col_pos(
 	ut_ad(index);
 	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
 
+	col = dict_table_get_nth_col(index->table, n);
+
 	if (index->type & DICT_CLUSTERED) {
-		col = dict_table_get_nth_col(index->table, n);
 
 		return(col->clust_pos);
 	}
@@ -407,9 +484,8 @@ dict_index_get_nth_col_pos(
 	
 	for (pos = 0; pos < n_fields; pos++) {
 		field = dict_index_get_nth_field(index, pos);
-		col = field->col;
 
-		if (dict_col_get_no(col) == n) {
+		if (col == field->col && field->prefix_len == 0) {
 
 			return(pos);
 		}
@@ -417,7 +493,86 @@ dict_index_get_nth_col_pos(
 
 	return(ULINT_UNDEFINED);
 }
+
+/************************************************************************
+Returns TRUE if the index contains a column or a prefix of that column. */
+
+ibool
+dict_index_contains_col_or_prefix(
+/*==============================*/
+				/* out: TRUE if contains the column or its
+				prefix */
+	dict_index_t*	index,	/* in: index */
+	ulint		n)	/* in: column number */
+{
+	dict_field_t*	field;
+	dict_col_t*	col;
+	ulint		pos;
+	ulint		n_fields;
 	
+	ut_ad(index);
+	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
+
+	if (index->type & DICT_CLUSTERED) {
+
+		return(TRUE);
+	}
+
+	col = dict_table_get_nth_col(index->table, n);
+
+	n_fields = dict_index_get_n_fields(index);
+	
+	for (pos = 0; pos < n_fields; pos++) {
+		field = dict_index_get_nth_field(index, pos);
+
+		if (col == field->col) {
+
+			return(TRUE);
+		}
+	}
+
+	return(FALSE);
+}
+
+/************************************************************************
+Looks for a matching field in an index. The column and the prefix len have
+to be the same. */
+
+ulint
+dict_index_get_nth_field_pos(
+/*=========================*/
+				/* out: position in internal representation
+				of the index; if not contained, returns
+				ULINT_UNDEFINED */
+	dict_index_t*	index,	/* in: index from which to search */
+	dict_index_t*	index2,	/* in: index */
+	ulint		n)	/* in: field number in index2 */
+{
+	dict_field_t*	field;
+	dict_field_t*	field2;
+	ulint		n_fields;
+	ulint		pos;
+	
+	ut_ad(index);
+	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
+
+	field2 = dict_index_get_nth_field(index2, n);
+
+	n_fields = dict_index_get_n_fields(index);
+	
+	for (pos = 0; pos < n_fields; pos++) {
+		field = dict_index_get_nth_field(index, pos);
+
+		if (field->col == field2->col
+		    && field->prefix_len == field2->prefix_len) {
+
+			return(pos);
+		}
+	}
+
+	return(ULINT_UNDEFINED);
+}
+
 /**************************************************************************
 Returns a table object, based on table id, and memoryfixes it. */
 
@@ -494,9 +649,15 @@ dict_init(void)
 
 	UT_LIST_INIT(dict_sys->table_LRU);
 
-	rw_lock_create(&dict_foreign_key_check_lock);
-	rw_lock_set_level(&dict_foreign_key_check_lock,
-						SYNC_FOREIGN_KEY_CHECK);
+	rw_lock_create(&dict_operation_lock);
+	rw_lock_set_level(&dict_operation_lock, SYNC_DICT_OPERATION);
+
+	dict_foreign_err_buf = mem_alloc(DICT_FOREIGN_ERR_BUF_LEN);
+	dict_foreign_err_buf[0] = '\0';
+	dict_unique_err_buf = mem_alloc(DICT_FOREIGN_ERR_BUF_LEN);
+	dict_unique_err_buf[0] = '\0';
+	mutex_create(&dict_foreign_err_mutex);
+	mutex_set_level(&dict_foreign_err_mutex, SYNC_ANY_LATCH);
 }
 
 /**************************************************************************
@@ -531,8 +692,7 @@ dict_table_get(
 }
 
 /**************************************************************************
-Returns a table object and increments MySQL open handle count on the table.
-*/
+Returns a table object and increments MySQL open handle count on the table. */
 
 dict_table_t*
 dict_table_get_and_increment_handle_count(
@@ -594,15 +754,19 @@ dict_table_add_to_cache(
 	The clustered index will not always physically contain all
 	system columns. */
 
-	dict_mem_table_add_col(table, "DB_ROW_ID", DATA_SYS, DATA_ROW_ID, 0, 0);
+	dict_mem_table_add_col(table, (char *) "DB_ROW_ID", DATA_SYS,
+			       DATA_ROW_ID, 0, 0);
 	ut_ad(DATA_ROW_ID == 0);
-	dict_mem_table_add_col(table, "DB_TRX_ID", DATA_SYS, DATA_TRX_ID, 0, 0);
+	dict_mem_table_add_col(table, (char *) "DB_TRX_ID", DATA_SYS,
+			       DATA_TRX_ID, 0, 0);
 	ut_ad(DATA_TRX_ID == 1);
-	dict_mem_table_add_col(table, "DB_ROLL_PTR", DATA_SYS, DATA_ROLL_PTR,
+	dict_mem_table_add_col(table, (char *) "DB_ROLL_PTR", DATA_SYS,
+			       DATA_ROLL_PTR,
 									0, 0);
 	ut_ad(DATA_ROLL_PTR == 2);
 
-	dict_mem_table_add_col(table, "DB_MIX_ID", DATA_SYS, DATA_MIX_ID, 0, 0);
+	dict_mem_table_add_col(table, (char *) "DB_MIX_ID", DATA_SYS,
+			       DATA_MIX_ID, 0, 0);
 	ut_ad(DATA_MIX_ID == 3);
 	ut_ad(DATA_N_SYS_COLS == 4); /* This assert reminds that if a new
 					system column is added to the program,
@@ -637,11 +801,12 @@ dict_table_add_to_cache(
 	}
 
 	/* Add table to hash table of tables */
-	HASH_INSERT(dict_table_t, name_hash, dict_sys->table_hash, fold, table);
+	HASH_INSERT(dict_table_t, name_hash, dict_sys->table_hash, fold,
+								   table);
 
 	/* Add table to hash table of tables based on table id */
 	HASH_INSERT(dict_table_t, id_hash, dict_sys->table_id_hash, id_fold,
-								table);
+								   table);
 	/* Add table to LRU list of tables */
 	UT_LIST_ADD_FIRST(table_LRU, dict_sys->table_LRU, table);
 
@@ -733,7 +898,7 @@ dict_table_rename_in_cache(
 
 	/* Remove table from the hash tables of tables */
 	HASH_DELETE(dict_table_t, name_hash, dict_sys->table_hash,
-					ut_fold_string(table->name), table);	
+					ut_fold_string(table->name), table);
 
 	name_buf = mem_heap_alloc(table->heap, ut_strlen(new_name) + 1);
 					
@@ -742,7 +907,8 @@ dict_table_rename_in_cache(
 	table->name = name_buf;
 					
 	/* Add table to hash table of tables */
-	HASH_INSERT(dict_table_t, name_hash, dict_sys->table_hash, fold, table);
+	HASH_INSERT(dict_table_t, name_hash, dict_sys->table_hash, fold,
+								   table);
 	
 	dict_sys->size += (mem_heap_get_size(table->heap) - old_size);
 
@@ -1062,7 +1228,7 @@ dict_index_add_to_cache(
 
 		return(FALSE);
 	}
-
+	
 	/* Build the cache internal representation of the index,
 	containing also the added system fields */
 
@@ -1105,8 +1271,8 @@ dict_index_add_to_cache(
 	    
 		cluster = dict_table_get_low(table->cluster_name);
 
-		tree = dict_index_get_tree(UT_LIST_GET_FIRST(cluster->indexes));
-
+		tree = dict_index_get_tree(
+					UT_LIST_GET_FIRST(cluster->indexes));
 		new_index->tree = tree;
 		new_index->page_no = tree->page;
 	} else {
@@ -1234,13 +1400,14 @@ UNIV_INLINE
 void
 dict_index_add_col(
 /*===============*/
-	dict_index_t*	index,	/* in: index */
-	dict_col_t*	col,	/* in: column */
-	ulint		order)	/* in: order criterion */
+	dict_index_t*	index,		/* in: index */
+	dict_col_t*	col,		/* in: column */
+	ulint		order,		/* in: order criterion */
+	ulint		prefix_len)	/* in: column prefix length */
 {
 	dict_field_t*	field;
 
-	dict_mem_index_add_field(index, col->name, order);
+	dict_mem_index_add_field(index, col->name, order, prefix_len);
 
 	field = dict_index_get_nth_field(index, index->n_def - 1);
 
@@ -1266,7 +1433,8 @@ dict_index_copy(
 	for (i = start; i < end; i++) {
 
 		field = dict_index_get_nth_field(index2, i);
-		dict_index_add_col(index1, field->col, field->order);
+		dict_index_add_col(index1, field->col, field->order,
+						      field->prefix_len);
 	}
 }
 
@@ -1369,7 +1537,7 @@ dict_index_build_internal_clust(
 
 		/* Add the mix id column */
 		dict_index_add_col(new_index,
-			        dict_table_get_sys_col(table, DATA_MIX_ID), 0);
+			  dict_table_get_sys_col(table, DATA_MIX_ID), 0, 0);
 
 		/* Copy the rest of fields */
 		dict_index_copy(new_index, index, table->mix_len,
@@ -1407,14 +1575,15 @@ dict_index_build_internal_clust(
 
 		if (!(index->type & DICT_UNIQUE)) {
 			dict_index_add_col(new_index,
-			   dict_table_get_sys_col(table, DATA_ROW_ID), 0);
+			   dict_table_get_sys_col(table, DATA_ROW_ID), 0, 0);
 			trx_id_pos++;
 		}
 
 		dict_index_add_col(new_index,
-			   dict_table_get_sys_col(table, DATA_TRX_ID), 0);	
+			   dict_table_get_sys_col(table, DATA_TRX_ID), 0, 0);
+	
 		dict_index_add_col(new_index,
-			   dict_table_get_sys_col(table, DATA_ROLL_PTR), 0);
+			   dict_table_get_sys_col(table, DATA_ROLL_PTR), 0, 0);
 
 		for (i = 0; i < trx_id_pos; i++) {
 
@@ -1443,7 +1612,14 @@ dict_index_build_internal_clust(
 	for (i = 0; i < new_index->n_def; i++) {
 
 		field = dict_index_get_nth_field(new_index, i);
-		(field->col)->aux = 0;
+
+		/* If there is only a prefix of the column in the index
+		field, do not mark the column as contained in the index */
+
+		if (field->prefix_len == 0) {
+
+		        field->col->aux = 0;
+		}
 	}
 	
 	/* Add to new_index non-system columns of table not yet included
@@ -1454,7 +1630,7 @@ dict_index_build_internal_clust(
 		ut_ad(col->type.mtype != DATA_SYS);
 
 		if (col->aux == ULINT_UNDEFINED) {
-			dict_index_add_col(new_index, col, 0);
+			dict_index_add_col(new_index, col, 0, 0);
 		}
 	}
 
@@ -1466,7 +1642,11 @@ dict_index_build_internal_clust(
 
 	for (i = 0; i < new_index->n_def; i++) {
 		field = dict_index_get_nth_field(new_index, i);
-		(field->col)->clust_pos = i;
+
+		if (field->prefix_len == 0) {
+
+		        field->col->clust_pos = i;
+		}
 	}
 	
 	new_index->cached = TRUE;
@@ -1528,25 +1708,33 @@ dict_index_build_internal_non_clust(
 	for (i = 0; i < clust_index->n_uniq; i++) {
 
 		field = dict_index_get_nth_field(clust_index, i);
-		(field->col)->aux = ULINT_UNDEFINED;
+		field->col->aux = ULINT_UNDEFINED;
 	}
 
 	/* Mark with 0 table columns already contained in new_index */
 	for (i = 0; i < new_index->n_def; i++) {
 
 		field = dict_index_get_nth_field(new_index, i);
-		(field->col)->aux = 0;
+
+		/* If there is only a prefix of the column in the index
+		field, do not mark the column as contained in the index */
+
+		if (field->prefix_len == 0) {
+
+		        field->col->aux = 0;
+		}
 	}
 
-	/* Add to new_index columns necessary to determine the clustered
+	/* Add to new_index the columns necessary to determine the clustered
 	index entry uniquely */
 
 	for (i = 0; i < clust_index->n_uniq; i++) {
 
 		field = dict_index_get_nth_field(clust_index, i);
 
-		if ((field->col)->aux == ULINT_UNDEFINED) {
-			dict_index_add_col(new_index, field->col, 0);
+		if (field->col->aux == ULINT_UNDEFINED) {
+			dict_index_add_col(new_index, field->col, 0,
+						      field->prefix_len);
 		}
 	}
 
@@ -1669,6 +1857,14 @@ dict_foreign_find_index(
 			for (i = 0; i < n_cols; i++) {
 				col_name = dict_index_get_nth_field(index, i)
 							->col->name;
+				if (dict_index_get_nth_field(index, i)
+						->prefix_len != 0) {
+					/* We do not accept column prefix
+					indexes here */
+					
+					break;
+				}
+
 				if (ut_strlen(columns[i]) !=
 						ut_strlen(col_name)
 				    || 0 != ut_cmp_in_lower_case(columns[i],
@@ -1715,6 +1911,7 @@ dict_foreign_add_to_cache(
 	dict_foreign_t*	for_in_cache			= NULL;
 	dict_index_t*	index;
 	ibool		added_to_referenced_list	= FALSE;
+	char*		buf 				= dict_foreign_err_buf;
 
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 
@@ -1747,9 +1944,29 @@ dict_foreign_add_to_cache(
 		    		   for_in_cache->foreign_index);
 
 		if (index == NULL) {
+			mutex_enter(&dict_foreign_err_mutex);
+			ut_sprintf_timestamp(buf);
+			sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s:\n"
+"there is no index in referenced table which would contain\n"
+"the columns as the first columns, or the data types in the\n"
+"referenced table do not match to the ones in table. Constraint:\n",
+				for_in_cache->foreign_table_name);
+			dict_print_info_on_foreign_key_in_create_format(
+				for_in_cache, buf + strlen(buf));
+			if (for_in_cache->foreign_index) {
+				sprintf(buf + strlen(buf),
+"\nThe index in the foreign key in table is %.500s\n"
+"See http://www.innodb.com/ibman.html about correct foreign key definition.\n",
+				for_in_cache->foreign_index->name);
+			}
+			ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+			mutex_exit(&dict_foreign_err_mutex);
+			
 			if (for_in_cache == foreign) {
 				mem_heap_free(foreign->heap);
 			}
+
 		    	return(DB_CANNOT_ADD_CONSTRAINT);
 		}
 
@@ -1768,6 +1985,25 @@ dict_foreign_add_to_cache(
 		    		   for_in_cache->referenced_index);
 
 		if (index == NULL) {
+			mutex_enter(&dict_foreign_err_mutex);
+			ut_sprintf_timestamp(buf);
+			sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s:\n"
+"there is no index in the table which would contain\n"
+"the columns as the first columns, or the data types in the\n"
+"table do not match to the ones in the referenced table. Constraint:\n",
+				for_in_cache->foreign_table_name);
+			dict_print_info_on_foreign_key_in_create_format(
+				for_in_cache, buf + strlen(buf));
+			if (for_in_cache->foreign_index) {
+				sprintf(buf + strlen(buf),
+"\nIndex of the foreign key in the referenced table is %.500s\n"
+"See http://www.innodb.com/ibman.html about correct foreign key definition.\n",
+				for_in_cache->referenced_index->name);
+			}
+			ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+			mutex_exit(&dict_foreign_err_mutex);
+
 			if (for_in_cache == foreign) {
 				if (added_to_referenced_list) {
 					UT_LIST_REMOVE(referenced_list,
@@ -1800,8 +2036,8 @@ char*
 dict_scan_to(
 /*=========*/
 			
-	char*	ptr,	/* in: scan from */
-	char*	string)	/* in: look for this */
+	char*	ptr,		/* in: scan from */
+	const char *string)	/* in: look for this */
 {
 	ibool	success;
 	ulint	i;
@@ -1832,14 +2068,14 @@ loop:
 
 /*************************************************************************
 Accepts a specified string. Comparisons are case-insensitive. */
-static
+
 char*
 dict_accept(
 /*========*/
 			/* out: if string was accepted, the pointer
 			is moved after that, else ptr is returned */
 	char*	ptr,	/* in: scan from this */
-	char*	string,	/* in: accept only this string as the next
+	const char* string,/* in: accept only this string as the next
 			non-whitespace string */
 	ibool*	success)/* out: TRUE if accepted */
 {
@@ -1901,7 +2137,8 @@ dict_scan_col(
 
 	old_ptr = ptr;
 	
-	while (!isspace(*ptr) && *ptr != ',' && *ptr != ')' && 	*ptr != '`') {
+	while (!isspace(*ptr) && *ptr != ',' && *ptr != ')' && 	*ptr != '`'
+	       && *ptr != '\0') {
 
 		ptr++;
 	}
@@ -1934,7 +2171,7 @@ dict_scan_col(
 	if (*ptr == '`') {
 		ptr++;
 	}
-
+	
 	return(ptr);
 }
 
@@ -1975,7 +2212,7 @@ dict_scan_table_name(
 
 	old_ptr = ptr;
 	
-	while (!isspace(*ptr) && *ptr != '(' && *ptr != '`') {
+	while (!isspace(*ptr) && *ptr != '(' && *ptr != '`' && *ptr != '\0') {
 		if (*ptr == '.') {
 			dot_ptr = ptr;
 		}
@@ -1998,17 +2235,28 @@ dict_scan_table_name(
 		}
 #ifdef __WIN__
 		ut_cpy_in_lower_case(second_table_name + i, old_ptr,
-				     ptr - old_ptr);
+				     				ptr - old_ptr);
 #else
-		ut_memcpy(second_table_name + i, old_ptr, ptr - old_ptr);
+		if (srv_lower_case_table_names) {
+			ut_cpy_in_lower_case(second_table_name + i, old_ptr,
+				     				ptr - old_ptr);
+		} else {
+			ut_memcpy(second_table_name + i, old_ptr,
+								ptr - old_ptr);
+		}
 #endif
 		second_table_name[i + (ptr - old_ptr)] = '\0';
 	} else {
 #ifdef __WIN__
 		ut_cpy_in_lower_case(second_table_name, old_ptr,
-				     ptr - old_ptr);
+								ptr - old_ptr);
 #else
-		ut_memcpy(second_table_name, old_ptr, ptr - old_ptr);
+		if (srv_lower_case_table_names) {
+			ut_cpy_in_lower_case(second_table_name, old_ptr,
+				   			ptr - old_ptr);
+		} else {
+			ut_memcpy(second_table_name, old_ptr, ptr - old_ptr);
+		}
 #endif
 		second_table_name[dot_ptr - old_ptr] = '/';
 		second_table_name[ptr - old_ptr] = '\0';
@@ -2025,6 +2273,85 @@ dict_scan_table_name(
 	return(ptr);
 }
 
+/*************************************************************************
+Scans an id. For the lexical definition of an 'id', see the code below.
+Strips backquotes from around the id. */
+static
+char*
+dict_scan_id(
+/*=========*/
+			/* out: scanned to */
+	char*	ptr,	/* in: scanned to */
+	char**	start,	/* out: start of the id; NULL if no id was
+			scannable */
+	ulint*	len)	/* out: length of the id */
+{
+	ibool	scanned_backquote	= FALSE;
+
+	*start = NULL;
+
+	while (isspace(*ptr)) {
+		ptr++;
+	}
+
+	if (*ptr == '\0') {
+
+		return(ptr);
+	}
+
+	if (*ptr == '`') {
+		scanned_backquote = TRUE;
+		ptr++;
+	}
+	
+	*start = ptr;
+
+	while (!isspace(*ptr) && *ptr != ',' && *ptr != '(' && *ptr != ')'
+		&& *ptr != '\0' && *ptr != '`') {
+
+		ptr++;
+	}
+
+	*len = (ulint) (ptr - *start);
+	
+	if (scanned_backquote) {
+		if (*ptr == '`') {
+			ptr++;
+		} else {
+			/* Syntax error */
+			*start = NULL;
+		}
+	}
+
+	return(ptr);
+}
+
+/*************************************************************************
+Skips one id. */
+static
+char*
+dict_skip_word(
+/*===========*/
+			/* out: scanned to */
+	char*	ptr,	/* in: scanned to */
+	ibool*	success)/* out: TRUE if success, FALSE if just spaces left in
+			string or a syntax error */
+{
+	char*	start;
+	ulint	len;
+	
+	*success = FALSE;
+
+	ptr = dict_scan_id(ptr, &start, &len);
+
+	if (start) {
+		*success = TRUE;
+	}
+	
+	return(ptr);
+}
+
+#ifdef currentlynotused
 /*************************************************************************
 Returns the number of opening brackets '(' subtracted by the number
 of closing brackets ')' between string and ptr. */
@@ -2051,6 +2378,106 @@ dict_bracket_count(
 
 	return(count);
 }
+#endif
+
+/*************************************************************************
+Removes MySQL comments from an SQL string. A comment is either
+(a) '#' to the end of the line,
+(b) '--<space>' to the end of the line, or
+(c) '<slash><asterisk>' till the next '<asterisk><slash>' (like the familiar
+C comment syntax). */
+static
+char*
+dict_strip_comments(
+/*================*/
+				/* out, own: SQL string stripped from
+				comments; the caller must free this
+				with mem_free()! */
+	char*	sql_string)	/* in: SQL string */
+{
+	char*	str;
+	char*	sptr;
+	char*	ptr;
+	
+	str = mem_alloc(strlen(sql_string) + 1);
+
+	sptr = sql_string;
+	ptr = str;
+
+	for (;;) {
+		if (*sptr == '\0') {
+			*ptr = '\0';
+
+			return(str);
+		}
+		
+		if (*sptr == '#'
+		    || (strlen(sptr) >= 3 && 0 == memcmp("-- ", sptr, 3))) {
+			for (;;) {
+				/* In Unix a newline is 0x0D while in Windows
+				it is 0x0A followed by 0x0D */
+
+				if (*sptr == (char)0x0A
+				    || *sptr == (char)0x0D
+				    || *sptr == '\0') {
+
+					break;
+				}
+
+				sptr++;
+			}
+		}
+
+		if (strlen(sptr) >= 2 && *sptr == '/' && *(sptr + 1) == '*') {
+			for (;;) {
+				if (strlen(sptr) >= 2
+				     && *sptr == '*' && *(sptr + 1) == '/') {
+
+				     	sptr += 2;
+
+					break;
+				}
+
+				if (*sptr == '\0') {
+
+					break;
+				}
+
+				sptr++;
+			}
+		}
+
+		*ptr = *sptr;
+
+		ptr++;
+		sptr++;
+	}
+}
+
+/*************************************************************************
+Reports a simple foreign key create clause syntax error. */
+static
+void
+dict_foreign_report_syntax_err(
+/*===========================*/
+	char*	name,			/* in: table name */
+	char*	start_of_latest_foreign,/* in: start of the foreign key clause
+					in the SQL string */
+	char*	ptr)			/* in: place of the syntax error */
+{
+        char*   buf = dict_foreign_err_buf;
+
+	mutex_enter(&dict_foreign_err_mutex);
+
+	ut_sprintf_timestamp(buf);
+
+	sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s,\n%.500s.\n"
+"Syntax error close to:\n%.500s\n", name, start_of_latest_foreign, ptr);
+
+	ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+	mutex_exit(&dict_foreign_err_mutex);
+}
 
 /*************************************************************************
 Scans a table create SQL string and adds to the data dictionary the foreign
@@ -2058,10 +2485,10 @@ key constraints declared in the string. This function should be called after
 the indexes for a table have been created. Each foreign key constraint must
 be accompanied with indexes in both participating tables. The indexes are
 allowed to contain more fields than mentioned in the constraint. */
-
+static
 ulint
-dict_create_foreign_constraints(
-/*============================*/
+dict_create_foreign_constraints_low(
+/*================================*/
 				/* out: error code or DB_SUCCESS */
 	trx_t*	trx,		/* in: transaction */
 	char*	sql_string,	/* in: table create or ALTER TABLE
@@ -2077,11 +2504,16 @@ dict_create_foreign_constraints(
 	dict_table_t*	referenced_table;
 	dict_index_t*	index;
 	dict_foreign_t*	foreign;
- 	char*		ptr				= sql_string;
+ 	char*		ptr			= sql_string;
+	char*		start_of_latest_foreign	= sql_string;
+ 	char*		buf			= dict_foreign_err_buf;
 	ibool		success;
 	ulint		error;
 	ulint		i;
 	ulint		j;
+	ibool		is_on_delete;
+	ulint		n_on_deletes;
+	ulint		n_on_updates;
 	dict_col_t*	columns[500];
 	char*		column_names[500];
 	ulint		column_name_lens[500];
@@ -2092,11 +2524,19 @@ dict_create_foreign_constraints(
 	table = dict_table_get_low(name);
 
 	if (table == NULL) {
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s.\n"
+"Cannot find the table from the internal data dictionary of InnoDB.\n"
+"Create table statement:\n%.2000\n", name, sql_string);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
 		return(DB_ERROR);
 	}
-
 loop:
-	ptr = dict_scan_to(ptr, "FOREIGN");
+	ptr = dict_scan_to(ptr, (char *) "FOREIGN");
 
 	if (*ptr == '\0') {
 
@@ -2108,22 +2548,42 @@ loop:
 		return(error);
 	}
 
-	ptr = dict_accept(ptr, "FOREIGN", &success);		
+	start_of_latest_foreign = ptr;
+
+	ptr = dict_accept(ptr, (char *) "FOREIGN", &success);		
 	
 	if (!isspace(*ptr)) {
 	        goto loop;
 	}
 
-	ptr = dict_accept(ptr, "KEY", &success);
+	ptr = dict_accept(ptr, (char *) "KEY", &success);
 
 	if (!success) {
 		goto loop;
 	}
 
-	ptr = dict_accept(ptr, "(", &success);
+	ptr = dict_accept(ptr, (char *) "(", &success);
 
 	if (!success) {
-		goto loop;
+		/* MySQL allows also an index id before the '('; we
+		skip it */
+		ptr = dict_skip_word(ptr, &success);
+
+		if (!success) {
+			dict_foreign_report_syntax_err(name,
+					start_of_latest_foreign, ptr);
+
+			return(DB_CANNOT_ADD_CONSTRAINT);
+		}
+
+		ptr = dict_accept(ptr, (char *) "(", &success);
+
+		if (!success) {
+			/* We do not flag a syntax error here because in an
+			ALTER TABLE we may also have DROP FOREIGN KEY abc */
+
+		        goto loop;
+		}
 	}
 
 	i = 0;
@@ -2133,20 +2593,31 @@ col_loop1:
 	ptr = dict_scan_col(ptr, &success, table, columns + i,
 				column_names + i, column_name_lens + i);
 	if (!success) {
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s,\n%.500s.\n"
+"Cannot resolve column name close to:\n%.500s\n", name,
+					start_of_latest_foreign, ptr);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 
 	i++;
 	
-	ptr = dict_accept(ptr, ",", &success);
+	ptr = dict_accept(ptr, (char *) ",", &success);
 
 	if (success) {
 		goto col_loop1;
 	}
 	
-	ptr = dict_accept(ptr, ")", &success);
+	ptr = dict_accept(ptr, (char *) ")", &success);
 
 	if (!success) {
+		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
+									ptr);
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 
@@ -2156,12 +2627,24 @@ col_loop1:
 	index = dict_foreign_find_index(table, column_names, i, NULL);
 
 	if (!index) {
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s:\n"
+"There is no index in the table %.500s where the columns appear\n"
+"as the first columns. Constraint:\n%.500s\n"
+"See http://www.innodb.com/ibman.html for correct foreign key definition.\n",
+			name, name, start_of_latest_foreign);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
-
-	ptr = dict_accept(ptr, "REFERENCES", &success);
+	ptr = dict_accept(ptr, (char *) "REFERENCES", &success);
 
 	if (!success || !isspace(*ptr)) {
+		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
+									ptr);
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 
@@ -2191,13 +2674,24 @@ col_loop1:
 	if (!success || (!referenced_table && trx->check_foreigns)) {
 		dict_foreign_free(foreign);
 
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s,\n%.500s.\n"
+"Cannot resolve table name close to:\n"
+"%.500s\n", name, start_of_latest_foreign, ptr);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 	
-	ptr = dict_accept(ptr, "(", &success);
+	ptr = dict_accept(ptr, (char *) "(", &success);
 
 	if (!success) {
 		dict_foreign_free(foreign);
+		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
+									ptr);
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 
@@ -2211,22 +2705,40 @@ col_loop2:
 	
 	if (!success) {
 		dict_foreign_free(foreign);
+
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s,\n%.500s\n"
+"Cannot resolve column name close to:\n"
+"%.500s\n", name, start_of_latest_foreign, ptr);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 
-	ptr = dict_accept(ptr, ",", &success);
+	ptr = dict_accept(ptr, (char *) ",", &success);
 
 	if (success) {
 		goto col_loop2;
 	}
 	
-	ptr = dict_accept(ptr, ")", &success);
+	ptr = dict_accept(ptr, (char *) ")", &success);
 
 	if (!success || foreign->n_fields != i) {
 		dict_foreign_free(foreign);
 		
+		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
+									ptr);
 		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
+
+	n_on_deletes = 0;
+	n_on_updates = 0;
+	
+scan_on_conditions:
+	/* Loop here as long as we can find ON ... conditions */
 
 	ptr = dict_accept(ptr, "ON", &success);
 
@@ -2238,48 +2750,130 @@ col_loop2:
 	ptr = dict_accept(ptr, "DELETE", &success);
 
 	if (!success) {
+		ptr = dict_accept(ptr, "UPDATE", &success);
 
-		goto try_find_index;
+		if (!success) {
+			dict_foreign_free(foreign);
+		
+			dict_foreign_report_syntax_err(name,
+						start_of_latest_foreign, ptr);
+			return(DB_CANNOT_ADD_CONSTRAINT);
+		}
+
+		is_on_delete = FALSE;
+		n_on_updates++;
+	} else {
+		is_on_delete = TRUE;
+		n_on_deletes++;
+	}
+
+	ptr = dict_accept(ptr, "RESTRICT", &success);
+
+	if (success) {
+		goto scan_on_conditions;
 	}
 
 	ptr = dict_accept(ptr, "CASCADE", &success);
 
 	if (success) {
+		if (is_on_delete) {
+			foreign->type |= DICT_FOREIGN_ON_DELETE_CASCADE;
+		} else {
+			foreign->type |= DICT_FOREIGN_ON_UPDATE_CASCADE;
+		}
 
-		foreign->type = DICT_FOREIGN_ON_DELETE_CASCADE;
+		goto scan_on_conditions;
+	}
 
-		goto try_find_index;
+	ptr = dict_accept(ptr, "NO", &success);
+
+	if (success) {
+		ptr = dict_accept(ptr, "ACTION", &success);
+
+		if (!success) {
+			dict_foreign_free(foreign);
+			dict_foreign_report_syntax_err(name,
+					start_of_latest_foreign, ptr);
+		
+			return(DB_CANNOT_ADD_CONSTRAINT);
+		}
+
+		if (is_on_delete) {
+			foreign->type |= DICT_FOREIGN_ON_DELETE_NO_ACTION;
+		} else {
+			foreign->type |= DICT_FOREIGN_ON_UPDATE_NO_ACTION;
+		}
+
+		goto scan_on_conditions;
 	}
 
 	ptr = dict_accept(ptr, "SET", &success);
 
 	if (!success) {
-
-		goto try_find_index;
+		dict_foreign_free(foreign);
+		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
+									ptr);
+		return(DB_CANNOT_ADD_CONSTRAINT);
 	}
 
 	ptr = dict_accept(ptr, "NULL", &success);
 
-	if (success) {
-		for (j = 0; j < foreign->n_fields; j++) {
-			if ((dict_index_get_nth_type(
+	if (!success) {
+		dict_foreign_free(foreign);
+		dict_foreign_report_syntax_err(name, start_of_latest_foreign,
+									ptr);
+		return(DB_CANNOT_ADD_CONSTRAINT);
+	}
+
+	for (j = 0; j < foreign->n_fields; j++) {
+		if ((dict_index_get_nth_type(
 				foreign->foreign_index, j)->prtype)
 				& DATA_NOT_NULL) {
 
-				/* It is not sensible to define SET NULL
-				if the column is not allowed to be NULL! */
+			/* It is not sensible to define SET NULL
+			if the column is not allowed to be NULL! */
 
-				dict_foreign_free(foreign);
-				return(DB_CANNOT_ADD_CONSTRAINT);
-			}
+			dict_foreign_free(foreign);
+
+			mutex_enter(&dict_foreign_err_mutex);
+			ut_sprintf_timestamp(buf);
+			sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s,\n%.500s.\n"
+"You have defined a SET NULL condition though some of the\n"
+"columns is defined as NOT NULL.\n", name, start_of_latest_foreign);
+			ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+			mutex_exit(&dict_foreign_err_mutex);
+
+			return(DB_CANNOT_ADD_CONSTRAINT);
 		}
+	}
 
-		foreign->type = DICT_FOREIGN_ON_DELETE_SET_NULL;
-
-		goto try_find_index;
+	if (is_on_delete) {
+		foreign->type |= DICT_FOREIGN_ON_DELETE_SET_NULL;
+	} else {
+		foreign->type |= DICT_FOREIGN_ON_UPDATE_SET_NULL;
 	}
 	
+	goto scan_on_conditions;
+
 try_find_index:
+	if (n_on_deletes > 1 || n_on_updates > 1) {
+		/* It is an error to define more than 1 action */
+		
+		dict_foreign_free(foreign);
+
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s,\n%.500s.\n"
+"You have twice an ON DELETE clause or twice an ON UPDATE clause.\n",
+		name, start_of_latest_foreign);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
+		return(DB_CANNOT_ADD_CONSTRAINT);
+	}
+
 	/* Try to find an index which contains the columns as the first fields
 	and in the right order, and the types are the same as in
 	foreign->foreign_index */
@@ -2290,6 +2884,18 @@ try_find_index:
 						foreign->foreign_index);
 		if (!index) {
 			dict_foreign_free(foreign);
+			mutex_enter(&dict_foreign_err_mutex);
+			ut_sprintf_timestamp(buf);
+			sprintf(buf + strlen(buf),
+" Error in foreign key constraint of table %.500s:\n"
+"Cannot find an index in the referenced table where the\n"
+"referenced columns appear as the first columns, or column types\n"
+"in the table and the referenced table do not match for constraint:\n%.500s\n"
+"See http://www.innodb.com/ibman.html for correct foreign key definition.\n",
+				name, start_of_latest_foreign);
+			ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+			mutex_exit(&dict_foreign_err_mutex);
+
 			return(DB_CANNOT_ADD_CONSTRAINT);
 		}
 	} else {
@@ -2326,7 +2932,167 @@ try_find_index:
 					referenced_table->referenced_list,
 								foreign);
 	}
+
 	goto loop;
+}
+
+/*************************************************************************
+Scans a table create SQL string and adds to the data dictionary the foreign
+key constraints declared in the string. This function should be called after
+the indexes for a table have been created. Each foreign key constraint must
+be accompanied with indexes in both participating tables. The indexes are
+allowed to contain more fields than mentioned in the constraint. */
+
+ulint
+dict_create_foreign_constraints(
+/*============================*/
+				/* out: error code or DB_SUCCESS */
+	trx_t*	trx,		/* in: transaction */
+	char*	sql_string,	/* in: table create or ALTER TABLE
+				statement where foreign keys are declared like:
+				FOREIGN KEY (a, b) REFERENCES table2(c, d),
+				table2 can be written also with the database
+				name before it: test.table2; the default
+				database id the database of parameter name */
+	char*	name)		/* in: table full name in the normalized form
+				database_name/table_name */
+{
+	char*	str;
+	ulint	err;
+
+	str = dict_strip_comments(sql_string);
+
+	err = dict_create_foreign_constraints_low(trx, str, name);
+
+	mem_free(str);	
+	
+	return(err);	
+}
+
+/**************************************************************************
+Parses the CONSTRAINT id's to be dropped in an ALTER TABLE statement. */
+
+ulint
+dict_foreign_parse_drop_constraints(
+/*================================*/
+						/* out: DB_SUCCESS or
+						DB_CANNOT_DROP_CONSTRAINT if
+						syntax error or the constraint
+						id does not match */
+	mem_heap_t*	heap,			/* in: heap from which we can
+						allocate memory */
+	trx_t*		trx,			/* in: transaction */
+	dict_table_t*	table,			/* in: table */
+	ulint*		n,			/* out: number of constraints
+						to drop */
+	char***		constraints_to_drop)	/* out: id's of the
+						constraints to drop */
+{
+        dict_foreign_t* foreign;
+	ibool	success;
+	char*	str;
+ 	char*	ptr;
+ 	char*	buf	= dict_foreign_err_buf;
+	char*	start;
+	char*	id;
+	ulint	len;
+	
+	*n = 0;
+
+	*constraints_to_drop = mem_heap_alloc(heap, 1000 * sizeof(char*));
+
+	str = dict_strip_comments(*(trx->mysql_query_str));
+	ptr = str;
+
+	ut_ad(mutex_own(&(dict_sys->mutex)));
+loop:
+	ptr = dict_scan_to(ptr, (char *) "DROP");
+
+	if (*ptr == '\0') {
+		ut_a(*n < 1000);
+
+		mem_free(str);
+		
+		return(DB_SUCCESS);
+	}
+
+	ptr = dict_accept(ptr, (char *) "DROP", &success);
+
+	if (!isspace(*ptr)) {
+
+	        goto loop;
+	}
+
+	ptr = dict_accept(ptr, (char *) "FOREIGN", &success);
+	
+	if (!success) {
+
+	        goto loop;
+	}
+
+	ptr = dict_accept(ptr, (char *) "KEY", &success);
+
+	if (!success) {
+
+		goto syntax_error;
+	}
+
+	ptr = dict_scan_id(ptr, &start, &len);
+
+	if (start == NULL) {
+
+		goto syntax_error;
+	}
+
+	id = mem_heap_alloc(heap, len + 1);
+	ut_memcpy(id, start, len);
+	id[len] = '\0';
+	(*constraints_to_drop)[*n] = id;
+	(*n)++;
+	
+	/* Look for the given constraint id */
+
+	foreign = UT_LIST_GET_FIRST(table->foreign_list);
+
+	while (foreign != NULL) {
+		if (0 == ut_strcmp(foreign->id, id)) {
+
+			/* Found */
+			break;
+		}
+		
+		foreign = UT_LIST_GET_NEXT(foreign_list, foreign);
+	}
+
+	if (foreign == NULL) {
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Error in dropping of a foreign key constraint of table %.500s,\n"
+"just before:\n%s\n in SQL command\n%s\nCannot find a constraint with the\n"
+"given id %s.\n", table->name, ptr, str, id);
+		ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+		mutex_exit(&dict_foreign_err_mutex);
+
+		mem_free(str);
+
+		return(DB_CANNOT_DROP_CONSTRAINT);
+	}
+
+	goto loop;	
+
+syntax_error:
+	mutex_enter(&dict_foreign_err_mutex);
+	ut_sprintf_timestamp(buf);
+	sprintf(buf + strlen(buf),
+" Syntax error in dropping of a foreign key constraint of table %.500s,\n"
+"close to:\n%s\n in SQL command\n%s\n", table->name, ptr, str);
+	ut_a(strlen(buf) < DICT_FOREIGN_ERR_BUF_LEN);
+	mutex_exit(&dict_foreign_err_mutex);
+
+	mem_free(str);
+
+	return(DB_CANNOT_DROP_CONSTRAINT);
 }
 
 /*==================== END OF FOREIGN KEY PROCESSING ====================*/
@@ -2816,12 +3582,21 @@ void
 dict_update_statistics_low(
 /*=======================*/
 	dict_table_t*	table,		/* in: table */
-	ibool		has_dict_mutex)	/* in: TRUE if the caller has the
+	ibool		has_dict_mutex __attribute__((unused)))
+                                        /* in: TRUE if the caller has the
 					dictionary mutex */	
 {
 	dict_index_t*	index;
 	ulint		size;
 	ulint		sum_of_index_sizes	= 0;
+
+	/* If we have set a high innodb_force_recovery level, do not calculate
+	statistics, as a badly corrupted index can cause a crash in it. */
+
+	if (srv_force_recovery >= SRV_FORCE_NO_IBUF_MERGE) {
+
+		return;
+	}
 
 	/* Find out the sizes of the indexes and how many different values
 	for the key they approximately have */
@@ -3041,7 +3816,6 @@ dict_index_print_low(
 		n_vals = index->stat_n_diff_key_vals[1];
 	}
 
-
 	printf(
 	"  INDEX: name %s, table name %s, id %lu %lu, fields %lu/%lu, type %lu\n",
 			index->name, index->table_name,
@@ -3080,6 +3854,103 @@ dict_field_print_low(
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 
 	printf(" %s", field->name);
+
+	if (field->prefix_len != 0) {
+	        printf("(%lu)", field->prefix_len);
+	}
+}
+
+/**************************************************************************
+Sprintfs to a string info on a foreign key of a table in a format suitable
+for CREATE TABLE. */
+
+char*
+dict_print_info_on_foreign_key_in_create_format(
+/*============================================*/
+				/* out: how far in buf we printed */
+	dict_foreign_t*	foreign,/* in: foreign key constraint */
+	char*		buf)	/* in: buffer of at least 5000 bytes */
+{
+	char*	buf2	= buf;
+	ulint	i;
+	
+	buf2 += sprintf(buf2, ",\n  CONSTRAINT `%s` FOREIGN KEY (",
+							foreign->id);
+	for (i = 0; i < foreign->n_fields; i++) {
+	        if ((ulint)(buf2 - buf) >= 4000) {
+
+	                goto no_space;
+	        }
+		buf2 += sprintf(buf2, "`%.250s`",
+				foreign->foreign_col_names[i]);
+		
+		if (i + 1 < foreign->n_fields) {
+			buf2 += sprintf(buf2, ", ");
+		}
+	}
+
+	if (dict_tables_have_same_db(foreign->foreign_table_name,
+					foreign->referenced_table_name)) {
+		/* Do not print the database name of the referenced
+		table */
+		buf2 += sprintf(buf2, ") REFERENCES `%.500s` (",
+					dict_remove_db_name(
+					foreign->referenced_table_name));
+	} else {
+		buf2 += sprintf(buf2, ") REFERENCES `%.500s` (",
+					foreign->referenced_table_name);
+		/* Change the '/' in the table name to '.' */
+
+		for (i = ut_strlen(buf); i > 0; i--) {
+			if (buf[i] == '/') {
+
+				buf[i] = '.';
+
+				break;
+			}
+		}
+	}
+	
+	for (i = 0; i < foreign->n_fields; i++) {
+	        if ((ulint)(buf2 - buf) >= 4000) {
+
+	                goto no_space;
+	        }
+		buf2 += sprintf(buf2, "`%.250s`",
+					foreign->referenced_col_names[i]);
+		if (i + 1 < foreign->n_fields) {
+			buf2 += sprintf(buf2, ", ");
+		}
+	}
+
+	buf2 += sprintf(buf2, ")");
+
+	if (foreign->type & DICT_FOREIGN_ON_DELETE_CASCADE) {
+		buf2 += sprintf(buf2, " ON DELETE CASCADE");
+	}
+	
+	if (foreign->type & DICT_FOREIGN_ON_DELETE_SET_NULL) {
+		buf2 += sprintf(buf2, " ON DELETE SET NULL");
+	}
+
+	if (foreign->type & DICT_FOREIGN_ON_DELETE_NO_ACTION) {
+		buf2 += sprintf(buf2, " ON DELETE NO ACTION");
+	}
+
+	if (foreign->type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
+		buf2 += sprintf(buf2, " ON UPDATE CASCADE");
+	}
+	
+	if (foreign->type & DICT_FOREIGN_ON_UPDATE_SET_NULL) {
+		buf2 += sprintf(buf2, " ON UPDATE SET NULL");
+	}
+
+	if (foreign->type & DICT_FOREIGN_ON_UPDATE_NO_ACTION) {
+		buf2 += sprintf(buf2, " ON UPDATE NO ACTION");
+	}
+
+no_space:
+	return(buf2);
 }
 
 /**************************************************************************
@@ -3089,14 +3960,14 @@ static
 void
 dict_print_info_on_foreign_keys_in_create_format(
 /*=============================================*/
-	char*		buf,	/* in: auxiliary buffer of 10000 chars */
+	char*		buf,	/* in: auxiliary buffer */
 	char*		str,	/* in/out: pointer to a string */
-	ulint		len,	/* in: space in str available for info */
+	ulint		len,	/* in: buf has to be a buffer of at least
+				len + 5000 bytes; str must have at least
+				len + 1 bytes */
 	dict_table_t*	table)	/* in: table */
 {
-
 	dict_foreign_t*	foreign;
-	ulint		i;
 	char*		buf2;
 
 	buf2 = buf;
@@ -3112,51 +3983,16 @@ dict_print_info_on_foreign_keys_in_create_format(
 	}
 
 	while (foreign != NULL) {
-		buf2 += sprintf(buf2, ",\n  FOREIGN KEY (");
+	        if ((ulint)(buf2 - buf) >= len) {
+	                goto no_space;
+	        }
 
-		for (i = 0; i < foreign->n_fields; i++) {
-			buf2 += sprintf(buf2, "`%s`",
-					foreign->foreign_col_names[i]);
-			
-			if (i + 1 < foreign->n_fields) {
-				buf2 += sprintf(buf2, ", ");
-			}
-		}
-
-		buf2 += sprintf(buf2, ") REFERENCES `%s` (",
-					foreign->referenced_table_name);
-		/* Change the '/' in the table name to '.' */
-
-		for (i = ut_strlen(buf); i > 0; i--) {
-			if (buf[i] == '/') {
-
-				buf[i] = '.';
-
-				break;
-			}
-		}
-	
-		for (i = 0; i < foreign->n_fields; i++) {
-			buf2 += sprintf(buf2, "`%s`",
-					foreign->referenced_col_names[i]);
-			if (i + 1 < foreign->n_fields) {
-				buf2 += sprintf(buf2, ", ");
-			}
-		}
-
-		buf2 += sprintf(buf2, ")");
-
-		if (foreign->type == DICT_FOREIGN_ON_DELETE_CASCADE) {
-			buf2 += sprintf(buf2, " ON DELETE CASCADE");
-		}
-	
-		if (foreign->type == DICT_FOREIGN_ON_DELETE_SET_NULL) {
-			buf2 += sprintf(buf2, " ON DELETE SET NULL");
-		}
+		buf2 = dict_print_info_on_foreign_key_in_create_format(
+							foreign, buf2);
 
 		foreign = UT_LIST_GET_NEXT(foreign_list, foreign);
 	}
-
+no_space:
 	mutex_exit(&(dict_sys->mutex));
 
 	buf[len - 1] = '\0';
@@ -3180,15 +4016,16 @@ dict_print_info_on_foreign_keys(
 	dict_foreign_t*	foreign;
 	ulint		i;
 	char*		buf2;
-	char		buf[10000];
+	char*		buf;
+
+	buf = mem_alloc(len + 5000);
 
 	if (create_table_format) {
 		dict_print_info_on_foreign_keys_in_create_format(
 						buf, str, len, table);
+		mem_free(buf);
 		return;
 	}
-
-	buf2 = buf;
 
 	mutex_enter(&(dict_sys->mutex));
 
@@ -3197,14 +4034,22 @@ dict_print_info_on_foreign_keys(
 	if (foreign == NULL) {
 		mutex_exit(&(dict_sys->mutex));
 
+		mem_free(buf);
 		return;
 	}
 
+	buf2 = buf;
+
 	while (foreign != NULL) {
+
 		buf2 += sprintf(buf2, "; (");
 
 		for (i = 0; i < foreign->n_fields; i++) {
-			buf2 += sprintf(buf2, "%s",
+		        if ((ulint)(buf2 - buf) >= len) {
+		                goto no_space;
+		        }
+
+			buf2 += sprintf(buf2, "%.500s",
 					foreign->foreign_col_names[i]);
 			
 			if (i + 1 < foreign->n_fields) {
@@ -3212,11 +4057,14 @@ dict_print_info_on_foreign_keys(
 			}
 		}
 
-		buf2 += sprintf(buf2, ") REFER %s(",
+		buf2 += sprintf(buf2, ") REFER %.500s(",
 					foreign->referenced_table_name);
 	
 		for (i = 0; i < foreign->n_fields; i++) {
-			buf2 += sprintf(buf2, "%s",
+		        if ((ulint)(buf2 - buf) >= len) {
+		                goto no_space;
+		        }
+			buf2 += sprintf(buf2, "%.500s",
 					foreign->referenced_col_names[i]);
 			if (i + 1 < foreign->n_fields) {
 				buf2 += sprintf(buf2, " ");
@@ -3233,11 +4081,29 @@ dict_print_info_on_foreign_keys(
 			buf2 += sprintf(buf2, " ON DELETE SET NULL");
 		}
 
+		if (foreign->type & DICT_FOREIGN_ON_DELETE_NO_ACTION) {
+			buf2 += sprintf(buf2, " ON DELETE NO ACTION");
+		}
+
+		if (foreign->type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
+			buf2 += sprintf(buf2, " ON UPDATE CASCADE");
+		}
+	
+		if (foreign->type & DICT_FOREIGN_ON_UPDATE_SET_NULL) {
+			buf2 += sprintf(buf2, " ON UPDATE SET NULL");
+		}
+
+		if (foreign->type & DICT_FOREIGN_ON_UPDATE_NO_ACTION) {
+			buf2 += sprintf(buf2, " ON UPDATE NO ACTION");
+		}
+
 		foreign = UT_LIST_GET_NEXT(foreign_list, foreign);
 	}
-
+no_space:
 	mutex_exit(&(dict_sys->mutex));
 
 	buf[len - 1] = '\0';
 	ut_memcpy(str, buf, len);
+
+	mem_free(buf);
 }

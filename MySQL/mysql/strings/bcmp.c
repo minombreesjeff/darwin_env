@@ -1,29 +1,34 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   bcmp(s1, s2, len) returns 0 if the "len" bytes starting at "s1" are
   identical to the "len" bytes starting at "s2", non-zero if they are
   different.
-  Now only used with purify.
+  Now only used with purify because purify gives wrong warnings when
+  comparing a shorter string with bcmp.
 */
 
-#include <global.h>
+#include <my_global.h>
 #include "m_string.h"
+
+#ifdef HAVE_purify
+#undef bcmp
+#undef HAVE_BCMP
+#endif
 
 #if !defined(bcmp) && !defined(HAVE_BCMP)
 
@@ -46,14 +51,11 @@ uint len;					/* 0 <= len <= 65535 */
 
 #else
 
-#ifdef HAVE_purify
-int my_bcmp(s1, s2, len)
+#ifndef HAVE_purify
+int bcmp(register const char *s1,register const char *s2, register uint len)
 #else
-int bcmp(s1, s2, len)
+int my_bcmp(register const char *s1,register const char *s2, register uint len)
 #endif
-    register const char *s1;
-    register const char *s2;
-    register uint len;
 {
   while (len-- != 0 && *s1++ == *s2++) ;
   return len+1;

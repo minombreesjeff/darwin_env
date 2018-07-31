@@ -109,7 +109,9 @@ print "Running tests on:    $machine\n";
 print "Arguments:           $log_prog_args\n";
 print "Comments:            $opt_comments\n";
 print "Limits from:         $opt_cmp\n";
-print "Server version:      $server_version\n\n";
+print "Server version:      $server_version\n";
+print "Optimization:        $opt_optimization\n";
+print "Hardware:            $opt_hw\n\n";
 
 
 $estimated=$warning=$got_warning=0;
@@ -194,6 +196,10 @@ while (<test-*>)
     {
       print "Summary for $prog: ", join(" ",@prog_sum), "\n";
     }
+  }
+  elsif ($last_line =~ /^Test skipped/i)
+  {
+    print "$last_line\n";
   }
   else
   {
@@ -281,10 +287,6 @@ sub read_headers
     {
       $log_prog_args=$1;
     }
-    elsif (/^Comments.*:\s+(.*)$/)
-    {
-      $opt_comments=$1;
-    }
     elsif (/^Limits.*:\s+(.*)$/)
     {
       $opt_cmp=$1;
@@ -292,6 +294,14 @@ sub read_headers
     elsif (/^Server ver.*:\s+(.*)$/)
     {
       $server_version=$1;
+    }
+    elsif (/^Optimiz.*:\s+(.*)$/)
+    {
+      $opt_optimization=$1;
+    }
+    elsif (/^Hardwar.*:\s+(.*)$/)
+    {
+      $opt_hw=$1;
     }
   }
   close(TMP);

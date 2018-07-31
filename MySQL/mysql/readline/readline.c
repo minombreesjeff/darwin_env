@@ -129,8 +129,8 @@ extern int _rl_suppress_redisplay;
 extern char *rl_display_prompt;
 
 /* Variables imported from complete.c. */
-extern char *rl_completer_word_break_characters;
-extern char *rl_basic_word_break_characters;
+extern const char *rl_completer_word_break_characters;
+extern const char *rl_basic_word_break_characters;
 extern int rl_completion_query_items;
 extern int rl_complete_with_tilde_expansion;
 
@@ -181,7 +181,7 @@ extern char *xmalloc (), *xrealloc ();
 /*								    */
 /* **************************************************************** */
 
-char *rl_library_version = RL_LIBRARY_VERSION;
+const char *rl_library_version = RL_LIBRARY_VERSION;
 
 /* A pointer to the keymap that is currently in use.
    By default, it is the standard emacs keymap. */
@@ -280,7 +280,7 @@ int _rl_mark_modified_lines = 0;
 /* The style of `bell' notification preferred.  This can be set to NO_BELL,
    AUDIBLE_BELL, or VISIBLE_BELL. */
 int _rl_bell_preference = AUDIBLE_BELL;
-     
+
 /* String inserted into the line by rl_insert_comment (). */
 char *_rl_comment_begin;
 
@@ -755,7 +755,7 @@ readline_initialize_everything ()
 
   /* Decide whether we should automatically go into eight-bit mode. */
   _rl_init_eightbit ();
-      
+
   /* Read in the init file. */
   rl_read_init_file ((char *)NULL);
 
@@ -914,7 +914,7 @@ rl_digit_loop ()
 /* Add the current digit to the argument in progress. */
 int
 rl_digit_argument (ignore, key)
-     int ignore, key;
+     int ignore __attribute__((unused)), key;
 {
   rl_pending_input = key;
   return (rl_digit_loop ());
@@ -944,7 +944,7 @@ _rl_init_argument ()
    dispatch on it.  If the key is the abort character then abort. */
 int
 rl_universal_argument (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   rl_numeric_arg *= 4;
   return (rl_digit_loop ());
@@ -960,8 +960,7 @@ rl_universal_argument (count, key)
    way that you should do insertion.  rl_insert () calls this
    function. */
 int
-rl_insert_text (string)
-     char *string;
+rl_insert_text (const char *string)
 {
   register int i, l = strlen (string);
 
@@ -1147,7 +1146,7 @@ rl_backward (count, key)
 /* Move to the beginning of the line. */
 int
 rl_beg_of_line (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   rl_point = 0;
   return 0;
@@ -1156,7 +1155,7 @@ rl_beg_of_line (count, key)
 /* Move to the end of the line. */
 int
 rl_end_of_line (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   rl_point = rl_end;
   return 0;
@@ -1253,7 +1252,7 @@ rl_backward_word (count, key)
 /* Clear the current line.  Numeric argument to C-l does this. */
 int
 rl_refresh_line (ignore1, ignore2)
-     int ignore1, ignore2;
+     int ignore1 __attribute__((unused)), ignore2 __attribute__((unused));
 {
   int curr_line, nleft;
 
@@ -1313,7 +1312,7 @@ rl_clear_screen (count, key)
 
 int
 rl_arrow_keys (count, c)
-     int count, c;
+     int count, c __attribute__((unused));
 {
   int ch;
 
@@ -1417,7 +1416,7 @@ rl_insert (count, c)
 /* Insert the next typed character verbatim. */
 int
 rl_quoted_insert (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   int c;
 
@@ -1428,7 +1427,7 @@ rl_quoted_insert (count, key)
 /* Insert a tab character. */
 int
 rl_tab_insert (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   return (rl_insert (count, '\t'));
 }
@@ -1438,7 +1437,7 @@ rl_tab_insert (count, key)
    meaning in the future. */
 int
 rl_newline (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   rl_done = 1;
 
@@ -1466,7 +1465,7 @@ rl_newline (count, key)
    is special cased. */
 int
 rl_do_lowercase_version (ignore1, ignore2)
-     int ignore1, ignore2;
+     int ignore1 __attribute__((unused)), ignore2 __attribute__((unused));
 {
   return 0;
 }
@@ -1548,12 +1547,12 @@ rl_rubout_or_delete (count, key)
     return (rl_rubout (count, key));
   else
     return (rl_delete (count, key));
-}  
+}
 
 /* Delete all spaces and tabs around point. */
 int
 rl_delete_horizontal_space (count, ignore)
-     int count, ignore;
+     int count __attribute__((unused)), ignore __attribute__((unused));
 {
   int start = rl_point;
 
@@ -1594,7 +1593,7 @@ rl_delete_or_show_completions (count, key)
    A K*rn shell style function. */
 int
 rl_insert_comment (count, key)
-     int count, key;
+     int count __attribute__((unused)), key;
 {
   rl_beg_of_line (1, key);
   rl_insert_text (_rl_comment_begin ? _rl_comment_begin
@@ -1620,7 +1619,7 @@ static int rl_change_case ();
 /* Uppercase the word at point. */
 int
 rl_upcase_word (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   return (rl_change_case (count, UpCase));
 }
@@ -1628,7 +1627,7 @@ rl_upcase_word (count, key)
 /* Lowercase the word at point. */
 int
 rl_downcase_word (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   return (rl_change_case (count, DownCase));
 }
@@ -1636,7 +1635,7 @@ rl_downcase_word (count, key)
 /* Upcase the first letter, downcase the rest. */
 int
 rl_capitalize_word (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
  return (rl_change_case (count, CapCase));
 }
@@ -1760,7 +1759,7 @@ rl_transpose_words (count, key)
    then transpose the characters before point. */
 int
 rl_transpose_chars (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   char dummy[2];
 
@@ -1853,14 +1852,14 @@ _rl_char_search (count, fdir, bdir)
 
 int
 rl_char_search (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   return (_rl_char_search (count, FFIND, BFIND));
 }
 
 int
 rl_backward_char_search (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   return (_rl_char_search (count, BFIND, FFIND));
 }
@@ -1965,7 +1964,7 @@ maybe_save_line ()
 /* Meta-< goes to the start of the history. */
 int
 rl_beginning_of_history (count, key)
-     int count, key;
+     int count __attribute__((unused)), key;
 {
   return (rl_get_previous_history (1 + where_history (), key));
 }
@@ -1973,7 +1972,7 @@ rl_beginning_of_history (count, key)
 /* Meta-> goes to the end of the history.  (The current line). */
 int
 rl_end_of_history (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   maybe_replace_line ();
   using_history ();
@@ -2105,7 +2104,7 @@ _rl_set_mark_at_pos (position)
 /* A bindable command to set the mark. */
 int
 rl_set_mark (count, key)
-     int count, key;
+     int count, key __attribute__((unused));
 {
   return (_rl_set_mark_at_pos (rl_explicit_arg ? count : rl_point));
 }
@@ -2113,7 +2112,7 @@ rl_set_mark (count, key)
 /* Exchange the position of mark and point. */
 int
 rl_exchange_point_and_mark (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   if (rl_mark > rl_end)
     rl_mark = -1;
@@ -2137,7 +2136,7 @@ rl_exchange_point_and_mark (count, key)
 /* How to toggle back and forth between editing modes. */
 int
 rl_vi_editing_mode (count, key)
-     int count, key;
+     int count __attribute__((unused)), key;
 {
 #if defined (VI_MODE)
   rl_editing_mode = vi_mode;
@@ -2148,7 +2147,7 @@ rl_vi_editing_mode (count, key)
 
 int
 rl_emacs_editing_mode (count, key)
-     int count, key;
+     int count __attribute__((unused)), key __attribute__((unused));
 {
   rl_editing_mode = emacs_mode;
   _rl_keymap = emacs_standard_keymap;

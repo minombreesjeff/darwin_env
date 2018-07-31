@@ -21,12 +21,13 @@ info_TEXINFOS =		manual.texi
 targets =		manual.txt mysql.info manual.html
 
 BUILT_SOURCES =		$(targets) manual_toc.html include.texi
-EXTRA_DIST =		$(noinst_SCRIPTS) $(BUILT_SOURCES) mysqld_error.txt INSTALL-BINARY
+EXTRA_DIST =		$(noinst_SCRIPTS) $(BUILT_SOURCES) mysqld_error.txt \
+			INSTALL-BINARY reservedwords.texi 
 
 all:			$(targets) txt_files
 
 txt_files:		../INSTALL-SOURCE ../COPYING ../COPYING.LIB \
-			../MIRRORS INSTALL-BINARY
+			INSTALL-BINARY ../support-files/MacOSX/ReadMe.txt
 
 CLEAN_FILES:		$(BUILD_SOURCES)
 	touch $(BUILD_SOURCES)
@@ -47,59 +48,45 @@ include.texi:	../configure.in
 	grep "MYSQL_TCP_PORT_DEFAULT=" ../configure.in | \
 	 sed -e 's;MYSQL_TCP_PORT_DEFAULT=;;' >> $@
 
+
+#
+# English Manual
+#
+
+# GNU Info
 mysql.info:	manual.texi include.texi
 	cd $(srcdir) && $(MAKEINFO) --no-split -I $(srcdir) $<
 
+# Plain Text
 manual.txt:	manual.texi include.texi
 	cd $(srcdir) && \
 	$(MAKEINFO) -I $(srcdir) --no-headers --no-split --output $@ $<
 
+# HTML, all in one file
 manual.html:	manual.texi include.texi $(srcdir)/Support/texi2html
 	cd $(srcdir) && @PERL@ $(srcdir)/Support/texi2html $(TEXI2HTML_FLAGS) $<
-
 manual_toc.html: manual.html
 
-
-# Fix: add --output-comment with some interesting info?
-# Fix: @image worked with a older version of pdftex. 
-# Note: @image will work if we first convert all images to pdf ...
-#       is that worth it?
-# Comment: We need to run pdftex 2 times to get the cross references right.
+# PDF, Portable Document Format
 manual.pdf: manual.texi
-	cat manual.texi | sed -e 's|@image{[^}]*} *||g' > manual-tmp.texi
+	sed -e 's|@image{[^}]*} *||g' <$< >manual-tmp.texi
 	pdftex --interaction=nonstopmode manual-tmp.texi
 	texindex manual-tmp.??
 	pdftex --interaction=nonstopmode manual-tmp.texi
 	texindex manual-tmp.??
 	pdftex --interaction=nonstopmode manual-tmp.texi
-	mv manual-tmp.pdf manual.pdf
+	mv manual-tmp.pdf $@
 	rm -f manual-tmp.*
 	touch $@
 
-# Target to produce NuSphere Manual
-nusphere.pdf: manual.texi
-	cat manual.texi \
-	| sed -e 's/@example/@smallexample/g' \
-	      -e 's/@end example/@end smallexample/g' \
-	      -e 's/@c ifnusphere //g' \
-	      -e 's|@image{[^}]*} *||g' \
-	> manual-tmp.texi
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	texindex manual-tmp.??
-	pdftex --interaction=nonstopmode manual-tmp.texi
-	mv manual-tmp.pdf nusphere.pdf
-	rm -f manual-tmp.*
-	touch $@
-
-# Target to produce DocBook XML
+# XML, DocBook 4.0
 mysql.xml: manual.texi include.texi
-	$(MAKEINFO) --force --no-ifinfo --docbook manual.texi
+	$(MAKEINFO) --force --no-ifinfo --docbook $<
+	mv $@ mysql-tmp.xml
+	Support/docbook-fixup.pl <mysql-tmp.xml >$@
+	rm -f mysql-tmp.xml
 
-# The texi2dvi gives a lot of harmless errors. Just ignore them unless
-# you want to help with the typesetting part.
-# This is the European papersize version
+# Postscript, A4 Paper
 manual_a4.ps:	manual.texi include.texi
 	TEXINPUTS=$(srcdir):$$TEXINPUTS \
 	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
@@ -107,12 +94,87 @@ manual_a4.ps:	manual.texi include.texi
 	$(DVIPS) -t a4 manual.dvi -o $@
 	touch $@
 
-# This is the American papersize version
+# Postscript, US Letter Paper
 manual_letter.ps:	manual.texi include.texi
 	TEXINPUTS=$(srcdir):$$TEXINPUTS \
 	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
 	    $(TEXI2DVI) --batch $<
 	$(DVIPS) -t letter manual.dvi -o $@
+	touch $@
+
+
+#
+# German Manual
+#
+
+# GNU Info
+mysql.de.info:	manual.de.texi include.texi
+	cd $(srcdir) && $(MAKEINFO) --no-split -I $(srcdir) $<
+
+# Plain Text
+manual.de.txt:	manual.de.texi include.texi
+	cd $(srcdir) && \
+	$(MAKEINFO) -I $(srcdir) --no-headers --no-split --output $@ $<
+
+# HTML, all in one file
+manual.de.html:	manual.de.texi include.texi $(srcdir)/Support/texi2html
+	cd $(srcdir) && @PERL@ $(srcdir)/Support/texi2html $(TEXI2HTML_FLAGS) $<
+manual_toc.de.html: manual.html
+
+# PDF, Portable Document Format
+manual.de.pdf: manual.de.texi
+	sed -e 's|@image{[^}]*} *||g' <$< >manual-tmp.texi
+	pdftex --interaction=nonstopmode manual-tmp.texi
+	texindex manual-tmp.??
+	pdftex --interaction=nonstopmode manual-tmp.texi
+	texindex manual-tmp.??
+	pdftex --interaction=nonstopmode manual-tmp.texi
+	mv manual-tmp.pdf $@
+	rm -f manual-tmp.*
+	touch $@
+
+# XML, DocBook 4.0
+mysql.de.xml: manual.de.texi include.texi
+	$(MAKEINFO) --force --no-ifinfo --docbook $<
+	mv $@ mysql-tmp.xml
+	Support/docbook-fixup.pl <mysql-tmp.xml >$@
+	rm -f mysql-tmp.xml
+
+# Postscript, A4 Paper
+manual_a4.de.ps:	manual.de.texi include.texi
+	TEXINPUTS=$(srcdir):$$TEXINPUTS \
+	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
+	    $(TEXI2DVI) --batch --texinfo --quiet '@afourpaper' $<
+	$(DVIPS) -t a4 manual.de.dvi -o $@
+	touch $@
+
+# Postscript, US Letter Paper
+manual_letter.de.ps:	manual.de.texi include.texi
+	TEXINPUTS=$(srcdir):$$TEXINPUTS \
+	  MAKEINFO='$(MAKEINFO) -I $(srcdir)' \
+	    $(TEXI2DVI) --batch $<
+	$(DVIPS) -t letter manual.de.dvi -o $@
+	touch $@
+
+
+#
+# Miscellaneous
+#
+
+# Target to produce NuSphere Manual
+nusphere.pdf: manual.texi
+	sed -e 's/@example/@smallexample/g' \
+	    -e 's/@end example/@end smallexample/g' \
+	    -e 's/@c ifnusphere //g' \
+	    -e 's|@image{[^}]*} *||g' \
+	<$< >manual-tmp.texi
+	pdftex --interaction=nonstopmode manual-tmp.texi
+	texindex manual-tmp.??
+	pdftex --interaction=nonstopmode manual-tmp.texi
+	texindex manual-tmp.??
+	pdftex --interaction=nonstopmode manual-tmp.texi
+	mv manual-tmp.pdf $@
+	rm -f manual-tmp.*
 	touch $@
 
 # Include images for the manual in the distribution
@@ -131,7 +193,7 @@ dist-hook:
 GT = $(srcdir)/Support/generate-text-files.pl
 
 ../INSTALL-SOURCE:	mysql.info $(GT)
-	perl -w $(GT) mysql.info "Installing" "Compatibility" > $@
+	perl -w $(GT) mysql.info "Installing" "Tutorial" > $@
 
 # We put the description for the binary installation here so that
 # people who download source wont have to see it. It is moved up to
@@ -145,8 +207,8 @@ INSTALL-BINARY:	mysql.info $(GT)
 ../COPYING.LIB:		mysql.info $(GT)
 	perl -w $(GT) mysql.info "LGPL license" "Function Index" > $@
 
-../MIRRORS:		manual.texi $(srcdir)/Support/generate-mirror-listing.pl
-	perl -w $(srcdir)/Support/generate-mirror-listing.pl manual.texi > $@
+../support-files/MacOSX/ReadMe.txt:	mysql.info $(GT)
+	perl -w $(GT) mysql.info "Mac OS X installation" "NetWare installation" > $@
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

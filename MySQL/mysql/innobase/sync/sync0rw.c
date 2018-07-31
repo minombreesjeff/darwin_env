@@ -115,8 +115,8 @@ rw_lock_create_func(
 	lock->cfile_name = cfile_name;
 	lock->cline = cline;
 
-	lock->last_s_file_name = "not yet reserved";
-	lock->last_x_file_name = "not yet reserved";
+	lock->last_s_file_name = (char *) "not yet reserved";
+	lock->last_x_file_name = (char *) "not yet reserved";
 	lock->last_s_line = 0;
 	lock->last_x_line = 0;
 
@@ -663,7 +663,8 @@ rw_lock_own(
 /*========*/
 					/* out: TRUE if locked */
 	rw_lock_t*	lock,		/* in: rw-lock */
-	ulint		lock_type)	/* in: lock type */
+	ulint		lock_type)	/* in: lock type: RW_LOCK_SHARED,
+					RW_LOCK_EX */
 {
 	rw_lock_debug_t*	info;
 
@@ -792,7 +793,7 @@ Prints debug info of an rw-lock. */
 void
 rw_lock_print(
 /*==========*/
-	rw_lock_t*	lock)	/* in: rw-lock */
+	rw_lock_t*	lock __attribute__((unused)))	/* in: rw-lock */
 {
 #ifndef UNIV_SYNC_DEBUG
 	printf(

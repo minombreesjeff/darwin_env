@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -416,8 +416,7 @@ int _mi_read_pack_record(MI_INFO *info, my_off_t filepos, byte *buf)
     DBUG_RETURN(-1);			/* _search() didn't find record */
 
   file=info->dfile;
-  if (_mi_pack_get_block_info(info, &block_info, file, filepos,
-			      info->rec_buff))
+  if (_mi_pack_get_block_info(info, &block_info, file, filepos))
     goto err;
   if (my_read(file,(byte*) info->rec_buff + block_info.offset ,
 	      block_info.rec_len - block_info.offset, MYF(MY_NABP)))
@@ -465,7 +464,7 @@ static void (*get_unpack_function(MI_COLUMNDEF *rec))
 (MI_COLUMNDEF *, MI_BIT_BUFF *, uchar *, uchar *)
 {
   switch (rec->base_type) {
-  case FIELD_SKIPP_ZERO:
+  case FIELD_SKIP_ZERO:
     if (rec->pack_type & PACK_TYPE_ZERO_FILL)
       return &uf_zerofill_skipp_zero;
     return &uf_skipp_zero;
@@ -475,7 +474,7 @@ static void (*get_unpack_function(MI_COLUMNDEF *rec))
     if (rec->pack_type & PACK_TYPE_ZERO_FILL)
       return &uf_zerofill_normal;
     return &decode_bytes;
-  case FIELD_SKIPP_ENDSPACE:
+  case FIELD_SKIP_ENDSPACE:
     if (rec->pack_type & PACK_TYPE_SPACE_FIELDS)
     {
       if (rec->pack_type & PACK_TYPE_SELECTED)
@@ -485,7 +484,7 @@ static void (*get_unpack_function(MI_COLUMNDEF *rec))
     if (rec->pack_type & PACK_TYPE_SELECTED)
       return &uf_endspace_selected;
     return &uf_endspace;
-  case FIELD_SKIPP_PRESPACE:
+  case FIELD_SKIP_PRESPACE:
     if (rec->pack_type & PACK_TYPE_SPACE_FIELDS)
     {
       if (rec->pack_type & PACK_TYPE_SELECTED)
@@ -963,11 +962,10 @@ int _mi_read_rnd_pack_record(MI_INFO *info, byte *buf,
     if (_mi_read_cache(&info->rec_cache,(byte*) block_info.header,filepos,
 		      share->pack.ref_length, skip_deleted_blocks))
       goto err;
-    b_type=_mi_pack_get_block_info(info,&block_info,-1, filepos, NullS);
+    b_type=_mi_pack_get_block_info(info,&block_info,-1, filepos);
   }
   else
-    b_type=_mi_pack_get_block_info(info,&block_info,info->dfile,filepos,
-				   info->rec_buff);
+    b_type=_mi_pack_get_block_info(info,&block_info,info->dfile,filepos);
   if (b_type)
     goto err;					/* Error code is already set */
 #ifndef DBUG_OFF
@@ -1007,7 +1005,7 @@ int _mi_read_rnd_pack_record(MI_INFO *info, byte *buf,
 	/* Read and process header from a huff-record-file */
 
 uint _mi_pack_get_block_info(MI_INFO *myisam, MI_BLOCK_INFO *info, File file,
-			     my_off_t filepos, char *rec_buff)
+			     my_off_t filepos)
 {
   uchar *header=info->header;
   uint head_length,ref_length;
@@ -1057,7 +1055,8 @@ uint _mi_pack_get_block_info(MI_INFO *myisam, MI_BLOCK_INFO *info, File file,
       info->blob_len=uint3korr(header+head_length+1);
       head_length+=4;
     }
-    if (!(mi_fix_rec_buff_for_blob(myisam,info->rec_len + info->blob_len)))
+    if (!(mi_alloc_rec_buff(myisam,info->rec_len + info->blob_len,
+			    &myisam->rec_buff)))
       return BLOCK_FATAL_ERROR;			/* not enough memory */
     myisam->bit_buff.blob_pos=(uchar*) myisam->rec_buff+info->rec_len;
     myisam->blob_length=info->blob_len;
@@ -1066,7 +1065,7 @@ uint _mi_pack_get_block_info(MI_INFO *myisam, MI_BLOCK_INFO *info, File file,
   if (file > 0)
   {
     info->offset=min(info->rec_len, ref_length - head_length);
-    memcpy(rec_buff, header+head_length, info->offset);
+    memcpy(myisam->rec_buff, header+head_length, info->offset);
   }
   return 0;
 }
@@ -1231,8 +1230,9 @@ static uchar *_mi_mempack_get_block_info(MI_INFO *myisam,MI_BLOCK_INFO *info,
       info->blob_len=uint3korr(header+1);
       header+=4;
     }
-    /* mi_fix_rec_buff_for_blob sets my_errno on error */
-    if (!(mi_fix_rec_buff_for_blob(myisam,info->blob_len)))
+    /* mi_alloc_rec_buff sets my_errno on error */
+    if (!(mi_alloc_rec_buff(myisam, info->blob_len,
+			    &myisam->rec_buff)))
       return 0;				/* not enough memory */
     myisam->bit_buff.blob_pos=(uchar*) myisam->rec_buff;
   }

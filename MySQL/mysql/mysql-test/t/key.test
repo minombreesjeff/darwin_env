@@ -54,12 +54,12 @@ INSERT INTO t1 VALUES (900,'Vancouver','Shared/Roomate','Y','Y','Y','Y');
 drop table t1;
 
 #
-# problem med primary key
+# No longer a problem with primary key
 #
 
 CREATE TABLE t1 (program enum('signup','unique','sliding') not null,  type enum('basic','sliding','signup'),  sites set('mt'),  PRIMARY KEY (program));
-# The following should give an error for wrong primary key
-!$1171 ALTER TABLE t1 modify program enum('signup','unique','sliding');
+# This no longer give an error for wrong primary key
+ALTER TABLE t1 modify program enum('signup','unique','sliding');
 drop table t1;
 
 #
@@ -159,4 +159,32 @@ INSERT INTO t1 VALUES ('a',1),('a',2);
 SELECT * FROM t1 WHERE a='a' AND b=2;
 SELECT * FROM t1 WHERE a='a' AND b in (2);
 SELECT * FROM t1 WHERE a='a' AND b in (1,2);
+drop table t1;
+
+#
+# Test of create key order
+#
+
+create table t1 (a int not null unique, b int unique, c int, d int not null primary key, key(c), e int not null unique);
+show keys from t1;
+drop table t1;
+
+#
+# Problem with UNIQUE() with NULL parts and auto increment
+#
+
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (c CHAR(10) NOT NULL,i INT NOT NULL AUTO_INCREMENT,
+UNIQUE (c,i));
+INSERT INTO t1 (c) VALUES (NULL),(NULL);
+SELECT * FROM t1;
+INSERT INTO t1 (c) VALUES ('a'),('a');
+SELECT * FROM t1;
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (c CHAR(10) NULL, i INT NOT NULL AUTO_INCREMENT,
+UNIQUE (c,i));
+INSERT INTO t1 (c) VALUES (NULL),(NULL);
+SELECT * FROM t1;
+INSERT INTO t1 (c) VALUES ('a'),('a');
+SELECT * FROM t1;
 drop table t1;

@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* The hash functions used for saveing keys */
 /* One of key_length or key_length_offset must be given */
@@ -83,7 +82,12 @@ void hash_free(HASH *hash)
 
 	/* some helper functions */
 
-inline byte*
+/*
+  This function is char* instead of byte* as HPUX11 compiler can't
+  handle inline functions that are not defined as native types
+*/
+
+inline char*
 hash_key(HASH *hash,const byte *record,uint *length,my_bool first)
 {
   if (hash->get_key)
@@ -104,7 +108,7 @@ static uint hash_rec_mask(HASH *hash,HASH_LINK *pos,uint buffmax,
 			  uint maxlength)
 {
   uint length;
-  byte *key=hash_key(hash,pos->data,&length,0);
+  byte *key= (byte*) hash_key(hash,pos->data,&length,0);
   return hash_mask((*hash->calc_hashnr)(key,length),buffmax,maxlength);
 }
 
@@ -148,9 +152,7 @@ static uint calc_hashnr_caseup(const byte *key,uint length)
  *
  * The magic is in the interesting relationship between the special prime
  * 16777619 (2^24 + 403) and 2^32 and 2^8.
- *
- * This hash produces the fewest collisions of any function that we've seen so
- * far, and works well on both numbers and strings.
+ * This works well on both numbers and strings.
  */
 
 uint calc_hashnr(const byte *key, uint len)
@@ -183,10 +185,10 @@ uint calc_hashnr_caseup(const byte *key, uint len)
 #ifndef __SUNPRO_C				/* SUNPRO can't handle this */
 inline
 #endif
-uint rec_hashnr(HASH *hash,const byte *record)
+unsigned int rec_hashnr(HASH *hash,const byte *record)
 {
   uint length;
-  byte *key=hash_key(hash,record,&length,0);
+  byte *key= (byte*) hash_key(hash,record,&length,0);
   return (*hash->calc_hashnr)(key,length);
 }
 
@@ -273,7 +275,7 @@ static void movelink(HASH_LINK *array,uint find,uint next_link,uint newlink)
 static int hashcmp(HASH *hash,HASH_LINK *pos,const byte *key,uint length)
 {
   uint rec_keylength;
-  byte *rec_key=hash_key(hash,pos->data,&rec_keylength,1);
+  byte *rec_key= (byte*) hash_key(hash,pos->data,&rec_keylength,1);
   return (length && length != rec_keylength) ||
     (hash->flags & HASH_CASE_INSENSITIVE ?
      my_casecmp(rec_key,key,rec_keylength) :
@@ -517,8 +519,8 @@ my_bool hash_update(HASH *hash,byte *record,byte *old_key,uint old_key_length)
   /* Search after record with key */
 
   idx=hash_mask((*hash->calc_hashnr)(old_key,(old_key_length ?
-						old_key_length :
-						hash->key_length)),
+					      old_key_length :
+					      hash->key_length)),
 		  blength,records);
   new_index=hash_mask(rec_hashnr(hash,record),blength,records);
   if (idx == new_index)
@@ -575,6 +577,18 @@ byte *hash_element(HASH *hash,uint idx)
   if (idx < hash->records)
     return dynamic_element(&hash->array,idx,HASH_LINK*)->data;
   return 0;
+}
+
+
+/*
+  Replace old row with new row.  This should only be used when key
+  isn't changed
+*/
+
+void hash_replace(HASH *hash, uint idx, byte *new_row)
+{
+  if (idx != NO_RECORD)				/* Safety */
+    dynamic_element(&hash->array,idx,HASH_LINK*)->data=new_row;
 }
 
 

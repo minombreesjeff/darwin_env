@@ -1,23 +1,22 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   A better inplementation of the UNIX ctype(3) library.
-  Notes:   global.h should be included before ctype.h
+  Notes:   my_global.h should be included before ctype.h
 */
 
 #ifndef _m_ctype_h
@@ -57,13 +56,12 @@ extern CHARSET_INFO *default_charset_info;
 extern CHARSET_INFO *find_compiled_charset(uint cs_number);
 extern CHARSET_INFO *find_compiled_charset_by_name(const char *name);
 extern CHARSET_INFO  compiled_charsets[];
+extern uint compiled_charset_number(const char *name);
+extern const char *compiled_charset_name(uint charset_number);
 
 #define MY_CHARSET_UNDEFINED 0
 #define MY_CHARSET_CURRENT (default_charset_info->number)
 
-#ifdef __WIN__
-#include <ctype.h>
-#endif
 /* Don't include std ctype.h when this is included */
 #define _CTYPE_H
 #define _CTYPE_H_
@@ -71,12 +69,32 @@ extern CHARSET_INFO  compiled_charsets[];
 #define __CTYPE_INCLUDED
 #define _CTYPE_USING   /* Don't put names in global namespace. */
 
+/* Fix things, if ctype.h would have been included before */
+#undef toupper
+#undef _toupper
+#undef _tolower
+#undef toupper
+#undef tolower
+#undef isalpha
+#undef isupper
+#undef islower
+#undef isdigit
+#undef isxdigit
+#undef isalnum
+#undef isspace
+#undef ispunct
+#undef isprint
+#undef isgraph
+#undef iscntrl
+#undef isascii
+#undef toascii
+
 #define	_U	01	/* Upper case */
 #define	_L	02	/* Lower case */
-#define	_N	04	/* Numeral (digit) */
-#define	_S	010	/* Spacing character */
-#define	_P	020	/* Punctuation */
-#define	_C	040	/* Control character */
+#define	_NMR	04	/* Numeral (digit) */
+#define	_SPC	010	/* Spacing character */
+#define	_PNT	020	/* Punctuation */
+#define	_CTR	040	/* Control character */
 #define	_B	0100	/* Blank */
 #define	_X	0200	/* heXadecimal digit */
 
@@ -85,7 +103,6 @@ extern CHARSET_INFO  compiled_charsets[];
 #define my_to_lower	(default_charset_info->to_lower)
 #define my_sort_order	(default_charset_info->sort_order)
 
-#ifndef __WIN__
 #define	_toupper(c)	(char) my_to_upper[(uchar) (c)]
 #define	_tolower(c)	(char) my_to_lower[(uchar) (c)]
 #define toupper(c)	(char) my_to_upper[(uchar) (c)]
@@ -94,14 +111,14 @@ extern CHARSET_INFO  compiled_charsets[];
 #define	isalpha(c)	((my_ctype+1)[(uchar) (c)] & (_U | _L))
 #define	isupper(c)	((my_ctype+1)[(uchar) (c)] & _U)
 #define	islower(c)	((my_ctype+1)[(uchar) (c)] & _L)
-#define	isdigit(c)	((my_ctype+1)[(uchar) (c)] & _N)
+#define	isdigit(c)	((my_ctype+1)[(uchar) (c)] & _NMR)
 #define	isxdigit(c)	((my_ctype+1)[(uchar) (c)] & _X)
-#define	isalnum(c)	((my_ctype+1)[(uchar) (c)] & (_U | _L | _N))
-#define	isspace(c)	((my_ctype+1)[(uchar) (c)] & _S)
-#define	ispunct(c)	((my_ctype+1)[(uchar) (c)] & _P)
-#define	isprint(c)	((my_ctype+1)[(uchar) (c)] & (_P | _U | _L | _N | _B))
-#define	isgraph(c)	((my_ctype+1)[(uchar) (c)] & (_P | _U | _L | _N))
-#define	iscntrl(c)	((my_ctype+1)[(uchar) (c)] & _C)
+#define	isalnum(c)	((my_ctype+1)[(uchar) (c)] & (_U | _L | _NMR))
+#define	isspace(c)	((my_ctype+1)[(uchar) (c)] & _SPC)
+#define	ispunct(c)	((my_ctype+1)[(uchar) (c)] & _PNT)
+#define	isprint(c)	((my_ctype+1)[(uchar) (c)] & (_PNT | _U | _L | _NMR | _B))
+#define	isgraph(c)	((my_ctype+1)[(uchar) (c)] & (_PNT | _U | _L | _NMR))
+#define	iscntrl(c)	((my_ctype+1)[(uchar) (c)] & _CTR)
 #define	isascii(c)	(!((c) & ~0177))
 #define	toascii(c)	((c) & 0177)
 
@@ -109,19 +126,17 @@ extern CHARSET_INFO  compiled_charsets[];
 #undef ctype
 #endif /* ctype */
 
-#endif	/* __WIN__ */
-
 #define	my_isalpha(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_U | _L))
 #define	my_isupper(s, c)  (((s)->ctype+1)[(uchar) (c)] & _U)
 #define	my_islower(s, c)  (((s)->ctype+1)[(uchar) (c)] & _L)
-#define	my_isdigit(s, c)  (((s)->ctype+1)[(uchar) (c)] & _N)
+#define	my_isdigit(s, c)  (((s)->ctype+1)[(uchar) (c)] & _NMR)
 #define	my_isxdigit(s, c) (((s)->ctype+1)[(uchar) (c)] & _X)
-#define	my_isalnum(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_U | _L | _N))
-#define	my_isspace(s, c)  (((s)->ctype+1)[(uchar) (c)] & _S)
-#define	my_ispunct(s, c)  (((s)->ctype+1)[(uchar) (c)] & _P)
-#define	my_isprint(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_P | _U | _L | _N | _B))
-#define	my_isgraph(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_P | _U | _L | _N))
-#define	my_iscntrl(s, c)  (((s)->ctype+1)[(uchar) (c)] & _C)
+#define	my_isalnum(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_U | _L | _NMR))
+#define	my_isspace(s, c)  (((s)->ctype+1)[(uchar) (c)] & _SPC)
+#define	my_ispunct(s, c)  (((s)->ctype+1)[(uchar) (c)] & _PNT)
+#define	my_isprint(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_PNT | _U | _L | _NMR | _B))
+#define	my_isgraph(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_PNT | _U | _L | _NMR))
+#define	my_iscntrl(s, c)  (((s)->ctype+1)[(uchar) (c)] & _CTR)
 
 #define use_strcoll(s)                ((s)->strcoll != NULL)
 #define MY_STRXFRM_MULTIPLY           (default_charset_info->strxfrm_multiply)

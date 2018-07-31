@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000 MySQL AB
 
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
 
-   This library is distributed in the hope that it will be useful,
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   This function is only used by some old ISAM code.
@@ -24,6 +23,12 @@
 
 #include "mysys_priv.h"
 #include <m_string.h>
+
+/* HPUX 11.0 doesn't allow us to change the environ pointer */
+#ifdef HPUX11
+#undef HAVE_TEMPNAM
+#endif
+
 #include "my_static.h"
 #include "mysys_err.h"
 
@@ -33,7 +38,7 @@
 #endif
 
 #ifdef HAVE_TEMPNAM
-#if !defined( MSDOS) && !defined(OS2)
+#if !defined( MSDOS) && !defined(OS2) && !defined(__NETWARE__)
 extern char **environ;
 #endif
 #endif
@@ -99,24 +104,30 @@ my_string my_tempnam(const char *dir, const char *pfx,
     dir=temp;
   }
 #ifdef OS2
-  // changing environ variable doesn't work with VACPP
+  /* changing environ variable doesn't work with VACPP */
   char  buffer[256];
   sprintf( buffer, "TMP=%s", dir);
-  // remove ending backslash
+  /* remove ending backslash */
   if (buffer[strlen(buffer)-1] == '\\')
      buffer[strlen(buffer)-1] = '\0';
   putenv( buffer);
-#else
+#elif !defined(__NETWARE__)
   old_env=(char**)environ;
   if (dir)
   {				/* Don't use TMPDIR if dir is given */
-    environ=(const char**)temp_env;		/* May give warning */
+    /*
+      The following strange cast is required because the IBM compiler on AIX
+      doesn't allow us to cast the value of environ.
+      The cast of environ is needed as some systems doesn't allow us to
+      update environ with a char ** pointer. (const mismatch)
+    */
+    (*(char***) &environ)=(char**) temp_env;
     temp_env[0]=0;
   }
 #endif
   res=tempnam((char*) dir,(my_string) pfx); /* Use stand. dir with prefix */
-#ifndef OS2
-  environ=(const char**)old_env;		/* May give warning */
+#if !defined(OS2) && !defined(__NETWARE__)
+  (*(char***) &environ)=(char**) old_env;
 #endif
   if (!res)
     DBUG_PRINT("error",("Got error: %d from tempnam",errno));

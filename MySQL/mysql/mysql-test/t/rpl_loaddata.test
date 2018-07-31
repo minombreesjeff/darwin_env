@@ -1,0 +1,46 @@
+# See if replication of a "LOAD DATA in an autoincrement column"
+# Honours autoincrement values
+# i.e. if the master and slave have the same sequence
+#
+# check replication of load data for temporary tables with additional parameters
+#
+# check if duplicate entries trigger an error (they should unless IGNORE or
+# REPLACE was used on the master) (bug 571).
+
+source include/master-slave.inc;
+
+create table t1(a int not null auto_increment, b int, primary key(a) );
+load data infile '../../std_data/rpl_loaddata.dat' into table t1;
+
+create temporary table t2 (day date,id int(9),category enum('a','b','c'),name varchar(60));
+load data infile '../../std_data/rpl_loaddata2.dat' into table t2 fields terminated by ',' optionally enclosed by '%' escaped by '@' lines terminated by '\n##\n' starting by '>' ignore 1 lines;
+
+create table t3 (day date,id int(9),category enum('a','b','c'),name varchar(60));
+insert into t3 select * from t2;
+
+save_master_pos;
+connection slave;
+sync_with_master;
+
+select * from t1;
+select * from t3;
+
+connection master;
+
+drop table t1;
+drop table t2;
+drop table t3;
+create table t1(a int, b int, unique(b));
+
+save_master_pos;
+connection slave;
+sync_with_master;
+insert into t1 values(1,10);
+
+connection master;
+load data infile '../../std_data/rpl_loaddata.dat' into table t1;
+
+save_master_pos;
+connection slave;
+# The SQL slave thread should be stopped now.
+wait_for_slave_to_stop;

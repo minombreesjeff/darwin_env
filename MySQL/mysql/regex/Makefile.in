@@ -1,6 +1,7 @@
-# Makefile.in generated automatically by automake 1.4-p5 from Makefile.am
+# Makefile.in generated automatically by automake 1.5 from Makefile.am.
 
-# Copyright (C) 1994, 1995-8, 1999, 2001 Free Software Foundation, Inc.
+# Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+# Free Software Foundation, Inc.
 # This Makefile.in is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
 # with or without modifications, as long as this notice is preserved.
@@ -9,6 +10,8 @@
 # but WITHOUT ANY WARRANTY, to the extent permitted by law; without
 # even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 # PARTICULAR PURPOSE.
+
+@SET_MAKE@
 
 # Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
 # 
@@ -26,7 +29,6 @@
 # License along with this library; if not, write to the Free
 # Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
 # MA 02111-1307, USA
-
 
 SHELL = @SHELL@
 
@@ -48,13 +50,9 @@ infodir = @infodir@
 mandir = @mandir@
 includedir = @includedir@
 oldincludedir = /usr/include
-
-DESTDIR =
-
 pkgdatadir = $(datadir)/@PACKAGE@
 pkglibdir = $(libdir)/@PACKAGE@
 pkgincludedir = $(includedir)/@PACKAGE@
-
 top_builddir = ..
 
 ACLOCAL = @ACLOCAL@
@@ -63,11 +61,11 @@ AUTOMAKE = @AUTOMAKE@
 AUTOHEADER = @AUTOHEADER@
 
 INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@ $(AM_INSTALL_PROGRAM_FLAGS)
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_HEADER = $(INSTALL_DATA)
 transform = @program_transform_name@
-
 NORMAL_INSTALL = :
 PRE_INSTALL = :
 POST_INSTALL = :
@@ -81,11 +79,14 @@ host_triplet = @host@
 target_alias = @target_alias@
 target_triplet = @target@
 ALLOCA = @ALLOCA@
+AMTAR = @AMTAR@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
 AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
+CC_VERSION = @CC_VERSION@
 CFLAGS = @CFLAGS@
 CHARSETS_NEED_SOURCE = @CHARSETS_NEED_SOURCE@
 CHARSET_OBJS = @CHARSET_OBJS@
@@ -102,13 +103,18 @@ CPP = @CPP@
 CXX = @CXX@
 CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
+CXX_VERSION = @CXX_VERSION@
+DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
 DVIS = @DVIS@
+ECHO = @ECHO@
+EXEEXT = @EXEEXT@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
 HOSTNAME = @HOSTNAME@
+INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
@@ -121,7 +127,7 @@ LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAINT = @MAINT@
-MAKEINFO = @MAKEINFO@
+MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
 MT_INCLUDES = @MT_INCLUDES@
 MT_LD_ADD = @MT_LD_ADD@
@@ -138,6 +144,7 @@ MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 OBJDUMP = @OBJDUMP@
+OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PDFMANUAL = @PDFMANUAL@
 PERL = @PERL@
@@ -146,12 +153,14 @@ PROTOCOL_VERSION = @PROTOCOL_VERSION@
 PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
+SAVE_ASFLAGS = @SAVE_ASFLAGS@
 SAVE_CFLAGS = @SAVE_CFLAGS@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
 SED = @SED@
 SHARED_LIB_VERSION = @SHARED_LIB_VERSION@
+STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
 TERMCAP_LIB = @TERMCAP_LIB@
@@ -160,25 +169,41 @@ THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
+am__include = @am__include@
+am__quote = @am__quote@
 bdb_includes = @bdb_includes@
 bdb_libs = @bdb_libs@
 bdb_libs_with_path = @bdb_libs_with_path@
 bench_dirs = @bench_dirs@
 default_charset = @default_charset@
 docs_dirs = @docs_dirs@
-gemini_includes = @gemini_includes@
-gemini_libs = @gemini_libs@
+fs_dirs = @fs_dirs@
 innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
+install_sh = @install_sh@
+isam_libs = @isam_libs@
+libmysqld_dirs = @libmysqld_dirs@
 linked_client_targets = @linked_client_targets@
+linked_netware_sources = @linked_netware_sources@
+netware_dir = @netware_dir@
+openssl_includes = @openssl_includes@
+openssl_libs = @openssl_libs@
+orbit_idl = @orbit_idl@
+orbit_includes = @orbit_includes@
+orbit_libs = @orbit_libs@
+pstack_dirs = @pstack_dirs@
+pstack_libs = @pstack_libs@
 readline_dir = @readline_dir@
 readline_link = @readline_link@
 server_scripts = @server_scripts@
 sql_client_dirs = @sql_client_dirs@
 sql_server_dirs = @sql_server_dirs@
 thread_dirs = @thread_dirs@
+tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
+vio_dir = @vio_dir@
+vio_libs = @vio_libs@
 
 INCLUDES = @MT_INCLUDES@ -I$(srcdir)/../include -I../include
 noinst_LIBRARIES = libregex.a
@@ -189,90 +214,55 @@ noinst_PROGRAMS = re
 re_SOURCES = split.c debug.c main.c
 re_DEPENDENCIES = $(LIBRARIES)
 re_LDFLAGS = @NOINST_LDFLAGS@
-EXTRA_DIST = tests CHANGES COPYRIGHT WHATSNEW regexp.c 			debug.ih engine.ih main.ih regcomp.ih regerror.ih 			regex.3 regex.7
+EXTRA_DIST = tests CHANGES COPYRIGHT WHATSNEW regexp.c \
+			debug.ih engine.ih main.ih regcomp.ih regerror.ih \
+			regex.3 regex.7
 
-
-OMIT_DEPENDENCIES = pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h 			__math.h time.h __time.h unistd.h __unistd.h types.h 			xtypes.h ac-types.h posix.h string.h __string.h 			errno.h socket.h inet.h dirent.h netdb.h 			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h 			prio_queue.h pthread_attr.h pthread_once.h queue.h 			sleep.h specific.h version.h pwd.h timers.h uio.h 			cdefs.h machdep.h signal.h __signal.h util.h
-
+subdir = regex
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
-CONFIG_HEADER = ../config.h
-CONFIG_CLEAN_FILES = 
-LIBRARIES =  $(noinst_LIBRARIES)
+CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_CLEAN_FILES =
+LIBRARIES = $(noinst_LIBRARIES)
 
+libregex_a_AR = $(AR) cru
+libregex_a_LIBADD =
+am_libregex_a_OBJECTS = regerror.$(OBJEXT) regcomp.$(OBJEXT) \
+	regexec.$(OBJEXT) regfree.$(OBJEXT) reginit.$(OBJEXT)
+libregex_a_OBJECTS = $(am_libregex_a_OBJECTS)
+noinst_PROGRAMS = re$(EXEEXT)
+PROGRAMS = $(noinst_PROGRAMS)
 
-DEFS = @DEFS@ -I. -I$(srcdir) -I..
+am_re_OBJECTS = split.$(OBJEXT) debug.$(OBJEXT) main.$(OBJEXT)
+re_OBJECTS = $(am_re_OBJECTS)
+re_LDADD = $(LDADD)
+
+DEFS = @DEFS@
+DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
-libregex_a_LIBADD = 
-libregex_a_OBJECTS =  regerror.o regcomp.o regexec.o regfree.o reginit.o
-AR = ar
-PROGRAMS =  $(noinst_PROGRAMS)
-
-re_OBJECTS =  split.o debug.o main.o
-re_LDADD = $(LDADD)
-COMPILE = $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
-LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+depcomp = $(SHELL) $(top_srcdir)/depcomp
+@AMDEP_TRUE@DEP_FILES = $(DEPDIR)/debug.Po $(DEPDIR)/main.Po \
+@AMDEP_TRUE@	$(DEPDIR)/regcomp.Po $(DEPDIR)/regerror.Po \
+@AMDEP_TRUE@	$(DEPDIR)/regexec.Po $(DEPDIR)/regfree.Po \
+@AMDEP_TRUE@	$(DEPDIR)/reginit.Po $(DEPDIR)/split.Po
+COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) \
+	$(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
-LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@
-HEADERS =  $(noinst_HEADERS)
+LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+DIST_SOURCES = $(libregex_a_SOURCES) $(re_SOURCES)
+HEADERS = $(noinst_HEADERS)
 
-DIST_COMMON =  README Makefile.am Makefile.in
-
-
-DISTFILES = $(DIST_COMMON) $(SOURCES) $(HEADERS) $(TEXINFOS) $(EXTRA_DIST)
-
-GZIP_ENV = --best
+DIST_COMMON = README $(noinst_HEADERS) Makefile.am Makefile.in
 SOURCES = $(libregex_a_SOURCES) $(re_SOURCES)
-OBJECTS = $(libregex_a_OBJECTS) $(re_OBJECTS)
 
-all: all-redirect
+all: all-am
+
 .SUFFIXES:
-.SUFFIXES: .S .c .lo .o .s
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am $(top_srcdir)/configure.in $(ACLOCAL_M4) 
-	cd $(top_srcdir) && $(AUTOMAKE) --gnu --include-deps regex/Makefile
-
-Makefile: $(srcdir)/Makefile.in  $(top_builddir)/config.status
-	cd $(top_builddir) \
-	  && CONFIG_FILES=$(subdir)/$@ CONFIG_HEADERS= $(SHELL) ./config.status
-
-
-mostlyclean-noinstLIBRARIES:
-
-clean-noinstLIBRARIES:
-	-test -z "$(noinst_LIBRARIES)" || rm -f $(noinst_LIBRARIES)
-
-distclean-noinstLIBRARIES:
-
-maintainer-clean-noinstLIBRARIES:
-
-.c.o:
-	$(COMPILE) -c $<
-
-.s.o:
-	$(COMPILE) -c $<
-
-.S.o:
-	$(COMPILE) -c $<
-
-mostlyclean-compile:
-	-rm -f *.o core *.core
-
-clean-compile:
-
-distclean-compile:
-	-rm -f *.tab.c
-
-maintainer-clean-compile:
-
-.c.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.s.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.S.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
+.SUFFIXES: .c .lo .o .obj
 
 mostlyclean-libtool:
 	-rm -f *.lo
@@ -281,171 +271,200 @@ clean-libtool:
 	-rm -rf .libs _libs
 
 distclean-libtool:
+	-rm -f libtool
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am  $(top_srcdir)/configure.in $(ACLOCAL_M4)
+	cd $(top_srcdir) && \
+	  $(AUTOMAKE) --gnu  regex/Makefile
+Makefile: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.in  $(top_builddir)/config.status
+	cd $(top_builddir) && \
+	  CONFIG_HEADERS= CONFIG_LINKS= \
+	  CONFIG_FILES=$(subdir)/$@ $(SHELL) ./config.status
 
-maintainer-clean-libtool:
+AR = ar
 
-libregex.a: $(libregex_a_OBJECTS) $(libregex_a_DEPENDENCIES)
+clean-noinstLIBRARIES:
+	-test -z "$(noinst_LIBRARIES)" || rm -f $(noinst_LIBRARIES)
+libregex.a: $(libregex_a_OBJECTS) $(libregex_a_DEPENDENCIES) 
 	-rm -f libregex.a
-	$(AR) cru libregex.a $(libregex_a_OBJECTS) $(libregex_a_LIBADD)
+	$(libregex_a_AR) libregex.a $(libregex_a_OBJECTS) $(libregex_a_LIBADD)
 	$(RANLIB) libregex.a
-
-mostlyclean-noinstPROGRAMS:
 
 clean-noinstPROGRAMS:
 	-test -z "$(noinst_PROGRAMS)" || rm -f $(noinst_PROGRAMS)
-
-distclean-noinstPROGRAMS:
-
-maintainer-clean-noinstPROGRAMS:
-
-re: $(re_OBJECTS) $(re_DEPENDENCIES)
-	@rm -f re
+re$(EXEEXT): $(re_OBJECTS) $(re_DEPENDENCIES) 
+	@rm -f re$(EXEEXT)
 	$(LINK) $(re_LDFLAGS) $(re_OBJECTS) $(re_LDADD) $(LIBS)
+
+mostlyclean-compile:
+	-rm -f *.$(OBJEXT) core *.core
+
+distclean-compile:
+	-rm -f *.tab.c
+
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/debug.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/main.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/regcomp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/regerror.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/regexec.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/regfree.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/reginit.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/split.Po@am__quote@
+
+distclean-depend:
+	-rm -rf $(DEPDIR)
+
+.c.o:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `test -f $< || echo '$(srcdir)/'`$<
+
+.c.obj:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `cygpath -w $<`
+
+.c.lo:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Plo' tmpdepfile='$(DEPDIR)/$*.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(LTCOMPILE) -c -o $@ `test -f $< || echo '$(srcdir)/'`$<
+CCDEPMODE = @CCDEPMODE@
+uninstall-info-am:
 
 tags: TAGS
 
-ID: $(HEADERS) $(SOURCES) $(LISP)
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
-	here=`pwd` && cd $(srcdir) \
-	  && mkid -f$$here/ID $$unique $(LISP)
+	mkid -fID $$unique $(LISP)
 
-TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) $(LISP)
+TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+		$(TAGS_FILES) $(LISP)
 	tags=; \
 	here=`pwd`; \
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
 	test -z "$(ETAGS_ARGS)$$unique$(LISP)$$tags" \
-	  || (cd $(srcdir) && etags $(ETAGS_ARGS) $$tags  $$unique $(LISP) -o $$here/TAGS)
+	  || etags $(ETAGS_ARGS) $$tags  $$unique $(LISP)
 
-mostlyclean-tags:
-
-clean-tags:
+GTAGS:
+	here=`CDPATH=: && cd $(top_builddir) && pwd` \
+	  && cd $(top_srcdir) \
+	  && gtags -i $(GTAGS_ARGS) $$here
 
 distclean-tags:
-	-rm -f TAGS ID
+	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH
 
-maintainer-clean-tags:
+DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 
-distdir = $(top_builddir)/$(PACKAGE)-$(VERSION)/$(subdir)
-
-subdir = regex
+top_distdir = ..
+distdir = $(top_distdir)/$(PACKAGE)-$(VERSION)
 
 distdir: $(DISTFILES)
 	@for file in $(DISTFILES); do \
-	  d=$(srcdir); \
+	  if test -f $$file; then d=.; else d=$(srcdir); fi; \
+	  dir=`echo "$$file" | sed -e 's,/[^/]*$$,,'`; \
+	  if test "$$dir" != "$$file" && test "$$dir" != "."; then \
+	    $(mkinstalldirs) "$(distdir)/$$dir"; \
+	  fi; \
 	  if test -d $$d/$$file; then \
-	    cp -pr $$d/$$file $(distdir)/$$file; \
+	    cp -pR $$d/$$file $(distdir) \
+	    || exit 1; \
 	  else \
 	    test -f $(distdir)/$$file \
-	    || ln $$d/$$file $(distdir)/$$file 2> /dev/null \
-	    || cp -p $$d/$$file $(distdir)/$$file || :; \
+	    || cp -p $$d/$$file $(distdir)/$$file \
+	    || exit 1; \
 	  fi; \
 	done
-debug.o: debug.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
-	../include/m_string.h regex.h utils.h regex2.h debug.ih
-main.o: main.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h \
-	regex.h main.ih
-regcomp.o: regcomp.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h \
-	../include/m_ctype.h regex.h utils.h regex2.h cclass.h cname.h \
-	regcomp.ih
-regerror.o: regerror.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h \
-	../include/m_ctype.h regex.h utils.h regerror.ih
-regexec.o: regexec.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h \
-	../include/m_ctype.h regex.h utils.h regex2.h engine.c \
-	engine.ih
-regfree.o: regfree.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h regex.h utils.h regex2.h
-reginit.o: reginit.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
-	../include/m_string.h cclass.h
-split.o: split.c
-
-info-am:
-info: info-am
-dvi-am:
-dvi: dvi-am
 check-am: all-am
 check: check-am
-installcheck-am:
-installcheck: installcheck-am
-install-exec-am:
-install-exec: install-exec-am
+all-am: Makefile $(LIBRARIES) $(PROGRAMS) $(HEADERS)
 
-install-data-am:
+installdirs:
+
+install: install-am
+install-exec: install-exec-am
 install-data: install-data-am
+uninstall: uninstall-am
 
 install-am: all-am
 	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
-install: install-am
-uninstall-am:
-uninstall: uninstall-am
-all-am: Makefile $(LIBRARIES) $(PROGRAMS) $(HEADERS)
-all-redirect: all-am
+
+installcheck: installcheck-am
 install-strip:
-	$(MAKE) $(AM_MAKEFLAGS) AM_INSTALL_PROGRAM_FLAGS=-s install
-installdirs:
-
-
+	$(MAKE) $(AM_MAKEFLAGS) INSTALL_PROGRAM="$(INSTALL_STRIP_PROGRAM)" \
+	  `test -z '$(STRIP)' || \
+	    echo "INSTALL_PROGRAM_ENV=STRIPPROG='$(STRIP)'"` install
 mostlyclean-generic:
 
 clean-generic:
 
 distclean-generic:
-	-rm -f Makefile $(CONFIG_CLEAN_FILES)
-	-rm -f config.cache config.log stamp-h stamp-h[0-9]*
+	-rm -f Makefile $(CONFIG_CLEAN_FILES) stamp-h stamp-h[0-9]*
 
 maintainer-clean-generic:
-mostlyclean-am:  mostlyclean-noinstLIBRARIES mostlyclean-compile \
-		mostlyclean-libtool mostlyclean-noinstPROGRAMS \
-		mostlyclean-tags mostlyclean-generic
-
-mostlyclean: mostlyclean-am
-
-clean-am:  clean-noinstLIBRARIES clean-compile clean-libtool \
-		clean-noinstPROGRAMS clean-tags clean-generic \
-		mostlyclean-am
-
+	@echo "This command is intended for maintainers to use"
+	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-distclean-am:  distclean-noinstLIBRARIES distclean-compile \
-		distclean-libtool distclean-noinstPROGRAMS \
-		distclean-tags distclean-generic clean-am
-	-rm -f libtool
+clean-am: clean-generic clean-libtool clean-noinstLIBRARIES \
+	clean-noinstPROGRAMS mostlyclean-am
 
 distclean: distclean-am
 
-maintainer-clean-am:  maintainer-clean-noinstLIBRARIES \
-		maintainer-clean-compile maintainer-clean-libtool \
-		maintainer-clean-noinstPROGRAMS maintainer-clean-tags \
-		maintainer-clean-generic distclean-am
-	@echo "This command is intended for maintainers to use;"
-	@echo "it deletes files that may require special tools to rebuild."
+distclean-am: clean-am distclean-compile distclean-depend \
+	distclean-generic distclean-libtool distclean-tags
+
+dvi: dvi-am
+
+dvi-am:
+
+info: info-am
+
+info-am:
+
+install-data-am:
+
+install-exec-am:
+
+install-info: install-info-am
+
+install-man:
+
+installcheck-am:
 
 maintainer-clean: maintainer-clean-am
 
-.PHONY: mostlyclean-noinstLIBRARIES distclean-noinstLIBRARIES \
-clean-noinstLIBRARIES maintainer-clean-noinstLIBRARIES \
-mostlyclean-compile distclean-compile clean-compile \
-maintainer-clean-compile mostlyclean-libtool distclean-libtool \
-clean-libtool maintainer-clean-libtool mostlyclean-noinstPROGRAMS \
-distclean-noinstPROGRAMS clean-noinstPROGRAMS \
-maintainer-clean-noinstPROGRAMS tags mostlyclean-tags distclean-tags \
-clean-tags maintainer-clean-tags distdir info-am info dvi-am dvi check \
-check-am installcheck-am installcheck install-exec-am install-exec \
-install-data-am install-data install-am install uninstall-am uninstall \
-all-redirect all-am all installdirs mostlyclean-generic \
-distclean-generic clean-generic maintainer-clean-generic clean \
-mostlyclean distclean maintainer-clean
+maintainer-clean-am: distclean-am maintainer-clean-generic
+
+mostlyclean: mostlyclean-am
+
+mostlyclean-am: mostlyclean-compile mostlyclean-generic \
+	mostlyclean-libtool
+
+uninstall-am: uninstall-info-am
+
+.PHONY: GTAGS all all-am check check-am clean clean-generic \
+	clean-libtool clean-noinstLIBRARIES clean-noinstPROGRAMS \
+	distclean distclean-compile distclean-depend distclean-generic \
+	distclean-libtool distclean-tags distdir dvi dvi-am info \
+	info-am install install-am install-data install-data-am \
+	install-exec install-exec-am install-info install-info-am \
+	install-man install-strip installcheck installcheck-am \
+	installdirs maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-compile mostlyclean-generic \
+	mostlyclean-libtool tags uninstall uninstall-am \
+	uninstall-info-am
 
 
 test: re tests
@@ -455,7 +474,6 @@ test: re tests
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%
-
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

@@ -17,11 +17,11 @@
 
 # This file is public domain and comes with NO WARRANTY of any kind
 
-target = libmysqlclient.la
-target_defs = -DUNDEF_THREADS_HACK -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@
-LIBS   = @CLIENT_LIBS@
+target =	libmysqlclient.la
+target_defs =	-DUNDEF_THREADS_HACK -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@ -DMYSQL_CLIENT
+LIBS =		@CLIENT_LIBS@
 INCLUDES =	-I$(srcdir)/../include -I../include \
-		-I$(srcdir)/.. -I$(top_srcdir) -I..
+		-I$(srcdir)/.. -I$(top_srcdir) -I.. $(openssl_includes)
 
 include $(srcdir)/Makefile.shared
 
@@ -36,9 +36,14 @@ link_sources:
 	  ss=`echo $(mystringsobjects) | sed "s;\.lo;.c;g"`; \
 	  ds=`echo $(dbugobjects) | sed "s;\.lo;.c;g"`; \
 	  ms=`echo $(mysysobjects) | sed "s;\.lo;.c;g"`; \
+	  vs=`echo $(vio_objects) | sed "s;\.lo;.c;g"`; \
 	  for f in $$ss; do \
 	    rm -f $(srcdir)/$$f; \
 	    @LN_CP_F@ $(srcdir)/../strings/$$f $(srcdir)/$$f; \
+	  done; \
+	  for f in $$vs; do \
+	    rm -f $(srcdir)/$$f; \
+	    @LN_CP_F@ $(srcdir)/../vio/$$f $(srcdir)/$$f; \
 	  done; \
 	  for f in $(mystringsextra); do \
 	    rm -f $(srcdir)/$$f; \
@@ -55,7 +60,11 @@ link_sources:
 	  for f in $$ms $(mysysheaders); do \
 	    rm -f $(srcdir)/$$f; \
 	    @LN_CP_F@ $(srcdir)/../mysys/$$f $(srcdir)/$$f; \
-	  done;
+	  done; \
+	  rm -f $(srcdir)/net.c; \
+	  @LN_CP_F@ $(srcdir)/../sql/net_serv.cc $(srcdir)/net.c ; \
+	  rm -f $(srcdir)/password.c; \
+	  @LN_CP_F@ $(srcdir)/../sql/password.c $(srcdir)/password.c
 
 # This part requires GNUmake
 #
@@ -66,13 +75,13 @@ link_sources:
 # keep only the stubs for safemalloc.c and debug.c
 #
 # A list of needed headers collected from the deps information 000213
-nh =		global.h config-win32.h dbug.h errmsg.h global.h \
+nh =		my_global.h config-win32.h dbug.h errmsg.h \
 		m_ctype.h m_string.h \
 		my_alarm.h my_config.h my_dir.h my_list.h my_net.h my_sys.h \
-		mysql.h mysql_com.h mysql_version.h mysqld_error.h mysys_err.h \
-		my_pthread.h thr_alarm.h violite.h hash.h
+		mysql.h mysql_com.h mysql_version.h mysqld_error.h \
+		mysys_err.h my_pthread.h thr_alarm.h violite.h hash.h
 # Get a list of the needed objects  
-lobjs = $(mysysobjects1) $(dbugobjects) $(mystringsobjects)
+lobjs = $(mysysobjects1) $(dbugobjects) $(mystringsobjects) $(sqlobjects)
 
 do-lib-dist:
 	dir=libmysql-$(MYSQL_NO_DASH_VERSION); \

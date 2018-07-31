@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* This file should be included when using heap_database_funktions */
 /* Author: Michael Widenius */
@@ -79,11 +78,13 @@ typedef struct st_hp_keyseg		/* Key-portion */
   uint start;				/* Start of key in record (from 0) */
   uint length;				/* Keylength */
   uint type;
+  uint null_bit;			/* bit set in row+null_pos */
+  uint null_pos;
 } HP_KEYSEG;
 
 typedef struct st_hp_keydef		/* Key definition with open */
 {
-  uint flag;				/* NOSAME */
+  uint flag;				/* HA_NOSAME | HA_NULL_PART_KEY */
   uint keysegs;				/* Number of key-segment */
   uint length;				/* Length of key (automatic) */
   HP_KEYSEG *seg;
@@ -109,6 +110,7 @@ typedef struct st_heap_share
   THR_LOCK lock;
   pthread_mutex_t intern_lock;		/* Locking for use with _locking */
 #endif
+  my_bool delete_on_close;
   LIST open_list;
 } HP_SHARE;
 
@@ -144,7 +146,7 @@ extern int heap_scan(register HP_INFO *info, byte *record);
 extern int heap_delete(HP_INFO *info,const byte *buff);
 extern int heap_info(HP_INFO *info,HEAPINFO *x,int flag);
 extern int heap_create(const char *name);
-extern int heap_delete_all(const char *name);
+extern int heap_delete_table(const char *name);
 extern int heap_extra(HP_INFO *info,enum ha_extra_function function);
 extern int heap_rename(const char *old_name,const char *new_name);
 extern int heap_panic(enum ha_panic_function flag);

@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -24,7 +24,7 @@
 #define  HASH_FILO_H
 
 #ifdef __GNUC__
-#pragma interface			/* gcc class implementation */
+#pragma interface			/* gcc class interface */
 #endif
 
 class hash_filo_element
@@ -40,7 +40,7 @@ class hash_filo
 {
   const uint size, key_offset, key_length;
   const hash_get_key get_key;
-  void (*free_element)(void*);
+  hash_free_key free_element;
   bool init;
 
   hash_filo_element *first_link,*last_link;
@@ -49,7 +49,7 @@ public:
   HASH cache;
 
   hash_filo(uint size_arg, uint key_offset_arg , uint key_length_arg,
-	    hash_get_key get_key_arg,void (*free_element_arg)(void*))
+	    hash_get_key get_key_arg, hash_free_key free_element_arg)
     :size(size_arg), key_offset(key_offset_arg), key_length(key_length_arg),
     get_key(get_key_arg), free_element(free_element_arg),init(0)
   {

@@ -1,6 +1,5 @@
 /******************************************************
-The interface to the operating system
-process and thread control primitives
+The interface to the operating system thread control primitives
 
 (c) 1995 Innobase Oy
 
@@ -17,6 +16,7 @@ Created 9/8/1995 Heikki Tuuri
 #endif
 
 #include "srv0srv.h"
+#include "os0sync.h"
 
 /*******************************************************************
 Compares two thread ids for equality. */
@@ -52,8 +52,8 @@ os_thread_pf(
 /*=========*/
 	os_thread_id_t	a)
 {
-#ifdef UNIV_HPUX
-        /* In HP-UX a pthread_t is a struct of 3 fields: field1, field2,
+#ifdef UNIV_HPUX10
+        /* In HP-UX-10.20 a pthread_t is a struct of 3 fields: field1, field2,
         field3. We do not know if field1 determines the thread uniquely. */
 
 	return((ulint)(a.field1));
@@ -102,6 +102,10 @@ os_thread_create(
 	os_thread_t	thread;
 	ulint           win_thread_id;
 
+	os_mutex_enter(os_sync_mutex);
+	os_thread_count++;
+	os_mutex_exit(os_sync_mutex);
+
 	thread = CreateThread(NULL,	/* no security attributes */
 				0,	/* default size stack */
 				(LPTHREAD_START_ROUTINE)start_f,
@@ -126,8 +130,10 @@ os_thread_create(
 	os_thread_t	pthread;
 	pthread_attr_t  attr;
 
+#if !(defined(UNIV_HOTBACKUP) && defined(UNIV_HPUX10))
         pthread_attr_init(&attr);
-
+#endif
+        
 #ifdef UNIV_AIX
 	/* We must make sure a thread stack is at least 32 kB, otherwise
 	InnoDB might crash; we do not know if the default stack size on
@@ -142,16 +148,24 @@ os_thread_create(
 		 exit(1);
 	}
 #endif
-	ret = pthread_create(&pthread, &attr, start_f, arg);
+	os_mutex_enter(os_sync_mutex);
+	os_thread_count++;
+	os_mutex_exit(os_sync_mutex);
 
+#if defined(UNIV_HOTBACKUP) && defined(UNIV_HPUX10)
+	ret = pthread_create(&pthread, pthread_attr_default, start_f, arg);
+#else
+	ret = pthread_create(&pthread, &attr, start_f, arg);
+#endif
         if (ret) {
 	         fprintf(stderr,
           "InnoDB: Error: pthread_create returned %d\n", ret);
 		 exit(1);
 	}
 
+#if !(defined(UNIV_HOTBACKUP) && defined(UNIV_HPUX10))
 	pthread_attr_destroy(&attr);
-
+#endif
 	if (srv_set_thread_priorities) {
 	
 	        my_pthread_setprio(pthread, srv_query_thread_priority);
@@ -160,6 +174,30 @@ os_thread_create(
 	*thread_id = pthread;
 
 	return(pthread);
+#endif
+}
+
+/*********************************************************************
+Exits the current thread. */
+
+void
+os_thread_exit(
+/*===========*/
+	void*	exit_value)	/* in: exit value; in Windows this void*
+				is cast as a DWORD */
+{
+#ifdef UNIV_DEBUG_THREAD_CREATION
+        printf("Thread exits, id %lu\n",
+			      os_thread_pf(os_thread_get_curr_id()));
+#endif
+	os_mutex_enter(os_sync_mutex);
+	os_thread_count--;
+	os_mutex_exit(os_sync_mutex);
+
+#ifdef __WIN__
+        ExitThread((DWORD)exit_value);
+#else
+	pthread_exit(exit_value);
 #endif
 }
 
@@ -207,6 +245,8 @@ os_thread_sleep(
 {
 #ifdef __WIN__
 	Sleep(tm / 1000);
+#elif defined(__NETWARE__)
+	delay(tm / 1000);
 #else
 	struct timeval	t;
 
@@ -253,7 +293,8 @@ ulint
 os_thread_get_priority(
 /*===================*/
 				/* out: priority */
-	os_thread_t	handle)	/* in: OS handle to the thread */
+	os_thread_t	handle __attribute__((unused)))	
+                                /* in: OS handle to the thread */
 {
 #ifdef __WIN__
 	int	os_pri;

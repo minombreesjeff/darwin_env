@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (C) 1997, 1998, 1999 TCX DataKonsult AB & Monty Program KB & Detron HB
+# Copyright (C) 2002 MySQL AB
 # For a more info consult the file COPYRIGHT distributed with this file.
 
 # This scripts creates the privilege tables db, host, user, tables_priv,
@@ -118,7 +118,8 @@ then
     resolved=`$bindir/resolveip localhost 2>&1`
     if [ $? -eq 0 ]
     then
-      echo "Sorry, the host '$hostname' could not be looked up."
+      echo "Neither host '$hostname' and 'localhost' could not be looked up with"
+      echo "$bindir/resolveip"
       echo "Please configure the 'hostname' command to return a correct hostname."
       echo "If you want to solve this at a later stage, restart this script with"
       echo "the --force option"
@@ -134,15 +135,12 @@ then
 fi
 
 # Create database directories mysql & test
-if test "$IN_RPM" -eq 0
-then
   if test ! -d $ldata; then mkdir $ldata; chmod 700 $ldata ; fi
   if test ! -d $ldata/mysql; then mkdir $ldata/mysql;  chmod 700 $ldata/mysql ; fi
   if test ! -d $ldata/test; then mkdir $ldata/test;  chmod 700 $ldata/test ; fi
   if test -w / -a ! -z "$user"; then
     chown $user $ldata $ldata/mysql $ldata/test;
   fi
-fi
 
 # Initialize variables
 c_d="" i_d=""
@@ -171,13 +169,15 @@ then
   c_d="$c_d   References_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_d="$c_d   Index_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_d="$c_d   Alter_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_d="$c_d   Create_tmp_table_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_d="$c_d   Lock_tables_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_d="$c_d PRIMARY KEY Host (Host,Db,User),"
   c_d="$c_d KEY User (User)"
   c_d="$c_d )"
   c_d="$c_d comment='Database privileges';"
   
-  i_d="INSERT INTO db VALUES ('%','test','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y');
-  INSERT INTO db VALUES ('%','test\_%','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y');"
+  i_d="INSERT INTO db VALUES ('%','test','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y','Y','Y');
+  INSERT INTO db VALUES ('%','test\_%','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y','Y','Y');"
 fi
 
 if test ! -f $mdata/host.frm
@@ -197,6 +197,8 @@ then
   c_h="$c_h  References_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_h="$c_h  Index_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_h="$c_h  Alter_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_h="$c_h  Create_tmp_table_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_h="$c_h  Lock_tables_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_h="$c_h  PRIMARY KEY Host (Host,Db)"
   c_h="$c_h )"
   c_h="$c_h comment='Host privileges;  Merged with database privileges';"
@@ -224,18 +226,32 @@ then
   c_u="$c_u   References_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_u="$c_u   Index_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_u="$c_u   Alter_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Show_db_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Super_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Create_tmp_table_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Lock_tables_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Execute_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Repl_slave_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Repl_client_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   ssl_type enum('','ANY','X509', 'SPECIFIED') DEFAULT '' NOT NULL,"
+  c_u="$c_u   ssl_cipher BLOB NOT NULL,"
+  c_u="$c_u   x509_issuer BLOB NOT NULL,"
+  c_u="$c_u   x509_subject BLOB NOT NULL,"
+  c_u="$c_u   max_questions int(11) unsigned DEFAULT 0  NOT NULL,"
+  c_u="$c_u   max_updates int(11) unsigned DEFAULT 0  NOT NULL,"
+  c_u="$c_u   max_connections int(11) unsigned DEFAULT 0  NOT NULL,"
   c_u="$c_u   PRIMARY KEY Host (Host,User)"
   c_u="$c_u )"
   c_u="$c_u comment='Users and global privileges';"
 
-  i_u="INSERT INTO user VALUES ('localhost','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
-  INSERT INTO user VALUES ('$hostname','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
+  i_u="INSERT INTO user VALUES ('localhost','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
+  INSERT INTO user VALUES ('$hostname','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
   
-  REPLACE INTO user VALUES ('localhost','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
-  REPLACE INTO user VALUES ('$hostname','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
+  REPLACE INTO user VALUES ('localhost','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
+  REPLACE INTO user VALUES ('$hostname','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
   
-  INSERT INTO user VALUES ('localhost','','','N','N','N','N','N','N','N','N','N','N','N','N','N','N');
-  INSERT INTO user VALUES ('$hostname','','','N','N','N','N','N','N','N','N','N','N','N','N','N','N');"
+  INSERT INTO user (host,user) values ('localhost','');
+  INSERT INTO user (host,user) values ('$hostname','');"
 fi
 
 if test ! -f $mdata/func.frm
@@ -290,7 +306,7 @@ fi
 
 echo "Installing all prepared tables"
 if eval "$execdir/mysqld $defaults --bootstrap --skip-grant-tables \
-         --basedir=$basedir --datadir=$ldata --skip-innodb --skip-gemini --skip-bdb $args" << END_OF_DATA
+         --basedir=$basedir --datadir=$ldata --skip-innodb --skip-bdb $args" << END_OF_DATA
 use mysql;
 $c_d
 $i_d
@@ -317,8 +333,8 @@ then
   fi
   echo "PLEASE REMEMBER TO SET A PASSWORD FOR THE MySQL root USER !"
   echo "This is done with:"
-  echo "$bindir/mysqladmin -u root  password 'new-password'"
-  echo "$bindir/mysqladmin -u root -h $hostname  password 'new-password'"
+  echo "$bindir/mysqladmin -u root password 'new-password'"
+  echo "$bindir/mysqladmin -u root -h $hostname password 'new-password'"
   echo "See the manual for more instructions."
   #
   # Print message about upgrading unless we have created a new db table.
@@ -333,10 +349,10 @@ then
   if test "$IN_RPM" -eq 0
   then
     echo "You can start the MySQL daemon with:"
-    echo "cd @prefix@ ; $bindir/safe_mysqld &"
+    echo "cd @prefix@ ; $bindir/mysqld_safe &"
     echo
     echo "You can test the MySQL daemon with the benchmarks in the 'sql-bench' directory:"
-    echo "cd sql-bench ; run-all-tests"
+    echo "cd sql-bench ; perl run-all-tests"
     echo
   fi
   echo "Please report any problems with the @scriptdir@/mysqlbug script!"

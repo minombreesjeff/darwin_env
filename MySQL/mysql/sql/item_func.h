@@ -34,12 +34,12 @@ protected:
   Item **args,*tmp_arg[2];
 public:
   uint arg_count;
-  table_map used_tables_cache;
+  table_map used_tables_cache, not_null_tables_cache;
   bool const_item_cache;
   enum Functype { UNKNOWN_FUNC,EQ_FUNC,EQUAL_FUNC,NE_FUNC,LT_FUNC,LE_FUNC,
 		  GE_FUNC,GT_FUNC,FT_FUNC,
 		  LIKE_FUNC,NOTLIKE_FUNC,ISNULL_FUNC,ISNOTNULL_FUNC,
-		  COND_AND_FUNC,COND_OR_FUNC,BETWEEN,IN_FUNC,INTERVAL_FUNC};
+		  COND_AND_FUNC,COND_OR_FUNC,COND_XOR_FUNC,BETWEEN,IN_FUNC,INTERVAL_FUNC};
   enum optimize_type { OPTIMIZE_NONE,OPTIMIZE_KEY,OPTIMIZE_OP, OPTIMIZE_NULL };
   enum Type type() const { return FUNC_ITEM; }
   virtual enum Functype functype() const   { return UNKNOWN_FUNC; }
@@ -97,6 +97,7 @@ public:
   bool fix_fields(THD *,struct st_table_list *);
   void make_field(Send_field *field);
   table_map used_tables() const;
+  table_map not_null_tables() const;
   void update_used_tables();
   bool eq(const Item *item, bool binary_cmp) const;
   virtual optimize_type select_optimize() const { return OPTIMIZE_NONE; }
@@ -119,7 +120,10 @@ public:
   {
     return (null_value=args[0]->get_time(ltime));
   }
+  bool is_null() { (void) val_int(); return null_value; }
   friend class udf_handler;
+  unsigned int size_of() { return sizeof(*this);}  
+  Field *tmp_table_field(TABLE *t_arg);
 };
 
 
@@ -134,7 +138,9 @@ public:
   longlong val_int() { return (longlong) val(); }
   enum Item_result result_type () const { return REAL_RESULT; }
   void fix_length_and_dec() { decimals=NOT_FIXED_DEC; max_length=float_length(decimals); }
+  unsigned int size_of() { return sizeof(*this);}  
 };
+
 
 class Item_num_func :public Item_func
 {
@@ -147,6 +153,8 @@ public:
   longlong val_int() { return (longlong) val(); }
   enum Item_result result_type () const { return hybrid_type; }
   void fix_length_and_dec() { fix_num_length_and_dec(); }
+  bool is_null() { (void) val(); return null_value; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -161,22 +169,47 @@ class Item_num_op :public Item_func
   enum Item_result result_type () const { return hybrid_type; }
   void fix_length_and_dec() { fix_num_length_and_dec(); find_num_type(); }
   void find_num_type(void);
+  bool is_null() { (void) val(); return null_value; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
 class Item_int_func :public Item_func
 {
 public:
-  Item_int_func() :Item_func() {}
-  Item_int_func(Item *a) :Item_func(a) {}
-  Item_int_func(Item *a,Item *b) :Item_func(a,b) {}
-  Item_int_func(Item *a,Item *b,Item *c) :Item_func(a,b,c) {}
-  Item_int_func(List<Item> &list) :Item_func(list) {}
+  Item_int_func() :Item_func() { max_length=21; }
+  Item_int_func(Item *a) :Item_func(a) { max_length=21; }
+  Item_int_func(Item *a,Item *b) :Item_func(a,b) { max_length=21; }
+  Item_int_func(Item *a,Item *b,Item *c) :Item_func(a,b,c) { max_length=21; }
+  Item_int_func(List<Item> &list) :Item_func(list) { max_length=21; }
   double val() { return (double) val_int(); }
   String *val_str(String*str);
   enum Item_result result_type () const { return INT_RESULT; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
+  void fix_length_and_dec() {}
 };
+
+
+class Item_func_signed :public Item_int_func
+{
+public:
+  Item_func_signed(Item *a) :Item_int_func(a) {}
+  double val() { return args[0]->val(); }
+  longlong val_int() { return args[0]->val_int(); }
+  void fix_length_and_dec()
+  { max_length=args[0]->max_length; unsigned_flag=0; }
+};
+
+
+class Item_func_unsigned :public Item_int_func
+{
+public:
+  Item_func_unsigned(Item *a) :Item_int_func(a) {}
+  double val() { return args[0]->val(); }
+  longlong val_int() { return args[0]->val_int(); }
+  void fix_length_and_dec()
+  { max_length=args[0]->max_length; unsigned_flag=1; }
+};
+
 
 class Item_func_plus :public Item_num_op
 {
@@ -194,7 +227,9 @@ public:
   const char *func_name() const { return "-"; }
   double val();
   longlong val_int();
+  void fix_length_and_dec();
 };
+
 
 class Item_func_mul :public Item_num_op
 {
@@ -284,12 +319,32 @@ public:
   const char *func_name() const { return "exp"; }
 };
 
+
+class Item_func_ln :public Item_dec_func
+{
+public:
+  Item_func_ln(Item *a) :Item_dec_func(a) {}
+  double val();
+  const char *func_name() const { return "ln"; }
+};
+
+
 class Item_func_log :public Item_dec_func
 {
 public:
   Item_func_log(Item *a) :Item_dec_func(a) {}
+  Item_func_log(Item *a,Item *b) :Item_dec_func(a,b) {}
   double val();
   const char *func_name() const { return "log"; }
+};
+
+
+class Item_func_log2 :public Item_dec_func
+{
+public:
+  Item_func_log2(Item *a) :Item_dec_func(a) {}
+  double val();
+  const char *func_name() const { return "log2"; }
 };
 
 
@@ -410,14 +465,15 @@ public:
 
 class Item_func_rand :public Item_real_func
 {
+  struct rand_struct *rand;
 public:
   Item_func_rand(Item *a) :Item_real_func(a) {}
   Item_func_rand()	  :Item_real_func()  {}
   double val();
   const char *func_name() const { return "rand"; }
-  void fix_length_and_dec() { decimals=NOT_FIXED_DEC; max_length=float_length(decimals); }
   bool const_item() const { return 0; }
   table_map used_tables() const { return RAND_TABLE_BIT; }
+  void fix_length_and_dec();
 };
 
 
@@ -440,6 +496,7 @@ class Item_func_units :public Item_real_func
   double val();
   const char *func_name() const { return name; }
   void fix_length_and_dec() { decimals=NOT_FIXED_DEC; max_length=float_length(decimals); }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -456,6 +513,7 @@ public:
   String *val_str(String *);
   void fix_length_and_dec();
   enum Item_result result_type () const { return cmp_type; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_func_min :public Item_func_min_max
@@ -481,6 +539,15 @@ public:
   longlong val_int();
   const char *func_name() const { return "length"; }
   void fix_length_and_dec() { max_length=10; }
+  unsigned int size_of() { return sizeof(*this);}  
+};
+
+class Item_func_bit_length :public Item_func_length
+{
+public:
+  Item_func_bit_length(Item *a) :Item_func_length(a) {}
+  longlong val_int() { return Item_func_length::val_int()*8; }
+  const char *func_name() const { return "bit_length"; }
 };
 
 class Item_func_char_length :public Item_int_func
@@ -491,6 +558,7 @@ public:
   longlong val_int();
   const char *func_name() const { return "char_length"; }
   void fix_length_and_dec() { max_length=10; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_func_locate :public Item_int_func
@@ -502,6 +570,7 @@ public:
   const char *func_name() const { return "locate"; }
   longlong val_int();
   void fix_length_and_dec() { maybe_null=0; max_length=11; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -517,9 +586,11 @@ public:
   {
     return (item->fix_fields(thd,tlist) || Item_func::fix_fields(thd,tlist));
   }
+  void split_sum_func(List<Item> &fields);
   void update_used_tables()
   {
-    item->update_used_tables() ; Item_func::update_used_tables();
+    item->update_used_tables();
+    Item_func::update_used_tables();
     used_tables_cache|= item->used_tables();
     const_item_cache&=  item->const_item();
   }
@@ -528,9 +599,11 @@ public:
   {
     maybe_null=0; max_length=3;
     used_tables_cache|= item->used_tables();
+    not_null_tables_cache&= item->not_null_tables();
     const_item_cache&=  item->const_item();
     with_sum_func= with_sum_func || item->with_sum_func;
   }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -542,6 +615,7 @@ public:
   longlong val_int();
   const char *func_name() const { return "ascii"; }
   void fix_length_and_dec() { max_length=3; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_func_ord :public Item_int_func
@@ -551,7 +625,7 @@ public:
   Item_func_ord(Item *a) :Item_int_func(a) {}
   longlong val_int();
   const char *func_name() const { return "ord"; }
-  void fix_length_and_dec() { max_length=21; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_func_find_in_set :public Item_int_func
@@ -564,6 +638,7 @@ public:
   longlong val_int();
   const char *func_name() const { return "find_in_set"; }
   void fix_length_and_dec();
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -573,7 +648,7 @@ public:
   Item_func_bit_or(Item *a,Item *b) :Item_int_func(a,b) {}
   longlong val_int();
   const char *func_name() const { return "|"; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
+  void fix_length_and_dec() { unsigned_flag=1; }
 };
 
 class Item_func_bit_and :public Item_int_func
@@ -582,7 +657,7 @@ public:
   Item_func_bit_and(Item *a,Item *b) :Item_int_func(a,b) {}
   longlong val_int();
   const char *func_name() const { return "&"; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
+  void fix_length_and_dec() { unsigned_flag=1; }
 };
 
 class Item_func_bit_count :public Item_int_func
@@ -591,7 +666,7 @@ public:
   Item_func_bit_count(Item *a) :Item_int_func(a) {}
   longlong val_int();
   const char *func_name() const { return "bit_count"; }
-  void fix_length_and_dec() { decimals=0; max_length=2; }
+  void fix_length_and_dec() { max_length=2; }
 };
 
 class Item_func_shift_left :public Item_int_func
@@ -600,7 +675,7 @@ public:
   Item_func_shift_left(Item *a,Item *b) :Item_int_func(a,b) {}
   longlong val_int();
   const char *func_name() const { return "<<"; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
+  void fix_length_and_dec() { unsigned_flag=1; }
 };
 
 class Item_func_shift_right :public Item_int_func
@@ -609,7 +684,6 @@ public:
   Item_func_shift_right(Item *a,Item *b) :Item_int_func(a,b) {}
   longlong val_int();
   const char *func_name() const { return ">>"; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
 };
 
 class Item_func_bit_neg :public Item_int_func
@@ -618,7 +692,7 @@ public:
   Item_func_bit_neg(Item *a) :Item_int_func(a) {}
   longlong val_int();
   const char *func_name() const { return "~"; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
+  void fix_length_and_dec() { unsigned_flag=1; }
 };
 
 class Item_func_set_last_insert_id :public Item_int_func
@@ -627,7 +701,7 @@ public:
   Item_func_set_last_insert_id(Item *a) :Item_int_func(a) {}
   longlong val_int();
   const char *func_name() const { return "last_insert_id"; }
-  void fix_length_and_dec() { decimals=0; max_length=args[0]->max_length; }
+  void fix_length_and_dec() { max_length=args[0]->max_length; }
 };
 
 class Item_func_benchmark :public Item_int_func
@@ -639,7 +713,8 @@ class Item_func_benchmark :public Item_int_func
   {}
   longlong val_int();
   const char *func_name() const { return "benchmark"; }
-  void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=0; }
+  void fix_length_and_dec() { max_length=1; maybe_null=0; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -664,6 +739,8 @@ public:
     return res;
   }
   Item_result result_type () const { return udf.result_type(); }
+  table_map not_null_tables() const { return 0; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -771,7 +848,8 @@ class Item_func_get_lock :public Item_int_func
   Item_func_get_lock(Item *a,Item *b) :Item_int_func(a,b) {}
   longlong val_int();
   const char *func_name() const { return "get_lock"; }
-  void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=1;}
+  void fix_length_and_dec() { max_length=1; maybe_null=1;}
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_func_release_lock :public Item_int_func
@@ -781,7 +859,8 @@ class Item_func_release_lock :public Item_int_func
   Item_func_release_lock(Item *a) :Item_int_func(a) {}
   longlong val_int();
   const char *func_name() const { return "release_lock"; }
-  void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=1;}
+  void fix_length_and_dec() { max_length=1; maybe_null=1;}
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 /* replication functions */
@@ -791,9 +870,11 @@ class Item_master_pos_wait :public Item_int_func
   String value;
  public:
   Item_master_pos_wait(Item *a,Item *b) :Item_int_func(a,b) {}
+  Item_master_pos_wait(Item *a,Item *b,Item *c) :Item_int_func(a,b,c) {}
   longlong val_int();
   const char *func_name() const { return "master_pos_wait"; }
-  void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=1;}
+  void fix_length_and_dec() { max_length=21; maybe_null=1;}
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -819,18 +900,18 @@ public:
   void fix_length_and_dec();
   void print(String *str);
   const char *func_name() const { return "set_user_var"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
 class Item_func_get_user_var :public Item_func
 {
   LEX_STRING name;
-  user_var_entry *entry;
-  bool const_var_flag;
+  user_var_entry *var_entry;
 
 public:
   Item_func_get_user_var(LEX_STRING a):
-    Item_func(), name(a), const_var_flag(1) {}
+    Item_func(), name(a) {}
   user_var_entry *get_entry();
   double val();
   longlong val_int();
@@ -839,10 +920,11 @@ public:
   void print(String *str);
   enum Item_result result_type() const;
   const char *func_name() const { return "get_user_var"; }
-  bool const_item() const { return const_var_flag; }
+  bool const_item() const;
   table_map used_tables() const
-  { return const_var_flag ? 0 : RAND_TABLE_BIT; }
+  { return const_item() ? 0 : RAND_TABLE_BIT; }
   bool eq(const Item *item, bool binary_cmp) const;
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -863,35 +945,92 @@ class Item_func_match :public Item_real_func
 {
 public:
   List<Item> fields;
+  String value;
   TABLE *table;
-  uint key;
-  bool join_key;
   Item_func_match *master;
-  FT_DOCLIST *ft_handler;
+  FT_INFO * ft_handler;
+  Item *concat;
+  byte *record;
+  uint key, mode;
+  bool join_key;
 
   Item_func_match(List<Item> &a, Item *b): Item_real_func(b),
-  fields(a), table(0),  join_key(0), master(0), ft_handler(0) {}
+       fields(a), table(0), master(0), ft_handler(0),
+       concat(0), key(0), join_key(0)
+  {}
   ~Item_func_match()
   {
-    if (!master)
+    if (!master && ft_handler)
     {
-      if (ft_handler)
-      {
-	ft_close_search(ft_handler);
-        if(join_key)
-          table->file->ft_handler=0;
-        table->fulltext_searched=0;
-      }
+      ft_handler->please->close_search(ft_handler);
+      ft_handler=0;
+      if(join_key)
+	table->file->ft_handler=0;
+      table->fulltext_searched=0;
     }
+    if (concat)
+      delete concat;
   }
-  const char *func_name() const { return "match"; }
   enum Functype functype() const { return FT_FUNC; }
   void update_used_tables() {}
+  table_map not_null_tables() const { return 0; }
   bool fix_fields(THD *thd,struct st_table_list *tlist);
   bool eq(const Item *, bool binary_cmp) const;
-  double val();
   longlong val_int() { return val()!=0.0; }
+  double val();
 
   bool fix_index();
   void init_search(bool no_order);
+  unsigned int size_of() { return sizeof(*this);}  
+};
+
+
+class Item_func_match_nl :public Item_func_match
+{
+public:
+  Item_func_match_nl(List<Item> &a, Item *b)
+    :Item_func_match(a,b)
+  { mode=FT_NL; }
+  const char *func_name() const { return "match_nl"; }
+};
+
+
+class Item_func_match_bool :public Item_func_match
+{
+public:
+  Item_func_match_bool(List<Item> &a, Item *b)
+    :Item_func_match(a,b)
+  { mode=FT_BOOL; }
+  const char *func_name() const { return "match_bool"; }
+};
+
+/* For type casts */
+
+enum Item_cast
+{
+  ITEM_CAST_BINARY, ITEM_CAST_SIGNED_INT, ITEM_CAST_UNSIGNED_INT,
+  ITEM_CAST_DATE, ITEM_CAST_TIME, ITEM_CAST_DATETIME, ITEM_CAST_CHAR
+};
+
+Item *create_func_cast(Item *a, Item_cast cast_type);
+
+
+class Item_func_bit_xor : public Item_int_func
+{
+public:
+  Item_func_bit_xor(Item *a,Item *b) :Item_int_func(a,b) {}
+  longlong val_int();
+  const char *func_name() const { return "^"; }
+  void fix_length_xor_dec() { unsigned_flag=1; }
+};
+
+class Item_func_is_free_lock :public Item_int_func
+{
+  String value;
+public:
+  Item_func_is_free_lock(Item *a) :Item_int_func(a) {}
+  longlong val_int();
+  const char *func_name() const { return "check_lock"; }
+  void fix_length_and_dec() { decimals=0; max_length=1; maybe_null=1;}
+  unsigned int size_of() { return sizeof(*this);}  
 };

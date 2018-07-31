@@ -1,24 +1,23 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Error messages for MySQL clients */
-/* error messages for the demon is in share/language/errmsg.sys */
+/* error messages for the daemon is in share/language/errmsg.sys */
 
-#include <global.h>
+#include <my_global.h>
 #include <my_sys.h>
 #include "errmsg.h"
 
@@ -45,7 +44,14 @@ const char *client_errors[]=
   "Kann Named Pipe nicht oeffnen. Host: %-.64s  pipe: %-.32s (%lu)",
   "Kann den Status der Named Pipe nicht setzen.  Host: %-.64s  pipe: %-.32s (%lu)",
   "Can't initialize character set %-.64s (path: %-.64s)",
-  "Got packet bigger than 'max_allowed_packet'"
+  "Got packet bigger than 'max_allowed_packet'",
+  "Embedded server",
+  "Error on SHOW SLAVE STATUS:",
+  "Error on SHOW SLAVE HOSTS:",
+  "Error connecting to slave:",
+  "Error connecting to master:",
+  "SSL connection error",
+  "Malformed packet"
 };
 
 /* Start of code added by Roberto M. Serqueira - martinsc@uol.com.br - 05.24.2001 */
@@ -58,7 +64,7 @@ const char *client_errors[]=
   "Não pode se conectar ao servidor MySQL local através do 'socket' '%-.64s' (%d)", 
   "Não pode se conectar ao servidor MySQL em '%-.64s' (%d)",
   "Não pode criar 'socket TCP/IP' (%d)",
-  "'Host' servidor MySQL '%-.64s' (%d) desconhecido", 
+  "'Host' servidor MySQL '%-.64s' (%d) desconhecido",
   "Servidor MySQL desapareceu",
   "Incompatibilidade de protocolos. Versão do Servidor: %d - Versão do Cliente: %d",
   "Cliente do MySQL com falta de memória",
@@ -73,7 +79,14 @@ const char *client_errors[]=
   "Não pode abrir 'named pipe' para o 'host' %-.64s - 'pipe' %-.32s (%lu)",
   "Não pode estabelecer o estado do 'named pipe' para o 'host' %-.64s - 'pipe' %-.32s (%lu)",
   "Não pode inicializar conjunto de caracteres %-.64s (caminho %-.64s)",
-  "Obteve pacote maior do que 'max_allowed_packet'"
+  "Obteve pacote maior do que 'max_allowed_packet'",
+  "Embedded server"
+  "Error on SHOW SLAVE STATUS:",
+  "Error on SHOW SLAVE HOSTS:",
+  "Error connecting to slave:",
+  "Error connecting to master:",
+  "SSL connection error",
+  "Malformed packet"
 };
 
 #else /* ENGLISH */
@@ -99,7 +112,14 @@ const char *client_errors[]=
   "Can't open named pipe to host: %-.64s  pipe: %-.32s (%lu)",
   "Can't set state of named pipe to host: %-.64s  pipe: %-.32s (%lu)",
   "Can't initialize character set %-.64s (path: %-.64s)",
-  "Got packet bigger than 'max_allowed_packet'"
+  "Got packet bigger than 'max_allowed_packet'",
+  "Embedded server",
+  "Error on SHOW SLAVE STATUS:",
+  "Error on SHOW SLAVE HOSTS:",
+  "Error connecting to slave:",
+  "Error connecting to master:",
+  "SSL connection error",
+  "Malformed packet"
 };
 #endif
 

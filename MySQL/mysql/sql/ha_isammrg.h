@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -32,8 +32,10 @@ class ha_isammrg: public handler
   ~ha_isammrg() {}
   const char *table_type() const { return "MRG_ISAM"; }
   const char **bas_ext() const;
-  ulong option_flag() const { return HA_READ_RND_SAME | HA_KEYPOS_TO_RNDPOS
-                                   | HA_REC_NOT_IN_SEQ  | HA_NO_FULLTEXT_KEY;}
+  ulong table_flags() const { return (HA_READ_RND_SAME | HA_KEYPOS_TO_RNDPOS |
+				      HA_REC_NOT_IN_SEQ); }
+  ulong index_flags(uint idx) const { return HA_NOT_READ_PREFIX_LAST; }
+
   uint max_record_length() const { return HA_MAX_REC_LENGTH; }
   uint max_keys()          const { return 0; }
   uint max_key_parts()     const { return 0; }

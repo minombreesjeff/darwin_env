@@ -1,48 +1,57 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Return error-text for system error messages and nisam messages */
 
-#define PERROR_VERSION "2.7"
+#define PERROR_VERSION "2.9"
 
-#include <global.h>
+#include <my_global.h>
 #include <my_sys.h>
 #include <m_string.h>
 #include <errno.h>
-#include <getopt.h>
+#include <my_getopt.h>
 
+static my_bool verbose, print_all_codes;
 
-static struct option long_options[] =
+static struct my_option my_long_options[] =
 {
-  {"help",       no_argument,        0, '?'},
-  {"info",       no_argument,        0, 'I'},
-  {"all",        no_argument,        0, 'a'},
-  {"silent",	 no_argument,	     0, 's'},
-  {"verbose",    no_argument,        0, 'v'},
-  {"version",    no_argument,        0, 'V'},
-  {0, 0, 0, 0}
+  {"help", '?', "Displays this help and exits.", 0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"info", 'I', "Synonym for --help",  0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
+#ifdef HAVE_SYS_ERRLIST
+  {"all", 'a', "Print all the error messages and the number.",
+   (gptr*) &print_all_codes, (gptr*) &print_all_codes, 0, GET_BOOL, NO_ARG,
+   0, 0, 0, 0, 0, 0},
+#endif
+  {"silent", 's', "Only print the error message", 0, 0, 0, GET_NO_ARG, NO_ARG,
+   0, 0, 0, 0, 0, 0},
+  {"verbose", 'v', "Print error code and message (default).", (gptr*) &verbose,
+   (gptr*) &verbose, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+  {"version", 'V', "Displays version information and exits.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
+
 
 typedef struct ha_errors {
   int errcode;
   const char *msg;
 } HA_ERRORS;
 
-static int verbose=1,print_all_codes=0;
 
 static HA_ERRORS ha_errlist[]=
 {
@@ -50,8 +59,10 @@ static HA_ERRORS ha_errlist[]=
   { 121,"Duplicate key on write or update" },
   { 123,"Someone has changed the row since it was read; Update with is recoverable" },
   { 124,"Wrong index given to function" },
-  { 126,"Index file is crashed / Wrong file format" },
+  { 126,"Index file is crashed" },
   { 127,"Record-file is crashed" },
+  { 128,"Out of memory" },
+  { 130,"Incorrect file format" },
   { 131,"Command not supported by database" },
   { 132,"Old database file" },
   { 133,"No record read before update" },
@@ -64,13 +75,16 @@ static HA_ERRORS ha_errlist[]=
   { 140,"Wrong create options"},
   { 141,"Duplicate unique key or constraint on write or update"},
   { 142,"Unknown character set used"},
-  { 143,"Conflicting table definition between MERGE and mapped table"},
+  { 143,"Conflicting table definitions in sub-tables of MERGE table"},
   { 144,"Table is crashed and last repair failed"},
   { 145,"Table was marked as crashed and should be repaired"},
   { 146,"Lock timed out; Retry transaction"},
   { 147,"Lock table is full;  Restart program with a larger locktable"},
   { 148,"Updates are not allowed under a read only transactions"},
   { 149,"Lock deadlock; Retry transaction"},
+  { 150,"Foreign key constraint is incorrectly formed"},
+  { 151,"Cannot add a child row"},
+  { 152,"Cannot delete a parent row"},
   { -30999, "DB_INCOMPLETE: Sync didn't finish"},
   { -30998, "DB_KEYEMPTY: Key/data deleted or never created"},
   { -30997, "DB_KEYEXIST: The key/data pair already exists"},
@@ -97,60 +111,43 @@ static void usage(void)
 {
   print_version();
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
-  printf("Print a description for a system error code or a error code from\na MyISAM/ISAM/BDB table handler.\n");
+  printf("Print a description for a system error code or an error code from\na MyISAM/ISAM/BDB table handler.\n");
   printf("If you want to get the error for a negative error code, you should use\n-- before the first error code to tell perror that there was no more options.\n\n");
   printf("Usage: %s [OPTIONS] [ERRORCODE [ERRORCODE...]]\n",my_progname);
-  printf("\n\
-   -?, --help     Displays this help and exits.\n\
-   -I, --info     Synonym for the above.");
-#ifdef HAVE_SYS_ERRLIST
-  printf("\n\
-   -a, --all      Print all the error messages and the number.");
-#endif
-  printf("\n\
-   -s, --silent	  Only print the error message\n\
-   -v, --verbose  Print error code and message (default).\n\
-   -V, --version  Displays version information and exits.\n");
-} 
+  my_print_help(my_long_options);
+  my_print_variables(my_long_options);
+}
+
+
+static my_bool
+get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
+	       char *argument __attribute__((unused)))
+{
+  switch (optid) {
+  case 's':
+    verbose=0;
+    break;
+  case 'V':
+    print_version();
+    exit(0);
+    break;
+  case 'I':
+  case '?':
+    usage();
+    exit(0);
+    break;
+  }
+  return 0;
+}
 
 
 static int get_options(int *argc,char ***argv)
 {
-  int c,option_index;
+  int ho_error;
 
-  while ((c=getopt_long(*argc,*argv,"asvVI?",long_options,
-			&option_index)) != EOF)
-  {
-      switch (c) {
-#ifdef HAVE_SYS_ERRLIST
-      case 'a':
-	print_all_codes=1;
-	break;
-#endif
-      case 'v':
-      	verbose=1;
-      	break;
-      case 's':
-	verbose=0;
-	break;
-      case 'V':
-	print_version();
-	exit(0);
-	break;
-      case 'I':
-      case '?':
-	usage();
-	exit(0);
-	break;
-      default:
-	fprintf(stderr,"%s: Illegal option character '%c'\n",
-		my_progname,opterr);
-	return(1);
-	break;
-      }
-  }
-  (*argc)-=optind;
-  (*argv)+=optind;
+  if ((ho_error=handle_options(argc, argv, my_long_options, get_one_option)))
+    exit(ho_error);
+
   if (!*argc && !print_all_codes)
   {
     usage();
@@ -231,4 +228,3 @@ int main(int argc,char *argv[])
   exit(error);
   return error;
 }
-

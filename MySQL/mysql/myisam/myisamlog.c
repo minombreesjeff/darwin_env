@@ -56,7 +56,7 @@ extern int main(int argc,char * *argv);
 static void get_options(int *argc,char ***argv);
 static int examine_log(my_string file_name,char **table_names);
 static int read_string(IO_CACHE *file,gptr *to,uint length);
-static int file_info_compare(void *a,void *b);
+static int file_info_compare(void *cmp_arg, void *a,void *b);
 static int test_if_open(struct file_info *key,element_count count,
 			struct test_if_open_param *param);
 static void fix_blob_pointers(MI_INFO *isam,byte *record);
@@ -331,9 +331,9 @@ static int examine_log(my_string file_name, char **table_names)
 
   init_io_cache(&cache,file,0,READ_CACHE,start_offset,0,MYF(0));
   bzero((gptr) com_count,sizeof(com_count));
-  init_tree(&tree,0,sizeof(file_info),(qsort_cmp) file_info_compare,1,
-	    (void(*)(void*)) file_info_free);
-  VOID(init_key_cache(KEY_CACHE_SIZE,(uint) (10*4*(IO_SIZE+MALLOC_OVERHEAD))));
+  init_tree(&tree,0,0,sizeof(file_info),(qsort_cmp2) file_info_compare,1,
+	    (tree_element_free) file_info_free, NULL);
+  VOID(init_key_cache(KEY_CACHE_SIZE));
 
   files_open=0; access_time=0;
   while (access_time++ != number_of_commands &&
@@ -404,11 +404,7 @@ static int examine_log(my_string file_name, char **table_names)
 	}
 	to=isam_file_name;
 	if (filepath)
-	{
-	  strmov(isam_file_name,filepath);
-	  convert_dirname(isam_file_name);
-	  to=strend(isam_file_name);
-	}
+	  to=convert_dirname(isam_file_name,filepath,NullS);
 	strmov(to,pos);
 	fn_ext(isam_file_name)[0]=0;	/* Remove extension */
       }
@@ -488,7 +484,7 @@ static int examine_log(my_string file_name, char **table_names)
 		   command_name[command], (int) extra_command,result);
       if (update && curr_file_info && !curr_file_info->closed)
       {
-	if (mi_extra(curr_file_info->isam, extra_command) != (int) result)
+	if (mi_extra(curr_file_info->isam, extra_command, 0) != (int) result)
 	{
 	  fflush(stdout);
 	  VOID(fprintf(stderr,
@@ -695,7 +691,8 @@ static int read_string(IO_CACHE *file, register gptr *to, register uint length)
 }				/* read_string */
 
 
-static int file_info_compare(void *a, void *b)
+static int file_info_compare(void* cmp_arg __attribute__((unused)),
+			     void *a, void *b)
 {
   long lint;
 

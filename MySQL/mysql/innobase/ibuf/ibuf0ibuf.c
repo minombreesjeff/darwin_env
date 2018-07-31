@@ -170,7 +170,7 @@ dropped! So, there seems to be no problem. */
 
 /**********************************************************************
 Validates the ibuf data structures when the caller owns ibuf_mutex. */
-static
+
 ibool
 ibuf_validate_low(void);
 /*===================*/
@@ -292,6 +292,7 @@ ibuf_count_get(
 
 /**********************************************************************
 Sets the ibuf count for a given page. */
+#ifdef UNIV_IBUF_DEBUG
 static
 void
 ibuf_count_set(
@@ -306,6 +307,7 @@ ibuf_count_set(
 
 	*(ibuf_counts[space] + page_no) = val;
 }
+#endif
 
 /**********************************************************************
 Creates the insert buffer data structure at a database startup and
@@ -472,19 +474,18 @@ ibuf_data_init_for_space(
 	
 	table = dict_mem_table_create(buf, space, 2);
 
-	dict_mem_table_add_col(table, "PAGE_NO", DATA_BINARY, 0, 0, 0);
-	dict_mem_table_add_col(table, "TYPES", DATA_BINARY, 0, 0, 0);
+	dict_mem_table_add_col(table,(char *) "PAGE_NO", DATA_BINARY, 0, 0, 0);
+	dict_mem_table_add_col(table,(char *) "TYPES", DATA_BINARY, 0, 0, 0);
 
 	table->id = ut_dulint_add(DICT_IBUF_ID_MIN, space);
 
 	dict_table_add_to_cache(table);
 
-	index = dict_mem_index_create(buf, "CLUST_IND", space,
-				DICT_CLUSTERED | DICT_UNIVERSAL | DICT_IBUF,
-				2);
+	index = dict_mem_index_create(buf, (char *) "CLUST_IND", space,
+				DICT_CLUSTERED | DICT_UNIVERSAL | DICT_IBUF,2);
 
-	dict_mem_index_add_field(index, "PAGE_NO", 0);
-	dict_mem_index_add_field(index, "TYPES", 0);
+	dict_mem_index_add_field(index, (char *) "PAGE_NO", 0, 0);
+	dict_mem_index_add_field(index, (char *) "TYPES", 0, 0);
 
 	index->page_no = FSP_IBUF_TREE_ROOT_PAGE_NO;
 	
@@ -538,7 +539,7 @@ ibuf_parse_bitmap_init(
 /*===================*/
 			/* out: end of log record or NULL */
 	byte*	ptr,	/* in: buffer */
-	byte*	end_ptr,/* in: buffer end */
+	byte*	end_ptr __attribute__((unused)), /* in: buffer end */
 	page_t*	page,	/* in: page or NULL */
 	mtr_t*	mtr)	/* in: mtr or NULL */
 {
@@ -561,7 +562,8 @@ ibuf_bitmap_page_get_bits(
 	page_t*	page,	/* in: bitmap page */
 	ulint	page_no,/* in: page whose bits to get */
 	ulint	bit,	/* in: IBUF_BITMAP_FREE, IBUF_BITMAP_BUFFERED, ... */
-	mtr_t*	mtr)	/* in: mtr containing an x-latch to the bitmap page */
+	mtr_t*	mtr __attribute__((unused))) /* in: mtr containing an x-latch
+                                               to the bitmap page */
 {
 	ulint	byte_offset;
 	ulint	bit_offset;
@@ -1293,6 +1295,8 @@ ibuf_add_free_page(
 	flst_add_last(root + PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST,
 		      page + PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST_NODE, &mtr);
 
+	fil_page_set_type(page, FIL_PAGE_IBUF_FREE_LIST);
+		      
 	ibuf_data->seg_size++;
 	ibuf_data->free_list_len++;
 
@@ -1303,6 +1307,7 @@ ibuf_add_free_page(
 
 	ibuf_bitmap_page_set_bits(bitmap_page, page_no, IBUF_BITMAP_IBUF,
 								TRUE, &mtr);
+
 	mtr_commit(&mtr);
 
 	mutex_exit(&ibuf_mutex);
@@ -2386,7 +2391,7 @@ ibuf_delete_rec(
 
 	ut_ad(ibuf_inside());
 
-	success = btr_cur_optimistic_delete(btr_pcur_get_btr_cur(pcur), mtr);	
+	success = btr_cur_optimistic_delete(btr_pcur_get_btr_cur(pcur), mtr);
 
 	if (success) {
 #ifdef UNIV_IBUF_DEBUG
@@ -2396,7 +2401,7 @@ ibuf_delete_rec(
 		return(FALSE);
 	}
 	
-	/* We have to resort to a pessimistic delete from ibuf */		
+	/* We have to resort to a pessimistic delete from ibuf */
 	btr_pcur_store_position(pcur, mtr);
 
 	btr_pcur_commit_specify_mtr(pcur, mtr);
@@ -2415,17 +2420,22 @@ ibuf_delete_rec(
 		fprintf(stderr, "InnoDB: ibuf cursor restoration fails!\n");
 		fprintf(stderr, "InnoDB: ibuf record inserted to page %lu\n",
 								page_no);
+		fflush(stderr);
+
 		rec_print(btr_pcur_get_rec(pcur));
 		rec_print(pcur->old_rec);
 		dtuple_print(search_tuple);
 
 		rec_print(page_rec_get_next(btr_pcur_get_rec(pcur)));
+		fflush(stdout);
 
 		mtr_commit(mtr);
 
 		fprintf(stderr, "InnoDB: Validating insert buffer tree:\n");
-		ut_a(btr_validate_tree(ibuf_data->index->tree));		
-		fprintf(stderr, "InnoDB: Ibuf tree ok\n");
+		ut_a(btr_validate_tree(ibuf_data->index->tree));
+
+		fprintf(stderr, "InnoDB: ibuf tree ok\n");
+		fflush(stderr);
 	}
 	
 	ut_a(success);
@@ -2483,7 +2493,9 @@ ibuf_merge_or_delete_for_page(
 	ulint		old_bits;
 	ulint		new_bits;
 	dulint		max_trx_id;
+	ibool		corruption_noticed	= FALSE;
 	mtr_t		mtr;
+	char		err_buf[500];
 
 	if (srv_force_recovery >= SRV_FORCE_NO_IBUF_MERGE) {
 
@@ -2535,7 +2547,38 @@ ibuf_merge_or_delete_for_page(
 		block = buf_block_align(page);
 		rw_lock_x_lock_move_ownership(&(block->lock));
 		
-		ut_a(fil_page_get_type(page) == FIL_PAGE_INDEX);
+		if (fil_page_get_type(page) != FIL_PAGE_INDEX) {
+
+			corruption_noticed = TRUE;
+		
+			ut_print_timestamp(stderr);
+
+			mtr_start(&mtr);
+
+			fprintf(stderr,
+"  InnoDB: Dump of the ibuf bitmap page:\n");
+			
+			bitmap_page = ibuf_bitmap_get_map_page(space, page_no,
+									&mtr);
+			buf_page_print(bitmap_page);
+		
+			mtr_commit(&mtr);
+
+			fprintf(stderr, "\nInnoDB: Dump of the page:\n");
+
+			buf_page_print(page);
+
+			fprintf(stderr,
+"InnoDB: Error: corruption in the tablespace. Bitmap shows insert\n"
+"InnoDB: buffer records to page n:o %lu though the page\n"
+"InnoDB: type is %lu, which is not an index page!\n"
+"InnoDB: We try to resolve the problem by skipping the insert buffer\n"
+"InnoDB: merge for this page. Please run CHECK TABLE on your tables\n"
+"InnoDB: to determine if they are corrupt after this.\n\n"
+"InnoDB: Please make a detailed bug report and send it to\n"
+"InnoDB: mysql@lists.mysql.com\n\n",
+				page_no, fil_page_get_type(page));
+		}
 	}
 
 	n_inserts = 0;
@@ -2578,8 +2621,14 @@ loop:
 
 			goto reset_bit;
 		}
+
+		if (corruption_noticed) {
+			rec_sprintf(err_buf, 450, ibuf_rec);
+
+			fprintf(stderr,
+"InnoDB: Discarding record\n %s\n from the insert buffer!\n\n", err_buf);
 	
-	   	if (page) {
+	   	} else if (page) {
 			/* Now we have at pcur a record which should be
 			inserted to the index page; NOTE that the call below
 			copies pointers to fields in ibuf_rec, and we must
@@ -2652,10 +2701,7 @@ reset_bit:
 							new_bits, &mtr);
 		}
 	}
-
-	ibuf_data->n_merges++;	
-	ibuf_data->n_merged_recs += n_inserts;
-
+	
 #ifdef UNIV_IBUF_DEBUG
 	/* printf("Ibuf merge %lu records volume %lu to page no %lu\n",
 					n_inserts, volume, page_no); */
@@ -2665,6 +2711,14 @@ reset_bit:
  	
 	mem_heap_free(heap);
 
+	/* Protect our statistics keeping from race conditions */
+	mutex_enter(&ibuf_mutex);
+
+	ibuf_data->n_merges++;	
+	ibuf_data->n_merged_recs += n_inserts;
+
+	mutex_exit(&ibuf_mutex);
+
 	ibuf_exit();
 #ifdef UNIV_IBUF_DEBUG
 	ut_a(ibuf_count_get(space, page_no) == 0);
@@ -2673,7 +2727,7 @@ reset_bit:
 
 /**********************************************************************
 Validates the ibuf data structures when the caller owns ibuf_mutex. */
-static
+
 ibool
 ibuf_validate_low(void)
 /*===================*/

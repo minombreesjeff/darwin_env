@@ -321,8 +321,8 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 	
 	for (i = 0; i < TRX_SYS_DOUBLEWRITE_BLOCK_SIZE * 2; i++) {
 		
-		space_id = mach_read_from_4(page + FIL_PAGE_SPACE);
 		page_no = mach_read_from_4(page + FIL_PAGE_OFFSET);
+		space_id = 0;
 
 		if (!fil_check_adress_in_tablespace(space_id, page_no)) {
 		  	fprintf(stderr,
@@ -340,7 +340,6 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 
 			/* It is an unwritten doublewrite buffer page:
 			do nothing */
-
 		} else {
 			/* Read in the actual page from the data files */
 			
@@ -357,9 +356,19 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 		"InnoDB: Trying to recover it from the doublewrite buffer.\n");
 				
 				if (buf_page_is_corrupted(page)) {
+					fprintf(stderr,
+		"InnoDB: Dump of the page:\n");
+					buf_page_print(read_buf);
+					fprintf(stderr,
+		"InnoDB: Dump of corresponding page in doublewrite buffer:\n");
+					buf_page_print(page);
+
 		  			fprintf(stderr,
 		"InnoDB: Also the page in the doublewrite buffer is corrupt.\n"
-		"InnoDB: Cannot continue operation.\n");
+		"InnoDB: Cannot continue operation.\n"
+		"InnoDB: You can try to recover the database with the my.cnf\n"
+		"InnoDB: option:\n"
+		"InnoDB: set-variable=innodb_force_recovery=6\n");
 					exit(1);
 				}
 
@@ -472,9 +481,9 @@ trx_sys_update_mysql_binlog_offset(
 	if (0 != ut_memcmp(sys_header + field + TRX_SYS_MYSQL_LOG_NAME,
 			file_name, 1 + ut_strlen(file_name))) {
 
-		mlog_write_string(sys_header + field
-					+ TRX_SYS_MYSQL_LOG_NAME,
-			file_name, 1 + ut_strlen(file_name), mtr);
+		mlog_write_string((byte*) (sys_header + field
+					+ TRX_SYS_MYSQL_LOG_NAME),
+			(byte*) file_name, 1 + ut_strlen(file_name), mtr);
 	}
 
 	if (mach_read_from_4(sys_header + field
@@ -699,6 +708,9 @@ trx_sys_init_at_db_start(void)
 /*==========================*/
 {
 	trx_sysf_t*	sys_header;
+	ib_longlong	rows_to_undo	= 0;
+	char*		unit		= (char*)"";
+	trx_t*		trx;
 	mtr_t		mtr;
 
 	mtr_start(&mtr);
@@ -734,9 +746,28 @@ trx_sys_init_at_db_start(void)
 	trx_lists_init_at_db_start();
 
 	if (UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
+		trx = UT_LIST_GET_FIRST(trx_sys->trx_list);
+
+		for (;;) {
+			rows_to_undo +=
+				ut_conv_dulint_to_longlong(trx->undo_no);
+			trx = UT_LIST_GET_NEXT(trx_list, trx);
+
+			if (!trx) {
+				break;
+			}
+		}
+	
+		if (rows_to_undo > 1000000000) {
+			unit = (char*)"M";
+			rows_to_undo = rows_to_undo / 1000000;
+		}
+
 		fprintf(stderr,
-	"InnoDB: %lu transaction(s) which must be rolled back or cleaned up\n",
-				UT_LIST_GET_LEN(trx_sys->trx_list));
+"InnoDB: %lu transaction(s) which must be rolled back or cleaned up\n"
+"InnoDB: in total %lu%s row operations to undo\n",
+				UT_LIST_GET_LEN(trx_sys->trx_list),
+				(ulint)rows_to_undo, unit);
 
 		fprintf(stderr, "InnoDB: Trx id counter is %lu %lu\n", 
 			ut_dulint_get_high(trx_sys->max_trx_id),

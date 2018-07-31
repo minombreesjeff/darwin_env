@@ -22,13 +22,13 @@ pkglib_LIBRARIES =	libmystrings.a
 # Exact one of ASSEMBLER_X
 if ASSEMBLER_x86
 ASRCS		= strings-x86.s longlong2str-x86.s
-CSRCS		= bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c atof.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c strxmov.c bmove_upp.c strappend.c strcont.c strend.c strfill.c strcend.c is_prefix.c strstr.c strinstr.c strmake.c strnmov.c strmov.c llstr.c ctype.c strnlen.c
+CSRCS		= bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c atof.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c ctype.c strnlen.c
 else
-if ASSEMBLER_sparc
+if ASSEMBLER_sparc32
 # These file MUST all be on the same line!! Otherwise automake
 # generats a very broken makefile
-ASRCS		= bmove_upp-sparc.s strappend-sparc.s strend-sparc.s strinstr-sparc.s strmake-sparc.s strmov-sparc.s strnmov-sparc.s strstr-sparc.s strxmov-sparc.s
-CSRCS		= strcont.c strfill.c strcend.c is_prefix.c longlong2str.c bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c atof.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c ctype.c strnlen.c
+ASRCS		= bmove_upp-sparc.s strappend-sparc.s strend-sparc.s strinstr-sparc.s strmake-sparc.s strmov-sparc.s strnmov-sparc.s strstr-sparc.s
+CSRCS		= strcont.c strfill.c strcend.c is_prefix.c longlong2str.c bfill.c bmove.c bmove512.c bchange.c strxnmov.c int2str.c str2int.c r_strinstr.c atof.c bcmp.c strtol.c strtoul.c strtoll.c strtoull.c llstr.c ctype.c strnlen.c strxmov.c
 else
 #no assembler
 ASRCS		=
@@ -38,12 +38,13 @@ CSRCS		= strxmov.c bmove_upp.c strappend.c strcont.c strend.c strfill.c strcend.
 endif
 endif
 
-libmystrings_a_SOURCES = @CHARSET_SRCS@ $(ASRCS) $(CSRCS)
+libmystrings_a_SOURCES = $(ASRCS) $(CSRCS)
 noinst_PROGRAMS = conf_to_src
+DISTCLEANFILES = ctype_autoconf.c
 # Default charset definitions
 EXTRA_DIST =		ctype-big5.c ctype-czech.c ctype-euc_kr.c \
                         ctype-gb2312.c ctype-gbk.c ctype-sjis.c \
-                        ctype-tis620.c ctype-ujis.c \
+                        ctype-tis620.c ctype-ujis.c ctype-latin1_de.c \
                         strto.c strings-x86.s \
 			longlong2str.c longlong2str-x86.s \
 			strxmov.c bmove_upp.c strappend.c strcont.c strend.c \
@@ -53,15 +54,6 @@ EXTRA_DIST =		ctype-big5.c ctype-czech.c ctype-euc_kr.c \
 			strinstr-sparc.s strmake-sparc.s strmov-sparc.s \
 			strnmov-sparc.s strstr-sparc.s strxmov-sparc.s \
                         t_ctype.h
-
-OMIT_DEPENDENCIES =	pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h\
-			__math.h time.h __time.h unistd.h __unistd.h types.h \
-			xtypes.h ac-types.h posix.h string.h __string.h \
-			errno.h socket.h inet.h dirent.h netdb.h \
-			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h \
-			prio_queue.h pthread_attr.h pthread_once.h queue.h\
-			sleep.h specific.h version.h pwd.h timers.h uio.h \
-			cdefs.h machdep.h signal.h __signal.h util.h
 
 libmystrings_a_LIBADD=	@CHARSET_OBJS@
 ctype.o:		ctype_extra_sources.c
@@ -84,8 +76,11 @@ clean-local:
 if ASSEMBLER
 # On Linux gcc can compile the assembly files
 %.o	: %.s
-	$(AS) -o $@ $<
+	$(AS) $(ASFLAGS) -o $@ $<
 endif
+
+str_test: str_test.c $(LIBRARIES)
+	$(LINK) $(FLAGS) -DMAIN $(srcdir)/str_test.c $(LDADD) $(LIBS)
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

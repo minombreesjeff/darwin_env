@@ -103,7 +103,7 @@ que_thr_add_update_info(
 	mach_write_to_8(thr->msg_buf + SESS_SRV_MSG_N_DELETES,
 							graph->n_deletes);
 }
-#endif	
+#endif
 
 /***************************************************************************
 Adds a query graph to the session's list of graphs. */
@@ -395,7 +395,7 @@ graph so that the graph can communicate an error message to the client.) */
 void
 que_fork_error_handle(
 /*==================*/
-	trx_t*	trx,	/* in: trx */
+	trx_t*	trx __attribute__((unused)),	/* in: trx */
 	que_t*	fork)	/* in: query graph which was run before signal
 			handling started, NULL not allowed */
 {
@@ -1046,14 +1046,16 @@ que_thr_stop(
 }
 
 /**************************************************************************
-A patch for MySQL used to 'stop' a dummy query thread used in MySQL. */
+A patch for MySQL used to 'stop' a dummy query thread used in MySQL. The
+query thread is stopped and made inactive, except in the case where
+it was put to the lock wait state in lock0lock.c, but the lock has already
+been granted or the transaction chosen as a victim in deadlock resolution. */
 
 void
 que_thr_stop_for_mysql(
 /*===================*/
 	que_thr_t*	thr)	/* in: query thread */
 {
-	ibool	stopped 	= FALSE;
 	trx_t*	trx;
 
 	trx = thr_get_trx(thr);
@@ -1067,13 +1069,10 @@ que_thr_stop_for_mysql(
 
 			/* Error handling built for the MySQL interface */
 			thr->state = QUE_THR_COMPLETED;
-
-			stopped = TRUE;
-		}
-		
-		if (!stopped) {
-			/* It must have been a lock wait but the
-			lock was already released */
+		} else {
+			/* It must have been a lock wait but the lock was
+			already released, or this transaction was chosen
+			as a victim in selective deadlock resolution */
 
 			mutex_exit(&kernel_mutex);
 
@@ -1081,6 +1080,10 @@ que_thr_stop_for_mysql(
 		}
 	}
 		
+	ut_ad(thr->is_active == TRUE);
+	ut_ad(trx->n_active_thrs == 1);
+	ut_ad(thr->graph->n_active_thrs == 1);
+
 	thr->is_active = FALSE;
 	(thr->graph)->n_active_thrs--;
 
@@ -1132,6 +1135,9 @@ que_thr_stop_for_mysql_no_error(
 	trx_t*		trx)	/* in: transaction */
 {
 	ut_ad(thr->state == QUE_THR_RUNNING);
+	ut_ad(thr->is_active == TRUE);
+	ut_ad(trx->n_active_thrs == 1);
+	ut_ad(thr->graph->n_active_thrs == 1);
 		
 	if (thr->magic_n != QUE_THR_MAGIC_N) {
 		fprintf(stderr,
@@ -1167,47 +1173,47 @@ que_node_print_info(
 	addr = (ulint)node;
 
 	if (type == QUE_NODE_SELECT) {
-		str = "SELECT";
+		str = (char *) "SELECT";
 	} else if (type == QUE_NODE_INSERT) {
-		str = "INSERT";
+		str = (char *) "INSERT";
 	} else if (type == QUE_NODE_UPDATE) {
-		str = "UPDATE";
+		str = (char *) "UPDATE";
 	} else if (type == QUE_NODE_WHILE) {
-		str = "WHILE";
+		str = (char *) "WHILE";
 	} else if (type == QUE_NODE_ASSIGNMENT) {
-		str = "ASSIGNMENT";
+		str = (char *) "ASSIGNMENT";
 	} else if (type == QUE_NODE_IF) {
-		str = "IF";
+		str = (char *) "IF";
 	} else if (type == QUE_NODE_FETCH) {
-		str = "FETCH";
+		str = (char *) "FETCH";
 	} else if (type == QUE_NODE_OPEN) {
-		str = "OPEN";
+		str = (char *) "OPEN";
 	} else if (type == QUE_NODE_PROC) {
-		str = "STORED PROCEDURE";
+		str = (char *) "STORED PROCEDURE";
 	} else if (type == QUE_NODE_FUNC) {
-		str = "FUNCTION";
+		str = (char *) "FUNCTION";
 	} else if (type == QUE_NODE_LOCK) {
-		str = "LOCK";
+		str = (char *) "LOCK";
 	} else if (type == QUE_NODE_THR) {
-		str = "QUERY THREAD";
+		str = (char *) "QUERY THREAD";
 	} else if (type == QUE_NODE_COMMIT) {
-		str = "COMMIT";
+		str = (char *) "COMMIT";
 	} else if (type == QUE_NODE_UNDO) {
-		str = "UNDO ROW";
+		str = (char *) "UNDO ROW";
 	} else if (type == QUE_NODE_PURGE) {
-		str = "PURGE ROW";
+		str = (char *) "PURGE ROW";
 	} else if (type == QUE_NODE_ROLLBACK) {
-		str = "ROLLBACK";
+		str = (char *) "ROLLBACK";
 	} else if (type == QUE_NODE_CREATE_TABLE) {
-		str = "CREATE TABLE";
+		str = (char *) "CREATE TABLE";
 	} else if (type == QUE_NODE_CREATE_INDEX) {
-		str = "CREATE INDEX";
+		str = (char *) "CREATE INDEX";
 	} else if (type == QUE_NODE_FOR) {
-		str = "FOR LOOP";
+		str = (char *) "FOR LOOP";
 	} else if (type == QUE_NODE_RETURN) {
-		str = "RETURN";
+		str = (char *) "RETURN";
 	} else {
-		str = "UNKNOWN NODE TYPE";
+		str = (char *) "UNKNOWN NODE TYPE";
 	}
 
 	printf("Node type %lu: %s, address %lx\n", type, str, addr);

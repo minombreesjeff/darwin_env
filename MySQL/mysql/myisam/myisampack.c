@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -30,7 +30,7 @@
 #ifndef __GNU_LIBRARY__
 #define __GNU_LIBRARY__			/* Skip warnings in getopt.h */
 #endif
-#include <getopt.h>
+#include <my_getopt.h>
 
 #if INT_MAX > 32767
 #define BITS_SAVED 32
@@ -124,7 +124,8 @@ static void free_counts_and_tree_and_queue(HUFF_TREE *huff_trees,
 					   uint trees,
 					   HUFF_COUNTS *huff_counts,
 					   uint fields);
-static int compare_tree(const uchar *s,const uchar *t);
+static int compare_tree(void* cmp_arg __attribute__((unused)),
+			const uchar *s,const uchar *t);
 static int get_statistic(PACK_MRG_INFO *mrg,HUFF_COUNTS *huff_counts);
 static void check_counts(HUFF_COUNTS *huff_counts,uint trees,
 			 my_off_t records);
@@ -168,9 +169,10 @@ static int mrg_rrnd(PACK_MRG_INFO *info,byte *buf);
 static void mrg_reset(PACK_MRG_INFO *mrg);
 
 
-static int backup=0,error_on_write=0,test_only=0,verbose=0,silent=0,
-	   write_loop=0,force_pack=0,opt_wait=0,isamchk_neaded=0;
+static int error_on_write=0,test_only=0,verbose=0,silent=0,
+	   write_loop=0,force_pack=0, isamchk_neaded=0;
 static int tmpfile_createflag=O_RDWR | O_TRUNC | O_EXCL;
+static my_bool backup, opt_wait;
 static uint tree_buff_length=8196-MALLOC_OVERHEAD;
 static char tmp_dir[FN_REFLEN]={0},*join_table;
 static my_off_t intervall_length;
@@ -231,57 +233,106 @@ int main(int argc, char **argv)
 
 enum options_mp {OPT_CHARSETS_DIR_MP=256};
 
-static struct option long_options[] =
+static struct my_option my_long_options[] =
 {
-  {"backup",	no_argument,	   0, 'b'},
-  {"character-sets-dir",required_argument,0,  OPT_CHARSETS_DIR_MP},
-  {"debug",	optional_argument, 0, '#'},
-  {"force",	no_argument,	   0, 'f'},
-  {"join",	required_argument, 0, 'j'},
-  {"help",	no_argument,	   0, '?'},
-  {"silent",	no_argument,	   0, 's'},
-  {"tmpdir",	required_argument, 0, 'T'},
-  {"test",	no_argument,	   0, 't'},
-  {"verbose",	no_argument,	   0, 'v'},
-  {"version",	no_argument,	   0, 'V'},
-  {"wait",	no_argument,	   0, 'w'},
-  {0, 0, 0, 0}
+  {"backup", 'b', "Make a backup of the table as table_name.OLD",
+   (gptr*) &backup, (gptr*) &backup, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"character-sets-dir", OPT_CHARSETS_DIR_MP,
+   "Directory where character sets are.", (gptr*) &charsets_dir,
+   (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'",
+   0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+  {"force", 'f',
+   "Force packing of table even if it gets bigger or if	tempfile exists.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"join", 'j',
+   "Join all given tables into 'new_table_name'. All tables MUST have identical layouts.",
+   (gptr*) &join_table, (gptr*) &join_table, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+   0, 0, 0},
+  {"help", '?', "Display this help and exit.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"silent", 's', "Be more silent.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"tmpdir", 'T', "Use temporary directory to store temporary table.",
+   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"test", 't', "Don't pack table, only test packing it.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"verbose", 'v', "Write info about progress and packing result.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"version", 'V', "Output version information and exit.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"wait", 'w', "Wait and retry if table is in use.", (gptr*) &opt_wait,
+   (gptr*) &opt_wait, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
+
 
 static void print_version(void)
 {
-  printf("%s  Ver 1.13 for %s on %s\n",my_progname,SYSTEM_TYPE,MACHINE_TYPE);
+  printf("%s Ver 1.22 for %s on %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
 }
 
 static void usage(void)
 {
   print_version();
-  puts("Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB");
+  puts("Copyright (C) 2002 MySQL AB");
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,");
   puts("and you are welcome to modify and redistribute it under the GPL license\n");
 
   puts("Pack a MyISAM-table to take much less space.");
   puts("Keys are not updated, you must run myisamchk -rq on the datafile");
   puts("afterwards to update the keys.");
-  puts("You should give the .MSI file as the filename argument.");
+  puts("You should give the .MYI file as the filename argument.");
 
   printf("\nUsage: %s [OPTIONS] filename...\n", my_progname);
-  puts("\n\
-  -b, --backup		Make a backup of the table as table_name.OLD\n\
-  -f, --force		Force packing of table even if it gets bigger or if\n\
-			tempfile exists.\n\
-  -j, --join='new_table_name'\n\
-			Join all given tables into 'new_table_name'.\n\
-			All tables MUST have identical layouts.\n\
-  -s, --silent		Be more silent.\n\
-  -t, --test		Don't pack table, only test packing it.\n\
-  -v, --verbose		Write info about progress and packing result.\n\
-  -w, --wait		Wait and retry if table is in use.\n\
-  -T, --tmpdir=...	Use temporary directory to store temporary table.\n\
-  -#, --debug=...       Output debug log. Often this is 'd:t:o,filename`\n\
-  -?, --help		Display this help and exit.\n\
-  -V, --version		Output version information and exit.");
-  print_defaults("my",load_default_groups);
+  my_print_help(my_long_options);
+  print_defaults("my", load_default_groups);
+  my_print_variables(my_long_options);
+}
+
+
+static my_bool
+get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
+	       char *argument)
+{
+  uint length;
+
+  switch(optid) {
+  case 'f':
+    force_pack= 1;
+    tmpfile_createflag= O_RDWR | O_TRUNC;
+    break;
+  case 's':
+    write_loop= verbose= 0;
+    silent= 1;
+    break;
+  case 't':
+    test_only= verbose= 1;
+    break;
+  case 'T':
+    length= (uint) (strmov(tmp_dir, argument) - tmp_dir);
+    if (length != dirname_length(tmp_dir))
+    {
+      tmp_dir[length]=FN_LIBCHAR;
+      tmp_dir[length+1]=0;
+    }
+    break;
+  case 'v':
+    verbose= 1;
+    silent= 0;
+    break;
+  case '#':
+    DBUG_PUSH(argument ? argument : "d:t:o");
+    break;
+  case 'V':
+    print_version();
+    exit(0);
+  case 'I':
+  case '?':
+    usage();
+    exit(0);
+  }
+  return 0;
 }
 
 	/* reads options */
@@ -289,66 +340,15 @@ static void usage(void)
 
 static void get_options(int *argc,char ***argv)
 {
-  int c,option_index=0;
-  uint length;
+  int ho_error;
 
   my_progname= argv[0][0];
   if (isatty(fileno(stdout)))
     write_loop=1;
 
-  while ((c=getopt_long(*argc,*argv,"bfj:stvwT:#::?V",long_options,
-			&option_index)) != EOF)
-  {
-    switch(c) {
-    case 'b':
-      backup=1;
-      break;
-    case 'f':
-      force_pack=1;
-      tmpfile_createflag=O_RDWR | O_TRUNC;
-      break;
-    case 'j':
-      join_table=optarg;
-      break;
-    case 's':
-      write_loop=verbose=0; silent=1;
-      break;
-    case 't':
-      test_only=verbose=1;
-      break;
-    case 'T':
-      length=(uint) (strmov(tmp_dir,optarg)-tmp_dir);
-      if (length != dirname_length(tmp_dir))
-      {
-	tmp_dir[length]=FN_LIBCHAR;
-	tmp_dir[length+1]=0;
-      }
-      break;
-    case 'v':
-      verbose=1; silent=0;
-      break;
-    case 'w':
-      opt_wait=1;
-      break;
-    case '#':
-      DBUG_PUSH(optarg ? optarg : "d:t:o");
-      break;
-    case OPT_CHARSETS_DIR_MP:
-      charsets_dir = optarg;
-      break;
-    case 'V': print_version(); exit(0);
-    case 'I':
-    case '?':
-      usage();
-      exit(0);
-    default:
-      fprintf(stderr,"%s: Illegal option: -%c\n",my_progname,opterr);
-      usage();
-      exit(1);
-    }
-  }
-  (*argc)-=optind;
-  (*argv)+=optind;
+  if ((ho_error=handle_options(argc, argv, my_long_options, get_one_option)))
+    exit(ho_error);
+
   if (!*argc)
   {
     usage();
@@ -663,9 +663,9 @@ static HUFF_COUNTS *init_huff_count(MI_INFO *info,my_off_t records)
 	type = FIELD_NORMAL;
       if (count[i].field_length <= 8 &&
 	  (type == FIELD_NORMAL ||
-	   type == FIELD_SKIPP_ZERO))
+	   type == FIELD_SKIP_ZERO))
 	count[i].max_zero_fill= count[i].field_length;
-      init_tree(&count[i].int_tree,0,-1,(qsort_cmp) compare_tree,0,NULL);
+      init_tree(&count[i].int_tree,0,0,-1,(qsort_cmp2) compare_tree,0,NULL,NULL);
       if (records && type != FIELD_BLOB && type != FIELD_VARCHAR)
 	count[i].tree_pos=count[i].tree_buff =
 	  my_malloc(count[i].field_length > 1 ? tree_buff_length : 2,
@@ -787,7 +787,7 @@ static int get_statistic(PACK_MRG_INFO *mrg,HUFF_COUNTS *huff_counts)
 
 	/* Save character counters and space-counts and zero-field-counts */
 	if (count->field_type == FIELD_NORMAL ||
-	    count->field_type == FIELD_SKIPP_ENDSPACE)
+	    count->field_type == FIELD_SKIP_ENDSPACE)
 	{
 	  for ( ; end_pos > pos ; end_pos--)
 	    if (end_pos[-1] != ' ')
@@ -806,7 +806,7 @@ static int get_statistic(PACK_MRG_INFO *mrg,HUFF_COUNTS *huff_counts)
 	    count->max_end_space = length;
 	}
 	if (count->field_type == FIELD_NORMAL ||
-	    count->field_type == FIELD_SKIPP_PRESPACE)
+	    count->field_type == FIELD_SKIP_PRESPACE)
 	{
 	  for (pos=start_pos; pos < end_pos ; pos++)
 	    if (pos[0] != ' ')
@@ -842,7 +842,7 @@ static int get_statistic(PACK_MRG_INFO *mrg,HUFF_COUNTS *huff_counts)
 	}
 	if (count->field_length <= 8 &&
 	    (count->field_type == FIELD_NORMAL ||
-	     count->field_type == FIELD_SKIPP_ZERO))
+	     count->field_type == FIELD_SKIP_ZERO))
 	{
 	  uint i;
 	  if (!memcmp((byte*) start_pos,zero_string,count->field_length))
@@ -947,7 +947,7 @@ static void check_counts(HUFF_COUNTS *huff_counts, uint trees,
       new_length=calc_packed_length(huff_counts,0);
       if (old_length < new_length && huff_counts->field_length > 1)
       {
-	huff_counts->field_type=FIELD_SKIPP_ZERO;
+	huff_counts->field_type=FIELD_SKIP_ZERO;
 	huff_counts->counts[0]-=length;
 	huff_counts->bytes_packed=old_length- records/8;
 	goto found_pack;
@@ -991,7 +991,7 @@ static void check_counts(HUFF_COUNTS *huff_counts, uint trees,
       huff_counts->counts[' ']+=huff_counts->tot_pre_space;
       if (test_space_compress(huff_counts,records,huff_counts->max_end_space,
 			      huff_counts->end_space,
-			      huff_counts->tot_end_space,FIELD_SKIPP_ENDSPACE))
+			      huff_counts->tot_end_space,FIELD_SKIP_ENDSPACE))
 	goto found_pack;
       huff_counts->counts[' ']-=huff_counts->tot_pre_space;
     }
@@ -999,7 +999,7 @@ static void check_counts(HUFF_COUNTS *huff_counts, uint trees,
     {
       if (test_space_compress(huff_counts,records,huff_counts->max_pre_space,
 			      huff_counts->pre_space,
-			      huff_counts->tot_pre_space,FIELD_SKIPP_PRESPACE))
+			      huff_counts->tot_pre_space,FIELD_SKIP_PRESPACE))
 	goto found_pack;
     }
 
@@ -1009,10 +1009,10 @@ static void check_counts(HUFF_COUNTS *huff_counts, uint trees,
 
     if (huff_counts->max_zero_fill &&
 	(huff_counts->field_type == FIELD_NORMAL ||
-	 huff_counts->field_type == FIELD_SKIPP_ZERO))
+	 huff_counts->field_type == FIELD_SKIP_ZERO))
     {
       huff_counts->counts[0]-=huff_counts->max_zero_fill*
-	(huff_counts->field_type == FIELD_SKIPP_ZERO ?
+	(huff_counts->field_type == FIELD_SKIP_ZERO ?
 	 records - huff_counts->zero_fields : records);
       huff_counts->pack_type|=PACK_TYPE_ZERO_FILL;
       huff_counts->bytes_packed=calc_packed_length(huff_counts,0);
@@ -1052,9 +1052,9 @@ static void check_counts(HUFF_COUNTS *huff_counts, uint trees,
   if (verbose)
     printf("\nnormal:    %3d  empty-space:     %3d  empty-zero:       %3d  empty-fill: %3d\npre-space: %3d  end-space:       %3d  intervall-fields: %3d  zero:       %3d\n",
 	   field_count[FIELD_NORMAL],space_fields,
-	   field_count[FIELD_SKIPP_ZERO],fill_zero_fields,
-	   field_count[FIELD_SKIPP_PRESPACE],
-	   field_count[FIELD_SKIPP_ENDSPACE],
+	   field_count[FIELD_SKIP_ZERO],fill_zero_fields,
+	   field_count[FIELD_SKIP_PRESPACE],
+	   field_count[FIELD_SKIP_ENDSPACE],
 	   field_count[FIELD_INTERVALL],
 	   field_count[FIELD_ZERO]);
   DBUG_VOID_RETURN;
@@ -1282,7 +1282,8 @@ static int make_huff_tree(HUFF_TREE *huff_tree, HUFF_COUNTS *huff_counts)
   return 0;
 }
 
-static int compare_tree(register const uchar *s, register const uchar *t)
+static int compare_tree(void* cmp_arg __attribute__((unused)),
+			register const uchar *s, register const uchar *t)
 {
   uint length;
   for (length=global_count->field_length; length-- ;)
@@ -1719,7 +1720,7 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
 	field_length-=count->max_zero_fill;
 
 	switch(count->field_type) {
-	case FIELD_SKIPP_ZERO:
+	case FIELD_SKIP_ZERO:
 	  if (!memcmp((byte*) start_pos,zero_string,field_length))
 	  {
 	    write_bits(1,1);
@@ -1733,7 +1734,7 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
 	    write_bits(tree->code[(uchar) *start_pos],
 		       (uint) tree->code_len[(uchar) *start_pos]);
 	  break;
-	case FIELD_SKIPP_ENDSPACE:
+	case FIELD_SKIP_ENDSPACE:
 	  for (pos=end_pos ; pos > start_pos && pos[-1] == ' ' ; pos--) ;
 	  length=(uint) (end_pos-pos);
 	  if (count->pack_type & PACK_TYPE_SELECTED)
@@ -1756,7 +1757,7 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
 		       (uint) tree->code_len[(uchar) *start_pos]);
 	  start_pos=end_pos;
 	  break;
-	case FIELD_SKIPP_PRESPACE:
+	case FIELD_SKIP_PRESPACE:
 	  for (pos=start_pos ; pos < end_pos && pos[0] == ' ' ; pos++) ;
 	  length=(uint) (pos-start_pos);
 	  if (count->pack_type & PACK_TYPE_SELECTED)
@@ -2045,7 +2046,7 @@ static int save_state(MI_INFO *isam_file,PACK_MRG_INFO *mrg,my_off_t new_length,
   share->changed=1;			/* Force write of header */
   share->state.open_count=0;
   share->global_changed=0;
-  VOID(my_chsize(share->kfile,share->state.state.key_file_length,
+  VOID(my_chsize(share->kfile, share->state.state.key_file_length, 0,
 		 MYF(0)));
   if (share->base.keys)
     isamchk_neaded=1;
@@ -2087,7 +2088,7 @@ static void mrg_reset(PACK_MRG_INFO *mrg)
 {
   if (mrg->current)
   {
-    mi_extra(*mrg->current,HA_EXTRA_NO_CACHE);
+    mi_extra(*mrg->current, HA_EXTRA_NO_CACHE, 0);
     mrg->current=0;
   }
 }
@@ -2102,8 +2103,8 @@ static int mrg_rrnd(PACK_MRG_INFO *info,byte *buf)
   {
     isam_info= *(info->current=info->file);
     info->end=info->current+info->count;
-    mi_extra(isam_info,HA_EXTRA_RESET);
-    mi_extra(isam_info,HA_EXTRA_CACHE);
+    mi_extra(isam_info, HA_EXTRA_RESET, 0);
+    mi_extra(isam_info, HA_EXTRA_CACHE, 0);
     filepos=isam_info->s->pack.header_length;
   }
   else
@@ -2119,14 +2120,14 @@ static int mrg_rrnd(PACK_MRG_INFO *info,byte *buf)
 					  filepos, 1)) ||
 	error != HA_ERR_END_OF_FILE)
       return (error);
-    mi_extra(isam_info,HA_EXTRA_NO_CACHE);
+    mi_extra(isam_info,HA_EXTRA_NO_CACHE, 0);
     if (info->current+1 == info->end)
       return(HA_ERR_END_OF_FILE);
     info->current++;
     isam_info= *info->current;
     filepos=isam_info->s->pack.header_length;
-    mi_extra(isam_info,HA_EXTRA_RESET);
-    mi_extra(isam_info,HA_EXTRA_CACHE);
+    mi_extra(isam_info,HA_EXTRA_RESET, 0);
+    mi_extra(isam_info,HA_EXTRA_CACHE, 0);
   }
 }
 

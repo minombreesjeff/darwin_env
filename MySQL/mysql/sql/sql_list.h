@@ -1,26 +1,25 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+/* Copyright (C) 2000-2003 MySQL AB
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
-/* mysql standard open memoryallocator */
-
 #ifdef __GNUC__
 #pragma interface			/* gcc class implementation */
 #endif
 
+/* mysql standard class memoryallocator */
 
 class Sql_alloc
 {
@@ -38,28 +37,46 @@ public:
 
 };
 
+
 /*
-** basic single linked list
-** Used for item and item_buffs.
+  Basic single linked list
+  Used for item and item_buffs.
+  All list ends with a pointer to the 'end_of_list' element, which
+  data pointer is a null pointer and the next pointer points to itself.
+  This makes it very fast to traverse lists as we don't have to
+  test for a specialend condition for list that can't contain a null
+  pointer.
 */
 
-class base_list :public Sql_alloc {
+class list_node :public Sql_alloc
+{
+public:
+  list_node *next;
+  void *info;
+  list_node(void *info_par,list_node *next_par)
+    :next(next_par),info(info_par)
+    {}
+  list_node()					/* For end_of_list */
+    {
+      info=0;
+      next= this;
+    }
+  friend class base_list;
+  friend class base_list_iterator;
+};
+
+
+extern list_node end_of_list;
+
+class base_list :public Sql_alloc
+{
 protected:
-  class list_node :public Sql_alloc
-  {
-  public:
-    list_node *next;
-    void *info;
-    list_node(void *info_par,list_node *next_par) : next(next_par),info(info_par) {}
-    friend class base_list;
-    friend class base_list_iterator;
-  };
   list_node *first,**last;
 
 public:
   uint elements;
 
-  inline void empty() { elements=0; first=0; last=&first;}
+  inline void empty() { elements=0; first= &end_of_list; last=&first;}
   inline base_list() { empty(); }
   inline base_list(const base_list &tmp) :Sql_alloc()
   {
@@ -69,7 +86,7 @@ public:
   }
   inline bool push_back(void *info)
   {
-    if (((*last)=new list_node(info,0)))
+    if (((*last)=new list_node(info, &end_of_list)))
     {
       last= &(*last)->next;
       elements++;
@@ -82,7 +99,7 @@ public:
     list_node *node=new list_node(info,first);
     if (node)
     {
-      if (!first)
+      if (last == &first)
 	last= &node->next;
       first=node;
       elements++;
@@ -96,22 +113,21 @@ public:
     delete *prev;
     *prev=node;
     if (!--elements)
-    {
       last= &first;
-      first=0;
-    }
   }
   inline void *pop(void)
   {
-    if (!first) return 0;
+    if (first == &end_of_list) return 0;
     list_node *tmp=first;
     first=first->next;
     if (!--elements)
       last= &first;
     return tmp->info;
   }
-  inline void *head() { return first ? first->info : 0; }
-  inline void **head_ref() { return first ? &first->info : 0; }
+  inline void *head() { return first->info; }
+  inline void **head_ref() { return first != &end_of_list ? &first->info : 0; }
+  inline bool is_empty() { return first == &end_of_list ; }
+  inline list_node *last_ref() { return &end_of_list; }
   friend class base_list_iterator;
 
 protected:
@@ -129,7 +145,7 @@ protected:
 class base_list_iterator
 {
   base_list *list;
-  base_list::list_node **el,**prev,*current;
+  list_node **el,**prev,*current;
 public:
   base_list_iterator(base_list &list_par) :list(&list_par),el(&list_par.first),
     prev(0),current(0)
@@ -137,16 +153,22 @@ public:
   inline void *next(void)
   {
     prev=el;
-    if (!(current= *el))
-      return 0;
+    current= *el;
     el= &current->next;
     return current->info;
+  }
+  inline void *next_fast(void)
+  {
+    list_node *tmp;
+    tmp= *el;
+    el= &tmp->next;
+    return tmp->info;
   }
   inline void rewind(void)
   {
     el= &list->first;
   }
-  void *replace(void *element)
+  inline void *replace(void *element)
   {						// Return old element
     void *tmp=current->info;
     current->info=element;
@@ -155,11 +177,13 @@ public:
   void *replace(base_list &new_list)
   {
     void *ret_value=current->info;
-    if (new_list.first)
+    if (!new_list.is_empty())
     {
       *new_list.last=current->next;
       current->info=new_list.first->info;
       current->next=new_list.first->next;
+      if ((list->last == &current->next) && (new_list.elements > 1))
+	list->last= new_list.last;
       list->elements+=new_list.elements-1;
     }
     return ret_value;				// return old element
@@ -182,7 +206,7 @@ public:
   }
   inline bool is_last(void)
   {
-    return *el == 0;
+    return el == &list->last_ref()->next;
   }
 };
 
@@ -200,7 +224,7 @@ public:
   void delete_elements(void)
   {
     list_node *element,*next;
-    for (element=first; element ; element=next)
+    for (element=first; element != &end_of_list; element=next)
     {
       next=element->next;
       delete (T*) element->info;
@@ -215,22 +239,36 @@ template <class T> class List_iterator :public base_list_iterator
 public:
   List_iterator(List<T> &a) : base_list_iterator(a) {}
   inline T* operator++(int) { return (T*) base_list_iterator::next(); }
-  inline void rewind(void)  { base_list_iterator::rewind(); }
   inline T *replace(T *a)   { return (T*) base_list_iterator::replace(a); }
   inline T *replace(List<T> &a) { return (T*) base_list_iterator::replace(a); }
-  inline void remove(void)  { base_list_iterator::remove(); }
   inline void after(T *a)   { base_list_iterator::after(a); }
   inline T** ref(void)	    { return (T**) base_list_iterator::ref(); }
-  inline bool is_last(void) { return base_list_iterator::is_last(); }
+};
+
+
+template <class T> class List_iterator_fast :public base_list_iterator
+{
+protected:
+  inline T *replace(T *a)   { return (T*) 0; }
+  inline T *replace(List<T> &a) { return (T*) 0; }
+  inline void remove(void)  { }
+  inline void after(T *a)   { }
+  inline T** ref(void)	    { return (T**) 0; }
+
+public:
+  List_iterator_fast(List<T> &a) : base_list_iterator(a) {}
+  inline T* operator++(int) { return (T*) base_list_iterator::next_fast(); }
+  inline void rewind(void)  { base_list_iterator::rewind(); }
 };
 
 
 /*
-** An simple intrusive list with automaticly removes element from list
-** on delete (for THD element)
+  A simple intrusive list which automaticly removes element from list
+  on delete (for THD element)
 */
 
-struct ilink {
+struct ilink
+{
   struct ilink **prev,*next;
   static void *operator new(size_t size)
   {
@@ -255,9 +293,11 @@ struct ilink {
   virtual ~ilink() { unlink(); }		/*lint -e1740 */
 };
 
+
 template <class T> class I_List_iterator;
 
-class base_ilist {
+class base_ilist
+{
   public:
   struct ilink *first,last;
   base_ilist() { first= &last; last.prev= &first; }
@@ -305,7 +345,8 @@ public:
 
 
 template <class T>
-class I_List :private base_ilist {
+class I_List :private base_ilist
+{
 public:
   I_List() :base_ilist()	{}
   inline bool is_empty()        { return base_ilist::is_empty(); } 

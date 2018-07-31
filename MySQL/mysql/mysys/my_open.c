@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #define USES_TYPES
 #include "mysys_priv.h"
@@ -24,7 +23,18 @@
 #include <share.h>
 #endif
 
-	/* Open a file */
+/*
+  Open a file
+
+  SYNOPSIS
+    my_open()
+      FileName	Fully qualified file name
+      Flags	Read | write 
+      MyFlags	Special flags
+
+  RETURN VALUE
+    File descriptor
+*/
 
 File my_open(const char *FileName, int Flags, myf MyFlags)
 				/* Path-name of file */
@@ -52,7 +62,15 @@ File my_open(const char *FileName, int Flags, myf MyFlags)
 } /* my_open */
 
 
-	/* Close a file */
+/*
+  Close a file
+
+  SYNOPSIS
+    my_close()
+      fd	File sescriptor
+      myf	Special Flags
+      
+*/
 
 int my_close(File fd, myf MyFlags)
 {
@@ -81,6 +99,16 @@ int my_close(File fd, myf MyFlags)
   DBUG_RETURN(err);
 } /* my_close */
 
+
+/*
+  Register file in my_file_info[]
+   
+  SYNOPSIS
+    my_register_filename()
+      fd
+      FileName
+      type_file_type
+*/
 
 File my_register_filename(File fd, const char *FileName, enum file_type
 			  type_of_file, uint error_message_number, myf MyFlags)

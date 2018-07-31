@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Code for generell handling of priority Queues.
@@ -42,17 +41,19 @@ typedef struct st_queue {
 #define queue_element(queue,index) ((queue)->root[index+1])
 #define queue_end(queue) ((queue)->root[(queue)->elements])
 #define queue_replaced(queue) _downheap(queue,1)
+typedef int (*queue_compare)(void *,byte *, byte *);
 
 int init_queue(QUEUE *queue,uint max_elements,uint offset_to_key,
-	       pbool max_at_top, int (*compare)(void *,byte *, byte *),
+	       pbool max_at_top, queue_compare compare,
 	       void *first_cmp_arg);
 int reinit_queue(QUEUE *queue,uint max_elements,uint offset_to_key,
-                 pbool max_at_top, int (*compare)(void *,byte *, byte *),
+                 pbool max_at_top, queue_compare compare,
                  void *first_cmp_arg);
 void delete_queue(QUEUE *queue);
 void queue_insert(QUEUE *queue,byte *element);
 byte *queue_remove(QUEUE *queue,uint idx);
 void _downheap(QUEUE *queue,uint idx);
+void queue_fix(QUEUE *queue);
 #define is_queue_inited(queue) ((queue)->root != 0)
 
 #ifdef	__cplusplus

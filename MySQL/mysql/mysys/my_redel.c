@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #define USES_TYPES				/* sys/types is included */
 #include "mysys_priv.h"
@@ -24,7 +23,7 @@
 #include <sys/utime.h>
 #elif defined(HAVE_UTIME_H)
 #include <utime.h>
-#elif !defined(HPUX)
+#elif !defined(HPUX10)
 struct utimbuf {
   time_t actime;
   time_t modtime;
@@ -91,7 +90,7 @@ int my_copystat(const char *from, const char *to, int MyFlags)
     return 1;
   VOID(chmod(to, statbuf.st_mode & 07777));		/* Copy modes */
 
-#if !defined(MSDOS) && !defined(__WIN__) && !defined(__EMX__) && !defined(OS2)
+#if !defined(MSDOS) && !defined(__WIN__) && !defined(__EMX__) && !defined(OS2) && !defined(__NETWARE__)
   if (statbuf.st_nlink > 1 && MyFlags & MY_LINK_WARNING)
   {
     if (MyFlags & MY_LINK_WARNING)

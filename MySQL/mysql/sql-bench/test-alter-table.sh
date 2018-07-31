@@ -27,6 +27,7 @@ $opt_start_field_count=8;	# start with this many fields
 $opt_loop_count=20;		# How many tests to do
 $opt_row_count=1000; 		# Rows in the table
 $opt_field_count=1000;		# Add until this many fields.
+$opt_time_limit=10*60;		# Don't wait more than 10 min for some tests
 
 chomp($pwd = `pwd`); $pwd = "." if ($pwd eq '');
 require "$pwd/bench-init.pl" || die "Can't read Configuration file: $!\n";
@@ -74,11 +75,25 @@ do_many($dbh,$server->create("bench",\@fields,\@index));
 print "Insert data into the table\n";
 
 $loop_time=new Benchmark;
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->{AutoCommit} = 0;
+  print "Transactions enabled\n" if ($opt_debug);
+}
+
 for ($i=0 ; $i < $opt_row_count ; $i++)
 {
   $query="insert into bench values ( " . ("$i," x ($opt_start_field_count-1)) . "$i)";
   $dbh->do($query) or die $DBI::errstr;
 }
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->commit;
+  $dbh->{AutoCommit} = 1;
+}
+
 $end_time=new Benchmark;
 
 print "Time for insert ($opt_row_count)",
@@ -99,9 +114,8 @@ if ($opt_fast)
 }
 else
 {
-  $add=1 if (!$limits{'alter_add_multi_col'});
+  $add=1 if (!$limits->{'alter_add_multi_col'});
 }
-
 
 $count=0;
 while ($field_count < $opt_field_count)
@@ -117,11 +131,34 @@ while ($field_count < $opt_field_count)
     $tmp="" if (!$multi_add);			# Adabas
   }
   do_query($dbh,"ALTER TABLE bench " . substr($fields,1));
+  $end_time=new Benchmark;
+  last if ($estimated=predict_query_time($loop_time,$end_time,\$count,$count,
+					 $opt_field_count/$add+1));
 }
 
 $end_time=new Benchmark;
-print "Time for alter_table_add ($count): " .
+if ($estimated)
+{ print "Estimated time"; }
+else
+{ print "Time"; }
+print " for alter_table_add ($count): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
+
+#
+# If estimated, fix table to have known number of fields
+#
+if ($estimated && $field_count < $opt_field_count)
+{
+  $fields="";
+  $tmp="ADD ";
+  while ($field_count < $opt_field_count)
+  {
+    $field_count++;
+    $fields.=",$tmp i${field_count} integer";
+    $tmp="" if (!$multi_add);			# Adabas
+  }
+  do_query($dbh,"ALTER TABLE bench " . substr($fields,1));
+}
 
 ####
 #### Test adding and deleting index on the first $opt_start_fields
@@ -129,7 +166,8 @@ print "Time for alter_table_add ($count): " .
 
 $loop_time=new Benchmark;
 
-for ($i=1; $i < $opt_start_field_count ; $i++)
+$count= 0;
+for ($i=1; $i <= $opt_start_field_count ; $i++)
 {
   $dbh->do("CREATE INDEX bench_ind$i ON bench (i${i})") || die $DBI::errstr;
 }
@@ -139,7 +177,7 @@ print "Time for create_index ($opt_start_field_count): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
 
 $loop_time=new Benchmark;
-for ($i=1; $i < $opt_start_field_count ; $i++)
+for ($i=1; $i <= $opt_start_field_count ; $i++)
 {
   $dbh->do($server->drop_index("bench","bench_ind$i")) || die $DBI::errstr;
 }
@@ -168,10 +206,17 @@ while ($field_count > $opt_start_field_count)
   }
   $dbh->do("ALTER TABLE bench " . substr($fields,1) . $server->{'drop_attr'})
   || die $DBI::errstr;
+  $end_time=new Benchmark;
+  last if ($estimated=predict_query_time($loop_time,$end_time,\$count,$count,
+					 $opt_field_count/$add+1));
 }
 
 $end_time=new Benchmark;
-print "Time for alter_table_drop ($count): " .
+if ($estimated)
+{ print "Estimated time"; }
+else
+{ print "Time"; }
+print " for alter_table_drop ($count): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
 
 skip_dropcol:

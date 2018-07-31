@@ -27,7 +27,7 @@
     Beware: the asm version works only if strlen(s) < 65535.
 */
 
-#include <global.h>
+#include <my_global.h>
 #include "m_string.h"
 
 #if	VaxAsm

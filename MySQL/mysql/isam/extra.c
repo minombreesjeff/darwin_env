@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -123,6 +123,7 @@ int nisam_extra(N_INFO *info, enum ha_extra_function function)
     }
 #endif
     if (!(info->opt_flag & (READ_CACHE_USED | WRITE_CACHE_USED)))
+    {
       if (!(init_io_cache(&info->rec_cache,info->dfile,0,
 			 WRITE_CACHE,info->s->state.data_file_length,
 			 (pbool) (info->lock_type != F_UNLCK),
@@ -131,7 +132,12 @@ int nisam_extra(N_INFO *info, enum ha_extra_function function)
 	info->opt_flag|=WRITE_CACHE_USED;
 	info->update&= ~HA_STATE_ROW_CHANGED;
       }
+    }
     break;
+  case HA_EXTRA_PREPARE_FOR_UPDATE:
+    if (info->s->data_file_type != DYNAMIC_RECORD)
+      break;
+    /* Remove read/write cache if dynamic rows */
   case HA_EXTRA_NO_CACHE:
     if (info->opt_flag & (READ_CACHE_USED | WRITE_CACHE_USED))
     {
@@ -204,6 +210,7 @@ int nisam_extra(N_INFO *info, enum ha_extra_function function)
     info->s->changed=1;				/* Update on close */
     break;
   case HA_EXTRA_FORCE_REOPEN:
+  case HA_EXTRA_PREPARE_FOR_DELETE:
     pthread_mutex_lock(&THR_LOCK_isam);
     info->s->last_version= 0L;			/* Impossible version */
 #ifdef __WIN__

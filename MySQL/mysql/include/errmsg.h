@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Error messages for mysql clients */
 /* error messages for the demon is in share/language/errmsg.sys */
@@ -29,7 +28,7 @@ extern const char *client_errors[];	/* Error messages */
 
 #define CR_MIN_ERROR		2000	/* For easier client code */
 #define CR_MAX_ERROR		2999
-#if defined(OS2) && defined( MYSQL_SERVER)
+#if defined(OS2) && defined(MYSQL_SERVER)
 #define CER(X) client_errors[(X)-CR_MIN_ERROR]
 #else
 #define ER(X) client_errors[(X)-CR_MIN_ERROR]
@@ -52,8 +51,16 @@ extern const char *client_errors[];	/* Error messages */
 #define CR_SERVER_LOST		2013
 #define CR_COMMANDS_OUT_OF_SYNC 2014
 #define CR_NAMEDPIPE_CONNECTION 2015
-#define CR_NAMEDPIPEWAIT_ERROR 2016
-#define CR_NAMEDPIPEOPEN_ERROR 2017
+#define CR_NAMEDPIPEWAIT_ERROR  2016
+#define CR_NAMEDPIPEOPEN_ERROR  2017
 #define CR_NAMEDPIPESETSTATE_ERROR 2018
 #define CR_CANT_READ_CHARSET	2019
 #define CR_NET_PACKET_TOO_LARGE 2020
+#define CR_EMBEDDED_CONNECTION	2021
+#define CR_PROBE_SLAVE_STATUS   2022
+#define CR_PROBE_SLAVE_HOSTS    2023
+#define CR_PROBE_SLAVE_CONNECT  2024
+#define CR_PROBE_MASTER_CONNECT 2025
+#define CR_SSL_CONNECTION_ERROR 2026
+#define CR_MALFORMED_PACKET     2027
+

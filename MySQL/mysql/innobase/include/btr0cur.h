@@ -507,7 +507,13 @@ void
 btr_free_externally_stored_field(
 /*=============================*/
 	dict_index_t*	index,		/* in: index of the data, the index
-					tree MUST be X-latched */
+					tree MUST be X-latched; if the tree
+					height is 1, then also the root page
+					must be X-latched! (this is relevant
+					in the case this function is called
+					from purge where 'data' is located on
+					an undo log page, not an index
+					page) */
 	byte*		data,		/* in: internally stored data
 					+ reference to the externally
 					stored part */
@@ -684,7 +690,13 @@ and sleep this many microseconds in between */
 #define BTR_CUR_RETRY_DELETE_N_TIMES	100
 #define BTR_CUR_RETRY_SLEEP_TIME	50000
 
-/* The reference in a field of which data is stored on a different page */
+/* The reference in a field for which data is stored on a different page.
+The reference is at the end of the 'locally' stored part of the field.
+'Locally' means storage in the index record.
+We store locally a long enough prefix of each column so that we can determine
+the ordering parts of each index record without looking into the externally
+stored part. */
+
 /*--------------------------------------*/
 #define BTR_EXTERN_SPACE_ID		0	/* space id where stored */
 #define BTR_EXTERN_PAGE_NO		4	/* page no where stored */

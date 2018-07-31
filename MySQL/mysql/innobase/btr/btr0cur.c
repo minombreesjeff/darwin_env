@@ -110,7 +110,7 @@ static
 void
 btr_cur_latch_leaves(
 /*=================*/
-	dict_tree_t*	tree,		/* in: index tree */
+	dict_tree_t*	tree __attribute__((unused)),	/* in: index tree */
 	page_t*		page,		/* in: leaf page where the search
 					converged */
 	ulint		space,		/* in: space id */
@@ -121,16 +121,19 @@ btr_cur_latch_leaves(
 {
 	ulint	left_page_no;
 	ulint	right_page_no;
-
+	page_t*	get_page;
+	
 	ut_ad(tree && page && mtr);
 
 	if (latch_mode == BTR_SEARCH_LEAF) {
 	
-		btr_page_get(space, page_no, RW_S_LATCH, mtr);
+		get_page = btr_page_get(space, page_no, RW_S_LATCH, mtr);
+		buf_block_align(get_page)->check_index_page_at_flush = TRUE;
 
 	} else if (latch_mode == BTR_MODIFY_LEAF) {
 
-		btr_page_get(space, page_no, RW_X_LATCH, mtr);
+		get_page = btr_page_get(space, page_no, RW_X_LATCH, mtr);
+		buf_block_align(get_page)->check_index_page_at_flush = TRUE;
 
 	} else if (latch_mode == BTR_MODIFY_TREE) {
 
@@ -138,15 +141,22 @@ btr_cur_latch_leaves(
 		left_page_no = btr_page_get_prev(page, mtr);
 
 		if (left_page_no != FIL_NULL) {
-			btr_page_get(space, left_page_no, RW_X_LATCH, mtr);
+			get_page = btr_page_get(space, left_page_no,
+							RW_X_LATCH, mtr);
+			buf_block_align(get_page)->check_index_page_at_flush =
+									TRUE;
 		}
 				
-		btr_page_get(space, page_no, RW_X_LATCH, mtr);
+		get_page = btr_page_get(space, page_no, RW_X_LATCH, mtr);
+		buf_block_align(get_page)->check_index_page_at_flush = TRUE;
 
 		right_page_no = btr_page_get_next(page, mtr);
 
 		if (right_page_no != FIL_NULL) {
-			btr_page_get(space, right_page_no, RW_X_LATCH, mtr);
+			get_page = btr_page_get(space, right_page_no,
+							RW_X_LATCH, mtr);
+			buf_block_align(get_page)->check_index_page_at_flush =
+									TRUE;
 		}
 
 	} else if (latch_mode == BTR_SEARCH_PREV) {
@@ -157,9 +167,12 @@ btr_cur_latch_leaves(
 		if (left_page_no != FIL_NULL) {
 			cursor->left_page = btr_page_get(space, left_page_no,
 							RW_S_LATCH, mtr);
+			buf_block_align(
+			cursor->left_page)->check_index_page_at_flush = TRUE;
 		}
 
-		btr_page_get(space, page_no, RW_S_LATCH, mtr);
+		get_page = btr_page_get(space, page_no, RW_S_LATCH, mtr);
+		buf_block_align(get_page)->check_index_page_at_flush = TRUE;
 
 	} else if (latch_mode == BTR_MODIFY_PREV) {
 
@@ -169,9 +182,12 @@ btr_cur_latch_leaves(
 		if (left_page_no != FIL_NULL) {
 			cursor->left_page = btr_page_get(space, left_page_no,
 							RW_X_LATCH, mtr);
+			buf_block_align(
+			cursor->left_page)->check_index_page_at_flush = TRUE;
 		}
 
-		btr_page_get(space, page_no, RW_X_LATCH, mtr);
+		get_page = btr_page_get(space, page_no, RW_X_LATCH, mtr);
+		buf_block_align(get_page)->check_index_page_at_flush = TRUE;
 	} else {
 		ut_error;
 	}
@@ -232,7 +248,7 @@ btr_cur_search_to_nth_level(
 	ulint		buf_mode;
 	ulint		estimate;
 	ulint		ignore_sec_unique;
-	ulint		root_height;
+	ulint		root_height = 0; /* remove warning */
 #ifdef BTR_CUR_ADAPT
 	btr_search_t*	info;
 #endif
@@ -274,6 +290,7 @@ btr_cur_search_to_nth_level(
 	if (btr_search_latch.writer == RW_LOCK_NOT_LOCKED
 		&& latch_mode <= BTR_MODIFY_LEAF && info->last_hash_succ
 		&& !estimate
+		&& mode != PAGE_CUR_LE_OR_EXTENDS
 	        && btr_search_guess_on_hash(index, info, tuple, mode,
 						latch_mode, cursor,
 						has_search_latch, mtr)) {
@@ -334,12 +351,18 @@ btr_cur_search_to_nth_level(
 	rw_latch = RW_NO_LATCH;
 	buf_mode = BUF_GET;
 
+	/* We use these modified search modes on non-leaf levels of the
+	B-tree. These let us end up in the right B-tree leaf. In that leaf
+	we use the original search mode. */
+
 	if (mode == PAGE_CUR_GE) {
 		page_mode = PAGE_CUR_L;
 	} else if (mode == PAGE_CUR_G) {
 		page_mode = PAGE_CUR_LE;
 	} else if (mode == PAGE_CUR_LE) {
 		page_mode = PAGE_CUR_LE;
+	} else if (mode == PAGE_CUR_LE_OR_EXTENDS) {
+		page_mode = PAGE_CUR_LE_OR_EXTENDS;
 	} else {
 		ut_ad(mode == PAGE_CUR_L);
 		page_mode = PAGE_CUR_L;
@@ -390,6 +413,8 @@ retry_page_get:
 
 			goto retry_page_get;
 		}
+
+		buf_block_align(page)->check_index_page_at_flush = TRUE;
 			
 #ifdef UNIV_SYNC_DEBUG					
 		if (rw_latch != RW_NO_LATCH) {
@@ -506,7 +531,7 @@ btr_cur_open_at_index_side(
 	ulint		page_no;
 	ulint		space;
 	ulint		height;
-	ulint		root_height;
+	ulint		root_height = 0; /* remove warning */
 	rec_t*		node_ptr;
 	ulint		estimate;
 	ulint           savepoint;
@@ -543,6 +568,8 @@ btr_cur_open_at_index_side(
 		ut_ad(0 == ut_dulint_cmp(tree->id,
 						btr_page_get_index_id(page)));
 
+		buf_block_align(page)->check_index_page_at_flush = TRUE;
+
 		if (height == ULINT_UNDEFINED) {
 			/* We are in the root node */
 
@@ -577,11 +604,11 @@ btr_cur_open_at_index_side(
 			page_cur_set_after_last(page, page_cursor);
 		}
 
-		if (estimate) {
-			btr_cur_add_path_info(cursor, height, root_height);
-		}
-
 		if (height == 0) {
+		        if (estimate) {
+			        btr_cur_add_path_info(cursor, height,
+						      root_height);
+		        }
 
 			break;
 		}
@@ -592,6 +619,10 @@ btr_cur_open_at_index_side(
 			page_cur_move_to_next(page_cursor);
 		} else {
 			page_cur_move_to_prev(page_cursor);
+		}
+
+		if (estimate) {
+			btr_cur_add_path_info(cursor, height, root_height);
 		}
 
 		height--;
@@ -833,7 +864,7 @@ btr_cur_optimistic_insert(
 
 	if (!dtuple_check_typed_no_assert(entry)) {
 		fprintf(stderr,
-"InnoDB: Error in a tuple to insert into table %lu index %s\n",
+"InnoDB: Error in a tuple to insert into table %s index %s\n",
 					index->table_name, index->name);
 	}
 	
@@ -1333,7 +1364,8 @@ btr_cur_update_sec_rec_in_place(
 }
 
 /*****************************************************************
-Updates a record when the update causes no size changes in its fields. */
+Updates a record when the update causes no size changes in its fields.
+We assume here that the ordering fields of the record do not change. */
 
 ulint
 btr_cur_update_in_place(
@@ -1424,7 +1456,8 @@ btr_cur_update_in_place(
 Tries to update a record on a page in an index tree. It is assumed that mtr
 holds an x-latch on the page. The operation does not succeed if there is too
 little space on the page or if the update would result in too empty a page,
-so that tree compression is recommended. */
+so that tree compression is recommended. We assume here that the ordering
+fields of the record do not change. */
 
 ulint
 btr_cur_optimistic_update(
@@ -1476,10 +1509,11 @@ btr_cur_optimistic_update(
 
 	ut_ad(mtr_memo_contains(mtr, buf_block_align(page),
 							MTR_MEMO_PAGE_X_FIX));
-	if (!row_upd_changes_field_size(rec, index, update)) {
+	if (!row_upd_changes_field_size_or_external(rec, index, update)) {
 
-		/* The simplest and most common case: the update does not
-		change the size of any field */
+		/* The simplest and the most common case: the update does not
+		change the size of any field and none of the updated fields is
+		externally stored in rec or update */
 
 		return(btr_cur_update_in_place(flags, cursor, update,
 							cmpl_info, thr, mtr));
@@ -1508,7 +1542,7 @@ btr_cur_optimistic_update(
 	
 	new_entry = row_rec_to_index_entry(ROW_COPY_DATA, index, rec, heap);
 
-	row_upd_clust_index_replace_new_col_vals(new_entry, update);
+	row_upd_index_replace_new_col_vals(new_entry, index, update, NULL);
 
 	old_rec_size = rec_get_size(rec);
 	new_rec_size = rec_get_converted_size(new_entry);
@@ -1638,54 +1672,13 @@ btr_cur_pess_upd_restore_supremum(
 	lock_rec_reset_and_inherit_gap_locks(page_get_supremum_rec(prev_page),
 									rec);
 }
-		   
-/***************************************************************
-Replaces and copies the data in the new column values stored in the
-update vector to the clustered index entry given. */
-static
-void
-btr_cur_copy_new_col_vals(
-/*======================*/
-	dtuple_t*	entry,	/* in/out: index entry where replaced */
-	upd_t*		update,	/* in: update vector */
-	mem_heap_t*	heap)	/* in: heap where data is copied */
-{
-	upd_field_t*	upd_field;
-	dfield_t*	dfield;
-	dfield_t*	new_val;
-	ulint		field_no;
-	byte*		data;
-	ulint		i;
-
-	dtuple_set_info_bits(entry, update->info_bits);
-
-	for (i = 0; i < upd_get_n_fields(update); i++) {
-
-		upd_field = upd_get_nth_field(update, i);
-
-		field_no = upd_field->field_no;
-
-		dfield = dtuple_get_nth_field(entry, field_no);
-
-		new_val = &(upd_field->new_val);
-
-		if (new_val->len == UNIV_SQL_NULL) {
-			data = NULL;
-		} else {
-			data = mem_heap_alloc(heap, new_val->len);
-
-			ut_memcpy(data, new_val->data, new_val->len);
-		}
-
-		dfield_set_data(dfield, data, new_val->len);
-	}
-}
 
 /*****************************************************************
 Performs an update of a record on a page of a tree. It is assumed
 that mtr holds an x-latch on the tree and on the cursor page. If the
 update is made on the leaf level, to avoid deadlocks, mtr must also
-own x-latches to brothers of page, if those brothers exist. */
+own x-latches to brothers of page, if those brothers exist. We assume
+here that the ordering fields of the record do not change. */
 
 ulint
 btr_cur_pessimistic_update(
@@ -1782,7 +1775,7 @@ btr_cur_pessimistic_update(
 	
 	new_entry = row_rec_to_index_entry(ROW_COPY_DATA, index, rec, heap);
 
-	btr_cur_copy_new_col_vals(new_entry, update, heap);
+	row_upd_index_replace_new_col_vals(new_entry, index, update, heap);
 
 	if (!(flags & BTR_KEEP_SYS_FLAG)) {
 		row_upd_index_entry_sys_field(new_entry, index, DATA_ROLL_PTR,
@@ -2547,6 +2540,7 @@ btr_estimate_n_rows_in_range(
 	btr_path_t*	slot1;
 	btr_path_t*	slot2;
 	ibool		diverged;
+	ibool           diverged_lot;
 	ulint           divergence_level;           
 	ib_longlong	n_rows;
 	ulint		i;
@@ -2589,10 +2583,13 @@ btr_estimate_n_rows_in_range(
 	/* We have the path information for the range in path1 and path2 */
 
 	n_rows = 1;
-	diverged = FALSE;
-	divergence_level = 1000000;
-	
-	for (i = 0; ; i++) {
+	diverged = FALSE;           /* This becomes true when the path is not
+				    the same any more */
+	diverged_lot = FALSE;       /* This becomes true when the paths are
+				    not the same or adjacent any more */
+	divergence_level = 1000000; /* This is the level where paths diverged
+				    a lot */ 
+       	for (i = 0; ; i++) {
 		ut_ad(i < BTR_PATH_ARRAY_N_SLOTS);
 	
 		slot1 = path1 + i;
@@ -2620,7 +2617,7 @@ btr_estimate_n_rows_in_range(
 				then we estimate all rows are in the range */
 			  
 			        if (n_rows == 0) {
-			                n_rows = index->table->stat_n_rows;
+				        n_rows = index->table->stat_n_rows;
 			        }
 			}
 
@@ -2629,8 +2626,15 @@ btr_estimate_n_rows_in_range(
 
 		if (!diverged && slot1->nth_rec != slot2->nth_rec) {
 
+			diverged = TRUE;
+
 			if (slot1->nth_rec < slot2->nth_rec) {
 				n_rows = slot2->nth_rec - slot1->nth_rec;
+
+				if (n_rows > 1) {
+				          diverged_lot = TRUE;
+					  divergence_level = i;
+				}
 			} else {
 				/* Maybe the tree has changed between
 				searches */
@@ -2638,10 +2642,27 @@ btr_estimate_n_rows_in_range(
 				return(10);
 			}
 
-			divergence_level = i;
+		} else if (diverged && !diverged_lot) {
 
-			diverged = TRUE;
-		} else if (diverged) {
+		        if (slot1->nth_rec < slot1->n_recs
+		            || slot2->nth_rec > 1) {
+
+		                diverged_lot = TRUE;
+				divergence_level = i;
+
+				n_rows = 0;
+
+		                if (slot1->nth_rec < slot1->n_recs) {
+				        n_rows += slot1->n_recs
+					             - slot1->nth_rec;
+				}
+
+				if (slot2->nth_rec > 1) {
+				        n_rows += slot2->nth_rec - 1;
+				}
+      			}
+		} else if (diverged_lot) {
+
 			n_rows = (n_rows * (slot1->n_recs + slot2->n_recs))
 									/ 2;
 		}	
@@ -3105,8 +3126,9 @@ btr_store_big_rec_extern_fields(
 	rec_t*		rec,		/* in: record */
 	big_rec_t*	big_rec_vec,	/* in: vector containing fields
 					to be stored externally */
-	mtr_t*		local_mtr)	/* in: mtr containing the latch to
-					rec and to the tree */
+	mtr_t*		local_mtr __attribute__((unused))) /* in: mtr
+                                        containing the latch to rec and to the
+                                        tree */
 {
 	byte*	data;
 	ulint	local_len;
@@ -3124,7 +3146,7 @@ btr_store_big_rec_extern_fields(
 
 	ut_ad(mtr_memo_contains(local_mtr, dict_tree_get_lock(index->tree),
 							MTR_MEMO_X_LOCK));
-	ut_ad(mtr_memo_contains(local_mtr, buf_block_align(data),
+	ut_ad(mtr_memo_contains(local_mtr, buf_block_align(rec),
 							MTR_MEMO_PAGE_X_FIX));	
 	ut_a(index->type & DICT_CLUSTERED);
 							
@@ -3259,7 +3281,13 @@ void
 btr_free_externally_stored_field(
 /*=============================*/
 	dict_index_t*	index,		/* in: index of the data, the index
-					tree MUST be X-latched */
+					tree MUST be X-latched; if the tree
+					height is 1, then also the root page
+					must be X-latched! (this is relevant
+					in the case this function is called
+					from purge where 'data' is located on
+					an undo log page, not an index
+					page) */
 	byte*		data,		/* in: internally stored data
 					+ reference to the externally
 					stored part */
@@ -3267,9 +3295,9 @@ btr_free_externally_stored_field(
 	ibool		do_not_free_inherited,/* in: TRUE if called in a
 					rollback and we do not want to free
 					inherited fields */
-	mtr_t*		local_mtr)	/* in: mtr containing the latch to
-					data an an X-latch to the index
-					tree */
+	mtr_t*		local_mtr __attribute__((unused))) /* in: mtr 
+                                        containing the latch to data an an 
+                                        X-latch to the index tree */
 {
 	page_t*	page;
 	page_t*	rec_page;
@@ -3303,8 +3331,8 @@ btr_free_externally_stored_field(
 		page_no = mach_read_from_4(data + local_len
 						+ BTR_EXTERN_PAGE_NO);
 
-		offset = mach_read_from_4(data + local_len + BTR_EXTERN_OFFSET);
-
+		offset = mach_read_from_4(data + local_len
+							+ BTR_EXTERN_OFFSET);
 		extern_len = mach_read_from_4(data + local_len
 						+ BTR_EXTERN_LEN + 4);
 

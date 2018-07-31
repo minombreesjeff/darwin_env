@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -60,8 +60,13 @@ int heap_write(HP_INFO *info, const byte *record)
   info->current_ptr=pos;
   info->current_hash_ptr=0;
   info->update|=HA_STATE_AKTIV;
+#if !defined(DBUG_OFF) && defined(EXTRA_HEAP_DEBUG)
+  DBUG_EXECUTE("check_heap",heap_check_heap(info, 0););
+#endif
   DBUG_RETURN(0);
+
 err:
+  DBUG_PRINT("info",("Duplicate key: %d",key));
   info->errkey= key;
   do
   {
@@ -73,6 +78,7 @@ err:
   *((byte**) pos)=share->del_link;
   share->del_link=pos;
   pos[share->reclength]=0;			/* Record deleted */
+
   DBUG_RETURN(my_errno);
 } /* heap_write */
 
@@ -237,8 +243,10 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
       _hp_movelink(pos,gpos,empty);
     }
 
-    /* Check if dupplicated keys */
-    if ((keyinfo->flag & HA_NOSAME) && pos == gpos)
+    /* Check if duplicated keys */
+    if ((keyinfo->flag & HA_NOSAME) && pos == gpos &&
+	(!(keyinfo->flag & HA_NULL_PART_KEY) ||
+	 !hp_if_null_in_key(keyinfo, record)))
     {
       pos=empty;
       do

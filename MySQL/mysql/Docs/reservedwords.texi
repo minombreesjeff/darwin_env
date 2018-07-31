@@ -1,0 +1,221 @@
+@c START_OF_RESERVED_WORDS
+
+@c Reserved word list updated Fri Apr 11 13:44:13 2003 by arjen.
+@c Data from MySQL version 5.0.0-alpha
+@c BitKeeper ChangeSet 1.1541 (03/04/08 19:43:24)
+@c To regenerate, use Support/update-reserved-words.pl
+
+@multitable @columnfractions .33 .33 .34
+@item @strong{Word}
+ @tab @strong{Word}
+ @tab @strong{Word}
+@item @code{ADD}
+ @tab @code{ALL}
+ @tab @code{ALTER}
+@item @code{ANALYZE}
+ @tab @code{AND}
+ @tab @code{AS}
+@item @code{ASC}
+ @tab @code{ASENSITIVE}
+ @tab @code{AUTO_INCREMENT}
+@item @code{BDB}
+ @tab @code{BEFORE}
+ @tab @code{BERKELEYDB}
+@item @code{BETWEEN}
+ @tab @code{BIGINT}
+ @tab @code{BINARY}
+@item @code{BLOB}
+ @tab @code{BOTH}
+ @tab @code{BTREE}
+@item @code{BY}
+ @tab @code{CALL}
+ @tab @code{CASCADE}
+@item @code{CASE}
+ @tab @code{CHANGE}
+ @tab @code{CHAR}
+@item @code{CHARACTER}
+ @tab @code{CHECK}
+ @tab @code{COLLATE}
+@item @code{COLUMN}
+ @tab @code{COLUMNS}
+ @tab @code{CONNECTION}
+@item @code{CONSTRAINT}
+ @tab @code{CREATE}
+ @tab @code{CROSS}
+@item @code{CURRENT_DATE}
+ @tab @code{CURRENT_TIME}
+ @tab @code{CURRENT_TIMESTAMP}
+@item @code{CURSOR}
+ @tab @code{DATABASE}
+ @tab @code{DATABASES}
+@item @code{DAY_HOUR}
+ @tab @code{DAY_MINUTE}
+ @tab @code{DAY_SECOND}
+@item @code{DEC}
+ @tab @code{DECIMAL}
+ @tab @code{DECLARE}
+@item @code{DEFAULT}
+ @tab @code{DELAYED}
+ @tab @code{DELETE}
+@item @code{DESC}
+ @tab @code{DESCRIBE}
+ @tab @code{DISTINCT}
+@item @code{DISTINCTROW}
+ @tab @code{DIV}
+ @tab @code{DOUBLE}
+@item @code{DROP}
+ @tab @code{ELSE}
+ @tab @code{ELSEIF}
+@item @code{ENCLOSED}
+ @tab @code{ERRORS}
+ @tab @code{ESCAPED}
+@item @code{EXISTS}
+ @tab @code{EXPLAIN}
+ @tab @code{FALSE}
+@item @code{FIELDS}
+ @tab @code{FLOAT}
+ @tab @code{FOR}
+@item @code{FORCE}
+ @tab @code{FOREIGN}
+ @tab @code{FROM}
+@item @code{FULLTEXT}
+ @tab @code{GRANT}
+ @tab @code{GROUP}
+@item @code{HASH}
+ @tab @code{HAVING}
+ @tab @code{HIGH_PRIORITY}
+@item @code{HOUR_MINUTE}
+ @tab @code{HOUR_SECOND}
+ @tab @code{IF}
+@item @code{IGNORE}
+ @tab @code{IN}
+ @tab @code{INDEX}
+@item @code{INFILE}
+ @tab @code{INNER}
+ @tab @code{INNODB}
+@item @code{INOUT}
+ @tab @code{INSENSITIVE}
+ @tab @code{INSERT}
+@item @code{INT}
+ @tab @code{INTEGER}
+ @tab @code{INTERVAL}
+@item @code{INTO}
+ @tab @code{IS}
+ @tab @code{ITERATE}
+@item @code{JOIN}
+ @tab @code{KEY}
+ @tab @code{KEYS}
+@item @code{KILL}
+ @tab @code{LEADING}
+ @tab @code{LEAVE}
+@item @code{LEFT}
+ @tab @code{LIKE}
+ @tab @code{LIMIT}
+@item @code{LINES}
+ @tab @code{LOAD}
+ @tab @code{LOCALTIME}
+@item @code{LOCALTIMESTAMP}
+ @tab @code{LOCK}
+ @tab @code{LONG}
+@item @code{LONGBLOB}
+ @tab @code{LONGTEXT}
+ @tab @code{LOOP}
+@item @code{LOW_PRIORITY}
+ @tab @code{MASTER_SERVER_ID}
+ @tab @code{MATCH}
+@item @code{MEDIUMBLOB}
+ @tab @code{MEDIUMINT}
+ @tab @code{MEDIUMTEXT}
+@item @code{MIDDLEINT}
+ @tab @code{MINUTE_SECOND}
+ @tab @code{MOD}
+@item @code{MRG_MYISAM}
+ @tab @code{NATURAL}
+ @tab @code{NOT}
+@item @code{NULL}
+ @tab @code{NUMERIC}
+ @tab @code{ON}
+@item @code{OPTIMIZE}
+ @tab @code{OPTION}
+ @tab @code{OPTIONALLY}
+@item @code{OR}
+ @tab @code{ORDER}
+ @tab @code{OUT}
+@item @code{OUTER}
+ @tab @code{OUTFILE}
+ @tab @code{PRECISION}
+@item @code{PRIMARY}
+ @tab @code{PRIVILEGES}
+ @tab @code{PROCEDURE}
+@item @code{PURGE}
+ @tab @code{READ}
+ @tab @code{REAL}
+@item @code{REFERENCES}
+ @tab @code{REGEXP}
+ @tab @code{RENAME}
+@item @code{REPEAT}
+ @tab @code{REPLACE}
+ @tab @code{REQUIRE}
+@item @code{RESTRICT}
+ @tab @code{RETURN}
+ @tab @code{RETURNS}
+@item @code{REVOKE}
+ @tab @code{RIGHT}
+ @tab @code{RLIKE}
+@item @code{RTREE}
+ @tab @code{SELECT}
+ @tab @code{SENSITIVE}
+@item @code{SEPARATOR}
+ @tab @code{SET}
+ @tab @code{SHOW}
+@item @code{SMALLINT}
+ @tab @code{SOME}
+ @tab @code{SONAME}
+@item @code{SPATIAL}
+ @tab @code{SPECIFIC}
+ @tab @code{SQL_BIG_RESULT}
+@item @code{SQL_CALC_FOUND_ROWS}
+ @tab @code{SQL_SMALL_RESULT}
+ @tab @code{SSL}
+@item @code{STARTING}
+ @tab @code{STRAIGHT_JOIN}
+ @tab @code{STRIPED}
+@item @code{TABLE}
+ @tab @code{TABLES}
+ @tab @code{TERMINATED}
+@item @code{THEN}
+ @tab @code{TINYBLOB}
+ @tab @code{TINYINT}
+@item @code{TINYTEXT}
+ @tab @code{TO}
+ @tab @code{TRAILING}
+@item @code{TRUE}
+ @tab @code{TYPES}
+ @tab @code{UNION}
+@item @code{UNIQUE}
+ @tab @code{UNLOCK}
+ @tab @code{UNSIGNED}
+@item @code{UNTIL}
+ @tab @code{UPDATE}
+ @tab @code{USAGE}
+@item @code{USE}
+ @tab @code{USER_RESOURCES}
+ @tab @code{USING}
+@item @code{VALUES}
+ @tab @code{VARBINARY}
+ @tab @code{VARCHAR}
+@item @code{VARCHARACTER}
+ @tab @code{VARYING}
+ @tab @code{WARNINGS}
+@item @code{WHEN}
+ @tab @code{WHERE}
+ @tab @code{WHILE}
+@item @code{WITH}
+ @tab @code{WRITE}
+ @tab @code{XOR}
+@item @code{YEAR_MONTH}
+ @tab @code{ZEROFILL}
+ @tab
+@end multitable
+
+@c END_OF_RESERVED_WORDS

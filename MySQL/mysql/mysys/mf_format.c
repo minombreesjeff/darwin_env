@@ -1,94 +1,84 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include <m_string.h>
-#ifdef HAVE_REALPATH
-#include <sys/param.h>
-#include <sys/stat.h>
-#endif
 
-	/* format a filename with replace of library and extension */
-	/* params to and name may be identicall */
-	/* function doesn't change name if name != to */
-	/* Flag may be: 1   replace filenames library with 'dsk' */
-	/*		2   replace extension with 'form' */
-	/*		4   Unpack filename (replace ~ with home) */
-	/*		8   Pack filename as short as possibly */
-	/*		16  Resolve symbolic links for filename */
-	/*		32  Resolve filename to full path */
-	/*		64  Return NULL if too long path */
+	/*
+	  Formats a filename with possible replace of directory of extension
+	  Function can handle the case where 'to' == 'name'
+	  For a description of the flag values, consult my_sys.h
+	  The arguments should be in unix format.
+	*/
 
-#ifdef SCO
-#define BUFF_LEN 4097
-#else
-#ifdef MAXPATHLEN
-#define BUFF_LEN MAXPATHLEN
-#else
-#define BUFF_LEN FN_LEN
-#endif
-#endif
 
-my_string fn_format(my_string to, const char *name, const char *dsk,
-		    const char *form, int flag)
+my_string fn_format(my_string to, const char *name, const char *dir,
+		    const char *extension, uint flag)
 {
   reg1 uint length;
-  char dev[FN_REFLEN], buff[BUFF_LEN], *pos, *startpos;
+  char dev[FN_REFLEN], buff[FN_REFLEN], *pos, *startpos;
   const char *ext;
   DBUG_ENTER("fn_format");
-  DBUG_PRINT("enter",("name: %s  dsk: %s  form: %s  flag: %d",
-		       name,dsk,form,flag));
+  DBUG_PRINT("enter",("name: %s  dir: %s  extension: %s  flag: %d",
+		       name,dir,extension,flag));
 
-	/* Kopiera & skippa enheten */
+  /* Copy and skip directory */
   name+=(length=dirname_part(dev,(startpos=(my_string) name)));
-  if (length == 0 || flag & 1)
+  if (length == 0 || (flag & MY_REPLACE_DIR))
   {
-    (void) strmake(dev,dsk, sizeof(dev) - 2);
-      /* Use given directory */
-    convert_dirname(dev);			/* Fix to this OS */
+    /* Use given directory */
+    convert_dirname(dev,dir,NullS);		/* Fix to this OS */
   }
-  if (flag & 8)
-    pack_dirname(dev,dev);			/* Put in ./.. and ~/.. */
-  if (flag & 4)
-    (void) unpack_dirname(dev,dev);		/* Replace ~/.. with dir */
-  if ((pos=(char*)strchr(name,FN_EXTCHAR)) != NullS)
+  else if ((flag & MY_RELATIVE_PATH) && !test_if_hard_path(name))
   {
-    if ((flag & 2) == 0)			/* Skall vi byta extension ? */
+    /* Put 'dir' before the given path */
+    strmake(buff,dev,sizeof(buff)-1);
+    pos=convert_dirname(dev,dir,NullS);
+    strmake(pos,buff,sizeof(buff)-1- (int) (pos-dev));
+  }
+
+  if (flag & MY_PACK_FILENAME)
+    pack_dirname(dev,dev);			/* Put in ./.. and ~/.. */
+  if (flag & MY_UNPACK_FILENAME)
+    (void) unpack_dirname(dev,dev);		/* Replace ~/.. with dir */
+  if ((pos= (char*) strchr(name,FN_EXTCHAR)) != NullS)
+  {
+    if ((flag & MY_REPLACE_EXT) == 0)		/* If we should keep old ext */
     {
-      length=strlength(name);			/* Old extension */
+      length=strlength(name);			/* Use old extension */
       ext = "";
     }
     else
     {
       length=(uint) (pos-(char*) name);		/* Change extension */
-      ext= form;
+      ext= extension;
     }
   }
   else
   {
-    length=strlength(name);			/* Har ingen ext- tag nya */
-    ext=form;
+    length=strlength(name);			/* No ext, use the now one */
+    ext=extension;
   }
 
   if (strlen(dev)+length+strlen(ext) >= FN_REFLEN || length >= FN_LEN )
-  {				/* To long path, return original */
+  {
+    /* To long path, return original or NULL */
     uint tmp_length;
-    if (flag & 64)
-      return 0;
+    if (flag & MY_SAFE_PATH)
+      return NullS;
     tmp_length=strlength(startpos);
     DBUG_PRINT("error",("dev: '%s'  ext: '%s'  length: %d",dev,ext,length));
     (void) strmake(to,startpos,min(tmp_length,FN_REFLEN-1));
@@ -109,18 +99,18 @@ my_string fn_format(my_string to, const char *name, const char *dsk,
 #endif
     (void) strmov(pos,ext);			/* Don't convert extension */
   }
-  /* Purify gives a lot of UMR errors when using realpath */
-#if defined(HAVE_REALPATH) && !defined(HAVE_purify) && !defined(HAVE_BROKEN_REALPATH)
-  if (flag & 16)
+  /*
+    If MY_RETURN_REAL_PATH and MY_RESOLVE_SYMLINK is given, only do
+    realpath if the file is a symbolic link
+  */
+  if (flag & MY_RETURN_REAL_PATH)
+    (void) my_realpath(to, to, MYF(flag & MY_RESOLVE_SYMLINKS ?
+				   MY_RESOLVE_LINK: 0));
+  else if (flag & MY_RESOLVE_SYMLINKS)
   {
-    struct stat stat_buff;
-    if (flag & 32 || (!lstat(to,&stat_buff) && S_ISLNK(stat_buff.st_mode)))
-    {
-      if (realpath(to,buff))
-	strmake(to,buff,FN_REFLEN-1);
-    }
+    strmov(buff,to);
+    (void) my_readlink(to, buff, MYF(0));
   }
-#endif
   DBUG_RETURN (to);
 } /* fn_format */
 

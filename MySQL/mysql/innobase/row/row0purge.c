@@ -24,6 +24,7 @@ Created 3/14/1997 Heikki Tuuri
 #include "row0row.h"
 #include "row0upd.h"
 #include "row0vers.h"
+#include "row0mysql.h"
 #include "log0log.h"
 
 /************************************************************************
@@ -204,7 +205,7 @@ row_purge_remove_sec_if_poss_low(
 	btr_pcur_t	pcur;
 	btr_cur_t*	btr_cur;
 	ibool		success;
-	ibool		old_has;
+	ibool		old_has = 0; /* remove warning */
 	ibool		found;
 	ulint		err;
 	mtr_t		mtr;
@@ -428,7 +429,18 @@ skip_secondaries:
 			index = dict_table_get_first_index(node->table);
 
 			mtr_x_lock(dict_tree_get_lock(index->tree), &mtr);
+
+			/* NOTE: we must also acquire an X-latch to the
+			root page of the tree. We will need it when we
+			free pages from the tree. If the tree is of height 1,
+			the tree X-latch does NOT protect the root page,
+			because it is also a leaf page. Since we will have a
+			latch on an undo log page, we would break the
+			latching order if we would only later latch the
+			root page of such a tree! */
 			
+			btr_root_get(index->tree, &mtr);
+
 			/* We assume in purge of externally stored fields
 			that the space id of the undo log record is 0! */
 
@@ -453,7 +465,9 @@ static
 ibool
 row_purge_parse_undo_rec(
 /*=====================*/
-				/* out: TRUE if purge operation required */
+				/* out: TRUE if purge operation required:
+				NOTE that then the CALLER must unfreeze
+				data dictionary! */
 	purge_node_t*	node,	/* in: row undo node */
 	ibool*		updated_extern,
 				/* out: TRUE if an externally stored field
@@ -462,6 +476,7 @@ row_purge_parse_undo_rec(
 {
 	dict_index_t*	clust_index;
 	byte*		ptr;
+	trx_t*		trx;
 	dulint		undo_no;
 	dulint		table_id;
 	dulint		trx_id;
@@ -471,6 +486,8 @@ row_purge_parse_undo_rec(
 	ulint		cmpl_info;
 	
 	ut_ad(node && thr);
+
+	trx = thr_get_trx(thr);
 	
 	ptr = trx_undo_rec_get_pars(node->undo_rec, &type, &cmpl_info,
 					updated_extern, &undo_no, &table_id);
@@ -493,18 +510,21 @@ row_purge_parse_undo_rec(
 	    	return(FALSE);
 	}
 	
- 	mutex_enter(&(dict_sys->mutex));
+	/* Prevent DROP TABLE etc. from running when we are doing the purge
+	for this row */
+
+	row_mysql_freeze_data_dictionary(trx);
+
+	mutex_enter(&(dict_sys->mutex));
 
 	node->table = dict_table_get_on_id_low(table_id, thr_get_trx(thr));
-
-	rw_lock_x_lock(&(purge_sys->purge_is_running));
-
- 	mutex_exit(&(dict_sys->mutex));
 	
+	mutex_exit(&(dict_sys->mutex));
+
 	if (node->table == NULL) {
 		/* The table has been dropped: no need to do purge */
 
-		rw_lock_x_unlock(&(purge_sys->purge_is_running));
+		row_mysql_unfreeze_data_dictionary(trx);
 
 		return(FALSE);
 	}
@@ -514,7 +534,7 @@ row_purge_parse_undo_rec(
 	if (clust_index == NULL) {
 		/* The table was corrupt in the data dictionary */
 
-		rw_lock_x_unlock(&(purge_sys->purge_is_running));
+		row_mysql_unfreeze_data_dictionary(trx);
 
 		return(FALSE);
 	}
@@ -552,9 +572,12 @@ row_purge(
 	dulint	roll_ptr;
 	ibool	purge_needed;
 	ibool	updated_extern;
+	trx_t*	trx;
 	
 	ut_ad(node && thr);
 
+	trx = thr_get_trx(thr);
+	
 	node->undo_rec = trx_purge_fetch_next_rec(&roll_ptr,
 						&(node->reservation),
 						node->heap);
@@ -573,6 +596,8 @@ row_purge(
 	} else {
 		purge_needed = row_purge_parse_undo_rec(node, &updated_extern,
 									thr);
+		/* If purge_needed == TRUE, we must also remember to unfreeze
+		data dictionary! */
 	}
 
 	if (purge_needed) {
@@ -594,7 +619,7 @@ row_purge(
 			btr_pcur_close(&(node->pcur));
 		}
 
-		rw_lock_x_unlock(&(purge_sys->purge_is_running));		
+		row_mysql_unfreeze_data_dictionary(trx);
 	}
 
 	/* Do some cleanup */

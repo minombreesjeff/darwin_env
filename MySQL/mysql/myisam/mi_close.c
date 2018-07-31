@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -29,8 +29,7 @@ int mi_close(register MI_INFO *info)
   MYISAM_SHARE *share=info->s;
   DBUG_ENTER("mi_close");
   DBUG_PRINT("enter",("base: %lx  reopen: %u  locks: %u",
-		      info,(uint) share->reopen,
-		      (uint) (share->w_locks+share->r_locks)));
+		      info,(uint) share->reopen, (uint) share->tot_locks));
 
   pthread_mutex_lock(&THR_LOCK_myisam);
   if (info->lock_type == F_EXTRA_LCK)
@@ -47,7 +46,10 @@ int mi_close(register MI_INFO *info)
   pthread_mutex_lock(&share->intern_lock);
 
   if (share->options & HA_OPTION_READ_ONLY_DATA)
+  {
     share->r_locks--;
+    share->tot_locks--;
+  }
   if (info->opt_flag & (READ_CACHE_USED | WRITE_CACHE_USED))
   {
     if (end_io_cache(&info->rec_cache))
@@ -58,6 +60,7 @@ int mi_close(register MI_INFO *info)
   myisam_open_list=list_delete(myisam_open_list,&info->open_list);
   pthread_mutex_unlock(&share->intern_lock);
 
+  my_free(mi_get_rec_buff_ptr(info, info->rec_buff), MYF(MY_ALLOW_ZERO_PTR));
   if (flag)
   {
     if (share->kfile >= 0 &&
@@ -99,7 +102,6 @@ int mi_close(register MI_INFO *info)
     error = my_errno;
 
   myisam_log_command(MI_LOG_CLOSE,info,NULL,0,error);
-  my_free((gptr) info->rec_alloc,MYF(MY_ALLOW_ZERO_PTR));
   my_free((gptr) info,MYF(0));
 
   if (error)

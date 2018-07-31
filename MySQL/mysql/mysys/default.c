@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /****************************************************************************
 ** Add all options from files named "group".cnf from the default_directories
@@ -34,11 +33,10 @@
 ** --print-defaults	; Print the modified command line and exit
 ****************************************************************************/
 
-#undef SAFEMALLOC		/* safe_malloc is not yet initailized */
-
 #include "mysys_priv.h"
 #include "m_string.h"
 #include "m_ctype.h"
+#include <my_dir.h>
 
 char *defaults_extra_file=0;
 
@@ -47,6 +45,8 @@ char *defaults_extra_file=0;
 const char *default_directories[]= {
 #ifdef __WIN__
 "C:/",
+#elif defined(__NETWARE__)
+"sys:/etc/",
 #else
 "/etc/",
 #endif
@@ -54,22 +54,23 @@ const char *default_directories[]= {
 DATADIR,
 #endif
 "",					/* Place for defaults_extra_dir */
-#ifndef __WIN__
+#if !defined(__WIN__) && !defined(__NETWARE__)
 "~/",
 #endif
 NullS,
 };
 
-#define default_ext   	".cnf"		/* extension for config file */
+#define default_ext	".cnf"		/* extension for config file */
 #ifdef __WIN__
 #include <winbase.h>
 #define windows_ext	".ini"
 #endif
 
-static my_bool search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
+static my_bool search_default_file(DYNAMIC_ARRAY *args,MEM_ROOT *alloc,
 				   const char *dir, const char *config_file,
 				   const char *ext, TYPELIB *group);
 
+static char *remove_end_comment(char *ptr);
 
 void load_defaults(const char *conf_file, const char **groups,
 		   int *argc, char ***argv)
@@ -83,7 +84,7 @@ void load_defaults(const char *conf_file, const char **groups,
   char *ptr,**res;
   DBUG_ENTER("load_defaults");
 
-  init_alloc_root(&alloc,128,0);
+  init_alloc_root(&alloc,512,0);
   if (*argc >= 2 && !strcmp(argv[0][1],"--no-defaults"))
   {
     /* remove the --no-defaults argument and return only the other arguments */
@@ -95,6 +96,7 @@ void load_defaults(const char *conf_file, const char **groups,
     res[0]= **argv;				/* Copy program name */
     for (i=2 ; i < (uint) *argc ; i++)
       res[i-1]=argv[0][i];
+    res[i-1]=0;					/* End pointer */
     (*argc)--;
     *argv=res;
     *(MEM_ROOT*) ptr= alloc;			/* Save alloc root for free */
@@ -231,16 +233,35 @@ static my_bool search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
     return 0;					/* Ignore wrong paths */
   if (dir)
   {
-    strmov(name,dir);
-    convert_dirname(name);
+    end=convert_dirname(name, dir, NullS);
     if (dir[0] == FN_HOMELIB)		/* Add . to filenames in home */
-      strcat(name,".");
-    strxmov(strend(name),config_file,ext,NullS);
+      *end++='.';
+    strxmov(end,config_file,ext,NullS);
   }
   else
   {
     strmov(name,config_file);
   }
+  fn_format(name,name,"","",4);
+#if !defined(__WIN__) && !defined(OS2) && !defined(__NETWARE__)
+  {
+    MY_STAT stat_info;
+    if (!my_stat(name,&stat_info,MYF(0)))
+      return 0;
+    /*
+      Ignore world-writable regular files.
+      This is mainly done to protect us to not read a file created by
+      the mysqld server, but the check is still valid in most context. 
+    */
+    if ((stat_info.st_mode & S_IWOTH) &&
+	(stat_info.st_mode & S_IFMT) == S_IFREG)
+    {
+      fprintf(stderr, "warning: World-writeable config file %s is ignored\n",
+              name);
+      return 0;
+    }
+  }
+#endif
   if (!(fp = my_fopen(fn_format(name,name,"","",4),O_RDONLY,MYF(0))))
     return 0;					/* Ignore wrong files */
 
@@ -275,9 +296,11 @@ static my_bool search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
     }
     if (!read_values)
       continue;
-    if (!(end=value=strchr(ptr,'=')))
-      end=strend(ptr);				/* Option without argument */
+    end= remove_end_comment(ptr);
+    if ((value= strchr(ptr, '=')))
+      end= value;				/* Option without argument */
     for ( ; isspace(end[-1]) ; end--) ;
+
     if (!value)
     {
       if (!(tmp=alloc_root(alloc,(uint) (end-ptr)+3)))
@@ -346,6 +369,29 @@ static my_bool search_default_file(DYNAMIC_ARRAY *args, MEM_ROOT *alloc,
 }
 
 
+static char *remove_end_comment(char *ptr)
+{
+  char quote= 0;
+
+  for (; *ptr; ptr++)
+  {
+    if (*ptr == '\'' || *ptr == '\"')
+    {
+      if (!quote)
+	quote= *ptr;
+      else if (quote == *ptr)
+	quote= 0;
+    }
+    if (!quote && *ptr == '#') /* We are not inside a comment */
+    {
+      *ptr= 0;
+      return ptr;
+    }
+  }
+  return ptr;
+}
+
+
 void print_defaults(const char *conf_file, const char **groups)
 {
 #ifdef __WIN__
@@ -369,16 +415,18 @@ void print_defaults(const char *conf_file, const char **groups)
 #endif
     for (dirs=default_directories ; *dirs; dirs++)
     {
+      const char *pos;
+      char *end;
       if (**dirs)
-	strmov(name,*dirs);
+	pos= *dirs;
       else if (defaults_extra_file)
-	strmov(name,defaults_extra_file);
+	pos= defaults_extra_file;
       else
 	continue;
-      convert_dirname(name);
+      end=convert_dirname(name, pos, NullS);
       if (name[0] == FN_HOMELIB)	/* Add . to filenames in home */
-	strcat(name,".");
-      strxmov(strend(name),conf_file,default_ext," ",NullS);
+	*end++='.';
+      strxmov(end,conf_file,default_ext," ",NullS);
       fputs(name,stdout);
     }
     puts("");
@@ -395,4 +443,3 @@ void print_defaults(const char *conf_file, const char **groups)
 --defaults-file=#	Only read default options from the given file #\n\
 --defaults-extra-file=# Read this file after the global files are read");
 }
-

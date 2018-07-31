@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include "mysys_err.h"
@@ -26,8 +25,15 @@
 const char ** NEAR my_errmsg[MAXMAPS]={0,0,0,0};
 char NEAR errbuff[NRERRBUFFS][ERRMSGSIZE];
 
-/* Error message to user */
-/*VARARGS2*/
+/*
+   Error message to user
+
+   SYNOPSIS
+     my_error()
+       nr	Errno
+       MyFlags	Flags
+       ...	variable list
+*/
 
 int my_error(int nr,myf MyFlags, ...)
 {
@@ -103,7 +109,16 @@ int my_error(int nr,myf MyFlags, ...)
   DBUG_RETURN((*error_handler_hook)(nr, ebuff, MyFlags));
 }
 
-	/* Error as printf */
+/*
+  Error as printf
+
+  SYNOPSIS
+    my_printf_error()
+      error	Errno
+      format	Format string
+      MyFlags	Flags
+      ...	variable list
+*/
 
 int my_printf_error (uint error, const char *format, myf MyFlags, ...)
 {
@@ -116,7 +131,15 @@ int my_printf_error (uint error, const char *format, myf MyFlags, ...)
   return (*error_handler_hook)(error, ebuff, MyFlags);
 }
 
-	/* Give message using error_handler_hook */
+/*
+  Give message using error_handler_hook
+
+  SYNOPSIS
+    my_message()
+      error	Errno
+      str	Error message
+      MyFlags	Flags
+*/
 
 int my_message(uint error, const char *str, register myf MyFlags)
 {

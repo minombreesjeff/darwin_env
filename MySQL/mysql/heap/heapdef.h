@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -21,6 +21,17 @@
 #include <my_pthread.h>
 #endif
 #include "heap.h"			/* Structs & some defines */
+
+/*
+  When allocating keys /rows in the internal block structure, do it
+  within the following boundaries.
+
+  The challenge is to find the balance between allocate as few blocks
+  as possible and keep memory consumption down.
+*/
+
+#define HP_MIN_RECORDS_IN_BLOCK 16
+#define HP_MAX_RECORDS_IN_BLOCK 8192
 
 	/* Some extern variables */
 
@@ -70,6 +81,7 @@ extern int _hp_rec_key_cmp(HP_KEYDEF *keydef,const byte *rec1,
 extern int _hp_key_cmp(HP_KEYDEF *keydef,const byte *rec,
 			   const byte *key);
 extern void _hp_make_key(HP_KEYDEF *keydef,byte *key,const byte *rec);
+extern my_bool hp_if_null_in_key(HP_KEYDEF *keyinfo, const byte *record);
 extern int _hp_close(register HP_INFO *info);
 extern void _hp_clear(HP_SHARE *info);
 

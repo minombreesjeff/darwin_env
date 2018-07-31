@@ -9,26 +9,35 @@
 #   changes
 # - Test creating a duplicate key error and recover from it
 #
-connect (master,localhost,root,,test,0,mysql-master.sock);
-connect (slave,localhost,root,,test,0,mysql-slave.sock);
+connect (master,localhost,root,,test,$MASTER_MYPORT,master.sock);
+drop table if exists t1, t2, t3, t4;
+connect (slave,localhost,root,,test,$SLAVE_MYPORT,slave.sock);
 system cat /dev/null > var/slave-data/master.info;
 system chmod 000 var/slave-data/master.info;
 connection slave;
-!slave start;
+drop table if exists t1, t2, t3, t4;
+# START SLAVE will fail because it can't read the file (mode 000) (system error 13)
+--error 1201
+slave start;
 system chmod 600 var/slave-data/master.info;
-!slave start;
-!eval change master to master_host='127.0.0.1',master_port=$MASTER_MYPORT,
- master_user='root'; 
+# It will fail again because the file is empty so the slave cannot get valuable
+# info about how to connect to the master from it (failure in
+# init_strvar_from_file() in init_master_info()).
+--error 1201
+slave start;
+--replace_result 3306 MASTER_PORT 9306 MASTER_PORT 3334 MASTER_PORT 3336 MASTER_PORT
+# CHANGE MASTER will fail because it first parses master.info before changing it
+# (so when master.info is bad, people have to use RESET SLAVE first).
+--error 1201
+eval change master to master_host='127.0.0.1',master_port=$MASTER_MYPORT, master_user='root';
 reset slave;
-eval change master to master_host='127.0.0.1',master_port=$MASTER_MYPORT,
- master_user='root'; 
+--replace_result 3306 MASTER_PORT 9306 MASTER_PORT 3334 MASTER_PORT 3336 MASTER_PORT
+eval change master to master_host='127.0.0.1',master_port=$MASTER_MYPORT, master_user='root'; 
 connection master;
 reset master;
 connection slave;
 slave start;
 connection master;
-
-drop table if exists t1, t2, t3, t4;
 
 #
 # Test FLUSH LOGS
@@ -40,7 +49,7 @@ insert into t1 values('Could not break slave'),('Tried hard');
 save_master_pos;
 connection slave;
 sync_with_master;
---replace_result 9306 9999 3334 9999 3335 9999
+--replace_result 3306 MASTER_PORT 9306 MASTER_PORT 3334 MASTER_PORT 3336 MASTER_PORT
 show slave status;
 select * from t1;
 connection master;
@@ -70,17 +79,13 @@ insert into t2 values(1234);
 
 #same value on the master
 connection master;
-save_master_pos;
 set insert_id=1234;
 insert into t2 values(NULL);
 connection slave;
-sync_with_master;
-
-#the slave may have already stopped, so we ignore the error
-!slave stop;
+wait_for_slave_to_stop;
 
 #restart slave skipping one event
-set sql_slave_skip_counter=1;
+set global sql_slave_skip_counter=1;
 slave start;
 
 connection master;
@@ -96,7 +101,7 @@ insert into t2 values (65);
 save_master_pos;
 connection slave;
 sync_with_master;
---replace_result 9306 9999 3334 9999 3335 9999
+--replace_result 3306 MASTER_PORT 9306 MASTER_PORT 3334 MASTER_PORT 3336 MASTER_PORT
 show slave status;
 select * from t2;
 
@@ -110,12 +115,14 @@ insert into temp_table values ("testing temporary tables part 2");
 let $1=100;
 drop table if exists t3;
 create table t3 (n int);
+disable_query_log;
 while ($1)
 {
 #eval means expand $ expressions
  eval insert into t3 values($1 + 4);
  dec $1;
 }
+enable_query_log;
 create table t4 select * from temp_table;
 show master logs;
 show master status;
@@ -126,7 +133,7 @@ connection slave;
 sync_with_master;
 select * from t4;
 
---replace_result 9306 9999 3334 9999 3335 9999
+--replace_result 3306 MASTER_PORT 9306 MASTER_PORT 3334 MASTER_PORT 3336 MASTER_PORT
 show slave status;
 # because of concurrent insert, the table may not be up to date
 # if we do not lock
@@ -135,7 +142,7 @@ select count(*) from t3 where n >= 4;
 unlock tables;
 #clean up
 connection master;
-drop table if exists t1,t2,t3;
+drop table if exists t1,t2,t3,t4;
 save_master_pos;
 connection slave;
 sync_with_master;

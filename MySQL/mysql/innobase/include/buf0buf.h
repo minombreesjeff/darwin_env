@@ -274,6 +274,15 @@ buf_page_peek_block(
 	ulint	space,	/* in: space id */
 	ulint	offset);/* in: page number */
 /************************************************************************
+Resets the check_index_page_at_flush field of a page if found in the buffer
+pool. */
+
+void
+buf_reset_check_index_page_at_flush(
+/*================================*/
+	ulint	space,	/* in: space id */
+	ulint	offset);/* in: page number */
+/************************************************************************
 Sets file_page_was_freed TRUE if the page is found in the buffer pool.
 This function should be called when we free a file page and want the
 debug version to check that it is not accessed any more unless
@@ -355,10 +364,23 @@ to a file. Note that we must be careful to calculate the same value
 on 32-bit and 64-bit architectures. */
 
 ulint
-buf_calc_page_checksum(
-/*===================*/
+buf_calc_page_new_checksum(
+/*=======================*/
 		       /* out: checksum */
 	byte*   page); /* in: buffer page */
+/************************************************************************
+In versions < 4.0.14 and < 4.1.1 there was a bug that the checksum only
+looked at the first few bytes of the page. This calculates that old
+checksum. 
+NOTE: we must first store the new formula checksum to
+FIL_PAGE_SPACE_OR_CHKSUM before calculating and storing this old checksum
+because this takes that field as an input! */
+
+ulint
+buf_calc_page_old_checksum(
+/*=======================*/
+		       /* out: checksum */
+	byte*    page); /* in: buffer page */
 /************************************************************************
 Checks if a page is corrupt. */
 
@@ -463,6 +485,13 @@ buf_print_io(
 /*=========*/
 	char*	buf,	/* in/out: buffer where to print */
 	char*	buf_end);/* in: buffer end */
+/*************************************************************************
+Returns the ratio in percents of modified pages in the buffer pool /
+database pages in the buffer pool. */
+
+ulint
+buf_get_modified_ratio_pct(void);
+/*============================*/
 /**************************************************************************
 Refreshes the statistics used to print per-second averages. */
 
@@ -648,6 +677,14 @@ struct buf_block_struct{
 					then it can wait for this rw-lock */
 	buf_block_t*	hash;		/* node used in chaining to the page
 					hash table */
+	ibool		check_index_page_at_flush;
+					/* TRUE if we know that this is
+					an index page, and want the database
+					to check its consistency before flush;
+					note that there may be pages in the
+					buffer pool which are index pages,
+					but this flag is not set because
+					we do not keep track of all pages */
 	/* 2. Page flushing fields */
 
 	UT_LIST_NODE_T(buf_block_t) flush_list;
@@ -711,8 +748,8 @@ struct buf_block_struct{
 					bufferfixed, or (2) the thread has an
 					x-latch on the block */
 
-	/* 5. Hash search fields: NOTE that these fields are protected by
-	btr_search_mutex */
+	/* 5. Hash search fields: NOTE that the first 4 fields are NOT
+	protected by any semaphore! */
 	
 	ulint		n_hash_helps;	/* counter which controls building
 					of a new hash index for the page */
@@ -725,6 +762,9 @@ struct buf_block_struct{
 					whether the leftmost record of several
 					records with the same prefix should be
 					indexed in the hash index */
+					
+	/* The following 4 fields are protected by btr_search_latch: */
+
 	ibool		is_hashed;	/* TRUE if hash index has already been
 					built on this page; note that it does
 					not guarantee that the index is

@@ -14,7 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-#include "mymrgdef.h"
+#include "myrg_def.h"
 
 ulonglong myrg_position(MYRG_INFO *info)
 {
@@ -27,8 +27,6 @@ ulonglong myrg_position(MYRG_INFO *info)
     current_table->table->lastpos + current_table->file_offset :
     ~(ulonglong) 0;
 }
-
-	/* If flag != 0 one only gets pos of last record */
 
 int myrg_status(MYRG_INFO *info,register MYMERGE_INFO *x,int flag)
 {
@@ -55,15 +53,16 @@ int myrg_status(MYRG_INFO *info,register MYMERGE_INFO *x,int flag)
       DBUG_PRINT("info2",("table: %s, offset: %lu",
                   file->table->filename,(ulong) file->file_offset));
     }
-    x->records	 = info->records;
-    x->deleted	 = info->del;
-    x->data_file_length = info->data_file_length;
-    x->reclength  = info->reclength;
-    x->options	 = info->options;
+    x->records= info->records;
+    x->deleted= info->del;
+    x->data_file_length= info->data_file_length;
+    x->reclength= info->reclength;
+    x->options= info->options;
     if (current_table)
-      x->errkey  = current_table->table->errkey;
+      x->errkey= current_table->table->errkey;
     else
-      x->errkey=0;
+      x->errkey= 0;
+    x->rec_per_key = info->rec_per_key_part;
   }
   DBUG_RETURN(0);
 }

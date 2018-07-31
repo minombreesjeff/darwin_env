@@ -33,16 +33,12 @@ typedef struct st_ft_docstat {
   double max, nsum, nsum2;
 #endif /* EVAL_RUN */
 
-  MI_INFO *info;
-  uint keynr;
-  byte *keybuf;
 } FT_DOCSTAT;
 
-static int FT_WORD_cmp(FT_WORD *w1, FT_WORD *w2)
+static int FT_WORD_cmp(CHARSET_INFO* cs, FT_WORD *w1, FT_WORD *w2)
 {
-  return _mi_compare_text(default_charset_info,
-			  (uchar*) w1->pos,w1->len,
-			  (uchar*) w2->pos, w2->len,0);
+  return _mi_compare_text(cs, (uchar*) w1->pos, w1->len,
+                              (uchar*) w2->pos, w2->len, 0);
 }
 
 static int walk_and_copy(FT_WORD *word,uint32 count,FT_DOCSTAT *docstat)
@@ -63,17 +59,15 @@ static int walk_and_copy(FT_WORD *word,uint32 count,FT_DOCSTAT *docstat)
 
 /* transforms tree of words into the array, applying normalization */
 
-FT_WORD * ft_linearize(MI_INFO *info, uint keynr, byte *keybuf, TREE *wtree)
+FT_WORD * ft_linearize(TREE *wtree)
 {
   FT_WORD *wlist,*p;
   FT_DOCSTAT docstat;
+  DBUG_ENTER("ft_linearize");
 
   if ((wlist=(FT_WORD *) my_malloc(sizeof(FT_WORD)*
 				   (1+wtree->elements_in_tree),MYF(0))))
   {
-    docstat.info=info;
-    docstat.keynr=keynr;
-    docstat.keybuf=keybuf;
     docstat.list=wlist;
     docstat.uniq=wtree->elements_in_tree;
 #ifdef EVAL_RUN
@@ -83,13 +77,12 @@ FT_WORD * ft_linearize(MI_INFO *info, uint keynr, byte *keybuf, TREE *wtree)
     tree_walk(wtree,(tree_walk_action)&walk_and_copy,&docstat,left_root_right);
   }
   delete_tree(wtree);
-  my_free((char*) wtree,MYF(0));
   if (!wlist)
-    return NULL;
+    DBUG_RETURN(NULL);
 
   docstat.list->pos=NULL;
 
-  for(p=wlist;p->pos;p++)
+  for (p=wlist;p->pos;p++)
   {
     p->weight=PRENORM_IN_USE;
 #ifdef EVAL_RUN
@@ -104,48 +97,146 @@ FT_WORD * ft_linearize(MI_INFO *info, uint keynr, byte *keybuf, TREE *wtree)
 #endif
 #endif /* EVAL_RUN */
 
-  for(p=wlist;p->pos;p++)
+  for (p=wlist;p->pos;p++)
   {
     p->weight/=NORM_IN_USE;
   }
 
-  return wlist;
+  DBUG_RETURN(wlist);
 }
 
+#define true_word_char(X)	(isalnum(X) || (X)=='_')
 #ifdef HYPHEN_IS_DELIM
-#define word_char(X)	(isalnum(X) || (X)=='_' || (X)=='\'')
+#define misc_word_char(X)	((X)=='\'')
 #else
-#define word_char(X)	(isalnum(X) || (X)=='_' || (X)=='\'' || (X)=='-')
+#define misc_word_char(X)	((X)=='\'' || (X)=='-')
 #endif
+#define word_char(X)		(true_word_char(X) || misc_word_char(X))
 
-/* this is rather dumb first version of the parser */
-TREE * ft_parse(TREE *wtree, byte *doc, int doclen)
+
+/* returns:
+ * 0 - eof
+ * 1 - word found
+ * 2 - left bracket
+ * 3 - right bracket
+ */
+byte ft_get_word(byte **start, byte *end, FT_WORD *word, FTB_PARAM *param)
 {
-  byte *end=doc+doclen;
-  FT_WORD w;
+  byte *doc=*start;
+  int mwc;
 
-  if (!wtree)
-  {
-    if (!(wtree=(TREE *)my_malloc(sizeof(TREE),MYF(0)))) return NULL;
-    init_tree(wtree,0,sizeof(FT_WORD),(qsort_cmp)&FT_WORD_cmp,0,NULL);
-  }
+  param->yesno=(FTB_YES==' ') ? 1 : (param->quot != 0);
+  param->plusminus=param->pmsign=0;
 
-  w.weight=0;
   while (doc<end)
   {
     for (;doc<end;doc++)
-      if (word_char(*doc)) break;
-    for (w.pos=doc; doc<end; doc++)
-      if (!word_char(*doc)) break;
-    if ((w.len= (uint) (doc-w.pos)) < MIN_WORD_LEN) continue;
-    if (w.len >= HA_FT_MAXLEN) continue;
-    if (is_stopword(w.pos, w.len)) continue;
-    if (!tree_insert(wtree, &w, 0))
     {
-      delete_tree(wtree);
-      my_free((char*) wtree,MYF(0));
-      return NULL;
+      if (true_word_char(*doc)) break;
+      if (*doc == FTB_RQUOT && param->quot) {
+        param->quot=doc;
+        *start=doc+1;
+        return 3; /* FTB_RBR */
+      }
+      if ((*doc == FTB_LBR || *doc == FTB_RBR || *doc == FTB_LQUOT)
+          && !param->quot)
+      {
+        /* param->prev=' '; */
+        *start=doc+1;
+        if (*doc == FTB_LQUOT) param->quot=*start;
+        return (*doc == FTB_RBR)+2;
+      }
+      if (param->prev == ' ' && !param->quot)
+      {
+        if (*doc == FTB_YES ) { param->yesno=+1;    continue; } else
+        if (*doc == FTB_EGAL) { param->yesno= 0;    continue; } else
+        if (*doc == FTB_NO  ) { param->yesno=-1;    continue; } else
+        if (*doc == FTB_INC ) { param->plusminus++; continue; } else
+        if (*doc == FTB_DEC ) { param->plusminus--; continue; } else
+        if (*doc == FTB_NEG ) { param->pmsign=!param->pmsign; continue; }
+      }
+      param->prev=*doc;
+      param->yesno=(FTB_YES==' ') ? 1 : (param->quot != 0);
+      param->plusminus=param->pmsign=0;
+    }
+
+    mwc=0;
+    for (word->pos=doc; doc<end; doc++)
+      if (true_word_char(*doc))
+        mwc=0;
+      else if (!misc_word_char(*doc) || mwc++)
+        break;
+
+    param->prev='A'; /* be sure *prev is true_word_char */
+    word->len= (uint)(doc-word->pos) - mwc;
+    if ((param->trunc=(doc<end && *doc == FTB_TRUNC)))
+      doc++;
+
+    if (((word->len >= ft_min_word_len && !is_stopword(word->pos, word->len))
+         || param->trunc) && word->len < ft_max_word_len)
+    {
+      *start=doc;
+      return 1;
     }
   }
-  return wtree;
+  return 0;
 }
+
+byte ft_simple_get_word(byte **start, byte *end, FT_WORD *word)
+{
+  byte *doc=*start;
+  int mwc;
+  DBUG_ENTER("ft_simple_get_word");
+
+  while (doc<end)
+  {
+    for (;doc<end;doc++)
+    {
+      if (true_word_char(*doc)) break;
+    }
+
+    mwc=0;
+    for(word->pos=doc; doc<end; doc++)
+      if (true_word_char(*doc))
+        mwc=0;
+      else if (!misc_word_char(*doc) || mwc++)
+        break;
+
+    word->len= (uint)(doc-word->pos) - mwc;
+
+    if (word->len >= ft_min_word_len && word->len < ft_max_word_len &&
+        !is_stopword(word->pos, word->len))
+    {
+      *start=doc;
+      DBUG_RETURN(1);
+    }
+  }
+  DBUG_RETURN(0);
+}
+
+void ft_parse_init(TREE *wtree, CHARSET_INFO *cs)
+{
+  DBUG_ENTER("ft_parse_init");
+  if (!is_tree_inited(wtree))
+    init_tree(wtree,0,0,sizeof(FT_WORD),(qsort_cmp2)&FT_WORD_cmp,0,NULL, cs);
+  DBUG_VOID_RETURN;
+}
+
+int ft_parse(TREE *wtree, byte *doc, int doclen)
+{
+  byte   *end=doc+doclen;
+  FT_WORD w;
+  DBUG_ENTER("ft_parse");
+
+  while (ft_simple_get_word(&doc,end,&w))
+  {
+    if (!tree_insert(wtree, &w, 0))
+      goto err;
+  }
+  DBUG_RETURN(0);
+
+err:
+  delete_tree(wtree);
+  DBUG_RETURN(1);
+}
+

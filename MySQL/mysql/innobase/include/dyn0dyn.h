@@ -19,7 +19,6 @@ typedef dyn_block_t			dyn_array_t;
 
 /* This is the initial 'payload' size of a dynamic array;
 this must be > MLOG_BUF_MARGIN + 30! */
-
 #define	DYN_ARRAY_DATA_SIZE	512
 
 /*************************************************************************

@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -43,13 +43,13 @@ int mi_lock_database(MI_INFO *info, int lock_type)
   pthread_mutex_lock(&share->intern_lock);
   if (share->kfile >= 0)		/* May only be false on windows */
   {
-    switch (lock_type)
-    {
+    switch (lock_type) {
     case F_UNLCK:
       if (info->lock_type == F_RDLCK)
 	count= --share->r_locks;
       else
 	count= --share->w_locks;
+      --share->tot_locks;
       if (info->lock_type == F_WRLCK && !share->w_locks &&
 	  !share->delay_key_write && flush_key_blocks(share->kfile,FLUSH_KEEP))
       {
@@ -153,6 +153,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       }
       VOID(_mi_test_if_changed(info));
       share->r_locks++;
+      share->tot_locks++;
       info->lock_type=lock_type;
       break;
     case F_WRLCK:
@@ -199,7 +200,9 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       }
       VOID(_mi_test_if_changed(info));
       info->lock_type=lock_type;
+      info->invalidator=info->s->invalidator;
       share->w_locks++;
+      share->tot_locks++;
       break;
     default:
       break;				/* Impossible */
@@ -216,7 +219,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 
 
 /****************************************************************************
-** The following functions are called by thr_lock() in threaded applications
+  The following functions are called by thr_lock() in threaded applications
 ****************************************************************************/
 
 void mi_get_status(void* param)
@@ -295,13 +298,12 @@ my_bool mi_check_status(void* param)
 
 int _mi_readinfo(register MI_INFO *info, int lock_type, int check_keybuffer)
 {
-  MYISAM_SHARE *share;
   DBUG_ENTER("_mi_readinfo");
 
-  share=info->s;
   if (info->lock_type == F_UNLCK)
   {
-    if (!share->r_locks && !share->w_locks)
+    MYISAM_SHARE *share=info->s;
+    if (!share->tot_locks)
     {
       if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
 		  info->lock_wait | MY_SEEK_NOT_DONE))
@@ -317,6 +319,7 @@ int _mi_readinfo(register MI_INFO *info, int lock_type, int check_keybuffer)
     }
     if (check_keybuffer)
       VOID(_mi_test_if_changed(info));
+    info->invalidator=info->s->invalidator;
   }
   else if (lock_type == F_WRLCK && info->lock_type == F_RDLCK)
   {
@@ -338,7 +341,7 @@ int _mi_writeinfo(register MI_INFO *info, uint operation)
   DBUG_ENTER("_mi_writeinfo");
 
   error=0;
-  if (share->r_locks == 0 && share->w_locks == 0)
+  if (share->tot_locks == 0)
   {
     olderror=my_errno;			/* Remember last error */
     if (operation)
@@ -411,11 +414,14 @@ int _mi_mark_file_changed(MI_INFO *info)
       share->global_changed=1;
       share->state.open_count++;
     }
-    mi_int2store(buff,share->state.open_count);
-    buff[2]=1;					/* Mark that it's changed */
-    return (my_pwrite(share->kfile,buff,sizeof(buff),
-		      sizeof(share->state.header),
-		      MYF(MY_NABP)));
+    if (!share->temporary)
+    {
+      mi_int2store(buff,share->state.open_count);
+      buff[2]=1;				/* Mark that it's changed */
+      return (my_pwrite(share->kfile,buff,sizeof(buff),
+			sizeof(share->state.header),
+			MYF(MY_NABP)));
+    }
   }
   return 0;
 }

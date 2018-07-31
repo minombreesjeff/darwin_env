@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include <m_string.h>
@@ -50,57 +49,70 @@ uint dirname_part(my_string to, const char *name)
   DBUG_PRINT("enter",("'%s'",name));
 
   length=dirname_length(name);
-  (void) strmake(to,(char*) name,min(length,FN_REFLEN-2));
-  convert_dirname(to);				/* Convert chars */
+  convert_dirname(to, name, name+length);
   DBUG_RETURN(length);
 } /* dirname */
 
 
-	/* convert dirname to use under this system */
-	/* If MSDOS converts '/' to '\' */
-	/* If VMS converts '<' to '[' and '>' to ']' */
-	/* Adds a '/' to end if there isn't one and the last isn't a dev_char */
-	/* ARGSUSED */
+	/*
+	  Convert directory name to use under this system
+	  If MSDOS converts '/' to '\'
+	  If VMS converts '<' to '[' and '>' to ']'
+	  Adds a FN_LIBCHAR to end if the result string if there isn't one
+	  and the last isn't dev_char.
+	  Copies data from 'from' until ASCII(0) for until from == from_end
+	  If you want to use the whole 'from' string, just send NullS as the
+	  last argument.
+	  If the result string is larger than FN_REFLEN -1, then it's cut.
+
+	  Returns pointer to end \0
+	*/
 
 #ifndef FN_DEVCHAR
 #define FN_DEVCHAR '\0'				/* For easier code */
 #endif
 
-char *convert_dirname(my_string to)
+char *convert_dirname(char *to, const char *from, const char *from_end)
 {
-  reg1 char *pos;
-#ifdef FN_UPPER_CASE
-  caseup_str(to);
-#endif
-#ifdef FN_LOWER_CASE
-  casedn_str(to);
-#endif
-#if FN_LIBCHAR != '/'
+  char *to_org=to;
+
+  /* We use -2 here, becasue we need place for the last FN_LIBCHAR */
+  if (!from_end || (from_end - from) > FN_REFLEN-2)
+    from_end=from+FN_REFLEN -2;
+
+#if FN_LIBCHAR != '/' || defined(FN_C_BEFORE_DIR_2)
   {
-    pos=to-1;					/* Change from '/' */
-    while ((pos=strchr(pos+1,'/')) != 0)
-      *pos=FN_LIBCHAR;
-  }
-#endif
-#ifdef FN_C_BEFORE_DIR_2
-  {
-    for (pos=to ; *pos ; pos++)
+    for (; *from && from != from_end; from++)
     {
-      if (*pos == FN_C_BEFORE_DIR_2)
-	*pos=FN_C_BEFORE_DIR;
-      if (*pos == FN_C_AFTER_DIR_2)
-	*pos=FN_C_AFTER_DIR;
+      if (*from == '/')
+	*to++= FN_LIBCHAR;
+#ifdef FN_C_BEFORE_DIR_2
+      else if (*from == FN_C_BEFORE_DIR_2)
+	*to++= FN_C_BEFORE_DIR;
+      else if (*from == FN_C_AFTER_DIR_2)
+	*to++= FN_C_AFTER_DIR;
+#endif
+      else
+	*to++= *from;
     }
+    *to=0;
   }
 #else
-  {					/* Append FN_LIBCHAR if not there */
-    pos=strend(to);
-    if (pos != to && (pos[-1] != FN_LIBCHAR && pos[-1] != FN_DEVCHAR))
-    {
-      *pos++=FN_LIBCHAR;
-      *pos=0;
-    }
-  }
+  /* This is ok even if to == from, becasue we need to cut the string */
+  to= strmake(to, from, (uint) (from_end-from));
 #endif
-  return pos;					/* Pointer to end of dir */
+
+  /* Add FN_LIBCHAR to the end of directory path */
+  if (to != to_org && (to[-1] != FN_LIBCHAR && to[-1] != FN_DEVCHAR))
+  {
+    *to++=FN_LIBCHAR;
+    *to=0;
+  }
+#ifdef FN_UPPER_CASE
+  caseup_str(to_org);
+#endif
+#ifdef FN_LOWER_CASE
+  casedn_str(to_org);
+#endif
+  return to;					/* Pointer to end of dir */
 } /* convert_dirname */

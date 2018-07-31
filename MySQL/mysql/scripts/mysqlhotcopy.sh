@@ -37,7 +37,7 @@ WARNING: THIS PROGRAM IS STILL IN BETA. Comments/patches welcome.
 
 # Documentation continued at end of file
 
-my $VERSION = "1.17";
+my $VERSION = "1.19";
 
 my $opt_tmpdir = $ENV{TMPDIR} || "/tmp";
 
@@ -49,12 +49,14 @@ Usage: $0 db_name[./table_regex/] [new_db_name | directory]
 
   -?, --help           display this helpscreen and exit
   -u, --user=#         user for database login if not current user
-  -p, --password=#     password to use when connecting to server
-  -h, --host=#	       Hostname for local server when connecting over TCP/IP
+  -p, --password=#     password to use when connecting to server (if not set
+                       in my.cnf, which is recommended)
+  -h, --host=#         Hostname for local server when connecting over TCP/IP
   -P, --port=#         port to use when connecting to local server with TCP/IP
   -S, --socket=#       socket to use when connecting to local server
 
-  --allowold           don\'t abort if target already exists (rename it _old)
+  --allowold           don\'t abort if target dir already exists (rename it _old)
+  --addtodest          don\'t rename target dir if it exists, just add files to it
   --keepold            don\'t delete previous (now renamed) target when done
   --noindices          don\'t include full index files in copy
   --method=#           method for copy (only "cp" currently supported)
@@ -79,8 +81,11 @@ sub usage {
     die @_, $OPTIONS;
 }
 
+# Do not initialize user or password options; that way, any user/password
+# options specified in option files will be used.  If no values are specified
+# all, the defaults will be used (login name, no password).
+
 my %opt = (
-    user	=> scalar getpwuid($>),
     noindices	=> 0,
     allowold	=> 0,	# for safety
     keepold	=> 0,
@@ -90,12 +95,14 @@ my %opt = (
 Getopt::Long::Configure(qw(no_ignore_case)); # disambuguate -p and -P
 GetOptions( \%opt,
     "help",
+    "host|h=s",
     "user|u=s",
     "password|p=s",
     "port|P=s",
     "socket|S=s",
     "allowold!",
     "keepold!",
+    "addtodest!",
     "noindices!",
     "method=s",
     "debug",
@@ -161,6 +168,9 @@ $dsn  = ";host=" . (defined($opt{host}) ? $opt{host} : "localhost");
 $dsn .= ";port=$opt{port}" if $opt{port};
 $dsn .= ";mysql_socket=$opt{socket}" if $opt{socket};
 
+# use mysql_read_default_group=mysqlhotcopy so that [client] and
+# [mysqlhotcopy] groups will be read from standard options files.
+
 my $dbh = DBI->connect("dbi:mysql:$dsn;mysql_read_default_group=mysqlhotcopy",
                         $opt{user}, $opt{password},
 {
@@ -171,6 +181,7 @@ my $dbh = DBI->connect("dbi:mysql:$dsn;mysql_read_default_group=mysqlhotcopy",
 
 # --- check that checkpoint table exists if specified ---
 if ( $opt{checkpoint} ) {
+    $opt{checkpoint} = quote_names( $opt{checkpoint} );
     eval { $dbh->do( qq{ select time_stamp, src, dest, msg 
 			 from $opt{checkpoint} where 1 != 1} );
        };
@@ -181,6 +192,8 @@ if ( $opt{checkpoint} ) {
 
 # --- check that log_pos table exists if specified ---
 if ( $opt{record_log_pos} ) {
+    $opt{record_log_pos} = quote_names( $opt{record_log_pos} );
+
     eval { $dbh->do( qq{ select host, time_stamp, log_file, log_pos, master_host, master_log_file, master_log_pos
 			 from $opt{record_log_pos} where 1 != 1} );
        };
@@ -307,7 +320,7 @@ foreach my $rdb ( @db_desc ) {
 
     $rdb->{files}  = [ @db_files ];
     $rdb->{index}  = [ @index_files ];
-    my @hc_tables = map { "`$db`.`$_`" } @dbh_tables;
+    my @hc_tables = map { quote_names("$db.$_") } @dbh_tables;
     $rdb->{tables} = [ @hc_tables ];
 
     $rdb->{raid_dirs} = [ get_raid_dirs( $rdb->{files} ) ];
@@ -375,14 +388,14 @@ if ($opt{method} =~ /^cp\b/)
     push @existing, $rdb->{target} if ( -d  $rdb->{target} );
   }
 
-  if ( @existing && !$opt{allowold} )
+  if ( @existing && !($opt{allowold} || $opt{addtodest}) )
   {
     $dbh->disconnect();
-    die "Can't hotcopy to '", join( "','", @existing ), "' because directory\nalready exist and the --allowold option was not given.\n"
+    die "Can't hotcopy to '", join( "','", @existing ), "' because directory\nalready exist and the --allowold or --addtodest options were not given.\n"
   }
 }
 
-retire_directory( @existing ) if ( @existing );
+retire_directory( @existing ) if @existing && !$opt{addtodest};
 
 foreach my $rdb ( @db_desc ) {
     foreach my $td ( '', @{$rdb->{raid_dirs}} ) {
@@ -398,8 +411,8 @@ foreach my $rdb ( @db_desc ) {
 	    ## ...
 	}
 	else {
-	    mkdir($tgt_dirpath, 0750)
-		or die "Can't create '$tgt_dirpath': $!\n";
+	    mkdir($tgt_dirpath, 0750) or die "Can't create '$tgt_dirpath': $!\n"
+		unless -d $tgt_dirpath;
 	}
     }
 }
@@ -556,22 +569,22 @@ sub copy_files {
     print "Copying ".@$files." files...\n" unless $opt{quiet};
 
     if ($method =~ /^s?cp\b/) { # cp or scp with optional flags
-	my @cp = ($method);
+	my $cp = $method;
 	# add option to preserve mod time etc of copied files
 	# not critical, but nice to have
-	push @cp, "-p" if $^O =~ m/^(solaris|linux|freebsd)$/;
+	$cp.= " -p" if $^O =~ m/^(solaris|linux|freebsd|darwin)$/;
 
 	# add recursive option for scp
-	push @cp, "-r" if $^O =~ /m^(solaris|linux|freebsd)$/ && $method =~ /^scp\b/;
+	$cp.= " -r" if $^O =~ /m^(solaris|linux|freebsd|darwin)$/ && $method =~ /^scp\b/;
 
 	my @non_raid = map { "'$_'" } grep { ! m:/\d{2}/[^/]+$: } @$files;
 
 	# add files to copy and the destination directory
-+ 	safe_system( @cp, @non_raid, "'$target'" );
+	safe_system( $cp, @non_raid, "'$target'" ) if (@non_raid);
 	
 	foreach my $rd ( @$raid_dirs ) {
 	    my @raid = map { "'$_'" } grep { m:$rd/: } @$files;
-	    safe_system( @cp, @raid, "'$target'/$rd" ) if ( @raid );
+	    safe_system( $cp, @raid, "'$target'/$rd" ) if ( @raid );
 	}
     }
     else
@@ -633,24 +646,52 @@ sub copy_index
 }
 
 
-sub safe_system
-{
-  my @cmd= @_;
+sub safe_system {
+  my @sources= @_;
+  my $method= shift @sources;
+  my $target= pop @sources;
+  ## @sources = list of source file names
 
-  if ( $opt{dryrun} )
-  {
-    print "@cmd\n";
-    return;
+  ## We have to deal with very long command lines, otherwise they may generate 
+  ## "Argument list too long".
+  ## With 10000 tables the command line can be around 1MB, much more than 128kB
+  ## which is the common limit on Linux (can be read from
+  ## /usr/src/linux/include/linux/binfmts.h
+  ## see http://www.linuxjournal.com/article.php?sid=6060).
+ 
+  my $chunk_limit= 100 * 1024; # 100 kB
+  my @chunk= (); 
+  my $chunk_length= 0;
+  foreach (@sources) {
+      push @chunk, $_;
+      $chunk_length+= length($_);
+      if ($chunk_length > $chunk_limit) {
+          safe_simple_system($method, @chunk, $target);
+          @chunk=();
+          $chunk_length= 0;
+      }
   }
+  if ($chunk_length > 0) { # do not forget last small chunk
+      safe_simple_system($method, @chunk, $target); 
+  }
+}
 
-  ## for some reason system fails but backticks works ok for scp...
-  print "Executing '@cmd'\n" if $opt{debug};
-  my $cp_status = system "@cmd > /dev/null";
-  if ($cp_status != 0) {
-    warn "Burp ('scuse me). Trying backtick execution...\n" if $opt{debug}; #'
-    ## try something else
-    `@cmd` && die "Error: @cmd failed ($cp_status) while copying files.\n";
-  }
+sub safe_simple_system {
+    my @cmd= @_;
+
+    if ( $opt{dryrun} ) {
+        print "@cmd\n";
+    }
+    else {
+        ## for some reason system fails but backticks works ok for scp...
+        print "Executing '@cmd'\n" if $opt{debug};
+        my $cp_status = system "@cmd > /dev/null";
+        if ($cp_status != 0) {
+            warn "Executing command failed ($cp_status). Trying backtick execution...\n";
+            ## try something else
+            `@cmd` || die "Error: @cmd failed ($?) while copying files.\n";
+        }
+    }
 }
 
 sub retire_directory {
@@ -756,6 +797,20 @@ sub get_list_of_tables {
     return @dbh_tables;
 }
 
+sub quote_names {
+  my ( $name ) = @_;
+  # given a db.table name, add quotes
+
+  my ($db, $table, @cruft) = split( /\./, $name );
+  die "Invalid db.table name '$name'" if (@cruft || !defined $db || !defined $table );
+
+  # Earlier versions of DBD return table name non-quoted,
+  # such as DBD-2.1012 and the newer ones, such as DBD-2.9002
+  # returns it quoted. Let's have a support for both.
+  $table=~ s/\`//g;
+  return "`$db`.`$table`";
+}
+
 __END__
 
 =head1 DESCRIPTION
@@ -846,6 +901,22 @@ Any existing versions of the backup directory are deleted.
 Behaves as for the --allowold, with the additional feature 
 of keeping the backup directory after the copy successfully completes.
 
+=item --addtodest
+
+Don't rename target directory if it already exists, just add the
+copied files into it.
+
+This is most useful when backing up a database with many large
+tables and you don't want to have all the tables locked for the
+whole duration.
+
+In this situation, I<if> you are happy for groups of tables to be
+backed up separately (and thus possibly not be logically consistant
+with one another) then you can run mysqlhotcopy several times on
+the same database each with different db_name./table_regex/.
+All but the first should use the --addtodest option so the tables
+all end up in the same directory.
+
 =item --flushlog
 
 Rotate the log files by executing "FLUSH LOGS" after all tables are
@@ -854,13 +925,13 @@ locked, and before they are copied.
 =item --resetmaster
 
 Reset the bin-log by executing "RESET MASTER" after all tables are
-locked, and before they are copied. Usefull if you are recovering a
+locked, and before they are copied. Useful if you are recovering a
 slave in a replication setup.
 
 =item --resetslave
 
 Reset the master.info by executing "RESET SLAVE" after all tables are
-locked, and before they are copied. Usefull if you are recovering a
+locked, and before they are copied. Useful if you are recovering a
 server in a mutual replication setup.
 
 =item --regexp pattern
@@ -892,7 +963,11 @@ user for database login if not current user
 
 =item -p, --password=#     
 
-password to use when connecting to server
+password to use when connecting to the server. Note that you are strongly
+encouraged *not* to use this option as every user would be able to see the
+password in the process list. Instead use the '[mysqlhotcopy]' section in
+one of the config files, normally /etc/my.cnf or your personal ~/.my.cnf.
+(See the chapter 'my.cnf Option Files' in the manual)
 
 =item -h, -h, --host=#
 
@@ -922,7 +997,7 @@ will vary with your ability to understand how scp works. 'man scp'
 and 'man ssh' are your friends.
 
 The destination directory _must exist_ on the target machine using the
-scp method. --keepold and --allowold are meeningless with scp.
+scp method. --keepold and --allowold are meaningless with scp.
 Liberal use of the --debug option will help you figure out what\'s
 really going on when you do an scp.
 

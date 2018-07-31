@@ -38,25 +38,34 @@ typedef struct st_key_part {
   Field *field;
 } KEY_PART;
 
+
 class QUICK_RANGE :public Sql_alloc {
  public:
   char *min_key,*max_key;
   uint16 min_length,max_length,flag;
+#ifdef HAVE_purify
+  uint16 dummy;					/* Avoid warnings on 'flag' */
+#endif
   QUICK_RANGE();				/* Full range */
   QUICK_RANGE(const char *min_key_arg,uint min_length_arg,
 	      const char *max_key_arg,uint max_length_arg,
 	      uint flag_arg)
     : min_key((char*) sql_memdup(min_key_arg,min_length_arg+1)),
       max_key((char*) sql_memdup(max_key_arg,max_length_arg+1)),
-      min_length(min_length_arg),
-      max_length(max_length_arg),
-      flag(flag_arg)
-    {}
+      min_length((uint16) min_length_arg),
+      max_length((uint16) max_length_arg),
+      flag((uint16) flag_arg)
+    {
+#ifdef HAVE_purify
+      dummy=0;
+#endif
+    }
 };
+
 
 class QUICK_SELECT {
 public:
-  bool next;
+  bool next,dont_free;
   int error;
   uint index,max_used_key_length;
   TABLE *head;
@@ -74,11 +83,31 @@ public:
   QUICK_SELECT(TABLE *table,uint index_arg,bool no_alloc=0);
   virtual ~QUICK_SELECT();
   void reset(void) { next=0; it.rewind(); }
-  virtual int init();
+  int init() { return error=file->index_init(index); }
   virtual int get_next();
+  virtual bool reverse_sorted() { return 0; }
   int cmp_next(QUICK_RANGE *range);
   bool unique_key_range();
 };
+
+
+class QUICK_SELECT_DESC: public QUICK_SELECT
+{
+public:
+  QUICK_SELECT_DESC(QUICK_SELECT *q, uint used_key_parts);
+  int get_next();
+  bool reverse_sorted() { return 1; }
+private:
+  int cmp_prev(QUICK_RANGE *range);
+  bool range_reads_after_key(QUICK_RANGE *range);
+#ifdef NOT_USED
+  bool test_if_null_range(QUICK_RANGE *range, uint used_key_parts);
+#endif
+  void reset(void) { next=0; rev_it.rewind(); }
+  List<QUICK_RANGE> rev_ranges;
+  List_iterator<QUICK_RANGE> rev_it;
+};
+
 
 class SQL_SELECT :public Sql_alloc {
  public:

@@ -1,23 +1,22 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
-** Functions to handle initializating and allocationg of all mysys & debug
-** thread variables.
+  Functions to handle initializating and allocationg of all mysys & debug
+  thread variables.
 */
 
 #include "mysys_priv.h"
@@ -45,10 +44,6 @@ pthread_mutexattr_t my_fast_mutexattr;
 pthread_mutexattr_t my_errchk_mutexattr;
 #endif
 
-/* FIXME  Note.  TlsAlloc does not set an auto destructor, so
-	the function my_thread_global_free must be called from
-	somewhere before final exit of the library */
-
 my_bool my_thread_global_init(void)
 {
   if (pthread_key_create(&THR_KEY_mysys,free))
@@ -60,7 +55,7 @@ my_bool my_thread_global_init(void)
   pthread_mutexattr_init(&my_fast_mutexattr);
   pthread_mutexattr_setkind_np(&my_fast_mutexattr,PTHREAD_MUTEX_ADAPTIVE_NP);
 #endif
-#ifdef PPTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
+#ifdef PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
   pthread_mutexattr_init(&my_errchk_mutexattr);
   pthread_mutexattr_setkind_np(&my_errchk_mutexattr,
 			       PTHREAD_MUTEX_ERRORCHECK_NP);
@@ -87,6 +82,7 @@ my_bool my_thread_global_init(void)
   return my_thread_init();
 }
 
+
 void my_thread_global_end(void)
 {
 #if defined(USE_TLS)
@@ -97,6 +93,18 @@ void my_thread_global_end(void)
 #endif
 #ifdef PPTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
   pthread_mutexattr_destroy(&my_errchk_mutexattr);
+#endif
+  pthread_mutex_destroy(&THR_LOCK_malloc);
+  pthread_mutex_destroy(&THR_LOCK_open);
+  pthread_mutex_destroy(&THR_LOCK_keycache);
+  pthread_mutex_destroy(&THR_LOCK_lock);
+  pthread_mutex_destroy(&THR_LOCK_isam);
+  pthread_mutex_destroy(&THR_LOCK_myisam);
+  pthread_mutex_destroy(&THR_LOCK_heap);
+  pthread_mutex_destroy(&THR_LOCK_net);
+  pthread_mutex_destroy(&THR_LOCK_charset);
+#ifndef HAVE_LOCALTIME_R
+  pthread_mutex_destroy(&LOCK_localtime_r);
 #endif
 #ifndef HAVE_GETHOSTBYNAME_R
   pthread_mutex_destroy(&LOCK_gethostbyname_r);
@@ -115,50 +123,62 @@ static long thread_id=0;
 my_bool my_thread_init(void)
 {
   struct st_my_thread_var *tmp;
+  my_bool error=0;
+
+#ifdef EXTRA_DEBUG_THREADS
+  fprintf(stderr,"my_thread_init(): thread_id=%ld\n",pthread_self());
+#endif  
 #if !defined(__WIN__) || defined(USE_TLS) || ! defined(SAFE_MUTEX)
   pthread_mutex_lock(&THR_LOCK_lock);
 #endif
+
 #if !defined(__WIN__) || defined(USE_TLS)
   if (my_pthread_getspecific(struct st_my_thread_var *,THR_KEY_mysys))
   {
-    pthread_mutex_unlock(&THR_LOCK_lock);
-    return 0;						/* Safequard */
+#ifdef EXTRA_DEBUG_THREADS
+    fprintf(stderr,"my_thread_init() called more than once in thread %ld\n",
+	        pthread_self());
+#endif    
+    goto end;
   }
-    /* We must have many calloc() here because these are freed on
-       pthread_exit */
-  if (!(tmp=(struct st_my_thread_var *)
-	calloc(1,sizeof(struct st_my_thread_var))))
+  if (!(tmp= (struct st_my_thread_var *) calloc(1, sizeof(*tmp))))
   {
-    pthread_mutex_unlock(&THR_LOCK_lock);
-    return 1;
+    error= 1;
+    goto end;
   }
   pthread_setspecific(THR_KEY_mysys,tmp);
 
 #else
-  if (THR_KEY_mysys.id)   /* Already initialized */
-  {
-#if !defined(__WIN__) || defined(USE_TLS) || ! defined(SAFE_MUTEX)
-    pthread_mutex_unlock(&THR_LOCK_lock);
-#endif
-    return 0;
-  }
+  /*
+    Skip initialization if the thread specific variable is already initialized
+  */
+  if (THR_KEY_mysys.id)
+    goto end;
   tmp= &THR_KEY_mysys;
 #endif
   tmp->id= ++thread_id;
   pthread_mutex_init(&tmp->mutex,MY_MUTEX_INIT_FAST);
   pthread_cond_init(&tmp->suspend, NULL);
+
+end:
 #if !defined(__WIN__) || defined(USE_TLS) || ! defined(SAFE_MUTEX)
   pthread_mutex_unlock(&THR_LOCK_lock);
 #endif
-  return 0;
+  return error;
 }
+
 
 void my_thread_end(void)
 {
   struct st_my_thread_var *tmp=my_thread_var;
+#ifdef EXTRA_DEBUG_THREADS
+  fprintf(stderr,"my_thread_end(): tmp=%p,thread_id=%ld\n",
+	  tmp,pthread_self());
+#endif  
   if (tmp)
   {
 #if !defined(DBUG_OFF)
+    /* tmp->dbug is allocated inside DBUG library */
     if (tmp->dbug)
     {
       free(tmp->dbug);
@@ -173,6 +193,7 @@ void my_thread_end(void)
     free(tmp);
 #endif
   }
+  /* The following free has to be done, even if my_thread_var() is 0 */
 #if (!defined(__WIN__) && !defined(OS2)) || defined(USE_TLS)
   pthread_setspecific(THR_KEY_mysys,0);
 #endif
@@ -193,8 +214,9 @@ struct st_my_thread_var *_my_thread_var(void)
   return tmp;
 }
 
+
 /****************************************************************************
-** Get name of current thread.
+  Get name of current thread.
 ****************************************************************************/
 
 #define UNKNOWN_THREAD -1

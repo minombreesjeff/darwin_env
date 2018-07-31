@@ -1,6 +1,6 @@
 /* Init cclasses array from ctypes */
 
-#include <global.h>
+#include <my_global.h>
 #include <m_ctype.h>
 #include <m_string.h>
 #include "cclass.h"
@@ -63,7 +63,7 @@ void regex_end()
   {
     int i;
     for (i=0; i < CCLASS_LAST ; i++)
-      free(cclasses[i].chars);
+      free((char*) cclasses[i].chars);
     regex_inited=0;
   }
 }

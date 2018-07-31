@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include <m_string.h>
@@ -40,6 +39,7 @@ void pack_dirname(my_string to, const char *from)
   char buff[FN_REFLEN];
   DBUG_ENTER("pack_dirname");
 
+  LINT_INIT(buff_length);
   (void) intern_filename(to,from);		/* Change to intern name */
 
 #ifdef FN_DEVCHAR
@@ -49,7 +49,6 @@ void pack_dirname(my_string to, const char *from)
 #endif
     start=to;
 
-  LINT_INIT(buff_length);
   if (!(cwd_err= my_getwd(buff,FN_REFLEN,MYF(0))))
   {
     buff_length= (uint) strlen(buff);
@@ -218,7 +217,7 @@ uint cleanup_dirname(register my_string to, const char *from)
 	  to the directory.  This will be used if the directory name
 	  doesn't exists
 	*/
-	  
+
 
 my_bool my_use_symdir=0;	/* Set this if you want to use symdirs */
 
@@ -254,15 +253,27 @@ void symdirget(char *dir)
 }
 #endif /* USE_SYMDIR */
 
-	/* Unpacks dirname to name that can be used by open... */
-	/* Make that last char of to is '/' if from not empty and
-	   from doesn't end in FN_DEVCHAR */
-	/* Uses cleanup_dirname and changes ~/.. to home_dir/.. */
-	/* Returns length of new directory */
+
+/*
+  Fixes a directroy name so that can be used by open()
+
+  SYNOPSIS
+    unpack_dirname()
+    to			Store result here.  May be = from
+    from		'Packed' directory name (may contain ~)
+
+ IMPLEMENTATION
+  Make that last char of to is '/' if from not empty and
+  from doesn't end in FN_DEVCHAR
+  Uses cleanup_dirname and changes ~/.. to home_dir/..
+
+  Changes a UNIX filename to system filename (replaces / with \ on windows)
+
+  RETURN
+   Length of new directory name (= length of to)
+*/
 
 uint unpack_dirname(my_string to, const char *from)
-
-						  /* to may be == from */
 {
   uint length,h_length;
   char buff[FN_REFLEN+1+4],*suffix,*tilde_expansion;
@@ -459,8 +470,7 @@ my_string intern_filename(my_string to, const char *from)
   my_string pos,from_pos,to_pos,end_pos;
   char buff[FN_REFLEN];
 
-  (void) strmov(buff,from);
-  convert_dirname(buff);			/* change '<>' to '[]' */
+  convert_dirname(buff,from,NullS);		/* change '<>' to '[]' */
   from_pos=buff;
   if ((pos=strrchr(from_pos,FN_DEVCHAR)))	/* Skipp device part */
   {

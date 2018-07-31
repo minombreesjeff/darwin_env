@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   strtol,strtoul,strtoll,strtoull
@@ -36,7 +35,9 @@
   it can be compiled with the UNSIGNED and/or LONGLONG flag set
 */
 
-#include <global.h>
+#define strtoll glob_strtoll		/* Fix for True64 */
+
+#include <my_global.h>
 #include "m_string.h"
 #include "m_ctype.h"
 #include "my_sys.h"			/* defines errno */
@@ -104,6 +105,7 @@ function (const char *nptr,char **endptr,int base)
   }
 
   /* Check for a sign.	*/
+  negative= 0;
   if (*s == '-')
   {
     negative = 1;
@@ -111,11 +113,9 @@ function (const char *nptr,char **endptr,int base)
   }
   else if (*s == '+')
   {
-    negative = 0;
     ++s;
   }
-  else
-    negative = 0;
+    
 
   if (base == 16 && s[0] == '0' && toupper (s[1]) == 'X')
     s += 2;

@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Code for handling red-black (balanced) binary trees.
@@ -46,7 +45,8 @@
 
 #define BLACK		1
 #define RED		0
-#define DEFAULT_ALLOC_SIZE (8192-MALLOC_OVERHEAD)
+#define DEFAULT_ALLOC_SIZE 8192
+#define DEFAULT_ALIGN_SIZE 8192
 
 static void delete_tree_element(TREE *,TREE_ELEMENT *);
 static int tree_walk_left_root_right(TREE *,TREE_ELEMENT *,
@@ -62,28 +62,41 @@ static void rb_delete_fixup(TREE *tree,TREE_ELEMENT ***parent);
 
 	/* The actuall code for handling binary trees */
 
-void init_tree(TREE *tree, uint default_alloc_size, int size,
-	       qsort_cmp compare, my_bool with_delete,
-	       void (*free_element) (void *))
+#ifndef DBUG_OFF
+static int test_rb_tree(TREE_ELEMENT *element);
+#endif
+
+void init_tree(TREE *tree, uint default_alloc_size, uint memory_limit,
+               int size, qsort_cmp2 compare, my_bool with_delete,
+	       tree_element_free free_element, void *custom_arg)
 {
   DBUG_ENTER("init_tree");
   DBUG_PRINT("enter",("tree: %lx  size: %d",tree,size));
 
-  if (!default_alloc_size)
+  if (default_alloc_size < DEFAULT_ALLOC_SIZE)
     default_alloc_size= DEFAULT_ALLOC_SIZE;
+  default_alloc_size= MY_ALIGN(default_alloc_size, DEFAULT_ALIGN_SIZE);
   bzero((gptr) &tree->null_element,sizeof(tree->null_element));
   tree->root= &tree->null_element;
   tree->compare=compare;
   tree->size_of_element=size > 0 ? (uint) size : 0;
+  tree->memory_limit=memory_limit;
   tree->free=free_element;
+  tree->allocated=0;
   tree->elements_in_tree=0;
+  tree->custom_arg = custom_arg;
   tree->null_element.colour=BLACK;
   tree->null_element.left=tree->null_element.right=0;
   if (!free_element && size >= 0 &&
       ((uint) size <= sizeof(void*) || ((uint) size & (sizeof(void*)-1))))
   {
+    /*
+      We know that the data doesn't have to be aligned (like if the key
+      contains a double), so we can store the data combined with the
+      TREE_ELEMENT.
+    */
     tree->offset_to_key=sizeof(TREE_ELEMENT); /* Put key after element */
-    /* Fix allocation size so that we don't loose any memory */
+    /* Fix allocation size so that we don't lose any memory */
     default_alloc_size/=(sizeof(TREE_ELEMENT)+size);
     if (!default_alloc_size)
       default_alloc_size=1;
@@ -102,9 +115,9 @@ void init_tree(TREE *tree, uint default_alloc_size, int size,
   DBUG_VOID_RETURN;
 }
 
-void delete_tree(TREE *tree)
+static void free_tree(TREE *tree, myf free_flags)
 {
-  DBUG_ENTER("delete_tree");
+  DBUG_ENTER("free_tree");
   DBUG_PRINT("enter",("tree: %lx",tree));
 
   if (tree->root)				/* If initialized */
@@ -114,24 +127,43 @@ void delete_tree(TREE *tree)
     else
     {
       if (tree->free)
+      {
+        if (tree->memory_limit)
+          (*tree->free)(NULL, free_init, tree->custom_arg);
 	delete_tree_element(tree,tree->root);
-      free_root(&tree->mem_root,MYF(0));
+        if (tree->memory_limit)
+          (*tree->free)(NULL, free_end, tree->custom_arg);
+      }
+      free_root(&tree->mem_root, free_flags);
     }
   }
   tree->root= &tree->null_element;
   tree->elements_in_tree=0;
+  tree->allocated=0;
 
   DBUG_VOID_RETURN;
 }
+
+void delete_tree(TREE* tree)
+{
+  free_tree(tree, MYF(0)); /* my_free() mem_root if applicable */
+}
+
+void reset_tree(TREE* tree)
+{
+  free_tree(tree, MYF(MY_MARK_BLOCKS_FREE));
+  /* do not my_free() mem_root if applicable, just mark blocks as free */
+}
+
 
 static void delete_tree_element(TREE *tree, TREE_ELEMENT *element)
 {
   if (element != &tree->null_element)
   {
     delete_tree_element(tree,element->left);
-    delete_tree_element(tree,element->right);
     if (tree->free)
-      (*tree->free)(ELEMENT_KEY(tree,element));
+      (*tree->free)(ELEMENT_KEY(tree,element), free_free, tree->custom_arg);
+    delete_tree_element(tree,element->right);
     if (tree->with_delete)
       my_free((char*) element,MYF(0));
   }
@@ -152,7 +184,8 @@ TREE_ELEMENT *tree_insert(TREE *tree, void *key, uint key_size)
   for (;;)
   {
     if (element == &tree->null_element ||
-	(cmp=(*tree->compare)(ELEMENT_KEY(tree,element),key)) == 0)
+	(cmp=(*tree->compare)(tree->custom_arg,
+			      ELEMENT_KEY(tree,element),key)) == 0)
       break;
     if (cmp < 0)
     {
@@ -165,13 +198,22 @@ TREE_ELEMENT *tree_insert(TREE *tree, void *key, uint key_size)
   }
   if (element == &tree->null_element)
   {
+    uint alloc_size=sizeof(TREE_ELEMENT)+key_size+tree->size_of_element;
+    tree->allocated+=alloc_size;
+
+    if (tree->memory_limit && tree->elements_in_tree
+                           && tree->allocated > tree->memory_limit)
+    {
+      reset_tree(tree);
+      return tree_insert(tree, key, key_size);
+    }
+
     key_size+=tree->size_of_element;
     if (tree->with_delete)
-      element=(TREE_ELEMENT *) my_malloc(sizeof(TREE_ELEMENT)+key_size,
-					 MYF(MY_WME));
+      element=(TREE_ELEMENT *) my_malloc(alloc_size, MYF(MY_WME));
     else
       element=(TREE_ELEMENT *)
-	alloc_root(&tree->mem_root,sizeof(TREE_ELEMENT)+key_size);
+	alloc_root(&tree->mem_root,alloc_size);
     if (!element)
       return(NULL);
     **parent=element;
@@ -195,6 +237,7 @@ TREE_ELEMENT *tree_insert(TREE *tree, void *key, uint key_size)
   }
   else
     element->count++;
+  DBUG_EXECUTE("check_tree", test_rb_tree(tree->root););
   return element;
 }
 
@@ -212,7 +255,8 @@ int tree_delete(TREE *tree, void *key)
   {
     if (element == &tree->null_element)
       return 1;				/* Was not in tree */
-    if ((cmp=(*tree->compare)(ELEMENT_KEY(tree,element),key)) == 0)
+    if ((cmp=(*tree->compare)(tree->custom_arg,
+			      ELEMENT_KEY(tree,element),key)) == 0)
       break;
     if (cmp < 0)
     {
@@ -252,7 +296,7 @@ int tree_delete(TREE *tree, void *key)
   if (remove_colour == BLACK)
     rb_delete_fixup(tree,parent);
   if (tree->free)
-    (*tree->free)(ELEMENT_KEY(tree,element));
+    (*tree->free)(ELEMENT_KEY(tree,element), free_free, tree->custom_arg);
   my_free((gptr) element,MYF(0));
   tree->elements_in_tree--;
   return 0;
@@ -268,7 +312,8 @@ void *tree_search(TREE *tree, void *key)
   {
     if (element == &tree->null_element)
       return (void*) 0;
-    if ((cmp=(*tree->compare)(ELEMENT_KEY(tree,element),key)) == 0)
+    if ((cmp=(*tree->compare)(tree->custom_arg,
+			      ELEMENT_KEY(tree,element),key)) == 0)
       return ELEMENT_KEY(tree,element);
     if (cmp < 0)
       element=element->right;
@@ -484,8 +529,7 @@ static void rb_delete_fixup(TREE *tree, TREE_ELEMENT ***parent)
   x->colour=BLACK;
 }
 
-
-#ifdef TESTING_TREES
+#ifndef DBUG_OFF
 
 	/* Test that the proporties for a red-black tree holds */
 
@@ -511,5 +555,4 @@ static int test_rb_tree(TREE_ELEMENT *element)
   }
   return -1;
 }
-
 #endif

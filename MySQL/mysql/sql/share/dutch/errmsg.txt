@@ -2,9 +2,14 @@
    This file is public domain and comes with NO WARRANTY of any kind
 
    Dutch error messages (share/dutch/errmsg.txt)
-   Arjen G. Lentz (agl@bitbike.com)
+   2001-08-02 - Arjen Lentz (agl@bitbike.com)
    Completed earlier partial translation; worked on consistency and spelling.
-   Version: 02-08-2001
+   2002-01-29 - Arjen Lentz (arjen@mysql.com)
+   2002-04-11 - Arjen Lentz (arjen@mysql.com)
+   2002-06-13 - Arjen Lentz (arjen@mysql.com)
+   2002-08-08 - Arjen Lentz (arjen@mysql.com)
+   2002-08-22 - Arjen Lentz (arjen@mysql.com)
+   Translated new error messages.
 */
 
 "hashchk",
@@ -16,9 +21,9 @@
 "Kan database '%-.64s' niet aanmaken (Errcode: %d)",
 "Kan database '%-.64s' niet aanmaken. Database bestaat reeds",
 "Kan database '%-.64s' niet verwijderen. Database bestaat niet",
-"Error verwijderen database (kan '%-.64s' niet verwijderen, Errcode: %d)",
-"Error verwijderen database (kan rmdir '%-.64s' niet uitvoeren, Errcode: %d)",
-"Error bij het verwijderen van '%-.64s' (Errcode: %d)",
+"Fout bij verwijderen database (kan '%-.64s' niet verwijderen, Errcode: %d)",
+"Fout bij verwijderen database (kan rmdir '%-.64s' niet uitvoeren, Errcode: %d)",
+"Fout bij het verwijderen van '%-.64s' (Errcode: %d)",
 "Kan record niet lezen in de systeem tabel",
 "Kan de status niet krijgen van '%-.64s' (Errcode: %d)",
 "Kan de werkdirectory niet krijgen (Errcode: %d)",
@@ -111,7 +116,7 @@
 "Blob veld '%-.64s' can geen standaardwaarde bevatten",
 "Databasenaam '%-.64s' is niet getoegestaan",
 "Niet toegestane tabelnaam '%-.64s'",
-"Het SELECT-statement zou te veel records analyseren en dus veel tijd in beslagnemen. Kijk het WHERE-gedeelte van de query na en kies SET OPTION SQL_BIG_SELECTS=1 als het stament in orde is.",
+"Het SELECT-statement zou te veel records analyseren en dus veel tijd in beslagnemen. Kijk het WHERE-gedeelte van de query na en kies SET SQL_BIG_SELECTS=1 als het stament in orde is.",
 "Onbekende Fout",
 "Onbekende procedure %s",
 "Foutief aantal parameters doorgegeven aan procedure %s",
@@ -144,7 +149,7 @@
 "Passende rijen: %ld  Gewijzigd: %ld  Waarschuwingen: %ld",
 "Kan geen nieuwe thread aanmaken (Errcode: %d). Indien er geen tekort aan geheugen is kunt u de handleiding consulteren over een mogelijke OS afhankelijke fout",
 "Kolom aantal komt niet overeen met waarde aantal in rij %ld",
-"Kan tabel niet opnieuw openen: '%-.64s',
+"Kan tabel niet opnieuw openen: '%-.64s",
 "Foutief gebruik van de NULL waarde",
 "Fout '%-.64s' ontvangen van regexp",
 "Het mixen van GROUP kolommen (MIN(),MAX(),COUNT()...) met no-GROUP kolommen is foutief indien er geen GROUP BY clausule is",
@@ -153,7 +158,7 @@
 "%-.16s commando geweigerd voor gebruiker: '%-.32s@%-.64s' voor kolom '%-.64s' in tabel '%-.64s'",
 "Foutief GRANT/REVOKE commando. Raadpleeg de handleiding welke priveleges gebruikt kunnen worden.",
 "De host of gebruiker parameter voor GRANT is te lang",
-"Tabel '%-64s.%s' bestaat niet",
+"Tabel '%-.64s.%s' bestaat niet",
 "Deze toegang (GRANT) is niet toegekend voor gebruiker '%-.32s' op host '%-.64s' op tabel '%-.64s'",
 "Het used commando is niet toegestaan in deze MySQL versie",
 "Er is iets fout in de gebruikte syntax",
@@ -165,10 +170,10 @@
 "Kreeg fout van fcntl()",
 "Pakketten in verkeerde volgorde ontvangen",
 "Communicatiepakket kon niet worden gedecomprimeerd",
-"Fout bij het lezen van communicatiepakketten"
+"Fout bij het lezen van communicatiepakketten",
 "Timeout bij het lezen van communicatiepakketten",
-"Got an error writing communication packets",
-"Got timeout writing communication packets",
+"Fout bij het schrijven van communicatiepakketten",
+"Timeout bij het schrijven van communicatiepakketten",
 "Resultaat string is langer dan max_allowed_packet",
 "Het gebruikte tabel type ondersteunt geen BLOB/TEXT kolommen",
 "Het gebruikte tabel type ondersteunt geen AUTO_INCREMENT kolommen",
@@ -185,7 +190,7 @@
 "U gebruikt 'safe update mode' en u probeerde een tabel te updaten zonder een WHERE met een KEY kolom",
 "Zoeksleutel '%-.64s' bestaat niet in tabel '%-.64s'",
 "Kan tabel niet openen",
-"De 'handler' voor de tabel ondersteund geen check/repair",
+"De 'handler' voor de tabel ondersteund geen %s",
 "Het is u niet toegestaan dit commando uit te voeren binnen een transactie",
 "Kreeg fout %d tijdens COMMIT",
 "Kreeg fout %d tijdens ROLLBACK",
@@ -204,7 +209,7 @@
 "Tabel '%-.64s' staat als gecrashed gemarkeerd en dient te worden gerepareerd",
 "Tabel '%-.64s' staat als gecrashed gemarkeerd en de laatste (automatische?) reparatie poging mislukte",
 "Waarschuwing: Roll back mislukt voor sommige buiten transacties gewijzigde tabellen",
-"Multi-statement transactie vereist meer dan 'max_binlog_cache_size' bytes opslag. Verhoog deze mysqld variabele en probeer opnieuw',
+"Multi-statement transactie vereist meer dan 'max_binlog_cache_size' bytes opslag. Verhoog deze mysqld variabele en probeer opnieuw",
 "Deze operatie kan niet worden uitgevoerd met een actieve slave, doe eerst SLAVE STOP",
 "Deze operatie vereist een actieve slave, configureer slave en doe dan SLAVE START",
 "De server is niet geconfigureerd als slave, fix in configuratie bestand of met CHANGE MASTER TO",
@@ -218,10 +223,30 @@
 "DROP DATABASE niet toegestaan terwijl thread een globale 'read lock' bezit",
 "CREATE DATABASE niet toegestaan terwijl thread een globale 'read lock' bezit",
 "Foutieve parameters voor %s",
-"%-.32s@%-.64s is not allowed to create new users",
-"Incorrect table definition; All MERGE tables must be in the same database",
-"Deadlock found when trying to get lock; Try restarting transaction",
-"The used table type doesn't support FULLTEXT indexes",
-"Cannot add foreign key constraint",
-"Cannot add a child row: a foreign key constraint fails",
-"Cannot delete a parent row: a foreign key constraint fails",
+"%-.32s@%-.64s mag geen nieuwe gebruikers creeren",
+"Incorrecte tabel definitie; Alle MERGE tabellen moeten tot dezelfde database behoren",
+"Deadlock gevonden tijdens lock-aanvraag poging; Probeer herstart van de transactie",
+"Het gebruikte tabel type ondersteund geen FULLTEXT indexen",
+"Kan foreign key beperking niet toevoegen",
+"Kan onderliggende rij niet toevoegen: foreign key beperking gefaald",
+"Kan bovenliggende rij nite verwijderen: foreign key beperking gefaald",
+"Fout bij opbouwen verbinding naar master: %-.128s",
+"Fout bij uitvoeren query op master: %-.128s",
+"Fout tijdens uitvoeren van commando %s: %-.128s",
+"Foutief gebruik van %s en %s",
+"De gebruikte SELECT commando's hebben een verschillend aantal kolommen",
+"Kan de query niet uitvoeren vanwege een conflicterende read lock",
+"Het combineren van transactionele en niet-transactionele tabellen is uitgeschakeld.",
+"Optie '%s' tweemaal gebruikt in opdracht",
+"Gebruiker '%-.64s' heeft het maximale gebruik van de '%s' faciliteit overschreden (huidige waarde: %ld)",
+"Toegang geweigerd. U moet het %-.128s privilege hebben voor deze operatie",
+"Variabele '%-.64s' is LOCAL en kan niet worden gebruikt met SET GLOBAL",
+"Variabele '%-.64s' is GLOBAL en dient te worden gewijzigd met SET GLOBAL",
+"Variabele '%-.64s' heeft geen standaard waarde",
+"Variabele '%-.64s' kan niet worden gewijzigd naar de waarde '%-.64s'",
+"Foutief argumenttype voor variabele '%-.64s'",
+"Variabele '%-.64s' kan alleen worden gewijzigd, niet gelezen",
+"Foutieve toepassing/plaatsing van '%s'",
+"Deze versie van MySQL ondersteunt nog geen '%s'",
+"Kreeg fatale fout %d: '%-.128s' van master tijdens lezen van data uit binaire log",
+"Slave SQL thread ignored the query because of replicate-*-table rules"

@@ -21,28 +21,29 @@ benchdir_root=		$(prefix)
 benchdir =		$(benchdir_root)/sql-bench
 bench_SCRIPTS =		test-ATIS test-connect test-create test-insert \
 			test-big-tables test-select test-wisconsin \
-			test-alter-table graph-compare-results \
+			test-alter-table test-transactions \
+			graph-compare-results \
 			bench-init.pl compare-results run-all-tests \
 			server-cfg crash-me copy-db innotest1 innotest1a \
-			innotest1b innotest2 innotest2a innotest2b
+			innotest1b innotest2 innotest2a innotest2b \
+			bench-count-distinct
 CLEANFILES =		$(bench_SCRIPTS)
 EXTRA_SCRIPTS =		test-ATIS.sh test-connect.sh test-create.sh \
 			test-insert.sh test-big-tables.sh test-select.sh \
 			test-alter-table.sh test-wisconsin.sh \
+			test-transactions.sh \
 			bench-init.pl.sh compare-results.sh server-cfg.sh \
 			run-all-tests.sh crash-me.sh copy-db.sh \
 			graph-compare-results.sh innotest1.sh innotest1a.sh \
-			innotest1b.sh innotest2.sh innotest2a.sh innotest2b.sh
+			innotest1b.sh innotest2.sh innotest2a.sh innotest2b.sh \
+			bench-count-distinct.sh
 EXTRA_DIST =		$(EXTRA_SCRIPTS)
 
 dist-hook:
 	mkdir -p $(distdir)/Data/ATIS $(distdir)/Data/Wisconsin \
-		 $(distdir)/Results  $(distdir)/Results-win32 \
 		 $(distdir)/limits $(distdir)/Comments
 	for i in $(srcdir)/Data/ATIS/*.* ; do $(INSTALL_DATA) $$i $(distdir)/Data/ATIS ; done
 	for i in $(srcdir)/Data/Wisconsin/*.* ; do $(INSTALL_DATA) $$i $(distdir)/Data/Wisconsin ; done
-	for i in $(srcdir)/Results/*-* ; do $(INSTALL_DATA) $$i $(distdir)/Results; done
-	for i in $(srcdir)/Results-win32/*-* ; do $(INSTALL_DATA) $$i $(distdir)/Results-win32; done
 	for i in $(srcdir)/limits/*.* ; do $(INSTALL_DATA) $$i $(distdir)/limits; done
 	for i in $(srcdir)/Comments/*.* ; do $(INSTALL_DATA) $$i $(distdir)/Comments; done
 
@@ -51,15 +52,11 @@ install-data-local:
 		 $(DESTDIR)$(benchdir)/Data \
 		 $(DESTDIR)$(benchdir)/Data/ATIS \
 		 $(DESTDIR)$(benchdir)/Data/Wisconsin \
-		 $(DESTDIR)$(benchdir)/Results \
-		 $(DESTDIR)$(benchdir)/Results-win32 \
 		 $(DESTDIR)$(benchdir)/limits \
 		 $(DESTDIR)$(benchdir)/Comments
 	$(INSTALL_DATA) $(srcdir)/README  $(DESTDIR)$(benchdir)
 	for i in $(srcdir)/Data/ATIS/*.* ; do $(INSTALL_DATA) $$i $(DESTDIR)$(benchdir)/Data/ATIS ; done
 	for i in $(srcdir)/Data/Wisconsin/*.* ; do $(INSTALL_DATA) $$i $(DESTDIR)$(benchdir)/Data/Wisconsin ; done
-	for i in $(srcdir)/Results/*-* ; do $(INSTALL_DATA) $$i $(DESTDIR)$(benchdir)/Results; done
-	for i in $(srcdir)/Results-win32/*-* ; do $(INSTALL_DATA) $$i $(DESTDIR)$(benchdir)/Results-win32; done
 	for i in $(srcdir)/limits/*.* ; do $(INSTALL_DATA) $$i $(DESTDIR)$(benchdir)/limits; done
 	for i in $(srcdir)/Comments/*.* ; do $(INSTALL_DATA) $$i $(DESTDIR)$(benchdir)/Comments; done
 

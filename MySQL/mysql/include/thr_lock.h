@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* For use with thr_lock:s */
 
@@ -28,7 +27,7 @@ extern "C" {
 
 struct st_thr_lock;
 extern ulong locks_immediate,locks_waited ;
-  
+
 enum thr_lock_type { TL_IGNORE=-1,
 		     TL_UNLOCK,			/* UNLOCK ANY LOCK */
 		     TL_READ,			/* Read lock */
@@ -44,8 +43,8 @@ enum thr_lock_type { TL_IGNORE=-1,
 		      */
 		     TL_WRITE_ALLOW_WRITE,
 		     /*
-			Write lock, but allow other threads to read / write.
-			Used by ALTER TABLE in MySQL to mark to allow readers
+			Write lock, but allow other threads to read.
+			Used by ALTER TABLE in MySQL to allow readers
 			to use the table until ALTER TABLE is finished.
 		     */
 		     TL_WRITE_ALLOW_READ,
@@ -108,6 +107,7 @@ void thr_unlock(THR_LOCK_DATA *data);
 int thr_multi_lock(THR_LOCK_DATA **data,uint count);
 void thr_multi_unlock(THR_LOCK_DATA **data,uint count);
 void thr_abort_locks(THR_LOCK *lock);
+void thr_abort_locks_for_thread(THR_LOCK *lock, pthread_t thread);
 void thr_print_locks(void);		/* For debugging */
 my_bool thr_upgrade_write_delay_lock(THR_LOCK_DATA *data);
 my_bool thr_reschedule_write_lock(THR_LOCK_DATA *data);

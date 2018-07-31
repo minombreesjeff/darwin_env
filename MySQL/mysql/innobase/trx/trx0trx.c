@@ -23,7 +23,7 @@ Created 3/26/1996 Heikki Tuuri
 #include "srv0srv.h"
 #include "thr0loc.h"
 #include "btr0sea.h"
-
+#include "os0proc.h"
 
 /* Copy of the prototype for innobase_mysql_print_thd: this
 copy MUST be equal to the one in mysql/sql/ha_innobase.cc ! */
@@ -79,29 +79,35 @@ trx_create(
 
 	trx->magic_n = TRX_MAGIC_N;
 
-	trx->op_info = "";
+	trx->op_info = (char *) "";
 	
 	trx->type = TRX_USER;
 	trx->conc_state = TRX_NOT_STARTED;
 	trx->start_time = time(NULL);
 
+	trx->isolation_level = TRX_ISO_REPEATABLE_READ;
+
+	trx->id = ut_dulint_zero;
+	trx->no = ut_dulint_max;
+
 	trx->check_foreigns = TRUE;
 	trx->check_unique_secondary = TRUE;
+
+	trx->flush_log_later = FALSE;
 
 	trx->dict_operation = FALSE;
 
 	trx->mysql_thd = NULL;
+	trx->mysql_query_str = NULL;
 
 	trx->n_mysql_tables_in_use = 0;
 	trx->mysql_n_tables_locked = 0;
 
 	trx->mysql_log_file_name = NULL;
 	trx->mysql_log_offset = 0;
-	trx->mysql_master_log_file_name = "";
+	trx->mysql_master_log_file_name = (char*) "";
 	trx->mysql_master_log_pos = 0;
 	
-	trx->ignore_duplicates_in_insert = FALSE;
-
 	mutex_create(&(trx->undo_mutex));
 	mutex_set_level(&(trx->undo_mutex), SYNC_TRX_UNDO);
 
@@ -127,12 +133,15 @@ trx_create(
 	trx->graph = NULL;
 
 	trx->wait_lock = NULL;
+	trx->was_chosen_as_deadlock_victim = FALSE;
 	UT_LIST_INIT(trx->wait_thrs);
 
 	trx->lock_heap = mem_heap_create_in_buffer(256);
 	UT_LIST_INIT(trx->trx_locks);
 
-	trx->has_dict_foreign_key_check_lock = FALSE;
+	UT_LIST_INIT(trx->trx_savepoints);
+
+	trx->dict_operation_lock_mode = 0;
 	trx->has_search_latch = FALSE;
 	trx->search_latch_timeout = BTR_SEA_TIMEOUT;
 
@@ -163,7 +172,7 @@ trx_allocate_for_mysql(void)
 
 	if (!trx_dummy_sess) {
 		trx_dummy_sess = sess_open(NULL, (byte*)"Dummy sess",
-						ut_strlen("Dummy sess"));
+					   ut_strlen((char *) "Dummy sess"));
 	}
 	
 	trx = trx_create(trx_dummy_sess);
@@ -175,6 +184,8 @@ trx_allocate_for_mysql(void)
 	mutex_exit(&kernel_mutex);
 
 	trx->mysql_thread_id = os_thread_get_curr_id();
+
+	trx->mysql_process_no = os_proc_get_number();
 	
 	return(trx);
 }
@@ -228,7 +239,18 @@ trx_free(
 /*=====*/
 	trx_t*	trx)	/* in, own: trx object */
 {
+        char      err_buf[1000];
+
 	ut_ad(mutex_own(&kernel_mutex));
+
+	if (trx->declared_to_be_inside_innodb) {
+	        ut_print_timestamp(stderr);
+	        trx_print(err_buf, trx);
+
+	        fprintf(stderr,
+"  InnoDB: Error: Freeing a trx which is declared to be processing\n"
+"InnoDB: inside InnoDB.\n%s\n", err_buf);
+	}
 
 	ut_a(trx->magic_n == TRX_MAGIC_N);
 
@@ -256,6 +278,8 @@ trx_free(
 
 	ut_a(!trx->has_search_latch);
 	ut_a(!trx->auto_inc_lock);
+
+	ut_a(trx->dict_operation_lock_mode == 0);
 
 	if (trx->lock_heap) {
 		mem_heap_free(trx->lock_heap);
@@ -758,23 +782,63 @@ trx_commit_off_kernel(
 		efficient here: call os_thread_yield here to allow also other
 		trxs to come to commit! */
 
-		/* We now flush the log, as the transaction made changes to
-		the database, making the transaction committed on disk. It is
-		enough that any one of the log groups gets written to disk. */
-
 		/*-------------------------------------*/
 
-		/* Most MySQL users run with srv_flush_.. set to FALSE: */
+                /* Depending on the my.cnf options, we may now write the log
+                buffer to the log files, making the transaction durable if
+                the OS does not crash. We may also flush the log files to
+                disk, making the transaction durable also at an OS crash or a
+                power outage.
 
-		if (srv_flush_log_at_trx_commit) {
+                The idea in InnoDB's group commit is that a group of
+                transactions gather behind a trx doing a physical disk write
+                to log files, and when that physical write has been completed,
+                one of those transactions does a write which commits the whole
+                group. Note that this group commit will only bring benefit if
+                there are > 2 users in the database. Then at least 2 users can
+                gather behind one doing the physical log write to disk.
+
+                If we are calling trx_commit() under MySQL's binlog mutex, we
+                will delay possible log write and flush to a separate function
+                trx_commit_complete_for_mysql(), which is only called when the
+                thread has released the binlog mutex. This is to make the
+                group commit algorithm to work. Otherwise, the MySQL binlog
+                mutex would serialize all commits and prevent a group of
+                transactions from gathering. */
+
+                if (trx->flush_log_later) {
+                        /* Do nothing yet */
+                } else if (srv_flush_log_at_trx_commit == 0) {
+                        /* Do nothing */
+                } else if (srv_flush_log_at_trx_commit == 1) {
+                        if (srv_unix_file_flush_method == SRV_UNIX_NOSYNC) {
+                               /* Write the log but do not flush it to disk */
+
+                               log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, FALSE);
+                        } else {
+                               /* Write the log to the log files AND flush
+                               them to disk */
+
+                               log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, TRUE);
+                        }
+                } else if (srv_flush_log_at_trx_commit == 2) {
+
+                        /* Write the log but do not flush it to disk */
+
+                        log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, FALSE);
+                } else {
+                        ut_a(0);
+                }
+
+		trx->commit_lsn = lsn;
 		
- 			log_flush_up_to(lsn, LOG_WAIT_ONE_GROUP);
-		}
-
 		/*-------------------------------------*/
 	
 		mutex_enter(&kernel_mutex);
 	}
+
+	/* Free savepoints */
+	trx_roll_savepoints_free(trx, NULL);
 
 	trx->conc_state = TRX_NOT_STARTED;
 	trx->rseg = NULL;
@@ -1135,7 +1199,7 @@ trx_sig_send(
 		ut_a(0);
 
 		sess_raise_error_low(trx, 0, 0, NULL, NULL, NULL, NULL,
-		  "Signal from another session, or a break execution signal");
+				     (char *) "Signal from another session, or a break execution signal");
 	}
 
 	/* If there were no other signals ahead in the queue, try to start
@@ -1436,7 +1500,7 @@ trx_commit_for_mysql(
 
 	ut_a(trx);
 
-	trx->op_info = "committing";
+	trx->op_info = (char *) "committing";
 	
 	trx_start_if_not_started(trx);
 
@@ -1446,9 +1510,52 @@ trx_commit_for_mysql(
 
 	mutex_exit(&kernel_mutex);
 
-	trx->op_info = "";
+	trx->op_info = (char *) "";
 	
 	return(0);
+}
+
+/**************************************************************************
+If required, flushes the log to disk if we called trx_commit_for_mysql()
+with trx->flush_log_later == TRUE. */
+
+ulint
+trx_commit_complete_for_mysql(
+/*==========================*/
+			/* out: 0 or error number */
+	trx_t*	trx)	/* in: trx handle */
+{
+        dulint  lsn     = trx->commit_lsn;
+
+        ut_a(trx);
+	
+	trx->op_info = (char*)"flushing log";
+
+        if (srv_flush_log_at_trx_commit == 0) {
+                /* Do nothing */
+        } else if (srv_flush_log_at_trx_commit == 1) {
+                if (srv_unix_file_flush_method == SRV_UNIX_NOSYNC) {
+                        /* Write the log but do not flush it to disk */
+
+                        log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, FALSE);
+                } else {
+                        /* Write the log to the log files AND flush them to
+                        disk */
+
+                        log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, TRUE);
+                }
+        } else if (srv_flush_log_at_trx_commit == 2) {
+
+                /* Write the log but do not flush it to disk */
+
+                log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, FALSE);
+        } else {
+                ut_a(0);
+        }
+
+	trx->op_info = (char*)"";
+
+        return(0);
 }
 
 /**************************************************************************
@@ -1497,6 +1604,9 @@ trx_print(
   		default: buf += sprintf(buf, " state %lu", trx->conc_state);
   	}
 
+#ifdef UNIV_LINUX
+        buf += sprintf(buf, ", process no %lu", trx->mysql_process_no);
+#endif
         buf += sprintf(buf, ", OS thread id %lu",
 		       os_thread_pf(trx->mysql_thread_id));
 
@@ -1507,6 +1617,11 @@ trx_print(
   	if (trx->type != TRX_USER) {
     		buf += sprintf(buf, " purge trx");
   	}
+
+	if (trx->declared_to_be_inside_innodb) {
+	        buf += sprintf(buf, ", thread declared inside InnoDB %lu",
+			       trx->n_tickets_to_enter_innodb);
+	}
 
 	buf += sprintf(buf, "\n");
   	

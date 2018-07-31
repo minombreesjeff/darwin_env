@@ -1,6 +1,7 @@
-# Makefile.in generated automatically by automake 1.4-p5 from Makefile.am
+# Makefile.in generated automatically by automake 1.5 from Makefile.am.
 
-# Copyright (C) 1994, 1995-8, 1999, 2001 Free Software Foundation, Inc.
+# Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+# Free Software Foundation, Inc.
 # This Makefile.in is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
 # with or without modifications, as long as this notice is preserved.
@@ -9,6 +10,8 @@
 # but WITHOUT ANY WARRANTY, to the extent permitted by law; without
 # even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 # PARTICULAR PURPOSE.
+
+@SET_MAKE@
 
 # Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
 # 
@@ -25,7 +28,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-
 
 SHELL = @SHELL@
 
@@ -47,13 +49,9 @@ infodir = @infodir@
 mandir = @mandir@
 includedir = @includedir@
 oldincludedir = /usr/include
-
-DESTDIR =
-
 pkgdatadir = $(datadir)/@PACKAGE@
 pkglibdir = $(libdir)/@PACKAGE@
 pkgincludedir = $(includedir)/@PACKAGE@
-
 top_builddir = ..
 
 ACLOCAL = @ACLOCAL@
@@ -62,11 +60,11 @@ AUTOMAKE = @AUTOMAKE@
 AUTOHEADER = @AUTOHEADER@
 
 INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@ $(AM_INSTALL_PROGRAM_FLAGS)
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_HEADER = $(INSTALL_DATA)
 transform = @program_transform_name@
-
 NORMAL_INSTALL = :
 PRE_INSTALL = :
 POST_INSTALL = :
@@ -80,11 +78,14 @@ host_triplet = @host@
 target_alias = @target_alias@
 target_triplet = @target@
 ALLOCA = @ALLOCA@
+AMTAR = @AMTAR@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
 AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
+CC_VERSION = @CC_VERSION@
 CFLAGS = @CFLAGS@
 CHARSETS_NEED_SOURCE = @CHARSETS_NEED_SOURCE@
 CHARSET_OBJS = @CHARSET_OBJS@
@@ -101,13 +102,18 @@ CPP = @CPP@
 CXX = @CXX@
 CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
+CXX_VERSION = @CXX_VERSION@
+DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
 DVIS = @DVIS@
+ECHO = @ECHO@
+EXEEXT = @EXEEXT@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
 HOSTNAME = @HOSTNAME@
+INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
@@ -120,7 +126,7 @@ LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAINT = @MAINT@
-MAKEINFO = @MAKEINFO@
+MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
 MT_INCLUDES = @MT_INCLUDES@
 MT_LD_ADD = @MT_LD_ADD@
@@ -137,6 +143,7 @@ MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 OBJDUMP = @OBJDUMP@
+OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PDFMANUAL = @PDFMANUAL@
 PERL = @PERL@
@@ -145,12 +152,14 @@ PROTOCOL_VERSION = @PROTOCOL_VERSION@
 PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
+SAVE_ASFLAGS = @SAVE_ASFLAGS@
 SAVE_CFLAGS = @SAVE_CFLAGS@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
 SED = @SED@
 SHARED_LIB_VERSION = @SHARED_LIB_VERSION@
+STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
 TERMCAP_LIB = @TERMCAP_LIB@
@@ -159,83 +168,111 @@ THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
+am__include = @am__include@
+am__quote = @am__quote@
 bdb_includes = @bdb_includes@
 bdb_libs = @bdb_libs@
 bdb_libs_with_path = @bdb_libs_with_path@
 bench_dirs = @bench_dirs@
 default_charset = @default_charset@
 docs_dirs = @docs_dirs@
-gemini_includes = @gemini_includes@
-gemini_libs = @gemini_libs@
+fs_dirs = @fs_dirs@
 innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
+install_sh = @install_sh@
+isam_libs = @isam_libs@
+libmysqld_dirs = @libmysqld_dirs@
 linked_client_targets = @linked_client_targets@
+linked_netware_sources = @linked_netware_sources@
+netware_dir = @netware_dir@
+openssl_includes = @openssl_includes@
+openssl_libs = @openssl_libs@
+orbit_idl = @orbit_idl@
+orbit_includes = @orbit_includes@
+orbit_libs = @orbit_libs@
+pstack_dirs = @pstack_dirs@
+pstack_libs = @pstack_libs@
 readline_dir = @readline_dir@
 readline_link = @readline_link@
 server_scripts = @server_scripts@
 sql_client_dirs = @sql_client_dirs@
 sql_server_dirs = @sql_server_dirs@
 thread_dirs = @thread_dirs@
+tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
+vio_dir = @vio_dir@
+vio_libs = @vio_libs@
 
 INCLUDES = @MT_INCLUDES@ -I$(srcdir)/../include -I../include
 pkglib_LIBRARIES = libmerge.a
-noinst_HEADERS = mrgdef.h
-libmerge_a_SOURCES = open.c extra.c info.c _locking.c 			rrnd.c update.c delete.c rsame.c panic.c 			close.c create.c static.c
+noinst_HEADERS = mrg_def.h
+libmerge_a_SOURCES = mrg_open.c mrg_extra.c mrg_info.c mrg_locking.c \
+			mrg_rrnd.c mrg_update.c mrg_delete.c mrg_rsame.c \
+			mrg_panic.c mrg_close.c mrg_create.c mrg_static.c
 
-
-OMIT_DEPENDENCIES = pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h 			__math.h time.h __time.h unistd.h __unistd.h types.h 			xtypes.h ac-types.h posix.h string.h __string.h 			errno.h socket.h inet.h dirent.h netdb.h 			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h 			prio_queue.h pthread_attr.h pthread_once.h queue.h 			sleep.h specific.h version.h pwd.h timers.h uio.h 			cdefs.h machdep.h signal.h __signal.h util.h
-
+subdir = merge
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
-CONFIG_HEADER = ../config.h
-CONFIG_CLEAN_FILES = 
-LIBRARIES =  $(pkglib_LIBRARIES)
+CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_CLEAN_FILES =
+LIBRARIES = $(pkglib_LIBRARIES)
 
+libmerge_a_AR = $(AR) cru
+libmerge_a_LIBADD =
+am_libmerge_a_OBJECTS = mrg_open.$(OBJEXT) mrg_extra.$(OBJEXT) \
+	mrg_info.$(OBJEXT) mrg_locking.$(OBJEXT) mrg_rrnd.$(OBJEXT) \
+	mrg_update.$(OBJEXT) mrg_delete.$(OBJEXT) mrg_rsame.$(OBJEXT) \
+	mrg_panic.$(OBJEXT) mrg_close.$(OBJEXT) mrg_create.$(OBJEXT) \
+	mrg_static.$(OBJEXT)
+libmerge_a_OBJECTS = $(am_libmerge_a_OBJECTS)
 
-DEFS = @DEFS@ -I. -I$(srcdir) -I..
+DEFS = @DEFS@
+DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
-libmerge_a_LIBADD = 
-libmerge_a_OBJECTS =  open.o extra.o info.o _locking.o rrnd.o update.o \
-delete.o rsame.o panic.o close.o create.o static.o
-AR = ar
-COMPILE = $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
-LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+depcomp = $(SHELL) $(top_srcdir)/depcomp
+@AMDEP_TRUE@DEP_FILES = $(DEPDIR)/mrg_close.Po $(DEPDIR)/mrg_create.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mrg_delete.Po $(DEPDIR)/mrg_extra.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mrg_info.Po $(DEPDIR)/mrg_locking.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mrg_open.Po $(DEPDIR)/mrg_panic.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mrg_rrnd.Po $(DEPDIR)/mrg_rsame.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mrg_static.Po $(DEPDIR)/mrg_update.Po
+COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) \
+	$(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
-LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@
-HEADERS =  $(noinst_HEADERS)
+LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+DIST_SOURCES = $(libmerge_a_SOURCES)
+HEADERS = $(noinst_HEADERS)
 
-DIST_COMMON =  Makefile.am Makefile.in
-
-
-DISTFILES = $(DIST_COMMON) $(SOURCES) $(HEADERS) $(TEXINFOS) $(EXTRA_DIST)
-
-GZIP_ENV = --best
+DIST_COMMON = $(noinst_HEADERS) Makefile.am Makefile.in
 SOURCES = $(libmerge_a_SOURCES)
-OBJECTS = $(libmerge_a_OBJECTS)
 
-all: all-redirect
+all: all-am
+
 .SUFFIXES:
-.SUFFIXES: .S .c .lo .o .s
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am $(top_srcdir)/configure.in $(ACLOCAL_M4) 
-	cd $(top_srcdir) && $(AUTOMAKE) --gnu --include-deps merge/Makefile
+.SUFFIXES: .c .lo .o .obj
 
-Makefile: $(srcdir)/Makefile.in  $(top_builddir)/config.status
-	cd $(top_builddir) \
-	  && CONFIG_FILES=$(subdir)/$@ CONFIG_HEADERS= $(SHELL) ./config.status
+mostlyclean-libtool:
+	-rm -f *.lo
 
+clean-libtool:
+	-rm -rf .libs _libs
 
-mostlyclean-pkglibLIBRARIES:
+distclean-libtool:
+	-rm -f libtool
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am  $(top_srcdir)/configure.in $(ACLOCAL_M4)
+	cd $(top_srcdir) && \
+	  $(AUTOMAKE) --gnu  merge/Makefile
+Makefile: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.in  $(top_builddir)/config.status
+	cd $(top_builddir) && \
+	  CONFIG_HEADERS= CONFIG_LINKS= \
+	  CONFIG_FILES=$(subdir)/$@ $(SHELL) ./config.status
 
-clean-pkglibLIBRARIES:
-	-test -z "$(pkglib_LIBRARIES)" || rm -f $(pkglib_LIBRARIES)
-
-distclean-pkglibLIBRARIES:
-
-maintainer-clean-pkglibLIBRARIES:
-
+AR = ar
 install-pkglibLIBRARIES: $(pkglib_LIBRARIES)
 	@$(NORMAL_INSTALL)
 	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
@@ -255,250 +292,197 @@ install-pkglibLIBRARIES: $(pkglib_LIBRARIES)
 
 uninstall-pkglibLIBRARIES:
 	@$(NORMAL_UNINSTALL)
-	list='$(pkglib_LIBRARIES)'; for p in $$list; do \
+	@list='$(pkglib_LIBRARIES)'; for p in $$list; do \
+	  echo " rm -f $(DESTDIR)$(pkglibdir)/$$p"; \
 	  rm -f $(DESTDIR)$(pkglibdir)/$$p; \
 	done
 
-.c.o:
-	$(COMPILE) -c $<
-
-.s.o:
-	$(COMPILE) -c $<
-
-.S.o:
-	$(COMPILE) -c $<
+clean-pkglibLIBRARIES:
+	-test -z "$(pkglib_LIBRARIES)" || rm -f $(pkglib_LIBRARIES)
+libmerge.a: $(libmerge_a_OBJECTS) $(libmerge_a_DEPENDENCIES) 
+	-rm -f libmerge.a
+	$(libmerge_a_AR) libmerge.a $(libmerge_a_OBJECTS) $(libmerge_a_LIBADD)
+	$(RANLIB) libmerge.a
 
 mostlyclean-compile:
-	-rm -f *.o core *.core
-
-clean-compile:
+	-rm -f *.$(OBJEXT) core *.core
 
 distclean-compile:
 	-rm -f *.tab.c
 
-maintainer-clean-compile:
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_close.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_create.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_delete.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_extra.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_info.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_locking.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_open.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_panic.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_rrnd.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_rsame.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_static.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mrg_update.Po@am__quote@
+
+distclean-depend:
+	-rm -rf $(DEPDIR)
+
+.c.o:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `test -f $< || echo '$(srcdir)/'`$<
+
+.c.obj:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `cygpath -w $<`
 
 .c.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.s.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.S.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-mostlyclean-libtool:
-	-rm -f *.lo
-
-clean-libtool:
-	-rm -rf .libs _libs
-
-distclean-libtool:
-
-maintainer-clean-libtool:
-
-libmerge.a: $(libmerge_a_OBJECTS) $(libmerge_a_DEPENDENCIES)
-	-rm -f libmerge.a
-	$(AR) cru libmerge.a $(libmerge_a_OBJECTS) $(libmerge_a_LIBADD)
-	$(RANLIB) libmerge.a
+@AMDEP_TRUE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Plo' tmpdepfile='$(DEPDIR)/$*.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(LTCOMPILE) -c -o $@ `test -f $< || echo '$(srcdir)/'`$<
+CCDEPMODE = @CCDEPMODE@
+uninstall-info-am:
 
 tags: TAGS
 
-ID: $(HEADERS) $(SOURCES) $(LISP)
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
-	here=`pwd` && cd $(srcdir) \
-	  && mkid -f$$here/ID $$unique $(LISP)
+	mkid -fID $$unique $(LISP)
 
-TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) $(LISP)
+TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+		$(TAGS_FILES) $(LISP)
 	tags=; \
 	here=`pwd`; \
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
 	test -z "$(ETAGS_ARGS)$$unique$(LISP)$$tags" \
-	  || (cd $(srcdir) && etags $(ETAGS_ARGS) $$tags  $$unique $(LISP) -o $$here/TAGS)
+	  || etags $(ETAGS_ARGS) $$tags  $$unique $(LISP)
 
-mostlyclean-tags:
-
-clean-tags:
+GTAGS:
+	here=`CDPATH=: && cd $(top_builddir) && pwd` \
+	  && cd $(top_srcdir) \
+	  && gtags -i $(GTAGS_ARGS) $$here
 
 distclean-tags:
-	-rm -f TAGS ID
+	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH
 
-maintainer-clean-tags:
+DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 
-distdir = $(top_builddir)/$(PACKAGE)-$(VERSION)/$(subdir)
-
-subdir = merge
+top_distdir = ..
+distdir = $(top_distdir)/$(PACKAGE)-$(VERSION)
 
 distdir: $(DISTFILES)
 	@for file in $(DISTFILES); do \
-	  d=$(srcdir); \
+	  if test -f $$file; then d=.; else d=$(srcdir); fi; \
+	  dir=`echo "$$file" | sed -e 's,/[^/]*$$,,'`; \
+	  if test "$$dir" != "$$file" && test "$$dir" != "."; then \
+	    $(mkinstalldirs) "$(distdir)/$$dir"; \
+	  fi; \
 	  if test -d $$d/$$file; then \
-	    cp -pr $$d/$$file $(distdir)/$$file; \
+	    cp -pR $$d/$$file $(distdir) \
+	    || exit 1; \
 	  else \
 	    test -f $(distdir)/$$file \
-	    || ln $$d/$$file $(distdir)/$$file 2> /dev/null \
-	    || cp -p $$d/$$file $(distdir)/$$file || :; \
+	    || cp -p $$d/$$file $(distdir)/$$file \
+	    || exit 1; \
 	  fi; \
 	done
-_locking.o: _locking.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-close.o: close.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-create.o: create.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-delete.o: delete.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-extra.o: extra.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-info.o: info.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-open.o: open.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-panic.o: panic.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-rrnd.o: rrnd.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-rsame.o: rsame.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-static.o: static.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-update.o: update.c mrgdef.h ../isam/isamdef.h ../include/nisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/thr_lock.h ../include/merge.h
-
-info-am:
-info: info-am
-dvi-am:
-dvi: dvi-am
 check-am: all-am
 check: check-am
-installcheck-am:
-installcheck: installcheck-am
-install-exec-am: install-pkglibLIBRARIES
-install-exec: install-exec-am
+all-am: Makefile $(LIBRARIES) $(HEADERS)
 
-install-data-am:
+installdirs:
+	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
+
+install: install-am
+install-exec: install-exec-am
 install-data: install-data-am
+uninstall: uninstall-am
 
 install-am: all-am
 	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
-install: install-am
-uninstall-am: uninstall-pkglibLIBRARIES
-uninstall: uninstall-am
-all-am: Makefile $(LIBRARIES) $(HEADERS)
-all-redirect: all-am
+
+installcheck: installcheck-am
 install-strip:
-	$(MAKE) $(AM_MAKEFLAGS) AM_INSTALL_PROGRAM_FLAGS=-s install
-installdirs:
-	$(mkinstalldirs)  $(DESTDIR)$(pkglibdir)
-
-
+	$(MAKE) $(AM_MAKEFLAGS) INSTALL_PROGRAM="$(INSTALL_STRIP_PROGRAM)" \
+	  `test -z '$(STRIP)' || \
+	    echo "INSTALL_PROGRAM_ENV=STRIPPROG='$(STRIP)'"` install
 mostlyclean-generic:
 
 clean-generic:
 
 distclean-generic:
-	-rm -f Makefile $(CONFIG_CLEAN_FILES)
-	-rm -f config.cache config.log stamp-h stamp-h[0-9]*
+	-rm -f Makefile $(CONFIG_CLEAN_FILES) stamp-h stamp-h[0-9]*
 
 maintainer-clean-generic:
-mostlyclean-am:  mostlyclean-pkglibLIBRARIES mostlyclean-compile \
-		mostlyclean-libtool mostlyclean-tags \
-		mostlyclean-generic
-
-mostlyclean: mostlyclean-am
-
-clean-am:  clean-pkglibLIBRARIES clean-compile clean-libtool clean-tags \
-		clean-generic mostlyclean-am
-
+	@echo "This command is intended for maintainers to use"
+	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-distclean-am:  distclean-pkglibLIBRARIES distclean-compile \
-		distclean-libtool distclean-tags distclean-generic \
-		clean-am
-	-rm -f libtool
+clean-am: clean-generic clean-libtool clean-pkglibLIBRARIES \
+	mostlyclean-am
 
 distclean: distclean-am
 
-maintainer-clean-am:  maintainer-clean-pkglibLIBRARIES \
-		maintainer-clean-compile maintainer-clean-libtool \
-		maintainer-clean-tags maintainer-clean-generic \
-		distclean-am
-	@echo "This command is intended for maintainers to use;"
-	@echo "it deletes files that may require special tools to rebuild."
+distclean-am: clean-am distclean-compile distclean-depend \
+	distclean-generic distclean-libtool distclean-tags
+
+dvi: dvi-am
+
+dvi-am:
+
+info: info-am
+
+info-am:
+
+install-data-am:
+
+install-exec-am: install-pkglibLIBRARIES
+
+install-info: install-info-am
+
+install-man:
+
+installcheck-am:
 
 maintainer-clean: maintainer-clean-am
 
-.PHONY: mostlyclean-pkglibLIBRARIES distclean-pkglibLIBRARIES \
-clean-pkglibLIBRARIES maintainer-clean-pkglibLIBRARIES \
-uninstall-pkglibLIBRARIES install-pkglibLIBRARIES mostlyclean-compile \
-distclean-compile clean-compile maintainer-clean-compile \
-mostlyclean-libtool distclean-libtool clean-libtool \
-maintainer-clean-libtool tags mostlyclean-tags distclean-tags \
-clean-tags maintainer-clean-tags distdir info-am info dvi-am dvi check \
-check-am installcheck-am installcheck install-exec-am install-exec \
-install-data-am install-data install-am install uninstall-am uninstall \
-all-redirect all-am all installdirs mostlyclean-generic \
-distclean-generic clean-generic maintainer-clean-generic clean \
-mostlyclean distclean maintainer-clean
+maintainer-clean-am: distclean-am maintainer-clean-generic
+
+mostlyclean: mostlyclean-am
+
+mostlyclean-am: mostlyclean-compile mostlyclean-generic \
+	mostlyclean-libtool
+
+uninstall-am: uninstall-info-am uninstall-pkglibLIBRARIES
+
+.PHONY: GTAGS all all-am check check-am clean clean-generic \
+	clean-libtool clean-pkglibLIBRARIES distclean distclean-compile \
+	distclean-depend distclean-generic distclean-libtool \
+	distclean-tags distdir dvi dvi-am info info-am install \
+	install-am install-data install-data-am install-exec \
+	install-exec-am install-info install-info-am install-man \
+	install-pkglibLIBRARIES install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool tags uninstall \
+	uninstall-am uninstall-info-am uninstall-pkglibLIBRARIES
 
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%
-
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

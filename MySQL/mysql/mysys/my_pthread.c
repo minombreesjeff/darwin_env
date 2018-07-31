@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000-2003 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Functions to get threads more portable */
 
@@ -91,6 +90,29 @@ void *my_pthread_getspecific_imp(pthread_key_t key)
 }
 #endif
 
+#ifdef __NETWARE__
+/*
+don't kill the LibC Reaper thread or the main thread
+*/
+#include <nks/thread.h>
+#undef pthread_exit
+void my_pthread_exit(void *status)
+{
+  NXThreadId_t tid = NXThreadGetId();
+  NXContext_t ctx;
+  char name[PATH_MAX] = "";
+
+  NXThreadGetContext(tid, &ctx);
+  NXContextGetName(ctx, name, PATH_MAX);
+
+  // "MYSQLD.NLM's LibC Reaper" or "MYSQLD.NLM's main thread"
+  // with a debug build of LibC the reaper can have different names
+  if (!strindex(name, "\'s"))
+  {
+    pthread_exit(status);
+  }
+}
+#endif
 
 /* Some functions for RTS threads, AIX, Siemens Unix and UnixWare 7
    (and DEC OSF/1 3.2 too) */
@@ -394,7 +416,7 @@ int pthread_signal(int sig, void (*func)())
 #undef pthread_cond_wait
 #undef pthread_cond_timedwait
 #undef pthread_cond_t
-
+#undef pthread_attr_getstacksize
 
 /*****************************************************************************
 ** Patches for AIX and DEC OSF/1 3.2
@@ -437,7 +459,7 @@ int my_pthread_cond_init(pthread_cond_t *mp, const pthread_condattr_t *attr)
   this has to be added here.
 ****************************************************************************/
 
-#if defined(HPUX) || defined(HAVE_BROKEN_PTHREAD_COND_TIMEDWAIT)
+#if defined(HPUX10) || defined(HAVE_BROKEN_PTHREAD_COND_TIMEDWAIT)
 
 int my_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 			      struct timespec *abstime)
@@ -451,6 +473,15 @@ int my_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
   if (error == EAGAIN)			/* Correct errno to Posix */
     error= ETIMEDOUT;
   return error;
+}
+#endif
+
+#if defined(HPUX10)
+
+void my_pthread_attr_getstacksize(pthread_attr_t *connection_attrib,
+				  size_t *stack_size)
+{
+  *stack_size= pthread_attr_getstacksize(*connection_attrib);
 }
 #endif
 

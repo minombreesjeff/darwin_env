@@ -52,11 +52,13 @@ ut_get_high32(
 			/* out: a >> 32 */
 	ulint	a)	/* in: ulint */
 {
-	if (sizeof(ulint) == 4) {
-		return(0);
-	}
+#if SIZEOF_LONG == 4
+	UT_NOT_USED(a);
 
+	return 0;
+#else
 	return(a >> 32);
+#endif
 }
 
 /************************************************************
@@ -197,7 +199,6 @@ ut_get_year_month_day(
   	*month = (ulint)cal_tm.wMonth;
   	*day = (ulint)cal_tm.wDay;
 #else
-  	struct tm  cal_tm;
   	struct tm* cal_tm_ptr;
   	time_t     tm;
 
@@ -205,7 +206,7 @@ ut_get_year_month_day(
 
   	cal_tm_ptr = localtime(&tm);
 
-  	*year = (ulint)cal_tm_ptr->tm_year;
+  	*year = (ulint)cal_tm_ptr->tm_year + 1900;
   	*month = (ulint)cal_tm_ptr->tm_mon + 1;
   	*day = (ulint)cal_tm_ptr->tm_mday;
 #endif
@@ -262,7 +263,7 @@ ut_print_buf(
 	data = buf;
 
 	for (i = 0; i < len; i++) {
-		if (isprint((char)(*data))) {
+		if (isprint((int)(*data))) {
 			printf("%c", (char)*data);
 		}
 		data++;
@@ -302,7 +303,7 @@ ut_sprintf_buf(
 	data = buf;
 
 	for (i = 0; i < len; i++) {
-		if (isprint((char)(*data))) {
+		if (isprint((int)(*data))) {
 			n += sprintf(str + n, "%c", (char)*data);
 		} else {
 			n += sprintf(str + n, ".");

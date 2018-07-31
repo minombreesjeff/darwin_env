@@ -1,20 +1,20 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-/* Ger tillbaka en struct med information om isam-filen */
+/* Return useful base information for an open table */
 
 #include "myisamdef.h"
 #ifdef	__WIN__
@@ -45,7 +45,7 @@ int mi_status(MI_INFO *info, register MI_ISAMINFO *x, uint flag)
   {
     pthread_mutex_lock(&share->intern_lock);
     VOID(_mi_readinfo(info,F_RDLCK,0));
-    VOID(_mi_writeinfo(info,0));
+    fast_mi_writeinfo(info);
     pthread_mutex_unlock(&share->intern_lock);
   }
   if (flag & HA_STATUS_VARIABLE)
@@ -80,13 +80,17 @@ int mi_status(MI_INFO *info, register MI_ISAMINFO *x, uint flag)
 			(HA_OPTION_PACK_RECORD | HA_OPTION_COMPRESS_RECORD)) ?
 		       0L : share->base.pack_reclength);
     x->sortkey= -1;				/* No clustering */
-    /* The following should be included even if we are not compiling with
-       USE_RAID as the client must be able to request it! */
     x->rec_per_key	= share->state.rec_per_key_part;
+    x->key_map	 	= share->state.key_map;
+    x->data_file_name   = share->data_file_name;
+    x->index_file_name  = share->index_file_name;
+    /*
+      The following should be included even if we are not compiling with
+      USE_RAID as the client must be able to request it!
+    */
     x->raid_type= share->base.raid_type;
     x->raid_chunks= share->base.raid_chunks;
     x->raid_chunksize= share->base.raid_chunksize;
-    x->key_map	 	= share->state.key_map;
   }
   if ((flag & HA_STATUS_TIME) && !my_fstat(info->dfile,&state,MYF(0)))
     x->update_time=state.st_mtime;

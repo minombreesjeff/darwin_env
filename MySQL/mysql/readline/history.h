@@ -116,7 +116,7 @@ extern HIST_ENTRY **history_list __P((void));
 /* Returns the number which says what history element we are now
    looking at.  */
 extern int where_history __P((void));
-  
+
 /* Return the history entry at the current position, as determined by
    history_offset.  If there is no entry there, return a NULL pointer. */
 HIST_ENTRY *current_history __P((void));
@@ -232,8 +232,8 @@ extern int max_input_history;
 extern char history_expansion_char;
 extern char history_subst_char;
 extern char history_comment_char;
-extern char *history_no_expand_chars;
-extern char *history_search_delimiter_chars;
+extern const char *history_no_expand_chars;
+extern const char *history_search_delimiter_chars;
 extern int history_quotes_inhibit_expansion;
 
 /* If set, this function is called to decide whether or not a particular

@@ -1,9 +1,9 @@
-connect (master,localhost,root,,test,0,mysql-master.sock);
-connect (slave,localhost,root,,test,0,mysql-slave.sock);
+connect (master,localhost,root,,test,$MASTER_MYPORT,master.sock);
+connect (slave,localhost,root,,test,$SLAVE_MYPORT,slave.sock);
 connection master;
 reset master;
-grant file on *.* to replicate@localhost identified by 'aaaaaaaaaaaaaaab';
-grant file on *.* to replicate@127.0.0.1 identified by 'aaaaaaaaaaaaaaab';
+grant replication slave on *.* to replicate@localhost identified by 'aaaaaaaaaaaaaaab';
+grant replication slave on *.* to replicate@127.0.0.1 identified by 'aaaaaaaaaaaaaaab';
 connection slave;
 slave start;
 connection master;

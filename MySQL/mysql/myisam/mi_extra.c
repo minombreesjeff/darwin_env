@@ -1,23 +1,18 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
-
-/* Extra functions we want to do with a database */
-/* - Set flags for quicker databasehandler */
-/* - Set databasehandler to normal */
-/* - Reset recordpointers as after open database */
 
 #include "myisamdef.h"
 #ifdef HAVE_MMAP
@@ -27,30 +22,55 @@
 #include <errno.h>
 #endif
 
-	/* set extra flags for database */
+/*
+  Set options and buffers to optimize table handling
 
-int mi_extra(MI_INFO *info, enum ha_extra_function function)
+  SYNOPSIS
+    mi_extra()
+    info	open table
+    function	operation
+    extra_arg	Pointer to extra argument (normally pointer to ulong)
+    		Used when function is one of:
+		HA_EXTRA_WRITE_CACHE
+		HA_EXTRA_CACHE
+		HA_EXTRA_BULK_INSERT_BEGIN
+		  If extra_arg is 0, then the default cache size is used.
+		HA_EXTRA_BULK_INSERT_FLUSH
+		  extra_arg is a a pointer to which index to flush (uint*)
+    RETURN VALUES
+    0	ok
+*/
+
+
+int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
 {
   int error=0;
+  ulong cache_size;
   MYISAM_SHARE *share=info->s;
   DBUG_ENTER("mi_extra");
+  DBUG_PRINT("enter",("function: %d",(int) function));
 
   switch (function) {
   case HA_EXTRA_RESET:
     /*
       Free buffers and reset the following flags:
       EXTRA_CACHE, EXTRA_WRITE_CACHE, EXTRA_KEYREAD, EXTRA_QUICK
+
+      If the row buffer cache is large (for dynamic tables), reduce it
+      to save memory.
     */
     if (info->opt_flag & (READ_CACHE_USED | WRITE_CACHE_USED))
     {
       info->opt_flag&= ~(READ_CACHE_USED | WRITE_CACHE_USED);
       error=end_io_cache(&info->rec_cache);
     }
+    if (share->base.blobs)
+      mi_alloc_rec_buff(info, -1, &info->rec_buff);
 #if defined(HAVE_MMAP) && defined(HAVE_MADVICE)
     if (info->opt_flag & MEMMAP_USED)
       madvise(share->file_map,share->state.state.data_file_length,MADV_RANDOM);
 #endif
-    info->opt_flag&= ~(KEY_READ_USED | REMEMBER_OLD_POS);    
+    info->opt_flag&= ~(KEY_READ_USED | REMEMBER_OLD_POS);
     info->quick_mode=0;
     /* Fall through */
 
@@ -102,11 +122,13 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function)
     if (!(info->opt_flag &
 	  (READ_CACHE_USED | WRITE_CACHE_USED | MEMMAP_USED)))
     {
+      cache_size= (extra_arg ? *(ulong*) extra_arg :
+		   my_default_record_cache_size);
       if (!(init_io_cache(&info->rec_cache,info->dfile,
 			 (uint) min(info->state->data_file_length+1,
-				    my_default_record_cache_size),
-			 READ_CACHE,0L,(pbool) (info->lock_type != F_UNLCK),
-			 MYF(share->write_flag & MY_WAIT_IF_FULL))))
+				    cache_size),
+			  READ_CACHE,0L,(pbool) (info->lock_type != F_UNLCK),
+			  MYF(share->write_flag & MY_WAIT_IF_FULL))))
       {
 	info->opt_flag|=READ_CACHE_USED;
 	info->update&= ~HA_STATE_ROW_CHANGED;
@@ -132,10 +154,12 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function)
       error=1;			/* Not possibly if not locked */
       break;
     }
+    cache_size= (extra_arg ? *(ulong*) extra_arg :
+		 my_default_record_cache_size);
     if (!(info->opt_flag &
 	  (READ_CACHE_USED | WRITE_CACHE_USED | OPT_NO_ROWS)) &&
 	!share->state.header.uniques)
-      if (!(init_io_cache(&info->rec_cache,info->dfile,0,
+      if (!(init_io_cache(&info->rec_cache,info->dfile, cache_size,
 			 WRITE_CACHE,info->state->data_file_length,
 			  (pbool) (info->lock_type != F_UNLCK),
 			  MYF(share->write_flag & MY_WAIT_IF_FULL))))
@@ -146,6 +170,10 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function)
 			 HA_STATE_EXTEND_BLOCK);
       }
     break;
+  case HA_EXTRA_PREPARE_FOR_UPDATE:
+    if (info->s->data_file_type != DYNAMIC_RECORD)
+      break;
+    /* Remove read/write cache if dynamic rows */
   case HA_EXTRA_NO_CACHE:
     if (info->opt_flag & (READ_CACHE_USED | WRITE_CACHE_USED))
     {
@@ -219,9 +247,17 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function)
     }
     if (share->state.key_map)
     {
-      share->state.key_map=0;
-      info->state->key_file_length=share->state.state.key_file_length=
-	share->base.keystart;
+      MI_KEYDEF *key=share->keyinfo;
+      uint i;
+      for (i=0 ; i < share->base.keys ; i++,key++)
+      {
+        if (!(key->flag & HA_NOSAME) && info->s->base.auto_key != i+1)
+        {
+          share->state.key_map&= ~ ((ulonglong) 1 << i);
+          info->update|= HA_STATE_CHANGED;
+        }
+      }
+
       if (!share->changed)
       {
 	share->state.changed|= STATE_CHANGED | STATE_NOT_ANALYZED;
@@ -239,10 +275,17 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function)
   case HA_EXTRA_FORCE_REOPEN:
     pthread_mutex_lock(&THR_LOCK_myisam);
     share->last_version= 0L;			/* Impossible version */
+    pthread_mutex_unlock(&THR_LOCK_myisam);
+    break;
+  case HA_EXTRA_PREPARE_FOR_DELETE:
+    pthread_mutex_lock(&THR_LOCK_myisam);
+    share->last_version= 0L;			/* Impossible version */
 #ifdef __WIN__
     /* Close the isam and data files as Win32 can't drop an open table */
     pthread_mutex_lock(&share->intern_lock);
-    if (flush_key_blocks(share->kfile,FLUSH_RELEASE))
+    if (flush_key_blocks(share->kfile,
+			 (function == HA_EXTRA_FORCE_REOPEN ?
+			  FLUSH_RELEASE : FLUSH_IGNORE_CHANGED)))
     {
       error=my_errno;
       share->changed=1;
@@ -316,11 +359,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function)
       }
     }
     if (share->base.blobs)
-    {
-      my_free(info->rec_alloc,MYF(MY_ALLOW_ZERO_PTR));
-      info->rec_alloc=info->rec_buff=0;
-      mi_fix_rec_buff_for_blob(info,info->s->base.pack_reclength);
-    }
+      mi_alloc_rec_buff(info, -1, &info->rec_buff);
     break;
   case HA_EXTRA_NORMAL:				/* Theese isn't in use */
     info->quick_mode=0;

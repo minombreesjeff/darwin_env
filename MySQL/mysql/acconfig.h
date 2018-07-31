@@ -91,6 +91,9 @@
 /* Using Innobase DB */
 #undef HAVE_INNOBASE_DB
 
+/* Using old ISAM tables */
+#undef HAVE_ISAM
+
 /* Define if we have GNU readline */
 #undef HAVE_LIBREADLINE
 
@@ -121,6 +124,9 @@
 /* sigwait with one argument */
 #undef HAVE_NONPOSIX_SIGWAIT
 
+/* ORBIT */
+#undef HAVE_ORBIT
+
 /* pthread_attr_setscope */
 #undef HAVE_PTHREAD_ATTR_SETSCOPE
 
@@ -141,6 +147,9 @@
 
 /* crypt */
 #undef HAVE_CRYPT
+
+/* If we want to have query cache */
+#undef HAVE_QUERY_CACHE
 
 /* Solaris define gethostbyaddr_r with 7 arguments. glibc2 defines
    this with 8 arguments */
@@ -170,8 +179,14 @@
 /* new UNIXWARE7 threads that are not yet posix */
 #undef HAVE_UNIXWARE7_POSIX
 
+/* OpenSSL */
+#undef HAVE_OPENSSL
+
 /* READLINE: */
 #undef HAVE_USG_SIGHOLD
+
+/* Virtual IO */
+#undef HAVE_VIO
 
 /* Handling of large files on Solaris 2.6 */
 #undef _LARGEFILE_SOURCE
@@ -219,7 +234,7 @@
 #undef SPRINTF_RETURNS_INT
 #undef SPRINTF_RETURNS_GARBAGE
 
-/* Needed to get large file supportat HPUX 10.20 */
+/* Needed to get large file support on HPUX 10.20 */
 #undef __STDC_EXT__
 
 #undef STACK_DIRECTION
@@ -247,6 +262,9 @@
 /* Use multi-byte character routines */
 #undef USE_MB
 #undef USE_MB_IDENT
+
+/* the pstack backtrace library */
+#undef USE_PSTACK
 
 /* Use MySQL RAID */
 #undef USE_RAID

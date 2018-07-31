@@ -1,6 +1,7 @@
-# Makefile.in generated automatically by automake 1.4-p5 from Makefile.am
+# Makefile.in generated automatically by automake 1.5 from Makefile.am.
 
-# Copyright (C) 1994, 1995-8, 1999, 2001 Free Software Foundation, Inc.
+# Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+# Free Software Foundation, Inc.
 # This Makefile.in is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
 # with or without modifications, as long as this notice is preserved.
@@ -10,22 +11,23 @@
 # even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 # PARTICULAR PURPOSE.
 
+@SET_MAKE@
+
 # Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-
 
 SHELL = @SHELL@
 
@@ -47,13 +49,9 @@ infodir = @infodir@
 mandir = @mandir@
 includedir = @includedir@
 oldincludedir = /usr/include
-
-DESTDIR =
-
 pkgdatadir = $(datadir)/@PACKAGE@
 pkglibdir = $(libdir)/@PACKAGE@
 pkgincludedir = $(includedir)/@PACKAGE@
-
 top_builddir = ..
 
 ACLOCAL = @ACLOCAL@
@@ -62,11 +60,11 @@ AUTOMAKE = @AUTOMAKE@
 AUTOHEADER = @AUTOHEADER@
 
 INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@ $(AM_INSTALL_PROGRAM_FLAGS)
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_HEADER = $(INSTALL_DATA)
 transform = @program_transform_name@
-
 NORMAL_INSTALL = :
 PRE_INSTALL = :
 POST_INSTALL = :
@@ -80,11 +78,14 @@ host_triplet = @host@
 target_alias = @target_alias@
 target_triplet = @target@
 ALLOCA = @ALLOCA@
+AMTAR = @AMTAR@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
 AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
+CC_VERSION = @CC_VERSION@
 CFLAGS = @CFLAGS@
 CHARSETS_NEED_SOURCE = @CHARSETS_NEED_SOURCE@
 CHARSET_OBJS = @CHARSET_OBJS@
@@ -101,13 +102,18 @@ CPP = @CPP@
 CXX = @CXX@
 CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
+CXX_VERSION = @CXX_VERSION@
+DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
 DVIS = @DVIS@
+ECHO = @ECHO@
+EXEEXT = @EXEEXT@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
 HOSTNAME = @HOSTNAME@
+INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
@@ -120,7 +126,7 @@ LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAINT = @MAINT@
-MAKEINFO = @MAKEINFO@
+MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
 MT_INCLUDES = @MT_INCLUDES@
 MT_LD_ADD = @MT_LD_ADD@
@@ -137,6 +143,7 @@ MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 OBJDUMP = @OBJDUMP@
+OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PDFMANUAL = @PDFMANUAL@
 PERL = @PERL@
@@ -145,12 +152,14 @@ PROTOCOL_VERSION = @PROTOCOL_VERSION@
 PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
+SAVE_ASFLAGS = @SAVE_ASFLAGS@
 SAVE_CFLAGS = @SAVE_CFLAGS@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
 SED = @SED@
 SHARED_LIB_VERSION = @SHARED_LIB_VERSION@
+STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
 TERMCAP_LIB = @TERMCAP_LIB@
@@ -159,143 +168,211 @@ THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
+am__include = @am__include@
+am__quote = @am__quote@
 bdb_includes = @bdb_includes@
 bdb_libs = @bdb_libs@
 bdb_libs_with_path = @bdb_libs_with_path@
 bench_dirs = @bench_dirs@
 default_charset = @default_charset@
 docs_dirs = @docs_dirs@
-gemini_includes = @gemini_includes@
-gemini_libs = @gemini_libs@
+fs_dirs = @fs_dirs@
 innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
+install_sh = @install_sh@
+isam_libs = @isam_libs@
+libmysqld_dirs = @libmysqld_dirs@
 linked_client_targets = @linked_client_targets@
+linked_netware_sources = @linked_netware_sources@
+netware_dir = @netware_dir@
+openssl_includes = @openssl_includes@
+openssl_libs = @openssl_libs@
+orbit_idl = @orbit_idl@
+orbit_includes = @orbit_includes@
+orbit_libs = @orbit_libs@
+pstack_dirs = @pstack_dirs@
+pstack_libs = @pstack_libs@
 readline_dir = @readline_dir@
 readline_link = @readline_link@
 server_scripts = @server_scripts@
 sql_client_dirs = @sql_client_dirs@
 sql_server_dirs = @sql_server_dirs@
 thread_dirs = @thread_dirs@
+tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
+vio_dir = @vio_dir@
+vio_libs = @vio_libs@
 
 EXTRA_DIST = mi_test_all.sh mi_test_all.res
 pkgdata_DATA = mi_test_all mi_test_all.res
 
-INCLUDES = @MT_INCLUDES@ -I$(srcdir)/../include -I../include 
-LDADD = @CLIENT_EXTRA_LDFLAGS@ libmyisam.a ../mysys/libmysys.a 			../dbug/libdbug.a ../strings/libmystrings.a
+INCLUDES = @MT_INCLUDES@ -I$(srcdir)/../include -I../include
+LDADD = @CLIENT_EXTRA_LDFLAGS@ libmyisam.a ../mysys/libmysys.a \
+			../dbug/libdbug.a ../strings/libmystrings.a
 
 pkglib_LIBRARIES = libmyisam.a
 bin_PROGRAMS = myisamchk myisamlog myisampack
 myisamchk_DEPENDENCIES = $(LIBRARIES)
 myisamlog_DEPENDENCIES = $(LIBRARIES)
 myisampack_DEPENDENCIES = $(LIBRARIES)
-noinst_PROGRAMS = mi_test1 mi_test2 mi_test3 ft_test1 ft_eval
+noinst_PROGRAMS = mi_test1 mi_test2 mi_test3 ft_dump #ft_test1 ft_eval
 noinst_HEADERS = myisamdef.h fulltext.h ftdefs.h ft_test1.h ft_eval.h
 mi_test1_DEPENDENCIES = $(LIBRARIES)
 mi_test2_DEPENDENCIES = $(LIBRARIES)
 mi_test3_DEPENDENCIES = $(LIBRARIES)
-ft_test1_DEPENDENCIES = $(LIBRARIES)
-ft_eval_DEPENDENCIES = $(LIBRARIES)
-libmyisam_a_SOURCES = mi_open.c mi_extra.c mi_info.c mi_rkey.c 			mi_rnext.c mi_rnext_same.c 			mi_search.c mi_page.c mi_key.c mi_locking.c 			mi_rrnd.c mi_scan.c mi_cache.c 			mi_statrec.c mi_packrec.c mi_dynrec.c 			mi_update.c mi_write.c mi_unique.c 			mi_delete.c 			mi_rprev.c mi_rfirst.c mi_rlast.c mi_rsame.c 			mi_rsamepos.c mi_panic.c mi_close.c mi_create.c 			mi_range.c mi_dbug.c mi_checksum.c mi_log.c 			mi_changed.c mi_static.c mi_delete_all.c 			mi_delete_table.c mi_rename.c  mi_check.c 			ft_parser.c ft_search.c ft_stopwords.c ft_static.c 			ft_update.c sort.c
+#ft_test1_DEPENDENCIES=	$(LIBRARIES)
+#ft_eval_DEPENDENCIES=	$(LIBRARIES)
+ft_dump_DEPENDENCIES = $(LIBRARIES)
+libmyisam_a_SOURCES = mi_open.c mi_extra.c mi_info.c mi_rkey.c \
+			mi_rnext.c mi_rnext_same.c \
+			mi_search.c mi_page.c mi_key.c mi_locking.c \
+			mi_rrnd.c mi_scan.c mi_cache.c \
+			mi_statrec.c mi_packrec.c mi_dynrec.c \
+			mi_update.c mi_write.c mi_unique.c \
+			mi_delete.c \
+			mi_rprev.c mi_rfirst.c mi_rlast.c mi_rsame.c \
+			mi_rsamepos.c mi_panic.c mi_close.c mi_create.c\
+			mi_range.c mi_dbug.c mi_checksum.c mi_log.c \
+			mi_changed.c mi_static.c mi_delete_all.c \
+			mi_delete_table.c mi_rename.c  mi_check.c \
+			ft_parser.c ft_stopwords.c ft_static.c \
+			ft_update.c ft_boolean_search.c ft_nlq_search.c sort.c
 
 CLEANFILES = test?.MY? FT?.MY? isam.log mi_test_all
 DEFS = -DMAP_TO_USE_RAID
-# Omit dependency for ../mit-pthreads/include/sys that only exits if
-# mit-pthreads are used
-OMIT_DEPENDENCIES = pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h 			__math.h time.h __time.h unistd.h __unistd.h types.h 			xtypes.h ac-types.h posix.h string.h __string.h 			errno.h socket.h inet.h dirent.h netdb.h 			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h 			prio_queue.h pthread_attr.h pthread_once.h queue.h 			sleep.h specific.h version.h pwd.h timers.h uio.h 			cdefs.h machdep.h signal.h __signal.h util.h 			wait.h
-
 
 SUFFIXES = .sh
+subdir = myisam
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
-CONFIG_HEADER = ../config.h
-CONFIG_CLEAN_FILES = 
-LIBRARIES =  $(pkglib_LIBRARIES)
+CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_CLEAN_FILES =
+LIBRARIES = $(pkglib_LIBRARIES)
 
+libmyisam_a_AR = $(AR) cru
+libmyisam_a_LIBADD =
+am_libmyisam_a_OBJECTS = mi_open.$(OBJEXT) mi_extra.$(OBJEXT) \
+	mi_info.$(OBJEXT) mi_rkey.$(OBJEXT) mi_rnext.$(OBJEXT) \
+	mi_rnext_same.$(OBJEXT) mi_search.$(OBJEXT) mi_page.$(OBJEXT) \
+	mi_key.$(OBJEXT) mi_locking.$(OBJEXT) mi_rrnd.$(OBJEXT) \
+	mi_scan.$(OBJEXT) mi_cache.$(OBJEXT) mi_statrec.$(OBJEXT) \
+	mi_packrec.$(OBJEXT) mi_dynrec.$(OBJEXT) mi_update.$(OBJEXT) \
+	mi_write.$(OBJEXT) mi_unique.$(OBJEXT) mi_delete.$(OBJEXT) \
+	mi_rprev.$(OBJEXT) mi_rfirst.$(OBJEXT) mi_rlast.$(OBJEXT) \
+	mi_rsame.$(OBJEXT) mi_rsamepos.$(OBJEXT) mi_panic.$(OBJEXT) \
+	mi_close.$(OBJEXT) mi_create.$(OBJEXT) mi_range.$(OBJEXT) \
+	mi_dbug.$(OBJEXT) mi_checksum.$(OBJEXT) mi_log.$(OBJEXT) \
+	mi_changed.$(OBJEXT) mi_static.$(OBJEXT) \
+	mi_delete_all.$(OBJEXT) mi_delete_table.$(OBJEXT) \
+	mi_rename.$(OBJEXT) mi_check.$(OBJEXT) ft_parser.$(OBJEXT) \
+	ft_stopwords.$(OBJEXT) ft_static.$(OBJEXT) ft_update.$(OBJEXT) \
+	ft_boolean_search.$(OBJEXT) ft_nlq_search.$(OBJEXT) \
+	sort.$(OBJEXT)
+libmyisam_a_OBJECTS = $(am_libmyisam_a_OBJECTS)
+bin_PROGRAMS = myisamchk$(EXEEXT) myisamlog$(EXEEXT) myisampack$(EXEEXT)
+noinst_PROGRAMS = mi_test1$(EXEEXT) mi_test2$(EXEEXT) mi_test3$(EXEEXT) \
+	ft_dump$(EXEEXT)
+PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS)
+
+ft_dump_SOURCES = ft_dump.c
+ft_dump_OBJECTS = ft_dump.$(OBJEXT)
+ft_dump_LDADD = $(LDADD)
+ft_dump_LDFLAGS =
+mi_test1_SOURCES = mi_test1.c
+mi_test1_OBJECTS = mi_test1.$(OBJEXT)
+mi_test1_LDADD = $(LDADD)
+mi_test1_LDFLAGS =
+mi_test2_SOURCES = mi_test2.c
+mi_test2_OBJECTS = mi_test2.$(OBJEXT)
+mi_test2_LDADD = $(LDADD)
+mi_test2_LDFLAGS =
+mi_test3_SOURCES = mi_test3.c
+mi_test3_OBJECTS = mi_test3.$(OBJEXT)
+mi_test3_LDADD = $(LDADD)
+mi_test3_LDFLAGS =
+myisamchk_SOURCES = myisamchk.c
+myisamchk_OBJECTS = myisamchk.$(OBJEXT)
+myisamchk_LDADD = $(LDADD)
+myisamchk_LDFLAGS =
+myisamlog_SOURCES = myisamlog.c
+myisamlog_OBJECTS = myisamlog.$(OBJEXT)
+myisamlog_LDADD = $(LDADD)
+myisamlog_LDFLAGS =
+myisampack_SOURCES = myisampack.c
+myisampack_OBJECTS = myisampack.$(OBJEXT)
+myisampack_LDADD = $(LDADD)
+myisampack_LDFLAGS =
+DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
-libmyisam_a_LIBADD = 
-libmyisam_a_OBJECTS =  mi_open.o mi_extra.o mi_info.o mi_rkey.o \
-mi_rnext.o mi_rnext_same.o mi_search.o mi_page.o mi_key.o mi_locking.o \
-mi_rrnd.o mi_scan.o mi_cache.o mi_statrec.o mi_packrec.o mi_dynrec.o \
-mi_update.o mi_write.o mi_unique.o mi_delete.o mi_rprev.o mi_rfirst.o \
-mi_rlast.o mi_rsame.o mi_rsamepos.o mi_panic.o mi_close.o mi_create.o \
-mi_range.o mi_dbug.o mi_checksum.o mi_log.o mi_changed.o mi_static.o \
-mi_delete_all.o mi_delete_table.o mi_rename.o mi_check.o ft_parser.o \
-ft_search.o ft_stopwords.o ft_static.o ft_update.o sort.o
-AR = ar
-PROGRAMS =  $(bin_PROGRAMS) $(noinst_PROGRAMS)
-
-myisamchk_SOURCES = myisamchk.c
-myisamchk_OBJECTS =  myisamchk.o
-myisamchk_LDADD = $(LDADD)
-myisamchk_LDFLAGS = 
-myisamlog_SOURCES = myisamlog.c
-myisamlog_OBJECTS =  myisamlog.o
-myisamlog_LDADD = $(LDADD)
-myisamlog_LDFLAGS = 
-myisampack_SOURCES = myisampack.c
-myisampack_OBJECTS =  myisampack.o
-myisampack_LDADD = $(LDADD)
-myisampack_LDFLAGS = 
-mi_test1_SOURCES = mi_test1.c
-mi_test1_OBJECTS =  mi_test1.o
-mi_test1_LDADD = $(LDADD)
-mi_test1_LDFLAGS = 
-mi_test2_SOURCES = mi_test2.c
-mi_test2_OBJECTS =  mi_test2.o
-mi_test2_LDADD = $(LDADD)
-mi_test2_LDFLAGS = 
-mi_test3_SOURCES = mi_test3.c
-mi_test3_OBJECTS =  mi_test3.o
-mi_test3_LDADD = $(LDADD)
-mi_test3_LDFLAGS = 
-ft_test1_SOURCES = ft_test1.c
-ft_test1_OBJECTS =  ft_test1.o
-ft_test1_LDADD = $(LDADD)
-ft_test1_LDFLAGS = 
-ft_eval_SOURCES = ft_eval.c
-ft_eval_OBJECTS =  ft_eval.o
-ft_eval_LDADD = $(LDADD)
-ft_eval_LDFLAGS = 
-COMPILE = $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
-LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+depcomp = $(SHELL) $(top_srcdir)/depcomp
+@AMDEP_TRUE@DEP_FILES = $(DEPDIR)/ft_boolean_search.Po \
+@AMDEP_TRUE@	$(DEPDIR)/ft_dump.Po $(DEPDIR)/ft_nlq_search.Po \
+@AMDEP_TRUE@	$(DEPDIR)/ft_parser.Po $(DEPDIR)/ft_static.Po \
+@AMDEP_TRUE@	$(DEPDIR)/ft_stopwords.Po $(DEPDIR)/ft_update.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_cache.Po $(DEPDIR)/mi_changed.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_check.Po $(DEPDIR)/mi_checksum.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_close.Po $(DEPDIR)/mi_create.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_dbug.Po $(DEPDIR)/mi_delete.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_delete_all.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_delete_table.Po $(DEPDIR)/mi_dynrec.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_extra.Po $(DEPDIR)/mi_info.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_key.Po $(DEPDIR)/mi_locking.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_log.Po $(DEPDIR)/mi_open.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_packrec.Po $(DEPDIR)/mi_page.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_panic.Po $(DEPDIR)/mi_range.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_rename.Po $(DEPDIR)/mi_rfirst.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_rkey.Po $(DEPDIR)/mi_rlast.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_rnext.Po $(DEPDIR)/mi_rnext_same.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_rprev.Po $(DEPDIR)/mi_rrnd.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_rsame.Po $(DEPDIR)/mi_rsamepos.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_scan.Po $(DEPDIR)/mi_search.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_static.Po $(DEPDIR)/mi_statrec.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_test1.Po $(DEPDIR)/mi_test2.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_test3.Po $(DEPDIR)/mi_unique.Po \
+@AMDEP_TRUE@	$(DEPDIR)/mi_update.Po $(DEPDIR)/mi_write.Po \
+@AMDEP_TRUE@	$(DEPDIR)/myisamchk.Po $(DEPDIR)/myisamlog.Po \
+@AMDEP_TRUE@	$(DEPDIR)/myisampack.Po $(DEPDIR)/sort.Po
+COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) \
+	$(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
-LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@
-DATA =  $(pkgdata_DATA)
+LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+DIST_SOURCES = $(libmyisam_a_SOURCES) ft_dump.c mi_test1.c mi_test2.c \
+	mi_test3.c myisamchk.c myisamlog.c myisampack.c
+DATA = $(pkgdata_DATA)
 
-HEADERS =  $(noinst_HEADERS)
+HEADERS = $(noinst_HEADERS)
 
-DIST_COMMON =  ChangeLog Makefile.am Makefile.in NEWS TODO
+DIST_COMMON = $(noinst_HEADERS) ChangeLog Makefile.am Makefile.in NEWS \
+	TODO
+SOURCES = $(libmyisam_a_SOURCES) ft_dump.c mi_test1.c mi_test2.c mi_test3.c myisamchk.c myisamlog.c myisampack.c
 
+all: all-am
 
-DISTFILES = $(DIST_COMMON) $(SOURCES) $(HEADERS) $(TEXINFOS) $(EXTRA_DIST)
-
-GZIP_ENV = --best
-SOURCES = $(libmyisam_a_SOURCES) myisamchk.c myisamlog.c myisampack.c mi_test1.c mi_test2.c mi_test3.c ft_test1.c ft_eval.c
-OBJECTS = $(libmyisam_a_OBJECTS) myisamchk.o myisamlog.o myisampack.o mi_test1.o mi_test2.o mi_test3.o ft_test1.o ft_eval.o
-
-all: all-redirect
 .SUFFIXES:
-.SUFFIXES: .S .c .lo .o .s .sh
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am $(top_srcdir)/configure.in $(ACLOCAL_M4) 
-	cd $(top_srcdir) && $(AUTOMAKE) --gnu --include-deps myisam/Makefile
+.SUFFIXES: .sh .c .lo .o .obj
 
-Makefile: $(srcdir)/Makefile.in  $(top_builddir)/config.status
-	cd $(top_builddir) \
-	  && CONFIG_FILES=$(subdir)/$@ CONFIG_HEADERS= $(SHELL) ./config.status
+mostlyclean-libtool:
+	-rm -f *.lo
 
+clean-libtool:
+	-rm -rf .libs _libs
 
-mostlyclean-pkglibLIBRARIES:
+distclean-libtool:
+	-rm -f libtool
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am  $(top_srcdir)/configure.in $(ACLOCAL_M4)
+	cd $(top_srcdir) && \
+	  $(AUTOMAKE) --gnu  myisam/Makefile
+Makefile: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.in  $(top_builddir)/config.status
+	cd $(top_builddir) && \
+	  CONFIG_HEADERS= CONFIG_LINKS= \
+	  CONFIG_FILES=$(subdir)/$@ $(SHELL) ./config.status
 
-clean-pkglibLIBRARIES:
-	-test -z "$(pkglib_LIBRARIES)" || rm -f $(pkglib_LIBRARIES)
-
-distclean-pkglibLIBRARIES:
-
-maintainer-clean-pkglibLIBRARIES:
-
+AR = ar
 install-pkglibLIBRARIES: $(pkglib_LIBRARIES)
 	@$(NORMAL_INSTALL)
 	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
@@ -315,635 +392,303 @@ install-pkglibLIBRARIES: $(pkglib_LIBRARIES)
 
 uninstall-pkglibLIBRARIES:
 	@$(NORMAL_UNINSTALL)
-	list='$(pkglib_LIBRARIES)'; for p in $$list; do \
+	@list='$(pkglib_LIBRARIES)'; for p in $$list; do \
+	  echo " rm -f $(DESTDIR)$(pkglibdir)/$$p"; \
 	  rm -f $(DESTDIR)$(pkglibdir)/$$p; \
 	done
 
-.c.o:
-	$(COMPILE) -c $<
-
-.s.o:
-	$(COMPILE) -c $<
-
-.S.o:
-	$(COMPILE) -c $<
-
-mostlyclean-compile:
-	-rm -f *.o core *.core
-
-clean-compile:
-
-distclean-compile:
-	-rm -f *.tab.c
-
-maintainer-clean-compile:
-
-.c.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.s.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.S.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-mostlyclean-libtool:
-	-rm -f *.lo
-
-clean-libtool:
-	-rm -rf .libs _libs
-
-distclean-libtool:
-
-maintainer-clean-libtool:
-
-libmyisam.a: $(libmyisam_a_OBJECTS) $(libmyisam_a_DEPENDENCIES)
+clean-pkglibLIBRARIES:
+	-test -z "$(pkglib_LIBRARIES)" || rm -f $(pkglib_LIBRARIES)
+libmyisam.a: $(libmyisam_a_OBJECTS) $(libmyisam_a_DEPENDENCIES) 
 	-rm -f libmyisam.a
-	$(AR) cru libmyisam.a $(libmyisam_a_OBJECTS) $(libmyisam_a_LIBADD)
+	$(libmyisam_a_AR) libmyisam.a $(libmyisam_a_OBJECTS) $(libmyisam_a_LIBADD)
 	$(RANLIB) libmyisam.a
-
-mostlyclean-binPROGRAMS:
-
-clean-binPROGRAMS:
-	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
-
-distclean-binPROGRAMS:
-
-maintainer-clean-binPROGRAMS:
-
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	$(mkinstalldirs) $(DESTDIR)$(bindir)
 	@list='$(bin_PROGRAMS)'; for p in $$list; do \
-	  if test -f $$p; then \
-	    echo " $(LIBTOOL)  --mode=install $(INSTALL_PROGRAM) $$p $(DESTDIR)$(bindir)/`echo $$p|sed 's/$(EXEEXT)$$//'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`"; \
-	    $(LIBTOOL)  --mode=install $(INSTALL_PROGRAM) $$p $(DESTDIR)$(bindir)/`echo $$p|sed 's/$(EXEEXT)$$//'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`; \
+	  p1=`echo $$p|sed 's/$(EXEEXT)$$//'`; \
+	  if test -f $$p \
+	     || test -f $$p1 \
+	  ; then \
+	    f=`echo $$p1|sed '$(transform);s/$$/$(EXEEXT)/'`; \
+	   echo " $(INSTALL_PROGRAM_ENV) $(LIBTOOL) --mode=install $(INSTALL_PROGRAM) $$p $(DESTDIR)$(bindir)/$$f"; \
+	   $(INSTALL_PROGRAM_ENV) $(LIBTOOL) --mode=install $(INSTALL_PROGRAM) $$p $(DESTDIR)$(bindir)/$$f; \
 	  else :; fi; \
 	done
 
 uninstall-binPROGRAMS:
 	@$(NORMAL_UNINSTALL)
-	list='$(bin_PROGRAMS)'; for p in $$list; do \
-	  rm -f $(DESTDIR)$(bindir)/`echo $$p|sed 's/$(EXEEXT)$$//'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`; \
+	@list='$(bin_PROGRAMS)'; for p in $$list; do \
+	  f=`echo $$p|sed 's/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/'`; \
+	  echo " rm -f $(DESTDIR)$(bindir)/$$f"; \
+	  rm -f $(DESTDIR)$(bindir)/$$f; \
 	done
 
-mostlyclean-noinstPROGRAMS:
+clean-binPROGRAMS:
+	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
 
 clean-noinstPROGRAMS:
 	-test -z "$(noinst_PROGRAMS)" || rm -f $(noinst_PROGRAMS)
-
-distclean-noinstPROGRAMS:
-
-maintainer-clean-noinstPROGRAMS:
-
-myisamchk: $(myisamchk_OBJECTS) $(myisamchk_DEPENDENCIES)
-	@rm -f myisamchk
+ft_dump$(EXEEXT): $(ft_dump_OBJECTS) $(ft_dump_DEPENDENCIES) 
+	@rm -f ft_dump$(EXEEXT)
+	$(LINK) $(ft_dump_LDFLAGS) $(ft_dump_OBJECTS) $(ft_dump_LDADD) $(LIBS)
+mi_test1$(EXEEXT): $(mi_test1_OBJECTS) $(mi_test1_DEPENDENCIES) 
+	@rm -f mi_test1$(EXEEXT)
+	$(LINK) $(mi_test1_LDFLAGS) $(mi_test1_OBJECTS) $(mi_test1_LDADD) $(LIBS)
+mi_test2$(EXEEXT): $(mi_test2_OBJECTS) $(mi_test2_DEPENDENCIES) 
+	@rm -f mi_test2$(EXEEXT)
+	$(LINK) $(mi_test2_LDFLAGS) $(mi_test2_OBJECTS) $(mi_test2_LDADD) $(LIBS)
+mi_test3$(EXEEXT): $(mi_test3_OBJECTS) $(mi_test3_DEPENDENCIES) 
+	@rm -f mi_test3$(EXEEXT)
+	$(LINK) $(mi_test3_LDFLAGS) $(mi_test3_OBJECTS) $(mi_test3_LDADD) $(LIBS)
+myisamchk$(EXEEXT): $(myisamchk_OBJECTS) $(myisamchk_DEPENDENCIES) 
+	@rm -f myisamchk$(EXEEXT)
 	$(LINK) $(myisamchk_LDFLAGS) $(myisamchk_OBJECTS) $(myisamchk_LDADD) $(LIBS)
-
-myisamlog: $(myisamlog_OBJECTS) $(myisamlog_DEPENDENCIES)
-	@rm -f myisamlog
+myisamlog$(EXEEXT): $(myisamlog_OBJECTS) $(myisamlog_DEPENDENCIES) 
+	@rm -f myisamlog$(EXEEXT)
 	$(LINK) $(myisamlog_LDFLAGS) $(myisamlog_OBJECTS) $(myisamlog_LDADD) $(LIBS)
-
-myisampack: $(myisampack_OBJECTS) $(myisampack_DEPENDENCIES)
-	@rm -f myisampack
+myisampack$(EXEEXT): $(myisampack_OBJECTS) $(myisampack_DEPENDENCIES) 
+	@rm -f myisampack$(EXEEXT)
 	$(LINK) $(myisampack_LDFLAGS) $(myisampack_OBJECTS) $(myisampack_LDADD) $(LIBS)
 
-mi_test1: $(mi_test1_OBJECTS) $(mi_test1_DEPENDENCIES)
-	@rm -f mi_test1
-	$(LINK) $(mi_test1_LDFLAGS) $(mi_test1_OBJECTS) $(mi_test1_LDADD) $(LIBS)
+mostlyclean-compile:
+	-rm -f *.$(OBJEXT) core *.core
 
-mi_test2: $(mi_test2_OBJECTS) $(mi_test2_DEPENDENCIES)
-	@rm -f mi_test2
-	$(LINK) $(mi_test2_LDFLAGS) $(mi_test2_OBJECTS) $(mi_test2_LDADD) $(LIBS)
+distclean-compile:
+	-rm -f *.tab.c
 
-mi_test3: $(mi_test3_OBJECTS) $(mi_test3_DEPENDENCIES)
-	@rm -f mi_test3
-	$(LINK) $(mi_test3_LDFLAGS) $(mi_test3_OBJECTS) $(mi_test3_LDADD) $(LIBS)
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_boolean_search.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_dump.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_nlq_search.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_parser.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_static.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_stopwords.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/ft_update.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_cache.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_changed.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_check.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_checksum.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_close.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_create.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_dbug.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_delete.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_delete_all.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_delete_table.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_dynrec.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_extra.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_info.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_key.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_locking.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_log.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_open.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_packrec.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_page.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_panic.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_range.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rename.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rfirst.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rkey.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rlast.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rnext.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rnext_same.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rprev.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rrnd.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rsame.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_rsamepos.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_scan.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_search.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_static.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_statrec.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_test1.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_test2.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_test3.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_unique.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_update.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/mi_write.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/myisamchk.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/myisamlog.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/myisampack.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/sort.Po@am__quote@
 
-ft_test1: $(ft_test1_OBJECTS) $(ft_test1_DEPENDENCIES)
-	@rm -f ft_test1
-	$(LINK) $(ft_test1_LDFLAGS) $(ft_test1_OBJECTS) $(ft_test1_LDADD) $(LIBS)
+distclean-depend:
+	-rm -rf $(DEPDIR)
 
-ft_eval: $(ft_eval_OBJECTS) $(ft_eval_DEPENDENCIES)
-	@rm -f ft_eval
-	$(LINK) $(ft_eval_LDFLAGS) $(ft_eval_OBJECTS) $(ft_eval_LDADD) $(LIBS)
+.c.o:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `test -f $< || echo '$(srcdir)/'`$<
 
+.c.obj:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `cygpath -w $<`
+
+.c.lo:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Plo' tmpdepfile='$(DEPDIR)/$*.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(LTCOMPILE) -c -o $@ `test -f $< || echo '$(srcdir)/'`$<
+CCDEPMODE = @CCDEPMODE@
+uninstall-info-am:
 install-pkgdataDATA: $(pkgdata_DATA)
 	@$(NORMAL_INSTALL)
 	$(mkinstalldirs) $(DESTDIR)$(pkgdatadir)
 	@list='$(pkgdata_DATA)'; for p in $$list; do \
-	  if test -f $(srcdir)/$$p; then \
-	    echo " $(INSTALL_DATA) $(srcdir)/$$p $(DESTDIR)$(pkgdatadir)/$$p"; \
-	    $(INSTALL_DATA) $(srcdir)/$$p $(DESTDIR)$(pkgdatadir)/$$p; \
-	  else if test -f $$p; then \
-	    echo " $(INSTALL_DATA) $$p $(DESTDIR)$(pkgdatadir)/$$p"; \
-	    $(INSTALL_DATA) $$p $(DESTDIR)$(pkgdatadir)/$$p; \
-	  fi; fi; \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  f="`echo $$p | sed -e 's|^.*/||'`"; \
+	  echo " $(INSTALL_DATA) $$d$$p $(DESTDIR)$(pkgdatadir)/$$f"; \
+	  $(INSTALL_DATA) $$d$$p $(DESTDIR)$(pkgdatadir)/$$f; \
 	done
 
 uninstall-pkgdataDATA:
 	@$(NORMAL_UNINSTALL)
-	list='$(pkgdata_DATA)'; for p in $$list; do \
-	  rm -f $(DESTDIR)$(pkgdatadir)/$$p; \
+	@list='$(pkgdata_DATA)'; for p in $$list; do \
+	  f="`echo $$p | sed -e 's|^.*/||'`"; \
+	  echo " rm -f $(DESTDIR)$(pkgdatadir)/$$f"; \
+	  rm -f $(DESTDIR)$(pkgdatadir)/$$f; \
 	done
 
 tags: TAGS
 
-ID: $(HEADERS) $(SOURCES) $(LISP)
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
-	here=`pwd` && cd $(srcdir) \
-	  && mkid -f$$here/ID $$unique $(LISP)
+	mkid -fID $$unique $(LISP)
 
-TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) $(LISP)
+TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+		$(TAGS_FILES) $(LISP)
 	tags=; \
 	here=`pwd`; \
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
 	test -z "$(ETAGS_ARGS)$$unique$(LISP)$$tags" \
-	  || (cd $(srcdir) && etags $(ETAGS_ARGS) $$tags  $$unique $(LISP) -o $$here/TAGS)
+	  || etags $(ETAGS_ARGS) $$tags  $$unique $(LISP)
 
-mostlyclean-tags:
-
-clean-tags:
+GTAGS:
+	here=`CDPATH=: && cd $(top_builddir) && pwd` \
+	  && cd $(top_srcdir) \
+	  && gtags -i $(GTAGS_ARGS) $$here
 
 distclean-tags:
-	-rm -f TAGS ID
+	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH
 
-maintainer-clean-tags:
+DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 
-distdir = $(top_builddir)/$(PACKAGE)-$(VERSION)/$(subdir)
-
-subdir = myisam
+top_distdir = ..
+distdir = $(top_distdir)/$(PACKAGE)-$(VERSION)
 
 distdir: $(DISTFILES)
 	@for file in $(DISTFILES); do \
-	  d=$(srcdir); \
+	  if test -f $$file; then d=.; else d=$(srcdir); fi; \
+	  dir=`echo "$$file" | sed -e 's,/[^/]*$$,,'`; \
+	  if test "$$dir" != "$$file" && test "$$dir" != "."; then \
+	    $(mkinstalldirs) "$(distdir)/$$dir"; \
+	  fi; \
 	  if test -d $$d/$$file; then \
-	    cp -pr $$d/$$file $(distdir)/$$file; \
+	    cp -pR $$d/$$file $(distdir) \
+	    || exit 1; \
 	  else \
 	    test -f $(distdir)/$$file \
-	    || ln $$d/$$file $(distdir)/$$file 2> /dev/null \
-	    || cp -p $$d/$$file $(distdir)/$$file || :; \
+	    || cp -p $$d/$$file $(distdir)/$$file \
+	    || exit 1; \
 	  fi; \
 	done
-ft_eval.o: ft_eval.c ftdefs.h fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h ft_eval.h
-ft_parser.o: ft_parser.c ftdefs.h fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h
-ft_search.o: ft_search.c ftdefs.h fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h
-ft_static.o: ft_static.c ftdefs.h fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h
-ft_stopwords.o: ft_stopwords.c ftdefs.h fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h
-ft_test1.o: ft_test1.c ftdefs.h fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h ft_test1.h
-ft_update.o: ft_update.c ftdefs.h fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h \
-	../include/my_tree.h
-mi_cache.o: mi_cache.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_changed.o: mi_changed.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_check.o: mi_check.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_checksum.o: mi_checksum.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_close.o: mi_close.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_create.o: mi_create.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_dbug.o: mi_dbug.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_delete.o: mi_delete.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_delete_all.o: mi_delete_all.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_delete_table.o: mi_delete_table.c fulltext.h myisamdef.h \
-	../include/myisam.h ../include/my_base.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_dir.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_dynrec.o: mi_dynrec.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_extra.o: mi_extra.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_info.o: mi_info.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_key.o: mi_key.c myisamdef.h ../include/myisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h
-mi_locking.o: mi_locking.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_log.o: mi_log.c myisamdef.h ../include/myisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h
-mi_open.o: mi_open.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_packrec.o: mi_packrec.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_page.o: mi_page.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_panic.o: mi_panic.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_range.o: mi_range.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rename.o: mi_rename.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_rfirst.o: mi_rfirst.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rkey.o: mi_rkey.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rlast.o: mi_rlast.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rnext.o: mi_rnext.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rnext_same.o: mi_rnext_same.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rprev.o: mi_rprev.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rrnd.o: mi_rrnd.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rsame.o: mi_rsame.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_rsamepos.o: mi_rsamepos.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_scan.o: mi_scan.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_search.o: mi_search.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_static.o: mi_static.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_statrec.o: mi_statrec.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_test1.o: mi_test1.c ../include/myisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/my_list.h
-mi_test2.o: mi_test2.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_test3.o: mi_test3.c ../include/myisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/my_list.h
-mi_unique.o: mi_unique.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h
-mi_update.o: mi_update.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-mi_write.o: mi_write.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-myisamchk.o: myisamchk.c fulltext.h myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/ft_global.h
-myisamlog.o: myisamlog.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/my_tree.h
-myisampack.o: myisampack.c myisamdef.h ../include/myisam.h \
-	../include/my_base.h ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_dir.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_list.h ../include/myisampack.h \
-	../include/thr_lock.h ../include/queues.h ../include/my_tree.h \
-	../include/mysys_err.h
-sort.o: sort.c myisamdef.h ../include/myisam.h ../include/my_base.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_dir.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h ../include/my_list.h \
-	../include/myisampack.h ../include/thr_lock.h \
-	../include/queues.h
-
-info-am:
-info: info-am
-dvi-am:
-dvi: dvi-am
 check-am: all-am
 check: check-am
-installcheck-am:
-installcheck: installcheck-am
-install-exec-am: install-pkglibLIBRARIES install-binPROGRAMS
-install-exec: install-exec-am
+all-am: Makefile $(LIBRARIES) $(PROGRAMS) $(DATA) $(HEADERS)
 
-install-data-am: install-pkgdataDATA
+installdirs:
+	$(mkinstalldirs) $(DESTDIR)$(pkglibdir) $(DESTDIR)$(bindir) $(DESTDIR)$(pkgdatadir)
+
+install: install-am
+install-exec: install-exec-am
 install-data: install-data-am
+uninstall: uninstall-am
 
 install-am: all-am
 	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
-install: install-am
-uninstall-am: uninstall-pkglibLIBRARIES uninstall-binPROGRAMS \
-		uninstall-pkgdataDATA
-uninstall: uninstall-am
-all-am: Makefile $(LIBRARIES) $(PROGRAMS) $(DATA) $(HEADERS)
-all-redirect: all-am
+
+installcheck: installcheck-am
 install-strip:
-	$(MAKE) $(AM_MAKEFLAGS) AM_INSTALL_PROGRAM_FLAGS=-s install
-installdirs:
-	$(mkinstalldirs)  $(DESTDIR)$(pkglibdir) $(DESTDIR)$(bindir) \
-		$(DESTDIR)$(pkgdatadir)
-
-
+	$(MAKE) $(AM_MAKEFLAGS) INSTALL_PROGRAM="$(INSTALL_STRIP_PROGRAM)" \
+	  `test -z '$(STRIP)' || \
+	    echo "INSTALL_PROGRAM_ENV=STRIPPROG='$(STRIP)'"` install
 mostlyclean-generic:
 
 clean-generic:
 	-test -z "$(CLEANFILES)" || rm -f $(CLEANFILES)
 
 distclean-generic:
-	-rm -f Makefile $(CONFIG_CLEAN_FILES)
-	-rm -f config.cache config.log stamp-h stamp-h[0-9]*
+	-rm -f Makefile $(CONFIG_CLEAN_FILES) stamp-h stamp-h[0-9]*
 
 maintainer-clean-generic:
-mostlyclean-am:  mostlyclean-pkglibLIBRARIES mostlyclean-compile \
-		mostlyclean-libtool mostlyclean-binPROGRAMS \
-		mostlyclean-noinstPROGRAMS mostlyclean-tags \
-		mostlyclean-generic
-
-mostlyclean: mostlyclean-am
-
-clean-am:  clean-pkglibLIBRARIES clean-compile clean-libtool \
-		clean-binPROGRAMS clean-noinstPROGRAMS clean-tags \
-		clean-generic mostlyclean-am
-
+	@echo "This command is intended for maintainers to use"
+	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-distclean-am:  distclean-pkglibLIBRARIES distclean-compile \
-		distclean-libtool distclean-binPROGRAMS \
-		distclean-noinstPROGRAMS distclean-tags \
-		distclean-generic clean-am
-	-rm -f libtool
+clean-am: clean-binPROGRAMS clean-generic clean-libtool \
+	clean-noinstPROGRAMS clean-pkglibLIBRARIES mostlyclean-am
 
 distclean: distclean-am
 
-maintainer-clean-am:  maintainer-clean-pkglibLIBRARIES \
-		maintainer-clean-compile maintainer-clean-libtool \
-		maintainer-clean-binPROGRAMS \
-		maintainer-clean-noinstPROGRAMS maintainer-clean-tags \
-		maintainer-clean-generic distclean-am
-	@echo "This command is intended for maintainers to use;"
-	@echo "it deletes files that may require special tools to rebuild."
+distclean-am: clean-am distclean-compile distclean-depend \
+	distclean-generic distclean-libtool distclean-tags
+
+dvi: dvi-am
+
+dvi-am:
+
+info: info-am
+
+info-am:
+
+install-data-am: install-pkgdataDATA
+
+install-exec-am: install-binPROGRAMS install-pkglibLIBRARIES
+
+install-info: install-info-am
+
+install-man:
+
+installcheck-am:
 
 maintainer-clean: maintainer-clean-am
 
-.PHONY: mostlyclean-pkglibLIBRARIES distclean-pkglibLIBRARIES \
-clean-pkglibLIBRARIES maintainer-clean-pkglibLIBRARIES \
-uninstall-pkglibLIBRARIES install-pkglibLIBRARIES mostlyclean-compile \
-distclean-compile clean-compile maintainer-clean-compile \
-mostlyclean-libtool distclean-libtool clean-libtool \
-maintainer-clean-libtool mostlyclean-binPROGRAMS distclean-binPROGRAMS \
-clean-binPROGRAMS maintainer-clean-binPROGRAMS uninstall-binPROGRAMS \
-install-binPROGRAMS mostlyclean-noinstPROGRAMS distclean-noinstPROGRAMS \
-clean-noinstPROGRAMS maintainer-clean-noinstPROGRAMS \
-uninstall-pkgdataDATA install-pkgdataDATA tags mostlyclean-tags \
-distclean-tags clean-tags maintainer-clean-tags distdir info-am info \
-dvi-am dvi check check-am installcheck-am installcheck install-exec-am \
-install-exec install-data-am install-data install-am install \
-uninstall-am uninstall all-redirect all-am all installdirs \
-mostlyclean-generic distclean-generic clean-generic \
-maintainer-clean-generic clean mostlyclean distclean maintainer-clean
+maintainer-clean-am: distclean-am maintainer-clean-generic
+
+mostlyclean: mostlyclean-am
+
+mostlyclean-am: mostlyclean-compile mostlyclean-generic \
+	mostlyclean-libtool
+
+uninstall-am: uninstall-binPROGRAMS uninstall-info-am \
+	uninstall-pkgdataDATA uninstall-pkglibLIBRARIES
+
+.PHONY: GTAGS all all-am check check-am clean clean-binPROGRAMS \
+	clean-generic clean-libtool clean-noinstPROGRAMS \
+	clean-pkglibLIBRARIES distclean distclean-compile \
+	distclean-depend distclean-generic distclean-libtool \
+	distclean-tags distdir dvi dvi-am info info-am install \
+	install-am install-binPROGRAMS install-data install-data-am \
+	install-exec install-exec-am install-info install-info-am \
+	install-man install-pkgdataDATA install-pkglibLIBRARIES \
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-compile mostlyclean-generic mostlyclean-libtool \
+	tags uninstall uninstall-am uninstall-binPROGRAMS \
+	uninstall-info-am uninstall-pkgdataDATA \
+	uninstall-pkglibLIBRARIES
 
 
 # Move to automake rules ?
@@ -994,7 +739,6 @@ prolint:;	plparse -b -u -hF1 "-width(0,0)" "-format=%f:%l:\s%t:%n\s%m" \
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%
-
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

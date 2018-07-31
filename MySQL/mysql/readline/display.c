@@ -79,9 +79,9 @@ extern int _rl_output_character_function ();
 #endif
 extern int _rl_backspace ();
 
-extern char *term_clreol, *term_clrpag;
-extern char *term_im, *term_ic,  *term_ei, *term_DC;
-extern char *term_up, *term_dc, *term_cr, *term_IC;
+extern const char *term_clreol, *term_clrpag;
+extern const char *term_im, *term_ic, *term_ei, *term_DC;
+extern const char *term_up, *term_dc, *term_cr, *term_IC;
 extern int screenheight, screenwidth, screenchars;
 extern int terminal_can_insert, _rl_term_autowrap;
 
@@ -141,7 +141,7 @@ int _rl_suppress_redisplay = 0;
 
 /* The stuff that gets printed out before the actual text of the line.
    This is usually pointing to rl_prompt. */
-char *rl_display_prompt = (char *)NULL;
+const char *rl_display_prompt = (char *)NULL;
 
 /* Pseudo-global variables declared here. */
 /* The visible cursor position.  If you print some text, adjust this. */
@@ -218,7 +218,7 @@ expand_prompt (pmt, lp, lip)
 
   l = strlen (pmt);
   r = ret = xmalloc (l + 1);
-  
+
   for (rl = ignoring = last = 0, p = pmt; p && *p; p++)
     {
       /* This code strips the invisible character string markers
@@ -315,7 +315,7 @@ rl_redisplay ()
   register char *line;
   int c_pos, inv_botlin, lb_botlin, lb_linenum;
   int newlines, lpos, temp;
-  char *prompt_this_line;
+  const char *prompt_this_line;
 
   if (!readline_echoing_p)
     return;
@@ -623,7 +623,7 @@ rl_redisplay ()
 		  _rl_move_vert (linenum);
 		  _rl_move_cursor_relative (0, tt);
 		  _rl_clear_to_eol
-		    ((linenum == _rl_vis_botlin) ? strlen (tt) : screenwidth);
+		    ((linenum == _rl_vis_botlin) ? (int) strlen (tt) : screenwidth);
 		}
 	    }
 	  _rl_vis_botlin = inv_botlin;
@@ -831,7 +831,7 @@ update_line (old, new, current_line, omax, nmax, inv_botlin)
       if (old[0] && new[0])
 	old[0] = new[0];
     }
-      
+
   /* Find first difference. */
   for (ofd = old, nfd = new;
        (ofd - old < omax) && *ofd && (*ofd == *nfd);
@@ -1229,8 +1229,7 @@ rl_message (va_alist)
 }
 #else /* !USE_VARARGS */
 int
-rl_message (format, arg1, arg2)
-     char *format;
+rl_message (char *format, void *arg1, void *arg2)
 {
   sprintf (msg_buf, format, arg1, arg2);
   rl_display_prompt = msg_buf;
@@ -1512,7 +1511,8 @@ cr ()
 void
 _rl_redisplay_after_sigwinch ()
 {
-  char *t, *oldp, *oldl, *oldlprefix;
+  char *t, *oldl, *oldlprefix;
+  const char *oldp;
 
   /* Clear the current line and put the cursor at column 0.  Make sure
      the right thing happens if we have wrapped to a new screen line. */

@@ -24,11 +24,11 @@
 #include <myisam.h>
 #include <ft_global.h>
 
-#define HA_RECOVER_NONE		0	// No automatic recover
-#define HA_RECOVER_DEFAULT	1	// Automatic recover active
-#define HA_RECOVER_BACKUP	2	// Make a backupfile on recover
-#define HA_RECOVER_FORCE	4	// Recover even if we loose rows
-#define HA_RECOVER_QUICK	8	// Don't check rows in data file
+#define HA_RECOVER_NONE		0	/* No automatic recover */
+#define HA_RECOVER_DEFAULT	1	/* Automatic recover active */
+#define HA_RECOVER_BACKUP	2	/* Make a backupfile on recover */
+#define HA_RECOVER_FORCE	4	/* Recover even if we loose rows */
+#define HA_RECOVER_QUICK	8	/* Don't check rows in data file */
 
 extern ulong myisam_sort_buffer_size;
 extern TYPELIB myisam_recover_typelib;
@@ -37,25 +37,33 @@ extern ulong myisam_recover_options;
 class ha_myisam: public handler
 {
   MI_INFO *file;
-  uint    int_option_flag;
+  uint    int_table_flags;
+  char    *data_file_name, *index_file_name;
+  bool enable_activate_all_index;
   int repair(THD *thd, MI_CHECK &param, bool optimize);
 
  public:
   ha_myisam(TABLE *table): handler(table), file(0),
-    int_option_flag(HA_READ_NEXT | HA_READ_PREV | HA_READ_RND_SAME |
-		    HA_KEYPOS_TO_RNDPOS | HA_READ_ORDER |  HA_LASTKEY_ORDER |
-		    HA_HAVE_KEY_READ_ONLY | HA_READ_NOT_EXACT_KEY |
-		    HA_LONGLONG_KEYS |  HA_NULL_KEY |
-		    HA_DUPP_POS | HA_BLOB_KEY | HA_AUTO_PART_KEY)
+    int_table_flags(HA_READ_RND_SAME | HA_KEYPOS_TO_RNDPOS | HA_LASTKEY_ORDER |
+		    HA_NULL_KEY | HA_CAN_FULLTEXT | HA_CAN_SQL_HANDLER |
+		    HA_DUPP_POS | HA_BLOB_KEY | HA_AUTO_PART_KEY),
+    enable_activate_all_index(1)
   {}
   ~ha_myisam() {}
   const char *table_type() const { return "MyISAM"; }
+  const char *index_type(uint key_number);
   const char **bas_ext() const;
-  ulong option_flag() const { return int_option_flag; }
+  ulong table_flags() const { return int_table_flags; }
+  ulong index_flags(uint inx) const
+  {
+    ulong flags=(HA_READ_NEXT | HA_READ_PREV | HA_READ_ORDER);
+    return (flags | ((table->key_info[inx].algorithm == HA_KEY_ALG_FULLTEXT) ?
+		     0 : HA_KEY_READ_ONLY));
+  }
   uint max_record_length() const { return HA_MAX_REC_LENGTH; }
   uint max_keys()          const { return MI_MAX_KEY; }
   uint max_key_parts()     const { return MAX_REF_PARTS; }
-  uint max_key_length()    const { return MAX_KEY_LENGTH; }
+  uint max_key_length()    const { return MI_MAX_KEY_LENGTH; }
 
   int open(const char *name, int mode, uint test_if_locked);
   int close(void);
@@ -66,6 +74,7 @@ class ha_myisam: public handler
 		 uint key_len, enum ha_rkey_function find_flag);
   int index_read_idx(byte * buf, uint idx, const byte * key,
 		     uint key_len, enum ha_rkey_function find_flag);
+  int index_read_last(byte * buf, const byte * key, uint key_len);
   int index_next(byte * buf);
   int index_prev(byte * buf);
   int index_first(byte * buf);
@@ -73,9 +82,15 @@ class ha_myisam: public handler
   int index_next_same(byte *buf, const byte *key, uint keylen);
   int index_end() { ft_handler=NULL; return 0; }
   int ft_init()
-         { if(!ft_handler) return 1; ft_reinit_search(ft_handler); return 0; }
-  void *ft_init_ext(uint inx,const byte *key, uint keylen, bool presort)
-               { return ft_init_search(file,inx,(byte*) key,keylen,presort); }
+  {
+    if (!ft_handler)
+      return 1;
+    ft_handler->please->reinit_search(ft_handler);
+    return 0;
+  }
+  FT_INFO *ft_init_ext(uint mode, uint inx,const byte *key, uint keylen,
+		       bool presort)
+  { return ft_init_search(mode, file,inx,(byte*) key,keylen,presort); }
   int ft_read(byte *buf);
   int rnd_init(bool scan=1);
   int rnd_next(byte *buf);
@@ -85,6 +100,7 @@ class ha_myisam: public handler
   my_off_t row_position() { return mi_position(file); }
   void info(uint);
   int extra(enum ha_extra_function operation);
+  int extra_opt(enum ha_extra_function operation, ulong cache_size);
   int reset(void);
   int external_lock(THD *thd, int lock_type);
   int delete_all_rows(void);

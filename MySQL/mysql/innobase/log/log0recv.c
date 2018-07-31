@@ -69,6 +69,8 @@ ulint	recv_previous_parsed_rec_type	= 999999;
 ulint	recv_previous_parsed_rec_offset	= 0;
 ulint	recv_previous_parsed_rec_is_multi = 0;
 
+ulint	recv_max_parsed_page_no		= 0;
+
 /************************************************************
 Creates the recovery system. */
 
@@ -141,7 +143,13 @@ recv_sys_empty_hash(void)
 /*=====================*/
 {
 	ut_ad(mutex_own(&(recv_sys->mutex)));
-	ut_a(recv_sys->n_addrs == 0);
+	if (recv_sys->n_addrs != 0) {
+		fprintf(stderr,
+"InnoDB: Error: %lu pages with log records were left unprocessed!\n"
+"InnoDB: Maximum page number with log records on it %lu\n",
+			recv_sys->n_addrs, recv_max_parsed_page_no);
+		ut_a(0);
+	}
 	
 	hash_table_free(recv_sys->addr_hash);
 	mem_heap_empty(recv_sys->heap);
@@ -965,7 +973,7 @@ recv_recover_page(
 	ulint	space,		/* in: space id */
 	ulint	page_no)	/* in: page number */
 {
-	buf_block_t*	block;
+	buf_block_t*	block		= NULL;
 	recv_addr_t*	recv_addr;
 	recv_t*		recv;
 	byte*		buf;
@@ -1077,7 +1085,7 @@ recv_recover_page(
 			page_lsn = page_newest_lsn;
 
 			mach_write_to_8(page + UNIV_PAGE_SIZE
-					- FIL_PAGE_END_LSN, ut_dulint_zero);
+				- FIL_PAGE_END_LSN_OLD_CHKSUM, ut_dulint_zero);
 			mach_write_to_8(page + FIL_PAGE_LSN, ut_dulint_zero);
 		}
 		
@@ -1099,7 +1107,7 @@ recv_recover_page(
 			recv_parse_or_apply_log_rec_body(recv->type, buf,
 						buf + recv->len, page, &mtr);
 			mach_write_to_8(page + UNIV_PAGE_SIZE
-					- FIL_PAGE_END_LSN,
+					- FIL_PAGE_END_LSN_OLD_CHKSUM,
 					ut_dulint_add(recv->start_lsn,
 							recv->len));
 			mach_write_to_8(page + FIL_PAGE_LSN,
@@ -1124,6 +1132,8 @@ recv_recover_page(
 	mutex_exit(&(recv_sys->mutex));
 	
 	if (!recover_backup && modification_to_page) {
+		ut_a(block);
+
 		buf_flush_recv_note_modification(block, start_lsn, end_lsn);
 	}
 	
@@ -1331,6 +1341,7 @@ loop:
 	mutex_exit(&(recv_sys->mutex));
 }
 
+#ifdef UNIV_HOTBACKUP
 /***********************************************************************
 Applies log records in the hash table to a backup. */
 
@@ -1361,6 +1372,14 @@ recv_apply_log_recs_for_backup(
 		n_pages_total += file_sizes[i];
 	}
 
+	if (recv_max_parsed_page_no >= n_pages_total) {
+		printf(
+"InnoDB: Error: tablespace size %lu pages, but a log record on page %lu!\n"
+"InnoDB: Are you sure you have specified all the ibdata files right in\n"
+"InnoDB: the my.cnf file you gave as the argument to ibbackup --restore?\n",
+			n_pages_total, recv_max_parsed_page_no);
+	}
+
 	printf( 
 "InnoDB: Starting an apply batch of log records to the database...\n"
 "InnoDB: Progress in percents: ");
@@ -1381,7 +1400,7 @@ recv_apply_log_recs_for_backup(
 							&success);
 			if (!success) {
 				printf(
-"InnoDB: Error: cannot open %lu'th data file %s\n", nth_file);
+"InnoDB: Error: cannot open %lu'th data file\n", nth_file);
 
 				exit(1);
 			}
@@ -1397,7 +1416,7 @@ recv_apply_log_recs_for_backup(
 				UNIV_PAGE_SIZE);
 			if (!success) {
 				printf(
-"InnoDB: Error: cannot read page no %lu from %lu'th data file %s\n",
+"InnoDB: Error: cannot read page no %lu from %lu'th data file\n",
 				nth_page_in_file, nth_file);
 
 				exit(1);
@@ -1425,7 +1444,7 @@ recv_apply_log_recs_for_backup(
 				UNIV_PAGE_SIZE);
 			if (!success) {
 				printf(
-"InnoDB: Error: cannot write page no %lu to %lu'th data file %s\n",
+"InnoDB: Error: cannot write page no %lu to %lu'th data file\n",
 				nth_page_in_file, nth_file);
 
 				exit(1);
@@ -1504,8 +1523,8 @@ recv_check_identical(
 	for (i = 0; i < len; i++) {
 
 		if (str1[i] != str2[i]) {
-			fprintf(stderr, "Strings do not match at offset %lu\n", i);
-
+			fprintf(stderr,
+				"Strings do not match at offset %lu\n", i);
 			ut_print_buf(str1 + i, 16);
 			fprintf(stderr, "\n");
 			ut_print_buf(str2 + i, 16);
@@ -1638,6 +1657,7 @@ recv_compare_spaces_low(
 
 	recv_compare_spaces(space1, space2, n_pages);
 }
+#endif
 
 /***********************************************************************
 Tries to parse a single log record and returns its length. */
@@ -1701,6 +1721,10 @@ recv_parse_log_rec(
 		return(0);
 	}
 
+	if (*page_no > recv_max_parsed_page_no) {
+		recv_max_parsed_page_no = *page_no;
+	}
+	
 	return(new_ptr - ptr);
 }
 
@@ -1779,7 +1803,7 @@ recv_report_corrupt_log(
 "InnoDB: Recv offset %lu, prev %lu\n",
 		recv_previous_parsed_rec_type,
 		recv_previous_parsed_rec_is_multi,
-		ptr - recv_sys->buf,
+		(ulint)(ptr - recv_sys->buf),
 		recv_previous_parsed_rec_offset);
 
 	if ((ulint)(ptr - recv_sys->buf + 100)
@@ -1805,7 +1829,12 @@ recv_report_corrupt_log(
 	"InnoDB: WARNING: the log file may have been corrupt and it\n"
 	"InnoDB: is possible that the log scan did not proceed\n"
 	"InnoDB: far enough in recovery! Please run CHECK TABLE\n"
-	"InnoDB: on your InnoDB tables to check that they are ok!\n");
+	"InnoDB: on your InnoDB tables to check that they are ok!\n"
+	"InnoDB: If mysqld crashes after this recovery, look at\n"
+	"InnoDB: section 6.1 of http://www.innodb.com/ibman.html\n"
+	"InnoDB: about forcing recovery.\n");
+
+	fflush(stderr);
 }
 
 /***********************************************************
@@ -2442,7 +2471,7 @@ recv_recovery_from_checkpoint_start(
 				log_hdr_buf, max_cp_group);
 
 	if (0 == ut_memcmp(log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
-				"ibbackup", ut_strlen("ibbackup"))) {
+			(byte*)"ibbackup", ut_strlen((char*)"ibbackup"))) {
 		/* This log file was created by ibbackup --restore: print
 		a note to the user about it */
 
@@ -2453,7 +2482,7 @@ recv_recovery_from_checkpoint_start(
 		/* Wipe over the label now */
 
 		ut_memcpy(log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
-								"    ", 4);
+					(char*)"    ", 4);
 		/* Write to the log file to wipe over the label */
 		fil_io(OS_FILE_WRITE | OS_FILE_LOG, TRUE,
 				max_cp_group->space_id,

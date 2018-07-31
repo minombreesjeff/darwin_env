@@ -1,28 +1,43 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include "mysys_err.h"
 #include "m_string.h"
 
-	/* Change size of file.  Truncate file if shorter,	*/
-	/* else expand with zero.				*/
+/*
+  Change size of file.
 
-int my_chsize(File fd, my_off_t newlength, myf MyFlags)
+  SYNOPSIS
+    my_chsize()
+      fd		File descriptor
+      new_length	New file size
+      filler		If we don't have truncate, fill up all bytes after
+			new_length with this character
+      MyFlags		Flags
+
+  DESCRIPTION
+    my_chsize() truncates file if shorter, else fill with the filler character
+
+  RETURN VALUE
+    0	Ok
+    1	Error 
+*/
+
+int my_chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
 {
   DBUG_ENTER("my_chsize");
   DBUG_PRINT("my",("fd: %d  length: %lu  MyFlags: %d",fd,(ulong) newlength,
@@ -68,7 +83,7 @@ int my_chsize(File fd, my_off_t newlength, myf MyFlags)
     }
 #endif
     /* Full file with 0 until it's as big as requested */
-    bzero(buff,IO_SIZE);
+    bfill(buff, IO_SIZE, filler);
     while (newlength-oldsize > IO_SIZE)
     {
       if (my_write(fd,(byte*) buff,IO_SIZE,MYF(MY_NABP)))

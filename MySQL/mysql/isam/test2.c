@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -115,17 +115,17 @@ int main(int argc, char *argv[])
   keyinfo[5].seg[1].base.type=0;
   keyinfo[5].base.flag = (uint8) (pack_type ? HA_PACK_KEY : 0);
 
-  recinfo[0].base.type=pack_fields ? FIELD_SKIPP_PRESPACE : 0;
+  recinfo[0].base.type=pack_fields ? FIELD_SKIP_PRESPACE : 0;
   recinfo[0].base.length=7;
-  recinfo[1].base.type=pack_fields ? FIELD_SKIPP_PRESPACE : 0;
+  recinfo[1].base.type=pack_fields ? FIELD_SKIP_PRESPACE : 0;
   recinfo[1].base.length=5;
-  recinfo[2].base.type=pack_fields ? FIELD_SKIPP_PRESPACE : 0;
+  recinfo[2].base.type=pack_fields ? FIELD_SKIP_PRESPACE : 0;
   recinfo[2].base.length=9;
   recinfo[3].base.type=FIELD_NORMAL;
   recinfo[3].base.length=STANDAR_LENGTH-7-5-9-4;
-  recinfo[4].base.type=pack_fields ? FIELD_SKIPP_ZERO : 0;
+  recinfo[4].base.type=pack_fields ? FIELD_SKIP_ZERO : 0;
   recinfo[4].base.length=4;
-  recinfo[5].base.type=pack_fields ? FIELD_SKIPP_ENDSPACE : 0;
+  recinfo[5].base.type=pack_fields ? FIELD_SKIP_ENDSPACE : 0;
   recinfo[5].base.length=60;
   if (use_blob)
   {
@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
     goto err;
   printf("- Writing key:s\n");
   if (key_cacheing)
-    init_key_cache(IO_SIZE*16,(uint) IO_SIZE*4*10);	/* Use a small cache */
+    init_key_cache(IO_SIZE*16);		/* Use a small cache */
   if (locking)
     nisam_lock_database(file,F_WRLCK);
   if (write_cacheing)

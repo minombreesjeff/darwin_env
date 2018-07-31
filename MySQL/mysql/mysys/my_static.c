@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Static variables for mysys library. All definied here for easy making of
@@ -61,7 +60,7 @@ USED_MEM* my_once_root_block=0;			/* pointer to first block */
 uint	  my_once_extra=ONCE_ALLOC_INIT;	/* Memory to alloc / block */
 
 	/* from my_tempnam */
-#ifndef HAVE_TEMPNAM
+#if !defined(HAVE_TEMPNAM) || defined(HPUX11)
 int _my_tempnam_used=0;
 #endif
 
@@ -70,18 +69,24 @@ uint sf_malloc_prehunc=0,		/* If you have problem with core- */
      sf_malloc_endhunc=0,		/* dump when malloc-message.... */
 					/* set theese to 64 or 128  */
      sf_malloc_quick=0;			/* set if no calls to sanity */
-long lCurMemory = 0L;			/* Current memory usage */
-long lMaxMemory = 0L;			/* Maximum memory usage */
-uint cNewCount = 0;			/* Number of times NEW() was called */
+ulong sf_malloc_cur_memory= 0L;		/* Current memory usage */
+ulong sf_malloc_max_memory= 0L;		/* Maximum memory usage */
+uint  sf_malloc_count= 0;		/* Number of times NEW() was called */
 byte *sf_min_adress= (byte*) ~(unsigned long) 0L,
      *sf_max_adress= (byte*) 0L;
-
-/* Root of the linked list of remembers */
-struct remember *pRememberRoot = NULL;
+/* Root of the linked list of struct st_irem */
+struct st_irem *sf_malloc_root = NULL;
 
 	/* from my_alarm */
 int volatile my_have_got_alarm=0;	/* declare variable to reset */
 ulong my_time_to_wait_for_lock=2;	/* In seconds */
+
+	/*
+	  We need to have this define here as otherwise linking will fail
+	  on OSF1 when compiling --without-raid --with-debug
+	*/
+
+const char *raid_type_string[]={"none","striped"};
 
 	/* from errors.c */
 #ifdef SHARED_LIBRARY

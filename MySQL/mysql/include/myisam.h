@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* This file should be included when using myisam_funktions */
 
@@ -46,6 +45,11 @@ extern "C" {
 /* Max extra space to use when sorting keys */
 #define MI_MAX_TEMP_LENGTH	256*1024L*1024L
 
+/* Possible values for myisam_block_size (must be power of 2) */
+#define MI_KEY_BLOCK_LENGTH	1024	/* default key block length */
+#define MI_MIN_KEY_BLOCK_LENGTH	1024	/* Min key block length */
+#define MI_MAX_KEY_BLOCK_LENGTH	16384
+
 #define mi_portable_sizeof_char_ptr 8
 
 typedef uint32 ha_checksum;
@@ -68,6 +72,7 @@ typedef struct st_mi_isaminfo		/* Struct from h_info */
   ulong mean_reclength;			/* Mean recordlength (if packed) */
   ulonglong auto_increment;
   ulonglong key_map;			/* Which keys are used */
+  char  *data_file_name, *index_file_name;
   uint  keys;				/* Number of keys in use */
   uint	options;			/* HA_OPTION_... used */
   int	errkey,				/* With key was dupplicated on err */
@@ -86,6 +91,7 @@ typedef struct st_mi_isaminfo		/* Struct from h_info */
 
 typedef struct st_mi_create_info
 {
+  char *index_file_name, *data_file_name;	/* If using symlinks */
   ha_rows max_rows;
   ha_rows reloc_rows;
   ulonglong auto_increment;
@@ -94,6 +100,7 @@ typedef struct st_mi_create_info
   ulong raid_chunksize;
   uint old_options;
   uint8 language;
+  my_bool with_auto_increment;
 } MI_CREATE_INFO;
 
 struct st_myisam_info;			/* For referense */
@@ -120,6 +127,7 @@ typedef struct st_mi_keydef		/* Key definition with open & info */
   uint16 keysegs;			/* Number of key-segment */
   uint16 flag;				/* NOSAME, PACK_USED */
 
+  uint8  key_alg;			/* BTREE, RTREE */
   uint16 block_length;			/* Length of keyblock (auto) */
   uint16 underflow_block_length;	/* When to execute underflow */
   uint16 keylength;			/* Tot length of keyparts (auto) */
@@ -163,9 +171,11 @@ typedef struct st_mi_decode_tree	/* Decode huff-table */
 
 struct st_mi_bit_buff;
 
-/* Note that null markers should always be first in a row !
-   When creating a column, one should only specify:
-   type, length, null_bit and null_pos */
+/*
+  Note that null markers should always be first in a row !
+  When creating a column, one should only specify:
+  type, length, null_bit and null_pos
+*/
 
 typedef struct st_columndef		/* column information */
 {
@@ -184,12 +194,15 @@ typedef struct st_columndef		/* column information */
 #endif
 } MI_COLUMNDEF;
 
+/* invalidator function reference for Query Cache */
+typedef void (* invalidator_by_filename)(const char * filename);
 
 extern my_string myisam_log_filename;		/* Name of logfile */
 extern uint myisam_block_size;
-extern my_bool myisam_flush,myisam_delay_key_write;
+extern my_bool myisam_flush,myisam_delay_key_write,myisam_single_user;
 extern my_bool myisam_concurrent_insert;
 extern my_off_t myisam_max_temp_length,myisam_max_extra_temp_length;
+extern ulong myisam_bulk_insert_tree_size;
 
 	/* Prototypes for myisam-functions */
 
@@ -219,13 +232,14 @@ extern my_off_t mi_position(struct st_myisam_info *file);
 extern int mi_status(struct st_myisam_info *info, MI_ISAMINFO *x, uint flag);
 extern int mi_lock_database(struct st_myisam_info *file,int lock_type);
 extern int mi_create(const char *name,uint keys,MI_KEYDEF *keydef,
-		     uint columns, MI_COLUMNDEF *columndef, 
+		     uint columns, MI_COLUMNDEF *columndef,
 		     uint uniques, MI_UNIQUEDEF *uniquedef,
 		     MI_CREATE_INFO *create_info, uint flags);
 extern int mi_delete_table(const char *name);
 extern int mi_rename(const char *from, const char *to);
 extern int mi_extra(struct st_myisam_info *file,
-		    enum ha_extra_function function);
+		    enum ha_extra_function function,
+		    void *extra_arg);
 extern ha_rows mi_records_in_range(struct st_myisam_info *info,int inx,
 				   const byte *start_key,uint start_key_len,
 				   enum ha_rkey_function start_search_flag,
@@ -239,42 +253,60 @@ extern uint mi_get_pointer_length(ulonglong file_length, uint def);
 
 /* this is used to pass to mysql_myisamchk_table -- by Sasha Pachev */
 
-#define   MYISAMCHK_REPAIR 1  /* equivalent to myisamchk -r*/
-#define   MYISAMCHK_VERIFY 2  /* run equivalent of myisamchk -c,
-			       * if corruption is detected, do myisamchk -r*/
+#define   MYISAMCHK_REPAIR 1  /* equivalent to myisamchk -r */
+#define   MYISAMCHK_VERIFY 2  /* Verify, run repair if failure */
 
-/* definitions needed for myisamchk.c -- by Sasha Pachev */
+/*
+  Definitions needed for myisamchk.c
 
-#define T_VERBOSE	1
-#define T_SILENT	2
-#define T_DESCRIPT	4
-#define T_EXTEND	8
-#define T_INFO		16
-#define T_REP		32
-#define T_OPT		64		/* Not currently used */
-#define T_FORCE_CREATE	128
-#define T_WRITE_LOOP	256
-#define T_UNPACK	512
-#define T_STATISTICS	1024
-#define T_VERY_SILENT	2048
-#define T_SORT_RECORDS	4096
-#define T_SORT_INDEX	8192
-#define T_WAIT_FOREVER	16384
-#define T_REP_BY_SORT	32768L
-#define T_FAST		65536L
-#define T_READONLY	131072L
-#define T_MEDIUM	T_READONLY*2
-#define T_AUTO_INC	T_MEDIUM*2
-#define T_CHECK		T_AUTO_INC*2
-#define T_UPDATE_STATE		T_CHECK*2
-#define T_CHECK_ONLY_CHANGED	T_UPDATE_STATE*2
-#define T_DONT_CHECK_CHECKSUM	T_CHECK_ONLY_CHANGED*2
-#define T_TRUST_HEADER		T_DONT_CHECK_CHECKSUM*2
-#define T_CREATE_MISSING_KEYS	T_TRUST_HEADER*2
-#define T_SAFE_REPAIR		T_CREATE_MISSING_KEYS*2
-#define T_AUTO_REPAIR   	T_SAFE_REPAIR*2
-#define T_BACKUP_DATA		T_AUTO_REPAIR*2
-#define T_CALC_CHECKSUM		T_BACKUP_DATA*2
+  Entries marked as "QQ to be removed" are NOT used to
+  pass check/repair options to mi_check.c. They are used
+  internally by myisamchk.c or/and ha_myisam.cc and should NOT
+  be stored together with other flags. They should be removed
+  from the following list to make addition of new flags possible.
+*/
+
+#define T_AUTO_INC              1
+#define T_AUTO_REPAIR           2              /* QQ to be removed */
+#define T_BACKUP_DATA           4
+#define T_CALC_CHECKSUM         8
+#define T_CHECK                 16             /* QQ to be removed */
+#define T_CHECK_ONLY_CHANGED    32             /* QQ to be removed */
+#define T_CREATE_MISSING_KEYS   64
+#define T_DESCRIPT              128
+#define T_DONT_CHECK_CHECKSUM   256
+#define T_EXTEND                512
+#define T_FAST                  (1L << 10)     /* QQ to be removed */
+#define T_FORCE_CREATE          (1L << 11)     /* QQ to be removed */
+#define T_FORCE_UNIQUENESS      (1L << 12)
+#define T_INFO                  (1L << 13)
+#define T_MEDIUM                (1L << 14)
+#define T_QUICK                 (1L << 15)     /* QQ to be removed */
+#define T_READONLY              (1L << 16)     /* QQ to be removed */
+#define T_REP                   (1L << 17)
+#define T_REP_BY_SORT           (1L << 18)     /* QQ to be removed */
+#define T_REP_PARALLEL          (1L << 19)     /* QQ to be removed */
+#define T_RETRY_WITHOUT_QUICK   (1L << 20)
+#define T_SAFE_REPAIR           (1L << 21)
+#define T_SILENT                (1L << 22)
+#define T_SORT_INDEX            (1L << 23)     /* QQ to be removed */
+#define T_SORT_RECORDS          (1L << 24)     /* QQ to be removed */
+#define T_STATISTICS            (1L << 25)
+#define T_UNPACK                (1L << 26)
+#define T_UPDATE_STATE          (1L << 27)
+#define T_VERBOSE               (1L << 28)
+#define T_VERY_SILENT           (1L << 29)
+#define T_WAIT_FOREVER          (1L << 30)
+#define T_WRITE_LOOP            ((ulong) 1L << 31)
+
+#define T_REP_ANY               (T_REP | T_REP_BY_SORT | T_REP_PARALLEL)
+
+/*
+  Flags used by myisamchk.c or/and ha_myisam.cc that are NOT passed
+  to mi_check.c follows:
+*/
+
+#define TT_USEFRM               1
 
 #define O_NEW_INDEX	1		/* Bits set in out_flag */
 #define O_NEW_DATA	2
@@ -282,30 +314,13 @@ extern uint mi_get_pointer_length(ulonglong file_length, uint def);
 
 /* these struct is used by my_check to tell it what to do */
 
-typedef struct st_sort_key_blocks {		/* Used when sorting */
+typedef struct st_sort_key_blocks		/* Used when sorting */
+{
   uchar *buff,*end_pos;
   uchar lastkey[MI_MAX_POSSIBLE_KEY_BUFF];
   uint last_length;
   int inited;
 } SORT_KEY_BLOCKS;
-
-struct st_mi_check_param;
-
-typedef struct st_sort_info {
-  MI_INFO *info;
-  struct st_mi_check_param *param;
-  enum data_file_type new_data_file_type;
-  SORT_KEY_BLOCKS *key_block,*key_block_end;
-  uint key,find_length;
-  my_off_t pos,max_pos,filepos,start_recpos,filelength,dupp,buff_length;
-  ha_rows max_records;
-  ulonglong unique[MI_MAX_KEY_SEG+1];
-  my_bool fix_datafile;
-  char *record,*buff;
-  MI_KEYDEF *keyinfo;
-  MI_KEYSEG *keyseg;
-} SORT_INFO;
-
 
 typedef struct st_mi_check_param
 {
@@ -319,18 +334,16 @@ typedef struct st_mi_check_param
   ha_checksum record_checksum,glob_crc;
   ulong	use_buffers,read_buffer_length,write_buffer_length,
 	sort_buffer_length,sort_key_blocks;
-  uint out_flag,warning_printed,error_printed,
-       opt_rep_quick,verbose;
+  uint out_flag,warning_printed,error_printed,verbose;
   uint opt_sort_key,total_files,max_level;
   uint testflag;
   uint8 language;
   my_bool using_global_keycache, opt_lock_memory, opt_follow_links;
-  my_bool retry_repair,retry_without_quick, force_sort, calc_checksum;
+  my_bool retry_repair, force_sort, calc_checksum;
   char temp_filename[FN_REFLEN],*isam_file_name,*tmpdir;
   int tmpfile_createflag;
   myf myf_rw;
   IO_CACHE read_cache;
-  SORT_INFO sort_info;
   ulonglong unique_count[MI_MAX_KEY_SEG+1];
   ha_checksum key_crc[MI_MAX_POSSIBLE_KEY];
   ulong rec_per_key_part[MI_MAX_KEY_SEG*MI_MAX_POSSIBLE_KEY];
@@ -340,17 +353,51 @@ typedef struct st_mi_check_param
 } MI_CHECK;
 
 
-typedef struct st_mi_sortinfo {
+typedef struct st_sort_info
+{
+  my_off_t filelength,dupp,buff_length;
   ha_rows max_records;
-  SORT_INFO *sort_info;
-  char *tmpdir;
-  int (*key_cmp)(SORT_INFO *info, const void *, const void *);
-  int (*key_read)(SORT_INFO *info,void *buff);
-  int (*key_write)(SORT_INFO *info, const void *buff);
-  void (*lock_in_memory)(MI_CHECK *info);
-  uint key_length;
+  uint current_key, total_keys;
   myf myf_rw;
+  enum data_file_type new_data_file_type;
+  MI_INFO *info;
+  MI_CHECK *param;
+  char *buff;
+  SORT_KEY_BLOCKS *key_block,*key_block_end;
+  /* sync things*/
+  uint got_error, threads_running;
+#ifdef THREAD
+  pthread_mutex_t mutex;
+  pthread_cond_t  cond;
+#endif
+} SORT_INFO;
+
+
+typedef struct st_mi_sort_param
+{
+#ifdef THREAD
+  pthread_t  thr;
+#endif
+  IO_CACHE read_cache, tempfile, tempfile_for_exceptions;
+  DYNAMIC_ARRAY buffpek;
+  ulonglong unique[MI_MAX_KEY_SEG+1];
+  my_off_t pos,max_pos,filepos,start_recpos;
+  uint key, key_length,real_key_length,sortbuff_size;
+  uint maxbuffers, keys, find_length, sort_keys_length;
+  my_bool fix_datafile, master;
+  MI_KEYDEF *keyinfo;
+  SORT_INFO *sort_info;
+  uchar **sort_keys;
+  byte *rec_buff;
+  void *wordlist, *wordptr;
+  char *record;
+  char *tmpdir;
+  int (*key_cmp)(struct st_mi_sort_param *, const void *, const void *);
+  int (*key_read)(struct st_mi_sort_param *,void *);
+  int (*key_write)(struct st_mi_sort_param *, const void *);
+  void (*lock_in_memory)(MI_CHECK *);
 } MI_SORT_PARAM;
+
 
 /* functions in mi_check */
 void myisamchk_init(MI_CHECK *param);
@@ -364,6 +411,8 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
 int mi_sort_index(MI_CHECK *param, register MI_INFO *info, my_string name);
 int mi_repair_by_sort(MI_CHECK *param, register MI_INFO *info,
 		      const char * name, int rep_quick);
+int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
+		      const char * name, int rep_quick);
 int change_to_newfile(const char * filename, const char * old_ext,
 		      const char * new_ext, uint raid_chunks,
 		      myf myflags);
@@ -374,19 +423,24 @@ int flush_blocks(MI_CHECK *param, File file);
 void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
 			       my_bool repair);
 int update_state_info(MI_CHECK *param, MI_INFO *info,uint update);
+void update_key_parts(MI_KEYDEF *keyinfo, ulong *rec_per_key_part,
+			     ulonglong *unique, ulonglong records);
 int filecopy(MI_CHECK *param, File to,File from,my_off_t start,
 	     my_off_t length, const char *type);
 int movepoint(MI_INFO *info,byte *record,my_off_t oldpos,
 	      my_off_t newpos, uint prot_key);
-int sort_write_record(SORT_INFO *sort_info);
- int write_data_suffix(MI_CHECK *param, MI_INFO *info);
-int _create_index_by_sort(MI_SORT_PARAM *info,my_bool no_messages,
-			  ulong);
+int sort_write_record(MI_SORT_PARAM *sort_param);
+int write_data_suffix(SORT_INFO *sort_info, my_bool fix_datafile);
+int _create_index_by_sort(MI_SORT_PARAM *info,my_bool no_messages, ulong);
 int test_if_almost_full(MI_INFO *info);
 int recreate_table(MI_CHECK *param, MI_INFO **org_info, char *filename);
 void mi_disable_non_unique_index(MI_INFO *info, ha_rows rows);
 my_bool mi_test_if_sort_rep(MI_INFO *info, ha_rows rows, ulonglong key_map,
 			    my_bool force);
+
+int mi_init_bulk_insert(MI_INFO *info, ulong cache_size, ha_rows rows);
+void mi_flush_bulk_insert(MI_INFO *info, uint inx);
+void mi_end_bulk_insert(MI_INFO *info);
 
 #ifdef	__cplusplus
 }

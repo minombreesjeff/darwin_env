@@ -373,7 +373,8 @@ opt_calc_index_goodness(
 		}
 	}
 
-	if (index->type & DICT_CLUSTERED) {
+	/* We have to test for goodness here, as last_op may note be set */
+	if (goodness && index->type & DICT_CLUSTERED) {
 
 		goodness++;
 	}
@@ -529,7 +530,7 @@ opt_search_plan_for_table(
 	ulint		last_op		= 75946965;	/* Eliminate a Purify
 							warning */
 	ulint		best_goodness;
-	ulint		best_last_op;
+	ulint		best_last_op = 0; /* remove warning */
 	ulint		mix_id_pos;
 	que_node_t*	index_plan[128];
 	que_node_t*	best_index_plan[128];
@@ -547,6 +548,7 @@ opt_search_plan_for_table(
 	best_index = index; /* Eliminate compiler warning */
 	best_goodness = 0;
 	
+	/* should be do ... until ? comment by Jani */
 	while (index) {
 		goodness = opt_calc_index_goodness(index, sel_node, i,
 						index_plan, &last_op);
@@ -1056,7 +1058,6 @@ opt_clust_access(
 	dfield_t*	dfield;
 	mem_heap_t*	heap;
 	ulint		n_fields;
-	ulint		col_no;
 	ulint		pos;
 	ulint		i;
 
@@ -1091,8 +1092,7 @@ opt_clust_access(
 	plan->clust_map = mem_heap_alloc(heap, n_fields * sizeof(ulint));
 	
 	for (i = 0; i < n_fields; i++) {
-		col_no = dict_index_get_nth_col_no(clust_index, i);
-		pos = dict_index_get_nth_col_pos(index, col_no);
+		pos = dict_index_get_nth_field_pos(index, clust_index, i);
 
 		*(plan->clust_map + i) = pos;
 
@@ -1107,7 +1107,8 @@ opt_clust_access(
 		
 		dfield = dtuple_get_nth_field(plan->clust_ref, table->mix_len);
 		
-		dfield_set_data(dfield, mem_heap_alloc(heap, table->mix_id_len),
+		dfield_set_data(dfield, mem_heap_alloc(heap,
+							table->mix_id_len),
 							table->mix_id_len);
 		ut_memcpy(dfield_get_data(dfield), table->mix_id_buf,
 							table->mix_id_len);

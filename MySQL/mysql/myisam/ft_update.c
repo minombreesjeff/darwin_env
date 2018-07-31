@@ -19,6 +19,7 @@
 /* functions to work with full-text indices */
 
 #include "ftdefs.h"
+#include <math.h>
 
 /**************************************************************
    This is to make ft-code to ignore keyseg.length at all     *
@@ -27,46 +28,92 @@
 #define set_if_smaller(A,B)                          /* no op */
 /**************************************************************/
 
-
-/* parses a document i.e. calls _mi_ft_parse for every keyseg */
-static FT_WORD * _mi_ft_parserecord(MI_INFO *info, uint keynr, byte *keybuf,
-				    const byte *record)
+void _mi_ft_segiterator_init(MI_INFO *info, uint keynr, const byte *record,
+			     FT_SEG_ITERATOR *ftsi)
 {
-  TREE *parsed=NULL;
-  MI_KEYSEG *keyseg;
-  byte *pos;
-  uint i;
+  ftsi->num=info->s->keyinfo[keynr].keysegs-FT_SEGS;
+  ftsi->seg=info->s->keyinfo[keynr].seg;
+  ftsi->rec=record;
+}
 
-  keyseg=info->s->keyinfo[keynr].seg;
-  for (i=info->s->keyinfo[keynr].keysegs-FT_SEGS ; i-- ; )
+void _mi_ft_segiterator_dummy_init(const byte *record, uint len,
+				   FT_SEG_ITERATOR *ftsi)
+{
+  ftsi->num=1;
+  ftsi->seg=0;
+  ftsi->pos=record;
+  ftsi->len=len;
+}
+
+/*
+  This function breaks convention "return 0 in success"
+  but it's easier to use like this
+
+     while(_mi_ft_segiterator())
+
+  so "1" means "OK", "0" means "EOF"
+*/
+
+uint _mi_ft_segiterator(register FT_SEG_ITERATOR *ftsi)
+{
+  if (!ftsi->num) return 0; else ftsi->num--;
+  if (!ftsi->seg) return 1; else ftsi->seg--;
+
+  if (ftsi->seg->null_bit &&
+      (ftsi->rec[ftsi->seg->null_pos] & ftsi->seg->null_bit))
   {
-    uint len;
-
-    keyseg--;
-    if (keyseg->null_bit && (record[keyseg->null_pos] & keyseg->null_bit))
-	continue; /* NULL field */
-    pos= (byte *)record+keyseg->start;
-    if (keyseg->flag & HA_VAR_LENGTH)
-    {
-      len=uint2korr(pos);
-      pos+=2;					 /* Skip VARCHAR length */
-      set_if_smaller(len,keyseg->length);
-    }
-    else if (keyseg->flag & HA_BLOB_PART)
-    {
-      len=_mi_calc_blob_length(keyseg->bit_start,pos);
-      memcpy_fixed(&pos,pos+keyseg->bit_start,sizeof(char*));
-      set_if_smaller(len,keyseg->length);
-    }
-    else
-      len=keyseg->length;
-    if (!(parsed=ft_parse(parsed, pos, len)))
-      return NULL;
+      ftsi->pos=0;
+      return 1;
   }
-  /* Handle the case where all columns are NULL */
-  if (!parsed && !(parsed=ft_parse(0, (byte*) "", 0)))
+  ftsi->pos= ftsi->rec+ftsi->seg->start;
+  if (ftsi->seg->flag & HA_VAR_LENGTH)
+  {
+    ftsi->len=uint2korr(ftsi->pos);
+    ftsi->pos+=2;				 /* Skip VARCHAR length */
+    set_if_smaller(ftsi->len,ftsi->seg->length);
+    return 1;
+  }
+  if (ftsi->seg->flag & HA_BLOB_PART)
+  {
+    ftsi->len=_mi_calc_blob_length(ftsi->seg->bit_start,ftsi->pos);
+    memcpy_fixed((char*) &ftsi->pos, ftsi->pos+ftsi->seg->bit_start,
+		 sizeof(char*));
+    set_if_smaller(ftsi->len,ftsi->seg->length);
+    return 1;
+  }
+  ftsi->len=ftsi->seg->length;
+  return 1;
+}
+
+
+/* parses a document i.e. calls ft_parse for every keyseg */
+
+uint _mi_ft_parse(TREE *parsed, MI_INFO *info, uint keynr, const byte *record)
+{
+  FT_SEG_ITERATOR ftsi;
+  _mi_ft_segiterator_init(info, keynr, record, &ftsi);
+
+  ft_parse_init(parsed, info->s->keyinfo[keynr].seg->charset);
+  while (_mi_ft_segiterator(&ftsi))
+  {
+    if (ftsi.pos)
+      if (ft_parse(parsed, (byte *)ftsi.pos, ftsi.len))
+        return 1;
+  }
+  return 0;
+}
+
+FT_WORD * _mi_ft_parserecord(MI_INFO *info, uint keynr,
+			     byte *keybuf __attribute__((unused)),
+			     const byte *record)
+{
+  TREE ptree;
+
+  bzero((char*) &ptree, sizeof(ptree));
+  if (_mi_ft_parse(&ptree, info, keynr, record))
     return NULL;
-  return ft_linearize(info, keynr, keybuf, parsed);
+
+  return ft_linearize(/*info, keynr, keybuf, */ &ptree);
 }
 
 static int _mi_ft_store(MI_INFO *info, uint keynr, byte *keybuf,
@@ -74,88 +121,110 @@ static int _mi_ft_store(MI_INFO *info, uint keynr, byte *keybuf,
 {
   uint key_length;
 
-  while(wlist->pos)
+  for (; wlist->pos; wlist++)
   {
     key_length=_ft_make_key(info,keynr,keybuf,wlist,filepos);
     if (_mi_ck_write(info,keynr,(uchar*) keybuf,key_length))
       return 1;
-    wlist++;
    }
    return 0;
 }
 
-static int _mi_ft_erase(MI_INFO *info, uint keynr, byte *keybuf, FT_WORD *wlist, my_off_t filepos)
+static int _mi_ft_erase(MI_INFO *info, uint keynr, byte *keybuf,
+			FT_WORD *wlist, my_off_t filepos)
 {
   uint key_length, err=0;
 
-  while(wlist->pos)
+  for (; wlist->pos; wlist++)
   {
     key_length=_ft_make_key(info,keynr,keybuf,wlist,filepos);
     if (_mi_ck_delete(info,keynr,(uchar*) keybuf,key_length))
       err=1;
-    wlist++;
    }
    return err;
 }
 
-/* compares an appropriate parts of two WORD_KEY keys directly out of records */
-/* returns 1 if they are different */
+/*
+  Compares an appropriate parts of two WORD_KEY keys directly out of records
+  returns 1 if they are different
+*/
 
 #define THOSE_TWO_DAMN_KEYS_ARE_REALLY_DIFFERENT 1
 #define GEE_THEY_ARE_ABSOLUTELY_IDENTICAL	 0
 
 int _mi_ft_cmp(MI_INFO *info, uint keynr, const byte *rec1, const byte *rec2)
 {
-  MI_KEYSEG *keyseg;
-  byte *pos1, *pos2;
-  uint i;
+  FT_SEG_ITERATOR ftsi1, ftsi2;
+  CHARSET_INFO *cs=info->s->keyinfo[keynr].seg->charset;
+  _mi_ft_segiterator_init(info, keynr, rec1, &ftsi1);
+  _mi_ft_segiterator_init(info, keynr, rec2, &ftsi2);
 
-  i=info->s->keyinfo[keynr].keysegs-FT_SEGS;
-  keyseg=info->s->keyinfo[keynr].seg;
-  while(i--)
+  while (_mi_ft_segiterator(&ftsi1) && _mi_ft_segiterator(&ftsi2))
   {
-    uint len1, len2;
-    LINT_INIT(len1); LINT_INIT(len2);
-    keyseg--;
-    if (keyseg->null_bit)
-    {
-      if ( (rec1[keyseg->null_pos] ^ rec2[keyseg->null_pos])
-	   & keyseg->null_bit )
-	return THOSE_TWO_DAMN_KEYS_ARE_REALLY_DIFFERENT;
-      if (rec1[keyseg->null_pos] & keyseg->null_bit )
-	continue; /* NULL field */
-    }
-    pos1= (byte *)rec1+keyseg->start;
-    pos2= (byte *)rec2+keyseg->start;
-    if (keyseg->flag & HA_VAR_LENGTH)
-    {
-      len1=uint2korr(pos1);
-      pos1+=2;					 /* Skip VARCHAR length */
-      set_if_smaller(len1,keyseg->length);
-      len2=uint2korr(pos2);
-      pos2+=2;					 /* Skip VARCHAR length */
-      set_if_smaller(len2,keyseg->length);
-    }
-    else if (keyseg->flag & HA_BLOB_PART)
-    {
-      len1=_mi_calc_blob_length(keyseg->bit_start,pos1);
-      memcpy_fixed(&pos1,pos1+keyseg->bit_start,sizeof(char*));
-      set_if_smaller(len1,keyseg->length);
-      len2=_mi_calc_blob_length(keyseg->bit_start,pos2);
-      memcpy_fixed(&pos2,pos2+keyseg->bit_start,sizeof(char*));
-      set_if_smaller(len2,keyseg->length);
-    }
-    else /* fixed length key */
-    {
-      len1=len2=keyseg->length;
-    }
-    if ((len1 != len2) || memcmp(pos1, pos2, len1))
+    if ((ftsi1.pos != ftsi2.pos) &&
+        (!ftsi1.pos || !ftsi2.pos ||
+          _mi_compare_text(cs, (uchar*) ftsi1.pos,ftsi1.len,
+                               (uchar*) ftsi2.pos,ftsi2.len,0)))
       return THOSE_TWO_DAMN_KEYS_ARE_REALLY_DIFFERENT;
   }
   return GEE_THEY_ARE_ABSOLUTELY_IDENTICAL;
 }
 
+
+/* update a document entry */
+
+int _mi_ft_update(MI_INFO *info, uint keynr, byte *keybuf,
+                  const byte *oldrec, const byte *newrec, my_off_t pos)
+{
+  int error= -1;
+  FT_WORD *oldlist,*newlist, *old_word, *new_word;
+  CHARSET_INFO *cs=info->s->keyinfo[keynr].seg->charset;
+  uint key_length;
+  int cmp, cmp2;
+
+  if (!(old_word=oldlist=_mi_ft_parserecord(info, keynr, keybuf, oldrec)))
+    goto err0;
+  if (!(new_word=newlist=_mi_ft_parserecord(info, keynr, keybuf, newrec)))
+    goto err1;
+
+  error=0;
+  while(old_word->pos && new_word->pos)
+  {
+    cmp=_mi_compare_text(cs, (uchar*) old_word->pos,old_word->len,
+                             (uchar*) new_word->pos,new_word->len,0);
+    cmp2= cmp ? 0 : (fabs(old_word->weight - new_word->weight) > 1.e-5);
+
+    if (cmp < 0 || cmp2)
+    {
+      key_length=_ft_make_key(info,keynr,keybuf,old_word,pos);
+      if ((error=_mi_ck_delete(info,keynr,(uchar*) keybuf,key_length)))
+        goto err2;
+    }
+    if (cmp > 0 || cmp2)
+    {
+      key_length=_ft_make_key(info,keynr,keybuf,new_word,pos);
+      if ((error=_mi_ck_write(info,keynr,(uchar*) keybuf,key_length)))
+        goto err2;
+    }
+    if (cmp<=0) old_word++;
+    if (cmp>=0) new_word++;
+ }
+ if (old_word->pos)
+   error=_mi_ft_erase(info,keynr,keybuf,old_word,pos);
+ else if (new_word->pos)
+   error=_mi_ft_store(info,keynr,keybuf,new_word,pos);
+
+err2:
+    my_free((char*) newlist,MYF(0));
+err1:
+    my_free((char*) oldlist,MYF(0));
+err0:
+  return error;
+}
+
+
 /* adds a document to the collection */
+
 int _mi_ft_add(MI_INFO *info, uint keynr, byte *keybuf, const byte *record,
 	       my_off_t pos)
 {
@@ -170,7 +239,9 @@ int _mi_ft_add(MI_INFO *info, uint keynr, byte *keybuf, const byte *record,
   return error;
 }
 
+
 /* removes a document from the collection */
+
 int _mi_ft_del(MI_INFO *info, uint keynr, byte *keybuf, const byte *record,
 	       my_off_t pos)
 {

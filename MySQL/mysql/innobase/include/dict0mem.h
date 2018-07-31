@@ -111,10 +111,13 @@ by the column name may be released only after publishing the index. */
 void
 dict_mem_index_add_field(
 /*=====================*/
-	dict_index_t*	index,	/* in: index */
-	char*		name,	/* in: column name */
-	ulint		order);	/* in: order criterion; 0 means an ascending
-				order */
+	dict_index_t*	index,		/* in: index */
+	char*		name,		/* in: column name */
+	ulint		order,		/* in: order criterion; 0 means an
+					ascending order */
+	ulint		prefix_len);	/* in: 0 or the column prefix length
+					in a MySQL index like
+					INDEX (textcol(25)) */
 /**************************************************************************
 Frees an index memory object. */
 
@@ -158,12 +161,18 @@ struct dict_col_struct{
 				in some of the functions below */
 };
 
+#define DICT_MAX_COL_PREFIX_LEN	512
+
 /* Data structure for a field in an index */
 struct dict_field_struct{
-	dict_col_t*	col;	/* pointer to the table column */
-	char*		name;	/* name of the column */
-	ulint		order;	/* flags for ordering this field:
-				DICT_DESCEND, ... */
+	dict_col_t*	col;		/* pointer to the table column */
+	char*		name;		/* name of the column */
+	ulint		order;		/* flags for ordering this field:
+					DICT_DESCEND, ... */
+	ulint		prefix_len;	/* 0 or the length of the column
+					prefix in a MySQL index of type, e.g.,
+					INDEX (textcol(25)); must be smaller
+					than DICT_MAX_COL_PREFIX_LEN */
 };
 
 /* Data structure for an index tree */
@@ -280,8 +289,15 @@ struct dict_foreign_struct{
 					table */
 };
 
+/* The flags for ON_UPDATE and ON_DELETE can be ORed; the default is that
+a foreign key constraint is enforced, therefore RESTRICT just means no flag */
 #define DICT_FOREIGN_ON_DELETE_CASCADE	1
 #define DICT_FOREIGN_ON_DELETE_SET_NULL	2
+#define DICT_FOREIGN_ON_UPDATE_CASCADE	4
+#define DICT_FOREIGN_ON_UPDATE_SET_NULL	8
+#define DICT_FOREIGN_ON_DELETE_NO_ACTION 16
+#define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32
+
 
 #define	DICT_INDEX_MAGIC_N	76789786
 
@@ -333,6 +349,13 @@ struct dict_table_struct{
 				space from the lock heap of the trx:
 				otherwise the lock heap would grow rapidly
 				if we do a large insert from a select */
+	dulint		query_cache_inv_trx_id;
+				/* transactions whose trx id < than this
+				number are not allowed to store to the MySQL
+				query cache or retrieve from it; when a trx
+				with undo logs commits, it sets this to the
+				value of the trx id counter for the tables it
+				had an IX lock on */
 	UT_LIST_BASE_NODE_T(lock_t)
 			locks; /* list of locks on the table */
 	/*----------------------*/

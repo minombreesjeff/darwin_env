@@ -270,7 +270,7 @@ page_parse_create(
 /*==============*/
 			/* out: end of log record or NULL */
 	byte*	ptr,	/* in: buffer */
-	byte*	end_ptr,/* in: buffer end */
+	byte*	end_ptr __attribute__((unused)), /* in: buffer end */
 	page_t*	page,	/* in: page or NULL */
 	mtr_t*	mtr)	/* in: mtr or NULL */
 {
@@ -343,7 +343,7 @@ page_create(
 	tuple = dtuple_create(heap, 1);
 	field = dtuple_get_nth_field(tuple, 0);
 
-	dfield_set_data(field, "infimum", strlen("infimum") + 1);
+	dfield_set_data(field,(char *) "infimum", strlen("infimum") + 1);
 	dtype_set(dfield_get_type(field), DATA_VARCHAR, DATA_ENGLISH, 20, 0);
 	
 	/* Set the corresponding physical record to its place in the page
@@ -353,7 +353,7 @@ page_create(
 	
 	infimum_rec = rec_convert_dtuple_to_rec(heap_top, tuple);
 
-	ut_ad(infimum_rec == page + PAGE_INFIMUM);
+	ut_a(infimum_rec == page + PAGE_INFIMUM);
 	
 	rec_set_n_owned(infimum_rec, 1);
 	rec_set_heap_no(infimum_rec, 0);
@@ -365,12 +365,12 @@ page_create(
 	tuple = dtuple_create(heap, 1);
 	field = dtuple_get_nth_field(tuple, 0);
 
-	dfield_set_data(field, "supremum", strlen("supremum") + 1);
+	dfield_set_data(field, (char *) "supremum", strlen("supremum") + 1);
 	dtype_set(dfield_get_type(field), DATA_VARCHAR, DATA_ENGLISH, 20, 0);
 
 	supremum_rec = rec_convert_dtuple_to_rec(heap_top, tuple);
 
-	ut_ad(supremum_rec == page + PAGE_SUPREMUM);
+	ut_a(supremum_rec == page + PAGE_SUPREMUM);
 
 	rec_set_n_owned(supremum_rec, 1);
 	rec_set_heap_no(supremum_rec, 1);
@@ -389,6 +389,8 @@ page_create(
 	page_header_set_ptr(page, PAGE_FREE, NULL);
 	page_header_set_field(page, PAGE_GARBAGE, 0);
 	page_header_set_ptr(page, PAGE_LAST_INSERT, NULL);
+	page_header_set_field(page, PAGE_DIRECTION, PAGE_NO_DIRECTION);
+	page_header_set_field(page, PAGE_N_DIRECTION, 0);
 	page_header_set_field(page, PAGE_N_RECS, 0);
 	page_set_max_trx_id(page, ut_dulint_zero);
 	
@@ -402,17 +404,22 @@ page_create(
 	slot = page_dir_get_nth_slot(page, 1);
 	page_dir_slot_set_rec(slot, supremum_rec);
 
-	/* Set next pointers in infimum and supremum */
+	/* Set the next pointers in infimum and supremum */
 	
 	rec_set_next_offs(infimum_rec, (ulint)(supremum_rec - page)); 
 	rec_set_next_offs(supremum_rec, 0);
+
+#ifdef notdefined
+        /* Disable the use of page_template: there is a race condition here:
+	while one thread is creating page_template, another one can start
+	using it before the memcpy completes! */
 
 	if (page_template == NULL) {
 		page_template = mem_alloc(UNIV_PAGE_SIZE);
 
 		ut_memcpy(page_template, page, UNIV_PAGE_SIZE);
 	}
-	
+#endif	
 	return(page);
 }
 
@@ -439,6 +446,8 @@ page_copy_rec_list_end_no_locks(
 		page_cur_move_to_next(&cur1);
 	}
 	
+	ut_a(mach_read_from_2(new_page + UNIV_PAGE_SIZE - 10) == PAGE_INFIMUM);
+
 	page_cur_set_before_first(new_page, &cur2);
 	
 	/* Copy records from the original page to the new page */	
@@ -446,8 +455,22 @@ page_copy_rec_list_end_no_locks(
 	sup = page_get_supremum_rec(page);
 	
 	while (sup != page_cur_get_rec(&cur1)) {
-		ut_a(
-		page_cur_rec_insert(&cur2, page_cur_get_rec(&cur1), mtr));
+		if (!page_cur_rec_insert(&cur2,
+					page_cur_get_rec(&cur1), mtr)) {
+			/* Track an assertion failure reported on the mailing
+			list on June 18th, 2003 */
+
+		        buf_page_print(new_page);
+		        buf_page_print(page);
+			ut_print_timestamp(stderr);
+
+			fprintf(stderr,
+"InnoDB: rec offset %lu, cur1 offset %lu, cur2 offset %lu\n",
+			      (ulint)(rec - page),
+			      (ulint)(page_cur_get_rec(&cur1) - page),
+			      (ulint)(page_cur_get_rec(&cur2) - new_page));
+			ut_a(0);
+		}
 
 		page_cur_move_to_next(&cur1);
 		page_cur_move_to_next(&cur2);
@@ -1299,19 +1322,242 @@ page_rec_validate(
 	heap_no = rec_get_heap_no(rec);
 
 	if (!(n_owned <= PAGE_DIR_SLOT_MAX_N_OWNED)) {
-		fprintf(stderr, "Dir slot n owned too big %lu\n", n_owned);
+		fprintf(stderr,
+			"InnoDB: Dir slot of rec %lu, n owned too big %lu\n",
+				(ulint)(rec - page), n_owned);
 		return(FALSE);
 	}
 
 	if (!(heap_no < page_header_get_field(page, PAGE_N_HEAP))) {
-		fprintf(stderr, "Heap no too big %lu %lu\n", heap_no,
+		fprintf(stderr,
+		"InnoDB: Heap no of rec %lu too big %lu %lu\n",
+				(ulint)(rec - page), heap_no,
 				page_header_get_field(page, PAGE_N_HEAP));
 		return(FALSE);
 	}
 	
 	return(TRUE);
 }
+
+/*******************************************************************
+Checks that the first directory slot points to the infimum record and
+the last to the supremum. This function is intended to track if the
+bug fixed in 4.0.14 has caused corruption to users' databases. */
+
+void
+page_check_dir(
+/*===========*/
+	page_t*	page)	/* in: index page */
+{
+	ulint	n_slots;
+
+	n_slots = page_dir_get_n_slots(page);
+
+	if (page_dir_slot_get_rec(page_dir_get_nth_slot(page, 0))
+	    != page_get_infimum_rec(page)) {
+
+	        fprintf(stderr,
+"InnoDB: Page directory corruption: supremum not pointed to\n");
+		buf_page_print(page);
+       	}
+
+	if (page_dir_slot_get_rec(page_dir_get_nth_slot(page, n_slots - 1))
+	    != page_get_supremum_rec(page)) {
+
+	        fprintf(stderr,
+"InnoDB: Page directory corruption: supremum not pointed to\n");
+		buf_page_print(page);
+       	}
+}
 	
+/*******************************************************************
+This function checks the consistency of an index page when we do not
+know the index. This is also resilient so that this should never crash
+even if the page is total garbage. */
+
+ibool
+page_simple_validate(
+/*=================*/
+			/* out: TRUE if ok */
+	page_t*	page)	/* in: index page */
+{
+	page_cur_t 	cur;
+	page_dir_slot_t* slot;
+	ulint		slot_no;
+	ulint		n_slots;
+	rec_t*		rec;
+	byte*		rec_heap_top;
+	ulint		count;
+	ulint		own_count;
+	ibool		ret	= FALSE;
+
+	/* Check first that the record heap and the directory do not
+	overlap. */
+
+	n_slots = page_dir_get_n_slots(page);
+
+	if (n_slots > UNIV_PAGE_SIZE / 4) {
+		fprintf(stderr,
+	"InnoDB: Nonsensical number %lu of page dir slots\n", n_slots);
+
+		goto func_exit;
+	}
+
+	rec_heap_top = page_header_get_ptr(page, PAGE_HEAP_TOP);
+	
+	if (rec_heap_top > page_dir_get_nth_slot(page, n_slots - 1)) {
+
+		fprintf(stderr,
+    "InnoDB: Record heap and dir overlap on a page, heap top %lu, dir %lu\n",
+       		(ulint)(page_header_get_ptr(page, PAGE_HEAP_TOP) - page),
+       		(ulint)(page_dir_get_nth_slot(page, n_slots - 1) - page));
+
+       		goto func_exit;
+       	}
+
+	/* Validate the record list in a loop checking also that it is
+	consistent with the page record directory. */
+
+	count = 0;
+	own_count = 1;
+	slot_no = 0;
+	slot = page_dir_get_nth_slot(page, slot_no);
+
+	page_cur_set_before_first(page, &cur);
+
+	for (;;) {
+		rec = (&cur)->rec;
+		
+		if (rec > rec_heap_top) {
+			fprintf(stderr,
+			"InnoDB: Record %lu is above rec heap top %lu\n",
+			(ulint)(rec - page), (ulint)(rec_heap_top - page));
+
+			goto func_exit;
+		}
+
+		if (rec_get_n_owned(rec) != 0) {
+			/* This is a record pointed to by a dir slot */
+			if (rec_get_n_owned(rec) != own_count) {
+
+				fprintf(stderr,
+		"InnoDB: Wrong owned count %lu, %lu, rec %lu\n",
+				rec_get_n_owned(rec), own_count,
+				(ulint)(rec - page));
+
+				goto func_exit;
+			}
+
+			if (page_dir_slot_get_rec(slot) != rec) {
+				fprintf(stderr,
+		"InnoDB: Dir slot does not point to right rec %lu\n",
+					(ulint)(rec - page));
+
+				goto func_exit;
+			}
+						
+			own_count = 0;
+
+			if (!page_cur_is_after_last(&cur)) {
+				slot_no++;
+				slot = page_dir_get_nth_slot(page, slot_no);
+			}
+		}
+
+		if (page_cur_is_after_last(&cur)) {
+
+			break;
+		}
+
+		if (rec_get_next_offs(rec) < FIL_PAGE_DATA
+				|| rec_get_next_offs(rec) >= UNIV_PAGE_SIZE) {
+			fprintf(stderr,
+		"InnoDB: Next record offset nonsensical %lu for rec %lu\n",
+			  rec_get_next_offs(rec),
+			  (ulint)(rec - page));
+
+			goto func_exit;
+		}
+
+		count++;		
+
+		if (count > UNIV_PAGE_SIZE) {
+			fprintf(stderr,
+		"InnoDB: Page record list appears to be circular %lu\n",
+								count);
+			goto func_exit;
+		}
+		
+		page_cur_move_to_next(&cur);
+		own_count++;
+	}
+	
+	if (rec_get_n_owned(rec) == 0) {
+		fprintf(stderr, "InnoDB: n owned is zero in a supremum rec\n");
+
+		goto func_exit;
+	}
+		
+	if (slot_no != n_slots - 1) {
+		fprintf(stderr, "InnoDB: n slots wrong %lu, %lu\n",
+			slot_no, n_slots - 1);
+		goto func_exit;
+	}		
+
+	if (page_header_get_field(page, PAGE_N_RECS) + 2 != count + 1) {
+		fprintf(stderr, "InnoDB: n recs wrong %lu %lu\n",
+		page_header_get_field(page, PAGE_N_RECS) + 2,  count + 1);
+
+		goto func_exit;
+	}
+
+	/* Check then the free list */
+	rec = page_header_get_ptr(page, PAGE_FREE);
+
+	while (rec != NULL) {
+		if (rec < page + FIL_PAGE_DATA
+				|| rec >= page + UNIV_PAGE_SIZE) {
+			fprintf(stderr,
+		"InnoDB: Free list record has a nonsensical offset %lu\n",
+			(ulint)(rec - page));
+
+			goto func_exit;
+		}
+
+		if (rec > rec_heap_top) {
+			fprintf(stderr,
+		"InnoDB: Free list record %lu is above rec heap top %lu\n",
+			(ulint)(rec - page), (ulint)(rec_heap_top - page));
+
+			goto func_exit;
+		}
+
+		count++;
+		
+		if (count > UNIV_PAGE_SIZE) {
+			fprintf(stderr,
+		"InnoDB: Page free list appears to be circular %lu\n",
+								count);
+			goto func_exit;
+		}
+
+		rec = page_rec_get_next(rec);
+	}
+	
+	if (page_header_get_field(page, PAGE_N_HEAP) != count + 1) {
+
+		fprintf(stderr, "InnoDB: N heap is wrong %lu, %lu\n",
+		page_header_get_field(page, PAGE_N_HEAP), count + 1);
+
+		goto func_exit;
+	}
+
+	ret = TRUE;	
+
+func_exit:
+	return(ret);			  
+}
+
 /*******************************************************************
 This function checks the consistency of an index page. */
 
@@ -1339,6 +1585,17 @@ page_validate(
 	ulint		i;
 	char           	err_buf[1000];
 	
+	if (!page_simple_validate(page)) {
+		fprintf(stderr,
+"InnoDB: Apparent corruption in page %lu in index %s in table %s\n",
+			buf_frame_get_page_no(page), index->name,
+			index->table_name);
+
+		buf_page_print(page);
+
+		return(FALSE);
+	}
+
 	heap = mem_heap_create(UNIV_PAGE_SIZE);
 	
 	/* The following buffer is used to check that the
@@ -1357,7 +1614,7 @@ page_validate(
 	if (!(page_header_get_ptr(page, PAGE_HEAP_TOP) <=
 			page_dir_get_nth_slot(page, n_slots - 1))) {
 		fprintf(stderr,
-       	"Record heap and dir overlap on a page in index %s, %lu, %lu\n",
+"InnoDB: Record heap and dir overlap on a page in index %s, %lu, %lu\n",
        		index->name, (ulint)page_header_get_ptr(page, PAGE_HEAP_TOP),
        		(ulint)page_dir_get_nth_slot(page, n_slots - 1));
 
@@ -1385,13 +1642,18 @@ page_validate(
 		if ((count >= 2) && (!page_cur_is_after_last(&cur))) {
 			if (!(1 == cmp_rec_rec(rec, old_rec, index))) {
 				fprintf(stderr,
-					"Records in wrong order in index %s\n",
-					index->name);
+"InnoDB: Records in wrong order on page %lu index %s table %s\n",
+					buf_frame_get_page_no(page),
+					index->name,
+					index->table_name);
+
 	 		 	rec_sprintf(err_buf, 900, old_rec);
-	  			fprintf(stderr, "InnoDB: record %s\n", err_buf);
+	  			fprintf(stderr,
+				"InnoDB: previous record %s\n", err_buf);
 				
 	 		 	rec_sprintf(err_buf, 900, rec);
-	  			fprintf(stderr, "InnoDB: record %s\n", err_buf);
+	  			fprintf(stderr,
+				"InnoDB: record %s\n", err_buf);
 				
 				goto func_exit;
 			}
@@ -1410,7 +1672,7 @@ page_validate(
 				/* No other record may overlap this */
 
 				fprintf(stderr,
-				"Record overlaps another in index %s \n",
+			"InnoDB: Record overlaps another in index %s \n",
 				index->name);
 
 				goto func_exit;
@@ -1423,7 +1685,7 @@ page_validate(
 			/* This is a record pointed to by a dir slot */
 			if (rec_get_n_owned(rec) != own_count) {
 				fprintf(stderr,
-				"Wrong owned count %lu, %lu, in index %s\n",
+			"InnoDB: Wrong owned count %lu, %lu, in index %s\n",
 				rec_get_n_owned(rec), own_count,
 				index->name);
 
@@ -1432,7 +1694,7 @@ page_validate(
 
 			if (page_dir_slot_get_rec(slot) != rec) {
 				fprintf(stderr,
-				"Dir slot does not point to right rec in %s\n",
+			"InnoDB: Dir slot does not point to right rec in %s\n",
 				index->name);
 
 				goto func_exit;
@@ -1454,7 +1716,7 @@ page_validate(
 		if (rec_get_next_offs(rec) < FIL_PAGE_DATA
 				|| rec_get_next_offs(rec) >= UNIV_PAGE_SIZE) {
 			fprintf(stderr,
-			  "Next record offset wrong %lu in index %s\n",
+		"InnoDB: Next record offset wrong %lu in index %s\n",
 			  rec_get_next_offs(rec), index->name);
 
 			goto func_exit;
@@ -1467,19 +1729,20 @@ page_validate(
 	}
 	
 	if (rec_get_n_owned(rec) == 0) {
-		fprintf(stderr, "n owned is zero in index %s\n", index->name);
+		fprintf(stderr,
+			"InnoDB: n owned is zero in index %s\n", index->name);
 
 		goto func_exit;
 	}
 		
 	if (slot_no != n_slots - 1) {
-		fprintf(stderr, "n slots wrong %lu %lu in index %s\n",
+		fprintf(stderr, "InnoDB: n slots wrong %lu %lu in index %s\n",
 			slot_no, n_slots - 1, index->name);
 		goto func_exit;
 	}		
 
 	if (page_header_get_field(page, PAGE_N_RECS) + 2 != count + 1) {
-		fprintf(stderr, "n recs wrong %lu %lu in index %s\n",
+		fprintf(stderr, "InnoDB: n recs wrong %lu %lu in index %s\n",
 		page_header_get_field(page, PAGE_N_RECS) + 2,  count + 1,
 		index->name);
 
@@ -1487,7 +1750,8 @@ page_validate(
 	}
 
 	if (data_size != page_get_data_size(page)) {
-		fprintf(stderr, "Summed data size %lu, returned by func %lu\n",
+		fprintf(stderr,
+		"InnoDB: Summed data size %lu, returned by func %lu\n",
 			data_size, page_get_data_size(page));
 		goto func_exit;
 	}
@@ -1508,7 +1772,7 @@ page_validate(
 
 			if (buf[offs + i] != 0) {
 				fprintf(stderr,
-	                "Record overlaps another in free list, index %s \n",
+	     	"InnoDB: Record overlaps another in free list, index %s \n",
 				index->name);
 
 				goto func_exit;
@@ -1522,9 +1786,11 @@ page_validate(
 	
 	if (page_header_get_field(page, PAGE_N_HEAP) != count + 1) {
 
-		fprintf(stderr, "N heap is wrong %lu %lu in index %s\n",
-		page_header_get_field(page, PAGE_N_HEAP), count + 1,
-		index->name);
+		fprintf(stderr,
+		"InnoDB: N heap is wrong %lu %lu in index %s\n",
+			page_header_get_field(page, PAGE_N_HEAP), count + 1,
+				index->name);
+		goto func_exit;
 	}
 
 	ret = TRUE;	
@@ -1532,6 +1798,15 @@ page_validate(
 func_exit:
 	mem_heap_free(heap);
 
+	if (ret == FALSE) {
+		fprintf(stderr,
+"InnoDB: Apparent corruption in page %lu in index %s in table %s\n",
+			buf_frame_get_page_no(page), index->name,
+			index->table_name);
+
+		buf_page_print(page);
+	}
+	
 	return(ret);			  
 }
 

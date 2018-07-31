@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000 MySQL AB
 
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
 
-   This library is distributed in the hope that it will be useful,
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Parser needs these defines  always, even if USE_RAID is not defined */
 #define RAID_TYPE_0 1       /* Striping */
@@ -23,17 +22,15 @@
 #define RAID_DEFAULT_CHUNKS 4
 #define RAID_DEFAULT_CHUNKSIZE 256*1024 /* 256kB */
 
+C_MODE_START
+#define my_raid_type(raid_type)  raid_type_string[(int)(raid_type)]
 extern const char *raid_type_string[];
+C_MODE_END
 
-#ifdef __cplusplus
-extern "C" {
+#ifdef DONT_USE_RAID
+#undef USE_RAID
 #endif
-const char *my_raid_type(int raid_type);
-#ifdef __cplusplus
-}
-#endif
-
-#if defined(USE_RAID) && !defined(DONT_USE_RAID)
+#if defined(USE_RAID)
 
 #ifdef __GNUC__
 #pragma interface			/* gcc class implementation */
@@ -47,7 +44,7 @@ const char *my_raid_type(int raid_type);
 #define my_write(A,B,C,D)    my_raid_write(A,B,C,D)
 #define my_pwrite(A,B,C,D,E) my_raid_pwrite(A,B,C,D,E)
 #define my_pread(A,B,C,D,E)  my_raid_pread(A,B,C,D,E)
-#define my_chsize(A,B,C)     my_raid_chsize(A,B,C)
+#define my_chsize(A,B,C,D)   my_raid_chsize(A,B,C,D)
 #define my_close(A,B)        my_raid_close(A,B)
 #define my_tell(A,B)         my_raid_tell(A,B)
 #define my_seek(A,B,C,D)     my_raid_seek(A,B,C,D)
@@ -88,7 +85,7 @@ extern "C" {
 
   int my_raid_lock(File,int locktype, my_off_t start, my_off_t length,
 		   myf MyFlags);
-  int my_raid_chsize(File fd, my_off_t newlength, myf MyFlags);
+  int my_raid_chsize(File fd, my_off_t newlength, int filler, myf MyFlags);
   int my_raid_close(File, myf MyFlags);
   int my_raid_fstat(int Filedes, struct stat *buf,  myf MyFlags);
 
@@ -119,7 +116,7 @@ class RaidFd {
     int Write(const byte *Buffer, uint Count, myf MyFlags);
     int Read(const byte *Buffer, uint Count, myf MyFlags);
     int Lock(int locktype, my_off_t start, my_off_t length, myf MyFlags);
-    int Chsize(File fd, my_off_t newlength, myf MyFlags);
+    int Chsize(File fd, my_off_t newlength, int filler, myf MyFlags);
     int Fstat(int fd, MY_STAT *stat_area, myf MyFlags );
     int Close(myf MyFlags);
     static bool IsRaid(File fd);

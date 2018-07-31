@@ -1,4 +1,4 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,13 +16,13 @@
 
 /* By Jani Tolonen, 2001-04-20, MySQL Development Team */
 
-#define CHECK_VERSION "1.02"
+#define CHECK_VERSION "2.4.3"
 
 #include "client_priv.h"
 #include <m_ctype.h>
-#include "mysql_version.h"
-#include "mysqld_error.h"
-#include "sslopt-vars.h"
+#include <mysql_version.h>
+#include <mysqld_error.h>
+#include <sslopt-vars.h>
 
 /* Exit codes */
 
@@ -33,7 +33,8 @@ static MYSQL mysql_connection, *sock = 0;
 static my_bool opt_alldbs = 0, opt_check_only_changed = 0, opt_extended = 0,
                opt_compress = 0, opt_databases = 0, opt_fast = 0,
                opt_medium_check = 0, opt_quick = 0, opt_all_in_1 = 0,
-               opt_silent = 0, opt_auto_repair = 0, ignore_errors = 0;
+               opt_silent = 0, opt_auto_repair = 0, ignore_errors = 0,
+               tty_password = 0, opt_frm = 0;
 static uint verbose = 0, opt_mysql_port=0;
 static my_string opt_mysql_unix_port = 0;
 static char *opt_password = 0, *current_user = 0, *default_charset = 0,
@@ -43,43 +44,99 @@ DYNAMIC_ARRAY tables4repair;
 
 enum operations {DO_CHECK, DO_REPAIR, DO_ANALYZE, DO_OPTIMIZE};
 
-static struct option long_options[] =
+static struct my_option my_long_options[] =
 {
-  {"all-databases",         no_argument,       0, 'A'},
-  {"all-in-1",              no_argument,       0, '1'},
-  {"auto-repair",           no_argument,       0, OPT_AUTO_REPAIR},
-  {"analyze",		    no_argument,       0, 'a'},
-  {"character-sets-dir",    required_argument, 0, OPT_CHARSETS_DIR},
-  {"check",	            no_argument,       0, 'c'},
-  {"check-only-changed",    no_argument,       0, 'C'},
-  {"compress",              no_argument,       0, OPT_COMPRESS},
-  {"databases",             no_argument,       0, 'B'},
-  {"debug",		    optional_argument, 0, '#'},
-  {"default-character-set", required_argument, 0, OPT_DEFAULT_CHARSET},
-  {"fast",	            no_argument,       0, 'F'},
-  {"force",                 no_argument,       0, 'f'},
-  {"extended",              no_argument,       0, 'e'},
-  {"help",   		    no_argument,       0, '?'},
-  {"host",    		    required_argument, 0, 'h'},
-  {"medium-check",          no_argument,       0, 'm'},
-  {"optimize",              no_argument,       0, 'o'},
-  {"password",  	    optional_argument, 0, 'p'},
+  {"all-databases", 'A',
+   "Check all the databases. This will be same as  --databases with all databases selected.",
+   (gptr*) &opt_alldbs, (gptr*) &opt_alldbs, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"analyze", 'a', "Analyze given tables.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0,
+   0, 0, 0, 0},
+  {"all-in-1", '1',
+   "Instead of issuing one query for each table, use one query per database, naming all tables in the database in a comma-separated list.",
+   (gptr*) &opt_all_in_1, (gptr*) &opt_all_in_1, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+   0, 0, 0},
+  {"auto-repair", OPT_AUTO_REPAIR,
+   "If a checked table is corrupted, automatically fix it. Repairing will be done after all tables have been checked, if corrupted ones were found.",
+   (gptr*) &opt_auto_repair, (gptr*) &opt_auto_repair, 0, GET_BOOL, NO_ARG, 0,
+   0, 0, 0, 0, 0},
+  {"character-sets-dir", OPT_CHARSETS_DIR,
+   "Directory where character sets are", (gptr*) &charsets_dir,
+   (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"check", 'c', "Check table for errors", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0,
+   0, 0, 0, 0},
+  {"check-only-changed", 'C',
+   "Check only tables that have changed since last check or haven't been closed properly.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"compress", OPT_COMPRESS, "Use compression in server/client protocol.",
+   (gptr*) &opt_compress, (gptr*) &opt_compress, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+   0, 0, 0},
+  {"databases", 'B',
+   "To check several databases. Note the difference in usage; In this case no tables are given. All name arguments are regarded as databasenames.",
+   (gptr*) &opt_databases, (gptr*) &opt_databases, 0, GET_BOOL, NO_ARG,
+   0, 0, 0, 0, 0, 0},
+  {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'",
+   0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+  {"default-character-set", OPT_DEFAULT_CHARSET,
+   "Set the default character set", (gptr*) &default_charset,
+   (gptr*) &default_charset, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"fast",'F', "Check only tables that haven't been closed properly",
+   (gptr*) &opt_fast, (gptr*) &opt_fast, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
+   0},
+  {"force", 'f', "Continue even if we get an sql-error.",
+   (gptr*) &ignore_errors, (gptr*) &ignore_errors, 0, GET_BOOL, NO_ARG, 0, 0,
+   0, 0, 0, 0},
+  {"extended", 'e',
+   "If you are using this option with CHECK TABLE, it will ensure that the table is 100 percent consistent, but will take a long time. If you are using this option with REPAIR TABLE, it will force using old slow repair with keycache method, instead of much faster repair by sorting.",
+   (gptr*) &opt_extended, (gptr*) &opt_extended, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+   0, 0, 0},
+  {"help", '?', "Display this help message and exit.", 0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"host",'h', "Connect to host.", (gptr*) &current_host,
+   (gptr*) &current_host, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"medium-check", 'm',
+   "Faster than extended-check, but only finds 99.99 percent of all errors. Should be good enough for most cases.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"optimize", 'o', "Optimize table.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"password", 'p',
+   "Password to use when connecting to server. If password is not given it's solicited on the tty.",
+   0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 #ifdef __WIN__
-  {"pipe",		    no_argument,       0, 'W'},
+  {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-  {"port",    		    required_argument, 0, 'P'},
-  {"quick",    		    no_argument,       0, 'q'},
-  {"repair",	            no_argument,       0, 'r'},
-  {"silent",                no_argument,       0, 's'},
-  {"socket",   		    required_argument, 0, 'S'},
-#include "sslopt-longopts.h"
-  {"tables",                no_argument,       0, OPT_TABLES},
+  {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
+   (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0,
+   0},
+  {"quick", 'q',
+   "If you are using this option with CHECK TABLE, it prevents the check from scanning the rows to check for wrong links. This is the fastest check. If you are using this option with REPAIR TABLE, it will try to repair only the index tree. This is the fastest repair method for a table.",
+   (gptr*) &opt_quick, (gptr*) &opt_quick, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
+   0},
+  {"repair", 'r',
+   "Can fix almost anything except unique keys that aren't unique.",
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"silent", 's', "Print only error messages.", (gptr*) &opt_silent,
+   (gptr*) &opt_silent, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"socket", 'S', "Socket file to use for connection.",
+   (gptr*) &opt_mysql_unix_port, (gptr*) &opt_mysql_unix_port, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#include <sslopt-longopts.h>
+  {"tables", OPT_TABLES, "Overrides option --databases (-B).", 0, 0, 0,
+   GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
 #ifndef DONT_ALLOW_USER_CHANGE
-  {"user",    		    required_argument, 0, 'u'},
+  {"user", 'u', "User for login if not current user.", (gptr*) &current_user,
+   (gptr*) &current_user, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-  {"verbose",    	    no_argument,       0, 'v'},
-  {"version",    	    no_argument,       0, 'V'},
-  {0, 0, 0, 0}
+  {"use-frm", OPT_FRM,
+   "When used with REPAIR, get table structure from .frm file, so the table can be repaired even if .MYI header is corrupted.",
+   (gptr*) &opt_frm, (gptr*) &opt_frm, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
+   0},
+  {"verbose", 'v', "Print info about the various stages.", 0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"version", 'V', "Output version information and exit.", 0, 0, 0, GET_NO_ARG,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
 static const char *load_default_groups[] = { "mysqlcheck", "client", 0 };
@@ -99,6 +156,7 @@ static void dbDisconnect(char *host);
 static void DBerror(MYSQL *mysql, const char *when);
 static void safe_exit(int error);
 static void print_result();
+static char *fix_table_name(char *dest, char *src);
 int what_to_do = 0;
 
 static void print_version(void)
@@ -116,7 +174,7 @@ static void usage(void)
   puts("and you are welcome to modify and redistribute it under the GPL license.\n");
   puts("This program can be used to CHECK (-c,-m,-C), REPAIR (-r), ANALYZE (-a)");
   puts("or OPTIMIZE (-o) tables. Some of the options (like -e or -q) can be");
-  puts("used same time. It works on MyISAM and in some cases on BDB tables.");
+  puts("used at the same time. It works on MyISAM and in some cases on BDB tables.");
   puts("Please consult the MySQL manual for latest information about the");
   puts("above. The options -c,-r,-a and -o are exclusive to each other, which");
   puts("means that the last option will be used, if several was specified.\n");
@@ -130,78 +188,78 @@ static void usage(void)
   printf("OR     %s [OPTIONS] --databases DB1 [DB2 DB3...]\n",
 	 my_progname);
   printf("OR     %s [OPTIONS] --all-databases\n", my_progname);
-  printf("\
-  -A, --all-databases   Check all the databases. This will be same as\n\
-		        --databases with all databases selected\n\
-  -1, --all-in-1        Instead of making one query for each table, execute\n\
-                        all queries in 1 query separately for each database.\n\
-                        Table names will be in a comma separeted list.\n\
-  -a, --analyze         Analyze given tables.\n\
-  --auto-repair         If a checked table is corrupted, automatically fix\n\
-                        it. Repairing will be done after all tables have\n\
-                        been checked, if corrupted ones were found.\n\
-  -#, --debug=...       Output debug log. Often this is 'd:t:o,filename'\n\
-  --character-sets-dir=...\n\
-                        Directory where character sets are\n\
-  -c, --check           Check table for errors\n\
-  -C, --check-only-changed\n\
-		        Check only tables that have changed since last check\n\
-                        or haven't been closed properly.\n\
-  --compress            Use compression in server/client protocol.\n\
-  -?, --help		Display this help message and exit.\n\
-  -B, --databases       To check several databases. Note the difference in\n\
- 			usage; In this case no tables are given. All name\n\
-			arguments are regarded as databasenames.\n\
-  --default-character-set=...\n\
-                        Set the default character set\n\
-  -F, --fast	        Check only tables that hasn't been closed properly\n\
-  -f, --force		Continue even if we get an sql-error.\n\
-  -e, --extended        If you are using this option with CHECK TABLE,\n\
-                        it will ensure that the table is 100 percent\n\
-                        consistent, but will take a long time.\n\n");
-printf("\
-                        If you are using this option with REPAIR TABLE,\n\
-                        it will run an extended repair on the table, which\n\
-                        may not only take a long time to execute, but\n\
-                        may produce a lot of garbage rows also!\n\
-  -h, --host=...	Connect to host.\n\
-  -m, --medium-check    Faster than extended-check, but only finds 99.99 percent\n\
-                        of all errors.  Should be good enough for most cases.\n\
-  -o, --optimize        Optimize table\n\
-  -p, --password[=...]	Password to use when connecting to server.\n\
-                        If password is not given it's solicited on the tty.\n");
-#ifdef __WIN__
-  puts("-W, --pipe	Use named pipes to connect to server");
-#endif
-  printf("\
-  -P, --port=...	Port number to use for connection.\n\
-  -q, --quick		If you are using this option with CHECK TABLE, it\n\
-                        prevents the check from scanning the rows to check\n\
-                        for wrong links. This is the fastest check.\n\n\
-                        If you are using this option with REPAIR TABLE, it\n\
-                        will try to repair only the index tree. This is\n\
-                        the fastest repair method for a table.\n\
-  -r, --repair          Can fix almost anything except unique keys that aren't\n\
-                        unique.\n\
-  -s, --silent          Print only error messages.\n\
-  -S, --socket=...	Socket file to use for connection.\n\
-  --tables              Overrides option --databases (-B).\n");
-#include "sslopt-usage.h"
-#ifndef DONT_ALLOW_USER_CHANGE
-  printf("\
-  -u, --user=#		User for login if not current user.\n");
-#endif
-  printf("\
-  -v, --verbose		Print info about the various stages.\n\
-  -V, --version		Output version information and exit.\n");
   print_defaults("my", load_default_groups);
+  my_print_help(my_long_options);
+  my_print_variables(my_long_options);
 } /* usage */
 
- 
+
+static my_bool
+get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
+	       char *argument)
+{
+  switch(optid) {
+  case 'a':
+    what_to_do = DO_ANALYZE;
+    break;
+  case 'c':
+    what_to_do = DO_CHECK;
+    break;
+  case 'C':
+    what_to_do = DO_CHECK;
+    opt_check_only_changed = 1;
+    break;
+  case 'I': /* Fall through */
+  case '?':
+    usage();
+    exit(0);
+  case 'm':
+    what_to_do = DO_CHECK;
+    opt_medium_check = 1;
+    break;
+  case 'o':
+    what_to_do = DO_OPTIMIZE;
+    break;
+  case 'p':
+    if (argument)
+    {
+      char *start = argument;
+      my_free(opt_password, MYF(MY_ALLOW_ZERO_PTR));
+      opt_password = my_strdup(argument, MYF(MY_FAE));
+      while (*argument) *argument++= 'x';		/* Destroy argument */
+      if (*start)
+	start[1] = 0;                             /* Cut length of argument */
+    }
+    else
+      tty_password = 1;
+    break;
+  case 'r':
+    what_to_do = DO_REPAIR;
+    break;
+  case 'W':
+#ifdef __WIN__
+    opt_mysql_unix_port = MYSQL_NAMEDPIPE;
+#endif
+    break;
+  case '#':
+    DBUG_PUSH(argument ? argument : "d:t:o");
+    break;
+#include <sslopt-case.h>
+  case OPT_TABLES:
+    opt_databases = 0;
+    break;
+  case 'v':
+    verbose++;
+    break;
+  case 'V': print_version(); exit(0);
+  }
+  return 0;
+}
+
+
 static int get_options(int *argc, char ***argv)
 {
-  int c, option_index;
-  my_bool tty_password = 0;
+  int ho_error;
 
   if (*argc == 1)
   {
@@ -210,119 +268,10 @@ static int get_options(int *argc, char ***argv)
   }
 
   load_defaults("my", load_default_groups, argc, argv);
-  while ((c = getopt_long(*argc, *argv, "#::p::h:u:P:S:BaAcCdeFfmqorsvVw:?I1",
-			long_options, &option_index)) != EOF)
-  {
-    switch(c) {
-    case 'a':
-      what_to_do = DO_ANALYZE;
-      break;
-    case '1':
-      opt_all_in_1 = 1;
-      break;
-    case 'A':
-      opt_alldbs = 1;
-      break;
-    case OPT_AUTO_REPAIR:
-      opt_auto_repair = 1;
-      break;
-    case OPT_DEFAULT_CHARSET:
-      default_charset = optarg;
-      break;
-    case OPT_CHARSETS_DIR:
-      charsets_dir = optarg;
-      break;
-    case 'c':
-      what_to_do = DO_CHECK;
-      break;
-    case 'C':
-      what_to_do = DO_CHECK;
-      opt_check_only_changed = 1;
-      break;
-    case 'e':
-      opt_extended = 1;
-      break;
-    case OPT_COMPRESS:
-      opt_compress = 1;
-      break;
-    case 'B':
-      opt_databases = 1;
-      break;
-    case 'F':
-      opt_fast = 1;
-      break;
-    case 'f':
-      ignore_errors = 1;
-      break;
-    case 'I': /* Fall through */
-    case '?':
-      usage();
-      exit(0);
-    case 'h':
-      my_free(current_host, MYF(MY_ALLOW_ZERO_PTR));
-      current_host = my_strdup(optarg, MYF(MY_WME));
-      break;
-    case 'm':
-      what_to_do = DO_CHECK;
-      opt_medium_check = 1;
-      break;
-    case 'o':
-      what_to_do = DO_OPTIMIZE;
-      break;
-#ifndef DONT_ALLOW_USER_CHANGE
-    case 'u':
-      current_user = optarg;
-      break;
-#endif
-    case 'p':
-      if (optarg)
-      {
-	char *start = optarg;
-	my_free(opt_password, MYF(MY_ALLOW_ZERO_PTR));
-	opt_password = my_strdup(optarg, MYF(MY_FAE));
-	while (*optarg) *optarg++= 'x';		/* Destroy argument */
-	if (*start)
-	  start[1] = 0;	         		/* Cut length of argument */
-      }
-      else
-	tty_password = 1;
-      break;
-    case 'P':
-      opt_mysql_port = (unsigned int) atoi(optarg);
-      break;
-    case 'q':
-      opt_quick = 1;
-      break;
-    case 'r':
-      what_to_do = DO_REPAIR;
-      break;
-    case 'S':
-      opt_mysql_unix_port = optarg;
-     break;
-    case 's':
-      opt_silent = 1;
-      break;
-    case 'W':
-#ifdef __WIN__
-      opt_mysql_unix_port = MYSQL_NAMEDPIPE;
-#endif
-      break;
-    case '#':
-      DBUG_PUSH(optarg ? optarg : "d:t:o");
-      break;
-    case OPT_TABLES:
-      opt_databases = 0;
-      break;
-    case 'v':
-      verbose++;
-      break;
-    case 'V': print_version(); exit(0);
-    default:
-      fprintf(stderr, "%s: Illegal option character '%c'\n", my_progname,
-	      opterr);
-#include "sslopt-case.h"
-    }
-  }
+
+  if ((ho_error=handle_options(argc, argv, my_long_options, get_one_option)))
+    exit(ho_error);
+
   if (!what_to_do)
   {
     int pnlen = strlen(my_progname);
@@ -343,8 +292,6 @@ static int get_options(int *argc, char ***argv)
     if (set_default_charset_by_name(default_charset, MYF(MY_WME)))
       exit(1);
   }
-  (*argc) -= optind;
-  (*argv) += optind;
   if (*argc > 0 && opt_alldbs)
   {
     printf("You should give only options, no arguments at all, with option\n");
@@ -406,20 +353,25 @@ static int process_selected_tables(char *db, char **table_names, int tables)
     return 1;
   if (opt_all_in_1)
   {
+    /* 
+      We need table list in form `a`, `b`, `c`
+      that's why we need 4 more chars added to to each table name
+      space is for more readable output in logs and in case of error
+    */	  
     char *table_names_comma_sep, *end;
     int i, tot_length = 0;
 
     for (i = 0; i < tables; i++)
-      tot_length += strlen(*(table_names + i)) + 1;
-    
+      tot_length += strlen(*(table_names + i)) + 4;
+
     if (!(table_names_comma_sep = (char *)
-	  my_malloc((sizeof(char) * tot_length) + 1, MYF(MY_WME))))
+	  my_malloc((sizeof(char) * tot_length) + 4, MYF(MY_WME))))
       return 1;
 
     for (end = table_names_comma_sep + 1; tables > 0;
 	 tables--, table_names++)
     {
-      end = strmov(end, *table_names);
+      end= fix_table_name(end, *table_names);
       *end++= ',';
     }
     *--end = 0;
@@ -433,6 +385,22 @@ static int process_selected_tables(char *db, char **table_names, int tables)
 } /* process_selected_tables */
 
 
+static char *fix_table_name(char *dest, char *src)
+{
+  char *db_sep;
+
+  *dest++= '`';
+  if ((db_sep= strchr(src, '.')))
+  {
+    dest= strmake(dest, src, (uint) (db_sep - src));
+    dest= strmov(dest, "`.`");
+    src= db_sep + 1;
+  }
+  dest= strxmov(dest, src, "`", NullS);
+  return dest;
+}
+
+
 static int process_all_tables_in_db(char *database)
 {
   MYSQL_RES *res;
@@ -444,24 +412,30 @@ static int process_all_tables_in_db(char *database)
   if (!(mysql_query(sock, "SHOW TABLES") ||
 	(res = mysql_store_result(sock))))
     return 1;
-  
+
   if (opt_all_in_1)
   {
+    /* 
+      We need table list in form `a`, `b`, `c`
+      that's why we need 4 more chars added to to each table name
+      space is for more readable output in logs and in case of error
+     */
+	  
     char *tables, *end;
     uint tot_length = 0;
 
     while ((row = mysql_fetch_row(res)))
-      tot_length += strlen(row[0]) + 1;
+      tot_length += strlen(row[0]) + 4;
     mysql_data_seek(res, 0);
-    
-    if (!(tables=(char *) my_malloc(sizeof(char)*tot_length+1, MYF(MY_WME))))
+
+    if (!(tables=(char *) my_malloc(sizeof(char)*tot_length+4, MYF(MY_WME))))
     {
       mysql_free_result(res);
       return 1;
     }
     for (end = tables + 1; (row = mysql_fetch_row(res)) ;)
     {
-      end = strmov(end, row[0]);
+      end= fix_table_name(end, row[0]);
       *end++= ',';
     }
     *--end = 0;
@@ -493,6 +467,7 @@ static int use_db(char *database)
 static int handle_request_for_tables(char *tables, uint length)
 {
   char *query, *end, options[100], message[100];
+  uint query_length= 0;
   const char *op = 0;
 
   options[0] = 0;
@@ -510,6 +485,7 @@ static int handle_request_for_tables(char *tables, uint length)
     op = "REPAIR";
     if (opt_quick)              end = strmov(end, " QUICK");
     if (opt_extended)           end = strmov(end, " EXTENDED");
+    if (opt_frm)                end = strmov(end, " USE_FRM");
     break;
   case DO_ANALYZE:
     op = "ANALYZE";
@@ -521,10 +497,24 @@ static int handle_request_for_tables(char *tables, uint length)
 
   if (!(query =(char *) my_malloc((sizeof(char)*(length+110)), MYF(MY_WME))))
     return 1;
-  sprintf(query, "%s TABLE %s %s", op, tables, options);
-  if (mysql_query(sock, query))
+  if (opt_all_in_1)
   {
-    sprintf(message, "when executing '%s TABLE ... %s", op, options);
+    /* No backticks here as we added them before */
+    query_length= my_sprintf(query,
+			     (query, "%s TABLE %s %s", op, tables, options));
+  }
+  else
+  {
+    char *ptr;
+
+    ptr= strmov(strmov(query, op), " TABLE ");
+    ptr= fix_table_name(ptr, tables);
+    ptr= strxmov(ptr, " ", options, NullS);
+    query_length= (uint) (ptr - query);
+  }
+  if (mysql_real_query(sock, query, query_length))
+  {
+    sprintf(message, "when executing '%s TABLE ... %s'", op, options);
     DBerror(sock, message);
     return 1;
   }
@@ -551,12 +541,9 @@ static void print_result()
 
     if (status)
     {
-      if (found_error)
-      {
-	if (what_to_do != DO_REPAIR && opt_auto_repair &&
-	    (!opt_fast || strcmp(row[3],"OK")))
-	  insert_dynamic(&tables4repair, row[0]);
-      }
+      if (found_error && opt_auto_repair && what_to_do != DO_REPAIR &&
+	  (!opt_fast || strcmp(row[3],"OK")))
+	insert_dynamic(&tables4repair, prev);
       found_error=0;
       if (opt_silent)
 	continue;
@@ -573,6 +560,9 @@ static void print_result()
     strmov(prev, row[0]);
     putchar('\n');
   }
+  if (found_error && opt_auto_repair && what_to_do != DO_REPAIR &&
+      (!opt_fast || strcmp(row[3],"OK")))
+    insert_dynamic(&tables4repair, prev);
   mysql_free_result(res);
 }
 
@@ -590,7 +580,7 @@ static int dbConnect(char *host, char *user, char *passwd)
 #ifdef HAVE_OPENSSL
   if (opt_use_ssl)
     mysql_ssl_set(&mysql_connection, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
-		  opt_ssl_capath);
+		  opt_ssl_capath, opt_ssl_cipher);
 #endif
   if (!(sock = mysql_real_connect(&mysql_connection, host, user, passwd,
          NULL, opt_mysql_port, opt_mysql_unix_port, 0)))
@@ -646,7 +636,7 @@ int main(int argc, char **argv)
   if (dbConnect(current_host, current_user, opt_password))
     exit(EX_MYSQLERR);
 
-  if (opt_auto_repair && 
+  if (opt_auto_repair &&
       my_init_dynamic_array(&tables4repair, sizeof(char)*(NAME_LEN*2+2),16,64))
   {
     first_error = 1;

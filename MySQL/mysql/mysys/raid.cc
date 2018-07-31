@@ -1,82 +1,81 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+/* Copyright (C) 2000 MySQL AB
 
-/* --------------------------------------------------------*
-*
-*  RAID support for MySQL. Raid 0 (stiping) only implemented yet.
-*
-*  Why RAID? Why it must be in MySQL?
-*
-*  This is because then you can:
-*  1. Have bigger tables than your OS limit. In time of writing this
-*     we are hitting to 2GB limit under linux/ext2
-*  2. You can get more speed from IO bottleneck by putting
-*     Raid dirs on different physical disks.
-*  3. Getting more fault tolerance (not implemented yet)
-*
-*  Why not to use RAID:
-*
-*  1. You are losing some processor power to calculate things,
-*     do more syscalls and interrupts.
-*
-*  Functionality is supplied by two classes: RaidFd and RaidName.
-*  RaidFd supports funtionality over file descriptors like
-*  open/create/write/seek/close. RaidName supports functionality
-*  like rename/delete where we have no relations to filedescriptors.
-*  RaidName can be prorably unchanged for different Raid levels. RaidFd
-*  have to be virtual I think ;).
-*  You can speed up some calls in MySQL code by skipping RAID code.
-*  For example LOAD DATA INFILE never needs to read RAID-ed files.
-*  This can be done adding proper "#undef my_read" or similar undef-s
-*  in your code. Check out the raid.h!
-*
-*  Some explanation about _seek_vector[]
-*  This is seek cache. RAID seeks too much and we cacheing this. We
-*  fool it and just storing new position in file to _seek_vector.
-*  When there is no seeks to do, we are putting RAID_SEEK_DONE into it.
-*  Any other value requires seeking to that position.
-*
-*  TODO:
-*
-*
-*  -  Implement other fancy things like RAID 1 (mirroring) and RAID 5.
-*     Should not to be very complex.
-*
-*  -  Optimize big blob writes by resorting write buffers and writing
-*     big chunks at once instead of doing many syscalls. - after thinking I
-*     found this is useless. This is because same thing one can do with just
-*     increasing RAID_CHUNKSIZE. Monty, what do you think? tonu.
-*
-*  -  If needed, then implement missing syscalls. One known to miss is stat();
-*
-*  -  Make and use a thread safe dynamic_array buffer. The used one
-*     will not work if needs to be extended at the same time someone is
-*     accessing it.
-*
-*
-*  tonu@mysql.com & monty@mysql.com
-* --------------------------------------------------------*/
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+
+/*
+ 
+   RAID support for MySQL. Raid 0 (stiping) only implemented yet.
+ 
+   Why RAID? Why it must be in MySQL?
+ 
+   This is because then you can:
+   1. Have bigger tables than your OS limit. In time of writing this
+      we are hitting to 2GB limit under linux/ext2
+   2. You can get more speed from IO bottleneck by putting
+      Raid dirs on different physical disks.
+   3. Getting more fault tolerance (not implemented yet)
+ 
+   Why not to use RAID:
+ 
+   1. You are losing some processor power to calculate things,
+      do more syscalls and interrupts.
+ 
+   Functionality is supplied by two classes: RaidFd and RaidName.
+   RaidFd supports funtionality over file descriptors like
+   open/create/write/seek/close. RaidName supports functionality
+   like rename/delete where we have no relations to filedescriptors.
+   RaidName can be prorably unchanged for different Raid levels. RaidFd
+   have to be virtual I think ;).
+   You can speed up some calls in MySQL code by skipping RAID code.
+   For example LOAD DATA INFILE never needs to read RAID-ed files.
+   This can be done adding proper "#undef my_read" or similar undef-s
+   in your code. Check out the raid.h!
+ 
+   Some explanation about _seek_vector[]
+   This is seek cache. RAID seeks too much and we cacheing this. We
+   fool it and just storing new position in file to _seek_vector.
+   When there is no seeks to do, we are putting RAID_SEEK_DONE into it.
+   Any other value requires seeking to that position.
+ 
+   TODO:
+ 
+ 
+   -  Implement other fancy things like RAID 1 (mirroring) and RAID 5.
+      Should not to be very complex.
+ 
+   -  Optimize big blob writes by resorting write buffers and writing
+      big chunks at once instead of doing many syscalls. - after thinking I
+      found this is useless. This is because same thing one can do with just
+      increasing RAID_CHUNKSIZE. Monty, what do you think? tonu.
+ 
+   -  If needed, then implement missing syscalls. One known to miss is stat();
+ 
+   -  Make and use a thread safe dynamic_array buffer. The used one
+      will not work if needs to be extended at the same time someone is
+      accessing it.
+ 
+ 
+   tonu@mysql.com & monty@mysql.com
+*/
 
 #ifdef __GNUC__
 #pragma implementation				// gcc: Class implementation
 #endif
 
 #include "mysys_priv.h"
-#include "my_dir.h"
+#include <my_dir.h>
 #include <m_string.h>
 #include <assert.h>
 
@@ -158,10 +157,10 @@ extern "C" {
     DBUG_PRINT("enter",("Fd: %d  pos: %lu whence: %d  MyFlags: %d",
 			fd, (ulong) pos, whence, MyFlags));
 
-    assert(pos != MY_FILEPOS_ERROR);
-
     if (is_raid(fd))
     {
+      assert(pos != MY_FILEPOS_ERROR);
+
       RaidFd *raid= (*dynamic_element(&RaidFd::_raid_map,fd,RaidFd**));
       DBUG_RETURN(raid->Seek(pos,whence,MyFlags));
     }
@@ -282,7 +281,7 @@ extern "C" {
       DBUG_RETURN(my_close(fd, MyFlags));
   }
 
-  int my_raid_chsize(File fd, my_off_t newlength, myf MyFlags)
+  int my_raid_chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
   {
     DBUG_ENTER("my_raid_chsize");
     DBUG_PRINT("enter",("Fd: %d  newlength: %u  MyFlags: %d",
@@ -290,10 +289,10 @@ extern "C" {
    if (is_raid(fd))
    {
      RaidFd *raid= (*dynamic_element(&RaidFd::_raid_map,fd,RaidFd**));
-     DBUG_RETURN(raid->Chsize(fd, newlength, MyFlags));
+     DBUG_RETURN(raid->Chsize(fd, newlength, filler, MyFlags));
    }
    else
-     DBUG_RETURN(my_chsize(fd, newlength, MyFlags));
+     DBUG_RETURN(my_chsize(fd, newlength, filler, MyFlags));
   }
 
   int my_raid_rename(const char *from, const char *to,
@@ -410,8 +409,8 @@ IsRaid(File fd)
 RaidFd::
 RaidFd(uint raid_type, uint raid_chunks, ulong raid_chunksize)
   :_raid_type(raid_type), _raid_chunks(raid_chunks),
-   _raid_chunksize(raid_chunksize), _position(0), _fd_vector(0),
-   _size(RAID_SIZE_UNKNOWN)
+   _raid_chunksize(raid_chunksize), _position(0), _size(RAID_SIZE_UNKNOWN),
+   _fd_vector(0)
 {
   DBUG_ENTER("RaidFd::RaidFd");
   DBUG_PRINT("enter",("RaidFd_type: %u  Disks: %u  Chunksize: %d",
@@ -739,7 +738,7 @@ Tell(myf MyFlags)
 }
 
 int RaidFd::
-Chsize(File fd, my_off_t newlength, myf MyFlags)
+Chsize(File fd, my_off_t newlength, int filler, myf MyFlags)
 {
   DBUG_ENTER("RaidFd::Chsize");
   DBUG_PRINT("enter",("Fd: %d, newlength: %d, MyFlags: %d",
@@ -753,17 +752,16 @@ Chsize(File fd, my_off_t newlength, myf MyFlags)
     if ( i < _this_block )
       newpos = my_chsize(_fd_vector[i],
 			 _this_block * _raid_chunksize + (_rounds + 1) *
-			 _raid_chunksize,
-			 MyFlags);
+			 _raid_chunksize, filler, MyFlags);
     else if ( i == _this_block )
       newpos = my_chsize(_fd_vector[i],
 			 _this_block * _raid_chunksize + _rounds *
 			 _raid_chunksize + (newlength % _raid_chunksize),
-			 MyFlags);
+			 filler, MyFlags);
     else // this means: i > _this_block
       newpos = my_chsize(_fd_vector[i],
 			 _this_block * _raid_chunksize + _rounds *
-			 _raid_chunksize, MyFlags);
+			 _raid_chunksize, filler, MyFlags);
     if (newpos)
       DBUG_RETURN(1);
   }

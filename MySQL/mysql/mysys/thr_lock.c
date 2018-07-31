@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
 Read and write locks for Posix threads. All tread must acquire
@@ -173,10 +172,13 @@ static int check_lock(struct st_lock_list *list, const char* lock_type,
   return 0;
 }
 
+
 static void check_locks(THR_LOCK *lock, const char *where,
 			my_bool allow_no_locks)
 {
   uint old_found_errors=found_errors;
+  DBUG_ENTER("check_locks");
+
   if (found_errors < MAX_FOUND_ERRORS)
   {
     if (check_lock(&lock->write,"write",where,1,1) |
@@ -253,18 +255,21 @@ static void check_locks(THR_LOCK *lock, const char *where,
 	}
 	if (lock->read.data)
 	{
-	  if ((!pthread_equal(lock->write.data->thread,
-			      lock->read.data->thread) &&
-	       lock->write.data->type > TL_WRITE_DELAYED &&
-	       lock->write.data->type != TL_WRITE_ONLY) ||
-	      ((lock->write.data->type == TL_WRITE_CONCURRENT_INSERT ||
-		lock->write.data->type == TL_WRITE_ALLOW_WRITE) &&
-	       lock->read_no_write_count))
+	  if (!pthread_equal(lock->write.data->thread,
+			     lock->read.data->thread) &&
+	      ((lock->write.data->type > TL_WRITE_DELAYED &&
+		lock->write.data->type != TL_WRITE_ONLY) ||
+	       ((lock->write.data->type == TL_WRITE_CONCURRENT_INSERT ||
+		 lock->write.data->type == TL_WRITE_ALLOW_WRITE) &&
+		lock->read_no_write_count)))
 	  {
 	    found_errors++;
 	    fprintf(stderr,
 		    "Warning at '%s': Found lock of type %d that is write and read locked\n",
 		    where, lock->write.data->type);
+	    DBUG_PRINT("warning",("At '%s': Found lock of type %d that is write and read locked\n",
+		    where, lock->write.data->type));
+
 	  }
 	}
 	if (lock->read_wait.data)
@@ -287,6 +292,7 @@ static void check_locks(THR_LOCK *lock, const char *where,
       DBUG_PRINT("error",("Found wrong lock"));
     }
   }
+  DBUG_VOID_RETURN;
 }
 
 #else /* EXTRA_DEBUG */
@@ -944,6 +950,54 @@ void thr_abort_locks(THR_LOCK *lock)
   pthread_mutex_unlock(&lock->mutex);
   DBUG_VOID_RETURN;
 }
+
+
+/*
+  Abort all locks for specific table/thread combination
+
+  This is used to abort all locks for a specific thread
+*/
+
+void thr_abort_locks_for_thread(THR_LOCK *lock, pthread_t thread)
+{
+  THR_LOCK_DATA *data;
+  DBUG_ENTER("thr_abort_locks_for_thread");
+
+  pthread_mutex_lock(&lock->mutex);
+  for (data= lock->read_wait.data; data ; data= data->next)
+  {
+    if (pthread_equal(thread, data->thread))
+    {
+      DBUG_PRINT("info",("Aborting read-wait lock"));
+      data->type= TL_UNLOCK;			/* Mark killed */
+      pthread_cond_signal(data->cond);
+      data->cond= 0;				/* Removed from list */
+
+      if (((*data->prev)= data->next))
+	data->next->prev= data->prev;
+      else
+	lock->read_wait.last= data->prev;
+    }
+  }
+  for (data= lock->write_wait.data; data ; data= data->next)
+  {
+    if (pthread_equal(thread, data->thread))
+    {
+      DBUG_PRINT("info",("Aborting write-wait lock"));
+      data->type= TL_UNLOCK;
+      pthread_cond_signal(data->cond);
+      data->cond= 0;
+
+      if (((*data->prev)= data->next))
+	data->next->prev= data->prev;
+      else
+	lock->write_wait.last= data->prev;
+    }
+  }
+  pthread_mutex_unlock(&lock->mutex);
+  DBUG_VOID_RETURN;
+}
+
 
 
 /* Upgrade a WRITE_DELAY lock to a WRITE_LOCK */

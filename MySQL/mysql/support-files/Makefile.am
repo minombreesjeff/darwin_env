@@ -25,7 +25,10 @@ EXTRA_DIST =		mysql.spec.sh \
 			mysql-log-rotate.sh \
 			mysql.server.sh \
 			binary-configure.sh \
-			magic
+			magic \
+			MySQL-shared-compat.spec.sh
+
+SUBDIRS = MacOSX
 
 pkgdata_DATA =		my-small.cnf \
 			my-medium.cnf \
@@ -33,7 +36,8 @@ pkgdata_DATA =		my-small.cnf \
 			my-huge.cnf \
 			mysql-log-rotate \
 			mysql-@VERSION@.spec \
-			binary-configure
+			binary-configure \
+			MySQL-shared-compat.spec
 
 pkgdata_SCRIPTS =	mysql.server
 
@@ -45,7 +49,8 @@ CLEANFILES =		my-small.cnf \
 			mysql-@VERSION@.spec \
 			mysql-log-rotate \
 			mysql.server \
-			binary-configure
+			binary-configure \
+			MySQL-shared-compat.spec
 			 
 
 mysql-@VERSION@.spec:	mysql.spec

@@ -39,7 +39,7 @@ select * from t1;
 update ignore t1 set id=id+1; # This will change all rows
 select * from t1;
 update ignore t1 set id=1023 where id=1010;
-select * from t1 where parent_id=102;
+select * from t1 where parent_id=102 order by parent_id,id;
 explain select level from t1 where level=1;
 explain select level,id from t1 where level=1;
 explain select level,id,parent_id from t1 where level=1;
@@ -767,3 +767,19 @@ select INFO_NOTE from t1 where STR_DATE = '20010610';
 select INFO_NOTE from t1 where STR_DATE < '20010610';
 select INFO_NOTE from t1 where STR_DATE > '20010610';
 drop table t1;
+
+#
+# Test problem with multi table delete which quickly shows up with bdb tables.
+#
+
+create table t1 (a int not null, b int, primary key (a)) type =bdb;
+create table t2 (a int not null, b int, primary key (a)) type =bdb;
+insert into t1 values (2, 3),(1, 7),(10, 7);
+insert into t2 values (2, 3),(1, 7),(10, 7);
+select * from t1;
+select * from t2;
+delete t1, t2 from t1, t2 where t1.a = t2.a;
+select * from t1;
+select * from t2;
+select * from t2;
+drop table t1,t2;

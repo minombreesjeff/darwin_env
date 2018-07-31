@@ -14,6 +14,7 @@ Created 10/4/1994 Heikki Tuuri
 #include "rem0cmp.h"
 #include "mtr0log.h"
 #include "log0recv.h"
+#include "rem0cmp.h"
 
 ulint	page_cur_short_succ	= 0;
 
@@ -121,6 +122,53 @@ page_cur_try_search_shortcut(
 #endif
 
 /********************************************************************
+Checks if the nth field in a record is a character type field which extends
+the nth field in tuple, i.e., the field is longer or equal in length and has
+common first characters. */
+static
+ibool
+page_cur_rec_field_extends(
+/*=======================*/
+			   /* out: TRUE if rec field extends tuple
+			   field */
+	dtuple_t* tuple,   /* in: data tuple */
+	rec_t*    rec,     /* in: record */
+        ulint     n)       /* in: compare nth field */
+{
+        dtype_t* type;
+        dfield_t* dfield;
+        byte*     rec_f;
+        ulint     rec_f_len;
+
+        dfield = dtuple_get_nth_field(tuple, n);
+
+        type = dfield_get_type(dfield);
+
+        rec_f = rec_get_nth_field(rec, n, &rec_f_len);
+
+        if (type->mtype == DATA_VARCHAR
+           || type->mtype == DATA_CHAR
+           || type->mtype == DATA_FIXBINARY
+           || type->mtype == DATA_BINARY
+           || type->mtype == DATA_BLOB
+           || type->mtype == DATA_VARMYSQL
+           || type->mtype == DATA_MYSQL) {
+
+                if (dfield_get_len(dfield) != UNIV_SQL_NULL
+                    && rec_f_len != UNIV_SQL_NULL
+                    && rec_f_len >= dfield_get_len(dfield)
+                    && 0 == cmp_data_data_slow(type, dfield_get_data(dfield),
+                                      dfield_get_len(dfield),
+       				       rec_f, dfield_get_len(dfield))) {
+
+	                return(TRUE);
+		}
+	}
+
+        return(FALSE);
+}
+
+/********************************************************************
 Searches the right position for a page cursor. */
 
 void
@@ -169,8 +217,10 @@ page_cur_search_with_match(
 	ut_ad(dtuple_check_typed(tuple));
 	ut_ad((mode == PAGE_CUR_L) || (mode == PAGE_CUR_LE)
 	      || (mode == PAGE_CUR_G) || (mode == PAGE_CUR_GE)
-	      || (mode == PAGE_CUR_DBG));
+	      || (mode == PAGE_CUR_LE_OR_EXTENDS) || (mode == PAGE_CUR_DBG));
 	      
+	page_check_dir(page);
+
 #ifdef PAGE_CUR_ADAPT
 	if ((page_header_get_field(page, PAGE_LEVEL) == 0)
 	    && (mode == PAGE_CUR_LE)
@@ -193,6 +243,11 @@ page_cur_search_with_match(
 	}
 /*#endif */
 #endif	
+
+	/* The following flag does not work for non-latin1 char sets because
+	cmp_full_field does not tell how many bytes matched */
+	ut_a(mode != PAGE_CUR_LE_OR_EXTENDS); 
+
 	/* If mode PAGE_CUR_G is specified, we are trying to position the
 	cursor to answer a query of the form "tuple < X", where tuple is
 	the input parameter, and X denotes an arbitrary physical record on
@@ -232,11 +287,21 @@ page_cur_search_with_match(
 			low_matched_bytes = cur_matched_bytes;
 
 		} else if (cmp == -1) {
-			up = mid;
-			up_matched_fields = cur_matched_fields;
-			up_matched_bytes = cur_matched_bytes; 
 
-		} else if ((mode == PAGE_CUR_G) || (mode == PAGE_CUR_LE)) {
+			if (mode == PAGE_CUR_LE_OR_EXTENDS
+			    && page_cur_rec_field_extends(tuple, mid_rec,
+						     cur_matched_fields)) {
+				low = mid;
+				low_matched_fields = cur_matched_fields;
+				low_matched_bytes = cur_matched_bytes;
+			} else {
+				up = mid;
+				up_matched_fields = cur_matched_fields;
+				up_matched_bytes = cur_matched_bytes;
+			}
+
+		} else if (mode == PAGE_CUR_G || mode == PAGE_CUR_LE
+			   || mode == PAGE_CUR_LE_OR_EXTENDS) {
 			low = mid;
 			low_matched_fields = cur_matched_fields;
 			low_matched_bytes = cur_matched_bytes;
@@ -252,8 +317,8 @@ page_cur_search_with_match(
 	slot = page_dir_get_nth_slot(page, up);
 	up_rec = page_dir_slot_get_rec(slot);
 
-	/* Perform linear search until the upper and lower records
-	come to distance 1 of each other. */
+	/* Perform linear search until the upper and lower records come to
+	distance 1 of each other. */
 
    	while (page_rec_get_next(low_rec) != up_rec) {
 
@@ -272,11 +337,19 @@ page_cur_search_with_match(
 			low_matched_bytes = cur_matched_bytes;
 
 		} else if (cmp == -1) {
-			up_rec = mid_rec;
-			up_matched_fields = cur_matched_fields;
-			up_matched_bytes = cur_matched_bytes; 
-
-		} else if ((mode == PAGE_CUR_G) || (mode == PAGE_CUR_LE)) {
+			if (mode == PAGE_CUR_LE_OR_EXTENDS
+			    && page_cur_rec_field_extends(tuple, mid_rec,
+						     cur_matched_fields)) {
+				low_rec = mid_rec;
+				low_matched_fields = cur_matched_fields;
+				low_matched_bytes = cur_matched_bytes;
+			} else {
+				up_rec = mid_rec;
+				up_matched_fields = cur_matched_fields;
+				up_matched_bytes = cur_matched_bytes;
+			}
+		} else if (mode == PAGE_CUR_G || mode == PAGE_CUR_LE
+			   || mode == PAGE_CUR_LE_OR_EXTENDS) {
 			low_rec = mid_rec;
 			low_matched_fields = cur_matched_fields;
 			low_matched_bytes = cur_matched_bytes;
@@ -518,14 +591,15 @@ page_cur_parse_insert_rec(
 	mtr_t*	mtr)	/* in: mtr or NULL */
 {
 	ulint	extra_info_yes;
-	ulint	offset;
+	ulint	offset = 0; /* remove warning */
 	ulint	origin_offset;
 	ulint	end_seg_len;
 	ulint	mismatch_index;
 	rec_t*	cursor_rec;
 	byte	buf1[1024];
 	byte*	buf;
-	ulint	info_bits;
+	byte*   ptr2 = ptr;
+	ulint	info_bits = 0; /* remove warning */
 	page_cur_t cursor;
 
 	if (!is_short) {
@@ -627,7 +701,20 @@ page_cur_parse_insert_rec(
 
 	/* Build the inserted record to buf */
 	
-	ut_a(mismatch_index < UNIV_PAGE_SIZE);
+        if (mismatch_index >= UNIV_PAGE_SIZE) {
+               printf("Is short %lu, info_bits %lu, offset %lu, o_offset %lu\n"
+                    "mismatch index %lu, end_seg_len %lu\n"
+                    "parsed len %lu\n",
+                    is_short, info_bits, offset, origin_offset,
+                    mismatch_index, end_seg_len, (ulint)(ptr - ptr2));
+
+	       printf("Dump of 300 bytes of log:\n");
+	       ut_print_buf(ptr2, 300);
+
+	       buf_page_print(page);
+
+	       ut_a(0);
+	}
 
 	ut_memcpy(buf, rec_get_start(cursor_rec), mismatch_index);
 	ut_memcpy(buf + mismatch_index, ptr, end_seg_len);
@@ -862,9 +949,9 @@ page_copy_rec_list_end_to_created_page(
 	rec_t*	rec,		/* in: first record to copy */
 	mtr_t*	mtr)		/* in: mtr */
 {
-	page_dir_slot_t* slot;
+	page_dir_slot_t* slot = 0; /* remove warning */
 	byte*	heap_top;
-	rec_t*	insert_rec;
+	rec_t*	insert_rec = 0; /* remove warning */
 	rec_t*	prev_rec;
 	ulint	count;
 	ulint	n_recs;
@@ -909,6 +996,7 @@ page_copy_rec_list_end_to_created_page(
 	slot_index = 0;
 	n_recs = 0;
 
+	/* should be do ... until, comment by Jani */
 	while (rec != page_get_supremum_rec(page)) {
 		
 		insert_rec = rec_copy(heap_top, rec);

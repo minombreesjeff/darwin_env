@@ -92,6 +92,12 @@ if ($opt_fast && defined($server->{vacuum}))
 print "Inserting $opt_loop_count rows\n";
 
 $loop_time=new Benchmark;
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->{AutoCommit} = 0;
+}
+
 $query="insert into bench1 values (";
 $half_done=$opt_loop_count/2;
 for ($id=0,$rev_id=$opt_loop_count-1 ; $id < $opt_loop_count ; $id++,$rev_id--)
@@ -103,6 +109,12 @@ for ($id=0,$rev_id=$opt_loop_count-1 ; $id < $opt_loop_count ; $id++,$rev_id--)
   {				# Test with different insert
     $query="insert into bench1 (region,idn,rev_idn,grp) values (";
   }
+}
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->commit;
+  $dbh->{AutoCommit} = 1;
 }
 
 $end_time=new Benchmark;
@@ -141,10 +153,10 @@ if ($limits->{'group_functions'})
   $loop_time=new Benchmark;
   for ($tests=0 ; $tests < $opt_loop_count ; $tests++)
   {
-    fetch_all_rows($dbh,"select sum(idn+$tests),sum(rev_idn-$tests) from bench1");
+    fetch_all_rows($dbh,"select sum(idn+100),sum(rev_idn-100) from bench1");
   }
   $end_time=new Benchmark;
-  print "Time for select_query_cache ($opt_loop_count): " .
+  print "Time for select_cache ($opt_loop_count): " .
      timestr(timediff($end_time, $loop_time),"all") . "\n\n";
 
   # If the database has a query cache, the following loop should be much
@@ -156,7 +168,7 @@ if ($limits->{'group_functions'})
     fetch_all_rows($dbh,"select sum(idn+$tests),sum(rev_idn-$tests) from bench1");
   }
   $end_time=new Benchmark;
-  print "Time for select_query_cache2 ($opt_loop_count): " .
+  print "Time for select_cache2 ($opt_loop_count): " .
      timestr(timediff($end_time, $loop_time),"all") . "\n\n";
 }
 
@@ -343,19 +355,22 @@ if ($limits->{'group_distinct_functions'})
   print " for count_distinct ($count:$rows): " .
     timestr(timediff($end_time, $loop_time),"all") . "\n";
 
-  $loop_time=new Benchmark;
-  $rows=$estimated=$count=0;
-  for ($i=0 ; $i < $opt_medium_loop_count ; $i++)
-  {
-    $count++;
-    $rows+=fetch_all_rows($dbh,"select count(distinct grp),count(distinct rev_idn) from bench1");
-    $end_time=new Benchmark;
-    last if ($estimated=predict_query_time($loop_time,$end_time,\$count,$i+1,
+#  Workaround mimer's behavior
+  if (limits->{'multi_distinct'} == 1 ) {
+    $loop_time=new Benchmark;
+    $rows=$estimated=$count=0;
+    for ($i=0 ; $i < $opt_medium_loop_count ; $i++)
+    {
+      $count++;
+      $rows+=fetch_all_rows($dbh,"select count(distinct grp),count(distinct rev_idn) from bench1");
+      $end_time=new Benchmark;
+      last if ($estimated=predict_query_time($loop_time,$end_time,\$count,$i+1,
 					   $opt_medium_loop_count));
-  }
-  print_time($estimated);
-  print " for count_distinct_2 ($count:$rows): " .
-    timestr(timediff($end_time, $loop_time),"all") . "\n";
+    } 
+    print_time($estimated);
+    print " for count_distinct_2 ($count:$rows): " .
+      timestr(timediff($end_time, $loop_time),"all") . "\n";
+  }    
 
   $loop_time=new Benchmark;
   $rows=$estimated=$count=0;

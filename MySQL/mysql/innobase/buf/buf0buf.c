@@ -209,12 +209,12 @@ ibool		buf_debug_prints = FALSE; /* If this is set TRUE,
 
 /************************************************************************
 Calculates a page checksum which is stored to the page when it is written
-to a file. Note that we must be careful to calculate the same value
-on 32-bit and 64-bit architectures. */
+to a file. Note that we must be careful to calculate the same value on
+32-bit and 64-bit architectures. */
 
 ulint
-buf_calc_page_checksum(
-/*===================*/
+buf_calc_page_new_checksum(
+/*=======================*/
 		       /* out: checksum */
 	byte*    page) /* in: buffer page */
 {
@@ -222,12 +222,39 @@ buf_calc_page_checksum(
 
 	/* Since the fields FIL_PAGE_FILE_FLUSH_LSN and ..._ARCH_LOG_NO
 	are written outside the buffer pool to the first pages of data
-	files, we have to skip them in page checksum calculation */
+	files, we have to skip them in the page checksum calculation.
+	We must also skip the field FIL_PAGE_SPACE_OR_CHKSUM where the
+	checksum is stored, and also the last 8 bytes of page because
+	there we store the old formula checksum. */
+  	
+  	checksum = ut_fold_binary(page + FIL_PAGE_OFFSET,
+				 FIL_PAGE_FILE_FLUSH_LSN - FIL_PAGE_OFFSET)
+  		   + ut_fold_binary(page + FIL_PAGE_DATA, 
+				           UNIV_PAGE_SIZE - FIL_PAGE_DATA
+				           - FIL_PAGE_END_LSN_OLD_CHKSUM);
+  	checksum = checksum & 0xFFFFFFFF;
+
+  	return(checksum);
+}
+
+/************************************************************************
+In versions < 4.0.14 and < 4.1.1 there was a bug that the checksum only
+looked at the first few bytes of the page. This calculates that old
+checksum. 
+NOTE: we must first store the new formula checksum to
+FIL_PAGE_SPACE_OR_CHKSUM before calculating and storing this old checksum
+because this takes that field as an input! */
+
+ulint
+buf_calc_page_old_checksum(
+/*=======================*/
+		       /* out: checksum */
+	byte*    page) /* in: buffer page */
+{
+  	ulint checksum;
   	
   	checksum = ut_fold_binary(page, FIL_PAGE_FILE_FLUSH_LSN);
-  		+ ut_fold_binary(page + FIL_PAGE_DATA,
-				UNIV_PAGE_SIZE - FIL_PAGE_DATA
-				- FIL_PAGE_END_LSN);
+
   	checksum = checksum & 0xFFFFFFFF;
 
   	return(checksum);
@@ -243,25 +270,45 @@ buf_page_is_corrupted(
 	byte*	read_buf)	/* in: a database page */
 {
 	ulint	checksum;
+	ulint	old_checksum;
+	ulint	checksum_field;
+	ulint	old_checksum_field;
 
-	checksum = buf_calc_page_checksum(read_buf);
+	if (mach_read_from_4(read_buf + FIL_PAGE_LSN + 4)
+	     != mach_read_from_4(read_buf + UNIV_PAGE_SIZE
+				- FIL_PAGE_END_LSN_OLD_CHKSUM + 4)) {
 
-	/* Note that InnoDB initializes empty pages to zero, and
-	early versions of InnoDB did not store page checksum to
-	the 4 most significant bytes of the page lsn field at the
-	end of a page: */
-	
-	if ((mach_read_from_4(read_buf + FIL_PAGE_LSN + 4)
-		    		!= mach_read_from_4(read_buf + UNIV_PAGE_SIZE
-					- FIL_PAGE_END_LSN + 4))
-		|| (checksum != mach_read_from_4(read_buf
-                                        + UNIV_PAGE_SIZE
-					- FIL_PAGE_END_LSN)
-		    && mach_read_from_4(read_buf + FIL_PAGE_LSN)
-			    	!= mach_read_from_4(read_buf
-                                        + UNIV_PAGE_SIZE
-						- FIL_PAGE_END_LSN))) {
+		/* Stored log sequence numbers at the start and the end
+		of page do not match */
+
 		return(TRUE);
+	}
+
+	old_checksum = buf_calc_page_old_checksum(read_buf);
+
+	old_checksum_field = mach_read_from_4(read_buf + UNIV_PAGE_SIZE
+					- FIL_PAGE_END_LSN_OLD_CHKSUM);
+
+	/* There are 2 valid formulas for old_checksum_field:
+	1. Very old versions of InnoDB only stored 8 byte lsn to the start
+	and the end of the page.
+	2. Newer InnoDB versions store the old formula checksum there. */
+	
+	if (old_checksum_field != mach_read_from_4(read_buf + FIL_PAGE_LSN)
+	    && old_checksum_field != old_checksum) {
+
+		return(TRUE);
+	}
+
+	checksum = buf_calc_page_new_checksum(read_buf);
+	checksum_field = mach_read_from_4(read_buf + FIL_PAGE_SPACE_OR_CHKSUM);
+
+	/* InnoDB versions < 4.0.14 and < 4.1.1 stored the space id
+	(always equal to 0), to FIL_PAGE_SPACE_SPACE_OR_CHKSUM */
+
+	if (checksum_field != 0 && checksum_field != checksum) {
+
+	        return(TRUE);
 	}
 
 	return(FALSE);
@@ -277,6 +324,7 @@ buf_page_print(
 {
 	dict_index_t*	index;
 	ulint		checksum;
+	ulint		old_checksum;
 	char*		buf;
 	
 	buf = mem_alloc(4 * UNIV_PAGE_SIZE);
@@ -291,19 +339,23 @@ buf_page_print(
 
 	mem_free(buf);
 
-	checksum = buf_calc_page_checksum(read_buf);
+	checksum = buf_calc_page_new_checksum(read_buf);
+	old_checksum = buf_calc_page_old_checksum(read_buf);
 
 	ut_print_timestamp(stderr);
-	fprintf(stderr, "  InnoDB: Page checksum %lu stored checksum %lu\n",
-			checksum, mach_read_from_4(read_buf
-                                        + UNIV_PAGE_SIZE
-					- FIL_PAGE_END_LSN)); 
+	fprintf(stderr, 
+"  InnoDB: Page checksum %lu, prior-to-4.0.14-form checksum %lu\n"
+"InnoDB: stored checksum %lu, prior-to-4.0.14-form stored checksum %lu\n",
+			checksum, old_checksum,
+			mach_read_from_4(read_buf + FIL_PAGE_SPACE_OR_CHKSUM),
+			mach_read_from_4(read_buf + UNIV_PAGE_SIZE
+					- FIL_PAGE_END_LSN_OLD_CHKSUM));
 	fprintf(stderr,
 	"InnoDB: Page lsn %lu %lu, low 4 bytes of lsn at page end %lu\n",
 		mach_read_from_4(read_buf + FIL_PAGE_LSN),
 		mach_read_from_4(read_buf + FIL_PAGE_LSN + 4),
 		mach_read_from_4(read_buf + UNIV_PAGE_SIZE
-					- FIL_PAGE_END_LSN + 4));
+					- FIL_PAGE_END_LSN_OLD_CHKSUM + 4));
 	if (mach_read_from_2(read_buf + TRX_UNDO_PAGE_HDR + TRX_UNDO_PAGE_TYPE)
 	    == TRX_UNDO_INSERT) {
 	    	fprintf(stderr,
@@ -324,13 +376,26 @@ buf_page_print(
 			ut_dulint_get_high(btr_page_get_index_id(read_buf)),
 			ut_dulint_get_low(btr_page_get_index_id(read_buf)));
 
-		index = dict_index_find_on_id_low(
+		/* If the code is in ibbackup, dict_sys may be uninitialized,
+		i.e., NULL */
+
+		if (dict_sys != NULL) {
+
+		        index = dict_index_find_on_id_low(
 					btr_page_get_index_id(read_buf));
-		if (index) {
-			fprintf(stderr, "InnoDB: and table %s index %s\n",
+		        if (index) {
+			        fprintf(stderr,
+					"InnoDB: and table %s index %s\n",
 						index->table_name,
 						index->name);
+			}
 		}
+	  
+	} else if (fil_page_get_type(read_buf) == FIL_PAGE_INODE) {
+		fprintf(stderr, "InnoDB: Page may be an 'inode' page\n");
+	} else if (fil_page_get_type(read_buf) == FIL_PAGE_IBUF_FREE_LIST) {
+		fprintf(stderr,
+		"InnoDB: Page may be an insert buffer free list page\n");
 	}
 }
 
@@ -350,6 +415,8 @@ buf_block_init(
 	block->modify_clock = ut_dulint_zero;
 	
 	block->file_page_was_freed = FALSE;
+
+	block->check_index_page_at_flush = FALSE;
 
 	rw_lock_create(&(block->lock));
 	ut_ad(rw_lock_validate(&(block->lock)));
@@ -464,9 +531,6 @@ buf_pool_create(
 	for (i = 0; i < curr_size; i++) {
 
 		block = buf_pool_get_nth_block(buf_pool, i);
-
-		/* Wipe contents of page to eliminate a Purify warning */
-		memset(block->frame, '\0', UNIV_PAGE_SIZE);
 
 		UT_LIST_ADD_FIRST(free, buf_pool->free, block);
 	}
@@ -614,6 +678,29 @@ buf_page_peek_block(
 	mutex_exit(&(buf_pool->mutex));
 
 	return(block);
+}
+
+/************************************************************************
+Resets the check_index_page_at_flush field of a page if found in the buffer
+pool. */
+
+void
+buf_reset_check_index_page_at_flush(
+/*================================*/
+	ulint	space,	/* in: space id */
+	ulint	offset)	/* in: page number */
+{
+	buf_block_t*	block;
+
+	mutex_enter_fast(&(buf_pool->mutex));
+
+	block = buf_page_hash_get(space, offset);
+
+	if (block) {
+		block->check_index_page_at_flush = FALSE;
+	}
+	
+	mutex_exit(&(buf_pool->mutex));
 }
 
 /************************************************************************
@@ -1185,6 +1272,8 @@ buf_page_init(
 	block->space 		= space;
 	block->offset 		= offset;
 
+	block->check_index_page_at_flush = FALSE;
+	
 	block->lock_hash_val	= lock_rec_hash(space, offset);
 	block->lock_mutex	= NULL;
 	
@@ -1325,11 +1414,6 @@ buf_page_create(
 	ut_ad(mtr);
 
 	free_block = buf_LRU_get_free_block();
-
-	/* Delete possible entries for the page from the insert buffer:
-	such can exist if the page belonged to an index which was dropped */
-
-	ibuf_merge_or_delete_for_page(NULL, space, offset);	
 	
 	mutex_enter(&(buf_pool->mutex));
 
@@ -1377,6 +1461,11 @@ buf_page_create(
 	buf_pool->n_pages_created++;
 
 	mutex_exit(&(buf_pool->mutex));
+
+	/* Delete possible entries for the page from the insert buffer:
+	such can exist if the page belonged to an index which was dropped */
+
+	ibuf_merge_or_delete_for_page(NULL, space, offset);	
 
 	/* Flush pages from the end of the LRU list if necessary */
 	buf_flush_free_margin();
@@ -1576,7 +1665,7 @@ buf_pool_invalidate(void)
 	freed = TRUE;
 
 	while (freed) {
-		freed = buf_LRU_search_and_free_block(0);
+		freed = buf_LRU_search_and_free_block(100);
 	}
 	
 	mutex_enter(&(buf_pool->mutex));
@@ -1796,6 +1885,29 @@ buf_get_n_pending_ios(void)
 }
 
 /*************************************************************************
+Returns the ratio in percents of modified pages in the buffer pool /
+database pages in the buffer pool. */
+
+ulint
+buf_get_modified_ratio_pct(void)
+/*============================*/
+{
+	ulint	ratio;
+
+	mutex_enter(&(buf_pool->mutex));
+
+	ratio = (100 * UT_LIST_GET_LEN(buf_pool->flush_list))
+		     / (1 + UT_LIST_GET_LEN(buf_pool->LRU)
+		        + UT_LIST_GET_LEN(buf_pool->free));
+
+		       /* 1 + is there to avoid division by zero */   
+
+	mutex_exit(&(buf_pool->mutex));
+
+	return(ratio);
+}
+
+/*************************************************************************
 Prints info of the buffer i/o. */
 
 void
@@ -1839,8 +1951,10 @@ buf_print_io(
 
 	buf += sprintf(buf,
 		"Pending writes: LRU %lu, flush list %lu, single page %lu\n",
-		buf_pool->n_flush[BUF_FLUSH_LRU],
-		buf_pool->n_flush[BUF_FLUSH_LIST],
+		buf_pool->n_flush[BUF_FLUSH_LRU]
+				+ buf_pool->init_flush[BUF_FLUSH_LRU],
+		buf_pool->n_flush[BUF_FLUSH_LIST]
+				+ buf_pool->init_flush[BUF_FLUSH_LIST],
 		buf_pool->n_flush[BUF_FLUSH_SINGLE_PAGE]);
 
 	current_time = time(NULL);
@@ -1867,7 +1981,7 @@ buf_print_io(
 		/ (buf_pool->n_page_gets - buf_pool->n_page_gets_old)));
 	} else {
 		buf += sprintf(buf,
-			"No buffer pool activity since the last printout\n");
+			"No buffer pool page gets since the last printout\n");
 	}
 
 	buf_pool->n_page_gets_old = buf_pool->n_page_gets;

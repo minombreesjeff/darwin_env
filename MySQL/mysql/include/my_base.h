@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* This file includes constants used with all databases */
 /* Author: Michael Widenius */
@@ -24,7 +23,7 @@
 #ifndef stdin				/* Included first in handler */
 #define USES_TYPES			/* my_dir with sys/types is included */
 #define CHSIZE_USED
-#include <global.h>
+#include <my_global.h>
 #include <my_dir.h>			/* This includes types */
 #include <my_sys.h>
 #include <m_string.h>
@@ -50,6 +49,21 @@
 
 	/* The following is parameter to ha_rkey() how to use key */
 
+/* We define a complete-field prefix of a key value as a prefix where the
+last included field in the prefix contains the full field, not just some bytes
+from the start of the field. A partial-field prefix is allowed to
+contain only a few first bytes from the last included field.
+
+Below HA_READ_KEY_EXACT, ..., HA_READ_BEFORE_KEY can take a
+complete-field prefix of a key value as the search key. HA_READ_PREFIX
+and HA_READ_PREFIX_LAST could also take a partial-field prefix, but
+currently (4.0.10) they are only used with complete-field prefixes. MySQL uses
+a padding trick to implement LIKE 'abc%' queries.
+
+NOTE that in InnoDB HA_READ_PREFIX_LAST will NOT work with a partial-field
+prefix because InnoDB currently strips spaces from the end of varchar
+fields! */
+
 enum ha_rkey_function {
   HA_READ_KEY_EXACT,			/* Find first record else error */
   HA_READ_KEY_OR_NEXT,			/* Record or next record */
@@ -57,7 +71,22 @@ enum ha_rkey_function {
   HA_READ_AFTER_KEY,			/* Find next rec. after key-record */
   HA_READ_BEFORE_KEY,			/* Find next rec. before key-record */
   HA_READ_PREFIX,			/* Key which as same prefix */
-  HA_READ_PREFIX_LAST			/* Last key with the same prefix */			
+  HA_READ_PREFIX_LAST,			/* Last key with the same prefix */
+  HA_READ_MBR_CONTAIN,
+  HA_READ_MBR_INTERSECT,
+  HA_READ_MBR_WITHIN,
+  HA_READ_MBR_DISJOINT,
+  HA_READ_MBR_EQUAL
+};
+
+	/* Key algorithm types */
+
+enum ha_key_alg {			
+  HA_KEY_ALG_UNDEF=	0,		/* Not specified (old file) */
+  HA_KEY_ALG_BTREE=	1,		/* B-tree, default one          */
+  HA_KEY_ALG_RTREE=	2,		/* R-tree, for spatial searches */
+  HA_KEY_ALG_HASH=	3,		/* HASH keys (HEAP tables) */
+  HA_KEY_ALG_FULLTEXT=	4		/* FULLTEXT (MyISAM tables) */
 };
 
 	/* The following is parameter to ha_extra() */
@@ -91,7 +120,9 @@ enum ha_extra_function {
   HA_EXTRA_RESET_STATE,			/* Reset positions */
   HA_EXTRA_IGNORE_DUP_KEY,		/* Dup keys don't rollback everything*/
   HA_EXTRA_NO_IGNORE_DUP_KEY,
-  HA_EXTRA_DONT_USE_CURSOR_TO_UPDATE	/* Cursor will not be used for update */
+  HA_EXTRA_DONT_USE_CURSOR_TO_UPDATE,	/* Cursor will not be used for update */
+  HA_EXTRA_PREPARE_FOR_DELETE,
+  HA_EXTRA_PREPARE_FOR_UPDATE		/* Remove read cache if problems */
 };
 
 	/* The following is parameter to ha_panic() */
@@ -134,7 +165,9 @@ enum ha_base_keytype {
 #define HA_BINARY_PACK_KEY	 32	/* Packing of all keys to prev key */
 #define HA_FULLTEXT		128     /* SerG: for full-text search */
 #define HA_UNIQUE_CHECK		256	/* Check the key for uniqueness */
+#define HA_SPATIAL		1024    /* Alex Barkov: for spatial search */
 #define HA_NULL_ARE_EQUAL	2048	/* NULL in key are cmp as equal */
+
 
 	/* Automatic bits in key-flag */
 
@@ -157,6 +190,7 @@ enum ha_base_keytype {
 #define HA_BLOB_PART		 32
 #define HA_SWAP_KEY		 64
 #define HA_REVERSE_SORT		 128	/* Sort key in reverse order */
+#define HA_NO_SORT               256 /* do not bother sorting on this keyseg */
 
 	/* optionbits for database */
 #define HA_OPTION_PACK_RECORD		1
@@ -190,6 +224,7 @@ enum ha_base_keytype {
 
 	/* Errorcodes given by functions */
 
+/* opt_sum_query() assumes these codes are > 1 */
 #define HA_ERR_KEY_NOT_FOUND	120	/* Didn't find key on read or update */
 #define HA_ERR_FOUND_DUPP_KEY	121	/* Dupplicate key on write */
 #define HA_ERR_RECORD_CHANGED	123	/* Uppdate with is recoverable */
@@ -197,6 +232,7 @@ enum ha_base_keytype {
 #define HA_ERR_CRASHED		126	/* Indexfile is crashed */
 #define HA_ERR_WRONG_IN_RECORD	127	/* Record-file is crashed */
 #define HA_ERR_OUT_OF_MEM	128	/* Record-file is crashed */
+#define HA_ERR_NOT_A_TABLE      130     /* not a MYI file - no signature */
 #define HA_ERR_WRONG_COMMAND	131	/* Command not supported */
 #define HA_ERR_OLD_FILE		132	/* old databasfile */
 #define HA_ERR_NO_ACTIVE_RECORD 133	/* No record read in update() */
@@ -209,20 +245,22 @@ enum ha_base_keytype {
 #define HA_WRONG_CREATE_OPTION	140	/* Wrong create option */
 #define HA_ERR_FOUND_DUPP_UNIQUE 141	/* Dupplicate unique on write */
 #define HA_ERR_UNKNOWN_CHARSET	 142	/* Can't open charset */
-#define HA_ERR_WRONG_TABLE_DEF	 143
+#define HA_ERR_WRONG_MRG_TABLE_DEF 143    /* conflicting MyISAM tables in MERGE */
 #define HA_ERR_CRASHED_ON_REPAIR 144	/* Last (automatic?) repair failed */
 #define HA_ERR_CRASHED_ON_USAGE  145	/* Table must be repaired */
-#define HA_ERR_LOCK_WAIT_TIMEOUT 146    
+#define HA_ERR_LOCK_WAIT_TIMEOUT 146
 #define HA_ERR_LOCK_TABLE_FULL   147
 #define HA_ERR_READ_ONLY_TRANSACTION 148 /* Updates not allowed */
 #define HA_ERR_LOCK_DEADLOCK	 149
 #define HA_ERR_CANNOT_ADD_FOREIGN 150    /* Cannot add a foreign key constr. */
 #define HA_ERR_NO_REFERENCED_ROW 151     /* Cannot add a child row */
 #define HA_ERR_ROW_IS_REFERENCED 152     /* Cannot delete a parent row */
+#define HA_ERR_NO_SAVEPOINT	 153     /* No savepoint with that name */
 
 	/* Other constants */
 
 #define HA_NAMELEN 64			/* Max length of saved filename */
+#define NO_SUCH_KEY ((uint)~0)          /* used as a key no. */
 
 	/* Intern constants in databases */
 
@@ -236,7 +274,14 @@ enum ha_base_keytype {
 #define SEARCH_UPDATE	64
 #define SEARCH_PREFIX	128
 #define SEARCH_LAST	256
+#define MBR_CONTAIN     512
+#define MBR_INTERSECT   1024
+#define MBR_WITHIN      2048
+#define MBR_DISJOINT    4096
+#define MBR_EQUAL       8192
+#define MBR_DATA        16384
 #define SEARCH_NULL_ARE_EQUAL 32768	/* NULL in keys are equal */
+#define SEARCH_NULL_ARE_NOT_EQUAL 65536	/* NULL in keys are not equal */
 
 	/* bits in opt_flag */
 #define QUICK_USED	1
@@ -261,8 +306,8 @@ enum ha_base_keytype {
 #define HA_STATE_EXTEND_BLOCK	2048
 
 enum en_fieldtype {
-  FIELD_LAST=-1,FIELD_NORMAL,FIELD_SKIPP_ENDSPACE,FIELD_SKIPP_PRESPACE,
-  FIELD_SKIPP_ZERO,FIELD_BLOB,FIELD_CONSTANT,FIELD_INTERVALL,FIELD_ZERO,
+  FIELD_LAST=-1,FIELD_NORMAL,FIELD_SKIP_ENDSPACE,FIELD_SKIP_PRESPACE,
+  FIELD_SKIP_ZERO,FIELD_BLOB,FIELD_CONSTANT,FIELD_INTERVALL,FIELD_ZERO,
   FIELD_VARCHAR,FIELD_CHECK
 };
 
@@ -272,8 +317,10 @@ enum data_file_type {
 
 /* For number of records */
 #ifdef BIG_TABLES
+#define rows2double(A)	ulonglong2double(A)
 typedef my_off_t	ha_rows;
 #else
+#define rows2double(A)	(double) (A)
 typedef ulong		ha_rows;	
 #endif
 

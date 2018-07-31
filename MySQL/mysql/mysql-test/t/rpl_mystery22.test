@@ -1,7 +1,7 @@
 # test case to make slave thread get ahead by 22 bytes
 
 source include/master-slave.inc;
-connection master;
+
 # first, cause a duplicate key problem on the slave
 create table t1(n int auto_increment primary key);
 save_master_pos;
@@ -13,7 +13,7 @@ insert into t1 values(NULL);
 insert into t1 values(NULL);
 save_master_pos;
 connection slave;
-sleep 1; # there is no way around this sleep - we have to wait until
+sleep 3; # there is no way around this sleep - we have to wait until
 # the slave tries to run the query, fails and aborts slave thread
 delete from t1 where n = 2;
 slave start;

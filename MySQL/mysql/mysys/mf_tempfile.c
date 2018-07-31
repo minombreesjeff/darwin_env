@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include <m_string.h>
@@ -25,7 +24,7 @@
 #endif
 
 #ifdef HAVE_TEMPNAM
-#if !defined( MSDOS) && !defined(OS2)
+#if !defined(MSDOS) && !defined(OS2) && !defined(__NETWARE__)
 extern char **environ;
 #endif
 #endif
@@ -90,9 +89,10 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     uint pfx_len;
     File org_file;
 
-    pfx_len=(strmov(strnmov(prefix_buff,
-			    prefix ? prefix : "tmp.",
-			    sizeof(prefix_buff)-7),"XXXXXX") - prefix_buff);
+    pfx_len= (uint) (strmov(strnmov(prefix_buff,
+				    prefix ? prefix : "tmp.",
+				    sizeof(prefix_buff)-7),"XXXXXX") -
+		     prefix_buff);
     if (!dir && ! (dir =getenv("TMPDIR")))
       dir=P_tmpdir;
     if (strlen(dir)+ pfx_len > FN_REFLEN-2)
@@ -100,8 +100,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
       errno=my_errno= ENAMETOOLONG;
       return 1;
     }
-    strmov(to,dir);
-    strmov(convert_dirname(to),prefix_buff);
+    strmov(convert_dirname(to,dir,NullS),prefix_buff);
     org_file=mkstemp(to);
     file=my_register_filename(org_file, to, FILE_BY_MKSTEMP,
 			      EE_CANTCREATEFILE, MyFlags);
@@ -123,14 +122,14 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
       dir=to;
     }
 #ifdef OS2
-    // changing environ variable doesn't work with VACPP
+    /* changing environ variable doesn't work with VACPP */
     char  buffer[256];
     sprintf( buffer, "TMP=%s", dir);
-    // remove ending backslash
+    /* remove ending backslash */
     if (buffer[strlen(buffer)-1] == '\\')
        buffer[strlen(buffer)-1] = '\0';
     putenv( buffer);
-#else
+#elif !defined(__NETWARE__)
     old_env= (char**) environ;
     if (dir)
     {				/* Don't use TMPDIR if dir is given */
@@ -152,7 +151,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     {
       DBUG_PRINT("error",("Got error: %d from tempnam",errno));
     }
-#ifndef OS2
+#if !defined(OS2) && !defined(__NETWARE__)
     environ=(const char**) old_env;
 #endif
   }
@@ -178,7 +177,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
       if (end_pos != to && end_pos[-1] != FN_LIBCHAR)
 	*end_pos++=FN_LIBCHAR;
       end_pos=strmov(end_pos,pfx);
-      
+
       for (length=0 ; length < 8 && uniq ; length++)
       {
 	*end_pos++= _dig_vec[(int) (uniq & 31)];

@@ -347,9 +347,19 @@ mem_hash_remove(
 								NULL, NULL);
 	if (error) {
 	   printf("Inconsistency in memory heap or buffer n:o %lu created\n",
-								node->nth_heap);
+							node->nth_heap);
 	   printf("in %s line %lu and tried to free in %s line %lu.\n",
 	  			node->file_name, node->line, file_name, line);
+
+	   printf(
+	   "Hex dump of 400 bytes around memory heap first block start:\n");
+
+	   ut_print_buf((byte*)(node->heap) - 200, 400);
+
+	   printf("\nDump of the mem heap:\n");
+
+	   mem_heap_validate_or_print(node->heap, NULL, TRUE, &error, &size,
+								NULL, NULL);
 	   ut_error;
 	}
 
@@ -372,7 +382,8 @@ void
 mem_heap_validate_or_print(
 /*=======================*/
 	mem_heap_t* 	heap, 	/* in: memory heap */
-	byte*		top,	/* in: calculate and validate only until
+	byte*		top __attribute__((unused)),	
+	                        /* in: calculate and validate only until
 				this top pointer in the heap is reached,
 				if this pointer is NULL, ignored */
 	ibool		print,	/* in: if TRUE, prints the contents
@@ -578,7 +589,8 @@ static
 void
 mem_print_info_low(
 /*===============*/
-	ibool	print_all)	/* in: if TRUE, all heaps are printed,
+	ibool	print_all __attribute__((unused)))
+                                /* in: if TRUE, all heaps are printed,
 				else only the heaps allocated after the
 				previous call of this function */	
 {

@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #define USES_TYPES				/* sys/types is included */
 #include "mysys_priv.h"
@@ -23,7 +22,7 @@
 #include <sys/utime.h>
 #elif defined(HAVE_UTIME_H)
 #include <utime.h>
-#elif !defined(HPUX)
+#elif !defined(HPUX10)
 #include <time.h>
 struct utimbuf {
   time_t actime;
@@ -32,17 +31,29 @@ struct utimbuf {
 #endif
 
 
-	/*
-	  Ordinary ownership and accesstimes are copied from 'from-file'
-	  if MyFlags & MY_HOLD_ORIGINAL_MODES is set and to-file exists then
-	  the modes of to-file isn't changed
-	  Dont set MY_FNABP or MY_NABP bits on when calling this function !
-	  */
+/*
+  int my_copy(const char *from, const char *to, myf MyFlags)
+
+  NOTES
+    Ordinary ownership and accesstimes are copied from 'from-file'
+    If MyFlags & MY_HOLD_ORIGINAL_MODES is set and to-file exists then
+    the modes of to-file isn't changed
+    If MyFlags & MY_DONT_OVERWRITE_FILE is set, we will give an error
+    if the file existed.
+
+  WARNING
+    Don't set MY_FNABP or MY_NABP bits on when calling this function !
+
+  RETURN
+    0	ok
+    #	Error
+
+*/
 
 int my_copy(const char *from, const char *to, myf MyFlags)
 {
   uint Count;
-  int new_file_stat;
+  int new_file_stat, create_flag;
   File from_file,to_file;
   char buff[IO_SIZE];
   struct stat stat_buff,new_stat_buff;
@@ -63,8 +74,10 @@ int my_copy(const char *from, const char *to, myf MyFlags)
     }
     if (MyFlags & MY_HOLD_ORIGINAL_MODES && !new_file_stat)
       stat_buff=new_stat_buff;
+    create_flag= (MyFlags & MY_DONT_OVERWRITE_FILE) ? O_EXCL : O_TRUNC;
+
     if ((to_file=  my_create(to,(int) stat_buff.st_mode,
-			     O_WRONLY | O_TRUNC | O_BINARY | O_SHARE,
+			     O_WRONLY | create_flag | O_BINARY | O_SHARE,
 			     MyFlags)) < 0)
       goto err;
 
@@ -81,7 +94,7 @@ int my_copy(const char *from, const char *to, myf MyFlags)
     if (MyFlags & MY_HOLD_ORIGINAL_MODES && new_file_stat)
 	DBUG_RETURN(0);			/* File copyed but not stat */
     VOID(chmod(to, stat_buff.st_mode & 07777)); /* Copy modes */
-#if !defined(MSDOS) && !defined(__WIN__) && !defined(__EMX__) && !defined(OS2)
+#if !defined(MSDOS) && !defined(__WIN__) && !defined(__EMX__) && !defined(OS2) && !defined(__NETWARE__)
     VOID(chown(to, stat_buff.st_uid,stat_buff.st_gid)); /* Copy ownership */
 #endif
 #if !defined(VMS) && !defined(__ZTC__)

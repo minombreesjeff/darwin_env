@@ -48,27 +48,36 @@ init_query();
 
 print "Wisconsin benchmark test\n\n";
 
-if (!$opt_skip_create)
+if ($opt_skip_create)
 {
-  $loop_time= new Benchmark;
-  for($ti = 0; $ti <= $#table_names; $ti++)
+  if ($opt_lock_tables)
   {
-    my $table_name = $table_names[$ti];
-    my $array_ref = $tables[$ti];
-
-    # This may fail if we have no table so do not check answer
-    $sth = $dbh->do("drop table $table_name" . $server->{'drop_attr'});
-    print "Creating table $table_name\n" if ($opt_verbose);
-    do_many($dbh,@$array_ref);
+    @tmp=@table_names; push(@tmp,@extra_names);
+    $sth = $dbh->do("LOCK TABLES " . join(" WRITE,", @tmp) . " WRITE") ||
+      die $DBI::errstr;
   }
-  $end_time=new Benchmark;
-  print "Time for create_table ($#tables): " .
-    timestr(timediff($end_time, $loop_time),"all") . "\n\n";
+  goto start_benchmark;
+}
 
-  if ($opt_fast && defined($server->{vacuum}))
-  {
-    $server->vacuum(1,\$dbh);
-  }
+$loop_time= new Benchmark;
+for($ti = 0; $ti <= $#table_names; $ti++)
+{
+  my $table_name = $table_names[$ti];
+  my $array_ref = $tables[$ti];
+  
+  # This may fail if we have no table so do not check answer
+  $sth = $dbh->do("drop table $table_name" . $server->{'drop_attr'});
+  print "Creating table $table_name\n" if ($opt_verbose);
+  do_many($dbh,@$array_ref);
+}
+$end_time=new Benchmark;
+print "Time for create_table ($#tables): " .
+  timestr(timediff($end_time, $loop_time),"all") . "\n\n";
+
+if ($opt_fast && defined($server->{vacuum}))
+{
+  $server->vacuum(1,\$dbh);
+}
 
 
 ####
@@ -100,6 +109,11 @@ if ($opt_fast && $server->{'limits'}->{'load_data_infile'})
 }
 else
 {
+  if ($opt_fast && $server->{transactions})
+  {
+    $dbh->{AutoCommit} = 0;
+  }
+
   for ($ti = 0; $ti <= $#table_names; $ti++)
   {
     my $table_name = $table_names[$ti];
@@ -124,10 +138,17 @@ else
   }
   close(DATA);
 }
+
 if ($opt_lock_tables)
 {
   do_query($dbh,"UNLOCK TABLES");
 }
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->commit;
+  $dbh->{AutoCommit} = 1;
+}
+
 $end_time=new Benchmark;
 print "Time to insert ($row_count): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n";
@@ -159,13 +180,6 @@ $sth = $dbh->do("delete from Bprime where Bprime.unique2 >= 1000") or
 $end_time=new Benchmark;
 print "Time to delete_big (1): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
-}
-elsif ($opt_lock_tables)
-{
-  @tmp=@table_names; push(@tmp,@extra_names);
-  $sth = $dbh->do("LOCK TABLES " . join(" WRITE,", @tmp) . " WRITE") ||
-    die $DBI::errstr;
-}
 
 if ($opt_fast && defined($server->{vacuum}))
 {
@@ -176,7 +190,9 @@ if ($opt_fast && defined($server->{vacuum}))
 #### Running the benchmark
 ####
 
-print "Running actual benchmark\n";
+start_benchmark:
+
+print "Running the actual benchmark\n";
 
 $loop_time= new Benchmark;
 $count=0;
@@ -226,7 +242,7 @@ sub init_data
 {
   @onek=
     $server->create("onek",
-		    ["unique1 int(4) NOT NULL",
+		    ["unique1 int(5) NOT NULL",
 		     "unique2 int(4) NOT NULL",
 		     "two int(4)",
 		     "four int(4)",

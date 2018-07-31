@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Defines to make different thread packages compatible */
 
@@ -248,6 +247,11 @@ extern int my_sigwait(const sigset_t *set,int *sig);
 #error Requires at least rev 2 of EMX pthreads library.
 #endif
 
+#ifdef __NETWARE__
+void my_pthread_exit(void *status);
+#define pthread_exit(A) my_pthread_exit(A)
+#endif
+
 extern int my_pthread_getprio(pthread_t thread_id);
 
 #define pthread_key(T,V) pthread_key_t V
@@ -423,17 +427,22 @@ struct tm *localtime_r(const time_t *clock, struct tm *res);
 #define pthread_kill(A,B) pthread_dummy(0)
 #undef	pthread_detach_this_thread
 #define pthread_detach_this_thread() { pthread_t tmp=pthread_self() ; pthread_detach(&tmp); }
-#else /* HAVE_PTHREAD_ATTR_CREATE && !HAVE_SIGWAIT */
+#elif !defined(__NETWARE__) /* HAVE_PTHREAD_ATTR_CREATE && !HAVE_SIGWAIT */
 #define HAVE_PTHREAD_KILL
 #endif
 
 #endif /* defined(__WIN__) */
 
-#if defined(HPUX) && !defined(DONT_REMAP_PTHREAD_FUNCTIONS)
+#if defined(HPUX10) && !defined(DONT_REMAP_PTHREAD_FUNCTIONS)
 #undef pthread_cond_timedwait
 #define pthread_cond_timedwait(a,b,c) my_pthread_cond_timedwait((a),(b),(c))
 int my_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 			      struct timespec *abstime);
+#endif
+
+#if defined(HPUX10)
+#define pthread_attr_getstacksize(A,B) my_pthread_attr_getstacksize(A,B)
+void my_pthread_attr_getstacksize(pthread_attr_t *attrib, size_t *size);
 #endif
 
 #if defined(HAVE_POSIX1003_4a_MUTEX) && !defined(DONT_REMAP_PTHREAD_FUNCTIONS)
@@ -444,15 +453,39 @@ int my_pthread_mutex_trylock(pthread_mutex_t *mutex);
 
 	/* safe_mutex adds checking to mutex for easier debugging */
 
+#if defined(__NETWARE__) && !defined(SAFE_MUTEX_DETECT_DESTROY)
+#define SAFE_MUTEX_DETECT_DESTROY
+#endif
+
 typedef struct st_safe_mutex_t
 {
   pthread_mutex_t global,mutex;
   char *file;
   uint line,count;
   pthread_t thread;
+#ifdef SAFE_MUTEX_DETECT_DESTROY
+  struct st_safe_mutex_info_t *info;	/* to track destroying of mutexes */
+#endif
 } safe_mutex_t;
 
-int safe_mutex_init(safe_mutex_t *mp, const pthread_mutexattr_t *attr);
+#ifdef SAFE_MUTEX_DETECT_DESTROY
+/*
+  Used to track the destroying of mutexes. This needs to be a seperate
+  structure because the safe_mutex_t structure could be freed before
+  the mutexes are destroyed.
+*/
+
+typedef struct st_safe_mutex_info_t
+{
+  struct st_safe_mutex_info_t *next;
+  struct st_safe_mutex_info_t *prev;
+  char *init_file;
+  uint32 init_line;
+} safe_mutex_info_t;
+#endif /* SAFE_MUTEX_DETECT_DESTROY */
+
+int safe_mutex_init(safe_mutex_t *mp, const pthread_mutexattr_t *attr,
+                    const char *file, uint line);
 int safe_mutex_lock(safe_mutex_t *mp,const char *file, uint line);
 int safe_mutex_unlock(safe_mutex_t *mp,const char *file, uint line);
 int safe_mutex_destroy(safe_mutex_t *mp,const char *file, uint line);
@@ -460,6 +493,8 @@ int safe_cond_wait(pthread_cond_t *cond, safe_mutex_t *mp,const char *file,
 		   uint line);
 int safe_cond_timedwait(pthread_cond_t *cond, safe_mutex_t *mp,
 			struct timespec *abstime, const char *file, uint line);
+void safe_mutex_global_init(void);
+void safe_mutex_end(FILE *file);
 
 	/* Wrappers if safe mutex is actually used */
 #ifdef SAFE_MUTEX
@@ -473,7 +508,7 @@ int safe_cond_timedwait(pthread_cond_t *cond, safe_mutex_t *mp,
 #undef pthread_cond_wait
 #undef pthread_cond_timedwait
 #undef pthread_mutex_trylock
-#define pthread_mutex_init(A,B) safe_mutex_init((A),(B))
+#define pthread_mutex_init(A,B) safe_mutex_init((A),(B),__FILE__,__LINE__)
 #define pthread_mutex_lock(A) safe_mutex_lock((A),__FILE__,__LINE__)
 #define pthread_mutex_unlock(A) safe_mutex_unlock((A),__FILE__,__LINE__)
 #define pthread_mutex_destroy(A) safe_mutex_destroy((A),__FILE__,__LINE__)
@@ -487,6 +522,12 @@ int safe_cond_timedwait(pthread_cond_t *cond, safe_mutex_t *mp,
 #endif /* SAFE_MUTEX */
 
 	/* READ-WRITE thread locking */
+
+#ifdef HAVE_BROKEN_RWLOCK			/* For OpenUnix */
+#undef HAVE_PTHREAD_RWLOCK_RDLOCK
+#undef HAVE_RWLOCK_INIT
+#undef HAVE_RWLOCK_T
+#endif
 
 #if defined(USE_MUTEX_INSTEAD_OF_RW_LOCKS)
 /* use these defs for simple mutex locking */
@@ -576,9 +617,13 @@ extern int pthread_dummy(int);
 
 #define THREAD_NAME_SIZE 10
 #if defined(__ia64__)
-#define DEFAULT_THREAD_STACK	(128*1024)
+/*
+  MySQL can survive with 32K, but some glibc libraries require > 128K stack
+  To resolve hostnames
+*/
+#define DEFAULT_THREAD_STACK	(192*1024L)
 #else
-#define DEFAULT_THREAD_STACK	(64*1024)
+#define DEFAULT_THREAD_STACK	(192*1024L)
 #endif
 
 struct st_my_thread_var
@@ -601,6 +646,11 @@ struct st_my_thread_var
 extern struct st_my_thread_var *_my_thread_var(void) __attribute__ ((const));
 #define my_thread_var (_my_thread_var())
 #define my_errno my_thread_var->thr_errno
+/*
+  Keep track of shutdown,signal, and main threads so that my_end() will not
+  report errors with them
+*/
+extern pthread_t shutdown_th, main_th, signal_th;
 
 	/* statistics_xxx functions are for not essential statistic */
 
@@ -631,5 +681,4 @@ extern struct st_my_thread_var *_my_thread_var(void) __attribute__ ((const));
 #ifdef  __cplusplus
 }
 #endif
-
 #endif /* _my_ptread_h */

@@ -87,7 +87,7 @@ char history_comment_char = '\0';
 
 /* The list of characters which inhibit the expansion of text if found
    immediately following history_expansion_char. */
-char *history_no_expand_chars = " \t\n\r=";
+const char *history_no_expand_chars = " \t\n\r=";
 
 /* If set to a non-zero value, single quotes inhibit history expansion.
    The default is 0. */
@@ -249,7 +249,7 @@ get_history_event (string, caller_index, delimiting_quote)
 	{
 	  entry = current_history ();
 	  history_offset = history_length;
-	
+
 	  /* If this was a substring search, then remember the
 	     string that we matched for word substitution. */
 	  if (substring_okay)
@@ -342,7 +342,8 @@ hist_error(s, start, current, errtype)
       char *s;
       int start, current, errtype;
 {
-  char *temp, *emsg;
+  char *temp;
+  const char *emsg;
   int ll, elen;
 
   ll = current - start;
@@ -514,7 +515,7 @@ history_expand_internal (string, start, end_index_ptr, ret_string, current_line)
 	quoted_search_delimiter = string[i - 1];
       event = get_history_event (string, &i, quoted_search_delimiter);
     }
-	  
+
   if (event == 0)
     {
       *ret_string = hist_error (string, start, i, EVENT_NOT_FOUND);
@@ -825,7 +826,7 @@ history_expand (hstring, output)
       *output = savestring (hstring);
       return (0);
     }
-    
+
   /* Prepare the buffer for printing error messages. */
   result = xmalloc (result_len = 256);
   result[0] = '\0';
@@ -904,7 +905,7 @@ history_expand (hstring, output)
 		i++;
 	    }
 	}
-	  
+
       if (string[i] != history_expansion_char)
 	{
 	  free (result);
@@ -1239,7 +1240,7 @@ history_tokenize_internal (string, wind, indp)
 	return (result);
 
       start = i;
-      
+
       if (member (string[i], "()\n"))
 	{
 	  i++;

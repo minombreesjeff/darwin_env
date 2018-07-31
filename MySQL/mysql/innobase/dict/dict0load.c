@@ -48,7 +48,7 @@ dict_get_first_table_name_in_db(
 	
 	mtr_start(&mtr);
 
-	sys_tables = dict_table_get_low("SYS_TABLES");
+	sys_tables = dict_table_get_low((char *) "SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 
 	tuple = dtuple_create(heap, 1);
@@ -127,7 +127,7 @@ dict_print(void)
 
 	mtr_start(&mtr);
 
-	sys_tables = dict_table_get_low("SYS_TABLES");
+	sys_tables = dict_table_get_low((char *) "SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 
 	btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
@@ -216,7 +216,7 @@ dict_load_columns(
 
 	mtr_start(&mtr);
 
-	sys_columns = dict_table_get_low("SYS_COLUMNS");
+	sys_columns = dict_table_get_low((char*) "SYS_COLUMNS");
 	sys_index = UT_LIST_GET_FIRST(sys_columns->indexes);
 
 	tuple = dtuple_create(heap, 1);
@@ -246,7 +246,7 @@ dict_load_columns(
 		ut_ad(len == 4);
 		ut_a(i == mach_read_from_4(field));
 
-		ut_a(0 == ut_strcmp("NAME",
+		ut_a(0 == ut_strcmp((char*) "NAME",
 			dict_field_get_col(
 			dict_index_get_nth_field(
 			dict_table_get_first_index(sys_columns), 4))->name));
@@ -268,7 +268,7 @@ dict_load_columns(
 		field = rec_get_nth_field(rec, 7, &len);
 		col_len = mach_read_from_4(field);
 
-		ut_a(0 == ut_strcmp("PREC",
+		ut_a(0 == ut_strcmp((char*) "PREC",
 			dict_field_get_col(
 			dict_index_get_nth_field(
 			dict_table_get_first_index(sys_columns), 8))->name));
@@ -301,6 +301,8 @@ dict_load_fields(
 	dtuple_t*	tuple;
 	dfield_t*	dfield;
 	char*		col_name;
+	ulint		pos_and_prefix_len;
+	ulint		prefix_len;
 	rec_t*		rec;
 	byte*		field;
 	ulint		len;
@@ -314,7 +316,7 @@ dict_load_fields(
 
 	mtr_start(&mtr);
 
-	sys_fields = dict_table_get_low("SYS_FIELDS");
+	sys_fields = dict_table_get_low((char*) "SYS_FIELDS");
 	sys_index = UT_LIST_GET_FIRST(sys_fields->indexes);
 
 	tuple = dtuple_create(heap, 1);
@@ -335,7 +337,7 @@ dict_load_fields(
 		ut_a(btr_pcur_is_on_user_rec(&pcur, &mtr));
 		if (rec_get_deleted_flag(rec)) {
 			fprintf(stderr,
-"InnoDB: Error: data dictionary entry for table %s is corrupt!\n",
+"InnoDB: Error: data dictionary entry for table %s is corrupt!\n"
 "InnoDB: An index field is delete marked.\n",
 			table->name);
 		}
@@ -345,10 +347,30 @@ dict_load_fields(
 		ut_a(ut_memcmp(buf, field, len) == 0);
 
 		field = rec_get_nth_field(rec, 1, &len);
-		ut_ad(len == 4);
-		ut_a(i == mach_read_from_4(field));
+		ut_a(len == 4);
 
-		ut_a(0 == ut_strcmp("COL_NAME",
+		/* The next field stores the field position in the index
+		and a possible column prefix length if the index field
+		does not contain the whole column. The storage format is
+		like this: if there is at least one prefix field in the index,
+		then the HIGH 2 bytes contain the field number (== i) and the
+		low 2 bytes the prefix length for the field. Otherwise the
+		field number (== i) is contained in the 2 LOW bytes. */
+
+		pos_and_prefix_len = mach_read_from_4(field);
+
+		ut_a((pos_and_prefix_len & 0xFFFF) == i
+		     || (pos_and_prefix_len & 0xFFFF0000) == (i << 16));
+
+		if ((i == 0 && pos_and_prefix_len > 0)
+		    || (pos_and_prefix_len & 0xFFFF0000) > 0) {
+
+		        prefix_len = pos_and_prefix_len & 0xFFFF;
+		} else {
+		        prefix_len = 0;
+		}
+
+		ut_a(0 == ut_strcmp((char*) "COL_NAME",
 			dict_field_get_col(
 			dict_index_get_nth_field(
 			dict_table_get_first_index(sys_fields), 4))->name));
@@ -359,7 +381,7 @@ dict_load_fields(
 		ut_memcpy(col_name, field, len);
 		col_name[len] = '\0';
 		
-		dict_mem_index_add_field(index, col_name, 0);
+		dict_mem_index_add_field(index, col_name, 0, prefix_len);
 
 		btr_pcur_move_to_next_user_rec(&pcur, &mtr);
 	} 
@@ -411,7 +433,7 @@ dict_load_indexes(
 	
 	mtr_start(&mtr);
 
-	sys_indexes = dict_table_get_low("SYS_INDEXES");
+	sys_indexes = dict_table_get_low((char*) "SYS_INDEXES");
 	sys_index = UT_LIST_GET_FIRST(sys_indexes->indexes);
 
 	tuple = dtuple_create(heap, 1);
@@ -456,7 +478,7 @@ dict_load_indexes(
 		ut_ad(len == 8);
 		id = mach_read_from_8(field);
 
-		ut_a(0 == ut_strcmp("NAME",
+		ut_a(0 == ut_strcmp((char*)"NAME",
 			dict_field_get_col(
 			dict_index_get_nth_field(
 			dict_table_get_first_index(sys_indexes), 4))->name));
@@ -476,7 +498,7 @@ dict_load_indexes(
 		field = rec_get_nth_field(rec, 7, &len);
 		space = mach_read_from_4(field);
 
-		ut_a(0 == ut_strcmp("PAGE_NO",
+		ut_a(0 == ut_strcmp((char*) "PAGE_NO",
 			dict_field_get_col(
 			dict_index_get_nth_field(
 			dict_table_get_first_index(sys_indexes), 8))->name));
@@ -515,7 +537,7 @@ dict_load_indexes(
 		    && ((type & DICT_CLUSTERED)
 		        || ((table == dict_sys->sys_tables)
 		            && (name_len == ut_strlen("ID_IND"))
-			    && (0 == ut_memcmp(name_buf, "ID_IND",
+			    && (0 == ut_memcmp(name_buf, (char*)"ID_IND",
 							name_len))))) {
 
 			/* The index was created in memory already in
@@ -566,6 +588,7 @@ dict_load_table(
 	char*		buf;
 	ulint		space;
 	ulint		n_cols;
+	ulint		err;
 	mtr_t		mtr;
 	
 	ut_ad(mutex_own(&(dict_sys->mutex)));
@@ -574,7 +597,7 @@ dict_load_table(
 	
 	mtr_start(&mtr);
 
-	sys_tables = dict_table_get_low("SYS_TABLES");
+	sys_tables = dict_table_get_low((char *) "SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 
 	tuple = dtuple_create(heap, 1);
@@ -610,7 +633,7 @@ dict_load_table(
 		return(NULL);
 	}
 
-	ut_a(0 == ut_strcmp("SPACE",
+	ut_a(0 == ut_strcmp((char *) "SPACE",
 		dict_field_get_col(
 		dict_index_get_nth_field(
 			dict_table_get_first_index(sys_tables), 9))->name));
@@ -618,7 +641,7 @@ dict_load_table(
 	field = rec_get_nth_field(rec, 9, &len);
 	space = mach_read_from_4(field);
 
-	ut_a(0 == ut_strcmp("N_COLS",
+	ut_a(0 == ut_strcmp((char *) "N_COLS",
 		dict_field_get_col(
 		dict_index_get_nth_field(
 			dict_table_get_first_index(sys_tables), 4))->name));
@@ -628,7 +651,7 @@ dict_load_table(
 
 	table = dict_mem_table_create(name, space, n_cols);
 
-	ut_a(0 == ut_strcmp("ID",
+	ut_a(0 == ut_strcmp((char *) "ID",
 		dict_field_get_col(
 		dict_index_get_nth_field(
 			dict_table_get_first_index(sys_tables), 3))->name));
@@ -674,8 +697,25 @@ dict_load_table(
 	
 	dict_load_indexes(table, heap);
 	
-	ut_a(DB_SUCCESS == dict_load_foreigns(table->name));
+	err = dict_load_foreigns(table->name);
+/*
+	if (err != DB_SUCCESS) {
+	
+ 		mutex_enter(&dict_foreign_err_mutex);
 
+ 		ut_print_timestamp(stderr);
+ 		
+		fprintf(stderr,
+"  InnoDB: Error: could not make a foreign key definition to match\n"
+"InnoDB: the foreign key table or the referenced table!\n"
+"InnoDB: The data dictionary of InnoDB is corrupt. You may need to drop\n"
+"InnoDB: and recreate the foreign key table or the referenced table.\n"
+"InnoDB: Send a detailed bug report to mysql@lists.mysql.com\n"
+"InnoDB: Latest foreign key error printout:\n%s\n", dict_foreign_err_buf);
+				
+		mutex_exit(&dict_foreign_err_mutex);
+	}
+*/
 	mem_heap_free(heap);
 
 	return(table);
@@ -829,7 +869,7 @@ dict_load_foreign_cols(
 					foreign->n_fields * sizeof(void*));
 	mtr_start(&mtr);
 
-	sys_foreign_cols = dict_table_get_low("SYS_FOREIGN_COLS");
+	sys_foreign_cols = dict_table_get_low((char *) "SYS_FOREIGN_COLS");
 	sys_index = UT_LIST_GET_FIRST(sys_foreign_cols->indexes);
 
 	tuple = dtuple_create(foreign->heap, 1);
@@ -907,7 +947,7 @@ dict_load_foreign(
 	
 	mtr_start(&mtr);
 
-	sys_foreign = dict_table_get_low("SYS_FOREIGN");
+	sys_foreign = dict_table_get_low((char *) "SYS_FOREIGN");
 	sys_index = UT_LIST_GET_FIRST(sys_foreign->indexes);
 
 	tuple = dtuple_create(heap2, 1);
@@ -978,8 +1018,8 @@ dict_load_foreign(
 	
 	field = rec_get_nth_field(rec, 4, &len);
 							
-	foreign->referenced_table_name = mem_heap_alloc(foreign->heap, 1 + len);
-				
+	foreign->referenced_table_name = mem_heap_alloc(foreign->heap,
+								1 + len);
 	ut_memcpy(foreign->referenced_table_name, field, len);
 	foreign->referenced_table_name[len] = '\0';	
 
@@ -988,10 +1028,19 @@ dict_load_foreign(
 
 	dict_load_foreign_cols(id, foreign);
 
+	/* If the foreign table is not yet in the dictionary cache, we
+	have to load it so that we are able to make type comparisons
+	in the next function call. */
+
+	dict_table_get_low(foreign->foreign_table_name);
+
 	/* Note that there may already be a foreign constraint object in
 	the dictionary cache for this constraint: then the following
 	call only sets the pointers in it to point to the appropriate table
-	and index objects and frees the newly created object foreign. */
+	and index objects and frees the newly created object foreign.
+	Adding to the cache should always succeed since we are not creating
+	a new foreign key constraint but loading one from the data
+	dictionary. */
 
 	err = dict_foreign_add_to_cache(foreign);
 
@@ -1026,7 +1075,7 @@ dict_load_foreigns(
 	
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 
-	sys_foreign = dict_table_get_low("SYS_FOREIGN");
+	sys_foreign = dict_table_get_low((char *) "SYS_FOREIGN");
 
 	if (sys_foreign == NULL) {
 		/* No foreign keys defined yet in this database */

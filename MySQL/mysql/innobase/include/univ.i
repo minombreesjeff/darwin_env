@@ -9,7 +9,8 @@ Created 1/20/1994 Heikki Tuuri
 #ifndef univ_i
 #define univ_i
 
-#if (defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)) && !defined(MYSQL_SERVER)
+#if (defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)) && !defined(MYSQL_SERVER) && !defined(__WIN__)
+#undef __WIN__
 #define __WIN__
 
 #include <windows.h>
@@ -29,7 +30,7 @@ Created 1/20/1994 Heikki Tuuri
 in compiling more Posix-compatible. These headers also define __WIN__
 if we are compiling on Windows. */
 
-#include <global.h>
+#include <my_global.h>
 #include <my_pthread.h>
 
 /* Include <sys/stat.h> to get S_I... macros defined for os0file.c */
@@ -56,6 +57,7 @@ of the 32-bit x86 assembler in mutex operations. */
 Microsoft Visual C++ */
 
 #if !defined(__GNUC__) && !defined(__WIN__)
+#undef  UNIV_MUST_NOT_INLINE			/* Remove compiler warning */
 #define UNIV_MUST_NOT_INLINE
 #endif
 
@@ -97,6 +99,15 @@ memory is read outside the allocated blocks. */
 #define UNIV_LIGHT_MEM_DEBUG
 
 #define YYDEBUG			1
+
+#ifdef HAVE_purify
+/* The following sets all new allocated memory to zero before use:
+this can be used to eliminate unnecessary Purify warnings, but note that
+it also masks many bugs Purify could detect. For detailed Purify analysis it
+is best to remove the define below and look through the warnings one
+by one. */
+#define UNIV_SET_MEM_TO_ZERO
+#endif
 
 /*
 #define UNIV_SQL_DEBUG
@@ -176,7 +187,11 @@ management to ensure correct alignment for doubles etc. */
 /* Another basic type we use is unsigned long integer which is intended to be
 equal to the word size of the machine. */
 
+#ifdef _WIN64
+typedef unsigned __int64	ulint;
+#else
 typedef unsigned long int	ulint;
+#endif
 
 typedef long int		lint;
 

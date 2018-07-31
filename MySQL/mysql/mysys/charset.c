@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include "mysys_err.h"
@@ -43,13 +42,6 @@ struct simpleconfig_buf_st {
   char  buf[MAX_LINE];
   char *p;
 };
-
-/* Defined in strings/ctype.c */
-
-CHARSET_INFO *find_compiled_charset(uint cs_number);
-uint compiled_charset_number(const char *name);
-const char *compiled_charset_name(uint charset_number);
-
 
 static uint num_from_csname(CS_ID **cs, const char *name)
 {
@@ -85,7 +77,7 @@ static my_bool get_word(struct simpleconfig_buf_st *fb, char *buf)
     endptr = fb->buf;
   }
 
-  while (!isspace(*endptr))
+  while (*endptr && !isspace(*endptr))
     *buf++= *endptr++;
   *buf=0;
   fb->p = endptr;
@@ -110,7 +102,7 @@ char *get_charsets_dir(char *buf)
       strxmov(buf, DEFAULT_CHARSET_HOME, "/", sharedir, "/", CHARSET_DIR,
 	      NullS);
   }
-  convert_dirname(buf);
+  convert_dirname(buf,buf,NullS);
   DBUG_PRINT("info",("charsets dir='%s'", buf));
   DBUG_RETURN(strend(buf));
 }
@@ -172,7 +164,11 @@ static my_bool read_charset_index(CS_ID ***charsets, myf myflags)
 }
 
 
+#ifdef __NETWARE__
+my_bool STDCALL init_available_charsets(myf myflags)
+#else
 static my_bool init_available_charsets(myf myflags)
+#endif
 {
   my_bool error=0;
   /*
@@ -203,6 +199,7 @@ static my_bool init_available_charsets(myf myflags)
 void free_charsets(void)
 {
   delete_dynamic(&cs_info_table);
+  charset_initialized=0;
 }
 
 
@@ -264,22 +261,22 @@ static my_bool read_charset_file(uint cs_number, CHARSET_INFO *set,
 
 uint get_charset_number(const char *charset_name)
 {
-  my_bool error;
-  error = init_available_charsets(MYF(0));	/* If it isn't initialized */
-  if (error)
-    return compiled_charset_number(charset_name);
-  else
-    return num_from_csname(available_charsets, charset_name);
+  uint number=compiled_charset_number(charset_name);
+  if (number)
+    return number;
+  if (init_available_charsets(MYF(0)))	/* If it isn't initialized */
+    return 0;
+  return num_from_csname(available_charsets, charset_name);
 }
 
 const char *get_charset_name(uint charset_number)
 {
-  my_bool error;
-  error = init_available_charsets(MYF(0));	/* If it isn't initialized */
-  if (error)
-    return compiled_charset_name(charset_number);
-  else
-    return name_from_csnum(available_charsets, charset_number);
+  const char *name=compiled_charset_name(charset_number);
+  if (*name != '?')
+    return name;
+  if (init_available_charsets(MYF(0)))	/* If it isn't initialized */
+    return "?";
+  return name_from_csnum(available_charsets, charset_number);
 }
 
 
@@ -293,8 +290,8 @@ static CHARSET_INFO *find_charset(CHARSET_INFO **table, uint cs_number,
   return NULL;
 }
 
-static CHARSET_INFO *find_charset_by_name(CHARSET_INFO **table, const char *name,
-					  size_t tablesz)
+static CHARSET_INFO *find_charset_by_name(CHARSET_INFO **table,
+					  const char *name, size_t tablesz)
 {
   uint i;
   for (i = 0; i < tablesz; ++i)
@@ -303,7 +300,7 @@ static CHARSET_INFO *find_charset_by_name(CHARSET_INFO **table, const char *name
   return NULL;
 }
 
-static CHARSET_INFO *add_charset(uint cs_number, const char *cs_name)
+static CHARSET_INFO *add_charset(uint cs_number, const char *cs_name, myf flags)
 {
   CHARSET_INFO tmp_cs,*cs;
   uchar tmp_ctype[CTYPE_TABLE_SIZE];
@@ -318,11 +315,12 @@ static CHARSET_INFO *add_charset(uint cs_number, const char *cs_name)
   cs->to_lower=tmp_to_lower;
   cs->to_upper=tmp_to_upper;
   cs->sort_order=tmp_sort_order;
-  if (read_charset_file(cs_number, cs, MYF(MY_WME)))
+  cs->strxfrm_multiply=cs->mbmaxlen=1;
+  if (read_charset_file(cs_number, cs, flags))
     return NULL;
 
   cs           = (CHARSET_INFO*) my_once_alloc(sizeof(CHARSET_INFO),
-					       MYF(MY_WME));
+                                               MYF(MY_WME));
   *cs=tmp_cs;
   cs->name     = (char *) my_once_alloc((uint) strlen(cs_name)+1, MYF(MY_WME));
   cs->ctype    = (uchar*) my_once_alloc(CTYPE_TABLE_SIZE,      MYF(MY_WME));
@@ -340,7 +338,7 @@ static CHARSET_INFO *add_charset(uint cs_number, const char *cs_name)
   return cs;
 }
 
-static CHARSET_INFO *get_internal_charset(uint cs_number)
+static CHARSET_INFO *get_internal_charset(uint cs_number, myf flags)
 {
   CHARSET_INFO *cs;
   /*
@@ -351,13 +349,13 @@ static CHARSET_INFO *get_internal_charset(uint cs_number)
   if (!(cs = find_charset((CHARSET_INFO**) cs_info_table.buffer, cs_number,
 			  cs_info_table.elements)))
     if (!(cs = find_compiled_charset(cs_number)))
-      cs=add_charset(cs_number, get_charset_name(cs_number));
+      cs=add_charset(cs_number, get_charset_name(cs_number), flags);
   pthread_mutex_unlock(&THR_LOCK_charset);
   return cs;
 }
 
 
-static CHARSET_INFO *get_internal_charset_by_name(const char *name)
+static CHARSET_INFO *get_internal_charset_by_name(const char *name, myf flags)
 {
   CHARSET_INFO *cs;
   /*
@@ -368,7 +366,7 @@ static CHARSET_INFO *get_internal_charset_by_name(const char *name)
   if (!(cs = find_charset_by_name((CHARSET_INFO**) cs_info_table.buffer, name,
 				 cs_info_table.elements)))
     if (!(cs = find_compiled_charset_by_name(name)))
-      cs=add_charset(get_charset_number(name), name);
+      cs=add_charset(get_charset_number(name), name, flags);
   pthread_mutex_unlock(&THR_LOCK_charset);
   return cs;
 }
@@ -378,7 +376,7 @@ CHARSET_INFO *get_charset(uint cs_number, myf flags)
 {
   CHARSET_INFO *cs;
   (void) init_available_charsets(MYF(0));	/* If it isn't initialized */
-  cs=get_internal_charset(cs_number);
+  cs=get_internal_charset(cs_number, flags);
 
   if (!cs && (flags & MY_WME))
   {
@@ -410,7 +408,7 @@ CHARSET_INFO *get_charset_by_name(const char *cs_name, myf flags)
 {
   CHARSET_INFO *cs;
   (void) init_available_charsets(MYF(0));	/* If it isn't initialized */
-  cs=get_internal_charset_by_name(cs_name);
+  cs=get_internal_charset_by_name(cs_name, flags);
 
   if (!cs && (flags & MY_WME))
   {

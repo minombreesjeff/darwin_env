@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #ifndef _mysys_err_h
 #define _mysys_err_h
@@ -55,7 +54,23 @@ extern const char * NEAR globerrs[];	/* my_error_messages is here */
 #define EE_CANT_SYMLINK		25
 #define EE_REALPATH		26
 
+  /* exit codes for all MySQL programs */
+
+#define EXIT_UNSPECIFIED_ERROR		1
+#define EXIT_UNKNOWN_OPTION		2
+#define EXIT_AMBIGUOUS_OPTION		3
+#define EXIT_NO_ARGUMENT_ALLOWED	4
+#define EXIT_ARGUMENT_REQUIRED		5
+#define EXIT_VAR_PREFIX_NOT_UNIQUE	6
+#define EXIT_UNKNOWN_VARIABLE		7
+#define EXIT_OUT_OF_MEMORY		8
+#define EXIT_UNKNOWN_SUFFIX		9
+#define EXIT_NO_PTR_TO_VARIABLE		10
+#define EXIT_CANNOT_CONNECT_TO_SERVICE	11
+
+
 #ifdef	__cplusplus
 }
 #endif
 #endif
+

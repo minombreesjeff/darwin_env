@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -27,17 +27,16 @@ int _mi_write_static_record(MI_INFO *info, const byte *record)
   {
     my_off_t filepos=info->s->state.dellink;
     info->rec_cache.seek_not_done=1;		/* We have done a seek */
-    VOID(my_seek(info->dfile,info->s->state.dellink+1,MY_SEEK_SET,MYF(0)));
-
-    if (my_read(info->dfile,(char*) &temp[0],info->s->base.rec_reflength,
-		MYF(MY_NABP)))
+    if (my_pread(info->dfile,(char*) &temp[0],info->s->base.rec_reflength,
+		info->s->state.dellink+1,
+		 MYF(MY_NABP)))
       goto err;
     info->s->state.dellink= _mi_rec_pos(info->s,temp);
     info->state->del--;
     info->state->empty-=info->s->base.pack_reclength;
-    VOID(my_seek(info->dfile,filepos,MY_SEEK_SET,MYF(0)));
-    if (my_write(info->dfile, (char*) record, info->s->base.reclength,
-		 MYF(MY_NABP)))
+    if (my_pwrite(info->dfile, (char*) record, info->s->base.reclength,
+		  filepos,
+		  MYF(MY_NABP)))
       goto err;
   }
   else
@@ -64,16 +63,18 @@ int _mi_write_static_record(MI_INFO *info, const byte *record)
     else
     {
       info->rec_cache.seek_not_done=1;		/* We have done a seek */
-      VOID(my_seek(info->dfile,info->state->data_file_length,
-		   MY_SEEK_SET,MYF(0)));
-      if (my_write(info->dfile,(char*) record,info->s->base.reclength,
-		   info->s->write_flag))
+      if (my_pwrite(info->dfile,(char*) record,info->s->base.reclength,
+		    info->state->data_file_length,
+		    info->s->write_flag))
 	goto err;
       if (info->s->base.pack_reclength != info->s->base.reclength)
       {
 	uint length=info->s->base.pack_reclength - info->s->base.reclength;
 	bzero((char*) temp,length);
-	if (my_write(info->dfile, (byte*) temp,length, info->s->write_flag))
+	if (my_pwrite(info->dfile, (byte*) temp,length,
+		      info->state->data_file_length+
+		      info->s->base.reclength,
+		      info->s->write_flag))
 	  goto err;
       }
     }
@@ -88,9 +89,10 @@ int _mi_write_static_record(MI_INFO *info, const byte *record)
 int _mi_update_static_record(MI_INFO *info, my_off_t pos, const byte *record)
 {
   info->rec_cache.seek_not_done=1;		/* We have done a seek */
-  VOID(my_seek(info->dfile,pos,MY_SEEK_SET,MYF(0)));
-  return (my_write(info->dfile,(char*) record,info->s->base.reclength,
-		   MYF(MY_NABP)) != 0);
+  return (my_pwrite(info->dfile,
+		    (char*) record,info->s->base.reclength,
+		    pos,
+		    MYF(MY_NABP)) != 0);
 }
 
 
@@ -104,9 +106,8 @@ int _mi_delete_static_record(MI_INFO *info)
   _mi_dpointer(info,temp+1,info->s->state.dellink);
   info->s->state.dellink = info->lastpos;
   info->rec_cache.seek_not_done=1;
-  VOID(my_seek(info->dfile,info->lastpos,MY_SEEK_SET,MYF(0)));
-  return (my_write(info->dfile,(byte*) temp, 1+info->s->rec_reflength,
-		   MYF(MY_NABP)) != 0);
+  return (my_pwrite(info->dfile,(byte*) temp, 1+info->s->rec_reflength,
+		    info->lastpos, MYF(MY_NABP)) != 0);
 }
 
 
@@ -129,9 +130,9 @@ int _mi_cmp_static_record(register MI_INFO *info, register const byte *old)
   if ((info->opt_flag & READ_CHECK_USED))
   {						/* If check isn't disabled  */
     info->rec_cache.seek_not_done=1;		/* We have done a seek */
-    VOID(my_seek(info->dfile,info->lastpos,MY_SEEK_SET,MYF(0)));
-    if (my_read(info->dfile, (char*) info->rec_buff, info->s->base.reclength,
-		MYF(MY_NABP)))
+    if (my_pread(info->dfile, (char*) info->rec_buff, info->s->base.reclength,
+		 info->lastpos,
+		 MYF(MY_NABP)))
       DBUG_RETURN(-1);
     if (memcmp((byte*) info->rec_buff, (byte*) old,
 	       (uint) info->s->base.reclength))
@@ -152,9 +153,8 @@ int _mi_cmp_static_unique(MI_INFO *info, MI_UNIQUEDEF *def,
   DBUG_ENTER("_mi_cmp_static_unique");
 
   info->rec_cache.seek_not_done=1;		/* We have done a seek */
-  VOID(my_seek(info->dfile,pos,MY_SEEK_SET,MYF(0)));
-  if (my_read(info->dfile, (char*) info->rec_buff, info->s->base.reclength,
-	      MYF(MY_NABP)))
+  if (my_pread(info->dfile, (char*) info->rec_buff, info->s->base.reclength,
+	       pos, MYF(MY_NABP)))
     DBUG_RETURN(-1);
   DBUG_RETURN(mi_unique_comp(def, record, info->rec_buff,
 			     def->null_are_equal));
@@ -181,8 +181,7 @@ int _mi_read_static_record(register MI_INFO *info, register my_off_t pos,
 
     error=my_pread(info->dfile,(char*) record,info->s->base.reclength,
 		   pos,MYF(MY_NABP)) != 0;
-    if (info->s->r_locks == 0 && info->s->w_locks == 0)
-      VOID(_mi_writeinfo(info,0));
+    fast_mi_writeinfo(info);
     if (! error)
     {
       if (!*record)
@@ -195,7 +194,7 @@ int _mi_read_static_record(register MI_INFO *info, register my_off_t pos,
     }
     return(-1);					/* Error on read */
   }
-  VOID(_mi_writeinfo(info,0));			/* No such record */
+  fast_mi_writeinfo(info);			/* No such record */
   return(-1);
 }
 
@@ -222,7 +221,7 @@ int _mi_read_rnd_static_record(MI_INFO *info, byte *buf,
 	(skipp_deleted_blocks || !filepos))
     {
       cache_read=1;				/* Read record using cache */
-      cache_length=(uint) (info->rec_cache.rc_end - info->rec_cache.rc_pos);
+      cache_length=(uint) (info->rec_cache.read_end - info->rec_cache.read_pos);
     }
     else
       info->rec_cache.seek_not_done=1;		/* Filepos is changed */
@@ -240,7 +239,7 @@ int _mi_read_rnd_static_record(MI_INFO *info, byte *buf,
     {						/* We don't nead new info */
 #ifndef UNSAFE_LOCKING
       if ((! cache_read || share->base.reclength > cache_length) &&
-	  share->r_locks == 0 && share->w_locks == 0)
+	  share->tot_locks == 0)
       {						/* record not in cache */
 	if (my_lock(share->kfile,F_RDLCK,0L,F_TO_EOF,
 		    MYF(MY_SEEK_NOT_DONE) | info->lock_wait))
@@ -257,7 +256,7 @@ int _mi_read_rnd_static_record(MI_INFO *info, byte *buf,
     DBUG_PRINT("test",("filepos: %ld (%ld)  records: %ld  del: %ld",
 		       filepos/share->base.reclength,filepos,
 		       info->state->records, info->state->del));
-    VOID(_mi_writeinfo(info,0));
+    fast_mi_writeinfo(info);
     DBUG_RETURN(my_errno=HA_ERR_END_OF_FILE);
   }
   info->lastpos= filepos;

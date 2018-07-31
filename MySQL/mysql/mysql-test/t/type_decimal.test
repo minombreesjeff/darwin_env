@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (
-   id int(11) DEFAULT '0' NOT NULL auto_increment,
+   id int(11) NOT NULL auto_increment,
    datatype_id int(11) DEFAULT '0' NOT NULL,
    minvalue decimal(20,10) DEFAULT '0.0000000000' NOT NULL,
    maxvalue decimal(20,10) DEFAULT '0.0000000000' NOT NULL,
@@ -160,6 +160,8 @@ insert into t1 values ("-.1"),("+.1"),(".1");
 insert into t1 values ("00000000000001"),("+0000000000001"),("-0000000000001");
 insert into t1 values ("+111111111.11"),("111111111.11"),("-11111111.11");
 insert into t1 values ("-111111111.11"),("+1111111111.11"),("1111111111.11");
+insert into t1 values ("1e+1000"),("1e-1000"),("-1e+1000");
+insert into t1 values ("123.4e"),("123.4e+2"),("123.4e-2"),("123e1"),("123e+0");
 select * from t1;
 drop  table t1;
 
@@ -169,6 +171,8 @@ insert into t1 values ("-.1"),("+.1"),(".1");
 insert into t1 values ("00000000000001"),("+0000000000001"),("-0000000000001");
 insert into t1 values ("+111111111.11"),("111111111.11"),("-11111111.11");
 insert into t1 values ("-111111111.11"),("+1111111111.11"),("1111111111.11");
+insert into t1 values ("1e+1000"),("1e-1000"),("-1e+1000");
+insert into t1 values ("123.4e"),("123.4e+2"),("123.4e-2"),("123e1"),("123e+0");
 select * from t1;
 drop  table t1;
 
@@ -178,16 +182,21 @@ insert into t1 values ("-.1"),("+.1"),(".1");
 insert into t1 values ("00000000000001"),("+0000000000001"),("-0000000000001");
 insert into t1 values ("+111111111.11"),("111111111.11"),("-11111111.11");
 insert into t1 values ("-111111111.11"),("+1111111111.11"),("1111111111.11");
+insert into t1 values ("1e+1000"),("1e-1000"),("-1e+1000");
+insert into t1 values ("123.4e"),("123.4e+2"),("123.4e-2"),("123e1"),("123e+0");
 select * from t1;
 drop  table t1;
 
 
 create table t1 (a decimal(10,2));
+# The -0.0 needs to be quoted as not all platforms supports this
 insert into t1 values (0.0),("-0.0"),(+0.0),(01.0),(+01.0),(-01.0);
 insert into t1 values (-.1),(+.1),(.1);
 insert into t1 values (00000000000001),(+0000000000001),(-0000000000001);
 insert into t1 values (+111111111.11),(111111111.11),(-11111111.11);
 insert into t1 values (-111111111.11),(+1111111111.11),(1111111111.11);
+insert into t1 values (1e+100),(1e-100),(-1e+100);
+insert into t1 values (123.4e0),(123.4e+2),(123.4e-2),(123e1),(123e+0);
 select * from t1;
 drop  table t1;
 
@@ -211,3 +220,23 @@ create table t1 (a decimal unsigned zerofill);
 insert into t1 values (-99999999999999),(-1),('+1'),('01'),('+00000000000001'),('+1234567890'),(99999999999999);
 select * from t1;
 drop  table t1;
+
+#  Exponent overflow bug
+create table t1(a decimal(10,0));
+insert into t1 values ("1e4294967295");
+select * from t1;
+delete from t1;
+insert into t1 values("1e4294967297");
+select * from t1;
+drop table t1;
+
+#
+# Test of wrong decimal type
+#
+
+--error 1074
+CREATE TABLE t1 (a_dec DECIMAL(-1,0));
+--error 1074
+CREATE TABLE t1 (a_dec DECIMAL(-2,1));
+--error 1074
+CREATE TABLE t1 (a_dec DECIMAL(-1,1));

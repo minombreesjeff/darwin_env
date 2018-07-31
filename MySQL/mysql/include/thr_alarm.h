@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Prototypes when using thr_alarm library functions */
 
@@ -39,24 +38,32 @@ extern "C" {
 #define THR_SERVER_ALARM SIGALRM
 #endif
 
-#if defined(DONT_USE_THR_ALARM)
+typedef struct st_alarm_info
+{
+  ulong next_alarm_time;
+  uint active_alarms;
+  uint max_used_alarms;
+} ALARM_INFO;
+
+void thr_alarm_info(ALARM_INFO *info);
+
+#if defined(DONT_USE_THR_ALARM) || !defined(THREAD)
 
 #define USE_ALARM_THREAD
 #undef USE_ONE_SIGNAL_HAND
 
-typedef struct st_thr_alarm_entry
-{
-  uint crono;
-} thr_alarm_entry;
+typedef my_bool thr_alarm_t;
+typedef my_bool ALARM;
 
-#define thr_alarm_init(A)   (A)->crono=0
-#define thr_alarm_in_use(A) (A)->crono
+#define thr_alarm_init(A) (*(A))=0
+#define thr_alarm_in_use(A) (*(A) != 0)
+#define thr_end_alarm(A)
+#define thr_alarm(A,B,C) ((*(A)=1)-1)
+/* The following should maybe be (*(A)) */
+#define thr_got_alarm(A) 0 
 #define init_thr_alarm(A)
 #define thr_alarm_kill(A)
 #define end_thr_alarm()
-#define thr_alarm(A,B) (((A)->crono=1)-1)
-#define thr_got_alarm(A) (A)->crono
-#define thr_end_alarm(A)
 
 #else
 #if defined(__WIN__)
@@ -93,10 +100,10 @@ typedef struct st_alarm {
 #define thr_alarm_init(A) (*(A))=0
 #define thr_alarm_in_use(A) (*(A)!= 0)
 void init_thr_alarm(uint max_alarm);
-bool thr_alarm(thr_alarm_t *alarmed, uint sec, ALARM *buff);
+my_bool thr_alarm(thr_alarm_t *alarmed, uint sec, ALARM *buff);
 void thr_alarm_kill(pthread_t thread_id);
 void thr_end_alarm(thr_alarm_t *alarmed);
-void end_thr_alarm(void);
+void end_thr_alarm(my_bool free_structures);
 sig_handler process_alarm(int);
 #ifndef thr_got_alarm
 bool thr_got_alarm(thr_alarm_t *alrm);
@@ -109,4 +116,3 @@ bool thr_got_alarm(thr_alarm_t *alrm);
 }
 #endif /* __cplusplus */
 #endif /* _thr_alarm_h */
-

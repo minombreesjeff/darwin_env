@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -148,15 +148,15 @@ int main(int argc, char *argv[])
   keyinfo[5].keysegs=1;
   keyinfo[5].flag = pack_type;
 
-  recinfo[0].type=pack_fields ? FIELD_SKIPP_PRESPACE : 0;
+  recinfo[0].type=pack_fields ? FIELD_SKIP_PRESPACE : 0;
   recinfo[0].length=7;
   recinfo[0].null_bit=0;
   recinfo[0].null_pos=0;
-  recinfo[1].type=pack_fields ? FIELD_SKIPP_PRESPACE : 0;
+  recinfo[1].type=pack_fields ? FIELD_SKIP_PRESPACE : 0;
   recinfo[1].length=5;
   recinfo[1].null_bit=0;
   recinfo[1].null_pos=0;
-  recinfo[2].type=pack_fields ? FIELD_SKIPP_PRESPACE : 0;
+  recinfo[2].type=pack_fields ? FIELD_SKIP_PRESPACE : 0;
   recinfo[2].length=9;
   recinfo[2].null_bit=0;
   recinfo[2].null_pos=0;
@@ -164,11 +164,11 @@ int main(int argc, char *argv[])
   recinfo[3].length=STANDARD_LENGTH-7-5-9-4;
   recinfo[3].null_bit=0;
   recinfo[3].null_pos=0;
-  recinfo[4].type=pack_fields ? FIELD_SKIPP_ZERO : 0;
+  recinfo[4].type=pack_fields ? FIELD_SKIP_ZERO : 0;
   recinfo[4].length=4;
   recinfo[4].null_bit=0;
   recinfo[4].null_pos=0;
-  recinfo[5].type=pack_fields ? FIELD_SKIPP_ENDSPACE : 0;
+  recinfo[5].type=pack_fields ? FIELD_SKIP_ENDSPACE : 0;
   recinfo[5].length=60;
   recinfo[5].null_bit=0;
   recinfo[5].null_pos=0;
@@ -208,13 +208,13 @@ int main(int argc, char *argv[])
   if (!silent)
     printf("- Writing key:s\n");
   if (key_cacheing)
-    init_key_cache(key_cache_size,(uint) IO_SIZE*4*10);	/* Use a small cache */
+    init_key_cache(key_cache_size);		/* Use a small cache */
   if (locking)
     mi_lock_database(file,F_WRLCK);
   if (write_cacheing)
-    mi_extra(file,HA_EXTRA_WRITE_CACHE);
+    mi_extra(file,HA_EXTRA_WRITE_CACHE,0);
   if (opt_quick_mode)
-    mi_extra(file,HA_EXTRA_QUICK);
+    mi_extra(file,HA_EXTRA_QUICK,0);
 
   for (i=0 ; i < recant ; i++)
   {
@@ -261,11 +261,15 @@ int main(int argc, char *argv[])
   if (testflag==1) goto end;
 
   if (write_cacheing)
-    if (mi_extra(file,HA_EXTRA_NO_CACHE))
+  {
+    if (mi_extra(file,HA_EXTRA_NO_CACHE,0))
     {
       puts("got error from mi_extra(HA_EXTRA_NO_CACHE)");
       goto end;
     }
+    if (key_cacheing)
+      resize_key_cache(key_cache_size*2);
+  }
 
   if (!silent)
     printf("- Delete\n");
@@ -341,70 +345,81 @@ int main(int argc, char *argv[])
       }
     }
   }
-  if (testflag==3) goto end;
+  if (testflag == 3)
+    goto end;
 
-  if (!silent)
-    printf("- Same key: first - next -> last - prev -> first\n");
-  DBUG_PRINT("progpos",("first - next -> last - prev -> first"));
   for (i=999, dupp_keys=j=0 ; i>0 ; i--)
   {
-    if (key1[i] >dupp_keys) { dupp_keys=key1[i]; j=i; }
-  }
-  sprintf(key,"%6d",j);
-  if (verbose) printf("	 Using key: \"%s\"  Keys: %d\n",key,dupp_keys);
-  if (mi_rkey(file,read_record,0,key,0,HA_READ_KEY_EXACT)) goto err;
-  if (mi_rsame(file,read_record2,-1)) goto err;
-  if (memcmp(read_record,read_record2,reclength) != 0)
-  {
-    printf("mi_rsame didn't find same record\n");
-    goto end;
-  }
-  info.recpos=mi_position(file);
-  if (mi_rfirst(file,read_record2,0) ||
-      mi_rsame_with_pos(file,read_record2,0,info.recpos) ||
-      memcmp(read_record,read_record2,reclength) != 0)
-  {
-    printf("mi_rsame_with_pos didn't find same record\n");
-    goto end;
-  }
-  {
-    int skr=mi_rnext(file,read_record2,0);
-    if ((skr && my_errno != HA_ERR_END_OF_FILE) ||
-	mi_rprev(file,read_record2,-1) ||
-	memcmp(read_record,read_record2,reclength) != 0)
+    if (key1[i] > dupp_keys)
     {
-      printf("mi_rsame_with_pos lost position\n");
-      goto end;
+      dupp_keys=key1[i]; j=i;
     }
   }
-  ant=1;
-  start=keyinfo[0].seg[0].start; length=keyinfo[0].seg[0].length;
-  while (mi_rnext(file,read_record2,0) == 0 &&
-	 memcmp(read_record2+start,key,length) == 0) ant++;
-  if (ant != dupp_keys)
+  sprintf(key,"%6d",j);
+  start=keyinfo[0].seg[0].start;
+  length=keyinfo[0].seg[0].length;
+  if (dupp_keys)
   {
-    printf("next: Found: %d keys of %d\n",ant,dupp_keys);
-    goto end;
-  }
-  ant=0;
-  while (mi_rprev(file,read_record3,0) == 0 &&
-	 bcmp(read_record3+start,key,length) == 0) ant++;
-  if (ant != dupp_keys)
-  {
-    printf("prev: Found: %d records of %d\n",ant,dupp_keys);
-    goto end;
-  }
+    if (!silent)
+      printf("- Same key: first - next -> last - prev -> first\n");
+    DBUG_PRINT("progpos",("first - next -> last - prev -> first"));
+    if (verbose) printf("	 Using key: \"%s\"  Keys: %d\n",key,dupp_keys);
 
-  /* Check of mi_rnext_same */
-  if (mi_rkey(file,read_record,0,key,0,HA_READ_KEY_EXACT))
-    goto err;
-  ant=1;
-  while (!mi_rnext_same(file,read_record3) && ant < dupp_keys+10)
-    ant++;
-  if (ant != dupp_keys || my_errno != HA_ERR_END_OF_FILE)
-  {
-    printf("mi_rnext_same: Found: %d records of %d\n",ant,dupp_keys);
-    goto end;
+    if (mi_rkey(file,read_record,0,key,0,HA_READ_KEY_EXACT))
+      goto err;
+    if (mi_rsame(file,read_record2,-1))
+      goto err;
+    if (memcmp(read_record,read_record2,reclength) != 0)
+    {
+      printf("mi_rsame didn't find same record\n");
+      goto end;
+    }
+    info.recpos=mi_position(file);
+    if (mi_rfirst(file,read_record2,0) ||
+	mi_rsame_with_pos(file,read_record2,0,info.recpos) ||
+	memcmp(read_record,read_record2,reclength) != 0)
+    {
+      printf("mi_rsame_with_pos didn't find same record\n");
+      goto end;
+    }
+    {
+      int skr=mi_rnext(file,read_record2,0);
+      if ((skr && my_errno != HA_ERR_END_OF_FILE) ||
+	  mi_rprev(file,read_record2,-1) ||
+	  memcmp(read_record,read_record2,reclength) != 0)
+      {
+	printf("mi_rsame_with_pos lost position\n");
+	goto end;
+      }
+    }
+    ant=1;
+    while (mi_rnext(file,read_record2,0) == 0 &&
+	   memcmp(read_record2+start,key,length) == 0) ant++;
+    if (ant != dupp_keys)
+    {
+      printf("next: Found: %d keys of %d\n",ant,dupp_keys);
+      goto end;
+    }
+    ant=0;
+    while (mi_rprev(file,read_record3,0) == 0 &&
+	   bcmp(read_record3+start,key,length) == 0) ant++;
+    if (ant != dupp_keys)
+    {
+      printf("prev: Found: %d records of %d\n",ant,dupp_keys);
+      goto end;
+    }
+
+    /* Check of mi_rnext_same */
+    if (mi_rkey(file,read_record,0,key,0,HA_READ_KEY_EXACT))
+      goto err;
+    ant=1;
+    while (!mi_rnext_same(file,read_record3) && ant < dupp_keys+10)
+      ant++;
+    if (ant != dupp_keys || my_errno != HA_ERR_END_OF_FILE)
+    {
+      printf("mi_rnext_same: Found: %d records of %d\n",ant,dupp_keys);
+      goto end;
+    }
   }
 
   if (!silent)
@@ -624,14 +639,14 @@ int main(int argc, char *argv[])
       if ((long) range_records < (long) records*7/10-2 ||
 	  (long) range_records > (long) records*14/10+2)
       {
-	printf("mi_records_range for key: %d returned %ld; Should be about %ld\n",
-	       i, range_records, records);
+	printf("mi_records_range for key: %d returned %lu; Should be about %lu\n",
+	       i, (ulong) range_records, (ulong) records);
 	goto end;
       }
       if (verbose && records)
       {
-	printf("mi_records_range returned %ld;  Exact is %ld  (diff: %4.2g %%)\n",
-	       range_records,records,
+	printf("mi_records_range returned %lu;  Exact is %lu  (diff: %4.2g %%)\n",
+	       (ulong) range_records, (ulong) records,
 	       labs((long) range_records-(long) records)*100.0/records);
 
       }
@@ -645,8 +660,8 @@ int main(int argc, char *argv[])
       || info.keys != keys)
   {
     puts("Wrong info from mi_info");
-    printf("Got: records: %ld  delete: %ld  i_keys: %d\n",
-	   info.records,info.deleted,info.keys);
+    printf("Got: records: %lu  delete: %lu  i_keys: %d\n",
+	   (ulong) info.records, (ulong) info.deleted, info.keys);
   }
   if (verbose)
   {
@@ -666,7 +681,7 @@ int main(int argc, char *argv[])
 
   if (!silent)
     printf("- mi_extra(CACHE) + mi_rrnd.... + mi_extra(NO_CACHE)\n");
-  if (mi_extra(file,HA_EXTRA_RESET) || mi_extra(file,HA_EXTRA_CACHE))
+  if (mi_extra(file,HA_EXTRA_RESET,0) || mi_extra(file,HA_EXTRA_CACHE,0))
   {
     if (locking || (!use_blob && !pack_fields))
     {
@@ -684,7 +699,7 @@ int main(int argc, char *argv[])
 	   ant,write_count-opt_delete);
     goto end;
   }
-  if (mi_extra(file,HA_EXTRA_NO_CACHE))
+  if (mi_extra(file,HA_EXTRA_NO_CACHE,0))
   {
     puts("got error from mi_extra(HA_EXTRA_NO_CACHE)");
     goto end;
@@ -709,7 +724,7 @@ int main(int argc, char *argv[])
   DBUG_PRINT("progpos",("Removing keys"));
   lastpos = HA_OFFSET_ERROR;
   /* DBUG_POP(); */
-  mi_extra(file,HA_EXTRA_RESET);
+  mi_extra(file,HA_EXTRA_RESET,0);
   found_parts=0;
   while ((error=mi_rrnd(file,read_record,HA_OFFSET_ERROR)) !=
 	 HA_ERR_END_OF_FILE)
@@ -776,9 +791,15 @@ end:
     printf("\nFollowing test have been made:\n");
     printf("Write records: %d\nUpdate records: %d\nSame-key-read: %d\nDelete records: %d\n", write_count,update,dupp_keys,opt_delete);
     if (rec_pointer_size)
-      printf("Record pointer size: %d\n",rec_pointer_size);
+      printf("Record pointer size:  %d\n",rec_pointer_size);
+    printf("myisam_block_size:    %u\n", myisam_block_size);
     if (key_cacheing)
-      puts("Key cacheing used");
+    {
+      puts("Key cache used");
+      printf("key_cache_block_size: %u\n", key_cache_block_size);
+      if (write_cacheing)
+	puts("Key cache resized");
+    }
     if (write_cacheing)
       puts("Write cacheing used");
     if (write_cacheing)
@@ -801,7 +822,7 @@ reads:      %10lu\n",
   end_key_cache();
   if (blob_buffer)
     my_free(blob_buffer,MYF(0));
-  my_end(MY_CHECK_ERROR | MY_GIVE_INFO);
+  my_end(silent ? MY_CHECK_ERROR : MY_CHECK_ERROR | MY_GIVE_INFO);
   return(0);
 err:
   printf("got error: %d when using MyISAM-database\n",my_errno);
@@ -861,7 +882,29 @@ static void get_options(int argc, char **argv)
       verbose=1;
       break;
     case 'm':				/* records */
-      recant=atoi(++pos);
+      if ((recant=atoi(++pos)) < 10)
+      {
+	fprintf(stderr,"record count must be >= 10\n");
+	exit(1);
+      }
+      break;
+    case 'e':				/* myisam_block_length */
+      if ((myisam_block_size=atoi(++pos)) < MI_MIN_KEY_BLOCK_LENGTH ||
+	  myisam_block_size > MI_MAX_KEY_BLOCK_LENGTH)
+      {
+	fprintf(stderr,"Wrong myisam_block_length\n");
+	exit(1);
+      }
+      myisam_block_size=1 << my_bit_log2(myisam_block_size);
+      break;
+    case 'E':				/* myisam_block_length */
+      if ((key_cache_block_size=atoi(++pos)) < MI_MIN_KEY_BLOCK_LENGTH ||
+	  key_cache_block_size > MI_MAX_KEY_BLOCK_LENGTH)
+      {
+	fprintf(stderr,"Wrong key_cache_block_size\n");
+	exit(1);
+      }
+      key_cache_block_size=1 << my_bit_log2(key_cache_block_size);
       break;
     case 'f':
       if ((first_key=atoi(++pos)) < 0 || first_key >= MYISAM_KEYS)
@@ -904,7 +947,7 @@ static void get_options(int argc, char **argv)
     case 'V':
       printf("%s  Ver 1.2 for %s at %s\n",progname,SYSTEM_TYPE,MACHINE_TYPE);
       puts("By Monty, for your professional use\n");
-      printf("Usage: %s [-?AbBcDIKLPRqSsVWltv] [-k#] [-f#] [-m#] [-t#]\n",
+      printf("Usage: %s [-?AbBcDIKLPRqSsVWltv] [-k#] [-f#] [-m#] [-e#] [-E#] [-t#]\n",
 	     progname);
       exit(0);
     case '#':

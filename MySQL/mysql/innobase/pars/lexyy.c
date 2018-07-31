@@ -8,6 +8,7 @@
 #define YY_FLEX_MAJOR_VERSION 2
 #define YY_FLEX_MINOR_VERSION 5
 
+#include "univ.i"
 #include <stdio.h>
 
 
@@ -605,6 +606,9 @@ How to make the InnoDB parser and lexer C files:
 5. Rename lex.yy.c to lexyy.c.
 
 6. Remove the #include of unistd.h from about line 2500 of lexyy.c
+
+7. Add '#include "univ.i"' before #include <stdio.h> in lexyy.c
+   (Needed for AIX)
 
 These instructions seem to work at least with bison-1.28 and flex-2.5.4 on
 Linux.

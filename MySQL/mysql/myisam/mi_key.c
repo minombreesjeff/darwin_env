@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -18,6 +18,9 @@
 
 #include "myisamdef.h"
 #include "m_ctype.h"
+#ifdef HAVE_IEEEFP_H
+#include <ieeefp.h>
+#endif
 
 #define CHECK_KEYS
 
@@ -88,25 +91,28 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
     }
     else if (keyseg->flag & HA_SWAP_KEY)
     {						/* Numerical column */
-#ifdef NAN_TEST
-      float float_nr;
-      double dbl_nr;
+#ifdef HAVE_ISNAN
       if (type == HA_KEYTYPE_FLOAT)
       {
-	float_nr=float4get(pos);
-	if (float_nr == (float) FLT_MAX)
+	float nr;
+	float4get(nr,pos);
+	if (isnan(nr))
 	{
-	  float_nr= (float) FLT_MAX;
-	  pos= (byte*) &float_nr;
+	  /* Replace NAN with zero */
+ 	  bzero(key,length);
+	  key+=length;
+	  continue;
 	}
       }
       else if (type == HA_KEYTYPE_DOUBLE)
       {
-	dbl_nr=float8get(key);
-	if (dbl_nr == DBL_MAX)
+	double nr;
+	float8get(nr,pos);
+	if (isnan(nr))
 	{
-	  dbl_nr=DBL_MAX;
-	  pos=(byte*) &dbl_nr;
+ 	  bzero(key,length);
+	  key+=length;
+	  continue;
 	}
       }
 #endif
@@ -130,11 +136,26 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
 } /* _mi_make_key */
 
 
-	/* Pack a key to intern format from given format (c_rkey) */
-	/* returns length of packed key */
+/*
+  Pack a key to intern format from given format (c_rkey)
+
+  SYNOPSIS
+    _mi_pack_key()
+    info		MyISAM handler
+    uint keynr		key number
+    key			Store packed key here
+    old			Not packed key
+    k_length		Length of 'old' to use
+    last_used_keyseg	out parameter.  May be NULL
+
+   RETURN
+     length of packed key
+
+     last_use_keyseg 	Store pointer to the keyseg after the last used one
+*/
 
 uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
-		  uint k_length)
+		  uint k_length, MI_KEYSEG **last_used_keyseg)
 {
   uint length;
   uchar *pos,*end,*start_key=key;
@@ -205,6 +226,8 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
     key+= length;
     k_length-=length;
   }
+  if (last_used_keyseg)
+    *last_used_keyseg= keyseg;
 
 #ifdef NOT_USED
   if (keyseg->type)
@@ -241,10 +264,11 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
   byte *blob_ptr;
   DBUG_ENTER("_mi_put_key_in_record");
 
-  if (info->blobs && info->s->keyinfo[keynr].flag & HA_VAR_LENGTH_KEY)
+  if (info->s->base.blobs && info->s->keyinfo[keynr].flag & HA_VAR_LENGTH_KEY)
   {
     if (!(blob_ptr=
-	  mi_fix_rec_buff_for_blob(info, info->s->keyinfo[keynr].keylength)))
+	  mi_alloc_rec_buff(info, info->s->keyinfo[keynr].keylength,
+			    &info->rec_buff)))
       goto err;
   }
   key=(byte*) info->lastkey;
@@ -346,7 +370,7 @@ err:
 
 int _mi_read_key_record(MI_INFO *info, my_off_t filepos, byte *buf)
 {
-  VOID(_mi_writeinfo(info,0));
+  fast_mi_writeinfo(info);
   if (filepos != HA_OFFSET_ERROR)
   {
     if (info->lastinx >= 0)

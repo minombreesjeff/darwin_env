@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Static variables for mysys library. All definied here for easy making of
@@ -33,19 +32,24 @@ struct st_remember {
   sig_handler (*func)(int number);
 };
 
-struct irem {
-    struct remember *_pNext;		/* Linked list of structures	   */
-    struct remember *_pPrev;		/* Other link			   */
-    my_string _sFileName;		/* File in which memory was new'ed */
-    uint _uLineNum;			/* Line number in above file	   */
-    uint _uDataSize;			/* Size requested		   */
-    long _lSpecialValue;		/* Underrun marker value	   */
+/*
+  Structure that stores information of a allocated memory block
+  The data is at &struct_adr+sizeof(ALIGN_SIZE(sizeof(struct irem)))
+  The lspecialvalue is at the previous 4 bytes from this, which may not
+  necessarily be in the struct if the struct size isn't aligned at a 8 byte
+  boundary.
+*/
+
+struct st_irem
+{
+  struct st_irem *next;		/* Linked list of structures	   */
+  struct st_irem *prev;		/* Other link			   */
+  char *filename;		/* File in which memory was new'ed */
+  uint32 linenum;		/* Line number in above file	   */
+  uint32 datasize;		/* Size requested		   */
+  uint32 SpecialValue;		/* Underrun marker value	   */
 };
 
-struct remember {
-    struct irem tInt;
-    char aData[1];
-};
 
 extern char	NEAR curr_dir[FN_REFLEN],NEAR home_dir_buff[FN_REFLEN];
 
@@ -57,13 +61,13 @@ extern const char *soundex_map;
 extern USED_MEM* my_once_root_block;
 extern uint	 my_once_extra;
 
-#ifndef HAVE_TEMPNAM
+#if !defined(HAVE_TEMPNAM) || defined(HPUX11)
 extern int	_my_tempnam_used;
 #endif
 
 extern byte	*sf_min_adress,*sf_max_adress;
-extern uint	cNewCount;
-extern struct remember *pRememberRoot;
+extern uint	sf_malloc_count;
+extern struct st_irem *sf_malloc_root;
 
 #if defined(THREAD) && !defined(__WIN__)
 extern sigset_t my_signals;		/* signals blocked by mf_brkhant */

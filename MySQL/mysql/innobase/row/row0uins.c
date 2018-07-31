@@ -234,7 +234,7 @@ void
 row_undo_ins_parse_undo_rec(
 /*========================*/
 	undo_node_t*	node,	/* in: row undo node */
-	que_thr_t*	thr)	/* in: query thread */
+	que_thr_t*	thr __attribute__((unused))) /* in: query thread */
 {
 	dict_index_t*	clust_index;
 	byte*		ptr;
@@ -254,7 +254,8 @@ row_undo_ins_parse_undo_rec(
 	node->table = dict_table_get_on_id(table_id, node->trx);
 
 	if (node->table == NULL) {
-	  return;
+
+		return;
 	}
 
 	clust_index = dict_table_get_first_index(node->table);
@@ -281,7 +282,7 @@ row_undo_ins(
 	
 	ut_ad(node && thr);
 	ut_ad(node->state == UNDO_NODE_INSERT);
-
+	
 	row_undo_ins_parse_undo_rec(node, thr);
 
 	if (node->table == NULL) {
@@ -292,6 +293,7 @@ row_undo_ins(
 
 	if (!found) {
 	        trx_undo_rec_release(node->trx, node->undo_no);
+
 		return(DB_SUCCESS);
 	}
 

@@ -15,12 +15,10 @@ Created 9/8/1995 Heikki Tuuri
 /* Maximum number of threads which can be created in the program;
 this is also the size of the wait slot array for MySQL threads which
 can wait inside InnoDB */
-#ifdef __WIN__
-/* Windows 95/98/ME seemed to have difficulties creating the all
-the event semaphores for the wait array slots. If the computer had
-<= 64 MB memory, InnoDB startup could take minutes or even crash.
-That is why we set this to only 1000 in Windows. */
-
+#if defined(__WIN__) || defined(__NETWARE__)
+/* Create less event semaphores because Win 98/ME had difficult creating
+40000 event semaphores */
+/* TODO: these just take a lot of memory on NetWare.  should netware move up? */
 #define	OS_THREAD_MAX_N		1000
 #else
 #define	OS_THREAD_MAX_N		10000
@@ -42,7 +40,6 @@ typedef os_thread_t          	os_thread_id_t;	/* In Unix we use the thread
 						handle itself as the id of
 						the thread */
 #endif
-
 
 /* Define a function pointer type to use in a typecast */
 typedef void* (*os_posix_f_t) (void*);
@@ -68,7 +65,9 @@ os_thread_pf(
 /********************************************************************
 Creates a new thread of execution. The execution starts from
 the function given. The start function takes a void* parameter
-and returns a ulint. */
+and returns a ulint.
+NOTE: We count the number of threads in os_thread_exit(). A created
+thread should always use that to exit and not use return() to exit. */
 
 os_thread_t
 os_thread_create(
@@ -85,12 +84,13 @@ os_thread_create(
 	os_thread_id_t*		thread_id);	/* out: id of the created
 						thread */
 /*********************************************************************
-A thread calling this function ends its execution. */
+Exits the current thread. */
 
 void
 os_thread_exit(
 /*===========*/
-	ulint	code);	/* in: exit code */
+	void*	exit_value);	/* in: exit value; in Windows this void*
+				is cast as a DWORD */
 /*********************************************************************
 Returns the thread identifier of current thread. */
 
@@ -145,7 +145,6 @@ Gets the last operating system error code for the calling thread. */
 ulint
 os_thread_get_last_error(void);
 /*==========================*/
-
 
 #ifndef UNIV_NONINL
 #include "os0thread.ic"

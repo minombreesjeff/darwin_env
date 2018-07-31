@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000-2003 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include "my_static.h"
@@ -42,9 +41,14 @@ static my_bool win32_init_tcp_ip();
 #else
 #define my_win_init()
 #endif
-static my_bool my_init_done=0;
+#ifdef __NETWARE__
+static void netware_init();
+#else
+#define netware_init()
+#endif
 
 
+my_bool my_init_done=0;
 
 static ulong atoi_octal(const char *str)
 {
@@ -66,12 +70,16 @@ void my_init(void)
   if (my_init_done)
     return;
   my_init_done=1;
+#if defined(THREAD) && defined(SAFE_MUTEX)
+  safe_mutex_global_init();		/* Must be called early */
+#endif
+  netware_init();
 #ifdef THREAD
 #if defined(HAVE_PTHREAD_INIT)
   pthread_init();			/* Must be called before DBUG_ENTER */
 #endif
   my_thread_global_init();
-#if !defined( __WIN__) && !defined(OS2)
+#if !defined( __WIN__) && !defined(OS2) && !defined(__NETWARE__)
   sigfillset(&my_signals);		/* signals blocked by mf_brkhant */
 #endif
 #endif /* THREAD */
@@ -145,7 +153,7 @@ Voluntary context switches %ld, Involuntary context switches %ld\n",
 	      rus.ru_msgsnd, rus.ru_msgrcv, rus.ru_nsignals,
 	      rus.ru_nvcsw, rus.ru_nivcsw);
 #endif
-#if defined(MSDOS) && !defined(__WIN__)
+#if ( defined(MSDOS) || defined(__NETWARE__) ) && !defined(__WIN__)
     fprintf(info_file,"\nRun time: %.1f\n",(double) clock()/CLOCKS_PER_SEC);
 #endif
 #if defined(SAFEMALLOC)
@@ -162,19 +170,26 @@ Voluntary context switches %ld, Involuntary context switches %ld\n",
 #endif
   }
 #ifdef THREAD
-  pthread_mutex_destroy(&THR_LOCK_keycache);
-  pthread_mutex_destroy(&THR_LOCK_malloc);
-  pthread_mutex_destroy(&THR_LOCK_open);
   DBUG_POP();				/* Must be done before my_thread_end */
+  my_once_free();
   my_thread_end();
   my_thread_global_end();
-#endif
+#if defined(SAFE_MUTEX)
+  /*
+    Check on destroying of mutexes. A few may be left that will get cleaned
+    up by C++ destructors
+  */
+  safe_mutex_end(infoflag & MY_GIVE_INFO ? stderr : (FILE *) 0);
+#endif /* defined(SAFE_MUTEX) */
+#endif /* THREAD */
+
 #ifdef __WIN__
-  if (have_tcpip);
-    WSACleanup( );
+  if (have_tcpip)
+    WSACleanup();
 #endif /* __WIN__ */
-    my_init_done=0;
+  my_init_done=0;
 } /* my_end */
+
 
 #ifdef __WIN__
 
@@ -219,6 +234,10 @@ static void my_win_init(void)
 
   setlocale(LC_CTYPE, "");             /* To get right sortorder */
 
+  /* Clear the OS system variable TZ and avoid the 100% CPU usage */
+  _putenv( "TZ=" ); 
+  _tzset();
+
   /* apre la chiave HKEY_LOCAL_MACHINES\software\MySQL */
   if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,(LPCTSTR)targetKey,0,
 		   KEY_READ,&hSoftMysql) != ERROR_SUCCESS)
@@ -242,7 +261,7 @@ static void my_win_init(void)
 
     /* Inserisce i dati come variabili d'ambiente */
     my_env=strdup(EnvString);  /* variable for putenv must be allocated ! */
-    putenv(EnvString) ;
+    putenv(my_env) ;
 
     dimNameValueBuffer = dimName ;
     dimDataValueBuffer = dimData ;
@@ -260,10 +279,10 @@ static void my_win_init(void)
 
 
 /*------------------------------------------------------------------
-** Name: CheckForTcpip| Desc: checks if tcpip has been installed on system
-** According to Microsoft Developers documentation the first registry
-** entry should be enough to check if TCP/IP is installed, but as expected
-** this doesn't work on all Win32 machines :(
+  Name: CheckForTcpip| Desc: checks if tcpip has been installed on system
+  According to Microsoft Developers documentation the first registry
+  entry should be enough to check if TCP/IP is installed, but as expected
+  this doesn't work on all Win32 machines :(
 ------------------------------------------------------------------*/
 
 #define TCPIPKEY  "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"
@@ -288,6 +307,7 @@ static my_bool win32_have_tcpip(void)
   RegCloseKey ( hTcpipRegKey);
   return (TRUE);
 }
+
 
 static my_bool win32_init_tcp_ip()
 {
@@ -320,4 +340,54 @@ static my_bool win32_init_tcp_ip()
   }
   return(0);
 }
-#endif
+#endif /* __WIN__ */
+
+
+#ifdef __NETWARE__
+/****************************************************************************
+  Do basic initialisation for netware needed by most programs
+****************************************************************************/
+
+static void netware_init()
+{
+  char cwd[PATH_MAX], *name;
+
+  /* init only if we are not a client library */
+  if (my_progname)
+  {
+#if SUPPORTED_BY_LIBC   /* Removed until supported in Libc */
+    struct termios tp;
+    /* Disable control characters */
+    tcgetattr(STDIN_FILENO, &tp);
+    tp.c_cc[VINTR] = _POSIX_VDISABLE;
+    tp.c_cc[VEOF] = _POSIX_VDISABLE;
+    tp.c_cc[VSUSP] = _POSIX_VDISABLE;
+    tcsetattr(STDIN_FILENO, TCSANOW, &tp);
+#endif /* SUPPORTED_BY_LIBC */
+
+    /* With stdout redirection */
+    if (!isatty(STDOUT_FILENO))
+    {
+      setscreenmode(SCR_AUTOCLOSE_ON_EXIT);      /* auto close the screen */
+    }
+    else
+    {
+      setscreenmode(SCR_NO_MODE);		/* keep the screen up */
+    }
+
+    /* Parse program name and change to base format */
+    name= my_progname;
+    for (; *name; name++)
+    {
+      if (*name == '\\')
+      {
+        *name = '/';
+      }
+      else
+      {
+        *name = tolower(*name);
+      }
+    }
+  }
+}
+#endif /* __NETWARE__ */

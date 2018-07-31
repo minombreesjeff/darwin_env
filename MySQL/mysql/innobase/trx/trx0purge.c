@@ -209,9 +209,6 @@ trx_purge_sys_create(void)
 	purge_sys->purge_undo_no = ut_dulint_zero;
 	purge_sys->next_stored = FALSE;
 	
-	rw_lock_create(&(purge_sys->purge_is_running));
-	rw_lock_set_level(&(purge_sys->purge_is_running),
-						SYNC_PURGE_IS_RUNNING);
 	rw_lock_create(&(purge_sys->latch));
 	rw_lock_set_level(&(purge_sys->latch), SYNC_PURGE_LATCH);
 
@@ -596,7 +593,7 @@ trx_purge_rseg_get_next_history_log(
 
 	mutex_enter(&(rseg->mutex));
 
-	ut_ad(rseg->last_page_no != FIL_NULL);
+	ut_a(rseg->last_page_no != FIL_NULL);
 
 	purge_sys->purge_trx_no = ut_dulint_add(rseg->last_trx_no, 1);
 	purge_sys->purge_undo_no = ut_dulint_zero;
@@ -609,16 +606,9 @@ trx_purge_rseg_get_next_history_log(
 	log_hdr = undo_page + rseg->last_offset;
 	seg_hdr = undo_page + TRX_UNDO_SEG_HDR;
 
-	if ((mach_read_from_2(log_hdr + TRX_UNDO_NEXT_LOG) == 0)
-	    && (mach_read_from_2(seg_hdr + TRX_UNDO_STATE)
-		== TRX_UNDO_TO_PURGE)) {
-	
-		/* This is the last log header on this page and the log
-		segment cannot be reused: we may increment the number of
-		pages handled */
+	/* Increase the purge page count by one for every handled log */
 
-		purge_sys->n_pages_handled++;
-	}
+	purge_sys->n_pages_handled++;
 
 	prev_log_addr = trx_purge_get_log_from_hist(
 			 flst_get_prev_addr(log_hdr + TRX_UNDO_HISTORY_NODE,
@@ -674,9 +664,9 @@ trx_purge_choose_next_log(void)
 	trx_rseg_t*	rseg;
 	trx_rseg_t*	min_rseg;
 	dulint		min_trx_no;
-	ulint		space;
-	ulint		page_no;
-	ulint		offset;
+	ulint		space = 0;   /* remove warning (??? bug ???) */
+	ulint		page_no = 0; /* remove warning (??? bug ???) */
+	ulint		offset = 0;  /* remove warning (??? bug ???) */
 	mtr_t		mtr;
 	
 	ut_ad(mutex_own(&(purge_sys->mutex)));

@@ -21,7 +21,8 @@
  *	all copies and derivative works.  Thank you.			      *
  *									      *
  *	The author makes no warranty of any kind  with	respect  to  this     *
- *	product  and  explicitly disclaims any implied warranties of mer-     *
+ *	product  and  explicitly disclaims any implied warranties of mer-     *ct_lex.table_list.first=0;
+  thd->lex.selec
  *	chantability or fitness for any particular purpose.		      *
  *									      *
  ******************************************************************************
@@ -58,7 +59,7 @@
  *	seismo!bpa!sjuvax!bbanerje
  *
  *	Michael Widenius:
- *	DBUG_DUMP	- To dump a pice of memory.
+ *	DBUG_DUMP	- To dump a block of memory.
  *	PUSH_FLAG "O"	- To be used insted of "o" if we don't
  *			  want flushing (for slow systems)
  *	PUSH_FLAG "A"	- as 'O', but we will append to the out file instead
@@ -69,7 +70,7 @@
 #ifdef DBUG_OFF
 #undef DBUG_OFF
 #endif
-#include <global.h>
+#include <my_global.h>
 #include <m_string.h>
 #include <errno.h>
 #if defined(MSDOS) || defined(__WIN__)
@@ -705,9 +706,16 @@ char ***_sframep_ __attribute__((unused)))
   if (!_no_db_)
   {
     int save_errno=errno;
+    /*
+      Sasha: the test below is so we could call functions with DBUG_ENTER
+      before my_thread_init(). I needed this because I suspected corruption
+      of a block allocated by my_thread_init() itself, so I wanted to use
+      my_malloc()/my_free() in my_thread_init()/my_thread_end()
+    */
+    if (!(state=code_state()))
+      return;
     if (!init_done)
       _db_push_ (_DBUG_START_CONDITION_);
-    state=code_state();
 
     *_sfunc_ = state->func;
     *_sfile_ = state->file;
@@ -787,10 +795,10 @@ uint *_slevel_)
   if (!_no_db_)
   {
     int save_errno=errno;
+    if (!(state=code_state()))
+      return;				
     if (!init_done)
       _db_push_ ("");
-    if (!(state=code_state()))
-      return;				/* Only happens at end of program */
     if (stack->flags & (TRACE_ON | DEBUG_ON | PROFILE_ON))
     {
       if (!state->locked)
@@ -855,6 +863,9 @@ uint _line_,
 const char *keyword)
 {
   CODE_STATE *state=code_state();
+  /* Sasha: pre-my_thread_init() safety */
+  if (!state)
+    return;
   state->u_line = _line_;
   state->u_keyword = (char*) keyword;
 }
@@ -890,7 +901,9 @@ void _db_doprnt_ (const char *format,...)
 {
   va_list args;
   CODE_STATE *state;
-  state=code_state();
+  /* Sasha: pre-my_thread_init() safety */
+  if (!(state=code_state()))
+    return;
 
   va_start(args,format);
 
@@ -906,7 +919,6 @@ void _db_doprnt_ (const char *format,...)
     }
     (void) fprintf (_db_fp_, "%s: ", state->u_keyword);
     (void) vfprintf (_db_fp_, format, args);
-    va_end(args);
     (void) fputc('\n',_db_fp_);
     dbug_flush(state);
     errno=save_errno;
@@ -942,7 +954,9 @@ uint length)
   int pos;
   char dbuff[90];
   CODE_STATE *state;
-  state=code_state();
+  /* Sasha: pre-my_thread_init() safety */
+  if (!(state=code_state()))
+    return;
 
   if (_db_keyword_ ((char*) keyword))
   {
@@ -1224,7 +1238,9 @@ const char *keyword)
 
   if (!init_done)
     _db_push_ ("");
-  state=code_state();
+  /* Sasha: pre-my_thread_init() safety */
+  if (!(state=code_state()))
+    return FALSE;
   result = FALSE;
   if (DEBUGGING &&
       state->level <= stack -> maxdepth &&
@@ -1928,7 +1944,7 @@ static void dbug_flush(CODE_STATE *state)
     {
       if (!(freopen(stack->name,"a",_db_fp_)))
       {
-	(void) fprintf(stderr, ERR_OPEN, _db_process_);
+	(void) fprintf(stderr, ERR_OPEN, _db_process_, stack->name);
 	fflush(stderr);
 	_db_fp_ = stdout;
 	stack -> out_file = _db_fp_;

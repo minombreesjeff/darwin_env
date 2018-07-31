@@ -1,25 +1,28 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+/* Copyright (C) 2000-2003 MySQL AB
 
-/* This is the main include file that should included 'first' in every
-   C file. */
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+
+/* This is the include file that should be included 'first' in every C file. */
 
 #ifndef _global_h
 #define _global_h
+
+#ifndef EMBEDDED_LIBRARY
+#define HAVE_REPLICATION
+#define HAVE_EXTERNAL_CLIENT
+#endif
 
 #if defined( __EMX__) && !defined( MYSQL_SERVER)
 /* moved here to use below VOID macro redefinition */
@@ -40,17 +43,52 @@
 #define HAVE_ERRNO_AS_DEFINE
 #endif /* __CYGWIN__ */
 
+#if defined(i386) && !defined(__i386__)
+#define __i386__
+#endif
+
+/* Macros to make switching between C and C++ mode easier */
+#ifdef __cplusplus
+#define C_MODE_START    extern "C" {
+#define C_MODE_END	}
+#else
+#define C_MODE_START
+#define C_MODE_END
+#endif
 
 #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__) || defined(WIN32)
 #include <config-win.h>
 #elif defined(OS2)
 #include <config-os2.h>
+#elif defined(__NETWARE__)
+#include <my_config.h>
+#include <config-netware.h>
+#if defined(__cplusplus) && defined(inline)
+#undef inline				/* fix configure problem */
+#endif
 #else
 #include <my_config.h>
 #if defined(__cplusplus) && defined(inline)
 #undef inline				/* fix configure problem */
 #endif
 #endif /* _WIN32... */
+
+/*
+  The macros below are borrowed from include/linux/compiler.h in the
+  Linux kernel. Use them to indicate the likelyhood of the truthfulness
+  of a condition. This serves two purposes - newer versions of gcc will be
+  able to optimize for branch predication, which could yield siginficant
+  performance gains in frequently executed sections of the code, and the
+  other reason to use them is for documentation
+*/
+
+#if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
+#define __builtin_expect(x, expected_value) (x)
+#endif
+
+#define likely(x)	__builtin_expect((x),1)
+#define unlikely(x)	__builtin_expect((x),0)
+
 
 /* Fix problem with S_ISLNK() on Linux */
 #if defined(HAVE_LINUXTHREADS)
@@ -80,7 +118,7 @@
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS /* We want posix threads */
 #endif
-/* was #if defined(HAVE_LINUXTHREADS) || defined(HAVE_DEC_THREADS) || defined(HPUX) */
+
 #if !defined(SCO)
 #define _REENTRANT	1	/* Some thread libraries require this */
 #endif
@@ -103,16 +141,12 @@
 #ifdef _AIX			/* By soren@t.dk */
 #define _H_STRINGS
 #define _SYS_STREAM_H
-#define _AIX32_CURSES
+/* #define _AIX32_CURSES */	/* XXX: this breaks AIX 4.3.3 (others?). */
 #define ulonglong2double(A) my_ulonglong2double(A)
 #define my_off_t2double(A)  my_ulonglong2double(A)
-#ifdef	__cplusplus
-extern "C" {
-#endif
+C_MODE_START
 double my_ulonglong2double(unsigned long long A);
-#ifdef	__cplusplus
-}
-#endif
+C_MODE_END
 #endif /* _AIX */
 
 #ifdef HAVE_BROKEN_SNPRINTF	/* HPUX 10.20 don't have this defined */
@@ -122,6 +156,10 @@ double my_ulonglong2double(unsigned long long A);
 #undef HAVE_PREAD
 #undef HAVE_PWRITE
 #endif
+#if defined(HAVE_BROKEN_INLINE) && !defined(__cplusplus)
+#undef inline
+#define inline
+#endif
 
 #ifdef UNDEF_HAVE_GETHOSTBYNAME_R		/* For OSF4.x */
 #undef HAVE_GETHOSTBYNAME_R
@@ -129,6 +167,13 @@ double my_ulonglong2double(unsigned long long A);
 #ifdef UNDEF_HAVE_INITGROUPS			/* For AIX 4.3 */
 #undef HAVE_INITGROUPS
 #endif
+
+/* gcc/egcs issues */
+
+#if defined(__GNUC) && defined(__EXCEPTIONS)
+#error "Please add -fno-exceptions to CXXFLAGS and reconfigure/recompile"
+#endif
+
 
 /* Fix a bug in gcc 2.8.0 on IRIX 6.2 */
 #if SIZEOF_LONG == 4 && defined(__LONG_MAX__)
@@ -155,7 +200,7 @@ double my_ulonglong2double(unsigned long long A);
 #endif
 
 /* In Linux-ia64 including atomic.h will give us an error */
-#if (defined(HAVE_LINUXTHREADS) && defined(__GNUC__) && (defined(__ia64__) || defined(__powerpc64__))) || !defined(THREAD)
+#if (defined(HAVE_LINUXTHREADS) && defined(__GNUC__) && (defined(__ia64__)||defined(__powerpc64__))) || !defined(THREAD)
 #undef HAVE_ATOMIC_ADD
 #undef HAVE_ATOMIC_SUB
 #endif
@@ -205,7 +250,13 @@ double my_ulonglong2double(unsigned long long A);
 # endif
 #endif /* TIME_WITH_SYS_TIME */
 #ifdef HAVE_UNISTD_H
+#if defined(HAVE_OPENSSL) && !defined(__FreeBSD__) && !defined(NeXT) && !defined(__OpenBSD__)
+#define crypt unistd_crypt
+#endif
 #include <unistd.h>
+#ifdef HAVE_OPENSSL
+#undef crypt
+#endif
 #endif
 #if defined(__cplusplus) && defined(NO_CPLUSPLUS_ALLOCA)
 #undef HAVE_ALLOCA
@@ -216,8 +267,15 @@ double my_ulonglong2double(unsigned long long A);
 #endif
 #ifdef HAVE_ATOMIC_ADD
 #define __SMP__
+#ifndef CONFIG_SMP
 #define CONFIG_SMP
+#endif
 #include <asm/atomic.h>
+#endif
+#include <errno.h>				/* Recommended by debian */
+/* We need the following to go around a problem with openssl on solaris */
+#if defined(HAVE_CRYPT_H)
+#include <crypt.h>
 #endif
 
 /* Go around some bugs in different OS and compilers */
@@ -228,13 +286,22 @@ double my_ulonglong2double(unsigned long long A);
 #ifdef DONT_USE_FINITE		/* HPUX 11.x has is_finite() */
 #undef HAVE_FINITE
 #endif
-#if defined(HPUX) && defined(_LARGEFILE64_SOURCE) && defined(THREAD)
+#if defined(HPUX10) && defined(_LARGEFILE64_SOURCE) && defined(THREAD)
 /* Fix bug in setrlimit */
 #undef setrlimit
 #define setrlimit cma_setrlimit64
 #endif
 
-/* We can not live without these */
+#ifdef __QNXNTO__
+/* This has to be after include limits.h */
+#define HAVE_ERRNO_AS_DEFINE
+#define HAVE_FCNTL_LOCK
+#undef  HAVE_FINITE
+#undef  LONGLONG_MIN            /* These get wrongly defined in QNX 6.2 */
+#undef  LONGLONG_MAX            /* standard system library 'limits.h' */
+#endif
+
+/* We can not live without the following defines */
 
 #define USE_MYFUNC 1		/* Must use syscall indirection */
 #define MASTER 1		/* Compile without unireg */
@@ -243,7 +310,7 @@ double my_ulonglong2double(unsigned long long A);
 #define USE_REGEX 1		/* We want the use the regex library */
 /* Do not define for ultra sparcs */
 #ifndef OS2
-#define USE_BMOVE512 1		/* Use this unless the system bmove is faster */
+#define USE_BMOVE512 1		/* Use this unless system bmove is faster */
 #endif
 
 /* Paranoid settings. Define I_AM_PARANOID if you are paranoid */
@@ -251,10 +318,6 @@ double my_ulonglong2double(unsigned long long A);
 #define DONT_ALLOW_USER_CHANGE 1
 #define DONT_USE_MYSQL_PWD 1
 #endif
-
-/* #define USE_some_charset 1 was deprecated by changes to configure */
-/* my_ctype my_to_upper, my_to_lower, my_sort_order gain theit right value */
-/* automagically during configuration */
 
 /* Does the system remember a signal handler after a signal ? */
 #ifndef HAVE_BSD_SIGNALS
@@ -292,6 +355,7 @@ typedef unsigned int uint;
 typedef unsigned short ushort;
 #endif
 
+#define CMP_NUM(a,b)    (((a) < (b)) ? -1 : ((a) == (b)) ? 0 : 1)
 #define sgn(a)		(((a) < 0) ? -1 : ((a) > 0) ? 1 : 0)
 #define swap(t,a,b)	{ register t dummy; dummy = a; a = b; b = dummy; }
 #define test(a)		((a) ? 1 : 0)
@@ -301,7 +365,7 @@ typedef unsigned short ushort;
 #define set_bits(type, bit_count) (sizeof(type)*8 <= (bit_count) ? ~(type) 0 : ((((type) 1) << (bit_count)) - (type) 1))
 #define array_elements(A) ((uint) (sizeof(A)/sizeof(A[0])))
 #ifndef HAVE_RINT
-#define rint(A) floor((A)+0.5)
+#define rint(A) floor((A)+(((A) < 0)? -0.5 : 0.5))
 #endif
 
 /* Define some general constants */
@@ -341,12 +405,7 @@ typedef unsigned short ushort;
 #define DBUG_OFF
 #endif
 
-#include <dbug.h>
-#ifndef DBUG_OFF
-#define dbug_assert(A) assert(A)
-#else
-#define dbug_assert(A)
-#endif
+#include <my_dbug.h>
 
 #define MIN_ARRAY_SIZE	0	/* Zero or One. Gcc allows zero*/
 #define ASCII_BITS_USED 8	/* Bit char used */
@@ -361,7 +420,9 @@ typedef int	my_socket;	/* File descriptor for sockets */
 #endif
 /* Type for fuctions that handles signals */
 #define sig_handler RETSIGTYPE
+C_MODE_START
 typedef void	(*sig_return)();/* Returns type from signal */
+C_MODE_END
 #if defined(__GNUC__) && !defined(_lint)
 typedef char	pchar;		/* Mixed prototypes can take char */
 typedef char	puchar;		/* Mixed prototypes can take char */
@@ -375,7 +436,10 @@ typedef int	pbool;		/* Mixed prototypes can't take char */
 typedef int	pshort;		/* Mixed prototypes can't take short int */
 typedef double	pfloat;		/* Mixed prototypes can't take float */
 #endif
+C_MODE_START
 typedef int	(*qsort_cmp)(const void *,const void *);
+typedef int	(*qsort_cmp2)(void*, const void *,const void *);
+C_MODE_END
 #ifdef HAVE_mit_thread
 #define qsort_t void
 #undef QSORT_TYPE_IS_VOID
@@ -398,17 +462,20 @@ typedef SOCKET_SIZE_TYPE size_socket;
 
 /* file create flags */
 
-#ifndef O_SHARE
+#ifndef O_SHARE			/* Probably not windows */
 #define O_SHARE		0	/* Flag to my_open for shared files */
 #ifndef O_BINARY
 #define O_BINARY	0	/* Flag to my_open for binary files */
 #endif
-#define FILE_BINARY	0	/* Flag to my_fopen for binary streams */
+#ifndef FILE_BINARY
+#define FILE_BINARY	O_BINARY /* Flag to my_fopen for binary streams */
+#endif
 #ifdef HAVE_FCNTL
 #define HAVE_FCNTL_LOCK
 #define F_TO_EOF	0L	/* Param to lockf() to lock rest of file */
 #endif
 #endif /* O_SHARE */
+
 #ifndef O_TEMPORARY
 #define O_TEMPORARY	0
 #endif
@@ -474,9 +541,6 @@ typedef SOCKET_SIZE_TYPE size_socket;
 
 	/* Some things that this system doesn't have */
 
-#define ONLY_OWN_DATABASES	/* We are using only databases by monty */
-#define NO_PISAM		/* Not needed anymore */
-#define NO_MISAM		/* Not needed anymore */
 #define NO_HASH			/* Not needed anymore */
 #ifdef __WIN__
 #define NO_DIR_LIBRARY		/* Not standar dir-library */
@@ -520,11 +584,6 @@ extern double		my_atof(const char*);
 
 #if !defined(HAVE_mit_thread) && !defined(HAVE_STRTOK_R)
 #define strtok_r(A,B,C) strtok((A),(B))
-#endif
-
-#ifdef HAVE_LINUXTHREADS
-/* #define pthread_sigmask(A,B,C) sigprocmask((A),(B),(C)) */
-/* #define sigset(A,B) signal((A),(B)) */
 #endif
 
 /* Remove some things that mit_thread break or doesn't support */
@@ -581,7 +640,12 @@ extern double		my_atof(const char*);
   Max size that must be added to a so that we know Size to make
   adressable obj.
 */
+#if SIZEOF_CHARP == 4
 typedef long		my_ptrdiff_t;
+#else
+typedef long long	my_ptrdiff_t;
+#endif
+
 #define MY_ALIGN(A,L)	(((A) + (L) - 1) & ~((L) - 1))
 #define ALIGN_SIZE(A)	MY_ALIGN((A),sizeof(double))
 /* Size to make adressable obj. */
@@ -638,17 +702,20 @@ error "Neither int or long is of 4 bytes width"
 #endif
 
 #if !defined(HAVE_ULONG) && !defined(HAVE_LINUXTHREADS) && !defined(__USE_MISC)
-typedef unsigned long	ulong;	/* Short for unsigned long */
+typedef unsigned long	ulong;		  /* Short for unsigned long */
 #endif
 #ifndef longlong_defined
 #if defined(HAVE_LONG_LONG) && SIZEOF_LONG != 8
 typedef unsigned long long int ulonglong; /* ulong or unsigned long long */
-typedef long long int longlong;
+typedef long long int	longlong;
 #else
-typedef unsigned long	ulonglong;	/* ulong or unsigned long long */
+typedef unsigned long	ulonglong;	  /* ulong or unsigned long long */
 typedef long		longlong;
 #endif
 #endif
+
+/* typedef used for length of string;  Should be unsigned! */
+typedef ulong		size_str;
 
 #ifdef USE_RAID
 /*
@@ -678,13 +745,14 @@ typedef off_t os_off_t;
 
 #if defined(__WIN__)
 #define socket_errno	WSAGetLastError()
-#define SOCKET_EINTR	WSAEINTR 
+#define SOCKET_EINTR	WSAEINTR
 #define SOCKET_EAGAIN	WSAEINPROGRESS
+#define SOCKET_EWOULDBLOCK WSAEINPROGRESS
 #define SOCKET_ENFILE	ENFILE
 #define SOCKET_EMFILE	EMFILE
 #elif defined(OS2)
 #define socket_errno	sock_errno()
-#define SOCKET_EINTR	SOCEINTR 
+#define SOCKET_EINTR	SOCEINTR
 #define SOCKET_EAGAIN	SOCEINPROGRESS
 #define SOCKET_EWOULDBLOCK SOCEWOULDBLOCK
 #define SOCKET_ENFILE	SOCENFILE
@@ -718,6 +786,14 @@ typedef char		bool;	/* Ordinary boolean values 0 1 */
 #define INT32(v)	(int32) (v)
 #define MYF(v)		(myf) (v)
 
+#ifndef LL
+#ifdef HAVE_LONG_LONG
+#define LL(A) A ## LL
+#else
+#define LL(A) A ## L
+#endif
+#endif
+
 /*
   Defines to make it possible to prioritize register assignments. No
   longer that important with modern compilers.
@@ -741,19 +817,44 @@ typedef char		bool;	/* Ordinary boolean values 0 1 */
 #define reg16 register
 #endif
 
+/*
+  Sometimes we want to make sure that the variable is not put into
+  a register in debugging mode so we can see its value in the core
+*/
+
+#ifndef DBUG_OFF
+#define dbug_volatile volatile
+#else
+#define dbug_volatile
+#endif
+
 /* Defines for time function */
 #define SCALE_SEC	100
 #define SCALE_USEC	10000
 #define MY_HOW_OFTEN_TO_ALARM	2	/* How often we want info on screen */
 #define MY_HOW_OFTEN_TO_WRITE	1000	/* How often we want info on screen */
 
+#ifndef set_timespec
+#ifdef HAVE_TIMESPEC_TS_SEC
+#define set_timespec(ABSTIME,SEC) { (ABSTIME).ts_sec=time(0) + (time_t) (SEC); (ABSTIME).ts_nsec=0; }
+#else
+#define set_timespec(ABSTIME,SEC) \
+{\
+  struct timeval tv;\
+  gettimeofday(&tv,0);\
+  (ABSTIME).tv_sec=tv.tv_sec+(time_t) (SEC);\
+  (ABSTIME).tv_nsec=tv.tv_usec*1000;\
+}
+#endif /* HAVE_TIMESPEC_TS_SEC */
+#endif /* set_timespec */
+
 /*
-** Define-funktions for reading and storing in machine independent format
-**  (low byte first)
+  Define-funktions for reading and storing in machine independent format
+  (low byte first)
 */
 
 /* Optimized store functions for Intel x86 */
-#ifdef __i386__
+#if defined(__i386__) && !defined(_WIN64)
 #define sint2korr(A)	(*((int16 *) (A)))
 #define sint3korr(A)	((int32) ((((uchar) (A)[2]) & 128) ? \
 				  (((uint32) 255L << 24) | \
@@ -765,7 +866,13 @@ typedef char		bool;	/* Ordinary boolean values 0 1 */
 				  ((uint32) (uchar) (A)[0])))
 #define sint4korr(A)	(*((long *) (A)))
 #define uint2korr(A)	(*((uint16 *) (A)))
+#ifdef HAVE_purify
+#define uint3korr(A)	(uint32) (((uint32) ((uchar) (A)[0])) +\
+				  (((uint32) ((uchar) (A)[1])) << 8) +\
+				  (((uint32) ((uchar) (A)[2])) << 16))
+#else
 #define uint3korr(A)	(long) (*((unsigned long *) (A)) & 0xFFFFFF)
+#endif
 #define uint4korr(A)	(*((unsigned long *) (A)))
 #define uint5korr(A)	((ulonglong)(((uint32) ((uchar) (A)[0])) +\
 				    (((uint32) ((uchar) (A)[1])) << 8) +\
@@ -790,15 +897,18 @@ typedef union {
   double v;
   long m[2];
 } doubleget_union;
-#define doubleget(V,M)	{ ((doubleget_union *)&V)->m[0] = *((long*) M); \
-			  ((doubleget_union *)&V)->m[1] = *(((long*) M)+1); }
+#define doubleget(V,M)	\
+{ doubleget_union _tmp; \
+  _tmp.m[0] = *((long*)(M)); \
+  _tmp.m[1] = *(((long*) (M))+1); \
+  (V) = _tmp.v; }
 #define doublestore(T,V) { *((long *) T) = ((doubleget_union *)&V)->m[0]; \
 			   *(((long *) T)+1) = ((doubleget_union *)&V)->m[1]; }
 #define float4get(V,M) { *((long *) &(V)) = *((long*) (M)); }
 #define float8get(V,M) doubleget((V),(M))
 #define float4store(V,M) memcpy((byte*) V,(byte*) (&M),sizeof(float))
 #define float8store(V,M) doublestore((V),(M))
-#endif /* __i386__ */ 
+#endif /* __i386__ */
 
 #ifndef sint2korr
 #define sint2korr(A)	(int16) (((int16) ((uchar) (A)[0])) +\
@@ -843,9 +953,9 @@ typedef union {
 				  *((uchar*) (T))=  (uchar)(def_temp); \
 				  *((uchar*) (T+1))=(uchar)((def_temp >> 8)); }
 #define int3store(T,A)		{ /*lint -save -e734 */\
-				  *((T))=(char) ((A));\
-				  *((T)+1)=(char) (((A) >> 8));\
-				  *((T)+2)=(char) (((A) >> 16)); \
+				  *((uchar*)(T))=(uchar) ((A));\
+				  *((uchar*) (T)+1)=(uchar) (((A) >> 8));\
+				  *((uchar*)(T)+2)=(uchar) (((A) >> 16)); \
 				  /*lint -restore */}
 #define int4store(T,A)		{ *(T)=(char) ((A));\
 				  *((T)+1)=(char) (((A) >> 8));\
@@ -983,7 +1093,7 @@ typedef union {
 #ifdef SPRINTF_RETURNS_PTR
 #define my_sprintf(buff,args) ((int)(sprintf args - buff))
 #else
-#define my_sprintf(buff,args) sprintf args,strlen(buff)
+#define my_sprintf(buff,args) ((ulong) sprintf args, (ulong) strlen(buff))
 #endif
 #endif
 
@@ -995,4 +1105,4 @@ typedef union {
 #define statistic_add(V,C,L)       (V)+=(C)
 #endif
 
-#endif /* _global_h */
+#endif /* my_global_h */

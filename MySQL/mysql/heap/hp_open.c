@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -44,7 +44,15 @@ HP_INFO *heap_open(const char *name, int mode, uint keys, HP_KEYDEF *keydef,
       key_segs+= keydef[i].keysegs;
       bzero((char*) &keydef[i].block,sizeof(keydef[i].block));
       for (j=length=0 ; j < keydef[i].keysegs; j++)
+      {
 	length+=keydef[i].seg[j].length;
+	if (keydef[i].seg[j].null_bit)
+	{
+	  length++;
+	  if (!(keydef[i].flag & HA_NULL_ARE_EQUAL))
+	    keydef[i].flag |= HA_NULL_PART_KEY;
+	}
+      }
       keydef[i].length=length;
       if (length > max_length)
 	max_length=length;
@@ -157,8 +165,14 @@ static void init_block(HP_BLOCK *block, uint reclength, ulong min_records,
     max_records=1000;			/* As good as quess as anything */
   recbuffer=(uint) (reclength+sizeof(byte**)-1) & ~(sizeof(byte**)-1);
   records_in_block=max_records/10;
-  if (records_in_block < 10 && max_records)
-    records_in_block=10;
+  if (records_in_block < HP_MIN_RECORDS_IN_BLOCK && max_records)
+    records_in_block= HP_MIN_RECORDS_IN_BLOCK;
+  /*
+    Don't allocate too many rows at one time too keep memory consumption
+    done when we don't need it.
+  */
+  if (records_in_block > HP_MAX_RECORDS_IN_BLOCK)
+    records_in_block= HP_MAX_RECORDS_IN_BLOCK;
   if (!records_in_block || records_in_block*recbuffer >
       (my_default_record_cache_size-sizeof(HP_PTRS)*HP_MAX_LEVELS))
     records_in_block=(my_default_record_cache_size-sizeof(HP_PTRS)*

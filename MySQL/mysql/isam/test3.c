@@ -1,20 +1,22 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* Test av locking */
+
+#ifndef __NETWARE__
 
 #include "nisam.h"
 #include <sys/types.h>
@@ -171,8 +173,8 @@ void start_test(int id)
     exit(1);
   }
   if (key_cacheing && rnd(2) == 0)
-    init_key_cache(65536L,(uint) IO_SIZE*4*10);
-  printf("Process %d, pid: %d\n",id,getpid()); fflush(stdout);
+    init_key_cache(65536L);
+  printf("Process %d, pid: %d\n",id,(int) getpid()); fflush(stdout);
 
   for (error=i=0 ; i < tests && !error; i++)
   {
@@ -356,7 +358,7 @@ int test_write(N_INFO *file,int id,int lock_type)
       nisam_extra(file,HA_EXTRA_WRITE_CACHE);
   }
 
-  sprintf(record.id,"%7d",getpid());
+  sprintf(record.id,"%7d",(int) getpid());
   strmov(record.text,"Testing...");
 
   tries=(uint) rnd(100)+10;
@@ -477,3 +479,15 @@ int test_update(N_INFO *file,int id,int lock_type)
   printf("%2d: update: %5d\n",id,update); fflush(stdout);
   return 0;
 }
+
+#else /* __NETWARE__ */
+
+#include <stdio.h>
+
+main()
+{
+	fprintf(stderr,"this test has not been ported to NetWare\n");
+	return 0;
+}
+
+#endif /* __NETWARE__ */

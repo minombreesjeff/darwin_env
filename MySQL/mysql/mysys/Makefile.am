@@ -27,7 +27,7 @@ noinst_HEADERS =	mysys_priv.h my_static.h \
 			my_os2thread.c my_os2tls.c
 libmysys_a_SOURCES =	my_init.c my_getwd.c mf_getdate.c\
 			mf_path.c mf_loadpath.c\
-			my_open.c my_create.c my_seek.c my_read.c \
+			my_open.c my_create.c my_dup.c my_seek.c my_read.c \
 			my_pread.c my_write.c \
 			mf_keycache.c \
 			mf_iocache.c mf_iocache2.c mf_cache.c mf_tempfile.c \
@@ -38,7 +38,7 @@ libmysys_a_SOURCES =	my_init.c my_getwd.c mf_getdate.c\
 			my_error.c errors.c my_div.c my_messnc.c \
 			mf_format.c mf_same.c mf_dirname.c mf_fn_ext.c \
 			my_symlink.c my_symlink2.c \
-			mf_pack.c mf_pack2.c mf_unixpath.c mf_strip.c \
+			mf_pack.c mf_unixpath.c mf_strip.c \
 			mf_casecnv.c mf_soundex.c mf_wcomp.c mf_wfile.c \
 			mf_qsort.c mf_qsort2.c mf_sort.c \
 			ptr_cmp.c mf_radix.c queues.c \
@@ -47,36 +47,28 @@ libmysys_a_SOURCES =	my_init.c my_getwd.c mf_getdate.c\
 			my_delete.c my_rename.c my_redel.c my_tempnam.c \
 			my_chsize.c my_lread.c my_lwrite.c my_clock.c \
 			my_quick.c my_lockmem.c my_static.c \
-			getopt.c getopt1.c getvar.c my_mkdir.c \
-			default.c my_compress.c checksum.c raid.cc raid2.c \
-			my_net.c my_port.c \
-			my_vsnprintf.c charset.c my_bitmap.c my_gethostbyname.c
+			my_getopt.c my_mkdir.c \
+			default.c my_compress.c checksum.c raid.cc \
+			my_net.c my_semaphore.c my_port.c  my_sleep.c \
+			my_vsnprintf.c charset.c my_bitmap.c my_bit.c md5.c \
+			my_gethostbyname.c rijndael.c my_aes.c sha1.c \
+			my_netware.c
 EXTRA_DIST =		thr_alarm.c thr_lock.c my_pthread.c my_thr_init.c \
 			thr_mutex.c thr_rwlock.c
 libmysys_a_LIBADD =	@THREAD_LOBJECTS@
-# test_fn removed 980815 since it not upp to date test_dir
-noinst_PROGRAMS =	test_charset @THREAD_LPROGRAMS@
+# test_fn removed 980815 since it not up to date test_dir
+noinst_PROGRAMS =	@THREAD_LPROGRAMS@
 # test_dir_DEPENDENCIES=	$(LIBRARIES)
 # testhash_DEPENDENCIES=	$(LIBRARIES)
-test_charset_DEPENDENCIES=	$(LIBRARIES)
+# test_charset_DEPENDENCIES=	$(LIBRARIES)
 EXTRA_PROGRAMS =	
 DEFS =			-DDEFAULT_BASEDIR=\"$(prefix)\" \
 			-DDATADIR="\"$(MYSQLDATAdir)\"" \
 			-DDEFAULT_CHARSET_HOME="\"$(MYSQLBASEdir)\"" \
-			-DDATADIR="\"$(MYSQLDATAdir)\"" \
 			-DSHAREDIR="\"$(MYSQLSHAREdir)\"" \
                         @DEFS@
 
 libmysys_a_DEPENDENCIES= @THREAD_LOBJECTS@
-
-OMIT_DEPENDENCIES =	pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h\
-			__math.h time.h __time.h unistd.h __unistd.h types.h \
-			xtypes.h ac-types.h posix.h string.h __string.h \
-			errno.h socket.h inet.h dirent.h netdb.h \
-			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h \
-			prio_queue.h pthread_attr.h pthread_once.h queue.h\
-			sleep.h specific.h version.h pwd.h timers.h uio.h \
-			cdefs.h machdep.h signal.h __signal.h util.h
 
 # I hope this always does the right thing. Otherwise this is only test programs
 FLAGS=$(DEFS) $(INCLUDES) $(CPPFLAGS) $(CFLAGS) @NOINST_LDFLAGS@
@@ -86,28 +78,32 @@ FLAGS=$(DEFS) $(INCLUDES) $(CPPFLAGS) $(CFLAGS) @NOINST_LDFLAGS@
 # which automaticly removes the object files you use to compile a final program
 #
 
-test_thr_alarm: thr_alarm.c $(LIBRARIES)
+test_thr_alarm$(EXEEXT): thr_alarm.c $(LIBRARIES)
 	$(CP) $(srcdir)/thr_alarm.c ./test_thr_alarm.c
 	$(LINK) $(FLAGS) -DMAIN  ./test_thr_alarm.c $(LDADD) $(LIBS)
-	$(RM) -f ./test_thr_alarm.*
+	$(RM) -f ./test_thr_alarm.c
 
-test_thr_lock: thr_lock.c $(LIBRARIES)
+test_thr_lock$(EXEEXT): thr_lock.c $(LIBRARIES)
 	$(CP) $(srcdir)/thr_lock.c test_thr_lock.c
 	$(LINK) $(FLAGS) -DMAIN  ./test_thr_lock.c $(LDADD) $(LIBS)
-	$(RM) -f ./test_thr_lock.*
+	$(RM) -f ./test_thr_lock.c
 
-test_vsnprintf: my_vsnprintf.c $(LIBRARIES)
+test_vsnprintf$(EXEEXT): my_vsnprintf.c $(LIBRARIES)
 	$(CP) $(srcdir)/my_vsnprintf.c test_vsnprintf.c
 	$(LINK) $(FLAGS) -DMAIN ./test_vsnprintf.c $(LDADD) $(LIBS)
-	$(RM) -f test_vsnprintf.*
+	$(RM) -f test_vsnprintf.c
+test_io_cache$(EXEEXT): mf_iocache.c $(LIBRARIES)
+	$(CP) $(srcdir)/mf_iocache.c test_io_cache.c
+	$(LINK) $(FLAGS) -DMAIN ./test_io_cache.c $(LDADD) $(LIBS)
+	$(RM) -f test_io_cache.c
 
-test_dir: test_dir.c $(LIBRARIES)
+test_dir$(EXEEXT): test_dir.c $(LIBRARIES)
 	$(LINK) $(FLAGS) -DMAIN $(srcdir)/test_dir.c $(LDADD) $(LIBS)
 
-test_charset: test_charset.c $(LIBRARIES)
+test_charset$(EXEEXT): test_charset.c $(LIBRARIES)
 	$(LINK) $(FLAGS) -DMAIN $(srcdir)/test_charset.c $(LDADD) $(LIBS)
 
-testhash: testhash.c $(LIBRARIES)
+testhash$(EXEEXT): testhash.c $(LIBRARIES)
 	$(LINK) $(FLAGS) -DMAIN $(srcdir)/testhash.c $(LDADD) $(LIBS)
 
 # Don't update the files from bitkeeper

@@ -1,6 +1,7 @@
-# Makefile.in generated automatically by automake 1.4-p5 from Makefile.am
+# Makefile.in generated automatically by automake 1.5 from Makefile.am.
 
-# Copyright (C) 1994, 1995-8, 1999, 2001 Free Software Foundation, Inc.
+# Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+# Free Software Foundation, Inc.
 # This Makefile.in is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
 # with or without modifications, as long as this notice is preserved.
@@ -9,6 +10,8 @@
 # but WITHOUT ANY WARRANTY, to the extent permitted by law; without
 # even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 # PARTICULAR PURPOSE.
+
+@SET_MAKE@
 
 # Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
 # 
@@ -26,7 +29,6 @@
 # License along with this library; if not, write to the Free
 # Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
 # MA 02111-1307, USA
-
 
 
 SHELL = @SHELL@
@@ -49,13 +51,9 @@ infodir = @infodir@
 mandir = @mandir@
 includedir = @includedir@
 oldincludedir = /usr/include
-
-DESTDIR =
-
 pkgdatadir = $(datadir)/@PACKAGE@
 pkglibdir = $(libdir)/@PACKAGE@
 pkgincludedir = $(includedir)/@PACKAGE@
-
 top_builddir = ..
 
 ACLOCAL = @ACLOCAL@
@@ -64,11 +62,11 @@ AUTOMAKE = @AUTOMAKE@
 AUTOHEADER = @AUTOHEADER@
 
 INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@ $(AM_INSTALL_PROGRAM_FLAGS)
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_HEADER = $(INSTALL_DATA)
 transform = @program_transform_name@
-
 NORMAL_INSTALL = :
 PRE_INSTALL = :
 POST_INSTALL = :
@@ -82,11 +80,14 @@ host_triplet = @host@
 target_alias = @target_alias@
 target_triplet = @target@
 ALLOCA = @ALLOCA@
+AMTAR = @AMTAR@
 AS = @AS@
+ASFLAGS = @ASFLAGS@
 AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
 AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
 AWK = @AWK@
 CC = @CC@
+CC_VERSION = @CC_VERSION@
 CFLAGS = @CFLAGS@
 CHARSETS_NEED_SOURCE = @CHARSETS_NEED_SOURCE@
 CHARSET_SRCS = @CHARSET_SRCS@
@@ -102,13 +103,18 @@ CPP = @CPP@
 CXX = @CXX@
 CXXFLAGS = @CXXFLAGS@
 CXXLDFLAGS = @CXXLDFLAGS@
+CXX_VERSION = @CXX_VERSION@
+DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DOT_FRM_VERSION = @DOT_FRM_VERSION@
 DVIS = @DVIS@
+ECHO = @ECHO@
+EXEEXT = @EXEEXT@
 FIND_PROC = @FIND_PROC@
 GETCONF = @GETCONF@
 GXX = @GXX@
 HOSTNAME = @HOSTNAME@
+INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 IS_LINUX = @IS_LINUX@
 KILL = @KILL@
 LD = @LD@
@@ -121,7 +127,7 @@ LN_CP_F = @LN_CP_F@
 LN_S = @LN_S@
 MACHINE_TYPE = @MACHINE_TYPE@
 MAINT = @MAINT@
-MAKEINFO = @MAKEINFO@
+MAKE_BINARY_DISTRIBUTION_OPTIONS = @MAKE_BINARY_DISTRIBUTION_OPTIONS@
 MAKE_SHELL = @MAKE_SHELL@
 MT_INCLUDES = @MT_INCLUDES@
 MT_LD_ADD = @MT_LD_ADD@
@@ -138,6 +144,7 @@ MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
 MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
 NOINST_LDFLAGS = @NOINST_LDFLAGS@
 OBJDUMP = @OBJDUMP@
+OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PDFMANUAL = @PDFMANUAL@
 PERL = @PERL@
@@ -146,12 +153,14 @@ PROTOCOL_VERSION = @PROTOCOL_VERSION@
 PS = @PS@
 RANLIB = @RANLIB@
 RM = @RM@
+SAVE_ASFLAGS = @SAVE_ASFLAGS@
 SAVE_CFLAGS = @SAVE_CFLAGS@
 SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
 SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
 SAVE_LDFLAGS = @SAVE_LDFLAGS@
 SED = @SED@
 SHARED_LIB_VERSION = @SHARED_LIB_VERSION@
+STRIP = @STRIP@
 SYSTEM_TYPE = @SYSTEM_TYPE@
 TAR = @TAR@
 TERMCAP_LIB = @TERMCAP_LIB@
@@ -160,30 +169,50 @@ THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
 VERSION = @VERSION@
 WRAPLIBS = @WRAPLIBS@
 YACC = @YACC@
+am__include = @am__include@
+am__quote = @am__quote@
 bdb_includes = @bdb_includes@
 bdb_libs = @bdb_libs@
 bdb_libs_with_path = @bdb_libs_with_path@
 bench_dirs = @bench_dirs@
 default_charset = @default_charset@
 docs_dirs = @docs_dirs@
-gemini_includes = @gemini_includes@
-gemini_libs = @gemini_libs@
+fs_dirs = @fs_dirs@
 innodb_includes = @innodb_includes@
 innodb_libs = @innodb_libs@
 innodb_system_libs = @innodb_system_libs@
+install_sh = @install_sh@
+isam_libs = @isam_libs@
+libmysqld_dirs = @libmysqld_dirs@
 linked_client_targets = @linked_client_targets@
+linked_netware_sources = @linked_netware_sources@
+netware_dir = @netware_dir@
+openssl_includes = @openssl_includes@
+openssl_libs = @openssl_libs@
+orbit_idl = @orbit_idl@
+orbit_includes = @orbit_includes@
+orbit_libs = @orbit_libs@
+pstack_dirs = @pstack_dirs@
+pstack_libs = @pstack_libs@
 readline_dir = @readline_dir@
 readline_link = @readline_link@
 server_scripts = @server_scripts@
 sql_client_dirs = @sql_client_dirs@
 sql_server_dirs = @sql_server_dirs@
 thread_dirs = @thread_dirs@
+tools_dirs = @tools_dirs@
 uname_prog = @uname_prog@
+vio_dir = @vio_dir@
+vio_libs = @vio_libs@
+
+# We need .lo, not .o files for everything.
+CHARSET_OBJS = @CHARSET_OBJS@
 
 target = libmysqlclient_r.la
 target_defs = -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@
 
-INCLUDES = @MT_INCLUDES@ -I$(srcdir)/../include -I../include 		-I$(srcdir)/.. -I$(top_srcdir) -I..
+INCLUDES = @MT_INCLUDES@ -I$(srcdir)/../include -I../include \
+		-I$(srcdir)/.. -I$(top_srcdir) -I.. $(openssl_includes)
 
 
 MYSQLDATAdir = $(localstatedir)
@@ -193,30 +222,57 @@ LDADD = @CLIENT_EXTRA_LDFLAGS@ $(target)
 pkglib_LTLIBRARIES = $(target)
 
 noinst_PROGRAMS = conf_to_src
-
-# We need .lo, not .o files for everything.
-CHARSET_OBJS = @CHARSET_OBJS@
 LTCHARSET_OBJS = ${CHARSET_OBJS:.o=.lo}
 
-target_sources = libmysql.c net.c violite.c password.c 			    get_password.c errmsg.c
+target_sources = libmysql.c password.c manager.c \
+			get_password.c errmsg.c
 
 
-mystringsobjects = strmov.lo strxmov.lo strnmov.lo strmake.lo strend.lo 			strnlen.lo strfill.lo is_prefix.lo 			int2str.lo str2int.lo strinstr.lo strcont.lo 			strcend.lo 			bchange.lo bmove.lo bmove_upp.lo longlong2str.lo 			strtoull.lo strtoll.lo llstr.lo 			ctype.lo $(LTCHARSET_OBJS)
+mystringsobjects = strmov.lo strxmov.lo strxnmov.lo strnmov.lo \
+			strmake.lo strend.lo \
+			strnlen.lo strfill.lo is_prefix.lo \
+			int2str.lo str2int.lo strinstr.lo strcont.lo \
+			strcend.lo bcmp.lo \
+			bchange.lo bmove.lo bmove_upp.lo longlong2str.lo \
+			strtoull.lo strtoll.lo llstr.lo \
+			ctype.lo $(LTCHARSET_OBJS)
 
 mystringsextra = strto.c
 mystringsgen = ctype_autoconf.c
 dbugobjects = dbug.lo # IT IS IN SAFEMALLOC.C sanity.lo
 mysysheaders = mysys_priv.h my_static.h
-mysysobjects1 = my_init.lo my_static.lo my_malloc.lo my_realloc.lo 			my_create.lo my_delete.lo mf_tempfile.lo my_open.lo 			mf_casecnv.lo my_read.lo my_write.lo errors.lo 			my_error.lo my_getwd.lo my_div.lo 			mf_pack.lo my_messnc.lo mf_dirname.lo mf_fn_ext.lo 			mf_wcomp.lo typelib.lo safemalloc.lo my_alloc.lo 			mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo 			my_symlink.lo my_fstream.lo 			mf_loadpath.lo my_pthread.lo my_thr_init.lo 			thr_mutex.lo mulalloc.lo string.lo default.lo 			my_compress.lo array.lo my_once.lo list.lo my_net.lo                         charset.lo hash.lo mf_iocache.lo my_seek.lo 			my_pread.lo mf_cache.lo my_gethostbyname.lo my_port.lo
+mysysobjects1 = my_init.lo my_static.lo my_malloc.lo my_realloc.lo \
+			my_create.lo my_delete.lo mf_tempfile.lo my_open.lo \
+			mf_casecnv.lo my_read.lo my_write.lo errors.lo \
+			my_error.lo my_getwd.lo my_div.lo \
+			mf_pack.lo my_messnc.lo mf_dirname.lo mf_fn_ext.lo\
+			mf_wcomp.lo typelib.lo safemalloc.lo my_alloc.lo \
+			mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo \
+			my_symlink.lo my_fstream.lo \
+			mf_loadpath.lo my_pthread.lo my_thr_init.lo \
+			thr_mutex.lo mulalloc.lo string.lo default.lo \
+			my_compress.lo array.lo my_once.lo list.lo my_net.lo \
+                        charset.lo hash.lo mf_iocache.lo \
+                        mf_iocache2.lo my_seek.lo my_sleep.lo \
+			my_pread.lo mf_cache.lo my_vsnprintf.lo md5.lo \
+			my_getopt.lo my_gethostbyname.lo my_port.lo
+
+sqlobjects = net.lo
 
 # Not needed in the minimum library
-mysysobjects2 = getopt.lo getopt1.lo getvar.lo my_lib.lo
+mysysobjects2 = my_lib.lo
 mysysobjects = $(mysysobjects1) $(mysysobjects2)
-target_libadd = $(mysysobjects) $(mystringsobjects) $(dbugobjects)
-target_ldflags = -version-info @SHARED_LIB_VERSION@
-CLEANFILES = $(target_libadd) $(SHLIBOBJS) 			$(target)
+target_libadd = $(mysysobjects) $(mystringsobjects) $(dbugobjects) \
+ $(vio_objects) $(sqlobjects)
 
-DEFS = -DDEFAULT_CHARSET_HOME="\"$(MYSQLBASEdir)\"" 			-DDATADIR="\"$(MYSQLDATAdir)\"" 			-DSHAREDIR="\"$(MYSQLSHAREdir)\"" $(target_defs)
+target_ldflags = -version-info @SHARED_LIB_VERSION@
+vio_objects = vio.lo viosocket.lo viossl.lo viosslfactories.lo
+CLEANFILES = $(target_libadd) $(SHLIBOBJS) \
+			$(target)
+
+DEFS = -DDEFAULT_CHARSET_HOME="\"$(MYSQLBASEdir)\"" \
+			-DDATADIR="\"$(MYSQLDATAdir)\"" \
+			-DSHAREDIR="\"$(MYSQLSHAREdir)\"" $(target_defs)
 
 conf_to_src_SOURCES = conf_to_src.c
 conf_to_src_LDADD = 
@@ -224,119 +280,66 @@ conf_to_src_LDADD =
 #custom installation of libc
 conf_to_src_LDFLAGS = @NOINST_LDFLAGS@
 
-# Don't depend on files in pthread library
-OMIT_DEPENDENCIES = pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h 			__math.h time.h __time.h unistd.h __unistd.h types.h 			xtypes.h ac-types.h posix.h string.h __string.h 			errno.h socket.h inet.h dirent.h netdb.h 			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h 			prio_queue.h pthread_attr.h pthread_once.h queue.h 			sleep.h specific.h version.h pwd.h timers.h uio.h 			cdefs.h machdep.h signal.h __signal.h util.h lex.h 			wait.h
-
-
 libmysql_dir = $(top_srcdir)/libmysql
 
 libmysqlclient_r_la_SOURCES = $(target_sources)
 libmysqlclient_r_la_LIBADD = $(target_libadd)
 libmysqlclient_r_la_LDFLAGS = $(target_ldflags)
+subdir = libmysql_r
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
-CONFIG_HEADER = ../config.h
-CONFIG_CLEAN_FILES = 
-LTLIBRARIES =  $(pkglib_LTLIBRARIES)
+CONFIG_HEADER = $(top_builddir)/config.h
+CONFIG_CLEAN_FILES =
+LTLIBRARIES = $(pkglib_LTLIBRARIES)
 
+libmysqlclient_r_la_DEPENDENCIES = my_init.lo my_static.lo my_malloc.lo \
+	my_realloc.lo my_create.lo my_delete.lo mf_tempfile.lo \
+	my_open.lo mf_casecnv.lo my_read.lo my_write.lo errors.lo \
+	my_error.lo my_getwd.lo my_div.lo mf_pack.lo my_messnc.lo \
+	mf_dirname.lo mf_fn_ext.lo mf_wcomp.lo typelib.lo safemalloc.lo \
+	my_alloc.lo mf_format.lo mf_path.lo mf_unixpath.lo my_fopen.lo \
+	my_symlink.lo my_fstream.lo mf_loadpath.lo my_pthread.lo \
+	my_thr_init.lo thr_mutex.lo mulalloc.lo string.lo default.lo \
+	my_compress.lo array.lo my_once.lo list.lo my_net.lo charset.lo \
+	hash.lo mf_iocache.lo mf_iocache2.lo my_seek.lo my_sleep.lo \
+	my_pread.lo mf_cache.lo my_vsnprintf.lo md5.lo my_getopt.lo \
+	my_gethostbyname.lo my_port.lo my_lib.lo strmov.lo strxmov.lo \
+	strxnmov.lo strnmov.lo strmake.lo strend.lo strnlen.lo \
+	strfill.lo is_prefix.lo int2str.lo str2int.lo strinstr.lo \
+	strcont.lo strcend.lo bcmp.lo bchange.lo bmove.lo bmove_upp.lo \
+	longlong2str.lo strtoull.lo strtoll.lo llstr.lo ctype.lo \
+	dbug.lo vio.lo viosocket.lo viossl.lo viosslfactories.lo net.lo
+am_libmysqlclient_r_la_OBJECTS = libmysql.lo password.lo manager.lo \
+	get_password.lo errmsg.lo
+libmysqlclient_r_la_OBJECTS = $(am_libmysqlclient_r_la_OBJECTS)
+noinst_PROGRAMS = conf_to_src$(EXEEXT)
+PROGRAMS = $(noinst_PROGRAMS)
+
+am_conf_to_src_OBJECTS = conf_to_src.$(OBJEXT)
+conf_to_src_OBJECTS = $(am_conf_to_src_OBJECTS)
+conf_to_src_DEPENDENCIES =
+DEFAULT_INCLUDES =  -I. -I$(srcdir) -I$(top_builddir)
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
-libmysqlclient_r_la_DEPENDENCIES =  my_init.lo my_static.lo my_malloc.lo \
-my_realloc.lo my_create.lo my_delete.lo mf_tempfile.lo my_open.lo \
-mf_casecnv.lo my_read.lo my_write.lo errors.lo my_error.lo my_getwd.lo \
-my_div.lo mf_pack.lo my_messnc.lo mf_dirname.lo mf_fn_ext.lo \
-mf_wcomp.lo typelib.lo safemalloc.lo my_alloc.lo mf_format.lo \
-mf_path.lo mf_unixpath.lo my_fopen.lo my_symlink.lo my_fstream.lo \
-mf_loadpath.lo my_pthread.lo my_thr_init.lo thr_mutex.lo mulalloc.lo \
-string.lo default.lo my_compress.lo array.lo my_once.lo list.lo \
-my_net.lo charset.lo hash.lo mf_iocache.lo my_seek.lo my_pread.lo \
-mf_cache.lo my_gethostbyname.lo my_port.lo getopt.lo getopt1.lo \
-getvar.lo my_lib.lo strmov.lo strxmov.lo strnmov.lo strmake.lo \
-strend.lo strnlen.lo strfill.lo is_prefix.lo int2str.lo str2int.lo \
-strinstr.lo strcont.lo strcend.lo bchange.lo bmove.lo bmove_upp.lo \
-longlong2str.lo strtoull.lo strtoll.lo llstr.lo ctype.lo dbug.lo
-libmysqlclient_r_la_OBJECTS =  libmysql.lo net.lo violite.lo password.lo \
-get_password.lo errmsg.lo
-PROGRAMS =  $(noinst_PROGRAMS)
-
-conf_to_src_OBJECTS =  conf_to_src.o
-conf_to_src_DEPENDENCIES = 
-COMPILE = $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
-LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+depcomp = $(SHELL) $(top_srcdir)/depcomp
+@AMDEP_TRUE@DEP_FILES = $(DEPDIR)/conf_to_src.Po $(DEPDIR)/errmsg.Plo \
+@AMDEP_TRUE@	$(DEPDIR)/get_password.Plo $(DEPDIR)/libmysql.Plo \
+@AMDEP_TRUE@	$(DEPDIR)/manager.Plo $(DEPDIR)/password.Plo
+COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) \
+	$(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
-LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@
-DIST_COMMON =  Makefile.am Makefile.in
-
-
-DISTFILES = $(DIST_COMMON) $(SOURCES) $(HEADERS) $(TEXINFOS) $(EXTRA_DIST)
-
-GZIP_ENV = --best
+LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+DIST_SOURCES = $(libmysqlclient_r_la_SOURCES) $(conf_to_src_SOURCES)
+DIST_COMMON = Makefile.am Makefile.in
 SOURCES = $(libmysqlclient_r_la_SOURCES) $(conf_to_src_SOURCES)
-OBJECTS = $(libmysqlclient_r_la_OBJECTS) $(conf_to_src_OBJECTS)
 
-all: all-redirect
+all: all-am
+
 .SUFFIXES:
-.SUFFIXES: .S .c .lo .o .s
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am $(top_srcdir)/configure.in $(ACLOCAL_M4) $(top_srcdir)/libmysql/Makefile.shared
-	cd $(top_srcdir) && $(AUTOMAKE) --gnu --include-deps libmysql_r/Makefile
-
-Makefile: $(srcdir)/Makefile.in  $(top_builddir)/config.status
-	cd $(top_builddir) \
-	  && CONFIG_FILES=$(subdir)/$@ CONFIG_HEADERS= $(SHELL) ./config.status
-
-
-mostlyclean-pkglibLTLIBRARIES:
-
-clean-pkglibLTLIBRARIES:
-	-test -z "$(pkglib_LTLIBRARIES)" || rm -f $(pkglib_LTLIBRARIES)
-
-distclean-pkglibLTLIBRARIES:
-
-maintainer-clean-pkglibLTLIBRARIES:
-
-install-pkglibLTLIBRARIES: $(pkglib_LTLIBRARIES)
-	@$(NORMAL_INSTALL)
-	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
-	@list='$(pkglib_LTLIBRARIES)'; for p in $$list; do \
-	  if test -f $$p; then \
-	    echo "$(LIBTOOL)  --mode=install $(INSTALL) $$p $(DESTDIR)$(pkglibdir)/$$p"; \
-	    $(LIBTOOL)  --mode=install $(INSTALL) $$p $(DESTDIR)$(pkglibdir)/$$p; \
-	  else :; fi; \
-	done
-
-uninstall-pkglibLTLIBRARIES:
-	@$(NORMAL_UNINSTALL)
-	list='$(pkglib_LTLIBRARIES)'; for p in $$list; do \
-	  $(LIBTOOL)  --mode=uninstall rm -f $(DESTDIR)$(pkglibdir)/$$p; \
-	done
-
-.c.o:
-	$(COMPILE) -c $<
-
-.s.o:
-	$(COMPILE) -c $<
-
-.S.o:
-	$(COMPILE) -c $<
-
-mostlyclean-compile:
-	-rm -f *.o core *.core
-
-clean-compile:
-
-distclean-compile:
-	-rm -f *.tab.c
-
-maintainer-clean-compile:
-
-.c.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.s.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
-
-.S.lo:
-	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
+.SUFFIXES: .c .lo .o .obj
 
 mostlyclean-libtool:
 	-rm -f *.lo
@@ -345,497 +348,213 @@ clean-libtool:
 	-rm -rf .libs _libs
 
 distclean-libtool:
+	-rm -f libtool
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am $(top_srcdir)/libmysql/Makefile.shared $(top_srcdir)/configure.in $(ACLOCAL_M4)
+	cd $(top_srcdir) && \
+	  $(AUTOMAKE) --gnu  libmysql_r/Makefile
+Makefile: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.in  $(top_builddir)/config.status
+	cd $(top_builddir) && \
+	  CONFIG_HEADERS= CONFIG_LINKS= \
+	  CONFIG_FILES=$(subdir)/$@ $(SHELL) ./config.status
+install-pkglibLTLIBRARIES: $(pkglib_LTLIBRARIES)
+	@$(NORMAL_INSTALL)
+	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
+	@list='$(pkglib_LTLIBRARIES)'; for p in $$list; do \
+	  if test -f $$p; then \
+	    echo " $(LIBTOOL) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$p $(DESTDIR)$(pkglibdir)/$$p"; \
+	    $(LIBTOOL) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$p $(DESTDIR)$(pkglibdir)/$$p; \
+	  else :; fi; \
+	done
 
-maintainer-clean-libtool:
+uninstall-pkglibLTLIBRARIES:
+	@$(NORMAL_UNINSTALL)
+	@list='$(pkglib_LTLIBRARIES)'; for p in $$list; do \
+	  echo " $(LIBTOOL) --mode=uninstall rm -f $(DESTDIR)$(pkglibdir)/$$p"; \
+	  $(LIBTOOL) --mode=uninstall rm -f $(DESTDIR)$(pkglibdir)/$$p; \
+	done
 
-libmysqlclient_r.la: $(libmysqlclient_r_la_OBJECTS) $(libmysqlclient_r_la_DEPENDENCIES)
+clean-pkglibLTLIBRARIES:
+	-test -z "$(pkglib_LTLIBRARIES)" || rm -f $(pkglib_LTLIBRARIES)
+libmysqlclient_r.la: $(libmysqlclient_r_la_OBJECTS) $(libmysqlclient_r_la_DEPENDENCIES) 
 	$(LINK) -rpath $(pkglibdir) $(libmysqlclient_r_la_LDFLAGS) $(libmysqlclient_r_la_OBJECTS) $(libmysqlclient_r_la_LIBADD) $(LIBS)
-
-mostlyclean-noinstPROGRAMS:
 
 clean-noinstPROGRAMS:
 	-test -z "$(noinst_PROGRAMS)" || rm -f $(noinst_PROGRAMS)
-
-distclean-noinstPROGRAMS:
-
-maintainer-clean-noinstPROGRAMS:
-
-conf_to_src: $(conf_to_src_OBJECTS) $(conf_to_src_DEPENDENCIES)
-	@rm -f conf_to_src
+conf_to_src$(EXEEXT): $(conf_to_src_OBJECTS) $(conf_to_src_DEPENDENCIES) 
+	@rm -f conf_to_src$(EXEEXT)
 	$(LINK) $(conf_to_src_LDFLAGS) $(conf_to_src_OBJECTS) $(conf_to_src_LDADD) $(LIBS)
+
+mostlyclean-compile:
+	-rm -f *.$(OBJEXT) core *.core
+
+distclean-compile:
+	-rm -f *.tab.c
+
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/conf_to_src.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/errmsg.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/get_password.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/libmysql.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/manager.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@$(DEPDIR)/password.Plo@am__quote@
+
+distclean-depend:
+	-rm -rf $(DEPDIR)
+
+.c.o:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `test -f $< || echo '$(srcdir)/'`$<
+
+.c.obj:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Po' tmpdepfile='$(DEPDIR)/$*.TPo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(COMPILE) -c `cygpath -w $<`
+
+.c.lo:
+@AMDEP_TRUE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@	depfile='$(DEPDIR)/$*.Plo' tmpdepfile='$(DEPDIR)/$*.TPlo' @AMDEPBACKSLASH@
+@AMDEP_TRUE@	$(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+	$(LTCOMPILE) -c -o $@ `test -f $< || echo '$(srcdir)/'`$<
+CCDEPMODE = @CCDEPMODE@
+uninstall-info-am:
 
 tags: TAGS
 
-ID: $(HEADERS) $(SOURCES) $(LISP)
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
-	here=`pwd` && cd $(srcdir) \
-	  && mkid -f$$here/ID $$unique $(LISP)
+	mkid -fID $$unique $(LISP)
 
-TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) $(LISP)
+TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+		$(TAGS_FILES) $(LISP)
 	tags=; \
 	here=`pwd`; \
-	list='$(SOURCES) $(HEADERS)'; \
-	unique=`for i in $$list; do echo $$i; done | \
-	  awk '    { files[$$0] = 1; } \
+	list='$(SOURCES) $(HEADERS) $(TAGS_FILES)'; \
+	unique=`for i in $$list; do \
+	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
+	  done | \
+	  $(AWK) '    { files[$$0] = 1; } \
 	       END { for (i in files) print i; }'`; \
 	test -z "$(ETAGS_ARGS)$$unique$(LISP)$$tags" \
-	  || (cd $(srcdir) && etags $(ETAGS_ARGS) $$tags  $$unique $(LISP) -o $$here/TAGS)
+	  || etags $(ETAGS_ARGS) $$tags  $$unique $(LISP)
 
-mostlyclean-tags:
-
-clean-tags:
+GTAGS:
+	here=`CDPATH=: && cd $(top_builddir) && pwd` \
+	  && cd $(top_srcdir) \
+	  && gtags -i $(GTAGS_ARGS) $$here
 
 distclean-tags:
-	-rm -f TAGS ID
+	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH
 
-maintainer-clean-tags:
+DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 
-distdir = $(top_builddir)/$(PACKAGE)-$(VERSION)/$(subdir)
-
-subdir = libmysql_r
+top_distdir = ..
+distdir = $(top_distdir)/$(PACKAGE)-$(VERSION)
 
 distdir: $(DISTFILES)
 	@for file in $(DISTFILES); do \
-	  d=$(srcdir); \
+	  if test -f $$file; then d=.; else d=$(srcdir); fi; \
+	  dir=`echo "$$file" | sed -e 's,/[^/]*$$,,'`; \
+	  if test "$$dir" != "$$file" && test "$$dir" != "."; then \
+	    $(mkinstalldirs) "$(distdir)/$$dir"; \
+	  fi; \
 	  if test -d $$d/$$file; then \
-	    cp -pr $$d/$$file $(distdir)/$$file; \
+	    cp -pR $$d/$$file $(distdir) \
+	    || exit 1; \
 	  else \
 	    test -f $(distdir)/$$file \
-	    || ln $$d/$$file $(distdir)/$$file 2> /dev/null \
-	    || cp -p $$d/$$file $(distdir)/$$file || :; \
+	    || cp -p $$d/$$file $(distdir)/$$file \
+	    || exit 1; \
 	  fi; \
 	done
-array.lo array.o : array.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-bchange.lo bchange.o : bchange.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-bmove.lo bmove.o : bmove.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h
-bmove_upp.lo bmove_upp.o : bmove_upp.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-charset.lo charset.o : charset.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h \
-	../include/m_string.h ../include/my_dir.h
-conf_to_src.o: conf_to_src.c ../include/getopt.h
-ctype-big5.lo ctype-big5.o : ctype-big5.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h
-ctype-czech.lo ctype-czech.o : ctype-czech.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-ctype-euc_kr.lo ctype-euc_kr.o : ctype-euc_kr.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-ctype-gb2312.lo ctype-gb2312.o : ctype-gb2312.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-ctype-gbk.lo ctype-gbk.o : ctype-gbk.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h
-ctype-sjis.lo ctype-sjis.o : ctype-sjis.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h
-ctype-tis620.lo ctype-tis620.o : ctype-tis620.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/t_ctype.h
-ctype-ujis.lo ctype-ujis.o : ctype-ujis.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-ctype.lo ctype.o : ctype.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_ctype.h \
-	../include/m_string.h ctype_extra_sources.c ctype_autoconf.c
-dbug.lo dbug.o : dbug.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h \
-	../include/my_pthread.h
-default.lo default.o : default.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-errmsg.lo errmsg.o : errmsg.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/errmsg.h
-errors.lo errors.o : errors.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-get_password.lo get_password.o : get_password.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysql.h \
-	../include/mysql_com.h ../include/mysql_version.h \
-	../include/m_string.h
-getopt.lo getopt.o : getopt.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h
-getopt1.lo getopt1.o : getopt1.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h
-getvar.lo getvar.o : getvar.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-hash.lo hash.o : hash.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/hash.h
-int2str.lo int2str.o : int2str.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-is_prefix.lo is_prefix.o : is_prefix.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-libmysql.lo libmysql.o : libmysql.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h \
-	../include/m_string.h ../include/mysql.h ../include/mysql_com.h \
-	../include/mysql_version.h ../include/mysqld_error.h \
-	../include/errmsg.h ../include/violite.h ../include/my_net.h
-list.lo list.o : list.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/my_list.h
-llstr.lo llstr.o : llstr.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h
-longlong2str.lo longlong2str.o : longlong2str.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-mf_cache.lo mf_cache.o : mf_cache.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	my_static.h ../include/mysys_err.h
-mf_casecnv.lo mf_casecnv.o : mf_casecnv.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_dirname.lo mf_dirname.o : mf_dirname.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_fn_ext.lo mf_fn_ext.o : mf_fn_ext.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_format.lo mf_format.o : mf_format.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_iocache.lo mf_iocache.o : mf_iocache.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_loadpath.lo mf_loadpath.o : mf_loadpath.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_pack.lo mf_pack.o : mf_pack.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_path.lo mf_path.o : mf_path.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_tempfile.lo mf_tempfile.o : mf_tempfile.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	my_static.h ../include/mysys_err.h
-mf_unixpath.lo mf_unixpath.o : mf_unixpath.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-mf_wcomp.lo mf_wcomp.o : mf_wcomp.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h
-mulalloc.lo mulalloc.o : mulalloc.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h
-my_alloc.lo my_alloc.o : my_alloc.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-my_compress.lo my_compress.o : my_compress.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-my_create.lo my_create.o : my_create.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/my_dir.h \
-	../include/mysys_err.h
-my_delete.lo my_delete.o : my_delete.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-my_div.lo my_div.o : my_div.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h
-my_error.lo my_error.o : my_error.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h \
-	../include/m_string.h
-my_fopen.lo my_fopen.o : my_fopen.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h my_static.h \
-	../include/mysys_err.h
-my_fstream.lo my_fstream.o : my_fstream.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-my_gethostbyname.lo my_gethostbyname.o : my_gethostbyname.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/my_net.h
-my_getwd.lo my_getwd.o : my_getwd.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/mysys_err.h
-my_init.lo my_init.o : my_init.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h my_static.h \
-	../include/mysys_err.h ../include/m_string.h
-my_lib.lo my_lib.o : my_lib.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/my_dir.h ../include/mysys_err.h
-my_malloc.lo my_malloc.o : my_malloc.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h \
-	../include/m_string.h
-my_messnc.lo my_messnc.o : my_messnc.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h
-my_net.lo my_net.o : my_net.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-my_once.lo my_once.o : my_once.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h my_static.h \
-	../include/mysys_err.h
-my_open.lo my_open.o : my_open.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h \
-	../include/my_dir.h
-my_port.lo my_port.o : my_port.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h
-my_pread.lo my_pread.o : my_pread.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-my_pthread.lo my_pthread.o : my_pthread.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/thr_alarm.h
-my_read.lo my_read.o : my_read.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-my_realloc.lo my_realloc.o : my_realloc.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-my_seek.lo my_seek.o : my_seek.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h
-my_static.lo my_static.o : my_static.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h my_static.h \
-	../include/my_alarm.h
-my_symlink.lo my_symlink.o : my_symlink.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h \
-	../include/m_string.h
-my_thr_init.lo my_thr_init.o : my_thr_init.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-my_write.lo my_write.o : my_write.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/mysys_err.h
-net.lo net.o : net.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/violite.h \
-	../include/my_net.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/mysql.h ../include/mysql_com.h \
-	../include/mysql_version.h ../include/mysqld_error.h
-password.lo password.o : password.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	../include/mysql.h ../include/mysql_com.h \
-	../include/mysql_version.h
-safemalloc.lo safemalloc.o : safemalloc.c mysys_priv.h \
-	../include/global.h ../include/my_config.h ../include/getopt.h \
-	../include/dbug.h ../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h \
-	my_static.h ../include/mysys_err.h
-str2int.lo str2int.o : str2int.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h ../include/m_ctype.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/raid.h
-strcend.lo strcend.o : strcend.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strcont.lo strcont.o : strcont.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strend.lo strend.o : strend.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h
-strfill.lo strfill.o : strfill.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-string.lo string.o : string.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-strinstr.lo strinstr.o : strinstr.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strmake.lo strmake.o : strmake.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strmov.lo strmov.o : strmov.c ../include/global.h ../include/my_config.h \
-	../include/getopt.h ../include/dbug.h ../include/m_string.h
-strnlen.lo strnlen.o : strnlen.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strnmov.lo strnmov.o : strnmov.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strtoll.lo strtoll.o : strtoll.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strtoull.lo strtoull.o : strtoull.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-strxmov.lo strxmov.o : strxmov.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-thr_mutex.lo thr_mutex.o : thr_mutex.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/m_string.h
-typelib.lo typelib.o : typelib.c mysys_priv.h ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/my_sys.h ../include/my_pthread.h \
-	../include/m_ctype.h ../include/raid.h ../include/m_string.h
-violite.lo violite.o : violite.c ../include/global.h \
-	../include/my_config.h ../include/getopt.h ../include/dbug.h \
-	../include/violite.h ../include/my_net.h ../include/my_sys.h \
-	../include/my_pthread.h ../include/m_ctype.h ../include/raid.h \
-	../include/m_string.h
-
-info-am:
-info: info-am
-dvi-am:
-dvi: dvi-am
 check-am: all-am
 check: check-am
-installcheck-am:
-installcheck: installcheck-am
-install-exec-am: install-pkglibLTLIBRARIES
-install-exec: install-exec-am
+all-am: Makefile $(LTLIBRARIES) $(PROGRAMS)
 
-install-data-am:
+installdirs:
+	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
+
+install: install-am
+install-exec: install-exec-am
 install-data: install-data-am
+uninstall: uninstall-am
 
 install-am: all-am
 	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
-install: install-am
-uninstall-am: uninstall-pkglibLTLIBRARIES
-uninstall: uninstall-am
-all-am: Makefile $(LTLIBRARIES) $(PROGRAMS)
-all-redirect: all-am
+
+installcheck: installcheck-am
 install-strip:
-	$(MAKE) $(AM_MAKEFLAGS) AM_INSTALL_PROGRAM_FLAGS=-s install
-installdirs:
-	$(mkinstalldirs)  $(DESTDIR)$(pkglibdir)
-
-
+	$(MAKE) $(AM_MAKEFLAGS) INSTALL_PROGRAM="$(INSTALL_STRIP_PROGRAM)" \
+	  `test -z '$(STRIP)' || \
+	    echo "INSTALL_PROGRAM_ENV=STRIPPROG='$(STRIP)'"` install
 mostlyclean-generic:
 
 clean-generic:
 	-test -z "$(CLEANFILES)" || rm -f $(CLEANFILES)
 
 distclean-generic:
-	-rm -f Makefile $(CONFIG_CLEAN_FILES)
-	-rm -f config.cache config.log stamp-h stamp-h[0-9]*
+	-rm -f Makefile $(CONFIG_CLEAN_FILES) stamp-h stamp-h[0-9]*
 
 maintainer-clean-generic:
-mostlyclean-am:  mostlyclean-pkglibLTLIBRARIES mostlyclean-compile \
-		mostlyclean-libtool mostlyclean-noinstPROGRAMS \
-		mostlyclean-tags mostlyclean-generic
-
-mostlyclean: mostlyclean-am
-
-clean-am:  clean-pkglibLTLIBRARIES clean-compile clean-libtool \
-		clean-noinstPROGRAMS clean-tags clean-generic \
-		mostlyclean-am clean-local
-
+	@echo "This command is intended for maintainers to use"
+	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-distclean-am:  distclean-pkglibLTLIBRARIES distclean-compile \
-		distclean-libtool distclean-noinstPROGRAMS \
-		distclean-tags distclean-generic clean-am
-	-rm -f libtool
+clean-am: clean-generic clean-libtool clean-local clean-noinstPROGRAMS \
+	clean-pkglibLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
 
-maintainer-clean-am:  maintainer-clean-pkglibLTLIBRARIES \
-		maintainer-clean-compile maintainer-clean-libtool \
-		maintainer-clean-noinstPROGRAMS maintainer-clean-tags \
-		maintainer-clean-generic distclean-am
-	@echo "This command is intended for maintainers to use;"
-	@echo "it deletes files that may require special tools to rebuild."
+distclean-am: clean-am distclean-compile distclean-depend \
+	distclean-generic distclean-libtool distclean-tags
+
+dvi: dvi-am
+
+dvi-am:
+
+info: info-am
+
+info-am:
+
+install-data-am:
+
+install-exec-am: install-pkglibLTLIBRARIES
+
+install-info: install-info-am
+
+install-man:
+
+installcheck-am:
 
 maintainer-clean: maintainer-clean-am
 
-.PHONY: mostlyclean-pkglibLTLIBRARIES distclean-pkglibLTLIBRARIES \
-clean-pkglibLTLIBRARIES maintainer-clean-pkglibLTLIBRARIES \
-uninstall-pkglibLTLIBRARIES install-pkglibLTLIBRARIES \
-mostlyclean-compile distclean-compile clean-compile \
-maintainer-clean-compile mostlyclean-libtool distclean-libtool \
-clean-libtool maintainer-clean-libtool mostlyclean-noinstPROGRAMS \
-distclean-noinstPROGRAMS clean-noinstPROGRAMS \
-maintainer-clean-noinstPROGRAMS tags mostlyclean-tags distclean-tags \
-clean-tags maintainer-clean-tags distdir info-am info dvi-am dvi check \
-check-am installcheck-am installcheck install-exec-am install-exec \
-install-data-am install-data install-am install uninstall-am uninstall \
-all-redirect all-am all installdirs mostlyclean-generic \
-distclean-generic clean-generic maintainer-clean-generic clean \
-mostlyclean distclean maintainer-clean
+maintainer-clean-am: distclean-am maintainer-clean-generic
+
+mostlyclean: mostlyclean-am
+
+mostlyclean-am: mostlyclean-compile mostlyclean-generic \
+	mostlyclean-libtool
+
+uninstall-am: uninstall-info-am uninstall-pkglibLTLIBRARIES
+
+.PHONY: GTAGS all all-am check check-am clean clean-generic \
+	clean-libtool clean-local clean-noinstPROGRAMS \
+	clean-pkglibLTLIBRARIES distclean distclean-compile \
+	distclean-depend distclean-generic distclean-libtool \
+	distclean-tags distdir dvi dvi-am info info-am install \
+	install-am install-data install-data-am install-exec \
+	install-exec-am install-info install-info-am install-man \
+	install-pkglibLTLIBRARIES install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool tags uninstall \
+	uninstall-am uninstall-info-am uninstall-pkglibLTLIBRARIES
 
 
 # The automatic dependencies miss this
@@ -846,8 +565,10 @@ clean-local:
 	rm -f `echo $(mystringsobjects) | sed "s;\.lo;.c;g"` \
 	      `echo $(dbugobjects) | sed "s;\.lo;.c;g"` \
 	      `echo $(mysysobjects) | sed "s;\.lo;.c;g"` \
+	      `echo $(vio_objects) | sed "s;\.lo;.c;g"` \
+	       $(CHARSET_SRCS) $(CHARSET_OBJS) \
 	       $(mystringsextra) $(mystringsgen) $(mysysheaders) \
-	       ctype_extra_sources.c ../linked_client_sources
+	       ctype_extra_sources.c net.c ../linked_client_sources
 
 ctype_extra_sources.c: conf_to_src
 	./conf_to_src $(top_srcdir) @CHARSETS_NEED_SOURCE@ > \
@@ -863,7 +584,6 @@ link_sources:
 	  rm -f $(srcdir)/$$f; \
 	  @LN_CP_F@ $(libmysql_dir)/$$f $(srcdir)/$$f; \
 	done
-
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

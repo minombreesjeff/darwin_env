@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -20,6 +20,8 @@
 #ifdef __GNUC__
 #pragma interface			/* gcc class implementation */
 #endif
+
+#include <my_tree.h>
 
 class Item_sum :public Item_result_field
 {
@@ -62,11 +64,14 @@ public:
   { return new Item_field(field);}
   table_map used_tables() const { return ~(table_map) 0; } /* Not used */
   bool const_item() const { return 0; }
+  bool is_null() { return null_value; }
   void update_used_tables() { }
   void make_field(Send_field *field);
   void print(String *str);
   void fix_num_length_and_dec();
+  void no_rows_in_result() { reset(); }
   virtual bool setup(THD *thd) {return 0;}
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -81,20 +86,21 @@ public:
   longlong val_int() { return (longlong) val(); } /* Real as default */
   String *val_str(String*str);
   void reset_field();
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
 class Item_sum_int :public Item_sum_num
 {
-  void fix_length_and_dec()
-    { decimals=0; max_length=21; maybe_null=null_value=0; }
-
 public:
   Item_sum_int(Item *item_par) :Item_sum_num(item_par) {}
   Item_sum_int(List<Item> &list) :Item_sum_num(list) {}
   double val() { return (double) val_int(); }
   String *val_str(String*str);
   enum Item_result result_type () const { return INT_RESULT; }
+  unsigned int size_of() { return sizeof(*this);}  
+  void fix_length_and_dec()
+  { decimals=0; max_length=21; maybe_null=null_value=0; }
 };
 
 
@@ -111,7 +117,9 @@ class Item_sum_sum :public Item_sum_num
   double val();
   void reset_field();
   void update_field(int offset);
+  void no_rows_in_result() {}
   const char *func_name() const { return "sum"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -128,12 +136,14 @@ class Item_sum_count :public Item_sum_int
   bool const_item() const { return !used_table_cache; }
   enum Sumfunctype sum_func () const { return COUNT_FUNC; }
   void reset();
+  void no_rows_in_result() { count=0; }
   bool add();
   void make_const(longlong count_arg) { count=count_arg; used_table_cache=0; }
   longlong val_int();
   void reset_field();
   void update_field(int offset);
   const char *func_name() const { return "count"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -144,15 +154,39 @@ class Item_sum_count_distinct :public Item_sum_int
   TABLE *table;
   table_map used_table_cache;
   bool fix_fields(THD *thd,TABLE_LIST *tables);
+  uint32 *field_lengths;
   TMP_TABLE_PARAM *tmp_table_param;
-  bool always_null;
+  TREE tree;
+  uint key_length;
+
+  // calculated based on max_heap_table_size. If reached,
+  // walk the tree and dump it into MyISAM table
+  uint max_elements_in_tree;
+
+  // the first few bytes of record ( at least one)
+  // are just markers for deleted and NULLs. We want to skip them since
+  // they will just bloat the tree without providing any valuable info
+  int rec_offset;
+
+  // If there are no blobs, we can use a tree, which
+  // is faster than heap table. In that case, we still use the table
+  // to help get things set up, but we insert nothing in it
+  bool use_tree;
+  bool always_null;		// Set to 1 if the result is always NULL
+
+  int tree_to_myisam();
+
+  friend int composite_key_cmp(void* arg, byte* key1, byte* key2);
+  friend int dump_leaf(byte* key, uint32 count __attribute__((unused)),
+		       Item_sum_count_distinct* item);
 
   public:
   Item_sum_count_distinct(List<Item> &list)
     :Item_sum_int(list),table(0),used_table_cache(~(table_map) 0),
-    tmp_table_param(0),always_null(0)
+     tmp_table_param(0),use_tree(0),always_null(0)
   { quick_group=0; }
   ~Item_sum_count_distinct();
+
   table_map used_tables() const { return used_table_cache; }
   enum Sumfunctype sum_func () const { return COUNT_DISTINCT_FUNC; }
   void reset();
@@ -162,6 +196,8 @@ class Item_sum_count_distinct :public Item_sum_int
   void update_field(int offset) { return ; }	// Never called
   const char *func_name() const { return "count_distinct"; }
   bool setup(THD *thd);
+  void no_rows_in_result() {}
+  unsigned int size_of() { return sizeof(*this);}
 };
 
 
@@ -177,9 +213,11 @@ public:
   enum Type type() const { return FIELD_AVG_ITEM; }
   double val();
   longlong val_int() { return (longlong) val(); }
+  bool is_null() { (void) val_int(); return null_value; }
   String *val_str(String*);
   void make_field(Send_field *field);
   void fix_length_and_dec() {}
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -201,6 +239,7 @@ class Item_sum_avg :public Item_sum_num
   Item *result_item(Field *field)
   { return new Item_avg_field(this); }
   const char *func_name() const { return "avg"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_sum_std;
@@ -214,8 +253,10 @@ public:
   double val();
   longlong val_int() { return (longlong) val(); }
   String *val_str(String*);
+  bool is_null() { (void) val_int(); return null_value; }
   void make_field(Send_field *field);
   void fix_length_and_dec() {}
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 class Item_sum_std :public Item_sum_num
@@ -236,6 +277,7 @@ class Item_sum_std :public Item_sum_num
   Item *result_item(Field *field)
   { return new Item_std_field(this); }
   const char *func_name() const { return "std"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -246,6 +288,7 @@ class Item_sum_hybrid :public Item_sum
  protected:
   String value,tmp_value;
   double sum;
+  longlong sum_int;
   Item_result hybrid_type;
   int cmp_sign;
   table_map used_table_cache;
@@ -261,12 +304,13 @@ class Item_sum_hybrid :public Item_sum
   void reset()
   {
     sum=0.0;
+    sum_int=0;
     value.length(0);
     null_value=1;
     add();
   }
   double val();
-  longlong val_int() { return (longlong) val(); } /* Real as default */
+  longlong val_int();
   void reset_field();
   String *val_str(String *);
   void make_const() { used_table_cache=0; }
@@ -276,6 +320,7 @@ class Item_sum_hybrid :public Item_sum
   void min_max_update_str_field(int offset);
   void min_max_update_real_field(int offset);
   void min_max_update_int_field(int offset);
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -287,6 +332,7 @@ public:
 
   bool add();
   const char *func_name() const { return "min"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -298,6 +344,7 @@ public:
 
   bool add();
   const char *func_name() const { return "max"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -313,6 +360,9 @@ class Item_sum_bit :public Item_sum_int
   void reset();
   longlong val_int();
   void reset_field();
+  unsigned int size_of() { return sizeof(*this);}  
+  void fix_length_and_dec()
+  { decimals=0; max_length=21; unsigned_flag=1; maybe_null=null_value=0; }
 };
 
 
@@ -323,6 +373,7 @@ class Item_sum_or :public Item_sum_bit
   bool add();
   void update_field(int offset);
   const char *func_name() const { return "bit_or"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 
@@ -333,6 +384,7 @@ class Item_sum_and :public Item_sum_bit
   bool add();
   void update_field(int offset);
   const char *func_name() const { return "bit_and"; }
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 /*
@@ -363,6 +415,7 @@ public:
   bool add();
   void reset_field() {};
   void update_field(int offset_arg) {};
+  unsigned int size_of() { return sizeof(*this);}  
 };
 
 

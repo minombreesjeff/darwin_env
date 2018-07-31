@@ -1,37 +1,46 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #include "mysys_priv.h"
 #include "mysys_err.h"
 #include <errno.h>
 
 
-	/* Read a chunk of bytes from a file  */
+/*
+  Read a chunk of bytes from a file with retry's if needed
+
+  The parameters are:
+    File descriptor
+    Buffer to hold at least Count bytes
+    Bytes to read
+    Flags on what to do on error
+
+    Return:
+      -1 on error
+      0  if flag has bits MY_NABP or MY_FNABP set
+      N  number of bytes read.
+*/
 
 uint my_read(File Filedes, byte *Buffer, uint Count, myf MyFlags)
-				/* File descriptor */
-				/* Buffer must be at least count bytes */
-				/* Max number of bytes returnd */
-				/* Flags on what to do on error */
 {
-  uint readbytes;
+  uint readbytes,save_count;
   DBUG_ENTER("my_read");
   DBUG_PRINT("my",("Fd: %d  Buffer: %lx  Count: %u  MyFlags: %d",
 		   Filedes, Buffer, Count, MyFlags));
+  save_count=Count;
 
   for (;;)
   {
@@ -54,12 +63,21 @@ uint my_read(File Filedes, byte *Buffer, uint Count, myf MyFlags)
 	  my_error(EE_EOFERR, MYF(ME_BELL+ME_WAITTANG),
 		   my_filename(Filedes),my_errno);
       }
-      if ((int) readbytes == -1 || (MyFlags & (MY_FNABP | MY_NABP)))
+      if ((int) readbytes == -1 ||
+	  ((MyFlags & (MY_FNABP | MY_NABP)) && !(MyFlags & MY_FULL_IO)))
 	DBUG_RETURN(MY_FILE_ERROR);	/* Return with error */
+      if (readbytes > 0 && (MyFlags & MY_FULL_IO))
+      {
+	Buffer+=readbytes;
+	Count-=readbytes;
+	continue;
+      }
     }
 
     if (MyFlags & (MY_NABP | MY_FNABP))
       readbytes=0;			/* Ok on read */
+    else if (MyFlags & MY_FULL_IO)
+      readbytes=save_count;
     break;
   }
   DBUG_RETURN(readbytes);

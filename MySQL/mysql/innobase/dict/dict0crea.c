@@ -337,7 +337,7 @@ dict_create_index_for_cluster_step(
 
 	for (i = 0; i < table->n_cols; i++) {
 		col = dict_table_get_nth_col(table, i);
-		dict_mem_index_add_field(index, col->name, 0);
+		dict_mem_index_add_field(index, col->name, 0, 0);
 	}
 				
 	(node->cluster)->index = index;
@@ -450,8 +450,16 @@ dict_create_sys_fields_tuple(
 	dict_field_t*	field;
 	dfield_t*	dfield;
 	byte*		ptr;
+	ibool		index_contains_column_prefix_field	= FALSE;
+	ulint		j;
 
 	ut_ad(index && heap);
+
+	for (j = 0; j < index->n_fields; j++) {
+	        if (dict_index_get_nth_field(index, j)->prefix_len > 0) {
+	                index_contains_column_prefix_field = TRUE;	   
+		}
+	}
 
 	field = dict_index_get_nth_field(index, i);
 
@@ -466,11 +474,25 @@ dict_create_sys_fields_tuple(
 	mach_write_to_8(ptr, index->id);
 
 	dfield_set_data(dfield, ptr, 8);
-	/* 1: POS ----------------------------*/
+	/* 1: POS + PREFIX LENGTH ----------------------------*/
+
 	dfield = dtuple_get_nth_field(entry, 1);
 
 	ptr = mem_heap_alloc(heap, 4);
-	mach_write_to_4(ptr, i);
+	
+	if (index_contains_column_prefix_field) {
+		/* If there are column prefix fields in the index, then
+		we store the number of the field to the 2 HIGH bytes
+		and the prefix length to the 2 low bytes, */
+
+	        mach_write_to_4(ptr, (i << 16) + field->prefix_len);
+	} else {
+	        /* Else we store the number of the field to the 2 LOW bytes.
+		This is to keep the storage format compatible with
+		InnoDB versions < 4.0.14. */
+	  
+	        mach_write_to_4(ptr, i);
+	}
 
 	dfield_set_data(dfield, ptr, 4);
 	/* 4: COL_NAME -------------------------*/
@@ -1041,12 +1063,12 @@ dict_create_or_check_foreign_constraint_tables(void)
 	que_t*		graph;
 	ulint		error;
 	trx_t*		trx;
-	char*		str;
+	char*		str;	
 
 	mutex_enter(&(dict_sys->mutex));
 
-	table1 = dict_table_get_low("SYS_FOREIGN");
-	table2 = dict_table_get_low("SYS_FOREIGN_COLS");
+	table1 = dict_table_get_low((char *) "SYS_FOREIGN");
+	table2 = dict_table_get_low((char *) "SYS_FOREIGN_COLS");
 	
 	if (table1 && table2
             && UT_LIST_GET_LEN(table1->indexes) == 3
@@ -1060,20 +1082,24 @@ dict_create_or_check_foreign_constraint_tables(void)
             	return(DB_SUCCESS);
         }
 
+	mutex_exit(&(dict_sys->mutex));
+
 	trx = trx_allocate_for_mysql();
 	
-	trx->op_info = "creating foreign key sys tables";
+	trx->op_info = (char *) "creating foreign key sys tables";
+
+	row_mysql_lock_data_dictionary(trx);
 
 	if (table1) {
 		fprintf(stderr,
 		"InnoDB: dropping incompletely created SYS_FOREIGN table\n");
-		row_drop_table_for_mysql("SYS_FOREIGN", trx, TRUE);
+		row_drop_table_for_mysql((char *) "SYS_FOREIGN", trx);
 	}
 
 	if (table2) {
 		fprintf(stderr,
 	"InnoDB: dropping incompletely created SYS_FOREIGN_COLS table\n");
-		row_drop_table_for_mysql("SYS_FOREIGN_COLS", trx, TRUE);
+		row_drop_table_for_mysql((char *) "SYS_FOREIGN_COLS", trx);
 	}
 
 	fprintf(stderr,
@@ -1083,7 +1109,7 @@ dict_create_or_check_foreign_constraint_tables(void)
 	there are 2 secondary indexes on SYS_FOREIGN, and they
 	are defined just like below */
 	
-	str =
+	str = (char *)
 	"PROCEDURE CREATE_FOREIGN_SYS_TABLES_PROC () IS\n"
 	"BEGIN\n"
 	"CREATE TABLE\n"
@@ -1122,15 +1148,17 @@ dict_create_or_check_foreign_constraint_tables(void)
 		fprintf(stderr,
 		"InnoDB: dropping incompletely created SYS_FOREIGN tables\n");
 
-		row_drop_table_for_mysql("SYS_FOREIGN", trx, TRUE);
-		row_drop_table_for_mysql("SYS_FOREIGN_COLS", trx, TRUE);
+		row_drop_table_for_mysql((char *) "SYS_FOREIGN", trx);
+		row_drop_table_for_mysql((char *) "SYS_FOREIGN_COLS", trx);
 
 		error = DB_MUST_GET_MORE_FILE_SPACE;
 	}
 
 	que_graph_free(graph);
 	
-	trx->op_info = "";
+	trx->op_info = (char *) "";
+
+	row_mysql_unlock_data_dictionary(trx);
 
   	trx_free_for_mysql(trx);
 
@@ -1138,8 +1166,6 @@ dict_create_or_check_foreign_constraint_tables(void)
 		fprintf(stderr,
 		"InnoDB: Foreign key constraint system tables created\n");
 	}
-
-	mutex_exit(&(dict_sys->mutex));
 
 	return(error);
 }
@@ -1166,9 +1192,10 @@ dict_create_add_foreigns_to_dictionary(
 
 	ut_ad(mutex_own(&(dict_sys->mutex)));	
 
-	if (NULL == dict_table_get_low("SYS_FOREIGN")) {
+	if (NULL == dict_table_get_low((char *) "SYS_FOREIGN")) {
 		fprintf(stderr,
      "InnoDB: table SYS_FOREIGN not found from internal data dictionary\n");
+
 		return(DB_ERROR);
 	}
 
@@ -1254,6 +1281,13 @@ loop:
 	"InnoDB: See section 15.1 Troubleshooting data dictionary operations\n"
 	"InnoDB: at http://www.innodb.com/ibman.html\n");
 		}
+
+		mutex_enter(&dict_foreign_err_mutex);
+		ut_sprintf_timestamp(buf);
+		sprintf(buf + strlen(buf),
+" Internal error in foreign key constraint creation for table %.500s.\n"
+"See the MySQL .err log in the datadir for more information.\n", table->name);
+		mutex_exit(&dict_foreign_err_mutex);
 
 		return(error);
 	}

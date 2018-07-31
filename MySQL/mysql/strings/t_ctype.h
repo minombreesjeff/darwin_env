@@ -1,3 +1,19 @@
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+
 /*
   Copyright (C) 1998, 1999 by Pruet Boonma, all rights reserved.
   Copyright (C) 1998 by Theppitak Karoonboonyanan, all rights reserved.
@@ -24,7 +40,7 @@ typedef unsigned char tchar;
 #define IGNORE 0
 
 
-// level 1 symbols & order
+/* level 1 symbols & order */
 enum l1_symbols {
     L1_08 = TOT_LEVELS,
     L1_18,
@@ -125,8 +141,8 @@ enum l1_symbols {
     L1_SARA_AI_MAIMUAN,
     L1_SARA_AI_MAIMALAI
 };
-  
-// level 2 symbols & order
+
+/* level 2 symbols & order */
 enum l2_symbols {
     L2_BLANK = TOT_LEVELS,
     L2_THAII,
@@ -139,8 +155,8 @@ enum l2_symbols {
     L2_TONE3,
     L2_TONE4
 };
-  
-// level 3 symbols & order
+
+/* level 3 symbols & order */
 enum l3_symbols {
 	L3_BLANK = TOT_LEVELS,
     L3_SPACE,
@@ -185,7 +201,7 @@ enum l3_symbols {
     L3_V_LINE
 };
 
-// level 4 symbols & order
+/* level 4 symbols & order */
 enum l4_symbols {
     L4_BLANK = TOT_LEVELS,
     L4_MIN,

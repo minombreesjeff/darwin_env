@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
   Functions to convert to lover_case and to upper_case in scandinavia.
@@ -25,9 +24,25 @@
 
 #include "mysys_priv.h"
 #include <m_ctype.h>
+#ifndef SCO
 #include <m_string.h>
+#endif
 
-	/* string to uppercase */
+/*
+  Upcase string 
+  
+  SYNOPSIS
+    str IN/OUT  String to upcase    
+	  
+  RETURN VALUE
+    none
+  DESCRIPTION
+    Function changes input parameter so all chars it consist from
+    are replaced with matching one in upper case.
+    String should be writable with exception read-only empty string
+    constant is handled correctly.    
+*/
+				
 
 void caseup_str(my_string str)
 {
@@ -35,7 +50,7 @@ void caseup_str(my_string str)
   if (use_mb(default_charset_info))
   {
     register uint32 l;
-    register char *end=str+(uint) strlen(str);
+    register char *end=str+strlen(str);
     while (*str)
     {
       if ((l=my_ismbchar(default_charset_info, str,end))) str+=l;
@@ -44,11 +59,29 @@ void caseup_str(my_string str)
   }
   else
 #endif
-    while ((*str = toupper(*str)) != 0)
+    while (*str!=0) /* iterate till the end of string */
+    {
+      *str= toupper(*str);
       str++;
+    }  
 } /* caseup_str */
 
-	/* string to lowercase */
+
+/*
+  Downcase string 
+  
+  SYNOPSIS
+    str IN/OUT  String to downcase    
+	  
+  RETURN VALUE
+    none
+  DESCRIPTION
+    Function changes input parameter so all chars it consist from
+    are replaced with matching one in lower case.
+    String should be writable with exception read-only empty string
+    constant is handled correctly.    
+*/
+
 
 void casedn_str(my_string str)
 {
@@ -56,7 +89,7 @@ void casedn_str(my_string str)
   if (use_mb(default_charset_info))
   {
     register uint32 l;
-    register char *end=str+(uint) strlen(str);
+    register char *end=str+strlen(str);
     while (*str)
     {
       if ((l=my_ismbchar(default_charset_info, str,end))) str+=l;
@@ -65,8 +98,11 @@ void casedn_str(my_string str)
   }
   else
 #endif
-    while ((*str= tolower(*str)) != 0)
+    while (*str!=0) /* iterate till the end of string */
+    {
+      *str= tolower(*str);
       str++;
+    }  
 } /* casedn_str */
 
 
@@ -155,7 +191,7 @@ int my_strcasecmp(const char *s, const char *t)
   if (use_mb(default_charset_info))
   {
     register uint32 l;
-    register const char *end=s+(uint) strlen(s);
+    register const char *end=s+strlen(s);
     while (s<end)
     {
       if ((l=my_ismbchar(default_charset_info, s,end)))

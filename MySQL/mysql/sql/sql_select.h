@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -115,22 +115,26 @@ typedef struct st_position {			/* Used in find_best */
 
 /* Param to create temporary tables when doing SELECT:s */
 
-class TMP_TABLE_PARAM {
+class TMP_TABLE_PARAM :public Sql_alloc
+{
  public:
   List<Item> copy_funcs;
-  Copy_field *copy_field;
+  List_iterator_fast<Item> copy_funcs_it;
+  Copy_field *copy_field, *copy_field_end;
   byte	    *group_buff;
-  Item_result_field **funcs;
+  Item	    **items_to_copy;			/* Fields in tmp table */
   MI_COLUMNDEF *recinfo,*start_recinfo;
   KEY *keyinfo;
   ha_rows end_write_records;
-  uint	copy_field_count,field_count,sum_func_count,func_count;
+  uint	field_count,sum_func_count,func_count;
   uint  hidden_field_count;
-  uint	group_parts,group_length;
+  uint	group_parts,group_length,group_null_parts;
   uint	quick_group;
   bool  using_indirect_summary_function;
 
-  TMP_TABLE_PARAM() :copy_field(0), group_parts(0), group_length(0)
+  TMP_TABLE_PARAM()
+    :copy_funcs_it(copy_funcs), copy_field(0), group_parts(0),
+    group_length(0), group_null_parts(0)
   {}
   ~TMP_TABLE_PARAM()
   {
@@ -154,7 +158,8 @@ class JOIN {
   uint	   tables,const_tables;
   uint	   send_group_parts;
   bool	   sort_and_group,first_record,full_join,group, no_field_update;
-  table_map const_table_map,outer_join;
+  bool	   do_send_rows;
+  table_map const_table_map,found_const_table_map,outer_join;
   ha_rows  send_records,found_records,examined_rows,row_limit;
   POSITION positions[MAX_TABLES+1],best_positions[MAX_TABLES+1];
   double   best_read;
@@ -183,15 +188,15 @@ void TEST_join(JOIN *join);
 bool store_val_in_field(Field *field,Item *val);
 TABLE *create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
 			ORDER *group, bool distinct, bool save_sum_fields,
-			bool allow_distinct_limit, uint select_options);
+			bool allow_distinct_limit, ulong select_options);
 void free_tmp_table(THD *thd, TABLE *entry);
 void count_field_types(TMP_TABLE_PARAM *param, List<Item> &fields,
 		       bool reset_with_sum_func);
-bool setup_copy_fields(TMP_TABLE_PARAM *param,List<Item> &fields);
+bool setup_copy_fields(THD *thd, TMP_TABLE_PARAM *param,List<Item> &fields);
 void copy_fields(TMP_TABLE_PARAM *param);
-void copy_funcs(Item_result_field **func_ptr);
-bool create_myisam_from_heap(TABLE *table, TMP_TABLE_PARAM *param, int error,
-			     bool ignore_last_dupp_error);
+void copy_funcs(Item **func_ptr);
+bool create_myisam_from_heap(THD *Thd, TABLE *table, TMP_TABLE_PARAM *param,
+			     int error, bool ignore_last_dupp_error);
 
 /* functions from opt_sum.cc */
 int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds);
@@ -207,7 +212,7 @@ class store_key :public Sql_alloc
   char *null_ptr;
   char err;
  public:
-  store_key(Field *field_arg, char *ptr, char *null, uint length)
+  store_key(THD *thd, Field *field_arg, char *ptr, char *null, uint length)
     :null_ptr(null),err(0)
   {
     if (field_arg->type() == FIELD_TYPE_BLOB)
@@ -216,7 +221,7 @@ class store_key :public Sql_alloc
 				   field_arg->table, field_arg->binary());
     else
     {
-      to_field=field_arg->new_field(field_arg->table);
+      to_field=field_arg->new_field(&thd->mem_root,field_arg->table);
       if (to_field)
 	to_field->move_field(ptr, (uchar*) null, 1);
     }
@@ -232,9 +237,9 @@ class store_key_field: public store_key
   Copy_field copy_field;
   const char *field_name;
  public:
-  store_key_field(Field *to_field_arg, char *ptr, char *null_ptr_arg,
+  store_key_field(THD *thd, Field *to_field_arg, char *ptr, char *null_ptr_arg,
 		  uint length, Field *from_field, const char *name_arg)
-    :store_key(to_field_arg,ptr,
+    :store_key(thd, to_field_arg,ptr,
 	       null_ptr_arg ? null_ptr_arg : from_field->maybe_null() ? &err
 	       : NullS,length), field_name(name_arg)
   {
@@ -243,12 +248,12 @@ class store_key_field: public store_key
       copy_field.set(to_field,from_field,0);
     }
   }
- bool copy()
- {
-   copy_field.do_copy(&copy_field);
-   return err != 0;
- }
- const char *name() const { return field_name; }
+  bool copy()
+  {
+    copy_field.do_copy(&copy_field);
+    return err != 0;
+  }
+  const char *name() const { return field_name; }
 };
 
 
@@ -257,16 +262,15 @@ class store_key_item :public store_key
  protected:
   Item *item;
 public:
-  store_key_item(Field *to_field_arg, char *ptr, char *null_ptr_arg,
+  store_key_item(THD *thd, Field *to_field_arg, char *ptr, char *null_ptr_arg,
 		 uint length, Item *item_arg)
-    :store_key(to_field_arg,ptr,
+    :store_key(thd, to_field_arg,ptr,
 	       null_ptr_arg ? null_ptr_arg : item_arg->maybe_null ?
 	       &err : NullS, length), item(item_arg)
   {}
   bool copy()
   {
-    item->save_in_field(to_field);
-    return err != 0;
+    return item->save_in_field(to_field, 1) || err != 0;
   }
   const char *name() const { return "func"; }
 };
@@ -276,10 +280,10 @@ class store_key_const_item :public store_key_item
 {
   bool inited;
 public:
-  store_key_const_item(Field *to_field_arg, char *ptr,
+  store_key_const_item(THD *thd, Field *to_field_arg, char *ptr,
 		       char *null_ptr_arg, uint length,
 		       Item *item_arg)
-    :store_key_item(to_field_arg,ptr,
+    :store_key_item(thd, to_field_arg,ptr,
 		    null_ptr_arg ? null_ptr_arg : item_arg->maybe_null ?
 		    &err : NullS, length, item_arg), inited(0)
   {
@@ -289,7 +293,8 @@ public:
     if (!inited)
     {
       inited=1;
-      item->save_in_field(to_field);
+      if (item->save_in_field(to_field, 1))
+	err= 1;
     }
     return err != 0;
   }
@@ -297,3 +302,4 @@ public:
 };
 
 bool cp_buffer_from_ref(TABLE_REF *ref);
+bool error_if_full_join(JOIN *join);

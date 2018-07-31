@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -456,7 +456,7 @@ int _nisam_pack_rec_unpack(register N_INFO *info, register byte *to,
 static void (*get_unpack_function(N_RECINFO *rec))(N_RECINFO *, BIT_BUFF *, uchar *, uchar *)
 {
   switch (rec->base_type) {
-  case FIELD_SKIPP_ZERO:
+  case FIELD_SKIP_ZERO:
     if (rec->pack_type & PACK_TYPE_ZERO_FILL)
       return &uf_zerofill_skipp_zero;
     return &uf_skipp_zero;
@@ -466,7 +466,7 @@ static void (*get_unpack_function(N_RECINFO *rec))(N_RECINFO *, BIT_BUFF *, ucha
     if (rec->pack_type & PACK_TYPE_ZERO_FILL)
       return &uf_zerofill_normal;
     return &decode_bytes;
-  case FIELD_SKIPP_ENDSPACE:
+  case FIELD_SKIP_ENDSPACE:
     if (rec->pack_type & PACK_TYPE_SPACE_FIELDS)
     {
       if (rec->pack_type & PACK_TYPE_SELECTED)
@@ -476,7 +476,7 @@ static void (*get_unpack_function(N_RECINFO *rec))(N_RECINFO *, BIT_BUFF *, ucha
     if (rec->pack_type & PACK_TYPE_SELECTED)
       return &uf_endspace_selected;
     return &uf_endspace;
-  case FIELD_SKIPP_PRESPACE:
+  case FIELD_SKIP_PRESPACE:
     if (rec->pack_type & PACK_TYPE_SPACE_FIELDS)
     {
       if (rec->pack_type & PACK_TYPE_SELECTED)

@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -17,6 +17,11 @@
 /* Written by Sergei A. Golubchik, who has a shared copyright to this code */
 
 #include "ftdefs.h"
+
+ulong ft_min_word_len=4;
+ulong ft_max_word_len=HA_FT_MAXLEN;
+ulong ft_max_word_len_for_sort=20;
+const char *ft_boolean_syntax="+ -><()~*:\"\"&|";
 
 const MI_KEYSEG ft_keysegs[FT_SEGS]={
 {
@@ -39,10 +44,30 @@ const MI_KEYSEG ft_keysegs[FT_SEGS]={
   },
 #endif /* EVAL_RUN */
   {
-      HA_FT_WTYPE, 7, 0, 0, 0, 0, HA_FT_WLEN, 0, 0, NULL
+      HA_FT_WTYPE, 7, 0, 0, 0, HA_NO_SORT, HA_FT_WLEN, 0, 0, NULL
   }
 };
 
+const struct _ft_vft _ft_vft_nlq = {
+  ft_nlq_read_next, ft_nlq_find_relevance, ft_nlq_close_search,
+  ft_nlq_get_relevance,  ft_nlq_reinit_search
+};
+const struct _ft_vft _ft_vft_boolean = {
+  ft_boolean_read_next, ft_boolean_find_relevance, ft_boolean_close_search,
+  ft_boolean_get_relevance,  ft_boolean_reinit_search
+};
+
+FT_INFO *(*_ft_init_vft[2])(MI_INFO *, uint, byte *, uint, my_bool) =
+{ ft_init_nlq_search, ft_init_boolean_search };
+
+FT_INFO *ft_init_search(uint mode, void *info, uint keynr,
+    byte *query, uint query_len, my_bool presort)
+{
+  return (*_ft_init_vft[mode])((MI_INFO *)info, keynr,
+          query, query_len, presort);
+}
+
+const char *ft_stopword_file = 0;
 const char *ft_precompiled_stopwords[] = {
 
 #ifdef COMPILE_STOPWORDS_IN
@@ -52,7 +77,6 @@ const char *ft_precompiled_stopwords[] = {
    it was slightly modified to my taste, though
  */
 
-  "a",
   "a's",
   "able",
   "about",
@@ -106,7 +130,6 @@ const char *ft_precompiled_stopwords[] = {
   "available",
   "away",
   "awfully",
-  "b",
   "be",
   "became",
   "because",
@@ -130,7 +153,6 @@ const char *ft_precompiled_stopwords[] = {
   "brief",
   "but",
   "by",
-  "c",
   "c'mon",
   "c's",
   "came",
@@ -160,7 +182,6 @@ const char *ft_precompiled_stopwords[] = {
   "couldn't",
   "course",
   "currently",
-  "d",
   "definitely",
   "described",
   "despite",
@@ -176,7 +197,6 @@ const char *ft_precompiled_stopwords[] = {
   "down",
   "downwards",
   "during",
-  "e",
   "each",
   "edu",
   "eg",
@@ -200,7 +220,6 @@ const char *ft_precompiled_stopwords[] = {
   "exactly",
   "example",
   "except",
-  "f",
   "far",
   "few",
   "fifth",
@@ -217,7 +236,6 @@ const char *ft_precompiled_stopwords[] = {
   "from",
   "further",
   "furthermore",
-  "g",
   "get",
   "gets",
   "getting",
@@ -230,7 +248,6 @@ const char *ft_precompiled_stopwords[] = {
   "got",
   "gotten",
   "greetings",
-  "h",
   "had",
   "hadn't",
   "happens",
@@ -263,7 +280,6 @@ const char *ft_precompiled_stopwords[] = {
   "how",
   "howbeit",
   "however",
-  "i",
   "i'd",
   "i'll",
   "i'm",
@@ -292,16 +308,13 @@ const char *ft_precompiled_stopwords[] = {
   "it's",
   "its",
   "itself",
-  "j",
   "just",
-  "k",
   "keep",
   "keeps",
   "kept",
   "know",
   "knows",
   "known",
-  "l",
   "last",
   "lately",
   "later",
@@ -320,7 +333,6 @@ const char *ft_precompiled_stopwords[] = {
   "looking",
   "looks",
   "ltd",
-  "m",
   "mainly",
   "many",
   "may",
@@ -338,7 +350,6 @@ const char *ft_precompiled_stopwords[] = {
   "must",
   "my",
   "myself",
-  "n",
   "name",
   "namely",
   "nd",
@@ -365,7 +376,6 @@ const char *ft_precompiled_stopwords[] = {
   "novel",
   "now",
   "nowhere",
-  "o",
   "obviously",
   "of",
   "off",
@@ -393,7 +403,6 @@ const char *ft_precompiled_stopwords[] = {
   "over",
   "overall",
   "own",
-  "p",
   "particular",
   "particularly",
   "per",
@@ -405,11 +414,9 @@ const char *ft_precompiled_stopwords[] = {
   "presumably",
   "probably",
   "provides",
-  "q",
   "que",
   "quite",
   "qv",
-  "r",
   "rather",
   "rd",
   "re",
@@ -421,7 +428,6 @@ const char *ft_precompiled_stopwords[] = {
   "relatively",
   "respectively",
   "right",
-  "s",
   "said",
   "same",
   "saw",
@@ -471,7 +477,6 @@ const char *ft_precompiled_stopwords[] = {
   "such",
   "sup",
   "sure",
-  "t",
   "t's",
   "take",
   "taken",
@@ -531,7 +536,6 @@ const char *ft_precompiled_stopwords[] = {
   "trying",
   "twice",
   "two",
-  "u",
   "un",
   "under",
   "unfortunately",
@@ -548,14 +552,12 @@ const char *ft_precompiled_stopwords[] = {
   "uses",
   "using",
   "usually",
-  "v",
   "value",
   "various",
   "very",
   "via",
   "viz",
   "vs",
-  "w",
   "want",
   "wants",
   "was",
@@ -607,8 +609,6 @@ const char *ft_precompiled_stopwords[] = {
   "would",
   "would",
   "wouldn't",
-  "x",
-  "y",
   "yes",
   "yet",
   "you",
@@ -620,7 +620,6 @@ const char *ft_precompiled_stopwords[] = {
   "yours",
   "yourself",
   "yourselves",
-  "z",
   "zero",
 #endif
 

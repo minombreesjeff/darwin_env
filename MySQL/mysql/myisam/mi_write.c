@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -25,7 +25,8 @@
 
 	/* Functions declared in this file */
 
-static int w_search(MI_INFO *info,MI_KEYDEF *keyinfo,uchar *key,
+static int w_search(MI_INFO *info,MI_KEYDEF *keyinfo,
+		    uint comp_flag, uchar *key,
 		    uint key_length, my_off_t pos, uchar *father_buff,
 		    uchar *father_keypos, my_off_t father_page,
 		    my_bool insert_last);
@@ -35,17 +36,21 @@ static int _mi_balance_page(MI_INFO *info,MI_KEYDEF *keyinfo,uchar *key,
 static uchar *_mi_find_last_pos(MI_KEYDEF *keyinfo, uchar *page,
 				uchar *key, uint *return_key_length,
 				uchar **after_key);
-
+int _mi_ck_write_tree(register MI_INFO *info, uint keynr, uchar *key,
+		      uint key_length);
+int _mi_ck_write_btree(register MI_INFO *info, uint keynr, uchar *key,
+		       uint key_length);
 
 	/* Write new record to database */
 
 int mi_write(MI_INFO *info, byte *record)
 {
+  MYISAM_SHARE *share=info->s;
   uint i;
   int save_errno;
   my_off_t filepos;
   uchar *buff;
-  MYISAM_SHARE *share=info->s;
+  my_bool lock_tree= share->concurrent_insert;
   DBUG_ENTER("mi_write");
   DBUG_PRINT("enter",("isam: %d  data: %d",info->s->kfile,info->dfile));
 
@@ -96,33 +101,36 @@ int mi_write(MI_INFO *info, byte *record)
   {
     if (((ulonglong) 1 << i) & share->state.key_map)
     {
-      if (share->concurrent_insert)
+      bool local_lock_tree= (lock_tree &&
+			     !(info->bulk_insert &&
+			       is_tree_inited(&info->bulk_insert[i])));
+      if (local_lock_tree)
       {
 	rw_wrlock(&share->key_root_lock[i]);
 	share->keyinfo[i].version++;
       }
-      if (share->keyinfo[i].flag & HA_FULLTEXT )                  /* SerG */
-      {                                                           /* SerG */
-        if (_mi_ft_add(info,i,(char*) buff,record,filepos))       /* SerG */
-        {                                                         /* SerG */
-	  if (share->concurrent_insert)
+      if (share->keyinfo[i].flag & HA_FULLTEXT )
+      {
+        if (_mi_ft_add(info,i,(char*) buff,record,filepos))
+        {
+	  if (local_lock_tree)
 	    rw_unlock(&share->key_root_lock[i]);
-          DBUG_PRINT("error",("Got error: %d on write",my_errno));  /* SerG */
-          goto err;                                                 /* SerG */
-        }                                                           /* SerG */
-      }                                                             /* SerG */
-      else                                                          /* SerG */
+          DBUG_PRINT("error",("Got error: %d on write",my_errno));
+          goto err;
+        }
+      }
+      else
       {
 	uint key_length=_mi_make_key(info,i,buff,record,filepos);
 	if (_mi_ck_write(info,i,buff,key_length))
 	{
-	  if (share->concurrent_insert)
+	  if (local_lock_tree)
 	    rw_unlock(&share->key_root_lock[i]);
 	  DBUG_PRINT("error",("Got error: %d on write",my_errno));
 	  goto err;
 	}
       }
-      if (share->concurrent_insert)
+      if (local_lock_tree)
 	rw_unlock(&share->key_root_lock[i]);
     }
   }
@@ -142,6 +150,12 @@ int mi_write(MI_INFO *info, byte *record)
   info->lastpos=filepos;
   myisam_log_record(MI_LOG_WRITE,info,record,filepos,0);
   VOID(_mi_writeinfo(info, WRITEINFO_UPDATE_KEYFILE));
+  if (info->invalidator != 0)
+  {
+    DBUG_PRINT("info", ("invalidator... '%s' (update)", info->filename));
+    (*info->invalidator)(info->filename);
+    info->invalidator=0;
+  }
   allow_break();				/* Allow SIGHUP & SIGINT */
   DBUG_RETURN(0);
 
@@ -149,19 +163,32 @@ err:
   save_errno=my_errno;
   if (my_errno == HA_ERR_FOUND_DUPP_KEY || my_errno == HA_ERR_RECORD_FILE_FULL)
   {
+    if (info->bulk_insert)
+    {
+      uint j;
+      for (j=0 ; j < share->base.keys ; j++)
+      {
+        if (is_tree_inited(&info->bulk_insert[j]))
+        {
+          reset_tree(&info->bulk_insert[j]);
+        }
+      }
+    }
     info->errkey= (int) i;
     while ( i-- > 0)
     {
       if (((ulonglong) 1 << i) & share->state.key_map)
       {
-	if (share->concurrent_insert)
+	bool local_lock_tree= (lock_tree &&
+			       !(info->bulk_insert &&
+				 is_tree_inited(&info->bulk_insert[i])));
+	if (local_lock_tree)
 	  rw_wrlock(&share->key_root_lock[i]);
-	/* The following code block is for text searching by SerG */
 	if (share->keyinfo[i].flag & HA_FULLTEXT)
         {
           if (_mi_ft_del(info,i,(char*) buff,record,filepos))
 	  {
-	    if (share->concurrent_insert)
+	    if (local_lock_tree)
 	      rw_unlock(&share->key_root_lock[i]);
             break;
 	  }
@@ -171,12 +198,12 @@ err:
 	  uint key_length=_mi_make_key(info,i,buff,record,filepos);
 	  if (_mi_ck_delete(info,i,buff,key_length))
 	  {
-	    if (share->concurrent_insert)
+	    if (local_lock_tree)
 	      rw_unlock(&share->key_root_lock[i]);
 	    break;
 	  }
 	}
-	if (share->concurrent_insert)
+	if (local_lock_tree)
 	  rw_unlock(&share->key_root_lock[i]);
       }
     }
@@ -196,19 +223,51 @@ err2:
 
 	/* Write one key to btree */
 
-int _mi_ck_write(register MI_INFO *info, uint keynr, uchar *key,
-		 uint key_length)
+int _mi_ck_write(MI_INFO *info, uint keynr, uchar *key, uint key_length)
 {
-  int error;
   DBUG_ENTER("_mi_ck_write");
 
+  if (info->bulk_insert && is_tree_inited(&info->bulk_insert[keynr]))
+  {
+    DBUG_RETURN(_mi_ck_write_tree(info, keynr, key, key_length));
+  }
+  else
+  {
+    DBUG_RETURN(_mi_ck_write_btree(info, keynr, key, key_length));
+  }
+} /* _mi_ck_write */
+
+
+/**********************************************************************
+ *                Normal insert code                                  *
+ **********************************************************************/
+
+int _mi_ck_write_btree(register MI_INFO *info, uint keynr, uchar *key,
+		       uint key_length)
+{
+  int error;
+  uint comp_flag;
+  MI_KEYDEF *keyinfo=info->s->keyinfo+keynr;
+  DBUG_ENTER("_mi_ck_write_btree");
+
+  if (keyinfo->flag & HA_SORT_ALLOWS_SAME)
+    comp_flag=SEARCH_BIGGER;			/* Put after same key */
+  else if (keyinfo->flag & HA_NOSAME)
+  {
+    comp_flag=SEARCH_FIND | SEARCH_UPDATE;	/* No dupplicates */
+    if (keyinfo->flag & HA_NULL_ARE_EQUAL)
+      comp_flag|= SEARCH_NULL_ARE_EQUAL;
+  }
+  else
+    comp_flag=SEARCH_SAME;			/* Keys in rec-pos order */
+
   if (info->s->state.key_root[keynr] == HA_OFFSET_ERROR ||
-      (error=w_search(info,info->s->keyinfo+keynr,key, key_length,
+      (error=w_search(info, keyinfo, comp_flag, key, key_length,
 		      info->s->state.key_root[keynr], (uchar *) 0, (uchar*) 0,
 		      (my_off_t) 0, 1)) > 0)
     error=_mi_enlarge_root(info,keynr,key);
   DBUG_RETURN(error);
-} /* _mi_ck_write */
+} /* _mi_ck_write_btree */
 
 
 	/* Make a new root with key as only pointer */
@@ -246,13 +305,12 @@ int _mi_enlarge_root(register MI_INFO *info, uint keynr, uchar *key)
 	*/
 
 static int w_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
-		    uchar *key, uint key_length, my_off_t page,
-		    uchar *father_buff,
-		    uchar *father_keypos, my_off_t father_page,
-		    my_bool insert_last)
+		    uint comp_flag, uchar *key, uint key_length, my_off_t page,
+		    uchar *father_buff, uchar *father_keypos,
+		    my_off_t father_page, my_bool insert_last)
 {
   int error,flag;
-  uint comp_flag,nod_flag;
+  uint nod_flag, search_key_length;
   uchar *temp_buff,*keypos;
   uchar keybuff[MI_MAX_KEY_BUFF];
   my_bool was_last_key;
@@ -260,25 +318,15 @@ static int w_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   DBUG_ENTER("w_search");
   DBUG_PRINT("enter",("page: %ld",page));
 
-  if (keyinfo->flag & HA_SORT_ALLOWS_SAME)
-    comp_flag=SEARCH_BIGGER;			/* Put after same key */
-  else if (keyinfo->flag & HA_NOSAME)
-  {
-    comp_flag=SEARCH_FIND | SEARCH_UPDATE;	/* No dupplicates */
-    if (keyinfo->flag & HA_NULL_ARE_EQUAL)
-      comp_flag|= SEARCH_NULL_ARE_EQUAL;
-  }
-  else
-    comp_flag=SEARCH_SAME;			/* Keys in rec-pos order */
-
+  search_key_length= (comp_flag & SEARCH_FIND) ? key_length : USE_WHOLE_KEY;
   if (!(temp_buff= (uchar*) my_alloca((uint) keyinfo->block_length+
 				      MI_MAX_KEY_BUFF*2)))
     DBUG_RETURN(-1);
   if (!_mi_fetch_keypage(info,keyinfo,page,temp_buff,0))
     goto err;
 
-  flag=(*keyinfo->bin_search)(info,keyinfo,temp_buff,key,key_length,comp_flag,
-			      &keypos, keybuff, &was_last_key);
+  flag=(*keyinfo->bin_search)(info,keyinfo,temp_buff,key,search_key_length,
+			      comp_flag, &keypos, keybuff, &was_last_key);
   nod_flag=mi_test_if_nod(temp_buff);
   if (flag == 0)
   {
@@ -299,7 +347,7 @@ static int w_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     insert_last=0;
   next_page=_mi_kpos(nod_flag,keypos);
   if (next_page == HA_OFFSET_ERROR ||
-      (error=w_search(info,keyinfo,key,key_length,next_page,
+      (error=w_search(info, keyinfo, comp_flag, key, key_length, next_page,
 		      temp_buff, keypos, page, insert_last)) >0)
   {
     error=_mi_insert(info,keyinfo,key,temp_buff,keypos,keybuff,father_buff,
@@ -349,7 +397,7 @@ int _mi_insert(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   {
     DBUG_PRINT("test",("t_length: %d  ref_len: %d",
 		       t_length,s_temp.ref_length));
-    DBUG_PRINT("test",("n_ref_len: %d  n_length: %d  key: %lx",
+    DBUG_PRINT("test",("n_ref_len: %d  n_length: %d  key_pos: %lx",
 		       s_temp.n_ref_length,s_temp.n_length,s_temp.key));
   }
 #endif
@@ -686,3 +734,157 @@ static int _mi_balance_page(register MI_INFO *info, MI_KEYDEF *keyinfo,
 err:
   DBUG_RETURN(-1);
 } /* _mi_balance_page */
+
+/**********************************************************************
+ *                Bulk insert code                                    *
+ **********************************************************************/
+
+typedef struct {
+  MI_INFO *info;
+  uint keynr;
+} bulk_insert_param;
+
+int _mi_ck_write_tree(register MI_INFO *info, uint keynr, uchar *key,
+		      uint key_length)
+{
+  int error;
+  DBUG_ENTER("_mi_ck_write_tree");
+
+  error= tree_insert(&info->bulk_insert[keynr], key,
+         key_length + info->s->rec_reflength) ? 0 : HA_ERR_OUT_OF_MEM ;
+
+  DBUG_RETURN(error);
+} /* _mi_ck_write_tree */
+
+
+/* typeof(_mi_keys_compare)=qsort_cmp2 */
+
+static int keys_compare(bulk_insert_param *param, uchar *key1, uchar *key2)
+{
+  uint not_used;
+  return _mi_key_cmp(param->info->s->keyinfo[param->keynr].seg,
+		     key1, key2, USE_WHOLE_KEY, SEARCH_SAME,
+		     &not_used);
+}
+
+
+static int keys_free(uchar *key, TREE_FREE mode, bulk_insert_param *param)
+{
+  /*
+    Probably I can use info->lastkey here, but I'm not sure,
+    and to be safe I'd better use local lastkey.
+  */
+  uchar lastkey[MI_MAX_KEY_BUFF];
+  uint keylen;
+  MI_KEYDEF *keyinfo;
+
+  switch (mode) {
+  case free_init:
+    if (param->info->s->concurrent_insert)
+    {
+      rw_wrlock(&param->info->s->key_root_lock[param->keynr]);
+      param->info->s->keyinfo[param->keynr].version++;
+    }
+    return 0;
+  case free_free:
+    keyinfo=param->info->s->keyinfo+param->keynr;
+    keylen=_mi_keylength(keyinfo, key);
+    memcpy(lastkey, key, keylen);
+    return _mi_ck_write_btree(param->info,param->keynr,lastkey,
+			      keylen - param->info->s->rec_reflength);
+  case free_end:
+    if (param->info->s->concurrent_insert)
+      rw_unlock(&param->info->s->key_root_lock[param->keynr]);
+    return 0;
+  }
+  return -1;
+}
+
+
+int mi_init_bulk_insert(MI_INFO *info, ulong cache_size, ha_rows rows)
+{
+  MYISAM_SHARE *share=info->s;
+  MI_KEYDEF *key=share->keyinfo;
+  bulk_insert_param *params;
+  uint i, num_keys, total_keylength;
+  ulonglong key_map=0;
+  DBUG_ENTER("_mi_init_bulk_insert");
+  DBUG_PRINT("enter",("cache_size: %lu", cache_size));
+
+  if (info->bulk_insert || (rows && rows < MI_MIN_ROWS_TO_USE_BULK_INSERT))
+    DBUG_RETURN(0);
+
+  for (i=total_keylength=num_keys=0 ; i < share->base.keys ; i++)
+  {
+    if (!(key[i].flag & HA_NOSAME) && share->base.auto_key != i+1
+        && test(share->state.key_map & ((ulonglong) 1 << i)))
+    {
+      num_keys++;
+      key_map |=((ulonglong) 1 << i);
+      total_keylength+=key[i].maxlength+TREE_ELEMENT_EXTRA_SIZE;
+    }
+  }
+
+  if (num_keys==0 ||
+      num_keys * MI_MIN_SIZE_BULK_INSERT_TREE > cache_size)
+    DBUG_RETURN(0);
+
+  if (rows && rows*total_keylength < cache_size)
+    cache_size=rows;
+  else
+    cache_size/=total_keylength*16;
+
+  info->bulk_insert=(TREE *)
+    my_malloc((sizeof(TREE)*share->base.keys+
+               sizeof(bulk_insert_param)*num_keys),MYF(0));
+
+  if (!info->bulk_insert)
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+
+  params=(bulk_insert_param *)(info->bulk_insert+share->base.keys);
+  for (i=0 ; i < share->base.keys ; i++)
+  {
+    if (test(key_map & ((ulonglong) 1 << i)))
+    {
+      params->info=info;
+      params->keynr=i;
+      /* Only allocate a 16'th of the buffer at a time */
+      init_tree(&info->bulk_insert[i],
+                cache_size * key[i].maxlength,
+                cache_size * key[i].maxlength, 0,
+		(qsort_cmp2)keys_compare, 0,
+		(tree_element_free) keys_free, (void *)params++);
+    }
+    else
+     info->bulk_insert[i].root=0;
+  }
+
+  DBUG_RETURN(0);
+}
+
+void mi_flush_bulk_insert(MI_INFO *info, uint inx)
+{
+  if (info->bulk_insert)
+  {
+    if (is_tree_inited(&info->bulk_insert[inx]))
+      reset_tree(&info->bulk_insert[inx]);
+  }
+}
+
+void mi_end_bulk_insert(MI_INFO *info)
+{
+  if (info->bulk_insert)
+  {
+    uint i;
+    for (i=0 ; i < info->s->base.keys ; i++)
+    {
+      if (is_tree_inited(& info->bulk_insert[i]))
+      {
+        delete_tree(& info->bulk_insert[i]);
+      }
+    }
+    my_free((void *)info->bulk_insert, MYF(0));
+    info->bulk_insert=0;
+  }
+}
+

@@ -1,19 +1,18 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
-   
-   This library is distributed in the hope that it will be useful,
+/* Copyright (C) 2000 MySQL AB
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-   MA 02111-1307, USA */
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /* TODO: check for overun of memory for names. */
 /*	 Convert MSDOS-TIME to standar time_t */
@@ -104,7 +103,7 @@ MY_DIR	*my_dir(const char *path, myf MyFlags)
   char	dirent_tmp[sizeof(struct dirent)+_POSIX_PATH_MAX+1];
 #endif
   DBUG_ENTER("my_dir");
-  DBUG_PRINT("my",("path: '%s' stat: %d  MyFlags: %d",path,MyFlags));
+  DBUG_PRINT("my",("path: '%s' MyFlags: %d",path,MyFlags));
 
 #if defined(THREAD) && !defined(HAVE_READDIR_R)
   pthread_mutex_lock(&THR_LOCK_open);
@@ -112,6 +111,10 @@ MY_DIR	*my_dir(const char *path, myf MyFlags)
 
   dirp = opendir(directory_file_name(tmp_path,(my_string) path));
   size = STARTSIZE;
+#if defined(__amiga__)
+  if ((dirp->dd_fd) < 0)			/* Directory doesn't exists */
+    goto error;
+#endif
   if (dirp == NULL || ! (buffer = (char *) my_malloc(size, MyFlags)))
     goto error;
 
@@ -183,7 +186,7 @@ MY_DIR	*my_dir(const char *path, myf MyFlags)
   my_errno=errno;
   if (dirp)
     (void) closedir(dirp);
-  if (MyFlags & (MY_FAE+MY_WME))
+  if (MyFlags & (MY_FAE | MY_WME))
     my_error(EE_DIR,MYF(ME_BELL+ME_WAITTANG),path,my_errno);
   DBUG_RETURN((MY_DIR *) NULL);
 } /* my_dir */
@@ -580,12 +583,14 @@ error:
 ** Note that MY_STAT is assumed to be same as struct stat
 ****************************************************************************/ 
 
-int my_fstat(int Filedes, MY_STAT *stat_area, myf MyFlags )
+int my_fstat(int Filedes, MY_STAT *stat_area,
+             myf MyFlags __attribute__((unused)))
 {
   DBUG_ENTER("my_fstat");
   DBUG_PRINT("my",("fd: %d MyFlags: %d",Filedes,MyFlags));
   DBUG_RETURN(fstat(Filedes, (struct stat *) stat_area));
 }
+
 
 MY_STAT *my_stat(const char *path, MY_STAT *stat_area, myf my_flags)
 {
@@ -611,4 +616,3 @@ error:
   }
   DBUG_RETURN((MY_STAT *) NULL);
 } /* my_stat */
-

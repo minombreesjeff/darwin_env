@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -83,8 +83,6 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
   /* Check which keys changed from the original row */
 
   new_key=info->lastkey2;
-  key_changed=HA_STATE_KEY_CHANGED;	/* We changed current database */
-					/* Remove key that didn't change */
   changed=0;
   for (i=0 ; i < share->base.keys ; i++)
   {
@@ -93,14 +91,12 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
       /* The following code block is for text searching by SerG */
       if (share->keyinfo[i].flag & HA_FULLTEXT )
       {
-	if(_mi_ft_cmp(info,i,oldrec, newrec))
+	if (_mi_ft_cmp(info,i,oldrec, newrec))
 	{
 	  if ((int) i == info->lastinx)
 	    key_changed|=HA_STATE_WRITTEN;
 	  changed|=((ulonglong) 1 << i);
-	  if (_mi_ft_del(info,i,(char*) old_key,oldrec,pos))
-	    goto err;
-	  if (_mi_ft_add(info,i,(char*) new_key,newrec,pos))
+	  if (_mi_ft_update(info,i,(char*) old_key,oldrec,newrec,pos))
 	    goto err;
 	}
       }
@@ -123,11 +119,28 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
       }
     }
   }
+  /*
+    If we are running with external locking, we must update the index file
+    that something has changed
+  */
+  if (changed || !my_disable_locking)
+    key_changed|= HA_STATE_KEY_CHANGED;
 
   if (share->calc_checksum)
+  {
     info->checksum=(*share->calc_checksum)(info,newrec);
-  if ((*share->update_record)(info,pos,newrec))
-    goto err;
+    key_changed|= HA_STATE_KEY_CHANGED;		/* Must update index file */
+  }
+  {
+    /* Don't update index file if data file is not extended */
+    MI_STATUS_INFO state;
+    memcpy((char*) &state, (char*) info->state, sizeof(state));
+    if ((*share->update_record)(info,pos,newrec))
+      goto err;
+    if (!key_changed &&
+	memcmp((char*) &state, (char*) info->state, sizeof(state)))
+      key_changed|= HA_STATE_KEY_CHANGED;	/* Must update index file */  
+  }
   if (auto_key_changed)
     update_auto_increment(info,newrec);
   if (share->calc_checksum)
@@ -138,11 +151,19 @@ int mi_update(register MI_INFO *info, const byte *oldrec, byte *newrec)
   myisam_log_record(MI_LOG_UPDATE,info,newrec,info->lastpos,0);
   VOID(_mi_writeinfo(info,key_changed ?  WRITEINFO_UPDATE_KEYFILE : 0));
   allow_break();				/* Allow SIGHUP & SIGINT */
+  if (info->invalidator != 0)
+  {
+    DBUG_PRINT("info", ("invalidator... '%s' (update)", info->filename));
+    (*info->invalidator)(info->filename);
+    info->invalidator=0;
+  }
   DBUG_RETURN(0);
 
 err:
   DBUG_PRINT("error",("key: %d  errno: %d",i,my_errno));
   save_errno=my_errno;
+  if (changed)
+    key_changed|= HA_STATE_KEY_CHANGED;
   if (my_errno == HA_ERR_FOUND_DUPP_KEY || my_errno == HA_ERR_RECORD_FILE_FULL)
   {
     info->errkey= (int) i;

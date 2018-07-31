@@ -71,6 +71,21 @@ the x-latch freed? The most efficient way for performing a
 searched delete is obviously to keep the x-latch for several
 steps of query graph execution. */
 
+/***************************************************************
+Checks if an update vector changes some of the first ordering fields of an
+index record. This is only used in foreign key checks and we can assume
+that index does not contain column prefixes. */
+static
+ibool
+row_upd_changes_first_fields(
+/*=========================*/
+				/* out: TRUE if changes */
+	dtuple_t*	entry,	/* in: old value of index entry */
+	dict_index_t*	index,	/* in: index of entry */
+	upd_t*		update,	/* in: update vector for the row */
+	ulint		n);	/* in: how many first fields to check */
+
+
 /*************************************************************************
 Checks if index currently is mentioned as a referenced index in a foreign
 key constraint. */
@@ -79,7 +94,7 @@ ibool
 row_upd_index_is_referenced(
 /*========================*/
 				/* out: TRUE if referenced; NOTE that since
-				we do not hold dict_foreign_key_check_lock
+				we do not hold dict_operation_lock
 				when leaving the function, it may be that
 				the referencing table has been dropped when
 				we leave this function: this function is only
@@ -89,14 +104,16 @@ row_upd_index_is_referenced(
 {
 	dict_table_t*	table		= index->table;
 	dict_foreign_t*	foreign;
+	ibool		froze_data_dict	= FALSE;
 
 	if (!UT_LIST_GET_FIRST(table->referenced_list)) {
 
 		return(FALSE);
 	}
 
-	if (!trx->has_dict_foreign_key_check_lock) {
-		rw_lock_s_lock(&dict_foreign_key_check_lock);
+	if (trx->dict_operation_lock_mode == 0) {
+		row_mysql_freeze_data_dictionary(trx);
+		froze_data_dict = TRUE;
 	}
 
 	foreign = UT_LIST_GET_FIRST(table->referenced_list);
@@ -104,8 +121,8 @@ row_upd_index_is_referenced(
 	while (foreign) {
 		if (foreign->referenced_index == index) {
 
-			if (!trx->has_dict_foreign_key_check_lock) {
-				rw_lock_s_unlock(&dict_foreign_key_check_lock);
+			if (froze_data_dict) {
+				row_mysql_unfreeze_data_dictionary(trx);
 			}
 
 			return(TRUE);
@@ -114,8 +131,8 @@ row_upd_index_is_referenced(
 		foreign = UT_LIST_GET_NEXT(referenced_list, foreign);
 	}
 	
-	if (!trx->has_dict_foreign_key_check_lock) {
-		rw_lock_s_unlock(&dict_foreign_key_check_lock);
+	if (froze_data_dict) {
+		row_mysql_unfreeze_data_dictionary(trx);
 	}
 
 	return(FALSE);
@@ -130,6 +147,7 @@ ulint
 row_upd_check_references_constraints(
 /*=================================*/
 				/* out: DB_SUCCESS or an error code */
+	upd_node_t*	node,	/* in: row update node */
 	btr_pcur_t*	pcur,	/* in: cursor positioned on a record; NOTE: the
 				cursor position is lost in this function! */
 	dict_table_t*	table,	/* in: table in question */
@@ -162,18 +180,25 @@ row_upd_check_references_constraints(
 
 	mtr_start(mtr);	
 	
-	if (!trx->has_dict_foreign_key_check_lock) {
+	if (trx->dict_operation_lock_mode == 0) {
 		got_s_lock = TRUE;
 
-		rw_lock_s_lock(&dict_foreign_key_check_lock);
-
-		trx->has_dict_foreign_key_check_lock = TRUE;
+		row_mysql_freeze_data_dictionary(trx);
 	}
 		
 	foreign = UT_LIST_GET_FIRST(table->referenced_list);
 
 	while (foreign) {
-		if (foreign->referenced_index == index) {
+		/* Note that we may have an update which updates the index
+		record, but does NOT update the first fields which are
+		referenced in a foreign key constraint. Then the update does
+		NOT break the constraint. */
+
+		if (foreign->referenced_index == index
+		    && (node->is_delete
+		       || row_upd_changes_first_fields(entry, index,
+			    		node->update, foreign->n_fields))) {
+			    				
 			if (foreign->foreign_table == NULL) {
 				dict_table_get(foreign->foreign_table_name,
 									trx);
@@ -189,13 +214,12 @@ row_upd_check_references_constraints(
 			}
 
 			/* NOTE that if the thread ends up waiting for a lock
-			we will release dict_foreign_key_check_lock
-			temporarily! But the counter on the table
-			protects 'foreign' from being dropped while the check
-			is running. */
+			we will release dict_operation_lock temporarily!
+			But the counter on the table protects 'foreign' from
+			being dropped while the check is running. */
 			
 			err = row_ins_check_foreign_constraint(FALSE, foreign,
-						table, index, entry, thr);
+							table, entry, thr);
 
 			if (foreign->foreign_table) {
 				mutex_enter(&(dict_sys->mutex));
@@ -211,10 +235,8 @@ row_upd_check_references_constraints(
 
 			if (err != DB_SUCCESS) {
 				if (got_s_lock) {
-					rw_lock_s_unlock(
-						&dict_foreign_key_check_lock);	
-					trx->has_dict_foreign_key_check_lock
-								= FALSE;
+					row_mysql_unfreeze_data_dictionary(
+									trx);
 				}
 
 				mem_heap_free(heap);
@@ -227,8 +249,7 @@ row_upd_check_references_constraints(
 	}
 
 	if (got_s_lock) {
-		rw_lock_s_unlock(&dict_foreign_key_check_lock);	
-		trx->has_dict_foreign_key_check_lock = FALSE;
+		row_mysql_unfreeze_data_dictionary(trx);
 	}
 
 	mem_heap_free(heap);
@@ -259,6 +280,7 @@ upd_node_create(
 	node->index = NULL;
 	node->update = NULL;
 	
+	node->foreign = NULL;
 	node->cascade_heap = NULL;
 	node->cascade_node = NULL;
 	
@@ -330,14 +352,15 @@ row_upd_index_entry_sys_field(
 }
 
 /***************************************************************
-Returns TRUE if row update changes size of some field in index
-or if some field to be updated is stored externally in rec or update. */
+Returns TRUE if row update changes size of some field in index or if some
+field to be updated is stored externally in rec or update. */
 
 ibool
-row_upd_changes_field_size(
-/*=======================*/
+row_upd_changes_field_size_or_external(
+/*===================================*/
 				/* out: TRUE if the update changes the size of
-				some field in index */		
+				some field in index or the field is external
+				in rec or update */
 	rec_t*		rec,	/* in: record in clustered index */
 	dict_index_t*	index,	/* in: clustered index */
 	upd_t*		update)	/* in: update vector */
@@ -428,7 +451,7 @@ row_upd_write_sys_vals_to_log(
 	dulint		roll_ptr,/* in: roll ptr of the undo log record */
 	byte*		log_ptr,/* pointer to a buffer of size > 20 opened
 				in mlog */
-	mtr_t*		mtr)	/* in: mtr */
+	mtr_t*		mtr __attribute__((unused))) /* in: mtr */
 {
 	ut_ad(index->type & DICT_CLUSTERED);
 	ut_ad(mtr);
@@ -800,69 +823,55 @@ void
 row_upd_index_replace_new_col_vals(
 /*===============================*/
 	dtuple_t*	entry,	/* in/out: index entry where replaced */
-	dict_index_t*	index,	/* in: index; NOTE that may also be a
+	dict_index_t*	index,	/* in: index; NOTE that this may also be a
 				non-clustered index */
-	upd_t*		update)	/* in: update vector */
+	upd_t*		update,	/* in: update vector */
+	mem_heap_t*	heap)	/* in: memory heap to which we allocate and
+				copy the new values, set this as NULL if you
+				do not want allocation */
 {
+	dict_field_t*	field;
 	upd_field_t*	upd_field;
 	dfield_t*	dfield;
 	dfield_t*	new_val;
-	ulint		field_no;
-	dict_index_t*	clust_index;
+	ulint		j;
 	ulint		i;
 
 	ut_ad(index);
 
-	clust_index = dict_table_get_first_index(index->table);
-
 	dtuple_set_info_bits(entry, update->info_bits);
 
-	for (i = 0; i < upd_get_n_fields(update); i++) {
+	for (j = 0; j < dict_index_get_n_fields(index); j++) {
 
-		upd_field = upd_get_nth_field(update, i);
+	        field = dict_index_get_nth_field(index, j);
 
-		field_no = dict_index_get_nth_col_pos(index,
-				dict_index_get_nth_col_no(clust_index,
-							upd_field->field_no));
-		if (field_no != ULINT_UNDEFINED) {
-			dfield = dtuple_get_nth_field(entry, field_no);
+		for (i = 0; i < upd_get_n_fields(update); i++) {
 
-			new_val = &(upd_field->new_val);
+		        upd_field = upd_get_nth_field(update, i);
 
-			dfield_set_data(dfield, new_val->data, new_val->len);
+			if (upd_field->field_no == field->col->clust_pos) {
+
+			        dfield = dtuple_get_nth_field(entry, j);
+
+				new_val = &(upd_field->new_val);
+
+				dfield_set_data(dfield, new_val->data,
+								new_val->len);
+				if (heap && new_val->len != UNIV_SQL_NULL) {
+				        dfield->data = mem_heap_alloc(heap,
+								new_val->len);
+					ut_memcpy(dfield->data, new_val->data,
+								new_val->len);
+				}
+
+				if (field->prefix_len > 0
+			            && new_val->len != UNIV_SQL_NULL
+			            && new_val->len > field->prefix_len) {
+
+				        dfield->len = field->prefix_len;
+				}
+			}
 		}
-	}
-}
-
-/***************************************************************
-Replaces the new column values stored in the update vector to the
-clustered index entry given. */
-
-void
-row_upd_clust_index_replace_new_col_vals(
-/*=====================================*/
-	dtuple_t*	entry,	/* in/out: index entry where replaced */
-	upd_t*		update)	/* in: update vector */
-{
-	upd_field_t*	upd_field;
-	dfield_t*	dfield;
-	dfield_t*	new_val;
-	ulint		field_no;
-	ulint		i;
-
-	dtuple_set_info_bits(entry, update->info_bits);
-
-	for (i = 0; i < upd_get_n_fields(update); i++) {
-
-		upd_field = upd_get_nth_field(update, i);
-
-		field_no = upd_field->field_no;
-
-		dfield = dtuple_get_nth_field(entry, field_no);
-
-		new_val = &(upd_field->new_val);
-
-		dfield_set_data(dfield, new_val->data, new_val->len);
 	}
 }
 
@@ -911,9 +920,15 @@ row_upd_changes_ord_field_binary(
 
 			upd_field = upd_get_nth_field(update, j);
 
+			/* Note that if the index field is a column prefix
+			then it may be that row does not contain an externally
+			stored part of the column value, and we cannot compare
+			the datas */
+
 			if (col_pos == upd_field->field_no
-			     && (row == NULL
-				 || !dfield_datas_are_binary_equal(
+			    && (row == NULL
+			        || ind_field->prefix_len > 0
+				|| !dfield_datas_are_binary_equal(
 					dtuple_get_nth_field(row, col_no),
 						&(upd_field->new_val)))) {
 				return(TRUE);
@@ -954,6 +969,55 @@ row_upd_changes_some_index_ord_field_binary(
 		}
 	}
 	
+	return(FALSE);
+}
+
+/***************************************************************
+Checks if an update vector changes some of the first ordering fields of an
+index record. This is only used in foreign key checks and we can assume
+that index does not contain column prefixes. */
+static
+ibool
+row_upd_changes_first_fields(
+/*=========================*/
+				/* out: TRUE if changes */
+	dtuple_t*	entry,	/* in: index entry */
+	dict_index_t*	index,	/* in: index of entry */
+	upd_t*		update,	/* in: update vector for the row */
+	ulint		n)	/* in: how many first fields to check */
+{
+	upd_field_t*	upd_field;
+	dict_field_t*	ind_field;
+	dict_col_t*	col;
+	ulint		n_upd_fields;
+	ulint		col_pos;
+	ulint		i, j;
+	
+	ut_a(update && index);
+	ut_a(n <= dict_index_get_n_fields(index));
+	
+	n_upd_fields = upd_get_n_fields(update);
+
+	for (i = 0; i < n; i++) {
+
+		ind_field = dict_index_get_nth_field(index, i);
+		col = dict_field_get_col(ind_field);
+		col_pos = dict_col_get_clust_pos(col);
+
+		for (j = 0; j < n_upd_fields; j++) {
+
+			upd_field = upd_get_nth_field(update, j);
+
+			if (col_pos == upd_field->field_no
+			    && (ind_field->prefix_len > 0
+			        || 0 != cmp_dfield_dfield(
+					     dtuple_get_nth_field(entry, i),
+					     &(upd_field->new_val)))) {
+				return(TRUE);
+			}
+		}
+	}
+
 	return(FALSE);
 }
 
@@ -1110,9 +1174,11 @@ row_upd_sec_index_entry(
 			err = btr_cur_del_mark_set_sec_rec(0, btr_cur, TRUE,
 								thr, &mtr);
 			if (err == DB_SUCCESS && check_ref) {
+			    	
 				/* NOTE that the following call loses
 				the position of pcur ! */
 				err = row_upd_check_references_constraints(
+							node,
 							&pcur, index->table,
 							index, thr, &mtr);
 				if (err != DB_SUCCESS) {
@@ -1135,7 +1201,7 @@ close_cur:
 	}
 
 	/* Build a new index entry */
-	row_upd_index_replace_new_col_vals(entry, index, node->update);
+	row_upd_index_replace_new_col_vals(entry, index, node->update, NULL);
 
 	/* Insert new index entry */
 	err = row_ins_index_entry(index, entry, NULL, 0, thr);
@@ -1228,7 +1294,7 @@ row_upd_clust_rec_by_insert(
 		if (check_ref) {
 			/* NOTE that the following call loses
 			the position of pcur ! */
-			err = row_upd_check_references_constraints(
+			err = row_upd_check_references_constraints(node,
 							pcur, table,
 							index, thr, mtr);
 			if (err != DB_SUCCESS) {
@@ -1248,12 +1314,12 @@ row_upd_clust_rec_by_insert(
 	
 	entry = row_build_index_entry(node->row, index, heap);
 
-	row_upd_clust_index_replace_new_col_vals(entry, node->update);
+	row_upd_index_replace_new_col_vals(entry, index, node->update, NULL);
 	
 	row_upd_index_entry_sys_field(entry, index, DATA_TRX_ID, trx->id);
 	
 	/* If we return from a lock wait, for example, we may have
-	extern fields marked as not-owned in entry (marked if the
+	extern fields marked as not-owned in entry (marked in the
 	if-branch above). We must unmark them. */
 	
 	btr_cur_unmark_dtuple_extern_fields(entry, node->ext_vec,
@@ -1396,7 +1462,8 @@ row_upd_del_mark_clust_rec(
 	if (err == DB_SUCCESS && check_ref) {
 		/* NOTE that the following call loses the position of pcur ! */
 
-		err = row_upd_check_references_constraints(pcur, index->table,
+		err = row_upd_check_references_constraints(node,
+							pcur, index->table,
 							index, thr, mtr);
 		if (err != DB_SUCCESS) {
 			mtr_commit(mtr);
@@ -1632,9 +1699,9 @@ function_exit:
 		/* Do some cleanup */
 
 		if (node->row != NULL) {
-			mem_heap_empty(node->heap);
 			node->row = NULL;
 			node->n_ext_vec = 0;
+			mem_heap_empty(node->heap);
 		}
 
 		node->state = UPD_NODE_UPDATE_CLUSTERED;

@@ -38,24 +38,31 @@ require "$pwd/server-cfg" || die "Can't read Configuration file: $!\n";
 
 $|=1;				# Output data immediately
 
-$opt_skip_test=$opt_skip_create=$opt_skip_delete=$opt_verbose=$opt_fast_insert=$opt_lock_tables=$opt_debug=$opt_skip_delete=$opt_fast=$opt_force=$opt_log=$opt_use_old_results=$opt_help=$opt_odbc=$opt_small_test=$opt_small_tables=$opt_samll_key_tables=$opt_stage=$opt_old_headers=$opt_die_on_errors=$opt_tcpip=0;
-$opt_cmp=$opt_user=$opt_password="";
+$opt_skip_test=$opt_skip_create=$opt_skip_delete=$opt_verbose=$opt_fast_insert=$opt_lock_tables=$opt_debug=$opt_skip_delete=$opt_fast=$opt_force=$opt_log=$opt_use_old_results=$opt_help=$opt_odbc=$opt_small_test=$opt_small_tables=$opt_samll_key_tables=$opt_stage=$opt_old_headers=$opt_die_on_errors=$opt_tcpip=$opt_random=0;
+$opt_cmp=$opt_user=$opt_password=$opt_connect_options="";
 $opt_server="mysql"; $opt_dir="output";
 $opt_host="localhost";$opt_database="test";
 $opt_machine=""; $opt_suffix="";
 $opt_create_options=undef;
+$opt_optimization="None";
+$opt_hw="";
+$opt_threads=5;
 
-$opt_time_limit=10*60;		# Don't wait more than 10 min for some tests
+if (!defined($opt_time_limit))
+{
+  $opt_time_limit=10*60;	# Don't wait more than 10 min for some tests
+}
 
 $log_prog_args=join(" ", skip_arguments(\@ARGV,"comments","cmp","server",
 					"user", "host", "database", "password",
 					"use-old-results","skip-test",
+					"optimization","hw",
 					"machine", "dir", "suffix", "log"));
-GetOptions("skip-test=s","comments=s","cmp=s","server=s","user=s","host=s","database=s","password=s","loop-count=i","row-count=i","skip-create","skip-delete","verbose","fast-insert","lock-tables","debug","fast","force","field-count=i","regions=i","groups=i","time-limit=i","log","use-old-results","machine=s","dir=s","suffix=s","help","odbc","small-test","small-tables","small-key-tables","stage=i","old-headers","die-on-errors","create-options=s","hires","tcpip","silent") || usage();
+GetOptions("skip-test=s","comments=s","cmp=s","server=s","user=s","host=s","database=s","password=s","loop-count=i","row-count=i","skip-create","skip-delete","verbose","fast-insert","lock-tables","debug","fast","force","field-count=i","regions=i","groups=i","time-limit=i","log","use-old-results","machine=s","dir=s","suffix=s","help","odbc","small-test","small-tables","small-key-tables","stage=i","threads=i","random","old-headers","die-on-errors","create-options=s","hires","tcpip","silent","optimization=s","hw=s","socket=s","connect-options=s") || usage();
 
 usage() if ($opt_help);
 $server=get_server($opt_server,$opt_host,$opt_database,$opt_odbc,
-                   machine_part());
+                   machine_part(), $opt_socket, $opt_connect_options);
 $limits=merge_limits($server,$opt_cmp);
 $date=date();
 @estimated=(0.0,0.0,0.0);		# For estimated time support
@@ -515,6 +522,10 @@ All benchmarks takes the following options:
 --password='password'
   Password for the current user.
 
+--socket='socket'
+  If the database supports connecting through a Unix socket,
+  use this socket to connect
+
 --regions
   This is a test specific option that is only used when debugging a test.
   This usually means how AND levels should be tested.
@@ -553,6 +564,13 @@ All benchmarks takes the following options:
   different server options without overwritten old files.
   When using --fast the suffix is automaticly set to '_fast'.
 
+--random
+  Inform test suite that we are generate random inital values for sequence of
+  test executions. It should be used for imitation of real conditions.
+
+--threads=# (Default 5)
+  Number of threads for multi-user benchmarks.
+
 --tcpip
   Inform test suite that we are using TCP/IP to connect to the server. In
   this case we can\t do many new connections in a row as we in this case may
@@ -572,6 +590,17 @@ All benchmarks takes the following options:
 --verbose
   This is a test specific option that is only used when debugging a test.
   Print more information about what is going on.
+
+--optimization='some comments'
+ Add coments about optimization of DBMS, which was done before the test.
+ 
+--hw='some comments'
+ Add coments about hardware used for this test.
+
+--connect-options='some connect options'
+  Add options, which uses at DBI connect.
+  For example --connect-options=mysql_read_default_file=/etc/my.cnf.
+
 EOF
   exit(0);
 }

@@ -14,29 +14,26 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-/* open a MYMERGE_-database */
+/* open a MyISAM MERGE table */
 
-#include "mymrgdef.h"
+#include "myrg_def.h"
 #include <stddef.h>
 #include <errno.h>
 #ifdef VMS
 #include "mrg_static.c"
 #endif
 
-/*	open a MYMERGE_-database.
-
-	if handle_locking is 0 then exit with error if some database is locked
-	if handle_locking is 1 then wait if database is locked
+/*
+	open a MyISAM MERGE table
+	if handle_locking is 0 then exit with error if some table is locked
+	if handle_locking is 1 then wait if table is locked
 */
 
 
-MYRG_INFO *myrg_open(
-const char *name,
-int mode,
-int handle_locking)
+MYRG_INFO *myrg_open(const char *name, int mode, int handle_locking)
 {
   int save_errno,i,errpos;
-  uint files,dir_length,length;
+  uint files,dir_length,length,key_parts;
   ulonglong file_offset;
   char name_buff[FN_REFLEN*2],buff[FN_REFLEN],*end;
   MYRG_INFO info,*m_info;
@@ -63,45 +60,72 @@ int handle_locking)
   {
     if ((end=buff+length)[-1] == '\n')
       end[-1]='\0';
-    if (buff[0] && buff[0] != '#')	/* Skipp empty lines and comments */
+    if (!buff[0])
+      continue;		/* Skip empty lines */
+    if (buff[0] == '#')
     {
-      if (!test_if_hard_path(buff))
-      {
-	VOID(strmake(name_buff+dir_length,buff,
-		     sizeof(name_buff)-1-dir_length));
-	VOID(cleanup_dirname(buff,name_buff));
+      if( !strncmp(buff+1,"INSERT_METHOD=",14))
+      {			/* Lookup insert method */
+	int tmp=find_type(buff+15,&merge_insert_method,2);
+	info.merge_insert_method = (uint) (tmp >= 0 ? tmp : 0);
       }
-      if (!(isam=mi_open(buff,mode,test(handle_locking))))
-	goto err;
-      files++;
-      last_isam=isam;
-      if (info.reclength && info.reclength != isam->s->base.reclength)
-      {
-	my_errno=HA_ERR_WRONG_IN_RECORD;
-	goto err;
-      }
-      info.reclength=isam->s->base.reclength;
+      continue;		/* Skip comments */
     }
+
+    if (!test_if_hard_path(buff))
+    {
+      VOID(strmake(name_buff+dir_length,buff,
+                   sizeof(name_buff)-1-dir_length));
+      VOID(cleanup_dirname(buff,name_buff));
+    }
+    if (!(isam=mi_open(buff,mode,(handle_locking?HA_OPEN_WAIT_IF_LOCKED:0))))
+	goto err;
+    files++;
+    last_isam=isam;
+    if (info.reclength && info.reclength != isam->s->base.reclength)
+    {
+      my_errno=HA_ERR_WRONG_MRG_TABLE_DEF;
+      goto err;
+    }
+    info.reclength=isam->s->base.reclength;
   }
+  key_parts=(isam ? isam->s->base.key_parts : 0);
   if (!(m_info= (MYRG_INFO*) my_malloc(sizeof(MYRG_INFO)+
-				       files*sizeof(MYRG_TABLE),
+                                       files*sizeof(MYRG_TABLE)+
+                                       sizeof(long)*key_parts,
 				       MYF(MY_WME))))
     goto err;
   *m_info=info;
-  m_info->open_tables=(files) ? (MYRG_TABLE *) (m_info+1) : 0;
   m_info->tables=files;
+  if (files)
+  {
+    m_info->open_tables=(MYRG_TABLE *) (m_info+1);
+    m_info->rec_per_key_part=(ulong *) (m_info->open_tables+files);
+    bzero((char*) m_info->rec_per_key_part,sizeof(long)*key_parts);
+  }
+  else
+  {
+    m_info->open_tables=0;
+    m_info->rec_per_key_part=0;
+  }
   errpos=2;
 
   for (i=files ; i-- > 0 ; )
   {
+    uint j;
     m_info->open_tables[i].table=isam;
     m_info->options|=isam->s->options;
     m_info->records+=isam->state->records;
     m_info->del+=isam->state->del;
     m_info->data_file_length+=isam->state->data_file_length;
+    for (j=0; j < key_parts; j++)
+      m_info->rec_per_key_part[j]+=isam->s->state.rec_per_key_part[j] / files;
     if (i)
       isam=(MI_INFO*) (isam->open_list.next->data);
   }
+  /* Don't mark table readonly, for ALTER TABLE ... UNION=(...) to work */
+  m_info->options&= ~(HA_OPTION_COMPRESS_RECORD | HA_OPTION_READ_ONLY_DATA);
+
   /* Fix fileinfo for easyer debugging (actually set by rrnd) */
   file_offset=0;
   for (i=0 ; (uint) i < files ; i++)

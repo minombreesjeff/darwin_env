@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -46,14 +46,16 @@
 #define MAX_DBKEY_LENGTH (FN_LEN*2+6)           /* extra 4 bytes for slave tmp
 						 * tables */
 #define MAX_FIELD_NAME 34			/* Max colum name length +2 */
+#define MAX_SYS_VAR_LENGTH 32
 #define MAX_KEY 32				/* Max used keys */
 #define MAX_REF_PARTS 16			/* Max parts used as ref */
-#define MAX_KEY_LENGTH 500			/* max possible key */
+#define MAX_KEY_LENGTH 1024			/* max possible key */
 #if SIZEOF_OFF_T > 4
 #define MAX_REFLENGTH 8				/* Max length for record ref */
 #else
 #define MAX_REFLENGTH 4				/* Max length for record ref */
 #endif
+#define MAX_HOSTNAME  61			/* len+1 in mysql.user */
 
 #define MAX_FIELD_WIDTH 256			/* Max column width +1 */
 #define MAX_TABLES	(sizeof(table_map)*8-1)	/* Max tables in join */
@@ -80,8 +82,8 @@
 #define MYF_RW MYF(MY_WME+MY_NABP)		/* Vid my_read & my_write */
 
 #define SPECIAL_USE_LOCKS	1		/* Lock used databases */
-#define SPECIAL_NO_NEW_FUNC	2		/* Skipp new functions */
-#define SPECIAL_NEW_FUNC	4		/* New nonstandard functions */
+#define SPECIAL_NO_NEW_FUNC	2		/* Skip new functions */
+#define SPECIAL_SKIP_SHOW_DB    4               /* Don't allow 'show db' */
 #define SPECIAL_WAIT_IF_LOCKED	8		/* Wait if locked database */
 #define SPECIAL_SAME_DB_NAME   16		/* form name = file name */
 #define SPECIAL_ENGLISH        32		/* English error messages */
@@ -91,7 +93,6 @@
 #define SPECIAL_NO_HOST_CACHE	512		/* Don't cache hosts */
 #define SPECIAL_LONG_LOG_FORMAT 1024
 #define SPECIAL_SAFE_MODE	2048
-#define SPECIAL_SKIP_SHOW_DB	4096		/* Don't allow 'show db' */
 
 	/* Extern defines */
 #define store_record(A,B) bmove_allign((A)->record[B],(A)->record[0],(size_t) (A)->reclength)
@@ -121,6 +122,21 @@ bfill((A)->null_flags,(A)->null_bytes,255);\
 #define SC_INFO_LENGTH 4		/* Form format constant */
 #define TE_INFO_LENGTH 3
 #define MTYP_NOEMPTY_BIT 128
+
+/*
+ *  Minimum length pattern before Turbo Boyer-Moore is used
+ *  for SELECT "text" LIKE "%pattern%", excluding the two
+ *  wildcards in class Item_func_like.
+ */
+#define MIN_TURBOBM_PATTERN_LEN 3
+
+/* 
+   Defines for binary logging.
+   Do not decrease the value of BIN_LOG_HEADER_SIZE.
+   Do not even increase it before checking code.
+*/
+
+#define BIN_LOG_HEADER_SIZE    4 
 
 	/* Include prototypes for unireg */
 

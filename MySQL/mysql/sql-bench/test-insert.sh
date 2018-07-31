@@ -21,14 +21,16 @@
 # $opt_loop_count rows in random order
 #
 # changes made for Oracle compatibility
-# - $limits{'func_odbc_mod'} is OK from crash-me, but it fails here so set we
+# - $limits->{'func_odbc_mod'} is OK from crash-me, but it fails here so set we
 #   set it to 0 in server-cfg
-# - the default server config runs out of rollback segments, so I added a couple
-#   of disconnect/connects to reset
+# - the default server config runs out of rollback segments, so we added a
+#   couple of disconnect/connects to reset
+#
 ##################### Standard benchmark inits ##############################
 
 use DBI;
 use Benchmark;
+use Data::Dumper;
 
 $opt_loop_count=100000;		# number of rows/3
 $small_loop_count=10;		# Loop for full table retrieval
@@ -110,7 +112,7 @@ do_many($dbh,$server->create("bench1",
 			      "id3 int NOT NULL",
 			      "dummy1 char(30)"],
 			     ["primary key (id,id2)",
-			     "index index_id3 (id3)"]));
+			     "index ix_id3 (id3)"]));
 
 if ($opt_lock_tables)
 {
@@ -130,6 +132,12 @@ if ($opt_fast_insert)
 else
 {
   $query="insert into bench1 (id,id2,id3,dummy1) values ";
+}
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->{AutoCommit} = 0;
+  print "Transactions enabled\n" if ($opt_debug);
 }
 
 if (($opt_fast || $opt_fast_insert) && $server->{'limits'}->{'insert_multi_value'})
@@ -209,6 +217,12 @@ else
   }
 }
 
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->commit;
+  $dbh->{AutoCommit} = 1;
+}
+
 $end_time=new Benchmark;
 print "Time for insert (" . ($total_rows) . "): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
@@ -234,6 +248,12 @@ if ($limits->{'unique_index'})
 {
   print "Testing insert of duplicates\n";
   $loop_time=new Benchmark;
+
+  if ($opt_fast && $server->{transactions})
+  {
+    $dbh->{AutoCommit} = 0;
+  }
+
   for ($i=0 ; $i < $opt_loop_count ; $i++)
   {
     $tmpvar^= ((($tmpvar + 63) + $i)*3 % $opt_loop_count);
@@ -243,6 +263,11 @@ if ($limits->{'unique_index'})
     {
       die "Didn't get an error when inserting duplicate record $tmp\n";
     }
+  }
+  if ($opt_fast && $server->{transactions})
+  {
+    $dbh->commit;
+    $dbh->{AutoCommit} = 1;
   }
 
   $end_time=new Benchmark;
@@ -576,7 +601,6 @@ if ($limits->{'group_functions'})
       print "Warning: '$query' returned wrong result\n";
     }
     $sth->finish;
-
 
     $count++;
     $sth=$dbh->prepare($query="select count(*),sum(id+0.0),min(id),max(id),avg(id-0.0) from bench1") or die $DBI::errstr;
@@ -917,13 +941,19 @@ print "Time for update_with_key (" . ($opt_loop_count*3) . "):  " .
   timestr(timediff($end_time, $loop_time),"all") . "\n";
 
 $loop_time=new Benchmark;
-for ($i=0 ; $i < $opt_loop_count*3 ; $i+=3)
+$count=0;
+for ($i=1 ; $i < $opt_loop_count*3 ; $i+=3)
 {
   $sth = $dbh->do("update bench1 set dummy1='updated' where id=$i") or die $DBI::errstr;
+  $end_time=new Benchmark;
+  last if ($estimated=predict_query_time($loop_time,$end_time,\$i,$tests,
+					 $opt_loop_count));
 }
-
-$end_time=new Benchmark;
-print "Time for update_with_key_prefix (" . ($opt_loop_count) . "):  " .
+if ($estimated)
+{ print "Estimated time"; }
+else
+{ print "Time"; }
+print " for update_with_key_prefix (" . ($opt_loop_count) . "):  " .
   timestr(timediff($end_time, $loop_time),"all") . "\n";
 
 print "\nTesting update of all rows\n";
@@ -1167,7 +1197,7 @@ if (!$opt_skip_delete)
   }
 
   $end_time=new Benchmark;
-  print "Time for delete_all ($count): " .
+  print "Time for delete_range ($count): " .
     timestr(timediff($end_time, $loop_time),"all") . "\n\n";
 
   if ($opt_lock_tables)
@@ -1203,6 +1233,7 @@ print "Insert into table with $keys keys and with a primary key with $seg parts\
 # Make keys on the most important types
 @types=(0,0,0,1,0,0,0,1,1,1,1,1,1,1,1,1,1);	# A 1 for each char field
 push(@fields,"field1 tinyint not null");
+push(@fields,"field_search tinyint not null");
 push(@fields,"field2 mediumint not null");
 push(@fields,"field3 smallint not null");
 push(@fields,"field4 char(16) not null");
@@ -1222,9 +1253,10 @@ for ($i= 1 ; $i <= $seg ; $i++)
 }
 substr($query,-1)=")";
 push (@keys,$query);
+push (@keys,"index index2 (field_search)");
 
 #Create other keys
-for ($i=2 ; $i <= $keys ; $i++)
+for ($i=3 ; $i <= $keys ; $i++)
 {
   push(@keys,"index index$i (field$i)");
 }
@@ -1242,6 +1274,11 @@ if ($server->small_rollback_segment())
 }
 
 $loop_time=new Benchmark;
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->{AutoCommit} = 0;
+}
+
 $fields=$#fields;
 if (($opt_fast || $opt_fast_insert) && $server->{'limits'}->{'insert_multi_value'})
 {
@@ -1250,11 +1287,11 @@ if (($opt_fast || $opt_fast_insert) && $server->{'limits'}->{'insert_multi_value
   $res=$query;
   for ($i=0; $i < $many_keys_loop_count; $i++)
   {
+    $id= $i & 127;
     $rand=$random[$i];
-    $tmp="(" . ($i & 127) . ",$rand," . ($i & 32766) .
-      ",'ABCDEF$rand',0,";
+    $tmp="($id,$id,$rand," . ($i & 32766) . ",'ABCDEF$rand',0,$rand,$rand.0,";
 
-    for ($j=5; $j <= $fields ; $j++)
+    for ($j=8; $j <= $fields ; $j++)
     {
       $tmp.= ($types[$j] == 0) ? "$rand," : "'$rand',";
     }
@@ -1275,11 +1312,12 @@ else
 {
   for ($i=0; $i < $many_keys_loop_count; $i++)
   {
+    $id= $i & 127;
     $rand=$random[$i];
-    $query="insert into bench1 values (" . ($i & 127) . ",$rand," . ($i & 32767) .
-      ",'ABCDEF$rand',0,";
+    $query="insert into bench1 values ($id,$id,$rand," . ($i & 32767) .
+      ",'ABCDEF$rand',0,$rand,$rand.0,";
 
-    for ($j=5; $j <= $fields ; $j++)
+    for ($j=8; $j <= $fields ; $j++)
     {
       $query.= ($types[$j] == 0) ? "$rand," : "'$rand',";
     }
@@ -1288,6 +1326,13 @@ else
     $dbh->do($query) or die "Got error $DBI::errstr with query: $query\n";
   }
 }
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->commit;
+  $dbh->{AutoCommit} = 1;
+}
+
 $end_time=new Benchmark;
 print "Time for insert_key ($many_keys_loop_count): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
@@ -1316,11 +1361,24 @@ if ($opt_fast && defined($server->{vacuum}))
 
 print "Testing update of keys\n";
 $loop_time=new Benchmark;
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->{AutoCommit} = 0;
+}
+
 for ($i=0 ; $i< 256; $i++)
 {
-  $dbh->do("update bench1 set field5=1 where field1=$i")
-    or die "Got error $DBI::errstr with query: update bench1 set field5=1 where field1=$i\n";
+  $dbh->do("update bench1 set field5=1 where field_search=$i")
+    or die "Got error $DBI::errstr with query: update bench1 set field5=1 where field_search=$i\n";
 }
+
+if ($opt_fast && $server->{transactions})
+{
+  $dbh->commit;
+  $dbh->{AutoCommit} = 1;
+}
+
 $end_time=new Benchmark;
 print "Time for update_of_primary_key_many_keys (256): " .
   timestr(timediff($end_time, $loop_time),"all") . "\n\n";
@@ -1360,27 +1418,29 @@ $count=0;
 for ($i=0 ; $i < 128 ; $i++)
 {
   $count++;
-  $dbh->do("delete from bench1 where field1 = $i") or die $DBI::errstr;
+  $dbh->do("delete from bench1 where field_search = $i") or die $DBI::errstr;
 }
 
 $end_time=new Benchmark;
 print "Time for delete_big_many_keys ($count): " .
 timestr(timediff($end_time, $loop_time),"all") . "\n\n";
 
+if ($opt_lock_tables)
+{
+  $sth = $dbh->do("UNLOCK TABLES") || die $DBI::errstr;
+}
+
 print "Deleting everything from table\n";
 $count=1;
 if ($opt_fast)
 {
-  $dbh->do("delete from bench1") or die $DBI::errstr;
+  $query= ($limits->{'truncate_table'} ? "truncate table bench1" :
+	     "delete from bench1");
+  $dbh->do($query) or die $DBI::errstr;
 }
 else
 {
   $dbh->do("delete from bench1 where field1 > 0") or die $DBI::errstr;
-}
-
-if ($opt_lock_tables)
-{
-  $sth = $dbh->do("UNLOCK TABLES") || die $DBI::errstr;
 }
 
 $end_time=new Benchmark;
@@ -1409,12 +1469,18 @@ if ($limits->{'insert_multi_value'})
 				"dummy1 char(30)"],
 			       ["primary key (id,id2)",
 			       "index index_id3 (id3)"]));
+
+  $loop_time=new Benchmark;
+
   if ($opt_lock_tables)
   {
     $sth = $dbh->do("LOCK TABLES bench1 write") || die $DBI::errstr;
   }
+  if ($opt_fast && $server->{transactions})
+  {
+    $dbh->{AutoCommit} = 0;
+  }
 
-  $loop_time=new Benchmark;
   print "Inserting $opt_loop_count rows with multiple values\n";
   $query="insert into bench1 values ";
   $res=$query;
@@ -1436,6 +1502,11 @@ if ($limits->{'insert_multi_value'})
   if ($opt_lock_tables)
   {
     $sth = $dbh->do("UNLOCK TABLES ") || die $DBI::errstr;
+  }
+  if ($opt_fast && $server->{transactions})
+  {
+    $dbh->commit;
+    $dbh->{AutoCommit} = 1;
   }
 
   $end_time=new Benchmark;

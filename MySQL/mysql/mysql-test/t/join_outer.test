@@ -168,7 +168,7 @@ INSERT INTO t2 VALUES (11416,11416,32767,0);
 INSERT INTO t2 VALUES (11409,0,0,0);
 
 CREATE TABLE t3 (
-  id int(11) DEFAULT '0' NOT NULL auto_increment,
+  id int(11) NOT NULL auto_increment,
   dni_pasaporte char(16) DEFAULT '' NOT NULL,
   idPla int(11) DEFAULT '0' NOT NULL,
   cod_asig int(11) DEFAULT '0' NOT NULL,
@@ -183,7 +183,7 @@ CREATE TABLE t3 (
 INSERT INTO t3 VALUES (1,'11111111',1,10362,98,1,'M');
 
 CREATE TABLE t4 (
-  id int(11) DEFAULT '0' NOT NULL auto_increment,
+  id int(11) NOT NULL auto_increment,
   papa int(11) DEFAULT '0' NOT NULL,
   fill int(11) DEFAULT '0' NOT NULL,
   idPla int(11) DEFAULT '0' NOT NULL,
@@ -210,7 +210,7 @@ drop table t1,t2,t3,test.t4;
 #
 
 CREATE TABLE t1 (
-  id smallint(5) unsigned DEFAULT '0' NOT NULL auto_increment,
+  id smallint(5) unsigned NOT NULL auto_increment,
   name char(60) DEFAULT '' NOT NULL,
   PRIMARY KEY (id)
 );
@@ -219,7 +219,7 @@ INSERT INTO t1 VALUES (2,'Lilliana Angelovska');
 INSERT INTO t1 VALUES (3,'Thimble Smith');
 
 CREATE TABLE t2 (
-  id smallint(5) unsigned DEFAULT '0' NOT NULL auto_increment,
+  id smallint(5) unsigned NOT NULL auto_increment,
   owner smallint(5) unsigned DEFAULT '0' NOT NULL,
   name char(60),
   PRIMARY KEY (id)
@@ -248,7 +248,7 @@ drop table t1,t2;
 
 create table t1 (id int not null, str char(10), index(str));
 insert into t1 values (1, null), (2, null), (3, "foo"), (4, "bar");
-select * from t1 where str is not null;
+select * from t1 where str is not null order by id;
 select * from t1 where str is null;
 drop table t1;
 
@@ -257,15 +257,15 @@ drop table t1;
 #
 
 CREATE TABLE t1 (
-  t1_id bigint(21) DEFAULT '0' NOT NULL auto_increment,
+  t1_id bigint(21) NOT NULL auto_increment,
   PRIMARY KEY (t1_id)
 );
 CREATE TABLE t2 (
-  t2_id bigint(21) DEFAULT '0' NOT NULL auto_increment,
+  t2_id bigint(21) NOT NULL auto_increment,
   PRIMARY KEY (t2_id)
 );
 CREATE TABLE t3 (
-  t3_id bigint(21) DEFAULT '0' NOT NULL auto_increment,
+  t3_id bigint(21) NOT NULL auto_increment,
   PRIMARY KEY (t3_id)
 );
 CREATE TABLE t4 (
@@ -416,3 +416,24 @@ explain select * from t2 left join t1 on t1.fooID = t2.fooID and t1.fooID = 30;
 select * from t2 left join t1 on t1.fooID = t2.fooID and t1.fooID = 30;
 select * from t2 left join t1 ignore index(primary) on t1.fooID = t2.fooID and t1.fooID = 30;
 drop table t1,t2;
+drop table if exists t3;
+create table t1 (i int);
+create table t2 (i int);
+create table t3 (i int);
+insert into t1 values(1),(2);
+insert into t2 values(2),(3);
+insert into t3 values(2),(4);
+select * from t1 natural left join t2 natural left join t3;
+drop table t1,t2,t3;
+
+#
+# Test of USING
+#
+create table t1 (f1 integer,f2 integer,f3 integer);
+create table t2 (f2 integer,f4 integer);
+create table t3 (f3 integer,f5 integer);
+--error 1054
+select * from t1
+         left outer join t2 using (f2)
+         left outer join t3 using (f3);
+drop table t1,t2,t3;

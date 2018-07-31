@@ -1,23 +1,23 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 
 /*
-** Because of the function new_field all field classes that have static
-** variables must declare the size_of() member function.
+  Because of the function new_field() all field classes that have static
+  variables must declare the size_of() member function.
 */
 
 #ifdef __GNUC__
@@ -31,27 +31,28 @@ struct st_cache_field;
 void field_conv(Field *to,Field *from);
 
 class Field {
-  Field(const Item &);				/* Prevent use of theese */
+  Field(const Item &);				/* Prevent use of these */
   void operator=(Field &);
 public:
   static void *operator new(size_t size) {return (void*) sql_alloc((uint) size); }
   static void operator delete(void *ptr_arg, size_t size) {} /*lint -e715 */
 
-  enum utype { NONE,DATE,SHIELD,NOEMPTY,CASEUP,PNR,BGNR,PGNR,YES,NO,REL,
-	       CHECK,EMPTY,UNKNOWN_FIELD,CASEDN,NEXT_NUMBER,INTERVAL_FIELD,
-	       BIT_FIELD, TIMESTAMP_FIELD,CAPITALIZE,BLOB_FIELD};
-  char	*ptr;				// Position to field in record
+  char		*ptr;			// Position to field in record
   uchar		*null_ptr;		// Byte where null_bit is
-  uint8		null_bit;		// And position to it
   struct st_table *table;		// Pointer for table
-  ulong query_id;			// For quick test of used fields
-  key_map key_start,part_of_key,part_of_sortkey;// Field is part of these keys.
-  const char *table_name,*field_name;
-  utype unireg_check;
-  uint32 field_length;			// Length of field
-  uint16 flags;
+  const char	*table_name,*field_name;
+  ulong		query_id;		// For quick test of used fields
+  /* Field is part of the following keys */
+  key_map 	key_start,part_of_key,part_of_sortkey;
+  enum utype  { NONE,DATE,SHIELD,NOEMPTY,CASEUP,PNR,BGNR,PGNR,YES,NO,REL,
+		CHECK,EMPTY,UNKNOWN_FIELD,CASEDN,NEXT_NUMBER,INTERVAL_FIELD,
+		BIT_FIELD, TIMESTAMP_FIELD,CAPITALIZE,BLOB_FIELD};
+  utype		unireg_check;
+  uint32	field_length;		// Length of field
+  uint16	flags;
+  uchar		null_bit;		// Bit used to test null bit
 
-  Field(char *ptr_arg,uint32 length_arg,uchar *null_ptr_arg,uint null_bit_arg,
+  Field(char *ptr_arg,uint32 length_arg,uchar *null_ptr_arg,uchar null_bit_arg,
 	utype unireg_check_arg, const char *field_name_arg,
 	struct st_table *table_arg);
   virtual ~Field() {}
@@ -64,11 +65,20 @@ public:
   virtual String *val_str(String*,String *)=0;
   virtual Item_result result_type () const=0;
   virtual Item_result cmp_type () const { return result_type(); }
-  bool eq(Field *field) { return ptr == field->ptr; }
+  bool eq(Field *field) { return ptr == field->ptr && null_ptr == field->null_ptr; }
   virtual bool eq_def(Field *field);
   virtual uint32 pack_length() const { return (uint32) field_length; }
   virtual void reset(void) { bzero(ptr,pack_length()); }
   virtual void reset_fields() {}
+  virtual void set_default()
+  {
+    my_ptrdiff_t offset = (my_ptrdiff_t) (table->record[2] -
+					  table->record[0]);
+    memcpy(ptr, ptr + offset, pack_length());
+    if (null_ptr)
+      *null_ptr= ((*null_ptr & (uchar) ~null_bit) |
+		  null_ptr[offset] & null_bit);
+  }
   virtual bool binary() const { return 1; }
   virtual bool zero_pack() const { return 1; }
   virtual enum ha_base_keytype key_type() const { return HA_KEYTYPE_BINARY; }
@@ -77,7 +87,7 @@ public:
   virtual enum_field_types real_type() const { return type(); }
   inline  int cmp(const char *str) { return cmp(ptr,str); }
   virtual int cmp(const char *,const char *)=0;
-  virtual int cmp_binary(const char *a,const char *b, ulong max_length=~0L)
+  virtual int cmp_binary(const char *a,const char *b, uint32 max_length=~0L)
   { return memcmp(a,b,pack_length()); }
   virtual int cmp_offset(uint row_offset)
   { return memcmp(ptr,ptr+row_offset,pack_length()); }
@@ -88,12 +98,13 @@ public:
   virtual int key_cmp(const byte *str, uint length)
   { return cmp(ptr,(char*) str); }
   virtual uint decimals() const { return 0; }
+  /*
+    Caller beware: sql_type can change str.Ptr, so check
+    ptr() to see if it changed if you are using your own buffer
+    in str and restore it with set() if needed
+  */
   virtual void sql_type(String &str) const =0;
-  // Caller beware: sql_type can change str.Ptr, so check
-  // ptr() to see if it changed if you are using your own buffer
-  // in str and restore it with set() if needed
-  
-  virtual uint size_of() const =0;			// For new field
+  virtual uint size_of() const =0;		// For new field
   inline bool is_null(uint row_offset=0)
   { return null_ptr ? (null_ptr[row_offset] & null_bit ? 1 : 0) : table->null_row; }
   inline bool is_real_null(uint row_offset=0)
@@ -101,30 +112,32 @@ public:
   inline void set_null(int row_offset=0)
     { if (null_ptr) null_ptr[row_offset]|= null_bit; }
   inline void set_notnull(int row_offset=0)
-    { if (null_ptr) null_ptr[row_offset]&= ~null_bit; }
+    { if (null_ptr) null_ptr[row_offset]&= (uchar) ~null_bit; }
   inline bool maybe_null(void) { return null_ptr != 0 || table->maybe_null; }
   inline bool real_maybe_null(void) { return null_ptr != 0; }
   virtual void make_field(Send_field *)=0;
   virtual void sort_string(char *buff,uint length)=0;
-  virtual bool optimize_range();
+  virtual bool optimize_range(uint idx);
   virtual bool store_for_compare() { return 0; }
-  inline Field *new_field(struct st_table *new_table)
+  Field *new_field(MEM_ROOT *root, struct st_table *new_table)
+  {
+    Field *tmp= (Field*) memdup_root(root,(char*) this,size_of());
+    if (tmp)
     {
-      Field *tmp= (Field*) sql_memdup((char*) this,size_of());
-      if (tmp)
-      {
-	tmp->table=new_table;
-	tmp->key_start=tmp->part_of_key=tmp->part_of_sortkey=0;
-	tmp->unireg_check=Field::NONE;
-	tmp->flags&= (NOT_NULL_FLAG | BLOB_FLAG | UNSIGNED_FLAG | ZEROFILL_FLAG | BINARY_FLAG | ENUM_FLAG | SET_FLAG);
-	tmp->reset_fields();
-      }
-      return tmp;
+      if (tmp->table->maybe_null)
+	tmp->flags&= ~NOT_NULL_FLAG;
+      tmp->table=new_table;
+      tmp->key_start=tmp->part_of_key=tmp->part_of_sortkey=0;
+      tmp->unireg_check=Field::NONE;
+      tmp->flags&= (NOT_NULL_FLAG | BLOB_FLAG | UNSIGNED_FLAG | ZEROFILL_FLAG | BINARY_FLAG | ENUM_FLAG | SET_FLAG);
+      tmp->reset_fields();
     }
-  inline void move_field(char *ptr_arg,uchar *null_ptr_arg,uint null_bit_arg)
-    {
-      ptr=ptr_arg; null_ptr=null_ptr_arg; null_bit=null_bit_arg;
-    }
+    return tmp;
+  }
+  inline void move_field(char *ptr_arg,uchar *null_ptr_arg,uchar null_bit_arg)
+  {
+    ptr=ptr_arg; null_ptr=null_ptr_arg; null_bit=null_bit_arg;
+  }
   inline void move_field(char *ptr_arg) { ptr=ptr_arg; }
   inline void move_field(my_ptrdiff_t ptr_diff)
   {
@@ -154,10 +167,10 @@ public:
       ptr-=row_offset;
       return tmp;
     }
-  bool send(String *packet);
+  bool send(THD *thd, String *packet);
   virtual char *pack(char* to, const char *from, uint max_length=~(uint) 0)
   {
-    uint length=pack_length();
+    uint32 length=pack_length();
     memcpy(to,from,length);
     return to+length;
   }
@@ -185,7 +198,7 @@ public:
   { return cmp(a,b); }
   virtual int pack_cmp(const char *b, uint key_length_arg)
   { return cmp(ptr,b); }
-  uint offset();				// Should be inline ...
+  uint offset();			// Should be inline ...
   void copy_from_tmp(int offset);
   uint fill_cache_field(struct st_cache_field *copy);
   virtual bool get_date(TIME *ltime,bool fuzzydate);
@@ -210,12 +223,12 @@ public:
 class Field_num :public Field {
 public:
   const uint8 dec;
-  bool zerofill,unsigned_flag;		// Purify cannot handle bit fields
+  bool zerofill,unsigned_flag;	// Purify cannot handle bit fields
   Field_num(char *ptr_arg,uint32 len_arg, uchar *null_ptr_arg,
-	    uint null_bit_arg, utype unireg_check_arg,
+	    uchar null_bit_arg, utype unireg_check_arg,
 	    const char *field_name_arg,
 	    struct st_table *table_arg,
-	    uint dec_arg,bool zero_arg,bool unsigned_arg)
+	    uint8 dec_arg,bool zero_arg,bool unsigned_arg)
     :Field(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
 	   unireg_check_arg, field_name_arg, table_arg),
      dec(dec_arg),zerofill(zero_arg),unsigned_flag(unsigned_arg)
@@ -230,7 +243,7 @@ public:
   void add_zerofill_and_unsigned(String &res) const;
   friend class create_field;
   void make_field(Send_field *);
-  uint decimals() const { return dec; }
+  uint decimals() const { return (uint) dec; }
   uint size_of() const { return sizeof(*this); }
   bool eq_def(Field *field);
 };
@@ -239,7 +252,7 @@ public:
 class Field_str :public Field {
 public:
   Field_str(char *ptr_arg,uint32 len_arg, uchar *null_ptr_arg,
-	    uint null_bit_arg, utype unireg_check_arg,
+	    uchar null_bit_arg, utype unireg_check_arg,
 	    const char *field_name_arg,
 	    struct st_table *table_arg)
     :Field(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
@@ -256,10 +269,10 @@ public:
 class Field_decimal :public Field_num {
 public:
   Field_decimal(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-		uint null_bit_arg,
+		uchar null_bit_arg,
 		enum utype unireg_check_arg, const char *field_name_arg,
 		struct st_table *table_arg,
-		uint dec_arg,bool zero_arg,bool unsigned_arg)
+		uint8 dec_arg,bool zero_arg,bool unsigned_arg)
     :Field_num(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg,
 	       dec_arg, zero_arg,unsigned_arg)
@@ -285,7 +298,7 @@ public:
 class Field_tiny :public Field_num {
 public:
   Field_tiny(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	     uint null_bit_arg,
+	     uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg,
 	     struct st_table *table_arg,
 	     bool zero_arg, bool unsigned_arg)
@@ -314,7 +327,7 @@ public:
 class Field_short :public Field_num {
 public:
   Field_short(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	      uint null_bit_arg,
+	      uchar null_bit_arg,
 	      enum utype unireg_check_arg, const char *field_name_arg,
 	      struct st_table *table_arg,
 	      bool zero_arg, bool unsigned_arg)
@@ -343,7 +356,7 @@ public:
 class Field_medium :public Field_num {
 public:
   Field_medium(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	      uint null_bit_arg,
+	      uchar null_bit_arg,
 	      enum utype unireg_check_arg, const char *field_name_arg,
 	      struct st_table *table_arg,
 	      bool zero_arg, bool unsigned_arg)
@@ -372,7 +385,7 @@ public:
 class Field_long :public Field_num {
 public:
   Field_long(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	     uint null_bit_arg,
+	     uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg,
 	     struct st_table *table_arg,
 	     bool zero_arg, bool unsigned_arg)
@@ -407,7 +420,7 @@ public:
 class Field_longlong :public Field_num {
 public:
   Field_longlong(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	      uint null_bit_arg,
+	      uchar null_bit_arg,
 	      enum utype unireg_check_arg, const char *field_name_arg,
 	      struct st_table *table_arg,
 	      bool zero_arg, bool unsigned_arg)
@@ -415,10 +428,11 @@ public:
 	       unireg_check_arg, field_name_arg, table_arg,
 	       0, zero_arg,unsigned_arg)
     {}
-  Field_longlong(uint32 len_arg,bool maybe_null_arg, const char *field_name_arg,
-		 struct st_table *table_arg)
+  Field_longlong(uint32 len_arg,bool maybe_null_arg,
+		 const char *field_name_arg,
+		 struct st_table *table_arg, bool unsigned_arg)
     :Field_num((char*) 0, len_arg, maybe_null_arg ? (uchar*) "": 0,0,
-	       NONE, field_name_arg, table_arg,0,0,0)
+	       NONE, field_name_arg, table_arg,0,0,unsigned_arg)
     {}
   enum Item_result result_type () const { return INT_RESULT; }
   enum_field_types type() const { return FIELD_TYPE_LONGLONG;}
@@ -435,16 +449,17 @@ public:
   void sort_string(char *buff,uint length);
   uint32 pack_length() const { return 8; }
   void sql_type(String &str) const;
+  bool store_for_compare() { return 1; }
 };
 #endif
 
 class Field_float :public Field_num {
 public:
   Field_float(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	      uint null_bit_arg,
+	      uchar null_bit_arg,
 	      enum utype unireg_check_arg, const char *field_name_arg,
 	      struct st_table *table_arg,
-	       uint dec_arg,bool zero_arg,bool unsigned_arg)
+	      uint8 dec_arg,bool zero_arg,bool unsigned_arg)
     :Field_num(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg,
 	       dec_arg, zero_arg,unsigned_arg)
@@ -468,16 +483,16 @@ public:
 class Field_double :public Field_num {
 public:
   Field_double(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	       uint null_bit_arg,
+	       uchar null_bit_arg,
 	       enum utype unireg_check_arg, const char *field_name_arg,
 	       struct st_table *table_arg,
-	       uint dec_arg,bool zero_arg,bool unsigned_arg)
+	       uint8 dec_arg,bool zero_arg,bool unsigned_arg)
     :Field_num(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg,
 	       dec_arg, zero_arg,unsigned_arg)
     {}
   Field_double(uint32 len_arg, bool maybe_null_arg, const char *field_name_arg,
-	       struct st_table *table_arg, uint dec_arg)
+	       struct st_table *table_arg, uint8 dec_arg)
     :Field_num((char*) 0, len_arg, maybe_null_arg ? (uchar*) "": 0, (uint) 0,
 	       NONE, field_name_arg, table_arg,dec_arg,0,0)
     {}
@@ -530,7 +545,7 @@ public:
   Field_timestamp(char *ptr_arg, uint32 len_arg,
 		  enum utype unireg_check_arg, const char *field_name_arg,
 		  struct st_table *table_arg);
-  enum Item_result result_type () const { return field_length == 8 || field_length == 14 ? INT_RESULT : STRING_RESULT; }
+  enum Item_result result_type () const;
   enum_field_types type() const { return FIELD_TYPE_TIMESTAMP;}
   enum ha_base_keytype key_type() const { return HA_KEYTYPE_ULONG_INT; }
   void store(const char *to,uint length);
@@ -547,6 +562,10 @@ public:
   bool store_for_compare() { return 1; }
   bool zero_pack() const { return 0; }
   void set_time();
+  virtual void set_default()
+  {
+    set_time();
+  }
   inline long get_timestamp()
   {
 #ifdef WORDS_BIGENDIAN
@@ -560,13 +579,14 @@ public:
   void fill_and_store(char *from,uint len);
   bool get_date(TIME *ltime,bool fuzzydate);
   bool get_time(TIME *ltime);
+  void make_field(Send_field *field);
 };
 
 
 class Field_year :public Field_tiny {
 public:
   Field_year(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	     uint null_bit_arg,
+	     uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg,
 	     struct st_table *table_arg)
     :Field_tiny(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
@@ -585,12 +605,16 @@ public:
 
 class Field_date :public Field_str {
 public:
-  Field_date(char *ptr_arg, uchar *null_ptr_arg, uint null_bit_arg,
+  Field_date(char *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg,
 	     struct st_table *table_arg)
     :Field_str(ptr_arg, 10, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg)
     {}
+  Field_date(bool maybe_null_arg, const char *field_name_arg,
+		 struct st_table *table_arg)
+    :Field_str((char*) 0,10, maybe_null_arg ? (uchar*) "": 0,0,
+	       NONE, field_name_arg, table_arg) {}
   enum_field_types type() const { return FIELD_TYPE_DATE;}
   enum ha_base_keytype key_type() const { return HA_KEYTYPE_ULONG_INT; }
   enum Item_result cmp_type () const { return INT_RESULT; }
@@ -611,7 +635,7 @@ public:
 
 class Field_newdate :public Field_str {
 public:
-  Field_newdate(char *ptr_arg, uchar *null_ptr_arg, uint null_bit_arg,
+  Field_newdate(char *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 		enum utype unireg_check_arg, const char *field_name_arg,
 		struct st_table *table_arg)
     :Field_str(ptr_arg, 10, null_ptr_arg, null_bit_arg,
@@ -642,12 +666,16 @@ public:
 
 class Field_time :public Field_str {
 public:
-  Field_time(char *ptr_arg, uchar *null_ptr_arg, uint null_bit_arg,
+  Field_time(char *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg,
 	     struct st_table *table_arg)
     :Field_str(ptr_arg, 8, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg)
     {}
+  Field_time(bool maybe_null_arg, const char *field_name_arg,
+		 struct st_table *table_arg)
+    :Field_str((char*) 0,8, maybe_null_arg ? (uchar*) "": 0,0,
+	       NONE, field_name_arg, table_arg) {}
   enum_field_types type() const { return FIELD_TYPE_TIME;}
   enum ha_base_keytype key_type() const { return HA_KEYTYPE_INT24; }
   enum Item_result cmp_type () const { return INT_RESULT; }
@@ -670,12 +698,16 @@ public:
 
 class Field_datetime :public Field_str {
 public:
-  Field_datetime(char *ptr_arg, uchar *null_ptr_arg, uint null_bit_arg,
+  Field_datetime(char *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 		 enum utype unireg_check_arg, const char *field_name_arg,
 		 struct st_table *table_arg)
     :Field_str(ptr_arg, 19, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg)
     {}
+  Field_datetime(bool maybe_null_arg, const char *field_name_arg,
+		 struct st_table *table_arg)
+    :Field_str((char*) 0,19, maybe_null_arg ? (uchar*) "": 0,0,
+	       NONE, field_name_arg, table_arg) {}
   enum_field_types type() const { return FIELD_TYPE_DATETIME;}
 #ifdef HAVE_LONG_LONG
   enum ha_base_keytype key_type() const { return HA_KEYTYPE_ULONGLONG; }
@@ -704,7 +736,7 @@ class Field_string :public Field_str {
   bool binary_flag;
 public:
   Field_string(char *ptr_arg, uint32 len_arg,uchar *null_ptr_arg,
-	       uint null_bit_arg,
+	       uchar null_bit_arg,
 	       enum utype unireg_check_arg, const char *field_name_arg,
 	       struct st_table *table_arg,bool binary_arg)
     :Field_str(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
@@ -759,7 +791,7 @@ class Field_varstring :public Field_str {
   bool binary_flag;
 public:
   Field_varstring(char *ptr_arg, uint32 len_arg,uchar *null_ptr_arg,
-		  uint null_bit_arg,
+		  uchar null_bit_arg,
 		  enum utype unireg_check_arg, const char *field_name_arg,
 		  struct st_table *table_arg,bool binary_arg)
     :Field_str(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
@@ -809,10 +841,10 @@ public:
 
 class Field_blob :public Field_str {
   uint packlength;
-  String value;					// For temporaries
+  String value;				// For temporaries
   bool binary_flag;
 public:
-  Field_blob(char *ptr_arg, uchar *null_ptr_arg, uint null_bit_arg,
+  Field_blob(char *ptr_arg, uchar *null_ptr_arg, uchar null_bit_arg,
 	     enum utype unireg_check_arg, const char *field_name_arg,
 	     struct st_table *table_arg,uint blob_pack_length,
 	     bool binary_arg);
@@ -836,21 +868,22 @@ public:
   longlong val_int(void);
   String *val_str(String*,String *);
   int cmp(const char *,const char*);
-  int cmp(const char *a, ulong a_length, const char *b, ulong b_length);
+  int cmp(const char *a, uint32 a_length, const char *b, uint32 b_length);
   int cmp_offset(uint offset);
-  int cmp_binary(const char *a,const char *b, ulong max_length=~0L);
+  int cmp_binary(const char *a,const char *b, uint32 max_length=~0L);
   int cmp_binary_offset(uint row_offset);
   int key_cmp(const byte *,const byte*);
   int key_cmp(const byte *str, uint length);
   uint32 key_length() const { return 0; }
   void sort_string(char *buff,uint length);
-  uint32 pack_length() const { return (uint32) (packlength+table->blob_ptr_size); }
-  void reset(void) { bzero(ptr,packlength+sizeof(char*)); }
+  uint32 pack_length() const
+  { return (uint32) (packlength+table->blob_ptr_size); }
+  void reset(void) { bzero(ptr, packlength+sizeof(char*)); }
   void reset_fields() { bzero((char*) &value,sizeof(value)); }
-  void store_length(ulong number);
-  inline ulong get_length(uint row_offset=0)
+  void store_length(uint32 number);
+  inline uint32 get_length(uint row_offset=0)
   { return get_length(ptr+row_offset); }
-  ulong get_length(const char *ptr);
+  uint32 get_length(const char *ptr);
   bool binary() const { return binary_flag; }
   inline void get_ptr(char **str)
     {
@@ -861,7 +894,7 @@ public:
       memcpy(ptr,length,packlength);
       memcpy_fixed(ptr+packlength,&data,sizeof(char*));
     }
-  inline void set_ptr(ulong length,char *data)
+  inline void set_ptr(uint32 length,char *data)
     {
       store_length(length);
       memcpy_fixed(ptr+packlength,&data,sizeof(char*));
@@ -882,21 +915,6 @@ public:
   }
   char *pack(char *to, const char *from, uint max_length= ~(uint) 0);
   const char *unpack(char *to, const char *from);
-#ifdef HAVE_GEMINI_DB
-  char *pack_id(char *to, const char *from, ulonglong id, 
-                uint max_length= ~(uint) 0);
-  ulonglong get_id(const char *from);
-  const char *unpack_id(char *to, const char *from, const char *bdata);
-  inline void get_ptr_from_key_image(char **str,char *key_str)
-  {
-     *str = key_str + sizeof(uint16);
-  }
-  inline uint get_length_from_key_image(char *key_str)
-  {
-    return uint2korr(key_str);
-  }
-  enum_field_types blobtype() { return (packlength == 1 ? FIELD_TYPE_TINY_BLOB : FIELD_TYPE_BLOB);}
-#endif
   char *pack_key(char *to, const char *from, uint max_length);
   char *pack_key_from_key_image(char* to, const char *from, uint max_length);
   int pack_cmp(const char *a, const char *b, uint key_length);
@@ -916,16 +934,16 @@ protected:
 public:
   TYPELIB *typelib;
   Field_enum(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-		 uint null_bit_arg,
+		 uchar null_bit_arg,
 		 enum utype unireg_check_arg, const char *field_name_arg,
 		 struct st_table *table_arg,uint packlength_arg,
 		 TYPELIB *typelib_arg)
     :Field_str(ptr_arg, len_arg, null_ptr_arg, null_bit_arg,
 	       unireg_check_arg, field_name_arg, table_arg),
     packlength(packlength_arg),typelib(typelib_arg)
-    {
+  {
       flags|=ENUM_FLAG;
-    }
+  }
   enum_field_types type() const { return FIELD_TYPE_STRING; }
   enum Item_result cmp_type () const { return INT_RESULT; }
   enum ha_base_keytype key_type() const;
@@ -944,7 +962,7 @@ public:
   uint size_of() const { return sizeof(*this); }
   enum_field_types real_type() const { return FIELD_TYPE_ENUM; }
   virtual bool zero_pack() const { return 0; }
-  bool optimize_range() { return 0; }
+  bool optimize_range(uint idx) { return 0; }
   bool binary() const { return 0; }
   bool eq_def(Field *field);
 };
@@ -953,7 +971,7 @@ public:
 class Field_set :public Field_enum {
 public:
   Field_set(char *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
-	    uint null_bit_arg,
+	    uchar null_bit_arg,
 	    enum utype unireg_check_arg, const char *field_name_arg,
 	    struct st_table *table_arg,uint32 packlength_arg,
 	    TYPELIB *typelib_arg)
@@ -975,23 +993,23 @@ public:
 
 
 /*
-** Create field class for CREATE TABLE
+  Create field class for CREATE TABLE
 */
 
 class create_field :public Sql_alloc {
 public:
   const char *field_name;
-  const char *change;				// If done with alter table
-  const char *after;				// Put column after this one
-  Item	*def;					// Default value
+  const char *change;			// If done with alter table
+  const char *after;			// Put column after this one
+  Item	*def;				// Default value
   enum	enum_field_types sql_type;
   uint32 length;
   uint decimals,flags,pack_length;
   Field::utype unireg_check;
-  TYPELIB *interval;				// Which interval to use
-  Field *field;					// For alter table
+  TYPELIB *interval;			// Which interval to use
+  Field *field;				// For alter table
 
-  uint8 row,col,sc_length,interval_id;		// For rea_create_table
+  uint8 row,col,sc_length,interval_id;	// For rea_create_table
   uint	offset,pack_flag;
   create_field() :after(0) {}
   create_field(Field *field, Field *orig_field);
@@ -999,7 +1017,7 @@ public:
 
 
 /*
-** A class for sending info to the client
+  A class for sending info to the client
 */
 
 class Send_field {
@@ -1012,7 +1030,7 @@ class Send_field {
 
 
 /*
-** A class for quick copying data to fields
+  A class for quick copying data to fields
 */
 
 class Copy_field :public Sql_alloc {
@@ -1028,7 +1046,7 @@ public:
 
   Copy_field() {}
   ~Copy_field() {}
-  void set(Field *to,Field *from,bool save);	// Field to field
+  void set(Field *to,Field *from,bool save);	// Field to field 
   void set(char *to,Field *from);		// Field to string
   void (*do_copy)(Copy_field *);
   void (*do_copy2)(Copy_field *);		// Used to handle null values
@@ -1036,29 +1054,33 @@ public:
 
 
 Field *make_field(char *ptr, uint32 field_length,
-		  uchar *null_pos, uint null_bit,
-		  uint pack_flag, Field::utype unireg_check,
+		  uchar *null_pos, uchar null_bit,
+		  uint pack_flag,
+		  enum_field_types field_type,
+		  Field::utype unireg_check,
 		  TYPELIB *interval, const char *field_name,
 		  struct st_table *table);
 uint pack_length_to_packflag(uint type);
 uint32 calc_pack_length(enum_field_types type,uint32 length);
 bool set_field_to_null(Field *field);
+bool set_field_to_null_with_conversions(Field *field, bool no_conversions);
 uint find_enum(TYPELIB *typelib,const char *x, uint length);
 ulonglong find_set(TYPELIB *typelib,const char *x, uint length);
 bool test_if_int(const char *str,int length);
 
 /*
-** The following are for the interface with the .frm file
+  The following are for the interface with the .frm file
 */
 
 #define FIELDFLAG_DECIMAL		1
-#define FIELDFLAG_BINARY		1	// Shares same flag
+#define FIELDFLAG_BINARY		1	// Shares same flag 
 #define FIELDFLAG_NUMBER		2
 #define FIELDFLAG_ZEROFILL		4
 #define FIELDFLAG_PACK			120	// Bits used for packing
 #define FIELDFLAG_INTERVAL		256
 #define FIELDFLAG_BITFIELD		512	// mangled with dec!
 #define FIELDFLAG_BLOB			1024	// mangled with dec!
+#define FIELDFLAG_GEOM			2048
 #define FIELDFLAG_LEFT_FULLSCREEN	8192
 #define FIELDFLAG_RIGHT_FULLSCREEN	16384
 #define FIELDFLAG_FORMAT_NUMBER		16384	// predit: ###,,## in output
@@ -1079,12 +1101,13 @@ bool test_if_int(const char *str,int length);
 #define f_is_zerofill(x)	((x) & FIELDFLAG_ZEROFILL)
 #define f_is_packed(x)		((x) & FIELDFLAG_PACK)
 #define f_packtype(x)		(((x) >> FIELDFLAG_PACK_SHIFT) & 15)
-#define f_decimals(x)		(((x) >> FIELDFLAG_DEC_SHIFT) & FIELDFLAG_MAX_DEC)
+#define f_decimals(x)		((uint8) (((x) >> FIELDFLAG_DEC_SHIFT) & FIELDFLAG_MAX_DEC))
 #define f_is_alpha(x)		(!f_is_num(x))
 #define f_is_binary(x)		((x) & FIELDFLAG_BINARY)
 #define f_is_enum(x)	((x) & FIELDFLAG_INTERVAL)
 #define f_is_bitfield(x)	((x) & FIELDFLAG_BITFIELD)
 #define f_is_blob(x)		(((x) & (FIELDFLAG_BLOB | FIELDFLAG_NUMBER)) == FIELDFLAG_BLOB)
+#define f_is_geom(x)		((x) & FIELDFLAG_GEOM)
 #define f_is_equ(x)		((x) & (1+2+FIELDFLAG_PACK+31*256))
 #define f_settype(x)		(((int) x) << FIELDFLAG_PACK_SHIFT)
 #define f_maybe_null(x)		(x & FIELDFLAG_MAYBE_NULL)

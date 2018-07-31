@@ -159,7 +159,7 @@ struct sync_thread_struct{
 };
 
 /* Number of slots reserved for each OS thread in the sync level array */
-#define SYNC_THREAD_N_LEVELS	10000
+#define SYNC_THREAD_N_LEVELS	250
 
 struct sync_level_struct{
 	void*	latch;	/* pointer to a mutex or an rw-lock; NULL means that
@@ -220,7 +220,7 @@ mutex_create_func(
 	char*		cfile_name,	/* in: file name where created */
 	ulint		cline)		/* in: file line where created */
 {
-#if defined(_WIN32) && defined(UNIV_CAN_USE_X86_ASSEMBLER) 
+#if defined(_WIN32) && defined(UNIV_CAN_USE_X86_ASSEMBLER) && !defined(__NETWARE)
 	mutex_reset_lock_word(mutex);
 #else	
 	os_fast_mutex_init(&(mutex->os_fast_mutex));
@@ -229,14 +229,13 @@ mutex_create_func(
 	mutex_set_waiters(mutex, 0);
 	mutex->magic_n = MUTEX_MAGIC_N;
 	mutex->line = 0;
-	mutex->file_name = "not yet reserved";
+	mutex->file_name = (char *) "not yet reserved";
 	mutex->level = SYNC_LEVEL_NONE;
 	mutex->cfile_name = cfile_name;
 	mutex->cline = cline;
 	
 	/* Check that lock_word is aligned; this is important on Intel */
-
-	ut_a(((ulint)(&(mutex->lock_word))) % 4 == 0);
+	ut_ad(((ulint)(&(mutex->lock_word))) % 4 == 0);
 
 	/* NOTE! The very first mutexes are not put to the mutex list */
 
@@ -266,11 +265,14 @@ mutex_free(
 	ut_a(mutex_get_lock_word(mutex) == 0);
 	ut_a(mutex_get_waiters(mutex) == 0);
 	
-	mutex_enter(&mutex_list_mutex);
+	if (mutex != &mutex_list_mutex && mutex != &sync_thread_mutex) {
 
-	UT_LIST_REMOVE(list, mutex_list, mutex);
+	        mutex_enter(&mutex_list_mutex);
 
-	mutex_exit(&mutex_list_mutex);
+	        UT_LIST_REMOVE(list, mutex_list, mutex);
+
+		mutex_exit(&mutex_list_mutex);
+	}
 
 #if !defined(_WIN32) || !defined(UNIV_CAN_USE_X86_ASSEMBLER) 
 	os_fast_mutex_free(&(mutex->os_fast_mutex));
@@ -901,8 +903,7 @@ sync_thread_levels_empty_gen(
 
 		if (slot->latch != NULL && (!dict_mutex_allowed ||
 				(slot->level != SYNC_DICT
-				&& slot->level != SYNC_FOREIGN_KEY_CHECK
-				&& slot->level != SYNC_PURGE_IS_RUNNING))) {
+				&& slot->level != SYNC_DICT_OPERATION))) {
 
 			lock = slot->latch;
 			mutex = slot->latch;
@@ -1087,12 +1088,10 @@ sync_thread_add_level(
 						SYNC_IBUF_PESS_INSERT_MUTEX));
 	} else if (level == SYNC_DICT_AUTOINC_MUTEX) {
 		ut_a(sync_thread_levels_g(array, SYNC_DICT_AUTOINC_MUTEX));
-	} else if (level == SYNC_FOREIGN_KEY_CHECK) {
-		ut_a(sync_thread_levels_g(array, SYNC_FOREIGN_KEY_CHECK));
+	} else if (level == SYNC_DICT_OPERATION) {
+		ut_a(sync_thread_levels_g(array, SYNC_DICT_OPERATION));
 	} else if (level == SYNC_DICT_HEADER) {
 		ut_a(sync_thread_levels_g(array, SYNC_DICT_HEADER));
-	} else if (level == SYNC_PURGE_IS_RUNNING) {
-		ut_a(sync_thread_levels_g(array, SYNC_PURGE_IS_RUNNING));
 	} else if (level == SYNC_DICT) {
 		ut_a(buf_debug_prints
 		     || sync_thread_levels_g(array, SYNC_DICT));
@@ -1233,13 +1232,26 @@ sync_init(void)
 }
 
 /**********************************************************************
-Frees the resources in synchronization data structures. */
+Frees the resources in InnoDB's own synchronization data structures. Use
+os_sync_free() after calling this. */
 
 void
 sync_close(void)
 /*===========*/
 {
+	mutex_t*	mutex;
+
 	sync_array_free(sync_primary_wait_array);
+
+	mutex = UT_LIST_GET_FIRST(mutex_list);
+
+	while (mutex) {
+	        mutex_free(mutex);
+		mutex = UT_LIST_GET_FIRST(mutex_list);
+	}
+
+	mutex_free(&mutex_list_mutex);
+	mutex_free(&sync_thread_mutex);	
 }
 
 /***********************************************************************

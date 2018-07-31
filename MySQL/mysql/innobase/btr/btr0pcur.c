@@ -292,6 +292,11 @@ btr_pcur_restore_position(
 
 	mem_heap_free(heap);
 
+	/* We have to store position information, modify clock value, etc.
+        because the cursor may now be on a different page */
+
+	btr_pcur_store_position(cursor, mtr);
+
 	return(FALSE);
 }
 
@@ -354,10 +359,13 @@ btr_pcur_move_to_next_page(
 	ut_ad(next_page_no != FIL_NULL);	
 
 	next_page = btr_page_get(space, next_page_no, cursor->latch_mode, mtr);
+	buf_block_align(next_page)->check_index_page_at_flush = TRUE;
 
 	btr_leaf_page_release(page, cursor->latch_mode, mtr);
 	
 	page_cur_set_before_first(next_page, btr_pcur_get_page_cur(cursor));
+
+	page_check_dir(next_page);
 }
 
 /*************************************************************

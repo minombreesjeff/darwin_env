@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -24,7 +24,7 @@ my_bool mi_check_unique(MI_INFO *info, MI_UNIQUEDEF *def, byte *record,
 {
   my_off_t lastpos=info->lastpos;
   MI_KEYDEF *key= &info->s->keyinfo[def->key];
-  uchar *key_buff=info->lastkey+info->s->base.max_key_length;
+  uchar *key_buff=info->lastkey2;
   DBUG_ENTER("mi_check_unique");
 
   mi_unique_store(record+key->seg->start, unique_hash);
@@ -80,7 +80,16 @@ ha_checksum mi_unique_hash(MI_UNIQUEDEF *def, const byte *record)
     if (keyseg->null_bit)
     {
       if (record[keyseg->null_pos] & keyseg->null_bit)
+      {
+	/*
+	  Change crc in a way different from an empty string or 0.
+	  (This is an optimisation;  The code will work even if this isn't
+	  done)
+	*/
+	crc=((crc << 8) + 511+
+	     (crc >> (8*sizeof(ha_checksum)-8)));
 	continue;
+      }
     }
     pos= record+keyseg->start;
     if (keyseg->flag & HA_VAR_LENGTH)
@@ -170,19 +179,19 @@ int mi_unique_comp(MI_UNIQUEDEF *def, const byte *a, const byte *b,
       memcpy_fixed((byte*) &pos_a,pos_a+keyseg->bit_start,sizeof(char*));
       memcpy_fixed((byte*) &pos_b,pos_b+keyseg->bit_start,sizeof(char*));
     }
-    end= pos_a+length;
     if (type == HA_KEYTYPE_TEXT || type == HA_KEYTYPE_VARTEXT)
     {
-      uchar *sort_order=keyseg->charset->sort_order;
-      while (pos_a != end)
-	if (sort_order[*(uchar*) pos_a++] !=
-	    sort_order[*(uchar*) pos_b++])
+      if (_mi_compare_text(keyseg->charset, (uchar *)pos_a, length,
+                                            (uchar *)pos_b, length, 0))
 	  return 1;
     }
     else
+    {
+      end= pos_a+length;
       while (pos_a != end)
 	if (*pos_a++ != *pos_b++)
 	  return 1;
+    }
   }
   return 0;
 }

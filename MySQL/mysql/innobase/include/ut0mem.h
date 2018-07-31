@@ -57,7 +57,7 @@ ut_free(
 /*====*/
 	void* ptr);  /* in, own: memory block */
 /**************************************************************************
-Frees all allocated memory not freed yet. */
+Frees in shutdown all allocated memory not freed yet. */
 
 void
 ut_free_all_mem(void);
@@ -69,7 +69,7 @@ ut_strcpy(char* dest, char* sour);
 
 UNIV_INLINE
 ulint
-ut_strlen(char* str);
+ut_strlen(const char* str);
 
 UNIV_INLINE
 int

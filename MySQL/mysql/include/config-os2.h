@@ -67,10 +67,10 @@
 #define NO_FCNTL_NONBLOCK
 
 #define EFBIG			   E2BIG
-//#define ENFILE		  EMFILE
-//#define ENAMETOOLONG		(EOS2ERR+2)
-//#define ETIMEDOUT		  145
-//#define EPIPE			  146
+/*#define ENFILE		  EMFILE    */
+/*#define ENAMETOOLONG		(EOS2ERR+2) */
+/*#define ETIMEDOUT		  145       */
+/*#define EPIPE			  146       */
 #define EROFS			147
 
 #define sleep(A)	DosSleep((A)*1000)
@@ -132,7 +132,7 @@ typedef unsigned long long os_off_t;
 #define HAVE_ALLOCA 1
 
 /* Define if you have <alloca.h> and it should be used (not on Ultrix).  */
-//#define HAVE_ALLOCA_H 1
+/* #define HAVE_ALLOCA_H 1 */
 
 /* Define if you don't have vprintf but do have _doprnt.  */
 /* #undef HAVE_DOPRNT */
@@ -148,7 +148,7 @@ typedef unsigned long long os_off_t;
 #define HAVE_ST_RDEV 1
 
 /* Define if you have <sys/wait.h> that is POSIX.1 compatible.	*/
-//#define HAVE_SYS_WAIT_H 1
+/* #define HAVE_SYS_WAIT_H 1 */
 
 /* Define if you don't have tm_zone but do have the external array
    tzname.  */
@@ -219,7 +219,7 @@ typedef unsigned long long os_off_t;
 #define HAVE_BOOL 1
 
 /* Have berkeley db installed */
-//#define HAVE_BERKELEY_DB 1
+/* #define HAVE_BERKELEY_DB 1 */
 
 /* DSB style signals ? */
 /* #undef HAVE_BSD_SIGNALS */
@@ -398,7 +398,7 @@ typedef unsigned long long os_off_t;
 #define HAVE_CHSIZE 1
 
 /* Define if you have the cuserid function.  */
-//#define HAVE_CUSERID 1
+/* #define HAVE_CUSERID 1 */
 
 /* Define if you have the dlerror function.  */
 #define HAVE_DLERROR 1
@@ -410,7 +410,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_FCHMOD */
 
 /* Define if you have the fcntl function.  */
-//#define HAVE_FCNTL 1
+/* #define HAVE_FCNTL 1 */
 
 /* Define if you have the fconvert function.  */
 /* #undef HAVE_FCONVERT */
@@ -428,7 +428,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_FSEEKO */
 
 /* Define if you have the ftruncate function.  */
-//#define HAVE_FTRUNCATE 1
+/* #define HAVE_FTRUNCATE 1 */
 
 /* Define if you have the getcwd function.  */
 #define HAVE_GETCWD 1
@@ -443,16 +443,16 @@ typedef unsigned long long os_off_t;
 #define HAVE_GETPAGESIZE 1
 
 /* Define if you have the getpass function.  */
-//#define HAVE_GETPASS 1
+/*#define HAVE_GETPASS 1 */
 
 /* Define if you have the getpassphrase function.  */
 /* #undef HAVE_GETPASSPHRASE */
 
 /* Define if you have the getpwnam function.  */
-//#define HAVE_GETPWNAM 1
+/* #define HAVE_GETPWNAM 1 */
 
 /* Define if you have the getpwuid function.  */
-//#define HAVE_GETPWUID 1
+/* #define HAVE_GETPWUID 1 */
 
 /* Define if you have the getrlimit function.  */
 /* #undef HAVE_GETRLIMIT */
@@ -494,7 +494,7 @@ typedef unsigned long long os_off_t;
 #define HAVE_MEMMOVE 1
 
 /* Define if you have the mkstemp function.  */
-//#define HAVE_MKSTEMP 1
+/* #define HAVE_MKSTEMP 1 */
 
 /* Define if you have the mlockall function.  */
 /* #undef HAVE_MLOCKALL */
@@ -584,7 +584,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_SIGTHREADMASK */
 
 /* Define if you have the snprintf function.  */
-//#define HAVE_SNPRINTF 1
+/* #define HAVE_SNPRINTF 1 */
 
 /* Define if you have the socket function.  */
 #define HAVE_SOCKET 1
@@ -638,7 +638,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_VIDATTR */
 
 /* Define if you have the <alloca.h> header file.  */
-//#define HAVE_ALLOCA_H 1
+/* #define HAVE_ALLOCA_H 1 */
 
 /* Define if you have the <arpa/inet.h> header file.  */
 #define HAVE_ARPA_INET_H 1
@@ -650,10 +650,10 @@ typedef unsigned long long os_off_t;
 #define HAVE_CRYPT_H 1
 
 /* Define if you have the <curses.h> header file.  */
-//#define HAVE_CURSES_H 1
+/* #define HAVE_CURSES_H 1 */
 
 /* Define if you have the <dirent.h> header file.  */
-//#define HAVE_DIRENT_H 1
+/* #define HAVE_DIRENT_H 1 */
 
 /* Define if you have the <fcntl.h> header file.  */
 #define HAVE_FCNTL_H 1
@@ -665,7 +665,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_FLOATINGPOINT_H */
 
 /* Define if you have the <grp.h> header file.	*/
-//#define HAVE_GRP_H 1
+/* #define HAVE_GRP_H 1 */
 
 /* Define if you have the <ieeefp.h> header file.  */
 /* #undef HAVE_IEEEFP_H */
@@ -689,7 +689,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_PATHS_H */
 
 /* Define if you have the <pwd.h> header file.	*/
-//#define HAVE_PWD_H 1
+/* #define HAVE_PWD_H 1 */
 
 /* Define if you have the <sched.h> header file.  */
 /* #undef HAVE_SCHED_H */
@@ -710,16 +710,16 @@ typedef unsigned long long os_off_t;
 #define HAVE_STRING_H 1
 
 /* Define if you have the <strings.h> header file.  */
-//#define HAVE_STRINGS_H 1
+/* #define HAVE_STRINGS_H 1 */
 
 /* Define if you have the <synch.h> header file.  */
 /* #undef HAVE_SYNCH_H */
 
 /* Define if you have the <sys/dir.h> header file.  */
-//#define HAVE_SYS_DIR_H 1
+/* #define HAVE_SYS_DIR_H 1 */
 
 /* Define if you have the <sys/file.h> header file.  */
-//#define HAVE_SYS_FILE_H 1
+/* #define HAVE_SYS_FILE_H 1 */
 
 /* Define if you have the <sys/ioctl.h> header file.  */
 #define HAVE_SYS_IOCTL_H 1
@@ -761,7 +761,7 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_SYS_VADVISE_H */
 
 /* Define if you have the <sys/wait.h> header file.  */
-//#define HAVE_SYS_WAIT_H 1
+/* #define HAVE_SYS_WAIT_H 1 */
 
 /* Define if you have the <term.h> header file.  */
 /* #undef HAVE_TERM_H */
@@ -770,13 +770,13 @@ typedef unsigned long long os_off_t;
 /* #undef HAVE_TERMBITS_H */
 
 /* Define if you have the <termcap.h> header file.  */
-//#define HAVE_TERMCAP_H 1
+/* #define HAVE_TERMCAP_H 1 */
 
 /* Define if you have the <termio.h> header file.  */
-//#define HAVE_TERMIO_H 1
+/* /#define HAVE_TERMIO_H 1 */
 
 /* Define if you have the <termios.h> header file.  */
-//#define HAVE_TERMIOS_H 1
+/* #define HAVE_TERMIOS_H 1 */
 
 /* Define if you have the <unistd.h> header file.  */
 #define HAVE_UNISTD_H 1
@@ -829,4 +829,4 @@ typedef unsigned long long os_off_t;
 /* Define for large files, on AIX-style hosts. */
 /* #undef _LARGE_FILES */
 
-#endif // __CONFIG_OS2_H__
+#endif /* __CONFIG_OS2_H__ */

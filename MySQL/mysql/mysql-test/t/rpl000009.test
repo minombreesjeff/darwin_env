@@ -1,7 +1,7 @@
-#this one assumes we are ignoring updates on tables in database foo, but doing
-#the ones in database bar
+# This one assumes we are ignoring updates on tables in database foo, but doing
+# the ones in database bar
+
 source include/master-slave.inc;
-connection master;
 drop database if exists foo;
 create database foo;
 drop database if exists bar;
@@ -9,6 +9,7 @@ create database bar;
 save_master_pos;
 connection slave;
 sync_with_master;
+create database foo;
 drop table if exists foo.foo;
 create table foo.foo (n int);
 insert into foo.foo values(4);
@@ -24,10 +25,65 @@ connection slave;
 sync_with_master;
 select foo.foo.n,bar.bar.m from foo.foo,bar.bar;
 connection master;
-drop database if exists bar;
+drop database bar;
 drop database if exists foo;
 save_master_pos;
 connection slave;
 sync_with_master;
-drop database if exists bar;
-drop database if exists foo;
+--error 1008
+drop database bar;
+drop database foo;
+
+# Now let's test load data from master
+
+# First create some databases and tables on the master
+
+connection master;
+set sql_log_bin = 0;
+create database foo;
+create database bar;
+show databases;
+create table foo.t1(n int, s char(20));
+create table foo.t2(n int, s text);
+insert into foo.t1 values (1, 'one'), (2, 'two'), (3, 'three'); 
+insert into foo.t2 values (11, 'eleven'), (12, 'twelve'), (13, 'thirteen'); 
+
+create table bar.t1(n int, s char(20));
+create table bar.t2(n int, s text);
+insert into bar.t1 values (1, 'one bar'), (2, 'two bar'), (3, 'three bar'); 
+insert into bar.t2 values (11, 'eleven bar'), (12, 'twelve bar'),
+ (13, 'thirteen bar'); 
+set sql_log_bin = 1;
+save_master_pos;
+connection slave;
+sync_with_master;
+
+# This should show that the slave is empty at this point
+show databases;
+load data from master;
+
+# Now let's check if we have the right tables and the right data in them
+show databases;
+use foo;
+show tables;
+use bar;
+show tables;
+select * from bar.t1;
+select * from bar.t2;
+
+# Now let's see if replication works
+connection master;
+insert into bar.t1 values (4, 'four bar');
+save_master_pos;
+connection slave;
+sync_with_master;
+select * from bar.t1;
+
+# Now time for cleanup
+connection master;
+drop database bar;
+drop database foo;
+save_master_pos;
+connection slave;
+sync_with_master;
+

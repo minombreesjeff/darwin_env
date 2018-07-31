@@ -1,15 +1,15 @@
 /* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -18,6 +18,7 @@
 
 #include "myisam.h"			/* Structs & some defines */
 #include "myisampack.h"			/* packing of keys */
+#include <my_tree.h>
 #ifdef THREAD
 #include <my_pthread.h>
 #include <thr_lock.h>
@@ -37,7 +38,7 @@ typedef struct st_mi_status_info
   my_off_t key_empty;			/* lost space in indexfile */
   my_off_t key_file_length;
   my_off_t data_file_length;
-} MI_STATUS_INFO;  
+} MI_STATUS_INFO;
 
 typedef struct st_mi_state_info
 {
@@ -54,7 +55,8 @@ typedef struct st_mi_state_info
     uchar uniques;			/* number of UNIQUE definitions */
     uchar language;			/* Language for indexes */
     uchar max_block_size;		/* max keyblock size */
-    uchar not_used[2];			/* To align to 8 */
+    uchar fulltext_keys;                /* reserved for 4.1 */
+    uchar not_used;			/* To align to 8 */
   } header;
 
   MI_STATUS_INFO state;
@@ -65,8 +67,10 @@ typedef struct st_mi_state_info
   ulong unique;				/* Unique number for this process */
   ulong update_count;			/* Updated for each write lock */
   ulong status;
+  ulong *rec_per_key_part;
   my_off_t *key_root;			/* Start of key trees */
   my_off_t *key_del;			/* delete links for trees */
+  my_off_t rec_per_key_rows;		/* Rows when calculating rec_per_key */
 
   ulong sec_index_changed;		/* Updated when new sec_index */
   ulong sec_index_used;			/* which extra index are in use */
@@ -79,8 +83,6 @@ typedef struct st_mi_state_info
   uint	sortkey;			/* sorted by this key  (not used) */
   uint open_count;
   uint8 changed;			/* Changed since myisamchk */
-  my_off_t rec_per_key_rows;		/* Rows when calculating rec_per_key */
-  ulong *rec_per_key_part;
 
   /* the following isn't saved on disk */
   uint state_diff_length;		/* Should be 0 */
@@ -159,33 +161,12 @@ typedef struct st_mi_isam_share {	/* Shared between opens */
   MI_COLUMNDEF *rec;			/* Pointer to field information */
   MI_PACK    pack;			/* Data about packed records */
   MI_BLOB    *blobs;			/* Pointer to blobs */
-  char	*filename;			/* Name of indexfile */
+  char  *unique_file_name;		/* realpath() of index file */
+  char  *data_file_name,		/* Resolved path names from symlinks */
+        *index_file_name;
   byte *file_map;			/* mem-map of file if possible */
-  ulong this_process;			/* processid */
-  ulong last_process;			/* For table-change-check */
-  ulong last_version;			/* Version on start */
-  ulong options;			/* Options used */
-  uint	rec_reflength;			/* rec_reflength in use now */
-  int	kfile;				/* Shared keyfile */
-  int	data_file;			/* Shared data file */
-  int	mode;				/* mode of file on open */
-  uint	reopen;				/* How many times reopened */
-  uint	w_locks,r_locks;		/* Number of read/write locks */
-  uint	blocksize;			/* blocksize of keyfile */
-  ulong min_pack_length;		/* Theese are used by packed data */
-  ulong max_pack_length;
-  ulong state_diff_length;
-  my_bool  changed,			/* If changed since lock */
-    global_changed,			/* If changed since open */
-    not_flushed,
-    temporary,delay_key_write,
-    concurrent_insert,
-    fulltext_index;
-  myf write_flag;
-  int	rnd;				/* rnd-counter */
   MI_DECODE_TREE *decode_trees;
   uint16 *decode_tables;
-  enum data_file_type data_file_type;
   int (*read_record)(struct st_myisam_info*, my_off_t, byte*);
   int (*write_record)(struct st_myisam_info*, const byte*);
   int (*update_record)(struct st_myisam_info*, my_off_t, const byte*);
@@ -195,6 +176,30 @@ typedef struct st_mi_isam_share {	/* Shared between opens */
   ha_checksum (*calc_checksum)(struct st_myisam_info*, const byte *);
   int (*compare_unique)(struct st_myisam_info*, MI_UNIQUEDEF *,
 			const byte *record, my_off_t pos);
+  invalidator_by_filename invalidator;  /* query cache invalidator */
+  ulong this_process;			/* processid */
+  ulong last_process;			/* For table-change-check */
+  ulong last_version;			/* Version on start */
+  ulong options;			/* Options used */
+  ulong min_pack_length;		/* Theese are used by packed data */
+  ulong max_pack_length;
+  ulong state_diff_length;
+  uint	rec_reflength;			/* rec_reflength in use now */
+  File	kfile;				/* Shared keyfile */
+  File	data_file;			/* Shared data file */
+  int	mode;				/* mode of file on open */
+  uint	reopen;				/* How many times reopened */
+  uint	w_locks,r_locks,tot_locks;	/* Number of read/write locks */
+  uint	blocksize;			/* blocksize of keyfile */
+  myf write_flag;
+  int	rnd;				/* rnd-counter */
+  enum data_file_type data_file_type;
+  my_bool  changed,			/* If changed since lock */
+    global_changed,			/* If changed since open */
+    not_flushed,
+    temporary,delay_key_write,
+    concurrent_insert,
+    fulltext_index;
 #ifdef THREAD
   THR_LOCK lock;
   pthread_mutex_t intern_lock;		/* Locking for use with _locking */
@@ -212,16 +217,21 @@ typedef struct st_mi_bit_buff {		/* Used for packing of record */
   uint error;
 } MI_BIT_BUFF;
 
-
 struct st_myisam_info {
   MYISAM_SHARE *s;			/* Shared between open:s */
   MI_STATUS_INFO *state,save_state;
   MI_BLOB     *blobs;			/* Pointer to blobs */
-  int dfile;				/* The datafile */
-  MI_BIT_BUFF   bit_buff;
-  uint	opt_flag;			/* Optim. for space/speed */
-  uint update;				/* If file changed since open */
+  MI_BIT_BUFF  bit_buff;
+  /* accumulate indexfile changes between write's */
+  TREE	      *bulk_insert;
   char *filename;			/* parameter to open filename */
+  uchar *buff,				/* Temp area for key */
+	*lastkey,*lastkey2;		/* Last used search key */
+  byte	*rec_buff;			/* Tempbuff for recordpack */
+  uchar *int_keypos,			/* Save position for next/previous */
+        *int_maxpos;			/*  -""-  */
+  int (*read_record)(struct st_myisam_info*, my_off_t, byte*);
+  invalidator_by_filename invalidator;  /* query cache invalidator */
   ulong this_unique;			/* uniq filenumber or thread */
   ulong last_unique;			/* last unique number */
   ulong this_loop;			/* counter for this open */
@@ -230,20 +240,15 @@ struct st_myisam_info {
 	nextpos;			/* Position to next record */
   my_off_t save_lastpos;
   my_off_t pos;				/* Intern variable */
-  ha_checksum checksum;
-  ulong packed_length,blob_length;	/* Length of found, packed record */
-  uint	alloced_rec_buff_length;	/* Max recordlength malloced */
-  uchar *buff,				/* Temp area for key */
-	*lastkey,*lastkey2;		/* Last used search key */
-  byte	*rec_buff,			/* Tempbuff for recordpack */
-	*rec_alloc;			/* Malloced area for record */
-  uchar *int_keypos,			/* Save position for next/previous */
-    *int_maxpos;			/*  -""-  */
-  uint32 int_keytree_version;		/*  -""-  */
-  uint   int_nod_flag;			/*  -""-  */
   my_off_t last_keypage;		/* Last key page read */
   my_off_t last_search_keypage;		/* Last keypage when searching */
   my_off_t dupp_key_pos;
+  ha_checksum checksum;
+  ulong packed_length,blob_length;	/* Length of found, packed record */
+  int  dfile;				/* The datafile */
+  uint opt_flag;			/* Optim. for space/speed */
+  uint update;				/* If file changed since open */
+  uint  int_nod_flag;			/*  -""-  */
   int	lastinx;			/* Last used index */
   uint	lastkey_length;			/* Length of key in lastkey */
   uint	last_rkey_length;		/* Last length in mi_rkey() */
@@ -254,15 +259,15 @@ struct st_myisam_info {
   uint	data_changed;			/* Somebody has changed data */
   uint	save_update;			/* When using KEY_READ */
   int	save_lastinx;
+  uint32 int_keytree_version;		/*  -""-  */
+  LIST	open_list;
+  IO_CACHE rec_cache;			/* When cacheing records */
+  myf lock_wait;			/* is 0 or MY_DONT_WAIT */
   my_bool was_locked;			/* Was locked in panic */
   my_bool quick_mode;
   my_bool page_changed;		/* If info->buff can't be used for rnext */
   my_bool buff_used;		/* If info->buff has to be reread for rnext */
   my_bool use_packed_key;		/* For MYISAMMRG */
-  myf lock_wait;			/* is 0 or MY_DONT_WAIT */
-  int (*read_record)(struct st_myisam_info*, my_off_t, byte*);
-  LIST	open_list;
-  IO_CACHE rec_cache;			/* When cacheing records */
 #ifdef THREAD
   THR_LOCK_DATA lock;
 #endif
@@ -285,7 +290,7 @@ struct st_myisam_info {
 
 #define STATE_CHANGED		1
 #define STATE_CRASHED		2
-#define STATE_CRASHED_ON_REPAIR 4 
+#define STATE_CRASHED_ON_REPAIR 4
 #define STATE_NOT_ANALYZED	8
 #define STATE_NOT_OPTIMIZED_KEYS 16
 #define STATE_NOT_SORTED_PAGES	32
@@ -352,7 +357,9 @@ struct st_myisam_info {
 #define MI_DYN_MAX_BLOCK_LENGTH	((1L << 24)-4L)
 #define MI_DYN_MAX_ROW_LENGTH	(MI_DYN_MAX_BLOCK_LENGTH - MI_SPLIT_LENGTH)
 #define MI_DYN_ALIGN_SIZE	4	/* Align blocks on this */
-#define MI_MAX_DYN_HEADER_BYTE	12	/* max header byte for dynamic rows */
+#define MI_MAX_DYN_HEADER_BYTE	13	/* max header byte for dynamic rows */
+#define MI_MAX_BLOCK_LENGTH	((((ulong) 1 << 24)-1) & (~ (ulong) (MI_DYN_ALIGN_SIZE-1)))
+#define MI_REC_BUFF_OFFSET      ALIGN_SIZE(MI_DYN_DELETE_BLOCK_HEADER+sizeof(uint32))
 
 #define MEMMAP_EXTRA_MARGIN	7	/* Write this as a suffix for file */
 
@@ -361,12 +368,13 @@ struct st_myisam_info {
 #define PACK_TYPE_ZERO_FILL	4
 #define MI_FOUND_WRONG_KEY 32738	/* Impossible value from _mi_key_cmp */
 
-#define MI_KEY_BLOCK_LENGTH	1024	/* Min key block length */
-#define MI_MAX_KEY_BLOCK_LENGTH	8192
-#define MI_MAX_KEY_BLOCK_SIZE	(MI_MAX_KEY_BLOCK_LENGTH/MI_KEY_BLOCK_LENGTH)
-#define MI_BLOCK_SIZE(key_length,data_pointer,key_pointer) ((((key_length+data_pointer+key_pointer)*4+key_pointer+2)/MI_KEY_BLOCK_LENGTH+1)*MI_KEY_BLOCK_LENGTH)
-#define MI_MAX_KEYPTR_SIZE	5	/* For calculating block lengths */
-#define MI_MIN_KEYBLOCK_LENGTH	50	/* When to split delete blocks */
+#define MI_MAX_KEY_BLOCK_SIZE	(MI_MAX_KEY_BLOCK_LENGTH/MI_MIN_KEY_BLOCK_LENGTH)
+#define MI_BLOCK_SIZE(key_length,data_pointer,key_pointer) ((((key_length+data_pointer+key_pointer)*4+key_pointer+2)/myisam_block_size+1)*myisam_block_size)
+#define MI_MAX_KEYPTR_SIZE	5        /* For calculating block lengths */
+#define MI_MIN_KEYBLOCK_LENGTH	50         /* When to split delete blocks */
+
+#define MI_MIN_SIZE_BULK_INSERT_TREE 16384             /* this is per key */
+#define MI_MIN_ROWS_TO_USE_BULK_INSERT 100
 
 /* The UNIQUE check is done with a hashed long key */
 
@@ -473,6 +481,9 @@ extern int _mi_bin_search(struct st_myisam_info *info,MI_KEYDEF *keyinfo,
 extern int _mi_seq_search(MI_INFO *info,MI_KEYDEF *keyinfo,uchar *page,
 			  uchar *key,uint key_len,uint comp_flag,
 			  uchar **ret_pos,uchar *buff, my_bool *was_last_key);
+extern int _mi_prefix_search(MI_INFO *info,MI_KEYDEF *keyinfo,uchar *page,
+			  uchar *key,uint key_len,uint comp_flag,
+			  uchar **ret_pos,uchar *buff, my_bool *was_last_key);
 extern int _mi_compare_text(CHARSET_INFO *, uchar *, uint, uchar *, uint ,
 			    my_bool);
 extern my_off_t _mi_kpos(uint nod_flag,uchar *after_key);
@@ -494,6 +505,8 @@ extern uchar *_mi_get_last_key(MI_INFO *info,MI_KEYDEF *keyinfo,uchar *keypos,
 extern uchar *_mi_get_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
 			  uchar *key, uchar *keypos, uint *return_key_length);
 extern uint _mi_keylength(MI_KEYDEF *keyinfo,uchar *key);
+extern uint _mi_keylength_part(MI_KEYDEF *keyinfo, register uchar *key,
+			       MI_KEYSEG *end);
 extern uchar *_mi_move_key(MI_KEYDEF *keyinfo,uchar *to,uchar *from);
 extern int _mi_search_next(MI_INFO *info,MI_KEYDEF *keyinfo,uchar *key,
 			   uint key_length,uint nextflag,my_off_t pos);
@@ -508,15 +521,22 @@ extern my_off_t _mi_new(MI_INFO *info,MI_KEYDEF *keyinfo);
 extern uint _mi_make_key(MI_INFO *info,uint keynr,uchar *key,
 			 const byte *record,my_off_t filepos);
 extern uint _mi_pack_key(MI_INFO *info,uint keynr,uchar *key,uchar *old,
-			 uint key_length);
+			 uint key_length, MI_KEYSEG **last_used_keyseg);
 extern int _mi_read_key_record(MI_INFO *info,my_off_t filepos,byte *buf);
 extern int _mi_read_cache(IO_CACHE *info,byte *buff,my_off_t pos,
 			  uint length,int re_read_if_possibly);
 extern void update_auto_increment(MI_INFO *info,const byte *record);
-extern byte *mi_fix_rec_buff_for_blob(MI_INFO *info,ulong blob_length);
+
+extern byte *mi_alloc_rec_buff(MI_INFO *,ulong, byte**);
+#define mi_get_rec_buff_ptr(info,buf)                              \
+        ((((info)->s->options & HA_OPTION_PACK_RECORD) && (buf)) ? \
+        (buf) - MI_REC_BUFF_OFFSET : (buf))
+#define mi_get_rec_buff_len(info,buf)                              \
+        (*((uint32 *)(mi_get_rec_buff_ptr(info,buf))))
+
 extern ulong _mi_rec_unpack(MI_INFO *info,byte *to,byte *from,
 			    ulong reclength);
-extern my_bool _mi_rec_check(MI_INFO *info,const char *from);
+extern my_bool _mi_rec_check(MI_INFO *info,const char *record, byte *packpos);
 extern int _mi_write_part_record(MI_INFO *info,my_off_t filepos,ulong length,
 				 my_off_t next_filepos,byte **record,
 				 ulong *reclength,int *flag);
@@ -528,6 +548,8 @@ extern int _mi_read_rnd_pack_record(MI_INFO*, byte *,my_off_t, my_bool);
 extern int _mi_pack_rec_unpack(MI_INFO *info,byte *to,byte *from,
 			       ulong reclength);
 extern ulonglong mi_safe_mul(ulonglong a,ulonglong b);
+extern int _mi_ft_update(MI_INFO *info, uint keynr, byte *keybuf,
+			 const byte *oldrec, const byte *newrec, my_off_t pos);
 
 struct st_sort_info;
 
@@ -554,7 +576,7 @@ typedef struct st_mi_block_info {	/* Parameter to _mi_get_block_info */
 #define BLOCK_SYNC_ERROR 16	/* Right data at wrong place */
 #define BLOCK_FATAL_ERROR 32	/* hardware-error */
 
-#define NEAD_MEM	((uint) 10*4*(IO_SIZE+32)+32) /* Nead for recursion */
+#define NEED_MEM	((uint) 10*4*(IO_SIZE+32)+32) /* Nead for recursion */
 #define MAXERR			20
 #define BUFFERS_WHEN_SORTING	16		/* Alloc for sort-key-tree */
 #define WRITE_COUNT		MY_HOW_OFTEN_TO_WRITE
@@ -580,14 +602,16 @@ enum myisam_log_commands {
 #define myisam_log_command(a,b,c,d,e) if (myisam_log_file >= 0) _myisam_log_command(a,b,c,d,e)
 #define myisam_log_record(a,b,c,d,e) if (myisam_log_file >= 0) _myisam_log_record(a,b,c,d,e)
 
+#define fast_mi_writeinfo(INFO) if (!(INFO)->s->tot_locks) (void) _mi_writeinfo((INFO),0)
+#define fast_mi_readinfo(INFO) ((INFO)->lock_type == F_UNLCK) && _mi_readinfo((INFO),F_RDLCK,1)
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
 extern uint _mi_get_block_info(MI_BLOCK_INFO *,File, my_off_t);
 extern uint _mi_rec_pack(MI_INFO *info,byte *to,const byte *from);
-extern uint _mi_pack_get_block_info(MI_INFO *mysql, MI_BLOCK_INFO *, File,
-				    my_off_t, char *rec_buf);
+extern uint _mi_pack_get_block_info(MI_INFO *, MI_BLOCK_INFO *, File, my_off_t);
 extern void _my_store_blob_length(byte *pos,uint pack_length,uint length);
 extern void _myisam_log(enum myisam_log_commands command,MI_INFO *info,
 		       const byte *buffert,uint length);
@@ -633,14 +657,19 @@ my_bool mi_check_status(void* param);
 void mi_disable_non_unique_index(MI_INFO *info, ha_rows rows);
 
 my_bool check_table_is_closed(const char *name, const char *where);
-int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share);
+int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, File file_to_dup);
 int mi_open_keyfile(MYISAM_SHARE *share);
 void mi_setup_functions(register MYISAM_SHARE *share);
 
-/* Functions needed by mi_check */
+    /* Functions needed by mi_check */
 void mi_check_print_error _VARARGS((MI_CHECK *param, const char *fmt,...));
 void mi_check_print_warning _VARARGS((MI_CHECK *param, const char *fmt,...));
 void mi_check_print_info _VARARGS((MI_CHECK *param, const char *fmt,...));
+int flush_pending_blocks(MI_SORT_PARAM *param);
+int thr_write_keys(MI_SORT_PARAM *sort_param);
+#ifdef THREAD
+pthread_handler_decl(thr_find_all_keys,arg);
+#endif
 
 #ifdef __cplusplus
 }

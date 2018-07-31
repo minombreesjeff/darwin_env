@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (C) 1997, 1998, 1999 TCX DataKonsult AB & Monty Program KB & Detron HB
+# Copyright (C) 1997-2002 MySQL AB
 # For a more info consult the file COPYRIGHT distributed with this file
 
 # This scripts creates the privilege tables db, host, user, tables_priv,
@@ -30,7 +30,7 @@ else
 fi
 
 mdata=$data/mysql
-
+EXTRA_ARG=""
 
 if test ! -x $execdir/mysqld
 then
@@ -57,9 +57,7 @@ if [ x$BINARY_DIST = x1 ] ; then
 basedir=..
 else
 basedir=.
-rm -rf share
-mkdir  share
-ln -f -s ../../sql/share share/mysql 
+EXTRA_ARG="--language=../sql/share/english/"
 fi
 
 # Initialize variables
@@ -87,13 +85,15 @@ then
   c_d="$c_d   References_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_d="$c_d   Index_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_d="$c_d   Alter_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_d="$c_d   Create_tmp_table_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_d="$c_d   Lock_tables_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_d="$c_d PRIMARY KEY Host (Host,Db,User),"
   c_d="$c_d KEY User (User)"
   c_d="$c_d )"
   c_d="$c_d comment='Database privileges';"
   
-  i_d="INSERT INTO db VALUES ('%','test','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y');
-  INSERT INTO db VALUES ('%','test\_%','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y');"
+  i_d="INSERT INTO db VALUES ('%','test','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y','Y','Y');
+  INSERT INTO db VALUES ('%','test\_%','','Y','Y','Y','Y','Y','Y','N','Y','Y','Y','Y','Y');"
 fi
 
 if test ! -f $mdata/host.frm
@@ -111,6 +111,8 @@ then
   c_h="$c_h  References_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_h="$c_h  Index_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_h="$c_h  Alter_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_h="$c_h  Create_tmp_table_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_h="$c_h  Lock_tables_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_h="$c_h  PRIMARY KEY Host (Host,Db)"
   c_h="$c_h )"
   c_h="$c_h comment='Host privileges;  Merged with database privileges';"
@@ -119,9 +121,9 @@ fi
 if test ! -f $mdata/user.frm
 then
   c_u="$c_u CREATE TABLE user ("
-  c_u="$c_u   Host char(60) DEFAULT '' NOT NULL,"
-  c_u="$c_u   User char(16) DEFAULT '' NOT NULL,"
-  c_u="$c_u   Password char(16) DEFAULT '' NOT NULL,"
+  c_u="$c_u   Host char(60) binary DEFAULT '' NOT NULL,"
+  c_u="$c_u   User char(16) binary DEFAULT '' NOT NULL,"
+  c_u="$c_u   Password char(16) binary DEFAULT '' NOT NULL,"
   c_u="$c_u   Select_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_u="$c_u   Insert_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_u="$c_u   Update_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
@@ -136,16 +138,29 @@ then
   c_u="$c_u   References_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_u="$c_u   Index_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
   c_u="$c_u   Alter_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Show_db_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Super_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Create_tmp_table_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Lock_tables_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Execute_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Repl_slave_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   Repl_client_priv enum('N','Y') DEFAULT 'N' NOT NULL,"
+  c_u="$c_u   ssl_type enum('','ANY','X509', 'SPECIFIED') DEFAULT '' NOT NULL,"
+  c_u="$c_u   ssl_cipher BLOB NOT NULL,"
+  c_u="$c_u   x509_issuer BLOB NOT NULL,"
+  c_u="$c_u   x509_subject BLOB NOT NULL,"
+  c_u="$c_u   max_questions int(11) unsigned DEFAULT 0  NOT NULL,"
+  c_u="$c_u   max_updates int(11) unsigned DEFAULT 0  NOT NULL,"
+  c_u="$c_u   max_connections int(11) unsigned DEFAULT 0  NOT NULL,"
   c_u="$c_u   PRIMARY KEY Host (Host,User)"
   c_u="$c_u )"
   c_u="$c_u comment='Users and global privileges';"
 
-  i_u="INSERT INTO user VALUES ('localhost','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
-  INSERT INTO user VALUES ('$hostname','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
-  REPLACE INTO user VALUES ('127.0.0.1','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
-  
-  INSERT INTO user VALUES ('localhost','','','N','N','N','N','N','N','N','N','N','N','N','N','N','N');
-  INSERT INTO user VALUES ('$hostname','','','N','N','N','N','N','N','N','N','N','N','N','N','N','N');"
+  i_u="INSERT INTO user VALUES ('localhost','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
+  INSERT INTO user VALUES ('$hostname','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
+  REPLACE INTO user VALUES ('127.0.0.1','root','','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0);
+  INSERT INTO user (host,user) values ('localhost','');
+  INSERT INTO user (host,user) values ('$hostname','');"
 fi
 
 if test ! -f $mdata/func.frm
@@ -192,8 +207,11 @@ then
   c_c="$c_c   comment='Column privileges';"
 fi
 
-if $execdir/mysqld --no-defaults --bootstrap --skip-grant-tables \
-    --basedir=$basedir --datadir=$ldata --skip-innodb --skip-bdb --skip-gemini << END_OF_DATA
+mysqld_boot=" $execdir/mysqld --no-defaults --bootstrap --skip-grant-tables \
+    --basedir=$basedir --datadir=$ldata --skip-innodb --skip-bdb $EXTRA_ARG"
+echo "running $mysqld_boot"
+
+if $mysqld_boot << END_OF_DATA
 use mysql;
 $c_d
 $i_d
@@ -213,5 +231,6 @@ END_OF_DATA
 then
     exit 0
 else
+    echo "Error executing mysqld --bootstrap"
     exit 1
 fi

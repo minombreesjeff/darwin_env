@@ -230,18 +230,35 @@ row_update_cascade_for_mysql(
 				or set null operation */
 	dict_table_t*	table);	/* in: table where we do the operation */
 /*************************************************************************
-Locks the data dictionary exclusively for performing a table create
-operation. */
+Locks the data dictionary exclusively for performing a table create or other
+data dictionary modification operation. */
 
 void
-row_mysql_lock_data_dictionary(void);
-/*================================*/
+row_mysql_lock_data_dictionary(
+/*===========================*/
+	trx_t*	trx);	/* in: transaction */
 /*************************************************************************
-Unlocks the data dictionary exclusively lock. */
+Unlocks the data dictionary exclusive lock. */
 
 void
-row_mysql_unlock_data_dictionary(void);
-/*==================================*/
+row_mysql_unlock_data_dictionary(
+/*=============================*/
+	trx_t*	trx);	/* in: transaction */
+/*************************************************************************
+Locks the data dictionary in shared mode from modifications, for performing
+foreign key check, rollback, or other operation invisible to MySQL. */
+
+void
+row_mysql_freeze_data_dictionary(
+/*=============================*/
+	trx_t*	trx);	/* in: transaction */
+/*************************************************************************
+Unlocks the data dictionary shared lock. */
+
+void
+row_mysql_unfreeze_data_dictionary(
+/*===============================*/
+	trx_t*	trx);	/* in: transaction */
 /*************************************************************************
 Does a table creation operation for MySQL. If the name of the created
 table ends to characters INNODB_MONITOR, then this also starts
@@ -310,11 +327,9 @@ output by the master thread. */
 int
 row_drop_table_for_mysql(
 /*=====================*/
-				/* out: error code or DB_SUCCESS */
-	char*	name,		/* in: table name */
-	trx_t*	trx,		/* in: transaction handle */
-	ibool	has_dict_mutex);/* in: TRUE if the caller already owns the
-				dictionary system mutex */
+			/* out: error code or DB_SUCCESS */
+	char*	name,	/* in: table name */
+	trx_t*	trx);	/* in: transaction handle */
 /*************************************************************************
 Drops a database for MySQL. */
 
@@ -393,6 +408,10 @@ struct row_prebuilt_struct {
 					an SQL statement: we may have to set
 					an intention lock on the table,
 					create a consistent read view etc. */
+        ibool           mysql_has_locked; /* this is set TRUE when MySQL
+			                calls external_lock on this handle
+			                with a lock flag, and set FALSE when
+			                with the F_UNLOCK flag */
 	ibool		clust_index_was_generated;
 					/* if the user did not define a
 					primary key in MySQL, then Innobase
@@ -400,13 +419,21 @@ struct row_prebuilt_struct {
 					index where the ordering column is
 					the row id: in this case this flag
 					is set to TRUE */
-	dict_index_t*	index;		/* current index for a search, if any */
+	dict_index_t*	index;		/* current index for a search, if
+					any */
 	ulint		read_just_key;	/* set to 1 when MySQL calls
 					ha_innobase::extra with the
 					argument HA_EXTRA_KEYREAD; it is enough
 					to read just columns defined in
 					the index (i.e., no read of the
 					clustered index record necessary) */
+	ibool		used_in_HANDLER;/* TRUE if we have been using this
+					handle in a MySQL HANDLER low level
+					index cursor command: then we must
+					store the pcur position even in a
+					unique search from a clustered index,
+					because HANDLER allows NEXT and PREV
+					in such a situation */
 	ulint		template_type;	/* ROW_MYSQL_WHOLE_ROW, 
 					ROW_MYSQL_REC_FIELDS,
 					ROW_MYSQL_DUMMY_TEMPLATE, or
@@ -473,7 +500,11 @@ struct row_prebuilt_struct {
 					fetch many rows from the same cursor:
 					it saves CPU time to fetch them in a
 					batch; we reserve mysql_row_len
-					bytes for each such row */
+					bytes for each such row; these
+					pointers point 4 bytes past the
+					allocated mem buf start, because
+					there is a 4 byte magic number at the
+					start and at the end */
 	ulint		fetch_cache_first;/* position of the first not yet
 					fetched row in fetch_cache */
 	ulint		n_fetch_cached;	/* number of not yet fetched rows
@@ -482,7 +513,11 @@ struct row_prebuilt_struct {
 					to this heap */
 	mem_heap_t*	old_vers_heap;	/* memory heap where a previous
 					version is built in consistent read */
+	ulint		magic_n2;	/* this should be the same as
+					magic_n */
 };
+
+#define ROW_PREBUILT_FETCH_MAGIC_N	465765687
 
 #define ROW_MYSQL_WHOLE_ROW	0
 #define ROW_MYSQL_REC_FIELDS	1
