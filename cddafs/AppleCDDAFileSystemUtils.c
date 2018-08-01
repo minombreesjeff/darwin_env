@@ -525,7 +525,7 @@ FindName ( mount_t mountPtr, UInt8 trackNumber, char ** name, UInt8 * nameSize )
 			DebugLog ( ( "Found track = %d\n", trackNumber ) );
 			
 			*nameSize 	= ptr[1];
-			*name 		= &ptr[2];
+			*name 		= ( char * ) &ptr[2];
 			
 			bcopy ( &ptr[2], mylocalname, *nameSize );
 			mylocalname[*nameSize] = 0;
@@ -758,7 +758,7 @@ CalculateNumberOfDescriptors ( const QTOCDataFormat10Ptr TOCDataPtr )
 	DebugAssert ( ( TOCDataPtr != NULL ) );
 	
 	// Get the length of the TOC
-	length = TOCDataPtr->TOCDataLength;
+	length = OSSwapBigToHostInt16 ( TOCDataPtr->TOCDataLength );
 	
 	// Remove the first and last session numbers so all we are left with are track descriptors
 	length -= ( sizeof ( TOCDataPtr->firstSessionNumber ) +

@@ -34,7 +34,7 @@
 #include <sys/buf.h>
 #include <sys/malloc.h>
 #include <sys/ubc.h>
-#include <miscfs/specfs/specdev.h>
+#include <mach/kmod.h>
 
 // Project Includes
 #ifndef __APPLE_CDDA_FS_VFS_OPS_H__
@@ -548,8 +548,8 @@ CDDA_VFSGetAttributes ( mount_t					mountPtr,
 	if ( VFSATTR_IS_ACTIVE ( attrPtr, f_vol_name ) )
 	{
 		
-		char *		vname 	= NULL;
-		ssize_t		length 	= 0;
+		const char *	vname 	= NULL;
+		ssize_t			length 	= 0;
 		
 		FindVolumeName ( vfs_statfs ( mountPtr )->f_mntonname, &vname, &length );
 		
@@ -1005,7 +1005,7 @@ FindVolumeName ( const char * mn, const char ** np, ssize_t * nl )
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 int
-Apple_CDDA_FS_Module_Start ( unused struct kmod_info_t * moduleInfo,
+Apple_CDDA_FS_Module_Start ( unused kmod_info_t * moduleInfo,
 							 unused void * loadArgument )
 {
 	
@@ -1032,7 +1032,7 @@ Apple_CDDA_FS_Module_Start ( unused struct kmod_info_t * moduleInfo,
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 int
-Apple_CDDA_FS_Module_Stop ( unused struct kmod_info_t * moduleInfo,
+Apple_CDDA_FS_Module_Stop ( unused kmod_info_t * moduleInfo,
 							unused void * unloadArgument )
 {
 	

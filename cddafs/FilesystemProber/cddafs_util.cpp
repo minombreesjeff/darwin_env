@@ -750,6 +750,8 @@ Mount ( const char * 	deviceNamePtr,
 	UInt32					size		= 0;
 	QTOCDataFormat10Ptr		TOCDataPtr 	= NULL;
 	UInt8 *					xmlDataPtr 	= NULL;
+	char					realMountPoint[PATH_MAX];
+	char *					realMountPointPtr;
 	
 	DebugLog ( ( "Mount('%s','%s')\n", deviceNamePtr, mountPointPtr ) );
 	
@@ -835,11 +837,15 @@ Mount ( const char * 	deviceNamePtr,
 	DebugLog ( ( "DeviceName = %s\n", deviceNamePtr ) );
 	DebugLog ( ( "numTracks = %d\n", args.numTracks ) );
 	
-	require ( ( args.nameData != NULL ), Exit );
-	require ( ( args.nameDataSize != 0 ), Exit );
+	require ( ( args.nameData != NULL ), ReleaseXMLData );
+	require ( ( args.nameDataSize != 0 ), ReleaseXMLData );
+
+	// Obtain the real path.
+	realMountPointPtr = realpath ( mountPointPtr, realMountPoint );
+	require ( ( realMountPointPtr != NULL ), ReleaseXMLData );
 	
 	// Issue the system mount command
-	result = mount ( vfc.vfc_name, mountPointPtr, mountFlags, &args );
+	result = mount ( vfc.vfc_name, realMountPoint, mountFlags, &args );
 	require ( ( result == 0 ), ReleaseXMLData );
 	
 	result = FSUR_IO_SUCCESS;

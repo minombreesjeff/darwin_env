@@ -60,7 +60,7 @@ TSystemUtils::GetPreferredLanguages ( void )
 	CFStringRef			userName			= NULL;
 	CFComparisonResult	equal				= kCFCompareEqualTo;
 	uid_t				uid					= 0;
-	
+
 	uid = FindUIDToUse ( );
 	seteuid ( uid );
 	
@@ -87,7 +87,7 @@ ErrorExit:
 	
 	
 	seteuid ( 0 );
-		
+	
 	return preferredLanguages;
 	
 }
@@ -105,13 +105,13 @@ TSystemUtils::FindUIDToUse ( void )
 	gid_t				gid			= 0;
 	CFStringRef			userName	= NULL;
 	SCDynamicStoreRef	storeRef	= NULL;
-	
+
 	storeRef = SCDynamicStoreCreate ( kCFAllocatorDefault,
 									  CFSTR ( "cddafs.util" ),
 									  NULL,
 									  NULL );
 	require ( ( storeRef != NULL ), ErrorExit );
-	
+
 	userName = SCDynamicStoreCopyConsoleUser ( storeRef,
 											   &uid,
 											   &gid );

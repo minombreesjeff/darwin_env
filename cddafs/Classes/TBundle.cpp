@@ -67,7 +67,7 @@ TBundle::TBundle ( CFBundleRef bundle ) :
 
 TBundle::~TBundle ( void )
 {
-
+	
 	check ( fCFBundleRef );
 	::CFRelease ( fCFBundleRef );
 	fCFBundleRef = NULL;
@@ -140,7 +140,7 @@ TBundle::CopyLocalizationDictionaryForTable ( CFStringRef table )
 				table,
 				CFSTR ( kStringsTypeString ),
 				fCFBundleRef );
-	
+
 	require ( ( localizedStringsURL != NULL ), ErrorExit );
 	
 	result = ::CFURLCreateDataAndPropertiesFromResource ( kCFAllocatorDefault,
@@ -161,8 +161,11 @@ TBundle::CopyLocalizationDictionaryForTable ( CFStringRef table )
 	
 	if ( errStr != NULL )
 	{
+	
+	#if DEBUG
+		::CFShow ( errStr );
+	#endif
 		
-		CFShow ( errStr );
 		::CFRelease ( errStr );
 		errStr = NULL;
 		
@@ -228,7 +231,7 @@ TBundle::CopyURLForResourceOfTypeInBundle ( CFStringRef		resource,
 	CFArrayRef			preferredLocalizations	= NULL;
 	UInt32				index					= 0;
 	UInt32				count					= 0;
-	
+
 	if ( bundle == NULL )
 	{
 		bundle = ::CFBundleGetMainBundle ( );
@@ -241,7 +244,7 @@ TBundle::CopyURLForResourceOfTypeInBundle ( CFStringRef		resource,
 	
 	bundleLocalizations		= CopyLocalizations ( );
 	preferredLocalizations	= CopyLocalizationsForPrefs ( bundleLocalizations, preferredLanguages );
-	
+
 	count = ::CFArrayGetCount ( preferredLocalizations );
 
 	for ( index = 0; ( result == NULL ) && ( index < count ); index++)
