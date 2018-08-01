@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2002 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,33 +22,35 @@
  */
 
 /*
- * nbsp.h
- * - NetBoot SharePoint routines
+ * IPConfigurationServiceInternal.h
+ * - internal definitions
  */
 
-#ifndef _S_NBSP_H
-#define _S_NBSP_H
+/* 
+ * Modification History
+ *
+ * April 14, 2011 	Dieter Siegmund (dieter@apple.com)
+ * - initial revision
+ */
 
-#include <stdbool.h>
+#ifndef _IPCONFIGURATIONSERVICEINTERNAL_H
+#define _IPCONFIGURATIONSERVICEINTERNAL_H
 
-#define NBSP_NO_READONLY	FALSE
-#define NBSP_READONLY_OK	TRUE
+#include "symbol_scope.h"
 
-typedef struct {
-    char *	name;
-    char *	path;
-    bool	is_hfs;
-    bool	is_readonly;
-} NBSPEntry, * NBSPEntryRef;
+#define kIPConfigurationServiceOptions	CFSTR("__IPConfigurationServiceOptions") /* dictionary */
 
-struct NBSPList_s;
+#define kIPConfigurationServiceOptionMonitorPID CFSTR("MonitorPID") /* boolean */
+#define kIPConfigurationServiceOptionNoPublish 	CFSTR("NoPublish")  /* boolean */
 
-typedef struct NBSPList_s * NBSPListRef;
+#define IPCONFIGURATION_SERVICE_FORMAT CFSTR("Plugin:IPConfigurationService:%@")
 
-int		NBSPList_count(NBSPListRef list);
-NBSPEntryRef	NBSPList_element(NBSPListRef list, int i);
-void		NBSPList_print(NBSPListRef list);
-void		NBSPList_free(NBSPListRef * list);
-NBSPListRef	NBSPList_init(const char * symlink_name, bool readonly_ok);
+INLINE CFStringRef
+IPConfigurationServiceKey(CFStringRef serviceID)
+{
+    return (CFStringCreateWithFormat(NULL, NULL,
+				     IPCONFIGURATION_SERVICE_FORMAT,
+				     serviceID));
+}
 
-#endif /* _S_NBSP_H */
+#endif /* _IPCONFIGURATIONSERVICEINTERNAL_H */
