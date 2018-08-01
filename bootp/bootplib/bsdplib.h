@@ -1,8 +1,5 @@
-
-#ifndef _S_IPCONFIGD_GLOBALS_H
-#define _S_IPCONFIGD_GLOBALS_H
 /*
- * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -26,22 +23,12 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-/*
- * ipconfigd_globals.h
- * - ipconfigd global variables
- */
-/* 
- * Modification History
- *
- * May 22, 2000		Dieter Siegmund (dieter@apple.com)
- * - created
- */
+#ifndef _S_BSDPLIB_H
+#define _S_BSDPLIB_H
 
+#include "dhcp.h"
 
-#include "timer.h"
-#include "globals.h"
-#include "FDSet.h"
+void
+bsdp_print_packet(struct dhcp * pkt, int length, int options_only);
 
-extern FDSet_t *		G_readers;
-
-#endif _S_IPCONFIGD_GLOBALS_H
+#endif _S_BSDPLIB_H
