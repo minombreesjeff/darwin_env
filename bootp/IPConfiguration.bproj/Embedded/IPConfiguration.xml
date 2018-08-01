@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UseMaintenanceWake</key>
-	<true/>
 	<key>ManualConflictRetryIntervalSeconds</key>
 	<integer>300</integer>
 	<key>ARPConflictRetryCount</key>
@@ -43,11 +41,7 @@
 		<integer>6</integer>
 		<integer>15</integer>
 		<integer>119</integer>
-		<integer>95</integer>
 		<integer>252</integer>
-		<integer>44</integer>
-		<integer>46</integer>
-		<integer>47</integer>
 	</array>
 	<key>DHCPRouterARPAtRetryCount</key>
 	<integer>7</integer>
