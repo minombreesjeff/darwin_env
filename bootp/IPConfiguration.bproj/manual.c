@@ -59,10 +59,10 @@
 #import <netinet/ip.h>
 #import <arpa/inet.h>
 #import <net/if_types.h>
+#import <syslog.h>
 
 #import "interfaces.h"
 #import "util.h"
-#import "ts_log.h"
 
 #import "dprintf.h"
 #import "dhcp_options.h"
@@ -94,16 +94,18 @@ manual_cancel_pending_events(IFState_t * ifstate)
 }
 
 static void
-manual_link_timer(void * arg0, void * arg1, void * arg2)
+manual_inactive(IFState_t * ifstate)
 {
-    IFState_t * ifstate = (IFState_t *) arg0;
-
-    if (ifstate == NULL)
-	return;
-    
-    (void)inet_remove(ifstate, &G_ip_zeroes);
+    ifstate_remove_addresses(ifstate);
     ifstate_publish_failure(ifstate, ipconfig_status_media_inactive_e,
 			    NULL);
+    return;
+}
+
+static void
+manual_link_timer(void * arg0, void * arg1, void * arg2)
+{
+    manual_inactive((IFState_t *) arg0);
     return;
 }
 
@@ -115,9 +117,6 @@ manual_start(IFState_t * ifstate, IFEventID_t evid, void * event_data)
     switch (evid) {
       case IFEventID_start_e: {
 	  manual_cancel_pending_events(ifstate);
-	  if (if_inet_find_ip(ifstate->if_p, manual->our_ip) == INDEX_BAD) {
-	      (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
-	  }
 	  arp_probe(manual->arp, 
 		    (arp_result_func_t *)manual_start, ifstate,
 		    (void *)IFEventID_arp_e, G_ip_zeroes,
@@ -128,7 +127,7 @@ manual_start(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  arp_result_t *	result = (arp_result_t *)event_data;
 
 	  if (result->error) {
-	      ts_log(LOG_ERR, "MANUAL %s: arp probe failed, %s", 
+	      my_log(LOG_ERR, "MANUAL %s: arp probe failed, %s", 
 		     if_name(ifstate->if_p),
 		     arp_client_errmsg(manual->arp));
 	      /* continue without it anyways */
@@ -142,26 +141,23 @@ manual_start(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 			   IP_LIST(&manual->our_ip), 
 			   EA_LIST(result->hwaddr));
 		  ifstate_tell_user(ifstate, msg);
-		  ts_log(LOG_ERR, "MANUAL %s: %s", 
+		  my_log(LOG_ERR, "MANUAL %s: %s", 
 			 if_name(ifstate->if_p), msg);
-		  (void)inet_remove(ifstate, &manual->our_ip);
-		  (void)inet_remove(ifstate, &G_ip_zeroes);
+		  ifstate_remove_addresses(ifstate);
+		  (void)inet_remove(ifstate, manual->our_ip);
 		  ifstate_publish_failure(ifstate, 
 					  ipconfig_status_address_in_use_e,
 					  msg);
 		  break;
 	      }
 	  }
-	  (void)inet_remove(ifstate, &G_ip_zeroes);
 	  if (ifstate->link.valid == TRUE && ifstate->link.active == FALSE) {
-	      ifstate_publish_failure(ifstate, 
-				      ipconfig_status_media_inactive_e,
-				      NULL);
+	      manual_inactive(ifstate);
 	      break;
 	  }
 
 	  /* set the new address */
-	  (void)inet_add(ifstate, &manual->our_ip, &manual->our_mask, NULL);
+	  (void)inet_add(ifstate, manual->our_ip, &manual->our_mask, NULL);
 	  ifstate_publish_success(ifstate, NULL, 0);
 	  break;
       }
@@ -184,7 +180,7 @@ manual_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  ipconfig_method_data_t *ipcfg = evdata->config.data;
 
 	  if (manual) {
-	      ts_log(LOG_DEBUG, "MANUAL %s: re-entering start state", 
+	      my_log(LOG_DEBUG, "MANUAL %s: re-entering start state", 
 		     if_name(ifstate->if_p));
 	      return (ipconfig_status_internal_error_e);
 	  }
@@ -195,7 +191,7 @@ manual_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	      break;
 	  manual = malloc(sizeof(*manual));
 	  if (manual == NULL) {
-	      ts_log(LOG_ERR, "MANUAL %s: malloc failed", 
+	      my_log(LOG_ERR, "MANUAL %s: malloc failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      break;
@@ -206,44 +202,37 @@ manual_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  manual->our_mask = ipcfg->ip[0].mask;
 	  if (if_flags(ifstate->if_p) & IFF_LOOPBACK) {
 	      /* set the new address */
-	      (void)inet_add(ifstate, &manual->our_ip, 
+	      (void)inet_add(ifstate, manual->our_ip, 
 			     &manual->our_mask, NULL);
 	      ifstate_publish_success(ifstate, NULL, 0);
 	      break;
 	  }
 	  manual->timer = timer_callout_init();
 	  if (manual->timer == NULL) {
-	      ts_log(LOG_ERR, "MANUAL %s: timer_callout_init failed", 
+	      my_log(LOG_ERR, "MANUAL %s: timer_callout_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
 	  manual->arp = arp_client_init(G_arp_session, ifstate->if_p);
 	  if (manual->arp == NULL) {
-	      ts_log(LOG_ERR, "MANUAL %s: arp_client_init failed", 
+	      my_log(LOG_ERR, "MANUAL %s: arp_client_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
-	  ts_log(LOG_DEBUG, "MANUAL %s: starting", if_name(ifstate->if_p));
+	  my_log(LOG_DEBUG, "MANUAL %s: starting", if_name(ifstate->if_p));
 	  manual_start(ifstate, IFEventID_start_e, NULL);
 	  break;
       }
       stop:
       case IFEventID_stop_e: {
-	  inet_addrinfo_t * info;
-
 	  if (manual == NULL) {
 	      break;
 	  }
 
 	  /* remove IP address(es) */
-	  while (info = if_inet_addr_at(ifstate->if_p, 
-					ifstate->our_addrs_start)) {
-	      ts_log(LOG_DEBUG, "MANUAL %s: removing %s",
-		     if_name(ifstate->if_p), inet_ntoa(info->addr));
-	      inet_remove(ifstate, &info->addr);
-	  }
+	  ifstate_remove_addresses(ifstate);
 
 	  /* clean-up resources */
 	  if (manual->arp) {
@@ -263,7 +252,7 @@ manual_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  ipconfig_method_data_t *ipcfg = evdata->config.data;
 
 	  if (manual == NULL) {
-	      ts_log(LOG_DEBUG, "MANUAL %s: private data is NULL", 
+	      my_log(LOG_DEBUG, "MANUAL %s: private data is NULL", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_internal_error_e;
 	      break;
@@ -279,8 +268,10 @@ manual_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  }
 	  else if (ipcfg->ip[0].mask.s_addr != manual->our_mask.s_addr) {
 	      manual->our_mask = ipcfg->ip[0].mask;
-	      (void)inet_add(ifstate, &manual->our_ip, &manual->our_mask, 
+	      (void)inet_add(ifstate, manual->our_ip, &manual->our_mask, 
 			     NULL);
+	      /* publish new mask */
+	      ifstate_publish_success(ifstate, NULL, 0);
 	  }
 	  break;
       }

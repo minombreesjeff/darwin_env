@@ -45,7 +45,6 @@
 #import <sys/socket.h>
 #import <net/if_types.h>
 #import <syslog.h>
-#import "ts_log.h"
 
 #import "dynarray.h"
 #import "FDSet.h"

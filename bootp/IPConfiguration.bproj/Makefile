@@ -7,32 +7,38 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = ipconfigd
+NAME = IPConfiguration
 
 PROJECTVERSION = 2.8
-PROJECT_TYPE = Tool
+PROJECT_TYPE = Loadable Bundle
 
-HFILES = ipconfigd.h server.h timer.h bootp_session.h FDSet.h\
-         arp_session.h globals.h ipconfigd_globals.h\
-         ipconfigd_threads.h
+GLOBAL_RESOURCES = IPConfiguration.xml
 
-CFILES = arp_session.c bootp_session.c dhcp.c bootp.c FDSet.c\
-         ipconfigd.c server.c timer.c manual.c
+HFILES = arp_session.h bootp_session.h FDSet.h globals.h ipconfigd.h\
+         ipconfigd_globals.h ipconfigd_threads.h server.h timer.h
 
-OTHERSRCS = Makefile.preamble Makefile Makefile.postamble
+CFILES = arp_session.c bootp_session.c bootp.c dhcp.c FDSet.c\
+         ipconfigd.c manual.c server.c timer.c
+
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble\
+            CustomInfo.plist
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
-MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = /usr/sbin
+MAKEFILE = bundle.make
+NEXTSTEP_INSTALLDIR = $(SYSTEM_LIBRARY_DIR)/SystemConfiguration
+WINDOWS_INSTALLDIR = /Library/Bundles
+PDO_UNIX_INSTALLDIR = /Library/Bundles
 LIBS = -lbootplib
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
+BUNDLE_EXTENSION = bundle
 
 
-FRAMEWORK_PATHS = -F$(NEXT_ROOT)/System/Library/PrivateFrameworks
-NEXTSTEP_PB_CFLAGS =  -I../bootplib
+HEADER_PATHS =\
+               -I$(NEXT_ROOT)$(SYSTEM_LIBRARY_DIR)/Frameworks/System.framework/PrivateHeaders
+FRAMEWORK_PATHS = -F/System/Library/PrivateFrameworks
 FRAMEWORKS = -framework CoreFoundation -framework SystemConfiguration
 
 
@@ -41,7 +47,7 @@ WINDOWS_OBJCPLUS_COMPILER = $(DEVDIR)/gcc
 PDO_UNIX_OBJCPLUS_COMPILER = $(NEXTDEV_BIN)/gcc
 NEXTSTEP_JAVA_COMPILER = /usr/bin/javac
 WINDOWS_JAVA_COMPILER = $(JDKBINDIR)/javac.exe
-PDO_UNIX_JAVA_COMPILER = $(NEXTDEV_BIN)/javac
+PDO_UNIX_JAVA_COMPILER = $(JDKBINDIR)/javac
 
 include $(MAKEFILEDIR)/platform.make
 

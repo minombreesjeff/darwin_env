@@ -39,9 +39,14 @@
 #import <sys/types.h>
 #import <sys/time.h>
 #import <math.h>
+#import <syslog.h>
+#import "globals.h"
 #import "util.h"
 #import "timer.h"
-#import "ts_log.h"
+
+#ifdef TEST_ARP_SESSION
+#define my_log	syslog
+#endif TEST_ARP_SESSION
 
 /**
  ** Timer callout functions
@@ -118,9 +123,9 @@ timer_set_relative(timer_callout_t * callout,
 			       0.0, 0, 0,
 			       timer_callout_process,
 			       &context);
-    ts_log(LOG_DEBUG, "timer: wakeup time is (%d.%d) %g", 
+    my_log(LOG_DEBUG, "timer: wakeup time is (%d.%d) %g", 
 	   rel_time.tv_sec, rel_time.tv_usec, wakeup_time);
-    ts_log(LOG_DEBUG, "timer: adding timer source");
+    my_log(LOG_DEBUG, "timer: adding timer source");
     CFRunLoopAddTimer(CFRunLoopGetCurrent(), callout->timer_source,
 		      kCFRunLoopDefaultMode);
     return (1);
@@ -135,7 +140,7 @@ timer_cancel(timer_callout_t * callout)
     callout->enabled = 0;
     callout->func = NULL;
     if (callout->timer_source) {
-	ts_log(LOG_DEBUG, "timer:  freeing timer source");
+	my_log(LOG_DEBUG, "timer:  freeing timer source");
 	CFRunLoopTimerInvalidate(callout->timer_source);
 	CFRelease(callout->timer_source);
 	callout->timer_source = 0;

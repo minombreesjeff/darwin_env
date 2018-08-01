@@ -56,7 +56,7 @@
 #import <net/if_types.h>
 #import "dhcp_options.h"
 #import "util.h"
-#import "ts_log.h"
+#import <syslog.h>
 
 #import "dhcplib.h"
 #import "dynarray.h"
@@ -87,7 +87,7 @@ S_get_bootp_socket(u_short client_port)
     
     status = bind(sockfd, (struct sockaddr *)&me, sizeof(me));
     if (status != 0) {
-	ts_log(LOG_ERR, "bootp_session: bind port %d failed",
+	my_log(LOG_ERR, "bootp_session: bind port %d failed",
 	       client_port);
 	goto failed;
     }
@@ -95,7 +95,7 @@ S_get_bootp_socket(u_short client_port)
     status = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &opt, 
 			sizeof(opt));
     if (status < 0)	{
-	ts_log(LOG_ERR, "setsockopt SO_BROADCAST");
+	my_log(LOG_ERR, "setsockopt SO_BROADCAST");
 	goto failed;
     }
     return sockfd;

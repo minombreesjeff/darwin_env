@@ -45,8 +45,12 @@ typedef void (arp_result_func_t)(void * arg1, void * arg2, void * arg3);
 #define ARP_PROBE_TRIES				3
 #define ARP_PROBE_TRY_INTERVAL_SECS		0
 #define ARP_PROBE_TRY_INTERVAL_USECS		(700 * 1000)
-	
+
 typedef struct arp_client arp_client_t;
+
+typedef boolean_t (arp_our_address_func_t)(interface_t * if_p, 
+					   int hwtype, void * hwaddr,
+					   int hwlen);
 
 typedef struct {
     int				bpf_fd;
@@ -58,6 +62,7 @@ typedef struct {
     arp_client_t *		pending_client;
     int				pending_client_try;
     timer_callout_t *		timer_callout;
+    arp_our_address_func_t *	is_our_address;
     int				debug;
 } arp_session_t;
 
@@ -74,7 +79,6 @@ struct arp_client
     char			errmsg[1024];
 };
 
-
 typedef struct {
     boolean_t			error;
     boolean_t			in_use;
@@ -85,7 +89,7 @@ typedef struct {
 } arp_result_t;
 
 arp_session_t * 
-arp_session_init();
+arp_session_init(arp_our_address_func_t * func);
 
 void
 arp_session_free(arp_session_t * * session_p);

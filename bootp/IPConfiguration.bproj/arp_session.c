@@ -28,6 +28,10 @@
  *
  * May 11, 2000		Dieter Siegmund (dieter@apple.com)
  * - created
+ *
+ * March 21, 2001	Dieter Siegmund (dieter@apple.com)
+ * - process multiple ARP responses from one bpf read instead of
+ *   assuming there's just one response per read
  */
 
 #import <stdlib.h>
@@ -54,8 +58,7 @@
 #import <net/if_types.h>
 #import <net/bpf.h>
 #import "util.h"
-#import "ts_log.h"
-
+#import <syslog.h>
 #import "bpflib.h"
 #import "util.h"
 #import "dprintf.h"
@@ -67,6 +70,10 @@
 
 extern char *  			ether_ntoa(struct ether_addr *e);
 extern struct ether_addr *	ether_aton(char *);
+
+#ifdef TEST_ARP_SESSION
+#define my_log		syslog
+#endif TEST_ARP_SESSION
 
 /* local functions: */
 static int
@@ -83,6 +90,10 @@ arp_retransmit(void * arg1, void * arg2, void * arg3);
 
 static void
 arp_read(void * arg1, void * arg2);
+
+static boolean_t
+arp_is_our_address(interface_t * if_p,
+		   int hwtype, void * hwaddr, int hwlen);
 
 static __inline__ char *
 arpop_name(u_int16_t op)
@@ -105,7 +116,7 @@ arpop_name(u_int16_t op)
 static void
 dump_arp(struct ether_arp * earp)
 {
-    printf("\nGot ARP packet\n");
+    printf("\n");
     printf("%s type=0x%x proto=0x%x\n", arpop_name(ntohs(earp->ea_hdr.ar_op)),
 	   ntohs(earp->ea_hdr.ar_hrd), ntohs(earp->ea_hdr.ar_pro));
 
@@ -187,6 +198,25 @@ arp_error(void * arg1, void * arg2, void * arg3)
 }
 
 /*
+ * Function: arp_is_our_hardware_address
+ *
+ * Purpose:
+ *   Returns whether the given hardware address matches the given
+ *   network interface.
+ */
+static boolean_t
+arp_is_our_address(interface_t * if_p,
+		   int hwtype, void * hwaddr, int hwlen)
+{
+    if (hwtype == if_link_arptype(if_p)
+	&& hwlen == if_link_length(if_p)
+	&& bcmp(hwaddr, if_link_address(if_p), hwlen) == 0) {
+	return (TRUE);
+    }
+    return (FALSE);
+}
+
+/*
  * Function: arp_read
  * Purpose:
  *   Called when data is available on the bpf fd.
@@ -197,56 +227,64 @@ arp_error(void * arg1, void * arg2, void * arg3)
 static void
 arp_read(void * arg1, void * arg2)
 {
-    arp_session_t * 	session = (arp_session_t *)arg1;
-    arp_client_t *	client = session->pending_client;
+    arp_client_t *	client;
     int			n;
+    char *		offset;
+    arp_session_t * 	session = (arp_session_t *)arg1;
 
+    client = session->pending_client;
     if (client == NULL) {
-	ts_log(LOG_ERR, "arp_read: no pending clients?");
+	my_log(LOG_ERR, "arp_read: no pending clients?");
 	arp_close_fd(session);
 	arp_start(session);
 	return;
     }
     n = read(session->bpf_fd, session->receive_buf, session->receive_bufsize);
     if (n < 0) {
-	ts_log(LOG_ERR, "arp_read: read(%s) failed, %s (%d)", 
+	my_log(LOG_ERR, "arp_read: read(%s) failed, %s (%d)", 
 	       if_name, strerror(errno), errno);
 	sprintf(client->errmsg, "arp_read: read(%s) failed, %s (%d)", 
 	       if_name(client->if_p), strerror(errno), errno);
 	goto failed;
     }
-    if (n > 0) {
+    for (offset = session->receive_buf; n > 0; ) {
 	void *			c_arg1;
 	void *			c_arg2;
-	struct bpf_hdr * 	bpf = (struct bpf_hdr *)session->receive_buf;
+	struct bpf_hdr * 	bpf = (struct bpf_hdr *)offset;
 	struct ether_arp *	earp;
 	arp_result_func_t *	func;
 	char *			pkt_start;
 	arp_result_t 		result;
 	
-	dprintf(("bpf read %d captured %d\n", n, bpf->bh_caplen));
+	dprintf(("bpf remaining %d header %d captured %d\n", n, 
+		 bpf->bh_hdrlen, bpf->bh_caplen));
 	    
-	pkt_start = session->receive_buf + bpf->bh_hdrlen;
+	pkt_start = offset + bpf->bh_hdrlen;
 	earp = (struct ether_arp *)(pkt_start + sizeof(struct ether_header));
 	if (session->debug) {
 	    dump_arp(earp);
 	}
 	if (ntohs(earp->ea_hdr.ar_op) != ARPOP_REPLY
 	    || ntohs(earp->ea_hdr.ar_hrd) != ARPHRD_ETHER
-	    || ntohs(earp->ea_hdr.ar_pro) != ETHERTYPE_IP) {
-	    return;
+	    || ntohs(earp->ea_hdr.ar_pro) != ETHERTYPE_IP
+	    || (client->target_ip.s_addr 
+		!= ((struct in_addr *)earp->arp_spa)->s_addr)
+	    || bcmp(earp->arp_tha, if_link_address(client->if_p), 
+		    sizeof(earp->arp_tha))
+	    || (client->sender_ip.s_addr 
+		!= ((struct in_addr *)earp->arp_tpa)->s_addr)
+	    || (*session->is_our_address)(client->if_p, earp->ea_hdr.ar_hrd,
+					  earp->arp_sha,
+					  earp->ea_hdr.ar_hln) == TRUE) {
+	    int skip = bpf->bh_caplen + bpf->bh_hdrlen;
+
+	    if (skip == 0) {
+		break;
+	    }
+	    offset += skip;
+	    n -= skip;
+	    continue;
 	}
-	
-	if (client->target_ip.s_addr 
-	    != ((struct in_addr *)earp->arp_spa)->s_addr)
-	    return;
-	if (bcmp(earp->arp_tha, if_link_address(client->if_p), 
-		 sizeof(earp->arp_tha)))
-	    return;
-	if (client->sender_ip.s_addr 
-	    != ((struct in_addr *)earp->arp_tpa)->s_addr)
-	    return;
-	
 	/* clean-up before calling the client */
 	timer_cancel(session->timer_callout);
 	func = client->func;
@@ -266,6 +304,7 @@ arp_read(void * arg1, void * arg2)
 
 	/* start any pending client */
 	arp_start(session);
+	break;
     }
     return;
  failed:
@@ -289,7 +328,7 @@ arp_open_fd(arp_session_t * session, arp_client_t * client)
     if (session->bpf_fd < 0) {
 	session->bpf_fd = bpf_new();
 	if (session->bpf_fd < 0) {
-	    ts_log(LOG_ERR, "arp_open_fd: bpf_new(%s) failed, %s (%d)", 
+	    my_log(LOG_ERR, "arp_open_fd: bpf_new(%s) failed, %s (%d)", 
 		   if_name(client->if_p), strerror(errno), errno);
 	    sprintf(client->errmsg, "arp_open_fd: bpf_new(%s) failed, %s (%d)", 
 		   if_name(client->if_p), strerror(errno), errno);
@@ -302,7 +341,7 @@ arp_open_fd(arp_session_t * session, arp_client_t * client)
 	/* set the filter to return only ARP packets */
 	status = bpf_arp_filter(session->bpf_fd);
 	if (status < 0) {
-	    ts_log(LOG_ERR, "arp_open_fd: bpf_arp_filter(%s) failed: %s (%d)", 
+	    my_log(LOG_ERR, "arp_open_fd: bpf_arp_filter(%s) failed: %s (%d)", 
 		   if_name(client->if_p), strerror(errno), errno);
 	    sprintf(client->errmsg, 
 		    "arp_open_fd: bpf_arp_filter(%s) failed: %s (%d)", 
@@ -312,7 +351,7 @@ arp_open_fd(arp_session_t * session, arp_client_t * client)
 	/* get the receive buffer size */
 	status = bpf_get_blen(session->bpf_fd, &session->receive_bufsize);
 	if (status < 0) {
-	    ts_log(LOG_ERR, 
+	    my_log(LOG_ERR, 
 		   "arp_open_fd: bpf_get_blen(%s) failed, %s (%d)", 
 		   if_name(client->if_p), strerror(errno), errno);
 	    sprintf(client->errmsg,
@@ -322,7 +361,7 @@ arp_open_fd(arp_session_t * session, arp_client_t * client)
 	}
 	session->receive_buf = malloc(session->receive_bufsize);
 	if (session->receive_buf == NULL) {
-	    ts_log(LOG_ERR, 
+	    my_log(LOG_ERR, 
 		   "arp_open_fd: malloc failed");
 	    sprintf(client->errmsg, "arp_open_fd: malloc failed");
 	    goto failed;
@@ -334,7 +373,7 @@ arp_open_fd(arp_session_t * session, arp_client_t * client)
     /* associate it with the given interface */
     status = bpf_setif(session->bpf_fd, if_name(client->if_p));
     if (status < 0) {
-	ts_log(LOG_ERR, "arp_open_fd: bpf_setif(%s) failed: %s (%d)", 
+	my_log(LOG_ERR, "arp_open_fd: bpf_setif(%s) failed: %s (%d)", 
 	       if_name, strerror(errno), errno);
 	sprintf(client->errmsg, "arp_open_fd: bpf_setif(%s) failed: %s (%d)", 
 	       if_name(client->if_p), strerror(errno), errno);
@@ -382,7 +421,7 @@ arp_transmit(arp_session_t * session, arp_client_t * client)
 
     status = bpf_write(session->bpf_fd, txbuf, sizeof(*eh_p) + sizeof(*earp));
     if (status < 0) {
-	ts_log(LOG_ERR, "arp_transmit(%s) failed, %s (%d)", 
+	my_log(LOG_ERR, "arp_transmit(%s) failed, %s (%d)", 
 	       if_name, strerror(errno), errno);
 	sprintf(client->errmsg, "arp_transmit(%s) failed, %s (%d)", 
 	       if_name(client->if_p), strerror(errno), errno);
@@ -491,7 +530,7 @@ arp_client_init(arp_session_t * session, interface_t * if_p)
     arp_client_t *	client;
 
     if (if_link_arptype(if_p) != ARPHRD_ETHER) {
-	ts_log(LOG_DEBUG, "arp_client_init(%s): not ethernet",
+	my_log(LOG_DEBUG, "arp_client_init(%s): not ethernet",
 	       if_name(if_p));
 	return (NULL);
     }
@@ -568,7 +607,7 @@ arp_cancel_probe(arp_client_t * client)
 }
 
 arp_session_t *
-arp_session_init()
+arp_session_init(arp_our_address_func_t * func)
 {
     arp_session_t * 	session;
     timer_callout_t *	timer;
@@ -585,6 +624,12 @@ arp_session_init()
     dynarray_init(&session->clients, free, NULL);
     session->bpf_fd = -1;
     session->timer_callout = timer;
+    if (func == NULL) {
+	session->is_our_address = arp_is_our_address;
+    }
+    else {
+	session->is_our_address = func;
+    }
     return (session);
 }
 
@@ -672,7 +717,7 @@ main(int argc, char * argv[])
 	exit(1);
     }
 
-    p = arp_session_init();
+    p = arp_session_init(NULL);
     if (p == NULL) {
 	fprintf(stderr, "arp_session_init failed\n");
 	exit(1);

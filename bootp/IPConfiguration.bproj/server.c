@@ -26,16 +26,16 @@
 #import <mach/mach.h>
 #import <mach/mach_error.h>
 #import <servers/bootstrap.h>
-#define CFRUNLOOP_NEW_API
+#import <syslog.h>
 #import <CoreFoundation/CFMachPort.h>
 
 #import "dprintf.h"
 #import "threadcompat.h"
 #import "machcompat.h"
-#import "../bootplib/ipconfig.h"
+#import "ipconfig.h"
 #import "ipconfigd.h"
 #import "ipconfig_ext.h"
-#import "ts_log.h"
+#import "globals.h"
 
 //static char request_buf[1024];
 static char reply_buf[1024];
@@ -202,18 +202,18 @@ server_loop(void * arg)
 	    if (ipconfig_server(request, reply)) {
 		r = msg_send(reply, MSG_OPTION_NONE, 0);
 		if (r != SEND_SUCCESS)
-		    ts_log(LOG_INFO, "msg_send: %s", mach_error_string(r));
+		    my_log(LOG_INFO, "msg_send: %s", mach_error_string(r));
 	    }
 	}
 	else {
 #ifdef MOSX	    
-	    ts_log(LOG_INFO, "msg_receive: %s (0x%x)", 
+	    my_log(LOG_INFO, "msg_receive: %s (0x%x)", 
 		   mach_error_string(r), r);
 	    if (r == MACH_RCV_INVALID_NAME) {
 		break; /* out of while */
 	    }
 #else MOSX
-	    ts_log(LOG_INFO, "msg_receive: %s (%d)", mach_error_string(r), r);
+	    my_log(LOG_INFO, "msg_receive: %s (%d)", mach_error_string(r), r);
 	    if (r == RCV_INVALID_PORT) {
 		break; /* out of while */
 	    }
@@ -251,7 +251,7 @@ S_ipconfig_server(CFMachPortRef port, void *msg, CFIndex size, void *info)
     if (ipconfig_server(request, reply)) {
 	r = msg_send(reply, MSG_OPTION_NONE, 0);
 	if (r != SEND_SUCCESS)
-	    ts_log(LOG_INFO, "msg_send: %s", mach_error_string(r));
+	    my_log(LOG_INFO, "msg_send: %s", mach_error_string(r));
     }
     return;
 }
@@ -269,9 +269,9 @@ server_init()
     switch (status) {
       case BOOTSTRAP_SUCCESS :
 	  if (active) {
-	      fprintf(stderr, "\"%s\" is currently active, exiting.\n", 
+	      fprintf(stderr, "\"%s\" is currently active.\n", 
 		     IPCONFIG_SERVER);
-	      exit(1);
+	      return;
 	  }
 	  break;
       case BOOTSTRAP_UNKNOWN_SERVICE :
@@ -279,7 +279,8 @@ server_init()
       default :
 	  fprintf(stderr,
 		 "bootstrap_status(): %s\n", mach_error_string(status));
-	  exit(1);
+	  return;
+	  break;
     }
 
     ipconfigd_port = CFMachPortCreate(NULL, S_ipconfig_server, NULL, NULL);
@@ -291,7 +292,7 @@ server_init()
 				CFMachPortGetPort(ipconfigd_port));
     if (status != BOOTSTRAP_SUCCESS) {
 	mach_error("bootstrap_register", status);
-	exit(1);
     }
+    return;
 }
 

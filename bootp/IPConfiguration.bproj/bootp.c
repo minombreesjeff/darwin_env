@@ -59,13 +59,13 @@
 #import <netinet/bootp.h>
 #import <arpa/inet.h>
 #import <net/if_types.h>
+#import <syslog.h>
 
 #import "rfc_options.h"
 #import "dhcp_options.h"
 #import "dhcp.h"
 #import "interfaces.h"
 #import "util.h"
-#import "ts_log.h"
 #import "host_identifier.h"
 #import "dhcplib.h"
 
@@ -161,10 +161,10 @@ bootp_success(IFState_t * ifstate)
 
     if (bootp->saved.our_ip.s_addr
 	&& reply->bp_yiaddr.s_addr != bootp->saved.our_ip.s_addr) {
-	(void)inet_remove(ifstate, &bootp->saved.our_ip);
+	(void)inet_remove(ifstate, bootp->saved.our_ip);
     }
     bootp->saved.our_ip = reply->bp_yiaddr;
-    (void)inet_add(ifstate, &bootp->saved.our_ip, &mask, NULL);
+    (void)inet_add(ifstate, bootp->saved.our_ip, &mask, NULL);
     ifstate_publish_success(ifstate, bootp->saved.pkt, bootp->saved.pkt_size);
     return;
 }
@@ -177,23 +177,20 @@ bootp_failed(IFState_t * ifstate, ipconfig_status_t status, char * msg)
 
     S_cancel_pending_events(ifstate);
     dhcpol_free(&bootp->saved.options);
-
-    if (bootp->saved.our_ip.s_addr) {
-	(void)inet_remove(ifstate, &bootp->saved.our_ip);
-    }
+    ifstate_remove_addresses(ifstate);
+    (void)inet_disable_autoaddr(ifstate);
     bootp->saved.our_ip.s_addr = 0;
-
-    /* remove the all-zeroes IP address */
-    (void)inet_remove(ifstate, &G_ip_zeroes);
     ifstate_publish_failure(ifstate, status, msg);
 
-    /* retry BOOTP again in a bit */
+    if (status != ipconfig_status_media_inactive_e) {
+	/* retry BOOTP again in a bit */
 #define RETRY_INTERVAL_SECS      (2 * 60)
-    tv.tv_sec = RETRY_INTERVAL_SECS;
-    tv.tv_usec = 0;
-    timer_set_relative(bootp->timer, tv, 
-		       (timer_func_t *)bootp_request,
-		       ifstate, (void *)IFEventID_start_e, NULL);
+	tv.tv_sec = RETRY_INTERVAL_SECS;
+	tv.tv_usec = 0;
+	timer_set_relative(bootp->timer, tv, 
+			   (timer_func_t *)bootp_request,
+			   ifstate, (void *)IFEventID_start_e, NULL);
+    }
 
     return;
 }
@@ -207,10 +204,9 @@ bootp_arp_probe(IFState_t * ifstate,  IFEventID_t evid, void * event_data)
       case IFEventID_start_e: {
 	  struct bootp *	reply = (struct bootp *)bootp->saved.pkt;
 
-	  ts_log(LOG_DEBUG, "BOOTP %s: ended at %d", if_name(ifstate->if_p), 
+	  my_log(LOG_DEBUG, "BOOTP %s: ended at %d", if_name(ifstate->if_p), 
 		 timer_current_secs() - bootp->start_secs);
-	  /* don't need the all-zeroes address anymore */
-	  (void)inet_remove(ifstate, &G_ip_zeroes);
+	  (void)inet_disable_autoaddr(ifstate);
 	  bootp_client_disable_receive(bootp->client);
 	  timer_cancel(bootp->timer);
 	  arp_cancel_probe(bootp->arp);
@@ -225,7 +221,7 @@ bootp_arp_probe(IFState_t * ifstate,  IFEventID_t evid, void * event_data)
 	  arp_result_t *	result = (arp_result_t *)event_data;
 
 	  if (result->error) {
-	      ts_log(LOG_ERR, "BOOTP %s: arp probe failed, %s", 
+	      my_log(LOG_ERR, "BOOTP %s: arp probe failed, %s", 
 		     if_name(ifstate->if_p),
 		     arp_client_errmsg(bootp->arp));
 	      /* continue without it anyways */
@@ -268,8 +264,8 @@ bootp_request(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 
     switch (evid) {
       case IFEventID_start_e: 
-	  ts_log(LOG_DEBUG, "BOOTP %s: starting", if_name(ifstate->if_p));
-	  (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
+	  my_log(LOG_DEBUG, "BOOTP %s: starting", if_name(ifstate->if_p));
+	  (void)inet_enable_autoaddr(ifstate);
 	  S_cancel_pending_events(ifstate);
 	  bootp->start_secs = timer_current_secs();
 	  bootp->wait_secs = INITIAL_WAIT_SECS;
@@ -313,13 +309,13 @@ bootp_request(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 				    G_server_port, G_client_port,
 				    &bootp->request, 
 				    sizeof(bootp->request)) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "BOOTP %s: transmit failed", if_name(ifstate->if_p));
 	  }
 	  /* wait for responses */
 	  tv.tv_sec = bootp->wait_secs;
 	  tv.tv_usec = random_range(0, USECS_PER_SEC - 1);
-	  ts_log(LOG_DEBUG, "BOOTP %s: waiting at %d for %d.%06d", 
+	  my_log(LOG_DEBUG, "BOOTP %s: waiting at %d for %d.%06d", 
 		 if_name(ifstate->if_p), 
 		 timer_current_secs() - bootp->start_secs,
 		 tv.tv_sec, tv.tv_usec);
@@ -365,7 +361,7 @@ bootp_request(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	      if (bootp->gathering == FALSE) {
 		  struct timeval t = {0,0};
 		  t.tv_sec = G_gather_secs;
-		  ts_log(LOG_DEBUG, "BOOTP %s: gathering began at %d", 
+		  my_log(LOG_DEBUG, "BOOTP %s: gathering began at %d", 
 			 if_name(ifstate->if_p), 
 			 timer_current_secs() - bootp->start_secs);
 		  bootp->gathering = TRUE;
@@ -386,12 +382,13 @@ bootp_request(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 static void
 bootp_link_timer(void * arg0, void * arg1, void * arg2)
 {
-    IFState_t * ifstate = (IFState_t *) arg0;
+    IFState_t * 	ifstate = (IFState_t *) arg0;
+    IFState_bootp_t *	bootp = (IFState_bootp_t *)ifstate->private;
 
-    if (ifstate == NULL)
-	return;
-    
-    (void)inet_remove(ifstate, &G_ip_zeroes);
+    S_cancel_pending_events(ifstate);
+    ifstate_remove_addresses(ifstate);
+    (void)inet_disable_autoaddr(ifstate);
+    dhcpol_free(&bootp->saved.options);
     ifstate_publish_failure(ifstate, ipconfig_status_media_inactive_e,
 			    NULL);
     return;
@@ -406,13 +403,13 @@ bootp_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
     switch (evid) {
       case IFEventID_start_e: 
 	  if (bootp) {
-	      ts_log(LOG_ERR, "BOOTP %s: re-entering start state", 
+	      my_log(LOG_ERR, "BOOTP %s: re-entering start state", 
 		     if_name(ifstate->if_p));
 	      return (ipconfig_status_internal_error_e);
 	  }
 	  bootp = malloc(sizeof(*bootp));
 	  if (bootp == NULL) {
-	      ts_log(LOG_ERR, "BOOTP %s: malloc failed", 
+	      my_log(LOG_ERR, "BOOTP %s: malloc failed", 
 		     if_name(ifstate->if_p));
 	      return (ipconfig_status_allocation_failed_e);
 	  }
@@ -422,22 +419,22 @@ bootp_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  bootp->xid = random();
 	  bootp->timer = timer_callout_init();
 	  if (bootp->timer == NULL) {
-	      ts_log(LOG_ERR, "BOOTP %s: timer_callout_init failed", 
+	      my_log(LOG_ERR, "BOOTP %s: timer_callout_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
-	  (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
+	  (void)inet_enable_autoaddr(ifstate);
 	  bootp->client = bootp_client_init(G_bootp_session);
 	  if (bootp->client == NULL) {
-	      ts_log(LOG_ERR, "BOOTP %s: bootp_client_init failed",
+	      my_log(LOG_ERR, "BOOTP %s: bootp_client_init failed",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
 	  bootp->arp = arp_client_init(G_arp_session, ifstate->if_p);
 	  if (bootp->arp == NULL) {
-	      ts_log(LOG_ERR, "BOOTP %s: arp_client_init failed", 
+	      my_log(LOG_ERR, "BOOTP %s: arp_client_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
@@ -445,24 +442,21 @@ bootp_thread(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  bootp_request(ifstate, IFEventID_start_e, NULL);
 	  break;
       case IFEventID_stop_e: {
-	  inet_addrinfo_t * info;
       stop:
-	  ts_log(LOG_DEBUG, "BOOTP %s: stop", if_name(ifstate->if_p));
+	  my_log(LOG_DEBUG, "BOOTP %s: stop", if_name(ifstate->if_p));
 
 	  if (bootp == NULL) { /* already stopped */
-	      ts_log(LOG_DEBUG, "DHCP %s: already stopped", 
+	      my_log(LOG_DEBUG, "BOOTP %s: already stopped", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_internal_error_e; /* shouldn't happen */
 	      break;
 	  }
 
 	  /* remove IP address(es) */
-	  while (info = if_inet_addr_at(ifstate->if_p, 
-					ifstate->our_addrs_start)) {
-	      ts_log(LOG_DEBUG, "BOOTP %s: removing %s",
-		     if_name(ifstate->if_p), inet_ntoa(info->addr));
-	      inet_remove(ifstate, &info->addr);
-	  }
+	  ifstate_remove_addresses(ifstate);
+
+	  /* disable reception of packets */
+	  (void)inet_disable_autoaddr(ifstate);
 
 	  /* clean-up resources */
 	  if (bootp->timer) {

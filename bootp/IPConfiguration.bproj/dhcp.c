@@ -55,7 +55,7 @@
 #import <netinet/ip.h>
 #import <netinet/bootp.h>
 #import <arpa/inet.h>
-
+#import <syslog.h>
 
 #import "rfc_options.h"
 #import "dhcp_options.h"
@@ -63,7 +63,6 @@
 #import "interfaces.h"
 #import "util.h"
 #import <net/if_types.h>
-#import "ts_log.h"
 #import "host_identifier.h"
 #import "dhcplib.h"
 
@@ -188,10 +187,9 @@ get_lease(dhcpol_t * options, dhcp_lease_t * lease_time)
     return (lease_p != NULL);
 }
 
-static u_char dhcp_params[] = {
+static u_char dhcp_static_default_params[] = {
     dhcptag_subnet_mask_e, 
     dhcptag_router_e,
-    dhcptag_host_name_e,
     dhcptag_domain_name_server_e,
     dhcptag_domain_name_e,
     dhcptag_netinfo_server_address_e,
@@ -199,8 +197,127 @@ static u_char dhcp_params[] = {
     dhcptag_slp_directory_agent_e,
     dhcptag_slp_service_scope_e,
 };
+static int	n_dhcp_static_default_params 
+	= sizeof(dhcp_static_default_params) / sizeof(dhcp_static_default_params[0]);
 
-int	n_dhcp_params = sizeof(dhcp_params) / sizeof(dhcp_params[0]);
+static u_char * dhcp_default_params = dhcp_static_default_params;
+static int	n_dhcp_default_params 
+	= sizeof(dhcp_static_default_params)  / sizeof(dhcp_static_default_params[0]);
+
+static u_char * dhcp_params = dhcp_static_default_params;
+static int	n_dhcp_params 
+	= sizeof(dhcp_static_default_params)  / sizeof(dhcp_static_default_params[0]);
+
+void
+dhcp_set_default_parameters(u_char * params, int n_params)
+{
+    static boolean_t	done = FALSE;
+
+    if (done) {
+	return;
+    }
+    done = TRUE;
+    if (params && n_params) {
+	dhcp_default_params = params;
+	n_dhcp_default_params = n_params;
+    }
+    else {
+	dhcp_default_params = dhcp_static_default_params;
+	n_dhcp_default_params = n_dhcp_static_default_params;
+    }
+    dhcp_params = dhcp_default_params;
+    n_dhcp_params = n_dhcp_default_params;
+    return;
+}
+
+static u_char *
+S_merge_parameters(u_char * params, int n_params, int * n_ret)
+{
+    int		i;
+    u_char *	ret = dhcp_default_params;
+    u_char *	new = NULL;
+    int		new_end = 0;
+
+    *n_ret = n_dhcp_default_params;
+    if (params == NULL || n_params == 0) {
+	goto done;
+    }
+    /* allocate the worst case size ie. no duplicates */
+    new = (u_char *)malloc(n_dhcp_default_params + n_params);
+    if (new == NULL) {
+	goto done;
+    }
+    bcopy(dhcp_default_params, new, n_dhcp_default_params);
+    for (i = 0, new_end = n_dhcp_default_params; i < n_params; i++) {
+	boolean_t	already_there = FALSE;
+	int 		j;
+
+	for (j = 0; j < new_end; j++) {
+	    if (new[j] == params[i]) {
+		/* already in requested parameters list, ignore it */
+		already_there = TRUE;
+		break;
+	    }
+	}
+	if (already_there == FALSE) {
+	    new[new_end++] = params[i];
+	}
+    }
+    if (new_end > n_dhcp_default_params) {
+	ret = new;
+	*n_ret = new_end;
+    }
+    else {
+	free(new);
+	new = NULL;
+    }
+ done:
+    return (ret);
+}
+
+static __inline__ void
+S_print_char_array(u_char * params, int n_params)
+{
+    int i;
+
+    for (i = 0; i < n_params; i++) {
+	if (i == 0)
+	    printf("%d", params[i]);
+	else
+	    printf(", %d", params[i]);
+    }
+    return;
+}
+
+void
+dhcp_set_additional_parameters(u_char * params, int n_params)
+{
+    if (dhcp_params && dhcp_params != dhcp_default_params) {
+	free(dhcp_params);
+    }
+    dhcp_params = S_merge_parameters(params, n_params, &n_dhcp_params);
+    if (G_debug) {
+	printf("DHCP requested parameters = {");
+	S_print_char_array(dhcp_params, n_dhcp_params);
+	printf("}\n");
+    }
+}
+
+static void
+add_computer_name(dhcpoa_t * options_p)
+{
+    /* add the computer name as the host_name option */
+    char *	name = computer_name();
+
+    if (name) {
+	if (dhcpoa_add(options_p, dhcptag_host_name_e, strlen(name), name)
+	    != dhcpoa_success_e) {
+	    my_log(LOG_INFO, "make_dhcp_request: couldn't add host_name, %s",
+		   dhcpoa_err(options_p));
+	}
+    }
+    return;
+}
 
 static struct dhcp * 
 make_dhcp_request(struct dhcp * request, int pkt_size,
@@ -225,7 +342,7 @@ make_dhcp_request(struct dhcp * request, int pkt_size,
     
     /* make the request a dhcp message */
     if (dhcpoa_add_dhcpmsg(options_p, msg) != dhcpoa_success_e) {
-	ts_log(LOG_ERR,
+	my_log(LOG_ERR,
 	       "make_dhcp_request: couldn't add dhcp message tag %d, %s", msg,
 	       dhcpoa_err(options_p));
 	goto err;
@@ -234,9 +351,9 @@ make_dhcp_request(struct dhcp * request, int pkt_size,
     if (msg != dhcp_msgtype_decline_e && msg != dhcp_msgtype_release_e) {
 	/* add the list of required parameters */
 	if (dhcpoa_add(options_p, dhcptag_parameter_request_list_e,
-			sizeof(dhcp_params), dhcp_params)
+			n_dhcp_params, dhcp_params)
 	    != dhcpoa_success_e) {
-	    ts_log(LOG_ERR, "make_dhcp_request: "
+	    my_log(LOG_ERR, "make_dhcp_request: "
 		   "couldn't add parameter request list, %s",
 		   dhcpoa_err(options_p));
 	    goto err;
@@ -253,7 +370,7 @@ make_dhcp_request(struct dhcp * request, int pkt_size,
     /* add the client identifier to the request packet */
     buf = malloc(cid_len + 1);
     if (buf == NULL) {
-	ts_log(LOG_ERR, "make_dhcp_request: malloc failed, %s (%d)",
+	my_log(LOG_ERR, "make_dhcp_request: malloc failed, %s (%d)",
 	       strerror(errno), errno);
 	goto err;
     }
@@ -262,7 +379,7 @@ make_dhcp_request(struct dhcp * request, int pkt_size,
     if (dhcpoa_add(options_p, dhcptag_client_identifier_e, cid_len + 1, buf)
 	!= dhcpoa_success_e) {
 	free(buf);
-	ts_log(LOG_ERR, "make_dhcp_request: "
+	my_log(LOG_ERR, "make_dhcp_request: "
 	       "couldn't add client identifier, %s",
 	       dhcpoa_err(options_p));
 	goto err;
@@ -288,118 +405,6 @@ interface_is_ad_hoc(interface_t * if_p)
     }
     return (NULL);
 }
-
-/* 
- * Function: read_ip_lease
- *
- * Purpose:
- *   Retrieve a saved lease from the filesystem.
- */
-#define IP_LEASE_INFO_MAGIC			"dhcp"
-#define IP_LEASE_INFO_VERSION			1
-
-typedef struct {
-    char	magic[4];
-    int16_t	version;
-    int8_t	length;
-    int8_t	is_infinite;
-    int32_t	expiration;
-    int32_t	ip_address;
-} ip_lease_info_t;
-
-static boolean_t
-read_ip_lease(char * idstr, struct in_addr * ip, dhcp_time_secs_t * expiry,
-	      boolean_t * is_infinite)
-{
-    FILE * 		f;
-    char		filename[256];
-    ip_lease_info_t	info;
-    boolean_t		ret = FALSE;
-	
-    snprintf(filename, sizeof(filename), DHCPCLIENT_LEASES_DIR "/%s", idstr);
-
-    f = fopen(filename, "r");
-    if (f == NULL) {
-	return (FALSE);
-    }
-    
-    bzero(&info, sizeof(info));
-    if (fread(&info, sizeof(ip_lease_info_t), 1, f) != 1
-	|| bcmp(info.magic, IP_LEASE_INFO_MAGIC, sizeof(info.magic))) {
-	goto done;
-    }
-    if (ntohs(info.version) != IP_LEASE_INFO_VERSION
-	|| info.length != sizeof(ip_lease_info_t)) {
-	goto done;
-    }
-    *is_infinite = info.is_infinite;
-    *expiry = ntohl(info.expiration);
-    /* ip is stored in network byte order, no conversion */
-    ip->s_addr = info.ip_address;
-    ret = TRUE;
- done:
-    fclose(f);
-    return (ret);
-}
-
-/* 
- * Function: write_ip_lease
- *
- * Purpose:
- *   Write an IP lease for this interface.
- */
-static boolean_t
-write_ip_lease(char * idstr, struct in_addr ip, dhcp_time_secs_t expiry,
-	       boolean_t is_infinite)
-{
-    FILE * 		f;
-    char		filename[256];
-    ip_lease_info_t	info;
-    boolean_t		ret = FALSE;
-	
-    snprintf(filename, sizeof(filename), DHCPCLIENT_LEASES_DIR "/%s", idstr);
-
-    f = fopen(filename, "w");
-    if (f == NULL) {
-	ts_log(LOG_ERR, "write_ip_lease(%s) fopen(%s) failed, %s (%d)", 
-	       idstr, filename, strerror(errno), errno);
-	return (FALSE);
-    }
-
-    bzero(&info, sizeof(info));
-    bcopy(IP_LEASE_INFO_MAGIC, info.magic, sizeof(info.magic));
-    info.version = htons(IP_LEASE_INFO_VERSION);
-    info.length = sizeof(info);
-    info.is_infinite = is_infinite;
-    info.expiration = htonl(expiry);
-    /* ip is stored in network byte order, no conversion */
-    info.ip_address = ip.s_addr;
-    if (fwrite(&info, sizeof(info), 1, f) != 1) {
-	ts_log(LOG_ERR, "write_lease_info(%s) fwrite() failed, %s (%d)", 
-	       idstr, strerror(errno), errno);
-    }
-    else {
-	ret = TRUE;
-    }
-    fclose(f);
-    return (ret);
-}
-
-/*
- * Function: clear_ip_lease
- * Purpose:
- *   Remove the lease file so we don't try to use it again.
- */
-static void
-clear_ip_lease(char * idstr)
-{
-    char		filename[256];
-	
-    snprintf(filename, sizeof(filename), DHCPCLIENT_LEASES_DIR "/%s", idstr);
-    unlink(filename);
-    return;
-}
-
 
 /*
  * Function: verify_packet
@@ -428,6 +433,9 @@ verify_packet(bootp_receive_data_t * pkt, u_long xid, interface_t * if_p,
 	    || *msgtype_p == dhcp_msgtype_request_e
 	    || *msgtype_p == dhcp_msgtype_inform_e) {
 	    /* BOOTP packet */
+	    if (G_dhcp_accepts_bootp == FALSE) {
+		return (FALSE);
+	    }
 	    *msgtype_p = dhcp_msgtype_none_e;
 	    *is_dhcp = FALSE;
 	    *server_ip = pkt->data->dp_siaddr;
@@ -450,20 +458,6 @@ verify_packet(bootp_receive_data_t * pkt, u_long xid, interface_t * if_p,
  */
 
 static void
-inform_link_timer(void * arg0, void * arg1, void * arg2)
-{
-    IFState_t * ifstate = (IFState_t *) arg0;
-
-    if (ifstate == NULL)
-	return;
-    
-    (void)inet_remove(ifstate, &G_ip_zeroes);
-    ifstate_publish_failure(ifstate, ipconfig_status_media_inactive_e,
-			    NULL);
-    return;
-}
-
-static void
 inform_cancel_pending_events(IFState_t * ifstate)
 {
     IFState_inform_t *	inform = (IFState_inform_t *)ifstate->private;
@@ -483,13 +477,29 @@ inform_cancel_pending_events(IFState_t * ifstate)
 }
 
 static void
+inform_inactive(IFState_t * ifstate)
+{
+    IFState_inform_t *	inform = (IFState_inform_t *)ifstate->private;
+
+    inform_cancel_pending_events(ifstate);
+    ifstate_remove_addresses(ifstate);
+    dhcpol_free(&inform->saved.options);
+    ifstate_publish_failure(ifstate, ipconfig_status_media_inactive_e,
+			    NULL);
+    return;
+}
+
+static void
+inform_link_timer(void * arg0, void * arg1, void * arg2)
+{
+    inform_inactive((IFState_t *) arg0);
+    return;
+}
+
+static void
 inform_failed(IFState_t * ifstate, ipconfig_status_t status, char * msg)
 {
     inform_cancel_pending_events(ifstate);
-
-    /* remove the all-zeroes address */
-    (void)inet_remove(ifstate, &G_ip_zeroes);
-    
     ifstate_publish_failure(ifstate, status, msg);
     return;
 }
@@ -507,7 +517,7 @@ inform_success(IFState_t * ifstate)
 	inform->our_mask = *((struct in_addr *)option);
 	
 	/* reset the interface address with the new mask */
-	(void)inet_add(ifstate, &inform->our_ip, 
+	(void)inet_add(ifstate, inform->our_ip, 
 		       &inform->our_mask, NULL);
     }
     inform_cancel_pending_events(ifstate);
@@ -538,15 +548,16 @@ inform_request(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 					      NULL, 0,
 					      &options);
 	  if (inform->request == NULL) {
-	      ts_log(LOG_ERR, "INFORM %s: make_dhcp_request failed",
+	      my_log(LOG_ERR, "INFORM %s: make_dhcp_request failed",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
 	  }
 	  inform->request->dp_ciaddr = inform->our_ip;
+	  add_computer_name(&options);
 	  if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "INFORM %s: failed to terminate options",
+	      my_log(LOG_ERR, "INFORM %s: failed to terminate options",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -578,8 +589,8 @@ inform_request(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  inform->try++;
 	  if (inform->try > 1) {
 	      if (ifstate->link.valid && ifstate->link.active == FALSE) {
-		  status = ipconfig_status_media_inactive_e;
-		  goto error;
+		  inform_inactive(ifstate);
+		  break; /* out of switch */
 	      }
 	  }
 	  if (inform->try > (G_max_retries + 1)) {
@@ -597,13 +608,13 @@ inform_request(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 				    G_server_port, G_client_port,
 				    inform->request, 
 				    inform->request_size) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "INFORM %s: transmit failed", if_name(ifstate->if_p));
 	  }
 	  /* wait for responses */
 	  tv.tv_sec = inform->wait_secs;
 	  tv.tv_usec = random_range(0, USECS_PER_SEC - 1);
-	  ts_log(LOG_DEBUG, "INFORM %s: waiting at %d for %d.%06d", 
+	  my_log(LOG_DEBUG, "INFORM %s: waiting at %d for %d.%06d", 
 		 if_name(ifstate->if_p), 
 		 timer_current_secs() - inform->start_secs,
 		 tv.tv_sec, tv.tv_usec);
@@ -669,7 +680,7 @@ inform_request(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 		  if (inform->gathering == FALSE) {
 		      struct timeval t = {0,0};
 		      t.tv_sec = G_gather_secs;
-		      ts_log(LOG_DEBUG, "INFORM %s: gathering began at %d", 
+		      my_log(LOG_DEBUG, "INFORM %s: gathering began at %d", 
 			     if_name(ifstate->if_p), 
 			     timer_current_secs() - inform->start_secs);
 		      inform->gathering = TRUE;
@@ -700,9 +711,6 @@ inform_start(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
       case IFEventID_start_e: {
 	  inform_cancel_pending_events(ifstate);
 
-	  if (if_inet_find_ip(ifstate->if_p, inform->our_ip) == INDEX_BAD) {
-	      (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
-	  }
 	  arp_probe(inform->arp, 
 		    (arp_result_func_t *)inform_start, ifstate,
 		    (void *)IFEventID_arp_e, G_ip_zeroes,
@@ -713,7 +721,7 @@ inform_start(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  arp_result_t *	result = (arp_result_t *)event_data;
 
 	  if (result->error) {
-	      ts_log(LOG_DEBUG, "INFORM %s: arp probe failed, %s", 
+	      my_log(LOG_DEBUG, "INFORM %s: arp probe failed, %s", 
 		     if_name(ifstate->if_p),
 		     arp_client_errmsg(inform->arp));
 	  }
@@ -725,18 +733,21 @@ inform_start(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 			   IP_FORMAT " in use by " EA_FORMAT,
 			   IP_LIST(&inform->our_ip), EA_LIST(result->hwaddr));
 		  ifstate_tell_user(ifstate, msg);
-		  ts_log(LOG_ERR, "INFORM %s: %s", if_name(ifstate->if_p), 
+		  my_log(LOG_ERR, "INFORM %s: %s", if_name(ifstate->if_p), 
 			 msg);
-		  (void)inet_remove(ifstate, &G_ip_zeroes);
-		  (void)inet_remove(ifstate, &inform->our_ip);
+		  (void)inet_remove(ifstate, inform->our_ip);
 		  inform_failed(ifstate, ipconfig_status_address_in_use_e,
 				msg);
 		  break;
 	      }
 	  }
-	  (void)inet_remove(ifstate, &G_ip_zeroes);
+	  if (ifstate->link.valid == TRUE && ifstate->link.active == FALSE) {
+	      inform_inactive(ifstate);
+	      break;
+	  }
+
 	  /* set the primary address */
-	  (void)inet_add(ifstate, &inform->our_ip, 
+	  (void)inet_add(ifstate, inform->our_ip, 
 			 &inform->our_mask, NULL);
 	  inform_request(ifstate, IFEventID_start_e, 0);
 	  break;
@@ -764,7 +775,7 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	      break;
 	  }
 	  if (inform) {
-	      ts_log(LOG_ERR, "INFORM %s: re-entering start state", 
+	      my_log(LOG_ERR, "INFORM %s: re-entering start state", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_internal_error_e;
 	      break;
@@ -777,7 +788,7 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 
 	  inform = malloc(sizeof(*inform));
 	  if (inform == NULL) {
-	      ts_log(LOG_ERR, "INFORM %s: malloc failed", 
+	      my_log(LOG_ERR, "INFORM %s: malloc failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      break;
@@ -792,27 +803,26 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  inform->our_mask = ipcfg->ip[0].mask;
 	  inform->timer = timer_callout_init();
 	  if (inform->timer == NULL) {
-	      ts_log(LOG_ERR, "INFORM %s: timer_callout_init failed", 
+	      my_log(LOG_ERR, "INFORM %s: timer_callout_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
-	  (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
 	  inform->client = bootp_client_init(G_bootp_session);
 	  if (inform->client == NULL) {
-	      ts_log(LOG_ERR, "INFORM %s: bootp_client_init failed",
+	      my_log(LOG_ERR, "INFORM %s: bootp_client_init failed",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
 	  inform->arp = arp_client_init(G_arp_session, ifstate->if_p);
 	  if (inform->arp == NULL) {
-	      ts_log(LOG_ERR, "INFORM %s: arp_client_init failed", 
+	      my_log(LOG_ERR, "INFORM %s: arp_client_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
-	  ts_log(LOG_DEBUG, "INFORM %s: id %s start", 
+	  my_log(LOG_DEBUG, "INFORM %s: id %s start", 
 		 if_name(ifstate->if_p), inform->idstr);
 	  inform->start_secs = timer_current_secs();
 	  inform->xid = random();
@@ -821,19 +831,14 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  break;
       }
       case IFEventID_stop_e: {
-	  inet_addrinfo_t * info;
       stop:
-	  ts_log(LOG_DEBUG, "INFORM %s: stop", if_name(ifstate->if_p));
+	  my_log(LOG_DEBUG, "INFORM %s: stop", if_name(ifstate->if_p));
 	  if (inform == NULL) { /* already stopped */
 	      break;
 	  }
 	  /* remove IP address(es) */
-	  while (info = if_inet_addr_at(ifstate->if_p, 
-					ifstate->our_addrs_start)) {
-	      ts_log(LOG_DEBUG, "INFORM %s: removing %s",
-		     if_name(ifstate->if_p), inet_ntoa(info->addr));
-	      inet_remove(ifstate, &info->addr);
-	  }
+	  ifstate_remove_addresses(ifstate);
+
 	  /* clean-up resources */
 	  if (inform->timer) {
 	      timer_callout_free(&inform->timer);
@@ -861,7 +866,7 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  ipconfig_status_t	  status;	
 
 	  if (inform == NULL) {
-	      ts_log(LOG_DEBUG, "INFORM %s: private data is NULL", 
+	      my_log(LOG_DEBUG, "INFORM %s: private data is NULL", 
 		     if_name(ifstate->if_p));
 	      return (ipconfig_status_internal_error_e);
 	  }
@@ -877,7 +882,7 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  else if (ipcfg->ip[0].mask.s_addr != 0
 		   && ipcfg->ip[0].mask.s_addr != inform->our_mask.s_addr) {
 	      inform->our_mask = ipcfg->ip[0].mask;
-	      (void)inet_add(ifstate, &inform->our_ip,
+	      (void)inet_add(ifstate, inform->our_ip,
 			     &inform->our_mask, NULL);
 	  }
 	  return (ipconfig_status_success_e);
@@ -901,6 +906,15 @@ inform_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 				     (timer_func_t *)inform_link_timer,
 				     ifstate, NULL, NULL);
 	      }
+	  }
+	  break;
+      }
+      case IFEventID_renew_e: {
+	  if (inform == NULL) {
+	      return (ipconfig_status_internal_error_e);
+	  }
+	  if (ifstate->link.valid == TRUE && ifstate->link.active == TRUE) {
+	      inform_start(ifstate, IFEventID_start_e, 0);
 	  }
 	  break;
       }
@@ -942,23 +956,28 @@ dhcp_failed(IFState_t * ifstate, ipconfig_status_t status, char * msg)
     IFState_dhcp_t *	dhcp = (IFState_dhcp_t *)ifstate->private;
 
     dhcp_cancel_pending_events(ifstate);
-    (void)inet_remove(ifstate, &G_ip_zeroes);
-    ifstate_publish_failure(ifstate, status, msg);
+
+    inet_disable_autoaddr(ifstate);
+    dhcpol_free(&dhcp->saved.options);
     if (dhcp->saved.our_ip.s_addr) {
-	(void)inet_remove(ifstate, &dhcp->saved.our_ip);
+	(void)inet_remove(ifstate, dhcp->saved.our_ip);
     }
     dhcp->saved.our_ip.s_addr = 0;
+    ifstate_publish_failure(ifstate, status, msg);
     ((IFState_dhcp_t *)ifstate->private)->state = dhcp_cstate_none_e;
     return;
 }
 
 static void
-dhcp_inactive(IFState_t * ifstate, ipconfig_status_t status, char * msg)
+dhcp_inactive(IFState_t * ifstate)
 {
+    IFState_dhcp_t * 	dhcp = (IFState_dhcp_t *)ifstate->private;
+
     dhcp_cancel_pending_events(ifstate);
-    (void)inet_remove(ifstate, &G_ip_zeroes);
-    ifstate_publish_failure(ifstate, status, msg);
-    ((IFState_dhcp_t *)ifstate->private)->state = dhcp_cstate_none_e;
+    ifstate_remove_addresses(ifstate);
+    inet_disable_autoaddr(ifstate);
+    dhcpol_free(&dhcp->saved.options);
+    ifstate_publish_failure(ifstate, ipconfig_status_media_inactive_e, NULL);
     return;
 }
 
@@ -997,7 +1016,7 @@ dhcp_set_lease_params(IFState_t * ifstate, char * descr, boolean_t is_dhcp,
 	dhcp->t2 = dhcp->lease_start
 	    + (dhcp_lease_t) ((double)dhcp->lease_length * 0.875);
     }
-    ts_log(LOG_DEBUG, 
+    my_log(LOG_DEBUG, 
 	   "DHCP %s: %s lease"
 	   " start = 0x%x, t1 = 0x%x , t2 = 0x%x, expiration 0x%x", 
 	   if_name(ifstate->if_p), descr, dhcp->lease_start, 
@@ -1008,14 +1027,7 @@ dhcp_set_lease_params(IFState_t * ifstate, char * descr, boolean_t is_dhcp,
 static void
 dhcp_link_timer(void * arg0, void * arg1, void * arg2)
 {
-    IFState_t * ifstate = (IFState_t *) arg0;
-
-    if (ifstate == NULL)
-	return;
-    
-    (void)inet_remove(ifstate, &G_ip_zeroes);
-    ifstate_publish_failure(ifstate, ipconfig_status_media_inactive_e,
-			    NULL);
+    dhcp_inactive((IFState_t *)arg0);
     return;
 }
 
@@ -1030,16 +1042,14 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
       case IFEventID_start_e: {
 	  start_event_data_t *   	evdata = ((start_event_data_t *)event_data);
 	  ipconfig_method_data_t*	ipcfg = evdata->config.data;
-	  boolean_t			is_infinite = FALSE;
 	  struct in_addr		our_ip;
-	  dhcp_time_secs_t		lease_expiration = 0;
 
 	  if (if_flags(ifstate->if_p) & IFF_LOOPBACK) {
 	      status = ipconfig_status_invalid_operation_e;
 	      break;
 	  }
 	  if (dhcp) {
-	      ts_log(LOG_ERR, "DHCP %s: re-entering start state", 
+	      my_log(LOG_ERR, "DHCP %s: re-entering start state", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_internal_error_e;
 	      break;
@@ -1047,7 +1057,7 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 
 	  dhcp = malloc(sizeof(*dhcp));
 	  if (dhcp == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: malloc failed", 
+	      my_log(LOG_ERR, "DHCP %s: malloc failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      break;
@@ -1058,22 +1068,22 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  dhcp->state = dhcp_cstate_none_e;
 	  dhcp->timer = timer_callout_init();
 	  if (dhcp->timer == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: timer_callout_init failed", 
+	      my_log(LOG_ERR, "DHCP %s: timer_callout_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
-	  (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
+	  (void)inet_enable_autoaddr(ifstate);
 	  dhcp->client = bootp_client_init(G_bootp_session);
 	  if (dhcp->client == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: bootp_client_init failed",
+	      my_log(LOG_ERR, "DHCP %s: bootp_client_init failed",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
 	  dhcp->arp = arp_client_init(G_arp_session, ifstate->if_p);
 	  if (dhcp->arp == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: arp_client_init failed", 
+	      my_log(LOG_ERR, "DHCP %s: arp_client_init failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
@@ -1084,7 +1094,7 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	      dhcp->client_id_len = ipcfg->n_dhcp_client_id;
 	      dhcp->client_id = malloc(dhcp->client_id_len);
 	      if (dhcp->client_id == NULL) {
-		  ts_log(LOG_ERR, "DHCP %s: malloc client ID failed", 
+		  my_log(LOG_ERR, "DHCP %s: malloc client ID failed", 
 			 if_name(ifstate->if_p));
 		  status = ipconfig_status_allocation_failed_e;
 		  goto stop;
@@ -1097,36 +1107,31 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 					   if_link_address(ifstate->if_p), 
 					   if_link_length(ifstate->if_p));
 	  if (dhcp->idstr == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: malloc device ID string failed", 
+	      my_log(LOG_ERR, "DHCP %s: malloc device ID string failed", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto stop;
 	  }
 	  dhcpol_init(&dhcp->saved.options);
-	  ts_log(LOG_DEBUG, "DHCP %s: H/W %s start", 
+	  my_log(LOG_DEBUG, "DHCP %s: H/W %s start", 
 		 if_name(ifstate->if_p), dhcp->idstr);
 	  dhcp->start_secs = current_time;
 	  dhcp->xid = random();
 	  dhcpol_init(&dhcp->saved.options);
 	  /* use the previous lease if it exists */
-	  if (read_ip_lease(dhcp->idstr, &our_ip, 
-			    &lease_expiration, &is_infinite)) {
-	      if (is_infinite || current_time < lease_expiration) {
-		  /* try same address if there's time left on the lease */
-		  dhcp_init_reboot(ifstate, IFEventID_start_e, &our_ip);
-		  break;
-	      }
+	  if (dhcp_lease_read(dhcp->idstr, &our_ip)) {
+	      /* try the same address if we had a lease at some point */
+	      dhcp_init_reboot(ifstate, IFEventID_start_e, &our_ip);
+	      break;
 	  }
 	  dhcp_init(ifstate, IFEventID_start_e, NULL);
 	  break;
       }
       case IFEventID_stop_e: {
-	  inet_addrinfo_t * info;
-
       stop:
-	  ts_log(LOG_DEBUG, "DHCP %s: stop", if_name(ifstate->if_p));
+	  my_log(LOG_DEBUG, "DHCP %s: stop", if_name(ifstate->if_p));
 	  if (dhcp == NULL) {
-	      ts_log(LOG_DEBUG, "DHCP %s: already stopped", 
+	      my_log(LOG_DEBUG, "DHCP %s: already stopped", 
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_internal_error_e; /* shouldn't happen */
 	      break;
@@ -1136,12 +1141,9 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  }
 
 	  /* remove IP address(es) */
-	  while (info = if_inet_addr_at(ifstate->if_p, 
-					ifstate->our_addrs_start)) {
-	      ts_log(LOG_DEBUG, "DHCP %s: removing %s",
-		     if_name(ifstate->if_p), inet_ntoa(info->addr));
-	      inet_remove(ifstate, &info->addr);
-	  }
+	  ifstate_remove_addresses(ifstate);
+
+	  inet_disable_autoaddr(ifstate);
 
 	  /* clean-up resources */
 	  if (dhcp->timer) {
@@ -1173,7 +1175,7 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  ipconfig_method_data_t *	ipcfg = evdata->config.data;
 
 	  if (dhcp == NULL) {
-	      ts_log(LOG_DEBUG, "DHCP %s: private data is NULL", 
+	      my_log(LOG_DEBUG, "DHCP %s: private data is NULL", 
 		     if_name(ifstate->if_p));
 	      return (ipconfig_status_internal_error_e);
 	  }
@@ -1204,12 +1206,13 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 		  dhcp->in_use = dhcp->user_warned = FALSE;
 		  if (our_ip.s_addr) {
 		      if (dhcp->lease_is_infinite 
-			  || current_time < dhcp->lease_expiration) {
+			  || current_time < dhcp->lease_expiration
+			  || dhcp->lease_expiration == 0) {
 			  /* try same address if there's time left on the lease */
 			  dhcp_init_reboot(ifstate, IFEventID_start_e, &our_ip);
 			  break;
 		      }
-		      (void)inet_remove(ifstate, &our_ip);
+		      (void)inet_remove(ifstate, our_ip);
 		  }
 		  dhcp_init(ifstate, IFEventID_start_e, NULL);
 	      }
@@ -1224,6 +1227,29 @@ dhcp_thread(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 				     (timer_func_t *)dhcp_link_timer,
 				     ifstate, NULL, NULL);
 	      }
+	  }
+	  break;
+      }
+      case IFEventID_renew_e: {
+	  struct in_addr our_ip;
+
+	  if (dhcp == NULL)
+	      return (ipconfig_status_internal_error_e);
+
+	  if (ifstate->link.valid == TRUE && ifstate->link.active == TRUE) {
+	      dhcp->in_use = dhcp->user_warned = FALSE;
+	      our_ip = dhcp->saved.our_ip;
+	      if (our_ip.s_addr) {
+		  if (dhcp->lease_is_infinite 
+		      || current_time < dhcp->lease_expiration
+		      || dhcp->lease_expiration == 0) {
+		      /* try same address if there's time left on the lease */
+		      dhcp_init_reboot(ifstate, IFEventID_start_e, &our_ip);
+		      break;
+		  }
+		  (void)inet_remove(ifstate, our_ip);
+	      }
+	      dhcp_init(ifstate, IFEventID_start_e, NULL);
 	  }
 	  break;
       }
@@ -1260,20 +1286,21 @@ dhcp_init(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 					    dhcp->client_id, dhcp->client_id_len,
 					    &options);
 	  if (dhcp->request == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: INIT make_dhcp_request failed",
+	      my_log(LOG_ERR, "DHCP %s: INIT make_dhcp_request failed",
 		     if_name(ifstate->if_p));
 	  }
 	  if (dhcpoa_add(&options, dhcptag_lease_time_e,
 			 sizeof(lease_option), &lease_option) 
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: INIT dhcpoa_add lease time failed, %s", 
+	      my_log(LOG_ERR, "DHCP %s: INIT dhcpoa_add lease time failed, %s", 
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
 	  }
+	  add_computer_name(&options);
 	  if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: INIT failed to terminate options",
+	      my_log(LOG_ERR, "DHCP %s: INIT failed to terminate options",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -1289,7 +1316,7 @@ dhcp_init(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  dhcp->gathering = FALSE;
 	  dhcpol_free(&dhcp->saved.options);
 	  bzero(&dhcp->saved, sizeof(dhcp->saved));
-	  (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
+	  (void)inet_enable_autoaddr(ifstate);
 	  bootp_client_enable_receive(dhcp->client,
 				      (bootp_receive_func_t *)dhcp_init, 
 				      ifstate, (void *)IFEventID_data_e);
@@ -1308,8 +1335,8 @@ dhcp_init(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  dhcp->try++;
 	  if (dhcp->try > 1) {
 	      if (ifstate->link.valid && ifstate->link.active == FALSE) {
-		  status = ipconfig_status_media_inactive_e;
-		  goto error;
+		  dhcp_inactive(ifstate);
+		  break;
 	      }
 	  }
 	  if (dhcp->try > (G_max_retries + 1)) {
@@ -1327,13 +1354,13 @@ dhcp_init(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 				    G_ip_broadcast, G_ip_zeroes,
 				    G_server_port, G_client_port,
 				    dhcp->request, dhcp->request_size) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "DHCP %s: INIT transmit failed", if_name(ifstate->if_p));
 	  }
 	  /* wait for responses */
 	  tv.tv_sec = dhcp->wait_secs;
 	  tv.tv_usec = random_range(0, USECS_PER_SEC - 1);
-	  ts_log(LOG_DEBUG, "DHCP %s: INIT waiting at %d for %d.%06d", 
+	  my_log(LOG_DEBUG, "DHCP %s: INIT waiting at %d for %d.%06d", 
 		 if_name(ifstate->if_p), 
 		 timer_current_secs() - dhcp->start_secs,
 		 tv.tv_sec, tv.tv_usec);
@@ -1404,7 +1431,7 @@ dhcp_init(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 		  if (dhcp->gathering == FALSE) {
 		      struct timeval t = {0,0};
 		      t.tv_sec = G_gather_secs;
-		      ts_log(LOG_DEBUG, "DHCP %s: INIT gathering began at %d", 
+		      my_log(LOG_DEBUG, "DHCP %s: INIT gathering began at %d", 
 			     if_name(ifstate->if_p), 
 			     timer_current_secs() - dhcp->start_secs);
 		      dhcp->gathering = TRUE;
@@ -1462,7 +1489,7 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  if (dhcpoa_add(&options, dhcptag_requested_ip_address_e,
 			 sizeof(our_ip), &our_ip) 
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: INIT-REBOOT add request ip failed, %s", 
+	      my_log(LOG_ERR, "DHCP %s: INIT-REBOOT add request ip failed, %s", 
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -1470,14 +1497,15 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  if (dhcpoa_add(&options, dhcptag_lease_time_e,
 			 sizeof(lease_option), &lease_option) 
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: INIT-REBOOT add lease time failed, %s", 
+	      my_log(LOG_ERR, "DHCP %s: INIT-REBOOT add lease time failed, %s", 
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
 	  }
+	  add_computer_name(&options);
 	  if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: INIT-REBOOT failed to terminate options",
+	      my_log(LOG_ERR, "DHCP %s: INIT-REBOOT failed to terminate options",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -1494,7 +1522,7 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  dhcpol_free(&dhcp->saved.options);
 	  bzero(&dhcp->saved, sizeof(dhcp->saved));
 	  dhcp->saved.our_ip = our_ip;
-	  (void)inet_add(ifstate, &G_ip_zeroes, NULL, NULL);
+	  (void)inet_enable_autoaddr(ifstate);
 	  bootp_client_enable_receive(dhcp->client,
 				      (bootp_receive_func_t *)dhcp_init_reboot, 
 				      ifstate, (void *)IFEventID_data_e);
@@ -1509,17 +1537,17 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  dhcp->try++;
 	  if (dhcp->try > 1) {
 	      if (ifstate->link.valid && ifstate->link.active == FALSE) {
-		  dhcp_inactive(ifstate, ipconfig_status_media_inactive_e,
-				NULL);
+		  dhcp_inactive(ifstate);
 		  break;
 	      }
 	  }
 #define INIT_REBOOT_TRIES	2
 	  if (dhcp->try > INIT_REBOOT_TRIES) {
-	      ts_log(LOG_DEBUG, "DHCP %s: INIT-REBOOT timed out", 
+	      my_log(LOG_DEBUG, "DHCP %s: INIT-REBOOT timed out", 
 		     if_name(ifstate->if_p));
 	      /* go back to the INIT state */
-	      (void)inet_remove(ifstate, &dhcp->saved.our_ip);
+	      dhcp_failed(ifstate, ipconfig_status_no_server_e, 
+			  "INIT-REBOOT");
 	      dhcp_init(ifstate, IFEventID_start_e, NULL);
 	      break; /* ouf of case */
 	  }
@@ -1533,14 +1561,14 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 				    G_ip_broadcast, G_ip_zeroes,
 				    G_server_port, G_client_port,
 				    dhcp->request, dhcp->request_size) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "DHCP %s: INIT-REBOT transmit failed", 
 		     if_name(ifstate->if_p));
 	  }
 	  /* wait for responses */
 	  tv.tv_sec = dhcp->wait_secs;
 	  tv.tv_usec = random_range(0, USECS_PER_SEC - 1);
-	  ts_log(LOG_DEBUG, "DHCP %s: INIT-REBOOT waiting at %d for %d.%06d", 
+	  my_log(LOG_DEBUG, "DHCP %s: INIT-REBOOT waiting at %d for %d.%06d", 
 		 if_name(ifstate->if_p), 
 		 timer_current_secs() - dhcp->start_secs,
 		 tv.tv_sec, tv.tv_usec);
@@ -1570,7 +1598,7 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	      break; /* out of switch */
 	  }
 	  if (server_ip.s_addr == 0
-	      || ip_valid(pkt->data->dp_yiaddr) == FALSE) {
+	      || pkt->data->dp_yiaddr.s_addr != dhcp->saved.our_ip.s_addr) {
 	      /* reject the packet */
 	      break; /* out of switch */
 	  }
@@ -1621,7 +1649,7 @@ dhcp_init_reboot(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 		  if (dhcp->gathering == FALSE) {
 		      struct timeval t = {0,0};
 		      t.tv_sec = G_gather_secs;
-		      ts_log(LOG_DEBUG, 
+		      my_log(LOG_DEBUG, 
 			     "DHCP %s: INIT-REBOOT gathering began at %d", 
 			     if_name(ifstate->if_p), 
 			     timer_current_secs() - dhcp->start_secs);
@@ -1671,7 +1699,7 @@ dhcp_select(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 					    dhcp->client_id, dhcp->client_id_len,
 					    &options);
 	  if (dhcp->request == NULL) {
-	      ts_log(LOG_ERR, "DHCP %s: SELECT make_dhcp_request failed",
+	      my_log(LOG_ERR, "DHCP %s: SELECT make_dhcp_request failed",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -1680,7 +1708,7 @@ dhcp_select(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  if (dhcpoa_add(&options, dhcptag_requested_ip_address_e,
 			 sizeof(dhcp->saved.our_ip), &dhcp->saved.our_ip)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: SELECT add requested ip failed, %s", 
+	      my_log(LOG_ERR, "DHCP %s: SELECT add requested ip failed, %s", 
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -1688,14 +1716,15 @@ dhcp_select(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  if (dhcpoa_add(&options, dhcptag_server_identifier_e,
 			 sizeof(dhcp->saved.server_ip), &dhcp->saved.server_ip)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: SELECT add server ip failed, %s", 
+	      my_log(LOG_ERR, "DHCP %s: SELECT add server ip failed, %s", 
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
 	  }
+	  add_computer_name(&options);
 	  if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: SELECT failed to terminate options",
+	      my_log(LOG_ERR, "DHCP %s: SELECT failed to terminate options",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -1717,7 +1746,7 @@ dhcp_select(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	  dhcp->try++;
 #define SELECT_RETRIES	1
 	  if (dhcp->try > (SELECT_RETRIES + 1)) {
-	      ts_log(LOG_DEBUG, "DHCP %s: SELECT timed out", 
+	      my_log(LOG_DEBUG, "DHCP %s: SELECT timed out", 
 		     if_name(ifstate->if_p), 
 		     timer_current_secs() - dhcp->start_secs,
 		     tv.tv_sec, tv.tv_usec);
@@ -1725,7 +1754,7 @@ dhcp_select(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 	      dhcp_init(ifstate, IFEventID_start_e, NULL);
 	      break; /* out of switch */
 	  }
-	  dhcp->request->dp_xid = htonl(++dhcp->xid);
+	  dhcp->request->dp_xid = htonl(dhcp->xid);
 #ifdef DEBUG
 	  dhcp_print_packet(dhcp->request, dhcp->request_size);
 #endif DEBUG
@@ -1735,14 +1764,14 @@ dhcp_select(IFState_t * ifstate, IFEventID_t evid, void * event_data)
 				    G_ip_broadcast, G_ip_zeroes,
 				    G_server_port, G_client_port,
 				    dhcp->request, dhcp->request_size) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "DHCP %s: SELECT transmit failed", 
 		     if_name(ifstate->if_p));
 	  }
 	  /* wait for responses */
 	  tv.tv_sec = dhcp->wait_secs;
 	  tv.tv_usec = random_range(0, USECS_PER_SEC - 1);
-	  ts_log(LOG_DEBUG, "DHCP %s: SELECT waiting at %d for %d.%06d", 
+	  my_log(LOG_DEBUG, "DHCP %s: SELECT waiting at %d for %d.%06d", 
 		 if_name(ifstate->if_p), 
 		 timer_current_secs() - dhcp->start_secs,
 		 tv.tv_sec, tv.tv_usec);
@@ -1824,23 +1853,23 @@ dhcp_bound(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
     IFState_dhcp_t *	dhcp = (IFState_dhcp_t *)ifstate->private;
     int			len;
     struct in_addr	mask = {0};
+    boolean_t		renewing = FALSE;
     void *		option;
-    struct dhcp *	reply;
     struct timeval 	tv = {0, 0};
-
-    reply = (struct dhcp *)dhcp->saved.pkt;
 
     switch (event_id) {
       case IFEventID_start_e: {
+	  if (dhcp->state == dhcp_cstate_renew_e
+	      || dhcp->state == dhcp_cstate_rebind_e) {
+	      renewing = TRUE;
+	      dhcp->state = dhcp_cstate_bound_e;
+	      break; /* out of switch */
+	  }
 	  dhcp->state = dhcp_cstate_bound_e;
 
 	  /* clean-up anything that might have come before */
 	  dhcp_cancel_pending_events(ifstate);
 
-	  /* make sure that the IP address is the same as the old one */
-	  /* ie. check that if src_ip is nonzero, that src_ip == our_ip */
-	  /* XXX */
-	  
 	  /* do an ARP probe of the supplied address */
 	  arp_probe(dhcp->arp, 
 		    (arp_result_func_t *)dhcp_bound, ifstate,
@@ -1848,12 +1877,12 @@ dhcp_bound(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 		    dhcp->saved.our_ip);
 	  return;
 	  break;
-      }
-      case IFEventID_arp_e: {
+	}
+	case IFEventID_arp_e: {
 	  arp_result_t *	result = (arp_result_t *)event_data;
 
 	  if (result->error) {
-	      ts_log(LOG_ERR, "DHCP %s: ARP probe failed, %s", 
+	      my_log(LOG_ERR, "DHCP %s: ARP probe failed, %s", 
 		     if_name(ifstate->if_p),
 		     arp_client_errmsg(dhcp->arp));
 	      /* continue anyways */
@@ -1876,7 +1905,7 @@ dhcp_bound(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	      }
 	      dhcp->in_use = TRUE;
 	      syslog(LOG_ERR, "DHCP %s: %s", if_name(ifstate->if_p), msg);
-	      clear_ip_lease(dhcp->idstr);
+	      dhcp_lease_clear(dhcp->idstr);
 	      ifstate_publish_failure(ifstate, 
 				      ipconfig_status_address_in_use_e, msg);
 	      if (dhcp->saved.is_dhcp) {
@@ -1884,8 +1913,7 @@ dhcp_bound(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 		  return;
 	      }
 	      dhcp_cancel_pending_events(ifstate);
-	      /* remove the all-zeroes address */
-	      inet_remove(ifstate, &G_ip_zeroes);
+	      (void)inet_disable_autoaddr(ifstate);
 	      dhcp->saved.our_ip.s_addr = 0;
 	      tv.tv_sec = 10; /* retry in a bit */
 	      tv.tv_usec = 0;
@@ -1895,45 +1923,40 @@ dhcp_bound(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	      return;
 	  }
 	  break;
-      }
-      default:
+	}
+	default:
 	  return;
     }
 
-    /*
-     * we reach this point if an ARP probe wasn't needed, or
-     * the ARP probe indicated that the address was not in use
-     */
-
-    /* write the lease data */
-    if (dhcp->saved.is_dhcp) {
-	/* only bother to save a lease if it came from a DHCP server */
-	(void)write_ip_lease(dhcp->idstr, reply->dp_yiaddr, 
-			     dhcp->lease_expiration, dhcp->lease_is_infinite);
-    }
-    else {
-	clear_ip_lease(dhcp->idstr);
+    /* don't update the lease file if we're renewing the lease */
+    if (renewing == FALSE) {
+	if (dhcp->saved.is_dhcp) {
+	    /* only bother to save a lease if it came from a DHCP server */
+	    (void)dhcp_lease_write(dhcp->idstr, dhcp->saved.our_ip);
+	}
+	else {
+	    dhcp_lease_clear(dhcp->idstr);
+	}
     }
 
     /* allow user warning to appear */
     dhcp->in_use = dhcp->user_warned = FALSE;
 
     /* set the interface's address and output the status */
-	      
     option = dhcpol_find(&dhcp->saved.options, dhcptag_subnet_mask_e, 
 			 &len, NULL);
     if (option) {
 	mask = *((struct in_addr *)option);
     }
-    /* remove the all-zeroes address */
-    inet_remove(ifstate, &G_ip_zeroes);
+
+    inet_disable_autoaddr(ifstate);
 	      
     /* set our new address */
-    (void)inet_add(ifstate, &dhcp->saved.our_ip, &mask, NULL);
+    (void)inet_add(ifstate, dhcp->saved.our_ip, &mask, NULL);
     ifstate_publish_success(ifstate, dhcp->saved.pkt, dhcp->saved.pkt_size);
     if (dhcp->lease_is_infinite == TRUE) {
 	/* don't need to talk to server anymore */
-	ts_log(LOG_DEBUG, "DHCP %s: infinite lease", 
+	my_log(LOG_DEBUG, "DHCP %s: infinite lease", 
 	       if_name(ifstate->if_p));
 	/* clean-up anything that might have come before */
 	dhcp_cancel_pending_events(ifstate);
@@ -1989,7 +2012,7 @@ dhcp_ad_hoc(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  dhcp->ad_hoc.probe.s_addr 
 	      = htonl(AD_HOC_FIRST_USEABLE 
 		      + dhcp->ad_hoc.offset[dhcp->ad_hoc.current]);
-	  ts_log(LOG_DEBUG, "DHCP %s probing " IP_FORMAT, 
+	  my_log(LOG_DEBUG, "DHCP %s probing " IP_FORMAT, 
 		 if_name(ifstate->if_p), IP_LIST(&dhcp->ad_hoc.probe));
 	  arp_probe(dhcp->arp, 
 		    (arp_result_func_t *)dhcp_ad_hoc, ifstate,
@@ -2002,12 +2025,12 @@ dhcp_ad_hoc(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  arp_result_t *	result = (arp_result_t *)event_data;
 
 	  if (result->error) {
-	      ts_log(LOG_DEBUG, "DHCP %s: ARP probe failed, %s", 
+	      my_log(LOG_DEBUG, "DHCP %s: ARP probe failed, %s", 
 		     if_name(ifstate->if_p),
 		     arp_client_errmsg(dhcp->arp));
 	  }
 	  else if (result->in_use) {
-	      ts_log(LOG_DEBUG, "DHCP %s: IP address " 
+	      my_log(LOG_DEBUG, "DHCP %s: IP address " 
 		     IP_FORMAT " is in use by " EA_FORMAT, 
 		     if_name(ifstate->if_p), 
 		     IP_LIST(&dhcp->ad_hoc.probe),
@@ -2016,10 +2039,10 @@ dhcp_ad_hoc(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  else {
 	      const struct in_addr ad_hoc_mask = { htonl(AD_HOC_MASK) };
 	      /* ad-hoc IP address is not in use, so use it */
-	      if (inet_add(ifstate, &dhcp->ad_hoc.probe, &ad_hoc_mask, 
+	      if (inet_add(ifstate, dhcp->ad_hoc.probe, &ad_hoc_mask, 
 			   NULL) == EEXIST) {
 		  /* some other interface is already ad hoc */
-		  (void)inet_remove(ifstate, &dhcp->ad_hoc.probe);
+		  (void)inet_remove(ifstate, dhcp->ad_hoc.probe);
 		  /* wake/unblock anyone waiting */
 		  ifstate_publish_failure(ifstate, ipconfig_status_no_server_e,
 					  NULL);
@@ -2045,7 +2068,7 @@ dhcp_ad_hoc(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 		    (arp_result_func_t *)dhcp_ad_hoc, ifstate,
 		    (void *)IFEventID_arp_e, G_ip_zeroes,
 		    dhcp->ad_hoc.probe);
-	  ts_log(LOG_DEBUG, "DHCP %s probing " IP_FORMAT, 
+	  my_log(LOG_DEBUG, "DHCP %s probing " IP_FORMAT, 
 		 if_name(ifstate->if_p), IP_LIST(&dhcp->ad_hoc.probe));
 	  /* wait for the results */
 	  return;
@@ -2055,7 +2078,6 @@ dhcp_ad_hoc(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
     }
 
     /*  we're done trying to configure ad hoc networking */
-    (void)inet_remove(ifstate, &G_ip_zeroes);
     dhcp_cancel_pending_events(ifstate);
 #define INIT_RETRY_INTERVAL_SECS      (5 * 60)
     tv.tv_sec = INIT_RETRY_INTERVAL_SECS;
@@ -2098,7 +2120,7 @@ dhcp_decline(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  if (dhcpoa_add(&options, dhcptag_requested_ip_address_e,
 			 sizeof(dhcp->saved.our_ip), &dhcp->saved.our_ip) 
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: DECLINE couldn't add our ip, %s",
+	      my_log(LOG_ERR, "DHCP %s: DECLINE couldn't add our ip, %s",
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -2106,14 +2128,14 @@ dhcp_decline(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  if (dhcpoa_add(&options, dhcptag_server_identifier_e,
 			 sizeof(dhcp->saved.server_ip), &dhcp->saved.server_ip)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: DECLINE couldn't add server ip, %s",
+	      my_log(LOG_ERR, "DHCP %s: DECLINE couldn't add server ip, %s",
 		     if_name(ifstate->if_p), dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
 	  }
 	  if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: DECLINE failed to terminate options",
+	      my_log(LOG_ERR, "DHCP %s: DECLINE failed to terminate options",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -2123,14 +2145,13 @@ dhcp_decline(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 				    G_ip_broadcast, G_ip_zeroes,
 				    G_server_port, G_client_port,
 				    dhcp->request, dhcp->request_size) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "DHCP %s: DECLINE transmit failed", 
 		     if_name(ifstate->if_p));
 	  }
-	  (void)inet_remove(ifstate, &dhcp->saved.our_ip);
+	  (void)inet_remove(ifstate, dhcp->saved.our_ip);
 	  dhcp->saved.our_ip.s_addr = 0;
-	  /* remove the all-zeroes address */
-	  inet_remove(ifstate, &G_ip_zeroes);
+	  inet_disable_autoaddr(ifstate);
 	  tv.tv_sec = 10; /* retry in a bit */
 	  tv.tv_usec = 0;
 	  timer_set_relative(dhcp->timer, tv, 
@@ -2160,10 +2181,10 @@ dhcp_unbound(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 
 	  dhcp->state = dhcp_cstate_unbound_e;
 	  /* stop using the IP address immediately */
-	  (void)inet_remove(ifstate, &dhcp->saved.our_ip);
+	  (void)inet_remove(ifstate, dhcp->saved.our_ip);
 	  dhcp->saved.our_ip.s_addr = 0;
 
-	  clear_ip_lease(dhcp->idstr);
+	  dhcp_lease_clear(dhcp->idstr);
 
 	  tv.tv_sec = 0;
 	  tv.tv_usec = 1000;
@@ -2195,7 +2216,7 @@ dhcp_renew_rebind(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  dhcp_cancel_pending_events(ifstate);
 
 	  dhcp->state = dhcp_cstate_renew_e;
-	  ts_log(LOG_DEBUG, "DHCP %s: RENEW", if_name(ifstate->if_p));
+	  my_log(LOG_DEBUG, "DHCP %s: RENEW", if_name(ifstate->if_p));
 	  dhcp->request = make_dhcp_request((struct dhcp *)dhcp->txbuf, 
 					    sizeof(dhcp->txbuf),
 					    dhcp_msgtype_request_e,
@@ -2213,15 +2234,16 @@ dhcp_renew_rebind(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  lease_option = dhcp_lease_hton(SUGGESTED_LEASE_LENGTH);
 	  if (dhcpoa_add(&options, dhcptag_lease_time_e, sizeof(lease_option), 
 			 &lease_option) != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: RENEW/REBIND couldn't add"
+	      my_log(LOG_ERR, "DHCP %s: RENEW/REBIND couldn't add"
 		     " lease time: %s", if_name(ifstate->if_p),
 		     dhcpoa_err(&options));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
 	  }
+	  add_computer_name(&options);
 	  if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	      != dhcpoa_success_e) {
-	      ts_log(LOG_ERR, "DHCP %s: RENEW/REBIND failed to terminate options",
+	      my_log(LOG_ERR, "DHCP %s: RENEW/REBIND failed to terminate options",
 		     if_name(ifstate->if_p));
 	      status = ipconfig_status_allocation_failed_e;
 	      goto error;
@@ -2265,7 +2287,7 @@ dhcp_renew_rebind(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 				    dest_ip, dhcp->saved.our_ip,
 				    G_server_port, G_client_port,
 				    dhcp->request, dhcp->request_size) < 0) {
-	      ts_log(LOG_ERR, 
+	      my_log(LOG_ERR, 
 		     "DHCP %s: RENEW/REBIND transmit failed", 
 		     if_name(ifstate->if_p));
 	  }
@@ -2278,7 +2300,7 @@ dhcp_renew_rebind(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	      tv.tv_sec = wakeup_time - current_time;
 	  }
 	  tv.tv_usec = 0;
-	  ts_log(LOG_DEBUG, "DHCP %s: RENEW/REBIND waiting at %d for %d.%06d", 
+	  my_log(LOG_DEBUG, "DHCP %s: RENEW/REBIND waiting at %d for %d.%06d", 
 		 if_name(ifstate->if_p), 
 		 timer_current_secs() - dhcp->start_secs,
 		 tv.tv_sec, tv.tv_usec);
@@ -2316,7 +2338,16 @@ dhcp_renew_rebind(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	      return;
 	  }
 	  
-	  /* need to check whether t1,t2 overrided by server XXX */
+	  /* address has to match, otherwise start over */
+	  if (pkt->data->dp_yiaddr.s_addr != dhcp->saved.our_ip.s_addr) {
+	      ifstate_publish_failure(ifstate, 
+				      ipconfig_status_server_error_e,
+				      NULL);
+	      dhcp_unbound(ifstate, IFEventID_start_e, NULL);
+	      return;
+	  }
+	  
+	  /* need to check whether t1,t2 overridden by server XXX */
 	  dhcp_set_lease_params(ifstate, "RENEW/REBIND", is_dhcp, lease);
 
 	  dhcpol_free(&dhcp->saved.options);
@@ -2326,7 +2357,6 @@ dhcp_renew_rebind(IFState_t * ifstate, IFEventID_t event_id, void * event_data)
 	  (void)dhcpol_parse_packet(&dhcp->saved.options, 
 				    (void *)dhcp->saved.pkt, 
 				    dhcp->saved.pkt_size, NULL);
-	  dhcp->saved.our_ip = pkt->data->dp_yiaddr;
 	  dhcp->saved.server_ip = server_ip;
 	  dhcp->saved.is_dhcp = TRUE;
 	  dhcp_bound(ifstate, IFEventID_start_e, NULL);
@@ -2372,13 +2402,13 @@ dhcp_release(IFState_t * ifstate)
     if (dhcpoa_add(&options, dhcptag_server_identifier_e,
 		   sizeof(dhcp->saved.server_ip), &dhcp->saved.server_ip)
 	!= dhcpoa_success_e) {
-	ts_log(LOG_ERR, "DHCP %s: RELEASE couldn't add server ip, %s",
+	my_log(LOG_ERR, "DHCP %s: RELEASE couldn't add server ip, %s",
 	       if_name(ifstate->if_p), dhcpoa_err(&options));
 	return;
     }
     if (dhcpoa_add(&options, dhcptag_end_e, 0, 0)
 	!= dhcpoa_success_e) {
-	ts_log(LOG_ERR, "DHCP %s: RELEASE failed to terminate options",
+	my_log(LOG_ERR, "DHCP %s: RELEASE failed to terminate options",
 	       if_name(ifstate->if_p));
 	return;
     }
@@ -2387,13 +2417,13 @@ dhcp_release(IFState_t * ifstate)
 			      dhcp->saved.server_ip, dhcp->saved.our_ip,
 			      G_server_port, G_client_port,
 			      dhcp->request, dhcp->request_size) < 0) {
-	ts_log(LOG_ERR, 
+	my_log(LOG_ERR, 
 	       "DHCP %s: RELEASE transmit failed", 
 	       if_name(ifstate->if_p));
 	return;
     }
     dhcp->saved.our_ip.s_addr = 0;
-    clear_ip_lease(dhcp->idstr);
+    dhcp_lease_clear(dhcp->idstr);
     return;
 }
 
