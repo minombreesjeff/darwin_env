@@ -51,6 +51,11 @@ Boston, MA 02111-1307, USA.  */
 #include "alloc.h"
 #include "gram.h"
 
+/* these are for getfilepath() */
+#include <mach-o/dyld.h>
+#include <sys/param.h>
+#include <stdlib.h>
+
 FILE *finput = NULL;
 FILE *foutput = NULL;
 FILE *fdefines = NULL;
@@ -92,6 +97,53 @@ extern int verboseflag;
 extern int definesflag;
 int fixed_outfiles = 0;
 
+
+/* see 5100083 */
+static const char *
+getfilepath(int which)
+{
+    char	buf[PATH_MAX];
+    uint32_t	bufsize = sizeof(buf);
+    char 	*cp;
+    static char	path[PATH_MAX];
+    static int	pathlen = 0;
+
+    if(pathlen < 0)
+	goto error;
+    if(pathlen == 0) {
+	if (_NSGetExecutablePath(buf, &bufsize) != 0)
+	    goto error;
+
+	cp = buf + strlen(buf);
+	while(cp > buf && *--cp != '/') {} // skip over progname
+	if(cp <= buf)
+	    goto error;
+	*cp = 0;
+
+	if(realpath(buf, path) == NULL)
+	    goto error;
+
+	cp = path + strlen(path);
+	while(cp > path && *--cp != '/') {} // skip over dir (usually "bin")
+	if(cp <= path)
+	    goto error;
+	*cp = 0;
+	strlcat(path, "/share/", sizeof(path));
+	pathlen = strlen(path);
+    }
+    path[pathlen] = 0;
+    if(which == 0)
+	strlcat(path, "bison.simple", sizeof(path));
+    else
+	strlcat(path, "bison.hairy", sizeof(path));
+    return path;
+
+error:
+    pathlen = -1;
+    if(which == 0)
+	return PFILE;
+    return PFILE1;
+}
 
 char *
 stringappend (char *string1, int end1, char *string2)
@@ -246,7 +298,7 @@ openfiles (void)
           strcpy(cp, PFILE);
         }
 #endif /* MSDOS */
-      fparser = tryopen(filename ? filename : PFILE, "r");
+      fparser = tryopen(filename ? filename : getfilepath(0), "r");
     }
 
   if (verboseflag)
@@ -353,7 +405,7 @@ open_extra_files (void)
           strcpy(cp, PFILE1);
         }
 #endif
-      fparser= tryopen(filename ? filename : PFILE1, "r");
+      fparser= tryopen(filename ? filename : getfilepath(1), "r");
     }
 
 		/* JF change from inline attrs file to separate one */
