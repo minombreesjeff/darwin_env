@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -64,21 +64,21 @@ TSystemUtils::GetPreferredLanguages ( void )
 	uid = FindUIDToUse ( );
 	seteuid ( uid );
 	
-	userName = CFGetUserName ( );
+	userName = ::CFGetUserName ( );
 	require ( ( userName != NULL ), ErrorExit );
 	
-	equal = CFStringCompare ( userName, CFSTR ( kEmptyString ), 0 );
+	equal = ::CFStringCompare ( userName, CFSTR ( kEmptyString ), 0 );
 	require ( ( equal != kCFCompareEqualTo ), ErrorExit );
 	
-	languages = CFPreferencesCopyValue ( CFSTR ( kAppleLanguagesString ),
-										 kCFPreferencesAnyApplication,
-										 userName,
-										 kCFPreferencesAnyHost );
+	languages = ::CFPreferencesCopyValue ( CFSTR ( kAppleLanguagesString ),
+										   kCFPreferencesAnyApplication,
+										   userName,
+										   kCFPreferencesAnyHost );
 	
 	require ( ( languages != NULL ), ErrorExit );
-	require_action ( ( CFGetTypeID ( languages ) == CFArrayGetTypeID ( ) ),
+	require_action ( ( ::CFGetTypeID ( languages ) == ::CFArrayGetTypeID ( ) ),
 					 ErrorExit,
-					 CFRelease ( languages ) );
+					 ::CFRelease ( languages ) );
 	
 	preferredLanguages = ( CFArrayRef ) languages;
 	
@@ -106,24 +106,24 @@ TSystemUtils::FindUIDToUse ( void )
 	CFStringRef			userName	= NULL;
 	SCDynamicStoreRef	storeRef	= NULL;
 
-	storeRef = SCDynamicStoreCreate ( kCFAllocatorDefault,
-									  CFSTR ( "cddafs.util" ),
-									  NULL,
-									  NULL );
+	storeRef = ::SCDynamicStoreCreate ( kCFAllocatorDefault,
+										CFSTR ( "cddafs.util" ),
+										NULL,
+										NULL );
 	require ( ( storeRef != NULL ), ErrorExit );
 
-	userName = SCDynamicStoreCopyConsoleUser ( storeRef,
-											   &uid,
-											   &gid );
+	userName = ::SCDynamicStoreCopyConsoleUser ( storeRef,
+												 &uid,
+												 &gid );
 	require ( ( userName != NULL ), ReleaseDynamicStore );
-	CFRelease ( userName );
+	::CFRelease ( userName );
 	
 	
 ReleaseDynamicStore:
 	
 	
 	require_quiet ( ( storeRef != NULL ), ErrorExit );
-	CFRelease ( storeRef );
+	::CFRelease ( storeRef );
 	storeRef = NULL;
 	
 	

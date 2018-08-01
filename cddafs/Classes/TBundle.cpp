@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -270,6 +270,9 @@ TBundle::CopyURLForResourceOfTypeInBundle ( CFStringRef		resource,
 		}
 		
 	}
+
+	if ( preferredLocalizations != NULL )
+		::CFRelease ( preferredLocalizations );
     
 	if ( preferredLanguages != NULL )
 		::CFRelease ( preferredLanguages );
