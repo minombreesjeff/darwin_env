@@ -736,66 +736,136 @@ struct vop_read_args {
 			
 		}
 		
-		// Adjust offset by the header size so we have a true offset into the media.
-		offset -= headerSize;
-		sectorOffset = offset % kPhysicalMediaBlockSize;
-		
-		if ( sectorOffset != 0 )
+		if ( uio->uio_resid > 0 )
 		{
 			
-			count = ( kPhysicalMediaBlockSize - sectorOffset );
-			count += ( kMaxBlocksPerRead - 1 ) * kPhysicalMediaBlockSize;
+			// Adjust offset by the header size so we have a true offset into the media.
+			offset -= headerSize;
+			sectorOffset = offset % kPhysicalMediaBlockSize;
+			blockNumber = ( offset / kPhysicalMediaBlockSize ) + cddaNodePtr->u.file.nodeInfoPtr->LBA;
 			
-		}
-		
-		else
-		{
-			count = kMaxBlocksPerRead * kPhysicalMediaBlockSize;
-		}
-		
-		blockNumber = ( offset / kPhysicalMediaBlockSize ) + cddaNodePtr->u.file.nodeInfoPtr->LBA;
-
-		// We always want to read on block aligned boundaries. Always read block multiples
-		// as well.
-		
-		while ( uio->uio_resid > 0 )
-		{
-			
-			// Clip to requested data transfer
-			count = ulmin ( uio->uio_resid, count );
-			
-			// bread kMaxBlocksPerRead blocks and put them in the cache.
-			error = bread ( cddaNodePtr->blockDeviceVNodePtr,
-							blockNumber,
-							kMaxBlocksPerRead * kPhysicalMediaBlockSize,
-							NOCRED,
-							&bufPtr );
-			
-			if ( error != 0 )
+			// Part 1
+			// We do the read in 3 parts. First is the portion which is not part of a full 2352 byte block.
+			// In some cases, we actually are sector aligned and we skip this part. A lot of times we'll find
+			// this sector incore as well, since it was part of third read for the previous I/O.
+			if ( sectorOffset != 0 )
 			{
 				
+				// Clip to requested transfer count.
+				count = ulmin ( uio->uio_resid, ( kPhysicalMediaBlockSize - sectorOffset ) );
+				
+				// Read the one sector
+				error = bread ( cddaNodePtr->blockDeviceVNodePtr,
+								blockNumber,
+								kPhysicalMediaBlockSize,
+								NOCRED,
+								&bufPtr );
+				
+				if ( error != 0 )
+				{
+					
+					brelse ( bufPtr );
+					return ( error );
+					
+				}
+				
+				// Move the data from the block into the buffer
+				uiomove ( bufPtr->b_data + sectorOffset, count, uio );
+				
+				// Make sure we mark this bp invalid as we don't need to keep it around anymore
+				SET ( bufPtr->b_flags, B_INVAL );
+				
+				// Release this buffer back into the buffer pool. 
 				brelse ( bufPtr );
-				return ( error );
+				
+				// Update offset
+				blockNumber++;
 				
 			}
 			
-			// Move the data from the block into the buffer
-			uiomove ( bufPtr->b_data + sectorOffset, count, uio );
+			// Part 2
+			// Now we execute the second part of the read. This will be the largest chunk of the read.
+			// We will read multiple disc blocks up to MAXBSIZE bytes in a loop until we hit a chunk which
+			// is less than one block size. That will be read in the third part.
 			
-			// Make sure we mark any intermediate buffers as invalid as we don't need
-			// to keep them. We only need to keep the tail (for the beginning
-			// of the next I/O).
-			if ( uio->uio_resid > ( kMaxBlocksPerRead * kPhysicalMediaBlockSize ) )
+			while ( uio->uio_resid > kPhysicalMediaBlockSize )
+			{
+				
+				UInt32		blocksToRead = 0;
+				
+				// Read in as close to MAXBSIZE chunks as possible
+				if ( uio->uio_resid > kMaxBytesPerRead )
+				{
+					blocksToRead	= kMaxBlocksPerRead;
+					count			= kMaxBytesPerRead;
+				}
+				
+				else
+				{
+					blocksToRead	= uio->uio_resid / kPhysicalMediaBlockSize;
+					count			= blocksToRead * kPhysicalMediaBlockSize;
+				}
+				
+				// bread kMaxBlocksPerRead blocks and put them in the cache.
+				error = bread ( cddaNodePtr->blockDeviceVNodePtr,
+								blockNumber,
+								count,
+								NOCRED,
+								&bufPtr );
+				
+				if ( error != 0 )
+				{
+					
+					brelse ( bufPtr );
+					return ( error );
+					
+				}
+				
+				// Move the data from the block into the buffer
+				uiomove ( bufPtr->b_data, count, uio );
+				
+				// Make sure we mark any intermediate buffers as invalid as we don't need
+				// to keep them.
 				SET ( bufPtr->b_flags, B_INVAL );
+				
+				// Release this buffer back into the buffer pool. 
+				brelse ( bufPtr );
+				
+				// Update offset
+				blockNumber += blocksToRead;
+				
+			}
 			
-			// Release this buffer back into the buffer pool. 
-			brelse ( bufPtr );
-			
-			// Update offset
-			blockNumber += kMaxBlocksPerRead;
-			
-			count = kMaxBlocksPerRead * kPhysicalMediaBlockSize;
-			sectorOffset = 0;
+			// Part 3
+			// Now that we have read everything, we read the tail end which is a partial sector.
+			// Sometimes we don't need to execute this step since there isn't a tail.
+			if ( uio->uio_resid > 0 )
+			{
+				
+				count = uio->uio_resid;
+				
+				// Read the one sector
+				error = bread ( cddaNodePtr->blockDeviceVNodePtr,
+								blockNumber,
+								kPhysicalMediaBlockSize,
+								NOCRED,
+								&bufPtr );
+				
+				if ( error != 0 )
+				{
+					
+					brelse ( bufPtr );
+					return ( error );
+					
+				}
+				
+				// Move the data from the block into the buffer
+				uiomove ( bufPtr->b_data, count, uio );
+				
+				// Release this buffer back into the buffer pool. 
+				brelse ( bufPtr );
+				
+			}
 			
 		}
 		
@@ -1198,7 +1268,7 @@ struct vop_pagein_args {
 		
 		headerSize = sizeof ( cddaNodePtr->u.file.aiffHeader );
 
-		// Map the physical page into the kernel address space
+		// Map the physical pages into the kernel address space
 		kret = ubc_upl_map ( pageInArgsPtr->a_pl, &vmOffsetPtr );
 		
 		// If we got an error or the vmOffsetPtr is zero, panic for now
@@ -1227,66 +1297,148 @@ struct vop_pagein_args {
 			
 		}
 		
-		// Adjust offset by the header size so we have a true offset into the media.
-		offset -= headerSize;
-		sectorOffset = offset % kPhysicalMediaBlockSize;
-		
-		if ( sectorOffset != 0 )
-		{
-			count = ( kPhysicalMediaBlockSize - sectorOffset );
-			count += ( kMaxBlocksPerRead - 1 ) * kPhysicalMediaBlockSize;
-		}
-		
-		else
-		{
-			count = kMaxBlocksPerRead * kPhysicalMediaBlockSize;
-		}
-		
-		blockNumber = ( offset / kPhysicalMediaBlockSize ) + cddaNodePtr->u.file.nodeInfoPtr->LBA;
-		
-		// We always want to read on block aligned boundaries. Always read block multiples
-		// as well.
-		
-		while ( residual > 0 )
+		if ( residual > 0 )
 		{
 			
-			// Clip to requested data transfer
-			count = ulmin ( residual, count );
+			// Adjust offset by the header size so we have a true offset into the media.
+			offset -= headerSize;
+			sectorOffset = offset % kPhysicalMediaBlockSize;
+			blockNumber = ( offset / kPhysicalMediaBlockSize ) + cddaNodePtr->u.file.nodeInfoPtr->LBA;
 			
-			// bread kMaxBlocksPerRead blocks and put them in the cache.
-			error = bread ( cddaNodePtr->blockDeviceVNodePtr,
-							blockNumber,
-							kMaxBlocksPerRead * kPhysicalMediaBlockSize,
-							NOCRED,
-							&bufPtr );
-			
-			if ( error != 0 )
+			// Part 1
+			// We do the read in 3 parts. First is the portion which is not part of a full 2352 byte block.
+			// In some cases, we actually are sector aligned and we skip this part. A lot of times we'll find
+			// this sector incore as well, since it was part of third read for the previous I/O.
+			if ( sectorOffset != 0 )
 			{
 				
+				// Clip to requested transfer count.
+				count = ulmin ( residual, ( kPhysicalMediaBlockSize - sectorOffset ) );
+				
+				// Read the one sector
+				error = bread ( cddaNodePtr->blockDeviceVNodePtr,
+								blockNumber,
+								kPhysicalMediaBlockSize,
+								NOCRED,
+								&bufPtr );
+				
+				if ( error != 0 )
+				{
+					
+					brelse ( bufPtr );
+					return ( error );
+					
+				}
+				
+				// Copy the data
+				bcopy ( bufPtr->b_data + sectorOffset, ( void * ) vmOffsetPtr + offset + headerSize, count );
+				
+				// Increment/decrement counters
+				offset		+= count;
+				residual	-= count;
+				
+				// Make sure we mark this bp invalid as we don't need to keep it around anymore
+				SET ( bufPtr->b_flags, B_INVAL );
+				
+				// Release this buffer back into the buffer pool. 
 				brelse ( bufPtr );
-				return ( error );
+				
+				// Update offset
+				blockNumber++;
 				
 			}
 			
-			// Copy the data
-			bcopy ( bufPtr->b_data + sectorOffset, ( void * ) vmOffsetPtr + offset + headerSize, count );
+			// Part 2
+			// Now we execute the second part of the read. This will be the largest chunk of the read.
+			// We will read multiple disc blocks up to MAXBSIZE bytes in a loop until we hit a chunk which
+			// is less than one block size. That will be read in the third part.
 			
-			// Make sure we mark any intermediate buffers as invalid as we don't need
-			// to keep them. We only need to keep the tail (for the beginning
-			// of the next I/O).
-			if ( residual > ( kMaxBlocksPerRead * kPhysicalMediaBlockSize ) )
+			while ( residual > kPhysicalMediaBlockSize )
+			{
+				
+				UInt32		blocksToRead = 0;
+				
+				// Read in as close to MAXBSIZE chunks as possible
+				if ( residual > kMaxBytesPerRead )
+				{
+					blocksToRead	= kMaxBlocksPerRead;
+					count			= kMaxBytesPerRead;
+				}
+				
+				else
+				{
+					blocksToRead	= residual / kPhysicalMediaBlockSize;
+					count			= blocksToRead * kPhysicalMediaBlockSize;
+				}
+				
+				// bread kMaxBlocksPerRead blocks and put them in the cache.
+				error = bread ( cddaNodePtr->blockDeviceVNodePtr,
+								blockNumber,
+								count,
+								NOCRED,
+								&bufPtr );
+				
+				if ( error != 0 )
+				{
+					
+					brelse ( bufPtr );
+					return ( error );
+					
+				}
+
+				// Copy the data
+				bcopy ( bufPtr->b_data, ( void * ) vmOffsetPtr + offset + headerSize, count );
+				
+				// Increment/decrement counters
+				offset		+= count;
+				residual	-= count;
+				
+				// Make sure we mark any intermediate buffers as invalid as we don't need
+				// to keep them.
 				SET ( bufPtr->b_flags, B_INVAL );
+				
+				// Release this buffer back into the buffer pool. 
+				brelse ( bufPtr );
+				
+				// Update offset
+				blockNumber += blocksToRead;
+				
+			}
 			
-			// Release this buffer back into the buffer pool. 
-			brelse ( bufPtr );
-			
-			// Update offset
-			offset += count;
-			residual -= count;
-			blockNumber += kMaxBlocksPerRead;
-			
-			count = kMaxBlocksPerRead * kPhysicalMediaBlockSize;
-			sectorOffset = 0;
+			// Part 3
+			// Now that we have read everything, we read the tail end which is a partial sector.
+			// Sometimes we don't need to execute this step since there isn't a tail.
+			if ( residual > 0 )
+			{
+				
+				count = residual;
+				
+				// Read the one sector
+				error = bread ( cddaNodePtr->blockDeviceVNodePtr,
+								blockNumber,
+								kPhysicalMediaBlockSize,
+								NOCRED,
+								&bufPtr );
+				
+				if ( error != 0 )
+				{
+					
+					brelse ( bufPtr );
+					return ( error );
+					
+				}
+				
+				// Copy the data
+				bcopy ( bufPtr->b_data, ( void * ) vmOffsetPtr + offset + headerSize, count );
+				
+				// Increment/decrement counters
+				offset		+= count;
+				residual	-= count;
+				
+				// Release this buffer back into the buffer pool. 
+				brelse ( bufPtr );
+				
+			}
 			
 		}
 		
@@ -1460,7 +1612,7 @@ struct vop_getattrlist_args {
 	void *				varptr;
 	
 	DebugLog ( ( "CDDA_GetAttributesList: Entering.\n" ) );
-
+	
 	DebugAssert ( ( attrListArgsPtr != NULL ) );
 	
 	vNodePtr 			= attrListArgsPtr->a_vp;
@@ -1470,21 +1622,22 @@ struct vop_getattrlist_args {
 	DebugAssert ( ( attributesListPtr != NULL ) );
 	
 	cddaNodePtr	= VTOCDDA ( vNodePtr );
-
+	
 	DebugAssert ( ( cddaNodePtr != NULL ) );
 	
 	DebugAssert ( ( ap->a_uio->uio_rw == UIO_READ ) );
 	
-	if ( ( attributesListPtr->bitmapcount != ATTR_BIT_MAP_COUNT ) ||
-		 ( ( attributesListPtr->commonattr & ~ATTR_CMN_VALIDMASK ) != 0 ) ||
-		 ( ( attributesListPtr->volattr & ~ATTR_VOL_VALIDMASK ) != 0 ) ||
-		 ( ( attributesListPtr->dirattr & ~ATTR_DIR_VALIDMASK ) != 0 ) ||
-		 ( ( attributesListPtr->fileattr & ~ATTR_FILE_VALIDMASK ) != 0 ) ||
-		 ( ( attributesListPtr->forkattr & ~ATTR_FORK_VALIDMASK ) != 0) )
+	// Make sure the caller isn't asking for an attribute we don't support.
+	if ( ( attributesListPtr->bitmapcount != 5 ) ||
+		 ( ( attributesListPtr->commonattr & ~kAppleCDDACommonAttributesValidMask ) != 0 ) ||
+		 ( ( attributesListPtr->volattr & ~kAppleCDDAVolumeAttributesValidMask ) != 0 ) ||
+		 ( ( attributesListPtr->dirattr & ~kAppleCDDADirectoryAttributesValidMask ) != 0 ) ||
+		 ( ( attributesListPtr->fileattr & ~kAppleCDDAFileAttributesValidMask ) != 0 ) ||
+		 ( ( attributesListPtr->forkattr & ~kAppleCDDAForkAttributesValidMask ) != 0) )
 	{
 		
 		DebugLog ( ( "CDDA_GetAttributesList: bad attrlist\n" ) );
-		return EINVAL;
+		return EOPNOTSUPP;
 		
 	}
 	
@@ -1495,24 +1648,6 @@ struct vop_getattrlist_args {
 	{
 		
 		DebugLog ( ( "CDDA_GetAttributesList: conflicting information requested\n" ) );
-		return EINVAL;
-		
-	}
-	
-	if ( attributesListPtr->commonattr & ( ATTR_CMN_NAMEDATTRCOUNT | ATTR_CMN_NAMEDATTRLIST ) )
-	{
-		
-		DebugLog ( ( "CDDA_GetAttributesList: illegal bits for commonattr\n" ) );
-		return EINVAL;
-		
-	}
-	
-	if ( attributesListPtr->fileattr & ( ATTR_FILE_FILETYPE | ATTR_FILE_FORKCOUNT |
-									   ATTR_FILE_FORKLIST | ATTR_FILE_DATAEXTENTS |
-									   ATTR_FILE_RSRCEXTENTS ) )
-	{
-		
-		DebugLog ( ( "CDDA_GetAttributesList: illegal bits for fileattr\n" ) );
 		return EINVAL;
 		
 	}
@@ -1530,13 +1665,6 @@ struct vop_getattrlist_args {
 		
 	if ( attributesListPtr->volattr & ATTR_VOL_NAME )
 		attrblocksize += kCDDAMaxFileNameBytes + 1;
-	
-	// We don't support these two, so we add nothing to the buffersize
-	if ( attributesListPtr->fileattr & ATTR_FILE_FORKLIST )
-		attrblocksize += 0;
-
-	if ( attributesListPtr->commonattr & ATTR_CMN_NAMEDATTRLIST )
-		attrblocksize += 0;
 	
 	attrbufsize = MIN ( attrListArgsPtr->a_uio->uio_resid, attrblocksize );
 	
@@ -2370,8 +2498,11 @@ struct vnodeopv_entry_desc gCDDA_VNodeOperationEntries[] =
 	{ &vop_seek_desc, 			( VOPFUNC ) err_seek },					// seek
 	{ &vop_remove_desc, 		( VOPFUNC ) CDDA_Remove },				// remove
 	{ &vop_link_desc, 			( VOPFUNC ) err_link },					// link
-	{ &vop_rename_desc, 		( VOPFUNC ) err_rename },				// rename
-//	{ &vop_rename_desc, 		( VOPFUNC ) CDDA_Rename },				// rename
+#if RENAME_SUPPORTED
+	{ &vop_rename_desc, 		( VOPFUNC ) CDDA_Rename },				// rename
+#else
+	{ &vop_rename_desc, 		( VOPFUNC ) err_rename },				// rename	
+#endif /* RENAME_SUPPORTED */
 	{ &vop_mkdir_desc, 			( VOPFUNC ) err_mkdir },				// mkdir
 	{ &vop_rmdir_desc, 			( VOPFUNC ) CDDA_RmDir },				// rmdir
 	{ &vop_getattrlist_desc, 	( VOPFUNC ) CDDA_GetAttributesList },	// getattrlist

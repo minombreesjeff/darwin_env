@@ -24,57 +24,43 @@
  */
 
 
-#ifndef __CDDA_TRACK_NAME_H__
-#define __CDDA_TRACK_NAME_H__
+#ifndef __TSYSTEM_UTILS_H__
+#define __TSYSTEM_UTILS_H__
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	Includes
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
-#include "TBundle.h"
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreFoundation/CFPriv.h>
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	Class Declaration
-//
-//	CDDATrackName is the base class for all databases used. It provides
-//	localized variants of the artist, title, and track names, as well as a
-//	possible separator string used for autodiskmount
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
-class CDDATrackName
+class TSystemUtils
 {
 	
-	private:
-		
-		// Disable copy constructors
-		CDDATrackName ( CDDATrackName &src );
-		void operator = ( CDDATrackName &src );
-		
-		TBundle *		fBundle;
-		
-		CFStringRef		fTrackNameStringRef;
-		CFStringRef		fAlbumStringRef;
-		CFStringRef		fArtistStringRef;
-		CFStringRef		fSeparatorStringRef;
-		
-	public:
-		
-		// Constructor
-		CDDATrackName ( void );
-		
-		// Destructor
-		virtual ~CDDATrackName ( void );		
-		
-		virtual SInt32			Init ( const char * bsdDevNode, const void * TOCData );
-		
-		virtual CFStringRef 	GetArtistName ( void );
-		virtual CFStringRef 	GetAlbumName ( void );
-		virtual CFStringRef 	GetSeparatorString ( void );
-		virtual CFStringRef 	GetTrackName ( UInt8 trackNumber );
-		
+private:
+	
+	// Disable constructor
+	TSystemUtils ( void );
+	
+	// Disable destructor
+	~TSystemUtils ( void );
+	
+	// Disable copy constructors
+	TSystemUtils ( TSystemUtils &src );
+	void operator = ( TSystemUtils &src );
+	
+public:
+	
+	static CFArrayRef	GetPreferredLanguages ( void );
+	static uid_t		FindUIDToUse ( void );
+	
 };
 
 
-#endif	/* __CDDA_TRACK_NAME_H__ */
+#endif	// __TSYSTEM_UTILS_H__

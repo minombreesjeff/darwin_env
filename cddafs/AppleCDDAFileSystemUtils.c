@@ -67,42 +67,8 @@
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	Globals
+//	Constants
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-
-
-char 		gFileSuffix[5] 		= ".aiff";
-
-enum
-{
-	kASCIINumberZero	= 0x30	// '0'
-};
-
-enum
-{
-	kAlbumTrackNumber	= 0
-};
-
-// For pre-Panther systems
-#ifndef VOL_CAP_FMT_JOURNAL
-#define VOL_CAP_FMT_JOURNAL			0x00000008
-#define VOL_CAP_FMT_JOURNAL_ACTIVE	0x00000010
-#define VOL_CAP_FMT_NO_ROOT_TIMES	0x00000020
-#define VOL_CAP_FMT_SPARSE_FILES	0x00000040
-#define VOL_CAP_FMT_ZERO_RUNS		0x00000080
-#define VOL_CAP_FMT_CASE_SENSITIVE	0x00000100
-#define VOL_CAP_FMT_CASE_PRESERVING 0x00000200
-#define VOL_CAP_FMT_FAST_STATFS		0x00000400
-#endif
-
-#ifndef VOL_CAP_INT_EXCHANGEDATA
-#define VOL_CAP_INT_EXCHANGEDATA	0x00000010
-#define VOL_CAP_INT_COPYFILE		0x00000020
-#define VOL_CAP_INT_ALLOCATE		0x00000040
-#define VOL_CAP_INT_VOL_RENAME		0x00000080
-#define VOL_CAP_INT_ADVLOCK			0x00000100
-#endif
-
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	Static Function Prototypes
@@ -746,7 +712,7 @@ ParseTOC ( struct mount * mountPtr,
 			{
 				
 				// Make this easier to read by getting a pointer to the nodeInfo
-				nodeInfoPtr  = &cddaMountPtr->nodeInfoArrayPtr[rootDirNodePtr->entryCount - kNumberOfFakeDirEntries];
+				nodeInfoPtr = &cddaMountPtr->nodeInfoArrayPtr[rootDirNodePtr->entryCount - kNumberOfFakeDirEntries];
 				
 				// Copy this trackDescriptor into the AppleCDDANodeInfo array
 				nodeInfoPtr->trackDescriptor = *trackDescriptorPtr;				
@@ -819,12 +785,10 @@ int
 BuildTrackName ( struct mount * mountPtr, AppleCDDANodeInfoPtr nodeInfoPtr )
 {
 	
-	UInt8		offset 		= 0;
 	UInt8		trackNumber	= 0;
-	char *		name;
-	UInt8		nameSize;
-	int			error;
-	UInt8		numberOfPadBytes = 2;
+	char *		name		= NULL;
+	UInt8		nameSize	= 0;
+	int			error		= 0;
 	
 	DebugLog ( ( "BuildTrackName: entering.\n" ) );
 	
@@ -844,35 +808,19 @@ BuildTrackName ( struct mount * mountPtr, AppleCDDANodeInfoPtr nodeInfoPtr )
 		
 	}
 	
-	if ( nodeInfoPtr->trackDescriptor.point > 9 )
-	{
-		numberOfPadBytes++;
-	}
-	
 	// Set the size of the name
-	nodeInfoPtr->nameSize = nameSize + strlen ( gFileSuffix ) + numberOfPadBytes;
+	nodeInfoPtr->nameSize = nameSize;
 	
 	// If we got here, then we have a valid track and the nodeInfoArrayPtr points to our
 	// offset into the array. So, MALLOC the name here
 	MALLOC ( nodeInfoPtr->name, char *, nodeInfoPtr->nameSize + 1, M_TEMP, M_WAITOK ); 
 	
-	if ( nodeInfoPtr->trackDescriptor.point > 9 )
-	{
-		nodeInfoPtr->name[offset++] = ( nodeInfoPtr->trackDescriptor.point / 10 ) + kASCIINumberZero;
-	}
-	
-	nodeInfoPtr->name[offset++] = ( nodeInfoPtr->trackDescriptor.point % 10 ) + kASCIINumberZero;
-	nodeInfoPtr->name[offset++] = ' ';
-	
-	// Copy the name and the suffix to the name ptr.
-	bcopy ( name, &nodeInfoPtr->name[offset], nameSize );
-	offset += nameSize;
-	bcopy ( gFileSuffix, &nodeInfoPtr->name[offset], strlen ( gFileSuffix ) );
-	offset += strlen ( gFileSuffix );
+	// Copy the name
+	bcopy ( name, &nodeInfoPtr->name[0], nameSize );
 	
 	// Don't forget NULL byte
-	nodeInfoPtr->name[offset] = 0;
-		
+	nodeInfoPtr->name[nameSize] = 0;
+	
 	DebugLog ( ( "BuildTrackName: fileName = %s\n", nodeInfoPtr->name ) );
 	
 	return 0;
@@ -948,46 +896,10 @@ CalculateAttributeBlockSize ( struct attrlist * attrlist )
 	int				size;
 	attrgroup_t		a;
 	
-#if ( (	ATTR_CMN_NAME		| ATTR_CMN_DEVID			| ATTR_CMN_FSID 			| ATTR_CMN_OBJTYPE 		| \
-		ATTR_CMN_OBJTAG		| ATTR_CMN_OBJID			| ATTR_CMN_OBJPERMANENTID	| ATTR_CMN_PAROBJID		| \
-		ATTR_CMN_SCRIPT		| ATTR_CMN_CRTIME			| ATTR_CMN_MODTIME			| ATTR_CMN_CHGTIME		| \
-		ATTR_CMN_ACCTIME	| ATTR_CMN_BKUPTIME			| ATTR_CMN_FNDRINFO			| ATTR_CMN_OWNERID		| \
-		ATTR_CMN_GRPID		| ATTR_CMN_ACCESSMASK		| ATTR_CMN_NAMEDATTRCOUNT	| ATTR_CMN_NAMEDATTRLIST| \
-		ATTR_CMN_FLAGS		| ATTR_CMN_USERACCESS ) != ATTR_CMN_VALIDMASK )
-#error CalculateAttributeBlockSize: Missing bits in common mask computation!
-#endif
-	
 	DebugAssert ( ( attrlist->commonattr & ~ATTR_CMN_VALIDMASK ) == 0 );
-
-#if ( (	ATTR_VOL_FSTYPE			| ATTR_VOL_SIGNATURE		| ATTR_VOL_SIZE				| ATTR_VOL_SPACEFREE 	| \
-		ATTR_VOL_SPACEAVAIL		| ATTR_VOL_MINALLOCATION	| ATTR_VOL_ALLOCATIONCLUMP	| ATTR_VOL_IOBLOCKSIZE	| \
-		ATTR_VOL_OBJCOUNT		| ATTR_VOL_FILECOUNT		| ATTR_VOL_DIRCOUNT			| ATTR_VOL_MAXOBJCOUNT	| \
-		ATTR_VOL_MOUNTPOINT		| ATTR_VOL_NAME				| ATTR_VOL_MOUNTFLAGS		| ATTR_VOL_INFO			| \
-		ATTR_VOL_MOUNTEDDEVICE	| ATTR_VOL_ENCODINGSUSED	| ATTR_VOL_CAPABILITIES		| ATTR_VOL_ATTRIBUTES ) != ATTR_VOL_VALIDMASK )
-#error CalculateAttributeBlockSize: Missing bits in volume mask computation!
-#endif
-	
 	DebugAssert ( ( attrlist->volattr & ~ATTR_VOL_VALIDMASK ) == 0 );
-	
-#if ( ( ATTR_DIR_LINKCOUNT | ATTR_DIR_ENTRYCOUNT | ATTR_DIR_MOUNTSTATUS ) != ATTR_DIR_VALIDMASK )
-#error CalculateAttributeBlockSize: Missing bits in directory mask computation!
-#endif
-	
 	DebugAssert ( ( attrlist->dirattr & ~ATTR_DIR_VALIDMASK ) == 0 );
-	
-#if ( (	ATTR_FILE_LINKCOUNT		| ATTR_FILE_TOTALSIZE		| ATTR_FILE_ALLOCSIZE 		| ATTR_FILE_IOBLOCKSIZE 	| \
-		ATTR_FILE_CLUMPSIZE		| ATTR_FILE_DEVTYPE			| ATTR_FILE_FILETYPE		| ATTR_FILE_FORKCOUNT		| \
-		ATTR_FILE_FORKLIST		| ATTR_FILE_DATALENGTH		| ATTR_FILE_DATAALLOCSIZE	| ATTR_FILE_DATAEXTENTS		| \
-		ATTR_FILE_RSRCLENGTH	| ATTR_FILE_RSRCALLOCSIZE	| ATTR_FILE_RSRCEXTENTS ) != ATTR_FILE_VALIDMASK )
-#error CalculateAttributeBlockSize: Missing bits in file mask computation!
-#endif
-	
 	DebugAssert ( ( attrlist->fileattr & ~ATTR_FILE_VALIDMASK ) == 0 );
-	
-#if ( ( ATTR_FORK_TOTALSIZE | ATTR_FORK_ALLOCSIZE ) != ATTR_FORK_VALIDMASK )
-#error CalculateAttributeBlockSize: Missing bits in fork mask computation!
-#endif
-	
 	DebugAssert ( ( attrlist->forkattr & ~ATTR_FORK_VALIDMASK ) == 0 );
 	
 	size = 0;
@@ -1029,6 +941,7 @@ CalculateAttributeBlockSize ( struct attrlist * attrlist )
 		
 		if ( a & ATTR_VOL_FSTYPE )			size += sizeof ( UInt32 );
 		if ( a & ATTR_VOL_SIGNATURE ) 		size += sizeof ( UInt32 );
+		if ( a & ATTR_VOL_VCBFSID )			size += sizeof ( UInt32 );
 		if ( a & ATTR_VOL_SIZE ) 			size += sizeof ( off_t );
 		if ( a & ATTR_VOL_SPACEFREE ) 		size += sizeof ( off_t );
 		if ( a & ATTR_VOL_SPACEAVAIL ) 		size += sizeof ( off_t );
@@ -1080,16 +993,6 @@ CalculateAttributeBlockSize ( struct attrlist * attrlist )
 		if ( a & ATTR_FILE_RSRCLENGTH ) 	size += sizeof ( off_t );
 		if ( a & ATTR_FILE_RSRCALLOCSIZE ) 	size += sizeof ( off_t );
 		if ( a & ATTR_FILE_RSRCEXTENTS )	size += sizeof ( extentrecord );
-		
-	}
-	
-	if ( ( a = attrlist->forkattr ) != 0 )
-	{
-		
-		DebugLog ( ( "Fork attributes wanted\n" ) );
-		
-		if ( a & ATTR_FORK_TOTALSIZE )		size += sizeof ( off_t );
-		if ( a & ATTR_FORK_ALLOCSIZE )		size += sizeof ( off_t );
 		
 	}
 	
@@ -1331,8 +1234,8 @@ PackVolumeAttributes ( 	struct attrlist * attrListPtr,
 		if ( a & ATTR_VOL_SIGNATURE )
 		{
 			
-			DebugLog ( ( "ATTR_VOL_SIGNATURE : 0x%04x\n", 0x4A48 ) );
-			*( ( UInt32 * ) attrbufptr )++ = ( UInt32 ) 0x4A48;
+			DebugLog ( ( "ATTR_VOL_SIGNATURE : 0x%04x\n", kAppleCDDAFileSystemVolumeSignature ) );
+			*( ( UInt32 * ) attrbufptr )++ = ( UInt32 ) kAppleCDDAFileSystemVolumeSignature;
 			
 		}
 		
@@ -1513,7 +1416,8 @@ PackVolumeAttributes ( 	struct attrlist * attrListPtr,
 																	  VOL_CAP_INT_COPYFILE |
 																	  VOL_CAP_INT_ALLOCATE |
 																	  VOL_CAP_INT_VOL_RENAME |
-																	  VOL_CAP_INT_ADVLOCK;
+																	  VOL_CAP_INT_ADVLOCK |
+																	  VOL_CAP_INT_FLOCK;
 
 			// We only support these bits of the above recognized things.
 			capabilities->capabilities[VOL_CAPABILITIES_FORMAT] 	= VOL_CAP_FMT_PERSISTENTOBJECTIDS |
@@ -1533,22 +1437,30 @@ PackVolumeAttributes ( 	struct attrlist * attrListPtr,
 			
 		}
 		
+		if ( a & ATTR_VOL_VCBFSID )
+		{
+			
+			DebugLog ( ( "ATTR_VOL_VCBFSID : 0x%04x\n", kAppleCDDAFileSystemVCBFSID ) );
+			*( ( UInt32 * ) attrbufptr )++ = ( UInt32 ) kAppleCDDAFileSystemVCBFSID;
+			
+		}
+		
 		if ( a & ATTR_VOL_ATTRIBUTES )
 		{
 			
 			DebugLog ( ( "ATTR_VOL_ATTRIBUTES\n" ) );
 			
-			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.commonattr 	= ATTR_CMN_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.volattr 		= ATTR_VOL_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.dirattr 		= ATTR_DIR_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.fileattr 		= ATTR_FILE_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.forkattr 		= ATTR_FORK_VALIDMASK;
+			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.commonattr 	= kAppleCDDACommonAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.volattr 		= kAppleCDDAVolumeAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.dirattr 		= kAppleCDDADirectoryAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.fileattr 		= kAppleCDDAFileAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->validattr.forkattr 		= kAppleCDDAForkAttributesValidMask;
 			
-			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.commonattr 	= ATTR_CMN_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.volattr 		= ATTR_VOL_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.dirattr 		= ATTR_DIR_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.fileattr 	= ATTR_FILE_VALIDMASK;
-			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.forkattr 	= ATTR_FORK_VALIDMASK;
+			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.commonattr 	= kAppleCDDACommonAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.volattr 		= kAppleCDDAVolumeAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.dirattr 		= kAppleCDDADirectoryAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.fileattr 	= kAppleCDDAFileAttributesValidMask;
+			( ( vol_attributes_attr_t * ) attrbufptr )->nativeattr.forkattr 	= kAppleCDDAForkAttributesValidMask;
 			
 			++( ( vol_attributes_attr_t * ) attrbufptr );
 			
@@ -1563,6 +1475,10 @@ PackVolumeAttributes ( 	struct attrlist * attrListPtr,
 	
 }
 
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	PackCommonAttributes - 	Packs the common attributes
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 void
 PackCommonAttributes (  struct attrlist * attrListPtr,
@@ -1919,6 +1835,10 @@ PackCommonAttributes (  struct attrlist * attrListPtr,
 }
 
 
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	PackDirectoryAttributes - 	Packs the directory attributes
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
 void
 PackDirectoryAttributes ( struct attrlist * attrListPtr,
 						  AppleCDDANodePtr cddaNodePtr,
@@ -1980,6 +1900,10 @@ PackDirectoryAttributes ( struct attrlist * attrListPtr,
 	
 }
 
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	PackFileAttributes - Packs the file attributes
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 void
 PackFileAttributes ( struct attrlist * 	attrListPtr,
@@ -2100,6 +2024,10 @@ PackFileAttributes ( struct attrlist * 	attrListPtr,
 	
 }
 
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	PackAttributesBlock - Packs the attributes block
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 void
 PackAttributesBlock ( struct attrlist * attrListPtr,

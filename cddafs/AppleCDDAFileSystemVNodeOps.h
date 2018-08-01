@@ -28,6 +28,8 @@
 #ifndef __APPLE_CDDA_FS_VNODE_OPS_H__
 #define __APPLE_CDDA_FS_VNODE_OPS_H__
 
+#include <sys/param.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -37,7 +39,8 @@ extern "C" {
 enum
 {
 	kPhysicalMediaBlockSize		= 2352,
-	kMaxBlocksPerRead			= 1		// Max blocks to read per bread()
+	kMaxBlocksPerRead			= MAXBSIZE / kPhysicalMediaBlockSize,			// Max blocks to read per bread()
+	kMaxBytesPerRead			= kMaxBlocksPerRead * kPhysicalMediaBlockSize	// Max bytes to read per bread()
 };
 
 #ifdef __cplusplus

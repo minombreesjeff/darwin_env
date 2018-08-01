@@ -32,6 +32,10 @@
 #include "AppleCDDAFileSystemVFSOps.h"
 #endif
 
+#ifndef __APPLE_CDDA_FS_VNODE_OPS_H__
+#include "AppleCDDAFileSystemVNodeOps.h"
+#endif
+
 #ifndef __APPLE_CDDA_FS_DEBUG_H__
 #include "AppleCDDAFileSystemDebug.h"
 #endif
@@ -470,6 +474,7 @@ CDDA_Unmount ( struct mount * mountPtr,
 	AppleCDDAMountPtr		cddaMountPtr		= NULL;
 	AppleCDDANodePtr		cddaNodePtr			= NULL;
 	AppleCDDANodeInfoPtr	nodeInfoArrayPtr	= NULL;
+	UInt8 *					nameData			= NULL;
 	int						error				= 0;
 	int						flags				= 0;
 	
@@ -572,9 +577,17 @@ CDDA_Unmount ( struct mount * mountPtr,
 	
 	DebugLog ( ( "CDDA_Unmount: All vnodes killed!\n" ) );
 	
+	// Get a pointer to the name data	
+	nameData = VFSTONAMEINFO ( mountPtr );
+	
+	DebugLog ( ( "CDDA_Unmount: Free the name data.\n" ) );
+	
+	// Free the name data
+	FREE ( ( caddr_t ) nameData, M_TEMP );
+	
 	// Get a pointer to the NodeInfo Array	
 	nodeInfoArrayPtr = VFSTONODEINFO ( mountPtr );
-
+	
 	DebugLog ( ( "CDDA_Unmount: Free the nodeinfo array.\n" ) );
 	
 	// Free the NodeInfo Array we allocated at mount time
@@ -661,7 +674,7 @@ CDDA_Statfs ( struct mount * mountPtr,
 	
 	statFSPtr->f_flags	= 0;
 	statFSPtr->f_bsize	= kPhysicalMediaBlockSize;
-	statFSPtr->f_iosize = PAGE_SIZE;	// Lie to system and tell it we like 4K I/Os
+	statFSPtr->f_iosize = kMaxBytesPerRead * 2;
 	statFSPtr->f_bfree	= 0;			// No free blocks since we're a CD-ROM
 	statFSPtr->f_bavail = 0;			// No available blocks since we're a CD-ROM
 	statFSPtr->f_ffree	= 0;
@@ -1073,7 +1086,7 @@ Apple_CDDA_FS_Module_Start ( int loadArgument )
 	// Fill in the rest of the structure
 	newVFSConf->vfc_typenum		= maxvfsconf++; // еее Bad to use a system global here!!
 	newVFSConf->vfc_refcount	= 0;
-	newVFSConf->vfc_flags		= 0;
+	newVFSConf->vfc_flags		= (MNT_LOCAL | MNT_DOVOLFS);
 	newVFSConf->vfc_mountroot	= NULL;			// Can't mount as root
 	newVFSConf->vfc_next		= NULL;
 	

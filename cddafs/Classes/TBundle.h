@@ -24,57 +24,62 @@
  */
 
 
-#ifndef __CDDA_TRACK_NAME_H__
-#define __CDDA_TRACK_NAME_H__
+#ifndef __TBUNDLE_H__
+#define __TBUNDLE_H__
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	Includes
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
-#include "TBundle.h"
+#include <CoreFoundation/CoreFoundation.h>
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	Class Declaration
-//
-//	CDDATrackName is the base class for all databases used. It provides
-//	localized variants of the artist, title, and track names, as well as a
-//	possible separator string used for autodiskmount
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
-class CDDATrackName
+class TBundle
 {
 	
-	private:
-		
-		// Disable copy constructors
-		CDDATrackName ( CDDATrackName &src );
-		void operator = ( CDDATrackName &src );
-		
-		TBundle *		fBundle;
-		
-		CFStringRef		fTrackNameStringRef;
-		CFStringRef		fAlbumStringRef;
-		CFStringRef		fArtistStringRef;
-		CFStringRef		fSeparatorStringRef;
-		
-	public:
-		
-		// Constructor
-		CDDATrackName ( void );
-		
-		// Destructor
-		virtual ~CDDATrackName ( void );		
-		
-		virtual SInt32			Init ( const char * bsdDevNode, const void * TOCData );
-		
-		virtual CFStringRef 	GetArtistName ( void );
-		virtual CFStringRef 	GetAlbumName ( void );
-		virtual CFStringRef 	GetSeparatorString ( void );
-		virtual CFStringRef 	GetTrackName ( UInt8 trackNumber );
-		
+private:
+	
+	// Disable copy constructors
+	TBundle ( TBundle &src );
+	void operator = ( TBundle &src );
+	
+	CFBundleRef		fCFBundleRef;
+	CFDictionaryRef	fLocalizationDictionaryForTable;
+	
+	CFArrayRef		CopyLocalizations ( void );
+	CFArrayRef		CopyLocalizationsForPrefs ( CFArrayRef bundleLocalizations,
+												CFArrayRef preferredLanguages );
+
+	CFURLRef		CopyURLForResourceOfTypeInBundle ( CFStringRef	resource,
+													   CFStringRef	type,
+													   CFBundleRef	bundle );
+	
+	CFURLRef		CopyURLForResource ( CFStringRef resource,
+										 CFStringRef type,
+										 CFStringRef dir,
+										 CFStringRef localization );
+	
+	CFDictionaryRef	CopyLocalizationDictionaryForTable ( CFStringRef table );
+	
+	
+public:
+	
+	// Constructor
+	TBundle ( CFBundleRef bundle );
+	
+	// Destructor
+	~TBundle ( void );
+	
+	CFStringRef		CopyLocalizedStringForKey ( CFStringRef key,
+												CFStringRef	defaultValue,
+												CFStringRef tableName );
+	
 };
 
 
-#endif	/* __CDDA_TRACK_NAME_H__ */
+#endif	// __TBUNDLE_H__
