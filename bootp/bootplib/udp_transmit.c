@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2000, 2010-2013 Apple Inc. All rights reserved.
+ * Copyright (c) 1999-2016 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,14 +22,17 @@
  */
 
 /*
- * bootp_transmit.c
- * - send a bootp reques using a socket or BPF
+ * udp_transmit.c
+ * - send a UDP packet using a socket or BPF
  */
 /* 
  * Modification History
  *
  * May 11, 2000		Dieter Siegmund (dieter@apple.com)
  * - created
+ * March 31, 2016	Dieter Siegmund (dieter@apple.com)
+ * - renamed bootp_transmit.c => udp_transmit.c,
+ *   bootp_transmit() => udpv4_transmit()
  */
 
 #include <stdlib.h>
@@ -50,8 +53,9 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 #include "IPConfigurationLog.h"
+#include "symbol_scope.h"
 
-#include "bootp_transmit.h"
+#include "udp_transmit.h"
 #include "bpflib.h"
 #include "in_cksum.h"
 
@@ -69,7 +73,7 @@ typedef struct {
 } udp_pseudo_hdr_t;
 
 
-static int 
+STATIC int
 get_bpf_fd(const char * if_name)
 {
     int bpf_fd;
@@ -99,9 +103,9 @@ get_bpf_fd(const char * if_name)
     return (bpf_fd);
 }
 
-int
-bootp_transmit(int sockfd, void * sendbuf,
-	       const char * if_name, int hwtype, const void * hwaddr, int hwlen,
+PRIVATE_EXTERN int
+udpv4_transmit(int sockfd, void * sendbuf,
+	       const char * if_name, int hwtype, const void * hwaddr,
 	       struct in_addr dest_ip,
 	       struct in_addr src_ip,
 	       u_short dest_port,
@@ -239,4 +243,3 @@ bootp_transmit(int sockfd, void * sendbuf,
     }
     return (status);
 }
-		       

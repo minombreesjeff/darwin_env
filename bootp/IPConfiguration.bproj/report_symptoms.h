@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2016 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,35 +22,22 @@
  */
 
 /*
- * bootp_transmit.h
- * - send a bootp packet using a socket or BPF
+ * report_symptoms.h
+ * - report symptoms related to address acquisition
  */
-
-#ifndef _S_BOOTP_TRANSMIT_H
-#define _S_BOOTP_TRANSMIT_H
 
 /* 
  * Modification History
  *
- * May 11, 2000		Dieter Siegmund (dieter@apple.com)
- * - created
+ * February 23, 2016	Dieter Siegmund (dieter@apple.com)
+ * - initial version
  */
 
-#include "udp_transmit.h"
+#ifndef _S_REPORT_SYMPTOMS_H
+#define _S_REPORT_SYMPTOMS_H
+#include <stdbool.h>
 
-static inline int
-bootp_transmit(int sockfd, void * sendbuf,
-	       const char * if_name,
-	       int hwtype, const void * hwaddr,
-	       struct in_addr dest_ip,
-	       struct in_addr src_ip,
-	       u_short dest_port,
-	       u_short src_port,
-	       const void * data, int len)
-{
-    return (udpv4_transmit(sockfd, sendbuf, if_name, hwtype, hwaddr,
-			   dest_ip, src_ip, dest_port, src_port, data, len));
+bool
+report_address_acquisition_symptom(int ifindex, bool success);
 
-}
-
-#endif /* _S_BOOTP_TRANSMIT_H */
+#endif /* _S_REPORT_SYMPTOMS_H */

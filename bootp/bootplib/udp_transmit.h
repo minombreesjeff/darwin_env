@@ -22,35 +22,29 @@
  */
 
 /*
- * bootp_transmit.h
- * - send a bootp packet using a socket or BPF
+ * udp_transmit.h
+ * - send a UDP packet using a socket or BPF
  */
 
-#ifndef _S_BOOTP_TRANSMIT_H
-#define _S_BOOTP_TRANSMIT_H
+#ifndef _S_UDP_TRANSMIT_H
+#define _S_UDP_TRANSMIT_H
 
 /* 
  * Modification History
  *
- * May 11, 2000		Dieter Siegmund (dieter@apple.com)
+ * March 30, 2016		Dieter Siegmund (dieter@apple.com)
  * - created
  */
 
-#include "udp_transmit.h"
-
-static inline int
-bootp_transmit(int sockfd, void * sendbuf,
-	       const char * if_name,
+int
+udpv4_transmit(int sockfd, void * sendbuf,
+	       const char * if_name, 
 	       int hwtype, const void * hwaddr,
 	       struct in_addr dest_ip,
 	       struct in_addr src_ip,
 	       u_short dest_port,
 	       u_short src_port,
-	       const void * data, int len)
-{
-    return (udpv4_transmit(sockfd, sendbuf, if_name, hwtype, hwaddr,
-			   dest_ip, src_ip, dest_port, src_port, data, len));
+	       const void * data, int len);
 
-}
 
-#endif /* _S_BOOTP_TRANSMIT_H */
+#endif /* _S_UDP_TRANSMIT_H */
