@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Inc. All rights reserved.
+ * Copyright (c) 2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,4 +21,37 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-char *	tftp_get(char * host, char * remote_file, off_t * len_p, int t);
+/*
+ * IPv6Socket.h
+ * - common functions for creating/sending packets over IPv6 sockets
+ */
+
+/* 
+ * Modification History
+ *
+ * May 24, 2013		Dieter Siegmund (dieter@apple.com)
+ * - created
+ */
+
+#ifndef _S_IPV6SOCKET_H
+#define _S_IPV6SOCKET_H
+
+#include <stdbool.h>
+#include <netinet/in.h>
+#include <netinet/ip6.h>
+
+int
+IPv6SocketSend(int sockfd, int ifindex, const struct sockaddr_in6 * dest,
+	       const void * pkt, int pkt_size, int hlim);
+
+int
+ICMPv6SocketOpen(bool receive_too);
+
+int
+ICMPv6SocketSendNeighborAdvertisement(int sockfd,
+				      int if_index,
+				      const void * link_addr,
+				      int link_addr_length,
+				      const struct in6_addr * target_ipaddr);
+
+#endif /* _S_IPV6SOCKET_H */
