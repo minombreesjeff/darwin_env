@@ -1,8 +1,5 @@
-
-#ifndef _S_TS_LOG_H
-#define _S_TS_LOG_H
 /*
- * Copyright (c) 2000 Apple Inc. All rights reserved.
+ * Copyright (c) 2010-2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,11 +22,22 @@
  */
 
 /*
- * ts_log.h
- * - thread safe syslog()
+ * HostUUID.h
+ * - get the host UUID
  */
-#include <syslog.h>
-void ts_log_init(int verbose);
-void ts_log(int priority, const char * message, ...);
 
-#endif /* _S_TS_LOG_H */
+/* 
+ * Modification History
+ *
+ * April 11, 2013
+ * - created (split out from DHCPDUIDIAID.c)
+ */
+#ifndef _S_HOSTUUID_H
+#define _S_HOSTUUID_H
+
+#include <CoreFoundation/CFData.h>
+
+CFDataRef
+HostUUIDGet(void);
+
+#endif /* _S_HOSTUUID_H */

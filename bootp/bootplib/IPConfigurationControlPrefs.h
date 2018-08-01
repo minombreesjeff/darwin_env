@@ -1,8 +1,5 @@
-
-#ifndef _S_IPCONFIGD_GLOBALS_H
-#define _S_IPCONFIGD_GLOBALS_H
 /*
- * Copyright (c) 2000-2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -24,38 +21,37 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#ifndef _S_IPCONFIGURATIONCONTROLPREFS_H
+#define _S_IPCONFIGURATIONCONTROLPREFS_H
+
 /*
- * ipconfigd_globals.h
- * - ipconfigd global definitions
+ * IPConfigurationControlPrefs.h
+ * - definitions for accessing IPConfiguration controlpreferences and being
+ *   notified when they change
  */
+
 /* 
  * Modification History
  *
- * May 22, 2000		Dieter Siegmund (dieter@apple.com)
- * - created
+ * March 26, 2013	Dieter Siegmund (dieter@apple)
+ * - created (from EAPOLControlPrefs.h)
  */
+#include <CoreFoundation/CFRunLoop.h>
+#include <SystemConfiguration/SCPreferences.h>
 
-#include <CoreFoundation/CFString.h>
-#include "mylog.h"
-#include "util.h"
-#include <sys/stat.h>
+typedef void (*IPConfigurationControlPrefsCallBack)(SCPreferencesRef prefs);
 
-#define IPCONFIGURATION_PRIVATE_DIR	"/var/db/dhcpclient"
-#define DHCPCLIENT_LEASES_DIR		IPCONFIGURATION_PRIVATE_DIR "/leases"
+SCPreferencesRef
+IPConfigurationControlPrefsInit(CFRunLoopRef runloop,
+				IPConfigurationControlPrefsCallBack callback);
 
 void
-remove_unused_ip(const char * ifname, struct in_addr ip);
+IPConfigurationControlPrefsSynchronize(void);
 
-INLINE void
-ipconfigd_create_paths(void)
-{
-    if (create_path(DHCPCLIENT_LEASES_DIR, 0700) < 0) {
-	my_log(LOG_ERR, "failed to create " 
-	       DHCPCLIENT_LEASES_DIR ", %s (%d)", strerror(errno), errno);
-	return;
-    }
-    return;
+Boolean
+IPConfigurationControlPrefsGetVerbose(void);
 
-}
+Boolean
+IPConfigurationControlPrefsSetVerbose(Boolean verbose);
 
-#endif /* _S_IPCONFIGD_GLOBALS_H */
+#endif /* _S_IPCONFIGURATIONCONTROLPREFS_H */

@@ -1,5 +1,6 @@
+
 /*
- * Copyright (c) 1999 Apple Inc. All rights reserved.
+ * Copyright (c) 2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,40 +22,33 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _S_HFSVOLS_H
-#define _S_HFSVOLS_H
-
 /*
- * hfsvols.h
+ * CGA.h
+ * - Cryptographically Generated Addresses support routines
  */
 
-/*
- * Modification History:
+/* 
+ * Modification History
  *
- * May 15, 1998	Dieter Siegmund (dieter@apple)
- * - created
+ * April 11, 2013 	Dieter Siegmund (dieter@apple.com)
+ * - initial revision
  */
 
-typedef struct {
-    u_char *	name;
-    u_char *	mounted_on;
-    u_char *	mounted_from;
-    long	device_id;
-} hfsVol_t;
+#ifndef _S_CGA_H
+#define _S_CGA_H
 
-typedef void * hfsVolList_t;
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/in_var.h>
+#include <stdbool.h>
 
-hfsVol_t *		hfsVolList_entry(hfsVolList_t vols, int i);
-int			hfsVolList_count(hfsVolList_t list);
-void			hfsVolList_free(hfsVolList_t * list);
-hfsVolList_t		hfsVolList_init();
-void			hfsVolList_print(hfsVolList_t vols);
-hfsVol_t *		hfsVolList_lookup(hfsVolList_t vols, u_char * name);
+void
+CGAInit(void);
 
-/*
- * HFS filesystem routines
- */
-boolean_t		hfs_get_dirID(u_int32_t volumeID, 
-				      u_char * path, u_int32_t * dirID_p);
-int			hfs_set_file_size(int fd, off_t size);
-#endif /* _S_HFSVOLS_H */
+bool
+CGAIsEnabled(void);
+
+void
+CGAPrepareSetForInterface(const char * name, struct in6_cga_prepare * cgaprep);
+
+#endif /* _S_CGA_H */

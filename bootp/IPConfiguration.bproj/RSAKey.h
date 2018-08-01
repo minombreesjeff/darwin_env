@@ -1,8 +1,5 @@
-
-#ifndef _S_IPCONFIGD_GLOBALS_H
-#define _S_IPCONFIGD_GLOBALS_H
 /*
- * Copyright (c) 2000-2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,37 +22,29 @@
  */
 
 /*
- * ipconfigd_globals.h
- * - ipconfigd global definitions
+ * RSAKey.h
+ * - generate RSA key pair
  */
 /* 
  * Modification History
  *
- * May 22, 2000		Dieter Siegmund (dieter@apple.com)
- * - created
+ * April 11, 2013 	Dieter Siegmund (dieter@apple.com)
+ * - initial revision
  */
+#ifndef _S_RSAKEY_H
+#define _S_RSAKEY_H
+#include <CoreFoundation/CFData.h>
 
-#include <CoreFoundation/CFString.h>
-#include "mylog.h"
-#include "util.h"
-#include <sys/stat.h>
+/*
+ * Function: RSAKeyPairGenerate
+ * Purpose:
+ *   Generate a key pair of the given size in bits.
+ *
+ * Returns:
+ *   NULL and *ret_pub also NULL on failure,
+ *   non-NULL private key data and non-NULL *ret_pub public key data on success.
+ */
+CFDataRef
+RSAKeyPairGenerate(int key_size, CFDataRef * ret_pub);
 
-#define IPCONFIGURATION_PRIVATE_DIR	"/var/db/dhcpclient"
-#define DHCPCLIENT_LEASES_DIR		IPCONFIGURATION_PRIVATE_DIR "/leases"
-
-void
-remove_unused_ip(const char * ifname, struct in_addr ip);
-
-INLINE void
-ipconfigd_create_paths(void)
-{
-    if (create_path(DHCPCLIENT_LEASES_DIR, 0700) < 0) {
-	my_log(LOG_ERR, "failed to create " 
-	       DHCPCLIENT_LEASES_DIR ", %s (%d)", strerror(errno), errno);
-	return;
-    }
-    return;
-
-}
-
-#endif /* _S_IPCONFIGD_GLOBALS_H */
+#endif /* _S_RSAKEY_H */

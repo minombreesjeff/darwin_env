@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000 Apple Inc. All rights reserved.
+ * Copyright (c) 2010-2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,52 +21,37 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#import <syslog.h>
-#import <stdarg.h>
-#import <syslog.h>
+/*
+ * HostUUID.c
+ * - get the host UUID
+ */
 
-#import <mach/boolean.h>
-#import "lockc.h"
+/* 
+ * Modification History
+ *
+ * April 11, 2013
+ * - created (split out from DHCPDUIDIAID.c)
+ */
 
-static lockc_t		log;
-static int		verbose = FALSE;
-static int		initialized = FALSE;
+#include <unistd.h>
+#include "HostUUID.h"
+#include "symbol_scope.h"
+#include "cfutil.h"
 
-void
-ts_log_init(int v)
+PRIVATE_EXTERN CFDataRef
+HostUUIDGet(void)
 {
-    verbose = v;
-    lockc_init(&log);
-    initialized = TRUE;
-}
+    STATIC CFMutableDataRef	host_UUID;
+    struct timespec		ts = { 0, 0 };
 
-void
-ts_log(int priority, const char *message, ...)
-{
-    va_list 		ap;
-    static boolean_t	log_busy = FALSE;
-
-    if (initialized == FALSE)
-	return;
-
-    if (priority == LOG_DEBUG) {
-	if (verbose == FALSE)
-	    return;
-	priority = LOG_INFO;
+    if (host_UUID != NULL) {
+	return (host_UUID);
     }
-
-    va_start(ap, message);
-
-    lockc_lock(&log);
-    while (log_busy)
-	 lockc_wait(&log);
-    log_busy = TRUE;
-    lockc_unlock(&log);
-    vsyslog(priority, message, ap);
-    lockc_lock(&log);
-    log_busy = FALSE;
-    lockc_signal_nl(&log);
-    lockc_unlock(&log);
-    return;
+    host_UUID = CFDataCreateMutable(NULL, sizeof(uuid_t));
+    CFDataSetLength(host_UUID, sizeof(uuid_t));
+    if (gethostuuid(CFDataGetMutableBytePtr(host_UUID), &ts) != 0) {
+	my_CFRelease(&host_UUID);
+    }
+    return (host_UUID);
 }
 
