@@ -1,0 +1,128 @@
+#################################################################
+# Makefile.in for Samba Documentation
+# Authors:	James Moore <jmoore@php.net>
+# 			Gerald Carter <jerry@samba.org>
+# 			Jelmer Vernooij <jelmer@samba.org>
+#
+# Please see http://www.samba.org/samba/cvs.html
+# for information on getting the latest  
+# source and documentation source files.  
+#
+
+# Autoconf Variables
+
+MANPAGES_NAMES=findsmb.1 smbclient.1 \
+	smbspool.8 lmhosts.5 \
+	smbcontrol.1 smbstatus.1 \
+	smbd.8 net.8 smbtar.1 nmbd.8 \
+	smbmnt.8 smbumount.8 nmblookup.1 \
+	smbmount.8 swat.8 rpcclient.1 \
+	smbpasswd.5 testparm.1 samba.7 \
+	smbpasswd.8 testprns.1 \
+	smb.conf.5 wbinfo.1 pdbedit.8 \
+	smbcacls.1 smbsh.1 winbindd.8 \
+	smbgroupedit.8 vfstest.1
+
+## This part contains only rules. You shouldn't need to change it 
+## if you are adding docs
+
+DOCBOOK2MAN = @JW@ -b man
+DOCBOOK2HTML = @JW@ -b html
+DOCBOOK2PDF = @JW@ -b pdf
+DOCBOOK2PS = @JW@ -b ps
+DOCBOOK2TXT = @JW@ -b txt
+DOCBOOK2INFO = @JW@ -b texi
+HTMLDOC = @HTMLDOC@
+SRCDIR = @srcdir@
+MANDIR=../manpages
+HTMLDIR=../htmldocs
+MANPROJDOC = manpages/
+PROJDOC = projdoc/
+DEVDOC = devdoc/
+PERL = @PERL@
+PSDIR = ..
+PDFDIR = ..
+TXTDIR = ../textdocs
+FAQPROJDOC = faq/
+FAQDIR = ../faq
+
+MANPAGES=$(patsubst %,$(MANDIR)/%,$(MANPAGES_NAMES))
+MANPAGES_HTML=$(patsubst %,$(HTMLDIR)/%.html,$(MANPAGES_NAMES))
+
+all: 
+	@echo "Supported make targets:"
+	@echo "manpages - Build manpages"
+	@echo "ps - Build PostScript version of HOWTO Collection"
+	@echo "pdf - Build PDF version of HOWTO Collection"
+	@echo -n "html-single - Build single file HTML version of HOWTO Collection"
+	@echo " and developers guide"
+	@echo "html - Build HTML version of HOWTO Collection"
+	@echo "htmlman - Build html version of manpages"
+	@echo "txt - Build plain text version of HOWTO Collection"
+	@echo "htmlfaq - Build html version of the FAQ"
+	@echo "everything - Build all of the above"
+
+everything: manpages ps pdf html-single html htmlman txt htmlfaq
+
+# Global rules
+
+manpages: $(MANPAGES)
+pdf: $(PDFDIR)/Samba-HOWTO-Collection.pdf ../Samba-Developers-Guide.pdf
+ps: $(PSDIR)/Samba-HOWTO-Collection.ps ../Samba-Developers-Guide.ps
+txt: $(TXTDIR)/Samba-HOWTO-Collection.txt $(TXTDIR)/Samba-Developers-Guide.txt
+htmlman:  $(MANPAGES_HTML)
+htmlfaq: 
+	$(DOCBOOK2HTML) -d samba.dsl -o $(FAQDIR) $(FAQPROJDOC)/sambafaq.sgml
+html-single: $(HTMLDIR)/Samba-HOWTO-Collection.html  $(HTMLDIR)/Samba-Developers-Guide.html
+html:
+	$(DOCBOOK2HTML) -d samba.dsl -o $(HTMLDIR) $(PROJDOC)/samba-doc.sgml
+
+# Text files
+
+$(TXTDIR)/Samba-HOWTO-Collection.txt: $(PROJDOC)/samba-doc.sgml
+	$(DOCBOOK2TXT) -o . $<
+	mv ./samba-doc.txt $@
+
+$(TXTDIR)/Samba-Developers-Guide.txt: $(PROJDOC)/samba-doc.sgml
+	$(DOCBOOK2TXT) -o . $<
+	mv ./samba-doc.txt $@
+
+# PostScript
+
+$(PSDIR)/Samba-HOWTO-Collection.ps: $(PROJDOC)/samba-doc.sgml
+	$(DOCBOOK2PS) -o . $<
+	mv ./samba-doc.ps $@
+
+$(PSDIR)/Samba-Developers-Guide.ps: $(PROJDOC)/samba-doc.sgml
+	$(DOCBOOK2PS) -o . $<
+	mv ./samba-doc.ps $@
+
+# Adobe PDF files
+
+$(PDFDIR)/Samba-HOWTO-Collection.pdf: $(HTMLDIR)/Samba-HOWTO-Collection.html
+	$(HTMLDOC) --book --color --links -f $@ $<
+
+$(PDFDIR)/Samba-Developers-Guide.pdf: $(HTMLDIR)/Samba-Developers-Guide.html
+	$(HTMLDOC) --book --color --links -f $@ $<
+
+# Single large HTML files
+
+$(HTMLDIR)/Samba-HOWTO-Collection.html: $(PROJDOC)/samba-doc.sgml
+	$(DOCBOOK2HTML) -u -o . $<
+	mv ./samba-doc.html $@
+
+$(HTMLDIR)/Samba-Developers-Guide.html: $(DEVDOC)/dev-doc.sgml
+	$(DOCBOOK2HTML) -u -o . $<
+	mv ./dev-doc.html $@
+
+
+$(HTMLDIR)/%.html: $(MANPROJDOC)/%.sgml
+	$(DOCBOOK2HTML) -u -o $(HTMLDIR) $<
+
+$(MANDIR)/%: $(MANPROJDOC)/%.sgml 
+	$(DOCBOOK2MAN) -o $(MANDIR) $< || rm $@
+	$(PERL) scripts/strip-links.pl < $@ > $@.temp
+	mv $@.temp $@
+
+clean: 
+	rm -f $(MANPAGES) $(MANPAGES_HTML) $(HTMLDIR)/*.html $(TXTDIR)/*.txt $(PSDIR)/*.ps $(PDFDIR)/*.pdf

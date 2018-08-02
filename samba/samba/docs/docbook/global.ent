@@ -1,0 +1,88 @@
+<!-- Global Entities File -->
+
+
+<!-- Email Address' -->
+<!ENTITY email.dbannon 'D.Bannon@latrobe.edu.au'>
+<!ENTITY email.jmoore  'jmoore@php.net'>
+<!ENTITY email.jerry   'jerry@samba.org'>
+<!ENTITY email.patches 'samba-patches@samba.org'>
+
+<!-- URL's -->
+<!ENTITY url.samba.cvsinfo 'http://pserver.samba.org/samba/cvs.html'>
+<!ENTITY url.pdc-howto.local 'samba-pdc-howto.html'>
+<!ENTITY url.samba-tng 'http://www.samba-tng.org'>
+<!ENTITY url.samba.doc 'http://bioserve.latrobe.edu.au/samba/'>
+<!ENTITY url.ultraedit 'http://www.ultraedit.com'>
+<!ENTITY url.vi-windows 'http://home.snafu.de/ramo/WinViEn.htm'>
+<!ENTITY url.pfe 'http://www.lancs.ac.uk/people/cpaap/pfe/'>
+<!ENTITY url.server-tools.win95 'ftp://ftp.microsoft.com/Softlib/MSLFILES/NEXUS.EXE'>
+<!ENTITY url.server-tools.winnt 'ftp://ftp.microsoft.com/Softlib/MSLFILES/SRVTOOLS.EXE'>
+<!ENTITY url.tcpdump 'http://www.tcpdump.org/'>
+<!ENTITY url.samba 'http://samba.org'>
+<!ENTITY url.samba-ldap-howto 'http://www.unav.es/cti/ldap-smb-howto.html'>
+<!ENTITY url.samba-tng.home 'http://www.kneschke.de/projekte/samba_tng/'>
+<!ENTITY url.samba.mailinglist.ntdom 'http://lists.samba.org/mailman/samba-ntdom'>
+<!ENTITY url.samba.cifs 'http://samba.org/cifs/'>
+<!ENTITY url.ntdomains-for-unix 'http://mailhost.cb1.com/~lkcl/ntdom/'>
+<!ENTITY url.samba.specs.old 'ftp://ftp.microsoft.com/developr/drg/CIFS/'>
+<!ENTITY url.rfc.1001 'http://ds.internic.net/rfc/rfc1001.txt'>
+<!ENTITY url.rfc.1002 'http://ds.internic.net/rfc/rfc1002.txt'>
+
+<!-- Misc -->
+<!ENTITY samba.pub.cvshost 'pserver.samba.org'>
+
+<!ENTITY stdarg.debuglevel '
+<varlistentry>
+<term>-d|--debug=debuglevel</term>
+<listitem>
+<para><replaceable>debuglevel</replaceable> is an integer 
+from 0 to 10.  The default value if this parameter is 
+not specified is zero.</para>
+
+<para>The higher this value, the more detail will be 
+logged to the log files about the activities of the 
+server. At level 0, only critical errors and serious 
+warnings will be logged. Level 1 is a reasonable level for
+day to day running - it generates a small amount of 
+information about operations carried out.</para>
+
+<para>Levels above 1 will generate considerable 
+amounts of log data, and should only be used when 
+investigating a problem. Levels above 3 are designed for 
+use only by developers and generate HUGE amounts of log
+data, most of which is extremely cryptic.</para>
+
+<para>Note that specifying this parameter here will 
+override the <ulink url="smb.conf.5.html#loglevel">log
+level</ulink> parameter in the <ulink url="smb.conf.5.html">
+<filename>smb.conf(5)</filename></ulink> file.</para>
+</listitem>
+</varlistentry>'>
+
+<!ENTITY stdarg.help '
+<varlistentry>
+<term>-h|--help</term>
+<listitem><para>Print a summary of command line options.
+</para></listitem>
+</varlistentry>'>
+
+<!ENTITY stdarg.configfile '
+<varlistentry>
+<term>-s &lt;configuration file&gt;</term>
+<listitem><para>The file specified contains the 
+configuration details required by the server.  The 
+information in this file includes server-specific
+information such as what printcap file to use, as well 
+as descriptions of all the services that the server is 
+to provide. See <ulink url="smb.conf.5.html"><filename>
+smb.conf(5)</filename></ulink> for more information.
+The default configuration file name is determined at 
+compile time.</para></listitem>
+</varlistentry>'>
+
+<!ENTITY stdarg.version '
+<varlistentry>
+<term>-v</term>
+<listitem><para>Prints the version number for 
+<command>smbd</command>.</para></listitem>
+</varlistentry>'>

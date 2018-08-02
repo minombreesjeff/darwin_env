@@ -1,0 +1,10 @@
+AC_INIT(global.ent)
+
+AC_PATH_PROG(JW, jw)
+AC_PATH_PROG(PERL, perl)
+AC_PATH_PROG(HTMLDOC, htmldoc)
+
+DOC_BUILD_DATE=`date '+%d-%m-%Y'`
+AC_SUBST(DOC_BUILD_DATE)
+
+AC_OUTPUT( Makefile )

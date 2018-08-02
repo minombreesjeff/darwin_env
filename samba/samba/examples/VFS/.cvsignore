@@ -1,0 +1,4 @@
+.libs
+*.so
+*.o
+Makefile

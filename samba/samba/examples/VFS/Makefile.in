@@ -1,0 +1,24 @@
+CC		= @CC@
+CFLAGS		= @CFLAGS@
+CPPFLAGS	= @CPPFLAGS@
+LDFLAGS		= @LDFLAGS@
+LDSHFLAGS	= -shared
+srcdir		= ../../source/
+FLAGS		=  $(CFLAGS) -Iinclude -I$(srcdir)/include -I$(srcdir)/ubiqx -I$(srcdir)/smbwrapper  -I. $(CPPFLAGS) -I$(srcdir)
+
+# Auto target
+default: $(patsubst %.c,%.so,$(wildcard *.c))
+
+# Pattern rules
+
+%.so: %.o
+	$(CC) $(LDSHFLAGS) $(LDFLAGS) -o $@ $<
+
+%.o: %.c
+	$(CC) $(FLAGS) -c $<
+
+# Misc targets
+
+clean:
+	rm -rf .libs
+	rm -f core *~ *% *.bak *.o *.so
