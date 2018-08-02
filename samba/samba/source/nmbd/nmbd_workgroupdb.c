@@ -41,6 +41,27 @@ static void add_workgroup(struct subnet_record *subrec, struct work_record *work
 }
 
 /****************************************************************************
+ Copy name to unstring. Used by create_workgroup() and find_workgroup_on_subnet().
+**************************************************************************/
+
+static void name_to_unstring(unstring unname, const char *name)
+{
+        nstring nname;
+
+	errno = 0;
+	push_ascii_nstring(nname, name);
+	if (errno == E2BIG) {
+		unstring tname;
+		pull_ascii_nstring(tname, sizeof(tname), nname);
+		unstrcpy(unname, tname);
+		DEBUG(0,("name_to_nstring: workgroup name %s is too long. Truncating to %s\n",
+			name, tname));
+	} else {
+		unstrcpy(unname, name);
+	}
+}
+		
+/****************************************************************************
   Create an empty workgroup.
 **************************************************************************/
 
@@ -50,20 +71,14 @@ static struct work_record *create_workgroup(const char *name, int ttl)
 	struct subnet_record *subrec;
 	int t = -1;
   
-	if((work = (struct work_record *)malloc(sizeof(*work))) == NULL) {
+	if((work = SMB_MALLOC_P(struct work_record)) == NULL) {
 		DEBUG(0,("create_workgroup: malloc fail !\n"));
 		return NULL;
 	}
 	memset((char *)work, '\0', sizeof(*work));
- 
-	if (strlen(name)+1 > sizeof(nstring)) {
-		memcpy(work->work_group,name,sizeof(nstring)-1);
-		work->work_group[sizeof(nstring)-1] = '\0';
-		DEBUG(0,("create_workgroup: workgroup name %s is too long. Truncating to %s\n",
-				name, work->work_group ));
-	} else {
-		nstrcpy(work->work_group,name);
-	}
+
+	name_to_unstring(work->work_group, name);
+
 	work->serverlist = NULL;
   
 	work->RunningElection = False;
@@ -83,7 +98,7 @@ static struct work_record *create_workgroup(const char *name, int ttl)
 	for (subrec = FIRST_SUBNET; subrec && (t == -1); subrec = NEXT_SUBNET_INCLUDING_UNICAST(subrec)) {
 		struct work_record *w;
 		for (w = subrec->workgrouplist; w && t == -1; w = w->next) {
-			if (strnequal(w->work_group, work->work_group, sizeof(nstring)-1))
+			if (strequal(w->work_group, work->work_group))
 				t = w->token;
 		}
 	}
@@ -152,12 +167,15 @@ struct work_record *find_workgroup_on_subnet(struct subnet_record *subrec,
                                              const char *name)
 {
 	struct work_record *ret;
-  
+ 	unstring un_name;
+ 
 	DEBUG(4, ("find_workgroup_on_subnet: workgroup search for %s on subnet %s: ",
 		name, subrec->subnet_name));
   
+	name_to_unstring(un_name, name);
+
 	for (ret = subrec->workgrouplist; ret; ret = ret->next) {
-		if (strnequal(ret->work_group,name,sizeof(nstring)-1)) {
+		if (strequal(ret->work_group,un_name)) {
 			DEBUGADD(4, ("found.\n"));
 			return(ret);
 		}
@@ -218,7 +236,7 @@ void initiate_myworkgroup_startup(struct subnet_record *subrec, struct work_reco
 {
 	int i;
 
-	if(!strnequal(lp_workgroup(), work->work_group,sizeof(nstring)-1))
+	if(!strequal(lp_workgroup(), work->work_group))
 		return;
 
 	/* If this is a broadcast subnet then start elections on it if we are so configured. */

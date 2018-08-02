@@ -38,7 +38,7 @@ extern int winbindd_fd;
    are the pointers passed in by the C library to the _nss_ntdom_*
    functions. */
 
-static char *get_static(char **buffer, int *buflen, int len)
+static char *get_static(char **buffer, size_t *buflen, size_t len)
 {
 	char *result;
 
@@ -833,25 +833,40 @@ _nss_winbind_initgroups_dyn(char *user, gid_t group, long int *start,
 
 			/* Skip primary group */
 
-			if (gid_list[i] == group) continue;
+			if (gid_list[i] == group) {
+				continue;
+			}
+
+			/* Filled buffer ? If so, resize. */
+
+			if (*start == *size) {
+				long int newsize;
+				gid_t *newgroups;
+
+				newsize = 2 * (*size);
+				if (limit > 0) {
+					if (*size == limit) {
+						goto done;
+					}
+					if (newsize > limit) {
+						newsize = limit;
+					}
+				}
+
+				newgroups = realloc((*groups), newsize * sizeof(**groups));
+				if (!newgroups) {
+					*errnop = ENOMEM;
+					ret = NSS_STATUS_NOTFOUND;
+					goto done;
+				}
+				*groups = newgroups;
+				*size = newsize;
+			}
 
 			/* Add to buffer */
 
-			if (*start == *size && limit <= 0) {
-				(*groups) = realloc(
-					(*groups), (2 * (*size) + 1) * sizeof(**groups));
-				if (! *groups) goto done;
-				*size = 2 * (*size) + 1;
-			}
-
-			if (*start == *size) goto done;
-
 			(*groups)[*start] = gid_list[i];
 			*start += 1;
-
-			/* Filled buffer? */
-
-			if (*start == limit) goto done;
 		}
 	}
 	
@@ -1080,7 +1095,7 @@ _nss_winbind_uidtosid(uid_t uid, char **sid, char *buffer,
 	struct winbindd_request request;
 
 #ifdef DEBUG_NSS
-	fprintf(stderr, "[%5d]: uidtosid %s\n", getpid(), name);
+	fprintf(stderr, "[%5u]: uidtosid %u\n", (unsigned int)getpid(), (unsigned int)uid);
 #endif
 
 	ZERO_STRUCT(response);
@@ -1119,7 +1134,7 @@ _nss_winbind_gidtosid(gid_t gid, char **sid, char *buffer,
 	struct winbindd_request request;
 
 #ifdef DEBUG_NSS
-	fprintf(stderr, "[%5d]: gidtosid %s\n", getpid(), name);
+	fprintf(stderr, "[%5u]: gidtosid %u\n", (unsigned int)getpid(), (unsigned int)gid);
 #endif
 
 	ZERO_STRUCT(response);

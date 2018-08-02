@@ -6,7 +6,7 @@
  *  Copyright (C) Paul Ashton                       1997,
  *  Copyright (C) Jeremy Allison                    2001,
  *  Copyright (C) Rafal Szczesniak                  2002,
- *  Copyright (C) Jim McDonough <jmcd@us.ibm.com>   2002.
+ *  Copyright (C) Jim McDonough <jmcd@us.ibm.com>   2002,
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -101,7 +101,7 @@ static int init_dom_ref(DOM_R_REF *ref, char *dom_name, DOM_SID *dom_sid)
 	if (dom_name != NULL) {
 		for (num = 0; num < ref->num_ref_doms_1; num++) {
 			fstring domname;
-			rpcstr_pull(domname, &ref->ref_dom[num].uni_dom_name, sizeof(domname), -1, 0);
+			rpcstr_pull(domname, ref->ref_dom[num].uni_dom_name.buffer, sizeof(domname), -1, 0);
 			if (strequal(domname, dom_name))
 				return num;
 		}
@@ -165,6 +165,19 @@ static void init_lsa_rid2s(DOM_R_REF *ref, DOM_RID2 *rid2,
 
 		status = lookup_name(dom_name, user, &sid, &name_type);
 
+		if((name_type == SID_NAME_UNKNOWN) && (lp_server_role() == ROLE_DOMAIN_MEMBER)  && (strncmp(dom_name, full_name, strlen(dom_name)) != 0)) {
+			DEBUG(5, ("init_lsa_rid2s: domain name not provided and local account not found, using member domain\n"));
+			fstrcpy(dom_name, lp_workgroup());
+			status = lookup_name(dom_name, user, &sid, &name_type);
+		}
+
+#if 0 /* This is not true. */
+		if (name_type == SID_NAME_WKN_GRP) {
+			/* BUILTIN aliases are still aliases :-) */
+			name_type = SID_NAME_ALIAS;
+		}
+#endif
+
 		DEBUG(5, ("init_lsa_rid2s: %s\n", status ? "found" : 
 			  "not found"));
 
@@ -174,7 +187,7 @@ static void init_lsa_rid2s(DOM_R_REF *ref, DOM_RID2 *rid2,
 			(*mapped_count)++;
 		} else {
 			dom_idx = -1;
-			rid = 0xffffffff;
+			rid = 0;
 			name_type = SID_NAME_UNKNOWN;
 		}
 
@@ -202,11 +215,6 @@ static void init_reply_lookup_names(LSA_R_LOOKUP_NAMES *r_l,
 	r_l->dom_rid      = rid2;
 
 	r_l->mapped_count = mapped_count;
-
-	if (mapped_count == 0)
-		r_l->status = NT_STATUS_NONE_MAPPED;
-	else
-		r_l->status = NT_STATUS_OK;
 }
 
 /***************************************************************************
@@ -224,14 +232,12 @@ static void init_lsa_trans_names(TALLOC_CTX *ctx, DOM_R_REF *ref, LSA_TRANS_NAME
 	/* Allocate memory for list of names */
 
 	if (num_entries > 0) {
-		if (!(trn->name = (LSA_TRANS_NAME *)talloc(ctx, sizeof(LSA_TRANS_NAME) *
-							  num_entries))) {
+		if (!(trn->name = TALLOC_ARRAY(ctx, LSA_TRANS_NAME, num_entries))) {
 			DEBUG(0, ("init_lsa_trans_names(): out of memory\n"));
 			return;
 		}
 
-		if (!(trn->uni_name = (UNISTR2 *)talloc(ctx, sizeof(UNISTR2) * 
-							num_entries))) {
+		if (!(trn->uni_name = TALLOC_ARRAY(ctx, UNISTR2, num_entries))) {
 			DEBUG(0, ("init_lsa_trans_names(): out of memory\n"));
 			return;
 		}
@@ -252,9 +258,6 @@ static void init_lsa_trans_names(TALLOC_CTX *ctx, DOM_R_REF *ref, LSA_TRANS_NAME
 
 		/* Lookup sid from winbindd */
 
-		memset(dom_name, '\0', sizeof(dom_name));
-		memset(name, '\0', sizeof(name));
-
 		status = lookup_sid(&find_sid, dom_name, name, &sid_name_use);
 
 		DEBUG(5, ("init_lsa_trans_names: %s\n", status ? "found" : 
@@ -262,20 +265,24 @@ static void init_lsa_trans_names(TALLOC_CTX *ctx, DOM_R_REF *ref, LSA_TRANS_NAME
 
 		if (!status) {
 			sid_name_use = SID_NAME_UNKNOWN;
+			memset(dom_name, '\0', sizeof(dom_name));
+			sid_to_string(name, &find_sid);
+			dom_idx = -1;
+
+			DEBUG(10,("init_lsa_trans_names: added unknown user '%s' to "
+				  "referenced list.\n", name ));
 		} else {
 			(*mapped_count)++;
+			/* Store domain sid in ref array */
+			if (find_sid.num_auths == 5) {
+				sid_split_rid(&find_sid, &rid);
+			}
+			dom_idx = init_dom_ref(ref, dom_name, &find_sid);
+
+			DEBUG(10,("init_lsa_trans_names: added user '%s\\%s' to "
+				  "referenced list.\n", dom_name, name ));
+
 		}
-
-		/* Store domain sid in ref array */
-
-		if (find_sid.num_auths == 5) {
-			sid_split_rid(&find_sid, &rid);
-		}
-
-		dom_idx = init_dom_ref(ref, dom_name, &find_sid);
-
-		DEBUG(10,("init_lsa_trans_names: added user '%s\\%s' to "
-			  "referenced list.\n", dom_name, name ));
 
 		init_lsa_trans_name(&trn->name[total], &trn->uni_name[total],
 					sid_name_use, name, dom_idx);
@@ -301,11 +308,6 @@ static void init_reply_lookup_sids(LSA_R_LOOKUP_SIDS *r_l,
 	r_l->dom_ref      = ref;
 	r_l->names        = names;
 	r_l->mapped_count = mapped_count;
-
-	if (mapped_count == 0)
-		r_l->status = NT_STATUS_NONE_MAPPED;
-	else
-		r_l->status = NT_STATUS_OK;
 }
 
 static NTSTATUS lsa_get_generic_sd(TALLOC_CTX *mem_ctx, SEC_DESC **sd, size_t *sd_size)
@@ -348,7 +350,7 @@ static NTSTATUS lsa_get_generic_sd(TALLOC_CTX *mem_ctx, SEC_DESC **sd, size_t *s
 
 static void init_dns_dom_info(LSA_DNS_DOM_INFO *r_l, const char *nb_name,
 			      const char *dns_name, const char *forest_name,
-			      GUID *dom_guid, DOM_SID *dom_sid)
+			      struct uuid *dom_guid, DOM_SID *dom_sid)
 {
 	if (nb_name && *nb_name) {
 		init_unistr2(&r_l->uni_nb_dom_name, nb_name, UNI_FLAGS_NONE);
@@ -373,7 +375,7 @@ static void init_dns_dom_info(LSA_DNS_DOM_INFO *r_l, const char *nb_name,
 
 	/* how do we init the guid ? probably should write an init fn */
 	if (dom_guid) {
-		memcpy(&r_l->dom_guid, dom_guid, sizeof(GUID));
+		memcpy(&r_l->dom_guid, dom_guid, sizeof(struct uuid));
 	}
 	
 	if (dom_sid) {
@@ -414,7 +416,7 @@ NTSTATUS _lsa_open_policy2(pipes_struct *p, LSA_Q_OPEN_POL2 *q_u, LSA_R_OPEN_POL
 
 
 	/* associate the domain SID with the (unique) handle. */
-	if ((info = (struct lsa_info *)malloc(sizeof(struct lsa_info))) == NULL)
+	if ((info = SMB_MALLOC_P(struct lsa_info)) == NULL)
 		return NT_STATUS_NO_MEMORY;
 
 	ZERO_STRUCTP(info);
@@ -459,7 +461,7 @@ NTSTATUS _lsa_open_policy(pipes_struct *p, LSA_Q_OPEN_POL *q_u, LSA_R_OPEN_POL *
 	}
 
 	/* associate the domain SID with the (unique) handle. */
-	if ((info = (struct lsa_info *)malloc(sizeof(struct lsa_info))) == NULL)
+	if ((info = SMB_MALLOC_P(struct lsa_info)) == NULL)
 		return NT_STATUS_NO_MEMORY;
 
 	ZERO_STRUCTP(info);
@@ -546,7 +548,7 @@ NTSTATUS _lsa_query_info(pipes_struct *p, LSA_Q_QUERY_INFO *q_u, LSA_R_QUERY_INF
 		info->id2.auditing_enabled = 1;
 		info->id2.count1 = 7;
 		info->id2.count2 = 7;
-		if ((info->id2.auditsettings = (uint32 *)talloc(p->mem_ctx,7*sizeof(uint32))) == NULL)
+		if ((info->id2.auditsettings = TALLOC_ARRAY(p->mem_ctx,uint32, 7)) == NULL)
 			return NT_STATUS_NO_MEMORY;
 		for (i = 0; i < 7; i++)
 			info->id2.auditsettings[i] = 3;
@@ -645,8 +647,8 @@ NTSTATUS _lsa_lookup_sids(pipes_struct *p, LSA_Q_LOOKUP_SIDS *q_u, LSA_R_LOOKUP_
 		DEBUG(5,("_lsa_lookup_sids: truncating SID lookup list to %d\n", num_entries));
 	}
 
-	ref = (DOM_R_REF *)talloc_zero(p->mem_ctx, sizeof(DOM_R_REF));
-	names = (LSA_TRANS_NAME_ENUM *)talloc_zero(p->mem_ctx, sizeof(LSA_TRANS_NAME_ENUM));
+	ref = TALLOC_ZERO_P(p->mem_ctx, DOM_R_REF);
+	names = TALLOC_ZERO_P(p->mem_ctx, LSA_TRANS_NAME_ENUM);
 
 	if (!find_policy_by_hnd(p, &q_u->pol, (void **)&handle)) {
 		r_u->status = NT_STATUS_INVALID_HANDLE;
@@ -665,6 +667,12 @@ done:
 
 	/* set up the LSA Lookup SIDs response */
 	init_lsa_trans_names(p->mem_ctx, ref, names, num_entries, sid, &mapped_count);
+	if (NT_STATUS_IS_OK(r_u->status)) {
+		if (mapped_count == 0)
+			r_u->status = NT_STATUS_NONE_MAPPED;
+		else if (mapped_count != num_entries)
+			r_u->status = STATUS_SOME_UNMAPPED;
+	}
 	init_reply_lookup_sids(r_u, ref, names, mapped_count);
 
 	return r_u->status;
@@ -688,8 +696,8 @@ NTSTATUS _lsa_lookup_names(pipes_struct *p,LSA_Q_LOOKUP_NAMES *q_u, LSA_R_LOOKUP
 		DEBUG(5,("_lsa_lookup_names: truncating name lookup list to %d\n", num_entries));
 	}
 		
-	ref = (DOM_R_REF *)talloc_zero(p->mem_ctx, sizeof(DOM_R_REF));
-	rids = (DOM_RID2 *)talloc_zero(p->mem_ctx, sizeof(DOM_RID2)*num_entries);
+	ref = TALLOC_ZERO_P(p->mem_ctx, DOM_R_REF);
+	rids = TALLOC_ZERO_ARRAY(p->mem_ctx, DOM_RID2, num_entries);
 
 	if (!find_policy_by_hnd(p, &q_u->pol, (void **)&handle)) {
 		r_u->status = NT_STATUS_INVALID_HANDLE;
@@ -709,6 +717,12 @@ done:
 
 	/* set up the LSA Lookup RIDs response */
 	init_lsa_rid2s(ref, rids, num_entries, names, &mapped_count, p->endian);
+	if (NT_STATUS_IS_OK(r_u->status)) {
+		if (mapped_count == 0)
+			r_u->status = NT_STATUS_NONE_MAPPED;
+		else if (mapped_count != num_entries)
+			r_u->status = STATUS_SOME_UNMAPPED;
+	}
 	init_reply_lookup_names(r_u, ref, num_entries, rids, mapped_count);
 
 	return r_u->status;
@@ -752,7 +766,7 @@ NTSTATUS _lsa_enum_privs(pipes_struct *p, LSA_Q_ENUM_PRIVS *q_u, LSA_R_ENUM_PRIV
 	if (enum_context >= PRIV_ALL_INDEX)
 		return NT_STATUS_NO_MORE_ENTRIES;
 
-	entries = (LSA_PRIV_ENTRY *)talloc_zero(p->mem_ctx, sizeof(LSA_PRIV_ENTRY) * (PRIV_ALL_INDEX));
+	entries = TALLOC_ZERO_ARRAY(p->mem_ctx, LSA_PRIV_ENTRY, PRIV_ALL_INDEX);
 	if (entries==NULL)
 		return NT_STATUS_NO_MEMORY;
 
@@ -871,8 +885,8 @@ NTSTATUS _lsa_enum_accounts(pipes_struct *p, LSA_Q_ENUM_ACCOUNTS *q_u, LSA_R_ENU
 	if (q_u->enum_context >= num_entries)
 		return NT_STATUS_NO_MORE_ENTRIES;
 
-	sids->ptr_sid = (uint32 *)talloc_zero(p->mem_ctx, (num_entries-q_u->enum_context)*sizeof(uint32));
-	sids->sid = (DOM_SID2 *)talloc_zero(p->mem_ctx, (num_entries-q_u->enum_context)*sizeof(DOM_SID2));
+	sids->ptr_sid = TALLOC_ZERO_ARRAY(p->mem_ctx, uint32, num_entries-q_u->enum_context);
+	sids->sid = TALLOC_ZERO_ARRAY(p->mem_ctx, DOM_SID2, num_entries-q_u->enum_context);
 
 	if (sids->ptr_sid==NULL || sids->sid==NULL) {
 		SAFE_FREE(map);
@@ -944,7 +958,7 @@ NTSTATUS _lsa_open_account(pipes_struct *p, LSA_Q_OPENACCOUNT *q_u, LSA_R_OPENAC
 		return NT_STATUS_ACCESS_DENIED;
 
 	/* associate the user/group SID with the (unique) handle. */
-	if ((info = (struct lsa_info *)malloc(sizeof(struct lsa_info))) == NULL)
+	if ((info = SMB_MALLOC_P(struct lsa_info)) == NULL)
 		return NT_STATUS_NO_MEMORY;
 
 	ZERO_STRUCTP(info);
@@ -1091,7 +1105,6 @@ NTSTATUS _lsa_addprivs(pipes_struct *p, LSA_Q_ADDPRIVS *q_u, LSA_R_ADDPRIVS *r_u
 		/* check if the privilege is already there */
 		if (check_priv_in_privilege(map.priv_set, *luid_attr)){
 			destroy_privilege(&map.priv_set);
-			return NT_STATUS_NO_SUCH_PRIVILEGE;
 		}
 		
 		add_privilege(map.priv_set, *luid_attr);
@@ -1226,7 +1239,7 @@ NTSTATUS _lsa_query_info2(pipes_struct *p, LSA_Q_QUERY_INFO2 *q_u, LSA_R_QUERY_I
 	char *dns_name = NULL;
 	char *forest_name = NULL;
 	DOM_SID *sid = NULL;
-	GUID guid;
+	struct uuid guid;
 	fstring dnsdomname;
 
 	ZERO_STRUCT(guid);
@@ -1250,7 +1263,7 @@ NTSTATUS _lsa_query_info2(pipes_struct *p, LSA_Q_QUERY_INFO2 *q_u, LSA_R_QUERY_I
 
 				/* This should be a 'netbios domain -> DNS domain' mapping */
 				dnsdomname[0] = '\0';
-				get_mydomname(dnsdomname);
+				get_mydnsdomname(dnsdomname);
 				strlower_m(dnsdomname);
 				
 				dns_name = dnsdomname;

@@ -107,11 +107,6 @@ machine %s. Error was : %s.\n", dc_name, cli_errstr(*cli)));
 
 	fstr_sprintf((*cli)->mach_acct, "%s$", setup_creds_as);
 
-	if (!(*cli)->mach_acct) {
-		release_server_mutex();
-		return NT_STATUS_NO_MEMORY;
-	}
-
 	/* This must be the remote domain (not ours) for schannel */
 
 	fstrcpy( (*cli)->domain, domain ); 
@@ -210,7 +205,7 @@ static NTSTATUS domain_client_validate(TALLOC_CTX *mem_ctx,
 	} else {
 		nt_status = make_server_info_info3(mem_ctx, user_info->internal_username.str, 
 						   user_info->smb_name.str, domain, server_info, &info3);
-		netsamlogon_cache_store( mem_ctx, &info3 );
+		netsamlogon_cache_store( mem_ctx, user_info->smb_name.str, &info3 );
 	}
 
 #if 0

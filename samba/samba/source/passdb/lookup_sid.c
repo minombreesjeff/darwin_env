@@ -36,16 +36,7 @@ BOOL lookup_name(const char *domain, const char *name, DOM_SID *psid, enum SID_N
 	/* If we are looking up a domain user, make sure it is
 	   for the local machine only */
 	
-	if (strequal(global_myname(), domain)) {
-		local_lookup = True;
-	} else if (lp_server_role() == ROLE_DOMAIN_PDC || 
-		   lp_server_role() == ROLE_DOMAIN_BDC) {
-		if (strequal(domain, lp_workgroup())) {
-			local_lookup = True;
-		}
-	}
-		
-	if (local_lookup) {
+	if (strequal(domain, get_global_sam_name())) {
 		if (local_lookup_name(name, psid, name_type)) {
 			DEBUG(10,
 			      ("lookup_name: (local) [%s]\\[%s] -> SID %s (type %s: %u)\n",
@@ -75,7 +66,7 @@ BOOL lookup_name(const char *domain, const char *name, DOM_SID *psid, enum SID_N
  Tries local lookup first - for local sids, then tries winbind.
 *****************************************************************/  
 
-BOOL lookup_sid(DOM_SID *sid, fstring dom_name, fstring name, enum SID_NAME_USE *name_type)
+BOOL lookup_sid(const DOM_SID *sid, fstring dom_name, fstring name, enum SID_NAME_USE *name_type)
 {
 	if (!name_type)
 		return False;
@@ -210,7 +201,7 @@ static void store_uid_sid_cache(const DOM_SID *psid, uid_t uid)
 		}
 	}
 
-	pc = (struct uid_sid_cache *)malloc(sizeof(struct uid_sid_cache));
+	pc = SMB_MALLOC_P(struct uid_sid_cache);
 	if (!pc)
 		return;
 	pc->uid = uid;
@@ -284,7 +275,7 @@ static void store_gid_sid_cache(const DOM_SID *psid, gid_t gid)
 		}
 	}
 
-	pc = (struct gid_sid_cache *)malloc(sizeof(struct gid_sid_cache));
+	pc = SMB_MALLOC_P(struct gid_sid_cache);
 	if (!pc)
 		return;
 	pc->gid = gid;
@@ -313,7 +304,7 @@ NTSTATUS uid_to_sid(DOM_SID *psid, uid_t uid)
 	if ( lp_server_role()==ROLE_DOMAIN_MEMBER 
 		|| (lp_idmap_uid(&low, &high) && uid >= low && uid <= high) ) 
 	{
-		if (winbind_uid_to_sid(psid, uid)) {
+		if (!lp_opendirectory() && winbind_uid_to_sid(psid, uid)) {
 
 			DEBUG(10,("uid_to_sid: winbindd %u -> %s\n",
 				(unsigned int)uid, sid_to_string(sid, psid)));
@@ -454,14 +445,11 @@ NTSTATUS sid_to_gid(const DOM_SID *psid, gid_t *pgid)
 	 * Group mapping can deal with foreign SIDs
 	 */
 
+	if ( local_sid_to_gid(pgid, psid, &name_type) )
+		goto success;
+	
 	if (!winbind_lookup_sid(psid, dom_name, name, &name_type)) {
-		DEBUG(10,("sid_to_gid: winbind lookup for sid %s failed - trying local.\n",
-			sid_to_string(sid_str, psid) ));
-
-		if ( local_sid_to_gid(pgid, psid, &name_type) )
-			goto success;
-			
-		DEBUG(10,("sid_to_gid: no one knows this SID\n"));
+		DEBUG(10,("sid_to_gid: no one knows the SID %s (tried local, then winbind)\n", sid_to_string(sid_str, psid)));
 		
 		return NT_STATUS_UNSUCCESSFUL;
 	}

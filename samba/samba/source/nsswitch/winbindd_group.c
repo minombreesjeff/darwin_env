@@ -25,6 +25,8 @@
 #include "includes.h"
 #include "winbindd.h"
 
+extern BOOL opt_nocache;
+
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_WINBIND
 
@@ -45,7 +47,7 @@ static int gr_mem_buffer( char **buffer, char **members, int num_members )
 	for ( i=0; i<num_members; i++ )
 		len += strlen(members[i])+1;
 
-	*buffer = (char*)smb_xmalloc(len);
+	*buffer = SMB_XMALLOC_ARRAY(char, len);
 	for ( i=0; i<num_members; i++ ) {
 		snprintf( &(*buffer)[idx], len-idx, "%s,", members[i]);
 		idx += strlen(members[i])+1;
@@ -104,6 +106,15 @@ static BOOL fill_grent_mem(struct winbindd_domain *domain,
 	DEBUG(10, ("group SID %s\n", sid_to_string(sid_string, group_sid)));
 
 	*num_gr_mem = 0;
+
+	/* HACK ALERT!! This whole routine does not cope with group members
+	 * from more than one domain, ie aliases. Thus we have to work it out
+	 * ourselves in a special routine. */
+
+	if (domain->internal)
+		return fill_passdb_alias_grmem(domain, group_sid,
+					       num_gr_mem,
+					       gr_mem, gr_mem_len);
 	
 	if ( !((group_name_type==SID_NAME_DOM_GRP) ||
 		((group_name_type==SID_NAME_ALIAS) && domain->primary)) )
@@ -183,7 +194,7 @@ static BOOL fill_grent_mem(struct winbindd_domain *domain,
 	/* Allocate buffer */
 
 	if (!buf && buf_len != 0) {
-		if (!(buf = malloc(buf_len))) {
+		if (!(buf = SMB_MALLOC(buf_len))) {
 			DEBUG(1, ("out of memory\n"));
 			result = False;
 			goto done;
@@ -241,14 +252,11 @@ enum winbindd_result winbindd_getgrnam(struct winbindd_cli_state *state)
 
 	/* if no domain or our local domain, then do a local tdb search */
 	
-	if ( !*name_domain || strequal(name_domain, get_global_sam_name()) ) {
+	if ( (!*name_domain || strequal(name_domain, get_global_sam_name())) &&
+	     ((grp = wb_getgrnam(name_group)) != NULL) ) {
+
 		char *buffer = NULL;
 		
-		if ( !(grp=wb_getgrnam(name_group)) ) {
-			DEBUG(5,("winbindd_getgrnam: lookup for %s\\%s failed\n",
-				name_domain, name_group));
-			return WINBINDD_ERROR;
-		}
 		memcpy( &state->response.data.gr, grp, sizeof(WINBINDD_GR) );
 
 		gr_mem_len = gr_mem_buffer( &buffer, grp->gr_mem, grp->num_gr_mem );
@@ -258,6 +266,13 @@ enum winbindd_result winbindd_getgrnam(struct winbindd_cli_state *state)
 		state->response.extra_data = buffer;	/* give the memory away */
 		
 		return WINBINDD_OK;
+	}
+
+	/* if no domain or our local domain and no local tdb group, default to
+	 * our local domain for aliases */
+
+	if ( !*name_domain || strequal(name_domain, get_global_sam_name()) ) {
+		fstrcpy(name_domain, get_global_sam_name());
 	}
 
 	/* Get info for the domain */
@@ -277,7 +292,7 @@ enum winbindd_result winbindd_getgrnam(struct winbindd_cli_state *state)
 
 	/* Get rid and name type from name */
         
-	if (!winbindd_lookup_sid_by_name(domain, name_group, &group_sid, 
+	if (!winbindd_lookup_sid_by_name(domain, domain->name, name_group, &group_sid, 
 					 &name_type)) {
 		DEBUG(1, ("group %s in domain %s does not exist\n", 
 			  name_group, name_domain));
@@ -285,7 +300,8 @@ enum winbindd_result winbindd_getgrnam(struct winbindd_cli_state *state)
 	}
 
 	if ( !((name_type==SID_NAME_DOM_GRP) ||
-		((name_type==SID_NAME_ALIAS) && domain->primary)) )
+	       ((name_type==SID_NAME_ALIAS) && domain->primary) ||
+	       ((name_type==SID_NAME_ALIAS) && domain->internal)) )
 	{
 		DEBUG(1, ("name '%s' is not a local or domain group: %d\n", 
 			  name_group, name_type));
@@ -376,7 +392,8 @@ enum winbindd_result winbindd_getgrgid(struct winbindd_cli_state *state)
 	}
 
 	if ( !((name_type==SID_NAME_DOM_GRP) ||
-	       ((name_type==SID_NAME_ALIAS) && domain->primary) ))
+	       ((name_type==SID_NAME_ALIAS) && domain->primary) ||
+	       ((name_type==SID_NAME_ALIAS) && domain->internal)) )
 	{
 		DEBUG(1, ("name '%s' is not a local or domain group: %d\n", 
 			  group_name, name_type));
@@ -429,20 +446,18 @@ enum winbindd_result winbindd_setgrent(struct winbindd_cli_state *state)
 	for (domain = domain_list(); domain != NULL; domain = domain->next) {
 		struct getent_state *domain_state;
 		
-		
+		/* Create a state record for this domain */
+
 		/* don't add our domaina if we are a PDC or if we 
 		   are a member of a Samba domain */
 		
-		if ( (IS_DC || lp_winbind_trusted_domains_only())
-			&& domain->primary )
+		if ( lp_winbind_trusted_domains_only() && domain->primary )
 		{
 			continue;
 		}
 						
-		/* Create a state record for this domain */
 		
-		if ((domain_state = (struct getent_state *)
-		     malloc(sizeof(struct getent_state))) == NULL) {
+		if ((domain_state = SMB_MALLOC_P(struct getent_state)) == NULL) {
 			DEBUG(1, ("winbindd_setgrent: malloc failed for domain_state!\n"));
 			return WINBINDD_ERROR;
 		}
@@ -456,6 +471,8 @@ enum winbindd_result winbindd_setgrent(struct winbindd_cli_state *state)
 		DLIST_ADD(state->getgrent_state, domain_state);
 	}
 	
+	state->getgrent_initialized = True;
+
 	return WINBINDD_OK;
 }
 
@@ -466,6 +483,7 @@ enum winbindd_result winbindd_endgrent(struct winbindd_cli_state *state)
 	DEBUG(3, ("[%5lu]: endgrent\n", (unsigned long)state->pid));
 
 	free_getent_state(state->getgrent_state);
+	state->getgrent_initialized = False;
 	state->getgrent_state = NULL;
 	
 	return WINBINDD_OK;
@@ -475,8 +493,6 @@ enum winbindd_result winbindd_endgrent(struct winbindd_cli_state *state)
    the sam_entries and num_sam_entries fields with domain group information.  
    The dispinfo_ndx field is incremented to the index of the next group to 
    fetch. Return True if some groups were returned, False otherwise. */
-
-#define MAX_FETCH_SAM_ENTRIES 100
 
 static BOOL get_sam_group_entries(struct getent_state *ent)
 {
@@ -525,7 +541,7 @@ static BOOL get_sam_group_entries(struct getent_state *ent)
 	/* Copy entries into return buffer */
 
 	if (num_entries) {
-		if ( !(name_list = malloc(sizeof(struct acct_info) * num_entries)) ) {
+		if ( !(name_list = SMB_MALLOC_ARRAY(struct acct_info, num_entries)) ) {
 			DEBUG(0,("get_sam_group_entries: Failed to malloc memory for %d domain groups!\n", 
 				num_entries));
 			result = False;
@@ -539,8 +555,8 @@ static BOOL get_sam_group_entries(struct getent_state *ent)
 	/* get the domain local groups if we are a member of a native win2k domain
 	   and are not using LDAP to get the groups */
 	   
-	if ( lp_security() != SEC_ADS && domain->native_mode 
-		&& domain->primary )
+	if ( ( lp_security() != SEC_ADS && domain->native_mode 
+		&& domain->primary) || domain->internal )
 	{
 		DEBUG(4,("get_sam_group_entries: Native Mode 2k domain; enumerating local groups as well\n"));
 		
@@ -556,7 +572,7 @@ static BOOL get_sam_group_entries(struct getent_state *ent)
 		/* Copy entries into return buffer */
 
 		if ( num_entries ) {
-			if ( !(tmp_name_list = Realloc( name_list, sizeof(struct acct_info) * (ent->num_sam_entries+num_entries))) )
+			if ( !(tmp_name_list = SMB_REALLOC_ARRAY( name_list, struct acct_info, ent->num_sam_entries+num_entries)) )
 			{
 				DEBUG(0,("get_sam_group_entries: Failed to realloc more memory for %d local groups!\n", 
 					num_entries));
@@ -608,13 +624,18 @@ enum winbindd_result winbindd_getgrent(struct winbindd_cli_state *state)
 
 	num_groups = MIN(MAX_GETGRENT_GROUPS, state->request.data.num_entries);
 
-	if ((state->response.extra_data = 
-	     malloc(num_groups * sizeof(struct winbindd_gr))) == NULL)
+	if ((state->response.extra_data = SMB_MALLOC_ARRAY(struct winbindd_gr, num_groups)) == NULL)
 		return WINBINDD_ERROR;
+
+	memset(state->response.extra_data, '\0',
+		num_groups * sizeof(struct winbindd_gr) );
 
 	state->response.data.num_entries = 0;
 
 	group_list = (struct winbindd_gr *)state->response.extra_data;
+
+	if (!state->getgrent_initialized)
+		winbindd_setgrent(state);
 
 	if (!(ent = state->getgrent_state))
 		return WINBINDD_ERROR;
@@ -723,9 +744,7 @@ enum winbindd_result winbindd_getgrent(struct winbindd_cli_state *state)
 
 		if (result) {
 			/* Append to group membership list */
-			new_gr_mem_list = Realloc(
-				gr_mem_list,
-				gr_mem_list_len + gr_mem_len);
+			new_gr_mem_list = SMB_REALLOC( gr_mem_list, gr_mem_list_len + gr_mem_len);
 
 			if (!new_gr_mem_list && (group_list[group_list_ndx].num_gr_mem != 0)) {
 				DEBUG(0, ("out of memory\n"));
@@ -776,7 +795,7 @@ enum winbindd_result winbindd_getgrent(struct winbindd_cli_state *state)
 	if (group_list_ndx == 0)
 		goto done;
 
-	new_extra_data = Realloc(
+	new_extra_data = SMB_REALLOC(
 		state->response.extra_data,
 		group_list_ndx * sizeof(struct winbindd_gr) + gr_mem_list_len);
 
@@ -857,7 +876,7 @@ enum winbindd_result winbindd_list_groups(struct winbindd_cli_state *state)
 		
 		/* Allocate some memory for extra data.  Note that we limit
 		   account names to sizeof(fstring) = 128 characters.  */		
-                ted = Realloc(extra_data, sizeof(fstring) * total_entries);
+                ted = SMB_REALLOC(extra_data, sizeof(fstring) * total_entries);
  
 		if (!ted) {
 			DEBUG(0,("failed to enlarge buffer!\n"));
@@ -896,6 +915,65 @@ enum winbindd_result winbindd_list_groups(struct winbindd_cli_state *state)
 	return WINBINDD_OK;
 }
 
+static void add_local_gids_from_sid(DOM_SID *sid, gid_t **gids, int *num)
+{
+	gid_t gid;
+	DOM_SID *aliases;
+	int j, num_aliases;
+
+	DEBUG(10, ("Adding local gids from SID: %s\n",
+		   sid_string_static(sid)));
+
+	/* Don't expand aliases if not explicitly activated -- for now
+	   -- jerry */
+
+	if (!lp_winbind_nested_groups())
+		return;
+
+	/* Add nested group memberships */
+
+	if (!pdb_enum_alias_memberships(sid, &aliases, &num_aliases))
+		return;
+
+	for (j=0; j<num_aliases; j++) {
+		enum SID_NAME_USE type;
+
+		if (!local_sid_to_gid(&gid, &aliases[j], &type)) {
+			DEBUG(1, ("Got an alias membership with no alias\n"));
+			continue;
+		}
+
+		if ((type != SID_NAME_ALIAS) && (type != SID_NAME_WKN_GRP)) {
+			DEBUG(1, ("Got an alias membership in a non-alias\n"));
+			continue;
+		}
+
+		add_gid_to_array_unique(gid, gids, num);
+	}
+	SAFE_FREE(aliases);
+}
+
+static void add_gids_from_user_sid(DOM_SID *sid, gid_t **gids, int *num)
+{
+	DEBUG(10, ("Adding gids from user SID: %s\n",
+		   sid_string_static(sid)));
+
+	add_local_gids_from_sid(sid, gids, num);
+}
+
+static void add_gids_from_group_sid(DOM_SID *sid, gid_t **gids, int *num)
+{
+	gid_t gid;
+
+	DEBUG(10, ("Adding gids from group SID: %s\n",
+		   sid_string_static(sid)));
+
+	if (NT_STATUS_IS_OK(idmap_sid_to_gid(sid, &gid, 0)))
+		add_gid_to_array_unique(gid, gids, num);
+
+	add_local_gids_from_sid(sid, gids, num);
+}
+
 /* Get user supplementary groups.  This is much quicker than trying to
    invert the groups database.  We merge the groups from the gids and
    other_sids info3 fields as trusted domain, universal group
@@ -913,7 +991,7 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 	DOM_SID **user_grpsids;
 	struct winbindd_domain *domain;
 	enum winbindd_result result = WINBINDD_ERROR;
-	gid_t *gid_list;
+	gid_t *gid_list = NULL;
 	unsigned int i;
 	TALLOC_CTX *mem_ctx;
 	NET_USER_INFO_3 *info3 = NULL;
@@ -949,7 +1027,7 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 	
 	/* Get rid and name type from name.  The following costs 1 packet */
 
-	if (!winbindd_lookup_sid_by_name(domain, name_user, &user_sid, 
+	if (!winbindd_lookup_sid_by_name(domain, domain->name, name_user, &user_sid, 
 					 &name_type)) {
 		DEBUG(1, ("user '%s' does not exist\n", name_user));
 		goto done;
@@ -961,16 +1039,17 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 		goto done;
 	}
 
+	add_gids_from_user_sid(&user_sid, &gid_list, &num_gids);
+
 	/* Treat the info3 cache as authoritative as the
 	   lookup_usergroups() function may return cached data. */
 
-	if ((info3 = netsamlogon_cache_get(mem_ctx, &user_sid))) {
+	if ( !opt_nocache && (info3 = netsamlogon_cache_get(mem_ctx, &user_sid))) {
 
 		DEBUG(10, ("winbindd_getgroups: info3 has %d groups, %d other sids\n",
 			   info3->num_groups2, info3->num_other_sids));
 
 		num_groups = info3->num_other_sids + info3->num_groups2;
-		gid_list = calloc(sizeof(gid_t), num_groups);
 
 		/* Go through each other sid and convert it to a gid */
 
@@ -1004,23 +1083,11 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 				continue;
 			}
 
-			/* Map to a gid */
+			add_gids_from_group_sid(&info3->other_sids[i].sid,
+						&gid_list, &num_gids);
 
-			if (!NT_STATUS_IS_OK(idmap_sid_to_gid(&info3->other_sids[i].sid, &gid_list[num_gids], 0)) )
-			{
-				DEBUG(10, ("winbindd_getgroups: could not map sid %s to gid\n",
-					   sid_string_static(&info3->other_sids[i].sid)));
-				continue;
-			}
-
-			/* We've jumped through a lot of hoops to get here */
-
-			DEBUG(10, ("winbindd_getgroups: mapped other sid %s to "
-				   "gid %lu\n", sid_string_static(
-					   &info3->other_sids[i].sid),
-				   (unsigned long)gid_list[num_gids]));
-
-			num_gids++;
+			if (gid_list == NULL)
+				goto done;
 		}
 
 		for (i = 0; i < info3->num_groups2; i++) {
@@ -1030,12 +1097,11 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 			sid_copy( &group_sid, &domain->sid );
 			sid_append_rid( &group_sid, info3->gids[i].g_rid );
 
-			if (!NT_STATUS_IS_OK(idmap_sid_to_gid(&group_sid, &gid_list[num_gids], 0)) ) {
-				DEBUG(10, ("winbindd_getgroups: could not map sid %s to gid\n",
-					   sid_string_static(&group_sid)));
-			}
+			add_gids_from_group_sid(&group_sid, &gid_list,
+						&num_gids);
 
-			num_gids++;
+			if (gid_list == NULL)
+				goto done;
 		}
 
 		SAFE_FREE(info3);
@@ -1047,20 +1113,19 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 		if (!NT_STATUS_IS_OK(status)) 
 			goto done;
 
-		gid_list = malloc(sizeof(gid_t) * num_groups);
-
 		if (state->response.extra_data)
 			goto done;
 
 		for (i = 0; i < num_groups; i++) {
-			if (!NT_STATUS_IS_OK(idmap_sid_to_gid(user_grpsids[i], &gid_list[num_gids], 0))) {
-				DEBUG(1, ("unable to convert group sid %s to gid\n", 
-					  sid_string_static(user_grpsids[i])));
-				continue;
-			}
-			num_gids++;
+			add_gids_from_group_sid(user_grpsids[i],
+						&gid_list, &num_gids);
+
+			if (gid_list == NULL)
+				goto done;
 		}
 	}
+
+	remove_duplicate_gids( &num_gids, gid_list );
 
 	/* Send data back to client */
 
@@ -1077,6 +1142,48 @@ enum winbindd_result winbindd_getgroups(struct winbindd_cli_state *state)
 	return result;
 }
 
+static void add_sid_to_array_unique(TALLOC_CTX *mem_ctx, const DOM_SID *sid,
+				    DOM_SID ***sids, int *num_sids)
+{
+	int i;
+
+	for (i=0; i<(*num_sids); i++) {
+		if (sid_compare(sid, (*sids)[i]) == 0)
+			return;
+	}
+
+	*sids = TALLOC_REALLOC_ARRAY(mem_ctx, *sids, DOM_SID *, *num_sids+1);
+
+	if (*sids == NULL)
+		return;
+
+	(*sids)[*num_sids] = TALLOC_P(mem_ctx, DOM_SID);
+	sid_copy((*sids)[*num_sids], sid);
+	*num_sids += 1;
+	return;
+}
+
+static void add_local_sids_from_sid(TALLOC_CTX *mem_ctx, const DOM_SID *sid,
+				    DOM_SID ***user_grpsids,
+				    int *num_groups)
+{
+	DOM_SID *aliases = NULL;
+	int i, num_aliases = 0;
+
+	if (!pdb_enum_alias_memberships(sid, &aliases, &num_aliases))
+		return;
+
+	if (num_aliases == 0)
+		return;
+
+	for (i=0; i<num_aliases; i++)
+		add_sid_to_array_unique(mem_ctx, &aliases[i], user_grpsids,
+					num_groups);
+
+	SAFE_FREE(aliases);
+
+	return;
+}
 
 /* Get user supplementary sids. This is equivalent to the
    winbindd_getgroups() function but it involves a SID->SIDs mapping
@@ -1132,6 +1239,20 @@ enum winbindd_result winbindd_getusersids(struct winbindd_cli_state *state)
 		goto no_groups;
 	}
 
+	if (lp_winbind_nested_groups()) {
+		int k;
+		/* num_groups is changed during the loop, that's why we have
+		   to count down here.*/
+
+		for (k=num_groups-1; k>=0; k--) {
+			add_local_sids_from_sid(mem_ctx, user_grpsids[k],
+						&user_grpsids, &num_groups);
+		}
+
+		add_local_sids_from_sid(mem_ctx, &user_sid, &user_grpsids,
+					&num_groups);
+	}
+
 	/* work out the response size */
 	for (i = 0; i < num_groups; i++) {
 		const char *s = sid_string_static(user_grpsids[i]);
@@ -1139,7 +1260,7 @@ enum winbindd_result winbindd_getusersids(struct winbindd_cli_state *state)
 	}
 
 	/* build the reply */
-	ret = malloc(ret_size);
+	ret = SMB_MALLOC(ret_size);
 	if (!ret) goto done;
 	ofs = 0;
 	for (i = 0; i < num_groups; i++) {

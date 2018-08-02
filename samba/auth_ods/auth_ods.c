@@ -25,10 +25,12 @@
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_AUTH
 
-#include <DirectoryService/DirServices.h>
-#include <DirectoryService/DirServicesConst.h>
-#include <DirectoryService/DirServicesUtils.h>
+#include <DirectoryService/DirectoryService.h>
 #include <libopendirectorycommon.h>
+#if WITH_SACL
+#include <membershipPriv.h>
+#define kSMBServiceACL "smb"
+#endif
 
 tDirNodeReference getusernode(tDirReference dirRef, const char *userName)
 {
@@ -237,7 +239,50 @@ tDirStatus opendirectory_auth_user(tDirReference dirRef, tDirNodeReference userN
 
 
 }
+#if WITH_SACL
+/*
+	check_sacl(const char *inUser, const char *inService) - Check Service ACL
+		inUser - username in utf-8
+		inService - name of the service in utf-8
+		
+		NOTE: the service name is not the group name, the transformation currently goes like
+			this: "service" -> "com.apple.access_service"
+			
+	returns
+		1 if the user is authorized (or no ACL exists)
+		0 if the user is not authorized or does not exist
 
+*/
+int		check_sacl(const char *inUser, const char *inService)
+{
+	uuid_t	user_uuid;
+	int		isMember = 0;
+	int		mbrErr = 0;
+	
+	// get the uuid
+	if(mbr_user_name_to_uuid(inUser, user_uuid))
+	{
+		return 0;
+	}	
+	
+	// check the sacl
+	if((mbrErr = mbr_check_service_membership(user_uuid, inService, &isMember)))
+	{
+		if(mbrErr == ENOENT)	// no ACL exists
+		{
+			return 1;	
+		} else {
+			return 0;
+		}
+	}
+	if(isMember == 1)
+	{
+		return 1;
+	} else {
+		return 0;
+	}
+}
+#endif
 tDirStatus opendirectory_ntlmv2_auth_user(tDirReference dirRef, tDirNodeReference userNode, const char* user, const char* domain,
 										const DATA_BLOB *sec_blob, const DATA_BLOB *ntv2_response, DATA_BLOB *user_sess_key)
 {
@@ -346,9 +391,9 @@ tDirStatus opendirectory_ntlmv2_auth_user(tDirReference dirRef, tDirNodeReferenc
 core of smb password checking routine.
 ****************************************************************************/
 static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirNodeReference userNode, const char *user, char *inAuthMethod,
-				DATA_BLOB nt_response,
-				 DATA_BLOB sec_blob,
-				 DATA_BLOB *user_sess_key)
+				const DATA_BLOB *nt_response,
+				const DATA_BLOB *sec_blob,
+				DATA_BLOB *user_sess_key)
 {
 	/* Finish the encryption of part_passwd. */
 	uchar p24[24];
@@ -356,33 +401,37 @@ static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirN
     tDirStatus	keyStatus = eDSNoErr;
 
 	
-	if (sec_blob.length != 8) {
-		DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv1: incorrect challenge size (%ld)\n", sec_blob.length));
+	if (sec_blob->length != 8) {
+		DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv1: incorrect challenge size (%ld)\n", sec_blob->length));
 		return eDSAuthFailed;
 	}
 	
-	if (nt_response.length != 24) {
-		DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv1: incorrect password length (%ld)\n", nt_response.length));
+	if (nt_response->length != 24) {
+		DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv1: incorrect password length (%ld)\n", nt_response->length));
 		return eDSAuthFailed;
 	}
 
-    status = opendirectory_auth_user(dirRef, userNode, user, sec_blob.data, nt_response.data, inAuthMethod);
-	DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv1: [%d]opendirectory_auth_user\n", status));
+    status = opendirectory_auth_user(dirRef, userNode, user, sec_blob->data, nt_response->data, inAuthMethod);
 	
-	if (eDSNoErr == status && user_sess_key != NULL)
+	if (eDSNoErr == status)
 	{
-		*user_sess_key = data_blob(NULL, 16);
-		become_root();
-		keyStatus = opendirectory_user_session_key(user, user_sess_key->data, NULL);
-		unbecome_root();
-		DEBUG(2, ("opendirectory_smb_pwd_check_ntlmv1: [%d]opendirectory_user_session_key\n", keyStatus));
+		if (user_sess_key != NULL)
+		{
+			*user_sess_key = data_blob(NULL, 16);
+			become_root();
+			keyStatus = opendirectory_user_session_key(user, user_sess_key->data, NULL);
+			unbecome_root();
+			DEBUG(2, ("opendirectory_smb_pwd_check_ntlmv1: [%d]opendirectory_user_session_key\n", keyStatus));
+		}
+	} else {
+		DEBUG(1, ("opendirectory_smb_pwd_check_ntlmv1: [%d]opendirectory_auth_user\n", status));	
 	}
 		
 #if DEBUG_PASSWORD
 	DEBUG(100,("Password from client was |"));
-	dump_data(100, nt_response.data, nt_response.length);
+	dump_data(100, nt_response->data, nt_response->length);
 	DEBUG(100,("Given challenge was |"));
-	dump_data(100, sec_blob.data, sec_blob.length);
+	dump_data(100, sec_blob->data, sec_blob->length);
 	DEBUG(100,("Value from encryption was |"));
 	dump_data(100, p24, 24);
 #endif
@@ -395,15 +444,16 @@ static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirN
  Note:  The same code works with both NTLMv2 and LMv2.
 ****************************************************************************/
 
-static BOOL opendirectory_smb_pwd_check_ntlmv2(tDirReference dirRef, tDirNodeReference userNode,
+static tDirStatus opendirectory_smb_pwd_check_ntlmv2(tDirReference dirRef, tDirNodeReference userNode,
 				const DATA_BLOB *ntv2_response,
 				 const DATA_BLOB *sec_blob,
 				 const char *user, const char *domain,
+				 BOOL upper_case_domain, /* should the domain be transformed into upper case? */
 				 DATA_BLOB *user_sess_key)
 {
     tDirStatus	status	= eDSAuthFailed;
     tDirStatus	keyStatus = eDSNoErr;
-
+	u_int32_t session_key_len = 0;
 	if (sec_blob->length != 8) {
 		DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv2: incorrect challenge size (%lu)\n", 
 			  (unsigned long)sec_blob->length));
@@ -420,15 +470,18 @@ static BOOL opendirectory_smb_pwd_check_ntlmv2(tDirReference dirRef, tDirNodeRef
 	}
 
     status = opendirectory_ntlmv2_auth_user(dirRef, userNode, user, domain, sec_blob, ntv2_response, user_sess_key );
-	DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv2:  [%d]opendirectory_ntlmv2_auth_user\n", status));
+	DEBUG(4, ("opendirectory_smb_pwd_check_ntlmv2:  [%d]opendirectory_[%s]_auth_user\n", status, ntv2_response->length == 24 ?  "LMv2" : "NTLMv2"));
 
-	if (eDSNoErr == status && user_sess_key != NULL)
+
+	if (eDSNoErr == status)
 	{
-		*user_sess_key = data_blob(NULL, 16);
-		become_root();
-		keyStatus = opendirectory_user_session_key(user, user_sess_key->data, NULL);
-		unbecome_root();
-		DEBUG(2, ("opendirectory_smb_pwd_check_ntlmv2: [%d]opendirectory_user_session_key\n", keyStatus));
+		if (user_sess_key != NULL) {
+			*user_sess_key = data_blob(NULL, 16);
+			become_root();
+			keyStatus = opendirectory_ntlmv2user_session_key(user, ntv2_response->length, ntv2_response->data, domain, &session_key_len, user_sess_key->data, NULL);
+			unbecome_root();
+			DEBUG(2, ("opendirectory_smb_pwd_check_ntlmv2: [%d]opendirectory_[%s]user_session_key len(%d)\n", keyStatus, ntv2_response->length == 24 ? "LMv2" : "NTLMv2", session_key_len));
+		}
 	}
 
 #if DEBUG_PASSWORD
@@ -441,6 +494,213 @@ static BOOL opendirectory_smb_pwd_check_ntlmv2(tDirReference dirRef, tDirNodeRef
  return (status);
 
 }
+
+
+/**
+ * Check a challenge-response password against the value of the NT or
+ * LM password hash.
+ *
+ * @param mem_ctx talloc context
+ * @param challenge 8-byte challenge.  If all zero, forces plaintext comparison
+ * @param nt_response 'unicode' NT response to the challenge, or unicode password
+ * @param lm_response ASCII or LANMAN response to the challenge, or password in DOS code page
+ * @param username internal Samba username, for log messages
+ * @param client_username username the client used
+ * @param client_domain domain name the client used (may be mapped)
+ * @param nt_pw MD4 unicode password from our passdb or similar
+ * @param lm_pw LANMAN ASCII password from our passdb or similar
+ * @param user_sess_key User session key
+ * @param lm_sess_key LM session key (first 8 bytes of the LM hash)
+ */
+
+NTSTATUS opendirectory_opendirectory_ntlm_password_check(tDirReference dirRef, tDirNodeReference userNode, TALLOC_CTX *mem_ctx,
+			     const DATA_BLOB *challenge,
+			     const DATA_BLOB *lm_response,
+			     const DATA_BLOB *nt_response,
+			     const DATA_BLOB *lm_interactive_pwd,
+			     const DATA_BLOB *nt_interactive_pwd,
+			     const char *username, 
+			     const char *client_username, 
+			     const char *client_domain,
+			     DATA_BLOB *user_sess_key, 
+			     DATA_BLOB *lm_sess_key)
+{
+	tDirStatus dirStatus = eDSAuthFailed;
+
+	if (nt_response->length != 0 && nt_response->length < 24) {
+		DEBUG(2,("opendirectory_ntlm_password_check: invalid NT password length (%lu) for user %s\n", 
+			 (unsigned long)nt_response->length, username));		
+	}
+	
+	if (nt_response->length >= 24) {
+		if (nt_response->length > 24) {
+			/* We have the NT MD4 hash challenge available - see if we can
+			   use it 
+			*/
+			DEBUG(4,("opendirectory_ntlm_password_check: Checking NTLMv2 password with domain [%s]\n", client_domain));
+			if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, nt_response, 
+						  challenge, 
+						  client_username, 
+						  client_domain,
+						  False,
+						  user_sess_key)) == eDSNoErr)
+			{
+#if DEBUG_LMv2
+				DEBUG(4,("opendirectory_ntlm_password_check: Checking LMv2 password with domain [%s]\n", client_domain));
+				if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, lm_response, 
+							  challenge, 
+							  client_username, 
+							  client_domain,
+							  False,
+							  user_sess_key)) == eDSNoErr)
+				{
+					DEBUG(4,("opendirectory_ntlm_password_check: Checking LMv2 password with domain [%s]\n", client_domain));
+				} else {
+					DEBUG(4,("opendirectory_ntlm_password_check: Checking LMv2 password with domain [%s]\n", client_domain));
+				}
+#endif			
+				return NT_STATUS_OK;
+			}
+			DEBUG(4,("opendirectory_ntlm_password_check: Checking NTLMv2 password with uppercased version of domain [%s]\n", client_domain));
+			if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, nt_response, 
+						  challenge, 
+						  client_username, 
+						  client_domain,
+						  True,
+						  user_sess_key)) == eDSNoErr)
+			{
+				return NT_STATUS_OK;
+			}
+
+			DEBUG(4,("opendirectory_ntlm_password_check: Checking NTLMv2 password without a domain\n"));
+			if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, nt_response, 
+						  challenge, 
+						  client_username, 
+						  "",
+						  False,
+						  user_sess_key)) == eDSNoErr)
+			{
+
+				return NT_STATUS_OK;
+			} else {
+				DEBUG(3,("opendirectory_ntlm_password_check: NTLMv2 password check failed\n"));
+				return map_dserr_to_nterr(dirStatus);
+			}
+		}
+
+		if (lp_ntlm_auth() || (nt_interactive_pwd && nt_interactive_pwd->length)) {		
+			/* We have the NT MD4 hash challenge available - see if we can
+			   use it (ie. does it exist in the smbpasswd file).
+			*/
+			DEBUG(4,("opendirectory_ntlm_password_check: Checking NT MD4 password\n"));
+			if ((dirStatus =  opendirectory_smb_pwd_check_ntlmv1(dirRef, userNode, username, kDSStdAuthSMB_NT_Key,
+						nt_response, 
+						 challenge,
+						 user_sess_key)) == eDSNoErr) 
+			{
+				return NT_STATUS_OK;
+			} else {
+				DEBUG(3,("opendirectory_ntlm_password_check: NT MD4 password check failed for user %s\n",
+					 username));
+				return map_dserr_to_nterr(dirStatus);
+			}
+		} else {
+			DEBUG(2,("opendirectory_ntlm_password_check: NTLMv1 passwords NOT PERMITTED for user %s\n",
+				 username));			
+			/* no return, because we might pick up LMv2 in the LM field */
+		}
+	}
+	
+	if (lm_response->length == 0) {
+		DEBUG(3,("opendirectory_ntlm_password_check: NEITHER LanMan nor NT password supplied for user %s\n",
+			 username));
+		return NT_STATUS_WRONG_PASSWORD;
+	}
+	
+	if (lm_response->length < 24) {
+		DEBUG(2,("opendirectory_ntlm_password_check: invalid LanMan password length (%lu) for user %s\n", 
+			 (unsigned long)nt_response->length, username));		
+		return NT_STATUS_WRONG_PASSWORD;
+	}
+		
+	if (!lp_lanman_auth()) {
+		DEBUG(3,("opendirectory_ntlm_password_check: Lanman passwords NOT PERMITTED for user %s\n",
+			 username));
+	} else {
+		DEBUG(4,("opendirectory_ntlm_password_check: Checking LM password\n"));
+		if ((dirStatus =  opendirectory_smb_pwd_check_ntlmv1(dirRef, userNode, username, kDSStdAuthSMB_LM_Key,
+					lm_response, 
+					 challenge,
+					 NULL)) == eDSNoErr) 
+		{
+			return NT_STATUS_OK;
+		} else {
+			DEBUG(3,("opendirectory_ntlm_password_check: LM password check failed for user %s\n",username));
+			
+//			return map_dserr_to_nterr(dirStatus);
+		}
+	}
+/*	
+	if (!nt_pw) {
+		DEBUG(4,("opendirectory_ntlm_password_check: LM password check failed for user, no NT password %s\n",username));
+		return NT_STATUS_WRONG_PASSWORD;
+	}
+*/	
+	/* This is for 'LMv2' authentication.  almost NTLMv2 but limited to 24 bytes.
+	   - related to Win9X, legacy NAS pass-though authentication
+	*/
+	DEBUG(4,("opendirectory_ntlm_password_check: Checking LMv2 password with domain %s\n", client_domain));
+	if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, lm_response, 
+				  challenge, 
+				  client_username, 
+				  client_domain,
+				  False,
+				  user_sess_key)) == eDSNoErr)
+	{
+		return NT_STATUS_OK;
+	}
+	
+	DEBUG(4,("opendirectory_ntlm_password_check: Checking LMv2 password with upper-cased version of domain %s\n", client_domain));
+	if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, lm_response, 
+				  challenge, 
+				  client_username, 
+				  client_domain,
+				  True,
+				  user_sess_key)) == eDSNoErr)
+	{
+		return NT_STATUS_OK;
+	}
+	
+	DEBUG(4,("opendirectory_ntlm_password_check: Checking LMv2 password without a domain\n"));
+	if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, lm_response, 
+				  challenge, 
+				  client_username, 
+				  "",
+				  False,
+				  user_sess_key)) == eDSNoErr)
+	{
+		return NT_STATUS_OK;
+	}
+
+	/* Apparently NT accepts NT responses in the LM field
+	   - I think this is related to Win9X pass-though authentication
+	*/
+	DEBUG(4,("opendirectory_ntlm_password_check: Checking NT MD4 password in LM field\n"));
+	if (lp_ntlm_auth()) {
+		if ((dirStatus =  opendirectory_smb_pwd_check_ntlmv1(dirRef, userNode, username, kDSStdAuthSMB_NT_Key,
+					lm_response, 
+					 challenge,
+					 user_sess_key)) == eDSNoErr) 
+		{
+			return NT_STATUS_OK;
+		} 
+		DEBUG(3,("opendirectory_ntlm_password_check: LM password, NT MD4 password in LM field and LMv2 failed for user %s\n",username));
+	} else {
+		DEBUG(3,("opendirectory_ntlm_password_check: LM password and LMv2 failed for user %s, and NT MD4 password in LM field not permitted\n",username));
+	}
+	return NT_STATUS_WRONG_PASSWORD;
+}
+
 
 
 /****************************************************************************
@@ -456,145 +716,26 @@ static NTSTATUS opendirectory_password_ok(tDirReference dirRef, tDirNodeReferenc
 				DATA_BLOB *lm_sess_key)
 {
 	uint16 acct_ctrl;
-	uint32 auth_flags;
-	tDirStatus dirStatus = eDSAuthFailed;
-	
+	const char *username = pdb_get_username(sampass);
+
 	acct_ctrl = pdb_get_acct_ctrl(sampass);
-	if (acct_ctrl & ACB_PWNOTREQ) 
-	{
-		if (lp_null_passwords()) 
-		{
-			DEBUG(3,("Account for user '%s' has no password and null passwords are allowed.\n", pdb_get_username(sampass)));
-			return(NT_STATUS_OK);
-		} 
-		else 
-		{
-			DEBUG(3,("Account for user '%s' has no password and null passwords are NOT allowed.\n", pdb_get_username(sampass)));
-			return(NT_STATUS_LOGON_FAILURE);
+	if (acct_ctrl & ACB_PWNOTREQ) {
+		if (lp_null_passwords()) {
+			DEBUG(3,("Account for user '%s' has no password and null passwords are allowed.\n", username));
+			return NT_STATUS_OK;
+		} else {
+			DEBUG(3,("Account for user '%s' has no password and null passwords are NOT allowed.\n", username));
+			return NT_STATUS_LOGON_FAILURE;
 		}		
 	}
 
-	auth_flags = user_info->auth_flags;
-
-	if (auth_flags & AUTH_FLAG_NTLMv2_RESP) {
-		/* We have the NT MD4 hash challenge available - see if we can
-		   use it (ie. does it exist in the smbpasswd file).
-		*/
-		DEBUG(4,("opendirectory_password_ok: Checking NTLMv2 password\n"));
-
-		if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, &user_info->nt_resp, 
-					  &auth_context->challenge, 
-					  user_info->smb_name.str, 
-					  user_info->client_domain.str,
-					  user_sess_key)) == eDSNoErr)
-		{
-			return NT_STATUS_OK;
-		} else {
-			DEBUG(3,("opendirectory_password_ok: NTLMv2 password check failed\n"));
-			//return NT_STATUS_WRONG_PASSWORD;
-			return map_dserr_to_nterr(dirStatus);
-		}
-
-		return NT_STATUS_LOGON_FAILURE; /* NTLMv2 not available */
-	} else if (auth_flags & AUTH_FLAG_NTLM_RESP) {
-		if (lp_ntlm_auth()) {		
-			/* We have the NT MD4 hash challenge available - see if we can
-			   use it
-			*/
-			DEBUG(4,("opendirectory_password_ok: Checking NT MD4 password\n"));
-			if ((dirStatus = opendirectory_smb_pwd_check_ntlmv1(dirRef, userNode, pdb_get_username(sampass), kDSStdAuthSMB_NT_Key,
-						user_info->nt_resp, 
-						 auth_context->challenge,
-						 user_sess_key)) == eDSNoErr) 
-			{
-				return NT_STATUS_OK;
-			} else {
-				DEBUG(3,("opendirectory_password_ok: NT MD4 password check failed for user %s\n",pdb_get_username(sampass)));
-				
-				//return NT_STATUS_WRONG_PASSWORD;
-				return map_dserr_to_nterr(dirStatus);
-			}
-		} else {
-			DEBUG(2,("opendirectory_password_ok: NTLMv1 passwords NOT PERMITTED for user %s\n",pdb_get_username(sampass)));			
-			/* no return, becouse we might pick up LMv2 in the LM field */
-		}
-	}
-	
-	if (auth_flags & AUTH_FLAG_LM_RESP) {
-		if (user_info->lm_resp.length != 24) {
-			DEBUG(2,("opendirectory_password_ok: invalid LanMan password length (%lu) for user %s\n", 
-				 (unsigned long)user_info->nt_resp.length, pdb_get_username(sampass)));		
-		}
-		
-		if (!lp_lanman_auth()) {
-			DEBUG(3,("opendirectory_password_ok: Lanman passwords NOT PERMITTED for user %s\n",pdb_get_username(sampass)));
-		} else {			
-			DEBUG(4,("opendirectory_password_ok: Checking LM password\n"));
-			if ((dirStatus =  opendirectory_smb_pwd_check_ntlmv1(dirRef, userNode, pdb_get_username(sampass), kDSStdAuthSMB_LM_Key,
-						user_info->lm_resp, 
-						 auth_context->challenge,
-						 user_sess_key)) == eDSNoErr) 
-			{
-				return NT_STATUS_OK;
-			} else {
-				DEBUG(3,("opendirectory_password_ok: LM password check failed for user %s\n",pdb_get_username(sampass)));
-				
-				//return NT_STATUS_WRONG_PASSWORD;
-				return map_dserr_to_nterr(dirStatus);
-			}
-		}
-#if 0
-		if (IS_SAM_DEFAULT(sampass, PDB_NTPASSWD)) {
-			DEBUG(4,("opendirectory_password_ok: LM password check failed for user, no NT password %s\n",pdb_get_username(sampass)));
-			return NT_STATUS_WRONG_PASSWORD;
-		} 
-#endif		
-
-		/* This is for 'LMv2' authentication.  almost NTLMv2 but limited to 24 bytes.
-		   - related to Win9X, legacy NAS pass-through authentication
-		*/
-		DEBUG(4,("opendirectory_password_ok: Checking LMv2 password\n"));
-
-		if ((dirStatus = opendirectory_smb_pwd_check_ntlmv2( dirRef, userNode, &user_info->nt_resp, 
-					  &auth_context->challenge, 
-					  user_info->smb_name.str, 
-					  user_info->client_domain.str,
-					  user_sess_key)) == eDSNoErr)
-		{
-			return NT_STATUS_OK;
-		} else {
-			DEBUG(3,("opendirectory_password_ok: LMv2 password check failed for user %s\n",pdb_get_username(sampass)));
-			
-			//return NT_STATUS_WRONG_PASSWORD;
-			return map_dserr_to_nterr(dirStatus);
-		}
-
-		/* Apparently NT accepts NT responses in the LM field
-		   - I think this is related to Win9X pass-through authentication
-		*/
-		DEBUG(4,("opendirectory_password_ok: Checking NT MD4 password in LM field\n"));
-		if (lp_ntlm_auth()) 
-		{
-			if ((dirStatus =  opendirectory_smb_pwd_check_ntlmv1(dirRef, userNode, pdb_get_username(sampass), kDSStdAuthSMB_NT_Key,
-						user_info->lm_resp, 
-						 auth_context->challenge,
-						 user_sess_key)) == eDSNoErr) 
-			{
-				return NT_STATUS_OK;
-			}
-			DEBUG(3,("opendirectory_password_ok: LM password, NT MD4 password in LM field and LMv2 failed for user %s\n",pdb_get_username(sampass)));
-			//return NT_STATUS_WRONG_PASSWORD;
-			return map_dserr_to_nterr(dirStatus);
-		} else {
-			DEBUG(3,("opendirectory_password_ok: LM password and LMv2 failed for user %s, and NT MD4 password in LM field not permitted\n",pdb_get_username(sampass)));
-			return NT_STATUS_WRONG_PASSWORD;
-		}
-			
-	}
-		
-	/* Should not be reached, but if they send nothing... */
-	DEBUG(3,("opendirectory_password_ok: NEITHER LanMan nor NT password supplied for user %s\n",pdb_get_username(sampass)));
-	return NT_STATUS_WRONG_PASSWORD;
+	return opendirectory_opendirectory_ntlm_password_check(dirRef, userNode, mem_ctx, &auth_context->challenge, 
+				   &user_info->lm_resp, &user_info->nt_resp, 
+				   &user_info->lm_interactive_pwd, &user_info->nt_interactive_pwd,
+				   username, 
+				   user_info->smb_name.str, 
+				   user_info->client_domain.str, 
+				   user_sess_key, lm_sess_key);
 }
 
 /****************************************************************************
@@ -767,13 +908,19 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
 		pdb_free_sam(&sampass);
 		return nt_status;
 	}
-
+#if WITH_SACL
+	if (check_sacl(pdb_get_username(sampass), kSMBServiceACL) == 0)
+	{
+		DEBUG(0,("check_opendirectory_security: check_sacl(%s, smb) failed \n", pdb_get_username(sampass)));
+		return NT_STATUS_WRONG_PASSWORD;	
+	}
+#endif
 	if (!NT_STATUS_IS_OK(nt_status = make_server_info_sam(server_info, sampass))) {		
 		DEBUG(0,("check_opendirectory_security: make_server_info_sam() failed with '%s'\n", nt_errstr(nt_status)));
 		return nt_status;
 	}
 
-	(*server_info)->nt_session_key = user_sess_key;
+	(*server_info)->user_session_key = user_sess_key;
 	(*server_info)->lm_session_key = lm_sess_key;
 
 	return nt_status;

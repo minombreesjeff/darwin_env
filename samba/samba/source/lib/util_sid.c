@@ -174,6 +174,19 @@ NT_USER_TOKEN *get_system_token(void)
 	return &system_token;
 }
 
+/******************************************************************
+ get the default domain/netbios name to be used when dealing 
+ with our passdb list of accounts
+******************************************************************/
+
+const char *get_global_sam_name(void) 
+{
+	if ((lp_server_role() == ROLE_DOMAIN_PDC) || (lp_server_role() == ROLE_DOMAIN_BDC)) {
+		return lp_workgroup();
+	}
+	return global_myname();
+}
+
 /**************************************************************************
  Splits a name of format \DOMAIN\name or name into its two components.
  Sets the DOMAIN name to global_myname() if it has not been specified.
@@ -201,7 +214,7 @@ void split_domain_name(const char *fullname, char *domain, char *name)
 		fstrcpy(domain, full_name);
 		fstrcpy(name, p+1);
 	} else {
-		fstrcpy(domain, global_myname());
+		fstrcpy(domain, get_global_sam_name());
 		fstrcpy(name, full_name);
 	}
 
@@ -291,7 +304,7 @@ BOOL string_to_sid(DOM_SID *sidout, const char *sidstr)
 
 	memset((char *)sidout, '\0', sizeof(DOM_SID));
 
-	p = q = strdup(sidstr + 2);
+	p = q = SMB_STRDUP(sidstr + 2);
 	if (p == NULL) {
 		DEBUG(0, ("string_to_sid: out of memory!\n"));
 		return False;
@@ -608,30 +621,13 @@ char *sid_binstring(const DOM_SID *sid)
 {
 	char *buf, *s;
 	int len = sid_size(sid);
-	buf = malloc(len);
+	buf = SMB_MALLOC(len);
 	if (!buf)
 		return NULL;
 	sid_linearize(buf, len, sid);
 	s = binary_string(buf, len);
 	free(buf);
 	return s;
-}
-
-
-/*****************************************************************
- Print a GUID structure for debugging.
-*****************************************************************/
-
-void print_guid(GUID *guid)
-{
-	int i;
-
-	d_printf("%08x-%04x-%04x", 
-		 IVAL(guid->info, 0), SVAL(guid->info, 4), SVAL(guid->info, 6));
-	d_printf("-%02x%02x-", guid->info[8], guid->info[9]);
-	for (i=10;i<GUID_SIZE;i++)
-		d_printf("%02x", guid->info[i]);
-	d_printf("\n");
 }
 
 /*******************************************************************
@@ -645,7 +641,7 @@ DOM_SID *sid_dup_talloc(TALLOC_CTX *ctx, const DOM_SID *src)
 	if(!src)
 		return NULL;
 	
-	if((dst = talloc_zero(ctx, sizeof(DOM_SID))) != NULL) {
+	if((dst = TALLOC_ZERO_P(ctx, DOM_SID)) != NULL) {
 		sid_copy( dst, src);
 	}
 	

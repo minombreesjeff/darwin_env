@@ -25,9 +25,10 @@
 
 /****************************************************************************
  Hard/Symlink a file (UNIX extensions).
+ Creates new name (sym)linked to oldname.
 ****************************************************************************/
 
-static BOOL cli_link_internal(struct cli_state *cli, const char *fname_src, const char *fname_dst, BOOL hard_link)
+static BOOL cli_link_internal(struct cli_state *cli, const char *oldname, const char *newname, BOOL hard_link)
 {
 	unsigned int data_len = 0;
 	unsigned int param_len = 0;
@@ -36,16 +37,18 @@ static BOOL cli_link_internal(struct cli_state *cli, const char *fname_src, cons
 	pstring data;
 	char *rparam=NULL, *rdata=NULL;
 	char *p;
+	size_t oldlen = 2*(strlen(oldname)+1);
+	size_t newlen = 2*(strlen(newname)+1);
 
 	memset(param, 0, sizeof(param));
 	SSVAL(param,0,hard_link ? SMB_SET_FILE_UNIX_HLINK : SMB_SET_FILE_UNIX_LINK);
 	p = &param[6];
 
-	p += clistr_push(cli, p, fname_src, -1, STR_TERMINATE);
+	p += clistr_push(cli, p, newname, MIN(newlen, sizeof(param)-6), STR_TERMINATE);
 	param_len = PTR_DIFF(p, param);
 
 	p = data;
-	p += clistr_push(cli, p, fname_dst, -1, STR_TERMINATE);
+	p += clistr_push(cli, p, oldname, MIN(oldlen,sizeof(data)), STR_TERMINATE);
 	data_len = PTR_DIFF(p, data);
 
 	if (!cli_send_trans(cli, SMBtrans2,
@@ -74,7 +77,7 @@ static BOOL cli_link_internal(struct cli_state *cli, const char *fname_src, cons
  Map standard UNIX permissions onto wire representations.
 ****************************************************************************/
 
-uint32  unix_perms_to_wire(mode_t perms)
+uint32 unix_perms_to_wire(mode_t perms)
 {
         unsigned int ret = 0;
 
@@ -100,21 +103,156 @@ uint32  unix_perms_to_wire(mode_t perms)
 }
 
 /****************************************************************************
+ Map wire permissions to standard UNIX.
+****************************************************************************/
+
+mode_t wire_perms_to_unix(uint32 perms)
+{
+        mode_t ret = (mode_t)0;
+
+        ret |= ((perms & UNIX_X_OTH) ? S_IXOTH : 0);
+        ret |= ((perms & UNIX_W_OTH) ? S_IWOTH : 0);
+        ret |= ((perms & UNIX_R_OTH) ? S_IROTH : 0);
+        ret |= ((perms & UNIX_X_GRP) ? S_IXGRP : 0);
+        ret |= ((perms & UNIX_W_GRP) ? S_IWGRP : 0);
+        ret |= ((perms & UNIX_R_GRP) ? S_IRGRP : 0);
+        ret |= ((perms & UNIX_X_USR) ? S_IXUSR : 0);
+        ret |= ((perms & UNIX_W_USR) ? S_IWUSR : 0);
+        ret |= ((perms & UNIX_R_USR) ? S_IRUSR : 0);
+#ifdef S_ISVTX
+        ret |= ((perms & UNIX_STICKY) ? S_ISVTX : 0);
+#endif
+#ifdef S_ISGID
+        ret |= ((perms & UNIX_SET_GID) ? S_ISGID : 0);
+#endif
+#ifdef S_ISUID
+        ret |= ((perms & UNIX_SET_UID) ? S_ISUID : 0);
+#endif
+        return ret;
+}
+
+/****************************************************************************
+ Return the file type from the wire filetype for UNIX extensions.
+****************************************************************************/
+                                                                                                                
+static mode_t unix_filetype_from_wire(uint32 wire_type)
+{
+	switch (wire_type) {
+		case UNIX_TYPE_FILE:
+			return S_IFREG;
+		case UNIX_TYPE_DIR:
+			return S_IFDIR;
+#ifdef S_IFLNK
+		case UNIX_TYPE_SYMLINK:
+			return S_IFLNK;
+#endif
+#ifdef S_IFCHR
+		case UNIX_TYPE_CHARDEV:
+			return S_IFCHR;
+#endif
+#ifdef S_IFBLK
+		case UNIX_TYPE_BLKDEV:
+			return S_IFBLK;
+#endif
+#ifdef S_IFIFO
+		case UNIX_TYPE_FIFO:
+			return S_IFIFO;
+#endif
+#ifdef S_IFSOCK
+		case UNIX_TYPE_SOCKET:
+			return S_IFSOCK;
+#endif
+		default:
+			return (mode_t)0;
+	}
+}
+
+/****************************************************************************
+ Stat a file (UNIX extensions).
+****************************************************************************/
+
+BOOL cli_unix_stat(struct cli_state *cli, const char *name, SMB_STRUCT_STAT *sbuf)
+{
+	unsigned int param_len = 0;
+	unsigned int data_len = 0;
+	uint16 setup = TRANSACT2_QPATHINFO;
+	char param[sizeof(pstring)+6];
+	char *rparam=NULL, *rdata=NULL;
+	char *p;
+
+	ZERO_STRUCTP(sbuf);
+
+	p = param;
+	memset(p, 0, 6);
+	SSVAL(p, 0, SMB_QUERY_FILE_UNIX_BASIC);
+	p += 6;
+	p += clistr_push(cli, p, name, sizeof(pstring)-6, STR_TERMINATE);
+	param_len = PTR_DIFF(p, param);
+
+	if (!cli_send_trans(cli, SMBtrans2,
+		NULL,                        /* name */
+		-1, 0,                       /* fid, flags */
+		&setup, 1, 0,                /* setup, length, max */
+		param, param_len, 2,         /* param, length, max */
+		NULL,  0, cli->max_xmit      /* data, length, max */
+		)) {
+			return False;
+	}
+
+	if (!cli_receive_trans(cli, SMBtrans2,
+		&rparam, &param_len,
+		&rdata, &data_len)) {
+			return False;
+	}
+
+	if (data_len < 96) {
+		SAFE_FREE(rdata);
+		SAFE_FREE(rparam);
+		return False;
+	}
+
+	sbuf->st_size = IVAL2_TO_SMB_BIG_UINT(rdata,0);     /* total size, in bytes */
+	sbuf->st_blocks = IVAL2_TO_SMB_BIG_UINT(rdata,8);   /* number of blocks allocated */
+	sbuf->st_blocks /= STAT_ST_BLOCKSIZE;
+	sbuf->st_ctime = interpret_long_date(rdata + 16);    /* time of last change */
+	sbuf->st_atime = interpret_long_date(rdata + 24);    /* time of last access */
+	sbuf->st_mtime = interpret_long_date(rdata + 32);    /* time of last modification */
+	sbuf->st_uid = IVAL(rdata,40);      /* user ID of owner */
+	sbuf->st_gid = IVAL(rdata,48);      /* group ID of owner */
+	sbuf->st_mode |= unix_filetype_from_wire(IVAL(rdata, 56));
+#if defined(HAVE_MAKEDEV)
+	{
+		uint32 dev_major = IVAL(rdata,60);
+		uint32 dev_minor = IVAL(rdata,68);
+		sbuf->st_rdev = makedev(dev_major, dev_minor);
+	}
+#endif
+	sbuf->st_ino = (SMB_INO_T)IVAL2_TO_SMB_BIG_UINT(rdata,76);      /* inode */
+	sbuf->st_mode |= wire_perms_to_unix(IVAL(rdata,84));     /* protection */
+	sbuf->st_nlink = IVAL(rdata,92);    /* number of hard links */
+
+	SAFE_FREE(rdata);
+	SAFE_FREE(rparam);
+
+	return True;
+}
+
+/****************************************************************************
  Symlink a file (UNIX extensions).
 ****************************************************************************/
 
-BOOL cli_unix_symlink(struct cli_state *cli, const char *fname_src, const char *fname_dst)
+BOOL cli_unix_symlink(struct cli_state *cli, const char *oldname, const char *newname)
 {
-	return cli_link_internal(cli, fname_src, fname_dst, False);
+	return cli_link_internal(cli, oldname, newname, False);
 }
 
 /****************************************************************************
  Hard a file (UNIX extensions).
 ****************************************************************************/
 
-BOOL cli_unix_hardlink(struct cli_state *cli, const char *fname_src, const char *fname_dst)
+BOOL cli_unix_hardlink(struct cli_state *cli, const char *oldname, const char *newname)
 {
-	return cli_link_internal(cli, fname_src, fname_dst, True);
+	return cli_link_internal(cli, oldname, newname, True);
 }
 
 /****************************************************************************
@@ -204,6 +342,82 @@ BOOL cli_rename(struct cli_state *cli, const char *fname_src, const char *fname_
 	cli_setup_packet(cli);
 
 	SSVAL(cli->outbuf,smb_vwv0,aSYSTEM | aHIDDEN | aDIR);
+
+	p = smb_buf(cli->outbuf);
+	*p++ = 4;
+	p += clistr_push(cli, p, fname_src, -1, STR_TERMINATE);
+	*p++ = 4;
+	p += clistr_push(cli, p, fname_dst, -1, STR_TERMINATE);
+
+	cli_setup_bcc(cli, p);
+
+	cli_send_smb(cli);
+	if (!cli_receive_smb(cli))
+		return False;
+
+	if (cli_is_error(cli))
+		return False;
+
+	return True;
+}
+
+/****************************************************************************
+ NT Rename a file.
+****************************************************************************/
+
+BOOL cli_ntrename(struct cli_state *cli, const char *fname_src, const char *fname_dst)
+{
+	char *p;
+
+	memset(cli->outbuf,'\0',smb_size);
+	memset(cli->inbuf,'\0',smb_size);
+
+	set_message(cli->outbuf, 4, 0, True);
+
+	SCVAL(cli->outbuf,smb_com,SMBntrename);
+	SSVAL(cli->outbuf,smb_tid,cli->cnum);
+	cli_setup_packet(cli);
+
+	SSVAL(cli->outbuf,smb_vwv0,aSYSTEM | aHIDDEN | aDIR);
+	SSVAL(cli->outbuf,smb_vwv1, RENAME_FLAG_RENAME);
+
+	p = smb_buf(cli->outbuf);
+	*p++ = 4;
+	p += clistr_push(cli, p, fname_src, -1, STR_TERMINATE);
+	*p++ = 4;
+	p += clistr_push(cli, p, fname_dst, -1, STR_TERMINATE);
+
+	cli_setup_bcc(cli, p);
+
+	cli_send_smb(cli);
+	if (!cli_receive_smb(cli))
+		return False;
+
+	if (cli_is_error(cli))
+		return False;
+
+	return True;
+}
+
+/****************************************************************************
+ NT hardlink a file.
+****************************************************************************/
+
+BOOL cli_nt_hardlink(struct cli_state *cli, const char *fname_src, const char *fname_dst)
+{
+	char *p;
+
+	memset(cli->outbuf,'\0',smb_size);
+	memset(cli->inbuf,'\0',smb_size);
+
+	set_message(cli->outbuf, 4, 0, True);
+
+	SCVAL(cli->outbuf,smb_com,SMBntrename);
+	SSVAL(cli->outbuf,smb_tid,cli->cnum);
+	cli_setup_packet(cli);
+
+	SSVAL(cli->outbuf,smb_vwv0,aSYSTEM | aHIDDEN | aDIR);
+	SSVAL(cli->outbuf,smb_vwv1, RENAME_FLAG_HARD_LINK);
 
 	p = smb_buf(cli->outbuf);
 	*p++ = 4;
@@ -904,6 +1118,47 @@ BOOL cli_getatr(struct cli_state *cli, const char *fname,
 }
 
 /****************************************************************************
+ Do a SMBsetattrE call.
+****************************************************************************/
+
+BOOL cli_setattrE(struct cli_state *cli, int fd,
+		  time_t c_time, time_t a_time, time_t m_time)
+
+{
+	char *p;
+
+	memset(cli->outbuf,'\0',smb_size);
+	memset(cli->inbuf,'\0',smb_size);
+
+	set_message(cli->outbuf,7,0,True);
+
+	SCVAL(cli->outbuf,smb_com,SMBsetattrE);
+	SSVAL(cli->outbuf,smb_tid,cli->cnum);
+	cli_setup_packet(cli);
+
+	SSVAL(cli->outbuf,smb_vwv0, fd);
+	put_dos_date3(cli->outbuf,smb_vwv1, c_time);
+	put_dos_date3(cli->outbuf,smb_vwv3, a_time);
+	put_dos_date3(cli->outbuf,smb_vwv5, m_time);
+
+	p = smb_buf(cli->outbuf);
+	*p++ = 4;
+
+	cli_setup_bcc(cli, p);
+
+	cli_send_smb(cli);
+	if (!cli_receive_smb(cli)) {
+		return False;
+	}
+	
+	if (cli_is_error(cli)) {
+		return False;
+	}
+
+	return True;
+}
+
+/****************************************************************************
  Do a SMBsetatr call.
 ****************************************************************************/
 
@@ -1047,7 +1302,7 @@ int cli_ctemp(struct cli_state *cli, const char *path, char **tmp_path)
 		pstring path2;
 		clistr_pull(cli, path2, p, 
 			    sizeof(path2), len, STR_ASCII);
-		*tmp_path = strdup(path2);
+		*tmp_path = SMB_STRDUP(path2);
 	}
 
 	return SVAL(cli->inbuf,smb_vwv0);
@@ -1082,4 +1337,258 @@ NTSTATUS cli_raw_ioctl(struct cli_state *cli, int fnum, uint32 code, DATA_BLOB *
 	*blob = data_blob(NULL, 0);
 
 	return NT_STATUS_OK;
+}
+
+/*********************************************************
+ Set an extended attribute utility fn.
+*********************************************************/
+
+static BOOL cli_set_ea(struct cli_state *cli, uint16 setup, char *param, unsigned int param_len,
+			const char *ea_name, const char *ea_val, size_t ea_len)
+{	
+	unsigned int data_len = 0;
+	char *data = NULL;
+	char *rparam=NULL, *rdata=NULL;
+	char *p;
+	size_t ea_namelen = strlen(ea_name);
+
+	data_len = 4 + 4 + ea_namelen + 1 + ea_len;
+	data = SMB_MALLOC(data_len);
+	if (!data) {
+		return False;
+	}
+	p = data;
+	SIVAL(p,0,data_len);
+	p += 4;
+	SCVAL(p, 0, 0); /* EA flags. */
+	SCVAL(p, 1, ea_namelen);
+	SSVAL(p, 2, ea_len);
+	memcpy(p+4, ea_name, ea_namelen+1); /* Copy in the name. */
+	memcpy(p+4+ea_namelen+1, ea_val, ea_len);
+
+	if (!cli_send_trans(cli, SMBtrans2,
+		NULL,                        /* name */
+		-1, 0,                          /* fid, flags */
+		&setup, 1, 0,                   /* setup, length, max */
+		param, param_len, 2,            /* param, length, max */
+		data,  data_len, cli->max_xmit /* data, length, max */
+		)) {
+			return False;
+	}
+
+	if (!cli_receive_trans(cli, SMBtrans2,
+		&rparam, &param_len,
+		&rdata, &data_len)) {
+			return False;
+	}
+
+	SAFE_FREE(data);
+	SAFE_FREE(rdata);
+	SAFE_FREE(rparam);
+
+	return True;
+}
+
+/*********************************************************
+ Set an extended attribute on a pathname.
+*********************************************************/
+
+BOOL cli_set_ea_path(struct cli_state *cli, const char *path, const char *ea_name, const char *ea_val, size_t ea_len)
+{
+	uint16 setup = TRANSACT2_SETPATHINFO;
+	unsigned int param_len = 0;
+	char param[sizeof(pstring)+6];
+	size_t srclen = 2*(strlen(path)+1);
+	char *p;
+
+	memset(param, 0, sizeof(param));
+	SSVAL(param,0,SMB_INFO_SET_EA);
+	p = &param[6];
+
+	p += clistr_push(cli, p, path, MIN(srclen, sizeof(param)-6), STR_TERMINATE);
+	param_len = PTR_DIFF(p, param);
+
+	return cli_set_ea(cli, setup, param, param_len, ea_name, ea_val, ea_len);
+}
+
+/*********************************************************
+ Set an extended attribute on an fnum.
+*********************************************************/
+
+BOOL cli_set_ea_fnum(struct cli_state *cli, int fnum, const char *ea_name, const char *ea_val, size_t ea_len)
+{
+	char param[6];
+	uint16 setup = TRANSACT2_SETFILEINFO;
+
+	memset(param, 0, 6);
+	SSVAL(param,0,fnum);
+	SSVAL(param,2,SMB_INFO_SET_EA);
+
+	return cli_set_ea(cli, setup, param, 6, ea_name, ea_val, ea_len);
+}
+
+/*********************************************************
+ Get an extended attribute list tility fn.
+*********************************************************/
+
+static BOOL cli_get_ea_list(struct cli_state *cli,
+		uint16 setup, char *param, unsigned int param_len,
+		TALLOC_CTX *ctx,
+		size_t *pnum_eas,
+		struct ea_struct **pea_list)
+{
+	unsigned int data_len = 0;
+	unsigned int rparam_len, rdata_len;
+	char *rparam=NULL, *rdata=NULL;
+	char *p;
+	size_t ea_size;
+	size_t num_eas;
+	BOOL ret = False;
+	struct ea_struct *ea_list;
+
+	*pnum_eas = 0;
+	*pea_list = NULL;
+
+	if (!cli_send_trans(cli, SMBtrans2,
+			NULL,           /* Name */
+			-1, 0,          /* fid, flags */
+			&setup, 1, 0,   /* setup, length, max */
+			param, param_len, 10, /* param, length, max */
+			NULL, data_len, cli->max_xmit /* data, length, max */
+				)) {
+		return False;
+	}
+
+	if (!cli_receive_trans(cli, SMBtrans2,
+			&rparam, &rparam_len,
+			&rdata, &rdata_len)) {
+		return False;
+	}
+
+	if (!rdata || rdata_len < 4) {
+		goto out;
+	}
+
+	ea_size = (size_t)IVAL(rdata,0);
+	if (ea_size > rdata_len) {
+		goto out;
+	}
+
+	if (ea_size == 0) {
+		/* No EA's present. */
+		ret = True;
+		goto out;
+	}
+
+	p = rdata + 4;
+	ea_size -= 4;
+
+	/* Validate the EA list and count it. */
+	for (num_eas = 0; ea_size >= 4; num_eas++) {
+		unsigned int ea_namelen = CVAL(p,1);
+		unsigned int ea_valuelen = SVAL(p,2);
+		if (ea_namelen == 0) {
+			goto out;
+		}
+		if (4 + ea_namelen + 1 + ea_valuelen > ea_size) {
+			goto out;
+		}
+		ea_size -= 4 + ea_namelen + 1 + ea_valuelen;
+		p += 4 + ea_namelen + 1 + ea_valuelen;
+	}
+
+	if (num_eas == 0) {
+		ret = True;
+		goto out;
+	}
+
+	*pnum_eas = num_eas;
+	if (!pea_list) {
+		/* Caller only wants number of EA's. */
+		ret = True;
+		goto out;
+	}
+
+	ea_list = TALLOC_ARRAY(ctx, struct ea_struct, num_eas);
+	if (!ea_list) {
+		goto out;
+	}
+
+	ea_size = (size_t)IVAL(rdata,0);
+	p = rdata + 4;
+
+	for (num_eas = 0; num_eas < *pnum_eas; num_eas++ ) {
+		struct ea_struct *ea = &ea_list[num_eas];
+		fstring unix_ea_name;
+		unsigned int ea_namelen = CVAL(p,1);
+		unsigned int ea_valuelen = SVAL(p,2);
+
+		ea->flags = CVAL(p,0);
+		unix_ea_name[0] = '\0';
+		pull_ascii_fstring(unix_ea_name, p + 4);
+		ea->name = talloc_strdup(ctx, unix_ea_name);
+		/* Ensure the value is null terminated (in case it's a string). */
+		ea->value = data_blob_talloc(ctx, NULL, ea_valuelen + 1);
+		if (!ea->value.data) {
+			goto out;
+		}
+		if (ea_valuelen) {
+			memcpy(ea->value.data, p+4+ea_namelen+1, ea_valuelen);
+		}
+		ea->value.data[ea_valuelen] = 0;
+		ea->value.length--;
+		p += 4 + ea_namelen + 1 + ea_valuelen;
+	}
+
+	*pea_list = ea_list;
+	ret = True;
+
+ out :
+
+	SAFE_FREE(rdata);
+	SAFE_FREE(rparam);
+	return ret;
+}
+
+/*********************************************************
+ Get an extended attribute list from a pathname.
+*********************************************************/
+
+BOOL cli_get_ea_list_path(struct cli_state *cli, const char *path,
+		TALLOC_CTX *ctx,
+		size_t *pnum_eas,
+		struct ea_struct **pea_list)
+{
+	uint16 setup = TRANSACT2_QPATHINFO;
+	unsigned int param_len = 0;
+	char param[sizeof(pstring)+6];
+	char *p;
+
+	p = param;
+	memset(p, 0, 6);
+	SSVAL(p, 0, SMB_INFO_QUERY_ALL_EAS);
+	p += 6;
+	p += clistr_push(cli, p, path, sizeof(pstring)-6, STR_TERMINATE);
+	param_len = PTR_DIFF(p, param);
+
+	return cli_get_ea_list(cli, setup, param, param_len, ctx, pnum_eas, pea_list);
+}
+
+/*********************************************************
+ Get an extended attribute list from an fnum.
+*********************************************************/
+
+BOOL cli_get_ea_list_fnum(struct cli_state *cli, int fnum,
+		TALLOC_CTX *ctx,
+		size_t *pnum_eas,
+		struct ea_struct **pea_list)
+{
+	uint16 setup = TRANSACT2_QFILEINFO;
+	char param[6];
+
+	memset(param, 0, 6);
+	SSVAL(param,0,fnum);
+	SSVAL(param,2,SMB_INFO_SET_EA);
+
+	return cli_get_ea_list(cli, setup, param, 6, ctx, pnum_eas, pea_list);
 }

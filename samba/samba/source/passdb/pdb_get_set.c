@@ -72,6 +72,14 @@ time_t pdb_get_kickoff_time (const SAM_ACCOUNT *sampass)
 		return (-1);
 }
 
+time_t pdb_get_bad_password_time (const SAM_ACCOUNT *sampass)
+{
+	if (sampass)
+		return (sampass->private.bad_password_time);
+	else
+		return (-1);
+}
+
 time_t pdb_get_pass_last_set_time (const SAM_ACCOUNT *sampass)
 {
 	if (sampass)
@@ -140,6 +148,19 @@ const uint8* pdb_get_lanman_passwd (const SAM_ACCOUNT *sampass)
 	}
 	else
 		return (NULL);
+}
+
+const uint8* pdb_get_pw_history (const SAM_ACCOUNT *sampass, uint32 *current_hist_len)
+{
+	if (sampass) {
+		SMB_ASSERT((!sampass->private.nt_pw_his.data) 
+		   || ((sampass->private.nt_pw_his.length % PW_HISTORY_ENTRY_LEN) == 0));
+		*current_hist_len = sampass->private.nt_pw_his.length / PW_HISTORY_ENTRY_LEN;
+		return ((uint8*)sampass->private.nt_pw_his.data);
+	} else {
+		*current_hist_len = 0;
+		return (NULL);
+	}
 }
 
 /* Return the plaintext password if known.  Most of the time
@@ -306,10 +327,10 @@ const char* pdb_get_munged_dial (const SAM_ACCOUNT *sampass)
 		return (NULL);
 }
 
-uint32 pdb_get_unknown_3 (const SAM_ACCOUNT *sampass)
+uint32 pdb_get_fields_present (const SAM_ACCOUNT *sampass)
 {
 	if (sampass)
-		return (sampass->private.unknown_3);
+		return (sampass->private.fields_present);
 	else
 		return (-1);
 }
@@ -388,6 +409,17 @@ BOOL pdb_set_kickoff_time (SAM_ACCOUNT *sampass, time_t mytime, enum pdb_value_s
 	sampass->private.kickoff_time = mytime;
 
 	return pdb_set_init_flags(sampass, PDB_KICKOFFTIME, flag);
+}
+
+BOOL pdb_set_bad_password_time (SAM_ACCOUNT *sampass, time_t mytime, 
+				enum pdb_value_state flag)
+{
+	if (!sampass)
+		return False;
+
+	sampass->private.bad_password_time = mytime;
+
+	return pdb_set_init_flags(sampass, PDB_BAD_PASSWORD_TIME, flag);
 }
 
 BOOL pdb_set_pass_can_change_time (SAM_ACCOUNT *sampass, time_t mytime, enum pdb_value_state flag)
@@ -963,6 +995,32 @@ BOOL pdb_set_lanman_passwd (SAM_ACCOUNT *sampass, const uint8 pwd[LM_HASH_LEN], 
 }
 
 /*********************************************************************
+ Set the user's password history hash. historyLen is the number of 
+ PW_HISTORY_SALT_LEN+SALTED_MD5_HASH_LEN length
+ entries to store in the history - this must match the size of the uint8 array
+ in pwd.
+********************************************************************/
+
+BOOL pdb_set_pw_history (SAM_ACCOUNT *sampass, const uint8 *pwd, uint32 historyLen, enum pdb_value_state flag)
+{
+	if (!sampass)
+		return False;
+
+	if (historyLen && pwd){
+		sampass->private.nt_pw_his = data_blob_talloc(sampass->mem_ctx,
+						pwd, historyLen*PW_HISTORY_ENTRY_LEN);
+		if (!sampass->private.nt_pw_his.length) {
+			DEBUG(0, ("pdb_set_pw_history: data_blob_talloc() failed!\n"));
+			return False;
+		}
+	} else {
+		sampass->private.nt_pw_his = data_blob_talloc(sampass->mem_ctx, NULL, 0);
+	}
+
+	return pdb_set_init_flags(sampass, PDB_PWHISTORY, flag);
+}
+
+/*********************************************************************
  Set the user's plaintext password only (base procedure, see helper
  below)
  ********************************************************************/
@@ -990,14 +1048,14 @@ BOOL pdb_set_plaintext_pw_only (SAM_ACCOUNT *sampass, const char *password, enum
 	return pdb_set_init_flags(sampass, PDB_PLAINTEXT_PW, flag);
 }
 
-BOOL pdb_set_unknown_3 (SAM_ACCOUNT *sampass, uint32 unkn, enum pdb_value_state flag)
+BOOL pdb_set_fields_present (SAM_ACCOUNT *sampass, uint32 fields_present, enum pdb_value_state flag)
 {
 	if (!sampass)
 		return False;
 
-	sampass->private.unknown_3 = unkn;
+	sampass->private.fields_present = fields_present;
 	
-	return pdb_set_init_flags(sampass, PDB_UNKNOWN3, flag);
+	return pdb_set_init_flags(sampass, PDB_FIELDS_PRESENT, flag);
 }
 
 BOOL pdb_set_bad_password_count(SAM_ACCOUNT *sampass, uint16 bad_password_count, enum pdb_value_state flag)
@@ -1084,7 +1142,7 @@ BOOL pdb_set_pass_changed_now (SAM_ACCOUNT *sampass)
 		return False;
 
 	if (!account_policy_get(AP_MAX_PASSWORD_AGE, &expire) 
-	    || (expire==(uint32)-1)) {
+	    || (expire==(uint32)-1) || (expire == 0)) {
 		if (!pdb_set_pass_must_change_time (sampass, get_time_t_max(), PDB_CHANGED))
 			return False;
 	} else {
@@ -1114,25 +1172,106 @@ BOOL pdb_set_pass_changed_now (SAM_ACCOUNT *sampass)
 
 BOOL pdb_set_plaintext_passwd (SAM_ACCOUNT *sampass, const char *plaintext)
 {
-	uchar new_lanman_p16[16];
-	uchar new_nt_p16[16];
+	uchar new_lanman_p16[LM_HASH_LEN];
+	uchar new_nt_p16[NT_HASH_LEN];
 
 	if (!sampass || !plaintext)
 		return False;
-	
-	nt_lm_owf_gen (plaintext, new_nt_p16, new_lanman_p16);
+
+#ifdef WITH_OPENDIRECTORY
+if (!lp_opendirectory()) {
+#endif
+	/* Calculate the MD4 hash (NT compatible) of the password */
+	E_md4hash(plaintext, new_nt_p16);
 
 	if (!pdb_set_nt_passwd (sampass, new_nt_p16, PDB_CHANGED)) 
 		return False;
 
-	if (!pdb_set_lanman_passwd (sampass, new_lanman_p16, PDB_CHANGED)) 
-		return False;
+	if (!E_deshash(plaintext, new_lanman_p16)) {
+		/* E_deshash returns false for 'long' passwords (> 14
+		   DOS chars).  This allows us to match Win2k, which
+		   does not store a LM hash for these passwords (which
+		   would reduce the effective password length to 14 */
 
+		if (!pdb_set_lanman_passwd (sampass, NULL, PDB_CHANGED)) 
+			return False;
+	} else {
+		if (!pdb_set_lanman_passwd (sampass, new_lanman_p16, PDB_CHANGED)) 
+			return False;
+	}
+#ifdef WITH_OPENDIRECTORY
+}
+#endif
 	if (!pdb_set_plaintext_pw_only (sampass, plaintext, PDB_CHANGED)) 
 		return False;
 
 	if (!pdb_set_pass_changed_now (sampass))
 		return False;
 
+	/* Store the password history. */
+	if (pdb_get_acct_ctrl(sampass) & ACB_NORMAL) {
+		uchar *pwhistory;
+		uint32 pwHistLen;
+		account_policy_get(AP_PASSWORD_HISTORY, &pwHistLen);
+		if (pwHistLen != 0){
+			uint32 current_history_len;
+			/* We need to make sure we don't have a race condition here - the
+			   account policy history length can change between when the pw_history
+			   was first loaded into the SAM_ACCOUNT struct and now.... JRA. */
+			pwhistory = (uchar *)pdb_get_pw_history(sampass, &current_history_len);
+
+			if (current_history_len != pwHistLen) {
+				/* After closing and reopening SAM_ACCOUNT the history
+					values will sync up. We can't do this here. */
+
+				/* current_history_len > pwHistLen is not a problem - we
+					have more history than we need. */
+
+				if (current_history_len < pwHistLen) {
+					/* Ensure we have space for the needed history. */
+					uchar *new_history = TALLOC(sampass->mem_ctx,
+								pwHistLen*PW_HISTORY_ENTRY_LEN);
+					/* And copy it into the new buffer. */
+					if (current_history_len) {
+						memcpy(new_history, pwhistory,
+							current_history_len*PW_HISTORY_ENTRY_LEN);
+					}
+					/* Clearing out any extra space. */
+					memset(&new_history[current_history_len*PW_HISTORY_ENTRY_LEN],
+						'\0', (pwHistLen-current_history_len)*PW_HISTORY_ENTRY_LEN);
+					/* Finally replace it. */
+					pwhistory = new_history;
+				}
+			}
+			if (pwhistory && pwHistLen){
+				/* Make room for the new password in the history list. */
+				if (pwHistLen > 1) {
+					memmove(&pwhistory[PW_HISTORY_ENTRY_LEN],
+						pwhistory, (pwHistLen -1)*PW_HISTORY_ENTRY_LEN );
+				}
+				/* Create the new salt as the first part of the history entry. */
+				generate_random_buffer(pwhistory, PW_HISTORY_SALT_LEN);
+
+				/* Generate the md5 hash of the salt+new password as the second
+					part of the history entry. */
+
+				E_md5hash(pwhistory, new_nt_p16, &pwhistory[PW_HISTORY_SALT_LEN]);
+				pdb_set_pw_history(sampass, pwhistory, pwHistLen, PDB_CHANGED);
+			} else {
+				DEBUG (10,("pdb_get_set.c: pdb_set_plaintext_passwd: pwhistory was NULL!\n"));
+			}
+		} else {
+			/* Set the history length to zero. */
+			pdb_set_pw_history(sampass, NULL, 0, PDB_CHANGED);
+		}
+	}
+
 	return True;
+}
+
+/* check for any PDB_SET/CHANGED field and fill the appropriate mask bit */
+uint32 pdb_build_fields_present (SAM_ACCOUNT *sampass)
+{
+	/* value set to all for testing */
+	return 0x00ffffff;
 }

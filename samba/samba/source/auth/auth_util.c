@@ -107,7 +107,7 @@ NTSTATUS auth_get_sam_account(const char *user, SAM_ACCOUNT **account)
 		if (!pass) 
 			return NT_STATUS_NO_SUCH_USER;
 
-		if (!NT_STATUS_IS_OK(nt_status = pdb_fill_sam_pw(*account, pass))) {
+		if (!NT_STATUS_IS_OK(nt_status = pdb_fill_sam_pw(*account, pass, True))) {
 			return nt_status;
 		}
 	}
@@ -124,14 +124,15 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
                                const char *client_domain, 
                                const char *domain,
                                const char *wksta_name, 
-                               DATA_BLOB lm_pwd, DATA_BLOB nt_pwd,
-                               DATA_BLOB plaintext, 
-                               uint32 auth_flags, BOOL encrypted)
+                               DATA_BLOB *lm_pwd, DATA_BLOB *nt_pwd,
+                               DATA_BLOB *lm_interactive_pwd, DATA_BLOB *nt_interactive_pwd,
+                               DATA_BLOB *plaintext, 
+                               BOOL encrypted)
 {
 
 	DEBUG(5,("attempting to make a user_info for %s (%s)\n", internal_username, smb_name));
 
-	*user_info = malloc(sizeof(**user_info));
+	*user_info = SMB_MALLOC_P(auth_usersupplied_info);
 	if (!user_info) {
 		DEBUG(0,("malloc failed for user_info (size %lu)\n", (unsigned long)sizeof(*user_info)));
 		return NT_STATUS_NO_MEMORY;
@@ -141,7 +142,7 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 
 	DEBUG(5,("making strings for %s's user_info struct\n", internal_username));
 
-	(*user_info)->smb_name.str = strdup(smb_name);
+	(*user_info)->smb_name.str = SMB_STRDUP(smb_name);
 	if ((*user_info)->smb_name.str) { 
 		(*user_info)->smb_name.len = strlen(smb_name);
 	} else {
@@ -149,7 +150,7 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 		return NT_STATUS_NO_MEMORY;
 	}
 	
-	(*user_info)->internal_username.str = strdup(internal_username);
+	(*user_info)->internal_username.str = SMB_STRDUP(internal_username);
 	if ((*user_info)->internal_username.str) { 
 		(*user_info)->internal_username.len = strlen(internal_username);
 	} else {
@@ -157,7 +158,7 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	(*user_info)->domain.str = strdup(domain);
+	(*user_info)->domain.str = SMB_STRDUP(domain);
 	if ((*user_info)->domain.str) { 
 		(*user_info)->domain.len = strlen(domain);
 	} else {
@@ -165,7 +166,7 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	(*user_info)->client_domain.str = strdup(client_domain);
+	(*user_info)->client_domain.str = SMB_STRDUP(client_domain);
 	if ((*user_info)->client_domain.str) { 
 		(*user_info)->client_domain.len = strlen(client_domain);
 	} else {
@@ -173,7 +174,7 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	(*user_info)->wksta_name.str = strdup(wksta_name);
+	(*user_info)->wksta_name.str = SMB_STRDUP(wksta_name);
 	if ((*user_info)->wksta_name.str) { 
 		(*user_info)->wksta_name.len = strlen(wksta_name);
 	} else {
@@ -183,12 +184,19 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 
 	DEBUG(5,("making blobs for %s's user_info struct\n", internal_username));
 
-	(*user_info)->lm_resp = data_blob(lm_pwd.data, lm_pwd.length);
-	(*user_info)->nt_resp = data_blob(nt_pwd.data, nt_pwd.length);
-	(*user_info)->plaintext_password = data_blob(plaintext.data, plaintext.length);
+	if (lm_pwd)
+		(*user_info)->lm_resp = data_blob(lm_pwd->data, lm_pwd->length);
+	if (nt_pwd)
+		(*user_info)->nt_resp = data_blob(nt_pwd->data, nt_pwd->length);
+	if (lm_interactive_pwd)
+		(*user_info)->lm_interactive_pwd = data_blob(lm_interactive_pwd->data, lm_interactive_pwd->length);
+	if (nt_interactive_pwd)
+		(*user_info)->nt_interactive_pwd = data_blob(nt_interactive_pwd->data, nt_interactive_pwd->length);
+
+	if (plaintext)
+		(*user_info)->plaintext_password = data_blob(plaintext->data, plaintext->length);
 
 	(*user_info)->encrypted = encrypted;
-	(*user_info)->auth_flags = auth_flags;
 
 	DEBUG(10,("made an %sencrypted user_info for %s (%s)\n", encrypted ? "":"un" , internal_username, smb_name));
 
@@ -203,9 +211,10 @@ NTSTATUS make_user_info_map(auth_usersupplied_info **user_info,
 			    const char *smb_name, 
 			    const char *client_domain, 
 			    const char *wksta_name, 
-			    DATA_BLOB lm_pwd, DATA_BLOB nt_pwd,
-			    DATA_BLOB plaintext, 
-			    uint32 ntlmssp_flags, BOOL encrypted)
+ 			    DATA_BLOB *lm_pwd, DATA_BLOB *nt_pwd,
+ 			    DATA_BLOB *lm_interactive_pwd, DATA_BLOB *nt_interactive_pwd,
+			    DATA_BLOB *plaintext, 
+			    BOOL encrypted)
 {
 	const char *domain;
 	fstring internal_username;
@@ -233,8 +242,10 @@ NTSTATUS make_user_info_map(auth_usersupplied_info **user_info,
 	/* we know that it is a trusted domain (and we are allowing them) or it is our domain */
 	
 	return make_user_info(user_info, smb_name, internal_username, 
-		client_domain, domain, wksta_name, lm_pwd, nt_pwd,
-		plaintext, ntlmssp_flags, encrypted);
+			      client_domain, domain, wksta_name, 
+			      lm_pwd, nt_pwd,
+			      lm_interactive_pwd, nt_interactive_pwd,
+			      plaintext, encrypted);
 }
 
 /****************************************************************************
@@ -253,23 +264,14 @@ BOOL make_user_info_netlogon_network(auth_usersupplied_info **user_info,
 	NTSTATUS nt_status;
 	DATA_BLOB lm_blob = data_blob(lm_network_pwd, lm_pwd_len);
 	DATA_BLOB nt_blob = data_blob(nt_network_pwd, nt_pwd_len);
-	DATA_BLOB plaintext_blob = data_blob(NULL, 0);
-	uint32 auth_flags = AUTH_FLAG_NONE;
-
-	if (lm_pwd_len)
-		auth_flags |= AUTH_FLAG_LM_RESP;
-	if (nt_pwd_len == 24) {
-		auth_flags |= AUTH_FLAG_NTLM_RESP; 
-	} else if (nt_pwd_len != 0) {
-		auth_flags |= AUTH_FLAG_NTLMv2_RESP; 
-	}
 
 	nt_status = make_user_info_map(user_info,
-	                              smb_name, client_domain, 
-                                  wksta_name, 
-	                              lm_blob, nt_blob,
-	                              plaintext_blob, 
-	                              auth_flags, True);
+				       smb_name, client_domain, 
+				       wksta_name, 
+				       lm_pwd_len ? &lm_blob : NULL, 
+				       nt_pwd_len ? &nt_blob : NULL,
+				       NULL, NULL, NULL,
+				       True);
 	
 	ret = NT_STATUS_IS_OK(nt_status) ? True : False;
 		
@@ -297,7 +299,6 @@ BOOL make_user_info_netlogon_interactive(auth_usersupplied_info **user_info,
 	unsigned char local_lm_response[24];
 	unsigned char local_nt_response[24];
 	unsigned char key[16];
-	uint32 auth_flags = AUTH_FLAG_NONE;
 	
 	ZERO_STRUCT(key);
 	memcpy(key, dc_sess_key, 8);
@@ -316,8 +317,11 @@ BOOL make_user_info_netlogon_interactive(auth_usersupplied_info **user_info,
 	dump_data(100, nt_pwd, sizeof(nt_pwd));
 #endif
 	
-	SamOEMhash((uchar *)lm_pwd, key, sizeof(lm_pwd));
-	SamOEMhash((uchar *)nt_pwd, key, sizeof(nt_pwd));
+	if (lm_interactive_pwd)
+		SamOEMhash((uchar *)lm_pwd, key, sizeof(lm_pwd));
+	
+	if (nt_interactive_pwd)
+		SamOEMhash((uchar *)nt_pwd, key, sizeof(nt_pwd));
 	
 #ifdef DEBUG_PASSWORD
 	DEBUG(100,("decrypt of lm owf password:"));
@@ -327,37 +331,51 @@ BOOL make_user_info_netlogon_interactive(auth_usersupplied_info **user_info,
 	dump_data(100, nt_pwd, sizeof(nt_pwd));
 #endif
 	
-	SMBOWFencrypt((const unsigned char *)lm_pwd, chal, local_lm_response);
-	SMBOWFencrypt((const unsigned char *)nt_pwd, chal, local_nt_response);
+	if (lm_interactive_pwd)
+		SMBOWFencrypt((const unsigned char *)lm_pwd, chal, local_lm_response);
+
+	if (nt_interactive_pwd)
+		SMBOWFencrypt((const unsigned char *)nt_pwd, chal, local_nt_response);
 	
 	/* Password info paranoia */
-	ZERO_STRUCT(lm_pwd);
-	ZERO_STRUCT(nt_pwd);
 	ZERO_STRUCT(key);
 
 	{
 		BOOL ret;
 		NTSTATUS nt_status;
-		DATA_BLOB local_lm_blob = data_blob(local_lm_response, sizeof(local_lm_response));
-		DATA_BLOB local_nt_blob = data_blob(local_nt_response, sizeof(local_nt_response));
-		DATA_BLOB plaintext_blob = data_blob(NULL, 0);
+		DATA_BLOB local_lm_blob;
+		DATA_BLOB local_nt_blob;
 
-		if (lm_interactive_pwd)
-			auth_flags |= AUTH_FLAG_LM_RESP;
-		if (nt_interactive_pwd)
-			auth_flags |= AUTH_FLAG_NTLM_RESP; 
+		DATA_BLOB lm_interactive_blob;
+		DATA_BLOB nt_interactive_blob;
+		
+		if (lm_interactive_pwd) {
+			local_lm_blob = data_blob(local_lm_response, sizeof(local_lm_response));
+			lm_interactive_blob = data_blob(lm_pwd, sizeof(lm_pwd));
+			ZERO_STRUCT(lm_pwd);
+		}
+		
+		if (nt_interactive_pwd) {
+			local_nt_blob = data_blob(local_nt_response, sizeof(local_nt_response));
+			nt_interactive_blob = data_blob(nt_pwd, sizeof(nt_pwd));
+			ZERO_STRUCT(nt_pwd);
+		}
 
 		nt_status = make_user_info_map(user_info, 
 		                               smb_name, client_domain, 
 		                               wksta_name, 
-		                               local_lm_blob,
-		                               local_nt_blob,
-		                               plaintext_blob, 
-		                               auth_flags, True);
-		
+		                               lm_interactive_pwd ? &local_lm_blob : NULL,
+		                               nt_interactive_pwd ? &local_nt_blob : NULL,
+		                               lm_interactive_pwd ? &lm_interactive_blob : NULL,
+		                               nt_interactive_pwd ? &nt_interactive_blob : NULL,
+		                               NULL,
+		                               True);
+
 		ret = NT_STATUS_IS_OK(nt_status) ? True : False;
 		data_blob_free(&local_lm_blob);
 		data_blob_free(&local_nt_blob);
+		data_blob_free(&lm_interactive_blob);
+		data_blob_free(&nt_interactive_blob);
 		return ret;
 	}
 }
@@ -377,7 +395,6 @@ BOOL make_user_info_for_reply(auth_usersupplied_info **user_info,
 	DATA_BLOB local_lm_blob;
 	DATA_BLOB local_nt_blob;
 	NTSTATUS ret = NT_STATUS_UNSUCCESSFUL;
-	uint32 auth_flags = AUTH_FLAG_NONE;
 			
 	/*
 	 * Not encrypted - do so.
@@ -400,7 +417,6 @@ BOOL make_user_info_for_reply(auth_usersupplied_info **user_info,
 		   case insensitive */
 		local_nt_blob = data_blob(NULL, 0); 
 		
-		auth_flags = (AUTH_FLAG_PLAINTEXT | AUTH_FLAG_LM_RESP);
 	} else {
 		local_lm_blob = data_blob(NULL, 0); 
 		local_nt_blob = data_blob(NULL, 0); 
@@ -409,10 +425,11 @@ BOOL make_user_info_for_reply(auth_usersupplied_info **user_info,
 	ret = make_user_info_map(user_info, smb_name,
 	                         client_domain, 
 	                         get_remote_machine_name(),
-	                         local_lm_blob,
-	                         local_nt_blob,
-	                         plaintext_password, 
-	                         auth_flags, False);
+	                         local_lm_blob.data ? &local_lm_blob : NULL,
+	                         local_nt_blob.data ? &local_nt_blob : NULL,
+				 NULL, NULL,
+	                         plaintext_password.data ? &plaintext_password : NULL, 
+	                         False);
 	
 	data_blob_free(&local_lm_blob);
 	return NT_STATUS_IS_OK(ret) ? True : False;
@@ -427,27 +444,13 @@ NTSTATUS make_user_info_for_reply_enc(auth_usersupplied_info **user_info,
                                       const char *client_domain, 
                                       DATA_BLOB lm_resp, DATA_BLOB nt_resp)
 {
-	uint32 auth_flags = AUTH_FLAG_NONE;
-
-	DATA_BLOB no_plaintext_blob = data_blob(NULL, 0); 
-	
-	if (lm_resp.length == 24) {
-		auth_flags |= AUTH_FLAG_LM_RESP;
-	}
-	if (nt_resp.length == 0) {
-	} else if (nt_resp.length == 24) {
-		auth_flags |= AUTH_FLAG_NTLM_RESP;
-	} else {
-		auth_flags |= AUTH_FLAG_NTLMv2_RESP;
-	}
-
 	return make_user_info_map(user_info, smb_name, 
-				 client_domain, 
-				 get_remote_machine_name(), 
-				 lm_resp, 
-				 nt_resp, 
-				 no_plaintext_blob, 
-				 auth_flags, True);
+				  client_domain, 
+				  get_remote_machine_name(), 
+				  lm_resp.data ? &lm_resp : NULL, 
+				  nt_resp.data ? &nt_resp : NULL, 
+				  NULL, NULL, NULL,
+				  True);
 }
 
 /****************************************************************************
@@ -456,19 +459,16 @@ NTSTATUS make_user_info_for_reply_enc(auth_usersupplied_info **user_info,
 
 BOOL make_user_info_guest(auth_usersupplied_info **user_info) 
 {
-	DATA_BLOB lm_blob = data_blob(NULL, 0);
-	DATA_BLOB nt_blob = data_blob(NULL, 0);
-	DATA_BLOB plaintext_blob = data_blob(NULL, 0);
-	uint32 auth_flags = AUTH_FLAG_NONE;
 	NTSTATUS nt_status;
 
 	nt_status = make_user_info(user_info, 
-			      "","", 
-			      "","", 
-			      "", 
-			      nt_blob, lm_blob,
-			      plaintext_blob, 
-			      auth_flags, True);
+				   "","", 
+				   "","", 
+				   "", 
+				   NULL, NULL, 
+				   NULL, NULL, 
+				   NULL,
+				   True);
 			      
 	return NT_STATUS_IS_OK(nt_status) ? True : False;
 }
@@ -523,7 +523,7 @@ static NTSTATUS create_nt_user_token(const DOM_SID *user_sid, const DOM_SID *gro
 	int i;
 	int sid_ndx;
 	
-	if ((ptoken = malloc( sizeof(NT_USER_TOKEN) ) ) == NULL) {
+	if ((ptoken = SMB_MALLOC_P(NT_USER_TOKEN)) == NULL) {
 		DEBUG(0, ("create_nt_token: Out of memory allocating token\n"));
 		nt_status = NT_STATUS_NO_MEMORY;
 		return nt_status;
@@ -533,7 +533,7 @@ static NTSTATUS create_nt_user_token(const DOM_SID *user_sid, const DOM_SID *gro
 
 	ptoken->num_sids = n_groupSIDs + 5;
 
-	if ((ptoken->user_sids = (DOM_SID *)malloc( sizeof(DOM_SID) * ptoken->num_sids )) == NULL) {
+	if ((ptoken->user_sids = SMB_MALLOC_ARRAY( DOM_SID, ptoken->num_sids )) == NULL) {
 		DEBUG(0, ("create_nt_token: Out of memory allocating SIDs\n"));
 		nt_status = NT_STATUS_NO_MEMORY;
 		return nt_status;
@@ -610,7 +610,7 @@ NT_USER_TOKEN *create_nt_token(uid_t uid, gid_t gid, int ngroups, gid_t *groups,
 		return NULL;
 	}
 
-	group_sids = malloc(sizeof(DOM_SID) * ngroups);
+	group_sids = SMB_MALLOC_ARRAY(DOM_SID, ngroups);
 	if (!group_sids) {
 		DEBUG(0, ("create_nt_token: malloc() failed for DOM_SID list!\n"));
 		return NULL;
@@ -660,7 +660,11 @@ static NTSTATUS get_user_groups(const char *username, uid_t uid, gid_t gid,
 	
 	/* Try winbind first */
 
+#ifdef WITH_OPENDIRECTORY
+	if ( strchr(username, *lp_winbind_separator()) && !lp_opendirectory()) {
+#else
 	if ( strchr(username, *lp_winbind_separator()) ) {
+#endif
 		n_unix_groups = winbind_getgroups( username, unix_groups );
 
 		DEBUG(10,("get_user_groups: winbind_getgroups(%s): result = %s\n", username, 
@@ -674,7 +678,7 @@ static NTSTATUS get_user_groups(const char *username, uid_t uid, gid_t gid,
 		
 		n_unix_groups = groups_max();
 		
-		if ((*unix_groups = malloc( sizeof(gid_t) * n_unix_groups ) ) == NULL) {
+		if ((*unix_groups = SMB_MALLOC_ARRAY( gid_t, n_unix_groups ) ) == NULL) {
 			DEBUG(0, ("get_user_groups: Out of memory allocating unix group list\n"));
 			return NT_STATUS_NO_MEMORY;
 		}
@@ -683,7 +687,7 @@ static NTSTATUS get_user_groups(const char *username, uid_t uid, gid_t gid,
 		
 			gid_t *groups_tmp;
 			
-			groups_tmp = Realloc(*unix_groups, sizeof(gid_t) * n_unix_groups);
+			groups_tmp = SMB_REALLOC_ARRAY(*unix_groups, gid_t, n_unix_groups);
 			
 			if (!groups_tmp) {
 				SAFE_FREE(*unix_groups);
@@ -705,7 +709,7 @@ static NTSTATUS get_user_groups(const char *username, uid_t uid, gid_t gid,
 	
 	if (n_unix_groups > 0) {
 	
-		*groups   = malloc(sizeof(DOM_SID) * n_unix_groups);
+		*groups   = SMB_MALLOC_ARRAY(DOM_SID, n_unix_groups);
 		
 		if (!*groups) {
 			DEBUG(0, ("get_user_group: malloc() failed for DOM_SID list!\n"));
@@ -735,7 +739,7 @@ static NTSTATUS get_user_groups(const char *username, uid_t uid, gid_t gid,
 
 static NTSTATUS make_server_info(auth_serversupplied_info **server_info)
 {
-	*server_info = malloc(sizeof(**server_info));
+	*server_info = SMB_MALLOC_P(auth_serversupplied_info);
 	if (!*server_info) {
 		DEBUG(0,("make_server_info: malloc failed!\n"));
 		return NT_STATUS_NO_MEMORY;
@@ -757,6 +761,7 @@ Fill a server_info struct from a SAM_ACCOUNT with their groups
 ***************************************************************************/
 
 static NTSTATUS add_user_groups(auth_serversupplied_info **server_info, 
+				const char * unix_username,
 				SAM_ACCOUNT *sampass,
 				uid_t uid, gid_t gid)
 {
@@ -770,7 +775,7 @@ static NTSTATUS add_user_groups(auth_serversupplied_info **server_info,
 	BOOL is_guest;
 	uint32 rid;
 
-	nt_status = get_user_groups(pdb_get_username(sampass), uid, gid, 
+	nt_status = get_user_groups(unix_username, uid, gid, 
 		&n_groupSIDs, &groupSIDs, &unix_groups);
 		
 	if (!NT_STATUS_IS_OK(nt_status)) {
@@ -828,9 +833,11 @@ NTSTATUS make_server_info_sam(auth_serversupplied_info **server_info,
 	
 	passwd_free(&pwd);
 
-	if (!NT_STATUS_IS_OK(nt_status = add_user_groups(server_info, sampass, 
+	if (!NT_STATUS_IS_OK(nt_status = add_user_groups(server_info, pdb_get_username(sampass), 
+							 sampass,
 							 (*server_info)->uid, 
-							 (*server_info)->gid))) {
+							 (*server_info)->gid))) 
+	{
 		free_server_info(server_info);
 		return nt_status;
 	}
@@ -848,11 +855,13 @@ NTSTATUS make_server_info_sam(auth_serversupplied_info **server_info,
  to a SAM_ACCOUNT
 ***************************************************************************/
 
-NTSTATUS make_server_info_pw(auth_serversupplied_info **server_info, const struct passwd *pwd)
+NTSTATUS make_server_info_pw(auth_serversupplied_info **server_info, 
+                             char *unix_username,
+			     struct passwd *pwd)
 {
 	NTSTATUS nt_status;
 	SAM_ACCOUNT *sampass = NULL;
-	if (!NT_STATUS_IS_OK(nt_status = pdb_init_sam_pw(&sampass, pwd))) {		
+	if (!NT_STATUS_IS_OK(nt_status = pdb_init_sam_pw(&sampass, pwd, True))) {		
 		return nt_status;
 	}
 	if (!NT_STATUS_IS_OK(nt_status = make_server_info(server_info))) {
@@ -861,11 +870,13 @@ NTSTATUS make_server_info_pw(auth_serversupplied_info **server_info, const struc
 
 	(*server_info)->sam_account    = sampass;
 
-	if (!NT_STATUS_IS_OK(nt_status = add_user_groups(server_info, sampass, pwd->pw_uid, pwd->pw_gid))) {
+	if (!NT_STATUS_IS_OK(nt_status = add_user_groups(server_info, unix_username,
+		sampass, pwd->pw_uid, pwd->pw_gid))) 
+	{
 		return nt_status;
 	}
 
-	(*server_info)->unix_name = smb_xstrdup(pwd->pw_name);
+	(*server_info)->unix_name = smb_xstrdup(unix_username);
 
 	(*server_info)->sam_fill_level = SAM_FILL_ALL;
 	(*server_info)->uid = pwd->pw_uid;
@@ -905,7 +916,7 @@ NTSTATUS make_server_info_guest(auth_serversupplied_info **server_info)
 		
 		/* annoying, but the Guest really does have a session key, 
 		   and it is all zeros! */
-		(*server_info)->nt_session_key = data_blob(zeros, sizeof(zeros));
+		(*server_info)->user_session_key = data_blob(zeros, sizeof(zeros));
 		(*server_info)->lm_session_key = data_blob(zeros, sizeof(zeros));
 	}
 
@@ -923,58 +934,41 @@ static NTSTATUS fill_sam_account(TALLOC_CTX *mem_ctx,
 				 uid_t *uid, gid_t *gid,
 				 SAM_ACCOUNT **sam_account)
 {
-	fstring dom_user;
+	fstring dom_user, lower_username;
+	fstring real_username;
 	struct passwd *passwd;
 
-	fstr_sprintf(dom_user, "%s%s%s", domain, lp_winbind_separator(), 
-		username);
+	fstrcpy( lower_username, username );
+	strlower_m( lower_username );
 
-	passwd = Get_Pwnam(dom_user);
-	
-	if ( passwd ) {
-		char *p;
-		
-		/* make sure we get the case of the username correct */
-		/* work around 'winbind use default domain = yes' */
-		
-		p = strchr( passwd->pw_name, *lp_winbind_separator() );
-		if ( !p ) 
-			fstr_sprintf(dom_user, "%s%s%s", domain, 
-				lp_winbind_separator(), passwd->pw_name);
-		else 
-			fstrcpy( dom_user, passwd->pw_name );
-	}
-	else {
-		/* if the lookup for DOMAIN\username failed, try again 
-		   with just 'username'.  This is need for accessing the server
-		   as a trust user that actually maps to a local account */
+	fstr_sprintf(dom_user, "%s%c%s", domain, *lp_winbind_separator(), 
+		lower_username);
 
-		fstrcpy( dom_user, username );
-		passwd = Get_Pwnam( dom_user );
-		
-		/* make sure we get the case of the username correct */
-		if ( passwd )
-			fstrcpy( dom_user, passwd->pw_name );
-	}
+	/* get the passwd struct but don't create the user if he/she 
+	   does not exist.  We were explicitly called from a following
+	   a winbindd authentication request so we should assume that 
+	   nss_winbindd is working */
 
-	if ( !passwd )
+	map_username( dom_user );
+
+	if ( !(passwd = smb_getpwnam( dom_user, real_username, True )) )
 		return NT_STATUS_NO_SUCH_USER;
 
 	*uid = passwd->pw_uid;
 	*gid = passwd->pw_gid;
 
-	/* This is pointless -- there is no suport for differeing 
+	/* This is pointless -- there is no suport for differing 
 	   unix and windows names.  Make sure to always store the 
 	   one we actually looked up and succeeded. Have I mentioned
 	   why I hate the 'winbind use default domain' parameter?   
 	                                 --jerry              */
 	   
-	*found_username = talloc_strdup(mem_ctx, dom_user);
+	*found_username = talloc_strdup( mem_ctx, real_username );
 	
 	DEBUG(5,("fill_sam_account: located username was [%s]\n",
 		*found_username));
 
-	return pdb_init_sam_pw(sam_account, passwd);
+	return pdb_init_sam_pw(sam_account, passwd, True);
 }
 
 /****************************************************************************
@@ -983,40 +977,77 @@ static NTSTATUS fill_sam_account(TALLOC_CTX *mem_ctx,
  the username if we fallback to the username only.
  ****************************************************************************/
  
-struct passwd *smb_getpwnam( char *domuser )
+struct passwd *smb_getpwnam( char *domuser, fstring save_username, BOOL create )
 {
 	struct passwd *pw = NULL;
 	char *p;
-	fstring mapped_username;
+	fstring username;
+	
+	/* we only save a copy of the username it has been mangled 
+	   by winbindd use default domain */
+	   
+	save_username[0] = '\0';
+	   
+	/* don't call map_username() here since it has to be done higher 
+	   up the stack so we don't call it mutliple times */
 
-	pw = Get_Pwnam( domuser );
-	if ( pw )
-		return pw;
-
-	/* fallback to looking up just the username */
-
-	p = strchr( domuser, *lp_winbind_separator() );
-
+	fstrcpy( username, domuser );
+	
+	p = strchr_m( username, *lp_winbind_separator() );
+	
+	/* code for a DOMAIN\user string */
+	
 	if ( p ) {
-		p += 1;
-		fstrcpy( mapped_username, p );
-		map_username( mapped_username );	
-		pw = Get_Pwnam(mapped_username);
-		if (!pw) {
-			/* Don't add a machine account. */
-			if (mapped_username[strlen(mapped_username)-1] == '$')
-				return NULL;
+		fstring strip_username;
 
-			/* Create local user if requested. */
-			p = strchr( mapped_username, *lp_winbind_separator() );
-			if (p)
-				p += 1;
+		pw = Get_Pwnam( domuser );
+		if ( pw ) {	
+			/* make sure we get the case of the username correct */
+			/* work around 'winbind use default domain = yes' */
+
+			if ( !strchr_m( pw->pw_name, *lp_winbind_separator() ) ) {
+				char *domain;
+				
+				/* split the domain and username into 2 strings */
+				*p = '\0';
+				domain = username;
+
+				fstr_sprintf(save_username, "%s%c%s", domain, *lp_winbind_separator(), pw->pw_name);
+			}
 			else
-				p = mapped_username;
-			auth_add_user_script(NULL, p);
-			return Get_Pwnam(p);
+				fstrcpy( save_username, pw->pw_name );
+
+			/* whew -- done! */		
+			return pw;
 		}
+
+		/* setup for lookup of just the username */
+		/* remember that p and username are overlapping memory */
+
+		p++;
+		fstrcpy( strip_username, p );
+		fstrcpy( username, strip_username );
 	}
+	
+	/* just lookup a plain username */
+	
+	pw = Get_Pwnam(username);
+		
+	/* Create local user if requested. */
+	
+	if ( !pw && create ) {
+		/* Don't add a machine account. */
+		if (username[strlen(username)-1] == '$')
+			return NULL;
+
+		auth_add_user_script(NULL, username);
+		pw = Get_Pwnam(username);
+	}
+	
+	/* one last check for a valid passwd struct */
+	
+	if ( pw )
+		fstrcpy( save_username, pw->pw_name );
 
 	return pw;
 }
@@ -1082,18 +1113,25 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 	}
 	
 	/* try to fill the SAM account..  If getpwnam() fails, then try the 
-	   add user script (2.2.x behavior) */
+	   add user script (2.2.x behavior).
+
+	   We use the _unmapped_ username here in an attempt to provide
+	   consistent username mapping behavior between kerberos and NTLM[SSP]
+	   authentication in domain mode security.  I.E. Username mapping should
+	   be applied to the fully qualified username (e.g. DOMAIN\user) and
+	   no just the login name.  Yes this mean swe called map_username()
+	   unnecessarily in make_user_info_map() but that is how the current
+	   code is designed.  Making the change here is the least disruptive 
+	   place.    -- jerry */
 	   
-	nt_status = fill_sam_account(mem_ctx, nt_domain, internal_username,
+	nt_status = fill_sam_account(mem_ctx, nt_domain, sent_nt_username,
 		&found_username, &uid, &gid, &sam_account);
 
 	if (NT_STATUS_EQUAL(nt_status, NT_STATUS_NO_SUCH_USER)) {
-		DEBUG(3,("User %s does not exist, trying to add it\n", 
-			internal_username));
-		auth_add_user_script(nt_domain, internal_username);
-		nt_status = fill_sam_account(mem_ctx, nt_domain, 
-			internal_username, &found_username,
-			&uid, &gid, &sam_account);
+		DEBUG(3,("User %s does not exist, trying to add it\n", internal_username));
+		auth_add_user_script( nt_domain, sent_nt_username );
+		nt_status = fill_sam_account( mem_ctx, nt_domain, sent_nt_username, 
+			&found_username, &uid, &gid, &sam_account );
 	}
 	
 	if (!NT_STATUS_IS_OK(nt_status)) {
@@ -1187,7 +1225,7 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 	
 	/* Create a 'combined' list of all SIDs we might want in the SD */
 	
-	all_group_SIDs = malloc(sizeof(DOM_SID) * (info3->num_groups2 +info3->num_other_sids));
+	all_group_SIDs = SMB_MALLOC_ARRAY(DOM_SID,info3->num_groups2 + info3->num_other_sids + n_lgroupSIDs);
 	
 	if (!all_group_SIDs) {
 		DEBUG(0, ("malloc() failed for DOM_SID list!\n"));
@@ -1195,12 +1233,6 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 		free_server_info(server_info);
 		return NT_STATUS_NO_MEMORY;
 	}
-
-#if 0 	/* JERRY -- no such thing as local groups in current code */
-	/* Copy the 'local' sids */
-	memcpy(all_group_SIDs, lgroupSIDs, sizeof(DOM_SID) * n_lgroupSIDs);
-	SAFE_FREE(lgroupSIDs);
-#endif
 
 	/* and create (by appending rids) the 'domain' sids */
 	
@@ -1216,6 +1248,7 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 				info3->gids[i].g_rid));			
 				
 			SAFE_FREE(lgroupSIDs);
+			SAFE_FREE(all_group_SIDs);
 			free_server_info(server_info);
 			
 			return nt_status;
@@ -1233,17 +1266,27 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 		sid_copy(&all_group_SIDs[info3->num_groups2 + i],
 			 &info3->other_sids[i].sid);
 	}
+
+
+	/* add local alias sids */ 
+
+	for (i = 0; i < n_lgroupSIDs; i++) {
+		sid_copy(&all_group_SIDs[info3->num_groups2 +
+					 info3->num_other_sids + i],
+			 &lgroupSIDs[i]);
+	}
 	
 	/* Where are the 'global' sids... */
 
 	/* can the user be guest? if yes, where is it stored? */
 	
 	nt_status = create_nt_user_token(&user_sid, &group_sid,
-		info3->num_groups2 + info3->num_other_sids,
+		info3->num_groups2 + info3->num_other_sids + n_lgroupSIDs,
 		all_group_SIDs, False, &token);
 		
 	if ( !NT_STATUS_IS_OK(nt_status) ) {
 		DEBUG(4,("create_nt_user_token failed\n"));
+		SAFE_FREE(lgroupSIDs);
 		SAFE_FREE(all_group_SIDs);
 		free_server_info(server_info);
 		return nt_status;
@@ -1251,14 +1294,15 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 
 	(*server_info)->ptok = token; 
 
+	SAFE_FREE(lgroupSIDs);
 	SAFE_FREE(all_group_SIDs);
 
 	/* ensure we are never given NULL session keys */
 	
 	if (memcmp(info3->user_sess_key, zeros, sizeof(zeros)) == 0) {
-		(*server_info)->nt_session_key = data_blob(NULL, 0);
+		(*server_info)->user_session_key = data_blob(NULL, 0);
 	} else {
-		(*server_info)->nt_session_key = data_blob(info3->user_sess_key, sizeof(info3->user_sess_key));
+		(*server_info)->user_session_key = data_blob(info3->user_sess_key, sizeof(info3->user_sess_key));
 	}
 
 	if (memcmp(info3->padding, zeros, sizeof(zeros)) == 0) {
@@ -1287,7 +1331,8 @@ void free_user_info(auth_usersupplied_info **user_info)
 		SAFE_FREE((*user_info)->wksta_name.str);
 		data_blob_free(&(*user_info)->lm_resp);
 		data_blob_free(&(*user_info)->nt_resp);
-		SAFE_FREE((*user_info)->interactive_password);
+		data_blob_clear_free(&(*user_info)->lm_interactive_pwd);
+		data_blob_clear_free(&(*user_info)->nt_interactive_pwd);
 		data_blob_clear_free(&(*user_info)->plaintext_password);
 		ZERO_STRUCT(**user_info);
 	}
@@ -1309,7 +1354,7 @@ void free_server_info(auth_serversupplied_info **server_info)
 		SAFE_FREE((*server_info)->groups);
 		SAFE_FREE((*server_info)->unix_name);
 		data_blob_free(&(*server_info)->lm_session_key);
-		data_blob_free(&(*server_info)->nt_session_key);
+		data_blob_free(&(*server_info)->user_session_key);
 		ZERO_STRUCT(**server_info);
 	}
 	SAFE_FREE(*server_info);
@@ -1329,7 +1374,7 @@ BOOL make_auth_methods(struct auth_context *auth_context, auth_methods **auth_me
 		smb_panic("make_auth_methods: pointer to auth_method pointer is NULL!\n");
 	}
 
-	*auth_method = talloc(auth_context->mem_ctx, sizeof(**auth_method));
+	*auth_method = TALLOC_P(auth_context->mem_ctx, auth_methods);
 	if (!*auth_method) {
 		DEBUG(0,("make_auth_method: malloc failed!\n"));
 		return False;
@@ -1364,7 +1409,7 @@ NT_USER_TOKEN *dup_nt_token(NT_USER_TOKEN *ptoken)
 	if (!ptoken)
 		return NULL;
 
-    if ((token = (NT_USER_TOKEN *)malloc( sizeof(NT_USER_TOKEN) ) ) == NULL)
+    if ((token = SMB_MALLOC_P(NT_USER_TOKEN)) == NULL)
         return NULL;
 
     ZERO_STRUCTP(token);
@@ -1378,34 +1423,6 @@ NT_USER_TOKEN *dup_nt_token(NT_USER_TOKEN *ptoken)
 
 	return token;
 }
-
-/**
- * Squash an NT_STATUS in line with security requirements.
- * In an attempt to avoid giving the whole game away when users
- * are authenticating, NT replaces both NT_STATUS_NO_SUCH_USER and 
- * NT_STATUS_WRONG_PASSWORD with NT_STATUS_LOGON_FAILURE in certain situations 
- * (session setups in particular).
- *
- * @param nt_status NTSTATUS input for squashing.
- * @return the 'squashed' nt_status
- **/
-
-NTSTATUS nt_status_squash(NTSTATUS nt_status)
-{
-	if NT_STATUS_IS_OK(nt_status) {
-		return nt_status;		
-	} else if NT_STATUS_EQUAL(nt_status, NT_STATUS_NO_SUCH_USER) {
-		/* Match WinXP and don't give the game away */
-		return NT_STATUS_LOGON_FAILURE;
-		
-	} else if NT_STATUS_EQUAL(nt_status, NT_STATUS_WRONG_PASSWORD) {
-		/* Match WinXP and don't give the game away */
-		return NT_STATUS_LOGON_FAILURE;
-	} else {
-		return nt_status;
-	}  
-}
-
 
 /**
  * Verify whether or not given domain is trusted.
@@ -1429,8 +1446,10 @@ BOOL is_trusted_domain(const char* dom_name)
 
 	/* if we are a DC, then check for a direct trust relationships */
 
-	if (lp_server_role() == ROLE_DOMAIN_BDC || lp_server_role() == ROLE_DOMAIN_PDC) {
+	if ( IS_DC ) {
 		become_root();
+		DEBUG (5,("is_trusted_domain: Checking for domain trust with [%s]\n",
+			dom_name ));
 		ret = secrets_fetch_trusted_domain_password(dom_name, &pass, &trustdom_sid, &lct);
 		unbecome_root();
 		SAFE_FREE(pass);

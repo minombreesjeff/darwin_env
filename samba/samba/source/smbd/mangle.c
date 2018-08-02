@@ -98,9 +98,9 @@ BOOL mangle_is_8_3_wildcards(const char *fname, BOOL check_case)
   looking for a matching name if it doesn't. It should succeed most of the time
   or there will be a huge performance penalty
 */
-BOOL mangle_check_cache(char *s)
+BOOL mangle_check_cache(char *s, size_t maxlen)
 {
-	return mangle_fns->check_cache(s);
+	return mangle_fns->check_cache(s, maxlen);
 }
 
 /* 
@@ -120,5 +120,5 @@ void mangle_map(pstring OutName, BOOL need83, BOOL cache83, int snum)
 
 	/* invoke the inane "mangled map" code */
 	mangle_map_filename(OutName, snum);
-	mangle_fns->name_map(OutName, need83, cache83);
+	mangle_fns->name_map(OutName, need83, cache83, lp_defaultcase(snum));
 }

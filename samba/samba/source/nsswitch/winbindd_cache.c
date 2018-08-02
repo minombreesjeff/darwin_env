@@ -136,7 +136,7 @@ static struct winbind_cache *get_cache(struct winbindd_domain *domain)
 	if (ret)
 		return ret;
 	
-	ret = smb_xmalloc(sizeof(*ret));
+	ret = SMB_XMALLOC_P(struct winbind_cache);
 	ZERO_STRUCTP(ret);
 
 	wcache = ret;
@@ -209,7 +209,7 @@ static char *centry_string(struct cache_entry *centry, TALLOC_CTX *mem_ctx)
 		smb_panic("centry_string");
 	}
 
-	ret = talloc(mem_ctx, len+1);
+	ret = TALLOC(mem_ctx, len+1);
 	if (!ret) {
 		smb_panic("centry_string out of memory\n");
 	}
@@ -227,7 +227,7 @@ static DOM_SID *centry_sid(struct cache_entry *centry, TALLOC_CTX *mem_ctx)
 	DOM_SID *sid;
 	char *sid_string;
 
-	sid = talloc(mem_ctx, sizeof(*sid));
+	sid = TALLOC_P(mem_ctx, DOM_SID);
 	if (!sid)
 		return NULL;
 	
@@ -276,6 +276,8 @@ static NTSTATUS fetch_cache_seqnum( struct winbindd_domain *domain, time_t now )
 	domain->sequence_number = IVAL(data.dptr, 0);
 	domain->last_seq_check  = IVAL(data.dptr, 4);
 	
+	SAFE_FREE(data.dptr);
+
 	/* have we expired? */
 	
 	time_diff = now - domain->last_seq_check;
@@ -339,10 +341,12 @@ static void refresh_sequence_number(struct winbindd_domain *domain, BOOL force)
 
 	get_cache( domain );
 
+#if 0	/* JERRY -- disable as the default cache time is now 5 minutes */
 	/* trying to reconnect is expensive, don't do it too often */
 	if (domain->sequence_number == DOM_SEQUENCE_NONE) {
 		cache_time *= 8;
 	}
+#endif
 
 	time_diff = t - domain->last_seq_check;
 
@@ -358,6 +362,12 @@ static void refresh_sequence_number(struct winbindd_domain *domain, BOOL force)
 	status = fetch_cache_seqnum( domain, t );
 	if ( NT_STATUS_IS_OK(status) )
 		goto done;	
+
+	/* important! make sure that we know if this is a native 
+	   mode domain or not */
+
+	if ( !domain->initialized )
+		set_dc_type_and_flags( domain );
 
 	status = domain->backend->sequence_number(domain, &domain->sequence_number);
 
@@ -440,7 +450,7 @@ static struct cache_entry *wcache_fetch(struct winbind_cache *cache,
 		return NULL;
 	}
 
-	centry = smb_xmalloc(sizeof(*centry));
+	centry = SMB_XMALLOC_P(struct cache_entry);
 	centry->data = (unsigned char *)data.dptr;
 	centry->len = data.dsize;
 	centry->ofs = 0;
@@ -491,7 +501,7 @@ static void centry_expand(struct cache_entry *centry, uint32 len)
 	if (centry->len - centry->ofs >= len)
 		return;
 	centry->len *= 2;
-	p = realloc(centry->data, centry->len);
+	p = SMB_REALLOC(centry->data, centry->len);
 	if (!p) {
 		DEBUG(0,("out of memory: needed %d bytes in centry_expand\n", centry->len));
 		smb_panic("out of memory in centry_expand");
@@ -558,10 +568,10 @@ struct cache_entry *centry_start(struct winbindd_domain *domain, NTSTATUS status
 	if (!wcache->tdb)
 		return NULL;
 
-	centry = smb_xmalloc(sizeof(*centry));
+	centry = SMB_XMALLOC_P(struct cache_entry);
 
 	centry->len = 8192; /* reasonable default */
-	centry->data = smb_xmalloc(centry->len);
+	centry->data = SMB_XMALLOC_ARRAY(char, centry->len);
 	centry->ofs = 0;
 	centry->sequence_number = domain->sequence_number;
 	centry_put_uint32(centry, NT_STATUS_V(status));
@@ -593,27 +603,28 @@ static void centry_end(struct cache_entry *centry, const char *format, ...)
 }
 
 static void wcache_save_name_to_sid(struct winbindd_domain *domain, 
-				    NTSTATUS status, 
+				    NTSTATUS status, const char *domain_name,
 				    const char *name, const DOM_SID *sid, 
 				    enum SID_NAME_USE type)
 {
 	struct cache_entry *centry;
 	fstring uname;
-	fstring sid_string;
 
 	centry = centry_start(domain, status);
 	if (!centry)
 		return;
+	centry_put_uint32(centry, type);
 	centry_put_sid(centry, sid);
 	fstrcpy(uname, name);
 	strupper_m(uname);
-	centry_end(centry, "NS/%s", sid_to_string(sid_string, sid));
-	DEBUG(10,("wcache_save_name_to_sid: %s -> %s\n", uname, sid_string));
+	centry_end(centry, "NS/%s/%s", domain_name, uname);
+	DEBUG(10,("wcache_save_name_to_sid: %s -> %s\n", uname,
+		  sid_string_static(sid)));
 	centry_free(centry);
 }
 
 static void wcache_save_sid_to_name(struct winbindd_domain *domain, NTSTATUS status, 
-				    const DOM_SID *sid, const char *name, enum SID_NAME_USE type)
+				    const DOM_SID *sid, const char *domain_name, const char *name, enum SID_NAME_USE type)
 {
 	struct cache_entry *centry;
 	fstring sid_string;
@@ -623,6 +634,7 @@ static void wcache_save_sid_to_name(struct winbindd_domain *domain, NTSTATUS sta
 		return;
 	if (NT_STATUS_IS_OK(status)) {
 		centry_put_uint32(centry, type);
+		centry_put_string(centry, domain_name);
 		centry_put_string(centry, name);
 	}
 	centry_end(centry, "SN/%s", sid_to_string(sid_string, sid));
@@ -672,7 +684,7 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 	if (*num_entries == 0)
 		goto do_cached;
 
-	(*info) = talloc(mem_ctx, sizeof(**info) * (*num_entries));
+	(*info) = TALLOC_ARRAY(mem_ctx, WINBIND_USERINFO, *num_entries);
 	if (! (*info))
 		smb_panic("query_user_list out of memory");
 	for (i=0; i<(*num_entries); i++) {
@@ -739,11 +751,13 @@ do_query:
 		if (domain->backend->consistent) {
 			/* when the backend is consistent we can pre-prime some mappings */
 			wcache_save_name_to_sid(domain, NT_STATUS_OK, 
+						domain->name,
 						(*info)[i].acct_name, 
 						(*info)[i].user_sid,
 						SID_NAME_USER);
 			wcache_save_sid_to_name(domain, NT_STATUS_OK, 
 						(*info)[i].user_sid,
+						domain->name,
 						(*info)[i].acct_name, 
 						SID_NAME_USER);
 			wcache_save_user(domain, NT_STATUS_OK, &(*info)[i]);
@@ -779,7 +793,7 @@ static NTSTATUS enum_dom_groups(struct winbindd_domain *domain,
 	if (*num_entries == 0)
 		goto do_cached;
 
-	(*info) = talloc(mem_ctx, sizeof(**info) * (*num_entries));
+	(*info) = TALLOC_ARRAY(mem_ctx, struct acct_info, *num_entries);
 	if (! (*info))
 		smb_panic("enum_dom_groups out of memory");
 	for (i=0; i<(*num_entries); i++) {
@@ -852,7 +866,7 @@ static NTSTATUS enum_local_groups(struct winbindd_domain *domain,
 	if (*num_entries == 0)
 		goto do_cached;
 
-	(*info) = talloc(mem_ctx, sizeof(**info) * (*num_entries));
+	(*info) = TALLOC_ARRAY(mem_ctx, struct acct_info, *num_entries);
 	if (! (*info))
 		smb_panic("enum_dom_groups out of memory");
 	for (i=0; i<(*num_entries); i++) {
@@ -915,6 +929,7 @@ skip_save:
 /* convert a single name to a sid in a domain */
 static NTSTATUS name_to_sid(struct winbindd_domain *domain,
 			    TALLOC_CTX *mem_ctx,
+			    const char *domain_name,
 			    const char *name,
 			    DOM_SID *sid,
 			    enum SID_NAME_USE *type)
@@ -930,7 +945,7 @@ static NTSTATUS name_to_sid(struct winbindd_domain *domain,
 
 	fstrcpy(uname, name);
 	strupper_m(uname);
-	centry = wcache_fetch(cache, domain, "NS/%s/%s", domain->name, uname);
+	centry = wcache_fetch(cache, domain, "NS/%s/%s", domain_name, uname);
 	if (!centry)
 		goto do_query;
 	*type = (enum SID_NAME_USE)centry_uint32(centry);
@@ -966,10 +981,10 @@ do_query:
 	DEBUG(10,("name_to_sid: [Cached] - doing backend query for name for domain %s\n",
 		domain->name ));
 
-	status = domain->backend->name_to_sid(domain, mem_ctx, name, sid, type);
+	status = domain->backend->name_to_sid(domain, mem_ctx, domain_name, name, sid, type);
 
 	/* and save it */
-	wcache_save_name_to_sid(domain, status, name, sid, *type);
+	wcache_save_name_to_sid(domain, status, domain_name, name, sid, *type);
 
 	/* We can't save the sid to name mapping as we don't know the
 	   correct case of the name without looking it up */
@@ -982,6 +997,7 @@ do_query:
 static NTSTATUS sid_to_name(struct winbindd_domain *domain,
 			    TALLOC_CTX *mem_ctx,
 			    const DOM_SID *sid,
+			    char **domain_name,
 			    char **name,
 			    enum SID_NAME_USE *type)
 {
@@ -998,6 +1014,7 @@ static NTSTATUS sid_to_name(struct winbindd_domain *domain,
 		goto do_query;
 	if (NT_STATUS_IS_OK(centry->status)) {
 		*type = (enum SID_NAME_USE)centry_uint32(centry);
+		*domain_name = centry_string(centry, mem_ctx);
 		*name = centry_string(centry, mem_ctx);
 	}
 	status = centry->status;
@@ -1010,6 +1027,7 @@ static NTSTATUS sid_to_name(struct winbindd_domain *domain,
 
 do_query:
 	*name = NULL;
+	*domain_name = NULL;
 
 	/* If the seq number check indicated that there is a problem
 	 * with this DC, then return that status... except for
@@ -1025,12 +1043,14 @@ do_query:
 	DEBUG(10,("sid_to_name: [Cached] - doing backend query for name for domain %s\n",
 		domain->name ));
 
-	status = domain->backend->sid_to_name(domain, mem_ctx, sid, name, type);
+	status = domain->backend->sid_to_name(domain, mem_ctx, sid, domain_name, name, type);
 
 	/* and save it */
 	refresh_sequence_number(domain, False);
-	wcache_save_sid_to_name(domain, status, sid, *name, *type);
-	wcache_save_name_to_sid(domain, status, *name, sid, *type);
+	wcache_save_sid_to_name(domain, status, sid, *domain_name, *name, *type);
+
+	/* We can't save the name to sid mapping here, as with sid history a
+	 * later name2sid would give the wrong sid. */
 
 	return status;
 }
@@ -1039,7 +1059,7 @@ do_query:
 /* Lookup user information from a rid */
 static NTSTATUS query_user(struct winbindd_domain *domain, 
 			   TALLOC_CTX *mem_ctx, 
-			   DOM_SID *user_sid, 
+			   const DOM_SID *user_sid, 
 			   WINBIND_USERINFO *info)
 {
 	struct winbind_cache *cache = get_cache(domain);
@@ -1102,7 +1122,7 @@ do_query:
 /* Lookup groups a user is a member of. */
 static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 				  TALLOC_CTX *mem_ctx,
-				  DOM_SID *user_sid, 
+				  const DOM_SID *user_sid, 
 				  uint32 *num_groups, DOM_SID ***user_gids)
 {
 	struct winbind_cache *cache = get_cache(domain);
@@ -1136,7 +1156,7 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 	if (*num_groups == 0)
 		goto do_cached;
 
-	(*user_gids) = talloc(mem_ctx, sizeof(**user_gids) * (*num_groups));
+	(*user_gids) = TALLOC_ARRAY(mem_ctx, DOM_SID *, *num_groups);
 	if (! (*user_gids))
 		smb_panic("lookup_usergroups out of memory");
 	for (i=0; i<(*num_groups); i++) {
@@ -1185,7 +1205,7 @@ skip_save:
 
 static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 				TALLOC_CTX *mem_ctx,
-				DOM_SID *group_sid, uint32 *num_names, 
+				const DOM_SID *group_sid, uint32 *num_names, 
 				DOM_SID ***sid_mem, char ***names, 
 				uint32 **name_types)
 {
@@ -1207,9 +1227,9 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 	if (*num_names == 0)
 		goto do_cached;
 
-	(*sid_mem) = talloc(mem_ctx, sizeof(**sid_mem) * (*num_names));
-	(*names) = talloc(mem_ctx, sizeof(**names) * (*num_names));
-	(*name_types) = talloc(mem_ctx, sizeof(**name_types) * (*num_names));
+	(*sid_mem) = TALLOC_ARRAY(mem_ctx, DOM_SID *, *num_names);
+	(*names) = TALLOC_ARRAY(mem_ctx, char *, *num_names);
+	(*name_types) = TALLOC_ARRAY(mem_ctx, uint32, *num_names);
 
 	if (! (*sid_mem) || ! (*names) || ! (*name_types)) {
 		smb_panic("lookup_groupmem out of memory");

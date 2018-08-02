@@ -436,6 +436,18 @@ static BOOL wbinfo_sid_to_gid(char *sid)
 	return True;
 }
 
+static BOOL wbinfo_allocate_rid(void)
+{
+	uint32 rid;
+
+	if (!winbind_allocate_rid(&rid))
+		return False;
+
+	d_printf("New rid: %d\n", rid);
+
+	return True;
+}
+
 /* Convert sid to string */
 
 static BOOL wbinfo_lookupsid(char *sid)
@@ -555,28 +567,61 @@ static BOOL wbinfo_auth_crap(char *username)
 		
 	parse_wbinfo_domain_user(username, name_domain, name_user);
 
-	if (push_utf8_fstring(request.data.auth_crap.user, name_user) == -1) {
-		d_printf("unable to create utf8 string for '%s'\n",
-			 name_user);
-		return False;
-	}
+	fstrcpy(request.data.auth_crap.user, name_user);
 
-	if (push_utf8_fstring(request.data.auth_crap.domain, 
-			      name_domain) == -1) {
-		d_printf("unable to create utf8 string for '%s'\n",
-			 name_domain);
-		return False;
-	}
+	fstrcpy(request.data.auth_crap.domain, 
+			      name_domain);
 
-	generate_random_buffer(request.data.auth_crap.chal, 8, False);
+	generate_random_buffer(request.data.auth_crap.chal, 8);
         
-        SMBencrypt(pass, request.data.auth_crap.chal, 
-                   (uchar *)request.data.auth_crap.lm_resp);
-        SMBNTencrypt(pass, request.data.auth_crap.chal,
-                     (uchar *)request.data.auth_crap.nt_resp);
+	if (lp_client_ntlmv2_auth()) {
+		DATA_BLOB server_chal;
+		DATA_BLOB names_blob;	
 
-        request.data.auth_crap.lm_resp_len = 24;
-        request.data.auth_crap.nt_resp_len = 24;
+		DATA_BLOB lm_response;
+		DATA_BLOB nt_response;
+
+		server_chal = data_blob(request.data.auth_crap.chal, 8); 
+		
+		/* Pretend this is a login to 'us', for blob purposes */
+		names_blob = NTLMv2_generate_names_blob(global_myname(), lp_workgroup());
+		
+		if (!SMBNTLMv2encrypt(name_user, name_domain, pass, &server_chal, 
+				      &names_blob,
+				      &lm_response, &nt_response, NULL)) {
+			data_blob_free(&names_blob);
+			data_blob_free(&server_chal);
+			return False;
+		}
+		data_blob_free(&names_blob);
+		data_blob_free(&server_chal);
+
+		memcpy(request.data.auth_crap.nt_resp, nt_response.data, 
+		       MIN(nt_response.length, 
+			   sizeof(request.data.auth_crap.nt_resp)));
+		request.data.auth_crap.nt_resp_len = nt_response.length;
+
+		memcpy(request.data.auth_crap.lm_resp, lm_response.data, 
+		       MIN(lm_response.length, 
+			   sizeof(request.data.auth_crap.lm_resp)));
+		request.data.auth_crap.lm_resp_len = lm_response.length;
+		       
+		data_blob_free(&nt_response);
+		data_blob_free(&lm_response);
+
+	} else {
+		if (lp_client_lanman_auth() 
+		    && SMBencrypt(pass, request.data.auth_crap.chal, 
+			       (uchar *)request.data.auth_crap.lm_resp)) {
+			request.data.auth_crap.lm_resp_len = 24;
+		} else {
+			request.data.auth_crap.lm_resp_len = 0;
+		}
+		SMBNTencrypt(pass, request.data.auth_crap.chal,
+			     (uchar *)request.data.auth_crap.nt_resp);
+
+		request.data.auth_crap.nt_resp_len = 24;
+	}
 
 	result = winbindd_request(WINBINDD_PAM_AUTH_CRAP, &request, &response);
 
@@ -592,6 +637,64 @@ static BOOL wbinfo_auth_crap(char *username)
 			 response.data.auth.error_string);
 
         return result == NSS_STATUS_SUCCESS;
+}
+
+/* Authenticate a user with a plaintext password and set a token */
+
+static BOOL wbinfo_klog(char *username)
+{
+	struct winbindd_request request;
+	struct winbindd_response response;
+        NSS_STATUS result;
+        char *p;
+
+	/* Send off request */
+
+	ZERO_STRUCT(request);
+	ZERO_STRUCT(response);
+
+        p = strchr(username, '%');
+
+        if (p) {
+                *p = 0;
+                fstrcpy(request.data.auth.user, username);
+                fstrcpy(request.data.auth.pass, p + 1);
+                *p = '%';
+        } else {
+                fstrcpy(request.data.auth.user, username);
+		fstrcpy(request.data.auth.pass, getpass("Password: "));
+	}
+
+	request.flags |= WBFLAG_PAM_AFS_TOKEN;
+
+	result = winbindd_request(WINBINDD_PAM_AUTH, &request, &response);
+
+	/* Display response */
+
+        d_printf("plaintext password authentication %s\n", 
+               (result == NSS_STATUS_SUCCESS) ? "succeeded" : "failed");
+
+	if (response.data.auth.nt_status)
+		d_printf("error code was %s (0x%x)\nerror messsage was: %s\n", 
+			 response.data.auth.nt_status_string, 
+			 response.data.auth.nt_status,
+			 response.data.auth.error_string);
+
+	if (result != NSS_STATUS_SUCCESS)
+		return False;
+
+	if (response.extra_data == NULL) {
+		d_printf("Did not get token data\n");
+		return False;
+	}
+
+	if (!afs_settoken_str((char *)response.extra_data)) {
+		d_printf("Could not set token\n");
+		return False;
+	}
+
+	d_printf("Successfully created AFS token\n");
+	return True;
 }
 
 /******************************************************************
@@ -846,18 +949,19 @@ static BOOL print_domain_groups(const char *domain)
 
 static BOOL wbinfo_set_auth_user(char *username)
 {
-	char *password;
+	const char *password;
+	char *p;
 	fstring user, domain;
 
 	/* Separate into user and password */
 
 	parse_wbinfo_domain_user(username, domain, user);
 
-	password = strchr(user, '%');
+	p = strchr(user, '%');
 
-	if (password) {
-		*password = 0;
-		password++;
+	if (p != NULL) {
+		*p = 0;
+		password = p+1;
 	} else {
 		char *thepass = getpass("Password: ");
 		if (thepass) {
@@ -983,6 +1087,7 @@ int main(int argc, char **argv)
 		{ "gid-to-sid", 'G', POPT_ARG_INT, &int_arg, 'G', "Converts gid to sid", "GID" },
 		{ "sid-to-uid", 'S', POPT_ARG_STRING, &string_arg, 'S', "Converts sid to uid", "SID" },
 		{ "sid-to-gid", 'Y', POPT_ARG_STRING, &string_arg, 'Y', "Converts sid to gid", "SID" },
+		{ "allocate-rid", 'A', POPT_ARG_NONE, 0, 'A', "Get a new RID out of idmap" },
 		{ "create-user", 'c', POPT_ARG_STRING, &string_arg, 'c', "Create a local user account", "name" },
 		{ "delete-user", 'x', POPT_ARG_STRING, &string_arg, 'x', "Delete a local user account", "name" },
 		{ "create-group", 'C', POPT_ARG_STRING, &string_arg, 'C', "Create a local group", "name" },
@@ -1000,6 +1105,9 @@ int main(int argc, char **argv)
 		{ "get-auth-user", 0, POPT_ARG_NONE, NULL, OPT_GET_AUTH_USER, "Retrieve user and password used by winbindd (root only)", NULL },
 		{ "ping", 'p', POPT_ARG_NONE, 0, 'p', "Ping winbindd to see if it is alive" },
 		{ "domain", 0, POPT_ARG_STRING, &opt_domain_name, OPT_DOMAIN_NAME, "Define to the domain to restrict operation", "domain" },
+#ifdef WITH_FAKE_KASERVER
+ 		{ "klog", 'k', POPT_ARG_STRING, &string_arg, 'k', "set an AFS token from winbind", "user%password" },
+#endif
 		POPT_COMMON_VERSION
 		POPT_TABLEEND
 	};
@@ -1102,6 +1210,12 @@ int main(int argc, char **argv)
 				goto done;
 			}
 			break;
+		case 'A':
+			if (!wbinfo_allocate_rid()) {
+				d_printf("Could not allocate a RID\n");
+				goto done;
+			}
+			break;
 		case 't':
 			if (!wbinfo_check_secret()) {
 				d_printf("Could not check secret\n");
@@ -1159,6 +1273,12 @@ int main(int argc, char **argv)
 					goto done;
 				break;
 			}
+		case 'k':
+			if (!wbinfo_klog(string_arg)) {
+				d_printf("Could not klog user\n");
+				goto done;
+			}
+			break;
 		case 'c':
 			if ( !wbinfo_create_user(string_arg) ) {
 				d_printf("Could not create user account\n");
@@ -1179,7 +1299,7 @@ int main(int argc, char **argv)
 			break;
 		case 'O':
 			if ( !wbinfo_remove_user_from_group(string_arg) ) {
-				d_printf("Could not remove user kfrom group\n");
+				d_printf("Could not remove user from group\n");
 				goto done;
 			}
 			break;

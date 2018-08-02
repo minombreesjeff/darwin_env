@@ -59,7 +59,7 @@
 #ifdef strncasecmp
 #undef strncasecmp
 #endif
-#define strncasecmp __ERROR__XX__NEVER_USE_STRCASECMP__;
+#define strncasecmp __ERROR__XX__NEVER_USE_STRNCASECMP__;
 
 #endif /* !_SPLINT_ */
 
@@ -139,6 +139,7 @@ size_t __unsafe_string_function_usage_here_char__(void);
 #define fstrcpy(d,s) safe_strcpy((d),(s),sizeof(fstring)-1)
 #define fstrcat(d,s) safe_strcat((d),(s),sizeof(fstring)-1)
 #define nstrcpy(d,s) safe_strcpy((d), (s),sizeof(nstring)-1)
+#define unstrcpy(d,s) safe_strcpy((d), (s),sizeof(unstring)-1)
 
 /* the addition of the DEVELOPER checks in safe_strcpy means we must
  * update a lot of code. To make this a little easier here are some

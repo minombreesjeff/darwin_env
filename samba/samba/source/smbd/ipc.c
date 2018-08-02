@@ -165,7 +165,7 @@ void send_trans_reply(char *outbuf,
 static BOOL api_rpc_trans_reply(char *outbuf, smb_np_struct *p)
 {
 	BOOL is_data_outstanding;
-	char *rdata = malloc(p->max_trans_reply);
+	char *rdata = SMB_MALLOC(p->max_trans_reply);
 	int data_len;
 
 	if(rdata == NULL) {
@@ -293,7 +293,7 @@ static int api_fd_reply(connection_struct *conn,uint16 vuid,char *outbuf,
 		return api_no_reply(outbuf, mdrcnt);
 	}
 
-	DEBUG(3,("Got API command 0x%x on pipe \"%s\" (pnum %x)", subcommand, p->name, pnum));
+	DEBUG(3,("Got API command 0x%x on pipe \"%s\" (pnum %x)\n", subcommand, p->name, pnum));
 
 	/* record maximum data length that can be transmitted in an SMBtrans */
 	p->max_trans_reply = mdrcnt;
@@ -389,7 +389,7 @@ int reply_trans(connection_struct *conn, char *inbuf,char *outbuf, int size, int
 		goto bad_param;
   
 	if (tdscnt)  {
-		if((data = (char *)malloc(tdscnt)) == NULL) {
+		if((data = (char *)SMB_MALLOC(tdscnt)) == NULL) {
 			DEBUG(0,("reply_trans: data malloc fail for %u bytes !\n", tdscnt));
 			END_PROFILE(SMBtrans);
 			return(ERROR_DOS(ERRDOS,ERRnomem));
@@ -404,7 +404,7 @@ int reply_trans(connection_struct *conn, char *inbuf,char *outbuf, int size, int
 	}
 
 	if (tpscnt) {
-		if((params = (char *)malloc(tpscnt)) == NULL) {
+		if((params = (char *)SMB_MALLOC(tpscnt)) == NULL) {
 			DEBUG(0,("reply_trans: param malloc fail for %u bytes !\n", tpscnt));
 			SAFE_FREE(data);
 			END_PROFILE(SMBtrans);
@@ -421,7 +421,7 @@ int reply_trans(connection_struct *conn, char *inbuf,char *outbuf, int size, int
 
 	if (suwcnt) {
 		unsigned int i;
-		if((setup = (uint16 *)malloc(suwcnt*sizeof(uint16))) == NULL) {
+		if((setup = SMB_MALLOC_ARRAY(uint16,suwcnt)) == NULL) {
 			DEBUG(0,("reply_trans: setup malloc fail for %u bytes !\n", (unsigned int)(suwcnt * sizeof(uint16))));
 			SAFE_FREE(data);
 			SAFE_FREE(params);

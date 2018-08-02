@@ -38,11 +38,7 @@
 /*****************************************************/
 
 #include "includes.h"
-#include "../utils/net.h"
-
-#ifdef WITH_OPENDIRECTORY
-#include "libopendirectorycommon.h"
-#endif
+#include "utils/net.h"
 
 /***********************************************************************/
 /* Beginning of internationalization section.  Translatable constants  */
@@ -70,13 +66,23 @@ int opt_long_list_entries = 0;
 int opt_reboot = 0;
 int opt_force = 0;
 int opt_port = 0;
+int opt_verbose = 0;
 int opt_maxusers = -1;
 const char *opt_comment = "";
-const char *opt_container = "cn=Users";
+const char *opt_container = NULL;
 int opt_flags = -1;
 int opt_timeout = 0;
 const char *opt_target_workgroup = NULL;
 int opt_machine_pass = 0;
+BOOL opt_localgroup = False;
+BOOL opt_domaingroup = False;
+const char *opt_newntname = "";
+int opt_rid = 0;
+int opt_acls = 0;
+int opt_attrs = 0;
+int opt_timestamps = 0;
+const char *opt_exclude = NULL;
+const char *opt_destination = NULL;
 
 BOOL opt_have_ip = False;
 struct in_addr opt_dest_ip;
@@ -125,33 +131,33 @@ int net_run_function(int argc, const char **argv, struct functable *table,
 	return usage_fn(argc, argv);
 }
 
-
 /****************************************************************************
-connect to \\server\ipc$  
+connect to \\server\service 
 ****************************************************************************/
-NTSTATUS connect_to_ipc(struct cli_state **c, struct in_addr *server_ip,
-					const char *server_name)
+NTSTATUS connect_to_service(struct cli_state **c, struct in_addr *server_ip,
+					const char *server_name, 
+					const char *service_name, 
+					const char *service_type)
 {
 	NTSTATUS nt_status;
 
 	if (!opt_password && !opt_machine_pass) {
 		char *pass = getpass("Password:");
 		if (pass) {
-			opt_password = strdup(pass);
+			opt_password = SMB_STRDUP(pass);
 		}
 	}
 	
-	nt_status = cli_full_connection(c, opt_requester_name, server_name, 
+	nt_status = cli_full_connection(c, NULL, server_name, 
 					server_ip, opt_port,
-					"IPC$", "IPC",  
+					service_name, service_type,  
 					opt_user_name, opt_workgroup,
 					opt_password, 0, Undefined, NULL);
 	
 	if (NT_STATUS_IS_OK(nt_status)) {
 		return nt_status;
 	} else {
-		DEBUG(1,("Cannot connect to server.  Error was %s\n", 
-			 nt_errstr(nt_status)));
+		d_printf("Could not connect to server %s\n", server_name);
 
 		/* Display a nicer message depending on the result */
 
@@ -169,6 +175,16 @@ NTSTATUS connect_to_ipc(struct cli_state **c, struct in_addr *server_ip,
 
 		return nt_status;
 	}
+}
+
+
+/****************************************************************************
+connect to \\server\ipc$  
+****************************************************************************/
+NTSTATUS connect_to_ipc(struct cli_state **c, struct in_addr *server_ip,
+					const char *server_name)
+{
+	return connect_to_service(c, server_ip, server_name, "IPC$", "IPC");
 }
 
 /****************************************************************************
@@ -192,6 +208,42 @@ NTSTATUS connect_to_ipc_anonymous(struct cli_state **c,
 		return nt_status;
 	}
 }
+
+/**
+ * Connect a server and open a given pipe
+ *
+ * @param cli_dst		A cli_state 
+ * @param pipe			The pipe to open
+ * @param got_pipe		boolean that stores if we got a pipe
+ *
+ * @return Normal NTSTATUS return.
+ **/
+NTSTATUS connect_pipe(struct cli_state **cli_dst, int pipe_num, BOOL *got_pipe)
+{
+	NTSTATUS nt_status;
+	char *server_name = SMB_STRDUP("127.0.0.1");
+	struct cli_state *cli_tmp = NULL;
+
+	if (opt_destination)
+		server_name = SMB_STRDUP(opt_destination);
+
+	/* make a connection to a named pipe */
+	nt_status = connect_to_ipc(&cli_tmp, NULL, server_name);
+	if (!NT_STATUS_IS_OK(nt_status)) 
+		return nt_status;
+
+	if (!cli_nt_session_open(cli_tmp, pipe_num)) {
+		DEBUG(0, ("couldn't not initialize pipe\n"));
+		cli_shutdown(cli_tmp);
+		return NT_STATUS_UNSUCCESSFUL;
+	}
+
+	*cli_dst = cli_tmp;
+	*got_pipe = True;
+
+	return nt_status;
+}
+
 
 /****************************************************************************
  Use the local machine's password for this session
@@ -218,13 +270,13 @@ BOOL net_find_server(unsigned flags, struct in_addr *server_ip, char **server_na
 {
 
 	if (opt_host) {
-		*server_name = strdup(opt_host);
+		*server_name = SMB_STRDUP(opt_host);
 	}		
 
 	if (opt_have_ip) {
 		*server_ip = opt_dest_ip;
 		if (!*server_name) {
-			*server_name = strdup(inet_ntoa(opt_dest_ip));
+			*server_name = SMB_STRDUP(inet_ntoa(opt_dest_ip));
 		}
 	} else if (*server_name) {
 		/* resolve the IP address */
@@ -244,7 +296,7 @@ BOOL net_find_server(unsigned flags, struct in_addr *server_ip, char **server_na
 			if ( !name_status_find(opt_target_workgroup, 0x1b, 0x20, pdc_ip, dc_name) )
 				return False;
 				
-			*server_name = strdup(dc_name);
+			*server_name = SMB_STRDUP(dc_name);
 			*server_ip = pdc_ip;
 		}
 		
@@ -257,7 +309,7 @@ BOOL net_find_server(unsigned flags, struct in_addr *server_ip, char **server_na
 		} else {
 			*server_ip = msbrow_ip;
 		}
-		*server_name = strdup(inet_ntoa(opt_dest_ip));
+		*server_name = SMB_STRDUP(inet_ntoa(opt_dest_ip));
 	} else if (flags & NET_FLAGS_MASTER) {
 		struct in_addr brow_ips;
 		if (!resolve_name(opt_target_workgroup, &brow_ips, 0x1D))  {
@@ -267,11 +319,11 @@ BOOL net_find_server(unsigned flags, struct in_addr *server_ip, char **server_na
 		} else {
 			*server_ip = brow_ips;
 		}
-		*server_name = strdup(inet_ntoa(opt_dest_ip));
+		*server_name = SMB_STRDUP(inet_ntoa(opt_dest_ip));
 	} else if (!(flags & NET_FLAGS_LOCALHOST_DEFAULT_INSANE)) {
 		extern struct in_addr loopback_ip;
 		*server_ip = loopback_ip;
-		*server_name = strdup("127.0.0.1");
+		*server_name = SMB_STRDUP("127.0.0.1");
 	}
 
 	if (!server_name || !*server_name) {
@@ -422,8 +474,24 @@ static int net_getlocalsid(int argc, const char **argv)
 		name = global_myname();
 	}
 
+	if(!initialize_password_db(False)) {
+		DEBUG(0, ("WARNING: Could not open passdb - local sid may not reflect passdb\n"
+			  "backend knowlege (such as the sid stored in LDAP)\n"));
+	}
+
+	/* first check to see if we can even access secrets, so we don't
+	   panic when we can't. */
+
+	if (!secrets_init()) {
+		d_printf("Unable to open secrets.tdb.  Can't fetch domain SID for name: %s\n", name);
+		return 1;
+	}
+
+	/* Generate one, if it doesn't exist */
+	get_global_sam_sid();
+
 	if (!secrets_fetch_domain_sid(name, &sid)) {
-		DEBUG(0, ("Can't fetch domain SID for name: %s\n", name));	
+		DEBUG(0, ("Can't fetch domain SID for name: %s\n", name));
 		return 1;
 	}
 	sid_to_string(sid_str, &sid);
@@ -455,6 +523,14 @@ static int net_getdomainsid(int argc, const char **argv)
 {
 	DOM_SID domain_sid;
 	fstring sid_str;
+
+	if(!initialize_password_db(False)) {
+		DEBUG(0, ("WARNING: Could not open passdb - domain sid may not reflect passdb\n"
+			  "backend knowlege (such as the sid stored in LDAP)\n"));
+	}
+
+	/* Generate one, if it doesn't exist */
+	get_global_sam_sid();
 
 	if (!secrets_fetch_domain_sid(global_myname(), &domain_sid)) {
 		d_printf("Could not fetch local SID\n");
@@ -629,6 +705,7 @@ static struct functable net_func[] = {
 	{"MAXRID", net_maxrid},
 	{"IDMAP", net_idmap},
 	{"STATUS", net_status},
+	{"USERSIDLIST", net_usersidlist},
 #ifdef WITH_FAKE_KASERVER
 	{"AFSKEY", net_afskey},
 #endif
@@ -668,15 +745,24 @@ static struct functable net_func[] = {
 		{"timeout",	't', POPT_ARG_INT,    &opt_timeout},
 		{"machine-pass",'P', POPT_ARG_NONE,   &opt_machine_pass},
 		{"myworkgroup", 'W', POPT_ARG_STRING, &opt_workgroup},
+		{"verbose",	'v', POPT_ARG_NONE,   &opt_verbose},
+		/* Options for 'net groupmap set' */
+		{"local",       'L', POPT_ARG_NONE,   &opt_localgroup},
+		{"domain",      'D', POPT_ARG_NONE,   &opt_domaingroup},
+		{"ntname",      'N', POPT_ARG_STRING, &opt_newntname},
+		{"rid",         'R', POPT_ARG_INT,    &opt_rid},
+		/* Options for 'net rpc share migrate' */
+		{"acls",	0, POPT_ARG_NONE,     &opt_acls},
+		{"attrs",	0, POPT_ARG_NONE,     &opt_attrs},
+		{"timestamps",	0, POPT_ARG_NONE,     &opt_timestamps},
+		{"exclude",	'e', POPT_ARG_STRING, &opt_exclude},
+		{"destination",	0, POPT_ARG_STRING,   &opt_destination},
+
 		POPT_COMMON_SAMBA
 		{ 0, 0, 0, 0}
 	};
 
 	zero_ip(&opt_dest_ip);
-
-#ifdef WITH_OPENDIRECTORY
-	get_opendirectory_authenticator();
-#endif
 
 	/* set default debug level to 0 regardless of what smb.conf sets */
 	DEBUGLEVEL_CLASS[DBGC_ALL] = 0;
@@ -700,7 +786,7 @@ static struct functable net_func[] = {
 			break;
 		case 'U':
 			opt_user_specified = True;
-			opt_user_name = strdup(opt_user_name);
+			opt_user_name = SMB_STRDUP(opt_user_name);
 			p = strchr(opt_user_name,'%');
 			if (p) {
 				*p = 0;
@@ -732,10 +818,8 @@ static struct functable net_func[] = {
 		}
 	}
 
-	if (!opt_requester_name) {
-		static fstring myname;
-		get_myname(myname);
-		opt_requester_name = myname;
+	if (opt_requester_name) {
+		set_global_myname(opt_requester_name);
 	}
 
 	if (!opt_user_name && getenv("LOGNAME")) {

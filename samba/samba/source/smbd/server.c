@@ -22,7 +22,7 @@
 
 #include "includes.h"
 
-int am_parent = 1;
+static int am_parent = 1;
 
 /* the last message the was processed */
 int last_message = -1;
@@ -45,6 +45,10 @@ extern int dcelogin_atmost_once;
    descriptor private to smbd
  */
 static int server_fd = -1;
+
+#ifdef WITH_BRLM
+BOOL brlm_init = False;
+#endif
 
 int smbd_server_fd(void)
 {
@@ -132,6 +136,13 @@ static BOOL open_sockets_inetd(void)
 	set_socket_options(smbd_server_fd(),"SO_KEEPALIVE");
 	set_socket_options(smbd_server_fd(), user_socket_options);
 
+#ifdef WITH_BRLM
+	if (lp_BRLM() && !brlm_init) {
+		BRLMInit();
+		brlm_init = True;
+	}
+#endif
+
 	return True;
 }
 
@@ -145,7 +156,7 @@ static void msg_exit_server(int msg_type, pid_t src, void *buf, size_t len)
  Have we reached the process limit ?
 ****************************************************************************/
 
-BOOL allowable_number_of_smbd_processes(void)
+static BOOL allowable_number_of_smbd_processes(void)
 {
 	int max_processes = lp_max_smbd_processes();
 
@@ -249,7 +260,10 @@ static BOOL open_sockets_smbd(BOOL is_daemon, BOOL interactive, const char *smb_
 				/* ready to listen */
 				set_socket_options(s,"SO_KEEPALIVE"); 
 				set_socket_options(s,user_socket_options);
-      
+     
+				/* Set server socket to non-blocking for the accept. */
+				set_blocking(s,False); 
+ 
 				if (listen(s, SMBD_LISTEN_BACKLOG) == -1) {
 					DEBUG(0,("listen: %s\n",strerror(errno)));
 					close(s);
@@ -286,6 +300,9 @@ static BOOL open_sockets_smbd(BOOL is_daemon, BOOL interactive, const char *smb_
 			set_socket_options(s,"SO_KEEPALIVE"); 
 			set_socket_options(s,user_socket_options);
 			
+			/* Set server socket to non-blocking for the accept. */
+			set_blocking(s,False); 
+ 
 			if (listen(s, SMBD_LISTEN_BACKLOG) == -1) {
 				DEBUG(0,("open_sockets_smbd: listen: %s\n",
 					 strerror(errno)));
@@ -378,9 +395,18 @@ static BOOL open_sockets_smbd(BOOL is_daemon, BOOL interactive, const char *smb_
 				continue;
 			}
 
-			if (smbd_server_fd() != -1 && interactive)
+			/* Ensure child is set to blocking mode */
+			set_blocking(smbd_server_fd(),True);
+
+			if (smbd_server_fd() != -1 && interactive) {
+#ifdef WITH_BRLM
+				if (lp_BRLM() && !brlm_init) {
+					BRLMInit();
+					brlm_init = True;
+				}
+#endif
 				return True;
-			
+			}
 			if (allowable_number_of_smbd_processes() && smbd_server_fd() != -1 && sys_fork()==0) {
 				/* Child code ... */
 				
@@ -400,20 +426,23 @@ static BOOL open_sockets_smbd(BOOL is_daemon, BOOL interactive, const char *smb_
 				   in smbstatus for port 445 connects */
 				set_remote_machine_name(get_peer_addr(smbd_server_fd()), False);
 				
-				/* Reset global variables in util.c so
-				   that client substitutions will be
-				   done correctly in the process.  */
-				reset_globals_after_fork();
+				/* Reset the state of the random
+				 * number generation system, so
+				 * children do not get the same random
+				 * numbers as each other */
 
-				/* tdb needs special fork handling */
+				set_need_random_reseed();
+				/* tdb needs special fork handling - remove CLEAR_IF_FIRST flags */
 				if (tdb_reopen_all() == -1) {
 					DEBUG(0,("tdb_reopen_all failed.\n"));
-					return False;
+					smb_panic("tdb_reopen_all failed.");
 				}
 
 #ifdef WITH_BRLM
-				if (lp_BRLM())
+				if (lp_BRLM() && !brlm_init) {
 					BRLMInit();
+					brlm_init = True;
+				}
 #endif
 
 				return True; 
@@ -490,21 +519,20 @@ BOOL reload_services(BOOL test)
 
 	load_interfaces();
 
-	{
-		if (smbd_server_fd() != -1) {      
-			set_socket_options(smbd_server_fd(),"SO_KEEPALIVE");
-			set_socket_options(smbd_server_fd(), user_socket_options);
-		}
+	if (smbd_server_fd() != -1) {      
+		set_socket_options(smbd_server_fd(),"SO_KEEPALIVE");
+		set_socket_options(smbd_server_fd(), user_socket_options);
 	}
 
 	mangle_reset_cache();
 	reset_stat_cache();
 
 	/* this forces service parameters to be flushed */
-	set_current_service(NULL,True);
+	set_current_service(NULL,0,True);
 
 	return(ret);
 }
+
 
 #if DUMP_CORE
 /*******************************************************************
@@ -540,6 +568,10 @@ static BOOL dump_core(void)
 
 
 	DEBUG(0,("Dumping core in %s\n", dname));
+	/* Ensure we don't have a signal handler for abort. */
+#ifdef SIGABRT
+	CatchSignal(SIGABRT,SIGNAL_CAST SIG_DFL);
+#endif
 	abort();
 	return(True);
 }
@@ -604,7 +636,7 @@ void exit_server(const char *reason)
 	printing_end();
 
 #ifdef WITH_BRLM
-    if(lp_BRLM())
+    if(lp_BRLM() && brlm_init)
        BRLMClose();
 #endif
 
@@ -715,7 +747,7 @@ void build_options(BOOL screen);
 
 	/* we want to re-seed early to prevent time delays causing
            client problems at a later date. (tridge) */
-	generate_random_buffer(NULL, 0, False);
+	generate_random_buffer(NULL, 0);
 
 	/* make absolutely sure we run as root - to handle cases where people
 	   are crazy enough to have it setuid */
@@ -818,30 +850,15 @@ void build_options(BOOL screen);
 	if (is_daemon)
 		pidfile_create("smbd");
 
+	/* Setup all the TDB's - including CLEAR_IF_FIRST tdb's. */
 	if (!message_init())
 		exit(1);
 
-	if (!print_backend_init())
+	if (!session_init())
 		exit(1);
 
-	/* Setup the main smbd so that we can get messages. */
-	claim_connection(NULL,"",0,True,FLAG_MSG_GENERAL|FLAG_MSG_SMBD);
-
-	/* 
-	   DO NOT ENABLE THIS TILL YOU COPE WITH KILLING THESE TASKS AND INETD
-	   THIS *killed* LOTS OF BUILD FARM MACHINES. IT CREATED HUNDREDS OF 
-	   smbd PROCESSES THAT NEVER DIE
-	   start_background_queue(); 
-	*/
-
-	if (!open_sockets_smbd(is_daemon, interactive, ports))
+	if (conn_tdb_ctx() == NULL)
 		exit(1);
-
-	/*
-	 * everything after this point is run after the fork()
-	 */ 
-
-	namecache_enable();
 
 	if (!locking_init(0))
 		exit(1);
@@ -849,8 +866,33 @@ void build_options(BOOL screen);
 	if (!share_info_db_init())
 		exit(1);
 
+	namecache_enable();
+
 	if (!init_registry())
 		exit(1);
+
+	if (!print_backend_init())
+		exit(1);
+
+	/* Setup the main smbd so that we can get messages. */
+	/* don't worry about general printing messages here */
+
+	claim_connection(NULL,"",0,True,FLAG_MSG_GENERAL|FLAG_MSG_SMBD);
+
+	/* only start the background queue daemon if we are 
+	   running as a daemon -- bad things will happen if
+	   smbd is launched via inetd and we fork a copy of 
+	   ourselves here */
+
+	if ( is_daemon )
+		start_background_queue(); 
+
+	if (!open_sockets_smbd(is_daemon, interactive, ports))
+		exit(1);
+
+	/*
+	 * everything after this point is run after the fork()
+	 */ 
 
 	/* Initialise the password backed before the global_sam_sid
 	   to ensure that we fetch from ldap before we make a domain sid up */
@@ -897,6 +939,15 @@ void build_options(BOOL screen);
 	smbd_process();
 	
 	namecache_shutdown();
+
+	if (interactive) {
+		TALLOC_CTX *mem_ctx = talloc_init("end_description");
+		char *description = talloc_describe_all(mem_ctx);
+
+		DEBUG(3, ("tallocs left:\n%s\n", description));
+		talloc_destroy(mem_ctx);
+	}
+
 	exit_server("normal exit");
 	return(0);
 }

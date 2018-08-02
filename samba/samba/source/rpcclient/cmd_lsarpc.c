@@ -69,7 +69,7 @@ static NTSTATUS cmd_lsa_query_info_policy(struct cli_state *cli,
 	POLICY_HND pol;
 	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
 	DOM_SID *dom_sid;
-	GUID *dom_guid;
+	struct uuid *dom_guid;
 	fstring sid_str;
 	char *domain_name = NULL;
 	char *dns_name = NULL;
@@ -128,7 +128,7 @@ static NTSTATUS cmd_lsa_query_info_policy(struct cli_state *cli,
 
 	if (info_class == 12) {
 		printf("domain GUID is ");
-		print_guid(&dom_guid);
+		smb_uuid_string_static(*dom_guid);
 	}
  done:
 	return result;
@@ -207,7 +207,7 @@ static NTSTATUS cmd_lsa_lookup_sids(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	/* Convert arguments to sids */
 
-	sids = (DOM_SID *)talloc(mem_ctx, sizeof(DOM_SID) * (argc - 1));
+	sids = TALLOC_ARRAY(mem_ctx, DOM_SID, argc - 1);
 
 	if (!sids) {
 		printf("could not allocate memory for %d sids\n", argc - 1);

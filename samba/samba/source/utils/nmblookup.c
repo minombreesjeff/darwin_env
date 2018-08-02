@@ -102,11 +102,12 @@ static void do_node_status(int fd, const char *name, int type, struct in_addr ip
 	struct nmb_name nname;
 	int count, i, j;
 	struct node_status *status;
+	struct node_status_extra extra;
 	fstring cleanname;
 
 	d_printf("Looking up status of %s\n",inet_ntoa(ip));
 	make_nmb_name(&nname, name, type);
-	status = node_status_query(fd,&nname,ip, &count);
+	status = node_status_query(fd,&nname,ip, &count, &extra);
 	if (status) {
 		for (i=0;i<count;i++) {
 			pull_ascii_fstring(cleanname, status[i].name);
@@ -117,9 +118,15 @@ static void do_node_status(int fd, const char *name, int type, struct in_addr ip
 			       cleanname,status[i].type,
 			       node_status_flags(status[i].flags));
 		}
+		d_printf("\n\tMAC Address = %02X-%02X-%02X-%02X-%02X-%02X\n",
+				extra.mac_addr[0], extra.mac_addr[1],
+				extra.mac_addr[2], extra.mac_addr[3],
+				extra.mac_addr[4], extra.mac_addr[5]);
+		d_printf("\n");
 		SAFE_FREE(status);
+	} else {
+		d_printf("No reply from %s\n\n",inet_ntoa(ip));
 	}
-	d_printf("\n");
 }
 
 

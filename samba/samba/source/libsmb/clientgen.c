@@ -176,7 +176,12 @@ void cli_setup_packet(struct cli_state *cli)
 	SSVAL(cli->outbuf,smb_mid,cli->mid);
 	if (cli->protocol > PROTOCOL_CORE) {
 		uint16 flags2;
-		SCVAL(cli->outbuf,smb_flg,0x8);
+		if (cli->case_sensitive) {
+			SCVAL(cli->outbuf,smb_flg,0x0);
+		} else {
+			/* Default setting, case insensitive. */
+			SCVAL(cli->outbuf,smb_flg,0x8);
+		}
 		flags2 = FLAGS2_LONG_PATH_COMPONENTS;
 		if (cli->capabilities & CAP_UNICODE)
 			flags2 |= FLAGS2_UNICODE_STRINGS;
@@ -248,7 +253,7 @@ struct cli_state *cli_initialise(struct cli_state *cli)
 	}
 
 	if (!cli) {
-		cli = (struct cli_state *)malloc(sizeof(*cli));
+		cli = SMB_MALLOC_P(struct cli_state);
 		if (!cli)
 			return NULL;
 		ZERO_STRUCTP(cli);
@@ -270,9 +275,10 @@ struct cli_state *cli_initialise(struct cli_state *cli)
 	cli->timeout = 20000; /* Timeout is in milliseconds. */
 	cli->bufsize = CLI_BUFFER_SIZE+4;
 	cli->max_xmit = cli->bufsize;
-	cli->outbuf = (char *)malloc(cli->bufsize+SAFETY_MARGIN);
-	cli->inbuf = (char *)malloc(cli->bufsize+SAFETY_MARGIN);
+	cli->outbuf = (char *)SMB_MALLOC(cli->bufsize+SAFETY_MARGIN);
+	cli->inbuf = (char *)SMB_MALLOC(cli->bufsize+SAFETY_MARGIN);
 	cli->oplock_handler = cli_oplock_ack;
+	cli->case_sensitive = False;
 
 	cli->use_spnego = lp_client_use_spnego();
 
@@ -372,6 +378,21 @@ void cli_close_connection(struct cli_state *cli)
 	cli_nt_session_close(cli);
 	cli_nt_netlogon_netsec_session_close(cli);
 
+	/*
+	 * tell our peer to free his resources.  Wihtout this, when an
+	 * application attempts to do a graceful shutdown and calls
+	 * smbc_free_context() to clean up all connections, some connections
+	 * can remain active on the peer end, until some (long) timeout period
+	 * later.  This tree disconnect forces the peer to clean up, since the
+	 * connection will be going away.
+	 *
+	 * Also, do not do tree disconnect when cli->smb_rw_error is DO_NOT_DO_TDIS
+	 * the only user for this so far is smbmount which passes opened connection
+	 * down to kernel's smbfs module.
+	 */
+	if ( (cli->cnum != (uint16)-1) && (cli->smb_rw_error != DO_NOT_DO_TDIS ) )
+		cli_tdis(cli);
+        
 	SAFE_FREE(cli->outbuf);
 	SAFE_FREE(cli->inbuf);
 
@@ -427,6 +448,17 @@ uint16 cli_setpid(struct cli_state *cli, uint16 pid)
 {
 	uint16 ret = cli->pid;
 	cli->pid = pid;
+	return ret;
+}
+
+/****************************************************************************
+ Set the case sensitivity flag on the packets. Returns old state.
+****************************************************************************/
+
+BOOL cli_set_case_sensitive(struct cli_state *cli, BOOL case_sensitive)
+{
+	BOOL ret = cli->case_sensitive;
+	cli->case_sensitive = case_sensitive;
 	return ret;
 }
 

@@ -22,9 +22,6 @@
 */
 
 #include "includes.h"
-#ifdef WITH_OPENDIRECTORY
-#include "libopendirectorycommon.h"
-#endif
 
 #define BIT_BACKEND	0x00000004
 #define BIT_VERBOSE	0x00000008
@@ -51,6 +48,8 @@
 #define BIT_IMPORT	0x01000000
 #define BIT_EXPORT	0x02000000
 #define BIT_FIX_INIT    0x04000000
+#define BIT_BADPWRESET	0x08000000
+#define BIT_LOGONHOURS	0x10000000
 
 #define MASK_ALWAYS_GOOD	0x0000001F
 #define MASK_USER_GOOD		0x00401F00
@@ -59,8 +58,11 @@
  Add all currently available users to another db
  ********************************************************/
 
-static int export_database (struct pdb_context *in, struct pdb_context *out) {
+static int export_database (struct pdb_context *in, struct pdb_context
+			    *out, const char *username) {
 	SAM_ACCOUNT *user = NULL;
+
+	DEBUG(3, ("called with username=\"%s\"\n", username));
 
 	if (NT_STATUS_IS_ERR(in->pdb_setsampwent(in, 0))) {
 		fprintf(stderr, "Can't sampwent!\n");
@@ -73,10 +75,17 @@ static int export_database (struct pdb_context *in, struct pdb_context *out) {
 	}
 
 	while (NT_STATUS_IS_OK(in->pdb_getsampwent(in, user))) {
-		out->pdb_add_sam_account(out, user);
-		if (!NT_STATUS_IS_OK(pdb_reset_sam(user))){
-			fprintf(stderr, "Can't reset SAM_ACCOUNT!\n");
-			return 1;
+		DEBUG(4, ("Processing account %s\n",
+			  user->private.username));
+		if (!username || 
+		    (strcmp(username, user->private.username)
+		     == 0)) {
+			out->pdb_add_sam_account(out, user);
+			if (!NT_STATUS_IS_OK(pdb_reset_sam(user))) {
+				fprintf(stderr,
+					"Can't reset SAM_ACCOUNT!\n");
+				return 1;
+			}
 		}
 	}
 
@@ -122,6 +131,9 @@ static int print_sam_info (SAM_ACCOUNT *sam_pwent, BOOL verbosity, BOOL smbpwdst
 	if (!sam_pwent) return -1;
 	
 	if (verbosity) {
+		pstring temp;
+		const uint8 *hours;
+		
 		printf ("Unix username:        %s\n", pdb_get_username(sam_pwent));
 		printf ("NT username:          %s\n", pdb_get_nt_username(sam_pwent));
 		printf ("Account Flags:        %s\n", pdb_encode_acct_ctrl(pdb_get_acct_ctrl(sam_pwent), NEW_PW_FORMAT_SPACE_PADDED_LEN));
@@ -156,6 +168,15 @@ static int print_sam_info (SAM_ACCOUNT *sam_pwent, BOOL verbosity, BOOL smbpwdst
 		
 		tmp = pdb_get_pass_must_change_time(sam_pwent);
 		printf ("Password must change: %s\n", tmp ? http_timestring(tmp) : "0");
+
+		tmp = pdb_get_bad_password_time(sam_pwent);
+		printf ("Last bad password   : %s\n", tmp ? http_timestring(tmp) : "0");
+		printf ("Bad password count  : %d\n", 
+			pdb_get_bad_password_count(sam_pwent));
+		
+		hours = pdb_get_hours(sam_pwent);
+		pdb_sethexhours(temp, (const char *)hours);
+		printf ("Logon hours         : %s\n", temp);
 		
 	} else if (smbpwdstyle) {
 		char lm_passwd[33];
@@ -189,11 +210,11 @@ static int print_user_info (struct pdb_context *in, const char *username, BOOL v
 {
 	SAM_ACCOUNT *sam_pwent=NULL;
 	BOOL ret;
-	
+
 	if (!NT_STATUS_IS_OK(pdb_init_sam (&sam_pwent))) {
 		return -1;
 	}
-	
+
 	ret = NT_STATUS_IS_OK(in->pdb_getsampwnam (in, sam_pwent, username));
 
 	if (ret==False) {
@@ -201,7 +222,7 @@ static int print_user_info (struct pdb_context *in, const char *username, BOOL v
 		pdb_free_sam(&sam_pwent);
 		return -1;
 	}
-	
+
 	ret=print_sam_info (sam_pwent, verbosity, smbpwdstyle);
 	pdb_free_sam(&sam_pwent);
 	
@@ -254,13 +275,15 @@ static int fix_users_list (struct pdb_context *in)
 	if (!(NT_STATUS_IS_OK(pdb_init_sam(&sam_pwent)))) return 1;
 
 	while (check && (ret = NT_STATUS_IS_OK(in->pdb_getsampwent (in, sam_pwent)))) {
+		printf("Updating record for user %s\n", pdb_get_username(sam_pwent));
+	
 		if (!pdb_update_sam_account(sam_pwent)) {
-			DEBUG(0, ("Update of user %s failed!\n", pdb_get_username(sam_pwent)));
+			printf("Update of user %s failed!\n", pdb_get_username(sam_pwent));
 		}
 		pdb_free_sam(&sam_pwent);
 		check = NT_STATUS_IS_OK(pdb_init_sam(&sam_pwent));
 		if (!check) {
-			DEBUG(0, ("Failed to initialise new SAM_ACCOUNT structure (out of memory?)\n"));
+			fprintf(stderr, "Failed to initialise new SAM_ACCOUNT structure (out of memory?)\n");
 		}
 			
 	}
@@ -278,8 +301,10 @@ static int set_user_info (struct pdb_context *in, const char *username,
 			  const char *fullname, const char *homedir, 
 			  const char *drive, const char *script, 
 			  const char *profile, const char *account_control,
-			  const char *user_sid, const char *group_sid)
+			  const char *user_sid, const char *group_sid,
+			  const BOOL badpw, const BOOL hours)
 {
+	BOOL updated_autolock = False, updated_badpw = False;
 	SAM_ACCOUNT *sam_pwent=NULL;
 	BOOL ret;
 	
@@ -291,7 +316,25 @@ static int set_user_info (struct pdb_context *in, const char *username,
 		pdb_free_sam(&sam_pwent);
 		return -1;
 	}
+
+	if (hours) {
+		uint8 hours_array[MAX_HOURS_LEN];
+		uint32 hours_len;
+		
+		hours_len = pdb_get_hours_len(sam_pwent);
+		memset(hours_array, 0xff, hours_len);
+		
+		pdb_set_hours(sam_pwent, hours_array, PDB_CHANGED);
+	}
 	
+	if (!pdb_update_autolock_flag(sam_pwent, &updated_autolock)) {
+		DEBUG(2,("pdb_update_autolock_flag failed.\n"));
+	}
+
+	if (!pdb_update_bad_password_count(sam_pwent, &updated_badpw)) {
+		DEBUG(2,("pdb_update_bad_password_count failed.\n"));
+	}
+
 	if (fullname)
 		pdb_set_fullname(sam_pwent, fullname, PDB_CHANGED);
 	if (homedir)
@@ -349,7 +392,12 @@ static int set_user_info (struct pdb_context *in, const char *username,
 		}
 		pdb_set_group_sid (sam_pwent, &g_sid, PDB_CHANGED);
 	}
-	
+
+	if (badpw) {
+		pdb_set_bad_password_count(sam_pwent, 0, PDB_CHANGED);
+		pdb_set_bad_password_time(sam_pwent, 0, PDB_CHANGED);
+	}
+
 	if (NT_STATUS_IS_OK(in->pdb_update_sam_account (in, sam_pwent)))
 		print_user_info (in, username, True, False);
 	else {
@@ -373,16 +421,18 @@ static int new_user (struct pdb_context *in, const char *username,
 	NTSTATUS nt_status;
 	char *password1, *password2, *staticpass;
 	
+	get_global_sam_sid();
+
 	if (!NT_STATUS_IS_OK(nt_status = pdb_init_sam_new(&sam_pwent, username, 0))) {
 		DEBUG(0, ("could not create account to add new user %s\n", username));
 		return -1;
 	}
 
 	staticpass = getpass("new password:");
-	password1 = strdup(staticpass);
+	password1 = SMB_STRDUP(staticpass);
 	memset(staticpass, 0, strlen(staticpass));
 	staticpass = getpass("retype new password:");
-	password2 = strdup(staticpass);
+	password2 = SMB_STRDUP(staticpass);
 	memset(staticpass, 0, strlen(staticpass));
 	if (strcmp (password1, password2)) {
 		fprintf (stderr, "Passwords does not match!\n");
@@ -465,6 +515,8 @@ static int new_machine (struct pdb_context *in, const char *machine_in)
 	fstring machineaccount;
 	struct passwd  *pwd = NULL;
 	
+	get_global_sam_sid();
+
 	fstrcpy(machinename, machine_in); 
 	machinename[15]= '\0';
 
@@ -477,7 +529,7 @@ static int new_machine (struct pdb_context *in, const char *machine_in)
 	fstrcat(machineaccount, "$");
 
 	if ((pwd = getpwnam_alloc(machineaccount))) {
-		if (!NT_STATUS_IS_OK(pdb_init_sam_pw( &sam_pwent, pwd))) {
+		if (!NT_STATUS_IS_OK(pdb_init_sam_pw( &sam_pwent, pwd, False))) {
 			fprintf(stderr, "Could not init sam from pw\n");
 			passwd_free(&pwd);
 			return -1;
@@ -596,6 +648,8 @@ int main (int argc, char **argv)
 	static char *group_sid = NULL;
 	static long int account_policy_value = 0;
 	BOOL account_policy_value_set = False;
+	static BOOL badpw_reset = False;
+	static BOOL hours_reset = False;
 
 	struct pdb_context *bin;
 	struct pdb_context *bout;
@@ -626,6 +680,8 @@ int main (int argc, char **argv)
 		{"value",       'C', POPT_ARG_LONG, &account_policy_value, 'C',"set the account policy to this value", NULL},
 		{"account-control",	'c', POPT_ARG_STRING, &account_control, 0, "Values of account control", NULL},
 		{"force-initialized-passwords", 0, POPT_ARG_NONE, &force_initialised_password, 0, "Force initialization of corrupt password strings in a passdb backend", NULL},
+		{"bad-password-count-reset", 'z', POPT_ARG_NONE, &badpw_reset, 0, "reset bad password count", NULL},
+		{"logon-hours-reset", 'Z', POPT_ARG_NONE, &hours_reset, 0, "reset logon hours", NULL},
 		POPT_COMMON_SAMBA
 		POPT_TABLEEND
 	};
@@ -656,9 +712,6 @@ int main (int argc, char **argv)
 	if(!initialize_password_db(False))
 		exit(1);
 
-#ifdef WITH_OPENDIRECTORY
-	get_opendirectory_authenticator();
-#endif
 	if (!init_names())
 		exit(1);
 
@@ -681,7 +734,9 @@ int main (int argc, char **argv)
 			(account_policy ? BIT_ACCPOLICY : 0) +
 			(account_policy_value_set ? BIT_ACCPOLVAL : 0) +
 			(backend_in ? BIT_IMPORT : 0) +
-			(backend_out ? BIT_EXPORT : 0);
+			(backend_out ? BIT_EXPORT : 0) +
+			(badpw_reset ? BIT_BADPWRESET : 0) +
+			(hours_reset ? BIT_LOGONHOURS : 0);
 
 	if (setparms & BIT_BACKEND) {
 		if (!NT_STATUS_IS_OK(make_pdb_context_string(&bdef, backend))) {
@@ -707,7 +762,12 @@ int main (int argc, char **argv)
 		uint32 value;
 		int field = account_policy_name_to_fieldnum(account_policy);
 		if (field == 0) {
+			char *apn = account_policy_names_list();
 			fprintf(stderr, "No account policy by that name\n");
+			if (apn) {
+				fprintf(stderr, "Account policy names are :\n%s\n", apn);
+			}
+			SAFE_FREE(apn);
 			exit(1);
 		}
 		if (!account_policy_get(field, &value)) {
@@ -730,7 +790,7 @@ int main (int argc, char **argv)
 
 	/* import and export operations */
 	if (((checkparms & BIT_IMPORT) || (checkparms & BIT_EXPORT))
-			&& !(checkparms & ~(BIT_IMPORT +BIT_EXPORT))) {
+	    && !(checkparms & ~(BIT_IMPORT +BIT_EXPORT +BIT_USER))) {
 		if (backend_in) {
 			if (!NT_STATUS_IS_OK(make_pdb_context_string(&bin, backend_in))) {
 				fprintf(stderr, "Can't initialize passdb backend.\n");
@@ -748,9 +808,15 @@ int main (int argc, char **argv)
 			bout = bdef;
 		}
 		if (transfer_groups) {
-			return export_groups(bin, bout);
+			if (!(checkparms & BIT_USER))
+				return export_groups(bin, bout);
 		} else {
-			return export_database(bin, bout);
+			if (checkparms & BIT_USER)
+				return export_database(bin, bout,
+						       user_name);
+			else
+				return export_database(bin, bout,
+						       NULL);
 		}
 	}
 
@@ -778,6 +844,18 @@ int main (int argc, char **argv)
 	
 	/* mask out users options */
 	checkparms &= ~MASK_USER_GOOD;
+
+	/* if bad password count is reset, we must be modifying */
+	if (checkparms & BIT_BADPWRESET) {
+		checkparms |= BIT_MODIFY;
+		checkparms &= ~BIT_BADPWRESET;
+	}
+
+	/* if logon hours is reset, must modify */
+	if (checkparms & BIT_LOGONHOURS) {
+		checkparms |= BIT_MODIFY;
+		checkparms &= ~BIT_LOGONHOURS;
+	}
 	
 	/* account operation */
 	if ((checkparms & BIT_CREATE) || (checkparms & BIT_MODIFY) || (checkparms & BIT_DELETE)) {
@@ -814,7 +892,8 @@ int main (int argc, char **argv)
 					      home_drive,
 					      logon_script,
 					      profile_path, account_control,
-					      user_sid, group_sid);
+					      user_sid, group_sid,
+					      badpw_reset, hours_reset);
 		}
 	}
 

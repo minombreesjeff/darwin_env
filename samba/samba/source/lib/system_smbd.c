@@ -53,7 +53,7 @@ static int getgrouplist_internals(const char *user, gid_t gid, gid_t *groups, in
 		return -1;
 	}
 	
-	gids_saved = (gid_t *)malloc(sizeof(gid_t) * (ngrp_saved+1));
+	gids_saved = SMB_MALLOC_ARRAY(gid_t, ngrp_saved+1);
 	if (!gids_saved) {
 		errno = ENOMEM;
 		return -1;
@@ -88,6 +88,10 @@ static int getgrouplist_internals(const char *user, gid_t gid, gid_t *groups, in
 			groups[0] = gid;
 			*grpcnt = ret + 1;
 		}
+		
+		/* remove any duplicates gids in the list */
+
+		remove_duplicate_gids( grpcnt, groups );
 	}
 
 	restore_re_gid();
@@ -99,7 +103,7 @@ static int getgrouplist_internals(const char *user, gid_t gid, gid_t *groups, in
 		free(gids_saved);
 		return -1;
 	}
-
+	
 	free(gids_saved);
 	return ret;
 }

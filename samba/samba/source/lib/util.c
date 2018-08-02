@@ -23,6 +23,9 @@
 
 #include "includes.h"
 
+/* Max allowable allococation - 256mb - 0x10000000 */
+#define MAX_ALLOC_SIZE (1024*1024*256)
+
 #if (defined(HAVE_NETGROUP) && defined (WITH_AUTOMOUNT))
 #ifdef WITH_NISPLUS_HOME
 #ifdef BROKEN_NISPLUS_INCLUDE_FILES
@@ -46,10 +49,6 @@
 
 #include <rpcsvc/nis.h>
 
-#else /* !WITH_NISPLUS_HOME */
-
-#include "rpcsvc/ypclnt.h"
-
 #endif /* WITH_NISPLUS_HOME */
 #endif /* HAVE_NETGROUP && WITH_AUTOMOUNT */
 
@@ -62,19 +61,6 @@ file_info def_finfo = {-1,0,0,0,0,0,0,"",""};
 int chain_size = 0;
 
 int trans_num = 0;
-
-/*
-   case handling on filenames 
-*/
-int case_default = CASE_LOWER;
-
-/* the following control case operations - they are put here so the
-   client can link easily */
-BOOL case_sensitive;
-BOOL case_preserve;
-BOOL use_mangled_map = False;
-BOOL short_case_preserve;
-BOOL case_mangle;
 
 static enum remote_arch_types ra_type = RA_UNKNOWN;
 pstring user_socket_options=DEFAULT_SOCKET_OPTIONS;   
@@ -96,7 +82,7 @@ static char **smb_my_netbios_names;
 BOOL set_global_myname(const char *myname)
 {
 	SAFE_FREE(smb_myname);
-	smb_myname = strdup(myname);
+	smb_myname = SMB_STRDUP(myname);
 	if (!smb_myname)
 		return False;
 	strupper_m(smb_myname);
@@ -115,7 +101,7 @@ const char *global_myname(void)
 BOOL set_global_myworkgroup(const char *myworkgroup)
 {
 	SAFE_FREE(smb_myworkgroup);
-	smb_myworkgroup = strdup(myworkgroup);
+	smb_myworkgroup = SMB_STRDUP(myworkgroup);
 	if (!smb_myworkgroup)
 		return False;
 	strupper_m(smb_myworkgroup);
@@ -134,7 +120,7 @@ const char *lp_workgroup(void)
 BOOL set_global_scope(const char *scope)
 {
 	SAFE_FREE(smb_scope);
-	smb_scope = strdup(scope);
+	smb_scope = SMB_STRDUP(scope);
 	if (!smb_scope)
 		return False;
 	strupper_m(smb_scope);
@@ -168,7 +154,7 @@ static BOOL allocate_my_netbios_names_array(size_t number)
 	free_netbios_names_array();
 
 	smb_num_netbios_names = number + 1;
-	smb_my_netbios_names = (char **)malloc( sizeof(char *) * smb_num_netbios_names );
+	smb_my_netbios_names = SMB_MALLOC_ARRAY( char *, smb_num_netbios_names );
 
 	if (!smb_my_netbios_names)
 		return False;
@@ -181,7 +167,7 @@ static BOOL set_my_netbios_names(const char *name, int i)
 {
 	SAFE_FREE(smb_my_netbios_names[i]);
 
-	smb_my_netbios_names[i] = strdup(name);
+	smb_my_netbios_names[i] = SMB_STRDUP(name);
 	if (!smb_my_netbios_names[i])
 		return False;
 	strupper_m(smb_my_netbios_names[i]);
@@ -306,6 +292,28 @@ BOOL in_group(gid_t group, gid_t current_gid, int ngroups, const gid_t *groups)
 }
 
 /****************************************************************************
+ Add a gid to an array of gids if it's not already there.
+****************************************************************************/
+
+void add_gid_to_array_unique(gid_t gid, gid_t **gids, int *num)
+{
+	int i;
+
+	for (i=0; i<*num; i++) {
+		if ((*gids)[i] == gid)
+			return;
+	}
+	
+	*gids = SMB_REALLOC_ARRAY(*gids, gid_t, *num+1);
+
+	if (*gids == NULL)
+		return;
+
+	(*gids)[*num] = gid;
+	*num += 1;
+}
+
+/****************************************************************************
  Like atoi but gets the value up to the separator character.
 ****************************************************************************/
 
@@ -346,7 +354,7 @@ const char *get_numlist(const char *p, uint32 **num, int *count)
 	while ((p = Atoic(p, &val, ":,")) != NULL && (*p) != ':') {
 		uint32 *tn;
 		
-		tn = Realloc((*num), ((*count)+1) * sizeof(uint32));
+		tn = SMB_REALLOC_ARRAY((*num), uint32, (*count)+1);
 		if (tn == NULL) {
 			SAFE_FREE(*num);
 			return NULL;
@@ -551,7 +559,7 @@ void dos_clean_name(char *s)
 	/* remove any double slashes */
 	all_string_sub(s, "\\\\", "\\", 0);
 
-	while ((p = strstr(s,"\\..\\")) != NULL) {
+	while ((p = strstr_m(s,"\\..\\")) != NULL) {
 		pstring s1;
 
 		*p = 0;
@@ -589,7 +597,7 @@ void unix_clean_name(char *s)
 			pstrcpy(s,"./");
 	}
 
-	while ((p = strstr(s,"/../")) != NULL) {
+	while ((p = strstr_m(s,"/../")) != NULL) {
 		pstring s1;
 
 		*p = 0;
@@ -609,7 +617,7 @@ void unix_clean_name(char *s)
  Make a dir struct.
 ****************************************************************************/
 
-void make_dir_struct(char *buf, const char *mask, const char *fname,SMB_OFF_T size,int mode,time_t date)
+void make_dir_struct(char *buf, const char *mask, const char *fname,SMB_OFF_T size,int mode,time_t date, BOOL case_sensitive)
 {  
 	char *p;
 	pstring mask2;
@@ -722,7 +730,7 @@ ssize_t transfer_file_internal(int infd, int outfd, size_t n, ssize_t (*read_fn)
 	size_t num_to_read_thistime;
 	size_t num_written = 0;
 
-	if ((buf = malloc(TRANSFER_BUF_SIZE)) == NULL)
+	if ((buf = SMB_MALLOC(TRANSFER_BUF_SIZE)) == NULL)
 		return -1;
 
 	while (total < n) {
@@ -769,7 +777,7 @@ SMB_OFF_T transfer_file(int infd,int outfd,SMB_OFF_T n)
  Sleep for a specified number of milliseconds.
 ********************************************************************/
 
-void msleep(unsigned int t)
+void smb_msleep(unsigned int t)
 {
 	unsigned int tdiff=0;
 	struct timeval tval,t1,t2;  
@@ -850,6 +858,76 @@ BOOL yesno(char *p)
 	return(False);
 }
 
+#if defined(PARANOID_MALLOC_CHECKER)
+
+/****************************************************************************
+ Internal malloc wrapper. Externally visible.
+****************************************************************************/
+
+void *malloc_(size_t size)
+{
+#undef malloc
+	return malloc(size);
+#define malloc(s) __ERROR_DONT_USE_MALLOC_DIRECTLY
+}
+
+/****************************************************************************
+ Internal calloc wrapper. Not externally visible.
+****************************************************************************/
+
+static void *calloc_(size_t count, size_t size)
+{
+#undef calloc
+	return calloc(count, size);
+#define calloc(n,s) __ERROR_DONT_USE_CALLOC_DIRECTLY
+}
+
+/****************************************************************************
+ Internal realloc wrapper. Not externally visible.
+****************************************************************************/
+
+static void *realloc_(void *ptr, size_t size)
+{
+#undef realloc
+	return realloc(ptr, size);
+#define realloc(p,s) __ERROR_DONT_USE_RELLOC_DIRECTLY
+}
+
+#endif /* PARANOID_MALLOC_CHECKER */
+
+/****************************************************************************
+ Type-safe malloc.
+****************************************************************************/
+
+void *malloc_array(size_t el_size, unsigned int count)
+{
+	if (count >= MAX_ALLOC_SIZE/el_size) {
+		return NULL;
+	}
+
+#if defined(PARANOID_MALLOC_CHECKER)
+	return malloc_(el_size*count);
+#else
+	return malloc(el_size*count);
+#endif
+}
+
+/****************************************************************************
+ Type-safe calloc.
+****************************************************************************/
+
+void *calloc_array(size_t size, size_t nmemb)
+{
+	if (nmemb >= MAX_ALLOC_SIZE/size) {
+		return NULL;
+	}
+#if defined(PARANOID_MALLOC_CHECKER)
+	return calloc_(nmemb, size);
+#else
+	return calloc(nmemb, size);
+#endif
+}
+
 /****************************************************************************
  Expand a pointer to be a particular size.
 ****************************************************************************/
@@ -864,10 +942,17 @@ void *Realloc(void *p,size_t size)
 		return NULL;
 	}
 
+#if defined(PARANOID_MALLOC_CHECKER)
+	if (!p)
+		ret = (void *)malloc_(size);
+	else
+		ret = (void *)realloc_(p,size);
+#else
 	if (!p)
 		ret = (void *)malloc(size);
 	else
 		ret = (void *)realloc(p,size);
+#endif
 
 	if (!ret)
 		DEBUG(0,("Memory allocation error: failed to expand to %d bytes\n",(int)size));
@@ -875,17 +960,16 @@ void *Realloc(void *p,size_t size)
 	return(ret);
 }
 
-void *Realloc_zero(void *ptr, size_t size)
-{
-	void *tptr = NULL;
+/****************************************************************************
+ Type-safe realloc.
+****************************************************************************/
 		
-	tptr = Realloc(ptr, size);
-	if(tptr == NULL)
+void *realloc_array(void *p,size_t el_size, unsigned int count)
+{
+	if (count >= MAX_ALLOC_SIZE/el_size) {
 		return NULL;
-
-	memset((char *)tptr,'\0',size);
-
-	return tptr;
+	}
+	return Realloc(p,el_size*count);
 }
 
 /****************************************************************************
@@ -932,26 +1016,33 @@ BOOL get_myname(char *my_name)
 }
 
 /****************************************************************************
- Get my own name, including domain.
+ Get my own canonical name, including domain.
 ****************************************************************************/
 
-BOOL get_myfullname(char *my_name)
+BOOL get_mydnsfullname(fstring my_dnsname)
 {
-	pstring hostname;
+	static fstring dnshostname;
+	struct hostent *hp;
 
-	*hostname = 0;
+	if (!*dnshostname) {
+		/* get my host name */
+		if (gethostname(dnshostname, sizeof(dnshostname)) == -1) {
+			*dnshostname = '\0';
+			DEBUG(0,("gethostname failed\n"));
+			return False;
+		} 
 
-	/* get my host name */
-	if (gethostname(hostname, sizeof(hostname)) == -1) {
-		DEBUG(0,("gethostname failed\n"));
-		return False;
-	} 
+		/* Ensure null termination. */
+		dnshostname[sizeof(dnshostname)-1] = '\0';
 
-	/* Ensure null termination. */
-	hostname[sizeof(hostname)-1] = '\0';
-
-	if (my_name)
-		fstrcpy(my_name, hostname);
+		/* Ensure we get the cannonical name. */
+		if (!(hp = sys_gethostbyname(dnshostname))) {
+			*dnshostname = '\0';
+			return False;
+		}
+		fstrcpy(dnshostname, hp->h_name);
+	}
+	fstrcpy(my_dnsname, dnshostname);
 	return True;
 }
 
@@ -959,44 +1050,19 @@ BOOL get_myfullname(char *my_name)
  Get my own domain name.
 ****************************************************************************/
 
-BOOL get_mydomname(fstring my_domname)
+BOOL get_mydnsdomname(fstring my_domname)
 {
-	pstring hostname;
+	fstring domname;
 	char *p;
-	struct hostent *hp;
 
-	*hostname = 0;
-	/* get my host name */
-	if (gethostname(hostname, sizeof(hostname)) == -1) {
-		DEBUG(0,("gethostname failed\n"));
+	*my_domname = '\0';
+	if (!get_mydnsfullname(domname)) {
 		return False;
-	} 
-
-	/* Ensure null termination. */
-	hostname[sizeof(hostname)-1] = '\0';
-
-		
-	p = strchr_m(hostname, '.');
-
+	}	
+	p = strchr_m(domname, '.');
 	if (p) {
 		p++;
-		
-		if (my_domname)
-			fstrcpy(my_domname, p);
-	}
-
-	if (!(hp = sys_gethostbyname(hostname))) {
-		return False;
-	}
-	
-	p = strchr_m(hp->h_name, '.');
-
-	if (p) {
-		p++;
-		
-		if (my_domname)
-			fstrcpy(my_domname, p);
-		return True;
+		fstrcpy(my_domname, p);
 	}
 
 	return False;
@@ -1154,7 +1220,7 @@ static void strip_mount_options( pstring *str)
 *******************************************************************/
 
 #ifdef WITH_NISPLUS_HOME
-char *automount_lookup(const char *user_name)
+char *automount_lookup( char *user_name)
 {
 	static fstring last_key = "";
 	static pstring last_value = "";
@@ -1197,7 +1263,7 @@ char *automount_lookup(const char *user_name)
 }
 #else /* WITH_NISPLUS_HOME */
 
-char *automount_lookup(const char *user_name)
+char *automount_lookup( char *user_name)
 {
 	static fstring last_key = "";
 	static pstring last_value = "";
@@ -1359,10 +1425,22 @@ gid_t nametogid(const char *name)
 }
 
 /*******************************************************************
+ legacy wrapper for smb_panic2()
+********************************************************************/
+void smb_panic( const char *why )
+{
+	smb_panic2( why, True );
+}
+
+/*******************************************************************
  Something really nasty happened - panic !
 ********************************************************************/
 
-void smb_panic(const char *why)
+#ifdef HAVE_LIBEXC_H
+#include <libexc.h>
+#endif
+
+void smb_panic2(const char *why, BOOL decrement_pid_count )
 {
 	char *cmd;
 	int result;
@@ -1384,6 +1462,10 @@ void smb_panic(const char *why)
 		} 
 	}
 #endif
+
+	/* only smbd needs to decrement the smbd counter in connections.tdb */
+	if ( decrement_pid_count )
+		decrement_smbd_process_count();
 
 	cmd = lp_panic_action();
 	if (cmd && *cmd) {
@@ -1413,12 +1495,51 @@ void smb_panic(const char *why)
 		for (i = 0; i < backtrace_size; i++)
 			DEBUGADD(0, (" #%u %s\n", i, backtrace_strings[i]));
 
-		SAFE_FREE(backtrace_strings);
+		/* Leak the backtrace_strings, rather than risk what free() might do */
 	}
 
+#elif HAVE_LIBEXC
+
+#define NAMESIZE 32 /* Arbitrary */
+
+	/* The IRIX libexc library provides an API for unwinding the stack. See
+	 * libexc(3) for details. Apparantly trace_back_stack leaks memory, but
+	 * since we are about to abort anyway, it hardly matters.
+	 *
+	 * Note that if we paniced due to a SIGSEGV or SIGBUS (or similar) this
+	 * will fail with a nasty message upon failing to open the /proc entry.
+	 */
+	{
+		__uint64_t	addrs[BACKTRACE_STACK_SIZE];
+		char *      	names[BACKTRACE_STACK_SIZE];
+		char		namebuf[BACKTRACE_STACK_SIZE * NAMESIZE];
+
+		int		i;
+		int		levels;
+
+		ZERO_ARRAY(addrs);
+		ZERO_ARRAY(names);
+		ZERO_ARRAY(namebuf);
+
+		for (i = 0; i < BACKTRACE_STACK_SIZE; i++) {
+			names[i] = namebuf + (i * NAMESIZE);
+		}
+
+		levels = trace_back_stack(0, addrs, names,
+				BACKTRACE_STACK_SIZE, NAMESIZE);
+
+		DEBUG(0, ("BACKTRACE: %d stack frames:\n", levels));
+		for (i = 0; i < levels; i++) {
+			DEBUGADD(0, (" #%d 0x%llx %s\n", i, addrs[i], names[i]));
+		}
+     }
+#undef NAMESIZE
 #endif
 
 	dbgflush();
+#ifdef SIGABRT
+	CatchSignal(SIGABRT,SIGNAL_CAST SIG_DFL);
+#endif
 	abort();
 }
 
@@ -1466,18 +1587,17 @@ const char *readdirname(DIR *p)
  of a path matches a (possibly wildcarded) entry in a namelist.
 ********************************************************************/
 
-BOOL is_in_path(const char *name, name_compare_entry *namelist)
+BOOL is_in_path(const char *name, name_compare_entry *namelist, BOOL case_sensitive)
 {
 	pstring last_component;
 	char *p;
 
-	DEBUG(8, ("is_in_path: %s\n", name));
-
 	/* if we have no list it's obviously not in the path */
 	if((namelist == NULL ) || ((namelist != NULL) && (namelist[0].name == NULL))) {
-		DEBUG(8,("is_in_path: no name list.\n"));
 		return False;
 	}
+
+	DEBUG(8, ("is_in_path: %s\n", name));
 
 	/* Get the last component of the unix name. */
 	p = strrchr_m(name, '/');
@@ -1554,8 +1674,7 @@ void set_namearray(name_compare_entry **ppname_array, char *namelist)
 	if(num_entries == 0)
 		return;
 
-	if(( (*ppname_array) = (name_compare_entry *)malloc(
-					(num_entries + 1) * sizeof(name_compare_entry))) == NULL) {
+	if(( (*ppname_array) = SMB_MALLOC_ARRAY(name_compare_entry, num_entries + 1)) == NULL) {
 		DEBUG(0,("set_namearray: malloc fail\n"));
 		return;
 	}
@@ -1578,7 +1697,7 @@ void set_namearray(name_compare_entry **ppname_array, char *namelist)
 			break;
 
 		(*ppname_array)[i].is_wild = ms_has_wild(nameptr);
-		if(((*ppname_array)[i].name = strdup(nameptr)) == NULL) {
+		if(((*ppname_array)[i].name = SMB_STRDUP(nameptr)) == NULL) {
 			DEBUG(0,("set_namearray: malloc fail (1)\n"));
 			return;
 		}
@@ -1679,37 +1798,66 @@ BOOL is_myname(const char *s)
 	return(ret);
 }
 
-/********************************************************************
- Return only the first IP address of our configured interfaces
- as a string
- *******************************************************************/
-
-const char* get_my_primary_ip (void)
-{
-	static fstring ip_string;
-	int n;
-	struct iface_struct nics[MAX_INTERFACES];
-
-	if ((n=get_interfaces(nics, MAX_INTERFACES)) <= 0)
-		return NULL;
-
-	fstrcpy(ip_string, inet_ntoa(nics[0].ip));
-	return ip_string;
-}
-
 BOOL is_myname_or_ipaddr(const char *s)
 {
+	fstring name, dnsname;
+	char *servername;
+
+	if ( !s )
+		return False;
+
+	/* santize the string from '\\name' */
+
+	fstrcpy( name, s );
+
+	servername = strrchr_m( name, '\\' );
+	if ( !servername )
+		servername = name;
+	else
+		servername++;
+
 	/* optimize for the common case */
-	if (strequal(s, global_myname())) 
+
+	if (strequal(servername, global_myname())) 
 		return True;
 
+	/* check for an alias */
+
+	if (is_myname(servername))
+		return True;
+
+	/* check for loopback */
+
+	if (strequal(servername, "localhost")) 
+		return True;
+
+	/* maybe it's my dns name */
+
+	if ( get_mydnsfullname( dnsname ) )
+		if ( strequal( servername, dnsname ) )
+			return True;
+		
+	/* handle possible CNAME records */
+
+	if ( !is_ipaddress( servername ) ) {
+		/* use DNS to resolve the name, but only the first address */
+		struct hostent *hp;
+
+		if (((hp = sys_gethostbyname(name)) != NULL) && (hp->h_addr != NULL)) {
+			struct in_addr return_ip;
+			putip( (char*)&return_ip, (char*)hp->h_addr );
+			fstrcpy( name, inet_ntoa( return_ip ) );
+			servername = name;
+		}	
+	}
+		
 	/* maybe its an IP address? */
-	if (is_ipaddress(s)) {
+	if (is_ipaddress(servername)) {
 		struct iface_struct nics[MAX_INTERFACES];
 		int i, n;
 		uint32 ip;
 		
-		ip = interpret_addr(s);
+		ip = interpret_addr(servername);
 		if ((ip==0) || (ip==0xffffffff))
 			return False;
 			
@@ -1720,10 +1868,6 @@ BOOL is_myname_or_ipaddr(const char *s)
 		}
 	}	
 
-	/* check for an alias */
-	if (is_myname(s))
-		return True;
-	
 	/* no match */
 	return False;
 }
@@ -1795,6 +1939,9 @@ void set_remote_arch(enum remote_arch_types type)
 		break;
 	case RA_SAMBA:
 		fstrcpy(remote_arch,"Samba");
+		break;
+	case RA_CIFSFS:
+		fstrcpy(remote_arch,"CIFSFS");
 		break;
 	default:
 		ra_type = RA_UNKNOWN;
@@ -2046,14 +2193,18 @@ int smb_mkstemp(char *template)
  malloc that aborts with smb_panic on fail or zero size.
  *****************************************************************/  
 
-void *smb_xmalloc(size_t size)
+void *smb_xmalloc_array(size_t size, unsigned int count)
 {
 	void *p;
 	if (size == 0)
-		smb_panic("smb_xmalloc: called with zero size.\n");
-	if ((p = malloc(size)) == NULL) {
-		DEBUG(0, ("smb_xmalloc() failed to allocate %lu bytes\n", (unsigned long)size));
-		smb_panic("smb_xmalloc: malloc fail.\n");
+		smb_panic("smb_xmalloc_array: called with zero size.\n");
+        if (count >= MAX_ALLOC_SIZE/size) {
+                smb_panic("smb_xmalloc: alloc size too large.\n");
+        }
+	if ((p = SMB_MALLOC(size*count)) == NULL) {
+		DEBUG(0, ("smb_xmalloc_array failed to allocate %lu * %lu bytes\n",
+			(unsigned long)size, (unsigned long)count));
+		smb_panic("smb_xmalloc_array: malloc fail.\n");
 	}
 	return p;
 }
@@ -2065,7 +2216,7 @@ void *smb_xmalloc(size_t size)
 void *smb_xmemdup(const void *p, size_t size)
 {
 	void *p2;
-	p2 = smb_xmalloc(size);
+	p2 = SMB_XMALLOC_ARRAY(unsigned char,size);
 	memcpy(p2, p, size);
 	return p2;
 }
@@ -2076,7 +2227,15 @@ void *smb_xmemdup(const void *p, size_t size)
 
 char *smb_xstrdup(const char *s)
 {
+#if defined(PARANOID_MALLOC_CHECKER)
+#ifdef strdup
+#undef strdup
+#endif
+#endif
 	char *s1 = strdup(s);
+#if defined(PARANOID_MALLOC_CHECKER)
+#define strdup(s) __ERROR_DONT_USE_STRDUP_DIRECTLY
+#endif
 	if (!s1)
 		smb_panic("smb_xstrdup: malloc fail\n");
 	return s1;
@@ -2088,7 +2247,15 @@ char *smb_xstrdup(const char *s)
 
 char *smb_xstrndup(const char *s, size_t n)
 {
+#if defined(PARANOID_MALLOC_CHECKER)
+#ifdef strndup
+#undef strndup
+#endif
+#endif
 	char *s1 = strndup(s, n);
+#if defined(PARANOID_MALLOC_CHECKER)
+#define strndup(s,n) __ERROR_DONT_USE_STRNDUP_DIRECTLY
+#endif
 	if (!s1)
 		smb_panic("smb_xstrndup: malloc fail\n");
 	return s1;
@@ -2120,7 +2287,7 @@ void *memdup(const void *p, size_t size)
 	void *p2;
 	if (size == 0)
 		return NULL;
-	p2 = malloc(size);
+	p2 = SMB_MALLOC(size);
 	if (!p2)
 		return NULL;
 	memcpy(p2, p, size);
@@ -2286,6 +2453,20 @@ BOOL mask_match(const char *string, char *pattern, BOOL is_case_sensitive)
 	return ms_fnmatch(pattern, string, Protocol, is_case_sensitive) == 0;
 }
 
+/*******************************************************************
+ A wrapper that handles a list of patters and calls mask_match()
+ on each.  Returns True if any of the patterns match.
+*******************************************************************/
+
+BOOL mask_match_list(const char *string, char **list, int listLen, BOOL is_case_sensitive)
+{
+       while (listLen-- > 0) {
+               if (mask_match(string, *list++, is_case_sensitive))
+                       return True;
+       }
+       return False;
+}
+
 /*********************************************************
  Recursive routine that is called by unix_wild_match.
 *********************************************************/
@@ -2412,6 +2593,21 @@ BOOL unix_wild_match(const char *pattern, const char *string)
 	return unix_do_match(p2, s2) == 0;	
 }
 
+/**********************************************************************
+ Converts a name to a fully qalified domain name.
+***********************************************************************/
+                                                                                                                                                   
+void name_to_fqdn(fstring fqdn, const char *name)
+{
+	struct hostent *hp = sys_gethostbyname(name);
+	if ( hp && hp->h_name && *hp->h_name ) {
+		DEBUG(10,("name_to_fqdn: lookup for %s -> %s.\n", name, hp->h_name));
+		fstrcpy(fqdn,hp->h_name);
+	} else {
+		DEBUG(10,("name_to_fqdn: lookup for %s failed.\n", name));
+		fstrcpy(fqdn, name);
+	}
+}
 
 #ifdef __INSURE__
 

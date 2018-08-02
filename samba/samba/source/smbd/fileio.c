@@ -151,10 +151,10 @@ ssize_t write_file(files_struct *fsp, char *data, SMB_OFF_T pos, size_t n)
 	int write_path = -1; 
 
 	if (fsp->print_file) {
-		int snum;
+		fstring sharename;
 		uint32 jobid;
 
-		if (!rap_to_pjobid(fsp->rap_print_jobid, &snum, &jobid)) {
+		if (!rap_to_pjobid(fsp->rap_print_jobid, sharename, &jobid)) {
 			DEBUG(3,("write_file: Unable to map RAP jobid %u to jobid.\n",
 						(unsigned int)fsp->rap_print_jobid ));
 			errno = EBADF;
@@ -176,8 +176,9 @@ ssize_t write_file(files_struct *fsp, char *data, SMB_OFF_T pos, size_t n)
 		if (SMB_VFS_FSTAT(fsp,fsp->fd,&st) == 0) {
 			int dosmode = dos_mode(fsp->conn,fsp->fsp_name,&st);
 			fsp->size = (SMB_BIG_UINT)st.st_size;
-			if (MAP_ARCHIVE(fsp->conn) && !IS_DOS_ARCHIVE(dosmode))
-				file_chmod(fsp->conn,fsp->fsp_name,dosmode | aARCH,&st);
+			if ((lp_store_dos_attributes(SNUM(fsp->conn)) || MAP_ARCHIVE(fsp->conn)) && !IS_DOS_ARCHIVE(dosmode)) {
+				file_set_dosmode(fsp->conn,fsp->fsp_name,dosmode | aARCH,&st);
+			}
 
 			/*
 			 * If this is the first write and we have an exclusive oplock then setup
@@ -661,7 +662,7 @@ static BOOL setup_write_cache(files_struct *fsp, SMB_OFF_T file_size)
 	if(alloc_size == 0 || fsp->wcp)
 		return False;
 
-	if((wcp = (write_cache *)malloc(sizeof(write_cache))) == NULL) {
+	if((wcp = SMB_MALLOC_P(write_cache)) == NULL) {
 		DEBUG(0,("setup_write_cache: malloc fail.\n"));
 		return False;
 	}
@@ -670,7 +671,7 @@ static BOOL setup_write_cache(files_struct *fsp, SMB_OFF_T file_size)
 	wcp->offset = 0;
 	wcp->alloc_size = alloc_size;
 	wcp->data_size = 0;
-	if((wcp->data = malloc(wcp->alloc_size)) == NULL) {
+	if((wcp->data = SMB_MALLOC(wcp->alloc_size)) == NULL) {
 		DEBUG(0,("setup_write_cache: malloc fail for buffer size %u.\n",
 			(unsigned int)wcp->alloc_size ));
 		SAFE_FREE(wcp);

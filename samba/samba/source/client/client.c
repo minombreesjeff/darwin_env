@@ -23,7 +23,7 @@
 #define NO_SYSLOG
 
 #include "includes.h"
-#include "../client/client_proto.h"
+#include "client/client_proto.h"
 #ifndef REGISTER
 #define REGISTER 0
 #endif
@@ -47,7 +47,7 @@ static int io_bufsize = 64512;
 static int name_type = 0x20;
 static int max_protocol = PROTOCOL_NT1;
 
-static int process_tok(fstring tok);
+static int process_tok(pstring tok);
 static int cmd_help(void);
 
 /* 30 second timeout on most commands */
@@ -284,7 +284,7 @@ static int do_cd(char *newdir)
 
 static int cmd_cd(void)
 {
-	fstring buf;
+	pstring buf;
 	int rc = 0;
 
 	if (next_token_nr(NULL,buf,NULL,sizeof(buf)))
@@ -387,7 +387,7 @@ static void init_do_list_queue(void)
 {
 	reset_do_list_queue();
 	do_list_queue_size = 1024;
-	do_list_queue = malloc(do_list_queue_size);
+	do_list_queue = SMB_MALLOC(do_list_queue_size);
 	if (do_list_queue == 0) { 
 		d_printf("malloc fail for size %d\n",
 			 (int)do_list_queue_size);
@@ -425,7 +425,7 @@ static void add_to_do_list_queue(const char* entry)
 		do_list_queue_size *= 2;
 		DEBUG(4,("enlarging do_list_queue to %d\n",
 			 (int)do_list_queue_size));
-		dlq = Realloc(do_list_queue, do_list_queue_size);
+		dlq = SMB_REALLOC(do_list_queue, do_list_queue_size);
 		if (! dlq) {
 			d_printf("failure enlarging do_list_queue to %d bytes\n",
 				 (int)do_list_queue_size);
@@ -572,14 +572,18 @@ static int cmd_dir(void)
 {
 	uint16 attribute = aDIR | aSYSTEM | aHIDDEN;
 	pstring mask;
-	fstring buf;
+	pstring buf;
 	char *p=buf;
 	int rc;
 	
 	dir_total = 0;
-	pstrcpy(mask,cur_dir);
-	if(mask[strlen(mask)-1]!='\\')
-		pstrcat(mask,"\\");
+	if (strcmp(cur_dir, "\\") != 0) {
+		pstrcpy(mask,cur_dir);
+		if(mask[strlen(mask)-1]!='\\')
+			pstrcat(mask,"\\");
+	} else {
+		*mask = '\0';
+	}
 	
 	if (next_token_nr(NULL,buf,NULL,sizeof(buf))) {
 		dos_format(p);
@@ -588,7 +592,7 @@ static int cmd_dir(void)
 		else
 			pstrcat(mask,p);
 	} else {
-		pstrcat(mask,"*");
+		pstrcat(mask,"\\*");
 	}
 
 	do_list(mask, attribute, display_finfo, recurse, True);
@@ -608,7 +612,7 @@ static int cmd_du(void)
 {
 	uint16 attribute = aDIR | aSYSTEM | aHIDDEN;
 	pstring mask;
-	fstring buf;
+	pstring buf;
 	char *p=buf;
 	int rc;
 	
@@ -697,10 +701,10 @@ static int do_get(char *rname, char *lname, BOOL reget)
 		return 1;
 	}
 
-	DEBUG(2,("getting file %s of size %.0f as %s ", 
+	DEBUG(1,("getting file %s of size %.0f as %s ", 
 		 rname, (double)size, lname));
 
-	if(!(data = (char *)malloc(read_size))) { 
+	if(!(data = (char *)SMB_MALLOC(read_size))) { 
 		d_printf("malloc fail for size %d\n", read_size);
 		cli_close(cli, fnum);
 		return 1;
@@ -754,7 +758,7 @@ static int do_get(char *rname, char *lname, BOOL reget)
 		get_total_time_ms += this_time;
 		get_total_size += nread;
 		
-		DEBUG(2,("(%3.1f kb/s) (average %3.1f kb/s)\n",
+		DEBUG(1,("(%3.1f kb/s) (average %3.1f kb/s)\n",
 			 nread / (1.024*this_time + 1.0e-4),
 			 get_total_size / (1.024*get_total_time_ms)));
 	}
@@ -862,13 +866,13 @@ static void do_mget(file_info *finfo)
 
 static int cmd_more(void)
 {
-	fstring rname,lname,pager_cmd;
+	pstring rname,lname,pager_cmd;
 	char *pager;
 	int fd;
 	int rc = 0;
 
-	fstrcpy(rname,cur_dir);
-	fstrcat(rname,"\\");
+	pstrcpy(rname,cur_dir);
+	pstrcat(rname,"\\");
 	
 	slprintf(lname,sizeof(lname)-1, "%s/smbmore.XXXXXX",tmpdir());
 	fd = smb_mkstemp(lname);
@@ -905,7 +909,7 @@ static int cmd_mget(void)
 {
 	uint16 attribute = aSYSTEM | aHIDDEN;
 	pstring mget_mask;
-	fstring buf;
+	pstring buf;
 	char *p=buf;
 
 	*mget_mask = 0;
@@ -959,7 +963,7 @@ static BOOL do_mkdir(char *name)
 
 static BOOL do_altname(char *name)
 {
-	fstring altname;
+	pstring altname;
 	if (!NT_STATUS_IS_OK(cli_qpathinfo_alt_name(cli, name, altname))) {
 		d_printf("%s getting alt name for %s\n",
 			 cli_errstr(cli),name);
@@ -989,7 +993,7 @@ static int cmd_quit(void)
 static int cmd_mkdir(void)
 {
 	pstring mask;
-	fstring buf;
+	pstring buf;
 	char *p=buf;
   
 	pstrcpy(mask,cur_dir);
@@ -1031,7 +1035,7 @@ static int cmd_mkdir(void)
 static int cmd_altname(void)
 {
 	pstring name;
-	fstring buf;
+	pstring buf;
 	char *p=buf;
   
 	pstrcpy(name,cur_dir);
@@ -1108,7 +1112,7 @@ static int do_put(char *rname, char *lname, BOOL reput)
 	DEBUG(1,("putting file %s as %s ",lname,
 		 rname));
   
-	buf = (char *)malloc(maxwrite);
+	buf = (char *)SMB_MALLOC(maxwrite);
 	if (!buf) {
 		d_printf("ERROR: Not enough memory!\n");
 		return 1;
@@ -1183,7 +1187,7 @@ static int cmd_put(void)
 {
 	pstring lname;
 	pstring rname;
-	fstring buf;
+	pstring buf;
 	char *p=buf;
 	
 	pstrcpy(rname,cur_dir);
@@ -1321,7 +1325,7 @@ static int file_find(struct file_list **list, const char *directory,
 					return -1;
 				}
 			}
-			entry = (struct file_list *) malloc(sizeof (struct file_list));
+			entry = SMB_MALLOC_P(struct file_list);
 			if (!entry) {
 				d_printf("Out of memory in file_find\n");
 				closedir(dir);
@@ -1345,7 +1349,7 @@ static int file_find(struct file_list **list, const char *directory,
 
 static int cmd_mput(void)
 {
-	fstring buf;
+	pstring buf;
 	char *p=buf;
 	
 	while (next_token_nr(NULL,p,NULL,sizeof(buf))) {
@@ -1443,7 +1447,7 @@ static int do_cancel(int job)
 
 static int cmd_cancel(void)
 {
-	fstring buf;
+	pstring buf;
 	int job; 
 
 	if (!next_token_nr(NULL,buf,NULL,sizeof(buf))) {
@@ -1532,7 +1536,7 @@ static void do_del(file_info *finfo)
 static int cmd_del(void)
 {
 	pstring mask;
-	fstring buf;
+	pstring buf;
 	uint16 attribute = aSYSTEM | aHIDDEN;
 
 	if (recurse)
@@ -1557,7 +1561,7 @@ static int cmd_del(void)
 static int cmd_open(void)
 {
 	pstring mask;
-	fstring buf;
+	pstring buf;
 	
 	pstrcpy(mask,cur_dir);
 	
@@ -1567,7 +1571,7 @@ static int cmd_open(void)
 	}
 	pstrcat(mask,buf);
 
-	cli_open(cli, mask, O_RDWR, DENY_ALL);
+	cli_nt_create(cli, mask, FILE_READ_DATA);
 
 	return 0;
 }
@@ -1580,7 +1584,7 @@ static int cmd_open(void)
 static int cmd_rmdir(void)
 {
 	pstring mask;
-	fstring buf;
+	pstring buf;
   
 	pstrcpy(mask,cur_dir);
 	
@@ -1604,28 +1608,28 @@ static int cmd_rmdir(void)
 
 static int cmd_link(void)
 {
-	pstring src,dest;
-	fstring buf,buf2;
+	pstring oldname,newname;
+	pstring buf,buf2;
   
 	if (!SERVER_HAS_UNIX_CIFS(cli)) {
 		d_printf("Server doesn't support UNIX CIFS calls.\n");
 		return 1;
 	}
 
-	pstrcpy(src,cur_dir);
-	pstrcpy(dest,cur_dir);
+	pstrcpy(oldname,cur_dir);
+	pstrcpy(newname,cur_dir);
   
-	if (!next_token(NULL,buf,NULL,sizeof(buf)) || 
-	    !next_token(NULL,buf2,NULL, sizeof(buf2))) {
-		d_printf("link <src> <dest>\n");
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf)) || 
+	    !next_token_nr(NULL,buf2,NULL, sizeof(buf2))) {
+		d_printf("link <oldname> <newname>\n");
 		return 1;
 	}
 
-	pstrcat(src,buf);
-	pstrcat(dest,buf2);
+	pstrcat(oldname,buf);
+	pstrcat(newname,buf2);
 
-	if (!cli_unix_hardlink(cli, src, dest)) {
-		d_printf("%s linking files (%s -> %s)\n", cli_errstr(cli), src, dest);
+	if (!cli_unix_hardlink(cli, oldname, newname)) {
+		d_printf("%s linking files (%s -> %s)\n", cli_errstr(cli), newname, oldname);
 		return 1;
 	}  
 
@@ -1638,29 +1642,28 @@ static int cmd_link(void)
 
 static int cmd_symlink(void)
 {
-	pstring src,dest;
-	fstring buf,buf2;
+	pstring oldname,newname;
+	pstring buf,buf2;
   
 	if (!SERVER_HAS_UNIX_CIFS(cli)) {
 		d_printf("Server doesn't support UNIX CIFS calls.\n");
 		return 1;
 	}
 
-	pstrcpy(src,cur_dir);
-	pstrcpy(dest,cur_dir);
+	pstrcpy(newname,cur_dir);
 	
-	if (!next_token(NULL,buf,NULL,sizeof(buf)) || 
-	    !next_token(NULL,buf2,NULL, sizeof(buf2))) {
-		d_printf("symlink <src> <dest>\n");
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf)) || 
+	    !next_token_nr(NULL,buf2,NULL, sizeof(buf2))) {
+		d_printf("symlink <oldname> <newname>\n");
 		return 1;
 	}
 
-	pstrcat(src,buf);
-	pstrcat(dest,buf2);
+	pstrcpy(oldname,buf);
+	pstrcat(newname,buf2);
 
-	if (!cli_unix_symlink(cli, src, dest)) {
+	if (!cli_unix_symlink(cli, oldname, newname)) {
 		d_printf("%s symlinking files (%s -> %s)\n",
-			cli_errstr(cli), src, dest);
+			cli_errstr(cli), newname, oldname);
 		return 1;
 	} 
 
@@ -1675,7 +1678,7 @@ static int cmd_chmod(void)
 {
 	pstring src;
 	mode_t mode;
-	fstring buf, buf2;
+	pstring buf, buf2;
   
 	if (!SERVER_HAS_UNIX_CIFS(cli)) {
 		d_printf("Server doesn't support UNIX CIFS calls.\n");
@@ -1684,8 +1687,8 @@ static int cmd_chmod(void)
 
 	pstrcpy(src,cur_dir);
 	
-	if (!next_token(NULL,buf,NULL,sizeof(buf)) || 
-	    !next_token(NULL,buf2,NULL, sizeof(buf2))) {
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf)) || 
+	    !next_token_nr(NULL,buf2,NULL, sizeof(buf2))) {
 		d_printf("chmod mode file\n");
 		return 1;
 	}
@@ -1702,6 +1705,158 @@ static int cmd_chmod(void)
 	return 0;
 }
 
+static const char *filetype_to_str(mode_t mode)
+{
+	if (S_ISREG(mode)) {
+		return "regular file";
+	} else if (S_ISDIR(mode)) {
+		return "directory";
+	} else 
+#ifdef S_ISCHR
+	if (S_ISCHR(mode)) {
+		return "character device";
+	} else
+#endif
+#ifdef S_ISBLK
+	if (S_ISBLK(mode)) {
+		return "block device";
+	} else
+#endif
+#ifdef S_ISFIFO
+	if (S_ISFIFO(mode)) {
+		return "fifo";
+	} else
+#endif
+#ifdef S_ISLNK
+	if (S_ISLNK(mode)) {
+		return "symbolic link";
+	} else
+#endif
+#ifdef S_ISSOCK
+	if (S_ISSOCK(mode)) {
+		return "socket";
+	} else
+#endif
+	return "";
+}
+
+static char rwx_to_str(mode_t m, mode_t bt, char ret)
+{
+	if (m & bt) {
+		return ret;
+	} else {
+		return '-';
+	}
+}
+
+static char *unix_mode_to_str(char *s, mode_t m)
+{
+	char *p = s;
+	const char *str = filetype_to_str(m);
+
+	switch(str[0]) {
+		case 'd':
+			*p++ = 'd';
+			break;
+		case 'c':
+			*p++ = 'c';
+			break;
+		case 'b':
+			*p++ = 'b';
+			break;
+		case 'f':
+			*p++ = 'p';
+			break;
+		case 's':
+			*p++ = str[1] == 'y' ? 'l' : 's';
+			break;
+		case 'r':
+		default:
+			*p++ = '-';
+			break;
+	}
+	*p++ = rwx_to_str(m, S_IRUSR, 'r');
+	*p++ = rwx_to_str(m, S_IWUSR, 'w');
+	*p++ = rwx_to_str(m, S_IXUSR, 'x');
+	*p++ = rwx_to_str(m, S_IRGRP, 'r');
+	*p++ = rwx_to_str(m, S_IWGRP, 'w');
+	*p++ = rwx_to_str(m, S_IXGRP, 'x');
+	*p++ = rwx_to_str(m, S_IROTH, 'r');
+	*p++ = rwx_to_str(m, S_IWOTH, 'w');
+	*p++ = rwx_to_str(m, S_IXOTH, 'x');
+	*p++ = '\0';
+	return s;
+}
+
+/****************************************************************************
+ UNIX stat.
+****************************************************************************/
+
+static int cmd_stat(void)
+{
+	pstring src, name;
+	fstring mode_str;
+	SMB_STRUCT_STAT sbuf;
+ 
+	if (!SERVER_HAS_UNIX_CIFS(cli)) {
+		d_printf("Server doesn't support UNIX CIFS calls.\n");
+		return 1;
+	}
+
+	pstrcpy(src,cur_dir);
+	
+	if (!next_token_nr(NULL,name,NULL,sizeof(name))) {
+		d_printf("stat file\n");
+		return 1;
+	}
+
+	pstrcat(src,name);
+
+	if (!cli_unix_stat(cli, src, &sbuf)) {
+		d_printf("%s stat file %s\n",
+			cli_errstr(cli), src);
+		return 1;
+	} 
+
+	/* Print out the stat values. */
+	d_printf("File: %s\n", src);
+	d_printf("Size: %-12.0f\tBlocks: %u\t%s\n",
+		(double)sbuf.st_size,
+		(unsigned int)sbuf.st_blocks,
+		filetype_to_str(sbuf.st_mode));
+
+#if defined(S_ISCHR) && defined(S_ISBLK)
+	if (S_ISCHR(sbuf.st_mode) || S_ISBLK(sbuf.st_mode)) {
+		d_printf("Inode: %.0f\tLinks: %u\tDevice type: %u,%u\n",
+			(double)sbuf.st_ino,
+			(unsigned int)sbuf.st_nlink,
+			unix_dev_major(sbuf.st_rdev),
+			unix_dev_minor(sbuf.st_rdev));
+	} else 
+#endif
+		d_printf("Inode: %.0f\tLinks: %u\n",
+			(double)sbuf.st_ino,
+			(unsigned int)sbuf.st_nlink);
+
+	d_printf("Access: (0%03o/%s)\tUid: %u\tGid: %u\n",
+		((int)sbuf.st_mode & 0777),
+		unix_mode_to_str(mode_str, sbuf.st_mode),
+		(unsigned int)sbuf.st_uid, 
+		(unsigned int)sbuf.st_gid);
+
+	strftime(mode_str, sizeof(mode_str), "%F %T %z", localtime(&sbuf.st_atime));
+	d_printf("Access: %s\n", mode_str);
+
+	strftime(mode_str, sizeof(mode_str), "%F %T %z", localtime(&sbuf.st_mtime));
+	d_printf("Modify: %s\n", mode_str);
+
+	strftime(mode_str, sizeof(mode_str), "%F %T %z", localtime(&sbuf.st_ctime));
+	d_printf("Change: %s\n", mode_str);
+	
+	return 0;
+}
+
+
 /****************************************************************************
  UNIX chown.
 ****************************************************************************/
@@ -1711,7 +1866,7 @@ static int cmd_chown(void)
 	pstring src;
 	uid_t uid;
 	gid_t gid;
-	fstring buf, buf2, buf3;
+	pstring buf, buf2, buf3;
   
 	if (!SERVER_HAS_UNIX_CIFS(cli)) {
 		d_printf("Server doesn't support UNIX CIFS calls.\n");
@@ -1720,9 +1875,9 @@ static int cmd_chown(void)
 
 	pstrcpy(src,cur_dir);
 	
-	if (!next_token(NULL,buf,NULL,sizeof(buf)) || 
-	    !next_token(NULL,buf2,NULL, sizeof(buf2)) ||
-	    !next_token(NULL,buf3,NULL, sizeof(buf3))) {
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf)) || 
+	    !next_token_nr(NULL,buf2,NULL, sizeof(buf2)) ||
+	    !next_token_nr(NULL,buf3,NULL, sizeof(buf3))) {
 		d_printf("chown uid gid file\n");
 		return 1;
 	}
@@ -1747,7 +1902,7 @@ static int cmd_chown(void)
 static int cmd_rename(void)
 {
 	pstring src,dest;
-	fstring buf,buf2;
+	pstring buf,buf2;
   
 	pstrcpy(src,cur_dir);
 	pstrcpy(dest,cur_dir);
@@ -1763,6 +1918,35 @@ static int cmd_rename(void)
 
 	if (!cli_rename(cli, src, dest)) {
 		d_printf("%s renaming files\n",cli_errstr(cli));
+		return 1;
+	}
+	
+	return 0;
+}
+
+/****************************************************************************
+ Hard link files using the NT call.
+****************************************************************************/
+
+static int cmd_hardlink(void)
+{
+	pstring src,dest;
+	pstring buf,buf2;
+  
+	pstrcpy(src,cur_dir);
+	pstrcpy(dest,cur_dir);
+	
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf)) || 
+	    !next_token_nr(NULL,buf2,NULL, sizeof(buf2))) {
+		d_printf("hardlink <src> <dest>\n");
+		return 1;
+	}
+
+	pstrcat(src,buf);
+	pstrcat(dest,buf2);
+
+	if (!cli_nt_hardlink(cli, src, dest)) {
+		d_printf("%s doing an NT hard link of files\n",cli_errstr(cli));
 		return 1;
 	}
 	
@@ -1787,7 +1971,7 @@ static int cmd_prompt(void)
 
 static int cmd_newer(void)
 {
-	fstring buf;
+	pstring buf;
 	BOOL ok;
 	SMB_STRUCT_STAT sbuf;
 
@@ -1814,7 +1998,7 @@ static int cmd_newer(void)
 
 static int cmd_archive(void)
 {
-	fstring buf;
+	pstring buf;
 
 	if (next_token_nr(NULL,buf,NULL,sizeof(buf))) {
 		archive_level = atoi(buf);
@@ -1832,6 +2016,21 @@ static int cmd_lowercase(void)
 {
 	lowercase = !lowercase;
 	DEBUG(2,("filename lowercasing is now %s\n",lowercase?"on":"off"));
+
+	return 0;
+}
+
+/****************************************************************************
+ Toggle the case sensitive flag.
+****************************************************************************/
+
+static int cmd_setcase(void)
+{
+	BOOL orig_case_sensitive = cli_set_case_sensitive(cli, False);
+
+	cli_set_case_sensitive(cli, !orig_case_sensitive);
+	DEBUG(2,("filename case sensitivity is now %s\n",!orig_case_sensitive ?
+		"on":"off"));
 
 	return 0;
 }
@@ -1904,7 +2103,7 @@ static int cmd_printmode(void)
 
 static int cmd_lcd(void)
 {
-	fstring buf;
+	pstring buf;
 	pstring d;
 	
 	if (next_token_nr(NULL,buf,NULL,sizeof(buf)))
@@ -1949,7 +2148,7 @@ static int cmd_reput(void)
 {
 	pstring local_name;
 	pstring remote_name;
-	fstring buf;
+	pstring buf;
 	char *p = buf;
 	SMB_STRUCT_STAT st;
 	
@@ -2003,7 +2202,7 @@ static void browse_fn(const char *name, uint32 m,
 	   in any of these fields, they can corrupt the output.  We
 	   should remove them. */
 	if (!grepable) {
-		d_printf("\t%-15.15s%-10.10s%s\n",
+		d_printf("\t%-15s %-10.10s%s\n",
                		name,typestr,comment);
 	} else {
 		d_printf ("%s|%s|%s\n",typestr,name,comment);
@@ -2018,8 +2217,8 @@ static BOOL browse_host(BOOL sort)
 {
 	int ret;
 	if (!grepable) {
-	        d_printf("\n\tSharename      Type      Comment\n");
-	        d_printf("\t---------      ----      -------\n");
+	        d_printf("\n\tSharename       Type      Comment\n");
+	        d_printf("\t---------       ----      -------\n");
 	}
 
 	if((ret = cli_RNetShareEnum(cli, browse_fn, NULL)) == -1)
@@ -2037,7 +2236,7 @@ static void server_fn(const char *name, uint32 m,
 {
 	
 	if (!grepable){
-		d_printf("\t%-16.16s     %s\n", name, comment);
+		d_printf("\t%-16s     %s\n", name, comment);
 	} else {
 		d_printf("%s|%s|%s\n",(char *)state, name, comment);
 	}
@@ -2069,6 +2268,61 @@ static BOOL list_servers(const char *wk_grp)
 	return True;
 }
 
+/****************************************************************************
+ Print or set current VUID
+****************************************************************************/
+
+static int cmd_vuid(void)
+{
+	fstring buf;
+	
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf))) {
+		d_printf("Current VUID is %d\n", cli->vuid);
+		return 0;
+	}
+
+	cli->vuid = atoi(buf);
+	return 0;
+}
+
+/****************************************************************************
+ Setup a new VUID, by issuing a session setup
+****************************************************************************/
+
+static int cmd_logon(void)
+{
+	pstring l_username, l_password;
+	pstring buf,buf2;
+  
+	if (!next_token_nr(NULL,buf,NULL,sizeof(buf))) {
+		d_printf("logon <username> [<password>]\n");
+		return 0;
+	}
+
+	pstrcpy(l_username, buf);
+
+	if (!next_token_nr(NULL,buf2,NULL,sizeof(buf))) {
+		char *pass = getpass("Password: ");
+		if (pass) {
+			pstrcpy(l_password, pass);
+			got_pass = 1;
+		}
+	} else {
+		pstrcpy(l_password, buf2);
+	}
+
+	if (!cli_session_setup(cli, l_username, 
+			       l_password, strlen(l_password),
+			       l_password, strlen(l_password),
+			       lp_workgroup())) {
+		d_printf("session setup failed: %s\n", cli_errstr(cli));
+		return -1;
+	}
+
+	d_printf("Current VUID is %d\n", cli->vuid);
+	return 0;
+}
+
 /* Some constants for completing filename arguments */
 
 #define COMPL_NONE        0          /* No completions */
@@ -2092,6 +2346,7 @@ static struct
   {"archive",cmd_archive,"<level>\n0=ignore archive bit\n1=only get archive files\n2=only get archive files and reset archive bit\n3=get all files and reset archive bit",{COMPL_NONE,COMPL_NONE}},
   {"blocksize",cmd_block,"blocksize <number> (default 20)",{COMPL_NONE,COMPL_NONE}},
   {"cancel",cmd_cancel,"<jobid> cancel a print queue entry",{COMPL_NONE,COMPL_NONE}},
+  {"case_sensitive",cmd_setcase,"toggle the case sensitive flag to server",{COMPL_NONE,COMPL_NONE}},
   {"cd",cmd_cd,"[directory] change/report the remote directory",{COMPL_REMOTE,COMPL_NONE}},
   {"chmod",cmd_chmod,"<src> <mode> chmod a file using UNIX permission",{COMPL_REMOTE,COMPL_REMOTE}},
   {"chown",cmd_chown,"<src> <uid> <gid> chown a file using UNIX uids and gids",{COMPL_REMOTE,COMPL_REMOTE}},
@@ -2100,10 +2355,11 @@ static struct
   {"du",cmd_du,"<mask> computes the total size of the current directory",{COMPL_REMOTE,COMPL_NONE}},
   {"exit",cmd_quit,"logoff the server",{COMPL_NONE,COMPL_NONE}},
   {"get",cmd_get,"<remote name> [local name] get a file",{COMPL_REMOTE,COMPL_LOCAL}},
+  {"hardlink",cmd_hardlink,"<src> <dest> create a Windows hard link",{COMPL_REMOTE,COMPL_REMOTE}},
   {"help",cmd_help,"[command] give help on a command",{COMPL_NONE,COMPL_NONE}},
   {"history",cmd_history,"displays the command history",{COMPL_NONE,COMPL_NONE}},
   {"lcd",cmd_lcd,"[directory] change/report the local current working directory",{COMPL_LOCAL,COMPL_NONE}},
-  {"link",cmd_link,"<src> <dest> create a UNIX hard link",{COMPL_REMOTE,COMPL_REMOTE}},
+  {"link",cmd_link,"<oldname> <newname> create a UNIX hard link",{COMPL_REMOTE,COMPL_REMOTE}},
   {"lowercase",cmd_lowercase,"toggle lowercasing of filenames for get",{COMPL_NONE,COMPL_NONE}},  
   {"ls",cmd_dir,"<mask> list the contents of the current directory",{COMPL_REMOTE,COMPL_NONE}},
   {"mask",cmd_select,"<mask> mask all filenames against this",{COMPL_REMOTE,COMPL_NONE}},
@@ -2130,10 +2386,13 @@ static struct
   {"rm",cmd_del,"<mask> delete all matching files",{COMPL_REMOTE,COMPL_NONE}},
   {"rmdir",cmd_rmdir,"<directory> remove a directory",{COMPL_NONE,COMPL_NONE}},
   {"setmode",cmd_setmode,"filename <setmode string> change modes of file",{COMPL_REMOTE,COMPL_NONE}},
-  {"symlink",cmd_symlink,"<src> <dest> create a UNIX symlink",{COMPL_REMOTE,COMPL_REMOTE}},
+  {"stat",cmd_stat,"filename Do a UNIX extensions stat call on a file",{COMPL_REMOTE,COMPL_REMOTE}},
+  {"symlink",cmd_symlink,"<oldname> <newname> create a UNIX symlink",{COMPL_REMOTE,COMPL_REMOTE}},
   {"tar",cmd_tar,"tar <c|x>[IXFqbgNan] current directory to/from <file name>",{COMPL_NONE,COMPL_NONE}},
   {"tarmode",cmd_tarmode,"<full|inc|reset|noreset> tar's behaviour towards archive bits",{COMPL_NONE,COMPL_NONE}},
   {"translate",cmd_translate,"toggle text translation for printing",{COMPL_NONE,COMPL_NONE}},
+  {"vuid",cmd_vuid,"change current vuid",{COMPL_NONE,COMPL_NONE}},
+  {"logon",cmd_logon,"establish new logon",{COMPL_NONE,COMPL_NONE}},
   
   /* Yes, this must be here, see crh's comment above. */
   {"!",NULL,"run a shell command on the local system",{COMPL_NONE,COMPL_NONE}},
@@ -2145,7 +2404,7 @@ static struct
  abbreviations.
 ******************************************************************/
 
-static int process_tok(fstring tok)
+static int process_tok(pstring tok)
 {
 	int i = 0, matches = 0;
 	int cmd=0;
@@ -2178,7 +2437,7 @@ static int process_tok(fstring tok)
 static int cmd_help(void)
 {
 	int i=0,j;
-	fstring buf;
+	pstring buf;
 	
 	if (next_token_nr(NULL,buf,NULL,sizeof(buf))) {
 		if ((i = process_tok(buf)) >= 0)
@@ -2215,7 +2474,7 @@ static int process_command_string(char *cmd)
 	
 	while (cmd[0] != '\0')    {
 		char *p;
-		fstring tok;
+		pstring tok;
 		int i;
 		
 		if ((p = strchr_m(cmd, ';')) == 0) {
@@ -2262,7 +2521,7 @@ static void completion_remote_filter(file_info *f, const char *mask, void *state
 
 	if ((info->count < MAX_COMPLETIONS - 1) && (strncmp(info->text, f->name, info->len) == 0) && (strcmp(f->name, ".") != 0) && (strcmp(f->name, "..") != 0)) {
 		if ((info->dirmask[0] == 0) && !(f->mode & aDIR))
-			info->matches[info->count] = strdup(f->name);
+			info->matches[info->count] = SMB_STRDUP(f->name);
 		else {
 			pstring tmp;
 
@@ -2273,7 +2532,7 @@ static void completion_remote_filter(file_info *f, const char *mask, void *state
 			pstrcat(tmp, f->name);
 			if (f->mode & aDIR)
 				pstrcat(tmp, "/");
-			info->matches[info->count] = strdup(tmp);
+			info->matches[info->count] = SMB_STRDUP(tmp);
 		}
 		if (info->matches[info->count] == NULL)
 			return;
@@ -2304,7 +2563,7 @@ static char **remote_completion(const char *text, int len)
 	if (len >= PATH_MAX)
 		return(NULL);
 
-	info.matches = (char **)malloc(sizeof(info.matches[0])*MAX_COMPLETIONS);
+	info.matches = SMB_MALLOC_ARRAY(char *,MAX_COMPLETIONS);
 	if (!info.matches) return NULL;
 	info.matches[0] = NULL;
 
@@ -2325,9 +2584,9 @@ static char **remote_completion(const char *text, int len)
 		goto cleanup;
 
 	if (info.count == 2)
-		info.matches[0] = strdup(info.matches[1]);
+		info.matches[0] = SMB_STRDUP(info.matches[1]);
 	else {
-		info.matches[0] = malloc(info.samelen+1);
+		info.matches[0] = SMB_MALLOC(info.samelen+1);
 		if (!info.matches[0])
 			goto cleanup;
 		strncpy(info.matches[0], info.matches[1], info.samelen);
@@ -2382,14 +2641,14 @@ static char **completion_fn(const char *text, int start, int end)
 		char **matches;
 		int i, len, samelen, count=1;
 
-		matches = (char **)malloc(sizeof(matches[0])*MAX_COMPLETIONS);
+		matches = SMB_MALLOC_ARRAY(char *, MAX_COMPLETIONS);
 		if (!matches) return NULL;
 		matches[0] = NULL;
 
 		len = strlen(text);
 		for (i=0;commands[i].fn && count < MAX_COMPLETIONS-1;i++) {
 			if (strncmp(text, commands[i].name, len) == 0) {
-				matches[count] = strdup(commands[i].name);
+				matches[count] = SMB_STRDUP(commands[i].name);
 				if (!matches[count])
 					goto cleanup;
 				if (count == 1)
@@ -2406,10 +2665,10 @@ static char **completion_fn(const char *text, int start, int end)
 		case 1:
 			goto cleanup;
 		case 2:
-			matches[0] = strdup(matches[1]);
+			matches[0] = SMB_STRDUP(matches[1]);
 			break;
 		default:
-			matches[0] = malloc(samelen+1);
+			matches[0] = SMB_MALLOC(samelen+1);
 			if (!matches[0])
 				goto cleanup;
 			strncpy(matches[0], matches[1], samelen);
@@ -2473,13 +2732,14 @@ static void readline_callback(void)
  Process commands on stdin.
 ****************************************************************************/
 
-static void process_stdin(void)
+static int process_stdin(void)
 {
 	const char *ptr;
+	int rc = 0;
 
 	while (1) {
-		fstring tok;
-		fstring the_prompt;
+		pstring tok;
+		pstring the_prompt;
 		char *cline;
 		pstring line;
 		int i;
@@ -2503,13 +2763,14 @@ static void process_stdin(void)
 		if (!next_token_nr(&ptr,tok,NULL,sizeof(tok))) continue;
 
 		if ((i = process_tok(tok)) >= 0) {
-			commands[i].fn();
+			rc = commands[i].fn();
 		} else if (i == -2) {
 			d_printf("%s: command abbreviation ambiguous\n",tok);
 		} else {
 			d_printf("%s: command not found\n",tok);
 		}
 	}
+	return rc;
 }
 
 /***************************************************** 
@@ -2522,11 +2783,11 @@ static struct cli_state *do_connect(const char *server, const char *share)
 	struct nmb_name called, calling;
 	const char *server_n;
 	struct in_addr ip;
-	fstring servicename;
+	pstring servicename;
 	char *sharename;
 	
 	/* make a copy so we don't modify the global string 'service' */
-	fstrcpy(servicename, share);
+	pstrcpy(servicename, share);
 	sharename = servicename;
 	if (*sharename == '\\') {
 		server = sharename+2;
@@ -2615,7 +2876,6 @@ static struct cli_state *do_connect(const char *server, const char *share)
 		DEBUG(1,("OS=[%s] Server=[%s]\n",
 			 c->server_os,c->server_type));
 	}		
-	
 	DEBUG(4,(" session setup ok\n"));
 
 	if (!cli_send_tconX(c, sharename, "?????",
@@ -2756,27 +3016,6 @@ static int do_message_op(void)
 }
 
 
-/**
- * Process "-L hostname" option.
- *
- * We don't actually do anything yet -- we just stash the name in a
- * global variable and do the query when all options have been read.
- **/
-
-static void remember_query_host(const char *arg,
-				pstring query_host)
-{
-	char *slash;
-	
-	while (*arg == '\\' || *arg == '/')
-		arg++;
-	pstrcpy(query_host, arg);
-	if ((slash = strchr(query_host, '/'))
-	    || (slash = strchr(query_host, '\\'))) {
-		*slash = 0;
-	}
-}
-
 /****************************************************************************
   main program
 ****************************************************************************/
@@ -2784,7 +3023,8 @@ static void remember_query_host(const char *arg,
  int main(int argc,char *argv[])
 {
 	extern BOOL AllowDebugChange;
-	fstring base_directory;
+	extern BOOL override_logfile;
+	pstring base_directory;
 	int opt;
 	pstring query_host;
 	BOOL message = False;
@@ -2871,7 +3111,7 @@ static void remember_query_host(const char *arg,
 			break;
 
 		case 'L':
-			remember_query_host(poptGetOptArg(pc), query_host);
+			pstrcpy(query_host, poptGetOptArg(pc));
 			break;
 		case 't':
 			pstrcpy(term_code, poptGetOptArg(pc));
@@ -2902,7 +3142,7 @@ static void remember_query_host(const char *arg,
 			}
 			break;
 		case 'D':
-			fstrcpy(base_directory,poptGetOptArg(pc));
+			pstrcpy(base_directory,poptGetOptArg(pc));
 			break;
 		case 'g':
 			grepable=True;
@@ -2920,11 +3160,14 @@ static void remember_query_host(const char *arg,
 	
 	/* save the workgroup...
 	
-	   FIXME!! do we need to do tyhis for other options as well 
+	   FIXME!! do we need to do this for other options as well 
 	   (or maybe a generic way to keep lp_load() from overwriting 
 	   everything)?  */
 	
-	fstrcpy( new_workgroup, lp_workgroup() );		
+	fstrcpy( new_workgroup, lp_workgroup() );
+	
+	if ( override_logfile )
+		setup_logging( lp_logfile(), False );
 	
 	if (!lp_load(dyn_CONFIGFILE,True,False,False)) {
 		fprintf(stderr, "%s: Can't load %s - run testparm to debug it\n",
@@ -2979,14 +3222,25 @@ static void remember_query_host(const char *arg,
 		return do_tar_op(base_directory);
 	}
 
-	if ((p=strchr_m(query_host,'#'))) {
-		*p = 0;
-		p++;
-		sscanf(p, "%x", &name_type);
-	}
-  
 	if (*query_host) {
-		return do_host_query(query_host);
+		char *qhost = query_host;
+		char *slash;
+
+		while (*qhost == '\\' || *qhost == '/')
+			qhost++;
+
+		if ((slash = strchr_m(qhost, '/'))
+		    || (slash = strchr_m(qhost, '\\'))) {
+			*slash = 0;
+		}
+
+		if ((p=strchr_m(qhost, '#'))) {
+			*p = 0;
+			p++;
+			sscanf(p, "%x", &name_type);
+		}
+  
+		return do_host_query(qhost);
 	}
 
 	if (message) {

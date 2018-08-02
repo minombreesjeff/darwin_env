@@ -921,13 +921,13 @@ static BOOL parse_lpq_vlp(char *line,print_queue_struct *buf,BOOL first)
 parse a lpq line. Choose printing style
 ****************************************************************************/
 
-BOOL parse_lpq_entry(int snum,char *line,
+BOOL parse_lpq_entry(enum printing_types printing_type,char *line,
 		     print_queue_struct *buf,
 		     print_status_struct *status,BOOL first)
 {
   BOOL ret;
 
-  switch (lp_printing(snum))
+  switch (printing_type)
     {
     case PRINT_SYSV:
       ret = parse_lpq_sysv(line,buf,first);
@@ -971,7 +971,7 @@ BOOL parse_lpq_entry(int snum,char *line,
   }
 
   /* in the LPRNG case, we skip lines starting by a space.*/
-  if (line && !ret && (lp_printing(snum)==PRINT_LPRNG) )
+  if (line && !ret && (printing_type==PRINT_LPRNG) )
   {
   	if (line[0]==' ')
 		return ret;
@@ -989,21 +989,21 @@ BOOL parse_lpq_entry(int snum,char *line,
       switch (status->status) {
       case LPSTAT_OK:
 	for (i=0; stat0_strings[i]; i++)
-	  if (strstr(line,stat0_strings[i])) {
+	  if (strstr_m(line,stat0_strings[i])) {
 		  fstrcpy(status->message,line);
 		  status->status=LPSTAT_OK;
 		  return ret;
 	  }
       case LPSTAT_STOPPED:
 	for (i=0; stat1_strings[i]; i++)
-	  if (strstr(line,stat1_strings[i])) {
+	  if (strstr_m(line,stat1_strings[i])) {
 		  fstrcpy(status->message,line);
 		  status->status=LPSTAT_STOPPED;
 		  return ret;
 	  }
       case LPSTAT_ERROR:
 	for (i=0; stat2_strings[i]; i++)
-	  if (strstr(line,stat2_strings[i])) {
+	  if (strstr_m(line,stat2_strings[i])) {
 		  fstrcpy(status->message,line);
 		  status->status=LPSTAT_ERROR;
 		  return ret;

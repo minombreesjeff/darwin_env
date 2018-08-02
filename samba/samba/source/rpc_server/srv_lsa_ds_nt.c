@@ -41,7 +41,7 @@ static NTSTATUS fill_dsrole_dominfo_basic(TALLOC_CTX *ctx, DSROLE_PRIMARY_DOMAIN
 
 	DEBUG(10,("fill_dsrole_dominfo_basic: enter\n"));
 
-	if ( !(basic = talloc_zero(ctx, sizeof(DSROLE_PRIMARY_DOMAIN_INFO_BASIC))) ) {
+	if ( !(basic = TALLOC_ZERO_P(ctx, DSROLE_PRIMARY_DOMAIN_INFO_BASIC)) ) {
 		DEBUG(0,("fill_dsrole_dominfo_basic: FATAL error!  talloc_xero() failed\n"));
 		return NT_STATUS_NO_MEMORY;
 	}
@@ -58,7 +58,7 @@ static NTSTATUS fill_dsrole_dominfo_basic(TALLOC_CTX *ctx, DSROLE_PRIMARY_DOMAIN
 			basic->flags = DSROLE_PRIMARY_DS_RUNNING|DSROLE_PRIMARY_DS_MIXED_MODE;
 			if ( secrets_fetch_domain_guid( lp_workgroup(), &basic->domain_guid ) )
 				basic->flags |= DSROLE_PRIMARY_DOMAIN_GUID_PRESENT;
-			get_mydomname(dnsdomain);
+			get_mydnsdomname(dnsdomain);
 			strlower_m(dnsdomain);
 			break;
 		case ROLE_DOMAIN_PDC:
@@ -66,7 +66,7 @@ static NTSTATUS fill_dsrole_dominfo_basic(TALLOC_CTX *ctx, DSROLE_PRIMARY_DOMAIN
 			basic->flags = DSROLE_PRIMARY_DS_RUNNING|DSROLE_PRIMARY_DS_MIXED_MODE;
 			if ( secrets_fetch_domain_guid( lp_workgroup(), &basic->domain_guid ) )
 				basic->flags |= DSROLE_PRIMARY_DOMAIN_GUID_PRESENT;
-			get_mydomname(dnsdomain);
+			get_mydnsdomname(dnsdomain);
 			strlower_m(dnsdomain);
 			break;
 	}

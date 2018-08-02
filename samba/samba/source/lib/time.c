@@ -190,8 +190,7 @@ static int TimeZoneFaster(time_t t)
     time_t low,high;
 
     zone = TimeZone(t);
-    tdt = (struct dst_table *)Realloc(dst_table,
-					      sizeof(dst_table[0])*(i+1));
+    tdt = SMB_REALLOC_ARRAY(dst_table, struct dst_table, i+1);
     if (!tdt) {
       DEBUG(0,("TimeZoneFaster: out of memory!\n"));
       SAFE_FREE(dst_table);
@@ -710,6 +709,33 @@ char *timestring(BOOL hires)
 	return(TimeBuf);
 }
 
+#if defined(ATTR_CMN_CRTIME)
+int get_creation_time_attr(char *path, time_t *createTime, int dontFollowSymLink) 
+{
+    int error;
+	struct attrlist alist;
+	struct replyBlock {
+		unsigned long   length;
+		struct timespec	createTime;
+	} reply;
+	unsigned long options = 0;
+	
+	if (dontFollowSymLink)
+		options |= FSOPT_NOFOLLOW;
+		
+	memset( &alist, 0, sizeof(alist));
+	memset( &reply, 0, sizeof(reply));
+	
+	alist.bitmapcount = ATTR_BIT_MAP_COUNT;
+	alist.commonattr = ATTR_CMN_CRTIME;
+	error = getattrlist( path, &alist, &reply, sizeof(reply), options);
+	if (error == 0) {
+		*createTime = reply.createTime.tv_sec;
+	}
+
+	return (error);
+}
+#endif
 /****************************************************************************
   return the best approximation to a 'create time' under UNIX from a stat
   structure.
@@ -753,4 +779,10 @@ BOOL nt_time_is_zero(NTTIME *nt)
 	if(nt->high==0) 
 		return True;
 	return False;
+}
+
+SMB_BIG_INT usec_time_diff(struct timeval *larget, struct timeval *smallt)
+{
+	SMB_BIG_INT sec_diff = larget->tv_sec - smallt->tv_sec;
+	return (sec_diff * 1000000) + (SMB_BIG_INT)(larget->tv_usec - smallt->tv_usec);
 }

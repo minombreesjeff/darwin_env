@@ -28,6 +28,22 @@
 #include "includes.h"
 
 static TDB_CONTEXT *tdb;
+
+BOOL session_init(void)
+{
+	if (tdb)
+		return True;
+
+	tdb = tdb_open_log(lock_path("sessionid.tdb"), 0, TDB_CLEAR_IF_FIRST|TDB_DEFAULT, 
+		       O_RDWR | O_CREAT, 0644);
+	if (!tdb) {
+		DEBUG(1,("session_init: failed to open sessionid tdb\n"));
+		return False;
+	}
+
+	return True;
+}
+
 /* called when a session is created */
 BOOL session_claim(user_struct *vuser)
 {
@@ -52,14 +68,8 @@ BOOL session_claim(user_struct *vuser)
 		return True;
 	}
 
-	if (!tdb) {
-		tdb = tdb_open_log(lock_path("sessionid.tdb"), 0, TDB_CLEAR_IF_FIRST|TDB_DEFAULT, 
-			       O_RDWR | O_CREAT, 0644);
-		if (!tdb) {
-			DEBUG(1,("session_claim: failed to open sessionid tdb\n"));
-			return False;
-		}
-	}
+	if (!session_init())
+		return False;
 
 	ZERO_STRUCT(sessionid);
 
@@ -141,7 +151,7 @@ BOOL session_claim(user_struct *vuser)
 			       sessionid.id_str, sessionid.id_num);
 	}
 
-	vuser->session_keystr = strdup(keystr);
+	vuser->session_keystr = SMB_STRDUP(keystr);
 	if (!vuser->session_keystr) {
 		DEBUG(0, ("session_claim:  strdup() failed for session_keystr\n"));
 		return False;
@@ -190,7 +200,7 @@ void session_yield(user_struct *vuser)
 
 static BOOL session_traverse(int (*fn)(TDB_CONTEXT *, TDB_DATA, TDB_DATA, void *), void *state)
 {
-	if (!tdb) {
+	if (!session_init()) {
 		DEBUG(3, ("No tdb opened\n"));
 		return False;
 	}
@@ -211,8 +221,8 @@ static int gather_sessioninfo(TDB_CONTEXT *stdb, TDB_DATA kbuf, TDB_DATA dbuf,
 	const struct sessionid *current = (const struct sessionid *) dbuf.dptr;
 
 	sesslist->count += 1;
-	sesslist->sessions = REALLOC(sesslist->sessions, sesslist->count * 
-				      sizeof(struct sessionid));
+	sesslist->sessions = SMB_REALLOC_ARRAY(sesslist->sessions, struct sessionid,
+					sesslist->count);
 
 	memcpy(&sesslist->sessions[sesslist->count - 1], current, 
 	       sizeof(struct sessionid));
@@ -238,4 +248,3 @@ int list_sessions(struct sessionid **session_list)
 	*session_list = sesslist.sessions;
 	return sesslist.count;
 }
-		

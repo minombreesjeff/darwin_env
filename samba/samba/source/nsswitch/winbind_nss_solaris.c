@@ -49,6 +49,28 @@
 
 #define NSS_ARGS(args) ((nss_XbyY_args_t *)args)
 
+#ifdef HPUX
+
+/*
+ * HP-UX 11 has no definiton of the nss_groupsbymem structure.   This
+ * definition is taken from the nss_ldap project at:
+ *  http://www.padl.com/OSS/nss_ldap.html
+ */
+
+struct nss_groupsbymem {
+       const char *username;
+       gid_t *gid_array;
+       int maxgids;
+       int force_slow_way;
+       int (*str2ent)(const char *instr, int instr_len, void *ent, 
+		      char *buffer, int buflen);
+       nss_status_t (*process_cstr)(const char *instr, int instr_len, 
+				    struct nss_groupsbymem *);
+       int numgids;
+};
+
+#endif /* HPUX */
+
 #define make_pwent_str(dest, src) 					\
 {									\
   if((dest = get_static(buffer, buflen, strlen(src)+1)) == NULL)	\
@@ -270,10 +292,13 @@ _nss_winbind_getgroupsbymember_solwrap(nss_backend_t* be, void* args)
 		&errnop);
 
 	/*
-	* Always return NOTFOUND so nsswitch will get info from all
-	* the database backends specified in the nsswitch.conf file.
-	*/
-	return NSS_STATUS_NOTFOUND;
+	 * If the maximum number of gids have been found, return
+	 * SUCCESS so the switch engine will stop searching. Otherwise
+	 * return NOTFOUND so nsswitch will continue to get groups
+	 * from the remaining database backends specified in the
+	 * nsswitch.conf file.
+	 */
+	return (gmem->numgids == gmem->maxgids ? NSS_STATUS_SUCCESS : NSS_STATUS_NOTFOUND);
 }
 
 static NSS_STATUS

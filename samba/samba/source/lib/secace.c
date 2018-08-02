@@ -48,8 +48,8 @@ void sec_ace_copy(SEC_ACE *ace_dest, SEC_ACE *ace_src)
 	ace_dest->size  = ace_src->size;
 	ace_dest->info.mask = ace_src->info.mask;
 	ace_dest->obj_flags = ace_src->obj_flags;
-	memcpy(&ace_dest->obj_guid, &ace_src->obj_guid, GUID_SIZE);
-	memcpy(&ace_dest->inh_guid, &ace_src->inh_guid, GUID_SIZE);	
+	memcpy(&ace_dest->obj_guid, &ace_src->obj_guid, sizeof(struct uuid));
+	memcpy(&ace_dest->inh_guid, &ace_src->inh_guid, sizeof(struct uuid));
 	sid_copy(&ace_dest->trustee, &ace_src->trustee);
 }
 
@@ -80,7 +80,7 @@ NTSTATUS sec_ace_add_sid(TALLOC_CTX *ctx, SEC_ACE **new, SEC_ACE *old, unsigned 
 
 	*num += 1;
 	
-	if((new[0] = (SEC_ACE *) talloc_zero(ctx, (*num) * sizeof(SEC_ACE))) == 0)
+	if((new[0] = TALLOC_ZERO_ARRAY(ctx, SEC_ACE, *num )) == 0)
 		return NT_STATUS_NO_MEMORY;
 
 	for (i = 0; i < *num - 1; i ++)
@@ -124,7 +124,7 @@ NTSTATUS sec_ace_del_sid(TALLOC_CTX *ctx, SEC_ACE **new, SEC_ACE *old, uint32 *n
 
 	if (!ctx || !new || !old || !sid || !num)  return NT_STATUS_INVALID_PARAMETER;
 
-	if((new[0] = (SEC_ACE *) talloc_zero(ctx, (*num) * sizeof(SEC_ACE))) == 0)
+	if((new[0] = TALLOC_ZERO_ARRAY(ctx, SEC_ACE, *num )) == 0)
 		return NT_STATUS_NO_MEMORY;
 
 	for (i = 0; i < *num; i ++) {
