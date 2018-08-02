@@ -16,6 +16,8 @@ Install_Target = install
 
 strip::
 	$(STRIP) $(DSTROOT)/usr/bin/fetchmail
+	chgrp mail $(DSTROOT)/usr/bin/fetchmail
+	chmod g+s $(DSTROOT)/usr/bin/fetchmail
 
 # fetchmailconf is a python script, and we don't have python.
 remove-fetchmailconf:
