@@ -85,7 +85,7 @@ encrypt of the server challenge originally received. JRA.
 
 NTSTATUS cli_net_auth2(struct cli_state *cli, 
 		       uint16 sec_chan, 
-		       uint32 neg_flags, DOM_CHAL *srv_chal)
+		       uint32 *neg_flags, DOM_CHAL *srv_chal)
 {
         prs_struct qbuf, rbuf;
         NET_Q_AUTH_2 q;
@@ -99,12 +99,12 @@ NTSTATUS cli_net_auth2(struct cli_state *cli,
 
         DEBUG(4,("cli_net_auth2: srv:%s acct:%s sc:%x mc: %s chal %s neg: %x\n",
                  cli->srv_name_slash, cli->mach_acct, sec_chan, global_myname(),
-                 credstr(cli->clnt_cred.challenge.data), neg_flags));
+                 credstr(cli->clnt_cred.challenge.data), *neg_flags));
 
         /* store the parameters */
         init_q_auth_2(&q, cli->srv_name_slash, cli->mach_acct, 
                       sec_chan, global_myname(), &cli->clnt_cred.challenge, 
-                      neg_flags);
+                      *neg_flags);
 
         /* turn parameters into data stream */
 
@@ -141,6 +141,7 @@ password ?).\n", cli->desthost ));
                         result = NT_STATUS_ACCESS_DENIED;
                         goto done;
                 }
+		*neg_flags = r.srv_flgs.neg_flags;
         }
 
  done:
@@ -195,7 +196,6 @@ NTSTATUS cli_net_auth3(struct cli_state *cli,
         }
 
         result = r.status;
-	*neg_flags = r.srv_flgs.neg_flags;
 
         if (NT_STATUS_IS_OK(result)) {
                 UTIME zerotime;
@@ -217,6 +217,7 @@ password ?).\n", cli->desthost ));
                         result = NT_STATUS_ACCESS_DENIED;
                         goto done;
                 }
+		*neg_flags = r.srv_flgs.neg_flags;
         }
 
  done:
@@ -224,24 +225,6 @@ password ?).\n", cli->desthost ));
         prs_mem_free(&rbuf);
         
         return result;
-}
-
-/* Return the secure channel type depending on the server role. */
-
-uint16 get_sec_chan(void)
-{
-	uint16 sec_chan = SEC_CHAN_WKSTA;
-
-	switch (lp_server_role()) {
-	case ROLE_DOMAIN_PDC:
-		sec_chan = SEC_CHAN_DOMAIN;
-		break;
-	case ROLE_DOMAIN_BDC:
-		sec_chan = SEC_CHAN_BDC;
-		break;
-	}
-
-	return sec_chan;
 }
 
 /* Initialize domain session credentials */
@@ -286,7 +269,7 @@ NTSTATUS cli_nt_setup_creds(struct cli_state *cli,
          */
         switch (level) {
 		case 2:
-			result = cli_net_auth2(cli, sec_chan, *neg_flags, &srv_chal);
+			result = cli_net_auth2(cli, sec_chan, neg_flags, &srv_chal);
 			break;
 		case 3:
 			result = cli_net_auth3(cli, sec_chan, neg_flags, &srv_chal);
@@ -297,7 +280,7 @@ NTSTATUS cli_nt_setup_creds(struct cli_state *cli,
 	}
 
 	if (!NT_STATUS_IS_OK(result))
-                DEBUG(1,("cli_nt_setup_creds: auth%d challenge failed %s\n", level, nt_errstr(result)));
+                DEBUG(3,("cli_nt_setup_creds: auth%d challenge failed %s\n", level, nt_errstr(result)));
 
         return result;
 }
@@ -349,8 +332,7 @@ NTSTATUS cli_netlogon_logon_ctrl2(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 }
 
 /****************************************************************************
-Generate the next creds to use.  Yuck - this is a cut&paste from another
-file.  They should be combined at some stage.  )-:
+Generate the next creds to use.
 ****************************************************************************/
 
 static void gen_next_creds( struct cli_state *cli, DOM_CRED *new_clnt_cred)
@@ -489,6 +471,7 @@ NTSTATUS cli_netlogon_sam_deltas(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 /* Logon domain user */
 
 NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
+				DOM_CRED *ret_creds,
                                 const char *username, const char *password,
                                 int logon_type)
 {
@@ -503,6 +486,7 @@ NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	ZERO_STRUCT(q);
 	ZERO_STRUCT(r);
+	ZERO_STRUCT(dummy_rtn_creds);
 
 	/* Initialise parse structures */
 
@@ -515,8 +499,8 @@ NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
         q.validation_level = validation_level;
 
-	memset(&dummy_rtn_creds, '\0', sizeof(dummy_rtn_creds));
-	dummy_rtn_creds.timestamp.time = time(NULL);
+	if (ret_creds == NULL)
+		ret_creds = &dummy_rtn_creds;
 
         ctr.switch_value = logon_type;
 
@@ -530,7 +514,7 @@ NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
                               0, /* param_ctrl */
                               0xdead, 0xbeef, /* LUID? */
                               username, cli->clnt_name_slash,
-                              cli->sess_key, lm_owf_user_pwd,
+                              (const char *)cli->sess_key, lm_owf_user_pwd,
                               nt_owf_user_pwd);
 
                 break;
@@ -559,7 +543,7 @@ NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
         }
 
         init_sam_info(&q.sam_id, cli->srv_name_slash, global_myname(),
-                      &clnt_creds, &dummy_rtn_creds, logon_type,
+                      &clnt_creds, ret_creds, logon_type,
                       &ctr);
 
         /* Marshall data and send request */
@@ -580,6 +564,7 @@ NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
         /* Return results */
 
 	result = r.status;
+	memcpy(ret_creds, &r.srv_creds, sizeof(*ret_creds));
 
  done:
 	prs_mem_free(&qbuf);
@@ -596,8 +581,9 @@ NTSTATUS cli_netlogon_sam_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
  **/
 
 NTSTATUS cli_netlogon_sam_network_logon(struct cli_state *cli, TALLOC_CTX *mem_ctx,
+					DOM_CRED *ret_creds,
 					const char *username, const char *domain, const char *workstation, 
-					const uint8 chal[8],
+					const uint8 chal[8], 
 					DATA_BLOB lm_response, DATA_BLOB nt_response,
 					NET_USER_INFO_3 *info3)
 
@@ -610,9 +596,12 @@ NTSTATUS cli_netlogon_sam_network_logon(struct cli_state *cli, TALLOC_CTX *mem_c
 	NET_ID_INFO_CTR ctr;
 	int validation_level = 3;
 	char *workstation_name_slash;
+	uint8 netlogon_sess_key[16];
+	static uint8 zeros[16];
 	
 	ZERO_STRUCT(q);
 	ZERO_STRUCT(r);
+	ZERO_STRUCT(dummy_rtn_creds);
 
 	workstation_name_slash = talloc_asprintf(mem_ctx, "\\\\%s", workstation);
 	
@@ -632,8 +621,8 @@ NTSTATUS cli_netlogon_sam_network_logon(struct cli_state *cli, TALLOC_CTX *mem_c
 
 	q.validation_level = validation_level;
 
-	memset(&dummy_rtn_creds, '\0', sizeof(dummy_rtn_creds));
-	dummy_rtn_creds.timestamp.time = time(NULL);
+	if (ret_creds == NULL)
+		ret_creds = &dummy_rtn_creds;
 
         ctr.switch_value = NET_LOGON_TYPE;
 
@@ -644,7 +633,7 @@ NTSTATUS cli_netlogon_sam_network_logon(struct cli_state *cli, TALLOC_CTX *mem_c
 		      lm_response.data, lm_response.length, nt_response.data, nt_response.length);
  
         init_sam_info(&q.sam_id, cli->srv_name_slash, global_myname(),
-                      &clnt_creds, &dummy_rtn_creds, NET_LOGON_TYPE,
+                      &clnt_creds, ret_creds, NET_LOGON_TYPE,
                       &ctr);
 
         /* Marshall data and send request */
@@ -662,9 +651,19 @@ NTSTATUS cli_netlogon_sam_network_logon(struct cli_state *cli, TALLOC_CTX *mem_c
 		goto done;
 	}
 
+	ZERO_STRUCT(netlogon_sess_key);
+	memcpy(netlogon_sess_key, cli->sess_key, 8);
+	
+	if (memcmp(zeros, info3->user_sess_key, 16) != 0)
+		SamOEMhash(info3->user_sess_key, netlogon_sess_key, 16);
+		
+	if (memcmp(zeros, info3->padding, 16) != 0)
+		SamOEMhash(info3->padding, netlogon_sess_key, 16);
+
         /* Return results */
 
 	result = r.status;
+	memcpy(ret_creds, &r.srv_creds, sizeof(*ret_creds));
 
  done:
 	prs_mem_free(&qbuf);
@@ -686,31 +685,20 @@ NTSTATUS cli_net_srv_pwset(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 	NET_Q_SRV_PWSET q_s;
 	uint16 sec_chan_type = 2;
 	NTSTATUS nt_status;
-	char *mach_acct;
 
 	gen_next_creds( cli, &new_clnt_cred);
 	
 	prs_init(&qbuf , 1024, mem_ctx, MARSHALL);
 	prs_init(&rbuf, 0,    mem_ctx, UNMARSHALL);
 	
-	/* create and send a MSRPC command with api NET_SRV_PWSET */
-	
-	mach_acct = talloc_asprintf(mem_ctx, "%s$", machine_name);
-	
-	if (!mach_acct) {
-		DEBUG(0,("talloc_asprintf failed!\n"));
-		nt_status = NT_STATUS_NO_MEMORY;
-		goto done;
-	}
-
 	DEBUG(4,("cli_net_srv_pwset: srv:%s acct:%s sc: %d mc: %s clnt %s %x\n",
-		 cli->srv_name_slash, mach_acct, sec_chan_type, machine_name,
+		 cli->srv_name_slash, cli->mach_acct, sec_chan_type, machine_name,
 		 credstr(new_clnt_cred.challenge.data), new_clnt_cred.timestamp.time));
 	
         /* store the parameters */
-	init_q_srv_pwset(&q_s, cli->srv_name_slash, cli->sess_key,
-			 mach_acct, sec_chan_type, machine_name, 
-			 &new_clnt_cred, (char *)hashed_mach_pwd);
+	init_q_srv_pwset(&q_s, cli->srv_name_slash, (const char *)cli->sess_key,
+			 cli->mach_acct, sec_chan_type, machine_name, 
+			 &new_clnt_cred, hashed_mach_pwd);
 	
 	/* turn parameters into data stream */
 	if(!net_io_q_srv_pwset("", &q_s,  &qbuf, 0)) {

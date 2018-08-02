@@ -91,8 +91,9 @@ static const struct {
 	{SID_NAME_DELETED, "Deleted Account"},
 	{SID_NAME_INVALID, "Invalid Account"},
 	{SID_NAME_UNKNOWN, "UNKNOWN"},
+	{SID_NAME_COMPUTER, "Computer"},
 
- 	{SID_NAME_USE_NONE, NULL}
+ 	{(enum SID_NAME_USE)0, NULL}
 };
 
 const char *sid_type_lookup(uint32 sid_type) 
@@ -390,6 +391,9 @@ BOOL sid_peek_check_rid(const DOM_SID *exp_dom_sid, const DOM_SID *sid, uint32 *
 	if (!exp_dom_sid || !sid || !rid)
 		return False;
 			
+	if (sid->num_auths != (exp_dom_sid->num_auths+1)) {
+		return False;
+	}
 
 	if (sid_compare_domain(exp_dom_sid, sid)!=0){
 		*rid=(-1);
@@ -628,4 +632,22 @@ void print_guid(GUID *guid)
 	for (i=10;i<GUID_SIZE;i++)
 		d_printf("%02x", guid->info[i]);
 	d_printf("\n");
+}
+
+/*******************************************************************
+ Tallocs a duplicate SID. 
+********************************************************************/ 
+
+DOM_SID *sid_dup_talloc(TALLOC_CTX *ctx, DOM_SID *src)
+{
+	DOM_SID *dst;
+	
+	if(!src)
+		return NULL;
+	
+	if((dst = talloc_zero(ctx, sizeof(DOM_SID))) != NULL) {
+		sid_copy( dst, src);
+	}
+	
+	return dst;
 }

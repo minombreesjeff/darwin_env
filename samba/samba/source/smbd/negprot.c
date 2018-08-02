@@ -101,6 +101,7 @@ static int reply_lanman1(char *inbuf, char *outbuf)
 	/* Create a token value and add it to the outgoing packet. */
 	if (global_encrypted_passwords_negotiated) {
 		get_challenge(smb_buf(outbuf));
+		SSVAL(outbuf,smb_vwv11, 8);
 	}
 
 	Protocol = PROTOCOL_LANMAN1;
@@ -144,6 +145,7 @@ static int reply_lanman2(char *inbuf, char *outbuf)
 	/* Create a token value and add it to the outgoing packet. */
 	if (global_encrypted_passwords_negotiated) {
 		get_challenge(smb_buf(outbuf));
+		SSVAL(outbuf,smb_vwv11, 8);
 	}
 
 	Protocol = PROTOCOL_LANMAN2;
@@ -167,7 +169,7 @@ static int reply_lanman2(char *inbuf, char *outbuf)
 static int negprot_spnego(char *p)
 {
 	DATA_BLOB blob;
-	uint8 guid[16];
+	uint8 guid[17];
 	const char *OIDs_krb5[] = {OID_KERBEROS5,
 				   OID_KERBEROS5_OLD,
 				   OID_NTLMSSP,
@@ -178,9 +180,19 @@ static int negprot_spnego(char *p)
 
 	global_spnego_negotiated = True;
 
-	memset(guid, 0, 16);
-	safe_strcpy((char *)guid, global_myname(), 16);
-	strlower((char *)guid);
+	ZERO_STRUCT(guid);
+	safe_strcpy((char *)guid, global_myname(), sizeof(guid)-1);
+
+#ifdef DEVELOPER
+	/* valgrind fixer... */
+	{
+		size_t sl = strlen(guid);
+		if (sizeof(guid)-sl)
+			memset(&guid[sl], '\0', sizeof(guid)-sl);
+	}
+#endif
+
+	strlower_m((char *)guid);
 
 #if 0
 	/* strangely enough, NT does not sent the single OID NTLMSSP when
@@ -265,6 +277,22 @@ static int reply_nt1(char *inbuf, char *outbuf)
 	if (global_encrypted_passwords_negotiated)
 		secword |= NEGOTIATE_SECURITY_CHALLENGE_RESPONSE;
 	
+	if (lp_server_signing()) {
+	       	if (lp_security() >= SEC_USER) {
+			secword |= NEGOTIATE_SECURITY_SIGNATURES_ENABLED;
+			/* No raw mode with smb signing. */
+			capabilities &= ~CAP_RAW_MODE;
+			if (lp_server_signing() == Required)
+				secword |=NEGOTIATE_SECURITY_SIGNATURES_REQUIRED;
+			srv_set_signing_negotiated();
+		} else {
+			DEBUG(0,("reply_nt1: smb signing is incompatible with share level security !\n"));
+			if (lp_server_signing() == Required) {
+				exit_server("reply_nt1: smb signing required and share level security selected.");
+			}
+		}
+	}
+
 	set_message(outbuf,17,0,True);
 	
 	SCVAL(outbuf,smb_vwv1,secword);
@@ -508,6 +536,10 @@ int reply_negprot(connection_struct *conn,
 	SSVAL(outbuf,smb_vwv0,choice);
   
 	DEBUG( 5, ( "negprot index=%d\n", choice ) );
+
+	if ((lp_server_signing() == Required) && (Protocol < PROTOCOL_NT1)) {
+		exit_server("SMB signing is required and client negotiated a downlevel protocol");
+	}
 
 	END_PROFILE(SMBnegprot);
 	return(outsize);

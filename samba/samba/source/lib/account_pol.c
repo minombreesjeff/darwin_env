@@ -53,7 +53,7 @@ BOOL init_account_policy(void)
 		account_policy_set(AP_MIN_PASSWORD_LEN, MINPASSWDLENGTH);   /* 5 chars minimum             */
 		account_policy_set(AP_PASSWORD_HISTORY, 0);		    /* don't keep any old password */
 		account_policy_set(AP_USER_MUST_LOGON_TO_CHG_PASS, 0);	    /* don't force user to logon   */
-		account_policy_set(AP_MAX_PASSWORD_AGE, MAX_PASSWORD_AGE);  /* 21 days                     */
+		account_policy_set(AP_MAX_PASSWORD_AGE, (uint32)-1);        /* don't expire		   */
 		account_policy_set(AP_MIN_PASSWORD_AGE, 0);		    /* 0 days                      */
 		account_policy_set(AP_LOCK_ACCOUNT_DURATION, 0);	    /* lockout for 0 minutes       */
 		account_policy_set(AP_RESET_COUNT_TIME, 0);		    /* reset immediatly            */
@@ -118,7 +118,7 @@ BOOL account_policy_get(int field, uint32 *value)
 {
 	fstring name;
 
-	init_account_policy();
+	if(!init_account_policy())return False;
 
 	*value = 0;
 
@@ -142,7 +142,7 @@ BOOL account_policy_set(int field, uint32 value)
 {
 	fstring name;
 
-	init_account_policy();
+	if(!init_account_policy())return False;
 
 	fstrcpy(name, decode_account_policy_name(field));
 	if (!*name) {

@@ -49,7 +49,7 @@ int set_opendirectory_authenticator(u_int32_t authenticatorlen, char *authentica
 	int initialized = 0;
 	
 	if (authenticatorlen && authenticator && secretlen && secret) {
-		fd = open(credentialfile, O_CREAT | O_WRONLY | O_TRUNC,0666);
+		fd = open(credentialfile, O_CREAT | O_WRONLY | O_TRUNC,0600);
 		if (fd == -1) {
 			fprintf(stderr,"unable to open file (%s)\n",strerror(errno));
 		} else {
@@ -187,7 +187,7 @@ void delete_opendirectory_authenticator(void*authenticator)
 tDirStatus get_node_ref_and_name(tDirReference dirRef, char *name, char *recordType, tDirNodeReference *nodeRef, char *outRecordName)
 {
     tDirStatus			status			= eDSNoErr;
-    long			bufferSize		= 2048;
+	unsigned long	bufferSize		= 1024 * 10;
     long			returnCount		= 0;
     tDataBufferPtr		nodeBuffer		= NULL;
     tDirNodeReference		searchNodeRef		= NULL;
@@ -212,7 +212,6 @@ tDirStatus get_node_ref_and_name(tDirReference dirRef, char *name, char *recordT
     status = dsFindDirNodes(dirRef, nodeBuffer, NULL, eDSSearchNodeName, &returnCount, NULL);
     if ((status != eDSNoErr) || (returnCount <= 0)) goto cleanup;
 
-    searchNodeName = dsDataListAllocate(dirRef);
     status = dsGetDirNodeName(dirRef, nodeBuffer, 1, &searchNodeName);
     if (status != eDSNoErr) goto cleanup;
     status = dsOpenDirNode(dirRef, searchNodeName, &searchNodeRef);
@@ -316,6 +315,7 @@ tDirStatus opendirectory_cred_session_key(char *client_challenge, char *server_c
     tDirReference	dirRef = NULL;
 	tDirStatus 		status			= eDSNoErr;
 	tDirStatus 		bufferStatus	= eDSNoErr;
+	unsigned long	bufferSize		= 1024 * 10;
 	unsigned long		curr			= 0;
 	unsigned long		len			= 0;
 	tDataBufferPtr		authBuff  		= NULL;
@@ -346,11 +346,11 @@ tDirStatus opendirectory_cred_session_key(char *client_challenge, char *server_c
 	else
 		targetaccount = recordName;
 
-	authBuff = dsDataBufferAllocate( dirRef, 2048 );
+	authBuff = dsDataBufferAllocate( dirRef, bufferSize );
 	if ( authBuff != NULL )
 	{
 			authBuff->fBufferLength = 0;
-			stepBuff = dsDataBufferAllocate( dirRef, 2048 );
+			stepBuff = dsDataBufferAllocate( dirRef, bufferSize );
 			if ( stepBuff != NULL )
 			{
 					authType = dsDataNodeAllocateString( dirRef,  kDSStdAuthSMBWorkstationCredentialSessionKey);
@@ -410,6 +410,10 @@ tDirStatus opendirectory_cred_session_key(char *client_challenge, char *server_c
 			// DEBUG(1,("get_password_policy: *** dsDataBufferAllocate(1) faild with \n" ));
 	}
 cleanup:
+    if (authType != NULL)
+		dsDataNodeDeAllocate(dirRef, authType);
+    if (recordType != NULL)
+		dsDataNodeDeAllocate(dirRef, recordType);
 	if (dirRef)
 		dsCloseDirService(dirRef);
 	if (nodeRef)
@@ -417,11 +421,12 @@ cleanup:
 	return status;
 }
 
-tDirStatus opendirectory_user_session_key(char *account_name, char *session_key, char *slot_id)
+tDirStatus opendirectory_user_session_key(const char *account_name, char *session_key, char *slot_id)
 {
     tDirReference	dirRef = NULL;
 	tDirStatus 		status			= eDSNoErr;
 	tDirStatus 		bufferStatus	= eDSNoErr;
+	unsigned long	bufferSize		= 1024 * 10;
 	unsigned long		len			= 0;
 	tDataBufferPtr		authBuff  		= NULL;
 	tDataBufferPtr		stepBuff  		= NULL;
@@ -451,11 +456,11 @@ tDirStatus opendirectory_user_session_key(char *account_name, char *session_key,
 	else
 		targetaccount = recordName;
 
-	authBuff = dsDataBufferAllocate( dirRef, 2048 );
+	authBuff = dsDataBufferAllocate( dirRef, bufferSize );
 	if ( authBuff != NULL )
 	{
 			authBuff->fBufferLength = 0;
-			stepBuff = dsDataBufferAllocate( dirRef, 2048 );
+			stepBuff = dsDataBufferAllocate( dirRef, bufferSize );
 			if ( stepBuff != NULL )
 			{
 					authType = dsDataNodeAllocateString( dirRef,  kDSStdAuthSMB_NT_UserSessionKey);
@@ -463,46 +468,49 @@ tDirStatus opendirectory_user_session_key(char *account_name, char *session_key,
 					if ( authType != NULL )
 					{
 							// Target account
-							printf("account_name(%s)\n",targetaccount);
 							opendirectory_add_data_buffer_item(authBuff, strlen( targetaccount ), targetaccount);
 							opendirectory_add_data_buffer_item(authBuff, 1, ""); // null terminate ??
 							
 							status = dsDoDirNodeAuthOnRecordType( nodeRef, authType, 1, authBuff, stepBuff, NULL,  recordType);
 							if ( status == eDSNoErr )
 							{
-									//DEBUG(1,("kDSStdAuthSMB_NT_UserSessionKey was successful for  \"%s\" :)\n", machine_acct));
+									//DEBUG(4,("kDSStdAuthSMB_NT_UserSessionKey was successful for  \"%s\" :)\n", targetaccount));
 									memcpy(&len, stepBuff->fBufferData, 4);
 									stepBuff->fBufferData[len+4] = '\0';
 									memcpy(session_key,stepBuff->fBufferData+4, len);
-									//DEBUG(1,("session key  \"%s\" :)\n", policy));
+									//DEBUG(4,("session key  \"%s\" :)\n", policy));
 
 							}
 							else
 							{
-									// DEBUG(1,("kDSStdAuthSMB_NT_UserSessionKey FAILED for user \"%s\" (%d) :(\n", userid, status) );
+									//DEBUG(4,("kDSStdAuthSMB_NT_UserSessionKey FAILED for user \"%s\" (%d) :(\n", targetaccount, status) );
 							}
 					}
 					bufferStatus = dsDataBufferDeAllocate( dirRef, stepBuff );
 					if ( bufferStatus != eDSNoErr )
 					{
-							// DEBUG(1,("kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferDeAllocate(2) faild with error = %d: \n", bufferStatus) );
+							//DEBUG(0,("kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferDeAllocate(2) faild with error = %d: \n", bufferStatus) );
 					}
 			}
 			else
 			{
-					// DEBUG(1,("kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferAllocate(2) faild with \n" ));
+					//DEBUG(0,("kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferAllocate(2) faild with \n" ));
 			}
 			bufferStatus = dsDataBufferDeAllocate( dirRef, authBuff );
 			if ( bufferStatus != eDSNoErr )
 			{
-					// DEBUG(1,( "kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferDeAllocate(2) faild with error = %d: \n", status ));
+					//DEBUG(0,( "kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferDeAllocate(2) faild with error = %d: \n", status ));
 			}
 	}
 	else
 	{
-			// DEBUG(1,("kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferAllocate(1) faild with \n" ));
+			//DEBUG(0,("kDSStdAuthSMB_NT_UserSessionKey: *** dsDataBufferAllocate(1) faild with \n" ));
 	}
 cleanup:
+    if (authType != NULL)
+		dsDataNodeDeAllocate(dirRef, authType);
+    if (recordType != NULL)
+		dsDataNodeDeAllocate(dirRef, recordType);
 	if (dirRef)
 		dsCloseDirService(dirRef);
 	if (nodeRef)
@@ -515,6 +523,7 @@ tDirStatus opendirectory_set_workstation_nthash(char *account_name, char *nt_has
     tDirReference	dirRef = NULL;
 	tDirStatus 		status			= eDSNoErr;
 	tDirStatus 		bufferStatus	= eDSNoErr;
+	unsigned long	bufferSize		= 1024 * 10;
 	unsigned long		curr			= 0;
 	unsigned long		len			= 0;
 	tDataBufferPtr		authBuff  		= NULL;
@@ -545,11 +554,11 @@ tDirStatus opendirectory_set_workstation_nthash(char *account_name, char *nt_has
 	else
 		targetaccount = recordName;
 
-	authBuff = dsDataBufferAllocate( dirRef, 2048 );
+	authBuff = dsDataBufferAllocate( dirRef, bufferSize );
 	if ( authBuff != NULL )
 	{
 			authBuff->fBufferLength = 0;
-			stepBuff = dsDataBufferAllocate( dirRef, 2048 );
+			stepBuff = dsDataBufferAllocate( dirRef, bufferSize );
 			if ( stepBuff != NULL )
 			{
 					authType = dsDataNodeAllocateString( dirRef,  kDSStdAuthSetWorkstationPasswd);
@@ -601,6 +610,105 @@ tDirStatus opendirectory_set_workstation_nthash(char *account_name, char *nt_has
 			// DEBUG(1,("kDSStdAuthSetWorkstationPasswd: *** dsDataBufferAllocate(1) faild with \n" ));
 	}
 cleanup:
+    if (authType != NULL)
+		dsDataNodeDeAllocate(dirRef, authType);
+    if (recordType != NULL)
+		dsDataNodeDeAllocate(dirRef, recordType);
+	if (dirRef)
+		dsCloseDirService(dirRef);
+	if (nodeRef)
+		dsCloseDirNode(nodeRef);
+	return status;
+}
+
+tDirStatus opendirectory_lmchap2changepasswd(char *account_name, char *passwordData, char *passwordHash, u_int8_t passwordFormat, char *slot_id)
+{
+    tDirReference	dirRef = NULL;
+	tDirStatus 		status			= eDSNoErr;
+	tDirStatus 		bufferStatus	= eDSNoErr;
+	unsigned long	bufferSize		= 1024 * 10;
+	unsigned long		len			= 0;
+	tDataBufferPtr		authBuff  		= NULL;
+	tDataBufferPtr		stepBuff  		= NULL;
+	tDataNodePtr		authType		= NULL;
+	tDataNodePtr		recordType		= NULL;
+	tDirNodeReference nodeRef = NULL;
+	char *targetaccount = NULL;
+	char recordName[255] = {0};
+		
+    status = dsOpenDirService(&dirRef);
+	
+	if (status != eDSNoErr)
+		return status;
+	
+	status = get_node_ref_and_name(dirRef, account_name, kDSStdRecordTypeUsers, &nodeRef, recordName);
+
+	if (status != eDSNoErr)
+		goto cleanup;
+
+	status = opendirectory_authenticate_node(dirRef, nodeRef);
+
+	if (status != eDSNoErr)
+		goto cleanup;
+
+	if (slot_id && strlen(slot_id))
+		targetaccount = slot_id;
+	else
+		targetaccount = recordName;
+
+	authBuff = dsDataBufferAllocate( dirRef, bufferSize );
+	if ( authBuff != NULL )
+	{
+			authBuff->fBufferLength = 0;
+			stepBuff = dsDataBufferAllocate( dirRef, bufferSize );
+			if ( stepBuff != NULL )
+			{
+					authType = dsDataNodeAllocateString( dirRef,  "dsAuthMethodStandard:dsAuthMSLMCHAP2ChangePasswd" /*kDSStdAuthMSLMCHAP2ChangePasswd*/);
+					recordType = dsDataNodeAllocateString( dirRef,  kDSStdRecordTypeUsers);
+					if ( authType != NULL )
+					{
+							// Target account
+							printf("account_name(%s)\n",targetaccount);
+							opendirectory_add_data_buffer_item(authBuff, strlen( targetaccount ), targetaccount);
+							opendirectory_add_data_buffer_item(authBuff, 1, &passwordFormat);
+							opendirectory_add_data_buffer_item(authBuff, 516, passwordData);
+							
+							status = dsDoDirNodeAuthOnRecordType( nodeRef, authType, 1, authBuff, stepBuff, NULL,  recordType);
+							if ( status == eDSNoErr )
+							{
+									//DEBUG(1,("kDSStdAuthMSLMCHAP2ChangePasswd was successful for  \"%s\" :)\n", machine_acct));
+
+							}
+							else
+							{
+									// DEBUG(1,("kDSStdAuthMSLMCHAP2ChangePasswd FAILED for user \"%s\" (%d) :(\n", userid, status) );
+							}
+					}
+					bufferStatus = dsDataBufferDeAllocate( dirRef, stepBuff );
+					if ( bufferStatus != eDSNoErr )
+					{
+							// DEBUG(1,("kDSStdAuthMSLMCHAP2ChangePasswd: *** dsDataBufferDeAllocate(2) faild with error = %d: \n", bufferStatus) );
+					}
+			}
+			else
+			{
+					// DEBUG(1,("kDSStdAuthMSLMCHAP2ChangePasswd: *** dsDataBufferAllocate(2) faild with \n" ));
+			}
+			bufferStatus = dsDataBufferDeAllocate( dirRef, authBuff );
+			if ( bufferStatus != eDSNoErr )
+			{
+					// DEBUG(1,( "kDSStdAuthMSLMCHAP2ChangePasswd: *** dsDataBufferDeAllocate(2) faild with error = %d: \n", status ));
+			}
+	}
+	else
+	{
+			// DEBUG(1,("kDSStdAuthMSLMCHAP2ChangePasswd: *** dsDataBufferAllocate(1) faild with \n" ));
+	}
+cleanup:
+    if (authType != NULL)
+		dsDataNodeDeAllocate(dirRef, authType);
+    if (recordType != NULL)
+		dsDataNodeDeAllocate(dirRef, recordType);
 	if (dirRef)
 		dsCloseDirService(dirRef);
 	if (nodeRef)
@@ -612,6 +720,7 @@ tDirStatus opendirectory_authenticate_node(tDirReference	dirRef, tDirNodeReferen
 {
 	tDirStatus 		status			= eDSNoErr;
 	tDirStatus 		bufferStatus	= eDSNoErr;
+	unsigned long	bufferSize		= 1024 * 10;
 	tDataBufferPtr		authBuff  		= NULL;
 	tDataBufferPtr		stepBuff  		= NULL;
 	tDataNodePtr		authType		= NULL;
@@ -626,11 +735,11 @@ tDirStatus opendirectory_authenticate_node(tDirReference	dirRef, tDirNodeReferen
 		return eDSNullParameter;
 	}
 		
-	authBuff = dsDataBufferAllocate( dirRef, 2048 );
+	authBuff = dsDataBufferAllocate( dirRef, bufferSize );
 	if ( authBuff != NULL )
 	{
 			authBuff->fBufferLength = 0;
-			stepBuff = dsDataBufferAllocate( dirRef, 2048 );
+			stepBuff = dsDataBufferAllocate( dirRef, bufferSize );
 			if ( stepBuff != NULL )
 			{
 					authType = dsDataNodeAllocateString( dirRef,  kDSStdAuthNodeNativeClearTextOK);
@@ -674,5 +783,11 @@ tDirStatus opendirectory_authenticate_node(tDirReference	dirRef, tDirNodeReferen
 	{
 			// DEBUG(1,("kDSStdAuthNodeNativeClearTextOK: *** dsDataBufferAllocate(1) faild with \n" ));
 	}
+	
+    if (authType != NULL)
+		dsDataNodeDeAllocate(dirRef, authType);
+    if (recordType != NULL)
+		dsDataNodeDeAllocate(dirRef, recordType);
+	delete_opendirectory_authenticator(authenticator);
 	return status;
 }

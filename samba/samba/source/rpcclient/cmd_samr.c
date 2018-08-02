@@ -125,7 +125,7 @@ static const char *display_time(NTTIME nttime)
 	mins=(sec - (days*60*60*24) - (hours*60*60) ) / 60;
 	secs=sec - (days*60*60*24) - (hours*60*60) - (mins*60);
 
-	snprintf(string, sizeof(string)-1, "%u days, %u hours, %u minutes, %u seconds", days, hours, mins, secs);
+	fstr_sprintf(string, "%u days, %u hours, %u minutes, %u seconds", days, hours, mins, secs);
 	return (string);
 }
 
@@ -288,8 +288,8 @@ static NTSTATUS cmd_samr_query_user(struct cli_state *cli,
 		sscanf(argv[3], "%x", &access_mask);
 	
 
-	slprintf (server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
-	strupper (server);
+	slprintf(server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
+	strupper_m(server);
 	
 	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS,
 				   &connect_pol);
@@ -396,8 +396,8 @@ static NTSTATUS cmd_samr_query_group(struct cli_state *cli,
 	if (argc > 3)
 		sscanf(argv[3], "%x", &access_mask);
 
-	slprintf (server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
-	strupper (server);
+	slprintf(server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
+	strupper_m(server);
 
 	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS,
 				   &connect_pol);
@@ -458,8 +458,8 @@ static NTSTATUS cmd_samr_query_usergroups(struct cli_state *cli,
 	if (argc > 2)
 		sscanf(argv[2], "%x", &access_mask);
 
-	slprintf (server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
-	strupper (server);
+	slprintf(server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
+	strupper_m(server);
 		
 	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS,
 				   &connect_pol);
@@ -524,8 +524,8 @@ static NTSTATUS cmd_samr_query_useraliases(struct cli_state *cli,
 	if (argc > 3)
 		sscanf(argv[3], "%x", &access_mask);
 
-	slprintf (server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
-	strupper (server);
+	slprintf(server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
+	strupper_m(server);
 		
 	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS,
 				   &connect_pol);
@@ -587,8 +587,8 @@ static NTSTATUS cmd_samr_query_groupmem(struct cli_state *cli,
 	if (argc > 2)
 		sscanf(argv[2], "%x", &access_mask);
 
-	slprintf (server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
-	strupper (server);
+	slprintf(server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
+	strupper_m(server);
 
 	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS,
 				   &connect_pol);
@@ -623,6 +623,80 @@ static NTSTATUS cmd_samr_query_groupmem(struct cli_state *cli,
 	}
 
  done:
+	return result;
+}
+
+/* Enumerate domain users */
+
+static NTSTATUS cmd_samr_enum_dom_users(struct cli_state *cli, 
+					TALLOC_CTX *mem_ctx,
+					int argc, const char **argv) 
+{
+	POLICY_HND connect_pol, domain_pol;
+	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
+	uint32 start_idx, size, num_dom_users, i;
+	char **dom_users;
+	uint32 *dom_rids;
+	uint32 access_mask = MAXIMUM_ALLOWED_ACCESS;
+	uint16 acb_mask = ACB_NORMAL;
+	BOOL got_connect_pol = False, got_domain_pol = False;
+
+	if ((argc < 1) || (argc > 2)) {
+		printf("Usage: %s [access_mask]\n", argv[0]);
+		return NT_STATUS_OK;
+	}
+	
+	if (argc > 1)
+		sscanf(argv[1], "%x", &access_mask);
+
+	/* Get sam policy handle */
+
+	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS, 
+				   &connect_pol);
+
+	if (!NT_STATUS_IS_OK(result))
+		goto done;
+
+	got_connect_pol = True;
+
+	/* Get domain policy handle */
+
+	result = cli_samr_open_domain(cli, mem_ctx, &connect_pol,
+				      access_mask,
+				      &domain_sid, &domain_pol);
+
+	if (!NT_STATUS_IS_OK(result))
+		goto done;
+
+	got_domain_pol = True;
+
+	/* Enumerate domain users */
+
+	start_idx = 0;
+	size = 0xffff;
+
+	do {
+		result = cli_samr_enum_dom_users(
+			cli, mem_ctx, &domain_pol, &start_idx, acb_mask,
+			size, &dom_users, &dom_rids, &num_dom_users);
+
+		if (NT_STATUS_IS_OK(result) ||
+		    NT_STATUS_V(result) == NT_STATUS_V(STATUS_MORE_ENTRIES)) {
+
+			for (i = 0; i < num_dom_users; i++)
+                               printf("user:[%s] rid:[0x%x]\n", 
+				       dom_users[i], dom_rids[i]);
+		}
+
+	} while (NT_STATUS_V(result) == NT_STATUS_V(STATUS_MORE_ENTRIES));
+
+ done:
+	if (got_domain_pol)
+		cli_samr_close(cli, mem_ctx, &domain_pol);
+
+	if (got_connect_pol)
+		cli_samr_close(cli, mem_ctx, &connect_pol);
+
 	return result;
 }
 
@@ -1341,8 +1415,8 @@ static NTSTATUS cmd_samr_query_sec_obj(struct cli_state *cli,
 			sscanf(argv[1], "%i", &user_rid);
 	}
 	
-	slprintf (server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
-	strupper (server);
+	slprintf(server, sizeof(fstring)-1, "\\\\%s", cli->desthost);
+	strupper_m(server);
 	result = try_samr_connects(cli, mem_ctx, MAXIMUM_ALLOWED_ACCESS,
 				   &connect_pol);
 
@@ -1413,6 +1487,49 @@ static NTSTATUS cmd_samr_get_dom_pwinfo(struct cli_state *cli,
 	return result;
 }
 
+/* Look up domain name */
+
+static NTSTATUS cmd_samr_lookup_domain(struct cli_state *cli, 
+				       TALLOC_CTX *mem_ctx,
+				       int argc, const char **argv) 
+{
+	POLICY_HND connect_pol, domain_pol;
+	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
+	uint32 access_mask = MAXIMUM_ALLOWED_ACCESS;
+	fstring domain_name,sid_string;
+	DOM_SID sid;
+	
+	if (argc != 2) {
+		printf("Usage: %s domain_name\n", argv[0]);
+		return NT_STATUS_OK;
+	}
+	
+	sscanf(argv[1], "%s", domain_name);
+	
+	result = try_samr_connects(cli, mem_ctx, access_mask, &connect_pol);
+	
+	if (!NT_STATUS_IS_OK(result))
+		goto done;
+
+	result = cli_samr_open_domain(cli, mem_ctx, &connect_pol,
+				      access_mask, &domain_sid, &domain_pol);
+
+	if (!NT_STATUS_IS_OK(result))
+		goto done;
+	
+	result = cli_samr_lookup_domain(
+		cli, mem_ctx, &connect_pol, domain_name, &sid);
+
+	sid_to_string(sid_string,&sid);
+ 
+	if (NT_STATUS_IS_OK(result)) 
+		printf("SAMR_LOOKUP_DOMAIN: Domain Name: %s Domain SID: %s\n",
+		       domain_name,sid_string);
+
+done:
+	return result;
+}
+
 
 /* List of commands exported by this module */
 
@@ -1420,23 +1537,25 @@ struct cmd_set samr_commands[] = {
 
 	{ "SAMR" },
 
-	{ "queryuser", 		cmd_samr_query_user, 		PI_SAMR,	"Query user info",         "" },
-	{ "querygroup", 	cmd_samr_query_group, 		PI_SAMR,	"Query group info",        "" },
-	{ "queryusergroups", 	cmd_samr_query_usergroups, 	PI_SAMR,	"Query user groups",       "" },
-	{ "queryuseraliases", 	cmd_samr_query_useraliases, 	PI_SAMR,	"Query user aliases",      "" },
-	{ "querygroupmem", 	cmd_samr_query_groupmem, 	PI_SAMR,	"Query group membership",  "" },
-	{ "queryaliasmem", 	cmd_samr_query_aliasmem, 	PI_SAMR,	"Query alias membership",  "" },
-	{ "querydispinfo", 	cmd_samr_query_dispinfo, 	PI_SAMR,	"Query display info",      "" },
-	{ "querydominfo", 	cmd_samr_query_dominfo, 	PI_SAMR,	"Query domain info",       "" },
-	{ "enumdomgroups",      cmd_samr_enum_dom_groups,       PI_SAMR,	"Enumerate domain groups", "" },
-	{ "enumalsgroups",      cmd_samr_enum_als_groups,       PI_SAMR,	"Enumerate alias groups",  "" },
+	{ "queryuser", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_user, 		NULL, PI_SAMR,	"Query user info",         "" },
+	{ "querygroup", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_group, 		NULL, PI_SAMR,	"Query group info",        "" },
+	{ "queryusergroups", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_usergroups, 	NULL, PI_SAMR,	"Query user groups",       "" },
+	{ "queryuseraliases", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_useraliases, 	NULL, PI_SAMR,	"Query user aliases",      "" },
+	{ "querygroupmem", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_groupmem, 	NULL, PI_SAMR,	"Query group membership",  "" },
+	{ "queryaliasmem", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_aliasmem, 	NULL, PI_SAMR,	"Query alias membership",  "" },
+	{ "querydispinfo", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_dispinfo, 	NULL, PI_SAMR,	"Query display info",      "" },
+	{ "querydominfo", 	RPC_RTYPE_NTSTATUS, cmd_samr_query_dominfo, 	NULL, PI_SAMR,	"Query domain info",       "" },
+	{ "enumdomusers",      RPC_RTYPE_NTSTATUS, cmd_samr_enum_dom_users,       NULL, PI_SAMR,	"Enumerate domain users", "" },
+	{ "enumdomgroups",      RPC_RTYPE_NTSTATUS, cmd_samr_enum_dom_groups,       NULL, PI_SAMR,	"Enumerate domain groups", "" },
+	{ "enumalsgroups",      RPC_RTYPE_NTSTATUS, cmd_samr_enum_als_groups,       NULL, PI_SAMR,	"Enumerate alias groups",  "" },
 
-	{ "createdomuser",      cmd_samr_create_dom_user,       PI_SAMR,	"Create domain user",      "" },
-	{ "samlookupnames",     cmd_samr_lookup_names,          PI_SAMR,	"Look up names",           "" },
-	{ "samlookuprids",      cmd_samr_lookup_rids,           PI_SAMR,	"Look up names",           "" },
-	{ "deletedomuser",      cmd_samr_delete_dom_user,       PI_SAMR,	"Delete domain user",      "" },
-	{ "samquerysecobj",     cmd_samr_query_sec_obj,         PI_SAMR, "Query SAMR security object",   "" },
-	{ "getdompwinfo",       cmd_samr_get_dom_pwinfo,        PI_SAMR, "Retrieve domain password info", "" },
+	{ "createdomuser",      RPC_RTYPE_NTSTATUS, cmd_samr_create_dom_user,       NULL, PI_SAMR,	"Create domain user",      "" },
+	{ "samlookupnames",     RPC_RTYPE_NTSTATUS, cmd_samr_lookup_names,          NULL, PI_SAMR,	"Look up names",           "" },
+	{ "samlookuprids",      RPC_RTYPE_NTSTATUS, cmd_samr_lookup_rids,           NULL, PI_SAMR,	"Look up names",           "" },
+	{ "deletedomuser",      RPC_RTYPE_NTSTATUS, cmd_samr_delete_dom_user,       NULL, PI_SAMR,	"Delete domain user",      "" },
+	{ "samquerysecobj",     RPC_RTYPE_NTSTATUS, cmd_samr_query_sec_obj,         NULL, PI_SAMR, "Query SAMR security object",   "" },
+	{ "getdompwinfo",       RPC_RTYPE_NTSTATUS, cmd_samr_get_dom_pwinfo,        NULL, PI_SAMR, "Retrieve domain password info", "" },
 
+	{ "lookupdomain",       RPC_RTYPE_NTSTATUS, cmd_samr_lookup_domain,         NULL, PI_SAMR, "Lookup Domain Name", "" },
 	{ NULL }
 };

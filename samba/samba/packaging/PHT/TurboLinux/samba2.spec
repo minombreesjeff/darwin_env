@@ -1,10 +1,10 @@
 Summary: Samba SMB client and server
 Name: samba
-Version: 3.0alpha22
+Version: 3.0.0rc1
 Release: 1
 Copyright: GNU GPL version 2
 Group: Networking
-Source: ftp://samba.org/pub/samba/samba-3.0alpha22.tar.gz
+Source: ftp://samba.org/pub/samba/samba-3.0.0rc1.tar.gz
 Patch: smbw.patch
 Requires: pam >= 0.64 kernel >= 2.2.1 glibc >= 2.1.2
 Prereq: chkconfig fileutils
@@ -12,13 +12,13 @@ BuildRoot: /var/tmp/samba
 Prefix: /usr
 
 %package debugtools
-Version: 3.0alpha22
+Version: 3.0.0rc1
 Release: 1
 Group: Networking
 Summary: Programs to debug Samba and to test SMB client integrity
 
 %package -n smbfs
-Version: 3.0alpha22
+Version: 3.0.0rc1
 Release: 1
 Group: Utilities/File
 Summary: Programs to mount SMB shares.

@@ -50,7 +50,7 @@ static NTSTATUS auth_ntlmssp_check_password(struct ntlmssp_state *ntlmssp_state)
 	/* the client has given us its machine name (which we otherwise would not get on port 445).
 	   we need to possibly reload smb.conf if smb.conf includes depend on the machine name */
 
-	set_remote_machine_name(auth_ntlmssp_state->ntlmssp_state->workstation);
+	set_remote_machine_name(auth_ntlmssp_state->ntlmssp_state->workstation, True);
 
 	/* setup the string used by %U */
 	/* sub_set_smb_name checks for weird internally */
@@ -135,4 +135,3 @@ NTSTATUS auth_ntlmssp_update(AUTH_NTLMSSP_STATE *auth_ntlmssp_state,
 {
 	return ntlmssp_server_update(auth_ntlmssp_state->ntlmssp_state, request, reply);
 }
-

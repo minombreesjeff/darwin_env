@@ -21,7 +21,7 @@
 */
 
 /**
- * @group swat SWAT
+ * @defgroup swat SWAT - Samba Web Administration Tool
  * @{ 
  * @file swat.c
  *
@@ -30,8 +30,6 @@
 
 #include "includes.h"
 #include "../web/swat_proto.h"
-
-#define GLOBALS_SNUM -1
 
 static BOOL demo_mode = False;
 static BOOL have_write_access = False;
@@ -52,10 +50,6 @@ static int iNumNonAutoPrintServices = 0;
 #define DISABLE_USER_FLAG "disable_user_flag"
 #define ENABLE_USER_FLAG "enable_user_flag"
 #define RHOST "remote_host"
-
-/* we need these because we link to locking*.o */
- void become_root(void) {}
- void unbecome_root(void) {}
 
 /****************************************************************************
 ****************************************************************************/
@@ -170,12 +164,12 @@ static const char* get_parm_translated(
 	static pstring output;
 	if(strcmp(pLabel, pTranslated) != 0)
 	{
-		snprintf(output, sizeof(output),
+		pstr_sprintf(output,
 		  "<A HREF=\"/swat/help/smb.conf.5.html#%s\" target=\"docs\"> %s</A>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; %s <br><span class=\"i18n_translated_parm\">%s</span>",
 		   pAnchor, pHelp, pLabel, pTranslated);
 		return output;
 	}
-	snprintf(output, sizeof(output), 
+	pstr_sprintf(output, 
 	  "<A HREF=\"/swat/help/smb.conf.5.html#%s\" target=\"docs\"> %s</A>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; %s",
 	  pAnchor, pHelp, pLabel);
 	return output;
@@ -318,9 +312,10 @@ static void show_parameters(int snum, int allparameters, unsigned int parm_filte
 			if (printers & !(parm->flags & FLAG_PRINT)) continue;
 			if (!printers & !(parm->flags & FLAG_SHARE)) continue;
 		}
-		if (parm_filter == FLAG_BASIC) {
+
+		if (!( parm_filter & FLAG_ADVANCED )) {
 			if (!(parm->flags & FLAG_BASIC)) {
-				void *ptr = parm->ptr;
+					void *ptr = parm->ptr;
 
 				if (parm->class == P_LOCAL && snum >= 0) {
 					ptr = lp_local_ptr(snum, ptr);
@@ -361,16 +356,15 @@ static void show_parameters(int snum, int allparameters, unsigned int parm_filte
 					break;
 				case P_SEP:
 					continue;
-				}
+					}
 			}
 			if (printers && !(parm->flags & FLAG_PRINT)) continue;
 		}
-		if (parm_filter == FLAG_WIZARD) {
-			if (!((parm->flags & FLAG_WIZARD))) continue;
-		}
-		if (parm_filter == FLAG_ADVANCED) {
-			if (!((parm->flags & FLAG_ADVANCED))) continue;
-		}
+
+		if ((parm_filter & FLAG_WIZARD) && !(parm->flags & FLAG_WIZARD)) continue;
+		
+		if ((parm_filter & FLAG_ADVANCED) && !(parm->flags & FLAG_ADVANCED)) continue;
+		
 		if (heading && heading != last_heading) {
 			d_printf("<tr><td></td></tr><tr><td><b><u>%s</u></b></td></tr>\n", _(heading));
 			last_heading = heading;
@@ -417,7 +411,11 @@ static int save_reload(int snum)
 	/* just in case they have used the buggy xinetd to create the file */
 	if (fstat(fileno(f), &st) == 0 &&
 	    (st.st_mode & S_IWOTH)) {
+#if defined HAVE_FCHMOD
 		fchmod(fileno(f), S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+#else
+		chmod(dyn_CONFIGFILE, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+#endif
 	}
 
 	write_config(f, False);
@@ -521,10 +519,12 @@ static void show_main_buttons(void)
  ****************************************************************************/
 static void ViewModeBoxes(int mode)
 {
-	d_printf("<p>%s\n", _("Configuration View:&nbsp"));
+	d_printf("<p>%s\n", _("Current View Is:&nbsp \n"));
 	d_printf("<input type=radio name=\"ViewMode\" value=0 %s>Basic\n", (mode == 0) ? "checked" : "");
 	d_printf("<input type=radio name=\"ViewMode\" value=1 %s>Advanced\n", (mode == 1) ? "checked" : "");
-	d_printf("<input type=radio name=\"ViewMode\" value=2 %s>Developer\n", (mode == 2) ? "checked" : "");
+	d_printf("<br>%s\n", _("Change View To:&nbsp"));
+	d_printf("<input type=submit name=\"BasicMode\" value=\"%s\">\n", _("Basic"));
+	d_printf("<input type=submit name=\"AdvMode\" value=\"%s\">\n", _("Advanced"));
 	d_printf("</p><br>\n");
 }
 
@@ -575,7 +575,7 @@ static void wizard_params_page(void)
 	d_printf("<H2>Wizard Parameter Edit Page</H2>\n");
 
 	if (cgi_variable("Commit")) {
-		commit_parameters(GLOBALS_SNUM);
+		commit_parameters(GLOBAL_SECTION_SNUM);
 		save_reload(0);
 	}
 
@@ -589,7 +589,7 @@ static void wizard_params_page(void)
 	d_printf("<p>\n");
 	
 	d_printf("<table>\n");
-	show_parameters(GLOBALS_SNUM, 1, parm_filter, 0);
+	show_parameters(GLOBAL_SECTION_SNUM, 1, parm_filter, 0);
 	d_printf("</table>\n");
 	d_printf("</form>\n");
 }
@@ -599,7 +599,7 @@ static void wizard_params_page(void)
 ****************************************************************************/
 static void rewritecfg_file(void)
 {
-	commit_parameters(GLOBALS_SNUM);
+	commit_parameters(GLOBAL_SECTION_SNUM);
 	save_reload(0);
 	d_printf("<H2>Note: smb.conf %s</H2>\n", _("file has been read and rewritten"));
 }
@@ -633,37 +633,37 @@ static void wizard_page(void)
 		HomeExpo = atoi(cgi_variable("HomeExpo"));
 
 		/* Plain text passwords are too badly broken - use encrypted passwords only */
-		lp_do_parameter( GLOBALS_SNUM, "encrypt passwords", "Yes");
+		lp_do_parameter( GLOBAL_SECTION_SNUM, "encrypt passwords", "Yes");
 		
 		switch ( SerType ){
 			case 0:
 				/* Stand-alone Server */
-				lp_do_parameter( GLOBALS_SNUM, "security", "USER" );
-				lp_do_parameter( GLOBALS_SNUM, "domain logons", "No" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "security", "USER" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "domain logons", "No" );
 				break;
 			case 1:
 				/* Domain Member */
-				lp_do_parameter( GLOBALS_SNUM, "security", "DOMAIN" );
-				lp_do_parameter( GLOBALS_SNUM, "domain logons", "No" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "security", "DOMAIN" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "domain logons", "No" );
 				break;
 			case 2:
 				/* Domain Controller */
-				lp_do_parameter( GLOBALS_SNUM, "security", "USER" );
-				lp_do_parameter( GLOBALS_SNUM, "domain logons", "Yes" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "security", "USER" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "domain logons", "Yes" );
 				break;
 		}
 		switch ( winstype ) {
 			case 0:
-				lp_do_parameter( GLOBALS_SNUM, "wins support", "No" );
-				lp_do_parameter( GLOBALS_SNUM, "wins server", "" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "wins support", "No" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "wins server", "" );
 				break;
 			case 1:
-				lp_do_parameter( GLOBALS_SNUM, "wins support", "Yes" );
-				lp_do_parameter( GLOBALS_SNUM, "wins server", "" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "wins support", "Yes" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "wins server", "" );
 				break;
 			case 2:
-				lp_do_parameter( GLOBALS_SNUM, "wins support", "No" );
-				lp_do_parameter( GLOBALS_SNUM, "wins server", cgi_variable("WINSAddr"));
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "wins support", "No" );
+				lp_do_parameter( GLOBAL_SECTION_SNUM, "wins server", cgi_variable("WINSAddr"));
 				break;
 		}
 
@@ -673,7 +673,7 @@ static void wizard_page(void)
 			
 			pstrcpy(unix_share,HOMES_NAME);
 			load_config(False);
-			lp_copy_service(GLOBALS_SNUM, unix_share);
+			lp_copy_service(GLOBAL_SECTION_SNUM, unix_share);
 			iNumNonAutoPrintServices = lp_numservices();
 			have_home = lp_servicenumber(HOMES_NAME);
 			lp_do_parameter( have_home, "read only", "No");
@@ -688,7 +688,7 @@ static void wizard_page(void)
 			have_home = -1;
 		}
 
-		commit_parameters(GLOBALS_SNUM);
+		commit_parameters(GLOBAL_SECTION_SNUM);
 		save_reload(0);
 	}
 	else
@@ -737,7 +737,16 @@ static void wizard_page(void)
 	d_printf("<td><input type=radio name=\"WINSType\" value=0 %s> Not Used&nbsp;</td>", (winstype == 0) ? "checked" : "");
 	d_printf("<td><input type=radio name=\"WINSType\" value=1 %s> Server for client use&nbsp;</td>", (winstype == 1) ? "checked" : "");
 	d_printf("<td><input type=radio name=\"WINSType\" value=2 %s> Client of another WINS server&nbsp;</td>", (winstype == 2) ? "checked" : "");
-	d_printf("<tr><td></td><td></td><td></td><td>Remote WINS Server&nbsp;<input type=text size=\"16\" name=\"WINSAddr\" value=\"%s\"></td></tr>",lp_wins_server_list());
+	d_printf("<tr><td></td><td></td><td></td><td>Remote WINS Server&nbsp;<input type=text size=\"16\" name=\"WINSAddr\" value=\"");
+	
+	/* Print out the list of wins servers */
+	if(lp_wins_server_list()) {
+		int i;
+		const char **wins_servers = lp_wins_server_list();
+		for(i = 0; wins_servers[i]; i++) d_printf("%s ", wins_servers[i]);
+	}
+	
+	d_printf("\"></td></tr>");
 	if (winstype == 3) {
 		d_printf("<tr><td></td><td colspan=3><font color=\"#ff0000\">Error: WINS Server Mode and WINS Support both set in smb.conf</font></td></tr>");
 		d_printf("<tr><td></td><td colspan=3><font color=\"#ff0000\">Please Select desired WINS mode above.</font></td></tr>");
@@ -774,12 +783,16 @@ static void globals_page(void)
 	d_printf("<H2>%s</H2>\n", _("Global Variables"));
 
 	if (cgi_variable("Commit")) {
-		commit_parameters(GLOBALS_SNUM);
+		commit_parameters(GLOBAL_SECTION_SNUM);
 		save_reload(0);
 	}
 
 	if ( cgi_variable("ViewMode") )
 		mode = atoi(cgi_variable("ViewMode"));
+	if ( cgi_variable("BasicMode"))
+		mode = 0;
+	if ( cgi_variable("AdvMode"))
+		mode = 1;
 
 	d_printf("<form name=\"swatform\" method=post action=globals>\n");
 
@@ -790,9 +803,6 @@ static void globals_page(void)
 			break;
 		case 1:
 			parm_filter = FLAG_ADVANCED;
-			break;
-		case 2:
-			parm_filter = FLAG_DEVELOPER;
 			break;
 	}
 	d_printf("<br>\n");
@@ -806,7 +816,7 @@ static void globals_page(void)
 
 	d_printf("<p>\n");
 	d_printf("<table>\n");
-	show_parameters(GLOBALS_SNUM, 1, parm_filter, 0);
+	show_parameters(GLOBAL_SECTION_SNUM, 1, parm_filter, 0);
 	d_printf("</table>\n");
 	d_printf("</form>\n");
 }
@@ -843,7 +853,7 @@ static void shares_page(void)
 
 	if (cgi_variable("createshare") && (share=cgi_variable("newshare"))) {
 		load_config(False);
-		lp_copy_service(GLOBALS_SNUM, share);
+		lp_copy_service(GLOBAL_SECTION_SNUM, share);
 		iNumNonAutoPrintServices = lp_numservices();
 		save_reload(0);
 		snum = lp_servicenumber(share);
@@ -852,8 +862,14 @@ static void shares_page(void)
 	d_printf("<FORM name=\"swatform\" method=post>\n");
 
 	d_printf("<table>\n");
+
 	if ( cgi_variable("ViewMode") )
 		mode = atoi(cgi_variable("ViewMode"));
+	if ( cgi_variable("BasicMode"))
+		mode = 0;
+	if ( cgi_variable("AdvMode"))
+		mode = 1;
+
 	ViewModeBoxes( mode );
 	switch ( mode ) {
 		case 0:
@@ -861,9 +877,6 @@ static void shares_page(void)
 			break;
 		case 1:
 			parm_filter = FLAG_ADVANCED;
-			break;
-		case 2:
-			parm_filter = FLAG_DEVELOPER;
 			break;
 	}
 	d_printf("<br><tr>\n");
@@ -1182,7 +1195,7 @@ static void printers_page(void)
 
 	if (cgi_variable("createshare") && (share=cgi_variable("newshare"))) {
 		load_config(False);
-		lp_copy_service(GLOBALS_SNUM, share);
+		lp_copy_service(GLOBAL_SECTION_SNUM, share);
 		iNumNonAutoPrintServices = lp_numservices();
 		snum = lp_servicenumber(share);
 		lp_do_parameter(snum, "print ok", "Yes");
@@ -1194,6 +1207,11 @@ static void printers_page(void)
 
 	if ( cgi_variable("ViewMode") )
 		mode = atoi(cgi_variable("ViewMode"));
+        if ( cgi_variable("BasicMode"))
+                mode = 0;
+        if ( cgi_variable("AdvMode"))
+                mode = 1;
+
 	ViewModeBoxes( mode );
 	switch ( mode ) {
 		case 0:
@@ -1201,9 +1219,6 @@ static void printers_page(void)
 			break;
 		case 1:
 			parm_filter = FLAG_ADVANCED;
-			break;
-		case 2:
-			parm_filter = FLAG_DEVELOPER;
 			break;
 	}
 	d_printf("<table>\n");
@@ -1261,10 +1276,15 @@ static void printers_page(void)
  **/
  int main(int argc, char *argv[])
 {
-	extern char *optarg;
-	extern int optind;
 	int opt;
-	char *page;
+	const char *page;
+	poptContext pc;
+	struct poptOption long_options[] = {
+		POPT_AUTOHELP
+		{ "disable-authentication", 'a', POPT_ARG_VAL, &demo_mode, True, "Disable authentication (demo mode)" },
+		POPT_COMMON_SAMBA
+		POPT_TABLEEND
+	};
 
 	fault_setup(NULL);
 	umask(S_IWGRP | S_IWOTH);
@@ -1288,16 +1308,13 @@ static void printers_page(void)
 	close(2);
 	open("/dev/null", O_WRONLY);
 
-	while ((opt = getopt(argc, argv,"s:a")) != EOF) {
-		switch (opt) {
-		case 's':
-			pstrcpy(dyn_CONFIGFILE,optarg);
-			break;	  
-		case 'a':
-			demo_mode = True;
-			break;	  
-		}
-	}
+	pc = poptGetContext("swat", argc, (const char **) argv, long_options, 0);
+
+	/* Parse command line options */
+
+	while((opt = poptGetNextOpt(pc)) != -1) { }
+
+	poptFreeContext(pc);
 
 	setup_logging(argv[0],False);
 	load_config(True);

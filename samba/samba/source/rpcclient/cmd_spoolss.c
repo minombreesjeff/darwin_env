@@ -35,6 +35,7 @@ static const struct table_node archi_table[]= {
 
 	{"Windows 4.0",          "WIN40",	0 },
 	{"Windows NT x86",       "W32X86",	2 },
+	{"Windows NT x86",       "W32X86",	3 },
 	{"Windows NT R4000",     "W32MIPS",	2 },
 	{"Windows NT Alpha_AXP", "W32ALPHA",	2 },
 	{"Windows NT PowerPC",   "W32PPC",	2 },
@@ -54,7 +55,7 @@ static const struct table_node archi_table[]= {
 function to do the mapping between the long architecture name and
 the short one.
 ****************************************************************************/
-BOOL get_short_archi(char *short_archi, const char *long_archi)
+static const char *cmd_spoolss_get_short_archi(const char *long_archi)
 {
         int i=-1;
 
@@ -66,37 +67,36 @@ BOOL get_short_archi(char *short_archi, const char *long_archi)
 
         if (archi_table[i].long_archi==NULL) {
                 DEBUGADD(10,("Unknown architecture [%s] !\n", long_archi));
-                return False;
+                return NULL;
         }
 
 	/* this might be client code - but shouldn't this be an fstrcpy etc? */
 
-        StrnCpy (short_archi, archi_table[i].short_archi, strlen(archi_table[i].short_archi));
 
         DEBUGADD(108,("index: [%d]\n", i));
-        DEBUGADD(108,("long architecture: [%s]\n", long_archi));
-        DEBUGADD(108,("short architecture: [%s]\n", short_archi));
+        DEBUGADD(108,("long architecture: [%s]\n", archi_table[i].long_archi));
+        DEBUGADD(108,("short architecture: [%s]\n", archi_table[i].short_archi));
 
-        return True;
+	return archi_table[i].short_archi;
 }
 
 #if 0
 /**********************************************************************
  * dummy function  -- placeholder
   */
-static NTSTATUS cmd_spoolss_not_implemented(struct cli_state *cli, 
+static WERROR cmd_spoolss_not_implemented(struct cli_state *cli, 
                                             TALLOC_CTX *mem_ctx,
                                             int argc, const char **argv)
 {
 	printf ("(*) This command is not currently implemented.\n");
-	return NT_STATUS_OK;
+	return WERR_OK;
 }
 #endif
 
 /***********************************************************************
  * Get printer information
  */
-static NTSTATUS cmd_spoolss_open_printer_ex(struct cli_state *cli, 
+static WERROR cmd_spoolss_open_printer_ex(struct cli_state *cli, 
                                             TALLOC_CTX *mem_ctx,
                                             int argc, const char **argv)
 {
@@ -107,16 +107,16 @@ static NTSTATUS cmd_spoolss_open_printer_ex(struct cli_state *cli,
 	
 	if (argc != 2) {
 		printf("Usage: %s <printername>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	
 	if (!cli)
-		return NT_STATUS_UNSUCCESSFUL;
+            return WERR_GENERAL_FAILURE;
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
-	fstrcpy  (user, cli->user_name);
-	fstrcpy  (printername, argv[1]);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
+	fstrcpy(user, cli->user_name);
+	fstrcpy(printername, argv[1]);
 
 	/* Open the printer handle */
 
@@ -134,7 +134,7 @@ static NTSTATUS cmd_spoolss_open_printer_ex(struct cli_state *cli,
 		}
 	}
 
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
 
@@ -298,7 +298,7 @@ static void display_print_info_3(PRINTER_INFO_3 *i3)
 
 /* Enumerate printers */
 
-static NTSTATUS cmd_spoolss_enum_printers(struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_printers(struct cli_state *cli, 
                                           TALLOC_CTX *mem_ctx,
                                           int argc, const char **argv)
 {
@@ -311,7 +311,7 @@ static NTSTATUS cmd_spoolss_enum_printers(struct cli_state *cli,
 	if (argc > 3) 
 	{
 		printf("Usage: %s [level] [name]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 
 	if (argc == 2)
@@ -321,7 +321,7 @@ static NTSTATUS cmd_spoolss_enum_printers(struct cli_state *cli,
 		fstrcpy(name, argv[2]);
 	else {
 		slprintf(name, sizeof(name)-1, "\\\\%s", cli->desthost);
-		strupper(name);
+		strupper_m(name);
 	}
 
 	/* Enumerate printers  -- Should we enumerate types other 
@@ -367,7 +367,7 @@ static NTSTATUS cmd_spoolss_enum_printers(struct cli_state *cli,
 	}
 	done:
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /****************************************************************************
@@ -396,14 +396,38 @@ static void display_port_info_2(PORT_INFO_2 *i2)
 	rpcstr_pull(buffer, i2->description.buffer, sizeof(buffer), -1, STR_TERMINATE);
 
 	printf("\tDescription:\t[%s]\n", buffer);
-	printf("\tPort Type:\t[%d]\n", i2->port_type);
+	printf("\tPort Type:\t" );
+	if ( i2->port_type ) {
+		int comma = 0; /* hack */
+		printf( "[" );
+		if ( i2->port_type & PORT_TYPE_READ ) {
+			printf( "Read" );
+			comma = 1;
+		}
+		if ( i2->port_type & PORT_TYPE_WRITE ) {
+			printf( "%sWrite", comma ? ", " : "" );
+			comma = 1;
+		}
+		/* These two have slightly different interpretations
+		 on 95/98/ME but I'm disregarding that for now */
+		if ( i2->port_type & PORT_TYPE_REDIRECTED ) {
+			printf( "%sRedirected", comma ? ", " : "" );
+			comma = 1;
+		}
+		if ( i2->port_type & PORT_TYPE_NET_ATTACHED ) {
+			printf( "%sNet-Attached", comma ? ", " : "" );
+		}
+		printf( "]\n" );
+	} else {
+		printf( "[Unset]\n" );
+	}
 	printf("\tReserved:\t[%d]\n", i2->reserved);
 	printf("\n");
 }
 
 /* Enumerate ports */
 
-static NTSTATUS cmd_spoolss_enum_ports(struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_ports(struct cli_state *cli, 
 				       TALLOC_CTX *mem_ctx, int argc, 
 				       const char **argv)
 {
@@ -414,7 +438,7 @@ static NTSTATUS cmd_spoolss_enum_ports(struct cli_state *cli,
 	
 	if (argc > 2) {
 		printf("Usage: %s [level]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	
 	if (argc == 2)
@@ -449,13 +473,13 @@ static NTSTATUS cmd_spoolss_enum_ports(struct cli_state *cli,
 		}
 	}
 	
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /***********************************************************************
  * Set printer comment - use a level2 set.
  */
-static NTSTATUS cmd_spoolss_setprinter(struct cli_state *cli,
+static WERROR cmd_spoolss_setprinter(struct cli_state *cli,
                                        TALLOC_CTX *mem_ctx,
                                        int argc, const char **argv)
 {
@@ -473,7 +497,7 @@ static NTSTATUS cmd_spoolss_setprinter(struct cli_state *cli,
 	if (argc == 1 || argc > 3) {
 		printf("Usage: %s printername comment\n", argv[0]);
 
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 
 	/* Open a printer handle */
@@ -481,14 +505,14 @@ static NTSTATUS cmd_spoolss_setprinter(struct cli_state *cli,
 		fstrcpy(comment, argv[2]);
 	}
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
-	fstrcpy (printername, argv[1]);
-	fstrcpy  (user, cli->user_name);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
+	fstrcpy(printername, argv[1]);
+	fstrcpy(user, cli->user_name);
 
 	/* get a printer handle */
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, "", 
-				MAXIMUM_ALLOWED_ACCESS, servername,
+				PRINTER_ALL_ACCESS, servername,
 				user, &pol);
 				
 	if (!W_ERROR_IS_OK(result))
@@ -519,13 +543,13 @@ static NTSTATUS cmd_spoolss_setprinter(struct cli_state *cli,
 	if (opened_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &pol);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /***********************************************************************
  * Get printer information
  */
-static NTSTATUS cmd_spoolss_getprinter(struct cli_state *cli,
+static WERROR cmd_spoolss_getprinter(struct cli_state *cli,
                                        TALLOC_CTX *mem_ctx,
                                        int argc, const char **argv)
 {
@@ -541,7 +565,7 @@ static NTSTATUS cmd_spoolss_getprinter(struct cli_state *cli,
 
 	if (argc == 1 || argc > 3) {
 		printf("Usage: %s <printername> [level]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 
 	/* Open a printer handle */
@@ -549,10 +573,10 @@ static NTSTATUS cmd_spoolss_getprinter(struct cli_state *cli,
 		info_level = atoi(argv[2]);
 	}
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
-	slprintf (printername, sizeof(printername)-1, "%s\\%s", servername, argv[1]);
-	fstrcpy  (user, cli->user_name);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
+	slprintf(printername, sizeof(printername)-1, "%s\\%s", servername, argv[1]);
+	fstrcpy(user, cli->user_name);
 	
 	/* get a printer handle */
 
@@ -601,7 +625,7 @@ static NTSTATUS cmd_spoolss_getprinter(struct cli_state *cli,
 	if (opened_hnd) 
 		cli_spoolss_close_printer(cli, mem_ctx, &pol);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 static void display_reg_value(REGISTRY_VALUE value)
@@ -644,7 +668,7 @@ static void display_reg_value(REGISTRY_VALUE value)
 /***********************************************************************
  * Get printer data
  */
-static NTSTATUS cmd_spoolss_getprinterdata(struct cli_state *cli,
+static WERROR cmd_spoolss_getprinterdata(struct cli_state *cli,
 					   TALLOC_CTX *mem_ctx,
 					   int argc, const char **argv)
 {
@@ -661,20 +685,20 @@ static NTSTATUS cmd_spoolss_getprinterdata(struct cli_state *cli,
 	if (argc != 3) {
 		printf("Usage: %s <printername> <valuename>\n", argv[0]);
 		printf("<printername> of . queries print server\n");
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	valuename = argv[2];
 
 	/* Open a printer handle */
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
 	if (strncmp(argv[1], ".", sizeof(".")) == 0)
 		fstrcpy(printername, servername);
 	else
-		slprintf (printername, sizeof(servername)-1, "%s\\%s", 
+		slprintf(printername, sizeof(servername)-1, "%s\\%s", 
 			  servername, argv[1]);
-	fstrcpy  (user, cli->user_name);
+	fstrcpy(user, cli->user_name);
 	
 	/* get a printer handle */
 
@@ -709,13 +733,13 @@ static NTSTATUS cmd_spoolss_getprinterdata(struct cli_state *cli,
 	if (opened_hnd) 
 		cli_spoolss_close_printer(cli, mem_ctx, &pol);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /***********************************************************************
  * Get printer data
  */
-static NTSTATUS cmd_spoolss_getprinterdataex(struct cli_state *cli,
+static WERROR cmd_spoolss_getprinterdataex(struct cli_state *cli,
 					     TALLOC_CTX *mem_ctx,
 					     int argc, const char **argv)
 {
@@ -733,21 +757,21 @@ static NTSTATUS cmd_spoolss_getprinterdataex(struct cli_state *cli,
 		printf("Usage: %s <printername> <keyname> <valuename>\n", 
 		       argv[0]);
 		printf("<printername> of . queries print server\n");
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	valuename = argv[3];
 	keyname = argv[2];
 
 	/* Open a printer handle */
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
 	if (strncmp(argv[1], ".", sizeof(".")) == 0)
 		fstrcpy(printername, servername);
 	else
-		slprintf (printername, sizeof(printername)-1, "%s\\%s", 
+		slprintf(printername, sizeof(printername)-1, "%s\\%s", 
 			  servername, argv[1]);
-	fstrcpy  (user, cli->user_name);
+	fstrcpy(user, cli->user_name);
 	
 	/* get a printer handle */
 
@@ -784,7 +808,7 @@ static NTSTATUS cmd_spoolss_getprinterdataex(struct cli_state *cli,
 	if (opened_hnd) 
 		cli_spoolss_close_printer(cli, mem_ctx, &pol);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /****************************************************************************
@@ -900,13 +924,12 @@ static void display_print_driver_3(DRIVER_INFO_3 *i1)
 /***********************************************************************
  * Get printer information
  */
-static NTSTATUS cmd_spoolss_getdriver(struct cli_state *cli, 
+static WERROR cmd_spoolss_getdriver(struct cli_state *cli, 
                                       TALLOC_CTX *mem_ctx,
                                       int argc, const char **argv)
 {
 	POLICY_HND 	pol;
 	WERROR          werror;
-	NTSTATUS	result;
 	uint32		info_level = 3;
 	BOOL 		opened_hnd = False;
 	PRINTER_DRIVER_CTR 	ctr;
@@ -914,18 +937,19 @@ static NTSTATUS cmd_spoolss_getdriver(struct cli_state *cli,
 			servername, 
 			user;
 	uint32		i;
+	BOOL		success = False;
 
 	if ((argc == 1) || (argc > 3)) 
 	{
 		printf("Usage: %s <printername> [level]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 
 	/* get the arguments need to open the printer handle */
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
-	fstrcpy  (user, cli->user_name);
-	fstrcpy  (printername, argv[1]);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
+	fstrcpy(user, cli->user_name);
+	fstrcpy(printername, argv[1]);
 	if (argc == 3)
 		info_level = atoi(argv[2]);
 
@@ -935,11 +959,9 @@ static NTSTATUS cmd_spoolss_getdriver(struct cli_state *cli,
 					     PRINTER_ACCESS_USE,
 					     servername, user, &pol);
 
-	result = W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-
-	if (!NT_STATUS_IS_OK(result)) {
+	if (!W_ERROR_IS_OK(werror)) {
 		printf("Error opening printer handle for %s!\n", printername);
-		return result;
+		return werror;
 	}
 
 	opened_hnd = True;
@@ -951,15 +973,22 @@ static NTSTATUS cmd_spoolss_getdriver(struct cli_state *cli,
 
 		werror = cli_spoolss_getprinterdriver(
 			cli, mem_ctx, 0, &needed, &pol, info_level, 
-			archi_table[i].long_archi, &ctr);
+			archi_table[i].long_archi, archi_table[i].version,
+			&ctr);
 
-		if (W_ERROR_V(werror) == ERRinsufficientbuffer)
+		if (W_ERROR_V(werror) == ERRinsufficientbuffer) {
 			werror = cli_spoolss_getprinterdriver(
 				cli, mem_ctx, needed, NULL, &pol, info_level, 
-				archi_table[i].long_archi, &ctr);
+				archi_table[i].long_archi, archi_table[i].version, 
+				&ctr);
+		}
 
 		if (!W_ERROR_IS_OK(werror))
 			continue;
+		
+		/* need at least one success */
+		
+		success = True;
 			
 		printf ("\n[%s]\n", archi_table[i].long_archi);
 
@@ -984,13 +1013,16 @@ static NTSTATUS cmd_spoolss_getdriver(struct cli_state *cli,
 	if (opened_hnd)
 		cli_spoolss_close_printer (cli, mem_ctx, &pol);
 	
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	if ( success )
+		werror = WERR_OK;
+		
+	return werror;
 }
 
 /***********************************************************************
  * Get printer information
  */
-static NTSTATUS cmd_spoolss_enum_drivers(struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_drivers(struct cli_state *cli, 
                                          TALLOC_CTX *mem_ctx,
                                          int argc, const char **argv)
 {
@@ -1003,7 +1035,7 @@ static NTSTATUS cmd_spoolss_enum_drivers(struct cli_state *cli,
 	if (argc > 2) 
 	{
 		printf("Usage: enumdrivers [level]\n");
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 
 	if (argc == 2)
@@ -1058,7 +1090,7 @@ static NTSTATUS cmd_spoolss_enum_drivers(struct cli_state *cli,
 		}
 	}
 	
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
 /****************************************************************************
@@ -1078,7 +1110,7 @@ static void display_printdriverdir_1(DRIVER_DIRECTORY_1 *i1)
 /***********************************************************************
  * Get printer driver directory information
  */
-static NTSTATUS cmd_spoolss_getdriverdir(struct cli_state *cli, 
+static WERROR cmd_spoolss_getdriverdir(struct cli_state *cli, 
                                          TALLOC_CTX *mem_ctx,
                                          int argc, const char **argv)
 {
@@ -1089,7 +1121,7 @@ static NTSTATUS cmd_spoolss_getdriverdir(struct cli_state *cli,
 
 	if (argc > 2) {
 		printf("Usage: %s [environment]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 
 	/* Get the arguments need to open the printer handle */
@@ -1111,7 +1143,7 @@ static NTSTATUS cmd_spoolss_getdriverdir(struct cli_state *cli,
 	if (W_ERROR_IS_OK(result))
 		display_printdriverdir_1(ctr.info1);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /*******************************************************************************
@@ -1156,7 +1188,7 @@ static char* get_driver_3_param (const char* str, const char* delim, UNISTR* des
 	   parameter because two consecutive delimiters
 	   will not return an empty string.  See man strtok(3)
 	   for details */
-	if (StrCaseCmp(ptr, "NULL") == 0)
+	if (ptr && (StrCaseCmp(ptr, "NULL") == 0))
 		ptr = NULL;
 
 	if (dest != NULL)
@@ -1222,7 +1254,7 @@ static BOOL init_drv_info_3_members (
 }
 
 
-static NTSTATUS cmd_spoolss_addprinterdriver(struct cli_state *cli, 
+static WERROR cmd_spoolss_addprinterdriver(struct cli_state *cli, 
                                              TALLOC_CTX *mem_ctx,
                                              int argc, const char **argv)
 {
@@ -1230,7 +1262,7 @@ static NTSTATUS cmd_spoolss_addprinterdriver(struct cli_state *cli,
 	uint32                  level = 3;
 	PRINTER_DRIVER_CTR	ctr;
 	DRIVER_INFO_3		info3;
-	fstring			arch;
+	const char		*arch;
 	fstring			driver_name;
 
 	/* parse the command arguements */
@@ -1241,15 +1273,15 @@ static NTSTATUS cmd_spoolss_addprinterdriver(struct cli_state *cli,
     		printf ("\t<Config File Name>:<Help File Name>:<Language Monitor Name>:\\\n");
 	    	printf ("\t<Default Data Type>:<Comma Separated list of Files>\n");
 
-		return NT_STATUS_OK;
+            return WERR_OK;
         }
 		
 	/* Fill in the DRIVER_INFO_3 struct */
 	ZERO_STRUCT(info3);
-	if (!get_short_archi(arch, argv[1]))
+	if (!(arch = cmd_spoolss_get_short_archi(argv[1])))
 	{
 		printf ("Error Unknown architechture [%s]\n", argv[1]);
-		return NT_STATUS_INVALID_PARAMETER;
+		return WERR_INVALID_PARAM;
 	}
 	else
 		set_drv_info_3_env(&info3, arch);
@@ -1257,7 +1289,7 @@ static NTSTATUS cmd_spoolss_addprinterdriver(struct cli_state *cli,
 	if (!init_drv_info_3_members(mem_ctx, &info3, argv[2]))
 	{
 		printf ("Error Invalid parameter list - %s.\n", argv[2]);
-		return NT_STATUS_INVALID_PARAMETER;
+		return WERR_INVALID_PARAM;
 	}
 
 
@@ -1271,11 +1303,11 @@ static NTSTATUS cmd_spoolss_addprinterdriver(struct cli_state *cli,
 			driver_name);
 	}
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 
-static NTSTATUS cmd_spoolss_addprinterex(struct cli_state *cli, 
+static WERROR cmd_spoolss_addprinterex(struct cli_state *cli, 
                                          TALLOC_CTX *mem_ctx,
                                          int argc, const char **argv)
 {
@@ -1289,11 +1321,11 @@ static NTSTATUS cmd_spoolss_addprinterex(struct cli_state *cli,
 	if (argc != 5)
 	{
 		printf ("Usage: %s <name> <shared name> <driver> <port>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 	
-        slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-        strupper (servername);
+        slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+        strupper_m(servername);
 
 	/* Fill in the DRIVER_INFO_3 struct */
 	ZERO_STRUCT(info2);
@@ -1329,10 +1361,10 @@ static NTSTATUS cmd_spoolss_addprinterex(struct cli_state *cli,
 	if (W_ERROR_IS_OK(result))
 		printf ("Printer %s successfully installed.\n", argv[1]);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
-static NTSTATUS cmd_spoolss_setdriver(struct cli_state *cli, 
+static WERROR cmd_spoolss_setdriver(struct cli_state *cli, 
                                       TALLOC_CTX *mem_ctx,
                                       int argc, const char **argv)
 {
@@ -1351,18 +1383,18 @@ static NTSTATUS cmd_spoolss_setdriver(struct cli_state *cli,
 	if (argc != 3)
 	{
 		printf ("Usage: %s <printer> <driver>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
-	slprintf (printername, sizeof(printername)-1, "%s\\%s", servername, argv[1]);
-	fstrcpy  (user, cli->user_name);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
+	slprintf(printername, sizeof(printername)-1, "%s\\%s", servername, argv[1]);
+	fstrcpy(user, cli->user_name);
 
 	/* Get a printer handle */
 
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, "", 
-					     MAXIMUM_ALLOWED_ACCESS,
+					     PRINTER_ALL_ACCESS,
 					     servername, user, &pol);
 
 	if (!W_ERROR_IS_OK(result))
@@ -1406,11 +1438,11 @@ done:
 	if (opened_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &pol);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 
-static NTSTATUS cmd_spoolss_deletedriver(struct cli_state *cli, 
+static WERROR cmd_spoolss_deletedriver(struct cli_state *cli, 
                                          TALLOC_CTX *mem_ctx,
                                          int argc, const char **argv)
 {
@@ -1422,11 +1454,11 @@ static NTSTATUS cmd_spoolss_deletedriver(struct cli_state *cli,
 	if (argc != 2)
 	{
 		printf ("Usage: %s <driver>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
 
 	/* delete the driver for all architectures */
 	for (i=0; archi_table[i].long_archi; i++)
@@ -1449,10 +1481,10 @@ static NTSTATUS cmd_spoolss_deletedriver(struct cli_state *cli,
 		}
 	}
 		
-	return W_ERROR_IS_OK(result) || W_ERROR_EQUAL(result, WERR_UNKNOWN_PRINTER_DRIVER) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
-static NTSTATUS cmd_spoolss_getprintprocdir(struct cli_state *cli, 
+static WERROR cmd_spoolss_getprintprocdir(struct cli_state *cli, 
 					    TALLOC_CTX *mem_ctx,
 					    int argc, const char **argv)
 {
@@ -1464,17 +1496,17 @@ static NTSTATUS cmd_spoolss_getprintprocdir(struct cli_state *cli,
 	/* parse the command arguements */
 	if (argc > 2) {
 		printf ("Usage: %s [environment]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 
 	if (asprintf(&servername, "\\\\%s", cli->desthost) < 0)
-		return NT_STATUS_NO_MEMORY;
-	strupper(servername);
+		return WERR_NOMEM;
+	strupper_m(servername);
 
 	if (asprintf(&environment, "%s", (argc == 2) ? argv[1] : 
 		     PRINTER_DRIVER_ARCHITECTURE) < 0) {
 		SAFE_FREE(servername);
-		return NT_STATUS_NO_MEMORY;
+		return WERR_NOMEM;
 	}
 
 	result = cli_spoolss_getprintprocessordirectory(
@@ -1491,12 +1523,12 @@ static NTSTATUS cmd_spoolss_getprintprocdir(struct cli_state *cli,
 	SAFE_FREE(servername);
 	SAFE_FREE(environment);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /* Add a form */
 
-static NTSTATUS cmd_spoolss_addform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
+static WERROR cmd_spoolss_addform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 				    int argc, const char **argv)
 {
 	POLICY_HND handle;
@@ -1509,13 +1541,13 @@ static NTSTATUS cmd_spoolss_addform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	if (argc != 3) {
 		printf ("Usage: %s <printer> <formname>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 	
 	/* Get a printer handle */
 
 	asprintf(&servername, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	asprintf(&printername, "%s\\%s", servername, argv[1]);
 
 	werror = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, "", 
@@ -1550,12 +1582,12 @@ static NTSTATUS cmd_spoolss_addform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 	SAFE_FREE(servername);
 	SAFE_FREE(printername);
 
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
 /* Set a form */
 
-static NTSTATUS cmd_spoolss_setform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
+static WERROR cmd_spoolss_setform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 				    int argc, const char **argv)
 {
 	POLICY_HND handle;
@@ -1568,13 +1600,13 @@ static NTSTATUS cmd_spoolss_setform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	if (argc != 3) {
 		printf ("Usage: %s <printer> <formname>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 	
 	/* Get a printer handle */
 
 	asprintf(&servername, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	asprintf(&printername, "%s\\%s", servername, argv[1]);
 
 	werror = cli_spoolss_open_printer_ex(
@@ -1608,12 +1640,12 @@ static NTSTATUS cmd_spoolss_setform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 	SAFE_FREE(servername);
 	SAFE_FREE(printername);
 
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
 /* Get a form */
 
-static NTSTATUS cmd_spoolss_getform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
+static WERROR cmd_spoolss_getform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 				    int argc, const char **argv)
 {
 	POLICY_HND handle;
@@ -1627,13 +1659,13 @@ static NTSTATUS cmd_spoolss_getform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	if (argc != 3) {
 		printf ("Usage: %s <printer> <formname>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 	
 	/* Get a printer handle */
 
 	asprintf(&servername, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	asprintf(&printername, "%s\\%s", servername, argv[1]);
 
 	werror = cli_spoolss_open_printer_ex(
@@ -1671,12 +1703,12 @@ static NTSTATUS cmd_spoolss_getform(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 	SAFE_FREE(servername);
 	SAFE_FREE(printername);
 
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
 /* Delete a form */
 
-static NTSTATUS cmd_spoolss_deleteform(struct cli_state *cli, 
+static WERROR cmd_spoolss_deleteform(struct cli_state *cli, 
 				       TALLOC_CTX *mem_ctx, int argc, 
 				       const char **argv)
 {
@@ -1689,13 +1721,13 @@ static NTSTATUS cmd_spoolss_deleteform(struct cli_state *cli,
 
 	if (argc != 3) {
 		printf ("Usage: %s <printer> <formname>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 	
 	/* Get a printer handle */
 
 	asprintf(&servername, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	asprintf(&printername, "%s\\%s", servername, argv[1]);
 
 	werror = cli_spoolss_open_printer_ex(
@@ -1718,12 +1750,12 @@ static NTSTATUS cmd_spoolss_deleteform(struct cli_state *cli,
 	SAFE_FREE(servername);
 	SAFE_FREE(printername);
 
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
 /* Enumerate forms */
 
-static NTSTATUS cmd_spoolss_enum_forms(struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_forms(struct cli_state *cli, 
 				       TALLOC_CTX *mem_ctx, int argc, 
 				       const char **argv)
 {
@@ -1738,13 +1770,13 @@ static NTSTATUS cmd_spoolss_enum_forms(struct cli_state *cli,
 
 	if (argc != 2) {
 		printf ("Usage: %s <printer>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 	
 	/* Get a printer handle */
 
 	asprintf(&servername, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	asprintf(&printername, "%s\\%s", servername, argv[1]);
 
 	werror = cli_spoolss_open_printer_ex(
@@ -1788,10 +1820,10 @@ static NTSTATUS cmd_spoolss_enum_forms(struct cli_state *cli,
 	SAFE_FREE(servername);
 	SAFE_FREE(printername);
 
-	return W_ERROR_IS_OK(werror) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return werror;
 }
 
-static NTSTATUS cmd_spoolss_setprinterdata(struct cli_state *cli,
+static WERROR cmd_spoolss_setprinterdata(struct cli_state *cli,
 					    TALLOC_CTX *mem_ctx,
 					    int argc, const char **argv)
 {
@@ -1807,13 +1839,13 @@ static NTSTATUS cmd_spoolss_setprinterdata(struct cli_state *cli,
 	/* parse the command arguements */
 	if (argc != 4) {
 		printf ("Usage: %s <printer> <value> <data>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
         }
 
-	slprintf (servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper (servername);
-	slprintf (printername, sizeof(servername)-1, "%s\\%s", servername, argv[1]);
-	fstrcpy  (user, cli->user_name);
+	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
+	strupper_m(servername);
+	slprintf(printername, sizeof(servername)-1, "%s\\%s", servername, argv[1]);
+	fstrcpy(user, cli->user_name);
 
 	/* get a printer handle */
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, "",
@@ -1869,7 +1901,7 @@ done:
 	if (opened_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &pol);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 static void display_job_info_1(JOB_INFO_1 *job)
@@ -1910,7 +1942,7 @@ static void display_job_info_2(JOB_INFO_2 *job)
 
 /* Enumerate jobs */
 
-static NTSTATUS cmd_spoolss_enum_jobs(struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_jobs(struct cli_state *cli, 
 				      TALLOC_CTX *mem_ctx, int argc, 
 				      const char **argv)
 {
@@ -1924,7 +1956,7 @@ static NTSTATUS cmd_spoolss_enum_jobs(struct cli_state *cli,
 	
 	if (argc < 2 || argc > 3) {
 		printf("Usage: %s printername [level]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	
 	if (argc == 3)
@@ -1933,10 +1965,10 @@ static NTSTATUS cmd_spoolss_enum_jobs(struct cli_state *cli,
 	/* Open printer handle */
 
 	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	fstrcpy(user, cli->user_name);
 	slprintf(printername, sizeof(servername)-1, "\\\\%s\\", cli->desthost);
-	strupper(printername);
+	strupper_m(printername);
 	pstrcat(printername, argv[1]);
 
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, 
@@ -1980,12 +2012,12 @@ done:
 	if (got_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &hnd);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /* enumerate data */
 
-static NTSTATUS cmd_spoolss_enum_data( struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_data( struct cli_state *cli, 
 				       TALLOC_CTX *mem_ctx, int argc, 
 				       const char **argv)
 {
@@ -1998,16 +2030,16 @@ static NTSTATUS cmd_spoolss_enum_data( struct cli_state *cli,
 
 	if (argc != 2) {
 		printf("Usage: %s printername\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	
 	/* Open printer handle */
 
 	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	fstrcpy(user, cli->user_name);
 	slprintf(printername, sizeof(printername)-1, "\\\\%s\\", cli->desthost);
-	strupper(printername);
+	strupper_m(printername);
 	pstrcat(printername, argv[1]);
 
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, 
@@ -2039,12 +2071,12 @@ done:
 	if (got_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &hnd);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /* enumerate data for a given key */
 
-static NTSTATUS cmd_spoolss_enum_data_ex( struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_data_ex( struct cli_state *cli, 
 					  TALLOC_CTX *mem_ctx, int argc, 
 					  const char **argv)
 {
@@ -2059,7 +2091,7 @@ static NTSTATUS cmd_spoolss_enum_data_ex( struct cli_state *cli,
 
 	if (argc != 3) {
 		printf("Usage: %s printername <keyname>\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	
 	keyname = argv[2];
@@ -2067,10 +2099,10 @@ static NTSTATUS cmd_spoolss_enum_data_ex( struct cli_state *cli,
 	/* Open printer handle */
 
 	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	fstrcpy(user, cli->user_name);
 	slprintf(printername, sizeof(printername)-1, "\\\\%s\\", cli->desthost);
-	strupper(printername);
+	strupper_m(printername);
 	pstrcat(printername, argv[1]);
 
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, 
@@ -2104,12 +2136,12 @@ done:
 	if (got_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &hnd);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /* enumerate subkeys */
 
-static NTSTATUS cmd_spoolss_enum_printerkey( struct cli_state *cli, 
+static WERROR cmd_spoolss_enum_printerkey( struct cli_state *cli, 
 					     TALLOC_CTX *mem_ctx, int argc, 
 					     const char **argv)
 {
@@ -2124,7 +2156,7 @@ static NTSTATUS cmd_spoolss_enum_printerkey( struct cli_state *cli,
 
 	if (argc < 2 || argc > 3) {
 		printf("Usage: %s printername [keyname]\n", argv[0]);
-		return NT_STATUS_OK;
+		return WERR_OK;
 	}
 	
 	if (argc == 3)
@@ -2135,10 +2167,10 @@ static NTSTATUS cmd_spoolss_enum_printerkey( struct cli_state *cli,
 	/* Open printer handle */
 
 	slprintf(servername, sizeof(servername)-1, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 	fstrcpy(user, cli->user_name);
 	slprintf(printername, sizeof(printername)-1, "\\\\%s\\", cli->desthost);
-	strupper(printername);
+	strupper_m(printername);
 	pstrcat(printername, argv[1]);
 
 	result = cli_spoolss_open_printer_ex(cli, mem_ctx, printername, 
@@ -2178,10 +2210,10 @@ done:
 	if (got_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &hnd);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
-static NTSTATUS cmd_spoolss_rffpcnex(struct cli_state *cli, 
+static WERROR cmd_spoolss_rffpcnex(struct cli_state *cli, 
 				     TALLOC_CTX *mem_ctx, int argc, 
 				     const char **argv)
 {
@@ -2200,11 +2232,11 @@ static NTSTATUS cmd_spoolss_rffpcnex(struct cli_state *cli,
 	/* Open printer */
 
 	slprintf(servername, sizeof(servername) - 1, "\\\\%s", cli->desthost);
-	strupper(servername);
+	strupper_m(servername);
 
 	slprintf(printername, sizeof(printername) - 1, "\\\\%s\\%s", cli->desthost,
 		 argv[1]);
-	strupper(printername);
+	strupper_m(printername);
 
 	result = cli_spoolss_open_printer_ex(
 		cli, mem_ctx, printername, "", MAXIMUM_ALLOWED_ACCESS, 
@@ -2243,7 +2275,7 @@ static NTSTATUS cmd_spoolss_rffpcnex(struct cli_state *cli,
 	/* Send rffpcnex */
 
 	slprintf(servername, sizeof(servername) - 1, "\\\\%s", myhostname());
-	strupper(servername);
+	strupper_m(servername);
 
 	result = cli_spoolss_rffpcnex(
 		cli, mem_ctx, &hnd, 0, 0, servername, 123, &option);
@@ -2257,7 +2289,7 @@ done:
 	if (got_hnd)
 		cli_spoolss_close_printer(cli, mem_ctx, &hnd);
 
-	return W_ERROR_IS_OK(result) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+	return result;
 }
 
 /* List of commands exported by this module */
@@ -2265,33 +2297,33 @@ struct cmd_set spoolss_commands[] = {
 
 	{ "SPOOLSS"  },
 
-	{ "adddriver",		cmd_spoolss_addprinterdriver,	PI_SPOOLSS, "Add a print driver",                  "" },
-	{ "addprinter",		cmd_spoolss_addprinterex,	PI_SPOOLSS, "Add a printer",                       "" },
-	{ "deldriver",		cmd_spoolss_deletedriver,	PI_SPOOLSS, "Delete a printer driver",             "" },
-	{ "enumdata",		cmd_spoolss_enum_data,		PI_SPOOLSS, "Enumerate printer data",              "" },
-	{ "enumdataex",		cmd_spoolss_enum_data_ex,	PI_SPOOLSS, "Enumerate printer data for a key",    "" },
-	{ "enumkey",		cmd_spoolss_enum_printerkey,	PI_SPOOLSS, "Enumerate printer keys",              "" },
-	{ "enumjobs",		cmd_spoolss_enum_jobs,          PI_SPOOLSS, "Enumerate print jobs",                "" },
-	{ "enumports", 		cmd_spoolss_enum_ports, 	PI_SPOOLSS, "Enumerate printer ports",             "" },
-	{ "enumdrivers", 	cmd_spoolss_enum_drivers, 	PI_SPOOLSS, "Enumerate installed printer drivers", "" },
-	{ "enumprinters", 	cmd_spoolss_enum_printers, 	PI_SPOOLSS, "Enumerate printers",                  "" },
-	{ "getdata",		cmd_spoolss_getprinterdata,	PI_SPOOLSS, "Get print driver data",               "" },
-	{ "getdataex",		cmd_spoolss_getprinterdataex,	PI_SPOOLSS, "Get printer driver data with keyname", ""},
-	{ "getdriver",		cmd_spoolss_getdriver,		PI_SPOOLSS, "Get print driver information",        "" },
-	{ "getdriverdir",	cmd_spoolss_getdriverdir,	PI_SPOOLSS, "Get print driver upload directory",   "" },
-	{ "getprinter", 	cmd_spoolss_getprinter, 	PI_SPOOLSS, "Get printer info",                    "" },
-	{ "getprintprocdir",	cmd_spoolss_getprintprocdir,    PI_SPOOLSS, "Get print processor directory",       "" },
-	{ "openprinter",	cmd_spoolss_open_printer_ex,	PI_SPOOLSS, "Open printer handle",                 "" },
-	{ "setdriver",		cmd_spoolss_setdriver,		PI_SPOOLSS, "Set printer driver",                  "" },
-	{ "getprintprocdir",	cmd_spoolss_getprintprocdir,    PI_SPOOLSS, "Get print processor directory",       "" },
-	{ "addform",            cmd_spoolss_addform,            PI_SPOOLSS, "Add form",                            "" },
-	{ "setform",            cmd_spoolss_setform,            PI_SPOOLSS, "Set form",                            "" },
-	{ "getform",            cmd_spoolss_getform,            PI_SPOOLSS, "Get form",                            "" },
-	{ "deleteform",         cmd_spoolss_deleteform,         PI_SPOOLSS, "Delete form",                         "" },
-	{ "enumforms",          cmd_spoolss_enum_forms,         PI_SPOOLSS, "Enumerate forms",                     "" },
-	{ "setprinter",	        cmd_spoolss_setprinter,         PI_SPOOLSS, "Set printer comment",                 "" },
-	{ "setprinterdata",	cmd_spoolss_setprinterdata,     PI_SPOOLSS, "Set REG_SZ printer data",             "" },
-	{ "rffpcnex",           cmd_spoolss_rffpcnex,           PI_SPOOLSS, "Rffpcnex test", "" },
+	{ "adddriver",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_addprinterdriver,	PI_SPOOLSS, "Add a print driver",                  "" },
+	{ "addprinter",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_addprinterex,	PI_SPOOLSS, "Add a printer",                       "" },
+	{ "deldriver",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_deletedriver,	PI_SPOOLSS, "Delete a printer driver",             "" },
+	{ "enumdata",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_data,		PI_SPOOLSS, "Enumerate printer data",              "" },
+	{ "enumdataex",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_data_ex,	PI_SPOOLSS, "Enumerate printer data for a key",    "" },
+	{ "enumkey",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_printerkey,	PI_SPOOLSS, "Enumerate printer keys",              "" },
+	{ "enumjobs",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_jobs,          PI_SPOOLSS, "Enumerate print jobs",                "" },
+	{ "enumports", 	RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_ports, 	PI_SPOOLSS, "Enumerate printer ports",             "" },
+	{ "enumdrivers", 	RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_drivers, 	PI_SPOOLSS, "Enumerate installed printer drivers", "" },
+	{ "enumprinters", 	RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_printers, 	PI_SPOOLSS, "Enumerate printers",                  "" },
+	{ "getdata",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_getprinterdata,	PI_SPOOLSS, "Get print driver data",               "" },
+	{ "getdataex",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_getprinterdataex,	PI_SPOOLSS, "Get printer driver data with keyname", ""},
+	{ "getdriver",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_getdriver,		PI_SPOOLSS, "Get print driver information",        "" },
+	{ "getdriverdir",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_getdriverdir,	PI_SPOOLSS, "Get print driver upload directory",   "" },
+	{ "getprinter", 	RPC_RTYPE_WERROR, NULL, cmd_spoolss_getprinter, 	PI_SPOOLSS, "Get printer info",                    "" },
+	{ "getprintprocdir",RPC_RTYPE_WERROR, NULL, cmd_spoolss_getprintprocdir,    PI_SPOOLSS, "Get print processor directory",       "" },
+	{ "openprinter",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_open_printer_ex,	PI_SPOOLSS, "Open printer handle",                 "" },
+	{ "setdriver", 	RPC_RTYPE_WERROR, NULL, cmd_spoolss_setdriver,		PI_SPOOLSS, "Set printer driver",                  "" },
+	{ "getprintprocdir",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_getprintprocdir,    PI_SPOOLSS, "Get print processor directory",       "" },
+	{ "addform",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_addform,            PI_SPOOLSS, "Add form",                            "" },
+	{ "setform",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_setform,            PI_SPOOLSS, "Set form",                            "" },
+	{ "getform",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_getform,            PI_SPOOLSS, "Get form",                            "" },
+	{ "deleteform",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_deleteform,         PI_SPOOLSS, "Delete form",                         "" },
+	{ "enumforms",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_enum_forms,         PI_SPOOLSS, "Enumerate forms",                     "" },
+	{ "setprinter",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_setprinter,         PI_SPOOLSS, "Set printer comment",                 "" },
+	{ "setprinterdata",	RPC_RTYPE_WERROR, NULL, cmd_spoolss_setprinterdata,     PI_SPOOLSS, "Set REG_SZ printer data",             "" },
+	{ "rffpcnex",		RPC_RTYPE_WERROR, NULL, cmd_spoolss_rffpcnex,           PI_SPOOLSS, "Rffpcnex test", "" },
 
 	{ NULL }
 };

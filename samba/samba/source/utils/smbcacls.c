@@ -5,6 +5,7 @@
    Copyright (C) Andrew Tridgell 2000
    Copyright (C) Tim Potter      2000
    Copyright (C) Jeremy Allison  2000
+   Copyright (C) Jelmer Vernooij 2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,20 +24,16 @@
 
 #include "includes.h"
 
-static fstring password;
-static pstring username;
 static pstring owner_username;
 static fstring server;
-static int got_pass;
-static int test_args;
+static int test_args = False;
 static TALLOC_CTX *ctx;
 
 #define CREATE_ACCESS_READ READ_CONTROL_ACCESS
-#define CREATE_ACCESS_WRITE (WRITE_DAC_ACCESS | WRITE_OWNER_ACCESS)
 
 /* numeric is set when the user wants numeric SIDs and ACEs rather
    than going via LSA calls to resolve them */
-static int numeric;
+static BOOL numeric = False;
 
 enum acl_mode {SMB_ACL_SET, SMB_ACL_DELETE, SMB_ACL_MODIFY, SMB_ACL_ADD };
 enum chown_mode {REQUEST_NONE, REQUEST_CHOWN, REQUEST_CHGRP};
@@ -408,7 +405,7 @@ static void sec_desc_print(FILE *f, SEC_DESC *sd)
 	fstring sidstr;
 	uint32 i;
 
-	printf("REVISION:%d\n", sd->revision);
+	fprintf(f, "REVISION:%d\n", sd->revision);
 
 	/* Print owner and group sid */
 
@@ -418,7 +415,7 @@ static void sec_desc_print(FILE *f, SEC_DESC *sd)
 		fstrcpy(sidstr, "");
 	}
 
-	printf("OWNER:%s\n", sidstr);
+	fprintf(f, "OWNER:%s\n", sidstr);
 
 	if (sd->grp_sid) {
 		SidToString(sidstr, sd->grp_sid);
@@ -508,11 +505,11 @@ static int owner_set(struct cli_state *cli, enum chown_mode change_mode,
 	}
 
 	sd = make_sec_desc(ctx,old->revision,
-				(change_mode == REQUEST_CHOWN) ? &sid : old->owner_sid,
-				(change_mode == REQUEST_CHGRP) ? &sid : old->grp_sid,
-			   NULL, old->dacl, &sd_size);
+				(change_mode == REQUEST_CHOWN) ? &sid : NULL,
+				(change_mode == REQUEST_CHGRP) ? &sid : NULL,
+			   NULL, NULL, &sd_size);
 
-	fnum = cli_nt_create(cli, filename, CREATE_ACCESS_WRITE);
+	fnum = cli_nt_create(cli, filename, WRITE_OWNER_ACCESS);
 
 	if (fnum == -1) {
 		printf("Failed to open %s: %s\n", filename, cli_errstr(cli));
@@ -682,10 +679,10 @@ static int cacl_set(struct cli_state *cli, char *filename,
 	sort_acl(old->dacl);
 
 	/* Create new security descriptor and set it */
-	sd = make_sec_desc(ctx,old->revision, old->owner_sid, old->grp_sid, 
+	sd = make_sec_desc(ctx,old->revision, NULL, NULL,
 			   NULL, old->dacl, &sd_size);
 
-	fnum = cli_nt_create(cli, filename, CREATE_ACCESS_WRITE);
+	fnum = cli_nt_create(cli, filename, WRITE_DAC_ACCESS);
 
 	if (fnum == -1) {
 		printf("cacl_set failed to open %s: %s\n", filename, cli_errstr(cli));
@@ -715,19 +712,20 @@ static struct cli_state *connect_one(const char *share)
 	NTSTATUS nt_status;
 	zero_ip(&ip);
 	
-	if (!got_pass) {
+	if (!cmdline_auth_info.got_pass) {
 		char *pass = getpass("Password: ");
 		if (pass) {
-			fstrcpy(password, pass);
-			got_pass = True;
+			pstrcpy(cmdline_auth_info.password, pass);
+			cmdline_auth_info.got_pass = True;
 		}
 	}
 
 	if (NT_STATUS_IS_OK(nt_status = cli_full_connection(&c, global_myname(), server, 
 							    &ip, 0,
 							    share, "?????",  
-							    username, lp_workgroup(),
-							    password, 0, NULL))) {
+							    cmdline_auth_info.username, lp_workgroup(),
+							    cmdline_auth_info.password, 0,
+							    cmdline_auth_info.signing_state, NULL))) {
 		return c;
 	} else {
 		DEBUG(0,("cli_full_connection failed! (%s)\n", nt_errstr(nt_status)));
@@ -735,45 +733,34 @@ static struct cli_state *connect_one(const char *share)
 	}
 }
 
-
-static void usage(void)
-{
-	printf(
-"Usage: smbcacls //server1/share1 filename [options]\n\
-\n\
-\t-D <acls>               delete an acl\n\
-\t-M <acls>               modify an acl\n\
-\t-A <acls>               add an acl\n\
-\t-S <acls>               set acls\n\
-\t-C username             change ownership of a file\n\
-\t-G username             change group ownership of a file\n\
-\t-n                      don't resolve sids or masks to names\n\
-\t-h                      print help\n\
-\t-d debuglevel           set debug output level\n\
-\t-U username             user to autheticate as\n\
-\n\
-The username can be of the form username%%password or\n\
-workgroup\\username%%password.\n\n\
-An acl is of the form ACL:<SID>:type/flags/mask\n\
-You can string acls together with spaces, commas or newlines\n\
-");
-}
-
 /****************************************************************************
   main program
 ****************************************************************************/
- int main(int argc,char *argv[])
+ int main(int argc, const char *argv[])
 {
 	char *share;
-	pstring filename;
-	extern char *optarg;
-	extern int optind;
 	int opt;
-	char *p;
 	enum acl_mode mode = SMB_ACL_SET;
-	char *the_acl = NULL;
+	static char *the_acl = NULL;
 	enum chown_mode change_mode = REQUEST_NONE;
 	int result;
+	fstring path;
+	pstring filename;
+	poptContext pc;
+	struct poptOption long_options[] = {
+		POPT_AUTOHELP
+		{ "delete", 'D', POPT_ARG_STRING, NULL, 'D', "Delete an acl", "ACL" },
+		{ "modify", 'M', POPT_ARG_STRING, NULL, 'M', "Modify an acl", "ACL" },
+		{ "add", 'A', POPT_ARG_STRING, NULL, 'A', "Add an acl", "ACL" },
+		{ "set", 'S', POPT_ARG_STRING, NULL, 'S', "Set acls", "ACLS" },
+		{ "chown", 'C', POPT_ARG_STRING, NULL, 'C', "Change ownership of a file", "USERNAME" },
+		{ "chgrp", 'G', POPT_ARG_STRING, NULL, 'G', "Change group ownership of a file", "GROUPNAME" },
+		{ "numeric", 0, POPT_ARG_NONE, &numeric, True, "Don't resolve sids or masks to names" },
+		{ "test-args", 't', POPT_ARG_NONE, &test_args, True, "Test arguments"},
+		POPT_COMMON_SAMBA
+		POPT_COMMON_CREDENTIALS
+		{ NULL }
+	};
 
 	struct cli_state *cli;
 
@@ -783,118 +770,72 @@ You can string acls together with spaces, commas or newlines\n\
 
 	dbf = x_stderr;
 
-	if (argc < 3 || argv[1][0] == '-') {
-		usage();
-		talloc_destroy(ctx);
-		exit(EXIT_PARSE_ERROR);
-	}
-
 	setup_logging(argv[0],True);
-
-	share = argv[1];
-	pstrcpy(filename, argv[2]);
-	all_string_sub(share,"/","\\",0);
-
-	argc -= 2;
-	argv += 2;
 
 	lp_load(dyn_CONFIGFILE,True,False,False);
 	load_interfaces();
 
-	if (getenv("USER")) {
-		pstrcpy(username,getenv("USER"));
+	pc = poptGetContext("smbcacls", argc, argv, long_options, 0);
+	
+	poptSetOtherOptionHelp(pc, "//server1/share1 filename");
 
-		if ((p=strchr_m(username,'%'))) {
-			*p = 0;
-			fstrcpy(password,p+1);
-			got_pass = True;
-			memset(strchr_m(getenv("USER"), '%') + 1, 'X',
-			       strlen(password));
-		}
-	}
-
-	while ((opt = getopt(argc, argv, "U:nhS:D:A:M:C:G:td:")) != EOF) {
+	while ((opt = poptGetNextOpt(pc)) != -1) {
 		switch (opt) {
-		case 'U':
-			pstrcpy(username,optarg);
-			p = strchr_m(username,'%');
-			if (p) {
-				*p = 0;
-				fstrcpy(password, p+1);
-				got_pass = 1;
-			}
-			break;
-
 		case 'S':
-			the_acl = optarg;
+			the_acl = smb_xstrdup(poptGetOptArg(pc));
 			mode = SMB_ACL_SET;
 			break;
 
 		case 'D':
-			the_acl = optarg;
+			the_acl = smb_xstrdup(poptGetOptArg(pc));
 			mode = SMB_ACL_DELETE;
 			break;
 
 		case 'M':
-			the_acl = optarg;
+			the_acl = smb_xstrdup(poptGetOptArg(pc));
 			mode = SMB_ACL_MODIFY;
 			break;
 
 		case 'A':
-			the_acl = optarg;
+			the_acl = smb_xstrdup(poptGetOptArg(pc));
 			mode = SMB_ACL_ADD;
 			break;
 
 		case 'C':
-			pstrcpy(owner_username,optarg);
+			pstrcpy(owner_username,poptGetOptArg(pc));
 			change_mode = REQUEST_CHOWN;
 			break;
 
 		case 'G':
-			pstrcpy(owner_username,optarg);
+			pstrcpy(owner_username,poptGetOptArg(pc));
 			change_mode = REQUEST_CHGRP;
 			break;
-
-		case 'n':
-			numeric = 1;
-			break;
-
-		case 't':
-			test_args = 1;
-			break;
-
-		case 'h':
-			usage();
-			talloc_destroy(ctx);
-			exit(EXIT_PARSE_ERROR);
-
-		case 'd':
-			DEBUGLEVEL = atoi(optarg);
-			break;
-
-		default:
-			printf("Unknown option %c (%d)\n", (char)opt, opt);
-			talloc_destroy(ctx);
-			exit(EXIT_PARSE_ERROR);
 		}
 	}
 
-	argc -= optind;
-	argv += optind;
-
-	if (argc > 0) {
-		usage();
-		talloc_destroy(ctx);
-		exit(EXIT_PARSE_ERROR);
-	}
-
 	/* Make connection to server */
+	if(!poptPeekArg(pc)) { 
+		poptPrintUsage(pc, stderr, 0);
+		return -1;
+	}
+	
+	fstrcpy(path, poptGetArg(pc));
+	
+	if(!poptPeekArg(pc)) { 
+		poptPrintUsage(pc, stderr, 0);	
+		return -1;
+	}
+	
+	pstrcpy(filename, poptGetArg(pc));
 
-	fstrcpy(server,share+2);
+	all_string_sub(path,"/","\\",0);
+
+	fstrcpy(server,path+2);
 	share = strchr_m(server,'\\');
 	if (!share) {
 		share = strchr_m(server,'/');
 		if (!share) {
+			printf("Invalid argument: %s\n", share);
 			return -1;
 		}
 	}
@@ -916,7 +857,7 @@ You can string acls together with spaces, commas or newlines\n\
 	if (filename[0] != '\\') {
 		pstring s;
 		s[0] = '\\';
-		safe_strcpy(&s[1], filename, sizeof(pstring)-1);
+		safe_strcpy(&s[1], filename, sizeof(pstring)-2);
 		pstrcpy(filename, s);
 	}
 
@@ -934,4 +875,3 @@ You can string acls together with spaces, commas or newlines\n\
 
 	return result;
 }
-

@@ -28,7 +28,7 @@
 #define DBGC_CLASS DBGC_PASSDB
 
 /**
- * @todo Redefine this to NULL, but this changes the API becouse
+ * @todo Redefine this to NULL, but this changes the API because
  *       much of samba assumes that the pdb_get...() funtions 
  *       return pstrings.  (ie not null-pointers).
  *       See also pdb_fill_default_sam().
@@ -186,36 +186,20 @@ enum pdb_value_state pdb_get_init_flags (const SAM_ACCOUNT *sampass, enum pdb_el
         	return ret;
         	
         if (bitmap_query(sampass->private.set_flags, element)) {
-		DEBUG(10, ("element %d: SET\n", element)); 
+		DEBUG(11, ("element %d: SET\n", element)); 
         	ret = PDB_SET;
 	}
 		
         if (bitmap_query(sampass->private.change_flags, element)) {
-		DEBUG(10, ("element %d: CHANGED\n", element)); 
+		DEBUG(11, ("element %d: CHANGED\n", element)); 
         	ret = PDB_CHANGED;
 	}
 
 	if (ret == PDB_DEFAULT) {
-		DEBUG(10, ("element %d: DEFAULT\n", element)); 
+		DEBUG(11, ("element %d: DEFAULT\n", element)); 
 	}
 
         return ret;
-}
-
-uid_t pdb_get_uid (const SAM_ACCOUNT *sampass)
-{
-	if (sampass)
-		return (sampass->private.uid);
-	else
-		return (-1);
-}
-
-gid_t pdb_get_gid (const SAM_ACCOUNT *sampass)
-{
-	if (sampass)
-		return (sampass->private.gid);
-	else
-		return (-1);
 }
 
 const char* pdb_get_username (const SAM_ACCOUNT *sampass)
@@ -344,6 +328,14 @@ uint32 pdb_get_unknown_6 (const SAM_ACCOUNT *sampass)
 		return (sampass->private.unknown_6);
 	else
 		return (-1);
+}
+
+void *pdb_get_backend_private_data (const SAM_ACCOUNT *sampass, const struct pdb_methods *my_methods)
+{
+	if (sampass && my_methods == sampass->private.backend_private_methods)
+		return sampass->private.backend_private_data;
+	else
+		return NULL;
 }
 
 /*********************************************************************
@@ -476,10 +468,10 @@ BOOL pdb_set_init_flags (SAM_ACCOUNT *sampass, enum pdb_elements element, enum p
 				return False;
 			}
         		if (!bitmap_set(sampass->private.set_flags, element)) {
-				DEBUG(0,("Can't set flag: %d in set_falgs.\n",element));
+				DEBUG(0,("Can't set flag: %d in set_flags.\n",element));
 				return False;
 			}
-			DEBUG(10, ("element %d -> now CHANGED\n", element)); 
+			DEBUG(11, ("element %d -> now CHANGED\n", element)); 
         		break;
         	case PDB_SET:
         		if (!bitmap_clear(sampass->private.change_flags, element)) {
@@ -487,7 +479,7 @@ BOOL pdb_set_init_flags (SAM_ACCOUNT *sampass, enum pdb_elements element, enum p
 				return False;
 			}
         		if (!bitmap_set(sampass->private.set_flags, element)) {
-				DEBUG(0,("Can't set flag: %d in set_falgs.\n",element));
+				DEBUG(0,("Can't set flag: %d in set_flags.\n",element));
 				return False;
 			}
 			DEBUG(10, ("element %d -> now SET\n", element)); 
@@ -499,40 +491,14 @@ BOOL pdb_set_init_flags (SAM_ACCOUNT *sampass, enum pdb_elements element, enum p
 				return False;
 			}
         		if (!bitmap_clear(sampass->private.set_flags, element)) {
-				DEBUG(0,("Can't set flag: %d in set_falgs.\n",element));
+				DEBUG(0,("Can't set flag: %d in set_flags.\n",element));
 				return False;
 			}
-			DEBUG(10, ("element %d -> now DEFAULT\n", element)); 
+			DEBUG(11, ("element %d -> now DEFAULT\n", element)); 
         		break;
 	}
 
         return True;
-}
-
-BOOL pdb_set_uid (SAM_ACCOUNT *sampass, const uid_t uid, enum pdb_value_state flag)
-{	
-	if (!sampass)
-		return False;
-	
-	DEBUG(10, ("pdb_set_uid: setting uid %d, was %d\n", 
-		   (int)uid, (int)sampass->private.uid));
- 
-	sampass->private.uid = uid;
-	
-	return pdb_set_init_flags(sampass, PDB_UID, flag);
-}
-
-BOOL pdb_set_gid (SAM_ACCOUNT *sampass, const gid_t gid, enum pdb_value_state flag)
-{
-	if (!sampass)
-		return False;
-		
-	DEBUG(10, ("pdb_set_gid: setting gid %d, was %d\n", 
-		   (int)gid, (int)sampass->private.gid));
- 
-	sampass->private.gid = gid; 
-
-	return pdb_set_init_flags(sampass, PDB_GID, flag);
 }
 
 BOOL pdb_set_user_sid (SAM_ACCOUNT *sampass, DOM_SID *u_sid, enum pdb_value_state flag)
@@ -1053,6 +1019,38 @@ BOOL pdb_set_hours (SAM_ACCOUNT *sampass, const uint8 *hours, enum pdb_value_sta
 	return pdb_set_init_flags(sampass, PDB_HOURS, flag);
 }
 
+BOOL pdb_set_backend_private_data (SAM_ACCOUNT *sampass, void *private_data, 
+				   void (*free_fn)(void **), 
+				   const struct pdb_methods *my_methods, 
+				   enum pdb_value_state flag)
+{
+	if (!sampass)
+		return False;
+
+#if 0
+	/* With this check backend_private_data_free_fn is *never* set
+	   as the methods are never set anywhere. What is this
+	   supposed to do ????
+
+	   Volker
+	*/
+
+	/* does this backend 'own' this SAM_ACCOUNT? */
+	if (my_methods != sampass->private.backend_private_methods)
+		return False;
+#endif
+
+	if (sampass->private.backend_private_data && sampass->private.backend_private_data_free_fn) {
+		sampass->private.backend_private_data_free_fn(&sampass->private.backend_private_data);
+	}
+
+	sampass->private.backend_private_data = private_data;
+	sampass->private.backend_private_data_free_fn = free_fn;
+	sampass->private.backend_private_methods = my_methods;
+
+	return pdb_set_init_flags(sampass, PDB_BACKEND_PRIVATE_DATA, flag);
+}
+
 
 /* Helpful interfaces to the above */
 
@@ -1064,6 +1062,7 @@ BOOL pdb_set_hours (SAM_ACCOUNT *sampass, const uint8 *hours, enum pdb_value_sta
 BOOL pdb_set_pass_changed_now (SAM_ACCOUNT *sampass)
 {
 	uint32 expire;
+	uint32 min_age;
 
 	if (!sampass)
 		return False;
@@ -1082,6 +1081,16 @@ BOOL pdb_set_pass_changed_now (SAM_ACCOUNT *sampass)
 			return False;
 	}
 	
+	if (!account_policy_get(AP_MIN_PASSWORD_AGE, &min_age) 
+	    || (min_age==(uint32)-1)) {
+		if (!pdb_set_pass_can_change_time (sampass, 0, PDB_CHANGED))
+			return False;
+	} else {
+		if (!pdb_set_pass_can_change_time (sampass, 
+						    pdb_get_pass_last_set_time(sampass)
+						    + min_age, PDB_CHANGED))
+			return False;
+	}
 	return True;
 }
 

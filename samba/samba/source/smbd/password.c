@@ -29,10 +29,11 @@ static int next_vuid = VUID_OFFSET;
 static int num_validated_vuids;
 
 /****************************************************************************
-check if a uid has been validated, and return an pointer to the user_struct
-if it has. NULL if not. vuid is biased by an offset. This allows us to
-tell random client vuid's (normally zero) from valid vuids.
+ Check if a uid has been validated, and return an pointer to the user_struct
+ if it has. NULL if not. vuid is biased by an offset. This allows us to
+ tell random client vuid's (normally zero) from valid vuids.
 ****************************************************************************/
+
 user_struct *get_valid_user_struct(uint16 vuid)
 {
 	user_struct *usp;
@@ -54,8 +55,9 @@ user_struct *get_valid_user_struct(uint16 vuid)
 }
 
 /****************************************************************************
-invalidate a uid
+ Invalidate a uid.
 ****************************************************************************/
+
 void invalidate_vuid(uint16 vuid)
 {
 	user_struct *vuser = get_valid_user_struct(vuid);
@@ -68,6 +70,7 @@ void invalidate_vuid(uint16 vuid)
 	SAFE_FREE(vuser->logon_script);
 	
 	session_yield(vuser);
+	SAFE_FREE(vuser->session_keystr);
 
 	free_server_info(&vuser->server_info);
 
@@ -84,8 +87,9 @@ void invalidate_vuid(uint16 vuid)
 }
 
 /****************************************************************************
-invalidate all vuid entries for this process
+ Invalidate all vuid entries for this process.
 ****************************************************************************/
+
 void invalidate_all_vuids(void)
 {
 	user_struct *usp, *next=NULL;
@@ -107,7 +111,7 @@ void invalidate_all_vuids(void)
  *
  */
 
-int register_vuid(auth_serversupplied_info *server_info, const char *smb_name)
+int register_vuid(auth_serversupplied_info *server_info, DATA_BLOB response_blob, const char *smb_name)
 {
 	user_struct *vuser = NULL;
 
@@ -141,15 +145,9 @@ int register_vuid(auth_serversupplied_info *server_info, const char *smb_name)
 	/* the next functions should be done by a SID mapping system (SMS) as
 	 * the new real sam db won't have reference to unix uids or gids
 	 */
-	if (!IS_SAM_UNIX_USER(server_info->sam_account)) {
-		DEBUG(0,("Attempted session setup with invalid user.  No uid/gid in SAM_ACCOUNT\n"));
-		free(vuser);
-		free_server_info(&server_info);
-		return UID_FIELD_INVALID;
-	}
 	
-	vuser->uid = pdb_get_uid(server_info->sam_account);
-	vuser->gid = pdb_get_gid(server_info->sam_account);
+	vuser->uid = server_info->uid;
+	vuser->gid = server_info->gid;
 	
 	vuser->n_groups = server_info->n_groups;
 	if (vuser->n_groups) {
@@ -162,7 +160,7 @@ int register_vuid(auth_serversupplied_info *server_info, const char *smb_name)
 	}
 
 	vuser->guest = server_info->guest;
-	fstrcpy(vuser->user.unix_name, pdb_get_username(server_info->sam_account)); 
+	fstrcpy(vuser->user.unix_name, server_info->unix_name); 
 
 	/* This is a potentially untrusted username */
 	alpha_strcpy(vuser->user.smb_name, smb_name, ". _-$", sizeof(vuser->user.smb_name));
@@ -173,16 +171,24 @@ int register_vuid(auth_serversupplied_info *server_info, const char *smb_name)
 	{
 		/* Keep the homedir handy */
 		const char *homedir = pdb_get_homedir(server_info->sam_account);
-		const char *unix_homedir = pdb_get_unix_homedir(server_info->sam_account);
 		const char *logon_script = pdb_get_logon_script(server_info->sam_account);
+
+		if (!IS_SAM_DEFAULT(server_info->sam_account, PDB_UNIXHOMEDIR)) {
+			const char *unix_homedir = pdb_get_unix_homedir(server_info->sam_account);
+			if (unix_homedir) {
+				vuser->unix_homedir = smb_xstrdup(unix_homedir);
+			}
+		} else {
+			struct passwd *passwd = getpwnam_alloc(vuser->user.unix_name);
+			if (passwd) {
+				vuser->unix_homedir = smb_xstrdup(passwd->pw_dir);
+				passwd_free(&passwd);
+			}
+		}
+		
 		if (homedir) {
 			vuser->homedir = smb_xstrdup(homedir);
 		}
-
-		if (unix_homedir) {
-			vuser->unix_homedir = smb_xstrdup(unix_homedir);
-		}
-
 		if (logon_script) {
 			vuser->logon_script = smb_xstrdup(logon_script);
 		}
@@ -228,45 +234,49 @@ int register_vuid(auth_serversupplied_info *server_info, const char *smb_name)
 
 	/* Register a home dir service for this user */
 	if ((!vuser->guest) && vuser->unix_homedir && *(vuser->unix_homedir)) {
-		DEBUG(3, ("Adding/updating homes service for user '%s' using home direcotry: '%s'\n", 
+		DEBUG(3, ("Adding/updating homes service for user '%s' using home directory: '%s'\n", 
 			  vuser->user.unix_name, vuser->unix_homedir));
 		vuser->homes_snum = add_home_service(vuser->user.unix_name, vuser->user.unix_name, vuser->unix_homedir);	  
 	} else {
 		vuser->homes_snum = -1;
 	}
 	
+	if (lp_server_signing() && !vuser->guest && !srv_is_signing_active()) {
+		/* Try and turn on server signing on the first non-guest sessionsetup. */
+		srv_set_signing(vuser->session_key, response_blob);
+	}
+
 	return vuser->vuid;
 }
 
-
 /****************************************************************************
-add a name to the session users list
+ Add a name to the session users list.
 ****************************************************************************/
+
 void add_session_user(const char *user)
 {
-  fstring suser;
-  struct passwd *passwd;
+	fstring suser;
+	struct passwd *passwd;
 
-  if (!(passwd = Get_Pwnam(user))) return;
+	if (!(passwd = Get_Pwnam(user)))
+		return;
 
-  StrnCpy(suser,passwd->pw_name,sizeof(suser)-1);
+	fstrcpy(suser,passwd->pw_name);
 
-  if (suser && *suser && !in_list(suser,session_users,False))
-    {
-      if (strlen(suser) + strlen(session_users) + 2 >= sizeof(pstring))
-	DEBUG(1,("Too many session users??\n"));
-      else
-	{
-	  pstrcat(session_users," ");
-	  pstrcat(session_users,suser);
+	if (suser && *suser && !in_list(suser,session_users,False)) {
+		if (strlen(suser) + strlen(session_users) + 2 >= sizeof(pstring)) {
+			DEBUG(1,("Too many session users??\n"));
+		} else {
+			pstrcat(session_users," ");
+			pstrcat(session_users,suser);
+		}
 	}
-    }
 }
 
-
 /****************************************************************************
-check if a username is valid
+ Check if a username is valid.
 ****************************************************************************/
+
 BOOL user_ok(const char *user,int snum, gid_t *groups, size_t n_groups)
 {
 	char **valid, **invalid;
@@ -305,8 +315,9 @@ BOOL user_ok(const char *user,int snum, gid_t *groups, size_t n_groups)
 }
 
 /****************************************************************************
-validate a group username entry. Return the username or NULL
+ Validate a group username entry. Return the username or NULL.
 ****************************************************************************/
+
 static char *validate_group(char *group, DATA_BLOB password,int snum)
 {
 #ifdef HAVE_NETGROUP
@@ -447,7 +458,7 @@ and given password ok\n", user));
 	if (!ok && lp_username(snum)) {
 		char *auser;
 		pstring user_list;
-		StrnCpy(user_list,lp_username(snum),sizeof(pstring));
+		pstrcpy(user_list,lp_username(snum));
 		
 		pstring_sub(user_list,"%S",lp_servicename(snum));
 		
@@ -477,7 +488,7 @@ and given password ok (%s)\n", user));
 	/* check for a normal guest connection */
 	if (!ok && GUEST_OK(snum)) {
 		fstring guestname;
-		StrnCpy(guestname,lp_guestaccount(),sizeof(guestname)-1);
+		fstrcpy(guestname,lp_guestaccount());
 		if (Get_Pwnam(guestname)) {
 			fstrcpy(user,guestname);
 			ok = True;

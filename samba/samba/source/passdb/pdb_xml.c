@@ -28,7 +28,7 @@
  */
 
 
-#define XML_URL "http://www.samba.org/ns"
+#define XML_URL "http://samba.org/~jelmer/sambapdb.dtd"
 
 #include "includes.h"
 
@@ -40,8 +40,6 @@ static int xmlsam_debug_level = DBGC_ALL;
 #undef DBGC_CLASS
 #define DBGC_CLASS xmlsam_debug_level
 
-PDB_MODULE_VERSIONING_MAGIC 
-
 static char * iota(int a) {
 	static char tmp[10];
 
@@ -49,7 +47,7 @@ static char * iota(int a) {
 	return tmp;
 }
 
-BOOL parsePass(xmlDocPtr doc, xmlNsPtr ns, xmlNodePtr cur, SAM_ACCOUNT * u)
+static BOOL parsePass(xmlDocPtr doc, xmlNsPtr ns, xmlNodePtr cur, SAM_ACCOUNT * u)
 {
 	pstring temp;
 
@@ -78,7 +76,7 @@ BOOL parsePass(xmlDocPtr doc, xmlNsPtr ns, xmlNodePtr cur, SAM_ACCOUNT * u)
 	return True;
 }
 
-BOOL parseUser(xmlDocPtr doc, xmlNsPtr ns, xmlNodePtr cur, SAM_ACCOUNT * u)
+static BOOL parseUser(xmlDocPtr doc, xmlNsPtr ns, xmlNodePtr cur, SAM_ACCOUNT * u)
 {
 	char *tmp;
 	DOM_SID sid;
@@ -88,17 +86,11 @@ BOOL parseUser(xmlDocPtr doc, xmlNsPtr ns, xmlNodePtr cur, SAM_ACCOUNT * u)
 		string_to_sid(&sid, tmp);
 		pdb_set_user_sid(u, &sid, PDB_SET);
 	}
-	tmp = xmlGetProp(cur, "uid");
-	if (tmp)
-		pdb_set_uid(u, atol(tmp), PDB_SET);
 	pdb_set_username(u, xmlGetProp(cur, "name"), PDB_SET);
 	/* We don't care what the top level element name is */
 	cur = cur->xmlChildrenNode;
 	while (cur != NULL) {
 		if ((!strcmp(cur->name, "group")) && (cur->ns == ns)) {
-			tmp = xmlGetProp(cur, "gid");
-			if (tmp)
-				pdb_set_gid(u, atol(tmp), PDB_SET);
 			tmp = xmlGetProp(cur, "sid");
 			if (tmp){
 				string_to_sid(&sid, tmp);
@@ -247,7 +239,7 @@ typedef struct pdb_xml {
 	xmlNsPtr ns;
 } pdb_xml;
 
-xmlNodePtr parseSambaXMLFile(struct pdb_xml *data)
+static xmlNodePtr parseSambaXMLFile(struct pdb_xml *data)
 {
 	xmlNodePtr cur;
 
@@ -408,8 +400,6 @@ static NTSTATUS xmlsam_add_sam_account(struct pdb_methods *methods, SAM_ACCOUNT 
 	user = xmlNewChild(data->users, data->ns, "user", NULL);
 	xmlNewProp(user, "sid",
 			   sid_to_string(sid_str, pdb_get_user_sid(u)));
-	if (pdb_get_init_flags(u, PDB_UID) != PDB_DEFAULT)
-		xmlNewProp(user, "uid", iota(pdb_get_uid(u)));
 
 	if (pdb_get_username(u) && strcmp(pdb_get_username(u), ""))
 		xmlNewProp(user, "name", pdb_get_username(u));
@@ -418,8 +408,6 @@ static NTSTATUS xmlsam_add_sam_account(struct pdb_methods *methods, SAM_ACCOUNT 
 	
 	xmlNewProp(cur, "sid",
 			   sid_to_string(sid_str, pdb_get_group_sid(u)));
-	if (pdb_get_init_flags(u, PDB_GID) != PDB_DEFAULT)
-		xmlNewProp(cur, "gid", iota(pdb_get_gid(u)));
 
 	if (pdb_get_init_flags(u, PDB_LOGONTIME) != PDB_DEFAULT)
 		xmlNewChild(user, data->ns, "login_time",
@@ -514,7 +502,7 @@ static NTSTATUS xmlsam_add_sam_account(struct pdb_methods *methods, SAM_ACCOUNT 
 	return NT_STATUS_OK;
 }
 
-NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
+static NTSTATUS xmlsam_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
 		 const char *location)
 {
 	NTSTATUS nt_status;
@@ -555,8 +543,7 @@ NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
 	(*pdb_method)->enum_group_mapping = NULL;
 
 	data = talloc(pdb_context->mem_ctx, sizeof(pdb_xml));
-	data->location =
-		(location ? talloc_strdup(pdb_context->mem_ctx, location) : "-");
+	data->location = talloc_strdup(pdb_context->mem_ctx, (location ? location : "passdb.xml"));
 	data->pwent = NULL;
 	data->written = 0;
 	(*pdb_method)->private_data = data;
@@ -564,4 +551,9 @@ NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
 	LIBXML_TEST_VERSION xmlKeepBlanksDefault(0);
 
 	return NT_STATUS_OK;
+}
+
+NTSTATUS pdb_xml_init(void) 
+{
+	return smb_register_passdb(PASSDB_INTERFACE_VERSION, "xml", xmlsam_init);
 }

@@ -25,8 +25,15 @@
 [global]
   guest account = unknown
   encrypt passwords = yes
-  auth methods = guest plugin:/usr/lib/samba/auth/auth_ods.so
+  auth methods = guest opendirectory
+  passdb backend = opendirectorysam guest
   printer admin = @admin, @staff
+  server string = Mac OS X
+  unix charset = UTF-8-MAC
+  display charset = UTF-8-MAC
+  dos charset = 437
+  use spnego = no
+  client ntlmv2 auth = no
 
 [homes]
    comment = User Home Directories
@@ -41,5 +48,5 @@
 ;   printable = no
 
 [printers]
-  path = /var/spool/samba
+  path = /tmp
   printable = yes

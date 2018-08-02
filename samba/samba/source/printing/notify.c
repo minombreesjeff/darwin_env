@@ -24,9 +24,12 @@
 
 static TALLOC_CTX *send_ctx;
 
+static unsigned int num_messages;
+
 static struct notify_queue {
 	struct notify_queue *next, *prev;
 	struct spoolss_notify_msg *msg;
+	struct timeval tv;
 	char *buf;
 	size_t buflen;
 } *notify_queue_head = NULL;
@@ -81,7 +84,8 @@ again:
 
 	len += tdb_pack(buf + len, buflen - len, "f", msg->printer);
 
-	len += tdb_pack(buf + len, buflen - len, "ddddd",
+	len += tdb_pack(buf + len, buflen - len, "ddddddd",
+			(uint32)q->tv.tv_sec, (uint32)q->tv.tv_usec,
 			msg->type, msg->field, msg->id, msg->len, msg->flags);
 
 	/* Pack data */
@@ -126,6 +130,7 @@ static void print_notify_send_messages_to_printer(const char *printer, unsigned 
 			if (!flatten_message(pq)) {
 				DEBUG(0,("print_notify_send_messages: Out of memory\n"));
 				talloc_destroy_pool(send_ctx);
+				num_messages = 0;
 				return;
 			}
 			offset += (pq->buflen + 4);
@@ -138,6 +143,7 @@ static void print_notify_send_messages_to_printer(const char *printer, unsigned 
 	if (!buf) {
 		DEBUG(0,("print_notify_send_messages: Out of memory\n"));
 		talloc_destroy_pool(send_ctx);
+		num_messages = 0;
 		return;
 	}
 
@@ -158,8 +164,8 @@ static void print_notify_send_messages_to_printer(const char *printer, unsigned 
 		}
 	}
 
-	DEBUG(5, ("print_notify_send_messages_to_printer: sending %d print notify message%s to printer %s\n", 
-		  msg_count, msg_count != 1 ? "s" : "", printer));
+	DEBUG(5, ("print_notify_send_messages_to_printer: sending %lu print notify message%s to printer %s\n", 
+		  (unsigned long)msg_count, msg_count != 1 ? "s" : "", printer));
 
 	/*
 	 * Get the list of PID's to send to.
@@ -168,8 +174,15 @@ static void print_notify_send_messages_to_printer(const char *printer, unsigned 
 	if (!print_notify_pid_list(printer, send_ctx, &num_pids, &pid_list))
 		return;
 
-	for (i = 0; i < num_pids; i++)
+	for (i = 0; i < num_pids; i++) {
+		unsigned int q_len = messages_pending_for_pid(pid_list[i]);
+		if (q_len > 1000) {
+			DEBUG(5, ("print_notify_send_messages_to_printer: discarding notify to printer %s as queue length = %u\n",
+				printer, q_len ));
+			continue;
+		}
 		message_send_pid_with_timeout(pid_list[i], MSG_PRINTER_NOTIFY2, buf, offset, True, timeout);
+	}
 }
 
 /*******************************************************************
@@ -188,6 +201,7 @@ void print_notify_send_messages(unsigned int timeout)
 		print_notify_send_messages_to_printer(notify_queue_head->msg->printer, timeout);
 
 	talloc_destroy_pool(send_ctx);
+	num_messages = 0;
 }
 
 /**********************************************************************
@@ -223,23 +237,27 @@ static void send_spoolss_notify2_msg(SPOOLSS_NOTIFY_MSG *msg)
 	struct notify_queue *pnqueue, *tmp_ptr;
 
 	/*
-	 * Ensure we only have one message unique to each name/type/field/id/flags
-	 * tuple. There is no point in sending multiple messages that match
+	 * Ensure we only have one job total_bytes and job total_pages for
+	 * each job. There is no point in sending multiple messages that match
 	 * as they will just cause flickering updates in the client.
 	 */
 
-	for (tmp_ptr = notify_queue_head; tmp_ptr; tmp_ptr = tmp_ptr->next) {
-		if (tmp_ptr->msg->type == msg->type &&
-				tmp_ptr->msg->field == msg->field &&
-				tmp_ptr->msg->id == msg->id &&
-				tmp_ptr->msg->flags == msg->flags &&
-				strequal(tmp_ptr->msg->printer, msg->printer)) {
+	if ((num_messages < 100) && (msg->type == JOB_NOTIFY_TYPE) &&
+				(msg->field == JOB_NOTIFY_TOTAL_BYTES || msg->field == JOB_NOTIFY_TOTAL_PAGES)) {
 
-			DEBUG(5, ("send_spoolss_notify2_msg: replacing message 0x%02x/0x%02x for printer %s \
+		for (tmp_ptr = notify_queue_head; tmp_ptr; tmp_ptr = tmp_ptr->next) {
+			if (tmp_ptr->msg->type == msg->type &&
+					tmp_ptr->msg->field == msg->field &&
+					tmp_ptr->msg->id == msg->id &&
+					tmp_ptr->msg->flags == msg->flags &&
+					strequal(tmp_ptr->msg->printer, msg->printer)) {
+
+				DEBUG(5, ("send_spoolss_notify2_msg: replacing message 0x%02x/0x%02x for printer %s \
 in notify_queue\n", msg->type, msg->field, msg->printer));
 
-			tmp_ptr->msg = msg;
-			return;
+				tmp_ptr->msg = msg;
+				return;
+			}
 		}
 	}
 
@@ -254,11 +272,12 @@ in notify_queue\n", msg->type, msg->field, msg->printer));
 	/* allocate a new msg structure and copy the fields */
 	
 	if ( !(pnqueue->msg = (SPOOLSS_NOTIFY_MSG*)talloc(send_ctx, sizeof(SPOOLSS_NOTIFY_MSG))) ) {
-		DEBUG(0,("send_spoolss_notify2_msg: talloc() of size [%d] failed!\n", 
-			sizeof(SPOOLSS_NOTIFY_MSG)));
+		DEBUG(0,("send_spoolss_notify2_msg: talloc() of size [%lu] failed!\n", 
+			(unsigned long)sizeof(SPOOLSS_NOTIFY_MSG)));
 		return;
 	}
 	copy_notify2_msg(pnqueue->msg, msg);
+	gettimeofday(&pnqueue->tv, NULL);
 	pnqueue->buf = NULL;
 	pnqueue->buflen = 0;
 
@@ -271,6 +290,7 @@ to notify_queue_head\n", msg->type, msg->field, msg->printer));
 	 */
 
 	DLIST_ADD_END(notify_queue_head, pnqueue, tmp_ptr);
+	num_messages++;
 }
 
 static void send_notify_field_values(const char *printer_name, uint32 type,
@@ -460,7 +480,7 @@ void notify_printer_location(int snum, char *location)
 		snum, strlen(location) + 1, location);
 }
 
-void notify_printer_byname( char *printername, uint32 change, char *value )
+void notify_printer_byname( const char *printername, uint32 change, char *value )
 {
 	int snum = print_queue_snum(printername);
 	int type = PRINTER_NOTIFY_TYPE;

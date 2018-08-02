@@ -7,5 +7,6 @@ service swat
 	user	= root
 	server	= /usr/sbin/swat
 	log_on_failure	+= USERID
+	groups = yes
 	disable = yes
 }

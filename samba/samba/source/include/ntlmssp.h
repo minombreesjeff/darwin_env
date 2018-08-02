@@ -62,10 +62,10 @@ enum NTLM_MESSAGE_TYPE
 #define NTLMSSP_NEGOTIATE_KEY_EXCH         0x40000000
 #define NTLMSSP_NEGOTIATE_080000000        0x80000000
 
-#define NTLMSSP_NAME_TYPE_DOMAIN      0x01
-#define NTLMSSP_NAME_TYPE_SERVER      0x02
-#define NTLMSSP_NAME_TYPE_DOMAIN_DNS  0x03
-#define NTLMSSP_NAME_TYPE_SERVER_DNS  0x04
+#define NTLMSSP_NAME_TYPE_SERVER      0x01
+#define NTLMSSP_NAME_TYPE_DOMAIN      0x02
+#define NTLMSSP_NAME_TYPE_SERVER_DNS  0x03
+#define NTLMSSP_NAME_TYPE_DOMAIN_DNS  0x04
 
 typedef struct ntlmssp_state 
 {
@@ -92,19 +92,48 @@ typedef struct ntlmssp_state
 typedef struct ntlmssp_client_state 
 {
 	TALLOC_CTX *mem_ctx;
+	unsigned int ref_count;
+
 	BOOL unicode;
 	BOOL use_ntlmv2;
 	char *user;
 	char *domain;
 	char *workstation;
 	char *password;
+	char *server_domain;
 
 	const char *(*get_global_myname)(void);
 	const char *(*get_domain)(void);
 
+	DATA_BLOB chal;
+ 	DATA_BLOB lm_resp;
+	DATA_BLOB nt_resp;
 	DATA_BLOB session_key;
 	
 	uint32 neg_flags;
+	
+	/* SMB Signing */
+	
+	uint32 ntlmssp_seq_num;
 
+	/* ntlmv2 */
+	char cli_sign_const[16];
+	char cli_seal_const[16];
+	char srv_sign_const[16];
+	char srv_seal_const[16];
+
+	unsigned char cli_sign_hash[258];
+	unsigned char cli_seal_hash[258];
+	unsigned char srv_sign_hash[258];
+	unsigned char srv_seal_hash[258];
+
+	/* ntlmv1 */
+	unsigned char ntlmssp_hash[258];
+
+	/* it turns out that we don't always get the
+	   response in at the time we want to process it.
+	   Store it here, until we need it */
+	DATA_BLOB stored_response; 
+	
 } NTLMSSP_CLIENT_STATE;
 

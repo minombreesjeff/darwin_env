@@ -26,12 +26,11 @@
 /****************************************************************************
 start a message sequence
 ****************************************************************************/
-BOOL cli_message_start(struct cli_state *cli, char *host, char *username, 
-			      int *grp)
+int cli_message_start_build(struct cli_state *cli, char *host, char *username)
 {
 	char *p;
 
-	/* send a SMBsendstrt command */
+	/* construct a SMBsendstrt command */
 	memset(cli->outbuf,'\0',smb_size);
 	set_message(cli->outbuf,0,0,True);
 	SCVAL(cli->outbuf,smb_com,SMBsendstrt);
@@ -40,11 +39,19 @@ BOOL cli_message_start(struct cli_state *cli, char *host, char *username,
 	
 	p = smb_buf(cli->outbuf);
 	*p++ = 4;
-	p += clistr_push(cli, p, username, -1, STR_TERMINATE);
+	p += clistr_push(cli, p, username, -1, STR_ASCII|STR_TERMINATE);
 	*p++ = 4;
-	p += clistr_push(cli, p, host, -1, STR_TERMINATE);
+	p += clistr_push(cli, p, host, -1, STR_ASCII|STR_TERMINATE);
 	
 	cli_setup_bcc(cli, p);
+
+	return(PTR_DIFF(p, cli->outbuf));
+}
+
+BOOL cli_message_start(struct cli_state *cli, char *host, char *username,
+			      int *grp)
+{
+	cli_message_start_build(cli, host, username);
 	
 	cli_send_smb(cli);	
 	
@@ -63,8 +70,10 @@ BOOL cli_message_start(struct cli_state *cli, char *host, char *username,
 /****************************************************************************
 send a message 
 ****************************************************************************/
-BOOL cli_message_text(struct cli_state *cli, char *msg, int len, int grp)
+int cli_message_text_build(struct cli_state *cli, char *msg, int len, int grp)
 {
+	char *msgdos;
+	int lendos;
 	char *p;
 
 	memset(cli->outbuf,'\0',smb_size);
@@ -77,11 +86,28 @@ BOOL cli_message_text(struct cli_state *cli, char *msg, int len, int grp)
 	
 	p = smb_buf(cli->outbuf);
 	*p++ = 1;
-	SSVAL(p,0,len); p += 2;
-	memcpy(p,msg,len);
-	p += len;
+
+	if ((lendos = convert_string_allocate(NULL,CH_UNIX, CH_DOS, msg,len, (void **) &msgdos)) < 0 || !msgdos) {
+		DEBUG(3,("Conversion failed, sending message in UNIX charset\n"));
+		SSVAL(p, 0, len); p += 2;
+		memcpy(p, msg, len);
+		p += len;
+	} else {
+		SSVAL(p, 0, lendos); p += 2;
+		memcpy(p, msgdos, lendos);
+		p += lendos;
+		SAFE_FREE(msgdos);
+	}
 
 	cli_setup_bcc(cli, p);
+
+	return(PTR_DIFF(p, cli->outbuf));
+}
+
+BOOL cli_message_text(struct cli_state *cli, char *msg, int len, int grp)
+{
+	cli_message_text_build(cli, msg, len, grp);
+
 	cli_send_smb(cli);
 
 	if (!cli_receive_smb(cli)) {
@@ -96,8 +122,10 @@ BOOL cli_message_text(struct cli_state *cli, char *msg, int len, int grp)
 /****************************************************************************
 end a message 
 ****************************************************************************/
-BOOL cli_message_end(struct cli_state *cli, int grp)
+int cli_message_end_build(struct cli_state *cli, int grp)
 {
+	char *p;
+
 	memset(cli->outbuf,'\0',smb_size);
 	set_message(cli->outbuf,1,0,True);
 	SCVAL(cli->outbuf,smb_com,SMBsendend);
@@ -106,7 +134,16 @@ BOOL cli_message_end(struct cli_state *cli, int grp)
 	SSVAL(cli->outbuf,smb_vwv0,grp);
 
 	cli_setup_packet(cli);
-	
+
+	p = smb_buf(cli->outbuf);
+
+	return(PTR_DIFF(p, cli->outbuf));
+}
+
+BOOL cli_message_end(struct cli_state *cli, int grp)
+{
+	cli_message_end_build(cli, grp);
+
 	cli_send_smb(cli);
 
 	if (!cli_receive_smb(cli)) {
@@ -117,4 +154,3 @@ BOOL cli_message_end(struct cli_state *cli, int grp)
 
 	return True;
 }      
-

@@ -206,7 +206,9 @@ Byte offset   Type     name                description
 #define SMB_QUERY_FS_SIZE_INFO          0x103
 #define SMB_QUERY_FS_DEVICE_INFO        0x104
 #define SMB_QUERY_FS_ATTRIBUTE_INFO     0x105
-
+#if 0
+#define SMB_QUERY_FS_QUOTA_INFO		
+#endif
 
 #define l2_vol_fdateCreation 0
 #define l2_vol_cch 4
@@ -222,11 +224,14 @@ Byte offset   Type     name                description
 #define SMB_QUERY_FILE_ALL_INFO		0x107
 #define SMB_QUERY_FILE_ALT_NAME_INFO	0x108
 #define SMB_QUERY_FILE_STREAM_INFO	0x109
+#define SMB_QUERY_COMPRESSION_INFO	0x10b
 
 #define SMB_FIND_FILE_DIRECTORY_INFO		0x101
 #define SMB_FIND_FILE_FULL_DIRECTORY_INFO	0x102
 #define SMB_FIND_FILE_NAMES_INFO		0x103
 #define SMB_FIND_FILE_BOTH_DIRECTORY_INFO	0x104
+#define SMB_FIND_FILE_LEVEL_261			0x105
+#define SMB_FIND_FILE_LEVEL_262			0x106
 
 #define SMB_SET_FILE_BASIC_INFO		0x101
 #define SMB_SET_FILE_DISPOSITION_INFO	0x102
@@ -320,7 +325,7 @@ Byte offset   Type     name                description
 #define SMB_FS_SIZE_INFORMATION				1003
 #define SMB_FS_DEVICE_INFORMATION			1004
 #define SMB_FS_ATTRIBUTE_INFORMATION			1005
-#define SMB_FS_CONTROL_INFORMATION			1006
+#define SMB_FS_QUOTA_INFORMATION			1006
 #define SMB_FS_FULL_SIZE_INFORMATION			1007
 #define SMB_FS_OBJECTID_INFORMATION			1008
 

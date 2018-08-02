@@ -23,6 +23,7 @@
 
 extern userdom_struct current_user_info;
 extern uint16 global_oplock_port;
+extern uint16 global_smbpid;
 extern BOOL global_client_failed_oplock_break;
 
 /****************************************************************************
@@ -38,13 +39,13 @@ static int fd_open(struct connection_struct *conn, char *fname,
 		flags |= O_NOFOLLOW;
 #endif
 
-	fd = conn->vfs_ops.open(conn,fname,flags,mode);
+	fd = SMB_VFS_OPEN(conn,fname,flags,mode);
 
 	/* Fix for files ending in '.' */
 	if((fd == -1) && (errno == ENOENT) &&
 	   (strchr_m(fname,'.')==NULL)) {
 		pstrcat(fname,".");
-		fd = conn->vfs_ops.open(conn,fname,flags,mode);
+		fd = SMB_VFS_OPEN(conn,fname,flags,mode);
 	}
 
 	DEBUG(10,("fd_open: name %s, flags = 0%o mode = 0%o, fd = %d. %s\n", fname,
@@ -74,7 +75,7 @@ static void check_for_pipe(char *fname)
 	/* special case of pipe opens */
 	char s[10];
 	StrnCpy(s,fname,sizeof(s)-1);
-	strlower(s);
+	strlower_m(s);
 	if (strstr(s,"pipe/")) {
 		DEBUG(3,("Rejecting named pipe open for %s\n",fname));
 		unix_ERR_class = ERRSRV;
@@ -125,6 +126,7 @@ static BOOL open_file(files_struct *fsp,connection_struct *conn,
 			   directory.
 			*/
 			flags &= ~O_CREAT;
+			local_flags &= ~O_CREAT;
 		}
 	}
 
@@ -166,19 +168,27 @@ static BOOL open_file(files_struct *fsp,connection_struct *conn,
 			local_flags |= O_NONBLOCK;
 #endif
 
+		/* Don't create files with Microsoft wildcard characters. */
+		if ((local_flags & O_CREAT) && !VALID_STAT(*psbuf) && ms_has_wild(fname))  {
+			unix_ERR_class = ERRDOS;
+			unix_ERR_code = ERRinvalidname;
+			unix_ERR_ntstatus = NT_STATUS_OBJECT_NAME_INVALID;
+			return False;
+		}
+
 		/* Actually do the open */
 		fsp->fd = fd_open(conn, fname, local_flags, mode);
-
-		/* Inherit the ACL if the file was created. */
-		if ((local_flags & O_CREAT) && !VALID_STAT(*psbuf))
-			inherit_access_acl(conn, fname, mode);
-
 		if (fsp->fd == -1)  {
 			DEBUG(3,("Error opening file %s (%s) (local_flags=%d) (flags=%d)\n",
 				 fname,strerror(errno),local_flags,flags));
 			check_for_pipe(fname);
 			return False;
 		}
+
+		/* Inherit the ACL if the file was created. */
+		if ((local_flags & O_CREAT) && !VALID_STAT(*psbuf))
+			inherit_access_acl(conn, fname, mode);
+
 	} else
 		fsp->fd = -1; /* What we used to call a stat open. */
 
@@ -186,9 +196,9 @@ static BOOL open_file(files_struct *fsp,connection_struct *conn,
 		int ret;
 
 		if (fsp->fd == -1)
-			ret = vfs_stat(conn, fname, psbuf);
+			ret = SMB_VFS_STAT(conn, fname, psbuf);
 		else {
-			ret = vfs_fstat(fsp,fsp->fd,psbuf);
+			ret = SMB_VFS_FSTAT(fsp,fsp->fd,psbuf);
 			/* If we have an fd, this stat should succeed. */
 			if (ret == -1)
 				DEBUG(0,("Error doing fstat on open file %s (%s)\n", fname,strerror(errno) ));
@@ -217,8 +227,8 @@ static BOOL open_file(files_struct *fsp,connection_struct *conn,
 	fsp->inode = psbuf->st_ino;
 	fsp->dev = psbuf->st_dev;
 	fsp->vuid = current_user.vuid;
+	fsp->file_pid = global_smbpid;
 	fsp->size = psbuf->st_size;
-	fsp->pos = -1;
 	fsp->can_lock = True;
 	fsp->can_read = ((flags & O_WRONLY)==0);
 	fsp->can_write = ((flags & (O_WRONLY|O_RDWR))!=0);
@@ -259,7 +269,7 @@ static int truncate_unless_locked(struct connection_struct *conn, files_struct *
 		unix_ERR_ntstatus = dos_to_ntstatus(ERRDOS, ERRlock);
 		return -1;
 	} else {
-		return conn->vfs_ops.ftruncate(fsp,fsp->fd,0); 
+		return SMB_VFS_FTRUNCATE(fsp,fsp->fd,0); 
 	}
 }
 
@@ -532,6 +542,31 @@ existing desired access (0x%x).\n", fname, (unsigned int)desired_access, (unsign
 	return True;
 }
 
+
+#if defined(DEVELOPER)
+static void validate_my_share_entries(int num, share_mode_entry *share_entry)
+{
+	files_struct *fsp;
+
+	if (share_entry->pid != sys_getpid())
+		return;
+
+	fsp = file_find_dif(share_entry->dev, share_entry->inode, share_entry->share_file_id);
+	if (!fsp) {
+		DEBUG(0,("validate_my_share_entries: PANIC : %s\n", share_mode_str(num, share_entry) ));
+		smb_panic("validate_my_share_entries: Cannot match a share entry with an open file\n");
+	}
+
+	if (((uint16)fsp->oplock_type) != share_entry->op_type) {
+		pstring str;
+		DEBUG(0,("validate_my_share_entries: PANIC : %s\n", share_mode_str(num, share_entry) ));
+		slprintf(str, sizeof(str)-1, "validate_my_share_entries: file %s, oplock_type = 0x%x, op_type = 0x%x\n",
+				fsp->fsp_name, (unsigned int)fsp->oplock_type, (unsigned int)share_entry->op_type );
+		smb_panic(str);
+	}
+}
+#endif
+
 /****************************************************************************
  Deal with open deny mode and oplock break processing.
  Invarient: Share mode must be locked on entry and exit.
@@ -572,6 +607,10 @@ static int open_mode_check(connection_struct *conn, const char *fname, SMB_DEV_T
 		for(i = 0; i < num_share_modes; i++) {
 			share_mode_entry *share_entry = &old_shares[i];
 			
+#if defined(DEVELOPER)
+			validate_my_share_entries(i, share_entry);
+#endif
+
 			/* 
 			 * By observation of NetBench, oplocks are broken *before* share
 			 * modes are checked. This allows a file to be closed by the client
@@ -588,6 +627,12 @@ static int open_mode_check(connection_struct *conn, const char *fname, SMB_DEV_T
 				DEBUG(5,("open_mode_check: oplock_request = %d, breaking oplock (%x) on file %s, \
 dev = %x, inode = %.0f\n", *p_oplock_request, share_entry->op_type, fname, (unsigned int)dev, (double)inode));
 				
+				/* Ensure the reply for the open uses the correct sequence number. */
+				/* This isn't a real deferred packet as it's response will also increment
+				 * the sequence.
+				 */
+				srv_defer_sign_response(get_current_mid(), False);
+
 				/* Oplock break - unlock to request it. */
 				unlock_share_entry(conn, dev, inode);
 				
@@ -646,8 +691,8 @@ dev = %x, inode = %.0f\n", old_shares[i].op_type, fname, (unsigned int)dev, (dou
 dev = %x, inode = %.0f. Deleting it to continue...\n", (int)broken_entry.pid, fname, (unsigned int)dev, (double)inode));
 					
 					if (process_exists(broken_entry.pid)) {
-						DEBUG(0,("open_mode_check: Existent process %d left active oplock.\n",
-							 broken_entry.pid ));
+						DEBUG(0,("open_mode_check: Existent process %lu left active oplock.\n",
+							 (unsigned long)broken_entry.pid ));
 					}
 					
 					if (del_share_entry(dev, inode, &broken_entry, NULL) == -1) {
@@ -845,7 +890,7 @@ files_struct *open_file_shared1(connection_struct *conn,char *fname, SMB_STRUCT_
 	if (file_existed && (GET_FILE_OPEN_DISPOSITION(ofun) == FILE_EXISTS_TRUNCATE)) {
 		if (!open_match_attributes(conn, fname, psbuf->st_mode, mode, &new_mode)) {
 			DEBUG(5,("open_file_shared: attributes missmatch for file %s (0%o, 0%o)\n",
-						fname, psbuf->st_mode, mode ));
+						fname, (int)psbuf->st_mode, (int)mode ));
 			file_free(fsp);
 			errno = EACCES;
 			return NULL;
@@ -995,6 +1040,16 @@ flags=0x%X flags2=0x%X mode=0%o returned %d\n",
 
 	if (!file_existed) { 
 
+		/*
+		 * Now the file exists and fsp is successfully opened,
+		 * fsp->dev and fsp->inode are valid and should replace the
+		 * dev=0,inode=0 from a non existent file. Spotted by
+		 * Nadav Danieli <nadavd@exanet.com>. JRA.
+		 */
+
+		dev = fsp->dev;
+		inode = fsp->inode;
+
 		lock_share_entry_fsp(fsp);
 
 		num_share_modes = open_mode_check(conn, fname, dev, inode, 
@@ -1044,7 +1099,7 @@ flags=0x%X flags2=0x%X mode=0%o returned %d\n",
 		/*
 		 * We are modifing the file after open - update the stat struct..
 		 */
-		if ((truncate_unless_locked(conn,fsp) == -1) || (vfs_fstat(fsp,fsp->fd,psbuf)==-1)) {
+		if ((truncate_unless_locked(conn,fsp) == -1) || (SMB_VFS_FSTAT(fsp,fsp->fd,psbuf)==-1)) {
 			unlock_share_entry_fsp(fsp);
 			fd_close(conn,fsp);
 			file_free(fsp);
@@ -1119,11 +1174,11 @@ flags=0x%X flags2=0x%X mode=0%o returned %d\n",
 	 * selected.
 	 */
 
-	if (!file_existed && !def_acl && (conn->vfs_ops.fchmod_acl != NULL)) {
+	if (!file_existed && !def_acl) {
 
 		int saved_errno = errno; /* We might get ENOSYS in the next call.. */
 
-		if (conn->vfs_ops.fchmod_acl(fsp, fsp->fd, mode) == -1 && errno == ENOSYS)
+		if (SMB_VFS_FCHMOD_ACL(fsp, fsp->fd, mode) == -1 && errno == ENOSYS)
 			errno = saved_errno; /* Ignore ENOSYS */
 
 	} else if (new_mode) {
@@ -1132,9 +1187,9 @@ flags=0x%X flags2=0x%X mode=0%o returned %d\n",
 
 		/* Attributes need changing. File already existed. */
 
-		if (conn->vfs_ops.fchmod_acl != NULL) {
+		{
 			int saved_errno = errno; /* We might get ENOSYS in the next call.. */
-			ret = conn->vfs_ops.fchmod_acl(fsp, fsp->fd, new_mode);
+			ret = SMB_VFS_FCHMOD_ACL(fsp, fsp->fd, new_mode);
 
 			if (ret == -1 && errno == ENOSYS) {
 				errno = saved_errno; /* Ignore ENOSYS */
@@ -1145,7 +1200,7 @@ flags=0x%X flags2=0x%X mode=0%o returned %d\n",
 			}
 		}
 
-		if ((ret == -1) && (conn->vfs_ops.fchmod(fsp, fsp->fd, new_mode) == -1))
+		if ((ret == -1) && (SMB_VFS_FCHMOD(fsp, fsp->fd, new_mode) == -1))
 			DEBUG(5, ("open_file_shared: failed to reset attributes of file %s to 0%o\n",
 				fname, (int)new_mode));
 	}
@@ -1251,14 +1306,23 @@ files_struct *open_directory(connection_struct *conn, char *fname, SMB_STRUCT_ST
 				return NULL;
 			}
 
-			if(vfs_mkdir(conn,fname, unix_mode(conn,aDIR, fname)) < 0) {
+			if (ms_has_wild(fname))  {
+				file_free(fsp);
+				DEBUG(5,("open_directory: failing create on filename %s with wildcards\n", fname));
+				unix_ERR_class = ERRDOS;
+				unix_ERR_code = ERRinvalidname;
+				unix_ERR_ntstatus = NT_STATUS_OBJECT_NAME_INVALID;
+				return NULL;
+			}
+
+			if(vfs_MkDir(conn,fname, unix_mode(conn,aDIR, fname)) < 0) {
 				DEBUG(2,("open_directory: unable to create %s. Error was %s\n",
 					 fname, strerror(errno) ));
 				file_free(fsp);
 				return NULL;
 			}
 
-			if(vfs_stat(conn,fname, psbuf) != 0) {
+			if(SMB_VFS_STAT(conn,fname, psbuf) != 0) {
 				file_free(fsp);
 				return NULL;
 			}
@@ -1299,7 +1363,7 @@ files_struct *open_directory(connection_struct *conn, char *fname, SMB_STRUCT_ST
 	fsp->dev = psbuf->st_dev;
 	fsp->size = psbuf->st_size;
 	fsp->vuid = current_user.vuid;
-	fsp->pos = -1;
+	fsp->file_pid = global_smbpid;
 	fsp->can_lock = True;
 	fsp->can_read = False;
 	fsp->can_write = False;
@@ -1362,7 +1426,7 @@ files_struct *open_file_stat(connection_struct *conn, char *fname, SMB_STRUCT_ST
 	fsp->dev = (SMB_DEV_T)0;
 	fsp->size = psbuf->st_size;
 	fsp->vuid = current_user.vuid;
-	fsp->pos = -1;
+	fsp->file_pid = global_smbpid;
 	fsp->can_lock = False;
 	fsp->can_read = False;
 	fsp->can_write = False;

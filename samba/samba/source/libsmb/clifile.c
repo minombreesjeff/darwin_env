@@ -29,8 +29,8 @@
 
 static BOOL cli_link_internal(struct cli_state *cli, const char *fname_src, const char *fname_dst, BOOL hard_link)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_SETPATHINFO;
 	char param[sizeof(pstring)+6];
 	pstring data;
@@ -123,8 +123,8 @@ BOOL cli_unix_hardlink(struct cli_state *cli, const char *fname_src, const char 
 
 static BOOL cli_unix_chmod_chown_internal(struct cli_state *cli, const char *fname, uint32 mode, uint32 uid, uint32 gid)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_SETPATHINFO;
 	char param[sizeof(pstring)+6];
 	char data[100];
@@ -335,8 +335,8 @@ BOOL cli_rmdir(struct cli_state *cli, const char *dname)
 
 int cli_nt_delete_on_close(struct cli_state *cli, int fnum, BOOL flag)
 {
-	int data_len = 1;
-	int param_len = 6;
+	unsigned int data_len = 1;
+	unsigned int param_len = 6;
 	uint16 setup = TRANSACT2_SETFILEINFO;
 	pstring param;
 	unsigned char data;
@@ -375,9 +375,11 @@ int cli_nt_delete_on_close(struct cli_state *cli, int fnum, BOOL flag)
  Used in smbtorture.
 ****************************************************************************/
 
-int cli_nt_create_full(struct cli_state *cli, const char *fname, uint32 DesiredAccess,
+int cli_nt_create_full(struct cli_state *cli, const char *fname, 
+		 uint32 CreatFlags, uint32 DesiredAccess,
 		 uint32 FileAttributes, uint32 ShareAccess,
-		 uint32 CreateDisposition, uint32 CreateOptions)
+		 uint32 CreateDisposition, uint32 CreateOptions,
+		 uint8 SecuityFlags)
 {
 	char *p;
 	int len;
@@ -393,9 +395,9 @@ int cli_nt_create_full(struct cli_state *cli, const char *fname, uint32 DesiredA
 
 	SSVAL(cli->outbuf,smb_vwv0,0xFF);
 	if (cli->use_oplocks)
-		SIVAL(cli->outbuf,smb_ntcreate_Flags, REQUEST_OPLOCK|REQUEST_BATCH_OPLOCK);
-	else
-		SIVAL(cli->outbuf,smb_ntcreate_Flags, 0);
+		CreatFlags |= (REQUEST_OPLOCK|REQUEST_BATCH_OPLOCK);
+	
+	SIVAL(cli->outbuf,smb_ntcreate_Flags, CreatFlags);
 	SIVAL(cli->outbuf,smb_ntcreate_RootDirectoryFid, 0x0);
 	SIVAL(cli->outbuf,smb_ntcreate_DesiredAccess, DesiredAccess);
 	SIVAL(cli->outbuf,smb_ntcreate_FileAttributes, FileAttributes);
@@ -403,6 +405,7 @@ int cli_nt_create_full(struct cli_state *cli, const char *fname, uint32 DesiredA
 	SIVAL(cli->outbuf,smb_ntcreate_CreateDisposition, CreateDisposition);
 	SIVAL(cli->outbuf,smb_ntcreate_CreateOptions, CreateOptions);
 	SIVAL(cli->outbuf,smb_ntcreate_ImpersonationLevel, 0x02);
+	SCVAL(cli->outbuf,smb_ntcreate_SecurityFlags, SecuityFlags);
 
 	p = smb_buf(cli->outbuf);
 	/* this alignment and termination is critical for netapp filers. Don't change */
@@ -433,8 +436,8 @@ int cli_nt_create_full(struct cli_state *cli, const char *fname, uint32 DesiredA
 
 int cli_nt_create(struct cli_state *cli, const char *fname, uint32 DesiredAccess)
 {
-	return cli_nt_create_full(cli, fname, DesiredAccess, 0,
-				FILE_SHARE_READ|FILE_SHARE_WRITE, FILE_EXISTS_OPEN, 0x0);
+	return cli_nt_create_full(cli, fname, 0, DesiredAccess, 0,
+				FILE_SHARE_READ|FILE_SHARE_WRITE, FILE_EXISTS_OPEN, 0x0, 0x0);
 }
 
 /****************************************************************************
@@ -597,8 +600,8 @@ NTSTATUS cli_locktype(struct cli_state *cli, int fnum,
 
 /****************************************************************************
  Lock a file.
+ note that timeout is in units of 2 milliseconds
 ****************************************************************************/
-
 BOOL cli_lock(struct cli_state *cli, int fnum, 
 	      uint32 offset, uint32 len, int timeout, enum brl_type lock_type)
 {
@@ -633,7 +636,7 @@ BOOL cli_lock(struct cli_state *cli, int fnum,
 	cli_send_smb(cli);
 
 	if (timeout != 0) {
-		cli->timeout = (timeout == -1) ? 0x7FFFFFFF : (timeout + 2*1000);
+		cli->timeout = (timeout == -1) ? 0x7FFFFFFF : (timeout*2 + 5*1000);
 	}
 
 	if (!cli_receive_smb(cli)) {
@@ -942,13 +945,12 @@ BOOL cli_setatr(struct cli_state *cli, const char *fname, uint16 attr, time_t t)
 /****************************************************************************
  Check for existance of a dir.
 ****************************************************************************/
-
 BOOL cli_chkpath(struct cli_state *cli, const char *path)
 {
 	pstring path2;
 	char *p;
 	
-	safe_strcpy(path2,path,sizeof(pstring));
+	pstrcpy(path2,path);
 	trim_string(path2,NULL,"\\");
 	if (!*path2) *path2 = '\\';
 	
@@ -1048,4 +1050,35 @@ int cli_ctemp(struct cli_state *cli, const char *path, char **tmp_path)
 	}
 
 	return SVAL(cli->inbuf,smb_vwv0);
+}
+
+
+/* 
+   send a raw ioctl - used by the torture code
+*/
+NTSTATUS cli_raw_ioctl(struct cli_state *cli, int fnum, uint32 code, DATA_BLOB *blob)
+{
+	memset(cli->outbuf,'\0',smb_size);
+	memset(cli->inbuf,'\0',smb_size);
+
+	set_message(cli->outbuf, 3, 0, True);
+	SCVAL(cli->outbuf,smb_com,SMBioctl);
+	cli_setup_packet(cli);
+
+	SSVAL(cli->outbuf, smb_vwv0, fnum);
+	SSVAL(cli->outbuf, smb_vwv1, code>>16);
+	SSVAL(cli->outbuf, smb_vwv2, (code&0xFFFF));
+
+	cli_send_smb(cli);
+	if (!cli_receive_smb(cli)) {
+		return NT_STATUS_UNEXPECTED_NETWORK_ERROR;
+	}
+
+	if (cli_is_error(cli)) {
+		return cli_nt_error(cli);
+	}
+
+	*blob = data_blob(NULL, 0);
+
+	return NT_STATUS_OK;
 }

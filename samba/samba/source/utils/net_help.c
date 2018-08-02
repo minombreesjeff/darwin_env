@@ -42,11 +42,13 @@ int net_common_flags_usage(int argc, const char **argv)
 	d_printf("Valid miscellaneous options are:\n"); /* misc options */
 	d_printf("\t-p or --port=<port>\t\tconnection port on target\n");
 	d_printf("\t-W or --myworkgroup=<wg>\tclient workgroup\n");
-	d_printf("\t-d or --debug=<level>\t\tdebug level (0-10)\n");
+	d_printf("\t-d or --debuglevel=<level>\t\tdebug level (0-10)\n");
 	d_printf("\t-n or --myname=<name>\t\tclient name\n");
 	d_printf("\t-U or --user=<name>\t\tuser name\n");
-	d_printf("\t-s or --conf=<path>\t\tpathname of smb.conf file\n");
+	d_printf("\t-s or --configfile=<path>\t\tpathname of smb.conf file\n");
 	d_printf("\t-l or --long\t\t\tDisplay full information\n");
+	d_printf("\t-V or --version\t\t\tPrint samba version information\n");
+	d_printf("\t-P or --machine-pass\t\tAuthenticate as machine account\n");
 	return -1;
 }
 
@@ -58,7 +60,8 @@ static int help_usage(int argc, const char **argv)
 "\n"\
 "Valid functions are:\n"\
 "  RPC RAP ADS FILE SHARE SESSION SERVER DOMAIN PRINTQ USER GROUP VALIDATE\n"\
-"  GROUPMEMBER ADMIN SERVICE PASSWORD TIME LOOKUP GETLOCALSID SETLOCALSID\n");
+"  GROUPMEMBER ADMIN SERVICE PASSWORD TIME LOOKUP GETLOCALSID SETLOCALSID\n"\
+"  CHANGESCRETPW\n");
 	return -1;
 }
 
@@ -96,7 +99,6 @@ int net_help_group(int argc, const char **argv)
 	d_printf("\t-c or --container=<container>\tLDAP container, defaults to cn=Users (for add in ADS only)\n");
 	return -1;
 }
-
 
 int net_help_join(int argc, const char **argv)
 {
@@ -150,16 +152,20 @@ static int net_usage(int argc, const char **argv)
 		 "  net lookup\t\tto lookup host name or ip address\n"\
 		 "  net user\t\tto manage users\n"\
 		 "  net group\t\tto manage groups\n"\
+		 "  net groupmap\t\tto manage group mappings\n"\
 		 "  net join\t\tto join a domain\n"\
 		 "  net cache\t\tto operate on cache tdb file\n"\
 		 "  net getlocalsid [NAME]\tto get the SID for local name\n"\
 		 "  net setlocalsid SID\tto set the local domain SID\n"\
+		 "  net changesecretpw\tto change the machine password in the local secrets database only\n"\
+		 "                    \tthis requires the -f flag as a safety barrier\n"\
 		 "\n"\
 		 "  net ads <command>\tto run ADS commands\n"\
 		 "  net rap <command>\tto run RAP (pre-RPC) commands\n"\
 		 "  net rpc <command>\tto run RPC commands\n"\
 		 "\n"\
 		 "Type \"net help <option>\" to get more information on that option\n");
+	net_common_flags_usage(argc, argv);
 	return -1;
 }
 
@@ -181,6 +187,7 @@ int net_help(int argc, const char **argv)
 		{"PRINTQ", net_rap_printq_usage},
 		{"USER", net_help_user},
 		{"GROUP", net_help_group},
+		{"GROUPMAP", net_help_groupmap},
 		{"JOIN", net_help_join},
 		{"VALIDATE", net_rap_validate_usage},
 		{"GROUPMEMBER", net_rap_groupmember_usage},

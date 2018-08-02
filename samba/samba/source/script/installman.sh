@@ -25,7 +25,7 @@ for lang in $langs; do
     langdir=$MANDIR/$lang
     for d in $MANDIR $langdir $langdir/man1 $langdir/man5 $langdir/man7 $langdir/man8; do
 	if [ ! -d $d ]; then
-	    mkdir -p $d
+	    mkdir $d
 	    if [ ! -d $d ]; then
 		echo Failed to make directory $d, does $USER have privileges?
 		exit 1

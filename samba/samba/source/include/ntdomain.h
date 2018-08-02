@@ -165,10 +165,21 @@ struct dcinfo
 
 };
 
+typedef struct pipe_rpc_fns {
+
+	struct pipe_rpc_fns *next, *prev;
+	
+	/* RPC function table associated with the current rpc_bind (associated by context) */
+	
+	struct api_struct *cmds;
+	int n_cmds;
+	uint32 context_id;
+	
+} PIPE_RPC_FNS;
+
 /*
  * DCE/RPC-specific samba-internal-specific handling of data on
  * NamedPipes.
- *
  */
 
 typedef struct pipes_struct
@@ -180,7 +191,12 @@ typedef struct pipes_struct
 
 	fstring name;
 	fstring pipe_srv_name;
-
+	
+	/* linked list of rpc dispatch tables associated 
+	   with the open rpc contexts */
+	   
+	PIPE_RPC_FNS *contexts;
+	
 	RPC_HDR hdr; /* Incoming RPC header. */
 	RPC_HDR_REQ hdr_req; /* Incoming request header. */
 
@@ -191,6 +207,13 @@ typedef struct pipes_struct
 	unsigned char ntlmssp_hash[258];
 	uint32 ntlmssp_seq_num;
 	struct dcinfo dc; /* Keeps the creds data. */
+
+	 /* Hmm. In my understanding the authentication happens
+	    implicitly later, so there are no two stages for
+	    schannel. */
+
+	BOOL netsec_auth_validated;
+	struct netsec_auth_struct netsec_auth;
 
 	/*
 	 * Windows user info.
@@ -365,6 +388,9 @@ struct acct_info
 /* security descriptor structures */
 #include "rpc_secdes.h"
 
+/* pac */
+#include "authdata.h"
+
 /* different dce/rpc pipes */
 #include "rpc_lsa.h"
 #include "rpc_netlogon.h"
@@ -375,5 +401,6 @@ struct acct_info
 #include "rpc_spoolss.h"
 #include "rpc_dfs.h"
 #include "rpc_ds.h"
+#include "rpc_echo.h"
 
 #endif /* _NT_DOMAIN_H */

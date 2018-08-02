@@ -94,12 +94,12 @@ BOOL gencache_shutdown(void)
  * Set an entry in the cache file. If there's no such
  * one, then add it.
  *
- * @param key string that represents a key of this entry
+ * @param keystr string that represents a key of this entry
  * @param value text representation value being cached
  * @param timeout time when the value is expired
  *
- * @return true when entry is successfuly stored or
- *         false on the attempt's failure
+ * @retval true when entry is successfuly stored
+ * @retval false on failure
  **/
  
 BOOL gencache_set(const char *keystr, const char *value, time_t timeout)
@@ -114,10 +114,13 @@ BOOL gencache_set(const char *keystr, const char *value, time_t timeout)
 	if (!gencache_init()) return False;
 	
 	asprintf(&valstr, CACHE_DATA_FMT, (int)timeout, value);
+	if (!valstr)
+		return False;
+
 	keybuf.dptr = strdup(keystr);
-	keybuf.dsize = strlen(keystr);
+	keybuf.dsize = strlen(keystr)+1;
 	databuf.dptr = strdup(valstr);
-	databuf.dsize = strlen(valstr);
+	databuf.dsize = strlen(valstr)+1;
 	DEBUG(10, ("Adding cache entry with key = %s; value = %s and timeout \
 	           = %s (%d seconds %s)\n", keybuf.dptr, value, ctime(&timeout),
 	           (int)(timeout - time(NULL)), timeout > time(NULL) ? "ahead" : "in the past"));
@@ -134,12 +137,12 @@ BOOL gencache_set(const char *keystr, const char *value, time_t timeout)
 /**
  * Set existing entry to the cache file.
  *
- * @param key string that represents a key of this entry
- * @param value text representation value being cached
+ * @param keystr string that represents a key of this entry
+ * @param valstr text representation value being cached
  * @param timeout time when the value is expired
  *
- * @return true when entry is successfuly set or
- *         false on the attempt's failure
+ * @retval true when entry is successfuly set
+ * @retval false on failure
  **/
 
 BOOL gencache_set_only(const char *keystr, const char *valstr, time_t timeout)
@@ -167,9 +170,9 @@ BOOL gencache_set_only(const char *keystr, const char *valstr, time_t timeout)
 
 	asprintf(&datastr, CACHE_DATA_FMT, (int)timeout, valstr);
 	keybuf.dptr = strdup(keystr);
-	keybuf.dsize = strlen(keystr);
+	keybuf.dsize = strlen(keystr)+1;
 	databuf.dptr = strdup(datastr);
-	databuf.dsize = strlen(datastr);
+	databuf.dsize = strlen(datastr)+1;
 	DEBUGADD(10, ("New value = %s, new timeout = %s (%d seconds %s)", valstr,
 	              ctime(&timeout), (int)(timeout - time(NULL)),
 	              timeout > time(NULL) ? "ahead" : "in the past"));
@@ -189,10 +192,10 @@ BOOL gencache_set_only(const char *keystr, const char *valstr, time_t timeout)
 /**
  * Delete one entry from the cache file.
  *
- * @param key string that represents a key of this entry
+ * @param keystr string that represents a key of this entry
  *
- * @return true upon successful deletion or
- *         false in case of failure
+ * @retval true upon successful deletion
+ * @retval false in case of failure
  **/
 
 BOOL gencache_del(const char *keystr)
@@ -206,7 +209,7 @@ BOOL gencache_del(const char *keystr)
 	if (!gencache_init()) return False;	
 	
 	keybuf.dptr = strdup(keystr);
-	keybuf.dsize = strlen(keystr);
+	keybuf.dsize = strlen(keystr)+1;
 	DEBUG(10, ("Deleting cache entry (key = %s)\n", keystr));
 	ret = tdb_delete(cache, keybuf);
 	
@@ -218,14 +221,14 @@ BOOL gencache_del(const char *keystr)
 /**
  * Get existing entry from the cache file.
  *
- * @param key string that represents a key of this entry
- * @param value buffer that is allocated and filled with the entry value
+ * @param keystr string that represents a key of this entry
+ * @param valstr buffer that is allocated and filled with the entry value
  *        buffer's disposing must be done outside
  * @param timeout pointer to a time_t that is filled with entry's
  *        timeout
  *
- * @return true when entry is successfuly fetched or
- *         false on the failure
+ * @retval true when entry is successfuly fetched
+ * @retval False for failure
  **/
 
 BOOL gencache_get(const char *keystr, char **valstr, time_t *timeout)
@@ -239,8 +242,9 @@ BOOL gencache_get(const char *keystr, char **valstr, time_t *timeout)
 		return False;
 	
 	keybuf.dptr = strdup(keystr);
-	keybuf.dsize = strlen(keystr);
+	keybuf.dsize = strlen(keystr)+1;
 	databuf = tdb_fetch(cache, keybuf);
+	SAFE_FREE(keybuf.dptr);
 	
 	if (databuf.dptr && databuf.dsize > TIMEOUT_LEN) {
 		char* entry_buf = strndup(databuf.dptr, databuf.dsize);
@@ -315,9 +319,8 @@ void gencache_iterate(void (*fn)(const char* key, const char *value, time_t time
 	
 	while (node) {
 		/* ensure null termination of the key string */
-		node->node_key.dptr[node->node_key.dsize] = '\0';
-		keystr = node->node_key.dptr;
-
+		keystr = strndup(node->node_key.dptr, node->node_key.dsize);
+		
 		/* 
 		 * We don't use gencache_get function, because we need to iterate through
 		 * all of the entries. Validity verification is up to fn routine.
@@ -325,6 +328,8 @@ void gencache_iterate(void (*fn)(const char* key, const char *value, time_t time
 		databuf = tdb_fetch(cache, node->node_key);
 		if (!databuf.dptr || databuf.dsize <= TIMEOUT_LEN) {
 			SAFE_FREE(databuf.dptr);
+			SAFE_FREE(keystr);
+			node = node->next;
 			continue;
 		}
 		entry = strndup(databuf.dptr, databuf.dsize);
@@ -338,8 +343,30 @@ void gencache_iterate(void (*fn)(const char* key, const char *value, time_t time
 		
 		SAFE_FREE(valstr);
 		SAFE_FREE(entry);
+		SAFE_FREE(keystr);
 		node = node->next;
 	}
 	
 	tdb_search_list_free(first_node);
 }
+
+/********************************************************************
+ lock a key
+********************************************************************/
+
+int gencache_lock_entry( const char *key )
+{
+	return tdb_lock_bystring(cache, key, 0);
+}
+
+/********************************************************************
+ unlock a key
+********************************************************************/
+
+void gencache_unlock_entry( const char *key )
+{
+	tdb_unlock_bystring(cache, key);
+	return;
+}
+
+

@@ -3,7 +3,7 @@
  *  Version 1.9.
  *  RPC Pipe client / server routines
  *  Copyright (C) Andrew Tridgell              1992-1998,
- *  Copyright (C) Jeremy R. Allison            1995-1998
+ *  Copyright (C) Jeremy R. Allison            1995-2003.
  *  Copyright (C) Luke Kenneth Casson Leighton 1996-1998,
  *  Copyright (C) Paul Ashton                  1997-1998.
  *  
@@ -48,7 +48,7 @@ BOOL sec_io_access(const char *desc, SEC_ACCESS *t, prs_struct *ps, int depth)
 	prs_debug(ps, depth, desc, "sec_io_access");
 	depth++;
 	
-	if(!prs_uint32("mask", ps, depth, &(t->mask)))
+	if(!prs_uint32("mask", ps, depth, &t->mask))
 		return False;
 
 	return True;
@@ -159,7 +159,7 @@ BOOL sec_io_ace(const char *desc, SEC_ACE *psa, prs_struct *ps, int depth)
 
 NTSTATUS sec_ace_add_sid(TALLOC_CTX *ctx, SEC_ACE **new, SEC_ACE *old, unsigned *num, DOM_SID *sid, uint32 mask)
 {
-	int i = 0;
+	unsigned int i = 0;
 	
 	if (!ctx || !new || !old || !sid || !num)  return NT_STATUS_INVALID_PARAMETER;
 
@@ -185,7 +185,7 @@ NTSTATUS sec_ace_add_sid(TALLOC_CTX *ctx, SEC_ACE **new, SEC_ACE *old, unsigned 
 
 NTSTATUS sec_ace_mod_sid(SEC_ACE *ace, size_t num, DOM_SID *sid, uint32 mask)
 {
-	int i = 0;
+	unsigned int i = 0;
 
 	if (!ace || !sid)  return NT_STATUS_INVALID_PARAMETER;
 
@@ -202,14 +202,14 @@ NTSTATUS sec_ace_mod_sid(SEC_ACE *ace, size_t num, DOM_SID *sid, uint32 mask)
  delete SID from ACL
 ********************************************************************/
 
-NTSTATUS sec_ace_del_sid(TALLOC_CTX *ctx, SEC_ACE **new, SEC_ACE *old, size_t *num, DOM_SID *sid)
+static NTSTATUS sec_ace_del_sid(TALLOC_CTX *ctx, SEC_ACE **new, SEC_ACE *old, uint32 *num, DOM_SID *sid)
 {
-	int i     = 0;
-	int n_del = 0;
+	unsigned int i     = 0;
+	unsigned int n_del = 0;
 
 	if (!ctx || !new || !old || !sid || !num)  return NT_STATUS_INVALID_PARAMETER;
 
-	if((new[0] = (SEC_ACE *) talloc_zero(ctx, *num * sizeof(SEC_ACE))) == 0)
+	if((new[0] = (SEC_ACE *) talloc_zero(ctx, (*num) * sizeof(SEC_ACE))) == 0)
 		return NT_STATUS_NO_MEMORY;
 
 	for (i = 0; i < *num; i ++) {
@@ -283,7 +283,7 @@ SEC_ACL *dup_sec_acl(TALLOC_CTX *ctx, SEC_ACL *src)
 
 BOOL sec_io_acl(const char *desc, SEC_ACL **ppsa, prs_struct *ps, int depth)
 {
-	int i;
+	unsigned int i;
 	uint32 old_offset;
 	uint32 offset_acl_size;
 	SEC_ACL *psa;
@@ -407,7 +407,7 @@ BOOL sec_ace_equal(SEC_ACE *s1, SEC_ACE *s2)
 
 BOOL sec_acl_equal(SEC_ACL *s1, SEC_ACL *s2)
 {
-	int i, j;
+	unsigned int i, j;
 
 	/* Trivial cases */
 
@@ -570,24 +570,6 @@ SEC_DESC_BUF *sec_desc_merge(TALLOC_CTX *ctx, SEC_DESC_BUF *new_sdb, SEC_DESC_BU
 }
 
 /*******************************************************************
- Tallocs a duplicate SID. 
-********************************************************************/ 
-
-static DOM_SID *sid_dup_talloc(TALLOC_CTX *ctx, DOM_SID *src)
-{
-  DOM_SID *dst;
-
-  if(!src)
-    return NULL;
-
-  if((dst = talloc_zero(ctx, sizeof(DOM_SID))) != NULL) {
-    sid_copy( dst, src);
-  }
-
-  return dst;
-}
-
-/*******************************************************************
  Creates a SEC_DESC structure
 ********************************************************************/
 
@@ -597,8 +579,6 @@ SEC_DESC *make_sec_desc(TALLOC_CTX *ctx, uint16 revision,
 {
 	SEC_DESC *dst;
 	uint32 offset     = 0;
-	uint32 offset_sid = SEC_DESC_HEADER_SIZE;
-	uint32 offset_acl = 0;
 
 	*sd_size = 0;
 
@@ -628,58 +608,33 @@ SEC_DESC *make_sec_desc(TALLOC_CTX *ctx, uint16 revision,
 	if(dacl && ((dst->dacl = dup_sec_acl(ctx, dacl)) == NULL))
 		goto error_exit;
 
-	offset = 0;
+	offset = SEC_DESC_HEADER_SIZE;
 
 	/*
 	 * Work out the linearization sizes.
 	 */
+
+	if (dst->sacl != NULL) {
+		dst->off_sacl = offset;
+		offset += dst->sacl->size;
+	}
+
+	if (dst->dacl != NULL) {
+		dst->off_dacl = offset;
+		offset += dst->dacl->size;
+	}
+
 	if (dst->owner_sid != NULL) {
-
-		if (offset == 0)
-			offset = SEC_DESC_HEADER_SIZE;
-
+		dst->off_owner_sid = offset;
 		offset += sid_size(dst->owner_sid);
 	}
 
 	if (dst->grp_sid != NULL) {
-
-		if (offset == 0)
-			offset = SEC_DESC_HEADER_SIZE;
-
+		dst->off_grp_sid = offset;
 		offset += sid_size(dst->grp_sid);
 	}
 
-	if (dst->sacl != NULL) {
-
-		offset_acl = SEC_DESC_HEADER_SIZE;
-
-		dst->off_sacl  = offset_acl;
-		offset_acl    += dst->sacl->size;
-		offset        += dst->sacl->size;
-		offset_sid    += dst->sacl->size;
-	}
-
-	if (dst->dacl != NULL) {
-
-		if (offset_acl == 0)
-			offset_acl = SEC_DESC_HEADER_SIZE;
-
-		dst->off_dacl  = offset_acl;
-		offset_acl    += dst->dacl->size;
-		offset        += dst->dacl->size;
-		offset_sid    += dst->dacl->size;
-	}
-
-	*sd_size = (size_t)((offset == 0) ? SEC_DESC_HEADER_SIZE : offset);
-
-	if (dst->owner_sid != NULL)
-		dst->off_owner_sid = offset_sid;
-		
-	/* sid_size() returns 0 if the sid is NULL so this is ok */
-		
-	if (dst->grp_sid != NULL)
-		dst->off_grp_sid = offset_sid + sid_size(dst->owner_sid);
-
+	*sd_size = (size_t)offset;
 	return dst;
 
 error_exit:
@@ -946,7 +901,7 @@ BOOL sec_io_desc_buf(const char *desc, SEC_DESC_BUF **ppsdb, prs_struct *ps, int
 }
 
 /*******************************************************************
- adds new SID with its permissions to SEC_DESC
+ Add a new SID with its permissions to SEC_DESC.
 ********************************************************************/
 
 NTSTATUS sec_desc_add_sid(TALLOC_CTX *ctx, SEC_DESC **psd, DOM_SID *sid, uint32 mask, size_t *sd_size)
@@ -958,7 +913,8 @@ NTSTATUS sec_desc_add_sid(TALLOC_CTX *ctx, SEC_DESC **psd, DOM_SID *sid, uint32 
 
 	*sd_size = 0;
 
-	if (!ctx || !psd || !sid || !sd_size)  return NT_STATUS_INVALID_PARAMETER;
+	if (!ctx || !psd || !sid || !sd_size)
+		return NT_STATUS_INVALID_PARAMETER;
 
 	status = sec_ace_add_sid(ctx, &ace, psd[0]->dacl->ace, &psd[0]->dacl->num_aces, sid, mask);
 	
@@ -978,14 +934,15 @@ NTSTATUS sec_desc_add_sid(TALLOC_CTX *ctx, SEC_DESC **psd, DOM_SID *sid, uint32 
 }
 
 /*******************************************************************
- modify SID's permissions at SEC_DESC
+ Modify a SID's permissions in a SEC_DESC.
 ********************************************************************/
 
 NTSTATUS sec_desc_mod_sid(SEC_DESC *sd, DOM_SID *sid, uint32 mask)
 {
 	NTSTATUS status;
 
-	if (!sd || !sid) return NT_STATUS_INVALID_PARAMETER;
+	if (!sd || !sid)
+		return NT_STATUS_INVALID_PARAMETER;
 
 	status = sec_ace_mod_sid(sd->dacl->ace, sd->dacl->num_aces, sid, mask);
 
@@ -996,7 +953,7 @@ NTSTATUS sec_desc_mod_sid(SEC_DESC *sd, DOM_SID *sid, uint32 mask)
 }
 
 /*******************************************************************
- delete SID from SEC_DESC
+ Delete a SID from a SEC_DESC.
 ********************************************************************/
 
 NTSTATUS sec_desc_del_sid(TALLOC_CTX *ctx, SEC_DESC **psd, DOM_SID *sid, size_t *sd_size)
@@ -1008,7 +965,8 @@ NTSTATUS sec_desc_del_sid(TALLOC_CTX *ctx, SEC_DESC **psd, DOM_SID *sid, size_t 
 
 	*sd_size = 0;
 	
-	if (!ctx || !psd[0] || !sid || !sd_size) return NT_STATUS_INVALID_PARAMETER;
+	if (!ctx || !psd[0] || !sid || !sd_size)
+		return NT_STATUS_INVALID_PARAMETER;
 
 	status = sec_ace_del_sid(ctx, &ace, psd[0]->dacl->ace, &psd[0]->dacl->num_aces, sid);
 
@@ -1025,4 +983,109 @@ NTSTATUS sec_desc_del_sid(TALLOC_CTX *ctx, SEC_DESC **psd, DOM_SID *sid, size_t 
 	*psd = sd;
 	 sd  = 0;
 	return NT_STATUS_OK;
+}
+
+/*******************************************************************
+  Comparison function to sort non-inherited first.
+*******************************************************************/
+
+static int nt_ace_inherit_comp( SEC_ACE *a1, SEC_ACE *a2)
+{
+	int a1_inh = a1->flags & SEC_ACE_FLAG_INHERITED_ACE;
+	int a2_inh = a2->flags & SEC_ACE_FLAG_INHERITED_ACE;
+
+	if (a1_inh == a2_inh)
+		return 0;
+
+	if (!a1_inh && a2_inh)
+		return -1;
+	return 1;
+}
+
+/*******************************************************************
+  Comparison function to apply the order explained below in a group.
+*******************************************************************/
+
+static int nt_ace_canon_comp( SEC_ACE *a1, SEC_ACE *a2)
+{
+	if ((a1->type == SEC_ACE_TYPE_ACCESS_DENIED) &&
+				(a2->type != SEC_ACE_TYPE_ACCESS_DENIED))
+		return -1;
+
+	if ((a2->type == SEC_ACE_TYPE_ACCESS_DENIED) &&
+				(a1->type != SEC_ACE_TYPE_ACCESS_DENIED))
+		return 1;
+
+	/* Both access denied or access allowed. */
+
+	/* 1. ACEs that apply to the object itself */
+
+	if (!(a1->flags & SEC_ACE_FLAG_INHERIT_ONLY) &&
+			(a2->flags & SEC_ACE_FLAG_INHERIT_ONLY))
+		return -1;
+	else if (!(a2->flags & SEC_ACE_FLAG_INHERIT_ONLY) &&
+			(a1->flags & SEC_ACE_FLAG_INHERIT_ONLY))
+		return 1;
+
+	/* 2. ACEs that apply to a subobject of the object, such as
+	 * a property set or property. */
+
+	if (a1->flags & (SEC_ACE_FLAG_CONTAINER_INHERIT|SEC_ACE_FLAG_OBJECT_INHERIT) &&
+			!(a2->flags & (SEC_ACE_FLAG_CONTAINER_INHERIT|SEC_ACE_FLAG_OBJECT_INHERIT)))
+		return -1;
+	else if (a2->flags & (SEC_ACE_FLAG_CONTAINER_INHERIT|SEC_ACE_FLAG_OBJECT_INHERIT) &&
+			!(a1->flags & (SEC_ACE_FLAG_CONTAINER_INHERIT|SEC_ACE_FLAG_OBJECT_INHERIT)))
+		return 1;
+
+	return 0;
+}
+
+/*******************************************************************
+ Functions to convert a SEC_DESC ACE DACL list into canonical order.
+ JRA.
+
+--- from http://msdn.microsoft.com/library/default.asp?url=/library/en-us/security/security/order_of_aces_in_a_dacl.asp
+
+The following describes the preferred order:
+
+ To ensure that noninherited ACEs have precedence over inherited ACEs,
+ place all noninherited ACEs in a group before any inherited ACEs.
+ This ordering ensures, for example, that a noninherited access-denied ACE
+ is enforced regardless of any inherited ACE that allows access.
+
+ Within the groups of noninherited ACEs and inherited ACEs, order ACEs according to ACE type, as the following shows:
+	1. Access-denied ACEs that apply to the object itself
+	2. Access-denied ACEs that apply to a subobject of the object, such as a property set or property
+	3. Access-allowed ACEs that apply to the object itself
+	4. Access-allowed ACEs that apply to a subobject of the object"
+
+********************************************************************/
+
+void dacl_sort_into_canonical_order(SEC_ACE *srclist, unsigned int num_aces)
+{
+	unsigned int i;
+
+	if (!srclist || num_aces == 0)
+		return;
+
+	/* Sort so that non-inherited ACE's come first. */
+	qsort( srclist, num_aces, sizeof(srclist[0]), QSORT_CAST nt_ace_inherit_comp);
+
+	/* Find the boundary between non-inherited ACEs. */
+	for (i = 0; i < num_aces; i++ ) {
+		SEC_ACE *curr_ace = &srclist[i];
+
+		if (curr_ace->flags & SEC_ACE_FLAG_INHERITED_ACE)
+			break;
+	}
+
+	/* i now points at entry number of the first inherited ACE. */
+
+	/* Sort the non-inherited ACEs. */
+	if (i)
+		qsort( srclist, i, sizeof(srclist[0]), QSORT_CAST nt_ace_canon_comp);
+
+	/* Now sort the inherited ACEs. */
+	if (num_aces - i)
+		qsort( &srclist[i], num_aces - i, sizeof(srclist[0]), QSORT_CAST nt_ace_canon_comp);
 }

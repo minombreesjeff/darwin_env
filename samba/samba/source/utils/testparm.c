@@ -177,18 +177,25 @@ via the %%o substitution. With encrypted passwords this is not possible.\n", lp_
 		printf("'algorithmic rid base' must be even.\n");
 	}
 
+#ifndef HAVE_DLOPEN
+	if (lp_preload_modules()) {
+		printf("WARNING: 'preload modules = ' set while loading plugins not supported.\n");
+	}
+#endif
+
+	if (!lp_passdb_backend()) {
+		printf("ERROR: passdb backend must have a value or be left out\n");
+	}
+
 	return ret;
 }   
 
-int main(int argc, const char *argv[])
+ int main(int argc, const char *argv[])
 {
-	extern char *optarg;
-	extern int optind;
 	const char *config_file = dyn_CONFIGFILE;
 	int s;
 	static BOOL silent_mode = False;
 	int ret = 0;
-	int opt;
 	poptContext pc;
 	static const char *term_code = "";
 	static char *new_local_machine = NULL;
@@ -202,15 +209,15 @@ int main(int argc, const char *argv[])
 		{"verbose", 'v', POPT_ARG_NONE, &show_defaults, 1, "Show default options too"},
 		{"server", 'L',POPT_ARG_STRING, &new_local_machine, 0, "Set %%L macro to servername\n"},
 		{"encoding", 't', POPT_ARG_STRING, &term_code, 0, "Print parameters with encoding"},
-		{NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_version},
-		{0,0,0,0}
+		POPT_COMMON_VERSION
+		POPT_TABLEEND
 	};
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 
 			    POPT_CONTEXT_KEEP_FIRST);
 	poptSetOtherOptionHelp(pc, "[OPTION...] <config-file> [host-name] [host-ip]");
 
-	while((opt = poptGetNextOpt(pc)) != -1);
+	while(poptGetNextOpt(pc) != -1);
 
 	setup_logging(poptGetArg(pc), True);
 
@@ -221,7 +228,7 @@ int main(int argc, const char *argv[])
 	caddr = poptGetArg(pc);
 	
 	if (new_local_machine) {
-		set_local_machine_name(new_local_machine);
+		set_local_machine_name(new_local_machine, True);
 	}
 
 	dbf = x_stdout;
@@ -278,6 +285,27 @@ int main(int argc, const char *argv[])
 			if(lp_level2_oplocks(s) && !lp_oplocks(s)) {
 				printf("Invalid combination of parameters for service %s. \
 					   Level II oplocks can only be set if oplocks are also set.\n",
+					   lp_servicename(s) );
+			}
+
+			if (lp_map_hidden(s) && !(lp_create_mask(s) & S_IXOTH)) {
+				printf("Invalid combination of parameters for service %s. \
+					   Map hidden can only work if create mask includes octal 01 (S_IXOTH).\n",
+					   lp_servicename(s) );
+			}
+			if (lp_map_hidden(s) && (lp_force_create_mode(s) & S_IXOTH)) {
+				printf("Invalid combination of parameters for service %s. \
+					   Map hidden can only work if force create mode excludes octal 01 (S_IXOTH).\n",
+					   lp_servicename(s) );
+			}
+			if (lp_map_system(s) && !(lp_create_mask(s) & S_IXGRP)) {
+				printf("Invalid combination of parameters for service %s. \
+					   Map hidden can only work if create mask includes octal 010 (S_IXGRP).\n",
+					   lp_servicename(s) );
+			}
+			if (lp_map_system(s) && (lp_force_create_mode(s) & S_IXGRP)) {
+				printf("Invalid combination of parameters for service %s. \
+					   Map hidden can only work if force create mode excludes octal 010 (S_IXGRP).\n",
 					   lp_servicename(s) );
 			}
 		}

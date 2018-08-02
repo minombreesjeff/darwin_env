@@ -432,7 +432,7 @@ BOOL net_io_r_logon_ctrl(const char *desc, NET_R_LOGON_CTRL *r_l, prs_struct *ps
 void init_r_trust_dom(NET_R_TRUST_DOM_LIST *r_t,
 			uint32 num_doms, const char *dom_name)
 {
-	int i = 0;
+	unsigned int i = 0;
 
 	DEBUG(5,("init_r_trust_dom\n"));
 
@@ -446,7 +446,7 @@ void init_r_trust_dom(NET_R_TRUST_DOM_LIST *r_t,
 	for (i = 0; i < num_doms; i++) {
 		fstring domain_name;
 		fstrcpy(domain_name, dom_name);
-		strupper(domain_name);
+		strupper_m(domain_name);
 		init_unistr2(&r_t->uni_trust_dom_name[i], domain_name, strlen(domain_name)+1);
 		/* the use of UNISTR2 here is non-standard. */
 		r_t->uni_trust_dom_name[i].undoc = 0x1;
@@ -801,7 +801,7 @@ void init_q_srv_pwset(NET_Q_SRV_PWSET *q_s,
 	DEBUG(5,("init_q_srv_pwset\n"));
 	
 	/* Process the new password. */
-	cred_hash3( nt_cypher, hashed_mach_pwd, sess_key, 1);
+	cred_hash3( nt_cypher, hashed_mach_pwd, (const unsigned char *)sess_key, 1);
 
 	init_clnt_info(&q_s->clnt_id, logon_srv, acct_name, sec_chan, comp_name, cred);
 
@@ -1038,12 +1038,12 @@ void init_id_info2(NET_ID_INFO_2 * id, const char *domain_name,
 		   uint32 log_id_low, uint32 log_id_high,
 		   const char *user_name, const char *wksta_name,
 		   const uchar lm_challenge[8],
-		   const uchar * lm_chal_resp, int lm_chal_resp_len,
-		   const uchar * nt_chal_resp, int nt_chal_resp_len)
+		   const uchar * lm_chal_resp, size_t lm_chal_resp_len,
+		   const uchar * nt_chal_resp, size_t nt_chal_resp_len)
 {
-	int len_domain_name = strlen(domain_name);
-	int len_user_name   = strlen(user_name  );
-	int len_wksta_name  = strlen(wksta_name );
+	size_t len_domain_name = strlen(domain_name);
+	size_t len_user_name   = strlen(user_name  );
+	size_t len_wksta_name  = strlen(wksta_name );
 	unsigned char lm_owf[24];
 	unsigned char nt_owf[128];
 
@@ -1281,7 +1281,7 @@ void init_net_user_info3(TALLOC_CTX *ctx, NET_USER_INFO_3 *usr,
 {
 	/* only cope with one "other" sid, right now. */
 	/* need to count the number of space-delimited sids */
-	int i;
+	unsigned int i;
 	int num_other_sids = 0;
 	
 	NTTIME 		logon_time, logoff_time, kickoff_time,
@@ -1294,7 +1294,7 @@ void init_net_user_info3(TALLOC_CTX *ctx, NET_USER_INFO_3 *usr,
 	int len_logon_srv    = strlen(logon_srv);
 	int len_logon_dom    = strlen(logon_dom);
 
-	len_user_name    = strlen(user_name   );
+	len_user_name    = strlen(user_name    );
 	len_full_name    = strlen(full_name   );
 	len_home_dir     = strlen(home_dir    );
 	len_dir_drive    = strlen(dir_drive   );
@@ -1306,6 +1306,7 @@ void init_net_user_info3(TALLOC_CTX *ctx, NET_USER_INFO_3 *usr,
 
 	usr->ptr_user_info = 1; /* yes, we're bothering to put USER_INFO data here */
 
+	
 
 	/* Create NTTIME structs */
 	unix_to_nt_time (&logon_time, 		 unix_logon_time);
@@ -1390,7 +1391,7 @@ void init_net_user_info3(TALLOC_CTX *ctx, NET_USER_INFO_3 *usr,
 BOOL net_io_user_info3(const char *desc, NET_USER_INFO_3 *usr, prs_struct *ps, 
 		       int depth, uint16 validation_level)
 {
-	int i;
+	unsigned int i;
 
 	if (usr == NULL)
 		return False;
@@ -2129,12 +2130,12 @@ static BOOL net_io_sam_account_info(const char *desc, uint8 sess_key[16],
 		if (!prs_uint32("pwd_len", ps, depth, &len))
                         return False;
 		old_offset = ps->data_offset;
-		if (len == 0x44)
+		if (len > 0)
 		{
 			if (ps->io)
 			{
 				/* reading */
-                                if (!prs_hash1(ps, ps->data_offset, sess_key))
+                                if (!prs_hash1(ps, ps->data_offset, sess_key, len))
                                         return False;
 			}
 			if (!net_io_sam_passwd_info("pass", &info->pass, 
@@ -2144,7 +2145,7 @@ static BOOL net_io_sam_account_info(const char *desc, uint8 sess_key[16],
 			if (!ps->io)
 			{
 				/* writing */
-                                if (!prs_hash1(ps, old_offset, sess_key))
+                                if (!prs_hash1(ps, old_offset, sess_key, len))
                                         return False;
 			}
 		}
@@ -2277,9 +2278,12 @@ static BOOL net_io_sam_alias_info(const char *desc, SAM_ALIAS_INFO * info,
 	if (!smb_io_buffer4("buf_sec_desc", &info->buf_sec_desc,
                             info->hdr_sec_desc.buffer, ps, depth))
                 return False;
-	if (!smb_io_unistr2("uni_als_desc", &info->uni_als_desc,
-                            info->hdr_als_name.buffer, ps, depth))
-                return False;
+
+	if (info->hdr_als_desc.buffer != 0) {
+		if (!smb_io_unistr2("uni_als_desc", &info->uni_als_desc,
+				    info->hdr_als_name.buffer, ps, depth))
+			return False;
+	}
 
 	return True;
 }
@@ -2363,7 +2367,7 @@ reads or writes a structure.
 static BOOL net_io_sam_policy_info(const char *desc, SAM_DELTA_POLICY *info,
 				      prs_struct *ps, int depth)
 {
-	int i;
+	unsigned int i;
 	prs_debug(ps, depth, desc, "net_io_sam_policy_info");
 	depth++;
 
@@ -2584,7 +2588,7 @@ reads or writes a structure.
 static BOOL net_io_sam_privs_info(const char *desc, SAM_DELTA_PRIVS *info,
 				      prs_struct *ps, int depth)
 {
-	int i;
+	unsigned int i;
 
 	prs_debug(ps, depth, desc, "net_io_sam_privs_info");
 	depth++;
@@ -2895,7 +2899,7 @@ reads or writes a structure.
 BOOL net_io_r_sam_deltas(const char *desc, uint8 sess_key[16],
                          NET_R_SAM_DELTAS *r_s, prs_struct *ps, int depth)
 {
-        int i;
+        unsigned int i;
 
 	prs_debug(ps, depth, desc, "net_io_r_sam_deltas");
 	depth++;

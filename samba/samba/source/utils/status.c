@@ -45,11 +45,6 @@ static int            locks_only  = 0;            /* Added by RJS */
 static BOOL processes_only=False;
 static int show_brl;
 
-/* we need these because we link to locking*.o */
- void become_root(void) {}
- void unbecome_root(void) {}
-
-
 /* added by OH */
 static void Ucrit_addUsername(const char *username)
 {
@@ -559,10 +554,8 @@ static int traverse_sessionid(TDB_CONTEXT *tdb, TDB_DATA kbuf, TDB_DATA dbuf, vo
 		{"profile",	'P', POPT_ARG_NONE,	&profile_only, 'P', "Do profiling" },
 #endif /* WITH_PROFILE */
 		{"byterange",	'B', POPT_ARG_NONE,	&show_brl, 'B', "Include byte range locks"},
-		{ NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_debug },
-		{ NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_version},
-		{ NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_configfile },
-		{ 0, 0, 0, 0}
+		POPT_COMMON_SAMBA
+		POPT_TABLEEND
 	};
 
 	setup_logging(argv[0],True);
@@ -577,7 +570,7 @@ static int traverse_sessionid(TDB_CONTEXT *tdb, TDB_DATA kbuf, TDB_DATA dbuf, vo
 	pc = poptGetContext(NULL, argc, (const char **) argv, long_options, 
 			    POPT_CONTEXT_KEEP_FIRST);
 	
-	while ((c = poptGetNextOpt(pc)) != EOF) {
+	while ((c = poptGetNextOpt(pc)) != -1) {
 		switch (c) {
 		case 'u':                                      
 			Ucrit_addUsername(poptGetOptArg(pc));             
@@ -604,7 +597,7 @@ static int traverse_sessionid(TDB_CONTEXT *tdb, TDB_DATA kbuf, TDB_DATA dbuf, vo
 	} else {
 		if (locks_only) goto locks;
 
-		d_printf("\nSamba version %s\n",VERSION);
+		d_printf("\nSamba version %s\n",SAMBA_VERSION_STRING);
 		d_printf("PID     Username      Group         Machine                        \n");
 		d_printf("-------------------------------------------------------------------\n");
 

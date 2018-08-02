@@ -41,6 +41,14 @@ static void make_conn_key(connection_struct *conn, const char *name, TDB_DATA *p
 	pkey->pid = sys_getpid();
 	pkey->cnum = conn?conn->cnum:-1;
 	fstrcpy(pkey->name, name);
+#ifdef DEVELOPER
+	/* valgrind fixer... */
+	{
+		size_t sl = strlen(pkey->name);
+		if (sizeof(fstring)-sl)
+			memset(&pkey->name[sl], '\0', sizeof(fstring)-sl);
+	}
+#endif
 
 	pkbuf->dptr = (char *)pkey;
 	pkbuf->dsize = sizeof(*pkey);
@@ -171,14 +179,14 @@ BOOL claim_connection(connection_struct *conn, const char *name,int max_connecti
 	if (conn) {
 		crec.uid = conn->uid;
 		crec.gid = conn->gid;
-		StrnCpy(crec.name,
-			lp_servicename(SNUM(conn)),sizeof(crec.name)-1);
+		safe_strcpy(crec.name,
+			    lp_servicename(SNUM(conn)),sizeof(crec.name)-1);
 	}
 	crec.start = time(NULL);
 	crec.bcast_msg_flags = msg_flags;
 	
-	StrnCpy(crec.machine,get_remote_machine_name(),sizeof(crec.machine)-1);
-	StrnCpy(crec.addr,conn?conn->client_address:client_addr(),sizeof(crec.addr)-1);
+	safe_strcpy(crec.machine,get_remote_machine_name(),sizeof(crec.machine)-1);
+	safe_strcpy(crec.addr,conn?conn->client_address:client_addr(),sizeof(crec.addr)-1);
 
 	dbuf.dptr = (char *)&crec;
 	dbuf.dsize = sizeof(crec);

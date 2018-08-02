@@ -33,13 +33,16 @@ static BOOL masked_match(const char *tok, const char *slash, const char *s)
         if (strlen(slash + 1) > 2) {
                 mask = interpret_addr(slash + 1);
         } else {
-		mask = (uint32)((ALLONES << atoi(slash + 1)) ^ ALLONES);
+		mask = (uint32)((ALLONES >> atoi(slash + 1)) ^ ALLONES);
+		/* convert to network byte order */
+		mask = htonl(mask);
         }
 
 	if (net == INADDR_NONE || mask == INADDR_NONE) {
 		DEBUG(0,("access: bad net/mask access control: %s\n", tok));
 		return (False);
 	}
+	
 	return ((addr & mask) == net);
 }
 
@@ -278,13 +281,12 @@ static BOOL only_ipaddrs_in_list(const char** list)
 		}
 		
 		if (!is_ipaddress(*list)) {
-			char *p;
 			/* 
 			 * if we failed, make sure that it was not because the token
 			 * was a network/netmask pair.  Only network/netmask pairs
 			 * have a '/' in them
 			 */
-			if ((p=strchr_m(*list, '/')) == NULL) {
+			if ((strchr_m(*list, '/')) == NULL) {
 				only_ip = False;
 				DEBUG(3,("only_ipaddrs_in_list: list has non-ip address (%s)\n", *list));
 				break;

@@ -163,8 +163,8 @@ static int close_normal_file(files_struct *fsp, BOOL normal_close)
 
 	share_entry_count = del_share_mode(fsp, &share_entry);
 
-	DEBUG(10,("close_normal_file: share_entry_count = %d for file %s\n",
-		share_entry_count, fsp->fsp_name ));
+	DEBUG(10,("close_normal_file: share_entry_count = %lu for file %s\n",
+		(unsigned long)share_entry_count, fsp->fsp_name ));
 
 	/*
 	 * We delete on close if it's the last open, and the
@@ -185,7 +185,7 @@ static int close_normal_file(files_struct *fsp, BOOL normal_close)
 	if (normal_close && delete_on_close) {
 		DEBUG(5,("close_file: file %s. Delete on close was set - deleting file.\n",
 			fsp->fsp_name));
-		if(fsp->conn->vfs_ops.unlink(conn,fsp->fsp_name) != 0) {
+		if(SMB_VFS_UNLINK(conn,fsp->fsp_name) != 0) {
 			/*
 			 * This call can potentially fail as another smbd may have
 			 * had the file open with delete on close set and deleted
@@ -196,11 +196,12 @@ static int close_normal_file(files_struct *fsp, BOOL normal_close)
 		DEBUG(5,("close_file: file %s. Delete on close was set and unlink failed \
 with error %s\n", fsp->fsp_name, strerror(errno) ));
 		}
+		process_pending_change_notify_queue((time_t)0);
 	}
 
 	unlock_share_entry_fsp(fsp);
 
-	if(EXCLUSIVE_OPLOCK_TYPE(fsp->oplock_type))
+	if(fsp->oplock_type)
 		release_file_oplock(fsp);
 
 	locking_close_file(fsp);
@@ -262,6 +263,7 @@ static int close_directory(files_struct *fsp, BOOL normal_close)
 
 		if(ok)
 			remove_pending_change_notify_requests_by_filename(fsp);
+		process_pending_change_notify_queue((time_t)0);
 	}
 
 	/*

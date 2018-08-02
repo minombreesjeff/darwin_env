@@ -1649,7 +1649,7 @@ static BOOL api_RNetGroupEnum(connection_struct *conn,uint16 vuid, char *param,c
 		return False;
 
 	/* get list of domain groups SID_DOMAIN_GRP=2 */
-	if(!pdb_enum_group_mapping(SID_NAME_DOM_GRP , &group_list, &num_entries, False, False)) {
+	if(!pdb_enum_group_mapping(SID_NAME_DOM_GRP , &group_list, &num_entries, False)) {
 		DEBUG(3,("api_RNetGroupEnum:failed to get group list"));
 		return False;
 	}
@@ -1706,13 +1706,24 @@ static BOOL api_NetUserGetGroups(connection_struct *conn,uint16 vuid, char *para
 	int uLevel = SVAL(p,0);
 	const char *level_string;
 	int count=0;
+	SAM_ACCOUNT *sampw = NULL;
+	BOOL ret = False;
+        DOM_GID *gids = NULL;
+        int num_groups = 0;
+	int i;
+	fstring grp_domain;
+	fstring grp_name;
+	enum SID_NAME_USE grp_type;
+	DOM_SID sid, dom_sid;
 
 	*rparam_len = 8;
 	*rparam = REALLOC(*rparam,*rparam_len);
   
 	/* check it's a supported varient */
-	if (!strcmp(str1,"zWrLeh"))
+	
+	if ( strcmp(str1,"zWrLeh") != 0 )
 		return False;
+		
 	switch( uLevel ) {
 		case 0:
 			level_string = "B21";
@@ -1732,18 +1743,59 @@ static BOOL api_NetUserGetGroups(connection_struct *conn,uint16 vuid, char *para
 
 	p = *rdata;
 
-	/* XXXX we need a real SAM database some day */
-	pstrcpy(p,"Users"); p += 21; count++;
-	pstrcpy(p,"Domain Users"); p += 21; count++;
-	pstrcpy(p,"Guests"); p += 21; count++;
-	pstrcpy(p,"Domain Guests"); p += 21; count++;
+	/* Lookup the user information; This should only be one of 
+	   our accounts (not remote domains) */
+	   
+	pdb_init_sam( &sampw );
+	
+	become_root();					/* ROOT BLOCK */
 
+	if ( !pdb_getsampwnam(sampw, UserName) )
+		goto out;
+
+	/* this next set of code is horribly inefficient, but since 
+	   it is rarely called, I'm going to leave it like this since 
+	   it easier to follow      --jerry                          */
+	   
+	/* get the list of group SIDs */
+	
+	if ( !get_domain_user_groups(conn->mem_ctx, &num_groups, &gids, sampw) ) {
+		DEBUG(1,("api_NetUserGetGroups: get_domain_user_groups() failed!\n"));
+		goto out;
+        }
+
+	/* convert to names (we don't support universal groups so the domain
+	   can only be ours) */
+	
+	sid_copy( &dom_sid, get_global_sam_sid() );
+	for (i=0; i<num_groups; i++) {
+	
+		/* make the DOM_GID into a DOM_SID and then lookup 
+		   the name */
+		
+		sid_copy( &sid, &dom_sid );
+		sid_append_rid( &sid, gids[i].g_rid );
+		
+		if ( lookup_sid(&sid, grp_domain, grp_name, &grp_type) ) {
+			pstrcpy(p, grp_name); 
+			p += 21; 
+			count++;
+		}
+	}
+	
 	*rdata_len = PTR_DIFF(p,*rdata);
 
 	SSVAL(*rparam,4,count);	/* is this right?? */
 	SSVAL(*rparam,6,count);	/* is this right?? */
 
-	return(True);
+	ret = True;
+
+out:
+	unbecome_root();				/* END ROOT BLOCK */
+
+	pdb_free_sam( &sampw );
+
+	return ret;
 }
 
 /*******************************************************************
@@ -1897,76 +1949,78 @@ static BOOL api_SetUserPassword(connection_struct *conn,uint16 vuid, char *param
 				char **rdata,char **rparam,
 				int *rdata_len,int *rparam_len)
 {
-  char *p = skip_string(param+2,2);
-  fstring user;
-  fstring pass1,pass2;
+	char *p = skip_string(param+2,2);
+	fstring user;
+	fstring pass1,pass2;
 
-  pull_ascii_fstring(user,p);
+	pull_ascii_fstring(user,p);
 
-  p = skip_string(p,1);
+	p = skip_string(p,1);
 
-  memset(pass1,'\0',sizeof(pass1));
-  memset(pass2,'\0',sizeof(pass2));
-  memcpy(pass1,p,16);
-  memcpy(pass2,p+16,16);
+	memset(pass1,'\0',sizeof(pass1));
+	memset(pass2,'\0',sizeof(pass2));
+	memcpy(pass1,p,16);
+	memcpy(pass2,p+16,16);
 
-  *rparam_len = 4;
-  *rparam = REALLOC(*rparam,*rparam_len);
+	*rparam_len = 4;
+	*rparam = REALLOC(*rparam,*rparam_len);
 
-  *rdata_len = 0;
+	*rdata_len = 0;
 
-  SSVAL(*rparam,0,NERR_badpass);
-  SSVAL(*rparam,2,0);		/* converter word */
+	SSVAL(*rparam,0,NERR_badpass);
+	SSVAL(*rparam,2,0);		/* converter word */
 
-  DEBUG(3,("Set password for <%s>\n",user));
+	DEBUG(3,("Set password for <%s>\n",user));
 
-  /*
-   * Attempt to verify the old password against smbpasswd entries
-   * Win98 clients send old and new password in plaintext for this call.
-   */
+	/*
+	 * Attempt to verify the old password against smbpasswd entries
+	 * Win98 clients send old and new password in plaintext for this call.
+	 */
 
-  {
-	  auth_serversupplied_info *server_info = NULL;
-	  DATA_BLOB password = data_blob(pass1, strlen(pass1)+1);
-	  if (NT_STATUS_IS_OK(check_plaintext_password(user,password,&server_info))) {
+	{
+		auth_serversupplied_info *server_info = NULL;
+		DATA_BLOB password = data_blob(pass1, strlen(pass1)+1);
 
-		  if (NT_STATUS_IS_OK(change_oem_password(server_info->sam_account, pass1, pass2)))
-		  {
-			  SSVAL(*rparam,0,NERR_Success);
-		  }
-		  
-		  free_server_info(&server_info);
-	  }
-	  data_blob_clear_free(&password);
-  }
+		if (NT_STATUS_IS_OK(check_plaintext_password(user,password,&server_info))) {
 
-  /*
-   * If the plaintext change failed, attempt
-   * the old encrypted method. NT will generate this
-   * after trying the samr method. Note that this
-   * method is done as a last resort as this
-   * password change method loses the NT password hash
-   * and cannot change the UNIX password as no plaintext
-   * is received.
-   */
+			become_root();
+			if (NT_STATUS_IS_OK(change_oem_password(server_info->sam_account, pass1, pass2))) {
+				SSVAL(*rparam,0,NERR_Success);
+			}
+			unbecome_root();
 
-  if(SVAL(*rparam,0) != NERR_Success)
-  {
-    SAM_ACCOUNT *hnd = NULL;
+			free_server_info(&server_info);
+		}
+		data_blob_clear_free(&password);
+	}
 
-    if (check_lanman_password(user,(unsigned char *)pass1,(unsigned char *)pass2, &hnd) && 
-       change_lanman_password(hnd,pass2))
-    {
-      SSVAL(*rparam,0,NERR_Success);
-    }
-	pdb_free_sam(&hnd);
-  }
+	/*
+	 * If the plaintext change failed, attempt
+	 * the old encrypted method. NT will generate this
+	 * after trying the samr method. Note that this
+	 * method is done as a last resort as this
+	 * password change method loses the NT password hash
+	 * and cannot change the UNIX password as no plaintext
+	 * is received.
+	 */
 
+	if(SVAL(*rparam,0) != NERR_Success) {
+		SAM_ACCOUNT *hnd = NULL;
 
-  memset((char *)pass1,'\0',sizeof(fstring));
-  memset((char *)pass2,'\0',sizeof(fstring));	 
+		if (check_lanman_password(user,(unsigned char *)pass1,(unsigned char *)pass2, &hnd)) {
+			become_root();
+			if (change_lanman_password(hnd,(uchar *)pass2)) {
+				SSVAL(*rparam,0,NERR_Success);
+			}
+			unbecome_root();
+			pdb_free_sam(&hnd);
+		}
+	}
+
+	memset((char *)pass1,'\0',sizeof(fstring));
+	memset((char *)pass2,'\0',sizeof(fstring));	 
 	 
-  return(True);
+	return(True);
 }
 
 /****************************************************************************
@@ -2367,7 +2421,7 @@ static BOOL api_NetWkstaGetInfo(connection_struct *conn,uint16 vuid, char *param
 
   SIVAL(p,0,PTR_DIFF(p2,*rdata)); /* host name */
   pstrcpy(p2,local_machine);
-  strupper(p2);
+  strupper_m(p2);
   p2 = skip_string(p2,1);
   p += 4;
 
@@ -2378,7 +2432,7 @@ static BOOL api_NetWkstaGetInfo(connection_struct *conn,uint16 vuid, char *param
 
   SIVAL(p,0,PTR_DIFF(p2,*rdata)); /* login domain */
   pstrcpy(p2,lp_workgroup());
-  strupper(p2);
+  strupper_m(p2);
   p2 = skip_string(p2,1);
   p += 4;
 
@@ -2788,7 +2842,7 @@ static BOOL api_WWkstaUserLogon(connection_struct *conn,uint16 vuid, char *param
       fstring mypath;
       fstrcpy(mypath,"\\\\");
       fstrcat(mypath,local_machine);
-      strupper(mypath);
+      strupper_m(mypath);
       PACKS(&desc,"z",mypath); /* computer */
     }
     PACKS(&desc,"z",lp_workgroup());/* domain */
@@ -3007,7 +3061,7 @@ static void fill_printdest_info(connection_struct *conn, int snum, int uLevel,
   char buf[100];
   strncpy(buf,SERVICE(snum),sizeof(buf)-1);
   buf[sizeof(buf)-1] = 0;
-  strupper(buf);
+  strupper_m(buf);
   if (uLevel <= 1) {
     PACKS(desc,"B9",buf);	/* szName */
     if (uLevel == 1) {

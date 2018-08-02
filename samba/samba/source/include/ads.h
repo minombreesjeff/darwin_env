@@ -38,7 +38,7 @@ typedef struct {
 	} config;
 } ADS_STRUCT;
 
-/* there are 4 possible types of errors the ads subsystem can produce */
+/* there are 5 possible types of errors the ads subsystem can produce */
 enum ads_error_type {ADS_ERROR_KRB5, ADS_ERROR_GSS, 
 		     ADS_ERROR_LDAP, ADS_ERROR_SYSTEM, ADS_ERROR_NT};
 
@@ -205,6 +205,19 @@ typedef void **ADS_MODLIST;
 #define ADS_AUTH_NO_BIND          0x02
 #define ADS_AUTH_ANON_BIND        0x04
 #define ADS_AUTH_SIMPLE_BIND      0x08
+#define ADS_AUTH_ALLOW_NTLMSSP    0x10
 
 /* Kerberos environment variable names */
 #define KRB5_ENV_CCNAME "KRB5CCNAME"
+
+/* Heimdal uses a slightly different name */
+#if defined(HAVE_ENCTYPE_ARCFOUR_HMAC_MD5)
+#define ENCTYPE_ARCFOUR_HMAC ENCTYPE_ARCFOUR_HMAC_MD5
+#endif
+
+/* The older versions of heimdal that don't have this
+   define don't seem to use it anyway.  I'm told they
+   always use a subkey */
+#ifndef HAVE_AP_OPTS_USE_SUBKEY
+#define AP_OPTS_USE_SUBKEY 0
+#endif

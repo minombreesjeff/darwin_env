@@ -47,12 +47,14 @@ int net_ads_usage(int argc, const char **argv)
 "\nnet ads password <username@realm> -Uadmin_username@realm%%admin_pass"\
 "\n\tchange a user's password using an admin account"\
 "\n\t(note: use realm in UPPERCASE)\n"\
-"\nnet ads chostpass"\
+"\nnet ads changetrustpw"\
 "\n\tchange the trust account password of this machine in the AD tree\n"\
 "\nnet ads printer [info | publish | remove] <printername> <servername>"\
 "\n\t lookup, add, or remove directory entry for a printer\n"\
 "\nnet ads search"\
 "\n\tperform a raw LDAP search and dump the results\n"
+"\nnet ads dn"\
+"\n\tperform a raw LDAP search and dump attributes of a particular DN\n"
 		);
 	return -1;
 }
@@ -66,7 +68,7 @@ static int net_ads_lookup(int argc, const char **argv)
 {
 	ADS_STRUCT *ads;
 
-	ads = ads_init(NULL, NULL, opt_host);
+	ads = ads_init(NULL, opt_target_workgroup, opt_host);
 	if (ads) {
 		ads->auth.flags |= ADS_AUTH_NO_BIND;
 	}
@@ -87,7 +89,7 @@ static int net_ads_info(int argc, const char **argv)
 {
 	ADS_STRUCT *ads;
 
-	ads = ads_init(NULL, NULL, opt_host);
+	ads = ads_init(NULL, opt_target_workgroup, opt_host);
 
 	if (ads) {
 		ads->auth.flags |= ADS_AUTH_NO_BIND;
@@ -107,6 +109,9 @@ static int net_ads_info(int argc, const char **argv)
 	d_printf("LDAP port: %d\n", ads->ldap_port);
 	d_printf("Server time: %s\n", http_timestring(ads->config.current_time));
 
+       d_printf("KDC server: %s\n", ads->auth.kdc_server );
+       d_printf("Server time offset: %d\n", ads->auth.time_offset );
+
 	return 0;
 }
 
@@ -122,8 +127,9 @@ static ADS_STRUCT *ads_startup(void)
 	ADS_STATUS status;
 	BOOL need_password = False;
 	BOOL second_time = False;
+       char *cp;
 	
-	ads = ads_init(NULL, NULL, opt_host);
+	ads = ads_init(NULL, opt_target_workgroup, opt_host);
 
 	if (!opt_user_name) {
 		opt_user_name = "administrator";
@@ -131,7 +137,6 @@ static ADS_STRUCT *ads_startup(void)
 
 	if (opt_user_specified) {
 		need_password = True;
-		use_in_memory_ccache();
 	}
 
 retry:
@@ -142,12 +147,26 @@ retry:
 		free(prompt);
 	}
 
-	if (opt_password)
-		ads->auth.password = strdup(opt_password);
+	if (opt_password) {
+		use_in_memory_ccache();
+		ads->auth.password = smb_xstrdup(opt_password);
+	}
 
-	ads->auth.user_name = strdup(opt_user_name);
+	ads->auth.user_name = smb_xstrdup(opt_user_name);
+
+       /*
+        * If the username is of the form "name@realm", 
+        * extract the realm and convert to upper case.
+        * This is only used to establish the connection.
+        */
+       if ((cp = strchr(ads->auth.user_name, '@'))!=0) {
+               *cp++ = '\0';
+               ads->auth.realm = smb_xstrdup(cp);
+               strupper_m(ads->auth.realm);
+       }
 
 	status = ads_connect(ads);
+
 	if (!ADS_ERR_OK(status)) {
 		if (!need_password && !second_time) {
 			need_password = True;
@@ -216,7 +235,7 @@ static BOOL usergrp_display(char *field, void **values, void *data_area)
 	if (!field) { /* must be end of record */
 		if (!strchr_m(disp_fields[0], '$')) {
 			if (disp_fields[1])
-				d_printf("%-21.21s %-50.50s\n", 
+				d_printf("%-21.21s %s\n", 
 				       disp_fields[0], disp_fields[1]);
 			else
 				d_printf("%s\n", disp_fields[0]);
@@ -281,7 +300,8 @@ static int ads_user_add(int argc, const char **argv)
 
 	/* try setting the password */
 	asprintf(&upn, "%s@%s", argv[0], ads->config.realm);
-	status = sys_krb5_set_password(ads->auth.kdc_server, upn, argv[1], ads->auth.time_offset);
+	status = ads_krb5_set_password(ads->auth.kdc_server, upn, argv[1], 
+				       ads->auth.time_offset);
 	safe_free(upn);
 	if (ADS_ERR_OK(status)) {
 		d_printf("User %s added\n", argv[0]);
@@ -559,10 +579,7 @@ static int net_ads_leave(int argc, const char **argv)
 	}
 
 	if (!opt_password) {
-		char *user_name;
-		asprintf(&user_name, "%s$", global_myname());
-		opt_password = secrets_fetch_machine_password();
-		opt_user_name = user_name;
+		net_use_machine_password();
 	}
 
 	if (!(ads = ads_startup())) {
@@ -583,7 +600,6 @@ static int net_ads_leave(int argc, const char **argv)
 
 static int net_ads_join_ok(void)
 {
-	char *user_name;
 	ADS_STRUCT *ads = NULL;
 
 	if (!secrets_init()) {
@@ -591,9 +607,7 @@ static int net_ads_join_ok(void)
 		return -1;
 	}
 
-	asprintf(&user_name, "%s$", global_myname());
-	opt_user_name = user_name;
-	opt_password = secrets_fetch_machine_password();
+	net_use_machine_password();
 
 	if (!(ads = ads_startup())) {
 		return -1;
@@ -628,12 +642,15 @@ int net_ads_join(int argc, const char **argv)
 	ADS_STRUCT *ads;
 	ADS_STATUS rc;
 	char *password;
+	char *machine_account = NULL;
 	char *tmp_password;
 	const char *org_unit = "Computers";
 	char *dn;
 	void *res;
 	DOM_SID dom_sid;
 	char *ou_str;
+	uint32 sec_channel_type = SEC_CHAN_WKSTA;
+	uint32 account_type = UF_WORKSTATION_TRUST_ACCOUNT;
 
 	if (argc > 0) org_unit = argv[0];
 
@@ -646,6 +663,16 @@ int net_ads_join(int argc, const char **argv)
 	password = strdup(tmp_password);
 
 	if (!(ads = ads_startup())) return -1;
+
+	if (!*lp_realm()) {
+		d_printf("realm must be set in in smb.conf for ADS join to succeed.\n");
+		return -1;
+	}
+
+	if (strcmp(ads->config.realm, lp_realm()) != 0) {
+		d_printf("realm of remote server (%s) and realm in smb.conf (%s) DO NOT match.  Aborting join\n", ads->config.realm, lp_realm());
+		return -1;
+	}
 
 	ou_str = ads_ou_string(org_unit);
 	asprintf(&dn, "%s,%s", ou_str, ads->config.bind_path);
@@ -666,7 +693,7 @@ int net_ads_join(int argc, const char **argv)
 		return -1;
 	}	
 
-	rc = ads_join_realm(ads, global_myname(), org_unit);
+	rc = ads_join_realm(ads, global_myname(), account_type, org_unit);
 	if (!ADS_ERR_OK(rc)) {
 		d_printf("ads_join_realm: %s\n", ads_errstr(rc));
 		return -1;
@@ -674,11 +701,16 @@ int net_ads_join(int argc, const char **argv)
 
 	rc = ads_domain_sid(ads, &dom_sid);
 	if (!ADS_ERR_OK(rc)) {
-		d_printf("ads_domain_sid: %s\n", ads_errstr(rc));
+		d_printf("ads_domain_sid: %s\n", ads_errstr(rc));	
+	return -1;
+	}
+
+	if (asprintf(&machine_account, "%s$", global_myname()) == -1) {
+		d_printf("asprintf failed\n");
 		return -1;
 	}
 
-	rc = ads_set_machine_password(ads, global_myname(), password);
+	rc = ads_set_machine_password(ads, machine_account, password);
 	if (!ADS_ERR_OK(rc)) {
 		d_printf("ads_set_machine_password: %s\n", ads_errstr(rc));
 		return -1;
@@ -689,14 +721,15 @@ int net_ads_join(int argc, const char **argv)
 		return -1;
 	}
 
-	if (!secrets_store_machine_password(password)) {
+	if (!secrets_store_machine_password(password, lp_workgroup(), sec_channel_type)) {
 		DEBUG(1,("Failed to save machine password\n"));
 		return -1;
 	}
 
 	d_printf("Joined '%s' to realm '%s'\n", global_myname(), ads->config.realm);
 
-	free(password);
+	SAFE_FREE(password);
+	SAFE_FREE(machine_account);
 
 	return 0;
 }
@@ -704,6 +737,8 @@ int net_ads_join(int argc, const char **argv)
 int net_ads_printer_usage(int argc, const char **argv)
 {
 	d_printf(
+"\nnet ads printer search <printer>"
+"\n\tsearch for a printer in the directory"
 "\nnet ads printer info <printer> <server>"
 "\n\tlookup info in directory for printer on server"
 "\n\t(note: printer defaults to \"*\", server defaults to local)\n"
@@ -714,6 +749,35 @@ int net_ads_printer_usage(int argc, const char **argv)
 "\n\tremove printer from directory"
 "\n\t(note: printer name is required)\n");
 	return -1;
+}
+
+static int net_ads_printer_search(int argc, const char **argv)
+{
+	ADS_STRUCT *ads;
+	ADS_STATUS rc;
+	void *res = NULL;
+
+	if (!(ads = ads_startup())) 
+		return -1;
+
+	rc = ads_find_printers(ads, &res);
+
+	if (!ADS_ERR_OK(rc)) {
+		d_printf("ads_find_printer: %s\n", ads_errstr(rc));
+		ads_msgfree(ads, res);
+		return -1;
+	}
+
+	if (ads_count_replies(ads, res) == 0) {
+		d_printf("No results found\n");
+		ads_msgfree(ads, res);
+		return -1;
+	}
+
+	ads_dump(ads, res);
+	ads_msgfree(ads, res);
+
+	return 0;
 }
 
 static int net_ads_printer_info(int argc, const char **argv)
@@ -764,7 +828,7 @@ static int net_ads_printer_publish(int argc, const char **argv)
 {
         ADS_STRUCT *ads;
         ADS_STATUS rc;
-	const char *servername;
+	const char *servername, *printername;
 	struct cli_state *cli;
 	struct in_addr 		server_ip;
 	NTSTATUS nt_status;
@@ -778,15 +842,14 @@ static int net_ads_printer_publish(int argc, const char **argv)
 	if (argc < 1)
 		return net_ads_printer_usage(argc, argv);
 	
+	printername = argv[0];
+
 	if (argc == 2)
 		servername = argv[1];
 	else
 		servername = global_myname();
 		
-	ads_find_machine_acct(ads, &res, servername);
-	srv_dn = ldap_get_dn(ads->ld, res);
-	srv_cn = ldap_explode_dn(srv_dn, 1);
-	asprintf(&prt_dn, "cn=%s-%s,%s", srv_cn[0], argv[0], srv_dn);
+	/* Get printer data from SPOOLSS */
 
 	resolve_name(servername, &server_ip, 0x20);
 
@@ -796,10 +859,31 @@ static int net_ads_printer_publish(int argc, const char **argv)
 					opt_user_name, opt_workgroup,
 					opt_password ? opt_password : "", 
 					CLI_FULL_CONNECTION_USE_KERBEROS, 
-					NULL);
+					Undefined, NULL);
+
+	if (NT_STATUS_IS_ERR(nt_status)) {
+		d_printf("Unable to open a connnection to %s to obtain data "
+			 "for %s\n", servername, printername);
+		return -1;
+	}
+
+	/* Publish on AD server */
+
+	ads_find_machine_acct(ads, &res, servername);
+
+	if (ads_count_replies(ads, res) == 0) {
+		d_printf("Could not find machine account for server %s\n", 
+			 servername);
+		return -1;
+	}
+
+	srv_dn = ldap_get_dn(ads->ld, res);
+	srv_cn = ldap_explode_dn(srv_dn, 1);
+
+	asprintf(&prt_dn, "cn=%s-%s,%s", srv_cn[0], printername, srv_dn);
 
 	cli_nt_session_open(cli, PI_SPOOLSS);
-	get_remote_printer_publishing_data(cli, mem_ctx, &mods, argv[0]);
+	get_remote_printer_publishing_data(cli, mem_ctx, &mods, printername);
 
         rc = ads_add_printer_entry(ads, prt_dn, mem_ctx, &mods);
         if (!ADS_ERR_OK(rc)) {
@@ -860,6 +944,7 @@ static int net_ads_printer_remove(int argc, const char **argv)
 static int net_ads_printer(int argc, const char **argv)
 {
 	struct functable func[] = {
+		{"SEARCH", net_ads_printer_search},
 		{"INFO", net_ads_printer_info},
 		{"PUBLISH", net_ads_printer_publish},
 		{"REMOVE", net_ads_printer_remove},
@@ -877,31 +962,54 @@ static int net_ads_password(int argc, const char **argv)
     const char *auth_password = opt_password;
     char *realm = NULL;
     char *new_password = NULL;
-    char *c;
-    char *prompt;
+    char *c, *prompt;
+    const char *user;
     ADS_STATUS ret;
 
+    if (opt_user_name == NULL || opt_password == NULL) {
+	    d_printf("You must supply an administrator username/password\n");
+	    return -1;
+    }
+
     
-    if ((argc != 1) || (opt_user_name == NULL) || 
-	(opt_password == NULL) || (strchr(opt_user_name, '@') == NULL) ||
-	(strchr(argv[0], '@') == NULL)) {
-	return net_ads_usage(argc, argv);
+    if (argc != 1) {
+	    d_printf("ERROR: You must say which username to change password for\n");
+	    return -1;
+    }
+
+    user = argv[0];
+    if (!strchr(user, '@')) {
+	    asprintf(&c, "%s@%s", argv[0], lp_realm());
+	    user = c;
     }
 
     use_in_memory_ccache();    
     c = strchr(auth_principal, '@');
-    realm = ++c;
+    if (c) {
+	    realm = ++c;
+    } else {
+	    realm = lp_realm();
+    }
 
     /* use the realm so we can eventually change passwords for users 
     in realms other than default */
     if (!(ads = ads_init(realm, NULL, NULL))) return -1;
 
-    asprintf(&prompt, "Enter new password for %s:", argv[0]);
+    /* we don't actually need a full connect, but it's the easy way to
+       fill in the KDC's addresss */
+    ads_connect(ads);
+    
+    if (!ads || !ads->config.realm) {
+	    d_printf("Didn't find the kerberos server!\n");
+	    return -1;
+    }
+
+    asprintf(&prompt, "Enter new password for %s:", user);
 
     new_password = getpass(prompt);
 
     ret = kerberos_set_password(ads->auth.kdc_server, auth_principal, 
-				auth_password, argv[0], new_password, ads->auth.time_offset);
+				auth_password, user, new_password, ads->auth.time_offset);
     if (!ADS_ERR_OK(ret)) {
 	d_printf("Password change failed :-( ...\n");
 	ads_destroy(&ads);
@@ -909,7 +1017,7 @@ static int net_ads_password(int argc, const char **argv)
 	return -1;
     }
 
-    d_printf("Password change for %s completed.\n", argv[0]);
+    d_printf("Password change for %s completed.\n", user);
     ads_destroy(&ads);
     free(prompt);
 
@@ -917,23 +1025,19 @@ static int net_ads_password(int argc, const char **argv)
 }
 
 
-static int net_ads_change_localhost_pass(int argc, const char **argv)
+int net_ads_changetrustpw(int argc, const char **argv)
 {    
     ADS_STRUCT *ads;
     char *host_principal;
     char *hostname;
     ADS_STATUS ret;
-    char *user_name;
 
     if (!secrets_init()) {
 	    DEBUG(1,("Failed to initialise secrets database\n"));
 	    return -1;
     }
 
-    asprintf(&user_name, "%s$", global_myname());
-    opt_user_name = user_name;
-
-    opt_password = secrets_fetch_machine_password();
+    net_use_machine_password();
 
     use_in_memory_ccache();
 
@@ -942,7 +1046,7 @@ static int net_ads_change_localhost_pass(int argc, const char **argv)
     }
 
     hostname = strdup(global_myname());
-    strlower(hostname);
+    strlower_m(hostname);
     asprintf(&host_principal, "%s@%s", hostname, ads->config.realm);
     SAFE_FREE(hostname);
     d_printf("Changing password for principal: HOST/%s\n", host_principal);
@@ -987,7 +1091,7 @@ static int net_ads_search(int argc, const char **argv)
 {
 	ADS_STRUCT *ads;
 	ADS_STATUS rc;
-	const char *exp;
+	const char *ldap_exp;
 	const char **attrs;
 	void *res = NULL;
 
@@ -999,12 +1103,71 @@ static int net_ads_search(int argc, const char **argv)
 		return -1;
 	}
 
-	exp = argv[0];
+	ldap_exp = argv[0];
 	attrs = (argv + 1);
 
-	rc = ads_do_search_all(ads, ads->config.bind_path, 
+	rc = ads_do_search_all(ads, ads->config.bind_path,
 			       LDAP_SCOPE_SUBTREE,
-			       exp, attrs, &res);
+			       ldap_exp, attrs, &res);
+	if (!ADS_ERR_OK(rc)) {
+		d_printf("search failed: %s\n", ads_errstr(rc));
+		return -1;
+	}	
+
+	d_printf("Got %d replies\n\n", ads_count_replies(ads, res));
+
+	/* dump the results */
+	ads_dump(ads, res);
+
+	ads_msgfree(ads, res);
+	ads_destroy(&ads);
+
+	return 0;
+}
+
+
+/*
+  help for net ads search
+*/
+static int net_ads_dn_usage(int argc, const char **argv)
+{
+	d_printf(
+		"\nnet ads dn <dn> <attributes...>\n"\
+		"\nperform a raw LDAP search on a ADS server and dump the results\n"\
+		"The DN standard LDAP DN, and the attributes are a list of LDAP fields \n"\
+		"to show in the results\n\n"\
+		"Example: net ads dn 'CN=administrator,CN=Users,DC=my,DC=domain' sAMAccountName\n\n"
+		);
+	net_common_flags_usage(argc, argv);
+	return -1;
+}
+
+
+/*
+  general ADS search function. Useful in diagnosing problems in ADS
+*/
+static int net_ads_dn(int argc, const char **argv)
+{
+	ADS_STRUCT *ads;
+	ADS_STATUS rc;
+	const char *dn;
+	const char **attrs;
+	void *res = NULL;
+
+	if (argc < 1) {
+		return net_ads_dn_usage(argc, argv);
+	}
+
+	if (!(ads = ads_startup())) {
+		return -1;
+	}
+
+	dn = argv[0];
+	attrs = (argv + 1);
+
+	rc = ads_do_search_all(ads, dn, 
+			       LDAP_SCOPE_BASE,
+			       "(objectclass=*)", attrs, &res);
 	if (!ADS_ERR_OK(rc)) {
 		d_printf("search failed: %s\n", ads_errstr(rc));
 		return -1;
@@ -1035,7 +1198,7 @@ int net_ads_help(int argc, const char **argv)
 		{"LEAVE", net_ads_leave},
 		{"STATUS", net_ads_status},
 		{"PASSWORD", net_ads_password},
-		{"CHOSTPASS", net_ads_change_localhost_pass},
+		{"CHANGETRUSTPW", net_ads_changetrustpw},
 #endif
 		{NULL, NULL}
 	};
@@ -1054,9 +1217,10 @@ int net_ads(int argc, const char **argv)
 		{"USER", net_ads_user},
 		{"GROUP", net_ads_group},
 		{"PASSWORD", net_ads_password},
-		{"CHOSTPASS", net_ads_change_localhost_pass},
+		{"CHANGETRUSTPW", net_ads_changetrustpw},
 		{"PRINTER", net_ads_printer},
 		{"SEARCH", net_ads_search},
+		{"DN", net_ads_dn},
 		{"WORKGROUP", net_ads_workgroup},
 		{"LOOKUP", net_ads_lookup},
 		{"HELP", net_ads_help},
@@ -1080,6 +1244,11 @@ int net_ads_usage(int argc, const char **argv)
 }
 
 int net_ads_help(int argc, const char **argv)
+{
+	return net_ads_noads();
+}
+
+int net_ads_changetrustpw(int argc, const char **argv)
 {
 	return net_ads_noads();
 }

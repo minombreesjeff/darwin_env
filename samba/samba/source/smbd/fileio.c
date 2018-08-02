@@ -32,7 +32,7 @@ static SMB_OFF_T seek_file(files_struct *fsp,SMB_OFF_T pos)
 {
 	SMB_OFF_T seek_ret;
 
-	seek_ret = fsp->conn->vfs_ops.lseek(fsp,fsp->fd,pos,SEEK_SET);
+	seek_ret = SMB_VFS_LSEEK(fsp,fsp->fd,pos,SEEK_SET);
 
 	if(seek_ret == -1) {
 		DEBUG(0,("seek_file: (%s) sys_lseek failed. Error was %s\n",
@@ -87,25 +87,24 @@ ssize_t read_file(files_struct *fsp,char *data,SMB_OFF_T pos,size_t n)
 	 * Serve from write cache if we can.
 	 */
 
-	if(read_from_write_cache(fsp, data, pos, n))
+	if(read_from_write_cache(fsp, data, pos, n)) {
+		fsp->pos = pos + n;
+		fsp->position_information = fsp->pos;
 		return n;
+	}
 
 	flush_write_cache(fsp, READ_FLUSH);
-#ifndef USES_PREAD
+
 	if (seek_file(fsp,pos) == -1) {
 		DEBUG(3,("read_file: Failed to seek to %.0f\n",(double)pos));
 		return(ret);
 	}
- #endif 
+  
 	if (n > 0) {
 #ifdef DMF_FIX
 		int numretries = 3;
 tryagain:
-#ifdef USES_PREAD
-		readret = pread(fsp->fd,data,n,pos);
-#else
-		readret = fsp->conn->vfs_ops.read(fsp,fsp->fd,data,n);
-#endif		
+		readret = SMB_VFS_READ(fsp,fsp->fd,data,n);
 		if (readret == -1) {
 			if ((errno == EAGAIN) && numretries) {
 				DEBUG(3,("read_file EAGAIN retry in 10 seconds\n"));
@@ -116,25 +115,19 @@ tryagain:
 			return -1;
 		}
 #else /* NO DMF fix. */
-#ifdef USES_PREAD
-		readret = pread(fsp->fd,data,n,pos);
-#else
-		readret = fsp->conn->vfs_ops.read(fsp,fsp->fd,data,n);
-#endif
+		readret = SMB_VFS_READ(fsp,fsp->fd,data,n);
 		if (readret == -1)
 			return -1;
 #endif
-		if (readret > 0) {
+		if (readret > 0)
 			ret += readret;
-#ifdef USES_PREAD
-			fsp->pos = pos + ret;
-#endif
-		}
-
 	}
 
 	DEBUG(10,("read_file (%s): pos = %.0f, size = %lu, returned %lu\n",
 		fsp->fsp_name, (double)pos, (unsigned long)n, (long)ret ));
+
+	fsp->pos += ret;
+	fsp->position_information = fsp->pos;
 
 	return(ret);
 }
@@ -150,18 +143,23 @@ static ssize_t real_write_file(files_struct *fsp,char *data,SMB_OFF_T pos, size_
 {
 	ssize_t ret;
 
-
-#ifdef USES_PWRITE
-    ret = pwrite(fsp->fd, data, n, pos);
-//    fsp->pos = pos + ret;
-#else
 	if ((pos != -1) && (seek_file(fsp,pos) == -1))
 		return -1;
 
 	ret = vfs_write_data(fsp,data,n);
-#endif
+
 	DEBUG(10,("real_write_file (%s): pos = %.0f, size = %lu, returned %ld\n",
 		fsp->fsp_name, (double)pos, (unsigned long)n, (long)ret ));
+
+	if (ret != -1) {
+		fsp->pos += ret;
+
+/* Yes - this is correct - writes don't update this. JRA. */
+/* Found by Samba4 tests. */
+#if 0
+		fsp->position_information = fsp->pos;
+#endif
+	}
 
 	return ret;
 }
@@ -199,7 +197,7 @@ ssize_t write_file(files_struct *fsp, char *data, SMB_OFF_T pos, size_t n)
 		SMB_STRUCT_STAT st;
 		fsp->modified = True;
 
-		if (fsp->conn->vfs_ops.fstat(fsp,fsp->fd,&st) == 0) {
+		if (SMB_VFS_FSTAT(fsp,fsp->fd,&st) == 0) {
 			int dosmode = dos_mode(fsp->conn,fsp->fsp_name,&st);
 			fsp->size = (SMB_BIG_UINT)st.st_size;
 			if (MAP_ARCHIVE(fsp->conn) && !IS_DOS_ARCHIVE(dosmode))
@@ -262,13 +260,15 @@ nonop=%u allocated=%u active=%u direct=%u perfect=%u readhits=%u\n",
 	if(!wcp) {
 		DO_PROFILE_INC(writecache_direct_writes);
 		total_written = real_write_file(fsp, data, pos, n);
-		if ((total_written != -1) && (pos + total_written > (SMB_OFF_T)fsp->size))
+		if ((total_written != -1) && (pos + total_written > (SMB_OFF_T)fsp->size)) 
 			fsp->size = (SMB_BIG_UINT)(pos + total_written);
 		return total_written;
 	}
 
 	DEBUG(9,("write_file (%s)(fd=%d pos=%.0f size=%u) wcp->offset=%.0f wcp->data_size=%u\n",
 		fsp->fsp_name, fsp->fd, (double)pos, (unsigned int)n, (double)wcp->offset, (unsigned int)wcp->data_size));
+
+	fsp->pos = pos + n;
 
 	/* 
 	 * If we have active cache and it isn't contiguous then we flush.
@@ -778,7 +778,7 @@ void sync_file(connection_struct *conn, files_struct *fsp)
 {
 	if(lp_strict_sync(SNUM(conn)) && fsp->fd != -1) {
 		flush_write_cache(fsp, SYNC_FLUSH);
-		conn->vfs_ops.fsync(fsp,fsp->fd);
+		SMB_VFS_FSYNC(fsp,fsp->fd);
 	}
 }
 
@@ -790,7 +790,7 @@ void sync_file(connection_struct *conn, files_struct *fsp)
 int fsp_stat(files_struct *fsp, SMB_STRUCT_STAT *pst)
 {
 	if (fsp->fd == -1)
-		return vfs_stat(fsp->conn, fsp->fsp_name, pst);
+		return SMB_VFS_STAT(fsp->conn, fsp->fsp_name, pst);
 	else
-		return vfs_fstat(fsp,fsp->fd, pst);
+		return SMB_VFS_FSTAT(fsp,fsp->fd, pst);
 }

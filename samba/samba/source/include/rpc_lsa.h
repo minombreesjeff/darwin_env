@@ -27,6 +27,12 @@
 
 /* Opcodes available on PIPE_LSARPC */
 
+#if 0	/* UNIMPLEMENTED */
+
+#define LSA_LOOKUPSIDS2		0x39
+
+#endif
+
 #define LSA_CLOSE              0x00
 #define LSA_DELETE             0x01
 #define LSA_ENUM_PRIVS         0x02
@@ -646,26 +652,6 @@ typedef struct lsa_q_enumprivsaccount
 {
 	POLICY_HND pol; /* policy handle */
 } LSA_Q_ENUMPRIVSACCOUNT;
-
-
-typedef struct LUID
-{
-	uint32 low;
-	uint32 high;
-} LUID;
-
-typedef struct LUID_ATTR
-{
-	LUID luid;
-	uint32 attr;
-} LUID_ATTR ;
-
-typedef struct privilege_set
-{
-	uint32 count;
-	uint32 control;
-	LUID_ATTR *set;
-} PRIVILEGE_SET;
 
 typedef struct lsa_r_enumprivsaccount
 {

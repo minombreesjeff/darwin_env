@@ -33,9 +33,10 @@ u_int32_t opendirectory_add_data_buffer_item(tDataBufferPtr dataBuffer, u_int32_
 
 tDirStatus opendirectory_authenticate_node(tDirReference	dirRef, tDirNodeReference nodeRef);
 
-tDirStatus opendirectory_user_session_key(char *account_name, char *session_key, char *slot_id);
+tDirStatus opendirectory_user_session_key(const char *account_name, char *session_key, char *slot_id);
 tDirStatus opendirectory_cred_session_key(char *client_challenge, char *server_challenge, char *machine_acct, char *session_key, char *slot_id);
 tDirStatus opendirectory_set_workstation_nthash(char *account_name, char *nt_hash, char *slot_id);
+tDirStatus opendirectory_lmchap2changepasswd(char *account_name, char *passwordData, char *passwordHash, u_int8_t passwordFormat, char *slot_id);
 
 #ifdef __cplusplus
 }

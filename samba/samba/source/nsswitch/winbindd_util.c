@@ -80,6 +80,7 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
 						  DOM_SID *sid)
 {
 	struct winbindd_domain *domain;
+	char *contact_name;
         
 	/* We can't call domain_list() as this function is called from
 	   init_domain_list() and we'll get stuck in a loop. */
@@ -111,26 +112,27 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
 		fstrcpy(domain->name, alt_name);
 		fstrcpy(domain->alt_name, domain_name);
 	} else {
-	fstrcpy(domain->name, domain_name);
+		fstrcpy(domain->name, domain_name);
 		if (alt_name) {
 			fstrcpy(domain->alt_name, alt_name);
 		}
 	}
 
 	domain->methods = methods;
+	domain->backend = NULL;
 	domain->sequence_number = DOM_SEQUENCE_NONE;
 	domain->last_seq_check = 0;
 	if (sid) {
 		sid_copy(&domain->sid, sid);
 	}
 	
-	/* see if this is a native mode win2k domain, but only for our own domain */
+	/* see if this is a native mode win2k domain (use realm name if possible) */
 	   
-	if ( strequal( lp_workgroup(), domain_name) ) 	{
-		domain->native_mode = cm_check_for_native_mode_win2k( domain_name );
-		DEBUG(3,("add_trusted_domain: %s is a %s mode domain\n", domain_name,
-					domain->native_mode ? "native" : "mixed" ));
-	}	
+	contact_name = *domain->alt_name ? domain->alt_name : domain->name;
+	domain->native_mode = cm_check_for_native_mode_win2k( contact_name );
+	
+	DEBUG(3,("add_trusted_domain: %s is a %s mode domain\n", contact_name,
+		domain->native_mode ? "native" : "mixed (or NT4)" ));
 
 	/* Link to domain list */
 	DLIST_ADD(_domain_list, domain);
@@ -142,55 +144,106 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
 	return domain;
 }
 
+/********************************************************************
+ Periodically we need to refresh the trusted domain cache for smbd 
+********************************************************************/
 
-/*
-  rescan our domains looking for new trusted domains
- */
-void rescan_trusted_domains(BOOL force)
+void rescan_trusted_domains( void )
 {
-	struct winbindd_domain *domain;
-	TALLOC_CTX *mem_ctx;
 	static time_t last_scan;
-	time_t t = time(NULL);
+	time_t now = time(NULL);
+	struct winbindd_domain *mydomain = NULL;
+	
+	/* see if the time has come... */
+	
+	if ( (now > last_scan) && ((now-last_scan) < WINBINDD_RESCAN_FREQ) )
+		return;
+		
+	/* get the handle for our domain */
+	
+	if ( (mydomain = find_domain_from_name(lp_workgroup())) == NULL ) {
+		DEBUG(0,("rescan_trusted_domains: Can't find my own domain!\n"));
+		return;
+	}
+	
+	/* this will only add new domains we didn't already know about */
+	
+	add_trusted_domains( mydomain );
+
+	last_scan = now;
+	
+	return;	
+}
+
+/********************************************************************
+  rescan our domains looking for new trusted domains
+********************************************************************/
+
+void add_trusted_domains( struct winbindd_domain *domain )
+{
+	TALLOC_CTX *mem_ctx;
+	NTSTATUS result;
+	time_t t;
+	char **names;
+	char **alt_names;
+	int num_domains = 0;
+	DOM_SID *dom_sids, null_sid;
+	int i;
+	struct winbindd_domain *new_domain;
 
 	/* trusted domains might be disabled */
 	if (!lp_allow_trusted_domains()) {
 		return;
 	}
 
-	/* Only rescan every few minutes but force if necessary */
-
-	if (((unsigned)(t - last_scan) < WINBINDD_RESCAN_FREQ) && !force)
-		return;
-
-	last_scan = t;
-
 	DEBUG(1, ("scanning trusted domain list\n"));
 
 	if (!(mem_ctx = talloc_init("init_domain_list")))
 		return;
+	   
+	ZERO_STRUCTP(&null_sid);
 
-	for (domain = _domain_list; domain; domain = domain->next) {
-		NTSTATUS result;
-		char **names;
-		char **alt_names;
-		int num_domains = 0;
-		DOM_SID *dom_sids;
-		int i;
+	t = time(NULL);
+	
+	/* ask the DC what domains it trusts */
+	
+	result = domain->methods->trusted_domains(domain, mem_ctx, (unsigned int *)&num_domains,
+		&names, &alt_names, &dom_sids);
+		
+	if ( NT_STATUS_IS_OK(result) ) {
 
-		result = domain->methods->trusted_domains(domain, mem_ctx, &num_domains,
-							  &names, &alt_names, &dom_sids);
-		if (!NT_STATUS_IS_OK(result)) {
-			continue;
-		}
-
-		/* Add each domain to the trusted domain list. Each domain inherits
-		   the access methods of its parent */
+		/* Add each domain to the trusted domain list */
+		
 		for(i = 0; i < num_domains; i++) {
 			DEBUG(10,("Found domain %s\n", names[i]));
-			add_trusted_domain(names[i], 
-					   alt_names?alt_names[i]:NULL, 
-					   domain->methods, &dom_sids[i]);
+			add_trusted_domain(names[i], alt_names?alt_names[i]:NULL,
+				domain->methods, &dom_sids[i]);
+					   
+			/* if the SID was empty, we better set it now */
+			
+			if ( sid_equal(&dom_sids[i], &null_sid) ) {
+			
+				new_domain = find_domain_from_name(names[i]);
+				 
+				/* this should never happen */
+				if ( !new_domain ) { 	
+					DEBUG(0,("rescan_trust_domains: can't find the domain I just added! [%s]\n",
+						names[i]));
+					break;
+				}
+				 
+				/* call the cache method; which will operate on the winbindd_domain \
+				   passed in and choose either rpc or ads as appropriate */
+
+				result = domain->methods->domain_sid( new_domain, &new_domain->sid );
+				 
+				if ( NT_STATUS_IS_OK(result) )
+				 	sid_copy( &dom_sids[i], &new_domain->sid );
+			}
+			
+			/* store trusted domain in the cache */
+			trustdom_cache_store(names[i], alt_names ? alt_names[i] : NULL,
+			                     &dom_sids[i], t + WINBINDD_RESCAN_FREQ);
 		}
 	}
 
@@ -207,7 +260,9 @@ BOOL init_domain_list(void)
 	free_domain_list();
 
 	/* Add ourselves as the first entry */
-	domain = add_trusted_domain(lp_workgroup(), NULL, &cache_methods, NULL);
+	
+	domain = add_trusted_domain( lp_workgroup(), NULL, &cache_methods, NULL);
+	
 	if (!secrets_fetch_domain_sid(domain->name, &domain->sid)) {
 		DEBUG(1, ("Could not fetch sid for our domain %s\n",
 			  domain->name));
@@ -218,7 +273,7 @@ BOOL init_domain_list(void)
 	cache_methods.alternate_name(domain);
 
 	/* do an initial scan for trusted domains */
-	rescan_trusted_domains(True);
+	add_trusted_domains(domain);
 
 	return True;
 }
@@ -268,14 +323,20 @@ BOOL winbindd_lookup_sid_by_name(struct winbindd_domain *domain,
 				 enum SID_NAME_USE *type)
 {
 	NTSTATUS result;
-        
+        TALLOC_CTX *mem_ctx;
 	/* Don't bother with machine accounts */
-        
+
 	if (name[strlen(name) - 1] == '$')
 		return False;
 
+	mem_ctx = talloc_init("lookup_sid_by_name for %s\n", name);
+	if (!mem_ctx) 
+		return False;
+        
 	/* Lookup name */
-	result = domain->methods->name_to_sid(domain, name, sid, type);
+	result = domain->methods->name_to_sid(domain, mem_ctx, name, sid, type);
+
+	talloc_destroy(mem_ctx);
         
 	/* Return rid and type if lookup successful */
 	if (!NT_STATUS_IS_OK(result)) {
@@ -289,14 +350,10 @@ BOOL winbindd_lookup_sid_by_name(struct winbindd_domain *domain,
  * @brief Lookup a name in a domain from a sid.
  *
  * @param sid Security ID you want to look up.
- *
  * @param name On success, set to the name corresponding to @p sid.
- * 
  * @param dom_name On success, set to the 'domain name' corresponding to @p sid.
- * 
  * @param type On success, contains the type of name: alias, group or
  * user.
- *
  * @retval True if the name exists, in which case @p name and @p type
  * are set, otherwise False.
  **/
@@ -371,13 +428,15 @@ BOOL winbindd_param_init(void)
 {
 	/* Parse winbind uid and winbind_gid parameters */
 
-	if (!lp_winbind_uid(&server_state.uid_low, &server_state.uid_high)) {
-		DEBUG(0, ("winbind uid range missing or invalid\n"));
+	if (!lp_idmap_uid(&server_state.uid_low, &server_state.uid_high)) {
+		DEBUG(0, ("winbindd: idmap uid range missing or invalid\n"));
+		DEBUG(0, ("winbindd: cannot continue, exiting.\n"));
 		return False;
 	}
 	
-	if (!lp_winbind_gid(&server_state.gid_low, &server_state.gid_high)) {
-		DEBUG(0, ("winbind gid range missing or invalid\n"));
+	if (!lp_idmap_gid(&server_state.gid_low, &server_state.gid_high)) {
+		DEBUG(0, ("winbindd: idmap gid range missing or invalid\n"));
+		DEBUG(0, ("winbindd: cannot continue, exiting.\n"));
 		return False;
 	}
 	
@@ -405,18 +464,22 @@ BOOL parse_domain_user(const char *domuser, fstring domain, fstring user)
 {
 	char *p = strchr(domuser,*lp_winbind_separator());
 
-	if (!(p || lp_winbind_use_default_domain()))
-		return False;
-	
-	if(!p && lp_winbind_use_default_domain()) {
+	if ( !p ) {
 		fstrcpy(user, domuser);
-		fstrcpy(domain, lp_workgroup());
-	} else {
+		
+		if ( lp_winbind_use_default_domain() )
+			fstrcpy(domain, lp_workgroup());
+		else
+			fstrcpy( domain, "" );
+	} 
+	else {
 		fstrcpy(user, p+1);
 		fstrcpy(domain, domuser);
 		domain[PTR_DIFF(p, domuser)] = 0;
 	}
-	strupper(domain);
+	
+	strupper_m(domain);
+	
 	return True;
 }
 
@@ -444,9 +507,15 @@ void fill_domain_username(fstring name, const char *domain, const char *user)
  * Winbindd socket accessor functions
  */
 
+char *get_winbind_priv_pipe_dir(void) 
+{
+	return lock_path(WINBINDD_PRIV_SOCKET_SUBDIR);
+}
+
 /* Open the winbindd socket */
 
 static int _winbindd_socket = -1;
+static int _winbindd_priv_socket = -1;
 
 int open_winbindd_socket(void)
 {
@@ -460,6 +529,18 @@ int open_winbindd_socket(void)
 	return _winbindd_socket;
 }
 
+int open_winbindd_priv_socket(void)
+{
+	if (_winbindd_priv_socket == -1) {
+		_winbindd_priv_socket = create_pipe_sock(
+			get_winbind_priv_pipe_dir(), WINBINDD_SOCKET_NAME, 0750);
+		DEBUG(10, ("open_winbindd_priv_socket: opened socket fd %d\n",
+			   _winbindd_priv_socket));
+	}
+
+	return _winbindd_priv_socket;
+}
+
 /* Close the winbindd socket */
 
 void close_winbindd_socket(void)
@@ -469,6 +550,12 @@ void close_winbindd_socket(void)
 			   _winbindd_socket));
 		close(_winbindd_socket);
 		_winbindd_socket = -1;
+	}
+	if (_winbindd_priv_socket != -1) {
+		DEBUG(10, ("close_winbindd_socket: closing socket fd %d\n",
+			   _winbindd_priv_socket));
+		close(_winbindd_priv_socket);
+		_winbindd_priv_socket = -1;
 	}
 }
 
@@ -525,3 +612,276 @@ int winbindd_num_clients(void)
 {
 	return _num_clients;
 }
+
+/* Help with RID -> SID conversion */
+
+DOM_SID *rid_to_talloced_sid(struct winbindd_domain *domain,
+				    TALLOC_CTX *mem_ctx,
+				    uint32 rid) 
+{
+	DOM_SID *sid;
+	sid = talloc(mem_ctx, sizeof(*sid));
+	if (!sid) {
+		smb_panic("rid_to_to_talloced_sid: talloc for DOM_SID failed!\n");
+	}
+	sid_copy(sid, &domain->sid);
+	sid_append_rid(sid, rid);
+	return sid;
+}
+	
+/*****************************************************************************
+ For idmap conversion: convert one record to new format
+ Ancient versions (eg 2.2.3a) of winbindd_idmap.tdb mapped DOMAINNAME/rid
+ instead of the SID.
+*****************************************************************************/
+static int convert_fn(TDB_CONTEXT *tdb, TDB_DATA key, TDB_DATA data, void *state)
+{
+	struct winbindd_domain *domain;
+	char *p;
+	DOM_SID sid;
+	uint32 rid;
+	fstring keystr;
+	fstring dom_name;
+	TDB_DATA key2;
+	BOOL *failed = (BOOL *)state;
+
+	DEBUG(10,("Converting %s\n", key.dptr));
+
+	p = strchr(key.dptr, '/');
+	if (!p)
+		return 0;
+
+	*p = 0;
+	fstrcpy(dom_name, key.dptr);
+	*p++ = '/';
+
+	domain = find_domain_from_name(dom_name);
+	if (domain == NULL) {
+		/* We must delete the old record. */
+		DEBUG(0,("Unable to find domain %s\n", dom_name ));
+		DEBUG(0,("deleting record %s\n", key.dptr ));
+
+		if (tdb_delete(tdb, key) != 0) {
+			DEBUG(0, ("Unable to delete record %s\n", key.dptr));
+			*failed = True;
+			return -1;
+		}
+
+		return 0;
+	}
+
+	rid = atoi(p);
+
+	sid_copy(&sid, &domain->sid);
+	sid_append_rid(&sid, rid);
+
+	sid_to_string(keystr, &sid);
+	key2.dptr = keystr;
+	key2.dsize = strlen(keystr) + 1;
+
+	if (tdb_store(tdb, key2, data, TDB_INSERT) != 0) {
+		DEBUG(0,("Unable to add record %s\n", key2.dptr ));
+		*failed = True;
+		return -1;
+	}
+
+	if (tdb_store(tdb, data, key2, TDB_REPLACE) != 0) {
+		DEBUG(0,("Unable to update record %s\n", data.dptr ));
+		*failed = True;
+		return -1;
+	}
+
+	if (tdb_delete(tdb, key) != 0) {
+		DEBUG(0,("Unable to delete record %s\n", key.dptr ));
+		*failed = True;
+		return -1;
+	}
+
+	return 0;
+}
+
+/* These definitions are from sam/idmap_tdb.c. Replicated here just
+   out of laziness.... :-( */
+
+/* High water mark keys */
+#define HWM_GROUP  "GROUP HWM"
+#define HWM_USER   "USER HWM"
+
+/* idmap version determines auto-conversion */
+#define IDMAP_VERSION 2
+
+
+/*****************************************************************************
+ Convert the idmap database from an older version.
+*****************************************************************************/
+
+static BOOL idmap_convert(const char *idmap_name)
+{
+	int32 vers;
+	BOOL bigendianheader;
+	BOOL failed = False;
+	TDB_CONTEXT *idmap_tdb;
+
+	if (!(idmap_tdb = tdb_open_log(idmap_name, 0,
+					TDB_DEFAULT, O_RDWR,
+					0600))) {
+		DEBUG(0, ("idmap_convert: Unable to open idmap database\n"));
+		return False;
+	}
+
+	bigendianheader = (idmap_tdb->flags & TDB_BIGENDIAN) ? True : False;
+
+	vers = tdb_fetch_int32(idmap_tdb, "IDMAP_VERSION");
+
+	if (((vers == -1) && bigendianheader) || (IREV(vers) == IDMAP_VERSION)) {
+		/* Arrggghh ! Bytereversed or old big-endian - make order independent ! */
+		/*
+		 * high and low records were created on a
+		 * big endian machine and will need byte-reversing.
+		 */
+
+		int32 wm;
+
+		wm = tdb_fetch_int32(idmap_tdb, HWM_USER);
+
+		if (wm != -1) {
+			wm = IREV(wm);
+		}  else {
+			wm = server_state.uid_low;
+		}
+
+		if (tdb_store_int32(idmap_tdb, HWM_USER, wm) == -1) {
+			DEBUG(0, ("idmap_convert: Unable to byteswap user hwm in idmap database\n"));
+			tdb_close(idmap_tdb);
+			return False;
+		}
+
+		wm = tdb_fetch_int32(idmap_tdb, HWM_GROUP);
+		if (wm != -1) {
+			wm = IREV(wm);
+		} else {
+			wm = server_state.gid_low;
+		}
+
+		if (tdb_store_int32(idmap_tdb, HWM_GROUP, wm) == -1) {
+			DEBUG(0, ("idmap_convert: Unable to byteswap group hwm in idmap database\n"));
+			tdb_close(idmap_tdb);
+			return False;
+		}
+	}
+
+	/* the old format stored as DOMAIN/rid - now we store the SID direct */
+	tdb_traverse(idmap_tdb, convert_fn, &failed);
+
+	if (failed) {
+		DEBUG(0, ("Problem during conversion\n"));
+		tdb_close(idmap_tdb);
+		return False;
+	}
+
+	if (tdb_store_int32(idmap_tdb, "IDMAP_VERSION", IDMAP_VERSION) == -1) {
+		DEBUG(0, ("idmap_convert: Unable to dtore idmap version in databse\n"));
+		tdb_close(idmap_tdb);
+		return False;
+	}
+
+	tdb_close(idmap_tdb);
+	return True;
+}
+
+/*****************************************************************************
+ Convert the idmap database from an older version if necessary
+*****************************************************************************/
+
+BOOL winbindd_upgrade_idmap(void)
+{
+	pstring idmap_name;
+	pstring backup_name;
+	SMB_STRUCT_STAT stbuf;
+	TDB_CONTEXT *idmap_tdb;
+
+	pstrcpy(idmap_name, lock_path("winbindd_idmap.tdb"));
+
+	if (!file_exist(idmap_name, &stbuf)) {
+		/* nothing to convert return */
+		return True;
+	}
+
+	if (!(idmap_tdb = tdb_open_log(idmap_name, 0,
+					TDB_DEFAULT, O_RDWR,
+					0600))) {
+		DEBUG(0, ("idmap_convert: Unable to open idmap database\n"));
+		return False;
+	}
+
+	if (tdb_fetch_int32(idmap_tdb, "IDMAP_VERSION") == IDMAP_VERSION) {
+		/* nothing to convert return */
+		tdb_close(idmap_tdb);
+		return True;
+	}
+
+	/* backup_tdb expects the tdb not to be open */
+	tdb_close(idmap_tdb);
+
+	DEBUG(0, ("Upgrading winbindd_idmap.tdb from an old version\n"));
+
+	pstrcpy(backup_name, idmap_name);
+	pstrcat(backup_name, ".bak");
+
+	if (backup_tdb(idmap_name, backup_name) != 0) {
+		DEBUG(0, ("Could not backup idmap database\n"));
+		return False;
+	}
+
+	return idmap_convert(idmap_name);
+}
+
+/*******************************************************************
+ wrapper around retrieving the trust account password
+*******************************************************************/
+
+BOOL get_trust_pw(const char *domain, uint8 ret_pwd[16],
+                          time_t *pass_last_set_time, uint32 *channel)
+{
+	DOM_SID sid;
+	char *pwd;
+
+	/* if we are a DC and this is not our domain, then lookup an account
+	   for the domain trust */
+	   
+	if ( IS_DC && !strequal(domain, lp_workgroup()) && lp_allow_trusted_domains() ) 
+	{
+		if ( !secrets_fetch_trusted_domain_password(domain, &pwd, &sid, 
+			pass_last_set_time) ) 
+		{
+			DEBUG(0, ("get_trust_pw: could not fetch trust account "
+				  "password for trusted domain %s\n", domain));
+			return False;
+		}
+		
+		*channel = SEC_CHAN_DOMAIN;
+		E_md4hash(pwd, ret_pwd);
+		SAFE_FREE(pwd);
+
+		return True;
+	}
+	else 	/* just get the account for our domain (covers 
+		   ROLE_DOMAIN_MEMBER as well */
+	{
+		/* get the machine trust account for our domain */
+
+		if ( !secrets_fetch_trust_account_password (lp_workgroup(), ret_pwd,
+			pass_last_set_time, channel) ) 
+		{
+			DEBUG(0, ("get_trust_pw: could not fetch trust account "
+				  "password for my domain %s\n", domain));
+			return False;
+		}
+		
+		return True;
+	}
+	
+	/* Failure */
+	return False;
+}
+

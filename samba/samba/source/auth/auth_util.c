@@ -1,4 +1,4 @@
-/* 
+/*
    Unix SMB/CIFS implementation.
    Authentication utility functions
    Copyright (C) Andrew Tridgell 1992-1998
@@ -36,7 +36,7 @@ extern DOM_SID global_sid_Authenticated_Users;
  Create a UNIX user on demand.
 ****************************************************************************/
 
-static int smb_create_user(const char *unix_user, const char *homedir)
+static int smb_create_user(const char *domain, const char *unix_username, const char *homedir)
 {
 	pstring add_script;
 	int ret;
@@ -44,7 +44,9 @@ static int smb_create_user(const char *unix_user, const char *homedir)
 	pstrcpy(add_script, lp_adduser_script());
 	if (! *add_script)
 		return -1;
-	all_string_sub(add_script, "%u", unix_user, sizeof(pstring));
+	all_string_sub(add_script, "%u", unix_username, sizeof(pstring));
+	if (domain)
+		all_string_sub(add_script, "%D", domain, sizeof(pstring));
 	if (homedir)
 		all_string_sub(add_script, "%H", homedir, sizeof(pstring));
 	ret = smbrun(add_script,NULL);
@@ -54,25 +56,30 @@ static int smb_create_user(const char *unix_user, const char *homedir)
 
 /****************************************************************************
  Add and Delete UNIX users on demand, based on NTSTATUS codes.
+ We don't care about RID's here so ignore.
 ****************************************************************************/
 
-void smb_user_control(const auth_usersupplied_info *user_info, auth_serversupplied_info *server_info, NTSTATUS nt_status)
+void auth_add_user_script(const char *domain, const char *username)
 {
-	struct passwd *pwd=NULL;
-
-	if (NT_STATUS_IS_OK(nt_status)) {
-
-		if (!(server_info->sam_fill_level & SAM_FILL_UNIX)) {
-			
-			/*
-			 * User validated ok against Domain controller.
-			 * If the admin wants us to try and create a UNIX
-			 * user on the fly, do so.
-			 */
-			
-			if(lp_adduser_script() && !(pwd = Get_Pwnam(user_info->internal_username.str))) {
-				smb_create_user(user_info->internal_username.str, NULL);
-			}
+	uint32 rid;
+	/*
+	 * User validated ok against Domain controller.
+	 * If the admin wants us to try and create a UNIX
+	 * user on the fly, do so.
+	 */
+	
+	if ( *lp_adduser_script() )
+		smb_create_user(domain, username, NULL);
+	else {
+		DEBUG(10,("auth_add_user_script: no 'add user script'.  Asking winbindd\n"));
+		
+		/* should never get here is we a re a domain member running winbindd
+		   However, a host set for 'security = server' might run winbindd for 
+		   account allocation */
+		   
+		if ( !winbind_create_user(username, NULL) ) {
+			DEBUG(5,("auth_add_user_script: winbindd_create_user() failed\n"));
+			rid = 0;
 		}
 	}
 }
@@ -126,7 +133,7 @@ static NTSTATUS make_user_info(auth_usersupplied_info **user_info,
 
 	*user_info = malloc(sizeof(**user_info));
 	if (!user_info) {
-		DEBUG(0,("malloc failed for user_info (size %d)\n", sizeof(*user_info)));
+		DEBUG(0,("malloc failed for user_info (size %lu)\n", (unsigned long)sizeof(*user_info)));
 		return NT_STATUS_NO_MEMORY;
 	}
 
@@ -208,58 +215,26 @@ NTSTATUS make_user_info_map(auth_usersupplied_info **user_info,
 	DEBUG(5, ("make_user_info_map: Mapping user [%s]\\[%s] from workstation [%s]\n",
 	      client_domain, smb_name, wksta_name));
 	
-	if (lp_allow_trusted_domains() && *client_domain) {
+	/* don't allow "" as a domain, fixes a Win9X bug 
+	   where it doens't supply a domain for logon script
+	   'net use' commands.                                 */
 
-		/* the client could have given us a workstation name
-		   or other crap for the workgroup - we really need a
-		   way of telling if this domain name is one of our
-		   trusted domain names 
-
-		   Also don't allow "" as a domain, fixes a Win9X bug 
-		   where it doens't supply a domain for logon script
-		   'net use' commands.
-
-		   The way I do it here is by checking if the fully
-		   qualified username exists. This is rather reliant
-		   on winbind, but until we have a better method this
-		   will have to do 
-		*/
-
+	if ( *client_domain )
 		domain = client_domain;
-
-		if ((smb_name) && (*smb_name)) { /* Don't do this for guests */
-			char *user = NULL;
-			if (asprintf(&user, "%s%s%s", 
-				 client_domain, lp_winbind_separator(), 
-				 smb_name) < 0) {
-				DEBUG(0, ("make_user_info_map: asprintf() failed!\n"));
-				return NT_STATUS_NO_MEMORY;
-			}
-
-			DEBUG(5, ("make_user_info_map: testing for user %s\n", user));
-			
-			if (Get_Pwnam(user) == NULL) {
-				DEBUG(5, ("make_user_info_map: test for user %s failed\n", user));
-				domain = lp_workgroup();
-				DEBUG(5, ("make_user_info_map: trusted domain %s doesn't appear to exist, using %s\n", 
-					  client_domain, domain));
-			} else {
-				DEBUG(5, ("make_user_info_map: using trusted domain %s\n", domain));
-			}
-			SAFE_FREE(user);
-		}
-	} else {
+	else
 		domain = lp_workgroup();
-	}
+
+	/* do what win2k does.  Always map unknown domains to our own
+	   and let the "passdb backend" handle unknown users. */
+
+	if ( !is_trusted_domain(domain) && !strequal(domain, get_global_sam_name()) ) 
+		domain = get_default_sam_name();
 	
-	return make_user_info(user_info, 
-			      smb_name, internal_username,
-			      client_domain, domain,
-			      wksta_name, 
-			      lm_pwd, nt_pwd,
-			      plaintext, 
-			      ntlmssp_flags, encrypted);
+	/* we know that it is a trusted domain (and we are allowing them) or it is our domain */
 	
+	return make_user_info(user_info, smb_name, internal_username, 
+		client_domain, domain, wksta_name, lm_pwd, nt_pwd,
+		plaintext, ntlmssp_flags, encrypted);
 }
 
 /****************************************************************************
@@ -418,7 +393,7 @@ BOOL make_user_info_for_reply(auth_usersupplied_info **user_info,
 		dump_data(100, plaintext_password.data, plaintext_password.length);
 #endif
 
-		SMBencrypt( (const uchar *)plaintext_password.data, (const uchar*)chal, local_lm_response);
+		SMBencrypt( (const char *)plaintext_password.data, (const uchar*)chal, local_lm_response);
 		local_lm_blob = data_blob(local_lm_response, 24);
 		
 		/* We can't do an NT hash here, as the password needs to be
@@ -514,9 +489,9 @@ void debug_nt_user_token(int dbg_class, int dbg_lev, NT_USER_TOKEN *token)
 	
 	DEBUGC(dbg_class, dbg_lev, ("NT user token of user %s\n",
 				    sid_to_string(sid_str, &token->user_sids[0]) ));
-	DEBUGADDC(dbg_class, dbg_lev, ("contains %i SIDs\n", token->num_sids));
+	DEBUGADDC(dbg_class, dbg_lev, ("contains %lu SIDs\n", (unsigned long)token->num_sids));
 	for (i = 0; i < token->num_sids; i++)
-		DEBUGADDC(dbg_class, dbg_lev, ("SID[%3i]: %s\n", i, 
+		DEBUGADDC(dbg_class, dbg_lev, ("SID[%3lu]: %s\n", (unsigned long)i, 
 					       sid_to_string(sid_str, &token->user_sids[i])));
 }
 
@@ -628,21 +603,21 @@ NT_USER_TOKEN *create_nt_token(uid_t uid, gid_t gid, int ngroups, gid_t *groups,
 	NT_USER_TOKEN *token;
 	int i;
 
-	if (!uid_to_sid(&user_sid, uid)) {
+	if (!NT_STATUS_IS_OK(uid_to_sid(&user_sid, uid))) {
 		return NULL;
 	}
-	if (!gid_to_sid(&group_sid, gid)) {
+	if (!NT_STATUS_IS_OK(gid_to_sid(&group_sid, gid))) {
 		return NULL;
 	}
 
-	group_sids   = malloc(sizeof(DOM_SID) * ngroups);
+	group_sids = malloc(sizeof(DOM_SID) * ngroups);
 	if (!group_sids) {
 		DEBUG(0, ("create_nt_token: malloc() failed for DOM_SID list!\n"));
 		return NULL;
 	}
 
 	for (i = 0; i < ngroups; i++) {
-		if (!gid_to_sid(&(group_sids)[i], (groups)[i])) {
+		if (!NT_STATUS_IS_OK(gid_to_sid(&(group_sids)[i], (groups)[i]))) {
 			DEBUG(1, ("create_nt_token: failed to convert gid %ld to a sid!\n", (long int)groups[i]));
 			SAFE_FREE(group_sids);
 			return NULL;
@@ -665,63 +640,72 @@ NT_USER_TOKEN *create_nt_token(uid_t uid, gid_t gid, int ngroups, gid_t *groups,
  * If this samba server is a DC of the domain the user belongs to, it returns 
  * both domain groups and local / builtin groups. If the user is in a trusted
  * domain, or samba is a member server of a domain, then this function returns
- * local and builtin groups the user is a member of. 
+ * local and builtin groups the user is a member of.
  *
  * currently this is a hack, as there is no sam implementation that is capable
  * of groups.
  ******************************************************************************/
 
-static NTSTATUS get_user_groups_from_local_sam(SAM_ACCOUNT *sampass,
-					       int *n_groups, DOM_SID **groups,	gid_t **unix_groups)
+static NTSTATUS get_user_groups(const char *username, uid_t uid, gid_t gid,
+                                int *n_groups, DOM_SID **groups, gid_t **unix_groups)
 {
-	uid_t             uid;
-	gid_t             gid;
-	int               n_unix_groups;
-	int               i;
-	struct passwd    *usr;	
+	int		n_unix_groups;
+	int		i;
 
 	*n_groups = 0;
 	*groups   = NULL;
-
-	if (!IS_SAM_UNIX_USER(sampass)) {
-		DEBUG(1, ("user %s does not have a unix identity!\n", pdb_get_username(sampass)));
-		return NT_STATUS_NO_SUCH_USER;
-	}
-
-	uid = pdb_get_uid(sampass);
-	gid = pdb_get_gid(sampass);
 	
-	n_unix_groups = groups_max();
-	if ((*unix_groups = malloc( sizeof(gid_t) * n_unix_groups ) ) == NULL) {
-		DEBUG(0, ("get_user_groups_from_local_sam: Out of memory allocating unix group list\n"));
-		passwd_free(&usr);
-		return NT_STATUS_NO_MEMORY;
+	/* Try winbind first */
+
+	if ( strchr(username, *lp_winbind_separator()) ) {
+		n_unix_groups = winbind_getgroups( username, unix_groups );
+
+		DEBUG(10,("get_user_groups: winbind_getgroups(%s): result = %s\n", username, 
+			  n_unix_groups == -1 ? "FAIL" : "SUCCESS"));
+			  
+		if ( n_unix_groups == -1 )
+			return NT_STATUS_NO_SUCH_USER; /* what should this return value be? */	
 	}
-	
-	if (sys_getgrouplist(pdb_get_username(sampass), gid, *unix_groups, &n_unix_groups) == -1) {
-		gid_t *groups_tmp;
-		groups_tmp = Realloc(*unix_groups, sizeof(gid_t) * n_unix_groups);
-		if (!groups_tmp) {
-			SAFE_FREE(*unix_groups);
-			passwd_free(&usr);
+	else {
+		/* fallback to getgrouplist() */
+		
+		n_unix_groups = groups_max();
+		
+		if ((*unix_groups = malloc( sizeof(gid_t) * n_unix_groups ) ) == NULL) {
+			DEBUG(0, ("get_user_groups: Out of memory allocating unix group list\n"));
 			return NT_STATUS_NO_MEMORY;
 		}
-		*unix_groups = groups_tmp;
+	
+		if (sys_getgrouplist(username, gid, *unix_groups, &n_unix_groups) == -1) {
+		
+			gid_t *groups_tmp;
+			
+			groups_tmp = Realloc(*unix_groups, sizeof(gid_t) * n_unix_groups);
+			
+			if (!groups_tmp) {
+				SAFE_FREE(*unix_groups);
+				return NT_STATUS_NO_MEMORY;
+			}
+			*unix_groups = groups_tmp;
 
-		if (sys_getgrouplist(pdb_get_username(sampass), gid, *unix_groups, &n_unix_groups) == -1) {
-			DEBUG(0, ("get_user_groups_from_local_sam: failed to get the unix group list\n"));
-			SAFE_FREE(*unix_groups);
-			passwd_free(&usr);
-			return NT_STATUS_NO_SUCH_USER; /* what should this return value be? */
+			if (sys_getgrouplist(username, gid, *unix_groups, &n_unix_groups) == -1) {
+				DEBUG(0, ("get_user_groups: failed to get the unix group list\n"));
+				SAFE_FREE(*unix_groups);
+				return NT_STATUS_NO_SUCH_USER; /* what should this return value be? */
+			}
 		}
 	}
 
 	debug_unix_user_token(DBGC_CLASS, 5, uid, gid, n_unix_groups, *unix_groups);
 	
+	/* now setup the space for storing the SIDS */
+	
 	if (n_unix_groups > 0) {
+	
 		*groups   = malloc(sizeof(DOM_SID) * n_unix_groups);
+		
 		if (!*groups) {
-			DEBUG(0, ("get_user_group_from_local_sam: malloc() failed for DOM_SID list!\n"));
+			DEBUG(0, ("get_user_group: malloc() failed for DOM_SID list!\n"));
 			SAFE_FREE(*unix_groups);
 			return NT_STATUS_NO_MEMORY;
 		}
@@ -730,8 +714,9 @@ static NTSTATUS get_user_groups_from_local_sam(SAM_ACCOUNT *sampass,
 	*n_groups = n_unix_groups;
 
 	for (i = 0; i < *n_groups; i++) {
-		if (!gid_to_sid(&(*groups)[i], (*unix_groups)[i])) {
-			DEBUG(1, ("get_user_groups_from_local_sam: failed to convert gid %ld to a sid!\n", (long int)(*unix_groups)[i+1]));
+		if (!NT_STATUS_IS_OK(gid_to_sid(&(*groups)[i], (*unix_groups)[i]))) {
+			DEBUG(1, ("get_user_groups: failed to convert gid %ld to a sid!\n", 
+				(long int)(*unix_groups)[i+1]));
 			SAFE_FREE(*groups);
 			SAFE_FREE(*unix_groups);
 			return NT_STATUS_NO_SUCH_USER;
@@ -745,7 +730,7 @@ static NTSTATUS get_user_groups_from_local_sam(SAM_ACCOUNT *sampass,
  Make a user_info struct
 ***************************************************************************/
 
-static NTSTATUS make_server_info(auth_serversupplied_info **server_info, SAM_ACCOUNT *sampass)
+static NTSTATUS make_server_info(auth_serversupplied_info **server_info)
 {
 	*server_info = malloc(sizeof(**server_info));
 	if (!*server_info) {
@@ -754,20 +739,25 @@ static NTSTATUS make_server_info(auth_serversupplied_info **server_info, SAM_ACC
 	}
 	ZERO_STRUCTP(*server_info);
 
-	(*server_info)->sam_fill_level = SAM_FILL_ALL;
-	(*server_info)->sam_account    = sampass;
+	/* Initialise the uid and gid values to something non-zero
+	   which may save us from giving away root access if there
+	   is a bug in allocating these fields. */
+
+	(*server_info)->uid = -1;
+	(*server_info)->gid = -1;
 
 	return NT_STATUS_OK;
 }
 
 /***************************************************************************
- Make (and fill) a user_info struct from a SAM_ACCOUNT
+Fill a server_info struct from a SAM_ACCOUNT with their groups
 ***************************************************************************/
 
-NTSTATUS make_server_info_sam(auth_serversupplied_info **server_info, 
-			      SAM_ACCOUNT *sampass)
+static NTSTATUS add_user_groups(auth_serversupplied_info **server_info, 
+				SAM_ACCOUNT *sampass,
+				uid_t uid, gid_t gid)
 {
-	NTSTATUS nt_status = NT_STATUS_OK;
+	NTSTATUS nt_status;
 	const DOM_SID *user_sid = pdb_get_user_sid(sampass);
 	const DOM_SID *group_sid = pdb_get_group_sid(sampass);
 	int       n_groupSIDs = 0;
@@ -777,14 +767,10 @@ NTSTATUS make_server_info_sam(auth_serversupplied_info **server_info,
 	BOOL is_guest;
 	uint32 rid;
 
-	if (!NT_STATUS_IS_OK(nt_status = make_server_info(server_info, sampass))) {
-		return nt_status;
-	}
-	
-	if (!NT_STATUS_IS_OK(nt_status 
-			     = get_user_groups_from_local_sam(sampass, 
-		&n_groupSIDs, &groupSIDs, &unix_groups)))
-	{
+	nt_status = get_user_groups(pdb_get_username(sampass), uid, gid, 
+		&n_groupSIDs, &groupSIDs, &unix_groups);
+		
+	if (!NT_STATUS_IS_OK(nt_status)) {
 		DEBUG(4,("get_user_groups_from_local_sam failed\n"));
 		free_server_info(server_info);
 		return nt_status;
@@ -807,11 +793,49 @@ NTSTATUS make_server_info_sam(auth_serversupplied_info **server_info,
 
 	(*server_info)->n_groups = n_groupSIDs;
 	(*server_info)->groups = unix_groups;
-
 	(*server_info)->ptok = token;
+
+	return nt_status;
+}
+
+/***************************************************************************
+ Make (and fill) a user_info struct from a SAM_ACCOUNT
+***************************************************************************/
+
+NTSTATUS make_server_info_sam(auth_serversupplied_info **server_info, 
+			      SAM_ACCOUNT *sampass)
+{
+	NTSTATUS nt_status;
+	struct passwd *pwd;
+
+	if (!NT_STATUS_IS_OK(nt_status = make_server_info(server_info)))
+		return nt_status;
+
+	(*server_info)->sam_account    = sampass;
+
+	if ( !(pwd = getpwnam_alloc(pdb_get_username(sampass))) )  {
+		DEBUG(1, ("User %s in passdb, but getpwnam() fails!\n",
+			  pdb_get_username(sampass)));
+		free_server_info(server_info);
+		return NT_STATUS_NO_SUCH_USER;
+	}
+	(*server_info)->unix_name = smb_xstrdup(pwd->pw_name);
+	(*server_info)->gid = pwd->pw_gid;
+	(*server_info)->uid = pwd->pw_uid;
 	
-	DEBUG(5,("make_server_info_sam: made server info for user %s\n",
-		 pdb_get_username((*server_info)->sam_account)));
+	passwd_free(&pwd);
+
+	if (!NT_STATUS_IS_OK(nt_status = add_user_groups(server_info, sampass, 
+							 (*server_info)->uid, 
+							 (*server_info)->gid))) {
+		free_server_info(server_info);
+		return nt_status;
+	}
+
+	(*server_info)->sam_fill_level = SAM_FILL_ALL;
+	DEBUG(5,("make_server_info_sam: made server info for user %s -> %s\n",
+		 pdb_get_username(sampass),
+		 (*server_info)->unix_name));
 
 	return nt_status;
 }
@@ -828,7 +852,22 @@ NTSTATUS make_server_info_pw(auth_serversupplied_info **server_info, const struc
 	if (!NT_STATUS_IS_OK(nt_status = pdb_init_sam_pw(&sampass, pwd))) {		
 		return nt_status;
 	}
-	return make_server_info_sam(server_info, sampass);
+	if (!NT_STATUS_IS_OK(nt_status = make_server_info(server_info))) {
+		return nt_status;
+	}
+
+	(*server_info)->sam_account    = sampass;
+
+	if (!NT_STATUS_IS_OK(nt_status = add_user_groups(server_info, sampass, pwd->pw_uid, pwd->pw_gid))) {
+		return nt_status;
+	}
+
+	(*server_info)->unix_name = smb_xstrdup(pwd->pw_name);
+
+	(*server_info)->sam_fill_level = SAM_FILL_ALL;
+	(*server_info)->uid = pwd->pw_uid;
+	(*server_info)->gid = pwd->pw_gid;
+	return nt_status;
 }
 
 /***************************************************************************
@@ -865,6 +904,43 @@ NTSTATUS make_server_info_guest(auth_serversupplied_info **server_info)
 }
 
 /***************************************************************************
+ Purely internal function for make_server_info_info3
+ Fill the sam account from getpwnam
+***************************************************************************/
+static NTSTATUS fill_sam_account(TALLOC_CTX *mem_ctx, 
+				 const char *domain,
+				 const char *username,
+				 char **found_username,
+				 uid_t *uid, gid_t *gid,
+				 SAM_ACCOUNT **sam_account)
+{
+	fstring dom_user;
+	struct passwd *passwd;
+
+	fstr_sprintf(dom_user, "%s%s%s",
+		     domain, lp_winbind_separator(), username);
+
+	passwd = Get_Pwnam(dom_user);
+
+	/* if the lookup for DOMAIN\username failed, try again 
+	   with just 'username'.  This is need for accessing the server
+	   as a trust user that actually maps to a local account */
+
+	if ( !passwd ) 
+		passwd = Get_Pwnam(username);
+
+	if (passwd == NULL)
+		return NT_STATUS_NO_SUCH_USER;
+
+	*uid = passwd->pw_uid;
+	*gid = passwd->pw_gid;
+
+	*found_username = talloc_strdup(mem_ctx, passwd->pw_name);
+
+	return pdb_init_sam_pw(sam_account, passwd);
+}
+
+/***************************************************************************
  Make a server_info struct from the info3 returned by a domain logon 
 ***************************************************************************/
 
@@ -876,15 +952,13 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 				NET_USER_INFO_3 *info3) 
 {
 	NTSTATUS nt_status = NT_STATUS_OK;
-
+	char *found_username;
 	const char *nt_domain;
 	const char *nt_username;
 
 	SAM_ACCOUNT *sam_account = NULL;
 	DOM_SID user_sid;
 	DOM_SID group_sid;
-
-	struct passwd *passwd;
 
 	uid_t uid;
 	gid_t gid;
@@ -923,38 +997,20 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 		/* If the server didn't give us one, just use the one we sent them */
 		domain = domain;
 	}
+	
+	/* try to fill the SAM account..  If getpwnam() fails, then try the 
+	   add user script (2.2.x behavior) */
+	   
+	nt_status = fill_sam_account(mem_ctx, nt_domain, internal_username,
+		&found_username, &uid, &gid, &sam_account);
 
-	if (winbind_sid_to_uid(&uid, &user_sid) 
-	    && winbind_sid_to_gid(&gid, &group_sid) 
-	    && ((passwd = getpwuid_alloc(uid)))) {
-		nt_status = pdb_init_sam_pw(&sam_account, passwd);
-		passwd_free(&passwd);
-	} else {
-		char *dom_user;
-		dom_user = talloc_asprintf(mem_ctx, "%s%s%s", 
-					   nt_domain,
-					   lp_winbind_separator(),
-					   internal_username);
-		
-		if (!dom_user) {
-			DEBUG(0, ("talloc_asprintf failed!\n"));
-			return NT_STATUS_NO_MEMORY;
-		} else { 
-		
-			if (!(passwd = Get_Pwnam(dom_user))
-				/* Only lookup local for the local
-				   domain, we don't want this for
-				   trusted domains */
-			    && strequal(nt_domain, lp_workgroup())) {
-				passwd = Get_Pwnam(internal_username);
-			}
-			    
-			if (!passwd) {
-				return NT_STATUS_NO_SUCH_USER;
-			} else {
-				nt_status = pdb_init_sam_pw(&sam_account, passwd);
-			}
-		}
+	if (NT_STATUS_EQUAL(nt_status, NT_STATUS_NO_SUCH_USER)) {
+		DEBUG(3,("User %s does not exist, trying to add it\n", 
+			internal_username));
+		auth_add_user_script(nt_domain, internal_username);
+		nt_status = fill_sam_account(mem_ctx, nt_domain, 
+			internal_username, &found_username,
+			&uid, &gid, &sam_account);
 	}
 	
 	if (!NT_STATUS_IS_OK(nt_status)) {
@@ -962,6 +1018,21 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 		return nt_status;
 	}
 		
+	if (!pdb_set_nt_username(sam_account, nt_username, PDB_CHANGED)) {
+		pdb_free_sam(&sam_account);
+		return NT_STATUS_NO_MEMORY;
+	}
+
+	if (!pdb_set_username(sam_account, nt_username, PDB_CHANGED)) {
+		pdb_free_sam(&sam_account);
+		return NT_STATUS_NO_MEMORY;
+	}
+
+	if (!pdb_set_domain(sam_account, nt_domain, PDB_CHANGED)) {
+		pdb_free_sam(&sam_account);
+		return NT_STATUS_NO_MEMORY;
+	}
+
 	if (!pdb_set_user_sid(sam_account, &user_sid, PDB_CHANGED)) {
 		pdb_free_sam(&sam_account);
 		return NT_STATUS_UNSUCCESSFUL;
@@ -972,17 +1043,8 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 		return NT_STATUS_UNSUCCESSFUL;
 	}
 		
-	if (!pdb_set_nt_username(sam_account, nt_username, PDB_CHANGED)) {
-		pdb_free_sam(&sam_account);
-		return NT_STATUS_NO_MEMORY;
-	}
-
-	if (!pdb_set_domain(sam_account, nt_domain, PDB_CHANGED)) {
-		pdb_free_sam(&sam_account);
-		return NT_STATUS_NO_MEMORY;
-	}
-
-	if (!pdb_set_fullname(sam_account, unistr2_static(&(info3->uni_full_name)), PDB_CHANGED)) {
+	if (!pdb_set_fullname(sam_account, unistr2_static(&(info3->uni_full_name)), 
+			      PDB_CHANGED)) {
 		pdb_free_sam(&sam_account);
 		return NT_STATUS_NO_MEMORY;
 	}
@@ -1007,22 +1069,33 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	if (!NT_STATUS_IS_OK(nt_status = make_server_info(server_info, sam_account))) {
+	if (!NT_STATUS_IS_OK(nt_status = make_server_info(server_info))) {
 		DEBUG(4, ("make_server_info failed!\n"));
 		pdb_free_sam(&sam_account);
 		return nt_status;
 	}
 
+	/* save this here to _net_sam_logon() doesn't fail (it assumes a 
+	   valid SAM_ACCOUNT) */
+		   
+	(*server_info)->sam_account = sam_account;
+
+	(*server_info)->unix_name = smb_xstrdup(found_username);
+
+	/* Fill in the unix info we found on the way */
+
+	(*server_info)->sam_fill_level = SAM_FILL_ALL;
+	(*server_info)->uid = uid;
+	(*server_info)->gid = gid;
+
 	/* Store the user group information in the server_info 
 	   returned to the caller. */
 	
-	if (!NT_STATUS_IS_OK(nt_status 
-			     = get_user_groups_from_local_sam(sam_account, 
-							      &n_lgroupSIDs, 
-							      &lgroupSIDs, 
-							      &unix_groups)))
-	{
-		DEBUG(4,("get_user_groups_from_local_sam failed\n"));
+	nt_status = get_user_groups((*server_info)->unix_name,
+		uid, gid, &n_lgroupSIDs, &lgroupSIDs, &unix_groups);
+		
+	if ( !NT_STATUS_IS_OK(nt_status) ) {
+		DEBUG(4,("get_user_groups failed\n"));
 		return nt_status;
 	}
 
@@ -1030,28 +1103,40 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 	(*server_info)->n_groups = n_lgroupSIDs;
 	
 	/* Create a 'combined' list of all SIDs we might want in the SD */
-	all_group_SIDs   = malloc(sizeof(DOM_SID) * 
-				  (n_lgroupSIDs + info3->num_groups2 +
-				   info3->num_other_sids));
+	
+	all_group_SIDs = malloc(sizeof(DOM_SID) * (info3->num_groups2 +info3->num_other_sids));
+	
 	if (!all_group_SIDs) {
-		DEBUG(0, ("create_nt_token_info3: malloc() failed for DOM_SID list!\n"));
+		DEBUG(0, ("malloc() failed for DOM_SID list!\n"));
 		SAFE_FREE(lgroupSIDs);
+		free_server_info(server_info);
 		return NT_STATUS_NO_MEMORY;
 	}
 
+#if 0 	/* JERRY -- no such thing as local groups in current code */
 	/* Copy the 'local' sids */
 	memcpy(all_group_SIDs, lgroupSIDs, sizeof(DOM_SID) * n_lgroupSIDs);
 	SAFE_FREE(lgroupSIDs);
+#endif
 
 	/* and create (by appending rids) the 'domain' sids */
+	
 	for (i = 0; i < info3->num_groups2; i++) {
-		sid_copy(&all_group_SIDs[i+n_lgroupSIDs], &(info3->dom_sid.sid));
-		if (!sid_append_rid(&all_group_SIDs[i+n_lgroupSIDs], info3->gids[i].g_rid)) {
+	
+		sid_copy(&all_group_SIDs[i], &(info3->dom_sid.sid));
+		
+		if (!sid_append_rid(&all_group_SIDs[i], info3->gids[i].g_rid)) {
+		
 			nt_status = NT_STATUS_INVALID_PARAMETER;
-			DEBUG(3,("create_nt_token_info3: could not append additional group rid 0x%x\n",
+			
+			DEBUG(3,("could not append additional group rid 0x%x\n",
 				info3->gids[i].g_rid));			
+				
 			SAFE_FREE(lgroupSIDs);
+			free_server_info(server_info);
+			
 			return nt_status;
+			
 		}
 	}
 
@@ -1061,21 +1146,23 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
            http://www.microsoft.com/windows2000/techinfo/administration/security/sidfilter.asp
          */
 
-	for (i = 0; i < info3->num_other_sids; i++) 
-		sid_copy(&all_group_SIDs[
-				 n_lgroupSIDs + info3->num_groups2 + i],
+	for (i = 0; i < info3->num_other_sids; i++) {
+		sid_copy(&all_group_SIDs[info3->num_groups2 + i],
 			 &info3->other_sids[i].sid);
+	}
 	
 	/* Where are the 'global' sids... */
 
 	/* can the user be guest? if yes, where is it stored? */
-	if (!NT_STATUS_IS_OK(
-		    nt_status = create_nt_user_token(
-			    &user_sid, &group_sid,
-			    n_lgroupSIDs + info3->num_groups2 + info3->num_other_sids, 
-			    all_group_SIDs, False, &token))) {
+	
+	nt_status = create_nt_user_token(&user_sid, &group_sid,
+		info3->num_groups2 + info3->num_other_sids,
+		all_group_SIDs, False, &token);
+		
+	if ( !NT_STATUS_IS_OK(nt_status) ) {
 		DEBUG(4,("create_nt_user_token failed\n"));
 		SAFE_FREE(all_group_SIDs);
+		free_server_info(server_info);
 		return nt_status;
 	}
 
@@ -1083,6 +1170,9 @@ NTSTATUS make_server_info_info3(TALLOC_CTX *mem_ctx,
 
 	SAFE_FREE(all_group_SIDs);
 	
+	memcpy((*server_info)->session_key, info3->user_sess_key, sizeof((*server_info)->session_key)/* 16 */);
+	memcpy((*server_info)->first_8_lm_hash, info3->padding, 8);
+
 	return NT_STATUS_OK;
 }
 
@@ -1124,6 +1214,7 @@ void free_server_info(auth_serversupplied_info **server_info)
 		/* call pam_end here, unless we know we are keeping it */
 		delete_nt_token( &(*server_info)->ptok );
 		SAFE_FREE((*server_info)->groups);
+		SAFE_FREE((*server_info)->unix_name);
 		ZERO_STRUCT(**server_info);
 	}
 	SAFE_FREE(*server_info);
@@ -1221,4 +1312,52 @@ NTSTATUS nt_status_squash(NTSTATUS nt_status)
 }
 
 
+/**
+ * Verify whether or not given domain is trusted.
+ *
+ * @param domain_name name of the domain to be verified
+ * @return true if domain is one of the trusted once or
+ *         false if otherwise
+ **/
+
+BOOL is_trusted_domain(const char* dom_name)
+{
+	DOM_SID trustdom_sid;
+	char *pass = NULL;
+	time_t lct;
+	BOOL ret;
+
+	/* no trusted domains for a standalone server */
+
+	if ( lp_server_role() == ROLE_STANDALONE )
+		return False;
+
+	/* if we are a DC, then check for a direct trust relationships */
+
+	if (lp_server_role() == ROLE_DOMAIN_BDC || lp_server_role() == ROLE_DOMAIN_PDC) {
+		become_root();
+		ret = secrets_fetch_trusted_domain_password(dom_name, &pass, &trustdom_sid, &lct);
+		unbecome_root();
+		SAFE_FREE(pass);
+		if (ret)
+			return True;
+	}
+	else {
+		/* if winbindd is not up and we are a domain member) then we need to update the
+		   trustdom_cache ourselves */
+
+		if ( !winbind_ping() )
+			update_trustdom_cache();
+	}
+
+	/* now the trustdom cache should be available a DC could still
+	 * have a transitive trust so fall back to the cache of trusted
+	 * domains (like a domain member would use  */
+
+	if ( trustdom_cache_fetch(dom_name, &trustdom_sid) ) {
+		return True;
+	}
+
+	return False;
+}
 

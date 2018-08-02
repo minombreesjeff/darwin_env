@@ -4,7 +4,7 @@
    Copyright (C) Andrew Tridgell 1992-1998
    Copyright (C) Jeremy Allison 2001-2002
    Copyright (C) Simo Sorce 2001
-   Copyright (C) Anthony Liguori 2003
+   Copyright (C) Jim McDonough <jmcd@us.ibm.com> 2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -99,7 +99,7 @@ BOOL set_global_myname(const char *myname)
 	smb_myname = strdup(myname);
 	if (!smb_myname)
 		return False;
-	strupper(smb_myname);
+	strupper_m(smb_myname);
 	return True;
 }
 
@@ -118,7 +118,7 @@ BOOL set_global_myworkgroup(const char *myworkgroup)
 	smb_myworkgroup = strdup(myworkgroup);
 	if (!smb_myworkgroup)
 		return False;
-	strupper(smb_myworkgroup);
+	strupper_m(smb_myworkgroup);
 	return True;
 }
 
@@ -137,7 +137,7 @@ BOOL set_global_scope(const char *scope)
 	smb_scope = strdup(scope);
 	if (!smb_scope)
 		return False;
-	strupper(smb_scope);
+	strupper_m(smb_scope);
 	return True;
 }
 
@@ -184,7 +184,7 @@ static BOOL set_my_netbios_names(const char *name, int i)
 	smb_my_netbios_names[i] = strdup(name);
 	if (!smb_my_netbios_names[i])
 		return False;
-	strupper(smb_my_netbios_names[i]);
+	strupper_m(smb_my_netbios_names[i]);
 	return True;
 }
 
@@ -265,7 +265,7 @@ BOOL init_names(void)
 	p = strchr( local_machine, ' ' );
 	if (p)
 		*p = 0;
-	strlower( local_machine );
+	strlower_m( local_machine );
 
 	DEBUG( 5, ("Netbios name list:-\n") );
 	for( n=0; my_netbios_names(n); n++ )
@@ -311,7 +311,7 @@ BOOL in_group(gid_t group, gid_t current_gid, int ngroups, const gid_t *groups)
 
 static const char *Atoic(const char *p, int *n, const char *c)
 {
-	if (!isdigit((const int)*p)) {
+	if (!isdigit((int)*p)) {
 		DEBUG(5, ("Atoic: malformed number\n"));
 		return NULL;
 	}
@@ -937,6 +937,19 @@ void *Realloc(void *p,size_t size)
 	return(ret);
 }
 
+void *Realloc_zero(void *ptr, size_t size)
+{
+	void *tptr = NULL;
+		
+	tptr = Realloc(ptr, size);
+	if(tptr == NULL)
+		return NULL;
+
+	memset((char *)tptr,'\0',size);
+
+	return tptr;
+}
+
 /****************************************************************************
  Free memory, checks for NULL.
  Use directly SAFE_FREE()
@@ -1012,6 +1025,7 @@ BOOL get_mydomname(fstring my_domname)
 {
 	pstring hostname;
 	char *p;
+	struct hostent *hp;
 
 	*hostname = 0;
 	/* get my host name */
@@ -1023,24 +1037,38 @@ BOOL get_mydomname(fstring my_domname)
 	/* Ensure null termination. */
 	hostname[sizeof(hostname)-1] = '\0';
 
+		
 	p = strchr_m(hostname, '.');
 
-	if (!p)
+	if (p) {
+		p++;
+		
+		if (my_domname)
+			fstrcpy(my_domname, p);
+	}
+
+	if (!(hp = sys_gethostbyname(hostname))) {
 		return False;
-
-	p++;
+	}
 	
-	if (my_domname)
-		fstrcpy(my_domname, p);
+	p = strchr_m(hp->h_name, '.');
 
-	return True;
+	if (p) {
+		p++;
+		
+		if (my_domname)
+			fstrcpy(my_domname, p);
+		return True;
+	}
+
+	return False;
 }
 
 /****************************************************************************
  Interpret a protocol description string, with a default.
 ****************************************************************************/
 
-int interpret_protocol(char *str,int def)
+int interpret_protocol(const char *str,int def)
 {
 	if (strequal(str,"NT1"))
 		return(PROTOCOL_NT1);
@@ -1352,7 +1380,7 @@ char *gidtoname(gid_t gid)
  Convert a user name into a uid. 
 ********************************************************************/
 
-uid_t nametouid(char *name)
+uid_t nametouid(const char *name)
 {
 	struct passwd *pass;
 	char *p;
@@ -1398,30 +1426,68 @@ gid_t nametogid(const char *name)
 
 void smb_panic(const char *why)
 {
-	char *cmd = lp_panic_action();
+	char *cmd;
 	int result;
+#ifdef HAVE_BACKTRACE_SYMBOLS
+	void *backtrace_stack[BACKTRACE_STACK_SIZE];
+	size_t backtrace_size;
+	char **backtrace_strings;
+#endif
 
+#ifdef DEVELOPER
+	{
+		extern char *global_clobber_region_function;
+		extern unsigned int global_clobber_region_line;
+
+		if (global_clobber_region_function) {
+			DEBUG(0,("smb_panic: clobber_region() last called from [%s(%u)]\n",
+					 global_clobber_region_function,
+					 global_clobber_region_line));
+		} 
+	}
+#endif
+
+	cmd = lp_panic_action();
 	if (cmd && *cmd) {
 		DEBUG(0, ("smb_panic(): calling panic action [%s]\n", cmd));
 		result = system(cmd);
 
 		if (result == -1)
 			DEBUG(0, ("smb_panic(): fork failed in panic action: %s\n",
-				  strerror(errno)));
+					  strerror(errno)));
 		else
 			DEBUG(0, ("smb_panic(): action returned status %d\n",
-				  WEXITSTATUS(result)));
+					  WEXITSTATUS(result)));
 	}
 	DEBUG(0,("PANIC: %s\n", why));
+
+#ifdef HAVE_BACKTRACE_SYMBOLS
+	/* get the backtrace (stack frames) */
+	backtrace_size = backtrace(backtrace_stack,BACKTRACE_STACK_SIZE);
+	backtrace_strings = backtrace_symbols(backtrace_stack, backtrace_size);
+
+	DEBUG(0, ("BACKTRACE: %d stack frames:\n", backtrace_size));
+	
+	if (backtrace_strings) {
+		int i;
+
+		for (i = 0; i < backtrace_size; i++)
+			DEBUGADD(0, (" #%u %s\n", i, backtrace_strings[i]));
+
+		SAFE_FREE(backtrace_strings);
+	}
+
+#endif
+
 	dbgflush();
 	abort();
 }
 
 /*******************************************************************
- A readdir wrapper which just returns the file name.
-********************************************************************/
+  A readdir wrapper which just returns the file name.
+ ********************************************************************/
 
-char *readdirname(DIR *p)
+const char *readdirname(DIR *p)
 {
 	SMB_STRUCT_DIRENT *ptr;
 	char *dname;
@@ -1741,6 +1807,22 @@ BOOL is_myworkgroup(const char *s)
 }
 
 /*******************************************************************
+ we distinguish between 2K and XP by the "Native Lan Manager" string
+   WinXP => "Windows 2002 5.1"
+   Win2k => "Windows 2000 5.0"
+   NT4   => "Windows NT 4.0" 
+   Win9x => "Windows 4.0"
+********************************************************************/
+
+void ra_lanman_string( const char *native_lanman )
+{		 
+	if ( 0 == strcmp( native_lanman, "Windows 2002 5.1" ) )
+		set_remote_arch( RA_WINXP );
+	else if ( 0 == strcmp( native_lanman, "Windows .NET 5.2" ) )
+		set_remote_arch( RA_WIN2K3 );
+}
+
+/*******************************************************************
  Set the horrid remote_arch string based on an enum.
 ********************************************************************/
 
@@ -1767,6 +1849,9 @@ void set_remote_arch(enum remote_arch_types type)
 	case RA_WINXP:
 		fstrcpy(remote_arch, "WinXP");
 		return;
+	case RA_WIN2K3:
+		fstrcpy(remote_arch, "Win2K3");
+		return;
 	case RA_SAMBA:
 		fstrcpy(remote_arch,"Samba");
 		return;
@@ -1784,50 +1869,6 @@ void set_remote_arch(enum remote_arch_types type)
 enum remote_arch_types get_remote_arch(void)
 {
 	return ra_type;
-}
-
-
-void out_ascii(FILE *f, unsigned char *buf,int len)
-{
-	int i;
-	for (i=0;i<len;i++)
-		fprintf(f, "%c", isprint(buf[i])?buf[i]:'.');
-}
-
-void out_data(FILE *f,char *buf1,int len, int per_line)
-{
-	unsigned char *buf = (unsigned char *)buf1;
-	int i=0;
-	if (len<=0) {
-		return;
-	}
-
-	fprintf(f, "[%03X] ",i);
-	for (i=0;i<len;) {
-		fprintf(f, "%02X ",(int)buf[i]);
-		i++;
-		if (i%(per_line/2) == 0) fprintf(f, " ");
-		if (i%per_line == 0) {      
-			out_ascii(f,&buf[i-per_line  ],per_line/2); fprintf(f, " ");
-			out_ascii(f,&buf[i-per_line/2],per_line/2); fprintf(f, "\n");
-			if (i<len) fprintf(f, "[%03X] ",i);
-		}
-	}
-	if ((i%per_line) != 0) {
-		int n;
-
-		n = per_line - (i%per_line);
-		fprintf(f, " ");
-		if (n>(per_line/2)) fprintf(f, " ");
-		while (n--) {
-			fprintf(f, "   ");
-		}
-		n = MIN(per_line/2,i%per_line);
-		out_ascii(f,&buf[i-(i%per_line)],n); fprintf(f, " ");
-		n = (i%per_line) - n;
-		if (n>0) out_ascii(f,&buf[i-n],n); 
-		fprintf(f, "\n");    
-	}
 }
 
 void print_asc(int level, const unsigned char *buf,int len)
@@ -1868,6 +1909,17 @@ void dump_data(int level, const char *buf1,int len)
 		if (n>0) print_asc(level,&buf[i-n],n); 
 		DEBUGADD(level,("\n"));    
 	}	
+}
+
+void dump_data_pw(const char *msg, const uchar * data, size_t len)
+{
+#ifdef DEBUG_PASSWORD
+	DEBUG(11, ("%s", msg));
+	if (data != NULL && len > 0)
+	{
+		dump_data(11, data, len);
+	}
+#endif
 }
 
 char *tab_depth(int depth)
@@ -2056,8 +2108,10 @@ void *smb_xmalloc(size_t size)
 	void *p;
 	if (size == 0)
 		smb_panic("smb_xmalloc: called with zero size.\n");
-	if ((p = malloc(size)) == NULL)
+	if ((p = malloc(size)) == NULL) {
+		DEBUG(0, ("smb_xmalloc() failed to allocate %lu bytes\n", (unsigned long)size));
 		smb_panic("smb_xmalloc: malloc fail.\n");
+	}
 	return p;
 }
 
@@ -2193,7 +2247,7 @@ char *pid_path(const char *name)
 char *lib_path(const char *name)
 {
 	static pstring fname;
-	snprintf(fname, sizeof(fname), "%s/%s", dyn_LIBDIR, name);
+	fstr_sprintf(fname, "%s/%s", dyn_LIBDIR, name);
 	return fname;
 }
 
@@ -2281,30 +2335,21 @@ BOOL ms_has_wild_w(const smb_ucs2_t *s)
 
 BOOL mask_match(const char *string, char *pattern, BOOL is_case_sensitive)
 {
-	fstring p2, s2;
-
 	if (strcmp(string,"..") == 0)
 		string = ".";
 	if (strcmp(pattern,".") == 0)
 		return False;
 	
-	if (is_case_sensitive)
-		return ms_fnmatch(pattern, string, Protocol) == 0;
-
-	fstrcpy(p2, pattern);
-	fstrcpy(s2, string);
-	strlower(p2); 
-	strlower(s2);
-	return ms_fnmatch(p2, s2, Protocol) == 0;
+	return ms_fnmatch(pattern, string, Protocol, is_case_sensitive) == 0;
 }
 
 /*********************************************************
  Recursive routine that is called by unix_wild_match.
 *********************************************************/
 
-static BOOL unix_do_match(char *regexp, char *str)
+static BOOL unix_do_match(const char *regexp, const char *str)
 {
-	char *p;
+	const char *p;
 
 	for( p = regexp; *p && *str; ) {
 
@@ -2410,8 +2455,8 @@ BOOL unix_wild_match(const char *pattern, const char *string)
 
 	pstrcpy(p2, pattern);
 	pstrcpy(s2, string);
-	strlower(p2);
-	strlower(s2);
+	strlower_m(p2);
+	strlower_m(s2);
 
 	/* Remove any *? and ** from the pattern as they are meaningless */
 	for(p = p2; *p; p++)
@@ -2423,6 +2468,7 @@ BOOL unix_wild_match(const char *pattern, const char *string)
 
 	return unix_do_match(p2, s2) == 0;	
 }
+
 
 #ifdef __INSURE__
 

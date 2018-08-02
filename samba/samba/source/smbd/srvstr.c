@@ -2,6 +2,7 @@
    Unix SMB/CIFS implementation.
    server specific string routines
    Copyright (C) Andrew Tridgell 2001
+   Copyright (C) Andrew Bartlett <abartlet@samba.org> 2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,23 +20,25 @@
 */
 
 #include "includes.h"
+extern int max_send;
 
-int srvstr_push(void *base_ptr, void *dest, const char *src, int dest_len, int flags)
-{
-	return push_string(base_ptr, dest, src, dest_len, flags);
-}
+/* Make sure we can't write a string past the end of the buffer */
 
-int srvstr_pull(void *base_ptr, char *dest, const void *src, int dest_len, int src_len, 
-		int flags)
+size_t srvstr_push_fn(const char *function, unsigned int line, 
+		      const char *base_ptr, void *dest, 
+		      const char *src, int dest_len, int flags)
 {
-	return pull_string(base_ptr, dest, src, dest_len, src_len, flags);
-}
-
-/* pull a string from the smb_buf part of a packet. In this case the
-   string can either be null terminated or it can be terminated by the
-   end of the smbbuf area 
-*/
-int srvstr_pull_buf(void *inbuf, char *dest, const void *src, int dest_len, int flags)
-{
-	return pull_string(inbuf, dest, src, dest_len, smb_bufrem(inbuf, src), flags);
+	size_t buf_used = PTR_DIFF(dest, base_ptr);
+	if (dest_len == -1) {
+		if (((ptrdiff_t)dest < (ptrdiff_t)base_ptr) || (buf_used > (size_t)max_send)) {
+#if 0
+			DEBUG(0, ("Pushing string of 'unlimited' length into non-SMB buffer!\n"));
+#endif
+			return push_string_fn(function, line, base_ptr, dest, src, -1, flags);
+		}
+		return push_string_fn(function, line, base_ptr, dest, src, max_send - buf_used, flags);
+	}
+	
+	/* 'normal' push into size-specified buffer */
+	return push_string_fn(function, line, base_ptr, dest, src, dest_len, flags);
 }

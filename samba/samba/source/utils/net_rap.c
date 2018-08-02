@@ -260,6 +260,9 @@ int net_rap_session_usage(int argc, const char **argv)
 	 "\tor"\
 	 "\nnet rap session CLOSE <client_name> [misc. options] [targets]"\
 	 "\n\tDeletes (closes) a session from specified client to server\n");
+	d_printf(
+	"\nnet rap session INFO <client_name>"\
+	"\n\tEnumerates all open files in specified session\n");
 
 	net_common_flags_usage(argc, argv);
 	return -1;
@@ -460,7 +463,6 @@ int net_rap_printq_usage(int argc, const char **argv)
 	 "\tprinter queue if no job number is specified\n");
 
 	net_common_flags_usage(argc, argv);
-        d_printf("\t-j or --jobid=<job id>\t\tjob id\n");
 
 	return -1;
 }	
@@ -597,7 +599,7 @@ static void long_user_fn(const char *user_name, const char *comment,
 			 const char * home_dir, const char * logon_script, 
 			 void *state)
 {
-	d_printf("%-21.21s %-50.50s\n",
+	d_printf("%-21.21s %s\n",
 		 user_name, comment);
 }
 
@@ -638,7 +640,7 @@ static int rap_user_add(int argc, const char **argv)
 	if (!(cli = net_make_ipc_connection(0)))
                 return -1;
 			
-	safe_strcpy(userinfo.user_name, argv[0], sizeof(userinfo.user_name));
+	safe_strcpy(userinfo.user_name, argv[0], sizeof(userinfo.user_name)-1);
 	if (opt_flags == -1) 
                 opt_flags = 0x21; 
 			
@@ -715,7 +717,7 @@ int net_rap_group_usage(int argc, const char **argv)
 static void long_group_fn(const char *group_name, const char *comment,
 			  void *state)
 {
-	d_printf("%-21.21s %-50.50s\n", group_name, comment);
+	d_printf("%-21.21s %s\n", group_name, comment);
 }
 
 static void group_fn(const char *group_name, const char *comment, void *state)
@@ -755,7 +757,7 @@ static int rap_group_add(int argc, const char **argv)
                 return -1;
 			
 	/* BB check for length 21 or smaller explicitly ? BB */
-	safe_strcpy(grinfo.group_name, argv[0], sizeof(grinfo.group_name));
+	safe_strcpy(grinfo.group_name, argv[0], sizeof(grinfo.group_name)-1);
 	grinfo.reserved1 = '\0';
 	grinfo.comment = smb_xstrdup(opt_comment);
 	

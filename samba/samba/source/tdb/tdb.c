@@ -20,6 +20,27 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
+
+
+/* NOTE: If you use tdbs under valgrind, and in particular if you run
+ * tdbtorture, you may get spurious "uninitialized value" warnings.  I
+ * think this is because valgrind doesn't understand that the mmap'd
+ * area may be written to by other processes.  Memory can, from the
+ * point of view of the grinded process, spontaneously become
+ * initialized.
+ *
+ * I can think of a few solutions.  [mbp 20030311]
+ *
+ * 1 - Write suppressions for Valgrind so that it doesn't complain
+ * about this.  Probably the most reasonable but people need to
+ * remember to use them.
+ *
+ * 2 - Use IO not mmap when running under valgrind.  Not so nice.
+ *
+ * 3 - Use the special valgrind macros to mark memory as valid at the
+ * right time.  Probably too hard -- the process just doesn't know.
+ */ 
+
 #ifdef STANDALONE
 #if HAVE_CONFIG_H
 #include <config.h>
@@ -1236,7 +1257,8 @@ static int tdb_next_lock(TDB_CONTEXT *tdb, struct tdb_traverse_lock *tlock,
 			/* Try to clean dead ones from old traverses */
 			current = tlock->off;
 			tlock->off = rec->next;
-			if (do_delete(tdb, current, rec) != 0)
+			if (!tdb->read_only && 
+			    do_delete(tdb, current, rec) != 0)
 				goto fail;
 		}
 		tdb_unlock(tdb, tlock->hash, F_WRLCK);
@@ -1728,8 +1750,7 @@ TDB_CONTEXT *tdb_open_ex(const char *name, int hash_size, int tdb_flags,
 
 	if (read(tdb->fd, &tdb->header, sizeof(tdb->header)) != sizeof(tdb->header)
 	    || strcmp(tdb->header.magic_food, TDB_MAGIC_FOOD) != 0
-	    || tdb->header.version != TDB_VERSION
-	    || (tdb->header.hash_size != hash_size
+	    || (tdb->header.version != TDB_VERSION
 		&& !(rev = (tdb->header.version==TDB_BYTEREV(TDB_VERSION))))) {
 		/* its not a valid database - possibly initialise it */
 		if (!(open_flags & O_CREAT) || tdb_new_database(tdb, hash_size) == -1) {
@@ -1934,6 +1955,8 @@ int tdb_lockkeys(TDB_CONTEXT *tdb, u32 number, TDB_DATA keys[])
 void tdb_unlockkeys(TDB_CONTEXT *tdb)
 {
 	u32 i;
+	if (!tdb->lockedkeys)
+		return;
 	for (i = 0; i < tdb->lockedkeys[0]; i++)
 		tdb_unlock(tdb, tdb->lockedkeys[i+1], F_WRLCK);
 	SAFE_FREE(tdb->lockedkeys);

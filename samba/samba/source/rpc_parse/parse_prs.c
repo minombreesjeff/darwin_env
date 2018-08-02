@@ -938,7 +938,7 @@ BOOL prs_buffer2(BOOL charmode, const char *name, prs_struct *ps, int depth, BUF
 
 BOOL prs_string2(BOOL charmode, const char *name, prs_struct *ps, int depth, STRING2 *str)
 {
-	int i;
+	unsigned int i;
 	char *q = prs_mem_get(ps, str->str_max_len);
 	if (q == NULL)
 		return False;
@@ -1035,7 +1035,7 @@ BOOL prs_unistr3(BOOL charmode, const char *name, UNISTR3 *str, prs_struct *ps, 
 
 BOOL prs_unistr(const char *name, prs_struct *ps, int depth, UNISTR *str)
 {
-	int len = 0;
+	unsigned int len = 0;
 	unsigned char *p = (unsigned char *)str->buffer;
 	uint8 *start;
 	char *q;
@@ -1159,10 +1159,16 @@ BOOL prs_unistr(const char *name, prs_struct *ps, int depth, UNISTR *str)
  not include the null-termination character.
  ********************************************************************/
 
-BOOL prs_string(const char *name, prs_struct *ps, int depth, char *str, int len, int max_buf_size)
+BOOL prs_string(const char *name, prs_struct *ps, int depth, char *str, int max_buf_size)
 {
 	char *q;
 	int i;
+	int len;
+
+	if (UNMARSHALLING(ps))
+		len = strlen(&ps->data_p[ps->data_offset]);
+	else
+		len = strlen(str);
 
 	len = MIN(len, (max_buf_size-1));
 
@@ -1310,7 +1316,7 @@ int tdb_prs_fetch(TDB_CONTEXT *tdb, char *keystr, prs_struct *ps, TALLOC_CTX *me
 /*******************************************************************
  hash a stream.
  ********************************************************************/
-BOOL prs_hash1(prs_struct *ps, uint32 offset, uint8 sess_key[16])
+BOOL prs_hash1(prs_struct *ps, uint32 offset, uint8 sess_key[16], int len)
 {
 	char *q;
 
@@ -1320,13 +1326,273 @@ BOOL prs_hash1(prs_struct *ps, uint32 offset, uint8 sess_key[16])
 #ifdef DEBUG_PASSWORD
 	DEBUG(100, ("prs_hash1\n"));
 	dump_data(100, sess_key, 16);
-	dump_data(100, q, 68);
+	dump_data(100, q, len);
 #endif
-	SamOEMhash((uchar *) q, sess_key, 68);
+	SamOEMhash((uchar *) q, sess_key, len);
 
 #ifdef DEBUG_PASSWORD
-	dump_data(100, q, 68);
+	dump_data(100, q, len);
 #endif
 
 	return True;
+}
+
+static void netsechash(uchar * key, uchar * data, int data_len)
+{
+	uchar hash[256];
+	uchar index_i = 0;
+	uchar index_j = 0;
+	uchar j = 0;
+	int ind;
+
+	for (ind = 0; ind < 256; ind++)
+	{
+		hash[ind] = (uchar) ind;
+	}
+
+	for (ind = 0; ind < 256; ind++)
+	{
+		uchar tc;
+
+		j += (hash[ind] + key[ind % 16]);
+
+		tc = hash[ind];
+		hash[ind] = hash[j];
+		hash[j] = tc;
+	}
+
+	for (ind = 0; ind < data_len; ind++)
+	{
+		uchar tc;
+		uchar t;
+
+		index_i++;
+		index_j += hash[index_i];
+
+		tc = hash[index_i];
+		hash[index_i] = hash[index_j];
+		hash[index_j] = tc;
+
+		t = hash[index_i] + hash[index_j];
+		data[ind] ^= hash[t];
+	}
+}
+
+
+/*******************************************************************
+ Create a digest over the entire packet (including the data), and 
+ MD5 it with the session key.
+ ********************************************************************/
+static void netsec_digest(struct netsec_auth_struct *a,
+			  int auth_flags,
+			  RPC_AUTH_NETSEC_CHK * verf,
+			  char *data, size_t data_len,
+			  uchar digest_final[16]) 
+{
+	uchar whole_packet_digest[16];
+	static uchar zeros[4];
+	struct MD5Context ctx3;
+	
+	/* verfiy the signature on the packet by MD5 over various bits */
+	MD5Init(&ctx3);
+	/* use our sequence number, which ensures the packet is not
+	   out of order */
+	MD5Update(&ctx3, zeros, sizeof(zeros));
+	MD5Update(&ctx3, verf->sig, sizeof(verf->sig));
+	if (auth_flags & AUTH_PIPE_SEAL) {
+		MD5Update(&ctx3, verf->data8, sizeof(verf->data8));
+	}
+	MD5Update(&ctx3, (const unsigned char *)data, data_len);
+	MD5Final(whole_packet_digest, &ctx3);
+	dump_data_pw("whole_packet_digest:\n", whole_packet_digest, sizeof(whole_packet_digest));
+	
+	/* MD5 this result and the session key, to prove that
+	   only a valid client could had produced this */
+	hmac_md5(a->sess_key, whole_packet_digest, sizeof(whole_packet_digest), digest_final);
+}
+
+/*******************************************************************
+ Calculate the key with which to encode the data payload 
+ ********************************************************************/
+static void netsec_get_sealing_key(struct netsec_auth_struct *a,
+				   RPC_AUTH_NETSEC_CHK *verf,
+				   uchar sealing_key[16]) 
+{
+	static uchar zeros[4];
+	uchar digest2[16];
+	uchar sess_kf0[16];
+	int i;
+
+	for (i = 0; i < sizeof(sess_kf0); i++) {
+		sess_kf0[i] = a->sess_key[i] ^ 0xf0;
+	}
+	
+	dump_data_pw("sess_kf0:\n", sess_kf0, sizeof(sess_kf0));
+	
+	/* MD5 of sess_kf0 and 4 zero bytes */
+	hmac_md5(sess_kf0, zeros, 0x4, digest2);
+	dump_data_pw("digest2:\n", digest2, sizeof(digest2));
+	
+	/* MD5 of the above result, plus 8 bytes of sequence number */
+	hmac_md5(digest2, verf->seq_num, sizeof(verf->seq_num), sealing_key);
+	dump_data_pw("sealing_key:\n", sealing_key, 16);
+}
+
+/*******************************************************************
+ Encode or Decode the sequence number (which is symmetric)
+ ********************************************************************/
+static void netsec_deal_with_seq_num(struct netsec_auth_struct *a,
+				     RPC_AUTH_NETSEC_CHK *verf)
+{
+	static uchar zeros[4];
+	uchar sequence_key[16];
+	uchar digest1[16];
+
+	hmac_md5(a->sess_key, zeros, sizeof(zeros), digest1);
+	dump_data_pw("(sequence key) digest1:\n", digest1, sizeof(digest1));
+
+	hmac_md5(digest1, verf->packet_digest, 8, sequence_key);
+
+	dump_data_pw("sequence_key:\n", sequence_key, sizeof(sequence_key));
+
+	dump_data_pw("seq_num (before):\n", verf->seq_num, sizeof(verf->seq_num));
+	netsechash(sequence_key, verf->seq_num, 8);
+	dump_data_pw("seq_num (after):\n", verf->seq_num, sizeof(verf->seq_num));
+}
+
+
+/*******************************************************************
+ Encode a blob of data using the netsec (schannel) alogrithm, also produceing
+ a checksum over the original data.  We currently only support
+ signing and sealing togeather - the signing-only code is close, but not
+ quite compatible with what MS does.
+ ********************************************************************/
+void netsec_encode(struct netsec_auth_struct *a, int auth_flags, 
+		   enum netsec_direction direction,
+		   RPC_AUTH_NETSEC_CHK * verf, char *data, size_t data_len)
+{
+	uchar digest_final[16];
+
+	DEBUG(10,("SCHANNEL: netsec_encode seq_num=%d data_len=%lu\n", a->seq_num, (unsigned long)data_len));
+	dump_data_pw("a->sess_key:\n", a->sess_key, sizeof(a->sess_key));
+
+	RSIVAL(verf->seq_num, 0, a->seq_num);
+
+	switch (direction) {
+	case SENDER_IS_INITIATOR:
+		SIVAL(verf->seq_num, 4, 0x80);
+		break;
+	case SENDER_IS_ACCEPTOR:
+		SIVAL(verf->seq_num, 4, 0x0);
+		break;
+	}
+
+	dump_data_pw("verf->seq_num:\n", verf->seq_num, sizeof(verf->seq_num));
+
+	/* produce a digest of the packet to prove it's legit (before we seal it) */
+	netsec_digest(a, auth_flags, verf, data, data_len, digest_final);
+	memcpy(verf->packet_digest, digest_final, sizeof(verf->packet_digest));
+
+	if (auth_flags & AUTH_PIPE_SEAL) {
+		uchar sealing_key[16];
+
+		/* get the key to encode the data with */
+		netsec_get_sealing_key(a, verf, sealing_key);
+
+		/* encode the verification data */
+		dump_data_pw("verf->data8:\n", verf->data8, sizeof(verf->data8));
+		netsechash(sealing_key, verf->data8, 8);
+
+		dump_data_pw("verf->data8_enc:\n", verf->data8, sizeof(verf->data8));
+		
+		/* encode the packet payload */
+		dump_data_pw("data:\n", (const unsigned char *)data, data_len);
+		netsechash(sealing_key, (unsigned char *)data, data_len);
+		dump_data_pw("data_enc:\n", (const unsigned char *)data, data_len);
+	}
+
+	/* encode the sequence number (key based on packet digest) */
+	/* needs to be done after the sealing, as the original version 
+	   is used in the sealing stuff... */
+	netsec_deal_with_seq_num(a, verf);
+
+	return;
+}
+
+/*******************************************************************
+ Decode a blob of data using the netsec (schannel) alogrithm, also verifiying
+ a checksum over the original data.  We currently can verify signed messages,
+ as well as decode sealed messages
+ ********************************************************************/
+
+BOOL netsec_decode(struct netsec_auth_struct *a, int auth_flags,
+		   enum netsec_direction direction, 
+		   RPC_AUTH_NETSEC_CHK * verf, char *data, size_t data_len)
+{
+	uchar digest_final[16];
+
+	/* Create the expected sequence number for comparison */
+	uchar seq_num[8];
+	RSIVAL(seq_num, 0, a->seq_num);
+
+	switch (direction) {
+	case SENDER_IS_INITIATOR:
+		SIVAL(seq_num, 4, 0x80);
+		break;
+	case SENDER_IS_ACCEPTOR:
+		SIVAL(seq_num, 4, 0x0);
+		break;
+	}
+
+	DEBUG(10,("SCHANNEL: netsec_decode seq_num=%d data_len=%lu\n", a->seq_num, (unsigned long)data_len));
+	dump_data_pw("a->sess_key:\n", a->sess_key, sizeof(a->sess_key));
+
+	dump_data_pw("seq_num:\n", seq_num, sizeof(seq_num));
+
+	/* extract the sequence number (key based on supplied packet digest) */
+	/* needs to be done before the sealing, as the original version 
+	   is used in the sealing stuff... */
+	netsec_deal_with_seq_num(a, verf);
+
+	if (memcmp(verf->seq_num, seq_num, sizeof(seq_num))) {
+		/* don't even bother with the below if the sequence number is out */
+		/* The sequence number is MD5'ed with a key based on the whole-packet
+		   digest, as supplied by the client.  We check that it's a valid 
+		   checksum after the decode, below
+		*/
+		return False;
+	}
+
+	if (auth_flags & AUTH_PIPE_SEAL) {
+		uchar sealing_key[16];
+		
+		/* get the key to extract the data with */
+		netsec_get_sealing_key(a, verf, sealing_key);
+
+		/* extract the verification data */
+		dump_data_pw("verf->data8:\n", verf->data8, 
+			     sizeof(verf->data8));
+		netsechash(sealing_key, verf->data8, 8);
+
+		dump_data_pw("verf->data8_dec:\n", verf->data8, 
+			     sizeof(verf->data8));
+		
+		/* extract the packet payload */
+		dump_data_pw("data   :\n", (const unsigned char *)data, data_len);
+		netsechash(sealing_key, (unsigned char *)data, data_len);
+		dump_data_pw("datadec:\n", (const unsigned char *)data, data_len);	
+	}
+
+	/* digest includes 'data' after unsealing */
+	netsec_digest(a, auth_flags, verf, data, data_len, digest_final);
+
+	dump_data_pw("Calculated digest:\n", digest_final, 
+		     sizeof(digest_final));
+	dump_data_pw("verf->packet_digest:\n", verf->packet_digest, 
+		     sizeof(verf->packet_digest));
+	
+	/* compare - if the client got the same result as us, then
+	   it must know the session key */
+	return (memcmp(digest_final, verf->packet_digest, 
+		       sizeof(verf->packet_digest)) == 0);
 }

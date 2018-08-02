@@ -125,7 +125,7 @@ void nb_setup(struct cli_state *cli)
 }
 
 
-void nb_unlink(char *fname)
+void nb_unlink(const char *fname)
 {
 	if (!cli_unlink(c, fname)) {
 #if NBDEBUG
@@ -136,7 +136,7 @@ void nb_unlink(char *fname)
 }
 
 
-void nb_createx(char *fname, 
+void nb_createx(const char *fname, 
 		unsigned create_options, unsigned create_disposition, int handle)
 {
 	int fd, i;
@@ -148,12 +148,12 @@ void nb_createx(char *fname,
 		desired_access = FILE_READ_DATA | FILE_WRITE_DATA;
 	}
 
-	fd = cli_nt_create_full(c, fname, 
+	fd = cli_nt_create_full(c, fname, 0, 
 				desired_access,
 				0x0,
 				FILE_SHARE_READ|FILE_SHARE_WRITE, 
 				create_disposition, 
-				create_options);
+				create_options, 0);
 	if (fd == -1 && handle != -1) {
 		printf("ERROR: cli_nt_create_full failed for %s - %s\n",
 		       fname, cli_errstr(c));
@@ -217,7 +217,7 @@ void nb_close(int handle)
 	ftable[i].handle = 0;
 }
 
-void nb_rmdir(char *fname)
+void nb_rmdir(const char *fname)
 {
 	if (!cli_rmdir(c, fname)) {
 		printf("ERROR: rmdir %s failed (%s)\n", 
@@ -226,7 +226,7 @@ void nb_rmdir(char *fname)
 	}
 }
 
-void nb_rename(char *old, char *new)
+void nb_rename(const char *old, const char *new)
 {
 	if (!cli_rename(c, old, new)) {
 		printf("ERROR: rename %s %s failed (%s)\n", 
@@ -236,7 +236,7 @@ void nb_rename(char *old, char *new)
 }
 
 
-void nb_qpathinfo(char *fname)
+void nb_qpathinfo(const char *fname)
 {
 	cli_qpathinfo(c, fname, NULL, NULL, NULL, NULL, NULL);
 }
@@ -260,7 +260,7 @@ static void find_fn(file_info *finfo, const char *name, void *state)
 	/* noop */
 }
 
-void nb_findfirst(char *mask)
+void nb_findfirst(const char *mask)
 {
 	cli_list(c, mask, 0, find_fn, NULL);
 }
@@ -295,7 +295,7 @@ static void delete_fn(file_info *finfo, const char *name, void *state)
 	free(n);
 }
 
-void nb_deltree(char *dname)
+void nb_deltree(const char *dname)
 {
 	char *mask;
 	asprintf(&mask, "%s\\*", dname);

@@ -23,26 +23,52 @@
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_AUTH
 
-/** List of various built-in authentication modules */
+static struct auth_init_function_entry *backends = NULL;
 
-static const struct auth_init_function_entry builtin_auth_init_functions[] = {
-	{ "guest", auth_init_guest },
-	{ "rhosts", auth_init_rhosts },
-	{ "hostsequiv", auth_init_hostsequiv },
-	{ "sam", auth_init_sam },	
-	{ "samstrict", auth_init_samstrict },
-	{ "unix", auth_init_unix },
-	{ "smbserver", auth_init_smbserver },
-	{ "ntdomain", auth_init_ntdomain },
-	{ "trustdomain", auth_init_trustdomain },
-	{ "winbind", auth_init_winbind },
-#ifdef DEVELOPER
-	{ "name_to_ntstatus", auth_init_name_to_ntstatus },
-	{ "fixed_challenge", auth_init_fixed_challenge },
-#endif
-	{ "plugin", auth_init_plugin },
-	{ NULL, NULL}
-};
+static struct auth_init_function_entry *auth_find_backend_entry(const char *name);
+
+NTSTATUS smb_register_auth(int version, const char *name, auth_init_function init)
+{
+	struct auth_init_function_entry *entry = backends;
+
+	if (version != AUTH_INTERFACE_VERSION) {
+		DEBUG(0,("Can't register auth_method!\n"
+			 "You tried to register an auth module with AUTH_INTERFACE_VERSION %d, while this version of samba uses %d\n",
+			 version,AUTH_INTERFACE_VERSION));
+		return NT_STATUS_OBJECT_TYPE_MISMATCH;
+	}
+
+	if (!name || !init) {
+		return NT_STATUS_INVALID_PARAMETER;
+	}
+
+	DEBUG(5,("Attempting to register auth backend %s\n", name));
+
+	if (auth_find_backend_entry(name)) {
+		DEBUG(0,("There already is an auth method registered with the name %s!\n", name));
+		return NT_STATUS_OBJECT_NAME_COLLISION;
+	}
+	
+	entry = smb_xmalloc(sizeof(struct auth_init_function_entry));
+	entry->name = smb_xstrdup(name);
+	entry->init = init;
+
+	DLIST_ADD(backends, entry);
+	DEBUG(5,("Successfully added auth method '%s'\n", name));
+	return NT_STATUS_OK;
+}
+
+static struct auth_init_function_entry *auth_find_backend_entry(const char *name)
+{
+	struct auth_init_function_entry *entry = backends;
+
+	while(entry) {
+		if (strcmp(entry->name, name)==0) return entry;
+		entry = entry->next;
+	}
+	
+	return NULL;
+}
 
 /****************************************************************************
  Try to get a challenge out of the various authentication modules.
@@ -105,7 +131,7 @@ static const uint8 *get_ntlm_challenge(struct auth_context *auth_context)
 	
 	DEBUG(5, ("auth_context challenge created by %s\n", challenge_set_by));
 	DEBUG(5, ("challenge is: \n"));
-	dump_data(5, auth_context->challenge.data, auth_context->challenge.length);
+	dump_data(5, (const char *)auth_context->challenge.data, auth_context->challenge.length);
 	
 	SMB_ASSERT(auth_context->challenge.length == 8);
 
@@ -161,8 +187,8 @@ static BOOL check_domain_match(const char *user, const char *domain)
  * @param user_info Contains the user supplied components, including the passwords.
  *                  Must be created with make_user_info() or one of its wrappers.
  *
- * @param auth_info Supplies the challenges and some other data. 
- *                  Must be created with make_auth_info(), and the challenges should be 
+ * @param auth_context Supplies the challenges and some other data. 
+ *                  Must be created with make_auth_context(), and the challenges should be 
  *                  filled in, either at creation or by calling the challenge geneation 
  *                  function auth_get_challenge().  
  *
@@ -177,9 +203,9 @@ static NTSTATUS check_ntlm_password(const struct auth_context *auth_context,
 				    const struct auth_usersupplied_info *user_info, 
 				    struct auth_serversupplied_info **server_info)
 {
-	
-	NTSTATUS nt_status = NT_STATUS_LOGON_FAILURE;
-	const char *pdb_username;
+	/* if all the modules say 'not for me' this is reasonable */
+	NTSTATUS nt_status = NT_STATUS_NO_SUCH_USER;
+	const char *unix_username;
 	auth_methods *auth_method;
 	TALLOC_CTX *mem_ctx;
 
@@ -202,7 +228,7 @@ static NTSTATUS check_ntlm_password(const struct auth_context *auth_context,
 					auth_context->challenge_set_by));
 
 	DEBUG(10, ("challenge is: \n"));
-	dump_data(5, auth_context->challenge.data, auth_context->challenge.length);
+	dump_data(5, (const char *)auth_context->challenge.data, auth_context->challenge.length);
 
 #ifdef DEBUG_PASSWORD
 	DEBUG(100, ("user_info has passwords of length %d and %d\n", 
@@ -218,12 +244,24 @@ static NTSTATUS check_ntlm_password(const struct auth_context *auth_context,
 		return NT_STATUS_LOGON_FAILURE;
 
 	for (auth_method = auth_context->auth_method_list;auth_method; auth_method = auth_method->next) {
+		NTSTATUS result;
+		
 		mem_ctx = talloc_init("%s authentication for user %s\\%s", auth_method->name, 
 					    user_info->domain.str, user_info->smb_name.str);
 
-		nt_status = auth_method->auth(auth_context, auth_method->private_data, mem_ctx, user_info, server_info);
+		result = auth_method->auth(auth_context, auth_method->private_data, mem_ctx, user_info, server_info);
+
+		/* check if the module did anything */
+		if ( NT_STATUS_V(result) == NT_STATUS_V(NT_STATUS_NOT_IMPLEMENTED) ) {
+			DEBUG(10,("check_ntlm_password: %s had nothing to say\n", auth_method->name));
+			talloc_destroy(mem_ctx);
+			continue;
+		}
+
+		nt_status = result;
+
 		if (NT_STATUS_IS_OK(nt_status)) {
-			DEBUG(3, ("check_ntlm_password: %s authentication for user [%s] suceeded\n", 
+			DEBUG(3, ("check_ntlm_password: %s authentication for user [%s] succeeded\n", 
 				  auth_method->name, user_info->smb_name.str));
 		} else {
 			DEBUG(5, ("check_ntlm_password: %s authentication for user [%s] FAILED with error %s\n", 
@@ -232,40 +270,36 @@ static NTSTATUS check_ntlm_password(const struct auth_context *auth_context,
 
 		talloc_destroy(mem_ctx);
 
-		if (NT_STATUS_IS_OK(nt_status))
-			break;
+		if ( NT_STATUS_IS_OK(nt_status))
+		{
+				break;			
+		}
 	}
 
-	/* This is one of the few places the *relies* (rather than just sets defaults
-	   on the value of lp_security().  This needs to change.  A new paramater 
-	   perhaps? */
-	if (lp_security() >= SEC_SERVER)
-		smb_user_control(user_info, *server_info, nt_status);
-
 	if (NT_STATUS_IS_OK(nt_status)) {
-		pdb_username = pdb_get_username((*server_info)->sam_account);
+		unix_username = (*server_info)->unix_name;
 		if (!(*server_info)->guest) {
 			/* We might not be root if we are an RPC call */
 			become_root();
-			nt_status = smb_pam_accountcheck(pdb_username);
+			nt_status = smb_pam_accountcheck(unix_username);
 			unbecome_root();
 			
 			if (NT_STATUS_IS_OK(nt_status)) {
-				DEBUG(5, ("check_ntlm_password:  PAM Account for user [%s] suceeded\n", 
-					  pdb_username));
+				DEBUG(5, ("check_ntlm_password:  PAM Account for user [%s] succeeded\n", 
+					  unix_username));
 			} else {
 				DEBUG(3, ("check_ntlm_password:  PAM Account for user [%s] FAILED with error %s\n", 
-					  pdb_username, nt_errstr(nt_status)));
+					  unix_username, nt_errstr(nt_status)));
 			} 
 		}
 		
 		if (NT_STATUS_IS_OK(nt_status)) {
 			DEBUG((*server_info)->guest ? 5 : 2, 
-			      ("check_ntlm_password:  %sauthentication for user [%s] -> [%s] -> [%s] suceeded\n", 
+			      ("check_ntlm_password:  %sauthentication for user [%s] -> [%s] -> [%s] succeeded\n", 
 			       (*server_info)->guest ? "guest " : "", 
 			       user_info->smb_name.str, 
 			       user_info->internal_username.str, 
-			       pdb_username));
+			       unix_username));
 		}
 	}
 
@@ -315,6 +349,60 @@ static NTSTATUS make_auth_context(struct auth_context **auth_context)
 	return NT_STATUS_OK;
 }
 
+BOOL load_auth_module(struct auth_context *auth_context, 
+		      const char *module, auth_methods **ret) 
+{
+	static BOOL initialised_static_modules = False;
+
+	struct auth_init_function_entry *entry;
+	char *module_name = smb_xstrdup(module);
+	char *module_params = NULL;
+	char *p;
+	BOOL good = False;
+
+	/* Initialise static modules if not done so yet */
+	if(!initialised_static_modules) {
+		static_init_auth;
+		initialised_static_modules = True;
+	}
+	
+	DEBUG(5,("load_auth_module: Attempting to find an auth method to match %s\n",
+		 module));
+	
+	p = strchr(module_name, ':');
+	if (p) {
+		*p = 0;
+		module_params = p+1;
+		trim_string(module_params, " ", " ");
+	}
+	
+	trim_string(module_name, " ", " ");
+	
+	entry = auth_find_backend_entry(module_name);
+	
+	if (entry == NULL) {
+		if (NT_STATUS_IS_OK(smb_probe_module("auth", module_name))) {
+			entry = auth_find_backend_entry(module_name);
+		}
+	}
+
+	if (entry != NULL) {
+		if (!NT_STATUS_IS_OK(entry->init(auth_context, module_params, ret))) {
+			DEBUG(0,("load_auth_module: auth method %s did not correctly init\n",
+				 module_name));
+		} else {
+			DEBUG(5,("load_auth_module: auth method %s has a valid init\n",
+				 module_name));
+			good = True;
+		}
+	} else {
+		DEBUG(0,("load_auth_module: can't find auth method %s!\n", module_name));
+	}
+
+	SAFE_FREE(module_name);
+	return good;
+}
+
 /***************************************************************************
  Make a auth_info struct for the auth subsystem
 ***************************************************************************/
@@ -324,7 +412,6 @@ static NTSTATUS make_auth_context_text_list(struct auth_context **auth_context, 
 	auth_methods *list = NULL;
 	auth_methods *t = NULL;
 	auth_methods *tmp;
-	int i;
 	NTSTATUS nt_status;
 
 	if (!text_list) {
@@ -334,37 +421,10 @@ static NTSTATUS make_auth_context_text_list(struct auth_context **auth_context, 
 	
 	if (!NT_STATUS_IS_OK(nt_status = make_auth_context(auth_context)))
 		return nt_status;
-	
+
 	for (;*text_list; text_list++) { 
-		DEBUG(5,("make_auth_context_text_list: Attempting to find an auth method to match %s\n",
-					*text_list));
-		for (i = 0; builtin_auth_init_functions[i].name; i++) {
-			char *module_name = smb_xstrdup(*text_list);
-			char *module_params = NULL;
-			char *p;
-
-			p = strchr(module_name, ':');
-			if (p) {
-				*p = 0;
-				module_params = p+1;
-				trim_string(module_params, " ", " ");
-			}
-
-			trim_string(module_name, " ", " ");
-
-			if (strequal(builtin_auth_init_functions[i].name, module_name)) {
-				DEBUG(5,("make_auth_context_text_list: Found auth method %s (at pos %d)\n", *text_list, i));
-				if (NT_STATUS_IS_OK(builtin_auth_init_functions[i].init(*auth_context, module_params, &t))) {
-					DEBUG(5,("make_auth_context_text_list: auth method %s has a valid init\n",
-								*text_list));
-					DLIST_ADD_END(list, t, tmp);
-				} else {
-					DEBUG(0,("make_auth_context_text_list: auth method %s did not correctly init\n",
-								*text_list));
-				}
-				break;
-			}
-			SAFE_FREE(module_name);
+		if (load_auth_module(*auth_context, *text_list, &t)) {
+		    DLIST_ADD_END(list, t, tmp);
 		}
 	}
 	
@@ -391,7 +451,7 @@ NTSTATUS make_auth_context_subsystem(struct auth_context **auth_context)
 		{
 		case SEC_DOMAIN:
 			DEBUG(5,("Making default auth method list for security=domain\n"));
-			auth_method_list = str_list_make("guest sam winbind ntdomain", NULL);
+			auth_method_list = str_list_make("guest sam winbind:ntdomain", NULL);
 			break;
 		case SEC_SERVER:
 			DEBUG(5,("Making default auth method list for security=server\n"));
@@ -399,8 +459,13 @@ NTSTATUS make_auth_context_subsystem(struct auth_context **auth_context)
 			break;
 		case SEC_USER:
 			if (lp_encrypted_passwords()) {	
-				DEBUG(5,("Making default auth method list for security=user, encrypt passwords = yes\n"));
-				auth_method_list = str_list_make("guest sam", NULL);
+				if ((lp_server_role() == ROLE_DOMAIN_PDC) || (lp_server_role() == ROLE_DOMAIN_BDC)) {
+					DEBUG(5,("Making default auth method list for DC, security=user, encrypt passwords = yes\n"));
+					auth_method_list = str_list_make("guest sam winbind:trustdomain", NULL);
+				} else {
+					DEBUG(5,("Making default auth method list for standalone security=user, encrypt passwords = yes\n"));
+					auth_method_list = str_list_make("guest sam", NULL);
+				}
 			} else {
 				DEBUG(5,("Making default auth method list for security=user, encrypt passwords = no\n"));
 				auth_method_list = str_list_make("guest unix", NULL);
@@ -417,7 +482,7 @@ NTSTATUS make_auth_context_subsystem(struct auth_context **auth_context)
 			break;
 		case SEC_ADS:
 			DEBUG(5,("Making default auth method list for security=ADS\n"));
-			auth_method_list = str_list_make("guest sam ads winbind ntdomain", NULL);
+			auth_method_list = str_list_make("guest sam winbind:ntdomain", NULL);
 			break;
 		default:
 			DEBUG(5,("Unknown auth method!\n"));
@@ -447,7 +512,7 @@ NTSTATUS make_auth_context_fixed(struct auth_context **auth_context, uchar chal[
 		return nt_status;
 	}
 	
-	(*auth_context)->challenge = data_blob(chal, 8);
+	(*auth_context)->challenge = data_blob_talloc((*auth_context)->mem_ctx, chal, 8);
 	(*auth_context)->challenge_set_by = "fixed";
 	return nt_status;
 }

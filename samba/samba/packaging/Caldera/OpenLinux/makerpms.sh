@@ -24,11 +24,11 @@ fi
 
 # Start preparing the packages...
 if [ $devel -ne 0 ]; then
-        ( cd ../../../.. ; chown -R ${USERID}.${GRPID} samba3; mv samba3 samba-3.0alpha22 )
-        ( cd ../../../.. ; tar czvf ${SRCDIR}/samba-3.0alpha22.tar.gz samba-3.0alpha22; mv samba-3.0alpha22 samba3 )
+        ( cd ../../../.. ; chown -R ${USERID}.${GRPID} samba3; mv samba3 samba-3.0.0rc1 )
+        ( cd ../../../.. ; tar czvf ${SRCDIR}/samba-3.0.0rc1.tar.gz samba-3.0.0rc1; mv samba-3.0.0rc1 samba3 )
 else
-        ( cd ../../../.. ; chown -R ${USERID}.${GRPID} samba-3.0alpha22 )
-        ( cd ../../../.. ; tar czvf ${SRCDIR}/samba-3.0alpha22.tar.gz samba-3.0alpha22 )
+        ( cd ../../../.. ; chown -R ${USERID}.${GRPID} samba-3.0.0rc1 )
+        ( cd ../../../.. ; tar czvf ${SRCDIR}/samba-3.0.0rc1.tar.gz samba-3.0.0rc1 )
 fi
 
 cp -af *.spec *.spec-lsb $SPECDIR

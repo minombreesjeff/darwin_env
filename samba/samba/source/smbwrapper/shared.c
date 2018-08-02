@@ -52,7 +52,7 @@ void smbw_setup_shared(void)
 
 	slprintf(s,sizeof(s)-1,"%d", shared_fd);
 
-	smbw_setenv("SMBW_HANDLE", s);
+	setenv("SMBW_HANDLE", s, 1);
 
 	return;
 
@@ -179,8 +179,8 @@ void smbw_setshared(const char *name, const char *val)
 	SSVAL(&variables[shared_size], 0, l1);
 	SSVAL(&variables[shared_size], 2, l2);
 
-	pstrcpy(&variables[shared_size] + 4, name);
-	pstrcpy(&variables[shared_size] + 4 + l1, val);
+	safe_strcpy(&variables[shared_size] + 4, name, l1-1);
+	safe_strcpy(&variables[shared_size] + 4 + l1, val, l2-1);
 
 	shared_size += l1+l2+4;
 
@@ -193,24 +193,6 @@ void smbw_setshared(const char *name, const char *val)
 	unlockit();
 }
 
-
-/*****************************************************************
-set an env variable - some systems don't have this
-*****************************************************************/  
-int smbw_setenv(const char *name, const char *value)
-{
-	pstring s;
-	char *p;
-	int ret = -1;
-
-	slprintf(s,sizeof(s)-1,"%s=%s", name, value);
-
-	p = strdup(s);
-
-	if (p) ret = putenv(p);
-
-	return ret;
-}
 
 /*****************************************************************
 return true if the passed fd is the SMBW_HANDLE

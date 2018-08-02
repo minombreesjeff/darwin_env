@@ -5,7 +5,7 @@
  *  Copyright (C) Luke Kenneth Casson Leighton 1996-1998,
  *  Copyright (C) Paul Ashton                  1997-1998,
  *  Copyright (C) Jeremy Allison                    1999,
- *  Copyright (C) Anthony Liguori                   2003.
+ *  Copyright (C) Jim McDonough <jmcd@us.ibm.com>   2003.
  *  
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -42,6 +42,13 @@
 
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_RPC_SRV
+
+/*************************************************************
+ HACK Alert!
+ We need to transfer the session key from one rpc bind to the
+ next. This is the way the netlogon schannel works.
+**************************************************************/
+struct dcinfo last_dcinfo;
 
 static void NTLMSSPcalc_p( pipes_struct *p, unsigned char *data, int len)
 {
@@ -115,6 +122,9 @@ BOOL create_next_pdu(pipes_struct *p)
 	if(p->ntlmssp_auth_validated)
 		data_space_available -= (RPC_HDR_AUTH_LEN + RPC_AUTH_NTLMSSP_CHK_LEN);
 
+	if(p->netsec_auth_validated)
+		data_space_available -= (RPC_HDR_AUTH_LEN + RPC_AUTH_NETSEC_CHK_LEN);
+
 	/*
 	 * The amount we send is the minimum of the available
 	 * space and the amount left to send.
@@ -148,6 +158,10 @@ BOOL create_next_pdu(pipes_struct *p)
 		p->hdr.frag_len = RPC_HEADER_LEN + RPC_HDR_RESP_LEN + data_len +
 					RPC_HDR_AUTH_LEN + RPC_AUTH_NTLMSSP_CHK_LEN;
 		p->hdr.auth_len = RPC_AUTH_NTLMSSP_CHK_LEN;
+	} else if (p->netsec_auth_validated) {
+		p->hdr.frag_len = RPC_HEADER_LEN + RPC_HDR_RESP_LEN + data_len +
+			RPC_HDR_AUTH_LEN + RPC_AUTH_NETSEC_CHK_LEN;
+		p->hdr.auth_len = RPC_AUTH_NETSEC_CHK_LEN;
 	} else {
 		p->hdr.frag_len = RPC_HEADER_LEN + RPC_HDR_RESP_LEN + data_len;
 		p->hdr.auth_len = 0;
@@ -192,7 +206,7 @@ BOOL create_next_pdu(pipes_struct *p)
 		return False;
 	}
 
-	if (p->hdr.auth_len > 0) {
+	if (p->ntlmssp_auth_validated) {
 		uint32 crc32 = 0;
 		char *data;
 
@@ -213,7 +227,7 @@ BOOL create_next_pdu(pipes_struct *p)
 		if (auth_seal || auth_verify) {
 			RPC_HDR_AUTH auth_info;
 
-			init_rpc_hdr_auth(&auth_info, NTLMSSP_AUTH_TYPE, NTLMSSP_AUTH_LEVEL, 
+			init_rpc_hdr_auth(&auth_info, NTLMSSP_AUTH_TYPE, RPC_PIPE_AUTH_SEAL_LEVEL, 
 					(auth_verify ? RPC_HDR_AUTH_LEN : 0), (auth_verify ? 1 : 0));
 			if(!smb_io_rpc_hdr_auth("hdr_auth", &auth_info, &outgoing_pdu, 0)) {
 				DEBUG(0,("create_next_pdu: failed to marshall RPC_HDR_AUTH.\n"));
@@ -237,6 +251,42 @@ BOOL create_next_pdu(pipes_struct *p)
 			}
 			NTLMSSPcalc_p(p, (uchar*)auth_data, RPC_AUTH_NTLMSSP_CHK_LEN - 4);
 		}
+	}
+
+	if (p->netsec_auth_validated) {
+		char *data;
+		RPC_HDR_AUTH auth_info;
+		static const uchar netsec_sig[8] = NETSEC_SIGNATURE;
+		static const uchar nullbytes[8] = { 0,0,0,0,0,0,0,0 };
+
+		RPC_AUTH_NETSEC_CHK verf;
+		prs_struct rverf;
+		prs_struct rauth;
+
+		data = prs_data_p(&outgoing_pdu) + data_pos;
+
+		init_rpc_hdr_auth(&auth_info, NETSEC_AUTH_TYPE, RPC_PIPE_AUTH_SEAL_LEVEL, 
+				  RPC_HDR_AUTH_LEN, 1);
+
+		if(!smb_io_rpc_hdr_auth("hdr_auth", &auth_info, &outgoing_pdu, 0)) {
+			DEBUG(0,("create_next_pdu: failed to marshall RPC_HDR_AUTH.\n"));
+			prs_mem_free(&outgoing_pdu);
+			return False;
+		}
+
+		prs_init(&rverf, 0, p->mem_ctx, MARSHALL);
+		prs_init(&rauth, 0, p->mem_ctx, MARSHALL);
+
+		init_rpc_auth_netsec_chk(&verf, netsec_sig, nullbytes, nullbytes, nullbytes);
+
+		netsec_encode(&p->netsec_auth, 
+			      AUTH_PIPE_NETSEC|AUTH_PIPE_SIGN|AUTH_PIPE_SEAL, 
+			      SENDER_IS_ACCEPTOR,
+			      &verf, data, data_len);
+
+		smb_io_rpc_auth_netsec_chk("", &verf, &outgoing_pdu, 0);
+
+		p->netsec_auth.seq_num++;
 	}
 
 	/*
@@ -401,13 +451,17 @@ failed authentication on named pipe %s.\n", domain, user_name, wks, p->name ));
 			p->ntlmssp_hash[256] = 0;
 			p->ntlmssp_hash[257] = 0;
 		}
+
+		dump_data_pw("NTLMSSP hash (v1)\n", p->ntlmssp_hash, 
+			     sizeof(p->ntlmssp_hash));
+
 /*		NTLMSSPhash(p->ntlmssp_hash, p24); */
 		p->ntlmssp_seq_num = 0;
 
 	}
 
 	fstrcpy(p->user_name, user_name);
-	fstrcpy(p->pipe_user_name, pdb_get_username(server_info->sam_account));
+	fstrcpy(p->pipe_user_name, server_info->unix_name);
 	fstrcpy(p->domain, domain);
 	fstrcpy(p->wks, wks);
 
@@ -415,16 +469,10 @@ failed authentication on named pipe %s.\n", domain, user_name, wks, p->name ));
 	 * Store the UNIX credential data (uid/gid pair) in the pipe structure.
 	 */
 
-	if (!IS_SAM_UNIX_USER(server_info->sam_account)) {
-		DEBUG(0,("Attempted authenticated pipe with invalid user.  No uid/gid in SAM_ACCOUNT\n"));
-		free_server_info(&server_info);
-		return False;
-	}
-	
 	memcpy(p->session_key, server_info->session_key, sizeof(p->session_key));
 
-	p->pipe_user.uid = pdb_get_uid(server_info->sam_account);
-	p->pipe_user.gid = pdb_get_gid(server_info->sam_account);
+	p->pipe_user.uid = server_info->uid;
+	p->pipe_user.gid = server_info->gid;
 	
 	p->pipe_user.ngroups = server_info->n_groups;
 	if (p->pipe_user.ngroups) {
@@ -453,41 +501,6 @@ failed authentication on named pipe %s.\n", domain, user_name, wks, p->name ));
 /*******************************************************************
  The switch table for the pipe names and the functions to handle them.
  *******************************************************************/
-
-struct api_cmd
-{
-  const char *name;
-  int (*init)(void);
-};
-
-static struct api_cmd api_fd_commands[] =
-{
-#ifndef RPC_LSA_DYNAMIC
-    { "lsarpc",   rpc_lsa_init },
-#endif
-#ifndef RPC_SAMR_DYNAMIC
-    { "samr",     rpc_samr_init },
-#endif
-#ifndef RPC_SVC_DYNAMIC
-    { "srvsvc",   rpc_srv_init },
-#endif
-#ifndef RPC_WKS_DYNAMIC
-    { "wkssvc",   rpc_wks_init },
-#endif
-#ifndef RPC_NETLOG_DYNAMIC
-    { "NETLOGON", rpc_net_init },
-#endif
-#ifndef RPC_REG_DYNAMIC
-    { "winreg",   rpc_reg_init },
-#endif
-#ifndef RPC_SPOOLSS_DYNAMIC
-    { "spoolss",  rpc_spoolss_init },
-#endif
-#ifndef RPC_DFS_DYNAMIC
-    { "netdfs",   rpc_dfs_init },
-#endif
-    { NULL, NULL }
-};
 
 struct rpc_table
 {
@@ -530,7 +543,7 @@ BOOL api_pipe_bind_auth_resp(pipes_struct *p, prs_struct *rpc_in_p)
 		return False;
 	}
 
-	if (autha_info.auth_type != NTLMSSP_AUTH_TYPE || autha_info.auth_level != NTLMSSP_AUTH_LEVEL) {
+	if (autha_info.auth_type != NTLMSSP_AUTH_TYPE || autha_info.auth_level != RPC_PIPE_AUTH_SEAL_LEVEL) {
 		DEBUG(0,("api_pipe_bind_auth_resp: incorrect auth type (%d) or level (%d).\n",
 			(int)autha_info.auth_type, (int)autha_info.auth_level ));
 		return False;
@@ -700,26 +713,19 @@ BOOL setup_fault_pdu(pipes_struct *p, NTSTATUS status)
  Used to reject unknown binds from Win2k.
 *******************************************************************/
 
-BOOL check_bind_req(char* pipe_name, RPC_IFACE* abstract,
-					RPC_IFACE* transfer)
+BOOL check_bind_req(struct pipes_struct *p, RPC_IFACE* abstract,
+                    RPC_IFACE* transfer, uint32 context_id)
 {
 	extern struct pipe_id_info pipe_names[];
+	char *pipe_name = p->name;
 	int i=0;
 	fstring pname;
+	
 	fstrcpy(pname,"\\PIPE\\");
 	fstrcat(pname,pipe_name);
 
 	DEBUG(3,("check_bind_req for %s\n", pname));
 
-#ifndef SUPPORT_NEW_LSARPC_UUID
-
-	/* check for the first pipe matching the name */
-	
-	for ( i=0; pipe_names[i].client_pipe; i++ ) {
-		if ( strequal(pipe_names[i].client_pipe, pname) )
-			break;
-	}
-#else
 	/* we have to check all now since win2k introduced a new UUID on the lsaprpc pipe */
 		
 	for ( i=0; pipe_names[i].client_pipe; i++ ) 
@@ -730,39 +736,62 @@ BOOL check_bind_req(char* pipe_name, RPC_IFACE* abstract,
 			&& (transfer->version == pipe_names[i].trans_syntax.version)
 			&& (memcmp(&transfer->uuid, &pipe_names[i].trans_syntax.uuid, sizeof(RPC_UUID)) == 0) )
 		{
+			struct api_struct 	*fns = NULL;
+			int 			n_fns = 0;
+			PIPE_RPC_FNS		*context_fns;
+			
+			if ( !(context_fns = malloc(sizeof(PIPE_RPC_FNS))) ) {
+				DEBUG(0,("check_bind_req: malloc() failed!\n"));
+				return False;
+			}
+			
+			/* save the RPC function table associated with this bind */
+			
+			get_pipe_fns(i, &fns, &n_fns);
+			
+			context_fns->cmds = fns;
+			context_fns->n_cmds = n_fns;
+			context_fns->context_id = context_id;
+			
+			/* add to the list of open contexts */
+			
+			DLIST_ADD( p->contexts, context_fns );
+			
 			break;
 		}
 	}
-#endif
 
 	if(pipe_names[i].client_pipe == NULL)
 		return False;
 
-#ifndef SUPPORT_NEW_LSARPC_UUID
-	/* check the abstract interface */
-	if ( (abstract->version != pipe_names[i].abstr_syntax.version) 
-		|| (memcmp(&abstract->uuid, &pipe_names[i].abstr_syntax.uuid, sizeof(RPC_UUID)) != 0) )
-	{
-		return False;
-	}
-
-	/* check the transfer interface */
-	if ( (transfer->version != pipe_names[i].trans_syntax.version) 
-		|| (memcmp(&transfer->uuid, &pipe_names[i].trans_syntax.uuid, sizeof(RPC_UUID)) != 0) )
-	{
-		return False;
-	}
-#endif
 	return True;
 }
 
 /*******************************************************************
  Register commands to an RPC pipe
 *******************************************************************/
-int rpc_pipe_register_commands(const char *clnt, const char *srv, const struct api_struct *cmds, int size)
+NTSTATUS rpc_pipe_register_commands(int version, const char *clnt, const char *srv, const struct api_struct *cmds, int size)
 {
         struct rpc_table *rpc_entry;
 
+	if (!clnt || !srv || !cmds) {
+		return NT_STATUS_INVALID_PARAMETER;
+	}
+
+	if (version != SMB_RPC_INTERFACE_VERSION) {
+		DEBUG(0,("Can't register rpc commands!\n"
+			 "You tried to register a rpc module with SMB_RPC_INTERFACE_VERSION %d"
+			 ", while this version of samba uses version %d!\n", 
+			 version,SMB_RPC_INTERFACE_VERSION));
+		return NT_STATUS_OBJECT_TYPE_MISMATCH;
+	}
+
+	/* TODO: 
+	 *
+	 * we still need to make sure that don't register the same commands twice!!!
+	 * 
+	 * --metze
+	 */
 
         /* We use a temporary variable because this call can fail and 
            rpc_lookup will still be valid afterwards.  It could then succeed if
@@ -772,7 +801,7 @@ int rpc_pipe_register_commands(const char *clnt, const char *srv, const struct a
         if (NULL == rpc_entry) {
                 rpc_lookup_size--;
                 DEBUG(0, ("rpc_pipe_register_commands: memory allocation failed\n"));
-                return 0;
+                return NT_STATUS_NO_MEMORY;
         } else {
                 rpc_lookup = rpc_entry;
         }
@@ -788,48 +817,7 @@ int rpc_pipe_register_commands(const char *clnt, const char *srv, const struct a
                size * sizeof(struct api_struct));
         rpc_entry->n_cmds += size;
         
-        return size;
-}
-
-/*******************************************************************
- Register commands to an RPC pipe
-*******************************************************************/
-int rpc_load_module(const char *module)
-{
-#ifdef HAVE_DLOPEN
-        void *handle;
-        int (*module_init)(void);
-        pstring full_path;
-        const char *error;
-        
-        pstrcpy(full_path, lib_path("rpc"));
-        pstrcat(full_path, "/librpc_");
-        pstrcat(full_path, module);
-        pstrcat(full_path, ".");
-        pstrcat(full_path, shlib_ext());
-
-        handle = sys_dlopen(full_path, RTLD_LAZY);
-        if (!handle) {
-                DEBUG(0, ("Could not load requested pipe %s as %s\n", 
-                    module, full_path));
-                DEBUG(0, (" Error: %s\n", dlerror()));
-                return 0;
-        }
-        
-        DEBUG(3, ("Module '%s' loaded\n", full_path));
-        
-        module_init = sys_dlsym(handle, "rpc_pipe_init");
-        if ((error = sys_dlerror()) != NULL) {
-                DEBUG(0, ("Error trying to resolve symbol 'rpc_pipe_init' in %s: %s\n",
-                          full_path, error));
-                return 0;
-        }
-        
-        return module_init();
-#else
-        DEBUG(0,("Attempting to load a dynamic RPC pipe when dlopen isn't available\n"));
-        return 0;
-#endif
+        return NT_STATUS_OK;
 }
 
 /*******************************************************************
@@ -851,6 +839,7 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 	enum RPC_PKT_TYPE reply_pkt_type;
 
 	p->ntlmssp_auth_requested = False;
+	p->netsec_auth_validated = False;
 
 	DEBUG(5,("api_pipe_bind_req: decode request. %d\n", __LINE__));
 
@@ -870,14 +859,7 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 	}
 
 	if (i == rpc_lookup_size) {
-                for (i = 0; api_fd_commands[i].name; i++) {
-                       if (strequal(api_fd_commands[i].name, p->name)) {
-                               api_fd_commands[i].init();
-                               break;
-                       }
-                }
-
-                if (!api_fd_commands[i].name && !rpc_load_module(p->name)) {
+		if (NT_STATUS_IS_ERR(smb_probe_module("rpc", p->name))) {
                        DEBUG(3,("api_pipe_bind_req: Unknown pipe name %s in bind request.\n",
                                 p->name ));
                        if(!setup_bind_nak(p))
@@ -893,6 +875,11 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
                                break;
                        }
                 }
+
+		if (i == rpc_lookup_size) {
+			DEBUG(0, ("module %s doesn't provide functions for pipe %s!\n", p->name, p->name));
+			return False;
+		}
 	}
 
 	/* decode the bind request */
@@ -918,39 +905,62 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 			return False;
 		}
 
-		/*
-		 * We only support NTLMSSP_AUTH_TYPE requests.
-		 */
+		if(auth_info.auth_type == NTLMSSP_AUTH_TYPE) {
 
-		if(auth_info.auth_type != NTLMSSP_AUTH_TYPE) {
+			if(!smb_io_rpc_auth_verifier("", &auth_verifier, rpc_in_p, 0)) {
+				DEBUG(0,("api_pipe_bind_req: unable to "
+					 "unmarshall RPC_HDR_AUTH struct.\n"));
+				return False;
+			}
+
+			if(!strequal(auth_verifier.signature, "NTLMSSP")) {
+				DEBUG(0,("api_pipe_bind_req: "
+					 "auth_verifier.signature != NTLMSSP\n"));
+				return False;
+			}
+
+			if(auth_verifier.msg_type != NTLMSSP_NEGOTIATE) {
+				DEBUG(0,("api_pipe_bind_req: "
+					 "auth_verifier.msg_type (%d) != NTLMSSP_NEGOTIATE\n",
+					 auth_verifier.msg_type));
+				return False;
+			}
+
+			if(!smb_io_rpc_auth_ntlmssp_neg("", &ntlmssp_neg, rpc_in_p, 0)) {
+				DEBUG(0,("api_pipe_bind_req: "
+					 "Failed to unmarshall RPC_AUTH_NTLMSSP_NEG.\n"));
+				return False;
+			}
+
+			p->ntlmssp_chal_flags = SMBD_NTLMSSP_NEG_FLAGS;
+			p->ntlmssp_auth_requested = True;
+
+		} else if (auth_info.auth_type == NETSEC_AUTH_TYPE) {
+
+			RPC_AUTH_NETSEC_NEG neg;
+			struct netsec_auth_struct *a = &(p->netsec_auth);
+
+			if (!smb_io_rpc_auth_netsec_neg("", &neg, rpc_in_p, 0)) {
+				DEBUG(0,("api_pipe_bind_req: "
+					 "Could not unmarshal SCHANNEL auth neg\n"));
+				return False;
+			}
+
+			p->netsec_auth_validated = True;
+
+			memset(a->sess_key, 0, sizeof(a->sess_key));
+			memcpy(a->sess_key, last_dcinfo.sess_key, sizeof(last_dcinfo.sess_key));
+
+			a->seq_num = 0;
+
+			DEBUG(10,("schannel auth: domain [%s] myname [%s]\n",
+				  neg.domain, neg.myname));
+
+		} else {
 			DEBUG(0,("api_pipe_bind_req: unknown auth type %x requested.\n",
-				auth_info.auth_type ));
+				 auth_info.auth_type ));
 			return False;
 		}
-
-		if(!smb_io_rpc_auth_verifier("", &auth_verifier, rpc_in_p, 0)) {
-			DEBUG(0,("api_pipe_bind_req: unable to unmarshall RPC_HDR_AUTH struct.\n"));
-			return False;
-		}
-
-		if(!strequal(auth_verifier.signature, "NTLMSSP")) {
-			DEBUG(0,("api_pipe_bind_req: auth_verifier.signature != NTLMSSP\n"));
-			return False;
-		}
-
-		if(auth_verifier.msg_type != NTLMSSP_NEGOTIATE) {
-			DEBUG(0,("api_pipe_bind_req: auth_verifier.msg_type (%d) != NTLMSSP_NEGOTIATE\n",
-				auth_verifier.msg_type));
-			return False;
-		}
-
-		if(!smb_io_rpc_auth_ntlmssp_neg("", &ntlmssp_neg, rpc_in_p, 0)) {
-			DEBUG(0,("api_pipe_bind_req: Failed to unmarshall RPC_AUTH_NTLMSSP_NEG.\n"));
-			return False;
-		}
-
-		p->ntlmssp_chal_flags = SMBD_NTLMSSP_NEG_FLAGS;
-		p->ntlmssp_auth_requested = True;
 	}
 
 	switch(p->hdr.pkt_type) {
@@ -1016,7 +1026,8 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 		unknown to NT4)
 		Needed when adding entries to a DACL from NT5 - SK */
 
-	if(check_bind_req(p->name, &hdr_rb.abstract, &hdr_rb.transfer)) {
+	if(check_bind_req(p, &hdr_rb.abstract, &hdr_rb.transfer, hdr_rb.context_id )) 
+	{
 		init_rpc_hdr_ba(&hdr_ba,
 	                MAX_PDU_FRAG_LEN,
 	                MAX_PDU_FRAG_LEN,
@@ -1055,7 +1066,7 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 
 		/*** Authentication info ***/
 
-		init_rpc_hdr_auth(&auth_info, NTLMSSP_AUTH_TYPE, NTLMSSP_AUTH_LEVEL, RPC_HDR_AUTH_LEN, 1);
+		init_rpc_hdr_auth(&auth_info, NTLMSSP_AUTH_TYPE, RPC_PIPE_AUTH_SEAL_LEVEL, RPC_HDR_AUTH_LEN, 1);
 		if(!smb_io_rpc_hdr_auth("", &auth_info, &out_auth, 0)) {
 			DEBUG(0,("api_pipe_bind_req: marshalling of RPC_HDR_AUTH failed.\n"));
 			goto err_exit;
@@ -1078,6 +1089,38 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 		}
 
 		/* Auth len in the rpc header doesn't include auth_header. */
+		auth_len = prs_offset(&out_auth) - RPC_HDR_AUTH_LEN;
+	}
+
+	if (p->netsec_auth_validated) {
+		RPC_AUTH_VERIFIER auth_verifier;
+		uint32 flags;
+
+		/* The client opens a second RPC NETLOGON pipe without
+                   doing a auth2. The credentials for the schannel are
+                   re-used from the auth2 the client did before. */
+		p->dc = last_dcinfo;
+
+		init_rpc_hdr_auth(&auth_info, NETSEC_AUTH_TYPE, RPC_PIPE_AUTH_SEAL_LEVEL, RPC_HDR_AUTH_LEN, 1);
+		if(!smb_io_rpc_hdr_auth("", &auth_info, &out_auth, 0)) {
+			DEBUG(0,("api_pipe_bind_req: marshalling of RPC_HDR_AUTH failed.\n"));
+			goto err_exit;
+		}
+
+		/*** NETSEC verifier ***/
+
+		init_rpc_auth_verifier(&auth_verifier, "\001", 0x0);
+		if(!smb_io_rpc_netsec_verifier("", &auth_verifier, &out_auth, 0)) {
+			DEBUG(0,("api_pipe_bind_req: marshalling of RPC_AUTH_VERIFIER failed.\n"));
+			goto err_exit;
+		}
+
+		prs_align(&out_auth);
+
+		flags = 5;
+		if(!prs_uint32("flags ", &out_auth, 0, &flags))
+			goto err_exit;
+
 		auth_len = prs_offset(&out_auth) - RPC_HDR_AUTH_LEN;
 	}
 
@@ -1108,7 +1151,8 @@ BOOL api_pipe_bind_req(pipes_struct *p, prs_struct *rpc_in_p)
 		goto err_exit;
 	}
 
-	if(p->ntlmssp_auth_requested && !prs_append_prs_data( &outgoing_rpc, &out_auth)) {
+	if((p->ntlmssp_auth_requested|p->netsec_auth_validated) &&
+	   !prs_append_prs_data( &outgoing_rpc, &out_auth)) {
 		DEBUG(0,("api_pipe_bind_req: append of auth info failed.\n"));
 		goto err_exit;
 	}
@@ -1178,7 +1222,14 @@ BOOL api_pipe_auth_process(pipes_struct *p, prs_struct *rpc_in)
 		 * has already been consumed.
 		 */
 		char *data = prs_data_p(rpc_in) + RPC_HDR_REQ_LEN;
+		dump_data_pw("NTLMSSP hash (v1)\n", p->ntlmssp_hash, 
+			     sizeof(p->ntlmssp_hash));
+
+		dump_data_pw("Incoming RPC PDU (NTLMSSP sealed)\n", 
+			     (const unsigned char *)data, data_len);
 		NTLMSSPcalc_p(p, (uchar*)data, data_len);
+		dump_data_pw("Incoming RPC PDU (NTLMSSP unsealed)\n", 
+			     (const unsigned char *)data, data_len);
 		crc32 = crc32_calc_buffer(data, data_len);
 	}
 
@@ -1241,6 +1292,89 @@ BOOL api_pipe_auth_process(pipes_struct *p, prs_struct *rpc_in)
 }
 
 /****************************************************************************
+ Deal with schannel processing on an RPC request.
+****************************************************************************/
+BOOL api_pipe_netsec_process(pipes_struct *p, prs_struct *rpc_in)
+{
+	/*
+	 * We always negotiate the following two bits....
+	 */
+	int data_len;
+	int auth_len;
+	uint32 old_offset;
+	RPC_HDR_AUTH auth_info;
+	RPC_AUTH_NETSEC_CHK netsec_chk;
+
+
+	auth_len = p->hdr.auth_len;
+
+	if (auth_len != RPC_AUTH_NETSEC_CHK_LEN) {
+		DEBUG(0,("Incorrect auth_len %d.\n", auth_len ));
+		return False;
+	}
+
+	/*
+	 * The following is that length of the data we must verify or unseal.
+	 * This doesn't include the RPC headers or the auth_len or the RPC_HDR_AUTH_LEN
+	 * preceeding the auth_data.
+	 */
+
+	data_len = p->hdr.frag_len - RPC_HEADER_LEN - RPC_HDR_REQ_LEN - 
+		RPC_HDR_AUTH_LEN - auth_len;
+	
+	DEBUG(5,("data %d auth %d\n", data_len, auth_len));
+
+	old_offset = prs_offset(rpc_in);
+
+	if(!prs_set_offset(rpc_in, old_offset + data_len)) {
+		DEBUG(0,("cannot move offset to %u.\n",
+			 (unsigned int)old_offset + data_len ));
+		return False;
+	}
+
+	if(!smb_io_rpc_hdr_auth("hdr_auth", &auth_info, rpc_in, 0)) {
+		DEBUG(0,("failed to unmarshall RPC_HDR_AUTH.\n"));
+		return False;
+	}
+
+	if ((auth_info.auth_type != NETSEC_AUTH_TYPE) ||
+	    (auth_info.auth_level != RPC_PIPE_AUTH_SEAL_LEVEL)) {
+		DEBUG(0,("Invalid auth info %d or level %d on schannel\n",
+			 auth_info.auth_type, auth_info.auth_level));
+		return False;
+	}
+
+	if(!smb_io_rpc_auth_netsec_chk("", &netsec_chk, rpc_in, 0)) {
+		DEBUG(0,("failed to unmarshal RPC_AUTH_NETSEC_CHK.\n"));
+		return False;
+	}
+
+	if (!netsec_decode(&p->netsec_auth,
+			   AUTH_PIPE_NETSEC|AUTH_PIPE_SIGN|AUTH_PIPE_SEAL, 
+			   SENDER_IS_INITIATOR,
+			   &netsec_chk,
+			   prs_data_p(rpc_in)+old_offset, data_len)) {
+		DEBUG(0,("failed to decode PDU\n"));
+		return False;
+	}
+
+	/*
+	 * Return the current pointer to the data offset.
+	 */
+
+	if(!prs_set_offset(rpc_in, old_offset)) {
+		DEBUG(0,("failed to set offset back to %u\n",
+			 (unsigned int)old_offset ));
+		return False;
+	}
+
+	/* The sequence number gets incremented on both send and receive. */
+	p->netsec_auth.seq_num++;
+
+	return True;
+}
+
+/****************************************************************************
  Return a user struct for a pipe user.
 ****************************************************************************/
 
@@ -1257,6 +1391,48 @@ struct current_user *get_current_user(struct current_user *user, pipes_struct *p
 }
 
 /****************************************************************************
+ Find the set of RPC functions associated with this context_id
+****************************************************************************/
+
+static PIPE_RPC_FNS* find_pipe_fns_by_context( PIPE_RPC_FNS *list, uint32 context_id )
+{
+	PIPE_RPC_FNS *fns = NULL;
+	PIPE_RPC_FNS *tmp = NULL;
+	
+	if ( !list ) {
+		DEBUG(0,("find_pipe_fns_by_context: ERROR!  No context list for pipe!\n"));
+		return NULL;
+	}
+	
+	for (tmp=list; tmp; tmp=tmp->next ) {
+		if ( tmp->context_id == context_id )
+			break;
+	}
+	
+	fns = tmp;
+	
+	return fns;
+}
+
+/****************************************************************************
+ memory cleanup
+****************************************************************************/
+
+void free_pipe_rpc_context( PIPE_RPC_FNS *list )
+{
+	PIPE_RPC_FNS *tmp = list;
+	PIPE_RPC_FNS *tmp2;
+		
+	while (tmp) {
+		tmp2 = tmp->next;
+		SAFE_FREE(tmp);
+		tmp = tmp2;
+	}
+
+	return;	
+}
+
+/****************************************************************************
  Find the correct RPC function to call for this request.
  If the pipe is authenticated then become the correct UNIX user
  before doing the call.
@@ -1264,9 +1440,9 @@ struct current_user *get_current_user(struct current_user *user, pipes_struct *p
 
 BOOL api_pipe_request(pipes_struct *p)
 {
-	int i = 0;
 	BOOL ret = False;
-
+	PIPE_RPC_FNS *pipe_fns;
+	
 	if (p->ntlmssp_auth_validated) {
 
 		if(!become_authenticated_pipe_user(p)) {
@@ -1276,45 +1452,19 @@ BOOL api_pipe_request(pipes_struct *p)
 	}
 
 	DEBUG(5, ("Requested \\PIPE\\%s\n", p->name));
-
-	for (i = 0; i < rpc_lookup_size; i++) {
-	        if (strequal(rpc_lookup[i].pipe.clnt, p->name)) {
-                        DEBUG(3,("Doing \\PIPE\\%s\n", 
-                                 rpc_lookup[i].pipe.clnt));
-                        set_current_rpc_talloc(p->mem_ctx);
-                        ret = api_rpcTNP(p, rpc_lookup[i].pipe.clnt,
-                                         rpc_lookup[i].cmds,
-                                         rpc_lookup[i].n_cmds);
-                        set_current_rpc_talloc(NULL);
-                        break;
-                }
+	
+	/* get the set of RPC functions for this context */
+	
+	pipe_fns = find_pipe_fns_by_context(p->contexts, p->hdr_req.context_id);
+	
+	if ( pipe_fns ) {
+		set_current_rpc_talloc(p->mem_ctx);
+		ret = api_rpcTNP(p, p->name, pipe_fns->cmds, pipe_fns->n_cmds);
+		set_current_rpc_talloc(NULL);	
 	}
-
-
-	if (i == rpc_lookup_size) {
-	        for (i = 0; api_fd_commands[i].name; i++) {
-                        if (strequal(api_fd_commands[i].name, p->name)) {
-                                api_fd_commands[i].init();
-                                break;
-                        }
-                }
-
-                if (!api_fd_commands[i].name) {
-                       rpc_load_module(p->name);
-                }
-
-                for (i = 0; i < rpc_lookup_size; i++) {
-                        if (strequal(rpc_lookup[i].pipe.clnt, p->name)) {
-                                DEBUG(3,("Doing \\PIPE\\%s\n",
-                                         rpc_lookup[i].pipe.clnt));
-                                set_current_rpc_talloc(p->mem_ctx);
-                                ret = api_rpcTNP(p, rpc_lookup[i].pipe.clnt,
-                                                 rpc_lookup[i].cmds,
-                                                 rpc_lookup[i].n_cmds);
-                                set_current_rpc_talloc(NULL);
-                                break;
-                        }
-                }
+	else {
+		DEBUG(0,("api_pipe_request: No rpc function table associated with context [%d] on pipe [%s]\n",
+			p->hdr_req.context_id, p->name));
 	}
 
 	if(p->ntlmssp_auth_validated)
@@ -1403,3 +1553,56 @@ BOOL api_rpcTNP(pipes_struct *p, const char *rpc_name,
 
 	return True;
 }
+
+/*******************************************************************
+*******************************************************************/
+
+void get_pipe_fns( int idx, struct api_struct **fns, int *n_fns )
+{
+	struct api_struct *cmds = NULL;
+	int               n_cmds = 0;
+
+	switch ( idx ) {
+		case PI_LSARPC:
+			lsa_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_LSARPC_DS:
+			lsa_ds_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_SAMR:
+			samr_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_NETLOGON:
+			netlog_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_SRVSVC:
+			srvsvc_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_WKSSVC:
+			wkssvc_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_WINREG:
+			reg_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_SPOOLSS:
+			spoolss_get_pipe_fns( &cmds, &n_cmds );
+			break;
+		case PI_NETDFS:
+			netdfs_get_pipe_fns( &cmds, &n_cmds );
+			break;
+#ifdef DEVELOPER
+		case PI_ECHO:
+			echo_get_pipe_fns( &cmds, &n_cmds );
+			break;
+#endif
+		default:
+			DEBUG(0,("get_pipe_fns: Unknown pipe index! [%d]\n", idx));
+	}
+
+	*fns = cmds;
+	*n_fns = n_cmds;
+
+	return;
+}
+
+

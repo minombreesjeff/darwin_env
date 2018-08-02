@@ -2,7 +2,7 @@
  *  Unix SMB/CIFS implementation.
  *  UUID server routines
  *  Copyright (C) Theodore Ts'o               1996, 1997,
- *  Copyright (C) Jim McDonough                     2002.
+ *  Copyright (C) Jim McDonough <jmcd@us.ibm.com> 2002.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ static void uuid_unpack(const GUID in, struct uuid *uu)
 	memcpy(uu->node, ptr+10, 6);
 }
 
-void uuid_generate_random(GUID *out)
+void smb_uuid_generate_random(GUID *out)
 {
 	GUID tmp;
 	struct uuid uu;
@@ -71,7 +71,7 @@ void uuid_generate_random(GUID *out)
 	uuid_pack(&uu, out);
 }
 
-char *guid_to_string(const GUID in)
+char *smb_uuid_to_string(const GUID in)
 {
 	struct uuid uu;
 	char *out;
@@ -87,7 +87,7 @@ char *guid_to_string(const GUID in)
 	return out;
 }
 
-const char *uuid_string_static(const GUID in)
+const char *smb_uuid_string_static(const GUID in)
 {
 	struct uuid uu;
 	static char out[37];

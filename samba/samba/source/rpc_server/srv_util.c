@@ -112,7 +112,7 @@ NTSTATUS get_alias_user_groups(TALLOC_CTX *ctx, DOM_SID *sid, int *numgroups, ui
 	*prids=NULL;
 	*numgroups=0;
 
-	winbind_groups_exist = lp_winbind_gid(&winbind_gid_low, &winbind_gid_high);
+	winbind_groups_exist = lp_idmap_gid(&winbind_gid_low, &winbind_gid_high);
 
 
 	DEBUG(10,("get_alias_user_groups: looking if SID %s is a member of groups in the SID domain %s\n", 
@@ -129,7 +129,12 @@ NTSTATUS get_alias_user_groups(TALLOC_CTX *ctx, DOM_SID *sid, int *numgroups, ui
 
 	fstrcpy(user_name, pdb_get_username(sam_pass));
 	grid=pdb_get_group_rid(sam_pass);
-	gid=pdb_get_gid(sam_pass);
+	if (!NT_STATUS_IS_OK(sid_to_gid(pdb_get_group_sid(sam_pass), &gid))) {
+		/* this should never happen */
+		DEBUG(2,("get_alias_user_groups: sid_to_gid failed!\n"));
+		pdb_free_sam(&sam_pass);
+		return NT_STATUS_UNSUCCESSFUL;
+	}
 
 	become_root();
 	/* on some systems this must run as root */
@@ -142,14 +147,17 @@ NTSTATUS get_alias_user_groups(TALLOC_CTX *ctx, DOM_SID *sid, int *numgroups, ui
 		return NT_STATUS_UNSUCCESSFUL;
 	}
 
+	become_root();
+	
 	for (i=0;i<num_groups;i++) {
-		if(!get_group_from_gid(groups[i], &map, MAPPING_WITHOUT_PRIV)) {
+
+		if (!get_group_from_gid(groups[i], &map)) {
 			DEBUG(10,("get_alias_user_groups: gid %d. not found\n", (int)groups[i]));
 			continue;
 		}
 		
 		/* if it's not an alias, continue */
-		if (map.sid_name_use!=SID_NAME_ALIAS) {
+		if (map.sid_name_use != SID_NAME_ALIAS) {
 			DEBUG(10,("get_alias_user_groups: not returing %s, not an ALIAS group.\n", map.nt_name));
 			continue;
 		}
@@ -189,7 +197,9 @@ NTSTATUS get_alias_user_groups(TALLOC_CTX *ctx, DOM_SID *sid, int *numgroups, ui
 		break;
 	}
 
-	free(groups);
+	unbecome_root();
+	
+	if(num_groups) free(groups);
 
 	/* now check for the user's gid (the primary group rid) */
 	for (i=0; i<cur_rid && grid!=rids[i]; i++)
@@ -203,10 +213,14 @@ NTSTATUS get_alias_user_groups(TALLOC_CTX *ctx, DOM_SID *sid, int *numgroups, ui
 
 	DEBUG(10,("get_alias_user_groups: looking for gid %d of user %s\n", (int)gid, user_name));
 
-	if(!get_group_from_gid(gid, &map, MAPPING_WITHOUT_PRIV)) {
+	become_root();
+
+	if(!get_group_from_gid(gid, &map)) {
 		DEBUG(0,("get_alias_user_groups: gid of user %s doesn't exist. Check your /etc/passwd and /etc/group files\n", user_name));
 		goto done;
 	}	
+
+	unbecome_root();
 
 	/* the primary group isn't an alias */
 	if (map.sid_name_use!=SID_NAME_ALIAS) {
@@ -275,10 +289,16 @@ BOOL get_domain_user_groups(TALLOC_CTX *ctx, int *numgroups, DOM_GID **pgids, SA
 
 	DEBUG(10,("get_domain_user_groups: searching domain groups [%s] is a member of\n", user_name));
 
+	/* we must wrap this is become/unbecome root for ldap backends */
+	become_root();
+
 	/* first get the list of the domain groups */
-	if (!pdb_enum_group_mapping(SID_NAME_DOM_GRP, &map, &num_entries, ENUM_ONLY_MAPPED, MAPPING_WITHOUT_PRIV))
+	if (!pdb_enum_group_mapping(SID_NAME_DOM_GRP, &map, &num_entries, ENUM_ONLY_MAPPED))
 		return False;
 	DEBUG(10,("get_domain_user_groups: there are %d mapped groups\n", num_entries));
+
+	unbecome_root();
+	/* end wrapper for group enumeration */
 
 	/* 
 	 * alloc memory. In the worse case, we alloc memory for nothing.
@@ -287,8 +307,17 @@ BOOL get_domain_user_groups(TALLOC_CTX *ctx, int *numgroups, DOM_GID **pgids, SA
 	 */
 	gids = (DOM_GID *)talloc(ctx, sizeof(DOM_GID) *  num_entries);	
 
-	/* for each group, check if the user is a member of*/
+	/* for each group, check if the user is a member of.  Only include groups 
+	   from this domain */
+	
 	for(i=0; i<num_entries; i++) {
+	
+		if ( !sid_check_is_in_our_domain(&map[i].sid) ) {
+			DEBUG(10,("get_domain_user_groups: skipping check of %s since it is not in our domain\n",
+				map[i].nt_name));
+			continue;
+		}
+			
 		if ((grp=getgrgid(map[i].gid)) == NULL) {
 			/* very weird !!! */
 			DEBUG(5,("get_domain_user_groups: gid %d doesn't exist anymore !\n", (int)map[i].gid));

@@ -24,20 +24,62 @@
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_PASSDB
 
-/** List of various built-in passdb modules */
+static struct pdb_init_function_entry *backends = NULL;
 
-const struct pdb_init_function_entry builtin_pdb_init_functions[] = {
-	{ "smbpasswd", pdb_init_smbpasswd },
-	{ "smbpasswd_nua", pdb_init_smbpasswd_nua },
-	{ "tdbsam", pdb_init_tdbsam },
-	{ "tdbsam_nua", pdb_init_tdbsam_nua },
-	{ "ldapsam", pdb_init_ldapsam },
-	{ "ldapsam_nua", pdb_init_ldapsam_nua },
-	{ "unixsam", pdb_init_unixsam },
-	{ "nisplussam", pdb_init_nisplussam },
-	{ "plugin", pdb_init_plugin },
-	{ NULL, NULL}
-};
+static void lazy_initialize_passdb(void)
+{
+	static BOOL initialized = False;
+	if(initialized)return;
+	static_init_pdb;
+	initialized = True;
+}
+
+static struct pdb_init_function_entry *pdb_find_backend_entry(const char *name);
+
+NTSTATUS smb_register_passdb(int version, const char *name, pdb_init_function init) 
+{
+	struct pdb_init_function_entry *entry = backends;
+
+	if(version != PASSDB_INTERFACE_VERSION) {
+		DEBUG(0,("Can't register passdb backend!\n"
+			 "You tried to register a passdb module with PASSDB_INTERFACE_VERSION %d, "
+			 "while this version of samba uses version %d\n", 
+			 version,PASSDB_INTERFACE_VERSION));
+		return NT_STATUS_OBJECT_TYPE_MISMATCH;
+	}
+
+	if (!name || !init) {
+		return NT_STATUS_INVALID_PARAMETER;
+	}
+
+	DEBUG(5,("Attempting to register passdb backend %s\n", name));
+
+	/* Check for duplicates */
+	if (pdb_find_backend_entry(name)) {
+		DEBUG(0,("There already is a passdb backend registered with the name %s!\n", name));
+		return NT_STATUS_OBJECT_NAME_COLLISION;
+	}
+
+	entry = smb_xmalloc(sizeof(struct pdb_init_function_entry));
+	entry->name = smb_xstrdup(name);
+	entry->init = init;
+
+	DLIST_ADD(backends, entry);
+	DEBUG(5,("Successfully added passdb backend '%s'\n", name));
+	return NT_STATUS_OK;
+}
+
+static struct pdb_init_function_entry *pdb_find_backend_entry(const char *name)
+{
+	struct pdb_init_function_entry *entry = backends;
+
+	while(entry) {
+		if (strcmp(entry->name, name)==0) return entry;
+		entry = entry->next;
+	}
+
+	return NULL;
+}
 
 static NTSTATUS context_setsampwent(struct pdb_context *context, BOOL update)
 {
@@ -216,7 +258,7 @@ static NTSTATUS context_delete_sam_account(struct pdb_context *context, SAM_ACCO
 }
 
 static NTSTATUS context_getgrsid(struct pdb_context *context,
-				 GROUP_MAP *map, DOM_SID sid, BOOL with_priv)
+				 GROUP_MAP *map, DOM_SID sid)
 {
 	NTSTATUS ret = NT_STATUS_UNSUCCESSFUL;
 
@@ -227,7 +269,7 @@ static NTSTATUS context_getgrsid(struct pdb_context *context,
 	}
 	curmethods = context->pdb_methods;
 	while (curmethods){
-		ret = curmethods->getgrsid(curmethods, map, sid, with_priv);
+		ret = curmethods->getgrsid(curmethods, map, sid);
 		if (NT_STATUS_IS_OK(ret)) {
 			map->methods = curmethods;
 			return ret;
@@ -239,7 +281,7 @@ static NTSTATUS context_getgrsid(struct pdb_context *context,
 }
 
 static NTSTATUS context_getgrgid(struct pdb_context *context,
-				 GROUP_MAP *map, gid_t gid, BOOL with_priv)
+				 GROUP_MAP *map, gid_t gid)
 {
 	NTSTATUS ret = NT_STATUS_UNSUCCESSFUL;
 
@@ -250,7 +292,7 @@ static NTSTATUS context_getgrgid(struct pdb_context *context,
 	}
 	curmethods = context->pdb_methods;
 	while (curmethods){
-		ret = curmethods->getgrgid(curmethods, map, gid, with_priv);
+		ret = curmethods->getgrgid(curmethods, map, gid);
 		if (NT_STATUS_IS_OK(ret)) {
 			map->methods = curmethods;
 			return ret;
@@ -262,7 +304,7 @@ static NTSTATUS context_getgrgid(struct pdb_context *context,
 }
 
 static NTSTATUS context_getgrnam(struct pdb_context *context,
-				 GROUP_MAP *map, char *name, BOOL with_priv)
+				 GROUP_MAP *map, const char *name)
 {
 	NTSTATUS ret = NT_STATUS_UNSUCCESSFUL;
 
@@ -273,7 +315,7 @@ static NTSTATUS context_getgrnam(struct pdb_context *context,
 	}
 	curmethods = context->pdb_methods;
 	while (curmethods){
-		ret = curmethods->getgrnam(curmethods, map, name, with_priv);
+		ret = curmethods->getgrnam(curmethods, map, name);
 		if (NT_STATUS_IS_OK(ret)) {
 			map->methods = curmethods;
 			return ret;
@@ -329,7 +371,7 @@ static NTSTATUS context_delete_group_mapping_entry(struct pdb_context *context,
 static NTSTATUS context_enum_group_mapping(struct pdb_context *context,
 					   enum SID_NAME_USE sid_name_use,
 					   GROUP_MAP **rmap, int *num_entries,
-					   BOOL unix_only, BOOL with_priv)
+					   BOOL unix_only)
 {
 	NTSTATUS ret = NT_STATUS_UNSUCCESSFUL;
 
@@ -340,8 +382,7 @@ static NTSTATUS context_enum_group_mapping(struct pdb_context *context,
 
 	return context->pdb_methods->enum_group_mapping(context->pdb_methods,
 							sid_name_use, rmap,
-							num_entries, unix_only,
-							with_priv);
+							num_entries, unix_only);
 }
 
 /******************************************************************
@@ -371,8 +412,10 @@ static NTSTATUS make_pdb_methods_name(struct pdb_methods **methods, struct pdb_c
 {
 	char *module_name = smb_xstrdup(selected);
 	char *module_location = NULL, *p;
+	struct pdb_init_function_entry *entry;
 	NTSTATUS nt_status = NT_STATUS_UNSUCCESSFUL;
-	int i;
+
+	lazy_initialize_passdb();
 
 	p = strchr(module_name, ':');
 
@@ -384,27 +427,37 @@ static NTSTATUS make_pdb_methods_name(struct pdb_methods **methods, struct pdb_c
 
 	trim_string(module_name, " ", " ");
 
+
 	DEBUG(5,("Attempting to find an passdb backend to match %s (%s)\n", selected, module_name));
-	for (i = 0; builtin_pdb_init_functions[i].name; i++)
-	{
-		if (strequal(builtin_pdb_init_functions[i].name, module_name))
-		{
-			DEBUG(5,("Found pdb backend %s (at pos %d)\n", module_name, i));
-			nt_status = builtin_pdb_init_functions[i].init(context, methods, module_location);
-			if (NT_STATUS_IS_OK(nt_status)) {
-				DEBUG(5,("pdb backend %s has a valid init\n", selected));
-			} else {
-				DEBUG(0,("pdb backend %s did not correctly init (error was %s)\n", selected, nt_errstr(nt_status)));
-			}
+
+	entry = pdb_find_backend_entry(module_name);
+	
+	/* Try to find a module that contains this module */
+	if (!entry) { 
+		DEBUG(2,("No builtin backend found, trying to load plugin\n"));
+		if(NT_STATUS_IS_OK(smb_probe_module("pdb", module_name)) && !(entry = pdb_find_backend_entry(module_name))) {
+			DEBUG(0,("Plugin is available, but doesn't register passdb backend %s\n", module_name));
 			SAFE_FREE(module_name);
-			return nt_status;
-			break; /* unreached */
+			return NT_STATUS_UNSUCCESSFUL;
 		}
 	}
-
+	
 	/* No such backend found */
+	if(!entry) { 
+		DEBUG(0,("No builtin nor plugin backend for %s found\n", module_name));
+		SAFE_FREE(module_name);
+		return NT_STATUS_INVALID_PARAMETER;
+	}
+
+	DEBUG(5,("Found pdb backend %s\n", module_name));
+	nt_status = entry->init(context, methods, module_location);
+	if (NT_STATUS_IS_OK(nt_status)) {
+		DEBUG(5,("pdb backend %s has a valid init\n", selected));
+	} else {
+		DEBUG(0,("pdb backend %s did not correctly init (error was %s)\n", selected, nt_errstr(nt_status)));
+	}
 	SAFE_FREE(module_name);
-	return NT_STATUS_INVALID_PARAMETER;
+	return nt_status;
 }
 
 /******************************************************************
@@ -463,12 +516,21 @@ NTSTATUS make_pdb_context_list(struct pdb_context **context, const char **select
 	int i = 0;
 	struct pdb_methods *curmethods, *tmpmethods;
 	NTSTATUS nt_status = NT_STATUS_UNSUCCESSFUL;
+	BOOL have_guest = False;
 
 	if (!NT_STATUS_IS_OK(nt_status = make_pdb_context(context))) {
 		return nt_status;
 	}
 
+	if (!selected) {
+		DEBUG(0, ("ERROR: empty passdb backend list!\n"));
+		return nt_status;
+	}
+
 	while (selected[i]){
+		if (strcmp(selected[i], "guest") == 0) {
+			have_guest = True;
+		}
 		/* Try to initialise pdb */
 		DEBUG(5,("Trying to load: %s\n", selected[i]));
 		if (!NT_STATUS_IS_OK(nt_status = make_pdb_methods_name(&curmethods, *context, selected[i]))) {
@@ -481,6 +543,27 @@ NTSTATUS make_pdb_context_list(struct pdb_context **context, const char **select
 		i++;
 	}
 
+	if (have_guest)
+		return NT_STATUS_OK;
+
+	if ( (lp_guestaccount() == NULL) ||
+	     (*lp_guestaccount() == '\0') ) {
+		/* We explicitly don't want guest access. No idea what
+		   else that breaks, but be it that way. */
+		return NT_STATUS_OK;
+	}
+
+	if (!NT_STATUS_IS_OK(nt_status = make_pdb_methods_name(&curmethods,
+							       *context,
+							       "guest"))) {
+		DEBUG(1, ("Loading guest module failed!\n"));
+		free_pdb_context(context);
+		return nt_status;
+	}
+
+	curmethods->parent = *context;
+	DLIST_ADD_END((*context)->pdb_methods, curmethods, tmpmethods);
+	
 	return NT_STATUS_OK;
 }
 
@@ -508,13 +591,13 @@ static struct pdb_context *pdb_get_static_context(BOOL reload)
 
 	if ((pdb_context) && (reload)) {
 		pdb_context->free_fn(&pdb_context);
-		if (NT_STATUS_IS_ERR(make_pdb_context_list(&pdb_context, lp_passdb_backend()))) {
+		if (!NT_STATUS_IS_OK(make_pdb_context_list(&pdb_context, lp_passdb_backend()))) {
 			return NULL;
 		}
 	}
 
 	if (!pdb_context) {
-		if (NT_STATUS_IS_ERR(make_pdb_context_list(&pdb_context, lp_passdb_backend()))) {
+		if (!NT_STATUS_IS_OK(make_pdb_context_list(&pdb_context, lp_passdb_backend()))) {
 			return NULL;
 		}
 	}
@@ -614,7 +697,7 @@ BOOL pdb_delete_sam_account(SAM_ACCOUNT *sam_acct)
 	return NT_STATUS_IS_OK(pdb_context->pdb_delete_sam_account(pdb_context, sam_acct));
 }
 
-BOOL pdb_getgrsid(GROUP_MAP *map, DOM_SID sid, BOOL with_priv)
+BOOL pdb_getgrsid(GROUP_MAP *map, DOM_SID sid)
 {
 	struct pdb_context *pdb_context = pdb_get_static_context(False);
 
@@ -623,10 +706,10 @@ BOOL pdb_getgrsid(GROUP_MAP *map, DOM_SID sid, BOOL with_priv)
 	}
 
 	return NT_STATUS_IS_OK(pdb_context->
-			       pdb_getgrsid(pdb_context, map, sid, with_priv));
+			       pdb_getgrsid(pdb_context, map, sid));
 }
 
-BOOL pdb_getgrgid(GROUP_MAP *map, gid_t gid, BOOL with_priv)
+BOOL pdb_getgrgid(GROUP_MAP *map, gid_t gid)
 {
 	struct pdb_context *pdb_context = pdb_get_static_context(False);
 
@@ -635,10 +718,10 @@ BOOL pdb_getgrgid(GROUP_MAP *map, gid_t gid, BOOL with_priv)
 	}
 
 	return NT_STATUS_IS_OK(pdb_context->
-			       pdb_getgrgid(pdb_context, map, gid, with_priv));
+			       pdb_getgrgid(pdb_context, map, gid));
 }
 
-BOOL pdb_getgrnam(GROUP_MAP *map, char *name, BOOL with_priv)
+BOOL pdb_getgrnam(GROUP_MAP *map, char *name)
 {
 	struct pdb_context *pdb_context = pdb_get_static_context(False);
 
@@ -647,7 +730,7 @@ BOOL pdb_getgrnam(GROUP_MAP *map, char *name, BOOL with_priv)
 	}
 
 	return NT_STATUS_IS_OK(pdb_context->
-			       pdb_getgrnam(pdb_context, map, name, with_priv));
+			       pdb_getgrnam(pdb_context, map, name));
 }
 
 BOOL pdb_add_group_mapping_entry(GROUP_MAP *map)
@@ -687,7 +770,7 @@ BOOL pdb_delete_group_mapping_entry(DOM_SID sid)
 }
 
 BOOL pdb_enum_group_mapping(enum SID_NAME_USE sid_name_use, GROUP_MAP **rmap,
-			    int *num_entries, BOOL unix_only, BOOL with_priv)
+			    int *num_entries, BOOL unix_only)
 {
 	struct pdb_context *pdb_context = pdb_get_static_context(False);
 
@@ -697,8 +780,7 @@ BOOL pdb_enum_group_mapping(enum SID_NAME_USE sid_name_use, GROUP_MAP **rmap,
 
 	return NT_STATUS_IS_OK(pdb_context->
 			       pdb_enum_group_mapping(pdb_context, sid_name_use,
-						      rmap, num_entries, unix_only,
-						      with_priv));
+						      rmap, num_entries, unix_only));
 }
 
 /***************************************************************
@@ -713,6 +795,51 @@ BOOL initialize_password_db(BOOL reload)
 }
 
 
+/***************************************************************************
+  Default implementations of some functions.
+ ****************************************************************************/
+
+static NTSTATUS pdb_default_getsampwnam (struct pdb_methods *methods, SAM_ACCOUNT *user, const char *sname)
+{
+	return NT_STATUS_NO_SUCH_USER;
+}
+
+static NTSTATUS pdb_default_getsampwsid(struct pdb_methods *my_methods, SAM_ACCOUNT * user, const DOM_SID *sid)
+{
+	return NT_STATUS_NO_SUCH_USER;
+}
+
+static NTSTATUS pdb_default_add_sam_account (struct pdb_methods *methods, SAM_ACCOUNT *newpwd)
+{
+	DEBUG(0,("this backend (%s) should not be listed as the first passdb backend! You can't add users to it.\n", methods->name));
+	return NT_STATUS_NOT_IMPLEMENTED;
+}
+
+static NTSTATUS pdb_default_update_sam_account (struct pdb_methods *methods, SAM_ACCOUNT *newpwd)
+{
+	return NT_STATUS_NOT_IMPLEMENTED;
+}
+
+static NTSTATUS pdb_default_delete_sam_account (struct pdb_methods *methods, SAM_ACCOUNT *pwd)
+{
+	return NT_STATUS_NOT_IMPLEMENTED;
+}
+
+static NTSTATUS pdb_default_setsampwent(struct pdb_methods *methods, BOOL update)
+{
+	return NT_STATUS_NOT_IMPLEMENTED;
+}
+
+static NTSTATUS pdb_default_getsampwent(struct pdb_methods *methods, SAM_ACCOUNT *user)
+{
+	return NT_STATUS_NOT_IMPLEMENTED;
+}
+
+static void pdb_default_endsampwent(struct pdb_methods *methods)
+{
+	return; /* NT_STATUS_NOT_IMPLEMENTED; */
+}
+
 NTSTATUS make_pdb_methods(TALLOC_CTX *mem_ctx, PDB_METHODS **methods) 
 {
 	*methods = talloc(mem_ctx, sizeof(struct pdb_methods));
@@ -722,6 +849,23 @@ NTSTATUS make_pdb_methods(TALLOC_CTX *mem_ctx, PDB_METHODS **methods)
 	}
 
 	ZERO_STRUCTP(*methods);
+
+	(*methods)->setsampwent = pdb_default_setsampwent;
+	(*methods)->endsampwent = pdb_default_endsampwent;
+	(*methods)->getsampwent = pdb_default_getsampwent;
+	(*methods)->getsampwnam = pdb_default_getsampwnam;
+	(*methods)->getsampwsid = pdb_default_getsampwsid;
+	(*methods)->add_sam_account = pdb_default_add_sam_account;
+	(*methods)->update_sam_account = pdb_default_update_sam_account;
+	(*methods)->delete_sam_account = pdb_default_delete_sam_account;
+
+	(*methods)->getgrsid = pdb_default_getgrsid;
+	(*methods)->getgrgid = pdb_default_getgrgid;
+	(*methods)->getgrnam = pdb_default_getgrnam;
+	(*methods)->add_group_mapping_entry = pdb_default_add_group_mapping_entry;
+	(*methods)->update_group_mapping_entry = pdb_default_update_group_mapping_entry;
+	(*methods)->delete_group_mapping_entry = pdb_default_delete_group_mapping_entry;
+	(*methods)->enum_group_mapping = pdb_default_enum_group_mapping;
 
 	return NT_STATUS_OK;
 }

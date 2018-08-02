@@ -345,6 +345,10 @@
 #include <poll.h>
 #endif
 
+#ifdef HAVE_EXECINFO_H
+#include <execinfo.h>
+#endif
+
 #ifdef HAVE_SYS_CAPABILITY_H
 
 #if defined(BROKEN_REDHAT_7_SYSTEM_HEADERS) && !defined(_I386_STATFS_H)
@@ -432,6 +436,39 @@
 #if HAVE_COM_ERR_H
 #include <com_err.h>
 #endif
+
+#if HAVE_SYS_ATTRIBUTES_H
+#include <sys/attributes.h>
+#endif
+
+#if HAVE_ATTR_XATTR_H
+#include <attr/xattr.h>
+#endif
+
+#if HAVE_LOCALE_H
+#include <locale.h>
+#endif
+
+#if HAVE_LANGINFO_H
+#include <langinfo.h>
+#endif
+
+/* Special macros that are no-ops except when run under Valgrind on
+ * x86.  They've moved a little bit from valgrind 1.0.4 to 1.9.4 */
+#if HAVE_VALGRIND_MEMCHECK_H
+        /* memcheck.h includes valgrind.h */
+#include <valgrind/memcheck.h>
+#elif HAVE_VALGRIND_H
+#include <valgrind.h>
+#endif
+
+/* If we have --enable-developer and the valgrind header is present,
+ * then we're OK to use it.  Set a macro so this logic can be done only
+ * once. */
+#if defined(DEVELOPER) && (HAVE_VALGRIND_H || HAVE_VALGRIND_VALGRIND_H)
+#define VALGRIND
+#endif
+
 
 /* we support ADS if we want it and have krb5 and ldap libs */
 #if defined(WITH_ADS) && defined(HAVE_KRB5) && defined(HAVE_LDAP)
@@ -746,21 +783,34 @@ extern int errno;
 #include "debugparse.h"
 
 #include "version.h"
+
 #include "smb.h"
-#include "smbw.h"
+
 #include "nameserv.h"
 
 #include "secrets.h"
 
 #include "byteorder.h"
 
+#include "privileges.h"
+
+#include "rpc_creds.h"
+
+#include "mapping.h"
+
+#include "passdb.h"
+
 #include "ntdomain.h"
+
+#include "rpc_misc.h"
+
+#include "rpc_secdes.h"
+
+#include "nt_printing.h"
 
 #include "msdfs.h"
 
 #include "smbprofile.h"
-
-#include "mapping.h"
 
 #include "rap.h"
 
@@ -771,7 +821,11 @@ extern int errno;
 
 #include "auth.h"
 
-#include "passdb.h"
+#include "idmap.h"
+
+#include "client.h"
+
+#include "smbw.h"
 
 #include "session.h"
 
@@ -781,7 +835,11 @@ extern int errno;
 
 #include "mangle.h"
 
+#include "module.h"
+
 #include "nsswitch/winbind_client.h"
+
+#include "spnego.h"
 
 /*
  * Type for wide character dirent structure.
@@ -820,18 +878,27 @@ struct functable {
 #define UNI_XDIGIT   0x8
 #define UNI_SPACE    0x10
 
-#include "nsswitch/nss.h"
+#include "nsswitch/winbind_nss.h"
 
 /* forward declaration from printing.h to get around 
    header file dependencies */
 
 struct printjob;
 
+struct smb_ldap_privates;
+
+/* forward declarations from smbldap.c */
+
+#include "smbldap.h"
+
 /***** automatically generated prototypes *****/
+#ifndef NO_PROTO_H
 #include "proto.h"
+#endif
 
 /* String routines */
 
+#include "srvstr.h"
 #include "safe_string.h"
 
 #ifdef __COMPAR_FN_T
@@ -863,12 +930,12 @@ struct printjob;
 #define SIGCLD SIGCHLD
 #endif
 
-#ifndef MAP_FILE
-#define MAP_FILE 0
+#ifndef SIGRTMIN
+#define SIGRTMIN 32
 #endif
 
-#if (!defined(WITH_NISPLUS) && !defined(WITH_LDAP) && !defined(WITH_TDB_SAM))
-#define USE_SMBPASS_DB 1
+#ifndef MAP_FILE
+#define MAP_FILE 0
 #endif
 
 #if defined(HAVE_PUTPRPWNAM) && defined(AUTH_CLEARTEXT_SEG_CHARS)
@@ -893,10 +960,6 @@ struct printjob;
 
 #ifndef HAVE_PIPE
 #define SYNC_DNS 1
-#endif
-
-#ifndef MAXPATHLEN
-#define MAXPATHLEN 256
 #endif
 
 #ifndef SEEK_SET
@@ -980,10 +1043,6 @@ int setresgid(gid_t rgid, gid_t egid, gid_t sgid);
 #endif
 #ifndef HAVE_VASPRINTF_DECL
 int vasprintf(char **ptr, const char *format, va_list ap);
-#endif
-
-#if !defined(HAVE_BZERO) && defined(HAVE_MEMSET)
-#define bzero(a,b) memset((a),'\0',(b))
 #endif
 
 #ifdef REPLACE_GETPASS
@@ -1175,6 +1234,14 @@ int snprintf(char *,size_t ,const char *, ...) PRINTF_ATTRIBUTE(3,4);
 int asprintf(char **,const char *, ...) PRINTF_ATTRIBUTE(2,3);
 #endif
 
+/* Fix prototype problem with non-C99 compliant snprintf implementations, esp
+   HPUX 11.  Don't change the sense of this #if statement.  Read the comments
+   in lib/snprint.c if you think you need to.  See also bugzilla bug 174. */
+
+#if !defined(HAVE_SNPRINTF) || !defined(HAVE_C99_VSNPRINTF)
+#define snprintf smb_snprintf
+#endif
+
 void sys_adminlog(int priority, const char *format_str, ...) PRINTF_ATTRIBUTE(2,3);
 
 int pstr_sprintf(pstring s, const char *fmt, ...) PRINTF_ATTRIBUTE(2,3);
@@ -1201,10 +1268,6 @@ int smb_xvasprintf(char **ptr, const char *format, va_list ap) PRINTF_ATTRIBUTE(
 time_t timegm(struct tm *tm);
 #endif
 
-#if defined(VALGRIND)
-#define strlen(x) valgrind_strlen(x)
-#endif
-
 /*
  * Veritas File System.  Often in addition to native.
  * Quotas different.
@@ -1215,13 +1278,8 @@ time_t timegm(struct tm *tm);
 
 #if defined(HAVE_KRB5)
 
-#ifndef KRB5_SET_REAL_TIME
+#ifndef HAVE_KRB5_SET_REAL_TIME
 krb5_error_code krb5_set_real_time(krb5_context context, int32_t seconds, int32_t microseconds);
-#endif
-
-#if defined(__APPLE__) && !defined(KRB5_SET_DEFAULT_TGS_KTYPES)
-#define krb5_set_default_tgs_ktypes krb5_set_default_tgs_enctypes
-#define HAVE_KRB5_SET_DEFAULT_TGS_KTYPES
 #endif
 
 #ifndef HAVE_KRB5_SET_DEFAULT_TGS_KTYPES
@@ -1240,7 +1298,21 @@ krb5_const_principal get_principal_from_tkt(krb5_ticket *tkt);
 krb5_error_code krb5_locate_kdc(krb5_context ctx, const krb5_data *realm, struct sockaddr **addr_pp, int *naddrs, int get_masters);
 krb5_error_code get_kerberos_allowed_etypes(krb5_context context, krb5_enctype **enctypes);
 void free_kerberos_etypes(krb5_context context, krb5_enctype *enctypes);
+BOOL get_krb5_smb_session_key(krb5_context context, krb5_auth_context auth_context, uint8 session_key[16], BOOL remote);
 #endif /* HAVE_KRB5 */
 
-#endif /* _INCLUDES_H */
+/* TRUE and FALSE are part of the C99 standard and gcc, but
+   unfortunately many vendor compilers don't support them.  Use True
+   and False instead. */
 
+#ifdef TRUE
+#undef TRUE
+#endif
+#define TRUE __ERROR__XX__DONT_USE_TRUE
+
+#ifdef FALSE
+#undef FALSE
+#endif
+#define FALSE __ERROR__XX__DONT_USE_FALSE
+
+#endif /* _INCLUDES_H */

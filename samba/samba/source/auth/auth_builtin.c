@@ -1,6 +1,6 @@
 /* 
    Unix SMB/CIFS implementation.
-   Generic authenticaion types
+   Generic authentication types
    Copyright (C) Andrew Bartlett         2001-2002
    Copyright (C) Jelmer Vernooij              2002
    
@@ -38,7 +38,8 @@ static NTSTATUS check_guest_security(const struct auth_context *auth_context,
 				     const auth_usersupplied_info *user_info, 
 				     auth_serversupplied_info **server_info)
 {
-	NTSTATUS nt_status = NT_STATUS_LOGON_FAILURE;
+	/* mark this as 'not for me' */
+	NTSTATUS nt_status = NT_STATUS_NOT_IMPLEMENTED;
 
 	if (!(user_info->internal_username.str 
 	      && *user_info->internal_username.str)) {
@@ -50,7 +51,7 @@ static NTSTATUS check_guest_security(const struct auth_context *auth_context,
 
 /* Guest modules initialisation */
 
-NTSTATUS auth_init_guest(struct auth_context *auth_context, const char *options, auth_methods **auth_method) 
+static NTSTATUS auth_init_guest(struct auth_context *auth_context, const char *options, auth_methods **auth_method) 
 {
 	if (!make_auth_methods(auth_context, auth_method))
 		return NT_STATUS_NO_MEMORY;
@@ -60,6 +61,7 @@ NTSTATUS auth_init_guest(struct auth_context *auth_context, const char *options,
 	return NT_STATUS_OK;
 }
 
+#ifdef DEVELOPER
 /** 
  * Return an error based on username
  *
@@ -85,11 +87,11 @@ static NTSTATUS check_name_to_ntstatus_security(const struct auth_context *auth_
 	fstrcpy(user, user_info->smb_name.str);
 	
 	if (strncasecmp("NT_STATUS", user, strlen("NT_STATUS")) == 0) {
-		strupper(user);
+		strupper_m(user);
 		return nt_status_string_to_code(user);
 	}
 
-	strlower(user);
+	strlower_m(user);
 	error_num = strtoul(user, NULL, 16);
 	
 	DEBUG(5,("check_name_to_ntstatus_security: Error for user %s was %lx\n", user, error_num));
@@ -99,9 +101,9 @@ static NTSTATUS check_name_to_ntstatus_security(const struct auth_context *auth_
 	return nt_status;
 }
 
-/** Module initailisation function */
+/** Module initialisation function */
 
-NTSTATUS auth_init_name_to_ntstatus(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
+static NTSTATUS auth_init_name_to_ntstatus(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
 {
 	if (!make_auth_methods(auth_context, auth_method))
 		return NT_STATUS_NO_MEMORY;
@@ -112,7 +114,7 @@ NTSTATUS auth_init_name_to_ntstatus(struct auth_context *auth_context, const cha
 }
 
 /** 
- * Return a 'fixed' challenge instead of a varaible one.
+ * Return a 'fixed' challenge instead of a variable one.
  *
  * The idea of this function is to make packet snifs consistant
  * with a fixed challenge, so as to aid debugging.
@@ -132,7 +134,7 @@ static NTSTATUS check_fixed_challenge_security(const struct auth_context *auth_c
 					       const auth_usersupplied_info *user_info, 
 					       auth_serversupplied_info **server_info)
 {
-	return NT_STATUS_UNSUCCESSFUL;
+	return NT_STATUS_NOT_IMPLEMENTED;
 }
 
 /****************************************************************************
@@ -150,7 +152,7 @@ static DATA_BLOB auth_get_fixed_challenge(const struct auth_context *auth_contex
 
 /** Module initailisation function */
 
-NTSTATUS auth_init_fixed_challenge(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
+static NTSTATUS auth_init_fixed_challenge(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
 {
 	if (!make_auth_methods(auth_context, auth_method))
 		return NT_STATUS_NO_MEMORY;
@@ -160,51 +162,14 @@ NTSTATUS auth_init_fixed_challenge(struct auth_context *auth_context, const char
 	(*auth_method)->name = "fixed_challenge";
 	return NT_STATUS_OK;
 }
+#endif /* DEVELOPER */
 
-/**
- * Outsorce an auth module to an external loadable .so
- *
- * Only works on systems with dlopen() etc.
- **/
-
-/* Plugin modules initialisation */
-
-NTSTATUS auth_init_plugin(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
+NTSTATUS auth_builtin_init(void)
 {
-	void * dl_handle;
-	char *plugin_param, *plugin_name, *p;
-	auth_init_function plugin_init;
-
-	if (param == NULL) {
-		DEBUG(0, ("auth_init_plugin: The plugin module needs an argument!\n"));
-		return NT_STATUS_UNSUCCESSFUL;
-	}
-
-	plugin_name = smb_xstrdup(param);
-	p = strchr(plugin_name, ':');
-	if (p) {
-		*p = 0;
-		plugin_param = p+1;
-		trim_string(plugin_param, " ", " ");
-	} else plugin_param = NULL;
-
-	trim_string(plugin_name, " ", " ");
-
-	DEBUG(5, ("auth_init_plugin: Trying to load auth plugin %s\n", plugin_name));
-	dl_handle = sys_dlopen(plugin_name, RTLD_NOW );
-	if (!dl_handle) {
-		DEBUG(0, ("auth_init_plugin: Failed to load auth plugin %s using sys_dlopen (%s)\n",
-					plugin_name, sys_dlerror()));
-		return NT_STATUS_UNSUCCESSFUL;
-	}
-    
-	plugin_init = sys_dlsym(dl_handle, "auth_init");
-	if (!plugin_init){
-		DEBUG(0, ("Failed to find function 'auth_init' using sys_dlsym in sam plugin %s (%s)\n",
-					plugin_name, sys_dlerror()));	    
-		return NT_STATUS_UNSUCCESSFUL;
-	}
-
-	DEBUG(5, ("Starting sam plugin %s with paramater %s\n", plugin_name, plugin_param?plugin_param:"(null)"));
-	return plugin_init(auth_context, plugin_param, auth_method);
+	smb_register_auth(AUTH_INTERFACE_VERSION, "guest", auth_init_guest);
+#ifdef DEVELOPER
+	smb_register_auth(AUTH_INTERFACE_VERSION, "fixed_challenge", auth_init_fixed_challenge);
+	smb_register_auth(AUTH_INTERFACE_VERSION, "name_to_ntstatus", auth_init_name_to_ntstatus);
+#endif
+	return NT_STATUS_OK;
 }

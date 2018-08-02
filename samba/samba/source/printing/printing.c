@@ -24,6 +24,7 @@
 
 /* Current printer interface */
 static struct printif *current_printif = &generic_printif;
+static BOOL remove_from_jobs_changed(int snum, uint32 jobid);
 
 /* 
    the printing backend revolves around a tdb database that stores the
@@ -246,20 +247,22 @@ int unpack_pjob( char* buf, int buflen, struct printjob *pjob )
 {
 	int	len = 0;
 	int	used;
-	
+	uint32 pjpid, pjsysjob, pjfd, pjstarttime, pjstatus;
+	uint32 pjsize, pjpage_count, pjspooled, pjsmbjob;
+
 	if ( !buf || !pjob )
 		return -1;
 		
 	len += tdb_unpack(buf+len, buflen-len, "dddddddddffff",
-				&pjob->pid,
-				&pjob->sysjob,
-				&pjob->fd,
-				&pjob->starttime,
-				&pjob->status,
-				&pjob->size,
-				&pjob->page_count,
-				&pjob->spooled,
-				&pjob->smbjob,
+				&pjpid,
+				&pjsysjob,
+				&pjfd,
+				&pjstarttime,
+				&pjstatus,
+				&pjsize,
+				&pjpage_count,
+				&pjspooled,
+				&pjsmbjob,
 				pjob->filename,
 				pjob->jobname,
 				pjob->user,
@@ -272,6 +275,16 @@ int unpack_pjob( char* buf, int buflen, struct printjob *pjob )
 		return -1;
 	
 	len += used;
+
+	pjob->pid = pjpid;
+	pjob->sysjob = pjsysjob;
+	pjob->fd = pjfd;
+	pjob->starttime = pjstarttime;
+	pjob->status = pjstatus;
+	pjob->size = pjsize;
+	pjob->page_count = pjpage_count;
+	pjob->spooled = pjspooled;
+	pjob->smbjob = pjsmbjob;
 	
 	return len;
 
@@ -464,15 +477,15 @@ static BOOL pjob_store(int snum, uint32 jobid, struct printjob *pjob)
 		len = 0;
 		buflen = newlen;
 		len += tdb_pack(buf+len, buflen-len, "dddddddddffff",
-				pjob->pid,
-				pjob->sysjob,
-				pjob->fd,
-				pjob->starttime,
-				pjob->status,
-				pjob->size,
-				pjob->page_count,
-				pjob->spooled,
-				pjob->smbjob,
+				(uint32)pjob->pid,
+				(uint32)pjob->sysjob,
+				(uint32)pjob->fd,
+				(uint32)pjob->starttime,
+				(uint32)pjob->status,
+				(uint32)pjob->size,
+				(uint32)pjob->page_count,
+				(uint32)pjob->spooled,
+				(uint32)pjob->smbjob,
 				pjob->filename,
 				pjob->jobname,
 				pjob->user,
@@ -651,9 +664,11 @@ static int traverse_fn_delete(TDB_CONTEXT *t, TDB_DATA key, TDB_DATA data, void 
 			if (jobid == u_jobid)
 				break;
 		}
-		if (i == ts->qcount)
+		if (i == ts->qcount) {
+			DEBUG(10,("traverse_fn_delete: pjob %u deleted due to !smbjob\n",
+						(unsigned int)jobid ));
 			pjob_delete(ts->snum, jobid);
-		else
+		} else
 			ts->total_jobs++;
 		return 0;
 	}
@@ -663,9 +678,11 @@ static int traverse_fn_delete(TDB_CONTEXT *t, TDB_DATA key, TDB_DATA data, void 
 		/* if a job is not spooled and the process doesn't
                    exist then kill it. This cleans up after smbd
                    deaths */
-		if (!process_exists(pjob.pid))
+		if (!process_exists(pjob.pid)) {
+			DEBUG(10,("traverse_fn_delete: pjob %u deleted due to !process_exists (%u)\n",
+						(unsigned int)jobid, (unsigned int)pjob.pid ));
 			pjob_delete(ts->snum, jobid);
-		else
+		} else
 			ts->total_jobs++;
 		return 0;
 	}
@@ -688,13 +705,28 @@ static int traverse_fn_delete(TDB_CONTEXT *t, TDB_DATA key, TDB_DATA data, void 
 		   is currently traversing the printing tdb and deleting jobs.
 		   Don't delete the job if it was submitted after the lpq_time. */
 
-		if (pjob.starttime < ts->lpq_time)
+		if (pjob.starttime < ts->lpq_time) {
+			DEBUG(10,("traverse_fn_delete: pjob %u deleted due to pjob.starttime (%u) < ts->lpq_time (%u)\n",
+						(unsigned int)jobid,
+						(unsigned int)pjob.starttime,
+						(unsigned int)ts->lpq_time ));
 			pjob_delete(ts->snum, jobid);
-		else
+		} else
 			ts->total_jobs++;
+		return 0;
 	}
-	else
-		ts->total_jobs++;
+
+	/* Save the pjob attributes we will store. */
+	ts->queue[i].job = jobid;
+	ts->queue[i].size = pjob.size;
+	ts->queue[i].page_count = pjob.page_count;
+	ts->queue[i].status = pjob.status;
+	ts->queue[i].priority = 1;
+	ts->queue[i].time = pjob.starttime;
+	fstrcpy(ts->queue[i].fs_user, pjob.user);
+	fstrcpy(ts->queue[i].fs_file, pjob.jobname);
+
+	ts->total_jobs++;
 
 	return 0;
 }
@@ -783,6 +815,116 @@ static void set_updating_pid(const fstring printer_name, BOOL delete)
 }
 
 /****************************************************************************
+ Sort print jobs by submittal time.
+****************************************************************************/
+
+static int printjob_comp(print_queue_struct *j1, print_queue_struct *j2)
+{
+	/* Silly cases */
+
+	if (!j1 && !j2)
+		return 0;
+	if (!j1)
+		return -1;
+	if (!j2)
+		return 1;
+
+	/* Sort on job start time */
+
+	if (j1->time == j2->time)
+		return 0;
+	return (j1->time > j2->time) ? 1 : -1;
+}
+
+/****************************************************************************
+ Store the sorted queue representation for later portmon retrieval.
+****************************************************************************/
+
+static void store_queue_struct(struct tdb_print_db *pdb, struct traverse_struct *pts)
+{
+	TDB_DATA data, key;
+	int max_reported_jobs = lp_max_reported_jobs(pts->snum);
+	print_queue_struct *queue = pts->queue;
+	size_t len;
+	size_t i;
+	uint qcount;
+
+	if (max_reported_jobs < pts->qcount)
+		pts->qcount = max_reported_jobs;
+	qcount = pts->qcount;
+
+	/* Work out the size. */
+	data.dsize = 0;
+	data.dsize += tdb_pack(NULL, 0, "d", qcount);
+
+	for (i = 0; i < pts->qcount; i++) {
+		data.dsize += tdb_pack(NULL, 0, "ddddddff",
+				(uint32)queue[i].job,
+				(uint32)queue[i].size,
+				(uint32)queue[i].page_count,
+				(uint32)queue[i].status,
+				(uint32)queue[i].priority,
+				(uint32)queue[i].time,
+				queue[i].fs_user,
+				queue[i].fs_file);
+	}
+
+	if ((data.dptr = malloc(data.dsize)) == NULL)
+		return;
+
+        len = 0;
+	len += tdb_pack(data.dptr + len, data.dsize - len, "d", qcount);
+	for (i = 0; i < pts->qcount; i++) {
+		len += tdb_pack(data.dptr + len, data.dsize - len, "ddddddff",
+				(uint32)queue[i].job,
+				(uint32)queue[i].size,
+				(uint32)queue[i].page_count,
+				(uint32)queue[i].status,
+				(uint32)queue[i].priority,
+				(uint32)queue[i].time,
+				queue[i].fs_user,
+				queue[i].fs_file);
+	}
+
+	key.dptr = "INFO/linear_queue_array";
+	key.dsize = strlen(key.dptr);
+	tdb_store(pdb->tdb, key, data, TDB_REPLACE);
+	SAFE_FREE(data.dptr);
+	return;
+}
+
+static TDB_DATA get_jobs_changed_data(struct tdb_print_db *pdb)
+{
+	TDB_DATA data, key;
+
+	key.dptr = "INFO/jobs_changed";
+	key.dsize = strlen(key.dptr);
+	ZERO_STRUCT(data);
+
+	data = tdb_fetch(pdb->tdb, key);
+	if (data.dptr == NULL || data.dsize == 0 || (data.dsize % 4 != 0)) {
+		SAFE_FREE(data.dptr);
+		ZERO_STRUCT(data);
+	}
+
+	return data;
+}
+
+static void check_job_changed(int snum, TDB_DATA data, uint32 jobid)
+{
+	unsigned int i;
+	unsigned int job_count = data.dsize / 4;
+
+	for (i = 0; i < job_count; i++) {
+		uint32 ch_jobid;
+
+		memcpy(&ch_jobid, data.dptr + (i*4), 4);
+		if (ch_jobid == jobid)
+			remove_from_jobs_changed(snum, jobid);
+	}
+}
+
+/****************************************************************************
  Update the internal database from the system print queue for a queue.
 ****************************************************************************/
 
@@ -796,6 +938,7 @@ static void print_queue_update(int snum)
 	struct traverse_struct tstruct;
 	fstring keystr, printer_name, cachestr;
 	TDB_DATA data, key;
+	TDB_DATA jcdata;
 	struct tdb_print_db *pdb;
 
 	fstrcpy(printer_name, lp_const_servicename(snum));
@@ -869,6 +1012,12 @@ static void print_queue_update(int snum)
 	DEBUG(3, ("%d job%s in queue for %s\n", qcount, (qcount != 1) ?
 		"s" : "", printer_name));
 
+	/* Sort the queue by submission time otherwise they are displayed
+	   in hash order. */
+
+	qsort(queue, qcount, sizeof(print_queue_struct),
+	      QSORT_CAST(printjob_comp));
+
 	/*
 	  any job in the internal database that is marked as spooled
 	  and doesn't exist in the system queue is considered finished
@@ -879,6 +1028,9 @@ static void print_queue_update(int snum)
 
 	  fill in any system job numbers as we go
 	*/
+
+	jcdata = get_jobs_changed_data(pdb);
+
 	for (i=0; i<qcount; i++) {
 		uint32 jobid = print_parse_jobid(queue[i].fs_file);
 
@@ -900,9 +1052,11 @@ static void print_queue_update(int snum)
 
 		pjob->sysjob = queue[i].job;
 		pjob->status = queue[i].status;
-
 		pjob_store(snum, jobid, pjob);
+		check_job_changed(snum, jcdata, jobid);
 	}
+
+	SAFE_FREE(jcdata.dptr);
 
 	/* now delete any queued entries that don't appear in the
            system queue */
@@ -913,6 +1067,9 @@ static void print_queue_update(int snum)
 	tstruct.lpq_time = time(NULL);
 
 	tdb_traverse(pdb->tdb, traverse_fn_delete, (void *)&tstruct);
+
+	/* Store the linearised queue, max jobs only. */
+	store_queue_struct(pdb, &tstruct);
 
 	SAFE_FREE(tstruct.queue);
 
@@ -1023,7 +1180,7 @@ BOOL print_notify_register_pid(int snum)
 	}
 
 	/* Store back the record. */
-	if (tdb_store_by_string(tdb, NOTIFY_PID_LIST_KEY, data, TDB_REPLACE) == -1) {
+	if (tdb_store_bystring(tdb, NOTIFY_PID_LIST_KEY, data, TDB_REPLACE) == -1) {
 		DEBUG(0,("print_notify_register_pid: Failed to update pid \
 list for printer %s\n", printername));
 		goto done;
@@ -1113,7 +1270,7 @@ printer %s database\n", printername));
 		SAFE_FREE(data.dptr);
 
 	/* Store back the record. */
-	if (tdb_store_by_string(tdb, NOTIFY_PID_LIST_KEY, data, TDB_REPLACE) == -1) {
+	if (tdb_store_bystring(tdb, NOTIFY_PID_LIST_KEY, data, TDB_REPLACE) == -1) {
 		DEBUG(0,("print_notify_register_pid: Failed to update pid \
 list for printer %s\n", printername));
 		goto done;
@@ -1216,6 +1373,62 @@ BOOL print_job_set_name(int snum, uint32 jobid, char *name)
 	return pjob_store(snum, jobid, pjob);
 }
 
+/***************************************************************************
+ Remove a jobid from the 'jobs changed' list.
+***************************************************************************/
+
+static BOOL remove_from_jobs_changed(int snum, uint32 jobid)
+{
+	const char *printername = lp_const_servicename(snum);
+	struct tdb_print_db *pdb = get_print_db_byname(printername);
+	TDB_DATA data, key;
+	size_t job_count, i;
+	BOOL ret = False;
+	BOOL gotlock = False;
+
+	key.dptr = "INFO/jobs_changed";
+	key.dsize = strlen(key.dptr);
+	ZERO_STRUCT(data);
+
+	if (tdb_chainlock_with_timeout(pdb->tdb, key, 5) == -1)
+		goto out;
+
+	gotlock = True;
+
+	data = tdb_fetch(pdb->tdb, key);
+
+	if (data.dptr == NULL || data.dsize == 0 || (data.dsize % 4 != 0))
+		goto out;
+
+	job_count = data.dsize / 4;
+	for (i = 0; i < job_count; i++) {
+		uint32 ch_jobid;
+
+		memcpy(&ch_jobid, data.dptr + (i*4), 4);
+		if (ch_jobid == jobid) {
+			if (i < job_count -1 )
+				memmove(data.dptr + (i*4), data.dptr + (i*4) + 4, (job_count - i - 1)*4 );
+			data.dsize -= 4;
+			if (tdb_store(pdb->tdb, key, data, TDB_REPLACE) == -1)
+				goto out;
+			break;
+		}
+	}
+
+	ret = True;
+  out:
+
+	if (gotlock)
+		tdb_chainunlock(pdb->tdb, key);
+	SAFE_FREE(data.dptr);
+	release_print_db(pdb);
+	if (ret)
+		DEBUG(10,("remove_from_jobs_changed: removed jobid %u\n", (unsigned int)jobid ));
+	else
+		DEBUG(10,("remove_from_jobs_changed: Failed to remove jobid %u\n", (unsigned int)jobid ));
+	return ret;
+}
+
 /****************************************************************************
  Delete a print job - don't update queue.
 ****************************************************************************/
@@ -1249,12 +1462,24 @@ static BOOL print_job_delete1(int snum, uint32 jobid)
 
 	if (pjob->spooled && pjob->sysjob != -1)
 		result = (*(current_printif->job_delete))(snum, pjob);
+	else
+		remove_from_jobs_changed(snum, jobid);
 
-	/* Delete the tdb entry if the delete suceeded or the job hasn't
+	/* Delete the tdb entry if the delete succeeded or the job hasn't
 	   been spooled. */
 
-	if (result == 0)
+	if (result == 0) {
+		const char *printername = lp_const_servicename(snum);
+		struct tdb_print_db *pdb = get_print_db_byname(printername);
+		int njobs = 1;
+
+		if (!pdb)
+			return False;
 		pjob_delete(snum, jobid);
+		/* Ensure we keep a rough count of the number of total jobs... */
+		tdb_change_int32_atomic(pdb->tdb, "INFO/total_jobs", &njobs, -1);
+		release_print_db(pdb);
+	}
 
 	return (result == 0);
 }
@@ -1625,6 +1850,24 @@ static BOOL allocate_print_jobid(struct tdb_print_db *pdb, int snum, const char 
 }
 
 /***************************************************************************
+ Append a jobid to the 'jobs changed' list.
+***************************************************************************/
+
+static BOOL add_to_jobs_changed(struct tdb_print_db *pdb, uint32 jobid)
+{
+	TDB_DATA data, key;
+
+	key.dptr = "INFO/jobs_changed";
+	key.dsize = strlen(key.dptr);
+	data.dptr = (char *)&jobid;
+	data.dsize = 4;
+
+	DEBUG(10,("add_to_jobs_changed: Added jobid %u\n", (unsigned int)jobid ));
+
+	return (tdb_append(pdb->tdb, key, data) == 0);
+}
+
+/***************************************************************************
  Start spooling a job - return the jobid.
 ***************************************************************************/
 
@@ -1736,6 +1979,9 @@ to open spool file %s.\n", pjob.filename));
 
 	pjob_store(snum, jobid, &pjob);
 
+	/* Update the 'jobs changed' entry used by print_queue_status. */
+	add_to_jobs_changed(pdb, jobid);
+
 	/* Ensure we keep a rough count of the number of total jobs... */
 	tdb_change_int32_atomic(pdb->tdb, "INFO/total_jobs", &njobs, 1);
 
@@ -1839,109 +2085,130 @@ fail:
 	/* Still need to add proper error return propagation! 010122:JRR */
 	unlink(pjob->filename);
 	pjob_delete(snum, jobid);
+	remove_from_jobs_changed(snum, jobid);
 	return False;
 }
 
 /****************************************************************************
- Utility fn to enumerate the print queue.
+ Get a snapshot of jobs in the system without traversing.
 ****************************************************************************/
 
-static int traverse_fn_queue(TDB_CONTEXT *t, TDB_DATA key, TDB_DATA data, void *state)
+static BOOL get_stored_queue_info(struct tdb_print_db *pdb, int snum, int *pcount, print_queue_struct **ppqueue)
 {
-	struct traverse_struct *ts = (struct traverse_struct *)state;
-	struct printjob pjob;
-	int i;
-	uint32 jobid;
+	TDB_DATA data, key, cgdata;
+	print_queue_struct *queue = NULL;
+	uint32 qcount = 0;
+	uint32 extra_count = 0;
+	int total_count = 0;
+	size_t len = 0;
+	uint32 i;
+	int max_reported_jobs = lp_max_reported_jobs(snum);
+	BOOL ret = False;
 
-	/* sanity checks */
-	
-	if ( key.dsize != sizeof(jobid) )
-		return 0;
-		
-	memcpy(&jobid, key.dptr, sizeof(jobid));
-	
-	if ( unpack_pjob( data.dptr, data.dsize, &pjob ) == -1 )
-		return 0;
-	free_nt_devicemode( &pjob.nt_devmode );
+	/* make sure the database is up to date */
+	if (print_cache_expired(snum))
+		print_queue_update(snum);
+ 
+	*pcount = 0;
+	*ppqueue = NULL;
 
-	/* maybe it isn't for this queue */
-	if (ts->snum != lp_servicenumber(pjob.queuename))
-		return 0;
+	ZERO_STRUCT(data);
+	ZERO_STRUCT(cgdata);
+	key.dptr = "INFO/linear_queue_array";
+	key.dsize = strlen(key.dptr);
 
-	if (ts->qcount >= ts->maxcount)
-		return 0;
+	/* Get the stored queue data. */
+	data = tdb_fetch(pdb->tdb, key);
 
-	i = ts->qcount;
+	if (data.dptr == NULL || data.dsize < 4)
+		qcount = 0;
+	else
+		memcpy(&qcount, data.dptr, 4);
 
-	ts->queue[i].job = jobid;
-	ts->queue[i].size = pjob.size;
-	ts->queue[i].page_count = pjob.page_count;
-	ts->queue[i].status = pjob.status;
-	ts->queue[i].priority = 1;
-	ts->queue[i].time = pjob.starttime;
-	fstrcpy(ts->queue[i].fs_user, pjob.user);
-	fstrcpy(ts->queue[i].fs_file, pjob.jobname);
+	/* Get the changed jobs list. */
+	key.dptr = "INFO/jobs_changed";
+	key.dsize = strlen(key.dptr);
 
-	ts->qcount++;
+	cgdata = tdb_fetch(pdb->tdb, key);
+	if (cgdata.dptr != NULL && (cgdata.dsize % 4 == 0))
+		extra_count = cgdata.dsize/4;
 
-	return 0;
-}
+	DEBUG(5,("get_stored_queue_info: qcount = %u, extra_count = %u\n", (unsigned int)qcount, (unsigned int)extra_count));
 
-struct traverse_count_struct {
-	int snum, count;
-};
+	/* Allocate the queue size. */
+	if (qcount == 0 && extra_count == 0)
+		goto out;
 
-/****************************************************************************
- Utility fn to count the number of entries in the print queue.
-****************************************************************************/
+	if ((queue = (print_queue_struct *)malloc(sizeof(print_queue_struct)*(qcount + extra_count))) == NULL)
+		goto out;
 
-static int traverse_count_fn_queue(TDB_CONTEXT *t, TDB_DATA key, TDB_DATA data, void *state)
-{
-	struct traverse_count_struct *ts = (struct traverse_count_struct *)state;
-	struct printjob pjob;
-	uint32 jobid;
+	/* Retrieve the linearised queue data. */
+	len = 0;
+	for( i  = 0; i < qcount; i++) {
+		uint32 qjob, qsize, qpage_count, qstatus, qpriority, qtime;
+		len += tdb_unpack(data.dptr + 4 + len, data.dsize - len, NULL, "ddddddff",
+				&qjob,
+				&qsize,
+				&qpage_count,
+				&qstatus,
+				&qpriority,
+				&qtime,
+				queue[i].fs_user,
+				queue[i].fs_file);
+		queue[i].job = qjob;
+		queue[i].size = qsize;
+		queue[i].page_count = qpage_count;
+		queue[i].status = qstatus;
+		queue[i].priority = qpriority;
+		queue[i].time = qtime;
+	}
 
-	/* sanity checks */
-	
-	if (  key.dsize != sizeof(jobid) )
-		return 0;
-		
-	memcpy(&jobid, key.dptr, sizeof(jobid));
-	
-	if ( unpack_pjob( data.dptr, data.dsize, &pjob ) == -1 )
-		return 0;
-		
-	free_nt_devicemode( &pjob.nt_devmode );
+	total_count = qcount;
 
-	/* maybe it isn't for this queue - this cannot happen with the tdb/printer code. JRA */
-	if (ts->snum != lp_servicenumber(pjob.queuename))
-		return 0;
+	/* Add in the changed jobids. */
+	for( i  = 0; i < extra_count; i++) {
+		uint32 jobid;
+		struct printjob *pjob;
 
-	ts->count++;
+		memcpy(&jobid, &cgdata.dptr[i*4], 4);
+		DEBUG(5,("get_stored_queue_info: changed job = %u\n", (unsigned int)jobid));
+		pjob = print_job_find(snum, jobid);
+		if (!pjob) {
+			DEBUG(5,("get_stored_queue_info: failed to find changed job = %u\n", (unsigned int)jobid));
+			remove_from_jobs_changed(snum, jobid);
+			continue;
+		}
 
-	return 0;
-}
+		queue[total_count].job = jobid;
+		queue[total_count].size = pjob->size;
+		queue[total_count].page_count = pjob->page_count;
+		queue[total_count].status = pjob->status;
+		queue[total_count].priority = 1;
+		fstrcpy(queue[total_count].fs_user, pjob->user);
+		fstrcpy(queue[total_count].fs_file, pjob->jobname);
+		total_count++;
+	}
 
-/****************************************************************************
- Sort print jobs by submittal time.
-****************************************************************************/
+	/* Sort the queue by submission time otherwise they are displayed
+	   in hash order. */
 
-static int printjob_comp(print_queue_struct *j1, print_queue_struct *j2)
-{
-	/* Silly cases */
+	qsort(queue, total_count, sizeof(print_queue_struct), QSORT_CAST(printjob_comp));
 
-	if (!j1 && !j2)
-		return 0;
-	if (!j1)
-		return -1;
-	if (!j2)
-		return 1;
+	DEBUG(5,("get_stored_queue_info: total_count = %u\n", (unsigned int)total_count));
 
-	/* Sort on job start time */
+	if (max_reported_jobs && total_count > max_reported_jobs)
+		total_count = max_reported_jobs;
 
-	if (j1->time == j2->time)
-		return 0;
-	return (j1->time > j2->time) ? 1 : -1;
+	*ppqueue = queue;
+	*pcount = total_count;
+
+	ret = True;
+
+  out:
+
+	SAFE_FREE(data.dptr);
+	SAFE_FREE(cgdata.dptr);
+	return ret;
 }
 
 /****************************************************************************
@@ -1950,15 +2217,14 @@ static int printjob_comp(print_queue_struct *j1, print_queue_struct *j2)
 ****************************************************************************/
 
 int print_queue_status(int snum, 
-		       print_queue_struct **queue,
+		       print_queue_struct **ppqueue,
 		       print_status_struct *status)
 {
-	struct traverse_struct tstruct;
-	struct traverse_count_struct tsc;
 	fstring keystr;
 	TDB_DATA data, key;
 	const char *printername;
 	struct tdb_print_db *pdb;
+	int count = 0;
 
 	/* make sure the database is up to date */
 
@@ -1966,11 +2232,10 @@ int print_queue_status(int snum,
 		print_queue_update(snum);
 
 	/* return if we are done */
-
-	if ( !queue || !status )
+	if ( !ppqueue || !status )
 		return 0;
 
-	*queue = NULL;
+	*ppqueue = NULL;
 	printername = lp_const_servicename(snum);
 	pdb = get_print_db_byname(printername);
 
@@ -1981,6 +2246,7 @@ int print_queue_status(int snum,
 	 * Fetch the queue status.  We must do this first, as there may
 	 * be no jobs in the queue.
 	 */
+
 	ZERO_STRUCTP(status);
 	slprintf(keystr, sizeof(keystr)-1, "STATUS/%s", printername);
 	key.dptr = keystr;
@@ -1997,43 +2263,14 @@ int print_queue_status(int snum,
 	 * Now, fetch the print queue information.  We first count the number
 	 * of entries, and then only retrieve the queue if necessary.
 	 */
-	tsc.count = 0;
-	tsc.snum = snum;
-	
-	tdb_traverse(pdb->tdb, traverse_count_fn_queue, (void *)&tsc);
 
-	if (tsc.count == 0) {
+	if (!get_stored_queue_info(pdb, snum, &count, ppqueue)) {
 		release_print_db(pdb);
 		return 0;
 	}
 
-	/* Allocate the queue size. */
-	if ((tstruct.queue = (print_queue_struct *)
-	     malloc(sizeof(print_queue_struct)*tsc.count)) == NULL) {
-		release_print_db(pdb);
-		return 0;
-	}
-
-	/*
-	 * Fill in the queue.
-	 * We need maxcount as the queue size may have changed between
-	 * the two calls to tdb_traverse.
-	 */
-	tstruct.qcount = 0;
-	tstruct.maxcount = tsc.count;
-	tstruct.snum = snum;
-
-	tdb_traverse(pdb->tdb, traverse_fn_queue, (void *)&tstruct);
 	release_print_db(pdb);
-
-	/* Sort the queue by submission time otherwise they are displayed
-	   in hash order. */
-
-	qsort(tstruct.queue, tstruct.qcount, sizeof(print_queue_struct),
-	      QSORT_CAST(printjob_comp));
-
-	*queue = tstruct.queue;
-	return tstruct.qcount;
+	return count;
 }
 
 /****************************************************************************

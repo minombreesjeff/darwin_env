@@ -26,7 +26,7 @@
 #ifndef _RPC_MISC_H /* _RPC_MISC_H */
 #define _RPC_MISC_H 
 
-
+#define SMB_RPC_INTERFACE_VERSION 1
 
 /* well-known RIDs - Relative IDs */
 
@@ -226,6 +226,22 @@ typedef struct
 	uint32 count;
 	UNISTR2_ARRAY_EL *strings;
 } UNISTR2_ARRAY;
+
+
+/* an element in a sid array */
+typedef struct
+{
+	uint32 ref_id;
+	DOM_SID2 sid;
+} SID_ARRAY_EL;
+
+/* an array of sids */
+typedef struct 
+{
+	uint32 ref_id;
+	uint32 count;
+	SID_ARRAY_EL *sids;
+} SID_ARRAY;
 
 /* DOM_RID2 - domain RID structure for ntlsa pipe */
 typedef struct domrid2_info

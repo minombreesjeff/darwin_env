@@ -4,6 +4,7 @@
    Winbind daemon for ntdom nss module
 
    Copyright (C) Tim Potter 2000
+   Copyright (C) Jim McDonough <jmcd@us.ibm.com> 2003
    
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -42,6 +43,8 @@ struct winbindd_cli_state {
 	BOOL finished;                            /* Can delete from list */
 	BOOL write_extra_data;                    /* Write extra_data field */
 	time_t last_access;                       /* Time of last access (read or write) */
+	BOOL privileged;                           /* Is the client 'privileged' */
+
 	struct winbindd_request request;          /* Request from client */
 	struct winbindd_response response;        /* Respose to client */
 	struct getent_state *getpwent_state;      /* State for getpwent() */
@@ -63,7 +66,8 @@ struct getent_state {
 struct getpwent_user {
 	fstring name;                        /* Account name */
 	fstring gecos;                       /* User information */
-	uint32 user_rid, group_rid;          /* NT user and group rids */
+	DOM_SID user_sid;                    /* NT user and primary group SIDs */
+	DOM_SID group_sid;
 };
 
 /* Server state structure */
@@ -81,8 +85,8 @@ extern struct winbindd_state server_state;  /* Server information */
 typedef struct {
 	char *acct_name;
 	char *full_name;
-	uint32 user_rid;
-	uint32 group_rid; /* primary group */
+	DOM_SID *user_sid;                    /* NT user and primary group SIDs */
+	DOM_SID *group_sid;
 } WINBIND_USERINFO;
 
 /* Structures to hold per domain information */
@@ -94,8 +98,11 @@ struct winbindd_domain {
 	BOOL native_mode;                      /* is this a win2k domain in native mode ? */
 
 	/* Lookup methods for this domain (LDAP or RPC) */
-
 	struct winbindd_methods *methods;
+
+	/* the backend methods are used by the cache layer to find the right
+	   backend */
+	struct winbindd_methods *backend;
 
         /* Private data for the backends (used for connection cache) */
 
@@ -105,6 +112,7 @@ struct winbindd_domain {
 
 	time_t last_seq_check;
 	uint32 sequence_number;
+	NTSTATUS last_status;
 
 	/* Linked list info */
 
@@ -138,6 +146,7 @@ struct winbindd_methods {
 				    
 	/* convert one user or group name to a sid */
 	NTSTATUS (*name_to_sid)(struct winbindd_domain *domain,
+				TALLOC_CTX *mem_ctx,
 				const char *name,
 				DOM_SID *sid,
 				enum SID_NAME_USE *type);
@@ -149,10 +158,10 @@ struct winbindd_methods {
 				char **name,
 				enum SID_NAME_USE *type);
 
-	/* lookup user info for a given rid */
+	/* lookup user info for a given SID */
 	NTSTATUS (*query_user)(struct winbindd_domain *domain, 
 			       TALLOC_CTX *mem_ctx, 
-			       uint32 user_rid, 
+			       DOM_SID *user_sid,
 			       WINBIND_USERINFO *user_info);
 
 	/* lookup all groups that a user is a member of. The backend
@@ -160,14 +169,15 @@ struct winbindd_methods {
 	   function */
 	NTSTATUS (*lookup_usergroups)(struct winbindd_domain *domain,
 				      TALLOC_CTX *mem_ctx,
-				      uint32 user_rid, 
-				      uint32 *num_groups, uint32 **user_gids);
+				      DOM_SID *user_sid,
+				      uint32 *num_groups, DOM_SID ***user_gids);
 
 	/* find all members of the group with the specified group_rid */
 	NTSTATUS (*lookup_groupmem)(struct winbindd_domain *domain,
 				    TALLOC_CTX *mem_ctx,
-				    uint32 group_rid, uint32 *num_names, 
-				    uint32 **rid_mem, char ***names, 
+				    DOM_SID *group_sid,
+				    uint32 *num_names, 
+				    DOM_SID ***sid_mem, char ***names, 
 				    uint32 **name_types);
 
 	/* return the current global sequence number */
@@ -196,7 +206,24 @@ typedef struct {
 	POLICY_HND pol;
 } CLI_POLICY_HND;
 
-#include "winbindd_proto.h"
+/* Filled out by IDMAP backends */
+struct winbindd_idmap_methods {
+  /* Called when backend is first loaded */
+  BOOL (*init)(void);
+
+  BOOL (*get_sid_from_uid)(uid_t uid, DOM_SID *sid);
+  BOOL (*get_sid_from_gid)(gid_t gid, DOM_SID *sid);
+
+  BOOL (*get_uid_from_sid)(DOM_SID *sid, uid_t *uid);
+  BOOL (*get_gid_from_sid)(DOM_SID *sid, gid_t *gid);
+
+  /* Called when backend is unloaded */
+  BOOL (*close)(void);
+  /* Called to dump backend status */
+  void (*status)(void);
+};
+
+#include "../nsswitch/winbindd_proto.h"
 
 #include "rpc_parse.h"
 #include "rpc_client.h"

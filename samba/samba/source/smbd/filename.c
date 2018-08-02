@@ -39,7 +39,7 @@ static BOOL scan_directory(const char *path, char *name,size_t maxlength,
  This needs to be careful about whether we are case sensitive.
 ****************************************************************************/
 
-static BOOL fname_equal(char *name1, char *name2)
+static BOOL fname_equal(const char *name1, const char *name2)
 {
 	/* Normal filename handling */
 	if (case_sensitive)
@@ -52,7 +52,7 @@ static BOOL fname_equal(char *name1, char *name2)
  Mangle the 2nd name and check if it is then equal to the first name.
 ****************************************************************************/
 
-static BOOL mangled_equal(char *name1, const char *name2, int snum)
+static BOOL mangled_equal(const char *name1, const char *name2, int snum)
 {
 	pstring tmpname;
 	
@@ -178,7 +178,7 @@ BOOL unix_convert(pstring name,connection_struct *conn,char *saved_last_componen
 	 * stat the name - if it exists then we are all done!
 	 */
 
-	if (vfs_stat(conn,name,&st) == 0) {
+	if (SMB_VFS_STAT(conn,name,&st) == 0) {
 		stat_cache_add(orig_path, name);
 		DEBUG(5,("conversion finished %s -> %s\n",orig_path, name));
 		*pst = st;
@@ -234,7 +234,7 @@ BOOL unix_convert(pstring name,connection_struct *conn,char *saved_last_componen
 		 * Check if the name exists up to this point.
 		 */
 
-		if (vfs_stat(conn,name, &st) == 0) {
+		if (SMB_VFS_STAT(conn,name, &st) == 0) {
 			/*
 			 * It exists. it must either be a directory or this must be
 			 * the last part of the path for it to be OK.
@@ -246,6 +246,16 @@ BOOL unix_convert(pstring name,connection_struct *conn,char *saved_last_componen
 				DEBUG(5,("Not a dir %s\n",start));
 				*end = '/';
 				return(False);
+			}
+
+			if (!end) {
+				/*
+				 * We just scanned for, and found the end of the path.
+				 * We must return the valid stat struct.
+				 * JRA.
+				 */
+
+				*pst = st;
 			}
 
 		} else {
@@ -332,7 +342,7 @@ BOOL unix_convert(pstring name,connection_struct *conn,char *saved_last_componen
 				 * JRA.
 				 */
 
-				if (vfs_stat(conn,name, &st) == 0) {
+				if (SMB_VFS_STAT(conn,name, &st) == 0) {
 					*pst = st;
 				} else {
 					ZERO_STRUCT(st);
@@ -371,14 +381,6 @@ BOOL unix_convert(pstring name,connection_struct *conn,char *saved_last_componen
 	if(!component_was_mangled && !name_has_wildcard)
 		stat_cache_add(orig_path, name);
 
-	/*
-	 * If we ended up resolving the entire path then return a valid
-	 * stat struct if we got one.
-	 */
-
-	if (VALID_STAT(st) && (strlen(orig_path) == strlen(name)))
-		*pst = st;
-
 	/* 
 	 * The name has been resolved.
 	 */
@@ -416,7 +418,7 @@ BOOL check_name(pstring name,connection_struct *conn)
 #ifdef S_ISLNK
 	if (!lp_symlinks(SNUM(conn))) {
 		SMB_STRUCT_STAT statbuf;
-		if ( (conn->vfs_ops.lstat(conn,name,&statbuf) != -1) &&
+		if ( (SMB_VFS_LSTAT(conn,name,&statbuf) != -1) &&
 				(S_ISLNK(statbuf.st_mode)) ) {
 			DEBUG(3,("check_name: denied: file path name %s is a symlink\n",name));
 			ret=0; 
@@ -439,7 +441,7 @@ static BOOL scan_directory(const char *path, char *name, size_t maxlength,
 			   connection_struct *conn,BOOL docache)
 {
 	void *cur_dir;
-	char *dname;
+	const char *dname;
 	BOOL mangled;
 
 	mangled = mangle_is_mangled(name);

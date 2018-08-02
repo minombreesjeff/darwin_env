@@ -30,19 +30,18 @@
 #include <DirectoryService/DirServicesUtils.h>
 #include <libopendirectorycommon.h>
 
-tDirNodeReference getusernode(tDirReference dirRef, char *userName)
+tDirNodeReference getusernode(tDirReference dirRef, const char *userName)
 {
     tDirStatus			status			= eDSNoErr;
-    long			bufferSize		= 2048;
+    long			bufferSize		= 1024 * 10;
     long			returnCount		= 0;
-    tDataBufferPtr		nodeBuffer		= NULL;
-    tDirNodeReference		searchNodeRef		= NULL;
+    tDataBufferPtr	dataBuffer		= NULL;
+  	tDirNodeReference		searchNodeRef		= NULL;
     tDataListPtr		searchNodeName		= NULL;
     tDirNodeReference		userNodeRef		= NULL;
     tDataListPtr		userNodePath		= NULL;
     char			userNodePathStr[256]	= {0};
     char			recUserName[128]	= {0};
-
     tDataListPtr		recName			= NULL;
     tDataListPtr		recType			= NULL;
     tDataListPtr		attrType		= NULL;
@@ -54,13 +53,12 @@ tDirNodeReference getusernode(tDirReference dirRef, char *userName)
     tAttributeValueEntryPtr	attrValue		= NULL;
     long			i			= 0;
     
-    nodeBuffer = dsDataBufferAllocate(dirRef, bufferSize);
-    if (nodeBuffer == NULL) goto cleanup;
-    status = dsFindDirNodes(dirRef, nodeBuffer, NULL, eDSSearchNodeName, &returnCount, NULL);
-    if ((status != eDSNoErr) || (returnCount <= 0)) goto cleanup;
+    dataBuffer = dsDataBufferAllocate(dirRef, bufferSize);
+    if (dataBuffer == NULL) goto cleanup;
+    status = dsFindDirNodes(dirRef, dataBuffer, NULL, eDSSearchNodeName, &returnCount, NULL);
+   if ((status != eDSNoErr) || (returnCount <= 0)) goto cleanup;
 
-    searchNodeName = dsDataListAllocate(dirRef);
-    status = dsGetDirNodeName(dirRef, nodeBuffer, 1, &searchNodeName);
+    status = dsGetDirNodeName(dirRef, dataBuffer, 1, &searchNodeName);
     if (status != eDSNoErr) goto cleanup;
     status = dsOpenDirNode(dirRef, searchNodeName, &searchNodeRef);
     if (status != eDSNoErr) goto cleanup;
@@ -69,34 +67,40 @@ tDirNodeReference getusernode(tDirReference dirRef, char *userName)
     recType = dsBuildListFromStrings(dirRef, kDSStdRecordTypeUsers, NULL);	
     attrType = dsBuildListFromStrings(dirRef, kDSNAttrMetaNodeLocation, kDSNAttrRecordName, NULL);
 
-    status = dsGetRecordList(searchNodeRef, nodeBuffer, recName, eDSiExact, recType, attrType, 0, &returnCount, NULL);
-    if (status != eDSNoErr) goto cleanup;
+   	status = dsGetRecordList(searchNodeRef, dataBuffer, recName, eDSiExact, recType, attrType, 0, &returnCount, NULL);
+   if (status != eDSNoErr) goto cleanup;
 
-    status = dsGetRecordEntry(searchNodeRef, nodeBuffer, 1, &attributeListRef, &outRecordEntryPtr);
+    status = dsGetRecordEntry(searchNodeRef, dataBuffer, 1, &attributeListRef, &outRecordEntryPtr);
     if (status == eDSNoErr)
     {
         for (i = 1 ; i <= outRecordEntryPtr->fRecordAttributeCount; i++)
         {
-            status = dsGetAttributeEntry(searchNodeRef, nodeBuffer, attributeListRef, i, &attributeValueListRef, &attributeInfo);
-            status = dsGetAttributeValue(searchNodeRef, nodeBuffer, 1, attributeValueListRef, &attrValue);
+            status = dsGetAttributeEntry(searchNodeRef, dataBuffer, attributeListRef, i, &attributeValueListRef, &attributeInfo);
+            status = dsGetAttributeValue(searchNodeRef, dataBuffer, 1, attributeValueListRef, &attrValue);
+            if (status == eDSNoErr)
+            {
+                if (strncmp(attributeInfo->fAttributeSignature.fBufferData, kDSNAttrMetaNodeLocation, strlen(kDSNAttrMetaNodeLocation)) == 0)
+                {
+                    strncpy(userNodePathStr, attrValue->fAttributeValueData.fBufferData, attrValue->fAttributeValueData.fBufferSize);
+                    ///DEBUG(0,("getusernode: [%d]userNodePathStr (%s)\n", i, userNodePathStr ));
+                } else if (strncmp(attributeInfo->fAttributeSignature.fBufferData, kDSNAttrRecordName, strlen(kDSNAttrRecordName)) == 0) {
+                    strncpy(recUserName, attrValue->fAttributeValueData.fBufferData, attrValue->fAttributeValueData.fBufferSize);
+                    ///DEBUG(0,("getusernode: [%d]recUserName (%s)\n", i, recUserName ));
+                }
+            }
+            if (attrValue != NULL) {
+                  ///DEBUG(0,("getusernode: [%d]dsDeallocAttributeValueEntry dirRef(%d) attrValue(%d)\n", i, dirRef, attrValue ));
+                  dsDeallocAttributeValueEntry(dirRef, attrValue);
+                    attrValue = NULL;
+            }				
             if (attributeValueListRef != 0)
             {
                     dsCloseAttributeValueList(attributeValueListRef);
                     attributeValueListRef = 0;
             }	
-            if (status == eDSNoErr)
-            {
-                if (strncmp(attributeInfo->fAttributeSignature.fBufferData, kDSNAttrMetaNodeLocation, strlen(kDSNAttrMetaNodeLocation)) == 0)
-                    strncpy(userNodePathStr, attrValue->fAttributeValueData.fBufferData, attrValue->fAttributeValueData.fBufferSize);
-                else if (strncmp(attributeInfo->fAttributeSignature.fBufferData, kDSNAttrRecordName, strlen(kDSNAttrRecordName)) == 0)
-                    strncpy(recUserName, attrValue->fAttributeValueData.fBufferData, attrValue->fAttributeValueData.fBufferSize);
-            }
-            if (attrValue != NULL) {
-                    dsDeallocAttributeValueEntry(dirRef, attrValue);
-                    attrValue = NULL;
-            }				
             if (attributeInfo != NULL) {
-                    dsDeallocAttributeEntry(dirRef, attributeInfo);
+                   ///DEBUG(0,("getusernode: [%d]dsDeallocAttributeEntry dirRef(%d) attributeInfo(%d)\n", i, dirRef, attributeInfo ));
+                   dsDeallocAttributeEntry(dirRef, attributeInfo);
                     attributeInfo = NULL;
             }
         }
@@ -108,33 +112,33 @@ tDirNodeReference getusernode(tDirReference dirRef, char *userName)
         {
             userNodePath = dsBuildFromPath(dirRef, userNodePathStr, "/");
             status = dsOpenDirNode(dirRef, userNodePath, &userNodeRef);
-            dsDataListDeAllocate( dirRef, userNodePath, True );
+            dsDataListDeallocate( dirRef, userNodePath);
             free(userNodePath);
         }
     }
 cleanup:
-    if (nodeBuffer != NULL)
-        dsDataBufferDeAllocate(dirRef, nodeBuffer);
-    if (searchNodeName != NULL)
+     if (dataBuffer != NULL)
+        dsDataBufferDeAllocate(dirRef, dataBuffer);
+   if (searchNodeName != NULL)
     {
-        dsDataListDeAllocate(dirRef, searchNodeName, 0);
+        dsDataListDeallocate(dirRef, searchNodeName);
         free(searchNodeName);
     }
     if (searchNodeRef != NULL)
         dsCloseDirNode(searchNodeRef);
     if (recName != NULL)
     {
-        dsDataListDeAllocate(dirRef, recName, 0);
+        dsDataListDeallocate(dirRef, recName);
         free(recName);
     }
     if (recType != NULL)
     {
-        dsDataListDeAllocate(dirRef, recType, 0);
+        dsDataListDeallocate(dirRef, recType);
         free(recType);
     }
     if (attrType != NULL)
     {
-        dsDataListDeAllocate(dirRef, attrType, 0);
+        dsDataListDeallocate(dirRef, attrType);
         free(attrType);
     }
 
@@ -157,7 +161,7 @@ static NTSTATUS map_dserr_to_nterr(tDirStatus dirStatus)
 	};
 }
 
-tDirStatus opendirectory_auth_user(tDirReference dirRef, tDirNodeReference userNode, char* user, char *challenge, char *password, char *inAuthMethod)
+tDirStatus opendirectory_auth_user(tDirReference dirRef, tDirNodeReference userNode, const char* user, char *challenge, char *password, char *inAuthMethod)
 {
 	tDirStatus 		status			= eDSNoErr;
 	tDirStatus 		bufferStatus	= eDSNoErr;
@@ -227,6 +231,8 @@ tDirStatus opendirectory_auth_user(tDirReference dirRef, tDirNodeReference userN
                 DEBUG(1,("*** dsDataBufferAllocate(1) faild with \n" ));
         }
 
+    if (authType != NULL)
+		dsDataNodeDeAllocate(dirRef, authType);
 	return status;
 
 
@@ -235,7 +241,7 @@ tDirStatus opendirectory_auth_user(tDirReference dirRef, tDirNodeReference userN
 /****************************************************************************
 core of smb password checking routine.
 ****************************************************************************/
-static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirNodeReference userNode, char *user, char *inAuthMethod,
+static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirNodeReference userNode, const char *user, char *inAuthMethod,
 				DATA_BLOB nt_response,
 				 DATA_BLOB sec_blob,
 				 uint8 user_sess_key[16])
@@ -261,8 +267,10 @@ static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirN
 	
 	if (eDSNoErr == status && user_sess_key != NULL)
 	{
+		become_root();
 		keyStatus = opendirectory_user_session_key(user, user_sess_key, NULL);
-		DEBUG(0, ("opendirectory_smb_pwd_check_ntlmv1: [%d]opendirectory_user_session_key\n", keyStatus));
+		unbecome_root();
+		DEBUG(2, ("opendirectory_smb_pwd_check_ntlmv1: [%d]opendirectory_user_session_key\n", keyStatus));
 	}
 		
 #if DEBUG_PASSWORD
@@ -275,73 +283,6 @@ static tDirStatus opendirectory_smb_pwd_check_ntlmv1(tDirReference dirRef, tDirN
 #endif
 
  return (status);
-}
-
-
-/****************************************************************************
-core of smb password checking routine. (NTLMv2, LMv2)
-
-Note:  The same code works with both NTLMv2 and LMv2.
-****************************************************************************/
-static BOOL opendirectory_smb_pwd_check_ntlmv2(const DATA_BLOB ntv2_response,
-				 const uchar *part_passwd,
-				 const DATA_BLOB sec_blob,
-				 const char *user, const char *domain,
-				 uint8 user_sess_key[16])
-{
-	/* Finish the encryption of part_passwd. */
-	uchar kr[16];
-	uchar value_from_encryption[16];
-	uchar client_response[16];
-	DATA_BLOB client_key_data;
-
-	if (part_passwd == NULL)
-	{
-		DEBUG(10,("No password set - DISALLOWING access\n"));
-		/* No password set - always False */
-		return False;
-	}
-
-	if (ntv2_response.length < 16) {
-		/* We MUST have more than 16 bytes, or the stuff below will go
-		   crazy... */
-		DEBUG(0, ("smb_pwd_check_ntlmv2: incorrect password length (%ld)\n", 
-			  ntv2_response.length));
-		return False;
-	}
-
-	client_key_data = data_blob(ntv2_response.data+16, ntv2_response.length-16);
-	/* 
-	   todo:  should we be checking this for anything?  We can't for LMv2, 
-	   but for NTLMv2 it is meant to contain the current time etc.
-	*/
-
-	memcpy(client_response, ntv2_response.data, sizeof(client_response));
-
-	if (!ntv2_owf_gen(part_passwd, user, domain, kr)) {
-		return False;
-	}
-
-	SMBOWFencrypt_ntv2(kr, sec_blob, client_key_data, value_from_encryption);
-	if (user_sess_key != NULL)
-	{
-		SMBsesskeygen_ntv2(kr, value_from_encryption, user_sess_key);
-	}
-
-#if DEBUG_PASSWORD
-	DEBUG(100,("Part password (P16) was |"));
-	dump_data(100, part_passwd, 16);
-	DEBUG(100,("Password from client was |"));
-	dump_data(100, ntv2_response.data, ntv2_response.length);
-	DEBUG(100,("Variable data from client was |"));
-	dump_data(100, client_key_data.data, client_key_data.length);
-	DEBUG(100,("Given challenge was |"));
-	dump_data(100, sec_blob.data, sec_blob.length);
-	DEBUG(100,("Value from encryption was |"));
-	dump_data(100, value_from_encryption, 16);
-#endif
-	data_blob_clear_free(&client_key_data);
-	return (memcmp(value_from_encryption, client_response, 16) == 0);
 }
 
 
@@ -601,8 +542,8 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
 				   auth_serversupplied_info **server_info)
 {
 	SAM_ACCOUNT *sampass=NULL;
-	BOOL ret;
-	NTSTATUS nt_status;
+	BOOL ret = False;
+	NTSTATUS nt_status = NT_STATUS_OK;
 	uint8 user_sess_key[16];
 	const uint8* lm_hash;
     tDirStatus		dirStatus		= eDSNoErr;
@@ -621,10 +562,12 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
 
 	/* get the account information */
 
-	become_root();
-	ret = pdb_getsampwnam(sampass, user_info->internal_username.str);
-	unbecome_root();
-
+	if (user_info->internal_username.str && strlen(user_info->internal_username.str)) {
+		become_root();
+		ret = pdb_getsampwnam(sampass, user_info->internal_username.str);
+		unbecome_root();
+	}
+	DEBUG(0,("check_opendirectory_security: after pdb_getsampwnam [%s]\n", user_info->internal_username.str));
 	if (ret == False)
 	{
 		DEBUG(3,("Couldn't find user '%s' in passdb file.\n", user_info->internal_username.str));
@@ -632,7 +575,10 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
 		return NT_STATUS_NO_SUCH_USER;
 	}
 
+	DEBUG(0,("check_opendirectory_security: after pdb_free_sam [%s]\n", user_info->internal_username.str));
+
 	nt_status = opendirectory_account_ok(mem_ctx, sampass, user_info);
+	DEBUG(0,("check_opendirectory_security: after opendirectory_account_ok [%s]\n", user_info->internal_username.str));
 	
 	if (!NT_STATUS_IS_OK(nt_status)) {
 		pdb_free_sam(&sampass);
@@ -643,6 +589,7 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
     if (dirStatus != eDSNoErr)
     {
 		DEBUG(0,("check_opendirectory_security: [%d]dsOpenDirService error\n", dirStatus));
+		pdb_free_sam(&sampass);
 		return NT_STATUS_UNSUCCESSFUL;
 	}
 	
@@ -655,6 +602,7 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
     	dsCloseDirService(dirRef);
     } else {
     	dsCloseDirService(dirRef);
+		pdb_free_sam(&sampass);
     	return NT_STATUS_NO_SUCH_USER;
     }
 
@@ -680,7 +628,7 @@ static NTSTATUS check_opendirectory_security(const struct auth_context *auth_con
 }
 
 /* module initialisation */
-NTSTATUS auth_init(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
+NTSTATUS auth_init_opendirectory(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
 {
 	if (!make_auth_methods(auth_context, auth_method)) {
 		return NT_STATUS_NO_MEMORY;
@@ -689,4 +637,9 @@ NTSTATUS auth_init(struct auth_context *auth_context, const char *param, auth_me
 	(*auth_method)->auth = check_opendirectory_security;	
 	(*auth_method)->name = "opendirectory";
 	return NT_STATUS_OK;
+}
+
+NTSTATUS init_module(void)
+{
+	return smb_register_auth(AUTH_INTERFACE_VERSION, "opendirectory", auth_init_opendirectory);
 }

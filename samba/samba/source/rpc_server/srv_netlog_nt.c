@@ -5,7 +5,7 @@
  *  Copyright (C) Luke Kenneth Casson Leighton 1996-1997,
  *  Copyright (C) Paul Ashton                       1997.
  *  Copyright (C) Jeremy Allison               1998-2001.
- *  Copyirht  (C) Andrew Bartlett                   2001.
+ *  Copyright (C) Andrew Bartlett                   2001.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,12 +25,6 @@
 /* This is the implementation of the netlogon pipe. */
 
 #include "includes.h"
-
-#ifdef WITH_OPENDIRECTORY
-#include <DirectoryService/DirServices.h>
-#include <DirectoryService/DirServicesConst.h>
-#include <DirectoryService/DirServicesUtils.h>
-#endif
 
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_RPC_SRV
@@ -280,43 +274,6 @@ NTSTATUS _net_auth(pipes_struct *p, NET_Q_AUTH *q_u, NET_R_AUTH *r_u)
 
 	rpcstr_pull(mach_acct, q_u->clnt_id.uni_acct_name.buffer,sizeof(fstring),q_u->clnt_id.uni_acct_name.uni_str_len*2,0);
 
-#ifdef WITH_OPENDIRECTORY
-	if (p->dc.challenge_sent ) {
-		/* from client / server challenges and md4 password, generate sess key */
-		if (lp_opendirectory()) {
-			//check acct_ctrl flags
-			opendirectory_cred_session_key(&p->dc.clnt_chal, &p->dc.srv_chal, mach_acct, p->dc.sess_key, NULL);
-		} else if (get_md4pw((char *)p->dc.md4pw, mach_acct)) {
-			cred_session_key(&p->dc.clnt_chal, &p->dc.srv_chal,
-					 p->dc.md4pw, p->dc.sess_key);
-		} else {
-			status = NT_STATUS_ACCESS_DENIED;
-			goto exit;
-		}
-			
-		/* check that the client credentials are valid */
-		if (cred_assert(&q_u->clnt_chal, p->dc.sess_key, &p->dc.clnt_cred.challenge, srv_time)) {
-			
-			/* create server challenge for inclusion in the reply */
-			cred_create(p->dc.sess_key, &p->dc.srv_cred.challenge, srv_time, &srv_cred);
-		
-			/* copy the received client credentials for use next time */
-			memcpy(p->dc.clnt_cred.challenge.data, q_u->clnt_chal.data, sizeof(q_u->clnt_chal.data));
-			memcpy(p->dc.srv_cred .challenge.data, q_u->clnt_chal.data, sizeof(q_u->clnt_chal.data));
-			
-			/* Save the machine account name. */
-			fstrcpy(p->dc.mach_acct, mach_acct);
-		
-			p->dc.authenticated = True;
-
-		} else {
-			status = NT_STATUS_ACCESS_DENIED;
-		}
-	} else {
-		status = NT_STATUS_ACCESS_DENIED;
-	}
-exit:
-#else
 	if (p->dc.challenge_sent && get_md4pw((char *)p->dc.md4pw, mach_acct)) {
 
 		/* from client / server challenges and md4 password, generate sess key */
@@ -344,7 +301,7 @@ exit:
 	} else {
 		status = NT_STATUS_ACCESS_DENIED;
 	}
-#endif	
+	
 	/* set up the LSA AUTH response */
 	init_net_r_auth(r_u, &srv_cred, status);
 
@@ -374,54 +331,18 @@ NTSTATUS _net_auth_2(pipes_struct *p, NET_Q_AUTH_2 *q_u, NET_R_AUTH_2 *r_u)
 	UTIME srv_time;
 	NEG_FLAGS srv_flgs;
 	fstring mach_acct;
-#ifdef WITH_OPENDIRECTORY
-	tDirStatus dirStatus = eDSNullParameter;
-#endif
+
 	srv_time.time = 0;
+
+	if ( (lp_server_schannel() == True) &&
+	     ((q_u->clnt_flgs.neg_flags & NETLOGON_NEG_SCHANNEL) == 0) ) {
+
+		/* schannel must be used, but client did not offer it. */
+		status = NT_STATUS_ACCESS_DENIED;
+	}
 
 	rpcstr_pull(mach_acct, q_u->clnt_id.uni_acct_name.buffer,sizeof(fstring),q_u->clnt_id.uni_acct_name.uni_str_len*2,0);
 
-	DEBUG(0, ("_net_auth_2 for [%s]\n", mach_acct));
-#ifdef WITH_OPENDIRECTORY
-	if (p->dc.challenge_sent) {
-		/* from client / server challenges and md4 password, generate sess key */
-		if (lp_opendirectory()) {
-			//check acct_ctrl flags
-			dirStatus = opendirectory_cred_session_key(&p->dc.clnt_chal, &p->dc.srv_chal, mach_acct, p->dc.sess_key, NULL);
-			DEBUG(0, ("_net_auth_2 opendirectory_cred_session_key [%d]\n", dirStatus));
-		} else if (get_md4pw((char *)p->dc.md4pw, mach_acct)) {
-			DEBUG(0, ("_net_auth_2 use account hash \n"));
-			cred_session_key(&p->dc.clnt_chal, &p->dc.srv_chal,
-					 p->dc.md4pw, p->dc.sess_key);
-		} else {
-			DEBUG(0, ("_net_auth_2 CAN NOT COMPUTE SESSION KEY \n"));
-			status = NT_STATUS_ACCESS_DENIED;
-			goto exit;
-		}
-
-		/* check that the client credentials are valid */
-		if (cred_assert(&q_u->clnt_chal, p->dc.sess_key, &p->dc.clnt_cred.challenge, srv_time)) {
-			
-			/* create server challenge for inclusion in the reply */
-			cred_create(p->dc.sess_key, &p->dc.srv_cred.challenge, srv_time, &srv_cred);
-			
-			/* copy the received client credentials for use next time */
-			memcpy(p->dc.clnt_cred.challenge.data, q_u->clnt_chal.data, sizeof(q_u->clnt_chal.data));
-			memcpy(p->dc.srv_cred .challenge.data, q_u->clnt_chal.data, sizeof(q_u->clnt_chal.data));
-			
-			/* Save the machine account name. */
-			fstrcpy(p->dc.mach_acct, mach_acct);
-			
-			p->dc.authenticated = True;
-
-		} else {
-			status = NT_STATUS_ACCESS_DENIED;
-		}
-	} else {
-		status = NT_STATUS_ACCESS_DENIED;
-	}
-exit:
-#else
 	if (p->dc.challenge_sent && get_md4pw((char *)p->dc.md4pw, mach_acct)) {
 		
 		/* from client / server challenges and md4 password, generate sess key */
@@ -449,11 +370,20 @@ exit:
 	} else {
 		status = NT_STATUS_ACCESS_DENIED;
 	}
-#endif	
+	
 	srv_flgs.neg_flags = 0x000001ff;
+
+	if (lp_server_schannel() != False) {
+		srv_flgs.neg_flags |= NETLOGON_NEG_SCHANNEL;
+	}
 
 	/* set up the LSA AUTH 2 response */
 	init_net_r_auth_2(r_u, &srv_cred, &srv_flgs, status);
+
+	if (NT_STATUS_IS_OK(status)) {
+		extern struct dcinfo last_dcinfo;
+		last_dcinfo = p->dc;
+	}
 
 	return r_u->status;
 }
@@ -594,6 +524,7 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 	auth_serversupplied_info *server_info = NULL;
 	extern userdom_struct current_user_info;
 	SAM_ACCOUNT *sampw;
+	struct auth_context *auth_context = NULL;
 	        
 	usr_info = (NET_USER_INFO_3 *)talloc(p->mem_ctx, sizeof(NET_USER_INFO_3));
 	if (!usr_info)
@@ -609,7 +540,15 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
  
 	if (!get_valid_user_struct(p->vuid))
 		return NT_STATUS_NO_SUCH_USER;
-    
+
+
+	if ( (lp_server_schannel() == True) && (!p->netsec_auth_validated) ) {
+		/* 'server schannel = yes' should enforce use of
+		   schannel, the client did offer it in auth2, but
+		   obviously did not use it. */
+		return NT_STATUS_ACCESS_DENIED;
+	}
+
 	/* checks and updates credentials.  creates reply credentials */
 	if (!(p->dc.authenticated && deal_with_creds(p->dc.sess_key, &p->dc.clnt_cred, &q_u->sam_id.client.cred, &srv_cred)))
 		return NT_STATUS_INVALID_HANDLE;
@@ -660,10 +599,11 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 
 	DEBUG(5,("Attempting validation level %d for unmapped username %s.\n", q_u->sam_id.ctr->switch_value, nt_username));
 
+	status = NT_STATUS_OK;
+	
 	switch (ctr->switch_value) {
 	case NET_LOGON_TYPE:
 	{
-		struct auth_context *auth_context = NULL;
 		if (!NT_STATUS_IS_OK(status = make_auth_context_fixed(&auth_context, ctr->auth.id2.lm_chal))) {
 			return status;
 		}
@@ -677,11 +617,7 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 						     ctr->auth.id2.nt_chal_resp.buffer,
 						     ctr->auth.id2.nt_chal_resp.str_str_len)) {
 			status = NT_STATUS_NO_MEMORY;
-		} else {
-			status = auth_context->check_ntlm_password(auth_context, user_info, &server_info);
-		}
-		(auth_context->free)(&auth_context);
-			
+		}	
 		break;
 	}
 	case INTERACTIVE_LOGON_TYPE:
@@ -690,8 +626,8 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 		   convert this to chellange/responce for the auth
 		   subsystem to chew on */
 	{
-		struct auth_context *auth_context = NULL;
 		const uint8 *chal;
+		
 		if (!NT_STATUS_IS_OK(status = make_auth_context_subsystem(&auth_context))) {
 			return status;
 		}
@@ -705,12 +641,7 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 							 ctr->auth.id1.nt_owf.data, 
 							 p->dc.sess_key)) {
 			status = NT_STATUS_NO_MEMORY;
-		} else {
-			status = auth_context->check_ntlm_password(auth_context, user_info, &server_info);
 		}
-
-		(auth_context->free)(&auth_context);
-
 		break;
 	}
 	default:
@@ -718,6 +649,12 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 		return NT_STATUS_INVALID_INFO_CLASS;
 	} /* end switch */
 	
+	if ( NT_STATUS_IS_OK(status) ) {
+		status = auth_context->check_ntlm_password(auth_context, 
+			user_info, &server_info);
+	}
+
+	(auth_context->free)(&auth_context);	
 	free_user_info(&user_info);
 	
 	DEBUG(5, ("_net_sam_logon: check_password returned status %s\n", 
@@ -793,8 +730,7 @@ NTSTATUS _net_sam_logon(pipes_struct *p, NET_Q_SAM_LOGON *q_u, NET_R_SAM_LOGON *
 
 		init_net_user_info3(p->mem_ctx, usr_info, 
 				    user_rid,
-				    group_rid,
-				    
+				    group_rid,   
 				    pdb_get_username(sampw),
 				    pdb_get_fullname(sampw),
 				    pdb_get_homedir(sampw),

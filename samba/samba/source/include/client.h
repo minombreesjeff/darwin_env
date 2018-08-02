@@ -57,17 +57,6 @@ struct print_job_info
 	time_t t;
 };
 
-typedef struct smb_sign_info {
-	BOOL use_smb_signing;
-	BOOL negotiated_smb_signing;
-	BOOL temp_smb_signing;
-	size_t mac_key_len;
-	uint8 mac_key[64];
-	uint32 send_seq_num;
-	uint32 reply_seq_num;
-	BOOL allow_smb_signing;
-} smb_sign_info;
-
 struct cli_state {
 	int port;
 	int fd;
@@ -109,11 +98,11 @@ struct cli_state {
 	int readbraw_supported;
 	int writebraw_supported;
 	int timeout; /* in milliseconds. */
-	int max_xmit;
-	int max_mux;
+	size_t max_xmit;
+	size_t max_mux;
 	char *outbuf;
 	char *inbuf;
-	int bufsize;
+	unsigned int bufsize;
 	int initialised;
 	int win95;
 	uint32 capabilities;
@@ -130,19 +119,30 @@ struct cli_state {
 	 * Only used in NT domain calls.
 	 */
 
+	int pipe_idx;                      /* Index (into list of known pipes) 
+					      of the pipe we're talking to, 
+					      if any */
+
 	uint16 nt_pipe_fnum;               /* Pipe handle. */
+
+	/* Secure pipe parameters */
+	int pipe_auth_flags;
+
+	uint16 saved_netlogon_pipe_fnum;   /* The "first" pipe to get
+                                              the session key for the
+                                              schannel. */
+	struct netsec_auth_struct auth_info;
+
+	NTLMSSP_CLIENT_STATE *ntlmssp_pipe_state;
+
 	unsigned char sess_key[16];        /* Current session key. */
-	unsigned char ntlmssp_hash[258];   /* ntlmssp data. */
-	uint32 ntlmssp_cli_flgs;           /* ntlmssp client flags */
-	uint32 ntlmssp_srv_flgs;           /* ntlmssp server flags */
-	uint32 ntlmssp_seq_num;            /* ntlmssp sequence number */
 	DOM_CRED clnt_cred;                /* Client credential. */
 	fstring mach_acct;                 /* MYNAME$. */
 	fstring srv_name_slash;            /* \\remote server. */
 	fstring clnt_name_slash;           /* \\local client. */
 	uint16 max_xmit_frag;
 	uint16 max_recv_frag;
-	uint32 ntlmssp_flags;
+
 	BOOL use_kerberos;
 	BOOL use_spnego;
 

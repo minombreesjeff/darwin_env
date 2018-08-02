@@ -6,8 +6,8 @@ SRCDIR=/usr/src/turbo/SOURCES
 USERID=`id -u`
 GRPID=`id -g`
 
-( cd ../../../.. ; chown -R ${USERID}.${GRPID} ${SRCDIR}/samba-3.0alpha22 )
-( cd ../../../.. ; tar czvf ${SRCDIR}/samba-3.0alpha22.tar.gz samba-3.0alpha22 )
+( cd ../../../.. ; chown -R ${USERID}.${GRPID} ${SRCDIR}/samba-3.0.0rc1 )
+( cd ../../../.. ; tar czvf ${SRCDIR}/samba-3.0.0rc1.tar.gz samba-3.0.0rc1 )
 cp -a *.spec $SPECDIR
 cp -a *.patch smb.* samba.log $SRCDIR
 cd $SPECDIR

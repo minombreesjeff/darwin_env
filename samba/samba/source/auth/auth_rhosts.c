@@ -135,17 +135,20 @@ check for a possible hosts equiv or rhosts entry for the user
 
 static BOOL check_hosts_equiv(SAM_ACCOUNT *account)
 {
-  char *fname = NULL;
+	uid_t uid;
+	char *fname = NULL;
 
-  fname = lp_hosts_equiv();
+	fname = lp_hosts_equiv();
+	if (!NT_STATUS_IS_OK(sid_to_uid(pdb_get_user_sid(account), &uid)))
+		return False;
 
-  /* note: don't allow hosts.equiv on root */
-  if (IS_SAM_UNIX_USER(account) && fname && *fname && (pdb_get_uid(account) != 0)) {
-	  if (check_user_equiv(pdb_get_username(account),client_name(),fname))
-		  return(True);
-  }
+	/* note: don't allow hosts.equiv on root */
+	if (fname && *fname && uid != 0) {
+		if (check_user_equiv(pdb_get_username(account),client_name(),fname))
+			return True;
+	}
   
-  return(False);
+	return False;
 }
 
 
@@ -159,11 +162,13 @@ static NTSTATUS check_hostsequiv_security(const struct auth_context *auth_contex
 					  const auth_usersupplied_info *user_info, 
 					  auth_serversupplied_info **server_info)
 {
-	NTSTATUS nt_status = NT_STATUS_LOGON_FAILURE;
+	NTSTATUS nt_status;
 	SAM_ACCOUNT *account = NULL;
 	if (!NT_STATUS_IS_OK(nt_status = 
 			     auth_get_sam_account(user_info->internal_username.str, 
 						  &account))) {
+		if (NT_STATUS_EQUAL(nt_status, NT_STATUS_NO_SUCH_USER)) 
+			nt_status = NT_STATUS_NOT_IMPLEMENTED;
 		return nt_status;
 	}
 
@@ -171,14 +176,14 @@ static NTSTATUS check_hostsequiv_security(const struct auth_context *auth_contex
 		nt_status = make_server_info_sam(server_info, account);
 	} else {
 		pdb_free_sam(&account);
-		nt_status = NT_STATUS_LOGON_FAILURE;
+		nt_status = NT_STATUS_NOT_IMPLEMENTED;
 	}
 
 	return nt_status;
 }
 
 /* module initialisation */
-NTSTATUS auth_init_hostsequiv(struct auth_context *auth_context, const char* param, auth_methods **auth_method) 
+static NTSTATUS auth_init_hostsequiv(struct auth_context *auth_context, const char* param, auth_methods **auth_method) 
 {
 	if (!make_auth_methods(auth_context, auth_method)) {
 		return NT_STATUS_NO_MEMORY;
@@ -200,7 +205,7 @@ static NTSTATUS check_rhosts_security(const struct auth_context *auth_context,
 				      const auth_usersupplied_info *user_info, 
 				      auth_serversupplied_info **server_info)
 {
-	NTSTATUS nt_status = NT_STATUS_LOGON_FAILURE;
+	NTSTATUS nt_status;
 	SAM_ACCOUNT *account = NULL;
 	pstring rhostsfile;
 	const char *home;
@@ -208,6 +213,8 @@ static NTSTATUS check_rhosts_security(const struct auth_context *auth_context,
 	if (!NT_STATUS_IS_OK(nt_status = 
 			     auth_get_sam_account(user_info->internal_username.str, 
 						  &account))) {
+		if (NT_STATUS_EQUAL(nt_status, NT_STATUS_NO_SUCH_USER)) 
+			nt_status = NT_STATUS_NOT_IMPLEMENTED;
 		return nt_status;
 	}
 
@@ -220,19 +227,18 @@ static NTSTATUS check_rhosts_security(const struct auth_context *auth_context,
 			nt_status = make_server_info_sam(server_info, account);
 		} else {
 			pdb_free_sam(&account);
-			nt_status = NT_STATUS_LOGON_FAILURE;
 		}
 		unbecome_root();
 	} else {
 		pdb_free_sam(&account);
-		nt_status = NT_STATUS_LOGON_FAILURE;
+		nt_status = NT_STATUS_NOT_IMPLEMENTED;
 	}
 	
 	return nt_status;
 }
 
 /* module initialisation */
-NTSTATUS auth_init_rhosts(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
+static NTSTATUS auth_init_rhosts(struct auth_context *auth_context, const char *param, auth_methods **auth_method) 
 {
 	if (!make_auth_methods(auth_context, auth_method)) {
 		return NT_STATUS_NO_MEMORY;
@@ -240,5 +246,12 @@ NTSTATUS auth_init_rhosts(struct auth_context *auth_context, const char *param, 
 
 	(*auth_method)->auth = check_rhosts_security;
 	(*auth_method)->name = "rhosts";
+	return NT_STATUS_OK;
+}
+
+NTSTATUS auth_rhosts_init(void)
+{
+	smb_register_auth(AUTH_INTERFACE_VERSION, "rhosts", auth_init_rhosts);
+	smb_register_auth(AUTH_INTERFACE_VERSION, "hostsequiv", auth_init_hostsequiv);
 	return NT_STATUS_OK;
 }

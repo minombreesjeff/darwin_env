@@ -143,6 +143,22 @@ void file_close_conn(connection_struct *conn)
 }
 
 /****************************************************************************
+ Close all open files for a pid.
+****************************************************************************/
+
+void file_close_pid(uint16 smbpid)
+{
+	files_struct *fsp, *next;
+	
+	for (fsp=Files;fsp;fsp=next) {
+		next = fsp->next;
+		if (fsp->file_pid == smbpid) {
+			close_file(fsp,False); 
+		}
+	}
+}
+
+/****************************************************************************
  Initialise file structures.
 ****************************************************************************/
 
@@ -200,6 +216,18 @@ void file_close_user(int vuid)
 	}
 }
 
+void file_dump_open_table(void)
+{
+	int count=0;
+	files_struct *fsp;
+
+	for (fsp=Files;fsp;fsp=fsp->next,count++) {
+		DEBUG(10,("Files[%d], fnum = %d, name %s, fd = %d, fileid = %lu, dev = %x, inode = %.0f\n",
+			count, fsp->fnum, fsp->fsp_name, fsp->fd, (unsigned long)fsp->file_id,
+			(unsigned int)fsp->dev, (double)fsp->inode ));
+	}
+}
+
 /****************************************************************************
  Find a fsp given a file descriptor.
 ****************************************************************************/
@@ -231,12 +259,20 @@ files_struct *file_find_dif(SMB_DEV_T dev, SMB_INO_T inode, unsigned long file_i
 	files_struct *fsp;
 
 	for (fsp=Files;fsp;fsp=fsp->next,count++) {
-		if (fsp->fd != -1 &&
-		    fsp->dev == dev && 
+		/* We can have a fsp->fd == -1 here as it could be a stat open. */
+		if (fsp->dev == dev && 
 		    fsp->inode == inode &&
 		    fsp->file_id == file_id ) {
 			if (count > 10) {
 				DLIST_PROMOTE(Files, fsp);
+			}
+			/* Paranoia check. */
+			if (fsp->fd == -1 && fsp->oplock_type != NO_OPLOCK) {
+				DEBUG(0,("file_find_dif: file %s dev = %x, inode = %.0f, file_id = %u \
+oplock_type = %u is a stat open with oplock type !\n", fsp->fsp_name, (unsigned int)fsp->dev,
+						(double)fsp->inode, (unsigned int)fsp->file_id,
+						(unsigned int)fsp->oplock_type ));
+				smb_panic("file_find_dif\n");
 			}
 			return fsp;
 		}
@@ -337,6 +373,10 @@ void file_free(files_struct *fsp)
 	DLIST_REMOVE(Files, fsp);
 
 	string_free(&fsp->fsp_name);
+
+	if (fsp->fake_file_handle) {
+		destroy_fake_file_handle(&fsp->fake_file_handle);
+	}
 
 	bitmap_clear(file_bmap, fsp->fnum - FILE_HANDLE_OFFSET);
 	files_used--;

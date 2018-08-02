@@ -24,34 +24,48 @@
 
 #include "includes.h"
 
-/*********************************************************
- Change the domain password on the PDC.
-**********************************************************/
+/************************************************************************
+ Change the trust account password for a domain.
+************************************************************************/
 
-static NTSTATUS modify_trust_password( const char *domain, const char *remote_machine, 
-				   unsigned char orig_trust_passwd_hash[16])
+NTSTATUS change_trust_account_password( const char *domain, const char *remote_machine)
 {
+	NTSTATUS nt_status = NT_STATUS_UNSUCCESSFUL;
+	struct in_addr pdc_ip;
+	fstring dc_name;
 	struct cli_state *cli;
-	DOM_SID domain_sid;
-	NTSTATUS nt_status;
 
-	/*
-	 * Ensure we have the domain SID for this domain.
-	 */
+	DEBUG(5,("change_trust_account_password: Attempting to change trust account password in domain %s....\n",
+		domain));
 
-	if (!secrets_fetch_domain_sid(domain, &domain_sid)) {
-		DEBUG(0, ("modify_trust_password: unable to fetch domain sid.\n"));
-		return NT_STATUS_UNSUCCESSFUL;
+	if (remote_machine == NULL || !strcmp(remote_machine, "*")) {
+		/* Use the PDC *only* for this */
+	
+		if ( !get_pdc_ip(domain, &pdc_ip) ) {
+			DEBUG(0,("Can't get IP for PDC for domain %s\n", domain));
+			goto failed;
+		}
+
+		if ( !name_status_find( domain, 0x1b, 0x20, pdc_ip, dc_name) )
+			goto failed;
 	}
-
+	/* supoport old deprecated "smbpasswd -j DOMAIN -r MACHINE" behavior */
+	else {
+		fstrcpy( dc_name, remote_machine );
+	}
+	
+	/* if this next call fails, then give up.  We can't do
+	   password changes on BDC's  --jerry */
+	   
 	if (!NT_STATUS_IS_OK(cli_full_connection(&cli, global_myname(), remote_machine, 
 					   NULL, 0,
 					   "IPC$", "IPC",  
 					   "", "",
-					   "", 0, NULL))) 
+					   "", 0, Undefined, NULL))) 
 	{
 		DEBUG(0,("modify_trust_password: Connection to %s failed!\n", remote_machine));
-		return NT_STATUS_UNSUCCESSFUL;
+		nt_status = NT_STATUS_UNSUCCESSFUL;
+		goto failed;
 	}
       
 	/*
@@ -65,64 +79,24 @@ static NTSTATUS modify_trust_password( const char *domain, const char *remote_ma
 		cli_nt_session_close(cli);
 		cli_ulogoff(cli);
 		cli_shutdown(cli);
-		return NT_STATUS_UNSUCCESSFUL;
+		nt_status = NT_STATUS_UNSUCCESSFUL;
+		goto failed;
 	}
 
-	nt_status = trust_pw_change_and_store_it(cli, cli->mem_ctx,
-					   orig_trust_passwd_hash);
+	nt_status = trust_pw_find_change_and_store_it(cli, cli->mem_ctx,
+						      domain);
   
 	cli_nt_session_close(cli);
 	cli_ulogoff(cli);
 	cli_shutdown(cli);
 	
-	return nt_status;
-}
-
-/************************************************************************
- Change the trust account password for a domain.
-************************************************************************/
-
-NTSTATUS change_trust_account_password( const char *domain, const char *remote_machine)
-{
-	unsigned char old_trust_passwd_hash[16];
-	time_t lct;
-	NTSTATUS res = NT_STATUS_UNSUCCESSFUL;
-	struct in_addr pdc_ip;
-	fstring dc_name;
-
-
-	if(!secrets_fetch_trust_account_password(domain, old_trust_passwd_hash, &lct)) {
-		DEBUG(0,("change_trust_account_password: unable to read the machine account password for domain %s.\n", 
-			domain));
-		return NT_STATUS_UNSUCCESSFUL;
-	}
-
-	if (remote_machine == NULL || !strcmp(remote_machine, "*")) {
-		/* Use the PDC *only* for this */
-	
-		if ( !get_pdc_ip(domain, &pdc_ip) ) {
-			DEBUG(0,("Can't get IP for PDC for domain %s\n", domain));
-			goto failed;
-		}
-
-		if ( !lookup_dc_name(global_myname(), domain, &pdc_ip, dc_name) ) 
-			goto failed;
-	}
-	/* supoport old deprecated "smbpasswd -j DOMAIN -r MACHINE" behavior */
-	else {
-		fstrcpy( dc_name, remote_machine );
-	}
-	
-	/* if this next call fails, then give up.  We can't do
-	   password changes on BDC's  --jerry */
-	   
-	res = modify_trust_password(domain, dc_name, old_trust_passwd_hash);	
-	
 failed:
-	if (!NT_STATUS_IS_OK(res)) {
+	if (!NT_STATUS_IS_OK(nt_status)) {
 		DEBUG(0,("%s : change_trust_account_password: Failed to change password for domain %s.\n", 
 			timestring(False), domain));
 	}
+	else
+		DEBUG(5,("change_trust_account_password: sucess!\n"));
   
-	return res;
+	return nt_status;
 }

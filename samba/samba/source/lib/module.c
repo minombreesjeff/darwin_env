@@ -2,7 +2,8 @@
    Unix SMB/CIFS implementation.
    module loading system
 
-   Copyright (C) Jelmer Vernooij 2002
+   Copyright (C) Jelmer Vernooij 2002-2003
+   Copyright (C) Stefan (metze) Metzmacher 2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +27,7 @@ NTSTATUS smb_load_module(const char *module_name)
 {
 	void *handle;
 	init_module_function *init;
-	NTSTATUS nt_status;
+	NTSTATUS status;
 	const char *error;
 
 	/* Always try to use LAZY symbol resolving; if the plugin has 
@@ -40,7 +41,7 @@ NTSTATUS smb_load_module(const char *module_name)
 		return NT_STATUS_UNSUCCESSFUL;
 	}
 
-	init = sys_dlsym(handle, "init_module");
+	init = (init_module_function *)sys_dlsym(handle, "init_module");
 
 	/* we must check sys_dlerror() to determine if it worked, because
            sys_dlsym() can validly return NULL */
@@ -50,19 +51,236 @@ NTSTATUS smb_load_module(const char *module_name)
 		return NT_STATUS_UNSUCCESSFUL;
 	}
 
-	nt_status = init();
+	status = init();
 
 	DEBUG(2, ("Module '%s' loaded\n", module_name));
 
-	return nt_status;
+	return status;
+}
+
+/* Load all modules in list and return number of 
+ * modules that has been successfully loaded */
+int smb_load_modules(const char **modules)
+{
+	int i;
+	int success = 0;
+
+	for(i = 0; modules[i]; i++){
+		if(NT_STATUS_IS_OK(smb_load_module(modules[i]))) {
+			success++;
+		}
+	}
+
+	DEBUG(2, ("%d modules successfully loaded\n", success));
+
+	return success;
+}
+
+NTSTATUS smb_probe_module(const char *subsystem, const char *module)
+{
+	pstring full_path;
+	
+	/* Check for absolute path */
+
+	/* if we make any 'samba multibyte string' 
+	   calls here, we break 
+	   for loading string modules */
+	if (module[0] == '/')
+		return smb_load_module(module);
+	
+	pstrcpy(full_path, lib_path(subsystem));
+	pstrcat(full_path, "/");
+	pstrcat(full_path, module);
+	pstrcat(full_path, ".");
+	pstrcat(full_path, shlib_ext());
+
+	DEBUG(5, ("Probing module %s: Trying to load from %s\n", module, full_path));
+	
+	return smb_load_module(full_path);
 }
 
 #else /* HAVE_DLOPEN */
 
 NTSTATUS smb_load_module(const char *module_name)
 {
-	DEBUG(0,("This samba executable has not been build with plugin support"));
+	DEBUG(0,("This samba executable has not been built with plugin support\n"));
+	return NT_STATUS_NOT_SUPPORTED;
+}
+
+int smb_load_modules(const char **modules)
+{
+	DEBUG(0,("This samba executable has not been built with plugin support\n"));
+	return -1;
+}
+
+NTSTATUS smb_probe_module(const char *subsystem, const char *module)
+{
+	DEBUG(0,("This samba executable has not been built with plugin support, not probing\n")); 
 	return NT_STATUS_NOT_SUPPORTED;
 }
 
 #endif /* HAVE_DLOPEN */
+
+void init_modules(void)
+{
+	/* FIXME: This can cause undefined symbol errors :
+	 *  smb_register_vfs() isn't available in nmbd, for example */
+	if(lp_preload_modules()) 
+		smb_load_modules(lp_preload_modules());
+}
+
+
+/***************************************************************************
+ * This Function registers a idle event
+ *
+ * the registered funtions are run periodically
+ * and maybe shutdown idle connections (e.g. to an LDAP server)
+ ***************************************************************************/
+static smb_event_id_t smb_idle_event_id = 1;
+
+struct smb_idle_list_ent {
+	struct smb_idle_list_ent *prev,*next;
+	smb_event_id_t id;
+	smb_idle_event_fn *fn;
+	void *data;
+	time_t interval;
+	time_t lastrun;
+};
+
+static struct smb_idle_list_ent *smb_idle_event_list = NULL;
+
+smb_event_id_t smb_register_idle_event(smb_idle_event_fn *fn, void *data, time_t interval)
+{
+	struct smb_idle_list_ent *event;
+
+	if (!fn) {	
+		return SMB_EVENT_ID_INVALID;
+	}
+
+	event = (struct smb_idle_list_ent *)malloc(sizeof(struct smb_idle_list_ent));
+	if (!event) {
+		DEBUG(0,("malloc() failed!\n"));
+		return SMB_EVENT_ID_INVALID;
+	}
+	event->fn = fn;
+	event->data = data;
+	event->interval = interval;
+	event->lastrun = 0;
+	event->id = smb_idle_event_id++;
+
+	DLIST_ADD(smb_idle_event_list,event);
+
+	return event->id;
+}
+
+BOOL smb_unregister_idle_event(smb_event_id_t id)
+{
+	struct smb_idle_list_ent *event = smb_idle_event_list;
+	
+	while(event) {
+		if (event->id == id) {
+			DLIST_REMOVE(smb_idle_event_list,event);
+			SAFE_FREE(event);
+			return True;
+		}
+		event = event->next;
+	}
+	
+	return False;
+}
+
+void smb_run_idle_events(time_t now)
+{
+	struct smb_idle_list_ent *event = smb_idle_event_list;
+
+	while (event) {
+		time_t interval;
+
+		if (event->interval >= SMB_IDLE_EVENT_MIN_INTERVAL) {
+			interval = event->interval;
+		} else {
+			interval = SMB_IDLE_EVENT_MIN_INTERVAL;
+		}
+		if (now >(event->lastrun+interval)) {
+			event->fn(&event->data,&event->interval,now);
+			event->lastrun = now;
+		}
+		event = event->next;
+	}
+
+	return;
+}
+
+/***************************************************************************
+ * This Function registers a exit event
+ *
+ * the registered functions are run on exit()
+ * and maybe shutdown idle connections (e.g. to an LDAP server)
+ ***************************************************************************/
+
+struct smb_exit_list_ent {
+	struct smb_exit_list_ent *prev,*next;
+	smb_event_id_t id;
+	smb_exit_event_fn *fn;
+	void *data;
+};
+
+static struct smb_exit_list_ent *smb_exit_event_list = NULL;
+
+smb_event_id_t smb_register_exit_event(smb_exit_event_fn *fn, void *data)
+{
+	struct smb_exit_list_ent *event;
+	static smb_event_id_t smb_exit_event_id = 1;
+
+	if (!fn) {	
+		return SMB_EVENT_ID_INVALID;
+	}
+
+	event = (struct smb_exit_list_ent *)malloc(sizeof(struct smb_exit_list_ent));
+	if (!event) {
+		DEBUG(0,("malloc() failed!\n"));
+		return SMB_EVENT_ID_INVALID;
+	}
+	event->fn = fn;
+	event->data = data;
+	event->id = smb_exit_event_id++;
+
+	DLIST_ADD(smb_exit_event_list,event);
+
+	return event->id;
+}
+
+BOOL smb_unregister_exit_event(smb_event_id_t id)
+{
+	struct smb_exit_list_ent *event = smb_exit_event_list;
+	
+	while(event) {
+		if (event->id == id) {
+			DLIST_REMOVE(smb_exit_event_list,event);
+			SAFE_FREE(event);
+			return True;
+		}
+		event = event->next;
+	}
+	
+	return False;
+}
+
+void smb_run_exit_events(void)
+{
+	struct smb_exit_list_ent *event = smb_exit_event_list;
+	struct smb_exit_list_ent *tmp = NULL;
+
+	while (event) {
+		event->fn(&event->data);
+		tmp = event;
+		event = event->next;
+		/* exit event should only run one time :-)*/
+		SAFE_FREE(tmp);
+	}
+
+	/* the list is empty now...*/
+	smb_exit_event_list = NULL;
+
+	return;
+}

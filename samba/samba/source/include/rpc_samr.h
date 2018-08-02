@@ -5,8 +5,7 @@
    Copyright (C) Luke Kenneth Casson Leighton 1996-2000
    Copyright (C) Paul Ashton                  1997-2000
    Copyright (C) Jean François Micouleau      1998-2001
-   Copyright (C) Anthony Liguori              2002
-   Copyright (C) Jim McDonough                2002
+   Copyright (C) Jim McDonough <jmcd@us.ibm.com> 2002
    
    
    This program is free software; you can redistribute it and/or modify
@@ -128,7 +127,7 @@ SamrTestPrivateFunctionsUser
 #define SAMR_UNKNOWN_2a        0x2a
 #define SAMR_UNKNOWN_2b        0x2b
 #define SAMR_GET_USRDOM_PWINFO 0x2c
-#define SAMR_UNKNOWN_2D        0x2d
+#define SAMR_REMOVE_USER_FOREIGN_DOMAIN        0x2d
 #define SAMR_UNKNOWN_2E        0x2e /* looks like an alias for SAMR_QUERY_DOMAIN_INFO */
 #define SAMR_UNKNOWN_2f        0x2f
 #define SAMR_QUERY_DISPINFO3   0x30 /* Alias for SAMR_QUERY_DISPINFO
@@ -146,16 +145,6 @@ SamrTestPrivateFunctionsUser
 #define SAMR_CONNECT           0x39
 #define SAMR_SET_USERINFO      0x3A
 #define SAMR_CONNECT4          0x3E
-
-
-typedef struct _DISP_USER_INFO {
-	SAM_ACCOUNT *sam;
-} DISP_USER_INFO;
-
-typedef struct _DISP_GROUP_INFO {
-	DOMAIN_GRP *grp;
-} DISP_GROUP_INFO;
-
 
 typedef struct logon_hours_info
 {
@@ -1797,21 +1786,21 @@ typedef struct r_samr_chgpasswd_user_info
 } SAMR_R_CHGPASSWD_USER;
 
 
-/* SAMR_Q_UNKNOWN_2D */
-typedef struct q_samr_unknown_2d_info
+/* SAMR_Q_REMOVE_USER_FOREIGN_DOMAIN */
+typedef struct q_samr_remove_user_foreign_domain_info
 {
 	POLICY_HND dom_pol;   /* policy handle */
 	DOM_SID2 sid;         /* SID */
 
-} SAMR_Q_UNKNOWN_2D;
+} SAMR_Q_REMOVE_USER_FOREIGN_DOMAIN;
 
 
-/* SAMR_R_UNKNOWN_2D - probably an open */
-typedef struct r_samr_unknown_2d_info
+/* SAMR_R_REMOVE_USER_FOREIGN_DOMAIN */
+typedef struct r_samr_remove_user_foreign_domain_info
 {
 	NTSTATUS status;         /* return status */
 
-} SAMR_R_UNKNOWN_2D;
+} SAMR_R_REMOVE_USER_FOREIGN_DOMAIN;
 
 
 

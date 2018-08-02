@@ -77,12 +77,21 @@
 #define OPEN_CONN(conn)    ((conn) && (conn)->open)
 #define IS_IPC(conn)       ((conn) && (conn)->ipc)
 #define IS_PRINT(conn)       ((conn) && (conn)->printer)
-#define FNUM_OK(fsp,c) (OPEN_FSP(fsp) && (c)==(fsp)->conn)
+#define FSP_BELONGS_CONN(fsp,conn) do {\
+			extern struct current_user current_user;\
+			if (!((fsp) && (conn) && ((conn)==(fsp)->conn) && (current_user.vuid==(fsp)->vuid))) \
+				return(ERROR_DOS(ERRDOS,ERRbadfid));\
+			} while(0)
 
-#define CHECK_FSP(fsp,conn) if (!FNUM_OK(fsp,conn)) \
+#define FNUM_OK(fsp,c) (OPEN_FSP(fsp) && (c)==(fsp)->conn && current_user.vuid==(fsp)->vuid)
+
+#define CHECK_FSP(fsp,conn) do {\
+			extern struct current_user current_user;\
+			if (!FNUM_OK(fsp,conn)) \
 				return(ERROR_DOS(ERRDOS,ERRbadfid)); \
 			else if((fsp)->fd == -1) \
-				return(ERROR_DOS(ERRDOS,ERRbadaccess))
+				return(ERROR_DOS(ERRDOS,ERRbadaccess));\
+			} while(0)
 
 #define CHECK_READ(fsp) if (!(fsp)->can_read) \
 				return(ERROR_DOS(ERRDOS,ERRbadaccess))
@@ -95,8 +104,11 @@
 #define ERROR_WAS_LOCK_DENIED(status) (NT_STATUS_EQUAL((status), NT_STATUS_LOCK_NOT_GRANTED) || \
 				NT_STATUS_EQUAL((status), NT_STATUS_FILE_LOCK_CONFLICT) )
 
+/* the service number for the [globals] defaults */ 
+#define GLOBAL_SECTION_SNUM	(-1)
 /* translates a connection number into a service number */
-#define SNUM(conn)         ((conn)?(conn)->service:-1)
+#define SNUM(conn)         	((conn)?(conn)->service:GLOBAL_SECTION_SNUM)
+
 
 /* access various service details */
 #define SERVICE(snum)      (lp_servicename(snum))
@@ -179,8 +191,8 @@
 #define smb_offset(p,buf) (PTR_DIFF(p,buf+4) + chain_size)
 
 #define smb_len(buf) (PVAL(buf,3)|(PVAL(buf,2)<<8)|((PVAL(buf,1)&1)<<16))
-#define _smb_setlen(buf,len) buf[0] = 0; buf[1] = (len&0x10000)>>16; \
-        buf[2] = (len&0xFF00)>>8; buf[3] = len&0xFF;
+#define _smb_setlen(buf,len) do { buf[0] = 0; buf[1] = (len&0x10000)>>16; \
+        buf[2] = (len&0xFF00)>>8; buf[3] = len&0xFF; } while (0)
 
 /*******************************************************************
 find the difference in milliseconds between two struct timeval
@@ -196,6 +208,7 @@ true if two IP addresses are equal
 ****************************************************************************/
 
 #define ip_equal(ip1,ip2) ((ip1).s_addr == (ip2).s_addr)
+#define ip_service_equal(ip1,ip2) ( ((ip1).ip.s_addr == (ip2).ip.s_addr) && ((ip1).port == (ip2).port) )
 
 /*****************************************************************
  splits out the last subkey of a key
@@ -241,52 +254,10 @@ copy an IP address from one buffer to another
 
 #define dos_format(fname) string_replace(fname,'/','\\')
 
-/*******************************************************************
- vfs stat wrapper that calls internal2unix.
-********************************************************************/
+/*****************************************************************************
+ Check to see if we are a DO for this domain
+*****************************************************************************/
 
-#define vfs_stat(conn, fname, st) ((conn)->vfs_ops.stat((conn), fname,(st)))
-
-/*******************************************************************
- vfs lstat wrapper that calls internal2unix.
-********************************************************************/
-
-#define vfs_lstat(conn, fname, st) ((conn)->vfs_ops.lstat((conn), fname,(st)))
-
-/*******************************************************************
- vfs fstat wrapper
-********************************************************************/
-
-#define vfs_fstat(fsp, fd, st) ((fsp)->conn->vfs_ops.fstat((fsp),(fd),(st)))
-
-/*******************************************************************
- vfs rmdir wrapper that calls internal2unix.
-********************************************************************/
-
-#define vfs_rmdir(conn,fname) ((conn)->vfs_ops.rmdir((conn),fname))
-
-/*******************************************************************
- vfs Unlink wrapper that calls internal2unix.
-********************************************************************/
-
-#define vfs_unlink(conn, fname) ((conn)->vfs_ops.unlink((conn),fname))
-
-/*******************************************************************
- vfs chmod wrapper that calls internal2unix.
-********************************************************************/
-
-#define vfs_chmod(conn,fname,mode) ((conn)->vfs_ops.chmod((conn),fname,(mode)))
-
-/*******************************************************************
- vfs chown wrapper that calls internal2unix.
-********************************************************************/
-
-#define vfs_chown(conn,fname,uid,gid) ((conn)->vfs_ops.chown((conn),fname,(uid),(gid)))
-
-/*******************************************************************
- A wrapper for vfs_chdir().
-********************************************************************/
-
-#define vfs_chdir(conn,fname) ((conn)->vfs_ops.chdir((conn),fname))
+#define IS_DC  (lp_server_role()==ROLE_DOMAIN_PDC || lp_server_role()==ROLE_DOMAIN_BDC) 
 
 #endif /* _SMB_MACROS_H */

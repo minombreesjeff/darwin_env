@@ -101,13 +101,20 @@ static int interpret_long_filename(struct cli_state *cli,
 			   cheap to calculate, I suppose, as
 			   no DST tables will be needed */
 			
-			finfo->ctime = interpret_long_date(p); p += 8;
-			finfo->atime = interpret_long_date(p); p += 8;
-			finfo->mtime = interpret_long_date(p); p += 8; p += 8;
-			finfo->size = IVAL2_TO_SMB_BIG_UINT(p,0); p += 8;
+			finfo->ctime = interpret_long_date(p);
+			p += 8;
+			finfo->atime = interpret_long_date(p);
+			p += 8;
+			finfo->mtime = interpret_long_date(p);
+			p += 8;
+			p += 8;
+			finfo->size = IVAL2_TO_SMB_BIG_UINT(p,0);
+			p += 8;
 			p += 8; /* alloc size */
-			finfo->mode = CVAL(p,0); p += 4;
-			namelen = IVAL(p,0); p += 4;
+			finfo->mode = CVAL(p,0);
+			p += 4;
+			namelen = IVAL(p,0);
+			p += 4;
 			p += 4; /* EA size */
 			slen = SVAL(p, 0);
 			p += 2; 
@@ -138,7 +145,11 @@ static int interpret_long_filename(struct cli_state *cli,
 int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute, 
 		 void (*fn)(file_info *, const char *, void *), void *state)
 {
+#if 0
+	int max_matches = 1366; /* Match W2k - was 512. */
+#else
 	int max_matches = 512;
+#endif
 	int info_level;
 	char *p, *p2;
 	pstring mask;
@@ -154,7 +165,7 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 	int ff_dir_handle=0;
 	int loop_count = 0;
 	char *rparam=NULL, *rdata=NULL;
-	int param_len, data_len;	
+	unsigned int param_len, data_len;	
 	uint16 setup;
 	pstring param;
 
@@ -178,7 +189,7 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 			SSVAL(param,6,info_level); 
 			SIVAL(param,8,0);
 			p = param+12;
-			p += clistr_push(cli, param+12, mask, -1, 
+			p += clistr_push(cli, param+12, mask, sizeof(param)-12, 
 					 STR_TERMINATE);
 		} else {
 			setup = TRANSACT2_FINDNEXT;
@@ -188,7 +199,7 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 			SIVAL(param,6,0); /* ff_resume_key */
 			SSVAL(param,10,8+4+2);	/* continue + resume required + close on end */
 			p = param+12;
-			p += clistr_push(cli, param+12, mask, -1, 
+			p += clistr_push(cli, param+12, mask, sizeof(param)-12, 
 					 STR_TERMINATE);
 		}
 
@@ -200,7 +211,12 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 				    &setup, 1, 0,           /* setup, length, max */
 				    param, param_len, 10,   /* param, length, max */
 				    NULL, 0, 
-				    cli->max_xmit /* data, length, max */
+#if 0
+				    /* w2k value. */
+				    MIN(16384,cli->max_xmit) /* data, length, max. */
+#else
+				    cli->max_xmit	    /* data, length, max. */
+#endif
 				    )) {
 			break;
 		}
@@ -214,7 +230,8 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 			uint8 eclass;
 			uint32 ecode;
 			cli_dos_error(cli, &eclass, &ecode);
-			if (eclass != ERRSRV || ecode != ERRerror) break;
+			if (eclass != ERRSRV || ecode != ERRerror)
+				break;
 			msleep(100);
 			continue;
 		}
@@ -222,7 +239,8 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
                 if (cli_is_error(cli) || !rdata || !rparam) 
 			break;
 
-		if (total_received == -1) total_received = 0;
+		if (total_received == -1)
+			total_received = 0;
 
 		/* parse out some important return info */
 		p = rparam;
@@ -245,8 +263,7 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 
 		/* we might need the lastname for continuations */
 		if (ff_lastname > 0) {
-			switch(info_level)
-				{
+			switch(info_level) {
 				case 260:
 					clistr_pull(cli, mask, p+ff_lastname,
 						    sizeof(mask), 
@@ -270,8 +287,9 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 		if (!tdl) {
 			DEBUG(0,("cli_list_new: Failed to expand dirlist\n"));
 			break;
+		} else {
+			dirlist = tdl;
 		}
-		else dirlist = tdl;
 
 		/* put in a length for the last entry, to ensure we can chain entries 
 		   into the next packet */
@@ -291,7 +309,8 @@ int cli_list_new(struct cli_state *cli,const char *Mask,uint16 attribute,
 		DEBUG(3,("received %d entries (eos=%d)\n",
 			 ff_searchcount,ff_eos));
 
-		if (ff_searchcount > 0) loop_count = 0;
+		if (ff_searchcount > 0)
+			loop_count = 0;
 
 		First = False;
 	}

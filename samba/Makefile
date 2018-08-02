@@ -9,7 +9,7 @@ ToolType        = Services
 GnuNoChown      = YES
 GnuAfterInstall = install-startup-xinetd install-config install-logdir install-strip plugins
 
-Extra_CC_Flags  = -no-cpp-precomp -L$(OBJROOT) -I$(SRCROOT)/dlcompat -I$(SRCROOT)/libopendirectorycommon \
+Extra_CC_Flags  = -no-cpp-precomp -I$(SRCROOT)/libopendirectorycommon \
 		-DWITH_OPENDIRECTORY -DUSES_RECVFROM -DUSES_PWRITE -DUSES_PREAD
 
 Extra_Configure_Flags = --with-swatdir="$(SHAREDIR)/swat"			\
@@ -19,11 +19,14 @@ Extra_Configure_Flags = --with-swatdir="$(SHAREDIR)/swat"			\
 			--with-lockdir="$(SPOOLDIR)/lock"			\
 			--with-logfilebase="$(LOGDIR)/samba"			\
 			--with-piddir="$(RUNDIR)"				\
+			--with-krb5						\
 			--with-cups						\
 			--with-ldap						\
-			--with-krb5						\
 			--with-spinlocks					\
 			--with-libiconv						\
+			--disable-shared					\
+			--with-static-modules=vfs				\
+			--without-libsmbclient					\
 			--with-winbind
 #			--with-tdbsam						
 
@@ -38,21 +41,33 @@ Extra_Install_Flags   = SWATDIR="$(DSTROOT)$(SHAREDIR)/swat"			\
 
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
 
-LDFLAGS += -framework DirectoryService -lopendirectorycommon
+LDFLAGS += -framework DirectoryService -L$(OBJROOT) -lopendirectorycommon
+PATCHES = $(wildcard $(SRCROOT)/patches/*.diff)
 
 Install_Target = install
 
-lazy_install_source::
-	gcc $(CFLAGS) -c $(SRCROOT)/dlcompat/dl.c -o $(OBJROOT)/dl.o
-	libtool -static -o $(OBJROOT)/libdl.a $(OBJROOT)/dl.o
+lazy_install_source:: patch
 	gcc $(CFLAGS) -c $(SRCROOT)/libopendirectorycommon/libopendirectorycommon.c -o $(OBJROOT)/libopendirectorycommon.o
 	libtool -static -o $(OBJROOT)/libopendirectorycommon.a $(OBJROOT)/libopendirectorycommon.o
 
-install-startup-item:
-	mkdir -p $(DSTROOT)/System/Library/StartupItems/Samba/Resources/English.lproj
-	$(INSTALL) -c -m 555 $(SRCROOT)/Samba.startup_item $(DSTROOT)/System/Library/StartupItems/Samba/Samba
-	$(INSTALL) -c -m 444 $(SRCROOT)/StartupParameters.plist $(DSTROOT)/System/Library/StartupItems/Samba/
-	$(INSTALL) -c -m 444 $(SRCROOT)/Localizable.strings $(DSTROOT)/System/Library/StartupItems/Samba/Resources/English.lproj
+patch: $(PATCHES)
+	for PATCH in $(PATCHES); do	\
+	    echo "patching: $$PATCH";	\
+	    patch -p0 -i "$$PATCH";	\
+	done
+
+repatch:
+	for PATCH in $(PATCHES); do					\
+	    echo "patching: $${PATCH##*/}";				\
+	    patch -p0 -b -i "$$PATCH";					\
+	    find samba -type f -name '*.orig' |				\
+		while read F; do					\
+		    echo -e "\t* $$F";					\
+		    diff -udbNp "$$F" "$${F%.orig}" >> "$$PATCH.new";	\
+		    mv "$$F" "$${F%.orig}";				\
+		done;							\
+		mv "$$PATCH.new" "$$PATCH";				\
+	done
 
 install-startup-xinetd:
 	$(INSTALL) -d -m 755 $(DSTROOT)/private/etc/xinetd.d
@@ -85,11 +100,8 @@ install-strip:
 plugins:
 	echo "building $@";
 	make -C $(SRCROOT)/auth_ods -f auth_ods.make RC_CFLAGS="$(RC_CFLAGS)"
-	mkdir -p $(DSTROOT)/usr/lib/samba/auth
-	install -c -m 755 $(OBJROOT)/auth_ods.so $(DSTROOT)/usr/lib/samba/auth
-	strip -x $(DSTROOT)/usr/lib/samba/auth/auth_ods.so
+	install -c -m 755 $(OBJROOT)/auth_ods.so $(DSTROOT)/private/etc/auth/opendirectory.so
+	strip -x $(DSTROOT)/private/etc/auth/opendirectory.so
 	make -C $(SRCROOT)/pdb_ods -f pdb_ods.make RC_CFLAGS="$(RC_CFLAGS)"
-	mkdir -p $(DSTROOT)/usr/lib/samba/pdb
-	install -c -m 755 $(OBJROOT)/pdb_ods.so $(DSTROOT)/usr/lib/samba/pdb
-	strip -x $(DSTROOT)/usr/lib/samba/pdb/pdb_ods.so
-
+	install -c -m 755 $(OBJROOT)/pdb_ods.so $(DSTROOT)/private/etc/pdb/opendirectorysam.so
+	strip -x $(DSTROOT)/private/etc/pdb/opendirectorysam.so

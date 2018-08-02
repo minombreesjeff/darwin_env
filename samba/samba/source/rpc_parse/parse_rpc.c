@@ -138,6 +138,15 @@ interface/version dce/rpc pipe identification
         }, 0x03                             \
 }
 
+#define SYNT_ECHO_V1                        \
+{                                           \
+        {                                   \
+                0x60a15ec5, 0x4de8, 0x11d7, \
+                { 0xa6, 0x37, 0x00, 0x50,   \
+                  0x56, 0xa2, 0x01, 0x82 }  \
+        }, 0x01                             \
+}
+
 /*
  * IMPORTANT!!  If you update this structure, make sure to
  * update the index #defines in smb.h.
@@ -155,6 +164,7 @@ const struct pipe_id_info pipe_names [] =
 	{ PIPE_WINREG  , SYNT_WINREG_V1        , PIPE_WINREG   , TRANS_SYNT_V2 },
 	{ PIPE_SPOOLSS , SYNT_SPOOLSS_V1       , PIPE_SPOOLSS  , TRANS_SYNT_V2 },
 	{ PIPE_NETDFS  , SYNT_NETDFS_V3        , PIPE_NETDFS   , TRANS_SYNT_V2 },
+	{ PIPE_ECHO    , SYNT_ECHO_V1          , PIPE_ECHO     , TRANS_SYNT_V2 },
 	{ NULL         , SYNT_NONE_V0          , NULL          , SYNT_NONE_V0  }
 };
 
@@ -593,29 +603,20 @@ BOOL smb_io_rpc_hdr_autha(const char *desc, RPC_HDR_AUTHA *rai, prs_struct *ps, 
 }
 
 /*******************************************************************
- Checks an RPC_HDR_AUTH structure.
-********************************************************************/
-
-BOOL rpc_hdr_auth_chk(RPC_HDR_AUTH *rai)
-{
-	return (rai->auth_type == NTLMSSP_AUTH_TYPE && rai->auth_level == NTLMSSP_AUTH_LEVEL);
-}
-
-/*******************************************************************
  Inits an RPC_HDR_AUTH structure.
 ********************************************************************/
 
 void init_rpc_hdr_auth(RPC_HDR_AUTH *rai,
 				uint8 auth_type, uint8 auth_level,
-				uint8 stub_type_len,
+				uint8 padding,
 				uint32 ptr)
 {
 	rai->auth_type     = auth_type; /* nt lm ssp 0x0a */
 	rai->auth_level    = auth_level; /* 0x06 */
-	rai->stub_type_len = stub_type_len; /* 0x00 */
-	rai->padding       = 0; /* padding 0x00 */
+	rai->padding       = padding;
+	rai->reserved      = 0;
 
-	rai->unknown       = ptr; /* non-zero pointer to something */
+	rai->auth_context  = ptr; /* non-zero pointer to something */
 }
 
 /*******************************************************************
@@ -637,12 +638,11 @@ BOOL smb_io_rpc_hdr_auth(const char *desc, RPC_HDR_AUTH *rai, prs_struct *ps, in
 		return False;
 	if(!prs_uint8 ("auth_level   ", ps, depth, &rai->auth_level)) /* 0x06 */
 		return False;
-	if(!prs_uint8 ("stub_type_len", ps, depth, &rai->stub_type_len))
-		return False;
 	if(!prs_uint8 ("padding      ", ps, depth, &rai->padding))
 		return False;
-
-	if(!prs_uint32("unknown      ", ps, depth, &rai->unknown)) /* 0x0014a0c0 */
+	if(!prs_uint8 ("reserved     ", ps, depth, &rai->reserved))
+		return False;
+	if(!prs_uint32("auth_context ", ps, depth, &rai->auth_context))
 		return False;
 
 	return True;
@@ -682,10 +682,32 @@ BOOL smb_io_rpc_auth_verifier(const char *desc, RPC_AUTH_VERIFIER *rav, prs_stru
 	depth++;
 
 	/* "NTLMSSP" */
-	if(!prs_string("signature", ps, depth, rav->signature, strlen("NTLMSSP"),
+	if(!prs_string("signature", ps, depth, rav->signature,
 			sizeof(rav->signature)))
 		return False;
 	if(!prs_uint32("msg_type ", ps, depth, &rav->msg_type)) /* NTLMSSP_MESSAGE_TYPE */
+		return False;
+
+	return True;
+}
+
+/*******************************************************************
+ This parses an RPC_AUTH_VERIFIER for NETLOGON schannel. I think
+ assuming "NTLMSSP" in sm_io_rpc_auth_verifier is somewhat wrong.
+ I have to look at that later...
+********************************************************************/
+
+BOOL smb_io_rpc_netsec_verifier(const char *desc, RPC_AUTH_VERIFIER *rav, prs_struct *ps, int depth)
+{
+	if (rav == NULL)
+		return False;
+
+	prs_debug(ps, depth, desc, "smb_io_rpc_auth_verifier");
+	depth++;
+
+	if(!prs_string("signature", ps, depth, rav->signature, sizeof(rav->signature)))
+		return False;
+	if(!prs_uint32("msg_type ", ps, depth, &rav->msg_type))
 		return False;
 
 	return True;
@@ -1057,9 +1079,10 @@ BOOL rpc_auth_ntlmssp_chk(RPC_AUTH_NTLMSSP_CHK *chk, uint32 crc32, uint32 seq_nu
 	    chk->seq_num != seq_num)
 	{
 		DEBUG(5,("verify failed - crc %x ver %x seq %d\n",
-			crc32, NTLMSSP_SIGN_VERSION, seq_num));
+			 chk->crc32, chk->ver, chk->seq_num));
+			
 		DEBUG(5,("verify expect - crc %x ver %x seq %d\n",
-			chk->crc32, chk->ver, chk->seq_num));
+			crc32, NTLMSSP_SIGN_VERSION, seq_num));
 		return False;
 	}
 	return True;
@@ -1104,3 +1127,84 @@ BOOL smb_io_rpc_auth_ntlmssp_chk(const char *desc, RPC_AUTH_NTLMSSP_CHK *chk, pr
 
 	return True;
 }
+
+/*******************************************************************
+creates an RPC_AUTH_NETSEC_NEG structure.
+********************************************************************/
+void init_rpc_auth_netsec_neg(RPC_AUTH_NETSEC_NEG *neg,
+			      const char *domain, const char *myname)
+{
+	neg->type1 = 0;
+	neg->type2 = 0x3;
+	fstrcpy(neg->domain, domain);
+	fstrcpy(neg->myname, myname);
+}
+
+/*******************************************************************
+ Reads or writes an RPC_AUTH_NETSEC_NEG structure.
+********************************************************************/
+
+BOOL smb_io_rpc_auth_netsec_neg(const char *desc, RPC_AUTH_NETSEC_NEG *neg,
+				prs_struct *ps, int depth)
+{
+	if (neg == NULL)
+		return False;
+
+	prs_debug(ps, depth, desc, "smb_io_rpc_auth_netsec_neg");
+	depth++;
+
+	if(!prs_align(ps))
+		return False;
+
+	if(!prs_uint32("type1", ps, depth, &neg->type1))
+		return False;
+	if(!prs_uint32("type2", ps, depth, &neg->type2))
+		return False;
+	if(!prs_string("domain  ", ps, depth, neg->domain, sizeof(neg->domain)))
+		return False;
+	if(!prs_string("myname  ", ps, depth, neg->myname, sizeof(neg->myname)))
+		return False;
+
+	return True;
+}
+
+
+/*******************************************************************
+creates an RPC_AUTH_NETSEC_CHK structure.
+********************************************************************/
+BOOL init_rpc_auth_netsec_chk(RPC_AUTH_NETSEC_CHK * chk,
+			      const uchar sig[8],
+			      const uchar packet_digest[8],
+			      const uchar seq_num[8], const uchar data8[8])
+{
+	if (chk == NULL)
+		return False;
+
+	memcpy(chk->sig, sig, sizeof(chk->sig));
+	memcpy(chk->packet_digest, packet_digest, sizeof(chk->packet_digest));
+	memcpy(chk->seq_num, seq_num, sizeof(chk->seq_num));
+	memcpy(chk->data8, data8, sizeof(chk->data8));
+
+	return True;
+}
+
+/*******************************************************************
+reads or writes an RPC_AUTH_NETSEC_CHK structure.
+********************************************************************/
+BOOL smb_io_rpc_auth_netsec_chk(const char *desc, RPC_AUTH_NETSEC_CHK * chk,
+				prs_struct *ps, int depth)
+{
+	if (chk == NULL)
+		return False;
+
+	prs_debug(ps, depth, desc, "smb_io_rpc_auth_netsec_chk");
+	depth++;
+
+	prs_uint8s(False, "sig  ", ps, depth, chk->sig, sizeof(chk->sig));
+	prs_uint8s(False, "seq_num", ps, depth, chk->seq_num, sizeof(chk->seq_num));
+	prs_uint8s(False, "packet_digest", ps, depth, chk->packet_digest, sizeof(chk->packet_digest));
+	prs_uint8s(False, "data8", ps, depth, chk->data8, sizeof(chk->data8));
+
+	return True;
+}
+

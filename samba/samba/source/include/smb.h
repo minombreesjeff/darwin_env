@@ -42,9 +42,11 @@
 #define SMB_PORT2 139
 #define SMB_PORTS "445 139"
 
+#define Undefined (-1)
 #define False (0)
 #define True (1)
 #define Auto (2)
+#define Required (3)
 
 #ifndef _BOOL
 typedef int BOOL;
@@ -66,6 +68,7 @@ typedef int BOOL;
 #define STR_ASCII 4
 #define STR_UNICODE 8
 #define STR_NOALIGN 16
+#define STR_TERMINATE_ASCII 128
 
 /* how long to wait for secondary SMB packets (milli-seconds) */
 #define SMB_SECONDARY_WAIT (60*1000)
@@ -77,6 +80,8 @@ typedef int BOOL;
 #define READ_TIMEOUT 1
 #define READ_EOF 2
 #define READ_ERROR 3
+#define WRITE_ERROR 4 /* This error code can go into the client smb_rw_error. */
+#define READ_BAD_SIG 5
 
 #define DIR_STRUCT_SIZE 43
 
@@ -151,6 +156,11 @@ typedef int BOOL;
 
 #include "doserr.h"
 
+typedef union unid_t {
+	uid_t uid;
+	gid_t gid;
+} unid_t;
+
 /*
  * SMB UCS2 (16-bit unicode) internal type.
  */
@@ -161,10 +171,7 @@ typedef uint16 smb_ucs2_t;
 typedef smb_ucs2_t wpstring[PSTRING_LEN];
 typedef smb_ucs2_t wfstring[FSTRING_LEN];
 
-/* This error code can go into the client smb_rw_error. */
-#define WRITE_ERROR 4
-
-#ifdef BIG_ENDIAN /* apple: configure test is bad for our platform ->  WORDS_BIGENDIAN */
+#ifdef WORDS_BIGENDIAN
 #define UCS2_SHIFT 8
 #else
 #define UCS2_SHIFT 0
@@ -186,6 +193,9 @@ typedef smb_ucs2_t wfstring[FSTRING_LEN];
 #define PIPE_LSARPC   "\\PIPE\\lsarpc"
 #define PIPE_SPOOLSS  "\\PIPE\\spoolss"
 #define PIPE_NETDFS   "\\PIPE\\netdfs"
+#define PIPE_ECHO     "\\PIPE\\rpcecho"
+
+#define PIPE_NETLOGON_PLAIN "\\NETLOGON"
 
 #define PI_LSARPC		0
 #define PI_LSARPC_DS		1
@@ -196,7 +206,8 @@ typedef smb_ucs2_t wfstring[FSTRING_LEN];
 #define PI_WINREG		6
 #define PI_SPOOLSS		7
 #define PI_NETDFS		8
-#define PI_MAX_PIPES		9
+#define PI_ECHO 		9
+#define PI_MAX_PIPES		10
 
 /* 64 bit time (100usec) since ????? - cifs6.txt, section 3.5, page 30 */
 typedef struct nttime_info
@@ -233,18 +244,21 @@ typedef struct nttime_info
 #define MAXSUBAUTHS 15 /* max sub authorities in a SID */
 #endif
 
+#define SID_MAX_SIZE ((size_t)(8+(MAXSUBAUTHS*4)))
+
 /* SID Types */
 enum SID_NAME_USE
 {
-	SID_NAME_USE_NONE = 0,/* NOTUSED */
+	SID_NAME_USE_NONE = 0,
 	SID_NAME_USER    = 1, /* user */
-	SID_NAME_DOM_GRP = 2, /* domain group */
-	SID_NAME_DOMAIN  = 3, /* domain: don't know what this is */
-	SID_NAME_ALIAS   = 4, /* local group */
-	SID_NAME_WKN_GRP = 5, /* well-known group */
-	SID_NAME_DELETED = 6, /* deleted account: needed for c2 rating */
-	SID_NAME_INVALID = 7, /* invalid account */
-	SID_NAME_UNKNOWN = 8  /* oops. */
+	SID_NAME_DOM_GRP,     /* domain group */
+	SID_NAME_DOMAIN,      /* domain sid */
+	SID_NAME_ALIAS,       /* local group */
+	SID_NAME_WKN_GRP,     /* well-known group */
+	SID_NAME_DELETED,     /* deleted account: needed for c2 rating */
+	SID_NAME_INVALID,     /* invalid account */
+	SID_NAME_UNKNOWN,     /* unknown sid type */
+	SID_NAME_COMPUTER     /* sid for a computer */
 };
 
 /**
@@ -361,6 +375,7 @@ typedef struct
 	SMB_STRUCT_STAT *statinfo;
 } smb_filename;
 
+#include "fake_file.h"
 
 typedef struct files_struct
 {
@@ -375,7 +390,9 @@ typedef struct files_struct
 	SMB_OFF_T pos;
 	SMB_BIG_UINT size;
 	SMB_BIG_UINT initial_allocation_size; /* Faked up initial allocation on disk. */
+	SMB_BIG_UINT position_information;
 	mode_t mode;
+	uint16 file_pid;
 	uint16 vuid;
 	write_bmpx_struct *wbmpx_ptr;
 	write_cache *wcp;
@@ -395,7 +412,11 @@ typedef struct files_struct
 	BOOL is_stat;
 	BOOL directory_delete_on_close;
 	char *fsp_name;
+ 	FAKE_FILE_HANDLE *fake_file_handle;
 } files_struct;
+
+#include "ntquotas.h"
+#include "sysquotas.h"
 
 /* used to hold an arbitrary blob of data */
 typedef struct data_blob {
@@ -431,18 +452,10 @@ typedef struct
 #include "smb_acls.h"
 #include "vfs.h"
 
-typedef struct smb_vfs_handle_struct
-{
-    void *data;
-    /* Handle on dlopen() call */
-    void *handle;
-    struct smb_vfs_handle_struct  *next, *prev;
-    
-} smb_vfs_handle_struct;
-
 typedef struct connection_struct
 {
 	struct connection_struct *next, *prev;
+	TALLOC_CTX *mem_ctx;
 	unsigned cnum; /* an index passed over the wire */
 	int service;
 	BOOL force_user;
@@ -457,8 +470,9 @@ typedef struct connection_struct
 	char *connectpath;
 	char *origpath;
 
-	struct vfs_ops vfs_ops;                   /* Filesystem operations */
-	struct smb_vfs_handle_struct *vfs_private;
+	struct vfs_ops vfs;                   /* Filesystem operations */
+	struct vfs_ops vfs_opaque;			/* OPAQUE Filesystem operations */
+	struct vfs_handle_struct *vfs_handles;		/* for the new plugins */
 
 	char *user; /* name of user who *opened* this connection */
 	uid_t uid; /* uid of user who *opened* this connection */
@@ -574,122 +588,6 @@ typedef struct {
 
 #define NT_HASH_LEN 16
 #define LM_HASH_LEN 16
-
-/*
- * bit flags representing initialized fields in SAM_ACCOUNT
- */
-enum pdb_elements {
-	PDB_UNINIT,
-	PDB_UID,
-	PDB_GID,
-	PDB_SMBHOME,
-	PDB_PROFILE,
-	PDB_DRIVE,
-	PDB_LOGONSCRIPT,
-	PDB_LOGONTIME,
-	PDB_LOGOFFTIME,
-	PDB_KICKOFFTIME,
-	PDB_CANCHANGETIME,
-	PDB_MUSTCHANGETIME,
-	PDB_PLAINTEXT_PW,
-	PDB_USERNAME,
-	PDB_FULLNAME,
-	PDB_DOMAIN,
-	PDB_NTUSERNAME,
-	PDB_HOURSLEN,
-	PDB_LOGONDIVS,
-	PDB_USERSID,
-	PDB_GROUPSID,
-	PDB_ACCTCTRL,
-	PDB_PASSLASTSET,
-	PDB_UNIXHOMEDIR,
-	PDB_ACCTDESC,
-	PDB_WORKSTATIONS,
-	PDB_UNKNOWNSTR,
-	PDB_MUNGEDDIAL,
-	PDB_HOURS,
-	PDB_UNKNOWN3,
-	PDB_UNKNOWN5,
-	PDB_UNKNOWN6,
-	PDB_LMPASSWD,
-	PDB_NTPASSWD,
-
-	/* this must be the last element */
-	PDB_COUNT,
-};
-
-enum pdb_value_state {
-	PDB_DEFAULT=0,
-	PDB_SET,
-	PDB_CHANGED
-};
-
-#define IS_SAM_UNIX_USER(x) \
-	(( pdb_get_init_flags(x, PDB_UID) != PDB_DEFAULT ) \
-	 && ( pdb_get_init_flags(x,PDB_GID) != PDB_DEFAULT ))
-
-#define IS_SAM_SET(x, flag)	(pdb_get_init_flags(x, flag) == PDB_SET)
-#define IS_SAM_CHANGED(x, flag)	(pdb_get_init_flags(x, flag) == PDB_CHANGED)
-#define IS_SAM_DEFAULT(x, flag)	(pdb_get_init_flags(x, flag) == PDB_DEFAULT)
-		
-typedef struct sam_passwd
-{
-	TALLOC_CTX *mem_ctx;
-	
-	void (*free_fn)(struct sam_passwd **);
-
-	struct pdb_methods *methods;
-
-	struct user_data {
-		/* initiailization flags */
-		struct bitmap *change_flags;
-		struct bitmap *set_flags;
-
-		time_t logon_time;            /* logon time */
-		time_t logoff_time;           /* logoff time */
-		time_t kickoff_time;          /* kickoff time */
-		time_t pass_last_set_time;    /* password last set time */
-		time_t pass_can_change_time;  /* password can change time */
-		time_t pass_must_change_time; /* password must change time */
-		
-		const char * username;     /* UNIX username string */
-		const char * domain;       /* Windows Domain name */
-		const char * nt_username;  /* Windows username string */
-		const char * full_name;    /* user's full name string */
-		const char * unix_home_dir;     /* UNIX home directory string */
-		const char * home_dir;     /* home directory string */
-		const char * dir_drive;    /* home directory drive string */
-		const char * logon_script; /* logon script string */
-		const char * profile_path; /* profile path string */
-		const char * acct_desc  ;  /* user description string */
-		const char * workstations; /* login from workstations string */
-		const char * unknown_str ; /* don't know what this is, yet. */
-		const char * munged_dial ; /* munged path name and dial-back tel number */
-		
-		uid_t uid;          /* this is a unix uid_t */
-		gid_t gid;          /* this is a unix gid_t */
-		DOM_SID user_sid;    /* Primary User SID */
-		DOM_SID group_sid;   /* Primary Group SID */
-		
-		DATA_BLOB lm_pw; /* .data is Null if no password */
-		DATA_BLOB nt_pw; /* .data is Null if no password */
-		char* plaintext_pw; /* is Null if not available */
-		
-		uint16 acct_ctrl; /* account info (ACB_xxxx bit-mask) */
-		uint32 unknown_3; /* 0x00ff ffff */
-		
-		uint16 logon_divs; /* 168 - number of hours in a week */
-		uint32 hours_len; /* normally 21 bytes */
-		uint8 hours[MAX_HOURS_LEN];
-		
-		uint32 unknown_5; /* 0x0002 0000 */
-		uint32 unknown_6; /* 0x0000 04ec */
-	} private;
-
-	/* Lets see if the remaining code can get the hint that you
-	   are meant to use the pdb_...() functions. */
-	
-} SAM_ACCOUNT;
 
 /*
  * Flags for account policy.
@@ -810,13 +708,14 @@ struct bitmap {
 	unsigned int n;
 };
 
-#define FLAG_BASIC 	0x0001 /* fundamental options */
+/* The following flags are used in SWAT */
+#define FLAG_BASIC 	0x0001 /* Display only in BASIC view */
 #define FLAG_SHARE 	0x0002 /* file sharing options */
 #define FLAG_PRINT 	0x0004 /* printing options */
 #define FLAG_GLOBAL 	0x0008 /* local options that should be globally settable in SWAT */
 #define FLAG_WIZARD 	0x0010 /* Parameters that the wizard will operate on */
-#define FLAG_ADVANCED 	0x0020 /* Parameters that the wizard will operate on */
-#define FLAG_DEVELOPER 	0x0040 /* Parameters that the wizard will operate on */
+#define FLAG_ADVANCED 	0x0020 /* Parameters that will be visible in advanced view */
+#define FLAG_DEVELOPER 	0x0040 /* No longer used */
 #define FLAG_DEPRECATED 0x1000 /* options that should no longer be used */
 #define FLAG_HIDE  	0x2000 /* options that should be hidden in SWAT */
 #define FLAG_DOS_STRING 0x4000 /* convert from UNIX to DOS codepage when reading this string. */
@@ -967,23 +866,23 @@ struct bitmap {
 #define TRANSACT_WAITNAMEDPIPEHANDLESTATE 0x53
 
 /* These are the TRANS2 sub commands */
-#define TRANSACT2_OPEN                        0
-#define TRANSACT2_FINDFIRST                   1
-#define TRANSACT2_FINDNEXT                    2
-#define TRANSACT2_QFSINFO                     3
-#define TRANSACT2_SETFSINFO                   4
-#define TRANSACT2_QPATHINFO                   5
-#define TRANSACT2_SETPATHINFO                 6
-#define TRANSACT2_QFILEINFO                   7
-#define TRANSACT2_SETFILEINFO                 8
-#define TRANSACT2_FSCTL                       9
-#define TRANSACT2_IOCTL                     0xA
-#define TRANSACT2_FINDNOTIFYFIRST           0xB
-#define TRANSACT2_FINDNOTIFYNEXT            0xC
-#define TRANSACT2_MKDIR                     0xD
-#define TRANSACT2_SESSION_SETUP             0xE
-#define TRANSACT2_GET_DFS_REFERRAL         0x10
-#define TRANSACT2_REPORT_DFS_INCONSISTANCY 0x11
+#define TRANSACT2_OPEN				0x00
+#define TRANSACT2_FINDFIRST			0x01
+#define TRANSACT2_FINDNEXT			0x02
+#define TRANSACT2_QFSINFO			0x03
+#define TRANSACT2_SETFSINFO			0x04
+#define TRANSACT2_QPATHINFO			0x05
+#define TRANSACT2_SETPATHINFO			0x06
+#define TRANSACT2_QFILEINFO			0x07
+#define TRANSACT2_SETFILEINFO			0x08
+#define TRANSACT2_FSCTL				0x09
+#define TRANSACT2_IOCTL				0x0A
+#define TRANSACT2_FINDNOTIFYFIRST		0x0B
+#define TRANSACT2_FINDNOTIFYNEXT		0x0C
+#define TRANSACT2_MKDIR				0x0D
+#define TRANSACT2_SESSION_SETUP			0x0E
+#define TRANSACT2_GET_DFS_REFERRAL		0x10
+#define TRANSACT2_REPORT_DFS_INCONSISTANCY	0x11
 
 /* These are the NT transact sub commands. */
 #define NT_TRANSACT_CREATE                1
@@ -992,6 +891,13 @@ struct bitmap {
 #define NT_TRANSACT_NOTIFY_CHANGE         4
 #define NT_TRANSACT_RENAME                5
 #define NT_TRANSACT_QUERY_SECURITY_DESC   6
+#define NT_TRANSACT_GET_USER_QUOTA	  7
+#define NT_TRANSACT_SET_USER_QUOTA	  8
+
+/* These are the NT transact_get_user_quota sub commands */
+#define TRANSACT_GET_USER_QUOTA_LIST_CONTINUE	0x0000
+#define TRANSACT_GET_USER_QUOTA_LIST_START	0x0100
+#define TRANSACT_GET_USER_QUOTA_FOR_SID		0x0101
 
 /* Relevant IOCTL codes */
 #define IOCTL_QUERY_JOB_INFO      0x530060
@@ -1232,18 +1138,23 @@ struct bitmap {
 #define RENAME_REPLACE_IF_EXISTS 1
 
 /* Filesystem Attributes. */
-#define FILE_CASE_SENSITIVE_SEARCH 0x01
-#define FILE_CASE_PRESERVED_NAMES 0x02
-#define FILE_UNICODE_ON_DISK 0x04
+#define FILE_CASE_SENSITIVE_SEARCH      0x00000001
+#define FILE_CASE_PRESERVED_NAMES       0x00000002
+#define FILE_UNICODE_ON_DISK            0x00000004
 /* According to cifs9f, this is 4, not 8 */
 /* Acconding to testing, this actually sets the security attribute! */
-#define FILE_PERSISTENT_ACLS 0x08
-/* These entries added from cifs9f --tsb */
-#define FILE_FILE_COMPRESSION 0x10
-#define FILE_VOLUME_QUOTAS 0x20
-/* I think this is wrong. JRA #define FILE_DEVICE_IS_MOUNTED 0x20 */
-#define FILE_VOLUME_SPARSE_FILE 0x40
-#define FILE_VOLUME_IS_COMPRESSED 0x8000
+#define FILE_PERSISTENT_ACLS            0x00000008
+#define FILE_FILE_COMPRESSION           0x00000010
+#define FILE_VOLUME_QUOTAS              0x00000020
+#define FILE_SUPPORTS_SPARSE_FILES      0x00000040
+#define FILE_SUPPORTS_REPARSE_POINTS    0x00000080
+#define FILE_SUPPORTS_REMOTE_STORAGE    0x00000100
+#define FS_LFN_APIS                     0x00004000
+#define FILE_VOLUME_IS_COMPRESSED       0x00008000
+#define FILE_SUPPORTS_OBJECT_IDS        0x00010000
+#define FILE_SUPPORTS_ENCRYPTION        0x00020000
+#define FILE_NAMED_STREAMS              0x00040000
+#define FILE_READ_ONLY_VOLUME           0x00080000
 
 /* ChangeNotify flags. */
 #define FILE_NOTIFY_CHANGE_FILE        0x001
@@ -1408,7 +1319,7 @@ enum ldap_ssl_types {LDAP_SSL_ON, LDAP_SSL_OFF, LDAP_SSL_START_TLS};
 enum ldap_passwd_sync_types {LDAP_PASSWD_SYNC_ON, LDAP_PASSWD_SYNC_OFF, LDAP_PASSWD_SYNC_ONLY};
 
 /* Remote architectures we know about. */
-enum remote_arch_types {RA_UNKNOWN, RA_WFWG, RA_OS2, RA_WIN95, RA_WINNT, RA_WIN2K, RA_WINXP, RA_SAMBA};
+enum remote_arch_types {RA_UNKNOWN, RA_WFWG, RA_OS2, RA_WIN95, RA_WINNT, RA_WIN2K, RA_WINXP, RA_WIN2K3, RA_SAMBA};
 
 /* case handling */
 enum case_handling {CASE_LOWER,CASE_UPPER};
@@ -1573,17 +1484,19 @@ struct cnotify_fns {
 
 #include "smb_macros.h"
 
+typedef char nstring[16];
+
 /* A netbios name structure. */
 struct nmb_name {
-  char         name[17];
-  char         scope[64];
-  unsigned int name_type;
+	nstring      name;
+	char         scope[64];
+	unsigned int name_type;
 };
 
 
 /* A netbios node status array element. */
 struct node_status {
-	char name[16];
+	nstring name;
 	unsigned char type;
 	unsigned char flags;
 };
@@ -1609,11 +1522,6 @@ struct pwd_info
 
 	uchar sess_key[16];
 };
-
-#include "rpc_creds.h"
-#include "rpc_misc.h"
-#include "rpc_secdes.h"
-#include "nt_printing.h"
 
 typedef struct user_struct
 {
@@ -1654,9 +1562,11 @@ struct unix_error_map {
 	NTSTATUS nt_error;
 };
 
+/*
 #include "ntdomain.h"
 
 #include "client.h"
+*/
 
 /*
  * Size of new password account encoding string.  This is enough space to
@@ -1711,16 +1621,31 @@ typedef struct {
 
 #define DEFAULT_TRUST_ACCOUNT_PASSWORD_LENGTH 14
 
-/* Common popt structures */
+#include "popt_common.h"
 
-extern struct poptOption popt_common_debug[];
-extern struct poptOption popt_common_configfile[];
-extern struct poptOption popt_common_socket_options[];
-extern struct poptOption popt_common_version[];
-extern struct poptOption popt_common_netbios_name[];
-extern struct poptOption popt_common_log_base[];
+#define PORT_NONE	0
+#ifndef LDAP_PORT
+#define LDAP_PORT	389
+#endif
 
-/* Module support */
-typedef NTSTATUS (init_module_function) (void);
+/* used by the IP comparison function */
+struct ip_service {
+	struct in_addr ip;
+	unsigned port;
+};
+
+/* Used by the SMB signing functions. */
+
+typedef struct smb_sign_info {
+	void (*sign_outgoing_message)(char *outbuf, struct smb_sign_info *si);
+	BOOL (*check_incoming_message)(char *inbuf, struct smb_sign_info *si);
+	void (*free_signing_context)(struct smb_sign_info *si);
+	void *signing_context;
+
+	BOOL negotiated_smb_signing;
+	BOOL allow_smb_signing;
+	BOOL doing_signing;
+	BOOL mandatory_signing;
+} smb_sign_info;
 
 #endif /* _SMB_H */

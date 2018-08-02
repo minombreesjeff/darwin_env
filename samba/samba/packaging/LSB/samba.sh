@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# "$Id: samba.sh,v 1.3 2003/03/07 04:56:56 nicolai Exp $"
+# "$Id: samba.sh,v 1.9 2003/08/29 22:14:26 nicolai Exp $"
 #
 # SAMBA startup (init) script for LSB-compliant systems.
 #
@@ -76,5 +76,5 @@ esac
 exit 0
 
 #
-# End of "$Id: samba.sh,v 1.3 2003/03/07 04:56:56 nicolai Exp $".
+# End of "$Id: samba.sh,v 1.9 2003/08/29 22:14:26 nicolai Exp $".
 #

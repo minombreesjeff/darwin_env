@@ -3,7 +3,7 @@
 
    Python wrapper for winbind client functions.
 
-   Copyright (C) Tim Potter      2002
+   Copyright (C) Tim Potter      2002-2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -259,14 +259,14 @@ static PyObject *py_config_dict(void)
 	PyDict_SetItemString(result, "template_shell", 
 			     PyString_FromString(lp_template_shell()));
 
-	/* Winbind uid/gid range */
+	/* idmap uid/gid range */
 
-	if (lp_winbind_uid(&ulow, &uhi)) {
+	if (lp_idmap_uid(&ulow, &uhi)) {
 		PyDict_SetItemString(result, "uid_low", PyInt_FromLong(ulow));
 		PyDict_SetItemString(result, "uid_high", PyInt_FromLong(uhi));
 	}
 
-	if (lp_winbind_gid(&glow, &ghi)) {
+	if (lp_idmap_gid(&glow, &ghi)) {
 		PyDict_SetItemString(result, "gid_low", PyInt_FromLong(glow));
 		PyDict_SetItemString(result, "gid_high", PyInt_FromLong(ghi));
 	}
@@ -427,7 +427,10 @@ static PyObject *py_auth_crap(PyObject *self, PyObject *args, PyObject *kw)
 	ZERO_STRUCT(request);
 	ZERO_STRUCT(response);
 
-	fstrcpy(request.data.auth_crap.user, username);
+	if (push_utf8_fstring(request.data.auth_crap.user, username) == -1) {
+		PyErr_SetString(winbind_error, "unable to create utf8 string");
+		return NULL;
+	}
 
 	generate_random_buffer(request.data.auth_crap.chal, 8, False);
         
@@ -451,6 +454,68 @@ static PyObject *py_auth_crap(PyObject *self, PyObject *args, PyObject *kw)
 	
 	return PyInt_FromLong(response.data.auth.nt_status);
 }
+
+#if 0				/* Include when auth_smbd merged to HEAD */
+
+/* Challenge/response authentication, with secret */
+
+static PyObject *py_auth_smbd(PyObject *self, PyObject *args, PyObject *kw)
+{
+	static char *kwlist[] = 
+		{"username", "password", "use_lm_hash", "use_nt_hash", NULL };
+	struct winbindd_request request;
+	struct winbindd_response response;
+	char *username, *password;
+	int use_lm_hash = 1, use_nt_hash = 1;
+
+	if (!PyArg_ParseTupleAndKeywords(
+		    args, kw, "ss|ii", kwlist, &username, &password, 
+		    &use_lm_hash, &use_nt_hash))
+		return NULL;
+
+	ZERO_STRUCT(request);
+	ZERO_STRUCT(response);
+
+	if (push_utf8_fstring(request.data.auth_crap.user, username) == -1) {
+		PyErr_SetString("unable to create utf8 string");
+		return NULL;
+	}
+
+	generate_random_buffer(request.data.smbd_auth_crap.chal, 8, False);
+        
+	if (use_lm_hash) {
+		SMBencrypt((uchar *)password, 
+			   request.data.smbd_auth_crap.chal, 
+			   (uchar *)request.data.smbd_auth_crap.lm_resp);
+		request.data.smbd_auth_crap.lm_resp_len = 24;
+	}
+
+	if (use_nt_hash) {
+		SMBNTencrypt((uchar *)password, 
+			     request.data.smbd_auth_crap.chal,
+			     (uchar *)request.data.smbd_auth_crap.nt_resp);
+		request.data.smbd_auth_crap.nt_resp_len = 24;
+	}
+
+	if (!secrets_fetch_trust_account_password(
+		    lp_workgroup(), request.data.smbd_auth_crap.proof, NULL)) {
+		PyErr_SetString(
+			winbind_error, "unable to fetch domain secret");
+		return NULL;
+	}
+
+
+
+	if (winbindd_request(WINBINDD_SMBD_AUTH_CRAP, &request, &response) 
+	    != NSS_STATUS_SUCCESS) {
+		PyErr_SetString(winbind_error, "lookup failed");
+		return NULL;		
+	}
+	
+	return PyInt_FromLong(response.data.auth.nt_status);
+}
+
+#endif /* 0 */
 
 /* Get user info from name */
 
@@ -526,127 +591,138 @@ static PyMethodDef winbind_methods[] = {
 	/* Name <-> SID conversion */
 
 	{ "name_to_sid", (PyCFunction)py_name_to_sid, METH_VARARGS,
-	  "name_to_sid(s) -> string
-
-Return the SID for a name.
-
-Example:
-
->>> winbind.name_to_sid('FOO/Administrator')
-'S-1-5-21-406022937-1377575209-526660263-500' " },
+	  "name_to_sid(s) -> string\n"
+"\n"
+"Return the SID for a name.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.name_to_sid('FOO/Administrator')\n"
+"'S-1-5-21-406022937-1377575209-526660263-500' " },
 
 	{ "sid_to_name", (PyCFunction)py_sid_to_name, METH_VARARGS,
-	  "sid_to_name(s) -> string
-
-Return the name for a SID.
-
-Example:
-
->>> import winbind
->>> winbind.sid_to_name('S-1-5-21-406022937-1377575209-526660263-500')
-'FOO/Administrator' " },
+	  "sid_to_name(s) -> string\n"
+"\n"
+"Return the name for a SID.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> import winbind\n"
+">>> winbind.sid_to_name('S-1-5-21-406022937-1377575209-526660263-500')\n"
+"'FOO/Administrator' " },
 
 	/* Enumerate users/groups */
 
 	{ "enum_domain_users", (PyCFunction)py_enum_domain_users, METH_VARARGS,
-	  "enum_domain_users() -> list of strings
-
-Return a list of domain users.
-
-Example:
-
->>> winbind.enum_domain_users()
-['FOO/Administrator', 'FOO/anna', 'FOO/Anne Elk', 'FOO/build', 
-'FOO/foo', 'FOO/foo2', 'FOO/foo3', 'FOO/Guest', 'FOO/user1', 
-'FOO/whoops-ptang'] " },
+	  "enum_domain_users() -> list of strings\n"
+"\n"
+"Return a list of domain users.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.enum_domain_users()\n"
+"['FOO/Administrator', 'FOO/anna', 'FOO/Anne Elk', 'FOO/build', \n"
+"'FOO/foo', 'FOO/foo2', 'FOO/foo3', 'FOO/Guest', 'FOO/user1', \n"
+"'FOO/whoops-ptang'] " },
 
 	{ "enum_domain_groups", (PyCFunction)py_enum_domain_groups, 
 	  METH_VARARGS,
-	  "enum_domain_groups() -> list of strings
-
-Return a list of domain groups.
-
-Example:
-
->>> winbind.enum_domain_groups()
-['FOO/cows', 'FOO/Domain Admins', 'FOO/Domain Guests', 
-'FOO/Domain Users'] " },
+	  "enum_domain_groups() -> list of strings\n"
+"\n"
+"Return a list of domain groups.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.enum_domain_groups()\n"
+"['FOO/cows', 'FOO/Domain Admins', 'FOO/Domain Guests', \n"
+"'FOO/Domain Users'] " },
 
 	/* ID mapping */
 
 	{ "uid_to_sid", (PyCFunction)py_uid_to_sid, METH_VARARGS,
-	  "uid_to_sid(int) -> string
-
-Return the SID for a UNIX uid.
-
-Example:
-
->>> winbind.uid_to_sid(10000)   
-'S-1-5-21-406022937-1377575209-526660263-500' " },
+	  "uid_to_sid(int) -> string\n"
+"\n"
+"Return the SID for a UNIX uid.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.uid_to_sid(10000)   \n"
+"'S-1-5-21-406022937-1377575209-526660263-500' " },
 
 	{ "gid_to_sid", (PyCFunction)py_gid_to_sid, METH_VARARGS,
-	  "gid_to_sid(int) -> string
-
-Return the UNIX gid for a SID.
-
-Example:
-
->>> winbind.gid_to_sid(10001)
-'S-1-5-21-406022937-1377575209-526660263-512' " },
+	  "gid_to_sid(int) -> string\n"
+"\n"
+"Return the UNIX gid for a SID.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.gid_to_sid(10001)\n"
+"'S-1-5-21-406022937-1377575209-526660263-512' " },
 
 	{ "sid_to_uid", (PyCFunction)py_sid_to_uid, METH_VARARGS,
-	  "sid_to_uid(string) -> int
-
-Return the UNIX uid for a SID.
-
-Example:
-
->>> winbind.sid_to_uid('S-1-5-21-406022937-1377575209-526660263-500')
-10000 " },
+	  "sid_to_uid(string) -> int\n"
+"\n"
+"Return the UNIX uid for a SID.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.sid_to_uid('S-1-5-21-406022937-1377575209-526660263-500')\n"
+"10000 " },
 
 	{ "sid_to_gid", (PyCFunction)py_sid_to_gid, METH_VARARGS,
-	  "sid_to_gid(string) -> int
-
-Return the UNIX gid corresponding to a SID.
-
-Example:
-
->>> winbind.sid_to_gid('S-1-5-21-406022937-1377575209-526660263-512')
-10001 " },
+	  "sid_to_gid(string) -> int\n"
+"\n"
+"Return the UNIX gid corresponding to a SID.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.sid_to_gid('S-1-5-21-406022937-1377575209-526660263-512')\n"
+"10001 " },
 
 	/* Miscellaneous */
 
 	{ "check_secret", (PyCFunction)py_check_secret, METH_VARARGS,
-	  "check_secret() -> int
-
-Check the machine trust account password.  The NT status is returned
-with zero indicating success. " },
+	  "check_secret() -> int\n"
+"\n"
+"Check the machine trust account password.  The NT status is returned\n"
+"with zero indicating success. " },
 
 	{ "enum_trust_dom", (PyCFunction)py_enum_trust_dom, METH_VARARGS,
-	  "enum_trust_dom() -> list of strings
-
-Return a list of trusted domains.  The domain the server is a member 
-of is not included.
-
-Example:
-
->>> winbind.enum_trust_dom()
-['NPSD-TEST2', 'SP2NDOM'] " },
+	  "enum_trust_dom() -> list of strings\n"
+"\n"
+"Return a list of trusted domains.  The domain the server is a member \n"
+"of is not included.\n"
+"\n"
+"Example:\n"
+"\n"
+">>> winbind.enum_trust_dom()\n"
+"['NPSD-TEST2', 'SP2NDOM'] " },
 
 	/* PAM authorisation functions */
 
 	{ "auth_plaintext", (PyCFunction)py_auth_plaintext, METH_VARARGS,
-	  "auth_plaintext(s, s) -> int
-
-Authenticate a username and password using plaintext authentication.
-The NT status code is returned with zero indicating success." },
+	  "auth_plaintext(s, s) -> int\n"
+"\n"
+"Authenticate a username and password using plaintext authentication.\n"
+"The NT status code is returned with zero indicating success." },
 
 	{ "auth_crap", (PyCFunction)py_auth_crap, METH_VARARGS,
-	  "auth_crap(s, s) -> int
+	  "auth_crap(s, s) -> int\n"
+"\n"
+"Authenticate a username and password using the challenge/response\n"
+"protocol.  The NT status code is returned with zero indicating\n"
+"success." },
 
-Authenticate a username and password using the challenge/response
-protocol.  The NT status code is returned with zero indicating
-success." },
+#if 0				/* Include when smbd_auth merged to HEAD */
+
+	{ "auth_smbd", (PyCFunction)py_auth_crap, METH_VARARGS,
+	  "auth_smbd(s, s) -> int\n"
+"\n"
+"Authenticate a username and password using the challenge/response\n"
+"protocol but using the domain secret to prove we are root.  The NT \n"
+"status code is returned with zero indicating success." },
+
+#endif
 
 	{ NULL }
 };

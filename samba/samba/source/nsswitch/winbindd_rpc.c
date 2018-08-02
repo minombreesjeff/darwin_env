@@ -3,7 +3,7 @@
 
    Winbind rpc backend functions
 
-   Copyright (C) Tim Potter 2000-2001
+   Copyright (C) Tim Potter 2000-2001,2003
    Copyright (C) Andrew Tridgell 2001
    
    This program is free software; you can redistribute it and/or modify
@@ -26,6 +26,7 @@
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_WINBIND
 
+
 /* Query display info for a domain.  This returns enough information plus a
    bit extra to give an overview of domain users for the User Manager
    application. */
@@ -39,20 +40,19 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 	POLICY_HND dom_pol;
 	BOOL got_dom_pol = False;
 	uint32 des_access = SEC_RIGHTS_MAXIMUM_ALLOWED;
-	int i, loop_count = 0;
-	int retry;
+	unsigned int i, start_idx, retry;
 
 	DEBUG(3,("rpc: query_user_list\n"));
 
 	*num_entries = 0;
 	*info = NULL;
 
-	/* Get sam handle */
-
 	retry = 0;
 	do {
-		if (!(hnd = cm_get_sam_handle(domain->name)))
-			goto done;
+		/* Get sam handle */
+
+		if ( !NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd)) )
+			return result;
 
 		/* Get domain handle */
 
@@ -66,50 +66,39 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 
 	got_dom_pol = True;
 
-	i = 0;
+	i = start_idx = 0;
 	do {
-		SAM_DISPINFO_CTR ctr;
-		SAM_DISPINFO_1 info1;
-		uint32 count = 0, start=i, max_entries, max_size;
-		int j;
 		TALLOC_CTX *ctx2;
+		char **dom_users;
+		uint32 num_dom_users, *dom_rids, j, size = 0xffff;
+		uint16 acb_mask = ACB_NORMAL;
 
-		ctr.sam.info1 = &info1;
-
-		ctx2 = talloc_init("winbindd dispinfo");
-		if (!ctx2) {
+		if (!(ctx2 = talloc_init("winbindd enum_users"))) {
 			result = NT_STATUS_NO_MEMORY;
 			goto done;
-		}
-		
-		get_query_dispinfo_params(
-			loop_count, &max_entries, &max_size);
+		}		
 
-		/* Query display info level 1 */
-		result = cli_samr_query_dispinfo(
-			hnd->cli, ctx2, &dom_pol, &start, 1, &count, 
-			max_entries, max_size, &ctr);
+		result = cli_samr_enum_dom_users(
+			hnd->cli, ctx2, &dom_pol, &start_idx, acb_mask,
+			size, &dom_users, &dom_rids, &num_dom_users);
 
-		loop_count++;
+		*num_entries += num_dom_users;
 
-		if (!NT_STATUS_IS_OK(result) && 
-		    !NT_STATUS_EQUAL(result, STATUS_MORE_ENTRIES)) break;
+		*info = talloc_realloc(
+			mem_ctx, *info, 
+			(*num_entries) * sizeof(WINBIND_USERINFO));
 
-		(*num_entries) += count;
-
-		/* now map the result into the WINBIND_USERINFO structure */
-		(*info) = talloc_realloc(mem_ctx, *info,
-					 (*num_entries)*sizeof(WINBIND_USERINFO));
 		if (!(*info)) {
 			result = NT_STATUS_NO_MEMORY;
 			talloc_destroy(ctx2);
 			goto done;
 		}
 
-		for (j=0;j<count;i++, j++) {
-			(*info)[i].acct_name = unistr2_tdup(mem_ctx, &info1.str[j].uni_acct_name);
-			(*info)[i].full_name = unistr2_tdup(mem_ctx, &info1.str[j].uni_full_name);
-			(*info)[i].user_rid = info1.sam[j].rid_user;
+		for (j = 0; j < num_dom_users; i++, j++) {
+			(*info)[i].acct_name = 
+				talloc_strdup(mem_ctx, dom_users[j]);
+			(*info)[i].full_name = talloc_strdup(mem_ctx, "");
+			(*info)[i].user_sid = rid_to_talloced_sid(domain, mem_ctx, dom_rids[j]);
 			/* For the moment we set the primary group for
 			   every user to be the Domain Users group.
 			   There are serious problems with determining
@@ -117,10 +106,14 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 			   This should really be made into a 'winbind
 			   force group' smb.conf parameter or
 			   something like that. */
-			(*info)[i].group_rid = DOMAIN_GROUP_RID_USERS;
+			(*info)[i].group_sid 
+				= rid_to_talloced_sid(domain, 
+						      mem_ctx, 
+						      DOMAIN_GROUP_RID_USERS);
 		}
 
 		talloc_destroy(ctx2);
+
 	} while (NT_STATUS_EQUAL(result, STATUS_MORE_ENTRIES));
 
  done:
@@ -143,6 +136,7 @@ static NTSTATUS enum_dom_groups(struct winbindd_domain *domain,
 	NTSTATUS status;
 	uint32 start = 0;
 	int retry;
+	NTSTATUS result;
 
 	*num_entries = 0;
 	*info = NULL;
@@ -151,8 +145,8 @@ static NTSTATUS enum_dom_groups(struct winbindd_domain *domain,
 
 	retry = 0;
 	do {
-		if (!(hnd = cm_get_sam_handle(domain->name)))
-			return NT_STATUS_UNSUCCESSFUL;
+		if (!NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd)))
+			return result;
 
 		status = cli_samr_open_domain(hnd->cli, mem_ctx,
 					      &hnd->pol, des_access, &domain->sid, &dom_pol);
@@ -216,8 +210,8 @@ static NTSTATUS enum_local_groups(struct winbindd_domain *domain,
 
 	retry = 0;
 	do {
-		if ( !(hnd = cm_get_sam_handle(domain->name)) )
-			return NT_STATUS_UNSUCCESSFUL;
+		if ( !NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd)) )
+			return result;
 
 		result = cli_samr_open_domain( hnd->cli, mem_ctx, &hnd->pol, 
 						des_access, &domain->sid, &dom_pol);
@@ -263,13 +257,13 @@ static NTSTATUS enum_local_groups(struct winbindd_domain *domain,
 
 /* convert a single name to a sid in a domain */
 static NTSTATUS name_to_sid(struct winbindd_domain *domain,
+			    TALLOC_CTX *mem_ctx,
 			    const char *name,
 			    DOM_SID *sid,
 			    enum SID_NAME_USE *type)
 {
-	TALLOC_CTX *mem_ctx;
 	CLI_POLICY_HND *hnd;
-	NTSTATUS status;
+	NTSTATUS result;
 	DOM_SID *sids = NULL;
 	uint32 *types = NULL;
 	const char *full_name;
@@ -277,39 +271,34 @@ static NTSTATUS name_to_sid(struct winbindd_domain *domain,
 
 	DEBUG(3,("rpc: name_to_sid name=%s\n", name));
 
-	if (!(mem_ctx = talloc_init("name_to_sid[rpc] for [%s]\\[%s]", domain->name, name))) {
-		DEBUG(0, ("talloc_init failed!\n"));
-		return NT_STATUS_NO_MEMORY;
-	}
-        
 	full_name = talloc_asprintf(mem_ctx, "%s\\%s", domain->name, name);
 	
 	if (!full_name) {
 		DEBUG(0, ("talloc_asprintf failed!\n"));
-		talloc_destroy(mem_ctx);
 		return NT_STATUS_NO_MEMORY;
 	}
 
+	DEBUG(3,("name_to_sid [rpc] %s for domain %s\n", name, domain->name ));
+
 	retry = 0;
 	do {
-		if (!(hnd = cm_get_lsa_handle(domain->name))) {
-			talloc_destroy(mem_ctx);
-			return NT_STATUS_UNSUCCESSFUL;
+		if (!NT_STATUS_IS_OK(result = cm_get_lsa_handle(domain->name, &hnd))) {
+			return result;
 		}
         
-		status = cli_lsa_lookup_names(hnd->cli, mem_ctx, &hnd->pol, 1, 
+		result = cli_lsa_lookup_names(hnd->cli, mem_ctx, &hnd->pol, 1, 
 					      &full_name, &sids, &types);
-	} while (!NT_STATUS_IS_OK(status) && (retry++ < 1) && hnd && hnd->cli && hnd->cli->fd == -1);
+	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) &&
+			hnd && hnd->cli && hnd->cli->fd == -1);
         
 	/* Return rid and type if lookup successful */
 
-	if (NT_STATUS_IS_OK(status)) {
+	if (NT_STATUS_IS_OK(result)) {
 		sid_copy(sid, &sids[0]);
-		*type = types[0];
+		*type = (enum SID_NAME_USE)types[0];
 	}
 
-	talloc_destroy(mem_ctx);
-	return status;
+	return result;
 }
 
 /*
@@ -325,22 +314,24 @@ static NTSTATUS sid_to_name(struct winbindd_domain *domain,
 	char **domains;
 	char **names;
 	uint32 *types;
-	NTSTATUS status;
+	NTSTATUS result;
 	int retry;
 
-	DEBUG(3,("rpc: sid_to_name\n"));
+	DEBUG(3,("sid_to_name [rpc] %s for domain %s\n", sid_string_static(sid),
+			domain->name ));
 
 	retry = 0;
 	do {
-		if (!(hnd = cm_get_lsa_handle(domain->name)))
-			return NT_STATUS_UNSUCCESSFUL;
+		if (!NT_STATUS_IS_OK(result = cm_get_lsa_handle(domain->name, &hnd)))
+			return result;
         
-		status = cli_lsa_lookup_sids(hnd->cli, mem_ctx, &hnd->pol,
+		result = cli_lsa_lookup_sids(hnd->cli, mem_ctx, &hnd->pol,
 					     1, sid, &domains, &names, &types);
-	} while (!NT_STATUS_IS_OK(status) && (retry++ < 1) && hnd && hnd->cli && hnd->cli->fd == -1);
+	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) &&
+			hnd && hnd->cli && hnd->cli->fd == -1);
 
-	if (NT_STATUS_IS_OK(status)) {
-		*type = types[0];
+	if (NT_STATUS_IS_OK(result)) {
+		*type = (enum SID_NAME_USE)types[0];
 		*name = names[0];
 		DEBUG(5,("Mapped sid to [%s]\\[%s]\n", domains[0], *name));
 
@@ -350,36 +341,66 @@ static NTSTATUS sid_to_name(struct winbindd_domain *domain,
 			return NT_STATUS_UNSUCCESSFUL;
 		}
 	}
-	return status;
+
+	return result;
 }
 
 /* Lookup user information from a rid or username. */
 static NTSTATUS query_user(struct winbindd_domain *domain, 
 			   TALLOC_CTX *mem_ctx, 
-			   uint32 user_rid, 
+			   DOM_SID *user_sid, 
 			   WINBIND_USERINFO *user_info)
 {
-	CLI_POLICY_HND *hnd;
-	NTSTATUS result;
+	CLI_POLICY_HND *hnd = NULL;
+	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
 	POLICY_HND dom_pol, user_pol;
 	BOOL got_dom_pol = False, got_user_pol = False;
 	SAM_USERINFO_CTR *ctr;
 	int retry;
+	fstring sid_string;
+	uint32 user_rid;
+	NET_USER_INFO_3 *user;
 
-	DEBUG(3,("rpc: query_user rid=%u\n", user_rid));
-
+	DEBUG(3,("rpc: query_user rid=%s\n", sid_to_string(sid_string, user_sid)));
+	if (!sid_peek_check_rid(&domain->sid, user_sid, &user_rid)) {
+		goto done;
+	}
+	
+	/* try netsamlogon cache first */
+			
+	if ( (user = netsamlogon_cache_get( mem_ctx, user_sid )) != NULL ) 
+	{
+				
+		DEBUG(5,("query_user: Cache lookup succeeded for %s\n", 
+			sid_string_static(user_sid)));
+			
+		user_info->user_sid  = rid_to_talloced_sid( domain, mem_ctx, user_rid );
+		user_info->group_sid = rid_to_talloced_sid( domain, mem_ctx, user->group_rid );
+				
+		user_info->acct_name = unistr2_tdup(mem_ctx, &user->uni_user_name);
+		user_info->full_name = unistr2_tdup(mem_ctx, &user->uni_full_name);
+								
+		SAFE_FREE(user);
+				
+		return NT_STATUS_OK;
+	}
+	
+	/* no cache; hit the wire */
+		
 	retry = 0;
 	do {
-		/* Get sam handle */
-		if (!(hnd = cm_get_sam_handle(domain->name)))
+		/* Get sam handle; if we fail here there is no hope */
+		
+		if (!NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd))) 
 			goto done;
-
+			
 		/* Get domain handle */
 
 		result = cli_samr_open_domain(hnd->cli, mem_ctx, &hnd->pol,
 					      SEC_RIGHTS_MAXIMUM_ALLOWED, 
 					      &domain->sid, &dom_pol);
-	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) && hnd && hnd->cli && hnd->cli->fd == -1);
+	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) &&
+			hnd && hnd->cli && hnd->cli->fd == -1);
 
 	if (!NT_STATUS_IS_OK(result))
 		goto done;
@@ -405,8 +426,8 @@ static NTSTATUS query_user(struct winbindd_domain *domain,
 	cli_samr_close(hnd->cli, mem_ctx, &user_pol);
 	got_user_pol = False;
 
-	user_info->user_rid = user_rid;
-	user_info->group_rid = ctr->info.id21->group_rid;
+	user_info->user_sid = rid_to_talloced_sid(domain, mem_ctx, user_rid);
+	user_info->group_sid = rid_to_talloced_sid(domain, mem_ctx, ctr->info.id21->group_rid);
 	user_info->acct_name = unistr2_tdup(mem_ctx, 
 					    &ctr->info.id21->uni_user_name);
 	user_info->full_name = unistr2_tdup(mem_ctx, 
@@ -426,8 +447,8 @@ static NTSTATUS query_user(struct winbindd_domain *domain,
 /* Lookup groups a user is a member of.  I wish Unix had a call like this! */
 static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 				  TALLOC_CTX *mem_ctx,
-				  uint32 user_rid, 
-				  uint32 *num_groups, uint32 **user_gids)
+				  DOM_SID *user_sid,
+				  uint32 *num_groups, DOM_SID ***user_grpsids)
 {
 	CLI_POLICY_HND *hnd;
 	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
@@ -435,37 +456,61 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 	uint32 des_access = SEC_RIGHTS_MAXIMUM_ALLOWED;
 	BOOL got_dom_pol = False, got_user_pol = False;
 	DOM_GID *user_groups;
-	int i;
-	int retry;
+	unsigned int i;
+	unsigned int retry;
+	fstring sid_string;
+	uint32 user_rid;
+	NET_USER_INFO_3 *user;
 
-	DEBUG(3,("rpc: lookup_usergroups rid=%u\n", user_rid));
+	DEBUG(3,("rpc: lookup_usergroups sid=%s\n", sid_to_string(sid_string, user_sid)));
 
 	*num_groups = 0;
+	*user_grpsids = NULL;
 
-	/* First try cached universal groups from logon */
-	*user_gids = uni_group_cache_fetch(&domain->sid, user_rid, mem_ctx, num_groups);
-	if((*num_groups > 0) && *user_gids) {
+	/* so lets see if we have a cached user_info_3 */
+	
+	if ( (user = netsamlogon_cache_get( mem_ctx, user_sid )) != NULL )
+	{
+		DEBUG(5,("query_user: Cache lookup succeeded for %s\n", 
+			sid_string_static(user_sid)));
+			
+		*num_groups = user->num_groups;
+				
+		(*user_grpsids) = talloc(mem_ctx, sizeof(DOM_SID*) * (*num_groups));
+		for (i=0;i<(*num_groups);i++) {
+			(*user_grpsids)[i] = rid_to_talloced_sid(domain, mem_ctx, user->gids[i].g_rid);
+		}
+				
+		SAFE_FREE(user);
+				
 		return NT_STATUS_OK;
-	} else {
-	    *user_gids = NULL;
-	    *num_groups = 0;
 	}
 
+	/* no cache; hit the wire */
+	
 	retry = 0;
 	do {
-		/* Get sam handle */
-		if (!(hnd = cm_get_sam_handle(domain->name)))
+		/* Get sam handle; if we fail here there is no hope */
+		
+		if (!NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd))) 		
 			goto done;
 
 		/* Get domain handle */
+		
 		result = cli_samr_open_domain(hnd->cli, mem_ctx, &hnd->pol,
-						des_access, &domain->sid, &dom_pol);
-	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) && hnd && hnd->cli && hnd->cli->fd == -1);
+					      des_access, &domain->sid, &dom_pol);
+	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) && 
+			hnd && hnd->cli && hnd->cli->fd == -1);
 
 	if (!NT_STATUS_IS_OK(result))
 		goto done;
 
 	got_dom_pol = True;
+
+
+	if (!sid_peek_check_rid(&domain->sid, user_sid, &user_rid)) {
+		goto done;
+	}
 
 	/* Get user handle */
 	result = cli_samr_open_user(hnd->cli, mem_ctx, &dom_pol,
@@ -483,9 +528,14 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 	if (!NT_STATUS_IS_OK(result) || (*num_groups) == 0)
 		goto done;
 
-	(*user_gids) = talloc(mem_ctx, sizeof(uint32) * (*num_groups));
+	(*user_grpsids) = talloc(mem_ctx, sizeof(DOM_SID*) * (*num_groups));
+	if (!(*user_grpsids)) {
+		result = NT_STATUS_NO_MEMORY;
+		goto done;
+	}
+
 	for (i=0;i<(*num_groups);i++) {
-		(*user_gids)[i] = user_groups[i].g_rid;
+		(*user_grpsids)[i] = rid_to_talloced_sid(domain, mem_ctx, user_groups[i].g_rid);
 	}
 	
  done:
@@ -503,26 +553,34 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 /* Lookup group membership given a rid.   */
 static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 				TALLOC_CTX *mem_ctx,
-				uint32 group_rid, uint32 *num_names, 
-				uint32 **rid_mem, char ***names, 
+				DOM_SID *group_sid, uint32 *num_names, 
+				DOM_SID ***sid_mem, char ***names, 
 				uint32 **name_types)
 {
-        CLI_POLICY_HND *hnd;
+        CLI_POLICY_HND *hnd = NULL;
         NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
         uint32 i, total_names = 0;
         POLICY_HND dom_pol, group_pol;
         uint32 des_access = SEC_RIGHTS_MAXIMUM_ALLOWED;
         BOOL got_dom_pol = False, got_group_pol = False;
+	uint32 *rid_mem = NULL;
+	uint32 group_rid;
 	int retry;
+	unsigned int j;
+	fstring sid_string;
 
-	DEBUG(10,("rpc: lookup_groupmem %s rid=%u\n", domain->name, group_rid));
+	DEBUG(10,("rpc: lookup_groupmem %s sid=%s\n", domain->name, sid_to_string(sid_string, group_sid)));
+
+	if (!sid_peek_check_rid(&domain->sid, group_sid, &group_rid)) {
+		goto done;
+	}
 
 	*num_names = 0;
 
 	retry = 0;
 	do {
 	        /* Get sam handle */
-		if (!(hnd = cm_get_sam_handle(domain->name)))
+		if (!NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd)))
 			goto done;
 
 		/* Get domain handle */
@@ -550,7 +608,7 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
            group. */
 
         result = cli_samr_query_groupmem(hnd->cli, mem_ctx,
-                                         &group_pol, num_names, rid_mem,
+                                         &group_pol, num_names, &rid_mem,
                                          name_types);
 
         if (!NT_STATUS_IS_OK(result))
@@ -565,6 +623,16 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 
         *names = talloc_zero(mem_ctx, *num_names * sizeof(char *));
         *name_types = talloc_zero(mem_ctx, *num_names * sizeof(uint32));
+        *sid_mem = talloc_zero(mem_ctx, *num_names * sizeof(DOM_SID *));
+
+	for (j=0;j<(*num_names);j++) {
+		(*sid_mem)[j] = rid_to_talloced_sid(domain, mem_ctx, (rid_mem)[j]);
+	}
+	
+	if (*num_names>0 && (!*names || !*name_types)) {
+		result = NT_STATUS_NO_MEMORY;
+		goto done;
+	}
 
         for (i = 0; i < *num_names; i += MAX_LOOKUP_RIDS) {
                 int num_lookup_rids = MIN(*num_names - i, MAX_LOOKUP_RIDS);
@@ -577,13 +645,16 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
                 result = cli_samr_lookup_rids(hnd->cli, mem_ctx,
                                               &dom_pol, 1000, /* flags */
                                               num_lookup_rids,
-                                              &(*rid_mem)[i],
+                                              &rid_mem[i],
                                               &tmp_num_names,
                                               &tmp_names, &tmp_types);
 
-                if (!NT_STATUS_IS_OK(result))
+		/* see if we have a real error (and yes the STATUS_SOME_UNMAPPED is
+		   the one returned from 2k) */
+		
+                if (!NT_STATUS_IS_OK(result) && NT_STATUS_V(result) != NT_STATUS_V(STATUS_SOME_UNMAPPED))
                         goto done;
-
+			
                 /* Copy result into array.  The talloc system will take
                    care of freeing the temporary arrays later on. */
 
@@ -592,13 +663,15 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 
                 memcpy(&(*name_types)[i], tmp_types, sizeof(uint32) *
                        tmp_num_names);
-
+		
                 total_names += tmp_num_names;
         }
 
         *num_names = total_names;
 
- done:
+ 	result = NT_STATUS_OK;
+	
+done:
         if (got_group_pol)
                 cli_samr_close(hnd->cli, mem_ctx, &group_pol);
 
@@ -608,6 +681,137 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
         return result;
 }
 
+#ifdef HAVE_LDAP
+
+#include <ldap.h>
+
+static SIG_ATOMIC_T gotalarm;
+
+/***************************************************************
+ Signal function to tell us we timed out.
+****************************************************************/
+
+static void gotalarm_sig(void)
+{
+	gotalarm = 1;
+}
+
+static LDAP *ldap_open_with_timeout(const char *server, int port, unsigned int to)
+{
+	LDAP *ldp = NULL;
+
+	/* Setup timeout */
+	gotalarm = 0;
+	CatchSignal(SIGALRM, SIGNAL_CAST gotalarm_sig);
+	alarm(to);
+	/* End setup timeout. */
+
+	ldp = ldap_open(server, port);
+
+	/* Teardown timeout. */
+	CatchSignal(SIGALRM, SIGNAL_CAST SIG_IGN);
+	alarm(0);
+
+	return ldp;
+}
+
+static int get_ldap_seq(const char *server, int port, uint32 *seq)
+{
+	int ret = -1;
+	struct timeval to;
+	char *attrs[] = {"highestCommittedUSN", NULL};
+	LDAPMessage *res = NULL;
+	char **values = NULL;
+	LDAP *ldp = NULL;
+
+	*seq = DOM_SEQUENCE_NONE;
+
+	/*
+	 * 10 second timeout on open. This is needed as the search timeout
+	 * doesn't seem to apply to doing an open as well. JRA.
+	 */
+
+	if ((ldp = ldap_open_with_timeout(server, port, 10)) == NULL)
+		return -1;
+
+	/* Timeout if no response within 20 seconds. */
+	to.tv_sec = 10;
+	to.tv_usec = 0;
+
+	if (ldap_search_st(ldp, "", LDAP_SCOPE_BASE, "(objectclass=*)", &attrs[0], 0, &to, &res))
+		goto done;
+
+	if (ldap_count_entries(ldp, res) != 1)
+		goto done;
+
+	values = ldap_get_values(ldp, res, "highestCommittedUSN");
+	if (!values || !values[0])
+		goto done;
+
+	*seq = atoi(values[0]);
+	ret = 0;
+
+  done:
+
+	if (values)
+		ldap_value_free(values);
+	if (res)
+		ldap_msgfree(res);
+	if (ldp)
+		ldap_unbind(ldp);
+	return ret;
+}
+
+/**********************************************************************
+ Get the sequence number for a Windows AD native mode domain using
+ LDAP queries
+**********************************************************************/
+
+int get_ldap_sequence_number( const char* domain, uint32 *seq)
+{
+	int ret = -1;
+	int i, port = LDAP_PORT;
+	struct ip_service *ip_list = NULL;
+	int count;
+	
+	if ( !get_sorted_dc_list(domain, &ip_list, &count, False) ) {
+		DEBUG(3, ("Could not look up dc's for domain %s\n", domain));
+		return False;
+	}
+
+	/* Finally return first DC that we can contact */
+
+	for (i = 0; i < count; i++) {
+		fstring ipstr;
+
+		/* since the is an LDAP lookup, default to the LDAP_PORT is not set */
+		port = (ip_list[i].port!= PORT_NONE) ? ip_list[i].port : LDAP_PORT;
+
+		fstrcpy( ipstr, inet_ntoa(ip_list[i].ip) );
+		
+		if (is_zero_ip(ip_list[i].ip))
+			continue;
+
+		if ( (ret = get_ldap_seq( ipstr, port,  seq)) == 0 )
+			goto done;
+
+		/* add to failed connection cache */
+		add_failed_connection_entry( domain, ipstr, NT_STATUS_UNSUCCESSFUL );
+	}
+
+done:
+	if ( ret == 0 ) {
+		DEBUG(3, ("get_ldap_sequence_number: Retrieved sequence number for Domain (%s) from DC (%s:%d)\n", 
+			domain, inet_ntoa(ip_list[i].ip), port));
+	}
+
+	SAFE_FREE(ip_list);
+
+	return ret;
+}
+
+#endif /* HAVE_LDAP */
+
 /* find the sequence number for a domain */
 static NTSTATUS sequence_number(struct winbindd_domain *domain, uint32 *seq)
 {
@@ -616,7 +820,6 @@ static NTSTATUS sequence_number(struct winbindd_domain *domain, uint32 *seq)
 	SAM_UNK_CTR ctr;
 	uint16 switch_value = 2;
 	NTSTATUS result;
-	uint32 seqnum = DOM_SEQUENCE_NONE;
 	POLICY_HND dom_pol;
 	BOOL got_dom_pol = False;
 	uint32 des_access = SEC_RIGHTS_MAXIMUM_ALLOWED;
@@ -631,8 +834,24 @@ static NTSTATUS sequence_number(struct winbindd_domain *domain, uint32 *seq)
 
 	retry = 0;
 	do {
-		/* Get sam handle */
-		if (!(hnd = cm_get_sam_handle(domain->name)))
+#ifdef HAVE_LDAP
+		if ( domain->native_mode ) 
+		{
+			DEBUG(8,("using get_ldap_seq() to retrieve the sequence number\n"));
+
+			if ( get_ldap_sequence_number( domain->name, seq ) == 0 ) {			
+				result = NT_STATUS_OK;
+				DEBUG(10,("domain_sequence_number: LDAP for domain %s is %u\n",
+					domain->name, *seq));
+				goto done;
+			}
+
+			DEBUG(10,("domain_sequence_number: failed to get LDAP sequence number for domain %s\n",
+			domain->name ));
+		}
+#endif /* HAVE_LDAP */
+	        /* Get sam handle */
+		if (!NT_STATUS_IS_OK(result = cm_get_sam_handle(domain->name, &hnd)))
 			goto done;
 
 		/* Get domain handle */
@@ -651,11 +870,11 @@ static NTSTATUS sequence_number(struct winbindd_domain *domain, uint32 *seq)
 					 switch_value, &ctr);
 
 	if (NT_STATUS_IS_OK(result)) {
-		seqnum = ctr.info.inf2.seq_num;
-		DEBUG(10,("domain_sequence_number: for domain %s is %u\n", domain->name, (unsigned)seqnum ));
+		*seq = ctr.info.inf2.seq_num;
+		DEBUG(10,("domain_sequence_number: for domain %s is %u\n", domain->name, (unsigned)*seq));
 	} else {
 		DEBUG(10,("domain_sequence_number: failed to get sequence number (%u) for domain %s\n",
-			(unsigned)seqnum, domain->name ));
+			(unsigned)*seq, domain->name ));
 	}
 
   done:
@@ -664,8 +883,6 @@ static NTSTATUS sequence_number(struct winbindd_domain *domain, uint32 *seq)
 		cli_samr_close(hnd->cli, mem_ctx, &dom_pol);
 
 	talloc_destroy(mem_ctx);
-
-	*seq = seqnum;
 
 	return result;
 }
@@ -690,7 +907,7 @@ static NTSTATUS trusted_domains(struct winbindd_domain *domain,
 
 	retry = 0;
 	do {
-		if (!(hnd = cm_get_lsa_handle(lp_workgroup())))
+		if (!NT_STATUS_IS_OK(result = cm_get_lsa_handle(lp_workgroup(), &hnd)))
 			goto done;
 
 		result = cli_lsa_enum_trust_dom(hnd->cli, mem_ctx,
@@ -705,7 +922,7 @@ done:
 /* find the domain sid for a domain */
 static NTSTATUS domain_sid(struct winbindd_domain *domain, DOM_SID *sid)
 {
-	NTSTATUS status = NT_STATUS_UNSUCCESSFUL;
+	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
 	TALLOC_CTX *mem_ctx;
 	CLI_POLICY_HND *hnd;
 	fstring level5_dom;
@@ -718,17 +935,17 @@ static NTSTATUS domain_sid(struct winbindd_domain *domain, DOM_SID *sid)
 
 	retry = 0;
 	do {
-		/* Get sam handle */
-		if (!(hnd = cm_get_lsa_handle(domain->name)))
+		/* Get lsa handle */
+		if (!NT_STATUS_IS_OK(result = cm_get_lsa_handle(domain->name, &hnd)))
 			goto done;
 
-		status = cli_lsa_query_info_policy(hnd->cli, mem_ctx,
+		result = cli_lsa_query_info_policy(hnd->cli, mem_ctx,
 					   &hnd->pol, 0x05, level5_dom, sid);
-	} while (!NT_STATUS_IS_OK(status) && (retry++ < 1) &&  hnd && hnd->cli && hnd->cli->fd == -1);
+	} while (!NT_STATUS_IS_OK(result) && (retry++ < 1) &&  hnd && hnd->cli && hnd->cli->fd == -1);
 
 done:
 	talloc_destroy(mem_ctx);
-	return status;
+	return result;
 }
 
 /* find alternate names list for the domain - none for rpc */

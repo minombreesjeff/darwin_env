@@ -41,8 +41,8 @@ BOOL cli_api_pipe(struct cli_state *cli, const char *pipe_name,
                  data, data_count, max_data_count);
 
   return (cli_receive_trans(cli, SMBtrans, 
-                            rparam, (int *)rparam_count,
-                            rdata, (int *)rdata_count));
+                            rparam, (unsigned int *)rparam_count,
+                            rdata, (unsigned int *)rdata_count));
 }
 
 /****************************************************************************
@@ -51,8 +51,8 @@ call a remote api
 BOOL cli_api(struct cli_state *cli,
 	     char *param, int prcnt, int mprcnt,
 	     char *data, int drcnt, int mdrcnt,
-	     char **rparam, int *rprcnt,
-	     char **rdata, int *rdrcnt)
+	     char **rparam, unsigned int *rprcnt,
+	     char **rdata, unsigned int *rdrcnt)
 {
   cli_send_trans(cli,SMBtrans,
                  PIPE_LANMAN,             /* Name */
@@ -76,7 +76,7 @@ BOOL cli_NetWkstaUserLogon(struct cli_state *cli,char *user, char *workstation)
 	char *rparam = NULL;
 	char *rdata = NULL;
 	char *p;
-	int rdrcnt,rprcnt;
+	unsigned int rdrcnt,rprcnt;
 	pstring param;
 
 	memset(param, 0, sizeof(param));
@@ -85,20 +85,20 @@ BOOL cli_NetWkstaUserLogon(struct cli_state *cli,char *user, char *workstation)
 	p = param;
 	SSVAL(p,0,132); /* api number */
 	p += 2;
-	pstrcpy(p,"OOWb54WrLh");
+	pstrcpy_base(p,"OOWb54WrLh",param);
 	p = skip_string(p,1);
-	pstrcpy(p,"WB21BWDWWDDDDDDDzzzD");
+	pstrcpy_base(p,"WB21BWDWWDDDDDDDzzzD",param);
 	p = skip_string(p,1);
 	SSVAL(p,0,1);
 	p += 2;
-	pstrcpy(p,user);
-	strupper(p);
+	pstrcpy_base(p,user,param);
+	strupper_m(p);
 	p += 21;
 	p++;
 	p += 15;
 	p++; 
-	pstrcpy(p, workstation); 
-	strupper(p);
+	pstrcpy_base(p, workstation, param);
+	strupper_m(p);
 	p += 16;
 	SSVAL(p, 0, CLI_BUFFER_SIZE);
 	p += 2;
@@ -137,7 +137,7 @@ int cli_RNetShareEnum(struct cli_state *cli, void (*fn)(const char *, uint32, co
 	char *rparam = NULL;
 	char *rdata = NULL;
 	char *p;
-	int rdrcnt,rprcnt;
+	unsigned int rdrcnt,rprcnt;
 	pstring param;
 	int count = -1;
 
@@ -145,9 +145,9 @@ int cli_RNetShareEnum(struct cli_state *cli, void (*fn)(const char *, uint32, co
 	p = param;
 	SSVAL(p,0,0); /* api number */
 	p += 2;
-	pstrcpy(p,"WrLeh");
+	pstrcpy_base(p,"WrLeh",param);
 	p = skip_string(p,1);
-	pstrcpy(p,"B13BWz");
+	pstrcpy_base(p,"B13BWz",param);
 	p = skip_string(p,1);
 	SSVAL(p,0,1);
 	/*
@@ -211,7 +211,7 @@ BOOL cli_NetServerEnum(struct cli_state *cli, char *workgroup, uint32 stype,
 {
 	char *rparam = NULL;
 	char *rdata = NULL;
-	int rdrcnt,rprcnt;
+	unsigned int rdrcnt,rprcnt;
 	char *p;
 	pstring param;
 	int uLevel = 1;
@@ -221,10 +221,10 @@ BOOL cli_NetServerEnum(struct cli_state *cli, char *workgroup, uint32 stype,
 	p = param;
 	SSVAL(p,0,0x68); /* api number */
 	p += 2;
-	pstrcpy(p,"WrLehDz");
+	pstrcpy_base(p,"WrLehDz", param);
 	p = skip_string(p,1);
   
-	pstrcpy(p,"B16BBDz");
+	pstrcpy_base(p,"B16BBDz", param);
 
 	p = skip_string(p,1);
 	SSVAL(p,0,uLevel);
@@ -233,7 +233,7 @@ BOOL cli_NetServerEnum(struct cli_state *cli, char *workgroup, uint32 stype,
 	SIVAL(p,0,stype);
 	p += 4;
 
-	p += push_pstring(p, workgroup);
+	p += push_ascii(p, workgroup, sizeof(pstring)-PTR_DIFF(p,param)-1, STR_TERMINATE|STR_UPPER);
 	
 	if (cli_api(cli, 
                     param, PTR_DIFF(p,param), 8,        /* params, length, max */
@@ -256,7 +256,7 @@ BOOL cli_NetServerEnum(struct cli_state *cli, char *workgroup, uint32 stype,
 				const char *cmnt = comment_offset?(rdata+comment_offset):"";
 				pstring s1, s2;
 
-				if (comment_offset < 0 || comment_offset > rdrcnt) continue;
+				if (comment_offset < 0 || comment_offset > (int)rdrcnt) continue;
 
 				stype = IVAL(p,18) & ~SV_TYPE_LOCAL_LIST_ONLY;
 
@@ -281,16 +281,16 @@ Send a SamOEMChangePassword command
 BOOL cli_oem_change_password(struct cli_state *cli, const char *user, const char *new_password,
                              const char *old_password)
 {
-  char param[16+sizeof(fstring)];
+  pstring param;
   char data[532];
   char *p = param;
   unsigned char old_pw_hash[16];
   unsigned char new_pw_hash[16];
-  int data_len;
-  int param_len = 0;
+  unsigned int data_len;
+  unsigned int param_len = 0;
   char *rparam = NULL;
   char *rdata = NULL;
-  int rprcnt, rdrcnt;
+  unsigned int rprcnt, rdrcnt;
   pstring dos_new_password;
 
   if (strlen(user) >= sizeof(fstring)-1) {
@@ -300,11 +300,11 @@ BOOL cli_oem_change_password(struct cli_state *cli, const char *user, const char
 
   SSVAL(p,0,214); /* SamOEMChangePassword command. */
   p += 2;
-  pstrcpy(p, "zsT");
+  pstrcpy_base(p, "zsT", param);
   p = skip_string(p,1);
-  pstrcpy(p, "B516B16");
+  pstrcpy_base(p, "B516B16", param);
   p = skip_string(p,1);
-  pstrcpy(p,user);
+  pstrcpy_base(p,user, param);
   p = skip_string(p,1);
   SSVAL(p,0,532);
   p += 2;
@@ -317,7 +317,7 @@ BOOL cli_oem_change_password(struct cli_state *cli, const char *user, const char
    */
   E_deshash(old_password, old_pw_hash);
 
-  clistr_push(cli, dos_new_password, new_password, -1, STR_TERMINATE|STR_ASCII);
+  clistr_push(cli, dos_new_password, new_password, sizeof(dos_new_password), STR_TERMINATE|STR_ASCII);
 
   if (!make_oem_passwd_hash( data, dos_new_password, old_pw_hash, False))
     return False;
@@ -368,9 +368,9 @@ BOOL cli_qpathinfo(struct cli_state *cli, const char *fname,
 		   time_t *c_time, time_t *a_time, time_t *m_time, 
 		   size_t *size, uint16 *mode)
 {
-	int data_len = 0;
-	int param_len = 0;
-	int rparam_len, rdata_len;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
+	unsigned int rparam_len, rdata_len;
 	uint16 setup = TRANSACT2_QPATHINFO;
 	pstring param;
 	char *rparam=NULL, *rdata=NULL;
@@ -449,8 +449,8 @@ BOOL cli_qpathinfo2(struct cli_state *cli, const char *fname,
 		    time_t *w_time, size_t *size, uint16 *mode,
 		    SMB_INO_T *ino)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_QPATHINFO;
 	pstring param;
 	char *rparam=NULL, *rdata=NULL;
@@ -518,8 +518,8 @@ send a qfileinfo QUERY_FILE_NAME_INFO call
 BOOL cli_qfilename(struct cli_state *cli, int fnum, 
 		   pstring name)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_QFILEINFO;
 	pstring param;
 	char *rparam=NULL, *rdata=NULL;
@@ -563,8 +563,8 @@ BOOL cli_qfileinfo(struct cli_state *cli, int fnum,
 		   time_t *c_time, time_t *a_time, time_t *m_time, 
 		   time_t *w_time, SMB_INO_T *ino)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_QFILEINFO;
 	pstring param;
 	char *rparam=NULL, *rdata=NULL;
@@ -631,8 +631,8 @@ send a qfileinfo call
 ****************************************************************************/
 BOOL cli_qfileinfo_test(struct cli_state *cli, int fnum, int level, char *outdata)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_QFILEINFO;
 	pstring param;
 	char *rparam=NULL, *rdata=NULL;
@@ -677,15 +677,15 @@ send a qpathinfo SMB_QUERY_FILE_ALT_NAME_INFO call
 ****************************************************************************/
 NTSTATUS cli_qpathinfo_alt_name(struct cli_state *cli, const char *fname, fstring alt_name)
 {
-	int data_len = 0;
-	int param_len = 0;
+	unsigned int data_len = 0;
+	unsigned int param_len = 0;
 	uint16 setup = TRANSACT2_QPATHINFO;
 	pstring param;
 	char *rparam=NULL, *rdata=NULL;
 	int count=8;
 	char *p;
 	BOOL ret;
-	int len;
+	unsigned int len;
 
 	p = param;
 	memset(p, 0, 6);

@@ -75,6 +75,9 @@ typedef struct auth_usersupplied_info
 typedef struct auth_serversupplied_info 
 {
 	BOOL guest;
+
+	uid_t uid;
+	gid_t gid;
 	
 	/* This groups info is needed for when we become_user() for this uid */
 	int n_groups;
@@ -93,6 +96,8 @@ typedef struct auth_serversupplied_info
 	SAM_ACCOUNT *sam_account;
 	
 	void *pam_handle;
+
+	char *unix_name;
 	
 } auth_serversupplied_info;
 
@@ -148,6 +153,8 @@ struct auth_init_function_entry {
 	/* Function to create a member of the authmethods list */
 
 	auth_init_function init;
+
+	struct auth_init_function_entry *prev, *next;
 };
 
 typedef struct auth_ntlmssp_state
@@ -157,5 +164,7 @@ typedef struct auth_ntlmssp_state
 	struct auth_serversupplied_info *server_info;
 	struct ntlmssp_state *ntlmssp_state;
 } AUTH_NTLMSSP_STATE;
+
+#define AUTH_INTERFACE_VERSION 1
 
 #endif /* _SMBAUTH_H_ */

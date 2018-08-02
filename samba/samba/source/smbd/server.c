@@ -3,7 +3,7 @@
    Main SMB server routines
    Copyright (C) Andrew Tridgell		1992-1998
    Copyright (C) Martin Pool			2002
-   Copyright (C) Jelmer Vernooij		2002
+   Copyright (C) Jelmer Vernooij		2002-2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -398,7 +398,7 @@ static BOOL open_sockets_smbd(BOOL is_daemon, BOOL interactive, const char *smb_
 				
 				/* this is needed so that we get decent entries
 				   in smbstatus for port 445 connects */
-				set_remote_machine_name(get_socket_addr(smbd_server_fd()));
+				set_remote_machine_name(get_socket_addr(smbd_server_fd()), False);
 				
 				/* Reset global variables in util.c so
 				   that client substitutions will be
@@ -501,25 +501,6 @@ BOOL reload_services(BOOL test)
 	return(ret);
 }
 
-/*******************************************************************
- Print out all talloc memory info.
-********************************************************************/
-
-void return_all_talloc_info(int msg_type, pid_t src_pid, void *buf, size_t len)
-{
-	TALLOC_CTX *ctx = talloc_init("info context");
-	char *info = NULL;
-
-	if (!ctx)
-		return;
-
-	info = talloc_describe_all(ctx);
-	if (info)
-		DEBUG(10,(info));
-	message_send_pid(src_pid, MSG_TALLOC_USAGE, info, info ? strlen(info) + 1 : 0, True);
-	talloc_destroy(ctx);
-}
-
 #if DUMP_CORE
 /*******************************************************************
 prepare to dump a core file - carefully!
@@ -586,6 +567,9 @@ void exit_server(const char *reason)
 
 	print_notify_send_messages(3); /* 3 second timeout. */
 
+	/* run all registered exit events */
+	smb_run_exit_events();
+
 	/* delete our entry in the connections database. */
 	yield_connection(NULL,"");
 
@@ -615,7 +599,7 @@ void exit_server(const char *reason)
 	printing_end();
 
 	DEBUG(3,("Server exit (%s)\n", (reason ? reason : "")));
-	_exit(0);
+	exit(0);
 }
 
 /****************************************************************************
@@ -650,6 +634,12 @@ static BOOL init_structs(void )
  main program.
 ****************************************************************************/
 
+/* Declare prototype for build_options() to avoid having to run it through
+   mkproto.h.  Mixing $(builddir) and $(srcdir) source files in the current
+   prototype generation system is too complicated. */
+
+void build_options(BOOL screen);
+
  int main(int argc,const char *argv[])
 {
 	/* shall I run as a daemon */
@@ -669,11 +659,7 @@ static BOOL init_structs(void )
 	{"log-stdout", 'S', POPT_ARG_VAL, &log_stdout, True, "Log to stdout" },
 	{"build-options", 'b', POPT_ARG_NONE, NULL, 'b', "Print build options" },
 	{"port", 'p', POPT_ARG_STRING, &ports, 0, "Listen on the specified ports"},
-	{NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_debug},
-	{NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_configfile},
-	{NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_socket_options},
-	{NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_log_base},
-	{NULL, 0, POPT_ARG_INCLUDE_TABLE, popt_common_version},
+	POPT_COMMON_SAMBA
 	{ NULL }
 	};
 
@@ -703,7 +689,7 @@ static BOOL init_structs(void )
 
 	load_case_tables();
 
-	set_remote_machine_name("smbd");
+	set_remote_machine_name("smbd", False);
 
 	if (interactive) {
 		Fork = False;
@@ -758,8 +744,8 @@ static BOOL init_structs(void )
 
 	reopen_logs();
 
-	DEBUG(0,( "smbd version %s started.\n", VERSION));
-	DEBUGADD(0,( "Copyright Andrew Tridgell and the Samba Team 1992-2002\n"));
+	DEBUG(0,( "smbd version %s started.\n", SAMBA_VERSION_STRING));
+	DEBUGADD(0,( "Copyright Andrew Tridgell and the Samba Team 1992-2003\n"));
 
 	DEBUG(2,("uid=%d gid=%d euid=%d egid=%d\n",
 		 (int)getuid(),(int)getgid(),(int)geteuid(),(int)getegid()));
@@ -825,10 +811,6 @@ static BOOL init_structs(void )
 	if (!message_init())
 		exit(1);
 
-	register_msg_pool_usage();
-	register_dmalloc_msgs();
-	message_register(MSG_REQ_TALLOC_USAGE, return_all_talloc_info);
-
 	if (!print_backend_init())
 		exit(1);
 
@@ -860,18 +842,23 @@ static BOOL init_structs(void )
 	if (!init_registry())
 		exit(1);
 
+	/* Initialise the password backed before the global_sam_sid
+	   to ensure that we fetch from ldap before we make a domain sid up */
+
 	if(!initialize_password_db(False))
 		exit(1);
-
-	uni_group_cache_init(); /* Non-critical */
-	
-	/* possibly reload the services file. */
-	reload_services(True);
 
 	if(!get_global_sam_sid()) {
 		DEBUG(0,("ERROR: Samba cannot create a SAM SID.\n"));
 		exit(1);
 	}
+
+	static_init_rpc;
+
+	init_modules();
+
+	/* possibly reload the services file. */
+	reload_services(True);
 
 	if (!init_account_policy()) {
 		DEBUG(0,("Could not open account policy tdb.\n"));
@@ -899,7 +886,7 @@ static BOOL init_structs(void )
 
 	smbd_process();
 	
-	uni_group_cache_shutdown();
+	namecache_shutdown();
 	exit_server("normal exit");
 	return(0);
 }

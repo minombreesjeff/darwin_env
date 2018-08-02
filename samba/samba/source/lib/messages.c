@@ -21,11 +21,11 @@
 */
 
 /**
-   @defgroups messages Internal messaging framework
-   @{
-   @file messages.c
-
-   This module is used for internal messaging between Samba daemons. 
+  @defgroup messages Internal messaging framework
+  @{
+  @file messages.c
+  
+  @brief  Module for internal messaging between Samba daemons. 
 
    The idea is that if a part of Samba wants to do communication with
    another Samba process then it will do a message_register() of a
@@ -36,7 +36,7 @@
    use that to reply by message_send_pid().  See ping_message() for a
    simple example.
 
-   *NOTE*: Dispatch functions must be able to cope with incoming
+   @caution Dispatch functions must be able to cope with incoming
    messages on an *odd* byte boundary.
 
    This system doesn't have any inherent size limitations but is not
@@ -110,6 +110,11 @@ BOOL message_init(void)
 	CatchSignal(SIGUSR1, SIGNAL_CAST sig_usr1);
 
 	message_register(MSG_PING, ping_message);
+
+	/* Register some debugging related messages */
+
+	register_msg_pool_usage();
+	register_dmalloc_msgs();
 
 	return True;
 }
@@ -299,6 +304,37 @@ BOOL message_send_pid_with_timeout(pid_t pid, int msg_type, const void *buf, siz
 }
 
 /****************************************************************************
+ Count the messages pending for a particular pid. Expensive....
+****************************************************************************/
+
+unsigned int messages_pending_for_pid(pid_t pid)
+{
+	TDB_DATA kbuf;
+	TDB_DATA dbuf;
+	char *buf;
+	unsigned int message_count = 0;
+
+	kbuf = message_key_pid(sys_getpid());
+
+	dbuf = tdb_fetch(tdb, kbuf);
+	if (dbuf.dptr == NULL || dbuf.dsize == 0) {
+		SAFE_FREE(dbuf.dptr);
+		return 0;
+	}
+
+	for (buf = dbuf.dptr; dbuf.dsize > sizeof(struct message_rec);) {
+		struct message_rec rec;
+		memcpy(&rec, buf, sizeof(rec));
+		buf += (sizeof(rec) + rec.len);
+		dbuf.dsize -= (sizeof(rec) + rec.len);
+		message_count++;
+	}
+
+	SAFE_FREE(dbuf.dptr);
+	return message_count;
+}
+
+/****************************************************************************
  Retrieve all messages for the current process.
 ****************************************************************************/
 
@@ -315,7 +351,9 @@ static BOOL retrieve_all_messages(char **msgs_buf, size_t *total_len)
 
 	kbuf = message_key_pid(sys_getpid());
 
-	tdb_chainlock(tdb, kbuf);
+	if (tdb_chainlock(tdb, kbuf) == -1)
+		return False;
+
 	dbuf = tdb_fetch(tdb, kbuf);
 	/*
 	 * Replace with an empty record to keep the allocated
@@ -524,7 +562,7 @@ static int traverse_fn(TDB_CONTEXT *the_tdb, TDB_DATA kbuf, TDB_DATA dbuf, void 
  * @param n_sent Set to the number of messages sent.  This should be
  * equal to the number of processes, but be careful for races.
  *
- * @return True for success.
+ * @retval True for success.
  **/
 BOOL message_send_all(TDB_CONTEXT *conn_tdb, int msg_type,
 		      const void *buf, size_t len,

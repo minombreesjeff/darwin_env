@@ -1,3 +1,4 @@
+
 /*
  * MySQL password backend for samba
  * Copyright (C) Jelmer Vernooij 2002
@@ -24,12 +25,12 @@
 #define CONFIG_LOGON_TIME_DEFAULT			"logon_time"
 #define CONFIG_LOGOFF_TIME_DEFAULT			"logoff_time"
 #define CONFIG_KICKOFF_TIME_DEFAULT			"kickoff_time"
-#define CONFIG_PASS_LAST_SET_TIME_DEFAULT	"pass_last_set_time"
-#define CONFIG_PASS_CAN_CHANGE_TIME_DEFAULT	"pass_can_change_time"
-#define CONFIG_PASS_MUST_CHANGE_TIME_DEFAULT "pass_must_change_time"
+#define CONFIG_PASS_LAST_SET_TIME_DEFAULT		"pass_last_set_time"
+#define CONFIG_PASS_CAN_CHANGE_TIME_DEFAULT		"pass_can_change_time"
+#define CONFIG_PASS_MUST_CHANGE_TIME_DEFAULT 		"pass_must_change_time"
 #define CONFIG_USERNAME_DEFAULT 			"username"
 #define CONFIG_DOMAIN_DEFAULT				"domain"
-#define CONFIG_NT_USERNAME_DEFAULT  		"nt_username"
+#define CONFIG_NT_USERNAME_DEFAULT  			"nt_username"
 #define CONFIG_FULLNAME_DEFAULT				"nt_fullname"
 #define CONFIG_HOME_DIR_DEFAULT				"home_dir"
 #define CONFIG_DIR_DRIVE_DEFAULT			"dir_drive"
@@ -39,8 +40,6 @@
 #define CONFIG_WORKSTATIONS_DEFAULT			"workstations"
 #define CONFIG_UNKNOWN_STR_DEFAULT			"unknown_str"
 #define CONFIG_MUNGED_DIAL_DEFAULT			"munged_dial"
-#define CONFIG_UID_DEFAULT					"uid"
-#define CONFIG_GID_DEFAULT					"gid"
 #define CONFIG_USER_SID_DEFAULT				"user_sid"
 #define CONFIG_GROUP_SID_DEFAULT			"group_sid"
 #define CONFIG_LM_PW_DEFAULT				"lm_pw"
@@ -52,23 +51,21 @@
 #define CONFIG_HOURS_LEN_DEFAULT			"hours_len"
 #define CONFIG_UNKNOWN_5_DEFAULT			"unknown_5"
 #define CONFIG_UNKNOWN_6_DEFAULT			"unknown_6"
-#define CONFIG_HOST_DEFAULT					"localhost"
-#define CONFIG_USER_DEFAULT					"samba"
-#define CONFIG_PASS_DEFAULT					""
-#define CONFIG_PORT_DEFAULT					"3306"
-#define CONFIG_DB_DEFAULT					"samba"
+#define CONFIG_HOST_DEFAULT				"localhost"
+#define CONFIG_USER_DEFAULT				"samba"
+#define CONFIG_PASS_DEFAULT				""
+#define CONFIG_PORT_DEFAULT				"3306"
+#define CONFIG_DB_DEFAULT				"samba"
 
 static int mysqlsam_debug_level = DBGC_ALL;
 
 #undef DBGC_CLASS
 #define DBGC_CLASS mysqlsam_debug_level
 
-PDB_MODULE_VERSIONING_MAGIC
-
 typedef struct pdb_mysql_data {
 	MYSQL *handle;
 	MYSQL_RES *pwent;
-	char *location;
+	const char *location;
 } pdb_mysql_data;
 
 /* Used to construct insert and update queries */
@@ -92,7 +89,7 @@ typedef struct pdb_mysql_query {
 }
 
 static void pdb_mysql_int_field(struct pdb_methods *m,
-					struct pdb_mysql_query *q, char *name, int value)
+					struct pdb_mysql_query *q, const char *name, int value)
 {
 	if (!name || strchr(name, '\''))
 		return;                 /* This field shouldn't be set by us */
@@ -111,7 +108,7 @@ static void pdb_mysql_int_field(struct pdb_methods *m,
 
 static NTSTATUS pdb_mysql_string_field(struct pdb_methods *methods,
 					   struct pdb_mysql_query *q,
-					   char *name, const char *value)
+					   const char *name, const char *value)
 {
 	char *esc_value;
 	struct pdb_mysql_data *data;
@@ -146,20 +143,17 @@ static NTSTATUS pdb_mysql_string_field(struct pdb_methods *methods,
 	return NT_STATUS_OK;
 }
 
-static char * config_value(pdb_mysql_data * data, char *name, char *default_value)
-{
-	if (lp_parm_string(NULL, data->location, name))
-		return lp_parm_string(NULL, data->location, name);
+#define config_value(data,name,default_value) \
+	lp_parm_const_string(GLOBAL_SECTION_SNUM, (data)->location, name, default_value)
 
-	return default_value;
-}
+static const char * config_value_write(pdb_mysql_data * data, const char *name, const char *default_value) {
+	char const *v = NULL;
+	char const *swrite = NULL;
 
-static char * config_value_write(pdb_mysql_data * data, char *name, char *default_value) {
-	char *v = config_value(data, name, NULL);
-	char *swrite;
+	v = lp_parm_const_string(GLOBAL_SECTION_SNUM, data->location, name, default_value);
 
 	if (!v)
-		return default_value;
+		return NULL;
 
 	swrite = strchr(v, ':');
 
@@ -177,13 +171,15 @@ static char * config_value_write(pdb_mysql_data * data, char *name, char *defaul
 	return swrite;
 }
 
-static const char * config_value_read(pdb_mysql_data * data, char *name, char *default_value)
+static const char * config_value_read(pdb_mysql_data * data, const char *name, const char *default_value)
 {
-	char *v = config_value(data, name, NULL);
+	char *v = NULL;
 	char *swrite;
 
+	v = lp_parm_talloc_string(GLOBAL_SECTION_SNUM, data->location, name, default_value);
+
 	if (!v)
-		return default_value;
+		return "NULL";
 
 	swrite = strchr(v, ':');
 
@@ -191,7 +187,7 @@ static const char * config_value_read(pdb_mysql_data * data, char *name, char *d
 	if (!swrite) {
 		if (strlen(v) == 0)
 			return "NULL";
-		return v;
+		return (const char *)v;
 	}
 
 	/* Otherwise, we have to cut the ':write_part' */
@@ -199,11 +195,11 @@ static const char * config_value_read(pdb_mysql_data * data, char *name, char *d
 	if (strlen(v) == 0)
 		return "NULL";
 
-	return v;
+	return (const char *)v;
 }
 
 /* Wrapper for atol that returns 0 if 'a' points to NULL */
-static long xatol(char *a)
+static long xatol(const char *a)
 {
 	long ret = 0;
 
@@ -244,32 +240,27 @@ static NTSTATUS row_to_sam_account(MYSQL_RES * r, SAM_ACCOUNT * u)
 	pdb_set_unknown_str(u, row[16], PDB_SET);
 	pdb_set_munged_dial(u, row[17], PDB_SET);
 
-	if (row[18])
-		pdb_set_uid(u, xatol(row[18]), PDB_SET);
-	if (row[19])
-		pdb_set_gid(u, xatol(row[19]), PDB_SET);
-
-	string_to_sid(&sid, row[20]);
+	string_to_sid(&sid, row[18]);
 	pdb_set_user_sid(u, &sid, PDB_SET);
-	string_to_sid(&sid, row[21]);
+	string_to_sid(&sid, row[19]);
 	pdb_set_group_sid(u, &sid, PDB_SET);
 
-	if (pdb_gethexpwd(row[22], temp), PDB_SET)
+	if (pdb_gethexpwd(row[20], temp), PDB_SET)
 		pdb_set_lanman_passwd(u, temp, PDB_SET);
-	if (pdb_gethexpwd(row[23], temp), PDB_SET)
+	if (pdb_gethexpwd(row[21], temp), PDB_SET)
 		pdb_set_nt_passwd(u, temp, PDB_SET);
 
 	/* Only use plaintext password storage when lanman and nt are
 	 * NOT used */
-	if (!row[22] || !row[23])
-		pdb_set_plaintext_passwd(u, row[24]);
+	if (!row[20] || !row[21])
+		pdb_set_plaintext_passwd(u, row[22]);
 
-	pdb_set_acct_ctrl(u, xatol(row[25]), PDB_SET);
-	pdb_set_unknown_3(u, xatol(row[26]), PDB_SET);
-	pdb_set_logon_divs(u, xatol(row[27]), PDB_SET);
-	pdb_set_hours_len(u, xatol(row[28]), PDB_SET);
-	pdb_set_unknown_5(u, xatol(row[29]), PDB_SET);
-	pdb_set_unknown_6(u, xatol(row[30]), PDB_SET);
+	pdb_set_acct_ctrl(u, xatol(row[23]), PDB_SET);
+	pdb_set_unknown_3(u, xatol(row[24]), PDB_SET);
+	pdb_set_logon_divs(u, xatol(row[25]), PDB_SET);
+	pdb_set_hours_len(u, xatol(row[26]), PDB_SET);
+	pdb_set_unknown_5(u, xatol(row[27]), PDB_SET);
+	pdb_set_unknown_6(u, xatol(row[28]), PDB_SET);
 
 	return NT_STATUS_OK;
 }
@@ -287,7 +278,7 @@ static NTSTATUS mysqlsam_setsampwent(struct pdb_methods *methods, BOOL update)
 	}
 
 	asprintf(&query,
-			 "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM %s",
+			 "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM %s",
 			 config_value_read(data, "logon time column",
 							   CONFIG_LOGON_TIME_DEFAULT),
 			 config_value_read(data, "logoff time column",
@@ -324,8 +315,6 @@ static NTSTATUS mysqlsam_setsampwent(struct pdb_methods *methods, BOOL update)
 							   CONFIG_UNKNOWN_STR_DEFAULT),
 			 config_value_read(data, "munged dial column",
 							   CONFIG_MUNGED_DIAL_DEFAULT),
-			 config_value_read(data, "uid column", CONFIG_UID_DEFAULT),
-			 config_value_read(data, "gid column", CONFIG_GID_DEFAULT),
 			 config_value_read(data, "user sid column",
 							   CONFIG_USER_SID_DEFAULT),
 			 config_value_read(data, "group sid column",
@@ -370,7 +359,7 @@ static NTSTATUS mysqlsam_setsampwent(struct pdb_methods *methods, BOOL update)
 	}
 	
 	DEBUG(5,
-		("mysqlsam_setsampwent succeeded(%lu results)!\n",
+		("mysqlsam_setsampwent succeeded(%llu results)!\n",
 				mysql_num_rows(data->pwent)));
 	
 	return NT_STATUS_OK;
@@ -453,7 +442,7 @@ static NTSTATUS mysqlsam_select_by_field(struct pdb_methods * methods, SAM_ACCOU
 	}
 
 	asprintf(&query,
-			 "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM %s WHERE %s = '%s'",
+			 "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM %s WHERE %s = '%s'",
 			 config_value_read(data, "logon time column",
 							   CONFIG_LOGON_TIME_DEFAULT),
 			 config_value_read(data, "logoff time column",
@@ -490,8 +479,6 @@ static NTSTATUS mysqlsam_select_by_field(struct pdb_methods * methods, SAM_ACCOU
 							   CONFIG_UNKNOWN_STR_DEFAULT),
 			 config_value_read(data, "munged dial column",
 							   CONFIG_MUNGED_DIAL_DEFAULT),
-			 config_value_read(data, "uid column", CONFIG_UID_DEFAULT),
-			 config_value_read(data, "gid column", CONFIG_GID_DEFAULT),
 			 config_value_read(data, "user sid column",
 							   CONFIG_USER_SID_DEFAULT),
 			 config_value_read(data, "group sid column",
@@ -760,20 +747,6 @@ static NTSTATUS mysqlsam_replace_sam_account(struct pdb_methods *methods,
 							pdb_get_logon_divs(newpwd));
 	}
 
-	if (pdb_get_init_flags(newpwd, PDB_UID) != PDB_DEFAULT) {
-		pdb_mysql_int_field(methods, &query,
-							config_value_write(data, "uid column",
-											   CONFIG_UID_DEFAULT),
-							pdb_get_uid(newpwd));
-	}
-
-	if (pdb_get_init_flags(newpwd, PDB_GID) != PDB_DEFAULT) {
-		pdb_mysql_int_field(methods, &query,
-							config_value_write(data, "gid column",
-											   CONFIG_GID_DEFAULT),
-							pdb_get_gid(newpwd));
-	}
-
 	pdb_mysql_string_field(methods, &query,
 						   config_value_write(data, "user sid column",
 											  CONFIG_USER_SID_DEFAULT),
@@ -894,61 +867,8 @@ static NTSTATUS mysqlsam_update_sam_account(struct pdb_methods *methods,
 	return mysqlsam_replace_sam_account(methods, newpwd, 1);
 }
 
-static NTSTATUS mysqlsam_getgrsid(struct pdb_methods *methods, GROUP_MAP *map,
-				DOM_SID sid, BOOL with_priv)
-{
-	return get_group_map_from_sid(sid, map, with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS mysqlsam_getgrgid(struct pdb_methods *methods, GROUP_MAP *map,
-				gid_t gid, BOOL with_priv)
-{
-	return get_group_map_from_gid(gid, map, with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS mysqlsam_getgrnam(struct pdb_methods *methods, GROUP_MAP *map,
-				char *name, BOOL with_priv)
-{
-	return get_group_map_from_ntname(name, map, with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS mysqlsam_add_group_mapping_entry(struct pdb_methods *methods,
-					       GROUP_MAP *map)
-{
-	return add_mapping_entry(map, TDB_INSERT) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS mysqlsam_update_group_mapping_entry(struct pdb_methods *methods,
-						  GROUP_MAP *map)
-{
-	return add_mapping_entry(map, TDB_REPLACE) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS mysqlsam_delete_group_mapping_entry(struct pdb_methods *methods,
-						  DOM_SID sid)
-{
-	return group_map_remove(sid) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS mysqlsam_enum_group_mapping(struct pdb_methods *methods,
-					  enum SID_NAME_USE sid_name_use,
-					  GROUP_MAP **rmap, int *num_entries,
-					  BOOL unix_only, BOOL with_priv)
-{
-	return enum_group_mapping(sid_name_use, rmap, num_entries, unix_only,
-				  with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-
-NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
-		 char *location)
+static NTSTATUS mysqlsam_init(struct pdb_context * pdb_context, struct pdb_methods ** pdb_method,
+		 const char *location)
 {
 	NTSTATUS nt_status;
 	struct pdb_mysql_data *data;
@@ -980,13 +900,6 @@ NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
 	(*pdb_method)->add_sam_account = mysqlsam_add_sam_account;
 	(*pdb_method)->update_sam_account = mysqlsam_update_sam_account;
 	(*pdb_method)->delete_sam_account = mysqlsam_delete_sam_account;
-	(*pdb_method)->getgrsid = mysqlsam_getgrsid;
-	(*pdb_method)->getgrgid = mysqlsam_getgrgid;
-	(*pdb_method)->getgrnam = mysqlsam_getgrnam;
-	(*pdb_method)->add_group_mapping_entry = mysqlsam_add_group_mapping_entry;
-	(*pdb_method)->update_group_mapping_entry = mysqlsam_update_group_mapping_entry;
-	(*pdb_method)->delete_group_mapping_entry = mysqlsam_delete_group_mapping_entry;
-	(*pdb_method)->enum_group_mapping = mysqlsam_enum_group_mapping;
 
 	data = talloc(pdb_context->mem_ctx, sizeof(struct pdb_mysql_data));
 	(*pdb_method)->private_data = data;
@@ -994,7 +907,7 @@ NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
 	data->pwent = NULL;
 
 	if (!location) {
-		DEBUG(0, ("No identifier specified. See README for details\n"));
+		DEBUG(0, ("No identifier specified. Check the Samba HOWTO Collection for details\n"));
 		return NT_STATUS_INVALID_PARAMETER;
 	}
 
@@ -1031,4 +944,9 @@ NTSTATUS pdb_init(PDB_CONTEXT * pdb_context, PDB_METHODS ** pdb_method,
 	DEBUG(5, ("Connected to mysql db\n"));
 
 	return NT_STATUS_OK;
+}
+
+NTSTATUS pdb_mysql_init(void) 
+{
+	return smb_register_passdb(PASSDB_INTERFACE_VERSION, "mysql", mysqlsam_init);
 }

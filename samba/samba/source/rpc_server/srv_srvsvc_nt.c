@@ -432,10 +432,13 @@ static void init_srv_share_info_1004(pipes_struct *p, SRV_SHARE_INFO_1004* sh100
 
 static void init_srv_share_info_1005(pipes_struct *p, SRV_SHARE_INFO_1005* sh1005, int snum)
 {
-	sh1005->dfs_root_flag = 0;
+	sh1005->share_info_flags = 0;
 
 	if(lp_host_msdfs() && lp_msdfs_root(snum))
-		sh1005->dfs_root_flag = 3;
+		sh1005->share_info_flags |= 
+			SHARE_1005_IN_DFS | SHARE_1005_DFS_ROOT;
+	sh1005->share_info_flags |= 
+		lp_csc_policy(snum) << SHARE_1005_CSC_POLICY_SHIFT;
 }
 /***************************************************************************
  Fill in a share info level 1006 structure.
@@ -1513,6 +1516,19 @@ WERROR _srv_net_share_set_info(pipes_struct *p, SRV_Q_NET_SHARE_SET_INFO *q_u, S
 		type = STYPE_DISKTREE;
 		break;
 	case 1005:
+                /* XP re-sets the csc policy even if it wasn't changed by the
+		   user, so we must compare it to see if it's what is set in
+		   smb.conf, so that we can contine other ops like setting
+		   ACLs on a share */
+		if (((q_u->info.share.info1005.share_info_flags &
+		      SHARE_1005_CSC_POLICY_MASK) >>
+		     SHARE_1005_CSC_POLICY_SHIFT) == lp_csc_policy(snum))
+			return WERR_OK;
+		else {
+			DEBUG(3, ("_srv_net_share_set_info: client is trying to change csc policy from the network; must be done with smb.conf\n"));
+			return WERR_ACCESS_DENIED;
+		}
+		break;
 	case 1006:
 	case 1007:
 		return WERR_ACCESS_DENIED;
@@ -1867,7 +1883,7 @@ WERROR _srv_net_file_query_secdesc(pipes_struct *p, SRV_Q_NET_FILE_QUERY_SECDESC
 		r_u->status = WERR_ACCESS_DENIED;
 		goto error_exit;
 	}
-    became_user = True;
+	became_user = True;
 
 	unistr2_to_ascii(filename, &q_u->uni_file_name, sizeof(filename));
 	unix_convert(filename, conn, NULL, &bad_path, &st);
@@ -1887,7 +1903,7 @@ WERROR _srv_net_file_query_secdesc(pipes_struct *p, SRV_Q_NET_FILE_QUERY_SECDESC
 		}
 	}
 
-	sd_size = conn->vfs_ops.get_nt_acl(fsp, fsp->fsp_name, &psd);
+	sd_size = SMB_VFS_GET_NT_ACL(fsp, fsp->fsp_name, (OWNER_SECURITY_INFORMATION|GROUP_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION), &psd);
 
 	if (sd_size == 0) {
 		DEBUG(3,("_srv_net_file_query_secdesc: Unable to get NT ACL for file %s\n", filename));
@@ -1991,7 +2007,7 @@ WERROR _srv_net_file_set_secdesc(pipes_struct *p, SRV_Q_NET_FILE_SET_SECDESC *q_
 		}
 	}
 
-	ret = conn->vfs_ops.set_nt_acl(fsp, fsp->fsp_name, q_u->sec_info, q_u->sec_desc);
+	ret = SMB_VFS_SET_NT_ACL(fsp, fsp->fsp_name, q_u->sec_info, q_u->sec_desc);
 
 	if (ret == False) {
 		DEBUG(3,("_srv_net_file_set_secdesc: Unable to set NT ACL on file %s\n", filename));

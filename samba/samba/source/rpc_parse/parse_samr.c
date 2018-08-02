@@ -7,8 +7,7 @@
  *  Copyright (C) Elrond                            2000,
  *  Copyright (C) Jeremy Allison                    2001,
  *  Copyright (C) Jean François Micouleau      1998-2001,
- *  Copyright (C) Anthony Liguori                   2002,
- *  Copyright (C) Jim McDonough                     2002.
+ *  Copyright (C) Jim McDonough <jmcd@us.ibm.com>   2002.
  *  
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -184,9 +183,9 @@ BOOL samr_io_r_lookup_domain(const char *desc, SAMR_R_LOOKUP_DOMAIN * r_u,
 reads or writes a structure.
 ********************************************************************/
 
-void init_samr_q_unknown_2d(SAMR_Q_UNKNOWN_2D * q_u, POLICY_HND *dom_pol, DOM_SID *sid)
+void init_samr_q_remove_user_foreign_domain(SAMR_Q_REMOVE_USER_FOREIGN_DOMAIN * q_u, POLICY_HND *dom_pol, DOM_SID *sid)
 {
-	DEBUG(5, ("samr_init_samr_q_unknown_2d\n"));
+	DEBUG(5, ("samr_init_samr_q_remove_user_foreign_domain\n"));
 
 	q_u->dom_pol = *dom_pol;
 	init_dom_sid2(&q_u->sid, sid);
@@ -196,13 +195,13 @@ void init_samr_q_unknown_2d(SAMR_Q_UNKNOWN_2D * q_u, POLICY_HND *dom_pol, DOM_SI
 reads or writes a structure.
 ********************************************************************/
 
-BOOL samr_io_q_unknown_2d(const char *desc, SAMR_Q_UNKNOWN_2D * q_u,
+BOOL samr_io_q_remove_user_foreign_domain(const char *desc, SAMR_Q_REMOVE_USER_FOREIGN_DOMAIN * q_u,
 			  prs_struct *ps, int depth)
 {
 	if (q_u == NULL)
 		return False;
 
-	prs_debug(ps, depth, desc, "samr_io_q_unknown_2d");
+	prs_debug(ps, depth, desc, "samr_io_q_remove_user_foreign_domain");
 	depth++;
 
 	if(!prs_align(ps))
@@ -224,13 +223,13 @@ BOOL samr_io_q_unknown_2d(const char *desc, SAMR_Q_UNKNOWN_2D * q_u,
 reads or writes a structure.
 ********************************************************************/
 
-BOOL samr_io_r_unknown_2d(const char *desc, SAMR_R_UNKNOWN_2D * r_u,
+BOOL samr_io_r_remove_user_foreign_domain(const char *desc, SAMR_R_REMOVE_USER_FOREIGN_DOMAIN * r_u,
 			  prs_struct *ps, int depth)
 {
 	if (r_u == NULL)
 		return False;
 
-	prs_debug(ps, depth, desc, "samr_io_r_unknown_2d");
+	prs_debug(ps, depth, desc, "samr_io_r_remove_user_foreign_domain");
 	depth++;
 
 	if(!prs_align(ps))
@@ -1500,7 +1499,7 @@ inits a SAM_DISPINFO_1 structure.
 ********************************************************************/
 
 NTSTATUS init_sam_dispinfo_1(TALLOC_CTX *ctx, SAM_DISPINFO_1 *sam, uint32 num_entries,
-			     uint32 start_idx, DISP_USER_INFO *disp_user_info,
+			     uint32 start_idx, SAM_ACCOUNT *disp_user_info,
 			     DOM_SID *domain_sid)
 {
 	uint32 len_sam_name, len_sam_full, len_sam_desc;
@@ -1535,7 +1534,7 @@ NTSTATUS init_sam_dispinfo_1(TALLOC_CTX *ctx, SAM_DISPINFO_1 *sam, uint32 num_en
 
 		DEBUG(11, ("init_sam_dispinfo_1: entry: %d\n",i));
 		
-		pwd=disp_user_info[i+start_idx].sam;
+		pwd=&disp_user_info[i+start_idx];
 		
 		username = pdb_get_username(pwd);
 		fullname = pdb_get_fullname(pwd);
@@ -1635,7 +1634,7 @@ inits a SAM_DISPINFO_2 structure.
 ********************************************************************/
 
 NTSTATUS init_sam_dispinfo_2(TALLOC_CTX *ctx, SAM_DISPINFO_2 *sam, uint32 num_entries,
-			     uint32 start_idx, DISP_USER_INFO *disp_user_info, 
+			     uint32 start_idx, SAM_ACCOUNT *disp_user_info, 
 			     DOM_SID *domain_sid )
 {
 	uint32 len_sam_name, len_sam_desc;
@@ -1666,7 +1665,7 @@ NTSTATUS init_sam_dispinfo_2(TALLOC_CTX *ctx, SAM_DISPINFO_2 *sam, uint32 num_en
 		fstring user_sid_string, domain_sid_string;			
 
 		DEBUG(11, ("init_sam_dispinfo_2: entry: %d\n",i));
-		pwd=disp_user_info[i+start_idx].sam;
+		pwd=&disp_user_info[i+start_idx];
 
 		username = pdb_get_username(pwd);
 		acct_desc = pdb_get_acct_desc(pwd);
@@ -1754,7 +1753,7 @@ inits a SAM_DISPINFO_3 structure.
 ********************************************************************/
 
 NTSTATUS init_sam_dispinfo_3(TALLOC_CTX *ctx, SAM_DISPINFO_3 *sam, uint32 num_entries,
-			 uint32 start_idx, DISP_GROUP_INFO *disp_group_info)
+			 uint32 start_idx, DOMAIN_GRP *disp_group_info)
 {
 	uint32 len_sam_name, len_sam_desc;
 	uint32 i;
@@ -1776,7 +1775,7 @@ NTSTATUS init_sam_dispinfo_3(TALLOC_CTX *ctx, SAM_DISPINFO_3 *sam, uint32 num_en
 	ZERO_STRUCTP(sam->str);
 
 	for (i = 0; i < num_entries; i++) {
-		DOMAIN_GRP *grp = disp_group_info[i+start_idx].grp;
+		DOMAIN_GRP *grp = &disp_group_info[i+start_idx];
 
 		DEBUG(11, ("init_sam_dispinfo_3: entry: %d\n",i));
 
@@ -1848,7 +1847,7 @@ inits a SAM_DISPINFO_4 structure.
 ********************************************************************/
 
 NTSTATUS init_sam_dispinfo_4(TALLOC_CTX *ctx, SAM_DISPINFO_4 *sam, uint32 num_entries,
-			 uint32 start_idx, DISP_USER_INFO *disp_user_info)
+			 uint32 start_idx, SAM_ACCOUNT *disp_user_info)
 {
 	uint32 len_sam_name;
 	uint32 i;
@@ -1872,7 +1871,7 @@ NTSTATUS init_sam_dispinfo_4(TALLOC_CTX *ctx, SAM_DISPINFO_4 *sam, uint32 num_en
 
 	for (i = 0; i < num_entries; i++) {
 		DEBUG(11, ("init_sam_dispinfo_2: entry: %d\n",i));
-		pwd=disp_user_info[i+start_idx].sam;
+		pwd=&disp_user_info[i+start_idx];
 
 		len_sam_name = strlen(pdb_get_username(pwd));
 	  
@@ -1939,7 +1938,7 @@ inits a SAM_DISPINFO_5 structure.
 ********************************************************************/
 
 NTSTATUS init_sam_dispinfo_5(TALLOC_CTX *ctx, SAM_DISPINFO_5 *sam, uint32 num_entries,
-			 uint32 start_idx, DISP_GROUP_INFO *disp_group_info)
+			 uint32 start_idx, DOMAIN_GRP *disp_group_info)
 {
 	uint32 len_sam_name;
 	uint32 i;
@@ -1961,7 +1960,7 @@ NTSTATUS init_sam_dispinfo_5(TALLOC_CTX *ctx, SAM_DISPINFO_5 *sam, uint32 num_en
 	ZERO_STRUCTP(sam->str);
 
 	for (i = 0; i < num_entries; i++) {
-		DOMAIN_GRP *grp = disp_group_info[i+start_idx].grp;
+		DOMAIN_GRP *grp = &disp_group_info[i+start_idx];
 
 		DEBUG(11, ("init_sam_dispinfo_5: entry: %d\n",i));
 
@@ -4598,7 +4597,6 @@ BOOL samr_io_r_query_aliasmem(const char *desc, SAMR_R_QUERY_ALIASMEM * r_u,
 			      prs_struct *ps, int depth)
 {
 	uint32 i;
-	uint32 ptr_sid[MAX_LOOKUP_SIDS];
 
 	if (r_u == NULL)
 		return False;
@@ -4614,24 +4612,31 @@ BOOL samr_io_r_query_aliasmem(const char *desc, SAMR_R_QUERY_ALIASMEM * r_u,
 	if(!prs_uint32("ptr", ps, depth, &r_u->ptr))
 		return False;
 
-	if (r_u->ptr != 0) {
-		SMB_ASSERT_ARRAY(ptr_sid, r_u->num_sids);
+	if (r_u->ptr != 0 && r_u->num_sids != 0) {
+		uint32 *ptr_sid = NULL;
 
-		if (r_u->num_sids != 0) {
-			if(!prs_uint32("num_sids1", ps, depth, &r_u->num_sids1))
+		if(!prs_uint32("num_sids1", ps, depth, &r_u->num_sids1))
+			return False;
+
+		ptr_sid = talloc(ps->mem_ctx, sizeof(uint32) * r_u->num_sids1);
+		if (!ptr_sid) {
+			return False;
+		}
+		
+		for (i = 0; i < r_u->num_sids1; i++) {
+			ptr_sid[i] = 1;
+			if(!prs_uint32("ptr_sid", ps, depth, &ptr_sid[i]))
 				return False;
-
-			for (i = 0; i < r_u->num_sids1; i++) {
-				ptr_sid[i] = 1;
-				if(!prs_uint32("", ps, depth, &ptr_sid[i]))
-				  return False;
-			}
-
-			for (i = 0; i < r_u->num_sids1; i++) {
-				if (ptr_sid[i] != 0) {
-					if(!smb_io_dom_sid2("", &r_u->sid[i], ps, depth))
-						return False;
-				}
+		}
+		
+		if (UNMARSHALLING(ps)) {
+			r_u->sid = talloc(ps->mem_ctx, r_u->num_sids1 * sizeof(DOM_SID2));
+		}
+		
+		for (i = 0; i < r_u->num_sids1; i++) {
+			if (ptr_sid[i] != 0) {
+				if(!smb_io_dom_sid2("sid", &r_u->sid[i], ps, depth))
+					return False;
 			}
 		}
 	}

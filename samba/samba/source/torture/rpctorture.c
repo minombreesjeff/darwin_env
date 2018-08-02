@@ -193,7 +193,7 @@ static void usage(char *pname)
   fprintf(out_hnd, "Usage: %s service <password> [-d debuglevel] [-l log] ",
 	   pname);
 
-  fprintf(out_hnd, "\nVersion %s\n",VERSION);
+  fprintf(out_hnd, "\nVersion %s\n",SAMBA_VERSION_STRING);
   fprintf(out_hnd, "\t-d debuglevel         set the debuglevel\n");
   fprintf(out_hnd, "\t-l log basename.      Basename for log/debug files\n");
   fprintf(out_hnd, "\t-n netbios name.      Use this name as my netbios name\n");
@@ -363,7 +363,7 @@ enum client_action
 			case 'S':
 			{
 				pstrcpy(cli_info.dest_host,optarg);
-				strupper(cli_info.dest_host);
+				strupper_m(cli_info.dest_host);
 				cli_action = CLIENT_IPC;
 				break;
 			}
@@ -486,16 +486,16 @@ enum client_action
 		exit(1);
 	}
 
-	strupper(global_myname);
+	strupper_m(global_myname);
 	fstrcpy(cli_info.myhostname, global_myname);
 
-	DEBUG(3,("%s client started (version %s)\n",timestring(False),VERSION));
+	DEBUG(3,("%s client started (version %s)\n",timestring(False),SAMBA_VERSION_STRING));
 
 	if (*smb_cli->domain == 0)
 	{
 		pstrcpy(smb_cli->domain,lp_workgroup());
 	}
-	strupper(smb_cli->domain);
+	strupper_m(smb_cli->domain);
 
 	load_interfaces();
 
@@ -506,7 +506,7 @@ enum client_action
 	}
 
 	fstrcpy(cli_info.mach_acct, cli_info.myhostname);
-	strupper(cli_info.mach_acct);
+	strupper_m(cli_info.mach_acct);
 	fstrcat(cli_info.mach_acct, "$");
 
 	/* set the password cache info */

@@ -1,4 +1,4 @@
-%define Version 	3.0alpha22
+%define Version 	3.0.0rc1
 %define date            1
 %define Vendor  	Caldera
 %define Dist		OpenLinux

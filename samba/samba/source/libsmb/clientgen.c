@@ -118,7 +118,10 @@ BOOL cli_receive_smb(struct cli_state *cli)
 	}
 
 	if (!cli_check_sign_mac(cli)) {
-		DEBUG(0, ("SMB Signiture verification failed on incoming packet!\n"));
+		DEBUG(0, ("SMB Signature verification failed on incoming packet!\n"));
+		cli->smb_rw_error = READ_BAD_SIG;
+		close(cli->fd);
+		cli->fd = -1;
 		return False;
 	};
 	return True;
@@ -138,7 +141,7 @@ BOOL cli_send_smb(struct cli_state *cli)
 	if (cli->fd == -1)
 		return False;
 
-	cli_caclulate_sign_mac(cli);
+	cli_calculate_sign_mac(cli);
 
 	len = smb_len(cli->outbuf) + 4;
 
@@ -154,6 +157,10 @@ BOOL cli_send_smb(struct cli_state *cli)
 		}
 		nwritten += ret;
 	}
+	/* Increment the mid so we can tell between responses. */
+	cli->mid++;
+	if (!cli->mid)
+		cli->mid++;
 	return True;
 }
 
@@ -177,9 +184,6 @@ void cli_setup_packet(struct cli_state *cli)
 			flags2 |= FLAGS2_32_BIT_ERROR_CODES;
 		if (cli->use_spnego)
 			flags2 |= FLAGS2_EXTENDED_SECURITY;
-		if (cli->sign_info.use_smb_signing 
-		    || cli->sign_info.temp_smb_signing)
-			flags2 |= FLAGS2_SMB_SECURITY_SIGNATURES;
 		SSVAL(cli->outbuf,smb_flg2, flags2);
 	}
 }
@@ -200,15 +204,33 @@ void cli_setup_bcc(struct cli_state *cli, void *p)
 void cli_init_creds(struct cli_state *cli, const struct ntuser_creds *usr)
 {
         /* copy_nt_creds(&cli->usr, usr); */
-	safe_strcpy(cli->domain   , usr->domain   , sizeof(usr->domain   )-1);
-	safe_strcpy(cli->user_name, usr->user_name, sizeof(usr->user_name)-1);
+	fstrcpy(cli->domain   , usr->domain);
+	fstrcpy(cli->user_name, usr->user_name);
 	memcpy(&cli->pwd, &usr->pwd, sizeof(usr->pwd));
-        cli->ntlmssp_flags = usr->ntlmssp_flags;
-        cli->ntlmssp_cli_flgs = usr != NULL ? usr->ntlmssp_flags : 0;
 
-        DEBUG(10,("cli_init_creds: user %s domain %s flgs: %x\nntlmssp_cli_flgs:%x\n",
-               cli->user_name, cli->domain,
-               cli->ntlmssp_flags,cli->ntlmssp_cli_flgs));
+        DEBUG(10,("cli_init_creds: user %s domain %s\n",
+               cli->user_name, cli->domain));
+}
+
+/****************************************************************************
+ Set the signing state (used from the command line).
+****************************************************************************/
+
+void cli_setup_signing_state(struct cli_state *cli, int signing_state)
+{
+	if (signing_state == Undefined)
+		return;
+
+	if (signing_state == False) {
+		cli->sign_info.allow_smb_signing = False;
+		cli->sign_info.mandatory_signing = False;
+		return;
+	}
+
+	cli->sign_info.allow_smb_signing = True;
+
+	if (signing_state == Required) 
+		cli->sign_info.mandatory_signing = True;
 }
 
 /****************************************************************************
@@ -248,8 +270,8 @@ struct cli_state *cli_initialise(struct cli_state *cli)
 	cli->timeout = 20000; /* Timeout is in milliseconds. */
 	cli->bufsize = CLI_BUFFER_SIZE+4;
 	cli->max_xmit = cli->bufsize;
-	cli->outbuf = (char *)malloc(cli->bufsize);
-	cli->inbuf = (char *)malloc(cli->bufsize);
+	cli->outbuf = (char *)malloc(cli->bufsize+SAFETY_MARGIN);
+	cli->inbuf = (char *)malloc(cli->bufsize+SAFETY_MARGIN);
 	cli->oplock_handler = cli_oplock_ack;
 
 	cli->use_spnego = lp_client_use_spnego();
@@ -264,6 +286,9 @@ struct cli_state *cli_initialise(struct cli_state *cli)
 
 	if (lp_client_signing()) 
 		cli->sign_info.allow_smb_signing = True;
+
+	if (lp_client_signing() == Required) 
+		cli->sign_info.mandatory_signing = True;
                                    
 	if (!cli->outbuf || !cli->inbuf)
                 goto error;
@@ -274,10 +299,20 @@ struct cli_state *cli_initialise(struct cli_state *cli)
 	memset(cli->outbuf, 0, cli->bufsize);
 	memset(cli->inbuf, 0, cli->bufsize);
 
+	/* just because we over-allocate, doesn't mean it's right to use it */
+	clobber_region(FUNCTION_MACRO, __LINE__, cli->outbuf+cli->bufsize, SAFETY_MARGIN);
+	clobber_region(FUNCTION_MACRO, __LINE__, cli->inbuf+cli->bufsize, SAFETY_MARGIN);
+
+	/* initialise signing */
+	cli_null_set_signing(cli);
+
 	cli->nt_pipe_fnum = 0;
+	cli->saved_netlogon_pipe_fnum = 0;
 
 	cli->initialised = 1;
 	cli->allocated = alloced_cli;
+
+	cli->pipe_idx = -1;
 
 	return cli;
 
@@ -295,15 +330,51 @@ struct cli_state *cli_initialise(struct cli_state *cli)
 }
 
 /****************************************************************************
+close the session
+****************************************************************************/
+
+void cli_nt_session_close(struct cli_state *cli)
+{
+	if (cli->ntlmssp_pipe_state) {
+		ntlmssp_client_end(&cli->ntlmssp_pipe_state);
+	}
+
+	if (cli->nt_pipe_fnum != 0)
+		cli_close(cli, cli->nt_pipe_fnum);
+
+	cli->nt_pipe_fnum = 0;
+	cli->pipe_idx = -1;
+}
+
+/****************************************************************************
+close the NETLOGON session holding the session key for NETSEC
+****************************************************************************/
+
+void cli_nt_netlogon_netsec_session_close(struct cli_state *cli)
+{
+	if (cli->saved_netlogon_pipe_fnum != 0) {
+		cli_close(cli, cli->saved_netlogon_pipe_fnum);
+		cli->saved_netlogon_pipe_fnum = 0;
+	}
+}
+
+/****************************************************************************
  Close a client connection and free the memory without destroying cli itself.
 ****************************************************************************/
 
 void cli_close_connection(struct cli_state *cli)
 {
+	cli_nt_session_close(cli);
+	cli_nt_netlogon_netsec_session_close(cli);
+
 	SAFE_FREE(cli->outbuf);
 	SAFE_FREE(cli->inbuf);
 
+	cli_free_signing_context(cli);
 	data_blob_free(&cli->secblob);
+
+	if (cli->ntlmssp_pipe_state) 
+		ntlmssp_client_end(&cli->ntlmssp_pipe_state);
 
 	if (cli->mem_ctx) {
 		talloc_destroy(cli->mem_ctx);
@@ -314,6 +385,7 @@ void cli_close_connection(struct cli_state *cli)
 		close(cli->fd);
 	cli->fd = -1;
 	cli->smb_rw_error = 0;
+
 }
 
 /****************************************************************************

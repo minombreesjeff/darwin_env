@@ -86,6 +86,48 @@ static void nss_wins_init(void)
 	load_interfaces();
 }
 
+static struct in_addr *lookup_byname_backend(const char *name, int *count)
+{
+	int fd = -1;
+	struct ip_service *address = NULL;
+	struct in_addr *ret;
+	int j, flags = 0;
+
+	if (!initialised) {
+		nss_wins_init();
+	}
+
+	*count = 0;
+
+	/* always try with wins first */
+	if (resolve_wins(name,0x20,&address,count)) {
+		if ( (ret = (struct in_addr *)malloc(sizeof(struct in_addr))) == NULL ) {
+			free( address );
+			return NULL;
+		}
+		*ret = address[0].ip;
+		free( address );
+		return ret;
+	}
+
+	fd = wins_lookup_open_socket_in();
+	if (fd == -1) {
+		return NULL;
+	}
+
+	/* uggh, we have to broadcast to each interface in turn */
+	for (j=iface_count() - 1;j >= 0;j--) {
+		struct in_addr *bcast = iface_n_bcast(j);
+		ret = name_query(fd,name,0x20,True,True,*bcast,count, &flags, NULL);
+		if (ret) break;
+	}
+
+	close(fd);
+	return ret;
+}
+
+#ifdef HAVE_NS_API_H
+
 static struct node_status *lookup_byaddr_backend(char *addr, int *count)
 {
 	int fd;
@@ -109,43 +151,6 @@ static struct node_status *lookup_byaddr_backend(char *addr, int *count)
 	return status;
 }
 
-static struct in_addr *lookup_byname_backend(const char *name, int *count)
-{
-	int fd = -1;
-	struct in_addr *ret = NULL;
-	struct in_addr  p;
-	int j, flags = 0;
-
-	if (!initialised) {
-		nss_wins_init();
-	}
-
-	*count = 0;
-
-	/* always try with wins first */
-	if (resolve_wins(name,0x20,&ret,count)) {
-		return ret;
-	}
-
-	fd = wins_lookup_open_socket_in();
-	if (fd == -1) {
-		return NULL;
-	}
-
-	/* uggh, we have to broadcast to each interface in turn */
-	for (j=iface_count() - 1;j >= 0;j--) {
-		struct in_addr *bcast = iface_n_bcast(j);
-		ret = name_query(fd,name,0x20,True,True,*bcast,count, &flags, NULL);
-		if (ret) break;
-	}
-
-out:
-	close(fd);
-	return ret;
-}
-
-
-#ifdef HAVE_NS_API_H
 /* IRIX version */
 
 int init(void)

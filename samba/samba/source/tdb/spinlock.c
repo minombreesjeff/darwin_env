@@ -75,7 +75,7 @@ static inline int __spin_is_locked(spinlock_t *lock)
 	return (*lock != 0);
 }
 
-#elif defined(__ppc__) // defined(POWERPC_SPINLOCKS) 
+#elif defined(POWERPC_SPINLOCKS) 
 
 static inline int __spin_trylock(spinlock_t *lock)
 {
@@ -113,7 +113,7 @@ static inline int __spin_is_locked(spinlock_t *lock)
 	return (*lock != 0);
 }
 
-#elif defined(__i386__) // defined(INTEL_SPINLOCKS) 
+#elif defined(INTEL_SPINLOCKS) 
 
 static inline int __spin_trylock(spinlock_t *lock)
 {

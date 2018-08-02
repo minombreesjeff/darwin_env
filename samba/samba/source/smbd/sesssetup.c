@@ -3,7 +3,8 @@
    handle SMBsessionsetup
    Copyright (C) Andrew Tridgell 1998-2001
    Copyright (C) Andrew Bartlett      2001
-   Copyright (C) Jim McDonough        2002
+   Copyright (C) Jim McDonough <jmcd@us.ibm.com> 2002
+   Copyright (C) Luke Howard          2003
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -38,48 +39,48 @@ static NTSTATUS do_map_to_guest(NTSTATUS status, auth_serversupplied_info **serv
 		    (lp_map_to_guest() == MAP_TO_GUEST_ON_BAD_PASSWORD)) {
 			DEBUG(3,("No such user %s [%s] - using guest account\n",
 				 user, domain));
-			make_server_info_guest(server_info);
-			status = NT_STATUS_OK;
+			status = make_server_info_guest(server_info);
 		}
 	}
 
 	if (NT_STATUS_EQUAL(status, NT_STATUS_WRONG_PASSWORD)) {
 		if (lp_map_to_guest() == MAP_TO_GUEST_ON_BAD_PASSWORD) {
 			DEBUG(3,("Registered username %s for guest access\n",user));
-			make_server_info_guest(server_info);
-			status = NT_STATUS_OK;
+			status = make_server_info_guest(server_info);
 		}
 	}
 
 	return status;
 }
 
-
 /****************************************************************************
  Add the standard 'Samba' signature to the end of the session setup.
 ****************************************************************************/
-static void add_signature(char *outbuf) 
+
+static int add_signature(char *outbuf, char *p)
 {
-	char *p;
-	p = smb_buf(outbuf);
+	char *start = p;
+	fstring lanman;
+
+	fstr_sprintf( lanman, "Samba %s", SAMBA_VERSION_STRING);
+
 	p += srvstr_push(outbuf, p, "Unix", -1, STR_TERMINATE);
-	p += srvstr_push(outbuf, p, "Samba", -1, STR_TERMINATE);
+	p += srvstr_push(outbuf, p, lanman, -1, STR_TERMINATE);
 	p += srvstr_push(outbuf, p, lp_workgroup(), -1, STR_TERMINATE);
-	set_message_end(outbuf,p);
+
+	return PTR_DIFF(p, start);
 }
 
 /****************************************************************************
-send a security blob via a session setup reply
+ Send a security blob via a session setup reply.
 ****************************************************************************/
+
 static BOOL reply_sesssetup_blob(connection_struct *conn, char *outbuf,
 				 DATA_BLOB blob, NTSTATUS nt_status)
 {
 	char *p;
 
 	set_message(outbuf,4,0,True);
-
-	/* we set NT_STATUS_MORE_PROCESSING_REQUIRED to tell the other end
-	   that we aren't finished yet */
 
 	nt_status = nt_status_squash(nt_status);
 	SIVAL(outbuf, smb_rcls, NT_STATUS_V(nt_status));
@@ -91,9 +92,8 @@ static BOOL reply_sesssetup_blob(connection_struct *conn, char *outbuf,
 	memcpy(p, blob.data, blob.length);
 	p += blob.length;
 
-	p += srvstr_push(outbuf, p, "Unix", -1, STR_TERMINATE);
-	p += srvstr_push(outbuf, p, "Samba", -1, STR_TERMINATE);
-	p += srvstr_push(outbuf, p, lp_workgroup(), -1, STR_TERMINATE);
+	p += add_signature( outbuf, p );
+
 	set_message_end(outbuf,p);
 
 	return send_smb(smbd_server_fd(),outbuf);
@@ -102,6 +102,7 @@ static BOOL reply_sesssetup_blob(connection_struct *conn, char *outbuf,
 /****************************************************************************
  Do a 'guest' logon, getting back the 
 ****************************************************************************/
+
 static NTSTATUS check_guest_password(auth_serversupplied_info **server_info) 
 {
 	struct auth_context *auth_context;
@@ -146,26 +147,29 @@ static int reply_spnego_kerberos(connection_struct *conn,
 	int sess_vuid;
 	NTSTATUS ret;
 	DATA_BLOB auth_data;
+	DATA_BLOB ap_rep, ap_rep_wrapped, response;
 	auth_serversupplied_info *server_info = NULL;
-	ADS_STRUCT *ads;
+	uint8 session_key[16];
+	uint8 tok_id[2];
 	BOOL foreign = False;
+	DATA_BLOB nullblob = data_blob(NULL, 0);
 
-	if (!spnego_parse_krb5_wrap(*secblob, &ticket)) {
+	ZERO_STRUCT(ticket);
+	ZERO_STRUCT(auth_data);
+	ZERO_STRUCT(ap_rep);
+	ZERO_STRUCT(ap_rep_wrapped);
+	ZERO_STRUCT(response);
+
+	if (!spnego_parse_krb5_wrap(*secblob, &ticket, tok_id)) {
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
-	ads = ads_init_simple();
+	ret = ads_verify_ticket(lp_realm(), &ticket, &client, &auth_data, &ap_rep, session_key);
 
-	if (!ads) {
-		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
-	}
+	data_blob_free(&ticket);
 
-	ads->auth.realm = strdup(lp_realm());
-
-	ret = ads_verify_ticket(ads, &ticket, &client, &auth_data);
 	if (!NT_STATUS_IS_OK(ret)) {
 		DEBUG(1,("Failed to verify incoming ticket!\n"));	
-		ads_destroy(&ads);
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
@@ -176,14 +180,17 @@ static int reply_spnego_kerberos(connection_struct *conn,
 	p = strchr_m(client, '@');
 	if (!p) {
 		DEBUG(3,("Doesn't look like a valid principal\n"));
-		ads_destroy(&ads);
+		data_blob_free(&ap_rep);
+		SAFE_FREE(client);
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
 	*p = 0;
-	if (strcasecmp(p+1, ads->auth.realm) != 0) {
+	if (strcasecmp(p+1, lp_realm()) != 0) {
 		DEBUG(3,("Ticket for foreign realm %s@%s\n", client, p+1));
 		if (!lp_allow_trusted_domains()) {
+			data_blob_free(&ap_rep);
+			SAFE_FREE(client);
 			return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 		}
 		foreign = True;
@@ -200,7 +207,7 @@ static int reply_spnego_kerberos(connection_struct *conn,
 		user = smb_xstrdup(client);
 	}
 
-	ads_destroy(&ads);
+	SAFE_FREE(client);
 
 	/* setup the string used by %U */
 	sub_set_smb_name(user);
@@ -209,50 +216,81 @@ static int reply_spnego_kerberos(connection_struct *conn,
 
 	if (!pw) {
 		DEBUG(1,("Username %s is invalid on this system\n",user));
-		return ERROR_NT(NT_STATUS_NO_SUCH_USER);
+		data_blob_free(&ap_rep);
+		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
 	if (!NT_STATUS_IS_OK(ret = make_server_info_pw(&server_info,pw))) {
 		DEBUG(1,("make_server_info_from_pw failed!\n"));
+		data_blob_free(&ap_rep);
 		return ERROR_NT(ret);
 	}
-	
+
+	/* Copy out the session key from the AP_REQ. */
+	memcpy(server_info->session_key, session_key, sizeof(session_key));
+
 	/* register_vuid keeps the server info */
-	sess_vuid = register_vuid(server_info, user);
+	sess_vuid = register_vuid(server_info, nullblob, user);
 
 	free(user);
 
 	if (sess_vuid == -1) {
-		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
+		ret = NT_STATUS_LOGON_FAILURE;
+	} else {
+		set_message(outbuf,4,0,True);
+		SSVAL(outbuf, smb_vwv3, 0);
+			
+		if (server_info->guest) {
+			SSVAL(outbuf,smb_vwv2,1);
+		}
+		
+		SSVAL(outbuf, smb_uid, sess_vuid);
+
+		if (!server_info->guest) {
+			/* We need to start the signing engine
+			 * here but a W2K client sends the old
+			 * "BSRSPYL " signature instead of the
+			 * correct one. Subsequent packets will
+			 * be correct.
+			 */
+		       	srv_check_sign_mac(inbuf);
+		}
 	}
 
-	set_message(outbuf,4,0,True);
-	SSVAL(outbuf, smb_vwv3, 0);
-	add_signature(outbuf);
- 
-	SSVAL(outbuf,smb_uid,sess_vuid);
-	SSVAL(inbuf,smb_uid,sess_vuid);
-	
-	return chain_reply(inbuf,outbuf,length,bufsize);
+        /* wrap that up in a nice GSS-API wrapping */
+	if (NT_STATUS_IS_OK(ret)) {
+		ap_rep_wrapped = spnego_gen_krb5_wrap(ap_rep, TOK_ID_KRB_AP_REP);
+	} else {
+		ap_rep_wrapped = data_blob(NULL, 0);
+	}
+	response = spnego_gen_auth_response(&ap_rep_wrapped, ret, OID_KERBEROS5_OLD);
+	reply_sesssetup_blob(conn, outbuf, response, ret);
+
+	data_blob_free(&ap_rep);
+	data_blob_free(&ap_rep_wrapped);
+	data_blob_free(&response);
+
+	return -1; /* already replied */
 }
 #endif
 
-
 /****************************************************************************
- send a session setup reply, wrapped in SPNEGO.
- get vuid and check first.
- end the NTLMSSP exchange context if we are OK/complete fail
+ Send a session setup reply, wrapped in SPNEGO.
+ Get vuid and check first.
+ End the NTLMSSP exchange context if we are OK/complete fail
 ***************************************************************************/
-static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *outbuf,
+
+static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *inbuf, char *outbuf,
 				 AUTH_NTLMSSP_STATE **auth_ntlmssp_state,
 				 DATA_BLOB *ntlmssp_blob, NTSTATUS nt_status) 
 {
 	BOOL ret;
 	DATA_BLOB response;
-	struct auth_serversupplied_info *server_info;
-	server_info = (*auth_ntlmssp_state)->server_info;
+	struct auth_serversupplied_info *server_info = NULL;
 
-	if (!NT_STATUS_IS_OK(nt_status)) {
+	if (NT_STATUS_IS_OK(nt_status)) {
+		server_info = (*auth_ntlmssp_state)->server_info;
+	} else {
 		nt_status = do_map_to_guest(nt_status, 
 					    &server_info, 
 					    (*auth_ntlmssp_state)->ntlmssp_state->user, 
@@ -261,8 +299,10 @@ static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *outbuf,
 
 	if (NT_STATUS_IS_OK(nt_status)) {
 		int sess_vuid;
+		DATA_BLOB nullblob = data_blob(NULL, 0);
+
 		/* register_vuid keeps the server info */
-		sess_vuid = register_vuid(server_info, (*auth_ntlmssp_state)->ntlmssp_state->user);
+		sess_vuid = register_vuid(server_info, nullblob, (*auth_ntlmssp_state)->ntlmssp_state->user);
 		(*auth_ntlmssp_state)->server_info = NULL;
 
 		if (sess_vuid == -1) {
@@ -277,12 +317,25 @@ static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *outbuf,
 			}
 			
 			SSVAL(outbuf,smb_uid,sess_vuid);
+
+			if (!server_info->guest) {
+				/* We need to start the signing engine
+				 * here but a W2K client sends the old
+				 * "BSRSPYL " signature instead of the
+				 * correct one. Subsequent packets will
+				 * be correct.
+				 */
+			       	srv_check_sign_mac(inbuf);
+			}
 		}
 	}
 
-        response = spnego_gen_auth_response(ntlmssp_blob, nt_status);
+        response = spnego_gen_auth_response(ntlmssp_blob, nt_status, OID_NTLMSSP);
 	ret = reply_sesssetup_blob(conn, outbuf, response, nt_status);
 	data_blob_free(&response);
+
+	/* NT_STATUS_MORE_PROCESSING_REQUIRED from our NTLMSSP code tells us,
+	   and the other end, that we are not finished yet. */
 
 	if (!ret || !NT_STATUS_EQUAL(nt_status, NT_STATUS_MORE_PROCESSING_REQUIRED)) {
 		auth_ntlmssp_end(auth_ntlmssp_state);
@@ -292,8 +345,9 @@ static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *outbuf,
 }
 
 /****************************************************************************
-reply to a session setup spnego negotiate packet
+ Reply to a session setup spnego negotiate packet.
 ****************************************************************************/
+
 static int reply_spnego_negotiate(connection_struct *conn, 
 				  char *inbuf,
 				  char *outbuf,
@@ -311,16 +365,27 @@ static int reply_spnego_negotiate(connection_struct *conn,
 	if (!parse_negTokenTarg(blob1, OIDs, &secblob)) {
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
+
+	/* only look at the first OID for determining the mechToken --
+	   accoirding to RFC2478, we should choose the one we want 
+	   and renegotiate, but i smell a client bug here..  
+	   
+	   Problem observed when connecting to a member (samba box) 
+	   of an AD domain as a user in a Samba domain.  Samba member 
+	   server sent back krb5/mskrb5/ntlmssp as mechtypes, but the 
+	   client (2ksp3) replied with ntlmssp/mskrb5/krb5 and an 
+	   NTLMSSP mechtoken.                 --jerry              */
 	
+	if (strcmp(OID_KERBEROS5, OIDs[0]) == 0 ||
+	    strcmp(OID_KERBEROS5_OLD, OIDs[0]) == 0) {
+		got_kerberos = True;
+	}
+		
 	for (i=0;OIDs[i];i++) {
 		DEBUG(3,("Got OID %s\n", OIDs[i]));
-		if (strcmp(OID_KERBEROS5, OIDs[i]) == 0 ||
-		    strcmp(OID_KERBEROS5_OLD, OIDs[i]) == 0) {
-			got_kerberos = True;
-		}
 		free(OIDs[i]);
 	}
-	DEBUG(3,("Got secblob of size %d\n", secblob.length));
+	DEBUG(3,("Got secblob of size %lu\n", (unsigned long)secblob.length));
 
 #ifdef HAVE_KRB5
 	if (got_kerberos && (SEC_ADS == lp_security())) {
@@ -345,7 +410,7 @@ static int reply_spnego_negotiate(connection_struct *conn,
 
 	data_blob_free(&secblob);
 
-	reply_spnego_ntlmssp(conn, outbuf, &global_ntlmssp_state,
+	reply_spnego_ntlmssp(conn, inbuf, outbuf, &global_ntlmssp_state,
 			     &chal, nt_status);
 		
 	data_blob_free(&chal);
@@ -353,31 +418,36 @@ static int reply_spnego_negotiate(connection_struct *conn,
 	/* already replied */
 	return -1;
 }
-
 	
 /****************************************************************************
-reply to a session setup spnego auth packet
+ Reply to a session setup spnego auth packet.
 ****************************************************************************/
+
 static int reply_spnego_auth(connection_struct *conn, char *inbuf, char *outbuf,
 			     int length, int bufsize,
 			     DATA_BLOB blob1)
 {
 	DATA_BLOB auth, auth_reply;
-	NTSTATUS nt_status;
+	NTSTATUS nt_status = NT_STATUS_INVALID_PARAMETER;
 
 	if (!spnego_parse_auth(blob1, &auth)) {
 #if 0
 		file_save("auth.dat", blob1.data, blob1.length);
 #endif
-		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
+		return ERROR_NT(NT_STATUS_INVALID_PARAMETER);
 	}
-
+	
+	if (!global_ntlmssp_state) {
+		/* auth before negotiatiate? */
+		return ERROR_NT(NT_STATUS_INVALID_PARAMETER);
+	}
+	
 	nt_status = auth_ntlmssp_update(global_ntlmssp_state, 
-					  auth, &auth_reply);
+						auth, &auth_reply);
 
 	data_blob_free(&auth);
 
-	reply_spnego_ntlmssp(conn, outbuf, &global_ntlmssp_state,
+	reply_spnego_ntlmssp(conn, inbuf, outbuf, &global_ntlmssp_state,
 			     &auth_reply, nt_status);
 		
 	data_blob_free(&auth_reply);
@@ -386,10 +456,10 @@ static int reply_spnego_auth(connection_struct *conn, char *inbuf, char *outbuf,
 	return -1;
 }
 
-
 /****************************************************************************
-reply to a session setup command
+ Reply to a session setup command.
 ****************************************************************************/
+
 static int reply_sesssetup_and_X_spnego(connection_struct *conn, char *inbuf,
 					char *outbuf,
 					int length,int bufsize)
@@ -398,6 +468,10 @@ static int reply_sesssetup_and_X_spnego(connection_struct *conn, char *inbuf,
 	DATA_BLOB blob1;
 	int ret;
 	size_t bufrem;
+	fstring native_os, native_lanman;
+	char *p2;
+	uint16 data_blob_len = SVAL(inbuf, smb_vwv7);
+	enum remote_arch_types ra_type = get_remote_arch();
 
 	DEBUG(3,("Doing spnego session setup\n"));
 
@@ -407,18 +481,26 @@ static int reply_sesssetup_and_X_spnego(connection_struct *conn, char *inbuf,
 		
 	p = (uint8 *)smb_buf(inbuf);
 
-	if (SVAL(inbuf, smb_vwv7) == 0) {
+	if (data_blob_len == 0) {
 		/* an invalid request */
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
 	bufrem = smb_bufrem(inbuf, p);
 	/* pull the spnego blob */
-	blob1 = data_blob(p, MIN(bufrem, SVAL(inbuf, smb_vwv7)));
+	blob1 = data_blob(p, MIN(bufrem, data_blob_len));
 
 #if 0
 	file_save("negotiate.dat", blob1.data, blob1.length);
 #endif
+
+	p2 = inbuf + smb_vwv13 + data_blob_len;
+	p2 += srvstr_pull_buf(inbuf, native_os, p2, sizeof(native_os), STR_TERMINATE);
+	p2 += srvstr_pull_buf(inbuf, native_lanman, p2, sizeof(native_lanman), STR_TERMINATE);
+	DEBUG(3,("NativeOS=[%s] NativeLanMan=[%s]\n", native_os, native_lanman));
+
+	if ( ra_type == RA_WIN2K )
+		ra_lanman_string( native_lanman );
 
 	if (blob1.data[0] == ASN1_APPLICATION(0)) {
 		/* its a negTokenTarg packet */
@@ -442,10 +524,25 @@ static int reply_sesssetup_and_X_spnego(connection_struct *conn, char *inbuf,
 	return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 }
 
+/****************************************************************************
+ On new VC == 0, shutdown *all* old connections and users.
+ It seems that only NT4.x does this. At W2K and above (XP etc.).
+ a new session setup with VC==0 is ignored.
+****************************************************************************/
+
+static void setup_new_vc_session(void)
+{
+	DEBUG(2,("setup_new_vc_session: New VC == 0, if NT4.x compatible we would close all old resources.\n"));
+#if 0
+	conn_close_all();
+	invalidate_all_vuids();
+#endif
+}
 
 /****************************************************************************
-reply to a session setup command
+ Reply to a session setup command.
 ****************************************************************************/
+
 int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 			  int length,int bufsize)
 {
@@ -490,6 +587,9 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 			return ERROR_NT(NT_STATUS_UNSUCCESSFUL);
 		}
 
+		if (SVAL(inbuf,smb_vwv4) == 0) {
+			setup_new_vc_session();
+		}
 		return reply_sesssetup_and_X_spnego(conn, inbuf, outbuf, length, bufsize);
 	}
 
@@ -511,7 +611,7 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 
 		srvstr_pull_buf(inbuf, user, smb_buf(inbuf)+passlen1, sizeof(user), STR_TERMINATE);
 		*domain = 0;
-  
+
 	} else {
 		uint16 passlen1 = SVAL(inbuf,smb_vwv7);
 		uint16 passlen2 = SVAL(inbuf,smb_vwv8);
@@ -531,7 +631,7 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 				set_remote_arch( RA_WIN95);
 			}
 		}
-		
+
 		if (!doencrypt) {
 			/* both Win95 and WinNT stuff up the password lengths for
 			   non-encrypting systems. Uggh. 
@@ -569,8 +669,11 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 			nt_resp = data_blob(p+passlen1, passlen2);
 		} else {
 			pstring pass;
+			BOOL unic;
+			unic=SVAL(inbuf, smb_flg2) & FLAGS2_UNICODE_STRINGS;
 			srvstr_pull(inbuf, pass, smb_buf(inbuf), 
-				    sizeof(pass),  passlen1, STR_TERMINATE);
+				    sizeof(pass),  unic ? passlen2 : passlen1, 
+				    STR_TERMINATE);
 			plaintext_password = data_blob(pass, strlen(pass)+1);
 		}
 		
@@ -582,28 +685,21 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 		DEBUG(3,("Domain=[%s]  NativeOS=[%s] NativeLanMan=[%s]\n",
 			 domain,native_os,native_lanman));
 
-		/* 
-		 * we distinguish between 2K and XP by the "Native Lan Manager" string
-		 *   WinXP => "Windows 2002 5.1"
-		 *   Win2k => "Windows 2000 5.0"
-		 *   NT4   => "Windows NT 4.0" 
-		 *   Win9x => "Windows 4.0"
-		 */
-		 
-		if ( ra_type == RA_WIN2K ) {
-			if ( 0 == strcmp( native_lanman, "Windows 2002 5.1" ) )
-				set_remote_arch( RA_WINXP );
-		}
-		
+		if ( ra_type == RA_WIN2K )
+			ra_lanman_string( native_lanman );
 
 	}
 	
+	if (SVAL(inbuf,smb_vwv4) == 0) {
+		setup_new_vc_session();
+	}
+
 	DEBUG(3,("sesssetupX:name=[%s]\\[%s]@[%s]\n", domain, user, get_remote_machine_name()));
 
 	if (*user) {
 		if (global_spnego_negotiated) {
 			
-			/* This has to be here, becouse this is a perfectly valid behaviour for guest logons :-( */
+			/* This has to be here, because this is a perfectly valid behaviour for guest logons :-( */
 			
 			DEBUG(0,("reply_sesssetup_and_X:  Rejecting attempt at 'normal' session setup after negotiating spnego.\n"));
 			return ERROR_NT(NT_STATUS_UNSUCCESSFUL);
@@ -674,7 +770,6 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 	free_user_info(&user_info);
 	
 	data_blob_free(&lm_resp);
-	data_blob_free(&nt_resp);
 	data_blob_clear_free(&plaintext_password);
 	
 	if (!NT_STATUS_IS_OK(nt_status)) {
@@ -682,13 +777,16 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 	}
 	
 	if (!NT_STATUS_IS_OK(nt_status)) {
+		data_blob_free(&nt_resp);
 		return ERROR_NT(nt_status_squash(nt_status));
 	}
-	
+
 	/* it's ok - setup a reply */
 	set_message(outbuf,3,0,True);
 	if (Protocol >= PROTOCOL_NT1) {
-		add_signature(outbuf);
+		char *p = smb_buf( outbuf );
+		p += add_signature( outbuf, p );
+		set_message_end( outbuf, p );
 		/* perhaps grab OS version here?? */
 	}
 	
@@ -700,10 +798,15 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 	   to a uid can get through without a password, on the same VC */
 
 	/* register_vuid keeps the server info */
-	sess_vuid = register_vuid(server_info, sub_user);
-  
+	sess_vuid = register_vuid(server_info, nt_resp, sub_user);
+	data_blob_free(&nt_resp);
+
 	if (sess_vuid == -1) {
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
+	}
+
+ 	if (!server_info->guest && !srv_check_sign_mac(inbuf)) {
+		exit_server("reply_sesssetup_and_X: bad smb signature");
 	}
 
 	SSVAL(outbuf,smb_uid,sess_vuid);

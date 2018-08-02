@@ -218,7 +218,7 @@ int find_service(fstring service)
  do some basic sainity checks on the share.  
  This function modifies dev, ecode.
 ****************************************************************************/
-static NTSTATUS share_sanity_checks(int snum, pstring dev) 
+static NTSTATUS share_sanity_checks(int snum, fstring dev) 
 {
 	
 	if (!lp_snum_ok(snum) || 
@@ -227,28 +227,33 @@ static NTSTATUS share_sanity_checks(int snum, pstring dev)
 		return NT_STATUS_ACCESS_DENIED;
 	}
 
-	/* you can only connect to the IPC$ service as an ipc device */
-	if (strequal(lp_fstype(snum), "IPC"))
-		pstrcpy(dev,"IPC");
-	
 	if (dev[0] == '?' || !dev[0]) {
 		if (lp_print_ok(snum)) {
-			pstrcpy(dev,"LPT1:");
+			fstrcpy(dev,"LPT1:");
+		} else if (strequal(lp_fstype(snum), "IPC")) {
+			fstrcpy(dev, "IPC");
 		} else {
-			pstrcpy(dev,"A:");
+			fstrcpy(dev,"A:");
 		}
 	}
 
-	/* if the request is as a printer and you can't print then refuse */
-	strupper(dev);
-	if (!lp_print_ok(snum) && (strncmp(dev,"LPT",3) == 0)) {
-		DEBUG(1,("Attempt to connect to non-printer as a printer\n"));
+	strupper_m(dev);
+
+	if (lp_print_ok(snum)) {
+		if (!strequal(dev, "LPT1:")) {
+			return NT_STATUS_BAD_DEVICE_TYPE;
+		}
+	} else if (strequal(lp_fstype(snum), "IPC")) {
+		if (!strequal(dev, "IPC")) {
+			return NT_STATUS_BAD_DEVICE_TYPE;
+		}
+	} else if (!strequal(dev, "A:")) {
 		return NT_STATUS_BAD_DEVICE_TYPE;
 	}
 
 	/* Behave as a printer if we are supposed to */
 	if (lp_print_ok(snum) && (strcmp(dev, "A:") == 0)) {
-		pstrcpy(dev, "LPT1:");
+		fstrcpy(dev, "LPT1:");
 	}
 
 	return NT_STATUS_OK;
@@ -326,14 +331,17 @@ static void set_admin_user(connection_struct *conn, gid_t *groups, size_t n_grou
 
 static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 					       DATA_BLOB password, 
-					       char *dev, NTSTATUS *status)
+					       const char *pdev, NTSTATUS *status)
 {
 	struct passwd *pass = NULL;
 	BOOL guest = False;
 	connection_struct *conn;
 	struct stat st;
 	fstring user;
+	fstring dev;
+
 	*user = 0;
+	fstrcpy(dev, pdev);
 
 	if (NT_STATUS_IS_ERR(*status = share_sanity_checks(snum, dev))) {
 		return NULL;
@@ -351,13 +359,15 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 		guest = True;
 		pass = getpwnam_alloc(guestname);
 		if (!pass) {
-			DEBUG(0,("authorise_login: Invalid guest account %s??\n",guestname));
+			DEBUG(0,("make_connection_snum: Invalid guest account %s??\n",guestname));
 			conn_free(conn);
 			*status = NT_STATUS_NO_SUCH_USER;
 			return NULL;
 		}
 		fstrcpy(user,pass->pw_name);
 		conn->force_user = True;
+		conn->uid = pass->pw_uid;
+		conn->gid = pass->pw_gid;
 		string_set(&conn->user,pass->pw_name);
 		passwd_free(&pass);
 		DEBUG(3,("Guest only user %s\n",user));
@@ -478,13 +488,14 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 		pstring tmp_gname;
 		BOOL user_must_be_member = False;
 		
-		StrnCpy(tmp_gname,lp_force_group(snum),sizeof(pstring)-1);
+		pstrcpy(tmp_gname,lp_force_group(snum));
 		
 		if (tmp_gname[0] == '+') {
 			user_must_be_member = True;
-			StrnCpy(gname,&tmp_gname[1],sizeof(pstring)-2);
+			/* even now, tmp_gname is null terminated */
+			pstrcpy(gname,&tmp_gname[1]);
 		} else {
-			StrnCpy(gname,tmp_gname,sizeof(pstring)-1);
+			pstrcpy(gname,tmp_gname);
 		}
 		/* default service may be a group name 		*/
 		pstring_sub(gname,"%S",lp_servicename(snum));
@@ -650,7 +661,7 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 #else
 	/* the alternative is just to check the directory exists */
 	if (stat(conn->connectpath, &st) != 0 || !S_ISDIR(st.st_mode)) {
-		DEBUG(0,("'%s' is not a directory, when connecting to [%s]\n", conn->connectpath, lp_servicename(SNUM(conn))));
+		DEBUG(0,("'%s' does not exist or is not a directory, when connecting to [%s]\n", conn->connectpath, lp_servicename(SNUM(conn))));
 		change_to_root_user();
 		yield_connection(conn, lp_servicename(SNUM(conn)));
 		conn_free(conn);
@@ -680,6 +691,7 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 
 	if( DEBUGLVL( IS_IPC(conn) ? 3 : 1 ) ) {
 		dbgtext( "%s (%s) ", get_remote_machine_name(), conn->client_address );
+		dbgtext( "%s", srv_is_signing_active() ? "signed " : "");
 		dbgtext( "connect to service %s ", lp_servicename(SNUM(conn)) );
 		dbgtext( "initially as user %s ", user );
 		dbgtext( "(uid=%d, gid=%d) ", (int)geteuid(), (int)getegid() );
@@ -695,14 +707,12 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 	
 	/* Invoke VFS make connection hook */
 
-	if (conn->vfs_ops.connect) {
-		if (conn->vfs_ops.connect(conn, lp_servicename(snum), user) < 0) {
-			DEBUG(0,("make_connection: VFS make connection failed!\n"));
-			change_to_root_user();
-			conn_free(conn);
-			*status = NT_STATUS_UNSUCCESSFUL;
-			return NULL;
-		}
+	if (SMB_VFS_CONNECT(conn, lp_servicename(snum), user) < 0) {
+		DEBUG(0,("make_connection: VFS make connection failed!\n"));
+		change_to_root_user();
+		conn_free(conn);
+		*status = NT_STATUS_UNSUCCESSFUL;
+		return NULL;
 	}
 
 	/* we've finished with the user stuff - go back to root */
@@ -717,7 +727,7 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
  **************************************************************************************/
  
 connection_struct *make_connection_with_chdir(const char *service_in, DATA_BLOB password, 
-				   char *dev, uint16 vuid, NTSTATUS *status)
+				   const char *dev, uint16 vuid, NTSTATUS *status)
 {
 	connection_struct *conn = NULL;
 	
@@ -747,12 +757,15 @@ connection_struct *make_connection_with_chdir(const char *service_in, DATA_BLOB 
 ****************************************************************************/
 
 connection_struct *make_connection(const char *service_in, DATA_BLOB password, 
-				   char *dev, uint16 vuid, NTSTATUS *status)
+				   const char *pdev, uint16 vuid, NTSTATUS *status)
 {
 	uid_t euid;
 	user_struct *vuser = NULL;
 	fstring service;
+	fstring dev;
 	int snum = -1;
+
+	fstrcpy(dev, pdev);
 
 	/* This must ONLY BE CALLED AS ROOT. As it exits this function as root. */
 	if (!non_root_mode() && (euid = geteuid()) != 0) {
@@ -780,7 +793,7 @@ connection_struct *make_connection(const char *service_in, DATA_BLOB password,
 		if(lp_security() != SEC_SHARE) {
 			DATA_BLOB no_pw = data_blob(NULL, 0);
 			if (vuser->homes_snum == -1) {
-				DEBUG(2, ("[homes] share not available for this user becouse it was not found or created at session setup time\n"));
+				DEBUG(2, ("[homes] share not available for this user because it was not found or created at session setup time\n"));
 				*status = NT_STATUS_BAD_NETWORK_NAME;
 				return NULL;
 			}
@@ -816,7 +829,7 @@ connection_struct *make_connection(const char *service_in, DATA_BLOB password,
 	
 	fstrcpy(service, service_in);
 
-	strlower(service);
+	strlower_m(service);
 
 	snum = find_service(service);
 
@@ -860,13 +873,8 @@ void close_cnum(connection_struct *conn, uint16 vuid)
 				 get_remote_machine_name(),conn->client_address,
 				 lp_servicename(SNUM(conn))));
 
-	if (conn->vfs_ops.disconnect != NULL) {
-
-	    /* Call VFS disconnect hook */
-	    
-	    conn->vfs_ops.disconnect(conn);
-	    
-	}
+	/* Call VFS disconnect hook */    
+	SMB_VFS_DISCONNECT(conn);
 
 	yield_connection(conn, lp_servicename(SNUM(conn)));
 

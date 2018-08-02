@@ -1,10 +1,10 @@
 /*
  * Unix SMB/CIFS implementation. 
  * SMB parameters and setup
- * Copyright (C) Andrew Tridgell 1992-1998 
- * Modified by Jeremy Allison 1995.
- * Modified by Gerald (Jerry) Carter 2000-2001
- * Modified by Andrew Bartlett 2002.
+ * Copyright (C) Andrew Tridgell       1992-1998 
+ * Modified by Jeremy Allison          1995.
+ * Modified by Gerald (Jerry) Carter   2000-2001,2003
+ * Modified by Andrew Bartlett         2002.
  * 
  * This program is free software; you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free
@@ -34,14 +34,13 @@
  
 struct smb_passwd
 {
-        BOOL smb_userid_set;     /* this is actually the unix uid_t */
-        uint32 smb_userid;     /* this is actually the unix uid_t */
+        uint32 smb_userid;        /* this is actually the unix uid_t */
         const char *smb_name;     /* username string */
 
-        const unsigned char *smb_passwd; /* Null if no password */
+        const unsigned char *smb_passwd;    /* Null if no password */
         const unsigned char *smb_nt_passwd; /* Null if no password */
 
-        uint16 acct_ctrl; /* account info (ACB_xxxx bit-mask) */
+        uint16 acct_ctrl;             /* account info (ACB_xxxx bit-mask) */
         time_t pass_last_set_time;    /* password last set time */
 };
 
@@ -61,12 +60,6 @@ struct smbpasswd_privates
 
 	/* retrive-once info */
 	const char *smbpasswd_file;
-
-	BOOL permit_non_unix_accounts;
-
-	uint32 low_nua_userid; 
-	uint32 high_nua_userid; 
-
 };
 
 enum pwf_access_type { PWF_READ, PWF_UPDATE, PWF_CREATE };
@@ -186,8 +179,25 @@ static FILE *startsmbfilepwent(const char *pfile, enum pwf_access_type type, int
     DEBUG(10, ("startsmbfilepwent_internal: opening file %s\n", pfile));
 
     if((fp = sys_fopen(pfile, open_mode)) == NULL) {
-      DEBUG(0, ("startsmbfilepwent_internal: unable to open file %s. Error was %s\n", pfile, strerror(errno) ));
-      return NULL;
+    
+      /*
+       * If smbpasswd file doesn't exist, then create new one. This helps to avoid
+       * confusing error msg when adding user account first time.
+       */
+      if (errno == ENOENT) {
+        if ((fp = sys_fopen(pfile, "a+")) != NULL) {
+          DEBUG(0, ("startsmbfilepwent_internal: file %s did not exist. File successfully created.\n", pfile));
+
+        } else {
+          DEBUG(0, ("startsmbfilepwent_internal: file %s did not exist. Couldn't create new one. Error was: %s",
+                    pfile, strerror(errno)));
+          return NULL;
+        }
+
+      } else {
+        DEBUG(0, ("startsmbfilepwent_internal: unable to open file %s. Error was: %s\n", pfile, strerror(errno)));
+        return NULL;
+	  }
     }
 
     if (!pw_file_lock(fileno(fp), lock_type, 5, lock_depth)) {
@@ -590,28 +600,6 @@ static BOOL add_smbfilepwd_entry(struct smbpasswd_privates *smbpasswd_state, str
    }
 
   /* Ok - entry doesn't exist. We can add it */
-
-  /* Account not in /etc/passwd hack!!! */
-  if (!newpwd->smb_userid_set) {
-	  if (!smbpasswd_state->permit_non_unix_accounts) {
-		  DEBUG(0, ("add_smbfilepwd_entry: cannot add account %s without unix identity\n", newpwd->smb_name));
-		  endsmbfilepwent(fp, &(smbpasswd_state->pw_file_lock_depth));
-		  return False;
-	  }
-
-	  if (max_found_uid < smbpasswd_state->low_nua_userid) {
-		  newpwd->smb_userid = smbpasswd_state->low_nua_userid;
-		  newpwd->smb_userid_set = True;
-	  } else if (max_found_uid >= smbpasswd_state->high_nua_userid) {
-		  DEBUG(0, ("add_smbfilepwd_entry: cannot add machine %s, no uids are free! \n", newpwd->smb_name));
-		  endsmbfilepwent(fp, &(smbpasswd_state->pw_file_lock_depth));
-		  return False;           
-	  } else {
-		  newpwd->smb_userid = max_found_uid + 1;
-		  newpwd->smb_userid_set = True;
-         }
-  }
-
 
   /* Create a new smb passwd entry and set it to the given password. */
   /* 
@@ -1133,29 +1121,32 @@ Error was %s\n", pwd->smb_name, pfile2, strerror(errno)));
  ********************************************************************/
 static BOOL build_smb_pass (struct smb_passwd *smb_pw, const SAM_ACCOUNT *sampass)
 {
-	uid_t uid;
+	uint32 rid;
 
 	if (sampass == NULL) 
 		return False;
-
 	ZERO_STRUCTP(smb_pw);
- 
-        if (!IS_SAM_UNIX_USER(sampass)) {
-		smb_pw->smb_userid_set = False;
-		DEBUG(5,("build_smb_pass: storing user without a UNIX uid or gid. \n"));
-	} else {
-		uint32 rid = pdb_get_user_rid(sampass);
-		smb_pw->smb_userid_set = True;
-		uid = pdb_get_uid(sampass);
 
+	if (!IS_SAM_DEFAULT(sampass, PDB_USERSID)) {
+		rid = pdb_get_user_rid(sampass);
+		
 		/* If the user specified a RID, make sure its able to be both stored and retreived */
-		if (rid && rid != DOMAIN_USER_RID_GUEST && uid != fallback_pdb_user_rid_to_uid(rid)) {
+		if (rid == DOMAIN_USER_RID_GUEST) {
+			struct passwd *passwd = getpwnam_alloc(lp_guestaccount());
+			if (!passwd) {
+				DEBUG(0, ("Could not find gest account via getpwnam()! (%s)\n", lp_guestaccount()));
+				return False;
+			}
+			smb_pw->smb_userid=passwd->pw_uid;
+			passwd_free(&passwd);
+
+		} else if (fallback_pdb_rid_is_user(rid)) {
+			smb_pw->smb_userid=fallback_pdb_user_rid_to_uid(rid);
+		} else {
 			DEBUG(0,("build_sam_pass: Failing attempt to store user with non-uid based user RID. \n"));
 			return False;
 		}
-
-		smb_pw->smb_userid=uid;
-        }
+	}
 
 	smb_pw->smb_name=(const char*)pdb_get_username(sampass);
 
@@ -1164,25 +1155,6 @@ static BOOL build_smb_pass (struct smb_passwd *smb_pw, const SAM_ACCOUNT *sampas
 
 	smb_pw->acct_ctrl=pdb_get_acct_ctrl(sampass);
 	smb_pw->pass_last_set_time=pdb_get_pass_last_set_time(sampass);
-
-#if 0
-	/*
-	 * ifdef'out by JFM on 11/29/2001.
-	 * this assertion is no longer valid
-	 * and I don't understand the goal 
-	 * and doing the same thing with the group mapping code
-	 * is hairy !
-	 *
-	 * We just have the RID, in which SID is it valid ?
-	 * our domain SID ? well known SID ? local SID ?
-	 */
-
-	if (gid != pdb_group_rid_to_gid(pdb_get_group_rid(sampass))) {
-		DEBUG(0,("build_sam_pass: Failing attempt to store user with non-gid based primary group RID. \n"));
-		DEBUG(0,("build_sam_pass: %d %d %d. \n", *gid, pdb_group_rid_to_gid(pdb_get_group_rid(sampass)), pdb_get_group_rid(sampass)));
-		return False;
-	}
-#endif
 
 	return True;
 }	
@@ -1199,50 +1171,28 @@ static BOOL build_sam_account(struct smbpasswd_privates *smbpasswd_state,
 		DEBUG(5,("build_sam_account: SAM_ACCOUNT is NULL\n"));
 		return False;
 	}
-		
-	pwfile = getpwnam_alloc(pw_buf->smb_name);
-	if (pwfile == NULL) {
-		if ((smbpasswd_state->permit_non_unix_accounts) 
-		    && (pw_buf->smb_userid >= smbpasswd_state->low_nua_userid) 
-		    && (pw_buf->smb_userid <= smbpasswd_state->high_nua_userid)) {
 
-			pdb_set_user_sid_from_rid(sam_pass, fallback_pdb_uid_to_user_rid (pw_buf->smb_userid), PDB_SET);
+	/* verify the user account exists */
 			
-			/* lkclXXXX this is OBSERVED behaviour by NT PDCs, enforced here. 
-			   
-			This was down the bottom for machines, but it looks pretty good as
-			a general default for non-unix users. --abartlet 2002-01-08
-			*/
-			pdb_set_group_sid_from_rid (sam_pass, DOMAIN_GROUP_RID_USERS, PDB_SET); 
-			pdb_set_username (sam_pass, pw_buf->smb_name, PDB_SET);
-			pdb_set_domain (sam_pass, lp_workgroup(), PDB_DEFAULT);
-			
-		} else {
-			DEBUG(0,("build_sam_account: smbpasswd database is corrupt!  username %s with uid %u is not in unix passwd database!\n", pw_buf->smb_name, pw_buf->smb_userid));
+	if ( !(pwfile = getpwnam_alloc(pw_buf->smb_name)) ) {
+		DEBUG(0,("build_sam_account: smbpasswd database is corrupt!  username %s with uid "
+		"%u is not in unix passwd database!\n", pw_buf->smb_name, pw_buf->smb_userid));
 			return False;
-		}
-	} else {
-		
-		if (!NT_STATUS_IS_OK(pdb_fill_sam_pw(sam_pass, pwfile))) {
-			return False;
-		}
-		
-		passwd_free(&pwfile);
 	}
 	
+	if (!NT_STATUS_IS_OK(pdb_fill_sam_pw(sam_pass, pwfile)))
+		return False;
+		
+	passwd_free(&pwfile);
+
+	/* set remaining fields */
+		
 	pdb_set_nt_passwd (sam_pass, pw_buf->smb_nt_passwd, PDB_SET);
 	pdb_set_lanman_passwd (sam_pass, pw_buf->smb_passwd, PDB_SET);			
 	pdb_set_acct_ctrl (sam_pass, pw_buf->acct_ctrl, PDB_SET);
 	pdb_set_pass_last_set_time (sam_pass, pw_buf->pass_last_set_time, PDB_SET);
 	pdb_set_pass_can_change_time (sam_pass, pw_buf->pass_last_set_time, PDB_SET);
 	
-#if 0	/* JERRY */
-	/* the smbpasswd format doesn't have a must change time field, so
-	   we can't get this right. The best we can do is to set this to 
-	   some time in the future. 21 days seems as reasonable as any other value :) 
-	*/
-	pdb_set_pass_must_change_time (sam_pass, pw_buf->pass_last_set_time + MAX_PASSWORD_AGE, PDB_DEFAULT);
-#endif
 	return True;
 }
 
@@ -1348,7 +1298,7 @@ static NTSTATUS smbpasswd_getsampwnam(struct pdb_methods *my_methods,
 	fp = startsmbfilepwent(smbpasswd_state->smbpasswd_file, PWF_READ, &(smbpasswd_state->pw_file_lock_depth));
 
 	if (fp == NULL) {
-		DEBUG(0, ("unable to open passdb database.\n"));
+		DEBUG(0, ("Unable to open passdb database.\n"));
 		return nt_status;
 	}
 
@@ -1380,14 +1330,19 @@ static NTSTATUS smbpasswd_getsampwnam(struct pdb_methods *my_methods,
 	return NT_STATUS_OK;
 }
 
-static NTSTATUS smbpasswd_getsampwrid(struct pdb_methods *my_methods, SAM_ACCOUNT *sam_acct,uint32 rid)
+static NTSTATUS smbpasswd_getsampwsid(struct pdb_methods *my_methods, SAM_ACCOUNT *sam_acct, const DOM_SID *sid)
 {
 	NTSTATUS nt_status = NT_STATUS_UNSUCCESSFUL;
 	struct smbpasswd_privates *smbpasswd_state = (struct smbpasswd_privates*)my_methods->private_data;
 	struct smb_passwd *smb_pw;
 	void *fp = NULL;
+	fstring sid_str;
+	uint32 rid;
+	
+	DEBUG(10, ("smbpasswd_getsampwrid: search by sid: %s\n", sid_to_string(sid_str, sid)));
 
-	DEBUG(10, ("smbpasswd_getsampwrid: search by rid: %d\n", rid));
+	if (!sid_peek_check_rid(get_global_sam_sid(), sid, &rid))
+		return NT_STATUS_UNSUCCESSFUL;
 
 	/* More special case 'guest account' hacks... */
 	if (rid == DOMAIN_USER_RID_GUEST) {
@@ -1403,7 +1358,7 @@ static NTSTATUS smbpasswd_getsampwrid(struct pdb_methods *my_methods, SAM_ACCOUN
 	fp = startsmbfilepwent(smbpasswd_state->smbpasswd_file, PWF_READ, &(smbpasswd_state->pw_file_lock_depth));
 
 	if (fp == NULL) {
-		DEBUG(0, ("unable to open passdb database.\n"));
+		DEBUG(0, ("Unable to open passdb database.\n"));
 		return nt_status;
 	}
 
@@ -1431,16 +1386,16 @@ static NTSTATUS smbpasswd_getsampwrid(struct pdb_methods *my_methods, SAM_ACCOUN
 	if (!build_sam_account (smbpasswd_state, sam_acct, smb_pw))
 		return nt_status;
 
+	/* build_sam_account might change the SID on us, if the name was for the guest account */
+	if (NT_STATUS_IS_OK(nt_status) && !sid_equal(pdb_get_user_sid(sam_acct), sid)) {
+		fstring sid_string1, sid_string2;
+		DEBUG(1, ("looking for user with sid %s instead returned %s for account %s!?!\n",
+			  sid_to_string(sid_string1, sid), sid_to_string(sid_string2, pdb_get_user_sid(sam_acct)), pdb_get_username(sam_acct)));
+		return NT_STATUS_NO_SUCH_USER;
+	}
+
 	/* success */
 	return NT_STATUS_OK;
-}
-
-static NTSTATUS smbpasswd_getsampwsid(struct pdb_methods *my_methods, SAM_ACCOUNT * user, const DOM_SID *sid)
-{
-	uint32 rid;
-	if (!sid_peek_check_rid(get_global_sam_sid(), sid, &rid))
-		return NT_STATUS_UNSUCCESSFUL;
-	return smbpasswd_getsampwrid(my_methods, user, rid);
 }
 
 static NTSTATUS smbpasswd_add_sam_account(struct pdb_methods *my_methods, SAM_ACCOUNT *sampass)
@@ -1493,58 +1448,6 @@ static NTSTATUS smbpasswd_delete_sam_account (struct pdb_methods *my_methods, SA
 	return NT_STATUS_UNSUCCESSFUL;
 }
 
-static NTSTATUS smbpasswd_getgrsid(struct pdb_methods *methods, GROUP_MAP *map,
-				 DOM_SID sid, BOOL with_priv)
-{
-	return get_group_map_from_sid(sid, map, with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS smbpasswd_getgrgid(struct pdb_methods *methods, GROUP_MAP *map,
-				 gid_t gid, BOOL with_priv)
-{
-	return get_group_map_from_gid(gid, map, with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS smbpasswd_getgrnam(struct pdb_methods *methods, GROUP_MAP *map,
-				 char *name, BOOL with_priv)
-{
-	return get_group_map_from_ntname(name, map, with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS smbpasswd_add_group_mapping_entry(struct pdb_methods *methods,
-						GROUP_MAP *map)
-{
-	return add_mapping_entry(map, TDB_INSERT) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS smbpasswd_update_group_mapping_entry(struct pdb_methods *methods,
-						   GROUP_MAP *map)
-{
-	return add_mapping_entry(map, TDB_REPLACE) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS smbpasswd_delete_group_mapping_entry(struct pdb_methods *methods,
-						   DOM_SID sid)
-{
-	return group_map_remove(sid) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
-static NTSTATUS smbpasswd_enum_group_mapping(struct pdb_methods *methods,
-					   enum SID_NAME_USE sid_name_use,
-					   GROUP_MAP **rmap, int *num_entries,
-					   BOOL unix_only, BOOL with_priv)
-{
-	return enum_group_mapping(sid_name_use, rmap, num_entries, unix_only,
-				  with_priv) ?
-		NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
-}
-
 static void free_private_data(void **vp) 
 {
 	struct smbpasswd_privates **privates = (struct smbpasswd_privates**)vp;
@@ -1555,8 +1458,7 @@ static void free_private_data(void **vp)
 	/* No need to free any further, as it is talloc()ed */
 }
 
-
-NTSTATUS pdb_init_smbpasswd(PDB_CONTEXT *pdb_context, PDB_METHODS **pdb_method, const char *location)
+static NTSTATUS pdb_init_smbpasswd(PDB_CONTEXT *pdb_context, PDB_METHODS **pdb_method, const char *location)
 {
 	NTSTATUS nt_status;
 	struct smbpasswd_privates *privates;
@@ -1575,13 +1477,6 @@ NTSTATUS pdb_init_smbpasswd(PDB_CONTEXT *pdb_context, PDB_METHODS **pdb_method, 
 	(*pdb_method)->add_sam_account = smbpasswd_add_sam_account;
 	(*pdb_method)->update_sam_account = smbpasswd_update_sam_account;
 	(*pdb_method)->delete_sam_account = smbpasswd_delete_sam_account;
-	(*pdb_method)->getgrsid = smbpasswd_getgrsid;
-	(*pdb_method)->getgrgid = smbpasswd_getgrgid;
-	(*pdb_method)->getgrnam = smbpasswd_getgrnam;
-	(*pdb_method)->add_group_mapping_entry = smbpasswd_add_group_mapping_entry;
-	(*pdb_method)->update_group_mapping_entry = smbpasswd_update_group_mapping_entry;
-	(*pdb_method)->delete_group_mapping_entry = smbpasswd_delete_group_mapping_entry;
-	(*pdb_method)->enum_group_mapping = smbpasswd_enum_group_mapping;
 
 	/* Setup private data and free function */
 
@@ -1612,25 +1507,7 @@ NTSTATUS pdb_init_smbpasswd(PDB_CONTEXT *pdb_context, PDB_METHODS **pdb_method, 
 	return NT_STATUS_OK;
 }
 
-NTSTATUS pdb_init_smbpasswd_nua(PDB_CONTEXT *pdb_context, PDB_METHODS **pdb_method, const char *location)
+NTSTATUS pdb_smbpasswd_init(void) 
 {
-	NTSTATUS nt_status;
-	struct smbpasswd_privates *privates;
-
-	if (!NT_STATUS_IS_OK(nt_status = pdb_init_smbpasswd(pdb_context, pdb_method, location))) {
-		return nt_status;
-	}
-
-	(*pdb_method)->name = "smbpasswd_nua";
-
-	privates = (*pdb_method)->private_data;
-	
-	privates->permit_non_unix_accounts = True;
-
-	if (!lp_non_unix_account_range(&privates->low_nua_userid, &privates->high_nua_userid)) {
-		DEBUG(0, ("cannot use smbpasswd_nua without 'non unix account range' in smb.conf!\n"));
-		return NT_STATUS_UNSUCCESSFUL;
-	}
-
-	return NT_STATUS_OK;
+	return smb_register_passdb(PASSDB_INTERFACE_VERSION, "smbpasswd", pdb_init_smbpasswd);
 }

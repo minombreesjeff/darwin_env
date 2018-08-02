@@ -11,6 +11,12 @@
 ac_help=
 ac_default_prefix=/usr/local
 # Any additions from configure.in:
+ac_help="$ac_help
+ --enable-crop					    Whether to use a crop template"
+ac_help="$ac_help
+ --with-papersize					Specify papersize (a4paper,letter) "
+ac_help="$ac_help
+ --with-fontsize	              Specify the fontsize in points (default: 10.5) "
 
 # Initialize some variables set by options.
 # The variables have the same names as the options, with
@@ -522,19 +528,19 @@ fi
 
 
 
-# Extract the first word of "jw", so it can be a program name with args.
-set dummy jw; ac_word=$2
+# Extract the first word of "xsltproc", so it can be a program name with args.
+set dummy xsltproc; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:529: checking for $ac_word" >&5
-if eval "test \"`echo '$''{'ac_cv_path_JW'+set}'`\" = set"; then
+echo "configure:535: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_XSLTPROC'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
-  case "$JW" in
+  case "$XSLTPROC" in
   /*)
-  ac_cv_path_JW="$JW" # Let the user override the test with a path.
+  ac_cv_path_XSLTPROC="$XSLTPROC" # Let the user override the test with a path.
   ;;
   ?:/*)			 
-  ac_cv_path_JW="$JW" # Let the user override the test with a dos path.
+  ac_cv_path_XSLTPROC="$XSLTPROC" # Let the user override the test with a dos path.
   ;;
   *)
   IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
@@ -542,7 +548,7 @@ else
   for ac_dir in $ac_dummy; do 
     test -z "$ac_dir" && ac_dir=.
     if test -f $ac_dir/$ac_word; then
-      ac_cv_path_JW="$ac_dir/$ac_word"
+      ac_cv_path_XSLTPROC="$ac_dir/$ac_word"
       break
     fi
   done
@@ -550,9 +556,260 @@ else
   ;;
 esac
 fi
-JW="$ac_cv_path_JW"
-if test -n "$JW"; then
-  echo "$ac_t""$JW" 1>&6
+XSLTPROC="$ac_cv_path_XSLTPROC"
+if test -n "$XSLTPROC"; then
+  echo "$ac_t""$XSLTPROC" 1>&6
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+if test "x$XSLTPROC" = x; then
+   { echo "configure: error: "xsltproc is required"" 1>&2; exit 1; }
+fi
+# Extract the first word of "pdflatex", so it can be a program name with args.
+set dummy pdflatex; ac_word=$2
+echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
+echo "configure:573: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_PDFLATEX'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  case "$PDFLATEX" in
+  /*)
+  ac_cv_path_PDFLATEX="$PDFLATEX" # Let the user override the test with a path.
+  ;;
+  ?:/*)			 
+  ac_cv_path_PDFLATEX="$PDFLATEX" # Let the user override the test with a dos path.
+  ;;
+  *)
+  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  ac_dummy="$PATH"
+  for ac_dir in $ac_dummy; do 
+    test -z "$ac_dir" && ac_dir=.
+    if test -f $ac_dir/$ac_word; then
+      ac_cv_path_PDFLATEX="$ac_dir/$ac_word"
+      break
+    fi
+  done
+  IFS="$ac_save_ifs"
+  ;;
+esac
+fi
+PDFLATEX="$ac_cv_path_PDFLATEX"
+if test -n "$PDFLATEX"; then
+  echo "$ac_t""$PDFLATEX" 1>&6
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+if test "x$PDFLATEX" = x; then
+   { echo "configure: error: "pdflatex is required"" 1>&2; exit 1; }
+fi
+# Extract the first word of "makeindex", so it can be a program name with args.
+set dummy makeindex; ac_word=$2
+echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
+echo "configure:611: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_MAKEINDEX'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  case "$MAKEINDEX" in
+  /*)
+  ac_cv_path_MAKEINDEX="$MAKEINDEX" # Let the user override the test with a path.
+  ;;
+  ?:/*)			 
+  ac_cv_path_MAKEINDEX="$MAKEINDEX" # Let the user override the test with a dos path.
+  ;;
+  *)
+  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  ac_dummy="$PATH"
+  for ac_dir in $ac_dummy; do 
+    test -z "$ac_dir" && ac_dir=.
+    if test -f $ac_dir/$ac_word; then
+      ac_cv_path_MAKEINDEX="$ac_dir/$ac_word"
+      break
+    fi
+  done
+  IFS="$ac_save_ifs"
+  ;;
+esac
+fi
+MAKEINDEX="$ac_cv_path_MAKEINDEX"
+if test -n "$MAKEINDEX"; then
+  echo "$ac_t""$MAKEINDEX" 1>&6
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+if test "x$MAKEINDEX" = x; then
+	{ echo "configure: error: "makeindex is required"" 1>&2; exit 1; }
+fi
+
+PAPERSIZE=""
+TEXSTYLESHEET=xslt/latex.xsl
+DUPLICATE_ULINKS=""
+
+CROP="--stringparam docrop 0"
+
+# Check whether --enable-crop or --disable-crop was given.
+if test "${enable_crop+set}" = set; then
+  enableval="$enable_crop"
+   test "$withval" && CROP="--stringparam docrop 1" 
+fi
+
+
+PAPERSIZE="--stringparam papersize a4paper"
+
+# Check whether --with-papersize or --without-papersize was given.
+if test "${with_papersize+set}" = set; then
+  withval="$with_papersize"
+   test "$withval" && PAPERSIZE="--stringparam papersize $withval" 
+fi
+
+
+FONTSIZE="--stringparam fontsize 10.5"
+
+# Check whether --with-fontsize or --without-fontsize was given.
+if test "${with_fontsize+set}" = set; then
+  withval="$with_fontsize"
+   test "$withval" && FONTSIZE="--stringparam fontsize $withval" 
+fi
+
+
+# Extract the first word of "latex", so it can be a program name with args.
+set dummy latex; ac_word=$2
+echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
+echo "configure:681: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_LATEX'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  case "$LATEX" in
+  /*)
+  ac_cv_path_LATEX="$LATEX" # Let the user override the test with a path.
+  ;;
+  ?:/*)			 
+  ac_cv_path_LATEX="$LATEX" # Let the user override the test with a dos path.
+  ;;
+  *)
+  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  ac_dummy="$PATH"
+  for ac_dir in $ac_dummy; do 
+    test -z "$ac_dir" && ac_dir=.
+    if test -f $ac_dir/$ac_word; then
+      ac_cv_path_LATEX="$ac_dir/$ac_word"
+      break
+    fi
+  done
+  IFS="$ac_save_ifs"
+  ;;
+esac
+fi
+LATEX="$ac_cv_path_LATEX"
+if test -n "$LATEX"; then
+  echo "$ac_t""$LATEX" 1>&6
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+# Extract the first word of "dvips", so it can be a program name with args.
+set dummy dvips; ac_word=$2
+echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
+echo "configure:716: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_DVIPS'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  case "$DVIPS" in
+  /*)
+  ac_cv_path_DVIPS="$DVIPS" # Let the user override the test with a path.
+  ;;
+  ?:/*)			 
+  ac_cv_path_DVIPS="$DVIPS" # Let the user override the test with a dos path.
+  ;;
+  *)
+  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  ac_dummy="$PATH"
+  for ac_dir in $ac_dummy; do 
+    test -z "$ac_dir" && ac_dir=.
+    if test -f $ac_dir/$ac_word; then
+      ac_cv_path_DVIPS="$ac_dir/$ac_word"
+      break
+    fi
+  done
+  IFS="$ac_save_ifs"
+  ;;
+esac
+fi
+DVIPS="$ac_cv_path_DVIPS"
+if test -n "$DVIPS"; then
+  echo "$ac_t""$DVIPS" 1>&6
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+# Extract the first word of "pngtopnm", so it can be a program name with args.
+set dummy pngtopnm; ac_word=$2
+echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
+echo "configure:751: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_PNGTOPNM'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  case "$PNGTOPNM" in
+  /*)
+  ac_cv_path_PNGTOPNM="$PNGTOPNM" # Let the user override the test with a path.
+  ;;
+  ?:/*)			 
+  ac_cv_path_PNGTOPNM="$PNGTOPNM" # Let the user override the test with a dos path.
+  ;;
+  *)
+  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  ac_dummy="$PATH"
+  for ac_dir in $ac_dummy; do 
+    test -z "$ac_dir" && ac_dir=.
+    if test -f $ac_dir/$ac_word; then
+      ac_cv_path_PNGTOPNM="$ac_dir/$ac_word"
+      break
+    fi
+  done
+  IFS="$ac_save_ifs"
+  ;;
+esac
+fi
+PNGTOPNM="$ac_cv_path_PNGTOPNM"
+if test -n "$PNGTOPNM"; then
+  echo "$ac_t""$PNGTOPNM" 1>&6
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+# Extract the first word of "pnmtops", so it can be a program name with args.
+set dummy pnmtops; ac_word=$2
+echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
+echo "configure:786: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_PNMTOPS'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  case "$PNMTOPS" in
+  /*)
+  ac_cv_path_PNMTOPS="$PNMTOPS" # Let the user override the test with a path.
+  ;;
+  ?:/*)			 
+  ac_cv_path_PNMTOPS="$PNMTOPS" # Let the user override the test with a dos path.
+  ;;
+  *)
+  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  ac_dummy="$PATH"
+  for ac_dir in $ac_dummy; do 
+    test -z "$ac_dir" && ac_dir=.
+    if test -f $ac_dir/$ac_word; then
+      ac_cv_path_PNMTOPS="$ac_dir/$ac_word"
+      break
+    fi
+  done
+  IFS="$ac_save_ifs"
+  ;;
+esac
+fi
+PNMTOPS="$ac_cv_path_PNMTOPS"
+if test -n "$PNMTOPS"; then
+  echo "$ac_t""$PNMTOPS" 1>&6
 else
   echo "$ac_t""no" 1>&6
 fi
@@ -560,7 +817,7 @@ fi
 # Extract the first word of "perl", so it can be a program name with args.
 set dummy perl; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:564: checking for $ac_word" >&5
+echo "configure:821: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PERL'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -592,19 +849,19 @@ else
   echo "$ac_t""no" 1>&6
 fi
 
-# Extract the first word of "htmldoc", so it can be a program name with args.
-set dummy htmldoc; ac_word=$2
+# Extract the first word of "xmlto", so it can be a program name with args.
+set dummy xmlto; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:599: checking for $ac_word" >&5
-if eval "test \"`echo '$''{'ac_cv_path_HTMLDOC'+set}'`\" = set"; then
+echo "configure:856: checking for $ac_word" >&5
+if eval "test \"`echo '$''{'ac_cv_path_XMLTO'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
-  case "$HTMLDOC" in
+  case "$XMLTO" in
   /*)
-  ac_cv_path_HTMLDOC="$HTMLDOC" # Let the user override the test with a path.
+  ac_cv_path_XMLTO="$XMLTO" # Let the user override the test with a path.
   ;;
   ?:/*)			 
-  ac_cv_path_HTMLDOC="$HTMLDOC" # Let the user override the test with a dos path.
+  ac_cv_path_XMLTO="$XMLTO" # Let the user override the test with a dos path.
   ;;
   *)
   IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
@@ -612,7 +869,7 @@ else
   for ac_dir in $ac_dummy; do 
     test -z "$ac_dir" && ac_dir=.
     if test -f $ac_dir/$ac_word; then
-      ac_cv_path_HTMLDOC="$ac_dir/$ac_word"
+      ac_cv_path_XMLTO="$ac_dir/$ac_word"
       break
     fi
   done
@@ -620,15 +877,20 @@ else
   ;;
 esac
 fi
-HTMLDOC="$ac_cv_path_HTMLDOC"
-if test -n "$HTMLDOC"; then
-  echo "$ac_t""$HTMLDOC" 1>&6
+XMLTO="$ac_cv_path_XMLTO"
+if test -n "$XMLTO"; then
+  echo "$ac_t""$XMLTO" 1>&6
 else
   echo "$ac_t""no" 1>&6
 fi
 
 
 DOC_BUILD_DATE=`date '+%d-%m-%Y'`
+
+
+
+
+
 
 
 trap '' 1 2 15
@@ -775,10 +1037,21 @@ s%@includedir@%$includedir%g
 s%@oldincludedir@%$oldincludedir%g
 s%@infodir@%$infodir%g
 s%@mandir@%$mandir%g
-s%@JW@%$JW%g
+s%@XSLTPROC@%$XSLTPROC%g
+s%@PDFLATEX@%$PDFLATEX%g
+s%@MAKEINDEX@%$MAKEINDEX%g
+s%@LATEX@%$LATEX%g
+s%@DVIPS@%$DVIPS%g
+s%@PNGTOPNM@%$PNGTOPNM%g
+s%@PNMTOPS@%$PNMTOPS%g
 s%@PERL@%$PERL%g
-s%@HTMLDOC@%$HTMLDOC%g
+s%@XMLTO@%$XMLTO%g
 s%@DOC_BUILD_DATE@%$DOC_BUILD_DATE%g
+s%@TEXSTYLESHEET@%$TEXSTYLESHEET%g
+s%@PAPERSIZE@%$PAPERSIZE%g
+s%@DUPLICATE_ULINKS@%$DUPLICATE_ULINKS%g
+s%@FONTSIZE@%$FONTSIZE%g
+s%@CROP@%$CROP%g
 
 CEOF
 EOF

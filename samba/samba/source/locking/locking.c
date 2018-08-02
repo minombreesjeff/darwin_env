@@ -125,14 +125,19 @@ static NTSTATUS do_lock(files_struct *fsp,connection_struct *conn, uint16 lock_p
 			 */
 
 			if (!set_posix_lock(fsp, offset, count, lock_type)) {
-				status = NT_STATUS_LOCK_NOT_GRANTED;
+				if (errno == EACCES || errno == EAGAIN)
+					status = NT_STATUS_FILE_LOCK_CONFLICT;
+				else
+					status = map_nt_error_from_unix(errno);
+
 				/*
 				 * We failed to map - we must now remove the brl
 				 * lock entry.
 				 */
 				(void)brl_unlock(fsp->dev, fsp->inode, fsp->fnum,
 								lock_pid, sys_getpid(), conn->cnum, 
-								offset, count, False);
+								offset, count, False,
+								NULL, NULL);
 			}
 		}
 	}
@@ -175,6 +180,25 @@ NTSTATUS do_lock_spin(files_struct *fsp,connection_struct *conn, uint16 lock_pid
 	return ret;
 }
 
+/* Struct passed to brl_unlock. */
+struct posix_unlock_data_struct {
+	files_struct *fsp;
+	SMB_BIG_UINT offset;
+	SMB_BIG_UINT count;
+};
+
+/****************************************************************************
+ Function passed to brl_unlock to allow POSIX unlock to be done first.
+****************************************************************************/
+
+static void posix_unlock(void *pre_data)
+{
+	struct posix_unlock_data_struct *pdata = (struct posix_unlock_data_struct *)pre_data;
+
+	if (lp_posix_locking(SNUM(pdata->fsp->conn)))
+		release_posix_lock(pdata->fsp, pdata->offset, pdata->count);
+}
+
 /****************************************************************************
  Utility function called by unlocking requests.
 ****************************************************************************/
@@ -183,6 +207,7 @@ NTSTATUS do_unlock(files_struct *fsp,connection_struct *conn, uint16 lock_pid,
 		   SMB_BIG_UINT count,SMB_BIG_UINT offset)
 {
 	BOOL ok = False;
+	struct posix_unlock_data_struct posix_data;
 	
 	if (!lp_locking(SNUM(conn)))
 		return NT_STATUS_OK;
@@ -200,19 +225,18 @@ NTSTATUS do_unlock(files_struct *fsp,connection_struct *conn, uint16 lock_pid,
 	 * match then don't bother looking to remove POSIX locks.
 	 */
 
+	posix_data.fsp = fsp;
+	posix_data.offset = offset;
+	posix_data.count = count;
+
 	ok = brl_unlock(fsp->dev, fsp->inode, fsp->fnum,
-			lock_pid, sys_getpid(), conn->cnum, offset, count, False);
+			lock_pid, sys_getpid(), conn->cnum, offset, count,
+			False, posix_unlock, (void *)&posix_data);
    
 	if (!ok) {
 		DEBUG(10,("do_unlock: returning ERRlock.\n" ));
 		return NT_STATUS_RANGE_NOT_LOCKED;
 	}
-
-	if (!lp_posix_locking(SNUM(conn)))
-		return NT_STATUS_OK;
-
-	(void)release_posix_lock(fsp, offset, count);
-
 	return NT_STATUS_OK;
 }
 
@@ -355,13 +379,13 @@ void unlock_share_entry_fsp(files_struct *fsp)
  Print out a share mode.
 ********************************************************************/
 
-static char *share_mode_str(int num, share_mode_entry *e)
+char *share_mode_str(int num, share_mode_entry *e)
 {
 	static pstring share_str;
 
 	slprintf(share_str, sizeof(share_str)-1, "share_mode_entry[%d]: \
-pid = %u, share_mode = 0x%x, desired_access = 0x%x, port = 0x%x, type= 0x%x, file_id = %lu, dev = 0x%x, inode = %.0f",
-	num, e->pid, e->share_mode, (unsigned int)e->desired_access, e->op_port, e->op_type, e->share_file_id,
+pid = %lu, share_mode = 0x%x, desired_access = 0x%x, port = 0x%x, type= 0x%x, file_id = %lu, dev = 0x%x, inode = %.0f",
+	num, (unsigned long)e->pid, e->share_mode, (unsigned int)e->desired_access, e->op_port, e->op_type, e->share_file_id,
 	(unsigned int)e->dev, (double)e->inode );
 
 	return share_str;

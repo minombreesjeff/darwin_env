@@ -2,7 +2,7 @@
    Unix SMB/CIFS implementation.
    simple kerberos5 routines for active directory
    Copyright (C) Andrew Tridgell 2001
-   Copyright (C) Luke Howard 2002
+   Copyright (C) Luke Howard 2002-2003
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,16 @@
 
 #ifdef HAVE_KRB5
 
+#ifdef HAVE_KRB5_KEYBLOCK_KEYVALUE
+#define KRB5_KEY_TYPE(k)	((k)->keytype)
+#define KRB5_KEY_LENGTH(k)	((k)->keyvalue.length)
+#define KRB5_KEY_DATA(k)	((k)->keyvalue.data)
+#else
+#define	KRB5_KEY_TYPE(k)	((k)->enctype)
+#define KRB5_KEY_LENGTH(k)	((k)->length)
+#define KRB5_KEY_DATA(k)	((k)->contents)
+#endif /* HAVE_KRB5_KEYBLOCK_KEYVALUE */
+
 #ifndef HAVE_KRB5_SET_REAL_TIME
 /*
  * This function is not in the Heimdal mainline.
@@ -36,12 +46,8 @@
 	if (ret)
 		return ret;
 
-#ifdef __APPLE__
-#warning "krb5_set_real_time: hacking around issues for now"
-#else
 	context->kdc_sec_offset = seconds - sec;
 	context->kdc_usec_offset = microseconds - usec;
-#endif
 
 	return 0;
 }
@@ -68,105 +74,10 @@
 {
 	pkaddr->addrtype = ADDRTYPE_INET;
 	pkaddr->length = sizeof(((struct sockaddr_in *)paddr)->sin_addr);
-	pkaddr->contents = (char *)&(((struct sockaddr_in *)paddr)->sin_addr);
+	pkaddr->contents = (krb5_octet *)&(((struct sockaddr_in *)paddr)->sin_addr);
 }
 #else
  __ERROR__XX__UNKNOWN_ADDRTYPE
-#endif
-
-#if !defined(KRB5_PRINCIPAL2SALT)
-/*
- * lib/krb5/krb/pr_to_salt.c
- *
- * Copyright 1990 by the Massachusetts Institute of Technology.
- * All Rights Reserved.
- *
- * Export of this software from the United States of America may
- *   require a specific license from the United States Government.
- *   It is the responsibility of any person or organization contemplating
- *   export to obtain such a license before exporting.
- * 
- * WITHIN THAT CONSTRAINT, permission to use, copy, modify, and
- * distribute this software and its documentation for any purpose and
- * without fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright notice and
- * this permission notice appear in supporting documentation, and that
- * the name of M.I.T. not be used in advertising or publicity pertaining
- * to distribution of the software without specific, written prior
- * permission.  Furthermore if you modify this software you must label
- * your software as modified software and not distribute it in such a
- * fashion that it might be confused with the original M.I.T. software.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is" without express
- * or implied warranty.
- * 
- *
- * krb5_principal2salt()
- */
-
-/*
- * Convert a krb5_principal into the default salt for that principal.
- */
-krb5_error_code
-krb5_principal2salt_internal(context, pr, ret, use_realm)
-    krb5_context context;
-    register krb5_const_principal pr;
-    krb5_data *ret;
-    int use_realm;
-{
-    int size = 0, offset = 0;
-    krb5_int32 nelem;
-    register int i;
-
-    if (pr == 0) {
-	ret->length = 0;
-	ret->data = 0;
-	return 0;
-    }
-
-    nelem = krb5_princ_size(context, pr);
-
-    if (use_realm)
-	    size += krb5_princ_realm(context, pr)->length;
-
-    for (i = 0; i < (int) nelem; i++)
-	size += krb5_princ_component(context, pr, i)->length;
-
-    ret->length = size;
-    if (!(ret->data = malloc (size)))
-	return ENOMEM;
-
-    if (use_realm) {
-	    offset = krb5_princ_realm(context, pr)->length;
-	    memcpy(ret->data, krb5_princ_realm(context, pr)->data, offset);
-    }
-
-    for (i = 0; i < (int) nelem; i++) {
-	memcpy(&ret->data[offset], krb5_princ_component(context, pr, i)->data,
-	       krb5_princ_component(context, pr, i)->length);
-	offset += krb5_princ_component(context, pr, i)->length;
-    }
-    return 0;
-}
-
-krb5_error_code
-krb5_principal2salt(context, pr, ret)
-    krb5_context context;
-    register krb5_const_principal pr;
-    krb5_data *ret;
-{
-	return krb5_principal2salt_internal(context, pr, ret, 1);
-}
-
-krb5_error_code
-krb5_principal2salt_norealm(context, pr, ret)
-    krb5_context context;
-    register krb5_const_principal pr;
-    krb5_data *ret;
-{
-	return krb5_principal2salt_internal(context, pr, ret, 0);
-}
-#define HAVE_KRB5_PRINCIPAL2SALT
 #endif
 
 #if defined(HAVE_KRB5_PRINCIPAL2SALT) && defined(HAVE_KRB5_USE_ENCTYPE) && defined(HAVE_KRB5_STRING_TO_KEY)
@@ -186,7 +97,9 @@ krb5_principal2salt_norealm(context, pr, ret)
 		return ret;
 	}
 	krb5_use_enctype(context, &eblock, enctype);
-	return krb5_string_to_key(context, &eblock, key, password, &salt);
+	ret = krb5_string_to_key(context, &eblock, key, password, &salt);
+	SAFE_FREE(salt.data);
+	return ret;
 }
 #elif defined(HAVE_KRB5_GET_PW_SALT) && defined(HAVE_KRB5_STRING_TO_KEY_SALT)
  int create_kerberos_key_from_string(krb5_context context,
@@ -223,7 +136,7 @@ krb5_error_code get_kerberos_allowed_etypes(krb5_context context,
 	return krb5_get_default_in_tkt_etypes(context, enctypes);
 }
 #else
-#warning  __ERROR_XX_UNKNOWN_GET_ENCTYPES_FUNCTIONS
+#error UNKNOWN_GET_ENCTYPES_FUNCTIONS
 #endif
 
  void free_kerberos_etypes(krb5_context context, 
@@ -272,9 +185,6 @@ krb5_error_code get_kerberos_allowed_etypes(krb5_context context,
 #if !defined(HAVE_KRB5_LOCATE_KDC)
  krb5_error_code krb5_locate_kdc(krb5_context ctx, const krb5_data *realm, struct sockaddr **addr_pp, int *naddrs, int get_masters)
 {
-#ifdef __APPLE__
-#warning "krb5_locate_kdc not exported"
-#else
 	krb5_krbhst_handle hnd;
 	krb5_krbhst_info *hinfo;
 	krb5_error_code rc;
@@ -320,7 +230,6 @@ krb5_error_code get_kerberos_allowed_etypes(krb5_context context,
 
 	*naddrs = num_kdcs;
 	*addr_pp = sa;
-#endif /* __APPLE__ */
 	return 0;
 }
 #endif
@@ -328,12 +237,12 @@ krb5_error_code get_kerberos_allowed_etypes(krb5_context context,
 /*
   we can't use krb5_mk_req because w2k wants the service to be in a particular format
 */
-static krb5_error_code krb5_mk_req2(krb5_context context, 
-				    krb5_auth_context *auth_context, 
-				    const krb5_flags ap_req_options,
-				    const char *principal,
-				    krb5_ccache ccache, 
-				    krb5_data *outbuf)
+static krb5_error_code ads_krb5_mk_req(krb5_context context, 
+				       krb5_auth_context *auth_context, 
+				       const krb5_flags ap_req_options,
+				       const char *principal,
+				       krb5_ccache ccache, 
+				       krb5_data *outbuf)
 {
 	krb5_error_code 	  retval;
 	krb5_principal	  server;
@@ -348,7 +257,7 @@ static krb5_error_code krb5_mk_req2(krb5_context context,
 	}
 	
 	/* obtain ticket & session key */
-	memset((char *)&creds, 0, sizeof(creds));
+	ZERO_STRUCT(creds);
 	if ((retval = krb5_copy_principal(context, server, &creds.server))) {
 		DEBUG(1,("krb5_copy_principal failed (%s)\n", 
 			 error_message(retval)));
@@ -398,7 +307,7 @@ cleanup_princ:
 /*
   get a kerberos5 ticket for the given service 
 */
-DATA_BLOB krb5_get_ticket(const char *principal, time_t time_offset)
+DATA_BLOB cli_krb5_get_ticket(const char *principal, time_t time_offset, unsigned char session_key_krb5[16])
 {
 	krb5_error_code retval;
 	krb5_data packet;
@@ -408,12 +317,12 @@ DATA_BLOB krb5_get_ticket(const char *principal, time_t time_offset)
 	DATA_BLOB ret;
 	krb5_enctype enc_types[] = {
 #ifdef ENCTYPE_ARCFOUR_HMAC
-		ENCTYPE_ARCFOUR_HMAC, 
-#endif
-				    ENCTYPE_DES_CBC_MD5, 
-				    ENCTYPE_DES_CBC_CRC, 
-				    ENCTYPE_NULL};
-
+		ENCTYPE_ARCFOUR_HMAC,
+#endif 
+		ENCTYPE_DES_CBC_MD5, 
+		ENCTYPE_DES_CBC_CRC, 
+		ENCTYPE_NULL};
+	
 	retval = krb5_init_context(&context);
 	if (retval) {
 		DEBUG(1,("krb5_init_context failed (%s)\n", 
@@ -437,13 +346,15 @@ DATA_BLOB krb5_get_ticket(const char *principal, time_t time_offset)
 		goto failed;
 	}
 
-	if ((retval = krb5_mk_req2(context, 
-				   &auth_context, 
-				   0, 
-				   principal,
-				   ccdef, &packet))) {
+	if ((retval = ads_krb5_mk_req(context, 
+					&auth_context, 
+					AP_OPTS_USE_SUBKEY, 
+					principal,
+					ccdef, &packet))) {
 		goto failed;
 	}
+
+	get_krb5_smb_session_key(context, auth_context, session_key_krb5, False);
 
 	ret = data_blob(packet.data, packet.length);
 /* Hmm, heimdal dooesn't have this - what's the correct call? */
@@ -458,11 +369,51 @@ failed:
 	return data_blob(NULL, 0);
 }
 
+ BOOL get_krb5_smb_session_key(krb5_context context, krb5_auth_context auth_context, uint8 session_key[16], BOOL remote)
+ {
+	krb5_keyblock *skey;
+	krb5_error_code err;
+	BOOL ret = False;
+
+	memset(session_key, 0, 16);
+
+	if (remote)
+		err = krb5_auth_con_getremotesubkey(context, auth_context, &skey);
+	else
+		err = krb5_auth_con_getlocalsubkey(context, auth_context, &skey);
+	if (err == 0 && skey != NULL) {
+		DEBUG(10, ("Got KRB5 session key of length %d\n",  KRB5_KEY_LENGTH(skey)));
+		if (KRB5_KEY_LENGTH(skey) == 16) {
+			memcpy(session_key, KRB5_KEY_DATA(skey), KRB5_KEY_LENGTH(skey));
+			dump_data_pw("KRB5 Session Key:\n", session_key, 16);
+			ret = True;
+		}
+		krb5_free_keyblock(context, skey);
+	} else {
+		DEBUG(10, ("KRB5 error getting session key %d\n", err));
+	}
+
+	return ret;
+ }
+
+
+#if defined(HAVE_KRB5_PRINCIPAL_GET_COMP_STRING) && !defined(HAVE_KRB5_PRINC_COMPONENT)
+ const krb5_data *krb5_princ_component(krb5_context context, krb5_principal principal, int i )
+{
+	static krb5_data kdata;
+
+	kdata.data = krb5_principal_get_comp_string(context, principal, i);
+	kdata.length = strlen(kdata.data);
+	return &kdata;
+}
+#endif
+
 #else /* HAVE_KRB5 */
  /* this saves a few linking headaches */
- DATA_BLOB krb5_get_ticket(const char *principal, time_t time_offset)
+DATA_BLOB cli_krb5_get_ticket(const char *principal, time_t time_offset, unsigned char session_key_krb5[16])
  {
 	 DEBUG(0,("NO KERBEROS SUPPORT\n"));
 	 return data_blob(NULL, 0);
  }
+
 #endif

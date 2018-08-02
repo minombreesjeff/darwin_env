@@ -31,10 +31,21 @@ static smb_ucs2_t *upcase_table;
 static smb_ucs2_t *lowcase_table;
 static uint8 *valid_table;
 
+/**
+ * This table says which Unicode characters are valid dos
+ * characters.
+ *
+ * Each value is just a single bit.
+ **/
+static uint8 doschar_table[8192]; /* 65536 characters / 8 bits/byte */
 
-/*******************************************************************
-load the case handling tables
-********************************************************************/
+
+/**
+ * Load or generate the case handling tables.
+ *
+ * The case tables are defined in UCS2 and don't depend on any
+ * configured parameters, so they never need to be reloaded.
+ **/
 void load_case_tables(void)
 {
 	static int initialised;
@@ -83,7 +94,17 @@ void load_case_tables(void)
   see if a ucs2 character can be mapped correctly to a dos character
   and mapped back to the same character in ucs2
 */
-static int check_dos_char(smb_ucs2_t c)
+int check_dos_char(smb_ucs2_t c)
+{
+	lazy_initialize_conv();
+	
+	/* Find the right byte, and right bit within the byte; return
+	 * 1 or 0 */
+	return (doschar_table[(c & 0xffff) / 8] & (1 << (c & 7))) != 0;
+}
+
+
+static int check_dos_char_slowly(smb_ucs2_t c)
 {
 	char buf[10];
 	smb_ucs2_t c2 = 0;
@@ -94,6 +115,31 @@ static int check_dos_char(smb_ucs2_t c)
 	if (len2 != 2) return 0;
 	return (c == c2);
 }
+
+
+/**
+ * Fill out doschar table the hard way, by examining each character
+ **/
+void init_doschar_table(void)
+{
+	int i, j, byteval;
+
+	/* For each byte of packed table */
+	
+	for (i = 0; i <= 0xffff; i += 8) {
+		byteval = 0;
+		for (j = 0; j <= 7; j++) {
+			smb_ucs2_t c;
+
+			c = i + j;
+			
+			if (check_dos_char_slowly(c))
+				byteval |= 1 << j;
+		}
+		doschar_table[i/8] = byteval;
+	}
+}
+
 
 /**
  * Load the valid character map table from <tt>valid.dat</tt> or
@@ -183,7 +229,10 @@ char *skip_unibuf(char *src, size_t len)
  */ 
 int rpcstr_pull(char* dest, void *src, int dest_len, int src_len, int flags)
 {
-	if (!src) return 0;
+	if (!src) {
+		dest[0] = 0;
+		return 0;
+	}
 	if(dest_len==-1) dest_len=MAXUNI-3;
 	return pull_ucs2(NULL, dest, src, dest_len, src_len, flags|STR_UNICODE|STR_NOALIGN);
 }
@@ -342,8 +391,9 @@ size_t strnlen_w(const smb_ucs2_t *src, size_t max)
 }
 
 /*******************************************************************
-wide strchr()
+ Wide strchr().
 ********************************************************************/
+
 smb_ucs2_t *strchr_w(const smb_ucs2_t *s, smb_ucs2_t c)
 {
 	while (*s != 0) {
@@ -360,6 +410,10 @@ smb_ucs2_t *strchr_wa(const smb_ucs2_t *s, char c)
 	return strchr_w(s, UCS2_CHAR(c));
 }
 
+/*******************************************************************
+ Wide strrchr().
+********************************************************************/
+
 smb_ucs2_t *strrchr_w(const smb_ucs2_t *s, smb_ucs2_t c)
 {
 	const smb_ucs2_t *p = s;
@@ -373,8 +427,30 @@ smb_ucs2_t *strrchr_w(const smb_ucs2_t *s, smb_ucs2_t c)
 }
 
 /*******************************************************************
-wide strstr()
+ Wide version of strrchr that returns after doing strrchr 'n' times.
 ********************************************************************/
+
+smb_ucs2_t *strnrchr_w(const smb_ucs2_t *s, smb_ucs2_t c, unsigned int n)
+{
+	const smb_ucs2_t *p = s;
+	int len = strlen_w(s);
+	if (len == 0 || !n)
+		return NULL;
+	p += (len - 1);
+	do {
+		if (c == *p)
+			n--;
+
+		if (!n)
+			return (smb_ucs2_t *)p;
+	} while (p-- != s);
+	return NULL;
+}
+
+/*******************************************************************
+ Wide strstr().
+********************************************************************/
+
 smb_ucs2_t *strstr_w(const smb_ucs2_t *s, const smb_ucs2_t *ins)
 {
 	smb_ucs2_t *r;
@@ -681,82 +757,6 @@ smb_ucs2_t *strstr_wa(const smb_ucs2_t *s, const char *ins)
 		r++;
 	}
 	return NULL;
-}
-
-/*******************************************************************
-copy a string with max len
-********************************************************************/
-
-smb_ucs2_t *strncpy_wa(smb_ucs2_t *dest, const char *src, const size_t max)
-{
-	smb_ucs2_t *ucs2_src;
-
-	if (!dest || !src) return NULL;
-	if (!(ucs2_src = acnv_uxu2(src)))
-		return NULL;
-	
-	strncpy_w(dest, ucs2_src, max);
-	SAFE_FREE(ucs2_src);
-	return dest;
-}
-
-/*******************************************************************
-convert and duplicate an ascii string
-********************************************************************/
-smb_ucs2_t *strdup_wa(const char *src)
-{
-	return strndup_wa(src, 0);
-}
-
-/* if len == 0 then duplicate the whole string */
-smb_ucs2_t *strndup_wa(const char *src, size_t len)
-{
-	smb_ucs2_t *dest, *s;
-
-	s = acnv_dosu2(src);	
-	if (!len) len = strlen_w(s);
-	dest = (smb_ucs2_t *)malloc((len + 1) * sizeof(smb_ucs2_t));
-	if (!dest) {
-		DEBUG(0,("strdup_w: out of memory!\n"));
-		SAFE_FREE(s);
-		return NULL;
-	}
-
-	memcpy(dest, src, len * sizeof(smb_ucs2_t));
-	dest[len] = 0;
-
-	SAFE_FREE(s);
-	return dest;
-}
-
-/*******************************************************************
-append a string of len bytes and add a terminator
-********************************************************************/
-
-smb_ucs2_t *strncat_wa(smb_ucs2_t *dest, const char *src, const size_t max)
-{
-	smb_ucs2_t *ucs2_src;
-
-	if (!dest || !src) return NULL;
-	if (!(ucs2_src = acnv_uxu2(src)))
-		return NULL;
-	
-	strncat_w(dest, ucs2_src, max);
-	SAFE_FREE(ucs2_src);
-	return dest;
-}
-
-smb_ucs2_t *strcat_wa(smb_ucs2_t *dest, const char *src)
-{	
-	smb_ucs2_t *ucs2_src;
-	
-	if (!dest || !src) return NULL;
-	if (!(ucs2_src = acnv_uxu2(src)))
-		return NULL;
-	
-	strcat_w(dest, ucs2_src);
-	SAFE_FREE(ucs2_src);
-	return dest;
 }
 
 BOOL trim_string_wa(smb_ucs2_t *s, const char *front,
