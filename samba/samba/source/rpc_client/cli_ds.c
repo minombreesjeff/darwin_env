@@ -39,13 +39,8 @@ NTSTATUS cli_ds_getprimarydominfo(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	/* Initialise parse structures */
 
-	if (!prs_init(&qbuf, MAX_PDU_FRAG_LEN, mem_ctx, MARSHALL)) {
-		return NT_STATUS_NO_MEMORY;
-	}
-	if (!prs_init(&rbuf, 0, mem_ctx, UNMARSHALL)) {
-		prs_mem_free(&qbuf);
-		return NT_STATUS_NO_MEMORY;
-	}
+	prs_init(&qbuf, MAX_PDU_FRAG_LEN, mem_ctx, MARSHALL);
+	prs_init(&rbuf, 0, mem_ctx, UNMARSHALL);
 	
 	q.level = level;
 	
@@ -68,7 +63,7 @@ NTSTATUS cli_ds_getprimarydominfo(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 	result = r.status;
 
 	if ( r.ptr && ctr ) {
-		ctr->basic = TALLOC_P(mem_ctx, DSROLE_PRIMARY_DOMAIN_INFO_BASIC);
+		ctr->basic = talloc(mem_ctx, sizeof(DSROLE_PRIMARY_DOMAIN_INFO_BASIC));
 		if (!ctr->basic)
 			goto done;
 		memcpy(ctr->basic, r.info.basic, sizeof(DSROLE_PRIMARY_DOMAIN_INFO_BASIC));
@@ -99,13 +94,8 @@ NTSTATUS cli_ds_enum_domain_trusts(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 
 	/* Initialise parse structures */
 
-	if (!prs_init(&qbuf, MAX_PDU_FRAG_LEN, mem_ctx, MARSHALL)) {
-		return NT_STATUS_NO_MEMORY;;
-	}
-	if (!prs_init(&rbuf, 0, mem_ctx, UNMARSHALL)) {
-		prs_mem_free(&qbuf);
-		return NT_STATUS_NO_MEMORY;
-	}
+	prs_init(&qbuf, MAX_PDU_FRAG_LEN, mem_ctx, MARSHALL);
+	prs_init(&rbuf, 0, mem_ctx, UNMARSHALL);
 
 	init_q_ds_enum_domain_trusts( &q, server, flags );
 		
@@ -128,7 +118,7 @@ NTSTATUS cli_ds_enum_domain_trusts(struct cli_state *cli, TALLOC_CTX *mem_ctx,
 		int i;
 	
 		*num_domains = r.num_domains;
-		*trusts = TALLOC_ARRAY(mem_ctx, struct ds_domain_trust, r.num_domains);
+		*trusts = (struct ds_domain_trust*)talloc(mem_ctx, r.num_domains*sizeof(**trusts));
 
 		for ( i=0; i< *num_domains; i++ ) {
 			(*trusts)[i].flags = r.domains.trusts[i].flags;

@@ -1,8 +1,7 @@
 /* 
    Unix SMB/CIFS implementation.
    tdb utility functions
-   Copyright (C) Andrew Tridgell   1992-1998
-   Copyright (C) Rafal Szczesniak  2002
+   Copyright (C) Andrew Tridgell 1992-1998
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -554,7 +553,7 @@ int tdb_unpack(char *buf, int bufsize, const char *fmt, ...)
 			len += *i;
 			if (bufsize < len)
 				goto no_space;
-			*b = (char *)SMB_MALLOC(*i);
+			*b = (char *)malloc(*i);
 			if (! *b)
 				goto no_space;
 			memcpy(*b, buf+4, *i);
@@ -740,7 +739,7 @@ TDB_CONTEXT *tdb_open_log(const char *name, int hash_size, int tdb_flags,
 		tdb_flags |= TDB_NOMMAP;
 
 	tdb = tdb_open_ex(name, hash_size, tdb_flags, 
-				    open_flags, mode, tdb_log, NULL);
+				    open_flags, mode, tdb_log);
 	if (!tdb)
 		return NULL;
 
@@ -778,7 +777,7 @@ TDB_LIST_NODE *tdb_search_keys(TDB_CONTEXT *tdb, const char* pattern)
 	
 	for (key = tdb_firstkey(tdb); key.dptr; key = next) {
 		/* duplicate key string to ensure null-termination */
-		char *key_str = (char*) SMB_STRNDUP(key.dptr, key.dsize);
+		char *key_str = (char*) strndup(key.dptr, key.dsize);
 		if (!key_str) {
 			DEBUG(0, ("tdb_search_keys: strndup() failed!\n"));
 			smb_panic("strndup failed!\n");
@@ -790,7 +789,7 @@ TDB_LIST_NODE *tdb_search_keys(TDB_CONTEXT *tdb, const char* pattern)
 
 		/* do the pattern checking */
 		if (fnmatch(pattern, key_str, 0) == 0) {
-			rec = SMB_MALLOC_P(TDB_LIST_NODE);
+			rec = (TDB_LIST_NODE*) malloc(sizeof(*rec));
 			ZERO_STRUCTP(rec);
 
 			rec->node_key = key;
@@ -827,3 +826,5 @@ void tdb_search_list_free(TDB_LIST_NODE* node)
 		node = next_node;
 	};
 }
+
+

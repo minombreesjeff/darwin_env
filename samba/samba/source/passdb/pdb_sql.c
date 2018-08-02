@@ -44,6 +44,7 @@
 #define CONFIG_NT_PW_DEFAULT				"nt_pw"
 #define CONFIG_PLAIN_PW_DEFAULT				"NULL"
 #define CONFIG_ACCT_CTRL_DEFAULT			"acct_ctrl"
+#define CONFIG_UNKNOWN_3_DEFAULT			"unknown_3"
 #define CONFIG_LOGON_DIVS_DEFAULT			"logon_divs"
 #define CONFIG_HOURS_LEN_DEFAULT			"hours_len"
 #define CONFIG_BAD_PASSWORD_COUNT_DEFAULT		"bad_password_count"
@@ -78,7 +79,7 @@ static void pdb_sql_int_field(struct pdb_sql_query *q, const char *name, int val
 
 char *sql_escape_string(const char *unesc)
 {
-	char *esc = SMB_MALLOC(strlen(unesc) * 2 + 3);
+	char *esc = malloc(strlen(unesc) * 2 + 3);
 	size_t pos_unesc = 0, pos_esc = 0;
 
 	for(pos_unesc = 0; unesc[pos_unesc]; pos_unesc++) {
@@ -204,7 +205,7 @@ char *sql_account_query_select(const char *data, BOOL update, enum sql_search_fi
 	}
 
 	asprintf(&query,
-			 "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM %s WHERE %s = '%s'",
+			 "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s FROM %s WHERE %s = '%s'",
 			 config_value_read(data, "logon time column",
 							   CONFIG_LOGON_TIME_DEFAULT),
 			 config_value_read(data, "logoff time column",
@@ -253,6 +254,8 @@ char *sql_account_query_select(const char *data, BOOL update, enum sql_search_fi
 							   CONFIG_PLAIN_PW_DEFAULT),
 			 config_value_read(data, "acct ctrl column",
 							   CONFIG_ACCT_CTRL_DEFAULT),
+			 config_value_read(data, "unknown 3 column",
+							   CONFIG_UNKNOWN_3_DEFAULT),
 			 config_value_read(data, "logon divs column",
 							   CONFIG_LOGON_DIVS_DEFAULT),
 			 config_value_read(data, "hours len column",
@@ -472,7 +475,7 @@ char *sql_account_query_update(const char *location, const SAM_ACCOUNT *newpwd, 
 								   " VALUES (%s", query.part2);
 	}
 
-	ret = SMB_STRDUP(query.part1);
+	ret = strdup(query.part1);
 	talloc_destroy(query.mem_ctx);
 	return ret;
 }

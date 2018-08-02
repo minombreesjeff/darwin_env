@@ -29,7 +29,7 @@ static BOOL ds_io_dominfobasic( const char *desc, prs_struct *ps, int depth, DSR
 	DSROLE_PRIMARY_DOMAIN_INFO_BASIC *p = *basic;
 	
 	if ( UNMARSHALLING(ps) )
-		p = *basic = PRS_ALLOC_MEM(ps, DSROLE_PRIMARY_DOMAIN_INFO_BASIC, 1);
+		p = *basic = (DSROLE_PRIMARY_DOMAIN_INFO_BASIC *)prs_alloc_mem(ps, sizeof(DSROLE_PRIMARY_DOMAIN_INFO_BASIC));
 		
 	if ( !p )
 		return False;
@@ -49,7 +49,7 @@ static BOOL ds_io_dominfobasic( const char *desc, prs_struct *ps, int depth, DSR
 	if ( !prs_uint32("forestname_ptr", ps, depth, &p->forestname_ptr) )
 		return False;
 		
-	if ( !smb_io_uuid("domain_guid", &p->domain_guid, ps, depth) )
+	if ( !prs_uint8s(False, "domain_guid", ps, depth, p->domain_guid.info, GUID_SIZE) )
 		return False;
 		
 	if ( !smb_io_unistr2( "netbios_domain", &p->netbios_domain, p->netbios_ptr, ps, depth) )
@@ -179,7 +179,7 @@ static BOOL ds_io_domain_trusts( const char *desc, prs_struct *ps, int depth, DS
 	if ( !prs_uint32( "sid_ptr", ps, depth, &trust->sid_ptr ) )
 		return False;
 	
-	if ( !smb_io_uuid("guid", &trust->guid, ps, depth) )
+	if ( !prs_uint8s(False, "guid", ps, depth, trust->guid.info, GUID_SIZE) )
 		return False;
 	
 	return True;	
@@ -208,7 +208,7 @@ static BOOL ds_io_dom_trusts_ctr( const char *desc, prs_struct *ps, int depth, D
 	
 	/* allocate the domain trusts array are parse it */
 	
-	ctr->trusts = TALLOC_ARRAY(ps->mem_ctx, DS_DOMAIN_TRUSTS, ctr->max_count);
+	ctr->trusts = (DS_DOMAIN_TRUSTS*)talloc(ps->mem_ctx, sizeof(DS_DOMAIN_TRUSTS)*ctr->max_count);
 	
 	if ( !ctr->trusts )
 		return False;

@@ -183,7 +183,7 @@ typedef struct sam_user_info_23
 
 	uint32 acb_info; /* account info (ACB_xxxx bit-mask) */
 
-	uint32 fields_present; /* 0x09f8 27fa */
+	uint32 unknown_3; /* 0x09f8 27fa */
 
 	uint16 logon_divs; /* 0x0000 00a8 which is 168 which is num hrs in a week */
 	/* uint8 pad[2] */
@@ -308,8 +308,7 @@ typedef struct sam_user_info_21
 
 	uint32 acb_info; /* account info (ACB_xxxx bit-mask) */
 
-	/* Was unknown_3 */
-	uint32 fields_present; /* 0x00ff ffff */
+	uint32 unknown_3; /* 0x00ff ffff */
 
 	uint16 logon_divs; /* 0x0000 00a8 which is 168 which is num hrs in a week */
 	/* uint8 pad[2] */
@@ -1068,14 +1067,6 @@ typedef struct samr_group_info1
 
 } GROUP_INFO1;
 
-typedef struct samr_group_info2
-{
-	uint16 level;
-	UNIHDR hdr_acct_name;
-	UNISTR2 uni_acct_name;
-
-} GROUP_INFO2;
-
 typedef struct samr_group_info3
 {
 	uint32 unknown_1; /* 0x0000 0003 - number of group members? */
@@ -1084,7 +1075,6 @@ typedef struct samr_group_info3
 
 typedef struct samr_group_info4
 {
-	uint16 level;
 	UNIHDR hdr_acct_desc;
 	UNISTR2 uni_acct_desc;
 
@@ -1098,7 +1088,6 @@ typedef struct group_info_ctr
 	union
  	{
 		GROUP_INFO1 info1;
-		GROUP_INFO2 info2;
 		GROUP_INFO3 info3;
 		GROUP_INFO4 info4;
 
@@ -1743,10 +1732,15 @@ typedef struct q_samr_get_dom_pwinfo
 typedef struct r_samr_get_dom_pwinfo
 {
 	/*
-	 * See Samba4 IDL
+	 * Previously this was 3 uint16's.  However, after some tests
+	 * it appears that the data len for the signing needs to be 16.
+	 * Not sure how 3 unit16's ever worked since the length always
+	 * turned out to 12.  3 uint32's + NT_STATUS == 16 bytes.  Tested
+	 * using NT and 2k.  --jerry
 	 */
-	uint16 unk_0;
+	uint32 unk_0;
 	uint32 unk_1;
+	uint32 unk_2;
 	NTSTATUS status;
 
 } SAMR_R_GET_DOM_PWINFO;

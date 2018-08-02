@@ -18,7 +18,7 @@ SRCDIR=`rpm --eval %_sourcedir`
 
 USERID=`id -u`
 GRPID=`id -g`
-VERSION='3.0.10'
+VERSION='3.0.2'
 SPECFILE="samba.spec"
 RPMVER=`rpm --version | awk '{print $3}'`
 RPM="rpmbuild"
@@ -46,8 +46,7 @@ esac
 ##
 for file in samba.pamd samba.sysconfig samba.spec \
 	smb.init swat.desktop filter-requires-samba.sh \
-	samba.log samba.xinetd smbprint winbind.init \
-	smb.conf smbusers
+	samba.log samba.xinetd smbprint winbind.init
 do
 	cp -p $file ${SRCDIR}
 

@@ -28,11 +28,9 @@
 BOOL opt_nocache = False;
 BOOL opt_dual_daemon = True;
 
-extern BOOL override_logfile;
-
 /* Reload configuration */
 
-static BOOL reload_services_file(void)
+static BOOL reload_services_file(BOOL test)
 {
 	BOOL ret;
 
@@ -42,6 +40,7 @@ static BOOL reload_services_file(void)
 		pstrcpy(fname,lp_configfile());
 		if (file_exist(fname,NULL) && !strcsequal(fname,dyn_CONFIGFILE)) {
 			pstrcpy(dyn_CONFIGFILE,fname);
+			test = False;
 		}
 	}
 
@@ -190,23 +189,12 @@ static void sighup_handler(int signum)
 	sys_select_signal();
 }
 
-static void sigchld_handler(int signum)
-{
-	pid_t pid;
-	int status;
-
-	while ((pid = wait(&status)) != -1 || errno == EINTR) {
-		continue; /* Reap children */
-	}
-	sys_select_signal();
-}
-
 /* React on 'smbcontrol winbindd reload-config' in the same way as on SIGHUP*/
 static void msg_reload_services(int msg_type, pid_t src, void *buf, size_t len)
 {
         /* Flush various caches */
 	flush_caches();
-	reload_services_file();
+	reload_services_file(True);
 }
 
 /* React on 'smbcontrol winbindd shutdown' in the same way as on SIGTERM*/
@@ -268,7 +256,6 @@ static struct dispatch_table dispatch_table[] = {
 	{ WINBINDD_SID_TO_GID, winbindd_sid_to_gid, "SID_TO_GID" },
 	{ WINBINDD_GID_TO_SID, winbindd_gid_to_sid, "GID_TO_SID" },
 	{ WINBINDD_UID_TO_SID, winbindd_uid_to_sid, "UID_TO_SID" },
-	{ WINBINDD_ALLOCATE_RID, winbindd_allocate_rid, "ALLOCATE_RID" },
 
 	/* Miscellaneous */
 
@@ -357,7 +344,8 @@ static void new_connection(int listen_sock, BOOL privileged)
 	
 	/* Create new connection structure */
 	
-	if ((state = SMB_MALLOC_P(struct winbindd_cli_state)) == NULL)
+	if ((state = (struct winbindd_cli_state *) 
+             malloc(sizeof(*state))) == NULL)
 		return;
 	
 	ZERO_STRUCTP(state);
@@ -588,7 +576,6 @@ static void process_loop(void)
 		int maxfd, listen_sock, listen_priv_sock, selret;
 		struct timeval timeout;
 
-	again:
 		/* Handle messages */
 
 		message_dispatch();
@@ -717,15 +704,6 @@ static void process_loop(void)
 			for (state = winbindd_client_list(); state; 
 			     state = state->next) {
                 
-				/* Data available for writing */
-                
-				if (FD_ISSET(state->sock, &w_fds))
-					client_write(state);
-			}
-                
-			for (state = winbindd_client_list(); state; 
-			     state = state->next) {
-                
 				/* Data available for reading */
                 
 				if (FD_ISSET(state->sock, &r_fds)) {
@@ -758,10 +736,13 @@ static void process_loop(void)
 					if (state->read_buf_len == 
 					    sizeof(state->request)) {
 						winbind_process_packet(state);
-						winbindd_demote_client(state);
-						goto again;
 					}
 				}
+                
+				/* Data available for writing */
+                
+				if (FD_ISSET(state->sock, &w_fds))
+					client_write(state);
 			}
 		}
 
@@ -805,7 +786,7 @@ int main(int argc, char **argv)
 		{ "foreground", 'F', POPT_ARG_VAL, &Fork, False, "Daemon in foreground mode" },
 		{ "interactive", 'i', POPT_ARG_NONE, NULL, 'i', "Interactive mode" },
 		{ "single-daemon", 'Y', POPT_ARG_VAL, &opt_dual_daemon, False, "Single daemon mode" },
-		{ "no-caching", 'n', POPT_ARG_VAL, &opt_nocache, True, "Disable caching" },
+		{ "no-caching", 'n', POPT_ARG_VAL, &opt_nocache, False, "Disable caching" },
 		POPT_COMMON_SAMBA
 		POPT_TABLEEND
 	};
@@ -854,17 +835,15 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (!override_logfile) {
-		pstr_sprintf(logfile, "%s/log.winbindd", dyn_LOGFILEBASE);
-		lp_set_logfile(logfile);
-	}
+	pstr_sprintf(logfile, "%s/log.winbindd", dyn_LOGFILEBASE);
+	lp_set_logfile(logfile);
 	setup_logging("winbindd", log_stdout);
 	reopen_logs();
 
 	DEBUG(1, ("winbindd version %s started.\n", SAMBA_VERSION_STRING) );
 	DEBUGADD( 1, ( "Copyright The Samba Team 2000-2004\n" ) );
 
-	if (!reload_services_file()) {
+	if (!reload_services_file(False)) {
 		DEBUG(0, ("error opening config file\n"));
 		exit(1);
 	}
@@ -890,15 +869,16 @@ int main(int argc, char **argv)
 
 	ZERO_STRUCT(server_state);
 
+	if (!winbindd_param_init())
+		return 1;
+
 	/* Winbind daemon initialisation */
 
-	if ( (!winbindd_param_init()) || (!winbindd_upgrade_idmap()) ||
-	     (!idmap_init(lp_idmap_backend())) ) {
-		DEBUG(1, ("Could not init idmap -- netlogon proxy only\n"));
-		idmap_proxyonly();
-	}
+	if (!winbindd_upgrade_idmap())
+		return 1;
 
-	generate_wellknown_sids();
+	if (!idmap_init(lp_idmap_backend()))
+		return 1;
 
 	/* Unblock all signals we are interested in as they may have been
 	   blocked by the parent process. */
@@ -909,14 +889,12 @@ int main(int argc, char **argv)
 	BlockSignals(False, SIGUSR1);
 	BlockSignals(False, SIGUSR2);
 	BlockSignals(False, SIGHUP);
-	BlockSignals(False, SIGCHLD);
 
 	/* Setup signal handlers */
 	
 	CatchSignal(SIGINT, termination_handler);      /* Exit on these sigs */
 	CatchSignal(SIGQUIT, termination_handler);
 	CatchSignal(SIGTERM, termination_handler);
-	CatchSignal(SIGCHLD, sigchld_handler);
 
 	CatchSignal(SIGPIPE, SIG_IGN);                 /* Ignore sigpipe */
 

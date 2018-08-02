@@ -26,6 +26,7 @@
 
 /* Misc bit macros */
 #define BOOLSTR(b) ((b) ? "Yes" : "No")
+#define BITSETB(ptr,bit) ((((char *)ptr)[0] & (1<<(bit)))!=0)
 #define BITSETW(ptr,bit) ((SVAL(ptr,0) & (1<<(bit)))!=0)
 
 /* for readability... */
@@ -121,9 +122,9 @@
 #define MAP_HIDDEN(conn)   ((conn) && lp_map_hidden((conn)->service))
 #define MAP_SYSTEM(conn)   ((conn) && lp_map_system((conn)->service))
 #define MAP_ARCHIVE(conn)   ((conn) && lp_map_archive((conn)->service))
-#define IS_HIDDEN_PATH(conn,path)  ((conn) && is_in_path((path),(conn)->hide_list,(conn)->case_sensitive))
-#define IS_VETO_PATH(conn,path)  ((conn) && is_in_path((path),(conn)->veto_list,(conn)->case_sensitive))
-#define IS_VETO_OPLOCK_PATH(conn,path)  ((conn) && is_in_path((path),(conn)->veto_oplock_list,(conn)->case_sensitive))
+#define IS_HIDDEN_PATH(conn,path)  ((conn) && is_in_path((path),(conn)->hide_list))
+#define IS_VETO_PATH(conn,path)  ((conn) && is_in_path((path),(conn)->veto_list))
+#define IS_VETO_OPLOCK_PATH(conn,path)  ((conn) && is_in_path((path),(conn)->veto_oplock_list))
 
 /* 
  * Used by the stat cache code to check if a returned
@@ -170,10 +171,9 @@
 /* these are the datagram types */
 #define DGRAM_DIRECT_UNIQUE 0x10
 
-#define ERROR_DOS(class,code) error_packet(outbuf,NT_STATUS_OK,class,code,False,__LINE__,__FILE__)
-#define ERROR_FORCE_DOS(class,code) error_packet(outbuf,NT_STATUS_OK,class,code,True,__LINE__,__FILE__)
-#define ERROR_NT(status) error_packet(outbuf,status,0,0,False,__LINE__,__FILE__)
-#define ERROR_BOTH(status,class,code) error_packet(outbuf,status,class,code,False,__LINE__,__FILE__)
+#define ERROR_DOS(class,code) error_packet(outbuf,NT_STATUS_OK,class,code,__LINE__,__FILE__)
+#define ERROR_NT(status) error_packet(outbuf,status,0,0,__LINE__,__FILE__)
+#define ERROR_BOTH(status,class,code) error_packet(outbuf,status,class,code,__LINE__,__FILE__)
 
 /* this is how errors are generated */
 #define UNIXERROR(defclass,deferror) unix_error_packet(outbuf,defclass,deferror,__LINE__,__FILE__)
@@ -245,7 +245,6 @@ copy an IP address from one buffer to another
  Make a filename into unix format.
 ****************************************************************************/
 
-#define IS_DIRECTORY_SEP(c) ((c) == '\\' || (c) == '/')
 #define unix_format(fname) string_replace(fname,'\\','/')
 #define unix_format_w(fname) string_replace_w(fname, UCS2_CHAR('\\'), UCS2_CHAR('/'))
 
@@ -260,93 +259,5 @@ copy an IP address from one buffer to another
 *****************************************************************************/
 
 #define IS_DC  (lp_server_role()==ROLE_DOMAIN_PDC || lp_server_role()==ROLE_DOMAIN_BDC) 
-
-/*****************************************************************************
- Safe allocation macros.
-*****************************************************************************/
-
-#define SMB_MALLOC_ARRAY(type,count) (type *)malloc_array(sizeof(type),(count))
-#define SMB_REALLOC(p,s) Realloc((p),(s))
-#define SMB_REALLOC_ARRAY(p,type,count) (type *)realloc_array((p),sizeof(type),(count))
-#define SMB_CALLOC_ARRAY(type,count) (type *)calloc_array(sizeof(type),(count))
-#define SMB_XMALLOC_P(type) (type *)smb_xmalloc_array(sizeof(type),1)
-#define SMB_XMALLOC_ARRAY(type,count) (type *)smb_xmalloc_array(sizeof(type),(count))
-
-/* limiting size of ipc replies */
-#define SMB_REALLOC_LIMIT(ptr,size) SMB_REALLOC(ptr,MAX((size),4*1024))
-
-/* #define PARANOID_MALLOC_CHECKER 1 */
-
-#if defined(PARANOID_MALLOC_CHECKER)
-
-#define TALLOC(ctx, size) talloc_((ctx),(size))
-#define TALLOC_P(ctx, type) (type *)talloc_((ctx),sizeof(type))
-#define TALLOC_ARRAY(ctx, type, count) (type *)talloc_array_((ctx),sizeof(type),(count))
-#define TALLOC_MEMDUP(ctx, ptr, size) talloc_memdup_((ctx),(ptr),(size))
-#define TALLOC_ZERO(ctx, size) talloc_zero_((ctx),(size))
-#define TALLOC_ZERO_P(ctx, type) (type *)talloc_zero_((ctx),sizeof(type))
-#define TALLOC_ZERO_ARRAY(ctx, type, count) (type *)talloc_zero_array_((ctx),sizeof(type),(count))
-#define TALLOC_REALLOC(ctx, ptr, count) talloc_realloc_((ctx),(ptr),(count))
-#define TALLOC_REALLOC_ARRAY(ctx, ptr, type, count) (type *)talloc_realloc_array_((ctx),(ptr),sizeof(type),(count))
-
-#define PRS_ALLOC_MEM(ps, type, count) (type *)prs_alloc_mem_((ps),sizeof(type),(count))
-
-/* Get medieval on our ass about malloc.... */
-
-/* Restrictions on malloc/realloc/calloc. */
-#ifdef malloc
-#undef malloc
-#endif
-#define malloc(s) __ERROR_DONT_USE_MALLOC_DIRECTLY
-
-#ifdef realloc
-#undef realloc
-#endif
-#define realloc(p,s) __ERROR_DONT_USE_REALLOC_DIRECTLY
-
-#ifdef calloc
-#undef calloc
-#endif
-#define calloc(n,s) __ERROR_DONT_USE_CALLOC_DIRECTLY
-
-#ifdef strndup
-#undef strndup
-#endif
-#define strndup(s,n) __ERROR_DONT_USE_STRNDUP_DIRECTLY
-
-#ifdef strdup
-#undef strdup
-#endif
-#define strdup(s) __ERROR_DONT_USE_STRDUP_DIRECTLY
-
-#define SMB_MALLOC(s) malloc_(s)
-#define SMB_MALLOC_P(type) (type *)malloc_(sizeof(type))
-
-#define SMB_STRDUP(s) smb_xstrdup(s)
-#define SMB_STRNDUP(s,n) smb_xstrndup(s,n)
-
-#else
-
-#define TALLOC(ctx, size) talloc((ctx),(size))
-#define TALLOC_P(ctx, type) (type *)talloc((ctx),sizeof(type))
-#define TALLOC_ARRAY(ctx, type, count) (type *)talloc_array((ctx),sizeof(type),(count))
-#define TALLOC_MEMDUP(ctx, ptr, size) talloc_memdup((ctx),(ptr),(size))
-#define TALLOC_ZERO(ctx, size) talloc_zero((ctx),(size))
-#define TALLOC_ZERO_P(ctx, type) (type *)talloc_zero((ctx),sizeof(type))
-#define TALLOC_ZERO_ARRAY(ctx, type, count) (type *)talloc_zero_array((ctx),sizeof(type),(count))
-#define TALLOC_REALLOC(ctx, ptr, count) talloc_realloc((ctx),(ptr),(count))
-#define TALLOC_REALLOC_ARRAY(ctx, ptr, type, count) (type *)talloc_realloc_array((ctx),(ptr),sizeof(type),(count))
-
-#define PRS_ALLOC_MEM(ps, type, count) (type *)prs_alloc_mem((ps),sizeof(type),(count))
-
-/* Regular malloc code. */
-
-#define SMB_MALLOC(s) malloc(s)
-#define SMB_MALLOC_P(type) (type *)malloc(sizeof(type))
-
-#define SMB_STRDUP(s) strdup(s)
-#define SMB_STRNDUP(s,n) strndup(s,n)
-
-#endif
 
 #endif /* _SMB_MACROS_H */

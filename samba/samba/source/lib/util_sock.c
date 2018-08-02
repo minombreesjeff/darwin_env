@@ -29,54 +29,13 @@ int lastport=0;
 
 int smb_read_error = 0;
 
-static char *get_socket_addr(int fd)
-{
-	struct sockaddr sa;
-	struct sockaddr_in *sockin = (struct sockaddr_in *) (&sa);
-	socklen_t length = sizeof(sa);
-	static fstring addr_buf;
-
-	fstrcpy(addr_buf,"0.0.0.0");
-
-	if (fd == -1) {
-		return addr_buf;
-	}
-	
-	if (getsockname(fd, &sa, &length) < 0) {
-		DEBUG(0,("getsockname failed. Error was %s\n", strerror(errno) ));
-		return addr_buf;
-	}
-	
-	fstrcpy(addr_buf,(char *)inet_ntoa(sockin->sin_addr));
-	
-	return addr_buf;
-}
-
-static int get_socket_port(int fd)
-{
-	struct sockaddr sa;
-	struct sockaddr_in *sockin = (struct sockaddr_in *) (&sa);
-	socklen_t length = sizeof(sa);
-
-	if (fd == -1)
-		return -1;
-	
-	if (getsockname(fd, &sa, &length) < 0) {
-		DEBUG(0,("getpeername failed. Error was %s\n", strerror(errno) ));
-		return -1;
-	}
-	
-	return ntohs(sockin->sin_port);
-}
-
 /****************************************************************************
  Determine if a file descriptor is in fact a socket.
 ****************************************************************************/
 
 BOOL is_a_socket(int fd)
 {
-	int v;
-	socklen_t l;
+	int v,l;
 	l = sizeof(int);
 	return(getsockopt(fd, SOL_SOCKET, SO_TYPE, (char *)&v, &l) == 0);
 }
@@ -133,8 +92,7 @@ static const smb_socket_option socket_options[] = {
 
 static void print_socket_options(int s)
 {
-	int value;
-	socklen_t vlen = 4;
+	int value, vlen = 4;
 	const smb_socket_option *p = &socket_options[0];
 
 	/* wrapped in if statement to prevent streams leak in SCO Openserver 5.0 */
@@ -631,7 +589,7 @@ BOOL receive_smb(int fd,char *buffer, unsigned int timeout)
 	}
 
 	/* Check the incoming SMB signature. */
-	if (!srv_check_sign_mac(buffer, True)) {
+	if (!srv_check_sign_mac(buffer)) {
 		DEBUG(0, ("receive_smb: SMB Signature verification failed on incoming packet!\n"));
 		if (smb_read_error == 0)
 			smb_read_error = READ_BAD_SIG;
@@ -749,7 +707,7 @@ int open_socket_out(int type, struct in_addr *addr, int port ,int timeout)
 	/* create a socket to write to */
 	res = socket(PF_INET, type, 0);
 	if (res == -1) {
-                DEBUG(0,("socket error (%s)\n", strerror(errno)));
+		DEBUG(0,("socket error\n"));
 		return -1;
 	}
 
@@ -775,8 +733,7 @@ int open_socket_out(int type, struct in_addr *addr, int port ,int timeout)
 	/* Some systems return EAGAIN when they mean EINPROGRESS */
 	if (ret < 0 && (errno == EINPROGRESS || errno == EALREADY ||
 			errno == EAGAIN) && (connect_loop < timeout) ) {
-		smb_msleep(connect_loop);
-		timeout -= connect_loop;
+		msleep(connect_loop);
 		connect_loop += increment;
 		if (increment < 250) {
 			/* After 8 rounds we end up at a max of 255 msec */
@@ -870,15 +827,10 @@ char *client_socket_addr(void)
 	return get_socket_addr(client_fd);
 }
 
-int client_socket_port(void)
-{
-	return get_socket_port(client_fd);
-}
-
 struct in_addr *client_inaddr(struct sockaddr *sa)
 {
 	struct sockaddr_in *sockin = (struct sockaddr_in *) (sa);
-	socklen_t  length = sizeof(*sa);
+	int     length = sizeof(*sa);
 	
 	if (getpeername(client_fd, sa, &length) < 0) {
 		DEBUG(0,("getpeername failed. Error was %s\n", strerror(errno) ));
@@ -1003,7 +955,7 @@ char *get_peer_addr(int fd)
 {
 	struct sockaddr sa;
 	struct sockaddr_in *sockin = (struct sockaddr_in *) (&sa);
-	socklen_t length = sizeof(sa);
+	int     length = sizeof(sa);
 	static fstring addr_buf;
 
 	fstrcpy(addr_buf,"0.0.0.0");
@@ -1013,6 +965,29 @@ char *get_peer_addr(int fd)
 	}
 	
 	if (getpeername(fd, &sa, &length) < 0) {
+		DEBUG(0,("getpeername failed. Error was %s\n", strerror(errno) ));
+		return addr_buf;
+	}
+	
+	fstrcpy(addr_buf,(char *)inet_ntoa(sockin->sin_addr));
+	
+	return addr_buf;
+}
+
+char *get_socket_addr(int fd)
+{
+	struct sockaddr sa;
+	struct sockaddr_in *sockin = (struct sockaddr_in *) (&sa);
+	int     length = sizeof(sa);
+	static fstring addr_buf;
+
+	fstrcpy(addr_buf,"0.0.0.0");
+
+	if (fd == -1) {
+		return addr_buf;
+	}
+	
+	if (getsockname(fd, &sa, &length) < 0) {
 		DEBUG(0,("getpeername failed. Error was %s\n", strerror(errno) ));
 		return addr_buf;
 	}

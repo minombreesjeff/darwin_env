@@ -63,16 +63,13 @@ enum RPC_PKT_TYPE
 #define NETSEC_AUTH_TYPE 0x44
 #define NETSEC_SIGN_SIGNATURE { 0x77, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00 }
 #define NETSEC_SEAL_SIGNATURE { 0x77, 0x00, 0x7a, 0x00, 0xff, 0xff, 0x00, 0x00 }
-
-#define RPC_AUTH_NETSEC_SIGN_OR_SEAL_CHK_LEN 	0x20
-#define RPC_AUTH_NETSEC_SIGN_ONLY_CHK_LEN 	0x18
+#define RPC_AUTH_NETSEC_CHK_LEN 0x20
 
 /* The 7 here seems to be required to get Win2k not to downgrade us
    to NT4.  Actually, anything other than 1ff would seem to do... */
 #define NETLOGON_NEG_AUTH2_FLAGS 0x000701ff
  
-#define NETLOGON_NEG_SCHANNEL    		0x40000000
-#define NETLOGON_NEG_DOMAIN_TRUST_ACCOUNT	0x2010b000
+#define NETLOGON_NEG_SCHANNEL    0x40000000
 
 enum netsec_direction
 {
@@ -90,15 +87,29 @@ enum netsec_direction
 /* #define MAX_PDU_FRAG_LEN 0x1630		this is what wnt sets */
 #define MAX_PDU_FRAG_LEN 0x10b8			/* this is what w2k sets */
 
+/*
+ * Actual structure of a DCE UUID
+ */
+
+typedef struct rpc_uuid
+{
+  uint32 time_low;
+  uint16 time_mid;
+  uint16 time_hi_and_version;
+  uint8 remaining[8];
+} RPC_UUID;
+
+#define RPC_UUID_LEN 16
+
 /* RPC_IFACE */
 typedef struct rpc_iface_info
 {
-  struct uuid uuid;  /* 16 bytes of rpc interface identification */
+  RPC_UUID uuid;    /* 16 bytes of rpc interface identification */
   uint32 version;    /* the interface version number */
 
 } RPC_IFACE;
 
-#define RPC_IFACE_LEN (UUID_SIZE + 4)
+#define RPC_IFACE_LEN (RPC_UUID_LEN + 4)
 
 struct pipe_id_info
 {

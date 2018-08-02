@@ -22,7 +22,7 @@
 */
 
 #include "includes.h"
-#include "utils/net.h"
+#include "../utils/net.h"
 
 extern DOM_SID global_sid_Builtin; 
 
@@ -62,21 +62,21 @@ static void display_account_info(uint32 rid, SAM_ACCOUNT_INFO *a)
 	
 	if (memcmp(a->pass.buf_lm_pwd, zero_buf, 16) != 0) {
 		sam_pwd_hash(a->user_rid, a->pass.buf_lm_pwd, lm_passwd, 0);
-		pdb_sethexpwd(hex_lm_passwd, lm_passwd, a->acb_info);
+		smbpasswd_sethexpwd(hex_lm_passwd, lm_passwd, a->acb_info);
 	} else {
-		pdb_sethexpwd(hex_lm_passwd, NULL, 0);
+		smbpasswd_sethexpwd(hex_lm_passwd, NULL, 0);
 	}
 
 	if (memcmp(a->pass.buf_nt_pwd, zero_buf, 16) != 0) {
 		sam_pwd_hash(a->user_rid, a->pass.buf_nt_pwd, nt_passwd, 0);
-		pdb_sethexpwd(hex_nt_passwd, nt_passwd, a->acb_info);
+		smbpasswd_sethexpwd(hex_nt_passwd, nt_passwd, a->acb_info);
 	} else {
-		pdb_sethexpwd(hex_nt_passwd, NULL, 0);
+		smbpasswd_sethexpwd(hex_nt_passwd, NULL, 0);
 	}
 	
 	printf("%s:%d:%s:%s:%s:LCT-0\n", unistr2_static(&a->uni_acct_name),
 	       a->user_rid, hex_lm_passwd, hex_nt_passwd,
-	       pdb_encode_acct_ctrl(a->acb_info, NEW_PW_FORMAT_SPACE_PADDED_LEN));
+	       smbpasswd_encode_acb_info(a->acb_info));
 }
 
 static void display_domain_info(SAM_DOMAIN_INFO *a)
@@ -196,29 +196,36 @@ static void dump_database(struct cli_state *cli, unsigned db_type, DOM_CRED *ret
 }
 
 /* dump sam database via samsync rpc calls */
-NTSTATUS rpc_samdump_internals(const DOM_SID *domain_sid, 
-			       const char *domain_name, 
-			       struct cli_state *cli, TALLOC_CTX *mem_ctx, 
-			       int argc, const char **argv) 
+int rpc_samdump(int argc, const char **argv)
 {
-	NTSTATUS nt_status = NT_STATUS_UNSUCCESSFUL;
+	struct cli_state *cli = NULL;
 	uchar trust_password[16];
 	DOM_CRED ret_creds;
 	uint32 sec_channel;
 
 	ZERO_STRUCT(ret_creds);
 
-	fstrcpy(cli->domain, domain_name);
+	/* Connect to remote machine */
+	if (!(cli = net_make_ipc_connection(NET_FLAGS_ANONYMOUS | NET_FLAGS_PDC))) {
+		return 1;
+	}
 
-	if (!secrets_fetch_trust_account_password(domain_name,
+	fstrcpy(cli->domain, lp_workgroup());
+
+	if (!cli_nt_session_open(cli, PI_NETLOGON)) {
+		DEBUG(0,("Could not open connection to NETLOGON pipe\n"));
+		goto fail;
+	}
+
+	if (!secrets_fetch_trust_account_password(lp_workgroup(),
 						  trust_password,
 						  NULL, &sec_channel)) {
 		DEBUG(0,("Could not fetch trust account password\n"));
 		goto fail;
 	}
 
-	if (!NT_STATUS_IS_OK(nt_status = cli_nt_establish_netlogon(cli, sec_channel,
-								   trust_password))) {
+	if (!NT_STATUS_IS_OK(cli_nt_establish_netlogon(cli, sec_channel,
+						       trust_password))) {
 		DEBUG(0,("Error connecting to NETLOGON pipe\n"));
 		goto fail;
 	}
@@ -227,11 +234,15 @@ NTSTATUS rpc_samdump_internals(const DOM_SID *domain_sid,
 	dump_database(cli, SAM_DATABASE_BUILTIN, &ret_creds);
 	dump_database(cli, SAM_DATABASE_PRIVS, &ret_creds);
 
-        nt_status = NT_STATUS_OK;
+	cli_nt_session_close(cli);
+        
+        return 0;
 
 fail:
-	cli_nt_session_close(cli);
-	return nt_status;
+	if (cli) {
+		cli_nt_session_close(cli);
+	}
+	return -1;
 }
 
 /* Convert a SAM_ACCOUNT_DELTA to a SAM_ACCOUNT. */
@@ -421,7 +432,7 @@ static NTSTATUS fetch_account_info(uint32 rid, SAM_ACCOUNT_INFO *delta)
 			pstrcpy(add_script, lp_addmachine_script());
 		} else {
 			DEBUG(1, ("Unknown user type: %s\n",
-				  pdb_encode_acct_ctrl(delta->acb_info, NEW_PW_FORMAT_SPACE_PADDED_LEN)));
+				  smbpasswd_encode_acb_info(delta->acb_info)));
 			nt_ret = NT_STATUS_UNSUCCESSFUL;
 			goto done;
 		}
@@ -446,6 +457,7 @@ static NTSTATUS fetch_account_info(uint32 rid, SAM_ACCOUNT_INFO *delta)
 			nt_ret = NT_STATUS_NO_SUCH_USER;
 			goto done;
 		}
+			
 	}
 	
 	sid_copy(&user_sid, get_global_sam_sid());
@@ -595,7 +607,7 @@ fetch_group_mem_info(uint32 rid, SAM_GROUP_MEM_INFO *delta)
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	nt_members = TALLOC_ZERO_ARRAY(t, char *, delta->num_members);
+	nt_members = talloc_zero(t, sizeof(char *) * delta->num_members);
 
 	for (i=0; i<delta->num_members; i++) {
 		NTSTATUS nt_status;
@@ -1008,73 +1020,75 @@ fetch_database(struct cli_state *cli, unsigned db_type, DOM_CRED *ret_creds,
 }
 
 /* dump sam database via samsync rpc calls */
-NTSTATUS rpc_vampire_internals(const DOM_SID *domain_sid, 
-			       const char *domain_name, 
-			       struct cli_state *cli, TALLOC_CTX *mem_ctx, 
-			       int argc, const char **argv) 
+int rpc_vampire(int argc, const char **argv)
 {
         NTSTATUS result;
+	struct cli_state *cli = NULL;
 	uchar trust_password[16];
 	DOM_CRED ret_creds;
-	fstring my_dom_sid_str;
-	fstring rem_dom_sid_str;
+	DOM_SID dom_sid;
 	uint32 sec_channel;
 
 	ZERO_STRUCT(ret_creds);
 
-	if (!sid_equal(domain_sid, get_global_sam_sid())) {
-		d_printf("Cannot import users from %s at this time, "
-			 "as the current domain:\n\t%s: %s\nconflicts "
-			 "with the remote domain\n\t%s: %s\n"
-			 "Perhaps you need to set: \n\n\tsecurity=user\n\tworkgroup=%s\n\n in your smb.conf?\n",
-			 domain_name,
-			 get_global_sam_name(), sid_to_string(my_dom_sid_str, 
-							      get_global_sam_sid()),
-			 domain_name, sid_to_string(rem_dom_sid_str, domain_sid),
-			 domain_name);
-		return NT_STATUS_UNSUCCESSFUL;
+	/* Connect to remote machine */
+	if (!(cli = net_make_ipc_connection(NET_FLAGS_ANONYMOUS |
+					    NET_FLAGS_PDC))) {
+		return 1;
 	}
 
-	fstrcpy(cli->domain, domain_name);
+	if (!cli_nt_session_open(cli, PI_NETLOGON)) {
+		DEBUG(0,("Error connecting to NETLOGON pipe\n"));
+		goto fail;
+	}
 
-	if (!secrets_fetch_trust_account_password(domain_name,
+	if (!secrets_fetch_trust_account_password(opt_target_workgroup,
 						  trust_password, NULL,
 						  &sec_channel)) {
-		result = NT_STATUS_CANT_ACCESS_DOMAIN_INFO;
 		d_printf("Could not retrieve domain trust secret\n");
 		goto fail;
 	}
 	
-	result = cli_nt_establish_netlogon(cli, sec_channel, trust_password);
+	result = cli_nt_establish_netlogon(cli, sec_channel,  trust_password);
 
 	if (!NT_STATUS_IS_OK(result)) {
 		d_printf("Failed to setup BDC creds\n");
 		goto fail;
 	}
 
-	result = fetch_database(cli, SAM_DATABASE_DOMAIN, &ret_creds, *domain_sid);
+	sid_copy( &dom_sid, get_global_sam_sid() );
+	result = fetch_database(cli, SAM_DATABASE_DOMAIN, &ret_creds, dom_sid);
 
 	if (!NT_STATUS_IS_OK(result)) {
 		d_printf("Failed to fetch domain database: %s\n",
 			 nt_errstr(result));
 		if (NT_STATUS_EQUAL(result, NT_STATUS_NOT_SUPPORTED))
 			d_printf("Perhaps %s is a Windows 2000 native mode "
-				 "domain?\n", domain_name);
+				 "domain?\n", opt_target_workgroup);
 		goto fail;
 	}
 
+	sid_copy(&dom_sid, &global_sid_Builtin);
+
 	result = fetch_database(cli, SAM_DATABASE_BUILTIN, &ret_creds, 
-				global_sid_Builtin);
+				dom_sid);
 
 	if (!NT_STATUS_IS_OK(result)) {
 		d_printf("Failed to fetch builtin database: %s\n",
 			 nt_errstr(result));
 		goto fail;
-	}
+	}	
 
 	/* Currently we crash on PRIVS somewhere in unmarshalling */
 	/* Dump_database(cli, SAM_DATABASE_PRIVS, &ret_creds); */
 
+	cli_nt_session_close(cli);
+        
+        return 0;
+
 fail:
-	return result;
+	if (cli)
+		cli_nt_session_close(cli);
+
+	return -1;
 }

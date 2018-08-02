@@ -117,7 +117,7 @@ void dual_send_request(struct winbindd_cli_state *state)
 
 	if (!background_process) return;
 
-	list = SMB_MALLOC_P(struct dual_list);
+	list = malloc(sizeof(*list));
 	if (!list) return;
 
 	list->next = NULL;
@@ -155,7 +155,7 @@ void do_dual_daemon(void)
 	dual_daemon_pipe = fdpair[1];
 	state.sock = fdpair[0];
 
-	if (sys_fork() != 0) {
+	if (fork() != 0) {
 		close(fdpair[0]);
 		return;
 	}

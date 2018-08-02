@@ -23,7 +23,7 @@ msgstr ""
 "Last-Translator: Deniz Akkus Kanca <deniz@arayan.com>\n"
 "Language-Team: Turkish <gnu-tr-u12a@lists.sourceforge.net>\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Type: text/plain; charset=ISO-8859-9\n"
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: KBabel 0.9.1\n"
 
@@ -34,11 +34,11 @@ msgstr ""
 
 #: ../web/swat.c:200
 msgid "Help"
-msgstr "YardÄ±m"
+msgstr "Yardım"
 
 #: ../web/swat.c:206 ../web/swat.c:220 ../web/swat.c:235 ../web/swat.c:243 ../web/swat.c:252 ../web/swat.c:261 ../web/swat.c:267 ../web/swat.c:273 ../web/swat.c:286
 msgid "Set Default"
-msgstr "Ã–ntanÄ±mlÄ±ya Ayarla"
+msgstr "Öntanımlıya Ayarla"
 
 #: ../web/swat.c:408
 #, c-format
@@ -53,7 +53,7 @@ msgstr ""
 #: ../web/swat.c:501
 #, c-format
 msgid "Logged in as <b>%s</b>"
-msgstr "<b>%s</b> kimliÄŸi ile oturum aÃ§Ä±lmÄ±ÅŸ"
+msgstr "<b>%s</b> kimliği ile oturum açılmış"
 
 #: ../web/swat.c:505
 msgid "Home"
@@ -65,11 +65,11 @@ msgstr "Evrenseller"
 
 #: ../web/swat.c:508
 msgid "Shares"
-msgstr "PaylaÅŸÄ±mlar"
+msgstr "Paylaşımlar"
 
 #: ../web/swat.c:509
 msgid "Printers"
-msgstr "YazÄ±cÄ±lar"
+msgstr "Yazıcılar"
 
 #: ../web/swat.c:510
 msgid "Wizard"
@@ -81,39 +81,39 @@ msgstr "Durum"
 
 #: ../web/swat.c:514
 msgid "View Config"
-msgstr "Ayarlara GÃ¶zat"
+msgstr "Ayarlara Gözat"
 
 #: ../web/swat.c:516
 msgid "Password Management"
-msgstr "Åifre YÃ¶netimi"
+msgstr "Şifre Yönetimi"
 
 #: ../web/swat.c:526
 msgid "Current View Is"
-msgstr "Åimdiki Ayarlar"
+msgstr "Şimdiki Ayarlar"
 
 #: ../web/swat.c:527 ../web/swat.c:530
 msgid "Basic"
-msgstr "Temel GÃ¶rÃ¼nÃ¼m"
+msgstr "Temel Görünüm"
 
 #: ../web/swat.c:528 ../web/swat.c:531
 msgid "Advanced"
-msgstr "GeliÅŸmiÅŸ GÃ¶rÃ¼nÃ¼m"
+msgstr "Gelişmiş Görünüm"
 
 #: ../web/swat.c:529
 msgid "Change View To"
-msgstr "Åifre DeÄŸiÅŸtir"
+msgstr "Şifre Değiştir"
 
 #: ../web/swat.c:554
 msgid "Current Config"
-msgstr "Åimdiki Ayarlar"
+msgstr "Şimdiki Ayarlar"
 
 #: ../web/swat.c:558
 msgid "Normal View"
-msgstr "Normal GÃ¶rÃ¼nÃ¼m"
+msgstr "Normal Görünüm"
 
 #: ../web/swat.c:560
 msgid "Full View"
-msgstr "Tam GÃ¶rÃ¼nÃ¼m"
+msgstr "Tam Görünüm"
 
 #. Here we first set and commit all the parameters that were selected
 #. in the previous screen.
@@ -144,11 +144,11 @@ msgstr ""
 
 #: ../web/swat.c:725
 msgid "Commit"
-msgstr "aÃ§Ä±klama"
+msgstr "açıklama"
 
 #: ../web/swat.c:726
 msgid "Edit Parameter Values"
-msgstr "YazÄ±cÄ± Bilgileri"
+msgstr "Yazıcı Bilgileri"
 
 #: ../web/swat.c:732
 msgid "Server Type"
@@ -156,7 +156,7 @@ msgstr ""
 
 #: ../web/swat.c:733
 msgid "Stand Alone"
-msgstr "Nmbd'yi Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi çalıştır"
 
 #: ../web/swat.c:734
 msgid "Domain Member"
@@ -208,35 +208,35 @@ msgstr ""
 
 #: ../web/swat.c:787
 msgid "Global Parameters"
-msgstr "Genel DeÄŸiÅŸkenler"
+msgstr "Genel Değişkenler"
 
 #: ../web/swat.c:815 ../web/swat.c:916 ../web/swat.c:1265
 msgid "Commit Changes"
-msgstr "DeÄŸiÅŸiklikleri Kaydet"
+msgstr "Değişiklikleri Kaydet"
 
 #: ../web/swat.c:819 ../web/swat.c:919 ../web/swat.c:1267
 msgid "Reset Values"
-msgstr "DeÄŸerleri Ä°lk Haline Getir"
+msgstr "Değerleri İlk Haline Getir"
 
 #: ../web/swat.c:844
 msgid "Share Parameters"
-msgstr "PaylaÅŸÄ±m Parametreleri"
+msgstr "Paylaşım Parametreleri"
 
 #: ../web/swat.c:887
 msgid "Choose Share"
-msgstr "PaylaÅŸÄ±m SeÃ§in"
+msgstr "Paylaşım Seçin"
 
 #: ../web/swat.c:901
 msgid "Delete Share"
-msgstr "PaylaÅŸÄ±m KaldÄ±r"
+msgstr "Paylaşım Kaldır"
 
 #: ../web/swat.c:908
 msgid "Create Share"
-msgstr "PaylaÅŸÄ±m OluÅŸtur"
+msgstr "Paylaşım Oluştur"
 
 #: ../web/swat.c:944
 msgid "password change in demo mode rejected"
-msgstr "demo kipinde ÅŸifre deÄŸiÅŸikliÄŸi kabul edilmedi\n"
+msgstr "demo kipinde şifre değişikliği kabul edilmedi\n"
 
 #: ../web/swat.c:957
 msgid "Can't setup password database vectors."
@@ -244,11 +244,11 @@ msgstr ""
 
 #: ../web/swat.c:983
 msgid " Must specify \"User Name\" "
-msgstr " \"KullanÄ±cÄ± AdÄ±\" belirtilmeli \n"
+msgstr " \"Kullanıcı Adı\" belirtilmeli \n"
 
 #: ../web/swat.c:999
 msgid " Must specify \"Old Password\" "
-msgstr " \"Eski Åifre\" belirtilmeli \n"
+msgstr " \"Eski Şifre\" belirtilmeli \n"
 
 #: ../web/swat.c:1005
 msgid " Must specify \"Remote Machine\" "
@@ -256,48 +256,48 @@ msgstr " \"Uzak Makina\" belirtilmeli \n"
 
 #: ../web/swat.c:1012
 msgid " Must specify \"New, and Re-typed Passwords\" "
-msgstr " \"Yeni ve Tekrar GirilmiÅŸ Åifreler\" belirtilmeli \n"
+msgstr " \"Yeni ve Tekrar Girilmiş Şifreler\" belirtilmeli \n"
 
 #: ../web/swat.c:1018
 msgid " Re-typed password didn't match new password "
-msgstr " Tekrar girilen ÅŸifre yeni ÅŸifre ile eÅŸleÅŸmedi\n"
+msgstr " Tekrar girilen şifre yeni şifre ile eşleşmedi\n"
 
 #: ../web/swat.c:1048
 #, c-format
 msgid " The passwd for '%s' has been changed."
-msgstr " '%s' iÃ§in ÅŸifre deÄŸiÅŸtirildi."
+msgstr " '%s' için şifre değiştirildi."
 
 #: ../web/swat.c:1051
 #, c-format
 msgid " The passwd for '%s' has NOT been changed."
-msgstr " '%s' iÃ§in ÅŸifre DEÄÄ°ÅTÄ°RÄ°LMEDÄ°."
+msgstr " '%s' için şifre DEĞİŞTİRİLMEDİ."
 
 #: ../web/swat.c:1076
 msgid "Server Password Management"
-msgstr "Sunucu Åifre YÃ¶netimi"
+msgstr "Sunucu Şifre Yönetimi"
 
 #.
 #. * Create all the dialog boxes for data collection
 #.
 #: ../web/swat.c:1085 ../web/swat.c:1132
 msgid "User Name"
-msgstr " KullanÄ±cÄ± AdÄ±"
+msgstr " Kullanıcı Adı"
 
 #: ../web/swat.c:1088 ../web/swat.c:1134
 msgid "Old Password"
-msgstr " Eski Åifre"
+msgstr " Eski Şifre"
 
 #: ../web/swat.c:1091 ../web/swat.c:1136
 msgid "New Password"
-msgstr " Yeni Åifre"
+msgstr " Yeni Şifre"
 
 #: ../web/swat.c:1093 ../web/swat.c:1138
 msgid "Re-type New Password"
-msgstr " Yeni Åifre TekrarÄ±"
+msgstr " Yeni Şifre Tekrarı"
 
 #: ../web/swat.c:1101 ../web/swat.c:1149
 msgid "Change Password"
-msgstr "Åifre DeÄŸiÅŸtir"
+msgstr "Şifre Değiştir"
 
 #: ../web/swat.c:1104
 msgid "Add New User"
@@ -309,15 +309,15 @@ msgstr "Kull. Sil"
 
 #: ../web/swat.c:1108
 msgid "Disable User"
-msgstr "Kull. EtkisizleÅŸtir"
+msgstr "Kull. Etkisizleştir"
 
 #: ../web/swat.c:1110
 msgid "Enable User"
-msgstr "Kull. EtkinleÅŸtir"
+msgstr "Kull. Etkinleştir"
 
 #: ../web/swat.c:1123
 msgid "Client/Server Password Management"
-msgstr "Ä°stemci/Sunucu Åifre YÃ¶netimi"
+msgstr "İstemci/Sunucu Şifre Yönetimi"
 
 #: ../web/swat.c:1140
 msgid "Remote Machine"
@@ -325,39 +325,39 @@ msgstr " Uzak Makina"
 
 #: ../web/swat.c:1179
 msgid "Printer Parameters"
-msgstr "YazÄ±cÄ± Bilgileri"
+msgstr "Yazıcı Bilgileri"
 
 #: ../web/swat.c:1181
 msgid "Important Note:"
-msgstr "Ã–nemli Not:"
+msgstr "Önemli Not:"
 
 #: ../web/swat.c:1182
 msgid "Printer names marked with [*] in the Choose Printer drop-down box "
-msgstr "YazÄ±cÄ± SeÃ§ kutusunda [*] ile iÅŸaretlenmiÅŸ yazÄ±cÄ± isimleri "
+msgstr "Yazıcı Seç kutusunda [*] ile işaretlenmiş yazıcı isimleri "
 
 #: ../web/swat.c:1183
 msgid "are autoloaded printers from "
-msgstr "otomatik yÃ¼klenen yazÄ±cÄ±lar "
+msgstr "otomatik yüklenen yazıcılar "
 
 #: ../web/swat.c:1184
 msgid "Printcap Name"
-msgstr "Printcap AdÄ±"
+msgstr "Printcap Adı"
 
 #: ../web/swat.c:1185
 msgid "Attempting to delete these printers from SWAT will have no effect."
-msgstr "Bu yazÄ±cÄ±larÄ± SWAT'dan silmek etkisiz olacaktÄ±r.\n"
+msgstr "Bu yazıcıları SWAT'dan silmek etkisiz olacaktır.\n"
 
 #: ../web/swat.c:1231
 msgid "Choose Printer"
-msgstr "YazÄ±cÄ± SeÃ§"
+msgstr "Yazıcı Seç"
 
 #: ../web/swat.c:1250
 msgid "Delete Printer"
-msgstr "YazÄ±cÄ± Sil"
+msgstr "Yazıcı Sil"
 
 #: ../web/swat.c:1257
 msgid "Create Printer"
-msgstr "YazÄ±cÄ± OluÅŸtur"
+msgstr "Yazıcı Oluştur"
 
 #: ../web/statuspage.c:123
 msgid "RDONLY     "
@@ -381,7 +381,7 @@ msgstr "Oto Tazele"
 
 #: ../web/statuspage.c:315 ../web/statuspage.c:320
 msgid "Refresh Interval: "
-msgstr "Tazeleme AralÄ±ÄŸÄ±: "
+msgstr "Tazeleme Aralığı: "
 
 #: ../web/statuspage.c:319
 msgid "Stop Refreshing"
@@ -389,7 +389,7 @@ msgstr "Tazelemeyi Durdur"
 
 #: ../web/statuspage.c:334
 msgid "version:"
-msgstr "sÃ¼rÃ¼m:"
+msgstr "sürüm:"
 
 #: ../web/statuspage.c:337
 msgid "smbd:"
@@ -397,11 +397,11 @@ msgstr "smbd:"
 
 #: ../web/statuspage.c:337 ../web/statuspage.c:350 ../web/statuspage.c:364
 msgid "running"
-msgstr "Ã§alÄ±ÅŸÄ±yor"
+msgstr "çalışıyor"
 
 #: ../web/statuspage.c:337 ../web/statuspage.c:350 ../web/statuspage.c:364
 msgid "not running"
-msgstr "Ã§alÄ±ÅŸmÄ±yor"
+msgstr "çalışmıyor"
 
 #: ../web/statuspage.c:341
 msgid "Stop smbd"
@@ -409,11 +409,11 @@ msgstr "Smbd'yi durdur"
 
 #: ../web/statuspage.c:343
 msgid "Start smbd"
-msgstr "Smbd'yi Ã§alÄ±ÅŸtÄ±r"
+msgstr "Smbd'yi çalıştır"
 
 #: ../web/statuspage.c:345
 msgid "Restart smbd"
-msgstr "Smbd'yi yeniden Ã§alÄ±ÅŸtÄ±r"
+msgstr "Smbd'yi yeniden çalıştır"
 
 #: ../web/statuspage.c:350
 msgid "nmbd:"
@@ -425,11 +425,11 @@ msgstr "Nmbd'yi durdur"
 
 #: ../web/statuspage.c:356
 msgid "Start nmbd"
-msgstr "Nmbd'yi Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi çalıştır"
 
 #: ../web/statuspage.c:358
 msgid "Restart nmbd"
-msgstr "Nmbd'yi yeniden Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi yeniden çalıştır"
 
 #: ../web/statuspage.c:364
 msgid "winbindd:"
@@ -441,11 +441,11 @@ msgstr "Nmbd'yi durdur"
 
 #: ../web/statuspage.c:370
 msgid "Start winbindd"
-msgstr "Nmbd'yi Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi çalıştır"
 
 #: ../web/statuspage.c:372
 msgid "Restart winbindd"
-msgstr "Nmbd'yi yeniden Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi yeniden çalıştır"
 
 #. stop, restart all
 #: ../web/statuspage.c:381
@@ -454,16 +454,16 @@ msgstr ""
 
 #: ../web/statuspage.c:382
 msgid "Restart All"
-msgstr "Nmbd'yi yeniden Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi yeniden çalıştır"
 
 #. start all
 #: ../web/statuspage.c:386
 msgid "Start All"
-msgstr "Nmbd'yi Ã§alÄ±ÅŸtÄ±r"
+msgstr "Nmbd'yi çalıştır"
 
 #: ../web/statuspage.c:393
 msgid "Active Connections"
-msgstr "Aktif BaÄŸlantÄ±lar"
+msgstr "Aktif Bağlantılar"
 
 #: ../web/statuspage.c:395 ../web/statuspage.c:408 ../web/statuspage.c:416
 msgid "PID"
@@ -471,11 +471,11 @@ msgstr "PID"
 
 #: ../web/statuspage.c:395 ../web/statuspage.c:408
 msgid "Client"
-msgstr "Ä°stemci"
+msgstr "İstemci"
 
 #: ../web/statuspage.c:395
 msgid "IP address"
-msgstr "IP numarasÄ±"
+msgstr "IP numarası"
 
 #: ../web/statuspage.c:395 ../web/statuspage.c:408 ../web/statuspage.c:416
 msgid "Date"
@@ -487,15 +487,15 @@ msgstr "Kapat"
 
 #: ../web/statuspage.c:405
 msgid "Active Shares"
-msgstr "Aktif PaylaÅŸÄ±mlar"
+msgstr "Aktif Paylaşımlar"
 
 #: ../web/statuspage.c:408
 msgid "Share"
-msgstr "PaylaÅŸÄ±m"
+msgstr "Paylaşım"
 
 #: ../web/statuspage.c:408
 msgid "User"
-msgstr "KullanÄ±cÄ±"
+msgstr "Kullanıcı"
 
 #: ../web/statuspage.c:408
 msgid "Group"
@@ -503,11 +503,11 @@ msgstr "Grup"
 
 #: ../web/statuspage.c:414
 msgid "Open Files"
-msgstr "AÃ§Ä±k Dosyalar"
+msgstr "Açık Dosyalar"
 
 #: ../web/statuspage.c:416
 msgid "Sharing"
-msgstr "PaylaÅŸÄ±lÄ±yor"
+msgstr "Paylaşılıyor"
 
 #: ../web/statuspage.c:416
 msgid "R/W"
@@ -531,64 +531,64 @@ msgstr ""
 
 #: ../param/loadparm.c:755
 msgid "Base Options"
-msgstr "Temel SeÃ§enekler"
+msgstr "Temel Seçenekler"
 
 #: ../param/loadparm.c:775
 msgid "Security Options"
-msgstr "GÃ¼venlik SeÃ§enekleri"
+msgstr "Güvenlik Seçenekleri"
 
 #: ../param/loadparm.c:859
 msgid "Logging Options"
-msgstr "GÃ¼nlÃ¼k KaydÄ± SeÃ§enekleri"
+msgstr "Günlük Kaydı Seçenekleri"
 
 #: ../param/loadparm.c:874
 msgid "Protocol Options"
-msgstr "Protokol SeÃ§enekleri"
+msgstr "Protokol Seçenekleri"
 
 #: ../param/loadparm.c:911
 msgid "Tuning Options"
-msgstr "Ayar SeÃ§enekleri"
+msgstr "Ayar Seçenekleri"
 
 #: ../param/loadparm.c:940
 msgid "Printing Options"
-msgstr "YazdÄ±rma SeÃ§enekleri"
+msgstr "Yazdırma Seçenekleri"
 
 #: ../param/loadparm.c:970
 msgid "Filename Handling"
-msgstr "DosyaadÄ± Ä°ÅŸlenmesi"
+msgstr "Dosyaadı İşlenmesi"
 
 #: ../param/loadparm.c:996
 msgid "Domain Options"
-msgstr "Alan SeÃ§enekleri"
+msgstr "Alan Seçenekleri"
 
 #: ../param/loadparm.c:1000
 msgid "Logon Options"
-msgstr "Sistem GiriÅŸ SeÃ§enekleri"
+msgstr "Sistem Giriş Seçenekleri"
 
 #: ../param/loadparm.c:1019
 msgid "Browse Options"
-msgstr "GÃ¶zatma SeÃ§enekleri"
+msgstr "Gözatma Seçenekleri"
 
 #: ../param/loadparm.c:1033
 msgid "WINS Options"
-msgstr "WINS SeÃ§enekleri"
+msgstr "WINS Seçenekleri"
 
 #: ../param/loadparm.c:1043
 msgid "Locking Options"
-msgstr "Kilitleme SeÃ§enekleri"
+msgstr "Kilitleme Seçenekleri"
 
 #: ../param/loadparm.c:1061
 msgid "Ldap Options"
-msgstr "Ldap SeÃ§enekleri"
+msgstr "Ldap Seçenekleri"
 
 #: ../param/loadparm.c:1078
 msgid "Miscellaneous Options"
-msgstr "DiÄŸer SeÃ§enekler"
+msgstr "Diğer Seçenekler"
 
 #: ../param/loadparm.c:1138
 msgid "VFS module options"
-msgstr "VFS SeÃ§enekleri"
+msgstr "VFS Seçenekleri"
 
 #: ../param/loadparm.c:1148
 msgid "Winbind options"
-msgstr "Winbind seÃ§enekleri"
+msgstr "Winbind seçenekleri"

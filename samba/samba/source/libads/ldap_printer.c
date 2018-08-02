@@ -36,7 +36,7 @@ ADS_STATUS ads_find_printer_on_server(ADS_STRUCT *ads, void **res,
 
 	status = ads_find_machine_acct(ads, res, servername);
 	if (!ADS_ERR_OK(status)) {
-		DEBUG(1, ("ads_find_printer_on_server: cannot find host %s in ads\n",
+		DEBUG(1, ("ads_add_printer: cannot find host %s in ads\n",
 			  servername));
 		return status;
 	}
@@ -161,9 +161,10 @@ static BOOL map_multi_sz(TALLOC_CTX *ctx, ADS_MODLIST *mods,
 	};
 
 	if (num_vals) {
-		str_values = TALLOC_ARRAY(ctx, char *, num_vals + 1);
+		str_values = talloc(ctx, 
+				    (num_vals + 1) * sizeof(smb_ucs2_t *));
 		memset(str_values, '\0', 
-		       (num_vals + 1) * sizeof(char *));
+		       (num_vals + 1) * sizeof(smb_ucs2_t *));
 
 		cur_str = (smb_ucs2_t *) value->data_p;
 		for (i=0; i < num_vals; i++)

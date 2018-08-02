@@ -51,6 +51,13 @@
 
 
 /* -------------------------------------------------------------------------- **
+ * External Variables...
+ */
+
+extern int case_default;    /* Are conforming 8.3 names all upper or lower?   */
+extern BOOL case_mangle;    /* If true, all chars in 8.3 should be same case. */
+
+/* -------------------------------------------------------------------------- **
  * Other stuff...
  *
  * magic_char     - This is the magic char used for mangling.  It's
@@ -85,6 +92,23 @@
  *                  if that character is in the illegal characters set.
  *                  This is faster than using strchr_m().
  *
+ * mangled_cache  - Cache header used for storing mangled -> original
+ *                  reverse maps.
+ *
+ * mc_initialized - False until the mangled_cache structure has been
+ *                  initialized via a call to reset_mangled_cache().
+ *
+ * MANGLED_CACHE_MAX_ENTRIES - Default maximum number of entries for the
+ *                  cache.  A value of 0 indicates "infinite".
+ *
+ * MANGLED_CACHE_MAX_MEMORY  - Default maximum amount of memory for the
+ *                  cache.  When the cache was kept as an array of 256
+ *                  byte strings, the default cache size was 50 entries.
+ *                  This required a fixed 12.5Kbytes of memory.  The
+ *                  mangled stack parameter is no longer used (though
+ *                  this might change).  We're now using a fixed 16Kbyte
+ *                  maximum cache size.  This will probably be much more
+ *                  than 50 entries.
  */
 
 char magic_char = '~';
@@ -101,7 +125,17 @@ static BOOL          ct_initialized = False;
 #define isbasechar(C) ( (chartest[ ((C) & 0xff) ]) & BASECHAR_MASK )
 #define isillegal(C) ( (chartest[ ((C) & 0xff) ]) & ILLEGAL_MASK )
 
-static TDB_CONTEXT *tdb_mangled_cache;
+static ubi_cacheRoot mangled_cache[1] =  { { { 0, 0, 0, 0 }, 0, 0, 0, 0, 0, 0 } };
+static BOOL          mc_initialized   = False;
+#define MANGLED_CACHE_MAX_ENTRIES 1024
+#define MANGLED_CACHE_MAX_MEMORY 0
+
+/* -------------------------------------------------------------------------- **
+ * External Variables...
+ */
+
+extern int case_default;    /* Are conforming 8.3 names all upper or lower?   */
+extern BOOL case_mangle;    /* If true, all chars in 8.3 should be same case. */
 
 /* -------------------------------------------------------------------- */
 
@@ -380,76 +414,162 @@ static BOOL is_mangled(const char *s)
 	return( False );
 }
 
-/***************************************************************************
- Initializes or clears the mangled cache.
-***************************************************************************/
+/* ************************************************************************** **
+ * Compare two cache keys and return a value indicating their ordinal
+ * relationship.
+ *
+ *  Input:  ItemPtr - Pointer to a comparison key.  In this case, this will
+ *                    be a mangled name string.
+ *          NodePtr - Pointer to a node in the cache.  The node structure
+ *                    will be followed in memory by a mangled name string.
+ *
+ *  Output: A signed integer, as follows:
+ *            (x < 0)  <==> Key1 less than Key2
+ *            (x == 0) <==> Key1 equals Key2
+ *            (x > 0)  <==> Key1 greater than Key2
+ *
+ *  Notes:  This is a ubiqx-style comparison routine.  See ubi_BinTree for
+ *          more info.
+ *
+ * ************************************************************************** **
+ */
+static signed int cache_compare( ubi_btItemPtr ItemPtr, ubi_btNodePtr NodePtr )
+{
+	char *Key1 = (char *)ItemPtr;
+	char *Key2 = (char *)(((ubi_cacheEntryPtr)NodePtr) + 1);
+
+	return( StrCaseCmp( Key1, Key2 ) );
+}
+
+/* ************************************************************************** **
+ * Free a cache entry.
+ *
+ *  Input:  WarrenZevon - Pointer to the entry that is to be returned to
+ *                        Nirvana.
+ *  Output: none.
+ *
+ *  Notes:  This function gets around the possibility that the standard
+ *          free() function may be implemented as a macro, or other evil
+ *          subversions (oh, so much fun).
+ *
+ * ************************************************************************** **
+ */
+static void cache_free_entry( ubi_trNodePtr WarrenZevon )
+{
+	ZERO_STRUCTP(WarrenZevon);
+	SAFE_FREE( WarrenZevon );
+}
+
+/* ************************************************************************** **
+ * Initializes or clears the mangled cache.
+ *
+ *  Input:  none.
+ *  Output: none.
+ *
+ *  Notes:  There is a section below that is commented out.  It shows how
+ *          one might use lp_ calls to set the maximum memory and entry size
+ *          of the cache.  You might also want to remove the constants used
+ *          in ubi_cacheInit() and replace them with lp_ calls.  If so, then
+ *          the calls to ubi_cacheSetMax*() would be moved into the else
+ *          clause.  Another option would be to pass in the max_entries and
+ *          max_memory values as parameters.  crh 09-Apr-1998.
+ *
+ * ************************************************************************** **
+ */
 
 static void mangle_reset( void )
 {
-	/* We could close and re-open the tdb here... should we ? The old code did
-	   the equivalent... JRA. */
+	if( !mc_initialized ) {
+		(void)ubi_cacheInit( mangled_cache,
+				cache_compare,
+				cache_free_entry,
+				MANGLED_CACHE_MAX_ENTRIES,
+				MANGLED_CACHE_MAX_MEMORY );
+		mc_initialized = True;
+	} else {
+		(void)ubi_cacheClear( mangled_cache );
+	}
+
+	/*
+	(void)ubi_cacheSetMaxEntries( mangled_cache, lp_mangled_cache_entries() );
+	(void)ubi_cacheSetMaxMemory(  mangled_cache, lp_mangled_cache_memory() );
+	*/
 }
 
-/***************************************************************************
- Add a mangled name into the cache.
- If the extension of the raw name maps directly to the
- extension of the mangled name, then we'll store both names
- *without* extensions.  That way, we can provide consistent
- reverse mangling for all names that match.  The test here is
- a bit more careful than the one done in earlier versions of
- mangle.c:
-
-    - the extension must exist on the raw name,
-    - it must be all lower case
-    - it must match the mangled extension (to prove that no
-      mangling occurred).
-  crh 07-Apr-1998
-**************************************************************************/
-
-static void cache_mangled_name( const char mangled_name[13], char *raw_name )
+/* ************************************************************************** **
+ * Add a mangled name into the cache.
+ *
+ *  Notes:  If the mangled cache has not been initialized, then the
+ *          function will simply fail.  It could initialize the cache,
+ *          but that's not the way it was done before I changed the
+ *          cache mechanism, so I'm sticking with the old method.
+ *
+ *          If the extension of the raw name maps directly to the
+ *          extension of the mangled name, then we'll store both names
+ *          *without* extensions.  That way, we can provide consistent
+ *          reverse mangling for all names that match.  The test here is
+ *          a bit more careful than the one done in earlier versions of
+ *          mangle.c:
+ *
+ *            - the extension must exist on the raw name,
+ *            - it must be all lower case
+ *            - it must match the mangled extension (to prove that no
+ *              mangling occurred).
+ *
+ *  crh 07-Apr-1998
+ *
+ * ************************************************************************** **
+ */
+static void cache_mangled_name( char *mangled_name, char *raw_name )
 {
-	TDB_DATA data_val;
-	char mangled_name_key[13];
-	char *s1;
-	char *s2;
+	ubi_cacheEntryPtr new_entry;
+	char             *s1;
+	char             *s2;
+	size_t               mangled_len;
+	size_t               raw_len;
+	size_t               i;
 
 	/* If the cache isn't initialized, give up. */
-	if( !tdb_mangled_cache )
+	if( !mc_initialized )
 		return;
 
 	/* Init the string lengths. */
-	safe_strcpy(mangled_name_key, mangled_name, sizeof(mangled_name_key)-1);
+	mangled_len = strlen( mangled_name );
+	raw_len     = strlen( raw_name );
 
 	/* See if the extensions are unmangled.  If so, store the entry
 	 * without the extension, thus creating a "group" reverse map.
 	 */
-	s1 = strrchr( mangled_name_key, '.' );
+	s1 = strrchr( mangled_name, '.' );
 	if( s1 && (s2 = strrchr( raw_name, '.' )) ) {
-		size_t i = 1;
+		i = 1;
 		while( s1[i] && (tolower( s1[i] ) == s2[i]) )
 			i++;
 		if( !s1[i] && !s2[i] ) {
-			/* Truncate at the '.' */
-			*s1 = '\0';
-			*s2 = '\0';
+			mangled_len -= i;
+			raw_len     -= i;
 		}
 	}
 
 	/* Allocate a new cache entry.  If the allocation fails, just return. */
-	data_val.dptr = raw_name;
-	data_val.dsize = strlen(raw_name)+1;
-	if (tdb_store_bystring(tdb_mangled_cache, mangled_name_key, data_val, TDB_REPLACE) != 0) {
-		DEBUG(0,("cache_mangled_name: Error storing entry %s -> %s\n", mangled_name_key, raw_name));
-	} else {
-		DEBUG(5,("cache_mangled_name: Stored entry %s -> %s\n", mangled_name_key, raw_name));
-	}
+	i = sizeof( ubi_cacheEntry ) + mangled_len + raw_len + 2;
+	new_entry = malloc( i );
+	if( !new_entry )
+		return;
+
+	/* Fill the new cache entry, and add it to the cache. */
+	s1 = (char *)(new_entry + 1);
+	s2 = (char *)&(s1[mangled_len + 1]);
+	safe_strcpy( s1, mangled_name, mangled_len );
+	safe_strcpy( s2, raw_name,     raw_len );
+	ubi_cachePut( mangled_cache, i, new_entry, s1 );
 }
 
 /* ************************************************************************** **
  * Check for a name on the mangled name stack
  *
  *  Input:  s - Input *and* output string buffer.
- *	    maxlen - space in i/o string buffer.
+ *
  *  Output: True if the name was found in the cache, else False.
  *
  *  Notes:  If a reverse map is found, the function will overwrite the string
@@ -460,27 +580,28 @@ static void cache_mangled_name( const char mangled_name[13], char *raw_name )
  * ************************************************************************** **
  */
 
-static BOOL check_cache( char *s, size_t maxlen )
+static BOOL check_cache( char *s )
 {
-	TDB_DATA data_val;
-	char *ext_start = NULL;
-	char *saved_ext = NULL;
+	ubi_cacheEntryPtr FoundPtr;
+	char             *ext_start = NULL;
+	char             *found_name;
+	char             *saved_ext = NULL;
 
 	/* If the cache isn't initialized, give up. */
-	if( !tdb_mangled_cache )
+	if( !mc_initialized )
 		return( False );
 
-	data_val = tdb_fetch_bystring(tdb_mangled_cache, s);
+	FoundPtr = ubi_cacheGet( mangled_cache, (ubi_trItemPtr)s );
 
 	/* If we didn't find the name *with* the extension, try without. */
-	if(data_val.dptr == NULL || data_val.dsize == 0) {
+	if( !FoundPtr ) {
 		ext_start = strrchr( s, '.' );
 		if( ext_start ) {
-			if((saved_ext = SMB_STRDUP(ext_start)) == NULL)
+			if((saved_ext = strdup(ext_start)) == NULL)
 				return False;
 
 			*ext_start = '\0';
-			data_val = tdb_fetch_bystring(tdb_mangled_cache, s);
+			FoundPtr = ubi_cacheGet( mangled_cache, (ubi_trItemPtr)s );
 			/* 
 			 * At this point s is the name without the
 			 * extension. We re-add the extension if saved_ext
@@ -490,23 +611,26 @@ static BOOL check_cache( char *s, size_t maxlen )
 	}
 
 	/* Okay, if we haven't found it we're done. */
-	if(data_val.dptr == NULL || data_val.dsize == 0) {
+	if( !FoundPtr ) {
 		if(saved_ext) {
 			/* Replace the saved_ext as it was truncated. */
-			(void)safe_strcat( s, saved_ext, maxlen );
+			(void)pstrcat( s, saved_ext );
 			SAFE_FREE(saved_ext);
 		}
 		return( False );
 	}
 
 	/* If we *did* find it, we need to copy it into the string buffer. */
-	(void)safe_strcpy( s, data_val.dptr, maxlen );
+	found_name = (char *)(FoundPtr + 1);
+	found_name += (strlen( found_name ) + 1);
+
+	(void)pstrcpy( s, found_name );
 	if( saved_ext ) {
 		/* Replace the saved_ext as it was truncated. */
-		(void)safe_strcat( s, saved_ext, maxlen );
+		(void)pstrcat( s, saved_ext );
 		SAFE_FREE(saved_ext);
 	}
-	SAFE_FREE(data_val.dptr);
+
 	return( True );
 }
 
@@ -515,7 +639,7 @@ static BOOL check_cache( char *s, size_t maxlen )
  * the buffer must be able to hold 13 characters (including the null)
  *****************************************************************************
  */
-static void to_8_3(char *s, int default_case)
+static void to_8_3(char *s)
 {
 	int csum;
 	char *p;
@@ -529,7 +653,7 @@ static void to_8_3(char *s, int default_case)
 
 	p = strrchr(s,'.');  
 	if( p && (strlen(p+1) < (size_t)4) ) {
-		BOOL all_normal = ( strisnormal(p+1, default_case) ); /* XXXXXXXXX */
+		BOOL all_normal = ( strisnormal(p+1) ); /* XXXXXXXXX */
 
 		if( all_normal && p[1] != 0 ) {
 			*p = 0;
@@ -604,7 +728,7 @@ static void to_8_3(char *s, int default_case)
  * ****************************************************************************
  */
 
-static void name_map(char *OutName, BOOL need83, BOOL cache83, int default_case)
+static void name_map(char *OutName, BOOL need83, BOOL cache83)
 {
 	smb_ucs2_t *OutName_ucs2;
 	DEBUG(5,("name_map( %s, need83 = %s, cache83 = %s)\n", OutName,
@@ -624,9 +748,9 @@ static void name_map(char *OutName, BOOL need83, BOOL cache83, int default_case)
 
 		/* mangle it into 8.3 */
 		if (cache83)
-			tmp = SMB_STRDUP(OutName);
+			tmp = strdup(OutName);
 
-		to_8_3(OutName, default_case);
+		to_8_3(OutName);
 
 		if(tmp != NULL) {
 			cache_mangled_name(OutName, tmp);
@@ -654,10 +778,6 @@ static struct mangle_fns mangle_fns = {
 struct mangle_fns *mangle_hash_init(void)
 {
 	mangle_reset();
-
-	/* Create the in-memory tdb using our custom hash function. */
-	tdb_mangled_cache = tdb_open_ex("mangled_cache", 1031, TDB_INTERNAL,
-				(O_RDWR|O_CREAT), 0644, NULL, fast_string_hash);
 
 	return &mangle_fns;
 }

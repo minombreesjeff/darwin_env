@@ -53,6 +53,9 @@ typedef int BOOL;
 #define _BOOL       /* So we don't typedef BOOL again in vfs.h */
 #endif
 
+/* limiting size of ipc replies */
+#define REALLOC(ptr,size) Realloc(ptr,MAX((size),4*1024))
+
 #define SIZEOFWORD 2
 
 #ifndef DEF_CREATE_MASK
@@ -79,7 +82,6 @@ typedef int BOOL;
 #define READ_ERROR 3
 #define WRITE_ERROR 4 /* This error code can go into the client smb_rw_error. */
 #define READ_BAD_SIG 5
-#define DO_NOT_DO_TDIS 6 /* cli_close_connection() check for this when smbfs wants to keep tree connected */
 
 #define DIR_STRUCT_SIZE 43
 
@@ -377,7 +379,12 @@ typedef struct
 
 #include "fake_file.h"
 
-typedef struct files_struct {
+#ifdef WITH_BRLM
+#include <ByteRangeLocking/BRLM.h>
+#endif
+
+typedef struct files_struct
+{
 	struct files_struct *next, *prev;
 	int fnum;
 	struct connection_struct *conn;
@@ -412,14 +419,18 @@ typedef struct files_struct {
 	BOOL directory_delete_on_close;
 	char *fsp_name;
  	FAKE_FILE_HANDLE *fake_file_handle;
+#ifdef WITH_BRLM
+       BRLMRef brlm_ref;
+       int     brlm_deny_mode;
+       int     brlm_open_mode;
+#endif
 } files_struct;
 
 #include "ntquotas.h"
 #include "sysquotas.h"
 
 /* used to hold an arbitrary blob of data */
-typedef struct data_blob
-{
+typedef struct data_blob {
 	uint8 *data;
 	size_t length;
 	void (*free)(struct data_blob *data_blob);
@@ -432,27 +443,19 @@ typedef struct data_blob
 
 typedef struct
 {
-	time_t modify_time;
-	time_t status_time;
+  time_t modify_time;
+  time_t status_time;
 } dir_status_struct;
 
-struct vuid_cache_entry
-{
-	uint16 vuid;
-	BOOL read_only;
-	BOOL admin_user;
-};
-
-struct vuid_cache
-{
-	unsigned int entries;
-	struct vuid_cache_entry array[VUID_CACHE_SIZE];
+struct vuid_cache {
+  unsigned int entries;
+  uint16 list[VUID_CACHE_SIZE];
 };
 
 typedef struct
 {
-	char *name;
-	BOOL is_wild;
+  char *name;
+  BOOL is_wild;
 } name_compare_entry;
 
 /* Include VFS stuff */
@@ -472,8 +475,8 @@ typedef struct connection_struct
 	void *dirptr;
 	BOOL printer;
 	BOOL ipc;
-	BOOL read_only; /* Attributes for the current user of the share. */
-	BOOL admin_user; /* Attributes for the current user of the share. */
+	BOOL read_only;
+	BOOL admin_user;
 	char *dirpath;
 	char *connectpath;
 	char *origpath;
@@ -499,11 +502,6 @@ typedef struct connection_struct
 	time_t lastused;
 	BOOL used;
 	int num_files_open;
-
-	BOOL case_sensitive;
-	BOOL case_preserve;
-	BOOL short_case_preserve;
-
 	name_compare_entry *hide_list; /* Per-share list of files to return as hidden. */
 	name_compare_entry *veto_list; /* Per-share list of files to veto (never show). */
 	name_compare_entry *veto_oplock_list; /* Per-share list of files to refuse oplocks on. */       
@@ -540,7 +538,7 @@ enum {LPQ_QUEUED=0,LPQ_PAUSED,LPQ_SPOOLING,LPQ_PRINTING,LPQ_ERROR,LPQ_DELETING,
 
 typedef struct _print_queue_struct
 {
-  int job;		/* normally the UNIX jobid -- see note in 
+  int job;		/* normally the SMB jobid -- see note in 
 			   printing.c:traverse_fn_delete() */
   int size;
   int page_count;
@@ -580,24 +578,6 @@ struct interface
 	struct in_addr nmask;
 };
 
-/* struct used by share mode violation error processing */
-typedef struct {
-	pid_t pid;
-	uint16 mid;
-	struct timeval time;
-	SMB_DEV_T dev;
-	SMB_INO_T inode;
-	uint16 port;
-} deferred_open_entry;
-
-/* Internal message queue for deferred opens. */
-struct pending_message_list {
-	struct pending_message_list *next, *prev;
-	struct timeval msg_time; /* The timeout time */
-	DATA_BLOB buf;
-	DATA_BLOB private_data;
-};
-
 /* struct returned by get_share_modes */
 typedef struct {
 	pid_t pid;
@@ -620,11 +600,6 @@ typedef struct {
 
 #define NT_HASH_LEN 16
 #define LM_HASH_LEN 16
-
-/* Password history contants. */
-#define PW_HISTORY_SALT_LEN 16
-#define SALTED_MD5_HASH_LEN 16
-#define PW_HISTORY_ENTRY_LEN (PW_HISTORY_SALT_LEN+SALTED_MD5_HASH_LEN)
 
 /*
  * Flags for account policy.
@@ -682,14 +657,28 @@ struct locking_key {
 	SMB_INO_T inode;
 };
 
+struct locking_data {
+	union {
+		int num_share_mode_entries;
+		share_mode_entry dummy; /* Needed for alignment. */
+	} u;
+	/* the following two entries are implicit 
+	   share_mode_entry modes[num_share_mode_entries];
+           char file_name[];
+	*/
+};
+
+
 /* the following are used by loadparm for option lists */
-typedef enum {
-	P_BOOL,P_BOOLREV,P_CHAR,P_INTEGER,P_OCTAL,P_LIST,
-	P_STRING,P_USTRING,P_GSTRING,P_UGSTRING,P_ENUM,P_SEP
+typedef enum
+{
+  P_BOOL,P_BOOLREV,P_CHAR,P_INTEGER,P_OCTAL,P_LIST,
+  P_STRING,P_USTRING,P_GSTRING,P_UGSTRING,P_ENUM,P_SEP
 } parm_type;
 
-typedef enum {
-	P_LOCAL,P_GLOBAL,P_SEPARATOR,P_NONE
+typedef enum
+{
+  P_LOCAL,P_GLOBAL,P_SEPARATOR,P_NONE
 } parm_class;
 
 /* passed to br lock code */
@@ -714,7 +703,7 @@ struct parm_struct
 	parm_type type;
 	parm_class class;
 	void *ptr;
-	BOOL (*special)(int snum, const char *, char **);
+	BOOL (*special)(const char *, char **);
 	const struct enum_list *enum_list;
 	unsigned flags;
 	union {
@@ -882,7 +871,6 @@ struct bitmap {
 #define SMBnttranss      0xA1   /* NT transact secondary */
 #define SMBntcreateX     0xA2   /* NT create and X */
 #define SMBntcancel      0xA4   /* NT cancel */
-#define SMBntrename      0xA5   /* NT rename */
 
 /* These are the trans subcommands */
 #define TRANSACT_SETNAMEDPIPEHANDLESTATE  0x01 
@@ -1096,7 +1084,6 @@ struct bitmap {
 #define REQUEST_OPLOCK 2
 #define REQUEST_BATCH_OPLOCK 4
 #define OPEN_DIRECTORY 8
-#define EXTENDED_RESPONSE_REQUIRED 0x10
 
 /* ShareAccess field. */
 #define FILE_SHARE_NONE 0 /* Cannot be used in bitmask. */
@@ -1161,12 +1148,6 @@ struct bitmap {
 
 /* Flag for NT transact rename call. */
 #define RENAME_REPLACE_IF_EXISTS 1
-
-/* flags for SMBntrename call (from Samba4) */
-#define RENAME_FLAG_MOVE_CLUSTER_INFORMATION 0x102 /* ???? */
-#define RENAME_FLAG_HARD_LINK                0x103
-#define RENAME_FLAG_RENAME                   0x104
-#define RENAME_FLAG_COPY                     0x105
 
 /* Filesystem Attributes. */
 #define FILE_CASE_SENSITIVE_SEARCH      0x00000001
@@ -1350,8 +1331,7 @@ enum ldap_ssl_types {LDAP_SSL_ON, LDAP_SSL_OFF, LDAP_SSL_START_TLS};
 enum ldap_passwd_sync_types {LDAP_PASSWD_SYNC_ON, LDAP_PASSWD_SYNC_OFF, LDAP_PASSWD_SYNC_ONLY};
 
 /* Remote architectures we know about. */
-enum remote_arch_types {RA_UNKNOWN, RA_WFWG, RA_OS2, RA_WIN95, RA_WINNT,
-			RA_WIN2K, RA_WINXP, RA_WIN2K3, RA_SAMBA, RA_CIFSFS};
+enum remote_arch_types {RA_UNKNOWN, RA_WFWG, RA_OS2, RA_WIN95, RA_WINNT, RA_WIN2K, RA_WINXP, RA_WIN2K3, RA_SAMBA};
 
 /* case handling */
 enum case_handling {CASE_LOWER,CASE_UPPER};
@@ -1416,7 +1396,6 @@ extern int chain_size;
 #define EXCLUSIVE_OPLOCK 1
 #define BATCH_OPLOCK 2
 #define LEVEL_II_OPLOCK 4
-#define INTERNAL_OPEN_ONLY 8
 
 #define EXCLUSIVE_OPLOCK_TYPE(lck) ((lck) & (EXCLUSIVE_OPLOCK|BATCH_OPLOCK))
 #define BATCH_OPLOCK_TYPE(lck) ((lck) & BATCH_OPLOCK)
@@ -1468,25 +1447,6 @@ extern int chain_size;
 #define LEVEL_II_OPLOCK_BREAK_CMD 0x3
 #define ASYNC_LEVEL_II_OPLOCK_BREAK_CMD 0x4
 
-/* Add the "deferred open" message. */
-#define RETRY_DEFERRED_OPEN_CMD 0x5
-
-/*
- * And the message format for it. Keep the same message length.
- *
- *  0     2       2+pid   2+pid+dev 2+pid+dev+ino
- *  +----+--------+-------+--------+---------+
- *  | cmd| pid    | dev   |  inode | mid     |
- *  +----+--------+-------+--------+---------+
- */
-
-#define DEFERRED_OPEN_CMD_OFFSET 0
-#define DEFERRED_OPEN_PID_OFFSET 2 /* pid we're *sending* from. */
-#define DEFERRED_OPEN_DEV_OFFSET (DEFERRED_OPEN_PID_OFFSET + sizeof(pid_t))
-#define DEFERRED_OPEN_INODE_OFFSET (DEFERRED_OPEN_DEV_OFFSET + sizeof(SMB_DEV_T))
-#define DEFERRED_OPEN_MID_OFFSET (DEFERRED_OPEN_INODE_OFFSET + sizeof(SMB_INO_T))
-#define DEFERRED_OPEN_MSG_LEN OPLOCK_BREAK_MSG_LEN
-
 /*
  * Capabilities abstracted for different systems.
  */
@@ -1536,11 +1496,7 @@ struct cnotify_fns {
 
 #include "smb_macros.h"
 
-#define MAX_NETBIOSNAME_LEN 16
-/* DOS character, NetBIOS namestring. Type used on the wire. */
-typedef char nstring[MAX_NETBIOSNAME_LEN];
-/* Unix character, NetBIOS namestring. Type used to manipulate name in nmbd. */
-typedef char unstring[MAX_NETBIOSNAME_LEN*4];
+typedef char nstring[16];
 
 /* A netbios name structure. */
 struct nmb_name {
@@ -1557,19 +1513,26 @@ struct node_status {
 	unsigned char flags;
 };
 
-/* The extra info from a NetBIOS node status query */
-struct node_status_extra {
-	unsigned char mac_addr[6];
-	/* There really is more here ... */ 
-};
-
 struct pwd_info
 {
 	BOOL null_pwd;
 	BOOL cleartext;
+	BOOL crypted;
 
 	fstring password;
 
+	uchar smb_lm_pwd[16];
+	uchar smb_nt_pwd[16];
+
+	uchar smb_lm_owf[24];
+	uchar smb_nt_owf[128];
+	size_t nt_owf_len;
+
+	uchar lm_cli_chal[8];
+	uchar nt_cli_chal[128];
+	size_t nt_cli_chal_len;
+
+	uchar sess_key[16];
 };
 
 typedef struct user_struct
@@ -1653,12 +1616,12 @@ struct unix_error_map {
 #define SAFE_NETBIOS_CHARS ". -_"
 
 /* generic iconv conversion structure */
-typedef struct _smb_iconv_t {
-	size_t (*direct)(void *cd, const char **inbuf, size_t *inbytesleft,
+typedef struct {
+	size_t (*direct)(void *cd, char **inbuf, size_t *inbytesleft,
 			 char **outbuf, size_t *outbytesleft);
-	size_t (*pull)(void *cd, const char **inbuf, size_t *inbytesleft,
+	size_t (*pull)(void *cd, char **inbuf, size_t *inbytesleft,
 		       char **outbuf, size_t *outbytesleft);
-	size_t (*push)(void *cd, const char **inbuf, size_t *inbytesleft,
+	size_t (*push)(void *cd, char **inbuf, size_t *inbytesleft,
 		       char **outbuf, size_t *outbytesleft);
 	void *cd_direct, *cd_pull, *cd_push;
 	char *from_name, *to_name;
@@ -1687,7 +1650,7 @@ struct ip_service {
 
 typedef struct smb_sign_info {
 	void (*sign_outgoing_message)(char *outbuf, struct smb_sign_info *si);
-	BOOL (*check_incoming_message)(char *inbuf, struct smb_sign_info *si, BOOL must_be_ok);
+	BOOL (*check_incoming_message)(char *inbuf, struct smb_sign_info *si);
 	void (*free_signing_context)(struct smb_sign_info *si);
 	void *signing_context;
 
@@ -1695,18 +1658,6 @@ typedef struct smb_sign_info {
 	BOOL allow_smb_signing;
 	BOOL doing_signing;
 	BOOL mandatory_signing;
-	BOOL seen_valid; /* Have I ever seen a validly signed packet? */
 } smb_sign_info;
-
-struct ea_struct {
-	uint8 flags;
-	char *name;
-	DATA_BLOB value;
-};
-
-/* EA names used internally in Samba. KEEP UP TO DATE with prohibited_ea_names in trans2.c !. */
-#define SAMBA_POSIX_INHERITANCE_EA_NAME "user.SAMBA_PAI"
-/* EA to use for DOS attributes */
-#define SAMBA_XATTR_DOS_ATTRIB "user.DOSATTRIB"
 
 #endif /* _SMB_H */

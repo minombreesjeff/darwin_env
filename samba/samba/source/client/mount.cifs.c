@@ -38,15 +38,11 @@
 #include <fcntl.h>
 
 #define MOUNT_CIFS_VERSION_MAJOR "1"
-#define MOUNT_CIFS_VERSION_MINOR "5"
+#define MOUNT_CIFS_VERSION_MINOR "0"
 
 #ifndef MOUNT_CIFS_VENDOR_SUFFIX
 #define MOUNT_CIFS_VENDOR_SUFFIX ""
 #endif
-
-#ifndef MS_MOVE 
-#define MS_MOVE 8192 
-#endif 
 
 char * thisprogram;
 int verboseflag = 0;
@@ -57,7 +53,6 @@ static int got_ip = 0;
 static int got_unc = 0;
 static int got_uid = 0;
 static int got_gid = 0;
-static int free_share_name = 0;
 static char * user_name = NULL;
 char * mountpassword = NULL;
 
@@ -75,19 +70,7 @@ static void mount_cifs_usage(void)
 {
 	printf("\nUsage:  %s <remotetarget> <dir> -o <options>\n", thisprogram);
 	printf("\nMount the remote target, specified as a UNC name,");
-	printf(" to a local directory.\n\nOptions:\n");
-	printf("\tuser=<arg>\n\tpass=<arg>\n\tdom=<arg>\n");
-	printf("\nLess commonly used options:");
-	printf("\n\tcredentials=<filename>,guest,perm,noperm,setuids,nosetuids,\n\trw,ro,sep=<char>,iocharset=<codepage>,suid,nosuid,exec,noexec");
-	printf("\n\nOptions not needed for servers supporting CIFS Unix extensions (e.g. most Samba versions):");
-	printf("\n\tuid=<uid>,gid=<gid>,dir_mode=<mode>,file_mode=<mode>");
-	printf("\n\nRarely used options:");
-	printf("\n\tport=<tcpport>,rsize=<size>,wsize=<size>,unc=<unc_name>,ip=<ip_address>,dev,nodev");
-	printf("\n\nOptions are described in more detail in the manual page");
-	printf("\n\tman 8 mount.cifs\n");
-	printf("\nTo display the version number of the mount helper:");
-	printf("\n\t%s -V\n",thisprogram);
-
+	printf(" to a local directory.\n");
 	if(mountpassword) {
 		memset(mountpassword,0,64);
 		free(mountpassword);
@@ -108,7 +91,7 @@ static char * getusername(void) {
 
 char * parse_cifs_url(char * unc_name)
 {
-	printf("\nMounting cifs URL not implemented yet. Attempt to mount %s\n",unc_name);
+	printf("\ncifs url %s\n",unc_name);
 	return NULL;
 }
 
@@ -129,22 +112,22 @@ static int open_cred_file(char * file_name)
 		/* parse line from credential file */
 
 		/* eat leading white space */
-		for(i=0;i<4086;i++) {
-			if((line_buf[i] != ' ') && (line_buf[i] != '\t'))
+		for(i=0;i<4096;i++) {
+			if(line_buf[i] == '\0')
 				break;
-			/* if whitespace - skip past it */
+			else if((line_buf[i] != ' ') && (line_buf[i] != '\t'))
+				break;
+			line_buf++;
 		}
-		if (strncasecmp("username",line_buf+i,8) == 0) {
+
+		if (strncasecmp("username",line_buf,8) == 0) {
 			temp_val = strchr(line_buf + i,'=');
 			if(temp_val) {
 				/* go past equals sign */
 				temp_val++;
-				for(length = 0;length<4087;length++) {
-					if(temp_val[length] == '\n')
-						break;
-				}
+				length = strlen(temp_val);
 				if(length > 4086) {
-					printf("mount.cifs failed due to malformed username in credentials file");
+					printf("cifs.mount failed due to malformed username in credentials file");
 					memset(line_buf,0,4096);
 					if(mountpassword) {
 						memset(mountpassword,0,64);
@@ -158,17 +141,14 @@ static int open_cred_file(char * file_name)
 					strncpy(user_name,temp_val, length);
 				}
 			}
-		} else if (strncasecmp("password",line_buf+i,8) == 0) {
+		} else if (strncasecmp("password",line_buf,8) == 0) {
 			temp_val = strchr(line_buf+i,'=');
 			if(temp_val) {
 				/* go past equals sign */
 				temp_val++;
-				for(length = 0;length<65;length++) {
-					if(temp_val[length] == '\n')
-						break;
-				}
+				length = strlen(temp_val);
 				if(length > 64) {
-					printf("mount.cifs failed: password in credentials file too long\n");
+					printf("cifs.mount failed: password in credentials file too long\n");
 					memset(line_buf,0, 4096);
 					if(mountpassword) {
 						memset(mountpassword,0,64);
@@ -177,11 +157,9 @@ static int open_cred_file(char * file_name)
 				} else {
 					if(mountpassword == NULL) {
 						mountpassword = calloc(65,1);
-					} else
-						memset(mountpassword,0,64);
+					}
 					if(mountpassword) {
-						/* BB add handling for commas in password here */
-						strncpy(mountpassword,temp_val,length);
+						strncpy(mountpassword,temp_val,64);
 						got_password = 1;
 					}
 				}
@@ -210,7 +188,7 @@ static int get_password_from_file(int file_descript, char * filename)
 	if(filename != NULL) {
 		file_descript = open(filename, O_RDONLY);
 		if(file_descript < 0) {
-			printf("mount.cifs failed. %s attempting to open password file %s\n",
+			printf("cifs.mount failed. %s attempting to open password file %s\n",
 				   strerror(errno),filename);
 			exit(1);
 		}
@@ -220,7 +198,7 @@ static int get_password_from_file(int file_descript, char * filename)
 	for(i=0;i<64;i++) {
 		rc = read(file_descript,&c,1);
 		if(rc < 0) {
-			printf("mount.cifs failed. Error %s reading password file\n",strerror(errno));
+			printf("cifs.mount failed. Error %s reading password file\n",strerror(errno));
 			memset(mountpassword,0,64);
 			if(filename != NULL)
 				close(file_descript);
@@ -249,12 +227,12 @@ static int get_password_from_file(int file_descript, char * filename)
 	return rc;
 }
 
-static int parse_options(char * options, int * filesys_flags)
+static int parse_options(char * options)
 {
 	char * data;
-	char * percent_char = NULL;
-	char * value = NULL;
-	char * next_keyword = NULL;
+	char * percent_char = 0;
+	char * value = 0;
+	char * next_keyword = 0;
 	int rc = 0;
 
 	if (!options)
@@ -292,45 +270,32 @@ static int parse_options(char * options, int * filesys_flags)
 
 		if (strncmp(data, "user", 4) == 0) {
 			if (!value || !*value) {
-				if(data[4] == '\0') {
-					if(verboseflag)
-						printf("\nskipping empty user mount parameter\n");
-					/* remove the parm since it would otherwise be confusing
-					to the kernel code which would think it was a real username */
-						data[0] = ',';
-						data[1] = ',';
-						data[2] = ',';
-						data[3] = ',';
-					/* BB remove it from mount line so as not to confuse kernel code */
-				} else {
-					printf("username specified with no parameter\n");
-					return 1;	/* needs_arg; */
-				}
-			} else {
-				if (strnlen(value, 260) < 260) {
-					got_user=1;
-					percent_char = strchr(value,'%');
-					if(percent_char) {
-						*percent_char = ',';
-						if(mountpassword == NULL)
-							mountpassword = calloc(65,1);
-						if(mountpassword) {
-							if(got_password)
-								printf("\nmount.cifs warning - password specified twice\n");
-							got_password = 1;
+				printf("invalid or missing username\n");
+				return 1;	/* needs_arg; */
+			}
+			if (strnlen(value, 260) < 260) {
+				got_user=1;
+				percent_char = strchr(value,'%');
+				if(percent_char) {
+					*percent_char = ',';
+					if(mountpassword == NULL)
+						mountpassword = calloc(65,1);
+					if(mountpassword) {
+						if(got_password)
+							printf("\ncifs.mount warning - password specified twice\n");
+						got_password = 1;
+						percent_char++;
+						strncpy(mountpassword, percent_char,64);
+					/*  remove password from username */
+						while(*percent_char != 0) {
+							*percent_char = ',';
 							percent_char++;
-							strncpy(mountpassword, percent_char,64);
-						/*  remove password from username */
-							while(*percent_char != 0) {
-								*percent_char = ',';
-								percent_char++;
-							}
 						}
 					}
-				} else {
-					printf("username too long\n");
-					return 1;
 				}
+			} else {
+				printf("username too long\n");
+				return 1;
 			}
 		} else if (strncmp(data, "pass", 4) == 0) {
 			if (!value || !*value) {
@@ -340,7 +305,7 @@ static int parse_options(char * options, int * filesys_flags)
 					got_password = 1;
 			} else if (strnlen(value, 17) < 17) {
 				if(got_password)
-					printf("\nmount.cifs warning - password specified twice\n");
+					printf("\ncifs.mount warning - password specified twice\n");
 				got_password = 1;
 			} else {
 				printf("password too long\n");
@@ -350,8 +315,6 @@ static int parse_options(char * options, int * filesys_flags)
 			if (!value || !*value) {
 				printf("target ip address argument missing");
 			} else if (strnlen(value, 35) < 35) {
-				if(verboseflag)
-					printf("ip address %s override specified\n",value);
 				got_ip = 1;
 			} else {
 				printf("ip address too long\n");
@@ -403,7 +366,7 @@ static int parse_options(char * options, int * filesys_flags)
 			if (value && *value) {
 				rc = open_cred_file(value);
 				if(rc) {
-					printf("error %d opening credential file %s\n",rc, value);
+					printf("error %d opening credential file %s",rc, value);
 					return 1;
 				}
 			} else {
@@ -431,7 +394,7 @@ static int parse_options(char * options, int * filesys_flags)
 
 			if (strcmp (data, "fmask") == 0) {
 				printf ("WARNING: CIFS mount option 'fmask' is deprecated. Use 'file_mode' instead.\n");
-				data = "file_mode"; /* BB fix this */
+				data = "file_mode";
 			}
 		} else if (strcmp(data, "dir_mode") == 0 || strcmp(data, "dmask")==0) {
 			if (!value || !*value) {
@@ -447,58 +410,29 @@ static int parse_options(char * options, int * filesys_flags)
 				printf ("WARNING: CIFS mount option 'dmask' is deprecated. Use 'dir_mode' instead.\n");
 				data = "dir_mode";
 			}
-			/* the following eight mount options should be
-			stripped out from what is passed into the kernel
-			since these eight options are best passed as the
-			mount flags rather than redundantly to the kernel 
-			and could generate spurious warnings depending on the
-			level of the corresponding cifs vfs kernel code */
-		} else if (strncmp(data, "nosuid", 6) == 0) {
-			*filesys_flags |= MS_NOSUID;
-		} else if (strncmp(data, "suid", 4) == 0) {
-			*filesys_flags &= ~MS_NOSUID;
-		} else if (strncmp(data, "nodev", 5) == 0) {
-			*filesys_flags |= MS_NODEV;
-		} else if (strncmp(data, "dev", 3) == 0) {
-			*filesys_flags &= ~MS_NODEV;
-		} else if (strncmp(data, "noexec", 6) == 0) {
-			*filesys_flags |= MS_NOEXEC;
-		} else if (strncmp(data, "exec", 4) == 0) {
-			*filesys_flags &= ~MS_NOEXEC;
-		} else if (strncmp(data, "guest", 5) == 0) {
-			got_password=1;
-                        /* remove the parm since it would otherwise be logged by kern */
- 			data[0] = ',';
-                        data[1] = ',';
-                        data[2] = ',';
- 			data[3] = ',';
-			data[4] = ',';
-		} else if (strncmp(data, "ro", 2) == 0) {
-			*filesys_flags |= MS_RDONLY;
-		} else if (strncmp(data, "rw", 2) == 0) {
-			*filesys_flags &= ~MS_RDONLY;
 		} /* else if (strnicmp(data, "port", 4) == 0) {
-			if (value && *value) {
-				vol->port =
-					simple_strtoul(value, &value, 0);
-			}
-		} else if (strnicmp(data, "rsize", 5) == 0) {
-			if (value && *value) {
-				vol->rsize =
-					simple_strtoul(value, &value, 0);
-			}
-		} else if (strnicmp(data, "wsize", 5) == 0) {
-			if (value && *value) {
-				vol->wsize =
-					simple_strtoul(value, &value, 0);
-			}
-		} else if (strnicmp(data, "version", 3) == 0) {
-		} else {
-			printf("CIFS: Unknown mount option %s\n",data);
-		} */ /* nothing to do on those four mount options above.
-			Just pass to kernel and ignore them here */
+		if (value && *value) {
+			vol->port =
+				simple_strtoul(value, &value, 0);
+		}
+	} else if (strnicmp(data, "rsize", 5) == 0) {
+		if (value && *value) {
+			vol->rsize =
+				simple_strtoul(value, &value, 0);
+		}
+	} else if (strnicmp(data, "wsize", 5) == 0) {
+		if (value && *value) {
+			vol->wsize =
+				simple_strtoul(value, &value, 0);
+		}
+	} else if (strnicmp(data, "version", 3) == 0) {
+		
+	} else if (strnicmp(data, "rw", 2) == 0) {
+		
+	} else
+		printf("CIFS: Unknown mount option %s\n",data); */
 
-			/* move to next option */
+		/* move to next option */
 		data = next_keyword+1;
 
 		/* put overwritten equals sign back */
@@ -506,20 +440,20 @@ static int parse_options(char * options, int * filesys_flags)
 			value--;
 			*value = '=';
 		}
-	
+		
 		/* put previous overwritten comma back */
 		if(next_keyword)
 			*next_keyword = ',';
 		else
-			data = NULL;
+			data = 0;
+
 	}
 	return 0;
 }
 
 /* Note that caller frees the returned buffer if necessary */
-char * parse_server(char ** punc_name)
+char * parse_server(char * unc_name)
 {
-	char * unc_name = *punc_name;
 	int length = strnlen(unc_name,1024);
 	char * share;
 	char * ipaddress_string = NULL;
@@ -529,7 +463,7 @@ char * parse_server(char ** punc_name)
 
 	if(length > 1023) {
 		printf("mount error: UNC name too long");
-		return NULL;
+		return 0;
 	}
 	if (strncasecmp("cifs://",unc_name,7) == 0)
 		return parse_cifs_url(unc_name+7);
@@ -540,26 +474,14 @@ char * parse_server(char ** punc_name)
 	if(length < 3) {
 		/* BB add code to find DFS root here */
 		printf("\nMounting the DFS root for domain not implemented yet");
-		return NULL;
+		return 0;
 	} else {
 		if(strncmp(unc_name,"//",2) && strncmp(unc_name,"\\\\",2)) {
-			/* check for nfs syntax ie server:share */
-			share = strchr(unc_name,':');
-			if(share) {
-				free_share_name = 1;
-				*punc_name = malloc(length+3);
-				*share = '/';
-				strncpy((*punc_name)+2,unc_name,length);
-				unc_name = *punc_name;
-				unc_name[length+2] = 0;
-				goto continue_unc_parsing;
-			} else {
-				printf("mount error: improperly formatted UNC name.");
-				printf(" %s does not begin with \\\\ or //\n",unc_name);
-				return NULL;
-			}
+			printf("mount error: improperly formatted UNC name.");
+			printf(" %s does not begin with \\\\ or //\n",unc_name);
+			return 0;
 		} else {
-continue_unc_parsing:
+			unc_name[0] = '\\';
 			unc_name[0] = '/';
 			unc_name[1] = '/';
 			unc_name += 2;
@@ -567,20 +489,15 @@ continue_unc_parsing:
 				(share = strchr(unc_name,'\\'))) {
 				*share = 0;  /* temporarily terminate the string */
 				share += 1;
-				if(got_ip == 0) {
-					host_entry = gethostbyname(unc_name);
-				}
+				host_entry = gethostbyname(unc_name);
 				*(share - 1) = '/'; /* put the slash back */
-				if(got_ip) {
-					if(verboseflag)
-						printf("ip address specified explicitly\n");
-					return NULL;
-				}
+/*				rc = getipnodebyname(unc_name, AF_INET, AT_ADDRCONFIG ,&rc);*/
 				if(host_entry == NULL) {
 					printf("mount error: could not find target server. TCP name %s not found ", unc_name);
 					printf(" rc = %d\n",rc);
-					return NULL;
-				} else {
+					return 0;
+				}
+				else {
 					/* BB should we pass an alternate version of the share name as Unicode */
 					/* BB what about ipv6? BB */
 					/* BB add retries with alternate servers in list */
@@ -590,52 +507,50 @@ continue_unc_parsing:
 					ipaddress_string = inet_ntoa(server_ipaddr);                                                                                     
 					if(ipaddress_string == NULL) {
 						printf("mount error: could not get valid ip address for target server\n");
-						return NULL;
+						return 0;
 					}
 					return ipaddress_string; 
 				}
 			} else {
 				/* BB add code to find DFS root (send null path on get DFS Referral to specified server here */
 				printf("Mounting the DFS root for a particular server not implemented yet\n");
-				return NULL;
+				return 0;
 			}
 		}
 	}
 }
 
 static struct option longopts[] = {
-	{ "all", 0, NULL, 'a' },
-	{ "help",0, NULL, 'h' },
-	{ "move",0, NULL, 'm' },
-	{ "bind",0, NULL, 'b' },
-	{ "read-only", 0, NULL, 'r' },
-	{ "ro", 0, NULL, 'r' },
-	{ "verbose", 0, NULL, 'v' },
-	{ "version", 0, NULL, 'V' },
-	{ "read-write", 0, NULL, 'w' },
-	{ "rw", 0, NULL, 'w' },
-	{ "options", 1, NULL, 'o' },
-	{ "type", 1, NULL, 't' },
-	{ "rsize",1, NULL, 'R' },
-	{ "wsize",1, NULL, 'W' },
-	{ "uid", 1, NULL, '1'},
-	{ "gid", 1, NULL, '2'},
-	{ "user",1,NULL,'u'},
-	{ "username",1,NULL,'u'},
-	{ "dom",1,NULL,'d'},
-	{ "domain",1,NULL,'d'},
-	{ "password",1,NULL,'p'},
-	{ "pass",1,NULL,'p'},
-	{ "credentials",1,NULL,'c'},
-	{ "port",1,NULL,'P'},
-	/* { "uuid",1,NULL,'U'}, */ /* BB unimplemented */
-	{ NULL, 0, NULL, 0 }
+	{ "all", 0, 0, 'a' },
+	{ "help", 0, 0, 'h' },
+	{ "read-only", 0, 0, 'r' },
+	{ "ro", 0, 0, 'r' },
+	{ "verbose", 0, 0, 'v' },
+	{ "version", 0, 0, 'V' },
+	{ "read-write", 0, 0, 'w' },
+	{ "rw", 0, 0, 'w' },
+	{ "options", 1, 0, 'o' },
+	{ "types", 1, 0, 't' },
+	{ "rsize",1, 0, 'R' },
+	{ "wsize",1, 0, 'W' },
+	{ "uid", 1, 0, '1'},
+	{ "gid", 1, 0, '2'},
+	{ "uuid",1,0,'U' },
+	{ "user",1,0,'u'},
+	{ "username",1,0,'u'},
+	{ "dom",1,0,'d'},
+	{ "domain",1,0,'d'},
+	{ "password",1,0,'p'},
+	{ "pass",1,0,'p'},
+	{ "credentials",1,0,'c'},
+	{ "port",1,0,'P'},
+	{ NULL, 0, 0, 0 }
 };
 
 int main(int argc, char ** argv)
 {
 	int c;
-	int flags = MS_MANDLOCK; /* no need to set legacy MS_MGC_VAL */
+	int flags = MS_MANDLOCK | MS_MGC_VAL;
 	char * orgoptions = NULL;
 	char * share_name = NULL;
 	char * domain_name = NULL;
@@ -643,7 +558,6 @@ int main(int argc, char ** argv)
 	char * uuid = NULL;
 	char * mountpoint;
 	char * options;
-	char * resolved_path;
 	char * temp;
 	int rc;
 	int rsize = 0;
@@ -680,7 +594,7 @@ int main(int argc, char ** argv)
 
 	/* add sharename in opts string as unc= parm */
 
-	while ((c = getopt_long (argc, argv, "afFhilL:no:O:rsSU:vVwt:",
+	while ((c = getopt_long (argc, argv, "afFhilL:no:O:rsU:vVwt:",
 			 longopts, NULL)) != -1) {
 		switch (c) {
 /* No code to do the following  options yet */
@@ -701,12 +615,6 @@ int main(int argc, char ** argv)
 		case 'n':
 		    ++nomtab;
 		    break;
-		case 'b':
-			flags |= MS_BIND;
-			break;
-		case 'm':
-			flags |= MS_MOVE;
-			break;
 		case 'o':
 			orgoptions = strdup(optarg);
 		    break;
@@ -758,9 +666,6 @@ int main(int argc, char ** argv)
 				strncpy(mountpassword,optarg,64);
 			}
 			break;
-		case 'S':
-			get_password_from_file(0 /* stdin */,NULL);
-			break;
 		case 't':
 			break;
 		default:
@@ -786,31 +691,19 @@ int main(int argc, char ** argv)
 		get_password_from_file(0, getenv("PASSWD_FILE"));
 	}
 
-        if (orgoptions && parse_options(orgoptions, &flags))
-                return -1;
+	ipaddr = parse_server(share_name);
 	
-	ipaddr = parse_server(&share_name);
-	if((ipaddr == NULL) && (got_ip == 0)) {
-		printf("No ip address specified and hostname not found\n");
-		return -1;
-	}
-	
+	if (orgoptions && parse_options(orgoptions))
+		return 1;
 
 	/* BB save off path and pop after mount returns? */
-	resolved_path = malloc(PATH_MAX+1);
-	if(resolved_path) {
-		/* Note that if we can not canonicalize the name, we get
-		another chance to see if it is valid when we chdir to it */
-		if (realpath(mountpoint, resolved_path)) {
-			mountpoint = resolved_path; 
-		}
-	}
+	/* BB canonicalize the path in argv[1]? */
+
 	if(chdir(mountpoint)) {
 		printf("mount error: can not change directory into mount target %s\n",mountpoint);
-		return -1;
 	}
 
-	if(stat (".", &statbuf)) {
+	if(stat (mountpoint, &statbuf)) {
 		printf("mount error: mount point %s does not exist\n",mountpoint);
 		return -1;
 	}
@@ -822,13 +715,9 @@ int main(int argc, char ** argv)
 
 	if((getuid() != 0) && (geteuid() == 0)) {
 		if((statbuf.st_uid == getuid()) && (S_IRWXU == (statbuf.st_mode & S_IRWXU))) {
-#ifndef CIFS_ALLOW_USR_SUID
-			/* Do not allow user mounts to control suid flag
-			for mount unless explicitly built that way */
-			flags |= MS_NOSUID | MS_NODEV;
-#endif						
+			printf("setuid mount allowed\n");
 		} else {
-			printf("mount error: permission denied or not superuser and mount.cifs not installed SUID\n"); 
+			printf("mount error: permission denied or not superuser and cifs.mount not installed SUID\n"); 
 			return -1;
 		}
 	}
@@ -857,12 +746,6 @@ int main(int argc, char ** argv)
 		optlen += strlen(mountpassword) + 6;
 	options = malloc(optlen + 10);
 
-	if(options == NULL) {
-		printf("Could not allocate memory for mount options\n");
-		return -1;
-	}
-		
-
 	options[0] = 0;
 	strncat(options,"unc=",4);
 	strcat(options,share_name);
@@ -890,7 +773,7 @@ int main(int argc, char ** argv)
 		strcat(options,orgoptions);
 	}
 	if(verboseflag)
-		printf("\nmount.cifs kernel mount options %s \n",options);
+		printf("\ncifs.mount kernel mount options %s \n",options);
 	if(mount(share_name, mountpoint, "cifs", flags, options)) {
 	/* remember to kill daemon on error */
 		switch (errno) {
@@ -914,40 +797,11 @@ int main(int argc, char ** argv)
 			mountent.mnt_fsname = share_name;
 			mountent.mnt_dir = mountpoint; 
 			mountent.mnt_type = "cifs"; 
-			mountent.mnt_opts = malloc(220);
-			if(mountent.mnt_opts) {
-				char * mount_user = getusername();
-				memset(mountent.mnt_opts,0,200);
-				if(flags & MS_RDONLY)
-					strcat(mountent.mnt_opts,"ro");
-				else
-					strcat(mountent.mnt_opts,"rw");
-				if(flags & MS_MANDLOCK)
-					strcat(mountent.mnt_opts,",mand");
-				else
-					strcat(mountent.mnt_opts,",nomand");
-				if(flags & MS_NOEXEC)
-					strcat(mountent.mnt_opts,",noexec");
-				if(flags & MS_NOSUID)
-					strcat(mountent.mnt_opts,",nosuid");
-				if(flags & MS_NODEV)
-					strcat(mountent.mnt_opts,",nodev");
-				if(flags & MS_SYNCHRONOUS)
-					strcat(mountent.mnt_opts,",synch");
-				if(mount_user) {
-					if(getuid() != 0) {
-						strcat(mountent.mnt_opts,",user=");
-						strcat(mountent.mnt_opts,mount_user);
-					}
-					free(mount_user);
-				}
-			}
+			mountent.mnt_opts = "";
 			mountent.mnt_freq = 0;
 			mountent.mnt_passno = 0;
 			rc = addmntent(pmntfile,&mountent);
 			endmntent(pmntfile);
-			if(mountent.mnt_opts)
-				free(mountent.mnt_opts);
 		} else {
 		    printf("could not update mount table\n");
 		}
@@ -966,13 +820,6 @@ int main(int argc, char ** argv)
 		memset(orgoptions,0,orgoptlen);
 		free(orgoptions);
 	}
-	if(resolved_path) {
-		free(resolved_path);
-	}
-
-	if(free_share_name) {
-		free(share_name);
-		}
 	return 0;
 }
 

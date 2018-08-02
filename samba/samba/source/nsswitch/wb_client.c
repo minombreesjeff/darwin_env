@@ -235,30 +235,6 @@ BOOL winbind_gid_to_sid(DOM_SID *sid, gid_t gid)
 	return (result == NSS_STATUS_SUCCESS);
 }
 
-BOOL winbind_allocate_rid(uint32 *rid)
-{
-	struct winbindd_request request;
-	struct winbindd_response response;
-	int result;
-
-	/* Initialise request */
-
-	ZERO_STRUCT(request);
-	ZERO_STRUCT(response);
-
-	/* Make request */
-
-	result = winbindd_request(WINBINDD_ALLOCATE_RID, &request, &response);
-
-	if (result != NSS_STATUS_SUCCESS)
-		return False;
-
-	/* Copy out result */
-	*rid = response.data.rid;
-
-	return True;
-}
-
 /* Fetch the list of groups a user is a member of from winbindd.  This is
    used by winbind_getgroups. */
 
@@ -270,7 +246,6 @@ static int wb_getgroups(const char *user, gid_t **groups)
 
 	/* Call winbindd */
 
-	ZERO_STRUCT(request);
 	fstrcpy(request.data.username, user);
 
 	ZERO_STRUCT(response);
@@ -326,7 +301,7 @@ int winbind_initgroups(char *user, gid_t gid)
 		/* Add group to list if necessary */
 
 		if (!is_member) {
-			tgr = SMB_REALLOC_ARRAY(groups, gid_t, ngroups + 1);
+			tgr = (gid_t *)Realloc(groups, sizeof(gid_t) * ngroups + 1);
 			
 			if (!tgr) {
 				errno = ENOMEM;
@@ -523,9 +498,6 @@ BOOL winbind_remove_user_from_group( const char *user, const char *group )
 		user, group));
 		
 	ZERO_STRUCT(response);
-	
-	fstrcpy( request.data.acct_mgt.username, user );
-	fstrcpy( request.data.acct_mgt.groupname, group );
 	
 	result = winbindd_request( WINBINDD_REMOVE_USER_FROM_GROUP, &request, &response);
 	

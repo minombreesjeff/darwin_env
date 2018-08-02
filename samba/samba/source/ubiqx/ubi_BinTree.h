@@ -28,16 +28,7 @@
  *
  * -------------------------------------------------------------------------- **
  *
- * Log: ubi_BinTree.h,v
- * Revision 4.12  2004/06/06 04:51:56  crh
- * Fixed a small typo in ubi_BinTree.c (leftover testing cruft).
- * Did a small amount of formatting touchup to ubi_BinTree.h.
- *
- * Revision 4.11  2004/06/06 03:14:09  crh
- * Rewrote the ubi_btLeafNode() function.  It now takes several paths in an
- * effort to find a deeper leaf node.  There is a small amount of extra
- * overhead, but it is limited.
- *
+ * Log: ubi_BinTree.h,v 
  * Revision 4.10  2000/06/06 20:38:40  crh
  * In the ReplaceNode() function, the old node header was being copied
  * to the new node header using a byte-by-byte copy.  This was causing
@@ -269,7 +260,6 @@ typedef enum {
  *                   is left as is.
  * -------------------------------------------------------------------------- **
  */
-
 #define ubi_trNormalize(W) ((char)( (W) - ubi_trEQUAL ))
 #define ubi_trAbNormal(W)  ((char)( ((char)ubi_btSgn( (long)(W) )) \
                                          + ubi_trEQUAL ))
@@ -280,7 +270,6 @@ typedef enum {
  * DUPlicate KEY bits of the tree root flags field.
  * -------------------------------------------------------------------------- **
  */
-
 #define ubi_trDups_OK(A) \
         ((ubi_trDUPKEY & ((A)->flags))?(ubi_trTRUE):(ubi_trFALSE))
 #define ubi_trOvwt_OK(A) \
@@ -348,7 +337,6 @@ typedef void *ubi_btItemPtr;          /* A pointer to key data within a node. */
  *
  *  ------------------------------------------------------------------------- **
  */
-
 typedef struct ubi_btNodeStruct {
   struct ubi_btNodeStruct *Link[ 3 ];
   char                     gender;
@@ -759,8 +747,8 @@ ubi_btNodePtr ubi_btLeafNode( ubi_btNodePtr leader );
    *
    *  Input:  leader  - Pointer to a node at which to start the descent.
    *
-   *  Output: A pointer to a leaf node, selected in a somewhat arbitrary
-   *          manner but with an effort to dig deep.
+   *  Output: A pointer to a leaf node selected in a somewhat arbitrary
+   *          manner.
    *
    *  Notes:  I wrote this function because I was using splay trees as a
    *          database cache.  The cache had a maximum size on it, and I
@@ -769,7 +757,7 @@ ubi_btNodePtr ubi_btLeafNode( ubi_btNodePtr leader );
    *          tend toward the bottom of the tree, meaning that leaf nodes
    *          are good candidates for removal.  (I really can't think of
    *          any other reason to use this function.)
-   *        + In a simple binary tree, or in an AVL tree, the most recently
+   *        + In a simple binary tree or an AVL tree, the most recently
    *          added nodes tend to be nearer the bottom, making this a *bad*
    *          way to choose which node to remove from the cache.
    *        + Randomizing the traversal order is probably a good idea.  You
@@ -777,17 +765,6 @@ ubi_btNodePtr ubi_btLeafNode( ubi_btNodePtr leader );
    *          in pointers to nodes other than the root node each time.  A
    *          pointer to any node in the tree will do.  Of course, if you
    *          pass a pointer to a leaf node you'll get the same thing back.
-   *        + In an unbalanced splay tree, if you simply traverse downward
-   *          until you hit a leaf node it is possible to accidentally
-   *          stumble onto a short path.  The result will be a leaf node
-   *          that is actually very high in the tree--possibly a very
-   *          recently accessed node.  Not good.  This function can follow
-   *          multiple paths in an effort to find a leaf node deeper
-   *          in the tree.  Following a single path, of course, is the
-   *          fastest way to find a leaf node.  A complete traversal would
-   *          be sure to find the deepest leaf but would be very costly in
-   *          terms of time.  This function uses a compromise that has
-   *          worked well in testing.
    *
    * ------------------------------------------------------------------------ **
    */

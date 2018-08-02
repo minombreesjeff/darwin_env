@@ -538,6 +538,8 @@ static NTSTATUS cmd_stat(struct vfs_state *vfs, TALLOC_CTX *mem_ctx, int argc, c
 	printf("  Modify: %s", ctime(&(st.st_mtime)));
 	printf("  Change: %s", ctime(&(st.st_ctime)));
 
+	SAFE_FREE(pwd);
+	SAFE_FREE(grp);
 	return NT_STATUS_OK;
 }
 
@@ -604,6 +606,8 @@ static NTSTATUS cmd_fstat(struct vfs_state *vfs, TALLOC_CTX *mem_ctx, int argc, 
 	printf("  Modify: %s", ctime(&(st.st_mtime)));
 	printf("  Change: %s", ctime(&(st.st_ctime)));
 
+	SAFE_FREE(pwd);
+	SAFE_FREE(grp);
 	return NT_STATUS_OK;
 }
 
@@ -658,6 +662,8 @@ static NTSTATUS cmd_lstat(struct vfs_state *vfs, TALLOC_CTX *mem_ctx, int argc, 
 	printf("  Modify: %s", ctime(&(st.st_mtime)));
 	printf("  Change: %s", ctime(&(st.st_ctime)));
 	
+	SAFE_FREE(pwd);
+	SAFE_FREE(grp);
 	return NT_STATUS_OK;
 }
 

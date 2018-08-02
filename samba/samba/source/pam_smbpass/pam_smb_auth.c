@@ -24,19 +24,11 @@
 #ifndef LINUX
 
 /* This is only used in the Sun implementation. */
-#if defined(HAVE_SECURITY_PAM_APPL_H)
 #include <security/pam_appl.h>
-#elif defined(HAVE_PAM_PAM_APPL_H)
-#include <pam/pam_appl.h>
-#endif
 
 #endif  /* LINUX */
 
-#if defined(HAVE_SECURITY_PAM_MODULES_H)
 #include <security/pam_modules.h>
-#elif defined(HAVE_PAM_PAM_MODULES_H)
-#include <pam/pam_modules.h>
-#endif
 
 #include "general.h"
 
@@ -206,7 +198,7 @@ static int _smb_add_user(pam_handle_t *pamh, unsigned int ctrl,
 
     /* Add the user to the db if they aren't already there. */
    if (!exist) {
-	retval = local_password_change( name, LOCAL_ADD_USER|LOCAL_SET_PASSWORD,
+	retval = local_password_change( name, LOCAL_ADD_USER,
 	                                 pass, err_str,
 	                                 sizeof(err_str),
 	                                 msg_str, sizeof(msg_str) );
@@ -225,10 +217,10 @@ static int _smb_add_user(pam_handle_t *pamh, unsigned int ctrl,
 	return PAM_IGNORE;
    }
    else {
-    /* mimick 'update encrypted' as long as the 'no pw req' flag is not set */
-    if ( pdb_get_acct_ctrl(sampass) & ~ACB_PWNOTREQ )
+    /* Change the user's password IFF it's null. */
+    if ((pdb_get_lanman_passwd(sampass) == NULL) && (pdb_get_acct_ctrl(sampass) & ACB_PWNOTREQ))
     {
-	retval = local_password_change( name, LOCAL_SET_PASSWORD, pass, err_str, sizeof(err_str),
+	retval = local_password_change( name, 0, pass, err_str, sizeof(err_str),
 	                                 msg_str, sizeof(msg_str) );
 	if (!retval && *err_str)
 	{

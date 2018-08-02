@@ -115,7 +115,8 @@ void add_failed_connection_entry(const char *domain, const char *server, NTSTATU
 
 	/* Create negative lookup cache entry for this domain and controller */
 
-	if ( !(fcc = SMB_MALLOC_P(struct failed_connection_cache)) ) {
+	if ( !(fcc = (struct failed_connection_cache *)malloc(sizeof(struct failed_connection_cache))) ) 
+	{
 		DEBUG(0, ("malloc failed in add_failed_connection_entry!\n"));
 		return;
 	}
@@ -153,3 +154,5 @@ void flush_negative_conn_cache( void )
 	}
 
 }
+
+

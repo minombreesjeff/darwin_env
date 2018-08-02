@@ -49,7 +49,6 @@
 #define LDAP_ATTRIBUTE_SID		"sambaSID"
 #define LDAP_ATTRIBUTE_UIDNUMBER	"uidNumber"
 #define LDAP_ATTRIBUTE_GIDNUMBER	"gidNumber"
-#define LDAP_ATTRIBUTE_SID_LIST		"sambaSIDList"
 
 /* attribute map table indexes */
 
@@ -92,11 +91,6 @@
 #define LDAP_ATTR_BAD_PASSWORD_COUNT	35
 #define LDAP_ATTR_LOGON_COUNT		36
 #define LDAP_ATTR_MUNGED_DIAL		37
-#define LDAP_ATTR_BAD_PASSWORD_TIME	38
-#define LDAP_ATTR_PWD_HISTORY		39
-#define LDAP_ATTR_SID_LIST		40
-#define LDAP_ATTR_MOD_TIMESTAMP		41
-#define LDAP_ATTR_LOGON_HOURS		42
 
 typedef struct _attrib_map_entry {
 	int		attrib;
@@ -107,9 +101,7 @@ typedef struct _attrib_map_entry {
 /* structures */
 
 extern ATTRIB_MAP_ENTRY attrib_map_v22[];
-extern ATTRIB_MAP_ENTRY attrib_map_to_delete_v22[];
 extern ATTRIB_MAP_ENTRY attrib_map_v30[];
-extern ATTRIB_MAP_ENTRY attrib_map_to_delete_v30[];
 extern ATTRIB_MAP_ENTRY dominfo_attr_list[];
 extern ATTRIB_MAP_ENTRY groupmap_attr_list[];
 extern ATTRIB_MAP_ENTRY groupmap_attr_list_to_delete[];
@@ -127,10 +119,7 @@ void smbldap_make_mod(LDAP *ldap_struct, LDAPMessage *existing,
 		      LDAPMod ***mods,
 		      const char *attribute, const char *newval);
 BOOL smbldap_get_single_attribute (LDAP * ldap_struct, LDAPMessage * entry,
-				   const char *attribute, char *value,
-				   int max_len);
-BOOL smbldap_get_single_pstring (LDAP * ldap_struct, LDAPMessage * entry,
-				 const char *attribute, pstring value);
+				   const char *attribute, pstring value);
 
 /**
  * Struct to keep the state for all the ldap stuff 
@@ -157,6 +146,5 @@ struct smbldap_state {
 
 struct smbldap_state;
 
-#define LDAP_CONNECT_DEFAULT_TIMEOUT   15
-
 #endif	/* _SMBLDAP_H */
+

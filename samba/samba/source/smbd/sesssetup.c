@@ -143,17 +143,17 @@ static int reply_spnego_kerberos(connection_struct *conn,
 	DATA_BLOB ticket;
 	char *client, *p, *domain;
 	fstring netbios_domain_name;
-	struct passwd *pw;
+	const struct passwd *pw;
 	char *user;
 	int sess_vuid;
 	NTSTATUS ret;
 	DATA_BLOB auth_data;
 	DATA_BLOB ap_rep, ap_rep_wrapped, response;
 	auth_serversupplied_info *server_info = NULL;
-	DATA_BLOB session_key = data_blob(NULL, 0);
+	DATA_BLOB session_key;
 	uint8 tok_id[2];
+	BOOL foreign = False;
 	DATA_BLOB nullblob = data_blob(NULL, 0);
-	fstring real_username;
 
 	ZERO_STRUCT(ticket);
 	ZERO_STRUCT(auth_data);
@@ -182,7 +182,6 @@ static int reply_spnego_kerberos(connection_struct *conn,
 	if (!p) {
 		DEBUG(3,("Doesn't look like a valid principal\n"));
 		data_blob_free(&ap_rep);
-		data_blob_free(&session_key);
 		SAFE_FREE(client);
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
@@ -192,10 +191,10 @@ static int reply_spnego_kerberos(connection_struct *conn,
 		DEBUG(3,("Ticket for foreign realm %s@%s\n", client, p+1));
 		if (!lp_allow_trusted_domains()) {
 			data_blob_free(&ap_rep);
-			data_blob_free(&session_key);
 			SAFE_FREE(client);
 			return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 		}
+		foreign = True;
 	}
 
 	/* this gives a fully qualified user name (ie. with full realm).
@@ -240,33 +239,26 @@ static int reply_spnego_kerberos(connection_struct *conn,
 
 	asprintf(&user, "%s%c%s", domain, *lp_winbind_separator(), client);
 	
-	/* lookup the passwd struct, create a new user if necessary */
-
-	map_username( user );
-
-	pw = smb_getpwnam( user, real_username, True );
+	pw = smb_getpwnam( user );
 	
 	if (!pw) {
 		DEBUG(1,("Username %s is invalid on this system\n",user));
 		SAFE_FREE(user);
 		SAFE_FREE(client);
 		data_blob_free(&ap_rep);
-		data_blob_free(&session_key);
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
 	/* setup the string used by %U */
 	
-	sub_set_smb_name( real_username );
+	sub_set_smb_name(pw->pw_name);
 	reload_services(True);
 	
-	if (!NT_STATUS_IS_OK(ret = make_server_info_pw(&server_info, real_username, pw))) 
-	{
+	if (!NT_STATUS_IS_OK(ret = make_server_info_pw(&server_info,pw))) {
 		DEBUG(1,("make_server_info_from_pw failed!\n"));
 		SAFE_FREE(user);
 		SAFE_FREE(client);
 		data_blob_free(&ap_rep);
-		data_blob_free(&session_key);
 		return ERROR_NT(ret);
 	}
 
@@ -278,8 +270,6 @@ static int reply_spnego_kerberos(connection_struct *conn,
         }
 
 	/* register_vuid keeps the server info */
-	/* register_vuid takes ownership of session_key, no need to free after this.
- 	   A better interface would copy it.... */
 	sess_vuid = register_vuid(server_info, session_key, nullblob, client);
 
 	SAFE_FREE(user);
@@ -288,9 +278,6 @@ static int reply_spnego_kerberos(connection_struct *conn,
 	if (sess_vuid == -1) {
 		ret = NT_STATUS_LOGON_FAILURE;
 	} else {
-		/* current_user_info is changed on new vuid */
-		reload_services( True );
-
 		set_message(outbuf,4,0,True);
 		SSVAL(outbuf, smb_vwv3, 0);
 			
@@ -300,14 +287,14 @@ static int reply_spnego_kerberos(connection_struct *conn,
 		
 		SSVAL(outbuf, smb_uid, sess_vuid);
 
-		if (!server_info->guest && !srv_signing_started()) {
+		if (!server_info->guest) {
 			/* We need to start the signing engine
 			 * here but a W2K client sends the old
 			 * "BSRSPYL " signature instead of the
 			 * correct one. Subsequent packets will
 			 * be correct.
 			 */
-		       	srv_check_sign_mac(inbuf, False);
+		       	srv_check_sign_mac(inbuf);
 		}
 	}
 
@@ -364,9 +351,6 @@ static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *inbuf, char *out
 			nt_status = NT_STATUS_LOGON_FAILURE;
 		} else {
 			
-			/* current_user_info is changed on new vuid */
-			reload_services( True );
-
 			set_message(outbuf,4,0,True);
 			SSVAL(outbuf, smb_vwv3, 0);
 			
@@ -376,15 +360,14 @@ static BOOL reply_spnego_ntlmssp(connection_struct *conn, char *inbuf, char *out
 			
 			SSVAL(outbuf,smb_uid,sess_vuid);
 
-			if (!server_info->guest && !srv_signing_started()) {
+			if (!server_info->guest) {
 				/* We need to start the signing engine
 				 * here but a W2K client sends the old
 				 * "BSRSPYL " signature instead of the
 				 * correct one. Subsequent packets will
 				 * be correct.
 				 */
-
-				srv_check_sign_mac(inbuf, False);
+			       	srv_check_sign_mac(inbuf);
 			}
 		}
 	}
@@ -887,12 +870,17 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 		return ERROR_NT(nt_status_squash(nt_status));
 	}
 
-	if (server_info->user_session_key.data) {
-		session_key = data_blob(server_info->user_session_key.data, server_info->user_session_key.length);
+	if (server_info->nt_session_key.data) {
+		session_key = data_blob(server_info->nt_session_key.data, server_info->nt_session_key.length);
+	} else if (server_info->lm_session_key.length >= 8 && lm_resp.length == 24) {
+		session_key = data_blob(NULL, 16);
+		SMBsesskeygen_lmv1(server_info->lm_session_key.data, lm_resp.data, 
+				   session_key.data);
 	} else {
 		session_key = data_blob(NULL, 0);
 	}
 
+	data_blob_free(&lm_resp);
 	data_blob_clear_free(&plaintext_password);
 	
 	/* it's ok - setup a reply */
@@ -912,18 +900,14 @@ int reply_sesssetup_and_X(connection_struct *conn, char *inbuf,char *outbuf,
 	   to a uid can get through without a password, on the same VC */
 
 	/* register_vuid keeps the server info */
-	sess_vuid = register_vuid(server_info, session_key, nt_resp.data ? nt_resp : lm_resp, sub_user);
+	sess_vuid = register_vuid(server_info, session_key, nt_resp, sub_user);
 	data_blob_free(&nt_resp);
-	data_blob_free(&lm_resp);
 
 	if (sess_vuid == -1) {
 		return ERROR_NT(NT_STATUS_LOGON_FAILURE);
 	}
 
-	/* current_user_info is changed on new vuid */
-	reload_services( True );
-
- 	if (!server_info->guest && !srv_signing_started() && !srv_check_sign_mac(inbuf, True)) {
+ 	if (!server_info->guest && !srv_check_sign_mac(inbuf)) {
 		exit_server("reply_sesssetup_and_X: bad smb signature");
 	}
 

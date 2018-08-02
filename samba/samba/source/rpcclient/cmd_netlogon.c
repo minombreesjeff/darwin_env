@@ -45,31 +45,6 @@ static NTSTATUS cmd_netlogon_logon_ctrl2(struct cli_state *cli,
 	return result;
 }
 
-static NTSTATUS cmd_netlogon_getdcname(struct cli_state *cli, 
-				       TALLOC_CTX *mem_ctx, int argc, 
-				       const char **argv)
-{
-	fstring dcname;
-	NTSTATUS result = NT_STATUS_UNSUCCESSFUL;
-
-	if (argc != 2) {
-		fprintf(stderr, "Usage: %s domainname\n", argv[0]);
-		return NT_STATUS_OK;
-	}
-
-	result = cli_netlogon_getdcname(cli, mem_ctx, argv[1], dcname);
-
-	if (!NT_STATUS_IS_OK(result))
-		goto done;
-
-	/* Display results */
-
-	printf("%s\n", dcname);
-
- done:
-	return result;
-}
-
 static NTSTATUS cmd_netlogon_logon_ctrl(struct cli_state *cli, 
                                         TALLOC_CTX *mem_ctx, int argc, 
                                         const char **argv)
@@ -266,10 +241,10 @@ static NTSTATUS cmd_netlogon_sam_logon(struct cli_state *cli,
         username = argv[1];
         password = argv[2];
 
-        if (argc >= 4)
+        if (argc == 4)
                 sscanf(argv[3], "%i", &logon_type);
 
-	if (argc >= 5)
+	if (argc == 5)
                 sscanf(argv[4], "%i", &neg_flags);
 
 	if (argc == 6)
@@ -283,6 +258,10 @@ static NTSTATUS cmd_netlogon_sam_logon(struct cli_state *cli,
 
 	clnt_deal_with_creds(cli->sess_key, &(cli->clnt_cred), &ret_creds);
 	
+        result = cli_netlogon_sam_logon(cli, mem_ctx, &ret_creds, username, password, logon_type);
+
+	clnt_deal_with_creds(cli->sess_key, &(cli->clnt_cred), &ret_creds);
+
 	if (!NT_STATUS_IS_OK(result))
 		goto done;
 
@@ -330,12 +309,11 @@ struct cmd_set netlogon_commands[] = {
 	{ "NETLOGON" },
 
 	{ "logonctrl2", RPC_RTYPE_NTSTATUS, cmd_netlogon_logon_ctrl2, NULL, PI_NETLOGON, "Logon Control 2",     "" },
-	{ "getdcname", RPC_RTYPE_NTSTATUS, cmd_netlogon_getdcname, NULL, PI_NETLOGON, "Get trusted DC name",     "" },
 	{ "logonctrl",  RPC_RTYPE_NTSTATUS, cmd_netlogon_logon_ctrl,  NULL, PI_NETLOGON, "Logon Control",       "" },
 	{ "samsync",    RPC_RTYPE_NTSTATUS, cmd_netlogon_sam_sync,    NULL, PI_NETLOGON, "Sam Synchronisation", "" },
 	{ "samdeltas",  RPC_RTYPE_NTSTATUS, cmd_netlogon_sam_deltas,  NULL, PI_NETLOGON, "Query Sam Deltas",    "" },
 	{ "samlogon",   RPC_RTYPE_NTSTATUS, cmd_netlogon_sam_logon,   NULL, PI_NETLOGON, "Sam Logon",           "" },
-	{ "change_trust_pw",   RPC_RTYPE_NTSTATUS, cmd_netlogon_change_trust_pw,   NULL, PI_NETLOGON, "Change Trust Account Password",           "" },
+	{ "samlogon",   RPC_RTYPE_NTSTATUS, cmd_netlogon_change_trust_pw,   NULL, PI_NETLOGON, "Change Trust Account Password",           "" },
 
 	{ NULL }
 };

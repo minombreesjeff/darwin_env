@@ -49,10 +49,8 @@ static BOOL ads_dc_name(const char *domain, const char *realm, struct in_addr *d
 	ads_connect(ads);
 #endif
 
-	if (!ads->config.realm) {
-		ads_destroy(&ads);
+	if (!ads->config.realm)
 		return False;
-	}
 
 	fstrcpy(srv_name, ads->config.ldap_server_name);
 	strupper_m(srv_name);

@@ -59,7 +59,7 @@ static BOOL pac_io_unknown_type_10(const char *desc, UNKNOWN_TYPE_10 *type_10,
 		return False;
 
 	if (UNMARSHALLING(ps) && type_10->len) {
-		type_10->username = PRS_ALLOC_MEM(ps, uint16, type_10->len);
+		type_10->username = (uint16 *) prs_alloc_mem(ps, type_10->len);
 		if (!type_10->username) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -85,7 +85,8 @@ static BOOL pac_io_krb_sids(const char *desc, KRB_SID_AND_ATTRS *sid_and_attr,
 	depth++;
 
 	if (UNMARSHALLING(ps)) {
-		sid_and_attr->sid = PRS_ALLOC_MEM(ps, DOM_SID2, 1);
+		sid_and_attr->sid = 
+			(DOM_SID2 * ) prs_alloc_mem(ps, sizeof(DOM_SID2));
 		if (!sid_and_attr->sid) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -134,7 +135,8 @@ static BOOL pac_io_krb_sid_and_attr_array(const char *desc,
 		return False;
 
 	if (UNMARSHALLING(ps)) {
-		array->krb_sid_and_attrs = PRS_ALLOC_MEM(ps, KRB_SID_AND_ATTRS, num);
+		array->krb_sid_and_attrs = (KRB_SID_AND_ATTRS *)
+			prs_alloc_mem(ps, sizeof(KRB_SID_AND_ATTRS) * num);
 		if (!array->krb_sid_and_attrs) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -197,7 +199,8 @@ static BOOL pac_io_group_membership_array(const char *desc,
 		return False;
 
 	if (UNMARSHALLING(ps)) {
-		array->group_membership = PRS_ALLOC_MEM(ps, GROUP_MEMBERSHIP, num);
+		array->group_membership = (GROUP_MEMBERSHIP *)
+			prs_alloc_mem(ps, sizeof(GROUP_MEMBERSHIP) * num);
 		if (!array->group_membership) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -420,7 +423,7 @@ static BOOL pac_io_pac_signature_data(const char *desc,
 	if (!prs_uint32("type", ps, depth, &data->type))
 		return False;
 	if (UNMARSHALLING(ps)) {
-		data->signature = PRS_ALLOC_MEM(ps, unsigned char, siglen);
+		data->signature = (unsigned char *)prs_alloc_mem(ps, siglen);
 		if (!data->signature) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -451,7 +454,8 @@ static BOOL pac_io_pac_info_hdr_ctr(const char *desc, PAC_INFO_HDR *hdr,
 	}
 
 	if (UNMARSHALLING(ps) && hdr->size > 0) {
-		hdr->ctr = PRS_ALLOC_MEM(ps, PAC_INFO_CTR, 1);
+		hdr->ctr = (PAC_INFO_CTR *) 
+			prs_alloc_mem(ps, sizeof(PAC_INFO_CTR));
 		if (!hdr->ctr) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -462,7 +466,8 @@ static BOOL pac_io_pac_info_hdr_ctr(const char *desc, PAC_INFO_HDR *hdr,
 	case PAC_TYPE_LOGON_INFO:
 		DEBUG(5, ("PAC_TYPE_LOGON_INFO\n"));
 		if (UNMARSHALLING(ps))
-			hdr->ctr->pac.logon_info = PRS_ALLOC_MEM(ps, PAC_LOGON_INFO, 1);
+			hdr->ctr->pac.logon_info = (PAC_LOGON_INFO *)
+				prs_alloc_mem(ps, sizeof(PAC_LOGON_INFO));
 		if (!hdr->ctr->pac.logon_info) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -475,7 +480,8 @@ static BOOL pac_io_pac_info_hdr_ctr(const char *desc, PAC_INFO_HDR *hdr,
 	case PAC_TYPE_SERVER_CHECKSUM:
 		DEBUG(5, ("PAC_TYPE_SERVER_CHECKSUM\n"));
 		if (UNMARSHALLING(ps))
-			hdr->ctr->pac.srv_cksum = PRS_ALLOC_MEM(ps, PAC_SIGNATURE_DATA, 1);
+			hdr->ctr->pac.srv_cksum = (PAC_SIGNATURE_DATA *)
+				prs_alloc_mem(ps, sizeof(PAC_SIGNATURE_DATA));
 		if (!hdr->ctr->pac.srv_cksum) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -488,7 +494,8 @@ static BOOL pac_io_pac_info_hdr_ctr(const char *desc, PAC_INFO_HDR *hdr,
 	case PAC_TYPE_PRIVSVR_CHECKSUM:
 		DEBUG(5, ("PAC_TYPE_PRIVSVR_CHECKSUM\n"));
 		if (UNMARSHALLING(ps))
-			hdr->ctr->pac.privsrv_cksum = PRS_ALLOC_MEM(ps, PAC_SIGNATURE_DATA, 1);
+			hdr->ctr->pac.privsrv_cksum = (PAC_SIGNATURE_DATA *)
+				prs_alloc_mem(ps, sizeof(PAC_SIGNATURE_DATA));
 		if (!hdr->ctr->pac.privsrv_cksum) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -502,7 +509,8 @@ static BOOL pac_io_pac_info_hdr_ctr(const char *desc, PAC_INFO_HDR *hdr,
 	case PAC_TYPE_UNKNOWN_10:
 		DEBUG(5, ("PAC_TYPE_UNKNOWN_10\n"));
 		if (UNMARSHALLING(ps))
-			hdr->ctr->pac.type_10 = PRS_ALLOC_MEM(ps, UNKNOWN_TYPE_10, 1);
+			hdr->ctr->pac.type_10 = (UNKNOWN_TYPE_10 *)
+				prs_alloc_mem(ps, sizeof(UNKNOWN_TYPE_10));
 		if (!hdr->ctr->pac.type_10) {
 			DEBUG(3, ("No memory available\n"));
 			return False;
@@ -563,7 +571,9 @@ static BOOL pac_io_pac_data(const char *desc, PAC_DATA *data,
 		return False;
 
 	if (UNMARSHALLING(ps) && data->num_buffers > 0) {
-		if ((data->pac_info_hdr_ptr = PRS_ALLOC_MEM(ps, PAC_INFO_HDR, data->num_buffers)) == NULL) {
+		if ((data->pac_info_hdr_ptr = (PAC_INFO_HDR *) 
+		     prs_alloc_mem(ps, sizeof(PAC_INFO_HDR) * 
+				   data->num_buffers)) == NULL) {
 			return False;
 		}
 	}
@@ -596,7 +606,7 @@ PAC_DATA *decode_pac_data(DATA_BLOB *auth_data, TALLOC_CTX *ctx)
 
 	data_blob_free(&pac_data_blob);
 
-	pac_data = TALLOC_ZERO_P(ctx, PAC_DATA);
+	pac_data = (PAC_DATA *) talloc_zero(ctx, sizeof(PAC_DATA));
 	pac_io_pac_data("pac data", pac_data, &ps, 0);
 
 	prs_mem_free(&ps);

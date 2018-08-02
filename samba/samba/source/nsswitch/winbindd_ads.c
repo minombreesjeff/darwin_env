@@ -5,7 +5,6 @@
 
    Copyright (C) Andrew Tridgell 2001
    Copyright (C) Andrew Bartlett <abartlet@samba.org> 2003
-   Copyright (C) Gerald (Jerry) Carter 2004
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -40,22 +39,7 @@ static ADS_STRUCT *ads_cached_connection(struct winbindd_domain *domain)
 	ADS_STATUS status;
 
 	if (domain->private) {
-		ads = (ADS_STRUCT *)domain->private;
-
-		/* check for a valid structure */
-
-		DEBUG(7, ("Current tickets expire at %d, time is now %d\n",
-			  (uint32) ads->auth.expire, (uint32) time(NULL)));
-		if ( ads->config.realm && (ads->auth.expire > time(NULL))) {
-			return ads;
-		}
-		else {
-			/* we own this ADS_STRUCT so make sure it goes away */
-			ads->is_mine = True;
-			ads_destroy( &ads );
-			ads_kdestroy("MEMORY:winbind_ccache");
-			domain->private = NULL;
-		}	
+		return (ADS_STRUCT *)domain->private;
 	}
 
 	/* we don't want this to affect the users ccache */
@@ -72,7 +56,7 @@ static ADS_STRUCT *ads_cached_connection(struct winbindd_domain *domain)
 	ads->auth.password = secrets_fetch_machine_password(lp_workgroup(), NULL, NULL);
 
 	SAFE_FREE(ads->auth.realm);
-	ads->auth.realm = SMB_STRDUP(lp_realm());
+	ads->auth.realm = strdup(lp_realm());
 
 	status = ads_connect(ads);
 	if (!ADS_ERR_OK(status) || !ads->config.realm) {
@@ -94,12 +78,6 @@ static ADS_STRUCT *ads_cached_connection(struct winbindd_domain *domain)
 		}
 		return NULL;
 	}
-
-	/* set the flag that says we don't own the memory even 
-	   though we do so that ads_destroy() won't destroy the 
-	   structure we pass back by reference */
-
-	ads->is_mine = False;
 
 	domain->private = (void *)ads;
 	return ads;
@@ -146,7 +124,7 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 		goto done;
 	}
 
-	(*info) = TALLOC_ZERO_ARRAY(mem_ctx, WINBIND_USERINFO, count);
+	(*info) = talloc_zero(mem_ctx, count * sizeof(**info));
 	if (!*info) {
 		status = NT_STATUS_NO_MEMORY;
 		goto done;
@@ -179,7 +157,7 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 			continue;
 		}
 
-		sid2 = TALLOC_P(mem_ctx, DOM_SID);
+		sid2 = talloc(mem_ctx, sizeof(*sid2));
 		if (!sid2) {
 			status = NT_STATUS_NO_MEMORY;
 			goto done;
@@ -248,7 +226,7 @@ static NTSTATUS enum_dom_groups(struct winbindd_domain *domain,
 		goto done;
 	}
 
-	(*info) = TALLOC_ZERO_ARRAY(mem_ctx, struct acct_info, count);
+	(*info) = talloc_zero(mem_ctx, count * sizeof(**info));
 	if (!*info) {
 		status = NT_STATUS_NO_MEMORY;
 		goto done;
@@ -323,6 +301,48 @@ static NTSTATUS enum_local_groups(struct winbindd_domain *domain,
 	return NT_STATUS_OK;
 }
 
+/* convert a single name to a sid in a domain */
+static NTSTATUS name_to_sid(struct winbindd_domain *domain,
+			    TALLOC_CTX *mem_ctx,
+			    const char *name,
+			    DOM_SID *sid,
+			    enum SID_NAME_USE *type)
+{
+	ADS_STRUCT *ads;
+
+	DEBUG(3,("ads: name_to_sid\n"));
+
+	ads = ads_cached_connection(domain);
+	
+	if (!ads) {
+		domain->last_status = NT_STATUS_SERVER_DISABLED;
+		return NT_STATUS_UNSUCCESSFUL;
+	}
+
+	return ads_name_to_sid(ads, name, sid, type);
+}
+
+/* convert a sid to a user or group name */
+static NTSTATUS sid_to_name(struct winbindd_domain *domain,
+			    TALLOC_CTX *mem_ctx,
+			    const DOM_SID *sid,
+			    char **name,
+			    enum SID_NAME_USE *type)
+{
+	ADS_STRUCT *ads = NULL;
+	DEBUG(3,("ads: sid_to_name\n"));
+
+	ads = ads_cached_connection(domain);
+	
+	if (!ads) {
+		domain->last_status = NT_STATUS_SERVER_DISABLED;
+		return NT_STATUS_UNSUCCESSFUL;
+	}
+
+	return ads_sid_to_name(ads, mem_ctx, sid, name, type);
+}
+
+
 /* convert a DN to a name, SID and name type 
    this might become a major speed bottleneck if groups have
    lots of users, in which case we could cache the results
@@ -370,7 +390,7 @@ failed:
 /* Lookup user information from a rid */
 static NTSTATUS query_user(struct winbindd_domain *domain, 
 			   TALLOC_CTX *mem_ctx, 
-			   const DOM_SID *sid, 
+			   DOM_SID *sid, 
 			   WINBIND_USERINFO *info)
 {
 	ADS_STRUCT *ads = NULL;
@@ -421,7 +441,7 @@ static NTSTATUS query_user(struct winbindd_domain *domain,
 		goto done;
 	}
 	
-	sid2 = TALLOC_P(mem_ctx, DOM_SID);
+	sid2 = talloc(mem_ctx, sizeof(*sid2));
 	if (!sid2) {
 		status = NT_STATUS_NO_MEMORY;
 		goto done;
@@ -501,7 +521,7 @@ static NTSTATUS lookup_usergroups_alt(struct winbindd_domain *domain,
 		goto done;
 	}
 	
-	(*user_gids) = TALLOC_ZERO_ARRAY(mem_ctx, DOM_SID *, count + 1);
+	(*user_gids) = talloc_zero(mem_ctx, sizeof(**user_gids) * (count + 1));
 	(*user_gids)[0] = primary_group;
 	
 	*num_groups = 1;
@@ -516,7 +536,7 @@ static NTSTATUS lookup_usergroups_alt(struct winbindd_domain *domain,
 		
 		if (sid_equal(&group_sid, primary_group)) continue;
 		
-		(*user_gids)[*num_groups] = TALLOC_P(mem_ctx, DOM_SID);
+		(*user_gids)[*num_groups] = talloc(mem_ctx, sizeof(***user_gids));
 		if (!(*user_gids)[*num_groups]) {
 			status = NT_STATUS_NO_MEMORY;
 			goto done;
@@ -541,7 +561,7 @@ done:
 /* Lookup groups a user is a member of. */
 static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 				  TALLOC_CTX *mem_ctx,
-				  const DOM_SID *sid, 
+				  DOM_SID *sid, 
 				  uint32 *num_groups, DOM_SID ***user_gids)
 {
 	ADS_STRUCT *ads = NULL;
@@ -610,7 +630,7 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 					     num_groups, user_gids);
 	}
 
-	(*user_gids) = TALLOC_ZERO_ARRAY(mem_ctx, DOM_SID *, count + 1);
+	(*user_gids) = talloc_zero(mem_ctx, sizeof(**user_gids) * (count + 1));
 	(*user_gids)[0] = primary_group;
 	
 	*num_groups = 1;
@@ -618,7 +638,7 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 	for (i=0;i<count;i++) {
 		if (sid_equal(&sids[i], primary_group)) continue;
 		
-		(*user_gids)[*num_groups] = TALLOC_P(mem_ctx, DOM_SID);
+		(*user_gids)[*num_groups] = talloc(mem_ctx, sizeof(***user_gids));
 		if (!(*user_gids)[*num_groups]) {
 			status = NT_STATUS_NO_MEMORY;
 			goto done;
@@ -639,7 +659,7 @@ done:
  */
 static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 				TALLOC_CTX *mem_ctx,
-				const DOM_SID *group_sid, uint32 *num_names, 
+				DOM_SID *group_sid, uint32 *num_names, 
 				DOM_SID ***sid_mem, char ***names, 
 				uint32 **name_types)
 {
@@ -685,7 +705,7 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 	members = NULL;
 	num_members = 0;
 
-	attrs = TALLOC_ARRAY(mem_ctx, const char *, 3);
+	attrs = talloc(mem_ctx, 3 * sizeof(*attrs));
 	attrs[1] = talloc_strdup(mem_ctx, "usnChanged");
 	attrs[2] = NULL;
 		
@@ -751,9 +771,9 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 	   the problem is that the members are in the form of distinguised names
 	*/
 
-	(*sid_mem) = TALLOC_ZERO_ARRAY(mem_ctx, DOM_SID *, num_members);
-	(*name_types) = TALLOC_ZERO_ARRAY(mem_ctx, uint32, num_members);
-	(*names) = TALLOC_ZERO_ARRAY(mem_ctx, char *, num_members);
+	(*sid_mem) = talloc_zero(mem_ctx, sizeof(**sid_mem) * num_members);
+	(*name_types) = talloc_zero(mem_ctx, sizeof(**name_types) * num_members);
+	(*names) = talloc_zero(mem_ctx, sizeof(**names) * num_members);
 
 	for (i=0;i<num_members;i++) {
 		uint32 name_type;
@@ -763,7 +783,7 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 		if (dn_lookup(ads, mem_ctx, members[i], &name, &name_type, &sid)) {
 		    (*names)[*num_names] = name;
 		    (*name_types)[*num_names] = name_type;
-		    (*sid_mem)[*num_names] = TALLOC_P(mem_ctx, DOM_SID);
+		    (*sid_mem)[*num_names] = talloc(mem_ctx, sizeof(***sid_mem));
 		    if (!(*sid_mem)[*num_names]) {
 			    status = NT_STATUS_NO_MEMORY;
 			    goto done;
@@ -850,19 +870,19 @@ static NTSTATUS trusted_domains(struct winbindd_domain *domain,
 	
 		/* Allocate memory for trusted domain names and sids */
 
-		if ( !(*names = TALLOC_ARRAY(mem_ctx, char *, count)) ) {
+		if ( !(*names = (char **)talloc(mem_ctx, sizeof(char *) * count)) ) {
 			DEBUG(0, ("trusted_domains: out of memory\n"));
 			result = NT_STATUS_NO_MEMORY;
 			goto done;
 		}
 
-		if ( !(*alt_names = TALLOC_ARRAY(mem_ctx, char *, count)) ) {
+		if ( !(*alt_names = (char **)talloc(mem_ctx, sizeof(char *) * count)) ) {
 			DEBUG(0, ("trusted_domains: out of memory\n"));
 			result = NT_STATUS_NO_MEMORY;
 			goto done;
 		}
 
-		if ( !(*dom_sids = TALLOC_ARRAY(mem_ctx, DOM_SID, count)) ) {
+		if ( !(*dom_sids = (DOM_SID *)talloc(mem_ctx, sizeof(DOM_SID) * count)) ) {
 			DEBUG(0, ("trusted_domains: out of memory\n"));
 			result = NT_STATUS_NO_MEMORY;
 			goto done;
@@ -962,8 +982,8 @@ struct winbindd_methods ads_methods = {
 	query_user_list,
 	enum_dom_groups,
 	enum_local_groups,
-	msrpc_name_to_sid,
-	msrpc_sid_to_name,
+	name_to_sid,
+	sid_to_name,
 	query_user,
 	lookup_usergroups,
 	lookup_groupmem,

@@ -10,8 +10,6 @@ typedef struct {
 	time_t last_attempt; /* last attempt to reconnect */
 	int ldap_port;
 	
-	int is_mine;	/* do I own this structure's memory? */
-	
 	/* info needed to find the server */
 	struct {
 		char *realm;
@@ -29,7 +27,6 @@ typedef struct {
 		char *kdc_server;
 		unsigned flags;
 		int time_offset;
-		time_t expire;
 	} auth;
 
 	/* info derived from the servers config */
@@ -224,6 +221,3 @@ typedef void **ADS_MODLIST;
 #ifndef HAVE_AP_OPTS_USE_SUBKEY
 #define AP_OPTS_USE_SUBKEY 0
 #endif
-
-#define WELL_KNOWN_GUID_COMPUTERS	"AA312825768811D1ADED00C04FD8D5CD" 
-#define WELL_KNOWN_GUID_USERS		"A9D1CA15768811D1ADED00C04FD8D5CD"

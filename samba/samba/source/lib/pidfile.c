@@ -49,13 +49,6 @@ pid_t pidfile_pid(const char *name)
 	}
 
 	ret = atoi(pidstr);
-
-	if (ret == 0) {
-		/* Obviously we had some garbage in the pidfile... */
-		DEBUG(1, ("Could not parse contents of pidfile %s\n",
-			  pidFile));
-		goto noproc;
-	}
 	
 	if (!process_exists((pid_t)ret)) {
 		goto noproc;

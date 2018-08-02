@@ -57,51 +57,13 @@ static NTSTATUS sam_password_ok(const struct auth_context *auth_context,
 	nt_pw = pdb_get_nt_passwd(sampass);
 
 	return ntlm_password_check(mem_ctx, &auth_context->challenge, 
-				   &user_info->lm_resp, &user_info->nt_resp, 
-				   &user_info->lm_interactive_pwd, &user_info->nt_interactive_pwd,
+				   &user_info->lm_resp, &user_info->nt_resp,  
 				   username, 
 				   user_info->smb_name.str, 
 				   user_info->client_domain.str, 
 				   lm_pw, nt_pw, user_sess_key, lm_sess_key);
 }
 
-/****************************************************************************
- Check if a user is allowed to logon at this time. Note this is the
- servers local time, as logon hours are just specified as a weekly
- bitmask.
-****************************************************************************/
-                                                                                                              
-static BOOL logon_hours_ok(SAM_ACCOUNT *sampass)
-{
-	/* In logon hours first bit is Sunday from 12AM to 1AM */
-	extern struct timeval smb_last_time;
-	const uint8 *hours;
-	struct tm *utctime;
-	uint8 bitmask, bitpos;
-
-	hours = pdb_get_hours(sampass);
-	if (!hours) {
-		DEBUG(5,("logon_hours_ok: No hours restrictions for user %s\n",pdb_get_username(sampass)));
-		return True;
-	}
-
-	utctime = localtime(&smb_last_time.tv_sec);
-
-	/* find the corresponding byte and bit */
-	bitpos = (utctime->tm_wday * 24 + utctime->tm_hour) % 168;
-	bitmask = 1 << (bitpos % 8);
-
-	if (! (hours[bitpos/8] & bitmask)) {
-		DEBUG(1,("logon_hours_ok: Account for user %s not allowed to logon at this time (%s).\n",
-			pdb_get_username(sampass), asctime(utctime) ));
-		return False;
-	}
-
-	DEBUG(5,("logon_hours_ok: user %s allowed to logon at this time (%s)\n",
-		pdb_get_username(sampass), asctime(utctime) ));
-
-	return True;
-}
 
 /****************************************************************************
  Do a specific test for a SAM_ACCOUNT being vaild for this connection 
@@ -128,11 +90,6 @@ static NTSTATUS sam_account_ok(TALLOC_CTX *mem_ctx,
 	if (acct_ctrl & ACB_AUTOLOCK) {
 		DEBUG(1,("sam_account_ok: Account for user %s was locked out.\n", pdb_get_username(sampass)));
 		return NT_STATUS_ACCOUNT_LOCKED_OUT;
-	}
-
-	/* Quit if the account is not allowed to logon at this time. */
-	if (! logon_hours_ok(sampass)) {
-		return NT_STATUS_INVALID_LOGON_HOURS;
 	}
 
 	/* Test account expire time */
@@ -222,7 +179,6 @@ static NTSTATUS check_sam_security(const struct auth_context *auth_context,
 	NTSTATUS nt_status;
 	DATA_BLOB user_sess_key = data_blob(NULL, 0);
 	DATA_BLOB lm_sess_key = data_blob(NULL, 0);
-	BOOL updated_autolock = False, updated_badpw = False;
 
 	if (!user_info || !auth_context) {
 		return NT_STATUS_UNSUCCESSFUL;
@@ -246,70 +202,27 @@ static NTSTATUS check_sam_security(const struct auth_context *auth_context,
 		return NT_STATUS_NO_SUCH_USER;
 	}
 
-	/* see if autolock flag needs to be updated */
-	if (pdb_get_acct_ctrl(sampass) & ACB_NORMAL)
-		pdb_update_autolock_flag(sampass, &updated_autolock);
-	/* Quit if the account was locked out. */
-	if (pdb_get_acct_ctrl(sampass) & ACB_AUTOLOCK) {
-		DEBUG(3,("check_sam_security: Account for user %s was locked out.\n", pdb_get_username(sampass)));
-		return NT_STATUS_ACCOUNT_LOCKED_OUT;
-	}
-
 	nt_status = sam_password_ok(auth_context, mem_ctx, sampass, 
 				    user_info, &user_sess_key, &lm_sess_key);
 	
 	if (!NT_STATUS_IS_OK(nt_status)) {
-		if (NT_STATUS_EQUAL(nt_status,NT_STATUS_WRONG_PASSWORD) && 
-		    pdb_get_acct_ctrl(sampass) &ACB_NORMAL) {  
-			pdb_increment_bad_password_count(sampass);
-			updated_badpw = True;
-		} else {
-			pdb_update_bad_password_count(sampass, 
-						      &updated_badpw);
-		}
-		if (updated_autolock || updated_badpw){
-			become_root();
-			if(!pdb_update_sam_account(sampass))
-				DEBUG(1, ("Failed to modify entry.\n"));
-			unbecome_root();
-		}
-		data_blob_free(&user_sess_key);
-		data_blob_free(&lm_sess_key);
 		pdb_free_sam(&sampass);
 		return nt_status;
 	}
-
-	if ((pdb_get_acct_ctrl(sampass) & ACB_NORMAL) && 
-	    (pdb_get_bad_password_count(sampass) > 0)){
-		pdb_set_bad_password_count(sampass, 0, PDB_CHANGED);
-		pdb_set_bad_password_time(sampass, 0, PDB_CHANGED);
-		updated_badpw = True;
-	}
-
-	if (updated_autolock || updated_badpw){
-		become_root();
-		if(!pdb_update_sam_account(sampass))
-			DEBUG(1, ("Failed to modify entry.\n"));
-		unbecome_root();
- 	}
 
 	nt_status = sam_account_ok(mem_ctx, sampass, user_info);
 
 	if (!NT_STATUS_IS_OK(nt_status)) {
 		pdb_free_sam(&sampass);
-		data_blob_free(&user_sess_key);
-		data_blob_free(&lm_sess_key);
 		return nt_status;
 	}
 
 	if (!NT_STATUS_IS_OK(nt_status = make_server_info_sam(server_info, sampass))) {		
 		DEBUG(0,("check_sam_security: make_server_info_sam() failed with '%s'\n", nt_errstr(nt_status)));
-		data_blob_free(&user_sess_key);
-		data_blob_free(&lm_sess_key);
 		return nt_status;
 	}
 
-	(*server_info)->user_session_key = user_sess_key;
+	(*server_info)->nt_session_key = user_sess_key;
 	(*server_info)->lm_session_key = lm_sess_key;
 
 	return nt_status;

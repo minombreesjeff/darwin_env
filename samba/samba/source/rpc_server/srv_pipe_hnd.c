@@ -204,7 +204,8 @@ smb_np_struct *open_rpc_pipe_p(char *pipe_name,
 	for (p = Pipes; p; p = p->next)
 		DEBUG(5,("open_rpc_pipe_p: name %s pnum=%x\n", p->name, p->pnum));  
 
-	p = SMB_MALLOC_P(smb_np_struct);
+	p = (smb_np_struct *)malloc(sizeof(*p));
+
 	if (!p) {
 		DEBUG(0,("ERROR! no memory for pipes_struct!\n"));
 		return NULL;
@@ -282,9 +283,10 @@ static void *make_internal_rpc_pipe_p(char *pipe_name,
 		return NULL;
 	}
 
-	p = SMB_MALLOC_P(pipes_struct);
+	p = (pipes_struct *)malloc(sizeof(*p));
 
-	if (!p) {
+	if (!p)
+	{
 		DEBUG(0,("ERROR! no memory for pipes_struct!\n"));
 		return NULL;
 	}
@@ -600,7 +602,7 @@ static BOOL process_request_pdu(pipes_struct *p, prs_struct *rpc_in_p)
 	}
 
 	if (p->netsec_auth_validated && !api_pipe_netsec_process(p, rpc_in_p)) {
-		DEBUG(3,("process_request_pdu: failed to do schannel processing.\n"));
+		DEBUG(0,("process_request_pdu: failed to do schannel processing.\n"));
 		set_incoming_fault(p);
 		return False;
 	}
@@ -1090,22 +1092,6 @@ BOOL close_rpc_pipe_hnd(smb_np_struct *p)
 }
 
 /****************************************************************************
- Close all pipes on a connection.
-****************************************************************************/
-
-void pipe_close_conn(connection_struct *conn)
-{
-	smb_np_struct *p, *next;
-
-	for (p=Pipes;p;p=next) {
-		next = p->next;
-		if (p->conn == conn) {
-			close_rpc_pipe_hnd(p);
-		}
-	}
-}
-
-/****************************************************************************
  Close an rpc pipe.
 ****************************************************************************/
 
@@ -1129,7 +1115,6 @@ static BOOL close_internal_rpc_pipe_hnd(void *np_conn)
 	close_policy_by_pipe(p);
 
 	delete_nt_token(&p->pipe_user.nt_user_token);
-	data_blob_free(&p->session_key);
 	SAFE_FREE(p->pipe_user.groups);
 
 	DLIST_REMOVE(InternalPipes, p);

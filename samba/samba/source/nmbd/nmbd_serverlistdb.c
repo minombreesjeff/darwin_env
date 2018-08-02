@@ -137,7 +137,7 @@ workgroup %s. This is a bug.\n", name, work->work_group));
 		return NULL;
 	}
   
-	if((servrec = SMB_MALLOC_P(struct server_record)) == NULL) {
+	if((servrec = (struct server_record *)malloc(sizeof(*servrec))) == NULL) {
 		DEBUG(0,("create_server_entry_on_workgroup: malloc fail !\n"));
 		return NULL;
 	}
@@ -251,7 +251,7 @@ static uint32 write_this_workgroup_name( struct subnet_record *subrec,
 {
 	struct subnet_record *ssub;
 
-	if(strequal(lp_workgroup(), work->work_group))
+	if(strnequal(lp_workgroup(), work->work_group, sizeof(nstring)-1))
 		return 0;
 
 	/* This is a workgroup we have seen on a broadcast subnet. All

@@ -40,24 +40,24 @@ void set_local_machine_name(const char* local_name, BOOL perm)
 	static BOOL already_perm = False;
 	fstring tmp_local_machine;
 
-	fstrcpy(tmp_local_machine,local_name);
-	trim_char(tmp_local_machine,' ',' ');
-
 	/*
 	 * Windows NT/2k uses "*SMBSERVER" and XP uses "*SMBSERV"
 	 * arrggg!!! 
 	 */
 
-	if ( strequal(tmp_local_machine, "*SMBSERVER") || strequal(tmp_local_machine, "*SMBSERV") )  {
-		fstrcpy( local_machine, client_socket_addr() );
+	if (strequal(local_name, "*SMBSERVER")) 
 		return;
-	}
+
+	if (strequal(local_name, "*SMBSERV")) 
+		return;
 
 	if (already_perm)
 		return;
 
 	already_perm = perm;
 
+	fstrcpy(tmp_local_machine,local_name);
+	trim_char(tmp_local_machine,' ',' ');
 	alpha_strcpy(local_machine,tmp_local_machine,SAFE_NETBIOS_CHARS,sizeof(local_machine)-1);
 	strlower_m(local_machine);
 }
@@ -114,11 +114,6 @@ void sub_set_smb_name(const char *name)
 	trim_char(tmp,' ',' ');
 	strlower_m(tmp);
 	alpha_strcpy(smb_user_name,tmp,SAFE_NETBIOS_CHARS,sizeof(smb_user_name)-1);
-}
-
-char* sub_get_smb_name( void )
-{
-	return smb_user_name;
 }
 
 /*******************************************************************
@@ -224,7 +219,7 @@ static char * realloc_expand_env_var(char *str, char *p)
 
 	r = p + 3;
 	copylen = q - r;
-	envname = (char *)SMB_MALLOC(copylen + 1 + 4); /* reserve space for use later add %$() chars */
+	envname = (char *)malloc(copylen + 1 + 4); /* reserve space for use later add %$() chars */
 	if (envname == NULL) return NULL;
 	strncpy(envname,r,copylen);
 	envname[copylen] = '\0';
@@ -446,8 +441,7 @@ static void standard_sub_advanced(int snum, const char *user,
 			string_sub(p,"%P", connectpath, l); 
 			break;
 		case 'S': 
-			if ( snum != -1 )
-				string_sub(p,"%S", lp_servicename(snum), l); 
+			string_sub(p,"%S", lp_servicename(snum), l); 
 			break;
 		case 'g': 
 			string_sub(p,"%g", gidtoname(gid), l); 
@@ -464,8 +458,7 @@ static void standard_sub_advanced(int snum, const char *user,
 			 * "path =" string in [homes] and so needs the
 			 * service name, not the username.  */
 		case 'p': 
-			if ( snum != -1 )
-				string_sub(p,"%p", automount_path(lp_servicename(snum)), l); 
+			string_sub(p,"%p", automount_path(lp_servicename(snum)), l); 
 			break;
 		case '\0': 
 			p++; 
@@ -508,7 +501,7 @@ char *alloc_sub_basic(const char *smb_name, const char *str)
 		return NULL;
 	}
 	
-	a_string = SMB_STRDUP(str);
+	a_string = strdup(str);
 	if (a_string == NULL) {
 		DEBUG(0, ("alloc_sub_specified: Out of memory!\n"));
 		return NULL;
@@ -526,7 +519,7 @@ char *alloc_sub_basic(const char *smb_name, const char *str)
 			t = realloc_string_sub(t, "%U", r);
 			break;
 		case 'G' :
-			r = SMB_STRDUP(smb_name);
+			r = strdup(smb_name);
 			if (r == NULL) goto error;
 			if ((pass = Get_Pwnam(r))!=NULL) {
 				t = realloc_string_sub(t, "%G", gidtoname(pass->pw_gid));
@@ -623,7 +616,7 @@ char *alloc_sub_specified(const char *input_string,
 	char *a_string, *ret_string;
 	char *b, *p, *s, *t;
 
-	a_string = SMB_STRDUP(input_string);
+	a_string = strdup(input_string);
 	if (a_string == NULL) {
 		DEBUG(0, ("alloc_sub_specified: Out of memory!\n"));
 		return NULL;
@@ -700,7 +693,7 @@ char *alloc_sub_advanced(int snum, const char *user,
 	char *a_string, *ret_string;
 	char *b, *p, *s, *t, *h;
 
-	a_string = SMB_STRDUP(str);
+	a_string = strdup(str);
 	if (a_string == NULL) {
 		DEBUG(0, ("alloc_sub_specified: Out of memory!\n"));
 		return NULL;
@@ -799,6 +792,6 @@ void standard_sub_snum(int snum, char *str, size_t len)
 		cached_uid = current_user.uid;
 	}
 
-	standard_sub_advanced(snum, cached_user, "", current_user.gid,
+	standard_sub_advanced(snum, cached_user, "", -1,
 			      smb_user_name, str, len);
 }

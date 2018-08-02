@@ -240,7 +240,7 @@ do_mount(char *share_name, unsigned int flags, struct smb_mount_data *data)
                         data.dir_mode |= S_IXOTH;
         }
 
-	flags = MS_MGC_VAL | MS_NOSUID | MS_NODEV;
+	flags = MS_MGC_VAL;
 
 	if (mount_ro) flags |= MS_RDONLY;
 

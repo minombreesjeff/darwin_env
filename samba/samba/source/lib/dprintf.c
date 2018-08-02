@@ -54,12 +54,12 @@
 	   charset, but beware of it growing */
 	maxlen = ret*2;
 again:
-	p2 = SMB_MALLOC(maxlen);
+	p2 = malloc(maxlen);
 	if (!p2) {
 		SAFE_FREE(p);
 		return -1;
 	}
-	clen = convert_string(CH_UNIX, CH_DISPLAY, p, ret, p2, maxlen, True);
+	clen = convert_string(CH_UNIX, CH_DISPLAY, p, ret, p2, maxlen);
 
 	if (clen >= maxlen) {
 		/* it didn't fit - try a larger buffer */

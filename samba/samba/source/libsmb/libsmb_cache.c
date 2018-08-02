@@ -27,7 +27,7 @@
  * Define this to get the real SMBCFILE and SMBCSRV structures 
  */
 #define _SMBC_INTERNAL
-#include "include/libsmbclient.h"
+#include "../include/libsmbclient.h"
 
 /*
  * Structure we use if internal caching mechanism is used 
@@ -55,7 +55,7 @@ static int smbc_add_cached_server(SMBCCTX * context, SMBCSRV * new,
 {
 	struct smbc_server_cache * srvcache = NULL;
 
-	if (!(srvcache = SMB_MALLOC_P(struct smbc_server_cache))) {
+	if (!(srvcache = malloc(sizeof(*srvcache)))) {
 		errno = ENOMEM;
 		DEBUG(3, ("Not enough space for server cache allocation\n"));
 		return 1;
@@ -65,25 +65,25 @@ static int smbc_add_cached_server(SMBCCTX * context, SMBCSRV * new,
 
 	srvcache->server = new;
 
-	srvcache->server_name = SMB_STRDUP(server);
+	srvcache->server_name = strdup(server);
 	if (!srvcache->server_name) {
 		errno = ENOMEM;
 		goto failed;
 	}
 
-	srvcache->share_name = SMB_STRDUP(share);
+	srvcache->share_name = strdup(share);
 	if (!srvcache->share_name) {
 		errno = ENOMEM;
 		goto failed;
 	}
 
-	srvcache->workgroup = SMB_STRDUP(workgroup);
+	srvcache->workgroup = strdup(workgroup);
 	if (!srvcache->workgroup) {
 		errno = ENOMEM;
 		goto failed;
 	}
 
-	srvcache->username = SMB_STRDUP(username);
+	srvcache->username = strdup(username);
 	if (!srvcache->username) {
 		errno = ENOMEM;
 		goto failed;
@@ -159,15 +159,10 @@ static int smbc_remove_cached_server(SMBCCTX * context, SMBCSRV * server)
  */
 static int smbc_purge_cached(SMBCCTX * context)
 {
-	struct smbc_server_cache * srv;
-	struct smbc_server_cache * next;
+	struct smbc_server_cache * srv = NULL;
 	int could_not_purge_all = 0;
 
-	for (srv = ((struct smbc_server_cache *) context->server_cache),
-                 next = (srv ? srv->next :NULL);
-             srv;
-             srv = next, next = (srv ? srv->next : NULL)) {
-
+	for (srv=((struct smbc_server_cache *) context->server_cache);srv;srv=srv->next) {
 		if (smbc_remove_unused_server(context, srv->server)) {
 			/* could not be removed */
 			could_not_purge_all = 1;

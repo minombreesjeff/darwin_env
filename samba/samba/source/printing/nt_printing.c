@@ -2,7 +2,7 @@
  *  Unix SMB/CIFS implementation.
  *  RPC Pipe client / server routines
  *  Copyright (C) Andrew Tridgell              1992-2000,
- *  Copyright (C) Jean FranÃ§ois Micouleau      1998-2000.
+ *  Copyright (C) Jean François Micouleau      1998-2000.
  *  Copyright (C) Gerald Carter                2002-2003.
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -209,8 +209,6 @@ struct table_node {
 #define SPL_ARCH_W32MIPS	"W32MIPS"
 #define SPL_ARCH_W32ALPHA	"W32ALPHA"
 #define SPL_ARCH_W32PPC		"W32PPC"
-#define SPL_ARCH_IA64		"IA64"
-#define SPL_ARCH_X64		"x64"
 
 static const struct table_node archi_table[]= {
 
@@ -219,8 +217,6 @@ static const struct table_node archi_table[]= {
 	{"Windows NT R4000",     SPL_ARCH_W32MIPS,	2 },
 	{"Windows NT Alpha_AXP", SPL_ARCH_W32ALPHA,	2 },
 	{"Windows NT PowerPC",   SPL_ARCH_W32PPC,	2 },
-	{"Windows IA64",   	 SPL_ARCH_IA64,		3 },
-	{"Windows x64",   	 SPL_ARCH_X64,		3 },
 	{NULL,                   "",		-1 }
 };
 
@@ -291,7 +287,6 @@ BOOL nt_printing_init(void)
 {
 	static pid_t local_pid;
 	const char *vstring = "INFO/version";
-	WERROR win_rc;
 
 	if (tdb_drivers && tdb_printers && tdb_forms && local_pid == sys_getpid())
 		return True;
@@ -368,38 +363,8 @@ BOOL nt_printing_init(void)
 
 	message_register( MSG_PRINTERDATA_INIT_RESET, reset_all_printerdata );
 
-	/*
-	 * register callback to handle invalidating the printer cache 
-	 * between smbd processes.
-	 */
-
-	message_register( MSG_PRINTER_MOD, receive_printer_mod_msg);
-
-	/* of course, none of the message callbacks matter if you don't
-	   tell messages.c that you interested in receiving PRINT_GENERAL 
-	   msgs.  This is done in claim_connection() */
-
-
-	if ( lp_security() == SEC_ADS ) {
-		win_rc = check_published_printers();
-		if (!W_ERROR_IS_OK(win_rc))
-			DEBUG(0, ("nt_printing_init: error checking published printers: %s\n", dos_errstr(win_rc)));
-	}
 
 	return True;
-}
-
-/*******************************************************************
- Function to allow filename parsing "the old way".
-********************************************************************/
-
-static BOOL driver_unix_convert(char *name,connection_struct *conn,
-		char *saved_last_component, BOOL *bad_path, SMB_STRUCT_STAT *pst)
-{
-	unix_format(name);
-	unix_clean_name(name);
-	trim_string(name,"/","/");
-	return unix_convert(name, conn, saved_last_component, bad_path, pst);
 }
 
 /*******************************************************************
@@ -531,7 +496,7 @@ int get_ntforms(nt_forms_struct **list)
 		if (ret != dbuf.dsize) 
 			continue;
 
-		tl = SMB_REALLOC_ARRAY(*list, nt_forms_struct, n+1);
+		tl = Realloc(*list, sizeof(nt_forms_struct)*(n+1));
 		if (!tl) {
 			DEBUG(0,("get_ntforms: Realloc fail.\n"));
 			return 0;
@@ -601,7 +566,7 @@ BOOL add_a_form(nt_forms_struct **list, const FORM *form, int *count)
 	}
 
 	if (update==False) {
-		if((tl=SMB_REALLOC_ARRAY(*list, nt_forms_struct, n+1)) == NULL) {
+		if((tl=Realloc(*list, (n+1)*sizeof(nt_forms_struct))) == NULL) {
 			DEBUG(0,("add_a_form: failed to enlarge forms list!\n"));
 			return False;
 		}
@@ -710,7 +675,7 @@ int get_ntdrivers(fstring **list, const char *architecture, uint32 version)
 		if (strncmp(kbuf.dptr, key, strlen(key)) != 0)
 			continue;
 		
-		if((fl = SMB_REALLOC_ARRAY(*list, fstring, total+1)) == NULL) {
+		if((fl = Realloc(*list, sizeof(fstring)*(total+1))) == NULL) {
 			DEBUG(0,("get_ntdrivers: failed to enlarge list!\n"));
 			return -1;
 		}
@@ -766,7 +731,7 @@ static int get_file_version(files_struct *fsp, char *fname,uint32 *major, uint32
 	char    *buf = NULL;
 	ssize_t byte_count;
 
-	if ((buf=SMB_MALLOC(PE_HEADER_SIZE)) == NULL) {
+	if ((buf=malloc(PE_HEADER_SIZE)) == NULL) {
 		DEBUG(0,("get_file_version: PE file [%s] PE Header malloc failed bytes = %d\n",
 				fname, PE_HEADER_SIZE));
 		goto error_exit;
@@ -822,7 +787,7 @@ static int get_file_version(files_struct *fsp, char *fname,uint32 *major, uint32
 			goto error_exit;
 
 		SAFE_FREE(buf);
-		if ((buf=SMB_MALLOC(section_table_bytes)) == NULL) {
+		if ((buf=malloc(section_table_bytes)) == NULL) {
 			DEBUG(0,("get_file_version: PE file [%s] section table malloc failed bytes = %d\n",
 					fname, section_table_bytes));
 			goto error_exit;
@@ -846,7 +811,7 @@ static int get_file_version(files_struct *fsp, char *fname,uint32 *major, uint32
 					goto error_exit;
 
 				SAFE_FREE(buf);
-				if ((buf=SMB_MALLOC(section_bytes)) == NULL) {
+				if ((buf=malloc(section_bytes)) == NULL) {
 					DEBUG(0,("get_file_version: PE file [%s] version malloc failed bytes = %d\n",
 							fname, section_bytes));
 					goto error_exit;
@@ -906,7 +871,7 @@ static int get_file_version(files_struct *fsp, char *fname,uint32 *major, uint32
 
 		/* Allocate a bit more space to speed up things */
 		SAFE_FREE(buf);
-		if ((buf=SMB_MALLOC(VS_NE_BUF_SIZE)) == NULL) {
+		if ((buf=malloc(VS_NE_BUF_SIZE)) == NULL) {
 			DEBUG(0,("get_file_version: NE file [%s] malloc failed bytes  = %d\n",
 					fname, PE_HEADER_SIZE));
 			goto error_exit;
@@ -1022,12 +987,12 @@ static int file_version_is_newer(connection_struct *conn, fstring new_file, fstr
 	/* Get file version info (if available) for previous file (if it exists) */
 	pstrcpy(filepath, old_file);
 
-	driver_unix_convert(filepath,conn,NULL,&bad_path,&stat_buf);
+	unix_convert(filepath,conn,NULL,&bad_path,&stat_buf);
 
 	fsp = open_file_shared(conn, filepath, &stat_buf,
-						   SET_DENY_MODE(DENY_NONE)|SET_OPEN_MODE(DOS_OPEN_RDONLY),
+						   SET_OPEN_MODE(DOS_OPEN_RDONLY),
 						   (FILE_FAIL_IF_NOT_EXIST|FILE_EXISTS_OPEN),
-						   FILE_ATTRIBUTE_NORMAL, INTERNAL_OPEN_ONLY, &access_mode, &action);
+						   0, 0, &access_mode, &action);
 	if (!fsp) {
 		/* Old file not found, so by definition new file is in fact newer */
 		DEBUG(10,("file_version_is_newer: Can't open old file [%s], errno = %d\n",
@@ -1051,12 +1016,12 @@ static int file_version_is_newer(connection_struct *conn, fstring new_file, fstr
 
 	/* Get file version info (if available) for new file */
 	pstrcpy(filepath, new_file);
-	driver_unix_convert(filepath,conn,NULL,&bad_path,&stat_buf);
+	unix_convert(filepath,conn,NULL,&bad_path,&stat_buf);
 
 	fsp = open_file_shared(conn, filepath, &stat_buf,
-						   SET_DENY_MODE(DENY_NONE)|SET_OPEN_MODE(DOS_OPEN_RDONLY),
+						   SET_OPEN_MODE(DOS_OPEN_RDONLY),
 						   (FILE_FAIL_IF_NOT_EXIST|FILE_EXISTS_OPEN),
-						   FILE_ATTRIBUTE_NORMAL, INTERNAL_OPEN_ONLY, &access_mode, &action);
+						   0, 0, &access_mode, &action);
 	if (!fsp) {
 		/* New file not found, this shouldn't occur if the caller did its job */
 		DEBUG(3,("file_version_is_newer: Can't open new file [%s], errno = %d\n",
@@ -1167,12 +1132,12 @@ static uint32 get_correct_cversion(const char *architecture, fstring driverpath_
 	 * deriver the cversion. */
 	slprintf(driverpath, sizeof(driverpath)-1, "%s/%s", architecture, driverpath_in);
 
-	driver_unix_convert(driverpath,conn,NULL,&bad_path,&st);
+	unix_convert(driverpath,conn,NULL,&bad_path,&st);
 
 	fsp = open_file_shared(conn, driverpath, &st,
-						   SET_DENY_MODE(DENY_NONE)|SET_OPEN_MODE(DOS_OPEN_RDONLY),
+						   SET_OPEN_MODE(DOS_OPEN_RDONLY),
 						   (FILE_FAIL_IF_NOT_EXIST|FILE_EXISTS_OPEN),
-						   FILE_ATTRIBUTE_NORMAL, INTERNAL_OPEN_ONLY, &access_mode, &action);
+						   0, 0, &access_mode, &action);
 	if (!fsp) {
 		DEBUG(3,("get_correct_cversion: Can't open file [%s], errno = %d\n",
 				driverpath, errno));
@@ -1438,8 +1403,6 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 	pstring inbuf;
 	pstring outbuf;
 	fstring res_type;
-	BOOL bad_path;
-	SMB_STRUCT_STAT st;
 	int ver = 0;
 	int i;
 
@@ -1491,7 +1454,6 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 	 */
 	DEBUG(5,("Creating first directory\n"));
 	slprintf(new_dir, sizeof(new_dir)-1, "%s/%d", architecture, driver->cversion);
-	driver_unix_convert(new_dir, conn, NULL, &bad_path, &st);
 	mkdir_internal(conn, new_dir);
 
 	/* For each driver file, archi\filexxx.yyy, if there is a duplicate file
@@ -1518,8 +1480,7 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 		slprintf(old_name, sizeof(old_name)-1, "%s/%s", new_dir, driver->driverpath);	
 		if (ver != -1 && (ver=file_version_is_newer(conn, new_name, old_name)) > 0) {
 			NTSTATUS status;
-			driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-			status = rename_internals(conn, new_name, old_name, 0, True);
+			status = rename_internals(conn, new_name, old_name, True);
 			if (!NT_STATUS_IS_OK(status)) {
 				DEBUG(0,("move_driver_to_download_area: Unable to rename [%s] to [%s]\n",
 						new_name, old_name));
@@ -1527,10 +1488,9 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 				unlink_internals(conn, 0, new_name);
 				ver = -1;
 			}
-		} else {
-			driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-			unlink_internals(conn, 0, new_name);
 		}
+		else
+			unlink_internals(conn, 0, new_name);
 	}
 
 	if (driver->datafile && strlen(driver->datafile)) {
@@ -1539,8 +1499,7 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 			slprintf(old_name, sizeof(old_name)-1, "%s/%s", new_dir, driver->datafile);	
 			if (ver != -1 && (ver=file_version_is_newer(conn, new_name, old_name)) > 0) {
 				NTSTATUS status;
-				driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-				status = rename_internals(conn, new_name, old_name, 0, True);
+				status = rename_internals(conn, new_name, old_name, True);
 				if (!NT_STATUS_IS_OK(status)) {
 					DEBUG(0,("move_driver_to_download_area: Unable to rename [%s] to [%s]\n",
 							new_name, old_name));
@@ -1548,10 +1507,9 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 					unlink_internals(conn, 0, new_name);
 					ver = -1;
 				}
-			} else {
-				driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-				unlink_internals(conn, 0, new_name);
 			}
+			else
+				unlink_internals(conn, 0, new_name);
 		}
 	}
 
@@ -1562,8 +1520,7 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 			slprintf(old_name, sizeof(old_name)-1, "%s/%s", new_dir, driver->configfile);	
 			if (ver != -1 && (ver=file_version_is_newer(conn, new_name, old_name)) > 0) {
 				NTSTATUS status;
-				driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-				status = rename_internals(conn, new_name, old_name, 0, True);
+				status = rename_internals(conn, new_name, old_name, True);
 				if (!NT_STATUS_IS_OK(status)) {
 					DEBUG(0,("move_driver_to_download_area: Unable to rename [%s] to [%s]\n",
 							new_name, old_name));
@@ -1571,10 +1528,9 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 					unlink_internals(conn, 0, new_name);
 					ver = -1;
 				}
-			} else {
-				driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-				unlink_internals(conn, 0, new_name);
 			}
+			else
+				unlink_internals(conn, 0, new_name);
 		}
 	}
 
@@ -1586,8 +1542,7 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 			slprintf(old_name, sizeof(old_name)-1, "%s/%s", new_dir, driver->helpfile);	
 			if (ver != -1 && (ver=file_version_is_newer(conn, new_name, old_name)) > 0) {
 				NTSTATUS status;
-				driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-				status = rename_internals(conn, new_name, old_name, 0, True);
+				status = rename_internals(conn, new_name, old_name, True);
 				if (!NT_STATUS_IS_OK(status)) {
 					DEBUG(0,("move_driver_to_download_area: Unable to rename [%s] to [%s]\n",
 							new_name, old_name));
@@ -1595,10 +1550,9 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 					unlink_internals(conn, 0, new_name);
 					ver = -1;
 				}
-			} else {
-				driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-				unlink_internals(conn, 0, new_name);
 			}
+			else
+				unlink_internals(conn, 0, new_name);
 		}
 	}
 
@@ -1619,8 +1573,7 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 				slprintf(old_name, sizeof(old_name)-1, "%s/%s", new_dir, driver->dependentfiles[i]);	
 				if (ver != -1 && (ver=file_version_is_newer(conn, new_name, old_name)) > 0) {
 					NTSTATUS status;
-					driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-					status = rename_internals(conn, new_name, old_name, 0, True);
+					status = rename_internals(conn, new_name, old_name, True);
 					if (!NT_STATUS_IS_OK(status)) {
 						DEBUG(0,("move_driver_to_download_area: Unable to rename [%s] to [%s]\n",
 								new_name, old_name));
@@ -1628,10 +1581,9 @@ BOOL move_driver_to_download_area(NT_PRINTER_DRIVER_INFO_LEVEL driver_abstract, 
 						unlink_internals(conn, 0, new_name);
 						ver = -1;
 					}
-				} else {
-					driver_unix_convert(new_name, conn, NULL, &bad_path, &st);
-					unlink_internals(conn, 0, new_name);
 				}
+				else
+					unlink_internals(conn, 0, new_name);
 			}
 		NextDriver: ;
 		}
@@ -1728,7 +1680,7 @@ static uint32 add_a_printer_driver_3(NT_PRINTER_DRIVER_INFO_LEVEL_3 *driver)
 	if (len != buflen) {
 		char *tb;
 
-		tb = (char *)SMB_REALLOC(buf, len);
+		tb = (char *)Realloc(buf, len);
 		if (!tb) {
 			DEBUG(0,("add_a_printer_driver_3: failed to enlarge buffer\n!"));
 			ret = -1;
@@ -1793,7 +1745,7 @@ static WERROR get_a_printer_driver_3_default(NT_PRINTER_DRIVER_INFO_LEVEL_3 **in
 	fstrcpy(info.configfile, "");
 	fstrcpy(info.helpfile, "");
 
-	if ((info.dependentfiles= SMB_MALLOC_ARRAY(fstring, 2)) == NULL)
+	if ((info.dependentfiles=(fstring *)malloc(2*sizeof(fstring))) == NULL)
 		return WERR_NOMEM;
 
 	memset(info.dependentfiles, '\0', 2*sizeof(fstring));
@@ -1850,7 +1802,8 @@ static WERROR get_a_printer_driver_3(NT_PRINTER_DRIVER_INFO_LEVEL_3 **info_ptr, 
 	while (len < dbuf.dsize) {
 		fstring *tddfs;
 
-		tddfs = SMB_REALLOC_ARRAY(driver.dependentfiles, fstring, i+2);
+		tddfs = (fstring *)Realloc(driver.dependentfiles,
+							 sizeof(fstring)*(i+2));
 		if (tddfs == NULL) {
 			DEBUG(0,("get_a_printer_driver_3: failed to enlarge buffer!\n"));
 			break;
@@ -2058,6 +2011,9 @@ uint32 del_a_printer(char *sharename)
 	return 0;
 }
 
+/* FIXME!!!  Reorder so this forward declaration is not necessary --jerry */
+static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **, const char* sharename);
+static void free_nt_printer_info_level_2(NT_PRINTER_INFO_LEVEL_2 **);
 /****************************************************************************
 ****************************************************************************/
 static WERROR update_a_printer_2(NT_PRINTER_INFO_LEVEL_2 *info)
@@ -2074,13 +2030,10 @@ static WERROR update_a_printer_2(NT_PRINTER_INFO_LEVEL_2 *info)
 	 *                and printer is \\server\\printer
 	 *
 	 * Samba manages only local printers.
-	 * we currently don't support things like i
-	 * path=\\other_server\printer
-	 *
-	 * We only store the printername, not \\server\printername
+	 * we currently don't support things like path=\\other_server\printer
 	 */
 
-	if ( info->servername[0] != '\0' ) {
+	if (info->servername[0]!='\0') {
 		trim_string(info->printername, info->servername, NULL);
 		trim_char(info->printername, '\\', '\0');
 		info->servername[0]='\0';
@@ -2132,7 +2085,7 @@ static WERROR update_a_printer_2(NT_PRINTER_INFO_LEVEL_2 *info)
 	if (buflen != len) {
 		char *tb;
 
-		tb = (char *)SMB_REALLOC(buf, len);
+		tb = (char *)Realloc(buf, len);
 		if (!tb) {
 			DEBUG(0,("update_a_printer_2: failed to enlarge buffer!\n"));
 			ret = WERR_NOMEM;
@@ -2174,7 +2127,7 @@ NT_DEVICEMODE *construct_nt_devicemode(const fstring default_devicename)
 {
 
 	char adevice[MAXDEVICENAME];
-	NT_DEVICEMODE *nt_devmode = SMB_MALLOC_P(NT_DEVICEMODE);
+	NT_DEVICEMODE *nt_devmode = (NT_DEVICEMODE *)malloc(sizeof(NT_DEVICEMODE));
 
 	if (nt_devmode == NULL) {
 		DEBUG(0,("construct_nt_devicemode: malloc fail.\n"));
@@ -2183,7 +2136,7 @@ NT_DEVICEMODE *construct_nt_devicemode(const fstring default_devicename)
 
 	ZERO_STRUCTP(nt_devmode);
 
-	slprintf(adevice, sizeof(adevice), "%s", default_devicename);
+	safe_strcpy(adevice, default_devicename, sizeof(adevice)-1);
 	fstrcpy(nt_devmode->devicename, adevice);	
 	
 	fstrcpy(nt_devmode->formname, "Letter");
@@ -2213,7 +2166,7 @@ NT_DEVICEMODE *construct_nt_devicemode(const fstring default_devicename)
 	nt_devmode->mediatype        = 0;
 	nt_devmode->dithertype       = 0;
 
-	/* non utilisÃ©s par un driver d'imprimante */
+	/* non utilisés par un driver d'imprimante */
 	nt_devmode->logpixels        = 0;
 	nt_devmode->bitsperpel       = 0;
 	nt_devmode->pelswidth        = 0;
@@ -2394,7 +2347,7 @@ static int add_new_printer_key( NT_PRINTER_DATA *data, const char *name )
 	
 	/* allocate another slot in the NT_PRINTER_KEY array */
 	
-	d = SMB_REALLOC_ARRAY( data->keys, NT_PRINTER_KEY, data->num_keys+1);
+	d = Realloc( data->keys, sizeof(NT_PRINTER_KEY)*(data->num_keys+1) );
 	if ( d )
 		data->keys = d;
 	
@@ -2403,7 +2356,7 @@ static int add_new_printer_key( NT_PRINTER_DATA *data, const char *name )
 	/* initialze new key */
 	
 	data->num_keys++;
-	data->keys[key_index].name = SMB_STRDUP( name );
+	data->keys[key_index].name = strdup( name );
 	
 	ZERO_STRUCTP( &data->keys[key_index].values );
 	
@@ -2486,7 +2439,7 @@ uint32 get_printer_subkeys( NT_PRINTER_DATA *data, const char* key, fstring **su
 
 			/* found a match, so allocate space and copy the name */
 			
-			if ( !(ptr = SMB_REALLOC_ARRAY( subkeys_ptr, fstring, num_subkeys+2)) ) {
+			if ( !(ptr = Realloc( subkeys_ptr, (num_subkeys+2)*sizeof(fstring))) ) {
 				DEBUG(0,("get_printer_subkeys: Realloc failed for [%d] entries!\n", 
 					num_subkeys+1));
 				SAFE_FREE( subkeys );
@@ -2549,14 +2502,9 @@ static void map_single_multi_sz_into_ctr(REGVAL_CTR *ctr, const char *val_name,
 
 	/* a multi-sz has to have a null string terminator, i.e., the last
 	   string must be followed by two nulls */
-	str_size = strlen(multi_sz) + 2;
-	conv_strs = SMB_CALLOC_ARRAY(smb_ucs2_t, str_size);
-	if (!conv_strs) {
-		return;
-	}
+	str_size = (strlen(multi_sz) + 2) * sizeof(smb_ucs2_t);
+	conv_strs = calloc(str_size, 1);
 
-	/* Change to byte units. */
-	str_size *= sizeof(smb_ucs2_t);
 	push_ucs2(NULL, conv_strs, multi_sz, str_size, 
 		  STR_TERMINATE | STR_NOALIGN);
 
@@ -2589,7 +2537,7 @@ static BOOL map_nt_printer_info2_to_dsspooler(NT_PRINTER_INFO_LEVEL_2 *info2)
 	map_sz_into_ctr(ctr, SPOOL_REG_PRINTERNAME, info2->sharename);
 	map_sz_into_ctr(ctr, SPOOL_REG_SHORTSERVERNAME, global_myname());
 
-	get_mydnsfullname(longname);
+	get_myfullname(longname);
 	map_sz_into_ctr(ctr, SPOOL_REG_SERVERNAME, longname);
 
 	asprintf(&allocated_string, "\\\\%s\\%s", longname, info2->sharename);
@@ -2628,8 +2576,7 @@ static BOOL map_nt_printer_info2_to_dsspooler(NT_PRINTER_INFO_LEVEL_2 *info2)
 	return True;
 }
 
-static void store_printer_guid(NT_PRINTER_INFO_LEVEL_2 *info2, 
-			       struct uuid guid)
+static void store_printer_guid(NT_PRINTER_INFO_LEVEL_2 *info2, GUID guid)
 {
 	int i;
 	REGVAL_CTR *ctr=NULL;
@@ -2641,23 +2588,59 @@ static void store_printer_guid(NT_PRINTER_INFO_LEVEL_2 *info2,
 
 	regval_ctr_delvalue(ctr, "objectGUID");
 	regval_ctr_addvalue(ctr, "objectGUID", REG_BINARY, 
-			    (char *) &guid, sizeof(struct uuid));	
+			    (char *) &guid, sizeof(GUID));	
 }
 
-static WERROR nt_printer_publish_ads(ADS_STRUCT *ads,
-                                     NT_PRINTER_INFO_LEVEL *printer)
+static WERROR publish_it(NT_PRINTER_INFO_LEVEL *printer)
 {
 	ADS_STATUS ads_rc;
-	void *res;
+	TALLOC_CTX *ctx = talloc_init("publish_it");
+	ADS_MODLIST mods = ads_init_mods(ctx);
 	char *prt_dn = NULL, *srv_dn, *srv_cn_0;
 	char *srv_dn_utf8, **srv_cn_utf8;
-	TALLOC_CTX *ctx;
-	ADS_MODLIST mods;
+	void *res = NULL;
+	ADS_STRUCT *ads;
 	const char *attrs[] = {"objectGUID", NULL};
-	struct uuid guid;
+	GUID guid;
 	WERROR win_rc = WERR_OK;
 
-	DEBUG(5, ("publishing printer %s\n", printer->info_2->printername));
+	ZERO_STRUCT(guid);
+	/* set the DsSpooler info and attributes */
+	if (!(map_nt_printer_info2_to_dsspooler(printer->info_2)))
+			return WERR_NOMEM;
+	printer->info_2->attributes |= PRINTER_ATTRIBUTE_PUBLISHED;
+	win_rc = mod_a_printer(*printer, 2);
+	if (!W_ERROR_IS_OK(win_rc)) {
+		DEBUG(3, ("err %d saving data\n",
+				  W_ERROR_V(win_rc)));
+		return win_rc;
+	}
+
+	/* Build the ads mods */
+	get_local_printer_publishing_data(ctx, &mods, 
+					  &printer->info_2->data);
+	ads_mod_str(ctx, &mods, SPOOL_REG_PRINTERNAME, 
+		    printer->info_2->sharename);
+
+	/* initial ads structure */
+	
+	ads = ads_init(NULL, NULL, NULL);
+	if (!ads) {
+		DEBUG(3, ("ads_init() failed\n"));
+		return WERR_SERVER_UNAVAILABLE;
+	}
+	setenv(KRB5_ENV_CCNAME, "MEMORY:prtpub_cache", 1);
+	SAFE_FREE(ads->auth.password);
+	ads->auth.password = secrets_fetch_machine_password(lp_workgroup(),
+		NULL, NULL);
+		
+	/* ads_connect() will find the DC for us */					    
+	ads_rc = ads_connect(ads);
+	if (!ADS_ERR_OK(ads_rc)) {
+		DEBUG(3, ("ads_connect failed: %s\n", ads_errstr(ads_rc)));
+		ads_destroy(&ads);
+		return WERR_ACCESS_DENIED;
+	}
 
 	/* figure out where to publish */
 	ads_find_machine_acct(ads, &res, global_myname());
@@ -2701,146 +2684,42 @@ static WERROR nt_printer_publish_ads(ADS_STRUCT *ads,
 	SAFE_FREE(srv_dn);
 	SAFE_FREE(srv_cn_0);
 
-	/* build the ads mods */
-	ctx = talloc_init("nt_printer_publish_ads");
-	mods = ads_init_mods(ctx);
-
-	get_local_printer_publishing_data(ctx, &mods, 
-	                                  &printer->info_2->data);
-	ads_mod_str(ctx, &mods, SPOOL_REG_PRINTERNAME, 
-	            printer->info_2->sharename);
-
 	/* publish it */
 	ads_rc = ads_add_printer_entry(ads, prt_dn, ctx, &mods);
 	if (LDAP_ALREADY_EXISTS == ads_rc.err.rc)
-		ads_rc = ads_mod_printer_entry(ads, prt_dn, ctx, &mods);
+		ads_rc = ads_mod_printer_entry(ads, prt_dn, ctx,&mods);
 	
-	talloc_destroy(ctx);
-
 	/* retreive the guid and store it locally */
 	if (ADS_ERR_OK(ads_search_dn(ads, &res, prt_dn, attrs))) {
-		ZERO_STRUCT(guid);
+		ads_memfree(ads, prt_dn);
 		ads_pull_guid(ads, res, &guid);
 		ads_msgfree(ads, res);
 		store_printer_guid(printer->info_2, guid);
-		win_rc = mod_a_printer(printer, 2);
+		win_rc = mod_a_printer(*printer, 2);
 	} 
 
-	SAFE_FREE(prt_dn);
-	return win_rc;
-}
+	safe_free(prt_dn);
+	ads_destroy(&ads);
 
-static WERROR nt_printer_unpublish_ads(ADS_STRUCT *ads,
-                                       NT_PRINTER_INFO_LEVEL *printer)
-{
-	ADS_STATUS ads_rc;
-	void *res;
-	char *prt_dn = NULL;
-
-	DEBUG(5, ("unpublishing printer %s\n", printer->info_2->printername));
-
-	/* remove the printer from the directory */
-	ads_rc = ads_find_printer_on_server(ads, &res, 
-			    printer->info_2->sharename, global_myname());
-
-	if (ADS_ERR_OK(ads_rc) && ads_count_replies(ads, res)) {
-		prt_dn = ads_get_dn(ads, res);
-		ads_rc = ads_del_dn(ads, prt_dn);
-		ads_memfree(ads, prt_dn);
-	}
-
-	ads_msgfree(ads, res);
 	return WERR_OK;
 }
 
-/****************************************************************************
- * Publish a printer in the directory
- *
- * @param snum describing printer service
- * @return WERROR indicating status of publishing
- ***************************************************************************/
-
-WERROR nt_printer_publish(Printer_entry *print_hnd, int snum, int action)
+WERROR unpublish_it(NT_PRINTER_INFO_LEVEL *printer)
 {
 	ADS_STATUS ads_rc;
-	ADS_STRUCT *ads = NULL;
-	NT_PRINTER_INFO_LEVEL *printer = NULL;
+	ADS_STRUCT *ads;
+	void *res;
+	char *prt_dn = NULL;
 	WERROR win_rc;
 
-	win_rc = get_a_printer(print_hnd, &printer, 2, lp_servicename(snum));
-	if (!W_ERROR_IS_OK(win_rc))
-		goto done;
-
-	switch (action) {
-	case SPOOL_DS_PUBLISH:
-	case SPOOL_DS_UPDATE:
-		/* set the DsSpooler info and attributes */
-		if (!(map_nt_printer_info2_to_dsspooler(printer->info_2))) {
-			win_rc = WERR_NOMEM;
-			goto done;
-		}
-
-		printer->info_2->attributes |= PRINTER_ATTRIBUTE_PUBLISHED;
-		break;
-	case SPOOL_DS_UNPUBLISH:
-		printer->info_2->attributes ^= PRINTER_ATTRIBUTE_PUBLISHED;
-		break;
-	default:
-		win_rc = WERR_NOT_SUPPORTED;
-		goto done;
-	}
-
-	win_rc = mod_a_printer(printer, 2);
+	printer->info_2->attributes ^= PRINTER_ATTRIBUTE_PUBLISHED;
+	win_rc = mod_a_printer(*printer, 2);
 	if (!W_ERROR_IS_OK(win_rc)) {
-		DEBUG(3, ("err %d saving data\n", W_ERROR_V(win_rc)));
-		goto done;
+		DEBUG(3, ("err %d saving data\n",
+				  W_ERROR_V(win_rc)));
+		return win_rc;
 	}
-
-	ads = ads_init(NULL, NULL, NULL);
-	if (!ads) {
-		DEBUG(3, ("ads_init() failed\n"));
-		win_rc = WERR_SERVER_UNAVAILABLE;
-		goto done;
-	}
-	setenv(KRB5_ENV_CCNAME, "MEMORY:prtpub_cache", 1);
-	SAFE_FREE(ads->auth.password);
-	ads->auth.password = secrets_fetch_machine_password(lp_workgroup(),
-		NULL, NULL);
-
-	/* ads_connect() will find the DC for us */					    
-	ads_rc = ads_connect(ads);
-	if (!ADS_ERR_OK(ads_rc)) {
-		DEBUG(3, ("ads_connect failed: %s\n", ads_errstr(ads_rc)));
-		win_rc = WERR_ACCESS_DENIED;
-		goto done;
-	}
-
-	switch (action) {
-	case SPOOL_DS_PUBLISH:
-	case SPOOL_DS_UPDATE:
-		win_rc = nt_printer_publish_ads(ads, printer);
-		break;
-	case SPOOL_DS_UNPUBLISH:
-		win_rc = nt_printer_unpublish_ads(ads, printer);
-		break;
-	}
-
-done:
-	free_a_printer(&printer, 2);
-	ads_destroy(&ads);
-	return win_rc;
-}
-
-WERROR check_published_printers(void)
-{
-	ADS_STATUS ads_rc;
-	ADS_STRUCT *ads = NULL;
-	void *res = NULL;
-	int snum;
-	int n_services = lp_numservices();
-	NT_PRINTER_INFO_LEVEL *printer = NULL;
-	WERROR win_rc;
-
+	
 	ads = ads_init(NULL, NULL, NULL);
 	if (!ads) {
 		DEBUG(3, ("ads_init() failed\n"));
@@ -2858,40 +2737,55 @@ WERROR check_published_printers(void)
 		ads_destroy(&ads);
 		return WERR_ACCESS_DENIED;
 	}
-
-	for (snum = 0; snum < n_services; snum++) {
-		if (!(lp_snum_ok(snum) && lp_print_ok(snum)))
-			continue;
-
-		if (!W_ERROR_IS_OK(get_a_printer(NULL, &printer, 2,
-		                                 lp_servicename(snum))) ||
-		    !(printer->info_2->attributes & PRINTER_ATTRIBUTE_PUBLISHED))
-			goto next;
-
-		DEBUG(5, ("checking directory for printer %s\n", printer->info_2->printername));
-		ads_rc = ads_find_printer_on_server(ads, &res,
-				printer->info_2->sharename, global_myname());
-		if (ADS_ERR_OK(ads_rc) && ads_count_replies(ads, res)) {
-			DEBUG(5, ("printer %s is in directory\n", printer->info_2->printername));
-			goto next;
-		}
-
-		win_rc = nt_printer_publish_ads(ads, printer);
-		if (!W_ERROR_IS_OK(win_rc))
-			DEBUG(3, ("error publishing %s: %s\n", printer->info_2->sharename, dos_errstr(win_rc)));
-
-	next:
-		free_a_printer(&printer, 2);
+	
+	/* remove the printer from the directory */
+	ads_rc = ads_find_printer_on_server(ads, &res, 
+			    printer->info_2->sharename, global_myname());
+	if (ADS_ERR_OK(ads_rc) && ads_count_replies(ads, res)) {
+		prt_dn = ads_get_dn(ads, res);
 		ads_msgfree(ads, res);
-		res = NULL;
+		ads_rc = ads_del_dn(ads, prt_dn);
+		ads_memfree(ads, prt_dn);
 	}
 
 	ads_destroy(&ads);
 	return WERR_OK;
 }
 
-BOOL is_printer_published(Printer_entry *print_hnd, int snum, 
-			  struct uuid *guid)
+/****************************************************************************
+ * Publish a printer in the directory
+ *
+ * @param snum describing printer service
+ * @return WERROR indicating status of publishing
+ ***************************************************************************/
+
+WERROR nt_printer_publish(Printer_entry *print_hnd, int snum, int action)
+{
+	NT_PRINTER_INFO_LEVEL *printer = NULL;
+	WERROR win_rc;
+
+	win_rc = get_a_printer(print_hnd, &printer, 2, lp_servicename(snum));
+	if (!W_ERROR_IS_OK(win_rc))
+		return win_rc;
+
+	switch(action) {
+	case SPOOL_DS_PUBLISH:
+	case SPOOL_DS_UPDATE:
+		win_rc = publish_it(printer);
+		break;
+	case SPOOL_DS_UNPUBLISH:
+		win_rc = unpublish_it(printer);
+		break;
+	default:
+		win_rc = WERR_NOT_SUPPORTED;
+	}
+	
+
+	free_a_printer(&printer, 2);
+	return win_rc;
+}
+
+BOOL is_printer_published(Printer_entry *print_hnd, int snum, GUID *guid)
 {
 	NT_PRINTER_INFO_LEVEL *printer = NULL;
 	REGVAL_CTR *ctr;
@@ -2899,42 +2793,42 @@ BOOL is_printer_published(Printer_entry *print_hnd, int snum,
 	WERROR win_rc;
 	int i;
 
-	win_rc = get_a_printer(print_hnd, &printer, 2, lp_servicename(snum));
 
-	if (!W_ERROR_IS_OK(win_rc) ||
-	    !(printer->info_2->attributes & PRINTER_ATTRIBUTE_PUBLISHED) ||
-	    ((i = lookup_printerkey(&printer->info_2->data, 
-	                            SPOOL_DSSPOOLER_KEY)) < 0) ||
-	    !(ctr = &printer->info_2->data.keys[i].values) ||
-	    !(guid_val = regval_ctr_getvalue(ctr, "objectGUID"))) {
-		free_a_printer(&printer, 2);
+	win_rc = get_a_printer(print_hnd, &printer, 2, lp_servicename(snum));
+	if (!W_ERROR_IS_OK(win_rc))
+		return False;
+
+	if (!(printer->info_2->attributes & PRINTER_ATTRIBUTE_PUBLISHED))
+		return False;
+
+	if ((i = lookup_printerkey(&printer->info_2->data, 
+				   SPOOL_DSSPOOLER_KEY)) < 0)
+		return False;
+
+	if (!(ctr = &printer->info_2->data.keys[i].values)) {
 		return False;
 	}
 
-	if (regval_size(guid_val) == sizeof(struct uuid))
-		memcpy(guid, regval_data_p(guid_val), sizeof(struct uuid));
+	if (!(guid_val = regval_ctr_getvalue(ctr, "objectGUID"))) {
+		return False;
+	}
 
-	free_a_printer(&printer, 2);
+	if (regval_size(guid_val) == sizeof(GUID))
+		memcpy(guid, regval_data_p(guid_val), sizeof(GUID));
+
 	return True;
 }
+	
 #else
 WERROR nt_printer_publish(Printer_entry *print_hnd, int snum, int action)
 {
 	return WERR_OK;
 }
-
-WERROR check_published_printers(void)
-{
-	return WERR_OK;
-}
-
-BOOL is_printer_published(Printer_entry *print_hnd, int snum, 
-			  struct uuid *guid)
+BOOL is_printer_published(Printer_entry *print_hnd, int snum, GUID *guid)
 {
 	return False;
 }
-#endif /* HAVE_ADS */
-
+#endif
 /****************************************************************************
  ***************************************************************************/
  
@@ -3133,7 +3027,6 @@ static int unpack_values(NT_PRINTER_DATA *printer_data, char *buf, int buflen)
 	
 		/* check to see if there are any more registry values */
 		
-		regval_p = NULL;
 		len += tdb_unpack(buf+len, buflen-len, "p", &regval_p);		
 		if ( !regval_p ) 
 			break;
@@ -3148,13 +3041,10 @@ static int unpack_values(NT_PRINTER_DATA *printer_data, char *buf, int buflen)
 	
 		/*
 		 * break of the keyname from the value name.  
-		 * Valuenames can have embedded '\'s so be careful.
-		 * only support one level of keys.  See the 
-		 * "Konica Fiery S300 50C-K v1.1. enu" 2k driver.
-		 * -- jerry
+		 * Should only be one '\' in the string returned.
 		 */	
 		 
-		str = strchr_m( string, '\\');
+		str = strrchr( string, '\\');
 		
 		/* Put in "PrinterDriverData" is no key specified */
 		
@@ -3278,7 +3168,7 @@ static void map_to_os2_driver(fstring drivername)
 /****************************************************************************
  Get a default printer info 2 struct.
 ****************************************************************************/
-static WERROR get_a_printer_2_default(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *servername, const char* sharename)
+static WERROR get_a_printer_2_default(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *sharename)
 {
 	int snum;
 	NT_PRINTER_INFO_LEVEL_2 info;
@@ -3287,9 +3177,9 @@ static WERROR get_a_printer_2_default(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const 
 
 	snum = lp_servicenumber(sharename);
 
-	slprintf(info.servername, sizeof(info.servername)-1, "\\\\%s", servername);
+	slprintf(info.servername, sizeof(info.servername)-1, "\\\\%s", get_called_name());
 	slprintf(info.printername, sizeof(info.printername)-1, "\\\\%s\\%s", 
-		servername, sharename);
+		 get_called_name(), sharename);
 	fstrcpy(info.sharename, sharename);
 	fstrcpy(info.portname, SAMBA_PRINTER_PORT_NAME);
 
@@ -3357,12 +3247,11 @@ static WERROR get_a_printer_2_default(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const 
 
 /****************************************************************************
 ****************************************************************************/
-static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *servername, const char *sharename)
+static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *sharename)
 {
 	pstring key;
 	NT_PRINTER_INFO_LEVEL_2 info;
-	int len = 0;
-	int snum = lp_servicenumber(sharename);
+	int 		len = 0;
 	TDB_DATA kbuf, dbuf;
 	fstring printername;
 	char adevice[MAXDEVICENAME];
@@ -3376,7 +3265,7 @@ static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *se
 
 	dbuf = tdb_fetch(tdb_printers, kbuf);
 	if (!dbuf.dptr)
-		return get_a_printer_2_default(info_ptr, servername, sharename);
+		return get_a_printer_2_default(info_ptr, sharename);
 
 	len += tdb_unpack(dbuf.dptr+len, dbuf.dsize-len, "dddddddddddfffffPfffff",
 			&info.attributes,
@@ -3404,16 +3293,11 @@ static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *se
 
 	/* Samba has to have shared raw drivers. */
 	info.attributes |= PRINTER_ATTRIBUTE_SAMBA;
-	info.attributes &= ~PRINTER_ATTRIBUTE_NOT_SAMBA;
 
 	/* Restore the stripped strings. */
-	slprintf(info.servername, sizeof(info.servername)-1, "\\\\%s", servername);
-
-	if ( lp_force_printername(snum) )
-		slprintf(printername, sizeof(printername)-1, "\\\\%s\\%s", servername, sharename );
-	else 
-		slprintf(printername, sizeof(printername)-1, "\\\\%s\\%s", servername, info.printername);
-
+	slprintf(info.servername, sizeof(info.servername)-1, "\\\\%s", get_called_name());
+	slprintf(printername, sizeof(printername)-1, "\\\\%s\\%s", get_called_name(),
+			info.printername);
 	fstrcpy(info.printername, printername);
 
 	len += unpack_devicemode(&info.devmode,dbuf.dptr+len, dbuf.dsize-len);
@@ -3426,13 +3310,13 @@ static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *se
 	 * See comments in get_a_printer_2_default()
 	 */
 
-	if (lp_default_devmode(snum) && !info.devmode) {
+	if (lp_default_devmode(lp_servicenumber(sharename)) && !info.devmode) {
 		DEBUG(8,("get_a_printer_2: Constructing a default device mode for [%s]\n",
 			printername));
 		info.devmode = construct_nt_devicemode(printername);
 	}
 
-	slprintf( adevice, sizeof(adevice), "%s", info.printername );
+	safe_strcpy(adevice, info.printername, sizeof(adevice)-1);
 	if (info.devmode) {
 		fstrcpy(info.devmode->devicename, adevice);	
 	}
@@ -3461,7 +3345,7 @@ static WERROR get_a_printer_2(NT_PRINTER_INFO_LEVEL_2 **info_ptr, const char *se
 /****************************************************************************
  Debugging function, dump at level 6 the struct in the logs.
 ****************************************************************************/
-static uint32 dump_a_printer(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
+static uint32 dump_a_printer(NT_PRINTER_INFO_LEVEL printer, uint32 level)
 {
 	uint32 result;
 	NT_PRINTER_INFO_LEVEL_2	*info2;
@@ -3471,11 +3355,11 @@ static uint32 dump_a_printer(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
 	switch (level) {
 		case 2:
 		{
-			if (printer->info_2 == NULL)
+			if (printer.info_2 == NULL)
 				result=5;
 			else
 			{
-				info2=printer->info_2;
+				info2=printer.info_2;
 			
 				DEBUGADD(106,("attributes:[%d]\n", info2->attributes));
 				DEBUGADD(106,("priority:[%d]\n", info2->priority));
@@ -3540,27 +3424,6 @@ static uint32 rev_changeid(void)
 #endif
 }
 
-/********************************************************************
- Send a message to all smbds about the printer that just changed
- ********************************************************************/
- 
-static BOOL send_printer_mod_msg( char* printername )
-{
-	int len = strlen(printername);
-	
-	if (!len)
-		return False;
-
-	DEBUG(10,("send_printer_mod_msg: Sending message about printer change [%s]\n",
-		printername));
-		
-	/* spam everyone that we just changed this printer */
-	
-	message_send_all( conn_tdb_ctx(), MSG_PRINTER_MOD, printername, len+1, False, NULL );
-
-	return True;
-}
-
 /*
  * The function below are the high level ones.
  * only those ones must be called from the spoolss code.
@@ -3571,7 +3434,7 @@ static BOOL send_printer_mod_msg( char* printername )
  Modify a printer. This is called from SETPRINTERDATA/DELETEPRINTERDATA.
 ****************************************************************************/
 
-WERROR mod_a_printer(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
+WERROR mod_a_printer(NT_PRINTER_INFO_LEVEL printer, uint32 level)
 {
 	WERROR result;
 	
@@ -3583,8 +3446,7 @@ WERROR mod_a_printer(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
 	 * get_a_printer() 
 	 */
 	 
-	invalidate_printer_hnd_cache( printer->info_2->sharename );
-	send_printer_mod_msg( printer->info_2->sharename );
+	invalidate_printer_hnd_cache( printer.info_2->sharename );
 	
 	switch (level) {
 		case 2:
@@ -3599,7 +3461,7 @@ WERROR mod_a_printer(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
 			   of client's spoolss service in order for the
 			   client's cache to show updates */
 
-			printer->info_2->changeid = rev_changeid();
+			printer.info_2->changeid = rev_changeid();
 
 			/*
 			 * Because one day someone will ask:
@@ -3620,7 +3482,7 @@ WERROR mod_a_printer(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
 			 * 14/12/01	--jerry
 			 */
 
-			result=update_a_printer_2(printer->info_2);
+			result=update_a_printer_2(printer.info_2);
 			
 			break;
 		}
@@ -3788,10 +3650,10 @@ static uint32 update_driver_init_2(NT_PRINTER_INFO_LEVEL_2 *info)
 
 	len += pack_values( &info->data, buf+len, buflen-len );
 
-	if (buflen < len) {
+	if (buflen != len) {
 		char *tb;
 
-		tb = (char *)SMB_REALLOC(buf, len);
+		tb = (char *)Realloc(buf, len);
 		if (!tb) {
 			DEBUG(0, ("update_driver_init_2: failed to enlarge buffer!\n"));
 			ret = -1;
@@ -3828,7 +3690,7 @@ done:
  Update (i.e. save) the driver init info (DEVMODE and values) for a printer
 ****************************************************************************/
 
-static uint32 update_driver_init(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
+uint32 update_driver_init(NT_PRINTER_INFO_LEVEL printer, uint32 level)
 {
 	uint32 result;
 	
@@ -3836,7 +3698,7 @@ static uint32 update_driver_init(NT_PRINTER_INFO_LEVEL *printer, uint32 level)
 	
 	switch (level) {
 		case 2:
-			result = update_driver_init_2(printer->info_2);
+			result = update_driver_init_2(printer.info_2);
 			break;
 		default:
 			result = 1;
@@ -3915,7 +3777,7 @@ static WERROR save_driver_init_2(NT_PRINTER_INFO_LEVEL *printer, uint8 *data, ui
 		if ((ctx = talloc_init("save_driver_init_2")) == NULL)
 			return WERR_NOMEM;
 
-		if ((nt_devmode = SMB_MALLOC_P(NT_DEVICEMODE)) == NULL) {
+		if ((nt_devmode = (NT_DEVICEMODE*)malloc(sizeof(NT_DEVICEMODE))) == NULL) {
 			status = WERR_NOMEM;
 			goto done;
 		}
@@ -3941,7 +3803,7 @@ static WERROR save_driver_init_2(NT_PRINTER_INFO_LEVEL *printer, uint8 *data, ui
 	 * 
 	 */
 
-	if ( update_driver_init(printer, 2) != 0 ) {
+	if ( update_driver_init(*printer, 2) != 0 ) {
 		DEBUG(10,("save_driver_init_2: error updating DEVMODE\n"));
 		status = WERR_NOMEM;
 		goto done;
@@ -3952,7 +3814,7 @@ static WERROR save_driver_init_2(NT_PRINTER_INFO_LEVEL *printer, uint8 *data, ui
 	 * printer to match it. This allows initialization of the current printer 
 	 * as well as the driver.
 	 */
-	status = mod_a_printer(printer, 2);
+	status = mod_a_printer(*printer, 2);
 	if (!W_ERROR_IS_OK(status)) {
 		DEBUG(10,("save_driver_init_2: error setting DEVMODE on printer [%s]\n",
 				  printer->info_2->printername));
@@ -4032,7 +3894,7 @@ NT_PRINTER_INFO_LEVEL_2* dup_printer_2( TALLOC_CTX *ctx, NT_PRINTER_INFO_LEVEL_2
 	if ( !printer )
 		return NULL;
 	
-	if ( !(copy = SMB_MALLOC_P(NT_PRINTER_INFO_LEVEL_2)) )
+	if ( !(copy = (NT_PRINTER_INFO_LEVEL_2 *)malloc(sizeof(NT_PRINTER_INFO_LEVEL_2))) )
 		return NULL;
 		
 	memcpy( copy, printer, sizeof(NT_PRINTER_INFO_LEVEL_2) );
@@ -4072,7 +3934,6 @@ WERROR get_a_printer( Printer_entry *print_hnd, NT_PRINTER_INFO_LEVEL **pp_print
 {
 	WERROR result;
 	NT_PRINTER_INFO_LEVEL *printer = NULL;
-	fstring servername;
 	
 	*pp_printer = NULL;
 
@@ -4080,18 +3941,11 @@ WERROR get_a_printer( Printer_entry *print_hnd, NT_PRINTER_INFO_LEVEL **pp_print
 
 	switch (level) {
 		case 2:
-			if ((printer = SMB_MALLOC_P(NT_PRINTER_INFO_LEVEL)) == NULL) {
+			if ((printer = (NT_PRINTER_INFO_LEVEL *)malloc(sizeof(NT_PRINTER_INFO_LEVEL))) == NULL) {
 				DEBUG(0,("get_a_printer: malloc fail.\n"));
 				return WERR_NOMEM;
 			}
 			ZERO_STRUCTP(printer);
-
-			if ( print_hnd ) 
-				fstrcpy( servername, print_hnd->servername );
-			else {
-				fstrcpy( servername, "%L" );
-				standard_sub_basic( "", servername, sizeof(servername)-1 );
-			}
 			
 			/* 
 			 * check for cache first.  A Printer handle cannot changed
@@ -4126,22 +3980,22 @@ WERROR get_a_printer( Printer_entry *print_hnd, NT_PRINTER_INFO_LEVEL **pp_print
 			   Make sure to use a short lived talloc ctx */
 
 			if ( print_hnd )
-				result = find_printer_in_print_hnd_cache(get_talloc_ctx(), &printer->info_2, servername, sharename);
+				result = find_printer_in_print_hnd_cache(get_talloc_ctx(), &printer->info_2, sharename);
 			
 			/* fail to disk if we don't have it with any open handle */
 
 			if ( !print_hnd || !W_ERROR_IS_OK(result) )
-				result = get_a_printer_2(&printer->info_2, servername, sharename );
+				result = get_a_printer_2(&printer->info_2, sharename);				
 			
 			/* we have a new printer now.  Save it with this handle */
 			
 			if ( W_ERROR_IS_OK(result) ) {
-				dump_a_printer(printer, level);
+				dump_a_printer(*printer, level);
 					
 				/* save a copy in cache */
 				if ( print_hnd && (print_hnd->printer_type==PRINTER_HANDLE_IS_PRINTER)) {
 					if ( !print_hnd->printer_info )
-						print_hnd->printer_info = SMB_MALLOC_P(NT_PRINTER_INFO_LEVEL);
+						print_hnd->printer_info = (NT_PRINTER_INFO_LEVEL *)malloc(sizeof(NT_PRINTER_INFO_LEVEL));
 
 					if ( print_hnd->printer_info ) {
 						/* make sure to use the handle's talloc ctx here since 
@@ -4553,8 +4407,6 @@ static BOOL delete_driver_files( NT_PRINTER_DRIVER_INFO_LEVEL_3 *info_3, struct 
 	DATA_BLOB null_pw;
 	NTSTATUS nt_status;
 	fstring res_type;
-	BOOL bad_path;
-	SMB_STRUCT_STAT  st;
 
 	if ( !info_3 )
 		return False;
@@ -4590,7 +4442,6 @@ static BOOL delete_driver_files( NT_PRINTER_DRIVER_INFO_LEVEL_3 *info_3, struct 
 	
 	if ( *info_3->driverpath ) {
 		if ( (s = strchr( &info_3->driverpath[1], '\\' )) != NULL ) {
-			driver_unix_convert(s, conn, NULL, &bad_path, &st);
 			DEBUG(10,("deleting driverfile [%s]\n", s));
 			unlink_internals(conn, 0, s);
 		}
@@ -4598,7 +4449,6 @@ static BOOL delete_driver_files( NT_PRINTER_DRIVER_INFO_LEVEL_3 *info_3, struct 
 		
 	if ( *info_3->configfile ) {
 		if ( (s = strchr( &info_3->configfile[1], '\\' )) != NULL ) {
-			driver_unix_convert(s, conn, NULL, &bad_path, &st);
 			DEBUG(10,("deleting configfile [%s]\n", s));
 			unlink_internals(conn, 0, s);
 		}
@@ -4606,7 +4456,6 @@ static BOOL delete_driver_files( NT_PRINTER_DRIVER_INFO_LEVEL_3 *info_3, struct 
 	
 	if ( *info_3->datafile ) {
 		if ( (s = strchr( &info_3->datafile[1], '\\' )) != NULL ) {
-			driver_unix_convert(s, conn, NULL, &bad_path, &st);
 			DEBUG(10,("deleting datafile [%s]\n", s));
 			unlink_internals(conn, 0, s);
 		}
@@ -4614,7 +4463,6 @@ static BOOL delete_driver_files( NT_PRINTER_DRIVER_INFO_LEVEL_3 *info_3, struct 
 	
 	if ( *info_3->helpfile ) {
 		if ( (s = strchr( &info_3->helpfile[1], '\\' )) != NULL ) {
-			driver_unix_convert(s, conn, NULL, &bad_path, &st);
 			DEBUG(10,("deleting helpfile [%s]\n", s));
 			unlink_internals(conn, 0, s);
 		}
@@ -4629,7 +4477,6 @@ static BOOL delete_driver_files( NT_PRINTER_DRIVER_INFO_LEVEL_3 *info_3, struct 
 			/* bypass the "\print$" portion of the path */
 			
 			if ( (file = strchr( info_3->dependentfiles[i]+1, '\\' )) != NULL ) {
-				driver_unix_convert(file, conn, NULL, &bad_path, &st);
 				DEBUG(10,("deleting dependent file [%s]\n", file));
 				unlink_internals(conn, 0, file );
 			}
@@ -5138,10 +4985,3 @@ BOOL print_time_access_check(int snum)
 	return ok;
 }
 
-/****************************************************************************
- Fill in the servername sent in the _spoolss_open_printer_ex() call
-****************************************************************************/
-char* get_server_name( Printer_entry *printer )
-{
-	return printer->servername;
-}

@@ -21,6 +21,12 @@
 #include "includes.h"
 
 extern struct timeval smb_last_time;
+extern int case_default;
+extern BOOL case_preserve;
+extern BOOL short_case_preserve;
+extern BOOL case_mangle;
+extern BOOL case_sensitive;
+extern BOOL use_mangled_map;
 extern userdom_struct current_user_info;
 
 
@@ -28,11 +34,10 @@ extern userdom_struct current_user_info;
  Load parameters specific to a connection/service.
 ****************************************************************************/
 
-BOOL set_current_service(connection_struct *conn, uint16 flags, BOOL do_chdir)
+BOOL set_current_service(connection_struct *conn,BOOL do_chdir)
 {
 	extern char magic_char;
 	static connection_struct *last_conn;
-	static uint16 last_flags;
 	int snum;
 
 	if (!conn)  {
@@ -52,26 +57,18 @@ BOOL set_current_service(connection_struct *conn, uint16 flags, BOOL do_chdir)
 		return(False);
 	}
 
-	if ((conn == last_conn) && (last_flags == flags)) {
+	if (conn == last_conn)
 		return(True);
-	}
 
 	last_conn = conn;
-	last_flags = flags;
-	
-	/* Obey the client case sensitivity requests - only for clients that support it. */
-	if (lp_casesensitive(snum) == Auto) {
-		/* We need this uglyness due to DOS/Win9x clients that lie about case insensitivity. */
-		enum remote_arch_types ra_type = get_remote_arch();
-		if ((ra_type != RA_SAMBA) && (ra_type != RA_CIFSFS)) {
-			/* Client can't support per-packet case sensitive pathnames. */
-			conn->case_sensitive = False;
-		} else {
-			conn->case_sensitive = !(flags & FLAG_CASELESS_PATHNAMES);
-		}
-	}
 
+	case_default = lp_defaultcase(snum);
+	case_preserve = lp_preservecase(snum);
+	short_case_preserve = lp_shortpreservecase(snum);
+	case_mangle = lp_casemangle(snum);
+	case_sensitive = lp_casesensitive(snum);
 	magic_char = lp_magicchar(snum);
+	use_mangled_map = (*lp_mangled_map(snum) ? True:False);
 	return(True);
 }
 
@@ -115,96 +112,105 @@ int add_home_service(const char *service, const char *username, const char *home
 
 
 /**
- * Find a service entry.
+ * Find a service entry. service is always in dos codepage.
  *
  * @param service is modified (to canonical form??)
  **/
-
 int find_service(fstring service)
 {
-	int iService;
+   int iService;
 
-	all_string_sub(service,"\\","/",0);
+   all_string_sub(service,"\\","/",0);
 
-	iService = lp_servicenumber(service);
+   iService = lp_servicenumber(service);
 
-	/* now handle the special case of a home directory */
-	if (iService < 0) {
-		char *phome_dir = get_user_home_dir(service);
+   /* now handle the special case of a home directory */
+   if (iService < 0)
+   {
+      char *phome_dir = get_user_home_dir(service);
 
-		if(!phome_dir) {
-			/*
-			 * Try mapping the servicename, it may
-			 * be a Windows to unix mapped user name.
-			 */
-			if(map_username(service))
-				phome_dir = get_user_home_dir(service);
-		}
+      if(!phome_dir)
+      {
+        /*
+         * Try mapping the servicename, it may
+         * be a Windows to unix mapped user name.
+         */
+        if(map_username(service))
+          phome_dir = get_user_home_dir(service);
+      }
 
-		DEBUG(3,("checking for home directory %s gave %s\n",service,
-			phome_dir?phome_dir:"(NULL)"));
+      DEBUG(3,("checking for home directory %s gave %s\n",service,
+            phome_dir?phome_dir:"(NULL)"));
 
-		iService = add_home_service(service,service /* 'username' */, phome_dir);
-	}
+      iService = add_home_service(service,service /* 'username' */, phome_dir);
+   }
 
-	/* If we still don't have a service, attempt to add it as a printer. */
-	if (iService < 0) {
-		int iPrinterService;
+   /* If we still don't have a service, attempt to add it as a printer. */
+   if (iService < 0)
+   {
+      int iPrinterService;
 
-		if ((iPrinterService = lp_servicenumber(PRINTERS_NAME)) >= 0) {
-			char *pszTemp;
+      if ((iPrinterService = lp_servicenumber(PRINTERS_NAME)) >= 0)
+      {
+         char *pszTemp;
 
-			DEBUG(3,("checking whether %s is a valid printer name...\n", service));
-			pszTemp = lp_printcapname();
-			if ((pszTemp != NULL) && pcap_printername_ok(service, pszTemp)) {
-				DEBUG(3,("%s is a valid printer name\n", service));
-				DEBUG(3,("adding %s as a printer service\n", service));
-				lp_add_printer(service, iPrinterService);
-				iService = lp_servicenumber(service);
-				if (iService < 0) {
-					DEBUG(0,("failed to add %s as a printer service!\n", service));
-				}
-			} else {
-				DEBUG(3,("%s is not a valid printer name\n", service));
-			}
-		}
-	}
+         DEBUG(3,("checking whether %s is a valid printer name...\n", service));
+         pszTemp = lp_printcapname();
+         if ((pszTemp != NULL) && pcap_printername_ok(service, pszTemp))
+         {
+            DEBUG(3,("%s is a valid printer name\n", service));
+            DEBUG(3,("adding %s as a printer service\n", service));
+            lp_add_printer(service, iPrinterService);
+            iService = lp_servicenumber(service);
+            if (iService < 0)
+               DEBUG(0,("failed to add %s as a printer service!\n", service));
+         }
+         else
+            DEBUG(3,("%s is not a valid printer name\n", service));
+      }
+   }
 
-	/* Check for default vfs service?  Unsure whether to implement this */
-	if (iService < 0) {
-	}
+   /* Check for default vfs service?  Unsure whether to implement this */
+   if (iService < 0)
+   {
+   }
 
-	/* just possibly it's a default service? */
-	if (iService < 0) {
-		char *pdefservice = lp_defaultservice();
-		if (pdefservice && *pdefservice && !strequal(pdefservice,service) && !strstr_m(service,"..")) {
-			/*
-			 * We need to do a local copy here as lp_defaultservice() 
-			 * returns one of the rotating lp_string buffers that
-			 * could get overwritten by the recursive find_service() call
-			 * below. Fix from Josef Hinteregger <joehtg@joehtg.co.at>.
-			 */
-			pstring defservice;
-			pstrcpy(defservice, pdefservice);
-			iService = find_service(defservice);
-			if (iService >= 0) {
-				all_string_sub(service, "_","/",0);
-				iService = lp_add_service(service, iService);
-			}
-		}
-	}
+   /* just possibly it's a default service? */
+   if (iService < 0) 
+   {
+     char *pdefservice = lp_defaultservice();
+     if (pdefservice && *pdefservice && 
+	 !strequal(pdefservice,service) &&
+	 !strstr(service,".."))
+     {
+       /*
+        * We need to do a local copy here as lp_defaultservice() 
+        * returns one of the rotating lp_string buffers that
+        * could get overwritten by the recursive find_service() call
+        * below. Fix from Josef Hinteregger <joehtg@joehtg.co.at>.
+        */
+       pstring defservice;
+       pstrcpy(defservice, pdefservice);
+       iService = find_service(defservice);
+       if (iService >= 0)
+       {
+         all_string_sub(service, "_","/",0);
+         iService = lp_add_service(service, iService);
+       }
+     }
+   }
 
-	if (iService >= 0) {
-		if (!VALID_SNUM(iService)) {
-			DEBUG(0,("Invalid snum %d for %s\n",iService, service));
-			iService = -1;
-		}
-	}
+   if (iService >= 0)
+     if (!VALID_SNUM(iService))
+     {
+       DEBUG(0,("Invalid snum %d for %s\n",iService, service));
+       iService = -1;
+     }
 
-	if (iService < 0)
-		DEBUG(3,("find_service() failed to find service %s\n", service));
+   if (iService < 0)
+     DEBUG(3,("find_service() failed to find service %s\n", service));
 
-	return (iService);
+   return (iService);
 }
 
 
@@ -212,7 +218,6 @@ int find_service(fstring service)
  do some basic sainity checks on the share.  
  This function modifies dev, ecode.
 ****************************************************************************/
-
 static NTSTATUS share_sanity_checks(int snum, fstring dev) 
 {
 	
@@ -252,6 +257,78 @@ static NTSTATUS share_sanity_checks(int snum, fstring dev)
 	}
 
 	return NT_STATUS_OK;
+}
+
+/****************************************************************************
+ readonly share?
+****************************************************************************/
+
+static void set_read_only(connection_struct *conn, gid_t *groups, size_t n_groups)
+{
+	char **list;
+	const char *service = lp_servicename(conn->service);
+	conn->read_only = lp_readonly(conn->service);
+
+	if (!service)
+		return;
+
+	str_list_copy(&list, lp_readlist(conn->service));
+	if (list) {
+		if (!str_list_sub_basic(list, current_user_info.smb_name) ) {
+			DEBUG(0, ("ERROR: read list substitution failed\n"));
+		}
+		if (!str_list_substitute(list, "%S", service)) {
+			DEBUG(0, ("ERROR: read list service substitution failed\n"));
+		}
+		if (user_in_list(conn->user, (const char **)list, groups, n_groups))
+			conn->read_only = True;
+		str_list_free(&list);
+	}
+	
+	str_list_copy(&list, lp_writelist(conn->service));
+	if (list) {
+		if (!str_list_sub_basic(list, current_user_info.smb_name) ) {
+			DEBUG(0, ("ERROR: write list substitution failed\n"));
+		}
+		if (!str_list_substitute(list, "%S", service)) {
+			DEBUG(0, ("ERROR: write list service substitution failed\n"));
+		}
+		if (user_in_list(conn->user, (const char **)list, groups, n_groups))
+			conn->read_only = False;
+		str_list_free(&list);
+	}
+}
+
+/****************************************************************************
+  admin user check
+****************************************************************************/
+
+static void set_admin_user(connection_struct *conn, gid_t *groups, size_t n_groups)
+{
+	/* admin user check */
+	
+	/* JRA - original code denied admin user if the share was
+	   marked read_only. Changed as I don't think this is needed,
+	   but old code left in case there is a problem here.
+	*/
+	if (user_in_list(conn->user,lp_admin_users(conn->service), groups, n_groups) 
+#if 0
+	    && !conn->read_only
+#endif
+	    ) {
+		conn->admin_user = True;
+		conn->force_user = True;  /* Admin users are effectivly 'forced' */
+		DEBUG(0,("%s logged in as admin user (root privileges)\n",conn->user));
+	} else {
+		conn->admin_user = False;
+	}
+
+#if 0 /* This done later, for now */    
+	/* admin users always run as uid=0 */
+	if (conn->admin_user) {
+		conn->uid = 0;
+	}
+#endif
 }
 
 /****************************************************************************
@@ -360,27 +437,16 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 	conn->printer = (strncmp(dev,"LPT",3) == 0);
 	conn->ipc = ((strncmp(dev,"IPC",3) == 0) || strequal(dev,"ADMIN$"));
 	conn->dirptr = NULL;
-
-	/* Case options for the share. */
-	if (lp_casesensitive(snum) == Auto) {
-		/* We will be setting this per packet. Set to be case insensitive for now. */
-		conn->case_sensitive = False;
-	} else {
-		conn->case_sensitive = (BOOL)lp_casesensitive(snum);
-	}
-
-	conn->case_preserve = lp_preservecase(snum);
-	conn->short_case_preserve = lp_shortpreservecase(snum);
-
 	conn->veto_list = NULL;
 	conn->hide_list = NULL;
 	conn->veto_oplock_list = NULL;
 	string_set(&conn->dirpath,"");
 	string_set(&conn->user,user);
 	conn->nt_user_token = NULL;
-
-	conn->read_only = lp_readonly(conn->service);
-	conn->admin_user = False;
+	
+	set_read_only(conn, vuser ? vuser->groups : NULL, vuser ? vuser->n_groups : 0);
+	
+	set_admin_user(conn, vuser ? vuser->groups : NULL, vuser ? vuser->n_groups : 0);
 
 	/*
 	 * If force user is true, then store the
@@ -410,6 +476,11 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 			*status = NT_STATUS_NO_SUCH_USER;
 			return NULL;
 		}
+	}
+
+	/* admin users always run as uid=0 */
+	if (conn->admin_user) {
+		conn->uid = 0;
 	}
 
 #ifdef HAVE_GETGRNAM 
@@ -518,20 +589,6 @@ static connection_struct *make_connection_snum(int snum, user_struct *vuser,
 		conn_free(conn);
 		*status = NT_STATUS_BAD_NETWORK_NAME;
 		return NULL;
-	}
-
-	/*
-	 * If widelinks are disallowed we need to canonicalise the
-	 * connect path here to ensure we don't have any symlinks in
-	 * the connectpath. We will be checking all paths on this
-	 * connection are below this directory. We must do this after
-	 * the VFS init as we depend on the realpath() pointer in the vfs table. JRA.
-	 */
-	if (!lp_widelinks(snum)) {
-		pstring s;
-		pstrcpy(s,conn->connectpath);
-		canonicalize_path(conn, s);
-		string_set(&conn->connectpath,s);
 	}
 
 /* ROOT Activities: */	
@@ -804,8 +861,7 @@ connection_struct *make_connection(const char *service_in, DATA_BLOB password,
 
 	/* Handle non-Dfs clients attempting connections to msdfs proxy */
 	if (lp_host_msdfs() && (*lp_msdfs_proxy(snum) != '\0'))  {
-		DEBUG(3, ("refusing connection to dfs proxy share '%s' (pointing to %s)\n", 
-			service, lp_msdfs_proxy(snum)));
+		DEBUG(3, ("refusing connection to dfs proxy '%s'\n", service));
 		*status = NT_STATUS_BAD_NETWORK_NAME;
 		return NULL;
 	}
@@ -822,12 +878,7 @@ close a cnum
 ****************************************************************************/
 void close_cnum(connection_struct *conn, uint16 vuid)
 {
-	if (IS_IPC(conn)) {
-		pipe_close_conn(conn);
-	} else {
-		file_close_conn(conn);
-		dptr_closecnum(conn);
-	}
+	DirCacheFlush(SNUM(conn));
 
 	change_to_root_user();
 
@@ -839,6 +890,9 @@ void close_cnum(connection_struct *conn, uint16 vuid)
 	SMB_VFS_DISCONNECT(conn);
 
 	yield_connection(conn, lp_servicename(SNUM(conn)));
+
+	file_close_conn(conn);
+	dptr_closecnum(conn);
 
 	/* make sure we leave the directory available for unmount */
 	vfs_ChDir(conn, "/");
@@ -863,28 +917,4 @@ void close_cnum(connection_struct *conn, uint16 vuid)
 	}
 
 	conn_free(conn);
-}
-
-/****************************************************************************
- Remove stale printers
-****************************************************************************/
-
-void remove_stale_printers( void )
-{
-	int snum, iNumServices, printersServiceNum;
-	const char *pname;
-
-	iNumServices = lp_numservices();
-	printersServiceNum = lp_servicenumber( PRINTERS_NAME);
-	for( snum = 0; snum < iNumServices; snum++) {
-		/* Never remove PRINTERS_NAME */
-		if ( snum == printersServiceNum)
-			continue;
-		pname = lp_printername( snum);
-		/* Is snum a print service and still in the printing subsystem? */
-		if ( lp_print_ok( snum) && !pcap_printername_ok( pname, NULL)) {
-			DEBUG( 3, ( "Removing printer: %s\n", pname));
-			lp_killservice( snum);
-		}
-	}
 }

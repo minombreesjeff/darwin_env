@@ -817,11 +817,10 @@ static void dopr_outch(char *buffer, size_t *currlen, size_t maxlen, char c)
 	(*currlen)++;
 }
 
- int smb_vsnprintf (char *str, size_t count, const char *fmt, va_list args)
+ int vsnprintf (char *str, size_t count, const char *fmt, va_list args)
 {
 	return dopr(str, count, fmt, args);
 }
-#define vsnprintf smb_vsnprintf
 #endif
 
 /* yes this really must be a ||. Don't muck with this (tridge)
@@ -841,7 +840,6 @@ int smb_snprintf(char *str,size_t count,const char *fmt,...)
 	va_end(ap);
 	return ret;
 }
-#define snprintf smb_snprintf
 #endif
 
 #endif 

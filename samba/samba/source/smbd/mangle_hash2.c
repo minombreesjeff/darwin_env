@@ -119,7 +119,7 @@ static const char *reserved_names[] =
 
    this hash needs to be fast with a low collision rate (what hash doesn't?)
 */
-static u32 mangle_hash(const char *key, unsigned int length)
+static u32 mangle_hash(const char *key, unsigned length)
 {
 	u32 value;
 	u32   i;
@@ -129,7 +129,6 @@ static u32 mangle_hash(const char *key, unsigned int length)
 	   doesn't depend on the case of the long name. Note that this
 	   is the only place where we need to use a multi-byte string
 	   function */
-	length = MIN(length,sizeof(fstring)-1);
 	strncpy(str, key, length);
 	str[length] = 0;
 	strupper_m(str);
@@ -153,19 +152,13 @@ static u32 mangle_hash(const char *key, unsigned int length)
  */
 static BOOL cache_init(void)
 {
-	if (prefix_cache) {
-		return True;
-	}
+	if (prefix_cache) return True;
 
-	prefix_cache = SMB_CALLOC_ARRAY(char *,MANGLE_CACHE_SIZE);
-	if (!prefix_cache) {
-		return False;
-	}
+	prefix_cache = calloc(MANGLE_CACHE_SIZE, sizeof(char *));
+	if (!prefix_cache) return False;
 
-	prefix_cache_hashes = SMB_CALLOC_ARRAY(u32, MANGLE_CACHE_SIZE);
-	if (!prefix_cache_hashes) {
-		return False;
-	}
+	prefix_cache_hashes = calloc(MANGLE_CACHE_SIZE, sizeof(u32));
+	if (!prefix_cache_hashes) return False;
 
 	return True;
 }
@@ -181,7 +174,7 @@ static void cache_insert(const char *prefix, int length, u32 hash)
 		free(prefix_cache[i]);
 	}
 
-	prefix_cache[i] = SMB_STRNDUP(prefix, length);
+	prefix_cache[i] = strndup(prefix, length);
 	prefix_cache_hashes[i] = hash;
 }
 
@@ -369,8 +362,10 @@ static void mangle_reset(void)
 /*
   try to find a 8.3 name in the cache, and if found then
   replace the string with the original long name. 
+
+  The filename must be able to hold at least sizeof(fstring) 
 */
-static BOOL check_cache(char *name, size_t maxlen)
+static BOOL check_cache(char *name)
 {
 	u32 hash, multiplier;
 	unsigned int i;
@@ -408,10 +403,10 @@ static BOOL check_cache(char *name, size_t maxlen)
 
 	if (extension[0]) {
 		M_DEBUG(10,("check_cache: %s -> %s.%s\n", name, prefix, extension));
-		slprintf(name, maxlen, "%s.%s", prefix, extension);
+		slprintf(name, sizeof(fstring), "%s.%s", prefix, extension);
 	} else {
 		M_DEBUG(10,("check_cache: %s -> %s\n", name, prefix));
-		safe_strcpy(name, prefix, maxlen);
+		fstrcpy(name, prefix);
 	}
 
 	return True;
@@ -458,13 +453,17 @@ static BOOL is_legal_name(const char *name)
 			/* Possible start of mb character. */
 			char mbc[2];
 			/*
+			 * We know the following will return 2 bytes. What
+			 * we need to know was if errno was set.
 			 * Note that if CH_UNIX is utf8 a string may be 3
 			 * bytes, but this is ok as mb utf8 characters don't
 			 * contain embedded ascii bytes. We are really checking
 			 * for mb UNIX asian characters like Japanese (SJIS) here.
 			 * JRA.
 			 */
-			if (convert_string(CH_UNIX, CH_UCS2, name, 2, mbc, 2, False) == 2) {
+			errno = 0;
+			convert_string(CH_UNIX, CH_UCS2, name, 2, mbc, 2);
+			if (!errno) {
 				/* Was a good mb string. */
 				name += 2;
 				continue;
@@ -506,7 +505,7 @@ static BOOL is_legal_name(const char *name)
 
   the name parameter must be able to hold 13 bytes
 */
-static void name_map(fstring name, BOOL need83, BOOL cache83, int default_case)
+static void name_map(fstring name, BOOL need83, BOOL cache83)
 {
 	char *dot_p;
 	char lead_chars[7];

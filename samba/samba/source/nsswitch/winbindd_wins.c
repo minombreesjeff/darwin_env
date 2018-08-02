@@ -78,7 +78,7 @@ static struct node_status *lookup_byaddr_backend(char *addr, int *count)
 
 	make_nmb_name(&nname, "*", 0);
 	ip = *interpret_addr2(addr);
-	status = node_status_query(fd,&nname,ip, count, NULL);
+	status = node_status_query(fd,&nname,ip, count);
 
 	close(fd);
 	return status;
@@ -97,7 +97,7 @@ static struct in_addr *lookup_byname_backend(const char *name, int *count)
 	if (resolve_wins(name,0x20,&ret,count)) {
 		if ( count == 0 )
 			return NULL;
-		if ( (return_ip = SMB_MALLOC_ARRAY(struct in_addr, *count)) == NULL ) {
+		if ( (return_ip = (struct in_addr *)malloc((*count)*sizeof(struct in_addr))) == NULL ) {
 			free( ret );
 			return NULL;
 		}
@@ -106,7 +106,6 @@ static struct in_addr *lookup_byname_backend(const char *name, int *count)
 		for ( i=0; i<(*count); i++ ) 
 			return_ip[i] = ret[i].ip;
 		
-		free( ret );
 		return return_ip;
 	}
 
@@ -202,10 +201,7 @@ enum winbindd_result winbindd_wins_byname(struct winbindd_cli_state *state)
 		    }
 		    if (i != 0) {
 			/* Clear out the newline character */
-		        /* But only if there is something in there, 
-			   otherwise we clobber something in the stack */
-			if (strlen(response))
-				response[strlen(response)-1] = ' '; 
+			response[strlen(response)-1] = ' '; 
 		    }
 		    fstrcat(response,addr);
 		    fstrcat(response,"\t");

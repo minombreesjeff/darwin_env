@@ -132,7 +132,7 @@ find_again:
 		return NULL;
 	}
 
-	if ((conn=TALLOC_ZERO_P(mem_ctx, connection_struct))==NULL) {
+	if ((conn=(connection_struct *)talloc_zero(mem_ctx, sizeof(*conn)))==NULL) {
 		DEBUG(0,("talloc_zero() failed!\n"));
 		return NULL;
 	}
@@ -161,7 +161,6 @@ void conn_close_all(void)
 	connection_struct *conn, *next;
 	for (conn=Connections;conn;conn=next) {
 		next=conn->next;
-		set_current_service(conn, 0, True);
 		close_cnum(conn, conn->vuid);
 	}
 }
@@ -200,9 +199,8 @@ BOOL conn_idle_all(time_t t, int deadtime)
 }
 
 /****************************************************************************
- Clear a vuid out of the validity cache, and as the 'owner' of a connection.
+clear a vuid out of the validity cache, and as the 'owner' of a connection.
 ****************************************************************************/
-
 void conn_clear_vuid_cache(uint16 vuid)
 {
 	connection_struct *conn;
@@ -214,11 +212,8 @@ void conn_clear_vuid_cache(uint16 vuid)
 		}
 
 		for (i=0;i<conn->vuid_cache.entries && i< VUID_CACHE_SIZE;i++) {
-			if (conn->vuid_cache.array[i].vuid == vuid) {
-				struct vuid_cache_entry *ent = &conn->vuid_cache.array[i];
-				ent->vuid = UID_FIELD_INVALID;
-				ent->read_only = False;
-				ent->admin_user = False;
+			if (conn->vuid_cache.list[i] == vuid) {
+				conn->vuid_cache.list[i] = UID_FIELD_INVALID;
 			}
 		}
 	}

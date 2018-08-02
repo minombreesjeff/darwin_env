@@ -92,28 +92,6 @@ static BOOL brl_same_context(struct lock_context *ctx1,
 }
 
 /****************************************************************************
- See if lck1 and lck2 overlap.
-****************************************************************************/
-
-static BOOL brl_overlap(struct lock_struct *lck1,
-                        struct lock_struct *lck2)
-{
-	/* this extra check is not redundent - it copes with locks
-	   that go beyond the end of 64 bit file space */
-	if (lck1->size != 0 &&
-	    lck1->start == lck2->start &&
-	    lck1->size == lck2->size) {
-		return True;
-	}
-
-	if (lck1->start >= (lck2->start+lck2->size) ||
-	    lck2->start >= (lck1->start+lck1->size)) {
-		return False;
-	}
-	return True;
-}
-
-/****************************************************************************
  See if lock2 can be added when lock1 is in place.
 ****************************************************************************/
 
@@ -137,7 +115,7 @@ static BOOL brl_conflict(struct lock_struct *lck1,
 		return False;
 	}
 	    
-	return brl_overlap(lck1, lck2);
+	return True;
 } 
 
 #if ZERO_ZERO
@@ -197,36 +175,9 @@ static BOOL brl_conflict_other(struct lock_struct *lck1, struct lock_struct *lck
 	    lck2->start >= (lck1->start + lck1->size))
 		return False;
 	    
-	return brl_overlap(lck1, lck2);
+	return True;
 } 
 
-/****************************************************************************
- Amazingly enough, w2k3 "remembers" whether the last lock failure
- is the same as this one and changes its error code. I wonder if any
- app depends on this ?
-****************************************************************************/
-
-static NTSTATUS brl_lock_failed(struct lock_struct *lock)
-{
-	static struct lock_struct last_lock_failure;
-
-	if (brl_same_context(&lock->context, &last_lock_failure.context) &&
-			lock->fnum == last_lock_failure.fnum &&
-			lock->start == last_lock_failure.start &&
-			lock->size == last_lock_failure.size) {
-		return NT_STATUS_FILE_LOCK_CONFLICT;
-	}
-	last_lock_failure = *lock;
-	if (lock->start >= 0xEF000000 &&
-			(lock->start >> 63) == 0) {
-		/* amazing the little things you learn with a test
-		   suite. Locks beyond this offset (as a 64 bit
-		   number!) always generate the conflict error code,
-		   unless the top bit is set */
-		return NT_STATUS_FILE_LOCK_CONFLICT;
-	}
-	return NT_STATUS_LOCK_NOT_GRANTED;
-}
 
 #if DONT_DO_THIS
 	/* doing this traversal could kill solaris machines under high load (tridge) */
@@ -296,7 +247,7 @@ void brl_init(int read_only)
 	if (tdb)
 		return;
 	tdb = tdb_open_log(lock_path("brlock.tdb"), 0,  TDB_DEFAULT|(read_only?0x0:TDB_CLEAR_IF_FIRST),
-		       read_only?O_RDONLY:(O_RDWR|O_CREAT), 0644 );
+		       read_only?O_RDONLY:(O_RDWR|O_CREAT), 0644);
 	if (!tdb) {
 		DEBUG(0,("Failed to open byte range locking database\n"));
 		return;
@@ -362,6 +313,8 @@ NTSTATUS brl_lock(SMB_DEV_T dev, SMB_INO_T ino, int fnum,
 	struct lock_struct lock, *locks;
 	char *tp;
 	NTSTATUS status = NT_STATUS_OK;
+	static int last_failed = -1;
+	static br_off last_failed_start;
 
 	*my_lock_ctx = False;
 	kbuf = locking_key(dev,ino);
@@ -391,7 +344,7 @@ NTSTATUS brl_lock(SMB_DEV_T dev, SMB_INO_T ino, int fnum,
 		count = dbuf.dsize / sizeof(*locks);
 		for (i=0; i<count; i++) {
 			if (brl_conflict(&locks[i], &lock)) {
-				status = brl_lock_failed(&lock);;
+				status = NT_STATUS_LOCK_NOT_GRANTED;
 				/* Did we block ourselves ? */
 				if (brl_same_context(&locks[i].context, &lock.context))
 					*my_lock_ctx = True;
@@ -407,7 +360,7 @@ NTSTATUS brl_lock(SMB_DEV_T dev, SMB_INO_T ino, int fnum,
 	}
 
 	/* no conflicts - add it to the list of locks */
-	tp = SMB_REALLOC(dbuf.dptr, dbuf.dsize + sizeof(*locks));
+	tp = Realloc(dbuf.dptr, dbuf.dsize + sizeof(*locks));
 	if (!tp) {
 		status = NT_STATUS_NO_MEMORY;
 		goto fail;
@@ -422,16 +375,24 @@ NTSTATUS brl_lock(SMB_DEV_T dev, SMB_INO_T ino, int fnum,
 	qsort(dbuf.dptr, dbuf.dsize/sizeof(lock), sizeof(lock), lock_compare);
 #endif
 
-	if (tdb_store(tdb, kbuf, dbuf, TDB_REPLACE) != 0) {
-		status = NT_STATUS_INTERNAL_DB_CORRUPTION;
-		goto fail;
-	}
+	tdb_store(tdb, kbuf, dbuf, TDB_REPLACE);
 
 	SAFE_FREE(dbuf.dptr);
 	tdb_chainunlock(tdb, kbuf);
 	return NT_STATUS_OK;
 
  fail:
+	/* this is a nasty hack to try to simulate the lock result cache code in w2k.
+	   It isn't completely accurate as I haven't yet worked out the correct
+	   semantics (tridge)
+	*/
+	if (last_failed == fnum &&
+	    last_failed_start == start &&
+	    NT_STATUS_EQUAL(status, NT_STATUS_LOCK_NOT_GRANTED)) {
+		status = NT_STATUS_FILE_LOCK_CONFLICT;
+	}
+	last_failed = fnum;
+	last_failed_start = start;
 
 	SAFE_FREE(dbuf.dptr);
 	tdb_chainunlock(tdb, kbuf);
@@ -602,6 +563,7 @@ BOOL brl_locktest(SMB_DEV_T dev, SMB_INO_T ino, int fnum,
 
 	dbuf.dptr = NULL;
 
+	tdb_chainlock(tdb, kbuf);
 	dbuf = tdb_fetch(tdb, kbuf);
 
 	lock.context.smbpid = smbpid;
@@ -632,10 +594,12 @@ BOOL brl_locktest(SMB_DEV_T dev, SMB_INO_T ino, int fnum,
 
 	/* no conflicts - we could have added it */
 	SAFE_FREE(dbuf.dptr);
+	tdb_chainunlock(tdb, kbuf);
 	return True;
 
  fail:
 	SAFE_FREE(dbuf.dptr);
+	tdb_chainunlock(tdb, kbuf);
 	return False;
 }
 

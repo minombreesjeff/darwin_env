@@ -20,7 +20,7 @@
 */
 
 #include "includes.h"
-#include "utils/net.h"
+#include "../utils/net.h"
 
 #ifdef HAVE_ADS
 
@@ -29,7 +29,7 @@
 struct cldap_netlogon_reply {
 	uint32 type;
 	uint32 flags;
-	UUID_FLAT guid;
+	GUID guid;
 
 	char forest[MAX_DNS_LABEL];
 	char domain[MAX_DNS_LABEL];
@@ -241,8 +241,8 @@ static int recv_cldap_netlogon(int sock, struct cldap_netlogon_reply *reply)
 	reply->type = IVAL(p, 0); p += 4;
 	reply->flags = IVAL(p, 0); p += 4;
 
-	memcpy(&reply->guid.info, p, UUID_FLAT_SIZE);
-	p += UUID_FLAT_SIZE;
+	memcpy(&reply->guid.info, p, GUID_SIZE);
+	p += GUID_SIZE;
 
 	p += pull_netlogon_string(reply->forest, p, (const char *)os3.data);
 	p += pull_netlogon_string(reply->domain, p, (const char *)os3.data);
@@ -280,9 +280,8 @@ int ads_cldap_netlogon(ADS_STRUCT *ads)
 	int sock;
 	int ret;
 	struct cldap_netlogon_reply reply;
-	const char *target = opt_host ? opt_host : inet_ntoa(ads->ldap_ip);
 
-	sock = open_udp_socket(target, ads->ldap_port);
+	sock = open_udp_socket(inet_ntoa(ads->ldap_ip), ads->ldap_port);
 	if (sock == -1) {
 		d_printf("Failed to open udp socket to %s:%u\n", 
 			 inet_ntoa(ads->ldap_ip), 
@@ -317,8 +316,8 @@ int ads_cldap_netlogon(ADS_STRUCT *ads)
 		d_printf("0x%x\n", reply.type);
 		break;
 	}
-	d_printf("GUID: %s\n", 
-		 smb_uuid_string_static(smb_uuid_unpack_static(reply.guid))); 
+	d_printf("GUID: "); 
+	print_guid(&reply.guid);
 	d_printf("Flags:\n"
 		 "\tIs a PDC:                                   %s\n"
 		 "\tIs a GC of the forest:                      %s\n"

@@ -31,7 +31,7 @@ findsmb \- list info about machines that respond to SMB name queries on a subnet
 .SH "DESCRIPTION"
 
 .PP
-This perl script is part of the \fBsamba\fR(7) suite\&.
+This perl script is part of the \fBSamba\fR(7) suite\&.
 
 .PP
 \fBfindsmb\fR is a perl script that prints out several pieces of information about machines on a subnet that respond to SMB name query requests\&. It uses \fBnmblookup\fR(1) and \fBsmbclient\fR(1) to obtain this information\&.
@@ -42,9 +42,11 @@ This perl script is part of the \fBsamba\fR(7) suite\&.
 \-r
 Controls whether \fBfindsmb\fR takes bugs in Windows95 into account when trying to find a Netbios name registered of the remote machine\&. This option is disabled by default because it is specific to Windows 95 and Windows 95 machines only\&. If set, \fBnmblookup\fR(1) will be called with \fB\-B\fR option\&.
 
+
 .TP
 subnet broadcast address
-Without this option, \fBfindsmb \fR will probe the subnet of the machine where\fBfindsmb\fR(1) is run\&. This value is passed to\fBnmblookup\fR(1) as part of the \fB\-B\fR option\&.
+Without this option, \fBfindsmb \fR will probe the subnet of the machine where \fBfindsmb\fR(1) is run\&. This value is passed to \fBnmblookup\fR(1) as part of the \fB\-B\fR option\&.
+
 
 .SH "EXAMPLES"
 
@@ -52,7 +54,7 @@ Without this option, \fBfindsmb \fR will probe the subnet of the machine where\f
 The output of \fBfindsmb\fR lists the following information for all machines that respond to the initial\fBnmblookup\fR for any name: IP address, NetBIOS name, Workgroup name, operating system, and SMB server version\&.
 
 .PP
-There will be a '+' in front of the workgroup name for machines that are local master browsers for that workgroup\&. There will be an '*' in front of the workgroup name for machines that are the domain master browser for that workgroup\&. Machines that are running Windows for Workgroups, Windows 95 or Windows 98 will not show any information about the operating system or server version\&.
+There will be a '+' in front of the workgroup name for machines that are local master browsers for that workgroup\&. There will be an '*' in front of the workgroup name for machines that are the domain master browser for that workgroup\&. Machines that are running Windows, Windows 95 or Windows 98 will not show any information about the operating system or server version\&.
 
 .PP
 The command with \fB\-r\fR option must be run on a system without \fBnmbd\fR(8)running\&. If \fBnmbd\fR is running on the system, you will only get the IP address and the DNS name of the machine\&. To get proper responses from Windows 95 and Windows 98 machines, the command must be run as root and with \fB\-r\fR option on a machine without \fBnmbd\fR running\&.

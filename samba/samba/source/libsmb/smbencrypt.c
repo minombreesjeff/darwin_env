@@ -28,17 +28,13 @@
 /*
    This implements the X/Open SMB password encryption
    It takes a password ('unix' string), a 8 byte "crypt key" 
-   and puts 24 bytes of encrypted password into p24 
-
-   Returns False if password must have been truncated to create LM hash
-*/
-BOOL SMBencrypt(const char *passwd, const uchar *c8, uchar p24[24])
+   and puts 24 bytes of encrypted password into p24 */
+void SMBencrypt(const char *passwd, const uchar *c8, uchar p24[24])
 {
-	BOOL ret;
 	uchar p21[21];
 
 	memset(p21,'\0',21);
-	ret = E_deshash(passwd, p21); 
+	E_deshash(passwd, p21); 
 
 	SMBOWFencrypt(p21, c8, p24);
 
@@ -48,8 +44,6 @@ BOOL SMBencrypt(const char *passwd, const uchar *c8, uchar p24[24])
 	dump_data(100, (const char *)c8, 8);
 	dump_data(100, (char *)p24, 24);
 #endif
-
-	return ret;
 }
 
 /**
@@ -73,52 +67,23 @@ void E_md4hash(const char *passwd, uchar p16[16])
 }
 
 /**
- * Creates the MD5 Hash of a combination of 16 byte salt and 16 byte NT hash.
- * @param 16 byte salt.
- * @param 16 byte NT hash.
- * @param 16 byte return hashed with md5, caller allocated 16 byte buffer
- */
-
-void E_md5hash(const uchar salt[16], const uchar nthash[16], uchar hash_out[16])
-{
-	struct MD5Context tctx;
-	uchar array[32];
-	
-	memset(hash_out, '\0', 16);
-	memcpy(array, salt, 16);
-	memcpy(&array[16], nthash, 16);
-	MD5Init(&tctx);
-	MD5Update(&tctx, array, 32);
-	MD5Final(hash_out, &tctx);
-}
-
-/**
  * Creates the DES forward-only Hash of the users password in DOS ASCII charset
  * @param passwd password in 'unix' charset.
  * @param p16 return password hashed with DES, caller allocated 16 byte buffer
- * @return False if password was > 14 characters, and therefore may be incorrect, otherwise True
- * @note p16 is filled in regardless
  */
  
-BOOL E_deshash(const char *passwd, uchar p16[16])
+void E_deshash(const char *passwd, uchar p16[16])
 {
-	BOOL ret = True;
 	fstring dospwd; 
 	ZERO_STRUCT(dospwd);
 	
 	/* Password must be converted to DOS charset - null terminated, uppercase. */
 	push_ascii(dospwd, passwd, sizeof(dospwd), STR_UPPER|STR_TERMINATE);
-       
+
 	/* Only the fisrt 14 chars are considered, password need not be null terminated. */
 	E_P16((const unsigned char *)dospwd, p16);
 
-	if (strlen(dospwd) > 14) {
-		ret = False;
-	}
-
 	ZERO_STRUCT(dospwd);	
-
-	return ret;
 }
 
 /**
@@ -153,9 +118,7 @@ void nt_lm_owf_gen(const char *pwd, uchar nt_p16[16], uchar p16[16])
 
 /* Does both the NTLMv2 owfs of a user's password */
 BOOL ntv2_owf_gen(const uchar owf[16],
-		  const char *user_in, const char *domain_in,
-		  BOOL upper_case_domain, /* Transform the domain into UPPER case */
-		  uchar kr_buf[16])
+		  const char *user_in, const char *domain_in, uchar kr_buf[16])
 {
 	smb_ucs2_t *user;
 	smb_ucs2_t *domain;
@@ -178,9 +141,7 @@ BOOL ntv2_owf_gen(const uchar owf[16],
 	}
 
 	strupper_w(user);
-
-	if (upper_case_domain)
-		strupper_w(domain);
+	strupper_w(domain);
 
 	SMB_ASSERT(user_byte_len >= 2);
 	SMB_ASSERT(domain_byte_len >= 2);
@@ -254,6 +215,36 @@ void SMBNTencrypt(const char *passwd, uchar *c8, uchar *p24)
 	dump_data(100, (char *)c8, 8);
 	dump_data(100, (char *)p24, 24);
 #endif
+}
+
+BOOL make_oem_passwd_hash(char data[516], const char *passwd, uchar old_pw_hash[16], BOOL unicode)
+{
+	int new_pw_len = strlen(passwd) * (unicode ? 2 : 1);
+
+	if (new_pw_len > 512)
+	{
+		DEBUG(0,("make_oem_passwd_hash: new password is too long.\n"));
+		return False;
+	}
+
+	/*
+	 * Now setup the data area.
+	 * We need to generate a random fill
+	 * for this area to make it harder to
+	 * decrypt. JRA.
+	 */
+	generate_random_buffer((unsigned char *)data, 516, False);
+	push_string(NULL, &data[512 - new_pw_len], passwd, new_pw_len, 
+		    STR_NOALIGN | (unicode?STR_UNICODE:STR_ASCII));
+	SIVAL(data, 512, new_pw_len);
+
+#ifdef DEBUG_PASSWORD
+	DEBUG(100,("make_oem_passwd_hash\n"));
+	dump_data(100, data, 516);
+#endif
+	SamOEMhash( (unsigned char *)data, (unsigned char *)old_pw_hash, 516);
+
+	return True;
 }
 
 /* Does the md5 encryption from the Key Response for NTLMv2. */
@@ -372,7 +363,7 @@ static DATA_BLOB NTLMv2_generate_client_data(const DATA_BLOB *names_blob)
 	DATA_BLOB response = data_blob(NULL, 0);
 	char long_date[8];
 
-	generate_random_buffer(client_chal, sizeof(client_chal));
+	generate_random_buffer(client_chal, sizeof(client_chal), False);
 
 	put_long_date(long_date, time(NULL));
 
@@ -426,7 +417,7 @@ static DATA_BLOB LMv2_generate_response(const uchar ntlm_v2_hash[16],
 	
 	/* LMv2 */
 	/* client-supplied random data */
-	generate_random_buffer(lmv2_client_data.data, lmv2_client_data.length);	
+	generate_random_buffer(lmv2_client_data.data, lmv2_client_data.length, False);	
 
 	/* Given that data, and the challenge from the server, generate a response */
 	SMBOWFencrypt_ntv2(ntlm_v2_hash, server_chal, &lmv2_client_data, lmv2_response);
@@ -446,7 +437,7 @@ BOOL SMBNTLMv2encrypt(const char *user, const char *domain, const char *password
 		      const DATA_BLOB *server_chal, 
 		      const DATA_BLOB *names_blob,
 		      DATA_BLOB *lm_response, DATA_BLOB *nt_response, 
-		      DATA_BLOB *user_session_key) 
+		      DATA_BLOB *nt_session_key) 
 {
 	uchar nt_hash[16];
 	uchar ntlm_v2_hash[16];
@@ -456,19 +447,19 @@ BOOL SMBNTLMv2encrypt(const char *user, const char *domain, const char *password
 	   the username and domain.
 	   This prevents username swapping during the auth exchange
 	*/
-	if (!ntv2_owf_gen(nt_hash, user, domain, True, ntlm_v2_hash)) {
+	if (!ntv2_owf_gen(nt_hash, user, domain, ntlm_v2_hash)) {
 		return False;
 	}
 	
 	if (nt_response) {
 		*nt_response = NTLMv2_generate_response(ntlm_v2_hash, server_chal,
 							names_blob); 
-		if (user_session_key) {
-			*user_session_key = data_blob(NULL, 16);
+		if (nt_session_key) {
+			*nt_session_key = data_blob(NULL, 16);
 			
 			/* The NTLMv2 calculations also provide a session key, for signing etc later */
 			/* use only the first 16 bytes of nt_response for session key */
-			SMBsesskeygen_ntv2(ntlm_v2_hash, nt_response->data, user_session_key->data);
+			SMBsesskeygen_ntv2(ntlm_v2_hash, nt_response->data, nt_session_key->data);
 		}
 	}
 	
@@ -482,31 +473,23 @@ BOOL SMBNTLMv2encrypt(const char *user, const char *domain, const char *password
 }
 
 /***********************************************************
- encode a password buffer with a unicode password.  The buffer
- is filled with random data to make it harder to attack.
+ encode a password buffer.  The caller gets to figure out 
+ what to put in it.
 ************************************************************/
-BOOL encode_pw_buffer(char buffer[516], const char *password, int string_flags)
+BOOL encode_pw_buffer(char buffer[516], char *new_pw, int new_pw_length)
 {
-	uchar new_pw[512];
-	size_t new_pw_len;
+	generate_random_buffer((unsigned char *)buffer, 516, True);
 
-	new_pw_len = push_string(NULL, new_pw,
-				 password, 
-				 sizeof(new_pw), string_flags);
-	
-	memcpy(&buffer[512 - new_pw_len], new_pw, new_pw_len);
-
-	generate_random_buffer((unsigned char *)buffer, 512 - new_pw_len);
+	memcpy(&buffer[512 - new_pw_length], new_pw, new_pw_length);
 
 	/* 
 	 * The length of the new password is in the last 4 bytes of
 	 * the data buffer.
 	 */
-	SIVAL(buffer, 512, new_pw_len);
-	ZERO_STRUCT(new_pw);
+	SIVAL(buffer, 512, new_pw_length);
+
 	return True;
 }
-
 
 /***********************************************************
  decode a password buffer
@@ -514,14 +497,13 @@ BOOL encode_pw_buffer(char buffer[516], const char *password, int string_flags)
  returned password including termination.
 ************************************************************/
 BOOL decode_pw_buffer(char in_buffer[516], char *new_pwrd,
-		      int new_pwrd_size, uint32 *new_pw_len,
-		      int string_flags)
+		      int new_pwrd_size, uint32 *new_pw_len)
 {
 	int byte_len=0;
 
 	/*
 	  Warning !!! : This function is called from some rpc call.
-	  The password IN the buffer may be a UNICODE string.
+	  The password IN the buffer is a UNICODE string.
 	  The password IN new_pwrd is an ASCII string
 	  If you reuse that code somewhere else check first.
 	*/
@@ -534,16 +516,15 @@ BOOL decode_pw_buffer(char in_buffer[516], char *new_pwrd,
 	dump_data(100, in_buffer, 516);
 #endif
 
-	/* Password cannot be longer than the size of the password buffer */
-	if ( (byte_len < 0) || (byte_len > 512)) {
+	/* Password cannot be longer than 128 characters */
+	if ( (byte_len < 0) || (byte_len > new_pwrd_size - 1)) {
 		DEBUG(0, ("decode_pw_buffer: incorrect password length (%d).\n", byte_len));
 		DEBUG(0, ("decode_pw_buffer: check that 'encrypt passwords = yes'\n"));
 		return False;
 	}
 
-	/* decode into the return buffer.  Buffer length supplied */
- 	*new_pw_len = pull_string(NULL, new_pwrd, &in_buffer[512 - byte_len], new_pwrd_size, 
-				  byte_len, string_flags);
+	/* decode into the return buffer.  Buffer must be a pstring */
+ 	*new_pw_len = pull_string(NULL, new_pwrd, &in_buffer[512 - byte_len], new_pwrd_size, byte_len, STR_UNICODE);
 
 #ifdef DEBUG_PASSWORD
 	DEBUG(100,("decode_pw_buffer: new_pwrd: "));

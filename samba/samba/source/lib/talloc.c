@@ -54,8 +54,6 @@
 
 #include "includes.h"
 
-/* Max allowable allococation - 256mb - 0x10000000 */
-#define MAX_TALLOC_SIZE (1024*1024*256)
 
 /**
  * Start of linked list of all talloc pools.
@@ -102,7 +100,7 @@ static TALLOC_CTX *talloc_init_internal(void)
 {
 	TALLOC_CTX *t;
 
-	t = (TALLOC_CTX *)SMB_MALLOC(sizeof(TALLOC_CTX));
+	t = (TALLOC_CTX *)malloc(sizeof(TALLOC_CTX));
 	if (t) {
 		t->list = NULL;
 		t->total_alloc_size = 0;
@@ -145,20 +143,16 @@ static TALLOC_CTX *talloc_init_internal(void)
 
 
 /** Allocate a bit of memory from the specified pool **/
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_(TALLOC_CTX *t, size_t size)
-#else
 void *talloc(TALLOC_CTX *t, size_t size)
-#endif
 {
 	void *p;
 	struct talloc_chunk *tc;
 
 	if (!t || size == 0) return NULL;
 
-	p = SMB_MALLOC(size);
+	p = malloc(size);
 	if (p) {
-		tc = SMB_MALLOC(sizeof(*tc));
+		tc = malloc(sizeof(*tc));
 		if (tc) {
 			tc->ptr = p;
 			tc->size = size;
@@ -173,25 +167,8 @@ void *talloc(TALLOC_CTX *t, size_t size)
 	return p;
 }
 
-/** Allocate an array of count elements of size x */
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_array_(TALLOC_CTX *ctx, size_t el_size, unsigned int count)
-#else
-void *talloc_array(TALLOC_CTX *ctx, size_t el_size, unsigned int count)
-#endif
-{
-        if (count >= MAX_TALLOC_SIZE/el_size) {
-                return NULL;
-        }
-	return TALLOC(ctx, el_size * count);
-}
-
 /** A talloc version of realloc */
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_realloc_(TALLOC_CTX *t, void *ptr, size_t size)
-#else
 void *talloc_realloc(TALLOC_CTX *t, void *ptr, size_t size)
-#endif
 {
 	struct talloc_chunk *tc;
 	void *new_ptr;
@@ -202,11 +179,11 @@ void *talloc_realloc(TALLOC_CTX *t, void *ptr, size_t size)
 
 	/* realloc(NULL) is equavalent to malloc() */
 	if (ptr == NULL)
-		return TALLOC(t, size);
+		return talloc(t, size);
 
 	for (tc=t->list; tc; tc=tc->next) {
 		if (tc->ptr == ptr) {
-			new_ptr = SMB_REALLOC(ptr, size);
+			new_ptr = Realloc(ptr, size);
 			if (new_ptr) {
 				t->total_alloc_size += (size - tc->size);
 				tc->size = size;
@@ -216,19 +193,6 @@ void *talloc_realloc(TALLOC_CTX *t, void *ptr, size_t size)
 		}
 	}
 	return NULL;
-}
-
-/** Re-allocate an array of count elements of size x */
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_realloc_array_(TALLOC_CTX *ctx, void *ptr, size_t el_size, unsigned int count)
-#else
-void *talloc_realloc_array(TALLOC_CTX *ctx, void *ptr, size_t el_size, unsigned int count)
-#endif
-{
-        if (count >= MAX_TALLOC_SIZE/el_size) {
-                return NULL;
-        }
-	return TALLOC_REALLOC(ctx, ptr, el_size * count);
 }
 
 /** Destroy all the memory allocated inside @p t, but not @p t
@@ -282,13 +246,9 @@ const char * talloc_pool_name(TALLOC_CTX const *t)
 
 
 /** talloc and zero memory. */
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_zero_(TALLOC_CTX *t, size_t size)
-#else
 void *talloc_zero(TALLOC_CTX *t, size_t size)
-#endif
 {
-	void *p = TALLOC(t, size);
+	void *p = talloc(t, size);
 
 	if (p)
 		memset(p, '\0', size);
@@ -296,32 +256,10 @@ void *talloc_zero(TALLOC_CTX *t, size_t size)
 	return p;
 }
 
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_zero_array_(TALLOC_CTX *t, size_t el_size, unsigned int count)
-#else
-void *talloc_zero_array(TALLOC_CTX *t, size_t el_size, unsigned int count)
-#endif
-{
-#if defined(PARANOID_MALLOC_CHECKER)
-	void *p = talloc_array_(t, el_size, count);
-#else
-	void *p = talloc_array(t, el_size, count);
-#endif
-
-	if (p)
-		memset(p, '\0', el_size*count);
-
-	return p;
-}
-
 /** memdup with a talloc. */
-#if defined(PARANOID_MALLOC_CHECKER)
-void *talloc_memdup_(TALLOC_CTX *t, const void *p, size_t size)
-#else
 void *talloc_memdup(TALLOC_CTX *t, const void *p, size_t size)
-#endif
 {
-	void *newp = TALLOC(t,size);
+	void *newp = talloc(t,size);
 
 	if (newp)
 		memcpy(newp, p, size);
@@ -333,34 +271,16 @@ void *talloc_memdup(TALLOC_CTX *t, const void *p, size_t size)
 char *talloc_strdup(TALLOC_CTX *t, const char *p)
 {
 	if (p)
-		return TALLOC_MEMDUP(t, p, strlen(p) + 1);
+		return talloc_memdup(t, p, strlen(p) + 1);
 	else
 		return NULL;
-}
-
-/** strdup_upper with a talloc */
-char *talloc_strdup_upper(TALLOC_CTX *t, const char *p)
-{
-	char *r;
-	if (p) {
-		char *q = strdup_upper(p);
-		if (q) { 
-			r = talloc_strdup(t, q);
-			SAFE_FREE(q);
-			return r;
-		} else {
-			return NULL;
-		}
-	} else {
-		return NULL;
-	}
 }
 
 /** strdup_w with a talloc */
 smb_ucs2_t *talloc_strdup_w(TALLOC_CTX *t, const smb_ucs2_t *p)
 {
 	if (p)
-		return TALLOC_MEMDUP(t, p, (strlen_w(p) + 1) * sizeof(smb_ucs2_t));
+		return talloc_memdup(t, p, (strlen_w(p) + 1) * sizeof(smb_ucs2_t));
 	else
 		return NULL;
 }
@@ -391,7 +311,7 @@ smb_ucs2_t *talloc_strdup_w(TALLOC_CTX *t, const smb_ucs2_t *p)
 
 	len = vsnprintf(NULL, 0, fmt, ap2);
 
-	ret = TALLOC(t, len+1);
+	ret = talloc(t, len+1);
 	if (ret) {
 		VA_COPY(ap2, ap);
 		vsnprintf(ret, len+1, fmt, ap2);
@@ -435,7 +355,7 @@ smb_ucs2_t *talloc_strdup_w(TALLOC_CTX *t, const smb_ucs2_t *p)
 	s_len = strlen(s);
 	len = vsnprintf(NULL, 0, fmt, ap2);
 
-	s = TALLOC_REALLOC(t, s, s_len + len+1);
+	s = talloc_realloc(t, s, s_len + len+1);
 	if (!s) return NULL;
 
 	VA_COPY(ap2, ap);

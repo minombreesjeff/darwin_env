@@ -34,7 +34,6 @@
   dos charset = 437
   use spnego = no
   client ntlmv2 auth = no
-  defer sharing violations = no
 
 [homes]
    comment = User Home Directories

@@ -31,8 +31,8 @@
 
 struct sync_record {
 	struct sync_record *next, *prev;
-	unstring workgroup;
-	unstring server;
+	nstring workgroup;
+	nstring server;
 	pstring fname;
 	struct in_addr ip;
 	pid_t pid;
@@ -143,13 +143,13 @@ done:
 		return;
 	}
 
-	s = SMB_MALLOC_P(struct sync_record);
+	s = (struct sync_record *)malloc(sizeof(*s));
 	if (!s) goto done;
 
 	ZERO_STRUCTP(s);
 	
-	unstrcpy(s->workgroup, work->work_group);
-	unstrcpy(s->server, name);
+	nstrcpy(s->workgroup, work->work_group);
+	nstrcpy(s->server, name);
 	s->ip = ip;
 
 	slprintf(s->fname, sizeof(pstring)-1,
@@ -206,7 +206,7 @@ static void complete_one(struct sync_record *s,
 							  sname, lp_max_ttl());
 			if (work) {
 				/* remember who the master is */
-				unstrcpy(work->local_master_browser_name, comment);
+				nstrcpy(work->local_master_browser_name, comment);
 			}
 		}
 		return;
@@ -243,7 +243,7 @@ static void complete_one(struct sync_record *s,
 static void complete_sync(struct sync_record *s)
 {
 	XFILE *f;
-	unstring server, type_str;
+	fstring server, type_str;
 	unsigned type;
 	pstring comment;
 	pstring line;

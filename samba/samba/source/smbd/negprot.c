@@ -169,8 +169,6 @@ static int reply_lanman2(char *inbuf, char *outbuf)
 static int negprot_spnego(char *p)
 {
 	DATA_BLOB blob;
-	nstring dos_name;
-	fstring unix_name;
 	uint8 guid[17];
 	const char *OIDs_krb5[] = {OID_KERBEROS5,
 				   OID_KERBEROS5_OLD,
@@ -183,11 +181,7 @@ static int negprot_spnego(char *p)
 	global_spnego_negotiated = True;
 
 	ZERO_STRUCT(guid);
-
-	safe_strcpy(unix_name, global_myname(), sizeof(unix_name)-1);
-	strlower_m(unix_name);
-	push_ascii_nstring(dos_name, unix_name);
-	safe_strcpy((char *)guid, dos_name, sizeof(guid)-1);
+	safe_strcpy((char *)guid, global_myname(), sizeof(guid)-1);
 
 #ifdef DEVELOPER
 	/* valgrind fixer... */
@@ -197,6 +191,8 @@ static int negprot_spnego(char *p)
 			memset(&guid[sl], '\0', sizeof(guid)-sl);
 	}
 #endif
+
+	strlower_m((char *)guid);
 
 #if 0
 	/* strangely enough, NT does not sent the single OID NTLMSSP when
@@ -249,13 +245,9 @@ static int reply_nt1(char *inbuf, char *outbuf)
 	    (SVAL(inbuf, smb_flg2) & FLAGS2_EXTENDED_SECURITY)) {
 		negotiate_spnego = True;
 		capabilities |= CAP_EXTENDED_SECURITY;
-		add_to_common_flags2(FLAGS2_EXTENDED_SECURITY);
-		/* Ensure FLAGS2_EXTENDED_SECURITY gets set in this reply (already
-			partially constructed. */
-		SSVAL(outbuf,smb_flg2, SVAL(outbuf,smb_flg2) | FLAGS2_EXTENDED_SECURITY);
 	}
 	
-	capabilities |= CAP_NT_SMBS|CAP_RPC_REMOTE_APIS|CAP_UNICODE;
+	capabilities |= CAP_NT_SMBS|CAP_RPC_REMOTE_APIS;
 
 	if (lp_unix_extensions()) {
 		capabilities |= CAP_UNIX;
@@ -270,6 +262,10 @@ static int reply_nt1(char *inbuf, char *outbuf)
 	if (lp_readraw() && lp_writeraw())
 		capabilities |= CAP_RAW_MODE;
 	
+	/* allow for disabling unicode */
+	if (lp_unicode())
+		capabilities |= CAP_UNICODE;
+
 	if (lp_nt_status_support())
 		capabilities |= CAP_STATUS32;
 	
@@ -405,9 +401,8 @@ protocol [LANMAN2.1]
 #define ARCH_WIN2K    0xC      /* Win2K is like NT */
 #define ARCH_OS2      0x14     /* Again OS/2 is like NT */
 #define ARCH_SAMBA    0x20
-#define ARCH_CIFSFS   0x40
  
-#define ARCH_ALL      0x7F
+#define ARCH_ALL      0x3F
  
 /* List of supported protocols, most desired first */
 static const struct {
@@ -418,7 +413,6 @@ static const struct {
 } supported_protocols[] = {
 	{"NT LANMAN 1.0",           "NT1",      reply_nt1,      PROTOCOL_NT1},
 	{"NT LM 0.12",              "NT1",      reply_nt1,      PROTOCOL_NT1},
-	{"POSIX 2",                 "NT1",      reply_nt1,      PROTOCOL_NT1},
 	{"LM1.2X002",               "LANMAN2",  reply_lanman2,  PROTOCOL_LANMAN2},
 	{"Samba",                   "LANMAN2",  reply_lanman2,  PROTOCOL_LANMAN2},
 	{"DOS LM1.2X002",           "LANMAN2",  reply_lanman2,  PROTOCOL_LANMAN2},
@@ -466,7 +460,7 @@ int reply_negprot(connection_struct *conn,
 		else if (strcsequal(p,"DOS LANMAN2.1"))
 			arch &= ( ARCH_WFWG | ARCH_WIN95 );
 		else if (strcsequal(p,"NT LM 0.12"))
-			arch &= ( ARCH_WIN95 | ARCH_WINNT | ARCH_WIN2K | ARCH_CIFSFS);
+			arch &= ( ARCH_WIN95 | ARCH_WINNT | ARCH_WIN2K );
 		else if (strcsequal(p,"LANMAN2.1"))
 			arch &= ( ARCH_WINNT | ARCH_WIN2K | ARCH_OS2 );
 		else if (strcsequal(p,"LM1.2X002"))
@@ -478,23 +472,12 @@ int reply_negprot(connection_struct *conn,
 		else if (strcsequal(p,"Samba")) {
 			arch = ARCH_SAMBA;
 			break;
-		} else if (strcsequal(p,"POSIX 2")) {
-			arch = ARCH_CIFSFS;
-			break;
 		}
  
 		p += strlen(p) + 2;
 	}
-
-	/* CIFSFS can send one arch only, NT LM 0.12. */
-	if (Index == 1 && (arch & ARCH_CIFSFS)) {
-		arch = ARCH_CIFSFS;
-	}
-
+    
 	switch ( arch ) {
-		case ARCH_CIFSFS:
-			set_remote_arch(RA_CIFSFS);
-			break;
 		case ARCH_SAMBA:
 			set_remote_arch(RA_SAMBA);
 			break;

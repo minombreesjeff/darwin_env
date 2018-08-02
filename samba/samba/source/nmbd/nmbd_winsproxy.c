@@ -30,7 +30,7 @@ static void wins_proxy_name_query_request_success( struct subnet_record *subrec,
                         struct userdata_struct *userdata,
                         struct nmb_name *nmbname, struct in_addr ip, struct res_rec *rrec)
 {
-	unstring name;
+	nstring name;
 	struct packet_struct *original_packet;
 	struct subnet_record *orig_broadcast_subnet;
 	struct name_record *namerec;
@@ -59,7 +59,7 @@ returned for name %s.\n", nmb_namestr(nmbname) ));
 	if(num_ips == 1) {
 		iplist = &ip;
 	} else {
-		if((iplist = SMB_MALLOC_ARRAY( struct in_addr, num_ips )) == NULL) {
+		if((iplist = (struct in_addr *)malloc( num_ips * sizeof(struct in_addr) )) == NULL) {
 			DEBUG(0,("wins_proxy_name_query_request_success: malloc fail !\n"));
 			return;
 		}
@@ -73,7 +73,7 @@ returned for name %s.\n", nmb_namestr(nmbname) ));
 	if(rrec == PERMANENT_TTL)
 		ttl = lp_max_ttl();
 
-	pull_ascii_nstring(name, sizeof(name), nmbname->name);
+	pull_ascii_nstring(name, nmbname->name);
 	namerec = add_name_to_subnet( orig_broadcast_subnet, name,
 					nmbname->name_type, nb_flags, ttl,
 					WINS_PROXY_NAME, num_ips, iplist );
@@ -131,7 +131,7 @@ proxy query returns.
 static struct userdata_struct *wins_proxy_userdata_copy_fn(struct userdata_struct *userdata)
 {
 	struct packet_struct *p, *copy_of_p;
-	struct userdata_struct *new_userdata = (struct userdata_struct *)SMB_MALLOC( userdata->userdata_len );
+	struct userdata_struct *new_userdata = (struct userdata_struct *)malloc( userdata->userdata_len );
 
 	if(new_userdata == NULL)
 		return NULL;
@@ -193,7 +193,7 @@ void make_wins_proxy_name_query_request( struct subnet_record *subrec,
 	long *ud[(sizeof(struct userdata_struct) + sizeof(struct subrec *) + 
 		sizeof(struct packet_struct *))/sizeof(long *) + 1];
 	struct userdata_struct *userdata = (struct userdata_struct *)ud;
-	unstring qname;
+	nstring qname;
 
 	memset(ud, '\0', sizeof(ud));
  
@@ -205,7 +205,7 @@ void make_wins_proxy_name_query_request( struct subnet_record *subrec,
 			sizeof(struct packet_struct *));
 
 	/* Now use the unicast subnet to query the name with the WINS server. */
-	pull_ascii_nstring(qname, sizeof(qname), question_name->name);
+	pull_ascii_nstring(qname, question_name->name);
 	query_name( unicast_subnet, qname, question_name->name_type,
 		wins_proxy_name_query_request_success,
 		wins_proxy_name_query_request_fail,

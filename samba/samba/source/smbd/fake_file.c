@@ -26,7 +26,7 @@
 files_struct *open_fake_file_shared1(enum FAKE_FILE_TYPE fake_file_type, connection_struct *conn,char *fname,
 				SMB_STRUCT_STAT *psbuf, 
 				uint32 desired_access, 
-				int share_mode,int ofun, uint32 new_dos_attr, int oplock_request, 
+				int share_mode,int ofun, mode_t mode,int oplock_request, 
 				int *Access,int *action)
 {
 	extern struct current_user current_user;
@@ -35,12 +35,12 @@ files_struct *open_fake_file_shared1(enum FAKE_FILE_TYPE fake_file_type, connect
 
 	if (fake_file_type == 0) {
 		return open_file_shared1(conn,fname,psbuf,desired_access,
-					share_mode,ofun,new_dos_attr,
+					share_mode,ofun,mode,
 					oplock_request,Access,action);	
 	}
 
 	/* access check */
-	if (current_user.uid != 0) {
+	if (conn->admin_user != True) {
 		DEBUG(1,("access_denied to service[%s] file[%s] user[%s]\n",
 			lp_servicename(SNUM(conn)),fname,conn->user));
 		errno = EACCES;
@@ -51,8 +51,8 @@ files_struct *open_fake_file_shared1(enum FAKE_FILE_TYPE fake_file_type, connect
 	if(!fsp)
 		return NULL;
 
-	DEBUG(5,("open_fake_file_shared1: fname = %s, FID = %d, share_mode = %x, ofun = %x, oplock request = %d\n",
-		fname, fsp->fnum, share_mode, ofun, oplock_request ));
+	DEBUG(5,("open_fake_file_shared1: fname = %s, FID = %d, share_mode = %x, ofun = %x, mode = %o, oplock request = %d\n",
+		fname, fsp->fnum, share_mode, ofun, (int)mode,  oplock_request ));
 
 	if (!check_name(fname,conn)) {
 		file_free(fsp);
@@ -95,9 +95,9 @@ files_struct *open_fake_file_shared1(enum FAKE_FILE_TYPE fake_file_type, connect
 
 static FAKE_FILE fake_files[] = {
 #ifdef WITH_QUOTAS
-	{FAKE_FILE_NAME_QUOTA_UNIX,	FAKE_FILE_TYPE_QUOTA,	init_quota_handle,	destroy_quota_handle},
+	{FAKE_FILE_NAME_QUOTA,	FAKE_FILE_TYPE_QUOTA,	init_quota_handle,	destroy_quota_handle},
 #endif /* WITH_QUOTAS */
-	{NULL,				FAKE_FILE_TYPE_NONE,	NULL,			NULL }
+	{NULL,			FAKE_FILE_TYPE_NONE,	NULL,			NULL }
 };
 
 int is_fake_file(char *fname)
@@ -132,7 +132,7 @@ struct _FAKE_FILE_HANDLE *init_fake_file_handle(enum FAKE_FILE_TYPE type)
 				return NULL;	
 			}
 
-			if ((fh =TALLOC_ZERO_P(mem_ctx, FAKE_FILE_HANDLE))==NULL) {
+			if ((fh =(FAKE_FILE_HANDLE *)talloc_zero(mem_ctx, sizeof(FAKE_FILE_HANDLE)))==NULL) {
 				DEBUG(0,("talloc_zero() failed.\n"));
 				talloc_destroy(mem_ctx);
 				return NULL;
@@ -156,7 +156,7 @@ struct _FAKE_FILE_HANDLE *init_fake_file_handle(enum FAKE_FILE_TYPE type)
 void destroy_fake_file_handle(FAKE_FILE_HANDLE **fh)
 {
 	if (!fh||!(*fh))
-		return;
+		return ;
 
 	if ((*fh)->free_pd)
 		(*fh)->free_pd(&(*fh)->pd);		

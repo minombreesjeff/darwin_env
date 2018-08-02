@@ -30,8 +30,10 @@
 
 enum winbindd_result winbindd_lookupsid(struct winbindd_cli_state *state)
 {
+	extern DOM_SID global_sid_Builtin;
 	enum SID_NAME_USE type;
-	DOM_SID sid;
+	DOM_SID sid, tmp_sid;
+	uint32 rid;
 	fstring name;
 	fstring dom_name;
 
@@ -45,6 +47,15 @@ enum winbindd_result winbindd_lookupsid(struct winbindd_cli_state *state)
 
 	if (!string_to_sid(&sid, state->request.data.sid)) {
 		DEBUG(5, ("%s not a SID\n", state->request.data.sid));
+		return WINBINDD_ERROR;
+	}
+
+	/* Don't look up BUILTIN sids */
+
+	sid_copy(&tmp_sid, &sid);
+	sid_split_rid(&tmp_sid, &rid);
+
+	if (sid_equal(&tmp_sid, &global_sid_Builtin)) {
 		return WINBINDD_ERROR;
 	}
 
@@ -95,14 +106,14 @@ enum winbindd_result winbindd_lookupname(struct winbindd_cli_state *state)
 	DEBUG(3, ("[%5lu]: lookupname %s%s%s\n", (unsigned long)state->pid,
 		  name_domain, lp_winbind_separator(), name_user));
 
-	if ((domain = find_lookup_domain_from_name(name_domain)) == NULL) {
+	if ((domain = find_domain_from_name(name_domain)) == NULL) {
 		DEBUG(0, ("could not find domain entry for domain %s\n", 
 			  name_domain));
 		return WINBINDD_ERROR;
 	}
 
 	/* Lookup name from PDC using lsa_lookup_names() */
-	if (!winbindd_lookup_sid_by_name(domain, name_domain, name_user, &sid, &type)) {
+	if (!winbindd_lookup_sid_by_name(domain, name_user, &sid, &type)) {
 		return WINBINDD_ERROR;
 	}
 
@@ -119,7 +130,7 @@ enum winbindd_result winbindd_lookupname(struct winbindd_cli_state *state)
 enum winbindd_result winbindd_sid_to_uid(struct winbindd_cli_state *state)
 {
 	DOM_SID sid;
-	NTSTATUS result;
+	uint32 flags = 0x0;
 
 	/* Ensure null termination */
 	state->request.data.sid[sizeof(state->request.data.sid)-1]='\0';
@@ -166,7 +177,8 @@ enum winbindd_result winbindd_sid_to_uid(struct winbindd_cli_state *state)
 			
 			/* But first check and see if we don't already have a mapping */
 			   
-			if ( NT_STATUS_IS_OK(idmap_sid_to_uid(&sid, &(state->response.data.uid), ID_QUERY_ONLY)) )
+			flags = ID_QUERY_ONLY;
+			if ( NT_STATUS_IS_OK(idmap_sid_to_uid(&sid, &(state->response.data.uid), flags)) )
 				return WINBINDD_OK;
 				
 			/* now fall back to the hard way */
@@ -190,37 +202,17 @@ enum winbindd_result winbindd_sid_to_uid(struct winbindd_cli_state *state)
 
 	}
 	
-	/* Find uid for this sid and return it */
-
-	result = idmap_sid_to_uid(&sid, &(state->response.data.uid),
-				  ID_QUERY_ONLY);
-
-	if (NT_STATUS_IS_OK(result))
-		return WINBINDD_OK;
-
-	if (state->request.flags & WBFLAG_QUERY_ONLY)
-		return WINBINDD_ERROR;
-
-	/* The query-only did not work, allocate a new uid *if* it's a user */
-
-	{
-		fstring dom_name, name;
-		enum SID_NAME_USE type;
-
-		if (!winbindd_lookup_name_by_sid(&sid, dom_name, name, &type))
-			return WINBINDD_ERROR;
-
-		if ((type != SID_NAME_USER) && (type != SID_NAME_COMPUTER))
-			return WINBINDD_ERROR;
-	}
+	if ( state->request.flags & WBFLAG_QUERY_ONLY ) 
+		flags = ID_QUERY_ONLY;
 	
-	result = idmap_sid_to_uid(&sid, &(state->response.data.uid), 0);
+	/* Find uid for this sid and return it */
+	
+	if ( !NT_STATUS_IS_OK(idmap_sid_to_uid(&sid, &(state->response.data.uid), flags)) ) {
+		DEBUG(1, ("Could not get uid for sid %s\n", state->request.data.sid));
+		return WINBINDD_ERROR;
+	}
 
-	if (NT_STATUS_IS_OK(result))
-		return WINBINDD_OK;
-
-	DEBUG(4, ("Could not get uid for sid %s\n", state->request.data.sid));
-	return WINBINDD_ERROR;
+	return WINBINDD_OK;
 }
 
 /* Convert a sid to a gid.  We assume we only have one rid attached to the
@@ -229,7 +221,7 @@ enum winbindd_result winbindd_sid_to_uid(struct winbindd_cli_state *state)
 enum winbindd_result winbindd_sid_to_gid(struct winbindd_cli_state *state)
 {
 	DOM_SID sid;
-	NTSTATUS result;
+	uint32 flags = 0x0;
 
 	/* Ensure null termination */
 	state->request.data.sid[sizeof(state->request.data.sid)-1]='\0';
@@ -275,7 +267,8 @@ enum winbindd_result winbindd_sid_to_gid(struct winbindd_cli_state *state)
 			
 			/* But first check and see if we don't already have a mapping */
 			   
-			if ( NT_STATUS_IS_OK(idmap_sid_to_gid(&sid, &(state->response.data.gid), ID_QUERY_ONLY)) )
+			flags = ID_QUERY_ONLY;
+			if ( NT_STATUS_IS_OK(idmap_sid_to_gid(&sid, &(state->response.data.gid), flags)) )
 				return WINBINDD_OK;
 				
 			/* now fall back to the hard way */
@@ -299,46 +292,16 @@ enum winbindd_result winbindd_sid_to_gid(struct winbindd_cli_state *state)
 
 	}
 	
+	if ( state->request.flags & WBFLAG_QUERY_ONLY ) 
+		flags = ID_QUERY_ONLY;
+		
 	/* Find gid for this sid and return it */
-
-	result = idmap_sid_to_gid(&sid, &(state->response.data.gid),
-				  ID_QUERY_ONLY);
-
-	if (NT_STATUS_IS_OK(result))
-		return WINBINDD_OK;
-
-	if (state->request.flags & WBFLAG_QUERY_ONLY)
+	if ( !NT_STATUS_IS_OK(idmap_sid_to_gid(&sid, &(state->response.data.gid), flags)) ) {
+		DEBUG(1, ("Could not get gid for sid %s\n", state->request.data.sid));
 		return WINBINDD_ERROR;
-
-	/* The query-only did not work, allocate a new gid *if* it's a group */
-
-	{
-		fstring dom_name, name;
-		enum SID_NAME_USE type;
-
-		if (sid_check_is_in_our_domain(&sid)) {
-			/* This is for half-created aliases... */
-			type = SID_NAME_ALIAS;
-		} else {
-			/* Foreign domains need to be looked up by the DC if
-			 * it's the right type */
-			if (!winbindd_lookup_name_by_sid(&sid, dom_name, name,
-							 &type))
-				return WINBINDD_ERROR;
-		}
-
-		if ((type != SID_NAME_DOM_GRP) && (type != SID_NAME_ALIAS) &&
-		    (type != SID_NAME_WKN_GRP))
-			return WINBINDD_ERROR;
 	}
-	
-	result = idmap_sid_to_gid(&sid, &(state->response.data.gid), 0);
 
-	if (NT_STATUS_IS_OK(result))
-		return WINBINDD_OK;
-
-	DEBUG(4, ("Could not get gid for sid %s\n", state->request.data.sid));
-	return WINBINDD_ERROR;
+	return WINBINDD_OK;
 }
 
 /* Convert a uid to a sid */
@@ -383,7 +346,7 @@ enum winbindd_result winbindd_uid_to_sid(struct winbindd_cli_state *state)
 			return WINBINDD_ERROR;
 		}
 
-		if ( !winbindd_lookup_sid_by_name(domain, domain->name, pw->pw_name, &sid, &type) )
+		if ( !winbindd_lookup_sid_by_name(domain, pw->pw_name, &sid, &type) )
 			return WINBINDD_ERROR;
 		
 		if ( type != SID_NAME_USER )
@@ -453,7 +416,7 @@ enum winbindd_result winbindd_gid_to_sid(struct winbindd_cli_state *state)
 			return WINBINDD_ERROR;
 		}
 
-		if ( !winbindd_lookup_sid_by_name(domain, domain->name, grp->gr_name, &sid, &type) )
+		if ( !winbindd_lookup_sid_by_name(domain, grp->gr_name, &sid, &type) )
 			return WINBINDD_ERROR;
 		
 		if ( type!=SID_NAME_DOM_GRP && type!=SID_NAME_ALIAS )
@@ -479,26 +442,6 @@ done:
 	/* Construct sid and return it */
 	sid_to_string(state->response.data.sid.sid, &sid);
 	state->response.data.sid.type = SID_NAME_DOM_GRP;
-
-	return WINBINDD_OK;
-}
-
-enum winbindd_result winbindd_allocate_rid(struct winbindd_cli_state *state)
-{
-	if ( !state->privileged ) {
-		DEBUG(2, ("winbindd_allocate_rid: non-privileged access "
-			  "denied!\n"));
-		return WINBINDD_ERROR;
-	}
-
-	/* We tell idmap to always allocate a user RID. There might be a good
-	 * reason to keep RID allocation for users to even and groups to
-	 * odd. This needs discussion I think. For now only allocate user
-	 * rids. */
-
-	if (!NT_STATUS_IS_OK(idmap_allocate_rid(&state->response.data.rid,
-						USER_RID_TYPE)))
-		return WINBINDD_ERROR;
 
 	return WINBINDD_OK;
 }

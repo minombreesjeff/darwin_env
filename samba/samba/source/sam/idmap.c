@@ -36,8 +36,6 @@ static struct idmap_function_entry *backends = NULL;
 static struct idmap_methods *cache_map;
 static struct idmap_methods *remote_map;
 
-static BOOL proxyonly = False;
-
 /**********************************************************************
  Get idmap methods. Don't allow tdb to be a remote method.
 **********************************************************************/
@@ -83,7 +81,7 @@ NTSTATUS smb_register_idmap(int version, const char *name, struct idmap_methods 
 		return NT_STATUS_OBJECT_NAME_COLLISION;
 	}
 
-	entry = SMB_XMALLOC_P(struct idmap_function_entry);
+	entry = smb_xmalloc(sizeof(struct idmap_function_entry));
 	entry->name = smb_xstrdup(name);
 	entry->methods = methods;
 
@@ -96,7 +94,7 @@ NTSTATUS smb_register_idmap(int version, const char *name, struct idmap_methods 
  Initialise idmap cache and a remote backend (if configured).
 **********************************************************************/
 
-BOOL idmap_init(const char **remote_backend)
+BOOL idmap_init(const char *remote_backend)
 {
 	if (!backends)
 		static_init_idmap;
@@ -115,9 +113,8 @@ BOOL idmap_init(const char **remote_backend)
 		}
 	}
 	
-	if ((remote_map == NULL) && (remote_backend != NULL) &&
-	    (*remote_backend != NULL) && (**remote_backend != '\0'))  {
-		char *rem_backend = smb_xstrdup(*remote_backend);
+	if (!remote_map && remote_backend && *remote_backend != 0) {
+		char *rem_backend = smb_xstrdup(remote_backend);
 		fstring params = "";
 		char *pparams;
 		
@@ -134,10 +131,7 @@ BOOL idmap_init(const char **remote_backend)
 		if((remote_map = get_methods(rem_backend, False)) ||
 		    (NT_STATUS_IS_OK(smb_probe_module("idmap", rem_backend)) && 
 		    (remote_map = get_methods(rem_backend, False)))) {
-			if (!NT_STATUS_IS_OK(remote_map->init(params))) {
-				DEBUG(0, ("idmap_init: failed to initialize remote backend!\n"));
-				return False;
-			}
+			remote_map->init(params);
 		} else {
 			DEBUG(0, ("idmap_init: could not load remote backend '%s'\n", rem_backend));
 			SAFE_FREE(rem_backend);
@@ -150,15 +144,6 @@ BOOL idmap_init(const char **remote_backend)
 }
 
 /**************************************************************************
- Don't do id mapping. This is used to make winbind a netlogon proxy only.
-**************************************************************************/
-
-void idmap_proxyonly(void)
-{
-	proxyonly = True;
-}
-
-/**************************************************************************
  This is a rare operation, designed to allow an explicit mapping to be
  set up for a sid to a POSIX id.
 **************************************************************************/
@@ -167,9 +152,6 @@ NTSTATUS idmap_set_mapping(const DOM_SID *sid, unid_t id, int id_type)
 {
 	struct idmap_methods *map = remote_map;
 	DOM_SID tmp_sid;
-
-	if (proxyonly)
-		return NT_STATUS_UNSUCCESSFUL;
 
 	DEBUG(10, ("idmap_set_mapping: Set %s to %s %lu\n",
 		   sid_string_static(sid),
@@ -203,10 +185,6 @@ NTSTATUS idmap_get_id_from_sid(unid_t *id, int *id_type, const DOM_SID *sid)
 {
 	NTSTATUS ret;
 	int loc_type;
-	unid_t loc_id;
-
-	if (proxyonly)
-		return NT_STATUS_UNSUCCESSFUL;
 
 	loc_type = *id_type;
 
@@ -225,32 +203,6 @@ NTSTATUS idmap_get_id_from_sid(unid_t *id, int *id_type, const DOM_SID *sid)
 
 	if (remote_map == NULL) {
 		return ret;
-	}
-
-	/* Before forking out to the possibly slow remote map, lets see if we
-	 * already have the sid as uid when asking for a gid or vice versa. */
-
-	loc_type = *id_type & ID_TYPEMASK;
-
-	switch (loc_type) {
-	case ID_USERID:
-		loc_type = ID_GROUPID;
-		break;
-	case ID_GROUPID:
-		loc_type = ID_USERID;
-		break;
-	default:
-		loc_type = ID_EMPTY;
-	}
-
-	loc_type |= ID_QUERY_ONLY;
-
-	ret = cache_map->get_id_from_sid(&loc_id, &loc_type, sid);
-
-	if (NT_STATUS_IS_OK(ret)) {
-		/* Ok, we have the uid as gid or vice versa. The remote map
-		 * would not know anything different, so return here. */
-		return NT_STATUS_UNSUCCESSFUL;
 	}
 
 	/* Ok, the mapping was not in the cache, give the remote map a
@@ -274,9 +226,6 @@ NTSTATUS idmap_get_sid_from_id(DOM_SID *sid, unid_t id, int id_type)
 {
 	NTSTATUS ret;
 	int loc_type;
-
-	if (proxyonly)
-		return NT_STATUS_UNSUCCESSFUL;
 
 	loc_type = id_type;
 	if (remote_map) {
@@ -311,9 +260,6 @@ NTSTATUS idmap_allocate_id(unid_t *id, int id_type)
 {
 	/* we have to allocate from the authoritative backend */
 	
-	if (proxyonly)
-		return NT_STATUS_UNSUCCESSFUL;
-
 	if ( remote_map )
 		return remote_map->allocate_id( id, id_type );
 
@@ -328,9 +274,6 @@ NTSTATUS idmap_allocate_rid(uint32 *rid, int type)
 {
 	/* we have to allocate from the authoritative backend */
 	
-	if (proxyonly)
-		return NT_STATUS_UNSUCCESSFUL;
-
 	if ( remote_map )
 		return remote_map->allocate_rid( rid, type );
 
@@ -344,9 +287,6 @@ NTSTATUS idmap_allocate_rid(uint32 *rid, int type)
 NTSTATUS idmap_close(void)
 {
 	NTSTATUS ret;
-
-	if (proxyonly)
-		return NT_STATUS_OK;
 
 	ret = cache_map->close();
 	if (!NT_STATUS_IS_OK(ret)) {

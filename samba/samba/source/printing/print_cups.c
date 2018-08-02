@@ -26,10 +26,30 @@
 #include <cups/language.h>
 
 
-static const char printerprefsfile[] = "/Library/Preferences/com.apple.printservice.plist";
+/*
+ * CUPS printing interface definitions...
+ */
 
-static char *cups_map_printer_name(http_t *http_p, const char *name);
+static int cups_job_delete(int snum, struct printjob *pjob);
+static int cups_job_pause(int snum, struct printjob *pjob);
+static int cups_job_resume(int snum, struct printjob *pjob);
+static int cups_job_submit(int snum, struct printjob *pjob);
+static int cups_queue_get(int snum, print_queue_struct **q,
+                          print_status_struct *status);
+static int cups_queue_pause(int snum);
+static int cups_queue_resume(int snum);
 
+
+struct printif	cups_printif =
+		{
+		  cups_queue_get,
+		  cups_queue_pause,
+		  cups_queue_resume,
+		  cups_job_delete,
+		  cups_job_pause,
+		  cups_job_resume,
+		  cups_job_submit,
+		};
 
 /*
  * 'cups_passwd_cb()' - The CUPS password callback...
@@ -45,17 +65,6 @@ cups_passwd_cb(const char *prompt)	/* I - Prompt */
   return (NULL);
 }
 
-static const char *cups_server(void)
-{
-	if ((lp_cups_server() != NULL) && (strlen(lp_cups_server()) > 0)) {
-		DEBUG(10, ("cups server explicitly set to %s\n",
-			   lp_cups_server()));
-		return lp_cups_server();
-	}
-
-	DEBUG(10, ("cups server left to default %s\n", cupsServer()));
-	return cupsServer();
-}
 
 /*
  * 'cups_printer_fn()' - Call a function for every printer known to the
@@ -73,24 +82,18 @@ void cups_printer_fn(void (*fn)(char *, char *))
 	char		*name,		/* printer-name attribute */
 			*make_model,	/* printer-make-and-model attribute */
 			*info;		/* printer-info attribute */
-	int		remote,		/* Remote printer */
-			shared;		/* Shared printer */
+	int remote;         /* filter out remote printers and classes */
 	static const char *requested[] =/* Requested attributes */
 			{
 			  "printer-name",
 			  "printer-make-and-model",
 			  "printer-info",
-			  "printer-type",
-			  "printer-is-shared"
+			  "printer-type"
 			};       
 
-	Boolean		displayPrinter;
-	CFArrayRef	smbQarray;
-	CFDataRef	xmlData;
-	CFURLRef	prefsurl;
-	Boolean		printerprefs;
-	CFStringRef	printername;
-	CFPropertyListRef plist;
+	char*   printerprefsfile = "/Library/Preferences/com.apple.printservice.plist";
+	Boolean displayPrinter = true;
+	CFArrayRef smbQarray = NULL;
 
 	DEBUG(5,("cups_printer_fn(%p)\n", fn));
 
@@ -104,10 +107,10 @@ void cups_printer_fn(void (*fn)(char *, char *))
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return;
 	}
 
@@ -150,35 +153,26 @@ void cups_printer_fn(void (*fn)(char *, char *))
 		return;
 	}
 
-	/*
-	 * Retrieve PrintService's list of queue names that have sharing enabled...
-	 */
 
-	printerprefs	= false;
-	smbQarray	= NULL;
+	CFDataRef xmlData = NULL;
+	CFURLRef prefsurl = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)printerprefsfile, (CFIndex)strlen(printerprefsfile), false);
+	Boolean printerprefs = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, prefsurl, &xmlData, NULL, NULL, NULL);
+	CFStringRef printername = NULL;
 
-	prefsurl = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)printerprefsfile, (CFIndex)strlen(printerprefsfile), false);
-	if (prefsurl)
-	{
-		printerprefs = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, prefsurl, &xmlData, NULL, NULL, NULL);
-		if (printerprefs)
-		{
-			plist = CFPropertyListCreateFromXMLData(kCFAllocatorDefault, xmlData, kCFPropertyListImmutable, NULL);
-			if (plist)
-			{
-				smbQarray = (CFArrayRef)CFDictionaryGetValue((CFDictionaryRef)plist, CFSTR("smbSharedQueues"));
-				if (smbQarray)
-					CFRetain(smbQarray);
-				CFRelease(plist);
-			}
-			CFRelease(xmlData);
+	if (printerprefs) {
+		CFPropertyListRef plist = CFPropertyListCreateFromXMLData(kCFAllocatorDefault, xmlData, kCFPropertyListImmutable, NULL);
+		CFRelease(xmlData);
+		if (plist) {
+			CFDictionaryRef dict = (CFDictionaryRef)plist;
+			smbQarray = (CFArrayRef)CFDictionaryGetValue(dict, CFSTR("smbSharedQueues"));
+			CFRetain(smbQarray);
+			CFRelease(plist);
 		}
-		CFRelease(prefsurl);
 	}
-
 
 	for (attr = response->attrs; attr != NULL;)
 	{
+		displayPrinter = true;
 	       /*
 		* Skip leading attributes until we hit a printer...
 		*/
@@ -197,13 +191,12 @@ void cups_printer_fn(void (*fn)(char *, char *))
 		make_model = NULL;
 		info       = NULL;
 		remote     = 0;
-		shared     = 1;
 
 		while (attr != NULL && attr->group_tag == IPP_TAG_PRINTER)
 		{
         		if (strcmp(attr->name, "printer-name") == 0 &&
 			    attr->value_tag == IPP_TAG_NAME)
-				name = attr->values[0].string.text;
+				info = attr->values[0].string.text; /* printer-name is the CUPS ID */
 
         		if (strcmp(attr->name, "printer-make-and-model") == 0 &&
 			    attr->value_tag == IPP_TAG_TEXT)
@@ -211,15 +204,11 @@ void cups_printer_fn(void (*fn)(char *, char *))
 
         		if (strcmp(attr->name, "printer-info") == 0 &&
 			    attr->value_tag == IPP_TAG_TEXT)
-				info = attr->values[0].string.text;
+				name = attr->values[0].string.text;  /* printer-info is the CUPS descriptive name we use for sharing */
 
         		if (strcmp(attr->name, "printer-type") == 0 &&
 			    attr->value_tag == IPP_TAG_ENUM)
 				remote = attr->values[0].integer & CUPS_PRINTER_REMOTE;
-
-        		if (strcmp(attr->name, "printer-is-shared") == 0 &&
-			    attr->value_tag == IPP_TAG_ENUM)
-				shared = attr->values[0].integer;
 
         		attr = attr->next;
 		}
@@ -228,34 +217,28 @@ void cups_printer_fn(void (*fn)(char *, char *))
 		* See if we have everything needed...
 		*/
 
-		if (!name || remote || !shared)
+		if (name == NULL)
 			continue;
 
-		/*
-		 * Make sure it's in PrintService's list of queues that are shared...
-		 */
-
-		if (printerprefs)
-		{
-			printername = CFStringCreateWithCString( kCFAllocatorDefault, name, kCFStringEncodingUTF8 );
-			if (printername)
-			{
-				displayPrinter = smbQarray && 
-						 CFArrayContainsValue(smbQarray, CFRangeMake(0, CFArrayGetCount(smbQarray)), printername);
-
-				CFRelease(printername);
-
-				if (!displayPrinter)
-					continue;
-			}
+ 		if (remote != 0)
+			continue;
+		
+		if (info == NULL)
+			continue;
+			
+		if (smbQarray) {
+			printername = CFStringCreateWithCString( kCFAllocatorDefault, info, kCFStringEncodingUTF8 );
+			if (!CFArrayContainsValue (smbQarray, CFRangeMake(0, CFArrayGetCount(smbQarray)), printername))
+				displayPrinter = false;						
+			CFRelease(printername);
 		}
 
+		if (displayPrinter) {
  		if (info == NULL || !info[0])
 			(*fn)(name, make_model);
 		else
-			(*fn)(info, make_model);
-		
-
+			(*fn)(name, info);
+	}
 	}
 
 	ippDelete(response);
@@ -302,6 +285,7 @@ void cups_printer_fn(void (*fn)(char *, char *))
 
 	for (attr = response->attrs; attr != NULL;)
 	{
+		displayPrinter = true;
 	       /*
 		* Skip leading attributes until we hit a printer...
 		*/
@@ -320,13 +304,13 @@ void cups_printer_fn(void (*fn)(char *, char *))
 		make_model = NULL;
 		info       = NULL;
 		remote     = 0;
-		shared     = 1;
+
 
 		while (attr != NULL && attr->group_tag == IPP_TAG_PRINTER)
 		{
         		if (strcmp(attr->name, "printer-name") == 0 &&
 			    attr->value_tag == IPP_TAG_NAME)
-				name = attr->values[0].string.text;
+				info = attr->values[0].string.text; /* printer-name is the CUPS ID */
 
         		if (strcmp(attr->name, "printer-make-and-model") == 0 &&
 			    attr->value_tag == IPP_TAG_TEXT)
@@ -334,15 +318,11 @@ void cups_printer_fn(void (*fn)(char *, char *))
 
         		if (strcmp(attr->name, "printer-info") == 0 &&
 			    attr->value_tag == IPP_TAG_TEXT)
-				info = attr->values[0].string.text;
+				name = attr->values[0].string.text;  /* printer-info is the CUPS descriptive name we use for sharing */
 
         		if (strcmp(attr->name, "printer-type") == 0 &&
 			    attr->value_tag == IPP_TAG_ENUM)
 				remote = attr->values[0].integer & CUPS_PRINTER_REMOTE;
-
-        		if (strcmp(attr->name, "printer-is-shared") == 0 &&
-			    attr->value_tag == IPP_TAG_ENUM)
-				shared = attr->values[0].integer;
 
         		attr = attr->next;
 		}
@@ -351,34 +331,28 @@ void cups_printer_fn(void (*fn)(char *, char *))
 		* See if we have everything needed...
 		*/
 
-		if (!name || remote || !shared)
+		if (name == NULL)
 			continue;
 
-		/*
-		 * Make sure it's in PrintService's list of queues that are shared...
-		 */
+ 		if (remote != 0)
+			continue;
 
-		if (printerprefs)
-		{
-			printername = CFStringCreateWithCString( kCFAllocatorDefault, name, kCFStringEncodingUTF8 );
-			if (printername)
-			{
-				displayPrinter = smbQarray && 
-						 CFArrayContainsValue(smbQarray, CFRangeMake(0, CFArrayGetCount(smbQarray)), printername);
-
-				CFRelease(printername);
-
-				if (!displayPrinter)
-					continue;
-			}
+		if (info == NULL)
+			continue;
+			
+		if (smbQarray) {
+			printername = CFStringCreateWithCString( kCFAllocatorDefault, info, kCFStringEncodingUTF8 );
+			if (!CFArrayContainsValue (smbQarray, CFRangeMake(0, CFArrayGetCount(smbQarray)), printername))
+				displayPrinter = false;						
+			CFRelease(printername);
 		}
 
+		if (displayPrinter) {
  		if (info == NULL || !info[0])
 			(*fn)(name, make_model);
 		else
-			(*fn)(info, make_model);
-		
-
+			(*fn)(name, info);
+		}
 	}
 
 	ippDelete(response);
@@ -421,20 +395,12 @@ int cups_printername_ok(const char *name)
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(3,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (0);
 	}
-
-       /*
-	 * Map from "printer-info" queue names to the real "printer-name" queue id.
-	 */
-
-	name = cups_map_printer_name(http, name);
-	if (name == NULL)
-		return 0;
 
        /*
 	* Build an IPP_GET_PRINTER_ATTRS request, which requires the following
@@ -523,10 +489,10 @@ cups_job_delete(int snum, struct printjob *pjob)
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (1);
 	}
 
@@ -613,10 +579,10 @@ cups_job_pause(int snum, struct printjob *pjob)
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (1);
 	}
 
@@ -703,10 +669,10 @@ cups_job_resume(int snum, struct printjob *pjob)
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (1);
 	}
 
@@ -781,9 +747,6 @@ cups_job_submit(int snum, struct printjob *pjob)
 	char		uri[HTTP_MAX_URI]; /* printer-uri attribute */
 	char 		*clientname; 	/* hostname of client for job-originating-host attribute */
 	pstring		new_jobname;
-	int		num_options = 0; 
-	cups_option_t 	*options;
-	char 		*printername; 	/* Printer name */
 
 	DEBUG(5,("cups_job_submit(%d, %p (%d))\n", snum, pjob, pjob->sysjob));
 
@@ -797,20 +760,12 @@ cups_job_submit(int snum, struct printjob *pjob)
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (1);
 	}
-
-       /*
-	 * Map from "printer-info" queue names to the real "printer-name" queue id.
-	 */
-
-	printername = cups_map_printer_name(http, PRINTERNAME(snum));
-	if (printername == NULL)
-		return 2;
 
        /*
 	* Build an IPP_PRINT_JOB request, which requires the following
@@ -837,7 +792,7 @@ cups_job_submit(int snum, struct printjob *pjob)
         	     "attributes-natural-language", NULL, language->language);
 
 	slprintf(uri, sizeof(uri) - 1, "ipp://localhost/printers/%s",
-	         printername);
+	         PRINTERNAME(snum));
 
 	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI,
         	     "printer-uri", NULL, uri);
@@ -860,22 +815,11 @@ cups_job_submit(int snum, struct printjob *pjob)
 	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_NAME, "job-name", NULL,
         	     new_jobname);
 
-	/* 
-	 * add any options defined in smb.conf 
-	 */
-
-	num_options = 0;
-	options     = NULL;
-	num_options = cupsParseOptions(lp_cups_options(snum), num_options, &options);
-
-	if ( num_options )
-		cupsEncodeOptions(request, num_options, options); 
-
        /*
 	* Do the request and get back a response...
 	*/
 
-	slprintf(uri, sizeof(uri) - 1, "/printers/%s", printername);
+	slprintf(uri, sizeof(uri) - 1, "/printers/%s", PRINTERNAME(snum));
 
         ret = 1;
 	if ((response = cupsDoFileRequest(http, request, uri,
@@ -902,16 +846,13 @@ cups_job_submit(int snum, struct printjob *pjob)
 	return (ret);
 }
 
+
 /*
  * 'cups_queue_get()' - Get all the jobs in the print queue.
  */
 
 static int
-cups_queue_get(const char *printer_name,
-               enum printing_types printing_type,
-               char *lpq_command,
-               print_queue_struct **q, 
-               print_status_struct *status)
+cups_queue_get(int snum, print_queue_struct **q, print_status_struct *status)
 {
 	http_t		*http;		/* HTTP connection to server */
 	ipp_t		*request,	/* IPP Request */
@@ -947,7 +888,7 @@ cups_queue_get(const char *printer_name,
 			};
 
 
-	DEBUG(5,("cups_queue_get(%s, %p, %p)\n", printer_name, q, status));
+	DEBUG(5,("cups_queue_get(%d, %p, %p)\n", snum, q, status));
 
        /*
         * Make sure we don't ask for passwords...
@@ -959,26 +900,19 @@ cups_queue_get(const char *printer_name,
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (0);
 	}
-
-       /*
-	 * Map from "printer-info" queue names to the real "printer-name" queue id.
-	 */
-
-	printer_name = cups_map_printer_name(http, printer_name);
-	if (printer_name == NULL)
-		return 2;
 
        /*
         * Generate the printer URI...
 	*/
 
-	slprintf(uri, sizeof(uri) - 1, "ipp://localhost/printers/%s", printer_name);
+	slprintf(uri, sizeof(uri) - 1, "ipp://localhost/printers/%s",
+	         PRINTERNAME(snum));
 
        /*
 	* Build an IPP_GET_JOBS request, which requires the following
@@ -1060,7 +994,7 @@ cups_queue_get(const char *printer_name,
 		{
 			qalloc += 16;
 
-			temp = SMB_REALLOC_ARRAY(queue, print_queue_struct, qalloc);
+			temp = Realloc(queue, sizeof(print_queue_struct) * qalloc);
 
 			if (temp == NULL)
 			{
@@ -1197,7 +1131,7 @@ cups_queue_get(const char *printer_name,
 
 	if ((response = cupsDoRequest(http, request, "/")) == NULL)
 	{
-		DEBUG(0,("Unable to get printer status for %s - %s\n", printer_name,
+		DEBUG(0,("Unable to get printer status for %s - %s\n", PRINTERNAME(snum),
 			 ippErrorString(cupsLastError())));
 		httpClose(http);
 		*q = queue;
@@ -1206,7 +1140,7 @@ cups_queue_get(const char *printer_name,
 
 	if (response->request.status.status_code >= IPP_OK_CONFLICT)
 	{
-		DEBUG(0,("Unable to get printer status for %s - %s\n", printer_name,
+		DEBUG(0,("Unable to get printer status for %s - %s\n", PRINTERNAME(snum),
 			 ippErrorString(response->request.status.status_code)));
 		ippDelete(response);
 		httpClose(http);
@@ -1257,7 +1191,6 @@ cups_queue_pause(int snum)
 			*response;	/* IPP Response */
 	cups_lang_t	*language;	/* Default language */
 	char		uri[HTTP_MAX_URI]; /* printer-uri attribute */
-	char 		*printername; 	/* Printer name */
 
 
 	DEBUG(5,("cups_queue_pause(%d)\n", snum));
@@ -1272,20 +1205,12 @@ cups_queue_pause(int snum)
 	 * Try to connect to the server...
 	 */
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (1);
 	}
-
-	/*
-	 * Map from "printer-info" queue names to the real "printer-name" queue id.
-	 */
-
-	printername = cups_map_printer_name(http, PRINTERNAME(snum));
-	if (printername == NULL)
-		return 2;
 
 	/*
 	 * Build an IPP_PAUSE_PRINTER request, which requires the following
@@ -1311,7 +1236,7 @@ cups_queue_pause(int snum)
         	     "attributes-natural-language", NULL, language->language);
 
 	slprintf(uri, sizeof(uri) - 1, "ipp://localhost/printers/%s",
-	         printername);
+	         PRINTERNAME(snum));
 
 	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI, "printer-uri", NULL, uri);
 
@@ -1358,7 +1283,6 @@ cups_queue_resume(int snum)
 			*response;	/* IPP Response */
 	cups_lang_t	*language;	/* Default language */
 	char		uri[HTTP_MAX_URI]; /* printer-uri attribute */
-	char 		*printername; 	/* Printer name */
 
 
 	DEBUG(5,("cups_queue_resume(%d)\n", snum));
@@ -1373,20 +1297,12 @@ cups_queue_resume(int snum)
 	* Try to connect to the server...
 	*/
 
-	if ((http = httpConnect(cups_server(), ippPort())) == NULL)
+	if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
 	{
 		DEBUG(0,("Unable to connect to CUPS server %s - %s\n", 
-			 cups_server(), strerror(errno)));
+			 cupsServer(), strerror(errno)));
 		return (1);
 	}
-
-       /*
-	 * Map from "printer-info" queue names to the real "printer-name" queue id.
-	 */
-
-	printername = cups_map_printer_name(http, PRINTERNAME(snum));
-	if (printername == NULL)
-		return 2;
 
        /*
 	* Build an IPP_RESUME_PRINTER request, which requires the following
@@ -1412,7 +1328,7 @@ cups_queue_resume(int snum)
         	     "attributes-natural-language", NULL, language->language);
 
 	slprintf(uri, sizeof(uri) - 1, "ipp://localhost/printers/%s",
-	         printername);
+	         PRINTERNAME(snum));
 
 	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI, "printer-uri", NULL, uri);
 
@@ -1444,311 +1360,6 @@ cups_queue_resume(int snum)
 	return (ret);
 }
 
-
-/*
- * 'cups_map_printer_name()' -	Map from the "printer-info" values OSX uses as queue names 
- *				to the real "printer-name" queue id.
- */
-
-static char *					/* O - mapped name or NULL */
-cups_map_printer_name(http_t *http, 		/* I - HTTP connection */
-		      const char *name)		/* I - name to map */
-{
-	ipp_t		*request,		/* IPP Request */
-			*response;		/* IPP Response */
-	ipp_attribute_t	*attr;			/* Current attribute */
-	cups_lang_t	*language;		/* Default language */
-	char		*printer_name,		/* printer-name attribute */
-			*printer_info;		/* printer-info attribute */
-	int		remote,			/* Remote printer */
-			shared;			/* Shared printer */
-	static char	*mapped_name = NULL;	/* Returned printer name */
-	static const char *requested[] =	/* Requested attributes */
-			{
-			  "printer-name",
-			  "printer-info",
-			  "printer-type",
-			  "printer-is-shared"
-			};       
-
-	CFArrayRef	smbQarray;
-	CFDataRef	xmlData;
-	CFURLRef	prefsurl;
-	Boolean		printerprefs;
-	CFStringRef	printername;
-	CFPropertyListRef plist;
-
-	DEBUG(5,("cups_map_printer_name(%s)\n", name));
-
-	/*
-	 * Free the old mapped queue name.
-	 */
-
-	if (mapped_name)
-	{
-		free(mapped_name);
-		mapped_name = NULL;
-	}
-
-       /*
-	* Build a CUPS_GET_PRINTERS request, which requires the following
-	* attributes:
-	*
-	*    attributes-charset
-	*    attributes-natural-language
-	*    requested-attributes
-	*/
-
-	request = ippNew();
-
-	request->request.op.operation_id = CUPS_GET_PRINTERS;
-	request->request.op.request_id   = 1;
-
-	language = cupsLangDefault();
-
-	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_CHARSET,
-                     "attributes-charset", NULL, cupsLangEncoding(language));
-
-	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_LANGUAGE,
-                     "attributes-natural-language", NULL, language->language);
-
-        ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_NAME,
-	              "requested-attributes",
-		      (sizeof(requested) / sizeof(requested[0])),
-		      NULL, requested);
-
-       /*
-	* Do the request and get back a response...
-	*/
-
-	if ((response = cupsDoRequest(http, request, "/")) == NULL)
-	{
-		DEBUG(0,("Unable to get printer list - %s\n",
-			 ippErrorString(cupsLastError())));
-		httpClose(http);
-		return NULL;
-	}
-
-	for (attr = response->attrs; attr != NULL;)
-	{
-	       /*
-		* Skip leading attributes until we hit a printer...
-		*/
-
-		while (attr != NULL && attr->group_tag != IPP_TAG_PRINTER)
-			attr = attr->next;
-
-		if (attr == NULL)
-        		break;
-
-	       /*
-		* Pull the needed attributes from this printer...
-		*/
-
-		printer_name= NULL;
-		printer_info= NULL;
-		remote	    = 0;
-		shared	    = 1;
-
-		while (attr != NULL && attr->group_tag == IPP_TAG_PRINTER)
-		{
-        		if (strcmp(attr->name, "printer-name") == 0 &&
-			    attr->value_tag == IPP_TAG_NAME)
-				printer_name = attr->values[0].string.text;
-
-        		if (strcmp(attr->name, "printer-info") == 0 &&
-			    attr->value_tag == IPP_TAG_TEXT)
-				printer_info = attr->values[0].string.text;
-
-        		if (strcmp(attr->name, "printer-type") == 0 &&
-			    attr->value_tag == IPP_TAG_ENUM)
-				remote = attr->values[0].integer & CUPS_PRINTER_REMOTE;
-
-        		if (strcmp(attr->name, "printer-is-shared") == 0 &&
-			    attr->value_tag == IPP_TAG_ENUM)
-				shared = attr->values[0].integer;
-
-        		attr = attr->next;
-		}
-
-	       /*
-		* We're only interested in local shared printers that have names...
-		*/
-
-		if (!name || remote || !shared)
-			continue;
-
- 		if (!strcmp(name, printer_name) || !strcmp(name, printer_info))
- 		{
- 			mapped_name = strdup(printer_name);
- 			break;
- 		}
-	}
-
-	ippDelete(response);
-
-
-	/*
-	 * If we match the name in the printer list then look at the classes list...
-	 */
-
-	if (!mapped_name)
-	{
-	       /*
-		* Build a CUPS_GET_CLASSES request, which requires the following
-		* attributes:
-		*
-		*    attributes-charset
-		*    attributes-natural-language
-		*    requested-attributes
-		*/
-	
-		request = ippNew();
-	
-		request->request.op.operation_id = CUPS_GET_CLASSES;
-		request->request.op.request_id   = 1;
-	
-		language = cupsLangDefault();
-	
-		ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_CHARSET,
-			     "attributes-charset", NULL, cupsLangEncoding(language));
-	
-		ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_LANGUAGE,
-			     "attributes-natural-language", NULL, language->language);
-	
-		ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_NAME,
-			      "requested-attributes",
-			      (sizeof(requested) / sizeof(requested[0])),
-			      NULL, requested);
-	
-	       /*
-		* Do the request and get back a response...
-		*/
-	
-		if ((response = cupsDoRequest(http, request, "/")) == NULL)
-		{
-			DEBUG(0,("Unable to get printer list - %s\n",
-				 ippErrorString(cupsLastError())));
-			httpClose(http);
-			return;
-		}
-	
-		for (attr = response->attrs; attr != NULL;)
-		{
-		       /*
-			* Skip leading attributes until we hit a printer...
-			*/
-	
-			while (attr != NULL && attr->group_tag != IPP_TAG_PRINTER)
-				attr = attr->next;
-	
-			if (attr == NULL)
-				break;
-	
-		       /*
-			* Pull the needed attributes from this printer...
-			*/
-	
-			printer_name= NULL;
-			printer_info= NULL;
-			remote	    = 0;
-			shared	    = 1;
-	
-			while (attr != NULL && attr->group_tag == IPP_TAG_PRINTER)
-			{
-				if (strcmp(attr->name, "printer-name") == 0 &&
-				    attr->value_tag == IPP_TAG_NAME)
-					printer_name = attr->values[0].string.text;
-	
-				if (strcmp(attr->name, "printer-info") == 0 &&
-				    attr->value_tag == IPP_TAG_TEXT)
-					printer_info = attr->values[0].string.text;
-	
-				if (strcmp(attr->name, "printer-type") == 0 &&
-				    attr->value_tag == IPP_TAG_ENUM)
-					remote = attr->values[0].integer & CUPS_PRINTER_REMOTE;
-	
-				if (strcmp(attr->name, "printer-is-shared") == 0 &&
-				    attr->value_tag == IPP_TAG_ENUM)
-					shared = attr->values[0].integer;
-	
-				attr = attr->next;
-			}
-	
-		       /*
-			* We're only interested in local shared printers that have names...
-			*/
-	
-			if (!name || remote || !shared)
-				continue;
-	
-			if (!strcmp(name, printer_name) || !strcmp(name, printer_info))
-			{
-				mapped_name = strdup(printer_name);
-				break;
-			}
-		}
-	
-		ippDelete(response);
-	}
-
-	/*
-	 * If we've mapped the name make sure it's in PrintService's list of queues that are shared...
-	 */
-
-	if (mapped_name)
-	{
-		prefsurl = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)printerprefsfile, (CFIndex)strlen(printerprefsfile), false);
-		if (prefsurl)
-		{
-			printerprefs = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, prefsurl, &xmlData, NULL, NULL, NULL);
-			if (printerprefs)
-			{
-				plist = CFPropertyListCreateFromXMLData(kCFAllocatorDefault, xmlData, kCFPropertyListImmutable, NULL);
-				if (plist)
-				{
-					smbQarray = (CFArrayRef)CFDictionaryGetValue((CFDictionaryRef)plist, CFSTR("smbSharedQueues"));
-					if (smbQarray)
-					{
-						printername = CFStringCreateWithCString( kCFAllocatorDefault, mapped_name, kCFStringEncodingUTF8 );
-						if (printername)
-						{
-							if (!CFArrayContainsValue(smbQarray, CFRangeMake(0, CFArrayGetCount(smbQarray)), printername)) {
-								free(mapped_name);
-								mapped_name = NULL;
-							}
-							CFRelease(printername);
-						}
-					} else {
-						free(mapped_name);
-						mapped_name = NULL;
-					}
-					CFRelease(xmlData);
-					CFRelease(plist);
-				}
-			}
-			CFRelease(prefsurl);
-		}
-	}
-
-	return mapped_name;
-}
-
-/*******************************************************************
- * CUPS printing interface definitions...
- ******************************************************************/
-
-struct printif	cups_printif =
-{
-	PRINT_CUPS,
-	cups_queue_get,
-	cups_queue_pause,
-	cups_queue_resume,
-	cups_job_delete,
-	cups_job_pause,
-	cups_job_resume,
-	cups_job_submit,
-};
 
 #else
  /* this keeps fussy compilers happy */

@@ -73,7 +73,7 @@ static char* trim_reg_path( char *path )
 		p++;
 	
 	if ( *p )
-		return SMB_STRDUP(p);
+		return strdup(p);
 	else
 		return NULL;
 }
@@ -90,8 +90,6 @@ static int print_subpath_environments( char *key, REGSUBKEY_CTR *subkeys )
 		"Windows NT R4000",
 		"Windows NT Alpha_AXP",
 		"Windows NT PowerPC",
-		"Windows IA64",
-		"Windows x64",
 		NULL };
 	fstring *drivers = NULL;
 	int i, env_index, num_drivers;
@@ -136,7 +134,7 @@ static int print_subpath_environments( char *key, REGSUBKEY_CTR *subkeys )
 	
 	/* we are dealing with a subkey of "Environments */
 	
-	key2 = SMB_STRDUP( key );
+	key2 = strdup( key );
 	keystr = key2;
 	reg_split_path( keystr, &base, &new_path );
 	
@@ -257,7 +255,7 @@ static int print_subpath_values_environments( char *key, REGVAL_CTR *val )
 	
 	/* env */
 	
-	key2 = SMB_STRDUP( key );
+	key2 = strdup( key );
 	keystr = key2;
 	reg_split_path( keystr, &base, &new_path );
 	if ( !base || !new_path )
@@ -322,7 +320,7 @@ static int print_subpath_values_environments( char *key, REGVAL_CTR *val )
 			
 			length = strlen(filename);
 		
-			buffer2 = SMB_REALLOC( buffer, buffer_size + (length + 1)*sizeof(uint16) );
+			buffer2 = Realloc( buffer, buffer_size + (length + 1)*sizeof(uint16) );
 			if ( !buffer2 )
 				break;
 			buffer = buffer2;
@@ -335,7 +333,7 @@ static int print_subpath_values_environments( char *key, REGVAL_CTR *val )
 		
 		/* terminated by double NULL.  Add the final one here */
 		
-		buffer2 = SMB_REALLOC( buffer, buffer_size + 2 );
+		buffer2 = Realloc( buffer, buffer_size + 2 );
 		if ( !buffer2 ) {
 			SAFE_FREE( buffer );
 			buffer_size = 0;
@@ -492,7 +490,7 @@ static int print_subpath_printers( char *key, REGSUBKEY_CTR *subkeys )
 
 	/* get information for a specific printer */
 	
-	key2 = SMB_STRDUP( key );
+	key2 = strdup( key );
 	keystr = key2;
 	reg_split_path( keystr, &base, &new_path );
 
@@ -546,7 +544,7 @@ static int print_subpath_values_printers( char *key, REGVAL_CTR *val )
 		goto done;
 	}
 	
-	key2 = SMB_STRDUP( key );
+	key2 = strdup( key );
 	keystr = key2;
 	reg_split_path( keystr, &base, &new_path );
 	

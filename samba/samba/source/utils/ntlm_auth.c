@@ -3,8 +3,8 @@
 
    Winbind status program.
 
-   Copyright (C) Tim Potter      2000-2003
-   Copyright (C) Andrew Bartlett <abartlet@samba.org> 2003-2004
+   Copyright (C) Tim Potter      2000-2002
+   Copyright (C) Andrew Bartlett <abartlet@samba.org> 2003
    Copyright (C) Francesco Chemolli <kinkie@kame.usr.dsi.unimi.it> 2000 
 
    This program is free software; you can redistribute it and/or modify
@@ -23,7 +23,6 @@
 */
 
 #include "includes.h"
-#include "utils/ntlm_auth.h"
 
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_WINBIND
@@ -37,8 +36,15 @@ enum stdio_helper_mode {
 	NTLMSSP_CLIENT_1,
 	GSS_SPNEGO,
 	GSS_SPNEGO_CLIENT,
-	NTLM_SERVER_1,
 	NUM_HELPER_MODES
+};
+
+enum ntlm_break {
+	BREAK_NONE,
+	BREAK_LM,
+	BREAK_NT,
+	NO_LM,
+	NO_NT
 };
 
 typedef void (*stdio_helper_function)(enum stdio_helper_mode stdio_helper_mode, 
@@ -59,9 +65,6 @@ static void manage_gss_spnego_request (enum stdio_helper_mode stdio_helper_mode,
 static void manage_gss_spnego_client_request (enum stdio_helper_mode stdio_helper_mode, 
 					      char *buf, int length);
 
-static void manage_ntlm_server_1_request (enum stdio_helper_mode stdio_helper_mode, 
-					  char *buf, int length);
-
 static const struct {
 	enum stdio_helper_mode mode;
 	const char *name;
@@ -73,24 +76,21 @@ static const struct {
 	{ NTLMSSP_CLIENT_1, "ntlmssp-client-1", manage_client_ntlmssp_request},
 	{ GSS_SPNEGO, "gss-spnego", manage_gss_spnego_request},
 	{ GSS_SPNEGO_CLIENT, "gss-spnego-client", manage_gss_spnego_client_request},
-	{ NTLM_SERVER_1, "ntlm-server-1", manage_ntlm_server_1_request},
 	{ NUM_HELPER_MODES, NULL, NULL}
 };
 
 extern int winbindd_fd;
 
-const char *opt_username;
-const char *opt_domain;
-const char *opt_workstation;
-const char *opt_password;
+static const char *opt_username;
+static const char *opt_domain;
+static const char *opt_workstation;
+static const char *opt_password;
 static DATA_BLOB opt_challenge;
 static DATA_BLOB opt_lm_response;
 static DATA_BLOB opt_nt_response;
 static int request_lm_key;
-static int request_user_session_key;
+static int request_nt_key;
 
-static const char *require_membership_of;
-static const char *require_membership_of_sid;
 
 static char winbind_separator(void)
 {
@@ -108,7 +108,7 @@ static char winbind_separator(void)
 	if (winbindd_request(WINBINDD_INFO, NULL, &response) !=
 	    NSS_STATUS_SUCCESS) {
 		d_printf("could not obtain winbind separator!\n");
-		return *lp_winbind_separator();
+		return '\\';
 	}
 
 	sep = response.data.info.winbind_separator;
@@ -116,13 +116,13 @@ static char winbind_separator(void)
 
 	if (!sep) {
 		d_printf("winbind separator was NULL!\n");
-		return *lp_winbind_separator();
+		return '\\';
 	}
 	
 	return sep;
 }
 
-const char *get_winbind_domain(void)
+static const char *get_winbind_domain(void)
 {
 	struct winbindd_response response;
 
@@ -138,7 +138,7 @@ const char *get_winbind_domain(void)
 	if (winbindd_request(WINBINDD_DOMAIN_NAME, NULL, &response) !=
 	    NSS_STATUS_SUCCESS) {
 		DEBUG(0, ("could not obtain winbind domain name!\n"));
-		return lp_workgroup();
+		return NULL;
 	}
 
 	fstrcpy(winbind_domain, response.data.domain_name);
@@ -147,7 +147,7 @@ const char *get_winbind_domain(void)
 
 }
 
-const char *get_winbind_netbios_name(void)
+static const char *get_winbind_netbios_name(void)
 {
 	struct winbindd_response response;
 
@@ -164,7 +164,7 @@ const char *get_winbind_netbios_name(void)
 	if (winbindd_request(WINBINDD_NETBIOS_NAME, NULL, &response) !=
 	    NSS_STATUS_SUCCESS) {
 		DEBUG(0, ("could not obtain winbind netbios name!\n"));
-		return global_myname();
+		return NULL;
 	}
 
 	fstrcpy(winbind_netbios_name, response.data.netbios_name);
@@ -173,90 +173,13 @@ const char *get_winbind_netbios_name(void)
 
 }
 
-DATA_BLOB get_challenge(void) 
-{
-	static DATA_BLOB chal;
-	if (opt_challenge.length)
-		return opt_challenge;
-	
-	chal = data_blob(NULL, 8);
-
-	generate_random_buffer(chal.data, chal.length);
-	return chal;
-}
-
-/* Copy of parse_domain_user from winbindd_util.c.  Parse a string of the
-   form DOMAIN/user into a domain and a user */
-
-static BOOL parse_ntlm_auth_domain_user(const char *domuser, fstring domain, 
-				     fstring user)
-{
-
-	char *p = strchr(domuser,winbind_separator());
-
-	if (!p) {
-		return False;
-	}
-        
-	fstrcpy(user, p+1);
-	fstrcpy(domain, domuser);
-	domain[PTR_DIFF(p, domuser)] = 0;
-	strupper_m(domain);
-
-	return True;
-}
-
-static BOOL get_require_membership_sid(void) {
-	struct winbindd_request request;
-	struct winbindd_response response;
-
-	if (!require_membership_of) {
-		return True;
-	}
-
-	if (require_membership_of_sid) {
-		return True;
-	}
-
-	/* Otherwise, ask winbindd for the name->sid request */
-
-	ZERO_STRUCT(request);
-	ZERO_STRUCT(response);
-
-	if (!parse_ntlm_auth_domain_user(require_membership_of, 
-					 request.data.name.dom_name, 
-					 request.data.name.name)) {
-		DEBUG(0, ("Could not parse %s into seperate domain/name parts!\n", 
-			  require_membership_of));
-		return False;
-	}
-
-	if (winbindd_request(WINBINDD_LOOKUPNAME, &request, &response) !=
-	    NSS_STATUS_SUCCESS) {
-		DEBUG(0, ("Winbindd lookupname failed to resolve %s into a SID!\n", 
-			  require_membership_of));
-		return False;
-	}
-
-	require_membership_of_sid = SMB_STRDUP(response.data.sid.sid);
-
-	if (require_membership_of_sid)
-		return True;
-
-	return False;
-}
 /* Authenticate a user with a plaintext password */
 
-static BOOL check_plaintext_auth(const char *user, const char *pass, 
-				 BOOL stdout_diagnostics)
+static BOOL check_plaintext_auth(const char *user, const char *pass, BOOL stdout_diagnostics)
 {
 	struct winbindd_request request;
 	struct winbindd_response response;
         NSS_STATUS result;
-
-	if (!get_require_membership_sid()) {
-		return False;
-	}
 
 	/* Send off request */
 
@@ -265,8 +188,6 @@ static BOOL check_plaintext_auth(const char *user, const char *pass,
 
 	fstrcpy(request.data.auth.user, user);
 	fstrcpy(request.data.auth.pass, pass);
-	if (require_membership_of_sid)
-		fstrcpy(request.data.auth.require_membership_of_sid, require_membership_of_sid);
 
 	result = winbindd_request(WINBINDD_PAM_AUTH, &request, &response);
 
@@ -297,54 +218,58 @@ static BOOL check_plaintext_auth(const char *user, const char *pass,
 
 /* authenticate a user with an encrypted username/password */
 
-NTSTATUS contact_winbind_auth_crap(const char *username, 
-				   const char *domain, 
-				   const char *workstation,
-				   const DATA_BLOB *challenge, 
-				   const DATA_BLOB *lm_response, 
-				   const DATA_BLOB *nt_response, 
-				   uint32 flags, 
-				   uint8 lm_key[8], 
-				   uint8 user_session_key[16], 
-				   char **error_string, 
-				   char **unix_name) 
+static NTSTATUS contact_winbind_auth_crap(const char *username, 
+					  const char *domain, 
+					  const char *workstation,
+					  const DATA_BLOB *challenge, 
+					  const DATA_BLOB *lm_response, 
+					  const DATA_BLOB *nt_response, 
+					  uint32 flags, 
+					  uint8 lm_key[8], 
+					  uint8 nt_key[16], 
+					  char **error_string, 
+					  char **unix_name) 
 {
 	NTSTATUS nt_status;
         NSS_STATUS result;
 	struct winbindd_request request;
 	struct winbindd_response response;
 
-	if (!get_require_membership_sid()) {
-		return NT_STATUS_INVALID_PARAMETER;
-	}
+	static uint8 zeros[16];
 
 	ZERO_STRUCT(request);
 	ZERO_STRUCT(response);
 
 	request.flags = flags;
 
-	if (require_membership_of_sid)
-		fstrcpy(request.data.auth_crap.require_membership_of_sid, require_membership_of_sid);
+	if (push_utf8_fstring(request.data.auth_crap.user, username) == -1) {
+		*error_string = smb_xstrdup(
+			"unable to create utf8 string for username");
+		return NT_STATUS_UNSUCCESSFUL;
+	}
 
-        fstrcpy(request.data.auth_crap.user, username);
-	fstrcpy(request.data.auth_crap.domain, domain);
+	if (push_utf8_fstring(request.data.auth_crap.domain, domain) == -1) {
+		*error_string = smb_xstrdup(
+			"unable to create utf8 string for domain");
+		return NT_STATUS_UNSUCCESSFUL;
+	}
 
-	fstrcpy(request.data.auth_crap.workstation, 
-		workstation);
+	if (push_utf8_fstring(request.data.auth_crap.workstation, 
+			      workstation) == -1) {
+		*error_string = smb_xstrdup(
+			"unable to create utf8 string for workstation");
+		return NT_STATUS_UNSUCCESSFUL;
+	}
 
 	memcpy(request.data.auth_crap.chal, challenge->data, MIN(challenge->length, 8));
 
 	if (lm_response && lm_response->length) {
-		memcpy(request.data.auth_crap.lm_resp, 
-		       lm_response->data, 
-		       MIN(lm_response->length, sizeof(request.data.auth_crap.lm_resp)));
+		memcpy(request.data.auth_crap.lm_resp, lm_response->data, MIN(lm_response->length, sizeof(request.data.auth_crap.lm_resp)));
 		request.data.auth_crap.lm_resp_len = lm_response->length;
 	}
 
 	if (nt_response && nt_response->length) {
-		memcpy(request.data.auth_crap.nt_resp, 
-		       nt_response->data, 
-		       MIN(nt_response->length, sizeof(request.data.auth_crap.nt_resp)));
+		memcpy(request.data.auth_crap.nt_resp, nt_response->data, MIN(nt_response->length, sizeof(request.data.auth_crap.nt_resp)));
                 request.data.auth_crap.nt_resp_len = nt_response->length;
 	}
 	
@@ -356,7 +281,6 @@ NTSTATUS contact_winbind_auth_crap(const char *username,
 		nt_status = NT_STATUS_UNSUCCESSFUL;
 		if (error_string)
 			*error_string = smb_xstrdup("Reading winbind reply failed!");
-		free_response(&response);
 		return nt_status;
 	}
 	
@@ -364,38 +288,38 @@ NTSTATUS contact_winbind_auth_crap(const char *username,
 	if (!NT_STATUS_IS_OK(nt_status)) {
 		if (error_string) 
 			*error_string = smb_xstrdup(response.data.auth.error_string);
-		free_response(&response);
 		return nt_status;
 	}
 
-	if ((flags & WBFLAG_PAM_LMKEY) && lm_key) {
+	if ((flags & WBFLAG_PAM_LMKEY) && lm_key 
+	    && (memcmp(zeros, response.data.auth.first_8_lm_hash, 
+		       sizeof(response.data.auth.first_8_lm_hash)) != 0)) {
 		memcpy(lm_key, response.data.auth.first_8_lm_hash, 
-		       sizeof(response.data.auth.first_8_lm_hash));
+			sizeof(response.data.auth.first_8_lm_hash));
 	}
-	if ((flags & WBFLAG_PAM_USER_SESSION_KEY) && user_session_key) {
-		memcpy(user_session_key, response.data.auth.user_session_key, 
-			sizeof(response.data.auth.user_session_key));
+	if ((flags & WBFLAG_PAM_NTKEY) && nt_key
+		    && (memcmp(zeros, response.data.auth.nt_session_key, 
+			       sizeof(response.data.auth.nt_session_key)) != 0)) {
+		memcpy(nt_key, response.data.auth.nt_session_key, 
+			sizeof(response.data.auth.nt_session_key));
 	}
 
 	if (flags & WBFLAG_PAM_UNIX_NAME) {
-		*unix_name = SMB_STRDUP((char *)response.extra_data);
-		if (!*unix_name) {
-			free_response(&response);
+		if (pull_utf8_allocate(unix_name, (char *)response.extra_data) == -1) {
 			return NT_STATUS_NO_MEMORY;
 		}
 	}
 
-	free_response(&response);
 	return nt_status;
 }
 				   
-static NTSTATUS winbind_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB *user_session_key, DATA_BLOB *lm_session_key) 
+static NTSTATUS winbind_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB *nt_session_key, DATA_BLOB *lm_session_key) 
 {
 	static const char zeros[16];
 	NTSTATUS nt_status;
 	char *error_string;
 	uint8 lm_key[8]; 
-	uint8 user_sess_key[16]; 
+	uint8 nt_key[16]; 
 	char *unix_name;
 
 	nt_status = contact_winbind_auth_crap(ntlmssp_state->user, ntlmssp_state->domain,
@@ -403,8 +327,8 @@ static NTSTATUS winbind_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB 
 					      &ntlmssp_state->chal,
 					      &ntlmssp_state->lm_resp,
 					      &ntlmssp_state->nt_resp, 
-					      WBFLAG_PAM_LMKEY | WBFLAG_PAM_USER_SESSION_KEY | WBFLAG_PAM_UNIX_NAME,
-					      lm_key, user_sess_key, 
+					      WBFLAG_PAM_LMKEY | WBFLAG_PAM_NTKEY | WBFLAG_PAM_UNIX_NAME,
+					      lm_key, nt_key, 
 					      &error_string, &unix_name);
 
 	if (NT_STATUS_IS_OK(nt_status)) {
@@ -414,25 +338,26 @@ static NTSTATUS winbind_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB 
 			memset(lm_session_key->data+8, '\0', 8);
 		}
 		
-		if (memcmp(user_sess_key, zeros, 16) != 0) {
-			*user_session_key = data_blob(user_sess_key, 16);
+		if (memcmp(nt_key, zeros, 16) != 0) {
+			*nt_session_key = data_blob(nt_key, 16);
 		}
 		ntlmssp_state->auth_context = talloc_strdup(ntlmssp_state->mem_ctx, unix_name);
 		SAFE_FREE(unix_name);
 	} else {
 		DEBUG(NT_STATUS_EQUAL(nt_status, NT_STATUS_ACCESS_DENIED) ? 0 : 3, 
 		      ("Login for user [%s]\\[%s]@[%s] failed due to [%s]\n", 
-		       ntlmssp_state->domain, ntlmssp_state->user, 
-		       ntlmssp_state->workstation, 
-		       error_string ? error_string : "unknown error (NULL)"));
+		       ntlmssp_state->domain, ntlmssp_state->user, ntlmssp_state->workstation, error_string ? error_string : "unknown error (NULL)"));
 		ntlmssp_state->auth_context = NULL;
 	}
 	return nt_status;
 }
 
-static NTSTATUS local_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB *user_session_key, DATA_BLOB *lm_session_key) 
+static NTSTATUS local_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB *nt_session_key, DATA_BLOB *lm_session_key) 
 {
+	static const char zeros[16];
 	NTSTATUS nt_status;
+	uint8 lm_key[8]; 
+	uint8 nt_key[16]; 
 	uint8 lm_pw[16], nt_pw[16];
 
 	nt_lm_owf_gen (opt_password, nt_pw, lm_pw);
@@ -441,17 +366,22 @@ static NTSTATUS local_pw_check(struct ntlmssp_state *ntlmssp_state, DATA_BLOB *u
 					&ntlmssp_state->chal,
 					&ntlmssp_state->lm_resp,
 					&ntlmssp_state->nt_resp, 
-					NULL, NULL,
 					ntlmssp_state->user, 
 					ntlmssp_state->user, 
 					ntlmssp_state->domain,
-					lm_pw, nt_pw, user_session_key, lm_session_key);
+					lm_pw, nt_pw, nt_session_key, lm_session_key);
 	
 	if (NT_STATUS_IS_OK(nt_status)) {
-		ntlmssp_state->auth_context = talloc_asprintf(ntlmssp_state->mem_ctx, 
-							      "%s%c%s", ntlmssp_state->domain, 
-							      *lp_winbind_separator(), 
-							      ntlmssp_state->user);
+		if (memcmp(lm_key, zeros, 8) != 0) {
+			*lm_session_key = data_blob(NULL, 16);
+			memcpy(lm_session_key->data, lm_key, 8);
+			memset(lm_session_key->data+8, '\0', 8);
+		}
+		
+		if (memcmp(nt_key, zeros, 16) != 0) {
+			*nt_session_key = data_blob(nt_key, 16);
+		}
+		ntlmssp_state->auth_context = talloc_asprintf(ntlmssp_state->mem_ctx, "%s%c%s", ntlmssp_state->domain, *lp_winbind_separator(), ntlmssp_state->user);
 	} else {
 		DEBUG(3, ("Login for user [%s]\\[%s]@[%s] failed due to [%s]\n", 
 			  ntlmssp_state->domain, ntlmssp_state->user, ntlmssp_state->workstation, 
@@ -466,7 +396,7 @@ static NTSTATUS ntlm_auth_start_ntlmssp_client(NTLMSSP_STATE **client_ntlmssp_st
 	NTSTATUS status;
 	if ( (opt_username == NULL) || (opt_domain == NULL) ) {
 		DEBUG(1, ("Need username and domain for NTLMSSP\n"));
-		return NT_STATUS_INVALID_PARAMETER;
+		return status;
 	}
 
 	status = ntlmssp_client_start(client_ntlmssp_state);
@@ -552,7 +482,7 @@ static void manage_squid_ntlmssp_request(enum stdio_helper_mode stdio_helper_mod
 	if ((strncmp(buf, "PW ", 3) == 0)) {
 		/* The calling application wants us to use a local password (rather than winbindd) */
 
-		opt_password = SMB_STRNDUP((const char *)request.data, request.length);
+		opt_password = strndup((const char *)request.data, request.length);
 
 		if (opt_password == NULL) {
 			DEBUG(1, ("Out of memory\n"));
@@ -634,7 +564,7 @@ static void manage_client_ntlmssp_request(enum stdio_helper_mode stdio_helper_mo
 	if (strncmp(buf, "PW ", 3) == 0) {
 		/* We asked for a password and obviously got it :-) */
 
-		opt_password = SMB_STRNDUP((const char *)request.data, request.length);
+		opt_password = strndup((const char *)request.data, request.length);
 
 		if (opt_password == NULL) {
 			DEBUG(1, ("Out of memory\n"));
@@ -716,7 +646,7 @@ static void manage_squid_basic_request(enum stdio_helper_mode stdio_helper_mode,
 	pass=memchr(buf,' ',length);
 	if (!pass) {
 		DEBUG(2, ("Password not found. Denying access\n"));
-		x_fprintf(x_stdout, "ERR\n");
+		x_fprintf(x_stderr, "ERR\n");
 		return;
 	}
 	*pass='\0';
@@ -753,7 +683,7 @@ static void offer_gss_spnego_mechs(void) {
 
 	/* Server negTokenInit (mech offerings) */
 	spnego.type = SPNEGO_NEG_TOKEN_INIT;
-	spnego.negTokenInit.mechTypes = SMB_XMALLOC_ARRAY(char *, 3);
+	spnego.negTokenInit.mechTypes = smb_xmalloc(sizeof(char *) * 3);
 #ifdef HAVE_KRB5
 	spnego.negTokenInit.mechTypes[0] = smb_xstrdup(OID_KERBEROS5_OLD);
 	spnego.negTokenInit.mechTypes[1] = smb_xstrdup(OID_NTLMSSP);
@@ -802,34 +732,32 @@ static void manage_gss_spnego_request(enum stdio_helper_mode stdio_helper_mode,
 	pstring     reply_argument;
 
 	if (strlen(buf) < 2) {
-		DEBUG(1, ("SPENGO query [%s] invalid", buf));
+
+		if (ntlmssp_state != NULL) {
+			DEBUG(1, ("Request for initial SPNEGO request where "
+				  "we already have a state\n"));
+			x_fprintf(x_stdout, "BH\n");
+			return;
+		}
+
+		DEBUG(1, ("NTLMSSP query [%s] invalid", buf));
 		x_fprintf(x_stdout, "BH\n");
 		return;
 	}
 
-	if (strncmp(buf, "YR", 2) == 0) {
-		if (ntlmssp_state)
-			ntlmssp_end(&ntlmssp_state);
-	} else if (strncmp(buf, "KK", 2) == 0) {
-		
-	} else {
-		DEBUG(1, ("SPENGO query [%s] invalid", buf));
-		x_fprintf(x_stdout, "BH\n");
-		return;
-	}
+	if ( (strlen(buf) == 2) && (strcmp(buf, "YR") == 0) ) {
 
-	if ( (strlen(buf) == 2)) {
-
-		/* no client data, get the negTokenInit offering
+		/* Initial request, get the negTokenInit offering
                    mechanisms */
 
 		offer_gss_spnego_mechs();
 		return;
 	}
 
-	/* All subsequent requests have a blob. This might be negTokenInit or negTokenTarg */
+	/* All subsequent requests are "KK" (Knock, Knock ;)) and have
+	   a blob. This might be negTokenInit or negTokenTarg */
 
-	if (strlen(buf) <= 3) {
+	if ( (strlen(buf) <= 3) || (strncmp(buf, "KK", 2) != 0) ) {
 		DEBUG(1, ("GSS-SPNEGO query [%s] invalid\n", buf));
 		x_fprintf(x_stdout, "BH\n");
 		return;
@@ -883,7 +811,7 @@ static void manage_gss_spnego_request(enum stdio_helper_mode stdio_helper_mode,
 				  request.negTokenInit.mechToken.length);
 
 			response.type = SPNEGO_NEG_TOKEN_TARG;
-			response.negTokenTarg.supportedMech = SMB_STRDUP(OID_NTLMSSP);
+			response.negTokenTarg.supportedMech = strdup(OID_NTLMSSP);
 			response.negTokenTarg.mechListMIC = data_blob(NULL, 0);
 
 			status = ntlmssp_update(ntlmssp_state,
@@ -906,7 +834,7 @@ static void manage_gss_spnego_request(enum stdio_helper_mode stdio_helper_mode,
 			}
 
 			response.type = SPNEGO_NEG_TOKEN_TARG;
-			response.negTokenTarg.supportedMech = SMB_STRDUP(OID_KERBEROS5_OLD);
+			response.negTokenTarg.supportedMech = strdup(OID_KERBEROS5_OLD);
 			response.negTokenTarg.mechListMIC = data_blob(NULL, 0);
 			response.negTokenTarg.responseToken = data_blob(NULL, 0);
 
@@ -920,7 +848,7 @@ static void manage_gss_spnego_request(enum stdio_helper_mode stdio_helper_mode,
 
 			if (NT_STATUS_IS_OK(status)) {
 
-				domain = strchr_m(principal, '@');
+				domain = strchr(principal, '@');
 
 				if (domain == NULL) {
 					DEBUG(1, ("Did not get a valid principal "
@@ -930,8 +858,8 @@ static void manage_gss_spnego_request(enum stdio_helper_mode stdio_helper_mode,
 				}
 
 				*domain++ = '\0';
-				domain = SMB_STRDUP(domain);
-				user = SMB_STRDUP(principal);
+				domain = strdup(domain);
+				user = strdup(principal);
 
 				data_blob_free(&ap_rep);
 				data_blob_free(&auth_data);
@@ -964,12 +892,12 @@ static void manage_gss_spnego_request(enum stdio_helper_mode stdio_helper_mode,
 					       &response.negTokenTarg.responseToken);
 
 		response.type = SPNEGO_NEG_TOKEN_TARG;
-		response.negTokenTarg.supportedMech = SMB_STRDUP(OID_NTLMSSP);
+		response.negTokenTarg.supportedMech = strdup(OID_NTLMSSP);
 		response.negTokenTarg.mechListMIC = data_blob(NULL, 0);
 
 		if (NT_STATUS_IS_OK(status)) {
-			user = SMB_STRDUP(ntlmssp_state->user);
-			domain = SMB_STRDUP(ntlmssp_state->domain);
+			user = strdup(ntlmssp_state->user);
+			domain = strdup(ntlmssp_state->domain);
 			ntlmssp_end(&ntlmssp_state);
 		}
 	}
@@ -1141,7 +1069,7 @@ static BOOL manage_client_krb5_init(SPNEGO_DATA spnego)
 {
 	char *principal;
 	DATA_BLOB tkt, to_server;
-	DATA_BLOB session_key_krb5 = data_blob(NULL, 0);
+	DATA_BLOB session_key_krb5;
 	SPNEGO_DATA reply;
 	char *reply_base64;
 	int retval;
@@ -1155,7 +1083,7 @@ static BOOL manage_client_krb5_init(SPNEGO_DATA spnego)
 		return False;
 	}
 
-	principal = SMB_MALLOC(spnego.negTokenInit.mechListMIC.length+1);
+	principal = malloc(spnego.negTokenInit.mechListMIC.length+1);
 
 	if (principal == NULL) {
 		DEBUG(1, ("Could not malloc principal\n"));
@@ -1183,17 +1111,16 @@ static BOOL manage_client_krb5_init(SPNEGO_DATA spnego)
 
 		pstr_sprintf(user, "%s@%s", opt_username, opt_domain);
 
-		if ((retval = kerberos_kinit_password(user, opt_password, 
-						      0, NULL, NULL))) {
+		if ((retval = kerberos_kinit_password(user, opt_password, 0))) {
 			DEBUG(10, ("Requesting TGT failed: %s\n", error_message(retval)));
-			return False;
+			x_fprintf(x_stdout, "NA\n");
+			return True;
 		}
 
 		retval = cli_krb5_get_ticket(principal, 0, &tkt, &session_key_krb5);
 
 		if (retval) {
 			DEBUG(10, ("Kinit suceeded, but getting a ticket failed: %s\n", error_message(retval)));
-			return False;
 		}
 	}
 
@@ -1266,8 +1193,8 @@ static void manage_gss_spnego_client_request(enum stdio_helper_mode stdio_helper
 
 		/* We asked for a password and obviously got it :-) */
 
-		opt_password = SMB_STRNDUP((const char *)request.data, request.length);
-		
+		opt_password = strndup((const char *)request.data, request.length);
+
 		if (opt_password == NULL) {
 			DEBUG(1, ("Out of memory\n"));
 			x_fprintf(x_stdout, "BH\n");
@@ -1380,199 +1307,6 @@ static void manage_gss_spnego_client_request(enum stdio_helper_mode stdio_helper
 	return;
 }
 
-static void manage_ntlm_server_1_request(enum stdio_helper_mode stdio_helper_mode, 
-					 char *buf, int length) 
-{
-	char *request, *parameter;	
-	static DATA_BLOB challenge;
-	static DATA_BLOB lm_response;
-	static DATA_BLOB nt_response;
-	static char *full_username;
-	static char *username;
-	static char *domain;
-	static char *plaintext_password;
-	static BOOL ntlm_server_1_user_session_key;
-	static BOOL ntlm_server_1_lm_session_key;
-	
-	if (strequal(buf, ".")) {
-		if (!full_username && !username) {	
-			x_fprintf(x_stdout, "Error: No username supplied!\n");
-		} else if (plaintext_password) {
-			/* handle this request as plaintext */
-			if (!full_username) {
-				if (asprintf(&full_username, "%s%c%s", domain, winbind_separator(), username) == -1) {
-					x_fprintf(x_stdout, "Error: Out of memory in asprintf!\n.\n");
-					return;
-				}
-			}
-			if (check_plaintext_auth(full_username, plaintext_password, False)) {
-				x_fprintf(x_stdout, "Authenticated: Yes\n");
-			} else {
-				x_fprintf(x_stdout, "Authenticated: No\n");
-			}
-		} else if (!lm_response.data && !nt_response.data) {
-			x_fprintf(x_stdout, "Error: No password supplied!\n");
-		} else if (!challenge.data) {	
-			x_fprintf(x_stdout, "Error: No lanman-challenge supplied!\n");
-		} else {
-			char *error_string = NULL;
-			uchar lm_key[8];
-			uchar user_session_key[16];
-			uint32 flags = 0;
-
-			if (full_username && !username) {
-				fstring fstr_user;
-				fstring fstr_domain;
-				
-				if (!parse_ntlm_auth_domain_user(full_username, fstr_user, fstr_domain)) {
-					/* username might be 'tainted', don't print into our new-line deleimianted stream */
-					x_fprintf(x_stdout, "Error: Could not parse into domain and username\n");
-				}
-				SAFE_FREE(username);
-				SAFE_FREE(domain);
-				username = smb_xstrdup(fstr_user);
-				domain = smb_xstrdup(fstr_domain);
-			}
-
-			if (!domain) {
-				domain = smb_xstrdup(get_winbind_domain());
-			}
-
-			if (ntlm_server_1_lm_session_key) 
-				flags |= WBFLAG_PAM_LMKEY;
-			
-			if (ntlm_server_1_user_session_key) 
-				flags |= WBFLAG_PAM_USER_SESSION_KEY;
-
-			if (!NT_STATUS_IS_OK(
-				    contact_winbind_auth_crap(username, 
-							      domain, 
-							      global_myname(),
-							      &challenge, 
-							      &lm_response, 
-							      &nt_response, 
-							      flags, 
-							      lm_key, 
-							      user_session_key,
-							      &error_string,
-							      NULL))) {
-
-				x_fprintf(x_stdout, "Authenticated: No\n");
-				x_fprintf(x_stdout, "Authentication-Error: %s\n.\n", error_string);
-				SAFE_FREE(error_string);
-			} else {
-				static char zeros[16];
-				char *hex_lm_key;
-				char *hex_user_session_key;
-
-				x_fprintf(x_stdout, "Authenticated: Yes\n");
-
-				if (ntlm_server_1_lm_session_key 
-				    && (memcmp(zeros, lm_key, 
-					       sizeof(lm_key)) != 0)) {
-					hex_encode((const unsigned char *)lm_key,
-						   sizeof(lm_key),
-						   &hex_lm_key);
-					x_fprintf(x_stdout, "LANMAN-Session-Key: %s\n", hex_lm_key);
-					SAFE_FREE(hex_lm_key);
-				}
-
-				if (ntlm_server_1_user_session_key 
-				    && (memcmp(zeros, user_session_key, 
-					       sizeof(user_session_key)) != 0)) {
-					hex_encode((const unsigned char *)user_session_key, 
-						   sizeof(user_session_key), 
-						   &hex_user_session_key);
-					x_fprintf(x_stdout, "User-Session-Key: %s\n", hex_user_session_key);
-					SAFE_FREE(hex_user_session_key);
-				}
-			}
-		}
-		/* clear out the state */
-		challenge = data_blob(NULL, 0);
-		nt_response = data_blob(NULL, 0);
-		lm_response = data_blob(NULL, 0);
-		SAFE_FREE(full_username);
-		SAFE_FREE(username);
-		SAFE_FREE(domain);
-		SAFE_FREE(plaintext_password);
-		ntlm_server_1_user_session_key = False;
-		ntlm_server_1_lm_session_key = False;
-		x_fprintf(x_stdout, ".\n");
-
-		return;
-	}
-
-	request = buf;
-
-	/* Indicates a base64 encoded structure */
-	parameter = strstr_m(request, ":: ");
-	if (!parameter) {
-		parameter = strstr_m(request, ": ");
-		
-		if (!parameter) {
-			DEBUG(0, ("Parameter not found!\n"));
-			x_fprintf(x_stdout, "Error: Parameter not found!\n.\n");
-			return;
-		}
-		
-		parameter[0] ='\0';
-		parameter++;
-		parameter[0] ='\0';
-		parameter++;
-
-	} else {
-		parameter[0] ='\0';
-		parameter++;
-		parameter[0] ='\0';
-		parameter++;
-		parameter[0] ='\0';
-		parameter++;
-
-		base64_decode_inplace(parameter);
-	}
-
-	if (strequal(request, "LANMAN-Challenge")) {
-		challenge = strhex_to_data_blob(parameter);
-		if (challenge.length != 8) {
-			x_fprintf(x_stdout, "Error: hex decode of %s failed! (got %d bytes, expected 8)\n.\n", 
-				  parameter,
-				  (int)challenge.length);
-			challenge = data_blob(NULL, 0);
-		}
-	} else if (strequal(request, "NT-Response")) {
-		nt_response = strhex_to_data_blob(parameter);
-		if (nt_response.length < 24) {
-			x_fprintf(x_stdout, "Error: hex decode of %s failed! (only got %d bytes, needed at least 24)\n.\n", 
-				  parameter,
-				  (int)nt_response.length);
-			nt_response = data_blob(NULL, 0);
-		}
-	} else if (strequal(request, "LANMAN-Response")) {
-		lm_response = strhex_to_data_blob(parameter);
-		if (lm_response.length != 24) {
-			x_fprintf(x_stdout, "Error: hex decode of %s failed! (got %d bytes, expected 24)\n.\n", 
-				  parameter,
-				  (int)lm_response.length);
-			lm_response = data_blob(NULL, 0);
-		}
-	} else if (strequal(request, "Password")) {
-		plaintext_password = smb_xstrdup(parameter);
-	} else if (strequal(request, "NT-Domain")) {
-		domain = smb_xstrdup(parameter);
-	} else if (strequal(request, "Username")) {
-		username = smb_xstrdup(parameter);
-	} else if (strequal(request, "Full-Username")) {
-		full_username = smb_xstrdup(parameter);
-	} else if (strequal(request, "Request-User-Session-Key")) {
-		ntlm_server_1_user_session_key = strequal(parameter, "Yes");
-	} else if (strequal(request, "Request-LanMan-Session-Key")) {
-		ntlm_server_1_lm_session_key = strequal(parameter, "Yes");
-	} else {
-		x_fprintf(x_stdout, "Error: Unknown request %s\n.\n", request);
-	}
-}
-
 static void manage_squid_request(enum stdio_helper_mode helper_mode, stdio_helper_function fn) 
 {
 	char buf[SQUID_BUFFER_SIZE+1];
@@ -1582,13 +1316,9 @@ static void manage_squid_request(enum stdio_helper_mode helper_mode, stdio_helpe
 
 	/* this is not a typo - x_fgets doesn't work too well under squid */
 	if (fgets(buf, sizeof(buf)-1, stdin) == NULL) {
-		if (ferror(stdin)) {
-			DEBUG(1, ("fgets() failed! dying..... errno=%d (%s)\n", ferror(stdin),
-				  strerror(ferror(stdin))));
-			
-			exit(1);    /* BIIG buffer */
-		}
-		exit(0);
+		DEBUG(1, ("fgets() failed! dying..... errno=%d (%s)\n", ferror(stdin),
+			  strerror(ferror(stdin))));
+		exit(1);    /* BIIG buffer */
 	}
     
 	c=memchr(buf,'\n',sizeof(buf)-1);
@@ -1635,9 +1365,9 @@ static BOOL check_auth_crap(void)
 	NTSTATUS nt_status;
 	uint32 flags = 0;
 	char lm_key[8];
-	char user_session_key[16];
+	char nt_key[16];
 	char *hex_lm_key;
-	char *hex_user_session_key;
+	char *hex_nt_key;
 	char *error_string;
 	static uint8 zeros[16];
 
@@ -1646,10 +1376,8 @@ static BOOL check_auth_crap(void)
 	if (request_lm_key) 
 		flags |= WBFLAG_PAM_LMKEY;
 
-	if (request_user_session_key) 
-		flags |= WBFLAG_PAM_USER_SESSION_KEY;
-
-	flags |= WBFLAG_PAM_NT_STATUS_SQUASH;
+	if (request_nt_key) 
+		flags |= WBFLAG_PAM_NTKEY;
 
 	nt_status = contact_winbind_auth_crap(opt_username, opt_domain, 
 					      opt_workstation,
@@ -1658,7 +1386,7 @@ static BOOL check_auth_crap(void)
 					      &opt_nt_response, 
 					      flags,
 					      (unsigned char *)lm_key, 
-					      (unsigned char *)user_session_key, 
+					      (unsigned char *)nt_key, 
 					      &error_string, NULL);
 
 	if (!NT_STATUS_IS_OK(nt_status)) {
@@ -1678,17 +1406,591 @@ static BOOL check_auth_crap(void)
 		x_fprintf(x_stdout, "LM_KEY: %s\n", hex_lm_key);
 		SAFE_FREE(hex_lm_key);
 	}
-	if (request_user_session_key 
-	    && (memcmp(zeros, user_session_key, 
-		       sizeof(user_session_key)) != 0)) {
-		hex_encode((const unsigned char *)user_session_key, 
-			   sizeof(user_session_key), 
-			   &hex_user_session_key);
-		x_fprintf(x_stdout, "NT_KEY: %s\n", hex_user_session_key);
-		SAFE_FREE(hex_user_session_key);
+	if (request_nt_key 
+	    && (memcmp(zeros, nt_key, 
+		       sizeof(nt_key)) != 0)) {
+		hex_encode((const unsigned char *)nt_key, 
+			   sizeof(nt_key), 
+			   &hex_nt_key);
+		x_fprintf(x_stdout, "NT_KEY: %s\n", hex_nt_key);
+		SAFE_FREE(hex_nt_key);
 	}
 
         return True;
+}
+
+/* 
+   Authenticate a user with a challenge/response, checking session key
+   and valid authentication types
+*/
+
+static DATA_BLOB get_challenge(void) 
+{
+	static DATA_BLOB chal;
+	if (opt_challenge.length)
+		return opt_challenge;
+	
+	chal = data_blob(NULL, 8);
+
+	generate_random_buffer(chal.data, chal.length, False);
+	return chal;
+}
+
+/* 
+ * Test the normal 'LM and NTLM' combination
+ */
+
+static BOOL test_lm_ntlm_broken(enum ntlm_break break_which) 
+{
+	BOOL pass = True;
+	NTSTATUS nt_status;
+	uint32 flags = 0;
+	DATA_BLOB lm_response = data_blob(NULL, 24);
+	DATA_BLOB nt_response = data_blob(NULL, 24);
+	DATA_BLOB session_key = data_blob(NULL, 16);
+
+	uchar lm_key[8];
+	uchar nt_key[16];
+	uchar lm_hash[16];
+	uchar nt_hash[16];
+	DATA_BLOB chall = get_challenge();
+	char *error_string;
+	
+	ZERO_STRUCT(lm_key);
+	ZERO_STRUCT(nt_key);
+
+	flags |= WBFLAG_PAM_LMKEY;
+	flags |= WBFLAG_PAM_NTKEY;
+
+	SMBencrypt(opt_password,chall.data,lm_response.data);
+	E_deshash(opt_password, lm_hash); 
+
+	SMBNTencrypt(opt_password,chall.data,nt_response.data);
+
+	E_md4hash(opt_password, nt_hash);
+	SMBsesskeygen_ntv1(nt_hash, NULL, session_key.data);
+
+	switch (break_which) {
+	case BREAK_NONE:
+		break;
+	case BREAK_LM:
+		lm_response.data[0]++;
+		break;
+	case BREAK_NT:
+		nt_response.data[0]++;
+		break;
+	case NO_LM:
+		data_blob_free(&lm_response);
+		break;
+	case NO_NT:
+		data_blob_free(&nt_response);
+		break;
+	}
+
+	nt_status = contact_winbind_auth_crap(opt_username, opt_domain, 
+					      opt_workstation,
+					      &chall,
+					      &lm_response,
+					      &nt_response,
+					      flags,
+					      lm_key, 
+					      nt_key,
+					      &error_string, NULL);
+	
+	data_blob_free(&lm_response);
+
+	if (!NT_STATUS_IS_OK(nt_status)) {
+		d_printf("%s (0x%x)\n", 
+			 error_string,
+			 NT_STATUS_V(nt_status));
+		SAFE_FREE(error_string);
+		return break_which == BREAK_NT;
+	}
+
+	if (memcmp(lm_hash, lm_key, 
+		   sizeof(lm_key)) != 0) {
+		DEBUG(1, ("LM Key does not match expectations!\n"));
+ 		DEBUG(1, ("lm_key:\n"));
+		dump_data(1, (const char *)lm_key, 8);
+		DEBUG(1, ("expected:\n"));
+		dump_data(1, (const char *)lm_hash, 8);
+		pass = False;
+	}
+
+	if (break_which == NO_NT) {
+		if (memcmp(lm_hash, nt_key, 
+			   8) != 0) {
+			DEBUG(1, ("NT Session Key does not match expectations (should be LM hash)!\n"));
+			DEBUG(1, ("nt_key:\n"));
+			dump_data(1, (const char *)nt_key, sizeof(nt_key));
+			DEBUG(1, ("expected:\n"));
+			dump_data(1, (const char *)lm_hash, sizeof(lm_hash));
+			pass = False;
+		}
+	} else {		
+		if (memcmp(session_key.data, nt_key, 
+			   sizeof(nt_key)) != 0) {
+			DEBUG(1, ("NT Session Key does not match expectations!\n"));
+			DEBUG(1, ("nt_key:\n"));
+			dump_data(1, (const char *)nt_key, 16);
+			DEBUG(1, ("expected:\n"));
+			dump_data(1, (const char *)session_key.data, session_key.length);
+			pass = False;
+		}
+	}
+        return pass;
+}
+
+/* 
+ * Test LM authentication, no NT response supplied
+ */
+
+static BOOL test_lm(void) 
+{
+
+	return test_lm_ntlm_broken(NO_NT);
+}
+
+/* 
+ * Test the NTLM response only, no LM.
+ */
+
+static BOOL test_ntlm(void) 
+{
+	return test_lm_ntlm_broken(NO_LM);
+}
+
+/* 
+ * Test the NTLM response only, but in the LM field.
+ */
+
+static BOOL test_ntlm_in_lm(void) 
+{
+	BOOL pass = True;
+	NTSTATUS nt_status;
+	uint32 flags = 0;
+	DATA_BLOB nt_response = data_blob(NULL, 24);
+
+	uchar lm_key[8];
+	uchar lm_hash[16];
+	uchar nt_key[16];
+	DATA_BLOB chall = get_challenge();
+	char *error_string;
+	
+	ZERO_STRUCT(nt_key);
+
+	flags |= WBFLAG_PAM_LMKEY;
+	flags |= WBFLAG_PAM_NTKEY;
+
+	SMBNTencrypt(opt_password,chall.data,nt_response.data);
+
+	E_deshash(opt_password, lm_hash); 
+
+	nt_status = contact_winbind_auth_crap(opt_username, opt_domain, 
+					      opt_workstation,
+					      &chall,
+					      &nt_response,
+					      NULL,
+					      flags,
+					      lm_key,
+					      nt_key,
+					      &error_string, NULL);
+	
+	data_blob_free(&nt_response);
+
+	if (!NT_STATUS_IS_OK(nt_status)) {
+		d_printf("%s (0x%x)\n", 
+			 error_string,
+			 NT_STATUS_V(nt_status));
+		SAFE_FREE(error_string);
+		return False;
+	}
+
+	if (memcmp(lm_hash, lm_key, 
+		   sizeof(lm_key)) != 0) {
+		DEBUG(1, ("LM Key does not match expectations!\n"));
+ 		DEBUG(1, ("lm_key:\n"));
+		dump_data(1, (const char *)lm_key, 8);
+		DEBUG(1, ("expected:\n"));
+		dump_data(1, (const char *)lm_hash, 8);
+		pass = False;
+	}
+	if (memcmp(lm_hash, nt_key, 8) != 0) {
+		DEBUG(1, ("Session Key (first 8 lm hash) does not match expectations!\n"));
+ 		DEBUG(1, ("nt_key:\n"));
+		dump_data(1, (const char *)nt_key, 16);
+ 		DEBUG(1, ("expected:\n"));
+		dump_data(1, (const char *)lm_hash, 8);
+		pass = False;
+	}
+        return pass;
+}
+
+/* 
+ * Test the NTLM response only, but in the both the NT and LM fields.
+ */
+
+static BOOL test_ntlm_in_both(void) 
+{
+	BOOL pass = True;
+	NTSTATUS nt_status;
+	uint32 flags = 0;
+	DATA_BLOB nt_response = data_blob(NULL, 24);
+	DATA_BLOB session_key = data_blob(NULL, 16);
+
+	char lm_key[8];
+	char lm_hash[16];
+	char nt_key[16];
+	char nt_hash[16];
+	DATA_BLOB chall = get_challenge();
+	char *error_string;
+	
+	ZERO_STRUCT(lm_key);
+	ZERO_STRUCT(nt_key);
+
+	flags |= WBFLAG_PAM_LMKEY;
+	flags |= WBFLAG_PAM_NTKEY;
+
+	SMBNTencrypt(opt_password,chall.data,nt_response.data);
+	E_md4hash(opt_password, (unsigned char *)nt_hash);
+	SMBsesskeygen_ntv1((const unsigned char *)nt_hash, NULL, session_key.data);
+
+	E_deshash(opt_password, (unsigned char *)lm_hash); 
+
+	nt_status = contact_winbind_auth_crap(opt_username, opt_domain, 
+					      opt_workstation,
+					      &chall,
+					      &nt_response,
+					      &nt_response,
+					      flags,
+					      (unsigned char *)lm_key,
+					      (unsigned char *)nt_key,
+					      &error_string, NULL);
+	
+	data_blob_free(&nt_response);
+
+	if (!NT_STATUS_IS_OK(nt_status)) {
+		d_printf("%s (0x%x)\n", 
+			 error_string,
+			 NT_STATUS_V(nt_status));
+		SAFE_FREE(error_string);
+		return False;
+	}
+
+	if (memcmp(lm_hash, lm_key, 
+		   sizeof(lm_key)) != 0) {
+		DEBUG(1, ("LM Key does not match expectations!\n"));
+ 		DEBUG(1, ("lm_key:\n"));
+		dump_data(1, lm_key, 8);
+		DEBUG(1, ("expected:\n"));
+		dump_data(1, lm_hash, 8);
+		pass = False;
+	}
+	if (memcmp(session_key.data, nt_key, 
+		   sizeof(nt_key)) != 0) {
+		DEBUG(1, ("NT Session Key does not match expectations!\n"));
+ 		DEBUG(1, ("nt_key:\n"));
+		dump_data(1, nt_key, 16);
+ 		DEBUG(1, ("expected:\n"));
+		dump_data(1, (const char *)session_key.data, session_key.length);
+		pass = False;
+	}
+
+
+        return pass;
+}
+
+/* 
+ * Test the NTLMv2 and LMv2 responses
+ */
+
+static BOOL test_lmv2_ntlmv2_broken(enum ntlm_break break_which) 
+{
+	BOOL pass = True;
+	NTSTATUS nt_status;
+	uint32 flags = 0;
+	DATA_BLOB ntlmv2_response = data_blob(NULL, 0);
+	DATA_BLOB lmv2_response = data_blob(NULL, 0);
+	DATA_BLOB nt_session_key = data_blob(NULL, 0);
+	DATA_BLOB names_blob = NTLMv2_generate_names_blob(get_winbind_netbios_name(), get_winbind_domain());
+
+	uchar nt_key[16];
+	DATA_BLOB chall = get_challenge();
+	char *error_string;
+
+	ZERO_STRUCT(nt_key);
+	
+	flags |= WBFLAG_PAM_NTKEY;
+
+	if (!SMBNTLMv2encrypt(opt_username, opt_domain, opt_password, &chall,
+			      &names_blob,
+			      &lmv2_response, &ntlmv2_response, 
+			      &nt_session_key)) {
+		data_blob_free(&names_blob);
+		return False;
+	}
+	data_blob_free(&names_blob);
+
+	switch (break_which) {
+	case BREAK_NONE:
+		break;
+	case BREAK_LM:
+		lmv2_response.data[0]++;
+		break;
+	case BREAK_NT:
+		ntlmv2_response.data[0]++;
+		break;
+	case NO_LM:
+		data_blob_free(&lmv2_response);
+		break;
+	case NO_NT:
+		data_blob_free(&ntlmv2_response);
+		break;
+	}
+
+	nt_status = contact_winbind_auth_crap(opt_username, opt_domain, 
+					      opt_workstation,
+					      &chall,
+					      &lmv2_response,
+					      &ntlmv2_response,
+					      flags,
+					      NULL, 
+					      nt_key,
+					      &error_string, NULL);
+	
+	data_blob_free(&lmv2_response);
+	data_blob_free(&ntlmv2_response);
+
+	if (!NT_STATUS_IS_OK(nt_status)) {
+		d_printf("%s (0x%x)\n", 
+			 error_string,
+			 NT_STATUS_V(nt_status));
+		SAFE_FREE(error_string);
+		return break_which == BREAK_NT;
+	}
+
+	if (break_which != NO_NT && break_which != BREAK_NT && memcmp(nt_session_key.data, nt_key, 
+		   sizeof(nt_key)) != 0) {
+		DEBUG(1, ("NT Session Key does not match expectations!\n"));
+ 		DEBUG(1, ("nt_key:\n"));
+		dump_data(1, (const char *)nt_key, 16);
+ 		DEBUG(1, ("expected:\n"));
+		dump_data(1, (const char *)nt_session_key.data, nt_session_key.length);
+		pass = False;
+	}
+        return pass;
+}
+
+/* 
+ * Test the NTLMv2 and LMv2 responses
+ */
+
+static BOOL test_lmv2_ntlmv2(void) 
+{
+	return test_lmv2_ntlmv2_broken(BREAK_NONE);
+}
+
+/* 
+ * Test the LMv2 response only
+ */
+
+static BOOL test_lmv2(void) 
+{
+	return test_lmv2_ntlmv2_broken(NO_NT);
+}
+
+/* 
+ * Test the NTLMv2 response only
+ */
+
+static BOOL test_ntlmv2(void) 
+{
+	return test_lmv2_ntlmv2_broken(NO_LM);
+}
+
+static BOOL test_lm_ntlm(void) 
+{
+	return test_lm_ntlm_broken(BREAK_NONE);
+}
+
+static BOOL test_ntlm_lm_broken(void) 
+{
+	return test_lm_ntlm_broken(BREAK_LM);
+}
+
+static BOOL test_ntlm_ntlm_broken(void) 
+{
+	return test_lm_ntlm_broken(BREAK_NT);
+}
+
+static BOOL test_ntlmv2_lmv2_broken(void) 
+{
+	return test_lmv2_ntlmv2_broken(BREAK_LM);
+}
+
+static BOOL test_ntlmv2_ntlmv2_broken(void) 
+{
+	return test_lmv2_ntlmv2_broken(BREAK_NT);
+}
+
+static BOOL test_plaintext(enum ntlm_break break_which)
+{
+	NTSTATUS nt_status;
+	uint32 flags = 0;
+	DATA_BLOB nt_response = data_blob(NULL, 0);
+	DATA_BLOB lm_response = data_blob(NULL, 0);
+	char *password;
+
+	uchar nt_key[16];
+	uchar lm_key[16];
+	static const uchar zeros[8];
+	DATA_BLOB chall = data_blob(zeros, sizeof(zeros));
+	char *error_string;
+
+	ZERO_STRUCT(nt_key);
+	
+	flags |= WBFLAG_PAM_NTKEY;
+	flags |= WBFLAG_PAM_LMKEY;
+
+	if ((push_ucs2_allocate((smb_ucs2_t **)&nt_response.data, opt_password)) == -1) {
+		DEBUG(0, ("push_ucs2_allocate failed!\n"));
+		exit(1);
+	}
+
+	nt_response.length = strlen_w(((void *)nt_response.data))*sizeof(smb_ucs2_t);
+
+	password = strdup_upper(opt_password);
+
+	if ((convert_string_allocate(NULL, CH_UNIX, 
+				     CH_DOS, password,
+				     strlen(password)+1, 
+				     (void**)&lm_response.data)) == -1) {
+		DEBUG(0, ("push_ascii_allocate failed!\n"));
+		exit(1);
+	}
+
+	SAFE_FREE(password);
+
+	lm_response.length = strlen(lm_response.data);
+
+	switch (break_which) {
+	case BREAK_NONE:
+		break;
+	case BREAK_LM:
+		lm_response.data[0]++;
+		break;
+	case BREAK_NT:
+		nt_response.data[0]++;
+		break;
+	case NO_LM:
+		SAFE_FREE(lm_response.data);
+		lm_response.length = 0;
+		break;
+	case NO_NT:
+		SAFE_FREE(nt_response.data);
+		nt_response.length = 0;
+		break;
+	}
+
+	nt_status = contact_winbind_auth_crap(opt_username, opt_domain, 
+					      opt_workstation,
+					      &chall,
+					      &lm_response,
+					      &nt_response,
+					      flags,
+					      lm_key,
+					      nt_key,
+					      &error_string, NULL);
+	
+	SAFE_FREE(nt_response.data);
+	SAFE_FREE(lm_response.data);
+	data_blob_free(&chall);
+
+	if (!NT_STATUS_IS_OK(nt_status)) {
+		d_printf("%s (0x%x)\n", 
+			 error_string,
+			 NT_STATUS_V(nt_status));
+		SAFE_FREE(error_string);
+		return break_which == BREAK_NT;
+	}
+
+        return break_which != BREAK_NT;
+}
+
+static BOOL test_plaintext_none_broken(void) {
+	return test_plaintext(BREAK_NONE);
+}
+
+static BOOL test_plaintext_lm_broken(void) {
+	return test_plaintext(BREAK_LM);
+}
+
+static BOOL test_plaintext_nt_broken(void) {
+	return test_plaintext(BREAK_NT);
+}
+
+static BOOL test_plaintext_nt_only(void) {
+	return test_plaintext(NO_LM);
+}
+
+static BOOL test_plaintext_lm_only(void) {
+	return test_plaintext(NO_NT);
+}
+
+/* 
+   Tests:
+   
+   - LM only
+   - NT and LM		   
+   - NT
+   - NT in LM field
+   - NT in both fields
+   - NTLMv2
+   - NTLMv2 and LMv2
+   - LMv2
+   - plaintext tests (in challenge-response feilds)
+  
+   check we get the correct session key in each case
+   check what values we get for the LM session key
+   
+*/
+
+struct ntlm_tests {
+	BOOL (*fn)(void);
+	const char *name;
+} test_table[] = {
+	{test_lm, "LM"},
+	{test_lm_ntlm, "LM and NTLM"},
+	{test_ntlm, "NTLM"},
+	{test_ntlm_in_lm, "NTLM in LM"},
+	{test_ntlm_in_both, "NTLM in both"},
+	{test_ntlmv2, "NTLMv2"},
+	{test_lmv2_ntlmv2, "NTLMv2 and LMv2"},
+	{test_lmv2, "LMv2"},
+	{test_ntlmv2_lmv2_broken, "NTLMv2 and LMv2, LMv2 broken"},
+	{test_ntlmv2_ntlmv2_broken, "NTLMv2 and LMv2, NTLMv2 broken"},
+	{test_ntlm_lm_broken, "NTLM and LM, LM broken"},
+	{test_ntlm_ntlm_broken, "NTLM and LM, NTLM broken"},
+	{test_plaintext_none_broken, "Plaintext"},
+	{test_plaintext_lm_broken, "Plaintext LM broken"},
+	{test_plaintext_nt_broken, "Plaintext NT broken"},
+	{test_plaintext_nt_only, "Plaintext NT only"},
+	{test_plaintext_lm_only, "Plaintext LM only"}
+};
+
+static BOOL diagnose_ntlm_auth(void)
+{
+	unsigned int i;
+	BOOL pass = True;
+
+	for (i=0; test_table[i].fn; i++) {
+		if (!test_table[i].fn()) {
+			DEBUG(1, ("Test %s failed!\n", test_table[i].name));
+			pass = False;
+		}
+	}
+
+        return pass;
 }
 
 /* Main program */
@@ -1703,9 +2005,8 @@ enum {
 	OPT_NT,
 	OPT_PASSWORD,
 	OPT_LM_KEY,
-	OPT_USER_SESSION_KEY,
-	OPT_DIAGNOSTICS,
-	OPT_REQUIRE_MEMBERSHIP
+	OPT_NT_KEY,
+	OPT_DIAGNOSTICS
 };
 
  int main(int argc, const char **argv)
@@ -1717,6 +2018,12 @@ enum {
 	static const char *hex_challenge;
 	static const char *hex_lm_response;
 	static const char *hex_nt_response;
+	char *challenge;
+	char *lm_response;
+	char *nt_response;
+	size_t challenge_len;
+	size_t lm_response_len;
+	size_t nt_response_len;
 
 	poptContext pc;
 
@@ -1739,9 +2046,8 @@ enum {
 		{ "nt-response", 0, POPT_ARG_STRING, &hex_nt_response, OPT_NT, "NT or NTLMv2 Response to the challenge (HEX encoded)"},
 		{ "password", 0, POPT_ARG_STRING, &opt_password, OPT_PASSWORD, "User's plaintext password"},		
 		{ "request-lm-key", 0, POPT_ARG_NONE, &request_lm_key, OPT_LM_KEY, "Retreive LM session key"},
-		{ "request-nt-key", 0, POPT_ARG_NONE, &request_user_session_key, OPT_USER_SESSION_KEY, "Retreive User (NT) session key"},
+		{ "request-nt-key", 0, POPT_ARG_NONE, &request_nt_key, OPT_NT_KEY, "Retreive NT session key"},
 		{ "diagnostics", 0, POPT_ARG_NONE, &diagnostics, OPT_DIAGNOSTICS, "Perform diagnostics on the authentictaion chain"},
-		{ "require-membership-of", 0, POPT_ARG_STRING, &require_membership_of, OPT_REQUIRE_MEMBERSHIP, "Require that a user be a member of this group (either name or SID) for authentication to succeed" },
 		POPT_COMMON_SAMBA
 		POPT_TABLEEND
 	};
@@ -1753,7 +2059,7 @@ enum {
 	/* Samba client initialisation */
 
 	if (!lp_load(dyn_CONFIGFILE, True, False, False)) {
-		d_fprintf(stderr, "ntlm_auth: error opening config file %s. Error was %s\n",
+		d_fprintf(stderr, "wbinfo: error opening config file %s. Error was %s\n",
 			dyn_CONFIGFILE, strerror(errno));
 		exit(1);
 	}
@@ -1775,38 +2081,40 @@ enum {
 	while((opt = poptGetNextOpt(pc)) != -1) {
 		switch (opt) {
 		case OPT_CHALLENGE:
-			opt_challenge = strhex_to_data_blob(hex_challenge);
-			if (opt_challenge.length != 8) {
-				x_fprintf(x_stderr, "hex decode of %s failed! (only got %d bytes)\n", 
-					  hex_challenge,
-					  (int)opt_challenge.length);
+			challenge = smb_xmalloc((strlen(hex_challenge))/2+1);
+			if ((challenge_len = strhex_to_str(challenge, 
+							   strlen(hex_challenge), 
+							   hex_challenge)) != 8) {
+				x_fprintf(x_stderr, "hex decode of %s failed (only got %lu bytes)!\n", 
+					hex_challenge, (unsigned long)challenge_len);
 				exit(1);
 			}
+			opt_challenge = data_blob(challenge, challenge_len);
+			SAFE_FREE(challenge);
 			break;
 		case OPT_LM: 
-			opt_lm_response = strhex_to_data_blob(hex_lm_response);
-			if (opt_lm_response.length != 24) {
-				x_fprintf(x_stderr, "hex decode of %s failed! (only got %d bytes)\n", 
-					  hex_lm_response,
-					  (int)opt_lm_response.length);
+			lm_response = smb_xmalloc((strlen(hex_lm_response))/2+1);
+			lm_response_len = strhex_to_str(lm_response, 	
+							strlen(hex_lm_response), 
+							hex_lm_response);
+			if (lm_response_len != 24) {
+				x_fprintf(x_stderr, "hex decode of %s failed!\n", hex_lm_response);
 				exit(1);
 			}
+			opt_lm_response = data_blob(lm_response, lm_response_len);
+			SAFE_FREE(lm_response);
 			break;
-
 		case OPT_NT: 
-			opt_nt_response = strhex_to_data_blob(hex_nt_response);
-			if (opt_nt_response.length < 24) {
-				x_fprintf(x_stderr, "hex decode of %s failed! (only got %d bytes)\n", 
-					  hex_nt_response,
-					  (int)opt_nt_response.length);
+			nt_response = smb_xmalloc((strlen(hex_nt_response)+2)/2+1);
+			nt_response_len = strhex_to_str(nt_response, 
+							strlen(hex_nt_response), 
+							hex_nt_response);
+			if (nt_response_len < 24) {
+				x_fprintf(x_stderr, "hex decode of %s failed!\n", hex_nt_response);
 				exit(1);
 			}
-			break;
-
-                case OPT_REQUIRE_MEMBERSHIP:
-			if (StrnCaseCmp("S-", require_membership_of, 2) == 0) {
-				require_membership_of_sid = require_membership_of;
-			}
+			opt_nt_response = data_blob(nt_response, nt_response_len);
+			SAFE_FREE(nt_response);
 			break;
 		}
 	}
@@ -1855,14 +2163,14 @@ enum {
 
 	if (diagnostics) {
 		if (!diagnose_ntlm_auth()) {
-			return 1;
+			exit(1);
 		}
 	} else {
 		fstring user;
 
 		fstr_sprintf(user, "%s%c%s", opt_domain, winbind_separator(), opt_username);
 		if (!check_plaintext_auth(user, opt_password, True)) {
-			return 1;
+			exit(1);
 		}
 	}
 

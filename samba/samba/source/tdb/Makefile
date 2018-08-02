@@ -5,13 +5,10 @@
 CFLAGS = -DSTANDALONE -DTDB_DEBUG -g -DHAVE_MMAP=1
 CC = gcc
 
-ADMINPROGS = tdbdump tdbbackup
 PROGS = tdbtest tdbtool tdbtorture
-TDB_OBJ = tdb.o spinlock.o tdbback.o
+TDB_OBJ = tdb.o spinlock.o
 
 default: $(PROGS)
-
-admintools: $(ADMINPROGS)
 
 tdbtest: tdbtest.o $(TDB_OBJ)
 	$(CC) $(CFLAGS) -o tdbtest tdbtest.o $(TDB_OBJ) -lgdbm

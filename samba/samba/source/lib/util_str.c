@@ -62,7 +62,7 @@ BOOL next_token(const char **ptr,char *buff, const char *sep, size_t bufsize)
 	/* copy over the token */
 	pbuf = buff;
 	for (quoted = False; len < bufsize && *s && (quoted || !strchr_m(sep,*s)); s++) {
-		if ( *s == '\"' ) {
+		if (*s == '\"' || *s == '\'') {
 			quoted = !quoted;
 		} else {
 			len++;
@@ -134,20 +134,17 @@ char **toktocliplist(int *ctok, const char *sep)
 	*ctok=ictok;
 	s=(char *)last_ptr;
 	
-	if (!(ret=iret=SMB_MALLOC_ARRAY(char *,ictok+1)))
+	if (!(ret=iret=malloc(ictok*sizeof(char *))))
 		return NULL;
 	
 	while(ictok--) {    
 		*iret++=s;
-		if (ictok > 0) {
-			while(*s++)
-				;
-			while(!*s)
-				s++;
-		}
+		while(*s++)
+			;
+		while(!*s)
+			s++;
 	}
 
-	ret[*ctok] = NULL;
 	return ret;
 }
 
@@ -337,8 +334,9 @@ char *strupper_static(const char *s)
  Convert a string to "normal" form.
 **/
 
-void strnorm(char *s, int case_default)
+void strnorm(char *s)
 {
+	extern int case_default;
 	if (case_default == CASE_UPPER)
 		strupper_m(s);
 	else
@@ -349,8 +347,9 @@ void strnorm(char *s, int case_default)
  Check if a string is in "normal" case.
 **/
 
-BOOL strisnormal(const char *s, int case_default)
+BOOL strisnormal(const char *s)
 {
+	extern int case_default;
 	if (case_default == CASE_UPPER)
 		return(!strhaslower(s));
 	
@@ -558,17 +557,10 @@ size_t count_chars(const char *s,char c)
 {
 	smb_ucs2_t *ptr;
 	int count;
-	smb_ucs2_t *alloc_tmpbuf = NULL;
-
-	if (push_ucs2_allocate(&alloc_tmpbuf, s) == (size_t)-1) {
-		return 0;
-	}
-
-	for(count=0,ptr=alloc_tmpbuf;*ptr;ptr++)
+	push_ucs2(NULL, tmpbuf,s, sizeof(tmpbuf), STR_TERMINATE);
+	for(count=0,ptr=tmpbuf;*ptr;ptr++)
 		if(*ptr==UCS2_CHAR(c))
 			count++;
-
-	SAFE_FREE(alloc_tmpbuf);
 	return(count);
 }
 
@@ -795,17 +787,6 @@ size_t strhex_to_str(char *p, size_t len, const char *strhex)
 	return num_chars;
 }
 
-DATA_BLOB strhex_to_data_blob(const char *strhex) 
-{
-	DATA_BLOB ret_blob = data_blob(NULL, strlen(strhex)/2+1);
-
-	ret_blob.length = strhex_to_str(ret_blob.data, 	
-					strlen(strhex), 
-					strhex);
-
-	return ret_blob;
-}
-
 /**
  * Routine to print a buffer as HEX digits, into an allocated string.
  */
@@ -815,7 +796,7 @@ void hex_encode(const unsigned char *buff_in, size_t len, char **out_hex_buffer)
 	int i;
 	char *hex_buffer;
 
-	*out_hex_buffer = SMB_XMALLOC_ARRAY(char, (len*2)+1);
+	*out_hex_buffer = smb_xmalloc((len*2)+1);
 	hex_buffer = *out_hex_buffer;
 
 	for (i = 0; i < len; i++)
@@ -863,7 +844,7 @@ static BOOL string_init(char **dest,const char *src)
 
 	if (l == 0) {
 		if (!null_string) {
-			if((null_string = (char *)SMB_MALLOC(1)) == NULL) {
+			if((null_string = (char *)malloc(1)) == NULL) {
 				DEBUG(0,("string_init: malloc fail for null_string.\n"));
 				return False;
 			}
@@ -871,7 +852,7 @@ static BOOL string_init(char **dest,const char *src)
 		}
 		*dest = null_string;
 	} else {
-		(*dest) = SMB_STRDUP(src);
+		(*dest) = strdup(src);
 		if ((*dest) == NULL) {
 			DEBUG(0,("Out of memory in string_init\n"));
 			return False;
@@ -931,7 +912,7 @@ void string_sub(char *s,const char *pattern, const char *insert, size_t len)
 	if (len == 0)
 		len = ls + 1; /* len is number of *bytes* */
 
-	while (lp <= ls && (p = strstr_m(s,pattern))) {
+	while (lp <= ls && (p = strstr(s,pattern))) {
 		if (ls + (li-lp) >= len) {
 			DEBUG(0,("ERROR: string overflow by %d in string_sub(%.50s, %d)\n", 
 				 (int)(ls + (li-lp) - len),
@@ -990,7 +971,7 @@ char *realloc_string_sub(char *string, const char *pattern, const char *insert)
 
 	s = string;
 
-	in = SMB_STRDUP(insert);
+	in = strdup(insert);
 	if (!in) {
 		DEBUG(0, ("realloc_string_sub: out of memory!\n"));
 		return NULL;
@@ -1016,10 +997,10 @@ char *realloc_string_sub(char *string, const char *pattern, const char *insert)
 		}
 	}
 	
-	while ((p = strstr_m(s,pattern))) {
+	while ((p = strstr(s,pattern))) {
 		if (ld > 0) {
 			int offset = PTR_DIFF(s,string);
-			char *t = SMB_REALLOC(string, ls + ld + 1);
+			char *t = Realloc(string, ls + ld + 1);
 			if (!t) {
 				DEBUG(0, ("realloc_string_sub: out of memory!\n"));
 				SAFE_FREE(in);
@@ -1064,7 +1045,7 @@ void all_string_sub(char *s,const char *pattern,const char *insert, size_t len)
 	if (len == 0)
 		len = ls + 1; /* len is number of *bytes* */
 	
-	while (lp <= ls && (p = strstr_m(s,pattern))) {
+	while (lp <= ls && (p = strstr(s,pattern))) {
 		if (ls + (li-lp) >= len) {
 			DEBUG(0,("ERROR: string overflow by %d in all_string_sub(%.50s, %d)\n", 
 				 (int)(ls + (li-lp) - len),
@@ -1110,7 +1091,7 @@ static smb_ucs2_t *all_string_sub_w(const smb_ucs2_t *s, const smb_ucs2_t *patte
 		}
 	}
 
-	r = rp = SMB_MALLOC_ARRAY(smb_ucs2_t, lt + 1);
+	r = rp = (smb_ucs2_t *)malloc((lt + 1)*(sizeof(smb_ucs2_t)));
 	if (!r) {
 		DEBUG(0, ("all_string_sub_w: out of memory!\n"));
 		return NULL;
@@ -1208,12 +1189,6 @@ char *strchr_m(const char *src, char c)
 	smb_ucs2_t *p;
 	const char *s;
 
-	/* characters below 0x3F are guaranteed to not appear in
-	   non-initial position in multi-byte charsets */
-	if ((c & 0xC0) == 0) {
-		return strchr(src, c);
-	}
-
 	/* this is quite a common operation, so we want it to be
 	   fast. We optimise for the ascii case, knowing that all our
 	   supported multi-byte character sets are ascii-compatible
@@ -1243,12 +1218,6 @@ char *strchr_m(const char *src, char c)
 
 char *strrchr_m(const char *s, char c)
 {
-	/* characters below 0x3F are guaranteed to not appear in
-	   non-initial position in multi-byte charsets */
-	if ((c & 0xC0) == 0) {
-		return strrchr(s, c);
-	}
-
 	/* this is quite a common operation, so we want it to be
 	   fast. We optimise for the ascii case, knowing that all our
 	   supported multi-byte character sets are ascii-compatible
@@ -1318,87 +1287,6 @@ char *strnrchr_m(const char *s, char c, unsigned int n)
 	return (char *)(s+strlen(s2));
 }
 
-/***********************************************************************
- strstr_m - We convert via ucs2 for now.
-***********************************************************************/
-
-char *strstr_m(const char *src, const char *findstr)
-{
-	smb_ucs2_t *p;
-	smb_ucs2_t *src_w, *find_w;
-	const char *s;
-	char *s2;
-	char *retp;
-
-	size_t findstr_len = 0;
-
-	/* for correctness */
-	if (!findstr[0]) {
-		return src;
-	}
-
-	/* Samba does single character findstr calls a *lot*. */
-	if (findstr[1] == '\0')
-		return strchr_m(src, *findstr);
-
-	/* We optimise for the ascii case, knowing that all our
-	   supported multi-byte character sets are ascii-compatible
-	   (ie. they match for the first 128 chars) */
-
-	for (s = src; *s && !(((unsigned char)s[0]) & 0x80); s++) {
-		if (*s == *findstr) {
-			if (!findstr_len) 
-				findstr_len = strlen(findstr);
-
-			if (strncmp(s, findstr, findstr_len) == 0) {
-				return (char *)s;
-			}
-		}
-	}
-
-	if (!*s)
-		return NULL;
-
-#if 1 /* def BROKEN_UNICODE_COMPOSE_CHARACTERS */
-	/* 'make check' fails unless we do this */
-
-	/* With compose characters we must restart from the beginning. JRA. */
-	s = src;
-#endif
-
-	if (push_ucs2_allocate(&src_w, src) == (size_t)-1) {
-		DEBUG(0,("strstr_m: src malloc fail\n"));
-		return NULL;
-	}
-	
-	if (push_ucs2_allocate(&find_w, findstr) == (size_t)-1) {
-		SAFE_FREE(src_w);
-		DEBUG(0,("strstr_m: find malloc fail\n"));
-		return NULL;
-	}
-
-	p = strstr_w(src_w, find_w);
-
-	if (!p) {
-		SAFE_FREE(src_w);
-		SAFE_FREE(find_w);
-		return NULL;
-	}
-	
-	*p = 0;
-	if (pull_ucs2_allocate(&s2, src_w) == (size_t)-1) {
-		SAFE_FREE(src_w);
-		SAFE_FREE(find_w);
-		DEBUG(0,("strstr_m: dest malloc fail\n"));
-		return NULL;
-	}
-	retp = (char *)(s+strlen(s2));
-	SAFE_FREE(src_w);
-	SAFE_FREE(find_w);
-	SAFE_FREE(s2);
-	return retp;
-}
-
 /**
  Convert a string to lower case.
 **/
@@ -1406,7 +1294,6 @@ char *strstr_m(const char *src, const char *findstr)
 void strlower_m(char *s)
 {
 	size_t len;
-	int errno_save;
 
 	/* this is quite a common operation, so we want it to be
 	   fast. We optimise for the ascii case, knowing that all our
@@ -1424,13 +1311,11 @@ void strlower_m(char *s)
 	/* I assume that lowercased string takes the same number of bytes
 	 * as source string even in UTF-8 encoding. (VIV) */
 	len = strlen(s) + 1;
-	errno_save = errno;
 	errno = 0;
 	unix_strlower(s,len,s,len);	
 	/* Catch mb conversion errors that may not terminate. */
 	if (errno)
 		s[len-1] = '\0';
-	errno = errno_save;
 }
 
 /**
@@ -1440,7 +1325,6 @@ void strlower_m(char *s)
 void strupper_m(char *s)
 {
 	size_t len;
-	int errno_save;
 
 	/* this is quite a common operation, so we want it to be
 	   fast. We optimise for the ascii case, knowing that all our
@@ -1458,13 +1342,11 @@ void strupper_m(char *s)
 	/* I assume that lowercased string takes the same number of bytes
 	 * as source string even in multibyte encoding. (VIV) */
 	len = strlen(s) + 1;
-	errno_save = errno;
 	errno = 0;
 	unix_strupper(s,len,s,len);	
 	/* Catch mb conversion errors that may not terminate. */
 	if (errno)
 		s[len-1] = '\0';
-	errno = errno_save;
 }
 
 /**
@@ -1478,7 +1360,7 @@ char *binary_string(char *buf, int len)
 	char *s;
 	int i, j;
 	const char *hex = "0123456789ABCDEF";
-	s = SMB_MALLOC(len * 3 + 1);
+	s = malloc(len * 3 + 1);
 	if (!s)
 		return NULL;
 	for (j=i=0;i<len;i++) {
@@ -1523,7 +1405,7 @@ int fstr_sprintf(fstring s, const char *fmt, ...)
 }
 
 
-#if !defined(HAVE_STRNDUP) || defined(BROKEN_STRNDUP)
+#ifndef HAVE_STRNDUP
 /**
  Some platforms don't have strndup.
 **/
@@ -1533,7 +1415,7 @@ int fstr_sprintf(fstring s, const char *fmt, ...)
 	char *ret;
 	
 	n = strnlen(s, n);
-	ret = SMB_MALLOC(n+1);
+	ret = malloc(n+1);
 	if (!ret)
 		return NULL;
 	memcpy(ret, s, n);
@@ -1543,7 +1425,7 @@ int fstr_sprintf(fstring s, const char *fmt, ...)
 }
 #endif
 
-#if !defined(HAVE_STRNLEN) || defined(BROKEN_STRNLEN)
+#ifndef HAVE_STRNLEN
 /**
  Some platforms don't have strnlen
 **/
@@ -1573,7 +1455,7 @@ char **str_list_make(const char *string, const char *sep)
 	
 	if (!string || !*string)
 		return NULL;
-	s = SMB_STRDUP(string);
+	s = strdup(string);
 	if (!s) {
 		DEBUG(0,("str_list_make: Unable to allocate memory"));
 		return NULL;
@@ -1587,7 +1469,7 @@ char **str_list_make(const char *string, const char *sep)
 	while (next_token(&str, tok, sep, sizeof(tok))) {		
 		if (num == lsize) {
 			lsize += S_LIST_ABS;
-			rlist = SMB_REALLOC_ARRAY(list, char *, lsize +1);
+			rlist = (char **)Realloc(list, ((sizeof(char **)) * (lsize +1)));
 			if (!rlist) {
 				DEBUG(0,("str_list_make: Unable to allocate memory"));
 				str_list_free(&list);
@@ -1598,7 +1480,7 @@ char **str_list_make(const char *string, const char *sep)
 			memset (&list[num], 0, ((sizeof(char**)) * (S_LIST_ABS +1)));
 		}
 		
-		list[num] = SMB_STRDUP(tok);
+		list[num] = strdup(tok);
 		if (!list[num]) {
 			DEBUG(0,("str_list_make: Unable to allocate memory"));
 			str_list_free(&list);
@@ -1628,7 +1510,7 @@ BOOL str_list_copy(char ***dest, const char **src)
 	while (src[num]) {
 		if (num == lsize) {
 			lsize += S_LIST_ABS;
-			rlist = SMB_REALLOC_ARRAY(list, char *, lsize +1);
+			rlist = (char **)Realloc(list, ((sizeof(char **)) * (lsize +1)));
 			if (!rlist) {
 				DEBUG(0,("str_list_copy: Unable to re-allocate memory"));
 				str_list_free(&list);
@@ -1638,7 +1520,7 @@ BOOL str_list_copy(char ***dest, const char **src)
 			memset (&list[num], 0, ((sizeof(char **)) * (S_LIST_ABS +1)));
 		}
 		
-		list[num] = SMB_STRDUP(src[num]);
+		list[num] = strdup(src[num]);
 		if (!list[num]) {
 			DEBUG(0,("str_list_copy: Unable to allocate memory"));
 			str_list_free(&list);
@@ -1703,7 +1585,6 @@ BOOL str_list_sub_basic( char **list, const char *smb_name )
 			return False;
 		}
 
-		SAFE_FREE(*list);
 		*list = tmpstr;
 			
 		list++;
@@ -1736,11 +1617,11 @@ BOOL str_list_substitute(char **list, const char *pattern, const char *insert)
 		s = *list;
 		ls = (ssize_t)strlen(s);
 
-		while ((p = strstr_m(s, pattern))) {
+		while ((p = strstr(s, pattern))) {
 			t = *list;
 			d = p -t;
 			if (ld) {
-				t = (char *) SMB_MALLOC(ls +ld +1);
+				t = (char *) malloc(ls +ld +1);
 				if (!t) {
 					DEBUG(0,("str_list_substitute: Unable to allocate memory"));
 					return False;
@@ -1863,7 +1744,7 @@ int ipstr_list_parse(const char* ipstr_list, struct ip_service **ip_list)
 		return 0;
 	
 	count = count_chars(ipstr_list, IPSTR_LIST_CHAR) + 1;
-	if ( (*ip_list = SMB_MALLOC_ARRAY(struct ip_service, count)) == NULL ) {
+	if ( (*ip_list = (struct ip_service*)malloc(count * sizeof(struct ip_service))) == NULL ) {
 		DEBUG(0,("ipstr_list_parse: malloc failed for %lu entries\n", (unsigned long)count));
 		return 0;
 	}
@@ -1971,9 +1852,7 @@ DATA_BLOB base64_decode_data_blob(const char *s)
 		s++; i++;
 	}
 
-	if ((n > 0) && (*s == '=')) {
-		n -= 1;
-	}
+	if (*s == '=') n -= 1;
 
 	/* fix up length */
 	decoded.length = n;
@@ -1986,15 +1865,9 @@ DATA_BLOB base64_decode_data_blob(const char *s)
 void base64_decode_inplace(char *s)
 {
 	DATA_BLOB decoded = base64_decode_data_blob(s);
-
-	if ( decoded.length != 0 ) {
-		memcpy(s, decoded.data, decoded.length);
-
-		/* null terminate */
-		s[decoded.length] = '\0';
-	} else {
-		*s = '\0';
-	}
+	memcpy(s, decoded.data, decoded.length);
+	/* null terminate */
+	s[decoded.length] = '\0';
 
 	data_blob_free(&decoded);
 }
@@ -2011,7 +1884,7 @@ char * base64_encode_data_blob(DATA_BLOB data)
 	size_t out_cnt = 0;
 	size_t len = data.length;
 	size_t output_len = data.length * 2;
-	char *result = SMB_MALLOC(output_len); /* get us plenty of space */
+	char *result = malloc(output_len); /* get us plenty of space */
 
 	while (len-- && out_cnt < (data.length * 2) - 5) {
 		int c = (unsigned char) *(data.data++);
@@ -2065,22 +1938,4 @@ SMB_BIG_UINT STR_TO_SMB_BIG_UINT(const char *nptr, const char **entptr)
 	}
 
 	return val;
-}
-
-void string_append(char **left, const char *right)
-{
-	int new_len = strlen(right) + 1;
-
-	if (*left == NULL) {
-		*left = SMB_MALLOC(new_len);
-		*left[0] = '\0';
-	} else {
-		new_len += strlen(*left);
-		*left = SMB_REALLOC(*left, new_len);
-	}
-
-	if (*left == NULL)
-		return;
-
-	safe_strcat(*left, right, new_len-1);
 }

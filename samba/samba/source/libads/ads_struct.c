@@ -31,7 +31,7 @@ char *ads_build_path(const char *realm, const char *sep, const char *field, int 
 	char *ret;
 	int len;
 	
-	r = SMB_STRDUP(realm);
+	r = strdup(realm);
 
 	if (!r || !*r)
 		return r;
@@ -42,7 +42,7 @@ char *ads_build_path(const char *realm, const char *sep, const char *field, int 
 
 	len = (numbits+1)*(strlen(field)+1) + strlen(r) + 1;
 
-	ret = SMB_MALLOC(len);
+	ret = malloc(len);
 	if (!ret)
 		return NULL;
 
@@ -87,12 +87,12 @@ ADS_STRUCT *ads_init(const char *realm,
 {
 	ADS_STRUCT *ads;
 	
-	ads = SMB_XMALLOC_P(ADS_STRUCT);
+	ads = (ADS_STRUCT *)smb_xmalloc(sizeof(*ads));
 	ZERO_STRUCTP(ads);
 	
-	ads->server.realm = realm? SMB_STRDUP(realm) : NULL;
-	ads->server.workgroup = workgroup ? SMB_STRDUP(workgroup) : NULL;
-	ads->server.ldap_server = ldap_server? SMB_STRDUP(ldap_server) : NULL;
+	ads->server.realm = realm? strdup(realm) : NULL;
+	ads->server.workgroup = workgroup ? strdup(workgroup) : NULL;
+	ads->server.ldap_server = ldap_server? strdup(ldap_server) : NULL;
 
 	/* we need to know if this is a foreign realm */
 	if (realm && *realm && !strequal(lp_realm(), realm)) {
@@ -102,10 +102,13 @@ ADS_STRUCT *ads_init(const char *realm,
 		ads->server.foreign = 1;
 	}
 
-	/* the caller will own the memory by default */
-	ads->is_mine = 1;
-
 	return ads;
+}
+
+/* a simpler ads_init() interface using all defaults */
+ADS_STRUCT *ads_init_simple(void)
+{
+	return ads_init(NULL, NULL, NULL);
 }
 
 /*
@@ -114,9 +117,6 @@ ADS_STRUCT *ads_init(const char *realm,
 void ads_destroy(ADS_STRUCT **ads)
 {
 	if (ads && *ads) {
-		BOOL is_mine;
-
-		is_mine = (*ads)->is_mine;
 #if HAVE_LDAP
 		if ((*ads)->ld) ldap_unbind((*ads)->ld);
 #endif
@@ -133,11 +133,8 @@ void ads_destroy(ADS_STRUCT **ads)
 		SAFE_FREE((*ads)->config.realm);
 		SAFE_FREE((*ads)->config.bind_path);
 		SAFE_FREE((*ads)->config.ldap_server_name);
-		
-		
-		ZERO_STRUCTP(*ads);
 
-		if ( is_mine )
-			SAFE_FREE(*ads);
+		ZERO_STRUCTP(*ads);
+		SAFE_FREE(*ads);
 	}
 }

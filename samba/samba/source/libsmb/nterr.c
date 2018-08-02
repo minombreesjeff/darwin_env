@@ -537,7 +537,6 @@ static nt_err_code_struct nt_errs[] =
         { "NT_STATUS_NO_MORE_ENTRIES", NT_STATUS_NO_MORE_ENTRIES },
 	{ "STATUS_MORE_ENTRIES", STATUS_MORE_ENTRIES },
 	{ "STATUS_SOME_UNMAPPED", STATUS_SOME_UNMAPPED },
-	{ "STATUS_NO_MORE_FILES", STATUS_NO_MORE_FILES },
 	{ NULL, NT_STATUS(0) }
 };
 
@@ -635,15 +634,14 @@ nt_err_code_struct nt_err_desc[] =
 	{ "Insufficient logon information", 	NT_STATUS_INSUFFICIENT_LOGON_INFO },
 	
 	{ "License quota exceeded", 		NT_STATUS_LICENSE_QUOTA_EXCEEDED },
-	{ "No more files",			STATUS_NO_MORE_FILES },
 
 	{ NULL, NT_STATUS(0) }
 };
 
-/*****************************************************************************
- Returns an NT error message.  not amazingly helpful, but better than a number.
- *****************************************************************************/
 
+/*****************************************************************************
+ returns an NT error message.  not amazingly helpful, but better than a number.
+ *****************************************************************************/
 const char *nt_errstr(NTSTATUS nt_code)
 {
         static pstring msg;
@@ -671,7 +669,8 @@ const char *get_friendly_nt_error_msg(NTSTATUS nt_code)
         int idx = 0;
 
 	while (nt_err_desc[idx].nt_errstr != NULL) {
-		if (NT_STATUS_V(nt_err_desc[idx].nt_errcode) == NT_STATUS_V(nt_code)) {
+		if (NT_STATUS_V(nt_err_desc[idx].nt_errcode) == NT_STATUS_V(nt_code)) 
+		{
                         return nt_err_desc[idx].nt_errstr;
 		}
 		idx++;
@@ -683,9 +682,8 @@ const char *get_friendly_nt_error_msg(NTSTATUS nt_code)
 }
 
 /*****************************************************************************
- Returns an NT_STATUS constant as a string for inclusion in autogen C code.
+ returns an NT_STATUS constant as a string for inclusion in autogen C code
  *****************************************************************************/
-
 const char *get_nt_error_c_code(NTSTATUS nt_code)
 {
         static pstring out;
@@ -705,9 +703,8 @@ const char *get_nt_error_c_code(NTSTATUS nt_code)
 }
 
 /*****************************************************************************
- Returns the NT_STATUS constant matching the string supplied (as an NTSTATUS)
+ returns the NT_STATUS constant matching the string supplied (as an NTSTATUS)
  *****************************************************************************/
-
 NTSTATUS nt_status_string_to_code(char *nt_status_str)
 {
         int idx = 0;
@@ -719,31 +716,4 @@ NTSTATUS nt_status_string_to_code(char *nt_status_str)
 		idx++;
 	}
 	return NT_STATUS_UNSUCCESSFUL;
-}
-
-/**
- * Squash an NT_STATUS in line with security requirements.
- * In an attempt to avoid giving the whole game away when users
- * are authenticating, NT replaces both NT_STATUS_NO_SUCH_USER and 
- * NT_STATUS_WRONG_PASSWORD with NT_STATUS_LOGON_FAILURE in certain situations 
- * (session setups in particular).
- *
- * @param nt_status NTSTATUS input for squashing.
- * @return the 'squashed' nt_status
- **/
-
-NTSTATUS nt_status_squash(NTSTATUS nt_status)
-{
-	if NT_STATUS_IS_OK(nt_status) {
-		return nt_status;		
-	} else if NT_STATUS_EQUAL(nt_status, NT_STATUS_NO_SUCH_USER) {
-		/* Match WinXP and don't give the game away */
-		return NT_STATUS_LOGON_FAILURE;
-		
-	} else if NT_STATUS_EQUAL(nt_status, NT_STATUS_WRONG_PASSWORD) {
-		/* Match WinXP and don't give the game away */
-		return NT_STATUS_LOGON_FAILURE;
-	} else {
-		return nt_status;
-	}  
 }

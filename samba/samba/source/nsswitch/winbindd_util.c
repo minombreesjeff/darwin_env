@@ -83,22 +83,6 @@ void free_domain_list(void)
 	}
 }
 
-static BOOL is_internal_domain(const DOM_SID *sid)
-{
-	extern DOM_SID global_sid_Builtin;
-
-	if (sid == NULL)
-		return False;
-
-	if (sid_compare_domain(sid, get_global_sam_sid()) == 0)
-		return True;
-
-	if (sid_compare_domain(sid, &global_sid_Builtin) == 0)
-		return True;
-
-	return False;
-}
-
 
 /* Add a trusted domain to our list of domains */
 static struct winbindd_domain *add_trusted_domain(const char *domain_name, const char *alt_name,
@@ -139,7 +123,7 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
         
 	/* Create new domain entry */
 
-	if ((domain = SMB_MALLOC_P(struct winbindd_domain)) == NULL)
+	if ((domain = (struct winbindd_domain *)malloc(sizeof(*domain))) == NULL)
 		return NULL;
 
 	/* Fill in fields */
@@ -159,13 +143,15 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
 
 	domain->methods = methods;
 	domain->backend = NULL;
-	domain->internal = is_internal_domain(sid);
 	domain->sequence_number = DOM_SEQUENCE_NONE;
 	domain->last_seq_check = 0;
-	domain->initialized = False;
 	if (sid) {
 		sid_copy(&domain->sid, sid);
 	}
+	
+	/* set flags about native_mode, active_directory */
+	   
+	set_dc_type_and_flags( domain );
 	
 	DEBUG(3,("add_trusted_domain: %s is an %s %s domain\n", domain->name,
 		 domain->active_directory ? "ADS" : "NT4", 
@@ -175,7 +161,7 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
 	/* Link to domain list */
 	DLIST_ADD(_domain_list, domain);
         
-	DEBUG(2,("Added domain %s %s %s\n", 
+	DEBUG(1,("Added domain %s %s %s\n", 
 		 domain->name, domain->alt_name,
 		 &domain->sid?sid_string_static(&domain->sid):""));
         
@@ -183,12 +169,39 @@ static struct winbindd_domain *add_trusted_domain(const char *domain_name, const
 }
 
 /********************************************************************
+ Periodically we need to refresh the trusted domain cache for smbd 
+********************************************************************/
+
+void rescan_trusted_domains( void )
+{
+	time_t now = time(NULL);
+	struct winbindd_domain *mydomain = NULL;
+	
+	/* see if the time has come... */
+	
+	if ( (now > last_trustdom_scan) && ((now-last_trustdom_scan) < WINBINDD_RESCAN_FREQ) )
+		return;
+		
+	if ( (mydomain = find_our_domain()) == NULL ) {
+		DEBUG(0,("rescan_trusted_domains: Can't find my own domain!\n"));
+		return;
+	}
+	
+	/* this will only add new domains we didn't already know about */
+	
+	add_trusted_domains( mydomain );
+
+	last_trustdom_scan = now;
+	
+	return;	
+}
+
+/********************************************************************
   rescan our domains looking for new trusted domains
 ********************************************************************/
 
-static void add_trusted_domains( struct winbindd_domain *domain )
+void add_trusted_domains( struct winbindd_domain *domain )
 {
-	extern struct winbindd_methods cache_methods;
 	TALLOC_CTX *mem_ctx;
 	NTSTATUS result;
 	time_t t;
@@ -225,7 +238,7 @@ static void add_trusted_domains( struct winbindd_domain *domain )
 		for(i = 0; i < num_domains; i++) {
 			DEBUG(10,("Found domain %s\n", names[i]));
 			add_trusted_domain(names[i], alt_names?alt_names[i]:NULL,
-					   &cache_methods, &dom_sids[i]);
+					   domain->methods, &dom_sids[i]);
 					   
 			/* if the SID was empty, we better set it now */
 			
@@ -258,59 +271,19 @@ static void add_trusted_domains( struct winbindd_domain *domain )
 	talloc_destroy(mem_ctx);
 }
 
-/********************************************************************
- Periodically we need to refresh the trusted domain cache for smbd 
-********************************************************************/
-
-void rescan_trusted_domains( void )
-{
-	time_t now = time(NULL);
-	struct winbindd_domain *mydomain = NULL;
-	
-	/* see if the time has come... */
-	
-	if ( (now > last_trustdom_scan) && ((now-last_trustdom_scan) < WINBINDD_RESCAN_FREQ) )
-		return;
-		
-	if ( (mydomain = find_our_domain()) == NULL ) {
-		DEBUG(0,("rescan_trusted_domains: Can't find my own domain!\n"));
-		return;
-	}
-	
-	/* this will only add new domains we didn't already know about */
-	
-	add_trusted_domains( mydomain );
-
-	last_trustdom_scan = now;
-	
-	return;	
-}
-
 /* Look up global info for the winbind daemon */
 BOOL init_domain_list(void)
 {
-	extern DOM_SID global_sid_Builtin;
 	extern struct winbindd_methods cache_methods;
-	extern struct winbindd_methods passdb_methods;
 	struct winbindd_domain *domain;
 
 	/* Free existing list */
 	free_domain_list();
 
 	/* Add ourselves as the first entry. */
-
-	if (IS_DC) {
-		domain = add_trusted_domain(get_global_sam_name(), NULL,
-					    &passdb_methods, get_global_sam_sid());
-	} else {
 	
-		domain = add_trusted_domain( lp_workgroup(), lp_realm(),
-					     &cache_methods, NULL);
+	domain = add_trusted_domain( lp_workgroup(), lp_realm(), &cache_methods, NULL);
 	
-		/* set flags about native_mode, active_directory */
-		set_dc_type_and_flags(domain);
-	}
-
 	domain->primary = True;
 
 	/* get any alternate name for the primary domain */
@@ -330,17 +303,6 @@ BOOL init_domain_list(void)
 
 	/* do an initial scan for trusted domains */
 	add_trusted_domains(domain);
-
-
-	/* Add our local SAM domains */
-
-	add_trusted_domain("BUILTIN", NULL, &passdb_methods,
-			   &global_sid_Builtin);
-
-	if (!IS_DC) {
-		add_trusted_domain(get_global_sam_name(), NULL,
-				   &passdb_methods, get_global_sam_sid());
-	}
 	
 	/* avoid rescanning this right away */
 	last_trustdom_scan = time(NULL);
@@ -368,9 +330,6 @@ struct winbindd_domain *find_domain_from_name(const char *domain_name)
 	for (domain = domain_list(); domain != NULL; domain = domain->next) {
 		if (strequal(domain_name, domain->name) ||
 		    (domain->alt_name[0] && strequal(domain_name, domain->alt_name))) {
-			if (!domain->initialized)
-				set_dc_type_and_flags(domain);
-
 			return domain;
 		}
 	}
@@ -382,18 +341,15 @@ struct winbindd_domain *find_domain_from_name(const char *domain_name)
 
 /* Given a domain sid, return the struct winbindd domain info for it */
 
-struct winbindd_domain *find_domain_from_sid(const DOM_SID *sid)
+struct winbindd_domain *find_domain_from_sid(DOM_SID *sid)
 {
 	struct winbindd_domain *domain;
 
 	/* Search through list */
 
 	for (domain = domain_list(); domain != NULL; domain = domain->next) {
-		if (sid_compare_domain(sid, &domain->sid) == 0) {
-			if (!domain->initialized)
-				set_dc_type_and_flags(domain);
+		if (sid_compare_domain(sid, &domain->sid) == 0)
 			return domain;
-		}
 	}
 
 	/* Not found */
@@ -419,49 +375,21 @@ struct winbindd_domain *find_our_domain(void)
 	return NULL;
 }
 
-/* Find the appropriate domain to lookup a name or SID */
-
-struct winbindd_domain *find_lookup_domain_from_sid(const DOM_SID *sid)
-{
-	/* A DC can't ask the local smbd for remote SIDs, here winbindd is the
-	 * one to contact the external DC's. On member servers the internal
-	 * domains are different: These are part of the local SAM. */
-
-	if (IS_DC || is_internal_domain(sid))
-		return find_domain_from_sid(sid);
-
-	/* On a member server a query for SID or name can always go to our
-	 * primary DC. */
-
-	return find_our_domain();
-}
-
-struct winbindd_domain *find_lookup_domain_from_name(const char *domain_name)
-{
-	if (IS_DC || strequal(domain_name, "BUILTIN") ||
-	    strequal(domain_name, get_global_sam_name()))
-		return find_domain_from_name(domain_name);
-
-	return find_our_domain();
-}
-
 /* Lookup a sid in a domain from a name */
 
 BOOL winbindd_lookup_sid_by_name(struct winbindd_domain *domain, 
-				 const char *domain_name,
 				 const char *name, DOM_SID *sid, 
 				 enum SID_NAME_USE *type)
 {
 	NTSTATUS result;
         TALLOC_CTX *mem_ctx;
 
-	mem_ctx = talloc_init("lookup_sid_by_name for %s\\%s\n",
-			      domain_name, name);
+	mem_ctx = talloc_init("lookup_sid_by_name for %s\n", name);
 	if (!mem_ctx) 
 		return False;
         
 	/* Lookup name */
-	result = domain->methods->name_to_sid(domain, mem_ctx, domain_name, name, sid, type);
+	result = domain->methods->name_to_sid(domain, mem_ctx, name, sid, type);
 
 	talloc_destroy(mem_ctx);
         
@@ -490,13 +418,12 @@ BOOL winbindd_lookup_name_by_sid(DOM_SID *sid,
 				 enum SID_NAME_USE *type)
 {
 	char *names;
-	char *dom_names;
 	NTSTATUS result;
 	TALLOC_CTX *mem_ctx;
 	BOOL rv = False;
 	struct winbindd_domain *domain;
 
-	domain = find_lookup_domain_from_sid(sid);
+	domain = find_domain_from_sid(sid);
 
 	if (!domain) {
 		DEBUG(1,("Can't find domain from sid\n"));
@@ -508,12 +435,12 @@ BOOL winbindd_lookup_name_by_sid(DOM_SID *sid,
 	if (!(mem_ctx = talloc_init("winbindd_lookup_name_by_sid")))
 		return False;
         
-	result = domain->methods->sid_to_name(domain, mem_ctx, sid, &dom_names, &names, type);
+	result = domain->methods->sid_to_name(domain, mem_ctx, sid, &names, type);
 
 	/* Return name and type if successful */
         
 	if ((rv = NT_STATUS_IS_OK(result))) {
-		fstrcpy(dom_name, dom_names);
+		fstrcpy(dom_name, domain->name);
 		fstrcpy(name, names);
 	} else {
 		*type = SID_NAME_UNKNOWN;
@@ -641,13 +568,11 @@ BOOL parse_domain_user(const char *domuser, fstring domain, fstring user)
 */
 void fill_domain_username(fstring name, const char *domain, const char *user)
 {
-	strlower_m( name );
-
 	if (assume_domain(domain)) {
 		strlcpy(name, user, sizeof(fstring));
 	} else {
-		slprintf(name, sizeof(fstring) - 1, "%s%c%s",
-			 domain, *lp_winbind_separator(),
+		slprintf(name, sizeof(fstring) - 1, "%s%s%s",
+			 domain, lp_winbind_separator(),
 			 user);
 	}
 }
@@ -738,14 +663,6 @@ void winbindd_remove_client(struct winbindd_cli_state *cli)
 	_num_clients--;
 }
 
-/* Demote a client to be the last in the list */
-
-void winbindd_demote_client(struct winbindd_cli_state *cli)
-{
-	struct winbindd_cli_state *tmp;
-	DLIST_DEMOTE(_client_list, cli, tmp);
-}
-
 /* Close all open clients */
 
 void winbindd_kill_all_clients(void)
@@ -777,7 +694,7 @@ DOM_SID *rid_to_talloced_sid(struct winbindd_domain *domain,
 				    uint32 rid) 
 {
 	DOM_SID *sid;
-	sid = TALLOC_P(mem_ctx, DOM_SID);
+	sid = talloc(mem_ctx, sizeof(*sid));
 	if (!sid) {
 		smb_panic("rid_to_to_talloced_sid: talloc for DOM_SID failed!\n");
 	}

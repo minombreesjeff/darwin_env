@@ -29,12 +29,12 @@
 static ADS_STATUS ads_sasl_spnego_ntlmssp_bind(ADS_STRUCT *ads)
 {
 	const char *mechs[] = {OID_NTLMSSP, NULL};
-	DATA_BLOB msg1 = data_blob(NULL, 0);
+	DATA_BLOB msg1;
 	DATA_BLOB blob, chal1, chal2, auth;
 	uint8 challenge[8];
 	uint8 nthash[24], lmhash[24], sess_key[16];
 	uint32 neg_flags;
-	struct berval cred, *scred = NULL;
+	struct berval cred, *scred;
 	ADS_STATUS status;
 	int rc;
 
@@ -70,7 +70,6 @@ static ADS_STATUS ads_sasl_spnego_ntlmssp_bind(ADS_STRUCT *ads)
 	}
 
 	blob = data_blob(scred->bv_val, scred->bv_len);
-	ber_bvfree(scred);
 
 	/* the server gives us back two challenges */
 	if (!spnego_parse_challenge(blob, &chal1, &chal2)) {
@@ -106,29 +105,15 @@ static ADS_STATUS ads_sasl_spnego_ntlmssp_bind(ADS_STRUCT *ads)
 
 	data_blob_free(&blob);
 
-	/* Remember to free the msg1 blob. The contents of this
-	   have been copied into cred and need freeing before reassignment. */
-	data_blob_free(&msg1);
-
 	/* now send the auth packet and we should be done */
 	cred.bv_val = (char *)auth.data;
 	cred.bv_len = auth.length;
 
 	rc = ldap_sasl_bind_s(ads->ld, NULL, "GSS-SPNEGO", &cred, NULL, NULL, &scred);
 
-	ber_bvfree(scred);
-	data_blob_free(&auth);
-	
 	return ADS_ERROR(rc);
 
 failed:
-
-	/* Remember to free the msg1 blob. The contents of this
-	   have been copied into cred and need freeing. */
-	data_blob_free(&msg1);
-
-	if(scred)
-		ber_bvfree(scred);
 	return status;
 }
 
@@ -137,9 +122,9 @@ failed:
 */
 static ADS_STATUS ads_sasl_spnego_krb5_bind(ADS_STRUCT *ads, const char *principal)
 {
-	DATA_BLOB blob = data_blob(NULL, 0);
-	struct berval cred, *scred = NULL;
-	DATA_BLOB session_key = data_blob(NULL, 0);
+	DATA_BLOB blob;
+	struct berval cred, *scred;
+	DATA_BLOB session_key;
 	int rc;
 
 	rc = spnego_gen_negTokenTarg(principal, ads->auth.time_offset, &blob, &session_key);
@@ -156,8 +141,6 @@ static ADS_STATUS ads_sasl_spnego_krb5_bind(ADS_STRUCT *ads, const char *princip
 
 	data_blob_free(&blob);
 	data_blob_free(&session_key);
-	if(scred)
-		ber_bvfree(scred);
 
 	return ADS_ERROR(rc);
 }
@@ -171,7 +154,7 @@ static ADS_STATUS ads_sasl_spnego_bind(ADS_STRUCT *ads)
 	int rc, i;
 	ADS_STATUS status;
 	DATA_BLOB blob;
-	char *principal = NULL;
+	char *principal;
 	char *OIDs[ASN1_MAX_OIDS];
 	BOOL got_kerberos_mechanism = False;
 
@@ -201,23 +184,21 @@ static ADS_STATUS ads_sasl_spnego_bind(ADS_STRUCT *ads)
 
 	/* make sure the server understands kerberos */
 	for (i=0;OIDs[i];i++) {
-		DEBUG(3,("ads_sasl_spnego_bind: got OID=%s\n", OIDs[i]));
+		DEBUG(3,("got OID=%s\n", OIDs[i]));
 		if (strcmp(OIDs[i], OID_KERBEROS5_OLD) == 0 ||
 		    strcmp(OIDs[i], OID_KERBEROS5) == 0) {
 			got_kerberos_mechanism = True;
 		}
 		free(OIDs[i]);
 	}
-	DEBUG(3,("ads_sasl_spnego_bind: got server principal name =%s\n", principal));
+	DEBUG(3,("got principal=%s\n", principal));
 
 #ifdef HAVE_KRB5
 	if (!(ads->auth.flags & ADS_AUTH_DISABLE_KERBEROS) &&
 	    got_kerberos_mechanism) {
 		status = ads_sasl_spnego_krb5_bind(ads, principal);
-		if (ADS_ERR_OK(status)) {
-			SAFE_FREE(principal);
+		if (ADS_ERR_OK(status))
 			return status;
-		}
 
 		status = ADS_ERROR_KRB5(ads_kinit_password(ads)); 
 
@@ -228,13 +209,10 @@ static ADS_STATUS ads_sasl_spnego_bind(ADS_STRUCT *ads)
 		/* only fallback to NTLMSSP if allowed */
 		if (ADS_ERR_OK(status) || 
 		    !(ads->auth.flags & ADS_AUTH_ALLOW_NTLMSSP)) {
-			SAFE_FREE(principal);
 			return status;
 		}
 	}
 #endif
-
-	SAFE_FREE(principal);
 
 	/* lets do NTLMSSP ... this has the big advantage that we don't need
 	   to sync clocks, and we don't rely on special versions of the krb5 
@@ -264,7 +242,7 @@ static ADS_STATUS ads_sasl_gssapi_bind(ADS_STRUCT *ads)
 	gss_buffer_desc output_token, input_token;
 	uint32 ret_flags, conf_state;
 	struct berval cred;
-	struct berval *scred = NULL;
+	struct berval *scred;
 	int i=0;
 	int gss_rc, rc;
 	uint8 *p;
@@ -273,7 +251,7 @@ static ADS_STATUS ads_sasl_gssapi_bind(ADS_STRUCT *ads)
 	unsigned sec_layer;
 	ADS_STATUS status;
 	krb5_principal principal;
-	krb5_context ctx = NULL;
+	krb5_context ctx;
 	krb5_enctype enc_types[] = {
 #ifdef ENCTYPE_ARCFOUR_HMAC
 			ENCTYPE_ARCFOUR_HMAC,
@@ -374,7 +352,7 @@ static ADS_STATUS ads_sasl_gssapi_bind(ADS_STRUCT *ads)
 
 	gss_release_buffer(&minor_status, &output_token);
 
-	output_token.value = SMB_MALLOC(strlen(ads->config.bind_path) + 8);
+	output_token.value = malloc(strlen(ads->config.bind_path) + 8);
 	p = output_token.value;
 
 	*p++ = 1; /* no sign & seal selection */
@@ -407,8 +385,6 @@ static ADS_STATUS ads_sasl_gssapi_bind(ADS_STRUCT *ads)
 	gss_release_buffer(&minor_status, &input_token);
 
 failed:
-	if(scred)
-		ber_bvfree(scred);
 	return status;
 }
 #endif

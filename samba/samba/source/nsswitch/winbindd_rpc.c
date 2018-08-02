@@ -98,7 +98,8 @@ static NTSTATUS query_user_list(struct winbindd_domain *domain,
 
 		*num_entries += num_dom_users;
 
-		*info = TALLOC_REALLOC_ARRAY( mem_ctx, *info, WINBIND_USERINFO, *num_entries);
+		*info = talloc_realloc( mem_ctx, *info, 
+			(*num_entries) * sizeof(WINBIND_USERINFO));
 
 		if (!(*info)) {
 			result = NT_STATUS_NO_MEMORY;
@@ -191,7 +192,8 @@ static NTSTATUS enum_dom_groups(struct winbindd_domain *domain,
 			break;
 		}
 
-		(*info) = TALLOC_REALLOC_ARRAY(mem_ctx, *info, struct acct_info, (*num_entries) + count);
+		(*info) = talloc_realloc(mem_ctx, *info, 
+					 sizeof(**info) * ((*num_entries) + count));
 		if (! *info) {
 			talloc_destroy(mem_ctx2);
 			cli_samr_close(hnd->cli, mem_ctx, &dom_pol);
@@ -253,7 +255,8 @@ static NTSTATUS enum_local_groups(struct winbindd_domain *domain,
 			break;
 		}
 
-		(*info) = TALLOC_REALLOC_ARRAY(mem_ctx, *info, struct acct_info, (*num_entries) + count);
+		(*info) = talloc_realloc(mem_ctx, *info, 
+					 sizeof(**info) * ((*num_entries) + count));
 		if (! *info) {
 			talloc_destroy(mem_ctx2);
 			cli_samr_close(hnd->cli, mem_ctx, &dom_pol);
@@ -271,9 +274,8 @@ static NTSTATUS enum_local_groups(struct winbindd_domain *domain,
 }
 
 /* convert a single name to a sid in a domain */
-NTSTATUS msrpc_name_to_sid(struct winbindd_domain *domain,
+static NTSTATUS name_to_sid(struct winbindd_domain *domain,
 			    TALLOC_CTX *mem_ctx,
-			    const char *domain_name,
 			    const char *name,
 			    DOM_SID *sid,
 			    enum SID_NAME_USE *type)
@@ -287,14 +289,14 @@ NTSTATUS msrpc_name_to_sid(struct winbindd_domain *domain,
 
 	DEBUG(3,("rpc: name_to_sid name=%s\n", name));
 
-	full_name = talloc_asprintf(mem_ctx, "%s\\%s", domain_name, name);
+	full_name = talloc_asprintf(mem_ctx, "%s\\%s", domain->name, name);
 	
 	if (!full_name) {
 		DEBUG(0, ("talloc_asprintf failed!\n"));
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	DEBUG(3,("name_to_sid [rpc] %s for domain %s\n", name, domain_name ));
+	DEBUG(3,("name_to_sid [rpc] %s for domain %s\n", name, domain->name ));
 
 	retry = 0;
 	do {
@@ -320,10 +322,9 @@ NTSTATUS msrpc_name_to_sid(struct winbindd_domain *domain,
 /*
   convert a domain SID to a user or group name
 */
-NTSTATUS msrpc_sid_to_name(struct winbindd_domain *domain,
+static NTSTATUS sid_to_name(struct winbindd_domain *domain,
 			    TALLOC_CTX *mem_ctx,
 			    const DOM_SID *sid,
-			    char **domain_name,
 			    char **name,
 			    enum SID_NAME_USE *type)
 {
@@ -349,9 +350,14 @@ NTSTATUS msrpc_sid_to_name(struct winbindd_domain *domain,
 
 	if (NT_STATUS_IS_OK(result)) {
 		*type = (enum SID_NAME_USE)types[0];
-		*domain_name = domains[0];
 		*name = names[0];
 		DEBUG(5,("Mapped sid to [%s]\\[%s]\n", domains[0], *name));
+
+		/* Paranoia */
+		if (!strequal(domain->name, domains[0])) {
+			DEBUG(1, ("domain name from domain param and PDC lookup return differ! (%s vs %s)\n", domain->name, domains[0]));
+			return NT_STATUS_UNSUCCESSFUL;
+		}
 	}
 
 	return result;
@@ -360,7 +366,7 @@ NTSTATUS msrpc_sid_to_name(struct winbindd_domain *domain,
 /* Lookup user information from a rid or username. */
 static NTSTATUS query_user(struct winbindd_domain *domain, 
 			   TALLOC_CTX *mem_ctx, 
-			   const DOM_SID *user_sid, 
+			   DOM_SID *user_sid, 
 			   WINBIND_USERINFO *user_info)
 {
 	CLI_POLICY_HND *hnd = NULL;
@@ -459,7 +465,7 @@ static NTSTATUS query_user(struct winbindd_domain *domain,
 /* Lookup groups a user is a member of.  I wish Unix had a call like this! */
 static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 				  TALLOC_CTX *mem_ctx,
-				  const DOM_SID *user_sid,
+				  DOM_SID *user_sid,
 				  uint32 *num_groups, DOM_SID ***user_grpsids)
 {
 	CLI_POLICY_HND *hnd;
@@ -488,7 +494,7 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 			
 		*num_groups = user->num_groups;
 				
-		(*user_grpsids) = TALLOC_ARRAY(mem_ctx, DOM_SID*, *num_groups);
+		(*user_grpsids) = talloc(mem_ctx, sizeof(DOM_SID*) * (*num_groups));
 		for (i=0;i<(*num_groups);i++) {
 			(*user_grpsids)[i] = rid_to_talloced_sid(domain, mem_ctx, user->gids[i].g_rid);
 		}
@@ -540,7 +546,7 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 	if (!NT_STATUS_IS_OK(result) || (*num_groups) == 0)
 		goto done;
 
-	(*user_grpsids) = TALLOC_ARRAY(mem_ctx, DOM_SID *, *num_groups);
+	(*user_grpsids) = talloc(mem_ctx, sizeof(DOM_SID*) * (*num_groups));
 	if (!(*user_grpsids)) {
 		result = NT_STATUS_NO_MEMORY;
 		goto done;
@@ -565,7 +571,7 @@ static NTSTATUS lookup_usergroups(struct winbindd_domain *domain,
 /* Lookup group membership given a rid.   */
 static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 				TALLOC_CTX *mem_ctx,
-				const DOM_SID *group_sid, uint32 *num_names, 
+				DOM_SID *group_sid, uint32 *num_names, 
 				DOM_SID ***sid_mem, char ***names, 
 				uint32 **name_types)
 {
@@ -640,9 +646,9 @@ static NTSTATUS lookup_groupmem(struct winbindd_domain *domain,
 
 #define MAX_LOOKUP_RIDS 900
 
-        *names = TALLOC_ZERO_ARRAY(mem_ctx, char *, *num_names);
-        *name_types = TALLOC_ZERO_ARRAY(mem_ctx, uint32, *num_names);
-        *sid_mem = TALLOC_ZERO_ARRAY(mem_ctx, DOM_SID *, *num_names);
+        *names = talloc_zero(mem_ctx, *num_names * sizeof(char *));
+        *name_types = talloc_zero(mem_ctx, *num_names * sizeof(uint32));
+        *sid_mem = talloc_zero(mem_ctx, *num_names * sizeof(DOM_SID *));
 
 	for (j=0;j<(*num_names);j++) {
 		(*sid_mem)[j] = rid_to_talloced_sid(domain, mem_ctx, (rid_mem)[j]);
@@ -704,6 +710,36 @@ done:
 
 #include <ldap.h>
 
+static SIG_ATOMIC_T gotalarm;
+
+/***************************************************************
+ Signal function to tell us we timed out.
+****************************************************************/
+
+static void gotalarm_sig(void)
+{
+	gotalarm = 1;
+}
+
+static LDAP *ldap_open_with_timeout(const char *server, int port, unsigned int to)
+{
+	LDAP *ldp = NULL;
+
+	/* Setup timeout */
+	gotalarm = 0;
+	CatchSignal(SIGALRM, SIGNAL_CAST gotalarm_sig);
+	alarm(to);
+	/* End setup timeout. */
+
+	ldp = ldap_open(server, port);
+
+	/* Teardown timeout. */
+	CatchSignal(SIGALRM, SIGNAL_CAST SIG_IGN);
+	alarm(0);
+
+	return ldp;
+}
+
 static int get_ldap_seq(const char *server, int port, uint32 *seq)
 {
 	int ret = -1;
@@ -716,11 +752,11 @@ static int get_ldap_seq(const char *server, int port, uint32 *seq)
 	*seq = DOM_SEQUENCE_NONE;
 
 	/*
-	 * Parameterised (5) second timeout on open. This is needed as the search timeout
+	 * 10 second timeout on open. This is needed as the search timeout
 	 * doesn't seem to apply to doing an open as well. JRA.
 	 */
 
-	if ((ldp = ldap_open_with_timeout(server, port, lp_ldap_timeout())) == NULL)
+	if ((ldp = ldap_open_with_timeout(server, port, 10)) == NULL)
 		return -1;
 
 	/* Timeout if no response within 20 seconds. */
@@ -756,7 +792,7 @@ static int get_ldap_seq(const char *server, int port, uint32 *seq)
  LDAP queries
 **********************************************************************/
 
-static int get_ldap_sequence_number( const char* domain, uint32 *seq)
+int get_ldap_sequence_number( const char* domain, uint32 *seq)
 {
 	int ret = -1;
 	int i, port = LDAP_PORT;
@@ -959,8 +995,8 @@ struct winbindd_methods msrpc_methods = {
 	query_user_list,
 	enum_dom_groups,
 	enum_local_groups,
-	msrpc_name_to_sid,
-	msrpc_sid_to_name,
+	name_to_sid,
+	sid_to_name,
 	query_user,
 	lookup_usergroups,
 	lookup_groupmem,
