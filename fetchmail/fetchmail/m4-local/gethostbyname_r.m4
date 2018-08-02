@@ -13,10 +13,11 @@ dnl @author Brian Stafford <brian@stafford.uklinux.net>
 dnl
 dnl based on version by Caolan McNamara <caolan@skynet.ie>
 dnl based on David Arnold's autoconf suggestion in the threads faq
+dnl with fixes and updates by Matthias Andree
 dnl
 AC_DEFUN([ACX_WHICH_GETHOSTBYNAME_R],
 [AC_CACHE_CHECK(number of arguments to gethostbyname_r,
-                acx_which_gethostbyname_r, [
+                acx_cv_which_gethostbyname_r, [
 	AC_TRY_LINK([
 #		include <netdb.h> 
   	], 	[
@@ -26,10 +27,11 @@ AC_DEFUN([ACX_WHICH_GETHOSTBYNAME_R],
         struct hostent_data data;
         (void) gethostbyname_r(name, he, &data);
 
-		],acx_which_gethostbyname_r=3, 
+		],acx_cv_which_gethostbyname_r=3,
 			[
-dnl			acx_which_gethostbyname_r=0
+dnl			acx_cv_which_gethostbyname_r=0
   AC_TRY_LINK([
+#include <stdlib.h>
 #   include <netdb.h>
   ], [
 	char *name;
@@ -38,11 +40,12 @@ dnl			acx_which_gethostbyname_r=0
 	int buflen = 2048;
 	int h_errnop;
 	(void) gethostbyname_r(name, he, buffer, buflen, &res, &h_errnop)
-  ],acx_which_gethostbyname_r=6,
+  ],acx_cv_which_gethostbyname_r=6,
   
   [
-dnl  acx_which_gethostbyname_r=0
+dnl  acx_cv_which_gethostbyname_r=0
   AC_TRY_LINK([
+#include <stdlib.h>
 #   include <netdb.h>
   ], [
 			char *name;
@@ -51,7 +54,7 @@ dnl  acx_which_gethostbyname_r=0
 			int buflen = 2048;
 			int h_errnop;
 			(void) gethostbyname_r(name, he, buffer, buflen, &h_errnop)
-  ],acx_which_gethostbyname_r=5,acx_which_gethostbyname_r=0)
+  ],acx_cv_which_gethostbyname_r=5,acx_cv_which_gethostbyname_r=0)
 
   ]
   
@@ -60,8 +63,8 @@ dnl  acx_which_gethostbyname_r=0
 		)
 	])
 
-if test $acx_which_gethostbyname_r -gt 0 ; then
-    AC_DEFINE_UNQUOTED([HAVE_GETHOSTBYNAME_R], $acx_which_gethostbyname_r,
+if test $acx_cv_which_gethostbyname_r -gt 0 ; then
+    AC_DEFINE_UNQUOTED([HAVE_GETHOSTBYNAME_R], $acx_cv_which_gethostbyname_r,
     		       [Number of parameters to gethostbyname_r or 0 if not available])
 fi
 
