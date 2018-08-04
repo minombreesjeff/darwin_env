@@ -11,7 +11,7 @@ use strict;
 use FileHandle;
 use vars qw($VERSION);
 
-$VERSION = "2.12"; # $Id: Netrc.pm,v 1.4 2003/05/20 22:52:11 emoy Exp $
+$VERSION = "2.12"; # $Id: //depot/libnet/Net/Netrc.pm#13 $
 
 my %netrc = ();
 
@@ -335,6 +335,6 @@ it under the same terms as Perl itself.
 
 =for html <hr>
 
-$Id: Netrc.pm,v 1.4 2003/05/20 22:52:11 emoy Exp $
+$Id: //depot/libnet/Net/Netrc.pm#13 $
 
 =cut

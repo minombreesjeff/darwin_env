@@ -1161,7 +1161,7 @@ Perl_gv_check(pTHX_ HV *stash)
     for (i = 0; i <= (I32) HvMAX(stash); i++) {
 	for (entry = HvARRAY(stash)[i]; entry; entry = HeNEXT(entry)) {
 	    if (HeKEY(entry)[HeKLEN(entry)-1] == ':' &&
-		(gv = (GV*)HeVAL(entry)) && (hv = GvHV(gv)))
+		(gv = (GV*)HeVAL(entry)) && isGV(gv) && (hv = GvHV(gv)))
 	    {
 		if (hv != PL_defstash && hv != stash)
 		     gv_check(hv);              /* nested package */
@@ -1252,14 +1252,18 @@ Perl_gp_free(pTHX_ GV *gv)
         return;
     }
 
-    SvREFCNT_dec(gp->gp_sv);
-    SvREFCNT_dec(gp->gp_av);
-    if(gp->gp_hv && HvNAME(gp->gp_hv) && PL_stashcache)
-        hv_delete(PL_stashcache, HvNAME(gp->gp_hv), strlen(HvNAME(gp->gp_hv)), G_DISCARD);
-    SvREFCNT_dec(gp->gp_hv);
-    SvREFCNT_dec(gp->gp_io);
-    SvREFCNT_dec(gp->gp_cv);
-    SvREFCNT_dec(gp->gp_form);
+    if (gp->gp_sv) SvREFCNT_dec(gp->gp_sv);
+    if (gp->gp_sv) SvREFCNT_dec(gp->gp_av);
+    if (gp->gp_hv) {
+	 if (PL_stashcache && HvNAME(gp->gp_hv))
+	      hv_delete(PL_stashcache,
+			HvNAME(gp->gp_hv), strlen(HvNAME(gp->gp_hv)),
+			G_DISCARD);
+	 SvREFCNT_dec(gp->gp_hv);
+    }
+    if (gp->gp_io)   SvREFCNT_dec(gp->gp_io);
+    if (gp->gp_cv)   SvREFCNT_dec(gp->gp_cv);
+    if (gp->gp_form) SvREFCNT_dec(gp->gp_form);
 
     Safefree(gp);
     GvGP(gv) = 0;
@@ -1355,7 +1359,8 @@ Perl_Gv_AMupdate(pTHX_ HV *stash)
 		/* GvSV contains the name of the method. */
 		GV *ngv = Nullgv;
 		
-		DEBUG_o( Perl_deb(aTHX_ "Resolving method `%.256"SVf"' for overloaded `%s' in package `%.256s'\n",
+		DEBUG_o( Perl_deb(aTHX_ "Resolving method `%"SVf256\
+			"' for overloaded `%s' in package `%.256s'\n",
 			     GvSV(gv), cp, HvNAME(stash)) );
 		if (!SvPOK(GvSV(gv))
 		    || !(ngv = gv_fetchmethod_autoload(stash, SvPVX(GvSV(gv)),
@@ -1364,7 +1369,8 @@ Perl_Gv_AMupdate(pTHX_ HV *stash)
 		    /* Can be an import stub (created by `can'). */
 		    SV *gvsv = GvSV(gv);
 		    const char *name = SvPOK(gvsv) ?  SvPVX(gvsv) : "???";
-		    Perl_croak(aTHX_ "%s method `%.256s' overloading `%s' in package `%.256s'",
+		    Perl_croak(aTHX_ "%s method `%.256s' overloading `%s' "\
+				"in package `%.256s'",
 			       (GvCVGEN(gv) ? "Stub found while resolving"
 				: "Can't resolve"),
 			       name, cp, HvNAME(stash));

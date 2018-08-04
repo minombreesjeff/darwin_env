@@ -11,13 +11,13 @@
  * that running config_h.SH again will wipe out any changes you've made.
  * For a more permanent change edit config.sh and rerun config_h.SH.
  *
- * $Id: config_H,v 1.5 2003/05/20 22:48:55 emoy Exp $
+ * $Id: Config_h.U,v 3.0.1.5 1997/02/28 14:57:43 ram Exp $
  */
 
 /*
  * Package name      : perl5
  * Source directory  : .
- * Configuration time: Wed Apr 23 23:10:03 EET DST 2003
+ * Configuration time: Thu Jul  3 17:37:04 EEST 2003
  * Configured by     : jhi
  * Target system     : osf1 kosh.hut.fi v5.1 2650 alpha 
  */
@@ -1480,7 +1480,7 @@
 #define OSVERS "5.1b"		/**/
 
 /* CAT2:
- *	This macro catenates 2 tokens together.
+ *	This macro concatenates 2 tokens together.
  */
 /* STRINGIFY:
  *	This macro surrounds its token with double quotes.
@@ -2646,7 +2646,7 @@
  *	This symbol, if defined, indicates that the nanosleep
  *	system call is available to sleep with 1E-9 sec accuracy.
  */
-#define HAS_NANOSLEEP		/**/
+/*#define HAS_NANOSLEEP		/ **/
 
 /* HAS_NL_LANGINFO:
  *	This symbol, if defined, indicates that the nl_langinfo routine is
@@ -2673,6 +2673,13 @@
 #if defined(HAS_PROCSELFEXE) && !defined(PROCSELFEXE_PATH)
 #define PROCSELFEXE_PATH		/**/
 #endif
+
+/* HAS_PTHREAD_ATTR_SETSCOPE:
+ *	This symbol, if defined, indicates that the pthread_attr_setscope
+ *	system call is available to set the contention scope attribute of
+ *	a thread attribute object.
+ */
+/*#define HAS_PTHREAD_ATTR_SETSCOPE		/ **/
 
 /* HAS_READV:
  *	This symbol, if defined, indicates that the readv routine is
@@ -3263,7 +3270,7 @@
  *	script to make sure (one hopes) that it runs with perl and not
  *	some shell.
  */
-#define STARTPERL "#!/opt/perl/bin/perl5.8.1"		/**/
+#define STARTPERL "#!/opt/perl/bin/perl"		/**/
 
 /* HAS_STDIO_STREAM_ARRAY:
  *	This symbol, if defined, tells that there is an array
@@ -3927,7 +3934,7 @@
 
 /* HAS_PTHREAD_ATFORK:
  *	This symbol, if defined, indicates that the pthread_atfork routine
- *	is available setup fork handlers.
+ *	is available to setup fork handlers.
  */
 /*#define HAS_PTHREAD_ATFORK		/ **/
 

@@ -13,7 +13,6 @@ $Is_VMS     = $^O eq 'VMS';
 $Is_MacPerl = $^O eq 'MacOS';
 
 my $splitchar = $^O eq 'VMS' ? '|' : ($^O eq 'os2' || $^O eq 'dos') ? ';' : ':';
-my @PERL_ENV_LIB = split $splitchar, defined $ENV{'PERL5LIB'} ? $ENV{'PERL5LIB'} : $ENV{'PERLLIB'} || '';
 my $Inc_uninstall_warn_handler;
 
 # install relative to here
@@ -56,7 +55,7 @@ perl modules. They are not designed as general purpose tools.
 =item B<install>
 
     install(\%from_to);
-    install(\%from_to, $verbose, $dont_execute);
+    install(\%from_to, $verbose, $dont_execute, $uninstall_shadows);
 
 Copies each directory tree of %from_to to its corresponding value
 preserving timestamps and permissions.
@@ -70,10 +69,13 @@ on AFS it is quite likely that people are installing to a different
 directory than the one where the files later appear.
 
 If $verbose is true, will print out each file removed.  Default is
-false.
+false.  This is "make install VERBINST=1"
 
 If $dont_execute is true it will only print what it was going to do
 without actually doing it.  Default is false.
+
+If $uninstall_shadows is true any differing versions throughout @INC
+will be uninstalled.  This is "make install UNINST=1"
 
 =cut
 
@@ -108,20 +110,11 @@ sub install {
 	for (readdir DIR) {
 	    next if $_ eq $Curdir || $_ eq $Updir || $_ eq ".exists";
             my $targetdir = install_rooted_dir($from_to{$source_dir_or_file});
-	    if ($nonono) {
-		if (!-w $targetdir) {
-		    print "mkpath($targetdir)\n" if $verbose>1;
-		}
-		last;
-	    } else {
-		if (-w $targetdir ||
-		    mkpath($targetdir)) {
-		    last;
-		} else {
-		    warn "Warning: You do not have permissions to " .
-			"install into $from_to{$source_dir_or_file}"
-			    unless $warn_permissions++;
-		}
+            mkpath($targetdir) unless $nonono;
+	    if (!$nonono && !-w $targetdir) {
+		warn "Warning: You do not have permissions to " .
+		    "install into $from_to{$source_dir_or_file}"
+		    unless $warn_permissions++;
 	    }
 	}
 	closedir DIR;
@@ -156,11 +149,13 @@ sub install {
 	find(sub {
 	    my ($mode,$size,$atime,$mtime) = (stat)[2,7,8,9];
 	    return unless -f _;
-	    return if $_ eq ".exists";
+
+            my $origfile = $_;
+	    return if $origfile eq ".exists";
 	    my $targetdir  = File::Spec->catdir($targetroot, $File::Find::dir);
-	    my $targetfile = File::Spec->catfile($targetdir, $_);
+	    my $targetfile = File::Spec->catfile($targetdir, $origfile);
             my $sourcedir  = File::Spec->catdir($source, $File::Find::dir);
-            my $sourcefile = File::Spec->catfile($sourcedir, $_);
+            my $sourcefile = File::Spec->catfile($sourcedir, $origfile);
 
             my $save_cwd = cwd;
             chdir $cwd;  # in case the target is relative
@@ -335,9 +330,14 @@ sub uninstall {
 }
 
 sub inc_uninstall {
-    my($file,$libdir,$verbose,$nonono) = @_;
+    my($filepath,$libdir,$verbose,$nonono) = @_;
     my($dir);
+    my $file = (File::Spec->splitpath($filepath))[2];
     my %seen_dir = ();
+
+    my @PERL_ENV_LIB = split $splitchar, defined $ENV{'PERL5LIB'} 
+      ? $ENV{'PERL5LIB'} : $ENV{'PERLLIB'} || '';
+
     foreach $dir (@INC, @PERL_ENV_LIB, @Config{qw(archlibexp
 						  privlibexp
 						  sitearchexp
@@ -351,9 +351,9 @@ sub inc_uninstall {
 	# know, which is the file we just installed (AFS). So we leave
 	# an identical file in place
 	my $diff = 0;
-	if ( -f $targetfile && -s _ == -s $file) {
+	if ( -f $targetfile && -s _ == -s $filepath) {
 	    # We have a good chance, we can skip this one
-	    $diff = compare($file,$targetfile);
+	    $diff = compare($filepath,$targetfile);
 	} else {
 	    print "#$file and $targetfile differ\n" if $verbose>1;
 	    $diff++;
@@ -379,6 +379,7 @@ sub inc_uninstall {
 
 sub run_filter {
     my ($cmd, $src, $dest) = @_;
+    local(*CMD, *SRC);
     open(CMD, "|$cmd >$dest") || die "Cannot fork: $!";
     open(SRC, $src)           || die "Cannot open $src: $!";
     my $buf;

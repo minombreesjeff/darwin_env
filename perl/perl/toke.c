@@ -676,7 +676,7 @@ S_check_uni(pTHX)
         char ch = *s;
         *s = '\0';
         Perl_warner(aTHX_ packWARN(WARN_AMBIGUOUS),
-		   "Warning: Use of \"%s\" without parens is ambiguous",
+		   "Warning: Use of \"%s\" without parentheses is ambiguous",
 		   PL_last_uni);
         *s = ch;
     }
@@ -780,6 +780,8 @@ S_force_word(pTHX_ register char *start, int token, int check_keyword, int allow
 	}
 	PL_nextval[PL_nexttoke].opval = (OP*)newSVOP(OP_CONST,0, newSVpv(PL_tokenbuf,0));
 	PL_nextval[PL_nexttoke].opval->op_private |= OPpCONST_BARE;
+	if (UTF && !IN_BYTES && is_utf8_string((U8*)PL_tokenbuf, len))
+	    SvUTF8_on(((SVOP*)PL_nextval[PL_nexttoke].opval)->op_sv);
 	force_next(token);
     }
     return s;
@@ -2701,7 +2703,9 @@ Perl_yylex(pTHX)
 		    else
 			newargv = PL_origargv;
 		    newargv[0] = ipath;
+		    PERL_FPU_PRE_EXEC
 		    PerlProc_execv(ipath, EXEC_ARGV_CAST(newargv));
+		    PERL_FPU_POST_EXEC
 		    Perl_croak(aTHX_ "Can't exec %s", ipath);
 		}
 #endif
@@ -2724,6 +2728,14 @@ Perl_yylex(pTHX)
 			    }
 			    d = moreswitches(d);
 			} while (d);
+			if (PL_doswitches && !switches_done) {
+			    int argc = PL_origargc;
+			    char **argv = PL_origargv;
+			    do {
+				argc--,argv++;
+			    } while (argc && argv[0][0] == '-' && argv[0][1]);
+			    init_argv_symbols(argc,argv);
+			}
 			if ((PERLDB_LINE && !oldpdb) ||
 			    ((PL_minus_n || PL_minus_p) && !(oldn || oldp)))
 			      /* if we have already added "LINE: while (<>) {",
@@ -3642,7 +3654,7 @@ Perl_yylex(pTHX)
     case '5': case '6': case '7': case '8': case '9':
 	s = scan_num(s, &yylval);
         DEBUG_T( { PerlIO_printf(Perl_debug_log,
-                    "### Saw number in '%s'\n", s);
+                    "### Saw number before '%s'\n", s);
         } );
 	if (PL_expect == XOPERATOR)
 	    no_op("Number",s);
@@ -7543,7 +7555,10 @@ Perl_scan_num(pTHX_ char *start, YYSTYPE* lvalp)
     case 'v':
 vstring:
 		sv = NEWSV(92,5); /* preallocate storage space */
-		s = new_vstring(s,sv);
+		s = scan_vstring(s,sv);
+		DEBUG_T( { PerlIO_printf(Perl_debug_log,
+		  "### Saw v-string before '%s'\n", s);
+		} ); 
 	break;
     }
 
@@ -7932,4 +7947,93 @@ utf16rev_textfilter(pTHX_ int idx, SV *sv, int maxlen)
     return count;
 }
 #endif
+
+/*
+Returns a pointer to the next character after the parsed
+vstring, as well as updating the passed in sv.
+
+Function must be called like
+
+	sv = NEWSV(92,5);
+	s = scan_vstring(s,sv);
+
+The sv should already be large enough to store the vstring
+passed in, for performance reasons.
+
+*/
+
+char *
+Perl_scan_vstring(pTHX_ char *s, SV *sv)
+{
+    char *pos = s;
+    char *start = s;
+    if (*pos == 'v') pos++;  /* get past 'v' */
+    while (pos < PL_bufend && (isDIGIT(*pos) || *pos == '_'))
+	pos++;
+    if ( *pos != '.') {
+	/* this may not be a v-string if followed by => */
+	char *next = pos;
+	while (next < PL_bufend && isSPACE(*next))
+	    ++next;
+	if ((PL_bufend - next) >= 2 && *next == '=' && next[1] == '>' ) {
+	    /* return string not v-string */
+	    sv_setpvn(sv,(char *)s,pos-s);
+	    return pos;
+	}
+    }
+
+    if (ckWARN(WARN_DEPRECATED))
+	Perl_warner(aTHX_ packWARN(WARN_DEPRECATED), "v-strings are deprecated");
+
+    if (!isALPHA(*pos)) {
+	UV rev;
+	U8 tmpbuf[UTF8_MAXLEN+1];
+	U8 *tmpend;
+
+	if (*s == 'v') s++;  /* get past 'v' */
+
+	sv_setpvn(sv, "", 0);
+
+	for (;;) {
+	    rev = 0;
+	    {
+		/* this is atoi() that tolerates underscores */
+		char *end = pos;
+		UV mult = 1;
+		while (--end >= s) {
+		    UV orev;
+		    if (*end == '_')
+			continue;
+		    orev = rev;
+		    rev += (*end - '0') * mult;
+		    mult *= 10;
+		    if (orev > rev && ckWARN_d(WARN_OVERFLOW))
+			Perl_warner(aTHX_ packWARN(WARN_OVERFLOW),
+				    "Integer overflow in decimal number");
+		}
+	    }
+#ifdef EBCDIC
+	    if (rev > 0x7FFFFFFF)
+		 Perl_croak(aTHX_ "In EBCDIC the v-string components cannot exceed 2147483647");
+#endif
+	    /* Append native character for the rev point */
+	    tmpend = uvchr_to_utf8(tmpbuf, rev);
+	    sv_catpvn(sv, (const char*)tmpbuf, tmpend - tmpbuf);
+	    if (!UNI_IS_INVARIANT(NATIVE_TO_UNI(rev)))
+		 SvUTF8_on(sv);
+	    if (pos + 1 < PL_bufend && *pos == '.' && isDIGIT(pos[1]))
+		 s = ++pos;
+	    else {
+		 s = pos;
+		 break;
+	    }
+	    while (pos < PL_bufend && (isDIGIT(*pos) || *pos == '_'))
+		 pos++;
+	}
+	SvPOK_on(sv);
+	sv_magic(sv,NULL,PERL_MAGIC_vstring,(const char*)start, pos-start);
+	SvRMAGICAL_on(sv);
+    }
+    return s;
+}
 

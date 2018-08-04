@@ -470,7 +470,7 @@ static stcxt_t *Context_ptr = NULL;
 	if (!mbase) {						\
 		TRACEME(("** allocating mbase of %d bytes", MGROW)); \
 		New(10003, mbase, MGROW, char);	\
-		msiz = MGROW;					\
+		msiz = (STRLEN)MGROW;					\
 	}									\
 	mptr = mbase;						\
 	if (x)								\
@@ -1237,13 +1237,13 @@ static void clean_store_context(stcxt_t *cxt)
 	if (cxt->hseen) {
 		hv_iterinit(cxt->hseen);
 		while ((he = hv_iternext(cxt->hseen)))	/* Extra () for -Wall, grr.. */
-			HeVAL(he) = &PL_sv_undef;
+			HeVAL(he) = &PL_sv_placeholder;
 	}
 
 	if (cxt->hclass) {
 		hv_iterinit(cxt->hclass);
 		while ((he = hv_iternext(cxt->hclass)))	/* Extra () for -Wall, grr.. */
-			HeVAL(he) = &PL_sv_undef;
+			HeVAL(he) = &PL_sv_placeholder;
 	}
 
 	/*
@@ -1322,7 +1322,8 @@ static void init_retrieve_context(stcxt_t *cxt, int optype, int is_tainted)
 	 * new retrieve routines.
 	 */
 
-	cxt->hseen = ((cxt->retrieve_vtbl == sv_old_retrieve) ? newHV() : 0);
+	cxt->hseen = (((void*)cxt->retrieve_vtbl == (void*)sv_old_retrieve)
+		      ? newHV() : 0);
 
 	cxt->aseen = newAV();			/* Where retrieved objects are kept */
 	cxt->aclass = newAV();			/* Where seen classnames are kept */
@@ -2207,7 +2208,7 @@ static int store_hash(stcxt_t *cxt, HV *hv)
                             = (((hash_flags & SHV_RESTRICTED)
                                 && SvREADONLY(val))
                                ? SHV_K_LOCKED : 0);
-                        if (val == &PL_sv_undef)
+                        if (val == &PL_sv_placeholder)
                             flags |= SHV_K_PLACEHOLDER;
 
 			keyval = SvPV(key, keylen_tmp);
@@ -2303,7 +2304,7 @@ static int store_hash(stcxt_t *cxt, HV *hv)
                             = (((hash_flags & SHV_RESTRICTED)
                                 && SvREADONLY(val))
                                              ? SHV_K_LOCKED : 0);
-                        if (val == &PL_sv_undef)
+                        if (val == &PL_sv_placeholder)
                             flags |= SHV_K_PLACEHOLDER;
 
                         hek = HeKEY_hek(he);
@@ -2379,7 +2380,7 @@ static int store_code(stcxt_t *cxt, CV *cv)
 #else
 	dSP;
 	I32 len;
-	int ret, count, reallen;
+	int count, reallen;
 	SV *text, *bdeparse;
 
 	TRACEME(("store_code (0x%"UVxf")", PTR2UV(cv)));
@@ -4895,7 +4896,7 @@ static SV *retrieve_flag_hash(stcxt_t *cxt, char *cname)
 
             if (flags & SHV_K_PLACEHOLDER) {
                 SvREFCNT_dec (sv);
-                sv = &PL_sv_undef;
+                sv = &PL_sv_placeholder;
 		store_flags |= HVhek_PLACEHOLD;
 	    }
             if (flags & SHV_K_UTF8) {
@@ -4960,7 +4961,7 @@ static SV *retrieve_code(stcxt_t *cxt, char *cname)
 	dSP;
 	int type, count;
 	SV *cv;
-	SV *sv, *text, *sub, *errsv;
+	SV *sv, *text, *sub;
 
 	TRACEME(("retrieve_code (#%d)", cxt->tagnum));
 

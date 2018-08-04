@@ -1,7 +1,7 @@
 package Encode::JP::JIS7;
 use strict;
 
-our $VERSION = do { my @r = (q$Revision$ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 1.12 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 use Encode qw(:fallbacks);
 
@@ -24,8 +24,6 @@ sub needs_lines { 1 }
 
 use Encode::CJKConstants qw(:all);
 
-our $DEBUG = 0;
-
 #
 # decode is identical for all 2022 variants
 #
@@ -35,8 +33,7 @@ sub decode($$;$)
     my ($obj, $str, $chk) = @_;
     my $residue = '';
     if ($chk){
-	$str =~ s/([^\x00-\x7f].*)$//so;
-	$1 and $residue = $1;
+	$str =~ s/([^\x00-\x7f].*)$//so and $residue = $1;
     }
     $residue .= jis_euc(\$str);
     $_[1] = $residue if $chk;

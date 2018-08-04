@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Id$
+# $Id: text-errors.t,v 1.1 2002/01/01 02:41:53 eagle Exp $
 #
 # texterrs.t -- Error tests for Pod::Text.
 #

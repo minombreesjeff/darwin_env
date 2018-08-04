@@ -4,23 +4,27 @@ perlsyn - Perl syntax
 
 =head1 DESCRIPTION
 
-A Perl script consists of a sequence of declarations and statements.
-The sequence of statements is executed just once, unlike in B<sed>
-and B<awk> scripts, where the sequence of statements is executed
-for each input line.  While this means that you must explicitly
-loop over the lines of your input file (or files), it also means
-you have much more control over which files and which lines you look at.
-(Actually, I'm lying--it is possible to do an implicit loop with
-either the B<-n> or B<-p> switch.  It's just not the mandatory
-default like it is in B<sed> and B<awk>.)
+A Perl program consists of a sequence of declarations and statements
+which run from the top to the bottom.  Loops, subroutines and other
+control structures allow you to jump around within the code.
 
-Perl is, for the most part, a free-form language.  (The only exception
-to this is format declarations, for obvious reasons.)  Text from a
-C<"#"> character until the end of the line is a comment, and is
-ignored.  If you attempt to use C</* */> C-style comments, it will be
-interpreted either as division or pattern matching, depending on the
-context, and C++ C<//> comments just look like a null regular
-expression, so don't do that.
+Perl is a B<free-form> language, you can format and indent it however
+you like.  Whitespace mostly serves to separate tokens, unlike
+languages like Python where it is an important part of the syntax.
+
+Many of Perl's syntactic elements are B<optional>.  Rather than
+requiring you to put parentheses around every function call and
+declare every variable, you can often leave such explicit elements off
+and Perl will figure out what you meant.  This is known as B<Do What I
+Mean>, abbreviated B<DWIM>.  It allows programmers to be B<lazy> and to
+code in a style with which they are comfortable.
+
+Perl B<borrows syntax> and concepts from many languages: awk, sed, C,
+Bourne Shell, Smalltalk, Lisp and even English.  Other
+languages have borrowed syntax from Perl, particularly its regular
+expression extensions.  So if you have programmed in another language
+you will see familiar pieces in Perl.  They often work the same, but
+see L<perltrap> for information about how they differ.
 
 =head2 Declarations
 
@@ -79,7 +83,13 @@ like an ordinary statement, and is elaborated within the sequence of
 statements as if it were an ordinary statement.  That means it actually
 has both compile-time and run-time effects.
 
-=head2 Simple statements
+=head2 Comments
+
+Text from a C<"#"> character until the end of the line is a comment,
+and is ignored.  Exceptions include C<"#"> inside a string or regular
+expression.
+
+=head2 Simple Statements
 
 The only kind of simple statement is an expression evaluated for its
 side effects.  Every simple statement must be terminated with a
@@ -141,7 +151,7 @@ previously assigned value, or possibly anything else.  Don't rely on
 it.  Future versions of perl might do something different from the
 version of perl you try it out on.  Here be dragons.
 
-=head2 Compound statements
+=head2 Compound Statements
 
 In Perl, a sequence of statements that defines a scope is called a block.
 Sometimes a block is delimited by the file containing it (in the case
@@ -192,23 +202,20 @@ desperate behavior triggers a warning if you use the C<use warnings>
 pragma or the B<-w> flag.
 
 If there is a C<continue> BLOCK, it is always executed just before the
-conditional is about to be evaluated again, just like the third part of a
-C<for> loop in C.  Thus it can be used to increment a loop variable, even
-when the loop has been continued via the C<next> statement (which is
-similar to the C C<continue> statement).
+conditional is about to be evaluated again.  Thus it can be used to
+increment a loop variable, even when the loop has been continued via
+the C<next> statement.
 
 =head2 Loop Control
 
-The C<next> command is like the C<continue> statement in C; it starts
-the next iteration of the loop:
+The C<next> command starts the next iteration of the loop:
 
     LINE: while (<STDIN>) {
 	next LINE if /^#/;	# discard comments
 	...
     }
 
-The C<last> command is like the C<break> statement in C (as used in
-loops); it immediately exits the loop in question.  The
+The C<last> command immediately exits the loop in question.  The
 C<continue> block, if any, is not executed:
 
     LINE: while (<STDIN>) {
@@ -442,8 +449,8 @@ In addition to the above BLOCK construct, you could write
     }
 
 (That's actually not as strange as it looks once you realize that you can
-use loop control "operators" within an expression,  That's just the normal
-C comma operator.)
+use loop control "operators" within an expression.  That's just the binary
+comma operator in scalar context.  See L<perlop/"Comma Operator">.)
 
 or
 
@@ -632,14 +639,20 @@ of code.
 
 =head2 Plain Old Comments (Not!)
 
-Much like the C preprocessor, Perl can process line directives.  Using
+Perl can process line directives, much like the C preprocessor.  Using
 this, one can control Perl's idea of filenames and line numbers in
 error or warning messages (especially for strings that are processed
 with C<eval()>).  The syntax for this mechanism is the same as for most
 C preprocessors: it matches the regular expression
-C</^#\s*line\s+(\d+)\s*(?:\s"([^"]+)")?\s*$/> with C<$1> being the line
-number for the next line, and C<$2> being the optional filename
-(specified within quotes).
+
+    # example: '# line 42 "new_filename.plx"'
+    /^\#   \s*
+      line \s+ (\d+)   \s*
+      (?:\s("?)([^"]+)\2)? \s*
+     $/x
+
+with C<$1> being the line number for the next line, and C<$3> being
+the optional filename (specified with or without quotes).
 
 There is a fairly obvious gotcha included with the line directive:
 Debuggers and profilers will only show the last source line to appear

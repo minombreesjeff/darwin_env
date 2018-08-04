@@ -1,5 +1,5 @@
 # -*- Mode: cperl; cperl-indent-level: 4 -*-
-# $Id: Harness.pm,v 1.5 2003/05/20 22:52:38 emoy Exp $
+# $Id: Harness.pm,v 1.52 2003/07/17 19:02:48 andy Exp $
 
 package Test::Harness;
 
@@ -13,16 +13,16 @@ use strict;
 
 use vars qw($VERSION $Verbose $Switches $Have_Devel_Corestack $Curtest
             $Columns $verbose $switches $ML $Strap
-            @ISA @EXPORT @EXPORT_OK
+            @ISA @EXPORT @EXPORT_OK $Last_ML_Print
            );
 
 # Backwards compatibility for exportable variable names.
-*verbose  = \$Verbose;
-*switches = \$Switches;
+*verbose  = *Verbose;
+*switches = *Switches;
 
 $Have_Devel_Corestack = 0;
 
-$VERSION = '2.28';
+$VERSION = '2.29';
 
 $ENV{HARNESS_ACTIVE} = 1;
 
@@ -35,6 +35,8 @@ END {
 my $Ignore_Exitcode = $ENV{HARNESS_IGNORE_EXITCODE};
 
 my $Files_In_Dir = $ENV{HARNESS_FILELEAK_IN_DIR};
+
+my $Ok_Slow = $ENV{HARNESS_OK_SLOW};
 
 $Strap = Test::Harness::Straps->new;
 
@@ -449,7 +451,7 @@ sub _run_all_tests {
 
     my $width = _leader_width(@tests);
     foreach my $tfile (@tests) {
-
+        $Last_ML_Print = 0;  # so each test prints at least once
         my($leader, $ml) = _mk_leader($tfile, $width);
         local $ML = $ml;
         print $leader;
@@ -523,7 +525,7 @@ sub _run_all_tests {
                 $failedtests{$tfile}{name} = $tfile;
             }
             elsif($results{seen}) {
-                if (@{$test{failed}}) {
+                if (@{$test{failed}} and $test{max}) {
                     my ($txt, $canon) = canonfailed($test{max},$test{skipped},
                                                     @{$test{failed}});
                     print "$test{ml}$txt";
@@ -706,7 +708,7 @@ $Handlers{test} = sub {
     my $detail = $totals->{details}[-1];
 
     if( $detail->{ok} ) {
-        _print_ml("ok $curr/$max");
+        _print_ml_less("ok $curr/$max");
 
         if( $detail->{type} eq 'skip' ) {
             $totals->{skip_reason} = $detail->{reason}
@@ -741,6 +743,15 @@ sub _print_ml {
     print join '', $ML, @_ if $ML;
 }
 
+
+# For slow connections, we save lots of bandwidth by printing only once
+# per second.
+sub _print_ml_less {
+    if( !$Ok_Slow || $Last_ML_Print != time ) {
+        _print_ml(@_);
+        $Last_ML_Print = time;
+    }
+}
 
 sub _bonusmsg {
     my($tot) = @_;
@@ -887,7 +898,7 @@ sub _create_fmts {
     }
 }
 
-sub canonfailed ($@) {
+sub canonfailed ($$@) {
     my($max,$skipped,@failed) = @_;
     my %seen;
     @failed = sort {$a <=> $b} grep !$seen{$_}++, @failed;
@@ -918,13 +929,23 @@ sub canonfailed ($@) {
     }
 
     push @result, "\tFailed $failed/$max tests, ";
-    push @result, sprintf("%.2f",100*(1-$failed/$max)), "% okay";
+    if ($max) {
+	push @result, sprintf("%.2f",100*(1-$failed/$max)), "% okay";
+    } else {
+	push @result, "?% okay";
+    }
     my $ender = 's' x ($skipped > 1);
     my $good = $max - $failed - $skipped;
-    my $goodper = sprintf("%.2f",100*($good/$max));
-    push @result, " (less $skipped skipped test$ender: $good okay, ".
-                  "$goodper%)"
-         if $skipped;
+    if ($skipped) {
+	my $skipmsg = " (less $skipped skipped test$ender: $good okay, ";
+	if ($max) {
+	    my $goodper = sprintf("%.2f",100*($good/$max));
+	    $skipmsg .= "$goodper%)";
+	} else {
+	    $skipmsg .= "?%)";
+	}
+	push @result, $skipmsg;
+    }
     push @result, "\n";
     my $txt = join "", @result;
     ($txt, $canon);
@@ -1028,6 +1049,12 @@ not a console.  You may need to set this if you don't want harness to
 output more frequent progress messages using carriage returns.  Some
 consoles may not handle carriage returns properly (which results in a
 somewhat messy output).
+
+=item C<HARNESS_OK_SLOW>
+
+If true, the C<ok> messages are printed out only every second.
+This reduces output and therefore may for example help testing
+over slow connections.
 
 =item C<HARNESS_PERL_SWITCHES>
 

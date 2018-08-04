@@ -326,3 +326,37 @@ print $f4{'foo'}[0],"\n";
 EXPECT
 2
 3
+########
+# test untie() from within FETCH
+package Foo;
+sub TIESCALAR { my $pkg = shift; return bless [@_], $pkg; }
+sub FETCH {
+  my $self = shift;
+  my ($obj, $field) = @$self;
+  untie $obj->{$field};
+  $obj->{$field} = "Bar";
+}
+package main;
+tie $a->{foo}, "Foo", $a, "foo";
+$a->{foo}; # access once
+# the hash element should not be tied anymore
+print defined tied $a->{foo} ? "not ok" : "ok";
+EXPECT
+ok
+########
+# the tmps returned by FETCH should appear to be SCALAR
+# (even though they are now implemented using PVLVs.)
+package X;
+sub TIEHASH { bless {} }
+sub TIEARRAY { bless {} }
+sub FETCH {1}
+my (%h, @a);
+tie %h, 'X';
+tie @a, 'X';
+my $r1 = \$h{1};
+my $r2 = \$a[0];
+my $s = "$r1 ". ref($r1) . " $r2 " . ref($r2);
+$s=~ s/\(0x\w+\)//g;
+print $s, "\n";
+EXPECT
+SCALAR SCALAR SCALAR SCALAR

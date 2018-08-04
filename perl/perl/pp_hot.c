@@ -763,7 +763,6 @@ PP(pp_rv2hv)
 {
     dSP; dTOPss;
     HV *hv;
-    I32 gimme = GIMME_V;
 
     if (SvROK(sv)) {
       wasref:
@@ -777,7 +776,7 @@ PP(pp_rv2hv)
 	    RETURN;
 	}
 	else if (LVRET) {
-	    if (GIMME != G_SCALAR)
+	    if (GIMME == G_SCALAR)
 		Perl_croak(aTHX_ "Can't return hash to lvalue scalar context");
 	    SETs((SV*)hv);
 	    RETURN;
@@ -1425,7 +1424,7 @@ yup:					/* Confirmed by INTUIT */
 	rx->startp[0] = s - truebase;
 	rx->endp[0] = s - truebase + rx->minlen;
     }
-    rx->nparens = rx->lastparen = 0;	/* used by @- and @+ */
+    rx->nparens = rx->lastparen = rx->lastcloseparen = 0;	/* used by @-, @+, and $^N */
     LEAVE_SCOPE(oldsave);
     RETPUSHYES;
 

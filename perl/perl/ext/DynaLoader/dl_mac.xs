@@ -5,17 +5,6 @@
  *		Adapted from dl_dlopen.xs reference implementation by
  *              Paul Marquess (pmarquess@bfsec.bt.co.uk)
  * $Log: dl_mac.xs,v $
- * Revision 1.4  2003/05/20 22:49:14  emoy
- * Update to Perl 5.8.1, including thread support and two level namespace.
- * Bug #: 3258028
- * Reviewed by: Jordan Hubbard
- *
- * Revision 1.3.2.1  2003/05/17 07:01:14  emoy
- * Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
- * two level namespace.  Append prefix, installprefix, and standard paths to
- * darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
- * .packlist.
- *
  * Revision 1.3  1998/04/07 01:47:24  neeri
  * MacPerl 5.2.0r4b1
  *

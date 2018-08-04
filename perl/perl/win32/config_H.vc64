@@ -7,7 +7,7 @@
  * that running config_h.SH again will wipe out any changes you've made.
  * For a more permanent change edit undef and rerun config_h.SH.
  *
- * $Id$
+ * $Id: Config_h.U,v 3.0.1.5 1997/02/28 14:57:43 ram Exp $
  */
 
 /*
@@ -2638,12 +2638,6 @@
  */
 /*#define HAS_STRUCT_MSGHDR	/**/
 
-/* HAS_NANOSLEEP:
- *	This symbol, if defined, indicates that the nanosleep
- *	system call is available to sleep with 1E-9 sec accuracy.
- */
-/*#define HAS_NANOSLEEP		/**/
-
 /* HAS_NL_LANGINFO:
  *	This symbol, if defined, indicates that the nl_langinfo routine is
  *	available to return local data.  You will also need <langinfo.h>
@@ -2669,6 +2663,13 @@
 #if defined(HAS_PROCSELFEXE) && !defined(PROCSELFEXE_PATH)
 #define PROCSELFEXE_PATH		/**/
 #endif
+
+/* HAS_PTHREAD_ATTR_SETSCOPE:
+ *	This symbol, if defined, indicates that the pthread_attr_setscope
+ *	system call is available to set the contention scope attribute of
+ *	a thread attribute object.
+ */
+/*#define HAS_PTHREAD_ATTR_SETSCOPE		/ **/
 
 /* HAS_READV:
  *	This symbol, if defined, indicates that the readv routine is
@@ -3932,7 +3933,7 @@
 
 /* HAS_PTHREAD_ATFORK:
  *	This symbol, if defined, indicates that the pthread_atfork routine
- *	is available setup fork handlers.
+ *	is available to setup fork handlers.
  */
 /*#define HAS_PTHREAD_ATFORK		/**/
 

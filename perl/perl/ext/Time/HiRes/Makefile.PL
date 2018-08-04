@@ -11,8 +11,12 @@ use strict;
 
 my $VERBOSE = $ENV{VERBOSE};
 my $DEFINE;
-my $LIBS;
+my $LIBS = [];
 my $XSOPT;
+
+use vars qw($self); # Used in 'sourcing' the hints.
+
+my $ld_exeext = ($^O eq 'os2' and $Config{ldflags} =~ /-Zexe\b/) ? '.exe' : '';
 
 unless($ENV{PERL_CORE}) {
     $ENV{PERL_CORE} = 1 if grep { $_ eq 'PERL_CORE=1' } @ARGV;
@@ -62,9 +66,9 @@ my $nop3 = *File::Spec::catfile;
 # if you have 5.004_03 (and some slightly older versions?), xsubpp
 # tries to generate line numbers in the C code generated from the .xs.
 # unfortunately, it is a little buggy around #ifdef'd code.
-# my choice is leave it in and have people with old perls complain 
+# my choice is leave it in and have people with old perls complain
 # about the "Usage" bug, or leave it out and be unable to compile myself
-# without changing it, and then I'd always forget to change it before a 
+# without changing it, and then I'd always forget to change it before a
 # release. Sorry, Edward :)
 
 sub TMPDIR {
@@ -125,7 +129,7 @@ sub try_compile_and_link {
         $cccmd = "$Config{'cc'} -o $tmp $ccflags $tmp.c @$LIBS $errornull"
 	    unless defined $cccmd;
 
-	if ($^O eq 'VMS') {
+       if ($^O eq 'VMS') {
 	    open( CMDFILE, ">$tmp.com" );
 	    print CMDFILE "\$ SET MESSAGE/NOFACILITY/NOSEVERITY/NOIDENT/NOTEXT\n";
 	    print CMDFILE "\$ $cccmd\n";
@@ -133,30 +137,31 @@ sub try_compile_and_link {
 	    close CMDFILE;
 	    system("\@ $tmp.com");
 	    $ok = $?==0;
-	    for ("$tmp.c", "$tmp$obj_ext", "$tmp.com", "$tmp$Config{exe_ext}") { 
+	    for ("$tmp.c", "$tmp$obj_ext", "$tmp.com", "$tmp$Config{exe_ext}") {
 		1 while unlink $_;
 	    }
         }
         else
         {
+	    my $tmp_exe = "$tmp$ld_exeext";
 	    printf "cccmd = $cccmd\n" if $VERBOSE;
-	    system($cccmd);
-	    $ok = -s $tmp && -x _;
-	    unlink("$tmp.c", $tmp);
+	    my $res = system($cccmd);
+	    $ok = defined($res) && $res==0 && -s $tmp_exe && -x _;
+	    unlink("$tmp.c", $tmp_exe);
         }
     }
-    
+
     $ok;
 }
 
 sub has_gettimeofday {
     # confusing but true (if condition true ==> -DHAS_GETTIMEOFDAY already)
-    return 0 if $Config{'d_gettimeod'} eq 'define';
+    return 0 if $Config{d_gettimeod} eq 'define';
     return 1 if try_compile_and_link(<<EOM);
-#include "EXTERN.h" 
-#include "perl.h" 
-#include "XSUB.h" 
-#ifdef I_SYS_TYPES 
+#include "EXTERN.h"
+#include "perl.h"
+#include "XSUB.h"
+#ifdef I_SYS_TYPES
 #   include <sys/types.h>
 #endif
 
@@ -209,51 +214,24 @@ EOM
     return 0;
 }
 
-sub unixinit {
-    $DEFINE = '';
-
-    $LIBS = [];
-
-    # this might break the link, try it if it can't find some things you 
-    # honestly think should be in there...
-    # $LIBS = ['-lucb -lbsd'];
-
-    # ... but ucb is poison for Solaris, and probably Linux. honest.
-    $LIBS = [] if $Config{'osname'} eq 'solaris';
-    $LIBS = [] if $Config{'osname'} eq 'linux';
-    $LIBS = ['-lm'] if $Config{'osname'} =~ /sco/i;
-    $LIBS = ['-lc'] if $Config{'osname'} =~ /dynixptx/i;
-
-    # For nanosleep
-    push @$LIBS, '-lrt' unless $Config{'osname'} =~ /^(?:irix|linux)$/;
-    push @$LIBS, '-lposix4';
-
-    my @goodlibs;
-
-    select(STDOUT);
-    $| = 1;
-
-    print "Checking for libraries...\n";
-    my $lib;
-    for $lib (@$LIBS) {
-	print "Checking for $lib... ";
-	$LIBS = [ $lib ];
-	if ($Config{libs} =~ /\b$lib\b/ || has_x("time(0)")) {
-	    push @goodlibs, $lib;
-	    print "found.\n";
-	} else {
-	    print "NOT found.\n";
+sub init {
+    my $hints = File::Spec->catfile("hints", "$^O.pl");
+    if (-f $hints) {
+	print "Using hints $hints...\n";
+	local $self;
+	do $hints;
+	if (exists $self->{LIBS}) {
+	    $LIBS = $self->{LIBS};
+	    print "Extra libraries: @$LIBS...\n";
 	}
     }
-    $LIBS = [ @goodlibs ];
-    print @$LIBS ?
-	  "You have extra libraries: @$LIBS.\n" :
-          "You have no applicable extra libraries.\n";
+
+    $DEFINE = '';
 
     print "Looking for gettimeofday()... ";
     my $has_gettimeofday;
-    if ($Config{'d_gettimeod'}) {
-	$has_gettimeofday++;
+    if (exists $Config{d_gettimeod}) {
+	$has_gettimeofday++ if $Config{d_gettimeod};
     } elsif (has_gettimeofday()) {
 	$DEFINE .= ' -DHAS_GETTIMEOFDAY';
 	$has_gettimeofday++;
@@ -277,8 +255,8 @@ EOD
 
     print "Looking for setitimer()... ";
     my $has_setitimer;
-    if ($Config{d_setitimer}) {
-        $has_setitimer++;
+    if (exists $Config{d_setitimer}) {
+        $has_setitimer++ if $Config{d_setitimer};
     } elsif (has_x("setitimer(ITIMER_REAL, 0, 0)")) {
         $has_setitimer++;
         $DEFINE .= ' -DHAS_SETITIMER';
@@ -292,8 +270,8 @@ EOD
 
     print "Looking for getitimer()... ";
     my $has_getitimer;
-    if ($Config{d_getitimer}) {
-        $has_getitimer++;
+    if (exists $Config{'d_getitimer'}) {
+        $has_getitimer++ if $Config{'d_getitimer'};
     } elsif (has_x("getitimer(ITIMER_REAL, 0)")) {
         $has_getitimer++;
         $DEFINE .= ' -DHAS_GETITIMER';
@@ -313,8 +291,8 @@ EOD
 
     print "Looking for ualarm()... ";
     my $has_ualarm;
-    if ($Config{d_ualarm}) {
-        $has_ualarm++;
+    if (exists $Config{d_ualarm}) {
+        $has_ualarm++ if $Config{d_ualarm};
     } elsif (has_x ("ualarm (0, 0)")) {
         $has_ualarm++;
 	$DEFINE .= ' -DHAS_UALARM';
@@ -332,8 +310,8 @@ EOD
 
     print "Looking for usleep()... ";
     my $has_usleep;
-    if ($Config{d_usleep}) {
-	$has_usleep++;
+    if (exists $Config{d_usleep}) {
+	$has_usleep++ if $Config{d_usleep};
     } elsif (has_x ("usleep (0)")) {
 	$has_usleep++;
 	$DEFINE .= ' -DHAS_USLEEP';
@@ -355,11 +333,14 @@ EOD
 
     print "Looking for nanosleep()... ";
     my $has_nanosleep;
-    if ($Config{d_nanosleep}) {
-	$has_nanosleep++;
+    if (exists $Config{d_nanosleep}) {
+	if ($Config{d_nanosleep}) {
+	    $has_nanosleep++;
+	    $DEFINE .= ' -DTIME_HIRES_NANOSLEEP';
+	}
     } elsif (has_x ("nanosleep (NULL, NULL)")) {
 	$has_nanosleep++;
-	$DEFINE .= ' -DHAS_NANOSLEEP';
+	$DEFINE .= ' -DTIME_HIRES_NANOSLEEP';
     }
 
     if ($has_nanosleep) {
@@ -367,7 +348,8 @@ EOD
         print "You can mix subsecond sleeps with signals.\n";
     } else {
 	print "NOT found.\n";
-        print "You cannot mix subsecond sleeps with signals.\n";
+	my $nt = ($^O eq 'os2' ? '' : 'not');
+        print "You can$nt mix subsecond sleeps with signals.\n";
     }
 
     if ($DEFINE) {
@@ -393,15 +375,15 @@ sub doMakefile {
     push (@makefileopts,
 	'NAME'	=> 'Time::HiRes',
 	'VERSION_FROM' => 'HiRes.pm', # finds $VERSION
-	'LIBS'	=> $LIBS,   # e.g., '-lm' 
-	'DEFINE'	=> $DEFINE,     # e.g., '-DHAS_SOMETHING' 
+	'LIBS'	=> $LIBS,   # e.g., '-lm'
+	'DEFINE'	=> $DEFINE,     # e.g., '-DHAS_SOMETHING'
 	'XSOPT'	=> $XSOPT,
     # do not even think about 'INC' => '-I/usr/ucbinclude', Solaris will avenge.
-	'INC'	=> '',     # e.g., '-I/usr/include/other' 
+	'INC'	=> '',     # e.g., '-I/usr/include/other'
 	'INSTALLDIRS' => 'perl',
 	'dist'      => {
 	    'CI'       => 'ci -l',
-	    'COMPRESS' => 'gzip -9f', 
+	    'COMPRESS' => 'gzip -9f',
 	    'SUFFIX'   => 'gz',
 	},
         clean => { FILES => "xdefine" },
@@ -422,7 +404,11 @@ sub doConstants {
 	foreach (qw (d_usleep d_ualarm d_gettimeofday d_getitimer d_setitimer
 		     d_nanosleep)) {
 	    my $macro = $_;
-	    $macro =~ s/d_(.*)/HAS_\U$1/;
+	    if ($macro eq 'd_nanosleep') {
+		$macro =~ s/d_(.*)/TIME_HIRES_\U$1/;
+	    } else {
+		$macro =~ s/d_(.*)/HAS_\U$1/;
+	    }
 	    push @names, {name => $_, macro => $macro, value => 1,
 			  default => ["IV", "0"]};
 	}
@@ -448,9 +434,9 @@ sub main {
 
     if ($^O =~ /Win32/i) {
       $DEFINE = '-DSELECT_IS_BROKEN';
-      $LIBS = [''];
+      $LIBS = [];
     } else {
-      unixinit();
+      init();
     }
     doMakefile;
     doConstants;

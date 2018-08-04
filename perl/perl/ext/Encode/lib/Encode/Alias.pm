@@ -1,8 +1,9 @@
 package Encode::Alias;
 use strict;
+no warnings 'redefine';
 use Encode;
-our $VERSION = do { my @r = (q$Revision$ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
-our $DEBUG = 0;
+our $VERSION = do { my @r = (q$Revision: 1.37 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+sub DEBUG () { 0 }
 
 use base qw(Exporter);
 
@@ -31,13 +32,13 @@ sub find_alias
 	    my $new;
 	    if (ref($alias) eq 'Regexp' && $find =~ $alias)
 	    {
-		$DEBUG and warn "eval $val";
+		DEBUG and warn "eval $val";
 		$new = eval $val;
-		$DEBUG and $@ and warn "$val, $@";
+		DEBUG and $@ and warn "$val, $@";
 	    }
 	    elsif (ref($alias) eq 'CODE')
 	    {
-		$DEBUG and warn "$alias", "->", "($find)";
+		DEBUG and warn "$alias", "->", "($find)";
 		$new = $alias->($find);
 	    }
 	    elsif (lc($find) eq lc($alias))
@@ -47,7 +48,7 @@ sub find_alias
 	    if (defined($new))
 	    {
 		next if $new eq $find; # avoid (direct) recursion on bugs
-		$DEBUG and warn "$alias, $new";
+		DEBUG and warn "$alias, $new";
 		my $enc = (ref($new)) ? $new : Encode::find_encoding($new);
 		if ($enc)
 		{
@@ -57,7 +58,7 @@ sub find_alias
 	    }
 	}
     }
-    if ($DEBUG){
+    if (DEBUG){
 	my $name;
 	if (my $e = $Alias{$find}){
 	    $name = $e->name;
@@ -81,17 +82,17 @@ sub define_alias
 	    for my $k (@a){
 		if (ref($alias) eq 'Regexp' && $k =~ $alias)
 		{
-		    $DEBUG and warn "delete \$Alias\{$k\}";
+		    DEBUG and warn "delete \$Alias\{$k\}";
 		    delete $Alias{$k};
 		}
 		elsif (ref($alias) eq 'CODE')
 		{
-		    $DEBUG and warn "delete \$Alias\{$k\}";
+		    DEBUG and warn "delete \$Alias\{$k\}";
 		    delete $Alias{$alias->($name)};
 		}
 	    }
 	}else{
-	    $DEBUG and warn "delete \$Alias\{$alias\}";
+	    DEBUG and warn "delete \$Alias\{$alias\}";
 	    delete $Alias{$alias};
 	}
     }
@@ -128,6 +129,7 @@ sub init_aliases
     define_alias( qr/^(.*)$/ => '"\L$1"' );
 
     # UTF/UCS stuff
+    define_alias( qr/^UTF-?7$/i           => '"UTF-7"');
     define_alias( qr/^UCS-?2-?LE$/i       => '"UCS-2LE"' );
     define_alias( qr/^UCS-?2-?(BE)?$/i    => '"UCS-2BE"',
                   qr/^UCS-?4-?(BE|LE)?$/i => 'uc("UTF-32$1")',
@@ -190,9 +192,9 @@ sub init_aliases
     # define_alias( qr/\bmacRomanian$/i => '"macRumanian"');
   
     # Standardize on the dashed versions.
-    # define_alias( qr/\butf8$/i  => 'utf-8' );
-    define_alias( qr/\bkoi8r$/i => 'koi8-r' );
-    define_alias( qr/\bkoi8u$/i => 'koi8-u' );
+    # define_alias( qr/\butf8$/i  => '"utf-8"' );
+    define_alias( qr/\bkoi8r$/i => '"koi8-r"' );
+    define_alias( qr/\bkoi8u$/i => '"koi8-u"' );
 
     unless ($Encode::ON_EBCDIC){
         # for Encode::CN
@@ -202,7 +204,7 @@ sub init_aliases
 	# CP936 doesn't have vendor-addon for GBK, so they're identical.
 	define_alias( qr/^gbk$/i => '"cp936"');
 	# This fixes gb2312 vs. euc-cn confusion, practically
-	define_alias( qr/\bGB[-_ ]?2312(?:\D.*$|$)/i => '"euc-cn"' );
+	define_alias( qr/\bGB[-_ ]?2312(?!-?raw)/i => '"euc-cn"' );
 	# for Encode::JP
 	define_alias( qr/\bjis$/i            => '"7bit-jis"' );
 	define_alias( qr/\beuc.*jp$/i        => '"euc-jp"' );

@@ -1,4 +1,4 @@
-# $Id$
+# $Id: vos.sh,v 1.0 2001-12-11 09:30:00-05 Green Exp $
 
 # This is a hints file for Stratus VOS, using the POSIX environment
 # in VOS 14.4.0 and higher.
@@ -144,6 +144,4 @@ fi
 $rm -f t001$_o t001$_exe t001.kp
 EOCBU
 
-# VOS has a nanosleep() function but it is a dummy.
-d_nanosleep="undef"
 

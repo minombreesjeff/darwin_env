@@ -30,23 +30,7 @@ include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
 Install_Target  = install-strip
 CC_Optimize     = 
 Extra_CC_Flags  = 
-Configure_Flags = -ds -e -Dprefix='$(Install_Prefix)' -Dccflags='$(CFLAGS)' -Dldflags='$(LDFLAGS)' -Dman3ext=3pm -Duseithreads
-
-##--------------------------------------------------------------------------
-# Getting perl to compile outside of the source tree is a severe pain.
-# I got some of it working, but it's pretty bothersome, so we'll cheat here and
-# create a 'shadow tree' instead and build there.
-#
-# We also patch hints/darwin.sh to include the arch in the archname, to
-# install in $(DSTROOT), and to force putting things in the right place.
-##--------------------------------------------------------------------------
-lazy_install_source:: shadow_source patch_hints
-
-HINTS = $(OBJROOT)/hints/darwin.sh
-
-patch_hints:
-	$(_v) $(MV) $(HINTS) $(HINTS).orig
-	$(_v) $(CAT) $(HINTS).orig $(SRCROOT)/hints.append > $(HINTS)
+Configure_Flags = -ds -e -Dprefix='$(Install_Prefix)' -Dccflags='$(CFLAGS)' -Dldflags='$(LDFLAGS)' -Dman3ext=3pm -Duseithreads -Duseshrplib
 
 ##--------------------------------------------------------------------------
 # We need to strip $(DSTROOT) from Config.pm and .packlist.

@@ -3,18 +3,25 @@ package B::Concise;
 # This program is free software; you can redistribute and/or modify it
 # under the same terms as Perl itself.
 
-use strict;
-use warnings;
+# Note: we need to keep track of how many use declarations/BEGIN
+# blocks this module uses, so we can avoid printing them when user
+# asks for the BEGIN blocks in her program. Update the comments and
+# the count in concise_specials if you add or delete one. The
+# -MO=Concise counts as use #1.
 
-use Exporter ();
+use strict; # use #2
+use warnings; # uses #3 and #4, since warnings uses Carp
 
-our $VERSION   = "0.55";
+use Exporter (); # use #5
+
+our $VERSION   = "0.56";
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(set_style set_style_standard add_callback
-		    concise_cv concise_main);
+		    concise_subref concise_cv concise_main);
 
+# use #6
 use B qw(class ppname main_start main_root main_cv cstring svref_2object
-	 SVf_IOK SVf_NOK SVf_POK SVf_IVisUV OPf_KIDS);
+	 SVf_IOK SVf_NOK SVf_POK SVf_IVisUV SVf_FAKE OPf_KIDS CVf_ANON);
 
 my %style = 
   ("terse" =>
@@ -61,9 +68,17 @@ sub add_callback {
     push @callbacks, @_;
 }
 
-sub concise_cv {
-    my ($order, $cvref) = @_;
-    my $cv = svref_2object($cvref);
+sub concise_subref {
+    my($order, $subref) = @_;
+    concise_cv_obj($order, svref_2object($subref));
+}
+
+# This should have been called concise_subref, but it was exported
+# under this name in versions before 0.56
+sub concise_cv { concise_subref(@_); }
+
+sub concise_cv_obj {
+    my ($order, $cv) = @_;
     $curcv = $cv;
     sequence($cv->START);
     if ($order eq "exec") {
@@ -89,6 +104,21 @@ sub concise_main {
 	return if class(main_root) eq "NULL";
 	walk_topdown(main_root,
 		     sub { $_[0]->concise($_[1]) }, 0);
+    }
+}
+
+sub concise_specials {
+    my($name, $order, @cv_s) = @_;
+    my $i = 1;
+    if ($name eq "BEGIN") {
+	splice(@cv_s, 0, 7); # skip 7 BEGIN blocks in this file
+    } elsif ($name eq "CHECK") {
+	pop @cv_s; # skip the CHECK block that calls us
+    }
+    for my $cv (@cv_s) {	
+	print "$name $i:\n";
+	$i++;
+	concise_cv_obj($order, $cv);
     }
 }
 
@@ -146,10 +176,28 @@ sub compile {
     return sub {
 	if (@args) {
 	    for my $objname (@args) {
-		$objname = "main::" . $objname unless $objname =~ /::/;
-		print "$objname:\n";
-		eval "concise_cv(\$order, \\&$objname)";
-		die "concise_cv($order, \\&$objname) failed: $@" if $@;
+		if ($objname eq "BEGIN") {
+		    concise_specials("BEGIN", $order,
+				     B::begin_av->isa("B::AV") ?
+				     B::begin_av->ARRAY : ());
+		} elsif ($objname eq "INIT") {
+		    concise_specials("INIT", $order,
+				     B::init_av->isa("B::AV") ?
+				     B::init_av->ARRAY : ());
+		} elsif ($objname eq "CHECK") {
+		    concise_specials("CHECK", $order,
+				     B::check_av->isa("B::AV") ?
+				     B::check_av->ARRAY : ());
+		} elsif ($objname eq "END") {
+		    concise_specials("END", $order,
+				     B::end_av->isa("B::AV") ?
+				     B::end_av->ARRAY : ());
+		} else {
+		    $objname = "main::" . $objname unless $objname =~ /::/;
+		    print "$objname:\n";
+		    eval "concise_subref(\$order, \\&$objname)";
+		    die "concise_subref($order, \\&$objname) failed: $@" if $@;
+		}
 	    }
 	}
 	if (!@args or $do_main) {
@@ -166,7 +214,7 @@ my %opclass = ('OP' => "0", 'UNOP' => "1", 'BINOP' => "2", 'LOGOP' => "|",
 	       'LISTOP' => "@", 'PMOP' => "/", 'SVOP' => "\$", 'GVOP' => "*",
 	       'PVOP' => '"', 'LOOP' => "{", 'COP' => ";", 'PADOP' => "#");
 
-no warnings 'qw'; # "Possible attempt to put comments..."
+no warnings 'qw'; # "Possible attempt to put comments..."; use #7
 my @linenoise =
   qw'#  () sc (  @? 1  $* gv *{ m$ m@ m% m? p/ *$ $  $# & a& pt \\ s\\ rf bl
      `  *? <> ?? ?/ r/ c/ // qr s/ /c y/ =  @= C  sC Cp sp df un BM po +1 +I
@@ -227,9 +275,13 @@ sub walk_topdown {
 	    walk_topdown($kid, $sub, $level + 1);
 	}
     }
-    if (class($op) eq "PMOP" and $op->pmreplroot and $ {$op->pmreplroot}
-	and $op->pmreplroot->isa("B::OP")) {
-	walk_topdown($op->pmreplroot, $sub, $level + 1);
+    if (class($op) eq "PMOP") {
+	my $maybe_root = $op->pmreplroot;
+	if (ref($maybe_root) and $maybe_root->isa("B::OP")) {
+	    # It really is the root of the replacement, not something
+	    # else stored here for lack of space elsewhere
+	    walk_topdown($maybe_root, $sub, $level + 1);
+	}
     }
 }
 
@@ -326,7 +378,7 @@ my %priv;
 $priv{$_}{128} = "LVINTRO"
   for ("pos", "substr", "vec", "threadsv", "gvsv", "rv2sv", "rv2hv", "rv2gv",
        "rv2av", "rv2arylen", "aelem", "helem", "aslice", "hslice", "padsv",
-       "padav", "padhv");
+       "padav", "padhv", "enteriter");
 $priv{$_}{64} = "REFC" for ("leave", "leavesub", "leavesublv", "leavewrite");
 $priv{"aassign"}{64} = "COMMON";
 $priv{"aassign"}{32} = "PHASH";
@@ -343,7 +395,8 @@ $priv{"entersub"}{32} = "TARG";
 @{$priv{$_}}{4,8,128} = ("INARGS","AMPER","NO()") for ("entersub", "rv2cv");
 $priv{"gv"}{32} = "EARLYCV";
 $priv{"aelem"}{16} = $priv{"helem"}{16} = "LVDEFER";
-$priv{$_}{16} = "OURINTR" for ("gvsv", "rv2sv", "rv2av", "rv2hv", "r2gv");
+$priv{$_}{16} = "OURINTR" for ("gvsv", "rv2sv", "rv2av", "rv2hv", "r2gv",
+	"enteriter");
 $priv{$_}{16} = "TARGMY"
   for (map(($_,"s$_"),"chop", "chomp"),
        map(($_,"i_$_"), "postinc", "postdec", "multiply", "divide", "modulo",
@@ -430,16 +483,28 @@ sub concise_op {
     $h{extarg} = $h{targ} = $op->targ;
     $h{extarg} = "" unless $h{extarg};
     if ($h{name} eq "null" and $h{targ}) {
+	# targ holds the old type
 	$h{exname} = "ex-" . substr(ppname($h{targ}), 3);
 	$h{extarg} = "";
+    } elsif ($op->name =~ /^leave(sub(lv)?|write)?$/) {
+	# targ potentially holds a reference count
+	if ($op->private & 64) {
+	    my $refs = "ref" . ($h{targ} != 1 ? "s" : "");
+	    $h{targarglife} = $h{targarg} = "$h{targ} $refs";
+	}
     } elsif ($h{targ}) {
 	my $padname = (($curcv->PADLIST->ARRAY)[0]->ARRAY)[$h{targ}];
 	if (defined $padname and class($padname) ne "SPECIAL") {
 	    $h{targarg}  = $padname->PVX;
-	    my $intro = $padname->NVX - $cop_seq_base;
-	    my $finish = int($padname->IVX) - $cop_seq_base;
-	    $finish = "end" if $finish == 999999999 - $cop_seq_base;
-	    $h{targarglife} = "$h{targarg}:$intro,$finish";
+	    if ($padname->FLAGS & SVf_FAKE) {
+		$h{targarglife} = "$h{targarg}:FAKE";
+	    }
+	    else {
+		my $intro = $padname->NVX - $cop_seq_base;
+		my $finish = int($padname->IVX) - $cop_seq_base;
+		$finish = "end" if $finish == 999999999 - $cop_seq_base;
+		$h{targarglife} = "$h{targarg}:$intro,$finish";
+	    }
 	} else {
 	    $h{targarglife} = $h{targarg} = "t" . $h{targ};
 	}
@@ -456,10 +521,16 @@ sub concise_op {
 	}
 	my $pmreplroot = $op->pmreplroot;
 	my $pmreplstart;
-	if ($pmreplroot && $$pmreplroot && $pmreplroot->isa("B::GV")) {
+	if (ref($pmreplroot) eq "B::GV") {
 	    # with C<@stash_array = split(/pat/, str);>,
-	    #  *stash_array is stored in pmreplroot.
+	    #  *stash_array is stored in /pat/'s pmreplroot.
 	    $h{arg} = "($precomp => \@" . $pmreplroot->NAME . ")";
+	} elsif (!ref($pmreplroot) and $pmreplroot) {
+	    # same as the last case, except the value is actually a
+	    # pad offset for where the GV is kept (this happens under
+	    # ithreads)
+	    my $gv = (($curcv->PADLIST->ARRAY)[1]->ARRAY)[$pmreplroot];
+	    $h{arg} = "($precomp => \@" . $gv->NAME . ")";
 	} elsif ($ {$op->pmreplstart}) {
 	    undef $lastnext;
 	    $pmreplstart = "replstart->" . seq($op->pmreplstart);
@@ -631,7 +702,7 @@ sub tree {
 # Remember, this needs to stay the last things in the module.
 
 # Why is this different for MacOS?  Does it matter?
-my $cop_seq_mnum = $^O eq 'MacOS' ? 10 : 9;
+my $cop_seq_mnum = $^O eq 'MacOS' ? 12 : 11;
 $cop_seq_base = svref_2object(eval 'sub{0;}')->START->cop_seq + $cop_seq_mnum;
 
 1;
@@ -665,7 +736,7 @@ Here's is a short example of output, using the default formatting
 conventions :
 
     % perl -MO=Concise -e '$a = $b + 42'
-    8  <@> leave[t1] vKP/REFC ->(end)
+    8  <@> leave[1 ref] vKP/REFC ->(end)
     1     <0> enter ->2
     2     <;> nextstate(main 1 -e:1) v ->3
     7     <2> sassign vKS/2 ->8
@@ -700,9 +771,11 @@ Finally an arrow points to the sequence number of the next op.
 =head1 OPTIONS
 
 Arguments that don't start with a hyphen are taken to be the names of
-subroutines to print the OPs of; if no such functions are specified, the
-main body of the program (outside any subroutines, and not including use'd
-or require'd files) is printed.
+subroutines to print the OPs of; if no such functions are specified,
+the main body of the program (outside any subroutines, and not
+including use'd or require'd files) is printed. Passing C<BEGIN>,
+C<CHECK>, C<INIT>, or C<END> will cause all of the corresponding
+special blocks to be printed.
 
 =over 4
 

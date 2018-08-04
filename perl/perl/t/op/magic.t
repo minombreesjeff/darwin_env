@@ -36,7 +36,7 @@ sub skip {
     return 1;
 }
 
-print "1..52\n";
+print "1..53\n";
 
 $Is_MSWin32 = $^O eq 'MSWin32';
 $Is_NetWare = $^O eq 'NetWare';
@@ -264,7 +264,7 @@ ok $^O;
 ok $^T > 850000000, $^T;
 
 if ($Is_VMS || $Is_Dos || $Is_MacOS) {
-    skip("%ENV manipulations fail or aren't safe on $^O") for 1..3;
+    skip("%ENV manipulations fail or aren't safe on $^O") for 1..4;
 }
 else {
 	$PATH = $ENV{PATH};
@@ -286,10 +286,36 @@ else {
 	    open CMDLINE, "/proc/$$/cmdline") {
 	    chomp(my $line = scalar <CMDLINE>);
 	    my $me = (split /\0/, $line)[0];
-	    ok($me eq $0, 'altering $0 is effective');
+	    ok($me eq $0, 'altering $0 is effective (testing with /proc/)');
 	    close CMDLINE;
+            # perlbug #22811
+            my $mydollarzero = sub {
+              my($arg) = shift;
+              $0 = $arg if defined $arg;
+	      # In FreeBSD the ps -o command= will cause
+	      # an empty header line, grab only the last line.
+              my $ps = (`ps -o command= -p $$`)[-1];
+              return if $?;
+              chomp $ps;
+              printf "# 0[%s]ps[%s]\n", $0, $ps;
+              $ps;
+            };
+            my $ps = $mydollarzero->("x");
+            ok(!$ps  # we allow that something goes wrong with the ps command
+	       # In Linux 2.4 we would get an exact match ($ps eq 'x') but
+	       # in Linux 2.2 there seems to be something funny going on:
+	       # it seems as if the original length of the argv[] would
+	       # be stored in the proc struct and then used by ps(1),
+	       # no matter what characters we use to pad the argv[].
+	       # (And if we use \0:s, they are shown as spaces.)  Sigh.
+               || $ps =~ /^x\s*$/
+	       # FreeBSD cannot get rid of both the leading "perl :"
+	       # and the trailing " (perl)": some FreeBSD versions
+	       # can get rid of the first one.
+	       || ($^O eq 'freebsd' && $ps =~ m/^(?:perl: )?x(?: \(perl\))?$/),
+		       'altering $0 is effective (testing with `ps`)');
 	} else {
-	    skip("\$0 check only on Linux and FreeBSD with /proc");
+	    skip("\$0 check only on Linux and FreeBSD") for 0, 1;
 	}
 }
 
@@ -316,20 +342,16 @@ else {
     skip('no caseless %ENV support') for 1..4;
 }
 
-{
-   no warnings 'void';
-
 # Make sure Errno hasn't been prematurely autoloaded
 
-   ok !defined %Errno::;
+ok !defined %Errno::;
 
 # Test auto-loading of Errno when %! is used
 
-   ok scalar eval q{
-      %!;
-      defined %Errno::;
-   }, $@;
-}
+ok scalar eval q{
+   my $errs = %!;
+   defined %Errno::;
+}, $@;
 
 
 # Make sure that Errno loading doesn't clobber $!

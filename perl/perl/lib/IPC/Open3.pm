@@ -95,7 +95,7 @@ The order of arguments differs from that of open2().
 # allow fd numbers to be used, by Frank Tobin
 # allow '-' as command (c.f. open "-|"), by Adam Spiers <perl@adamspiers.org>
 #
-# $Id: Open3.pm,v 1.5 2003/05/20 22:51:52 emoy Exp $
+# $Id: open3.pl,v 1.1 1993/11/23 06:26:15 marc Exp $
 #
 # usage: $pid = open3('wtr', 'rdr', 'err' 'some cmd and args', 'optarg', ...);
 #

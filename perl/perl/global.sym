@@ -21,6 +21,7 @@ perl_destruct
 perl_free
 perl_run
 perl_parse
+Perl_doing_taint
 perl_clone
 perl_clone_using
 Perl_malloc
@@ -325,7 +326,7 @@ Perl_newSVsv
 Perl_newUNOP
 Perl_newWHILEOP
 Perl_new_stackinfo
-Perl_new_vstring
+Perl_scan_vstring
 Perl_ninstr
 Perl_op_free
 Perl_pad_sv
@@ -420,6 +421,7 @@ Perl_scan_hex
 Perl_scan_num
 Perl_scan_oct
 Perl_screaminstr
+Perl_csighandler
 Perl_stack_grow
 Perl_start_subparse
 Perl_sv_2bool

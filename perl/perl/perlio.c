@@ -430,9 +430,11 @@ PerlIO_findFILE(PerlIO *pio)
 #include <sys/mman.h>
 #endif
 
-
+/*
+ * Why is this here - not in perlio.h?  RMB
+ */
 void PerlIO_debug(const char *fmt, ...)
-    __attribute__ ((format(__printf__, 1, 2)));
+    __attribute__format__(__printf__, 1, 2);
 
 void
 PerlIO_debug(const char *fmt, ...)
@@ -1068,7 +1070,7 @@ PerlIO_default_layers(pTHX)
 	PerlIO_funcs *osLayer = &PerlIO_unix;
 	PL_def_layerlist = PerlIO_list_alloc(aTHX);
 	PerlIO_define_layer(aTHX_ & PerlIO_unix);
-#if defined(WIN32) && !defined(UNDER_CE)
+#if defined(WIN32)
 	PerlIO_define_layer(aTHX_ & PerlIO_win32);
 #if 0
 	osLayer = &PerlIO_win32;
@@ -2031,8 +2033,11 @@ PerlIOBase_read(pTHX_ PerlIO *f, void *vbuf, Size_t count)
 {
     STDCHAR *buf = (STDCHAR *) vbuf;
     if (f) {
-	if (!(PerlIOBase(f)->flags & PERLIO_F_CANREAD))
+        if (!(PerlIOBase(f)->flags & PERLIO_F_CANREAD)) {
+	    PerlIOBase(f)->flags |= PERLIO_F_ERROR;
+	    SETERRNO(EBADF, SS_IVCHAN);
 	    return 0;
+	}
 	while (count > 0) {
 	    SSize_t avail = PerlIO_get_cnt(f);
 	    SSize_t take = 0;
@@ -2447,10 +2452,15 @@ PerlIOUnix_read(pTHX_ PerlIO *f, void *vbuf, Size_t count)
     while (1) {
 	SSize_t len = PerlLIO_read(fd, vbuf, count);
 	if (len >= 0 || errno != EINTR) {
-	    if (len < 0)
-		PerlIOBase(f)->flags |= PERLIO_F_ERROR;
-	    else if (len == 0 && count != 0)
+	    if (len < 0) {
+		if (errno != EAGAIN) {
+		    PerlIOBase(f)->flags |= PERLIO_F_ERROR;
+		}
+	    }
+	    else if (len == 0 && count != 0) {
 		PerlIOBase(f)->flags |= PERLIO_F_EOF;
+		SETERRNO(0,0);
+	    }
 	    return len;
 	}
 	PERL_ASYNC_CHECK();
@@ -2464,8 +2474,11 @@ PerlIOUnix_write(pTHX_ PerlIO *f, const void *vbuf, Size_t count)
     while (1) {
 	SSize_t len = PerlLIO_write(fd, vbuf, count);
 	if (len >= 0 || errno != EINTR) {
-	    if (len < 0)
-		PerlIOBase(f)->flags |= PERLIO_F_ERROR;
+	    if (len < 0) {
+		if (errno != EAGAIN) {
+		    PerlIOBase(f)->flags |= PERLIO_F_ERROR;
+		}
+	    }
 	    return len;
 	}
 	PERL_ASYNC_CHECK();
@@ -2941,7 +2954,7 @@ PerlIOStdio_close(pTHX_ PerlIO *f)
 	}
 	if (dupfd) {
 	    PerlLIO_dup2(dupfd,fd);
-	    close(dupfd);
+	    PerlLIO_close(dupfd);
 	}
 	return result;
     }
@@ -2967,10 +2980,10 @@ PerlIOStdio_read(pTHX_ PerlIO *f, void *vbuf, Size_t count)
 	}
 	else
 	    got = PerlSIO_fread(vbuf, 1, count, s);
-	if (got || errno != EINTR)
+	if (got >= 0 || errno != EINTR)
 	    break;
 	PERL_ASYNC_CHECK();
-	errno = 0;	/* just in case */
+	SETERRNO(0,0);	/* just in case */
     }
     return got;
 }
@@ -3040,10 +3053,10 @@ PerlIOStdio_write(pTHX_ PerlIO *f, const void *vbuf, Size_t count)
     for (;;) {
 	got = PerlSIO_fwrite(vbuf, 1, count,
 			      PerlIOSelf(f, PerlIOStdio)->stdio);
-	if (got || errno != EINTR)
+	if (got >= 0 || errno != EINTR)
 	    break;
 	PERL_ASYNC_CHECK();
-	errno = 0;	/* just in case */
+	SETERRNO(0,0);	/* just in case */
     }
     return got;
 }
@@ -3313,10 +3326,11 @@ PerlIO_exportFILE(PerlIO * f, const char *mode)
 	stdio = PerlSIO_fdopen(PerlIO_fileno(f), mode);
 	if (stdio) {
 	    PerlIOl *l = *f;
+	    PerlIO *f2;
 	    /* De-link any lower layers so new :stdio sticks */
 	    *f = NULL;
-	    if ((f = PerlIO_push(aTHX_ f, &PerlIO_stdio, buf, Nullsv))) {
-		PerlIOStdio *s = PerlIOSelf(f, PerlIOStdio);
+	    if ((f2 = PerlIO_push(aTHX_ f, &PerlIO_stdio, buf, Nullsv))) {
+		PerlIOStdio *s = PerlIOSelf((f = f2), PerlIOStdio);
 		s->stdio = stdio;
 		/* Link previous lower layers under new one */
 		*PerlIONext(f) = l;
@@ -3394,9 +3408,12 @@ PerlIOBuf_open(pTHX_ PerlIO_funcs *self, PerlIO_list_t *layers,
 {
     if (PerlIOValid(f)) {
 	PerlIO *next = PerlIONext(f);
-	PerlIO_funcs *tab =  PerlIO_layer_fetch(aTHX_ layers, n - 1, PerlIOBase(next)->tab);
-	next = (*tab->Open) (aTHX_ tab, layers, n - 1, mode, fd, imode, perm,
-			  next, narg, args);
+	PerlIO_funcs *tab =
+	     PerlIO_layer_fetch(aTHX_ layers, n - 1, PerlIOBase(next)->tab);
+	if (tab && tab->Open)
+	     next =
+		  (*tab->Open)(aTHX_ tab, layers, n - 1, mode, fd, imode, perm,
+			       next, narg, args);
 	if (!next || (*PerlIOBase(f)->tab->Pushed) (aTHX_ f, mode, PerlIOArg, self) != 0) {
 	    return NULL;
 	}
@@ -3410,8 +3427,11 @@ PerlIOBuf_open(pTHX_ PerlIO_funcs *self, PerlIO_list_t *layers,
 	     * mode++;
 	     */
 	}
-	f = (*tab->Open) (aTHX_ tab, layers, n - 1, mode, fd, imode, perm,
-			  f, narg, args);
+	if (tab && tab->Open)
+	     f = (*tab->Open)(aTHX_ tab, layers, n - 1, mode, fd, imode, perm,
+			      f, narg, args);
+	else
+	     SETERRNO(EINVAL, LIB_INVARG);
 	if (f) {
 	    if (PerlIO_push(aTHX_ f, self, mode, PerlIOArg) == 0) {
 		/*
@@ -4807,45 +4827,39 @@ PerlIO_tmpfile(void)
      dTHX;
      PerlIO *f = NULL;
      int fd = -1;
-     SV *sv = Nullsv;
-     GV *gv = gv_fetchpv("File::Temp::tempfile", FALSE, SVt_PVCV);
+#ifdef WIN32
+     fd = win32_tmpfd();
+     if (fd >= 0)
+	  f = PerlIO_fdopen(fd, "w+b");
+#else /* WIN32 */
+#    ifdef HAS_MKSTEMP
+     SV *sv = newSVpv("/tmp/PerlIO_XXXXXX", 0);
 
-     if (!gv) {
-	  ENTER;
-	  Perl_load_module(aTHX_ PERL_LOADMOD_NOIMPORT,
-			   newSVpvn("File::Temp", 10), Nullsv, Nullsv, Nullsv);
-	  gv = gv_fetchpv("File::Temp::tempfile", FALSE, SVt_PVCV);
-	  GvIMPORTED_CV_on(gv);
-	  LEAVE;
-     }
-
-     if (gv && GvCV(gv)) {
-	  dSP;
-	  ENTER;
-	  SAVETMPS;
-	  PUSHMARK(SP);
-	  PUTBACK;
-	  if (call_sv((SV*)GvCV(gv), G_SCALAR)) {
-	       GV *gv = (GV*)SvRV(newSVsv(*PL_stack_sp--));
-	       IO *io = gv ? GvIO(gv) : 0;
-	       fd = io ? PerlIO_fileno(IoIFP(io)) : -1;
-	  }
-	  SPAGAIN;
-	  PUTBACK;
-	  FREETMPS;
-	  LEAVE;
-     }
-
+     /*
+      * I have no idea how portable mkstemp() is ... NI-S
+      */
+     fd = mkstemp(SvPVX(sv));
      if (fd >= 0) {
 	  f = PerlIO_fdopen(fd, "w+");
-	  if (sv) {
-	       if (f)
-		    PerlIOBase(f)->flags |= PERLIO_F_TEMP;
-	       PerlLIO_unlink(SvPVX(sv));
-	       SvREFCNT_dec(sv);
-	  }
+	  if (f)
+	       PerlIOBase(f)->flags |= PERLIO_F_TEMP;
+	  PerlLIO_unlink(SvPVX(sv));
+	  SvREFCNT_dec(sv);
      }
+#    else	/* !HAS_MKSTEMP, fallback to stdio tmpfile(). */
+     FILE *stdio = PerlSIO_tmpfile();
 
+     if (stdio) {
+	  if ((f = PerlIO_push(aTHX_(PerlIO_allocate(aTHX)),
+                               &PerlIO_stdio, "w+", Nullsv))) {
+               PerlIOStdio *s = PerlIOSelf(f, PerlIOStdio);
+
+               if (s)
+                    s->stdio = stdio;
+          }
+     }
+#    endif /* else HAS_MKSTEMP */
+#endif /* else WIN32 */
      return f;
 }
 

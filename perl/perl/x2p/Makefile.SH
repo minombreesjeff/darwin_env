@@ -27,20 +27,9 @@ esac
 echo "Extracting x2p/Makefile (with variable substitutions)"
 rm -f Makefile
 cat >Makefile <<!GROK!THIS!
-# $RCSfile: Makefile.SH,v $$Revision: 1.5 $$Date: 2003/05/20 22:54:50 $
+# $RCSfile: Makefile.SH,v $$Revision: 4.1 $$Date: 92/08/07 18:29:07 $
 #
-# $Log: Makefile.SH,v $
-# Revision 1.5  2003/05/20 22:54:50  emoy
-# Update to Perl 5.8.1, including thread support and two level namespace.
-# Bug #: 3258028
-# Reviewed by: Jordan Hubbard
-#
-# Revision 1.4.2.1  2003/05/17 07:07:55  emoy
-# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
-# two level namespace.  Append prefix, installprefix, and standard paths to
-# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
-# .packlist.
-#
+# $Log:	Makefile.SH,v $
 
 CC = $cc
 BYACC = $byacc
@@ -50,7 +39,7 @@ LDFLAGS = $ldflags
 #mallocobj = $mallocobj
 shellflags = $shellflags
 
-libs = $libs
+libs = $perllibs
 
 $make_set_make
 # grrr

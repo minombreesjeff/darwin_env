@@ -2,7 +2,7 @@ package ExtUtils::MM_Any;
 
 use strict;
 use vars qw($VERSION @ISA);
-$VERSION = 0.05;
+$VERSION = 0.06;
 @ISA = qw(File::Spec);
 
 use Config;
@@ -43,6 +43,25 @@ These are methods which are by their nature cross-platform and should
 always be cross-platform.
 
 =over 4
+
+=item installvars
+
+    my @installvars = $mm->installvars;
+
+A list of all the INSTALL* variables without the INSTALL prefix.  Useful
+for iteration or building related variable sets.
+
+=cut
+
+sub installvars {
+    return qw(PRIVLIB SITELIB  VENDORLIB
+              ARCHLIB SITEARCH VENDORARCH
+              BIN     SITEBIN  VENDORBIN
+              SCRIPT
+              MAN1DIR SITEMAN1DIR VENDORMAN1DIR
+              MAN3DIR SITEMAN3DIR VENDORMAN3DIR
+             );
+}
 
 =item os_flavor_is
 
@@ -490,7 +509,7 @@ installation.
 sub libscan {
     my($self,$path) = @_;
     my($dirs,$file) = ($self->splitpath($path))[1,2];
-    return '' if grep /^RCS|CVS|SCCS|\.svn$/, 
+    return '' if grep /^(?:RCS|CVS|SCCS|\.svn)$/, 
                      $self->splitdir($dirs), $file;
 
     return $path;
@@ -605,7 +624,8 @@ metafile_addtomanifest:
 MAKE_FRAG
 
     my $add_meta = $self->oneliner(<<'CODE', ['-MExtUtils::Manifest=maniadd']);
-maniadd({q{META.yml} => q{Module meta-data in YAML}});
+eval { maniadd({q{META.yml} => q{Module meta-data (added by MakeMaker)}}) } 
+    or print "Could not add META.yml to MANIFEST: $${'@'}\n"
 CODE
 
     return sprintf <<'MAKE_FRAG', $add_meta;

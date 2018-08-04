@@ -296,7 +296,7 @@ cpp (Loc.U):
 	the value is reset to a plain "cpp" and is not useful.
 
 cpp_stuff (cpp_stuff.U):
-	This variable contains an identification of the catenation mechanism
+	This variable contains an identification of the concatenation mechanism
 	used by the C preprocessor.
 
 cppccsymbols (Cppsym.U):
@@ -1478,6 +1478,11 @@ d_pthread_atfork (d_pthread_atfork.U):
 	This variable conditionally defines the HAS_PTHREAD_ATFORK symbol,
 	which indicates to the C program that the pthread_atfork()
 	routine is available.
+
+d_pthread_attr_setscope (d_pthread_attr_ss.U):
+	This variable conditionally defines HAS_PTHREAD_ATTR_SETSCOPE if
+	pthread_attr_setscope() is available to set the contention scope
+	attribute of a thread attribute object.
 
 d_pthread_yield (d_pthread_y.U):
 	This variable conditionally defines the HAS_PTHREAD_YIELD
@@ -3503,6 +3508,14 @@ mips_type (usrinc.U):
 	This variable holds the environment type for the mips system.
 	Possible values are "BSD 4.3" and "System V".
 
+mistrustnm (Csym.U):
+	This variable can be used to establish a fallthrough for the cases
+	where nm fails to find a symbol.  If usenm is false or usenm is true
+	and mistrustnm is false, this variable has no effect.  If usenm is true
+	and mistrustnm is "compile", a test program will be compiled to try to
+	find any symbol that can't be located via nm lookup.  If mistrustnm is
+	"run", the test program will be run as well as being compiled.
+
 mkdir (Loc.U):
 	This variable is used internally by Configure to determine the
 	full pathname (if any) of the mkdir program.  After Configure runs,
@@ -3722,11 +3735,6 @@ patchlevel (patchlevel.U):
 path_sep (Unix.U):
 	This is an old synonym for p_ in Head.U, the character
 	used to separate elements in the command shell search PATH.
-
-perl5 (perl5.U):
-	This variable contains the full path (if any) to a previously
-	installed perl5.005 or later suitable for running the script
-	to determine inc_version_list.
 
 perl5 (perl5.U):
 	This variable contains the full path (if any) to a previously
@@ -4890,6 +4898,10 @@ xs_apiversion (xs_apiversion.U):
 	debugging, 64bits, sfio, etc., are not checked for currently,
 	though in principle we could go snooping around in old
 	Config.pm files.
+
+yacc (yacc.U):
+	This variable holds the name of the compiler compiler we
+	want to use in the Makefile. It can be yacc, byacc, or bison -y.
 
 yaccflags (yacc.U):
 	This variable contains any additional yacc flags desired by the

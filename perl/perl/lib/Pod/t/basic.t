@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Id$
+# $Id: basic.t,v 1.4 2002/01/28 02:56:19 eagle Exp $
 #
 # basic.t -- Basic tests for podlators.
 #

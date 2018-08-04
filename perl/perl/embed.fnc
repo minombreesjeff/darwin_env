@@ -45,6 +45,7 @@ Anod	|void	|perl_free	|PerlInterpreter* interp
 Anod	|int	|perl_run	|PerlInterpreter* interp
 Anod	|int	|perl_parse	|PerlInterpreter* interp|XSINIT_t xsinit \
 				|int argc|char** argv|char** env
+Anp	|bool	|doing_taint	|int argc|char** argv|char** env
 #if defined(USE_ITHREADS)
 Anod	|PerlInterpreter*|perl_clone|PerlInterpreter* interp, UV flags
 #  if defined(PERL_IMPLICIT_SYS)
@@ -548,7 +549,7 @@ Ap	|OP*	|newWHILEOP	|I32 flags|I32 debuggable|LOOP* loop \
 				|I32 whileline|OP* expr|OP* block|OP* cont
 
 Ap	|PERL_SI*|new_stackinfo|I32 stitems|I32 cxitems
-Apd	|char*	|new_vstring	|char *vstr|SV *sv
+Ap	|char*	|scan_vstring	|char *vstr|SV *sv
 p	|PerlIO*|nextargv	|GV* gv
 Ap	|char*	|ninstr		|const char* big|const char* bigend \
 				|const char* little|const char* lend
@@ -701,6 +702,7 @@ p	|I32	|setenv_getix	|char* nam
 p	|void	|setdefout	|GV* gv
 p	|HEK*	|share_hek	|const char* sv|I32 len|U32 hash
 np	|Signal_t |sighandler	|int sig
+Anp	|Signal_t |csighandler	|int sig
 Ap	|SV**	|stack_grow	|SV** sp|SV**p|int n
 Ap	|I32	|start_subparse	|I32 is_format|U32 flags
 p	|void	|sub_crush_depth|CV* cv
@@ -851,6 +853,8 @@ p	|void	|vivify_defelem	|SV* sv
 p	|void	|vivify_ref	|SV* sv|U32 to_what
 p	|I32	|wait4pid	|Pid_t pid|int* statusp|int flags
 p	|U32	|parse_unicode_opts|char **popt
+p	|U32	|seed
+p	|UV	|get_hash_seed
 p	|void	|report_evil_fh	|GV *gv|IO *io|I32 op
 pd	|void	|report_uninit
 Afpd	|void	|warn		|const char* pat|...
@@ -859,6 +863,7 @@ Afp	|void	|warner		|U32 err|const char* pat|...
 Ap	|void	|vwarner	|U32 err|const char* pat|va_list* args
 p	|void	|watch		|char** addr
 Ap	|I32	|whichsig	|char* sig
+p	|void	|write_to_stderr|const char* message|int msglen
 p	|int	|yyerror	|char* s
 #ifdef USE_PURE_BISON
 p	|int	|yylex_r	|YYSTYPE *lvalp|int *lcharp
@@ -1081,7 +1086,6 @@ s	|struct perl_thread *	|init_main_thread
 
 #if defined(PERL_IN_PP_C) || defined(PERL_DECL_PROT)
 s	|SV*	|refto		|SV* sv
-s	|U32	|seed
 #endif
 
 #if defined(PERL_IN_PP_PACK_C) || defined(PERL_DECL_PROT)
@@ -1112,7 +1116,7 @@ s	|I32	|dopoptosub	|I32 startingblock
 s	|I32	|dopoptosub_at	|PERL_CONTEXT* cxstk|I32 startingblock
 s	|void	|save_lines	|AV *array|SV *sv
 s	|OP*	|doeval		|int gimme|OP** startop|CV* outside|U32 seq
-s	|PerlIO *|doopen_pmc	|const char *name|const char *mode
+s	|PerlIO *|doopen_pm	|const char *name|const char *mode
 s	|bool	|path_is_absolute|char *name
 #endif
 
@@ -1400,6 +1404,9 @@ s	|CV*	|cv_clone2	|CV *proto|CV *outside
 #endif
 pd 	|CV*	|find_runcv	|U32 *db_seqp
 p	|void	|free_tied_hv_pool
+#if defined(DEBUGGING)
+p	|int	|get_debug_opts	|char **s
+#endif
 
 
 

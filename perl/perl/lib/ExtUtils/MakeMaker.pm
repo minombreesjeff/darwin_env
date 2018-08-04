@@ -2,8 +2,8 @@ package ExtUtils::MakeMaker;
 
 BEGIN {require 5.005_03;}
 
-$VERSION = '6.10_03';
-($Revision = substr(q$Revision: 1.5 $, 10)) =~ s/\s+$//;
+$VERSION = '6.12';
+($Revision) = q$Revision: 1.124 $ =~ /Revision:\s+(\S+)/;
 
 require Exporter;
 use Config;
@@ -92,6 +92,7 @@ my %Special_Sigs = (
  dynamic_lib=> 'hash',
  linkext    => 'hash',
  macro      => 'hash',
+ postamble  => 'hash',
  realclean  => 'hash',
  test       => 'hash',
  tool_autosplit => 'hash',
@@ -219,8 +220,8 @@ sub full_setup {
     SITELIBEXP      SITEARCHEXP 
 
     INC INCLUDE_EXT LDFROM LIB LIBPERL_A LIBS
-    LINKTYPE MAKEAPERL MAKEFILE_OLD MAN1PODS MAN3PODS MAP_TARGET MYEXTLIB
-    NAME NEEDS_LINKING NOECHO NO_META NORECURS NO_VC OBJECT OPTIMIZE 
+    LINKTYPE MAKEAPERL MAKEFILE MAKEFILE_OLD MAN1PODS MAN3PODS MAP_TARGET 
+    MYEXTLIB NAME NEEDS_LINKING NOECHO NO_META NORECURS NO_VC OBJECT OPTIMIZE 
     PERL_MALLOC_OK PERL PERLMAINCC PERLRUN PERLRUNINST PERL_CORE
     PERL_SRC PERM_RW PERM_RWX
     PL_FILES PM PM_FILTER PMLIBDIRS POLLUTE PPM_INSTALL_EXEC
@@ -436,7 +437,12 @@ sub new {
         my $key;
         for $key (@Prepend_parent) {
             next unless defined $self->{PARENT}{$key};
-            $self->{$key} = $self->{PARENT}{$key};
+
+            # Don't stomp on WriteMakefile() args.
+            $self->{$key} = $self->{PARENT}{$key}
+                unless defined $self->{ARGS}{$key} and
+                       $self->{ARGS}{$key} eq $self->{$key};
+
             unless ($Is_VMS && $key =~ /PERL$/) {
                 $self->{$key} = $self->catdir("..",$self->{$key})
                   unless $self->file_name_is_absolute($self->{$key});
@@ -478,6 +484,7 @@ sub new {
     $self->init_dist;
     $self->init_INST;
     $self->init_INSTALL;
+    $self->init_DEST;
     $self->init_dirscan;
     $self->init_xs;
     $self->init_PERL;
@@ -1346,12 +1353,13 @@ Something like C<"-DHAVE_UNISTD_H">
 
 This is the root directory into which the code will be installed.  It
 I<prepends itself to the normal prefix>.  For example, if your code
-would normally go into /usr/local/lib/perl you could set DESTDIR=/tmp
+would normally go into /usr/local/lib/perl you could set DESTDIR=/tmp/
 and installation would go into /tmp/usr/local/lib/perl.
 
 This is primarily of use for people who repackage Perl modules.
 
-From the GNU Makefile conventions.
+NOTE: Due to the nature of make, it is important that you put the trailing
+slash on your DESTDIR.  "/tmp/" not "/tmp".
 
 =item DIR
 
@@ -1418,6 +1426,11 @@ command line:  perl Makefile.PL EXCLUDE_EXT='Socket Safe'
 Ref to array of executable files. The files will be copied to the
 INST_SCRIPT directory. Make realclean will delete them from there
 again.
+
+If your executables start with something like #!perl or
+#!/usr/bin/perl MakeMaker will change this to the path of the perl
+'Makefile.PL' was invoked with so the programs will be sure to run
+properly even if perl is not in /usr/bin/perl.
 
 =item FIRST_MAKEFILE
 
@@ -1715,6 +1728,13 @@ Defaults to C<@>.
 =item NORECURS
 
 Boolean.  Attribute to inhibit descending into subdirectories.
+
+=item NO_META
+
+When true, suppresses the generation and addition to the MANIFEST of
+the META.yml module meta-data file during 'make distdir'.
+
+Defaults to false.
 
 =item NO_VC
 
@@ -2017,7 +2037,7 @@ MakeMaker object. The following lines will be parsed o.k.:
 
     $VERSION = '1.00';
     *VERSION = \'1.01';
-    ( $VERSION ) = '$Revision: 1.5 $ ' =~ /\$Revision:\s+([^\s]+)/;
+    $VERSION = sprintf "%d.%03d", q$Revision: 1.124 $ =~ /(\d+)/g;
     $FOO::VERSION = '1.10';
     *FOO::VERSION = \'1.11';
     our $VERSION = 1.2.3;       # new for perl5.6.0 
@@ -2077,7 +2097,8 @@ to the value of the VERSION attribute.
 =head2 Additional lowercase attributes
 
 can be used to pass parameters to the methods which implement that
-part of the Makefile.
+part of the Makefile.  Parameters are specified as a hash ref but are
+passed to the method as a hash.
 
 =over 2
 
@@ -2123,6 +2144,10 @@ be linked.
 =item macro
 
   {ANY_MACRO => ANY_VALUE, ...}
+
+=item postamble
+
+Anything put here will be passed to MY::postamble() if you have one.
 
 =item realclean
 
@@ -2257,6 +2282,10 @@ Copies all the files that are in the MANIFEST file to a newly created
 directory with the name C<$(DISTNAME)-$(VERSION)>. If that directory
 exists, it will be removed first.
 
+Additionally, it will create a META.yml module meta-data file and add
+this to your MANFIEST.  You can shut this behavior off with the NO_META
+flag.
+
 =item   make disttest
 
 Makes a distdir first, and runs a C<perl Makefile.PL>, a make, and
@@ -2320,6 +2349,27 @@ following parameters are recognized:
 An example:
 
     WriteMakefile( 'dist' => { COMPRESS=>"bzip2", SUFFIX=>".bz2" })
+
+
+=head2 Module Meta-Data
+
+Long plaguing users of MakeMaker based modules has been the problem of
+getting basic information about the module out of the sources
+I<without> running the F<Makefile.PL> and doing a bunch of messy
+heuristics on the resulting F<Makefile>.  To this end a simple module
+meta-data file has been introduced, F<META.yml>.
+
+F<META.yml> is a YAML document (see http://www.yaml.org) containing
+basic information about the module (name, version, prerequisites...)
+in an easy to read format.  The format is developed and defined by the
+Module::Build developers.
+
+MakeMaker will automatically generate a F<META.yml> file for you and
+add it to your F<MANIFEST> as part of the 'distdir' target (and thus
+the 'dist' target).  This is intended to seamlessly and rapidly
+populate CPAN with module meta-data.  If you wish to shut this feature
+off, set the C<NO_META> C<WriteMakefile()> flag to true.
+
 
 =head2 Disabling an extension
 

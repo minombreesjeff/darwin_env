@@ -1,18 +1,7 @@
 #
 # syslog.pl
 #
-# $Log: syslog.pl,v $
-# Revision 1.5  2003/05/20 22:50:35  emoy
-# Update to Perl 5.8.1, including thread support and two level namespace.
-# Bug #: 3258028
-# Reviewed by: Jordan Hubbard
-#
-# Revision 1.4.2.1  2003/05/17 07:04:01  emoy
-# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
-# two level namespace.  Append prefix, installprefix, and standard paths to
-# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
-# .packlist.
-#
+# $Log:	syslog.pl,v $
 # 
 # tom christiansen <tchrist@convex.com>
 # modified to use sockets by Larry Wall <lwall@jpl-devvax.jpl.nasa.gov>

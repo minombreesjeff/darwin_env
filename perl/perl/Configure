@@ -18,9 +18,9 @@
 # you may fetch it yourself from your nearest archive site.)
 #
 
-# $Id: Configure,v 1.10 2003/05/20 22:47:40 emoy Exp $
+# $Id: Head.U,v 3.0.1.9 1997/02/28 15:02:09 ram Exp $
 #
-# Generated on Wed May  7 23:33:48 EET DST 2003 [metaconfig 3.0 PL70]
+# Generated on Thu Jul  3 17:15:17 EEST 2003 [metaconfig 3.0 PL70]
 # (with additional metaconfig patches by perlbug@perl.org)
 
 cat >c1$$ <<EOF
@@ -188,6 +188,7 @@ run=''
 targetarch=''
 to=''
 usecrosscompile=''
+mistrustnm=''
 perllibs=''
 dynamic_ext=''
 extensions=''
@@ -580,6 +581,7 @@ procselfexe=''
 d_old_pthread_create_joinable=''
 old_pthread_create_joinable=''
 d_pthread_atfork=''
+d_pthread_attr_setscope=''
 d_pthread_yield=''
 d_sched_yield=''
 sched_yield=''
@@ -1265,11 +1267,9 @@ archname=''
 : set usethreads on the Configure command line to enable threads.
 usereentrant='undef'
 : List of libraries we want.
-: If anyone needs -lnet, put it in a hint file.
-libswanted='sfio socket bind inet nsl nm ndbm gdbm dbm db malloc dl'
-libswanted="$libswanted dld ld sun m c cposix posix"
-libswanted="$libswanted ndir dir crypt sec"
-libswanted="$libswanted ucb bsd BSD PW x util rt posix4"
+: If anyone needs extra -lxxx, put those in a hint file.
+libswanted="sfio socket bind inet nsl nm ndbm gdbm dbm db malloc dl dld ld sun"
+libswanted="$libswanted m crypt sec util c cposix posix ucb bsd BSD"
 : We probably want to search /usr/shlib before most other libraries.
 : This is only used by the lib/ExtUtils/MakeMaker.pm routine extliblist.
 glibpth=`echo " $glibpth " | sed -e 's! /usr/shlib ! !'`
@@ -7222,7 +7222,7 @@ $grep fprintf libc.tmp > libc.ptf
 xscan='eval "<libc.ptf $com >libc.list"; $echo $n ".$c" >&4'
 xrun='eval "<libc.tmp $com >libc.list"; echo "done." >&4'
 xxx='[ADTSIW]'
-if com="$sed -n -e 's/__IO//' -e 's/^.* $xxx  *_[_.]*//p' -e 's/^.* $xxx  *//p'";\
+if com="$sed -n -e 's/__IO//' -e 's/^.* $xxx  *//p'";\
 	eval $xscan;\
 	$contains '^fprintf$' libc.list >/dev/null 2>&1; then
 		eval $xrun
@@ -7357,7 +7357,7 @@ csym='tlook=$1;
 case "$3" in
 -v) tf=libc.tmp; tc=""; tdc="";;
 -a) tf=libc.tmp; tc="[0]"; tdc="[]";;
-*) tlook="^$1\$"; tf=libc.list; tc="()"; tdc="()";;
+*) tlook="^$1\$"; tf=libc.list; tc=""; tdc="()";;
 esac;
 tx=yes;
 case "$reuseval-$4" in
@@ -7366,25 +7366,29 @@ true-*) tx=no; eval "tval=\$$4"; case "$tval" in "") tx=yes;; esac;;
 esac;
 case "$tx" in
 yes)
-	case "$runnm" in
-	true)
-		if $contains $tlook $tf >/dev/null 2>&1;
-		then tval=true;
-		else tval=false;
-		fi;;
-	*)
-		echo "int main() { extern short $1$tdc; printf(\"%hd\", $1$tc); }" > t.c;
-		if $cc -o t $optimize $ccflags $ldflags t.c $libs >/dev/null 2>&1;
-		then tval=true;
-		else tval=false;
+	tval=false;
+	if $test "$runnm" = true; then
+		if $contains $tlook $tf >/dev/null 2>&1; then
+			tval=true;
+		elif $test "$mistrustnm" = compile -o "$mistrustnm" = run; then
+			echo "int main() { extern void *$1$tdc; if (&$1$tc) return(0); else return(1); }" > try.c;
+			$cc -o try $optimize $ccflags $ldflags try.c >/dev/null 2>&1 $libs && tval=true;
+			$test "$mistrustnm" = run -a -x try && { $run ./try >/dev/null 2>&1 || tval=false; };
+			$rm -f try try.c core;
 		fi;
-		$rm -f t t.c;;
-	esac;;
+	else
+		echo "#include <stdio.h>" > try.c;
+		echo "int main() { extern void *$1$tdc; if(&$1$tc) return(0); else return(1); }" > try.c;
+		$cc -o try $optimize $ccflags $ldflags try.c $libs >/dev/null 2>&1 && tval=true;
+		$rm -f try try.c;
+	fi;
+	;;
 *)
 	case "$tval" in
 	$define) tval=true;;
 	*) tval=false;;
-	esac;;
+	esac;
+	;;
 esac;
 eval "$2=$tval"'
 
@@ -9815,7 +9819,7 @@ echo " "
 echo "Checking whether your compiler can handle __attribute__ ..." >&4
 $cat >attrib.c <<'EOCP'
 #include <stdio.h>
-void croak (char* pat,...) __attribute__((format(printf,1,2),noreturn));
+void croak (char* pat,...) __attribute__((__format__(__printf__,1,2),noreturn));
 EOCP
 if $cc $ccflags -c attrib.c >attrib.out 2>&1 ; then
 	if $contains 'warning' attrib.out >/dev/null 2>&1; then
@@ -14708,6 +14712,10 @@ $define)
 esac
 set d_pthread_atfork
 eval $setvar
+
+: see if pthread_attr_setscope exists
+set pthread_attr_setscope d_pthread_attr_setscope
+eval $inlibc
 
 
 : see whether the various POSIXish _yields exist
@@ -20140,8 +20148,8 @@ case "$noextensions" in
 *)  keepextensions=''
     echo "You have requested that certain extensions be ignored..." >&4
     for i in $avail_ext; do
-        case " $i " in
-        " $noextensions ") echo "Ignoring extension $i." ;;
+        case " $noextensions " in
+        *" $i "*) echo "Ignoring extension $i." ;;
         *) echo "Keeping extension $i.";
            keepextensions="$keepextensions $i"
            ;;
@@ -20726,6 +20734,7 @@ d_poll='$d_poll'
 d_portable='$d_portable'
 d_procselfexe='$d_procselfexe'
 d_pthread_atfork='$d_pthread_atfork'
+d_pthread_attr_setscope='$d_pthread_attr_setscope'
 d_pthread_yield='$d_pthread_yield'
 d_pwage='$d_pwage'
 d_pwchange='$d_pwchange'
@@ -21150,6 +21159,7 @@ man3dir='$man3dir'
 man3direxp='$man3direxp'
 man3ext='$man3ext'
 mips_type='$mips_type'
+mistrustnm='$mistrustnm'
 mkdir='$mkdir'
 mmaptype='$mmaptype'
 modetype='$modetype'

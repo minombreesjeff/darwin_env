@@ -1,5 +1,5 @@
 # Pod::Man -- Convert POD data to formatted *roff input.
-# $Id: Man.pm,v 1.5 2003/05/20 22:52:25 emoy Exp $
+# $Id: Man.pm,v 1.37 2003/03/30 22:34:11 eagle Exp $
 #
 # Copyright 1999, 2000, 2001, 2002, 2003 by Russ Allbery <rra@stanford.edu>
 #

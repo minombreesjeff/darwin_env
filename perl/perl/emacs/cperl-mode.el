@@ -44,7 +44,7 @@
 
 ;;; Commentary:
 
-;; $Id: cperl-mode.el,v 1.5 2003/05/20 22:49:00 emoy Exp $
+;; $Id: cperl-mode.el,v 5.0 2003/02/17 01:33:20 vera Exp vera $
 
 ;;; If your Emacs does not default to `cperl-mode' on Perl files:
 ;;; To use this mode put the following into
@@ -8454,7 +8454,7 @@ Delay of auto-help controlled by `cperl-lazy-help-time'."
 	  (cperl-fontify-syntaxically to)))))
 
 (defvar cperl-version
-  (let ((v  "$Revision: 1.5 $"))
+  (let ((v  "$Revision: 5.0 $"))
     (string-match ":\\s *\\([0-9.]+\\)" v)
     (substring v (match-beginning 1) (match-end 1)))
   "Version of IZ-supported CPerl package this file is based on.")

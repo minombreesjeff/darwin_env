@@ -423,7 +423,7 @@ PP(pp_warn)
 	tmpsv = TOPs;
     }
     tmps = SvPV(tmpsv, len);
-    if (!tmps || !len) {
+    if ((!tmps || !len) && PL_errgv) {
   	SV *error = ERRSV;
 	(void)SvUPGRADE(error, SVt_PV);
 	if (SvPOK(error) && SvCUR(error))
@@ -742,6 +742,14 @@ PP(pp_binmode)
     PUTBACK;
     if (PerlIO_binmode(aTHX_ fp,IoTYPE(io),mode_from_discipline(discp),
                        (discp) ? SvPV_nolen(discp) : Nullch)) {
+	if (IoOFP(io) && IoOFP(io) != IoIFP(io)) {
+	     if (!PerlIO_binmode(aTHX_ IoOFP(io),IoTYPE(io),
+			mode_from_discipline(discp),
+                       (discp) ? SvPV_nolen(discp) : Nullch)) {
+		SPAGAIN;
+		RETPUSHUNDEF;
+	     }
+	}
 	SPAGAIN;
 	RETPUSHYES;
     }
@@ -875,8 +883,8 @@ PP(pp_untie)
 		       (UV)SvREFCNT(obj) - 1 ) ;
            }
         }
-	sv_unmagic(sv, how) ;
     }
+    sv_unmagic(sv, how) ;
     RETPUSHYES;
 }
 
@@ -2175,7 +2183,9 @@ PP(pp_ioctl)
 #else
 	retval = fcntl(PerlIO_fileno(IoIFP(io)), func, s);
 #endif
+#endif
 
+#if defined(HAS_IOCTL) || defined(HAS_FCNTL)
     if (SvPOK(argsv)) {
 	if (s[SvCUR(argsv)] != 17)
 	    DIE(aTHX_ "Possible memory corruption: %s overflowed 3rd argument",
@@ -2477,8 +2487,12 @@ PP(pp_accept)
     GV *ggv;
     register IO *nstio;
     register IO *gstio;
-    struct sockaddr saddr;	/* use a struct to avoid alignment problems */
-    Sock_size_t len = sizeof saddr;
+    char namebuf[MAXPATHLEN];
+#if (defined(VMS_DO_SOCKETS) && defined(DECCRTL_SOCKETS)) || defined(MPE) || defined(__QNXNTO__)
+    Sock_size_t len = sizeof (struct sockaddr_in);
+#else
+    Sock_size_t len = sizeof namebuf;
+#endif
     int fd;
 
     ggv = (GV*)POPs;
@@ -2494,7 +2508,7 @@ PP(pp_accept)
 	goto nuts;
 
     nstio = GvIOn(ngv);
-    fd = PerlSock_accept(PerlIO_fileno(IoIFP(gstio)), (struct sockaddr *)&saddr, &len);
+    fd = PerlSock_accept(PerlIO_fileno(IoIFP(gstio)), (struct sockaddr *) namebuf, &len);
     if (fd < 0)
 	goto badexit;
     if (IoIFP(nstio))
@@ -2513,14 +2527,14 @@ PP(pp_accept)
 #endif
 
 #ifdef EPOC
-    len = sizeof saddr;          /* EPOC somehow truncates info */
+    len = sizeof (struct sockaddr_in); /* EPOC somehow truncates info */
     setbuf( IoIFP(nstio), NULL); /* EPOC gets confused about sockets */
 #endif
 #ifdef __SCO_VERSION__
-    len = sizeof saddr;          /* OpenUNIX 8 somehow truncates info */
+    len = sizeof (struct sockaddr_in); /* OpenUNIX 8 somehow truncates info */
 #endif
 
-    PUSHp((char *)&saddr, len);
+    PUSHp(namebuf, len);
     RETURN;
 
 nuts:
@@ -3323,7 +3337,7 @@ PP(pp_fttext)
 	PL_laststype = OP_STAT;
 	sv_setpv(PL_statname, SvPV(sv, n_a));
 	if (!(fp = PerlIO_open(SvPVX(PL_statname), "r"))) {
-	    if (ckWARN(WARN_NEWLINE) && strchr(SvPV(sv, n_a), '\n'))
+	    if (ckWARN(WARN_NEWLINE) && strchr(SvPV(PL_statname, n_a), '\n'))
 		Perl_warner(aTHX_ packWARN(WARN_NEWLINE), PL_warn_nl, "open");
 	    RETPUSHUNDEF;
 	}
@@ -4142,14 +4156,14 @@ PP(pp_system)
     result = 0;
     if (PL_op->op_flags & OPf_STACKED) {
 	SV *really = *++MARK;
-#  ifdef WIN32
+#  if defined(WIN32) || defined(OS2)
 	value = (I32)do_aspawn(really, MARK, SP);
 #  else
 	value = (I32)do_aspawn(really, (void **)MARK, (void **)SP);
 #  endif
     }
     else if (SP - MARK != 1) {
-#  ifdef WIN32
+#  if defined(WIN32) || defined(OS2)
 	value = (I32)do_aspawn(Nullsv, MARK, SP);
 #  else
 	value = (I32)do_aspawn(Nullsv, (void **)MARK, (void **)SP);

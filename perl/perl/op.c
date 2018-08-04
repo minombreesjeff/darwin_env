@@ -193,7 +193,7 @@ Perl_allocmy(pTHX_ char *name)
     }
     /* check for duplicate declaration */
     pad_check_dup(name,
-		PL_in_my == KEY_our,
+		(bool)(PL_in_my == KEY_our),
 		(PL_curstash ? PL_curstash : PL_defstash)
     );
 
@@ -1883,8 +1883,11 @@ Perl_newPROG(pTHX_ OP *o)
 	CALL_PEEP(PL_eval_start);
     }
     else {
-	if (o->op_type == OP_STUB)
+	if (o->op_type == OP_STUB) {
+	    PL_comppad_name = 0;
+	    PL_compcv = 0;
 	    return;
+	}
 	PL_main_root = scope(sawparens(scalarvoid(o)));
 	PL_curcop = &PL_compiling;
 	PL_main_start = LINKLIST(PL_main_root);
@@ -2068,6 +2071,8 @@ Perl_gen_constant_list(pTHX_ register OP *o)
 
     o->op_type = OP_RV2AV;
     o->op_ppaddr = PL_ppaddr[OP_RV2AV];
+    o->op_flags &= ~OPf_REF;	/* treat \(1..2) like an ordinary list */
+    o->op_flags |= OPf_PARENS;	/* and flatten \(1..2,3) */
     o->op_seq = 0;		/* needs to be revisited in peep() */
     curop = ((UNOP*)o)->op_first;
     ((UNOP*)o)->op_first = newSVOP(OP_CONST, 0, SvREFCNT_inc(*PL_stack_sp--));
@@ -2228,7 +2233,7 @@ Perl_newLISTOP(pTHX_ I32 type, I32 flags, OP *first, OP *last)
 	    listop->op_last = pushop;
     }
 
-    return (OP*)listop;
+    return CHECKOP(type, listop);
 }
 
 OP *
@@ -2351,13 +2356,13 @@ Perl_pmtrans(pTHX_ OP *o, OP *expr, OP *repl)
 	U8* tend = t + tlen;
 	U8* rend = r + rlen;
 	STRLEN ulen;
-	U32 tfirst = 1;
-	U32 tlast = 0;
-	I32 tdiff;
-	U32 rfirst = 1;
-	U32 rlast = 0;
-	I32 rdiff;
-	I32 diff;
+	UV tfirst = 1;
+	UV tlast = 0;
+	IV tdiff;
+	UV rfirst = 1;
+	UV rlast = 0;
+	IV rdiff;
+	IV diff;
 	I32 none = 0;
 	U32 max = 0;
 	I32 bits;
@@ -2665,7 +2670,7 @@ Perl_newPMOP(pTHX_ I32 type, I32 flags)
 	PmopSTASH_set(pmop,PL_curstash);
     }
 
-    return (OP*)pmop;
+    return CHECKOP(type, pmop);
 }
 
 OP *
@@ -2731,7 +2736,7 @@ Perl_pmruntime(pTHX_ OP *o, OP *expr, OP *repl)
 	OP *curop;
 	if (pm->op_pmflags & PMf_EVAL) {
 	    curop = 0;
-	    if (CopLINE(PL_curcop) < PL_multi_end)
+	    if (CopLINE(PL_curcop) < (line_t)PL_multi_end)
 		CopLINE_set(PL_curcop, (line_t)PL_multi_end);
 	}
 #ifdef USE_5005THREADS
@@ -3006,6 +3011,7 @@ Perl_utilize(pTHX_ int aver, I32 floor, OP *version, OP *idop, OP *arg)
     PL_hints |= HINT_BLOCK_SCOPE;
     PL_copline = NOLINE;
     PL_expect = XSTATE;
+    PL_cop_seqmax++; /* Purely for B::*'s benefit */
 }
 
 /*
@@ -3228,7 +3234,7 @@ Perl_newASSIGNOP(pTHX_ I32 flags, OP *left, I32 optype, OP *right)
 			     curop->op_type == OP_PADHV ||
 			     curop->op_type == OP_PADANY)
 		    {
-			if (PAD_COMPNAME_GEN(curop->op_targ)
+			if ((int)PAD_COMPNAME_GEN(curop->op_targ)
 						    == PL_generation)
 			    break;
 			PAD_COMPNAME_GEN(curop->op_targ)
@@ -3501,6 +3507,8 @@ S_new_logop(pTHX_ I32 type, I32 flags, OP** firstp, OP** otherp)
     first->op_next = (OP*)logop;
     first->op_sibling = other;
 
+    CHECKOP(type,logop);
+
     o = newUNOP(OP_NULL, 0, (OP*)logop);
     other->op_next = o;
 
@@ -3545,6 +3553,8 @@ Perl_newCONDOP(pTHX_ I32 flags, OP *first, OP *trueop, OP *falseop)
     logop->op_other = LINKLIST(trueop);
     logop->op_next = LINKLIST(falseop);
 
+    CHECKOP(OP_COND_EXPR, /* that's logop->op_type */
+	    logop);
 
     /* establish postfix order */
     start = LINKLIST(first);
@@ -3709,11 +3719,6 @@ Perl_newWHILEOP(pTHX_ I32 flags, I32 debuggable, LOOP *loop, I32 whileline, OP *
 	if (!next)
 	    next = unstack;
 	cont = append_elem(OP_LINESEQ, cont, unstack);
-	if ((line_t)whileline != NOLINE) {
-	    PL_copline = (line_t)whileline;
-	    cont = append_elem(OP_LINESEQ, cont,
-			       newSTATEOP(0, Nullch, Nullop));
-	}
     }
 
     listop = append_list(OP_LINESEQ, (LISTOP*)block, (LISTOP*)cont);
@@ -3766,13 +3771,16 @@ Perl_newFOROP(pTHX_ I32 flags,char *label,line_t forline,OP *sv,OP *expr,OP *blo
     OP *wop;
     PADOFFSET padoff = 0;
     I32 iterflags = 0;
+    I32 iterpflags = 0;
 
     if (sv) {
 	if (sv->op_type == OP_RV2SV) {	/* symbol table variable */
+	    iterpflags = sv->op_private & OPpOUR_INTRO; /* for our $x () */
 	    sv->op_type = OP_RV2GV;
 	    sv->op_ppaddr = PL_ppaddr[OP_RV2GV];
 	}
 	else if (sv->op_type == OP_PADSV) { /* private variable */
+	    iterpflags = sv->op_private & OPpLVAL_INTRO; /* for my $x () */
 	    padoff = sv->op_targ;
 	    sv->op_targ = 0;
 	    op_free(sv);
@@ -3836,6 +3844,9 @@ Perl_newFOROP(pTHX_ I32 flags,char *label,line_t forline,OP *sv,OP *expr,OP *blo
     loop = (LOOP*)list(convert(OP_ENTERITER, iterflags,
 			       append_elem(OP_LIST, expr, scalar(sv))));
     assert(!loop->op_next);
+    /* for my  $x () sets OPpLVAL_INTRO;
+     * for our $x () sets OPpOUR_INTRO; both only used by Deparse.pm */
+    loop->op_private = (U8)iterpflags;
 #ifdef PL_OP_SLAB_ALLOC
     {
 	LOOP *tmp;
@@ -4765,13 +4776,17 @@ Perl_ck_bitop(pTHX_ OP *o)
 	 (op) == OP_NE   || (op) == OP_I_NE || \
 	 (op) == OP_NCMP || (op) == OP_I_NCMP)
     o->op_private = (U8)(PL_hints & HINT_PRIVATE_MASK);
-    if (o->op_type == OP_BIT_OR
-	    || o->op_type == OP_BIT_AND
-	    || o->op_type == OP_BIT_XOR)
+    if (!(o->op_flags & OPf_STACKED) /* Not an assignment */
+	    && (o->op_type == OP_BIT_OR
+	     || o->op_type == OP_BIT_AND
+	     || o->op_type == OP_BIT_XOR))
     {
-	OPCODE typfirst = cBINOPo->op_first->op_type;
-	OPCODE typlast  = cBINOPo->op_first->op_sibling->op_type;
-	if (OP_IS_NUMCOMPARE(typfirst) || OP_IS_NUMCOMPARE(typlast))
+	OP * left = cBINOPo->op_first;
+	OP * right = left->op_sibling;
+	if ((OP_IS_NUMCOMPARE(left->op_type) &&
+		(left->op_flags & OPf_PARENS) == 0) ||
+	    (OP_IS_NUMCOMPARE(right->op_type) &&
+		(right->op_flags & OPf_PARENS) == 0))
 	    if (ckWARN(WARN_PRECEDENCE))
 		Perl_warner(aTHX_ packWARN(WARN_PRECEDENCE),
 			"Possible precedence problem on bitwise %c operator",
@@ -4785,8 +4800,9 @@ Perl_ck_bitop(pTHX_ OP *o)
 OP *
 Perl_ck_concat(pTHX_ OP *o)
 {
-    if (cUNOPo->op_first->op_type == OP_CONCAT)
-	o->op_flags |= OPf_STACKED;
+    OP *kid = cUNOPo->op_first;
+    if (kid->op_type == OP_CONCAT && !(kUNOP->op_first->op_flags & OPf_MOD))
+        o->op_flags |= OPf_STACKED;
     return o;
 }
 

@@ -1,10 +1,10 @@
-# $Id$
+# $Id: encoding.pm,v 1.46 2003/07/08 21:52:14 dankogai Exp $
 package encoding;
-our $VERSION = do { my @r = (q$Revision$ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 1.46 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 use Encode;
 use strict;
-our $DEBUG = 0;
+sub DEBUG () { 0 }
 
 BEGIN {
     if (ord("A") == 193) {
@@ -21,13 +21,13 @@ unless ($@){
 
 sub _exception{
     my $name = shift;
-    $] > 5.008 and return 0;             # 5.8.1 then no
+    $] > 5.008 and return 0;               # 5.8.1 or higher then no
     my %utfs = map {$_=>1}
 	qw(utf8 UCS-2BE UCS-2LE UTF-16 UTF-16BE UTF-16LE
 	   UTF-32 UTF-32BE UTF-32LE);
-    $utfs{$name} or return 0;            # UTFs or no
+    $utfs{$name} or return 0;               # UTFs or no
     require Config; Config->import(); our %Config;
-    return $Config{perl_patchlevel} == 0 # maintperl then no
+    return $Config{perl_patchlevel} ? 0 : 1 # maintperl then no
 }
 
 sub import {
@@ -42,7 +42,7 @@ sub import {
     }
     $name = $enc->name; # canonize
     unless ($arg{Filter}) {
-	$DEBUG and warn "_exception($name) = ", _exception($name);
+	DEBUG and warn "_exception($name) = ", _exception($name);
 	_exception($name) or ${^ENCODING} = $enc;
 	$HAS_PERLIO or return 1;
     }else{
@@ -56,14 +56,13 @@ sub import {
 	    filter_add(sub{
 			   my $status = filter_read();
                            if ($status > 0){
-			       # $DEBUG and warn $_;
 			       $_ = $enc->decode($_, 1);
-			       $DEBUG and warn $_;
+			       DEBUG and warn $_;
 			   }
 			   $status ;
 		       });
 	};
-    }	$DEBUG and warn "Filter installed";
+    }	DEBUG and warn "Filter installed";
     defined ${^UNICODE} and ${^UNICODE} != 0 and return 1;
     for my $h (qw(STDIN STDOUT)){
 	if ($arg{$h}){

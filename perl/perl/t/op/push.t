@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: push.t,v $$Revision: 1.4 $$Date: 2003/05/20 22:54:12 $
+# $RCSfile: push.t,v $$Revision: 4.1 $$Date: 92/08/07 18:28:13 $
 
 @tests = split(/\n/, <<EOF);
 0 3,			0 1 2,		3 4 5 6 7

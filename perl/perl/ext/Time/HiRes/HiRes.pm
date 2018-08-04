@@ -15,7 +15,7 @@ require DynaLoader;
 		 d_usleep d_ualarm d_gettimeofday d_getitimer d_setitimer
 		 d_nanosleep);
 	
-$VERSION = '1.47';
+$VERSION = '1.50';
 $XS_VERSION = $VERSION;
 $VERSION = eval $VERSION;
 
@@ -316,6 +316,17 @@ Here is an example of using NVtime from C:
   if (!SvIOK(*svp)) croak("Time::NVtime isn't a function pointer");
   myNVtime = INT2PTR(double(*)(), SvIV(*svp));
   printf("The current time is: %f\n", (*myNVtime)());
+
+=head1 DIAGNOSTICS
+
+=head2 negative time not invented yet
+
+You tried to use a negative time argument.
+
+=head2 internal error: useconds < 0 (unsigned ... signed ...)
+
+Something went horribly wrong-- the number of microseconds that cannot
+become negative just became negative.  Maybe your compiler is broken?
 
 =head1 CAVEATS
 

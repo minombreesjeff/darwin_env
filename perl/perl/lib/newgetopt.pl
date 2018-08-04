@@ -1,4 +1,4 @@
-# $Id: newgetopt.pl,v 1.4 2003/05/20 22:50:34 emoy Exp $
+# $Id: newgetopt.pl,v 1.18 2001-09-21 15:34:59+02 jv Exp $
 
 # This library is no longer being maintained, and is included for backward
 # compatibility with Perl 4 programs which may require it.

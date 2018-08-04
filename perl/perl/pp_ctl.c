@@ -22,7 +22,7 @@
 #include "perl.h"
 
 #ifndef WORD_ALIGN
-#define WORD_ALIGN sizeof(U16)
+#define WORD_ALIGN sizeof(U32)
 #endif
 
 #define DOCATCH(o) ((CATCH_GET == TRUE) ? docatch(o) : (o))
@@ -322,7 +322,7 @@ PP(pp_formline)
 {
     dSP; dMARK; dORIGMARK;
     register SV *tmpForm = *++MARK;
-    register U16 *fpc;
+    register U32 *fpc;
     register char *t;
     register char *f;
     register char *s;
@@ -362,7 +362,7 @@ PP(pp_formline)
     /* need to jump to the next word */
     s = f + len + WORD_ALIGN - SvCUR(tmpForm) % WORD_ALIGN;
 
-    fpc = (U16*)s;
+    fpc = (U32*)s;
 
     for (;;) {
 	DEBUG_f( {
@@ -649,6 +649,7 @@ PP(pp_formline)
 		    s++;
 	    }
 	    sv_chop(sv,s);
+	    SvSETMAGIC(sv);
 	    break;
 
 	case FF_LINEGLOB:
@@ -1302,8 +1303,6 @@ OP *
 Perl_die_where(pTHX_ char *message, STRLEN msglen)
 {
     STRLEN n_a;
-    IO *io;
-    MAGIC *mg;
 
     if (PL_in_eval) {
 	I32 cxix;
@@ -1338,8 +1337,6 @@ Perl_die_where(pTHX_ char *message, STRLEN msglen)
 		sv_setpvn(ERRSV, message, msglen);
 	    }
 	}
-	else
-	    message = SvPVx(ERRSV, msglen);
 
 	while ((cxix = dopoptoeval(cxstack_ix)) < 0
 	       && PL_curstackinfo->si_prev)
@@ -1356,6 +1353,8 @@ Perl_die_where(pTHX_ char *message, STRLEN msglen)
 
 	    POPBLOCK(cx,PL_curpm);
 	    if (CxTYPE(cx) != CXt_EVAL) {
+		if (!message)
+		    message = SvPVx(ERRSV, msglen);
 		PerlIO_write(Perl_error_log, "panic: die ", 11);
 		PerlIO_write(Perl_error_log, message, msglen);
 		my_exit(1);
@@ -1385,30 +1384,7 @@ Perl_die_where(pTHX_ char *message, STRLEN msglen)
     if (!message)
 	message = SvPVx(ERRSV, msglen);
 
-    /* if STDERR is tied, print to it instead */
-    if (PL_stderrgv && (io = GvIOp(PL_stderrgv))
-	&& (mg = SvTIED_mg((SV*)io, PERL_MAGIC_tiedscalar))) {
-	dSP; ENTER;
-	PUSHMARK(SP);
-	XPUSHs(SvTIED_obj((SV*)io, mg));
-	XPUSHs(sv_2mortal(newSVpvn(message, msglen)));
-	PUTBACK;
-	call_method("PRINT", G_SCALAR);
-	LEAVE;
-    }
-    else {
-#ifdef USE_SFIO
-	/* SFIO can really mess with your errno */
-	int e = errno;
-#endif
-	PerlIO *serr = Perl_error_log;
-
-	PERL_WRITE_MSG_TO_CONSOLE(serr, message, msglen);
-	(void)PerlIO_flush(serr);
-#ifdef USE_SFIO
-	errno = e;
-#endif
-    }
+    write_to_stderr(message, msglen);
     my_failure_exit();
     /* NOTREACHED */
     return 0;
@@ -2321,7 +2297,10 @@ PP(pp_goto)
 		    CV *gotocv;
 		
 		    if (PERLDB_SUB_NN) {
-			SvIVX(sv) = PTR2IV(cv); /* Already upgraded, saved */
+			(void)SvUPGRADE(sv, SVt_PVIV);
+			(void)SvIOK_on(sv);
+			SAVEIV(SvIVX(sv));
+			SvIVX(sv) = PTR2IV(cv); /* Do it the quickest way */
 		    } else {
 			save_item(sv);
 			gv_efullname3(sv, CvGV(cv), Nullch);
@@ -2364,7 +2343,7 @@ PP(pp_goto)
 	    switch (CxTYPE(cx)) {
 	    case CXt_EVAL:
 		leaving_eval = TRUE;
-                if (CxREALEVAL(cx)) {
+                if (!CxTRYBLOCK(cx)) {
 		    gotoprobe = (last_eval_cx ?
 				last_eval_cx->blk_eval.old_eval_root :
 				PL_eval_root);
@@ -2821,8 +2800,7 @@ S_doeval(pTHX_ int gimme, OP** startop, CV* outside, U32 seq)
     else
 	sv_setpv(ERRSV,"");
     if (yyparse() || PL_error_count || !PL_eval_root) {
-	SV **newsp;
-	I32 gimme;
+	SV **newsp;			/* Used by POPBLOCK. */
 	PERL_CONTEXT *cx;
 	I32 optype = 0;			/* Might be reset by POPEVAL. */
 	STRLEN n_a;
@@ -2872,13 +2850,16 @@ S_doeval(pTHX_ int gimme, OP** startop, CV* outside, U32 seq)
 	*startop = PL_eval_root;
     } else
 	SAVEFREEOP(PL_eval_root);
-    if (gimme & G_VOID && ! PL_in_eval & EVAL_INREQUIRE)
-	/*
-	 * EVAL_INREQUIRE (the code is being required) is special-cased :
-	 * in this case we want scalar context to be forced, instead
-	 * of void context, so a proper return value is returned from
-	 * C<require> via this leaveeval op.
-	 */
+
+    /* Set the context for this new optree.
+     * If the last op is an OP_REQUIRE, force scalar context.
+     * Otherwise, propagate the context from the eval(). */
+    if (PL_eval_root->op_type == OP_LEAVEEVAL
+	    && cUNOPx(PL_eval_root)->op_first->op_type == OP_LINESEQ
+	    && cLISTOPx(cUNOPx(PL_eval_root)->op_first)->op_last->op_type
+	    == OP_REQUIRE)
+	scalar(PL_eval_root);
+    else if (gimme & G_VOID)
 	scalarvoid(PL_eval_root);
     else if (gimme & G_ARRAY)
 	list(PL_eval_root);
@@ -2916,8 +2897,9 @@ S_doeval(pTHX_ int gimme, OP** startop, CV* outside, U32 seq)
 }
 
 STATIC PerlIO *
-S_doopen_pmc(pTHX_ const char *name, const char *mode)
+S_doopen_pm(pTHX_ const char *name, const char *mode)
 {
+#ifndef PERL_DISABLE_PMC
     STRLEN namelen = strlen(name);
     PerlIO *fp;
 
@@ -2945,6 +2927,9 @@ S_doopen_pmc(pTHX_ const char *name, const char *mode)
 	fp = PerlIO_open(name, mode);
     }
     return fp;
+#else
+    return PerlIO_open(name, mode);
+#endif /* !PERL_DISABLE_PMC */
 }
 
 PP(pp_require)
@@ -3043,7 +3028,7 @@ PP(pp_require)
 
     if (path_is_absolute(name)) {
 	tryname = name;
-	tryrsfp = doopen_pmc(name,PERL_SCRIPT_MODE);
+	tryrsfp = doopen_pm(name,PERL_SCRIPT_MODE);
     }
 #ifdef MACOS_TRADITIONAL
     if (!tryrsfp) {
@@ -3052,7 +3037,7 @@ PP(pp_require)
 	MacPerl_CanonDir(name, newname, 1);
 	if (path_is_absolute(newname)) {
 	    tryname = newname;
-	    tryrsfp = doopen_pmc(newname,PERL_SCRIPT_MODE);
+	    tryrsfp = doopen_pm(newname,PERL_SCRIPT_MODE);
 	}
     }
 #endif
@@ -3207,7 +3192,7 @@ PP(pp_require)
 #endif
 		    TAINT_PROPER("require");
 		    tryname = SvPVX(namesv);
-		    tryrsfp = doopen_pmc(tryname, PERL_SCRIPT_MODE);
+		    tryrsfp = doopen_pm(tryname, PERL_SCRIPT_MODE);
 		    if (tryrsfp) {
 			if (tryname[0] == '.' && tryname[1] == '/')
 			    tryname += 2;
@@ -3564,9 +3549,9 @@ S_doparseform(pTHX_ SV *sv)
     bool noblank   = FALSE;
     bool repeat    = FALSE;
     bool postspace = FALSE;
-    U16 *fops;
-    register U16 *fpc;
-    U16 *linepc = 0;
+    U32 *fops;
+    register U32 *fpc;
+    U32 *linepc = 0;
     register I32 arg;
     bool ischop;
     int maxops = 2; /* FF_LINEMARK + FF_END) */
@@ -3582,7 +3567,7 @@ S_doparseform(pTHX_ SV *sv)
     s = base;
     base = Nullch;
 
-    New(804, fops, maxops, U16);
+    New(804, fops, maxops, U32);
     fpc = fops;
 
     if (s < send) {
@@ -3750,10 +3735,10 @@ S_doparseform(pTHX_ SV *sv)
     { /* need to jump to the next word */
         int z;
 	z = WORD_ALIGN - SvCUR(sv) % WORD_ALIGN;
-	SvGROW(sv, SvCUR(sv) + z + arg * sizeof(U16) + 4);
+	SvGROW(sv, SvCUR(sv) + z + arg * sizeof(U32) + 4);
 	s = SvPVX(sv) + SvCUR(sv) + z;
     }
-    Copy(fops, s, arg, U16);
+    Copy(fops, s, arg, U32);
     Safefree(fops);
     sv_magic(sv, Nullsv, PERL_MAGIC_fm, Nullch, 0);
     SvCOMPILED_on(sv);

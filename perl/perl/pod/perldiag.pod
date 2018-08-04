@@ -915,14 +915,6 @@ for stdout.
 
 (F) The script you specified can't be opened for the indicated reason.
 
-=item Can't provide tied hash usage; use keys(%hash) to test if empty
-
-(F) When a hash is evaluated in scalar context, bucket usage is
-returned if the hash is populated, and false is returned if the hash
-is empty.  Bucket usage is not currently available for tied hashes.
-To test if a hash is empty or populated, use keys(%hash) in scalar
-context instead.
-
 =item Can't read CRTL environ
 
 (S) A warning peculiar to VMS.  Perl tried to read an element of %ENV
@@ -2210,6 +2202,15 @@ C<??> appear to be nested quantifiers, but aren't.  See L<perlre>.
 (S internal) The symbol in question was declared but somehow went out of
 scope before it could possibly have been used.
 
+=item Newline in left-justified string for %s
+
+(W printf) There is a newline in a string to be left justified by 
+C<printf> or C<sprintf>.
+
+The padding spaces will appear after the newline, which is probably not
+what you wanted.  Usually you should remove the newline from the string 
+and put formatting characters in the C<sprintf> format.
+
 =item No %s allowed while running setuid
 
 (F) Certain operations are deemed to be too insecure for a setuid or
@@ -2642,6 +2643,13 @@ there are in the savestack.
 (P) Failed an internal consistency check while trying to reset a weak
 reference.
 
+=item panic: Devel::DProf inconsistent subroutine return
+
+(P) Devel::DProf called a subroutine that exited using goto(LABEL),
+last(LABEL) or next(LABEL). Leaving that way a subroutine called from
+an XSUB will lead very probably to a crash of the interpreter. This is
+a bug that will hopefully one day get fixed.
+
 =item panic: die %s
 
 (P) We popped the context stack to an eval context, and then discovered
@@ -2997,8 +3005,8 @@ with a numeric comparison operator, like this :
 
 This expression is actually equivalent to C<$x & ($y == 0)>, due to the
 higher precedence of C<==>. This is probably not what you want. (If you
-really meant to write this, disable the warning, or, better, write
-C<$x & ($y == 0 ? 1 : 0)>).
+really meant to write this, disable the warning, or, better, put the
+parentheses explicitly and write C<$x & ($y == 0)>).
 
 =item Possible unintended interpolation of %s in string
 
@@ -4035,6 +4043,16 @@ earlier in the line, and you really meant a "less than".
 (W untie) A copy of the object returned from C<tie> (or C<tied>) was
 still valid when C<untie> was called.
 
+=item Usage: POSIX::%s(%s)
+
+(F) You called a POSIX function with incorrect arguments.
+See L<POSIX/FUNCTIONS> for more information.
+
+=item Usage: Win32::%s(%s)
+
+(F) You called a Win32 function with incorrect arguments.
+See L<Win32> for more information.
+
 =item Useless (?-%s) - don't use /%s modifier in regex; marked by <-- HERE in m/%s/
 
 (W regexp) You have used an internal modifier such as (?-o) that has no
@@ -4410,6 +4428,11 @@ C<use 5.006_001>.  This of course won't help: the older Perls
 won't suddenly start understanding newer features, but at least
 they will show a sensible error message indicating the required
 minimum version.
+
+=item v-strings are deprecated
+
+(D deprecated) v-strings are deprecated.  Their semantics and use were
+overly confusing.
 
 =item Warning: something's wrong
 

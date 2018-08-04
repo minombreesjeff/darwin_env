@@ -207,7 +207,7 @@ PERLVARI(Irsfp_filters,	AV *,	Nullav)	/* keeps active source filters */
 PERLVAR(Icompiling,	COP)		/* compiling/done executing marker */
 
 PERLVAR(Icompcv,	CV *)		/* currently compiling subroutine */
-PERLVAR(Icomppad,	AV *)		/* storage for lexically scoped temporaries */
+PERLVAR(IBINCOMPAT0,	AV *)		/* filler for binary compatibility */
 PERLVAR(Icomppad_name,	AV *)		/* variable names for "my" variables */
 PERLVAR(Icomppad_name_fill,	I32)	/* last "introduced" variable offset */
 PERLVAR(Icomppad_name_floor,	I32)	/* start of vars in innermost block */
@@ -556,10 +556,14 @@ PERLVARI(Irunops_dbg,	runops_proc_t,	MEMBER_TO_FPTR(Perl_runops_debug))
 PERLVARI(Ippid,		IV,		0)
 #endif
 
-/* Don't forget to add your variable also to perl_clone()! */
+PERLVARI(Ihash_seed, UV, 0)		/* Hash initializer */
+
+PERLVARI(Ihash_seed_set, bool, FALSE)		/* Hash initialized? */
 
 /* New variables must be added to the very end, before this comment,
  * for binary compatibility (the offsets of the old members must not change).
+ * (Don't forget to add your variable also to perl_clone()!)
  * XSUB.h provides wrapper functions via perlapi.h that make this
- * irrelevant, but not all code may be expected to #include XSUB.h. */
+ * irrelevant, but not all code may be expected to #include XSUB.h.
+ */
 

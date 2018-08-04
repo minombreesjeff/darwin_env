@@ -86,6 +86,8 @@ END_EXTERN_C
 
 #undef  PL_Argv
 #define PL_Argv			(*Perl_IArgv_ptr(aTHX))
+#undef  PL_BINCOMPAT0
+#define PL_BINCOMPAT0		(*Perl_IBINCOMPAT0_ptr(aTHX))
 #undef  PL_Cmd
 #define PL_Cmd			(*Perl_ICmd_ptr(aTHX))
 #undef  PL_DBcv
@@ -168,8 +170,6 @@ END_EXTERN_C
 #define PL_compcv		(*Perl_Icompcv_ptr(aTHX))
 #undef  PL_compiling
 #define PL_compiling		(*Perl_Icompiling_ptr(aTHX))
-#undef  PL_comppad
-#define PL_comppad		(*Perl_Icomppad_ptr(aTHX))
 #undef  PL_comppad_name
 #define PL_comppad_name		(*Perl_Icomppad_name_ptr(aTHX))
 #undef  PL_comppad_name_fill
@@ -274,6 +274,10 @@ END_EXTERN_C
 #define PL_glob_index		(*Perl_Iglob_index_ptr(aTHX))
 #undef  PL_globalstash
 #define PL_globalstash		(*Perl_Iglobalstash_ptr(aTHX))
+#undef  PL_hash_seed
+#define PL_hash_seed		(*Perl_Ihash_seed_ptr(aTHX))
+#undef  PL_hash_seed_set
+#define PL_hash_seed_set	(*Perl_Ihash_seed_set_ptr(aTHX))
 #undef  PL_he_arenaroot
 #define PL_he_arenaroot		(*Perl_Ihe_arenaroot_ptr(aTHX))
 #undef  PL_he_root
@@ -724,6 +728,8 @@ END_EXTERN_C
 #define PL_colors		(*Perl_Tcolors_ptr(aTHX))
 #undef  PL_colorset
 #define PL_colorset		(*Perl_Tcolorset_ptr(aTHX))
+#undef  PL_comppad
+#define PL_comppad		(*Perl_Tcomppad_ptr(aTHX))
 #undef  PL_curcop
 #define PL_curcop		(*Perl_Tcurcop_ptr(aTHX))
 #undef  PL_curpad
@@ -998,6 +1004,10 @@ END_EXTERN_C
 #define PL_patleave		(*Perl_Gpatleave_ptr(NULL))
 #undef  PL_sh_path
 #define PL_sh_path		(*Perl_Gsh_path_ptr(NULL))
+#undef  PL_sigfpe_saved
+#define PL_sigfpe_saved		(*Perl_Gsigfpe_saved_ptr(NULL))
+#undef  PL_sv_placeholder
+#define PL_sv_placeholder	(*Perl_Gsv_placeholder_ptr(NULL))
 #undef  PL_thr_key
 #define PL_thr_key		(*Perl_Gthr_key_ptr(NULL))
 

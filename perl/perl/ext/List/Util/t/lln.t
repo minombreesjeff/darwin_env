@@ -3,7 +3,7 @@
 
 
 #
-# $Id: lln.t,v 1.2 2003/05/20 22:49:41 emoy Exp $
+# $Id: $
 # Author: Slaven Rezic
 #
 

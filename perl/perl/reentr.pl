@@ -187,7 +187,7 @@ while (<DATA>) { # Read in the protypes.
 	}
 	# Output the metaconfig unit header.
 	print <<EOF;
-?RCS: \$Id${func}_r.U,v $
+?RCS: \$Id: d_${func}_r.U,v $
 ?RCS:
 ?RCS: Copyright (c) 2002,2003 Jarkko Hietaniemi
 ?RCS:

@@ -171,7 +171,6 @@ perl_construct(pTHXx)
    if (PL_perl_destruct_level > 0)
        init_interp();
 #endif
-
    /* Init the real globals (and main thread)? */
     if (!PL_linestr) {
 #ifdef USE_5005THREADS
@@ -220,6 +219,9 @@ perl_construct(pTHXx)
 	    SvNV(&PL_sv_yes);
 	    SvREADONLY_on(&PL_sv_yes);
 	    SvREFCNT(&PL_sv_yes) = (~(U32)0)/2;
+
+	    SvREADONLY_on(&PL_sv_placeholder);
+	    SvREFCNT(&PL_sv_placeholder) = (~(U32)0)/2;
 	}
 
 	PL_sighandlerp = Perl_sighandler;
@@ -897,6 +899,9 @@ perl_destruct(pTHXx)
     SvREFCNT(&PL_sv_undef) = 0;
     SvREADONLY_off(&PL_sv_undef);
 
+    SvREFCNT(&PL_sv_placeholder) = 0;
+    SvREADONLY_off(&PL_sv_placeholder);
+
     Safefree(PL_origfilename);
     Safefree(PL_reg_start_tmp);
     if (PL_reg_curpm)
@@ -1028,8 +1033,116 @@ setuid perl scripts securely.\n");
 #endif
 #endif
 
+#if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT)
+    /* [perl #22371] Algorimic Complexity Attack on Perl 5.6.1, 5.8.0
+     * This MUST be done before any hash stores or fetches take place.
+     * If you set PL_hash_seed (and assumedly also PL_hash_seed_set) yourself,
+     * it is your responsibility to provide a good random seed!
+     * You can also define PERL_HASH_SEED in compile time, see hv.h. */
+    if (!PL_hash_seed_set)
+	 PL_hash_seed = get_hash_seed();
+    {
+	 char *s = PerlEnv_getenv("PERL_HASH_SEED_DEBUG");
+
+	 if (s) {
+	      int i = atoi(s);
+
+	      if (i == 1)
+		   PerlIO_printf(Perl_debug_log, "HASH_SEED = %"UVuf"\n",
+				 PL_hash_seed);
+	 }
+    }
+#endif /* #if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT) */
+
     PL_origargc = argc;
     PL_origargv = argv;
+
+    {
+	/* Set PL_origalen be the sum of the contiguous argv[]
+	 * elements plus the size of the env in case that it is
+	 * contiguous with the argv[].  This is used in mg.c:mg_set()
+	 * as the maximum modifiable length of $0.  In the worst case
+	 * the area we are able to modify is limited to the size of
+	 * the original argv[0].  (See below for 'contiguous', though.)
+	 * --jhi */
+	 char *s = NULL;
+	 int i;
+	 UV mask =
+	   ~(UV)(PTRSIZE == 4 ? 3 : PTRSIZE == 8 ? 7 : PTRSIZE == 16 ? 15 : 0);
+         /* Do the mask check only if the args seem like aligned. */
+	 UV aligned =
+	   (mask < ~(UV)0) && ((PTR2UV(argv[0]) & mask) == PTR2UV(argv[0]));
+
+	 /* See if all the arguments are contiguous in memory.  Note
+	  * that 'contiguous' is a loose term because some platforms
+	  * align the argv[] and the envp[].  If the arguments look
+	  * like non-aligned, assume that they are 'strictly' or
+	  * 'traditionally' contiguous.  If the arguments look like
+	  * aligned, we just check that they are within aligned
+	  * PTRSIZE bytes.  As long as no system has something bizarre
+	  * like the argv[] interleaved with some other data, we are
+	  * fine.  (Did I just evoke Murphy's Law?)  --jhi */
+	 if (PL_origargv && PL_origargc >= 1 && (s = PL_origargv[0])) {
+	      while (*s) s++;
+	      for (i = 1; i < PL_origargc; i++) {
+		   if ((PL_origargv[i] == s + 1
+#ifdef OS2
+			|| PL_origargv[i] == s + 2
+#endif 
+			    )
+		       ||
+		       (aligned &&
+			(PL_origargv[i] >  s &&
+			 PL_origargv[i] <=
+			 INT2PTR(char *, PTR2UV(s + PTRSIZE) & mask)))
+			)
+		   {
+			s = PL_origargv[i];
+			while (*s) s++;
+		   }
+		   else
+			break;
+	      }
+	 }
+	 /* Can we grab env area too to be used as the area for $0? */
+	 if (PL_origenviron) {
+	      if ((PL_origenviron[0] == s + 1
+#ifdef OS2
+		   || (PL_origenviron[0] == s + 9 && (s += 8))
+#endif 
+		  )
+		  ||
+		  (aligned &&
+		   (PL_origenviron[0] >  s &&
+		    PL_origenviron[0] <=
+		    INT2PTR(char *, PTR2UV(s + PTRSIZE) & mask)))
+		 )
+	      {
+#ifndef OS2
+		   s = PL_origenviron[0];
+		   while (*s) s++;
+#endif
+		   my_setenv("NoNe  SuCh", Nullch);
+		   /* Force copy of environment. */
+		   for (i = 1; PL_origenviron[i]; i++) {
+			if (PL_origenviron[i] == s + 1
+			    ||
+			    (aligned &&
+			     (PL_origenviron[i] >  s &&
+			      PL_origenviron[i] <=
+			      INT2PTR(char *, PTR2UV(s + PTRSIZE) & mask)))
+			   )
+			{
+			     s = PL_origenviron[i];
+			     while (*s) s++;
+			}
+			else
+			     break;
+		   }
+	      }
+	 }
+	 PL_origalen = s - PL_origargv[0];
+    }
 
     if (PL_do_undump) {
 
@@ -1162,6 +1275,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 	    break;
 
 	case 't':
+	    CHECK_MALLOC_TOO_LATE_FOR('t');
 	    if( !PL_tainting ) {
 	         PL_taint_warn = TRUE;
 	         PL_tainting = TRUE;
@@ -1169,6 +1283,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 	    s++;
 	    goto reswitch;
 	case 'T':
+	    CHECK_MALLOC_TOO_LATE_FOR('T');
 	    PL_tainting = TRUE;
 	    PL_taint_warn = FALSE;
 	    s++;
@@ -1351,6 +1466,7 @@ print \"  \\@INC:\\n    @INC\\n\";");
 	while (isSPACE(*s))
 	    s++;
 	if (*s == '-' && *(s+1) == 'T') {
+	    CHECK_MALLOC_TOO_LATE_FOR('T');
 	    PL_tainting = TRUE;
             PL_taint_warn = FALSE;
 	}
@@ -2290,13 +2406,47 @@ NULL
 	PerlIO_printf(PerlIO_stdout(), "\n  %s", *p++);
 }
 
+/* convert a string of -D options (or digits) into an int.
+ * sets *s to point to the char after the options */
+
+#ifdef DEBUGGING
+int
+Perl_get_debug_opts(pTHX_ char **s)
+{
+    int i = 0;
+    if (isALPHA(**s)) {
+	/* if adding extra options, remember to update DEBUG_MASK */
+	static char debopts[] = "psltocPmfrxu HXDSTRJvC";
+
+	for (; isALNUM(**s); (*s)++) {
+	    char *d = strchr(debopts,**s);
+	    if (d)
+		i |= 1 << (d - debopts);
+	    else if (ckWARN_d(WARN_DEBUGGING))
+		Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
+		    "invalid option -D%c\n", **s);
+	}
+    }
+    else {
+	i = atoi(*s);
+	for (; isALNUM(**s); (*s)++) ;
+    }
+#  ifdef EBCDIC
+    if ((i & DEBUG_p_FLAG) && ckWARN_d(WARN_DEBUGGING))
+	Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
+		"-Dp not implemented on this platform\n");
+#  endif
+    return i;
+}
+#endif
+
 /* This routine handles any switches that can be given during run */
 
 char *
 Perl_moreswitches(pTHX_ char *s)
 {
     STRLEN numlen;
-    U32 rschar;
+    UV rschar;
 
     switch (*s) {
     case '0':
@@ -2318,7 +2468,7 @@ Perl_moreswitches(pTHX_ char *s)
 		   s--;
 	      }
 	      PL_rs = newSVpvn("", 0);
-	      SvGROW(PL_rs, UNISKIP(rschar) + 1);
+	      SvGROW(PL_rs, (STRLEN)(UNISKIP(rschar) + 1));
 	      tmps = (U8*)SvPVX(PL_rs);
 	      uvchr_to_utf8(tmps, rschar);
 	      SvCUR_set(PL_rs, UNISKIP(rschar));
@@ -2389,24 +2539,8 @@ Perl_moreswitches(pTHX_ char *s)
     {	
 #ifdef DEBUGGING
 	forbid_setid("-D");
-	if (isALPHA(s[1])) {
-	    /* if adding extra options, remember to update DEBUG_MASK */
-	    static char debopts[] = "psltocPmfrxu HXDSTRJv";
-	    char *d;
-
-	    for (s++; *s && (d = strchr(debopts,*s)); s++)
-		PL_debug |= 1 << (d - debopts);
-	}
-	else {
-	    PL_debug = atoi(s+1);
-	    for (s++; isDIGIT(*s); s++) ;
-	}
-#ifdef EBCDIC
-	if (DEBUG_p_TEST_ && ckWARN_d(WARN_DEBUGGING))
-	    Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
-		    "-Dp not implemented on this platform\n");
-#endif
-	PL_debug |= DEBUG_TOP_FLAG;
+	s++;
+	PL_debug = get_debug_opts(&s) | DEBUG_TOP_FLAG;
 #else /* !DEBUGGING */
 	if (ckWARN_d(WARN_DEBUGGING))
 	    Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
@@ -2539,12 +2673,12 @@ Perl_moreswitches(pTHX_ char *s)
 	return s;
     case 't':
         if (!PL_tainting)
-            Perl_croak(aTHX_ "Too late for \"-t\" option");
+	    TOO_LATE_FOR('t');
         s++;
         return s;
     case 'T':
 	if (!PL_tainting)
-	    Perl_croak(aTHX_ "Too late for \"-T\" option");
+	    TOO_LATE_FOR('T');
 	s++;
 	return s;
     case 'u':
@@ -2615,7 +2749,7 @@ Perl_moreswitches(pTHX_ char *s)
 #endif
 #ifdef MPE
 	PerlIO_printf(PerlIO_stdout(),
-		      "MPE/iX port Copyright by Mark Klein and Mark Bixby, 1996-2002\n");
+		      "MPE/iX port Copyright by Mark Klein and Mark Bixby, 1996-2003\n");
 #endif
 #ifdef OEMVS
 	PerlIO_printf(PerlIO_stdout(),
@@ -2957,10 +3091,12 @@ S_open_script(pTHX_ char *scriptname, bool dosearch, SV *sv, int *fdscript)
                 PL_statbuf.st_mode & (S_ISUID|S_ISGID))
             {
                 /* try again */
+                PERL_FPU_PRE_EXEC
                 PerlProc_execv(Perl_form(aTHX_ "%s/sperl"PERL_FS_VER_FMT,
                                          BIN_EXP, (int)PERL_REVISION,
                                          (int)PERL_VERSION,
                                          (int)PERL_SUBVERSION), PL_origargv);
+                PERL_FPU_POST_EXEC
                 Perl_croak(aTHX_ "Can't do setuid\n");
             }
 #       endif
@@ -3217,9 +3353,11 @@ FIX YOUR KERNEL, PUT A C WRAPPER AROUND THIS SCRIPT, OR USE -u AND UNDUMP!\n");
 	    (void)PerlIO_close(PL_rsfp);
 #ifndef IAMSUID
 	    /* try again */
+	    PERL_FPU_PRE_EXEC
 	    PerlProc_execv(Perl_form(aTHX_ "%s/sperl"PERL_FS_VER_FMT, BIN_EXP,
 				     (int)PERL_REVISION, (int)PERL_VERSION,
 				     (int)PERL_SUBVERSION), PL_origargv);
+	    PERL_FPU_POST_EXEC
 #endif
 	    Perl_croak(aTHX_ "Can't do setuid\n");
 	}
@@ -3301,9 +3439,11 @@ FIX YOUR KERNEL, PUT A C WRAPPER AROUND THIS SCRIPT, OR USE -u AND UNDUMP!\n");
 #if defined(HAS_FCNTL) && defined(F_SETFD)
     fcntl(PerlIO_fileno(PL_rsfp),F_SETFD,0);	/* ensure no close-on-exec */
 #endif
+    PERL_FPU_PRE_EXEC
     PerlProc_execv(Perl_form(aTHX_ "%s/perl"PERL_FS_VER_FMT, BIN_EXP,
 			     (int)PERL_REVISION, (int)PERL_VERSION,
 			     (int)PERL_SUBVERSION), PL_origargv);/* try again */
+    PERL_FPU_POST_EXEC
     Perl_croak(aTHX_ "Can't do setuid\n");
 #endif /* IAMSUID */
 #else /* !DOSUID */
@@ -3402,7 +3542,45 @@ S_init_ids(pTHX)
     PL_uid |= PL_gid << 16;
     PL_euid |= PL_egid << 16;
 #endif
+    /* Should not happen: */
+    CHECK_MALLOC_TAINT(PL_uid && (PL_euid != PL_uid || PL_egid != PL_gid));
     PL_tainting |= (PL_uid && (PL_euid != PL_uid || PL_egid != PL_gid));
+}
+
+/* This is used very early in the lifetime of the program,
+ * before even the options are parsed, so PL_tainting has
+ * not been initialized properly.  */
+bool
+Perl_doing_taint(int argc, char *argv[], char *envp[])
+{
+#ifndef PERL_IMPLICIT_SYS
+    /* If we have PERL_IMPLICIT_SYS we can't call getuid() et alia
+     * before we have an interpreter-- and the whole point of this
+     * function is to be called at such an early stage.  If you are on
+     * a system with PERL_IMPLICIT_SYS but you do have a concept of
+     * "tainted because running with altered effective ids', you'll
+     * have to add your own checks somewhere in here.  The two most
+     * known samples of 'implicitness' are Win32 and NetWare, neither
+     * of which has much of concept of 'uids'. */
+    int uid  = PerlProc_getuid();
+    int euid = PerlProc_geteuid();
+    int gid  = PerlProc_getgid();
+    int egid = PerlProc_getegid();
+
+#ifdef VMS
+    uid  |=  gid << 16;
+    euid |= egid << 16;
+#endif
+    if (uid && (euid != uid || egid != gid))
+	return 1;
+#endif /* !PERL_IMPLICIT_SYS */
+    /* This is a really primitive check; environment gets ignored only
+     * if -T are the first chars together; otherwise one gets
+     *  "Too late" message. */
+    if ( argc > 1 && argv[1][0] == '-'
+         && (argv[1][1] == 't' || argv[1][1] == 'T') )
+	return 1;
+    return 0;
 }
 
 STATIC void
@@ -3420,17 +3598,17 @@ Perl_init_debugger(pTHX)
     HV *ostash = PL_curstash;
 
     PL_curstash = PL_debstash;
-    PL_dbargs = GvAV(gv_AVadd((gv_fetchpv("args", GV_ADDMULTI, SVt_PVAV))));
+    PL_dbargs = GvAV(gv_AVadd((gv_fetchpv("DB::args", GV_ADDMULTI, SVt_PVAV))));
     AvREAL_off(PL_dbargs);
-    PL_DBgv = gv_fetchpv("DB", GV_ADDMULTI, SVt_PVGV);
-    PL_DBline = gv_fetchpv("dbline", GV_ADDMULTI, SVt_PVAV);
-    PL_DBsub = gv_HVadd(gv_fetchpv("sub", GV_ADDMULTI, SVt_PVHV));
+    PL_DBgv = gv_fetchpv("DB::DB", GV_ADDMULTI, SVt_PVGV);
+    PL_DBline = gv_fetchpv("DB::dbline", GV_ADDMULTI, SVt_PVAV);
+    PL_DBsub = gv_HVadd(gv_fetchpv("DB::sub", GV_ADDMULTI, SVt_PVHV));
     sv_upgrade(GvSV(PL_DBsub), SVt_IV);	/* IVX accessed if PERLDB_SUB_NN */
-    PL_DBsingle = GvSV((gv_fetchpv("single", GV_ADDMULTI, SVt_PV)));
+    PL_DBsingle = GvSV((gv_fetchpv("DB::single", GV_ADDMULTI, SVt_PV)));
     sv_setiv(PL_DBsingle, 0);
-    PL_DBtrace = GvSV((gv_fetchpv("trace", GV_ADDMULTI, SVt_PV)));
+    PL_DBtrace = GvSV((gv_fetchpv("DB::trace", GV_ADDMULTI, SVt_PV)));
     sv_setiv(PL_DBtrace, 0);
-    PL_DBsignal = GvSV((gv_fetchpv("signal", GV_ADDMULTI, SVt_PV)));
+    PL_DBsignal = GvSV((gv_fetchpv("DB::signal", GV_ADDMULTI, SVt_PV)));
     sv_setiv(PL_DBsignal, 0);
     PL_curstash = ostash;
 }

@@ -1,5 +1,5 @@
 /*
- $Id: Encode.xs,v 1.4 2003/05/20 22:49:15 emoy Exp $
+ $Id: Encode.xs,v 1.56 2003/06/18 09:29:02 dankogai Exp $
  */
 
 #define PERL_NO_GET_CONTEXT
@@ -258,6 +258,16 @@ encode_method(pTHX_ encode_t * enc, encpage_t * dir, SV * src,
 
 MODULE = Encode		PACKAGE = Encode::utf8	PREFIX = Method_
 
+PROTOTYPES: DISABLE
+
+void
+Method_renew(obj)
+SV *	obj
+CODE:
+{
+    XSRETURN(1);
+}
+
 void
 Method_decode_xs(obj,src,check = 0)
 SV *	obj
@@ -387,6 +397,14 @@ CODE:
 MODULE = Encode		PACKAGE = Encode::XS	PREFIX = Method_
 
 PROTOTYPES: ENABLE
+
+void
+Method_renew(obj)
+SV *	obj
+CODE:
+{
+    XSRETURN(1);
+}
 
 void
 Method_name(obj)

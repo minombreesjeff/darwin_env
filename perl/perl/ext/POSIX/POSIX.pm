@@ -54,7 +54,7 @@ sub AUTOLOAD {
 package POSIX::SigAction;
 
 use AutoLoader 'AUTOLOAD';
-sub new { bless {HANDLER => $_[1], MASK => $_[2], FLAGS => $_[3] || 0}, $_[0] }
+sub new { bless {HANDLER => $_[1], MASK => $_[2], FLAGS => $_[3] || 0, SAFE => 0}, $_[0] }
 
 package POSIX;
 
@@ -425,7 +425,7 @@ sub calloc {
 }
 
 sub div {
-    unimpl "div() is C-specific, stopped";
+    unimpl "div() is C-specific, use /, % and int instead";
 }
 
 sub exit {
@@ -447,7 +447,7 @@ sub labs {
 }
 
 sub ldiv {
-    unimpl "ldiv() is C-specific, use / and int instead";
+    unimpl "ldiv() is C-specific, use /, % and int instead";
 }
 
 sub malloc {
@@ -961,3 +961,4 @@ package POSIX::SigAction;
 sub handler { $_[0]->{HANDLER} = $_[1] if @_ > 1; $_[0]->{HANDLER} };
 sub mask    { $_[0]->{MASK}    = $_[1] if @_ > 1; $_[0]->{MASK} };
 sub flags   { $_[0]->{FLAGS}   = $_[1] if @_ > 1; $_[0]->{FLAGS} };
+sub safe    { $_[0]->{SAFE}    = $_[1] if @_ > 1; $_[0]->{SAFE} };

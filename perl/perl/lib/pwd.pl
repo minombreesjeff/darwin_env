@@ -9,20 +9,9 @@
 #
 # Suggested alternative: Cwd
 #
-;# $RCSfile: pwd.pl,v $$Revision: 1.4 $$Date: 2003/05/20 22:50:35 $
+;# $RCSfile: pwd.pl,v $$Revision: 4.1 $$Date: 92/08/07 18:24:11 $
 ;#
-;# $Log: pwd.pl,v $
-;# Revision 1.4  2003/05/20 22:50:35  emoy
-;# Update to Perl 5.8.1, including thread support and two level namespace.
-;# Bug #: 3258028
-;# Reviewed by: Jordan Hubbard
-;#
-;# Revision 1.3.2.1  2003/05/17 07:04:01  emoy
-;# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
-;# two level namespace.  Append prefix, installprefix, and standard paths to
-;# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
-;# .packlist.
-;#
+;# $Log:	pwd.pl,v $
 ;#
 ;# Usage:
 ;#	require "pwd.pl";

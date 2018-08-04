@@ -1859,7 +1859,7 @@ it under the same terms as Perl itself.
 
 =head1 REVISION
 
-$Id: LaTeX.pm,v 1.4 2003/05/20 22:52:25 emoy Exp $
+$Id: LaTeX.pm,v 1.17 2003/04/05 21:25:49 timj Exp $
 
 =end __PRIVATE__
 

@@ -1,4 +1,4 @@
-/* $RCSfile: a2py.c,v $$Revision: 1.5 $$Date: 2003/05/20 22:54:50 $
+/* $RCSfile: a2py.c,v $$Revision: 4.1 $$Date: 92/08/07 18:29:14 $
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
  *    2000, 2001, 2002, by Larry Wall and others
@@ -6,18 +6,7 @@
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
  *
- * $Log: a2py.c,v $
- * Revision 1.5  2003/05/20 22:54:50  emoy
- * Update to Perl 5.8.1, including thread support and two level namespace.
- * Bug #: 3258028
- * Reviewed by: Jordan Hubbard
- *
- * Revision 1.4.2.1  2003/05/17 07:07:56  emoy
- * Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
- * two level namespace.  Append prefix, installprefix, and standard paths to
- * darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
- * .packlist.
- *
+ * $Log:	a2py.c,v $
  */
 
 #if defined(OS2) || defined(WIN32) || defined(NETWARE)

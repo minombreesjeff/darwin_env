@@ -24,6 +24,24 @@
 
 #define FCALL *f
 
+#ifdef PERL_UTF8_CACHE_ASSERT
+/* The cache element 0 is the Unicode offset;
+ * the cache element 1 is the byte offset of the element 0;
+ * the cache element 2 is the Unicode length of the substring;
+ * the cache element 3 is the byte length of the substring;
+ * The checking of the substring side would be good
+ * but substr() has enough code paths to make my head spin;
+ * if adding more checks watch out for the following tests:
+ *   t/op/index.t t/op/length.t t/op/pat.t t/op/substr.t
+ *   lib/utf8.t lib/Unicode/Collate/t/index.t
+ * --jhi
+ */
+#define ASSERT_UTF8_CACHE(cache) \
+	STMT_START { if (cache) { assert((cache)[0] <= (cache)[1]); } } STMT_END
+#else
+#define ASSERT_UTF8_CACHE(cache) NOOP
+#endif
+
 /* ============================================================================
 
 =head1 Allocation and deallocation of SVs.
@@ -3070,7 +3088,11 @@ Perl_sv_2pv_flags(pTHX_ register SV *sv, STRLEN *lp, I32 flags)
 				    s = "REF";
 				else
 				    s = "SCALAR";		break;
-		case SVt_PVLV:	s = SvROK(sv) ? "REF":"LVALUE";	break;
+		case SVt_PVLV:	s = SvROK(sv) ? "REF"
+				/* tied lvalues should appear to be
+				 * scalars for backwards compatitbility */
+				: (LvTYPE(sv) == 't' || LvTYPE(sv) == 'T')
+				    ? "SCALAR" : "LVALUE";	break;
 		case SVt_PVAV:	s = "ARRAY";			break;
 		case SVt_PVHV:	s = "HASH";			break;
 		case SVt_PVCV:	s = "CODE";			break;
@@ -3677,7 +3699,7 @@ Perl_sv_setsv_flags(pTHX_ SV *dstr, register SV *sstr, I32 flags)
 	if (dtype < SVt_RV)
 	    sv_upgrade(dstr, SVt_RV);
 	else if (dtype == SVt_PVGV &&
-		 SvTYPE(SvRV(sstr)) == SVt_PVGV) {
+		 SvROK(sstr) && SvTYPE(SvRV(sstr)) == SVt_PVGV) {
 	    sstr = SvRV(sstr);
 	    if (sstr == dstr) {
 		if (GvIMPORTED(dstr) != GVf_IMPORTED
@@ -4261,6 +4283,8 @@ Efficient removal of characters from the beginning of the string buffer.
 SvPOK(sv) must be true and the C<ptr> must be a pointer to somewhere inside
 the string buffer.  The C<ptr> becomes the first character of the adjusted
 string. Uses the "OOK hack".
+Beware: after this function returns, C<ptr> and SvPVX(sv) may no longer
+refer to the same chunk of data.
 
 =cut
 */
@@ -4269,9 +4293,9 @@ void
 Perl_sv_chop(pTHX_ register SV *sv, register char *ptr)
 {
     register STRLEN delta;
-
     if (!ptr || !SvPOKp(sv))
 	return;
+    delta = ptr - SvPVX(sv);
     SV_CHECK_THINKFIRST(sv);
     if (SvTYPE(sv) < SVt_PVIV)
 	sv_upgrade(sv,SVt_PVIV);
@@ -4291,7 +4315,6 @@ Perl_sv_chop(pTHX_ register SV *sv, register char *ptr)
 	SvFLAGS(sv) |= SVf_OOK; 
     }
     SvNIOK_off(sv);
-    delta = ptr - SvPVX(sv);
     SvLEN(sv) -= delta;
     SvCUR(sv) -= delta;
     SvPVX(sv) += delta;
@@ -4851,7 +4874,9 @@ S_sv_add_backref(pTHX_ SV *tsv, SV *sv)
     else {
 	av = newAV();
 	sv_magic(tsv, (SV*)av, PERL_MAGIC_backref, NULL, 0);
-	SvREFCNT_dec(av);           /* for sv_magic */
+	/* av now has a refcnt of 2, which avoids it getting freed
+	 * before us during global cleanup. The extra ref is removed
+	 * by magic_killbackrefs() when tsv is being freed */
     }
     if (AvFILLp(av) >= AvMAX(av)) {
         SV **svp = AvARRAY(av);
@@ -5369,8 +5394,12 @@ Perl_sv_len_utf8(pTHX_ register SV *sv)
 	U8 *s = (U8*)SvPV(sv, len);
 	MAGIC *mg = SvMAGICAL(sv) ? mg_find(sv, PERL_MAGIC_utf8) : 0;
 
-	if (mg && mg->mg_len != -1 && (mg->mg_len > 0 || len == 0))
+	if (mg && mg->mg_len != -1 && (mg->mg_len > 0 || len == 0)) {
 	     ulen = mg->mg_len;
+#ifdef PERL_UTF8_CACHE_ASSERT
+	    assert(ulen == Perl_utf8_length(aTHX_ s, s + len));
+#endif
+        }
 	else {
 	     ulen = Perl_utf8_length(aTHX_ s, s + len);
 	     if (!mg && !SvREADONLY(sv)) {
@@ -5440,6 +5469,7 @@ S_utf8_mg_pos(pTHX_ SV *sv, MAGIC **mgp, STRLEN **cachep, I32 i, I32 *offsetp, I
             *mgp = mg_find(sv, PERL_MAGIC_utf8);
         if (*mgp && (*mgp)->mg_ptr) {
             *cachep = (STRLEN *) (*mgp)->mg_ptr;
+	    ASSERT_UTF8_CACHE(*cachep);
             if ((*cachep)[i] == (STRLEN)uoff)	/* An exact match. */
 		 found = TRUE;
 	    else {			/* We will skip to the right spot. */
@@ -5512,7 +5542,23 @@ S_utf8_mg_pos(pTHX_ SV *sv, MAGIC **mgp, STRLEN **cachep, I32 i, I32 *offsetp, I
 		      *offsetp = 0;
 		 }
 	    }
-        }
+	}
+#ifdef PERL_UTF8_CACHE_ASSERT
+	if (found) {
+	     U8 *s = start;
+	     I32 n = uoff;
+
+	     while (n-- && s < send)
+		  s += UTF8SKIP(s);
+
+	     if (i == 0) {
+		  assert(*offsetp == s - start);
+		  assert((*cachep)[0] == (STRLEN)uoff);
+		  assert((*cachep)[1] == *offsetp);
+	     }
+	     ASSERT_UTF8_CACHE(*cachep);
+	}
+#endif
     }
 
     return found;
@@ -5586,12 +5632,14 @@ Perl_sv_pos_u2b(pTHX_ register SV *sv, I32* offsetp, I32* lenp)
 	      }
 	      *lenp = s - start;
 	 }
+	 ASSERT_UTF8_CACHE(cache);
     }
     else {
 	 *offsetp = 0;
 	 if (lenp)
 	      *lenp = 0;
     }
+
     return;
 }
 
@@ -5635,13 +5683,13 @@ Perl_sv_pos_b2u(pTHX_ register SV* sv, I32* offsetp)
 	      mg = mg_find(sv, PERL_MAGIC_utf8);
 	      if (mg && mg->mg_ptr) {
 		   cache = (STRLEN *) mg->mg_ptr;
-                   if (cache[1] == *offsetp) {
+                   if (cache[1] == (STRLEN)*offsetp) {
                         /* An exact match. */
                         *offsetp = cache[0];
 
 			return;
 		   }
-		   else if (cache[1] < *offsetp) {
+		   else if (cache[1] < (STRLEN)*offsetp) {
 			/* We already know part of the way. */
 			len = cache[0];
 			s  += cache[1];
@@ -5663,18 +5711,21 @@ Perl_sv_pos_b2u(pTHX_ register SV* sv, I32* offsetp)
 			     cache[1] -= backw;
 
 			     while (backw--) {
-				  p--;
-				  while (UTF8_IS_CONTINUATION(*p))
-				       p--;
-				  ubackw++;
-			     }
-
-			     cache[0] -= ubackw;
-
-			     return;
+			    p--;
+			    while (UTF8_IS_CONTINUATION(*p)) {
+				p--;
+				backw--;
+			    }
+			    ubackw++;
 			}
-		   }
-	      }
+
+			cache[0] -= ubackw;
+			*offsetp = cache[0];
+			return;
+		    }
+		}
+	    }
+	    ASSERT_UTF8_CACHE(cache);
 	 }
 
 	 while (s < send) {
@@ -6283,15 +6334,23 @@ thats_really_all_folks:
     }
    else
     {
-#ifndef EPOC
-       /*The big, slow, and stupid way */
-	STDCHAR buf[8192];
+       /*The big, slow, and stupid way. */
+
+      /* Any stack-challenged places. */
+#if defined(EPOC)
+      /* EPOC: need to work around SDK features.         *
+       * On WINS: MS VC5 generates calls to _chkstk,     *
+       * if a "large" stack frame is allocated.          *
+       * gcc on MARM does not generate calls like these. */
+#   define USEHEAPINSTEADOFSTACK
+#endif
+
+#ifdef USEHEAPINSTEADOFSTACK
+	STDCHAR *buf = 0;
+	New(0, buf, 8192, STDCHAR);
+	assert(buf);
 #else
-	/* Need to work around EPOC SDK features          */
-	/* On WINS: MS VC5 generates calls to _chkstk,    */
-	/* if a `large' stack frame is allocated          */
-	/* gcc on MARM does not generate calls like these */
-	STDCHAR buf[1024];
+	STDCHAR buf[8192];
 #endif
 
 screamer2:
@@ -6340,6 +6399,10 @@ screamer2:
 	    if (!(cnt < sizeof(buf) && PerlIO_eof(fp)))
 		goto screamer2;
 	}
+
+#ifdef USEHEAPINSTEADOFSTACK
+	Safefree(buf);
+#endif
     }
 
     if (rspara) {		/* have to do this both before and after */
@@ -7509,7 +7572,12 @@ Perl_sv_reftype(pTHX_ SV *sv, int ob)
 				    return "REF";
 				else
 				    return "SCALAR";
-	case SVt_PVLV:		return SvROK(sv) ? "REF" : "LVALUE";
+				
+	case SVt_PVLV:		return SvROK(sv) ? "REF"
+				/* tied lvalues should appear to be
+				 * scalars for backwards compatitbility */
+				: (LvTYPE(sv) == 't' || LvTYPE(sv) == 'T')
+				    ? "SCALAR" : "LVALUE";
 	case SVt_PVAV:		return "ARRAY";
 	case SVt_PVHV:		return "HASH";
 	case SVt_PVCV:		return "CODE";
@@ -7834,7 +7902,9 @@ Perl_sv_unref_flags(pTHX_ SV *sv, U32 flags)
     }
     SvRV(sv) = 0;
     SvROK_off(sv);
-    if (SvREFCNT(rv) != 1 || SvREADONLY(rv) || flags) /* SV_IMMEDIATE_UNREF */
+    /* You can't have a || SvREADONLY(rv) here, as $a = $$a, where $a was
+       assigned to as BEGIN {$a = \"Foo"} will fail.  */
+    if (SvREFCNT(rv) != 1 || (flags & SV_IMMEDIATE_UNREF))
 	SvREFCNT_dec(rv);
     else /* XXX Hack, but hard to make $a=$a->[1] work otherwise */
 	sv_2mortal(rv);		/* Schedule for freeing later */
@@ -8372,7 +8442,7 @@ Perl_sv_vcatpvfn(pTHX_ SV *sv, const char *pat, STRLEN patlen, va_list *args, SV
 		    vecsv = va_arg(*args, SV*);
 		else
 		    vecsv = (evix ? evix <= svmax : svix < svmax) ?
-			svargs[ewix ? ewix-1 : svix++] : &PL_sv_undef;
+			svargs[evix ? evix-1 : svix++] : &PL_sv_undef;
 		dotstr = SvPVx(vecsv, dotstrlen);
 		if (DO_UTF8(vecsv))
 		    is_utf8 = TRUE;
@@ -9033,6 +9103,13 @@ Perl_sv_vcatpvfn(pTHX_ SV *sv, const char *pat, STRLEN patlen, va_list *args, SV
 	     p = SvEND(sv);
 	     *p = '\0';
 	}
+	/* Use memchr() instead of strchr(), as eptr is not guaranteed */
+	/* to point to a null-terminated string.                       */
+	if (left && ckWARN(WARN_PRINTF) && memchr(eptr, '\n', elen) && 
+	    (PL_op->op_type == OP_PRTF || PL_op->op_type == OP_SPRINTF)) 
+	    Perl_warner(aTHX_ packWARN(WARN_PRINTF),
+		"Newline in left-justified string for %sprintf",
+			(PL_op->op_type == OP_PRTF) ? "" : "s");
 	
 	have = esignlen + zeros + elen;
 	need = (have > width ? have : width);
@@ -10356,7 +10433,7 @@ Perl_ss_dup(pTHX_ PerlInterpreter *proto_perl, CLONE_PARAMS* param)
 
 Create and return a new interpreter by cloning the current one.
 
-perl_clone takes these flags as paramters:
+perl_clone takes these flags as parameters:
 
 CLONEf_COPY_STACKS - is used to, well, copy the stacks also, 
 without it we only clone the data and zero the stacks, 
@@ -10439,6 +10516,8 @@ perl_clone_using(PerlInterpreter *proto_perl, UV flags,
     PL_markstack = 0;
     PL_scopestack = 0;
     PL_savestack = 0;
+    PL_savestack_ix = 0;
+    PL_savestack_max = -1;
     PL_retstack = 0;
     PL_sig_pending = 0;
     Zero(&PL_debug_pad, 1, struct perl_debug_pad);
@@ -10470,6 +10549,8 @@ perl_clone_using(PerlInterpreter *proto_perl, UV flags,
     PL_markstack = 0;
     PL_scopestack = 0;
     PL_savestack = 0;
+    PL_savestack_ix = 0;
+    PL_savestack_max = -1;
     PL_retstack = 0;
     PL_sig_pending = 0;
     Zero(&PL_debug_pad, 1, struct perl_debug_pad);
@@ -10956,6 +11037,7 @@ perl_clone_using(PerlInterpreter *proto_perl, UV flags,
 
     PL_glob_index	= proto_perl->Iglob_index;
     PL_srand_called	= proto_perl->Isrand_called;
+    PL_hash_seed	= proto_perl->Ihash_seed;
     PL_uudmap['M']	= 0;		/* reinits on demand */
     PL_bitcount		= Nullch;	/* reinits on demand */
 
@@ -11127,6 +11209,7 @@ perl_clone_using(PerlInterpreter *proto_perl, UV flags,
     PL_regstartp	= (I32*)NULL;
     PL_regendp		= (I32*)NULL;
     PL_reglastparen	= (U32*)NULL;
+    PL_reglastcloseparen	= (U32*)NULL;
     PL_regtill		= Nullch;
     PL_reg_start_tmp	= (char**)NULL;
     PL_reg_start_tmpl	= 0;

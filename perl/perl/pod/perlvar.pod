@@ -695,7 +695,7 @@ In the above I<meaningless> stands for anything: zero, non-zero,
 C<undef>.  A successful system or library call does B<not> set
 the variable to zero.
 
-If used an a string, yields the corresponding system error string.
+If used as a string, yields the corresponding system error string.
 You can assign a number to C<$!> to set I<errno> if, for instance,
 you want C<"$!"> to return the string for error I<n>, or you want
 to set the exit value for the die() operator.  (Mnemonic: What just
@@ -858,20 +858,36 @@ and C<$)> can be swapped only on machines supporting setregid().
 
 =item $0
 
-Contains the name of the program being executed.  On some operating
-systems assigning to C<$0> modifies the argument area that the B<ps>
-program sees.  This is more useful as a way of indicating the current
-program state than it is for hiding the program you're running.
-(Mnemonic: same as B<sh> and B<ksh>.)
+Contains the name of the program being executed.
+
+On some (read: not all) operating systems assigning to C<$0> modifies
+the argument area that the C<ps> program sees.  On some platforms you
+may have to use special C<ps> options or a different C<ps> to see the
+changes.  Modifying the $0 is more useful as a way of indicating the
+current program state than it is for hiding the program you're
+running.  (Mnemonic: same as B<sh> and B<ksh>.)
+
+Note that there are platform specific limitations on the the maximum
+length of C<$0>.  In the most extreme case it may be limited to the
+space occupied by the original C<$0>.
+
+In some platforms there may be arbitrary amount of padding, for
+example space characters, after the modified name as shown by C<ps>.
+In some platforms this padding may extend all the way to the original
+length of the argument area, no matter what you do (this is the case
+for example with Linux 2.2).
 
 Note for BSD users: setting C<$0> does not completely remove "perl"
-from the ps(1) output.  For example, setting C<$0> to C<"foobar"> will
-result in C<"perl: foobar (perl)">.  This is an operating system
-feature.
+from the ps(1) output.  For example, setting C<$0> to C<"foobar"> may
+result in C<"perl: foobar (perl)"> (whether both the C<"perl: "> prefix
+and the " (perl)" suffix are shown depends on your exact BSD variant
+and version).  This is an operating system feature, Perl cannot help it.
 
 In multithreaded scripts Perl coordinates the threads so that any
 thread may modify its copy of the C<$0> and the change becomes visible
-to ps(1) (assuming the operating system plays along).
+to ps(1) (assuming the operating system plays along).  Note that the
+the view of C<$0> the other threads have will not change since they
+have their own copies of it.
 
 =item $[
 
@@ -922,7 +938,8 @@ C<$^C = 1> is similar to calling C<B::minus_c>.
 =item $^D
 
 The current value of the debugging flags.  (Mnemonic: value of B<-D>
-switch.)
+switch.) May be read or set. Like its command-line equivalent, you can use
+numeric or symbolic values, eg C<$^D = 10> or C<$^D = "st">.
 
 =item $SYSTEM_FD_MAX
 
@@ -1080,6 +1097,10 @@ Provide informative "file" names for evals based on the place they were compiled
 
 Provide informative names to anonymous subroutines based on the place they
 were compiled.
+
+=item 0x400
+
+Debug assertion subroutines enter/exit.
 
 =back
 
@@ -1335,24 +1356,11 @@ Be sure not to use a bareword as the name of a signal handler,
 lest you inadvertently call it. 
 
 If your system has the sigaction() function then signal handlers are
-installed using it.  This means you get reliable signal handling.  If
-your system has the SA_RESTART flag it is used when signals handlers are
-installed.  This means that system calls for which restarting is supported
-continue rather than returning when a signal arrives.  If you want your
-system calls to be interrupted by signal delivery then do something like
-this:
+installed using it.  This means you get reliable signal handling.
 
-    use POSIX ':signal_h';
-
-    my $alarm = 0;
-    sigaction SIGALRM, new POSIX::SigAction sub { $alarm = 1 }
-    	or die "Error setting SIGALRM handler: $!\n";
-
-See L<POSIX>.
-
-The delivery policy of signals changed in Perl 5.8.0 from immediate
-(also known as "unsafe") to deferred, also known as "safe signals".
-See L<perlipc> for more information.
+The default delivery policy of signals changed in Perl 5.8.0 from 
+immediate (also known as "unsafe") to deferred, also known as 
+"safe signals".  See L<perlipc> for more information.
 
 Certain internal hooks can be also set using the %SIG hash.  The
 routine indicated by C<$SIG{__WARN__}> is called when a warning message is

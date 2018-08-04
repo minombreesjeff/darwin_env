@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Id$
+# $Id: man.t,v 1.4 2003/01/05 06:31:52 eagle Exp $
 #
 # man.t -- Additional specialized tests for Pod::Man.
 #

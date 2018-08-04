@@ -2,7 +2,14 @@
 
 # "This IS structured code.  It's just randomly structured."
 
-print "1..28\n";
+BEGIN {
+    chdir 't' if -d 't';
+    @INC = qw(. ../lib);
+}
+
+print "1..30\n";
+
+require "test.pl";
 
 while ($?) {
     $foo = 1;
@@ -184,6 +191,35 @@ sub f1 {
     goto sub { $x; print "ok 28 - don't prematurely free CV\n" }
 }
 f1();
+
+# bug #22181 - this used to coredump or make $x undefined, due to
+# erroneous popping of the inner BLOCK context
+
+for ($i=0; $i<2; $i++) {
+    my $x = 1;
+    goto LABEL29;
+    LABEL29:
+    print "not " if !defined $x || $x != 1;
+}
+print "ok 29 - goto in for(;;) with continuation\n";
+
+# bug #22299 - goto in require doesn't find label
+
+open my $f, ">goto01.pm" or die;
+print $f <<'EOT';
+package goto01;
+goto YYY;
+die;
+YYY: print "OK\n";
+1;
+EOT
+close $f;
+
+curr_test(30);
+my $r = runperl(prog => 'use goto01; print qq[DONE\n]');
+is($r, "OK\nDONE\n", "goto within use-d file"); 
+unlink "goto01.pm";
+
 
 exit;
 

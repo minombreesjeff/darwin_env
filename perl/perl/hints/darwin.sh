@@ -13,33 +13,37 @@ perl_version=`awk '/define[ 	]+PERL_VERSION/ {print $3}' $src/patchlevel.h`
 perl_subversion=`awk '/define[ 	]+PERL_SUBVERSION/ {print $3}' $src/patchlevel.h`
 version="${perl_revision}.${perl_version}.${perl_subversion}"
 
+# This was previously used in all but causes three cases
+# (no -Ddprefix=, -Dprefix=/usr, -Dprefix=/some/thing/else)
+# but that caused too much grief.
+# vendorlib="/System/Library/Perl/${version}"; # Apple-supplied modules
+
 # BSD paths
 case "$prefix" in
-  '')
-    # Default install; use non-system directories
-    prefix='/usr/local'; # Built-in perl uses /usr
-    siteprefix='/usr/local';
-    vendorprefix='/usr'; usevendorprefix='define';
-
-    # Where to put modules.
-    sitelib="/Library/Perl/${version}"; # FIXME: Want "/Network/Perl/${version}" also
-    vendorlib="/System/Library/Perl/${version}"; # Apple-supplied modules
-    ;;
-
-  '/usr')
-    # We are building/replacing the built-in perl
-    siteprefix='/usr/local';
-    vendorprefix='/usr/local'; usevendorprefix='define';
-
-    # Where to put modules.
-    sitelib="/Library/Perl/${version}"; # FIXME: Want "/Network/Perl/${version}" also
-    vendorlib="/System/Library/Perl/${version}"; # Apple-supplied modules
-    ;;
+'')	# Default install; use non-system directories
+	prefix='/usr/local';
+	siteprefix='/usr/local';
+	;;
+'/usr')	# We are building/replacing the built-in perl
+	prefix='/';
+	installprefix='/';
+	bin='/usr/bin';
+	sitebin='/usr/bin';
+	installusrbinperl='define'; # You knew what you were doing.
+	privlib="/System/Library/Perl/${version}";
+	sitelib="/Library/Perl/${version}";
+	vendorprefix='/';
+	usevendorprefix='define';
+	vendorbin='/usr/bin';
+	vendorscript='/usr/bin';
+	vendorlib="/Network/Library/Perl/${version}";
+	# 4BSD uses ${prefix}/share/man, not ${prefix}/man.
+	man1dir='/usr/share/man/man1';
+	man3dir='/usr/share/man/man3';
+	;;
+  *)	# Anything else; use non-system directories, use Configure defaults
+	;;
 esac
-
-# 4BSD uses ${prefix}/share/man, not ${prefix}/man.
-man1dir="${prefix}/share/man/man1";
-man3dir="${prefix}/share/man/man3";
 
 ##
 # Tool chain settings
@@ -71,7 +75,10 @@ esac
 
 # -pipe: makes compilation go faster.
 # -fno-common because common symbols are not allowed in MH_DYLIB
-ccflags="${ccflags} -pipe -fno-common"
+# -DDARWIN: apparently the __APPLE__ is not sanctioned by Apple
+# as the way to differentiate Mac OS X.  (The official line is that
+# *no* cpp symbol does differentiate Mac OS X.)
+ccflags="${ccflags} -pipe -fno-common -DDARWIN"
 
 # At least on Darwin 1.3.x:
 #
@@ -139,7 +146,9 @@ case "$osvers" in
    ;;
 esac
 ldlibpthname='DYLD_LIBRARY_PATH';
-useshrplib='true';
+
+# useshrplib=true results in much slower startup times.
+# 'false' is the default value.  Use Configure -Duseshrplib to override.
 
 cat > UU/archname.cbu <<'EOCBU'
 # This script UU/archname.cbu will get 'called-back' by Configure 

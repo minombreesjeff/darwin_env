@@ -7,7 +7,7 @@
  * that running config_h.SH again will wipe out any changes you've made.
  * For a more permanent change edit undef and rerun config_h.SH.
  *
- * $Id: config_H.wc,v 1.4 2003/05/20 22:48:54 emoy Exp $
+ * $Id: Config_h.U,v 3.0.1.5 1997/02/28 14:57:43 ram Exp $
  */
 
 /*
@@ -647,12 +647,6 @@
  *	available to let the process sleep on a sub-second accuracy.
  */
 /*#define HAS_USLEEP		/**/
-
-/* HAS_NANOSLEEP:
- *	This symbol, if defined, indicates that the nanosleep system
- *	call is available to let the process sleep with 1E-9 accuracy.
- */
-/*#define HAS_NANOSLEEP		/**/
 
 /* HASVOLATILE:
  *	This symbol, if defined, indicates that this C compiler knows about
@@ -1814,6 +1808,13 @@
 /*#define HAS_PTHREAD_YIELD	/**/
 #define SCHED_YIELD		/**/
 /*#define HAS_SCHED_YIELD	/**/
+
+/* HAS_PTHREAD_ATTR_SETSCOPE:
+ *	This symbol, if defined, indicates that the pthread_attr_setscope
+ *	system call is available to set the contention scope attribute of
+ *	a thread attribute object.
+ */
+/*#define HAS_PTHREAD_ATTR_SETSCOPE		/ **/
 
 /* HAS_READV:
  *	This symbol, if defined, indicates that the readv routine is
@@ -3471,7 +3472,7 @@
 
 /* HAS_PTHREAD_ATFORK:
  *	This symbol, if defined, indicates that the pthread_atfork routine
- *	is available setup fork handlers.
+ *	is available to setup fork handlers.
  */
 /*#define HAS_PTHREAD_ATFORK		/**/
 

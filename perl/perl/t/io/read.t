@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: read.t,v $
+# $RCSfile$
 
 BEGIN {
     chdir 't' if -d 't';

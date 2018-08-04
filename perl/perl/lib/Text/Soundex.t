@@ -1,21 +1,10 @@
 #!./perl
 #
-# $Id: Soundex.t,v 1.4 2003/05/20 22:52:44 emoy Exp $
+# $Id: soundex.t,v 1.2 1994/03/24 00:30:27 mike Exp $
 #
 # test module for soundex.pl
 #
-# $Log: Soundex.t,v $
-# Revision 1.4  2003/05/20 22:52:44  emoy
-# Update to Perl 5.8.1, including thread support and two level namespace.
-# Bug #: 3258028
-# Reviewed by: Jordan Hubbard
-#
-# Revision 1.3.2.1  2003/05/17 07:05:32  emoy
-# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
-# two level namespace.  Append prefix, installprefix, and standard paths to
-# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
-# .packlist.
-#
+# $Log: soundex.t,v $
 # Revision 1.2  1994/03/24  00:30:27  mike
 # Subtle bug (any excuse :-) spotted by Rich Pinder <rpinder@hsc.usc.edu>
 # in the way I handles leasing characters which were different but had

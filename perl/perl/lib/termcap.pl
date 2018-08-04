@@ -1,4 +1,4 @@
-;# $RCSfile: termcap.pl,v $$Revision: 1.5 $$Date: 2003/05/20 22:50:36 $
+;# $RCSfile: termcap.pl,v $$Revision: 4.1 $$Date: 92/08/07 18:24:16 $
 #
 # This library is no longer being maintained, and is included for backward
 # compatibility with Perl 4 programs which may require it.

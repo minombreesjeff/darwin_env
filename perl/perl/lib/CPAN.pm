@@ -1,11 +1,11 @@
 # -*- Mode: cperl; coding: utf-8; cperl-indent-level: 4 -*-
 package CPAN;
-$VERSION = '1.64';
-# $Id: CPAN.pm,v 1.5 2003/05/20 22:50:31 emoy Exp $
+$VERSION = '1.74_01';
+# $Id: CPAN.pm,v 1.409 2003/07/28 22:07:23 k Exp $
 
 # only used during development:
 $Revision = "";
-# $Revision = "[".substr(q$Revision: 1.5 $, 10)."]";
+# $Revision = "[".substr(q$Revision: 1.409 $, 10)."]";
 
 use Carp ();
 use Config ();
@@ -280,6 +280,28 @@ package CPAN::Bundle;
 
 package CPAN::Module;
 @CPAN::Module::ISA = qw(CPAN::InfoObj);
+
+package CPAN::Exception::RecursiveDependency;
+use overload '""' => "as_string";
+
+sub new {
+    my($class) = shift;
+    my($deps) = shift;
+    my @deps;
+    my %seen;
+    for my $dep (@$deps) {
+        push @deps, $dep;
+        last if $seen{$dep}++;
+    }
+    bless { deps => \@deps }, $class;
+}
+
+sub as_string {
+    my($self) = shift;
+    "\nRecursive dependency detected:\n    " .
+        join("\n => ", @{$self->{deps}}) .
+            ".\nCannot continue.\n";
+}
 
 package CPAN::Shell;
 use vars qw($AUTOLOAD @ISA $COLOR_REGISTERED $ADVANCED_QUERY $PRINT_ORNAMENTING);
@@ -751,6 +773,16 @@ sub has_inst {
 
 });
 	sleep 2;
+    } elsif ($mod eq "Module::Signature"){
+	# No point in complaining unless the user can reasonably install it.
+	if (eval { require Crypt::OpenPGP; 1 } or
+	    defined $CPAN::Config->{'gpg'}) {
+	    $CPAN::Frontend->myprint(qq{
+  CPAN: Module::Signature security checks disabled because Module::Signature
+  not installed.  Please consider installing the Module::Signature module.
+});
+	    sleep 2;
+	}
     } else {
 	delete $INC{$file}; # if it inc'd LWP but failed during, say, URI
     }
@@ -803,14 +835,18 @@ sub savehist {
         return;
     }
     $histsize = $CPAN::Config->{'histsize'} || 100;
-    unless ($CPAN::term->can("GetHistory")) {
-        $CPAN::Frontend->mywarn("Terminal does not support GetHistory.\n");
+    if ($CPAN::term){
+        unless ($CPAN::term->can("GetHistory")) {
+            $CPAN::Frontend->mywarn("Terminal does not support GetHistory.\n");
+            return;
+        }
+    } else {
         return;
     }
     my @h = $CPAN::term->GetHistory;
     splice @h, 0, @h-$histsize if @h>$histsize;
     my($fh) = FileHandle->new;
-    open $fh, ">$histfile" or mydie("Couldn't open >$histfile: $!");
+    open $fh, ">$histfile" or $CPAN::Frontend->mydie("Couldn't open >$histfile: $!");
     local $\ = local $, = "\n";
     print $fh @h;
     close $fh;
@@ -1419,7 +1455,8 @@ sub d { $CPAN::Frontend->myprint(shift->format_result('Distribution',@_));}
 
 #-> sub CPAN::Shell::m ;
 sub m { # emacs confused here }; sub mimimimimi { # emacs in sync here
-    $CPAN::Frontend->myprint(shift->format_result('Module',@_));
+    my $self = shift;
+    $CPAN::Frontend->myprint($self->format_result('Module',@_));
 }
 
 #-> sub CPAN::Shell::i ;
@@ -2335,10 +2372,9 @@ sub localize {
             }
 	}
     }
-    $ENV{ftp_proxy} = $CPAN::Config->{ftp_proxy} if $CPAN::Config->{ftp_proxy};
-    $ENV{http_proxy} = $CPAN::Config->{http_proxy}
-        if $CPAN::Config->{http_proxy};
-    $ENV{no_proxy} = $CPAN::Config->{no_proxy} if $CPAN::Config->{no_proxy};
+    for my $prx (qw(ftp_proxy http_proxy no_proxy)) {
+        $ENV{$prx} = $CPAN::Config->{$prx} if $CPAN::Config->{$prx};
+    }
 
     # Try the list of urls for each single object. We keep a record
     # where we did get a file from
@@ -2664,8 +2700,9 @@ sub hosthardest {
     my($i);
     my($aslocal_dir) = File::Basename::dirname($aslocal);
     File::Path::mkpath($aslocal_dir);
+    my $ftpbin = $CPAN::Config->{ftp};
   HOSTHARDEST: for $i (@$host_seq) {
-	unless (length $CPAN::Config->{'ftp'}) {
+	unless (length $ftpbin && MM->maybe_command($ftpbin)) {
 	    $CPAN::Frontend->myprint("No external ftp command available\n\n");
 	    last HOSTHARDEST;
 	}
@@ -2710,7 +2747,7 @@ sub hosthardest {
 
 }
 		     );
-		$self->talk_ftp("$CPAN::Config->{'ftp'}$verbose $host",
+		$self->talk_ftp("$ftpbin$verbose $host",
 				@dialog);
 		($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
 		 $atime,$mtime,$ctime,$blksize,$blocks) = stat($aslocal);
@@ -2735,13 +2772,13 @@ sub hosthardest {
 	# OK, they don't have a valid ~/.netrc. Use 'ftp -n'
 	# then and login manually to host, using e-mail as
 	# password.
-	$CPAN::Frontend->myprint(qq{Issuing "$CPAN::Config->{'ftp'}$verbose -n"\n});
+	$CPAN::Frontend->myprint(qq{Issuing "$ftpbin$verbose -n"\n});
 	unshift(
 		@dialog,
 		"open $host",
 		"user anonymous $Config::Config{'cf_email'}"
 	       );
-	$self->talk_ftp("$CPAN::Config->{'ftp'}$verbose -n", @dialog);
+	$self->talk_ftp("$ftpbin$verbose -n", @dialog);
 	($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
 	 $atime,$mtime,$ctime,$blksize,$blocks) = stat($aslocal);
 	$mtime ||= 0;
@@ -3286,7 +3323,7 @@ happen.\a
 	if ($id->cpan_file ne $dist){ # update only if file is
                                       # different. CPAN prohibits same
                                       # name with different version
-	    $userid = $self->userid($dist);
+	    $userid = $id->userid || $self->userid($dist);
 	    $id->set(
 		     'CPAN_USERID' => $userid,
 		     'CPAN_VERSION' => $version,
@@ -3452,7 +3489,11 @@ sub read_metadata_cache {
 package CPAN::InfoObj;
 
 # Accessors
-sub cpan_userid { shift->{RO}{CPAN_USERID} }
+sub cpan_userid {
+    my $self = shift;
+    $self->{RO}{CPAN_USERID}
+}
+
 sub id { shift->{ID}; }
 
 #-> sub CPAN::InfoObj::new ;
@@ -3628,6 +3669,18 @@ sub dir_listing {
     my $lc_want =
 	File::Spec->catfile($CPAN::Config->{keep_source_where},
 			    "authors", "id", @$chksumfile);
+
+    my $fh;
+
+    # Purge and refetch old (pre-PGP) CHECKSUMS; they are a security
+    # hazard.  (Without GPG installed they are not that much better,
+    # though.)
+    $fh = FileHandle->new;
+    if (open($fh, $lc_want)) {
+	my $line = <$fh>; close $fh;
+	unlink($lc_want) unless $line =~ /PGP/;
+    }
+
     local($") = "/";
     # connect "force" argument with "index_expire".
     my $force = 0;
@@ -3650,7 +3703,7 @@ sub dir_listing {
     }
 
     # adapted from CPAN::Distribution::MD5_check_file ;
-    my $fh = FileHandle->new;
+    $fh = FileHandle->new;
     my($cksum);
     if (open $fh, $lc_file){
 	local($/);
@@ -3722,22 +3775,20 @@ sub color_cmd_tmps {
     my($self) = shift;
     my($depth) = shift || 0;
     my($color) = shift || 0;
+    my($ancestors) = shift || [];
     # a distribution needs to recurse into its prereq_pms
 
     return if exists $self->{incommandcolor}
         && $self->{incommandcolor}==$color;
-    $CPAN::Frontend->mydie(sprintf("CPAN.pm panic: deep recursion in ".
-                                   "color_cmd_tmps depth[%s] self[%s] id[%s]",
-                                   $depth,
-                                   $self,
-                                   $self->id
-                                  )) if $depth>=100;
-    ##### warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
+    if ($depth>=100){
+        $CPAN::Frontend->mydie(CPAN::Exception::RecursiveDependency->new($ancestors));
+    }
+    # warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
     my $prereq_pm = $self->prereq_pm;
     if (defined $prereq_pm) {
         for my $pre (keys %$prereq_pm) {
             my $premo = CPAN::Shell->expand("Module",$pre);
-            $premo->color_cmd_tmps($depth+1,$color);
+            $premo->color_cmd_tmps($depth+1,$color,[@$ancestors, $self->id]);
         }
     }
     if ($color==0) {
@@ -3932,8 +3983,43 @@ sub get {
     }
 
     $self->{'build_dir'} = $packagedir;
-    $self->safe_chdir(File::Spec->updir);
+    $self->safe_chdir($builddir);
     File::Path::rmtree("tmp");
+
+    $self->safe_chdir($packagedir);
+    if ($CPAN::META->has_inst("Module::Signature")) {
+        if (-f "SIGNATURE") {
+            $self->debug("Module::Signature is installed, verifying") if $CPAN::DEBUG;
+            my $rv = Module::Signature::verify();
+            if ($rv != Module::Signature::SIGNATURE_OK() and
+                $rv != Module::Signature::SIGNATURE_MISSING()) {
+                $CPAN::Frontend->myprint(
+                                         qq{\nSignature invalid for }.
+                                         qq{distribution file. }.
+                                         qq{Please investigate.\n\n}.
+                                         $self->as_string,
+                                         $CPAN::META->instance(
+                                                               'CPAN::Author',
+                                                               $self->cpan_userid,
+                                                              )->as_string
+                                        );
+
+                my $wrap = qq{I\'d recommend removing $self->{localfile}. Its signature
+is invalid. Maybe you have configured your 'urllist' with
+a bad URL. Please check this array with 'o conf urllist', and
+retry.};
+                $CPAN::Frontend->mydie(Text::Wrap::wrap("","",$wrap));
+            }
+        } else {
+            $CPAN::Frontend->myprint(qq{Package came without SIGNATURE\n\n});
+        }
+    } else {
+	$self->debug("Module::Signature is NOT installed") if $CPAN::DEBUG;
+    }
+    $self->safe_chdir($builddir);
+    return if $CPAN::Signal;
+
+
 
     my($mpl) = File::Spec->catfile($packagedir,"Makefile.PL");
     my($mpl_exists) = -f $mpl;
@@ -4077,8 +4163,10 @@ Could not determine which directory to use for looking at $dist.
     my $pwd  = CPAN::anycwd();
     $self->safe_chdir($dir);
     $CPAN::Frontend->myprint(qq{Working directory is $dir\n});
-    system($CPAN::Config->{'shell'}) == 0
-	or $CPAN::Frontend->mydie("Subprocess shell error");
+    unless (system($CPAN::Config->{'shell'}) == 0) {
+        my $code = $? >> 8;
+        $CPAN::Frontend->mywarn("Subprocess shell exit code $code\n");
+    }
     $self->safe_chdir($pwd);
 }
 
@@ -4200,10 +4288,44 @@ sub verifyMD5 {
     $self->MD5_check_file($lc_file);
 }
 
+sub SIG_check_file {
+    my($self,$chk_file) = @_;
+    my $rv = eval { Module::Signature::_verify($chk_file) };
+
+    if ($rv == Module::Signature::SIGNATURE_OK()) {
+	$CPAN::Frontend->myprint("Signature for $chk_file ok\n");
+	return $self->{SIG_STATUS} = "OK";
+    } else {
+	$CPAN::Frontend->myprint(qq{\nSignature invalid for }.
+				 qq{distribution file. }.
+				 qq{Please investigate.\n\n}.
+				 $self->as_string,
+				$CPAN::META->instance(
+							'CPAN::Author',
+							$self->cpan_userid
+							)->as_string);
+
+	my $wrap = qq{I\'d recommend removing $chk_file. Its signature
+is invalid. Maybe you have configured your 'urllist' with
+a bad URL. Please check this array with 'o conf urllist', and
+retry.};
+
+	$CPAN::Frontend->mydie(Text::Wrap::wrap("","",$wrap));
+    }
+}
+
 #-> sub CPAN::Distribution::MD5_check_file ;
 sub MD5_check_file {
     my($self,$chk_file) = @_;
     my($cksum,$file,$basename);
+
+    if ($CPAN::META->has_inst("Module::Signature") and Module::Signature->VERSION >= 0.26) {
+	$self->debug("Module::Signature is installed, verifying");
+	$self->SIG_check_file($chk_file);
+    } else {
+	$self->debug("Module::Signature is NOT installed");
+    }
+
     $file = $self->{localfile};
     $basename = File::Basename::basename($file);
     my $fh = FileHandle->new;
@@ -4553,6 +4675,7 @@ of modules we are processing right now?", "yes");
     if ($follow) {
         # color them as dirty
         for my $p (@prereq) {
+            # warn "calling color_cmd_tmps(0,1)";
             CPAN::Shell->expandany($p)->color_cmd_tmps(0,1);
         }
         CPAN::Queue->jumpqueue(@prereq,$id); # queue them and requeue yourself
@@ -4834,10 +4957,7 @@ package CPAN::Bundle;
 
 sub look {
     my $self = shift;
-    $CPAN::Frontend->myprint(
-                             qq{ look() commmand on bundles not}.
-                             qq{ implemented (What should it do?)}
-                            );
+    $CPAN::Frontend->myprint($self->as_string);
 }
 
 sub undelay {
@@ -4854,23 +4974,21 @@ sub color_cmd_tmps {
     my($self) = shift;
     my($depth) = shift || 0;
     my($color) = shift || 0;
+    my($ancestors) = shift || [];
     # a module needs to recurse to its cpan_file, a distribution needs
     # to recurse into its prereq_pms, a bundle needs to recurse into its modules
 
     return if exists $self->{incommandcolor}
         && $self->{incommandcolor}==$color;
-    $CPAN::Frontend->mydie(sprintf("CPAN.pm panic: deep recursion in ".
-                                   "color_cmd_tmps depth[%s] self[%s] id[%s]",
-                                   $depth,
-                                   $self,
-                                   $self->id
-                                  )) if $depth>=100;
-    ##### warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
+    if ($depth>=100){
+        $CPAN::Frontend->mydie(CPAN::Exception::RecursiveDependency->new($ancestors));
+    }
+    # warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
 
     for my $c ( $self->contains ) {
         my $obj = CPAN::Shell->expandany($c) or next;
         CPAN->debug("c[$c]obj[$obj]") if $CPAN::DEBUG;
-        $obj->color_cmd_tmps($depth+1,$color);
+        $obj->color_cmd_tmps($depth+1,$color,[@$ancestors, $self->id]);
     }
     if ($color==0) {
         delete $self->{badtestcnt};
@@ -5160,12 +5278,13 @@ No File found for bundle } . $self->id . qq{\n}), return;
 package CPAN::Module;
 
 # Accessors
-# sub cpan_userid { shift->{RO}{CPAN_USERID} }
+# sub CPAN::Module::userid
 sub userid {
     my $self = shift;
     return unless exists $self->{RO}; # should never happen
-    return $self->{RO}{CPAN_USERID} || $self->{RO}{userid};
+    return $self->{RO}{userid} || $self->{RO}{CPAN_USERID};
 }
+# sub CPAN::Module::description
 sub description { shift->{RO}{description} }
 
 sub undelay {
@@ -5181,20 +5300,18 @@ sub color_cmd_tmps {
     my($self) = shift;
     my($depth) = shift || 0;
     my($color) = shift || 0;
+    my($ancestors) = shift || [];
     # a module needs to recurse to its cpan_file
 
     return if exists $self->{incommandcolor}
         && $self->{incommandcolor}==$color;
-    $CPAN::Frontend->mydie(sprintf("CPAN.pm panic: deep recursion in ".
-                                   "color_cmd_tmps depth[%s] self[%s] id[%s]",
-                                   $depth,
-                                   $self,
-                                   $self->id
-                                  )) if $depth>=100;
-    ##### warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
+    if ($depth>=100){
+        $CPAN::Frontend->mydie(CPAN::Exception::RecursiveDependency->new($ancestors));
+    }
+    # warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
 
     if ( my $dist = CPAN::Shell->expand("Distribution", $self->cpan_file) ) {
-        $dist->color_cmd_tmps($depth+1,$color);
+        $dist->color_cmd_tmps($depth+1,$color,[@$ancestors, $self->id]);
     }
     if ($color==0) {
         delete $self->{badtestcnt};
@@ -5233,7 +5350,7 @@ sub as_glimpse {
 sub as_string {
     my($self) = @_;
     my(@m);
-    CPAN->debug($self) if $CPAN::DEBUG;
+    CPAN->debug("$self entering as_string") if $CPAN::DEBUG;
     my $class = ref($self);
     $class =~ s/^CPAN:://;
     local($^W) = 0;
@@ -5243,7 +5360,8 @@ sub as_string {
 	if $self->description;
     my $sprintf2 = "    %-12s %s (%s)\n";
     my($userid);
-    if ($userid = $self->cpan_userid || $self->userid){
+    $userid = $self->userid;
+    if ( $userid ){
 	my $author;
 	if ($author = CPAN::Shell->expand('Author',$userid)) {
 	  my $email = "";
@@ -5267,8 +5385,8 @@ sub as_string {
     my(%statd,%stats,%statl,%stati);
     @statd{qw,? i c a b R M S,} = qw,unknown idea
 	pre-alpha alpha beta released mature standard,;
-    @stats{qw,? m d u n,}       = qw,unknown mailing-list
-	developer comp.lang.perl.* none,;
+    @stats{qw,? m d u n a,}       = qw,unknown mailing-list
+	developer comp.lang.perl.* none abandoned,;
     @statl{qw,? p c + o h,}       = qw,unknown perl C C++ other hybrid,;
     @stati{qw,? f r O h,}         = qw,unknown functions
 	references+ties object-oriented hybrid,;
@@ -5506,6 +5624,13 @@ sub install {
 	$CPAN::Frontend->myprint( $self->id. " is up to date.\n");
     } else {
 	$doit = 1;
+    }
+    if ($self->{RO}{stats} && $self->{RO}{stats} eq "a") {
+        $CPAN::Frontend->mywarn(qq{
+\n\n\n     ***WARNING***
+     The module $self->{ID} has no active maintainer.\n\n\n
+});
+        sleep 5;
     }
     $self->rematein('install') if $doit;
 }
@@ -5972,7 +6097,7 @@ stalled.
 =head1 DESCRIPTION
 
 The CPAN module is designed to automate the make and install of perl
-modules and extensions. It includes some searching capabilities and
+modules and extensions. It includes some primitive searching capabilities and
 knows how to use Net::FTP or LWP (or lynx or an external ftp client)
 to fetch the raw data from the net.
 
@@ -6693,12 +6818,19 @@ with this floppy. See also below the paragraph about CD-ROM support.
 
 =head1 CONFIGURATION
 
-When the CPAN module is installed, a site wide configuration file is
-created as CPAN/Config.pm. The default values defined there can be
-overridden in another configuration file: CPAN/MyConfig.pm. You can
-store this file in $HOME/.cpan/CPAN/MyConfig.pm if you want, because
-$HOME/.cpan is added to the search path of the CPAN module before the
-use() or require() statements.
+When the CPAN module is used for the first time, a configuration
+dialog tries to determine a couple of site specific options. The
+result of the dialog is stored in a hash reference C< $CPAN::Config >
+in a file CPAN/Config.pm.
+
+The default values defined in the CPAN/Config.pm file can be
+overridden in a user specific file: CPAN/MyConfig.pm. Such a file is
+best placed in $HOME/.cpan/CPAN/MyConfig.pm, because $HOME/.cpan is
+added to the search path of the CPAN module before the use() or
+require() statements.
+
+The configuration dialog can be started any time later again by
+issueing the command C< o conf init > in the CPAN shell.
 
 Currently the following keys in the hash reference $CPAN::Config are
 defined:

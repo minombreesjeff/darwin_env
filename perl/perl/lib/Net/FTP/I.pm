@@ -1,4 +1,4 @@
-## $Id: I.pm,v 1.4 2003/05/20 22:52:18 emoy Exp $
+## $Id: //depot/libnet/Net/FTP/I.pm#13 $
 ## Package to read/write on BINARY data connections
 ##
 

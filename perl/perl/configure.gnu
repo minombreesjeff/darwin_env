@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# $Id: configure.gnu,v 1.5 2003/05/20 22:47:45 emoy Exp $
+# $Id: configure,v 3.0.1.1 1995/07/25 14:16:21 ram Exp $
 #
 # GNU configure-like front end to metaconfig's Configure.
 #
@@ -15,18 +15,7 @@
 # The remaining of this leading shell comment may be removed if you
 # include this script in your own package.
 #
-# $Log: configure.gnu,v $
-# Revision 1.5  2003/05/20 22:47:45  emoy
-# Update to Perl 5.8.1, including thread support and two level namespace.
-# Bug #: 3258028
-# Reviewed by: Jordan Hubbard
-#
-# Revision 1.4.2.1  2003/05/17 06:59:15  emoy
-# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
-# two level namespace.  Append prefix, installprefix, and standard paths to
-# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
-# .packlist.
-#
+# $Log: configure,v $
 # Revision 3.0.1.1  1995/07/25  14:16:21  ram
 # patch56: created
 #
@@ -73,6 +62,18 @@ EOM
 		;;
 	--prefix=*)
 		arg=`echo $1 | sed 's/--prefix=/-Dprefix=/'`
+		opts="$opts $arg"
+		shift
+		;;
+	--prefix)
+		shift
+		arg="-Dprefix=$1"
+		opts="$opts $arg"
+		shift
+		;;
+	--prefix)
+		shift
+		arg="-Dprefix=$1"
 		opts="$opts $arg"
 		shift
 		;;

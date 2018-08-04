@@ -1,5 +1,5 @@
 #
-# $Id: tr_sjis.t,v 1.2 2003/05/20 22:54:35 emoy Exp $
+# $Id$
 #
 # This script is written intentionally in Shift JIS
 # -- dankogai

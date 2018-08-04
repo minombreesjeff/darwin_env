@@ -1,5 +1,5 @@
 #
-# $Id$
+# $Id: big5-eten.ucm,v 1.4 2003/03/31 03:27:27 dankogai Exp $
 #
 # ./compile -n big5-eten -o Encode/big5-eten.ucm Encode/big5-eten.enc
 <code_set_name> "big5-eten"

@@ -8,15 +8,18 @@ use vars qw(@ISA @EXPORT $VERSION
             $def_timeout $def_proto $def_factor
             $max_datasize $pingstring $hires $source_verify $syn_forking);
 use Fcntl qw( F_GETFL F_SETFL O_NONBLOCK );
-use Socket qw( SOCK_DGRAM SOCK_STREAM SOCK_RAW PF_INET SOL_SOCKET
+use Socket qw( SOCK_DGRAM SOCK_STREAM SOCK_RAW PF_INET SOL_SOCKET SO_ERROR
                inet_aton inet_ntoa sockaddr_in );
-use POSIX qw( ECONNREFUSED ECONNRESET EINPROGRESS EAGAIN WNOHANG );
+use POSIX qw( ENOTCONN ECONNREFUSED ECONNRESET EINPROGRESS EWOULDBLOCK EAGAIN WNOHANG );
 use FileHandle;
 use Carp;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(pingecho);
-$VERSION = "2.30";
+$VERSION = "2.31";
+
+sub SOL_IP { 0; };
+sub IP_TOS { 1; };
 
 # Constants
 
@@ -33,7 +36,11 @@ if ($^O =~ /Win32/i) {
   # Hack to avoid this Win32 spewage:
   # Your vendor has not defined POSIX macro ECONNREFUSED
   *ECONNREFUSED = sub {10061;}; # "Unknown Error" Special Win32 Response?
-  $syn_forking = 1;
+  *ENOTCONN     = sub {10057;};
+  *ECONNRESET   = sub {10054;};
+  *EINPROGRESS  = sub {10036;};
+  *EWOULDBLOCK  = sub {10035;};
+#  $syn_forking = 1;    # XXX possibly useful in < Win2K ?
 };
 
 # h2ph "asm/socket.h"
@@ -70,6 +77,7 @@ sub new
       $timeout,           # Optional timeout in seconds
       $data_size,         # Optional additional bytes of data
       $device,            # Optional device to use
+      $tos,               # Optional ToS to set
       ) = @_;
   my  $class = ref($this) || $this;
   my  $self = {};
@@ -90,6 +98,8 @@ sub new
   $self->{"timeout"} = $timeout;
 
   $self->{"device"} = $device;
+
+  $self->{"tos"} = $tos;
 
   $min_datasize = ($proto eq "udp") ? 1 : 0;  # Determine data size
   $data_size = $min_datasize unless defined($data_size) && $proto ne "tcp";
@@ -123,6 +133,10 @@ sub new
       setsockopt($self->{"fh"}, SOL_SOCKET, SO_BINDTODEVICE(), pack("Z*", $self->{'device'}))
         or croak "error binding to device $self->{'device'} $!";
     }
+    if ($self->{'tos'}) {
+      setsockopt($self->{"fh"}, SOL_IP, IP_TOS(), pack("I*", $self->{'tos'}))
+        or croak "error configuring tos to $self->{'tos'} $!";
+    }
   }
   elsif ($self->{"proto"} eq "icmp")
   {
@@ -136,6 +150,10 @@ sub new
     if ($self->{'device'}) {
       setsockopt($self->{"fh"}, SOL_SOCKET, SO_BINDTODEVICE(), pack("Z*", $self->{'device'}))
         or croak "error binding to device $self->{'device'} $!";
+    }
+    if ($self->{'tos'}) {
+      setsockopt($self->{"fh"}, SOL_IP, IP_TOS(), pack("I*", $self->{'tos'}))
+        or croak "error configuring tos to $self->{'tos'} $!";
     }
   }
   elsif ($self->{"proto"} eq "tcp" || $self->{"proto"} eq "stream")
@@ -199,7 +217,7 @@ sub bind
   CORE::bind($self->{"fh"}, sockaddr_in(0, $ip)) ||
     croak("$self->{'proto'} bind error - $!");
   }
-  elsif ($self->{"proto"} ne "tcp")
+  elsif (($self->{"proto"} ne "tcp") && ($self->{"proto"} ne "syn"))
   {
     croak("Unknown protocol \"$self->{proto}\" in bind()");
   }
@@ -207,6 +225,32 @@ sub bind
   return 1;
 }
 
+# Description: A select() wrapper that compensates for platform
+# peculiarities.
+sub mselect
+{
+    if ($_[3] > 0 and $^O eq 'MSWin32') {
+	# On windows, select() doesn't process the message loop,
+	# but sleep() will, allowing alarm() to interrupt the latter.
+	# So we chop up the timeout into smaller pieces and interleave
+	# select() and sleep() calls.
+	my $t = $_[3];
+	my $gran = 0.5;  # polling granularity in seconds
+	my @args = @_;
+	while (1) {
+	    $gran = $t if $gran > $t;
+	    my $nfound = select($_[0], $_[1], $_[2], $gran);
+	    $t -= $gran;
+	    return $nfound if $nfound or !defined($nfound) or $t <= 0;
+
+	    sleep(0);
+	    ($_[0], $_[1], $_[2]) = @args;
+	}
+    }
+    else {
+	return select($_[0], $_[1], $_[2], $_[3]);
+    }
+}
 
 # Description: Allow UDP source endpoint comparision to be
 #              skipped for those remote interfaces that do
@@ -272,6 +316,14 @@ sub socket_blocking_mode
                         # set the non-blocking mode (set O_NONBLOCK)
 
   my $flags;
+  if ($^O eq 'MSWin32') {
+      # FIONBIO enables non-blocking sockets on windows.
+      # FIONBIO is (0x80000000|(4<<16)|(ord('f')<<8)|126), as per winsock.h.
+      my $f = 0x8004667e;
+      my $v = pack("L", $block ? 0 : 1);
+      ioctl($fh, $f, $v) or croak("ioctl failed: $!");
+      return;
+  }
   if ($flags = fcntl($fh, F_GETFL, 0)) {
     $flags = $block ? ($flags & ~O_NONBLOCK) : ($flags | O_NONBLOCK);
     if (!fcntl($fh, F_SETFL, $flags)) {
@@ -399,7 +451,7 @@ sub ping_icmp
   $finish_time = &time() + $timeout;      # Must be done by this time
   while (!$done && $timeout > 0)          # Keep trying if we have time
   {
-    $nfound = select((my $rout=$rbits), undef, undef, $timeout); # Wait for packet
+    $nfound = mselect((my $rout=$rbits), undef, undef, $timeout); # Wait for packet
     $timeout = $finish_time - &time();    # Get remaining time
     if (!defined($nfound))                # Hmm, a strange error
     {
@@ -524,10 +576,16 @@ sub tcp_connect
       setsockopt($self->{"fh"}, SOL_SOCKET, SO_BINDTODEVICE(), pack("Z*", $self->{'device'}))
         or croak("error binding to device $self->{'device'} $!");
     }
+    if ($self->{'tos'}) {
+      setsockopt($self->{"fh"}, SOL_IP, IP_TOS(), pack("I*", $self->{'tos'}))
+        or croak "error configuring tos to $self->{'tos'} $!";
+    }
   };
   my $do_connect = sub {
     $self->{"ip"} = $ip;
-    return ($ret = connect($self->{"fh"}, $saddr));
+    # ECONNREFUSED is 10061 on MSWin32. If we pass it as child error through $?,
+    # we'll get (10061 & 255) = 77, so we cannot check it in the parent process.
+    return ($ret = connect($self->{"fh"}, $saddr) || ($! == ECONNREFUSED && !$self->{"econnrefused"}));
   };
   my $do_connect_nb = sub {
     # Set O_NONBLOCK property on filehandle
@@ -537,7 +595,7 @@ sub tcp_connect
     if (!connect($self->{"fh"}, $saddr)) {
       if ($! == ECONNREFUSED) {
         $ret = 1 unless $self->{"econnrefused"};
-      } elsif ($! != EINPROGRESS) {
+      } elsif ($! != EINPROGRESS && ($^O ne 'MSWin32' || $! != EWOULDBLOCK)) {
         # EINPROGRESS is the expected error code after a connect()
         # on a non-blocking socket.  But if the kernel immediately
         # determined that this connect() will never work,
@@ -548,11 +606,14 @@ sub tcp_connect
       } else {
         # Got the expected EINPROGRESS.
         # Just wait for connection completion...
-        my ($wbits, $wout);
-        $wout = $wbits = "";
+        my ($wbits, $wout, $wexc);
+        $wout = $wexc = $wbits = "";
         vec($wbits, $self->{"fh"}->fileno, 1) = 1;
 
-        my $nfound = select(undef, ($wout = $wbits), undef, $timeout);
+        my $nfound = mselect(undef,
+			    ($wout = $wbits),
+			    ($^O eq 'MSWin32' ? ($wexc = $wbits) : undef),
+			    $timeout);
         warn("select: $!") unless defined $nfound;
 
         if ($nfound && vec($wout, $self->{"fh"}->fileno, 1)) {
@@ -576,7 +637,18 @@ sub tcp_connect
                          && $! == ECONNREFUSED);
           }
         } else {
-          # the connection attempt timed out
+          # the connection attempt timed out (or there were connect
+	  # errors on Windows)
+	  if ($^O =~ 'MSWin32') {
+	      # If the connect will fail on a non-blocking socket,
+	      # winsock reports ECONNREFUSED as an exception, and we
+	      # need to fetch the socket-level error code via getsockopt()
+	      # instead of using the thread-level error code that is in $!.
+	      if ($nfound && vec($wexc, $self->{"fh"}->fileno, 1)) {
+		  $! = unpack("i", getsockopt($self->{"fh"}, SOL_SOCKET,
+			                      SO_ERROR));
+	      }
+	  }
         }
       }
     } else {
@@ -594,6 +666,8 @@ sub tcp_connect
     # Buggy Winsock API doesn't allow nonblocking connect.
     # Hence, if our OS is Windows, we need to create a separate
     # process to do the blocking connect attempt.
+    # XXX Above comments are not true at least for Win2K, where
+    # nonblocking connect works.
 
     $| = 1; # Clear buffer prior to fork to prevent duplicate flushing.
     $self->{'tcp_chld'} = fork;
@@ -613,7 +687,8 @@ sub tcp_connect
         exit 0;
       } else {
         # Pass the error status to the parent
-        exit $!;
+        # Make sure that $! <= 255
+        exit($! <= 255 ? $! : 255);
       }
     }
 
@@ -638,6 +713,8 @@ sub tcp_connect
         # within the timeout
         &{ $do_connect }();
       }
+      # $ret cannot be set by the child process
+      $ret = !$child_errno;
     } else {
       # Time must have run out.
       # Put that choking client out of its misery
@@ -694,7 +771,7 @@ sub tcp_echo
         vec($rout, $self->{"fh"}->fileno(), 1) = 1;
       }
 
-      if(select($rin, $rout, undef, ($time + $timeout) - &time())) {
+      if(mselect($rin, $rout, undef, ($time + $timeout) - &time())) {
 
         if($rout && vec($rout,$self->{"fh"}->fileno(),1)) {
           my $num = syswrite($self->{"fh"}, $wrstr, length $wrstr);
@@ -853,7 +930,7 @@ sub ping_udp
       $timeout = $retrans if $timeout > $retrans;
       $retrans*= $factor; # Exponential backoff
     }
-    $nfound  = select((my $rout=$rbits), undef, undef, $timeout); # Wait for response
+    $nfound  = mselect((my $rout=$rbits), undef, undef, $timeout); # Wait for response
     my $why = $!;
     $timeout = $finish_time - &time();   # Get remaining time
 
@@ -943,7 +1020,10 @@ sub ping_syn
     setsockopt($fh, SOL_SOCKET, SO_BINDTODEVICE(), pack("Z*", $self->{'device'}))
       or croak("error binding to device $self->{'device'} $!");
   }
-
+  if ($self->{'tos'}) {
+    setsockopt($fh, SOL_IP, IP_TOS(), pack("I*", $self->{'tos'}))
+      or croak "error configuring tos to $self->{'tos'} $!";
+  }
   # Set O_NONBLOCK property on filehandle
   $self->socket_blocking_mode($fh, 0);
 
@@ -956,7 +1036,7 @@ sub ping_syn
     #warn "WARNING: Nonblocking connect connected anyway? ($^O)";
   } else {
     # Error occurred connecting.
-    if ($! == EINPROGRESS) {
+    if ($! == EINPROGRESS || ($^O eq 'MSWin32' && $! == EWOULDBLOCK)) {
       # The connection is just still in progress.
       # This is the expected condition.
     } else {
@@ -1008,6 +1088,10 @@ sub ping_syn_fork {
       if ($self->{'device'}) {
         setsockopt($self->{"fh"}, SOL_SOCKET, SO_BINDTODEVICE(), pack("Z*", $self->{'device'}))
           or croak("error binding to device $self->{'device'} $!");
+      }
+      if ($self->{'tos'}) {
+        setsockopt($self->{"fh"}, SOL_IP, IP_TOS(), pack("I*", $self->{'tos'}))
+          or croak "error configuring tos to $self->{'tos'} $!";
       }
 
       $!=0;
@@ -1100,7 +1184,7 @@ sub ack
         $fd++;
       }
 
-      if (defined($winner_fd) or my $nfound = select(undef, ($wout=$wbits), undef, $timeout)) {
+      if (defined($winner_fd) or my $nfound = mselect(undef, ($wout=$wbits), undef, $timeout)) {
         if (defined $winner_fd) {
           $fd = $winner_fd;
         } else {
@@ -1204,7 +1288,7 @@ sub ack_unfork {
   if ($timeout > 0) {
     my $nfound;
     while ( keys %{ $self->{"syn"} } and
-           $nfound = select((my $rout=$rbits), undef, undef, $timeout)) {
+           $nfound = mselect((my $rout=$rbits), undef, undef, $timeout)) {
       # Done waiting for one of the ACKs
       if (!sysread($self->{"fork_rd"}, $_, 16)) {
         # Socket closed, which means all children are done.
@@ -1400,7 +1484,7 @@ This protocol does not require any special privileges.
 
 =over 4
 
-=item Net::Ping->new([$proto [, $def_timeout [, $bytes [, $device ]]]]);
+=item Net::Ping->new([$proto [, $def_timeout [, $bytes [, $device [, $tos ]]]]]);
 
 Create a new ping object.  All of the parameters are optional.  $proto
 specifies the protocol to use when doing a ping.  The current choices
@@ -1421,6 +1505,8 @@ otherwise.  The maximum number of data bytes that can be specified is
 If $device is given, this device is used to bind the source endpoint
 before sending the ping packet.  I beleive this only works with
 superuser privileges and with udp and icmp protocols at this time.
+
+If $tos is given, this ToS is configured into the soscket.
 
 =item $p->ping($host [, $timeout]);
 
@@ -1653,6 +1739,6 @@ Copyright (c) 2001, Colin McMillen.  All rights reserved.
 This program is free software; you may redistribute it and/or
 modify it under the same terms as Perl itself.
 
-$Id: Ping.pm,v 1.5 2003/05/20 22:52:11 emoy Exp $
+$Id: Ping.pm,v 1.86 2003/06/27 21:31:07 rob Exp $
 
 =cut

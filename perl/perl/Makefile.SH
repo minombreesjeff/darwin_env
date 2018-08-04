@@ -104,17 +104,25 @@ true)
 
 	case "$osname" in
 	linux)
+	    # If there is a pre-existing $libperl from a previous
+	    # installation, Linux needs to use LD_PRELOAD to
+	    # override the LD_LIBRARY_PATH setting.  See the
+	    # INSTALL file, under "Building a shared perl library".
+	    # If there is no pre-existing $libperl, we don't need
+	    # to do anything further.
+	    if test -f $archlib/CORE/$libperl; then
 		rm -f preload
-		cat <<-'EOT' > preload
-		#! /bin/sh
-		lib=$1
-		shift
-		test -r $lib && export LD_PRELOAD="$lib $LD_PRELOAD"
-		exec "$@"
-		EOT
+		cat <<'EOT' > preload
+#! /bin/sh
+lib=$1
+shift
+test -r $lib && export LD_PRELOAD="$lib $LD_PRELOAD"
+exec "$@"
+EOT
 		chmod 755 preload
 		ldlibpth="$ldlibpth `pwd`/preload `pwd`/$libperl"
-		;;
+	    fi
+	    ;;
 	os390)	test -f /bin/env && ldlibpth="/bin/env $ldlibpth"
 		;;
 	esac
@@ -494,7 +502,7 @@ $(LIBPERL): $& perl$(OBJ_EXT) $(obj) $(LIBPERLEXPORT)
 	case "$useshrplib" in
 	true)
 		$spitshell >>Makefile <<'!NO!SUBS!'
-	$(LD) -o $@ $(SHRPLDFLAGS) perl$(OBJ_EXT) $(obj)
+	$(LD) -o $@ $(SHRPLDFLAGS) perl$(OBJ_EXT) $(obj) $(libs)
 !NO!SUBS!
 		case "$osname" in
 		aix)
@@ -746,13 +754,13 @@ extra.pods: miniperl$(EXE_EXT)
 	-@test -f vms/perlvms.pod && cd pod && $(LNS) ../vms/perlvms.pod perlvms.pod && cd .. && echo "pod/perlvms.pod" >> extra.pods
 
 extras.make: perl$(EXE_EXT)
-	-@test -s extras.lst && $(LDLIBPTH) PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib ./perl -Ilib -MCPAN -e '@ARGV&&make(@ARGV)' `cat extras.lst`
+	-@test -s extras.lst && PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&make(@ARGV)' `cat extras.lst`
 
 extras.test: perl$(EXE_EXT)
-	-@test -s extras.lst && $(LDLIBPTH) PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib ./perl -Ilib -MCPAN -e '@ARGV&&test(@ARGV)' `cat extras.lst`
+	-@test -s extras.lst && PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&test(@ARGV)' `cat extras.lst`
 
 extras.install: perl$(EXE_EXT)
-	-@test -s extras.lst && $(LDLIBPTH) PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib ./perl -Ilib -MCPAN -e '@ARGV&&install(@ARGV)' `cat extras.lst`
+	-@test -s extras.lst && PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&install(@ARGV)' `cat extras.lst`
 
 .PHONY: install install-strip install-all install-verbose install-silent \
 	no-install install.perl install.man install.html
@@ -780,11 +788,11 @@ install.perl:	all installperl
 		cd ../pod; $(MAKE) compile; \
 	else :; \
 	fi
-	$(LDLIBPTH) ./perl installperl $(INSTALLFLAGS) $(STRIPFLAGS)
+	$(LDLIBPTH) ./perl installperl --destdir=$(DESTDIR) $(INSTALLFLAGS) $(STRIPFLAGS)
 	$(MAKE) extras.install
 
 install.man:	all installman
-	$(LDLIBPTH) ./perl installman $(INSTALLFLAGS)
+	$(LDLIBPTH) ./perl installman --destdir=$(DESTDIR) $(INSTALLFLAGS)
 
 # XXX Experimental. Hardwired values, but useful for testing.
 # Eventually Configure could ask for some of these values.
@@ -985,9 +993,9 @@ _cleaner2:
 	rm -f testcompile compilelog
 	-rmdir lib/B lib/Data lib/Digest
 	rm -rf lib/Encode
-	-rmdir lib/IO/Socket lib/IO/t lib/IO
-	-rmdir lib/Filter/Util lib/List lib/MIME lib/PerlIO lib/Scalar lib/Sys
-	-rmdir lib/Thread lib/XS lib/threads/shared lib/threads t/lib/B
+	-rmdir lib/Filter/Util lib/IO/Socket lib/IO
+	-rmdir lib/List lib/MIME lib/Scalar lib/Sys 
+	-rmdir lib/threads lib/XS
 
 _realcleaner:
 	@$(LDLIBPTH) $(MAKE) _cleaner1 CLEAN=realclean
@@ -1034,8 +1042,8 @@ makedepend: makedepend.SH config.sh
 	test_tty test-tty _test_tty test_notty test-notty _test_notty \
 	utest ucheck test.utf8 check.utf8 test.torture torturetest \
 	test.third check.third utest.third ucheck.third test_notty.third \
-	test.deparse test_notty.deparse test_harness \
-	minitest coretest
+	test.deparse test_notty.deparse test_harness test_harness_notty \
+	test.bytecompile minitest coretest
 
 # Cannot delegate rebuilding of t/perl to make
 # to allow interlaced test and minitest
@@ -1053,10 +1061,10 @@ test_prep: test_prep_pre miniperl$(EXE_EXT) perl$(EXE_EXT) $(dynamic_ext) $(TEST
 	PERL=./perl $(MAKE) _test_prep
 
 _test_tty:
-	cd t && $(LDLIBPTH) $(PERL_DEBUG) $(PERL) $(TESTFILE) $(TEST_ARGS) </dev/tty
+	cd t && $(PERL_DEBUG) $(LDLIBPTH) $(PERL) $(TESTFILE) $(TEST_ARGS) </dev/tty
 
 _test_notty:
-	cd t && $(LDLIBPTH) $(PERL_DEBUG) PERL_SKIP_TTY_TEST=1 $(PERL) $(TESTFILE) $(TEST_ARGS)
+	cd t && $(PERL_DEBUG) PERL_SKIP_TTY_TEST=1 $(LDLIBPTH) $(PERL) $(TESTFILE) $(TEST_ARGS)
 
 # The second branch is for testing without a tty or controlling terminal,
 # see t/op/stat.t
@@ -1108,6 +1116,11 @@ utest.third ucheck.third: test_prep.third perl.third
 test_notty.third: test_prep.third perl.third
 	PERL=./perl.third $(MAKE) PERL_DEBUG=PERL_3LOG=1 _test_notty
 
+# Targets for Bytecode/ByteLoader testing.
+
+test.bytecompile:	test_prep
+	PERL=./perl TEST_ARGS=-bytecompile $(MAKE) _test
+
 # Targets for Deparse testing.
 
 test.deparse:	test_prep
@@ -1132,6 +1145,9 @@ minitest: miniperl$(EXE_EXT) lib/re.pm
 
 test_harness: test_prep
 	PERL=./perl $(MAKE) TESTFILE=harness _test
+
+test_harness_notty: test_prep
+	PERL=./perl HARNESS_NOTTY=1 $(MAKE) TESTFILE=harness _test
 
 # Handy way to run perlbug -ok without having to install and run the
 # installed perlbug. We don't re-run the tests here - we trust the user.
@@ -1222,9 +1238,9 @@ $rm -f $firstmakefile
 # Now do any special processing required before building.
 
 case "$ebcdic" in
-$define)
+define)
     xxx=''
-    echo "This is an EBCDIC system, checking if any parser files need regenerating." >&4
+    echo "This is an EBCDIC system, checking if any parser files need regenerating." >&2
 case "$osname" in
 os390|posix-bc)
     rm -f y.tab.c y.tab.h

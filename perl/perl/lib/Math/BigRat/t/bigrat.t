@@ -8,7 +8,7 @@ BEGIN
   $| = 1;
   chdir 't' if -d 't';
   unshift @INC, '../lib'; # for running manually
-  plan tests => 151;
+  plan tests => 164;
   }
 
 # testing of Math::BigRat
@@ -44,6 +44,7 @@ foreach my $func (qw/new bnorm/)
   $x = $cr->$func('0.1/10');	ok ($x,'1/100');
   $x = $cr->$func('0.1/0.1');	ok ($x,'1');
   $x = $cr->$func('1e2/10');	ok ($x,10);
+  $x = $cr->$func('5/1e2');	ok ($x,'1/20');
   $x = $cr->$func('1e2/1e1');	ok ($x,10);
   $x = $cr->$func('1 / 3');	ok ($x,'1/3');
   $x = $cr->$func('-1 / 3');	ok ($x,'-1/3');
@@ -54,6 +55,10 @@ foreach my $func (qw/new bnorm/)
 
   # input ala '1+1/3' isn't parsed ok yet
   $x = $cr->$func('1+1/3');	ok ($x,'NaN');
+  
+  $x = $cr->$func('1/1.2');	ok ($x,'5/6');
+  $x = $cr->$func('1.3/1.2');	ok ($x,'13/12');
+  $x = $cr->$func('1.2/1');	ok ($x,'6/5');
 
   ############################################################################
   # other classes as input
@@ -157,8 +162,20 @@ ok ($x*$y,'3/7');
 $x = $cr->new('3/5');		$y = $cr->new('5/7');
 ok ($x/$y,'21/25');
 
+$x = $cr->new('7/4');		$y = $cr->new('1');
+ok ($x % $y,'3/4');
+
+$x = $cr->new('7/4');		$y = $cr->new('5/13');
+ok ($x % $y,'11/52');
+
+$x = $cr->new('7/4');		$y = $cr->new('5/9');
+ok ($x % $y,'1/12');
+
 $x = $cr->new('-144/9')->bsqrt();	ok ($x,'NaN');
 $x = $cr->new('144/9')->bsqrt();	ok ($x,'4');
+$x = $cr->new('3/4')->bsqrt();		ok ($x,
+  '1732050807568877293527446341505872366943/'
+ .'2000000000000000000000000000000000000000');
 
 ##############################################################################
 # bpow
@@ -216,6 +233,8 @@ $x = $cr->new('-33/8'); ok ($x->numify() * 1000, -4125);
 $x = $cr->new('inf'); ok ($x->numify(), 'inf');
 $x = $cr->new('-inf'); ok ($x->numify(), '-inf');
 $x = $cr->new('NaN'); ok ($x->numify(), 'NaN');
+
+$x = $cr->new('4/3'); ok ($x->numify(), 4/3);
 
 ##############################################################################
 # done

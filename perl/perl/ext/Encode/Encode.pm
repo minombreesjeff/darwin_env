@@ -1,10 +1,10 @@
 #
-# $Id: Encode.pm,v 1.4 2003/05/20 22:49:15 emoy Exp $
+# $Id: Encode.pm,v 1.97 2003/07/08 21:52:14 dankogai Exp $
 #
 package Encode;
 use strict;
-our $VERSION = do { my @r = (q$Revision: 1.4 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
-our $DEBUG = 0;
+our $VERSION = do { my @r = (q$Revision: 1.97 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+sub DEBUG () { 0 }
 use XSLoader ();
 XSLoader::load(__PACKAGE__, $VERSION);
 
@@ -15,7 +15,7 @@ use base qw/Exporter/;
 
 our @EXPORT = qw(
   decode  decode_utf8  encode  encode_utf8
-  encodings  find_encoding
+  encodings  find_encoding clone_encoding
 );
 
 our @FB_FLAGS  = qw(DIE_ON_ERR WARN_ON_ERR RETURN_ON_ERR LEAVE_SRC
@@ -60,7 +60,7 @@ sub encodings
     }else{
 	%enc = %Encoding;
 	for my $mod (map {m/::/o ? $_ : "Encode::$_" } @_){
-	    $DEBUG and warn $mod;
+	    DEBUG and warn $mod;
 	    for my $enc (keys %ExtModule){
 		$ExtModule{$enc} eq $mod and $enc{$enc} = $mod;
 	    }
@@ -95,7 +95,7 @@ sub getEncoding
 {
     my ($class, $name, $skip_external) = @_;
 
-    ref($name) && $name->can('new_sequence') and return $name;
+    ref($name) && $name->can('renew') and return $name;
     exists $Encoding{$name} and return $Encoding{$name};
     my $lc = lc $name;
     exists $Encoding{$lc} and return $Encoding{$lc};
@@ -116,16 +116,24 @@ sub getEncoding
     return;
 }
 
-sub find_encoding
+sub find_encoding($;$)
 {
     my ($name, $skip_external) = @_;
     return __PACKAGE__->getEncoding($name,$skip_external);
 }
 
-sub resolve_alias {
+sub resolve_alias($){
     my $obj = find_encoding(shift);
     defined $obj and return $obj->name;
     return;
+}
+
+sub clone_encoding($){
+    my $obj = find_encoding(shift);
+    ref $obj or return;
+    eval { require Storable };
+    $@ and return;
+    return Storable::dclone($obj);
 }
 
 sub encode($$;$)
@@ -139,7 +147,7 @@ sub encode($$;$)
 	Carp::croak("Unknown encoding '$name'");
     }
     my $octets = $enc->encode($string,$check);
-    return undef if ($check && length($string));
+    $_[1] = $string if $check;
     return $octets;
 }
 
@@ -250,11 +258,11 @@ sub predefine_encodings{
 	push @Encode::utf8::ISA, 'Encode::Encoding';
 	# 
 	if ($use_xs){
-	    $DEBUG and warn __PACKAGE__, " XS on";
+	    Encode::DEBUG and warn __PACKAGE__, " XS on";
 	    *decode = \&decode_xs;
 	    *encode = \&encode_xs;
 	}else{
-	    $DEBUG and warn __PACKAGE__, " XS off";
+	    Encode::DEBUG and warn __PACKAGE__, " XS off";
 	    *decode = sub{
 		my ($obj,$octets,$chk) = @_;
 		my $str = Encode::decode_utf8($octets);
@@ -730,6 +738,8 @@ implementation.  As such, they are efficient but may change.
 [INTERNAL] Tests whether the UTF-8 flag is turned on in the STRING.
 If CHECK is true, also checks the data in STRING for being well-formed
 UTF-8.  Returns true if successful, false otherwise.
+
+As of perl 5.8.1, L<utf8> also has utf8::is_utif8().
 
 =item _utf8_on(STRING)
 

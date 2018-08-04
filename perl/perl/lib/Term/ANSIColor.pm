@@ -1,5 +1,5 @@
 # Term::ANSIColor -- Color screen output using ANSI escape sequences.
-# $Id: ANSIColor.pm,v 1.5 2003/05/20 22:52:37 emoy Exp $
+# $Id: ANSIColor.pm,v 1.7 2003/03/26 07:00:51 eagle Exp $
 #
 # Copyright 1996, 1997, 1998, 2000, 2001, 2002
 #   by Russ Allbery <rra@stanford.edu> and Zenin <zenin@bawdycaste.com>

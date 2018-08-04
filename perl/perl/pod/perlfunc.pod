@@ -457,14 +457,31 @@ binary and text files.  If FILEHANDLE is an expression, the value is
 taken as the name of the filehandle.  Returns true on success,
 otherwise it returns C<undef> and sets C<$!> (errno).
 
+On some systems (in general, DOS and Windows-based systems) binmode()
+is necessary when you're not working with a text file.  For the sake
+of portability it is a good idea to always use it when appropriate,
+and to never use it when it isn't appropriate.  Also, people can
+set their I/O to be by default UTF-8 encoded Unicode, not bytes.
+
+In other words: regardless of platform, use binmode() on binary data,
+like for example images.
+
+If LAYER is present it is a single string, but may contain multiple
+directives. The directives alter the behaviour of the file handle.
+When LAYER is present using binmode on text file makes sense.
+
 If LAYER is omitted or specified as C<:raw> the filehandle is made
 suitable for passing binary data. This includes turning off possible CRLF
 translation and marking it as bytes (as opposed to Unicode characters).
-Note that as desipite what may be implied in I<"Programming Perl">
+Note that as despite what may be implied in I<"Programming Perl">
 (the Camel) or elsewhere C<:raw> is I<not> the simply inverse of C<:crlf>
 -- other layers which would affect binary nature of the stream are
 I<also> disabled. See L<PerlIO>, L<perlrun> and the discussion about the
 PERLIO environment variable.
+
+The C<:bytes>, C<:crlf>, and C<:utf8>, and any other directives of the
+form C<:...>, are called I/O I<layers>.  The C<open> pragma can be used to
+establish default I/O layers.  See L<open>.
 
 I<The LAYER parameter of the binmode() function is described as "DISCIPLINE"
 in "Programming Perl, 3rd Edition".  However, since the publishing of this
@@ -473,24 +490,7 @@ functionality has moved from "discipline" to "layer".  All documentation
 of this version of Perl therefore refers to "layers" rather than to
 "disciplines".  Now back to the regularly scheduled documentation...>
 
-On some systems (in general, DOS and Windows-based systems) binmode()
-is necessary when you're not working with a text file.  For the sake
-of portability it is a good idea to always use it when appropriate,
-and to never use it when it isn't appropriate.
-
-In other words: regardless of platform, use binmode() on binary files
-(like for example images).
-
-If LAYER is present it is a single string, but may contain
-multiple directives. The directives alter the behaviour of the
-file handle. When LAYER is present using binmode on text
-file makes sense.
-
 To mark FILEHANDLE as UTF-8, use C<:utf8>.
-
-The C<:bytes>, C<:crlf>, and C<:utf8>, and any other directives of the
-form C<:...>, are called I/O I<layers>.  The C<open> pragma can be used to
-establish default I/O layers.  See L<open>.
 
 In general, binmode() should be called after open() but before any I/O
 is done on the filehandle.  Calling binmode() will normally flush any
@@ -498,7 +498,9 @@ pending buffered output data (and perhaps pending input data) on the
 handle.  An exception to this is the C<:encoding> layer that
 changes the default character encoding of the handle, see L<open>.
 The C<:encoding> layer sometimes needs to be called in
-mid-stream, and it doesn't flush the stream.
+mid-stream, and it doesn't flush the stream.  The C<:encoding>
+also implicitly pushes on top of itself the C<:utf8> layer because
+internally Perl will operate on UTF-8 encoded Unicode characters.
 
 The operating system, device drivers, C libraries, and Perl run-time
 system all work together to let the programmer treat a single
@@ -730,10 +732,14 @@ chr(0x263a) is a Unicode smiley face.  Note that characters from 127
 to 255 (inclusive) are by default not encoded in Unicode for backward
 compatibility reasons (but see L<encoding>).
 
-For the reverse, use L</ord>.
-See L<perlunicode> and L<encoding> for more about Unicode.
-
 If NUMBER is omitted, uses C<$_>.
+
+For the reverse, use L</ord>.
+
+Note that under the C<bytes> pragma the NUMBER is masked to
+the low eight bits.
+
+See L<perlunicode> and L<encoding> for more about Unicode.
 
 =item chroot FILENAME
 
@@ -1119,7 +1125,7 @@ This is useful for propagating exceptions:
 If LIST is empty and C<$@> contains an object reference that has a
 C<PROPAGATE> method, that method will be called with additional file
 and line number parameters.  The return value replaces the value in
-C<$@>.  ie. as if C<<$@ = eval { $@->PROPAGATE(__FILE__, __LINE__) };>>
+C<$@>.  ie. as if C<< $@ = eval { $@->PROPAGATE(__FILE__, __LINE__) }; >>
 were called.
 
 If C<$@> is empty then the string C<"Died"> is used.
@@ -1261,9 +1267,11 @@ it.  When called in scalar context, returns only the key for the next
 element in the hash.
 
 Entries are returned in an apparently random order.  The actual random
-order is subject to change in future versions of perl, but it is guaranteed
-to be in the same order as either the C<keys> or C<values> function
-would produce on the same (unmodified) hash.
+order is subject to change in future versions of perl, but it is
+guaranteed to be in the same order as either the C<keys> or C<values>
+function would produce on the same (unmodified) hash.  Since Perl
+5.8.1 the ordering is different even between different runs of Perl
+for security reasons (see L<perlsec/"Algorithmic Complexity Attacks">).
 
 When the hash is entirely read, a null array is returned in list context
 (which when assigned produces a false (C<0>) value), and C<undef> in
@@ -2308,13 +2316,19 @@ first argument.  Compare L</split>.
 
 =item keys HASH
 
-Returns a list consisting of all the keys of the named hash.  (In
-scalar context, returns the number of keys.)  The keys are returned in
-an apparently random order.  The actual random order is subject to
-change in future versions of perl, but it is guaranteed to be the same
-order as either the C<values> or C<each> function produces (given
-that the hash has not been modified).  As a side effect, it resets
-HASH's iterator.
+Returns a list consisting of all the keys of the named hash.
+(In scalar context, returns the number of keys.)
+
+The keys are returned in an apparently random order.  The actual
+random order is subject to change in future versions of perl, but it
+is guaranteed to be the same order as either the C<values> or C<each>
+function produces (given that the hash has not been modified).  Since
+Perl 5.8.1 the ordering is different even between different runs of
+Perl for security reasons (see L<perlsec/"Algorithmic Complexity
+Attacks">).
+
+As a side effect, calling keys() resets the HASH's internal iterator,
+see L</each>.
 
 Here is yet another way to print your environment:
 
@@ -2429,10 +2443,14 @@ If EXPR is omitted, uses C<$_>.
 
 =item length
 
-Returns the length in characters of the value of EXPR.  If EXPR is
+Returns the length in I<characters> of the value of EXPR.  If EXPR is
 omitted, returns length of C<$_>.  Note that this cannot be used on
 an entire array or hash to find out how many elements these have.
 For that, use C<scalar @array> and C<scalar keys %hash> respectively.
+
+Note the I<characters>: if the EXPR is in Unicode, you will get the
+number of characters, not the number of bytes.  To get the length
+in bytes, use C<do { use bytes; length(EXPR) }>, see L<bytes>.
 
 =item link OLDFILE,NEWFILE
 
@@ -2864,9 +2882,7 @@ argument being C<undef>:
 opens a filehandle to an anonymous temporary file.  Also using "+<"
 works for symmetry, but you really should consider writing something
 to the temporary file first.  You will need to seek() to do the
-reading.  Starting from Perl 5.8.1 the temporary files are created
-using the File::Temp module for greater portability, in Perl 5.8.0 the
-mkstemp() system call (which has known bugs in some platforms) was used.
+reading.
 
 File handles can be opened to "in memory" files held in Perl scalars via:
 
@@ -3798,18 +3814,27 @@ with the wrong number of RANDBITS.)
 Attempts to read LENGTH I<characters> of data into variable SCALAR
 from the specified FILEHANDLE.  Returns the number of characters
 actually read, C<0> at end of file, or undef if there was an error (in
-the latter case C<$!> is also set).  SCALAR will be grown or shrunk to
-the length actually read.  If SCALAR needs growing, the new bytes will
-be zero bytes.  An OFFSET may be specified to place the read data into
-some other place in SCALAR than the beginning.  The call is actually
-implemented in terms of either Perl's or system's fread() call.  To
-get a true read(2) system call, see C<sysread>.
+the latter case C<$!> is also set).  SCALAR will be grown or shrunk 
+so that the last character actually read is the last character of the
+scalar after the read.
+
+An OFFSET may be specified to place the read data at some place in the
+string other than the beginning.  A negative OFFSET specifies
+placement at that many characters counting backwards from the end of
+the string.  A positive OFFSET greater than the length of SCALAR
+results in the string being padded to the required size with C<"\0">
+bytes before the result of the read is appended.
+
+The call is actually implemented in terms of either Perl's or system's
+fread() call.  To get a true read(2) system call, see C<sysread>.
 
 Note the I<characters>: depending on the status of the filehandle,
 either (8-bit) bytes or characters are read.  By default all
 filehandles operate on bytes, but for example if the filehandle has
 been opened with the C<:utf8> I/O layer (see L</open>, and the C<open>
-pragma, L<open>), the I/O will operate on characters, not bytes.
+pragma, L<open>), the I/O will operate on UTF-8 encoded Unicode
+characters, not bytes.  Similarly for the C<:encoding> pragma:
+in that case pretty much any characters can be read.
 
 =item readdir DIRHANDLE
 
@@ -3896,7 +3921,9 @@ Note the I<characters>: depending on the status of the socket, either
 (8-bit) bytes or characters are received.  By default all sockets
 operate on bytes, but for example if the socket has been changed using
 binmode() to operate with the C<:utf8> I/O layer (see the C<open>
-pragma, L<open>), the I/O will operate on characters, not bytes.
+pragma, L<open>), the I/O will operate on UTF-8 encoded Unicode
+characters, not bytes.  Similarly for the C<:encoding> pragma:
+in that case pretty much any characters can be read.
 
 =item redo LABEL
 
@@ -4201,9 +4228,9 @@ last occurrence at or before that position.
 
 =item rmdir
 
-Deletes the directory specified by FILENAME if that directory is empty.  If it
-succeeds it returns true, otherwise it returns false and sets C<$!> (errno).  If
-FILENAME is omitted, uses C<$_>.
+Deletes the directory specified by FILENAME if that directory is
+empty.  If it succeeds it returns true, otherwise it returns false and
+sets C<$!> (errno).  If FILENAME is omitted, uses C<$_>.
 
 =item s///
 
@@ -4424,9 +4451,10 @@ L<perlipc/"UDP: Message Passing"> for examples.
 Note the I<characters>: depending on the status of the socket, either
 (8-bit) bytes or characters are sent.  By default all sockets operate
 on bytes, but for example if the socket has been changed using
-binmode() to operate with the C<:utf8> I/O layer (see L</open>, or
-the C<open> pragma, L<open>), the I/O will operate on characters, not
-bytes.
+binmode() to operate with the C<:utf8> I/O layer (see L</open>, or the
+C<open> pragma, L<open>), the I/O will operate on UTF-8 encoded
+Unicode characters, not bytes.  Similarly for the C<:encoding> pragma:
+in that case pretty much any characters can be sent.
 
 =item setpgrp PID,PGRP
 
@@ -4737,6 +4765,15 @@ inconsistent results (sometimes saying C<$x[1]> is less than C<$x[2]> and
 sometimes saying the opposite, for example) the results are not
 well-defined.
 
+Because C<< <=> >> returns C<undef> when either operand is C<NaN>
+(not-a-number), and because C<sort> will trigger a fatal error unless the
+result of a comparison is defined, when sorting with a comparison function
+like C<< $a <=> $b >>, be careful about lists that might contain a C<NaN>.
+The following example takes advantage of the fact that C<NaN != NaN> to
+eliminate any C<NaN>s from the input.
+
+    @result = sort { $a <=> $b } grep { $_ == $_ } @input;
+
 =item splice ARRAY,OFFSET,LENGTH,LIST
 
 =item splice ARRAY,OFFSET,LENGTH
@@ -4835,8 +4872,8 @@ The LIMIT parameter can be used to split a line partially
 
     ($login, $passwd, $remainder) = split(/:/, $_, 3);
 
-When assigning to a list, if LIMIT is omitted, Perl supplies a LIMIT
-one larger than the number of variables in the list, to avoid
+When assigning to a list, if LIMIT is omitted, or zero, Perl supplies
+a LIMIT one larger than the number of variables in the list, to avoid
 unnecessary work.  For the list above LIMIT would have been 4 by
 default.  In time critical applications it behooves you not to split
 into more fields than you really need.
@@ -5587,21 +5624,15 @@ See L<perlopentut> for a kinder, gentler explanation of opening files.
 
 =item sysread FILEHANDLE,SCALAR,LENGTH
 
-Attempts to read LENGTH I<characters> of data into variable SCALAR
-from the specified FILEHANDLE, using the system call read(2).  It
-bypasses buffered IO, so mixing this with other kinds of reads,
-C<print>, C<write>, C<seek>, C<tell>, or C<eof> can cause confusion
-because stdio usually buffers data.  Returns the number of characters
-actually read, C<0> at end of file, or undef if there was an error (in
-the latter case C<$!> is also set).  SCALAR will be grown or shrunk so
-that the last byte actually read is the last byte of the scalar after
-the read.
-
-Note the I<characters>: depending on the status of the filehandle,
-either (8-bit) bytes or characters are read.  By default all
-filehandles operate on bytes, but for example if the filehandle has
-been opened with the C<:utf8> I/O layer (see L</open>, and the C<open>
-pragma, L<open>), the I/O will operate on characters, not bytes.
+Attempts to read LENGTH bytes of data into variable SCALAR from the
+specified FILEHANDLE, using the system call read(2).  It bypasses
+buffered IO, so mixing this with other kinds of reads, C<print>,
+C<write>, C<seek>, C<tell>, or C<eof> can cause confusion because the
+perlio or stdio layers usually buffers data.  Returns the number of
+bytes actually read, C<0> at end of file, or undef if there was an
+error (in the latter case C<$!> is also set).  SCALAR will be grown or
+shrunk so that the last byte actually read is the last byte of the
+scalar after the read.
 
 An OFFSET may be specified to place the read data at some place in the
 string other than the beginning.  A negative OFFSET specifies
@@ -5614,9 +5645,15 @@ There is no syseof() function, which is ok, since eof() doesn't work
 very well on device files (like ttys) anyway.  Use sysread() and check
 for a return value for 0 to decide whether you're done.
 
+Note that if the filehandle has been marked as C<:utf8> Unicode
+characters are read instead of bytes (the LENGTH, OFFSET, and the
+return value of sysread() are in Unicode characters).
+The C<:encoding(...)> layer implicitly introduces the C<:utf8> layer.
+See L</binmode>, L</open>, and the C<open> pragma, L<open>.
+
 =item sysseek FILEHANDLE,POSITION,WHENCE
 
-Sets FILEHANDLE's system position I<in bytes> using the system call
+Sets FILEHANDLE's system position in bytes using the system call
 lseek(2).  FILEHANDLE may be an expression whose value gives the name
 of the filehandle.  The values for WHENCE are C<0> to set the new
 position to POSITION, C<1> to set the it to the current position plus
@@ -5628,7 +5665,7 @@ on characters (for example by using the C<:utf8> I/O layer), tell()
 will return byte offsets, not character offsets (because implementing
 that would render sysseek() very slow).
 
-sysseek() bypasses normal buffered io, so mixing this with reads (other
+sysseek() bypasses normal buffered IO, so mixing this with reads (other
 than C<sysread>, for example &gt;&lt or read()) C<print>, C<write>,
 C<seek>, C<tell>, or C<eof> may cause confusion.
 
@@ -5707,27 +5744,27 @@ See L<perlop/"`STRING`"> and L</exec> for details.
 
 =item syswrite FILEHANDLE,SCALAR
 
-Attempts to write LENGTH characters of data from variable SCALAR to
-the specified FILEHANDLE, using the system call write(2).  If LENGTH
-is not specified, writes whole SCALAR.  It bypasses buffered IO, so
+Attempts to write LENGTH bytes of data from variable SCALAR to the
+specified FILEHANDLE, using the system call write(2).  If LENGTH is
+not specified, writes whole SCALAR.  It bypasses buffered IO, so
 mixing this with reads (other than C<sysread())>, C<print>, C<write>,
-C<seek>, C<tell>, or C<eof> may cause confusion because stdio usually
-buffers data.  Returns the number of characters actually written, or
-C<undef> if there was an error (in this case the errno variable C<$!>
-is also set).  If the LENGTH is greater than the available data in the
-SCALAR after the OFFSET, only as much data as is available will be
-written.
+C<seek>, C<tell>, or C<eof> may cause confusion because the perlio and
+stdio layers usually buffers data.  Returns the number of bytes
+actually written, or C<undef> if there was an error (in this case the
+errno variable C<$!> is also set).  If the LENGTH is greater than the
+available data in the SCALAR after the OFFSET, only as much data as is
+available will be written.
 
 An OFFSET may be specified to write the data from some part of the
 string other than the beginning.  A negative OFFSET specifies writing
 that many characters counting backwards from the end of the string.
 In the case the SCALAR is empty you can use OFFSET but only zero offset.
 
-Note the I<characters>: depending on the status of the filehandle,
-either (8-bit) bytes or characters are written.  By default all
-filehandles operate on bytes, but for example if the filehandle has
-been opened with the C<:utf8> I/O layer (see L</open>, and the open
-pragma, L<open>), the I/O will operate on characters, not bytes.
+Note that if the filehandle has been marked as C<:utf8>, Unicode
+characters are written instead of bytes (the LENGTH, OFFSET, and the
+return value of syswrite() are in UTF-8 encoded Unicode characters).
+The C<:encoding(...)> layer implicitly introduces the C<:utf8> layer.
+See L</binmode>, L</open>, and the C<open> pragma, L<open>.
 
 =item tell FILEHANDLE
 
@@ -5965,7 +6002,7 @@ string of octal digits.  See also L</oct>, if all you have is a string.
 
 Undefines the value of EXPR, which must be an lvalue.  Use only on a
 scalar value, an array (using C<@>), a hash (using C<%>), a subroutine
-(using C<&>), or a typeglob (using <*>).  (Saying C<undef $hash{$key}>
+(using C<&>), or a typeglob (using C<*>).  (Saying C<undef $hash{$key}>
 will probably not do what you expect on most predefined variables or
 DBM list values, so don't do that; see L<delete>.)  Always returns the
 undefined value.  You can omit the EXPR, in which case nothing is
@@ -6198,12 +6235,18 @@ above.)
 
 =item values HASH
 
-Returns a list consisting of all the values of the named hash.  (In a
-scalar context, returns the number of values.)  The values are
-returned in an apparently random order.  The actual random order is
-subject to change in future versions of perl, but it is guaranteed to
-be the same order as either the C<keys> or C<each> function would
-produce on the same (unmodified) hash.
+Returns a list consisting of all the values of the named hash.
+(In a scalar context, returns the number of values.)
+
+The values are returned in an apparently random order.  The actual
+random order is subject to change in future versions of perl, but it
+is guaranteed to be the same order as either the C<keys> or C<each>
+function would produce on the same (unmodified) hash.  Since Perl
+5.8.1 the ordering is different even between different runs of Perl
+for security reasons (see L<perlsec/"Algorithmic Complexity Attacks">).
+
+As a side effect, calling values() resets the HASH's internal iterator,
+see L</each>.
 
 Note that the values are not copied, which means modifying them will
 modify the contents of the hash:
@@ -6211,7 +6254,6 @@ modify the contents of the hash:
     for (values %hash) 	    { s/foo/bar/g }   # modifies %hash values
     for (@hash{keys %hash}) { s/foo/bar/g }   # same
 
-As a side effect, calling values() resets the HASH's internal iterator.
 See also C<keys>, C<each>, and C<sort>.
 
 =item vec EXPR,OFFSET,BITS

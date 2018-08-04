@@ -29,6 +29,7 @@
 
 #if defined(PERL_IMPLICIT_SYS)
 #endif
+#define doing_taint		Perl_doing_taint
 #if defined(USE_ITHREADS)
 #  if defined(PERL_IMPLICIT_SYS)
 #  endif
@@ -751,7 +752,7 @@
 #define newUNOP			Perl_newUNOP
 #define newWHILEOP		Perl_newWHILEOP
 #define new_stackinfo		Perl_new_stackinfo
-#define new_vstring		Perl_new_vstring
+#define scan_vstring		Perl_scan_vstring
 #ifdef PERL_CORE
 #define nextargv		Perl_nextargv
 #endif
@@ -974,6 +975,7 @@
 #ifdef PERL_CORE
 #define sighandler		Perl_sighandler
 #endif
+#define csighandler		Perl_csighandler
 #define stack_grow		Perl_stack_grow
 #define start_subparse		Perl_start_subparse
 #ifdef PERL_CORE
@@ -1130,6 +1132,12 @@
 #define parse_unicode_opts	Perl_parse_unicode_opts
 #endif
 #ifdef PERL_CORE
+#define seed			Perl_seed
+#endif
+#ifdef PERL_CORE
+#define get_hash_seed		Perl_get_hash_seed
+#endif
+#ifdef PERL_CORE
 #define report_evil_fh		Perl_report_evil_fh
 #endif
 #ifdef PERL_CORE
@@ -1143,6 +1151,9 @@
 #define watch			Perl_watch
 #endif
 #define whichsig		Perl_whichsig
+#ifdef PERL_CORE
+#define write_to_stderr		Perl_write_to_stderr
+#endif
 #ifdef PERL_CORE
 #define yyerror			Perl_yyerror
 #endif
@@ -1498,9 +1509,6 @@
 #ifdef PERL_CORE
 #define refto			S_refto
 #endif
-#ifdef PERL_CORE
-#define seed			S_seed
-#endif
 #endif
 #if defined(PERL_IN_PP_PACK_C) || defined(PERL_DECL_PROT)
 #ifdef PERL_CORE
@@ -1574,7 +1582,7 @@
 #define doeval			S_doeval
 #endif
 #ifdef PERL_CORE
-#define doopen_pmc		S_doopen_pmc
+#define doopen_pm		S_doopen_pm
 #endif
 #ifdef PERL_CORE
 #define path_is_absolute	S_path_is_absolute
@@ -2162,6 +2170,11 @@
 #ifdef PERL_CORE
 #define free_tied_hv_pool	Perl_free_tied_hv_pool
 #endif
+#if defined(DEBUGGING)
+#ifdef PERL_CORE
+#define get_debug_opts		Perl_get_debug_opts
+#endif
+#endif
 #define ck_anoncode		Perl_ck_anoncode
 #define ck_bitop		Perl_ck_bitop
 #define ck_concat		Perl_ck_concat
@@ -2553,6 +2566,7 @@
 
 #if defined(PERL_IMPLICIT_SYS)
 #endif
+#define doing_taint		Perl_doing_taint
 #if defined(USE_ITHREADS)
 #  if defined(PERL_IMPLICIT_SYS)
 #  endif
@@ -3253,7 +3267,7 @@
 #define newUNOP(a,b,c)		Perl_newUNOP(aTHX_ a,b,c)
 #define newWHILEOP(a,b,c,d,e,f,g)	Perl_newWHILEOP(aTHX_ a,b,c,d,e,f,g)
 #define new_stackinfo(a,b)	Perl_new_stackinfo(aTHX_ a,b)
-#define new_vstring(a,b)	Perl_new_vstring(aTHX_ a,b)
+#define scan_vstring(a,b)	Perl_scan_vstring(aTHX_ a,b)
 #ifdef PERL_CORE
 #define nextargv(a)		Perl_nextargv(aTHX_ a)
 #endif
@@ -3477,6 +3491,7 @@
 #ifdef PERL_CORE
 #define sighandler		Perl_sighandler
 #endif
+#define csighandler		Perl_csighandler
 #define stack_grow(a,b,c)	Perl_stack_grow(aTHX_ a,b,c)
 #define start_subparse(a,b)	Perl_start_subparse(aTHX_ a,b)
 #ifdef PERL_CORE
@@ -3631,6 +3646,12 @@
 #define parse_unicode_opts(a)	Perl_parse_unicode_opts(aTHX_ a)
 #endif
 #ifdef PERL_CORE
+#define seed()			Perl_seed(aTHX)
+#endif
+#ifdef PERL_CORE
+#define get_hash_seed()		Perl_get_hash_seed(aTHX)
+#endif
+#ifdef PERL_CORE
 #define report_evil_fh(a,b,c)	Perl_report_evil_fh(aTHX_ a,b,c)
 #endif
 #ifdef PERL_CORE
@@ -3642,6 +3663,9 @@
 #define watch(a)		Perl_watch(aTHX_ a)
 #endif
 #define whichsig(a)		Perl_whichsig(aTHX_ a)
+#ifdef PERL_CORE
+#define write_to_stderr(a,b)	Perl_write_to_stderr(aTHX_ a,b)
+#endif
 #ifdef PERL_CORE
 #define yyerror(a)		Perl_yyerror(aTHX_ a)
 #endif
@@ -3993,9 +4017,6 @@
 #ifdef PERL_CORE
 #define refto(a)		S_refto(aTHX_ a)
 #endif
-#ifdef PERL_CORE
-#define seed()			S_seed(aTHX)
-#endif
 #endif
 #if defined(PERL_IN_PP_PACK_C) || defined(PERL_DECL_PROT)
 #ifdef PERL_CORE
@@ -4069,7 +4090,7 @@
 #define doeval(a,b,c,d)		S_doeval(aTHX_ a,b,c,d)
 #endif
 #ifdef PERL_CORE
-#define doopen_pmc(a,b)		S_doopen_pmc(aTHX_ a,b)
+#define doopen_pm(a,b)		S_doopen_pm(aTHX_ a,b)
 #endif
 #ifdef PERL_CORE
 #define path_is_absolute(a)	S_path_is_absolute(aTHX_ a)
@@ -4655,6 +4676,11 @@
 #endif
 #ifdef PERL_CORE
 #define free_tied_hv_pool()	Perl_free_tied_hv_pool(aTHX)
+#endif
+#if defined(DEBUGGING)
+#ifdef PERL_CORE
+#define get_debug_opts(a)	Perl_get_debug_opts(aTHX_ a)
+#endif
 #endif
 #define ck_anoncode(a)		Perl_ck_anoncode(aTHX_ a)
 #define ck_bitop(a)		Perl_ck_bitop(aTHX_ a)

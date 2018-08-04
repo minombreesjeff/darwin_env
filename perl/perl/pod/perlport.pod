@@ -192,8 +192,8 @@ There may well be others.  For example, on an EBCDIC implementation
 such as z/OS (OS/390) or OS/400 (using the ILE, the PASE is ASCII-based)
 the above material is similar to "Unix" but the code numbers change:
 
-    LF  eq  \025  eq  \x15  eq           chr(21)  eq  CP-1047 21
-    LF  eq  \045  eq  \x25  eq  \cU  eq  chr(37)  eq  CP-0037 37
+    LF  eq  \025  eq  \x15  eq  \cU  eq  chr(21)  eq  CP-1047 21
+    LF  eq  \045  eq  \x25  eq           chr(37)  eq  CP-0037 37
     CR  eq  \015  eq  \x0D  eq  \cM  eq  chr(13)  eq  CP-1047 13
     CR  eq  \015  eq  \x0D  eq  \cM  eq  chr(13)  eq  CP-0037 13
 
@@ -486,6 +486,20 @@ To convert $Config{perlpath} to a file pathname, say:
   $thisperl = $Config{perlpath};
   if ($^O ne 'VMS')
      {$thisperl .= $Config{_exe} unless $thisperl =~ m/$Config{_exe}$/i;}
+
+=head2 Networking
+
+Don't assume that you can reach the public Internet.
+
+Don't assume that there is only one way to get through firewalls
+to the public Internet.
+
+Don't assume that you can reach yourself or any node by the name
+'localhost'.  The same goes for '127.0.0.1'.
+
+Don't assume that any particular port (service) will respond.
+
+Don't assume that you can ping hosts and get replies.
 
 =head2 Interprocess Communication (IPC)
 
@@ -2115,7 +2129,7 @@ First public release with perl5.005.
 
 =head1 Supported Platforms
 
-As of July 2002 (the Perl release 5.8.0), the following platforms are
+As of July 2003 (the Perl release 5.8.1), the following platforms are
 able to build Perl from the standard source code distribution
 available at http://www.cpan.org/src/index.html
 
@@ -2165,10 +2179,9 @@ available at http://www.cpan.org/src/index.html
 
 The following platforms worked with the previous releases (5.6 and
 5.7), but we did not manage either to fix or to test these in time
-for the 5.8.0 release.  There is a very good chance that many of these
-will work fine with the 5.8.0.
+for the 5.8.1 release.  There is a very good chance that many of these
+will work fine with the 5.8.1.
 
-        BSD/OS
         DomainOS
         Hurd
         LynxOS
@@ -2179,7 +2192,7 @@ will work fine with the 5.8.0.
         Unixware
         Windows 3.1
 
-Known to be broken for 5.8.0 (but 5.6.1 and 5.7.2 can be used):
+Known to be broken for 5.8.0 and 5.8.1 (but 5.6.1 and 5.7.2 can be used):
 
 	AmigaOS
 

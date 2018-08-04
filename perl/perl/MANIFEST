@@ -65,10 +65,10 @@ epoc/epocish.c		EPOC port
 epoc/epocish.h		EPOC port
 epoc/epoc_stubs.c	EPOC port
 epoc/link.pl		EPOC port link a exe
-ext/attrs.t			See if attrs works with C<sub : attrs>
 ext/attrs/attrs.pm		attrs extension Perl module
 ext/attrs/attrs.xs		attrs extension external subroutines
 ext/attrs/Makefile.PL		attrs extension makefile writer
+ext/attrs/t/attrs.t		See if attrs works with C<sub : attrs>
 ext/B/B.pm		Compiler backend support functions and methods
 ext/B/B.xs		Compiler backend external subroutines
 ext/B/B/Asmdata.pm	Compiler backend data for assembler
@@ -155,15 +155,15 @@ ext/DB_File/typemap		Berkeley DB extension interface types
 ext/DB_File/version.c		Berkeley DB extension interface version check
 ext/Devel/DProf/Changes		Perl code profiler changelog
 ext/Devel/DProf/DProf.pm	Perl code profiler
-ext/Devel/DProf/DProf.t		Perl code profiler
 ext/Devel/DProf/DProf.xs	Perl code profiler
 ext/Devel/DProf/Makefile.PL	Perl code profiler makefile writer
+ext/Devel/DProf/t/DProf.t	Perl code profiler
 ext/Devel/DProf/Todo		Perl code profiler todo list
 ext/Devel/Peek/Changes		Data debugging tool, changelog
 ext/Devel/Peek/Makefile.PL	Data debugging tool, makefile writer
 ext/Devel/Peek/Peek.pm		Data debugging tool, module and pod
-ext/Devel/Peek/Peek.t		See if Devel::Peek works
 ext/Devel/Peek/Peek.xs		Data debugging tool, externals
+ext/Devel/Peek/t/Peek.t		See if Devel::Peek works
 ext/Devel/PPPort/Changes	Devel::PPPort changes
 ext/Devel/PPPort/Makefile.PL	Devel::PPPort makefile writer
 ext/Devel/PPPort/MANIFEST	Devel::PPPort Manifest
@@ -186,6 +186,7 @@ ext/Digest/MD5/MD5.xs		Digest::MD5 extension
 ext/Digest/MD5/README		Digest::MD5 extension Readme
 ext/Digest/MD5/t/align.t	See if Digest::MD5 extension works
 ext/Digest/MD5/t/badfile.t	See if Digest::MD5 extension works
+ext/Digest/MD5/t/clone.t	See if Digest::MD5 extension works
 ext/Digest/MD5/t/files.t	See if Digest::MD5 extension works
 ext/Digest/MD5/t/md5-aaa.t	See if Digest::MD5 extension works
 ext/Digest/MD5/t/utf8.t		See if Digest::MD5 extension works
@@ -254,6 +255,7 @@ ext/Encode/lib/Encode/KR/2022_KR.pm	 Encode extension
 ext/Encode/lib/Encode/MIME/Header.pm	Encode extension
 ext/Encode/lib/Encode/PerlIO.pod	Documents for Encode & PerlIO
 ext/Encode/lib/Encode/Supported.pod	Documents for supported encodings
+ext/Encode/lib/Encode/Unicode/UTF7.pm	Encode extension
 ext/Encode/Makefile.PL		Encode extension makefile writer
 ext/Encode/MANIFEST		Encode extension
 ext/Encode/META.yml		Module meta-data in YAML
@@ -404,10 +406,10 @@ ext/Encode/ucm/viscii.ucm	Unicode Character Map
 ext/Encode/Unicode/Makefile.PL	Encode extension
 ext/Encode/Unicode/Unicode.pm	Encode extension
 ext/Encode/Unicode/Unicode.xs	Encode extension
-ext/Errno/ChangeLog	See if Errno works
-ext/Errno/Errno.t	See if Errno works
+ext/Errno/ChangeLog	Errno changes
 ext/Errno/Errno_pm.PL	Errno perl module create script
 ext/Errno/Makefile.PL	Errno extension makefile writer
+ext/Errno/t/Errno.t	See if Errno works
 ext/Fcntl/Fcntl.pm	Fcntl extension Perl module
 ext/Fcntl/Fcntl.xs	Fcntl extension external subroutines
 ext/Fcntl/Makefile.PL	Fcntl extension makefile writer
@@ -428,18 +430,18 @@ ext/Filter/t/call.t		See if Filter::Util::Call works
 ext/Filter/Util/Call/Call.pm	Filter::Util::Call extension module
 ext/Filter/Util/Call/Call.xs	Filter::Util::Call extension external subroutines
 ext/Filter/Util/Call/Makefile.PL	Filter::Util::Call extension makefile writer
-ext/GDBM_File/gdbm.t		See if GDBM_File works
 ext/GDBM_File/GDBM_File.pm	GDBM extension Perl module
 ext/GDBM_File/GDBM_File.xs	GDBM extension external subroutines
 ext/GDBM_File/hints/sco.pl	Hint for GDBM_File for named architecture
 ext/GDBM_File/Makefile.PL	GDBM extension makefile writer
+ext/GDBM_File/t/gdbm.t		See if GDBM_File works
 ext/GDBM_File/typemap		GDBM extension interface types
 ext/I18N/Langinfo/fallback/const-c.inc	I18N::Langinfo
 ext/I18N/Langinfo/fallback/const-xs.inc	I18N::Langinfo
 ext/I18N/Langinfo/Langinfo.pm	I18N::Langinfo
-ext/I18N/Langinfo/Langinfo.t	I18N::Langinfo
 ext/I18N/Langinfo/Langinfo.xs	I18N::Langinfo
 ext/I18N/Langinfo/Makefile.PL	I18N::Langinfo
+ext/I18N/Langinfo/t/Langinfo.t	See whether I18N::Langinfo works
 ext/IO/ChangeLog		IO perl module change log
 ext/IO/hints/sco.pl		Hint for IO for named architecture
 ext/IO/IO.pm			Top-level interface to IO::* classes
@@ -454,29 +456,29 @@ ext/IO/lib/IO/Select.pm		IO system select() interface
 ext/IO/lib/IO/Socket.pm		IO socket handle package
 ext/IO/lib/IO/Socket/INET.pm	IO INET specific socket methods
 ext/IO/lib/IO/Socket/UNIX.pm	IO UNIX specific socket methods
-ext/IO/lib/IO/t/IO.t	See if IO works
-ext/IO/lib/IO/t/io_const.t	See if constants from IO work
-ext/IO/lib/IO/t/io_dir.t	See if directory-related methods from IO work
-ext/IO/lib/IO/t/io_dup.t	See if dup()-related methods from IO work
-ext/IO/lib/IO/t/io_linenum.t	See if I/O line numbers are tracked correctly
-ext/IO/lib/IO/t/io_multihomed.t	See if INET sockets work with multi-homed hosts
-ext/IO/lib/IO/t/io_pipe.t	See if pipe()-related methods from IO work
-ext/IO/lib/IO/t/io_poll.t	See if poll()-related methods from IO work
-ext/IO/lib/IO/t/io_sel.t	See if select()-related methods from IO work
-ext/IO/lib/IO/t/io_sock.t	See if INET socket-related methods from IO work
-ext/IO/lib/IO/t/io_taint.t	See if the untaint method from IO works
-ext/IO/lib/IO/t/io_tell.t	See if seek()/tell()-related methods from IO work
-ext/IO/lib/IO/t/io_udp.t	See if UDP socket-related methods from IO work
-ext/IO/lib/IO/t/io_unix.t	See if UNIX socket-related methods from IO work
-ext/IO/lib/IO/t/io_xs.t		See if XSUB methods from IO work
 ext/IO/Makefile.PL		IO extension makefile writer
 ext/IO/poll.c			IO poll() emulation using select()
 ext/IO/poll.h			IO poll() emulation using select()
 ext/IO/README			IO extension maintenance notice
+ext/IO/t/IO.t	See if IO works
+ext/IO/t/io_const.t	See if constants from IO work
+ext/IO/t/io_dir.t	See if directory-related methods from IO work
+ext/IO/t/io_dup.t	See if dup()-related methods from IO work
+ext/IO/t/io_linenum.t	See if I/O line numbers are tracked correctly
+ext/IO/t/io_multihomed.t	See if INET sockets work with multi-homed hosts
+ext/IO/t/io_pipe.t	See if pipe()-related methods from IO work
+ext/IO/t/io_poll.t	See if poll()-related methods from IO work
+ext/IO/t/io_sel.t	See if select()-related methods from IO work
+ext/IO/t/io_sock.t	See if INET socket-related methods from IO work
+ext/IO/t/io_taint.t	See if the untaint method from IO works
+ext/IO/t/io_tell.t	See if seek()/tell()-related methods from IO work
+ext/IO/t/io_udp.t	See if UDP socket-related methods from IO work
+ext/IO/t/io_unix.t	See if UNIX socket-related methods from IO work
+ext/IO/t/io_utf8.t	See if perlio opens work
+ext/IO/t/io_xs.t		See if XSUB methods from IO work
 ext/IPC/SysV/ChangeLog		IPC::SysV extension Perl module
 ext/IPC/SysV/hints/cygwin.pl	Hint for IPC::SysV for named architecture
 ext/IPC/SysV/hints/next_3.pl	Hint for IPC::SysV for named architecture
-ext/IPC/SysV/ipcsysv.t		See if IPC::SysV works
 ext/IPC/SysV/Makefile.PL	IPC::SysV extension Perl module
 ext/IPC/SysV/MANIFEST		IPC::SysV extension Perl module
 ext/IPC/SysV/Msg.pm		IPC::SysV extension Perl module
@@ -484,6 +486,7 @@ ext/IPC/SysV/README		IPC::SysV extension Perl module
 ext/IPC/SysV/Semaphore.pm	IPC::SysV extension Perl module
 ext/IPC/SysV/SysV.pm		IPC::SysV extension Perl module
 ext/IPC/SysV/SysV.xs		IPC::SysV extension Perl module
+ext/IPC/SysV/t/ipcsysv.t		See if IPC::SysV works
 ext/IPC/SysV/t/msg.t		IPC::SysV extension Perl module
 ext/IPC/SysV/t/sem.t		IPC::SysV extension Perl module
 ext/List/Util/ChangeLog		Util extension
@@ -527,9 +530,9 @@ ext/NDBM_File/hints/sco.pl	Hint for NDBM_File for named architecture
 ext/NDBM_File/hints/solaris.pl	Hint for NDBM_File for named architecture
 ext/NDBM_File/hints/svr4.pl	Hint for NDBM_File for named architecture
 ext/NDBM_File/Makefile.PL	NDBM extension makefile writer
-ext/NDBM_File/ndbm.t		See if NDBM_File works
 ext/NDBM_File/NDBM_File.pm	NDBM extension Perl module
 ext/NDBM_File/NDBM_File.xs	NDBM extension external subroutines
+ext/NDBM_File/t/ndbm.t		See if NDBM_File works
 ext/NDBM_File/typemap		NDBM extension interface types
 ext/ODBM_File/hints/cygwin.pl	Hint for ODBM_File for named architecture
 ext/ODBM_File/hints/dec_osf.pl	Hint for ODBM_File for named architecture
@@ -540,22 +543,21 @@ ext/ODBM_File/hints/solaris.pl	Hint for ODBM_File for named architecture
 ext/ODBM_File/hints/svr4.pl	Hint for ODBM_File for named architecture
 ext/ODBM_File/hints/ultrix.pl	Hint for ODBM_File for named architecture
 ext/ODBM_File/Makefile.PL	ODBM extension makefile writer
-ext/ODBM_File/odbm.t		See if ODBM_File works
 ext/ODBM_File/ODBM_File.pm	ODBM extension Perl module
 ext/ODBM_File/ODBM_File.xs	ODBM extension external subroutines
+ext/ODBM_File/t/odbm.t		See if ODBM_File works
 ext/ODBM_File/typemap		ODBM extension interface types
 ext/Opcode/Makefile.PL		Opcode extension makefile writer
 ext/Opcode/Opcode.pm		Opcode extension Perl module
-ext/Opcode/Opcode.t		See if Opcode works
 ext/Opcode/Opcode.xs		Opcode extension external subroutines
 ext/Opcode/ops.pm		"Pragma" form of Opcode extension Perl module
-ext/Opcode/ops.t		See if Opcode works
 ext/Opcode/Safe.pm		Safe extension Perl module
+ext/Opcode/t/Opcode.t		See if Opcode works
+ext/Opcode/t/ops.t		See if Opcode works
 ext/PerlIO/encoding/encoding.pm	PerlIO::encoding
 ext/PerlIO/encoding/encoding.xs	PerlIO::encoding
 ext/PerlIO/encoding/Makefile.PL	PerlIO::encoding makefile writer
 ext/PerlIO/encoding/MANIFEST	PerlIO::encoding list of files
-ext/PerlIO/PerlIO.t		See if PerlIO works
 ext/PerlIO/scalar/Makefile.PL	PerlIO layer for scalars
 ext/PerlIO/scalar/scalar.pm	PerlIO layer for scalars
 ext/PerlIO/scalar/scalar.xs	PerlIO layer for scalars
@@ -563,6 +565,7 @@ ext/PerlIO/t/encoding.t		See if PerlIO encoding conversion works
 ext/PerlIO/t/fail.t		See if bad layers fail
 ext/PerlIO/t/fallback.t		See if PerlIO fallbacks work
 ext/PerlIO/t/open.t		See if PerlIO certain special opens work
+ext/PerlIO/t/PerlIO.t		See if PerlIO works
 ext/PerlIO/t/scalar.t		See if PerlIO::scalar works
 ext/PerlIO/t/via.t		See if PerlIO::via works
 ext/PerlIO/via/Makefile.PL	PerlIO layer for layers in perl
@@ -592,13 +595,12 @@ ext/POSIX/typemap		POSIX extension interface types
 ext/re/hints/mpeix.pl		Hints for re for named architecture
 ext/re/Makefile.PL		re extension makefile writer
 ext/re/re.pm			re extension Perl module
-ext/re/re.t				see if re pragma works
 ext/re/re.xs			re extension external subroutines
-ext/Safe/safe1.t		See if Safe works
-ext/Safe/safe2.t		See if Safe works
-ext/Safe/safe3.t		See if Safe works
+ext/re/t/re.t			see if re pragma works
+ext/Safe/t/safe1.t		See if Safe works
+ext/Safe/t/safe2.t		See if Safe works
+ext/Safe/t/safe3.t		See if Safe works
 ext/SDBM_File/Makefile.PL	SDBM extension makefile writer
-ext/SDBM_File/sdbm.t		See if SDBM_File works
 ext/SDBM_File/sdbm/biblio	SDBM kit
 ext/SDBM_File/sdbm/CHANGES	SDBM kit
 ext/SDBM_File/sdbm/COMPARE	SDBM kit
@@ -624,12 +626,13 @@ ext/SDBM_File/sdbm/tune.h	SDBM kit
 ext/SDBM_File/sdbm/util.c	SDBM kit
 ext/SDBM_File/SDBM_File.pm	SDBM extension Perl module
 ext/SDBM_File/SDBM_File.xs	SDBM extension external subroutines
+ext/SDBM_File/t/sdbm.t		See if SDBM_File works
 ext/SDBM_File/typemap		SDBM extension interface types
 ext/Socket/Makefile.PL		Socket extension makefile writer
 ext/Socket/Socket.pm		Socket extension Perl module
-ext/Socket/Socket.t		See if Socket works
 ext/Socket/Socket.xs		Socket extension external subroutines
-ext/Socket/socketpair.t		See if socketpair works
+ext/Socket/t/Socket.t		See if Socket works
+ext/Socket/t/socketpair.t	See if socketpair works
 ext/Storable/ChangeLog		Storable extension
 ext/Storable/Makefile.PL	Storable extension
 ext/Storable/MANIFEST		Storable extension
@@ -663,13 +666,13 @@ ext/Storable/t/tied_items.t	See if Storable works
 ext/Storable/t/utf8.t		See if Storable works
 ext/Storable/t/utf8hash.t	See if Storable works
 ext/Sys/Hostname/Hostname.pm	Sys::Hostname extension Perl module
-ext/Sys/Hostname/Hostname.t	See if Sys::Hostname works
 ext/Sys/Hostname/Hostname.xs	Sys::Hostname extension external subroutines
 ext/Sys/Hostname/Makefile.PL	Sys::Hostname extension makefile writer
+ext/Sys/Hostname/t/Hostname.t	See if Sys::Hostname works
 ext/Sys/Syslog/Makefile.PL	Sys::Syslog extension makefile writer
 ext/Sys/Syslog/Syslog.pm	Sys::Syslog extension Perl module
-ext/Sys/Syslog/syslog.t		See if Sys::Syslog works
 ext/Sys/Syslog/Syslog.xs	Sys::Syslog extension external subroutines
+ext/Sys/Syslog/t/syslog.t	See if Sys::Syslog works
 ext/Thread/create.tx		Test thread creation
 ext/Thread/die.tx		Test thread die()
 ext/Thread/die2.tx		Test thread die() differently
@@ -730,15 +733,16 @@ ext/threads/threads.pm		ithreads
 ext/threads/threads.xs		ithreads
 ext/threads/typemap		ithreads
 ext/Time/HiRes/Changes		Time::HiRes extension
-ext/Time/HiRes/fallback/const-c.inc	Time::HiRes extension fallback code
-ext/Time/HiRes/fallback/const-xs.inc	Time::HiRes extension fallback code
+ext/Time/HiRes/fallback/const-c.inc	Time::HiRes extension
+ext/Time/HiRes/fallback/const-xs.inc	Time::HiRes extension
+ext/Time/HiRes/hints/dec_osf.pl		Hint for Time::HiRes for named architecture
 ext/Time/HiRes/hints/dynixptx.pl	Hint for Time::HiRes for named architecture
 ext/Time/HiRes/hints/irix.pl	Hint for Time::HiRes for named architecture
 ext/Time/HiRes/hints/sco.pl	Hints for Time::HiRes for named architecture
 ext/Time/HiRes/HiRes.pm		Time::HiRes extension
-ext/Time/HiRes/HiRes.t		Test for Time::HiRes
 ext/Time/HiRes/HiRes.xs		Time::HiRes extension
 ext/Time/HiRes/Makefile.PL	Time::HiRes extension
+ext/Time/HiRes/t/HiRes.t	Test for Time::HiRes
 ext/Time/HiRes/typemap		Time::HiRes extension
 ext/Unicode/Normalize/Changes	Unicode::Normalize
 ext/Unicode/Normalize/Makefile.PL	Unicode::Normalize
@@ -759,9 +763,9 @@ ext/XS/APItest/t/printf.t	XS::APItest extension
 ext/XS/Typemap/Makefile.PL	XS::Typemap extension
 ext/XS/Typemap/README		XS::Typemap extension
 ext/XS/Typemap/stdio.c		XS::Typemap extension
+ext/XS/Typemap/t/Typemap.t	test that typemaps work
 ext/XS/Typemap/typemap		XS::Typemap extension
 ext/XS/Typemap/Typemap.pm	XS::Typemap extension
-ext/XS/Typemap/Typemap.t	test that typemaps work
 ext/XS/Typemap/Typemap.xs	XS::Typemap extension
 EXTERN.h			Included before foreign .h files
 fakesdio.h			stdio in terms of PerlIO
@@ -1026,6 +1030,7 @@ lib/CGI/t/pretty.t		See if CGI.pm works
 lib/CGI/t/push.t		See if CGI::Push works
 lib/CGI/t/request.t		See if CGI.pm works
 lib/CGI/t/switch.t		See if CGI::Switch still loads
+lib/CGI/t/util-58.t		See if 5.8-dependent features work
 lib/CGI/t/util.t		See if CGI.pm works
 lib/CGI/Util.pm			Utility functions
 lib/charnames.pm		Character names
@@ -1042,10 +1047,10 @@ lib/CPAN.pm			Interface to Comprehensive Perl Archive Network
 lib/CPAN/bin/cpan		easily interact with CPAN from the command line
 lib/CPAN/FirstTime.pm		Utility for creating CPAN config files
 lib/CPAN/Nox.pm			Runs CPAN while avoiding compiled extensions
-lib/CPAN/README			README of CPAN
 lib/CPAN/t/loadme.t		See if CPAN the module works
 lib/CPAN/t/mirroredby.t		See if CPAN::Mirrored::By works
 lib/CPAN/t/Nox.t		See if CPAN::Nox works
+lib/CPAN/t/signature.t		See if CPAN signatures work
 lib/CPAN/t/vcmp.t		See if CPAN the module works
 lib/ctime.pl			A ctime workalike
 lib/Cwd.pm			Various cwd routines (getcwd, fastcwd, chdir)
@@ -1083,11 +1088,13 @@ lib/ExtUtils/instmodsh		Give information about installed extensions
 lib/ExtUtils/Liblist.pm		Locates libraries
 lib/ExtUtils/Liblist/Kid.pm	Does the real work of the above
 lib/ExtUtils/MakeMaker.pm	Write Makefiles for extensions
+lib/ExtUtils/MakeMaker/bytes.pm	Version agnostic bytes.pm
 lib/ExtUtils/MakeMaker/FAQ.pod	MakeMaker FAQ
 lib/ExtUtils/MakeMaker/Tutorial.pod	Writing a module with MakeMaker
 lib/ExtUtils/MakeMaker/vmsish.pm	Platform agnostic vmsish.pm
 lib/ExtUtils/Manifest.pm	Utilities to write MANIFEST files
 lib/ExtUtils/MANIFEST.SKIP	The default MANIFEST.SKIP
+lib/ExtUtils/META.yml	ExtUtils::MakeMaker metadata
 lib/ExtUtils/Mkbootstrap.pm	Writes a bootstrap file (see MakeMaker)
 lib/ExtUtils/Mksymlists.pm	Writes a linker options file for extensions
 lib/ExtUtils/MM.pm		MakeMaker adaptor class
@@ -1112,6 +1119,7 @@ lib/ExtUtils/t/00compile.t	See if MakeMaker modules compile
 lib/ExtUtils/t/00setup_dummy.t	Setup MakeMaker test module
 lib/ExtUtils/t/backwards.t	Check MakeMaker's backwards compatibility
 lib/ExtUtils/t/basic.t		See if MakeMaker can build a module
+lib/ExtUtils/t/bytes.t	Test ExtUtils::MakeMaker::bytes
 lib/ExtUtils/t/Command.t	See if ExtUtils::Command works (Win32 only)
 lib/ExtUtils/t/Constant.t	See if ExtUtils::Constant works
 lib/ExtUtils/t/Embed.t		See if ExtUtils::Embed and embedding works
@@ -1133,12 +1141,15 @@ lib/ExtUtils/t/MM_VMS.t		See if ExtUtils::MM_VMS works
 lib/ExtUtils/t/MM_Win32.t	See if ExtUtils::MM_Win32 works
 lib/ExtUtils/t/oneliner.t	See if MM can generate perl one-liners
 lib/ExtUtils/t/Packlist.t	See if Packlist works
+lib/ExtUtils/t/postamble.t	See if postamble works
 lib/ExtUtils/t/prefixify.t	See if MakeMaker can apply a PREFIX
 lib/ExtUtils/t/problems.t	How MakeMaker reacts to build problems
 lib/ExtUtils/t/prompt.t		See if E::MM::prompt() works
+lib/ExtUtils/t/recurs.t		See if recursive builds work
 lib/ExtUtils/t/split_command.t	See if MM's xargs-like function works
 lib/ExtUtils/t/testlib.t	See if ExtUtils::testlib works
 lib/ExtUtils/t/VERSION_FROM.t	See if MakeMaker's VERSION_FROM works
+lib/ExtUtils/t/vmsish.t	Test ExtUtils::MakeMaker::vmsish
 lib/ExtUtils/t/writemakefile_args.t	See if WriteMakefile works
 lib/ExtUtils/t/zz_cleanup_dummy.t	Cleanup MakeMaker test module
 lib/ExtUtils/testlib.pm		Fixes up @INC to use just-built extension
@@ -1185,7 +1196,11 @@ lib/File/Temp/t/posix.t		See if File::Temp works
 lib/File/Temp/t/security.t	See if File::Temp works
 lib/File/Temp/t/tempfile.t	See if File::Temp works
 lib/FileCache.pm		Keep more files open than the system permits
-lib/FileCache.t			See if FileCache works
+lib/FileCache/t/01open.t	See if FileCache works
+lib/FileCache/t/02maxopen.t	See if FileCache works
+lib/FileCache/t/03append.t	See if FileCache works
+lib/FileCache/t/04twoarg.t	See if FileCache works
+lib/FileCache/t/05override.t	See if FileCache works
 lib/FileHandle.pm		Backward-compatible front end to IO extension
 lib/FileHandle.t		See if FileHandle works
 lib/filetest.pm			For "use filetest"
@@ -1203,7 +1218,6 @@ lib/FindBin.pm			Find name of currently executing program
 lib/FindBin.t			See if FindBin works
 lib/finddepth.pl		A depth-first find emulator--used by find2perl
 lib/flush.pl			Routines to do single flush
-lib/ftp.pl			FTP code (obsolete, use Net::FTP instead)
 lib/getcwd.pl			A getcwd() emulator
 lib/getopt.pl			Perl library supporting option parsing
 lib/Getopt/Long.pm		Fetch command options (GetOptions)
@@ -1227,7 +1241,7 @@ lib/I18N/LangTags.pm		I18N::LangTags
 lib/I18N/LangTags/ChangeLog	I18N::LangTags
 lib/I18N/LangTags/List.pm	List of tags for human languages
 lib/I18N/LangTags/README	I18N::LangTags
-lib/I18N/LangTags/test.pl	See if I18N::LangTags works
+lib/I18N/LangTags/t/01test.t	See whether I18N::LangTags works
 lib/if.pm			For "use if"
 lib/if.t			Tests for "use if"
 lib/importenv.pl		Perl routine to get environment into variables
@@ -1266,11 +1280,14 @@ lib/Locale/Language.pod		Locale::Codes documentation
 lib/Locale/Maketext.pm		Locale::Maketext
 lib/Locale/Maketext.pod		Locale::Maketext documentation
 lib/Locale/Maketext/ChangeLog	Locale::Maketext
+lib/Locale/Maketext/Guts.pm	Locale::Maketext
+lib/Locale/Maketext/GutsLoader.pm	Locale::Maketext
 lib/Locale/Maketext/README	Locale::Maketext
 lib/Locale/Maketext/t/00about.t	See if Locale::Maketext works
 lib/Locale/Maketext/t/01make.t	See if Locale::Maketext works
 lib/Locale/Maketext/t/02get.t	See if Locale::Maketext works
 lib/Locale/Maketext/t/03http.t	See if Locale::Maketext works
+lib/Locale/Maketext/t/90utf8.t	Locale::Maketext
 lib/Locale/Maketext/TPJ13.pod	Locale::Maketext documentation article
 lib/Locale/Script.pm		Locale::Codes
 lib/Locale/Script.pod		Locale::Codes documentation
@@ -1289,6 +1306,7 @@ lib/Math/BigInt/t/bigintc.t	See if BigInt/Calc.pm works
 lib/Math/BigInt/t/bigintpm.inc	Shared tests for bigintpm.t and sub_mbi.t
 lib/Math/BigInt/t/bigintpm.t	See if BigInt.pm works
 lib/Math/BigInt/t/bigints.t	See if BigInt.pm works
+lib/Math/BigInt/t/biglog.t	Test the log function
 lib/Math/BigInt/t/calling.t	Test calling conventions
 lib/Math/BigInt/t/config.t	Test Math::BigInt->config()
 lib/Math/BigInt/t/constant.t	Test Math::BigInt/BigFloat under :constant
@@ -1299,9 +1317,16 @@ lib/Math/BigInt/t/mbimbf.inc	Actual BigInt/BigFloat accuracy, precision and fall
 lib/Math/BigInt/t/mbimbf.t	BigInt/BigFloat accuracy, precision and fallback, round_mode
 lib/Math/BigInt/t/mbi_rand.t	Test Math::BigInt randomly
 lib/Math/BigInt/t/require.t	Test if require Math::BigInt works
+lib/Math/BigInt/t/req_mbf0.t	test: require Math::BigFloat; ->bzero();
+lib/Math/BigInt/t/req_mbf1.t	test: require Math::BigFloat; ->bone();
+lib/Math/BigInt/t/req_mbfa.t	test: require Math::BigFloat; ->bnan();
+lib/Math/BigInt/t/req_mbfi.t	test: require Math::BigFloat; ->binf();
+lib/Math/BigInt/t/req_mbfn.t	test: require Math::BigFloat; ->new();
+lib/Math/BigInt/t/req_mbfw.t	require Math::BigFloat; import ( with => );
 lib/Math/BigInt/t/sub_mbf.t	Empty subclass test of BigFloat
 lib/Math/BigInt/t/sub_mbi.t	Empty subclass test of BigInt
 lib/Math/BigInt/t/sub_mif.t	Test A & P with subclasses using mbimbf.inc
+lib/Math/BigInt/t/trap.t	Test whether trap_nan and trap_inf work
 lib/Math/BigInt/t/upgrade.inc	Actual tests for upgrade.t
 lib/Math/BigInt/t/upgrade.t	Test if use Math::BigInt(); under upgrade works
 lib/Math/BigInt/t/upgradef.t	Test if use Math::BigFloat(); under upgrade works
@@ -1310,6 +1335,7 @@ lib/Math/BigInt/t/use_lib1.t	Test combinations of Math::BigInt and BigFloat
 lib/Math/BigInt/t/use_lib2.t	Test combinations of Math::BigInt and BigFloat
 lib/Math/BigInt/t/use_lib3.t	Test combinations of Math::BigInt and BigFloat
 lib/Math/BigInt/t/use_lib4.t	Test combinations of Math::BigInt and BigFloat
+lib/Math/BigInt/t/use_mbfw.t	use BigFloat w/ with and lib at the same time
 lib/Math/BigInt/t/with_sub.t	Test use Math::BigFloat with => package
 lib/Math/BigInt/Trace.pm	bignum tracing
 lib/Math/BigRat.pm		Math::BigRat
@@ -1318,7 +1344,10 @@ lib/Math/BigRat/t/bigfltrt.t		Math::BigRat test
 lib/Math/BigRat/t/bigrat.t		Math::BigRat test
 lib/Math/BigRat/t/bigratpm.inc		Math::BigRat test
 lib/Math/BigRat/t/bigratpm.t		Math::BigRat test
+lib/Math/BigRat/t/bigratup.t	test under $Math::BigInt::upgrade
 lib/Math/BigRat/t/big_ap.t		Math::BigRat test
+lib/Math/BigRat/t/requirer.t	see if require works properly
+lib/Math/BigRat/t/trap.t	see if trap_nan and trap_inf work
 lib/Math/Complex.pm		A Complex package
 lib/Math/Complex.t		See if Math::Complex works
 lib/Math/Trig.pm		A simple interface to complex trigonometry
@@ -2073,6 +2102,7 @@ makedir.SH			Precursor to makedir
 Makefile.micro			microperl Makefile
 Makefile.SH			A script that generates Makefile
 malloc.c			A version of malloc you might not want
+malloc_ctl.h			A version of malloc you might not want
 MANIFEST			This list of files
 mg.c				Magic code
 mg.h				Magic header
@@ -2174,7 +2204,6 @@ os2/OS2/PrfDB/MANIFEST		System database access module
 os2/OS2/PrfDB/PrfDB.pm		System database access module
 os2/OS2/PrfDB/PrfDB.xs		System database access module
 os2/OS2/PrfDB/t/os2_prfdb.t	System database access module
-os2/OS2/PrfDB/typemap		System database access module
 os2/OS2/Process/Makefile.PL	system() constants in a module
 os2/OS2/Process/MANIFEST	system() constants in a module
 os2/OS2/Process/Process.pm	system() constants in a module
@@ -2202,12 +2231,14 @@ os2/OS2/REXX/t/rx_tievar.t	DLL access module
 os2/OS2/REXX/t/rx_tieydb.t	DLL access module
 os2/OS2/REXX/t/rx_varset.t	DLL access module
 os2/OS2/REXX/t/rx_vrexx.t	DLL access module
+os2/OS2/typemap			Common typemap for OS/2 types
 os2/os2add.sym			Overriding symbols to export
 os2/os2ish.h			Header for OS/2
 os2/os2thread.h			pthread-like typedefs
 os2/os2_base.t			Additional tests for builtin methods
 os2/perl2cmd.pl			Corrects installed binaries under OS/2
 os2/perlrexx.c			Support perl interpreter embedded in REXX
+os2/perlrexx.cmd		Test perl interpreter embedded in REXX
 pad.c				Scratchpad functions
 pad.h				Scratchpad headers
 patchlevel.h			The current patch level of perl
@@ -2368,6 +2399,8 @@ Porting/genlog		Generate formatted changelogs by querying p4d
 Porting/Glossary	Glossary of config.sh variables
 Porting/makerel		Release making utility
 Porting/manicheck	Check against MANIFEST
+Porting/Maintainers	Program to pretty print info in Maintainers.pl
+Porting/Maintainers.pl	Information about maintainers
 Porting/p4d2p		Generate patch from p4 diff
 Porting/p4genpatch	Generate patch from p4 change in repository (obsoletes p4desc)
 Porting/patching.pod	How to report changes made to Perl
@@ -2509,6 +2542,10 @@ t/lib/dprof/test5_t		Perl code profiler tests
 t/lib/dprof/test5_v		Perl code profiler tests
 t/lib/dprof/test6_t		Perl code profiler tests
 t/lib/dprof/test6_v		Perl code profiler tests
+t/lib/dprof/test7_t		Perl code profiler tests
+t/lib/dprof/test7_v		Perl code profiler tests
+t/lib/dprof/test8_t		Perl code profiler tests
+t/lib/dprof/test8_v		Perl code profiler tests
 t/lib/dprof/V.pm		Perl code profiler tests
 t/lib/filter-util.pl		See if Filter::Util::Call works
 t/lib/Filter/Simple/ExportTest.pm	Helper file for Filter::Simple tests
@@ -2519,6 +2556,7 @@ t/lib/h2ph.h			Test header file for h2ph
 t/lib/h2ph.pht			Generated output from h2ph.h by h2ph, for comparison
 t/lib/locale/latin1		Part of locale.t in Latin 1
 t/lib/locale/utf8		Part of locale.t in UTF8
+t/lib/MakeMaker/Test/Setup/Recurs.pm	MakeMaker test utilities
 t/lib/MakeMaker/Test/Utils.pm	MakeMaker test utilities
 t/lib/Math/BigFloat/Subclass.pm	Empty subclass of BigFloat for test
 t/lib/Math/BigInt/BareCalc.pm	Bigint's simulation of Calc
@@ -2954,13 +2992,15 @@ wince/makedist.pl			WinCE port
 wince/Makefile.ce			WinCE port
 wince/makeico.pl			WinCE port
 wince/perl.rc				WinCE port
+wince/perlhost.h		Perl "host" implementation
 wince/perllib.c				WinCE port
 wince/perlmain.c			WinCE port
-wince/README.compile			WinCE port
 wince/README.perlce			WinCE port
 wince/registry.bat			WinCE port
 wince/runperl.c				WinCE port
 wince/splittree.pl			WinCE port
+wince/vdir.h			Perl "host" virtual directory manager for CE
+wince/vmem.h			Perl "host" memory manager for CE
 wince/win32.h				WinCE port
 wince/win32io.c				WinCE port
 wince/win32iop.h			WinCE port

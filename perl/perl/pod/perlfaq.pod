@@ -1,6 +1,6 @@
 =head1 NAME
 
-perlfaq - frequently asked questions about Perl ($Date: 2003/05/20 22:53:34 $)
+perlfaq - frequently asked questions about Perl ($Date: 2003/01/31 17:37:17 $)
 
 =head1 DESCRIPTION
 

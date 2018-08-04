@@ -12,7 +12,7 @@ require ExtUtils::MM_Unix;
 @ISA = qw( ExtUtils::MM_Any ExtUtils::MM_Unix );
 
 use vars qw($VERSION);
-$VERSION = '1.05';
+$VERSION = '1.07';
 
 use Config;
 use Cwd 'cwd';
@@ -278,7 +278,7 @@ Translate Unix filepaths and shell globs to Mac style.
 sub patternify {
     my($unix) = @_;
     my(@mac);
-    use bytes; # Non-UTF-8 high bytes below.
+    use ExtUtils::MakeMaker::bytes; # Non-UTF-8 high bytes below.
 
     foreach (split(/[ \t\n]+/, $unix)) {
 	if (m|/|) {
@@ -537,6 +537,7 @@ sub init_dirscan {	# --- File and Directory Lists (.xs .pm .pod etc)
 	next if ($name =~ /^\./ or $ignore{$name});
 	next unless $self->libscan($name);
 	if (-d $name){
+            next if $self->{NORECURS};
 	    $dir{$name} = $name if (-f ":$name:Makefile.PL");
 	} elsif ($name =~ /\.xs$/){
 	    my($c); ($c = $name) =~ s/\.xs$/.c/;
@@ -874,11 +875,6 @@ install install_static install_dynamic ::
 
 .INCLUDE : \$(MACPERL_SRC)BulkBuildRules.mk
 ';
-}
-
-sub xsubpp_version
-{
-    return $ExtUtils::MakeMaker::Version;
 }
 
 

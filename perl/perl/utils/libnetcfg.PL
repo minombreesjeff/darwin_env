@@ -95,7 +95,7 @@ Jarkko Hietaniemi, conversion into libnetcfg for inclusion into Perl 5.8.
 
 =cut
 
-# $Id: libnetcfg.PL,v 1.4 2003/05/20 22:54:36 emoy Exp $
+# $Id: Configure,v 1.8 1997/03/04 09:22:32 gbarr Exp $
 
 use strict;
 use IO::File;

@@ -1,5 +1,5 @@
 #
-# $Id: tr_7jis.t,v 1.2 2003/05/20 22:54:35 emoy Exp $
+# $Id$
 #
 # This script is written intentionally in ISO-2022-JP
 # requires Encode 1.83 or better to work

@@ -1,4 +1,4 @@
-/* $Id: MD5.xs,v 1.4 2003/05/20 22:49:11 emoy Exp $ */
+/* $Id: MD5.xs,v 1.40 2003/07/22 05:59:27 gisle Exp $ */
 
 /* 
  * This library is free software; you can redistribute it and/or
@@ -44,15 +44,24 @@ extern "C" {
 }
 #endif
 
-#ifndef PATCHLEVEL
+#ifndef PERL_VERSION
 #    include <patchlevel.h>
 #    if !(defined(PERL_VERSION) || (SUBVERSION > 0 && defined(PATCHLEVEL)))
 #        include <could_not_find_Perl_patchlevel.h>
 #    endif
+#    define PERL_REVISION       5
+#    define PERL_VERSION        PATCHLEVEL
+#    define PERL_SUBVERSION     SUBVERSION
 #endif
 
-#if PATCHLEVEL <= 4 && !defined(PL_dowarn)
+#if PERL_VERSION <= 4 && !defined(PL_dowarn)
    #define PL_dowarn dowarn
+#endif
+
+#ifdef G_WARN_ON
+   #define DOWARN (PL_dowarn & G_WARN_ON)
+#else
+   #define DOWARN PL_dowarn
 #endif
 
 #ifdef SvPVbyte
@@ -621,16 +630,23 @@ addfile(self, fh)
 	         * first.
 	         */
 	        STRLEN missing = 64 - fill;
-	        if ( (n = PerlIO_read(fh, buffer, missing)))
+	        if ( (n = PerlIO_read(fh, buffer, missing)) > 0)
 	 	    MD5Update(context, buffer, n);
 	        else
 		    XSRETURN(1);  /* self */
 	    }
 
-	    /* Process blocks until EOF */
-            while ( (n = PerlIO_read(fh, buffer, sizeof(buffer)))) {
+	    /* Process blocks until EOF or error */
+            while ( (n = PerlIO_read(fh, buffer, sizeof(buffer))) > 0) {
 	        MD5Update(context, buffer, n);
 	    }
+
+	    if (PerlIO_error(fh)) {
+		croak("Reading from filehandle failed");
+	    }
+	}
+	else {
+	    croak("No filehandle passed");
 	}
 	XSRETURN(1);  /* self */
 
@@ -664,7 +680,7 @@ md5(...)
     PPCODE:
 	MD5Init(&ctx);
 
-	if (PL_dowarn) {
+	if (DOWARN) {
             char *msg = 0;
 	    if (items == 1) {
 		if (SvROK(ST(0))) {

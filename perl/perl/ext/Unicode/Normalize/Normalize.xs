@@ -361,7 +361,7 @@ compose(arg)
 		    }
 		    /* preCC not changed to curCC */
 		    uvS = uvComp;
-	        } else if (! curCC && p < e) { /* blocked */
+		} else if (! curCC && p < e) { /* blocked */
 		    break;
 		} else {
 		    preCC = curCC;
@@ -378,6 +378,7 @@ compose(arg)
 	}
 	uvS = uv;
     } /* for */
+    *d = '\0';
     SvCUR_set(dst, d - (U8*)SvPVX(dst));
     RETVAL = dst;
   OUTPUT:

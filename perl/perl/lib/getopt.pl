@@ -1,4 +1,4 @@
-;# $RCSfile: getopt.pl,v $$Revision: 1.4 $$Date: 2003/05/20 22:50:34 $
+;# $RCSfile: getopt.pl,v $$Revision: 4.1 $$Date: 92/08/07 18:23:58 $
 #
 # This library is no longer being maintained, and is included for backward
 # compatibility with Perl 4 programs which may require it.

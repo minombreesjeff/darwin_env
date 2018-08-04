@@ -1,4 +1,4 @@
-# $Id: enc_data.t,v 1.2 2003/05/20 22:49:21 emoy Exp $
+# $Id: enc_data.t,v 1.1 2003/03/09 17:47:32 dankogai Exp $
 
 BEGIN {
     require Config; import Config;

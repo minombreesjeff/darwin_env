@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Id: text-options.t,v 1.2 2003/05/20 22:52:34 emoy Exp $
+# $Id: text-options.t,v 1.2 2002/08/04 03:38:24 eagle Exp $
 #
 # text-options.t -- Additional tests for Pod::Text options.
 #

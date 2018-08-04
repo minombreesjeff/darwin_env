@@ -8,7 +8,7 @@
 # same terms as Perl itself.  If in doubt, 
 # write to mjd-perl-memoize+@plover.com for a license.
 #
-# Version 1.01 $Revision: 1.4 $ $Date: 2003/05/20 22:50:32 $
+# Version 1.01 $Revision: 1.18 $ $Date: 2001/06/24 17:16:47 $
 
 package Memoize;
 $VERSION = '1.01';

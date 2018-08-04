@@ -73,7 +73,7 @@ sub B::COP::debug {
     my ($op) = @_;
     $op->B::OP::debug();
     my $cop_io = class($op->io) eq 'SPECIAL' ? '' : $op->io->as_string;
-    printf <<'EOT', $op->label, $op->stashpv, $op->file, $op->seq, $op->arybase, $op->line, ${$op->warnings}, cstring($cop_io);
+    printf <<'EOT', $op->label, $op->stashpv, $op->file, $op->cop_seq, $op->arybase, $op->line, ${$op->warnings}, cstring($cop_io);
 	cop_label	%s
 	cop_stashpv	%s
 	cop_file	%s
@@ -102,12 +102,6 @@ sub B::PADOP::debug {
     my ($op) = @_;
     $op->B::OP::debug();
     printf "\top_padix\t\t%ld\n", $op->padix;
-}
-
-sub B::CVOP::debug {
-    my ($op) = @_;
-    $op->B::OP::debug();
-    printf "\top_cv\t\t0x%x\n", ${$op->cv};
 }
 
 sub B::NULL::debug {

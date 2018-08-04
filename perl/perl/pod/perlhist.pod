@@ -5,7 +5,7 @@ perlhist - the Perl history records
 =begin RCS
 
 #
-# $Id: perlhist.pod,v 1.5 2003/05/20 22:53:35 emoy Exp $
+# $Id: perlhist.pod,v 1.2 2000/01/24 11:44:47 jhi Exp $
 #
 
 =end RCS
@@ -363,6 +363,9 @@ the strings?).
           5.8.0-RC2     2002-Jun-21
           5.8.0-RC3     2002-Jul-13
           5.8.0         2002-Jul-18
+          5.8.1-RC1     2003-Jul-10
+          5.8.1-RC2     2003-Jul-11
+          5.8.1-RC3     2003-Jul-30
 
 =head2 SELECTED RELEASE SIZES
 

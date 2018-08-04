@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: Complex.t,v $
+# $RCSfile: complex.t,v $
 #
 # Regression tests for the Math::Complex pacakge
 # -- Raphael Manfredi	since Sep 1996

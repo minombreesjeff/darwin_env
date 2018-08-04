@@ -1,6 +1,6 @@
 BEGIN {
     chdir 't' if -d 't';
-    @INC = '../lib';
+    push @INC, '../lib';
     require Config; import Config;
     unless ($Config{'useithreads'}) {
         print "1..0 # Skip: no useithreads\n";
@@ -43,11 +43,11 @@ ok(1,"");
 {
     my ($thread) = threads->create(sub { return (1,2,3) });
     my @retval = $thread->join();
-    ok($retval[0] == 1 && $retval[1] == 2 && $retval[2] == 3);
+    ok($retval[0] == 1 && $retval[1] == 2 && $retval[2] == 3,'');
 }
 {
     my $retval = threads->create(sub { return [1] })->join();
-    ok($retval->[0] == 1,"Check that a array ref works");
+    ok($retval->[0] == 1,"Check that a array ref works",);
 }
 {
     my $retval = threads->create(sub { return { foo => "bar" }})->join();
@@ -69,15 +69,15 @@ ok(1,"");
 {
     my $test = "hi";
     my $retval = threads->create(sub { return $_[0]}, \$test)->join();
-    ok($$retval eq 'hi');
+    ok($$retval eq 'hi','');
 }
 {
     my $test = "hi";
     share($test);
     my $retval = threads->create(sub { return $_[0]}, \$test)->join();
-    ok($$retval eq 'hi');
+    ok($$retval eq 'hi','');
     $test = "foo";
-    ok($$retval eq 'foo');
+    ok($$retval eq 'foo','');
 }
 {
     my %foo;
@@ -91,7 +91,8 @@ ok(1,"");
     ok(1,"");
 }
 
-if ($^O eq 'linux') { # We parse ps output so this is OS-dependent.
+# We parse ps output so this is OS-dependent.
+if ($^O eq 'linux') {
   # First modify $0 in a subthread.
   print "# mainthread: \$0 = $0\n";
   threads->new( sub {
@@ -100,18 +101,25 @@ if ($^O eq 'linux') { # We parse ps output so this is OS-dependent.
 		  print "# subthread: \$0 = $0\n" } )->join;
   print "# mainthread: \$0 = $0\n";
   print "# pid = $$\n";
-  if (open PS, "ps -f |") { # Note: must work in (all) Linux(es).
-    my $ok;
+  if (open PS, "ps -f |") { # Note: must work in (all) systems.
+    my ($sawpid, $sawexe);
     while (<PS>) {
-      s/\s+$//; # there seems to be extra whitespace at the end by ps(1)?
-      print "# $_\n";
-      if (/\b$$\b.+\bfoobar\b/) {
-	$ok++;
+      chomp;
+      print "# [$_]\n";
+      if (/^\S+\s+$$\s/) {
+	$sawpid++;
+	if (/\sfoobar\s*$/) { # Linux 2.2 leaves extra trailing spaces.
+	  $sawexe++;
+        }
 	last;
       }
     }
-    close PS;
-    ok($ok, 'altering $0 is effective');
+    close PS or die;
+    if ($sawpid) {
+      ok($sawpid && $sawexe, 'altering $0 is effective');
+    } else {
+      skip("\$0 check: did not see pid $$ in 'ps -f |'");
+    }
   } else {
     skip("\$0 check: opening 'ps -f |' failed: $!");
   }
