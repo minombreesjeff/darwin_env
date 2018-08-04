@@ -1,5 +1,5 @@
 # BeOS hints file
-# $Id: beos.sh,v 1.1.1.3 2000/03/31 05:11:31 wsanchez Exp $
+# $Id: beos.sh,v 1.4 2003/05/20 22:50:16 emoy Exp $
 
 if [ ! -f beos/nm ]; then mwcc -w all -o beos/nm beos/nm.c 2>/dev/null; fi
 # If this fails, that's all right - it's only for PPC.
@@ -38,20 +38,25 @@ d_syserrlst='undef'
 # the array syserrlst[] is useless for the most part.
 # large negative numbers really kind of suck in arrays.
 
-d_socket='undef'
-d_gethbyaddr='undef'
-d_gethbyname='undef'
-d_getsbyname='undef'
+# Sockets didn't use to be real sockets but BONE changes this.
+# How does one test for BONEness?
+if [ ! -f /some/bone/file.h ]; then
+    d_socket='undef'
+    d_gethbyaddr='undef'
+    d_gethbyname='undef'
+    d_getsbyname='undef'
+fi
 
 ld='gcc'
-
-# Sockets really don't work with the current version of perl and the
-# current BeOS sockets; I suspect that a new module a la GSAR's WIN32 port
-# will be required.
-# Of course, this may also change with R5.
 
 export PATH="$PATH:$PWD/beos"
 
 case "$ldlibpthname" in
 '') ldlibpthname=LIBRARY_PATH ;;
 esac
+
+# the waitpid() wrapper
+archobjs="beos.o"
+test -f beos.c || cp beos/beos.c .
+
+

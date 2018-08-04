@@ -1,12 +1,15 @@
 package File::Spec::Unix;
 
 use strict;
+use vars qw($VERSION);
+
+$VERSION = '1.4';
 
 use Cwd;
 
 =head1 NAME
 
-File::Spec::Unix - methods used by File::Spec
+File::Spec::Unix - File::Spec for Unix, base for other File::Spec modules
 
 =head1 SYNOPSIS
 
@@ -14,16 +17,18 @@ File::Spec::Unix - methods used by File::Spec
 
 =head1 DESCRIPTION
 
-Methods for manipulating file specifications.
+Methods for manipulating file specifications.  Other File::Spec
+modules, such as File::Spec::Mac, inherit from File::Spec::Unix and
+override specific methods.
 
 =head1 METHODS
 
 =over 2
 
-=item canonpath
+=item canonpath()
 
 No physical check on the filesystem, but a logical cleanup of a
-path. On UNIX eliminated successive slashes and successive "/.".
+path. On UNIX eliminates successive slashes and successive "/.".
 
     $cpath = File::Spec->canonpath( $path ) ;
 
@@ -31,15 +36,30 @@ path. On UNIX eliminated successive slashes and successive "/.".
 
 sub canonpath {
     my ($self,$path) = @_;
-    $path =~ s|/+|/|g unless($^O eq 'cygwin');     # xx////xx  -> xx/xx
-    $path =~ s|(/\.)+/|/|g;                        # xx/././xx -> xx/xx
+    
+    # Handle POSIX-style node names beginning with double slash (qnx, nto)
+    # Handle network path names beginning with double slash (cygwin)
+    # (POSIX says: "a pathname that begins with two successive slashes
+    # may be interpreted in an implementation-defined manner, although
+    # more than two leading slashes shall be treated as a single slash.")
+    my $node = '';
+    if ( $^O =~ m/^(?:qnx|nto|cygwin)$/ && $path =~ s:^(//[^/]+)(/|\z):/:s ) {
+      $node = $1;
+    }
+    # This used to be
+    # $path =~ s|/+|/|g unless($^O eq 'cygwin');
+    # but that made tests 29, 30, 35, 46, and 213 (as of #13272) to fail
+    # (Mainly because trailing "" directories didn't get stripped).
+    # Why would cygwin avoid collapsing multiple slashes into one? --jhi
+    $path =~ s|/+|/|g;                             # xx////xx  -> xx/xx
+    $path =~ s@(/\.)+(/|\Z(?!\n))@/@g;             # xx/././xx -> xx/xx
     $path =~ s|^(\./)+||s unless $path eq "./";    # ./xx      -> xx
     $path =~ s|^/(\.\./)+|/|s;                     # /../../xx -> xx
-    $path =~ s|/\z|| unless $path eq "/";          # xx/       -> xx
-    return $path;
+    $path =~ s|/\Z(?!\n)|| unless $path eq "/";          # xx/       -> xx
+    return "$node$path";
 }
 
-=item catdir
+=item catdir()
 
 Concatenate two or more directory names to form a complete path ending
 with a directory. But remove the trailing slash from the resulting
@@ -68,7 +88,7 @@ complete path ending with a filename
 
 sub catfile {
     my $self = shift;
-    my $file = pop @_;
+    my $file = $self->canonpath(pop @_);
     return $file unless @_;
     my $dir = $self->catdir(@_);
     $dir .= "/" unless substr($dir,-1) eq "/";
@@ -107,24 +127,44 @@ sub rootdir {
 
 =item tmpdir
 
-Returns a string representation of the first writable directory
-from the following list or "" if none are writable:
+Returns a string representation of the first writable directory from
+the following list or the current directory if none from the list are
+writable:
 
     $ENV{TMPDIR}
     /tmp
 
+Since perl 5.8.0, if running under taint mode, and if $ENV{TMPDIR}
+is tainted, it is not used.
+
 =cut
 
 my $tmpdir;
-sub tmpdir {
+sub _tmpdir {
     return $tmpdir if defined $tmpdir;
-    foreach ($ENV{TMPDIR}, "/tmp") {
+    my $self = shift;
+    my @dirlist = @_;
+    {
+	no strict 'refs';
+	if (${"\cTAINT"}) { # Check for taint mode on perl >= 5.8.0
+            require Scalar::Util;
+	    @dirlist = grep { ! Scalar::Util::tainted($_) } @dirlist;
+	}
+    }
+    foreach (@dirlist) {
 	next unless defined && -d && -w _;
 	$tmpdir = $_;
 	last;
     }
-    $tmpdir = '' unless defined $tmpdir;
+    $tmpdir = $self->curdir unless defined $tmpdir;
+    $tmpdir = defined $tmpdir && $self->canonpath($tmpdir);
     return $tmpdir;
+}
+
+sub tmpdir {
+    return $tmpdir if defined $tmpdir;
+    my $self = shift;
+    $tmpdir = $self->_tmpdir( $ENV{TMPDIR}, "/tmp" );
 }
 
 =item updir
@@ -146,7 +186,7 @@ directory. (Does not strip symlinks, only '.', '..', and equivalents.)
 
 sub no_upwards {
     my $self = shift;
-    return grep(!/^\.{1,2}\z/s, @_);
+    return grep(!/^\.{1,2}\Z(?!\n)/s, @_);
 }
 
 =item case_tolerant
@@ -162,7 +202,11 @@ sub case_tolerant {
 
 =item file_name_is_absolute
 
-Takes as argument a path and returns true, if it is an absolute path.
+Takes as argument a path and returns true if it is an absolute path.
+
+This does not consult the local filesystem on Unix, Win32, OS/2 or Mac 
+OS (Classic).  It does consult the working environment for VMS (see
+L<File::Spec::VMS/file_name_is_absolute>).
 
 =cut
 
@@ -178,6 +222,7 @@ Takes no argument, returns the environment variable PATH as an array.
 =cut
 
 sub path {
+    return () unless exists $ENV{PATH};
     my @path = split(':', $ENV{PATH});
     foreach (@path) { $_ = '.' if $_ eq '' }
     return @path;
@@ -199,8 +244,8 @@ sub join {
     ($volume,$directories,$file) = File::Spec->splitpath( $path );
     ($volume,$directories,$file) = File::Spec->splitpath( $path, $no_file );
 
-Splits a path in to volume, directory, and filename portions. On systems
-with no concept of volume, returns undef for volume. 
+Splits a path into volume, directory, and filename portions. On systems
+with no concept of volume, returns '' for volume. 
 
 For systems with no syntax differentiating filenames from directories, 
 assumes that the last file is a path unless $no_file is true or a 
@@ -223,7 +268,7 @@ sub splitpath {
         $directory = $path;
     }
     else {
-        $path =~ m|^ ( (?: .* / (?: \.\.?\z )? )? ) ([^/]*) |xs;
+        $path =~ m|^ ( (?: .* / (?: \.\.?\Z(?!\n) )? )? ) ([^/]*) |xs;
         $directory = $1;
         $file      = $2;
     }
@@ -244,7 +289,7 @@ files from directories.
 
 Unlike just splitting the directories on the separator, empty
 directory names (C<''>) can be returned, because these are significant
-on some OSs (e.g. MacOS).
+on some OSs.
 
 On Unix,
 
@@ -263,7 +308,7 @@ sub splitdir {
     # check to be sure that there will not be any before handling the
     # simple case.
     #
-    if ( $directories !~ m|/\z| ) {
+    if ( $directories !~ m|/\Z(?!\n)| ) {
         return split( m|/|, $directories );
     }
     else {
@@ -278,11 +323,12 @@ sub splitdir {
 }
 
 
-=item catpath
+=item catpath()
 
 Takes volume, directory and file portions and returns an entire path. Under
-Unix, $volume is ignored, and directory and file are catenated.  A '/' is
-inserted if need be.  On other OSs, $volume is significant.
+Unix, $volume is ignored, and directory and file are concatenated.  A '/' is
+inserted if needed (though if the directory portion doesn't start with
+'/' it is not added).  On other OSs, $volume is significant.
 
 =cut
 
@@ -308,12 +354,12 @@ sub catpath {
 Takes a destination path and an optional base path returns a relative path
 from the base path to the destination path:
 
-    $rel_path = File::Spec->abs2rel( $destination ) ;
-    $rel_path = File::Spec->abs2rel( $destination, $base ) ;
+    $rel_path = File::Spec->abs2rel( $path ) ;
+    $rel_path = File::Spec->abs2rel( $path, $base ) ;
 
-If $base is not present or '', then L<cwd()> is used. If $base is relative, 
+If $base is not present or '', then L<cwd()|Cwd> is used. If $base is relative, 
 then it is converted to absolute form using L</rel2abs()>. This means that it
-is taken to be relative to L<cwd()>.
+is taken to be relative to L<cwd()|Cwd>.
 
 On systems with the concept of a volume, this assumes that both paths 
 are on the $destination volume, and ignores the $base volume. 
@@ -323,11 +369,13 @@ $base filename as well. Otherwise all path components are assumed to be
 directories.
 
 If $path is relative, it is converted to absolute form using L</rel2abs()>.
-This means that it is taken to be relative to L<cwd()>.
+This means that it is taken to be relative to L<cwd()|Cwd>.
+
+No checks against the filesystem are made.  On VMS, there is
+interaction with the working environment, as logicals and
+macros are expanded.
 
 Based on code written by Shigio Yamaguchi.
-
-No checks against the filesystem are made. 
 
 =cut
 
@@ -381,19 +429,19 @@ sub abs2rel {
     return $self->canonpath( $path ) ;
 }
 
-=item rel2abs
+=item rel2abs()
 
 Converts a relative path to an absolute path. 
 
-    $abs_path = File::Spec->rel2abs( $destination ) ;
-    $abs_path = File::Spec->rel2abs( $destination, $base ) ;
+    $abs_path = File::Spec->rel2abs( $path ) ;
+    $abs_path = File::Spec->rel2abs( $path, $base ) ;
 
-If $base is not present or '', then L<cwd()> is used. If $base is relative, 
+If $base is not present or '', then L<cwd()|Cwd> is used. If $base is relative, 
 then it is converted to absolute form using L</rel2abs()>. This means that it
-is taken to be relative to L<cwd()>.
+is taken to be relative to L<cwd()|Cwd>.
 
 On systems with the concept of a volume, this assumes that both paths 
-are on the $base volume, and ignores the $destination volume. 
+are on the $base volume, and ignores the $path volume. 
 
 On systems that have a grammar that indicates filenames, this ignores the 
 $base filename as well. Otherwise all path components are assumed to be
@@ -401,13 +449,15 @@ directories.
 
 If $path is absolute, it is cleaned up and returned using L</canonpath()>.
 
-Based on code written by Shigio Yamaguchi.
+No checks against the filesystem are made.  On VMS, there is
+interaction with the working environment, as logicals and
+macros are expanded.
 
-No checks against the filesystem are made. 
+Based on code written by Shigio Yamaguchi.
 
 =cut
 
-sub rel2abs($;$;) {
+sub rel2abs {
     my ($self,$path,$base ) = @_;
 
     # Clean up $path

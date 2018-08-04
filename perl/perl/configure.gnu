@@ -1,10 +1,10 @@
 #! /bin/sh
 #
-# $Id: configure.gnu,v 1.2 2002/03/14 08:54:08 zarzycki Exp $
+# $Id: configure.gnu,v 1.5 2003/05/20 22:47:45 emoy Exp $
 #
 # GNU configure-like front end to metaconfig's Configure.
 #
-# Written by Andy Dougherty <doughera@lafcol.lafayette.edu>
+# Written by Andy Dougherty <doughera@lafayette.edu>
 # and Matthew Green <mrg@mame.mu.oz.au>.
 #
 # Reformatted and modified for inclusion in the dist-3.0 package by
@@ -16,11 +16,16 @@
 # include this script in your own package.
 #
 # $Log: configure.gnu,v $
-# Revision 1.2  2002/03/14 08:54:08  zarzycki
-# Revert HEAD back to perl-17
+# Revision 1.5  2003/05/20 22:47:45  emoy
+# Update to Perl 5.8.1, including thread support and two level namespace.
+# Bug #: 3258028
+# Reviewed by: Jordan Hubbard
 #
-# Revision 1.1.1.5  2000/03/31 05:10:40  wsanchez
-# Import of perl 5.6.0
+# Revision 1.4.2.1  2003/05/17 06:59:15  emoy
+# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+# two level namespace.  Append prefix, installprefix, and standard paths to
+# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+# .packlist.
 #
 # Revision 3.0.1.1  1995/07/25  14:16:21  ram
 # patch56: created
@@ -92,7 +97,7 @@ EOM
 		exit 1
 		;;
 	*)
-		opts="$opts $1"
+		opts="$opts '$1'"
 		shift
 		;;
 	esac
@@ -132,7 +137,7 @@ case "$verbose" in
 *) copt="$copt -d";;
 esac
 
-set X sh Configure $copt $create $opts
+eval "set X sh Configure $copt $create $opts"
 shift
 echo "$@"
 exec "$@"

@@ -1,16 +1,22 @@
-/* $RCSfile: str.c,v $$Revision: 1.2 $$Date: 2002/03/14 09:04:01 $
+/* $RCSfile: str.c,v $$Revision: 1.5 $$Date: 2003/05/20 22:54:50 $
  *
- *    Copyright (c) 1991-1997, Larry Wall
+ *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1999,
+ *    2001, 2002, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
  *
  * $Log: str.c,v $
- * Revision 1.2  2002/03/14 09:04:01  zarzycki
- * Revert HEAD back to perl-17
+ * Revision 1.5  2003/05/20 22:54:50  emoy
+ * Update to Perl 5.8.1, including thread support and two level namespace.
+ * Bug #: 3258028
+ * Reviewed by: Jordan Hubbard
  *
- * Revision 1.1.1.3  2000/03/31 05:13:05  wsanchez
- * Import of perl 5.6.0
+ * Revision 1.4.2.1  2003/05/17 07:07:56  emoy
+ * Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+ * two level namespace.  Append prefix, installprefix, and standard paths to
+ * darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+ * .packlist.
  *
  */
 
@@ -83,7 +89,7 @@ void
 str_nset(register STR *str, register char *ptr, register int len)
 {
     GROWSTR(&(str->str_ptr), &(str->str_len), len + 1);
-    bcopy(ptr,str->str_ptr,len);
+    memcpy(str->str_ptr,ptr,len);
     str->str_cur = len;
     *(str->str_ptr+str->str_cur) = '\0';
     str->str_nok = 0;		/* invalidate number */
@@ -99,7 +105,7 @@ str_set(register STR *str, register char *ptr)
 	ptr = "";
     len = strlen(ptr);
     GROWSTR(&(str->str_ptr), &(str->str_len), len + 1);
-    bcopy(ptr,str->str_ptr,len+1);
+    memcpy(str->str_ptr,ptr,len+1);
     str->str_cur = len;
     str->str_nok = 0;		/* invalidate number */
     str->str_pok = 1;		/* validate pointer */
@@ -113,7 +119,7 @@ str_chop(register STR *str, register char *ptr)	/* like set but assuming ptr is 
     if (!(str->str_pok))
 	str_2ptr(str);
     str->str_cur -= (ptr - str->str_ptr);
-    bcopy(ptr,str->str_ptr, str->str_cur + 1);
+    memcpy(str->str_ptr, ptr, str->str_cur + 1);
     str->str_nok = 0;		/* invalidate number */
     str->str_pok = 1;		/* validate pointer */
 }
@@ -124,7 +130,7 @@ str_ncat(register STR *str, register char *ptr, register int len)
     if (!(str->str_pok))
 	str_2ptr(str);
     GROWSTR(&(str->str_ptr), &(str->str_len), str->str_cur + len + 1);
-    bcopy(ptr,str->str_ptr+str->str_cur,len);
+    memcpy(str->str_ptr+str->str_cur, ptr, len);
     str->str_cur += len;
     *(str->str_ptr+str->str_cur) = '\0';
     str->str_nok = 0;		/* invalidate number */
@@ -151,7 +157,7 @@ str_cat(register STR *str, register char *ptr)
 	str_2ptr(str);
     len = strlen(ptr);
     GROWSTR(&(str->str_ptr), &(str->str_len), str->str_cur + len + 1);
-    bcopy(ptr,str->str_ptr+str->str_cur,len+1);
+    memcpy(str->str_ptr+str->str_cur, ptr, len+1);
     str->str_cur += len;
     str->str_nok = 0;		/* invalidate number */
     str->str_pok = 1;		/* validate pointer */
@@ -203,7 +209,7 @@ str_new(int len)
     }
     else {
 	str = (STR *) safemalloc(sizeof(STR));
-	bzero((char*)str,sizeof(STR));
+	memset((char*)str,0,sizeof(STR));
     }
     if (len)
 	GROWSTR(&(str->str_ptr), &(str->str_len), len + 1);
@@ -227,7 +233,7 @@ str_replace(register STR *str, register STR *nstr)
     str->str_len = nstr->str_len;
     str->str_cur = nstr->str_cur;
     str->str_pok = nstr->str_pok;
-    if (str->str_nok = nstr->str_nok)
+    if ((str->str_nok = nstr->str_nok))
 	str->str_nval = nstr->str_nval;
     safefree((char*)nstr);
 }
@@ -288,23 +294,24 @@ str_gets(register STR *str, register FILE *fp)
     if (str->str_len <= cnt)		/* make sure we have the room */
 	GROWSTR(&(str->str_ptr), &(str->str_len), cnt+1);
     bp = str->str_ptr;			/* move these two too to registers */
-    ptr = FILE_ptr(fp);
+    ptr = (STDCHAR*)FILE_ptr(fp);
     for (;;) {
 	while (--cnt >= 0) {
-	    if ((*bp++ = *ptr++) == newline)
+	    if ((*bp++ = *ptr++) == newline) {
 		if (bp <= str->str_ptr || bp[-2] != '\\')
 		    goto thats_all_folks;
 		else {
 		    line++;
 		    bp -= 2;
 		}
+	    }
 	}
 	
 	FILE_cnt(fp) = cnt;		/* deregisterize cnt and ptr */
-	FILE_ptr(fp) = ptr;
+	FILE_ptr(fp) = (void*)ptr; /* LHS STDCHAR* cast non-portable */
 	i = getc(fp);		/* get more characters */
 	cnt = FILE_cnt(fp);
-	ptr = FILE_ptr(fp);		/* reregisterize cnt and ptr */
+	ptr = (STDCHAR*)FILE_ptr(fp);		/* reregisterize cnt and ptr */
 
 	bpx = bp - str->str_ptr;	/* prepare for possible relocation */
 	GROWSTR(&(str->str_ptr), &(str->str_len), str->str_cur + cnt + 1);
@@ -321,7 +328,7 @@ str_gets(register STR *str, register FILE *fp)
 
 thats_all_folks:
     FILE_cnt(fp) = cnt;			/* put these back or we're in trouble */
-    FILE_ptr(fp) = ptr;
+    FILE_ptr(fp) = (void*)ptr; /* LHS STDCHAR* cast non-portable */
     *bp = '\0';
     str->str_cur = bp - str->str_ptr;	/* set length */
 
@@ -359,7 +366,7 @@ str_inc(register STR *str)
     }
     for (d = str->str_ptr; *d && *d != '.'; d++) ;
     d--;
-    if (!isdigit(*str->str_ptr) || !isdigit(*d) ) {
+    if (!isDIGIT(*str->str_ptr) || !isDIGIT(*d) ) {
         str_numset(str,atof(str->str_ptr) + 1.0);  /* punt */
 	return;
     }
@@ -395,7 +402,7 @@ str_dec(register STR *str)
     }
     for (d = str->str_ptr; *d && *d != '.'; d++) ;
     d--;
-    if (!isdigit(*str->str_ptr) || !isdigit(*d) || (*d == '0' && d == str->str_ptr)) {
+    if (!isDIGIT(*str->str_ptr) || !isDIGIT(*d) || (*d == '0' && d == str->str_ptr)) {
         str_numset(str,atof(str->str_ptr) - 1.0);  /* punt */
 	return;
     }

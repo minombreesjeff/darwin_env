@@ -1,5 +1,42 @@
 package strict;
 
+$strict::VERSION = "1.03";
+
+my %bitmask = (
+refs => 0x00000002,
+subs => 0x00000200,
+vars => 0x00000400
+);
+
+sub bits {
+    my $bits = 0;
+    my @wrong;
+    foreach my $s (@_) {
+	push @wrong, $s unless exists $bitmask{$s};
+        $bits |= $bitmask{$s} || 0;
+    }
+    if (@wrong) {
+        require Carp;
+        Carp::croak("Unknown 'strict' tag(s) '@wrong'");
+    }
+    $bits;
+}
+
+my $default_bits = bits(qw(refs subs vars));
+
+sub import {
+    shift;
+    $^H |= @_ ? bits(@_) : $default_bits;
+}
+
+sub unimport {
+    shift;
+    $^H &= ~ (@_ ? bits(@_) : $default_bits);
+}
+
+1;
+__END__
+
 =head1 NAME
 
 strict - Perl pragma to restrict unsafe constructs
@@ -36,6 +73,14 @@ use symbolic references (see L<perlref>).
     print $$ref;	# runtime error; normally ok
     $file = "STDOUT";
     print $file "Hi!";	# error; note: no comma after $file
+
+There is one exception to this rule:
+
+    $bar = \&{'foo'};
+    &$bar;
+
+is allowed so that C<goto &$AUTOLOAD> would not break under stricture.
+
 
 =item C<strict vars>
 
@@ -79,31 +124,4 @@ appears in curly braces or on the left hand side of the "=E<gt>" symbol.
 
 See L<perlmodlib/Pragmatic Modules>.
 
-
 =cut
-
-$strict::VERSION = "1.01";
-
-my %bitmask = (
-refs => 0x00000002,
-subs => 0x00000200,
-vars => 0x00000400
-);
-
-sub bits {
-    my $bits = 0;
-    foreach my $s (@_){ $bits |= $bitmask{$s} || 0; };
-    $bits;
-}
-
-sub import {
-    shift;
-    $^H |= bits(@_ ? @_ : qw(refs subs vars));
-}
-
-sub unimport {
-    shift;
-    $^H &= ~ bits(@_ ? @_ : qw(refs subs vars));
-}
-
-1;

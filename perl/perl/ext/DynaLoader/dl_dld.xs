@@ -7,14 +7,22 @@
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
  *
- * $Date: 2000/03/31 05:11:15 $
- * $Source: /cvs/Darwin/src/live/perl/perl/ext/DynaLoader/dl_dld.xs,v $
- * $Revision: 1.1.1.3 $
+ * $Date: 2003/05/20 22:49:14 $
+ * $Source: /cvs/root/perl/perl/ext/DynaLoader/dl_dld.xs,v $
+ * $Revision: 1.4 $
  * $State: Exp $
  *
  * $Log: dl_dld.xs,v $
- * Revision 1.1.1.3  2000/03/31 05:11:15  wsanchez
- * Import of perl 5.6.0
+ * Revision 1.4  2003/05/20 22:49:14  emoy
+ * Update to Perl 5.8.1, including thread support and two level namespace.
+ * Bug #: 3258028
+ * Reviewed by: Jordan Hubbard
+ *
+ * Revision 1.3.2.1  2003/05/17 07:01:14  emoy
+ * Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+ * two level namespace.  Append prefix, installprefix, and standard paths to
+ * darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+ * .packlist.
  *
  * Removed implicit link against libc.  1994/09/14 William Setzer.
  *
@@ -45,31 +53,41 @@
 #include <dld.h>	/* GNU DLD header file */
 #include <unistd.h>
 
+typedef struct {
+    AV *	x_resolve_using;
+    AV *	x_require_symbols;
+} my_cxtx_t;		/* this *must* be named my_cxtx_t */
+
+#define DL_CXT_EXTRA	/* ask for dl_cxtx to be defined in dlutils.c */
 #include "dlutils.c"	/* for SaveError() etc */
 
-static AV *dl_resolve_using   = Nullav;
-static AV *dl_require_symbols = Nullav;
+#define dl_resolve_using	(dl_cxtx.x_resolve_using)
+#define dl_require_symbols	(dl_cxtx.x_require_symbols)
 
 static void
 dl_private_init(pTHX)
 {
-    int dlderr;
     dl_generic_private_init(aTHX);
-    dl_resolve_using   = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
-    dl_require_symbols = get_av("DynaLoader::dl_require_symbols", GV_ADDMULTI);
+    {
+	int dlderr;
+	dMY_CXT;
+
+	dl_resolve_using   = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
+	dl_require_symbols = get_av("DynaLoader::dl_require_symbols", GV_ADDMULTI);
 #ifdef __linux__
-    dlderr = dld_init("/proc/self/exe");
-    if (dlderr) {
+	dlderr = dld_init("/proc/self/exe");
+	if (dlderr) {
 #endif
-        dlderr = dld_init(dld_find_executable(PL_origargv[0]));
-        if (dlderr) {
-            char *msg = dld_strerror(dlderr);
-            SaveError(aTHX_ "dld_init(%s) failed: %s", PL_origargv[0], msg);
-            DLDEBUG(1,PerlIO_printf(Perl_debug_log, "%s", LastError));
-        }
+	    dlderr = dld_init(dld_find_executable(PL_origargv[0]));
+	    if (dlderr) {
+		char *msg = dld_strerror(dlderr);
+		SaveError(aTHX_ "dld_init(%s) failed: %s", PL_origargv[0], msg);
+		DLDEBUG(1,PerlIO_printf(Perl_debug_log, "%s", dl_last_error));
+	    }
 #ifdef __linux__
+	}
+#endif
     }
-#endif
 }
 
 
@@ -86,6 +104,7 @@ dl_load_file(filename, flags=0)
     PREINIT:
     int dlderr,x,max;
     GV *gv;
+    dMY_CXT;
     CODE:
     RETVAL = filename;
     DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s,%x):\n", filename,flags));
@@ -172,8 +191,10 @@ dl_install_xsub(perl_name, symref, filename="$Package")
 
 char *
 dl_error()
+    PREINIT:
+    dMY_CXT;
     CODE:
-    RETVAL = LastError ;
+    RETVAL = dl_last_error ;
     OUTPUT:
     RETVAL
 

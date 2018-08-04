@@ -39,7 +39,7 @@ require 5.000;
 
 $debug = $ENV{'GEN_SHRFLS_DEBUG'};
 
-print "gen_shrfls.pl Rev. 14-Dec-1997\n" if $debug;
+print "gen_shrfls.pl Rev. 18-May-2001\n" if $debug;
 
 if ($ARGV[0] eq '-f') {
   open(INP,$ARGV[1]) or die "Can't read input file $ARGV[1]: $!\n";
@@ -68,16 +68,22 @@ if ($docc) {
   elsif (-f '[-]perl.h') { $dir = '[-]'; }
   else { die "$0: Can't find perl.h\n"; }
 
-  # Go see if debugging is enabled in config.h
-  $config = $dir . "config.h";
+  $use_threads = $use_mymalloc = $case_about_case = $debugging_enabled = 0;
+  $hide_mymalloc = $isgcc = $use_perlio = 0;
+
+  # Go see what is enabled in config.sh
+  $config = $dir . "config.sh";
   open CONFIG, "< $config";
   while(<CONFIG>) {
-    $debugging_enabled++ if /define\s+DEBUGGING/;
-    $use_mymalloc++ if /define\s+MYMALLOC/;
-    $hide_mymalloc++ if /define\s+EMBEDMYMALLOC/;
-    $use_threads++ if /define\s+USE_THREADS/;
-    $care_about_case++ if /define\s+VMS_WE_ARE_CASE_SENSITIVE/;
+    $use_threads++ if /usethreads='(define|yes|true|t|y|1)'/i;
+    $use_mymalloc++ if /usemymalloc='(define|yes|true|t|y|1)'/i;
+    $care_about_case++ if /d_vms_case_sensitive_symbols='(define|yes|true|t|y|1)'/i;
+    $debugging_enabled++ if /usedebugging_perl='(define|yes|true|t|y|1)'/i;
+    $hide_mymalloc++ if /embedmymalloc='(define|yes|true|t|y|1)'/i;
+    $isgcc++ if /gccversion='[^']/;
+    $use_perlio++ if /useperlio='(define|yes|true|t|y|1)'/i;
   }
+  close CONFIG;
   
   # put quotes back onto defines - they were removed by DCL on the way in
   if (($prefix,$defines,$suffix) =
@@ -92,8 +98,7 @@ if ($docc) {
 
   # check for gcc - if present, we'll need to use MACRO hack to
   # define global symbols for shared variables
-  $isgcc = `$cc_cmd _nla0:/Version` =~ /GNU/
-           or 0; # make debug output nice
+
   print "\$isgcc: $isgcc\n" if $debug;
   print "\$debugging_enabled: $debugging_enabled\n" if $debug;
 
@@ -143,6 +148,7 @@ sub scan_func {
   my($line) = @_;
 
   print "\tchecking for global routine\n" if $debug > 1;
+  $line =~ s/\b(IV|Off_t|Size_t|SSize_t|void)\b//i;
   if ( $line =~ /(\w+)\s*\(/ ) {
     print "\troutine name is \\$1\\\n" if $debug > 1;
     if ($1 eq 'main' || $1 eq 'perl_init_ext') {
@@ -160,15 +166,21 @@ if ($use_mymalloc) {
   $fcns{'Perl_mfree'}++;
 }
 
+if ($use_perlio) {
+  $preprocess_list = "${dir}perl.h+${dir}perlapi.h,${dir}perliol.h";
+} else {
+  $preprocess_list = "${dir}perl.h+${dir}perlapi.h";
+}
+
 $used_expectation_enum = $used_opcode_enum = 0; # avoid warnings
 if ($docc) {
-  open(CPP,"${cc_cmd}/NoObj/PreProc=Sys\$Output ${dir}perl.h|")
-    or die "$0: Can't preprocess ${dir}perl.h: $!\n";
+  open(CPP,"${cc_cmd}/NoObj/PreProc=Sys\$Output $preprocess_list|")
+    or die "$0: Can't preprocess $preprocess_list: $!\n";
 }
 else {
   open(CPP,"$cpp_file") or die "$0: Can't read preprocessed file $cpp_file: $!\n";
 }
-%checkh = map { $_,1 } qw( thread bytecode byterun proto );
+%checkh = map { $_,1 } qw( thread bytecode byterun proto perlio perlvars intrpvar thrdvar );
 $ckfunc = 0;
 LINE: while (<CPP>) {
   while (/^#.*vmsish\.h/i .. /^#.*perl\.h/i) {
@@ -194,13 +206,14 @@ LINE: while (<CPP>) {
     # Pull name from library module or header filespec
     $spec =~ /^(\w+)$/ or $spec =~ /(\w+)\.h/i;
     my $name = lc $1;
+    $name = 'perlio' if $name eq 'perliol';
     $ckfunc = exists $checkh{$name} ? 1 : 0;
     $scanname = $name if $ckfunc;
     print "Header file transition: ckfunc = $ckfunc for $name.h\n" if $debug > 1;
   }
   if ($ckfunc) {
     print "$scanname>> $_" if $debug > 2;
-    if (/\s*^EXT/) { &scan_var($_);  }
+    if (/^\s*EXT/) { &scan_var($_);  }
     else           { &scan_func($_); }
   }
   else {
@@ -328,6 +341,7 @@ if ($ENV{PERLSHR_USE_GSMATCH}) {
     # number in the top four bits and use the bottom four for build options
     # that'll cause incompatibilities
     ($ver, $sub) = $] =~ /\.(\d\d\d)(\d\d)/;
+    $ver += 0; $sub += 0;
     $gsmatch = ($sub >= 50) ? "equal" : "lequal"; # Force an equal match for
 						  # dev, but be more forgiving
 						  # for releases

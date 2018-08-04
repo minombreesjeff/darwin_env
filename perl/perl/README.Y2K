@@ -21,7 +21,7 @@ Long answer: The question belies a true understanding of the
        localtime) supply adequate information to determine the
        year well beyond 2000 (2038 is when trouble strikes for
        32-bit machines).  The year returned by these functions
-       when used in an array context is the year minus 1900.  For
+       when used in a list context is the year minus 1900.  For
        years between 1910 and 1999 this happens to be a 2-digit
        decimal number. To avoid the year 2000 problem simply do
        not treat the year as a 2-digit number.  It isn't.
@@ -40,7 +40,7 @@ Long answer: The question belies a true understanding of the
        longer exposition.
 
        If you want perl to warn you when it sees a program which
-       catenates a number with the string "19" -- a common
+       concatenates a number with the string "19" -- a common
        indication of a year 2000 problem -- build perl using the
        Configure option  "-Accflags=-DPERL_Y2KWARN".
        (See the file INSTALL for more information about building

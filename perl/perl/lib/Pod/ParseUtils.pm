@@ -10,7 +10,7 @@
 package Pod::ParseUtils;
 
 use vars qw($VERSION);
-$VERSION = 0.2;    ## Current version of this package
+$VERSION = 0.30;   ## Current version of this package
 require  5.005;    ## requires this Perl version or later
 
 =head1 NAME
@@ -49,7 +49,7 @@ The following methods are available:
 
 =over 4
 
-=item new()
+=item Pod::List-E<gt>new()
 
 Create a new list object. Properties may be specified through a hash
 reference like this:
@@ -79,7 +79,7 @@ sub initialize {
     $self->{-type} ||= '';
 }
 
-=item file()
+=item $list-E<gt>file()
 
 Without argument, retrieves the file name the list is in. This must
 have been set before by either specifying B<-file> in the B<new()>
@@ -92,7 +92,7 @@ sub file {
    return (@_ > 1) ? ($_[0]->{-file} = $_[1]) : $_[0]->{-file};
 }
 
-=item start()
+=item $list-E<gt>start()
 
 Without argument, retrieves the line number where the list started.
 This must have been set before by either specifying B<-start> in the
@@ -106,7 +106,7 @@ sub start {
    return (@_ > 1) ? ($_[0]->{-start} = $_[1]) : $_[0]->{-start};
 }
 
-=item indent()
+=item $list-E<gt>indent()
 
 Without argument, retrieves the indent level of the list as specified
 in C<=over n>. This must have been set before by either specifying
@@ -120,7 +120,7 @@ sub indent {
    return (@_ > 1) ? ($_[0]->{-indent} = $_[1]) : $_[0]->{-indent};
 }
 
-=item type()
+=item $list-E<gt>type()
 
 Without argument, retrieves the list type, which can be an arbitrary value,
 e.g. C<OL>, C<UL>, ... when thinking the HTML way.
@@ -135,7 +135,7 @@ sub type {
    return (@_ > 1) ? ($_[0]->{-type} = $_[1]) : $_[0]->{-type};
 }
 
-=item rx()
+=item $list-E<gt>rx()
 
 Without argument, retrieves a regular expression for simplifying the 
 individual item strings once the list type has been determined. Usage:
@@ -152,7 +152,7 @@ sub rx {
    return (@_ > 1) ? ($_[0]->{-rx} = $_[1]) : $_[0]->{-rx};
 }
 
-=item item()
+=item $list-E<gt>item()
 
 Without argument, retrieves the array of the items in this list.
 The items may be represented by any scalar.
@@ -172,7 +172,7 @@ sub item {
     }
 }
 
-=item parent()
+=item $list-E<gt>parent()
 
 Without argument, retrieves information about the parent holding this
 list, which is represented as an arbitrary scalar.
@@ -188,7 +188,7 @@ sub parent {
    return (@_ > 1) ? ($_[0]->{-parent} = $_[1]) : $_[0]->{-parent};
 }
 
-=item tag()
+=item $list-E<gt>tag()
 
 Without argument, retrieves information about the list tag, which can be
 any scalar.
@@ -227,7 +227,7 @@ used to construct hyperlinks.
 
 =over 4
 
-=item new()
+=item Pod::Hyperlink-E<gt>new()
 
 The B<new()> method can either be passed a set of key/value pairs or a single
 scalar value, namely the contents of a C<LE<lt>...E<gt>> sequence. An object
@@ -269,10 +269,14 @@ sub initialize {
     $self->{_warnings} = [];
 }
 
-=item parse($string)
+=item $link-E<gt>parse($string)
 
 This method can be used to (re)parse a (new) hyperlink, i.e. the contents
 of a C<LE<lt>...E<gt>> sequence. The result is stored in the current object.
+Warnings are stored in the B<warnings> property.
+E.g. sections like C<LE<lt>open(2)E<gt>> are deprecated, as they do not point
+to Perl documents. C<LE<lt>DBI::foo(3p)E<gt>> is wrong as well, the manpage
+section can simply be dropped.
 
 =cut
 
@@ -280,14 +284,13 @@ sub parse {
     my $self = shift;
     local($_) = $_[0];
     # syntax check the link and extract destination
-    my ($alttext,$page,$node,$type) = ('','','','');
+    my ($alttext,$page,$node,$type,$quoted) = (undef,'','','',0);
 
     $self->{_warnings} = [];
 
     # collapse newlines with whitespace
-    if(s/\s*\n+\s*/ /g) {
-        $self->warning("collapsing newlines to blanks");
-    }
+    s/\s*\n+\s*/ /g;
+
     # strip leading/trailing whitespace
     if(s/^[\s\n]+//) {
         $self->warning("ignoring leading whitespace in link");
@@ -308,32 +311,34 @@ sub parse {
     # problem: a lot of people use (), or (1) or the like to indicate
     # man page sections. But this collides with L<func()> that is supposed
     # to point to an internal funtion...
-    # I would like the following better, here and below:
-    #if(m!^(\w+(?:::\w+)*)$!) {
-    my $page_rx = '[\w.]+(?:::[\w.]+)*';
+    my $page_rx = '[\w.-]+(?:::[\w.-]+)*(?:[(](?:\d\w*|)[)]|)';
+    # page name only
     if(m!^($page_rx)$!o) {
         $page = $1;
         $type = 'page';
     }
     # alttext, page and "section"
-    elsif(m!^(.+?)\s*[|]\s*($page_rx)\s*/\s*"(.+)"$!o) {
+    elsif(m!^(.*?)\s*[|]\s*($page_rx)\s*/\s*"(.+)"$!o) {
         ($alttext, $page, $node) = ($1, $2, $3);
         $type = 'section';
+        $quoted = 1; #... therefore | and / are allowed
     }
     # alttext and page
-    elsif(m!^(.+?)\s*[|]\s*($page_rx)$!o) {
+    elsif(m!^(.*?)\s*[|]\s*($page_rx)$!o) {
         ($alttext, $page) = ($1, $2);
         $type = 'page';
     }
     # alttext and "section"
-    elsif(m!^(.+?)\s*[|]\s*(?:/\s*|)"(.+)"$!) {
+    elsif(m!^(.*?)\s*[|]\s*(?:/\s*|)"(.+)"$!) {
         ($alttext, $node) = ($1,$2);
         $type = 'section';
+        $quoted = 1;
     }
     # page and "section"
     elsif(m!^($page_rx)\s*/\s*"(.+)"$!o) {
         ($page, $node) = ($1, $2);
         $type = 'section';
+        $quoted = 1;
     }
     # page and item
     elsif(m!^($page_rx)\s*/\s*(.+)$!o) {
@@ -344,6 +349,7 @@ sub parse {
     elsif(m!^/?"(.+)"$!) {
         $node = $1;
         $type = 'section';
+        $quoted = 1;
     }
     # only item
     elsif(m!^\s*/(.+)$!) {
@@ -356,16 +362,16 @@ sub parse {
         $type = 'hyperlink';
     }
     # alttext, page and item
-    elsif(m!^(.+?)\s*[|]\s*($page_rx)\s*/\s*(.+)$!o) {
+    elsif(m!^(.*?)\s*[|]\s*($page_rx)\s*/\s*(.+)$!o) {
         ($alttext, $page, $node) = ($1, $2, $3);
         $type = 'item';
     }
     # alttext and item
-    elsif(m!^(.+?)\s*[|]\s*/(.+)$!) {
+    elsif(m!^(.*?)\s*[|]\s*/(.+)$!) {
         ($alttext, $node) = ($1,$2);
     }
     # nonstandard: alttext and hyperlink
-    elsif(m!^(.+?)\s*[|]\s*((?:http|ftp|mailto|news):.+)$!) {
+    elsif(m!^(.*?)\s*[|]\s*((?:http|ftp|mailto|news):.+)$!) {
         ($alttext, $node) = ($1,$2);
         $type = 'hyperlink';
     }
@@ -377,10 +383,20 @@ sub parse {
     # collapse whitespace in nodes
     $node =~ s/\s+/ /gs;
 
-    #if($page =~ /[(]\w*[)]$/) {
-    #    $self->warning("section in '$page' deprecated");
-    #}
-    if($node =~ m:[|/]:) {
+    # empty alternative text expands to node name
+    if(defined $alttext) {
+        if(!length($alttext)) {
+          $alttext = $node | $page;
+        }
+    }
+    else {
+        $alttext = '';
+    }
+
+    if($page =~ /[(]\w*[)]$/) {
+        $self->warning("(section) in '$page' deprecated");
+    }
+    if(!$quoted && $node =~ m:[|/]:) {
         $self->warning("node '$node' contains non-escaped | or /");
     }
     if($alttext =~ m:[|/]:) {
@@ -410,11 +426,9 @@ sub _construct_text {
         $self->{_text} = $section;
     }
     else {
-        $self->{_text} = (!$section ? '' : 
-            $type eq 'item' ? "the $section entry" :
-                "the section on $section" ) .
-            ($page ? ($section ? ' in ':'') . "the $page$page_ext manpage" :
-                ' elsewhere in this document');
+        $self->{_text} = ($section || '') .
+            (($page && $section) ? ' in ' : '') .
+            "$page$page_ext";
     }
     # for being marked up later
     # use the non-standard markers P<> and Q<>, so that the resulting
@@ -427,15 +441,12 @@ sub _construct_text {
         $self->{_markup} = "Q<$section>";
     }
     else {
-        $self->{_markup} = (!$section ? '' : 
-            $type eq 'item' ? "the Q<$section> entry" :
-                "the section on Q<$section>" ) .
-            ($page ? ($section ? ' in ':'') . "the P<$page>$page_ext manpage" :
-                ' elsewhere in this document');
+        $self->{_markup} = (!$section ? '' : "Q<$section>") .
+            ($page ? ($section ? ' in ':'') . "P<$page>$page_ext" : '');
     }
 }
 
-=item markup($string)
+=item $link-E<gt>markup($string)
 
 Set/retrieve the textual value of the link. This string contains special
 markers C<PE<lt>E<gt>> and C<QE<lt>E<gt>> that should be expanded by the
@@ -450,17 +461,17 @@ sub markup {
     return (@_ > 1) ? ($_[0]->{_markup} = $_[1]) : $_[0]->{_markup};
 }
 
-=item text()
+=item $link-E<gt>text()
 
 This method returns the textual representation of the hyperlink as above,
 but without markers (read only). Depending on the link type this is one of
 the following alternatives (the + and * denote the portions of the text
 that are marked up):
 
-  the +perl+ manpage
-  the *$|* entry in the +perlvar+ manpage
-  the section on *OPTIONS* in the +perldoc+ manpage
-  the section on *DESCRIPTION* elsewhere in this document
+  +perl+                    L<perl>
+  *$|* in +perlvar+         L<perlvar/$|>
+  *OPTIONS* in +perldoc+    L<perldoc/"OPTIONS">
+  *DESCRIPTION*             L<"DESCRIPTION">
 
 =cut
 
@@ -469,7 +480,7 @@ sub text {
     $_[0]->{_text};
 }
 
-=item warning()
+=item $link-E<gt>warning()
 
 After parsing, this method returns any warnings encountered during the
 parsing process.
@@ -486,7 +497,9 @@ sub warning {
     return @{$self->{_warnings}};
 }
 
-=item line(), file()
+=item $link-E<gt>file()
+
+=item $link-E<gt>line()
 
 Just simple slots for storing information about the line and the file
 the link was encountered in. Has to be filled in manually.
@@ -503,7 +516,7 @@ sub file {
     return (@_ > 1) ? ($_[0]->{-file} = $_[1]) : $_[0]->{-file};
 }
 
-=item page()
+=item $link-E<gt>page()
 
 This method sets or returns the POD page this link points to.
 
@@ -518,7 +531,7 @@ sub page {
     $_[0]->{-page};
 }
 
-=item node()
+=item $link-E<gt>node()
 
 As above, but the destination node text of the link.
 
@@ -533,7 +546,7 @@ sub node {
     $_[0]->{-node};
 }
 
-=item alttext()
+=item $link-E<gt>alttext()
 
 Sets or returns an alternative text specified in the link.
 
@@ -548,7 +561,7 @@ sub alttext {
     $_[0]->{-alttext};
 }
 
-=item type()
+=item $link-E<gt>type()
 
 The node type, either C<section> or C<item>. As an unofficial type,
 there is also C<hyperlink>, derived from e.g. C<LE<lt>http://perl.comE<gt>>
@@ -560,7 +573,7 @@ sub type {
     return (@_ > 1) ? ($_[0]->{-type} = $_[1]) : $_[0]->{-type};
 }
 
-=item link()
+=item $link-E<gt>link()
 
 Returns the link as contents of C<LE<lt>E<gt>>. Reciprocal to B<parse()>.
 
@@ -620,7 +633,7 @@ The following methods are available:
 
 =over 4
 
-=item new()
+=item Pod::Cache-E<gt>new()
 
 Create a new cache object. This object can hold an arbitrary number of
 POD documents of class Pod::Cache::Item.
@@ -635,7 +648,7 @@ sub new {
     return $self;
 }
 
-=item item()
+=item $cache-E<gt>item()
 
 Add a new item to the cache. Without arguments, this method returns a
 list of all cache elements.
@@ -654,7 +667,7 @@ sub item {
     }
 }
 
-=item find_page($name)
+=item $cache-E<gt>find_page($name)
 
 Look for a POD document named C<$name> in the cache. Returns the
 reference to the corresponding Pod::Cache::Item object or undef if
@@ -686,7 +699,7 @@ The following methods are available:
 
 =over 4
 
-=item new()
+=item Pod::Cache::Item-E<gt>new()
 
 Create a new object.
 
@@ -707,7 +720,7 @@ sub initialize {
     $self->{-nodes} = [] unless(defined $self->{-nodes});
 }
 
-=item page()
+=item $cacheitem-E<gt>page()
 
 Set/retrieve the POD document name (e.g. "Pod::Parser").
 
@@ -718,7 +731,7 @@ sub page {
    return (@_ > 1) ? ($_[0]->{-page} = $_[1]) : $_[0]->{-page};
 }
 
-=item description()
+=item $cacheitem-E<gt>description()
 
 Set/retrieve the POD short description as found in the C<=head1 NAME>
 section.
@@ -730,7 +743,7 @@ sub description {
    return (@_ > 1) ? ($_[0]->{-description} = $_[1]) : $_[0]->{-description};
 }
 
-=item path()
+=item $cacheitem-E<gt>path()
 
 Set/retrieve the POD file storage path.
 
@@ -741,7 +754,7 @@ sub path {
    return (@_ > 1) ? ($_[0]->{-path} = $_[1]) : $_[0]->{-path};
 }
 
-=item file()
+=item $cacheitem-E<gt>file()
 
 Set/retrieve the POD file name.
 
@@ -752,7 +765,7 @@ sub file {
    return (@_ > 1) ? ($_[0]->{-file} = $_[1]) : $_[0]->{-file};
 }
 
-=item nodes()
+=item $cacheitem-E<gt>nodes()
 
 Add a node (or a list of nodes) to the document's node list. Note that
 the order is kept, i.e. start with the first node and end with the last.
@@ -775,13 +788,11 @@ sub nodes {
     }
 }
 
-=item find_node($name)
+=item $cacheitem-E<gt>find_node($name)
 
 Look for a node or index entry named C<$name> in the object.
 Returns the unique id of the node (i.e. the second element of the array
 stored in the node arry) or undef if not found.
-
-=back
 
 =cut
 
@@ -798,7 +809,7 @@ sub find_node {
     undef;
 }
 
-=item idx()
+=item $cacheitem-E<gt>idx()
 
 Add an index entry (or a list of them) to the document's index list. Note that
 the order is kept, i.e. start with the first node and end with the last.
@@ -806,6 +817,8 @@ If no argument is given, the current list of index entries is returned in the
 same order the entries have been added.
 An index entry can be any scalar, but usually is a pair of string and
 unique id.
+
+=back
 
 =cut
 

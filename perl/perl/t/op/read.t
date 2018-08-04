@@ -1,11 +1,11 @@
 #!./perl
 
-# $RCSfile: read.t,v $$Revision: 1.1.1.2 $$Date: 2000/03/31 05:12:44 $
+# $RCSfile: read.t,v $$Revision: 1.4 $$Date: 2003/05/20 22:54:12 $
 
 print "1..4\n";
 
 
-open(FOO,'op/read.t') || open(FOO,'t/op/read.t') || die "Can't open op.read";
+open(FOO,'op/read.t') || open(FOO,'t/op/read.t') || open(FOO,':op:read.t') || die "Can't open op.read";
 seek(FOO,4,0);
 $got = read(FOO,$buf,4);
 

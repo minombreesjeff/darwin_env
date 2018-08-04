@@ -2,7 +2,7 @@
 
 # "This IS structured code.  It's just randomly structured."
 
-print "1..16\n";
+print "1..28\n";
 
 while ($?) {
     $foo = 1;
@@ -29,7 +29,7 @@ label4:
 print "#2\t:$foo: == 4\n";
 if ($foo == 4) {print "ok 2\n";} else {print "not ok 2\n";}
 
-$PERL = ($^O eq 'MSWin32') ? '.\perl' : './perl';
+$PERL = ($^O eq 'MSWin32') ? '.\perl' : ($^O eq 'MacOS') ? $^X : ($^O eq 'NetWare') ? 'perl' : './perl';
 $CMD = qq[$PERL -e "goto foo;" 2>&1 ];
 $x = `$CMD`;
 
@@ -76,6 +76,115 @@ for (1) {
     }
 }
 print "ok 16\n";
+
+# Does goto work correctly within a for(;;) loop?
+#  (BUG ID 20010309.004)
+
+for(my $i=0;!$i++;) {
+  my $x=1;
+  goto label;
+  label: print (defined $x?"ok ": "not ok ", "17\n")
+}
+
+# Does goto work correctly going *to* a for(;;) loop?
+#  (make sure it doesn't skip the initializer)
+
+my ($z, $y) = (0);
+FORL1: for($y="ok 18\n"; $z;) {print $y; goto TEST19}
+($y,$z) = ("not ok 18\n", 1);
+goto FORL1;
+
+# Even from within the loop?
+
+TEST19: $z = 0;
+FORL2: for($y="ok 19\n"; 1;) {
+  if ($z) {
+    print $y;
+    last;
+  }
+  ($y, $z) = ("not ok 19\n", 1);
+  goto FORL2;
+}
+
+# Does goto work correctly within a try block?
+#  (BUG ID 20000313.004)
+
+my $ok = 0;
+eval {
+  my $variable = 1;
+  goto LABEL20;
+  LABEL20: $ok = 1 if $variable;
+};
+print ($ok&&!$@ ? "ok 20\n" : "not ok 20\n");
+
+# And within an eval-string?
+
+
+$ok = 0;
+eval q{
+  my $variable = 1;
+  goto LABEL21;
+  LABEL21: $ok = 1 if $variable;
+};
+print ($ok&&!$@ ? "ok 21\n" : "not ok 21\n");
+
+
+# Test that goto works in nested eval-string
+$ok = 0;
+{eval q{
+  eval q{
+    goto LABEL22;
+  };
+  $ok = 0;
+  last;
+
+  LABEL22: $ok = 1;
+};
+$ok = 0 if $@;
+}
+print ($ok ? "ok 22\n" : "not ok 22\n");
+
+{
+    my $false = 0;
+
+    $ok = 0;
+    { goto A; A: $ok = 1 } continue { }
+    print "not " unless $ok;
+    print "ok 23 - #20357 goto inside /{ } continue { }/ loop\n";
+
+    $ok = 0;
+    { do { goto A; A: $ok = 1 } while $false }
+    print "not " unless $ok;
+    print "ok 24 - #20154 goto inside /do { } while ()/ loop\n";
+
+    $ok = 0;
+    foreach(1) { goto A; A: $ok = 1 } continue { };
+    print "not " unless $ok;
+    print "ok 25 - goto inside /foreach () { } continue { }/ loop\n";
+
+    $ok = 0;
+    sub a {
+	A: { if ($false) { redo A; B: $ok = 1; redo A; } }
+	goto B unless $r++
+    }
+    a();
+    print "not " unless $ok;
+    print "ok 26 - #19061 loop label wiped away by goto\n";
+
+    $ok = 0;
+    for ($p=1;$p && goto A;$p=0) { A: $ok = 1 }
+    print "not " unless $ok;
+    print "ok 27 - weird case of goto and for(;;) loop\n";
+}
+
+# bug #9990 - don't prematurely free the CV we're &going to.
+
+sub f1 {
+    my $x;
+    goto sub { $x; print "ok 28 - don't prematurely free CV\n" }
+}
+f1();
+
 exit;
 
 bypass:

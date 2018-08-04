@@ -1,4 +1,7 @@
 package B::Debug;
+
+our $VERSION = '1.00';
+
 use strict;
 use B qw(peekop class walkoptree walkoptree_exec
          main_start main_root cstring sv_undef);
@@ -33,6 +36,16 @@ sub B::BINOP::debug {
     printf "\top_last\t\t0x%x\n", ${$op->last};
 }
 
+sub B::LOOP::debug {
+    my ($op) = @_;
+    $op->B::BINOP::debug();
+    printf <<'EOT', ${$op->redoop}, ${$op->nextop}, ${$op->lastop};
+	op_redoop	0x%x
+	op_nextop	0x%x
+	op_lastop	0x%x
+EOT
+}
+
 sub B::LOGOP::debug {
     my ($op) = @_;
     $op->B::UNOP::debug();
@@ -53,14 +66,14 @@ sub B::PMOP::debug {
     printf "\top_pmnext\t0x%x\n", ${$op->pmnext};
     printf "\top_pmregexp->precomp\t%s\n", cstring($op->precomp);
     printf "\top_pmflags\t0x%x\n", $op->pmflags;
-    $op->pmshort->debug;
     $op->pmreplroot->debug;
 }
 
 sub B::COP::debug {
     my ($op) = @_;
     $op->B::OP::debug();
-    printf <<'EOT', $op->label, $op->stashpv, $op->file, $op->seq, $op->arybase, $op->line, ${$op->warnings};
+    my $cop_io = class($op->io) eq 'SPECIAL' ? '' : $op->io->as_string;
+    printf <<'EOT', $op->label, $op->stashpv, $op->file, $op->seq, $op->arybase, $op->line, ${$op->warnings}, cstring($cop_io);
 	cop_label	%s
 	cop_stashpv	%s
 	cop_file	%s
@@ -68,6 +81,7 @@ sub B::COP::debug {
 	cop_arybase	%d
 	cop_line	%d
 	cop_warnings	0x%x
+	cop_io		%s
 EOT
 }
 
@@ -81,7 +95,7 @@ sub B::SVOP::debug {
 sub B::PVOP::debug {
     my ($op) = @_;
     $op->B::OP::debug();
-    printf "\top_pv\t\t0x%x\n", $op->pv;
+    printf "\top_pv\t\t%s\n", cstring($op->pv);
 }
 
 sub B::PADOP::debug {
@@ -116,6 +130,15 @@ sub B::SV::debug {
 	REFCNT		%d
 	FLAGS		0x%x
 EOT
+}
+
+sub B::RV::debug {
+    my ($rv) = @_;
+    B::SV::debug($rv);
+    printf <<'EOT', ${$rv->RV};
+	RV		0x%x
+EOT
+    $rv->RV->debug;
 }
 
 sub B::PV::debug {
@@ -177,15 +200,16 @@ sub B::CV::debug {
     my ($padlist) = $sv->PADLIST;
     my ($file) = $sv->FILE;
     my ($gv) = $sv->GV;
-    printf <<'EOT', $$stash, $$start, $$root, $$gv, $file, $sv->DEPTH, $padlist, ${$sv->OUTSIDE};
+    printf <<'EOT', $$stash, $$start, $$root, $$gv, $file, $sv->DEPTH, $padlist, ${$sv->OUTSIDE}, $sv->OUTSIDE_SEQ;
 	STASH		0x%x
 	START		0x%x
 	ROOT		0x%x
 	GV		0x%x
 	FILE		%s
 	DEPTH		%d
-	PADLIST		0x%x			       
+	PADLIST		0x%x
 	OUTSIDE		0x%x
+	OUTSIDE_SEQ	%d
 EOT
     $start->debug if $start;
     $root->debug if $root;
@@ -199,24 +223,24 @@ sub B::AV::debug {
     my(@array) = $av->ARRAY;
     print "\tARRAY\t\t(", join(", ", map("0x" . $$_, @array)), ")\n";
     printf <<'EOT', scalar(@array), $av->MAX, $av->OFF, $av->AvFLAGS;
-	FILL		%d    
+	FILL		%d
 	MAX		%d
 	OFF		%d
 	AvFLAGS		%d
 EOT
 }
-    
+
 sub B::GV::debug {
     my ($gv) = @_;
     if ($done_gv{$$gv}++) {
-	printf "GV %s::%s\n", $gv->STASH->NAME, $gv->NAME;
+	printf "GV %s::%s\n", $gv->STASH->NAME, $gv->SAFENAME;
 	return;
     }
     my ($sv) = $gv->SV;
     my ($av) = $gv->AV;
     my ($cv) = $gv->CV;
     $gv->B::SV::debug;
-    printf <<'EOT', $gv->NAME, $gv->STASH->NAME, $gv->STASH, $$sv, $gv->GvREFCNT, $gv->FORM, $$av, ${$gv->HV}, ${$gv->EGV}, $$cv, $gv->CVGEN, $gv->LINE, $gv->FILE, $gv->GvFLAGS;
+    printf <<'EOT', $gv->SAFENAME, $gv->STASH->NAME, $gv->STASH, $$sv, $gv->GvREFCNT, $gv->FORM, $$av, ${$gv->HV}, ${$gv->EGV}, $$cv, $gv->CVGEN, $gv->LINE, $gv->FILE, $gv->GvFLAGS;
 	NAME		%s
 	STASH		%s (0x%x)
 	SV		0x%x
@@ -244,7 +268,7 @@ sub B::SPECIAL::debug {
 sub compile {
     my $order = shift;
     B::clearsym();
-    if ($order eq "exec") {
+    if ($order && $order eq "exec") {
         return sub { walkoptree_exec(main_start, "debug") }
     } else {
         return sub { walkoptree(main_root, "debug") }

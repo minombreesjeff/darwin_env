@@ -1,38 +1,37 @@
 #!./perl
 
-# This test harness will (eventually) test the "tie" functionality
-# without the need for a *DBM* implementation.
-
-# Currently it only tests the untie warning 
+# Add new tests to the end with format:
+# ########
+#
+# # test description
+# Test code
+# EXPECT
+# Warn or die msgs (if any) at - line 1234
+#
 
 chdir 't' if -d 't';
-unshift @INC, "../lib";
+@INC = '../lib';
 $ENV{PERL5LIB} = "../lib";
 
 $|=1;
 
-# catch warnings into fatal errors
-$SIG{__WARN__} = sub { die "WARNING: @_" } ;
-
 undef $/;
-@prgs = split "\n########\n", <DATA>;
-print "1..", scalar @prgs, "\n";
+@prgs = split /^########\n/m, <DATA>;
 
+require './test.pl';
+plan(tests => scalar @prgs);
 for (@prgs){
-    my($prog,$expected) = split(/\nEXPECT\n/, $_);
-    eval "$prog" ;
-    $status = $?;
-    $results = $@ ;
+    ++$i;
+    my($prog,$expected) = split(/\nEXPECT\n/, $_, 2);
+    print("not ok $i # bad test format\n"), next
+        unless defined $expected;
+    my ($testname) = $prog =~ /^# (.*)\n/m;
+    $testname ||= '';
+    $TODO = $testname =~ s/^TODO //;
     $results =~ s/\n+$//;
     $expected =~ s/\n+$//;
-    if ( $status or $results and $results !~ /^WARNING: $expected/){
-	print STDERR "STATUS: $status\n";
-	print STDERR "PROG: $prog\n";
-	print STDERR "EXPECTED:\n$expected\n";
-	print STDERR "GOT:\n$results\n";
-	print "not ";
-    }
-    print "ok ", ++$i, "\n";
+
+    fresh_perl_is($prog, $expected, {}, $testname);
 }
 
 __END__
@@ -42,6 +41,21 @@ use Tie::Hash ;
 tie %h, Tie::StdHash;
 untie %h;
 EXPECT
+########
+
+# standard behaviour, without any extra references
+use Tie::Hash ;
+{package Tie::HashUntie;
+ use base 'Tie::StdHash';
+ sub UNTIE
+  {
+   warn "Untied\n";
+  }
+}
+tie %h, Tie::HashUntie;
+untie %h;
+EXPECT
+Untied
 ########
 
 # standard behaviour, with 1 extra reference
@@ -90,7 +104,7 @@ use Tie::Hash ;
 $a = tie %h, Tie::StdHash;
 untie %h;
 EXPECT
-untie attempted while 1 inner references still exist
+untie attempted while 1 inner references still exist at - line 6.
 ########
 
 # strict behaviour, with 1 extra references via tied generating an error
@@ -100,7 +114,7 @@ tie %h, Tie::StdHash;
 $a = tied %h;
 untie %h;
 EXPECT
-untie attempted while 1 inner references still exist
+untie attempted while 1 inner references still exist at - line 7.
 ########
 
 # strict behaviour, with 1 extra references which are destroyed
@@ -122,14 +136,14 @@ untie %h;
 EXPECT
 ########
 
-# strict error behaviour, with 2 extra references 
+# strict error behaviour, with 2 extra references
 use warnings 'untie';
 use Tie::Hash ;
 $a = tie %h, Tie::StdHash;
 $b = tied %h ;
 untie %h;
 EXPECT
-untie attempted while 2 inner references still exist
+untie attempted while 2 inner references still exist at - line 7.
 ########
 
 # strict behaviour, check scope of strictness.
@@ -147,18 +161,77 @@ untie %H;
 EXPECT
 ########
 
-# verify no leak when underlying object is selfsame tied variable
-my ($a, $b);
+# Forbidden aggregate self-ties
 sub Self::TIEHASH { bless $_[1], $_[0] }
-sub Self::DESTROY { $b = $_[0] + 0; }
 {
-    my %b5;
-    $a = \%b5 + 0;
-    tie %b5, 'Self', \%b5;
+    my %c;
+    tie %c, 'Self', \%c;
 }
-die unless $a == $b;
+EXPECT
+Self-ties of arrays and hashes are not supported at - line 6.
+########
+
+# Allowed scalar self-ties
+my $destroyed = 0;
+sub Self::TIESCALAR { bless $_[1], $_[0] }
+sub Self::DESTROY   { $destroyed = 1; }
+{
+    my $c = 42;
+    tie $c, 'Self', \$c;
+}
+die "self-tied scalar not DESTROYed" unless $destroyed == 1;
 EXPECT
 ########
+
+# Allowed glob self-ties
+my $destroyed = 0;
+my $printed   = 0;
+sub Self2::TIEHANDLE { bless $_[1], $_[0] }
+sub Self2::DESTROY   { $destroyed = 1; }
+sub Self2::PRINT     { $printed = 1; }
+{
+    use Symbol;
+    my $c = gensym;
+    tie *$c, 'Self2', $c;
+    print $c 'Hello';
+}
+die "self-tied glob not PRINTed" unless $printed == 1;
+die "self-tied glob not DESTROYed" unless $destroyed == 1;
+EXPECT
+########
+
+# Allowed IO self-ties
+my $destroyed = 0;
+sub Self3::TIEHANDLE { bless $_[1], $_[0] }
+sub Self3::DESTROY   { $destroyed = 1; }
+sub Self3::PRINT     { $printed = 1; }
+{
+    use Symbol 'geniosym';
+    my $c = geniosym;
+    tie *$c, 'Self3', $c;
+    print $c 'Hello';
+}
+die "self-tied IO not PRINTed" unless $printed == 1;
+die "self-tied IO not DESTROYed" unless $destroyed == 1;
+EXPECT
+########
+
+# TODO IO "self-tie" via TEMP glob
+my $destroyed = 0;
+sub Self3::TIEHANDLE { bless $_[1], $_[0] }
+sub Self3::DESTROY   { $destroyed = 1; }
+sub Self3::PRINT     { $printed = 1; }
+{
+    use Symbol 'geniosym';
+    my $c = geniosym;
+    tie *$c, 'Self3', \*$c;
+    print $c 'Hello';
+}
+die "IO tied to TEMP glob not PRINTed" unless $printed == 1;
+die "IO tied to TEMP glob not DESTROYed" unless $destroyed == 1;
+EXPECT
+########
+
 # Interaction of tie and vec
 
 my ($a, $b);
@@ -170,3 +243,86 @@ vec($a,1,1)=0;
 vec($b,1,1)=0;
 die unless $a eq $b;
 EXPECT
+########
+
+# correct unlocalisation of tied hashes (patch #16431)
+use Tie::Hash ;
+tie %tied, Tie::StdHash;
+{ local $hash{'foo'} } warn "plain hash bad unlocalize" if exists $hash{'foo'};
+{ local $tied{'foo'} } warn "tied hash bad unlocalize" if exists $tied{'foo'};
+{ local $ENV{'foo'}  } warn "%ENV bad unlocalize" if exists $ENV{'foo'};
+EXPECT
+########
+
+# An attempt at lvalueable barewords broke this
+tie FH, 'main';
+EXPECT
+Can't modify constant item in tie at - line 3, near "'main';"
+Execution of - aborted due to compilation errors.
+########
+
+# localizing tied hash slices
+$ENV{FooA} = 1;
+$ENV{FooB} = 2;
+print exists $ENV{FooA} ? 1 : 0, "\n";
+print exists $ENV{FooB} ? 2 : 0, "\n";
+print exists $ENV{FooC} ? 3 : 0, "\n";
+{
+    local @ENV{qw(FooA FooC)};
+    print exists $ENV{FooA} ? 4 : 0, "\n";
+    print exists $ENV{FooB} ? 5 : 0, "\n";
+    print exists $ENV{FooC} ? 6 : 0, "\n";
+}
+print exists $ENV{FooA} ? 7 : 0, "\n";
+print exists $ENV{FooB} ? 8 : 0, "\n";
+print exists $ENV{FooC} ? 9 : 0, "\n"; # this should not exist
+EXPECT
+1
+2
+0
+4
+5
+6
+7
+8
+0
+########
+#
+# FETCH freeing tie'd SV
+sub TIESCALAR { bless [] }
+sub FETCH { *a = \1; 1 }
+tie $a, 'main';
+print $a;
+EXPECT
+Tied variable freed while still in use at - line 6.
+########
+
+#  [20020716.007] - nested FETCHES
+
+sub F1::TIEARRAY { bless [], 'F1' }
+sub F1::FETCH { 1 }
+my @f1;
+tie @f1, 'F1';
+
+sub F2::TIEARRAY { bless [2], 'F2' }
+sub F2::FETCH { my $self = shift; my $x = $f1[3]; $self }
+my @f2;
+tie @f2, 'F2';
+
+print $f2[4][0],"\n";
+
+sub F3::TIEHASH { bless [], 'F3' }
+sub F3::FETCH { 1 }
+my %f3;
+tie %f3, 'F3';
+
+sub F4::TIEHASH { bless [3], 'F4' }
+sub F4::FETCH { my $self = shift; my $x = $f3{3}; $self }
+my %f4;
+tie %f4, 'F4';
+
+print $f4{'foo'}[0],"\n";
+
+EXPECT
+2
+3

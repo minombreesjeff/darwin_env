@@ -1,4 +1,4 @@
-# $Id: Embed.pm,v 1.2 2002/03/14 08:58:20 zarzycki Exp $
+# $Id: Embed.pm,v 1.5 2003/05/20 22:51:12 emoy Exp $
 require 5.002;
 
 package ExtUtils::Embed;
@@ -6,6 +6,7 @@ require Exporter;
 require FileHandle;
 use Config;
 use Getopt::Std;
+use File::Spec;
 
 #Only when we need them
 #require ExtUtils::MakeMaker;
@@ -17,7 +18,7 @@ use vars qw(@ISA @EXPORT $VERSION
 	    );
 use strict;
 
-$VERSION = sprintf("%d.%02d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/);
+$VERSION = 1.2506_01;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(&xsinit &ldopts 
@@ -43,15 +44,11 @@ sub my_return {
     }
 }
 
-sub is_perl_object {
-    $Config{ccflags} =~ /-DPERL_OBJECT/;  
-}
-
 sub xsinit { 
     my($file, $std, $mods) = @_;
     my($fh,@mods,%seen);
     $file ||= "perlxsi.c";
-    my $xsinit_proto = "pTHXo";
+    my $xsinit_proto = "pTHX";
 
     if (@_) {
        @mods = @$mods if $mods;
@@ -86,33 +83,8 @@ sub xsinit {
 
 sub xsi_header {
     return <<EOF;
-#if defined(__cplusplus) && !defined(PERL_OBJECT)
-#define is_cplusplus
-#endif
-
-#ifdef is_cplusplus
-extern "C" {
-#endif
-
 #include <EXTERN.h>
 #include <perl.h>
-#ifdef PERL_OBJECT
-#define NO_XSLOCKS
-#include <XSUB.h>
-#include "win32iop.h"
-#include <fcntl.h>
-#include <perlhost.h>
-#endif
-#ifdef is_cplusplus
-}
-#  ifndef EXTERN_C
-#    define EXTERN_C extern "C"
-#  endif
-#else
-#  ifndef EXTERN_C
-#    define EXTERN_C extern
-#  endif
-#endif
 
 EOF
 }    
@@ -120,7 +92,7 @@ EOF
 sub xsi_protos {
     my(@exts) = @_;
     my(@retval,%seen);
-    my $boot_proto = "pTHXo_ CV* cv";
+    my $boot_proto = "pTHX_ CV* cv";
     foreach $_ (@exts){
         my($pname) = canon('/', $_);
         my($mname, $cname);
@@ -167,6 +139,29 @@ sub static_ext {
     @Extensions;
 }
 
+sub _escape {
+    my $arg = shift;
+    $$arg =~ s/([\(\)])/\\$1/g;
+}
+
+sub _ldflags {
+    my $ldflags = $Config{ldflags};
+    _escape(\$ldflags);
+    return $ldflags;
+}
+
+sub _ccflags {
+    my $ccflags = $Config{ccflags};
+    _escape(\$ccflags);
+    return $ccflags;
+}
+
+sub _ccdlflags {
+    my $ccdlflags = $Config{ccdlflags};
+    _escape(\$ccdlflags);
+    return $ccdlflags;
+}
+
 sub ldopts {
     require ExtUtils::MakeMaker;
     require ExtUtils::Liblist;
@@ -174,7 +169,6 @@ sub ldopts {
     my(@mods,@link_args,@argv);
     my($dllib,$config_libs,@potential_libs,@path);
     local($") = ' ' unless $" eq ' ';
-    my $MM = bless {} => 'MY';
     if (scalar @_) {
        @link_args = @$link_args if $link_args;
        @mods = @$mods if $mods;
@@ -190,10 +184,14 @@ sub ldopts {
        }
     }
     $std = 1 unless scalar @link_args;
-    @path = $path ? split(/:/, $path) : @INC;
+    my $sep = $Config{path_sep} || ':';
+    @path = $path ? split(/\Q$sep/, $path) : @INC;
 
     push(@potential_libs, @link_args)    if scalar @link_args;
-    push(@potential_libs, $Config{libs}) if defined $std;
+    # makemaker includes std libs on windows by default
+    if ($^O ne 'MSWin32' and defined($std)) {
+	push(@potential_libs, $Config{perllibs});
+    }
 
     push(@mods, static_ext()) if $std;
 
@@ -202,13 +200,13 @@ sub ldopts {
     foreach $mod (@mods) {
 	@ns = split(/::|\/|\\/, $mod);
 	$sub = $ns[-1];
-	$root = $MM->catdir(@ns);
+	$root = File::Spec->catdir(@ns);
 	
 	print STDERR "searching for '$sub${lib_ext}'\n" if $Verbose;
 	foreach (@path) {
-	    next unless -e ($archive = $MM->catdir($_,"auto",$root,"$sub$lib_ext"));
+	    next unless -e ($archive = File::Spec->catdir($_,"auto",$root,"$sub$lib_ext"));
 	    push @archives, $archive;
-	    if(-e ($extra = $MM->catdir($_,"auto",$root,"extralibs.ld"))) {
+	    if(-e ($extra = File::Spec->catdir($_,"auto",$root,"extralibs.ld"))) {
 		local(*FH); 
 		if(open(FH, $extra)) {
 		    my($libs) = <FH>; chomp $libs;
@@ -223,16 +221,24 @@ sub ldopts {
     }
     #print STDERR "\@potential_libs = @potential_libs\n";
 
-    my $libperl = (grep(/^-l\w*perl\w*$/, @link_args))[0] || "-lperl";
+    my $libperl;
+    if ($^O eq 'MSWin32') {
+	$libperl = $Config{libperl};
+    }
+    else {
+	$libperl = (grep(/^-l\w*perl\w*$/, @link_args))[0] || "-lperl";
+    }
 
+    my $lpath = File::Spec->catdir($Config{archlibexp}, 'CORE');
+    $lpath = qq["$lpath"] if $^O eq 'MSWin32';
     my($extralibs, $bsloadlibs, $ldloadlibs, $ld_run_path) =
-	$MM->ext(join ' ', 
-		 $MM->catdir("-L$Config{archlibexp}", "CORE"), " $libperl", 
-		 @potential_libs);
+	MM->ext(join ' ', "-L$lpath", $libperl, @potential_libs);
 
     my $ld_or_bs = $bsloadlibs || $ldloadlibs;
     print STDERR "bs: $bsloadlibs ** ld: $ldloadlibs" if $Verbose;
-    my $linkage = "$Config{ccdlflags} $Config{ldflags} @archives $ld_or_bs";
+    my $ccdlflags = _ccdlflags();
+    my $ldflags   = _ldflags();
+    my $linkage = "$ccdlflags $ldflags @archives $ld_or_bs";
     print STDERR "ldopts: '$linkage'\n" if $Verbose;
 
     return $linkage if scalar @_;
@@ -240,15 +246,19 @@ sub ldopts {
 }
 
 sub ccflags {
-    my_return(" $Config{ccflags} ");
+    my $ccflags = _ccflags();
+    my_return(" $ccflags ");
 }
 
 sub ccdlflags {
-    my_return(" $Config{ccdlflags} ");
+    my $ccdlflags = _ccdlflags();
+    my_return(" $ccdlflags ");
 }
 
 sub perl_inc {
-    my_return(" -I$Config{archlibexp}/CORE ");
+    my $dir = File::Spec->catdir($Config{archlibexp}, 'CORE');
+    $dir = qq["$dir"] if $^O eq 'MSWin32';
+    my_return(" -I$dir ");
 }
 
 sub ccopts {
@@ -277,6 +287,7 @@ ExtUtils::Embed - Utilities for embedding Perl in C/C++ applications
 
 
  perl -MExtUtils::Embed -e xsinit 
+ perl -MExtUtils::Embed -e ccopts 
  perl -MExtUtils::Embed -e ldopts 
 
 =head1 DESCRIPTION
@@ -295,7 +306,7 @@ ccdlflags(), xsi_header(), xsi_protos(), xsi_body()
 
 =head1 FUNCTIONS
 
-=over
+=over 4
 
 =item xsinit()
 
@@ -477,14 +488,14 @@ This function returns a string of B<boot_$ModuleName> prototypes for each @modul
 This function returns a string of calls to B<newXS()> that glue the module B<bootstrap>
 function to B<boot_ModuleName> for each @modules.
 
-B<xsinit()> uses the xsi_* functions to generate most of it's code.
+B<xsinit()> uses the xsi_* functions to generate most of its code.
 
 =back
 
 =head1 EXAMPLES
 
 For examples on how to use B<ExtUtils::Embed> for building C/C++ applications
-with embedded perl, see the eg/ directory and L<perlembed>.
+with embedded perl, see L<perlembed>.
 
 =head1 SEE ALSO
 

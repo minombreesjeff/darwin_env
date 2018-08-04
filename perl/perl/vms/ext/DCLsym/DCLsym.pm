@@ -7,7 +7,7 @@ use strict;
 
 # Package globals
 @ISA = ( 'DynaLoader' );
-$VERSION = '1.01';
+$VERSION = '1.02';
 my(%Locsyms) = ( ':ID' => 'LOCAL' );
 my(%Gblsyms) = ( ':ID' => 'GLOBAL');
 my $DoCache = 1;
@@ -201,7 +201,7 @@ can also call methods directly to manipulate individual symbols.  In some
 cases, this allows you finer control than using a tied hash aggregate.  The
 following methods are supported:
 
-=over
+=over 4
 
 =item new
 
@@ -215,7 +215,7 @@ C<tie> described above.
 If called in a scalar context, C<getsym> returns the value of the symbol whose
 name is given as the argument to the call, or C<undef> if no such symbol
 exists.  Symbols in the local symbol table are always used in preference to
-symbols in the global symbol table.  If called in an array context, C<getsym>
+symbols in the global symbol table.  If called in a list context, C<getsym>
 returns a two-element list, whose first element is the value of the symbol, and
 whose second element is the string 'GLOBAL' or 'LOCAL', indicating the table
 from which the symbol's value was read.
@@ -253,6 +253,8 @@ disabled, respectively.
 This method is a stopgap until we can incorporate code into this extension to
 traverse the process' symbol table directly, so it may disappear in a future
 version of this package.
+
+=back
 
 =head1 AUTHOR
 

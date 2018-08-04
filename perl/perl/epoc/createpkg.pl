@@ -3,38 +3,39 @@
 use File::Find;
 use Cwd;
 
-$VERSION="5.5";
-$PATCH="650";
-$EPOC_VERSION=19;
-$CROSSCOMPILEPATH=cwd;
-$CROSSREPLACEPATH="H:\\devel\\perl5.5.650";
+$VERSION="5.8.0";
+$EPOC_VERSION=1;
 
 
 sub filefound {
-    my $f = $File::Find::name;
+
+  my $f = $File::Find::name;
     
-    return if ( $f =~ /CVS|unicode|CPAN|ExtUtils|IPC|User|DB.pm|\.a$|\.ld$|\.exists$/i);
-    my $back = $f;
+  return if ( $f =~ /CVS|Unicode|unicore|CPAN|ExtUtils|IPC|User|DB.pm|\.a$|\.ld$|\.exists$|\.pod$|\.t$/i);
+  my $back = $f;
 
-    $back =~ s|$CROSSCOMPILEPATH||;
+  my $psiback = $back;
 
-    $back =~ s|/|\\|g;
-
-    my $psiback = $back;
-
-    $psiback =~ s/\\lib\\/\\perl\\lib\\$VERSION.$PATCH\\/i;
-
-    print OUT "\"$CROSSREPLACEPATH$back\"-\"!:$psiback\"\n"  if ( -f $f );
-;
+  $psiback =~ s|.*/lib/|\\emx\\lib\\perl\\$VERSION\\|;
+  $psiback =~ s|/|\\|g;
+  print OUT "\"$back\"-\"!:$psiback\"\n"  if ( -f $f );
 }
 
 open OUT,">perl.pkg";
 
-print OUT "#{\"perl$VERSION\"},(0x100051d8),$PATCH,$EPOC_VERSION,0\n";
-
-print OUT "\"$CROSSREPLACEPATH\\perlmain.exe\"-\"!:\\perl.exe\"\n";
+print OUT "#{\"perl$VERSION\"},(0x100051d8),0,$EPOC_VERSION,0\n";
+print OUT "\"" . cwd . "/Artistic.txt\"-\"\",FT,TC\n";
+print OUT "\"" . cwd . "/perl\"-\"!:\\emx\\bin\\perl.exe\"\n";
 
 find(\&filefound, cwd.'/lib');
-print OUT "@\"G:\\lib\\stdlib.sis\",(0x0100002c3)\n"
 
+open IN,  "<Artistic";
+open OUT, ">Artistic.txt";
+while (my $line = <IN>) {
+  chomp $line;
+  print OUT "$line\r\n";
+}
+
+close IN;
+close OUT;
 

@@ -1,0 +1,18 @@
+# Avoid version control files.
+\bRCS\b
+\bCVS\b
+,v$
+\B\.svn\b
+
+# Avoid Makemaker generated and utility files.
+\bMANIFEST\.bak
+\bMakefile$
+\bblib/
+\bMakeMaker-\d
+\bpm_to_blib$
+
+# Avoid temp and backup files.
+~$
+\.old$
+\#$
+\b\.#

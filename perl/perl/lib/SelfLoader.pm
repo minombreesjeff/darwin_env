@@ -3,7 +3,7 @@ package SelfLoader;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(AUTOLOAD);
-$VERSION = "1.0901";
+$VERSION = "1.0903";
 sub Version {$VERSION}
 $DEBUG = 0;
 
@@ -20,6 +20,7 @@ sub croak { require Carp; goto &Carp::croak }
 AUTOLOAD {
     print STDERR "SelfLoader::AUTOLOAD for $AUTOLOAD\n" if $DEBUG;
     my $SL_code = $Cache{$AUTOLOAD};
+    my $save = $@; # evals in both AUTOLOAD and _load_stubs can corrupt $@
     unless ($SL_code) {
         # Maybe this pack had stubs before __DATA__, and never initialized.
         # Or, this maybe an automatic DESTROY method call when none exists.
@@ -31,11 +32,13 @@ AUTOLOAD {
         croak "Undefined subroutine $AUTOLOAD" unless $SL_code;
     }
     print STDERR "SelfLoader::AUTOLOAD eval: $SL_code\n" if $DEBUG;
+
     eval $SL_code;
     if ($@) {
         $@ =~ s/ at .*\n//;
         croak $@;
     }
+    $@ = $save;
     defined(&$AUTOLOAD) || die "SelfLoader inconsistency error";
     delete $Cache{$AUTOLOAD};
     goto &$AUTOLOAD
@@ -44,7 +47,8 @@ AUTOLOAD {
 sub load_stubs { shift->_load_stubs((caller)[0]) }
 
 sub _load_stubs {
-    my($self, $callpack) = @_;
+    # $endlines is used by Devel::SelfStubber to capture lines after __END__
+    my($self, $callpack, $endlines) = @_;
     my $fh = \*{"${callpack}::DATA"};
     my $currpack = $callpack;
     my($line,$name,@lines, @stubs, $protoype);
@@ -91,7 +95,16 @@ sub _load_stubs {
             push(@lines,$line);
         }
     }
-    close($fh) unless defined($line) && $line =~ /^__END__\s*DATA/;     # __END__
+    if (defined($line) && $line =~ /^__END__/) { # __END__
+        unless ($line =~ /^__END__\s*DATA/) {
+            if ($endlines) {
+                # Devel::SelfStubber would like us to capture the lines after
+                # __END__ so it can write out the entire file
+                @$endlines = <$fh>;
+            }
+            close($fh);
+        }
+    }
     push(@stubs, $self->_add_to_cache($name, $currpack, \@lines, $protoype));
     eval join('', @stubs) if @stubs;
 }

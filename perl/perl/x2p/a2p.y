@@ -1,17 +1,23 @@
 %{
-/* $RCSfile: a2p.y,v $$Revision: 1.2 $$Date: 2002/03/14 09:04:00 $
+/* $RCSfile: a2p.y,v $$Revision: 1.5 $$Date: 2003/05/20 22:54:50 $
  *
- *    Copyright (c) 1991-1997, Larry Wall
+ *    Copyright (C) 1991, 1992, 1993, 1994, 1996, 1997, 1999, 2000,
+ *    by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
  *
  * $Log: a2p.y,v $
- * Revision 1.2  2002/03/14 09:04:00  zarzycki
- * Revert HEAD back to perl-17
+ * Revision 1.5  2003/05/20 22:54:50  emoy
+ * Update to Perl 5.8.1, including thread support and two level namespace.
+ * Bug #: 3258028
+ * Reviewed by: Jordan Hubbard
  *
- * Revision 1.1.1.2  2000/03/31 05:13:03  wsanchez
- * Import of perl 5.6.0
+ * Revision 1.4.2.1  2003/05/17 07:07:56  emoy
+ * Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+ * two level namespace.  Append prefix, installprefix, and standard paths to
+ * darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+ * .packlist.
  *
  */
 

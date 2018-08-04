@@ -2,7 +2,7 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    unshift @INC, '../lib';
+    @INC = '../lib';
 }
 
 my @expect;
@@ -77,7 +77,7 @@ package main;
 
 use Symbol;
 
-print "1..29\n";
+print "1..40\n";
 
 my $fh = gensym;
 
@@ -149,3 +149,96 @@ ok($data eq "qwerty");
 @expect = (CLOSE => $ob);
 $r = close $fh;
 ok($r == 5);
+
+# Does aliasing work with tied FHs?
+*ALIAS = *$fh;
+@expect = (PRINT => $ob,"some","text");
+$r = print ALIAS @expect[2,3];
+ok($r == 1);
+
+{
+    use warnings;
+    # Special case of aliasing STDERR, which used
+    # to dump core when warnings were enabled
+    local *STDERR = *$fh;
+    @expect = (PRINT => $ob,"some","text");
+    $r = print STDERR @expect[2,3];
+    ok($r == 1);
+}
+
+{
+    # Test for change #11536
+    package Foo;
+    use strict;
+    sub TIEHANDLE { bless {} }
+    my $cnt = 'a';
+    sub READ {
+	$_[1] = $cnt++;
+	1;
+    }
+    sub do_read {
+	my $fh = shift;
+	read $fh, my $buff, 1;
+	main::ok(1);
+    }
+    $|=1;
+    tie *STDIN, 'Foo';
+    read STDIN, my $buff, 1;
+    main::ok(1);
+    do_read(\*STDIN);
+    untie *STDIN;
+}
+
+
+{
+    # test for change 11639: Can't localize *FH, then tie it
+    {
+	local *foo;
+	tie %foo, 'Blah';
+    }
+    ok(!tied %foo);
+
+    {
+	local *bar;
+	tie @bar, 'Blah';
+    }
+    ok(!tied @bar);
+
+    {
+	local *BAZ;
+	tie *BAZ, 'Blah';
+    }
+    ok(!tied *BAZ);
+
+    package Blah;
+
+    sub TIEHANDLE {bless {}}
+    sub TIEHASH   {bless {}}
+    sub TIEARRAY  {bless {}}
+}
+
+{
+    # warnings should pass to the PRINT method of tied STDERR
+    my @received;
+
+    local *STDERR = *$fh;
+    local *Implement::PRINT = sub { @received = @_ };
+
+    $r = warn("some", "text", "\n");
+    @expect = (PRINT => $ob,"sometext\n");
+
+    Implement::compare(PRINT => @received);
+}
+
+{
+    # [ID 20020713.001] chomp($data=<tied_fh>)
+    local *TEST;
+    tie *TEST, 'CHOMP';
+    my $data;
+    chomp($data = <TEST>);
+    ok($data eq 'foobar');
+
+    package CHOMP;
+    sub TIEHANDLE { bless {}, $_[0] }
+    sub READLINE { "foobar\n" }
+}

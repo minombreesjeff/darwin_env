@@ -4,14 +4,17 @@
 #
 #      You may distribute under the terms of either the GNU General Public
 #      License or the Artistic License, as specified in the README file.
+
 package B::Assembler;
 use Exporter;
 use B qw(ppname);
 use B::Asmdata qw(%insn_data @insn_name);
+use Config qw(%Config);
+require ByteLoader;		# we just need its $VERSIOM
 
 @ISA = qw(Exporter);
-@EXPORT_OK = qw(assemble_fh assemble_insn strip_comments
-		parse_statement uncstring);
+@EXPORT_OK = qw(assemble_fh newasm endasm assemble);
+$VERSION = 0.04;
 
 use strict;
 my %opnumber;
@@ -20,7 +23,7 @@ for ($i = 0; defined($opname = ppname($i)); $i++) {
     $opnumber{$opname} = $i;
 }
 
-my ($linenum, $errors);
+my($linenum, $errors, $out); #	global state, set up by newasm
 
 sub error {
     my $str = shift;
@@ -30,6 +33,15 @@ sub error {
 
 my $debug = 0;
 sub debug { $debug = shift }
+
+sub limcheck($$$$){
+    my( $val, $lo, $hi, $loc ) = @_;
+    if( $val < $lo || $hi < $val ){
+        error "argument for $loc outside [$lo, $hi]: $val";
+        $val = $hi;
+    }
+    return $val;
+}
 
 #
 # First define all the data conversion subs to which Asmdata will refer
@@ -44,30 +56,46 @@ sub B::Asmdata::PUT_U8 {
 	    $c = substr($c, 0, 1);
 	}
     } else {
+        $arg = limcheck( $arg, 0, 0xff, 'U8' );
 	$c = chr($arg);
     }
     return $c;
 }
 
-sub B::Asmdata::PUT_U16 { pack("n", $_[0]) }
-sub B::Asmdata::PUT_U32 { pack("N", $_[0]) }
-sub B::Asmdata::PUT_I32 { pack("N", $_[0]) }
-sub B::Asmdata::PUT_NV  { sprintf("%lf\0", $_[0]) }
-sub B::Asmdata::PUT_objindex { pack("N", $_[0]) } # could allow names here
+sub B::Asmdata::PUT_U16 {
+    my $arg = limcheck( $_[0], 0, 0xffff, 'U16' );
+    pack("S", $arg);
+}
+sub B::Asmdata::PUT_U32 {
+    my $arg = limcheck( $_[0], 0, 0xffffffff, 'U32' );
+    pack("L", $arg);
+}
+sub B::Asmdata::PUT_I32 {
+    my $arg = limcheck( $_[0], -0x80000000, 0x7fffffff, 'I32' );
+    pack("l", $arg);
+}
+sub B::Asmdata::PUT_NV  { sprintf("%s\0", $_[0]) } # "%lf" looses precision and pack('d',...)
+						   # may not even be portable between compilers
+sub B::Asmdata::PUT_objindex { # could allow names here
+    my $arg = limcheck( $_[0], 0, 0xffffffff, '*index' );
+    pack("L", $arg);
+} 
 sub B::Asmdata::PUT_svindex { &B::Asmdata::PUT_objindex }
 sub B::Asmdata::PUT_opindex { &B::Asmdata::PUT_objindex }
+sub B::Asmdata::PUT_pvindex { &B::Asmdata::PUT_objindex }
 
 sub B::Asmdata::PUT_strconst {
     my $arg = shift;
-    $arg = uncstring($arg);
-    if (!defined($arg)) {
+    my $str = uncstring($arg);
+    if (!defined($str)) {
 	error "bad string constant: $arg";
-	return "";
+	$str = '';
     }
-    if ($arg =~ s/\0//g) {
+    if ($str =~ s/\0//g) {
 	error "string constant argument contains NUL: $arg";
+        $str = '';
     }
-    return $arg . "\0";
+    return $str . "\0";
 }
 
 sub B::Asmdata::PUT_pvcontents {
@@ -77,9 +105,12 @@ sub B::Asmdata::PUT_pvcontents {
 }
 sub B::Asmdata::PUT_PV {
     my $arg = shift;
-    $arg = uncstring($arg);
-    error "bad string argument: $arg" unless defined($arg);
-    return pack("N", length($arg)) . $arg;
+    my $str = uncstring($arg);
+    if( ! defined($str) ){
+        error "bad string argument: $arg";
+        $str = '';
+    }
+    return pack("L", length($str)) . $str;
 }
 sub B::Asmdata::PUT_comment_t {
     my $arg = shift;
@@ -90,7 +121,7 @@ sub B::Asmdata::PUT_comment_t {
     }
     return $arg . "\n";
 }
-sub B::Asmdata::PUT_double { sprintf("%s\0", $_[0]) }
+sub B::Asmdata::PUT_double { sprintf("%s\0", $_[0]) } # see PUT_NV above
 sub B::Asmdata::PUT_none {
     my $arg = shift;
     error "extraneous argument: $arg" if defined $arg;
@@ -103,12 +134,17 @@ sub B::Asmdata::PUT_op_tr_array {
 	error "wrong number of arguments to op_tr_array";
 	@ary = (0) x 256;
     }
-    return pack("n256", @ary);
+    return pack("S256", @ary);
 }
 # XXX Check this works
+# Note: $arg >> 32 is a no-op on 32-bit systems
 sub B::Asmdata::PUT_IV64 {
     my $arg = shift;
-    return pack("NN", $arg >> 32, $arg & 0xffffffff);
+    return pack("LL", ($arg >> 16) >>16 , $arg & 0xffffffff);
+}
+
+sub B::Asmdata::PUT_IV {
+    $Config{ivsize} == 4 ? &B::Asmdata::PUT_I32 : &B::Asmdata::PUT_IV64;
 }
 
 my %unesc = (n => "\n", r => "\r", t => "\t", a => "\a",
@@ -124,9 +160,8 @@ sub uncstring {
 sub strip_comments {
     my $stmt = shift;
     # Comments only allowed in instructions which don't take string arguments
+    # Treat string as a single line so .* eats \n characters.
     $stmt =~ s{
-	(?sx)	# Snazzy extended regexp coming up. Also, treat
-		# string as a single line so .* eats \n characters.
 	^\s*	# Ignore leading whitespace
 	(
 	  [^"]*	# A double quote '"' indicates a string argument. If we
@@ -134,21 +169,38 @@ sub strip_comments {
 	)
 	\s*\#	# Any amount of whitespace plus the comment marker...
 	.*$	# ...which carries on to end-of-string.
-    }{$1};	# Keep only the instruction and optional argument.
+    }{$1}sx;	# Keep only the instruction and optional argument.
     return $stmt;
+}
+
+# create the ByteCode header: magic, archname, ByteLoader $VERSION, ivsize,
+# 	ptrsize, byteorder
+# nvtype is irrelevant (floats are stored as strings)
+# byteorder is strconst not U32 because of varying size issues
+
+sub gen_header {
+    my $header = "";
+
+    $header .= B::Asmdata::PUT_U32(0x43424c50);	# 'PLBC'
+    $header .= B::Asmdata::PUT_strconst('"' . $Config{archname}. '"');
+    $header .= B::Asmdata::PUT_strconst(qq["$ByteLoader::VERSION"]);
+    $header .= B::Asmdata::PUT_U32($Config{ivsize});
+    $header .= B::Asmdata::PUT_U32($Config{ptrsize});
+    $header .= B::Asmdata::PUT_strconst(sprintf(qq["0x%s"], $Config{byteorder}));
+
+    $header;
 }
 
 sub parse_statement {
     my $stmt = shift;
     my ($insn, $arg) = $stmt =~ m{
-	(?sx)
 	^\s*	# allow (but ignore) leading whitespace
 	(.*?)	# Instruction continues up until...
 	(?:	# ...an optional whitespace+argument group
 	    \s+		# first whitespace.
 	    (.*)	# The argument is all the rest (newlines included).
 	)?$	# anchor at end-of-line
-    };	
+    }sx;
     if (defined($arg)) {
 	if ($arg =~ s/^0x(?=[0-9a-fA-F]+$)//) {
 	    $arg = hex($arg);
@@ -183,27 +235,53 @@ sub assemble_insn {
 
 sub assemble_fh {
     my ($fh, $out) = @_;
-    my ($line, $insn, $arg);
-    $linenum = 0;
-    $errors = 0;
+    my $line;
+    my $asm = newasm($out);
     while ($line = <$fh>) {
-	$linenum++;
-	chomp $line;
-	if ($debug) {
-	    my $quotedline = $line;
-	    $quotedline =~ s/\\/\\\\/g;
-	    $quotedline =~ s/"/\\"/g;
-	    &$out(assemble_insn("comment", qq("$quotedline")));
-	}
-	$line = strip_comments($line) or next;
-	($insn, $arg) = parse_statement($line);
-	&$out(assemble_insn($insn, $arg));
-	if ($debug) {
-	    &$out(assemble_insn("nop", undef));
-	}
+	assemble($line);
     }
+    endasm();
+}
+
+sub newasm {
+    my($outsub) = @_;
+
+    die "Invalid printing routine for B::Assembler\n" unless ref $outsub eq 'CODE';
+    die <<EOD if ref $out;
+Can't have multiple byteassembly sessions at once!
+	(perhaps you forgot an endasm()?)
+EOD
+
+    $linenum = $errors = 0;
+    $out = $outsub;
+
+    $out->(gen_header());
+}
+
+sub endasm {
     if ($errors) {
-	die "Assembly failed with $errors error(s)\n";
+	die "There were $errors assembly errors\n";
+    }
+    $linenum = $errors = $out = 0;
+}
+
+sub assemble {
+    my($line) = @_;
+    my ($insn, $arg);
+    $linenum++;
+    chomp $line;
+    if ($debug) {
+	my $quotedline = $line;
+	$quotedline =~ s/\\/\\\\/g;
+	$quotedline =~ s/"/\\"/g;
+	$out->(assemble_insn("comment", qq("$quotedline")));
+    }
+    if( $line = strip_comments($line) ){
+        ($insn, $arg) = parse_statement($line);
+        $out->(assemble_insn($insn, $arg));
+        if ($debug) {
+	    $out->(assemble_insn("nop", undef));
+        }
     }
 }
 
@@ -217,14 +295,21 @@ B::Assembler - Assemble Perl bytecode
 
 =head1 SYNOPSIS
 
-	use Assembler;
+	use B::Assembler qw(newasm endasm assemble);
+	newasm(\&printsub);	# sets up for assembly
+	assemble($buf); 	# assembles one line
+	endasm();		# closes down
+
+	use B::Assembler qw(assemble_fh);
+	assemble_fh($fh, \&printsub);	# assemble everything in $fh
 
 =head1 DESCRIPTION
 
 See F<ext/B/B/Assembler.pm>.
 
-=head1 AUTHOR
+=head1 AUTHORS
 
 Malcolm Beattie, C<mbeattie@sable.ox.ac.uk>
+Per-statement interface by Benjamin Stuhl, C<sho_pi@hotmail.com>
 
 =cut

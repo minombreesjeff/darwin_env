@@ -1,23 +1,26 @@
 /*    pp.h
  *
- *    Copyright (c) 1991-2000, Larry Wall
+ *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1998, 1999,
+ *    2000, 2001, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
  *
  */
 
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 #define ARGS thr
 #define dARGS struct perl_thread *thr;
 #else
 #define ARGS
 #define dARGS
-#endif /* USE_THREADS */
+#endif /* USE_5005THREADS */
 
 #define PP(s) OP * Perl_##s(pTHX)
 
 /*
+=head1 Stack Manipulation Macros
+
 =for apidoc AmU||SP
 Stack pointer.  This is usually handled by C<xsubpp>.  See C<dSP> and
 C<SPAGAIN>.
@@ -33,6 +36,13 @@ L<perlcall>.
 Declares a local copy of perl's stack pointer for the XSUB, available via
 the C<SP> macro.  See C<SP>.
 
+=for apidoc ms||djSP
+
+Declare Just C<SP>. This is actually identical to C<dSP>, and declares
+a local copy of perl's stack pointer, available via the C<SP> macro.
+See C<SP>.  (Available for backward source code compatibility with the
+old (Perl 5.005) thread model.)
+
 =for apidoc Ams||dMARK
 Declare a stack marker variable, C<mark>, for the XSUB.  See C<MARK> and
 C<dORIGMARK>.
@@ -46,9 +56,9 @@ The original stack mark for the XSUB.  See C<dORIGMARK>.
 =for apidoc Ams||SPAGAIN
 Refetch the stack pointer.  Used after a callback.  See L<perlcall>.
 
-=cut
-*/
+=cut */
 
+#undef SP /* Solaris 2.7 i386 has this in /usr/include/sys/reg.h */
 #define SP sp
 #define MARK mark
 #define TARG targ
@@ -60,8 +70,8 @@ Refetch the stack pointer.  Used after a callback.  See L<perlcall>.
 #define TOPMARK		(*PL_markstack_ptr)
 #define POPMARK		(*PL_markstack_ptr--)
 
-#define djSP		register SV **sp = PL_stack_sp
-#define dSP		dTHR; djSP
+#define dSP		register SV **sp = PL_stack_sp
+#define djSP		dSP
 #define dMARK		register SV **mark = PL_stack_base + POPMARK
 #define dORIGMARK	I32 origmark = mark - PL_stack_base
 #define SETORIGMARK	origmark = mark - PL_stack_base
@@ -93,7 +103,16 @@ See C<PUSHMARK> and L<perlcall> for other uses.
 Pops an SV off the stack.
 
 =for apidoc Amn|char*|POPp
+Pops a string off the stack. Deprecated. New code should provide
+a STRLEN n_a and use POPpx.
+
+=for apidoc Amn|char*|POPpx
 Pops a string off the stack.
+Requires a variable STRLEN n_a in scope.
+
+=for apidoc Amn|char*|POPpbytex
+Pops a string off the stack which must consist of bytes i.e. characters < 256.
+Requires a variable STRLEN n_a in scope.
 
 =for apidoc Amn|NV|POPn
 Pops a double off the stack.
@@ -115,6 +134,7 @@ Pops a long off the stack.
 #define POPs		(*sp--)
 #define POPp		(SvPVx(POPs, PL_na))		/* deprecated */
 #define POPpx		(SvPVx(POPs, n_a))
+#define POPpbytex	(SvPVbytex(POPs, n_a))
 #define POPn		(SvNVx(POPs))
 #define POPi		((IV)SvIVx(POPs))
 #define POPu		((UV)SvUVx(POPs))
@@ -126,6 +146,8 @@ Pops a long off the stack.
 #endif
 
 #define TOPs		(*sp)
+#define TOPm1s		(*(sp-1))
+#define TOPp1s		(*(sp+1))
 #define TOPp		(SvPV(TOPs, PL_na))		/* deprecated */
 #define TOPpx		(SvPV(TOPs, n_a))
 #define TOPn		(SvNV(TOPs))
@@ -143,11 +165,11 @@ Pops a long off the stack.
 /*
 =for apidoc Am|void|EXTEND|SP|int nitems
 Used to extend the argument stack for an XSUB's return values. Once
-used, guarrantees that there is room for at least C<nitems> to be pushed
+used, guarantees that there is room for at least C<nitems> to be pushed
 onto the stack.
 
 =for apidoc Am|void|PUSHs|SV* sv
-Push an SV onto the stack.  The stack must have room for this element. 
+Push an SV onto the stack.  The stack must have room for this element.
 Does not handle 'set' magic.  See C<XPUSHs>.
 
 =for apidoc Am|void|PUSHp|char* str|STRLEN len
@@ -185,7 +207,7 @@ Push an integer onto the stack, extending the stack if necessary.  Handles
 'set' magic. See C<PUSHi>.
 
 =for apidoc Am|void|XPUSHu|UV uv
-Push an unsigned integer onto the stack, extending the stack if necessary. 
+Push an unsigned integer onto the stack, extending the stack if necessary.
 See C<PUSHu>.
 
 =cut
@@ -325,6 +347,7 @@ See C<PUSHu>.
           if (PL_amagic_generation) { \
 	    SV* tmpsv; \
 	    SV* arg= sp[shift]; \
+          if(0) goto am_again;  /* shut up unused warning */ \
 	  am_again: \
 	    if ((SvAMAGIC(arg))&&\
 		(tmpsv=AMG_CALLun(arg,meth))) {\
@@ -342,10 +365,13 @@ See C<PUSHu>.
 	    { dTARGETSTACKED; 						\
 		{ dSP; tryAMAGICunW(meth,FORCE_SETs,shift,RETURN);}}}
 
-#define setAGAIN(ref) sv = arg = ref;					\
-  if (!SvROK(ref))							\
+#define setAGAIN(ref) sv = ref;							\
+  if (!SvROK(ref))								\
       Perl_croak(aTHX_ "Overloaded dereference did not return a reference");	\
-  goto am_again;
+  if (ref != arg && SvRV(ref) != SvRV(arg)) {					\
+      arg = ref;								\
+      goto am_again;								\
+  }
 
 #define tryAMAGICunDEREF(meth) tryAMAGICunW(meth,setAGAIN,0,(void)0)
 
@@ -370,3 +396,10 @@ See C<PUSHu>.
     SvREFCNT_dec(tmpRef);                   \
     SvRV(rv)=AMG_CALLun(rv,copy);        \
   } } STMT_END
+
+/*
+=for apidoc mU||LVRET
+True if this op will be the return value of an lvalue subroutine
+
+=cut */
+#define LVRET ((PL_op->op_private & OPpMAYBE_LVSUB) && is_lvalue_sub())

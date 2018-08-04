@@ -1,18 +1,19 @@
 #!./perl
 
-# $RCSfile: cpp.t,v $$Revision: 1.2 $$Date: 2002/03/14 09:02:07 $
+# $RCSfile: cpp.t,v $$Revision: 1.5 $$Date: 2003/05/20 22:53:58 $
 
 BEGIN {
     chdir 't' if -d 't';
-    unshift @INC, '../lib';
+    @INC = '../lib';
+    $ENV{PERL5LIB} = '../lib';
 }
 
 use Config;
-if ( $^O eq 'MSWin32' or
-     ($Config{'cppstdin'} =~ /\bcppstdin\b/) and
-     ( ! -x $Config{'binexp'} . "/cppstdin") ) {
+if ( $^O eq 'MacOS' ||
+     ($Config{'cppstdin'} =~ /\bcppstdin\b/) &&
+     ! -x $Config{'binexp'} . "/cppstdin" ) {
     print "1..0 # Skip: \$Config{cppstdin} unavailable\n";
     exit; 		# Cannot test till after install, alas.
 }
 
-system "./perl -P comp/cpp.aux"
+system qq{$^X -"P" "comp/cpp.aux"};

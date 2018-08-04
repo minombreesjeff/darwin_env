@@ -1,4 +1,4 @@
-;# $RCSfile: termcap.pl,v $$Revision: 1.2 $$Date: 2002/03/14 08:57:54 $
+;# $RCSfile: termcap.pl,v $$Revision: 1.5 $$Date: 2003/05/20 22:50:36 $
 #
 # This library is no longer being maintained, and is included for backward
 # compatibility with Perl 4 programs which may require it.
@@ -22,7 +22,7 @@ sub Tgetent {
     local($TERM) = @_;
     local($TERMCAP,$_,$entry,$loop,$field);
 
-    warn "Tgetent: no ospeed set" unless $ospeed;
+    # warn "Tgetent: no ospeed set" unless $ospeed;
     foreach $key (keys %TC) {
 	delete $TC{$key};
     }

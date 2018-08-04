@@ -51,7 +51,7 @@ these classes with methods that are specific to file handles.
 
 =item new ( FILENAME [,MODE [,PERMS]] )
 
-Creates a C<IO::File>.  If it receives any parameters, they are passed to
+Creates an C<IO::File>.  If it receives any parameters, they are passed to
 the method C<open>; if the open fails, the object is destroyed.  Otherwise,
 it is returned to the caller.
 
@@ -78,7 +78,7 @@ whitespace or other special characters, and the second parameter is
 the open mode, optionally followed by a file permission value.
 
 If C<IO::File::open> receives a Perl mode string ("E<gt>", "+E<lt>", etc.)
-or a ANSI C fopen() mode string ("w", "r+", etc.), it uses the basic
+or an ANSI C fopen() mode string ("w", "r+", etc.), it uses the basic
 Perl C<open> operator (but protects any special characters).
 
 If C<IO::File::open> is given a numeric mode, it passes that mode
@@ -103,7 +103,7 @@ Derived from FileHandle.pm by Graham Barr E<lt>F<gbarr@pobox.com>E<gt>.
 
 =cut
 
-require 5.005_64;
+use 5.006_001;
 use strict;
 our($VERSION, @EXPORT, @EXPORT_OK, @ISA);
 use Carp;
@@ -116,7 +116,7 @@ require Exporter;
 
 @ISA = qw(IO::Handle IO::Seekable Exporter);
 
-$VERSION = "1.08";
+$VERSION = "1.09";
 
 @EXPORT = @IO::Seekable::EXPORT;
 
@@ -158,9 +158,11 @@ sub open {
 	    defined $perms or $perms = 0666;
 	    return sysopen($fh, $file, $mode, $perms);
 	}
-	if (! File::Spec->file_name_is_absolute($file)) {
-            $file = File::Spec->catfile(File::Spec->curdir(),$file);
-        }
+	if (defined($file) && length($file)
+	    && ! File::Spec->file_name_is_absolute($file))
+	{
+	    $file = File::Spec->catfile(File::Spec->curdir(),$file);
+	}
 	$file = IO::Handle::_open_mode_string($mode) . " $file\0";
     }
     open($fh, $file);

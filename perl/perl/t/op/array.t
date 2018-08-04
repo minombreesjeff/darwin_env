@@ -1,6 +1,12 @@
 #!./perl
 
-print "1..66\n";
+
+BEGIN {
+    chdir 't' if -d 't';
+    @INC = '../lib';
+}
+
+print "1..73\n";
 
 #
 # @foo, @bar, and @ary are also used from tie-stdarray after tie-ing them
@@ -139,8 +145,8 @@ t("@foo" eq "bar burbl blah");					# 39
 @foo = ('XXX',@foo, 'YYY');
 t("@foo" eq "XXX bar burbl blah YYY");				# 40
 
-@foo = @foo = qw(foo bar burbl blah);
-t("@foo" eq "foo bar burbl blah");				# 41
+@foo = @foo = qw(foo b\a\r bu\\rbl blah);
+t("@foo" eq 'foo b\a\r bu\\rbl blah');				# 41
 
 @bar = @foo = qw(foo bar);					# 42
 t("@foo" eq "foo bar");
@@ -216,3 +222,53 @@ reify('ok');
 print "not " unless qw(foo bar snorfle)[2] eq 'snorfle';
 print "ok 66\n";
 
+@ary = (12,23,34,45,56);
+
+print "not " unless shift(@ary) == 12;
+print "ok 67\n";
+
+print "not " unless pop(@ary) == 56;
+print "ok 68\n";
+
+print "not " unless push(@ary,56) == 4;
+print "ok 69\n";
+
+print "not " unless unshift(@ary,12) == 5;
+print "ok 70\n";
+
+sub foo { "a" }
+@foo=(foo())[0,0];
+$foo[1] eq "a" or print "not ";
+print "ok 71\n";
+
+# $[ should have the same effect regardless of whether the aelem
+#    op is optimized to aelemfast.
+
+sub tary {
+  local $[ = 10;
+  my $five = 5;
+  print "not " unless $tary[5] == $tary[$five];
+  print "ok 72\n";
+}
+
+@tary = (0..50);
+tary();
+
+
+require './test.pl';
+
+# bugid #15439 - clearing an array calls destructors which may try
+# to modify the array - caused 'Attempt to free unreferenced scalar'
+
+my $got = runperl (
+	prog => q{
+		    sub X::DESTROY { @a = () }
+		    @a = (bless {}, 'X');
+		    @a = ();
+		},
+	stderr => 1
+    );
+
+$got =~ s/\n/ /g;
+print "# $got\nnot " unless $got eq '';
+print "ok 73\n";

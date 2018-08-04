@@ -1,4 +1,4 @@
-case $CONFIGDOTSH in
+case $PERL_CONFIG_SH in
 '')
 	if test -f config.sh; then TOP=.;
 	elif test -f ../config.sh; then TOP=..;
@@ -27,23 +27,25 @@ esac
 echo "Extracting x2p/Makefile (with variable substitutions)"
 rm -f Makefile
 cat >Makefile <<!GROK!THIS!
-# $RCSfile: Makefile.SH,v $$Revision: 1.2 $$Date: 2002/03/14 09:03:59 $
+# $RCSfile: Makefile.SH,v $$Revision: 1.5 $$Date: 2003/05/20 22:54:50 $
 #
 # $Log: Makefile.SH,v $
-# Revision 1.2  2002/03/14 09:03:59  zarzycki
-# Revert HEAD back to perl-17
+# Revision 1.5  2003/05/20 22:54:50  emoy
+# Update to Perl 5.8.1, including thread support and two level namespace.
+# Bug #: 3258028
+# Reviewed by: Jordan Hubbard
 #
-# Revision 1.1.1.4  2000/03/31 05:13:03  wsanchez
-# Import of perl 5.6.0
+# Revision 1.4.2.1  2003/05/17 07:07:55  emoy
+# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+# two level namespace.  Append prefix, installprefix, and standard paths to
+# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+# .packlist.
 #
 
 CC = $cc
 BYACC = $byacc
 LDFLAGS = $ldflags
-SMALL = $small
-LARGE = $large $split
-# XXX Perl malloc temporarily unusable (declaration collisions with
-# stdlib.h)
+# XXX Perl malloc temporarily unusable (declaration collisions with stdlib.h)
 #mallocsrc = $mallocsrc
 #mallocobj = $mallocobj
 shellflags = $shellflags
@@ -67,6 +69,8 @@ FIRSTMAKEFILE = $firstmakefile
 
 TRNL = '$trnl'
 
+OPTIMIZE = $optimize
+
 .SUFFIXES: .c \$(OBJ_EXT)
 
 !GROK!THIS!
@@ -74,9 +78,9 @@ TRNL = '$trnl'
 cat >>Makefile <<'!NO!SUBS!'
 
 REALPERL = ../perl
-CCCMD = `sh $(shellflags) cflags $@`
+CCCMD = `sh $(shellflags) cflags "optimize='$(OPTIMIZE)'" $@`
 
-public = a2p s2p find2perl
+public = a2p$(EXE_EXT) s2p find2perl
 
 private = 
 
@@ -111,20 +115,30 @@ all: $(public) $(private) $(util)
 	@echo " "
 
 compile: all
-	$(REALPERL) -I../lib ../utils/perlcc -regex 's/$$/.exe/' $(plextract) -prog -verbose dcf -log ../compilelog;  
+	$(REALPERL) -I../lib ../utils/perlcc -I .. -L .. $(plextract) -v -log ../compilelog;  
 
-a2p: $(obj) a2p$(OBJ_EXT)
+a2p$(EXE_EXT): $(obj) a2p$(OBJ_EXT)
 	$(CC) -o a2p $(LDFLAGS) $(obj) a2p$(OBJ_EXT) $(libs)
 
 # I now supply a2p.c with the kits, so the following section is
 # used only if you force byacc to run by saying
 # make  run_byacc
 
-run_byacc:	FORCE
+check_byacc:
+	@$(BYACC) -V 2>&1 | grep 'version 1\.8\.2'
+
+run_byacc:	FORCE check_byacc
 	@ echo Expect many shift/reduce and reduce/reduce conflicts
 	$(BYACC) a2p.y
 	rm -f a2p.c
-	mv y.tab.c a2p.c
+	sed -e 's/(yyn = yydefred\[yystate\])/((yyn = yydefred[yystate]))/' \
+	    -e 's/(yys = getenv("YYDEBUG"))/((yys = getenv("YYDEBUG")))/' \
+	    -e 's/^yyerrlab://' \
+	    -e 's/^    goto yyerrlab;//' \
+	    -e 's/^yynewerror://' \
+	    -e 's/^    goto yynewerror;//' \
+	    -e 's|^static char yysccsid\(.*\)|/* static char yysccsid\1 */|' \
+	    < y.tab.c > a2p.c
 
 FORCE:
 
@@ -135,14 +149,18 @@ a2p.c: a2p.y
 
 a2p$(OBJ_EXT): a2p.c a2py.c a2p.h EXTERN.h util.h INTERN.h \
 		../handy.h ../config.h str.h hash.h
-	$(CCCMD) $(LARGE) a2p.c
+	$(CCCMD) a2p.c
 
 clean:
-	rm -f a2p *$(OBJ_EXT) $(plexe) $(plc) $(plm)
+	rm -f a2p$(EXE_EXT) psed *$(OBJ_EXT) $(plexe) $(plc) $(plm)
 
 realclean: clean
-	rm -f *.orig core $(addedbyconf) all malloc.c
-	rm -f $(FIRSTMAKEFILE) $(FIRSTMAKEFILE).old
+	-rmdir .depending
+	rm -f core $(addedbyconf) all malloc.c
+	rm -f $(FIRSTMAKEFILE) $(FIRSTMAKEFILE).old makefile.old
+
+veryclean: realclean
+	rm -f *~ *.orig
 
 # The following lint has practically everything turned on.  Unfortunately,
 # you have to wade through a lot of mumbo jumbo that can't be suppressed.

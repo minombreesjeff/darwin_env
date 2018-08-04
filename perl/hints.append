@@ -1,0 +1,13 @@
+#-------------------------------------------------------------------------
+# hints.append
+#-------------------------------------------------------------------------
+prefix=/
+installprefix=${DSTROOT}/
+privlib="/System/Library/Perl/${version}"
+sitelib="/Library/Perl/${version}"
+vendorlib="/Network/Library/Perl/${version}"
+man1dir="/usr/share/man/man1"
+man3dir="/usr/share/man/man3"
+bin='/usr/bin'
+sitebin='/usr/bin'
+installusrbinperl='define'

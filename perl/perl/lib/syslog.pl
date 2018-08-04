@@ -2,11 +2,16 @@
 # syslog.pl
 #
 # $Log: syslog.pl,v $
-# Revision 1.2  2002/03/14 08:57:54  zarzycki
-# Revert HEAD back to perl-17
+# Revision 1.5  2003/05/20 22:50:35  emoy
+# Update to Perl 5.8.1, including thread support and two level namespace.
+# Bug #: 3258028
+# Reviewed by: Jordan Hubbard
 #
-# Revision 1.1.1.2  2000/03/31 05:11:49  wsanchez
-# Import of perl 5.6.0
+# Revision 1.4.2.1  2003/05/17 07:04:01  emoy
+# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+# two level namespace.  Append prefix, installprefix, and standard paths to
+# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+# .packlist.
 #
 # 
 # tom christiansen <tchrist@convex.com>
@@ -40,7 +45,7 @@ use warnings::register;
 $host = 'localhost' unless $host;	# set $syslog'host to change
 
 if ($] >= 5 && warnings::enabled()) {
-    warnings::warn "You should 'use Sys::Syslog' instead; continuing";
+    warnings::warn("You should 'use Sys::Syslog' instead; continuing");
 } 
 
 require 'syslog.ph';

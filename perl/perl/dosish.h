@@ -1,3 +1,12 @@
+/*    dosish.h
+ *
+ *    Copyright (C) 1993, 1994, 1996, 1997, 1998, 1999,
+ *    2000, 2001, 2002, by Larry Wall and others
+ *
+ *    You may distribute under the terms of either the GNU General Public
+ *    License or the Artistic License, as specified in the README file.
+ *
+ */
 #define ABORT() abort();
 
 #ifndef SH_PATH
@@ -13,24 +22,33 @@
 #  define HAS_UTIME
 #  define HAS_KILL
    char *djgpp_pathexp (const char*);
+   void Perl_DJGPP_init (int *argcp,char ***argvp);
 #  if (DJGPP==2 && DJGPP_MINOR < 2)
 #    define NO_LOCALECONV_MON_THOUSANDS_SEP
 #  endif
-#  ifdef USE_THREADS
+#  ifdef USE_5005THREADS
 #    define OLD_PTHREADS_API
 #  endif
 #  define PERL_FS_VER_FMT	"%d_%d_%d"
 #else	/* DJGPP */
 #  ifdef WIN32
 #    define PERL_SYS_INIT(c,v)	Perl_win32_init(c,v)
+#    define PERL_SYS_TERM()	Perl_win32_term()
 #    define BIT_BUCKET "nul"
 #  else
-#    define PERL_SYS_INIT(c,v)
-#    define BIT_BUCKET "\\dev\\nul" /* "wanna be like, umm, Newlined, or somethin?" */
+#	 ifdef NETWARE
+#      define PERL_SYS_INIT(c,v)	Perl_nw5_init(c,v)
+#      define BIT_BUCKET "nwnul"
+#    else
+#      define PERL_SYS_INIT(c,v)
+#      define BIT_BUCKET "\\dev\\nul" /* "wanna be like, umm, Newlined, or somethin?" */
+#    endif /* NETWARE */
 #  endif
 #endif	/* DJGPP */
 
-#define PERL_SYS_TERM() OP_REFCNT_TERM; MALLOC_TERM
+#ifndef PERL_SYS_TERM
+#  define PERL_SYS_TERM() OP_REFCNT_TERM; MALLOC_TERM
+#endif
 #define dXSUB_SYS
 
 /*
@@ -64,7 +82,15 @@
  *	to include <sys/stat.h> and <sys/types.h> to get any typedef'ed
  *	information.
  */
+#if defined(WIN64) || defined(USE_LARGE_FILES)
+#define Stat_t struct _stati64
+#else
+#if defined(UNDER_CE)
+#define Stat_t struct xcestat
+#else
 #define Stat_t struct stat
+#endif
+#endif
 
 /* USE_STAT_RDEV:
  *	This symbol is defined if this system has a stat structure declaring
@@ -84,7 +110,7 @@
  *	as the first line of a Perl program designed to be executed directly
  *	by name, instead of the standard Unix #!.  If ALTERNATE_SHEBANG
  *	begins with a character other then #, then Perl will only treat
- *	it as a command line if if finds the string "perl" in the first
+ *	it as a command line if it finds the string "perl" in the first
  *	word; otherwise it's treated as the first line of code in the script.
  *	(IOW, Perl won't hand off to another interpreter via an alternate
  *	shebang sequence that might be legal Perl code.)
@@ -100,7 +126,11 @@
 #define fwrite1 fwrite
 
 #define Fstat(fd,bufptr)   fstat((fd),(bufptr))
-#define Fflush(fp)         fflush(fp)
+#ifdef DJGPP
+#   define Fflush(fp)      djgpp_fflush(fp)
+#else
+#   define Fflush(fp)      fflush(fp)
+#endif
 #define Mkdir(path,mode)   mkdir((path),(mode))
 
 #ifndef WIN32

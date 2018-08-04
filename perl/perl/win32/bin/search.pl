@@ -47,7 +47,12 @@ $version = "950918.5";
 $stripped=0;
 
 &init;
-$rc_file = join('/', $ENV{'HOME'}, ".search");
+if (exists $ENV{'HOME'}) {
+    $rc_file = join('/', $ENV{'HOME'}, ".search");
+}
+else {
+    $rc_file = "";
+}
 
 &check_args;
 
@@ -621,7 +626,7 @@ sub read_rc
     local($line_num, $ln, $tag) = 0;
     local($use_default, @default) = 0;
 
-    { package magic; $ = 0; } ## turn off warnings for when we run EXPR's
+    { package magic; $^W= 0; } ## turn off warnings for when we run EXPR's
 
     unless (open(RC, "$file")) {
 	$use_default=1;
@@ -629,8 +634,8 @@ sub read_rc
 	## no RC file -- use this default.
 	@default = split(/\n/,<<'--------INLINE_LITERAL_TEXT');
             magic: 32 : $H =~ m/[\x00-\x06\x10-\x1a\x1c-\x1f\x80\xff]{2}/
-	    option: -skip '.a .COM .elc .EXE .gz .o .pbm .xbm .dvi'
-	    option: -iskip '.tarz .zip .z .lzh .jpg .jpeg .gif .uu'
+	    option: -skip '.a .elc .gz .o .pbm .xbm .dvi'
+	    option: -iskip '.com .exe .lib .pdb .tarz .zip .z .lzh .jpg .jpeg .gif .uu'
 	    <!~> option: -skip '~ #'
 --------INLINE_LITERAL_TEXT
     }

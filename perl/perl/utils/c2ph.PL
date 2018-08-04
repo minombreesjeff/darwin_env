@@ -3,6 +3,28 @@
 use Config;
 use File::Basename qw(&basename &dirname);
 use Cwd;
+use subs qw(link);
+
+sub link { # This is a cut-down version of installperl:link().
+    my($from,$to) = @_;
+    my($success) = 0;
+
+    eval {
+	CORE::link($from, $to)
+	    ? $success++
+	    : ($from =~ m#^/afs/# || $to =~ m#^/afs/#)
+	      ? die "AFS"  # okay inside eval {}
+	      : die "Couldn't link $from to $to: $!\n";
+    };
+    if ($@) {
+	warn $@;
+	require File::Copy;
+	File::Copy::copy($from, $to)
+	    ? $success++
+	    : warn "Couldn't copy $from to $to: $!\n";
+    }
+    $success;
+}
 
 # List explicitly here the variables you want Configure to
 # generate.  Metaconfig only looks for shell variables, so you
@@ -162,9 +184,9 @@ declarations at least, but that's quite a bit.
 
 Prior to this point, anyone programming in perl who wanted to interact
 with C programs, like the kernel, was forced to guess the layouts of
-the C strutures, and then hardwire these into his program.  Of course,
+the C structures, and then hardwire these into his program.  Of course,
 when you took your wonderfully crafted program to a system where the
-sgtty structure was laid out differently, you program broke.  Which is
+sgtty structure was laid out differently, your program broke.  Which is
 a shame.
 
 We've had Larry's h2ph translator, which helped, but that only works on
@@ -256,7 +278,7 @@ Anyway, here it is.  Should run on perl v4 or greater.  Maybe less.
 
 =cut
 
-$RCSID = '$Id: c2ph.PL,v 1.1.1.3 2000/03/31 05:12:50 wsanchez Exp $';
+$RCSID = '$Id: c2ph.PL,v 1.4 2003/05/20 22:54:36 emoy Exp $';
 
 
 ######################################################################

@@ -40,6 +40,15 @@ the numeric mode to use when creating the directories
 It returns a list of all directories (including intermediates, determined
 using the Unix '/' separator) created.
 
+If a system error prevents a directory from being created, then the
+C<mkpath> function throws a fatal error with C<Carp::croak>. This error
+can be trapped with an C<eval> block:
+
+  eval { mkpath($dir) };
+  if ($@) {
+    print "Couldn't create $dir: $@";
+  }
+
 Similarly, the C<rmtree> function provides a convenient way to delete a
 subtree from the directory structure, much like the Unix command C<rm -r>.
 C<rmtree> takes three arguments:
@@ -81,8 +90,20 @@ were not deleted may be left with permissions reset to allow world
 read and write access.  Note also that the occurrence of errors in
 rmtree can be determined I<only> by trapping diagnostic messages
 using C<$SIG{__WARN__}>; it is not apparent from the return value.
-Therefore, you must be extremely careful about using C<rmtree($foo,$bar,0>
+Therefore, you must be extremely careful about using C<rmtree($foo,$bar,0)>
 in situations where security is an issue.
+
+=head1 DIAGNOSTICS
+
+=over 4
+
+=item *
+
+On Windows, if C<mkpath> gives you the warning: B<No such file or
+directory>, this may mean that you've exceeded your filesystem's
+maximum path length.
+
+=back
 
 =head1 AUTHORS
 
@@ -91,44 +112,49 @@ Charles Bailey <F<bailey@newman.upenn.edu>>
 
 =cut
 
-use 5.005_64;
+use 5.006;
 use Carp;
 use File::Basename ();
 use Exporter ();
 use strict;
+use warnings;
 
-our $VERSION = "1.0403";
+our $VERSION = "1.05";
 our @ISA = qw( Exporter );
 our @EXPORT = qw( mkpath rmtree );
 
 my $Is_VMS = $^O eq 'VMS';
+my $Is_MacOS = $^O eq 'MacOS';
 
 # These OSes complain if you want to remove a file that you have no
 # write permission to:
-my $force_writeable = ($^O eq 'os2' || $^O eq 'dos' || $^O eq 'MSWin32'
-		       || $^O eq 'amigaos');
+my $force_writeable = ($^O eq 'os2' || $^O eq 'dos' || $^O eq 'MSWin32' ||
+		       $^O eq 'amigaos' || $^O eq 'MacOS' || $^O eq 'epoc');
 
 sub mkpath {
     my($paths, $verbose, $mode) = @_;
     # $paths   -- either a path string or ref to list of paths
     # $verbose -- optional print "mkdir $path" for each directory created
     # $mode    -- optional permissions, defaults to 0777
-    local($")="/";
+    local($")=$Is_MacOS ? ":" : "/";
     $mode = 0777 unless defined($mode);
     $paths = [$paths] unless ref $paths;
     my(@created,$path);
     foreach $path (@$paths) {
 	$path .= '/' if $^O eq 'os2' and $path =~ /^\w:\z/s; # feature of CRT 
-	next if -d $path;
 	# Logic wants Unix paths, so go with the flow.
-	$path = VMS::Filespec::unixify($path) if $Is_VMS;
-	my $parent = File::Basename::dirname($path);
-	# Allow for creation of new logical filesystems under VMS
-	if (not $Is_VMS or $parent !~ m:/[^/]+/000000/?:) {
-	    unless (-d $parent or $path eq $parent) {
-		push(@created,mkpath($parent, $verbose, $mode));
+	if ($Is_VMS) {
+	    next if $path eq '/';
+	    $path = VMS::Filespec::unixify($path);
+	    if ($path =~ m:^(/[^/]+)/?\z:) {
+	        $path = $1.'/000000';
 	    }
 	}
+	next if -d $path;
+	my $parent = File::Basename::dirname($path);
+	unless (-d $parent or $path eq $parent) {
+	    push(@created,mkpath($parent, $verbose, $mode));
+ 	}
 	print "mkdir $path\n" if $verbose;
 	unless (mkdir($path,$mode)) {
 	    my $e = $!;
@@ -157,7 +183,12 @@ sub rmtree {
 
     my($root);
     foreach $root (@{$roots}) {
-	$root =~ s#/\z##;
+    	if ($Is_MacOS) {
+	    $root = ":$root" if $root !~ /:/;
+	    $root =~ s#([^:])\z#$1:#;
+	} else {
+	    $root =~ s#/\z##;
+	}
 	(undef, undef, my $rp) = lstat $root or next;
 	$rp &= 07777;	# don't forget setuid, setgid, sticky bits
 	if ( -d _ ) {
@@ -170,7 +201,13 @@ sub rmtree {
 		unless $safe;
 
 	    if (opendir my $d, $root) {
-		@files = readdir $d;
+		no strict 'refs';
+		if (!defined ${"\cTAINT"} or ${"\cTAINT"}) {
+		    # Blindly untaint dir names
+		    @files = map { /^(.*)$/s ; $1 } readdir $d;
+		} else {
+		    @files = readdir $d;
+		}
 		closedir $d;
 	    }
 	    else {
@@ -182,7 +219,11 @@ sub rmtree {
 	    # is faster if done in reverse ASCIIbetical order 
 	    @files = reverse @files if $Is_VMS;
 	    ($root = VMS::Filespec::unixify($root)) =~ s#\.dir\z## if $Is_VMS;
-	    @files = map("$root/$_", grep $_!~/^\.{1,2}\z/s,@files);
+	    if ($Is_MacOS) {
+		@files = map("$root$_", @files);
+	    } else {
+		@files = map("$root/$_", grep $_!~/^\.{1,2}\z/s,@files);
+	    }
 	    $count += rmtree(\@files,$verbose,$safe);
 	    if ($safe &&
 		($Is_VMS ? !&VMS::Filespec::candelete($root) : !-w $root)) {

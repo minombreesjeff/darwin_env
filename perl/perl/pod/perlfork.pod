@@ -4,6 +4,11 @@ perlfork - Perl's fork() emulation
 
 =head1 SYNOPSIS
 
+    NOTE:  As of the 5.8.0 release, fork() emulation has considerably
+    matured.  However, there are still a few known bugs and differences
+    from real fork() that might affect you.  See the "BUGS" and
+    "CAVEATS AND LIMITATIONS" sections below.
+
 Perl provides a fork() keyword that corresponds to the Unix system call
 of the same name.  On most Unix-like platforms where the fork() system
 call is available, Perl's fork() simply calls it.
@@ -11,7 +16,7 @@ call is available, Perl's fork() simply calls it.
 On some platforms such as Windows where the fork() system call is not
 available, Perl can be built to emulate fork() at the interpreter level.
 While the emulation is designed to be as compatible as possible with the
-real fork() at the the level of the Perl program, there are certain
+real fork() at the level of the Perl program, there are certain
 important differences that stem from the fact that all the pseudo child
 "processes" created this way live in the same real process as far as the
 operating system is concerned.
@@ -51,7 +56,7 @@ pseudo-processes are launched after others have been wait()-ed on.
 
 =item %ENV
 
-Each pseudo-process maintains its own virtual enviroment.  Modifications
+Each pseudo-process maintains its own virtual environment.  Modifications
 to %ENV affect the virtual environment, and are only visible within that
 pseudo-process, and in any processes (or pseudo-processes) launched from
 it.
@@ -279,6 +284,15 @@ C<-1> because the wait() and waitpid() functions treat this number as
 being special.  The tacit assumption in the current implementation is that
 the system never allocates a thread ID of C<1> for user threads.  A better
 representation for pseudo-process IDs will be implemented in future.
+
+=item *
+
+In certain cases, the OS-level handles created by the pipe(), socket(),
+and accept() operators are apparently not duplicated accurately in
+pseudo-processes.  This only happens in some situations, but where it
+does happen, it may result in deadlocks between the read and write ends
+of pipe handles, or inability to send or receive data across socket
+handles.
 
 =item *
 

@@ -19,9 +19,12 @@ then
     plibpth=`cd $plibpth && pwd`
 fi
 so='dll'
-# - eliminate -lc, implied by gcc
+# - eliminate -lc, implied by gcc and a symlink to libcygwin.a
 libswanted=`echo " $libswanted " | sed -e 's/ c / /g'`
-libswanted="$libswanted cygipc cygwin kernel32"
+# - eliminate -lm, symlink to libcygwin.a
+libswanted=`echo " $libswanted " | sed -e 's/ m / /g'`
+test -z "$optimize" && optimize='-O2'
+ccflags="$ccflags -DPERL_USE_SAFE_PUTENV"
 # - otherwise i686-cygwin
 archname='cygwin'
 
@@ -29,15 +32,6 @@ archname='cygwin'
 # - otherwise -fpic
 cccdlflags=' '
 ld='ld2'
-
-# optional(ish)
-# - perl malloc needs to be unpolluted
-bincompat5005='undef'
-
-# stubs (ENOSYS, not implemented)
-d_chroot='undef'
-d_seteuid='undef'
-d_setegid='undef'
 
 # Win9x problem with non-blocking read from a closed pipe
 d_eofnblk='define'

@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: cmdopt.t,v $$Revision: 1.1.1.2 $$Date: 2000/03/31 05:12:26 $
+# $RCSfile: cmdopt.t,v $$Revision: 1.4 $$Date: 2003/05/20 22:53:58 $
 
 print "1..44\n";
 

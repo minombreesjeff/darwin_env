@@ -1,7 +1,23 @@
-#if defined(USE_THREADS) || defined(USE_ITHREADS)
+/*    thread.h
+ *
+ *    Copyright (C) 1999, 2000, 2001, 2002, by Larry Wall and others
+ *
+ *    You may distribute under the terms of either the GNU General Public
+ *    License or the Artistic License, as specified in the README file.
+ *
+ */
+
+#if defined(USE_5005THREADS) || defined(USE_ITHREADS)
+
+#if defined(VMS)
+#include <builtins.h>
+#endif
 
 #ifdef WIN32
 #  include <win32thread.h>
+#else
+#ifdef NETWARE
+#  include <nw5thread.h>
 #else
 #  ifdef OLD_PTHREADS_API /* Here be dragons. */
 #    define DETACH(t) \
@@ -24,6 +40,12 @@
 #    ifdef __OPEN_VM
 #      define pthread_addr_t void *
 #    endif
+#    ifdef OEMVS
+#      define pthread_addr_t void *
+#      define pthread_mutexattr_settype(a,t) pthread_mutexattr_setkind_np(a,t)
+#      define pthread_create(t,a,s,d)        pthread_create(t,&(a),s,d)
+#      define pthread_keycreate              pthread_key_create
+#    endif
 #    ifdef VMS
 #      define pthread_attr_init(a) pthread_attr_create(a)
 #      define PTHREAD_ATTR_SETDETACHSTATE(a,s) pthread_setdetach_np(a,s)
@@ -32,13 +54,25 @@
 #      define pthread_mutexattr_init(a) pthread_mutexattr_create(a)
 #      define pthread_mutexattr_settype(a,t) pthread_mutexattr_setkind_np(a,t)
 #    endif
-#    if defined(DJGPP) || defined(__OPEN_VM)
+#    if defined(__hpux) && defined(__ux_version) && __ux_version <= 1020
+#      define pthread_attr_init(a) pthread_attr_create(a)
+       /* XXX pthread_setdetach_np() missing in DCE threads on HP-UX 10.20 */
+#      define PTHREAD_ATTR_SETDETACHSTATE(a,s)	(0)
+#      define PTHREAD_CREATE(t,a,s,d) pthread_create(t,a,s,d)
+#      define pthread_key_create(k,d) pthread_keycreate(k,(pthread_destructor_t)(d))
+#      define pthread_mutexattr_init(a) pthread_mutexattr_create(a)
+#      define pthread_mutexattr_settype(a,t) pthread_mutexattr_setkind_np(a,t)
+#    endif
+#    if defined(DJGPP) || defined(__OPEN_VM) || defined(OEMVS)
 #      define PTHREAD_ATTR_SETDETACHSTATE(a,s) pthread_attr_setdetachstate(a,&(s))
 #      define YIELD pthread_yield(NULL)
 #    endif
 #  endif
+#  if !defined(__hpux) || !defined(__ux_version) || __ux_version > 1020
 #    define pthread_mutexattr_default NULL
 #    define pthread_condattr_default  NULL
+#  endif
+#endif	/* NETWARE */
 #endif
 
 #ifndef PTHREAD_CREATE
@@ -56,6 +90,10 @@
 #  else
 #    define PTHREAD_CREATE_JOINABLE 0 /* Panic?  No, guess. */
 #  endif
+#endif
+
+#ifdef DGUX
+#  define THREAD_CREATE_NEEDS_STACK (32*1024)
 #endif
 
 #ifdef I_MACH_CTHREADS
@@ -117,6 +155,7 @@
 #define INIT_THREADS		cthread_init()
 #define YIELD			cthread_yield()
 #define ALLOC_THREAD_KEY	NOOP
+#define FREE_THREAD_KEY		NOOP
 #define SET_THREAD_SELF(thr)	(thr->self = cthread_self())
 
 #endif /* I_MACH_CTHREADS */
@@ -229,8 +268,22 @@
     } STMT_END
 #endif /* JOIN */
 
+/* Use an unchecked fetch of thread-specific data instead of a checked one.
+ * It would fail if the key were bogus, but if the key were bogus then
+ * Really Bad Things would be happening anyway. --dan */
+#if (defined(__ALPHA) && (__VMS_VER >= 70000000)) || \
+    (defined(__alpha) && defined(__osf__) && !defined(__GNUC__)) /* Available only on >= 4.0 */
+#  define HAS_PTHREAD_UNCHECKED_GETSPECIFIC_NP /* Configure test needed */
+#endif
+
+#ifdef HAS_PTHREAD_UNCHECKED_GETSPECIFIC_NP
+#  define PTHREAD_GETSPECIFIC(key) pthread_unchecked_getspecific_np(key)
+#else
+#    define PTHREAD_GETSPECIFIC(key) pthread_getspecific(key)
+#endif
+
 #ifndef PERL_GET_CONTEXT
-#  define PERL_GET_CONTEXT	pthread_getspecific(PL_thr_key)
+#  define PERL_GET_CONTEXT	PTHREAD_GETSPECIFIC(PL_thr_key)
 #endif
 
 #ifndef PERL_SET_CONTEXT
@@ -251,10 +304,27 @@
 #  define ALLOC_THREAD_KEY \
     STMT_START {						\
 	if (pthread_key_create(&PL_thr_key, 0))	{		\
-	    fprintf(stderr, "panic: pthread_key_create");	\
+	    PerlIO_printf(PerlIO_stderr(), "panic: pthread_key_create");	\
 	    exit(1);						\
 	}							\
     } STMT_END
+#endif
+
+#ifndef FREE_THREAD_KEY
+#  define FREE_THREAD_KEY \
+    STMT_START {						\
+	pthread_key_delete(PL_thr_key);				\
+    } STMT_END
+#endif
+
+#ifndef PTHREAD_ATFORK
+#  ifdef HAS_PTHREAD_ATFORK
+#    define PTHREAD_ATFORK(prepare,parent,child)		\
+	pthread_atfork(prepare,parent,child)
+#  else
+#    define PTHREAD_ATFORK(prepare,parent,child)		\
+	NOOP
+#  endif
 #endif
 
 #ifndef THREAD_RET_TYPE
@@ -262,7 +332,7 @@
 #  define THREAD_RET_CAST(p)	((void *)(p))
 #endif /* THREAD_RET */
 
-#if defined(USE_THREADS)
+#if defined(USE_5005THREADS)
 
 /* Accessor for per-thread SVs */
 #  define THREADSV(i) (thr->threadsvp[i])
@@ -280,7 +350,10 @@
 #  define UNLOCK_STRTAB_MUTEX	MUTEX_UNLOCK(&PL_strtab_mutex)
 #  define LOCK_CRED_MUTEX	MUTEX_LOCK(&PL_cred_mutex)
 #  define UNLOCK_CRED_MUTEX	MUTEX_UNLOCK(&PL_cred_mutex)
-
+#  define LOCK_FDPID_MUTEX	MUTEX_LOCK(&PL_fdpid_mutex)
+#  define UNLOCK_FDPID_MUTEX	MUTEX_UNLOCK(&PL_fdpid_mutex)
+#  define LOCK_SV_LOCK_MUTEX	MUTEX_LOCK(&PL_sv_lock_mutex)
+#  define UNLOCK_SV_LOCK_MUTEX	MUTEX_UNLOCK(&PL_sv_lock_mutex)
 
 /* Values and macros for thr->flags */
 #define THRf_STATE_MASK	7
@@ -313,8 +386,12 @@ typedef struct condpair {
 #define MgCONDP(mg) (&((condpair_t *)(mg->mg_ptr))->cond)
 #define MgOWNER(mg) ((condpair_t *)(mg->mg_ptr))->owner
 
-#endif /* USE_THREADS */
-#endif /* USE_THREADS || USE_ITHREADS */
+#endif /* USE_5005THREADS */
+
+#  define LOCK_DOLLARZERO_MUTEX		MUTEX_LOCK(&PL_dollarzero_mutex)
+#  define UNLOCK_DOLLARZERO_MUTEX	MUTEX_UNLOCK(&PL_dollarzero_mutex)
+
+#endif /* USE_5005THREADS || USE_ITHREADS */
 
 #ifndef MUTEX_LOCK
 #  define MUTEX_LOCK(m)
@@ -374,6 +451,30 @@ typedef struct condpair {
 
 #ifndef UNLOCK_CRED_MUTEX
 #  define UNLOCK_CRED_MUTEX
+#endif
+
+#ifndef LOCK_FDPID_MUTEX
+#  define LOCK_FDPID_MUTEX
+#endif
+
+#ifndef UNLOCK_FDPID_MUTEX
+#  define UNLOCK_FDPID_MUTEX
+#endif
+
+#ifndef LOCK_SV_LOCK_MUTEX
+#  define LOCK_SV_LOCK_MUTEX
+#endif
+
+#ifndef UNLOCK_SV_LOCK_MUTEX
+#  define UNLOCK_SV_LOCK_MUTEX
+#endif
+
+#ifndef LOCK_DOLLARZERO_MUTEX
+#  define LOCK_DOLLARZERO_MUTEX
+#endif
+
+#ifndef UNLOCK_DOLLARZERO_MUTEX
+#  define UNLOCK_DOLLARZERO_MUTEX
 #endif
 
 /* THR, SET_THR, and dTHR are there for compatibility with old versions */

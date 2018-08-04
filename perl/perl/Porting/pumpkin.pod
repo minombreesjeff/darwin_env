@@ -1,6 +1,6 @@
 =head1 NAME
 
-Pumpkin - Notes on handling the Perl Patch Pumpkin
+Pumpkin - Notes on handling the Perl Patch Pumpkin And Porting Perl
 
 =head1 SYNOPSIS
 
@@ -24,7 +24,7 @@ and all the various auxiliary files that are part of the distribution.
 
 The Comprehensive Perl Archive Network (or CPAN) is the place to go.
 There are many mirrors, but the easiest thing to use is probably
-http://www.perl.com/CPAN/README.html , which automatically points you to a
+http://www.cpan.org/README.html , which automatically points you to a
 mirror site "close" to you.
 
 =head2 Perl5-porters mailing list
@@ -43,7 +43,7 @@ to perl5-porters-request@perl.org .
 
 Archives of the list are held at:
 
-    http://www.rosat.mpe-garching.mpg.de/mailing-lists/perl-porters/
+    http://www.xray.mpe.mpg.de/mailing-lists/perl5-porters/
 
 =head1 How are Perl Releases Numbered?
 
@@ -58,7 +58,7 @@ and 1 is the subversion.
 
 For compatibility with the older numbering scheme the composite floating
 point version number continues to be available as the magic variable $],
-and amounts to C<$revision + $version/1000 + $subversion/1000000>.  This
+and amounts to C<$revision + $version/1000 + $subversion/100000>.  This
 can still be used in comparisons.
 
 	print "You've got an old perl\n" if $] < 5.005_03;
@@ -103,7 +103,7 @@ always match the regular expression:
 C<$1> in the pattern is always an even number for maintenance
 versions, and odd for developer releases.
 
-In the past it has been observed that pumkings tend to invent new
+In the past it has been observed that pumpkings tend to invent new
 naming conventions on the fly. If you are a pumpking, before you
 invent a new name for any of the three types of perl distributions,
 please inform the guys from the CPAN who are doing indexing and
@@ -158,6 +158,9 @@ settled elsewhere.
 
 If feasible, try to keep filenames 8.3-compliant to humor those poor
 souls that get joy from running Perl under such dire limitations.
+There's a script, check83.pl, for keeping your nose 8.3-clean.
+In a similar vein, do not create files or directories which differ only
+in case (upper versus lower).
 
 =head2 Seek consensus on major changes
 
@@ -210,7 +213,7 @@ unset appropriate Configure variables, based on the Configure command
 line options and possibly existing config.sh and Policy.sh files from
 previous Configure runs.
 
-The extension hints are written Perl (by the time they are used
+The extension hints are written in Perl (by the time they are used
 miniperl has been built) and control the building of their respective
 extensions.  They can be used to for example manipulate compilation
 and linking flags.
@@ -240,6 +243,9 @@ some or all of the modules File::Basename, File::Spec, File::Path, and
 File::Copy to become aware of your native filesystem syntax and
 peculiarities.
 
+Remember to have a $VERSION in the modules.  You can use the
+Porting/checkVERSION.pl script for checking this.
+
 =item documentation
 
 If your operating system comes from outside UNIX you almost certainly
@@ -252,7 +258,8 @@ the first B<not> to have a system call also update the list of
 A file called F<README.youros> at the top level that explains things
 like how to install perl at this platform, where to get any possibly
 required additional software, and for example what test suite errors
-to expect, is nice too.
+to expect, is nice too.  Such files are in the process of being written
+in pod format and will eventually be renamed F<INSTALL.youros>.
 
 You may also want to write a separate F<.pod> file for your operating
 system to tell about existing mailing lists, os-specific modules,
@@ -345,6 +352,9 @@ need feedback on your patch, go ahead and issue it and promise to
 incorporate that feedback quickly (e.g. within 1 week) and send out a
 second patch.
 
+If you update the subversion number, you may need to change the version
+number near the top of the F<Changes> file.
+
 =head2 run metaconfig
 
 If you need to make changes to Configure or config_h.SH, it may be best to
@@ -357,7 +367,7 @@ on obtaining and running metaconfig is in the F<U/README> file
 that comes with Perl's metaconfig units.  Perl's metaconfig units
 should be available on CPAN.  A set of units that will work with
 perl5.005 is in the file F<mc_units-5.005_00-01.tar.gz> under
-http://www.perl.com/CPAN/authors/id/ANDYD/ .  The mc_units tar file
+http://www.cpan.org/authors/id/ANDYD/ .  The mc_units tar file
 should be unpacked in your main perl source directory.  Note: those
 units were for use with 5.005.  There may have been changes since then.
 Check for later versions or contact perl5-porters@perl.org to obtain a
@@ -449,7 +459,9 @@ safely be sorted, so it's easy to track (typically very small) changes
 to config.sh and then propoagate them to a canned 'config.h' by any
 number of means, including a perl script in win32/ or carrying 
 config.sh and config_h.SH to a Unix system and running sh
-config_h.SH.)
+config_h.SH.)  Vms uses configure.com to generate its own config.sh
+and config.h.  If you want to add a new variable to config.sh check
+with vms folk how to add it to configure.com too.
 XXX]
 
 The Porting/config.sh and Porting/config_H files are provided to
@@ -460,7 +472,7 @@ distinguish the file from config.h even on case-insensitive file systems.)
 Simply edit the existing config_H file; keep the first few explanatory
 lines and then copy your new config.h below.
 
-It may also be necessary to update win32/config.?c, vms/config.vms and
+It may also be necessary to update win32/config.?c, and
 plan9/config.plan9, though you should be quite careful in doing so if
 you are not familiar with those systems.  You might want to issue your
 patch with a promise to quickly issue a follow-up that handles those
@@ -481,8 +493,10 @@ output statements mean the patch won't apply cleanly.  Long ago I
 started to fix F<perly.fixer> to detect this, but I never completed the
 task.
 
-If C<perly.c> changes, make sure you run C<perl vms/vms_yfix.pl> to
-update the corresponding VMS files.  See L<VMS-specific updates>.
+If C<perly.c> or C<perly.h> changes, make sure you run C<perl vms/vms_yfix.pl> 
+to update the corresponding VMS files.  This could be taken care of by 
+the regen_all target in the Unix Makefile.  See also 
+L<VMS-specific updates>.
 
 Some additional notes from Larry on this:
 
@@ -492,7 +506,7 @@ Don't forget to regenerate perly_c.diff.
     mv y.tab.c perly.c
     patch perly.c <perly_c.diff
     # manually apply any failed hunks
-    diff -c2 perly.c.orig perly.c >perly_c.diff
+    diff -c perly.c.orig perly.c >perly_c.diff
 
 One chunk of lines that often fails begins with
 
@@ -506,6 +520,11 @@ This only happens when you add or remove a token type.  I suppose this
 could be automated, but it doesn't happen very often nowadays.
 
 Larry
+
+=head2 make regen_all
+
+This target takes care of the PERLYVMS, regen_headers, and regen_pods
+targets.
 
 =head2 make regen_headers
 
@@ -532,6 +551,10 @@ and effort by manually running C<make regen_headers> myself rather
 than answering all the questions and complaints about the failing
 command.
 
+=head2 make regen_pods
+
+Will run `make regen_pods` in the pod directory for indexing. 
+
 =head2 global.sym, interp.sym and perlio.sym
 
 Make sure these files are up-to-date.  Read the comments in these
@@ -541,7 +564,7 @@ files and in perl_exp.SH to see what to do.
 
 If you do change F<global.sym> or F<interp.sym>, think carefully about
 what you are doing.  To the extent reasonable, we'd like to maintain
-souce and binary compatibility with older releases of perl.  That way,
+source and binary compatibility with older releases of perl.  That way,
 extensions built under one version of perl will continue to work with
 new versions of perl.
 
@@ -564,21 +587,24 @@ ought to go in the Changes file or whether they ought to be available
 separately in the patch file (or both).  There is no disagreement that
 detailed descriptions ought to be easily available somewhere.
 
+If you update the subversion number in F<patchlevel.h>, you may need
+to change the version number near the top of the F<Changes> file.
+
 =head2 Todo
 
-The F<Todo> file contains a roughly-catgorized unordered list of
-aspects of Perl that could use enhancement, features that could be
-added, areas that could be cleaned up, and so on.  During your term as
-pumpkin-holder, you will probably address some of these issues, and
-perhaps identify others which, while you decide not to address them
-this time around, may be tackled in the future.  Update the file
-reflect the situation as it stands when you hand over the pumpkin.
+The F<pod/perltodo.pod> file contains a roughly-categorized unordered
+list of aspects of Perl that could use enhancement, features that could
+be added, areas that could be cleaned up, and so on.  During your term
+as pumpkin-holder, you will probably address some of these issues, and
+perhaps identify others which, while you decide not to address them this
+time around, may be tackled in the future.  Update the file to reflect
+the situation as it stands when you hand over the pumpkin.
 
 You might like, early in your pumpkin-holding career, to see if you
 can find champions for partiticular issues on the to-do list: an issue
 owned is an issue more likely to be resolved.
 
-There are also some more porting-specific L<Todo> items later in this
+There are also some more porting-specific L</Todo> items later in this
 file.
 
 =head2 OS/2-specific updates
@@ -594,11 +620,11 @@ things that need to be fixed in Configure.
 =head2 VMS-specific updates
 
 If you have changed F<perly.y> or F<perly.c>, then you most probably want
-to update F<vms/perly_{h,c}.vms> by running C<perl vms/vms_yfix.pl>.
+to update F<vms/perly_{h,c}.vms> by running C<perl vms/vms_yfix.pl>, or
+by running `make regen_all` which will run that script for you.
 
-The Perl version number appears in several places under F<vms>.
-It is courteous to update these versions.  For example, if you are
-making 5.004_42, replace "5.00441" with "5.00442".
+The Perl revision number appears as "perl5" in configure.com.
+It is courteous to update that if necessary.
 
 =head2 Making the new distribution
 
@@ -618,7 +644,7 @@ script.
 
 I find the F<makepatch> utility quite handy for making patches.
 You can obtain it from any CPAN archive under
-http://www.perl.com/CPAN/authors/Johan_Vromans/ .  There are a couple
+http://www.cpan.org/authors/Johan_Vromans/ .  There are a couple
 of differences between my version and the standard one. I have mine do
 a
 
@@ -701,6 +727,94 @@ supports dynamic loading, you can also test static loading with
 You can also hand-tweak your config.h to try out different #ifdef
 branches.
 
+=head2 Other tests
+
+=over 4
+
+=item CHECK_FORMAT
+
+To test the correct use of printf-style arguments, C<Configure> with
+S<-Dccflags='-DCHECK_FORMAT -Wformat'> and run C<make>.  The compiler
+will produce warning of incorrect use of format arguments.  CHECK_FORMAT
+changes perl-defined formats to common formats, so DO NOT USE the executable
+produced by this process. 
+
+A more accurate approach is the following commands:
+
+=over 4
+
+=item *
+
+build miniperl with -DCHECK_FORMAT 
+
+    make clean
+    make miniperl OPTIMIZE=-DCHECK_FORMAT >& mini.log	
+
+=item *
+
+build a clean miniperl,
+and build everything else from that with -DCHECK_FORMAT
+
+    make clean
+    make miniperl	
+    make all OPTIMIZE='-DCHECK_FORMAT -Wformat' >& make.log  
+		
+=item *
+
+clean up, and print warnings from the log files
+
+    make clean
+    perl -nwe 'print if /^\S+:/ and not /^make\b/' \
+	mini.log make.log
+
+=back
+
+(-Wformat support by Robin Barker.)
+
+=item gcc -ansi -pedantic
+
+Configure -Dgccansipedantic [ -Dcc=gcc ] will enable (via the cflags script,
+not $Config{ccflags}) the gcc strict ANSI C flags -ansi and -pedantic for
+the compilation of the core files on platforms where it knows it can
+do so (like Linux, see cflags.SH for the full list), and on some
+platforms only one (Solaris can do only -pedantic, not -ansi).
+The flag -DPERL_GCC_PEDANTIC also gets added, since gcc does not add
+any internal cpp flag to signify that -pedantic is being used, as it
+does for -ansi (__STRICT_ANSI__).
+
+Note that the -ansi and -pedantic are enabled only for version 3 (and
+later) of gcc, since even gcc version 2.95.4 finds lots of seemingly
+false "value computed not used" errors from Perl.
+
+The -ansi and -pedantic are useful in catching at least the following
+nonportable practices:
+
+=over 4
+
+=item *
+
+gcc-specific extensions
+
+=item *
+
+lvalue casts
+
+=item *
+
+// C++ comments
+
+=item *
+
+enum trailing commas
+
+=back
+
+The -Dgccansipedantic should be used only when cleaning up the code,
+not for production builds, since otherwise gcc cannot inline certain
+things.
+
+=back
+
 =head1 Running Purify
 
 Purify is a commercial tool that is helpful in identifying memory
@@ -715,7 +829,7 @@ Use the following commands to test perl with Purify:
 	make all pureperl
 	cd t
 	ln -s ../pureperl perl
-	setenv PERL_DESTRUCT_LEVEL 5
+	setenv PERL_DESTRUCT_LEVEL 2
 	./perl TEST
 
 Disabling Perl's malloc allows Purify to monitor allocations and leaks
@@ -1075,7 +1189,7 @@ but not so much that it posed any serious problems.
 
 =item Metaconfig worked for me
 
-My system at the time was Interactive 2.2, a SVR3.2/386 derivative that
+My system at the time was Interactive 2.2, an SVR3.2/386 derivative that
 also had some POSIX support.  Metaconfig-generated Configure scripts
 worked fine for me on that system.  On the other hand, autoconf-generated
 scripts usually didn't.  (They did come quite close, though, in some
@@ -1146,12 +1260,18 @@ a mail message from Larry:
     probably have been named something to do with overriding though.  Since
     it's undocumented we could still change it...  :-)
 
-Given that it's already there, you can use it to override
-distribution modules.  If you do
+Given that it's already there, you can use it to override distribution modules.
+One way to do that is to add
 
-	sh Configure -Dccflags='-DAPPLLIB_EXP=/my/override'
+	ccflags="$ccflags -DAPPLLIB_EXP=\"/my/override\""
+	
+to your config.over file.  (You have to be particularly careful to get the
+double quotes in.  APPLLIB_EXP must be a valid C string.  It might
+actually be easier to just #define it yourself in perl.c.)
 
-then perl.c will put /my/override ahead of ARCHLIB and PRIVLIB.
+Then perl.c will put /my/override ahead of ARCHLIB and PRIVLIB.  Perl will
+also search architecture-specific and version-specific subdirectories of
+APPLLIB_EXP.
 
 =head2 Shared libperl.so location
 
@@ -1209,10 +1329,25 @@ reflection, I'd say leave libperl.so in $archlib.
 
 =back
 
+=head2 Indentation style
+
+Over the years Perl has become a mishmash of
+various indentation styles, but the original "Larry style" can
+probably be restored with (GNU) indent somewhat like this:
+
+    indent -kr -nce -psl -sc
+
+A more ambitious solution would also specify a list of Perl specific
+types with -TSV -TAV -THV .. -TMAGIC -TPerlIO ... but that list would
+be quite ungainly.  Also note that GNU indent also doesn't do aligning
+of consecutive assignments, which would truly wreck the layout in
+places like sv.c:Perl_sv_upgrade() or sv.c:Perl_clone_using().
+Similarly nicely aligned &&s, ||s and ==s would not be respected.
+
 =head1 Upload Your Work to CPAN
 
 You can upload your work to CPAN if you have a CPAN id.  Check out
-http://www.perl.com/CPAN/modules/04pause.html for information on
+http://www.cpan.org/modules/04pause.html for information on
 _PAUSE_, the Perl Author's Upload Server.
 
 I typically upload both the patch file, e.g. F<perl5.004_08.pat.gz>
@@ -1220,7 +1355,7 @@ and the full tar file, e.g. F<perl5.004_08.tar.gz>.
 
 If you want your patch to appear in the F<src/5.0/unsupported>
 directory on CPAN, send e-mail to the CPAN master librarian.  (Check
-out http://www.perl.com/CPAN/CPAN.html ).
+out http://www.cpan.org/CPAN.html ).
 
 =head1 Help Save the World
 
@@ -1235,6 +1370,97 @@ people who will not read your disclaimer.
 Here, in no particular order, are some Configure and build-related
 items that merit consideration.  This list isn't exhaustive, it's just
 what I came up with off the top of my head.
+
+=head2 Adding missing library functions to Perl
+
+The perl Configure script automatically determines which headers and
+functions you have available on your system and arranges for them to be
+included in the compilation and linking process.  Occasionally, when porting
+perl to an operating system for the first time, you may find that the
+operating system is missing a key function.  While perl may still build
+without this function, no perl program will be able to reference the missing
+function.  You may be able to write the missing function yourself, or you
+may be able to find the missing function in the distribution files for
+another software package.  In this case, you need to instruct the perl
+configure-and-build process to use your function.  Perform these steps.
+
+=over 3
+
+=item *
+
+Code and test the function you wish to add.  Test it carefully; you will
+have a much easier time debugging your code independently than when it is a
+part of perl.
+
+=item *
+
+Here is an implementation of the POSIX truncate function for an operating
+system (VOS) that does not supply one, but which does supply the ftruncate()
+function.
+
+  /* Beginning of modification history */
+  /* Written 02-01-02 by Nick Ing-Simmons (nick@ing-simmons.net) */
+  /* End of modification history */
+  
+  /* VOS doesn't supply a truncate function, so we build one up
+     from the available POSIX functions.  */
+  
+  #include <fcntl.h>
+  #include <sys/types.h>
+  #include <unistd.h>
+  
+  int
+  truncate(const char *path, off_t len)
+  {
+   int fd = open(path,O_WRONLY);
+   int code = -1;
+   if (fd >= 0) {
+     code = ftruncate(fd,len);
+     close(fd);
+   }
+   return code;
+  }
+
+Place this file into a subdirectory that has the same name as the operating
+system. This file is named perl/vos/vos.c
+
+=item *
+
+If your operating system has a hints file (in perl/hints/XXX.sh for an
+operating system named XXX), then start with it.  If your operating system
+has no hints file, then create one.  You can use a hints file for a similar
+operating system, if one exists, as a template.
+
+=item *
+
+Add lines like the following to your hints file. The first line
+(d_truncate="define") instructs Configure that the truncate() function
+exists. The second line (archobjs="vos.o") instructs the makefiles that the
+perl executable depends on the existence of a file named "vos.o".  (Make
+will automatically look for "vos.c" and compile it with the same options as
+the perl source code).  The final line ("test -h...") adds a symbolic link
+to the top-level directory so that make can find vos.c.  Of course, you
+should use your own operating system name for the source file of extensions,
+not "vos.c".
+
+  # VOS does not have truncate() but we supply one in vos.c
+  d_truncate="define"
+  archobjs="vos.o"
+  
+  # Help gmake find vos.c
+  test -h vos.c || ln -s vos/vos.c vos.c
+
+The hints file is a series of shell commands that are run in the top-level
+directory (the "perl" directory).  Thus, these commands are simply executed
+by Configure at an appropriate place during its execution.
+
+=item *
+
+At this point, you can run the Configure script and rebuild perl.  Carefully
+test the newly-built perl to ensure that normal paths, and error paths,
+behave as you expect.
+
+=back
 
 =head2 Good ideas waiting for round tuits
 
@@ -1325,13 +1551,85 @@ have good reason to do otherwise, I see no reason not to support them.
 =item File locking
 
 Somehow, straighten out, document, and implement lockf(), flock(),
-and/or fcntl() file locking.  It's a mess.
+and/or fcntl() file locking.  It's a mess.  See $d_fcntl_can_lock
+in recent config.sh files though.
+
+=back
+
+=head2 Copyright Issues
+
+The following is based on the consensus of a couple of IPR lawyers,
+but it is of course not a legally binding statement, just a common
+sense summary.
+
+=over 4
+
+=item *
+
+Tacking on copyright statements is unnecessary to begin with because
+of the Berne convention.  But assuming you want to go ahead...
+
+=item *
+
+The right form of a copyright statement is
+
+	Copyright (C) Year, Year, ... by Someone
+
+The (C) is not required everywhere but it doesn't hurt and in certain
+jurisdictions it is required, so let's leave it in.  (Yes, it's true
+that in some jurisdictions the "(C)" is not legally binding, one should
+use the true ringed-C.  But we don't have that character available for
+Perl's source code.)
+
+The years must be listed out separately.  Year-Year is not correct.
+Only the years when the piece has changed 'significantly' may be added.
+
+=item *
+
+One cannot give away one's copyright trivially.  One can give one's
+copyright away by using public domain, but even that requires a little
+bit more than just saying 'this is in public domain'.  (What it
+exactly requires depends on your jurisdiction.)  But barring public
+domain, one cannot "transfer" one's copyright to another person or
+entity.  In the context of software, it means that contributors cannot
+give away their copyright or "transfer" it to the "owner" of the software.
+
+Also remember that in many cases if you are employed by someone,
+your work may be copyrighted to your employer, even when you are
+contributing on your own time (this all depends on too many things
+to list here).  But the bottom line is that you definitely can't give
+away a copyright you may not even have.
+
+What is possible, however, is that the software can simply state
+
+	Copyright (C) Year, Year, ... by Someone and others
+
+and then list the "others" somewhere in the distribution.
+And this is exactly what Perl does.  (The "somewhere" is
+AUTHORS and the Changes* files.)
+
+=item *
+
+Split files, merged files, and generated files are problematic.
+The rule of thumb: in split files, copy the copyright years of
+the original file to all the new files; in merged files make
+an union of the copyright years of all the old files; in generated
+files propagate the copyright years of the generating file(s).
+
+=item *
+
+The files of Perl source code distribution do carry a lot of
+copyrights, by various people.  (There are many copyrights embedded in
+perl.c, for example.)  The most straightforward thing for pumpkings to
+do is to simply update Larry's copyrights at the beginning of the
+*.[hcy], x2p/*.[hcy], *.pl, and README files, and leave all other
+copyrights alone.  Doing more than that requires quite a bit of tracking. 
 
 =back
 
 =head1 AUTHORS
 
-Original author:  Andy Dougherty doughera@lafcol.lafayette.edu .
+Original author:  Andy Dougherty doughera@lafayette.edu .
 Additions by Chip Salzenberg chip@perl.com and 
 Tim Bunce Tim.Bunce@ig.co.uk .
 
@@ -1339,4 +1637,4 @@ All opinions expressed herein are those of the authorZ<>(s).
 
 =head1 LAST MODIFIED
 
-$Id: pumpkin.pod,v 1.2 2002/03/14 08:55:08 zarzycki Exp $
+$Id: pumpkin.pod,v 1.5 2003/05/20 22:48:55 emoy Exp $

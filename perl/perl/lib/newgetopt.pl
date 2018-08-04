@@ -1,6 +1,13 @@
-# newgetopt.pl -- new options parsing.
-# Now just a wrapper around the Getopt::Long module.
-# $Id: newgetopt.pl,v 1.1.1.2 2000/03/31 05:11:48 wsanchez Exp $
+# $Id: newgetopt.pl,v 1.4 2003/05/20 22:50:34 emoy Exp $
+
+# This library is no longer being maintained, and is included for backward
+# compatibility with Perl 4 programs which may require it.
+# It is now just a wrapper around the Getopt::Long module.
+#
+# In particular, this should not be used as an example of modern Perl
+# programming techniques.
+#
+# Suggested alternative: Getopt::Long
 
 {   package newgetopt;
 

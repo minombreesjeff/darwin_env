@@ -5,13 +5,13 @@ require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(&soundex $soundex_nocode);
 
-$VERSION = '1.0';
+$VERSION = '1.01';
 
-# $Id: Soundex.pm,v 1.2 2002/03/14 08:59:24 zarzycki Exp $
+# $Id: Soundex.pm,v 1.5 2003/05/20 22:52:44 emoy Exp $
 #
 # Implementation of soundex algorithm as described by Knuth in volume
 # 3 of The Art of Computer Programming, with ideas stolen from Ian
-# Phillips <ian@pipex.net>.
+# Phillipps <ian@pipex.net>.
 #
 # Mike Stok <Mike.Stok@meiko.concord.ma.us>, 2 March 1994.
 #
@@ -25,11 +25,16 @@ $VERSION = '1.0';
 # Lukasiewicz, Lissajous -> L222
 #
 # $Log: Soundex.pm,v $
-# Revision 1.2  2002/03/14 08:59:24  zarzycki
-# Revert HEAD back to perl-17
+# Revision 1.5  2003/05/20 22:52:44  emoy
+# Update to Perl 5.8.1, including thread support and two level namespace.
+# Bug #: 3258028
+# Reviewed by: Jordan Hubbard
 #
-# Revision 1.1.1.2  2000/03/31 05:12:00  wsanchez
-# Import of perl 5.6.0
+# Revision 1.4.2.1  2003/05/17 07:05:32  emoy
+# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+# two level namespace.  Append prefix, installprefix, and standard paths to
+# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+# .packlist.
 #
 # Revision 1.2  1994/03/24  00:30:27  mike
 # Subtle bug (any excuse :-) spotted by Rich Pinder <rpinder@hsc.usc.edu>
@@ -114,7 +119,7 @@ many people seem to prefer an I<unlikely> value like C<Z000>
 can be assigned to C<$soundex_nocode>.
 
 In scalar context C<soundex> returns the soundex code of its first
-argument, and in array context a list is returned in which each element is the 
+argument, and in list context a list is returned in which each element is the 
 soundex code for the corresponding argument passed to C<soundex> e.g.
 
   @codes = soundex qw(Mike Stok);
@@ -152,5 +157,5 @@ of C<H416>.
 =head1 AUTHOR
 
 This code was implemented by Mike Stok (C<stok@cybercom.net>) from the 
-description given by Knuth.  Ian Phillips (C<ian@pipex.net>) and Rich Pinder 
+description given by Knuth.  Ian Phillipps (C<ian@pipex.net>) and Rich Pinder 
 (C<rpinder@hsc.usc.edu>) supplied ideas and spotted mistakes.

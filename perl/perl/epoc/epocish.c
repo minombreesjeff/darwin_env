@@ -6,29 +6,36 @@
  *
  */
 
-/* This is indeed C++ Code !! */
+/* This is C++ Code !! */
 
 #include <e32std.h>
+#include <stdlib.h>
+#include <estlib.h>
+#include <string.h>
 
 extern "C" { 
 
-epoc_spawn( char *cmd, char *cmdline) {
-  RProcess p;
-  TRequestStatus status;
-  TInt rc;
 
-  rc = p.Create( _L( cmd), _L( cmdline));
-  if (rc != KErrNone)
-    return -1;
+/* Workaround for defect strtoul(). Values with leading + are zero */
 
-  p.Resume();
-  
-  p.Logon( status);
-  User::WaitForRequest( status);
-  if (status!=KErrNone) {
-    return -1;
+unsigned long int epoc_strtoul(const char *nptr, char **endptr,
+			       int base) {
+  if (nptr && *nptr == '+')
+    nptr++;
+  return strtoul( nptr, endptr, base);
+}
+
+void epoc_gcvt( double x, int digits, unsigned char *buf) {
+    TRealFormat trel;
+
+    trel.iPlaces = digits;
+    trel.iPoint = TChar( '.');
+
+    TPtr result( buf, 80);
+
+    result.Num( x, trel);
+    result.Append( TChar( 0));
   }
-  return 0;
 }
 
-}
+

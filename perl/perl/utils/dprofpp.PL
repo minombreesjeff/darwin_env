@@ -2,6 +2,7 @@
 
 use Config;
 use File::Basename qw(&basename &dirname);
+use File::Spec;
 
 # List explicitly here the variables you want Configure to
 # generate.  Metaconfig only looks for shell variables, so you
@@ -17,7 +18,7 @@ chdir(dirname($0));
 $file =~ s/\.pl$// if ($Config{'osname'} eq 'OS2');      # "case-forgiving"
 $file =~ s/\.pl$/.com/ if ($Config{'osname'} eq 'VMS');  # "case-forgiving"
 
-my $dprof_pm = '../ext/Devel/DProf/DProf.pm';
+my $dprof_pm = File::Spec->catfile(File::Spec->updir, 'ext', 'Devel', 'DProf', 'DProf.pm');
 my $VERSION = 0;
 open( PM, "<$dprof_pm" ) || die "Can't open $dprof_pm: $!";
 while(<PM>){
@@ -57,12 +58,14 @@ dprofpp - display perl profile data
 
 =head1 SYNOPSIS
 
-dprofpp [B<-a>|B<-z>|B<-l>|B<-v>|B<-U>] [B<-s>|B<-r>|B<-u>] [B<-q>] [B<-F>] [B<-I|-E>] [B<-O cnt>] [B<-A>] [B<-R>] [B<-S>] [B<-g subroutine>] [profile]
-
+dprofpp [B<-a>|B<-z>|B<-l>|B<-v>|B<-U>] [B<-d>] [B<-s>|B<-r>|B<-u>] [B<-q>] [B<-F>] [B<-I|-E>] [B<-O cnt>] [B<-A>] [B<-R>] [B<-S>] [B<-g subroutine>] [B<-G> <regexp> [B<-P>]] [B<-f> <regexp>] [profile]
+  
 dprofpp B<-T> [B<-F>] [B<-g subroutine>] [profile]
 
 dprofpp B<-t> [B<-F>] [B<-g subroutine>] [profile]
 
+dprofpp B<-G> <regexp> [B<-P>] [profile]
+ 
 dprofpp B<-p script> [B<-Q>] [other opts]
 
 dprofpp B<-V> [profile]
@@ -147,6 +150,10 @@ Average time (in seconds) spent in each call of this routine
 
 Sort alphabetically by subroutine names.
 
+=item B<-d>
+
+Reverse whatever sort is used
+
 =item B<-A>
 
 Count timing for autoloaded subroutine as timing for C<*::AUTOLOAD>.
@@ -221,7 +228,7 @@ calling level then it is displayed once with a repeat count.
 
 =item B<-S>
 
-Display I<merged> subroutine call tree to stdout.  Statistics is
+Display I<merged> subroutine call tree to stdout.  Statistics are
 displayed for each branch of the tree.  
 
 When a function is called multiple (I<not necessarily consecutive>)
@@ -257,6 +264,25 @@ should show you which subroutines are using the most time.
 =item B<-g> C<subroutine>
 
 Ignore subroutines except C<subroutine> and whatever is called from it.
+
+=item B<-G> <regexp>
+
+Aggregate "Group" all calls matching the pattern together.
+For example this can be used to group all calls of a set of packages
+
+  -G "(package1::)|(package2::)|(package3::)"
+
+or to group subroutines by name:
+
+  -G "getNum"
+
+=item B<-P>
+
+Used with -G to aggregate "Pull"  together all calls that did not match -G.
+
+=item B<-f> <regexp>
+
+Filter all calls matching the pattern.
 
 =back
 
@@ -297,7 +323,7 @@ use Getopt::Std 'getopts';
 use Config '%Config';
 
 Setup: {
-	my $options = 'O:g:lzaAvuTtqrRsUFEIp:QVS';
+	my $options = 'O:g:G:Pf:dlzaAvuTtqrRsUFEIp:QVS';
 
 	$Monfile = 'tmon.out';
 	if( exists $ENV{DPROFPP_OPTS} ){
@@ -340,6 +366,11 @@ Setup: {
 # -g subr	count only those who are SUBR or called from SUBR
 # -S		Create statistics for all the depths
 
+# -G		Group all calls matching the pattern together.
+# -P		Used with -G to pull all other calls together.
+# -f		Filter all calls mathcing the pattern.
+# -d		Reverse sort
+
 	if( defined $opt_V ){
 		my $fh = 'main::fh';
 		print "$0 version: $VERSION\n";
@@ -357,6 +388,10 @@ Setup: {
 	$sort = 'by_calls' if defined $opt_l;
 	$sort = 'by_alpha' if defined $opt_a;
 	$sort = 'by_avgcpu' if defined $opt_v;
+	
+	if(defined $opt_d){
+		$sort = "r".$sort;
+	}
 	$incl_excl = 'Exclusive';
 	$incl_excl = 'Inclusive' if defined $opt_I;
 	$whichtime = 'User+System';
@@ -412,6 +447,23 @@ Main: {
 
 	parsestack( $fh, $names, $calls, $times, $ctimes, $idkeys );
 
+	#filter calls
+	if( $opt_f ){
+		for(my $i = 0;$i < @$idkeys - 2;){
+			$key = $$idkeys[$i];
+			if($key =~ /$opt_f/){
+				splice(@$idkeys, $i, 1);
+				$runtime -= $$times{$key};
+				next;
+			}
+			$i++;
+		}
+	}
+
+	if( $opt_G ){
+		group($names, $calls, $times, $ctimes, $idkeys );
+	}
+
 	settime( \$runtime, $hz ) unless $opt_g;
 
 	exit(0) if $opt_T || $opt_t;
@@ -430,6 +482,49 @@ Main: {
 		 $deep_times);
 }
 
+sub group{
+	my ($names, $calls, $times, $ctimes, $idkeys ) = @_;
+		print "Option G Grouping: [$opt_G]\n";
+		# create entries to store grouping
+		$$names{$opt_G} = $opt_G;
+		$$calls{$opt_G} = 0;
+		$$times{$opt_G} = 0;
+		$$ctimes{$opt_G} = 0;
+		$$idkeys[@$idkeys] = $opt_G;
+		# Sum calls for the grouping
+
+		my $other = "other";
+		if($opt_P){
+			$$names{$other} = $other;
+			$$calls{$other} = 0;
+			$$times{$other} = 0;
+			$$ctimes{$other} = 0;
+			$$idkeys[@$idkeys] = $other;
+		}
+
+		for(my $i = 0;$i < @$idkeys - 2;){
+			$key = $$idkeys[$i];
+			if($key =~ /$opt_G/){
+				$$calls{$opt_G} += $$calls{$key};
+				$$times{$opt_G} += $$times{$key};
+				$$ctimes{$opt_G} += $$ctimes{$key};
+				splice(@$idkeys, $i, 1);
+				next;
+			}else{
+				if($opt_P){
+					$$calls{$other} += $$calls{$key};
+					$$times{$other} += $$times{$key};
+					$$ctimes{$other} += $$ctimes{$key};
+					splice(@$idkeys, $i, 1);
+					next;
+				}
+			}
+			$i++;
+		}
+		print "Grouping [$opt_G] Calls: [$$calls{$opt_G}]\n".
+			  "Grouping [$opt_G] Times: [$$times{$opt_G}]\n".
+			  "Grouping [$opt_G] IncTimes: [$$ctimes{$opt_G}]\n";
+}
 
 # Sets $runtime to user, system, real, or user+system time.  The
 # result is given in seconds.
@@ -440,16 +535,16 @@ sub settime {
   $hz ||= 1;
   
   if( $opt_r ){
-    $$runtime = ($rrun_rtime - $overhead - $over_rtime * $total_marks/$over_tests/2)/$hz;
+    $$runtime = ($rrun_rtime - $overhead)/$hz;
   }
   elsif( $opt_s ){
-    $$runtime = ($rrun_stime - $overhead - $over_stime * $total_marks/$over_tests/2)/$hz;
+    $$runtime = ($rrun_stime - $overhead)/$hz;
   }
   elsif( $opt_u ){
-    $$runtime = ($rrun_utime - $overhead - $over_utime * $total_marks/$over_tests/2)/$hz;
+    $$runtime = ($rrun_utime - $overhead)/$hz;
   }
   else{
-    $$runtime = ($rrun_ustime - $overhead - ($over_utime + $over_stime) * $total_marks/$over_tests/2)/$hz;
+    $$runtime = ($rrun_ustime - $overhead)/$hz;
   }
   $$runtime = 0 unless $$runtime > 0;
 }
@@ -480,10 +575,9 @@ sub display_tree {
   exclusives_in_tree($deep_times);
   
   my $kid;
-  local *kids = $deep_times->{kids}; # %kids
 
   my $time;
-  if (%kids) {
+  if (%{$deep_times->{kids}}) {
     $time = sprintf '%.*fs = (%.*f + %.*f)', 
       $time_precision, $deep_times->{incl_time}/$hz,
         $time_precision, $deep_times->{excl_time}/$hz,
@@ -494,7 +588,7 @@ sub display_tree {
   print ' ' x (2*$level), "$name x $deep_times->{count}  \t${time}s\n"
     if $deep_times->{count};
 
-  for $kid (sort kids_by_incl keys %kids) {
+  for $kid (sort kids_by_incl %{$deep_times->{kids}}) {
     display_tree( $deep_times->{kids}{$kid}, $kid, $level + 1 );
   }  
 }
@@ -531,15 +625,16 @@ sub display {
 
 sub move_keys {
   my ($source, $dest) = @_;
-  my $kid;
-  
-  for $kid (keys %$source) {
-    if (exists $dest->{$kid}) {
-      $dest->{count} += $source->{count};
-      $dest->{incl_time} += $source->{incl_time};
-      move_keys($source->{kids},$dest->{kids});
+
+  for my $kid_name (keys %$source) {
+    my $source_kid = delete $source->{$kid_name};
+
+    if (my $dest_kid = $dest->{$kid_name}) {
+      $dest_kid->{count} += $source_kid->{count};
+      $dest_kid->{incl_time} += $source_kid->{incl_time};
+      move_keys($source_kid->{kids},$dest_kid->{kids});
     } else {
-      $dest->{$kid} = delete $source->{$kid};
+      $dest->{$kid_name} = $source_kid;
     }
   }
 }
@@ -550,11 +645,11 @@ sub add_to_tree {
     $name = $curdeep_times->[-1]{name};
   }
   die "Shorted?!" unless @$curdeep_times >= 2;
-  $curdeep_times->[-2]{kids}{$name} = { count => 0 , kids => {}, 
-					incl_time => 0,
-				      } 
-    unless exists $curdeep_times->[-2]{kids}{$name};
-  my $entry = $curdeep_times->[-2]{kids}{$name};
+  my $entry = $curdeep_times->[-2]{kids}{$name} ||= {
+    count => 0,
+    kids => {}, 
+    incl_time => 0,
+  };
   # Now transfer to the new node (could not do earlier, since name can change)
   $entry->{count}++;
   $entry->{incl_time} += $t - $curdeep_times->[-1]{enter_stamp};
@@ -563,6 +658,7 @@ sub add_to_tree {
   pop @$curdeep_times;
 }
 
+
 sub parsestack {
 	my( $fh, $names, $calls, $times, $ctimes, $idkeys ) = @_;
 	my( $dir, $name );
@@ -570,6 +666,7 @@ sub parsestack {
 	my( $x, $z, $c, $id, $pack );
 	my @stack = ();
 	my @tstack = ();
+	my %outer;
 	my $tab = 3;
 	my $in = 0;
 
@@ -578,7 +675,6 @@ sub parsestack {
 	my $l_name = '';
 	my $repcnt = 0;
 	my $repstr = '';
-	my $dprof_t = 0;
 	my $dprof_stamp;
 	my %cv_hash;
 	my $in_level = not defined $opt_g; # Level deep in report grouping
@@ -598,7 +694,7 @@ sub parsestack {
 		chop;
 		if (/^&/) {
 		  ($dir, $id, $pack, $name) = split;
-		  if ($opt_R and ($name =~ /::(__ANON_|END)$/)) {
+		  if ($opt_R and ($name =~ /(?:::)?(__ANON__|END)$/)) {
 		    $name .= "($id)";
 		  }
 		  $cv_hash{$id} = "$pack\::$name";
@@ -624,22 +720,22 @@ sub parsestack {
 		  $name = defined $syst ? $syst : $cv_hash{$usert};
 		}
 
-		next unless $in_level or $name eq $opt_g or $dir eq '*';
+		next unless $in_level or $name eq $opt_g;
 		if ( $dir eq '-' or $dir eq '*' ) {
 		  	my $ename = $dir eq '*' ? $stack[-1][0]  : $name;
 			$overhead += $over_per_call;
 		  	if ($name eq "Devel::DProf::write") {
-			  $dprof_t += $t - $dprof_stamp;
+			  $overhead += $t - $dprof_stamp;
 			  next;
 		  	} elsif (defined $opt_g and $ename eq $opt_g) {
 			  $in_level--;
 			}
 			add_to_tree($curdeep_times, $ename,
-				    $t - $dprof_t - $overhead) if $opt_S;
+				    $t - $overhead) if $opt_S;
 			exitstamp( \@stack, \@tstack, 
-				   $t - $dprof_t - $overhead, 
+				   $t - $overhead, 
 				   $times, $ctimes, $ename, \$in, $tab, 
-				   $curdeep_times );
+				   $curdeep_times, \%outer );
 		} 
 		next unless $in_level or $name eq $opt_g;
 		if( $dir eq '+' or $dir eq '*' ){
@@ -678,11 +774,12 @@ sub parsestack {
 				push( @$idkeys, $name );
 			}
 			$calls->{$name}++;
+                        $outer{$name}++;
 			push @$curdeep_times, { kids => {}, 
 						name => $name, 
-						enter_stamp => $t - $dprof_t - $overhead,
+						enter_stamp => $t - $overhead,
 					      } if $opt_S;
-			$x = [ $name, $t - $dprof_t - $overhead ];
+			$x = [ $name, $t - $overhead ];
 			push( @stack, $x );
 
 			# my children will put their time here
@@ -695,6 +792,11 @@ sub parsestack {
 		$repstr = ' ('.++$repcnt.'x)' if $repcnt;
 		print ' ' x $l_in, "$l_name$repstr\n";
 	}
+
+        while (my ($key, $count) = each %outer) {
+            next unless $count;
+            warn "$key has $count unstacked calls in outer\n";
+        }
 
 	if( @stack ){
 		if( ! $opt_F ){
@@ -711,11 +813,11 @@ sub parsestack {
 			foreach $x ( reverse @stack ){
 				$name = $x->[0];
 				exitstamp( \@stack, \@tstack, 
-					   $t - $dprof_t - $overhead, $times, 
+					   $t - $overhead, $times, 
 					   $ctimes, $name, \$in, $tab, 
-					   $curdeep_times );
+					   $curdeep_times, \%outer );
 				add_to_tree($curdeep_times, $name,
-					    $t - $dprof_t - $overhead)
+					    $t - $overhead)
 				  if $opt_S;
 			}
 		}
@@ -727,15 +829,15 @@ sub parsestack {
 }
 
 sub exitstamp {
-	my($stack, $tstack, $t, $times, $ctimes, $name, $in, $tab, $deep) = @_;
+	my($stack, $tstack, $t, $times, $ctimes, $name, $in, $tab, $deep, $outer) = @_;
 	my( $x, $c, $z );
 
 	$x = pop( @$stack );
 	if( ! defined $x ){
 		die "Garbled profile, missing an enter time stamp";
 	}
-	if( $x->[0] ne $name ){
-	  if ($x->[0] =~ /::AUTOLOAD$/) {
+	if( $x->[0] ne $name and $opt_G and ($name =~ /$opt_G/)){
+	  if ($x->[0] =~ /(?:::)?AUTOLOAD$/) {
 	    if ($opt_A) {
 	      $name = $x->[0];
 	    }
@@ -756,8 +858,9 @@ sub exitstamp {
 	$c = pop( @$tstack );
 	# total time this func has been active
 	$z = $t - $x->[1];
-	$ctimes->{$name} += $z;
-	$times->{$name} += ($z > $c)? $z - $c: 0;
+	$ctimes->{$name} += $z
+            unless --$outer->{$name};
+	$times->{$name} += $z - $c;
 	# pass my time to my parent
 	if( @$tstack ){
 		$c = pop( @$tstack );
@@ -801,10 +904,12 @@ sub run_profiler {
 	my $script = shift;
 	my $profiler = shift;
 	my $startperl = shift;
+	my @script_parts = split /\s+/, $script;
 
-	system $startperl, "-d:$profiler", $script;
+	system $startperl, "-d:$profiler", @script_parts;
 	if( $? / 256 > 0 ){
-		die "Failed: $startperl -d:$profiler $script: $!";
+		my $cmd = join ' ', @script_parts;
+		die "Failed: $startperl -d:$profiler $cmd: $!";
 	}
 }
 
@@ -814,11 +919,17 @@ sub by_ctime { $ctimes->{$b} <=> $ctimes->{$a} }
 sub by_calls { $calls->{$b} <=> $calls->{$a} }
 sub by_alpha { $names->{$a} cmp $names->{$b} }
 sub by_avgcpu { $persecs->{$b} <=> $persecs->{$a} }
+# Reversed
+sub rby_time { $times->{$a} <=> $times->{$b} }
+sub rby_ctime { $ctimes->{$a} <=> $ctimes->{$b} }
+sub rby_calls { $calls->{$a} <=> $calls->{$b} }
+sub rby_alpha { $names->{$b} cmp $names->{$a} }
+sub rby_avgcpu { $persecs->{$a} <=> $persecs->{$b} }
 
 
 format CSTAT_top =
 Total Elapsed Time = @>>>>>>> Seconds
-(($rrun_rtime - $overhead - $over_rtime * $total_marks/$over_tests/2) / $hz)
+(($rrun_rtime - $overhead) / $hz)
   @>>>>>>>>>> Time = @>>>>>>> Seconds
 $whichtime, $runtime
 @<<<<<<<< Times
@@ -836,3 +947,4 @@ $pcnt, $secs, $csecs, $ncalls, $percall, $cpercall, $name
 close OUT or die "Can't close $file: $!";
 chmod 0755, $file or die "Can't reset permissions for $file: $!\n";
 exec("$Config{'eunicefix'} $file") if $Config{'eunicefix'} ne ':';
+

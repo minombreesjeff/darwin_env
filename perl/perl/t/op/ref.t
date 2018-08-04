@@ -1,6 +1,13 @@
 #!./perl
 
-print "1..56\n";
+BEGIN {
+    chdir 't' if -d 't';
+    @INC = qw(. ../lib);
+}
+
+print "1..63\n";
+
+require 'test.pl';
 
 # Test glob operations.
 
@@ -207,11 +214,15 @@ print @baa == 3 ? "ok 42\n" : "not ok 42\n";
 print grep(ref($_), @baa) == 3 ? "ok 43\n" : "not ok 43\n";
 print @bzz == 3 ? "ok 44\n" : "not ok 44\n";
 
+# also, it can't be an lvalue
+eval '\\($x, $y) = (1, 2);';
+print $@ =~ /Can\'t modify.*ref.*in.*assignment/ ? "ok 45\n" : "not ok 45\n";
+
 # test for proper destruction of lexical objects
 
-sub larry::DESTROY { print "# larry\nok 45\n"; }
-sub curly::DESTROY { print "# curly\nok 46\n"; }
-sub moe::DESTROY   { print "# moe\nok 47\n"; }
+sub larry::DESTROY { print "# larry\nok 46\n"; }
+sub curly::DESTROY { print "# curly\nok 47\n"; }
+sub moe::DESTROY   { print "# moe\nok 48\n"; }
 
 {
     my ($joe, @curly, %larry);
@@ -225,13 +236,13 @@ print "# left block\n";
 
 # another glob test
 
-$foo = "not ok 48";
+$foo = "not ok 49";
 { local(*bar) = "foo" }
-$bar = "ok 48";
+$bar = "ok 49";
 local(*bar) = *bar;
 print "$bar\n";
 
-$var = "ok 49";
+$var = "ok 50";
 $_   = \$var;
 print $$_,"\n";
 
@@ -240,10 +251,10 @@ print $$_,"\n";
 {
     package A;
     sub new { bless {}, shift }
-    DESTROY { print "# destroying 'A'\nok 51\n" }
+    DESTROY { print "# destroying 'A'\nok 52\n" }
     package _B;
     sub new { bless {}, shift }
-    DESTROY { print "# destroying '_B'\nok 50\n"; bless shift, 'A' }
+    DESTROY { print "# destroying '_B'\nok 51\n"; bless shift, 'A' }
     package main;
     my $b = _B->new;
 }
@@ -255,11 +266,11 @@ print $$_,"\n";
     local $SIG{'__DIE__'} = sub {
 	my $m = shift;
 	if ($i++ > 4) {
-	    print "# infinite recursion, bailing\nnot ok 52\n";
+	    print "# infinite recursion, bailing\nnot ok 53\n";
 	    exit 1;
         }
 	print "# $m";
-	if ($m =~ /^Modification of a read-only/) { print "ok 52\n" }
+	if ($m =~ /^Modification of a read-only/) { print "ok 53\n" }
     };
     package C;
     sub new { bless {}, shift }
@@ -275,18 +286,51 @@ print $$_,"\n";
 
 {
     my @a;
-    $a[1] = "ok 53\n";
+    $a[1] = "ok 54\n";
     print ${\$_} for @a;
+}
+
+# This test is the reason for postponed destruction in sv_unref
+$a = [1,2,3];
+$a = $a->[1];
+print "not " unless $a == 2;
+print "ok 55\n";
+
+sub x::DESTROY {print "ok ", 55 + shift->[0], "\n"}
+{ my $a1 = bless [4],"x";
+  my $a2 = bless [3],"x";
+  { my $a3 = bless [2],"x";
+    my $a4 = bless [1],"x";
+    567;
+  }
+}
+
+
+my $result = runperl (switches=>['-l'],
+                      prog=> 'print 1; print qq-*$\*-;print 1;');
+my $expect = "1\n*\n*\n1\n";
+if ($result eq $expect) {
+  print "ok 60\n";
+} else {
+  print "not ok 60\n";
+  foreach ($expect, $result) {
+    s/\n/\\n/gs;
+  }
+  print "# expected \"$expect\", got \"$result\"\n";
 }
 
 # test global destruction
 
+my $test = 61;
+my $test1 = $test + 1;
+my $test2 = $test + 2;
+
 package FINALE;
 
 {
-    $ref3 = bless ["ok 56\n"];		# package destruction
-    my $ref2 = bless ["ok 55\n"];	# lexical destruction
-    local $ref1 = bless ["ok 54\n"];	# dynamic destruction
+    $ref3 = bless ["ok $test2\n"];	# package destruction
+    my $ref2 = bless ["ok $test1\n"];	# lexical destruction
+    local $ref1 = bless ["ok $test\n"];	# dynamic destruction
     1;					# flush any temp values on stack
 }
 

@@ -1,6 +1,6 @@
 #!./perl
 
-# $RCSfile: elsif.t,v $$Revision: 1.1.1.2 $$Date: 2000/03/31 05:12:26 $
+# $RCSfile: elsif.t,v $$Revision: 1.4 $$Date: 2003/05/20 22:53:56 $
 
 sub foo {
     if ($_[0] == 1) {

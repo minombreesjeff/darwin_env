@@ -1,7 +1,7 @@
 package Text::ParseWords;
 
 use vars qw($VERSION @ISA @EXPORT $PERL_SINGLE_QUOTE);
-$VERSION = "3.2";
+$VERSION = "3.21";
 
 require 5.000;
 
@@ -50,6 +50,7 @@ sub nested_quotewords {
 sub parse_line {
 	# We will be testing undef strings
 	no warnings;
+	use re 'taint'; # if it's tainted, leave it as such
 
     my($delimiter, $keep, $line) = @_;
     my($quote, $quoted, $unquoted, $delim, $word, @pieces);
@@ -214,21 +215,27 @@ demonstrating:
 =over 4
 
 =item 0
+
 a simple word
 
 =item 1
+
 multiple spaces are skipped because of our $delim
 
 =item 2
+
 use of quotes to include a space in a word
 
 =item 3
+
 use of a backslash to include a space in a word
 
 =item 4
+
 use of a backslash to remove the special meaning of a double-quote
 
 =item 5
+
 another simple word (note the lack of effect of the
 backslashed double-quote)
 

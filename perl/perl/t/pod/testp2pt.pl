@@ -24,14 +24,8 @@ use vars qw($MYPKG @EXPORT @ISA);
 $MYPKG = eval { (caller)[0] };
 @EXPORT = qw(&testpodplaintext);
 BEGIN {
-    if ( $] >= 5.005_58 ) {
-       require Pod::Text;
-       @ISA = qw( Pod::Text );
-    }
-    else {
-       require Pod::PlainText;
-       @ISA = qw( Pod::PlainText );
-    }
+    require Pod::PlainText;
+    @ISA = qw( Pod::PlainText );
     require VMS::Filespec if $^O eq 'VMS';
 }
 
@@ -44,7 +38,9 @@ sub catfile(@) { File::Spec->catfile(@_); }
 my $INSTDIR = abs_path(dirname $0);
 $INSTDIR = VMS::Filespec::unixpath($INSTDIR) if $^O eq 'VMS';
 $INSTDIR =~ s#/$## if $^O eq 'VMS';
+$INSTDIR =~ s#:$## if $^O eq 'MacOS';
 $INSTDIR = (dirname $INSTDIR) if (basename($INSTDIR) eq 'pod');
+$INSTDIR =~ s#:$## if $^O eq 'MacOS';
 $INSTDIR = (dirname $INSTDIR) if (basename($INSTDIR) eq 't');
 my @PODINCDIRS = ( catfile($INSTDIR, 'lib', 'Pod'),
                    catfile($INSTDIR, 'scripts'),

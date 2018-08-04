@@ -13,7 +13,7 @@ use Carp '&croak';
 use DynaLoader ();
 use Exporter ();
  
-$VERSION = '2.2';
+$VERSION = '2.3';
 @ISA = qw( Exporter DynaLoader IO::File );
 @EXPORT = qw( &O_APPEND &O_CREAT &O_EXCL  &O_NDELAY &O_NOWAIT
               &O_RDONLY &O_RDWR  &O_TRUNC &O_WRONLY );
@@ -134,7 +134,7 @@ This package C<ISA> IO::File, so that you can call IO::File
 methods on the handles returned by C<vmsopen> and C<vmssysopen>.
 The IO::File package is not initialized, however, until you
 actually call a method that VMS::Stdio doesn't provide.  This
-is doen to save startup time for users who don't wish to use
+is done to save startup time for users who don't wish to use
 the IO::File methods.
 
 B<Note:>  In order to conform to naming conventions for Perl
@@ -146,7 +146,7 @@ VMS::Stdio function.  This compatibility interface will be
 removed in a future release of this extension, so please
 update your code to use the new routines.
 
-=over
+=over 4
 
 =item binmode
 
@@ -201,7 +201,7 @@ true value if successful, and C<undef> if it fails.
 This function sets the default device and directory for the process.
 It is identical to the built-in chdir() operator, except that the change
 persists after Perl exits.  It returns a true value on success, and
-C<undef> if it encounters and error.
+C<undef> if it encounters an error.
 
 =item sync
 
@@ -240,9 +240,7 @@ as a normal Perl file handle only.  When the scalar containing
 a VMS::Stdio file handle is overwritten, C<undef>d, or goes
 out of scope, the associated file is closed automatically.
 
-=over 4
-
-=head2 File characteristic options
+File characteristic options:
 
 =over 2
 
@@ -605,8 +603,6 @@ I/O timeout value
 
 =back
 
-=back
-
 =item vmssysopen
 
 This function bears the same relationship to the CORE function
@@ -633,6 +629,8 @@ supports this operation.  Its primary use is to send an EOF to a
 subprocess through a pipe opened for writing without closing the
 pipe.  It returns a true value if successful, and C<undef> if
 it encounters an error.
+
+=back
 
 =head1 REVISION
 

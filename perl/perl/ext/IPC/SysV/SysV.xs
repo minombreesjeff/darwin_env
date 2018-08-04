@@ -163,27 +163,26 @@ PPCODE:
 {
 #ifdef HAS_SEM
     SV **sv_ptr;
-    SV *sv;
     struct semid_ds ds;
     AV *list = (AV*)SvRV(obj);
     if(!sv_isa(obj, "IPC::Semaphore::stat"))
 	croak("method %s not called a %s object",
 		"pack","IPC::Semaphore::stat");
-    if((sv_ptr = av_fetch(list,0,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,0,TRUE)) && *sv_ptr)
 	ds.sem_perm.uid = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,1,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,1,TRUE)) && *sv_ptr)
 	ds.sem_perm.gid = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,2,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,2,TRUE)) && *sv_ptr)
 	ds.sem_perm.cuid = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,3,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,3,TRUE)) && *sv_ptr)
 	ds.sem_perm.cgid = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,4,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,4,TRUE)) && *sv_ptr)
 	ds.sem_perm.mode = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,5,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,5,TRUE)) && *sv_ptr)
 	ds.sem_ctime = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,6,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,6,TRUE)) && *sv_ptr)
 	ds.sem_otime = SvIV(*sv_ptr);
-    if((sv_ptr = av_fetch(list,7,TRUE)) && (sv = *sv_ptr))
+    if((sv_ptr = av_fetch(list,7,TRUE)) && *sv_ptr)
 	ds.sem_nsems = SvIV(*sv_ptr);
     ST(0) = sv_2mortal(newSVpvn((char *)&ds,sizeof(ds)));
     XSRETURN(1);
@@ -194,7 +193,7 @@ PPCODE:
 
 MODULE=IPC::SysV	PACKAGE=IPC::SysV
 
-int
+void
 ftok(path, id)
         char *          path
         int             id
@@ -203,10 +202,10 @@ ftok(path, id)
         key_t k = ftok(path, id);
         ST(0) = k == (key_t) -1 ? &PL_sv_undef : sv_2mortal(newSViv(k));
 #else
-        DIE(PL_no_func, "ftok");
+	Perl_die(aTHX_ PL_no_func, "ftok"); return;
 #endif
 
-int
+void
 SHMLBA()
     CODE:
 #ifdef SHMLBA
@@ -436,7 +435,7 @@ BOOT:
     char *name;
     int i;
 
-    for(i = 0 ; name = IPC__SysV__const[i].n ; i++) {
+    for(i = 0 ; (name = IPC__SysV__const[i].n) ; i++) {
 	newCONSTSUB(stash,name, newSViv(IPC__SysV__const[i].v));
     }
 }

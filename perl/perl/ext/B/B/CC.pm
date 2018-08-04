@@ -6,6 +6,9 @@
 #      License or the Artistic License, as specified in the README file.
 #
 package B::CC;
+
+our $VERSION = '1.00';
+
 use Config;
 use strict;
 use B qw(main_start main_root class comppadlist peekop svref_2object
@@ -151,7 +154,7 @@ sub init_pp {
     $ppname = shift;
     $runtime_list_ref = [];
     $declare_ref = {};
-    runtime("djSP;");
+    runtime("dSP;");
     declare("I32", "oldsave");
     declare("SV", "**svp");
     map { declare("SV", "*$_") } qw(sv src dst left right);

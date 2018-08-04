@@ -1,4 +1,4 @@
-case $CONFIGDOTSH in
+case $PERL_CONFIG_SH in
 '')
 	if test -f config.sh; then TOP=.;
 	elif test -f ../config.sh; then TOP=..;
@@ -27,29 +27,32 @@ $startsh
 
 # Note that the text lines /^Summary of/ .. /^\s*$/ are copied into Config.pm.
 cat <<'!NO!SUBS!'
-Summary of my $package (revision $baserev version $PERL_VERSION subversion $PERL_SUBVERSION) configuration:
+Summary of my $package (revision $baserev $version_patchlevel_string) configuration:
   Platform:
     osname=$osname, osvers=$osvers, archname=$archname
     uname='$myuname'
     config_args='$config_args'
     hint=$hint, useposix=$useposix, d_sigaction=$d_sigaction
     usethreads=$usethreads use5005threads=$use5005threads useithreads=$useithreads usemultiplicity=$usemultiplicity
-    useperlio=$useperlio d_sfio=$d_sfio uselargefiles=$uselargefiles 
-    use64bitint=$use64bitint use64bitall=$use64bitall uselongdouble=$uselongdouble usesocks=$usesocks
+    useperlio=$useperlio d_sfio=$d_sfio uselargefiles=$uselargefiles usesocks=$usesocks
+    use64bitint=$use64bitint use64bitall=$use64bitall uselongdouble=$uselongdouble
+    usemymalloc=$usemymalloc, bincompat5005=undef
   Compiler:
-    cc='$cc', optimize='$optimize', gccversion=$gccversion
+    cc='$cc', ccflags ='$ccflags',
+    optimize='$optimize',
     cppflags='$cppflags'
-    ccflags ='$ccflags'
-    stdchar='$stdchar', d_stdstdio=$d_stdstdio, usevfork=$usevfork
-    intsize=$intsize, longsize=$longsize, ptrsize=$ptrsize, doublesize=$doublesize
+    ccversion='$ccversion', gccversion='$gccversion', gccosandvers='$gccosandvers'
+    intsize=$intsize, longsize=$longsize, ptrsize=$ptrsize, doublesize=$doublesize, byteorder=$byteorder
     d_longlong=$d_longlong, longlongsize=$longlongsize, d_longdbl=$d_longdbl, longdblsize=$longdblsize
     ivtype='$ivtype', ivsize=$ivsize, nvtype='$nvtype', nvsize=$nvsize, Off_t='$lseektype', lseeksize=$lseeksize
-    alignbytes=$alignbytes, usemymalloc=$usemymalloc, prototype=$prototype
+    alignbytes=$alignbytes, prototype=$prototype
   Linker and Libraries:
     ld='$ld', ldflags ='$ldflags'
     libpth=$libpth
     libs=$libs
+    perllibs=$perllibs
     libc=$libc, so=$so, useshrplib=$useshrplib, libperl=$libperl
+    gnulibc_version='$gnulibc_version'
   Dynamic Linking:
     dlsrc=$dlsrc, dlext=$dlext, d_dlsymun=$d_dlsymun, ccdlflags='$ccdlflags'
     cccdlflags='$cccdlflags', lddlflags='$lddlflags'

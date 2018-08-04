@@ -8,6 +8,8 @@
 #define SPU_DISABLESUPPRESSION          0
 #define SPU_ENABLESUPPRESSION           1
 #include <os2.h>
+#include "dlfcn.h"
+#include <emx/syscalls.h>
 
 #include <sys/uflags.h>
 
@@ -20,11 +22,15 @@
 #include <limits.h>
 #include <process.h>
 #include <fcntl.h>
+#include <pwd.h>
+#include <grp.h>
+
+#define PERLIO_NOT_STDIO 0
 
 #include "EXTERN.h"
 #include "perl.h"
 
-#ifdef USE_THREADS
+#if defined(USE_5005THREADS) || defined(USE_ITHREADS)
 
 typedef void (*emx_startroutine)(void *);
 typedef void* (*pthreads_startroutine)(void *);
@@ -35,6 +41,8 @@ enum pthreads_state {
     pthreads_st_exited, 
     pthreads_st_detached, 
     pthreads_st_waited,
+    pthreads_st_norun,
+    pthreads_st_exited_waited,
 };
 const char *pthreads_states[] = {
     "uninit",
@@ -42,7 +50,23 @@ const char *pthreads_states[] = {
     "exited",
     "detached",
     "waited for",
+    "could not start",
+    "exited, then waited on",
 };
+
+enum pthread_exists { pthread_not_existant = -0xff };
+
+static const char*
+pthreads_state_string(enum pthreads_state state)
+{
+  if (state < 0 || state >= sizeof(pthreads_states)/sizeof(*pthreads_states)) {
+    static char buf[80];
+
+    snprintf(buf, sizeof(buf), "unknown thread state %d", (int)state);
+    return buf;
+  }
+  return pthreads_states[state];
+}
 
 typedef struct {
     void *status;
@@ -58,43 +82,90 @@ int
 pthread_join(perl_os_thread tid, void **status)
 {
     MUTEX_LOCK(&start_thread_mutex);
+    if (tid < 1 || tid >= thread_join_count) {
+	MUTEX_UNLOCK(&start_thread_mutex);
+	if (tid != pthread_not_existant)
+	    Perl_croak_nocontext("panic: join with a thread with strange ordinal %d", (int)tid);
+	Perl_warn_nocontext("panic: join with a thread which could not start");
+	*status = 0;
+	return 0;
+    }
     switch (thread_join_data[tid].state) {
     case pthreads_st_exited:
-	thread_join_data[tid].state = pthreads_st_none;	/* Ready to reuse */
-	MUTEX_UNLOCK(&start_thread_mutex);
+	thread_join_data[tid].state = pthreads_st_exited_waited;
 	*status = thread_join_data[tid].status;
+	MUTEX_UNLOCK(&start_thread_mutex);
+	COND_SIGNAL(&thread_join_data[tid].cond);    
 	break;
     case pthreads_st_waited:
 	MUTEX_UNLOCK(&start_thread_mutex);
-	croak("join with a thread with a waiter");
+	Perl_croak_nocontext("join with a thread with a waiter");
 	break;
-    case pthreads_st_run:
-	thread_join_data[tid].state = pthreads_st_waited;
-	COND_INIT(&thread_join_data[tid].cond);
+    case pthreads_st_norun:
+    {
+	int state = (int)thread_join_data[tid].status;
+
+	thread_join_data[tid].state = pthreads_st_none;
 	MUTEX_UNLOCK(&start_thread_mutex);
-	COND_WAIT(&thread_join_data[tid].cond, NULL);    
-	COND_DESTROY(&thread_join_data[tid].cond);
-	thread_join_data[tid].state = pthreads_st_none;	/* Ready to reuse */
-	*status = thread_join_data[tid].status;
+	Perl_croak_nocontext("panic: join with a thread which could not run"
+			     " due to attempt of tid reuse (state='%s')",
+			     pthreads_state_string(state));
 	break;
+    }
+    case pthreads_st_run:
+    {
+	perl_cond cond;
+
+	thread_join_data[tid].state = pthreads_st_waited;
+	thread_join_data[tid].status = (void *)status;
+	COND_INIT(&thread_join_data[tid].cond);
+	cond = thread_join_data[tid].cond;
+	COND_WAIT(&thread_join_data[tid].cond, &start_thread_mutex);
+	COND_DESTROY(&cond);
+	MUTEX_UNLOCK(&start_thread_mutex);
+	break;
+    }
     default:
 	MUTEX_UNLOCK(&start_thread_mutex);
-	croak("join: unknown thread state: '%s'", 
-	      pthreads_states[thread_join_data[tid].state]);
+	Perl_croak_nocontext("panic: join with thread in unknown thread state: '%s'", 
+	      pthreads_state_string(thread_join_data[tid].state));
 	break;
     }
     return 0;
 }
 
+typedef struct {
+  pthreads_startroutine sub;
+  void *arg;
+  void *ctx;
+} pthr_startit;
+
+/* The lock is used:
+	a) Since we temporarily usurp the caller interp, so malloc() may
+	   use it to decide on debugging the call;
+	b) Since *args is on the caller's stack.
+ */
 void
-pthread_startit(void *arg)
+pthread_startit(void *arg1)
 {
     /* Thread is already started, we need to transfer control only */
-    pthreads_startroutine start_routine = *((pthreads_startroutine*)arg);
+    pthr_startit args = *(pthr_startit *)arg1;
     int tid = pthread_self();
-    void *retval;
-    
-    arg = ((void**)arg)[1];
+    void *rc;
+    int state;
+
+    if (tid <= 1) {
+	/* Can't croak, the setjmp() is not in scope... */
+	char buf[80];
+
+	snprintf(buf, sizeof(buf),
+		 "panic: thread with strange ordinal %d created\n\r", tid);
+	write(2,buf,strlen(buf));
+	MUTEX_UNLOCK(&start_thread_mutex);
+	return;
+    }
+    /* Until args.sub resets it, makes debugging Perl_malloc() work: */
+    PERL_SET_CONTEXT(0);
     if (tid >= thread_join_count) {
 	int oc = thread_join_count;
 	
@@ -106,148 +177,357 @@ pthread_startit(void *arg)
 	    Newz(1323, thread_join_data, thread_join_count, thread_join_t);
 	}
     }
-    if (thread_join_data[tid].state != pthreads_st_none)
-	croak("attempt to reuse thread id %i", tid);
+    if (thread_join_data[tid].state != pthreads_st_none) {
+	/* Can't croak, the setjmp() is not in scope... */
+	char buf[80];
+
+	snprintf(buf, sizeof(buf),
+		 "panic: attempt to reuse thread id %d (state='%s')\n\r",
+		 tid, pthreads_state_string(thread_join_data[tid].state));
+	write(2,buf,strlen(buf));
+	thread_join_data[tid].status = (void*)thread_join_data[tid].state;
+	thread_join_data[tid].state = pthreads_st_norun;
+	MUTEX_UNLOCK(&start_thread_mutex);
+	return;
+    }
     thread_join_data[tid].state = pthreads_st_run;
     /* Now that we copied/updated the guys, we may release the caller... */
     MUTEX_UNLOCK(&start_thread_mutex);
-    thread_join_data[tid].status = (*start_routine)(arg);
+    rc = (*args.sub)(args.arg);
+    MUTEX_LOCK(&start_thread_mutex);
     switch (thread_join_data[tid].state) {
     case pthreads_st_waited:
-	COND_SIGNAL(&thread_join_data[tid].cond);    
+	COND_SIGNAL(&thread_join_data[tid].cond);
+	thread_join_data[tid].state = pthreads_st_none;
+	*((void**)thread_join_data[tid].status) = rc;
+	break;
+    case pthreads_st_detached:
+	thread_join_data[tid].state = pthreads_st_none;
+	break;
+    case pthreads_st_run:
+	/* Somebody can wait on us; cannot exit, since OS can reuse the tid
+	   and our waiter will get somebody else's status. */
+	thread_join_data[tid].state = pthreads_st_exited;
+	thread_join_data[tid].status = rc;
+	COND_INIT(&thread_join_data[tid].cond);
+	COND_WAIT(&thread_join_data[tid].cond, &start_thread_mutex);
+	COND_DESTROY(&thread_join_data[tid].cond);
+	thread_join_data[tid].state = pthreads_st_none;	/* Ready to reuse */
 	break;
     default:
-	thread_join_data[tid].state = pthreads_st_exited;
-	break;
+	state = thread_join_data[tid].state;
+	MUTEX_UNLOCK(&start_thread_mutex);
+	Perl_croak_nocontext("panic: unexpected thread state on exit: '%s'",
+			     pthreads_state_string(state));
     }
+    MUTEX_UNLOCK(&start_thread_mutex);
 }
 
 int
-pthread_create(perl_os_thread *tid, const pthread_attr_t *attr, 
+pthread_create(perl_os_thread *tidp, const pthread_attr_t *attr, 
 	       void *(*start_routine)(void*), void *arg)
 {
-    void *args[2];
+    dTHX;
+    pthr_startit args;
 
-    args[0] = (void*)start_routine;
-    args[1] = arg;
+    args.sub = (void*)start_routine;
+    args.arg = arg;
+    args.ctx = PERL_GET_CONTEXT;
 
     MUTEX_LOCK(&start_thread_mutex);
-    *tid = _beginthread(pthread_startit, /*stack*/ NULL, 
-			/*stacksize*/ 10*1024*1024, (void*)args);
-    MUTEX_LOCK(&start_thread_mutex);
+    /* Test suite creates 31 extra threads;
+       on machine without shared-memory-hogs this stack sizeis OK with 31: */
+    *tidp = _beginthread(pthread_startit, /*stack*/ NULL, 
+			 /*stacksize*/ 4*1024*1024, (void*)&args);
+    if (*tidp == -1) {
+	*tidp = pthread_not_existant;
+	MUTEX_UNLOCK(&start_thread_mutex);
+	return EINVAL;
+    }
+    MUTEX_LOCK(&start_thread_mutex);		/* Wait for init to proceed */
     MUTEX_UNLOCK(&start_thread_mutex);
-    return *tid ? 0 : EINVAL;
+    return 0;
 }
 
 int 
 pthread_detach(perl_os_thread tid)
 {
     MUTEX_LOCK(&start_thread_mutex);
+    if (tid < 1 || tid >= thread_join_count) {
+	MUTEX_UNLOCK(&start_thread_mutex);
+	if (tid != pthread_not_existant)
+	    Perl_croak_nocontext("panic: detach of a thread with strange ordinal %d", (int)tid);
+	Perl_warn_nocontext("detach of a thread which could not start");
+	return 0;
+    }
     switch (thread_join_data[tid].state) {
     case pthreads_st_waited:
 	MUTEX_UNLOCK(&start_thread_mutex);
-	croak("detach on a thread with a waiter");
+	Perl_croak_nocontext("detach on a thread with a waiter");
 	break;
     case pthreads_st_run:
 	thread_join_data[tid].state = pthreads_st_detached;
 	MUTEX_UNLOCK(&start_thread_mutex);
 	break;
+    case pthreads_st_exited:
+	MUTEX_UNLOCK(&start_thread_mutex);
+	COND_SIGNAL(&thread_join_data[tid].cond);    
+	break;
+    case pthreads_st_detached:
+	MUTEX_UNLOCK(&start_thread_mutex);
+	Perl_warn_nocontext("detach on an already detached thread");
+	break;
+    case pthreads_st_norun:
+    {
+	int state = (int)thread_join_data[tid].status;
+
+	thread_join_data[tid].state = pthreads_st_none;
+	MUTEX_UNLOCK(&start_thread_mutex);
+	Perl_croak_nocontext("panic: detaching thread which could not run"
+			     " due to attempt of tid reuse (state='%s')",
+			     pthreads_state_string(state));
+	break;
+    }
     default:
 	MUTEX_UNLOCK(&start_thread_mutex);
-	croak("detach: unknown thread state: '%s'", 
-	      pthreads_states[thread_join_data[tid].state]);
+	Perl_croak_nocontext("panic: detach of a thread with unknown thread state: '%s'", 
+	      pthreads_state_string(thread_join_data[tid].state));
 	break;
     }
     return 0;
 }
 
-/* This is a very bastardized version: */
+/* This is a very bastardized version; may be OK due to edge trigger of Wait */
 int
 os2_cond_wait(perl_cond *c, perl_mutex *m)
 {						
     int rc;
     STRLEN n_a;
     if ((rc = DosResetEventSem(*c,&n_a)) && (rc != ERROR_ALREADY_RESET))
-	croak("panic: COND_WAIT-reset: rc=%i", rc);		
+	Perl_croak_nocontext("panic: COND_WAIT-reset: rc=%i", rc);		
     if (m) MUTEX_UNLOCK(m);					
     if (CheckOSError(DosWaitEventSem(*c,SEM_INDEFINITE_WAIT))
 	&& (rc != ERROR_INTERRUPT))
-	croak("panic: COND_WAIT: rc=%i", rc);		
+	Perl_croak_nocontext("panic: COND_WAIT: rc=%i", rc);		
     if (rc == ERROR_INTERRUPT)
 	errno = EINTR;
-    if (m) MUTEX_LOCK(m);					
+    if (m) MUTEX_LOCK(m);
+    return 0;
 } 
-#endif 
+#endif
+
+static int exe_is_aout(void);
 
 /*****************************************************************************/
 /* 2.1 would not resolve symbols on demand, and has no ExtLIBPATH. */
-static PFN ExtFCN[2];			/* Labeled by ord below. */
-static USHORT loadOrd[2] = { 874, 873 }; /* Query=874, Set=873. */
-#define ORD_QUERY_ELP	0
-#define ORD_SET_ELP	1
+#define C_ARR_LEN(sym)	(sizeof(sym)/sizeof(*sym))
+
+struct dll_handle {
+    const char *modname;
+    HMODULE handle;
+};
+static struct dll_handle doscalls_handle = {"doscalls", 0};
+static struct dll_handle tcp_handle = {"tcp32dll", 0};
+static struct dll_handle pmwin_handle = {"pmwin", 0};
+static struct dll_handle rexx_handle = {"rexx", 0};
+static struct dll_handle rexxapi_handle = {"rexxapi", 0};
+static struct dll_handle sesmgr_handle = {"sesmgr", 0};
+static struct dll_handle pmshapi_handle = {"pmshapi", 0};
+
+/* This should match enum entries_ordinals defined in os2ish.h. */
+static const struct {
+    struct dll_handle *dll;
+    const char *entryname;
+    int entrypoint;
+} loadOrdinals[ORD_NENTRIES] = { 
+  {&doscalls_handle, NULL, 874},	/* DosQueryExtLibpath */
+  {&doscalls_handle, NULL, 873},	/* DosSetExtLibpath */
+  {&doscalls_handle, NULL, 460},	/* DosVerifyPidTid */
+  {&tcp_handle, "SETHOSTENT", 0},
+  {&tcp_handle, "SETNETENT" , 0},
+  {&tcp_handle, "SETPROTOENT", 0},
+  {&tcp_handle, "SETSERVENT", 0},
+  {&tcp_handle, "GETHOSTENT", 0},
+  {&tcp_handle, "GETNETENT" , 0},
+  {&tcp_handle, "GETPROTOENT", 0},
+  {&tcp_handle, "GETSERVENT", 0},
+  {&tcp_handle, "ENDHOSTENT", 0},
+  {&tcp_handle, "ENDNETENT", 0},
+  {&tcp_handle, "ENDPROTOENT", 0},
+  {&tcp_handle, "ENDSERVENT", 0},
+  {&pmwin_handle, NULL, 763},		/* WinInitialize */
+  {&pmwin_handle, NULL, 716},		/* WinCreateMsgQueue */
+  {&pmwin_handle, NULL, 726},		/* WinDestroyMsgQueue */
+  {&pmwin_handle, NULL, 918},		/* WinPeekMsg */
+  {&pmwin_handle, NULL, 915},		/* WinGetMsg */
+  {&pmwin_handle, NULL, 912},		/* WinDispatchMsg */
+  {&pmwin_handle, NULL, 753},		/* WinGetLastError */
+  {&pmwin_handle, NULL, 705},		/* WinCancelShutdown */
+	/* These are needed in extensions.
+	   How to protect PMSHAPI: it comes through EMX functions? */
+  {&rexx_handle,    "RexxStart", 0},
+  {&rexx_handle,    "RexxVariablePool", 0},
+  {&rexxapi_handle, "RexxRegisterFunctionExe", 0},
+  {&rexxapi_handle, "RexxDeregisterFunction", 0},
+  {&sesmgr_handle,  "DOSSMSETTITLE", 0}, /* Would not work runtime-loaded */
+  {&pmshapi_handle, "PRF32QUERYPROFILESIZE", 0},
+  {&pmshapi_handle, "PRF32OPENPROFILE", 0},
+  {&pmshapi_handle, "PRF32CLOSEPROFILE", 0},
+  {&pmshapi_handle, "PRF32QUERYPROFILE", 0},
+  {&pmshapi_handle, "PRF32RESET", 0},
+  {&pmshapi_handle, "PRF32QUERYPROFILEDATA", 0},
+  {&pmshapi_handle, "PRF32WRITEPROFILEDATA", 0},
+
+  /* At least some of these do not work by name, since they need
+	WIN32 instead of WIN... */
+#if 0
+  These were generated with
+    nm I:\emx\lib\os2.a  | fgrep -f API-list | grep = > API-list-entries
+    perl -wnle "next unless /^0+\s+E\s+_(\w+)=(\w+).(\d+)/; print qq(    ORD_$1,)" API-list-entries > API-list-ORD_
+    perl -wnle "next unless /^0+\s+E\s+_(\w+)=(\w+).(\d+)/; print qq(  {${2}_handle, NULL, $3},\t\t/* $1 */)" WinSwitch-API-list-entries  >API-list-entry
+#endif
+  {&pmshapi_handle, NULL, 123},		/* WinChangeSwitchEntry */
+  {&pmshapi_handle, NULL, 124},		/* WinQuerySwitchEntry */
+  {&pmshapi_handle, NULL, 125},		/* WinQuerySwitchHandle */
+  {&pmshapi_handle, NULL, 126},		/* WinQuerySwitchList */
+  {&pmshapi_handle, NULL, 131},		/* WinSwitchToProgram */
+  {&pmwin_handle, NULL, 702},		/* WinBeginEnumWindows */
+  {&pmwin_handle, NULL, 737},		/* WinEndEnumWindows */
+  {&pmwin_handle, NULL, 740},		/* WinEnumDlgItem */
+  {&pmwin_handle, NULL, 756},		/* WinGetNextWindow */
+  {&pmwin_handle, NULL, 768},		/* WinIsChild */
+  {&pmwin_handle, NULL, 799},		/* WinQueryActiveWindow */
+  {&pmwin_handle, NULL, 805},		/* WinQueryClassName */
+  {&pmwin_handle, NULL, 817},		/* WinQueryFocus */
+  {&pmwin_handle, NULL, 834},		/* WinQueryWindow */
+  {&pmwin_handle, NULL, 837},		/* WinQueryWindowPos */
+  {&pmwin_handle, NULL, 838},		/* WinQueryWindowProcess */
+  {&pmwin_handle, NULL, 841},		/* WinQueryWindowText */
+  {&pmwin_handle, NULL, 842},		/* WinQueryWindowTextLength */
+  {&pmwin_handle, NULL, 860},		/* WinSetFocus */
+  {&pmwin_handle, NULL, 875},		/* WinSetWindowPos */
+  {&pmwin_handle, NULL, 877},		/* WinSetWindowText */
+  {&pmwin_handle, NULL, 883},		/* WinShowWindow */
+  {&pmwin_handle, NULL, 772},		/* WinIsWindow */
+  {&pmwin_handle, NULL, 899},		/* WinWindowFromId */
+  {&pmwin_handle, NULL, 900},		/* WinWindowFromPoint */
+  {&pmwin_handle, NULL, 919},		/* WinPostMsg */
+  {&pmwin_handle, NULL, 735},		/* WinEnableWindow */
+  {&pmwin_handle, NULL, 736},		/* WinEnableWindowUpdate */
+  {&pmwin_handle, NULL, 773},		/* WinIsWindowEnabled */
+  {&pmwin_handle, NULL, 774},		/* WinIsWindowShowing */
+  {&pmwin_handle, NULL, 775},		/* WinIsWindowVisible */
+  {&pmwin_handle, NULL, 839},		/* WinQueryWindowPtr */
+  {&pmwin_handle, NULL, 843},		/* WinQueryWindowULong */
+  {&pmwin_handle, NULL, 844},		/* WinQueryWindowUShort */
+  {&pmwin_handle, NULL, 874},		/* WinSetWindowBits */
+  {&pmwin_handle, NULL, 876},		/* WinSetWindowPtr */
+  {&pmwin_handle, NULL, 878},		/* WinSetWindowULong */
+  {&pmwin_handle, NULL, 879},		/* WinSetWindowUShort */
+  {&pmwin_handle, NULL, 813},		/* WinQueryDesktopWindow */
+  {&pmwin_handle, NULL, 851},		/* WinSetActiveWindow */
+  {&doscalls_handle, NULL, 360},	/* DosQueryModFromEIP */
+};
+
+static PFN ExtFCN[C_ARR_LEN(loadOrdinals)];	/* Labeled by ord ORD_*. */
+const Perl_PFN * const pExtFCN = ExtFCN;
 struct PMWIN_entries_t PMWIN_entries;
 
-APIRET
-loadByOrd(char *modname, ULONG ord)
+HMODULE
+loadModule(const char *modname, int fail)
+{
+    HMODULE h = (HMODULE)dlopen(modname, 0);
+
+    if (!h && fail)
+	Perl_croak_nocontext("Error loading module '%s': %s", 
+			     modname, dlerror());
+    return h;
+}
+
+PFN
+loadByOrdinal(enum entries_ordinals ord, int fail)
 {
     if (ExtFCN[ord] == NULL) {
-	static HMODULE hdosc = 0;
-	BYTE buf[20];
-	PFN fcn;
+	PFN fcn = (PFN)-1;
 	APIRET rc;
 
-	if ((!hdosc && CheckOSError(DosLoadModule(buf, sizeof buf, 
-						  modname, &hdosc)))
-	    || CheckOSError(DosQueryProcAddr(hdosc, loadOrd[ord], NULL, &fcn)))
-	    croak("This version of OS/2 does not support %s.%i", 
-		  modname, loadOrd[ord]);
+	if (!loadOrdinals[ord].dll->handle)
+	    loadOrdinals[ord].dll->handle
+		= loadModule(loadOrdinals[ord].dll->modname, fail);
+	if (!loadOrdinals[ord].dll->handle)
+	    return 0;			/* Possible with FAIL==0 only */
+	if (CheckOSError(DosQueryProcAddr(loadOrdinals[ord].dll->handle,
+					  loadOrdinals[ord].entrypoint,
+					  loadOrdinals[ord].entryname,&fcn))) {
+	    char buf[20], *s = (char*)loadOrdinals[ord].entryname;
+
+	    if (!fail)
+		return 0;
+	    if (!s)
+		sprintf(s = buf, "%d", loadOrdinals[ord].entrypoint);
+	    Perl_croak_nocontext(
+		 "This version of OS/2 does not support %s.%s", 
+		 loadOrdinals[ord].dll->modname, s);
+	}
 	ExtFCN[ord] = fcn;
     } 
-    if ((long)ExtFCN[ord] == -1) 
-	croak("panic queryaddr");
+    if ((long)ExtFCN[ord] == -1)
+	Perl_croak_nocontext("panic queryaddr");
+    return ExtFCN[ord];
 }
 
 void 
 init_PMWIN_entries(void)
 {
-    static HMODULE hpmwin = 0;
-    static const int ords[] = {
-	763,				/* Initialize */
-	716,				/* CreateMsgQueue */
-	726,				/* DestroyMsgQueue */
-	918,				/* PeekMsg */
-	915,				/* GetMsg */
-	912,				/* DispatchMsg */
-    };
-    BYTE buf[20];
-    int i = 0;
-    unsigned long rc;
+    int i;
 
-    if (hpmwin)
-	return;
-
-    if (CheckOSError(DosLoadModule(buf, sizeof buf, "pmwin", &hpmwin)))
-	croak("This version of OS/2 does not support pmwin: error in %s", buf);
-    while (i <= 5) {
-	if (CheckOSError(DosQueryProcAddr(hpmwin, ords[i], NULL, 
-					  ((PFN*)&PMWIN_entries)+i)))
-	    croak("This version of OS/2 does not support pmwin.%d", ords[i]);
-	i++;
-    }
+    for (i = ORD_WinInitialize; i <= ORD_WinCancelShutdown; i++)
+	((PFN*)&PMWIN_entries)[i - ORD_WinInitialize] = loadByOrdinal(i, 1);
 }
 
+/*****************************************************/
+/* socket forwarders without linking with tcpip DLLs */
+
+DeclFuncByORD(struct hostent *,  gethostent,  ORD_GETHOSTENT,  (void), ())
+DeclFuncByORD(struct netent  *,  getnetent,   ORD_GETNETENT,   (void), ())
+DeclFuncByORD(struct protoent *, getprotoent, ORD_GETPROTOENT, (void), ())
+DeclFuncByORD(struct servent *,  getservent,  ORD_GETSERVENT,  (void), ())
+
+DeclVoidFuncByORD(sethostent,  ORD_SETHOSTENT,  (int x), (x))
+DeclVoidFuncByORD(setnetent,   ORD_SETNETENT,   (int x), (x))
+DeclVoidFuncByORD(setprotoent, ORD_SETPROTOENT, (int x), (x))
+DeclVoidFuncByORD(setservent,  ORD_SETSERVENT,  (int x), (x))
+
+DeclVoidFuncByORD(endhostent,  ORD_ENDHOSTENT,  (void), ())
+DeclVoidFuncByORD(endnetent,   ORD_ENDNETENT,   (void), ())
+DeclVoidFuncByORD(endprotoent, ORD_ENDPROTOENT, (void), ())
+DeclVoidFuncByORD(endservent,  ORD_ENDSERVENT,  (void), ())
 
 /* priorities */
 static signed char priors[] = {0, 1, 3, 2}; /* Last two interchanged,
 					       self inverse. */
 #define QSS_INI_BUFFER 1024
 
+ULONG (*pDosVerifyPidTid) (PID pid, TID tid);
+static int pidtid_lookup;
+
 PQTOPLEVEL
 get_sysinfo(ULONG pid, ULONG flags)
 {
     char *pbuffer;
     ULONG rc, buf_len = QSS_INI_BUFFER;
+    PQTOPLEVEL psi;
 
+    if (!pidtid_lookup) {
+	pidtid_lookup = 1;
+	*(PFN*)&pDosVerifyPidTid = loadByOrdinal(ORD_DosVerifyPidTid, 0);
+    }
+    if (pDosVerifyPidTid) {	/* Warp3 or later */
+	/* Up to some fixpak QuerySysState() kills the system if a non-existent
+	   pid is used. */
+	if (CheckOSError(pDosVerifyPidTid(pid, 1)))
+	    return 0;
+    }
     New(1322, pbuffer, buf_len, char);
     /* QSS_PROCESS | QSS_MODULE | QSS_SEMAPHORES | QSS_SHARED */
     rc = QuerySysState(flags, pid, pbuffer, buf_len);
@@ -260,7 +540,12 @@ get_sysinfo(ULONG pid, ULONG flags)
 	Safefree(pbuffer);
 	return 0;
     }
-    return (PQTOPLEVEL)pbuffer;
+    psi = (PQTOPLEVEL)pbuffer;
+    if (psi && pid && pid != psi->procdata->pid) {
+      Safefree(psi);
+      Perl_croak_nocontext("panic: wrong pid in sysinfo");
+    }
+    return psi;
 }
 
 #define PRIO_ERR 0x1111
@@ -271,14 +556,11 @@ sys_prio(pid)
   ULONG prio;
   PQTOPLEVEL psi;
 
-  psi = get_sysinfo(pid, QSS_PROCESS);
-  if (!psi) {
+  if (!pid)
       return PRIO_ERR;
-  }
-  if (pid != psi->procdata->pid) {
-      Safefree(psi);
-      croak("panic: wrong pid in sysinfo");
-  }
+  psi = get_sysinfo(pid, QSS_PROCESS);
+  if (!psi)
+      return PRIO_ERR;
   prio = psi->procdata->threads->priority;
   Safefree(psi);
   return prio;
@@ -287,10 +569,7 @@ sys_prio(pid)
 int 
 setpriority(int which, int pid, int val)
 {
-  ULONG rc, prio;
-  PQTOPLEVEL psi;
-
-  prio = sys_prio(pid);
+  ULONG rc, prio = sys_prio(pid);
 
   if (!(_emx_env & 0x200)) return 0; /* Nop if not OS/2. */
   if (priors[(32 - val) >> 5] + 1 == (prio >> 8)) {
@@ -319,36 +598,26 @@ setpriority(int which, int pid, int val)
 					 abs(pid)))
 	  ? -1 : 0;
   } 
-/*   else return CheckOSError(DosSetPriority((pid < 0)  */
-/* 					  ? PRTYS_PROCESSTREE : PRTYS_PROCESS, */
-/* 					  priors[(32 - val) >> 5] + 1,  */
-/* 					  (32 - val) % 32 - (prio & 0xFF),  */
-/* 					  abs(pid))) */
-/*       ? -1 : 0; */
 }
 
 int 
 getpriority(int which /* ignored */, int pid)
 {
-  TIB *tib;
-  PIB *pib;
-  ULONG rc, ret;
+  ULONG ret;
 
   if (!(_emx_env & 0x200)) return 0; /* Nop if not OS/2. */
-  /* DosGetInfoBlocks has old priority! */
-/*   if (CheckOSError(DosGetInfoBlocks(&tib, &pib))) return -1; */
-/*   if (pid != pib->pib_ulpid) { */
   ret = sys_prio(pid);
   if (ret == PRIO_ERR) {
       return -1;
   }
-/*   } else */
-/*       ret = tib->tib_ptib2->tib2_ulpri; */
   return (1 - priors[((ret >> 8) - 1)])*32 - (ret & 0xFF);
 }
 
 /*****************************************************************************/
 /* spawn */
+
+int emx_runtime_init;			/* If 1, we need to manually init it */
+int emx_exception_init;			/* If 1, we need to manually set it */
 
 /* There is no big sense to make it thread-specific, since signals 
    are delivered to thread 1 only.  XXXX Maybe make it into an array? */
@@ -373,7 +642,7 @@ spawn_sighandler(int sig)
 }
 
 static int
-result(int flag, int pid)
+result(pTHX_ int flag, int pid)
 {
 	int r, status;
 	Signal_t (*ihand)();     /* place to save signal during system() */
@@ -412,11 +681,14 @@ result(int flag, int pid)
 #endif
 }
 
-#define EXECF_SPAWN 0
-#define EXECF_EXEC 1
-#define EXECF_TRUEEXEC 2
-#define EXECF_SPAWN_NOWAIT 3
-#define EXECF_SPAWN_BYFLAG 4
+enum execf_t {
+  EXECF_SPAWN,
+  EXECF_EXEC,
+  EXECF_TRUEEXEC,
+  EXECF_SPAWN_NOWAIT,
+  EXECF_SPAWN_BYFLAG,
+  EXECF_SYNC
+};
 
 /* const char* const ptypes[] = { "FS", "DOS", "VIO", "PM", "DETACH" }; */
 
@@ -441,7 +713,7 @@ file_type(char *path)
     ULONG apptype;
     
     if (!(_emx_env & 0x200)) 
-	croak("file_type not implemented on DOS"); /* not OS/2. */
+	Perl_croak_nocontext("file_type not implemented on DOS"); /* not OS/2. */
     if (CheckOSError(DosQueryAppType(path, &apptype))) {
 	switch (rc) {
 	case ERROR_FILE_NOT_FOUND:
@@ -463,27 +735,28 @@ static ULONG os2_mytype;
 /* Spawn/exec a program, revert to shell if needed. */
 /* global PL_Argv[] contains arguments. */
 
+extern ULONG _emx_exception (	EXCEPTIONREPORTRECORD *,
+				EXCEPTIONREGISTRATIONRECORD *,
+                                CONTEXTRECORD *,
+                                void *);
+
 int
-do_spawn_ve(really, flag, execf, inicmd, addflag)
-SV *really;
-U32 flag;
-U32 execf;
-char *inicmd;
-U32 addflag;
+do_spawn_ve(pTHX_ SV *really, U32 flag, U32 execf, char *inicmd, U32 addflag)
 {
-    dTHR;
 	int trueflag = flag;
 	int rc, pass = 1;
 	char *tmps;
-	char buf[256], *s = 0, scrbuf[280];
 	char *args[4];
 	static char * fargs[4] 
 	    = { "/bin/sh", "-c", "\"$@\"", "spawn-via-shell", };
 	char **argsp = fargs;
-	char nargs = 4;
+	int nargs = 4;
 	int force_shell;
- 	int new_stderr = -1, nostderr = 0, fl_stderr;
+ 	int new_stderr = -1, nostderr = 0;
+	int fl_stderr = 0;
 	STRLEN n_a;
+	char *buf;
+	PerlIO *file;
 	
 	if (flag == P_WAIT)
 		flag = P_NOWAIT;
@@ -492,14 +765,14 @@ U32 addflag;
 	if (strEQ(PL_Argv[0],"/bin/sh")) 
 	    PL_Argv[0] = PL_sh_path;
 
-	if (PL_Argv[0][0] != '/' && PL_Argv[0][0] != '\\'
-	    && !(PL_Argv[0][0] && PL_Argv[0][1] == ':' 
-		 && (PL_Argv[0][2] == '/' || PL_Argv[0][2] != '\\'))
-	    ) /* will spawnvp use PATH? */
-	    TAINT_ENV();	/* testing IFS here is overkill, probably */
 	/* We should check PERL_SH* and PERLLIB_* as well? */
 	if (!really || !*(tmps = SvPV(really, n_a)))
 	    tmps = PL_Argv[0];
+	if (tmps[0] != '/' && tmps[0] != '\\'
+	    && !(tmps[0] && tmps[1] == ':' 
+		 && (tmps[2] == '/' || tmps[2] != '\\'))
+	    ) /* will spawnvp use PATH? */
+	    TAINT_ENV();	/* testing IFS here is overkill, probably */
 
       reread:
 	force_shell = 0;
@@ -541,7 +814,7 @@ U32 addflag;
 		    if (flag == P_NOWAIT)
 			flag = P_PM;
 		    else if ((flag & 7) != P_PM && (flag & 7) != P_SESSION)
-			warn("Starting PM process with flag=%d, mytype=%d",
+			Perl_warner(aTHX_ packWARN(WARN_EXEC), "Starting PM process with flag=%d, mytype=%d",
 			     flag, os2_mytype);
 		}
 	    }
@@ -552,7 +825,7 @@ U32 addflag;
 		    if (flag == P_NOWAIT)
 			flag = P_SESSION;
 		    else if ((flag & 7) != P_SESSION)
-			warn("Starting Full Screen process with flag=%d, mytype=%d",
+			Perl_warner(aTHX_ packWARN(WARN_EXEC), "Starting Full Screen process with flag=%d, mytype=%d",
 			     flag, os2_mytype);
 		}
 	    }
@@ -560,6 +833,8 @@ U32 addflag;
 	    case FAPPTYP_NOTSPEC: 
 		/* Let the shell handle this... */
 		force_shell = 1;
+		buf = "";		/* Pacify a warning */
+		file = 0;		/* Pacify a warning */
 		goto doshell_args;
 		break;
 	    }
@@ -584,7 +859,7 @@ U32 addflag;
 	}
 
 #if 0
-	rc = result(trueflag, spawnvp(flag,tmps,PL_Argv));
+	rc = result(aTHX_ trueflag, spawnvp(flag,tmps,PL_Argv));
 #else
 	if (execf == EXECF_TRUEEXEC)
 	    rc = execvp(tmps,PL_Argv);
@@ -592,8 +867,10 @@ U32 addflag;
 	    rc = spawnvp(trueflag | P_OVERLAY,tmps,PL_Argv);
 	else if (execf == EXECF_SPAWN_NOWAIT)
 	    rc = spawnvp(flag,tmps,PL_Argv);
+        else if (execf == EXECF_SYNC)
+	    rc = spawnvp(trueflag,tmps,PL_Argv);
         else				/* EXECF_SPAWN, EXECF_SPAWN_BYFLAG */
-	    rc = result(trueflag, 
+	    rc = result(aTHX_ trueflag, 
 			spawnvp(flag,tmps,PL_Argv));
 #endif 
 	if (rc < 0 && pass == 1
@@ -609,54 +886,45 @@ U32 addflag;
 		char *scr = find_script(PL_Argv[0], TRUE, NULL, 0);
 
 		if (scr) {
-		    FILE *file;
 		    char *s = 0, *s1;
-		    int l;
+		    SV *scrsv = sv_2mortal(newSVpv(scr, 0));
+		    SV *bufsv = sv_newmortal();
 
-                    l = strlen(scr);
-		
-                    if (l >= sizeof scrbuf) {
-                       Safefree(scr);
-                     longbuf:
-                       warn("Size of scriptname too big: %d", l);
-		       rc = -1;
-		       goto finish;
-                    }
-                    strcpy(scrbuf, scr);
                     Safefree(scr);
-                    scr = scrbuf;
+		    scr = SvPV(scrsv, n_a); /* free()ed later */
 
-		    file = fopen(scr, "r");
+		    file = PerlIO_open(scr, "r");
 		    PL_Argv[0] = scr;
 		    if (!file)
 			goto panic_file;
-		    if (!fgets(buf, sizeof buf, file)) { /* Empty... */
 
-			buf[0] = 0;
-			fclose(file);
+		    buf = sv_gets(bufsv, file, 0 /* No append */);
+		    if (!buf)
+			buf = "";	/* XXX Needed? */
+		    if (!buf[0]) {	/* Empty... */
+			PerlIO_close(file);
 			/* Special case: maybe from -Zexe build, so
 			   there is an executable around (contrary to
 			   documentation, DosQueryAppType sometimes (?)
 			   does not append ".exe", so we could have
 			   reached this place). */
-			if (l + 5 < sizeof scrbuf) {
-			    strcpy(scrbuf + l, ".exe");
-			    if (PerlLIO_stat(scrbuf,&PL_statbuf) >= 0
-				&& !S_ISDIR(PL_statbuf.st_mode)) {
-				/* Found */
+			sv_catpv(scrsv, ".exe");
+	                scr = SvPV(scrsv, n_a);	/* Reload */
+			if (PerlLIO_stat(scr,&PL_statbuf) >= 0
+			    && !S_ISDIR(PL_statbuf.st_mode)) {	/* Found */
 				tmps = scr;
 				pass++;
 				goto reread;
-			    } else
-				scrbuf[l] = 0;
-			} else
-			    goto longbuf;
+			} else {		/* Restore */
+				SvCUR_set(scrsv, SvCUR(scrsv) - 4);
+				*SvEND(scrsv) = 0;
+			}
 		    }
-		    if (fclose(file) != 0) { /* Failure */
+		    if (PerlIO_close(file) != 0) { /* Failure */
 		      panic_file:
-			warn("Error reading \"%s\": %s", 
+			Perl_warner(aTHX_ packWARN(WARN_EXEC), "Error reading \"%s\": %s", 
 			     scr, Strerror(errno));
-			buf[0] = 0;	/* Not #! */
+			buf = "";	/* Not #! */
 			goto doshell_args;
 		    }
 		    if (buf[0] == '#') {
@@ -672,7 +940,7 @@ U32 addflag;
 			    s = buf + 8;
 		    }
 		    if (!s) {
-			buf[0] = 0;	/* Not #! */
+			buf = "";	/* Not #! */
 			goto doshell_args;
 		    }
 		    
@@ -698,11 +966,12 @@ U32 addflag;
 			*s++ = 0;
 		    }
 		    if (nargs == -1) {
-			warn("Too many args on %.*s line of \"%s\"",
+			Perl_warner(aTHX_ packWARN(WARN_EXEC), "Too many args on %.*s line of \"%s\"",
 			     s1 - buf, buf, scr);
 			nargs = 4;
 			argsp = fargs;
 		    }
+		    /* Can jump from far, buf/file invalid if force_shell: */
 		  doshell_args:
 		    {
 			char **a = PL_Argv;
@@ -724,7 +993,7 @@ U32 addflag;
 				if (inicmd) { /* No spaces at start! */
 				    s = inicmd;
 				    while (*s && !isSPACE(*s)) {
-					if (*s++ = '/') {
+					if (*s++ == '/') {
 					    inicmd = NULL; /* Cannot use */
 					    break;
 					}
@@ -800,7 +1069,7 @@ U32 addflag;
 	    }
 	}
 	if (rc < 0 && ckWARN(WARN_EXEC))
-	    Perl_warner(aTHX_ WARN_EXEC, "Can't %s \"%s\": %s\n", 
+	    Perl_warner(aTHX_ packWARN(WARN_EXEC), "Can't %s \"%s\": %s\n", 
 		 ((execf != EXECF_EXEC && execf != EXECF_TRUEEXEC) 
 		  ? "spawn" : "exec"),
 		 PL_Argv[0], Strerror(errno));
@@ -820,14 +1089,12 @@ U32 addflag;
 
 /* Try converting 1-arg form to (usually shell-less) multi-arg form. */
 int
-do_spawn3(char *cmd, int execf, int flag)
+do_spawn3(pTHX_ char *cmd, int execf, int flag)
 {
     register char **a;
     register char *s;
-    char flags[10];
     char *shell, *copt, *news = NULL;
-    int rc, err, seenspace = 0, mergestderr = 0;
-    char fullcmd[MAXNAMLEN + 1];
+    int rc, seenspace = 0, mergestderr = 0;
 
 #ifdef TRYSHELL
     if ((shell = getenv("EMXSHELL")) != NULL)
@@ -896,7 +1163,7 @@ do_spawn3(char *cmd, int execf, int flag)
 	       should be smart enough to start itself gloriously. */
 	  doshell:
 	    if (execf == EXECF_TRUEEXEC)
-                rc = execl(shell,shell,copt,cmd,(char*)0);		
+                rc = execl(shell,shell,copt,cmd,(char*)0);
 	    else if (execf == EXECF_EXEC)
                 rc = spawnl(P_OVERLAY,shell,shell,copt,cmd,(char*)0);
 	    else if (execf == EXECF_SPAWN_NOWAIT)
@@ -905,10 +1172,13 @@ do_spawn3(char *cmd, int execf, int flag)
                 rc = spawnl(flag,shell,shell,copt,cmd,(char*)0);
 	    else {
 		/* In the ak code internal P_NOWAIT is P_WAIT ??? */
-		rc = result(P_WAIT,
-			    spawnl(P_NOWAIT,shell,shell,copt,cmd,(char*)0));
+		if (execf == EXECF_SYNC)
+		   rc = spawnl(P_WAIT,shell,shell,copt,cmd,(char*)0);
+		else
+		   rc = result(aTHX_ P_WAIT,
+			       spawnl(P_NOWAIT,shell,shell,copt,cmd,(char*)0));
 		if (rc < 0 && ckWARN(WARN_EXEC))
-		    Perl_warner(aTHX_ WARN_EXEC, "Can't %s \"%s\": %s", 
+		    Perl_warner(aTHX_ packWARN(WARN_EXEC), "Can't %s \"%s\": %s", 
 			 (execf == EXECF_SPAWN ? "spawn" : "exec"),
 			 shell, Strerror(errno));
 		if (rc < 0)
@@ -936,7 +1206,7 @@ do_spawn3(char *cmd, int execf, int flag)
     }
     *a = Nullch;
     if (PL_Argv[0])
-	rc = do_spawn_ve(NULL, flag, execf, cmd, mergestderr);
+	rc = do_spawn_ve(aTHX_ NULL, flag, execf, cmd, mergestderr);
     else
     	rc = -1;
     if (news)
@@ -947,12 +1217,10 @@ do_spawn3(char *cmd, int execf, int flag)
 
 /* Array spawn.  */
 int
-do_aspawn(really,mark,sp)
-SV *really;
-register SV **mark;
-register SV **sp;
+os2_do_aspawn(pTHX_ SV *really, register void **vmark, register void **vsp)
 {
-    dTHR;
+    register SV **mark = (SV **)vmark;
+    register SV **sp = (SV **)vsp;
     register char **a;
     int rc;
     int flag = P_WAIT, flag_set = 0;
@@ -978,9 +1246,9 @@ register SV **sp;
 	*a = Nullch;
 
 	if (flag_set && (a == PL_Argv + 1)) { /* One arg? */
-	    rc = do_spawn3(a[-1], EXECF_SPAWN_BYFLAG, flag);
+	    rc = do_spawn3(aTHX_ a[-1], EXECF_SPAWN_BYFLAG, flag);
 	} else
-	    rc = do_spawn_ve(really, flag, EXECF_SPAWN, NULL, 0);
+	    rc = do_spawn_ve(aTHX_ really, flag, EXECF_SPAWN, NULL, 0);
     } else
     	rc = -1;
     do_execfree();
@@ -988,47 +1256,39 @@ register SV **sp;
 }
 
 int
-do_spawn(cmd)
-char *cmd;
+os2_do_spawn(pTHX_ char *cmd)
 {
-    return do_spawn3(cmd, EXECF_SPAWN, 0);
+    return do_spawn3(aTHX_ cmd, EXECF_SPAWN, 0);
 }
 
 int
-do_spawn_nowait(cmd)
-char *cmd;
+do_spawn_nowait(pTHX_ char *cmd)
 {
-    return do_spawn3(cmd, EXECF_SPAWN_NOWAIT,0);
+    return do_spawn3(aTHX_ cmd, EXECF_SPAWN_NOWAIT,0);
 }
 
 bool
-do_exec(cmd)
-char *cmd;
+Perl_do_exec(pTHX_ char *cmd)
 {
-    do_spawn3(cmd, EXECF_EXEC, 0);
+    do_spawn3(aTHX_ cmd, EXECF_EXEC, 0);
     return FALSE;
 }
 
 bool
-os2exec(cmd)
-char *cmd;
+os2exec(pTHX_ char *cmd)
 {
-    return do_spawn3(cmd, EXECF_TRUEEXEC, 0);
+    return do_spawn3(aTHX_ cmd, EXECF_TRUEEXEC, 0);
 }
 
 PerlIO *
-my_syspopen(cmd,mode)
-char	*cmd;
-char	*mode;
+my_syspopen(pTHX_ char *cmd, char *mode)
 {
 #ifndef USE_POPEN
-
     int p[2];
     register I32 this, that, newfd;
-    register I32 pid, rc;
-    PerlIO *res;
+    register I32 pid;
     SV *sv;
-    int fh_fl;
+    int fh_fl = 0;			/* Pacify the warning */
     
     /* `this' is what we use in the parent, `that' in the child. */
     this = (*mode == 'w');
@@ -1069,7 +1329,7 @@ char	*mode;
     fcntl(p[this], F_SETFD, FD_CLOEXEC);
     if (newfd != -1)
 	fcntl(newfd, F_SETFD, FD_CLOEXEC);
-    pid = do_spawn_nowait(cmd);
+    pid = do_spawn_nowait(aTHX_ cmd);
     if (newfd == -1)
 	close(*mode == 'r');		/* It was closed initially */
     else if (newfd != (*mode == 'r')) {	/* Probably this check is not needed */
@@ -1124,65 +1384,20 @@ char	*mode;
 int
 fork(void)
 {
-    croak(PL_no_func, "Unsupported function fork");
+    Perl_croak_nocontext(PL_no_func, "Unsupported function fork");
     errno = EINVAL;
     return -1;
 }
 #endif
 
 /*******************************************************************/
-/* not implemented in EMX 0.9a */
+/* not implemented in EMX 0.9d */
 
-void *	ctermid(x)	{ return 0; }
+char *	ctermid(char *s)	{ return 0; }
 
 #ifdef MYTTYNAME /* was not in emx0.9a */
 void *	ttyname(x)	{ return 0; }
 #endif
-
-/******************************************************************/
-/* my socket forwarders - EMX lib only provides static forwarders */
-
-static HMODULE htcp = 0;
-
-static void *
-tcp0(char *name)
-{
-    static BYTE buf[20];
-    PFN fcn;
-
-    if (!(_emx_env & 0x200)) croak("%s requires OS/2", name); /* Die if not OS/2. */
-    if (!htcp)
-	DosLoadModule(buf, sizeof buf, "tcp32dll", &htcp);
-    if (htcp && DosQueryProcAddr(htcp, 0, name, &fcn) == 0)
-	return (void *) ((void * (*)(void)) fcn) ();
-    return 0;
-}
-
-static void
-tcp1(char *name, int arg)
-{
-    static BYTE buf[20];
-    PFN fcn;
-
-    if (!(_emx_env & 0x200)) croak("%s requires OS/2", name); /* Die if not OS/2. */
-    if (!htcp)
-	DosLoadModule(buf, sizeof buf, "tcp32dll", &htcp);
-    if (htcp && DosQueryProcAddr(htcp, 0, name, &fcn) == 0)
-	((void (*)(int)) fcn) (arg);
-}
-
-void *	gethostent()	{ return tcp0("GETHOSTENT");  }
-void *	getnetent()	{ return tcp0("GETNETENT");   }
-void *	getprotoent()	{ return tcp0("GETPROTOENT"); }
-void *	getservent()	{ return tcp0("GETSERVENT");  }
-void	sethostent(x)	{ tcp1("SETHOSTENT",  x); }
-void	setnetent(x)	{ tcp1("SETNETENT",   x); }
-void	setprotoent(x)	{ tcp1("SETPROTOENT", x); }
-void	setservent(x)	{ tcp1("SETSERVENT",  x); }
-void	endhostent()	{ tcp0("ENDHOSTENT");  }
-void	endnetent()	{ tcp0("ENDNETENT");   }
-void	endprotoent()	{ tcp0("ENDPROTOENT"); }
-void	endservent()	{ tcp0("ENDSERVENT");  }
 
 /*****************************************************************************/
 /* not implemented in C Set++ */
@@ -1197,23 +1412,99 @@ int	setgid(x)	{ errno = EINVAL; return -1; }
 
 #if OS2_STAT_HACK
 
+enum os2_stat_extra {	/* EMX 0.9d fix 4 defines up to 0100000 */
+  os2_stat_archived	= 0x1000000,	/* 0100000000 */
+  os2_stat_hidden	= 0x2000000,	/* 0200000000 */
+  os2_stat_system	= 0x4000000,	/* 0400000000 */
+  os2_stat_force	= 0x8000000,	/* Do not ignore flags on chmod */
+};
+
+#define OS2_STAT_SPECIAL (os2_stat_system | os2_stat_archived | os2_stat_hidden)
+
+static void
+massage_os2_attr(struct stat *st)
+{
+    if ( ((st->st_mode & S_IFMT) != S_IFREG
+	  && (st->st_mode & S_IFMT) != S_IFDIR)
+         || !(st->st_attr & (FILE_ARCHIVED | FILE_HIDDEN | FILE_SYSTEM)))
+	return;
+
+    if ( st->st_attr & FILE_ARCHIVED )
+	st->st_mode |= (os2_stat_archived | os2_stat_force);
+    if ( st->st_attr & FILE_HIDDEN )
+	st->st_mode |= (os2_stat_hidden | os2_stat_force);
+    if ( st->st_attr & FILE_SYSTEM )
+	st->st_mode |= (os2_stat_system | os2_stat_force);
+}
+
     /* First attempt used DosQueryFSAttach which crashed the system when
        used with 5.001. Now just look for /dev/. */
-
 int
-os2_stat(char *name, struct stat *st)
+os2_stat(const char *name, struct stat *st)
 {
     static int ino = SHRT_MAX;
+    STRLEN l = strlen(name);
 
-    if (stricmp(name, "/dev/con") != 0
-     && stricmp(name, "/dev/tty") != 0)
-	return stat(name, st);
+    if ( ( l < 8 || l > 9) || strnicmp(name, "/dev/", 5) != 0
+         || (    stricmp(name + 5, "con") != 0
+	      && stricmp(name + 5, "tty") != 0
+	      && stricmp(name + 5, "nul") != 0
+	      && stricmp(name + 5, "null") != 0) ) {
+	int s = stat(name, st);
+
+	if (s)
+	    return s;
+	massage_os2_attr(st);
+	return 0;
+    }
 
     memset(st, 0, sizeof *st);
     st->st_mode = S_IFCHR|0666;
     st->st_ino = (ino-- & 0x7FFF);
     st->st_nlink = 1;
     return 0;
+}
+
+int
+os2_fstat(int handle, struct stat *st)
+{
+    int s = fstat(handle, st);
+
+    if (s)
+	return s;
+    massage_os2_attr(st);
+    return 0;
+}
+
+#undef chmod
+int
+os2_chmod (const char *name, int pmode)	/* Modelled after EMX src/lib/io/chmod.c */
+{
+    int attr, rc;
+
+    if (!(pmode & os2_stat_force))
+	return chmod(name, pmode);
+
+    attr = __chmod (name, 0, 0);           /* Get attributes */
+    if (attr < 0)
+	return -1;
+    if (pmode & S_IWRITE)
+	attr &= ~FILE_READONLY;
+    else
+	attr |= FILE_READONLY;
+    /* New logic */
+    attr &= ~(FILE_ARCHIVED | FILE_HIDDEN | FILE_SYSTEM);
+
+    if ( pmode & os2_stat_archived )
+        attr |= FILE_ARCHIVED;
+    if ( pmode & os2_stat_hidden )
+        attr |= FILE_HIDDEN;
+    if ( pmode & os2_stat_system )
+        attr |= FILE_SYSTEM;
+
+    rc = __chmod (name, 1, attr);
+    if (rc >= 0) rc = 0;
+    return rc;
 }
 
 #endif
@@ -1230,7 +1521,7 @@ sys_alloc(int size) {
     if (rc == ERROR_NOT_ENOUGH_MEMORY) {
 	return (void *) -1;
     } else if ( rc ) 
-	croak("Got an error from DosAllocMem: %li", (long)rc);
+	Perl_croak_nocontext("Got an error from DosAllocMem: %li", (long)rc);
     return got;
 }
 
@@ -1264,7 +1555,7 @@ XS(XS_File__Copy_syscopy)
 {
     dXSARGS;
     if (items < 2 || items > 3)
-	croak("Usage: File::Copy::syscopy(src,dst,flag=0)");
+	Perl_croak_nocontext("Usage: File::Copy::syscopy(src,dst,flag=0)");
     {
 	STRLEN n_a;
 	char *	src = (char *)SvPV(ST(0),n_a);
@@ -1285,28 +1576,27 @@ XS(XS_File__Copy_syscopy)
     XSRETURN(1);
 }
 
+#define PERL_PATCHLEVEL_H_IMPLICIT	/* Do not init local_patches. */
 #include "patchlevel.h"
+#undef PERL_PATCHLEVEL_H_IMPLICIT
 
 char *
-mod2fname(sv)
-     SV   *sv;
+mod2fname(pTHX_ SV *sv)
 {
     static char fname[9];
     int pos = 6, len, avlen;
     unsigned int sum = 0;
-    AV  *av;
-    SV  *svp;
     char *s;
     STRLEN n_a;
 
-    if (!SvROK(sv)) croak("Not a reference given to mod2fname");
+    if (!SvROK(sv)) Perl_croak_nocontext("Not a reference given to mod2fname");
     sv = SvRV(sv);
     if (SvTYPE(sv) != SVt_PVAV) 
-      croak("Not array reference given to mod2fname");
+      Perl_croak_nocontext("Not array reference given to mod2fname");
 
     avlen = av_len((AV*)sv);
     if (avlen < 0) 
-      croak("Empty array reference given to mod2fname");
+      Perl_croak_nocontext("Empty array reference given to mod2fname");
 
     s = SvPV(*av_fetch((AV*)sv, avlen, FALSE), n_a);
     strncpy(fname, s, 8);
@@ -1324,10 +1614,18 @@ mod2fname(sv)
 	}
 	avlen --;
     }
-#ifdef USE_THREADS
-    sum++;				/* Avoid conflict of DLLs in memory. */
-#endif 
-    sum += PERL_VERSION * 200 + PERL_SUBVERSION * 2;  /*  */
+   /* We always load modules as *specific* DLLs, and with the full name.
+      When loading a specific DLL by its full name, one cannot get a
+      different DLL, even if a DLL with the same basename is loaded already.
+      Thus there is no need to include the version into the mangling scheme. */
+#if 0
+    sum += PERL_VERSION * 200 + PERL_SUBVERSION * 2;  /* Up to 5.6.1 */
+#else
+#  ifndef COMPATIBLE_VERSION_SUM  /* Binary compatibility with the 5.00553 binary */
+#    define COMPATIBLE_VERSION_SUM (5 * 200 + 53 * 2)
+#  endif
+    sum += COMPATIBLE_VERSION_SUM;
+#endif
     fname[pos] = 'A' + (sum % 26);
     fname[pos + 1] = 'A' + (sum / 26 % 26);
     fname[pos + 2] = '\0';
@@ -1338,12 +1636,12 @@ XS(XS_DynaLoader_mod2fname)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: DynaLoader::mod2fname(sv)");
+	Perl_croak_nocontext("Usage: DynaLoader::mod2fname(sv)");
     {
 	SV *	sv = ST(0);
 	char *	RETVAL;
 
-	RETVAL = mod2fname(sv);
+	RETVAL = mod2fname(aTHX_ sv);
 	ST(0) = sv_newmortal();
 	sv_setpv((SV*)ST(0), RETVAL);
     }
@@ -1353,38 +1651,87 @@ XS(XS_DynaLoader_mod2fname)
 char *
 os2error(int rc)
 {
+	dTHX;
 	static char buf[300];
 	ULONG len;
+	char *s;
+	int number = SvTRUE(get_sv("OS2::nsyserror", TRUE));
 
         if (!(_emx_env & 0x200)) return ""; /* Nop if not OS/2. */
 	if (rc == 0)
-		return NULL;
-	if (DosGetMessage(NULL, 0, buf, sizeof buf - 1, rc, "OSO001.MSG", &len))
-		sprintf(buf, "OS/2 system error code %d=0x%x", rc, rc);
-	else {
-		buf[len] = '\0';
-		if (len && buf[len - 1] == '\n')
-			buf[--len] = 0;
-		if (len && buf[len - 1] == '\r')
-			buf[--len] = 0;
-		if (len && buf[len - 1] == '.')
-			buf[--len] = 0;
+		return "";
+	if (number) {
+	    sprintf(buf, "SYS%04d=%#x: ", rc, rc);
+	    s = buf + strlen(buf);
+	} else
+	    s = buf;
+	if (DosGetMessage(NULL, 0, s, sizeof(buf) - 1 - (s-buf), 
+			  rc, "OSO001.MSG", &len)) {
+	    if (!number) {
+		sprintf(buf, "SYS%04d=%#x: ", rc, rc);
+		s = buf + strlen(buf);
+	    }
+	    sprintf(s, "[No description found in OSO001.MSG]");
+	} else {
+		s[len] = '\0';
+		if (len && s[len - 1] == '\n')
+			s[--len] = 0;
+		if (len && s[len - 1] == '\r')
+			s[--len] = 0;
+		if (len && s[len - 1] == '.')
+			s[--len] = 0;
+		if (len >= 10 && number && strnEQ(s, buf, 7)
+		    && s[7] == ':' && s[8] == ' ')
+		    /* Some messages start with SYSdddd:, some not */
+		    Move(s + 9, s, (len -= 9) + 1, char);
 	}
 	return buf;
 }
 
-char *
-os2_execname(void)
+void
+ResetWinError(void)
 {
-  char buf[300], *p;
+  WinError_2_Perl_rc;
+}
+
+void
+CroakWinError(int die, char *name)
+{
+  FillWinError;
+  if (die && Perl_rc) {
+    dTHX;
+
+    Perl_croak(aTHX_ "%s: %s", (name ? name : "Win* API call"), os2error(Perl_rc));
+  }
+}
+
+char *
+os2_execname(pTHX)
+{
+  char buf[300], *p, *o = PL_origargv[0], ok = 1;
 
   if (_execname(buf, sizeof buf) != 0)
-	return PL_origargv[0];
+	return o;
   p = buf;
   while (*p) {
     if (*p == '\\')
 	*p = '/';
+    if (*p == '/') {
+	if (ok && *o != '/' && *o != '\\')
+	    ok = 0;
+    } else if (ok && tolower(*o) != tolower(*p))
+	ok = 0;	
     p++;
+    o++;
+  }
+  if (ok) { /* PL_origargv[0] matches the real name.  Use PL_origargv[0]: */
+     strcpy(buf, PL_origargv[0]);	/* _execname() is always uppercased */
+     p = buf;
+     while (*p) {
+       if (*p == '\\')
+           *p = '/';
+       p++;
+     }     
   }
   p = savepv(buf);
   SAVEFREEPV(p);
@@ -1412,7 +1759,7 @@ perllib_mangle(char *s, unsigned int l)
 	    }
 	    newl = strlen(newp);
 	    if (newl == 0 || oldl == 0) {
-		croak("Malformed PERLLIB_PREFIX");
+		Perl_croak_nocontext("Malformed PERLLIB_PREFIX");
 	    }
 	    strcpy(ret, newp);
 	    s = ret;
@@ -1434,7 +1781,7 @@ perllib_mangle(char *s, unsigned int l)
 	return s;
     }
     if (l + newl - oldl > STATIC_FILE_LENGTH || newl > STATIC_FILE_LENGTH) {
-	croak("Malformed PERLLIB_PREFIX");
+	Perl_croak_nocontext("Malformed PERLLIB_PREFIX");
     }
     strcpy(ret + newl, s + oldl);
     return ret;
@@ -1449,14 +1796,13 @@ Perl_hab_GET()			/* Needed if perl.h cannot be included */
 HMQ
 Perl_Register_MQ(int serve)
 {
+  if (Perl_hmq_refcnt <= 0) {
     PPIB pib;
     PTIB tib;
 
-    if (Perl_os2_initial_mode++)
-	return Perl_hmq;
+    Perl_hmq_refcnt = 0;		/* Be extra safe */
     DosGetInfoBlocks(&tib, &pib);
     Perl_os2_initial_mode = pib->pib_ultype;
-    Perl_hmq_refcnt = 1;
     /* Try morphing into a PM application. */
     if (pib->pib_ultype != 3)		/* 2 is VIO */
 	pib->pib_ultype = 3;		/* 3 is PM */
@@ -1464,11 +1810,23 @@ Perl_Register_MQ(int serve)
     /* 64 messages if before OS/2 3.0, ignored otherwise */
     Perl_hmq = (*PMWIN_entries.CreateMsgQueue)(perl_hab_GET(), 64); 
     if (!Perl_hmq) {
+        dTHX;
 	static int cnt;
+
+	SAVEINT(cnt);			/* Allow catch()ing. */
 	if (cnt++)
 	    _exit(188);			/* Panic can try to create a window. */
-	croak("Cannot create a message queue, or morph to a PM application");
+	Perl_croak_nocontext("Cannot create a message queue, or morph to a PM application");
     }
+  }
+    if (serve) {
+	if ( Perl_hmq_servers <= 0	/* Safe to inform us on shutdown, */
+	     && Perl_hmq_refcnt > 0 )	/* this was switched off before... */
+	    (*PMWIN_entries.CancelShutdown)(Perl_hmq, 0);
+	Perl_hmq_servers++;
+    } else if (!Perl_hmq_servers)	/* Do not inform us on shutdown */
+	(*PMWIN_entries.CancelShutdown)(Perl_hmq, 1);
+    Perl_hmq_refcnt++;
     return Perl_hmq;
 }
 
@@ -1478,14 +1836,14 @@ Perl_Serve_Messages(int force)
     int cnt = 0;
     QMSG msg;
 
-    if (Perl_hmq_servers && !force)
+    if (Perl_hmq_servers > 0 && !force)
 	return 0;
-    if (!Perl_hmq_refcnt)
-	croak("No message queue");
+    if (Perl_hmq_refcnt <= 0)
+	Perl_croak_nocontext("No message queue");
     while ((*PMWIN_entries.PeekMsg)(Perl_hab, &msg, NULLHANDLE, 0, 0, PM_REMOVE)) {
 	cnt++;
 	if (msg.msg == WM_QUIT)
-	    croak("QUITing...");
+	    Perl_croak_nocontext("QUITing...");
 	(*PMWIN_entries.DispatchMsg)(Perl_hab, &msg);
     }
     return cnt;
@@ -1496,10 +1854,10 @@ Perl_Process_Messages(int force, I32 *cntp)
 {
     QMSG msg;
 
-    if (Perl_hmq_servers && !force)
+    if (Perl_hmq_servers > 0 && !force)
 	return 0;
-    if (!Perl_hmq_refcnt)
-	croak("No message queue");
+    if (Perl_hmq_refcnt <= 0)
+	Perl_croak_nocontext("No message queue");
     while ((*PMWIN_entries.GetMsg)(Perl_hab, &msg, NULLHANDLE, 0, 0)) {
 	if (cntp)
 	    (*cntp)++;
@@ -1509,7 +1867,7 @@ Perl_Process_Messages(int force, I32 *cntp)
 	if (msg.msg == WM_CREATE)
 	    return +1;
     }
-    croak("QUITing...");
+    Perl_croak_nocontext("QUITing...");
 }
 
 void
@@ -1518,20 +1876,22 @@ Perl_Deregister_MQ(int serve)
     PPIB pib;
     PTIB tib;
 
-    if (--Perl_hmq_refcnt == 0) {
+    if (serve)
+	Perl_hmq_servers--;
+    if (--Perl_hmq_refcnt <= 0) {
+	init_PMWIN_entries();			/* To be extra safe */
 	(*PMWIN_entries.DestroyMsgQueue)(Perl_hmq);
 	Perl_hmq = 0;
 	/* Try morphing back from a PM application. */
+	DosGetInfoBlocks(&tib, &pib);
 	if (pib->pib_ultype == 3)		/* 3 is PM */
 	    pib->pib_ultype = Perl_os2_initial_mode;
 	else
-	    warn("Unexpected program mode %d when morphing back from PM",
+	    Perl_warn_nocontext("Unexpected program mode %d when morphing back from PM",
 		 pib->pib_ultype);
-    }
+    } else if (serve && Perl_hmq_servers <= 0)	/* Last server exited */
+	(*PMWIN_entries.CancelShutdown)(Perl_hmq, 1);
 }
-
-extern void dlopen();
-void *fakedl = &dlopen;		/* Pull in dynaloading part. */
 
 #define sys_is_absolute(path) ( isALPHA((path)[0]) && (path)[1] == ':' \
 				&& ((path)[2] == '/' || (path)[2] == '\\'))
@@ -1549,7 +1909,7 @@ XS(XS_OS2_Error)
 {
     dXSARGS;
     if (items != 2)
-	croak("Usage: OS2::Error(harderr, exception)");
+	Perl_croak_nocontext("Usage: OS2::Error(harderr, exception)");
     {
 	int	arg1 = SvIV(ST(0));
 	int	arg2 = SvIV(ST(1));
@@ -1559,7 +1919,7 @@ XS(XS_OS2_Error)
 	unsigned long rc;
 
 	if (CheckOSError(DosError(a)))
-	    croak("DosError(%d) failed", a);
+	    Perl_croak_nocontext("DosError(%d) failed", a);
 	ST(0) = sv_newmortal();
 	if (DOS_harderr_state >= 0)
 	    sv_setiv(ST(0), DOS_harderr_state);
@@ -1574,7 +1934,7 @@ XS(XS_OS2_Errors2Drive)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: OS2::Errors2Drive(drive)");
+	Perl_croak_nocontext("Usage: OS2::Errors2Drive(drive)");
     {
 	STRLEN n_a;
 	SV  *sv = ST(0);
@@ -1584,12 +1944,12 @@ XS(XS_OS2_Errors2Drive)
 	unsigned long rc;
 
 	if (suppress && !isALPHA(drive))
-	    croak("Non-char argument '%c' to OS2::Errors2Drive()", drive);
+	    Perl_croak_nocontext("Non-char argument '%c' to OS2::Errors2Drive()", drive);
 	if (CheckOSError(DosSuppressPopUps((suppress
 					    ? SPU_ENABLESUPPRESSION 
 					    : SPU_DISABLESUPPRESSION),
 					   drive)))
-	    croak("DosSuppressPopUps(%c) failed", drive);
+	    Perl_croak_nocontext("DosSuppressPopUps(%c) failed", drive);
 	ST(0) = sv_newmortal();
 	if (DOS_suppression_state > 0)
 	    sv_setpvn(ST(0), &DOS_suppression_state, 1);
@@ -1632,7 +1992,7 @@ XS(XS_OS2_SysInfo)
 {
     dXSARGS;
     if (items != 0)
-	croak("Usage: OS2::SysInfo()");
+	Perl_croak_nocontext("Usage: OS2::SysInfo()");
     {
 	ULONG   si[QSV_MAX] = {0};	/* System Information Data Buffer */
 	APIRET  rc	= NO_ERROR;	/* Return code            */
@@ -1642,7 +2002,7 @@ XS(XS_OS2_SysInfo)
 					 QSV_MAX, /* information */
 					 (PVOID)si,
 					 sizeof(si))))
-	    croak("DosQuerySysInfo() failed");
+	    Perl_croak_nocontext("DosQuerySysInfo() failed");
 	EXTEND(SP,2*QSV_MAX);
 	while (i < QSV_MAX) {
 	    ST(j) = sv_newmortal();
@@ -1659,7 +2019,7 @@ XS(XS_OS2_BootDrive)
 {
     dXSARGS;
     if (items != 0)
-	croak("Usage: OS2::BootDrive()");
+	Perl_croak_nocontext("Usage: OS2::BootDrive()");
     {
 	ULONG   si[1] = {0};	/* System Information Data Buffer */
 	APIRET  rc    = NO_ERROR;	/* Return code            */
@@ -1667,7 +2027,7 @@ XS(XS_OS2_BootDrive)
 	
 	if (CheckOSError(DosQuerySysInfo(QSV_BOOT_DRIVE, QSV_BOOT_DRIVE,
 					 (PVOID)si, sizeof(si))))
-	    croak("DosQuerySysInfo() failed");
+	    Perl_croak_nocontext("DosQuerySysInfo() failed");
 	ST(0) = sv_newmortal();
 	c = 'a' - 1 + si[0];
 	sv_setpvn(ST(0), &c, 1);
@@ -1679,7 +2039,7 @@ XS(XS_OS2_MorphPM)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: OS2::MorphPM(serve)");
+	Perl_croak_nocontext("Usage: OS2::MorphPM(serve)");
     {
 	bool  serve = SvOK(ST(0));
 	unsigned long   pmq = perl_hmq_GET(serve);
@@ -1694,7 +2054,7 @@ XS(XS_OS2_UnMorphPM)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: OS2::UnMorphPM(serve)");
+	Perl_croak_nocontext("Usage: OS2::UnMorphPM(serve)");
     {
 	bool  serve = SvOK(ST(0));
 
@@ -1707,7 +2067,7 @@ XS(XS_OS2_Serve_Messages)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: OS2::Serve_Messages(force)");
+	Perl_croak_nocontext("Usage: OS2::Serve_Messages(force)");
     {
 	bool  force = SvOK(ST(0));
 	unsigned long   cnt = Perl_Serve_Messages(force);
@@ -1722,21 +2082,24 @@ XS(XS_OS2_Process_Messages)
 {
     dXSARGS;
     if (items < 1 || items > 2)
-	croak("Usage: OS2::Process_Messages(force [, cnt])");
+	Perl_croak_nocontext("Usage: OS2::Process_Messages(force [, cnt])");
     {
 	bool  force = SvOK(ST(0));
 	unsigned long   cnt;
-	I32 *cntp = NULL;
 
 	if (items == 2) {
+	    I32 cntr;
 	    SV *sv = ST(1);
-	    int fake = SvIV(sv);	/* Force SvIVX */
-	    
+
+	    (void)SvIV(sv);		/* Force SvIVX */	    
 	    if (!SvIOK(sv))
-		croak("Can't upgrade count to IV");
-	    cntp = &SvIVX(sv);
-	}
-	cnt =  Perl_Process_Messages(force, cntp);
+		Perl_croak_nocontext("Can't upgrade count to IV");
+	    cntr = SvIVX(sv);
+	    cnt =  Perl_Process_Messages(force, &cntr);
+	    SvIVX(sv) = cntr;
+	} else {
+	    cnt =  Perl_Process_Messages(force, NULL);
+        }
 	ST(0) = sv_newmortal();
 	sv_setiv(ST(0), cnt);
     }
@@ -1747,7 +2110,7 @@ XS(XS_Cwd_current_drive)
 {
     dXSARGS;
     if (items != 0)
-	croak("Usage: Cwd::current_drive()");
+	Perl_croak_nocontext("Usage: Cwd::current_drive()");
     {
 	char	RETVAL;
 
@@ -1762,7 +2125,7 @@ XS(XS_Cwd_sys_chdir)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: Cwd::sys_chdir(path)");
+	Perl_croak_nocontext("Usage: Cwd::sys_chdir(path)");
     {
 	STRLEN n_a;
 	char *	path = (char *)SvPV(ST(0),n_a);
@@ -1779,7 +2142,7 @@ XS(XS_Cwd_change_drive)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: Cwd::change_drive(d)");
+	Perl_croak_nocontext("Usage: Cwd::change_drive(d)");
     {
 	STRLEN n_a;
 	char	d = (char)*SvPV(ST(0),n_a);
@@ -1796,7 +2159,7 @@ XS(XS_Cwd_sys_is_absolute)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: Cwd::sys_is_absolute(path)");
+	Perl_croak_nocontext("Usage: Cwd::sys_is_absolute(path)");
     {
 	STRLEN n_a;
 	char *	path = (char *)SvPV(ST(0),n_a);
@@ -1813,7 +2176,7 @@ XS(XS_Cwd_sys_is_rooted)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: Cwd::sys_is_rooted(path)");
+	Perl_croak_nocontext("Usage: Cwd::sys_is_rooted(path)");
     {
 	STRLEN n_a;
 	char *	path = (char *)SvPV(ST(0),n_a);
@@ -1830,7 +2193,7 @@ XS(XS_Cwd_sys_is_relative)
 {
     dXSARGS;
     if (items != 1)
-	croak("Usage: Cwd::sys_is_relative(path)");
+	Perl_croak_nocontext("Usage: Cwd::sys_is_relative(path)");
     {
 	STRLEN n_a;
 	char *	path = (char *)SvPV(ST(0),n_a);
@@ -1847,13 +2210,16 @@ XS(XS_Cwd_sys_cwd)
 {
     dXSARGS;
     if (items != 0)
-	croak("Usage: Cwd::sys_cwd()");
+	Perl_croak_nocontext("Usage: Cwd::sys_cwd()");
     {
 	char p[MAXPATHLEN];
 	char *	RETVAL;
 	RETVAL = _getcwd2(p, MAXPATHLEN);
 	ST(0) = sv_newmortal();
 	sv_setpv((SV*)ST(0), RETVAL);
+#ifndef INCOMPLETE_TAINTS
+	SvTAINTED_on(ST(0));
+#endif
     }
     XSRETURN(1);
 }
@@ -1862,13 +2228,15 @@ XS(XS_Cwd_sys_abspath)
 {
     dXSARGS;
     if (items < 1 || items > 2)
-	croak("Usage: Cwd::sys_abspath(path, dir = NULL)");
+	Perl_croak_nocontext("Usage: Cwd::sys_abspath(path, dir = NULL)");
     {
 	STRLEN n_a;
 	char *	path = (char *)SvPV(ST(0),n_a);
-	char *	dir;
+	char *	dir, *s, *t, *e;
 	char p[MAXPATHLEN];
 	char *	RETVAL;
+	int l;
+	SV *sv;
 
 	if (items < 2)
 	    dir = NULL;
@@ -1921,8 +2289,6 @@ XS(XS_Cwd_sys_abspath)
 		   In all the cases it is safe to drop the drive part
 		   of the path. */
 		if ( !sys_is_relative(path) ) {
-		    int is_drived;
-
 		    if ( ( ( sys_is_absolute(dir)
 			     || (isALPHA(dir[0]) && dir[1] == ':' 
 				 && strnicmp(dir, path,1) == 0)) 
@@ -1960,36 +2326,69 @@ XS(XS_Cwd_sys_abspath)
 	      done:
 	    }
 	}
+	if (!RETVAL)
+	    XSRETURN_EMPTY;
+	/* Backslashes are already converted to slashes. */
+	/* Remove trailing slashes */
+	l = strlen(RETVAL);
+	while (l > 0 && RETVAL[l-1] == '/')
+	    l--;
 	ST(0) = sv_newmortal();
-	sv_setpv((SV*)ST(0), RETVAL);
+	sv_setpvn( sv = (SV*)ST(0), RETVAL, l);
+	/* Remove duplicate slashes, skipping the first three, which
+	   may be parts of a server-based path */
+	s = t = 3 + SvPV_force(sv, n_a);
+	e = SvEND(sv);
+	/* Do not worry about multibyte chars here, this would contradict the
+	   eventual UTFization, and currently most other places break too... */
+	while (s < e) {
+	    if (s[0] == t[-1] && s[0] == '/')
+		s++;				/* Skip duplicate / */
+	    else
+		*t++ = *s++;
+	}
+	if (t < e) {
+	    *t = 0;
+	    SvCUR_set(sv, t - SvPVX(sv));
+	}
     }
     XSRETURN(1);
 }
 typedef APIRET (*PELP)(PSZ path, ULONG type);
 
+/* Kernels after 2000/09/15 understand this too: */
+#ifndef LIBPATHSTRICT
+#  define LIBPATHSTRICT 3
+#endif
+
 APIRET
-ExtLIBPATH(ULONG ord, PSZ path, ULONG type)
+ExtLIBPATH(ULONG ord, PSZ path, IV type)
 {
-    loadByOrd("doscalls",ord);		/* Guarantied to load or die! */
-    return (*(PELP)ExtFCN[ord])(path, type);
+    ULONG what;
+    PFN f = loadByOrdinal(ord, 1);	/* Guarantied to load or die! */
+
+    if (type > 0)
+	what = END_LIBPATH;
+    else if (type == 0)
+	what = BEGIN_LIBPATH;
+    else
+	what = LIBPATHSTRICT;
+    return (*(PELP)f)(path, what);
 }
 
-#define extLibpath(type) 						\
-    (CheckOSError(ExtLIBPATH(ORD_QUERY_ELP, to, ((type) ? END_LIBPATH	\
-						 : BEGIN_LIBPATH)))	\
-     ? NULL : to )
+#define extLibpath(to,type) 						\
+    (CheckOSError(ExtLIBPATH(ORD_DosQueryExtLibpath, (to), (type))) ? NULL : (to) )
 
 #define extLibpath_set(p,type) 					\
-    (!CheckOSError(ExtLIBPATH(ORD_SET_ELP, (p), ((type) ? END_LIBPATH	\
-						 : BEGIN_LIBPATH))))
+    (!CheckOSError(ExtLIBPATH(ORD_DosSetExtLibpath, (p), (type))))
 
 XS(XS_Cwd_extLibpath)
 {
     dXSARGS;
     if (items < 0 || items > 1)
-	croak("Usage: Cwd::extLibpath(type = 0)");
+	Perl_croak_nocontext("Usage: Cwd::extLibpath(type = 0)");
     {
-	bool	type;
+	IV	type;
 	char	to[1024];
 	U32	rc;
 	char *	RETVAL;
@@ -1997,10 +2396,13 @@ XS(XS_Cwd_extLibpath)
 	if (items < 1)
 	    type = 0;
 	else {
-	    type = (int)SvIV(ST(0));
+	    type = SvIV(ST(0));
 	}
 
-	RETVAL = extLibpath(type);
+	to[0] = 1; to[1] = 0;		/* Sometimes no error reported */
+	RETVAL = extLibpath(to, type);
+	if (RETVAL && RETVAL[0] == 1 && RETVAL[1] == 0)
+	    Perl_croak_nocontext("panic Cwd::extLibpath parameter");
 	ST(0) = sv_newmortal();
 	sv_setpv((SV*)ST(0), RETVAL);
     }
@@ -2011,18 +2413,18 @@ XS(XS_Cwd_extLibpath_set)
 {
     dXSARGS;
     if (items < 1 || items > 2)
-	croak("Usage: Cwd::extLibpath_set(s, type = 0)");
+	Perl_croak_nocontext("Usage: Cwd::extLibpath_set(s, type = 0)");
     {
 	STRLEN n_a;
 	char *	s = (char *)SvPV(ST(0),n_a);
-	bool	type;
+	IV	type;
 	U32	rc;
 	bool	RETVAL;
 
 	if (items < 2)
 	    type = 0;
 	else {
-	    type = (int)SvIV(ST(1));
+	    type = SvIV(ST(1));
 	}
 
 	RETVAL = extLibpath_set(s, type);
@@ -2032,8 +2434,149 @@ XS(XS_Cwd_extLibpath_set)
     XSRETURN(1);
 }
 
+/* Input: Address, BufLen
+APIRET APIENTRY
+DosQueryModFromEIP (HMODULE * hmod, ULONG * obj, ULONG BufLen, PCHAR Buf,
+		    ULONG * Offset, ULONG Address);
+*/
+
+DeclOSFuncByORD(APIRET, _DosQueryModFromEIP,ORD_DosQueryModFromEIP,
+			(HMODULE * hmod, ULONG * obj, ULONG BufLen, PCHAR Buf,
+			ULONG * Offset, ULONG Address),
+			(hmod, obj, BufLen, Buf, Offset, Address))
+
+enum module_name_how { mod_name_handle, mod_name_shortname, mod_name_full};
+
+static SV*
+module_name_at(void *pp, enum module_name_how how)
+{
+    dTHX;
+    char buf[MAXPATHLEN];
+    char *p = buf;
+    HMODULE mod;
+    ULONG obj, offset, rc;
+
+    if (!_DosQueryModFromEIP(&mod, &obj, sizeof(buf), buf, &offset, (ULONG)pp))
+	return &PL_sv_undef;
+    if (how == mod_name_handle)
+	return newSVuv(mod);
+    /* Full name... */
+    if ( how == mod_name_full
+	 && CheckOSError(DosQueryModuleName(mod, sizeof(buf), buf)) )
+	return &PL_sv_undef;
+    while (*p) {
+	if (*p == '\\')
+	    *p = '/';
+	p++;
+    }
+    return newSVpv(buf, 0);
+}
+
+static SV*
+module_name_of_cv(SV *cv, enum module_name_how how)
+{
+    if (!cv || !SvROK(cv) || SvTYPE(SvRV(cv)) != SVt_PVCV || !CvXSUB(SvRV(cv))) {
+	dTHX;
+
+	Perl_croak(aTHX_ "Not an XSUB reference");
+    }
+    return module_name_at(CvXSUB(SvRV(cv)), how);
+}
+
+/* Find module name to which *this* subroutine is compiled */
+#define module_name(how)	module_name_at(&module_name_at, how)
+
+XS(XS_OS2_DLLname)
+{
+    dXSARGS;
+    if (items > 2)
+	Perl_croak(aTHX_ "Usage: OS2::DLLname( [ how, [\\&xsub] ] )");
+    {
+	SV *	RETVAL;
+	int	how;
+
+	if (items < 1)
+	    how = mod_name_full;
+	else {
+	    how = (int)SvIV(ST(0));
+	}
+	if (items < 2)
+	    RETVAL = module_name(how);
+	else
+	    RETVAL = module_name_of_cv(ST(1), how);
+	ST(0) = RETVAL;
+	sv_2mortal(ST(0));
+    }
+    XSRETURN(1);
+}
+
+#define get_control87()		_control87(0,0)
+#define set_control87		_control87
+
+XS(XS_OS2__control87)
+{
+    dXSARGS;
+    if (items != 2)
+	Perl_croak(aTHX_ "Usage: OS2::_control87(new,mask)");
+    {
+	unsigned	new = (unsigned)SvIV(ST(0));
+	unsigned	mask = (unsigned)SvIV(ST(1));
+	unsigned	RETVAL;
+
+	RETVAL = _control87(new, mask);
+	ST(0) = sv_newmortal();
+	sv_setiv(ST(0), (IV)RETVAL);
+    }
+    XSRETURN(1);
+}
+
+XS(XS_OS2_get_control87)
+{
+    dXSARGS;
+    if (items != 0)
+	Perl_croak(aTHX_ "Usage: OS2::get_control87()");
+    {
+	unsigned	RETVAL;
+
+	RETVAL = get_control87();
+	ST(0) = sv_newmortal();
+	sv_setiv(ST(0), (IV)RETVAL);
+    }
+    XSRETURN(1);
+}
+
+
+XS(XS_OS2_set_control87)
+{
+    dXSARGS;
+    if (items < 0 || items > 2)
+	Perl_croak(aTHX_ "Usage: OS2::set_control87(new=MCW_EM, mask=MCW_EM)");
+    {
+	unsigned	new;
+	unsigned	mask;
+	unsigned	RETVAL;
+
+	if (items < 1)
+	    new = MCW_EM;
+	else {
+	    new = (unsigned)SvIV(ST(0));
+	}
+
+	if (items < 2)
+	    mask = MCW_EM;
+	else {
+	    mask = (unsigned)SvIV(ST(1));
+	}
+
+	RETVAL = set_control87(new, mask);
+	ST(0) = sv_newmortal();
+	sv_setiv(ST(0), (IV)RETVAL);
+    }
+    XSRETURN(1);
+}
+
 int
-Xs_OS2_init()
+Xs_OS2_init(pTHX)
 {
     char *file = __FILE__;
     {
@@ -2061,11 +2604,18 @@ Xs_OS2_init()
         newXS("Cwd::sys_is_relative", XS_Cwd_sys_is_relative, file);
         newXS("Cwd::sys_cwd", XS_Cwd_sys_cwd, file);
         newXS("Cwd::sys_abspath", XS_Cwd_sys_abspath, file);
+        newXSproto("OS2::_control87", XS_OS2__control87, file, "$$");
+        newXSproto("OS2::get_control87", XS_OS2_get_control87, file, "");
+        newXSproto("OS2::set_control87", XS_OS2_set_control87, file, ";$$");
+        newXSproto("OS2::DLLname", XS_OS2_DLLname, file, ";$$");
 	gv = gv_fetchpv("OS2::is_aout", TRUE, SVt_PV);
 	GvMULTI_on(gv);
 #ifdef PERL_IS_AOUT
 	sv_setiv(GvSV(gv), 1);
-#endif 
+#endif
+	gv = gv_fetchpv("OS2::can_fork", TRUE, SVt_PV);
+	GvMULTI_on(gv);
+	sv_setiv(GvSV(gv), exe_is_aout());
 	gv = gv_fetchpv("OS2::emx_rev", TRUE, SVt_PV);
 	GvMULTI_on(gv);
 	sv_setiv(GvSV(gv), _emx_rev);
@@ -2077,23 +2627,334 @@ Xs_OS2_init()
 	gv = gv_fetchpv("OS2::os_ver", TRUE, SVt_PV);
 	GvMULTI_on(gv);
 	sv_setnv(GvSV(gv), _osmajor + 0.001 * _osminor);
+	gv = gv_fetchpv("OS2::nsyserror", TRUE, SVt_PV);
+	GvMULTI_on(gv);
+	sv_setiv(GvSV(gv), 1);		/* DEFAULT: Show number on syserror */
     }
+    return 0;
 }
 
 OS2_Perl_data_t OS2_Perl_data;
 
+extern void _emx_init(void*);
+
+static void jmp_out_of_atexit(void);
+
+#define FORCE_EMX_INIT_CONTRACT_ARGV	1
+#define FORCE_EMX_INIT_INSTALL_ATEXIT	2
+
+static void
+my_emx_init(void *layout) {
+    static volatile void *p = 0;	/* Cannot be on stack! */
+
+    /* Can't just call emx_init(), since it moves the stack pointer */
+    /* It also busts a lot of registers, so be extra careful */
+    __asm__(	"pushf\n"
+		"pusha\n"
+		"movl %%esp, %1\n"
+		"push %0\n"
+		"call __emx_init\n"
+		"movl %1, %%esp\n"
+		"popa\n"
+		"popf\n" : : "r" (layout), "m" (p)	);
+}
+
+struct layout_table_t {
+    ULONG text_base;
+    ULONG text_end;
+    ULONG data_base;
+    ULONG data_end;
+    ULONG bss_base;
+    ULONG bss_end;
+    ULONG heap_base;
+    ULONG heap_end;
+    ULONG heap_brk;
+    ULONG heap_off;
+    ULONG os2_dll;
+    ULONG stack_base;
+    ULONG stack_end;
+    ULONG flags;
+    ULONG reserved[2];
+    char options[64];
+};
+
+static ULONG
+my_os_version() {
+    static ULONG res;			/* Cannot be on stack! */
+
+    /* Can't just call __os_version(), since it does not follow C
+       calling convention: it busts a lot of registers, so be extra careful */
+    __asm__(	"pushf\n"
+		"pusha\n"
+		"call ___os_version\n"
+		"movl %%eax, %0\n"
+		"popa\n"
+		"popf\n" : "=m" (res)	);
+
+    return res;
+}
+
+static void
+force_init_emx_runtime(EXCEPTIONREGISTRATIONRECORD *preg, ULONG flags)
+{
+    /* Calling emx_init() will bust the top of stack: it installs an
+       exception handler and puts argv data there. */
+    char *oldarg, *oldenv;
+    void *oldstackend, *oldstack;
+    PPIB pib;
+    PTIB tib;
+    static ULONG os2_dll;
+    ULONG rc, error = 0, out;
+    char buf[512];
+    static struct layout_table_t layout_table;
+    struct {
+	char buf[48*1024]; /* _emx_init() requires 32K, cmd.exe has 64K only */
+	double alignment1;
+	EXCEPTIONREGISTRATIONRECORD xreg;
+    } *newstack;
+    char *s;
+
+    layout_table.os2_dll = (ULONG)&os2_dll;
+    layout_table.flags   = 0x02000002;	/* flags: application, OMF */
+
+    DosGetInfoBlocks(&tib, &pib);
+    oldarg = pib->pib_pchcmd;
+    oldenv = pib->pib_pchenv;
+    oldstack = tib->tib_pstack;
+    oldstackend = tib->tib_pstacklimit;
+
+    /* Minimize the damage to the stack via reducing the size of argv. */
+    if (flags & FORCE_EMX_INIT_CONTRACT_ARGV) {
+	pib->pib_pchcmd = "\0\0";	/* Need 3 concatenated strings */
+	pib->pib_pchcmd = "\0";		/* Ended by an extra \0. */
+    }
+
+    newstack = alloca(sizeof(*newstack));
+    /* Emulate the stack probe */
+    s = ((char*)newstack) + sizeof(*newstack);
+    while (s > (char*)newstack) {
+	s[-1] = 0;
+	s -= 4096;
+    }
+
+    /* Reassigning stack is documented to work */
+    tib->tib_pstack = (void*)newstack;
+    tib->tib_pstacklimit = (void*)((char*)newstack + sizeof(*newstack));
+
+    /* Can't just call emx_init(), since it moves the stack pointer */
+    my_emx_init((void*)&layout_table);
+
+    /* Remove the exception handler, cannot use it - too low on the stack.
+       Check whether it is inside the new stack.  */
+    buf[0] = 0;
+    if (tib->tib_pexchain >= tib->tib_pstacklimit
+	|| tib->tib_pexchain < tib->tib_pstack) {
+	error = 1;
+	sprintf(buf,
+		"panic: ExceptionHandler misplaced: not %#lx <= %#lx < %#lx\n",
+		(unsigned long)tib->tib_pstack,
+		(unsigned long)tib->tib_pexchain,
+		(unsigned long)tib->tib_pstacklimit);	
+	goto finish;
+    }
+    if (tib->tib_pexchain != &(newstack->xreg)) {
+	sprintf(buf, "ExceptionHandler misplaced: %#lx != %#lx\n",
+		(unsigned long)tib->tib_pexchain,
+		(unsigned long)&(newstack->xreg));	
+    }
+    rc = DosUnsetExceptionHandler((EXCEPTIONREGISTRATIONRECORD *)tib->tib_pexchain);
+    if (rc)
+	sprintf(buf + strlen(buf), 
+		"warning: DosUnsetExceptionHandler rc=%#lx=%lu\n", rc, rc);
+
+    if (preg) {
+	/* ExceptionRecords should be on stack, in a correct order.  Sigh... */
+	preg->prev_structure = 0;
+	preg->ExceptionHandler = _emx_exception;
+	rc = DosSetExceptionHandler(preg);
+	if (rc) {
+	    sprintf(buf + strlen(buf),
+		    "warning: DosSetExceptionHandler rc=%#lx=%lu\n", rc, rc);
+	    DosWrite(2, buf, strlen(buf), &out);
+	    emx_exception_init = 1;	/* Do it around spawn*() calls */
+	}
+    } else
+	emx_exception_init = 1;		/* Do it around spawn*() calls */
+
+  finish:
+    /* Restore the damage */
+    pib->pib_pchcmd = oldarg;
+    pib->pib_pchcmd = oldenv;
+    tib->tib_pstacklimit = oldstackend;
+    tib->tib_pstack = oldstack;
+    emx_runtime_init = 1;
+    if (buf[0])
+	DosWrite(2, buf, strlen(buf), &out);
+    if (error)
+	exit(56);
+}
+
+jmp_buf at_exit_buf;
+int longjmp_at_exit;
+
+static void
+jmp_out_of_atexit(void)
+{
+    if (longjmp_at_exit)
+	longjmp(at_exit_buf, 1);
+}
+
+extern void _CRT_term(void);
+
+int emx_runtime_secondary;
+
+void
+Perl_OS2_term(void **p, int exitstatus, int flags)
+{
+    if (!emx_runtime_secondary)
+	return;
+
+    /* The principal executable is not running the same CRTL, so there
+       is nobody to shutdown *this* CRTL except us... */
+    if (flags & FORCE_EMX_DEINIT_EXIT) {
+	if (p && !emx_exception_init)
+	    DosUnsetExceptionHandler((EXCEPTIONREGISTRATIONRECORD *)p);
+	/* Do not run the executable's CRTL's termination routines */
+	exit(exitstatus);		/* Run at-exit, flush buffers, etc */
+    }
+    /* Run at-exit list, and jump out at the end */
+    if ((flags & FORCE_EMX_DEINIT_RUN_ATEXIT) && !setjmp(at_exit_buf)) {
+	longjmp_at_exit = 1;
+	exit(exitstatus);		/* The first pass through "if" */
+    }
+
+    /* Get here if we managed to jump out of exit(), or did not run atexit. */
+    longjmp_at_exit = 0;		/* Maybe exit() is called again? */
+#if 0 /* _atexit_n is not exported */
+    if (flags & FORCE_EMX_DEINIT_RUN_ATEXIT)
+	_atexit_n = 0;			/* Remove the atexit() handlers */
+#endif
+    /* Will segfault on program termination if we leave this dangling... */
+    if (p && !emx_exception_init)
+	DosUnsetExceptionHandler((EXCEPTIONREGISTRATIONRECORD *)p);
+    /* Typically there is no need to do this, done from _DLL_InitTerm() */
+    if (flags & FORCE_EMX_DEINIT_CRT_TERM)
+	_CRT_term();			/* Flush buffers, etc. */
+    /* Now it is a good time to call exit() in the caller's CRTL... */
+}
+
+#include <emx/startup.h>
+
+extern ULONG __os_version();		/* See system.doc */
+
+static int emx_wasnt_initialized;
+
+void
+check_emx_runtime(char **env, EXCEPTIONREGISTRATIONRECORD *preg)
+{
+    ULONG v_crt, v_emx;
+
+    /*  If _environ is not set, this code sits in a DLL which
+	uses a CRT DLL which not compatible with the executable's
+	CRT library.  Some parts of the DLL are not initialized.
+     */
+    if (_environ != NULL)
+	return;				/* Properly initialized */
+
+    /*  If the executable does not use EMX.DLL, EMX.DLL is not completely
+	initialized either.  Uninitialized EMX.DLL returns 0 in the low
+	nibble of __os_version().  */
+    v_emx = my_os_version();
+
+    /*	_osmajor and _osminor are normally set in _DLL_InitTerm of CRT DLL
+	(=>_CRT_init=>_entry2) via a call to __os_version(), then
+	reset when the EXE initialization code calls _text=>_init=>_entry2.
+	The first time they are wrongly set to 0; the second time the
+	EXE initialization code had already called emx_init=>initialize1
+	which correctly set version_major, version_minor used by
+	__os_version().  */
+    v_crt = (_osmajor | _osminor);
+
+    if ((_emx_env & 0x200) && !(v_emx & 0xFFFF)) {	/* OS/2, EMX uninit. */ 
+	force_init_emx_runtime( preg,
+				FORCE_EMX_INIT_CONTRACT_ARGV 
+				| FORCE_EMX_INIT_INSTALL_ATEXIT );
+	emx_wasnt_initialized = 1;
+	/* Update CRTL data basing on now-valid EMX runtime data */
+	if (!v_crt) {		/* The only wrong data are the versions. */
+	    v_emx = my_os_version();			/* *Now* it works */
+	    *(unsigned char *)&_osmajor = v_emx & 0xFF;	/* Cast out const */
+	    *(unsigned char *)&_osminor = (v_emx>>8) & 0xFF;
+	}
+    }
+    emx_runtime_secondary = 1;
+    /* if (flags & FORCE_EMX_INIT_INSTALL_ATEXIT) */
+    atexit(jmp_out_of_atexit);		/* Allow run of atexit() w/o exit()  */
+
+    if (env == NULL) {			/* Fetch from the process info block */
+	int c = 0;
+	PPIB pib;
+	PTIB tib;
+	char *e, **ep;
+
+	DosGetInfoBlocks(&tib, &pib);
+	e = pib->pib_pchenv;
+	while (*e) {			/* Get count */
+	    c++;
+	    e = e + strlen(e) + 1;
+	}
+	New(1307, env, c + 1, char*);
+	ep = env;
+	e = pib->pib_pchenv;
+	while (c--) {
+	    *ep++ = e;
+	    e = e + strlen(e) + 1;
+	}
+	*ep = NULL;
+    }
+    _environ = _org_environ = env;
+}
+
+#define ENTRY_POINT 0x10000
+
+static int
+exe_is_aout(void)
+{
+    struct layout_table_t *layout;
+    if (emx_wasnt_initialized)
+	return 0;
+    /* Now we know that the principal executable is an EMX application 
+       - unless somebody did already play with delayed initialization... */
+    /* With EMX applications to determine whether it is AOUT one needs
+       to examine the start of the executable to find "layout" */
+    if ( *(unsigned char*)ENTRY_POINT != 0x68		/* PUSH n */
+	 || *(unsigned char*)(ENTRY_POINT+5) != 0xe8	/* CALL */
+	 || *(unsigned char*)(ENTRY_POINT+10) != 0xeb	/* JMP */
+	 || *(unsigned char*)(ENTRY_POINT+12) != 0xe8)	/* CALL */
+	return 0;					/* ! EMX executable */
+    /* Fix alignment */
+    Copy((char*)(ENTRY_POINT+1), &layout, 1, struct layout_table_t*);
+    return !(layout->flags & 2);			
+}
+
 void
 Perl_OS2_init(char **env)
 {
+    Perl_OS2_init3(env, 0, 0);
+}
+
+void
+Perl_OS2_init3(char **env, void **preg, int flags)
+{
     char *shell;
 
+    _uflags (_UF_SBRK_MODEL, _UF_SBRK_ARBITRARY);
     MALLOC_INIT;
+
+    check_emx_runtime(env, (EXCEPTIONREGISTRATIONRECORD *)preg);
+
     settmppath();
     OS2_Perl_data.xs_init = &Xs_OS2_init;
-    _uflags (_UF_SBRK_MODEL, _UF_SBRK_ARBITRARY);
-    if (environ == NULL && env) {
-	environ = env;
-    }
     if ( (shell = getenv("PERL_SH_DRIVE")) ) {
 	New(1304, PL_sh_path, strlen(SH_PATH) + 1, char);
 	strcpy(PL_sh_path, SH_PATH);
@@ -2110,8 +2971,12 @@ Perl_OS2_init(char **env)
 	    if (PL_sh_path[i] == '\\') PL_sh_path[i] = '/';
 	}
     }
+#if defined(USE_5005THREADS) || defined(USE_ITHREADS)
     MUTEX_INIT(&start_thread_mutex);
+#endif
     os2_mytype = my_type();		/* Do it before morphing.  Needed? */
+    /* Some DLLs reset FP flags on load.  We may have been linked with them */
+    _control87(MCW_EM, MCW_EM);
 }
 
 #undef tmpnam
@@ -2121,7 +2986,6 @@ char *
 my_tmpnam (char *str)
 {
     char *p = getenv("TMP"), *tpath;
-    int len;
 
     if (!p) p = getenv("TEMP");
     tpath = tempnam(p, "pltmp");
@@ -2143,6 +3007,59 @@ my_tmpfile ()
     }
     return fopen(my_tmpnam(NULL), "w+b"); /* Race condition, but
 					     grants TMP. */
+}
+
+#undef rmdir
+
+/* EMX flavors do not tolerate trailing slashes.  t/op/mkdir.t has many
+   trailing slashes, so we need to support this as well. */
+
+int
+my_rmdir (__const__ char *s)
+{
+    char b[MAXPATHLEN];
+    char *buf = b;
+    STRLEN l = strlen(s);
+    int rc;
+
+    if (s[l-1] == '/' || s[l-1] == '\\') {	/* EMX mkdir fails... */
+	if (l >= sizeof b)
+	    New(1305, buf, l + 1, char);
+	strcpy(buf,s);
+	while (l > 1 && (s[l-1] == '/' || s[l-1] == '\\'))
+	    l--;
+	buf[l] = 0;
+	s = buf;
+    }
+    rc = rmdir(s);
+    if (b != buf)
+	Safefree(buf);
+    return rc;
+}
+
+#undef mkdir
+
+int
+my_mkdir (__const__ char *s, long perm)
+{
+    char b[MAXPATHLEN];
+    char *buf = b;
+    STRLEN l = strlen(s);
+    int rc;
+
+    if (s[l-1] == '/' || s[l-1] == '\\') {	/* EMX mkdir fails... */
+	if (l >= sizeof b)
+	    New(1305, buf, l + 1, char);
+	strcpy(buf,s);
+	while (l > 1 && (s[l-1] == '/' || s[l-1] == '\\'))
+	    l--;
+	buf[l] = 0;
+	s = buf;
+    }
+    rc = mkdir(s, perm);
+    if (b != buf)
+	Safefree(buf);
+    return rc;
 }
 
 #undef flock
@@ -2167,21 +3084,21 @@ my_flock(int handle, int o)
   if (!(_emx_env & 0x200) || !use_my) 
     return flock(handle, o);	/* Delegate to EMX. */
   
-                                        // is this a file?
+                                        /* is this a file? */
   if ((DosQueryHType(handle, &handle_type, &flag_word) != 0) ||
       (handle_type & 0xFF))
   {
     errno = EBADF;
     return -1;
   }
-                                        // set lock/unlock ranges
+                                        /* set lock/unlock ranges */
   rNull.lOffset = rNull.lRange = rFull.lOffset = 0;
   rFull.lRange = 0x7FFFFFFF;
-                                        // set timeout for blocking
+                                        /* set timeout for blocking */
   timeout = ((blocking = !(o & LOCK_NB))) ? 100 : 1;
-                                        // shared or exclusive?
+                                        /* shared or exclusive? */
   shared = (o & LOCK_SH) ? 1 : 0;
-                                        // do not block the unlock
+                                        /* do not block the unlock */
   if (o & (LOCK_UN | LOCK_SH | LOCK_EX)) {
     rc = DosSetFileLocks(handle, &rFull, &rNull, timeout, shared);
     switch (rc) {
@@ -2195,7 +3112,7 @@ my_flock(int handle, int o)
         errno = ENOLCK;
         return -1;
       case ERROR_LOCK_VIOLATION:
-        break;                          // not an error
+        break;                          /* not an error */
       case ERROR_INVALID_PARAMETER:
       case ERROR_ATOMIC_LOCK_NOT_SUPPORTED:
       case ERROR_READ_LOCKS_NOT_SUPPORTED:
@@ -2209,9 +3126,9 @@ my_flock(int handle, int o)
         return -1;
     }
   }
-                                        // lock may block
+                                        /* lock may block */
   if (o & (LOCK_SH | LOCK_EX)) {
-                                        // for blocking operations
+                                        /* for blocking operations */
     for (;;) {
       rc =
         DosSetFileLocks(
@@ -2249,11 +3166,141 @@ my_flock(int handle, int o)
           errno = EINVAL;
           return -1;
       }
-                                        // give away timeslice
+                                        /* give away timeslice */
       DosSleep(1);
     }
   }
 
   errno = 0;
   return 0;
+}
+
+static int pwent_cnt;
+static int _my_pwent = -1;
+
+static int
+use_my_pwent(void)
+{
+  if (_my_pwent == -1) {
+    char *s = getenv("USE_PERL_PWENT");
+    if (s)
+	_my_pwent = atoi(s);
+    else 
+	_my_pwent = 1;
+  }
+  return _my_pwent;
+}
+
+#undef setpwent
+#undef getpwent
+#undef endpwent
+
+void
+my_setpwent(void)
+{
+  if (!use_my_pwent()) {
+    setpwent();			/* Delegate to EMX. */
+    return;
+  }
+  pwent_cnt = 0;
+}
+
+void
+my_endpwent(void)
+{
+  if (!use_my_pwent()) {
+    endpwent();			/* Delegate to EMX. */
+    return;
+  }
+}
+
+struct passwd *
+my_getpwent (void)
+{
+  if (!use_my_pwent())
+    return getpwent();			/* Delegate to EMX. */
+  if (pwent_cnt++)
+    return 0;				/* Return one entry only */
+  return getpwuid(0);
+}
+
+static int grent_cnt;
+
+void
+setgrent(void)
+{
+  grent_cnt = 0;
+}
+
+void
+endgrent(void)
+{
+}
+
+struct group *
+getgrent (void)
+{
+  if (grent_cnt++)
+    return 0;				/* Return one entry only */
+  return getgrgid(0);
+}
+
+#undef getpwuid
+#undef getpwnam
+
+/* Too long to be a crypt() of anything, so it is not-a-valid pw_passwd. */
+static const char pw_p[] = "Jf0Wb/BzMFvk7K7lrzK";
+
+static struct passwd *
+passw_wrap(struct passwd *p)
+{
+    static struct passwd pw;
+    char *s;
+
+    if (!p || (p->pw_passwd && *p->pw_passwd)) /* Not a dangerous password */
+	return p;
+    pw = *p;
+    s = getenv("PW_PASSWD");
+    if (!s)
+	s = (char*)pw_p;		/* Make match impossible */
+
+    pw.pw_passwd = s;
+    return &pw;    
+}
+
+struct passwd *
+my_getpwuid (uid_t id)
+{
+    return passw_wrap(getpwuid(id));
+}
+
+struct passwd *
+my_getpwnam (__const__ char *n)
+{
+    return passw_wrap(getpwnam(n));
+}
+
+char *
+gcvt_os2 (double value, int digits, char *buffer)
+{
+  return gcvt (value, digits, buffer);
+}
+
+#undef fork
+int fork_with_resources()
+{
+#if (defined(USE_5005THREADS) || defined(USE_ITHREADS)) && !defined(USE_SLOW_THREAD_SPECIFIC)
+  dTHX;
+  void *ctx = PERL_GET_CONTEXT;
+#endif
+
+  int rc = fork();
+
+#if (defined(USE_5005THREADS) || defined(USE_ITHREADS)) && !defined(USE_SLOW_THREAD_SPECIFIC)
+  if (rc == 0) {			/* child */
+    ALLOC_THREAD_KEY;			/* Acquire the thread-local memory */
+    PERL_SET_CONTEXT(ctx);		/* Reinit the thread-local memory */
+  }
+#endif
+  return rc;
 }

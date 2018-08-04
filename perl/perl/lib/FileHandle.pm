@@ -1,10 +1,10 @@
 package FileHandle;
 
-use 5.005_64;
+use 5.006;
 use strict;
 our($VERSION, @ISA, @EXPORT, @EXPORT_OK);
 
-$VERSION = "2.00";
+$VERSION = "2.01";
 
 require IO::File;
 @ISA = qw(IO::File);
@@ -225,7 +225,7 @@ supported C<FileHandle> methods:
 
 Furthermore, for doing normal I/O you might need these:
 
-=over 
+=over 4
 
 =item $fh->print
 
@@ -238,12 +238,12 @@ See L<perlfunc/printf>.
 =item $fh->getline
 
 This works like <$fh> described in L<perlop/"I/O Operators">
-except that it's more readable and can be safely called in an
-array context but still returns just one line.
+except that it's more readable and can be safely called in a
+list context but still returns just one line.
 
 =item $fh->getlines
 
-This works like <$fh> when called in an array context to
+This works like <$fh> when called in a list context to
 read all the remaining lines in a file, except that it's more readable.
 It will also croak() if accidentally called in a scalar context.
 

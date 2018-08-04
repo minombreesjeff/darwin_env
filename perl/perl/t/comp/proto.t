@@ -11,12 +11,12 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    unshift @INC, '../lib';
+    @INC = '../lib';
 }
 
 use strict;
 
-print "1..107\n";
+print "1..140\n";
 
 my $i = 1;
 
@@ -293,6 +293,25 @@ printf "ok %d\n",$i++;
 ##
 ##
 
+testing \&a_subx, '\&';
+
+sub a_subx (\&) {
+    print "# \@_ = (",join(",",@_),")\n";
+    &{$_[0]};
+}
+
+sub tmp_sub_2 { printf "ok %d\n",$i++ }
+a_subx &tmp_sub_2;
+
+@array = ( \&tmp_sub_2 );
+eval 'a_subx @array';
+print "not " unless $@;
+printf "ok %d\n",$i++;
+
+##
+##
+##
+
 testing \&sub_aref, '&\@';
 
 sub sub_aref (&\@) {
@@ -321,6 +340,7 @@ sub sub_array (&@) {
 
 @array = (qw(O K)," ", $i++);
 sub_array { lc shift } @array;
+sub_array { lc shift } ('O', 'K', ' ', $i++);
 print "\n";
 
 ##
@@ -421,44 +441,101 @@ sub star2 (**&) { &{$_[2]} }
 sub BAR { "quux" }
 sub Bar::BAZ { "quuz" }
 my $star = 'FOO';
-star FOO, sub { print "ok $i\n" if $_[0] eq 'FOO' }; $i++;
-star(FOO, sub { print "ok $i\n" if $_[0] eq 'FOO' }); $i++;
-star "FOO", sub { print "ok $i\n" if $_[0] eq 'FOO' }; $i++;
-star("FOO", sub { print "ok $i\n" if $_[0] eq 'FOO' }); $i++;
-star $star, sub { print "ok $i\n" if $_[0] eq 'FOO' }; $i++;
-star($star, sub { print "ok $i\n" if $_[0] eq 'FOO' }); $i++;
-star *FOO, sub { print "ok $i\n" if $_[0] eq \*FOO }; $i++;
-star(*FOO, sub { print "ok $i\n" if $_[0] eq \*FOO }); $i++;
-star \*FOO, sub { print "ok $i\n" if $_[0] eq \*FOO }; $i++;
-star(\*FOO, sub { print "ok $i\n" if $_[0] eq \*FOO }); $i++;
-star2 FOO, BAR, sub { print "ok $i\n"
-			if $_[0] eq 'FOO' and $_[1] eq 'BAR' }; $i++;
-star2(Bar::BAZ, FOO, sub { print "ok $i\n"
-			if $_[0] eq 'Bar::BAZ' and $_[1] eq 'FOO' }); $i++;
-star2 BAR(), FOO, sub { print "ok $i\n"
-			if $_[0] eq 'quux' and $_[1] eq 'FOO' }; $i++;
-star2(FOO, BAR(), sub { print "ok $i\n"
-			if $_[0] eq 'FOO' and $_[1] eq 'quux' }); $i++;
-star2 "FOO", "BAR", sub { print "ok $i\n"
-			if $_[0] eq 'FOO' and $_[1] eq 'BAR' }; $i++;
-star2("FOO", "BAR", sub { print "ok $i\n"
-			if $_[0] eq 'FOO' and $_[1] eq 'BAR' }); $i++;
-star2 $star, $star, sub { print "ok $i\n"
-			if $_[0] eq 'FOO' and $_[1] eq 'FOO' }; $i++;
-star2($star, $star, sub { print "ok $i\n"
-			if $_[0] eq 'FOO' and $_[1] eq 'FOO' }); $i++;
-star2 *FOO, *BAR, sub { print "ok $i\n"
-			if $_[0] eq \*FOO and $_[1] eq \*BAR }; $i++;
-star2(*FOO, *BAR, sub { print "ok $i\n"
-			if $_[0] eq \*FOO and $_[1] eq \*BAR }); $i++;
-star2 \*FOO, \*BAR, sub { no strict 'refs'; print "ok $i\n"
-			if $_[0] eq \*{'FOO'} and $_[1] eq \*{'BAR'} }; $i++;
-star2(\*FOO, \*BAR, sub { no strict 'refs'; print "ok $i\n"
-			if $_[0] eq \*{'FOO'} and $_[1] eq \*{'BAR'} }); $i++;
+star FOO, sub {
+    print "not " unless $_[0] eq 'FOO';
+    print "ok $i - star FOO\n";
+}; $i++;
+star(FOO, sub {
+	print "not " unless $_[0] eq 'FOO';
+	print "ok $i - star(FOO)\n";
+    }); $i++;
+star "FOO", sub {
+    print "not " unless $_[0] eq 'FOO';
+    print qq/ok $i - star "FOO"\n/;
+}; $i++;
+star("FOO", sub {
+	print "not " unless $_[0] eq 'FOO';
+	print qq/ok $i - star("FOO")\n/;
+    }); $i++;
+star $star, sub {
+    print "not " unless $_[0] eq 'FOO';
+    print "ok $i - star \$star\n";
+}; $i++;
+star($star, sub {
+	print "not " unless $_[0] eq 'FOO';
+	print "ok $i - star(\$star)\n";
+    }); $i++;
+star *FOO, sub {
+    print "not " unless $_[0] eq \*FOO;
+    print "ok $i - star *FOO\n";
+}; $i++;
+star(*FOO, sub {
+	print "not " unless $_[0] eq \*FOO;
+	print "ok $i - star(*FOO)\n";
+    }); $i++;
+star \*FOO, sub {
+    print "not " unless $_[0] eq \*FOO;
+    print "ok $i - star \\*FOO\n";
+}; $i++;
+star(\*FOO, sub {
+	print "not " unless $_[0] eq \*FOO;
+	print "ok $i - star(\\*FOO)\n";
+    }); $i++;
+star2 FOO, BAR, sub {
+    print "not " unless $_[0] eq 'FOO' and $_[1] eq 'BAR';
+    print "ok $i - star2 FOO, BAR\n";
+}; $i++;
+star2(Bar::BAZ, FOO, sub {
+	print "not " unless $_[0] eq 'Bar::BAZ' and $_[1] eq 'FOO';
+	print "ok $i - star2(Bar::BAZ, FOO)\n"
+    }); $i++;
+star2 BAR(), FOO, sub {
+    print "not " unless $_[0] eq 'quux' and $_[1] eq 'FOO';
+    print "ok $i - star2 BAR(), FOO\n"
+}; $i++;
+star2(FOO, BAR(), sub {
+	print "not " unless $_[0] eq 'FOO' and $_[1] eq 'quux';
+	print "ok $i - star2(FOO, BAR())\n";
+    }); $i++;
+star2 "FOO", "BAR", sub {
+    print "not " unless $_[0] eq 'FOO' and $_[1] eq 'BAR';
+    print qq/ok $i - star2 "FOO", "BAR"\n/;
+}; $i++;
+star2("FOO", "BAR", sub {
+	print "not " unless $_[0] eq 'FOO' and $_[1] eq 'BAR';
+	print qq/ok $i - star2("FOO", "BAR")\n/;
+    }); $i++;
+star2 $star, $star, sub {
+    print "not " unless $_[0] eq 'FOO' and $_[1] eq 'FOO';
+    print "ok $i - star2 \$star, \$star\n";
+}; $i++;
+star2($star, $star, sub {
+	print "not " unless $_[0] eq 'FOO' and $_[1] eq 'FOO';
+	print "ok $i - star2(\$star, \$star)\n";
+    }); $i++;
+star2 *FOO, *BAR, sub {
+    print "not " unless $_[0] eq \*FOO and $_[1] eq \*BAR;
+    print "ok $i - star2 *FOO, *BAR\n";
+}; $i++;
+star2(*FOO, *BAR, sub {
+	print "not " unless $_[0] eq \*FOO and $_[1] eq \*BAR;
+	print "ok $i - star2(*FOO, *BAR)\n";
+    }); $i++;
+star2 \*FOO, \*BAR, sub {
+    no strict 'refs';
+    print "not " unless $_[0] eq \*{'FOO'} and $_[1] eq \*{'BAR'};
+    print "ok $i - star2 \*FOO, \*BAR\n";
+}; $i++;
+star2(\*FOO, \*BAR, sub {
+	no strict 'refs';
+	print "not " unless $_[0] eq \*{'FOO'} and $_[1] eq \*{'BAR'};
+	print "ok $i - star2(\*FOO, \*BAR)\n";
+    }); $i++;
 
 # test scalarref prototype
 sub sreftest (\$$) {
-    print "ok $_[1]\n" if ref $_[0];
+    print "not " unless ref $_[0];
+    print "ok $_[1] - sreftest\n";
 }
 {
     no strict 'vars';
@@ -466,3 +543,89 @@ sub sreftest (\$$) {
     sreftest($helem{$i}, $i++);
     sreftest $aelem[0], $i++;
 }
+
+# test prototypes when they are evaled and there is a syntax error
+# Byacc generates the string "syntax error".  Bison gives the
+# string "parse error".
+#
+for my $p ( "", qw{ () ($) ($@) ($%) ($;$) (&) (&\@) (&@) (%) (\%) (\@) } ) {
+  no warnings 'prototype';
+  my $eval = "sub evaled_subroutine $p { &void *; }";
+  eval $eval;
+  print "# eval[$eval]\nnot " unless $@ && $@ =~ /(parse|syntax) error/i;
+  print "ok ", $i++, "\n";
+}
+
+# Not $$;$;$
+print "not " unless prototype "CORE::substr" eq '$$;$$';
+print "ok ", $i++, "\n";
+
+# recv takes a scalar reference for its second argument
+print "not " unless prototype "CORE::recv" eq '*\\$$$';
+print "ok ", $i++, "\n";
+
+{
+    my $myvar;
+    my @myarray;
+    my %myhash;
+    sub mysub { print "not calling mysub I hope\n" }
+    local *myglob;
+
+    sub myref (\[$@%&*]) { print "# $_[0]\n"; return "$_[0]" }
+
+    print "not " unless myref($myvar)   =~ /^SCALAR\(/;
+    print "ok ", $i++, "\n";
+    print "not " unless myref(@myarray) =~ /^ARRAY\(/;
+    print "ok ", $i++, "\n";
+    print "not " unless myref(%myhash)  =~ /^HASH\(/;
+    print "ok ", $i++, "\n";
+    print "not " unless myref(&mysub)   =~ /^CODE\(/;
+    print "ok ", $i++, "\n";
+    print "not " unless myref(*myglob)  =~ /^GLOB\(/;
+    print "ok ", $i++, "\n";
+
+    eval q/sub multi1 (\[%@]) { 1 } multi1 $myvar;/;
+    print "not " unless $@ =~ /Type of arg 1 to main::multi1 must be one of/;
+    print "ok ", $i++, "\n";
+    eval q/sub multi2 (\[$*&]) { 1 } multi2 @myarray;/;
+    print "not " unless $@ =~ /Type of arg 1 to main::multi2 must be one of/;
+    print "ok ", $i++, "\n";
+    eval q/sub multi3 (\[$@]) { 1 } multi3 %myhash;/;
+    print "not " unless $@ =~ /Type of arg 1 to main::multi3 must be one of/;
+    print "ok ", $i++, "\n";
+    eval q/sub multi4 ($\[%]) { 1 } multi4 1, &mysub;/;
+    print "not " unless $@ =~ /Type of arg 2 to main::multi4 must be one of/;
+    print "ok ", $i++, "\n";
+    eval q/sub multi5 (\[$@]$) { 1 } multi5 *myglob;/;
+    print "not " unless $@ =~ /Type of arg 1 to main::multi5 must be one of/
+		     && $@ =~ /Not enough arguments/;
+    print "ok ", $i++, "\n";
+}
+
+# check that obviously bad prototypes are getting warnings
+{
+  use warnings 'syntax';
+  my $warn = "";
+  local $SIG{__WARN__} = sub { $warn .= join("",@_) };
+  
+  eval 'sub badproto (@bar) { 1; }';
+  print "not " unless $warn =~ /Illegal character in prototype for main::badproto : \@bar/;
+  print "ok ", $i++, "\n";
+
+  eval 'sub badproto2 (bar) { 1; }';
+  print "not " unless $warn =~ /Illegal character in prototype for main::badproto2 : bar/;
+  print "ok ", $i++, "\n";
+  
+  eval 'sub badproto3 (&$bar$@) { 1; }';
+  print "not " unless $warn =~ /Illegal character in prototype for main::badproto3 : &\$bar\$\@/;
+  print "ok ", $i++, "\n";
+  
+  eval 'sub badproto4 (@ $b ar) { 1; }';
+  print "not " unless $warn =~ /Illegal character in prototype for main::badproto4 : \@\$bar/;
+  print "ok ", $i++, "\n";
+}
+
+# make sure whitespace in prototypes works
+eval "sub good (\$\t\$\n\$) { 1; }";
+print "not " if $@;
+print "ok ", $i++, "\n";

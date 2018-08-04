@@ -14,13 +14,18 @@
 # based on original version by Alan R. Martello <al@ee.pitt.edu>
 # And by A.Macpherson@bnr.co.uk for multi-homed hosts
 #
-# $Header: /cvs/Darwin/src/live/perl/perl/lib/ftp.pl,v 1.2 2002/03/14 08:57:50 zarzycki Exp $
+# $Header: /cvs/root/perl/perl/lib/ftp.pl,v 1.5 2003/05/20 22:50:34 emoy Exp $
 # $Log: ftp.pl,v $
-# Revision 1.2  2002/03/14 08:57:50  zarzycki
-# Revert HEAD back to perl-17
+# Revision 1.5  2003/05/20 22:50:34  emoy
+# Update to Perl 5.8.1, including thread support and two level namespace.
+# Bug #: 3258028
+# Reviewed by: Jordan Hubbard
 #
-# Revision 1.1.1.2  2000/03/31 05:11:47  wsanchez
-# Import of perl 5.6.0
+# Revision 1.4.2.1  2003/05/17 07:04:00  emoy
+# Branch PR3258028 - updating to Perl 5.8.1.  Turning on ithread support and
+# two level namespace.  Append prefix, installprefix, and standard paths to
+# darwin.hints file.  Use perl script to strip DSTROOT from Config.pm and
+# .packlist.
 #
 # Revision 1.17  1993/04/21  10:06:54  lmjm
 # Send all status reports to STDERR not to STDOUT (to allow use by ftpcat).
@@ -80,7 +85,7 @@
 # No longer call die expect on fatal errors.  Just return fail codes.
 # Changed returns so higher up routines can tell whats happening.
 # Get expect/accept in correct order for dir listing.
-# When ftp_show is set then print hashes every 1k transfered (like ftp).
+# When ftp_show is set then print hashes every 1k transferred (like ftp).
 # Allow for stripping returns out of incoming data.
 # Save last error in a global string.
 #
@@ -334,10 +339,10 @@ sub ftp'cwd
 
 # Get a full directory listing:
 # &ftp'dir( remote LIST options )
-# Start a list goin with the given options.
+# Start a list going with the given options.
 # Presuming that the remote deamon uses the ls command to generate the
-# data to send back then then you can send it some extra options (eg: -lRa)
-# return 1 if sucessful and 0 on a failure
+# data to send back then you can send it some extra options (eg: -lRa)
+# return 1 if successful and 0 on a failure
 sub ftp'dir_open
 {
 	local( $options ) = @_;

@@ -1,9 +1,8 @@
 #!./perl
 
-# $RCSfile: index.t,v $$Revision: 1.1.1.2 $$Date: 2000/03/31 05:12:42 $
+# $RCSfile: index.t,v $$Revision: 1.4 $$Date: 2003/05/20 22:54:11 $
 
-print "1..20\n";
-
+print "1..24\n";
 
 $foo = 'Now is the time for all good men to come to the aid of their country.';
 
@@ -40,3 +39,11 @@ print rindex("ababa","a",2) == 2 ? "ok 17\n" : "not ok 17\n";
 print rindex("ababa","a",3) == 2 ? "ok 18\n" : "not ok 18\n";
 print rindex("ababa","a",4) == 4 ? "ok 19\n" : "not ok 19\n";
 print rindex("ababa","a",5) == 4 ? "ok 20\n" : "not ok 20\n";
+
+$a = "foo \x{1234}bar";
+
+print index($a, "\x{1234}") == 4 ? "ok 21\n" : "not ok 21\n";
+print index($a, "bar",    ) == 5 ? "ok 22\n" : "not ok 22\n";
+
+print rindex($a, "\x{1234}") == 4 ? "ok 23\n" : "not ok 23\n";
+print rindex($a, "foo",    ) == 0 ? "ok 24\n" : "not ok 24\n";

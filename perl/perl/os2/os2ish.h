@@ -1,4 +1,6 @@
 #include <signal.h>
+#include <io.h>
+/* #include <sys/select.h> */
 
 /* HAS_IOCTL:
  *	This symbol, if defined, indicates that the ioctl() routine is
@@ -16,6 +18,23 @@
 #define HAS_WAIT
 #define HAS_DLERROR
 #define HAS_WAITPID_RUNTIME (_emx_env & 0x200)
+
+/* HAS_PASSWD
+ *	This symbol, if defined, indicates that the getpwnam() and
+ *	getpwuid() routines are available to get password entries.
+ *	The getpwent() has a separate definition, HAS_GETPWENT.
+ */
+#define HAS_PASSWD
+
+/* HAS_GROUP
+ *	This symbol, if defined, indicates that the getgrnam() and
+ *	getgrgid() routines are available to get group entries.
+ *	The getgrent() has a separate definition, HAS_GETGRENT.
+ */
+#define HAS_GROUP
+#define HAS_GETGRENT			/* fake */
+#define HAS_SETGRENT			/* fake */
+#define HAS_ENDGRENT			/* fake */
 
 /* USEMYBINMODE
  *	This symbol, if defined, indicates that the program should
@@ -80,7 +99,10 @@
 # undef I_SYS_UN
 #endif 
 
-#ifdef USE_THREADS
+#if defined(USE_5005THREADS) || defined(USE_ITHREADS)
+
+#define do_spawn(a)      os2_do_spawn(aTHX_ (a))
+#define do_aspawn(a,b,c) os2_do_aspawn(aTHX_ (a),(b),(c))
 
 #define OS2_ERROR_ALREADY_POSTED 299	/* Avoid os2.h */
 
@@ -90,49 +112,49 @@ extern int rc;
     STMT_START {						\
 	int rc;							\
 	if ((rc = _rmutex_create(m,0)))				\
-	    croak("panic: MUTEX_INIT: rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: MUTEX_INIT: rc=%i", rc);	\
     } STMT_END
 #define MUTEX_LOCK(m) \
     STMT_START {						\
 	int rc;							\
 	if ((rc = _rmutex_request(m,_FMR_IGNINT)))		\
-	    croak("panic: MUTEX_LOCK: rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: MUTEX_LOCK: rc=%i", rc);	\
     } STMT_END
 #define MUTEX_UNLOCK(m) \
     STMT_START {						\
 	int rc;							\
 	if ((rc = _rmutex_release(m)))				\
-	    croak("panic: MUTEX_UNLOCK: rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: MUTEX_UNLOCK: rc=%i", rc);	\
     } STMT_END
 #define MUTEX_DESTROY(m) \
     STMT_START {						\
 	int rc;							\
 	if ((rc = _rmutex_close(m)))				\
-	    croak("panic: MUTEX_DESTROY: rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: MUTEX_DESTROY: rc=%i", rc);	\
     } STMT_END
 
 #define COND_INIT(c) \
     STMT_START {						\
 	int rc;							\
 	if ((rc = DosCreateEventSem(NULL,c,0,0)))		\
-	    croak("panic: COND_INIT: rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: COND_INIT: rc=%i", rc);	\
     } STMT_END
 #define COND_SIGNAL(c) \
     STMT_START {						\
 	int rc;							\
-	if ((rc = DosPostEventSem(*(c))) && rc != OS2_ERROR_ALREADY_POSTED)		\
-	    croak("panic: COND_SIGNAL, rc=%ld", rc);		\
+	if ((rc = DosPostEventSem(*(c))) && rc != OS2_ERROR_ALREADY_POSTED)\
+	    Perl_croak_nocontext("panic: COND_SIGNAL, rc=%ld", rc);	\
     } STMT_END
 #define COND_BROADCAST(c) \
     STMT_START {						\
 	int rc;							\
 	if ((rc = DosPostEventSem(*(c))) && rc != OS2_ERROR_ALREADY_POSTED)\
-	    croak("panic: COND_BROADCAST, rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: COND_BROADCAST, rc=%i", rc);	\
     } STMT_END
 /* #define COND_WAIT(c, m) \
     STMT_START {						\
 	if (WaitForSingleObject(*(c),INFINITE) == WAIT_FAILED)	\
-	    croak("panic: COND_WAIT");				\
+	    Perl_croak_nocontext("panic: COND_WAIT");		\
     } STMT_END
 */
 #define COND_WAIT(c, m) os2_cond_wait(c,m)
@@ -140,8 +162,8 @@ extern int rc;
 #define COND_WAIT_win32(c, m) \
     STMT_START {						\
 	int rc;							\
-	if ((rc = SignalObjectAndWait(*(m),*(c),INFINITE,FALSE)))\
-	    croak("panic: COND_WAIT");				\
+	if ((rc = SignalObjectAndWait(*(m),*(c),INFINITE,FALSE)))	\
+	    Perl_croak_nocontext("panic: COND_WAIT");			\
 	else							\
 	    MUTEX_LOCK(m);					\
     } STMT_END
@@ -149,21 +171,24 @@ extern int rc;
     STMT_START {						\
 	int rc;							\
 	if ((rc = DosCloseEventSem(*(c))))			\
-	    croak("panic: COND_DESTROY, rc=%i", rc);		\
+	    Perl_croak_nocontext("panic: COND_DESTROY, rc=%i", rc);	\
     } STMT_END
 /*#define THR ((struct thread *) TlsGetValue(PL_thr_key))
-#define dTHR struct thread *thr = THR
 */
 
 #ifdef USE_SLOW_THREAD_SPECIFIC
 #  define pthread_getspecific(k)	(*_threadstore())
 #  define pthread_setspecific(k,v)	(*_threadstore()=v,0)
 #  define pthread_key_create(keyp,flag)	(*keyp=_gettid(),0)
-#else
+#else /* USE_SLOW_THREAD_SPECIFIC */
 #  define pthread_getspecific(k)	(*(k))
 #  define pthread_setspecific(k,v)	(*(k)=(v),0)
-#  define pthread_key_create(keyp,flag)	(DosAllocThreadLocalMemory(1,(U32*)keyp) ? croak("LocalMemory"),1 : 0)
-#endif
+#  define pthread_key_create(keyp,flag)			\
+	( DosAllocThreadLocalMemory(1,(unsigned long**)keyp)	\
+	  ? Perl_croak_nocontext("LocalMemory"),1	\
+	  : 0						\
+	)
+#endif /* USE_SLOW_THREAD_SPECIFIC */
 #define pthread_key_delete(keyp)
 #define pthread_self()			_gettid()
 #define YIELD				DosSleep(0)
@@ -173,37 +198,67 @@ int pthread_join(pthread_t tid, void **status);
 int pthread_detach(pthread_t tid);
 int pthread_create(pthread_t *tid, const pthread_attr_t *attr,
 		   void *(*start_routine)(void*), void *arg);
-#endif 
+#endif /* PTHREAD_INCLUDED */
 
 #define THREADS_ELSEWHERE
 
-#endif 
+#else /* USE_5005THREADS */
+
+#define do_spawn(a)      os2_do_spawn(a)
+#define do_aspawn(a,b,c) os2_do_aspawn((a),(b),(c))
+
+#endif /* USE_5005THREADS */
  
 void Perl_OS2_init(char **);
+void Perl_OS2_init3(char **envp, void **excH, int flags);
+void Perl_OS2_term(void **excH, int exitstatus, int flags);
 
-/* XXX This code hideously puts env inside: */
+/* The code without INIT3 hideously puts env inside: */
 
+/* These ones should be in the same block as PERL_SYS_TERM() */
 #ifdef PERL_CORE
-#  define PERL_SYS_INIT3(argcp, argvp, envp) STMT_START {	\
+
+#  define PERL_SYS_INIT3(argcp, argvp, envp)	\
+  { void *xreg[2];				\
     _response(argcp, argvp);			\
     _wildcard(argcp, argvp);			\
-    Perl_OS2_init(*envp);	} STMT_END
-#  define PERL_SYS_INIT(argcp, argvp) STMT_START {	\
+    Perl_OS2_init3(*envp, xreg, 0)
+
+#  define PERL_SYS_INIT(argcp, argvp)  {	\
+  { void *xreg[2];				\
     _response(argcp, argvp);			\
     _wildcard(argcp, argvp);			\
-    Perl_OS2_init(NULL);	} STMT_END
+    Perl_OS2_init3(NULL, xreg, 0)
+
 #else  /* Compiling embedded Perl or Perl extension */
-#  define PERL_SYS_INIT3(argcp, argvp, envp) STMT_START {	\
-    Perl_OS2_init(*envp);	} STMT_END
-#  define PERL_SYS_INIT(argcp, argvp) STMT_START {	\
-    Perl_OS2_init(NULL);	} STMT_END
+
+#  define PERL_SYS_INIT3(argcp, argvp, envp)	\
+  { void *xreg[2];				\
+    Perl_OS2_init3(*envp, xreg, 0)
+#  define PERL_SYS_INIT(argcp, argvp)	{	\
+  { void *xreg[2];				\
+    Perl_OS2_init3(NULL, xreg, 0)
 #endif
+
+#define FORCE_EMX_DEINIT_EXIT		1
+#define FORCE_EMX_DEINIT_CRT_TERM	2
+#define FORCE_EMX_DEINIT_RUN_ATEXIT	4
+
+#define PERL_SYS_TERM2(xreg,flags)					\
+  Perl_OS2_term(xreg, 0, flags);					\
+  MALLOC_TERM
+
+#define PERL_SYS_TERM1(xreg)						\
+     Perl_OS2_term(xreg, 0, FORCE_EMX_DEINIT_RUN_ATEXIT)
+
+/* This one should come in pair with PERL_SYS_INIT() and in the same block */
+#define PERL_SYS_TERM()							\
+     PERL_SYS_TERM1(xreg);						\
+  }
 
 #ifndef __EMX__
 #  define PERL_CALLCONV _System
 #endif
-
-#define PERL_SYS_TERM()		MALLOC_TERM
 
 /* #define PERL_SYS_TERM() STMT_START {	\
     if (Perl_HAB_set) WinTerminate(Perl_hab);	} STMT_END */
@@ -231,13 +286,38 @@ void *sys_alloc(int size);
 #  define PerlIO FILE
 #endif 
 
+/* os2ish is used from a2p/a2p.h without pTHX/pTHX_ first being
+ * defined.  Hack around this to get us to compile.
+*/
+#ifdef PTHX_UNUSED
+# ifndef pTHX
+#  define pTHX
+# endif
+# ifndef pTHX_
+#  define pTHX_
+# endif
+#endif
+
 #define TMPPATH1 "plXXXXXX"
 extern char *tmppath;
-PerlIO *my_syspopen(char *cmd, char *mode);
+PerlIO *my_syspopen(pTHX_ char *cmd, char *mode);
 /* Cannot prototype with I32 at this point. */
 int my_syspclose(PerlIO *f);
 FILE *my_tmpfile (void);
 char *my_tmpnam (char *);
+int my_mkdir (__const__ char *, long);
+int my_rmdir (__const__ char *);
+struct passwd *my_getpwent (void);
+void my_setpwent (void);
+void my_endpwent (void);
+char *gcvt_os2(double value, int digits, char *buffer);
+
+struct group *getgrent (void);
+void setgrent (void);
+void endgrent (void);
+
+struct passwd *my_getpwuid (uid_t);
+struct passwd *my_getpwnam (__const__ char *);
 
 #undef L_tmpnam
 #define L_tmpnam MAXPATHLEN
@@ -247,6 +327,8 @@ char *my_tmpnam (char *);
 #define isatty	_isterm
 #define rand	random
 #define srand	srandom
+#define strtoll	_strtoll
+#define strtoull	_strtoull
 
 /*
  * fwrite1() should be a routine with the same calling sequence as fwrite(),
@@ -258,6 +340,13 @@ char *my_tmpnam (char *);
 
 #define my_getenv(var) getenv(var)
 #define flock	my_flock
+#define rmdir	my_rmdir
+#define mkdir	my_mkdir
+#define setpwent	my_setpwent
+#define getpwent	my_getpwent
+#define endpwent	my_endpwent
+#define getpwuid	my_getpwuid
+#define getpwnam	my_getpwnam
 
 void *emx_calloc (size_t, size_t);
 void emx_free (void *);
@@ -268,6 +357,8 @@ void *emx_realloc (void *, size_t);
 
 #include <stdlib.h>	/* before the following definitions */
 #include <unistd.h>	/* before the following definitions */
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #define chdir	_chdir2
 #define getcwd	_getcwd2
@@ -281,20 +372,47 @@ void *emx_realloc (void *, size_t);
 	 ? (--FILE_ptr(fp), ++FILE_cnt(fp), (int)c) : ungetc(c,fp))
 #endif
 
+#define PERLIO_IS_BINMODE_FD(fd) _PERLIO_IS_BINMODE_FD(fd)
+
+#ifdef __GNUG__
+# define HAS_BOOL 
+#endif
+#ifndef HAS_BOOL
+# define bool char
+# define HAS_BOOL 1
+#endif
+
+#include <emx/io.h> /* for _fd_flags() prototype */
+
+static inline bool
+_PERLIO_IS_BINMODE_FD(int fd)
+{
+    int *pflags = _fd_flags(fd);
+
+    return pflags && (*pflags) & O_BINARY;
+}
+
+/* ctermid is missing from emx0.9d */
+char *ctermid(char *s);
+
 #define OP_BINARY O_BINARY
 
 #define OS2_STAT_HACK 1
 #if OS2_STAT_HACK
 
 #define Stat(fname,bufptr) os2_stat((fname),(bufptr))
-#define Fstat(fd,bufptr)   fstat((fd),(bufptr))
+#define Fstat(fd,bufptr)   os2_fstat((fd),(bufptr))
 #define Fflush(fp)         fflush(fp)
 #define Mkdir(path,mode)   mkdir((path),(mode))
+#define chmod(path,mode)   os2_chmod((path),(mode))
 
 #undef S_IFBLK
 #undef S_ISBLK
-#define S_IFBLK		0120000
+#define S_IFBLK		0120000		/* Hacks to make things compile... */
 #define S_ISBLK(mode)	(((mode) & S_IFMT) == S_IFBLK)
+
+int os2_chmod(const char *name, int pmode);
+int os2_fstat(int handle, struct stat *st);
 
 #else
 
@@ -352,7 +470,7 @@ void	Perl_Deregister_MQ(int serve);
 int	Perl_Serve_Messages(int force);
 /* Cannot prototype with I32 at this point. */
 int	Perl_Process_Messages(int force, long *cntp);
-char	*os2_execname(void);
+char	*os2_execname(pTHX);
 
 struct _QMSG;
 struct PMWIN_entries_t {
@@ -366,6 +484,8 @@ struct PMWIN_entries_t {
 		  unsigned long hwndFilter, unsigned long msgFilterFirst,
 		  unsigned long msgFilterLast);
     void * (*DispatchMsg)(unsigned long hab, struct _QMSG *pqmsg);
+    unsigned long (*GetLastError)(unsigned long hab);
+    unsigned long (*CancelShutdown)(unsigned long hmq, unsigned long fCancelAlways);
 };
 extern struct PMWIN_entries_t PMWIN_entries;
 void init_PMWIN_entries(void);
@@ -373,7 +493,7 @@ void init_PMWIN_entries(void);
 #define perl_hmq_GET(serve)	Perl_Register_MQ(serve)
 #define perl_hmq_UNSET(serve)	Perl_Deregister_MQ(serve)
 
-#define OS2_XS_init() (*OS2_Perl_data.xs_init)()
+#define OS2_XS_init() (*OS2_Perl_data.xs_init)(aTHX)
 
 #if _EMX_CRT_REV_ >= 60
 # define os2_setsyserrno(rc)	(Perl_rc = rc, errno = errno_isOS2_set, \
@@ -386,20 +506,253 @@ void init_PMWIN_entries(void);
 /* INCL_DOSERRORS needed. rc should be declared outside. */
 #define CheckOSError(expr) (!(rc = (expr)) ? 0 : (FillOSError(rc), 1))
 /* INCL_WINERRORS needed. */
-#define SaveWinError(expr) ((expr) ? : (FillWinError, 0))
 #define CheckWinError(expr) ((expr) ? 0: (FillWinError, 1))
+
+/* This form propagates the return value, setting $^E if needed */
+#define SaveWinError(expr) ((expr) ? : (FillWinError, 0))
+
+/* This form propagates the return value, dieing with $^E if needed */
+#define SaveCroakWinError(expr,die,name1,name2)		\
+  ((expr) ? : (CroakWinError(die,name1 name2), 0))
+
 #define FillOSError(rc) (os2_setsyserrno(rc),				\
 			Perl_severity = SEVERITY_ERROR) 
-#define FillWinError (Perl_severity = ERRORIDSEV(Perl_rc),		\
-			Perl_rc = ERRORIDERROR(Perl_rc)),		\
-			os2_setsyserrno(Perl_rc)
+
+#define WinError_2_Perl_rc	\
+ (	init_PMWIN_entries(),	\
+	Perl_rc=(*PMWIN_entries.GetLastError)(perl_hab_GET()) )
+
+/* Calling WinGetLastError() resets the error code of the current thread.
+   Since for some Win* API return value 0 is normal, one needs to call
+   this before calling them to distinguish normal and anomalous returns.  */
+/*#define ResetWinError()	WinError_2_Perl_rc */
+
+/* At this moment init_PMWIN_entries() should be a nop (WinInitialize should
+   be called already, right?), so we do not risk stepping over our own error */
+#define FillWinError (	WinError_2_Perl_rc,				\
+			Perl_severity = ERRORIDSEV(Perl_rc),		\
+			Perl_rc = ERRORIDERROR(Perl_rc),		\
+			os2_setsyserrno(Perl_rc))
 
 #define STATIC_FILE_LENGTH 127
+
+    /* This should match loadOrdinals[] array in os2.c */
+enum entries_ordinals {
+    ORD_DosQueryExtLibpath,
+    ORD_DosSetExtLibpath,
+    ORD_DosVerifyPidTid,
+    ORD_SETHOSTENT,
+    ORD_SETNETENT, 
+    ORD_SETPROTOENT,
+    ORD_SETSERVENT,
+    ORD_GETHOSTENT,
+    ORD_GETNETENT, 
+    ORD_GETPROTOENT,
+    ORD_GETSERVENT,
+    ORD_ENDHOSTENT,
+    ORD_ENDNETENT,
+    ORD_ENDPROTOENT,
+    ORD_ENDSERVENT,
+    ORD_WinInitialize,
+    ORD_WinCreateMsgQueue,
+    ORD_WinDestroyMsgQueue,
+    ORD_WinPeekMsg,
+    ORD_WinGetMsg,
+    ORD_WinDispatchMsg,
+    ORD_WinGetLastError,
+    ORD_WinCancelShutdown,
+    ORD_RexxStart,
+    ORD_RexxVariablePool,
+    ORD_RexxRegisterFunctionExe,
+    ORD_RexxDeregisterFunction,
+    ORD_DOSSMSETTITLE,
+    ORD_PRF32QUERYPROFILESIZE,
+    ORD_PRF32OPENPROFILE,
+    ORD_PRF32CLOSEPROFILE,
+    ORD_PRF32QUERYPROFILE,
+    ORD_PRF32RESET,
+    ORD_PRF32QUERYPROFILEDATA,
+    ORD_PRF32WRITEPROFILEDATA,
+
+    ORD_WinChangeSwitchEntry,
+    ORD_WinQuerySwitchEntry,
+    ORD_WinQuerySwitchHandle,
+    ORD_WinQuerySwitchList,
+    ORD_WinSwitchToProgram,
+    ORD_WinBeginEnumWindows,
+    ORD_WinEndEnumWindows,
+    ORD_WinEnumDlgItem,
+    ORD_WinGetNextWindow,
+    ORD_WinIsChild,
+    ORD_WinQueryActiveWindow,
+    ORD_WinQueryClassName,
+    ORD_WinQueryFocus,
+    ORD_WinQueryWindow,
+    ORD_WinQueryWindowPos,
+    ORD_WinQueryWindowProcess,
+    ORD_WinQueryWindowText,
+    ORD_WinQueryWindowTextLength,
+    ORD_WinSetFocus,
+    ORD_WinSetWindowPos,
+    ORD_WinSetWindowText,
+    ORD_WinShowWindow,
+    ORD_WinIsWindow,
+    ORD_WinWindowFromId,
+    ORD_WinWindowFromPoint,
+    ORD_WinPostMsg,
+    ORD_WinEnableWindow,
+    ORD_WinEnableWindowUpdate,
+    ORD_WinIsWindowEnabled,
+    ORD_WinIsWindowShowing,
+    ORD_WinIsWindowVisible,
+    ORD_WinQueryWindowPtr,
+    ORD_WinQueryWindowULong,
+    ORD_WinQueryWindowUShort,
+    ORD_WinSetWindowBits,
+    ORD_WinSetWindowPtr,
+    ORD_WinSetWindowULong,
+    ORD_WinSetWindowUShort,
+    ORD_WinQueryDesktopWindow,
+    ORD_WinSetActiveWindow,
+    ORD_DosQueryModFromEIP,
+    ORD_NENTRIES
+};
+
+/* RET: return type, AT: argument signature in (), ARGS: should be in () */
+#define CallORD(ret,o,at,args)	(((ret (*)at) loadByOrdinal(o, 1))args)
+#define DeclFuncByORD(ret,name,o,at,args)	\
+  ret name at { return CallORD(ret,o,at,args); }
+#define DeclVoidFuncByORD(name,o,at,args)	\
+  void name at { CallORD(void,o,at,args); }
+
+/* These functions return false on error, and save the error info in $^E */
+#define DeclOSFuncByORD(ret,name,o,at,args)	\
+  ret name at { unsigned long rc; return !CheckOSError(CallORD(ret,o,at,args)); }
+#define DeclWinFuncByORD(ret,name,o,at,args)	\
+  ret name at { return SaveWinError(CallORD(ret,o,at,args)); }
+
+#define AssignFuncPByORD(p,o)	(*(Perl_PFN*)&(p) = (loadByOrdinal(o, 1)))
+
+/* This flavor caches the procedure pointer (named as p__Win#name) locally */
+#define DeclWinFuncByORD_CACHE(ret,name,o,at,args)	\
+	DeclWinFuncByORD_CACHE_r(ret,name,o,at,args,0,1)
+
+/* This flavor may reset the last error before the call (if ret=0 may be OK) */
+#define DeclWinFuncByORD_CACHE_resetError(ret,name,o,at,args)	\
+	DeclWinFuncByORD_CACHE_r(ret,name,o,at,args,1,1)
+
+/* Two flavors below do the same as above, but do not auto-croak */
+/* This flavor caches the procedure pointer (named as p__Win#name) locally */
+#define DeclWinFuncByORD_CACHE_survive(ret,name,o,at,args)	\
+	DeclWinFuncByORD_CACHE_r(ret,name,o,at,args,0,0)
+
+/* This flavor may reset the last error before the call (if ret=0 may be OK) */
+#define DeclWinFuncByORD_CACHE_resetError_survive(ret,name,o,at,args)	\
+	DeclWinFuncByORD_CACHE_r(ret,name,o,at,args,1,0)
+
+#define DeclWinFuncByORD_CACHE_r(ret,name,o,at,args,r,die)	\
+  static ret (*CAT2(p__Win,name)) at;				\
+  static ret name at {						\
+	if (!CAT2(p__Win,name))					\
+	    AssignFuncPByORD(CAT2(p__Win,name), o);		\
+	if (r) ResetWinError();					\
+	return SaveCroakWinError(CAT2(p__Win,name) args, die, "[Win]", STRINGIFY(name)); }
+
+/* These flavors additionally assume ORD is name with prepended ORD_Win  */
+#define DeclWinFunc_CACHE(ret,name,at,args)	\
+	DeclWinFuncByORD_CACHE(ret,name,CAT2(ORD_Win,name),at,args)
+#define DeclWinFunc_CACHE_resetError(ret,name,at,args)	\
+	DeclWinFuncByORD_CACHE_resetError(ret,name,CAT2(ORD_Win,name),at,args)
+#define DeclWinFunc_CACHE_survive(ret,name,at,args)	\
+	DeclWinFuncByORD_CACHE_survive(ret,name,CAT2(ORD_Win,name),at,args)
+#define DeclWinFunc_CACHE_resetError_survive(ret,name,at,args)	\
+	DeclWinFuncByORD_CACHE_resetError_survive(ret,name,CAT2(ORD_Win,name),at,args)
+
+void ResetWinError(void);
+void CroakWinError(int die, char *name);
 
 #define PERLLIB_MANGLE(s, n) perllib_mangle((s), (n))
 char *perllib_mangle(char *, unsigned int);
 
+#define fork	fork_with_resources
+
+typedef int (*Perl_PFN)();
+Perl_PFN loadByOrdinal(enum entries_ordinals ord, int fail);
+extern const Perl_PFN * const pExtFCN;
 char *os2error(int rc);
+int os2_stat(const char *name, struct stat *st);
+int fork_with_resources();
+int setpriority(int which, int pid, int val);
+int getpriority(int which /* ignored */, int pid);
+
+#ifdef PERL_CORE
+int os2_do_spawn(pTHX_ char *cmd);
+int os2_do_aspawn(pTHX_ SV *really, void **vmark, void **vsp);
+#endif
+
+#ifndef LOG_DAEMON
+
+/* Replacement for syslog.h */
+#  define	LOG_EMERG	0	/* system is unusable */
+#  define	LOG_ALERT	1	/* action must be taken immediately */
+#  define	LOG_CRIT	2	/* critical conditions */
+#  define	LOG_ERR	3	/* error conditions */
+#  define	LOG_WARNING	4	/* warning conditions */
+#  define	LOG_NOTICE	5	/* normal but significant condition */
+#  define	LOG_INFO	6	/* informational */
+#  define	LOG_DEBUG	7	/* debug-level messages */
+
+#  define	LOG_PRIMASK	0x007	/* mask to extract priority part (internal) */
+				/* extract priority */
+#  define	LOG_PRI(p)	((p) & LOG_PRIMASK)
+#  define	LOG_MAKEPRI(fac, pri)	(((fac) << 3) | (pri))
+
+/* facility codes */
+#  define	LOG_KERN	(0<<3)	/* kernel messages */
+#  define	LOG_USER	(1<<3)	/* random user-level messages */
+#  define	LOG_MAIL	(2<<3)	/* mail system */
+#  define	LOG_DAEMON	(3<<3)	/* system daemons */
+#  define	LOG_AUTH	(4<<3)	/* security/authorization messages */
+#  define	LOG_SYSLOG	(5<<3)	/* messages generated internally by syslogd */
+#  define	LOG_LPR	(6<<3)	/* line printer subsystem */
+#  define	LOG_NEWS	(7<<3)	/* network news subsystem */
+#  define	LOG_UUCP	(8<<3)	/* UUCP subsystem */
+#  define	LOG_CRON	(15<<3)	/* clock daemon */
+	/* other codes through 15 reserved for system use */
+#  define	LOG_LOCAL0	(16<<3)	/* reserved for local use */
+#  define	LOG_LOCAL1	(17<<3)	/* reserved for local use */
+#  define	LOG_LOCAL2	(18<<3)	/* reserved for local use */
+#  define	LOG_LOCAL3	(19<<3)	/* reserved for local use */
+#  define	LOG_LOCAL4	(20<<3)	/* reserved for local use */
+#  define	LOG_LOCAL5	(21<<3)	/* reserved for local use */
+#  define	LOG_LOCAL6	(22<<3)	/* reserved for local use */
+#  define	LOG_LOCAL7	(23<<3)	/* reserved for local use */
+
+#  define	LOG_NFACILITIES	24	/* current number of facilities */
+#  define	LOG_FACMASK	0x03f8	/* mask to extract facility part */
+				/* facility of pri */
+#  define	LOG_FAC(p)	(((p) & LOG_FACMASK) >> 3)
+
+/*
+ * arguments to setlogmask.
+ */
+#  define	LOG_MASK(pri)	(1 << (pri))		/* mask for one priority */
+#  define	LOG_UPTO(pri)	((1 << ((pri)+1)) - 1)	/* all priorities through pri */
+
+/*
+ * Option flags for openlog.
+ *
+ * LOG_ODELAY no longer does anything.
+ * LOG_NDELAY is the inverse of what it used to be.
+ */
+#  define	LOG_PID		0x01	/* log the pid with each message */
+#  define	LOG_CONS	0x02	/* log on the console if errors in sending */
+#  define	LOG_ODELAY	0x04	/* delay open until first syslog() (default) */
+#  define	LOG_NDELAY	0x08	/* don't delay open */
+#  define	LOG_NOWAIT	0x10	/* don't wait for console forks: DEPRECATED */
+#  define	LOG_PERROR	0x20	/* log to stderr as well */
+
+#endif
 
 /* ************************************************************ */
 #define Dos32QuerySysState DosQuerySysState

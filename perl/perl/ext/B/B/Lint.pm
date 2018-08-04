@@ -1,5 +1,7 @@
 package B::Lint;
 
+our $VERSION = '1.01';
+
 =head1 NAME
 
 B::Lint - Perl lint
@@ -55,6 +57,18 @@ Both B<implicit-read> and B<implicit-write> warn about this:
 
     for (@a) { ... }
 
+=item B<bare-subs>
+
+This option warns whenever a bareword is implicitly quoted, but is also
+the name of a subroutine in the current package. Typical mistakes that it will
+trap are:
+
+	use constant foo => 'bar';
+	@a = ( foo => 1 );
+	$b{foo} = 2;
+
+Neither of these will do what a naive user would expect.
+
 =item B<dollar-underscore>
 
 This option warns whenever $_ is used either explicitly anywhere or
@@ -109,6 +123,8 @@ include other package names whose subs are then checked by Lint.
 
 This is only a very preliminary version.
 
+This module doesn't work correctly on thread-enabled perls.
+
 =head1 AUTHOR
 
 Malcolm Beattie, mbeattie@sable.ox.ac.uk.
@@ -117,7 +133,7 @@ Malcolm Beattie, mbeattie@sable.ox.ac.uk.
 
 use strict;
 use B qw(walkoptree_slow main_root walksymtable svref_2object parents
-         OPf_WANT_LIST OPf_WANT OPf_STACKED G_ARRAY
+         OPf_WANT_LIST OPf_WANT OPf_STACKED G_ARRAY SVf_POK
         );
 
 my $file = "unknown";		# shadows current filename
@@ -141,7 +157,7 @@ my %valid_check;
 BEGIN {
     map($valid_check{$_}++,
 	qw(context implicit_read implicit_write dollar_underscore
-	   private_names undefined_subs regexp_variables));
+	   private_names bare_subs undefined_subs regexp_variables));
 }
 
 # Debugging options
@@ -162,7 +178,7 @@ sub gimme {
     my $op = shift;
     my $flags = $op->flags;
     if ($flags & OPf_WANT) {
-	return(($flags & OPf_WANT_LIST) ? 1 : 0);
+	return(($flags & OPf_WANT) == OPf_WANT_LIST ? 1 : 0);
     }
     return undef;
 }
@@ -234,6 +250,14 @@ sub B::LOOP::lint {
 
 sub B::SVOP::lint {
     my $op = shift;
+    if ( $check{bare_subs} && $op->name eq 'const'
+         && $op->private & 64 )		# OPpCONST_BARE = 64 in op.h
+    {
+	my $sv = $op->sv;
+	if( $sv->FLAGS & SVf_POK && exists &{$curstash.'::'.$sv->PV} ) {
+	    warning "Bare sub name '" . $sv->PV . "' interpreted as string";
+	}
+    }
     if ($check{dollar_underscore} && $op->name eq "gvsv"
 	&& $op->gv->NAME eq "_")
     {
@@ -245,6 +269,11 @@ sub B::SVOP::lint {
 	    my $gv = $op->gv;
 	    if ($gv->NAME =~ /^_./ && $gv->STASH->NAME ne $curstash) {
 		warning('Illegal reference to private name %s', $gv->NAME);
+	    }
+	} elsif ($opname eq "method_named") {
+	    my $method = $op->gv->PV;
+	    if ($method =~ /^_./) {
+		warning("Illegal reference to private method name $method");
 	    }
 	}
     }
@@ -286,11 +315,11 @@ sub do_lint {
     
     # Now do subs in main
     no strict qw(vars refs);
-    my $sym;
     local(*glob);
-    while (($sym, *glob) = each %{"main::"}) {
-	#warn "Trying $sym\n";#debug
-	svref_2object(\*glob)->EGV->lintcv unless $sym =~ /::$/;
+    for my $sym (keys %main::) {
+	next if $sym =~ /::$/;
+	*glob = $main::{$sym};
+        svref_2object(\*glob)->EGV->lintcv;
     }
 
     # Now do subs in non-main packages given by -u options
@@ -345,7 +374,7 @@ sub compile {
 	    %check = ();
 	}
 	else {
-	    if ($opt =~ s/^no-//) {
+	    if ($opt =~ s/^no_//) {
 		$check{$opt} = 0;
 	    }
 	    else {

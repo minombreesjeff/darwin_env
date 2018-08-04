@@ -45,7 +45,7 @@ while (<PATCH_LEVEL>) {
 my $patch_desc = "'" . join("',\n    '", @patches) . "'";
 my $patch_tags = join "", map /(\S+)/ ? "+$1 " : (), @patches;
 
-close PATCH_LEVEL;
+close(PATCH_LEVEL) or die "Error closing patchlevel.h: $!";
 
 # TO DO (prehaps): store/embed $Config::config_sh into perlbug. When perlbug is
 # used, compare $Config::config_sh with the stored version. If they differ then
@@ -91,7 +91,7 @@ BEGIN {
     $::HaveUtil = ($@ eq "");
 };
 
-my $Version = "1.28";
+my $Version = "1.34";
 
 # Changed in 1.06 to skip Mail::Send and Mail::Util if not available.
 # Changed in 1.07 to see more sendmail execs, and added pipe output.
@@ -124,15 +124,22 @@ my $Version = "1.28";
 # Changed in 1.26 Don't require -t STDIN for -ok. HVDS 98-07-15
 # Changed in 1.27 Added Mac OS and File::Spec support CNANDOR 99-07-27
 # Changed in 1.28 Additional questions for Perlbugtron RFOLEY 20.03.2000
+# Changed in 1.29 Perlbug(tron): auto(-ok), short prompts RFOLEY 05-05-2000
+# Changed in 1.30 Added warnings on failure to open files MSTEVENS 13-07-2000
+# Changed in 1.31 Add checks on close().Fix my $var unless. TJENNESS 26-07-2000
+# Changed in 1.32 Use File::Spec->tmpdir TJENNESS 20-08-2000
+# Changed in 1.33 Don't require -t STDOUT for -ok.
+# Changed in 1.34 Added Message-Id RFOLEY 18-06-2002 
 
 # TODO: - Allow the user to re-name the file on mail failure, and
 #       make sure failure (transmission-wise) of Mail::Send is
 #       accounted for.
 #       - Test -b option
 
-my( $file, $usefile, $cc, $address, $perlbug, $testaddress, $filename,
-    $subject, $from, $verbose, $ed, $outfile, $Is_MacOS, $category, $severity, 
-    $fh, $me, $Is_MSWin32, $Is_VMS, $msg, $body, $andcc, %REP, $ok);
+my( $file, $usefile, $cc, $address, $perlbug, $testaddress, $filename, $messageid, $domain,
+    $subject, $from, $verbose, $ed, $outfile, $Is_MacOS, $category, $severity,
+    $fh, $me, $Is_MSWin32, $Is_Linux, $Is_VMS, $msg, $body, $andcc, %REP, $ok,
+    $Is_OpenBSD);
 
 my $perl_version = $^V ? sprintf("v%vd", $^V) : $];
 
@@ -149,7 +156,6 @@ include a file, you can use the -f switch.
 EOF
     die "\n";
 }
-if (!-t STDOUT && !$outfile) { Dump(*STDOUT); exit; }
 
 Query();
 Edit() unless $usefile || ($ok and not $::opt_n);
@@ -158,30 +164,45 @@ Send();
 
 exit;
 
-sub ask_for_alternatives {
+sub ask_for_alternatives { # (category|severity)
     my $name = shift;
-    my $default = shift;
-    my @alts = @_;
+    my %alts = (
+	'category' => {
+	    'default' => 'core',
+	    'ok'      => 'install',
+	    'opts'    => [qw(core docs install library utilities)], # patch, notabug
+	},
+	'severity' => {
+	    'default' => 'low',
+	    'ok'      => 'none',
+	    'opts'    => [qw(critical high medium low wishlist none)], # zero
+	},
+    );
+    die "Invalid alternative($name) requested\n" unless grep(/^$name$/, keys %alts);
     my $alt = "";
-    paraprint <<EOF;
+    if ($ok) {
+	$alt = $alts{$name}{'ok'};
+    } else {
+ 	my @alts = @{$alts{$name}{'opts'}};
+	paraprint <<EOF;
 Please pick a \u$name from the following:
 
     @alts
 
 EOF
-    my $err = 0;
-    my $joined_alts = join('|', @alts);
-    do {
-	if ($err++ > 5) {
-	    die "Invalid $name: aborting.\n";
-	}
-	print "Please enter a \u$name [$default]: ";
-	$alt = <>;
-	chomp $alt;
-	if ($alt =~ /^\s*$/) {
-	    $alt = $default;
-	}
-    } while ($alt !~ /^($joined_alts)$/i);
+	my $err = 0;
+	do {
+	    if ($err++ > 5) {
+		die "Invalid $name: aborting.\n";
+	    }
+	    print "Please enter a \u$name [$alts{$name}{'default'}]: ";
+	    $alt = <>;
+	    chomp $alt;
+	    if ($alt =~ /^\s*$/) {
+		$alt = $alts{$name}{'default'};
+	    }
+	} while !((($alt) = grep(/^$alt/i, @alts)));
+    }
     lc $alt;
 }
 
@@ -190,13 +211,15 @@ sub Init {
 
     $Is_MSWin32 = $^O eq 'MSWin32';
     $Is_VMS = $^O eq 'VMS';
+    $Is_Linux = lc($^O) eq 'linux';
+    $Is_OpenBSD = lc($^O) eq 'openbsd';
     $Is_MacOS = $^O eq 'MacOS';
 
     @ARGV = split m/\s+/,
         MacPerl::Ask('Provide command-line args here (-h for help):')
         if $Is_MacOS && $MacPerl::Version =~ /App/;
 
-    if (!getopts("dhva:s:b:f:F:r:e:SCc:to:n:")) { Help(); exit; };
+    if (!getopts("Adhva:s:b:f:F:r:e:SCc:to:n:")) { Help(); exit; };
 
     # This comment is needed to notify metaconfig that we are
     # using the $perladmin, $cf_by, and $cf_time definitions.
@@ -204,10 +227,10 @@ sub Init {
     # -------- Configuration ---------
 
     # perlbug address
-    $perlbug = 'perlbug@perl.com';
+    $perlbug = 'perlbug@perl.org';
 
     # Test address
-    $testaddress = 'perlbug-test@perl.com';
+    $testaddress = 'perlbug-test@perl.org';
 
     # Target address
     $address = $::opt_a || ($::opt_t ? $testaddress : $perlbug);
@@ -232,7 +255,7 @@ sub Init {
 
     # Body of report
     $body = $::opt_b || "";
-
+	
     # Editor
     $ed = $::opt_e || $ENV{VISUAL} || $ENV{EDITOR} || $ENV{EDIT}
 	|| ($Is_VMS && "edit/tpu")
@@ -276,8 +299,6 @@ EOF
 	    $subject = ($::opt_n ? 'Not ' : '')
 		    . "OK: perl $perl_version ${patch_tags}on"
 		    ." $::Config{'archname'} $::Config{'osvers'} $subject";
-	    $category = "install";
-	    $severity = "none";
 	    $ok = 1;
 	} else {
 	    Help();
@@ -295,6 +316,18 @@ EOF
 	$::opt_c || $::Config{'perladmin'}
 	|| $::Config{'cf_email'} || $::Config{'cf_by'}
     );
+
+    if ($::HaveUtil) {
+		$domain = Mail::Util::maildomain();
+    } elsif ($Is_MSWin32) {
+		$domain = $ENV{'USERDOMAIN'};
+    } else {
+		require Sys::Hostname;
+		$domain = Sys::Hostname::hostname();
+    }
+
+    # Message-Id - rjsf
+    $messageid = "<$::Config{'version'}_${$}_".time."\@$domain>"; 
 
     # My username
     $me = $Is_MSWin32 ? $ENV{'USERNAME'}
@@ -325,6 +358,11 @@ EOF
     }
 
     # Prompt for subject of message, if needed
+    
+    if (TrivialSubject($subject)) {
+	$subject = '';
+    }
+
     unless ($subject) {
 	paraprint <<EOF;
 First of all, please provide a subject for the
@@ -332,18 +370,16 @@ message. It should be a concise description of
 the bug or problem. "perl bug" or "perl problem"
 is not a concise description.
 EOF
-	print "Subject: ";
-	$subject = <>;
 
 	my $err = 0;
-	while ($subject !~ /\S/) {
-	    print "\nPlease enter a subject: ";
+	do {
+	    print "Subject: ";
 	    $subject = <>;
-	    if ($err++ > 5) {
+	    chomp $subject;
+	    if ($err++ == 5) {
 		die "Aborting.\n";
 	    }
-	}
-	chop $subject;
+	} while (TrivialSubject($subject));
     }
 
     # Prompt for return address, if needed
@@ -360,16 +396,8 @@ EOF
         }
 
 	unless ($guess) {
-	    my $domain;
-	    if ($::HaveUtil) {
-		$domain = Mail::Util::maildomain();
-	    } elsif ($Is_MSWin32) {
-		$domain = $ENV{'USERDOMAIN'};
-	    } else {
-		require Sys::Hostname;
-		$domain = Sys::Hostname::hostname();
-	    }
-	    if ($domain) {
+		# move $domain to where we can use it elsewhere	
+        if ($domain) {
 		if ($Is_VMS && !$::Config{'d_socket'}) {
 		    $guess = "$domain\:\:$me";
 		} else {
@@ -399,7 +427,7 @@ EOF
 	    # verify it
 	    print "Your address [$guess]: ";
 	    $from = <>;
-	    chop $from;
+	    chomp $from;
 	    $from = $guess if $from eq '';
 	}
     }
@@ -419,7 +447,7 @@ a copy.
 EOF
 	print "Local perl administrator [$cc]: ";
 	my $entry = scalar <>;
-	chop $entry;
+	chomp $entry;
 
 	if ($entry ne "") {
 	    $cc = $entry;
@@ -457,7 +485,7 @@ If you would like to use a prepared file, type
 EOF
 	print "Editor [$ed]: ";
 	my $entry =scalar <>;
-	chop $entry;
+	chomp $entry;
 
 	$usefile = 0;
 	if ($entry eq "file") {
@@ -468,14 +496,10 @@ EOF
     }
 
     # Prompt for category of bug
-    $category ||= ask_for_alternatives("category", "core",
-				     qw(core docs install
-					library utilities));
+    $category ||= ask_for_alternatives('category');
 
     # Prompt for severity of bug
-    $severity ||= ask_for_alternatives("severity", "low",
-				       qw(critical high medium
-					  low wishlist none));
+    $severity ||= ask_for_alternatives('severity');
 
     # Generate scratch file to edit report in
     $filename = filename();
@@ -488,7 +512,7 @@ What is the name of the file that contains your report?
 EOF
 	print "Filename: ";
 	my $entry = scalar <>;
-	chop $entry;
+	chomp $entry;
 
 	if ($entry eq "") {
 	    paraprint <<EOF;
@@ -509,7 +533,7 @@ EOF
     }
 
     # Generate report
-    open(REP,">$filename");
+    open(REP,">$filename") or die "Unable to create report file `$filename': $!\n";
     my $reptype = !$ok ? "bug" : $::opt_n ? "build failure" : "success";
 
     print REP <<EOF;
@@ -526,7 +550,7 @@ EOF
 	while (<F>) {
 	    print REP $_
 	}
-	close(F);
+	close(F) or die "Error closing `$file': $!";
     } else {
 	print REP <<EOF;
 
@@ -540,17 +564,17 @@ EOF
 EOF
     }
     Dump(*REP);
-    close(REP);
+    close(REP) or die "Error closing report file: $!";
 
     # read in the report template once so that
     # we can track whether the user does any editing.
     # yes, *all* whitespace is ignored.
-    open(REP, "<$filename");
+    open(REP, "<$filename") or die "Unable to open report file `$filename': $!\n";
     while (<REP>) {
 	s/\s+//g;
 	$REP{$_}++;
     }
-    close(REP);
+    close(REP) or die "Error closing report file `$filename': $!";
 } # sub Query
 
 sub Dump {
@@ -561,6 +585,13 @@ sub Dump {
 Flags:
     category=$category
     severity=$severity
+EFF
+    if ($::opt_A) {
+	print OUT <<EFF;
+    ack=no
+EFF
+    }
+    print OUT <<EFF;
 ---
 EFF
     print OUT "This perlbug was built using Perl $config_tag1\n",
@@ -598,7 +629,7 @@ EOF
     my @env =
         qw(PATH LD_LIBRARY_PATH LANG PERL_BADLANG SHELL HOME LOGDIR LANGUAGE);
     push @env, $Config{ldlibpthname} if $Config{ldlibpthname} ne '';
-    push @env, grep /^(?:PERL|LC_|LANG)/, keys %ENV;
+    push @env, grep /^(?:PERL|LC_|LANG|CYGWIN)/, keys %ENV;
     my %env;
     @env{@env} = @env;
     for my $env (sort keys %env) {
@@ -625,12 +656,13 @@ Please make sure that the name of the editor you want to use is correct.
 EOF
 	print "Editor [$ed]: ";
 	my $entry =scalar <>;
-	chop $entry;
+	chomp $entry;
 	$ed = $entry unless $entry eq '';
     }
 
 tryagain:
-    my $sts = system("$ed $filename") unless $Is_MacOS;
+    my $sts;
+    $sts = system("$ed $filename") unless $Is_MacOS;
     if ($Is_MacOS) {
         require ExtUtils::MakeMaker;
         ExtUtils::MM_MacOS::launch_file($filename);
@@ -647,7 +679,7 @@ correct it here, otherwise just press Enter.
 EOF
 	print "Editor [$ed]: ";
 	my $entry =scalar <>;
-	chop $entry;
+	chomp $entry;
 
 	if ($entry ne "") {
 	    $ed = $entry;
@@ -664,7 +696,7 @@ EOF
     # Check that we have a report that has some, eh, report in it.
     my $unseen = 0;
 
-    open(REP, "<$filename");
+    open(REP, "<$filename") or die "Couldn't open `$filename': $!\n";
     # a strange way to check whether any significant editing
     # have been done: check whether any new non-empty lines
     # have been added. Yes, the below code ignores *any* space
@@ -701,46 +733,62 @@ sub NowWhat {
 	    paraprint <<EOF;
 Now that you have completed your report, would you like to send
 the message to $address$andcc, display the message on
-the screen, re-edit it, or cancel without sending anything?
+the screen, re-edit it, display/change the subject,
+or cancel without sending anything?
 You may also save the message as a file to mail at another time.
 EOF
       retry:
-	    print "Action (Send/Display/Edit/Cancel/Save to File): ";
+	    print "Action (Send/Display/Edit/Subject/Save to File): ";
 	    my $action = scalar <>;
-	    chop $action;
+	    chomp $action;
 
 	    if ($action =~ /^(f|sa)/i) { # <F>ile/<Sa>ve
-		print "\n\nName of file to save message in [perlbug.rep]: ";
+		my $file_save = $outfile || "perlbug.rep";
+		print "\n\nName of file to save message in [$file_save]: ";
 		my $file = scalar <>;
-		chop $file;
-		$file = "perlbug.rep" if $file eq "";
+		chomp $file;
+		$file = $file_save if $file eq "";
 
 		unless (open(FILE, ">$file")) {
 		    print "\nError opening $file: $!\n\n";
 		    goto retry;
 		}
-		open(REP, "<$filename");
+		open(REP, "<$filename") or die "Couldn't open file `$filename': $!\n";
 		print FILE "To: $address\nSubject: $subject\n";
 		print FILE "Cc: $cc\n" if $cc;
 		print FILE "Reply-To: $from\n" if $from;
+		print FILE "Message-Id: $messageid\n" if $messageid;
 		print FILE "\n";
 		while (<REP>) { print FILE }
-		close(REP);
-		close(FILE);
+		close(REP) or die "Error closing report file `$filename': $!";
+		close(FILE) or die "Error closing $file: $!";
 
 		print "\nMessage saved in `$file'.\n";
 		exit;
 	    } elsif ($action =~ /^(d|l|sh)/i ) { # <D>isplay, <L>ist, <Sh>ow
 		# Display the message
-		open(REP, "<$filename");
+		open(REP, "<$filename") or die "Couldn't open file `$filename': $!\n";
 		while (<REP>) { print $_ }
-		close(REP);
+		close(REP) or die "Error closing report file `$filename': $!";
+	    } elsif ($action =~ /^su/i) { # <Su>bject
+		print "Subject: $subject\n";
+		print "If the above subject is fine, just press Enter.\n";
+		print "If not, type in the new subject.\n";
+		print "Subject: ";
+		my $reply = scalar <STDIN>;
+		chomp $reply;
+		if ($reply ne '') {
+		    unless (TrivialSubject($reply)) {
+			$subject = $reply;
+			print "Subject: $subject\n";
+		    }
+		}
 	    } elsif ($action =~ /^se/i) { # <S>end
 		# Send the message
 		print "Are you certain you want to send this message?\n"
 		    . 'Please type "yes" if you are: ';
 		my $reply = scalar <STDIN>;
-		chop $reply;
+		chomp $reply;
 		if ($reply eq "yes") {
 		    last;
 		} else {
@@ -755,7 +803,7 @@ EOF
 		Edit();
 	    } elsif ($action =~ /^[qc]/i) { # <C>ancel, <Q>uit
 		Cancel();
-	    } elsif ($action =~ /^s/) {
+	    } elsif ($action =~ /^s/i) {
 		paraprint <<EOF;
 I'm sorry, but I didn't understand that. Please type "send" or "save".
 EOF
@@ -764,21 +812,38 @@ EOF
     }
 } # sub NowWhat
 
+sub TrivialSubject {
+    my $subject = shift;
+    if ($subject =~
+	/^(y(es)?|no?|help|perl( (bug|problem))?|bug|problem)$/i ||
+	length($subject) < 4 ||
+	$subject !~ /\s/) {
+	print "\nThat doesn't look like a good subject.  Please be more verbose.\n\n";
+        return 1;
+    } else {
+	return 0;
+    }
+}
+
 sub Send {
     # Message has been accepted for transmission -- Send the message
     if ($outfile) {
 	open SENDMAIL, ">$outfile" or die "Couldn't open '$outfile': $!\n";
 	goto sendout;
     }
-    if ($::HaveSend) {
+
+    # on linux certain mail implementations won't accept the subject
+    # as "~s subject" and thus the Subject header will be corrupted
+    # so don't use Mail::Send to be safe
+    if ($::HaveSend && !$Is_Linux && !$Is_OpenBSD) {
 	$msg = new Mail::Send Subject => $subject, To => $address;
 	$msg->cc($cc) if $cc;
 	$msg->add("Reply-To",$from) if $from;
 
 	$fh = $msg->open;
-	open(REP, "<$filename");
+	open(REP, "<$filename") or die "Couldn't open `$filename': $!\n";
 	while (<REP>) { print $fh $_ }
-	close(REP);
+	close(REP) or die "Error closing $filename: $!";
 	$fh->close;
 
 	print "\nMessage sent.\n";
@@ -823,16 +888,17 @@ report. We apologize for the inconvenience.
 So you may attempt to find some way of sending your message, it has
 been left in the file `$filename'.
 EOF
-	open(SENDMAIL, "|$sendmail -t") || die "'|$sendmail -t' failed: $!";
+	open(SENDMAIL, "|$sendmail -t -oi") || die "'|$sendmail -t -oi' failed: $!";
 sendout:
 	print SENDMAIL "To: $address\n";
 	print SENDMAIL "Subject: $subject\n";
 	print SENDMAIL "Cc: $cc\n" if $cc;
 	print SENDMAIL "Reply-To: $from\n" if $from;
+	print SENDMAIL "Message-Id: $messageid\n" if $messageid;
 	print SENDMAIL "\n\n";
-	open(REP, "<$filename");
+	open(REP, "<$filename") or die "Couldn't open `$filename': $!\n";
 	while (<REP>) { print SENDMAIL $_ }
-	close(REP);
+	close(REP) or die "Error closing $filename: $!";
 
 	if (close(SENDMAIL)) {
 	    printf "\nMessage %s.\n", $outfile ? "saved" : "sent";
@@ -853,7 +919,7 @@ be needed.
 Usage:
 $0  [-v] [-a address] [-s subject] [-b body | -f inpufile ] [ -F outputfile ]
     [-r returnaddress] [-e editor] [-c adminaddress | -C] [-S] [-t] [-h]
-$0  [-v] [-r returnaddress] [-ok | -okay | -nok | -nokay]
+$0  [-v] [-r returnaddress] [-A] [-ok | -okay | -nok | -nokay]
 
 Simplest usage:  run "$0", and follow the prompts.
 
@@ -875,9 +941,9 @@ Options:
         this if you don't give it here.
   -e    Editor to use.
   -t    Test mode. The target address defaults to `$testaddress'.
-  -d    Data mode (the default if you redirect or pipe output.)
-        This prints out your configuration data, without mailing
+  -d    Data mode.  This prints out your configuration data, without mailing
         anything. You can use this with -v to get more complete data.
+  -A    Don't send a bug received acknowledgement to the return address.
   -ok   Report successful build on this system to perl porters
         (use alone or with -v). Only use -ok if *everything* was ok:
         if there were *any* problems at all, use -nok.
@@ -892,12 +958,8 @@ EOF
 }
 
 sub filename {
-    my $dir = $Is_VMS ? 'sys$scratch:'
-	: ($Is_MSWin32 && $ENV{'TEMP'}) ? $ENV{'TEMP'}
-        : $Is_MacOS ? $ENV{'TMPDIR'}
-	: '/tmp';
+    my $dir = File::Spec->tmpdir();
     $filename = "bugrep0$$";
-#    $dir .= "\\" if $Is_MSWin32 and $dir !~ m|[\\/]$|;
     $filename++ while -e File::Spec->catfile($dir, $filename);
     $filename = File::Spec->catfile($dir, $filename);
 }
@@ -929,10 +991,10 @@ B<perlbug> S<[ B<-v> ]> S<[ B<-a> I<address> ]> S<[ B<-s> I<subject> ]>
 S<[ B<-b> I<body> | B<-f> I<inputfile> ]> S<[ B<-F> I<outputfile> ]>
 S<[ B<-r> I<returnaddress> ]>
 S<[ B<-e> I<editor> ]> S<[ B<-c> I<adminaddress> | B<-C> ]>
-S<[ B<-S> ]> S<[ B<-t> ]>  S<[ B<-d> ]>  S<[ B<-h> ]>
+S<[ B<-S> ]> S<[ B<-t> ]>  S<[ B<-d> ]>  S<[ B<-A> ]>  S<[ B<-h> ]>
 
 B<perlbug> S<[ B<-v> ]> S<[ B<-r> I<returnaddress> ]>
-S<[ B<-ok> | B<-okay> | B<-nok> | B<-nokay> ]>
+ S<[ B<-A> ]> S<[ B<-ok> | B<-okay> | B<-nok> | B<-nokay> ]>
 
 =head1 DESCRIPTION
 
@@ -950,7 +1012,7 @@ will be needed.  Simply run it, and follow the prompts.
 
 If you are unable to run B<perlbug> (most likely because you don't have
 a working setup to send mail that perlbug recognizes), you may have to
-compose your own report, and email it to B<perlbug@perl.com>.  You might
+compose your own report, and email it to B<perlbug@perl.org>.  You might
 find the B<-d> option useful to get summary information in that case.
 
 In any case, when reporting a bug, please make sure you have run through
@@ -1028,7 +1090,7 @@ definitely be fixed.  Use the C<diff> program to generate your patches
 (C<diff> is being maintained by the GNU folks as part of the B<diffutils>
 package, so you should be able to get it from any of the GNU software
 repositories).  If you do submit a patch, the cool-dude counter at
-perlbug@perl.com will register you as a savior of the world.  Your
+perlbug@perl.org will register you as a savior of the world.  Your
 patch may be returned with requests for changes, or requests for more
 detailed explanations about your fix.
 
@@ -1048,7 +1110,7 @@ B<perlbug> will, amongst other things, ensure your report includes
 crucial information about your version of perl.  If C<perlbug> is unable
 to mail your report after you have typed it in, you may have to compose
 the message yourself, add the output produced by C<perlbug -d> and email
-it to B<perlbug@perl.com>.  If, for some reason, you cannot run
+it to B<perlbug@perl.org>.  If, for some reason, you cannot run
 C<perlbug> at all on your system, be sure to include the entire output
 produced by running C<perl -V> (note the uppercase V).
 
@@ -1075,7 +1137,14 @@ version of perl comes out and your bug is still present.
 
 =item B<-a>
 
-Address to send the report to.  Defaults to `perlbug@perl.com'.
+Address to send the report to.  Defaults to B<perlbug@perl.org>.
+
+=item B<-A>
+
+Don't send a bug received acknowledgement to the reply address.
+Generally it is only a sensible to use this option if you are a
+perl maintainer actively watching perl porters for your message to
+arrive.
 
 =item B<-b>
 
@@ -1160,7 +1229,7 @@ supply one on the command line.
 
 =item B<-t>
 
-Test mode.  The target address defaults to `perlbug-test@perl.com'.
+Test mode.  The target address defaults to B<perlbug-test@perl.org>.
 
 =item B<-v>
 
@@ -1175,7 +1244,7 @@ by Gurusamy Sarathy (E<lt>gsar@activestate.comE<gt>), Tom Christiansen
 (E<lt>tchrist@perl.comE<gt>), Nathan Torkington (E<lt>gnat@frii.comE<gt>),
 Charles F. Randall (E<lt>cfr@pobox.comE<gt>), Mike Guy
 (E<lt>mjtg@cam.a.ukE<gt>), Dominic Dunlop (E<lt>domo@computer.orgE<gt>),
-Hugo van der Sanden (E<lt>hv@crypt0.demon.co.ukE<gt>),
+Hugo van der Sanden (E<lt>hv@crypt.org<gt>),
 Jarkko Hietaniemi (E<lt>jhi@iki.fiE<gt>), Chris Nandor
 (E<lt>pudge@pobox.comE<gt>), Jon Orwant (E<lt>orwant@media.mit.eduE<gt>,
 and Richard Foley (E<lt>richard@rfi.netE<gt>).

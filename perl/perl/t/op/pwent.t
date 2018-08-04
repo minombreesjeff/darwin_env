@@ -2,8 +2,8 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    unshift @INC, "../lib" if -d "../lib";
-    eval {my @n = getpwuid 0};
+    @INC = '../lib';
+    eval {my @n = getpwuid 0; setpwent()};
     if ($@ && $@ =~ /(The \w+ function is unimplemented)/) {
 	print "1..0 # Skip: $1\n";
 	exit 0;
@@ -49,15 +49,27 @@ BEGIN {
 	}
     }
 
+    if (not defined $where) {      # Try NIS+
+     foreach my $niscat (qw(/bin/niscat)) {
+         if (-x $niscat &&
+           open(PW, "$niscat passwd.org_dir 2>/dev/null |") &&
+           defined(<PW>)) {
+           $where = "NIS+ $niscat passwd.org_dir";
+           undef $reason;
+           last;
+         }
+     }
+    }
+
     if ($reason) {	# Give up.
 	print "1..0 # Skip: $reason\n";
 	exit 0;
     }
 }
 
-# By now PW filehandle should be open and full of juicy password entries.
+# By now the PW filehandle should be open and full of juicy password entries.
 
-print "1..1\n";
+print "1..2\n";
 
 # Go through at most this many users.
 # (note that the first entry has been read away by now)
@@ -68,10 +80,20 @@ my $tst = 1;
 my %perfect;
 my %seen;
 
+print "# where $where\n";
+
+setpwent();
+
 while (<PW>) {
     chomp;
-    my @s = split /:/;
-    my ($name_s, $passwd_s, $uid_s, $gid_s, $gcos_s, $home_s, $shell_s) = @s;
+    # LIMIT -1 so that users with empty shells don't fall off
+    my @s = split /:/, $_, -1;
+    my ($name_s, $passwd_s, $uid_s, $gid_s, $gcos_s, $home_s, $shell_s);
+    if ($^O eq 'darwin') {
+       ($name_s, $passwd_s, $uid_s, $gid_s, $gcos_s, $home_s, $shell_s) = @s[0,1,2,3,7,8,9];
+    } else {
+       ($name_s, $passwd_s, $uid_s, $gid_s, $gcos_s, $home_s, $shell_s) = @s;
+    }
     next if /^\+/; # ignore NIS includes
     if (@s) {
 	push @{ $seen{$name_s} }, $.;
@@ -86,7 +108,7 @@ while (<PW>) {
     }
     # In principle we could whine if @s != 7 but do we know enough
     # of passwd file formats everywhere?
-    if (@s == 7) {
+    if (@s == 7 || ($^O eq 'darwin' && @s == 10)) {
 	@n = getpwuid($uid_s);
 	# 'nobody' et al.
 	next unless @n;
@@ -109,7 +131,11 @@ while (<PW>) {
     $n++;
 }
 
-if (keys %perfect == 0) {
+endpwent();
+
+print "# max = $max, n = $n, perfect = ", scalar keys %perfect, "\n";
+
+if (keys %perfect == 0 && $n) {
     $max++;
     print <<EOEX;
 #
@@ -133,5 +159,30 @@ EOEX
 print "ok ", $tst++;
 print "\t# (not necessarily serious: run t/op/pwent.t by itself)" if $not;
 print "\n";
+
+# Test both the scalar and list contexts.
+
+my @pw1;
+
+setpwent();
+for (1..$max) {
+    my $pw = scalar getpwent();
+    last unless defined $pw;
+    push @pw1, $pw;
+}
+endpwent();
+
+my @pw2;
+
+setpwent();
+for (1..$max) {
+    my ($pw) = (getpwent());
+    last unless defined $pw;
+    push @pw2, $pw;
+}
+endpwent();
+
+print "not " unless "@pw1" eq "@pw2";
+print "ok ", $tst++, "\n";
 
 close(PW);

@@ -1,6 +1,6 @@
 =head1 NAME
 
-perlfaq1 - General Questions About Perl ($Revision: 1.2 $, $Date: 2002/03/14 09:01:40 $)
+perlfaq1 - General Questions About Perl ($Revision: 1.5 $, $Date: 2003/05/20 22:53:34 $)
 
 =head1 DESCRIPTION
 
@@ -33,13 +33,17 @@ distribution for more details.  See L<perlhist> (new as of 5.005)
 for Perl's milestone releases.
 
 In particular, the core development team (known as the Perl Porters)
-are a rag-tag band of highly altruistic individuals committed
-to producing better software for free than you could hope to
-purchase for money.  You may snoop on pending developments via
-news://news.perl.com/perl.porters-gw/ and the Deja archive at
-http://www.deja.com/ using the perl.porters-gw newsgroup, or you can
-subscribe to the mailing list by sending perl5-porters-request@perl.org
-a subscription request.
+are a rag-tag band of highly altruistic individuals committed to
+producing better software for free than you could hope to purchase for
+money.  You may snoop on pending developments via the archives at
+http://www.xray.mpe.mpg.de/mailing-lists/perl5-porters/
+and http://archive.develooper.com/perl5-porters@perl.org/
+or the news gateway nntp://nntp.perl.org/perl.perl5.porters or
+its web interface at http://nntp.perl.org/group/perl.perl5.porters ,
+or read the faq at http://simon-cozens.org/writings/p5p-faq ,
+or you can subscribe to the mailing list by sending
+perl5-porters-request@perl.org a subscription request
+(an empty message with no subject is fine).
 
 While the GNU project includes Perl in its distributions, there's no
 such thing as "GNU Perl".  Perl is not produced nor maintained by the
@@ -55,14 +59,15 @@ users the informal support will more than suffice.  See the answer to
 You should definitely use version 5.  Version 4 is old, limited, and
 no longer maintained; its last patch (4.036) was in 1992, long ago and
 far away.  Sure, it's stable, but so is anything that's dead; in fact,
-perl4 had been called a dead, flea-bitten camel carcass.  The most recent
-production release is 5.005_03 (although 5.004_05 is still supported).
-The most cutting-edge development release is 5.005_57.  Further references
-to the Perl language in this document refer to the production release
-unless otherwise specified.  There may be one or more official bug fixes
-by the time you read this, and also perhaps some experimental versions
-on the way to the next release.  All releases prior to 5.004 were subject
-to buffer overruns, a grave security issue.
+perl4 had been called a dead, flea-bitten camel carcass.  The most
+recent production release is 5.8.0 (although 5.005_03 and 5.6.1 are
+still supported). The most cutting-edge development release is 5.9.
+Further references to the Perl language in this document refer to the
+production release unless otherwise specified.  There may be one or
+more official bug fixes by the time you read this, and also perhaps
+some experimental versions on the way to the next release.
+All releases prior to 5.004 were subject to buffer overruns, a grave
+security issue.
 
 =head2 What are perl4 and perl5?
 
@@ -78,8 +83,8 @@ The 5.0 release is, essentially, a ground-up rewrite of the original
 perl source code from releases 1 through 4.  It has been modularized,
 object-oriented, tweaked, trimmed, and optimized until it almost doesn't
 look like the old code.  However, the interface is mostly the same, and
-compatibility with previous releases is very high. See L<perltrap/"Perl4
-to Perl5 Traps">.
+compatibility with previous releases is very high.
+See L<perltrap/"Perl4 to Perl5 Traps">.
 
 To avoid the "what language is perl5?" confusion, some people prefer to
 simply use "perl" to refer to the latest version of perl and avoid using
@@ -89,24 +94,22 @@ See L<perlhist> for a history of Perl revisions.
 
 =head2 What is perl6?
 
-Perl6 is a semi-jocular reference to the Topaz project.  Headed by Chip
-Salzenberg, Topaz is yet-another ground-up rewrite of the current release
-of Perl, one whose major goal is to create a more maintainable core than
-found in release 5.  Written in nominally portable C++, Topaz hopes to
-maintain 100% source-compatibility with previous releases of Perl but to
-run significantly faster and smaller.  The Topaz team hopes to provide
-an XS compatibility interface to allow most XS modules to work unchanged,
-albeit perhaps without the efficiency that the new interface would allow.
-New features in Topaz are as yet undetermined, and will be addressed
-once compatibility and performance goals are met.
+At The Second O'Reilly Open Source Software Convention, Larry Wall
+announced Perl6 development would begin in earnest. Perl6 was an oft
+used term for Chip Salzenberg's project to rewrite Perl in C++ named
+Topaz. However, Topaz provided valuable insights to the next version
+of Perl and its implementation, but was ultimately abandoned.
 
-If you are a hard-working C++ wizard with a firm command of Perl's
-internals, and you would like to work on the project, send a request to
-perl6-porters-request@perl.org to subscribe to the Topaz mailing list.
+If you want to learn more about Perl6, or have a desire to help in
+the crusade to make Perl a better place then peruse the Perl6 developers
+page at http://dev.perl.org/perl6/ and get involved.
 
-There is no ETA for Topaz.  It is expected to be several years before it
-achieves enough robustness, compatibility, portability, and performance
-to replace perl5 for ordinary use by mere mortals.
+Perl6 is not scheduled for release yet, and Perl5 will still be supported
+for quite awhile after its release. Do not wait for Perl6 to do whatever
+you need to do.
+
+"We're really serious about reinventing everything that needs reinventing."
+--Larry Wall
 
 =head2 How stable is Perl?
 
@@ -123,10 +126,10 @@ and the rare new keyword).
 
 =head2 Is Perl difficult to learn?
 
-No, Perl is easy to start learning -- and easy to keep learning.  It looks
+No, Perl is easy to start learning--and easy to keep learning.  It looks
 like most programming languages you're likely to have experience
 with, so if you've ever written a C program, an awk script, a shell
-script, or even a BASIC program, you're already part way there.
+script, or even a BASIC program, you're already partway there.
 
 Most tasks only require a small subset of the Perl language.  One of
 the guiding mottos for Perl development is "there's more than one way
@@ -186,7 +189,7 @@ languages that come to mind include prolog and matlab.
 
 =head2 When shouldn't I program in Perl?
 
-When your manager forbids it -- but do consider replacing them :-).
+When your manager forbids it--but do consider replacing them :-).
 
 Actually, one good reason is when you already have an existing
 application written in another language that's all done (and done
@@ -204,7 +207,7 @@ limitations given in the previous statement to some degree, but understand
 that Perl remains fundamentally a dynamically typed language, not
 a statically typed one.  You certainly won't be chastised if you don't
 trust nuclear-plant or brain-surgery monitoring code to it.  And Larry
-will sleep easier, too -- Wall Street programs not withstanding. :-)
+will sleep easier, too--Wall Street programs not withstanding. :-)
 
 =head2 What's the difference between "perl" and "Perl"?
 
@@ -214,7 +217,7 @@ i.e. the current interpreter.  Hence Tom's quip that "Nothing but perl
 can parse Perl."  You may or may not choose to follow this usage.  For
 example, parallelism means "awk and perl" and "Python and Perl" look
 OK, while "awk and Perl" and "Python and perl" do not.  But never
-write "PERL", because perl isn't really an acronym, apocryphal
+write "PERL", because perl is not an acronym, apocryphal
 folklore and post-facto expansions notwithstanding.
 
 =head2 Is it a Perl program or a Perl script?
@@ -223,17 +226,17 @@ Larry doesn't really care.  He says (half in jest) that "a script is
 what you give the actors.  A program is what you give the audience."
 
 Originally, a script was a canned sequence of normally interactive
-commands, that is, a chat script.  Something like a UUCP or PPP chat
+commands--that is, a chat script.  Something like a UUCP or PPP chat
 script or an expect script fits the bill nicely, as do configuration
 scripts run by a program at its start up, such F<.cshrc> or F<.ircrc>,
 for example.  Chat scripts were just drivers for existing programs,
 not stand-alone programs in their own right.
 
 A computer scientist will correctly explain that all programs are
-interpreted, and that the only question is at what level.  But if you
+interpreted and that the only question is at what level.  But if you
 ask this question of someone who isn't a computer scientist, they might
 tell you that a I<program> has been compiled to physical machine code
-once, and can then be run multiple times, whereas a I<script> must be
+once and can then be run multiple times, whereas a I<script> must be
 translated by a program each time it's used.
 
 Perl programs are (usually) neither strictly compiled nor strictly
@@ -255,18 +258,14 @@ programmers prefer to avoid them altogether.
 These are the "just another perl hacker" signatures that some people
 sign their postings with.  Randal Schwartz made these famous.  About
 100 of the earlier ones are available from
-http://www.perl.com/CPAN/misc/japh .
+http://www.cpan.org/misc/japh .
 
 =head2 Where can I get a list of Larry Wall witticisms?
 
 Over a hundred quips by Larry, from postings of his or source code,
-can be found at http://www.perl.com/CPAN/misc/lwall-quotes.txt.gz .
+can be found at http://www.cpan.org/misc/lwall-quotes.txt.gz .
 
-Newer examples can be found by perusing Larry's postings:
-
-    http://x1.dejanews.com/dnquery.xp?QRY=*&DBS=2&ST=PS&defaultOp=AND&LNG=ALL&format=terse&showsort=date&maxhits=100&subjects=&groups=&authors=larry@*wall.org&fromdate=&todate=
-
-=head2 How can I convince my sysadmin/supervisor/employees to use version (5/5.005/Perl instead of some other language)?
+=head2 How can I convince my sysadmin/supervisor/employees to use version 5/5.6.1/Perl instead of some other language?
 
 If your manager or employees are wary of unsupported software, or
 software which doesn't officially ship with your operating system, you
@@ -275,15 +274,15 @@ more productive using and utilizing Perl constructs, functionality,
 simplicity, and power, then the typical manager/supervisor/employee
 may be persuaded.  Regarding using Perl in general, it's also
 sometimes helpful to point out that delivery times may be reduced
-using Perl, as compared to other languages.
+using Perl compared to other languages.
 
 If you have a project which has a bottleneck, especially in terms of
 translation or testing, Perl almost certainly will provide a viable,
-and quick solution.  In conjunction with any persuasion effort, you
+quick solution.  In conjunction with any persuasion effort, you
 should not fail to point out that Perl is used, quite extensively, and
 with extremely reliable and valuable results, at many large computer
-software and/or hardware companies throughout the world.  In fact,
-many Unix vendors now ship Perl by default, and support is usually
+software and hardware companies throughout the world.  In fact,
+many Unix vendors now ship Perl by default.  Support is usually
 just a news-posting away, if you can't find the answer in the
 I<comprehensive> documentation, including this FAQ.
 
@@ -295,27 +294,37 @@ by the Perl Development Team.  Another big sell for Perl5 is the large
 number of modules and extensions which greatly reduce development time
 for any given task.  Also mention that the difference between version
 4 and version 5 of Perl is like the difference between awk and C++.
-(Well, OK, maybe not quite that distinct, but you get the idea.)  If you
-want support and a reasonable guarantee that what you're developing
-will continue to work in the future, then you have to run the supported
-version.  That probably means running the 5.005 release, although 5.004
-isn't that bad.  Several important bugs were fixed from the 5.000 through
-5.003 versions, though, so try upgrading past them if possible.
+(Well, OK, maybe it's not quite that distinct, but you get the idea.)
+If you want support and a reasonable guarantee that what you're
+developing will continue to work in the future, then you have to run
+the supported version.  As of August 2002 that means running either
+5.8.0 (released in July 2002), or one of the older releases like
+5.6.1 (released in April 2001) or 5.005_03 (released in March 1999),
+although 5.004_05 isn't that bad if you B<absolutely> need such an old
+version (released in April 1999) for stability  reasons.
+Anything older than 5.004_05 shouldn't be used.
 
 Of particular note is the massive bug hunt for buffer overflow
 problems that went into the 5.004 release.  All releases prior to
 that, including perl4, are considered insecure and should be upgraded
 as soon as possible.
 
+In August 2000 in all Linux distributions a new security problem was
+found in the optional 'suidperl' (not built or installed by default)
+in all the Perl branches 5.6, 5.005, and 5.004, see
+http://www.cpan.org/src/5.0/sperl-2000-08-05/
+Perl maintenance releases 5.6.1 and 5.8.0 have this security hole closed.
+Most, if not all, Linux distribution have patches for this
+vulnerability available, see http://www.linuxsecurity.com/advisories/ ,
+but the most recommendable way is to upgrade to at least Perl 5.6.1.
+
 =head1 AUTHOR AND COPYRIGHT
 
-Copyright (c) 1997, 1998, 1999 Tom Christiansen and Nathan Torkington.
-All rights reserved.
+Copyright (c) 1997, 1998, 1999, 2000, 2001 Tom Christiansen and Nathan
+Torkington.  All rights reserved.
 
-When included as an integrated part of the Standard Distribution
-of Perl or of its documentation (printed or otherwise), this works is
-covered under Perl's Artistic Licence.  For separate distributions of
-all or part of this FAQ outside of that, see L<perlfaq>.
+This documentation is free; you can redistribute it and/or modify it
+under the same terms as Perl itself.
 
 Irrespective of its distribution, all code examples here are in the public
 domain.  You are permitted and encouraged to use this code and any

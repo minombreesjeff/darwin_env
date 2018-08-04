@@ -37,25 +37,45 @@ Read on...
 
 =over 5
 
-L<Compiling your C program>
+=item *
 
-L<Adding a Perl interpreter to your C program>
+Compiling your C program
 
-L<Calling a Perl subroutine from your C program>
+=item *
 
-L<Evaluating a Perl statement from your C program>
+Adding a Perl interpreter to your C program
 
-L<Performing Perl pattern matches and substitutions from your C program>
+=item *
 
-L<Fiddling with the Perl stack from your C program>
+Calling a Perl subroutine from your C program
 
-L<Maintaining a persistent interpreter>
+=item *
 
-L<Maintaining multiple interpreter instances>
+Evaluating a Perl statement from your C program
 
-L<Using Perl modules, which themselves use C libraries, from your C program>
+=item *
 
-L<Embedding Perl under Win32>
+Performing Perl pattern matches and substitutions from your C program
+
+=item *
+
+Fiddling with the Perl stack from your C program
+
+=item *
+
+Maintaining a persistent interpreter
+
+=item *
+
+Maintaining multiple interpreter instances
+
+=item *
+
+Using Perl modules, which themselves use C libraries, from your C program
+
+=item *
+
+Embedding Perl under Win32
 
 =back 
 
@@ -141,8 +161,8 @@ you:
 
 If the B<ExtUtils::Embed> module isn't part of your Perl distribution,
 you can retrieve it from
-http://www.perl.com/perl/CPAN/modules/by-module/ExtUtils/.  (If
-this documentation came from your Perl distribution, then you're
+http://www.perl.com/perl/CPAN/modules/by-module/ExtUtils/
+(If this documentation came from your Perl distribution, then you're
 running 5.004 or better and you already have it.)
 
 The B<ExtUtils::Embed> kit on CPAN also contains all source code for
@@ -163,17 +183,24 @@ version of I<miniperlmain.c> containing the essentials of embedding:
 
     int main(int argc, char **argv, char **env)
     {
+	PERL_SYS_INIT3(&argc,&argv,&env);
         my_perl = perl_alloc();
         perl_construct(my_perl);
+	PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
         perl_parse(my_perl, NULL, argc, argv, (char **)NULL);
         perl_run(my_perl);
         perl_destruct(my_perl);
         perl_free(my_perl);
+	PERL_SYS_TERM();
     }
 
 Notice that we don't use the C<env> pointer.  Normally handed to
 C<perl_parse> as its final argument, C<env> here is replaced by
-C<NULL>, which means that the current environment will be used.
+C<NULL>, which means that the current environment will be used.  The macros
+PERL_SYS_INIT3() and PERL_SYS_TERM() provide system-specific tune up 
+of the C runtime environment necessary to run Perl interpreters; since
+PERL_SYS_INIT3() may change C<env>, it may be more appropriate to provide
+C<env> as an argument to perl_parse().
 
 Now compile this program (I'll call it I<interp.c>) into an executable:
 
@@ -214,10 +241,12 @@ That's shown below, in a program I'll call I<showtime.c>.
     int main(int argc, char **argv, char **env)
     {
         char *args[] = { NULL };
+	PERL_SYS_INIT3(&argc,&argv,&env);
         my_perl = perl_alloc();
         perl_construct(my_perl);
 
         perl_parse(my_perl, NULL, argc, argv, NULL);
+	PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
 
         /*** skipping perl_run() ***/
 
@@ -225,6 +254,7 @@ That's shown below, in a program I'll call I<showtime.c>.
 
         perl_destruct(my_perl);
         perl_free(my_perl);
+	PERL_SYS_TERM();
     }
 
 where I<showtime> is a Perl subroutine that takes no arguments (that's the
@@ -250,17 +280,15 @@ yielding the number of seconds that elapsed between January 1, 1970
 (the beginning of the Unix epoch), and the moment I began writing this
 sentence.
 
-In this particular case we don't have to call I<perl_run>, but in
-general it's considered good practice to ensure proper initialization
-of library code, including execution of all object C<DESTROY> methods
-and package C<END {}> blocks.
+In this particular case we don't have to call I<perl_run>, as we set 
+the PL_exit_flag PERL_EXIT_DESTRUCT_END which executes END blocks in
+perl_destruct.
 
 If you want to pass arguments to the Perl subroutine, you can add
 strings to the C<NULL>-terminated C<args> list passed to
 I<call_argv>.  For other data types, or to examine return values,
-you'll need to manipulate the Perl stack.  That's demonstrated in the
-last section of this document: L<Fiddling with the Perl stack from
-your C program>.
+you'll need to manipulate the Perl stack.  That's demonstrated in
+L<Fiddling with the Perl stack from your C program>.
 
 =head2 Evaluating a Perl statement from your C program
 
@@ -288,10 +316,12 @@ the first, a C<float> from the second, and a C<char *> from the third.
        STRLEN n_a;
        char *embedding[] = { "", "-e", "0" };
 
+       PERL_SYS_INIT3(&argc,&argv,&env);
        my_perl = perl_alloc();
        perl_construct( my_perl );
 
        perl_parse(my_perl, NULL, 3, embedding, NULL);
+       PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
        perl_run(my_perl);
 
        /** Treat $a as an integer **/
@@ -308,6 +338,7 @@ the first, a C<float> from the second, and a C<char *> from the third.
 
        perl_destruct(my_perl);
        perl_free(my_perl);
+       PERL_SYS_TERM();
    }
 
 All of those strange functions with I<sv> in their names help convert Perl scalars to C types.  They're described in L<perlguts> and L<perlapi>.
@@ -356,7 +387,7 @@ made.
    int matches(SV *string, char *pattern, AV **matches);
 
 Given an C<SV>, a pattern, and a pointer to an empty C<AV>,
-matches() evaluates C<$string =~ $pattern> in an array context, and
+matches() evaluates C<$string =~ $pattern> in a list context, and
 fills in I<matches> with the array elements, returning the number of matches found.
 
 Here's a sample program, I<match.c>, that uses all three (long lines have
@@ -364,6 +395,8 @@ been wrapped here):
 
  #include <EXTERN.h>
  #include <perl.h>
+
+ static PerlInterpreter *my_perl;
 
  /** my_eval_sv(code, error_check)
  ** kinda like eval_sv(), 
@@ -434,7 +467,7 @@ been wrapped here):
 
  /** matches(string, pattern, matches)
  **
- ** Used for matches in an array context.
+ ** Used for matches in a list context.
  **
  ** Returns the number of matches,
  ** and fills in **matches with the matching substrings
@@ -460,16 +493,19 @@ been wrapped here):
 
  main (int argc, char **argv, char **env)
  {
-     PerlInterpreter *my_perl = perl_alloc();
      char *embedding[] = { "", "-e", "0" };
      AV *match_list;
      I32 num_matches, i;
-     SV *text = NEWSV(1099,0);
+     SV *text;
      STRLEN n_a;
 
+     PERL_SYS_INIT3(&argc,&argv,&env);
+     my_perl = perl_alloc();
      perl_construct(my_perl);
      perl_parse(my_perl, NULL, 3, embedding, NULL);
+     PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
 
+     text = NEWSV(1099,0);
      sv_setpv(text, "When he is at a convenience store and the bill comes to some amount like 76 cents, Maynard is aware that there is something he *should* do, something that will enable him to get back a quarter, but he has no idea *what*.  He fumbles through his red squeezey changepurse and gives the boy three extra pennies with his dollar, hoping that he might luck into the correct amount.  The boy gives him back two of his own pennies and then the big shiny quarter that is his prize. -RICHH");
 
      if (match(text, "m/quarter/")) /** Does text contain 'quarter'? **/
@@ -507,6 +543,7 @@ been wrapped here):
      PL_perl_destruct_level = 1;
      perl_destruct(my_perl);
      perl_free(my_perl);
+     PERL_SYS_TERM();
  }
 
 which produces the output (again, long lines have been wrapped here)
@@ -589,16 +626,19 @@ deep breath...
     {
       char *my_argv[] = { "", "power.pl" };
 
+      PERL_SYS_INIT3(&argc,&argv,&env);
       my_perl = perl_alloc();
       perl_construct( my_perl );
 
       perl_parse(my_perl, NULL, 2, my_argv, (char **)NULL);
+      PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
       perl_run(my_perl);
 
       PerlPower(3, 4);                      /*** Compute 3 ** 4 ***/
 
       perl_destruct(my_perl);
       perl_free(my_perl);
+      PERL_SYS_TERM();
     }
 
 
@@ -724,30 +764,35 @@ with L<perlfunc/my> whenever possible.
  #define DO_CLEAN 0
  #endif
 
- static PerlInterpreter *perl = NULL;
+ #define BUFFER_SIZE 1024
+
+ static PerlInterpreter *my_perl = NULL;
 
  int
  main(int argc, char **argv, char **env)
  {
      char *embedding[] = { "", "persistent.pl" };
      char *args[] = { "", DO_CLEAN, NULL };
-     char filename [1024];
+     char filename[BUFFER_SIZE];
      int exitstatus = 0;
      STRLEN n_a;
 
-     if((perl = perl_alloc()) == NULL) {
+     PERL_SYS_INIT3(&argc,&argv,&env);
+     if((my_perl = perl_alloc()) == NULL) {
         fprintf(stderr, "no memory!");
         exit(1);
      }
-     perl_construct(perl);
+     perl_construct(my_perl);
 
-     exitstatus = perl_parse(perl, NULL, 2, embedding, NULL);
-
+     exitstatus = perl_parse(my_perl, NULL, 2, embedding, NULL);
+     PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
      if(!exitstatus) {
-        exitstatus = perl_run(perl);
+        exitstatus = perl_run(my_perl);
 
-        while(printf("Enter file name: ") && gets(filename)) {
+        while(printf("Enter file name: ") &&
+              fgets(filename, BUFFER_SIZE, stdin)) {
 
+            filename[strlen(filename)-1] = '\0'; /* strip \n */
             /* call the subroutine, passing it the filename as an argument */
             args[0] = filename;
             call_argv("Embed::Persistent::eval_file",
@@ -760,8 +805,9 @@ with L<perlfunc/my> whenever possible.
      }
 
      PL_perl_destruct_level = 0;
-     perl_destruct(perl);
-     perl_free(perl);
+     perl_destruct(my_perl);
+     perl_free(my_perl);
+     PERL_SYS_TERM();
      exit(exitstatus);
  }
 
@@ -769,7 +815,7 @@ Now compile:
 
  % cc -o persistent persistent.c `perl -MExtUtils::Embed -e ccopts -e ldopts`
 
-Here's a example script file:
+Here's an example script file:
 
  #test.pl
  my $string = "hello";
@@ -789,6 +835,14 @@ Now run:
  foo says: hello
  Enter file name: ^C
 
+=head2 Execution of END blocks
+
+Traditionally END blocks have been executed at the end of the perl_run.
+This causes problems for applications that never call perl_run. Since
+perl 5.7.2 you can specify C<PL_exit_flags |= PERL_EXIT_DESTRUCT_END>
+to get the new behaviour. This also enables the running of END blocks if
+the perl_prase fails and C<perl_destruct> will return the exit value.
+
 =head2 Maintaining multiple interpreter instances
 
 Some rare applications will need to create more than one interpreter
@@ -796,9 +850,11 @@ during a session.  Such an application might sporadically decide to
 release any resources associated with the interpreter.
 
 The program must take care to ensure that this takes place I<before>
-the next interpreter is constructed.  By default, the global variable
+the next interpreter is constructed.  By default, when perl is not
+built with any special options, the global variable
 C<PL_perl_destruct_level> is set to C<0>, since extra cleaning isn't
-needed when a program has only one interpreter.
+usually needed when a program only ever creates a single interpreter
+in its entire lifetime.
 
 Setting C<PL_perl_destruct_level> to C<1> makes everything squeaky clean:
 
@@ -820,9 +876,16 @@ When I<perl_destruct()> is called, the interpreter's syntax parse tree
 and symbol tables are cleaned up, and global variables are reset.
 
 Now suppose we have more than one interpreter instance running at the
-same time.  This is feasible, but only if you used the
-C<-DMULTIPLICITY> flag when building Perl.  By default, that sets
-C<PL_perl_destruct_level> to C<1>.
+same time.  This is feasible, but only if you used the Configure option
+C<-Dusemultiplicity> or the options C<-Dusethreads -Duseithreads> when
+building Perl.  By default, enabling one of these Configure options
+sets the per-interpreter global variable C<PL_perl_destruct_level> to
+C<1>, so that thorough cleaning is automatic.
+
+Using C<-Dusethreads -Duseithreads> rather than C<-Dusemultiplicity>
+is more appropriate if you intend to run multiple interpreters
+concurrently in different threads, because it enables support for
+linking in the thread libraries of your system with the interpreter.
 
 Let's give it a try:
 
@@ -837,28 +900,50 @@ Let's give it a try:
 
  int main(int argc, char **argv, char **env)
  {
-     PerlInterpreter
-         *one_perl = perl_alloc(),
-         *two_perl = perl_alloc();
+     PerlInterpreter *one_perl, *two_perl;
      char *one_args[] = { "one_perl", SAY_HELLO };
      char *two_args[] = { "two_perl", SAY_HELLO };
 
+     PERL_SYS_INIT3(&argc,&argv,&env);
+     one_perl = perl_alloc();
+     two_perl = perl_alloc();
+
+     PERL_SET_CONTEXT(one_perl);
      perl_construct(one_perl);
+     PERL_SET_CONTEXT(two_perl);
      perl_construct(two_perl);
 
+     PERL_SET_CONTEXT(one_perl);
      perl_parse(one_perl, NULL, 3, one_args, (char **)NULL);
+     PERL_SET_CONTEXT(two_perl);
      perl_parse(two_perl, NULL, 3, two_args, (char **)NULL);
 
+     PERL_SET_CONTEXT(one_perl);
      perl_run(one_perl);
+     PERL_SET_CONTEXT(two_perl);
      perl_run(two_perl);
 
+     PERL_SET_CONTEXT(one_perl);
      perl_destruct(one_perl);
+     PERL_SET_CONTEXT(two_perl);
      perl_destruct(two_perl);
 
+     PERL_SET_CONTEXT(one_perl);
      perl_free(one_perl);
+     PERL_SET_CONTEXT(two_perl);
      perl_free(two_perl);
+     PERL_SYS_TERM();
  }
 
+Note the calls to PERL_SET_CONTEXT().  These are necessary to initialize
+the global state that tracks which interpreter is the "current" one on
+the particular process or thread that may be running it.  It should
+always be used if you have more than one interpreter and are making
+perl API calls on both interpreters in an interleaved fashion.
+
+PERL_SET_CONTEXT(interp) should also be called whenever C<interp> is
+used by a thread that did not create it (using either perl_alloc(), or
+the more esoteric perl_clone()).
 
 Compile as usual:
 
@@ -894,21 +979,14 @@ That's where the glue code can be inserted to create the initial contact between
 Perl and linked C/C++ routines.  Let's take a look some pieces of I<perlmain.c>
 to see how Perl does this:
 
+ static void xs_init (pTHX);
 
- #ifdef __cplusplus
- #  define EXTERN_C extern "C"
- #else
- #  define EXTERN_C extern
- #endif
-
- static void xs_init (void);
-
- EXTERN_C void boot_DynaLoader (CV* cv);
- EXTERN_C void boot_Socket (CV* cv);
+ EXTERN_C void boot_DynaLoader (pTHX_ CV* cv);
+ EXTERN_C void boot_Socket (pTHX_ CV* cv);
 
 
  EXTERN_C void
- xs_init()
+ xs_init(pTHX)
  {
         char *file = __FILE__;
         /* DynaLoader is a special case */
@@ -957,19 +1035,11 @@ Consult L<perlxs>, L<perlguts>, and L<perlapi> for more details.
 
 =head1 Embedding Perl under Win32
 
-At the time of this writing (5.004), there are two versions of Perl
-which run under Win32.  (The two versions are merging in 5.005.)
-Interfacing to ActiveState's Perl library is quite different from the
-examples in this documentation, as significant changes were made to
-the internal Perl API.  However, it is possible to embed ActiveState's
-Perl runtime.  For details, see the Perl for Win32 FAQ at
-http://www.perl.com/CPAN/doc/FAQs/win32/perlwin32faq.html.
+In general, all of the source code shown here should work unmodified under
+Windows.
 
-With the "official" Perl version 5.004 or higher, all the examples
-within this documentation will compile and run untouched, although
-the build process is slightly different between Unix and Win32.  
-
-For starters, backticks don't work under the Win32 native command shell.
+However, there are some caveats about the command-line examples shown.
+For starters, backticks won't work under the Win32 native command shell.
 The ExtUtils::Embed kit on CPAN ships with a script called
 B<genmake>, which generates a simple makefile to build a program from
 a single C source file.  It can be used like this:
@@ -991,6 +1061,24 @@ also need this path so it knows where to find Perl include files.
 This path can be added via the Tools -> Options -> Directories menu.
 Finally, select Build -> Build interp.exe and you're ready to go.
 
+=head1 Hiding Perl_
+
+If you completely hide the short forms forms of the Perl public API,
+add -DPERL_NO_SHORT_NAMES to the compilation flags.  This means that
+for example instead of writing
+
+    warn("%d bottles of beer on the wall", bottlecount);
+
+you will have to write the explicit full form
+
+    Perl_warn(aTHX_ "%d bottles of beer on the wall", bottlecount);
+
+(See L<perlguts/Background and PERL_IMPLICIT_CONTEXT for the explanation
+of the C<aTHX_>.> )  Hiding the short forms is very useful for avoiding
+all sorts of nasty (C preprocessor or otherwise) conflicts with other
+software packages (Perl defines about 2400 APIs with these short names,
+take or leave few hundred, so there certainly is room for conflict.)
+
 =head1 MORAL
 
 You can sometimes I<write faster code> in C, but
@@ -1006,7 +1094,7 @@ Christiansen, Guy Decoux, Hallvard Furuseth, Dov Grobgeld, and Ilya
 Zakharevich.
 
 Doug MacEachern has an article on embedding in Volume 1, Issue 4 of
-The Perl Journal (http://tpj.com).  Doug is also the developer of the
+The Perl Journal ( http://www.tpj.com/ ).  Doug is also the developer of the
 most widely-used Perl embedding: the mod_perl system
 (perl.apache.org), which embeds Perl in the Apache web server.
 Oracle, Binary Evolution, ActiveState, and Ben Sugars's nsapi_perl

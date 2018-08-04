@@ -21,9 +21,9 @@ static int sig_pipe[2];
 #endif
 
 static void
-remove_thread(pTHX_ struct perl_thread *t)
+remove_thread(pTHX_ Thread t)
 {
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
     DEBUG_S(WITH_THR(PerlIO_printf(Perl_debug_log,
 				   "%p: remove_thread %p\n", thr, t)));
     MUTEX_LOCK(&PL_threads_mutex);
@@ -40,7 +40,7 @@ remove_thread(pTHX_ struct perl_thread *t)
 static THREAD_RET_TYPE
 threadstart(void *arg)
 {
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 #ifdef FAKE_THREADS
     Thread savethread = thr;
     LOGOP myop;
@@ -81,15 +81,12 @@ threadstart(void *arg)
     return 0;
 #else
     Thread thr = (Thread) arg;
-    LOGOP myop;
-    djSP;
+    dSP;
     I32 oldmark = TOPMARK;
-    I32 oldscope = PL_scopestack_ix;
     I32 retval;
     SV *sv;
     AV *av;
-    int i, ret;
-    dJMPENV;
+    int i;
 
 #if defined(MULTIPLICITY)
     PERL_SET_INTERP(thr->interp);
@@ -98,7 +95,6 @@ threadstart(void *arg)
     DEBUG_S(PerlIO_printf(Perl_debug_log, "new thread %p waiting to start\n",
 			  thr));
 
-    /* Don't call *anything* requiring dTHR until after PERL_SET_THX() */
     /*
      * Wait until our creator releases us. If we didn't do this, then
      * it would be potentially possible for out thread to carry on and
@@ -116,7 +112,6 @@ threadstart(void *arg)
      */
     PERL_SET_THX(thr);
 
-    /* Only now can we use SvPEEK (which calls sv_newmortal which does dTHR) */
     DEBUG_S(PerlIO_printf(Perl_debug_log, "new thread %p starting at %s\n",
 			  thr, SvPEEK(TOPs)));
 
@@ -152,7 +147,6 @@ threadstart(void *arg)
     FREETMPS;
     LEAVE;
 
-  finishoff:
 #if 0    
     /* removed for debug */
     SvREFCNT_dec(PL_curstack);
@@ -177,10 +171,9 @@ threadstart(void *arg)
     Safefree(PL_savestack);
     Safefree(PL_retstack);
     Safefree(PL_tmps_stack);
-    Safefree(PL_ofs);
+    SvREFCNT_dec(PL_ofs_sv);
 
     SvREFCNT_dec(PL_rs);
-    SvREFCNT_dec(PL_nrs);
     SvREFCNT_dec(PL_statname);
     SvREFCNT_dec(PL_errors);
     Safefree(PL_screamfirst);
@@ -191,6 +184,7 @@ threadstart(void *arg)
     Safefree(PL_reg_poscache);
 
     MUTEX_LOCK(&thr->mutex);
+    thr->thr_done = 1;
     DEBUG_S(PerlIO_printf(Perl_debug_log,
 			  "%p: threadstart finishing: state is %u\n",
 			  thr, ThrSTATE(thr)));
@@ -233,7 +227,7 @@ threadstart(void *arg)
 static SV *
 newthread (pTHX_ SV *startsv, AV *initargs, char *classname)
 {
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
     dSP;
     Thread savethread;
     int i;
@@ -246,6 +240,9 @@ newthread (pTHX_ SV *startsv, AV *initargs, char *classname)
     static int attr_joinable = PTHREAD_CREATE_JOINABLE;
 #endif
 
+    if (ckWARN(WARN_DEPRECATED))	
+        Perl_warner(aTHX_ packWARN(WARN_DEPRECATED),
+		    "5.005 threads are deprecated");
     savethread = thr;
     thr = new_struct_thread(thr);
     /* temporarily pretend to be the child thread in case the
@@ -280,10 +277,17 @@ newthread (pTHX_ SV *startsv, AV *initargs, char *classname)
     if (!attr_inited) {
 	attr_inited = 1;
 	err = pthread_attr_init(&attr);
+#  ifdef THREAD_CREATE_NEEDS_STACK
+       if (err == 0)
+            err = pthread_attr_setstacksize(&attr, THREAD_CREATE_NEEDS_STACK);
+       if (err)
+           croak("panic: pthread_attr_setstacksize failed");
+#  endif
 #  ifdef PTHREAD_ATTR_SETDETACHSTATE
 	if (err == 0)
 	    err = PTHREAD_ATTR_SETDETACHSTATE(&attr, attr_joinable);
-
+       if (err)
+           croak("panic: pthread_attr_setdetachstate failed");
 #  else
 	croak("panic: can't pthread_attr_setdetachstate");
 #  endif
@@ -323,7 +327,13 @@ newthread (pTHX_ SV *startsv, AV *initargs, char *classname)
 
     return sv;
 #else
-    croak("No threads in this perl");
+#  ifdef USE_ITHREADS
+    croak("This perl was built for \"ithreads\", which currently does not support Thread.pm.\n"
+	  "Run \"perldoc Thread\" for more information");
+#  else
+    croak("This perl was not built with support for 5.005-style threads.\n"
+	  "Run \"perldoc Thread\" for more information");
+#  endif
     return &PL_sv_undef;
 #endif
 }
@@ -333,15 +343,15 @@ static Signal_t handle_thread_signal (int sig);
 static Signal_t
 handle_thread_signal(int sig)
 {
-    dTHXo;
     unsigned char c = (unsigned char) sig;
+    dTHX;
     /*
      * We're not really allowed to call fprintf in a signal handler
      * so don't be surprised if this isn't robust while debugging
      * with -DL.
      */
     DEBUG_S(PerlIO_printf(Perl_debug_log,
-	    "handle_thread_signal: got signal %d\n", sig););
+	    "handle_thread_signal: got signal %d\n", sig));
     write(sig_pipe[1], &c, 1);
 }
 
@@ -362,11 +372,11 @@ join(t)
 	AV *	av = NO_INIT
 	int	i = NO_INIT
     PPCODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	if (t == thr)
 	    croak("Attempt to join self");
 	DEBUG_S(PerlIO_printf(Perl_debug_log, "%p: joining %p (state %u)\n",
-			      thr, t, ThrSTATE(t)););
+			      thr, t, ThrSTATE(t)));
     	MUTEX_LOCK(&t->mutex);
 	switch (ThrSTATE(t)) {
 	case THRf_R_JOINABLE:
@@ -407,9 +417,9 @@ void
 detach(t)
 	Thread	t
     CODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	DEBUG_S(PerlIO_printf(Perl_debug_log, "%p: detaching %p (state %u)\n",
-			      thr, t, ThrSTATE(t)););
+			      thr, t, ThrSTATE(t)));
     	MUTEX_LOCK(&t->mutex);
 	switch (ThrSTATE(t)) {
 	case THRf_R_JOINABLE:
@@ -443,8 +453,16 @@ void
 flags(t)
 	Thread	t
     PPCODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	PUSHs(sv_2mortal(newSViv(t->flags)));
+#endif
+
+void
+done(t)
+	Thread	t
+    PPCODE:
+#ifdef USE_5005THREADS
+	PUSHs(t->thr_done ? &PL_sv_yes : &PL_sv_no);
 #endif
 
 void
@@ -453,7 +471,7 @@ self(classname)
     PREINIT:
 	SV *sv;
     PPCODE:        
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	sv = newSViv(thr->tid);
 	sv_magic(sv, thr->oursv, '~', 0, 0);
 	SvMAGIC(sv)->mg_private = Thread_MAGIC_SIGNATURE;
@@ -465,7 +483,7 @@ U32
 tid(t)
 	Thread	t
     CODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
     	MUTEX_LOCK(&t->mutex);
 	RETVAL = t->tid;
     	MUTEX_UNLOCK(&t->mutex);
@@ -479,13 +497,13 @@ void
 DESTROY(t)
 	SV *	t
     PPCODE:
-	PUSHs(&PL_sv_yes);
+	PUSHs(t ? &PL_sv_yes : &PL_sv_no);
 
 void
 yield()
     CODE:
 {
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	YIELD;
 #endif
 }
@@ -495,7 +513,7 @@ cond_wait(sv)
 	SV *	sv
 	MAGIC *	mg = NO_INIT
 CODE:                       
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	if (SvROK(sv))
 	    sv = SvRV(sv);
 
@@ -520,7 +538,7 @@ cond_signal(sv)
 	SV *	sv
 	MAGIC *	mg = NO_INIT
 CODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	if (SvROK(sv))
 	    sv = SvRV(sv);
 
@@ -540,7 +558,7 @@ cond_broadcast(sv)
 	SV *	sv
 	MAGIC *	mg = NO_INIT
 CODE: 
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	if (SvROK(sv))
 	    sv = SvRV(sv);
 
@@ -565,7 +583,7 @@ list(classname)
 	SV **	svp;
 	int	n = 0;
     PPCODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	av = newAV();
 	/*
 	 * Iterate until we have enough dynamic storage for all threads.
@@ -649,7 +667,7 @@ await_signal()
 	if (ret)
 	    sv_setsv(ST(0), c ? PL_psig_ptr[c] : &PL_sv_no);
 	DEBUG_S(PerlIO_printf(Perl_debug_log,
-			      "await_signal returning %s\n", SvPEEK(ST(0))););
+			      "await_signal returning %s\n", SvPEEK(ST(0))));
 
 MODULE = Thread		PACKAGE = Thread::Specific
 
@@ -657,7 +675,7 @@ void
 data(classname = "Thread::Specific")
 	char *	classname
     PPCODE:
-#ifdef USE_THREADS
+#ifdef USE_5005THREADS
 	if (AvFILL(thr->specific) == -1) {
 	    GV *gv = gv_fetchpv("Thread::Specific::FIELDS", TRUE, SVt_PVHV);
 	    av_store(thr->specific, 0, newRV((SV*)GvHV(gv)));

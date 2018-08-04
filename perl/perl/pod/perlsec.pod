@@ -38,11 +38,37 @@ msgrcv(), the password, gcos and shell fields returned by the
 getpwxxx() calls), and all file input are marked as "tainted".
 Tainted data may not be used directly or indirectly in any command
 that invokes a sub-shell, nor in any command that modifies files,
-directories, or processes. (B<Important exception>: If you pass a list
-of arguments to either C<system> or C<exec>, the elements of that list
-are B<NOT> checked for taintedness.) Any variable set to a value
-derived from tainted data will itself be tainted, even if it is
-logically impossible for the tainted data to alter the variable.
+directories, or processes, B<with the following exceptions>:
+
+=over 4
+
+=item *
+
+Arguments to C<print> and C<syswrite> are B<not> checked for taintedness.
+
+=item *
+
+Symbolic methods
+
+    $obj->$method(@args);
+
+and symbolic sub references
+
+    &{$foo}(@args);
+    $foo->(@args);
+
+are not checked for taintedness.  This requires extra carefulness
+unless you want external data to affect your control flow.  Unless
+you carefully limit what these symbolic values are, people are able
+to call functions B<outside> your Perl code, such as POSIX::system,
+in which case they are able to run arbitrary external code.
+
+=back
+
+The value of an expression containing tainted data will itself be
+tainted, even if it is logically impossible for the tainted data to
+affect the value.
+
 Because taintedness is associated with each scalar value, some
 elements of an array can be tainted and others not.
 
@@ -58,7 +84,8 @@ For example:
     $data = 'abc';		# Not tainted
 
     system "echo $arg";		# Insecure
-    system "/bin/echo", $arg;	# Secure (doesn't use sh)
+    system "/bin/echo", $arg;	# Considered insecure
+				# (Perl doesn't know about /bin/echo)
     system "echo $hid";		# Insecure
     system "echo $data";	# Insecure until PATH set
 
@@ -73,9 +100,9 @@ For example:
     open(FOO, "< $arg");	# OK - read-only file
     open(FOO, "> $arg"); 	# Not OK - trying to write
 
-    open(FOO,"echo $arg|");	# Not OK, but...
+    open(FOO,"echo $arg|");	# Not OK
     open(FOO,"-|")
-	or exec 'echo', $arg;	# OK
+	or exec 'echo', $arg;	# Also not OK
 
     $shout = `echo $arg`;	# Insecure, $shout now tainted
 
@@ -83,29 +110,33 @@ For example:
     umask $arg;			# Insecure
 
     exec "echo $arg";		# Insecure
-    exec "echo", $arg;		# Secure (doesn't use the shell)
-    exec "sh", '-c', $arg;	# Considered secure, alas!
+    exec "echo", $arg;		# Insecure
+    exec "sh", '-c', $arg;	# Very insecure!
 
     @files = <*.c>;		# insecure (uses readdir() or similar)
     @files = glob('*.c');	# insecure (uses readdir() or similar)
 
+    # In Perl releases older than 5.6.0 the <*.c> and glob('*.c') would
+    # have used an external program to do the filename expansion; but in
+    # either case the result is tainted since the list of filenames comes
+    # from outside of the program.
+
+    $bad = ($arg, 23);		# $bad will be tainted
+    $arg, `true`;		# Insecure (although it isn't really)
+
 If you try to do something insecure, you will get a fatal error saying
-something like "Insecure dependency" or "Insecure $ENV{PATH}".  Note that you
-can still write an insecure B<system> or B<exec>, but only by explicitly
-doing something like the "considered secure" example above.
+something like "Insecure dependency" or "Insecure $ENV{PATH}".
 
 =head2 Laundering and Detecting Tainted Data
 
-To test whether a variable contains tainted data, and whose use would thus
-trigger an "Insecure dependency" message, check your nearby CPAN mirror
-for the F<Taint.pm> module, which should become available around November
-1997.  Or you may be able to use the following I<is_tainted()> function.
+To test whether a variable contains tainted data, and whose use would
+thus trigger an "Insecure dependency" message, you can use the
+tainted() function of the Scalar::Util module, available in your
+nearby CPAN mirror, and included in Perl starting from the release 5.8.0.
+Or you may be able to use the following I<is_tainted()> function.
 
     sub is_tainted {
-	return ! eval {
-	    join('',@_), kill 0;
-	    1;
-	};
+        return ! eval { eval("#" . substr(join("", @_), 0, 0)); 1 };
     }
 
 This function makes use of the fact that the presence of tainted data
@@ -133,7 +164,7 @@ or a dot.
     if ($data =~ /^([-\@\w.]+)$/) {
 	$data = $1; 			# $data now untainted
     } else {
-	die "Bad data in $data"; 	# log this somewhere
+	die "Bad data in '$data'"; 	# log this somewhere
     }
 
 This is fairly secure because C</\w+/> doesn't normally match shell
@@ -217,25 +248,31 @@ not called with a string that the shell could expand.  This is by far the
 best way to call something that might be subjected to shell escapes: just
 never call the shell at all.  
 
-    use English;
-    die "Can't fork: $!" unless defined $pid = open(KID, "-|");
-    if ($pid) {	          # parent
-	while (<KID>) {
-	    # do something
-	}
-	close KID;
-    } else {
-	my @temp = ($EUID, $EGID);
-	$EUID = $UID;
-	$EGID = $GID;    # 	initgroups() also called!
-	# Make sure privs are really gone
-	($EUID, $EGID) = @temp;
-	die "Can't drop privileges" 
-		unless $UID == $EUID  && $GID eq $EGID;	
-	$ENV{PATH} = "/bin:/usr/bin";
-	exec 'myprog', 'arg1', 'arg2' 
-	    or die "can't exec myprog: $!";
-    }
+        use English '-no_match_vars';
+        die "Can't fork: $!" unless defined($pid = open(KID, "-|"));
+        if ($pid) {           # parent
+            while (<KID>) {
+                # do something
+            }
+            close KID;
+        } else {
+            my @temp     = ($EUID, $EGID);
+            my $orig_uid = $UID;
+            my $orig_gid = $GID;
+            $EUID = $UID;
+            $EGID = $GID;
+            # Drop privileges
+            $UID  = $orig_uid;
+            $GID  = $orig_gid;
+            # Make sure privs are really gone
+            ($EUID, $EGID) = @temp;
+            die "Can't drop privileges"
+                unless $UID == $EUID  && $GID eq $EGID;
+            $ENV{PATH} = "/bin:/usr/bin"; # Minimal PATH.
+	    # Consider sanitizing the environment even more.
+            exec 'myprog', 'arg1', 'arg2'
+                or die "can't exec myprog: $!";
+        }
 
 A similar strategy would work for wildcard expansion via C<glob>, although
 you can use C<readdir> instead.
@@ -291,12 +328,6 @@ in C:
 Compile this wrapper into a binary executable and then make I<it> rather
 than your script setuid or setgid.
 
-See the program B<wrapsuid> in the F<eg> directory of your Perl
-distribution for a convenient way to do this automatically for all your
-setuid Perl programs.  It moves setuid scripts into files with the same
-name plus a leading dot, and then compiles a wrapper like the one above
-for each of them.
-
 In recent years, vendors have begun to supply systems free of this
 inherent security bug.  On such systems, when the kernel passes the name
 of the set-id script to open to the interpreter, rather than using a
@@ -308,9 +339,8 @@ program that builds Perl tries to figure this out for itself, so you
 should never have to specify this yourself.  Most modern releases of
 SysVr4 and BSD 4.4 use this approach to avoid the kernel race condition.
 
-Prior to release 5.003 of Perl, a bug in the code of B<suidperl> could
-introduce a security hole in systems compiled with strict POSIX
-compliance.
+Prior to release 5.6.1 of Perl, bugs in the code of B<suidperl> could
+introduce a security hole.
 
 =head2 Protecting Your Programs
 
@@ -331,10 +361,11 @@ determine the insecure things and exploit them without viewing the
 source.  Security through obscurity, the name for hiding your bugs
 instead of fixing them, is little security indeed.
 
-You can try using encryption via source filters (Filter::* from CPAN).
-But crackers might be able to decrypt it.  You can try using the
-byte code compiler and interpreter described below, but crackers might
-be able to de-compile it.  You can try using the native-code compiler
+You can try using encryption via source filters (Filter::* from CPAN,
+or Filter::Util::Call and Filter::Simple since Perl 5.8).
+But crackers might be able to decrypt it.  You can try using the byte
+code compiler and interpreter described below, but crackers might be
+able to de-compile it.  You can try using the native-code compiler
 described below, but crackers might be able to disassemble it.  These
 pose varying degrees of difficulty to people wanting to get at your
 code, but none can definitively conceal it (this is true of every
@@ -347,6 +378,13 @@ statements like "This is unpublished proprietary software of XYZ Corp.
 Your access to it does not give you permission to use it blah blah
 blah."  You should see a lawyer to be sure your licence's wording will
 stand up in court.
+
+=head2 Unicode
+
+Unicode is a new and complex technology and one may easily overlook
+certain security pitfalls.  See L<perluniintro> for an overview and
+L<perlunicode> for details, and L<perlunicode/"Security Implications
+of Unicode"> for security implications in particular.
 
 =head1 SEE ALSO
 

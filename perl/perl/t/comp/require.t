@@ -2,12 +2,18 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    unshift @INC, ('.', '../lib');
+    @INC = '.';
+    push @INC, '../lib';
 }
 
 # don't make this lexical
 $i = 1;
-print "1..20\n";
+
+my $Is_EBCDIC = (ord('A') == 193) ? 1 : 0;
+my $Is_UTF8   = (${^OPEN} || "") =~ /:utf8/;
+my $total_tests = 29;
+if ($Is_EBCDIC || $Is_UTF8) { $total_tests = 26; }
+print "1..$total_tests\n";
 
 sub do_require {
     %INC = ();
@@ -19,8 +25,10 @@ sub do_require {
 sub write_file {
     my $f = shift;
     open(REQ,">$f") or die "Can't write '$f': $!";
+    binmode REQ;
+    use bytes;
     print REQ @_;
-    close REQ;
+    close REQ or die "Could not close $f: $!";
 }
 
 eval {require 5.005};
@@ -79,7 +87,6 @@ print "not " unless 5.5.1 gt v5.5;
 print "ok ",$i++,"\n";
 
 {
-    use utf8;
     print "not " unless v5.5.640 eq "\x{5}\x{5}\x{280}";
     print "ok ",$i++,"\n";
 
@@ -122,7 +129,38 @@ do "bleah.do";
 dofile();
 sub dofile { do "bleah.do"; };
 print $x;
-$i++;
+
+# Test that scalar context is forced for require
+
+write_file('bleah.pm', <<'**BLEAH**'
+print "not " if !defined wantarray || wantarray ne '';
+print "ok $i - require() context\n";
+1;
+**BLEAH**
+);
+                              delete $INC{"bleah.pm"}; ++$::i;
+$foo = eval q{require bleah}; delete $INC{"bleah.pm"}; ++$::i;
+@foo = eval q{require bleah}; delete $INC{"bleah.pm"}; ++$::i;
+       eval q{require bleah}; delete $INC{"bleah.pm"}; ++$::i;
+$foo = eval  {require bleah}; delete $INC{"bleah.pm"}; ++$::i;
+@foo = eval  {require bleah}; delete $INC{"bleah.pm"}; ++$::i;
+       eval  {require bleah};
+
+# UTF-encoded things - skipped on EBCDIC machines and on UTF-8 input
+
+if ($Is_EBCDIC || $Is_UTF8) { exit; }
+
+my $utf8 = chr(0xFEFF);
+
+$i++; do_require(qq(${utf8}print "ok $i\n"; 1;\n));
+
+sub bytes_to_utf16 {
+    my $utf16 = pack("$_[0]*", unpack("C*", $_[1]));
+    return @_ == 3 && $_[2] ? pack("$_[0]", 0xFEFF) . $utf16 : $utf16;
+}
+
+$i++; do_require(bytes_to_utf16('n', qq(print "ok $i\\n"; 1;\n), 1)); # BE
+$i++; do_require(bytes_to_utf16('v', qq(print "ok $i\\n"; 1;\n), 1)); # LE
 
 END { 1 while unlink 'bleah.pm'; 1 while unlink 'bleah.do'; }
 

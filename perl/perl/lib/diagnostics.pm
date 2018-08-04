@@ -4,7 +4,7 @@ package diagnostics;
 
 diagnostics - Perl compiler pragma to force verbose warning diagnostics
 
-splain - standalone program to do the same thing
+splain - filter to produce verbose descriptions of perl warning diagnostics
 
 =head1 SYNOPSIS
 
@@ -16,7 +16,7 @@ As a pragma:
     enable  diagnostics;
     disable diagnostics;
 
-Aa a program:
+As a program:
 
     perl program 2>diag.out
     splain [-v] [-p] diag.out
@@ -44,7 +44,7 @@ These still go out B<STDERR>.
 Due to the interaction between runtime and compiletime issues,
 and because it's probably not a very good idea anyway,
 you may not use C<no diagnostics> to turn them off at compiletime.
-However, you may control there behaviour at runtime using the 
+However, you may control their behaviour at runtime using the 
 disable() and enable() methods to turn them off and on respectively.
 
 The B<-verbose> flag first prints out the L<perldiag> introduction before
@@ -53,7 +53,7 @@ escape sequences for pagers.
 
 Warnings dispatched from perl itself (or more accurately, those that match
 descriptions found in L<perldiag>) are only displayed once (no duplicate
-descriptions).  User code generated warnings ala warn() are unaffected,
+descriptions).  User code generated warnings a la warn() are unaffected,
 allowing duplicate user messages to be displayed.
 
 =head2 The I<splain> Program
@@ -167,19 +167,23 @@ Tom Christiansen <F<tchrist@mox.perl.com>>, 25 June 1995.
 
 =cut
 
-use 5.005_64;
+use strict;
+use 5.006;
 use Carp;
 
-$VERSION = v1.0;
+our $VERSION = 1.1;
+our $DEBUG;
+our $VERBOSE;
+our $PRETTY;
 
 use Config;
-($privlib, $archlib) = @Config{qw(privlibexp archlibexp)};
+my($privlib, $archlib) = @Config{qw(privlibexp archlibexp)};
 if ($^O eq 'VMS') {
     require VMS::Filespec;
     $privlib = VMS::Filespec::unixify($privlib);
     $archlib = VMS::Filespec::unixify($archlib);
 }
-@trypod = (
+my @trypod = (
 	   "$archlib/pod/perldiag.pod",
 	   "$privlib/pod/perldiag-$Config{version}.pod",
 	   "$privlib/pod/perldiag.pod",
@@ -189,21 +193,27 @@ if ($^O eq 'VMS') {
 	  );
 # handy for development testing of new warnings etc
 unshift @trypod, "./pod/perldiag.pod" if -e "pod/perldiag.pod";
-($PODFILE) = ((grep { -e } @trypod), $trypod[$#trypod])[0];
+(my $PODFILE) = ((grep { -e } @trypod), $trypod[$#trypod])[0];
+
+if ($^O eq 'MacOS') {
+    # just updir one from each lib dir, we'll find it ...
+    ($PODFILE) = grep { -e } map { "$_:pod:perldiag.pod" } @INC;
+}
+
 
 $DEBUG ||= 0;
 my $WHOAMI = ref bless [];  # nobody's business, prolly not even mine
 
-$| = 1;
-
+local $| = 1;
 local $_;
 
-CONFIG: {
-    $opt_p = $opt_d = $opt_v = $opt_f = '';
-    %HTML_2_Troff = %HTML_2_Latin_1 = %HTML_2_ASCII_7 = ();  
-    %exact_duplicate = ();
+my $standalone;
+my(%HTML_2_Troff, %HTML_2_Latin_1, %HTML_2_ASCII_7);
 
-    unless (caller) { 
+CONFIG: {
+    our $opt_p = our $opt_d = our $opt_v = our $opt_f = '';
+
+    unless (caller) {
 	$standalone++;
 	require Getopt::Std;
 	Getopt::Std::getopts('pdvf:')
@@ -212,7 +222,7 @@ CONFIG: {
 	$DEBUG = 2 if $opt_d;
 	$VERBOSE = $opt_v;
 	$PRETTY = $opt_p;
-    } 
+    }
 
     if (open(POD_DIAG, $PODFILE)) {
 	warn "Happy happy podfile from real $PODFILE\n" if $DEBUG;
@@ -221,11 +231,12 @@ CONFIG: {
 
     if (caller) {
 	INCPATH: {
-	    for $file ( (map { "$_/$WHOAMI.pm" } @INC), $0) {
+	    for my $file ( (map { "$_/$WHOAMI.pm" } @INC), $0) {
 		warn "Checking $file\n" if $DEBUG;
 		if (open(POD_DIAG, $file)) {
 		    while (<POD_DIAG>) {
-			next unless /^__END__\s*# wish diag dbase were more accessible/;
+			next unless
+			    /^__END__\s*# wish diag dbase were more accessible/;
 			print STDERR "podfile is $file\n" if $DEBUG;
 			last INCPATH;
 		    }
@@ -274,6 +285,7 @@ if (eof(POD_DIAG)) {
     # etc
 );
 
+our %HTML_Escapes;
 *HTML_Escapes = do {
     if ($standalone) {
 	$PRETTY ? \%HTML_2_Latin_1 : \%HTML_2_ASCII_7; 
@@ -284,20 +296,21 @@ if (eof(POD_DIAG)) {
 
 *THITHER = $standalone ? *STDOUT : *STDERR;
 
-$transmo = <<EOFUNC;
+my %transfmt = (); 
+my $transmo = <<EOFUNC;
 sub transmo {
     #local \$^W = 0;  # recursive warnings we do NOT need!
     study;
 EOFUNC
 
-### sub finish_compilation {  # 5.001e panic: top_level for embedded version
+my %msg;
+{
     print STDERR "FINISHING COMPILATION for $_\n" if $DEBUG;
-    ### local 
-    $RS = '';
+    local $/ = '';
     local $_;
+    my $header;
+    my $for_item;
     while (<POD_DIAG>) {
-	#s/(.*)\n//;
-	#$header = $1;
 
 	unescape();
 	if ($PRETTY) {
@@ -318,40 +331,66 @@ EOFUNC
 		    ) )
 		{
 		    next;
-		} 
+		}
 		s/^/    /gm;
 		$msg{$header} .= $_;
+	 	undef $for_item;	
 	    }
 	    next;
 	} 
-	unless ( s/=item (.*)\s*\Z//) {
+	unless ( s/=item (.*?)\s*\z//) {
 
 	    if ( s/=head1\sDESCRIPTION//) {
 		$msg{$header = 'DESCRIPTION'} = '';
+		undef $for_item;
 	    }
+	    elsif( s/^=for\s+diagnostics\s*\n(.*?)\s*\z// ) {
+		$for_item = $1;
+	    } 
 	    next;
 	}
 
-	# strip formatting directives in =item line
-	($header = $1) =~ s/[A-Z]<(.*?)>/$1/g;
+	if( $for_item ) { $header = $for_item; undef $for_item } 
+	else {
+	    $header = $1;
+	    while( $header =~ /[;,]\z/ ) {
+		<POD_DIAG> =~ /^\s*(.*?)\s*\z/;
+		$header .= ' '.$1;
+	    }
+	}
 
-	if ($header =~ /%[csd]/) {
-	    $rhs = $lhs = $header;
-	    #if ($lhs =~ s/(.*?)%d(?!%d)(.*)/\Q$1\E\\d+\Q$2\E\$/g)  {
-	    if ($lhs =~ s/(.*?)%d(?!%d)(.*)/\Q$1\E\\d+\Q$2\E/g)  {
-		$lhs =~ s/\\%s/.*?/g;
-	    } else {
-		# if i had lookbehind negations, i wouldn't have to do this \377 noise
-		$lhs =~ s/(.*?)%s/\Q$1\E.*?\377/g;
-		#$lhs =~ s/\377([^\377]*)$/\Q$1\E\$/;
-		$lhs =~ s/\377([^\377]*)$/\Q$1\E/;
-		$lhs =~ s/\377//g;
-		$lhs =~ s/\.\*\?$/.*/; # Allow %s at the end to eat it all
-	    } 
-	    $lhs =~ s/\\%c/./g;
-	    $transmo .= "    s{^$lhs}\n     {\Q$rhs\E}s\n\t&& return 1;\n";
+	# strip formatting directives from =item line
+	$header =~ s/[A-Z]<(.*?)>/$1/g;
+
+        my @toks = split( /(%l?[dx]|%c|%(?:\.\d+)?s)/, $header );
+	if (@toks > 1) {
+            my $conlen = 0;
+            for my $i (0..$#toks){
+                if( $i % 2 ){
+                    if(      $toks[$i] eq '%c' ){
+                        $toks[$i] = '.';
+                    } elsif( $toks[$i] eq '%d' ){
+                        $toks[$i] = '\d+';
+                    } elsif( $toks[$i] eq '%s' ){
+                        $toks[$i] = $i == $#toks ? '.*' : '.*?';
+                    } elsif( $toks[$i] =~ '%.(\d+)s' ){
+                        $toks[$i] = ".{$1}";
+                     } elsif( $toks[$i] =~ '^%l*x$' ){
+                        $toks[$i] = '[\da-f]+';
+                   }
+                } elsif( length( $toks[$i] ) ){
+                    $toks[$i] =~ s/^.*$/\Q$&\E/;
+                    $conlen += length( $toks[$i] );
+                }
+            }  
+            my $lhs = join( '', @toks );
+	    $transfmt{$header}{pat} =
+              "    s{^$lhs}\n     {\Q$header\E}s\n\t&& return 1;\n";
+            $transfmt{$header}{len} = $conlen;
 	} else {
-	    $transmo .= "    m{^\Q$header\E} && return 1;\n";
+            $transfmt{$header}{pat} =
+	      "    m{^\Q$header\E} && return 1;\n";
+            $transfmt{$header}{len} = length( $header );
 	} 
 
 	print STDERR "$WHOAMI: Duplicate entry: \"$header\"\n"
@@ -365,30 +404,34 @@ EOFUNC
 
     die "No diagnostics?" unless %msg;
 
+    # Apply patterns in order of decreasing sum of lengths of fixed parts
+    # Seems the best way of hitting the right one.
+    for my $hdr ( sort { $transfmt{$b}{len} <=> $transfmt{$a}{len} }
+                  keys %transfmt ){
+        $transmo .= $transfmt{$hdr}{pat};
+    }
     $transmo .= "    return 0;\n}\n";
     print STDERR $transmo if $DEBUG;
     eval $transmo;
     die $@ if $@;
-    $RS = "\n";
-### }
+}
 
 if ($standalone) {
     if (!@ARGV and -t STDIN) { print STDERR "$0: Reading from STDIN\n" } 
-    while (defined ($error = <>)) {
+    while (defined (my $error = <>)) {
 	splainthis($error) || print THITHER $error;
     } 
     exit;
-} else { 
-    #$old_w = 0;
-    $oldwarn = ''; $olddie = '';
-}
+} 
+
+my $olddie;
+my $oldwarn;
 
 sub import {
     shift;
-    #$old_w = $^W;
-    $^W = 1; # yup, clobbered the global variable; tough, if you
-	     # want diags, you want diags.
-    return if $SIG{__WARN__} eq \&warn_trap;
+    $^W = 1; # yup, clobbered the global variable; 
+	     # tough, if you want diags, you want diags.
+    return if defined $SIG{__WARN__} && ($SIG{__WARN__} eq \&warn_trap);
 
     for (@_) {
 
@@ -421,10 +464,9 @@ sub enable { &import }
 
 sub disable {
     shift;
-    #$^W = $old_w;
     return unless $SIG{__WARN__} eq \&warn_trap;
-    $SIG{__WARN__} = $oldwarn;
-    $SIG{__DIE__} = $olddie;
+    $SIG{__WARN__} = $oldwarn || '';
+    $SIG{__DIE__} = $olddie || '';
 } 
 
 sub warn_trap {
@@ -454,17 +496,28 @@ sub death_trap {
     if (caller eq $WHOAMI) { print STDERR "INTERNAL EXCEPTION: $exception"; } 
     &$olddie if defined $olddie and $olddie and $olddie ne \&death_trap;
 
+    return if $in_eval;
+
     # We don't want to unset these if we're coming from an eval because
-    # then we've turned off diagnostics. (Actually what does this next
-    # line do?  -PSeibel)
-    $SIG{__DIE__} = $SIG{__WARN__} = '' unless $in_eval;
+    # then we've turned off diagnostics.
+
+    # Switch off our die/warn handlers so we don't wind up in our own
+    # traps.
+    $SIG{__DIE__} = $SIG{__WARN__} = '';
+
+    # Have carp skip over death_trap() when showing the stack trace.
     local($Carp::CarpLevel) = 1;
+
     confess "Uncaught exception from user code:\n\t$exception";
 	# up we go; where we stop, nobody knows, but i think we die now
 	# but i'm deeply afraid of the &$olddie guy reraising and us getting
 	# into an indirect recursion loop
 };
 
+my %exact_duplicate;
+my %old_diag;
+my $count;
+my $wantspace;
 sub splainthis {
     local $_ = shift;
     local $\;
@@ -472,15 +525,33 @@ sub splainthis {
     s/\.?\n+$//;
     my $orig = $_;
     # return unless defined;
+
+    # get rid of the where-are-we-in-input part
     s/, <.*?> (?:line|chunk).*$//;
-    $real = s/(.*?) at .*? (?:line|chunk) \d+.*/$1/;
+
+    # Discard 1st " at <file> line <no>" and all text beyond
+    # but be aware of messsages containing " at this-or-that"
+    my $real = 0;
+    my @secs = split( / at / );
+    $_ = $secs[0];
+    for my $i ( 1..$#secs ){
+        if( $secs[$i] =~ /.+? (?:line|chunk) \d+/ ){
+            $real = 1;
+            last;
+        } else {
+            $_ .= ' at ' . $secs[$i];
+	}
+    }
+    
+    # remove parenthesis occurring at the end of some messages 
     s/^\((.*)\)$/$1/;
+
     if ($exact_duplicate{$orig}++) {
 	return &transmo;
-    }
-    else {
+    } else {
 	return 0 unless &transmo;
     }
+
     $orig = shorten($orig);
     if ($old_diag{$_}) {
 	autodescribe();
@@ -541,9 +612,6 @@ sub shorten {
     return $line;
 } 
 
-
-# have to do this: RS isn't set until run time, but we're executing at compiletime
-$RS = "\n";
 
 1 unless $standalone;  # or it'll complain about itself
 __END__ # wish diag dbase were more accessible

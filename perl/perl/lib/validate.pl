@@ -1,4 +1,4 @@
-;# $RCSfile: validate.pl,v $$Revision: 1.1.1.2 $$Date: 2000/03/31 05:11:50 $
+;# $RCSfile: validate.pl,v $$Revision: 1.4 $$Date: 2003/05/20 22:50:36 $
 
 ;# The validate routine takes a single multiline string consisting of
 ;# lines containing a filename plus a file test to try on it.  (The

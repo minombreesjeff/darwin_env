@@ -1,6 +1,7 @@
 /*    av.c
  *
- *    Copyright (c) 1991-2000, Larry Wall
+ *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
+ *    2000, 2001, 2002, 2003, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -11,6 +12,10 @@
  * "...for the Entwives desired order, and plenty, and peace (by which they
  * meant that things should remain where they had set them)." --Treebeard
  */
+
+/*
+=head1 Array Manipulation Functions
+*/
 
 #include "EXTERN.h"
 #define PERL_IN_AV_C
@@ -25,8 +30,8 @@ Perl_av_reify(pTHX_ AV *av)
     if (AvREAL(av))
 	return;
 #ifdef DEBUGGING
-    if (SvTIED_mg((SV*)av, 'P') && ckWARN_d(WARN_DEBUGGING))
-	Perl_warner(aTHX_ WARN_DEBUGGING, "av_reify called on tied array");
+    if (SvTIED_mg((SV*)av, PERL_MAGIC_tied) && ckWARN_d(WARN_DEBUGGING))
+	Perl_warner(aTHX_ packWARN(WARN_DEBUGGING), "av_reify called on tied array");
 #endif
     key = AvMAX(av) + 1;
     while (key > AvFILLp(av) + 1)
@@ -34,10 +39,8 @@ Perl_av_reify(pTHX_ AV *av)
     while (key) {
 	sv = AvARRAY(av)[--key];
 	assert(sv);
-	if (sv != &PL_sv_undef) {
-	    dTHR;
+	if (sv != &PL_sv_undef)
 	    (void)SvREFCNT_inc(sv);
-	}
     }
     key = AvARRAY(av) - AvALLOC(av);
     while (key)
@@ -58,9 +61,8 @@ extended.
 void
 Perl_av_extend(pTHX_ AV *av, I32 key)
 {
-    dTHR;			/* only necessary if we have to extend stack */
     MAGIC *mg;
-    if ((mg = SvTIED_mg((SV*)av, 'P'))) {
+    if ((mg = SvTIED_mg((SV*)av, PERL_MAGIC_tied))) {
 	dSP;
 	ENTER;
 	SAVETMPS;
@@ -99,12 +101,12 @@ Perl_av_extend(pTHX_ AV *av, I32 key)
 	}
 	else {
 	    if (AvALLOC(av)) {
-#ifndef STRANGE_MALLOC
+#if !defined(STRANGE_MALLOC) && !defined(MYMALLOC)
 		MEM_SIZE bytes;
 		IV itmp;
 #endif
 
-#if defined(MYMALLOC) && !defined(LEAKTEST)
+#ifdef MYMALLOC
 		newmax = malloced_size((void*)AvALLOC(av))/sizeof(SV*) - 1;
 
 		if (key <= newmax) 
@@ -118,7 +120,7 @@ Perl_av_extend(pTHX_ AV *av, I32 key)
 		bytes = (newmax + 1) * sizeof(SV*);
 #define MALLOC_OVERHEAD 16
 		itmp = MALLOC_OVERHEAD;
-		while (itmp - MALLOC_OVERHEAD < bytes)
+		while ((MEM_SIZE)(itmp - MALLOC_OVERHEAD) < bytes)
 		    itmp += itmp;
 		itmp -= MALLOC_OVERHEAD;
 		itmp /= sizeof(SV*);
@@ -133,7 +135,9 @@ Perl_av_extend(pTHX_ AV *av, I32 key)
 		    Safefree(AvALLOC(av));
 		AvALLOC(av) = ary;
 #endif
+#ifdef MYMALLOC
 	      resized:
+#endif
 		ary = AvALLOC(av) + AvMAX(av) + 1;
 		tmp = newmax - AvMAX(av);
 		if (av == PL_curstack) {	/* Oops, grew stack (via av_store()?) */
@@ -181,20 +185,42 @@ Perl_av_fetch(pTHX_ register AV *av, I32 key, I32 lval)
     if (!av)
 	return 0;
 
+    if (SvRMAGICAL(av)) {
+        MAGIC *tied_magic = mg_find((SV*)av, PERL_MAGIC_tied);
+        if (tied_magic || mg_find((SV*)av, PERL_MAGIC_regdata)) {
+            U32 adjust_index = 1;
+
+            if (tied_magic && key < 0) {
+                /* Handle negative array indices 20020222 MJD */
+                SV **negative_indices_glob = 
+                    hv_fetch(SvSTASH(SvRV(SvTIED_obj((SV *)av, 
+                                                     tied_magic))), 
+                             NEGATIVE_INDICES_VAR, 16, 0);
+
+                if (negative_indices_glob
+                    && SvTRUE(GvSV(*negative_indices_glob)))
+                    adjust_index = 0;
+            }
+
+            if (key < 0 && adjust_index) {
+                key += AvFILL(av) + 1;
+                if (key < 0)
+                    return 0;
+            }
+
+            sv = sv_newmortal();
+	    sv_upgrade(sv, SVt_PVLV);
+	    mg_copy((SV*)av, sv, 0, key);
+	    LvTYPE(sv) = 't';
+	    LvTARG(sv) = sv; /* fake (SV**) */
+	    return &(LvTARG(sv));
+        }
+    }
+
     if (key < 0) {
 	key += AvFILL(av) + 1;
 	if (key < 0)
 	    return 0;
-    }
-
-    if (SvRMAGICAL(av)) {
-	if (mg_find((SV*)av,'P') || mg_find((SV*)av,'D')) {
-	    dTHR;
-	    sv = sv_newmortal();
-	    mg_copy((SV*)av, sv, 0, key);
-	    PL_av_fetch_sv = sv;
-	    return &PL_av_fetch_sv;
-	}
     }
 
     if (key > AvFILLp(av)) {
@@ -247,6 +273,33 @@ Perl_av_store(pTHX_ register AV *av, I32 key, SV *val)
     if (!val)
 	val = &PL_sv_undef;
 
+    if (SvRMAGICAL(av)) {
+        MAGIC *tied_magic = mg_find((SV*)av, PERL_MAGIC_tied);
+        if (tied_magic) {
+            /* Handle negative array indices 20020222 MJD */
+            if (key < 0) {
+                unsigned adjust_index = 1;
+                SV **negative_indices_glob = 
+                    hv_fetch(SvSTASH(SvRV(SvTIED_obj((SV *)av, 
+                                                     tied_magic))), 
+                             NEGATIVE_INDICES_VAR, 16, 0);
+                if (negative_indices_glob
+                    && SvTRUE(GvSV(*negative_indices_glob)))
+                    adjust_index = 0;
+                if (adjust_index) {
+                    key += AvFILL(av) + 1;
+                    if (key < 0)
+                        return 0;
+                }
+            }
+	    if (val != &PL_sv_undef) {
+		mg_copy((SV*)av, val, 0, key);
+	    }
+	    return 0;
+        }
+    }
+
+
     if (key < 0) {
 	key += AvFILL(av) + 1;
 	if (key < 0)
@@ -256,15 +309,6 @@ Perl_av_store(pTHX_ register AV *av, I32 key, SV *val)
     if (SvREADONLY(av) && key >= AvFILL(av))
 	Perl_croak(aTHX_ PL_no_modify);
 
-    if (SvRMAGICAL(av)) {
-	if (mg_find((SV*)av,'P')) {
-	    if (val != &PL_sv_undef) {
-		mg_copy((SV*)av, val, 0, key);
-	    }
-	    return 0;
-	}
-    }
-
     if (!AvREAL(av) && AvREIFY(av))
 	av_reify(av);
     if (key > AvMAX(av))
@@ -272,7 +316,6 @@ Perl_av_store(pTHX_ register AV *av, I32 key, SV *val)
     ary = AvARRAY(av);
     if (AvFILLp(av) < key) {
 	if (!AvREAL(av)) {
-	    dTHR;
 	    if (av == PL_curstack && key > PL_stack_sp - PL_stack_base)
 		PL_stack_sp = PL_stack_base + key;	/* XPUSH in disguise */
 	    do
@@ -392,7 +435,7 @@ Perl_av_clear(pTHX_ register AV *av)
 
 #ifdef DEBUGGING
     if (SvREFCNT(av) == 0 && ckWARN_d(WARN_DEBUGGING)) {
-	Perl_warner(aTHX_ WARN_DEBUGGING, "Attempt to clear deleted array");
+	Perl_warner(aTHX_ packWARN(WARN_DEBUGGING), "Attempt to clear deleted array");
     }
 #endif
     if (!av)
@@ -413,8 +456,11 @@ Perl_av_clear(pTHX_ register AV *av)
 	ary = AvARRAY(av);
 	key = AvFILLp(av) + 1;
 	while (key) {
-	    SvREFCNT_dec(ary[--key]);
+	    SV * sv = ary[--key];
+	    /* undef the slot before freeing the value, because a
+	     * destructor might try to modify this arrray */
 	    ary[key] = &PL_sv_undef;
+	    SvREFCNT_dec(sv);
 	}
     }
     if ((key = AvARRAY(av) - AvALLOC(av))) {
@@ -443,7 +489,7 @@ Perl_av_undef(pTHX_ register AV *av)
     /*SUPPRESS 560*/
 
     /* Give any tie a chance to cleanup first */
-    if (SvTIED_mg((SV*)av, 'P')) 
+    if (SvTIED_mg((SV*)av, PERL_MAGIC_tied)) 
 	av_fill(av, -1);   /* mg_clear() ? */
 
     if (AvREAL(av)) {
@@ -479,7 +525,7 @@ Perl_av_push(pTHX_ register AV *av, SV *val)
     if (SvREADONLY(av))
 	Perl_croak(aTHX_ PL_no_modify);
 
-    if ((mg = SvTIED_mg((SV*)av, 'P'))) {
+    if ((mg = SvTIED_mg((SV*)av, PERL_MAGIC_tied))) {
 	dSP;
 	PUSHSTACKi(PERLSI_MAGIC);
 	PUSHMARK(SP);
@@ -511,11 +557,11 @@ Perl_av_pop(pTHX_ register AV *av)
     SV *retval;
     MAGIC* mg;
 
-    if (!av || AvFILL(av) < 0)
-	return &PL_sv_undef;
+    if (!av)
+      return &PL_sv_undef;
     if (SvREADONLY(av))
 	Perl_croak(aTHX_ PL_no_modify);
-    if ((mg = SvTIED_mg((SV*)av, 'P'))) {
+    if ((mg = SvTIED_mg((SV*)av, PERL_MAGIC_tied))) {
 	dSP;    
 	PUSHSTACKi(PERLSI_MAGIC);
 	PUSHMARK(SP);
@@ -531,6 +577,8 @@ Perl_av_pop(pTHX_ register AV *av)
 	POPSTACK;
 	return retval;
     }
+    if (AvFILL(av) < 0)
+	return &PL_sv_undef;
     retval = AvARRAY(av)[AvFILLp(av)];
     AvARRAY(av)[AvFILLp(av)--] = &PL_sv_undef;
     if (SvSMAGICAL(av))
@@ -554,13 +602,14 @@ Perl_av_unshift(pTHX_ register AV *av, register I32 num)
     register I32 i;
     register SV **ary;
     MAGIC* mg;
+    I32 slide;
 
-    if (!av || num <= 0)
+    if (!av)
 	return;
     if (SvREADONLY(av))
 	Perl_croak(aTHX_ PL_no_modify);
 
-    if ((mg = SvTIED_mg((SV*)av, 'P'))) {
+    if ((mg = SvTIED_mg((SV*)av, PERL_MAGIC_tied))) {
 	dSP;
 	PUSHSTACKi(PERLSI_MAGIC);
 	PUSHMARK(SP);
@@ -577,6 +626,8 @@ Perl_av_unshift(pTHX_ register AV *av, register I32 num)
 	return;
     }
 
+    if (num <= 0)
+      return;
     if (!AvREAL(av) && AvREIFY(av))
 	av_reify(av);
     i = AvARRAY(av) - AvALLOC(av);
@@ -591,6 +642,9 @@ Perl_av_unshift(pTHX_ register AV *av, register I32 num)
     }
     if (num) {
 	i = AvFILLp(av);
+	/* Create extra elements */
+	slide = i > 0 ? i : 0;
+	num += slide;
 	av_extend(av, i + num);
 	AvFILLp(av) += num;
 	ary = AvARRAY(av);
@@ -598,6 +652,10 @@ Perl_av_unshift(pTHX_ register AV *av, register I32 num)
 	do {
 	    ary[--num] = &PL_sv_undef;
 	} while (num);
+	/* Make extra elements into a buffer */
+	AvMAX(av) -= slide;
+	AvFILLp(av) -= slide;
+	SvPVX(av) = (char*)(AvARRAY(av) + slide);
     }
 }
 
@@ -615,11 +673,11 @@ Perl_av_shift(pTHX_ register AV *av)
     SV *retval;
     MAGIC* mg;
 
-    if (!av || AvFILL(av) < 0)
+    if (!av)
 	return &PL_sv_undef;
     if (SvREADONLY(av))
 	Perl_croak(aTHX_ PL_no_modify);
-    if ((mg = SvTIED_mg((SV*)av, 'P'))) {
+    if ((mg = SvTIED_mg((SV*)av, PERL_MAGIC_tied))) {
 	dSP;
 	PUSHSTACKi(PERLSI_MAGIC);
 	PUSHMARK(SP);
@@ -635,6 +693,8 @@ Perl_av_shift(pTHX_ register AV *av)
 	POPSTACK;
 	return retval;
     }
+    if (AvFILL(av) < 0)
+      return &PL_sv_undef;
     retval = *AvARRAY(av);
     if (AvREAL(av))
 	*AvARRAY(av) = &PL_sv_undef;
@@ -661,6 +721,14 @@ Perl_av_len(pTHX_ register AV *av)
     return AvFILL(av);
 }
 
+/*
+=for apidoc av_fill
+
+Ensure than an array has a given number of elements, equivalent to
+Perl's C<$#array = $fill;>.
+
+=cut
+*/
 void
 Perl_av_fill(pTHX_ register AV *av, I32 fill)
 {
@@ -669,7 +737,7 @@ Perl_av_fill(pTHX_ register AV *av, I32 fill)
 	Perl_croak(aTHX_ "panic: null array");
     if (fill < 0)
 	fill = -1;
-    if ((mg = SvTIED_mg((SV*)av, 'P'))) {
+    if ((mg = SvTIED_mg((SV*)av, PERL_MAGIC_tied))) {
 	dSP;            
 	ENTER;
 	SAVETMPS;
@@ -708,6 +776,14 @@ Perl_av_fill(pTHX_ register AV *av, I32 fill)
 	(void)av_store(av,fill,&PL_sv_undef);
 }
 
+/*
+=for apidoc av_delete
+
+Deletes the element indexed by C<key> from the array.  Returns the
+deleted element. C<flags> is currently ignored.
+
+=cut
+*/
 SV *
 Perl_av_delete(pTHX_ AV *av, I32 key, I32 flags)
 {
@@ -717,30 +793,54 @@ Perl_av_delete(pTHX_ AV *av, I32 key, I32 flags)
 	return Nullsv;
     if (SvREADONLY(av))
 	Perl_croak(aTHX_ PL_no_modify);
+
+    if (SvRMAGICAL(av)) {
+        MAGIC *tied_magic = mg_find((SV*)av, PERL_MAGIC_tied);
+        SV **svp;
+        if ((tied_magic || mg_find((SV*)av, PERL_MAGIC_regdata))) {
+            /* Handle negative array indices 20020222 MJD */
+            if (key < 0) {
+                unsigned adjust_index = 1;
+                if (tied_magic) {
+                    SV **negative_indices_glob = 
+                        hv_fetch(SvSTASH(SvRV(SvTIED_obj((SV *)av, 
+                                                         tied_magic))), 
+                                 NEGATIVE_INDICES_VAR, 16, 0);
+                    if (negative_indices_glob
+                        && SvTRUE(GvSV(*negative_indices_glob)))
+                        adjust_index = 0;
+                }
+                if (adjust_index) {
+                    key += AvFILL(av) + 1;
+                    if (key < 0)
+                        return Nullsv;
+                }
+            }
+            svp = av_fetch(av, key, TRUE);
+            if (svp) {
+                sv = *svp;
+                mg_clear(sv);
+                if (mg_find(sv, PERL_MAGIC_tiedelem)) {
+                    sv_unmagic(sv, PERL_MAGIC_tiedelem); /* No longer an element */
+                    return sv;
+                }
+                return Nullsv;     
+            }
+        }
+    }
+
     if (key < 0) {
 	key += AvFILL(av) + 1;
 	if (key < 0)
 	    return Nullsv;
     }
-    if (SvRMAGICAL(av)) {
-	SV **svp;
-	if ((mg_find((SV*)av,'P') || mg_find((SV*)av,'D'))
-	    && (svp = av_fetch(av, key, TRUE)))
-	{
-	    sv = *svp;
-	    mg_clear(sv);
-	    if (mg_find(sv, 'p')) {
-		sv_unmagic(sv, 'p');		/* No longer an element */
-		return sv;
-	    }
-	    return Nullsv;			/* element cannot be deleted */
-	}
-    }
+
     if (key > AvFILLp(av))
 	return Nullsv;
     else {
 	sv = AvARRAY(av)[key];
 	if (key == AvFILLp(av)) {
+	    AvARRAY(av)[key] = &PL_sv_undef;
 	    do {
 		AvFILLp(av)--;
 	    } while (--key >= 0 && AvARRAY(av)[key] == &PL_sv_undef);
@@ -758,28 +858,62 @@ Perl_av_delete(pTHX_ AV *av, I32 key, I32 flags)
 }
 
 /*
- * This relies on the fact that uninitialized array elements
- * are set to &PL_sv_undef.
- */
+=for apidoc av_exists
 
+Returns true if the element indexed by C<key> has been initialized.
+
+This relies on the fact that uninitialized array elements are set to
+C<&PL_sv_undef>.
+
+=cut
+*/
 bool
 Perl_av_exists(pTHX_ AV *av, I32 key)
 {
     if (!av)
 	return FALSE;
+
+
+    if (SvRMAGICAL(av)) {
+        MAGIC *tied_magic = mg_find((SV*)av, PERL_MAGIC_tied);
+        if (tied_magic || mg_find((SV*)av, PERL_MAGIC_regdata)) {
+            SV *sv = sv_newmortal();
+            MAGIC *mg;
+            /* Handle negative array indices 20020222 MJD */
+            if (key < 0) {
+                unsigned adjust_index = 1;
+                if (tied_magic) {
+                    SV **negative_indices_glob = 
+                        hv_fetch(SvSTASH(SvRV(SvTIED_obj((SV *)av, 
+                                                         tied_magic))), 
+                                 NEGATIVE_INDICES_VAR, 16, 0);
+                    if (negative_indices_glob
+                        && SvTRUE(GvSV(*negative_indices_glob)))
+                        adjust_index = 0;
+                }
+                if (adjust_index) {
+                    key += AvFILL(av) + 1;
+                    if (key < 0)
+                        return FALSE;
+                }
+            }
+
+            mg_copy((SV*)av, sv, 0, key);
+            mg = mg_find(sv, PERL_MAGIC_tiedelem);
+            if (mg) {
+                magic_existspack(sv, mg);
+                return (bool)SvTRUE(sv);
+            }
+
+        }
+    }
+
     if (key < 0) {
 	key += AvFILL(av) + 1;
 	if (key < 0)
 	    return FALSE;
     }
-    if (SvRMAGICAL(av)) {
-	if (mg_find((SV*)av,'P') || mg_find((SV*)av,'D')) {
-	    SV *sv = sv_newmortal();
-	    mg_copy((SV*)av, sv, 0, key);
-	    magic_existspack(sv, mg_find(sv, 'p'));
-	    return SvTRUE(sv);
-	}
-    }
+
     if (key <= AvFILLp(av) && AvARRAY(av)[key] != &PL_sv_undef
 	&& AvARRAY(av)[key])
     {
@@ -826,6 +960,9 @@ Perl_avhv_keys(pTHX_ AV *av)
 	if (SvGMAGICAL(sv))
 	    mg_get(sv);
 	if (SvROK(sv)) {
+            if (ckWARN(WARN_DEPRECATED) && !sv_isa(sv, "pseudohash"))
+	        Perl_warner(aTHX_ packWARN(WARN_DEPRECATED),
+			    "Pseudo-hashes are deprecated");
 	    sv = SvRV(sv);
 	    if (SvTYPE(sv) == SVt_PVHV)
 		return (HV*)sv;

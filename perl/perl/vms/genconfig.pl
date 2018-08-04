@@ -157,8 +157,8 @@ foreach (@ARGV) {
       $optimize = $qual;
       $ccflags =~ s/$qual//;
     }
-    $usethreads = ($ccflags =~ m!/DEF[^/]+USE_THREADS!i and
-                   $ccflags !~ m!/UND[^/]+USE_THREADS!i);
+    $usethreads = ($ccflags =~ m!/DEF[^/]+USE_5005THREADS!i and
+                   $ccflags !~ m!/UND[^/]+USE_5005THREADS!i);
     print OUT "usethreads='",($usethreads ? 'define' : 'undef'),"'\n";;
     $optimize = "$debug$optimize";
     print OUT "ccflags='$ccflags'\n";
@@ -229,6 +229,8 @@ foreach (@ARGV) {
                  d_wcstombs d_wctomb d_mblen d_mktime d_strcoll d_strxfrm ]) {
       print OUT "$_='$rtlhas'\n";
     }
+    print OUT "d_stdio_ptr_lval_sets_cnt='undef'\n";
+    print OUT "d_stdio_ptr_lval_nochange_cnt='undef'\n";
     foreach (qw[ d_gettimeod d_uname d_truncate d_wait4 d_index
                  d_pathconf d_fpathconf d_sysconf d_sigsetjmp ]) {
       print OUT "$_='$rtlnew'\n";
@@ -365,8 +367,8 @@ close IN;
 # as the manifest for the obsolete variable $d_eunice.
 print OUT "d_eunice='undef'\n";  delete $pp_vars{VMS};
 
-# XXX temporary -- USE_THREADS is currently on CC command line
-delete $pp_vars{'USE_THREADS'};
+# XXX temporary -- USE_5005THREADS is currently on CC command line
+delete $pp_vars{'USE_5005THREADS'};
 
 foreach (sort keys %pp_vars) {
   warn "Didn't see $_ in $infile\n";

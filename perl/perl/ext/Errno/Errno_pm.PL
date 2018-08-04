@@ -2,11 +2,10 @@ use ExtUtils::MakeMaker;
 use Config;
 use strict;
 
-use vars qw($VERSION);
-
-$VERSION = "1.111";
+our $VERSION = "1.09_00";
 
 my %err = ();
+my %wsa = ();
 
 unlink "Errno.pm" if -f "Errno.pm";
 open OUT, ">Errno.pm" or die "Cannot open Errno.pm: $!";
@@ -22,10 +21,21 @@ sub process_file {
     my($file) = @_;
 
     return unless defined $file and -f $file;
+#   warn "Processing $file\n";
 
     local *FH;
     if (($^O eq 'VMS') && ($Config{vms_cc_type} ne 'gnuc')) {
 	unless(open(FH," LIBRARY/EXTRACT=ERRNO/OUTPUT=SYS\$OUTPUT $file |")) {
+            warn "Cannot open '$file'";
+            return;
+	}     
+    } elsif ($Config{gccversion} ne ''
+             # OpenSTEP has gcc 2.7.2.1 which recognizes but
+	     # doesn't implement the -dM flag.
+	     && $^O ne 'openstep' && $^O ne 'next' && $^O ne 'darwin'
+	     ) { 
+	# With the -dM option, gcc outputs every #define it finds
+	unless(open(FH,"$Config{cc} -E -dM $Config{cppflags} $file |")) {
             warn "Cannot open '$file'";
             return;
 	}     
@@ -37,11 +47,23 @@ sub process_file {
             return;
 	}
     }
-    while(<FH>) {
-	$err{$1} = 1
-	    if /^\s*#\s*define\s+(E\w+)\s+/;
-   }
-   close(FH);
+
+    if ($^O eq 'MacOS') {
+	while(<FH>) {
+	    $err{$1} = $2
+		if /^\s*#\s*define\s+(E\w+)\s+(\d+)/;
+	}
+    } else {
+	while(<FH>) {
+	    $err{$1} = 1
+		if /^\s*#\s*define\s+(E\w+)\s+/;
+            if ($^O eq 'MSWin32') {
+	        $wsa{$1} = 1
+	    	    if /^\s*#\s*define\s+WSA(E\w+)\s+/;
+            }
+	}
+    }
+    close(FH);
 }
 
 my $cppstdin;
@@ -79,16 +101,45 @@ sub get_files {
     } elsif ($^O eq 'vmesa') {
 	# OS/390 C compiler doesn't generate #file or #line directives
 	$file{'../../vmesa/errno.h'} = 1;
+    } elsif ($Config{archname} eq 'epoc') {
+	# Watch out for cross compiling for EPOC (usually done on linux)
+	$file{'/usr/local/epocemx/epocsdk/include/libc/sys/errno.h'} = 1;
+    } elsif ($^O eq 'linux' &&
+	     $Config{gccversion} ne '' # might be using, say, Intel's icc
+	     ) {
+	# Some Linuxes have weird errno.hs which generate
+	# no #file or #line directives
+	$file{'/usr/include/errno.h'} = 1;
+    } elsif ($^O eq 'MacOS') {
+	# note that we are only getting the GUSI errno's here ...
+	# we might miss out on compiler-specific ones
+	$file{"$ENV{GUSI}include:sys:errno.h"} = 1;
+
+    } elsif ($^O eq 'beos') {
+	# hidden in a special place
+	$file{'/boot/develop/headers/posix/errno.h'} = 1;
+
+    } elsif ($^O eq 'vos') {
+	# avoid problem where cpp returns non-POSIX pathnames
+	$file{'/system/include_library/errno.h'} = 1;
     } else {
 	open(CPPI,"> errno.c") or
 	    die "Cannot open errno.c";
 
-	print CPPI "#include <errno.h>\n";
+	if ($^O eq 'NetWare') {
+	    print CPPI "#include <nwerrno.h>\n";
+	} else {
+	    print CPPI "#include <errno.h>\n";
+	    if ($^O eq 'MSWin32') {
+		print CPPI "#define _WINSOCKAPI_\n"; # don't drag in everything
+		print CPPI "#include <winsock.h>\n";
+	    }
+	}
 
 	close(CPPI);
 
 	# invoke CPP and read the output
-	if ($^O eq 'MSWin32') {
+	if ($^O eq 'MSWin32' || $^O eq 'NetWare') {
 	    open(CPPO,"$Config{cpprun} $Config{cppflags} errno.c |") or
 		die "Cannot run '$Config{cpprun} $Config{cppflags} errno.c'";
 	} else {
@@ -98,14 +149,14 @@ sub get_files {
 	}
 
 	my $pat;
-	if ($^O eq 'MSWin32' and $Config{cc} =~ /^bcc/i) {
+	if (($^O eq 'MSWin32' || $^O eq 'NetWare') and $Config{cc} =~ /^bcc/i) {
 	    $pat = '^/\*\s+(.+)\s+\d+\s*:\s+\*/';
 	}
 	else {
-	    $pat = '^#(?:line)?\s*\d+\s+"([^"]+)"';
+	    $pat = '^#\s*(?:line)?\s*\d+\s+"([^"]+)"';
 	}
 	while(<CPPO>) {
-	    if ($^O eq 'os2' or $^O eq 'MSWin32') {
+	    if ($^O eq 'os2' or $^O eq 'MSWin32' or $^O eq 'NetWare') {
 		if (/$pat/o) {
 		   my $f = $1;
 		   $f =~ s,\\\\,/,g;
@@ -133,39 +184,90 @@ sub write_errno_pm {
     open(CPPI,"> errno.c") or
 	die "Cannot open errno.c";
 
-    print CPPI "#include <errno.h>\n";
-
+    if ($^O eq 'NetWare') {
+	print CPPI "#include <nwerrno.h>\n";
+	} 
+    else {
+	print CPPI "#include <errno.h>\n";
+    }
+    if ($^O eq 'MSWin32') {
+	print CPPI "#include <winsock.h>\n";
+	foreach $err (keys %wsa) {
+	    print CPPI "#ifndef $err\n";
+	    print CPPI "#define $err WSA$err\n";
+	    print CPPI "#endif\n";
+	    $err{$err} = 1;
+	}
+    }
+ 
     foreach $err (keys %err) {
 	print CPPI '"',$err,'" [[',$err,']]',"\n";
     }
 
     close(CPPI);
 
+    unless ($^O eq 'MacOS') {	# trust what we have
     # invoke CPP and read the output
 
-    if ($^O eq 'VMS') {
-	my $cpp = "$Config{cppstdin} $Config{cppflags} $Config{cppminus}";
-	$cpp =~ s/sys\$input//i;
-	open(CPPO,"$cpp  errno.c |") or
-          die "Cannot exec $Config{cppstdin}";
-    } elsif ($^O eq 'MSWin32') {
-	open(CPPO,"$Config{cpprun} $Config{cppflags} errno.c |") or
-	    die "Cannot run '$Config{cpprun} $Config{cppflags} errno.c'";
-    } else {
-	my $cpp = default_cpp();
-	open(CPPO,"$cpp < errno.c |")
-	    or die "Cannot exec $cpp";
+	if ($^O eq 'VMS') {
+	    my $cpp = "$Config{cppstdin} $Config{cppflags} $Config{cppminus}";
+	    $cpp =~ s/sys\$input//i;
+	    open(CPPO,"$cpp  errno.c |") or
+		die "Cannot exec $Config{cppstdin}";
+	} elsif ($^O eq 'MSWin32' || $^O eq 'NetWare') {
+	    open(CPPO,"$Config{cpprun} $Config{cppflags} errno.c |") or
+		die "Cannot run '$Config{cpprun} $Config{cppflags} errno.c'";
+	} else {
+	    my $cpp = default_cpp();
+	    open(CPPO,"$cpp < errno.c |")
+		or die "Cannot exec $cpp";
+	}
+
+	%err = ();
+
+	while(<CPPO>) {
+	    my($name,$expr);
+	    next unless ($name, $expr) = /"(.*?)"\s*\[\s*\[\s*(.*?)\s*\]\s*\]/;
+	    next if $name eq $expr;
+	    $expr =~ s/(\d+)[LU]+\b/$1/g; # 2147483647L et alia
+	    $err{$name} = eval $expr;
+	}
+	close(CPPO);
     }
 
-    %err = ();
+    # Many of the E constants (including ENOENT, which is being
+    # used in the Perl test suite a lot), are available only as
+    # enums in BeOS, so compiling and executing some code is about
+    # only way to find out what the numeric Evalues are.
 
-    while(<CPPO>) {
-	my($name,$expr);
-	next unless ($name, $expr) = /"(.*?)"\s*\[\s*\[\s*(.*?)\s*\]\s*\]/;
-	next if $name eq $expr;
-	$err{$name} = eval $expr;
+    if ($^O eq 'beos') {
+	if (open(C, ">errno.c")) {
+	    my @zero = grep { !$err{$_} } keys %err;
+	    print C <<EOF;
+#include <errno.h>
+#include <stdio.h>
+int main() {
+EOF
+            for (@zero) {
+		print C qq[printf("$_ %d\n", $_);]
+	    }
+            print C "}\n";
+            close C;
+            system("cc -o errno errno.c");
+            unlink("errno.c");
+            if (open(C, "./errno|")) {
+		while (<C>) {
+		    if (/^(\w+) (-?\d+)$/) { $err{$1} = $2 }
+		}
+		close(C);
+	    } else {
+		die "failed to execute ./errno: $!\n";
+	    }
+            unlink("errno");
+        } else {
+	    die "failed to create errno.c: $!\n";
+	}
     }
-    close(CPPO);
 
     # Write Errno.pm
 
@@ -175,7 +277,7 @@ sub write_errno_pm {
 #
 
 package Errno;
-use vars qw(\@EXPORT_OK \%EXPORT_TAGS \@ISA \$VERSION \%errno \$AUTOLOAD);
+our (\@EXPORT_OK,\%EXPORT_TAGS,\@ISA,\$VERSION,\%errno,\$AUTOLOAD);
 use Exporter ();
 use Config;
 use strict;
@@ -185,6 +287,7 @@ use strict;
 	die "Errno architecture ($Config{'archname'}-$Config{'osvers'}) does not match executable architecture (\$Config{'archname'}-\$Config{'osvers'})";
 
 \$VERSION = "$VERSION";
+\$VERSION = eval \$VERSION;
 \@ISA = qw(Exporter);
 
 EDQ

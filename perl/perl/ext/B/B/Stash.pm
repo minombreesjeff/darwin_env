@@ -2,11 +2,21 @@
 # vishalb@hotmail.com 
 package B::Stash;
 
+our $VERSION = '1.00';
+
+=pod
+
+=head1 NAME
+
+B::Stash - show what stashes are loaded
+
+=cut
+
 BEGIN { %Seen = %INC }
 
 CHECK {
 	my @arr=scan($main::{"main::"});
-	@arr=map{s/\:\:$//;$_;}  @arr;
+       @arr=map{s/\:\:$//;$_ eq "<none>"?():$_;}  @arr;
 	print "-umain,-u", join (",-u",@arr) ,"\n";
 }
 sub scan{

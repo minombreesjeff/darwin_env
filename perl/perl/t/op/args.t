@@ -1,6 +1,6 @@
 #!./perl
 
-print "1..8\n";
+print "1..11\n";
 
 # test various operations on @_
 
@@ -52,3 +52,37 @@ sub new4 { goto &new2 }
     print "# got [@$y], expected [a b c y]\nnot " unless "@$y" eq "a b c y";
     print "ok $ord\n";
 }
+
+# see if POPSUB gets to see the right pad across a dounwind() with
+# a reified @_
+
+sub methimpl {
+    my $refarg = \@_;
+    die( "got: @_\n" );
+}
+
+sub method {
+    &methimpl;
+}
+
+sub try {
+    eval { method('foo', 'bar'); };
+    print "# $@" if $@;
+}
+
+for (1..5) { try() }
+++$ord;
+print "ok $ord\n";
+
+# bug #21542 local $_[0] causes reify problems and coredumps
+
+sub local1 { local $_[0] }
+my $foo = 'foo'; local1($foo); local1($foo);
+print "got [$foo], expected [foo]\nnot " if $foo ne 'foo';
+$ord++;
+print "ok $ord\n";
+
+sub local2 { local $_[0]; last L }
+L: { local2 }
+$ord++;
+print "ok $ord\n";

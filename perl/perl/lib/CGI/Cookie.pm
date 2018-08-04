@@ -13,9 +13,9 @@ package CGI::Cookie;
 # wish, but if you redistribute a modified version, please attach a note
 # listing the modifications you have made.
 
-$CGI::Cookie::VERSION='1.12';
+$CGI::Cookie::VERSION='1.21';
 
-use CGI qw(-no_debug);
+use CGI::Util qw(rearrange unescape escape);
 use overload '""' => \&as_string,
     'cmp' => \&compare,
     'fallback'=>1;
@@ -40,88 +40,101 @@ sub raw_fetch {
     my %results;
     my($key,$value);
 
-    my(@pairs) = split("; ",$raw_cookie);
+    my(@pairs) = split("; ?",$raw_cookie);
     foreach (@pairs) {
-	if (/^([^=]+)=(.*)/) {
-	    $key = $1;
-	    $value = $2;
-	}
-	else {
-	    $key = $_;
-	    $value = '';
-	}
-	$results{$key} = $value;
+      s/\s*(.*?)\s*/$1/;
+      if (/^([^=]+)=(.*)/) {
+	$key = $1;
+	$value = $2;
+      }
+      else {
+	$key = $_;
+	$value = '';
+      }
+      $results{$key} = $value;
     }
     return \%results unless wantarray;
     return %results;
 }
 
-sub parse {
-    my ($self,$raw_cookie) = @_;
-    my %results;
 
-    my(@pairs) = split("; ",$raw_cookie);
-    foreach (@pairs) {
-	my($key,$value) = split("=");
-	my(@values) = map CGI::unescape($_),split('&',$value);
-	$key = CGI::unescape($key);
-	# A bug in Netscape can cause several cookies with same name to
-	# appear.  The FIRST one in HTTP_COOKIE is the most recent version.
-	$results{$key} ||= $self->new(-name=>$key,-value=>\@values);
+sub parse {
+  my ($self,$raw_cookie) = @_;
+  my %results;
+
+  my(@pairs) = split("; ?",$raw_cookie);
+  foreach (@pairs) {
+    s/\s*(.*?)\s*/$1/;
+    my($key,$value) = split("=",$_,2);
+
+    # Some foreign cookies are not in name=value format, so ignore
+    # them.
+    next if !defined($value);
+    my @values = ();
+    if ($value ne '') {
+      @values = map unescape($_),split(/[&;]/,$value.'&dmy');
+      pop @values;
     }
-    return \%results unless wantarray;
-    return %results;
+    $key = unescape($key);
+    # A bug in Netscape can cause several cookies with same name to
+    # appear.  The FIRST one in HTTP_COOKIE is the most recent version.
+    $results{$key} ||= $self->new(-name=>$key,-value=>\@values);
+  }
+  return \%results unless wantarray;
+  return %results;
 }
 
 sub new {
-    my $class = shift;
-    $class = ref($class) if ref($class);
-    my($name,$value,$path,$domain,$secure,$expires) =
-	CGI->rearrange([NAME,[VALUE,VALUES],PATH,DOMAIN,SECURE,EXPIRES],@_);
-
-    # Pull out our parameters.
-    my @values;
-    if (ref($value)) {
-	if (ref($value) eq 'ARRAY') {
-	    @values = @$value;
-	} elsif (ref($value) eq 'HASH') {
-	    @values = %$value;
-	}
-    } else {
-	@values = ($value);
+  my $class = shift;
+  $class = ref($class) if ref($class);
+  my($name,$value,$path,$domain,$secure,$expires) =
+    rearrange([NAME,[VALUE,VALUES],PATH,DOMAIN,SECURE,EXPIRES],@_);
+  
+  # Pull out our parameters.
+  my @values;
+  if (ref($value)) {
+    if (ref($value) eq 'ARRAY') {
+      @values = @$value;
+    } elsif (ref($value) eq 'HASH') {
+      @values = %$value;
     }
+  } else {
+    @values = ($value);
+  }
+  
+  bless my $self = {
+		    'name'=>$name,
+		    'value'=>[@values],
+		   },$class;
 
-    bless my $self = {
-	'name'=>$name,
-	'value'=>[@values],
-	},$class;
+  # IE requires the path and domain to be present for some reason.
+  $path   ||= "/";
+  # however, this breaks networks which use host tables without fully qualified
+  # names, so we comment it out.
+  #    $domain = CGI::virtual_host()    unless defined $domain;
 
-    # IE requires the path and domain to be present for some reason.
-    $path   = CGI::url(-absolute=>1) unless defined $path;
-# however, this breaks networks which use host tables without fully qualified
-# names, so we comment it out.
-#    $domain = CGI::virtual_host()    unless defined $domain;
-
-    $self->path($path)     if defined $path;
-    $self->domain($domain) if defined $domain;
-    $self->secure($secure) if defined $secure;
-    $self->expires($expires) if defined $expires;
-    return $self;
+  $self->path($path)     if defined $path;
+  $self->domain($domain) if defined $domain;
+  $self->secure($secure) if defined $secure;
+  $self->expires($expires) if defined $expires;
+#  $self->max_age($expires) if defined $expires;
+  return $self;
 }
 
 sub as_string {
     my $self = shift;
     return "" unless $self->name;
 
-    my(@constant_values,$domain,$path,$expires,$secure);
+    my(@constant_values,$domain,$path,$expires,$max_age,$secure);
 
-    push(@constant_values,"domain=$domain") if $domain = $self->domain;
-    push(@constant_values,"path=$path") if $path = $self->path;
+    push(@constant_values,"domain=$domain")   if $domain = $self->domain;
+    push(@constant_values,"path=$path")       if $path = $self->path;
     push(@constant_values,"expires=$expires") if $expires = $self->expires;
-    push(@constant_values,'secure') if $secure = $self->secure;
+    push(@constant_values,"max-age=$max_age") if $max_age = $self->max_age;
+    push(@constant_values,"secure") if $secure = $self->secure;
 
-    my($key) = CGI::escape($self->name);
-    my($cookie) = join("=",$key,join("&",map CGI::escape($_),$self->value));
+    my($key) = escape($self->name);
+    my($cookie) = join("=",$key,join("&",map escape($_),$self->value));
     return join("; ",$cookie,@constant_values);
 }
 
@@ -142,7 +155,19 @@ sub name {
 sub value {
     my $self = shift;
     my $value = shift;
-    $self->{'value'} = $value if defined $value;
+      if (defined $value) {
+              my @values;
+        if (ref($value)) {
+            if (ref($value) eq 'ARRAY') {
+                @values = @$value;
+            } elsif (ref($value) eq 'HASH') {
+                @values = %$value;
+            }
+        } else {
+            @values = ($value);
+        }
+      $self->{'value'} = [@values];
+      }
     return wantarray ? @{$self->{'value'}} : $self->{'value'}->[0]
 }
 
@@ -163,8 +188,15 @@ sub secure {
 sub expires {
     my $self = shift;
     my $expires = shift;
-    $self->{'expires'} = CGI::expires($expires,'cookie') if defined $expires;
+    $self->{'expires'} = CGI::Util::expires($expires,'cookie') if defined $expires;
     return $self->{'expires'};
+}
+
+sub max_age {
+  my $self = shift;
+  my $expires = shift;
+  $self->{'max-age'} = CGI::Util::expire_calc($expires)-time if defined $expires;
+  return $self->{'max-age'};
 }
 
 sub path {
@@ -252,8 +284,8 @@ against your script's URL before returning the cookie.  For example,
 if you specify the path "/cgi-bin", then the cookie will be returned
 to each of the scripts "/cgi-bin/tally.pl", "/cgi-bin/order.pl", and
 "/cgi-bin/customer_service/complain.pl", but not to the script
-"/cgi-private/site_admin.pl".  By default, the path is set to your
-script, so that only it will receive the cookie.
+"/cgi-private/site_admin.pl".  By default, the path is set to "/", so
+that all scripts at your site will receive the cookie.
 
 =item B<4. secure flag>
 
@@ -268,7 +300,7 @@ script if the CGI request is occurring on a secure channel, such as SSL.
                              -value   =>  'bar',
                              -expires =>  '+3M',
                              -domain  =>  '.capricorn.com',
-                             -path    =>  '/cgi-bin/database'
+                             -path    =>  '/cgi-bin/database',
                              -secure  =>  1
 	                    );
 
@@ -379,7 +411,7 @@ Get or set the cookie's value.  Example:
 	$value = $c->value;
 	@new_value = $c->value(['a','b','c','d']);
 
-B<value()> is context sensitive.  In an array context it will return
+B<value()> is context sensitive.  In a list context it will return
 the current value of the cookie as an array.  In a scalar context it
 will return the B<first> value of a multivalued cookie.
 
